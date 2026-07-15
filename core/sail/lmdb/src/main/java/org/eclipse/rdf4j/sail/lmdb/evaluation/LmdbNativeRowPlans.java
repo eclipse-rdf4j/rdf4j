@@ -197,6 +197,7 @@ final class FilterCursor implements RowCursor {
 	final RowCursor arg;
 	final NativeBooleanFilter filter;
 	final RowState row;
+	boolean closed;
 
 	FilterCursor(RowCursor arg, NativeBooleanFilter filter, RowState row) {
 		this.arg = arg;
@@ -216,8 +217,31 @@ final class FilterCursor implements RowCursor {
 
 	@Override
 	public void close() {
-		arg.close();
-		filter.close();
+		if (closed) {
+			return;
+		}
+		closed = true;
+		Throwable failure = null;
+		try {
+			arg.close();
+		} catch (RuntimeException | Error problem) {
+			failure = problem;
+		}
+		try {
+			filter.close();
+		} catch (RuntimeException | Error problem) {
+			if (failure == null) {
+				failure = problem;
+			} else if (failure != problem) {
+				failure.addSuppressed(problem);
+			}
+		}
+		if (failure instanceof RuntimeException runtimeException) {
+			throw runtimeException;
+		}
+		if (failure instanceof Error error) {
+			throw error;
+		}
 	}
 }
 

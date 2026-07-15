@@ -32,13 +32,19 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
+import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
@@ -140,6 +146,56 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 		assertThat(join.getLeftArg()).as("BIND clause should be left-most argument of join")
 				.isInstanceOf(Extension.class);
+	}
+
+	@Test
+	public void keepsBNodeExtensionAtOriginalUnequalFanoutBoundary() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern fanout = new StatementPattern(Var.of("s"),
+				Var.of("p", vf.createIRI("ex:pFanout")), Var.of("o"));
+		Extension generatedPerInput = new Extension(new SingletonSet(),
+				new ExtensionElem(new BNodeGenerator(), "generated"));
+		Join original = new Join(fanout, generatedPerInput);
+		QueryRoot root = new QueryRoot(original);
+
+		getOptimizer().optimize(root, null, null);
+
+		assertThat(joinArgs(root.getArg())).containsExactly(fanout, generatedPerInput);
+	}
+
+	@Test
+	public void keepsUnknownFunctionFilterAtOriginalJoinPositionWhenCostWouldReorder() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern volatilePattern = new StatementPattern(Var.of("volatileS"),
+				Var.of("volatileP", vf.createIRI("ex:pVolatile")), Var.of("volatileO"));
+		Filter volatileFactor = new Filter(volatilePattern,
+				new FunctionCall("urn:test:volatile:join-factor"));
+		StatementPattern cheap = new StatementPattern(Var.of("cheapS"),
+				Var.of("cheapP", vf.createIRI("ex:pCheap")), Var.of("cheapO"));
+		Join original = new Join(volatileFactor, cheap);
+		QueryRoot root = new QueryRoot(original);
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new VolatileBarrierStatistics(), new EmptyTripleSource());
+
+		optimizer.optimize(root, null, null);
+
+		assertThat(joinArgs(root.getArg())).containsExactly(volatileFactor, cheap);
+	}
+
+	@Test
+	public void classifiesDeepNonRepeatableJoinTreeOnce() {
+		CountingFunctionCall condition = new CountingFunctionCall();
+		TupleExpr tree = new Filter(new SingletonSet(), condition);
+		for (int i = 0; i < 64; i++) {
+			tree = new Join(tree,
+					new StatementPattern(new Var("s" + i), new Var("p" + i), new Var("o" + i)));
+		}
+		QueryRoot root = new QueryRoot(tree);
+
+		getOptimizer().optimize(root, null, null);
+
+		assertThat(condition.visits)
+				.as("repeatability classification plus the ordinary optimizer traversal")
+				.isLessThanOrEqualTo(2);
 	}
 
 	@Test
@@ -466,6 +522,21 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		}
 	}
 
+	private static final class CountingFunctionCall extends FunctionCall {
+
+		private int visits;
+
+		private CountingFunctionCall() {
+			super("urn:test:volatile:repeatability-visit-count");
+		}
+
+		@Override
+		public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
+			visits++;
+			super.visit(visitor);
+		}
+	}
+
 	private Object buildJoinVisitor(QueryJoinOptimizer optimizer) throws Exception {
 		Class<?> joinVisitorClass = Class
 				.forName("org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer$JoinVisitor");
@@ -637,6 +708,21 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 				if ("ex:pConsumer".equals(predicate)) {
 					return 1_000_000;
 				}
+			}
+			return super.getCardinality(expr);
+		}
+	}
+
+	private static final class VolatileBarrierStatistics extends EvaluationStatistics {
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof Filter) {
+				return 1_000_000;
+			}
+			if (expr instanceof StatementPattern pattern && pattern.getPredicateVar().hasValue()
+					&& "ex:pCheap".equals(pattern.getPredicateVar().getValue().stringValue())) {
+				return 1;
 			}
 			return super.getCardinality(expr);
 		}

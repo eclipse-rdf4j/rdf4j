@@ -12,18 +12,498 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 
+import java.lang.reflect.Field;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
+import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.junit.jupiter.api.Test;
 
 class LmdbNativeChunkHashBuildTest {
+	private static final long ENUM_PREDICATE = 9L;
+	private static final int ENUM_INITIAL_CAPACITY = 64;
+	private static final int CLASSIC_REPLAY_INITIAL_CAPACITY = 256;
+	private static final int ORDERED_ENUM_BRANCHES = 8;
+	private static final int ORDERED_ENUM_PREFIX_ROWS = 16_386;
+	private static final int SCAN_ONCE_COUNT_TABLE_INITIAL_CAPACITY = 64;
+	private static final long SCAN_ONCE_COUNT_TABLE_INITIAL_PHYSICAL_LONGS = 2L * SCAN_ONCE_COUNT_TABLE_INITIAL_CAPACITY
+			+ (SCAN_ONCE_COUNT_TABLE_INITIAL_CAPACITY + Long.SIZE - 1L) / Long.SIZE;
+
+	@Test
+	void externalRootBatchRefillCopiesOnlySeedAndCurrentRootSlots() throws Exception {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("root", 0, "downstream", 1, "seed", 2), null);
+		layout.freeze(List.of("root", "downstream", "seed"));
+		RowState row = new RowState(null, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, UNKNOWN);
+		row.slots[2] = 7L;
+		row.recomputeBoundMask();
+		RowCursor roots = new RowCursor() {
+			int next;
+
+			@Override
+			public boolean next() {
+				if (next == 2) {
+					return false;
+				}
+				row.slots[0] = 10L + next++;
+				return true;
+			}
+
+			@Override
+			public void close() {
+			}
+		};
+		LmdbNativeChunkPipeline.ExternalRootBatchStage stage = new LmdbNativeChunkPipeline.ExternalRootBatchStage(
+				roots, row, 1L);
+
+		NativeBatch first = new NativeBatch(3, 1);
+		assertThat(stage.fill(first)).isOne();
+		assertThat(first.get(0, 0)).isEqualTo(10L);
+		assertThat(first.get(1, 0)).isEqualTo(UNKNOWN);
+		assertThat(first.get(2, 0)).isEqualTo(7L);
+
+		row.slots[1] = 99L;
+		NativeBatch second = new NativeBatch(3, 1);
+		assertThat(stage.fill(second)).isOne();
+		assertThat(second.get(0, 0)).isEqualTo(11L);
+		assertThat(second.get(1, 0))
+				.as("a prior probe output must not become a constraint on the next root refill")
+				.isEqualTo(UNKNOWN);
+		assertThat(second.get(2, 0)).isEqualTo(7L);
+		stage.close();
+	}
+
+	@Test
+	void externalRootProbeStagesNeverSweepToBuildWorkerLocalHashes() throws Exception {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0, "value", 1), null);
+		layout.freeze(List.of("key", "value"));
+		CountingSource source = new CountingSource(2 * LmdbNativeChunkPipeline.BATCH_ROWS, false, true);
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, UNKNOWN);
+		row.recomputeBoundMask();
+
+		PatternPlan root = new PatternPlan(Term.slot(0), Term.constant(5), Term.constant(6), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, LmdbNativeChunkPipeline.HASH_BUILD_MIN_PROBES + 1D);
+		PatternPlan tail = new PatternPlan(Term.slot(0), Term.constant(7), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false,
+				LmdbNativeChunkPipeline.HASH_BUILD_MIN_PROBES * LmdbNativeChunkPipeline.SEEK_COST_KEYS);
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { root, tail }, new MaskedFilter[0]);
+		MultiJoinPlan.OrderedPlan derived = new MultiJoinPlan.OrderedPlan(new SlotPlan[] { root, tail }, new int[0]);
+		FactorizedTail.MemoBudget budget = new FactorizedTail.MemoBudget(FactorizedTail.MEMO_BYPASSES);
+		int rootRows = LmdbNativeChunkPipeline.HASH_BUILD_MIN_PROBES + 1;
+		RowCursor roots = new RowCursor() {
+			int next;
+
+			@Override
+			public boolean next() {
+				if (next == rootRows) {
+					return false;
+				}
+				row.slots[0] = 100L + next++;
+				return true;
+			}
+
+			@Override
+			public void close() {
+			}
+		};
+
+		try (RowCursor cursor = LmdbNativeChunkPipeline.tryOpenPrefixFrom(plan, derived, 2, row, roots, budget)) {
+			int emitted = 0;
+			while (cursor.next()) {
+				emitted++;
+			}
+			assertThat(emitted).isEqualTo(rootRows);
+		}
+
+		assertThat(source.sweepRowsDelivered)
+				.as("each independently scheduled worker must retain classic probes instead of sweeping the full source")
+				.isZero();
+	}
+
+	@Test
+	void tailBranchCloseReleasesMemoReservationsExactlyOnce() throws Exception {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("root", 0, "tail", 1), null);
+		layout.freeze(List.of("root", "tail"));
+		CountingSource source = new CountingSource(1, false, true);
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, UNKNOWN);
+		row.recomputeBoundMask();
+
+		PatternPlan root = new PatternPlan(Term.slot(0), Term.constant(7), Term.constant(8), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 1);
+		PatternPlan tail = new PatternPlan(Term.slot(0), Term.constant(7), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 2);
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { root, tail }, new MaskedFilter[0]);
+		MultiJoinPlan.OrderedPlan derived = plan.derivedFactorizedPlan(row);
+		LmdbNativeFactorizedRows factorized = LmdbNativeFactorizedRows.tryCreate(plan, derived, row, row.boundMask(),
+				new int[] { 0, 1 }, false);
+
+		assertThat(factorized).isNotNull();
+		assertThat(factorized.flatCount).isOne();
+		assertThat(factorized.branches).hasSize(1);
+		LmdbNativeFactorizedRows.TailBranch branch = factorized.branches[0];
+		assertThat(branch.role).isEqualTo(LmdbNativeFactorizedRows.ROLE_ENUM);
+
+		FactorizedTail.MemoBudget budget = factorized.memoBudget;
+		assertThat(budget.tryReserve(FactorizedTail.MEMO_MAX_ENTRIES - 1,
+				FactorizedTail.MEMO_MAX_STORED_VALUES - ENUM_INITIAL_CAPACITY)).isTrue();
+		row.slots[0] = 100L;
+		row.recomputeBoundMask();
+		LmdbNativeFactorizedRows.TailResult result = branch.result(row, factorized);
+		assertThat(result.count).isOne();
+		assertThat(result.values).hasSize(ENUM_INITIAL_CAPACITY);
+		assertThat(result.values[0]).isEqualTo(10_100L);
+		assertThat(budget.tryReserve(1, 1))
+				.as("the cached tail result must consume the last memo entry and physical value capacity")
+				.isFalse();
+
+		branch.close();
+		branch.close();
+		budget.release(FactorizedTail.MEMO_MAX_ENTRIES - 1,
+				FactorizedTail.MEMO_MAX_STORED_VALUES - ENUM_INITIAL_CAPACITY);
+		assertThat(budget.tryReserve(FactorizedTail.MEMO_MAX_ENTRIES, FactorizedTail.MEMO_MAX_STORED_VALUES))
+				.as("closing the tail branch must return every retained memo reservation exactly once")
+				.isTrue();
+	}
+
+	@Test
+	void enumScanRefusesBeforeOpeningAnUnchargedProbe() throws Exception {
+		EnumMaterializationSource source = new EnumMaterializationSource(0, Map.of(100L, 2));
+		EnumMaterializationFixture fixture = new EnumMaterializationFixture(source, 100L);
+		fixture.leaveValueHeadroom(0L);
+
+		List<String> actual = readFactorizedRows(fixture);
+
+		assertThat(actual).containsExactlyElementsOf(expectedEnumRows(source, 100L));
+		assertThat(source.newProbeCalls)
+				.as("an enum array without an initial physical-capacity reservation must not open a retained probe")
+				.isZero();
+		assertThat(source.probeOpenSubjects).isEmpty();
+		assertThat(source.ordinaryOpenSubjects)
+				.as("the same prefix must continue through the ordinary suffix cursor")
+				.containsExactly(100L);
+		assertThat(source.ordinaryRowsDelivered).isEqualTo(2L);
+		assertThat(fixture.branch.memo)
+				.as("a refused enum materialization must publish no memo result")
+				.isEmpty();
+	}
+
+	@Test
+	void enumGrowthRefusalStopsAfterFirstBatchAndRollsBack() throws Exception {
+		int fanout = 2 * LmdbNativeFactorizedRows.BATCH_ROWS;
+		EnumMaterializationSource source = new EnumMaterializationSource(0, Map.of(100L, fanout));
+		EnumMaterializationFixture fixture = new EnumMaterializationFixture(source, 100L);
+		fixture.leaveValueHeadroom(ENUM_INITIAL_CAPACITY);
+		List<String> actual = new ArrayList<>();
+
+		try (FactorizedRowCursor cursor = fixture.factorized.open(fixture.row)) {
+			assertThat(cursor.next()).isTrue();
+			actual.add(enumRow(fixture.row));
+			assertThat(source.probeRowsDelivered)
+					.as("the refused 64-to-128 growth must stop before a second enum batch is filled")
+					.isEqualTo(LmdbNativeFactorizedRows.BATCH_ROWS);
+			assertThat(fixture.branch.memo)
+					.as("the first batch must not become a partially published enum result")
+					.isEmpty();
+			assertThat(fixture.budget.tryReserve(0, ENUM_INITIAL_CAPACITY))
+					.as("the refused growth must roll back the complete initial array-capacity reservation")
+					.isTrue();
+			fixture.budget.release(0, ENUM_INITIAL_CAPACITY);
+			while (cursor.next()) {
+				actual.add(enumRow(fixture.row));
+			}
+		}
+
+		assertThat(actual).containsExactlyElementsOf(expectedEnumRows(source, 100L));
+		assertThat(source.probeOpenSubjects).containsExactly(100L);
+		assertThat(source.probeRowsDelivered).isEqualTo(LmdbNativeFactorizedRows.BATCH_ROWS);
+		assertThat(source.ordinaryOpenSubjects)
+				.as("the refused materialization must restart only the current prefix's suffix")
+				.containsExactly(100L);
+		assertThat(source.ordinaryRowsDelivered).isEqualTo(fanout);
+		assertThat(fixture.branch.memo).isEmpty();
+	}
+
+	@Test
+	void enumRefusalStreamsOrdinarySuffixForCurrentPrefix() throws Exception {
+		EnumMaterializationSource source = new EnumMaterializationSource(0,
+				Map.of(100L, 1, 200L, ENUM_INITIAL_CAPACITY + 1));
+		EnumMaterializationFixture fixture = new EnumMaterializationFixture(source, 100L, 200L);
+		fixture.leaveValueHeadroom(ENUM_INITIAL_CAPACITY);
+		List<String> expected = expectedEnumRows(source, 100L, 200L);
+		List<String> actual = new ArrayList<>();
+
+		try (FactorizedRowCursor cursor = fixture.factorized.open(fixture.row)) {
+			for (int i = 0; i < expected.size(); i++) {
+				assertThat(cursor.next()).as("expected result row %s", i).isTrue();
+				actual.add(enumRow(fixture.row));
+			}
+
+			assertThat(source.probeOpenSubjects)
+					.as("both first visits may reuse the single physically charged enum scratch")
+					.containsExactly(100L, 200L);
+			assertThat(source.ordinaryOpenSubjects)
+					.as("scratch growth refusal must stream the second prefix through its ordinary suffix")
+					.containsExactly(200L);
+			assertThat(source.probeRowsDelivered).isEqualTo(ENUM_INITIAL_CAPACITY + 2L);
+			assertThat(source.ordinaryRowsDelivered).isEqualTo(ENUM_INITIAL_CAPACITY + 1L);
+			assertThat(fixture.branch.memo)
+					.as("the first key keeps only its marker while the refused second key remains unpublished")
+					.hasSize(1);
+			assertThat(cursor.next()).as("ordinary suffix fallback must neither duplicate nor skip prefixes").isFalse();
+		}
+
+		assertThat(actual).containsExactlyElementsOf(expected);
+	}
+
+	@Test
+	void orderedTopKUniqueKeyChurnReusesOneTransientEnumBuffer() throws Exception {
+		long[] keys = { 109L, 108L, 107L, 106L, 105L, 104L, 103L, 102L, 101L, 100L };
+		EnumMaterializationSource source = new EnumMaterializationSource(4, Map.of());
+		EnumMaterializationFixture fixture = new EnumMaterializationFixture(source, keys);
+		// One transient enum buffer, one 16-long payload, and one compressed-reference metadata slot.
+		fixture.leaveValueHeadroom(ENUM_INITIAL_CAPACITY + 17L);
+		PackedRowComparator comparator = (left, leftOffset, right, rightOffset) -> Long.compare(
+				left[leftOffset], right[rightOffset]);
+		NativeTopKBuffer topK = new NativeTopKBuffer(5, 1, comparator);
+		long[] packed = new long[5];
+		int processed = 0;
+
+		try (FlatRowCursor cursor = fixture.factorized.openFlat(fixture.row);
+				TopKPayloadStore payloads = new TopKPayloadStore(1, fixture.budget)) {
+			long ordinal = 0L;
+			while (cursor.next()) {
+				System.arraycopy(fixture.row.slots, 0, packed, 0, 2);
+				packed[2] = cursor.multiplicity();
+				int acceptedSlot = topK.admit(packed, ordinal++, 3);
+				assertThat(acceptedSlot)
+						.as("descending unique key %s must improve the K=1 winner", fixture.row.slots[0])
+						.isZero();
+				assertThat(payloads.store(acceptedSlot, cursor, 1, packed, 3))
+						.as("one transient enum buffer plus one live top-K payload must fit the bounded budget")
+						.isTrue();
+				topK.replaceAcceptedSuffix(acceptedSlot, packed, 3);
+				processed++;
+			}
+
+			assertThat(processed).isEqualTo(keys.length);
+			long[] winner = new long[5];
+			topK.buffer.copyRow(0, winner);
+			assertThat(winner[0]).isEqualTo(100L);
+			long[] retained = new long[4];
+			payloads.copyTo(0, winner[3], retained, 0, retained.length);
+			assertThat(retained).containsExactly(
+					EnumMaterializationSource.enumValue(100L, ENUM_PREDICATE, 0),
+					EnumMaterializationSource.enumValue(100L, ENUM_PREDICATE, 1),
+					EnumMaterializationSource.enumValue(100L, ENUM_PREDICATE, 2),
+					EnumMaterializationSource.enumValue(100L, ENUM_PREDICATE, 3));
+		}
+
+		assertThat(source.probeOpenSubjects).containsExactly(109L, 108L, 107L, 106L, 105L, 104L, 103L, 102L,
+				101L, 100L);
+		assertThat(source.ordinaryOpenSubjects).isEmpty();
+	}
+
+	@Test
+	void enumMemoPromotesRepeatedKeyOnlyOnSecondEncounter() throws Exception {
+		EnumMaterializationSource source = new EnumMaterializationSource(4, Map.of());
+		EnumMaterializationFixture fixture = new EnumMaterializationFixture(source, 300L);
+		fixture.leaveValueHeadroom(2L * ENUM_INITIAL_CAPACITY);
+		long[] keys = { 300L, 200L, 300L, 300L };
+
+		try {
+			for (long key : keys) {
+				fixture.row.slots[0] = key;
+				fixture.row.slots[1] = UNKNOWN;
+				fixture.row.recomputeBoundMask();
+				LmdbNativeFactorizedRows.TailResult result = fixture.branch.result(fixture.row, fixture.factorized);
+				assertThat(result.count).isEqualTo(4L);
+				assertThat(result.values[0])
+						.isEqualTo(EnumMaterializationSource.enumValue(key, ENUM_PREDICATE, 0));
+			}
+		} finally {
+			fixture.branch.close();
+		}
+
+		assertThat(source.probeOpenSubjects)
+				.as("first visits use transient storage, the second 300 visit promotes it, and the third replays it")
+				.containsExactly(300L, 200L, 300L);
+	}
+
+	@Test
+	void orderedFlatEnumRefusalRestartsClassicSort() {
+		String property = "rdf4j.lmdb.orderedFactorizedRows.enabled";
+		String previous = System.getProperty(property);
+		EnumMaterializationSource source = new EnumMaterializationSource(1, Map.of());
+		SingletonSet telemetry = new SingletonSet();
+		telemetry.setRuntimeTelemetryEnabled(true);
+		NativeRowsStep step = orderedEnumStep(source, telemetry);
+
+		try {
+			System.setProperty(property, "false");
+			List<BindingSet> expected = step.evaluateAll(EmptyBindingSet.getInstance());
+			source.resetCounters();
+			System.setProperty(property, "true");
+			OrderedAttemptTelemetry telemetryBefore = OrderedAttemptTelemetry.capture();
+
+			List<BindingSet> actual = step.evaluateAll(EmptyBindingSet.getInstance());
+
+			assertThat(actual).containsExactlyElementsOf(expected);
+			assertThat(OrderedAttemptTelemetry.capture())
+					.as("a discarded physical-buffer attempt must publish no ordered, factorized, memo, or chunk telemetry")
+					.isEqualTo(telemetryBefore);
+			assertThat(telemetry.getStringMetricActual(LmdbNativeExplain.EXECUTION_STRATEGY))
+					.as("the final strategy must describe the restarted classic sort")
+					.isEqualTo("orderedSpillSort");
+			assertThat(source.newProbeCalls)
+					.as("one retained probe set belongs to the refused attempt and one to the classic restart")
+					.isEqualTo(2 * ORDERED_ENUM_BRANCHES);
+			long restartedRows = (long) ORDERED_ENUM_PREFIX_ROWS * ORDERED_ENUM_BRANCHES;
+			long attemptedRows = source.probeRowsDelivered - restartedRows;
+			assertThat(attemptedRows)
+					.as("the factorized attempt must do bounded partial work before the classic restart")
+					.isPositive()
+					.isLessThan(restartedRows);
+		} finally {
+			restoreProperty(property, previous);
+		}
+	}
+
+	@Test
+	void legacyChunkedPrefixRollsBackRefusedCollectionAndReleasesSharedBudget() throws Exception {
+		NativeSlotLayout layout = new NativeSlotLayout(
+				Map.of("root", 0, "middleSubject", 1, "middleObject", 2, "tail", 3), null);
+		layout.freeze(List.of("root", "middleSubject", "middleObject", "tail"));
+		CountingSource source = new CountingSource(65);
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, UNKNOWN);
+		row.recomputeBoundMask();
+
+		PatternPlan root = new PatternPlan(Term.slot(0), Term.constant(7), Term.constant(8), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 1);
+		PatternPlan middle = new PatternPlan(Term.slot(1), Term.constant(7), Term.slot(2), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 65);
+		PatternPlan tail = new PatternPlan(Term.slot(2), Term.constant(7), Term.slot(3), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 1);
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { root, middle, tail }, new MaskedFilter[0]);
+		MultiJoinPlan.OrderedPlan derived = plan.derivedFactorizedPlan(row);
+		LmdbNativeFactorizedRows factorized = LmdbNativeFactorizedRows.tryCreate(plan, derived, row, row.boundMask(),
+				new int[] { 0, 1, 2, 3 }, false);
+		assertThat(factorized).isNotNull();
+		assertThat(factorized.flatCount).isEqualTo(2);
+		LmdbNativeFactorizedRows.PrefixDepth depth = factorized.prefixDepths[1];
+		assertThat(depth.memoize).isTrue();
+		assertThat(depth.keySlots).isEmpty();
+
+		FactorizedTail.MemoBudget budget = factorized.memoBudget;
+		long headroom = 300L;
+		assertThat(budget.tryReserve(0, FactorizedTail.MEMO_MAX_STORED_VALUES - headroom)).isTrue();
+		GroupKey key = new GroupKey(new long[0]);
+		LmdbNativeFactorizedRows.ChunkedPrefixCursor markerCursor = new LmdbNativeFactorizedRows.ChunkedPrefixCursor(
+				row, new LmdbNativeFactorizedRows.PrefixDepth[] { depth });
+		LmdbNativeFactorizedRows.ChunkedPrefixCursor collectingCursor = null;
+		int markerRows = 0;
+		int collectedRows = 0;
+		boolean onlyMarkerRemained = false;
+		boolean collectionReservationRolledBack = false;
+		boolean markerReservationStillHeld = false;
+		try {
+			while (markerCursor.next()) {
+				markerRows++;
+			}
+			assertThat(depth.memo.get(key)).isSameAs(LmdbNativeFactorizedRows.PrefixDepth.SEEN_ONCE);
+
+			collectingCursor = new LmdbNativeFactorizedRows.ChunkedPrefixCursor(row,
+					new LmdbNativeFactorizedRows.PrefixDepth[] { depth });
+			while (collectingCursor.next()) {
+				collectedRows++;
+			}
+			onlyMarkerRemained = depth.memo.values()
+					.stream()
+					.allMatch(value -> value == LmdbNativeFactorizedRows.PrefixDepth.SEEN_ONCE);
+			collectionReservationRolledBack = budget.tryReserve(0, headroom);
+			if (collectionReservationRolledBack) {
+				budget.release(0, headroom);
+			}
+			markerReservationStillHeld = !budget.tryReserve(FactorizedTail.MEMO_MAX_ENTRIES, 0);
+			if (!markerReservationStillHeld) {
+				budget.release(FactorizedTail.MEMO_MAX_ENTRIES, 0);
+			}
+		} finally {
+			if (collectingCursor != null) {
+				collectingCursor.close();
+			}
+			markerCursor.close();
+		}
+
+		assertThat(markerRows).isEqualTo(65);
+		assertThat(collectedRows).isEqualTo(65);
+		assertThat(onlyMarkerRemained)
+				.as("the refused 256-to-512 growth must not publish the 260-value partial collection")
+				.isTrue();
+		assertThat(collectionReservationRolledBack)
+				.as("the refused growth must return its initial 256-value capacity reservation")
+				.isTrue();
+		assertThat(markerReservationStillHeld)
+				.as("the plan-wide ledger must retain the live SEEN_ONCE entry until close")
+				.isTrue();
+		assertThat(depth.memo).isEmpty();
+		assertThat(budget.tryReserve(FactorizedTail.MEMO_MAX_ENTRIES, headroom))
+				.as("close must return the marker entry after the collection capacity rollback")
+				.isTrue();
+	}
+
+	@Test
+	void producedBatchDoesNotEagerlyBuildHashBeforeEarlyClose() throws Exception {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0, "value", 1), null);
+		layout.freeze(List.of("key", "value"));
+		CountingSource source = new CountingSource(10_000, false, true);
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, UNKNOWN);
+		row.recomputeBoundMask();
+		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(7), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false,
+				LmdbNativeChunkPipeline.HASH_BUILD_MIN_PROBES * LmdbNativeChunkPipeline.SEEK_COST_KEYS);
+		FactorizedTail.MemoBudget budget = new FactorizedTail.MemoBudget(FactorizedTail.MEMO_BYPASSES);
+
+		LmdbNativeChunkPipeline.ProbeStage stage = new LmdbNativeChunkPipeline.ProbeStage(
+				new OneRowStage(new long[] { 42, UNKNOWN }), pattern, row, 1L, budget,
+				new LmdbNativeLongArena(), null, null, null);
+		stage.storeProbes = LmdbNativeChunkPipeline.HASH_BUILD_MIN_PROBES - 1;
+		long buildsBefore = LmdbNativeChunkPipeline.HASH_BUILDS.get();
+		try {
+			assertThat(stage.fill(new NativeBatch(2, 2))).isOne();
+			assertThat(source.sweepRowsDelivered)
+					.as("returning a produced batch must not first sweep the remaining source")
+					.isZero();
+			assertThat(stage.hashTable).isNull();
+			assertThat(LmdbNativeChunkPipeline.HASH_BUILDS.get()).isEqualTo(buildsBefore);
+
+			stage.close();
+			assertThat(source.sweepRowsDelivered)
+					.as("early close must not trigger deferred hash construction")
+					.isZero();
+			assertThat(stage.hashTable).isNull();
+			assertThat(LmdbNativeChunkPipeline.HASH_BUILDS.get()).isEqualTo(buildsBefore);
+		} finally {
+			stage.close();
+		}
+	}
 
 	@Test
 	void hashBuildStopsAtBudgetAndReleasesPartialReservations() throws Exception {
@@ -58,6 +538,244 @@ class LmdbNativeChunkHashBuildTest {
 	}
 
 	@Test
+	void seenOnceMarkerPublicationFailurePreservesCauseAndRollsBackReservation() {
+		IllegalStateException failure = new IllegalStateException("synthetic failure after marker publication");
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0, "value", 1), null);
+		layout.freeze(List.of("key", "value"));
+		RowState row = new RowState(new MarkerPublicationFailureSource(failure), layout,
+				EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, UNKNOWN);
+		row.recomputeBoundMask();
+		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(7), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 1);
+		FactorizedTail.MemoBudget budget = new FactorizedTail.MemoBudget(FactorizedTail.MEMO_BYPASSES);
+		assertThat(budget.tryReserve(FactorizedTail.MEMO_MAX_ENTRIES - 1, 0)).isTrue();
+
+		LmdbNativeChunkPipeline.ProbeStage stage = new LmdbNativeChunkPipeline.ProbeStage(
+				new OneRowStage(new long[] { 42, UNKNOWN }), pattern, row, 1L, budget,
+				new LmdbNativeLongArena(), null, null, null);
+		try {
+			assertThatThrownBy(() -> stage.fill(new NativeBatch(2, 1)))
+					.isSameAs(failure);
+			assertThat(stage.memo)
+					.as("a failed marker publication transaction must leave no visible SEEN_ONCE entry")
+					.isEmpty();
+			assertThat(budget.tryReserve(1, 0))
+					.as("the marker entry reservation must roll back with the failed publication transaction")
+					.isTrue();
+		} finally {
+			stage.close();
+		}
+	}
+
+	@Test
+	void classicReplayInitialCapacityRefusalRetainsNoUnchargedScratch() {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0, "value", 1), null);
+		layout.freeze(List.of("key", "value"));
+		CountingSource source = new CountingSource(1, false, true);
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, UNKNOWN);
+		row.recomputeBoundMask();
+		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(7), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 1);
+		FactorizedTail.MemoBudget budget = new FactorizedTail.MemoBudget(FactorizedTail.MEMO_BYPASSES);
+		long baseline = FactorizedTail.MEMO_MAX_STORED_VALUES - CLASSIC_REPLAY_INITIAL_CAPACITY + 1L;
+		assertThat(budget.tryReserve(0, baseline)).isTrue();
+
+		LmdbNativeChunkPipeline.ProbeStage stage = new LmdbNativeChunkPipeline.ProbeStage(
+				new OneRowStage(new long[] { 42, UNKNOWN }), pattern, row, 1L, budget,
+				new LmdbNativeLongArena(), null, null, null);
+		try {
+			assertThat(stage.replay)
+					.as("an initial replay allocation refused by the shared ledger must not remain uncharged")
+					.isEmpty();
+		} finally {
+			stage.close();
+		}
+		budget.release(0, baseline);
+		assertThat(budget.tryReserve(0, FactorizedTail.MEMO_MAX_STORED_VALUES)).isTrue();
+	}
+
+	@Test
+	void classicReplayGrowthChargesFullCapacityDeltaAndReleasesOnExhaustion() throws Exception {
+		int fanout = CLASSIC_REPLAY_INITIAL_CAPACITY + 1;
+		EnumMaterializationSource source = new EnumMaterializationSource(0, Map.of(42L, fanout));
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0, "value", 1), null);
+		layout.freeze(List.of("key", "value"));
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, UNKNOWN);
+		row.recomputeBoundMask();
+		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(ENUM_PREDICATE), Term.slot(1),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, fanout);
+		FactorizedTail.MemoBudget budget = new FactorizedTail.MemoBudget(FactorizedTail.MEMO_BYPASSES);
+		int grownCapacity = 2 * CLASSIC_REPLAY_INITIAL_CAPACITY;
+		long baseline = FactorizedTail.MEMO_MAX_STORED_VALUES - grownCapacity;
+		assertThat(budget.tryReserve(0, baseline)).isTrue();
+
+		LmdbNativeChunkPipeline.ProbeStage stage = new LmdbNativeChunkPipeline.ProbeStage(
+				new OneRowStage(new long[] { 42, UNKNOWN }), pattern, row, 1L, budget,
+				new LmdbNativeLongArena(), null, null, null);
+		assertThat(stage.fill(new NativeBatch(2, fanout))).isEqualTo(fanout);
+		assertThat(stage.replay).hasSize(grownCapacity);
+		assertThat(budget.tryReserve(0, 1))
+				.as("the 256-to-512 growth must charge its complete 256-slot capacity delta")
+				.isFalse();
+
+		assertThat(stage.fill(new NativeBatch(2, 1))).isZero();
+		assertThat(stage.replay)
+				.as("normal exhaustion must drop the dynamically retained replay array")
+				.isEmpty();
+		assertThat(budget.tryReserve(0, grownCapacity))
+				.as("normal exhaustion must release the exact initial and grown replay capacity")
+				.isTrue();
+	}
+
+	@Test
+	void classicReplayGrowthRefusalKeepsOriginalCapacityAndRollsBackOnClose() throws Exception {
+		int fanout = CLASSIC_REPLAY_INITIAL_CAPACITY + 1;
+		EnumMaterializationSource source = new EnumMaterializationSource(0, Map.of(42L, fanout));
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0, "value", 1), null);
+		layout.freeze(List.of("key", "value"));
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, UNKNOWN);
+		row.recomputeBoundMask();
+		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(ENUM_PREDICATE), Term.slot(1),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, fanout);
+		FactorizedTail.MemoBudget budget = new FactorizedTail.MemoBudget(FactorizedTail.MEMO_BYPASSES);
+		long available = 2L * CLASSIC_REPLAY_INITIAL_CAPACITY - 1L;
+		long baseline = FactorizedTail.MEMO_MAX_STORED_VALUES - available;
+		assertThat(budget.tryReserve(0, baseline)).isTrue();
+
+		LmdbNativeChunkPipeline.ProbeStage stage = new LmdbNativeChunkPipeline.ProbeStage(
+				new OneRowStage(new long[] { 42, UNKNOWN }), pattern, row, 1L, budget,
+				new LmdbNativeLongArena(), null, null, null);
+		try {
+			assertThat(stage.fill(new NativeBatch(2, fanout))).isEqualTo(fanout);
+			assertThat(stage.replay)
+					.as("a refused 256-to-512 growth must publish no uncharged replacement array")
+					.hasSize(CLASSIC_REPLAY_INITIAL_CAPACITY);
+			assertThat(stage.replayComplete).isFalse();
+			assertThat(budget.tryReserve(0, CLASSIC_REPLAY_INITIAL_CAPACITY)).isFalse();
+		} finally {
+			stage.close();
+		}
+		assertThat(stage.replay).isEmpty();
+		assertThat(budget.tryReserve(0, available))
+				.as("early close must release only the successfully retained initial replay capacity")
+				.isTrue();
+	}
+
+	@Test
+	void sharedLedgerReleasesClassicReplayCapacityFromEveryProbeStage() {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0, "middle", 1, "value", 2), null);
+		layout.freeze(List.of("key", "middle", "value"));
+		CountingSource source = new CountingSource(0);
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, UNKNOWN);
+		row.recomputeBoundMask();
+		PatternPlan middle = new PatternPlan(Term.slot(0), Term.constant(7), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 1);
+		PatternPlan tail = new PatternPlan(Term.slot(1), Term.constant(8), Term.slot(2), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 1);
+		FactorizedTail.MemoBudget budget = new FactorizedTail.MemoBudget(FactorizedTail.MEMO_BYPASSES);
+		long retained = 2L * CLASSIC_REPLAY_INITIAL_CAPACITY;
+		long baseline = FactorizedTail.MEMO_MAX_STORED_VALUES - retained;
+		assertThat(budget.tryReserve(0, baseline)).isTrue();
+		LmdbNativeLongArena arena = new LmdbNativeLongArena();
+		LmdbNativeChunkPipeline.ProbeStage first = new LmdbNativeChunkPipeline.ProbeStage(
+				new OneRowStage(new long[] { 42, UNKNOWN, UNKNOWN }), middle, row, 1L, budget, arena,
+				null, null, null);
+		LmdbNativeChunkPipeline.ProbeStage second = new LmdbNativeChunkPipeline.ProbeStage(
+				first, tail, row, 3L, budget, arena, null, null, null);
+
+		assertThat(budget.tryReserve(0, 1))
+				.as("both probe stages must charge their independently retained replay arrays")
+				.isFalse();
+		second.close();
+		assertThat(first.replay).isEmpty();
+		assertThat(second.replay).isEmpty();
+		assertThat(budget.tryReserve(0, retained))
+				.as("closing the chain must release each stage's replay reservation exactly once")
+				.isTrue();
+	}
+
+	@Test
+	void refusedHighFanoutKeyLatchesAndSkipsLaterReplayCollection() throws Exception {
+		int fanout = CLASSIC_REPLAY_INITIAL_CAPACITY + 1;
+		EnumMaterializationSource source = new EnumMaterializationSource(1, Map.of(42L, fanout));
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0, "value", 1), null);
+		layout.freeze(List.of("key", "value"));
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, UNKNOWN);
+		row.recomputeBoundMask();
+		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(ENUM_PREDICATE), Term.slot(1),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, fanout);
+		FactorizedTail.MemoBudget budget = new FactorizedTail.MemoBudget(FactorizedTail.MEMO_BYPASSES);
+		long available = 2L * CLASSIC_REPLAY_INITIAL_CAPACITY - 1L;
+		assertThat(budget.tryReserve(0, FactorizedTail.MEMO_MAX_STORED_VALUES - available)).isTrue();
+		LmdbNativeChunkPipeline.ProbeStage stage = new LmdbNativeChunkPipeline.ProbeStage(
+				new RowsStage(new long[][] {
+						{ 42, UNKNOWN },
+						{ 43, UNKNOWN },
+						{ 42, UNKNOWN }
+				}), pattern, row, 1L, budget, new LmdbNativeLongArena(), null, null, null);
+		try {
+			assertThat(stage.fill(new NativeBatch(2, fanout))).isEqualTo(fanout);
+			assertThat(stage.fill(new NativeBatch(2, 1))).isOne();
+			assertThat(stage.memo.get(new GroupKey(new long[] { 42 })))
+					.as("a replay-capacity refusal must replace SEEN_ONCE with a charged uncacheable latch")
+					.isNotNull()
+					.isNotSameAs(LmdbNativeChunkPipeline.ProbeStage.SEEN_ONCE);
+
+			assertThat(stage.fill(new NativeBatch(2, 1))).isOne();
+			assertThat(stage.replayComplete)
+					.as("a later visit to the refused key must not recollect the same doomed match run")
+					.isFalse();
+		} finally {
+			stage.close();
+		}
+	}
+
+	@Test
+	void arenaRefusalLatchesAndSkipsLaterReplayCollection() throws Exception {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0, "value", 1), null);
+		layout.freeze(List.of("key", "value"));
+		CountingSource source = new CountingSource(1, false, true);
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, UNKNOWN);
+		row.recomputeBoundMask();
+		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(7), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 1);
+		FactorizedTail.MemoBudget budget = new FactorizedTail.MemoBudget(FactorizedTail.MEMO_BYPASSES);
+		assertThat(budget.tryReserve(0,
+				FactorizedTail.MEMO_MAX_STORED_VALUES - CLASSIC_REPLAY_INITIAL_CAPACITY)).isTrue();
+		LmdbNativeChunkPipeline.ProbeStage stage = new LmdbNativeChunkPipeline.ProbeStage(
+				new RowsStage(new long[][] {
+						{ 42, UNKNOWN },
+						{ 43, UNKNOWN },
+						{ 42, UNKNOWN },
+						{ 44, UNKNOWN },
+						{ 42, UNKNOWN }
+				}), pattern, row, 1L, budget, new LmdbNativeLongArena(), null, null, null);
+		try {
+			for (int i = 0; i < 4; i++) {
+				assertThat(stage.fill(new NativeBatch(2, 1))).isOne();
+			}
+			assertThat(stage.memo.get(new GroupKey(new long[] { 42 })))
+					.as("an arena-capacity refusal must replace SEEN_ONCE with a charged uncacheable latch")
+					.isNotNull()
+					.isNotSameAs(LmdbNativeChunkPipeline.ProbeStage.SEEN_ONCE);
+
+			assertThat(stage.fill(new NativeBatch(2, 1))).isOne();
+			assertThat(stage.replayComplete)
+					.as("the third visit must stream directly without recollecting an arena-refused memo run")
+					.isFalse();
+		} finally {
+			stage.close();
+		}
+	}
+
+	@Test
 	void hashReplayStreamsPublishedBucketAndAccountsForAllocatedCapacity() throws Exception {
 		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0, "value", 1), null);
 		layout.freeze(List.of("key", "value"));
@@ -67,23 +785,783 @@ class LmdbNativeChunkHashBuildTest {
 		row.recomputeBoundMask();
 		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(7), Term.slot(1), Term.unbound(),
 				ContextConstraint.UNRESTRICTED, false, source.sweepSize);
-		FactorizedTail.MemoBudget budget = new FactorizedTail.MemoBudget(FactorizedTail.MEMO_BYPASSES);
+		LmdbNativeAttemptMetrics metrics = LmdbNativeAttemptMetrics.root();
+		FactorizedTail.MemoBudget budget = new FactorizedTail.MemoBudget(FactorizedTail.MEMO_BYPASSES, metrics);
 
 		LmdbNativeChunkPipeline.ProbeStage stage = new LmdbNativeChunkPipeline.ProbeStage(
 				new OneRowStage(new long[] { 42, UNKNOWN }), pattern, row, 1L, budget,
 				new LmdbNativeLongArena(), null, null, null);
 		stage.storeProbes = LmdbNativeChunkPipeline.HASH_BUILD_MIN_PROBES;
+		long replayRowsBefore = hashReplayRows();
 
-		assertThat(stage.fill(new NativeBatch(2, 1))).isEqualTo(1);
+		try {
+			NativeBatch output = new NativeBatch(2, 64);
+			long replayed = stage.fill(output);
 
-		LmdbNativeChunkPipeline.HashBucket bucket = stage.hashTable.values().iterator().next();
+			LmdbNativeChunkPipeline.HashBucket bucket = stage.hashTable.values().iterator().next();
+			assertThat(stage.replay)
+					.as("published hash payload must be streamed without a second retained copy")
+					.hasSize(256);
+			assertThat(stage.hashReservedValues)
+					.as("the shared budget must cover the allocated bucket capacity, not only its used prefix")
+					.isEqualTo(bucket.values.length);
+			int rows;
+			while ((rows = stage.fill(output)) != 0) {
+				replayed += rows;
+			}
+			assertThat(replayed).isEqualTo(513L);
+			assertThat(hashReplayRows())
+					.as("hash replay work must remain private until the successful attempt commits")
+					.isEqualTo(replayRowsBefore);
+		} finally {
+			stage.close();
+		}
+		assertThat(hashReplayRows()).isEqualTo(replayRowsBefore);
+		metrics.commitToParent();
+		assertThat(hashReplayRows())
+				.as("the committed counter must report every row served directly from the published bucket")
+				.isEqualTo(replayRowsBefore + 513L);
+	}
+
+	@Test
+	void discardedHashReplayDoesNotPublishRows() throws Exception {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0, "value", 1), null);
+		layout.freeze(List.of("key", "value"));
+		RowState row = new RowState(new CountingSource(0), layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, UNKNOWN);
+		row.recomputeBoundMask();
+		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(7), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 1);
+		LmdbNativeAttemptMetrics discarded = LmdbNativeAttemptMetrics.root();
+		FactorizedTail.MemoBudget budget = new FactorizedTail.MemoBudget(FactorizedTail.MEMO_BYPASSES, discarded);
+		LmdbNativeChunkPipeline.ProbeStage stage = new LmdbNativeChunkPipeline.ProbeStage(
+				new OneRowStage(new long[] { 42, UNKNOWN }), pattern, row, 1L, budget,
+				new LmdbNativeLongArena(), null, null, null);
+		LmdbNativeChunkPipeline.HashBucket bucket = new LmdbNativeChunkPipeline.HashBucket();
+		bucket.values = new long[] { 91L, 92L };
+		bucket.length = 2;
+		bucket.matches = 2L;
+		stage.hashTable = new HashMap<>();
+		stage.hashTable.put(new GroupKey(new long[] { 42L }), bucket);
+		long replayRowsBefore = hashReplayRows();
+
+		try {
+			NativeBatch output = new NativeBatch(2, 2);
+			assertThat(stage.fill(output)).isEqualTo(2);
+			assertThat(stage.fill(output)).isZero();
+		} finally {
+			stage.close();
+		}
+
+		assertThat(hashReplayRows())
+				.as("an abandoned speculative attempt must not publish hash replay telemetry")
+				.isEqualTo(replayRowsBefore);
+	}
+
+	private static long hashReplayRows() {
+		try {
+			Field field = LmdbNativeChunkPipeline.class.getDeclaredField("HASH_REPLAY_ROWS");
+			field.setAccessible(true);
+			return ((java.util.concurrent.atomic.AtomicLong) field.get(null)).get();
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError("chunk hash replay must expose committed row telemetry", e);
+		}
+	}
+
+	@Test
+	void zeroStrideHashBucketKeepsLongMatchCountAcrossOutputBatches() throws Exception {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0), null);
+		layout.freeze(List.of("key"));
+		CountingSource source = new CountingSource(0);
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, UNKNOWN);
+		row.recomputeBoundMask();
+		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(7), Term.unbound(), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 1);
+		FactorizedTail.MemoBudget budget = new FactorizedTail.MemoBudget(FactorizedTail.MEMO_BYPASSES);
+		assertThat(budget.tryReserve(1, 0)).isTrue();
+
+		LmdbNativeChunkPipeline.ProbeStage stage = new LmdbNativeChunkPipeline.ProbeStage(
+				new OneRowStage(new long[] { 42 }), pattern, row, 1L, budget,
+				new LmdbNativeLongArena(), null, null, null);
+		LmdbNativeChunkPipeline.HashBucket bucket = new LmdbNativeChunkPipeline.HashBucket();
+		bucket.matches = (long) Integer.MAX_VALUE + 1L;
+		stage.hashTable = new HashMap<>();
+		stage.hashTable.put(new GroupKey(new long[] { 42 }), bucket);
+		stage.hashReservedEntries = 1;
+
+		try {
+			NativeBatch first = new NativeBatch(1, 2);
+			assertThat(stage.fill(first))
+					.as("a count-only bucket must not truncate its long match count to int")
+					.isEqualTo(2);
+			assertThat(first.get(0, 0)).isEqualTo(42);
+			assertThat(first.get(0, 1)).isEqualTo(42);
+
+			NativeBatch second = new NativeBatch(1, 2);
+			assertThat(stage.fill(second))
+					.as("the same long-count bucket must continue streaming in the next output batch")
+					.isEqualTo(2);
+			assertThat(second.get(0, 0)).isEqualTo(42);
+			assertThat(second.get(0, 1)).isEqualTo(42);
+		} finally {
+			stage.close();
+		}
+	}
+
+	@Test
+	void hashGrowthFromEightToSixteenRollsBackCapacityReservation() throws Exception {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0, "value", 1), null);
+		layout.freeze(List.of("key", "value"));
+		CountingSource source = new CountingSource(9, true);
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, UNKNOWN);
+		row.recomputeBoundMask();
+		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(7), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, source.sweepSize);
+		FactorizedTail.MemoBudget budget = new FactorizedTail.MemoBudget(FactorizedTail.MEMO_BYPASSES);
+		long available = 15L;
+		assertThat(budget.tryReserve(0, FactorizedTail.MEMO_MAX_STORED_VALUES - available)).isTrue();
+
+		LmdbNativeChunkPipeline.ProbeStage stage = new LmdbNativeChunkPipeline.ProbeStage(
+				new OneRowStage(new long[] { 42, UNKNOWN }), pattern, row, 1L, budget,
+				new LmdbNativeLongArena(), null, null, null);
+		stage.storeProbes = LmdbNativeChunkPipeline.HASH_BUILD_MIN_PROBES;
+		try {
+			assertThat(stage.fill(new NativeBatch(2, 1)))
+					.as("the ninth value needs the full 8-to-16 capacity growth, not one logical value")
+					.isZero();
+			assertThat(source.sweepRowsDelivered).isEqualTo(9);
+			assertThat(stage.hashBuildRefused).isTrue();
+			assertThat(stage.hashTable).isNull();
+			assertThat(budget.tryReserve(0, available))
+					.as("the refused build must return the initial eight-slot bucket reservation")
+					.isTrue();
+		} finally {
+			stage.close();
+		}
+	}
+
+	@Test
+	void sipMaskRetainedCapacityIsChargedAndReleasedExactlyOnce() throws Exception {
+		FactorizedTail.MemoBudget budget = new FactorizedTail.MemoBudget(FactorizedTail.MEMO_BYPASSES);
+		assertThat(budget.tryReserve(FactorizedTail.MEMO_MAX_ENTRIES - 1,
+				FactorizedTail.MEMO_MAX_STORED_VALUES - 3)).isTrue();
+		Set<GroupKey> keys = Set.of(
+				new GroupKey(new long[] { 3 }),
+				new GroupKey(new long[] { 1 }),
+				new GroupKey(new long[] { 2 }));
+		LmdbNativeChunkPipeline.SipTarget target = new LmdbNativeChunkPipeline.SipTarget(
+				TripleIndex.SUBJ_IDX, false, new long[4]);
+
+		LmdbNativeChunkPipeline.SipMask mask = tryCreateSipMask(keys, target, budget);
+
+		assertThat(mask).isNotNull();
+		assertThat(mask.sortedKeys).containsExactly(1L, 2L, 3L);
+		assertThat(budget.tryReserve(1, 3))
+				.as("the retained mask must charge one owner entry and its complete primitive key capacity")
+				.isFalse();
+
+		closeSipMask(mask);
+		closeSipMask(mask);
+		assertThat(budget.tryReserve(1, 3))
+				.as("closing the mask must return its exact retained capacity")
+				.isTrue();
+		assertThat(budget.tryReserve(1, 1))
+				.as("a repeated close must not release the same mask reservation twice")
+				.isFalse();
+	}
+
+	@Test
+	void sipMaskRefusalLeavesNoPartialReservation() throws Exception {
+		FactorizedTail.MemoBudget budget = new FactorizedTail.MemoBudget(FactorizedTail.MEMO_BYPASSES);
+		assertThat(budget.tryReserve(FactorizedTail.MEMO_MAX_ENTRIES - 1,
+				FactorizedTail.MEMO_MAX_STORED_VALUES - 2)).isTrue();
+		Set<GroupKey> keys = Set.of(
+				new GroupKey(new long[] { 3 }),
+				new GroupKey(new long[] { 1 }),
+				new GroupKey(new long[] { 2 }));
+		LmdbNativeChunkPipeline.SipTarget target = new LmdbNativeChunkPipeline.SipTarget(
+				TripleIndex.SUBJ_IDX, false, new long[4]);
+
+		assertThat(tryCreateSipMask(keys, target, budget))
+				.as("a mask whose physical key capacity exceeds the remaining budget must be refused")
+				.isNull();
+		assertThat(budget.tryReserve(1, 2))
+				.as("a refused mask must publish no entry and leave no partial capacity reservation")
+				.isTrue();
+		assertThat(budget.tryReserve(1, 1))
+				.as("the successful post-refusal reservation must consume the exact remaining headroom")
+				.isFalse();
+	}
+
+	@Test
+	void memoChargesRetainedArenaBlockUntilArenaReset() throws Exception {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0, "value", 1), null);
+		layout.freeze(List.of("key", "value"));
+		CountingSource source = new CountingSource(0, false, true);
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, UNKNOWN);
+		row.recomputeBoundMask();
+		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(7), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 4);
+		FactorizedTail.MemoBudget budget = new FactorizedTail.MemoBudget(FactorizedTail.MEMO_BYPASSES);
+		assertThat(budget.tryReserve(0,
+				FactorizedTail.MEMO_MAX_STORED_VALUES - LmdbNativeLongArena.BLOCK_LONGS
+						- CLASSIC_REPLAY_INITIAL_CAPACITY)).isTrue();
+		LmdbNativeLongArena arena = new LmdbNativeLongArena();
+
+		LmdbNativeChunkPipeline.ProbeStage stage = new LmdbNativeChunkPipeline.ProbeStage(
+				new RowsStage(new long[][] {
+						{ 42, UNKNOWN },
+						{ 43, UNKNOWN },
+						{ 42, UNKNOWN },
+						{ 44, UNKNOWN }
+				}), pattern, row, 1L, budget, arena, null, null, null);
+		try {
+			assertThat(stage.fill(new NativeBatch(2, 3))).isEqualTo(3);
+			assertThat(stage.fill(new NativeBatch(2, 1))).isEqualTo(1);
+			assertThat(stage.memo.get(new GroupKey(new long[] { 42 })))
+					.as("the second non-adjacent visit must publish the one-value memo run")
+					.isNotNull()
+					.isNotSameAs(LmdbNativeChunkPipeline.ProbeStage.SEEN_ONCE);
+			assertThat(arena.used()).isEqualTo(1L);
+			assertThat(budget.tryReserve(0, 1))
+					.as("the memo ledger must charge the retained 32K arena block, not its one used slot")
+					.isFalse();
+
+			stage.close();
+			assertThat(budget.tryReserve(0, CLASSIC_REPLAY_INITIAL_CAPACITY))
+					.as("closing the stage must return its replay scratch while the arena keeps its own block")
+					.isTrue();
+			assertThat(budget.tryReserve(0, 1))
+					.as("after reclaiming replay headroom, the retained arena block must still consume the remainder")
+					.isFalse();
+			arena.reset();
+			assertThat(budget.tryReserve(0, LmdbNativeLongArena.BLOCK_LONGS))
+					.as("resetting the arena releases its retained-capacity reservation")
+					.isTrue();
+		} finally {
+			stage.close();
+		}
+	}
+
+	@Test
+	void scanOnceCountTableGrowthRefusalStopsAtFirstFillAndRollsBack() throws Exception {
+		ScanOnceCountTableFixture fixture = new ScanOnceCountTableFixture(2_048,
+				SCAN_ONCE_COUNT_TABLE_INITIAL_PHYSICAL_LONGS);
+		long buildsBefore = FactorizedTail.SCAN_ONCE_BUILDS.get();
+		try {
+			fixture.branch.buildCountTable(fixture.row);
+
+			assertThat(fixture.source.sweepRowsDelivered)
+					.as("the refused 64-to-128 growth must stop before opening a second sweep fill")
+					.isEqualTo(FactorizedTail.FILL_ROWS);
+			assertThat(fixture.branch.countTable)
+					.as("a refused growth must not publish the partially populated count table")
+					.isNull();
+			assertThat(FactorizedTail.SCAN_ONCE_BUILDS.get())
+					.as("a refused scan-once attempt must not report a completed build")
+					.isEqualTo(buildsBefore);
+			assertThat(fixture.budget.tryReserve(0, SCAN_ONCE_COUNT_TABLE_INITIAL_PHYSICAL_LONGS))
+					.as("growth refusal must roll back the complete initial backing-array reservation")
+					.isTrue();
+			fixture.budget.release(0, SCAN_ONCE_COUNT_TABLE_INITIAL_PHYSICAL_LONGS);
+		} finally {
+			fixture.branch.close();
+		}
+	}
+
+	@Test
+	void scanOnceCountTableCloseReleasesCapacityExactlyOnce() throws Exception {
+		ScanOnceCountTableFixture fixture = new ScanOnceCountTableFixture(48,
+				SCAN_ONCE_COUNT_TABLE_INITIAL_PHYSICAL_LONGS);
+		try {
+			fixture.branch.buildCountTable(fixture.row);
+
+			assertThat(fixture.source.sweepRowsDelivered).isEqualTo(48);
+			assertThat(fixture.branch.countTable).isNotNull();
+			assertThat(fixture.budget.tryReserve(0, 1))
+					.as("the live table must charge both 64-slot long arrays and its one-word occupancy bitmap")
+					.isFalse();
+
+			fixture.branch.close();
+			assertThat(fixture.branch.countTable)
+					.as("close must detach the physically retained count table")
+					.isNull();
+			assertThat(fixture.budget.tryReserve(0, SCAN_ONCE_COUNT_TABLE_INITIAL_PHYSICAL_LONGS))
+					.as("close must return the exact physical capacity retained by the table")
+					.isTrue();
+
+			fixture.branch.close();
+			assertThat(fixture.budget.tryReserve(0, SCAN_ONCE_COUNT_TABLE_INITIAL_PHYSICAL_LONGS))
+					.as("a repeated close must not release the same table capacity twice")
+					.isFalse();
+		} finally {
+			fixture.branch.close();
+		}
+	}
+
+	@Test
+	void factorizedTailBranchAccountsPhysicalValueCapacityAndReleasesDroppedState() throws Exception {
+		// Seventeen values grow the branch's primitive value array from 16 to 32 slots. Logical length 17 fits this
+		// budget, but physical capacity 32 does not: the current result must remain usable without publishing it.
+		BranchMaterializationFixture refused = new BranchMaterializationFixture(31, false);
+		BranchResult first = refused.branch.result(refused.row);
+		assertThat(first.count).isEqualTo(17);
+		assertThat(first.values[0])
+				.as("a refused cache attempt must keep the already-grown working array for the current caller")
+				.hasSize(32);
+		assertThat(first.values[0][0]).isEqualTo(10_000);
+		assertThat(first.values[0][16]).isEqualTo(10_016);
+		assertThat(refused.branch.memo.values())
+				.as("physical refusal may publish only the re-scan marker, never a partial branch result")
+				.containsExactly(FactorizedTail.TOO_LARGE);
+		assertThat(refused.branch.reservedEntries).isOne();
+		assertThat(refused.branch.reservedValues).isZero();
+		assertThat(refused.budget.tryReserve(0, 31))
+				.as("a refused materialization must roll back every attempt-local reservation")
+				.isTrue();
+		refused.budget.release(0, 31);
+		assertThat(refused.budget.tryReserve(1, 0))
+				.as("the retained re-scan marker must continue to own exactly one entry")
+				.isFalse();
+
+		BranchResult rescanned = refused.branch.result(refused.row);
+		assertThat(rescanned.count).isEqualTo(17);
+		assertThat(refused.source.sweepRowsDelivered)
+				.as("an uncacheable result must safely re-scan for the next caller")
+				.isEqualTo(34);
+		refused.branch.close();
+		assertThat(refused.budget.tryReserve(1, 31)).isTrue();
+
+		// With exactly 32 value slots available, the grown array and its entry may be retained. Close owns both
+		// reservations and must be idempotent.
+		BranchMaterializationFixture closed = new BranchMaterializationFixture(32, false);
+		BranchResult cached = closed.branch.result(closed.row);
+		assertThat(cached.values[0]).hasSize(32);
+		assertThat(closed.branch.memo).hasSize(1);
+		assertThat(closed.branch.reservedEntries).isOne();
+		assertThat(closed.branch.reservedValues).isEqualTo(32);
+		assertThat(closed.budget.tryReserve(0, 1))
+				.as("the cache must charge physical capacity, not its seventeen-value used prefix")
+				.isFalse();
+
+		closed.branch.close();
+		assertThat(closed.branch.memo).isNullOrEmpty();
+		assertThat(closed.branch.reservedEntries).isZero();
+		assertThat(closed.branch.reservedValues).isZero();
+		assertThat(closed.budget.tryReserve(1, 32)).isTrue();
+		closed.branch.close();
+		assertThat(closed.budget.tryReserve(1, 32))
+				.as("a repeated close must not release the same branch reservation twice")
+				.isFalse();
+
+		// The scan-once flip drops the same retained memo and must return the same exact physical reservation.
+		// Atomic replacement temporarily owns both the retained 32-long memo and the unpublished 129-long table.
+		BranchMaterializationFixture flipped = new BranchMaterializationFixture(
+				32 + SCAN_ONCE_COUNT_TABLE_INITIAL_PHYSICAL_LONGS, true);
+		assertThat(flipped.branch.result(flipped.row).values[0]).hasSize(32);
+		flipped.branch.memoMisses = Branch.SCAN_ONCE_MIN_MISSES - 1;
+		flipped.row.slots[0] = 101;
+		flipped.row.recomputeBoundMask();
+		assertThat(flipped.branch.result(flipped.row).count).isEqualTo(17);
+		assertThat(flipped.branch.countTable).isNotNull();
+		assertThat(flipped.branch.memo).isNull();
+		assertThat(flipped.branch.reservedEntries).isZero();
+		assertThat(flipped.branch.reservedValues).isZero();
+		assertThat(flipped.budget.tryReserve(1, 32))
+				.as("scan-once replacement must release the complete retained value-array capacity")
+				.isTrue();
+		flipped.branch.close();
+	}
+
+	@Test
+	void completedHashReplayReturnsEveryReservation() throws Exception {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0, "value", 1), null);
+		layout.freeze(List.of("key", "value"));
+		CountingSource source = new CountingSource(8, true);
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, UNKNOWN);
+		row.recomputeBoundMask();
+		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(7), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, source.sweepSize);
+		FactorizedTail.MemoBudget budget = new FactorizedTail.MemoBudget(FactorizedTail.MEMO_BYPASSES);
+		assertThat(budget.tryReserve(FactorizedTail.MEMO_MAX_ENTRIES - 1,
+				FactorizedTail.MEMO_MAX_STORED_VALUES - 8)).isTrue();
+
+		LmdbNativeChunkPipeline.ProbeStage stage = new LmdbNativeChunkPipeline.ProbeStage(
+				new OneRowStage(new long[] { 42, UNKNOWN }), pattern, row, 1L, budget,
+				new LmdbNativeLongArena(), null, null, null);
+		stage.storeProbes = LmdbNativeChunkPipeline.HASH_BUILD_MIN_PROBES;
+		try {
+			assertThat(stage.fill(new NativeBatch(2, 8))).isEqualTo(8);
+			assertThat(stage.fill(new NativeBatch(2, 1))).isZero();
+			assertThat(budget.tryReserve(1, 8))
+					.as("normal cursor exhaustion must return the hash entry and its eight-slot bucket")
+					.isTrue();
+		} finally {
+			stage.close();
+		}
+	}
+
+	@Test
+	void earlyCloseDuringHashReplayReturnsEveryReservation() throws Exception {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0, "value", 1), null);
+		layout.freeze(List.of("key", "value"));
+		CountingSource source = new CountingSource(8, true);
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, UNKNOWN);
+		row.recomputeBoundMask();
+		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(7), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, source.sweepSize);
+		FactorizedTail.MemoBudget budget = new FactorizedTail.MemoBudget(FactorizedTail.MEMO_BYPASSES);
+		assertThat(budget.tryReserve(FactorizedTail.MEMO_MAX_ENTRIES - 1,
+				FactorizedTail.MEMO_MAX_STORED_VALUES - 8)).isTrue();
+
+		LmdbNativeChunkPipeline.ProbeStage stage = new LmdbNativeChunkPipeline.ProbeStage(
+				new OneRowStage(new long[] { 42, UNKNOWN }), pattern, row, 1L, budget,
+				new LmdbNativeLongArena(), null, null, null);
+		stage.storeProbes = LmdbNativeChunkPipeline.HASH_BUILD_MIN_PROBES;
+		try {
+			assertThat(stage.fill(new NativeBatch(2, 1))).isEqualTo(1);
+			stage.close();
+			assertThat(budget.tryReserve(1, 8))
+					.as("closing with seven bucket matches still pending must return the complete reservation")
+					.isTrue();
+		} finally {
+			stage.close();
+		}
+	}
+
+	@Test
+	void exceptionalHashSweepReturnsPartialReservations() {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0, "value", 1), null);
+		layout.freeze(List.of("key", "value"));
+		CountingSource source = new CountingSource(9, true, false, 8);
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, UNKNOWN);
+		row.recomputeBoundMask();
+		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(7), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, source.sweepSize);
+		FactorizedTail.MemoBudget budget = new FactorizedTail.MemoBudget(FactorizedTail.MEMO_BYPASSES);
+		assertThat(budget.tryReserve(FactorizedTail.MEMO_MAX_ENTRIES - 1,
+				FactorizedTail.MEMO_MAX_STORED_VALUES - 8)).isTrue();
+
+		LmdbNativeChunkPipeline.ProbeStage stage = new LmdbNativeChunkPipeline.ProbeStage(
+				new OneRowStage(new long[] { 42, UNKNOWN }), pattern, row, 1L, budget,
+				new LmdbNativeLongArena(), null, null, null);
+		stage.storeProbes = LmdbNativeChunkPipeline.HASH_BUILD_MIN_PROBES;
+		try {
+			assertThatThrownBy(() -> stage.fill(new NativeBatch(2, 1)))
+					.isInstanceOf(QueryEvaluationException.class)
+					.hasMessageContaining("synthetic hash sweep failure");
+			assertThat(stage.hashTable).isNull();
+			assertThat(budget.tryReserve(1, 8))
+					.as("an exceptional sweep must roll back the bucket capacity reserved before the throw")
+					.isTrue();
+		} finally {
+			stage.close();
+		}
+	}
+
+	@Test
+	void hashSwitchBalancesMemoEntriesButRetainsArenaCapacityUntilReset() throws Exception {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0, "value", 1), null);
+		layout.freeze(List.of("key", "value"));
+		CountingSource source = new CountingSource(8, true, true);
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, UNKNOWN);
+		row.recomputeBoundMask();
+		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(7), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, source.sweepSize);
+		FactorizedTail.MemoBudget budget = new FactorizedTail.MemoBudget(FactorizedTail.MEMO_BYPASSES);
+		assertThat(budget.tryReserve(FactorizedTail.MEMO_MAX_ENTRIES - 4,
+				FactorizedTail.MEMO_MAX_STORED_VALUES - LmdbNativeLongArena.BLOCK_LONGS - 8
+						- CLASSIC_REPLAY_INITIAL_CAPACITY)).isTrue();
+		LmdbNativeLongArena arena = new LmdbNativeLongArena();
+
+		LmdbNativeChunkPipeline.ProbeStage stage = new LmdbNativeChunkPipeline.ProbeStage(
+				new RowsStage(new long[][] {
+						{ 42, UNKNOWN },
+						{ 43, UNKNOWN },
+						{ 42, UNKNOWN },
+						{ 44, UNKNOWN },
+						{ 42, UNKNOWN }
+				}), pattern, row, 1L, budget, arena, null, null, null);
+		try {
+			assertThat(stage.fill(new NativeBatch(2, 3))).isEqualTo(3);
+			assertThat(stage.fill(new NativeBatch(2, 1))).isEqualTo(1);
+			stage.storeProbes = LmdbNativeChunkPipeline.HASH_BUILD_MIN_PROBES;
+			assertThat(stage.fill(new NativeBatch(2, 1))).isEqualTo(1);
+
+			assertThat(stage.memo).isEmpty();
+			assertThat(stage.hashTable).isNotNull();
+			assertThat(stage.hashReservedEntries).isEqualTo(1);
+			assertThat(stage.hashReservedValues).isEqualTo(8);
+			assertThat(arena.used()).isEqualTo(1L);
+			assertThat(budget.tryReserve(0, 1))
+					.as("the live hash and the retained memo arena must consume the complete value allowance")
+					.isFalse();
+
+			stage.close();
+			assertThat(budget.tryReserve(4, 0))
+					.as("hash close plus memo replacement must balance every entry reservation")
+					.isTrue();
+			assertThat(budget.tryReserve(0, 8))
+					.as("hash close must return its bucket while the arena block stays charged")
+					.isTrue();
+			assertThat(budget.tryReserve(0, CLASSIC_REPLAY_INITIAL_CAPACITY))
+					.as("hash close must also return the stage-owned replay scratch")
+					.isTrue();
+			assertThat(budget.tryReserve(0, 1)).isFalse();
+
+			arena.reset();
+			assertThat(budget.tryReserve(0, LmdbNativeLongArena.BLOCK_LONGS))
+					.as("only the arena owner may return the memo block after reset")
+					.isTrue();
+		} finally {
+			stage.close();
+		}
+	}
+
+	@Test
+	void chunkCursorCloseResetsItsOwnedMemoArena() throws Exception {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0, "value", 1), null);
+		layout.freeze(List.of("key", "value"));
+		CountingSource source = new CountingSource(0, false, true);
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, UNKNOWN);
+		row.recomputeBoundMask();
+		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(7), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 1025);
+		FactorizedTail.MemoBudget budget = new FactorizedTail.MemoBudget(FactorizedTail.MEMO_BYPASSES);
+		assertThat(budget.tryReserve(0,
+				FactorizedTail.MEMO_MAX_STORED_VALUES - LmdbNativeLongArena.BLOCK_LONGS
+						- CLASSIC_REPLAY_INITIAL_CAPACITY)).isTrue();
+		LmdbNativeLongArena arena = new LmdbNativeLongArena();
+		long[][] inputRows = new long[1025][2];
+		inputRows[0] = new long[] { 42, UNKNOWN };
+		inputRows[1] = new long[] { 43, UNKNOWN };
+		inputRows[2] = new long[] { 42, UNKNOWN };
+		for (int i = 3; i < inputRows.length; i++) {
+			inputRows[i] = new long[] { 1000L + i, UNKNOWN };
+		}
+
+		LmdbNativeChunkPipeline.ProbeStage stage = new LmdbNativeChunkPipeline.ProbeStage(
+				new RowsStage(inputRows), pattern, row, 1L, budget, arena, null, null, null);
+		LmdbNativeChunkPipeline.ChunkPrefixRowCursor cursor = new LmdbNativeChunkPipeline.ChunkPrefixRowCursor(stage,
+				row);
+		try {
+			assertThat(cursor.next()).isTrue();
+			assertThat(arena.used()).isEqualTo(1L);
+		} finally {
+			cursor.close();
+		}
+
+		assertThat(arena.used())
+				.as("the prefix cursor owns the shared arena and must reset it on early close")
+				.isZero();
+		assertThat(budget.tryReserve(0,
+				LmdbNativeLongArena.BLOCK_LONGS + CLASSIC_REPLAY_INITIAL_CAPACITY))
+						.as("cursor close must return the arena and stage-owned replay capacities")
+						.isTrue();
+	}
+
+	@Test
+	void chunkCursorCloseReleasesEveryStageResourceAfterMultipleCloseFailures() {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0, "value", 1), null);
+		layout.freeze(List.of("key", "value"));
+		CountingSource source = new CountingSource(0);
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, UNKNOWN);
+		row.recomputeBoundMask();
+		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(7), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 1);
+		FactorizedTail.MemoBudget budget = new FactorizedTail.MemoBudget(FactorizedTail.MEMO_BYPASSES);
+		LmdbNativeLongArena arena = new LmdbNativeLongArena();
+		CloseFailureStage upstream = new CloseFailureStage("synthetic upstream stage close failure");
+		LmdbNativeChunkPipeline.ProbeStage stage = new LmdbNativeChunkPipeline.ProbeStage(
+				upstream, pattern, row, 1L, budget, arena, null, null, null);
+
+		assertThat(budget.tryReserve(2, 8)).isTrue();
+		stage.memo.put(new GroupKey(new long[] { 42 }), LmdbNativeChunkPipeline.ProbeStage.SEEN_ONCE);
+		LmdbNativeChunkPipeline.HashBucket bucket = new LmdbNativeChunkPipeline.HashBucket();
+		bucket.growTo(8);
+		stage.hashTable = new HashMap<>();
+		stage.hashTable.put(new GroupKey(new long[] { 42 }), bucket);
+		stage.hashReservedEntries = 1;
+		stage.hashReservedValues = 8;
+		assertThat(arena.append(123L)).isNotEqualTo(LmdbNativeLongArena.REFUSED);
+
+		CloseFailureIterator active = new CloseFailureIterator("synthetic active cursor close failure");
+		CloseFailureIterator merge = new CloseFailureIterator("synthetic merge cursor close failure");
+		CloseFailureProbe probe = new CloseFailureProbe("synthetic retained probe close failure");
+		stage.open = PatternCursor.single(active);
+		stage.mergeCursor = PatternCursor.single(merge);
+		stage.probe = probe;
+		LmdbNativeChunkPipeline.ChunkPrefixRowCursor cursor = new LmdbNativeChunkPipeline.ChunkPrefixRowCursor(stage,
+				row);
+
+		assertThatThrownBy(cursor::close)
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessage("synthetic active cursor close failure")
+				.satisfies(failure -> assertThat(failure.getSuppressed())
+						.extracting(Throwable::getMessage)
+						.containsExactly(
+								"synthetic merge cursor close failure",
+								"synthetic retained probe close failure",
+								"synthetic upstream stage close failure"));
+
+		assertThat(active.closeCalls).isOne();
+		assertThat(merge.closeCalls).isOne();
+		assertThat(probe.closeCalls).isOne();
+		assertThat(upstream.closeCalls).isOne();
+		assertThat(stage.open).isNull();
+		assertThat(stage.mergeCursor).isNull();
+		assertThat(stage.probe).isNull();
+		assertThat(stage.memo).isEmpty();
+		assertThat(stage.hashTable).isNull();
+		assertThat(stage.hashReservedEntries).isZero();
+		assertThat(stage.hashReservedValues).isZero();
 		assertThat(stage.replay)
-				.as("published hash payload must be streamed without a second retained copy")
-				.hasSize(256);
-		assertThat(stage.hashReservedValues)
-				.as("the shared budget must cover the allocated bucket capacity, not only its used prefix")
-				.isEqualTo(bucket.values.length);
-		stage.close();
+				.as("exceptional close must drop the dynamically retained replay array")
+				.isEmpty();
+		assertThat(arena.used()).isZero();
+		assertThat(budget.tryReserve(FactorizedTail.MEMO_MAX_ENTRIES, FactorizedTail.MEMO_MAX_STORED_VALUES))
+				.as("every memo, hash, and physical arena reservation must be returned despite close failures")
+				.isTrue();
+
+		cursor.close();
+		assertThat(active.closeCalls).isOne();
+		assertThat(merge.closeCalls).isOne();
+		assertThat(probe.closeCalls).isOne();
+		assertThat(upstream.closeCalls).isOne();
+	}
+
+	private static final class CloseFailureStage implements LmdbNativeChunkPipeline.BatchStage {
+		private final String message;
+		private int closeCalls;
+		private boolean closed;
+
+		private CloseFailureStage(String message) {
+			this.message = message;
+		}
+
+		@Override
+		public int fill(NativeBatch out) {
+			return 0;
+		}
+
+		@Override
+		public void close() {
+			if (!closed) {
+				closed = true;
+				closeCalls++;
+				throw new IllegalStateException(message);
+			}
+		}
+	}
+
+	private static final class CloseFailureIterator implements RecordIterator {
+		private final String message;
+		private int closeCalls;
+		private boolean closed;
+
+		private CloseFailureIterator(String message) {
+			this.message = message;
+		}
+
+		@Override
+		public long[] next() {
+			return null;
+		}
+
+		@Override
+		public void close() {
+			if (!closed) {
+				closed = true;
+				closeCalls++;
+				throw new IllegalStateException(message);
+			}
+		}
+	}
+
+	private static final class CloseFailureProbe implements NativeLmdbQuerySource.NativeProbe {
+		private final String message;
+		private int closeCalls;
+		private boolean closed;
+
+		private CloseFailureProbe(String message) {
+			this.message = message;
+		}
+
+		@Override
+		public RecordIterator open(long subj, long pred, long obj, long context) {
+			throw new AssertionError("close-only test probe must not be opened");
+		}
+
+		@Override
+		public void close() {
+			if (!closed) {
+				closed = true;
+				closeCalls++;
+				throw new IllegalStateException(message);
+			}
+		}
+	}
+
+	private static final class MarkerPublicationFailureSource implements NativeLmdbQuerySource {
+		private final IllegalStateException failure;
+
+		private MarkerPublicationFailureSource(IllegalStateException failure) {
+			this.failure = failure;
+		}
+
+		@Override
+		public long idOf(Value value) {
+			return UNKNOWN_ID;
+		}
+
+		@Override
+		public Value lazyValue(long id) {
+			throw new UnsupportedOperationException();
+		}
+
+		@Override
+		public Object idSpace() {
+			return this;
+		}
+
+		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context) {
+			throw new AssertionError("the marker transaction must fail before opening a statement iterator");
+		}
+
+		@Override
+		public NativeLmdbQuerySource.NativeProbe newProbe() {
+			throw failure;
+		}
+
+		@Override
+		public long count(long subj, long pred, long obj, long context) {
+			return 0;
+		}
+
+		@Override
+		public boolean has(long subj, long pred, long obj, long context) {
+			return false;
+		}
+
+		@Override
+		public double estimate(long subj, long pred, long obj, long context) {
+			return 1;
+		}
+
+		@Override
+		public boolean hasStatementsInSource() {
+			return true;
+		}
 	}
 
 	private static final class OneRowStage implements LmdbNativeChunkPipeline.BatchStage {
@@ -112,9 +1590,364 @@ class LmdbNativeChunkHashBuildTest {
 		}
 	}
 
+	private static final class RowsStage implements LmdbNativeChunkPipeline.BatchStage {
+		private final long[][] rows;
+		private int index;
+
+		private RowsStage(long[][] rows) {
+			this.rows = rows;
+		}
+
+		@Override
+		public int fill(NativeBatch out) {
+			out.clear();
+			int count = 0;
+			while (index < rows.length && count < out.capacity) {
+				out.copyFromRow(rows[index++], count++);
+			}
+			out.finishRows(count);
+			return count;
+		}
+
+		@Override
+		public void close() {
+			index = rows.length;
+		}
+	}
+
+	private static List<String> readFactorizedRows(EnumMaterializationFixture fixture) throws Exception {
+		List<String> rows = new ArrayList<>();
+		try (FactorizedRowCursor cursor = fixture.factorized.open(fixture.row)) {
+			while (cursor.next()) {
+				rows.add(enumRow(fixture.row));
+			}
+		}
+		return rows;
+	}
+
+	private static List<String> expectedEnumRows(EnumMaterializationSource source, long... subjects) {
+		List<String> rows = new ArrayList<>();
+		for (long subject : subjects) {
+			for (int i = 0; i < source.fanout(subject); i++) {
+				rows.add(subject + ":" + EnumMaterializationSource.enumValue(subject, ENUM_PREDICATE, i));
+			}
+		}
+		return rows;
+	}
+
+	private static String enumRow(RowState row) {
+		return row.slots[0] + ":" + row.slots[1];
+	}
+
+	private static LmdbNativeChunkPipeline.SipMask tryCreateSipMask(Set<GroupKey> keys,
+			LmdbNativeChunkPipeline.SipTarget target, FactorizedTail.MemoBudget budget) throws Exception {
+		try {
+			return (LmdbNativeChunkPipeline.SipMask) LmdbNativeChunkPipeline.SipMask.class
+					.getDeclaredMethod("tryCreate", Set.class, LmdbNativeChunkPipeline.SipTarget.class,
+							FactorizedTail.MemoBudget.class)
+					.invoke(null, keys, target, budget);
+		} catch (NoSuchMethodException e) {
+			throw new AssertionError(
+					"SipMask must expose a budget-aware tryCreate(Set, SipTarget, MemoBudget) factory", e);
+		}
+	}
+
+	private static void closeSipMask(LmdbNativeChunkPipeline.SipMask mask) throws Exception {
+		try {
+			LmdbNativeChunkPipeline.SipMask.class.getDeclaredMethod("close").invoke(mask);
+		} catch (NoSuchMethodException e) {
+			throw new AssertionError("SipMask must release its retained capacity through an idempotent close()", e);
+		}
+	}
+
+	private static NativeRowsStep orderedEnumStep(EnumMaterializationSource source, SingletonSet telemetry) {
+		int slotCount = ORDERED_ENUM_BRANCHES + 1;
+		Map<String, Integer> slots = new HashMap<>();
+		List<String> names = new ArrayList<>(slotCount);
+		int[] sourceSlots = new int[slotCount];
+		String[] targetNames = new String[slotCount];
+		for (int slot = 0; slot < slotCount; slot++) {
+			String name = slot == 0 ? "key" : "value" + slot;
+			slots.put(name, slot);
+			names.add(name);
+			sourceSlots[slot] = slot;
+			targetNames[slot] = name;
+		}
+		NativeSlotLayout layout = new NativeSlotLayout(slots, null);
+		layout.freeze(names);
+
+		ValuesRow[] prefixRows = new ValuesRow[ORDERED_ENUM_PREFIX_ROWS];
+		for (int i = 0; i < prefixRows.length; i++) {
+			prefixRows[i] = new ValuesRow(new int[] { 0 }, new long[] { prefixRows.length - i });
+		}
+		SlotPlan[] children = new SlotPlan[slotCount];
+		children[0] = new ValuesPlan(prefixRows);
+		for (int branch = 0; branch < ORDERED_ENUM_BRANCHES; branch++) {
+			children[branch + 1] = new PatternPlan(Term.slot(0), Term.constant(ENUM_PREDICATE + branch),
+					Term.slot(branch + 1), Term.unbound(), ContextConstraint.UNRESTRICTED, false, 1D);
+		}
+		MultiJoinPlan plan = new MultiJoinPlan(children, new MaskedFilter[0]);
+		return new NativeRowsStep(source, plan, layout, sourceSlots, targetNames, false, new int[] { 0 },
+				new boolean[] { true }, 0L, -1L, false, null, telemetry, null, Set.of(), null, null);
+	}
+
+	private static void restoreProperty(String property, String value) {
+		if (value == null) {
+			System.clearProperty(property);
+		} else {
+			System.setProperty(property, value);
+		}
+	}
+
+	private record OrderedAttemptTelemetry(long orderedSorts, long orderedTopK, long factorizedRowsEngaged,
+			long factorizedRowsMemoBypasses, long factorizedTailEngaged, long factorizedTailScanOnceBuilds,
+			long factorizedTailMemoBypasses, long chunkEngaged, long chunkRunReplays, long chunkMemoReplays,
+			long chunkHashBuilds, long chunkMergeWalks, long chunkMergeSeeks, long chunkMergeFallbacks,
+			long chunkSipMasks, long chunkSipMaskedRows, long chunkSipSeeks) {
+
+		private static OrderedAttemptTelemetry capture() {
+			return new OrderedAttemptTelemetry(
+					NativeRowsStep.ORDERED_FACTORIZED_SORTS.get(),
+					NativeRowsStep.ORDERED_FACTORIZED_TOPK.get(),
+					LmdbNativeFactorizedRows.ENGAGED.get(),
+					LmdbNativeFactorizedRows.MEMO_BYPASSES.get(),
+					FactorizedTail.ENGAGED.get(),
+					FactorizedTail.SCAN_ONCE_BUILDS.get(),
+					FactorizedTail.MEMO_BYPASSES.get(),
+					LmdbNativeChunkPipeline.ENGAGED.get(),
+					LmdbNativeChunkPipeline.RUN_REPLAYS.get(),
+					LmdbNativeChunkPipeline.MEMO_REPLAYS.get(),
+					LmdbNativeChunkPipeline.HASH_BUILDS.get(),
+					LmdbNativeChunkPipeline.MERGE_WALKS.get(),
+					LmdbNativeChunkPipeline.MERGE_SEEKS.get(),
+					LmdbNativeChunkPipeline.MERGE_FALLBACKS.get(),
+					LmdbNativeChunkPipeline.SIP_MASKS.get(),
+					LmdbNativeChunkPipeline.SIP_MASKED_ROWS.get(),
+					LmdbNativeChunkPipeline.SIP_SEEKS.get());
+		}
+	}
+
+	private static final class EnumMaterializationFixture {
+		private final EnumMaterializationSource source;
+		private final RowState row;
+		private final LmdbNativeFactorizedRows factorized;
+		private final LmdbNativeFactorizedRows.TailBranch branch;
+		private final FactorizedTail.MemoBudget budget;
+
+		private EnumMaterializationFixture(EnumMaterializationSource source, long... prefixKeys) {
+			this.source = source;
+			NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0, "value", 1), null);
+			layout.freeze(List.of("key", "value"));
+			row = new RowState(source, layout, EmptyBindingSet.getInstance());
+			Arrays.fill(row.slots, UNKNOWN);
+			row.recomputeBoundMask();
+
+			ValuesRow[] rows = new ValuesRow[prefixKeys.length];
+			for (int i = 0; i < prefixKeys.length; i++) {
+				rows[i] = new ValuesRow(new int[] { 0 }, new long[] { prefixKeys[i] });
+			}
+			PatternPlan tail = new PatternPlan(Term.slot(0), Term.constant(ENUM_PREDICATE), Term.slot(1),
+					Term.unbound(), ContextConstraint.UNRESTRICTED, false, 1D);
+			MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { new ValuesPlan(rows), tail }, new MaskedFilter[0]);
+			factorized = LmdbNativeFactorizedRows.tryCreate(plan, plan.derivedFactorizedPlan(row), row, row.boundMask(),
+					new int[] { 0, 1 }, false);
+			if (factorized == null || factorized.flatCount != 1 || factorized.branches.length != 1
+					|| factorized.branches[0].role != LmdbNativeFactorizedRows.ROLE_ENUM) {
+				throw new AssertionError("fixture must plan one flat VALUES prefix and one enum branch");
+			}
+			branch = factorized.branches[0];
+			budget = factorized.memoBudget;
+		}
+
+		private void leaveValueHeadroom(long headroom) {
+			if (!budget.tryReserve(0, FactorizedTail.MEMO_MAX_STORED_VALUES - headroom)) {
+				throw new AssertionError("unable to reserve the fixture's baseline enum budget");
+			}
+		}
+	}
+
+	private static final class EnumMaterializationSource implements NativeLmdbQuerySource {
+		private final int defaultFanout;
+		private final Map<Long, Integer> fanouts;
+		private final List<Long> probeOpenSubjects = new ArrayList<>();
+		private final List<Long> ordinaryOpenSubjects = new ArrayList<>();
+		private int newProbeCalls;
+		private long probeRowsDelivered;
+		private long ordinaryRowsDelivered;
+
+		private EnumMaterializationSource(int defaultFanout, Map<Long, Integer> fanouts) {
+			this.defaultFanout = defaultFanout;
+			this.fanouts = Map.copyOf(fanouts);
+		}
+
+		@Override
+		public long idOf(Value value) {
+			return UNKNOWN_ID;
+		}
+
+		@Override
+		public Value lazyValue(long id) {
+			return SimpleValueFactory.getInstance().createLiteral(id);
+		}
+
+		@Override
+		public Object idSpace() {
+			return this;
+		}
+
+		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context) {
+			ordinaryOpenSubjects.add(subj);
+			return iterator(subj, pred, false);
+		}
+
+		@Override
+		public NativeProbe newProbe() {
+			newProbeCalls++;
+			return new NativeProbe() {
+				private RecordIterator current;
+
+				@Override
+				public RecordIterator open(long subj, long pred, long obj, long context) {
+					if (current != null) {
+						current.close();
+					}
+					probeOpenSubjects.add(subj);
+					current = iterator(subj, pred, true);
+					return current;
+				}
+
+				@Override
+				public void close() {
+					if (current != null) {
+						current.close();
+						current = null;
+					}
+				}
+			};
+		}
+
+		@Override
+		public long count(long subj, long pred, long obj, long context) {
+			return fanout(subj);
+		}
+
+		@Override
+		public boolean has(long subj, long pred, long obj, long context) {
+			return fanout(subj) > 0;
+		}
+
+		@Override
+		public double estimate(long subj, long pred, long obj, long context) {
+			return fanout(subj);
+		}
+
+		@Override
+		public boolean hasStatementsInSource() {
+			return true;
+		}
+
+		private int fanout(long subject) {
+			return fanouts.getOrDefault(subject, defaultFanout);
+		}
+
+		private RecordIterator iterator(long subject, long predicate, boolean probe) {
+			return new RecordIterator() {
+				private final int size = fanout(subject);
+				private int index;
+
+				@Override
+				public long[] next() {
+					if (index >= size) {
+						return null;
+					}
+					long value = enumValue(subject, predicate, index++);
+					if (probe) {
+						probeRowsDelivered++;
+					} else {
+						ordinaryRowsDelivered++;
+					}
+					return new long[] { subject, predicate, value, 1L };
+				}
+
+				@Override
+				public void close() {
+					index = size;
+				}
+			};
+		}
+
+		private void resetCounters() {
+			newProbeCalls = 0;
+			probeRowsDelivered = 0L;
+			ordinaryRowsDelivered = 0L;
+			probeOpenSubjects.clear();
+			ordinaryOpenSubjects.clear();
+		}
+
+		private static long enumValue(long subject, long predicate, int index) {
+			return subject * 100_000L + predicate * 1_000L + index;
+		}
+	}
+
+	private static final class BranchMaterializationFixture {
+		private final CountingSource source = new CountingSource(17);
+		private final FactorizedTail.MemoBudget budget = new FactorizedTail.MemoBudget(
+				FactorizedTail.MEMO_BYPASSES);
+		private final RowState row;
+		private final Branch branch;
+
+		private BranchMaterializationFixture(long valueHeadroom, boolean scanOnce) {
+			NativeSlotLayout layout = new NativeSlotLayout(Map.of("memoKey", 0), null);
+			layout.freeze(List.of("memoKey"));
+			row = new RowState(source, layout, EmptyBindingSet.getInstance());
+			Arrays.fill(row.slots, UNKNOWN);
+			row.slots[0] = 100;
+			row.recomputeBoundMask();
+			PatternPlan pattern = new PatternPlan(Term.unbound(), Term.constant(7), Term.unbound(), Term.unbound(),
+					ContextConstraint.UNRESTRICTED, false, 17);
+			if (!budget.tryReserve(FactorizedTail.MEMO_MAX_ENTRIES - 1,
+					FactorizedTail.MEMO_MAX_STORED_VALUES - valueHeadroom)) {
+				throw new AssertionError("unable to reserve the fixture's baseline memo budget");
+			}
+			branch = new Branch(pattern, new int[] { 0 }, new int[] { TripleIndex.OBJ_IDX }, false, true,
+					scanOnce ? 0 : -1, scanOnce ? TripleIndex.SUBJ_IDX : -1, budget, new NativeBooleanFilter[0],
+					new int[0],
+					new int[0]);
+		}
+	}
+
+	private static final class ScanOnceCountTableFixture {
+		private final CountingSource source;
+		private final FactorizedTail.MemoBudget budget = new FactorizedTail.MemoBudget(
+				FactorizedTail.MEMO_BYPASSES);
+		private final RowState row;
+		private final Branch branch;
+
+		private ScanOnceCountTableFixture(int sweepRows, long valueHeadroom) {
+			source = new CountingSource(sweepRows);
+			NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0), null);
+			layout.freeze(List.of("key"));
+			row = new RowState(source, layout, EmptyBindingSet.getInstance());
+			Arrays.fill(row.slots, UNKNOWN);
+			row.slots[0] = 100;
+			row.recomputeBoundMask();
+			PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(7), Term.unbound(), Term.unbound(),
+					ContextConstraint.UNRESTRICTED, false, sweepRows);
+			if (!budget.tryReserve(FactorizedTail.MEMO_MAX_ENTRIES,
+					FactorizedTail.MEMO_MAX_STORED_VALUES - valueHeadroom)) {
+				throw new AssertionError("unable to reserve the fixture's baseline count-table budget");
+			}
+			branch = new Branch(pattern, new int[] { 0 }, new int[0], false, false, 0,
+					TripleIndex.SUBJ_IDX, budget, new NativeBooleanFilter[0], new int[0], new int[0]);
+		}
+	}
+
 	private static final class CountingSource implements NativeLmdbQuerySource {
 		private final int sweepSize;
 		private final boolean repeatedKey;
+		private final boolean matchBoundKeys;
+		private final int throwAfterSweep;
 		private int sweepRowsDelivered;
 
 		private CountingSource(int sweepSize) {
@@ -122,8 +1955,18 @@ class LmdbNativeChunkHashBuildTest {
 		}
 
 		private CountingSource(int sweepSize, boolean repeatedKey) {
+			this(sweepSize, repeatedKey, false);
+		}
+
+		private CountingSource(int sweepSize, boolean repeatedKey, boolean matchBoundKeys) {
+			this(sweepSize, repeatedKey, matchBoundKeys, -1);
+		}
+
+		private CountingSource(int sweepSize, boolean repeatedKey, boolean matchBoundKeys, int throwAfterSweep) {
 			this.sweepSize = sweepSize;
 			this.repeatedKey = repeatedKey;
+			this.matchBoundKeys = matchBoundKeys;
+			this.throwAfterSweep = throwAfterSweep;
 		}
 
 		@Override
@@ -144,7 +1987,7 @@ class LmdbNativeChunkHashBuildTest {
 		@Override
 		public RecordIterator statements(long subj, long pred, long obj, long context) {
 			if (subj != UNKNOWN) {
-				return new ArrayIterator(0, false);
+				return matchBoundKeys ? new BoundMatchIterator(subj) : new ArrayIterator(0, false);
 			}
 			return new ArrayIterator(sweepSize, true);
 		}
@@ -181,6 +2024,9 @@ class LmdbNativeChunkHashBuildTest {
 
 			@Override
 			public long[] next() {
+				if (countRows && index == throwAfterSweep) {
+					throw new QueryEvaluationException("synthetic hash sweep failure");
+				}
 				if (index >= size) {
 					return null;
 				}
@@ -196,6 +2042,29 @@ class LmdbNativeChunkHashBuildTest {
 			@Override
 			public void close() {
 				index = size;
+			}
+		}
+
+		private static final class BoundMatchIterator implements RecordIterator {
+			private final long key;
+			private boolean emitted;
+
+			private BoundMatchIterator(long key) {
+				this.key = key;
+			}
+
+			@Override
+			public long[] next() {
+				if (emitted) {
+					return null;
+				}
+				emitted = true;
+				return new long[] { key, 7, 10_000 + key, 1 };
+			}
+
+			@Override
+			public void close() {
+				emitted = true;
 			}
 		}
 	}

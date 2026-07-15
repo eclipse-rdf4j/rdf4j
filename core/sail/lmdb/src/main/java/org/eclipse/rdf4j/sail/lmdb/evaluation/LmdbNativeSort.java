@@ -41,6 +41,8 @@ interface NativeSortedRows extends AutoCloseable {
 /** Flat row arena plus stable primitive-index merge sort. */
 @Experimental
 final class NativeSortBuffer {
+	private static final int MAX_ARRAY_SIZE = Integer.MAX_VALUE - 8;
+	private static final long[] EMPTY_LONGS = new long[0];
 
 	static final AtomicLong PACKED_ROWS = new AtomicLong();
 	static final AtomicLong SORTS = new AtomicLong();
@@ -50,20 +52,54 @@ final class NativeSortBuffer {
 	long[] rows;
 	long[] ordinals;
 	int size;
+	private final int initialCapacity;
+	private final FactorizedTail.MemoBudget budget;
+	private final LmdbNativeAttemptMetrics metrics;
+	private List<int[]> retainedOrders;
+	private long reservedValues;
+	private long retainedOrderValues;
+	private boolean closed;
 
 	NativeSortBuffer(int slotCount, int expectedRows) {
 		this.slotCount = slotCount;
 		int capacity = Math.max(1, expectedRows);
+		this.initialCapacity = capacity;
+		this.budget = null;
+		this.metrics = LmdbNativeAttemptMetrics.direct();
 		this.rows = new long[capacity * slotCount];
 		this.ordinals = new long[capacity];
 	}
 
+	NativeSortBuffer(int slotCount, int expectedRows, FactorizedTail.MemoBudget budget) {
+		this.slotCount = slotCount;
+		this.initialCapacity = Math.min(16, Math.max(1, expectedRows));
+		this.budget = budget;
+		this.metrics = budget.metrics;
+		this.rows = EMPTY_LONGS;
+		this.ordinals = EMPTY_LONGS;
+	}
+
 	void append(long[] row, long ordinal) {
-		ensureCapacity(size + 1);
-		System.arraycopy(row, 0, rows, size * slotCount, slotCount);
-		ordinals[size] = ordinal;
-		size++;
-		PACKED_ROWS.incrementAndGet();
+		append(row, ordinal, slotCount);
+	}
+
+	void append(long[] row, long ordinal, int copiedSlots) {
+		if (!tryAppend(row, ordinal, copiedSlots)) {
+			throw new IllegalStateException("Native sort buffer physical-memory budget exhausted");
+		}
+	}
+
+	boolean tryAppend(long[] row, long ordinal) {
+		return tryAppend(row, ordinal, slotCount);
+	}
+
+	boolean tryAppend(long[] row, long ordinal, int copiedSlots) {
+		ensureOpen();
+		if (!tryEnsureCapacity(size + 1)) {
+			return false;
+		}
+		appendAtCurrentCapacity(row, ordinal, copiedSlots);
+		return true;
 	}
 
 	long id(int row, int slot) {
@@ -75,9 +111,51 @@ final class NativeSortBuffer {
 	}
 
 	int[] sortedOrder(PackedRowComparator comparator) {
-		SORTS.incrementAndGet();
+		if (budget != null) {
+			int[] order = trySortedOrder(comparator);
+			if (order == null) {
+				throw new IllegalStateException("Native sort buffer physical-memory budget exhausted");
+			}
+			return order;
+		}
+		ensureOpen();
+		metrics.recordNativeSort();
 		int[] order = new int[size];
 		int[] scratch = new int[size];
+		return sort(order, scratch, comparator);
+	}
+
+	int[] trySortedOrder(PackedRowComparator comparator) {
+		ensureOpen();
+		if (budget == null) {
+			return sortedOrder(comparator);
+		}
+		long arrayValues = intArrayValues(size);
+		long attemptValues = arrayValues * 2L;
+		if (!budget.tryReserve(0, attemptValues)) {
+			return null;
+		}
+		int[] order;
+		int[] scratch;
+		try {
+			order = new int[size];
+			scratch = new int[size];
+			order = sort(order, scratch, comparator);
+			if (retainedOrders == null) {
+				retainedOrders = new ArrayList<>();
+			}
+			retainedOrders.add(order);
+		} catch (RuntimeException | Error e) {
+			budget.release(0, attemptValues);
+			throw e;
+		}
+		metrics.recordNativeSort();
+		retainedOrderValues += arrayValues;
+		budget.release(0, arrayValues);
+		return order;
+	}
+
+	private int[] sort(int[] order, int[] scratch, PackedRowComparator comparator) {
 		for (int i = 0; i < size; i++) {
 			order[i] = i;
 		}
@@ -122,13 +200,106 @@ final class NativeSortBuffer {
 		}
 	}
 
-	private void ensureCapacity(int requiredRows) {
-		if (requiredRows <= ordinals.length) {
+	void close() {
+		if (closed) {
 			return;
 		}
-		int capacity = Math.max(requiredRows, ordinals.length << 1);
-		rows = Arrays.copyOf(rows, capacity * slotCount);
-		ordinals = Arrays.copyOf(ordinals, capacity);
+		closed = true;
+		rows = EMPTY_LONGS;
+		ordinals = EMPTY_LONGS;
+		size = 0;
+		if (retainedOrders != null) {
+			retainedOrders.clear();
+			retainedOrders = null;
+		}
+		if (budget != null) {
+			budget.release(0, reservedValues + retainedOrderValues);
+			reservedValues = 0L;
+			retainedOrderValues = 0L;
+		}
+	}
+
+	int grownCapacity(int requiredRows, int maximumRows) {
+		int current = ordinals.length;
+		if (requiredRows <= current) {
+			return current;
+		}
+		int arrayMaximumRows = slotCount == 0 ? MAX_ARRAY_SIZE : MAX_ARRAY_SIZE / slotCount;
+		int maximum = Math.min(MAX_ARRAY_SIZE, Math.min(maximumRows, arrayMaximumRows));
+		if (requiredRows > maximum) {
+			throw new OutOfMemoryError("Required native sort capacity exceeds the maximum array size");
+		}
+		if (current == 0) {
+			return Math.min(maximum, Math.max(requiredRows, initialCapacity));
+		}
+		long doubled = (long) current * 2L;
+		return (int) Math.min(maximum, Math.max(requiredRows, doubled));
+	}
+
+	long capacityValueDelta(int newCapacity) {
+		int oldCapacity = ordinals.length;
+		return (long) (newCapacity - oldCapacity) * (slotCount + 1L);
+	}
+
+	int rowArrayLength(int capacity) {
+		return Math.toIntExact((long) capacity * slotCount);
+	}
+
+	void publishCapacity(long[] newRows, long[] newOrdinals, long valueDelta) {
+		rows = newRows;
+		ordinals = newOrdinals;
+		if (budget != null) {
+			reservedValues += valueDelta;
+		}
+	}
+
+	void appendAtCurrentCapacity(long[] row, long ordinal, int copiedSlots) {
+		System.arraycopy(row, 0, rows, size * slotCount, copiedSlots);
+		ordinals[size] = ordinal;
+		size++;
+		metrics.recordNativeSortPackedRow();
+	}
+
+	void recordTopKCandidate() {
+		metrics.recordNativeTopKCandidate();
+	}
+
+	void recordTopKReplacement() {
+		metrics.recordNativeTopKReplacement();
+	}
+
+	private boolean tryEnsureCapacity(int requiredRows) {
+		if (requiredRows <= ordinals.length) {
+			return true;
+		}
+		int capacity = grownCapacity(requiredRows, MAX_ARRAY_SIZE);
+		long valueDelta = capacityValueDelta(capacity);
+		if (budget != null && !budget.tryReserve(0, valueDelta)) {
+			return false;
+		}
+		long[] newRows;
+		long[] newOrdinals;
+		try {
+			newRows = Arrays.copyOf(rows, rowArrayLength(capacity));
+			newOrdinals = Arrays.copyOf(ordinals, capacity);
+		} catch (RuntimeException | Error e) {
+			if (budget != null) {
+				budget.release(0, valueDelta);
+			}
+			throw e;
+		}
+		publishCapacity(newRows, newOrdinals, valueDelta);
+		return true;
+	}
+
+	private void ensureOpen() {
+		if (closed) {
+			throw new IllegalStateException("Native sort buffer is closed");
+		}
+	}
+
+	static long intArrayValues(int length) {
+		return ((long) length + 1L) / 2L;
 	}
 }
 
@@ -160,11 +331,17 @@ final class InMemorySortedRows implements NativeSortedRows {
 /** Fixed-capacity max heap whose rows share the same packed arena used by the final sort. */
 @Experimental
 final class NativeTopKBuffer {
+	static final int REJECTED = -1;
+	static final int BUDGET_REFUSED = -2;
+	static final AtomicLong REPLACEMENTS = new AtomicLong();
 
 	final NativeSortBuffer buffer;
 	final int capacity;
-	final int[] heap;
+	int[] heap;
 	final PackedRowComparator comparator;
+	private final FactorizedTail.MemoBudget budget;
+	private long reservedHeapValues;
+	private boolean closed;
 	int heapSize;
 
 	NativeTopKBuffer(int slotCount, int capacity, PackedRowComparator comparator) {
@@ -172,38 +349,49 @@ final class NativeTopKBuffer {
 		this.buffer = new NativeSortBuffer(slotCount, Math.max(1, capacity));
 		this.heap = new int[Math.max(1, capacity)];
 		this.comparator = comparator;
+		this.budget = null;
 	}
 
-	/**
-	 * Whether {@link #add} with this row and ordinal would enter the heap. The comparator only reads order-key columns,
-	 * so callers may test admission before paying to fill the row's payload columns.
-	 */
-	boolean wouldAccept(long[] row, long ordinal) {
-		if (capacity == 0) {
-			return false;
-		}
-		if (buffer.size < capacity) {
-			return true;
-		}
-		int worst = heap[0];
-		int compared = comparator.compare(row, 0, buffer.rows, worst * buffer.slotCount);
-		if (compared == 0) {
-			compared = Long.compare(ordinal, buffer.ordinals[worst]);
-		}
-		return compared < 0;
+	NativeTopKBuffer(int slotCount, int capacity, PackedRowComparator comparator,
+			FactorizedTail.MemoBudget budget) {
+		this.capacity = Math.max(0, capacity);
+		this.buffer = new NativeSortBuffer(slotCount, Math.min(16, this.capacity), budget);
+		this.heap = new int[0];
+		this.comparator = comparator;
+		this.budget = budget;
 	}
 
 	void add(long[] row, long ordinal) {
-		NativeSortBuffer.TOP_K_CANDIDATES.incrementAndGet();
+		admit(row, ordinal);
+	}
+
+	/**
+	 * Admits a row and returns its stable buffer slot, or {@code -1} when the bounded heap rejects it. Replacements
+	 * retain the evicted row's physical slot so side payload owned by that slot can be reused without accumulation.
+	 */
+	int admit(long[] row, long ordinal) {
+		return admit(row, ordinal, buffer.slotCount);
+	}
+
+	int admit(long[] row, long ordinal, int copiedSlots) {
+		return tryAdmit(row, ordinal, copiedSlots);
+	}
+
+	int tryAdmit(long[] row, long ordinal, int copiedSlots) {
+		ensureOpen();
+		buffer.recordTopKCandidate();
 		if (capacity == 0) {
-			return;
+			return REJECTED;
 		}
 		if (buffer.size < capacity) {
+			if (!tryEnsureCapacity(buffer.size + 1)) {
+				return BUDGET_REFUSED;
+			}
 			int index = buffer.size;
-			buffer.append(row, ordinal);
+			buffer.appendAtCurrentCapacity(row, ordinal, copiedSlots);
 			heap[heapSize++] = index;
 			siftUp(heapSize - 1);
-			return;
+			return index;
 		}
 		int worst = heap[0];
 		int compared = comparator.compare(row, 0, buffer.rows, worst * buffer.slotCount);
@@ -211,11 +399,71 @@ final class NativeTopKBuffer {
 			compared = Long.compare(ordinal, buffer.ordinals[worst]);
 		}
 		if (compared >= 0) {
-			return;
+			return REJECTED;
 		}
-		System.arraycopy(row, 0, buffer.rows, worst * buffer.slotCount, buffer.slotCount);
+		System.arraycopy(row, 0, buffer.rows, worst * buffer.slotCount, copiedSlots);
 		buffer.ordinals[worst] = ordinal;
 		siftDown(0);
+		buffer.recordTopKReplacement();
+		return worst;
+	}
+
+	void replaceAcceptedSuffix(int slot, long[] row, int from) {
+		System.arraycopy(row, from, buffer.rows, slot * buffer.slotCount + from, buffer.slotCount - from);
+	}
+
+	void close() {
+		if (closed) {
+			return;
+		}
+		closed = true;
+		buffer.close();
+		heap = new int[0];
+		heapSize = 0;
+		if (budget != null) {
+			budget.release(0, reservedHeapValues);
+			reservedHeapValues = 0L;
+		}
+	}
+
+	private boolean tryEnsureCapacity(int requiredRows) {
+		if (requiredRows <= buffer.ordinals.length && requiredRows <= heap.length) {
+			return true;
+		}
+		int newCapacity = buffer.grownCapacity(requiredRows, capacity);
+		long bufferDelta = buffer.capacityValueDelta(newCapacity);
+		long oldHeapValues = NativeSortBuffer.intArrayValues(heap.length);
+		long newHeapValues = NativeSortBuffer.intArrayValues(newCapacity);
+		long heapDelta = newHeapValues - oldHeapValues;
+		long totalDelta = bufferDelta + heapDelta;
+		if (budget != null && !budget.tryReserve(0, totalDelta)) {
+			return false;
+		}
+		long[] newRows;
+		long[] newOrdinals;
+		int[] newHeap;
+		try {
+			newRows = Arrays.copyOf(buffer.rows, buffer.rowArrayLength(newCapacity));
+			newOrdinals = Arrays.copyOf(buffer.ordinals, newCapacity);
+			newHeap = Arrays.copyOf(heap, newCapacity);
+		} catch (RuntimeException | Error e) {
+			if (budget != null) {
+				budget.release(0, totalDelta);
+			}
+			throw e;
+		}
+		buffer.publishCapacity(newRows, newOrdinals, bufferDelta);
+		heap = newHeap;
+		if (budget != null) {
+			reservedHeapValues += heapDelta;
+		}
+		return true;
+	}
+
+	private void ensureOpen() {
+		if (closed) {
+			throw new IllegalStateException("Native top-K buffer is closed");
+		}
 	}
 
 	private void siftUp(int position) {
@@ -250,6 +498,157 @@ final class NativeTopKBuffer {
 			heap[largest] = swap;
 			parent = largest;
 		}
+	}
+}
+
+/** Primitive enum-branch payload owned by the live slots of one factorized top-K heap. */
+@Experimental
+final class TopKPayloadStore implements AutoCloseable {
+
+	private static final int MIN_CAPACITY = 16;
+	private static final int MAX_ARRAY_SIZE = Integer.MAX_VALUE - 8;
+	private static final long[][] EMPTY_PAYLOADS = new long[0][];
+
+	private final int maxSlots;
+	private final FactorizedTail.MemoBudget budget;
+	private long[][] payloads = EMPTY_PAYLOADS;
+	private int reservedEntries;
+	private long reservedValues;
+	private boolean closed;
+
+	TopKPayloadStore(int slots, FactorizedTail.MemoBudget budget) {
+		this.maxSlots = Math.min(MAX_ARRAY_SIZE, Math.max(0, slots));
+		this.budget = budget;
+	}
+
+	boolean store(int slot, FlatRowCursor cursor, int enums, long[] packed, int metadataOffset) {
+		if (closed) {
+			throw new IllegalStateException("Top-K payload store is closed");
+		}
+		if (slot < 0 || slot >= maxSlots) {
+			throw new IndexOutOfBoundsException("Top-K payload slot " + slot + " outside [0, " + maxSlots + ")");
+		}
+		long requiredLongs = 0L;
+		for (int branch = 0; branch < enums; branch++) {
+			int stride = cursor.enumValueSlots(branch).length;
+			long matches = cursor.enumMatches(branch);
+			if (stride != 0 && matches > MAX_ARRAY_SIZE / stride) {
+				return false;
+			}
+			requiredLongs += matches * stride;
+			if (requiredLongs > MAX_ARRAY_SIZE) {
+				return false;
+			}
+		}
+
+		int required = (int) requiredLongs;
+		int oldMetadataCapacity = payloads.length;
+		int newMetadataCapacity = grownMetadataCapacity(oldMetadataCapacity, slot + 1, maxSlots);
+		long[] payload = slot < oldMetadataCapacity ? payloads[slot] : null;
+		int oldCapacity = payload == null ? 0 : payload.length;
+		int newCapacity = required > oldCapacity ? grownCapacity(oldCapacity, required) : oldCapacity;
+		int entryDelta = payload == null && newCapacity > 0 ? 1 : 0;
+		long metadataDelta = referenceArrayValues(newMetadataCapacity)
+				- referenceArrayValues(oldMetadataCapacity);
+		long payloadDelta = newCapacity - oldCapacity;
+		long valueDelta = metadataDelta + payloadDelta;
+		if ((entryDelta != 0 || valueDelta != 0L) && !budget.tryReserve(entryDelta, valueDelta)) {
+			return false;
+		}
+
+		long[][] newPayloads = payloads;
+		long[] newPayload = payload;
+		try {
+			if (newMetadataCapacity != oldMetadataCapacity) {
+				newPayloads = Arrays.copyOf(payloads, newMetadataCapacity);
+			}
+			if (newCapacity != oldCapacity) {
+				newPayload = payload == null ? new long[newCapacity] : Arrays.copyOf(payload, newCapacity);
+			}
+		} catch (RuntimeException | Error e) {
+			budget.release(entryDelta, valueDelta);
+			throw e;
+		}
+		if (newPayload != null) {
+			newPayloads[slot] = newPayload;
+		}
+		payloads = newPayloads;
+		payload = newPayload;
+		reservedEntries += entryDelta;
+		reservedValues += valueDelta;
+
+		int offset = 0;
+		for (int branch = 0; branch < enums; branch++) {
+			int stride = cursor.enumValueSlots(branch).length;
+			long matches = cursor.enumMatches(branch);
+			int runLength = (int) (matches * stride);
+			packed[metadataOffset + 2 * branch] = offset;
+			packed[metadataOffset + 2 * branch + 1] = matches;
+			if (runLength > 0) {
+				System.arraycopy(cursor.enumValues(branch), 0, payload, offset, runLength);
+				offset += runLength;
+			}
+		}
+		return true;
+	}
+
+	long get(int slot, long offset) {
+		return payloads[slot][Math.toIntExact(offset)];
+	}
+
+	void copyTo(int slot, long offset, long[] target, int targetOffset, int length) {
+		System.arraycopy(payloads[slot], Math.toIntExact(offset), target, targetOffset, length);
+	}
+
+	long retainedCapacity() {
+		long retained = 0L;
+		for (long[] payload : payloads) {
+			if (payload != null) {
+				retained += payload.length;
+			}
+		}
+		return retained;
+	}
+
+	@Override
+	public void close() {
+		if (closed) {
+			return;
+		}
+		closed = true;
+		payloads = EMPTY_PAYLOADS;
+		budget.release(reservedEntries, reservedValues);
+		reservedEntries = 0;
+		reservedValues = 0L;
+	}
+
+	private static int grownCapacity(int current, int required) {
+		int capacity = Math.max(MIN_CAPACITY, current);
+		while (capacity < required) {
+			if (capacity > MAX_ARRAY_SIZE / 2) {
+				return MAX_ARRAY_SIZE;
+			}
+			capacity *= 2;
+		}
+		return capacity;
+	}
+
+	private static int grownMetadataCapacity(int current, int required, int maximum) {
+		if (required <= current) {
+			return current;
+		}
+		int capacity = current == 0 ? Math.min(maximum, Math.max(MIN_CAPACITY, required)) : current;
+		while (capacity < required) {
+			capacity = (int) Math.min(maximum, Math.max((long) required, (long) capacity * 2L));
+		}
+		return capacity;
+	}
+
+	private static long referenceArrayValues(int length) {
+		// Budget in eight-byte value units. One unit per reference is exact without compressed oops and
+		// conservatively bounded with compressed oops; assuming four-byte references can undercharge the same array
+		// when the JVM disables compression.
+		return length;
 	}
 }
 

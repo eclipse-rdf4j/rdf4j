@@ -24,19 +24,27 @@ import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -50,6 +58,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimiz
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
@@ -81,6 +90,92 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 				super.meet(filter);
 			}
 		});
+	}
+
+	@Test
+	public void doesNotMoveDeterministicFilterAcrossVolatileFilter() {
+		Filter volatileBoundary = new Filter(pattern("s", "volatileFilter"),
+				new FunctionCall("urn:test:volatile:child-filter"));
+
+		assertFilterBoundaryPreserved(volatileBoundary, "s");
+	}
+
+	@Test
+	public void doesNotMoveDeterministicFilterAcrossVolatileExtension() {
+		Extension volatileBoundary = new Extension(pattern("s", "volatileExtension"),
+				new ExtensionElem(new BNodeGenerator(), "generated"));
+
+		assertFilterBoundaryPreserved(volatileBoundary, "s");
+	}
+
+	@Test
+	public void doesNotMoveDeterministicFilterIntoJoinWithVolatileSibling() {
+		TupleExpr left = pattern("s", "left");
+		TupleExpr volatileRight = new Filter(pattern("right", "right"),
+				new FunctionCall("urn:test:volatile:join-sibling"));
+		Join volatileBoundary = new Join(left, volatileRight);
+
+		assertFilterBoundaryPreserved(volatileBoundary, "s");
+	}
+
+	@Test
+	public void doesNotMoveDeterministicFilterAcrossVolatileLeftJoin() {
+		LeftJoin volatileBoundary = new LeftJoin(pattern("s", "optionalLeft"), pattern("right", "optionalRight"),
+				new FunctionCall("urn:test:volatile:left-join-condition"));
+
+		assertFilterBoundaryPreserved(volatileBoundary, "s");
+	}
+
+	@Test
+	public void doesNotMoveDeterministicFilterAcrossVolatileOrder() {
+		Order volatileBoundary = new Order(pattern("s", "ordered"),
+				new OrderElem(new FunctionCall("urn:test:volatile:order-key")));
+
+		assertFilterBoundaryPreserved(volatileBoundary, "s");
+	}
+
+	@Test
+	public void filterInValuesDoesNotMoveSyntheticValuesAboveBNodeExtension() {
+		Extension volatileInput = new Extension(pattern("s", "syntheticValues"),
+				new ExtensionElem(new BNodeGenerator(), "generated"));
+		SameTerm condition = new SameTerm(Var.of("s"),
+				new ValueConstant(SimpleValueFactory.getInstance().createIRI("urn:test:kept")));
+		Filter filter = new Filter(volatileInput, condition);
+		QueryRoot root = new QueryRoot(filter);
+
+		QueryOptimizer optimizer = StandardQueryOptimizerPipeline.FILTER_IN_VALUES_OPTIMIZER;
+		optimizer.optimize(root, null, EmptyBindingSet.getInstance());
+
+		assertThat(root.getArg()).isSameAs(filter);
+		assertThat(filter.getArg()).isSameAs(volatileInput);
+		assertThat(findAll(root, BindingSetAssignment.class)).isEmpty();
+	}
+
+	@Test
+	public void filterInValuesDoesNotNarrowExistingValuesAheadOfUnknownFunction() {
+		MapBindingSet kept = new MapBindingSet(1);
+		kept.addBinding("label", SimpleValueFactory.getInstance().createLiteral("kept"));
+		MapBindingSet dropped = new MapBindingSet(1);
+		dropped.addBinding("label", SimpleValueFactory.getInstance().createLiteral("dropped"));
+		BindingSetAssignment existingValues = new BindingSetAssignment();
+		existingValues.setBindingNames(Set.of("label"));
+		existingValues.setBindingSets(List.of(kept, dropped));
+
+		Filter volatileInput = new Filter(pattern("s", "existingValues"),
+				new FunctionCall("urn:test:volatile:existing-values"));
+		Join input = new Join(existingValues, volatileInput);
+		ListMemberOperator condition = new ListMemberOperator();
+		condition.addArgument(Var.of("label"));
+		condition.addArgument(new ValueConstant(SimpleValueFactory.getInstance().createLiteral("kept")));
+		Filter filter = new Filter(input, condition);
+		QueryRoot root = new QueryRoot(filter);
+
+		QueryOptimizer optimizer = StandardQueryOptimizerPipeline.FILTER_IN_VALUES_OPTIMIZER;
+		optimizer.optimize(root, null, EmptyBindingSet.getInstance());
+
+		assertThat(root.getArg()).isSameAs(filter);
+		assertThat(filter.getArg()).isSameAs(input);
+		assertThat(values(existingValues, "label")).containsExactly("\"kept\"", "\"dropped\"");
 	}
 
 	@Test
@@ -627,5 +722,22 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 			parent = parent.getParentNode();
 		}
 		return false;
+	}
+
+	private void assertFilterBoundaryPreserved(TupleExpr boundary, String bindingName) {
+		SameTerm deterministicCondition = new SameTerm(Var.of(bindingName),
+				new ValueConstant(SimpleValueFactory.getInstance().createIRI("urn:test:kept")));
+		Filter filter = new Filter(boundary, deterministicCondition);
+		QueryRoot root = new QueryRoot(filter);
+
+		getOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+
+		assertThat(root.getArg()).isSameAs(filter);
+		assertThat(filter.getArg()).isSameAs(boundary);
+		assertThat(filter.getCondition()).isSameAs(deterministicCondition);
+	}
+
+	private static StatementPattern pattern(String subjectName, String suffix) {
+		return new StatementPattern(Var.of(subjectName), Var.of("p" + suffix), Var.of("o" + suffix));
 	}
 }

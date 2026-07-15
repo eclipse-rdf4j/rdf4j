@@ -27,10 +27,12 @@ import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 
 	private final List<NativeLmdbQuerySource> sources;
+	private final List<NativeLmdbQuerySource> activeSources;
 	private final Object idSpace;
 
 	private CompositeNativeLmdbQuerySource(List<NativeLmdbQuerySource> sources, Object idSpace) {
 		this.sources = sources;
+		this.activeSources = sources.stream().filter(NativeLmdbQuerySource::hasStatementsInSource).toList();
 		this.idSpace = idSpace;
 	}
 
@@ -68,44 +70,52 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 
 	@Override
 	public RecordIterator statements(long subj, long pred, long obj, long context) throws IOException {
-		// CompositeNativeLmdbQuerySource is only constructed after inactive branches have already been filtered out.
-		// Avoid doing the same active-source scan for every native statement lookup: the aggregate engine may open tens
-		// of thousands of small correlated LMDB probes in one query.
-		return new ConcatenatingRecordIterator(sources, subj, pred, obj, context);
+		NativeLmdbQuerySource active = onlyActiveSource();
+		if (active != null) {
+			return active.statements(subj, pred, obj, context);
+		}
+		return new ConcatenatingRecordIterator(activeSources, subj, pred, obj, context);
+	}
+
+	@Override
+	public NativeProbe newProbe() {
+		NativeLmdbQuerySource active = onlyActiveSource();
+		if (active != null) {
+			return active.newProbe();
+		}
+		return new CompositeProbe(activeSources);
 	}
 
 	@Override
 	public RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context)
 			throws IOException {
-		List<RecordIterator> iterators = new ArrayList<>(sources.size());
-		try {
-			for (NativeLmdbQuerySource source : sources) {
-				if (source.hasStatementsInSource()) {
-					iterators.add(source.statements(order, subj, pred, obj, context));
-				}
-			}
-			return OrderedRecordIterator.merge(iterators, order);
-		} catch (IOException | RuntimeException | Error e) {
-			for (RecordIterator iterator : iterators) {
-				iterator.close();
-			}
-			throw e;
+		NativeLmdbQuerySource active = onlyActiveSource();
+		if (active != null) {
+			return active.statements(order, subj, pred, obj, context);
 		}
+		List<RecordIterator> iterators = new ArrayList<>(activeSources.size());
+		for (NativeLmdbQuerySource source : activeSources) {
+			try {
+				iterators.add(source.statements(order, subj, pred, obj, context));
+			} catch (IOException | RuntimeException | Error e) {
+				closeIterators(iterators, e);
+				throw e;
+			}
+		}
+		return OrderedRecordIterator.merge(iterators, order);
 	}
 
 	@Override
 	public String indexName(long subj, long pred, long obj, long context) {
 		String common = null;
 		int active = 0;
-		for (NativeLmdbQuerySource source : sources) {
-			if (source.hasStatementsInSource()) {
-				String indexName = source.indexName(subj, pred, obj, context);
-				if (indexName.isEmpty() || common != null && !common.equals(indexName)) {
-					return "";
-				}
-				common = indexName;
-				active++;
+		for (NativeLmdbQuerySource source : activeSources) {
+			String indexName = source.indexName(subj, pred, obj, context);
+			if (indexName.isEmpty() || common != null && !common.equals(indexName)) {
+				return "";
 			}
+			common = indexName;
+			active++;
 		}
 		// Unordered source scans concatenate sources and therefore preserve exact order only for one active source.
 		return active == 1 ? common : "";
@@ -114,14 +124,12 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	@Override
 	public String indexName(StatementOrder order, long subj, long pred, long obj, long context) {
 		String common = null;
-		for (NativeLmdbQuerySource source : sources) {
-			if (source.hasStatementsInSource()) {
-				String indexName = source.indexName(order, subj, pred, obj, context);
-				if (indexName.isEmpty() || common != null && !common.equals(indexName)) {
-					return "";
-				}
-				common = indexName;
+		for (NativeLmdbQuerySource source : activeSources) {
+			String indexName = source.indexName(order, subj, pred, obj, context);
+			if (indexName.isEmpty() || common != null && !common.equals(indexName)) {
+				return "";
 			}
+			common = indexName;
 		}
 		return common == null ? "" : common;
 	}
@@ -144,7 +152,7 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	@Override
 	public long count(long subj, long pred, long obj, long context) throws IOException {
 		long count = 0L;
-		for (NativeLmdbQuerySource source : sources) {
+		for (NativeLmdbQuerySource source : activeSources) {
 			long sourceCount = source.count(subj, pred, obj, context);
 			if (Long.MAX_VALUE - count < sourceCount) {
 				return Long.MAX_VALUE;
@@ -156,7 +164,7 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 
 	@Override
 	public boolean has(long subj, long pred, long obj, long context) throws IOException {
-		for (NativeLmdbQuerySource source : sources) {
+		for (NativeLmdbQuerySource source : activeSources) {
 			if (source.has(subj, pred, obj, context)) {
 				return true;
 			}
@@ -167,7 +175,7 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	@Override
 	public double estimate(long subj, long pred, long obj, long context) {
 		double estimate = 0D;
-		for (NativeLmdbQuerySource source : sources) {
+		for (NativeLmdbQuerySource source : activeSources) {
 			estimate += source.estimate(subj, pred, obj, context);
 		}
 		return estimate;
@@ -175,60 +183,123 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 
 	@Override
 	public boolean hasStatementsInSource() {
-		for (NativeLmdbQuerySource source : sources) {
-			if (source.hasStatementsInSource()) {
-				return true;
-			}
-		}
-		return false;
+		return !activeSources.isEmpty();
 	}
 
 	private NativeLmdbQuerySource onlyActiveSource() {
-		NativeLmdbQuerySource active = null;
-		for (NativeLmdbQuerySource source : sources) {
-			if (!source.hasStatementsInSource()) {
-				continue;
-			}
-			if (active != null) {
-				return null;
-			}
-			active = source;
-		}
-		return active;
+		return activeSources.size() == 1 ? activeSources.get(0) : null;
 	}
 
 	@Override
 	public ParallelSource[] openParallelSources(int count) throws IOException {
-		ParallelSource[][] members = new ParallelSource[sources.size()][];
+		NativeLmdbQuerySource active = onlyActiveSource();
+		if (active != null) {
+			return openSingleActiveParallelSources(active, count);
+		}
+		ParallelSource[][] members = new ParallelSource[activeSources.size()][];
 		boolean complete = false;
+		boolean allSnapshotsIdentified = true;
+		long snapshotId = ParallelSource.UNKNOWN_SNAPSHOT_ID;
+		Throwable primary = null;
 		try {
-			for (int i = 0; i < sources.size(); i++) {
-				members[i] = sources.get(i).openParallelSources(count);
-				if (members[i] == null) {
+			for (int i = 0; i < activeSources.size(); i++) {
+				members[i] = activeSources.get(i).openParallelSources(count);
+				if (members[i] == null || members[i].length != count) {
 					return null;
 				}
+				for (ParallelSource source : members[i]) {
+					if (source == null) {
+						return null;
+					}
+					long childSnapshotId = source.snapshotId();
+					if (childSnapshotId == ParallelSource.UNKNOWN_SNAPSHOT_ID) {
+						allSnapshotsIdentified = false;
+					} else if (snapshotId == ParallelSource.UNKNOWN_SNAPSHOT_ID) {
+						snapshotId = childSnapshotId;
+					} else if (snapshotId != childSnapshotId) {
+						return null;
+					}
+				}
 			}
+			long compositeSnapshotId = allSnapshotsIdentified ? snapshotId : ParallelSource.UNKNOWN_SNAPSHOT_ID;
 			ParallelSource[] result = new ParallelSource[count];
 			for (int j = 0; j < count; j++) {
-				NativeLmdbQuerySource[] slice = new NativeLmdbQuerySource[sources.size()];
-				ParallelSource[] owned = new ParallelSource[sources.size()];
-				for (int i = 0; i < sources.size(); i++) {
-					slice[i] = members[i][j];
+				ParallelSource[] owned = new ParallelSource[activeSources.size()];
+				for (int i = 0; i < activeSources.size(); i++) {
 					owned[i] = members[i][j];
 				}
 				result[j] = new CompositeParallelSource(
-						new CompositeNativeLmdbQuerySource(List.of(slice), idSpace), owned);
+						new CompositeNativeLmdbQuerySource(List.<NativeLmdbQuerySource>of(owned), idSpace), owned,
+						compositeSnapshotId);
 			}
 			complete = true;
 			return result;
+		} catch (IOException | RuntimeException | Error e) {
+			primary = e;
+			throw e;
 		} finally {
 			if (!complete) {
-				for (ParallelSource[] member : members) {
-					if (member != null) {
-						for (ParallelSource source : member) {
-							source.close();
-						}
-					}
+				Throwable failure = closeParallelMembers(members, primary);
+				if (primary == null) {
+					throwUnchecked(failure);
+				}
+			}
+		}
+	}
+
+	private ParallelSource[] openSingleActiveParallelSources(NativeLmdbQuerySource active, int count)
+			throws IOException {
+		ParallelSource[] opened = active.openParallelSources(count);
+		if (opened == null) {
+			return null;
+		}
+		boolean complete = false;
+		boolean sawKnownSnapshot = false;
+		boolean sawUnknownSnapshot = false;
+		long snapshotId = ParallelSource.UNKNOWN_SNAPSHOT_ID;
+		Throwable primary = null;
+		try {
+			if (opened.length != count) {
+				return null;
+			}
+			for (ParallelSource source : opened) {
+				if (source == null) {
+					return null;
+				}
+				long childSnapshotId = source.snapshotId();
+				if (childSnapshotId == ParallelSource.UNKNOWN_SNAPSHOT_ID) {
+					sawUnknownSnapshot = true;
+				} else if (!sawKnownSnapshot) {
+					sawKnownSnapshot = true;
+					snapshotId = childSnapshotId;
+				} else if (snapshotId != childSnapshotId) {
+					return null;
+				}
+			}
+			if (!sawKnownSnapshot || !sawUnknownSnapshot) {
+				complete = true;
+				return opened;
+			}
+
+			// Preserve the existing conservative UNKNOWN normalization for a family that mixes known and unknown
+			// tokens.
+			ParallelSource[] normalized = new ParallelSource[count];
+			for (int i = 0; i < count; i++) {
+				ParallelSource child = opened[i];
+				normalized[i] = new CompositeParallelSource(
+						new CompositeNativeLmdbQuerySource(List.<NativeLmdbQuerySource>of(child), idSpace),
+						new ParallelSource[] { child }, ParallelSource.UNKNOWN_SNAPSHOT_ID);
+			}
+			complete = true;
+			return normalized;
+		} catch (RuntimeException | Error e) {
+			primary = e;
+			throw e;
+		} finally {
+			if (!complete) {
+				Throwable failure = closeParallelSources(opened, primary);
+				if (primary == null) {
+					throwUnchecked(failure);
 				}
 			}
 		}
@@ -238,17 +309,27 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 
 		private final CompositeNativeLmdbQuerySource delegate;
 		private final ParallelSource[] owned;
+		private final long snapshotId;
+		private boolean closed;
 
-		CompositeParallelSource(CompositeNativeLmdbQuerySource delegate, ParallelSource[] owned) {
+		CompositeParallelSource(CompositeNativeLmdbQuerySource delegate, ParallelSource[] owned, long snapshotId) {
 			this.delegate = delegate;
 			this.owned = owned;
+			this.snapshotId = snapshotId;
 		}
 
 		@Override
-		public void close() {
-			for (ParallelSource source : owned) {
-				source.close();
+		public long snapshotId() {
+			return snapshotId;
+		}
+
+		@Override
+		public synchronized void close() {
+			if (closed) {
+				return;
 			}
+			closed = true;
+			throwUnchecked(closeParallelSources(owned, null));
 		}
 
 		@Override
@@ -272,8 +353,19 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		}
 
 		@Override
+		public RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context)
+				throws IOException {
+			return delegate.statements(order, subj, pred, obj, context);
+		}
+
+		@Override
 		public String indexName(long subj, long pred, long obj, long context) {
 			return delegate.indexName(subj, pred, obj, context);
+		}
+
+		@Override
+		public String indexName(StatementOrder order, long subj, long pred, long obj, long context) {
+			return delegate.indexName(order, subj, pred, obj, context);
 		}
 
 		@Override
@@ -299,6 +391,254 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		@Override
 		public boolean hasStatementsInSource() {
 			return delegate.hasStatementsInSource();
+		}
+	}
+
+	private static final class CompositeProbe implements NativeProbe {
+
+		private final NativeProbe[] probes;
+		private final ConcatenatingProbeIterator iterator;
+		private ConcatenatingProbeIterator current;
+		private boolean closed;
+
+		private CompositeProbe(List<NativeLmdbQuerySource> sources) {
+			probes = new NativeProbe[sources.size()];
+			int created = 0;
+			try {
+				for (; created < probes.length; created++) {
+					probes[created] = sources.get(created).newProbe();
+				}
+				iterator = new ConcatenatingProbeIterator(this, probes);
+			} catch (RuntimeException | Error e) {
+				for (int i = 0; i < created; i++) {
+					try {
+						probes[i].close();
+					} catch (RuntimeException | Error closeFailure) {
+						addSuppressed(e, closeFailure);
+					}
+				}
+				throw e;
+			}
+		}
+
+		@Override
+		public RecordIterator open(long subj, long pred, long obj, long context) throws IOException {
+			if (closed) {
+				throw new IOException("composite probe already closed");
+			}
+			try {
+				iterator.reset(subj, pred, obj, context);
+			} catch (RuntimeException | Error e) {
+				fail(iterator, e);
+				throw e;
+			}
+			current = iterator;
+			return current;
+		}
+
+		@Override
+		public void close() {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			Throwable failure = null;
+			ConcatenatingProbeIterator iterator = current;
+			current = null;
+			if (iterator != null) {
+				try {
+					iterator.close();
+				} catch (RuntimeException | Error e) {
+					failure = e;
+				}
+			}
+			for (NativeProbe probe : probes) {
+				try {
+					probe.close();
+				} catch (RuntimeException | Error e) {
+					if (failure == null) {
+						failure = e;
+					} else {
+						addSuppressed(failure, e);
+					}
+				}
+			}
+			if (failure instanceof RuntimeException) {
+				throw (RuntimeException) failure;
+			}
+			if (failure != null) {
+				throw (Error) failure;
+			}
+		}
+
+		private void fail(ConcatenatingProbeIterator iterator, Throwable primary) {
+			if (current == iterator) {
+				current = null;
+			}
+			try {
+				iterator.close();
+			} catch (RuntimeException | Error closeFailure) {
+				addSuppressed(primary, closeFailure);
+			}
+			try {
+				close();
+			} catch (RuntimeException | Error closeFailure) {
+				addSuppressed(primary, closeFailure);
+			}
+		}
+
+	}
+
+	private static void closeIterators(List<RecordIterator> iterators, Throwable primary) {
+		for (RecordIterator iterator : iterators) {
+			try {
+				iterator.close();
+			} catch (RuntimeException | Error closeFailure) {
+				addSuppressed(primary, closeFailure);
+			}
+		}
+	}
+
+	private static Throwable closeParallelMembers(ParallelSource[][] members, Throwable primary) {
+		Throwable failure = primary;
+		for (ParallelSource[] member : members) {
+			if (member != null) {
+				failure = closeParallelSources(member, failure);
+			}
+		}
+		return failure;
+	}
+
+	private static Throwable closeParallelSources(ParallelSource[] sources, Throwable primary) {
+		Throwable failure = primary;
+		for (ParallelSource source : sources) {
+			if (source == null) {
+				continue;
+			}
+			try {
+				source.close();
+			} catch (RuntimeException | Error closeFailure) {
+				if (failure == null) {
+					failure = closeFailure;
+				} else {
+					addSuppressed(failure, closeFailure);
+				}
+			}
+		}
+		return failure;
+	}
+
+	private static void addSuppressed(Throwable primary, Throwable secondary) {
+		if (primary != secondary) {
+			primary.addSuppressed(secondary);
+		}
+	}
+
+	private static void throwUnchecked(Throwable failure) {
+		if (failure instanceof RuntimeException) {
+			throw (RuntimeException) failure;
+		}
+		if (failure != null) {
+			throw (Error) failure;
+		}
+	}
+
+	private static final class ConcatenatingProbeIterator implements RecordIterator {
+
+		private final CompositeProbe owner;
+		private final NativeProbe[] probes;
+		private long subj;
+		private long pred;
+		private long obj;
+		private long context;
+		private int index;
+		private RecordIterator current;
+		private boolean closed = true;
+
+		private ConcatenatingProbeIterator(CompositeProbe owner, NativeProbe[] probes) {
+			this.owner = owner;
+			this.probes = probes;
+		}
+
+		private void reset(long subj, long pred, long obj, long context) {
+			RecordIterator previous = current;
+			current = null;
+			if (previous != null) {
+				previous.close();
+			}
+			this.subj = subj;
+			this.pred = pred;
+			this.obj = obj;
+			this.context = context;
+			index = 0;
+			closed = false;
+		}
+
+		@Override
+		public long[] next() {
+			if (closed) {
+				return null;
+			}
+			while (index < probes.length) {
+				if (current == null) {
+					try {
+						current = probes[index].open(subj, pred, obj, context);
+					} catch (IOException e) {
+						owner.fail(this, e);
+						throw new QueryEvaluationException(e);
+					} catch (RuntimeException | Error e) {
+						owner.fail(this, e);
+						throw e;
+					}
+				}
+				long[] row;
+				try {
+					row = current.next();
+				} catch (RuntimeException | Error e) {
+					owner.fail(this, e);
+					throw e;
+				}
+				if (row != null) {
+					return row;
+				}
+				RecordIterator exhausted = current;
+				current = null;
+				try {
+					exhausted.close();
+				} catch (RuntimeException | Error e) {
+					owner.fail(this, e);
+					throw e;
+				}
+				index++;
+			}
+			close();
+			return null;
+		}
+
+		@Override
+		public boolean seekForward(long subj, long pred, long obj, long context) {
+			if (closed || current == null) {
+				return false;
+			}
+			try {
+				return current.seekForward(subj, pred, obj, context);
+			} catch (RuntimeException | Error e) {
+				owner.fail(this, e);
+				throw e;
+			}
+		}
+
+		@Override
+		public void close() {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			RecordIterator iterator = current;
+			current = null;
+			if (iterator != null) {
+				iterator.close();
+			}
 		}
 	}
 

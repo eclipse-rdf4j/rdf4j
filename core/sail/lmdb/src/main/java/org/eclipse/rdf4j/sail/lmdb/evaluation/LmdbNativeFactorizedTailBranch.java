@@ -139,6 +139,9 @@ final class Branch {
 	long reservedValues;
 	/** Non-null once the branch flipped to scan-once mode: one sequential sweep, bucketed by key. */
 	LongCountMap countTable;
+	/** Set after a physical-budget refusal so later misses retain the classic memo/probe path. */
+	boolean scanOnceRefused;
+	boolean closed;
 
 	Branch(PatternPlan pattern, int[] memoKeySlots, int[] valueQuadPos, boolean existenceOnly,
 			boolean memoEnabled, int varyingSlot, int varyingQuadPos, FactorizedTail.MemoBudget budget,
@@ -165,10 +168,56 @@ final class Branch {
 	}
 
 	void close() {
-		if (probe != null) {
-			probe.close();
-			probe = null;
+		if (closed) {
+			return;
 		}
+		closed = true;
+		Throwable failure = null;
+		NativeLmdbQuerySource.NativeProbe ownedProbe = probe;
+		probe = null;
+		LongCountMap ownedCountTable = countTable;
+		countTable = null;
+		if (ownedProbe != null) {
+			try {
+				ownedProbe.close();
+			} catch (RuntimeException | Error problem) {
+				failure = addCloseFailure(failure, problem);
+			}
+		}
+		if (ownedCountTable != null) {
+			try {
+				ownedCountTable.close();
+			} catch (RuntimeException | Error problem) {
+				failure = addCloseFailure(failure, problem);
+			}
+		}
+		for (NativeBooleanFilter filter : filters) {
+			try {
+				filter.close();
+			} catch (RuntimeException | Error problem) {
+				failure = addCloseFailure(failure, problem);
+			}
+		}
+		HashMap<GroupKey, BranchResult> ownedMemo = memo;
+		memo = null;
+		probeKey = null;
+		int ownedReservedEntries = reservedEntries;
+		long ownedReservedValues = reservedValues;
+		reservedEntries = 0;
+		reservedValues = 0;
+		if (ownedMemo != null) {
+			try {
+				ownedMemo.clear();
+			} catch (RuntimeException | Error problem) {
+				failure = addCloseFailure(failure, problem);
+			}
+		}
+		try {
+			budget.release(ownedReservedEntries, ownedReservedValues);
+		} catch (RuntimeException | Error problem) {
+			failure = addCloseFailure(failure, problem);
+		}
+		rethrowCloseFailure(failure);
 	}
 
 	BranchResult result(RowState row) throws IOException {
@@ -197,34 +246,49 @@ final class Branch {
 		// only trust a finite, positive sweep estimate: NaN or negative would cast to a tiny long and
 		// flip prematurely into a full-range sweep (PatternPlan.estimate has the same guard)
 		double sweepEstimate = pattern.staticEstimate;
-		if (varyingSlot >= 0 && memoMisses >= SCAN_ONCE_MIN_MISSES
+		if (!scanOnceRefused && varyingSlot >= 0 && memoMisses >= SCAN_ONCE_MIN_MISSES
 				&& Double.isFinite(sweepEstimate) && sweepEstimate > 0
 				&& memoMisses * (long) SEEK_COST_KEYS + cumulativeScanned >= (long) sweepEstimate) {
 			// probing has cost about as much as one sequential sweep of the whole branch range:
 			// flip to hash-join-style evaluation — scan once, bucket counts per correlated key.
 			// The dropped memo returns its budget so sibling memos regain the headroom.
-			buildCountTable(row);
-			memo = null;
-			probeKey = null;
-			budget.release(reservedEntries, reservedValues);
-			reservedEntries = 0;
-			reservedValues = 0;
-			return result;
+			if (buildCountTable(row)) {
+				memo.clear();
+				memo = null;
+				probeKey = null;
+				budget.release(reservedEntries, reservedValues);
+				reservedEntries = 0;
+				reservedValues = 0;
+				return result;
+			}
 		}
+		long storedCapacity = retainedValueCapacity(result);
 		if (valueQuadPos.length > 0 && result.count > MAX_CACHED_VALUES) {
 			if (budget.tryReserve(1, 0)) {
 				reservedEntries++;
 				memo.put(probeKey.storedCopy(), TOO_LARGE);
 			}
-		} else {
-			long stored = (long) valueQuadPos.length * result.count;
-			if (budget.tryReserve(1, stored)) {
-				reservedEntries++;
-				reservedValues += stored;
-				memo.put(probeKey.storedCopy(), result);
-			}
+		} else if (budget.tryReserve(1, storedCapacity)) {
+			reservedEntries++;
+			reservedValues += storedCapacity;
+			memo.put(probeKey.storedCopy(), result);
+		} else if (storedCapacity > 0 && budget.tryReserve(1, 0)) {
+			// The current caller may consume the already-materialized result, but an unbudgeted payload must
+			// never become retained state. Keep only a charged marker so later callers safely re-scan.
+			reservedEntries++;
+			memo.put(probeKey.storedCopy(), TOO_LARGE);
 		}
 		return result;
+	}
+
+	private static long retainedValueCapacity(BranchResult result) {
+		long capacity = 0L;
+		if (result.values != null) {
+			for (long[] values : result.values) {
+				capacity = Math.addExact(capacity, values.length);
+			}
+		}
+		return capacity;
 	}
 
 	/**
@@ -233,33 +297,58 @@ final class Branch {
 	 */
 	boolean acceptFilters(RowState row, long[] buffer, int base) {
 		int mark = row.mark();
-		boolean ok = true;
-		for (int j = 0; j < freshSlots.length && ok; j++) {
-			ok = row.bind(freshSlots[j], buffer[base + freshQuadPos[j]]);
+		try {
+			boolean ok = true;
+			for (int j = 0; j < freshSlots.length && ok; j++) {
+				ok = row.bind(freshSlots[j], buffer[base + freshQuadPos[j]]);
+			}
+			for (int f = 0; f < filters.length && ok; f++) {
+				ok = filters[f].accept(row);
+			}
+			return ok;
+		} finally {
+			row.rollback(mark);
 		}
-		for (int f = 0; f < filters.length && ok; f++) {
-			ok = filters[f].accept(row);
-		}
-		row.rollback(mark);
-		return ok;
 	}
 
-	void buildCountTable(RowState row) throws IOException {
-		SCAN_ONCE_BUILDS.incrementAndGet();
-		LongCountMap table = new LongCountMap();
-		try (PatternCursor cursor = pattern.openRawUnbinding(row, 1L << varyingSlot, probe(row))) {
-			int rows;
-			while ((rows = cursor.fill(batch, FILL_ROWS)) > 0) {
-				for (int i = 0; i < rows; i++) {
-					int offset = i * 4;
-					if (rejectNullContext && batch[offset + TripleIndex.CONTEXT_IDX] == NULL_CONTEXT_ID) {
-						continue;
+	boolean buildCountTable(RowState row) throws IOException {
+		if (countTable != null) {
+			return true;
+		}
+		if (scanOnceRefused) {
+			return false;
+		}
+		LongCountMap table = new LongCountMap(budget);
+		if (!table.isAllocated()) {
+			scanOnceRefused = true;
+			return false;
+		}
+		boolean published = false;
+		try {
+			try (PatternCursor cursor = pattern.openRawUnbinding(row, 1L << varyingSlot, probe(row))) {
+				int rows;
+				while ((rows = cursor.fill(batch, FILL_ROWS)) > 0) {
+					for (int i = 0; i < rows; i++) {
+						int offset = i * 4;
+						if (rejectNullContext && batch[offset + TripleIndex.CONTEXT_IDX] == NULL_CONTEXT_ID) {
+							continue;
+						}
+						if (!table.tryIncrement(batch[offset + varyingQuadPos])) {
+							scanOnceRefused = true;
+							return false;
+						}
 					}
-					table.increment(batch[offset + varyingQuadPos]);
 				}
 			}
+			countTable = table;
+			published = true;
+			budget.metrics.recordFactorizedTailScanOnceBuild();
+			return true;
+		} finally {
+			if (!published) {
+				table.close();
+			}
 		}
-		countTable = table;
 	}
 
 	BranchResult scan(RowState row) throws IOException {
@@ -305,10 +394,8 @@ final class Branch {
 				}
 			}
 		}
-		if (values != null) {
-			for (int d = 0; d < values.length; d++) {
-				values[d] = Arrays.copyOf(values[d], (int) count);
-			}
+		if (count == 0L) {
+			return ZERO_RESULT;
 		}
 		return new BranchResult(count, values);
 	}

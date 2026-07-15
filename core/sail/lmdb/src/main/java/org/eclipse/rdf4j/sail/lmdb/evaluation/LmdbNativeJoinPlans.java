@@ -203,6 +203,27 @@ final class MultiJoinPlan implements SlotPlan {
 	}
 
 	/**
+	 * Opens the ordinary nested-loop suffix for one already-bound prefix row. The first suffix child opens directly so
+	 * a one-branch suffix keeps the same statement-scan shape as an ordinary plan; later children retain the usual
+	 * reusable-probe {@link JoinCursor} chain.
+	 */
+	RowCursor openSuffix(OrderedPlan plan, int fromInclusive, RowState row) throws IOException {
+		SlotPlan[] ordered = plan.order;
+		if (fromInclusive >= ordered.length) {
+			return new SingletonCursor();
+		}
+		RowCursor cursor = ordered[fromInclusive].open(row);
+		cursor = applySuffixFilters(cursor, plan.filterDepth, fromInclusive, row);
+		long leftProduced = ordered[fromInclusive].producedMask();
+		for (int i = fromInclusive + 1; i < ordered.length; i++) {
+			cursor = new JoinCursor(cursor, ordered[i], row, leftProduced);
+			cursor = applySuffixFilters(cursor, plan.filterDepth, i, row);
+			leftProduced |= ordered[i].producedMask();
+		}
+		return cursor;
+	}
+
+	/**
 	 * Like {@link #openChain} but with a caller-supplied cursor standing in for the ordered depth-0 child (parallel
 	 * morsel execution: workers read the root scan's quads from a shared queue instead of scanning themselves).
 	 */
@@ -223,6 +244,15 @@ final class MultiJoinPlan implements SlotPlan {
 		for (int i = 0; i < filterDepth.length; i++) {
 			if (filterDepth[i] == depth) {
 				cursor = new FilterCursor(cursor, filters[i].filter, row);
+			}
+		}
+		return cursor;
+	}
+
+	private RowCursor applySuffixFilters(RowCursor cursor, int[] filterDepth, int depth, RowState row) {
+		for (int i = 0; i < filterDepth.length; i++) {
+			if (filterDepth[i] == depth) {
+				cursor = new SuffixFilterCursor(cursor, filters[i].filter, row);
 			}
 		}
 		return cursor;
@@ -430,6 +460,37 @@ final class MultiJoinPlan implements SlotPlan {
 			newPlans[plans.length] = plan;
 			return new OrderCache(newMasks, newPlans);
 		}
+	}
+}
+
+/**
+ * Per-prefix ordinary fallback wrapper: the factorized owner retains the shared compiled filter across suffix opens.
+ */
+@Experimental
+final class SuffixFilterCursor implements RowCursor {
+	final RowCursor arg;
+	final NativeBooleanFilter filter;
+	final RowState row;
+
+	SuffixFilterCursor(RowCursor arg, NativeBooleanFilter filter, RowState row) {
+		this.arg = arg;
+		this.filter = filter;
+		this.row = row;
+	}
+
+	@Override
+	public boolean next() throws IOException {
+		while (arg.next()) {
+			if (filter.accept(row)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	@Override
+	public void close() {
+		arg.close();
 	}
 }
 

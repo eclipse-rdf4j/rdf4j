@@ -133,7 +133,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
-import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Now;
@@ -337,6 +336,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	 */
 	@Override
 	public TupleExpr optimize(TupleExpr expr, EvaluationStatistics evaluationStatistics, BindingSet bindings) {
+		QueryEvaluationUtility.pinFunctions(expr);
 
 		for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
 			optimizer.optimize(expr, dataset, bindings);
@@ -1254,14 +1254,13 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	public QueryValueEvaluationStep prepare(FunctionCall node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		Function function = FunctionRegistry.getInstance()
-				.get(node.getURI())
+		Function function = QueryEvaluationUtility.resolveFunction(node)
 				.orElseThrow(() -> new QueryEvaluationException("Unknown function '" + node.getURI() + "'"));
 
 		// the NOW function is a special case as it needs to keep a shared
 		// return
 		// value for the duration of the query.
-		if (function instanceof Now) {
+		if (function.getClass() == Now.class) {
 			return prepare((Now) function, context);
 		}
 
@@ -1290,25 +1289,18 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	 * If all input is constant normally the function call output will be constant as well.
 	 *
 	 * @param context  used to precompile arguments of the function
-	 * @param function that might be constant
+	 * @param function resolved function implementation that might be constant
 	 * @param args     that the function must evaluate
 	 * @param argSteps side effect this array is filled
 	 * @return if this function resolves to a constant value
 	 */
 	private boolean determineIfFunctionCallWillBeAConstant(QueryEvaluationContext context, Function function,
 			List<ValueExpr> args, QueryValueEvaluationStep[] argSteps) {
-		boolean allConstant = true;
-		if (function.mustReturnDifferentResult()) {
-			allConstant = false;
-			for (int i = 0; i < args.size(); i++) {
-				argSteps[i] = precompile(args.get(i), context);
-			}
-		} else {
-			for (int i = 0; i < args.size(); i++) {
-				argSteps[i] = precompile(args.get(i), context);
-				if (!argSteps[i].isConstant()) {
-					allConstant = false;
-				}
+		boolean allConstant = QueryEvaluationUtility.isRepeatable(function);
+		for (int i = 0; i < args.size(); i++) {
+			argSteps[i] = precompile(args.get(i), context);
+			if (!argSteps[i].isConstant()) {
+				allConstant = false;
 			}
 		}
 		return allConstant;

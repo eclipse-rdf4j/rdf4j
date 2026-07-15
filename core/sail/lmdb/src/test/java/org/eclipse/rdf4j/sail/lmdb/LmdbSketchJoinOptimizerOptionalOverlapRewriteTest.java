@@ -17,7 +17,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lang;
@@ -48,6 +51,20 @@ class LmdbSketchJoinOptimizerOptionalOverlapRewriteTest {
 		QueryRoot root = optimize(new LeftJoin(new LeftJoin(person, friend), label, sameTerm("labelOwner", "friend")));
 
 		assertRegroupedAsNestedOptional(root);
+	}
+
+	@Test
+	void keepsDependentOptionalOutsideVolatilePreviousOptionalSubtree() {
+		StatementPattern person = statementPattern("person", "type", "personType");
+		Extension volatileFriend = new Extension(statementPattern("person", "friend", "friend"),
+				new ExtensionElem(new BNodeGenerator(), "friendNonce"));
+		StatementPattern label = statementPattern("labelOwner", "label", "label");
+		QueryRoot root = optimize(
+				new LeftJoin(new LeftJoin(person, volatileFriend), label, sameTerm("labelOwner", "friend")));
+
+		LeftJoin retainedOuter = assertInstanceOf(LeftJoin.class, root.getArg());
+		assertInstanceOf(LeftJoin.class, retainedOuter.getLeftArg(),
+				"dependent OPTIONAL must not be nested below a non-repeatable previous OPTIONAL subtree");
 	}
 
 	@Test
@@ -127,6 +144,25 @@ class LmdbSketchJoinOptimizerOptionalOverlapRewriteTest {
 		QueryRoot root = optimize(input);
 
 		assertRegroupedAsOptionalUnion(root, 1);
+	}
+
+	@Test
+	void keepsMutuallyExclusiveVolatileOptionalsOnOriginalLeftSpine() {
+		TupleExpr base = new Join(statementPattern("person", "type", "personType"),
+				statementPattern("person", "contactKind", "contactKind"));
+		Extension volatileEmail = new Extension(statementPattern("person", "email", "email"),
+				new ExtensionElem(new BNodeGenerator(), "emailNonce"));
+		Extension volatilePhone = new Extension(statementPattern("person", "phone", "phone"),
+				new ExtensionElem(new BNodeGenerator(), "phoneNonce"));
+		TupleExpr input = new LeftJoin(
+				new LeftJoin(base, volatileEmail, sameTermLiteral("contactKind", "email")),
+				volatilePhone, sameTermLiteral("contactKind", "phone"));
+
+		QueryRoot root = optimize(input);
+
+		LeftJoin retainedOuter = assertInstanceOf(LeftJoin.class, root.getArg());
+		assertInstanceOf(LeftJoin.class, retainedOuter.getLeftArg(),
+				"mutually exclusive volatile OPTIONAL branches must not be merged into a UNION");
 	}
 
 	@Test

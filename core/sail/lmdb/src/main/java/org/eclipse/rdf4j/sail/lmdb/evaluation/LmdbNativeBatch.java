@@ -353,15 +353,33 @@ final class FilterBatchCursor implements BatchCursor {
 
 	@Override
 	public void close() {
-		if (!closed) {
-			closed = true;
-			try {
-				arg.close();
-			} finally {
-				filter.close();
-				System.arraycopy(entrySlots, 0, row.slots, 0, entrySlots.length);
-				row.recomputeBoundMask();
+		if (closed) {
+			return;
+		}
+		closed = true;
+		Throwable failure = null;
+		try {
+			arg.close();
+		} catch (RuntimeException | Error problem) {
+			failure = problem;
+		}
+		try {
+			filter.close();
+		} catch (RuntimeException | Error problem) {
+			if (failure == null) {
+				failure = problem;
+			} else if (failure != problem) {
+				failure.addSuppressed(problem);
 			}
+		} finally {
+			System.arraycopy(entrySlots, 0, row.slots, 0, entrySlots.length);
+			row.recomputeBoundMask();
+		}
+		if (failure instanceof RuntimeException runtimeException) {
+			throw runtimeException;
+		}
+		if (failure instanceof Error error) {
+			throw error;
 		}
 	}
 }

@@ -117,12 +117,18 @@ final class FactorizedTail {
 	 */
 	static final class MemoBudget {
 		private final AtomicLong bypassCounter;
+		final LmdbNativeAttemptMetrics metrics;
 		private int entries;
 		private long storedValues;
 		private boolean bypassReported;
 
 		MemoBudget(AtomicLong bypassCounter) {
+			this(bypassCounter, LmdbNativeAttemptMetrics.direct());
+		}
+
+		MemoBudget(AtomicLong bypassCounter, LmdbNativeAttemptMetrics metrics) {
 			this.bypassCounter = bypassCounter;
+			this.metrics = metrics;
 		}
 
 		boolean tryReserve(int newEntries, long newValues) {
@@ -131,7 +137,7 @@ final class FactorizedTail {
 				// atomic increment would contend across parallel workers on the per-key hot path
 				if (!bypassReported) {
 					bypassReported = true;
-					bypassCounter.incrementAndGet();
+					metrics.recordMemoBypass(bypassCounter);
 				}
 				return false;
 			}
@@ -148,6 +154,7 @@ final class FactorizedTail {
 
 	final Branch[] branches;
 	final MemoBudget memoBudget;
+	final LmdbNativeAttemptMetrics metrics;
 	final AggregateSpec[] specs;
 	final AggregateDistinctChannels hashDistinctChannels;
 	/** Branch index whose fresh slot each spec reads, or -1 for prefix/constant specs. */
@@ -161,6 +168,8 @@ final class FactorizedTail {
 	final NativeBooleanFilter[] prefixOnlyTailFilters;
 	final BranchResult[] resultScratch;
 	boolean engagementRecorded;
+	boolean closed;
+	String prefixStrategy = "chain";
 	/** Sentinel (compared by identity) for grouped results too large to cache. */
 	static final long[] GROUPED_TOO_LARGE = new long[] { -1 };
 	static final int[] NO_SLOTS = new int[0];
@@ -170,8 +179,16 @@ final class FactorizedTail {
 	FactorizedTail(Branch[] branches, MemoBudget memoBudget, AggregateSpec[] specs, int[] specBranch,
 			int[] specValueColumn, int tailGroupPos, boolean groupedMemoEnabled,
 			NativeBooleanFilter[] prefixOnlyTailFilters) {
+		this(branches, memoBudget, specs, specBranch, specValueColumn, tailGroupPos, groupedMemoEnabled,
+				prefixOnlyTailFilters, memoBudget.metrics);
+	}
+
+	FactorizedTail(Branch[] branches, MemoBudget memoBudget, AggregateSpec[] specs, int[] specBranch,
+			int[] specValueColumn, int tailGroupPos, boolean groupedMemoEnabled,
+			NativeBooleanFilter[] prefixOnlyTailFilters, LmdbNativeAttemptMetrics metrics) {
 		this.branches = branches;
 		this.memoBudget = memoBudget;
+		this.metrics = metrics;
 		this.specs = specs;
 		this.hashDistinctChannels = AggregateDistinctChannels.allHash(specs);
 		this.specBranch = specBranch;
@@ -187,7 +204,8 @@ final class FactorizedTail {
 	}
 
 	String describeEngagement() {
-		return "factorizedTail(branches=" + branches.length + (groupsByTail() ? ", groupedByTail" : "") + ")";
+		return "factorizedTail(prefix=" + prefixStrategy + ", branches=" + branches.length
+				+ (groupsByTail() ? ", groupedByTail" : "") + ")";
 	}
 
 	boolean groupsByTail() {
@@ -195,23 +213,90 @@ final class FactorizedTail {
 	}
 
 	void close() {
-		for (Branch branch : branches) {
-			branch.close();
+		if (closed) {
+			return;
 		}
+		closed = true;
+		Throwable failure = null;
+		for (Branch branch : branches) {
+			try {
+				branch.close();
+			} catch (RuntimeException | Error problem) {
+				failure = addCloseFailure(failure, problem);
+			}
+		}
+		for (NativeBooleanFilter filter : prefixOnlyTailFilters) {
+			try {
+				filter.close();
+			} catch (RuntimeException | Error problem) {
+				failure = addCloseFailure(failure, problem);
+			}
+		}
+		HashMap<GroupKey, long[]> ownedGroupedMemo = groupedMemo;
+		groupedMemo = null;
+		groupedProbe = null;
+		if (ownedGroupedMemo != null) {
+			int entries = 0;
+			long values = 0L;
+			boolean measured = false;
+			try {
+				entries = ownedGroupedMemo.size();
+				for (long[] pairs : ownedGroupedMemo.values()) {
+					if (pairs != GROUPED_TOO_LARGE) {
+						values = Math.addExact(values, pairs.length);
+					}
+				}
+				measured = true;
+			} catch (RuntimeException | Error problem) {
+				failure = addCloseFailure(failure, problem);
+			}
+			try {
+				ownedGroupedMemo.clear();
+			} catch (RuntimeException | Error problem) {
+				failure = addCloseFailure(failure, problem);
+			}
+			if (measured) {
+				try {
+					memoBudget.release(entries, values);
+				} catch (RuntimeException | Error problem) {
+					failure = addCloseFailure(failure, problem);
+				}
+			}
+		}
+		rethrowCloseFailure(failure);
 	}
 
-	static FactorizedTail tryCreate(MultiJoinPlan.OrderedPlan derived, MaskedFilter[] filters, long seedMask,
-			int[] groupSlots, AggregateSpec[] aggregates) {
-		return tryCreate(derived, filters, seedMask, groupSlots, aggregates, true);
+	static Throwable addCloseFailure(Throwable first, Throwable next) {
+		if (first == null) {
+			return next;
+		}
+		if (first != next) {
+			first.addSuppressed(next);
+		}
+		return first;
+	}
+
+	static void rethrowCloseFailure(Throwable failure) {
+		if (failure instanceof RuntimeException) {
+			throw (RuntimeException) failure;
+		}
+		if (failure != null) {
+			throw (Error) failure;
+		}
 	}
 
 	static FactorizedTail probe(MultiJoinPlan.OrderedPlan derived, MaskedFilter[] filters, long seedMask,
 			int[] groupSlots, AggregateSpec[] aggregates) {
-		return tryCreate(derived, filters, seedMask, groupSlots, aggregates, false);
+		return probe(derived, filters, seedMask, groupSlots, aggregates, LmdbNativeAttemptMetrics.direct());
 	}
 
-	private static FactorizedTail tryCreate(MultiJoinPlan.OrderedPlan derived, MaskedFilter[] filters, long seedMask,
-			int[] groupSlots, AggregateSpec[] aggregates, boolean recordEngagement) {
+	static FactorizedTail probe(MultiJoinPlan.OrderedPlan derived, MaskedFilter[] filters, long seedMask,
+			int[] groupSlots, AggregateSpec[] aggregates, LmdbNativeAttemptMetrics metrics) {
+		return create(derived, filters, seedMask, groupSlots, aggregates, metrics);
+	}
+
+	private static FactorizedTail create(MultiJoinPlan.OrderedPlan derived, MaskedFilter[] filters, long seedMask,
+			int[] groupSlots, AggregateSpec[] aggregates, LmdbNativeAttemptMetrics metrics) {
 		if (!ENABLED) {
 			return null;
 		}
@@ -370,7 +455,7 @@ final class FactorizedTail {
 			}
 		}
 
-		MemoBudget memoBudget = new MemoBudget(MEMO_BYPASSES);
+		MemoBudget memoBudget = new MemoBudget(MEMO_BYPASSES, metrics);
 		Branch[] branches = new Branch[branchCount];
 		for (int b = 0; b < branchCount; b++) {
 			PatternPlan pattern = (PatternPlan) order[branchStart + b];
@@ -430,18 +515,14 @@ final class FactorizedTail {
 				}
 			}
 		}
-		FactorizedTail tail = new FactorizedTail(branches, memoBudget, aggregates, specBranch, specValueColumn,
-				tailGroupPos, groupedMemoEnabled, prefixOnly.toArray(new NativeBooleanFilter[0]));
-		if (recordEngagement) {
-			tail.recordEngagement();
-		}
-		return tail;
+		return new FactorizedTail(branches, memoBudget, aggregates, specBranch, specValueColumn, tailGroupPos,
+				groupedMemoEnabled, prefixOnly.toArray(new NativeBooleanFilter[0]), metrics);
 	}
 
 	void recordEngagement() {
 		if (!engagementRecorded) {
 			engagementRecorded = true;
-			ENGAGED.incrementAndGet();
+			metrics.recordFactorizedTailEngaged();
 		}
 	}
 
@@ -497,10 +578,11 @@ final class FactorizedTail {
 			AggregateSpec spec = specs[k];
 			if (spec.distinct) {
 				if (specBranch[k] >= 0) {
-					long[] values = results[specBranch[k]].values[specValueColumn[k]];
+					BranchResult branchResult = results[specBranch[k]];
+					long[] values = branchResult.values[specValueColumn[k]];
 					LongHashSet set = state.distinctSets[k];
-					for (long value : values) {
-						set.add(value);
+					for (int value = 0; value < branchResult.count; value++) {
+						set.add(values[value]);
 					}
 				} else {
 					long value = spec.value(row);
@@ -512,10 +594,11 @@ final class FactorizedTail {
 				if (specBranch[k] >= 0) {
 					// each of the branch's per-key values joins with every combination of the OTHER
 					// branches' matches: weight = product of the other branches' counts
-					long[] values = results[specBranch[k]].values[specValueColumn[k]];
+					BranchResult branchResult = results[specBranch[k]];
+					long[] values = branchResult.values[specValueColumn[k]];
 					long weight = productExcluding(results, specBranch[k]);
-					for (long value : values) {
-						state.addWeighted(k, value, weight);
+					for (int value = 0; value < branchResult.count; value++) {
+						state.addWeighted(k, values[value], weight);
 					}
 				} else {
 					long value = spec.value(row);
@@ -597,13 +680,22 @@ final class FactorizedTail {
 			pairs = scanGroupedPairs(row);
 			if (pairs.length / 2 > MAX_CACHED_VALUES) {
 				if (memoBudget.tryReserve(1, 0)) {
-					groupedMemo.put(groupedProbe.storedCopy(), GROUPED_TOO_LARGE);
+					putGroupedMemo(groupedProbe.storedCopy(), GROUPED_TOO_LARGE, 0L);
 				}
 			} else if (memoBudget.tryReserve(1, pairs.length)) {
-				groupedMemo.put(groupedProbe.storedCopy(), pairs);
+				putGroupedMemo(groupedProbe.storedCopy(), pairs, pairs.length);
 			}
 		}
 		applyGroupedPairs(pairs, row, groups);
+	}
+
+	private void putGroupedMemo(GroupKey key, long[] pairs, long reservedValues) {
+		try {
+			groupedMemo.put(key, pairs);
+		} catch (RuntimeException | Error problem) {
+			memoBudget.release(1, reservedValues);
+			throw problem;
+		}
 	}
 
 	long[] scanGroupedPairs(RowState row) throws IOException {

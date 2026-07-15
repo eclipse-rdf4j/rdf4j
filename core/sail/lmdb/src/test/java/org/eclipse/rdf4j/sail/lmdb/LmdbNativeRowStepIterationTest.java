@@ -12,7 +12,9 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -22,6 +24,8 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.junit.jupiter.api.Test;
@@ -30,6 +34,7 @@ class LmdbNativeRowStepIterationTest {
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 	private static final long P1 = 100;
 	private static final long P2 = 200;
+	private static final long P3 = 300;
 
 	@Test
 	void evaluateDoesNotConsumeRowsBeforeIterationDemand() {
@@ -97,6 +102,45 @@ class LmdbNativeRowStepIterationTest {
 		assertThat(source.closedIterators).as("retained tail probes close on early result close").isEqualTo(2);
 	}
 
+	@Test
+	void failedChunkFactorizedAttemptDoesNotCommitCountersOrStrategy() {
+		IOException failure = new IOException("synthetic first chunk scan failure");
+		RecordingNativeSource source = new RecordingNativeSource(failure);
+		NativeSlotLayout layout = new NativeSlotLayout(
+				Map.of("root", 0, "middle", 1, "leaf", 2, "unprojectedTail", 3), null);
+		layout.freeze(List.of("root", "middle", "leaf", "unprojectedTail"));
+		PatternPlan root = new PatternPlan(Term.slot(0), Term.constant(P1), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 1);
+		PatternPlan middle = new PatternPlan(Term.slot(1), Term.constant(P2), Term.slot(2), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 2);
+		PatternPlan tail = new PatternPlan(Term.slot(2), Term.constant(P3), Term.slot(3), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 3);
+		MultiJoinPlan join = new MultiJoinPlan(new SlotPlan[] { root, middle, tail }, new MaskedFilter[0]);
+		SingletonSet telemetry = new SingletonSet();
+		telemetry.setRuntimeTelemetryEnabled(true);
+		NativeRowsStep step = new NativeRowsStep(source, join, layout, new int[] { 0, 2 },
+				new String[] { "root", "leaf" }, false, new int[0], new boolean[0], 0, -1, true,
+				null, telemetry, null, Set.of(), null, null);
+		long factorizedBefore = LmdbNativeFactorizedRows.ENGAGED.get();
+		long chunkBefore = LmdbNativeChunkPipeline.ENGAGED.get();
+
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThatThrownBy(iteration::hasNext)
+					.isInstanceOf(QueryEvaluationException.class)
+					.hasCause(failure);
+		}
+
+		assertThat(LmdbNativeFactorizedRows.ENGAGED.get())
+				.as("an attempt that fails before producing its first row must not claim factorized engagement")
+				.isEqualTo(factorizedBefore);
+		assertThat(LmdbNativeChunkPipeline.ENGAGED.get())
+				.as("an attempt that fails on its first prefix fill must not claim chunk engagement")
+				.isEqualTo(chunkBefore);
+		assertThat(telemetry.getStringMetricActual(LmdbNativeExplain.EXECUTION_STRATEGY))
+				.as("failed speculative execution must not report the chunk/factorized strategy")
+				.isNull();
+	}
+
 	private static PatternPlan pattern(int subjectSlot, long predicate, int objectSlot) {
 		return new PatternPlan(Term.slot(subjectSlot), Term.constant(predicate), Term.slot(objectSlot), Term.unbound(),
 				ContextConstraint.UNRESTRICTED, false, 3);
@@ -138,9 +182,18 @@ class LmdbNativeRowStepIterationTest {
 	}
 
 	private static final class RecordingNativeSource implements NativeLmdbQuerySource {
+		private final IOException statementsFailure;
 		private int statementCalls;
 		private int lazyValueCalls;
 		private int closedIterators;
+
+		private RecordingNativeSource() {
+			this(null);
+		}
+
+		private RecordingNativeSource(IOException statementsFailure) {
+			this.statementsFailure = statementsFailure;
+		}
 
 		@Override
 		public long idOf(Value value) {
@@ -159,8 +212,11 @@ class LmdbNativeRowStepIterationTest {
 		}
 
 		@Override
-		public RecordIterator statements(long subj, long pred, long obj, long context) {
+		public RecordIterator statements(long subj, long pred, long obj, long context) throws IOException {
 			statementCalls++;
+			if (statementsFailure != null) {
+				throw statementsFailure;
+			}
 			long base = pred == P1 ? 10 : 30;
 			return new RecordIterator() {
 				private int index;

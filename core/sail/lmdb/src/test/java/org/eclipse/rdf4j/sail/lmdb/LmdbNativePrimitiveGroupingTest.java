@@ -23,6 +23,8 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
@@ -36,6 +38,7 @@ import org.junit.jupiter.api.io.TempDir;
 public class LmdbNativePrimitiveGroupingTest {
 
 	private static final String EX = "http://example.com/";
+	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
 
 	@TempDir
 	File dataDir;
@@ -182,6 +185,101 @@ public class LmdbNativePrimitiveGroupingTest {
 		assertThat(NativeGroupIteration.ORDERED_GROUP_ROWS.get()).isEqualTo(600L);
 		assertThat(NativeGroupIteration.ORDERED_GROUPS.get()).isEqualTo(3L);
 		assertThat(NativeGroupIteration.PRIMITIVE_COUNT_GROUP_ROWS.get()).isZero();
+	}
+
+	@Test
+	public void floatingSumFallsBackFromOrderedSinglePatternGrouping() {
+		SailRepository floatingRepository = new SailRepository(
+				new LmdbStore(new File(dataDir, "ordered-floating"), new LmdbStoreConfig("spoc,posc,ospc")));
+		try {
+			try (SailRepositoryConnection connection = floatingRepository.getConnection()) {
+				ValueFactory vf = connection.getValueFactory();
+				for (int predicate = 0; predicate < 2; predicate++) {
+					IRI p = vf.createIRI(EX, "floating-p" + predicate);
+					for (int row = 0; row < 6; row++) {
+						connection.add(vf.createIRI(EX, "floating-s" + predicate + "/" + row), p,
+								vf.createLiteral(0.1d));
+					}
+				}
+			}
+			String query = "SELECT ?p (SUM(?v) AS ?sum) WHERE { ?s ?p ?v } GROUP BY ?p";
+			resetCounters();
+
+			assertNativeMatchesGeneric(floatingRepository, query);
+			assertThat(strategy(floatingRepository, query)).isEqualTo("singleSlotGroups");
+			assertThat(NativeGroupIteration.ORDERED_GROUP_ROWS.get())
+					.as("an aborted ordered grouping attempt must not publish row metrics")
+					.isZero();
+			assertThat(NativeGroupIteration.ORDERED_GROUPS.get())
+					.as("an aborted ordered grouping attempt must not publish group metrics")
+					.isZero();
+
+			String exactQuery = "SELECT ?p (COUNT(?s) AS ?c) WHERE { ?s ?p ?o } GROUP BY ?p";
+			long exactRowsBefore = NativeGroupIteration.ORDERED_GROUP_ROWS.get();
+			rows(repository, exactQuery);
+			assertThat(strategy(repository, exactQuery)).isEqualTo("orderedSinglePatternGroups");
+			assertThat(NativeGroupIteration.ORDERED_GROUP_ROWS.get())
+					.as("a floating fallback must not disable a subsequent exact ordered grouping")
+					.isGreaterThan(exactRowsBefore);
+		} finally {
+			floatingRepository.shutDown();
+		}
+	}
+
+	private void assertNativeMatchesGeneric(SailRepository target, String query) {
+		List<String> nativeRows = rows(target, query);
+		String previous = System.getProperty(NATIVE_FLAG);
+		List<String> genericRows;
+		try {
+			System.setProperty(NATIVE_FLAG, "false");
+			genericRows = rows(target, query);
+		} finally {
+			if (previous == null) {
+				System.clearProperty(NATIVE_FLAG);
+			} else {
+				System.setProperty(NATIVE_FLAG, previous);
+			}
+		}
+		assertThat(nativeRows).isEqualTo(genericRows);
+	}
+
+	private List<String> rows(SailRepository target, String query) {
+		try (SailRepositoryConnection connection = target.getConnection()) {
+			return QueryResults.asList(connection.prepareTupleQuery(query).evaluate())
+					.stream()
+					.map(Object::toString)
+					.sorted()
+					.toList();
+		}
+	}
+
+	private String strategy(SailRepository target, String query) {
+		try (SailRepositoryConnection connection = target.getConnection()) {
+			String strategy = findStrategy(connection.prepareTupleQuery(query)
+					.explain(Explanation.Level.Telemetry)
+					.toGenericPlanNode());
+			assertThat(strategy).as("expected a nativeExecutionStrategy metric in the explanation").isNotNull();
+			return strategy;
+		}
+	}
+
+	private static String findStrategy(GenericPlanNode node) {
+		if (node == null) {
+			return null;
+		}
+		String value = node.getStringMetricActual("nativeExecutionStrategy");
+		if (value != null) {
+			return value;
+		}
+		if (node.getPlans() != null) {
+			for (GenericPlanNode child : node.getPlans()) {
+				String found = findStrategy(child);
+				if (found != null) {
+					return found;
+				}
+			}
+		}
+		return null;
 	}
 
 	private Map<String, Long> groupedCounts(String aggregate) {

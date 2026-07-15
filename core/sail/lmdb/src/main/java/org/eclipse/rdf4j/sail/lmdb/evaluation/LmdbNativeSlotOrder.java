@@ -319,6 +319,9 @@ final class LmdbNativeOrderPlanner {
 	}
 
 	static NativeTupleDistinctPlan tuple(SlotPlan arg, int[] keySlots, RowState row) {
+		if (!SlotPlan.encounterOrderReplaySafe(arg)) {
+			return NativeTupleDistinctPlan.global(arg, keySlots);
+		}
 		if (keySlots.length == 0) {
 			return new NativeTupleDistinctPlan(arg, NativeDistinctStrategy.ADJACENT, keySlots, new int[0], new int[0]);
 		}
@@ -350,6 +353,9 @@ final class LmdbNativeOrderPlanner {
 	static NativeAggregateDistinctPlan aggregate(SlotPlan arg, int[] groupSlots, AggregateSpec[] specs,
 			RowState row) {
 		AggregateDistinctChannels base = AggregateDistinctChannels.sequential(specs);
+		if (!SlotPlan.encounterOrderReplaySafe(arg)) {
+			return new NativeAggregateDistinctPlan(arg, NativeSlotOrder.NONE, base, new int[0], 0);
+		}
 		NativeAggregateDistinctPlan fallback = assess(new NativeOrderedPlan(arg, NativeSlotOrder.NONE), groupSlots,
 				base, row);
 		NativeAggregateDistinctPlan bestPlan = fallback;
@@ -440,11 +446,19 @@ final class LmdbNativeOrderPlanner {
 		}
 		if (plan instanceof FilterPlan) {
 			FilterPlan filter = (FilterPlan) plan;
+			if (filter.filterMask < 0L) {
+				return new NativeOrderedPlan(plan, NativeSlotOrder.NONE);
+			}
 			NativeOrderedPlan child = best(filter.arg, requested, row);
 			return new NativeOrderedPlan(new FilterPlan(child.plan, filter.filter, filter.filterMask), child.order);
 		}
 		if (plan instanceof ExtensionPlan) {
 			ExtensionPlan extension = (ExtensionPlan) plan;
+			for (CopyBinding copy : extension.copies) {
+				if (!copy.encounterOrderReplaySafe) {
+					return new NativeOrderedPlan(plan, NativeSlotOrder.NONE);
+				}
+			}
 			int[] childRequest = mapAliases(requested, extension.copies);
 			NativeOrderedPlan child = best(extension.arg, childRequest, row);
 			return new NativeOrderedPlan(new ExtensionPlan(child.plan, extension.copies),

@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -110,6 +111,36 @@ class LmdbNativeOrderedDistinctTest {
 					.contains("distinctChannels=[MONOTONIC]")
 					.contains("groupOrderPrefix=1");
 			assertNativeMatchesGeneric(repository, query, 2);
+			assertThat(strategy(repository, query)).isEqualTo("orderedDistinctGroups");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void floatingSumDisablesOrderedDistinctExecutionOnlyAtRuntime() {
+		SailRepository repository = repository("floating-aggregate", "spoc,ospc");
+		try {
+			ValueFactory vf = repository.getValueFactory();
+			IRI value = vf.createIRI(EX, "floating-value");
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				for (int group = 1; group <= 2; group++) {
+					IRI subject = vf.createIRI(EX, "floating-group/" + group);
+					connection.add(subject, value, vf.createLiteral(0.1d));
+					connection.add(subject, value, vf.createLiteral(0.2d));
+					connection.add(subject, value, vf.createLiteral(0.3d));
+				}
+			}
+			String query = "SELECT ?group (COUNT(DISTINCT ?value) AS ?count) (SUM(?value) AS ?sum) "
+					+ "WHERE { ?group <" + EX + "floating-value> ?value } GROUP BY ?group";
+
+			assertThat(explain(repository, query))
+					.as("the ordered DISTINCT plan remains a valid speculative candidate")
+					.contains("distinctChannels=[MONOTONIC]");
+			assertNativeMatchesGeneric(repository, query, 2);
+			assertThat(strategy(repository, query))
+					.as("floating SUM must restart from the ordinary encounter-order row chain")
+					.isEqualTo("singleSlotGroups");
 		} finally {
 			repository.shutDown();
 		}
@@ -462,6 +493,35 @@ class LmdbNativeOrderedDistinctTest {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			return connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized).toString();
 		}
+	}
+
+	private String strategy(SailRepository repository, String query) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			String strategy = findStrategy(connection.prepareTupleQuery(query)
+					.explain(Explanation.Level.Telemetry)
+					.toGenericPlanNode());
+			assertThat(strategy).as("expected a nativeExecutionStrategy metric in the explanation").isNotNull();
+			return strategy;
+		}
+	}
+
+	private static String findStrategy(GenericPlanNode node) {
+		if (node == null) {
+			return null;
+		}
+		String value = node.getStringMetricActual("nativeExecutionStrategy");
+		if (value != null) {
+			return value;
+		}
+		if (node.getPlans() != null) {
+			for (GenericPlanNode child : node.getPlans()) {
+				String found = findStrategy(child);
+				if (found != null) {
+					return found;
+				}
+			}
+		}
+		return null;
 	}
 
 	private void assertNativeMatchesGeneric(SailRepository repository, String query, int expectedRows) {

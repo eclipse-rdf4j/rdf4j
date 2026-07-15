@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Difference;
@@ -33,6 +34,7 @@ import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -50,6 +52,7 @@ import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
@@ -229,6 +232,106 @@ class LmdbSketchJoinOptimizerTest {
 	}
 
 	@Test
+	void keepsUnmarkedFunctionFilterAtItsOriginalJoinBoundary() {
+		StatementPattern first = statementPattern("s1", "p1", "o1");
+		StatementPattern second = statementPattern("s1", "p2", "o2");
+		FunctionCall condition = new FunctionCall("urn:rdf4j:test:unmarked-function", new Var("o1"));
+		QueryRoot root = new QueryRoot(new Filter(new Join(first, second), condition));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		Filter retained = assertInstanceOf(Filter.class, root.getArg());
+		assertInstanceOf(Join.class, retained.getArg());
+		assertEquals(1, countFunctionCalls(root.getArg(), condition.getURI()));
+	}
+
+	@Test
+	void keepsUnmarkedFunctionFilterAboveLeftJoin() {
+		StatementPattern first = statementPattern("s1", "p1", "o1");
+		StatementPattern second = statementPattern("s2", "p2", "o2");
+		StatementPattern optional = statementPattern("s1", "p3", "opt");
+		FunctionCall condition = new FunctionCall("urn:rdf4j:test:unmarked-optional-function", new Var("o1"));
+		QueryRoot root = new QueryRoot(new Filter(new LeftJoin(new Join(first, second), optional), condition));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		Filter retained = assertInstanceOf(Filter.class, root.getArg());
+		LeftJoin leftJoin = assertInstanceOf(LeftJoin.class, retained.getArg());
+		assertFalse(containsFilter(leftJoin.getLeftArg()));
+		assertEquals(1, countFunctionCalls(root.getArg(), condition.getURI()));
+	}
+
+	@Test
+	void doesNotDropFilterCoveredOnlyByValuesBeyondOptionalBoundary() {
+		StatementPattern filtered = statementPattern("s", "name", "name");
+		Filter localFilter = new Filter(filtered,
+				new Or(new Compare(new Var("name"), new ValueConstant(VF.createLiteral("Component 1")),
+						Compare.CompareOp.EQ),
+						new Compare(new Var("name"), new ValueConstant(VF.createLiteral("Component 2")),
+								Compare.CompareOp.EQ)));
+		LeftJoin optionalBoundary = new LeftJoin(statementPattern("s", "optional", "optionalValue"),
+				statementPattern("s", "optionalDetail", "detail"));
+		optionalBoundary.setVariableScopeChange(true);
+		assertTrue(LmdbJoinPlanSupport.isJoinOrderSeparator(optionalBoundary));
+		BindingSetAssignment laterValues = values("name", "Component 1", "Component 2");
+		QueryRoot root = new QueryRoot(new Join(localFilter, new Join(optionalBoundary, laterValues)));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		assertTrue(containsFilter(root.getArg()),
+				"VALUES beyond an OPTIONAL boundary must not justify dropping an earlier local filter");
+	}
+
+	@Test
+	void keepsPerRowBindAtItsOriginalJoinBoundary() {
+		Extension extension = new Extension(
+				new Join(statementPattern("s", "first", "firstValue"),
+						statementPattern("s", "second", "secondValue")),
+				new ExtensionElem(new BNodeGenerator(), "generated"));
+		QueryRoot root = new QueryRoot(new Join(extension, statementPattern("s", "third", "thirdValue")));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		Extension retained = onlyExtension(root.getArg());
+		assertEquals(2, statementPatterns(retained.getArg()).size(),
+				"per-row BIND must not move from its original two-pattern input to the outer join result");
+	}
+
+	@Test
+	void keepsPerRowBindBelowNullRejectingOptionalRewrite() {
+		Extension left = new Extension(statementPattern("s", "required", "requiredValue"),
+				new ExtensionElem(new BNodeGenerator(), "generated"));
+		LeftJoin optional = new LeftJoin(left, statementPattern("s", "optional", "optionalValue"));
+		Filter filter = new Filter(optional,
+				new Compare(new Var("optionalValue"), new ValueConstant(VF.createLiteral("keep")),
+						Compare.CompareOp.EQ));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		Extension retained = onlyExtension(root.getArg());
+		assertEquals(1, statementPatterns(retained.getArg()).size(),
+				"OPTIONAL rewrite must not hoist a per-row BIND above the optional-side join");
+	}
+
+	@Test
+	void keepsVolatileDependentOptionalAtItsOriginalBoundary() {
+		StatementPattern base = statementPattern("s", "base", "baseValue");
+		LeftJoin firstOptional = new LeftJoin(base, statementPattern("s", "firstOptional", "firstValue"));
+		ValueExpr secondCondition = new And(
+				new Compare(new Var("firstValue"), new Var("baseValue"), Compare.CompareOp.NE),
+				new FunctionCall("urn:rdf4j:test:unmarked-dependent-optional", new Var("firstValue")));
+		QueryRoot root = new QueryRoot(
+				new LeftJoin(firstOptional, statementPattern("s", "secondOptional", "secondValue"), secondCondition));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		LeftJoin retainedOuter = assertInstanceOf(LeftJoin.class, root.getArg());
+		assertInstanceOf(LeftJoin.class, retainedOuter.getLeftArg(),
+				"dependent OPTIONAL rewrite must not move a volatile condition into a nested right-side OPTIONAL");
+	}
+
+	@Test
 	void keepsVariableVariableOptionalCompareAsLeftJoin() {
 		StatementPattern section = statementPattern("section", "type", "sectionType");
 		StatementPattern track = statementPattern("section", "hasTrack", "track");
@@ -338,6 +441,24 @@ class LmdbSketchJoinOptimizerTest {
 	}
 
 	@Test
+	void keepsNoNewBindingExistsFilterAboveNonRepeatableArg() {
+		Extension volatileHasTrack = new Extension(statementPattern("section", "hasTrack", "track"),
+				new ExtensionElem(new BNodeGenerator(), "nonce"));
+		StatementPattern trackType = new StatementPattern(new Var("track"),
+				new Var("_const_type", VF.createIRI("urn:type")),
+				new Var("_const_trackType", VF.createIRI("urn:TrackSection")),
+				new Var("_const_context", VF.createIRI("urn:ctx")));
+		QueryRoot root = new QueryRoot(new Filter(volatileHasTrack, new Exists(trackType)));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		Filter retained = assertInstanceOf(Filter.class, root.getArg(),
+				"EXISTS must remain at the original boundary above a non-repeatable argument");
+		assertInstanceOf(Extension.class, retained.getArg());
+		assertInstanceOf(Exists.class, retained.getCondition());
+	}
+
+	@Test
 	void keepsNoNewBindingExistsProbeWithoutFixedContext() {
 		StatementPattern hasTrack = statementPattern("section", "hasTrack", "track");
 		StatementPattern trackType = new StatementPattern(new Var("track"),
@@ -413,6 +534,40 @@ class LmdbSketchJoinOptimizerTest {
 		assertTrue(containsFilter(distributed.getRightArg()));
 		assertTrue(containsBindingSetAssignment(distributed.getLeftArg(), "target"));
 		assertTrue(containsBindingSetAssignment(distributed.getRightArg(), "target"));
+	}
+
+	@Test
+	void doesNotDuplicateUnmarkedFunctionFilterIntoUnionBranches() {
+		BindingSetAssignment values = values("target", "DX-200", "DX-201");
+		StatementPattern conditionType = statementPattern("entity", "type", "condition");
+		StatementPattern conditionCode = statementPattern("entity", "code", "code");
+		StatementPattern medicationType = statementPattern("entity", "type", "medication");
+		StatementPattern medicationCode = statementPattern("entity", "code", "code");
+		Union union = new Union(new Join(conditionType, conditionCode), new Join(medicationType, medicationCode));
+		FunctionCall condition = new FunctionCall("urn:rdf4j:test:unmarked-union-function", new Var("code"));
+		QueryRoot root = new QueryRoot(new Filter(new Join(values, union), condition));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		Filter retained = assertInstanceOf(Filter.class, root.getArg());
+		assertInstanceOf(Union.class, retained.getArg(),
+				"the finite-prefix union optimization may proceed while the volatile filter stays above it");
+		assertEquals(1, countFunctionCalls(root.getArg(), condition.getURI()));
+	}
+
+	@Test
+	void doesNotMovePerRowBindAcrossDistributedUnionPrefix() {
+		BindingSetAssignment values = values("target", "DX-200", "DX-201");
+		Extension conditionBranch = new Extension(statementPattern("entity", "conditionCode", "code"),
+				new ExtensionElem(new BNodeGenerator(), "conditionGenerated"));
+		Extension medicationBranch = new Extension(statementPattern("entity", "medicationCode", "code"),
+				new ExtensionElem(new BNodeGenerator(), "medicationGenerated"));
+		QueryRoot root = new QueryRoot(new Join(values, new Union(conditionBranch, medicationBranch)));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		assertInstanceOf(Join.class, root.getArg(),
+				"union distribution must not move a per-row BIND across the duplicated finite prefix");
 	}
 
 	@Test
@@ -540,6 +695,22 @@ class LmdbSketchJoinOptimizerTest {
 	}
 
 	@Test
+	void keepsVacuousMinusWhenRightFilterContainsNonRepeatableConjunct() {
+		StatementPattern left = statementPattern("x", "p", "v");
+		ValueExpr unavailableComparison = new Compare(new Var("load"), new Var("substation"),
+				Compare.CompareOp.EQ);
+		ValueExpr nonRepeatableConjunct = new FunctionCall("urn:rdf4j:test:volatile-vacuous-minus");
+		Filter right = new Filter(statementPattern("meter", "measures", "load"),
+				new And(unavailableComparison, nonRepeatableConjunct));
+		QueryRoot root = new QueryRoot(new Difference(left, right));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		assertInstanceOf(Difference.class, root.getArg(),
+				"a non-repeatable RHS condition must stay at its original MINUS evaluation boundary");
+	}
+
+	@Test
 	void keepsMinusWhenRhsFilterUnavailableBindingIsInitiallyBound() {
 		StatementPattern left = statementPattern("x", "p", "v");
 		Filter right = new Filter(statementPattern("meter", "measures", "load"),
@@ -570,6 +741,22 @@ class LmdbSketchJoinOptimizerTest {
 				"Assured left key plus cheap single-pattern RHS should not retain materialized MINUS");
 		assertTrue(containsNotExistsFilter(replacement),
 				"Assured left key plus cheap single-pattern RHS should use correlated NOT EXISTS");
+	}
+
+	@Test
+	void keepsMinusWhenRightFilterIsNonRepeatable() {
+		StatementPattern medicationType = statementPattern("med", "type", "medication");
+		StatementPattern medicationCode = statementPattern("med", "code", "code");
+		Filter right = new Filter(statementPattern("med", "dosage", "dose"),
+				new FunctionCall("urn:rdf4j:test:volatile-correlated-minus", new Var("dose")));
+		QueryRoot root = new QueryRoot(new Difference(new Join(medicationType, medicationCode), right));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.cheapCorrelatedPatternFilterMinus(), false)
+				.optimize(root, null, null);
+
+		assertInstanceOf(Difference.class, root.getArg(),
+				"a non-repeatable RHS filter must not be changed from one materialization to correlated replay");
+		assertFalse(containsNotExistsFilter(root.getArg()));
 	}
 
 	@Test
@@ -814,6 +1001,33 @@ class LmdbSketchJoinOptimizerTest {
 					|| containsBindingSetAssignment(join.getRightArg(), bindingName);
 		}
 		return false;
+	}
+
+	private static int countFunctionCalls(TupleExpr tupleExpr, String uri) {
+		int[] calls = { 0 };
+		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(FunctionCall node) {
+				if (uri.equals(node.getURI())) {
+					calls[0]++;
+				}
+				super.meet(node);
+			}
+		});
+		return calls[0];
+	}
+
+	private static Extension onlyExtension(TupleExpr tupleExpr) {
+		List<Extension> extensions = new ArrayList<>();
+		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Extension node) {
+				extensions.add(node);
+				super.meet(node);
+			}
+		});
+		assertEquals(1, extensions.size());
+		return extensions.getFirst();
 	}
 
 	private static void assertScopedBranchBeforeValues(TupleExpr tupleExpr) {

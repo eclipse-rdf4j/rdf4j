@@ -93,6 +93,83 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.sail.SailException;
 
+/**
+ * Internal control-flow signal used when a speculative aggregation discovers that its reordered input cannot preserve
+ * the ordinary row chain's encounter-order semantics. Each occurrence has suppression enabled so try-with-resources can
+ * retain real cleanup failures, while disabled stack traces keep worker propagation cheap.
+ */
+@Experimental
+final class EncounterOrderFallback extends RuntimeException {
+	private static final long serialVersionUID = 1L;
+
+	enum Reason {
+		FLOATING_SUM_OR_AVG,
+		DISTINCT_TERM_EXTREMA_TIE
+	}
+
+	final Reason reason;
+
+	private EncounterOrderFallback(Reason reason) {
+		super(reason.name(), null, true, false);
+		this.reason = reason;
+	}
+
+	static EncounterOrderFallback floatingSumOrAvg() {
+		return new EncounterOrderFallback(Reason.FLOATING_SUM_OR_AVG);
+	}
+
+	static EncounterOrderFallback distinctTermExtremaTie() {
+		return new EncounterOrderFallback(Reason.DISTINCT_TERM_EXTREMA_TIE);
+	}
+
+	static EncounterOrderFallback find(Throwable problem) {
+		while (problem != null) {
+			if (problem instanceof EncounterOrderFallback) {
+				return (EncounterOrderFallback) problem;
+			}
+			Throwable cause = problem.getCause();
+			if (cause == problem) {
+				break;
+			}
+			problem = cause;
+		}
+		return null;
+	}
+
+	/**
+	 * Returns real failures suppressed while unwinding a fallback, retaining subsequent failures on the first. Wrappers
+	 * whose cause chain contains the control signal remain transparent, matching {@link #find(Throwable)}.
+	 */
+	static Throwable realFailure(Throwable problem) {
+		Throwable realFailure = null;
+		while (problem != null) {
+			for (Throwable suppressed : problem.getSuppressed()) {
+				Throwable candidate = find(suppressed) == null ? suppressed : realFailure(suppressed);
+				realFailure = retain(realFailure, candidate);
+			}
+			Throwable cause = problem.getCause();
+			if (cause == problem) {
+				break;
+			}
+			problem = cause;
+		}
+		return realFailure;
+	}
+
+	private static Throwable retain(Throwable primary, Throwable later) {
+		if (later == null) {
+			return primary;
+		}
+		if (primary == null) {
+			return later;
+		}
+		if (primary != later) {
+			primary.addSuppressed(later);
+		}
+		return primary;
+	}
+}
+
 @Experimental
 enum AggKind {
 	COUNT,
@@ -165,14 +242,36 @@ final class AggContext {
 	final NativeLmdbQuerySource source;
 	final ValueComparator comparator = new ValueComparator();
 	final HashMap<Long, Value> valueCache = new HashMap<>();
+	final boolean encounterOrderChanging;
 
 	AggContext(NativeLmdbQuerySource source, boolean strictCompare) {
+		this(source, strictCompare, false);
+	}
+
+	AggContext(NativeLmdbQuerySource source, boolean strictCompare, boolean encounterOrderChanging) {
 		this.source = source;
+		this.encounterOrderChanging = encounterOrderChanging;
 		this.comparator.setStrict(strictCompare);
 	}
 
 	Value value(long id) {
 		return valueCache.computeIfAbsent(id, source::lazyValue);
+	}
+
+	void preserveFloatingEncounterOrder(Literal literal) {
+		if (!encounterOrderChanging) {
+			return;
+		}
+		CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
+		if (datatype == CoreDatatype.XSD.FLOAT || datatype == CoreDatatype.XSD.DOUBLE) {
+			throw EncounterOrderFallback.floatingSumOrAvg();
+		}
+	}
+
+	void preserveExtremaRepresentative(Value candidate, Value current, int comparison) {
+		if (encounterOrderChanging && comparison == 0 && !candidate.equals(current)) {
+			throw EncounterOrderFallback.distinctTermExtremaTie();
+		}
 	}
 }
 
@@ -306,6 +405,7 @@ final class AggState {
 		Literal literal = (Literal) v;
 		CoreDatatype.XSD coreDatatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
 		if (coreDatatype != null && coreDatatype.isNumericDatatype()) {
+			ctx.preserveFloatingEncounterOrder(literal);
 			Literal sum = sums[i] == null ? AggContext.INTEGER_ZERO : sums[i];
 			sums[i] = MathUtil.compute(sum, literal, MathExpr.MathOp.PLUS);
 		} else {
@@ -352,6 +452,7 @@ final class AggState {
 		Literal literal = (Literal) v;
 		CoreDatatype.XSD coreDatatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
 		if (coreDatatype != null && coreDatatype.isNumericDatatype()) {
+			ctx.preserveFloatingEncounterOrder(literal);
 			Literal sum = sums[i] == null ? AggContext.INTEGER_ZERO : sums[i];
 			sums[i] = MathUtil.compute(sum, weightedTerm(literal, weight), MathExpr.MathOp.PLUS);
 		} else {
@@ -368,6 +469,7 @@ final class AggState {
 			Literal literal = (Literal) v;
 			CoreDatatype.XSD coreDatatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
 			if (coreDatatype != null && coreDatatype.isNumericDatatype()) {
+				ctx.preserveFloatingEncounterOrder(literal);
 				Literal sum = sums[i] == null ? AggContext.INTEGER_ZERO : sums[i];
 				sums[i] = MathUtil.compute(sum, weightedTerm(literal, weight), MathExpr.MathOp.PLUS);
 			} else {
@@ -396,6 +498,7 @@ final class AggState {
 			Literal literal = (Literal) v;
 			CoreDatatype.XSD coreDatatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
 			if (coreDatatype != null && coreDatatype.isNumericDatatype()) {
+				ctx.preserveFloatingEncounterOrder(literal);
 				Literal sum = sums[i] == null ? AggContext.INTEGER_ZERO : sums[i];
 				sums[i] = MathUtil.compute(sum, literal, MathExpr.MathOp.PLUS);
 			} else {
@@ -418,6 +521,7 @@ final class AggState {
 			return;
 		}
 		int cmp = ctx.comparator.compare(v, extremes[i]);
+		ctx.preserveExtremaRepresentative(v, extremes[i], cmp);
 		if (min ? cmp < 0 : cmp > 0) {
 			extremes[i] = v;
 			extremeIds[i] = id;
@@ -471,13 +575,16 @@ final class AggState {
 	}
 
 	private void mergeSum(int i, AggState other) {
+		Literal otherSum = other.sums == null ? null : other.sums[i];
+		if (otherSum != null) {
+			ctx.preserveFloatingEncounterOrder(otherSum);
+		}
 		if (other.typeErrors != null && other.typeErrors[i]) {
 			typeErrors[i] = true;
 		}
 		if (typeErrors[i]) {
 			return;
 		}
-		Literal otherSum = other.sums == null ? null : other.sums[i];
 		if (otherSum == null) {
 			return;
 		}
@@ -495,6 +602,7 @@ final class AggState {
 			return;
 		}
 		int cmp = ctx.comparator.compare(otherExtreme, extremes[i]);
+		ctx.preserveExtremaRepresentative(otherExtreme, extremes[i], cmp);
 		if (min ? cmp < 0 : cmp > 0) {
 			extremes[i] = otherExtreme;
 			extremeIds[i] = other.extremeIds[i];

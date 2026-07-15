@@ -18,8 +18,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -37,15 +41,41 @@ public class LmdbNativePackedSortTest {
 
 	private static final String EX = "http://example.com/";
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
+	private static final List<String> ALL_CALENDAR_STANDARD_ORDER = List.of(
+			"gYear:2000",
+			"date:2000-02-29Z",
+			"dateTime:2000-02-29T23:59:59.123456789",
+			"dateTimeStamp:2000-03-01T00:00:00.000000001+14:00",
+			"gYearMonth:2000-03Z",
+			"gDay:---03+14:00",
+			"gMonth:--04-14:00",
+			"gMonthDay:--02-29Z",
+			"time:23:00:00.000000001-14:00",
+			"dateTime:1999-z",
+			"dateTimeStamp:2000-01-01T00:00:00");
+	private static final List<String> ALL_CALENDAR_STRICT_ORDER = List.of(
+			"date:2000-02-29Z",
+			"dateTime:2000-02-29T23:59:59.123456789",
+			"dateTime:1999-z",
+			"dateTimeStamp:2000-03-01T00:00:00.000000001+14:00",
+			"dateTimeStamp:2000-01-01T00:00:00",
+			"gDay:---03+14:00",
+			"gMonth:--04-14:00",
+			"gMonthDay:--02-29Z",
+			"gYear:2000",
+			"gYearMonth:2000-03Z",
+			"time:23:00:00.000000001-14:00");
 
 	@TempDir
 	File dataDir;
 
 	private SailRepository repository;
+	private LmdbStore store;
 
 	@BeforeEach
 	public void setUp() {
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc"));
+		repository = new SailRepository(store);
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
 			IRI type = vf.createIRI(EX, "type");
@@ -119,6 +149,72 @@ public class LmdbNativePackedSortTest {
 		assertThat(NativeSortBuffer.TOP_K_CANDIDATES.get()).isEqualTo(140L);
 		assertThat(NativeSortBuffer.PACKED_ROWS.get()).isEqualTo(13L);
 		assertThat(NativeSpillSort.SPILL_RUNS.get()).isZero();
+	}
+
+	@Test
+	public void packedStoreSortMatchesGenericForEveryCalendarDatatypeAndMode() {
+		String calendarIri = EX + "calendar";
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			IRI calendar = vf.createIRI(calendarIri);
+			String[][] terms = {
+					{ "2000", "gYear" },
+					{ "2000-03Z", "gYearMonth" },
+					{ "2000-02-29Z", "date" },
+					{ "2000-02-29T23:59:59.123456789", "dateTime" },
+					{ "2000-03-01T00:00:00.000000001+14:00", "dateTimeStamp" },
+					{ "---03+14:00", "gDay" },
+					{ "--04-14:00", "gMonth" },
+					{ "--02-29Z", "gMonthDay" },
+					{ "23:00:00.000000001-14:00", "time" },
+					{ "1999-z", "dateTime" },
+					{ "2000-01-01T00:00:00", "dateTimeStamp" }
+			};
+			for (int i = 0; i < terms.length; i++) {
+				connection.add(vf.createIRI(EX, "calendar/" + i), calendar,
+						vf.createLiteral(terms[i][0], vf.createIRI(XSD.NAMESPACE, terms[i][1])));
+			}
+		}
+		String query = "SELECT ?d WHERE { ?s <" + calendarIri + "> ?d } ORDER BY ?d";
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			assertThat(connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized).toString())
+					.contains("NativeRows")
+					.doesNotContain("orderSlots=[]");
+		}
+		for (QueryEvaluationMode mode : List.of(QueryEvaluationMode.STRICT, QueryEvaluationMode.STANDARD)) {
+			store.setDefaultQueryEvaluationMode(mode);
+			List<String> expected = mode == QueryEvaluationMode.STRICT
+					? ALL_CALENDAR_STRICT_ORDER
+					: ALL_CALENDAR_STANDARD_ORDER;
+			assertThat(calendarRowsWithNativeFlag(query, false)).as("generic %s", mode)
+					.containsExactlyElementsOf(expected);
+			assertThat(calendarRowsWithNativeFlag(query, true)).as("native packed %s", mode)
+					.containsExactlyElementsOf(expected);
+		}
+	}
+
+	private List<String> calendarRowsWithNativeFlag(String query, boolean nativeEnabled) {
+		String previous = System.getProperty(NATIVE_FLAG);
+		try {
+			System.setProperty(NATIVE_FLAG, Boolean.toString(nativeEnabled));
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				return QueryResults.asList(connection.prepareTupleQuery(query).evaluate())
+						.stream()
+						.map(row -> calendarTerm(row.getValue("d")))
+						.toList();
+			}
+		} finally {
+			if (previous == null) {
+				System.clearProperty(NATIVE_FLAG);
+			} else {
+				System.setProperty(NATIVE_FLAG, previous);
+			}
+		}
+	}
+
+	private static String calendarTerm(Value value) {
+		Literal literal = (Literal) value;
+		return literal.getDatatype().getLocalName() + ":" + literal.getLabel();
 	}
 
 	private String query(String suffix) {

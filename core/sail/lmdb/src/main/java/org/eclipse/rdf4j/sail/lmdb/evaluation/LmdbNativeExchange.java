@@ -63,6 +63,34 @@ final class LmdbNativeExchange {
 		}
 	}
 
+	/**
+	 * Continues a root scan whose first bulk-filled morsel was inspected before worker setup. The exact buffer is
+	 * transferred without copying or refilling, and subsequent morsels retain the ordinary bulk path. Cursor ownership
+	 * is transferred to this method and released on every exit.
+	 */
+	static void produceMorsels(PatternCursor cursor, Morsel firstMorsel, ArrayBlockingQueue<Morsel> queue, int workers,
+			AtomicReference<Throwable> failure, AtomicBoolean cancelled) throws IOException {
+		try (cursor) {
+			if (firstMorsel != null && failure.get() == null && !cancelled.get()) {
+				offer(queue, firstMorsel, failure, cancelled);
+			}
+			while (failure.get() == null && !cancelled.get()) {
+				long[] quads = new long[4 * MORSEL_ROWS];
+				int rows = cursor.fill(quads, MORSEL_ROWS);
+				if (rows == 0) {
+					break;
+				}
+				if (rows < MORSEL_ROWS) {
+					quads = Arrays.copyOf(quads, rows * 4);
+				}
+				offer(queue, new Morsel(quads, rows), failure, cancelled);
+			}
+		}
+		for (int i = 0; i < workers && failure.get() == null && !cancelled.get(); i++) {
+			offer(queue, Morsel.POISON, failure, cancelled);
+		}
+	}
+
 	static void offer(ArrayBlockingQueue<Morsel> queue, Morsel morsel, AtomicReference<Throwable> failure,
 			AtomicBoolean cancelled) throws IOException {
 		try {

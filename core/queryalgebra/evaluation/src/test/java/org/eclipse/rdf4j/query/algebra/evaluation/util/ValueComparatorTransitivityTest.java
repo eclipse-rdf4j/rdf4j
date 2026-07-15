@@ -20,9 +20,14 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Random;
 
+import javax.xml.datatype.DatatypeConstants;
+
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.junit.jupiter.api.Test;
@@ -97,6 +102,52 @@ public class ValueComparatorTransitivityTest {
 				vf.createLiteral("2000-01-01T00:00:00", XSD.DATETIME));
 	}
 
+	/**
+	 * Exercises every XML Schema calendar datatype and all timezone boundary forms used by the comparator's canonical
+	 * sort keys. The timezone-free dateTimeStamp is intentionally invalid: parsing it as an ordinary dateTime would let
+	 * an invalid RDF term participate in the timeline order and reintroduce comparison cycles.
+	 */
+	private List<Value> calendarEdgeCases() {
+		return List.of(
+				vf.createLiteral("1999", XSD.GYEAR),
+				vf.createLiteral("2000Z", XSD.GYEAR),
+				vf.createLiteral("2001+14:00", XSD.GYEAR),
+				vf.createLiteral("2002-14:00", XSD.GYEAR),
+				vf.createLiteral("2000-02", XSD.GYEARMONTH),
+				vf.createLiteral("2000-03Z", XSD.GYEARMONTH),
+				vf.createLiteral("2000-04+14:00", XSD.GYEARMONTH),
+				vf.createLiteral("2000-05-14:00", XSD.GYEARMONTH),
+				vf.createLiteral("2000-02-28", XSD.DATE),
+				vf.createLiteral("2000-02-29Z", XSD.DATE),
+				vf.createLiteral("2000-03-01+14:00", XSD.DATE),
+				vf.createLiteral("2000-03-02-14:00", XSD.DATE),
+				vf.createLiteral("2000-02-29T23:59:59.123456789", XSD.DATETIME),
+				vf.createLiteral("2000-02-29T23:59:59.123456789Z", XSD.DATETIME),
+				vf.createLiteral("2000-03-01T00:00:00.000000001+14:00", XSD.DATETIME),
+				vf.createLiteral("2000-03-01T00:00:00.000000001-14:00", XSD.DATETIME),
+				vf.createLiteral("2000-02-29T23:59:59.123456789Z", XSD.DATETIMESTAMP),
+				vf.createLiteral("2000-03-01T00:00:00.000000001+14:00", XSD.DATETIMESTAMP),
+				vf.createLiteral("2000-03-01T00:00:00.000000001-14:00", XSD.DATETIMESTAMP),
+				vf.createLiteral("2000-03-01T00:00:00.000000001", XSD.DATETIMESTAMP),
+				vf.createLiteral("---01", XSD.GDAY),
+				vf.createLiteral("---02Z", XSD.GDAY),
+				vf.createLiteral("---03+14:00", XSD.GDAY),
+				vf.createLiteral("---04-14:00", XSD.GDAY),
+				vf.createLiteral("--01", XSD.GMONTH),
+				vf.createLiteral("--02Z", XSD.GMONTH),
+				vf.createLiteral("--03+14:00", XSD.GMONTH),
+				vf.createLiteral("--04-14:00", XSD.GMONTH),
+				vf.createLiteral("--02-28", XSD.GMONTHDAY),
+				vf.createLiteral("--02-29Z", XSD.GMONTHDAY),
+				vf.createLiteral("--03-01+14:00", XSD.GMONTHDAY),
+				vf.createLiteral("--03-02-14:00", XSD.GMONTHDAY),
+				vf.createLiteral("10:30:00.123456789", XSD.TIME),
+				vf.createLiteral("18:45:00.123456789Z", XSD.TIME),
+				vf.createLiteral("22:00:00.000000001+14:00", XSD.TIME),
+				vf.createLiteral("23:00:00.000000001-14:00", XSD.TIME),
+				vf.createLiteral("1999-z", XSD.DATETIME));
+	}
+
 	@Test
 	public void testMixedDateDateTimeTotalOrderStrict() {
 		assertTotalOrder(mixedDatesAndDateTimes(), true);
@@ -161,13 +212,123 @@ public class ValueComparatorTransitivityTest {
 	}
 
 	@Test
-	public void testStableSortAlgorithmsAgreeOnMixedTemporalValues() {
+	public void testTimezoneFreeDateTimeStampSortsInInvalidBlock() {
+		Literal valid = vf.createLiteral("2000-01-01T00:00:00Z", XSD.DATETIMESTAMP);
+		Literal missingRequiredTimezone = vf.createLiteral("2000-01-01T00:00:00", XSD.DATETIMESTAMP);
+		Literal invalidLexical = vf.createLiteral("2000-z", XSD.DATETIMESTAMP);
+
+		for (boolean strict : new boolean[] { true, false }) {
+			ValueComparator cmp = new ValueComparator();
+			cmp.setStrict(strict);
+			assertTrue(cmp.compare(valid, missingRequiredTimezone) < 0,
+					"valid calendar values must precede invalid values (strict=" + strict + ")");
+			assertTrue(cmp.compare(missingRequiredTimezone, invalidLexical) < 0,
+					"invalid calendar values must use their fixed lexical order (strict=" + strict + ")");
+		}
+	}
+
+	@Test
+	public void testStrictCalendarDatatypePrecedenceComesBeforeValidity() {
+		Literal invalidDate = vf.createLiteral("2000-13-40", XSD.DATE);
+		Literal validTime = vf.createLiteral("12:00:00Z", XSD.TIME);
+		ValueComparator cmp = new ValueComparator();
+		cmp.setStrict(true);
+
+		assertTrue(CoreDatatype.XSD.DATE.compareTo(CoreDatatype.XSD.TIME) < 0);
+		assertTrue(cmp.compare(invalidDate, validTime) < 0,
+				"STRICT calendar ordering must retain CoreDatatype.XSD precedence before validity blocks");
+		assertTrue(cmp.compare(validTime, invalidDate) > 0,
+				"STRICT calendar datatype precedence must be antisymmetric across invalid and valid terms");
+	}
+
+	@Test
+	public void testAllCalendarDatatypesAndTimezoneEdgesFormTotalOrder() {
+		List<Value> values = calendarEdgeCases();
+		assertTotalOrder(values, true);
+		assertTotalOrder(values, false);
+	}
+
+	@Test
+	public void testDeterminateXmlCalendarComparisonsArePreserved() {
+		assertDeterminateOrder("1999Z", XSD.GYEAR, "2001Z", XSD.GYEAR, true);
+		assertDeterminateOrder("1999-12Z", XSD.GYEARMONTH, "2000-02Z", XSD.GYEARMONTH, true);
+		assertDeterminateOrder("2000-02-28Z", XSD.DATE, "2000-03-01Z", XSD.DATE, true);
+		assertDeterminateOrder("2000-02-29T23:59:59.1Z", XSD.DATETIME,
+				"2000-02-29T23:59:59.2Z", XSD.DATETIME, true);
+		assertDeterminateOrder("2000-02-29T23:59:59.1Z", XSD.DATETIMESTAMP,
+				"2000-02-29T23:59:59.2Z", XSD.DATETIMESTAMP, true);
+		assertDeterminateOrder("---01Z", XSD.GDAY, "---26Z", XSD.GDAY, true);
+		assertDeterminateOrder("--01Z", XSD.GMONTH, "--11Z", XSD.GMONTH, true);
+		assertDeterminateOrder("--02-28Z", XSD.GMONTHDAY, "--03-01Z", XSD.GMONTHDAY, true);
+		assertDeterminateOrder("01:00:00Z", XSD.TIME, "23:00:00Z", XSD.TIME, true);
+
+		// STANDARD compares the year-based calendar family on one extended timeline. STRICT deliberately orders these
+		// pairs by datatype precedence, so cross-datatype preservation is asserted only for STANDARD.
+		assertDeterminateOrder("1999Z", XSD.GYEAR, "2001-01Z", XSD.GYEARMONTH, false);
+		assertDeterminateOrder("1999-12Z", XSD.GYEARMONTH, "2000-02-29Z", XSD.DATE, false);
+		assertDeterminateOrder("2000-02-28Z", XSD.DATE, "2000-03-01T00:00:00Z", XSD.DATETIME, false);
+		assertDeterminateOrder("2000-02-29T23:59:59.1Z", XSD.DATETIME,
+				"2000-02-29T23:59:59.2Z", XSD.DATETIMESTAMP, false);
+	}
+
+	@Test
+	public void testEveryDeterminateCuratedYearBearingCalendarPairIsPreserved() {
+		List<Literal> values = calendarEdgeCases().stream()
+				.map(Literal.class::cast)
+				.filter(ValueComparatorTransitivityTest::isValidYearBearingCalendarLiteral)
+				.toList();
+
+		for (Literal left : values) {
+			CoreDatatype.XSD leftDatatype = left.getCoreDatatype().asXSDDatatypeOrNull();
+			for (Literal right : values) {
+				int xmlOrder = left.calendarValue().compare(right.calendarValue());
+				int reverseXmlOrder = right.calendarValue().compare(left.calendarValue());
+				if ((xmlOrder != DatatypeConstants.LESSER && xmlOrder != DatatypeConstants.GREATER)
+						|| reverseXmlOrder != -xmlOrder) {
+					continue;
+				}
+
+				CoreDatatype.XSD rightDatatype = right.getCoreDatatype().asXSDDatatypeOrNull();
+				if (leftDatatype == rightDatatype) {
+					assertComparatorPreservesXmlOrder(left, right, xmlOrder, true);
+					assertComparatorPreservesXmlOrder(left, right, xmlOrder, false);
+				} else {
+					assertComparatorPreservesXmlOrder(left, right, xmlOrder, false);
+				}
+			}
+		}
+	}
+
+	@Test
+	public void testRecurringCalendarsUseOneAnchoredTotalOrder() {
 		for (boolean strict : new boolean[] { true, false }) {
 			ValueComparator cmp = new ValueComparator();
 			cmp.setStrict(strict);
 
-			List<Value> values = mixedTemporalFamily();
-			Random random = new Random(20260706L);
+			assertTrue(cmp.compare(vf.createLiteral("---01", XSD.GDAY), vf.createLiteral("---02Z", XSD.GDAY)) < 0);
+			assertTrue(cmp.compare(vf.createLiteral("18:45:00.123456789Z", XSD.TIME),
+					vf.createLiteral("23:00:00.000000001-14:00", XSD.TIME)) < 0);
+			assertTrue(cmp.compare(vf.createLiteral("10:30:00.123456789", XSD.TIME),
+					vf.createLiteral("18:45:00.123456789", XSD.TIME)) < 0);
+		}
+	}
+
+	@Test
+	public void testStableSortAlgorithmsAgreeOnCalendarEdgeCases() {
+		assertStableSortAlgorithmsAgree(calendarEdgeCases(), 20260714L);
+	}
+
+	@Test
+	public void testStableSortAlgorithmsAgreeOnMixedTemporalValues() {
+		assertStableSortAlgorithmsAgree(mixedTemporalFamily(), 20260706L);
+	}
+
+	private void assertStableSortAlgorithmsAgree(List<Value> values, long seed) {
+		for (boolean strict : new boolean[] { true, false }) {
+			ValueComparator cmp = new ValueComparator();
+			cmp.setStrict(strict);
+
+			Random random = new Random(seed);
 
 			for (int round = 0; round < 100; round++) {
 				List<Value> shuffled = new ArrayList<>(values);
@@ -187,6 +348,51 @@ public class ValueComparatorTransitivityTest {
 		}
 	}
 
+	private void assertDeterminateOrder(String leftLabel, IRI leftDatatype, String rightLabel, IRI rightDatatype,
+			boolean includeStrict) {
+		Literal left = vf.createLiteral(leftLabel, leftDatatype);
+		Literal right = vf.createLiteral(rightLabel, rightDatatype);
+		int xmlOrder = left.calendarValue().compare(right.calendarValue());
+		assertTrue(xmlOrder == DatatypeConstants.LESSER || xmlOrder == DatatypeConstants.GREATER,
+				() -> "expected a determinate non-equal XML comparison for " + label(left) + " and " + label(right));
+
+		for (boolean strict : includeStrict ? new boolean[] { true, false } : new boolean[] { false }) {
+			ValueComparator cmp = new ValueComparator();
+			cmp.setStrict(strict);
+			assertEquals(Integer.signum(xmlOrder), signum(cmp.compare(left, right)),
+					() -> "determinate XML order changed (strict=" + strict + "): " + label(left) + " vs "
+							+ label(right));
+			assertEquals(-Integer.signum(xmlOrder), signum(cmp.compare(right, left)),
+					() -> "reverse determinate XML order changed (strict=" + strict + "): " + label(right) + " vs "
+							+ label(left));
+		}
+	}
+
+	private void assertComparatorPreservesXmlOrder(Literal left, Literal right, int xmlOrder, boolean strict) {
+		ValueComparator cmp = new ValueComparator();
+		cmp.setStrict(strict);
+		assertEquals(Integer.signum(xmlOrder), signum(cmp.compare(left, right)),
+				() -> "determinate XML order changed (strict=" + strict + "): " + label(left) + " vs "
+						+ label(right));
+	}
+
+	private static boolean isValidCalendarLiteral(Literal literal) {
+		CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
+		return datatype != null && datatype.isCalendarDatatype()
+				&& XMLDatatypeUtil.isValidValue(literal.getLabel(), datatype);
+	}
+
+	private static boolean isValidYearBearingCalendarLiteral(Literal literal) {
+		CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
+		return isValidCalendarLiteral(literal) && isYearBearing(datatype);
+	}
+
+	private static boolean isYearBearing(CoreDatatype.XSD datatype) {
+		return datatype == CoreDatatype.XSD.GYEAR || datatype == CoreDatatype.XSD.GYEARMONTH
+				|| datatype == CoreDatatype.XSD.DATE || datatype == CoreDatatype.XSD.DATETIME
+				|| datatype == CoreDatatype.XSD.DATETIMESTAMP;
+	}
+
 	private void assertTotalOrder(List<Value> values, boolean strict) {
 		ValueComparator cmp = new ValueComparator();
 		cmp.setStrict(strict);
@@ -197,6 +403,10 @@ public class ValueComparatorTransitivityTest {
 				int ba = signum(cmp.compare(b, a));
 				assertEquals(-ba, ab, () -> "antisymmetry violated (strict=" + strict + "): compare(" + label(a) + ", "
 						+ label(b) + ")=" + ab + " but compare(" + label(b) + ", " + label(a) + ")=" + ba);
+				if (ab == 0) {
+					assertEquals(a, b, () -> "calendar comparison returned zero for distinct RDF terms (strict="
+							+ strict + "): " + label(a) + " and " + label(b));
+				}
 			}
 		}
 

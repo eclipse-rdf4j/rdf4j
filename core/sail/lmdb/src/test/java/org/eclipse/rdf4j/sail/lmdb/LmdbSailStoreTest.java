@@ -286,6 +286,107 @@ public class LmdbSailStoreTest {
 	}
 
 	@Test
+	public void parallelNativeSourcesHoldTransactionReadLockUntilLastSiblingCloses() throws Exception {
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		LmdbSailStore backingStore = sail.getBackingStore();
+		TripleStore tripleStore = tripleStore(backingStore);
+		CountDownLatch writerAttempting = new CountDownLatch(1);
+		CountDownLatch writerAcquired = new CountDownLatch(1);
+		AtomicReference<Throwable> writerFailure = new AtomicReference<>();
+		NativeLmdbQuerySource.ParallelSource[] siblings = null;
+		Thread writer = null;
+
+		try (SailDataset dataset = backingStore.getExplicitSailSource().dataset(IsolationLevels.NONE)) {
+			NativeLmdbQuerySource nativeSource = (NativeLmdbQuerySource) dataset;
+			siblings = nativeSource.openParallelSources(2);
+			assertTrue("Expected two real parallel snapshot sources", siblings != null && siblings.length == 2);
+
+			writer = Thread.startVirtualThread(() -> {
+				long writeStamp = 0L;
+				try {
+					writerAttempting.countDown();
+					writeStamp = tripleStore.getTxnManager().lockManager().writeLock();
+					writerAcquired.countDown();
+				} catch (Throwable t) {
+					writerFailure.set(t);
+				} finally {
+					if (writeStamp != 0L) {
+						tripleStore.getTxnManager().lockManager().unlockWrite(writeStamp);
+					}
+				}
+			});
+
+			assertTrue(writerAttempting.await(1, TimeUnit.SECONDS));
+			assertFalse("The sibling set must retain the transaction read lock",
+					writerAcquired.await(100, TimeUnit.MILLISECONDS));
+
+			siblings[0].close();
+			siblings[0] = null;
+			assertFalse("Closing one sibling must not release the shared transaction read lock",
+					writerAcquired.await(100, TimeUnit.MILLISECONDS));
+
+			siblings[1].close();
+			siblings[1] = null;
+			assertTrue("Closing the last sibling must release the shared transaction read lock",
+					writerAcquired.await(1, TimeUnit.SECONDS));
+			writer.join(TimeUnit.SECONDS.toMillis(1));
+			assertFalse("The transaction writer must finish after the last sibling closes", writer.isAlive());
+			assertNull(writerFailure.get());
+		} finally {
+			if (siblings != null) {
+				for (NativeLmdbQuerySource.ParallelSource sibling : siblings) {
+					if (sibling != null) {
+						sibling.close();
+					}
+				}
+			}
+			if (writer != null && writer.isAlive()) {
+				writer.interrupt();
+				writer.join();
+			}
+		}
+	}
+
+	@Test
+	public void staleUntrackedNativeSourceRefusesNewerParallelSnapshots() throws Exception {
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		LmdbSailStore backingStore = sail.getBackingStore();
+		TripleStore tripleStore = tripleStore(backingStore);
+		Statement committedLater = F.createStatement(S1.getSubject(), S0.getPredicate(), S2.getObject());
+		long originalRevision = tripleStore.getDataRevision();
+		SailDataset dataset = newUntrackedDataset(backingStore, true);
+		NativeLmdbQuerySource nativeSource = (NativeLmdbQuerySource) dataset;
+		NativeLmdbQuerySource.ParallelSource[] opened = null;
+
+		try {
+			long subjectId = nativeSource.idOf(committedLater.getSubject());
+			long predicateId = nativeSource.idOf(committedLater.getPredicate());
+			long objectId = nativeSource.idOf(committedLater.getObject());
+			assertFalse(nativeSource.has(subjectId, predicateId, objectId, 0L));
+
+			try (RepositoryConnection connection = repo.getConnection()) {
+				connection.add(committedLater);
+			}
+
+			assertTrue("Expected a committed triple-store revision",
+					tripleStore.getDataRevision() > originalRevision);
+			assertFalse("The untracked dataset must remain on its original snapshot",
+					nativeSource.has(subjectId, predicateId, objectId, 0L));
+			opened = nativeSource.openParallelSources(2);
+			assertNull("A stale source must not open siblings over a newer committed snapshot", opened);
+		} finally {
+			if (opened != null) {
+				for (NativeLmdbQuerySource.ParallelSource source : opened) {
+					if (source != null) {
+						source.close();
+					}
+				}
+			}
+			dataset.close();
+		}
+	}
+
+	@Test
 	public void testExplainExecutedShowsIndexName() {
 		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
 		try (RepositoryConnection conn = repo.getConnection()) {
@@ -1124,6 +1225,21 @@ public class LmdbSailStoreTest {
 		} catch (ReflectiveOperationException e) {
 			throw new AssertionError("Missing LMDB bulk operation size config setter", e);
 		}
+	}
+
+	private static TripleStore tripleStore(LmdbSailStore backingStore) throws ReflectiveOperationException {
+		Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
+		tripleStoreField.setAccessible(true);
+		return (TripleStore) tripleStoreField.get(backingStore);
+	}
+
+	private static SailDataset newUntrackedDataset(LmdbSailStore backingStore, boolean explicit) throws Exception {
+		// The default fixture has the estimator disabled; instantiate the same untracked dataset variant used by its
+		// refresh reader without starting an unrelated estimator-enabled store.
+		Class<?> datasetClass = Class.forName(LmdbSailStore.class.getName() + "$LmdbSailDataset");
+		var constructor = datasetClass.getDeclaredConstructor(LmdbSailStore.class, boolean.class, boolean.class);
+		constructor.setAccessible(true);
+		return (SailDataset) constructor.newInstance(backingStore, explicit, false);
 	}
 
 	private Set<Statement> sampleStatements(int count) {

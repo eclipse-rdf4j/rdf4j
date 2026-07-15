@@ -97,20 +97,32 @@ final class LmdbNativeFactorizedRows {
 	final TailBranch[] enumBranches;
 	final int[] odometer;
 	/** One cumulative cap across every branch memo — per-entry caps alone let N branches × 64k entries blow up. */
-	final FactorizedTail.MemoBudget memoBudget = new FactorizedTail.MemoBudget(MEMO_BYPASSES);
+	final FactorizedTail.MemoBudget memoBudget;
+	final LmdbNativeAttemptMetrics metrics;
 	/** Which prefix strategy the last {@link #open} chose; feeds the engagement string. */
 	String prefixStrategy = "chain";
 	/** How many chunk-pipeline probe stages ran in merge/zig-zag mode (explain observability). */
 	int mergeStages;
+	boolean engagementRecorded;
+	boolean prefixOnlyTailFiltersClosed;
 
 	private LmdbNativeFactorizedRows(MultiJoinPlan plan, MultiJoinPlan.OrderedPlan derived, int flatCount,
 			PrefixDepth[] prefixDepths, TailBranch[] branches, NativeBooleanFilter[] prefixOnlyTailFilters) {
+		this(plan, derived, flatCount, prefixDepths, branches, prefixOnlyTailFilters,
+				LmdbNativeAttemptMetrics.direct());
+	}
+
+	private LmdbNativeFactorizedRows(MultiJoinPlan plan, MultiJoinPlan.OrderedPlan derived, int flatCount,
+			PrefixDepth[] prefixDepths, TailBranch[] branches, NativeBooleanFilter[] prefixOnlyTailFilters,
+			LmdbNativeAttemptMetrics metrics) {
 		this.plan = plan;
 		this.derived = derived;
 		this.flatCount = flatCount;
 		this.prefixDepths = prefixDepths;
 		this.branches = branches;
 		this.prefixOnlyTailFilters = prefixOnlyTailFilters;
+		this.metrics = metrics;
+		this.memoBudget = new FactorizedTail.MemoBudget(MEMO_BYPASSES, metrics);
 		this.enumResults = new TailResult[branches.length];
 		this.enumBranches = new TailBranch[branches.length];
 		this.odometer = new int[branches.length];
@@ -125,6 +137,46 @@ final class LmdbNativeFactorizedRows {
 	 */
 	static LmdbNativeFactorizedRows tryCreate(MultiJoinPlan plan, MultiJoinPlan.OrderedPlan derived, RowState row,
 			long seedMask, int[] sourceSlots, boolean distinct) {
+		return tryCreate(plan, derived, row, seedMask, sourceSlots, distinct, 0L, 0,
+				LmdbNativeAttemptMetrics.direct());
+	}
+
+	/**
+	 * Ordered-flat variant: every slot in {@code requiredPrefixMask} must be produced by the flat prefix so ORDER BY
+	 * keys never change while a retained row expands its factorized branches.
+	 */
+	static LmdbNativeFactorizedRows tryCreate(MultiJoinPlan plan, MultiJoinPlan.OrderedPlan derived, RowState row,
+			long seedMask, int[] sourceSlots, boolean distinct, long requiredPrefixMask) {
+		return tryCreate(plan, derived, row, seedMask, sourceSlots, distinct, requiredPrefixMask, 0,
+				LmdbNativeAttemptMetrics.direct());
+	}
+
+	static LmdbNativeFactorizedRows tryCreate(MultiJoinPlan plan, MultiJoinPlan.OrderedPlan derived, RowState row,
+			long seedMask, int[] sourceSlots, boolean distinct, long requiredPrefixMask,
+			LmdbNativeAttemptMetrics metrics) {
+		return tryCreate(plan, derived, row, seedMask, sourceSlots, distinct, requiredPrefixMask, 0, metrics);
+	}
+
+	/**
+	 * Parallel-worker variant: ordered depth zero is the externally partitioned morsel root and must remain in the flat
+	 * prefix even when it produces no slots. The remaining suffix can still use the ordinary factorized roles.
+	 */
+	static LmdbNativeFactorizedRows tryCreateFromExternalRoot(MultiJoinPlan plan,
+			MultiJoinPlan.OrderedPlan derived, RowState row, long seedMask, int[] sourceSlots, boolean distinct) {
+		return tryCreateFromExternalRoot(plan, derived, row, seedMask, sourceSlots, distinct,
+				LmdbNativeAttemptMetrics.direct());
+	}
+
+	static LmdbNativeFactorizedRows tryCreateFromExternalRoot(MultiJoinPlan plan,
+			MultiJoinPlan.OrderedPlan derived, RowState row, long seedMask, int[] sourceSlots, boolean distinct,
+			LmdbNativeAttemptMetrics metrics) {
+		return tryCreate(plan, derived, row, seedMask, sourceSlots, distinct, 0L, 1,
+				metrics);
+	}
+
+	private static LmdbNativeFactorizedRows tryCreate(MultiJoinPlan plan, MultiJoinPlan.OrderedPlan derived,
+			RowState row, long seedMask, int[] sourceSlots, boolean distinct, long requiredPrefixMask,
+			int minimumFlatCount, LmdbNativeAttemptMetrics metrics) {
 		Split split = analyzeSplit(plan, derived, seedMask);
 		if (split == null) {
 			return null;
@@ -133,7 +185,15 @@ final class LmdbNativeFactorizedRows {
 		int n = order.length;
 		long[] fresh = split.fresh;
 		long[] reads = split.reads;
-		int flatCount = split.flatCount;
+		int flatCount = Math.max(split.flatCount, minimumFlatCount);
+		for (int d = flatCount; d < n; d++) {
+			if ((fresh[d] & requiredPrefixMask) != 0L) {
+				flatCount = d + 1;
+			}
+		}
+		if (flatCount == n) {
+			return null;
+		}
 		MaskedFilter[] filters = plan.filters;
 		int[] filterDepth = derived.filterDepth;
 		long outputMask = outputMask(sourceSlots);
@@ -193,9 +253,17 @@ final class LmdbNativeFactorizedRows {
 						depthFilters.toArray(new NativeBooleanFilter[0]), slotsOf(reads[d]), d > 0);
 			}
 		}
-		ENGAGED.incrementAndGet();
-		return new LmdbNativeFactorizedRows(plan, derived, flatCount, prefixDepths, branches,
-				prefixOnly.toArray(new NativeBooleanFilter[0]));
+		LmdbNativeFactorizedRows result = new LmdbNativeFactorizedRows(plan, derived, flatCount, prefixDepths, branches,
+				prefixOnly.toArray(new NativeBooleanFilter[0]), metrics);
+		if (prefixDepths != null) {
+			for (PrefixDepth prefixDepth : prefixDepths) {
+				prefixDepth.memoBudget = result.memoBudget;
+			}
+		}
+		for (TailBranch branch : branches) {
+			branch.memoBudget = result.memoBudget;
+		}
+		return result;
 	}
 
 	/** The flat-prefix/branch split shared by planning ({@link #tryCreate}) and the cheap dispatch probe. */
@@ -315,6 +383,13 @@ final class LmdbNativeFactorizedRows {
 		return "factorizedRows(flatPrefix=" + flatCount + ", prefix=" + prefixStrategy + ", " + branchCounts + ")";
 	}
 
+	void recordEngagement() {
+		if (!engagementRecorded) {
+			engagementRecorded = true;
+			metrics.recordFactorizedRowsEngaged();
+		}
+	}
+
 	FactorizedRowCursor open(RowState row) throws IOException {
 		return new Cursor(this, row, openPrefix(row));
 	}
@@ -383,26 +458,33 @@ final class LmdbNativeFactorizedRows {
 		return result;
 	}
 
-	/**
-	 * Worker-local variant whose ordered depth-0 scan is supplied by the morsel scheduler. The ordinary cursor chain is
-	 * used for the remaining flat prefix because chunked-prefix depth zero owns an LMDB scan and cannot consume a
-	 * partitioned root. A zero-length flat prefix cannot be partitioned safely and is rejected by the caller.
-	 */
+	/** Worker-local variant whose ordered depth-zero scan is supplied by the morsel scheduler. */
 	FactorizedRowCursor openFrom(RowState row, RowCursor leftmost) throws IOException {
 		if (flatCount == 0) {
 			throw new IllegalStateException("a fully factorized plan has no partitionable root prefix");
 		}
-		prefixStrategy = "chain";
-		return new Cursor(this, row, plan.openChainFrom(derived, leftmost, flatCount, row));
+		RowCursor prefix = LmdbNativeChunkPipeline.externalRootCandidateEnabled()
+				? LmdbNativeChunkPipeline.tryOpenPrefixFrom(plan, derived, flatCount, row, leftmost, memoBudget)
+				: null;
+		if (prefix != null) {
+			prefixStrategy = "chunkPipeline";
+			mergeStages = 0;
+		} else {
+			prefixStrategy = "chain";
+			prefix = plan.openChainFrom(derived, leftmost, flatCount, row);
+		}
+		return new Cursor(this, row, prefix);
 	}
 
 	private static final class Cursor implements FactorizedRowCursor {
 		final LmdbNativeFactorizedRows owner;
 		final RowState row;
 		final RowCursor prefix;
+		RowCursor ordinarySuffix;
 		long multiplicity = 1L;
 		int enumCount;
 		boolean enumActive;
+		boolean ordinarySuffixOnly;
 		boolean closed;
 
 		Cursor(LmdbNativeFactorizedRows owner, RowState row, RowCursor prefix) {
@@ -413,31 +495,55 @@ final class LmdbNativeFactorizedRows {
 
 		@Override
 		public boolean next() throws IOException {
-			if (closed) {
-				return false;
-			}
-			if (enumActive) {
-				if (advanceOdometer()) {
-					writeEnumSlots();
-					return true;
+			nextLoop: while (!closed) {
+				if (ordinarySuffix != null) {
+					if (ordinarySuffix.next()) {
+						multiplicity = 1L;
+						return true;
+					}
+					closeOrdinarySuffix();
+					continue;
 				}
-				clearEnumSlots();
-				enumActive = false;
-			}
-
-			prefixLoop: while (prefix.next()) {
+				if (enumActive) {
+					if (advanceOdometer()) {
+						writeEnumSlots();
+						owner.recordEngagement();
+						return true;
+					}
+					clearEnumSlots();
+					enumActive = false;
+				}
+				if (!prefix.next()) {
+					boolean completedOptimizedAttempt = !ordinarySuffixOnly;
+					close();
+					if (completedOptimizedAttempt) {
+						owner.recordEngagement();
+					}
+					return false;
+				}
+				if (ordinarySuffixOnly) {
+					ordinarySuffix = owner.plan.openSuffix(owner.derived, owner.flatCount, row);
+					continue;
+				}
 				for (NativeBooleanFilter filter : owner.prefixOnlyTailFilters) {
 					if (!filter.accept(row)) {
-						continue prefixLoop;
+						continue nextLoop;
 					}
 				}
 				multiplicity = 1L;
 				enumCount = 0;
 				for (TailBranch branch : owner.branches) {
 					TailResult result = branch.result(row, owner);
+					if (result == TailResult.REFUSED) {
+						clearEnumSlots();
+						enumActive = false;
+						ordinarySuffixOnly = true;
+						ordinarySuffix = owner.plan.openSuffix(owner.derived, owner.flatCount, row);
+						continue nextLoop;
+					}
 					if (result.count == 0L) {
 						clearEnumSlots();
-						continue prefixLoop;
+						continue nextLoop;
 					}
 					if (branch.role == ROLE_COUNT) {
 						// saturation is observationally sound here: multiplicity only controls how many times an
@@ -457,15 +563,24 @@ final class LmdbNativeFactorizedRows {
 					}
 				}
 				if (enumCount == 0) {
+					owner.recordEngagement();
 					return true;
 				}
 				Arrays.fill(owner.odometer, 0, enumCount, 0);
 				writeEnumSlots();
 				enumActive = true;
+				owner.recordEngagement();
 				return true;
 			}
-			close();
 			return false;
+		}
+
+		private void closeOrdinarySuffix() {
+			RowCursor suffix = ordinarySuffix;
+			ordinarySuffix = null;
+			if (suffix != null) {
+				suffix.close();
+			}
 		}
 
 		private boolean advanceOdometer() {
@@ -515,23 +630,74 @@ final class LmdbNativeFactorizedRows {
 			}
 			closed = true;
 			clearEnumSlots();
-			prefix.close();
-			for (TailBranch branch : owner.branches) {
-				branch.close();
-				branch.memo.clear();
+			Throwable failure = null;
+			try {
+				closeOrdinarySuffix();
+			} catch (RuntimeException | Error problem) {
+				failure = addCloseFailure(failure, problem);
 			}
-			closeOwnerPrefixDepths(owner);
+			try {
+				prefix.close();
+			} catch (RuntimeException | Error problem) {
+				failure = addCloseFailure(failure, problem);
+			}
+			for (TailBranch branch : owner.branches) {
+				try {
+					branch.close();
+				} catch (RuntimeException | Error problem) {
+					failure = addCloseFailure(failure, problem);
+				}
+			}
+			failure = owner.closePrefixOnlyTailFilters(failure);
+			rethrowCloseFailure(failure);
 		}
 	}
 
-	static void closeOwnerPrefixDepths(LmdbNativeFactorizedRows owner) {
-		if (owner.prefixDepths != null) {
-			for (PrefixDepth depth : owner.prefixDepths) {
-				depth.close();
-				if (depth.memo != null) {
-					depth.memo.clear();
-				}
+	private Throwable closePrefixOnlyTailFilters(Throwable failure) {
+		if (prefixOnlyTailFiltersClosed) {
+			return failure;
+		}
+		prefixOnlyTailFiltersClosed = true;
+		return closeFilters(prefixOnlyTailFilters, failure);
+	}
+
+	static Throwable closeFilters(NativeBooleanFilter[] filters, Throwable failure) {
+		for (NativeBooleanFilter filter : filters) {
+			try {
+				filter.close();
+			} catch (RuntimeException | Error problem) {
+				failure = addCloseFailure(failure, problem);
 			}
+		}
+		return failure;
+	}
+
+	static Throwable addCloseFailure(Throwable first, Throwable next) {
+		if (first == null) {
+			return next;
+		}
+		if (first != next) {
+			first.addSuppressed(next);
+		}
+		return first;
+	}
+
+	static void rethrowCloseFailure(Throwable failure) {
+		if (failure instanceof RuntimeException) {
+			throw (RuntimeException) failure;
+		}
+		if (failure != null) {
+			throw (Error) failure;
+		}
+	}
+
+	/** Cold-path signal telling ordered factorized evaluation to discard its partial state and restart classically. */
+	static final class EnumMaterializationRefused extends IOException {
+		private static final long serialVersionUID = 1L;
+
+		@Override
+		public synchronized Throwable fillInStackTrace() {
+			return this;
 		}
 	}
 
@@ -565,6 +731,9 @@ final class LmdbNativeFactorizedRows {
 				enumCount = 0;
 				for (TailBranch branch : owner.branches) {
 					TailResult result = branch.result(row, owner);
+					if (result == TailResult.REFUSED) {
+						throw new EnumMaterializationRefused();
+					}
 					if (result.count == 0L) {
 						continue prefixLoop;
 					}
@@ -623,16 +792,27 @@ final class LmdbNativeFactorizedRows {
 				owner.enumBranches[k] = null;
 			}
 			enumCount = 0;
-			prefix.close();
-			for (TailBranch branch : owner.branches) {
-				branch.close();
-				branch.memo.clear();
+			Throwable failure = null;
+			try {
+				prefix.close();
+			} catch (RuntimeException | Error problem) {
+				failure = addCloseFailure(failure, problem);
 			}
-			closeOwnerPrefixDepths(owner);
+			for (TailBranch branch : owner.branches) {
+				try {
+					branch.close();
+				} catch (RuntimeException | Error problem) {
+					failure = addCloseFailure(failure, problem);
+				}
+			}
+			failure = owner.closePrefixOnlyTailFilters(failure);
+			rethrowCloseFailure(failure);
 		}
 	}
 
 	static final class TailResult {
+		static final TailResult REFUSED = new TailResult(-1L, null);
+		static final TailResult SEEN_ONCE = new TailResult(-2L, null);
 		static final TailResult EMPTY = new TailResult(0L, null);
 		static final TailResult ONE = new TailResult(1L, null);
 
@@ -657,7 +837,13 @@ final class LmdbNativeFactorizedRows {
 		final boolean rejectNullContext;
 		final HashMap<GroupKey, TailResult> memo = new HashMap<>();
 		final GroupKey probeKey;
+		FactorizedTail.MemoBudget memoBudget;
 		NativeLmdbQuerySource.NativeProbe probe;
+		long[] enumScratch;
+		long enumScratchReservedValues;
+		int reservedEntries;
+		long reservedValues;
+		boolean closed;
 
 		TailBranch(PatternPlan pattern, int role, int[] keySlots, int[] freshSlots, int[] freshQuadPos,
 				int[] valueSlots, int[] valueQuadPos, NativeBooleanFilter[] filters, boolean rejectNullContext) {
@@ -676,18 +862,161 @@ final class LmdbNativeFactorizedRows {
 		TailResult result(RowState row, LmdbNativeFactorizedRows owner) throws IOException {
 			probeKey.refill(row.slots, keySlots);
 			TailResult memoized = memo.get(probeKey);
-			if (memoized != null) {
+			if (memoized != null && memoized != TailResult.SEEN_ONCE) {
 				return memoized;
 			}
-			TailResult result = scan(row, owner.quadBuffer);
-			long stored = result.values == null ? 0L : result.values.length;
-			if (owner.memoBudget.tryReserve(1, stored)) {
-				memo.put(probeKey.storedCopy(), result);
+			if (role == ROLE_ENUM) {
+				return collectEnum(row, owner.quadBuffer, memoized == TailResult.SEEN_ONCE);
+			}
+			TailResult result = scanCountOrExists(row, owner.quadBuffer);
+			if (memoBudget.tryReserve(1, 0)) {
+				boolean published = false;
+				try {
+					memo.put(probeKey.storedCopy(), result);
+					reservedEntries++;
+					published = true;
+				} finally {
+					if (!published) {
+						memoBudget.release(1, 0);
+					}
+				}
 			}
 			return result;
 		}
 
-		TailResult scan(RowState row, long[] buffer) throws IOException {
+		private TailResult collectEnum(RowState row, long[] buffer, boolean repeatedKey) throws IOException {
+			int initialCapacity = Math.max(4, valueSlots.length) * 16;
+			if (!ensureEnumScratch(initialCapacity)) {
+				return TailResult.REFUSED;
+			}
+			if (probe == null) {
+				probe = row.source.newProbe();
+			}
+			long count = 0L;
+			try (PatternCursor cursor = pattern.openRaw(row, probe)) {
+				while (true) {
+					int rows = cursor.fill(buffer, BATCH_ROWS);
+					if (rows == 0) {
+						break;
+					}
+					for (int i = 0; i < rows; i++) {
+						int base = i * 4;
+						if (rejectNullContext && buffer[base + TripleIndex.CONTEXT_IDX] == NULL_CONTEXT_ID) {
+							continue;
+						}
+						if (filters.length > 0 && !acceptFilters(row, buffer, base)) {
+							continue;
+						}
+						long requiredLong = (count + 1L) * valueSlots.length;
+						if (requiredLong > FactorizedTail.MAX_COLLECTED_VALUES) {
+							throw new QueryEvaluationException(
+									"factorized enumeration overflow: a single probe key fans out beyond "
+											+ "the maximum in-memory value batch");
+						}
+						int required = (int) requiredLong;
+						if (required > enumScratch.length && !growEnumScratch(required)) {
+							return TailResult.REFUSED;
+						}
+						int at = (int) (count * valueSlots.length);
+						for (int j = 0; j < valueSlots.length; j++) {
+							enumScratch[at + j] = buffer[base + valueQuadPos[j]];
+						}
+						count++;
+					}
+				}
+			}
+
+			TailResult transientResult = count == 0L ? TailResult.EMPTY : new TailResult(count, enumScratch);
+			if (repeatedKey) {
+				return promoteRepeatedEnumResult(transientResult);
+			}
+			publishFirstEnumResult(transientResult);
+			return transientResult;
+		}
+
+		private boolean ensureEnumScratch(int initialCapacity) {
+			if (enumScratch != null) {
+				return true;
+			}
+			if (!memoBudget.tryReserve(0, initialCapacity)) {
+				return false;
+			}
+			try {
+				enumScratch = new long[initialCapacity];
+				enumScratchReservedValues = initialCapacity;
+				return true;
+			} catch (RuntimeException | Error problem) {
+				memoBudget.release(0, initialCapacity);
+				throw problem;
+			}
+		}
+
+		private boolean growEnumScratch(int required) {
+			int current = enumScratch.length;
+			int grown = grownEnumCapacity(current, required);
+			int delta = grown - current;
+			if (!memoBudget.tryReserve(0, delta)) {
+				dropEnumScratch();
+				return false;
+			}
+			try {
+				enumScratch = Arrays.copyOf(enumScratch, grown);
+				enumScratchReservedValues += delta;
+				return true;
+			} catch (RuntimeException | Error problem) {
+				memoBudget.release(0, delta);
+				throw problem;
+			}
+		}
+
+		private void publishFirstEnumResult(TailResult result) {
+			if (!memoBudget.tryReserve(1, 0)) {
+				return;
+			}
+			boolean published = false;
+			try {
+				memo.put(probeKey.storedCopy(), result == TailResult.EMPTY ? TailResult.EMPTY : TailResult.SEEN_ONCE);
+				reservedEntries++;
+				published = true;
+			} finally {
+				if (!published) {
+					memoBudget.release(1, 0);
+				}
+			}
+		}
+
+		private TailResult promoteRepeatedEnumResult(TailResult transientResult) {
+			if (transientResult == TailResult.EMPTY) {
+				memo.replace(probeKey, TailResult.SEEN_ONCE, TailResult.EMPTY);
+				return TailResult.EMPTY;
+			}
+			int capacity = enumScratch.length;
+			if (!memoBudget.tryReserve(0, capacity)) {
+				return transientResult;
+			}
+			boolean published = false;
+			try {
+				TailResult durable = new TailResult(transientResult.count, Arrays.copyOf(enumScratch, capacity));
+				if (!memo.replace(probeKey, TailResult.SEEN_ONCE, durable)) {
+					throw new IllegalStateException("enum memo marker disappeared during promotion");
+				}
+				reservedValues += capacity;
+				published = true;
+				return durable;
+			} finally {
+				if (!published) {
+					memoBudget.release(0, capacity);
+				}
+			}
+		}
+
+		private static int grownEnumCapacity(int current, int required) {
+			long doubled = (long) current * 2L;
+			long grown = Math.max(required, Math.min(doubled, FactorizedTail.MAX_COLLECTED_VALUES));
+			return (int) grown;
+		}
+
+		TailResult scanCountOrExists(RowState row, long[] buffer) throws IOException {
 			if (probe == null) {
 				probe = row.source.newProbe();
 			}
@@ -696,7 +1025,6 @@ final class LmdbNativeFactorizedRows {
 				// without per-quad checks an existence probe needs exactly one record
 				int batchRows = existsOnly && filters.length == 0 && !rejectNullContext ? 1 : BATCH_ROWS;
 				long count = 0L;
-				long[] values = role == ROLE_ENUM ? new long[Math.max(4, valueSlots.length) * 16] : null;
 				while (true) {
 					int rows = cursor.fill(buffer, batchRows);
 					if (rows == 0) {
@@ -713,35 +1041,13 @@ final class LmdbNativeFactorizedRows {
 						if (existsOnly) {
 							return TailResult.ONE;
 						}
-						if (values != null) {
-							long at = count * valueSlots.length;
-							if (at + valueSlots.length > FactorizedTail.MAX_COLLECTED_VALUES) {
-								// the int-indexed value batch is at the maximum array size; wrapping the
-								// index would read/write garbage, so fail clearly instead
-								throw new QueryEvaluationException(
-										"factorized enumeration overflow: a single probe key fans out beyond "
-												+ "the maximum in-memory value batch");
-							}
-							int atInt = (int) at;
-							if (atInt + valueSlots.length > values.length) {
-								values = Arrays.copyOf(values, Math.max(values.length * 2,
-										atInt + valueSlots.length));
-							}
-							for (int j = 0; j < valueSlots.length; j++) {
-								values[atInt + j] = buffer[base + valueQuadPos[j]];
-							}
-						}
 						count++;
 					}
 				}
 				if (count == 0L) {
 					return TailResult.EMPTY;
 				}
-				if (values == null) {
-					return count == 1L ? TailResult.ONE : new TailResult(count, null);
-				}
-				return new TailResult(count, values.length == count * valueSlots.length ? values
-						: Arrays.copyOf(values, (int) (count * valueSlots.length)));
+				return count == 1L ? TailResult.ONE : new TailResult(count, null);
 			}
 		}
 
@@ -751,22 +1057,67 @@ final class LmdbNativeFactorizedRows {
 		 */
 		boolean acceptFilters(RowState row, long[] buffer, int base) {
 			int mark = row.mark();
-			boolean ok = true;
-			for (int j = 0; j < freshSlots.length && ok; j++) {
-				ok = row.bind(freshSlots[j], buffer[base + freshQuadPos[j]]);
+			try {
+				boolean ok = true;
+				for (int j = 0; j < freshSlots.length && ok; j++) {
+					ok = row.bind(freshSlots[j], buffer[base + freshQuadPos[j]]);
+				}
+				for (int f = 0; f < filters.length && ok; f++) {
+					ok = filters[f].accept(row);
+				}
+				return ok;
+			} finally {
+				row.rollback(mark);
 			}
-			for (int f = 0; f < filters.length && ok; f++) {
-				ok = filters[f].accept(row);
+		}
+
+		private void dropEnumScratch() {
+			long reserved = enumScratchReservedValues;
+			enumScratch = null;
+			enumScratchReservedValues = 0L;
+			if (reserved != 0L) {
+				memoBudget.release(0, reserved);
 			}
-			row.rollback(mark);
-			return ok;
 		}
 
 		void close() {
-			if (probe != null) {
-				probe.close();
-				probe = null;
+			if (closed) {
+				return;
 			}
+			closed = true;
+			Throwable failure = null;
+			NativeLmdbQuerySource.NativeProbe ownedProbe = probe;
+			probe = null;
+			if (ownedProbe != null) {
+				try {
+					ownedProbe.close();
+				} catch (RuntimeException | Error problem) {
+					failure = addCloseFailure(failure, problem);
+				}
+			}
+			failure = closeFilters(filters, failure);
+			int ownedReservedEntries = reservedEntries;
+			long ownedReservedValues = reservedValues;
+			reservedEntries = 0;
+			reservedValues = 0L;
+			try {
+				memo.clear();
+			} catch (RuntimeException | Error problem) {
+				failure = addCloseFailure(failure, problem);
+			}
+			if (memoBudget != null) {
+				try {
+					memoBudget.release(ownedReservedEntries, ownedReservedValues);
+				} catch (RuntimeException | Error problem) {
+					failure = addCloseFailure(failure, problem);
+				}
+			}
+			try {
+				dropEnumScratch();
+			} catch (RuntimeException | Error problem) {
+				failure = addCloseFailure(failure, problem);
+			}
+			rethrowCloseFailure(failure);
 		}
 	}
 
@@ -787,8 +1138,11 @@ final class LmdbNativeFactorizedRows {
 		final boolean memoize;
 		final HashMap<GroupKey, long[]> memo;
 		final GroupKey probeKey;
+		FactorizedTail.MemoBudget memoBudget;
 		NativeLmdbQuerySource.NativeProbe probe;
-		long memoStoredValues;
+		int reservedEntries;
+		long reservedValues;
+		boolean closed;
 
 		PrefixDepth(PatternPlan pattern, NativeBooleanFilter[] filters, int[] keySlots, boolean memoize) {
 			this.pattern = pattern;
@@ -800,10 +1154,40 @@ final class LmdbNativeFactorizedRows {
 		}
 
 		void close() {
-			if (probe != null) {
-				probe.close();
-				probe = null;
+			if (closed) {
+				return;
 			}
+			closed = true;
+			Throwable failure = null;
+			NativeLmdbQuerySource.NativeProbe ownedProbe = probe;
+			probe = null;
+			if (ownedProbe != null) {
+				try {
+					ownedProbe.close();
+				} catch (RuntimeException | Error problem) {
+					failure = addCloseFailure(failure, problem);
+				}
+			}
+			failure = closeFilters(filters, failure);
+			int ownedReservedEntries = reservedEntries;
+			long ownedReservedValues = reservedValues;
+			reservedEntries = 0;
+			reservedValues = 0L;
+			try {
+				if (memo != null) {
+					memo.clear();
+				}
+			} catch (RuntimeException | Error problem) {
+				failure = addCloseFailure(failure, problem);
+			}
+			if (memoBudget != null) {
+				try {
+					memoBudget.release(ownedReservedEntries, ownedReservedValues);
+				} catch (RuntimeException | Error problem) {
+					failure = addCloseFailure(failure, problem);
+				}
+			}
+			rethrowCloseFailure(failure);
 		}
 	}
 
@@ -826,9 +1210,11 @@ final class LmdbNativeFactorizedRows {
 		final long[][] collects;
 		final int[] collectCount;
 		final GroupKey[] collectKeys;
+		final long[] collectReservedValues;
 		final int[] marks;
 		int depth = -1;
 		boolean exhausted;
+		boolean closed;
 
 		ChunkedPrefixCursor(RowState row, PrefixDepth[] depths) {
 			this.row = row;
@@ -843,13 +1229,14 @@ final class LmdbNativeFactorizedRows {
 			this.collects = new long[n][];
 			this.collectCount = new int[n];
 			this.collectKeys = new GroupKey[n];
+			this.collectReservedValues = new long[n];
 			this.marks = new int[n];
 			Arrays.fill(marks, -1);
 		}
 
 		@Override
 		public boolean next() throws IOException {
-			if (exhausted) {
+			if (closed || exhausted) {
 				return false;
 			}
 			if (depth == -1) {
@@ -896,11 +1283,18 @@ final class LmdbNativeFactorizedRows {
 					batchPos[d]++;
 				}
 				int mark = row.mark();
-				if (pd.pattern.bind(quads, base, row) && acceptFilters(pd, row)) {
-					marks[d] = mark;
-					return true;
+				boolean accepted = false;
+				try {
+					accepted = pd.pattern.bind(quads, base, row) && acceptFilters(pd, row);
+					if (accepted) {
+						marks[d] = mark;
+						return true;
+					}
+				} finally {
+					if (!accepted) {
+						row.rollback(mark);
+					}
 				}
-				row.rollback(mark);
 			}
 		}
 
@@ -928,9 +1322,22 @@ final class LmdbNativeFactorizedRows {
 			long[] collect = collects[d];
 			if (collect != null) {
 				int used = collectCount[d] * 4;
-				if (used + rows * 4 > collect.length) {
-					collect = collects[d] = Arrays.copyOf(collect,
-							Math.max(collect.length * 2, used + rows * 4));
+				int required = Math.addExact(used, Math.multiplyExact(rows, 4));
+				if (required > collect.length) {
+					int grown = Math.max(Math.multiplyExact(collect.length, 2), required);
+					long delta = grown - (long) collect.length;
+					PrefixDepth pd = depths[d];
+					if (!pd.memoBudget.tryReserve(0, delta)) {
+						releaseCollection(d);
+						return true;
+					}
+					try {
+						collect = collects[d] = Arrays.copyOf(collect, grown);
+						collectReservedValues[d] += delta;
+					} catch (RuntimeException | Error problem) {
+						pd.memoBudget.release(0, delta);
+						throw problem;
+					}
 				}
 				System.arraycopy(batch, 0, collect, used, rows * 4);
 				collectCount[d] += rows;
@@ -944,10 +1351,38 @@ final class LmdbNativeFactorizedRows {
 				return;
 			}
 			PrefixDepth pd = depths[d];
-			long[] quads = collectCount[d] == 0 ? PrefixDepth.EMPTY_QUADS
-					: Arrays.copyOf(collect, collectCount[d] * 4);
-			pd.memo.put(collectKeys[d], quads);
-			pd.memoStoredValues += quads.length;
+			int used = collectCount[d] * 4;
+			long[] quads;
+			if (used == 0) {
+				releaseCollectionValues(d);
+				quads = PrefixDepth.EMPTY_QUADS;
+			} else if (used == collect.length) {
+				quads = collect;
+			} else {
+				// The compact replay array coexists briefly with the append buffer. Charge that peak before
+				// allocation, then release the append capacity once the copy succeeds.
+				if (!pd.memoBudget.tryReserve(0, used)) {
+					releaseCollection(d);
+					return;
+				}
+				try {
+					quads = Arrays.copyOf(collect, used);
+				} catch (RuntimeException | Error problem) {
+					pd.memoBudget.release(0, used);
+					releaseCollection(d);
+					throw problem;
+				}
+				releaseCollectionValues(d);
+				collectReservedValues[d] = used;
+			}
+			try {
+				pd.memo.put(collectKeys[d], quads);
+				pd.reservedValues += collectReservedValues[d];
+				collectReservedValues[d] = 0L;
+			} catch (RuntimeException | Error problem) {
+				releaseCollection(d);
+				throw problem;
+			}
 			collects[d] = null;
 			collectKeys[d] = null;
 			collectCount[d] = 0;
@@ -956,9 +1391,7 @@ final class LmdbNativeFactorizedRows {
 		void open(int d) throws IOException {
 			PrefixDepth pd = depths[d];
 			replays[d] = null;
-			collects[d] = null;
-			collectKeys[d] = null;
-			collectCount[d] = 0;
+			releaseCollection(d);
 			batchSize[d] = 0;
 			batchPos[d] = 0;
 			if (pd.memoize) {
@@ -971,14 +1404,25 @@ final class LmdbNativeFactorizedRows {
 				}
 				openCursor(d, pd);
 				if (memoized == PrefixDepth.SEEN_ONCE) {
-					if (pd.memoStoredValues < MEMO_MAX_VALUES) {
-						collects[d] = new long[4 * 64];
+					int initialCapacity = 4 * 64;
+					if (pd.memoBudget.tryReserve(0, initialCapacity)) {
+						try {
+							collects[d] = new long[initialCapacity];
+							collectReservedValues[d] = initialCapacity;
+						} catch (RuntimeException | Error problem) {
+							pd.memoBudget.release(0, initialCapacity);
+							throw problem;
+						}
 						collectKeys[d] = pd.probeKey.storedCopy();
-					} else {
-						MEMO_BYPASSES.incrementAndGet();
 					}
-				} else if (pd.memo.size() < MEMO_MAX_ENTRIES) {
-					pd.memo.put(pd.probeKey.storedCopy(), PrefixDepth.SEEN_ONCE);
+				} else if (pd.memoBudget.tryReserve(1, 0)) {
+					try {
+						pd.memo.put(pd.probeKey.storedCopy(), PrefixDepth.SEEN_ONCE);
+						pd.reservedEntries++;
+					} catch (RuntimeException | Error problem) {
+						pd.memoBudget.release(1, 0);
+						throw problem;
+					}
 				}
 				return;
 			}
@@ -993,28 +1437,71 @@ final class LmdbNativeFactorizedRows {
 		}
 
 		void closeDepth(int d) {
+			Throwable failure = null;
 			if (marks[d] >= 0) {
-				row.rollback(marks[d]);
+				int mark = marks[d];
 				marks[d] = -1;
+				try {
+					row.rollback(mark);
+				} catch (RuntimeException | Error problem) {
+					failure = addCloseFailure(failure, problem);
+				}
 			}
 			// an early close (emit cap, backtrack while replaying) drops any partial collection
+			try {
+				releaseCollection(d);
+			} catch (RuntimeException | Error problem) {
+				failure = addCloseFailure(failure, problem);
+			}
+			replays[d] = null;
+			PatternCursor ownedCursor = cursors[d];
+			cursors[d] = null;
+			if (ownedCursor != null) {
+				try {
+					ownedCursor.close();
+				} catch (RuntimeException | Error problem) {
+					failure = addCloseFailure(failure, problem);
+				}
+			}
+			rethrowCloseFailure(failure);
+		}
+
+		void releaseCollection(int d) {
 			collects[d] = null;
 			collectKeys[d] = null;
 			collectCount[d] = 0;
-			replays[d] = null;
-			if (cursors[d] != null) {
-				cursors[d].close();
-				cursors[d] = null;
+			releaseCollectionValues(d);
+		}
+
+		void releaseCollectionValues(int d) {
+			long reserved = collectReservedValues[d];
+			collectReservedValues[d] = 0L;
+			if (reserved != 0L) {
+				depths[d].memoBudget.release(0, reserved);
 			}
 		}
 
 		@Override
 		public void close() {
-			for (int d = depths.length - 1; d >= 0; d--) {
-				closeDepth(d);
-				depths[d].close();
+			if (closed) {
+				return;
 			}
+			closed = true;
 			exhausted = true;
+			Throwable failure = null;
+			for (int d = depths.length - 1; d >= 0; d--) {
+				try {
+					closeDepth(d);
+				} catch (RuntimeException | Error problem) {
+					failure = addCloseFailure(failure, problem);
+				}
+				try {
+					depths[d].close();
+				} catch (RuntimeException | Error problem) {
+					failure = addCloseFailure(failure, problem);
+				}
+			}
+			rethrowCloseFailure(failure);
 		}
 	}
 }

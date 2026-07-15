@@ -100,6 +100,19 @@ import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 interface NativeBooleanFilter {
 	boolean accept(RowState row);
 
+	/** Whether this filter can create an independent owner for one parallel worker. */
+	default boolean parallelWorkerForkable() {
+		return false;
+	}
+
+	/**
+	 * Creates a worker-confined copy. Implementations may share immutable expression kernels, but must not share
+	 * mutable counters, memo tables, or close ownership.
+	 */
+	default NativeBooleanFilter forkForParallelWorker() {
+		return null;
+	}
+
 	default void close() {
 	}
 }
@@ -111,11 +124,18 @@ final class RecordingNativeBooleanFilter implements NativeBooleanFilter {
 	final EvaluationStatistics statistics;
 	final AtomicLong passed = new AtomicLong();
 	final AtomicLong filtered = new AtomicLong();
+	private final RecordingNativeBooleanFilter outcomeTarget;
 
 	RecordingNativeBooleanFilter(NativeBooleanFilter delegate, Filter filter, EvaluationStatistics statistics) {
+		this(delegate, filter, statistics, null);
+	}
+
+	private RecordingNativeBooleanFilter(NativeBooleanFilter delegate, Filter filter,
+			EvaluationStatistics statistics, RecordingNativeBooleanFilter outcomeTarget) {
 		this.delegate = delegate;
 		this.filter = filter;
 		this.statistics = statistics;
+		this.outcomeTarget = outcomeTarget;
 	}
 
 	@Override
@@ -130,16 +150,71 @@ final class RecordingNativeBooleanFilter implements NativeBooleanFilter {
 	}
 
 	@Override
+	public boolean parallelWorkerForkable() {
+		return delegate.parallelWorkerForkable();
+	}
+
+	@Override
+	public NativeBooleanFilter forkForParallelWorker() {
+		return forkForParallelWorker(null);
+	}
+
+	NativeBooleanFilter forkForParallelWorker(RecordingNativeBooleanFilter target) {
+		NativeBooleanFilter workerDelegate = delegate.forkForParallelWorker();
+		return workerDelegate == null ? null
+				: new RecordingNativeBooleanFilter(workerDelegate, filter, statistics, target);
+	}
+
+	@Override
 	public void close() {
 		long passedCount = passed.getAndSet(0L);
 		long filteredCount = filtered.getAndSet(0L);
 		if (passedCount > 0L || filteredCount > 0L) {
-			try {
-				statistics.recordFilterOutcome(filter, passedCount, filteredCount);
-			} catch (RuntimeException e) {
-				// Runtime optimizer feedback must never break query evaluation.
+			if (outcomeTarget != null) {
+				outcomeTarget.mergeOutcomes(passedCount, filteredCount);
+			} else {
+				try {
+					statistics.recordFilterOutcome(filter, passedCount, filteredCount);
+				} catch (RuntimeException e) {
+					// Runtime optimizer feedback must never break query evaluation.
+				}
 			}
 		}
+		delegate.close();
+	}
+
+	private void mergeOutcomes(long passedCount, long filteredCount) {
+		passed.addAndGet(passedCount);
+		filtered.addAndGet(filteredCount);
+	}
+
+	void discardOutcomes() {
+		passed.set(0L);
+		filtered.set(0L);
+	}
+}
+
+/** Worker-confined ownership guard. The closed bit is published before delegation so a throwing close stays final. */
+@Experimental
+final class CloseOnceNativeBooleanFilter implements NativeBooleanFilter {
+	private final NativeBooleanFilter delegate;
+	private boolean closed;
+
+	CloseOnceNativeBooleanFilter(NativeBooleanFilter delegate) {
+		this.delegate = delegate;
+	}
+
+	@Override
+	public boolean accept(RowState row) {
+		return delegate.accept(row);
+	}
+
+	@Override
+	public void close() {
+		if (closed) {
+			return;
+		}
+		closed = true;
 		delegate.close();
 	}
 }
@@ -385,14 +460,29 @@ final class CachedCompareFilter implements NativeBooleanFilter {
 	CachedCompareFilter(NativeLmdbQuerySource source, int slot, long constant, boolean constantOnLeft,
 			Compare.CompareOp op, boolean strict,
 			Predicate<BindingSet> fallback) {
+		this(slot, constant, constantOnLeft, op, strict, fallback, source.nativeValueCodec());
+	}
+
+	private CachedCompareFilter(int slot, long constant, boolean constantOnLeft, Compare.CompareOp op,
+			boolean strict, Predicate<BindingSet> fallback, LmdbNativeValueCodec codec) {
 		this.slot = slot;
 		this.constant = constant;
 		this.constantOnLeft = constantOnLeft;
 		this.op = op;
 		this.strict = strict;
 		this.fallback = fallback;
-		this.codec = source.nativeValueCodec();
+		this.codec = codec;
 		this.constantDecoded = codec == null ? null : codec.decode(constant);
+	}
+
+	@Override
+	public boolean parallelWorkerForkable() {
+		return true;
+	}
+
+	@Override
+	public NativeBooleanFilter forkForParallelWorker() {
+		return new CachedCompareFilter(slot, constant, constantOnLeft, op, strict, fallback, codec);
 	}
 
 	@Override

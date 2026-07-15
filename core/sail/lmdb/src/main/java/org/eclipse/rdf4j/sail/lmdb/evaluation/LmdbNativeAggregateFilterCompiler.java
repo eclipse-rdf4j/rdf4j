@@ -46,7 +46,6 @@ import org.eclipse.rdf4j.query.algebra.AbstractAggregateOperator;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.Avg;
-import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
@@ -90,10 +89,10 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -525,32 +524,14 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 		return finder.found;
 	}
 
-	/** Whether evaluating this expression again with the same bindings is guaranteed to produce the same result. */
+	/**
+	 * Whether evaluating this expression again with the same bindings is guaranteed to produce the same result. The
+	 * function SPI has no affirmative purity contract: its default {@code mustReturnDifferentResult() == false} cannot
+	 * prove that an extension function is deterministic. NOW is the sole function-call exception because RDF4J binds it
+	 * once per query through the evaluation context.
+	 */
 	static boolean isRepeatable(ValueExpr expr) {
-		class VolatileFinder extends AbstractQueryModelVisitor<RuntimeException> {
-			boolean found;
-
-			@Override
-			public void meet(FunctionCall node) {
-				boolean repeatable = FunctionRegistry.getInstance()
-						.get(node.getURI())
-						.map(function -> !function.mustReturnDifferentResult())
-						.orElse(false);
-				if (!repeatable) {
-					found = true;
-					return;
-				}
-				super.meet(node);
-			}
-
-			@Override
-			public void meet(BNodeGenerator node) {
-				found = true;
-			}
-		}
-		VolatileFinder finder = new VolatileFinder();
-		expr.visit(finder);
-		return !finder.found;
+		return QueryEvaluationUtility.isRepeatableWithinPreparation(expr);
 	}
 
 	NativeBooleanFilter compileListMember(ListMemberOperator list) {

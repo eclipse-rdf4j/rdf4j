@@ -229,60 +229,179 @@ final class LongAggStateMap {
 /** Minimal open-addressing long -> long counter map for scan-once branch count tables. */
 @Experimental
 final class LongCountMap {
-	long[] keys = new long[64];
-	long[] counts = new long[64];
-	boolean[] used = new boolean[64];
+	private static final int INITIAL_CAPACITY = 64;
+
+	private final FactorizedTail.MemoBudget budget;
+	long[] keys;
+	long[] counts;
+	private long[] usedBits;
+	/** Occupancy for the unbudgeted grouped-pair scan. Budgeted maps use only {@link #usedBits}. */
+	boolean[] used;
 	int size;
+	private long reservedValues;
+	private boolean closed;
+
+	LongCountMap() {
+		this(null);
+	}
+
+	LongCountMap(FactorizedTail.MemoBudget budget) {
+		this.budget = budget;
+		long initialValues = physicalCapacity(INITIAL_CAPACITY);
+		if (budget != null && !budget.tryReserve(0, initialValues)) {
+			return;
+		}
+		try {
+			long[] initialKeys = new long[INITIAL_CAPACITY];
+			long[] initialCounts = new long[INITIAL_CAPACITY];
+			long[] initialUsedBits = budget == null ? null : new long[wordCapacity(INITIAL_CAPACITY)];
+			boolean[] initialUsed = budget == null ? new boolean[INITIAL_CAPACITY] : null;
+			keys = initialKeys;
+			counts = initialCounts;
+			usedBits = initialUsedBits;
+			used = initialUsed;
+			reservedValues = budget == null ? 0L : initialValues;
+		} catch (RuntimeException | Error problem) {
+			if (budget != null) {
+				budget.release(0, initialValues);
+			}
+			throw problem;
+		}
+	}
+
+	boolean isAllocated() {
+		return keys != null;
+	}
 
 	void increment(long key) {
-		if ((size + 1) * 4 > keys.length * 3) {
-			grow();
+		if (!tryIncrement(key)) {
+			throw new IllegalStateException("unbudgeted long count map cannot refuse an increment");
+		}
+	}
+
+	boolean tryIncrement(long key) {
+		if (keys == null) {
+			return false;
+		}
+		int existing = find(key);
+		if (existing >= 0) {
+			counts[existing]++;
+			return true;
+		}
+		if ((size + 1L) * 4L > keys.length * 3L && !grow()) {
+			return false;
 		}
 		int mask = keys.length - 1;
 		int idx = mix(key) & mask;
-		while (used[idx]) {
-			if (keys[idx] == key) {
-				counts[idx]++;
-				return;
-			}
+		while (isUsed(used, usedBits, idx)) {
 			idx = (idx + 1) & mask;
 		}
-		used[idx] = true;
+		markUsed(used, usedBits, idx);
 		keys[idx] = key;
 		counts[idx] = 1;
 		size++;
+		return true;
 	}
 
 	long get(long key) {
+		int idx = find(key);
+		return idx < 0 ? 0L : counts[idx];
+	}
+
+	private int find(long key) {
+		if (keys == null) {
+			return -1;
+		}
 		int mask = keys.length - 1;
 		int idx = mix(key) & mask;
-		while (used[idx]) {
+		while (isUsed(used, usedBits, idx)) {
 			if (keys[idx] == key) {
-				return counts[idx];
+				return idx;
 			}
 			idx = (idx + 1) & mask;
 		}
-		return 0;
+		return -1;
 	}
 
-	void grow() {
+	private boolean grow() {
 		long[] oldKeys = keys;
 		long[] oldCounts = counts;
+		long[] oldUsedBits = usedBits;
 		boolean[] oldUsed = used;
-		keys = new long[oldKeys.length * 2];
-		counts = new long[oldCounts.length * 2];
-		used = new boolean[oldUsed.length * 2];
-		int mask = keys.length - 1;
-		for (int i = 0; i < oldUsed.length; i++) {
-			if (oldUsed[i]) {
+		int newCapacity = Math.multiplyExact(oldKeys.length, 2);
+		long newPhysicalCapacity = physicalCapacity(newCapacity);
+		long addedValues = budget == null ? 0L : newPhysicalCapacity - reservedValues;
+		if (budget != null && !budget.tryReserve(0, addedValues)) {
+			return false;
+		}
+		try {
+			long[] newKeys = new long[newCapacity];
+			long[] newCounts = new long[newCapacity];
+			long[] newUsedBits = budget == null ? null : new long[wordCapacity(newCapacity)];
+			boolean[] newUsed = budget == null ? new boolean[newCapacity] : null;
+			int mask = newCapacity - 1;
+			for (int i = 0; i < oldKeys.length; i++) {
+				if (!isUsed(oldUsed, oldUsedBits, i)) {
+					continue;
+				}
 				int idx = mix(oldKeys[i]) & mask;
-				while (used[idx]) {
+				while (isUsed(newUsed, newUsedBits, idx)) {
 					idx = (idx + 1) & mask;
 				}
-				used[idx] = true;
-				keys[idx] = oldKeys[i];
-				counts[idx] = oldCounts[i];
+				markUsed(newUsed, newUsedBits, idx);
+				newKeys[idx] = oldKeys[i];
+				newCounts[idx] = oldCounts[i];
 			}
+			keys = newKeys;
+			counts = newCounts;
+			usedBits = newUsedBits;
+			used = newUsed;
+			if (budget != null) {
+				reservedValues = newPhysicalCapacity;
+			}
+			return true;
+		} catch (RuntimeException | Error problem) {
+			if (budget != null) {
+				budget.release(0, addedValues);
+			}
+			throw problem;
+		}
+	}
+
+	void close() {
+		if (closed) {
+			return;
+		}
+		closed = true;
+		keys = null;
+		counts = null;
+		usedBits = null;
+		used = null;
+		size = 0;
+		long releasedValues = reservedValues;
+		reservedValues = 0L;
+		if (budget != null) {
+			budget.release(0, releasedValues);
+		}
+	}
+
+	private static int wordCapacity(int capacity) {
+		return (int) ((capacity + (long) Long.SIZE - 1L) / Long.SIZE);
+	}
+
+	private static long physicalCapacity(int capacity) {
+		return 2L * capacity + wordCapacity(capacity);
+	}
+
+	private static boolean isUsed(boolean[] flags, long[] bits, int index) {
+		return flags != null ? flags[index] : (bits[index >>> 6] & (1L << (index & 63))) != 0L;
+	}
+
+	private static void markUsed(boolean[] flags, long[] bits, int index) {
+		if (flags != null) {
+			flags[index] = true;
+		} else {
+			bits[index >>> 6] |= 1L << (index & 63);
 		}
 	}
 
@@ -302,6 +421,7 @@ final class CopyBinding {
 	final int sourceSlot;
 	final long constant;
 	final LmdbNativeCompiledInlineId computed;
+	final boolean encounterOrderReplaySafe;
 
 	CopyBinding(int targetSlot, int sourceSlot, long constant) {
 		this(targetSlot, sourceSlot, constant, null);
@@ -313,6 +433,7 @@ final class CopyBinding {
 		this.sourceSlot = sourceSlot;
 		this.constant = constant;
 		this.computed = computed;
+		this.encounterOrderReplaySafe = computed == null || computed.encounterOrderReplaySafe();
 	}
 
 	static CopyBinding slot(int targetSlot, int sourceSlot) {

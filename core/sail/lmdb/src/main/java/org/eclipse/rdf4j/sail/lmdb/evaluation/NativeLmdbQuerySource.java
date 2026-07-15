@@ -121,6 +121,16 @@ public interface NativeLmdbQuerySource {
 	/** A sibling source over the same committed snapshot, owned by the caller and closed when done. */
 	interface ParallelSource extends NativeLmdbQuerySource, java.io.Closeable {
 
+		long UNKNOWN_SNAPSHOT_ID = Long.MIN_VALUE;
+
+		/**
+		 * Internal snapshot token used to reject mixed-epoch composite sibling families when available. Tokens are
+		 * opaque and comparable only between sources that share the same {@link NativeLmdbQuerySource#idSpace()}.
+		 */
+		default long snapshotId() {
+			return UNKNOWN_SNAPSHOT_ID;
+		}
+
 		@Override
 		void close();
 	}

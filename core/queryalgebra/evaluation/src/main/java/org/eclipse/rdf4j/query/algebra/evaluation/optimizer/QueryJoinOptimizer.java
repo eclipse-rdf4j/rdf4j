@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -47,6 +48,7 @@ import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
@@ -102,7 +104,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	 */
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		tupleExpr.visit(new JoinVisitor());
+		tupleExpr.visit(new JoinVisitor(QueryEvaluationUtility.querySafetySnapshot(tupleExpr)));
 	}
 
 	/**
@@ -113,10 +115,15 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 		private Set<String> boundVars = new HashSet<>();
 		private double currentHighestCost = 1;
+		private final QueryEvaluationUtility.QuerySafetySnapshot safetySnapshot;
 
 		protected JoinVisitor() {
-			super(trackResultSize);
+			this(null);
+		}
 
+		private JoinVisitor(QueryEvaluationUtility.QuerySafetySnapshot safetySnapshot) {
+			super(trackResultSize);
+			this.safetySnapshot = safetySnapshot;
 		}
 
 		@Override
@@ -167,7 +174,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Join node) {
-			if (containsLateral(node)) {
+			if (containsLateral(node) || !isRepeatable(node)) {
 				node.visitChildren(this);
 				return;
 			}
@@ -356,7 +363,15 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 		}
 
+		private boolean isRepeatable(QueryModelNode node) {
+			return safetySnapshot == null ? QueryEvaluationUtility.isRepeatable(node)
+					: safetySnapshot.isRepeatable(node);
+		}
+
 		private boolean containsLateral(TupleExpr tupleExpr) {
+			if (safetySnapshot != null) {
+				return safetySnapshot.containsLateral(tupleExpr);
+			}
 			LateralFinder finder = new LateralFinder();
 			tupleExpr.visit(finder);
 			return finder.found;
@@ -579,7 +594,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 		private void optimizeInNewScope(List<TupleExpr> subSelects) {
 			for (TupleExpr subSelect : subSelects) {
-				subSelect.visit(new JoinVisitor());
+				subSelect.visit(new JoinVisitor(safetySnapshot));
 			}
 		}
 

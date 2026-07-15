@@ -86,6 +86,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
@@ -106,6 +107,15 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 	SlotPlan compileFilterIntoStatementPattern(Filter filter) {
 		if (!(filter.getArg() instanceof StatementPattern)) {
 			return null;
+		}
+		EvaluationStatistics statistics = strategy.evaluationStatistics();
+		if (statistics != null && statistics.supportsFilterSelectivityCosting()) {
+			EvaluationStatistics.FilterPassEstimate.Source source = statistics.estimateFilterPass(filter).getSource();
+			if (source != EvaluationStatistics.FilterPassEstimate.Source.EXACT
+					&& source != EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER) {
+				// Keep one exact-key observation at the original filter boundary before replacing it with probes.
+				return null;
+			}
 		}
 		return compileFilterIntoStatementPattern((StatementPattern) filter.getArg(), filter.getCondition());
 	}

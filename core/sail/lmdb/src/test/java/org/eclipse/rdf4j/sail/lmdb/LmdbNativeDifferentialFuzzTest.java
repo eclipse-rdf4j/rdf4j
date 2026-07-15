@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 import java.util.TreeMap;
@@ -23,6 +24,7 @@ import java.util.TreeSet;
 
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -54,6 +56,90 @@ public class LmdbNativeDifferentialFuzzTest {
 	private static final String EX = "http://example.com/";
 	private static final long SEED = 20260706L;
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
+	private static final String CALENDAR_PREFIX = "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\n";
+	private static final String MIXED_CALENDAR_VALUES = "VALUES ?d { "
+			+ "\"2000-01-02Z\"^^xsd:date "
+			+ "\"2000-01-01T23:30:00\"^^xsd:dateTime "
+			+ "\"2000-01-01T09:45:00Z\"^^xsd:dateTime "
+			+ "\"2000-01-01T00:00:00+14:00\"^^xsd:dateTime "
+			+ "\"2000-01-01T00:00:00+14:00\"^^xsd:dateTimeStamp "
+			+ "\"2000-01-01T00:00:00\"^^xsd:dateTime "
+			+ "\"1999-12-31T20:00:00-14:00\"^^xsd:dateTime "
+			+ "\"2000-01-01T00:00:00\"^^xsd:dateTimeStamp }";
+	private static final String CALENDAR_ORDER_QUERY = CALENDAR_PREFIX + "SELECT ?d WHERE { "
+			+ MIXED_CALENDAR_VALUES + " } ORDER BY ?d";
+	private static final String CALENDAR_EXTREMA_QUERY = CALENDAR_PREFIX
+			+ "SELECT (MIN(?d) AS ?min) (MAX(?d) AS ?max) WHERE { VALUES ?d { "
+			+ "\"1999-12-31T19:00:00-05:00\"^^xsd:dateTime "
+			+ "\"2000-01-01T00:00:00Z\"^^xsd:dateTime "
+			+ "\"2000-01-01T00:00:00Z\"^^xsd:dateTimeStamp } }";
+	private static final String ALL_CALENDAR_VALUES = "VALUES ?d { "
+			+ "\"2000\"^^xsd:gYear "
+			+ "\"2000-03Z\"^^xsd:gYearMonth "
+			+ "\"2000-02-29Z\"^^xsd:date "
+			+ "\"2000-02-29T23:59:59.123456789\"^^xsd:dateTime "
+			+ "\"2000-03-01T00:00:00.000000001+14:00\"^^xsd:dateTimeStamp "
+			+ "\"---03+14:00\"^^xsd:gDay "
+			+ "\"--04-14:00\"^^xsd:gMonth "
+			+ "\"--02-29Z\"^^xsd:gMonthDay "
+			+ "\"23:00:00.000000001-14:00\"^^xsd:time "
+			+ "\"1999-z\"^^xsd:dateTime "
+			+ "\"2000-01-01T00:00:00\"^^xsd:dateTimeStamp }";
+	private static final String ALL_CALENDAR_ORDER_QUERY = CALENDAR_PREFIX + "SELECT ?d WHERE { "
+			+ ALL_CALENDAR_VALUES + " } ORDER BY ?d";
+	private static final String ALL_CALENDAR_EXTREMA_QUERY = CALENDAR_PREFIX
+			+ "SELECT (MIN(?d) AS ?min) (MAX(?d) AS ?max) WHERE { " + ALL_CALENDAR_VALUES + " }";
+	private static final List<String> STANDARD_CALENDAR_ORDER = List.of(
+			"dateTime:2000-01-01T00:00:00+14:00",
+			"dateTimeStamp:2000-01-01T00:00:00+14:00",
+			"dateTime:2000-01-01T00:00:00",
+			"dateTime:2000-01-01T23:30:00",
+			"dateTime:2000-01-01T09:45:00Z",
+			"dateTime:1999-12-31T20:00:00-14:00",
+			"date:2000-01-02Z",
+			"dateTimeStamp:2000-01-01T00:00:00");
+	private static final List<String> STRICT_CALENDAR_ORDER = List.of(
+			"date:2000-01-02Z",
+			"dateTime:2000-01-01T00:00:00+14:00",
+			"dateTime:2000-01-01T00:00:00",
+			"dateTime:2000-01-01T23:30:00",
+			"dateTime:2000-01-01T09:45:00Z",
+			"dateTime:1999-12-31T20:00:00-14:00",
+			"dateTimeStamp:2000-01-01T00:00:00+14:00",
+			"dateTimeStamp:2000-01-01T00:00:00");
+	private static final List<String> CALENDAR_EXTREMA = List.of(
+			"dateTime:1999-12-31T19:00:00-05:00",
+			"dateTimeStamp:2000-01-01T00:00:00Z");
+	private static final List<String> ALL_CALENDAR_STANDARD_ORDER = List.of(
+			"gYear:2000",
+			"date:2000-02-29Z",
+			"dateTime:2000-02-29T23:59:59.123456789",
+			"dateTimeStamp:2000-03-01T00:00:00.000000001+14:00",
+			"gYearMonth:2000-03Z",
+			"gDay:---03+14:00",
+			"gMonth:--04-14:00",
+			"gMonthDay:--02-29Z",
+			"time:23:00:00.000000001-14:00",
+			"dateTime:1999-z",
+			"dateTimeStamp:2000-01-01T00:00:00");
+	private static final List<String> ALL_CALENDAR_STRICT_ORDER = List.of(
+			"date:2000-02-29Z",
+			"dateTime:2000-02-29T23:59:59.123456789",
+			"dateTime:1999-z",
+			"dateTimeStamp:2000-03-01T00:00:00.000000001+14:00",
+			"dateTimeStamp:2000-01-01T00:00:00",
+			"gDay:---03+14:00",
+			"gMonth:--04-14:00",
+			"gMonthDay:--02-29Z",
+			"gYear:2000",
+			"gYearMonth:2000-03Z",
+			"time:23:00:00.000000001-14:00");
+	private static final List<String> ALL_CALENDAR_STANDARD_EXTREMA = List.of(
+			"gYear:2000",
+			"dateTimeStamp:2000-01-01T00:00:00");
+	private static final List<String> ALL_CALENDAR_STRICT_EXTREMA = List.of(
+			"date:2000-02-29Z",
+			"time:23:00:00.000000001-14:00");
 
 	@TempDir
 	File dataDir;
@@ -271,6 +357,83 @@ public class LmdbNativeDifferentialFuzzTest {
 		} finally {
 			store.setDefaultQueryEvaluationMode(previousMode);
 		}
+	}
+
+	@Test
+	public void mixedCalendarOrderFollowsStrictMode() {
+		assertCalendarResults(QueryEvaluationMode.STRICT, CALENDAR_ORDER_QUERY, STRICT_CALENDAR_ORDER, "d");
+	}
+
+	@Test
+	public void mixedCalendarOrderFollowsStandardMode() {
+		assertCalendarResults(QueryEvaluationMode.STANDARD, CALENDAR_ORDER_QUERY, STANDARD_CALENDAR_ORDER, "d");
+	}
+
+	@Test
+	public void calendarExtremaPreserveRdfTermRepresentativesInBothModes() {
+		for (QueryEvaluationMode mode : List.of(QueryEvaluationMode.STRICT, QueryEvaluationMode.STANDARD)) {
+			assertCalendarResults(mode, CALENDAR_EXTREMA_QUERY, CALENDAR_EXTREMA, "min", "max");
+		}
+	}
+
+	@Test
+	public void allCalendarDatatypeExtremaFollowQueryEvaluationMode() {
+		assertCalendarResults(QueryEvaluationMode.STANDARD, ALL_CALENDAR_EXTREMA_QUERY,
+				ALL_CALENDAR_STANDARD_EXTREMA, "min", "max");
+		assertCalendarResults(QueryEvaluationMode.STRICT, ALL_CALENDAR_EXTREMA_QUERY,
+				ALL_CALENDAR_STRICT_EXTREMA, "min", "max");
+	}
+
+	@Test
+	public void allCalendarDatatypesFollowStrictMode() {
+		assertCalendarResults(QueryEvaluationMode.STRICT, ALL_CALENDAR_ORDER_QUERY, ALL_CALENDAR_STRICT_ORDER, "d");
+	}
+
+	@Test
+	public void allCalendarDatatypesFollowStandardMode() {
+		assertCalendarResults(QueryEvaluationMode.STANDARD, ALL_CALENDAR_ORDER_QUERY, ALL_CALENDAR_STANDARD_ORDER, "d");
+	}
+
+	private void assertCalendarResults(QueryEvaluationMode mode, String query, List<String> expected,
+			String... bindingNames) {
+		QueryEvaluationMode previousMode = store.getDefaultQueryEvaluationMode();
+		String previousFlag = System.getProperty(NATIVE_FLAG);
+		try {
+			store.setDefaultQueryEvaluationMode(mode);
+			System.setProperty(NATIVE_FLAG, "true");
+			List<String> nativeRows = calendarTerms(query, bindingNames);
+			System.setProperty(NATIVE_FLAG, "false");
+			List<String> genericRows = calendarTerms(query, bindingNames);
+
+			assertThat(nativeRows)
+					.as("native calendar results in %s mode", mode)
+					.containsExactlyElementsOf(expected);
+			assertThat(genericRows)
+					.as("generic calendar results in %s mode", mode)
+					.containsExactlyElementsOf(expected);
+		} finally {
+			store.setDefaultQueryEvaluationMode(previousMode);
+			if (previousFlag == null) {
+				System.clearProperty(NATIVE_FLAG);
+			} else {
+				System.setProperty(NATIVE_FLAG, previousFlag);
+			}
+		}
+	}
+
+	private List<String> calendarTerms(String query, String... bindingNames) {
+		try (SailRepositoryConnection conn = lmdb.getConnection()) {
+			return QueryResults.asList(conn.prepareTupleQuery(query).evaluate())
+					.stream()
+					.flatMap(row -> Arrays.stream(bindingNames)
+							.map(name -> calendarTerm(row.getValue(name))))
+					.toList();
+		}
+	}
+
+	private static String calendarTerm(Value value) {
+		Literal literal = (Literal) value;
+		return literal.getDatatype().getLocalName() + ":" + literal.getLabel();
 	}
 
 	/**

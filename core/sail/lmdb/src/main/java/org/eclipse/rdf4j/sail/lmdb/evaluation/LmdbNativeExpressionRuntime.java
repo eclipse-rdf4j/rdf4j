@@ -89,20 +89,37 @@ final class LmdbNativeCompiledBoolean implements NativeBooleanFilter {
 	boolean accept(LmdbNativeSlotReader row) {
 		return evaluator.eval(row) == LmdbNativeTruth.TRUE;
 	}
+
+	@Override
+	public boolean parallelWorkerForkable() {
+		return true;
+	}
+
+	@Override
+	public NativeBooleanFilter forkForParallelWorker() {
+		return this;
+	}
 }
 
 @Experimental
 final class LmdbNativeCompiledInlineId {
 	private final long requiredMask;
+	private final boolean encounterOrderReplaySafe;
 	private final LmdbNativeIdEvaluator evaluator;
 
-	LmdbNativeCompiledInlineId(long requiredMask, LmdbNativeIdEvaluator evaluator) {
+	LmdbNativeCompiledInlineId(long requiredMask, boolean encounterOrderReplaySafe,
+			LmdbNativeIdEvaluator evaluator) {
 		this.requiredMask = requiredMask;
+		this.encounterOrderReplaySafe = encounterOrderReplaySafe;
 		this.evaluator = evaluator;
 	}
 
 	long requiredMask() {
 		return requiredMask;
+	}
+
+	boolean encounterOrderReplaySafe() {
+		return encounterOrderReplaySafe;
 	}
 
 	long id(RowState row) {

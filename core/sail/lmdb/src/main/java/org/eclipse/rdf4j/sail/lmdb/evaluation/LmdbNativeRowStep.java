@@ -306,8 +306,11 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		if (!initializeRow(row, base, source, layout)) {
 			return List.of();
 		}
+		if (limit == 0L) {
+			return List.of();
+		}
 		AggContext values = new AggContext(source, strictCompare);
-		long emitCap = limit < 0 ? Long.MAX_VALUE : offset + limit;
+		long emitCap = limit < 0 ? Long.MAX_VALUE : saturatingAdd(Math.max(0L, offset), limit);
 
 		// ORDER BY: pack slot rows into one reusable arena (keys may be unprojected), sort primitive row indexes,
 		// then project/dedup/slice in SPARQL pipeline order.
@@ -387,7 +390,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	private List<BindingSet> tryEvaluateOrderedFactorized(BindingSet base, AggContext values,
 			PackedRowComparator comparator, long emitCap) {
 		if (!orderedFactorizedEnabled() || distinct || snapshotRows || !(arg instanceof MultiJoinPlan)
-				|| ((MultiJoinPlan) arg).children.length == 0) {
+				|| ((MultiJoinPlan) arg).children.length == 0 || !SlotPlan.encounterOrderReplaySafe(arg)) {
 			return null;
 		}
 		RowState row = new RowState(source, layout, base);
@@ -398,9 +401,35 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			// correlated entry: per-open factorization analysis is waste, mirror NativeRowsIteration's gate
 			return null;
 		}
-		MultiJoinPlan multiJoin = (MultiJoinPlan) arg;
+		NativeFilterLease filterLease = new NativeFilterLease();
+		MultiJoinPlan multiJoin = filterLease.borrow((MultiJoinPlan) arg);
+		LmdbNativeAttemptMetrics attemptMetrics = LmdbNativeAttemptMetrics.root();
+		try {
+			List<BindingSet> result = tryEvaluateOrderedFactorizedAttempt(values, comparator, emitCap, row, multiJoin,
+					attemptMetrics);
+			if (result == null) {
+				filterLease.discard();
+				return null;
+			}
+			filterLease.commit();
+			attemptMetrics.commitToParent();
+			return result;
+		} catch (RuntimeException | Error failure) {
+			filterLease.abort(failure);
+			throw failure;
+		}
+	}
+
+	private List<BindingSet> tryEvaluateOrderedFactorizedAttempt(AggContext values,
+			PackedRowComparator comparator, long emitCap, RowState row, MultiJoinPlan multiJoin,
+			LmdbNativeAttemptMetrics attemptMetrics) {
+		long requiredPrefixMask = 0L;
+		for (int orderSlot : orderSlots) {
+			requiredPrefixMask |= 1L << orderSlot;
+		}
 		LmdbNativeFactorizedRows factorized = LmdbNativeFactorizedRows.tryCreate(multiJoin,
-				multiJoin.derivedFactorizedPlan(row), row, row.boundMask(), sourceSlots, false);
+				multiJoin.derivedFactorizedPlan(row), row, row.boundMask(), sourceSlots, false, requiredPrefixMask,
+				attemptMetrics);
 		if (factorized == null) {
 			return null;
 		}
@@ -414,86 +443,144 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		int slotCount = row.slots.length;
 		int enums = factorized.enumBranchCount();
 		int width = slotCount + 1 + 2 * enums;
-		LmdbNativeLongArena arena = new LmdbNativeLongArena();
-		FactorizedTail.MemoBudget budget = new FactorizedTail.MemoBudget(LmdbNativeFactorizedRows.MEMO_BYPASSES);
+		FactorizedTail.MemoBudget budget = factorized.memoBudget;
 		long[] packed = new long[width];
 		boolean topK = emitCap != Long.MAX_VALUE && emitCap <= 100_000;
-		NativeTopKBuffer best = topK ? new NativeTopKBuffer(width, (int) emitCap, comparator) : null;
-		NativeSortBuffer buffer = topK ? null : new NativeSortBuffer(width, 1024);
+		NativeTopKBuffer best = topK
+				? new NativeTopKBuffer(width, (int) emitCap, comparator, budget)
+				: null;
+		TopKPayloadStore topKPayloads = topK && enums > 0
+				? new TopKPayloadStore((int) emitCap, budget)
+				: null;
+		LmdbNativeLongArena arena = topK ? null : new LmdbNativeLongArena();
+		if (arena != null) {
+			arena.attachCapacityBudget(budget);
+		}
+		NativeSortBuffer buffer = topK ? null : new NativeSortBuffer(width, 1024, budget);
 		long ordinal = 0L;
-		try (FlatRowCursor cursor = factorized.openFlat(row)) {
-			while (cursor.next()) {
-				System.arraycopy(row.slots, 0, packed, 0, slotCount);
-				packed[slotCount] = cursor.multiplicity();
-				if (best != null && !best.wouldAccept(packed, ordinal)) {
-					// order keys live in the slot section: rejected rows never pay the arena copy
-					ordinal++;
-					continue;
-				}
-				for (int b = 0; b < enums; b++) {
-					int stride = cursor.enumValueSlots(b).length;
-					int runLength = (int) (cursor.enumMatches(b) * stride);
-					long valuesOffset = 0L;
-					if (runLength > 0) {
-						if (!budget.tryReserve(1, runLength)) {
+		List<BindingSet> result;
+		try {
+			try (FlatRowCursor cursor = factorized.openFlat(row)) {
+				while (cursor.next()) {
+					System.arraycopy(row.slots, 0, packed, 0, slotCount);
+					packed[slotCount] = cursor.multiplicity();
+					int acceptedSlot = -1;
+					if (best != null) {
+						acceptedSlot = best.tryAdmit(packed, ordinal++, slotCount + 1);
+						if (acceptedSlot == NativeTopKBuffer.BUDGET_REFUSED) {
 							return null;
 						}
-						valuesOffset = arena.append(cursor.enumValues(b), 0, runLength);
-						if (valuesOffset == LmdbNativeLongArena.REFUSED) {
+						if (acceptedSlot == NativeTopKBuffer.REJECTED) {
+							// Order keys live in the slot section: rejected rows never pay for branch payload.
+							continue;
+						}
+					}
+					if (topKPayloads != null) {
+						if (!topKPayloads.store(acceptedSlot, cursor, enums, packed, slotCount + 1)) {
+							return null;
+						}
+					} else {
+						for (int b = 0; b < enums; b++) {
+							int stride = cursor.enumValueSlots(b).length;
+							int runLength = (int) (cursor.enumMatches(b) * stride);
+							long valuesOffset = 0L;
+							if (runLength > 0) {
+								valuesOffset = arena.append(cursor.enumValues(b), 0, runLength);
+								if (valuesOffset == LmdbNativeLongArena.REFUSED) {
+									return null;
+								}
+							}
+							packed[slotCount + 1 + 2 * b] = valuesOffset;
+							packed[slotCount + 2 + 2 * b] = cursor.enumMatches(b);
+						}
+					}
+					if (best != null) {
+						best.replaceAcceptedSuffix(acceptedSlot, packed, slotCount + 1);
+					} else {
+						if (!buffer.tryAppend(packed, ordinal++)) {
 							return null;
 						}
 					}
-					packed[slotCount + 1 + 2 * b] = valuesOffset;
-					packed[slotCount + 2 + 2 * b] = cursor.enumMatches(b);
-				}
-				if (best != null) {
-					best.add(packed, ordinal++);
-				} else {
-					if (!budget.tryReserve(0, width)) {
-						return null;
-					}
-					buffer.append(packed, ordinal++);
 				}
 			}
+			NativeSortBuffer sortBuffer = topK ? best.buffer : buffer;
+			int[] sortedOrder = sortBuffer.trySortedOrder(comparator);
+			if (sortedOrder == null) {
+				return null;
+			}
+			result = expandSortedFlatRows(sortBuffer, sortedOrder, factorized.enumValueSlots(),
+					arena, topKPayloads, slotCount, emitCap, values);
+		} catch (LmdbNativeFactorizedRows.EnumMaterializationRefused refused) {
+			rethrowRefusalCleanupFailure(refused);
+			return null;
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
+		} finally {
+			if (topKPayloads != null) {
+				topKPayloads.close();
+			}
+			if (arena != null) {
+				arena.reset();
+			}
+			if (best != null) {
+				best.close();
+			} else {
+				buffer.close();
+			}
 		}
-		LmdbNativeExplain.recordStrategy(originalExpr, topK ? "orderedFactorizedTopK" : "orderedFactorizedSort");
-		(topK ? ORDERED_FACTORIZED_TOPK : ORDERED_FACTORIZED_SORTS).incrementAndGet();
-		NativeSortBuffer sortBuffer = topK ? best.buffer : buffer;
-		return expandSortedFlatRows(sortBuffer, sortBuffer.sortedOrder(comparator), factorized.enumValueSlots(),
-				arena, slotCount, emitCap, values);
+		factorized.recordEngagement();
+		attemptMetrics.deferStrategy(originalExpr, topK ? "orderedFactorizedTopK" : "orderedFactorizedSort");
+		if (topK) {
+			attemptMetrics.recordOrderedFactorizedTopK();
+		} else {
+			attemptMetrics.recordOrderedFactorizedSort();
+		}
+		return result;
+	}
+
+	private static void rethrowRefusalCleanupFailure(
+			LmdbNativeFactorizedRows.EnumMaterializationRefused refusal) {
+		Throwable[] suppressed = refusal.getSuppressed();
+		if (suppressed.length == 0) {
+			return;
+		}
+		Throwable primary = suppressed[0];
+		for (int i = 1; i < suppressed.length; i++) {
+			if (suppressed[i] != primary) {
+				primary.addSuppressed(suppressed[i]);
+			}
+		}
+		if (primary instanceof RuntimeException) {
+			throw (RuntimeException) primary;
+		}
+		if (primary instanceof Error) {
+			throw (Error) primary;
+		}
+		throw new QueryEvaluationException(primary);
 	}
 
 	/** Emits the sorted flat rows: odometer over each row's arena runs, repeated {@code multiplicity} times. */
 	private List<BindingSet> expandSortedFlatRows(NativeSortBuffer sortBuffer, int[] sortedOrder,
-			int[][] enumValueSlots, LmdbNativeLongArena arena, int slotCount, long emitCap, AggContext values) {
+			int[][] enumValueSlots, LmdbNativeLongArena arena, TopKPayloadStore topKPayloads, int slotCount,
+			long emitCap,
+			AggContext values) {
 		int enums = enumValueSlots.length;
 		ArrayList<BindingSet> results = new ArrayList<>();
 		long[] snapshot = new long[sortBuffer.slotCount];
-		long[][] runs = new long[enums][];
 		int[] odometer = new int[enums];
 		for (int index : sortedOrder) {
 			sortBuffer.copyRow(index, snapshot);
 			long multiplicity = snapshot[slotCount];
-			for (int b = 0; b < enums; b++) {
-				int runLength = (int) (snapshot[slotCount + 2 + 2 * b] * enumValueSlots[b].length);
-				long[] run = runs[b];
-				if (run == null || run.length < runLength) {
-					run = new long[Math.max(16, runLength)];
-					runs[b] = run;
-				}
-				if (runLength > 0) {
-					arena.copyTo(snapshot[slotCount + 1 + 2 * b], run, 0, runLength);
-				}
-				odometer[b] = 0;
-			}
+			Arrays.fill(odometer, 0);
 			while (true) {
 				for (int b = 0; b < enums; b++) {
 					int[] valueSlots = enumValueSlots[b];
 					int at = odometer[b] * valueSlots.length;
+					long valuesOffset = snapshot[slotCount + 1 + 2 * b] + at;
 					for (int j = 0; j < valueSlots.length; j++) {
-						snapshot[valueSlots[j]] = runs[b][at + j];
+						snapshot[valueSlots[j]] = topKPayloads != null
+								? topKPayloads.get(index, valuesOffset + j)
+								: arena.get(valuesOffset + j);
 					}
 				}
 				for (long m = 0; m < multiplicity; m++) {
@@ -594,9 +681,14 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		if (offset <= 0 && limit < 0) {
 			return results;
 		}
-		int from = (int) Math.min(offset, results.size());
-		int to = limit < 0 ? results.size() : (int) Math.min(from + limit, results.size());
-		return results.subList(from, to);
+		int from = (int) Math.min(Math.max(0L, offset), results.size());
+		int remaining = results.size() - from;
+		int count = limit < 0 ? remaining : (int) Math.min(limit, (long) remaining);
+		return results.subList(from, from + count);
+	}
+
+	private static long saturatingAdd(long left, long right) {
+		return right > Long.MAX_VALUE - left ? Long.MAX_VALUE : left + right;
 	}
 }
 
@@ -615,6 +707,8 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 	RowState row;
 	AggContext values;
 	RowCursor cursor;
+	LmdbNativeFactorizedRows factorizedAttempt;
+	LmdbNativeAttemptMetrics factorizedAttemptMetrics;
 	BatchCursor batchCursor;
 	NativeBatch batch;
 	int batchIndex;
@@ -667,7 +761,12 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 			return getNextBatchElement();
 		}
 
-		while (!closed && cursor.next()) {
+		while (!closed) {
+			boolean advanced = cursor.next();
+			commitFactorizedAttemptIfEngaged();
+			if (!advanced) {
+				break;
+			}
 			if (closed) {
 				return null;
 			}
@@ -774,19 +873,32 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 		// under correlated entry an all-ENUM factorization is memoized enumeration whose memos die with
 		// this per-outer-row open — only a counting/existence branch pays for the per-open analysis
 		if (multiJoin != null && (!correlatedEntry || countingBranch)) {
+			LmdbNativeAttemptMetrics attemptMetrics = LmdbNativeAttemptMetrics.root();
 			LmdbNativeFactorizedRows factorized = LmdbNativeFactorizedRows.tryCreate(multiJoin,
-					multiJoin.derivedFactorizedPlan(row), row, row.boundMask(), step.sourceSlots, step.distinct);
+					multiJoin.derivedFactorizedPlan(row), row, row.boundMask(), step.sourceSlots, step.distinct, 0L,
+					attemptMetrics);
 			if (factorized != null) {
 				cursor = factorized.open(row);
-				if (LmdbNativeExplain.recordsStrategies(step.originalExpr)) {
-					LmdbNativeExplain.recordStrategy(step.originalExpr, factorized.describeEngagement());
-				}
+				factorizedAttempt = factorized;
+				factorizedAttemptMetrics = attemptMetrics;
+				attemptMetrics.deferStrategy(step.originalExpr, factorized.describeEngagement());
 				return true;
 			}
 		}
 		cursor = step.arg.open(row);
 		LmdbNativeExplain.recordStrategy(step.originalExpr, "nestedLoop");
 		return true;
+	}
+
+	private void commitFactorizedAttemptIfEngaged() {
+		LmdbNativeFactorizedRows factorized = factorizedAttempt;
+		if (factorized == null || !factorized.engagementRecorded) {
+			return;
+		}
+		LmdbNativeAttemptMetrics metrics = factorizedAttemptMetrics;
+		factorizedAttempt = null;
+		factorizedAttemptMetrics = null;
+		metrics.commitToParent();
 	}
 
 	@Override
@@ -840,6 +952,8 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 				repeated = null;
 				values = null;
 				row = null;
+				factorizedAttempt = null;
+				factorizedAttemptMetrics = null;
 				batch = null;
 				batchIndex = 0;
 				remainingMultiplicity = 0;

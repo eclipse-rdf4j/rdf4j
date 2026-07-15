@@ -146,37 +146,41 @@ final class LmdbNativeParallelPipelines {
 		if (!(root.estimate(consumerRow) >= threshold)) {
 			return reject("below-threshold");
 		}
+		if (!parallelWorkerForkable(plan.filters)) {
+			return reject("stateful-filter");
+		}
 		TaskReservation reservation = tryReserveTasks(threads + 1);
 		if (reservation == null) {
 			return reject("task-budget");
 		}
+		MultiJoinPlan[] workerPlans = null;
 		NativeLmdbQuerySource.ParallelSource[] sources = null;
 		boolean handedOff = false;
+		Throwable primaryFailure = null;
 		try {
+			workerPlans = forkWorkerPlans(plan, threads);
 			sources = step.source.openParallelSources(threads + 1);
 			if (sources == null) {
 				return reject("snapshot-unavailable");
 			}
-			MultiJoinPlan[] workerPlans = new MultiJoinPlan[threads];
-			for (int i = 0; i < threads; i++) {
-				MaskedFilter[] filters = forkFilters(plan.filters);
-				if (filters == null) {
-					return reject("stateful-filter");
-				}
-				workerPlans[i] = new MultiJoinPlan(plan.children, filters);
-			}
 			ParallelRowCursor cursor = new ParallelRowCursor(step, consumerRow, root, workerPlans, sources,
-					reservation);
+					reservation, false);
 			handedOff = true;
+			cursor.start();
 			PARALLEL_ROW_RUNS.incrementAndGet();
 			LAST_REJECTION.set(null);
 			return cursor;
+		} catch (IOException | RuntimeException | Error problem) {
+			primaryFailure = problem;
+			throw problem;
 		} finally {
 			if (!handedOff) {
-				if (sources != null) {
-					closeSources(sources);
-				}
+				Throwable failure = closeWorkerPlans(workerPlans, 0, primaryFailure);
+				failure = closeSources(sources, failure);
 				reservation.close();
+				if (primaryFailure == null && failure != null) {
+					rethrow(failure);
+				}
 			}
 		}
 	}
@@ -186,41 +190,111 @@ final class LmdbNativeParallelPipelines {
 		return null;
 	}
 
-	private static MaskedFilter[] forkFilters(MaskedFilter[] filters) {
-		MaskedFilter[] copies = new MaskedFilter[filters.length];
-		for (int i = 0; i < filters.length; i++) {
-			NativeBooleanFilter copy = forkFilter(filters[i].filter);
-			if (copy == null) {
-				return null;
+	static boolean parallelWorkerForkable(MaskedFilter[] filters) {
+		for (MaskedFilter filter : filters) {
+			if (!filter.filter.parallelWorkerForkable()) {
+				return false;
 			}
-			copies[i] = new MaskedFilter(copy, filters[i].mask);
 		}
-		return copies;
+		return true;
 	}
 
-	/**
-	 * The compiled expression kernel is immutable. Runtime-feedback wrappers are copied so their counters and close
-	 * lifecycle remain worker-confined. Stateful EXISTS/value-comparison filters deliberately gate parallelism out.
-	 */
-	private static NativeBooleanFilter forkFilter(NativeBooleanFilter filter) {
-		if (filter instanceof LmdbNativeCompiledBoolean) {
-			return filter;
+	static MultiJoinPlan[] forkWorkerPlans(MultiJoinPlan plan, int workers) {
+		MultiJoinPlan[] copies = new MultiJoinPlan[workers];
+		try {
+			for (int i = 0; i < workers; i++) {
+				copies[i] = new MultiJoinPlan(plan.children, forkFilters(plan.filters));
+			}
+			return copies;
+		} catch (RuntimeException | Error problem) {
+			closeWorkerPlans(copies, 0, problem);
+			throw problem;
 		}
-		if (filter instanceof RecordingNativeBooleanFilter) {
-			RecordingNativeBooleanFilter recording = (RecordingNativeBooleanFilter) filter;
-			NativeBooleanFilter delegate = forkFilter(recording.delegate);
-			return delegate == null ? null
-					: new RecordingNativeBooleanFilter(delegate, recording.filter, recording.statistics);
+	}
+
+	private static MaskedFilter[] forkFilters(MaskedFilter[] filters) {
+		MaskedFilter[] copies = new MaskedFilter[filters.length];
+		try {
+			for (int i = 0; i < filters.length; i++) {
+				NativeBooleanFilter copy = filters[i].filter.forkForParallelWorker();
+				if (copy == null) {
+					throw new IllegalStateException("parallel filter preflight disagreed with worker fork");
+				}
+				copies[i] = new MaskedFilter(new CloseOnceNativeBooleanFilter(copy), filters[i].mask);
+			}
+			return copies;
+		} catch (RuntimeException | Error problem) {
+			closeFilters(copies, problem);
+			throw problem;
 		}
-		return null;
+	}
+
+	static Throwable closeWorkerPlans(MultiJoinPlan[] plans, int fromInclusive, Throwable failure) {
+		if (plans == null) {
+			return failure;
+		}
+		for (int i = fromInclusive; i < plans.length; i++) {
+			failure = closePlanFilters(plans[i], failure);
+		}
+		return failure;
+	}
+
+	static Throwable closePlanFilters(MultiJoinPlan plan, Throwable failure) {
+		return plan == null ? failure : closeFilters(plan.filters, failure);
+	}
+
+	private static Throwable closeFilters(MaskedFilter[] filters, Throwable failure) {
+		for (MaskedFilter filter : filters) {
+			if (filter == null) {
+				continue;
+			}
+			try {
+				filter.filter.close();
+			} catch (RuntimeException | Error closeFailure) {
+				failure = addCleanupFailure(failure, closeFailure);
+			}
+		}
+		return failure;
 	}
 
 	static void closeSources(NativeLmdbQuerySource.ParallelSource[] sources) {
+		Throwable failure = closeSources(sources, null);
+		if (failure != null) {
+			rethrow(failure);
+		}
+	}
+
+	static Throwable closeSources(NativeLmdbQuerySource.ParallelSource[] sources, Throwable failure) {
+		if (sources == null) {
+			return failure;
+		}
 		for (NativeLmdbQuerySource.ParallelSource source : sources) {
 			if (source != null) {
-				source.close();
+				try {
+					source.close();
+				} catch (RuntimeException | Error problem) {
+					failure = addCleanupFailure(failure, problem);
+				}
 			}
 		}
+		return failure;
+	}
+
+	private static Throwable addCleanupFailure(Throwable primary, Throwable cleanup) {
+		if (primary == null) {
+			return cleanup;
+		}
+		if (primary != cleanup) {
+			primary.addSuppressed(cleanup);
+		}
+		return primary;
+	}
+
+	private static void rethrow(Throwable failure) {
+		if (failure instanceof RuntimeException) {
+			throw (RuntimeException) failure;
+		}
+		throw (Error) failure;
 	}
 
 	static final class TaskReservation implements AutoCloseable {
@@ -260,19 +334,30 @@ final class LmdbNativeParallelPipelines {
 		final ArrayBlockingQueue<LmdbNativeExchange.Morsel> input;
 		final ArrayBlockingQueue<OutputPage> output;
 		final AtomicReference<Throwable> failure = new AtomicReference<>();
+		final AtomicReference<Throwable> cleanupFailure = new AtomicReference<>();
 		final AtomicBoolean cancelled = new AtomicBoolean();
+		final Object failureLock = new Object();
 		final CountDownLatch tasks;
 		final ArrayList<Future<?>> futures;
 		final TaskReservation reservation;
+		final LmdbNativeAttemptMetrics attemptMetrics;
+		final LmdbNativeAttemptMetrics[] workerMetrics;
 		OutputPage active;
 		int activeIndex;
 		int endedWorkers;
+		boolean metricsCommitted;
 		boolean closed;
 		boolean exhausted;
 
 		ParallelRowCursor(NativeRowsStep step, RowState consumerRow, PatternPlan root,
 				MultiJoinPlan[] workerPlans, NativeLmdbQuerySource.ParallelSource[] sources,
 				TaskReservation reservation) {
+			this(step, consumerRow, root, workerPlans, sources, reservation, true);
+		}
+
+		ParallelRowCursor(NativeRowsStep step, RowState consumerRow, PatternPlan root,
+				MultiJoinPlan[] workerPlans, NativeLmdbQuerySource.ParallelSource[] sources,
+				TaskReservation reservation, boolean start) {
 			this.step = step;
 			this.consumerRow = consumerRow;
 			this.root = root;
@@ -284,7 +369,14 @@ final class LmdbNativeParallelPipelines {
 			this.tasks = new CountDownLatch(workerPlans.length + 1);
 			this.futures = new ArrayList<>(workerPlans.length + 1);
 			this.reservation = reservation;
-			start();
+			this.attemptMetrics = LmdbNativeAttemptMetrics.root();
+			this.workerMetrics = new LmdbNativeAttemptMetrics[workerPlans.length];
+			for (int i = 0; i < workerMetrics.length; i++) {
+				workerMetrics[i] = attemptMetrics.child();
+			}
+			if (start) {
+				start();
+			}
 		}
 
 		void start() {
@@ -292,20 +384,27 @@ final class LmdbNativeParallelPipelines {
 			try {
 				for (int i = 0; i < workerPlans.length; i++) {
 					int worker = i;
-					futures.add(pool().submit(() -> runTask(() -> runWorker(worker), sources[worker])));
+					futures.add(pool().submit(
+							() -> runTask(() -> runWorker(worker), workerPlans[worker], sources[worker])));
 					submitted++;
 				}
 				int producer = workerPlans.length;
-				futures.add(pool().submit(() -> runTask(this::produce, sources[producer])));
+				futures.add(pool().submit(() -> runTask(this::produce, null, sources[producer])));
 				submitted++;
 			} catch (RuntimeException | Error problem) {
-				failure.compareAndSet(null, problem);
+				recordStartupFailure(problem);
 				cancelled.set(true);
 				for (int i = submitted; i < sources.length; i++) {
+					if (i < workerPlans.length) {
+						Throwable filterFailure = closePlanFilters(workerPlans[i], null);
+						if (filterFailure != null) {
+							recordCleanupFailure(filterFailure);
+						}
+					}
 					try {
 						sources[i].close();
 					} catch (Throwable closeFailure) {
-						problem.addSuppressed(closeFailure);
+						recordCleanupFailure(closeFailure);
 					} finally {
 						taskFinished();
 					}
@@ -315,20 +414,72 @@ final class LmdbNativeParallelPipelines {
 			}
 		}
 
-		void runTask(IoTask task, NativeLmdbQuerySource.ParallelSource ownedSource) {
+		void runTask(IoTask task, MultiJoinPlan ownedPlan, NativeLmdbQuerySource.ParallelSource ownedSource) {
 			try {
 				task.run();
 			} catch (Throwable problem) {
-				if (!cancelled.get() && failure.compareAndSet(null, problem)) {
-					WORKER_FAILURES.incrementAndGet();
-				}
-				cancelled.set(true);
+				recordTaskFailure(problem);
 			} finally {
+				Throwable filterFailure = closePlanFilters(ownedPlan, null);
+				if (filterFailure != null) {
+					recordCleanupFailure(filterFailure);
+				}
 				try {
 					ownedSource.close();
+				} catch (Throwable closeFailure) {
+					recordCleanupFailure(closeFailure);
 				} finally {
 					taskFinished();
 				}
+			}
+		}
+
+		void recordStartupFailure(Throwable problem) {
+			synchronized (failureLock) {
+				if (failure.compareAndSet(null, problem)) {
+					addSuppressed(problem, cleanupFailure.get());
+				}
+			}
+		}
+
+		void recordTaskFailure(Throwable problem) {
+			boolean recorded = false;
+			synchronized (failureLock) {
+				if (!cancelled.get() && failure.compareAndSet(null, problem)) {
+					addSuppressed(problem, cleanupFailure.get());
+					recorded = true;
+				}
+			}
+			if (recorded) {
+				WORKER_FAILURES.incrementAndGet();
+			}
+			cancelled.set(true);
+		}
+
+		void recordCleanupFailure(Throwable closeFailure) {
+			boolean recorded = false;
+			synchronized (failureLock) {
+				Throwable problem = failure.get();
+				if (problem != null) {
+					addSuppressed(problem, closeFailure);
+				} else {
+					Throwable cleanupProblem = cleanupFailure.get();
+					if (cleanupProblem == null) {
+						cleanupFailure.set(closeFailure);
+						recorded = true;
+					} else {
+						addSuppressed(cleanupProblem, closeFailure);
+					}
+				}
+			}
+			if (recorded) {
+				WORKER_FAILURES.incrementAndGet();
+			}
+		}
+
+		private static void addSuppressed(Throwable problem, Throwable suppressed) {
+			if (problem != null && suppressed != null && problem != suppressed) {
+				problem.addSuppressed(suppressed);
 			}
 		}
 
@@ -372,14 +523,38 @@ final class LmdbNativeParallelPipelines {
 			}
 			row.recomputeBoundMask();
 			MultiJoinPlan plan = workerPlans[worker];
+			LmdbNativeAttemptMetrics metrics = workerMetrics[worker];
 			// must match the consumer's tryOpen order: the shared morsel root is derived.order[0]
 			MultiJoinPlan.OrderedPlan derived = plan.derivedFactorizedPlan(row);
+			LmdbNativeFactorizedRows factorized = LmdbNativeFactorizedRows.tryCreateFromExternalRoot(plan, derived, row,
+					row.boundMask(), step.sourceSlots, step.distinct, metrics);
 			LmdbNativeExchange.MorselCursor leftmost = new LmdbNativeExchange.MorselCursor(input, root, row, failure,
 					cancelled);
-			LmdbNativeFactorizedRows factorized = LmdbNativeFactorizedRows.tryCreate(plan, derived, row,
-					row.boundMask(), step.sourceSlots, step.distinct);
-			RowCursor pipeline = factorized != null && factorized.flatCount > 0 ? factorized.openFrom(row, leftmost)
-					: plan.openChainFrom(derived, leftmost, derived.order.length, row);
+			RowCursor pipeline;
+			try {
+				if (factorized != null) {
+					pipeline = factorized.openFrom(row, leftmost);
+				} else {
+					FactorizedTail.MemoBudget prefixBudget = new FactorizedTail.MemoBudget(
+							FactorizedTail.MEMO_BYPASSES, metrics);
+					pipeline = LmdbNativeChunkPipeline.externalRootCandidateEnabled()
+							? LmdbNativeChunkPipeline.tryOpenPrefixFrom(plan, derived, derived.order.length, row,
+									leftmost, prefixBudget)
+							: null;
+					if (pipeline == null) {
+						pipeline = plan.openChainFrom(derived, leftmost, derived.order.length, row);
+					}
+				}
+			} catch (IOException | RuntimeException | Error problem) {
+				try {
+					leftmost.close();
+				} catch (RuntimeException | Error closeFailure) {
+					if (problem != closeFailure) {
+						problem.addSuppressed(closeFailure);
+					}
+				}
+				throw problem;
+			}
 			try (RowCursor cursor = pipeline) {
 				NativeBatch batch = new NativeBatch(row.slots.length, OUTPUT_ROWS);
 				int rows = 0;
@@ -438,13 +613,17 @@ final class LmdbNativeParallelPipelines {
 				if (endedWorkers == workerPlans.length) {
 					exhausted = true;
 					close();
+					Throwable problem = failureToThrow();
+					if (problem == null) {
+						commitWorkerMetrics();
+					}
+					throwFailure(problem);
 					return false;
 				}
 				Throwable problem = failure.get();
 				if (problem != null) {
 					close();
-					throw problem instanceof IOException ? (IOException) problem
-							: new IOException("parallel native pipeline failed", problem);
+					throwFailure(failureToThrow());
 				}
 				try {
 					OutputPage page = output.poll(50, TimeUnit.MILLISECONDS);
@@ -462,6 +641,37 @@ final class LmdbNativeParallelPipelines {
 					close();
 					throw new IOException(e);
 				}
+			}
+		}
+
+		private void commitWorkerMetrics() {
+			if (metricsCommitted) {
+				return;
+			}
+			metricsCommitted = true;
+			for (LmdbNativeAttemptMetrics metrics : workerMetrics) {
+				metrics.commitToParent();
+			}
+			attemptMetrics.commitToParent();
+		}
+
+		private Throwable failureToThrow() {
+			Throwable problem = failure.get();
+			return problem != null ? problem : cleanupFailure.get();
+		}
+
+		private static void throwFailure(Throwable problem) throws IOException {
+			if (problem instanceof IOException) {
+				throw (IOException) problem;
+			}
+			if (problem instanceof RuntimeException) {
+				throw (RuntimeException) problem;
+			}
+			if (problem instanceof Error) {
+				throw (Error) problem;
+			}
+			if (problem != null) {
+				throw new IOException("parallel native pipeline failed", problem);
 			}
 		}
 

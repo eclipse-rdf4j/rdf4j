@@ -169,6 +169,61 @@ interface SlotPlan {
 		return 0L;
 	}
 
+	/**
+	 * Whether an encounter-order-changing attempt may evaluate this plan and still safely reopen it after a
+	 * value-driven fallback. This is deliberately exhaustive and conservative: an unknown future plan is unsafe until
+	 * its ownership and expression-repeatability rules are reviewed.
+	 */
+	static boolean encounterOrderReplaySafe(SlotPlan plan) {
+		if (plan instanceof EmptyPlan || plan instanceof SingletonPlan || plan instanceof PatternPlan
+				|| plan instanceof MultiValuePatternPlan || plan instanceof ValuesPlan || plan instanceof PathPlan) {
+			return true;
+		}
+		if (plan instanceof FilterPlan filter) {
+			return filter.filterMask >= 0L && encounterOrderReplaySafe(filter.arg);
+		}
+		if (plan instanceof ExtensionPlan extension) {
+			if (!encounterOrderReplaySafe(extension.arg)) {
+				return false;
+			}
+			for (CopyBinding copy : extension.copies) {
+				if (!copy.encounterOrderReplaySafe) {
+					return false;
+				}
+			}
+			return true;
+		}
+		if (plan instanceof JoinPlan join) {
+			return encounterOrderReplaySafe(join.left) && encounterOrderReplaySafe(join.right);
+		}
+		if (plan instanceof MultiJoinPlan multiJoin) {
+			for (SlotPlan child : multiJoin.children) {
+				if (!encounterOrderReplaySafe(child)) {
+					return false;
+				}
+			}
+			for (MaskedFilter filter : multiJoin.filters) {
+				if (filter.mask < 0L) {
+					return false;
+				}
+			}
+			return true;
+		}
+		if (plan instanceof LeftJoinPlan leftJoin) {
+			return encounterOrderReplaySafe(leftJoin.left) && encounterOrderReplaySafe(leftJoin.right);
+		}
+		if (plan instanceof UnionPlan union) {
+			return encounterOrderReplaySafe(union.left) && encounterOrderReplaySafe(union.right);
+		}
+		if (plan instanceof OrderedUnionPlan union) {
+			return encounterOrderReplaySafe(union.left) && encounterOrderReplaySafe(union.right);
+		}
+		if (plan instanceof MinusPlan minus) {
+			return encounterOrderReplaySafe(minus.left) && encounterOrderReplaySafe(minus.right);
+		}
+		return false;
+	}
+
 	static boolean canFlatten(SlotPlan plan) {
 		if (plan instanceof FilterPlan) {
 			FilterPlan filterPlan = (FilterPlan) plan;

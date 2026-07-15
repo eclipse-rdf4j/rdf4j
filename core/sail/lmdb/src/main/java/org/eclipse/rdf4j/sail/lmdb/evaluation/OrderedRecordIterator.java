@@ -25,11 +25,13 @@ final class OrderedRecordIterator implements RecordIterator {
 
 	private final List<RecordIterator> iterators;
 	private final PriorityQueue<Head> heads;
+	private final int[] components;
 	private Head pendingAdvance;
 	private boolean closed;
 
 	private OrderedRecordIterator(List<RecordIterator> iterators, int[] components) {
 		this.iterators = iterators;
+		this.components = components;
 		this.heads = new PriorityQueue<>((left, right) -> compare(left, right, components));
 		try {
 			for (int i = 0; i < iterators.size(); i++) {
@@ -39,7 +41,7 @@ final class OrderedRecordIterator implements RecordIterator {
 				}
 			}
 		} catch (RuntimeException | Error e) {
-			close();
+			closePreserving(e);
 			throw e;
 		}
 	}
@@ -51,7 +53,15 @@ final class OrderedRecordIterator implements RecordIterator {
 		if (iterators.size() == 1) {
 			return iterators.getFirst();
 		}
-		return new OrderedRecordIterator(new ArrayList<>(iterators), components(iterators, order));
+		List<RecordIterator> owned = new ArrayList<>(iterators);
+		int[] components;
+		try {
+			components = components(owned, order);
+		} catch (RuntimeException | Error e) {
+			closeIterators(owned, e);
+			throw e;
+		}
+		return new OrderedRecordIterator(owned, components);
 	}
 
 	private static int compare(Head left, Head right, int[] components) {
@@ -101,20 +111,25 @@ final class OrderedRecordIterator implements RecordIterator {
 		if (closed) {
 			return null;
 		}
-		if (pendingAdvance != null) {
-			pendingAdvance.row = iterators.get(pendingAdvance.ordinal).next();
-			if (pendingAdvance.row != null) {
-				heads.add(pendingAdvance);
+		try {
+			if (pendingAdvance != null) {
+				pendingAdvance.row = iterators.get(pendingAdvance.ordinal).next();
+				if (pendingAdvance.row != null) {
+					heads.add(pendingAdvance);
+				}
+				pendingAdvance = null;
 			}
-			pendingAdvance = null;
+			if (heads.isEmpty()) {
+				close();
+				return null;
+			}
+			Head head = heads.remove();
+			pendingAdvance = head;
+			return head.row;
+		} catch (RuntimeException | Error e) {
+			closePreserving(e);
+			throw e;
 		}
-		if (heads.isEmpty()) {
-			close();
-			return null;
-		}
-		Head head = heads.remove();
-		pendingAdvance = head;
-		return head.row;
 	}
 
 	@Override
@@ -123,15 +138,109 @@ final class OrderedRecordIterator implements RecordIterator {
 	}
 
 	@Override
-	public void close() {
-		if (!closed) {
-			closed = true;
-			for (RecordIterator iterator : iterators) {
-				iterator.close();
-			}
-			pendingAdvance = null;
-			heads.clear();
+	public boolean seekForward(long subj, long pred, long obj, long context) {
+		if (closed) {
+			return false;
 		}
+		try {
+			if (pendingAdvance != null) {
+				Head pending = pendingAdvance;
+				pendingAdvance = null;
+				if (compare(pending.row, subj, pred, obj, context) < 0) {
+					seekAndRefill(pending, subj, pred, obj, context);
+				} else {
+					refill(pending, subj, pred, obj, context);
+				}
+			}
+
+			while (!heads.isEmpty() && compare(heads.peek().row, subj, pred, obj, context) < 0) {
+				Head stale = heads.remove();
+				seekAndRefill(stale, subj, pred, obj, context);
+			}
+			if (heads.isEmpty()) {
+				close();
+				return false;
+			}
+			return true;
+		} catch (RuntimeException | Error e) {
+			closePreserving(e);
+			throw e;
+		}
+	}
+
+	private void seekAndRefill(Head head, long subj, long pred, long obj, long context) {
+		RecordIterator iterator = iterators.get(head.ordinal);
+		iterator.seekForward(subj, pred, obj, context);
+		refill(head, subj, pred, obj, context);
+	}
+
+	private void refill(Head head, long subj, long pred, long obj, long context) {
+		RecordIterator iterator = iterators.get(head.ordinal);
+		do {
+			head.row = iterator.next();
+		} while (head.row != null && compare(head.row, subj, pred, obj, context) < 0);
+		if (head.row != null) {
+			heads.add(head);
+		}
+	}
+
+	private int compare(long[] row, long subj, long pred, long obj, long context) {
+		for (int component : components) {
+			long target = switch (component) {
+			case TripleIndex.SUBJ_IDX -> subj;
+			case TripleIndex.PRED_IDX -> pred;
+			case TripleIndex.OBJ_IDX -> obj;
+			case TripleIndex.CONTEXT_IDX -> context;
+			default -> throw new AssertionError(component);
+			};
+			int comparison = Long.compareUnsigned(row[component], target);
+			if (comparison != 0) {
+				return comparison;
+			}
+		}
+		return 0;
+	}
+
+	@Override
+	public void close() {
+		Throwable failure = closeOwned(null);
+		if (failure instanceof RuntimeException) {
+			throw (RuntimeException) failure;
+		}
+		if (failure != null) {
+			throw (Error) failure;
+		}
+	}
+
+	private void closePreserving(Throwable primary) {
+		closeOwned(primary);
+	}
+
+	private Throwable closeOwned(Throwable primary) {
+		if (closed) {
+			return primary;
+		}
+		closed = true;
+		Throwable failure = closeIterators(iterators, primary);
+		pendingAdvance = null;
+		heads.clear();
+		return failure;
+	}
+
+	private static Throwable closeIterators(List<RecordIterator> iterators, Throwable primary) {
+		Throwable failure = primary;
+		for (RecordIterator iterator : iterators) {
+			try {
+				iterator.close();
+			} catch (RuntimeException | Error closeFailure) {
+				if (failure == null) {
+					failure = closeFailure;
+				} else if (failure != closeFailure) {
+					failure.addSuppressed(closeFailure);
+				}
+			}
+		}
+		return failure;
 	}
 
 	private static final class Head {

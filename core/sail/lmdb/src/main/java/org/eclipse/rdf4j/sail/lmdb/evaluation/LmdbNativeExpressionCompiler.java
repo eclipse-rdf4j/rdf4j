@@ -41,6 +41,7 @@ import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 
 /**
@@ -112,6 +113,7 @@ public final class LmdbNativeExpressionCompiler {
 			return null;
 		}
 		return new LmdbNativeCompiledInlineId(value.requiredMask,
+				QueryEvaluationUtility.isRepeatableWithinPreparation(expr),
 				row -> LmdbNativeValueCodec.packInline(value.evaluator.eval(row)));
 	}
 
@@ -135,7 +137,7 @@ public final class LmdbNativeExpressionCompiler {
 		}
 		long constant = id;
 		return constant == NativeLmdbQuerySource.UNKNOWN_ID ? null
-				: new LmdbNativeCompiledInlineId(0L, row -> constant);
+				: new LmdbNativeCompiledInlineId(0L, true, row -> constant);
 	}
 
 	private boolean guaranteedInline(ValueExpr expr) {

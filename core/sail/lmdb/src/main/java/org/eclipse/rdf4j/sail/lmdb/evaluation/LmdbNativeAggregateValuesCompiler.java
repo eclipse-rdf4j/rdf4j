@@ -229,15 +229,6 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 					duplicateInsensitive);
 			SlotPlan right = compileTupleWithConstantFilter(union.getRightArg(), variable, ids,
 					duplicateInsensitive);
-			if (left == null && right == null) {
-				return null;
-			}
-			if (left == null) {
-				left = compileTuple(union.getLeftArg(), duplicateInsensitive);
-			}
-			if (right == null) {
-				right = compileTuple(union.getRightArg(), duplicateInsensitive);
-			}
 			return left == null || right == null ? null : SlotPlan.union(left, right);
 		}
 		return null;

@@ -285,9 +285,60 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		if (!initialize(row)) {
 			return noInputResult();
 		}
+		if (!SlotPlan.encounterOrderReplaySafe(arg)) {
+			LmdbNativeAttemptMetrics metrics = LmdbNativeAttemptMetrics.root();
+			try {
+				List<BindingSet> results = evaluateSequential(row, aggContext, metrics);
+				metrics.commitToParent();
+				return results;
+			} catch (EncounterOrderFallback fallback) {
+				throwRealFailureSuppressedBy(fallback);
+				throw fallback;
+			}
+		}
+		NativeFilterLease filterLease = new NativeFilterLease();
+		NativeGroupIteration speculative = withArg(filterLease.borrow(arg));
+		LmdbNativeAttemptMetrics metrics = LmdbNativeAttemptMetrics.root();
+		try {
+			List<BindingSet> results = speculative.evaluateSpeculative(row, metrics);
+			filterLease.commit();
+			metrics.commitToParent();
+			return results;
+		} catch (EncounterOrderFallback fallback) {
+			filterLease.discard();
+			throwRealFailureSuppressedBy(fallback);
+			return evaluateSequentialFallback();
+		} catch (RuntimeException | Error failure) {
+			filterLease.abort(failure);
+			throw failure;
+		}
+	}
+
+	private NativeGroupIteration withArg(SlotPlan attemptArg) {
+		return new NativeGroupIteration(source, attemptArg, layout, groupSlots, aggregates, strictCompare, base,
+				prefixPattern, prefixRunPlan, prefixCountRunRows, explainTarget);
+	}
+
+	private static void throwRealFailureSuppressedBy(EncounterOrderFallback fallback) {
+		Throwable realFailure = EncounterOrderFallback.realFailure(fallback);
+		if (realFailure instanceof Error) {
+			throw (Error) realFailure;
+		}
+		if (realFailure instanceof RuntimeException) {
+			throw (RuntimeException) realFailure;
+		}
+		if (realFailure != null) {
+			throw new QueryEvaluationException(realFailure);
+		}
+	}
+
+	List<BindingSet> evaluateSpeculative(RowState row, LmdbNativeAttemptMetrics metrics) {
+		if (!SlotPlan.encounterOrderReplaySafe(arg)) {
+			return evaluateSequential(row, aggContext, metrics);
+		}
 		List<BindingSet> prefixResults = evaluatePrefixRuns(row);
 		if (prefixResults != null) {
-			LmdbNativeExplain.recordStrategy(explainTarget, "prefixRunGroups");
+			metrics.deferStrategy(explainTarget, "prefixRunGroups");
 			return prefixResults;
 		}
 		NativeAggregateDistinctPlan orderedDistinct = LmdbNativeOrderPlanner.aggregate(arg, groupSlots, aggregates,
@@ -304,30 +355,34 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		if (orderedDistinct.specialized() && directMultiJoin != null) {
 			MultiJoinPlan.OrderedPlan derived = directMultiJoin.derivedFactorizedPlan(row);
 			FactorizedTail factorized = FactorizedTail.probe(derived, directMultiJoin.filters, row.boundMask(),
-					groupSlots, aggregates);
+					groupSlots, aggregates, metrics.child());
 			if (factorized != null) {
 				List<BindingSet> parallel;
 				try {
-					parallel = LmdbNativeParallelAggregation.tryEvaluate(this, directMultiJoin, row);
+					parallel = LmdbNativeParallelAggregation.tryEvaluate(this, directMultiJoin, row, metrics);
 				} catch (RuntimeException | Error e) {
-					factorized.close();
+					try {
+						factorized.close();
+					} catch (RuntimeException | Error closeFailure) {
+						if (e != closeFailure) {
+							e.addSuppressed(closeFailure);
+						}
+					}
 					throw e;
 				}
 				if (parallel != null) {
 					factorized.close();
-					LmdbNativeExplain.recordStrategy(explainTarget, "parallelAggregation");
+					metrics.deferStrategy(explainTarget, "parallelAggregation");
 					return parallel;
-				}
-				factorized.recordEngagement();
-				if (LmdbNativeExplain.recordsStrategies(explainTarget)) {
-					LmdbNativeExplain.recordStrategy(explainTarget, factorized.describeEngagement());
 				}
 				return evaluateFactorized(row, directMultiJoin, derived, factorized);
 			}
 		}
 		if (orderedDistinct.specialized()) {
-			LmdbNativeExplain.recordStrategy(explainTarget, "orderedDistinctGroups");
-			return evaluateOrderedDistinct(row, orderedDistinct);
+			List<BindingSet> ordered = evaluateOrderedDistinct(row, orderedDistinct,
+					new AggContext(source, strictCompare, true), metrics);
+			metrics.deferStrategy(explainTarget, "orderedDistinctGroups");
+			return ordered;
 		}
 		MultiJoinPlan parallelPlan = arg instanceof MultiJoinPlan && ((MultiJoinPlan) arg).children.length >= 1
 				? (MultiJoinPlan) arg
@@ -336,32 +391,43 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 						? new MultiJoinPlan(new SlotPlan[] { arg }, new MaskedFilter[0])
 						: null;
 		if (parallelPlan != null) {
-			List<BindingSet> parallel = LmdbNativeParallelAggregation.tryEvaluate(this, parallelPlan, row);
+			List<BindingSet> parallel = LmdbNativeParallelAggregation.tryEvaluate(this, parallelPlan, row, metrics);
 			if (parallel != null) {
-				LmdbNativeExplain.recordStrategy(explainTarget, "parallelAggregation");
+				metrics.deferStrategy(explainTarget, "parallelAggregation");
 				return parallel;
 			}
 		}
 		if (directMultiJoin != null) {
 			MultiJoinPlan multiJoin = directMultiJoin;
 			MultiJoinPlan.OrderedPlan derived = multiJoin.derivedFactorizedPlan(row);
-			FactorizedTail tail = FactorizedTail.tryCreate(derived, multiJoin.filters, row.boundMask(), groupSlots,
-					aggregates);
+			FactorizedTail tail = FactorizedTail.probe(derived, multiJoin.filters, row.boundMask(), groupSlots,
+					aggregates, metrics.child());
 			if (tail != null) {
-				if (LmdbNativeExplain.recordsStrategies(explainTarget)) {
-					LmdbNativeExplain.recordStrategy(explainTarget, tail.describeEngagement());
-				}
 				return evaluateFactorized(row, multiJoin, derived, tail);
 			}
 		}
-		List<BindingSet> orderedGroups = evaluateOrderedSinglePatternGroups(row);
+		List<BindingSet> orderedGroups = evaluateOrderedSinglePatternGroups(row, metrics);
 		if (orderedGroups != null) {
-			LmdbNativeExplain.recordStrategy(explainTarget, "orderedSinglePatternGroups");
+			metrics.deferStrategy(explainTarget, "orderedSinglePatternGroups");
 			return orderedGroups;
 		}
-		NativeGroupTable table = NativeGroupTable.create(groupSlots, aggregates, aggContext,
+		return evaluateSequential(row, aggContext, metrics);
+	}
+
+	List<BindingSet> evaluateSequentialFallback() {
+		RowState row = new RowState(source, layout, base);
+		if (!initialize(row)) {
+			return noInputResult();
+		}
+		LmdbNativeAttemptMetrics metrics = LmdbNativeAttemptMetrics.root();
+		List<BindingSet> results = evaluateSequential(row, new AggContext(source, strictCompare), metrics);
+		metrics.commitToParent();
+		return results;
+	}
+
+	List<BindingSet> evaluateSequential(RowState row, AggContext context, LmdbNativeAttemptMetrics metrics) {
+		NativeGroupTable table = NativeGroupTable.create(groupSlots, aggregates, context,
 				sequentialDistinctChannels, true, true);
-		LmdbNativeExplain.recordStrategy(explainTarget, table.strategyName());
 		try (RowCursor cursor = arg.open(row)) {
 			while (cursor.next()) {
 				table.add(row);
@@ -369,13 +435,16 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
 		}
-		return table.results(this);
+		List<BindingSet> results = table.results(this, metrics);
+		metrics.deferStrategy(explainTarget, table.strategyName());
+		return results;
 	}
 
 	/** Evaluates the ordered DISTINCT plan before parallel or factorized execution can destroy its proof. */
-	List<BindingSet> evaluateOrderedDistinct(RowState row, NativeAggregateDistinctPlan plan) {
+	List<BindingSet> evaluateOrderedDistinct(RowState row, NativeAggregateDistinctPlan plan, AggContext context,
+			LmdbNativeAttemptMetrics metrics) {
 		if (groupSlots.length == 0) {
-			AggState state = new AggState(aggregates, 16, aggContext, plan.channels);
+			AggState state = new AggState(aggregates, 16, context, plan.channels);
 			boolean sawRow = false;
 			try (RowCursor cursor = plan.arg.open(row)) {
 				while (cursor.next()) {
@@ -388,15 +457,16 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 			return List.of(toBindingSet(null, state, sawRow));
 		}
 		if (LmdbNativeOrderPlanner.completeGroupPrefix(plan, groupSlots)) {
-			return evaluateStreamingOrderedGroups(row, plan);
+			return evaluateStreamingOrderedGroups(row, plan, context);
 		}
 		if (plan.groupPrefixSlots.length > 0) {
-			return evaluatePartitionedOrderedGroups(row, plan);
+			return evaluatePartitionedOrderedGroups(row, plan, context);
 		}
-		return evaluateOrderedGroupMap(row, plan);
+		return evaluateOrderedGroupMap(row, plan, context, metrics);
 	}
 
-	List<BindingSet> evaluateStreamingOrderedGroups(RowState row, NativeAggregateDistinctPlan plan) {
+	List<BindingSet> evaluateStreamingOrderedGroups(RowState row, NativeAggregateDistinctPlan plan,
+			AggContext context) {
 		ArrayList<BindingSet> results = new ArrayList<>();
 		GroupKey current = null;
 		AggState state = null;
@@ -407,7 +477,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 						results.add(toBindingSet(current, state, true));
 					}
 					current = groupKey(row);
-					state = new AggState(aggregates, 16, aggContext, plan.channels);
+					state = new AggState(aggregates, 16, context, plan.channels);
 				}
 				state.add(row);
 			}
@@ -420,7 +490,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		return results;
 	}
 
-	List<BindingSet> evaluatePartitionedOrderedGroups(RowState row, NativeAggregateDistinctPlan plan) {
+	List<BindingSet> evaluatePartitionedOrderedGroups(RowState row, NativeAggregateDistinctPlan plan,
+			AggContext context) {
 		ArrayList<BindingSet> results = new ArrayList<>();
 		HashMap<GroupKey, AggState> groups = new HashMap<>();
 		GroupKey probe = new GroupKey(new long[groupSlots.length]);
@@ -439,7 +510,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 				probe.refill(row.slots, groupSlots);
 				AggState state = groups.get(probe);
 				if (state == null) {
-					state = new AggState(aggregates, 16, aggContext, plan.channels);
+					state = new AggState(aggregates, 16, context, plan.channels);
 					groups.put(probe.storedCopy(), state);
 				}
 				state.add(row);
@@ -451,8 +522,9 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		return results;
 	}
 
-	List<BindingSet> evaluateOrderedGroupMap(RowState row, NativeAggregateDistinctPlan plan) {
-		NativeGroupTable table = NativeGroupTable.create(groupSlots, aggregates, aggContext, plan.channels, false,
+	List<BindingSet> evaluateOrderedGroupMap(RowState row, NativeAggregateDistinctPlan plan, AggContext context,
+			LmdbNativeAttemptMetrics metrics) {
+		NativeGroupTable table = NativeGroupTable.create(groupSlots, aggregates, context, plan.channels, false,
 				false);
 		try (RowCursor cursor = plan.arg.open(row)) {
 			while (cursor.next()) {
@@ -461,7 +533,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
 		}
-		return table.results(this);
+		return table.results(this, metrics);
 	}
 
 	void appendGroupResults(ArrayList<BindingSet> results, HashMap<GroupKey, AggState> groups) {
@@ -494,7 +566,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		}
 	}
 
-	List<BindingSet> evaluateOrderedSinglePatternGroups(RowState row) {
+	List<BindingSet> evaluateOrderedSinglePatternGroups(RowState row, LmdbNativeAttemptMetrics metrics) {
 		if (groupSlots.length != 1 || !(arg instanceof PatternPlan)) {
 			return null;
 		}
@@ -512,8 +584,11 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		}
 		PatternPlan ordered = new PatternPlan(pattern.s, pattern.p, pattern.o, pattern.c, pattern.contexts,
 				pattern.namedContextScope, order, pattern.indexName, pattern.staticEstimate);
+		AggContext context = new AggContext(source, strictCompare, true);
 		ArrayList<BindingSet> results = new ArrayList<>();
 		long currentKey = UNKNOWN;
+		long completedGroups = 0L;
+		long completedRows = 0L;
 		AggState state = null;
 		try (RowCursor cursor = ordered.open(row)) {
 			while (cursor.next()) {
@@ -521,13 +596,13 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 				if (state == null || key != currentKey) {
 					if (state != null) {
 						results.add(toBindingSet(new GroupKey(new long[] { currentKey }), state, true));
-						ORDERED_GROUPS.incrementAndGet();
+						completedGroups++;
 					}
 					currentKey = key;
-					state = new AggState(aggregates, 16, aggContext, sequentialDistinctChannels);
+					state = new AggState(aggregates, 16, context, sequentialDistinctChannels);
 				}
 				state.add(row);
-				ORDERED_GROUP_ROWS.incrementAndGet();
+				completedRows++;
 			}
 		} catch (UnsupportedOperationException e) {
 			return null;
@@ -536,8 +611,9 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		}
 		if (state != null) {
 			results.add(toBindingSet(new GroupKey(new long[] { currentKey }), state, true));
-			ORDERED_GROUPS.incrementAndGet();
+			completedGroups++;
 		}
+		metrics.recordOrderedGroups(completedRows, completedGroups);
 		return results;
 	}
 
@@ -554,8 +630,9 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 			if (cursor == null) {
 				return null;
 			}
+			AggContext orderedContext = new AggContext(source, strictCompare, true);
 			if (groupSlots.length == 0) {
-				AggState state = new AggState(aggregates, 16, aggContext, sequentialDistinctChannels);
+				AggState state = new AggState(aggregates, 16, orderedContext, sequentialDistinctChannels);
 				boolean sawRow = false;
 				while (cursor.next()) {
 					int mark = row.mark();
@@ -576,7 +653,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 				int mark = row.mark();
 				try {
 					if (prefixPattern.bind(cursor.quad(), row)) {
-						AggState state = new AggState(aggregates, 16, aggContext, sequentialDistinctChannels);
+						AggState state = new AggState(aggregates, 16, orderedContext,
+								sequentialDistinctChannels);
 						if (prefixCountRunRows) {
 							state.counts[0] += cursor.runRowCount();
 						} else {
@@ -610,37 +688,63 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 	 */
 	List<BindingSet> evaluateFactorized(RowState row, MultiJoinPlan plan,
 			MultiJoinPlan.OrderedPlan derived, FactorizedTail tail) {
+		List<BindingSet> results;
 		try {
-			return evaluateFactorizedInternal(row, plan, derived, tail);
-		} finally {
-			tail.close();
+			results = evaluateFactorizedInternal(row, plan, derived, tail,
+					new AggContext(source, strictCompare, true));
+		} catch (RuntimeException | Error problem) {
+			try {
+				tail.close();
+			} catch (RuntimeException | Error closeFailure) {
+				if (problem != closeFailure) {
+					problem.addSuppressed(closeFailure);
+				}
+			}
+			throw problem;
 		}
+		String strategy = LmdbNativeExplain.recordsStrategies(explainTarget) ? tail.describeEngagement() : null;
+		tail.close();
+		tail.recordEngagement();
+		tail.metrics.deferStrategy(explainTarget, strategy);
+		tail.metrics.commitToParent();
+		return results;
 	}
 
 	List<BindingSet> evaluateFactorizedInternal(RowState row, MultiJoinPlan plan,
-			MultiJoinPlan.OrderedPlan derived, FactorizedTail tail) {
+			MultiJoinPlan.OrderedPlan derived, FactorizedTail tail, AggContext context) {
 		int prefixLength = derived.order.length - tail.branchCount();
 		if (tail.groupsByTail()) {
-			NativeGroupTable table = NativeGroupTable.tailGrouped(aggregates, aggContext, hashDistinctChannels);
-			try (RowCursor prefix = plan.openChain(derived, prefixLength, row)) {
+			NativeGroupTable table = NativeGroupTable.tailGrouped(aggregates, context, hashDistinctChannels);
+			try (RowCursor prefix = openFactorizedPrefix(row, plan, derived, tail, prefixLength)) {
 				while (prefix.next()) {
 					tail.aggregateGrouped(row, table.longGroups());
 				}
 			} catch (IOException e) {
 				throw new QueryEvaluationException(e);
 			}
-			return table.results(this);
+			return table.results(this, tail.metrics);
 		}
-		NativeGroupTable table = NativeGroupTable.create(groupSlots, aggregates, aggContext, hashDistinctChannels,
+		NativeGroupTable table = NativeGroupTable.create(groupSlots, aggregates, context, hashDistinctChannels,
 				false, true);
-		try (RowCursor prefix = plan.openChain(derived, prefixLength, row)) {
+		try (RowCursor prefix = openFactorizedPrefix(row, plan, derived, tail, prefixLength)) {
 			while (prefix.next()) {
 				table.aggregateFactorized(row, tail);
 			}
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
 		}
-		return table.results(this);
+		return table.results(this, tail.metrics);
+	}
+
+	private RowCursor openFactorizedPrefix(RowState row, MultiJoinPlan plan,
+			MultiJoinPlan.OrderedPlan derived, FactorizedTail tail, int prefixLength) throws IOException {
+		RowCursor prefix = LmdbNativeChunkPipeline.tryOpenPrefix(plan, derived, prefixLength, row, tail.memoBudget);
+		if (prefix != null) {
+			tail.prefixStrategy = "chunkPipeline";
+			return prefix;
+		}
+		tail.prefixStrategy = "chain";
+		return plan.openChain(derived, prefixLength, row);
 	}
 
 	boolean initialize(RowState row) {
@@ -719,6 +823,9 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 			node = ((JoinPlan) node).left;
 		}
 		if (trailingReversed.isEmpty()) {
+			return null;
+		}
+		if (!SlotPlan.encounterOrderReplaySafe(node)) {
 			return null;
 		}
 		long optionalOnly = node.producedMask() & ~SlotPlan.assuredMask(node);

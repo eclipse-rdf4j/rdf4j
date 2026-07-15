@@ -20,6 +20,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
@@ -262,6 +263,11 @@ public class LmdbNativeFactorizedTailAggregationTest {
 			List<String> genericRows = rows(query);
 			assertThat(nativeRows).as("volatile filter must run once per complete joined solution")
 					.isEqualTo(genericRows);
+			System.setProperty(NATIVE_FLAG, "true");
+			function.reset();
+			assertThat(strategy(query))
+					.as("an extension function without an affirmative purity contract must stay at its row boundary")
+					.isEqualTo("aggState");
 		} finally {
 			registry.remove(function);
 			if (previous == null) {
@@ -387,8 +393,24 @@ public class LmdbNativeFactorizedTailAggregationTest {
 				+ "} GROUP BY ?s";
 		assertSameAsGeneric(query);
 		assertThat(strategy(query))
-				.as("prefix-slot value aggregates with counting branches should ride the factorized tail")
-				.startsWith("factorizedTail");
+				.as("prefix-slot value aggregates should use the serial chunk prefix and factorized counting branches")
+				.startsWith("factorizedTail(prefix=chunkPipeline,");
+	}
+
+	@Test
+	public void avgOverPrefixSlotWithCountingBranchesUsesChunkPrefix() {
+		// ?n0 is an exact prefix value repeated by two counting branches. AVG must retain the serial chunk prefix
+		// instead of enumerating the branch cross product or silently falling back to the row chain.
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s (AVG(?n0) AS ?avg) WHERE {\n"
+				+ "  ?s ex:pn0 ?n0 .\n"
+				+ "  ?s ex:p1 ?a .\n"
+				+ "  ?s ex:p2 ?b .\n"
+				+ "} GROUP BY ?s";
+		assertSameAsGeneric(query);
+		assertThat(strategy(query))
+				.as("exact prefix-slot AVG should use the serial chunk prefix and factorized counting branches")
+				.startsWith("factorizedTail(prefix=chunkPipeline,");
 	}
 
 	@Test
@@ -416,6 +438,111 @@ public class LmdbNativeFactorizedTailAggregationTest {
 				+ "  ?s ex:p1 ?a .\n"
 				+ "  ?s ex:pn ?n .\n"
 				+ "} GROUP BY ?s");
+	}
+
+	@Test
+	public void floatingWeightedSumAndAvgFallBackToEncounterOrder() {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			ValueFactory vf = conn.getValueFactory();
+			IRI subject = vf.createIRI(EX, "weightedDoubleHub");
+			conn.add(subject, vf.createIRI(EX, "weightedDoubleValue"), vf.createLiteral(0.1d));
+			for (int i = 0; i < 2; i++) {
+				conn.add(subject, vf.createIRI(EX, "weightedDoubleA"), vf.createIRI(EX, "weightedDoubleA" + i));
+			}
+			for (int i = 0; i < 3; i++) {
+				conn.add(subject, vf.createIRI(EX, "weightedDoubleB"), vf.createIRI(EX, "weightedDoubleB" + i));
+			}
+		}
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (SUM(?v) AS ?sum) (AVG(?v) AS ?avg) WHERE {\n"
+				+ "  ?s ex:weightedDoubleValue ?v .\n"
+				+ "  ?s ex:weightedDoubleA ?a .\n"
+				+ "  ?s ex:weightedDoubleB ?b .\n"
+				+ "}";
+
+		assertSameAsGeneric(query);
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+			assertThat(result).singleElement().satisfies(row -> {
+				Literal sum = (Literal) row.getValue("sum");
+				Literal avg = (Literal) row.getValue("avg");
+				assertThat(sum.getCoreDatatype()).isEqualTo(CoreDatatype.XSD.DOUBLE);
+				assertThat(sum.getLabel()).isEqualTo("0.6");
+				assertThat(avg.getCoreDatatype()).isEqualTo(CoreDatatype.XSD.DOUBLE);
+				assertThat(avg.getLabel()).isEqualTo("0.09999999999999999");
+			});
+		}
+		assertThat(strategy(query)).isEqualTo("aggState");
+	}
+
+	@Test
+	public void floatingWeightedFloatSumAndAvgFallBackToEncounterOrder() {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			ValueFactory vf = conn.getValueFactory();
+			IRI subject = vf.createIRI(EX, "weightedFloatHub");
+			conn.add(subject, vf.createIRI(EX, "weightedFloatValue"), vf.createLiteral(0.1f));
+			for (int i = 0; i < 7; i++) {
+				conn.add(subject, vf.createIRI(EX, "weightedFloatLeg"), vf.createIRI(EX, "weightedFloatLeg" + i));
+			}
+		}
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (SUM(?v) AS ?sum) (AVG(?v) AS ?avg) WHERE {\n"
+				+ "  ?s ex:weightedFloatValue ?v .\n"
+				+ "  ?s ex:weightedFloatLeg ?leg .\n"
+				+ "}";
+
+		assertSameAsGeneric(query);
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+			assertThat(result).singleElement().satisfies(row -> {
+				Literal sum = (Literal) row.getValue("sum");
+				Literal avg = (Literal) row.getValue("avg");
+				assertThat(sum.getCoreDatatype()).isEqualTo(CoreDatatype.XSD.FLOAT);
+				assertThat(sum.getLabel()).isEqualTo("0.70000005");
+				assertThat(avg.getCoreDatatype()).isEqualTo(CoreDatatype.XSD.FLOAT);
+				assertThat(avg.getLabel()).isEqualTo("0.10000001");
+			});
+		}
+		assertThat(strategy(query)).isEqualTo("aggState");
+	}
+
+	@Test
+	public void equivalentExtremaTermsFallBackFromFactorizationAndPreserveFirstTerm() {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			ValueFactory vf = conn.getValueFactory();
+			IRI subject = vf.createIRI(EX, "equivalentExtremeHub");
+			IRI value = vf.createIRI(EX, "equivalentExtremeValue");
+			conn.add(subject, value, vf.createLiteral(1));
+			conn.add(subject, value, vf.createLiteral("1.0", CoreDatatype.XSD.DECIMAL));
+			for (int i = 0; i < 2; i++) {
+				conn.add(subject, vf.createIRI(EX, "equivalentExtremeA"), vf.createIRI(EX, "equivalentExtremeA" + i));
+			}
+			for (int i = 0; i < 3; i++) {
+				conn.add(subject, vf.createIRI(EX, "equivalentExtremeB"), vf.createIRI(EX, "equivalentExtremeB" + i));
+			}
+		}
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (MIN(?v) AS ?min) (MAX(?v) AS ?max) WHERE {\n"
+				+ "  ?s ex:equivalentExtremeValue ?v .\n"
+				+ "  ?s ex:equivalentExtremeA ?a .\n"
+				+ "  ?s ex:equivalentExtremeB ?b .\n"
+				+ "}";
+
+		assertSameAsGeneric(query);
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+			assertThat(result).singleElement().satisfies(row -> {
+				Literal min = (Literal) row.getValue("min");
+				Literal max = (Literal) row.getValue("max");
+				assertThat(min.getCoreDatatype()).isEqualTo(CoreDatatype.XSD.INT);
+				assertThat(min.getLabel()).isEqualTo("1");
+				assertThat(max.getCoreDatatype()).isEqualTo(CoreDatatype.XSD.INT);
+				assertThat(max.getLabel()).isEqualTo("1");
+			});
+		}
+		assertThat(strategy(query))
+				.as("factorization must not choose a different representative from an equal-valued extrema tie")
+				.isEqualTo("aggState");
 	}
 
 	@Test
@@ -478,11 +605,15 @@ public class LmdbNativeFactorizedTailAggregationTest {
 
 	@Test
 	public void leftFilterCannotObserveOptionalBindingAfterReshape() {
-		assertSameAsGeneric("PREFIX ex: <" + EX + ">\n"
+		String query = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT (COUNT(?z) AS ?c) WHERE {\n"
 				+ "  { ?s ex:p1 ?x . ?s ex:pn0 ?y . FILTER(BOUND(?z)) }\n"
 				+ "  OPTIONAL { ?s ex:pn ?z }\n"
-				+ "}");
+				+ "}";
+		assertSameAsGeneric(query);
+		assertThat(strategy(query))
+				.as("a safe scoped left filter must retain factorized-tail execution after OPTIONAL reshaping")
+				.startsWith("factorizedTail");
 	}
 
 	@Test
