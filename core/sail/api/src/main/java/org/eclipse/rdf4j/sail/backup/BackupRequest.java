@@ -14,6 +14,9 @@ import java.nio.file.Path;
 import java.util.Objects;
 import java.util.OptionalLong;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
+@Experimental
 public final class BackupRequest {
 
 	private final Path backupDirectory;
