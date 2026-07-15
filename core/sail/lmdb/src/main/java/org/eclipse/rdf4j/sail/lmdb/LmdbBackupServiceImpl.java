@@ -37,6 +37,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 import java.util.zip.ZipEntry;
@@ -50,6 +52,8 @@ import org.eclipse.rdf4j.sail.backup.BackupCompression;
 import org.eclipse.rdf4j.sail.backup.BackupRequest;
 import org.eclipse.rdf4j.sail.backup.BackupResult;
 import org.eclipse.rdf4j.sail.backup.BackupSchedule;
+import org.eclipse.rdf4j.sail.backup.BackupScheduleStatus;
+import org.eclipse.rdf4j.sail.backup.BackupServiceStatus;
 import org.eclipse.rdf4j.sail.backup.BackupType;
 import org.eclipse.rdf4j.sail.backup.PointInTimeRestoreRequest;
 import org.eclipse.rdf4j.sail.backup.SailBackupService;
@@ -75,24 +79,51 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 		return thread;
 	});
 	private final Map<UUID, ScheduledFuture<?>> schedules = new ConcurrentHashMap<>();
+	private final Map<UUID, ScheduleState> scheduleStates = new ConcurrentHashMap<>();
+	private final ReentrantLock backupOperationLock = new ReentrantLock();
+	private final AtomicReference<BackupResult> lastSuccessfulBackup = new AtomicReference<>();
+	private volatile Instant lastSuccessfulBackupAt;
+	private volatile Instant lastFailureAt;
+	private volatile String lastFailureStage;
+	private volatile Long lastFailureTransactionId;
+	private volatile String lastFailureMessage;
 	private volatile Path txLogRoot;
 
 	LmdbBackupServiceImpl(LmdbStore store, LmdbSailStore backingStore, LmdbStoreConfig config) {
 		this.backingStore = backingStore;
 		this.config = config;
 		this.txLogRoot = store.getDataDir().toPath().resolve("backup");
-		this.backingStore.setCommitListener(this::onCommit);
+		this.backingStore.setCommitListener(new LmdbSailStore.CommitListener() {
+			@Override
+			public void onCommit(long transactionId, List<Statement> additions, List<Statement> removals) {
+				LmdbBackupServiceImpl.this.onCommit(transactionId, additions, removals);
+			}
+
+			@Override
+			public void onCommitFailure(long transactionId, List<Statement> additions, List<Statement> removals,
+					Throwable error) {
+				LmdbBackupServiceImpl.this.onCommitFailure(transactionId, additions, removals, error);
+			}
+		});
 	}
 
 	@Override
 	public BackupResult createBackup(BackupRequest request) throws SailException {
+		backupOperationLock.lock();
 		try {
 			Path backupDir = request.getBackupDirectory();
 			txLogRoot = backupDir;
 			Files.createDirectories(backupDir);
+			cleanupStaleTemporaryBackups(backupDir);
 			return request.getType() == BackupType.FULL ? createFullBackup(request) : createIncrementalBackup(request);
+		} catch (RuntimeException e) {
+			recordFailure("create-backup", null, e);
+			throw e;
 		} catch (IOException e) {
+			recordFailure("create-backup", null, e);
 			throw new SailException(e);
+		} finally {
+			backupOperationLock.unlock();
 		}
 	}
 
@@ -138,10 +169,16 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 	@Override
 	public UUID schedule(BackupSchedule schedule) throws SailException {
 		UUID id = UUID.randomUUID();
+		ScheduleState state = new ScheduleState(id, schedule, Instant.now());
+		scheduleStates.put(id, state);
 		ScheduledFuture<?> future = scheduler.scheduleAtFixedRate(() -> {
+			state.markAttempt();
 			try {
-				createBackup(schedule.getRequest());
+				BackupResult result = createBackup(schedule.getRequest());
+				state.markSuccess(result);
 			} catch (Exception e) {
+				state.markFailure(e);
+				recordFailure("scheduled-backup", null, e);
 				logger.warn("Scheduled LMDB backup {} failed", id, e);
 			}
 		}, schedule.getInterval().toMillis(), schedule.getInterval().toMillis(), TimeUnit.MILLISECONDS);
@@ -152,6 +189,10 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 	@Override
 	public boolean cancelSchedule(UUID scheduleId) {
 		ScheduledFuture<?> future = schedules.remove(scheduleId);
+		ScheduleState state = scheduleStates.get(scheduleId);
+		if (state != null) {
+			state.cancel();
+		}
 		return future != null && future.cancel(false);
 	}
 
@@ -170,28 +211,72 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 		backingStore.setCommitListener(null);
 		schedules.values().forEach(future -> future.cancel(false));
 		schedules.clear();
+		scheduleStates.values().forEach(ScheduleState::cancel);
 		scheduler.shutdown();
+	}
+
+	@Override
+	public BackupServiceStatus getStatus() {
+		return new BackupServiceStatus(java.util.Optional.ofNullable(lastSuccessfulBackup.get()),
+				java.util.Optional.ofNullable(lastSuccessfulBackupAt), java.util.Optional.ofNullable(lastFailureAt),
+				java.util.Optional.ofNullable(lastFailureStage),
+				lastFailureTransactionId == null ? OptionalLong.empty() : OptionalLong.of(lastFailureTransactionId),
+				java.util.Optional.ofNullable(lastFailureMessage), listScheduleStatuses());
+	}
+
+	@Override
+	public java.util.Optional<BackupScheduleStatus> getScheduleStatus(UUID scheduleId) {
+		ScheduleState state = scheduleStates.get(scheduleId);
+		return state == null ? java.util.Optional.empty() : java.util.Optional.of(state.snapshot());
+	}
+
+	@Override
+	public List<BackupScheduleStatus> listScheduleStatuses() {
+		List<BackupScheduleStatus> statuses = new ArrayList<>();
+		for (ScheduleState state : scheduleStates.values()) {
+			statuses.add(state.snapshot());
+		}
+		statuses.sort(Comparator.comparing(BackupScheduleStatus::getCreatedAt));
+		return statuses;
 	}
 
 	private BackupResult createFullBackup(BackupRequest request) throws IOException {
 		long txnId = backingStore.getCurrentCommittedTxnId();
 		String backupId = "full-" + txnId + "-" + System.currentTimeMillis();
-		Path container = request.getBackupDirectory().resolve(FULL_DIR).resolve(backupId);
-		Path snapshotDir = container.resolve("snapshot");
+		Path parent = request.getBackupDirectory().resolve(FULL_DIR);
+		Path tempContainer = parent.resolve(".tmp-" + backupId + "-" + UUID.randomUUID());
+		Path container = parent.resolve(backupId);
+		Path snapshotDir = tempContainer.resolve("snapshot");
 		Files.createDirectories(snapshotDir);
-		backingStore.createOnlineSnapshot(snapshotDir, true);
-		Path artifactPath = snapshotDir;
-		if (request.getCompression() == BackupCompression.ZIP) {
-			artifactPath = container.resolve("snapshot.zip");
-			zipDirectory(snapshotDir, artifactPath);
-			deleteRecursively(snapshotDir);
+		boolean promoted = false;
+		try {
+			backingStore.createOnlineSnapshot(snapshotDir, true);
+			Path artifactPath = snapshotDir;
+			if (request.getCompression() == BackupCompression.ZIP) {
+				artifactPath = tempContainer.resolve("snapshot.zip");
+				zipDirectory(snapshotDir, artifactPath);
+				deleteRecursively(snapshotDir);
+			}
+			String sha = checksum(artifactPath);
+			promoteBackupContainer(tempContainer, container);
+			promoted = true;
+			Path finalArtifactPath = container.resolve(artifactPath.getFileName());
+			BackupResult result = new BackupResult(backupId, BackupType.FULL, Instant.now(), txnId, txnId,
+					OptionalLong.empty(), finalArtifactPath, sha, request.isVerifyAfterWrite());
+			try {
+				writeMetadata(container.resolve(META_FILE), result);
+				recordSuccess(result);
+			} catch (IOException | RuntimeException e) {
+				deleteRecursively(container);
+				throw e;
+			}
+			applyRetention(request);
+			return result;
+		} finally {
+			if (!promoted) {
+				deleteRecursively(tempContainer);
+			}
 		}
-		String sha = checksum(artifactPath);
-		BackupResult result = new BackupResult(backupId, BackupType.FULL, Instant.now(), txnId, txnId,
-				OptionalLong.empty(), artifactPath, sha, request.isVerifyAfterWrite());
-		writeMetadata(container.resolve(META_FILE), result);
-		applyRetention(request);
-		return result;
 	}
 
 	private BackupResult createIncrementalBackup(BackupRequest request) throws IOException {
@@ -201,25 +286,44 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 		}
 		long currentTxn = backingStore.getCurrentCommittedTxnId();
 		String backupId = "incr-" + since.getAsLong() + "-" + currentTxn + "-" + System.currentTimeMillis();
-		Path container = request.getBackupDirectory().resolve(INCREMENTAL_DIR).resolve(backupId);
-		Files.createDirectories(container);
-		Path deltaDir = container.resolve("delta");
+		Path parent = request.getBackupDirectory().resolve(INCREMENTAL_DIR);
+		Path tempContainer = parent.resolve(".tmp-" + backupId + "-" + UUID.randomUUID());
+		Path container = parent.resolve(backupId);
+		Files.createDirectories(tempContainer);
+		Path deltaDir = tempContainer.resolve("delta");
 		Files.createDirectories(deltaDir);
-		List<Path> logs = listTransactionLogs(request.getBackupDirectory(), since.getAsLong(), currentTxn);
-		for (Path log : logs) {
-			Files.copy(log, deltaDir.resolve(log.getFileName()), StandardCopyOption.REPLACE_EXISTING);
+		boolean promoted = false;
+		try {
+			List<Path> logs = listTransactionLogs(request.getBackupDirectory(), since.getAsLong(), currentTxn);
+			for (Path log : logs) {
+				Files.copy(log, deltaDir.resolve(log.getFileName()), StandardCopyOption.REPLACE_EXISTING);
+			}
+			Path artifactPath = deltaDir;
+			if (request.getCompression() == BackupCompression.ZIP) {
+				artifactPath = tempContainer.resolve("delta.zip");
+				zipDirectory(deltaDir, artifactPath);
+				deleteRecursively(deltaDir);
+			}
+			String sha = checksum(artifactPath);
+			promoteBackupContainer(tempContainer, container);
+			promoted = true;
+			Path finalArtifactPath = container.resolve(artifactPath.getFileName());
+			BackupResult result = new BackupResult(backupId, BackupType.INCREMENTAL, Instant.now(),
+					since.getAsLong() + 1, currentTxn, OptionalLong.of(since.getAsLong()), finalArtifactPath, sha,
+					request.isVerifyAfterWrite());
+			try {
+				writeMetadata(container.resolve(META_FILE), result);
+				recordSuccess(result);
+			} catch (IOException | RuntimeException e) {
+				deleteRecursively(container);
+				throw e;
+			}
+			return result;
+		} finally {
+			if (!promoted) {
+				deleteRecursively(tempContainer);
+			}
 		}
-		Path artifactPath = deltaDir;
-		if (request.getCompression() == BackupCompression.ZIP) {
-			artifactPath = container.resolve("delta.zip");
-			zipDirectory(deltaDir, artifactPath);
-			deleteRecursively(deltaDir);
-		}
-		String sha = checksum(artifactPath);
-		BackupResult result = new BackupResult(backupId, BackupType.INCREMENTAL, Instant.now(), since.getAsLong() + 1,
-				currentTxn, OptionalLong.of(since.getAsLong()), artifactPath, sha, request.isVerifyAfterWrite());
-		writeMetadata(container.resolve(META_FILE), result);
-		return result;
 	}
 
 	private void onCommit(long transactionId, List<Statement> additions, List<Statement> removals) {
@@ -235,7 +339,13 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 			}
 		} catch (IOException e) {
 			logger.warn("Failed to persist LMDB transaction delta log for txn {}", transactionId, e);
+			throw new RuntimeException(e);
 		}
+	}
+
+	private void onCommitFailure(long transactionId, List<Statement> additions, List<Statement> removals,
+			Throwable error) {
+		recordFailure("commit-delta", transactionId, error);
 	}
 
 	private void applyDeltaLogs(Path backupDirectory, Path restoreDirectory, long fromExclusive, long toInclusive,
@@ -408,6 +518,46 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 		deleteTransactionLogsUpTo(request.getBackupDirectory(), oldestRetainedTxn);
 	}
 
+	private void cleanupStaleTemporaryBackups(Path backupDirectory) throws IOException {
+		deleteStaleTemporaryChildren(backupDirectory.resolve(FULL_DIR));
+		deleteStaleTemporaryChildren(backupDirectory.resolve(INCREMENTAL_DIR));
+	}
+
+	private void deleteStaleTemporaryChildren(Path typeDir) throws IOException {
+		if (!Files.isDirectory(typeDir)) {
+			return;
+		}
+		try (var stream = Files.list(typeDir)) {
+			for (Path child : (Iterable<Path>) stream::iterator) {
+				String name = child.getFileName().toString();
+				if (name.startsWith(".tmp-")) {
+					deleteRecursively(child);
+				}
+			}
+		}
+	}
+
+	private void promoteBackupContainer(Path source, Path target) throws IOException {
+		Files.createDirectories(target.getParent());
+		try {
+			Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
+		} catch (IOException e) {
+			Files.move(source, target);
+		}
+	}
+
+	private void recordSuccess(BackupResult result) {
+		lastSuccessfulBackup.set(result);
+		lastSuccessfulBackupAt = result.getCreatedAt();
+	}
+
+	private void recordFailure(String stage, Long transactionId, Throwable error) {
+		lastFailureAt = Instant.now();
+		lastFailureStage = stage;
+		lastFailureTransactionId = transactionId;
+		lastFailureMessage = error.getMessage() == null ? error.getClass().getName() : error.getMessage();
+	}
+
 	private void deleteIncrementalBackupsBefore(Path backupDirectory, long cutoffTxn) throws IOException {
 		for (BackupResult backup : listByType(backupDirectory, BackupType.INCREMENTAL)) {
 			if (backup.getEndTransactionId() <= cutoffTxn) {
@@ -497,6 +647,51 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 		@Override
 		public void write(byte[] b, int off, int len) {
 			digest.update(b, off, len);
+		}
+	}
+
+	private static final class ScheduleState {
+		private final UUID scheduleId;
+		private final BackupSchedule schedule;
+		private final Instant createdAt;
+		private volatile boolean active = true;
+		private volatile Instant lastAttemptAt;
+		private volatile Instant lastSuccessAt;
+		private volatile BackupResult lastSuccess;
+		private volatile Instant lastFailureAt;
+		private volatile String lastFailureMessage;
+
+		private ScheduleState(UUID scheduleId, BackupSchedule schedule, Instant createdAt) {
+			this.scheduleId = scheduleId;
+			this.schedule = schedule;
+			this.createdAt = createdAt;
+		}
+
+		private void markAttempt() {
+			lastAttemptAt = Instant.now();
+		}
+
+		private void markSuccess(BackupResult result) {
+			lastSuccessAt = result.getCreatedAt();
+			lastSuccess = result;
+			lastFailureAt = null;
+			lastFailureMessage = null;
+		}
+
+		private void markFailure(Throwable error) {
+			lastFailureAt = Instant.now();
+			lastFailureMessage = error.getMessage() == null ? error.getClass().getName() : error.getMessage();
+		}
+
+		private void cancel() {
+			active = false;
+		}
+
+		private BackupScheduleStatus snapshot() {
+			return new BackupScheduleStatus(scheduleId, schedule, createdAt, active,
+					java.util.Optional.ofNullable(lastAttemptAt), java.util.Optional.ofNullable(lastSuccessAt),
+					java.util.Optional.ofNullable(lastSuccess), java.util.Optional.ofNullable(lastFailureAt),
+					java.util.Optional.ofNullable(lastFailureMessage));
 		}
 	}
 }
