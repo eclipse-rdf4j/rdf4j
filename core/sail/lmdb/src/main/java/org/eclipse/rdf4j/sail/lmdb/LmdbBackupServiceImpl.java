@@ -188,8 +188,7 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 		}
 		String sha = checksum(artifactPath);
 		BackupResult result = new BackupResult(backupId, BackupType.FULL, Instant.now(), txnId, txnId,
-				OptionalLong.empty(),
-				artifactPath, sha, !request.isVerifyAfterWrite() || sha.equals(checksum(artifactPath)));
+				OptionalLong.empty(), artifactPath, sha, request.isVerifyAfterWrite());
 		writeMetadata(container.resolve(META_FILE), result);
 		applyRetention(request);
 		return result;
@@ -218,8 +217,7 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 		}
 		String sha = checksum(artifactPath);
 		BackupResult result = new BackupResult(backupId, BackupType.INCREMENTAL, Instant.now(), since.getAsLong() + 1,
-				currentTxn, OptionalLong.of(since.getAsLong()), artifactPath, sha,
-				!request.isVerifyAfterWrite() || sha.equals(checksum(artifactPath)));
+				currentTxn, OptionalLong.of(since.getAsLong()), artifactPath, sha, request.isVerifyAfterWrite());
 		writeMetadata(container.resolve(META_FILE), result);
 		return result;
 	}
@@ -401,9 +399,26 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 			return;
 		}
 		int toDelete = fullBackups.size() - retain;
+		long oldestRetainedTxn = fullBackups.get(toDelete).getEndTransactionId();
 		for (int i = 0; i < toDelete; i++) {
 			BackupResult old = fullBackups.get(i);
 			deleteRecursively(old.getArtifactPath().getParent());
+		}
+		deleteIncrementalBackupsBefore(request.getBackupDirectory(), oldestRetainedTxn);
+		deleteTransactionLogsUpTo(request.getBackupDirectory(), oldestRetainedTxn);
+	}
+
+	private void deleteIncrementalBackupsBefore(Path backupDirectory, long cutoffTxn) throws IOException {
+		for (BackupResult backup : listByType(backupDirectory, BackupType.INCREMENTAL)) {
+			if (backup.getEndTransactionId() <= cutoffTxn) {
+				deleteRecursively(backup.getArtifactPath().getParent());
+			}
+		}
+	}
+
+	private void deleteTransactionLogsUpTo(Path backupDirectory, long cutoffTxn) throws IOException {
+		for (Path log : listTransactionLogs(backupDirectory, Long.MIN_VALUE, cutoffTxn)) {
+			Files.deleteIfExists(log);
 		}
 	}
 
