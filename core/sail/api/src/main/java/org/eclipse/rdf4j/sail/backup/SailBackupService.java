@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.sail.backup;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.eclipse.rdf4j.sail.SailException;
@@ -29,6 +30,12 @@ public interface SailBackupService extends AutoCloseable {
 	boolean cancelSchedule(UUID scheduleId);
 
 	boolean verify(BackupResult backupResult) throws SailException;
+
+	BackupServiceStatus getStatus();
+
+	Optional<BackupScheduleStatus> getScheduleStatus(UUID scheduleId);
+
+	List<BackupScheduleStatus> listScheduleStatuses();
 
 	@Override
 	void close();
