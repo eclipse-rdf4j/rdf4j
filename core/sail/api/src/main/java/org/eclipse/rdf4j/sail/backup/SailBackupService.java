@@ -15,8 +15,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.sail.SailException;
 
 @Experimental
 public interface SailBackupService extends AutoCloseable {
