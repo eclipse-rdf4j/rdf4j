@@ -118,4 +118,65 @@ class LmdbBackupServiceTest {
 			repo.shutDown();
 		}
 	}
+
+	@Test
+	void prunesObsoleteIncrementalArtifactsAndTransactionLogs(@TempDir Path tempDir) throws Exception {
+		Path storeDir = tempDir.resolve("store");
+		Path backupDir = tempDir.resolve("backup");
+		Files.createDirectories(storeDir);
+
+		LmdbStore store = new LmdbStore(storeDir.toFile(), new LmdbStoreConfig("spoc,posc"));
+		SailRepository repo = new SailRepository(store);
+		repo.init();
+
+		try {
+			Statement first = vf.createStatement(vf.createIRI("urn:first"), RDF.TYPE, vf.createIRI("urn:Thing"));
+			Statement second = vf.createStatement(vf.createIRI("urn:second"), RDF.TYPE, vf.createIRI("urn:Thing"));
+			Statement third = vf.createStatement(vf.createIRI("urn:third"), RDF.TYPE, vf.createIRI("urn:Thing"));
+
+			try (RepositoryConnection conn = repo.getConnection()) {
+				conn.add(first);
+			}
+
+			SailBackupService backupService = store.getBackupService();
+			BackupResult full1 = backupService.createBackup(
+					BackupRequest.builder(backupDir, BackupType.FULL).compression(BackupCompression.ZIP).build());
+
+			try (RepositoryConnection conn = repo.getConnection()) {
+				conn.add(second);
+			}
+
+			BackupResult incremental = backupService
+					.createBackup(BackupRequest.builder(backupDir, BackupType.INCREMENTAL)
+							.sinceTransactionId(full1.getEndTransactionId())
+							.build());
+
+			try (RepositoryConnection conn = repo.getConnection()) {
+				conn.add(third);
+			}
+
+			BackupResult full2 = backupService.createBackup(BackupRequest.builder(backupDir, BackupType.FULL)
+					.compression(BackupCompression.ZIP)
+					.retentionCount(1)
+					.build());
+
+			assertEquals(BackupType.FULL, full2.getType());
+			assertTrue(full2.isVerified());
+
+			List<BackupResult> backups = backupService.listBackups(backupDir);
+			assertEquals(1, backups.size());
+			assertEquals(full2.getBackupId(), backups.get(0).getBackupId());
+
+			assertFalse(Files.exists(incremental.getArtifactPath().getParent()));
+			assertFalse(Files.exists(full1.getArtifactPath().getParent()));
+
+			Path txLogDir = backupDir.resolve("txlog");
+			assertTrue(Files.isDirectory(txLogDir));
+			try (var stream = Files.list(txLogDir)) {
+				assertFalse(stream.anyMatch(Files::isRegularFile));
+			}
+		} finally {
+			repo.shutDown();
+		}
+	}
 }

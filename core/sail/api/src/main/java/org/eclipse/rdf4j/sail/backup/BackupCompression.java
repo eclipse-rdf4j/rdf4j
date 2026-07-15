@@ -14,4 +14,3 @@ public enum BackupCompression {
 	NONE,
 	ZIP
 }
-
