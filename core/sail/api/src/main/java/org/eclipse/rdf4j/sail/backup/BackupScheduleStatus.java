@@ -15,6 +15,9 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
+@Experimental
 public final class BackupScheduleStatus {
 
 	private final UUID scheduleId;
