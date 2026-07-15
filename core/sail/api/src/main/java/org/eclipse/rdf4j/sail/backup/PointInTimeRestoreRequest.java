@@ -13,6 +13,9 @@ package org.eclipse.rdf4j.sail.backup;
 import java.nio.file.Path;
 import java.util.Objects;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
+@Experimental
 public final class PointInTimeRestoreRequest {
 	private final Path backupDirectory;
 	private final Path restoreDirectory;

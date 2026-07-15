@@ -10,11 +10,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.backup;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.Sail;
 
 /**
  * Marker interface for sails that expose a backup service.
  */
+@Experimental
 public interface BackupCapableSail extends Sail {
 
 	SailBackupService getBackupService();
