@@ -158,7 +158,7 @@ final class BindingAnalyzer {
 		addVariable(pattern.getObjectVar(), may, must, true);
 
 		Var context = pattern.getContextVar();
-		if (context != null && !context.hasValue()) {
+		if (context != null && !context.isConstant()) {
 			may.add(context.getName());
 			if (pattern.getScope() == StatementPattern.Scope.NAMED_CONTEXTS) {
 				must.add(context.getName());
@@ -184,7 +184,10 @@ final class BindingAnalyzer {
 	}
 
 	private static void addVariable(Var variable, Set<String> may, Set<String> must, boolean assured) {
-		if (variable != null && !variable.hasValue() && variable.getName() != null) {
+		// The runtime discriminates on isConstant(), not hasValue(): a valued-but-not-constant
+		// variable both constrains the match AND binds its name in the result row, so it must
+		// count as a binding variable here or MINUS/join domain reasoning diverges from runtime.
+		if (variable != null && !variable.isConstant() && variable.getName() != null) {
 			may.add(variable.getName());
 			if (assured) {
 				must.add(variable.getName());
