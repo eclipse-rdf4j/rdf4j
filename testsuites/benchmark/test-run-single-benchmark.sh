@@ -5,6 +5,8 @@ SCRIPT_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 SCRIPT="${REPO_ROOT}/scripts/run-single-benchmark.sh"
 
+python3 "${REPO_ROOT}/scripts/query-plan-risk-guard.py" --self-test
+
 set +e
 OUTPUT="$(bash "${SCRIPT}" --dry-run --module testsuites/benchmark --class org.eclipse.rdf4j.benchmark.ReasoningBenchmark --method forwardChainingSchemaCachingRDFSInferencer 2>&1)"
 STATUS=$?
@@ -33,6 +35,70 @@ fi
 
 if [[ "${OUTPUT}" != *$'# On failure, reruns single-threaded:\nmvn -Dmaven.repo.local=.m2_repo -pl testsuites/benchmark -am -P benchmarks\\,quick package'* ]]; then
         echo "Expected single-threaded fallback command not found in output" >&2
+        exit 1
+fi
+
+set +e
+NO_BUILD_OUTPUT="$(bash "${SCRIPT}" --dry-run --no-build --module testsuites/benchmark --class org.eclipse.rdf4j.benchmark.ReasoningBenchmark --method forwardChainingSchemaCachingRDFSInferencer 2>&1)"
+NO_BUILD_STATUS=$?
+set -e
+
+echo "${NO_BUILD_OUTPUT}"
+
+if [[ ${NO_BUILD_STATUS} -ne 0 ]]; then
+        exit ${NO_BUILD_STATUS}
+fi
+
+if [[ "${NO_BUILD_OUTPUT}" == *"mvn "* ]]; then
+        echo "Did not expect Maven commands when --no-build is enabled" >&2
+        exit 1
+fi
+
+if [[ "${NO_BUILD_OUTPUT}" != *"java -jar "* ]]; then
+        echo "Expected benchmark command when --no-build is enabled" >&2
+        exit 1
+fi
+
+set +e
+SKIP_BUILD_OUTPUT="$(bash "${SCRIPT}" --dry-run --skip-build --module testsuites/benchmark --class org.eclipse.rdf4j.benchmark.ReasoningBenchmark --method forwardChainingSchemaCachingRDFSInferencer 2>&1)"
+SKIP_BUILD_STATUS=$?
+set -e
+
+echo "${SKIP_BUILD_OUTPUT}"
+
+if [[ ${SKIP_BUILD_STATUS} -ne 0 ]]; then
+        exit ${SKIP_BUILD_STATUS}
+fi
+
+if [[ "${SKIP_BUILD_OUTPUT}" == *"mvn "* ]]; then
+        echo "Did not expect Maven commands when --skip-build is enabled" >&2
+        exit 1
+fi
+
+if [[ "${SKIP_BUILD_OUTPUT}" != *"java -jar "* ]]; then
+        echo "Expected benchmark command when --skip-build is enabled" >&2
+        exit 1
+fi
+
+set +e
+PREFLIGHT_OUTPUT="$(RDF4J_BENCHMARK_FORK_SOCKET_PREFLIGHT_CMD=false bash "${SCRIPT}" --no-build --module docs --class org.eclipse.rdf4j.benchmark.MissingBenchmark --method missingMethod 2>&1)"
+PREFLIGHT_STATUS=$?
+set -e
+
+echo "${PREFLIGHT_OUTPUT}"
+
+if [[ ${PREFLIGHT_STATUS} -eq 0 ]]; then
+        echo "Expected fork socket preflight to fail before benchmark execution" >&2
+        exit 1
+fi
+
+if [[ "${PREFLIGHT_OUTPUT}" != *"JMH fork socket preflight failed"* ]]; then
+        echo "Expected early JMH fork socket preflight failure" >&2
+        exit 1
+fi
+
+if [[ "${PREFLIGHT_OUTPUT}" == *"Unable to locate a benchmark jar"* ]]; then
+        echo "Expected fork socket preflight to run before benchmark jar lookup" >&2
         exit 1
 fi
 
@@ -94,7 +160,7 @@ if [[ "${JFR_OUTPUT}" != *"-f 1"* ]]; then
         exit 1
 fi
 
-if [[ "${JFR_OUTPUT}" != *"-XX:StartFlightRecording=settings=profile\\,dumponexit=true"* ]]; then
+if [[ "${JFR_OUTPUT}" != *"-XX:StartFlightRecording:settings=profile\\,dumponexit=true"* ]]; then
         echo "Expected JFR run to enable JFR profiling" >&2
         exit 1
 fi

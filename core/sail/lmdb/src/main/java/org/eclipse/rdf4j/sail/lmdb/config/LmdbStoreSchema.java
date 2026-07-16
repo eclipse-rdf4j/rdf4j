@@ -111,11 +111,24 @@ public class LmdbStoreSchema {
 
 	public final static IRI SKETCH_ESTIMATOR_CONTEXT_BUCKET_COUNT;
 
+	public final static IRI SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_COUNT;
+
+	public final static IRI SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX;
+	public final static IRI SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_MAX_ENTRIES;
+
 	public final static IRI SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED;
 
 	public final static IRI SKETCH_ESTIMATOR_THROTTLE_EVERY_N;
 
 	public final static IRI SKETCH_ESTIMATOR_THROTTLE_MILLIS;
+
+	public final static IRI SKETCH_ESTIMATOR_STRATEGY;
+
+	public final static IRI SKETCH_ESTIMATOR_EVIDENCE_MODE;
+
+	public final static IRI SKETCH_ESTIMATOR_COLD_SYNOPSIS_CAPACITY;
+
+	public final static IRI SKETCH_ESTIMATOR_MEMORY_BUDGET_BYTES;
 
 	public final static IRI SKETCH_ESTIMATOR_ENABLED;
 
@@ -128,6 +141,12 @@ public class LmdbStoreSchema {
 	public final static IRI BACKGROUND_RAW_SAMPLING_ENABLED;
 
 	public final static IRI BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE;
+
+	public final static IRI PREDICATE_GUARANTEE_INDEX_ENABLED;
+
+	public final static IRI PREDICATE_GUARANTEE_INDEX_AUTO_REBUILD;
+
+	public final static IRI PREDICATE_GUARANTEE_EXCLUDED_PREDICATES;
 
 	/**
 	 * <tt>http://rdf4j.org/config/sail/lmdb#inlineLiterals</tt>
@@ -155,10 +174,22 @@ public class LmdbStoreSchema {
 		SKETCH_ESTIMATOR_PREDICATE_BUCKET_COUNT = factory.createIRI(NAMESPACE, "sketchEstimatorPredicateBucketCount");
 		SKETCH_ESTIMATOR_OBJECT_BUCKET_COUNT = factory.createIRI(NAMESPACE, "sketchEstimatorObjectBucketCount");
 		SKETCH_ESTIMATOR_CONTEXT_BUCKET_COUNT = factory.createIRI(NAMESPACE, "sketchEstimatorContextBucketCount");
+		SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_COUNT = factory.createIRI(NAMESPACE,
+				"sketchEstimatorOmniWitnessCohortBucketCount");
+		SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX = factory.createIRI(NAMESPACE,
+				"sketchEstimatorOmniWitnessCohortBucketIndex");
+		SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_MAX_ENTRIES = factory.createIRI(NAMESPACE,
+				"sketchEstimatorOmniWitnessCohortMaxEntries");
 		SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED = factory.createIRI(NAMESPACE,
 				"sketchEstimatorContextPairSketchesEnabled");
 		SKETCH_ESTIMATOR_THROTTLE_EVERY_N = factory.createIRI(NAMESPACE, "sketchEstimatorThrottleEveryN");
 		SKETCH_ESTIMATOR_THROTTLE_MILLIS = factory.createIRI(NAMESPACE, "sketchEstimatorThrottleMillis");
+		SKETCH_ESTIMATOR_STRATEGY = factory.createIRI(NAMESPACE, "sketchEstimatorStrategy");
+		SKETCH_ESTIMATOR_EVIDENCE_MODE = factory.createIRI(NAMESPACE, "sketchEstimatorEvidenceMode");
+		SKETCH_ESTIMATOR_COLD_SYNOPSIS_CAPACITY = factory.createIRI(NAMESPACE,
+				"sketchEstimatorColdSynopsisCapacity");
+		SKETCH_ESTIMATOR_MEMORY_BUDGET_BYTES = factory.createIRI(NAMESPACE,
+				"sketchEstimatorMemoryBudgetBytes");
 		SKETCH_ESTIMATOR_ENABLED = factory.createIRI(NAMESPACE, "sketchEstimatorEnabled");
 		OPTIMIZER_SAMPLING_ENABLED = factory.createIRI(NAMESPACE, "optimizerSamplingEnabled");
 		OPTIMIZER_SAMPLING_MAX_MILLIS = factory.createIRI(NAMESPACE, "optimizerSamplingMaxMillis");
@@ -166,6 +197,11 @@ public class LmdbStoreSchema {
 		BACKGROUND_RAW_SAMPLING_ENABLED = factory.createIRI(NAMESPACE, "backgroundRawSamplingEnabled");
 		BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE = factory.createIRI(NAMESPACE,
 				"backgroundRawSamplingMaxMillisPerCycle");
+		PREDICATE_GUARANTEE_INDEX_ENABLED = factory.createIRI(NAMESPACE, "predicateGuaranteeIndexEnabled");
+		PREDICATE_GUARANTEE_INDEX_AUTO_REBUILD = factory.createIRI(NAMESPACE,
+				"predicateGuaranteeIndexAutoRebuild");
+		PREDICATE_GUARANTEE_EXCLUDED_PREDICATES = factory.createIRI(NAMESPACE,
+				"predicateGuaranteeExcludedPredicates");
 		INLINE_LITERALS = factory.createIRI(NAMESPACE, "inlineLiterals");
 	}
 }

@@ -14,24 +14,45 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.FN;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.CompareAll;
 import org.eclipse.rdf4j.query.algebra.CompareAny;
+import org.eclipse.rdf4j.query.algebra.Count;
+import org.eclipse.rdf4j.query.algebra.Datatype;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
+import org.eclipse.rdf4j.query.algebra.IsBNode;
+import org.eclipse.rdf4j.query.algebra.IsLiteral;
+import org.eclipse.rdf4j.query.algebra.IsNumeric;
+import org.eclipse.rdf4j.query.algebra.IsResource;
+import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
@@ -40,6 +61,7 @@ import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -48,12 +70,40 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteAssumption;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteCertificate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteSafety;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
 final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
+
+	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+	private static final String OPTIMIZER_GUARANTEE_OPTION = "optimizer.guaranteeOption";
+	private static final String OPTIMIZER_GUARANTEE_OPTIONS = "optimizer.guaranteeOptions";
+	private static final String OPTIMIZER_GUARANTEE_ANCHOR_BINDING = "optimizer.guaranteeAnchorBinding";
+	private static final String OPTIMIZER_GUARANTEE_ANCHOR_PREDICATE = "optimizer.guaranteeAnchorPredicate";
+	private static final String OPTIMIZER_GUARANTEE_ANCHOR_PREDICATE_DOMAIN = "optimizer.guaranteeAnchorPredicateDomain";
+	private static final String OPTIMIZER_GUARANTEE_ANCHOR_DOMAIN = "optimizer.guaranteeAnchorDomain";
+	private static final String OPTIMIZER_GUARANTEE_ANCHOR_ROLE = "optimizer.guaranteeAnchorRole";
+	private static final int FINITE_FILTER_RELATION_ROW_LIMIT = 256;
+	private static final List<CoreDatatype.XSD> INTEGER_ANCHOR_DATATYPES = List.of(
+			CoreDatatype.XSD.INTEGER,
+			CoreDatatype.XSD.LONG,
+			CoreDatatype.XSD.INT,
+			CoreDatatype.XSD.SHORT,
+			CoreDatatype.XSD.BYTE,
+			CoreDatatype.XSD.NON_POSITIVE_INTEGER,
+			CoreDatatype.XSD.NEGATIVE_INTEGER,
+			CoreDatatype.XSD.NON_NEGATIVE_INTEGER,
+			CoreDatatype.XSD.POSITIVE_INTEGER,
+			CoreDatatype.XSD.UNSIGNED_LONG,
+			CoreDatatype.XSD.UNSIGNED_INT,
+			CoreDatatype.XSD.UNSIGNED_SHORT,
+			CoreDatatype.XSD.UNSIGNED_BYTE);
 
 	private final EvaluationStatistics statistics;
 
@@ -92,16 +142,82 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		}
 
 		@Override
+		public void meet(Difference difference) {
+			super.meet(difference);
+			TupleExpr replacement = rewriteRedundantPatternMinusFilter(difference);
+			if (replacement != null) {
+				difference.replaceWith(replacement);
+				replacement.visit(this);
+			}
+		}
+
+		@Override
 		public void meet(Filter filter) {
 			super.meet(filter);
-			annotateFilter(filter);
 			if (filter.getArg()instanceof Filter childFilter && canMerge(filter, (Filter) filter.getArg())) {
 				filter.setCondition(mergeConditions(childFilter.getCondition(), filter.getCondition()));
 				filter.setArg(childFilter.getArg());
+			}
+			TupleExpr nullRejectingOptionalRewrite = LmdbNullRejectingOptionalSupport.rewrite(filter);
+			if (nullRejectingOptionalRewrite != null) {
+				filter.replaceWith(nullRejectingOptionalRewrite);
+				nullRejectingOptionalRewrite.visit(this);
+				return;
+			}
+			if (!rewriteSmallLiteralFilterAnchors(filter)) {
 				annotateFilter(filter);
 			}
-			rewriteSmallLiteralFilterAnchors(filter);
 		}
+	}
+
+	private static TupleExpr rewriteRedundantPatternMinusFilter(Difference difference) {
+		if (!(difference.getRightArg()instanceof Filter rightFilter)
+				|| !(rightFilter.getArg()instanceof StatementPattern rightPattern)) {
+			return null;
+		}
+
+		Set<String> conditionVars = DeferredFilter.conditionBindingNames(rightFilter.getCondition());
+		if (!rightPattern.getBindingNames().containsAll(conditionVars)
+				|| !difference.getLeftArg().getAssuredBindingNames().containsAll(conditionVars)
+				|| !isSafeTotalMinusLocalCondition(rightFilter.getCondition(), conditionVars)
+				|| !LmdbJoinPlanSupport.containsEquivalentRequiredPattern(difference.getLeftArg(), rightPattern)) {
+			return null;
+		}
+
+		Filter replacement = new Filter(difference.getLeftArg().clone(), new Not(rightFilter.getCondition().clone()));
+		replacement.setStringMetricPlanned("optimizer.rewriteProof",
+				new LmdbRewriteProof(LmdbRewriteProof.RewriteKind.MINUS_REDUNDANT_PATTERN_FILTER,
+						LmdbRewriteProof.EquivalenceScope.LOGICAL_BAG_EQUIVALENT,
+						Set.of("rhsPatternRequiredOnLeft", "conditionVarsAssuredByLeft", "totalStringFilter"),
+						"minus-rhs-required-pattern-filter-is-left-negated-filter").metricFragment());
+		return replacement;
+	}
+
+	private static boolean isSafeTotalMinusLocalCondition(ValueExpr condition, Set<String> assuredConditionVars) {
+		if (condition instanceof And and) {
+			return isSafeTotalMinusLocalCondition(and.getLeftArg(), assuredConditionVars)
+					&& isSafeTotalMinusLocalCondition(and.getRightArg(), assuredConditionVars);
+		}
+		if (condition instanceof FunctionCall functionCall) {
+			return FN.CONTAINS.stringValue().equals(functionCall.getURI()) && functionCall.getArgs().size() == 2
+					&& isSafeStringExpression(functionCall.getArgs().get(0), assuredConditionVars)
+					&& isSafeStringExpression(functionCall.getArgs().get(1), assuredConditionVars);
+		}
+		return false;
+	}
+
+	private static boolean isSafeStringExpression(ValueExpr expression, Set<String> assuredConditionVars) {
+		if (expression instanceof Str str) {
+			ValueExpr arg = str.getArg();
+			return arg instanceof Var var && assuredConditionVars.contains(var.getName());
+		}
+		if (expression instanceof ValueConstant valueConstant) {
+			Value value = valueConstant.getValue();
+			return value instanceof Literal literal
+					&& literal.getLanguage().isEmpty()
+					&& literal.getCoreDatatype() == CoreDatatype.XSD.STRING;
+		}
+		return false;
 	}
 
 	private static boolean canMerge(Filter parent, Filter child) {
@@ -119,13 +235,16 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		return new And(rightCondition.clone(), leftCondition.clone());
 	}
 
-	private void rewriteSmallLiteralFilterAnchors(Filter filter) {
+	private boolean rewriteSmallLiteralFilterAnchors(Filter filter) {
 		if (isVariableScopeChange(filter)) {
-			return;
+			return false;
 		}
 
 		TupleExpr arg = filter.getArg();
 		List<ValueExpr> conditions = LmdbJoinPlanSupport.splitConjuncts(filter.getCondition());
+		if (!hasSmallLiteralAnchorCandidate(conditions)) {
+			return false;
+		}
 		Set<String> mandatoryOptionalAnchorBindings = new HashSet<>();
 		Set<String> removableMandatoryOptionalAnchorBindings = new HashSet<>();
 		TupleExpr mandatoryArg = makeUnboundRejectingOptionalsMandatory(arg, conditions,
@@ -140,17 +259,13 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		List<BindingSetAssignment> anchors = new ArrayList<>();
 		List<ValueExpr> remainingConditions = new ArrayList<>();
 		for (ValueExpr condition : conditions) {
-			BindingSetAssignment valuesVariableAnchor = valuesVariableFilterAnchor(condition, assignmentValues);
-			if (valuesVariableAnchor != null
-					&& isSelectiveSmallLiteralAnchor(filter, condition)
-					&& canMaterializeSmallLiteralFilterAnchor(filter, condition, valuesVariableAnchor,
-							assuredBindings)) {
-				anchors.add(valuesVariableAnchor);
-				remainingConditions.add(condition);
-				continue;
+			BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(condition,
+					LmdbFilterSimplifierOptimizer::isPotentialSmallLiteralAnchorValue);
+			BindingSetAssignment materializedAnchor = null;
+			if (anchor == null) {
+				materializedAnchor = materializedValuesVariableFilterAnchor(filter, condition, assignmentValues,
+						assuredBindings);
 			}
-
-			BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(condition);
 			if (shouldDropMandatoryOptionalFilter(anchor, mandatoryOptionalAnchorBindings,
 					removableMandatoryOptionalAnchorBindings)) {
 				continue;
@@ -160,12 +275,23 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 				remainingConditions.add(condition);
 				continue;
 			}
-			if (anchor != null && canMaterializeSmallLiteralFilterAnchor(filter, condition, anchor, assuredBindings)) {
-				if (!equivalentSmallLiteralAssignmentExists(anchor, assignmentValues)) {
-					anchors.add(anchor);
+			if (equivalentSmallLiteralAssignmentExists(anchor, assignmentValues)
+					&& !shouldRetainSmallLiteralAnchorFilter(filter, condition)) {
+				continue;
+			}
+			if (materializedAnchor == null) {
+				materializedAnchor = materializedSmallLiteralFilterAnchor(filter, condition, anchor, assuredBindings,
+						mandatoryOptionalAnchorBindings);
+			}
+			if (materializedAnchor != null) {
+				TupleExpr semiFilter = duplicateInsensitiveMembershipSemiFilter(filter, condition, materializedAnchor,
+						conditions);
+				if (semiFilter != null) {
+					filter.replaceWith(semiFilter);
+					return true;
 				}
-				if (shouldRetainSmallLiteralAnchorFilter(filter, condition)) {
-					remainingConditions.add(condition);
+				if (!equivalentSmallLiteralAssignmentExists(materializedAnchor, assignmentValues)) {
+					anchors.add(materializedAnchor);
 				}
 			} else {
 				remainingConditions.add(condition);
@@ -174,17 +300,42 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 
 		if (remainingConditions.isEmpty()) {
 			filter.replaceWith(anchors.isEmpty() ? arg : prependAnchors(arg, anchors));
-			return;
+			return true;
 		}
 
 		if (anchors.isEmpty()) {
-			return;
+			return false;
 		}
 
 		TupleExpr anchoredArg = prependAnchors(arg, anchors);
 		filter.setArg(anchoredArg);
 		filter.setCondition(LmdbJoinPlanSupport.combinedCondition(remainingConditions));
-		annotateFilter(filter);
+		return false;
+	}
+
+	private static boolean hasSmallLiteralAnchorCandidate(List<ValueExpr> conditions) {
+		for (ValueExpr condition : conditions) {
+			if (isSmallLiteralAnchorCandidate(condition)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean isSmallLiteralAnchorCandidate(ValueExpr condition) {
+		if (condition instanceof ListMemberOperator || condition instanceof SameTerm) {
+			return true;
+		}
+		if (condition instanceof Compare compare) {
+			return compare.getOperator() == Compare.CompareOp.EQ;
+		}
+		if (condition instanceof Or or) {
+			return isSmallLiteralAnchorCandidate(or.getLeftArg()) || isSmallLiteralAnchorCandidate(or.getRightArg());
+		}
+		if (condition instanceof And and) {
+			return isSmallLiteralAnchorCandidate(and.getLeftArg()) || isSmallLiteralAnchorCandidate(and.getRightArg());
+		}
+		return false;
 	}
 
 	private static TupleExpr makeUnboundRejectingOptionalsMandatory(TupleExpr arg, List<ValueExpr> conditions,
@@ -413,54 +564,871 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		valuesByBinding.computeIfAbsent(bindingName, ignored -> new LinkedHashSet<>()).addAll(values);
 	}
 
-	private static BindingSetAssignment valuesVariableFilterAnchor(ValueExpr condition,
-			Map<String, LinkedHashSet<Value>> assignmentValues) {
-		if (assignmentValues.isEmpty()) {
+	private static BindingSetAssignment materializedValuesVariableFilterAnchor(Filter filter, ValueExpr condition,
+			Map<String, LinkedHashSet<Value>> assignmentValues, Set<String> assuredBindings) {
+		BindingSetAssignment relation = finiteFilterRelation(condition, assignmentValues);
+		if (relation == null) {
 			return null;
 		}
-
-		ValuesVariableAnchorCollector collector = new ValuesVariableAnchorCollector(assignmentValues);
-		if (!collectValuesVariableAnchor(condition, collector) || collector.bindingName == null
-				|| collector.values.isEmpty() || assignmentValues.containsKey(collector.bindingName)) {
+		Set<String> conditionVars = DeferredFilter.conditionBindingNames(condition);
+		if (!relation.getBindingNames().containsAll(conditionVars)) {
 			return null;
 		}
-		return LmdbJoinPlanSupport.smallLiteralFilterAnchor(collector.bindingName, collector.values);
+		Set<String> extensionNames = extensionElementNames(filter.getArg());
+		for (String bindingName : relation.getBindingNames()) {
+			if (!assuredBindings.contains(bindingName)
+					|| extensionNames.contains(bindingName)
+					|| containsVariableScopeChangeBinding(filter.getArg(), bindingName)
+					|| LmdbJoinPlanSupport.containsPathContextBinding(filter.getArg(), bindingName)) {
+				return null;
+			}
+		}
+		relation.setStringMetricPlanned(OPTIMIZER_GUARANTEE_OPTION, "finite-filter-relation");
+		relation.setStringMetricPlanned(OPTIMIZER_GUARANTEE_OPTIONS, "generated=1, selected=finite-filter-relation");
+		annotateFiniteFilterRelationProof(relation, condition, assignmentValues);
+		return relation;
 	}
 
-	private static boolean collectValuesVariableAnchor(ValueExpr condition,
-			ValuesVariableAnchorCollector collector) {
+	private static void annotateFiniteFilterRelationProof(BindingSetAssignment relation, ValueExpr condition,
+			Map<String, LinkedHashSet<Value>> assignmentValues) {
+		LmdbRewriteProof.RewriteKind kind;
+		String ruleId;
+		String originalNodeId;
+		String fact;
+		String reason;
+		if (containsListMemberOperator(condition)) {
+			kind = LmdbRewriteProof.RewriteKind.FILTER_IN_TO_VALUES;
+			ruleId = "10";
+			originalNodeId = "filter-in-finite-relation";
+			fact = "filterIn";
+			reason = "filter-in-finite-relation-is-materialized-as-values";
+		} else if (isTupleDisjunction(condition)) {
+			kind = LmdbRewriteProof.RewriteKind.TUPLE_DISJUNCTION_TO_VALUES;
+			ruleId = "12";
+			originalNodeId = "tuple-disjunction-finite-relation";
+			fact = "tupleDisjunction";
+			reason = "tuple-disjunction-finite-relation-is-materialized-as-values";
+		} else if (isCorrelatedValuesConstruction(condition, assignmentValues)) {
+			kind = LmdbRewriteProof.RewriteKind.CORRELATED_VALUES_CONSTRUCTION;
+			ruleId = "14";
+			originalNodeId = "independent-values-filter-correlation";
+			fact = "correlatedValues";
+			reason = "independent-values-correlation-is-materialized-as-values";
+		} else if (isEqualityDisjunction(condition)) {
+			kind = LmdbRewriteProof.RewriteKind.EQUALITY_DISJUNCTION_TO_VALUES;
+			ruleId = "11";
+			originalNodeId = "equality-disjunction-finite-relation";
+			fact = "equalityDisjunction";
+			reason = "equality-disjunction-finite-relation-is-materialized-as-values";
+		} else {
+			return;
+		}
+		relation.setStringMetricPlanned("optimizer.rewriteProof",
+				new LmdbRewriteProof(kind,
+						LmdbRewriteProof.EquivalenceScope.LOGICAL_BAG_EQUIVALENT,
+						Set.of("finiteRelation", "conditionVarsAssured", fact),
+						reason,
+						new RewriteCertificate(ruleId, originalNodeId, "values-finite-relation",
+								RewriteSafety.all(), Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS)))
+										.metricFragment());
+	}
+
+	private static boolean containsListMemberOperator(ValueExpr condition) {
+		if (condition instanceof ListMemberOperator) {
+			return true;
+		}
+		if (condition instanceof And and) {
+			return containsListMemberOperator(and.getLeftArg()) || containsListMemberOperator(and.getRightArg());
+		}
 		if (condition instanceof Or or) {
-			return collectValuesVariableAnchor(or.getLeftArg(), collector)
-					&& collectValuesVariableAnchor(or.getRightArg(), collector);
-		}
-		if (condition instanceof Compare compare && ((Compare) condition).getOperator() == Compare.CompareOp.EQ) {
-			return collectValuesVariableAnchorValue(compare.getLeftArg(), compare.getRightArg(), collector);
-		}
-		if (condition instanceof SameTerm sameTerm) {
-			return collectValuesVariableAnchorValue(sameTerm.getLeftArg(), sameTerm.getRightArg(), collector);
-		}
-		if (condition instanceof ListMemberOperator list) {
-			return collectValuesVariableAnchorValues(list, collector);
+			return containsListMemberOperator(or.getLeftArg()) || containsListMemberOperator(or.getRightArg());
 		}
 		return false;
 	}
 
-	private static boolean collectValuesVariableAnchorValues(ListMemberOperator list,
-			ValuesVariableAnchorCollector collector) {
+	private static boolean isEqualityDisjunction(ValueExpr condition) {
+		return condition instanceof Or && containsOnlyEqualityTerms(condition);
+	}
+
+	private static boolean isTupleDisjunction(ValueExpr condition) {
+		return condition instanceof Or && containsConjunctiveEqualityTerm(condition) && containsOnlyEqualityTerms(
+				condition);
+	}
+
+	private static boolean isCorrelatedValuesConstruction(ValueExpr condition,
+			Map<String, LinkedHashSet<Value>> assignmentValues) {
+		if (!containsOnlySameTermEqualities(condition)) {
+			return false;
+		}
+		Set<String> conditionVars = DeferredFilter.conditionBindingNames(condition);
+		if (conditionVars.size() < 2) {
+			return false;
+		}
+		for (String bindingName : conditionVars) {
+			LinkedHashSet<Value> values = assignmentValues.get(bindingName);
+			if (values == null || values.isEmpty()) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean containsOnlySameTermEqualities(ValueExpr condition) {
+		if (condition instanceof And and) {
+			return containsOnlySameTermEqualities(and.getLeftArg()) && containsOnlySameTermEqualities(
+					and.getRightArg());
+		}
+		return condition instanceof SameTerm;
+	}
+
+	private static boolean containsConjunctiveEqualityTerm(ValueExpr condition) {
+		if (condition instanceof And) {
+			return true;
+		}
+		if (condition instanceof Or or) {
+			return containsConjunctiveEqualityTerm(or.getLeftArg())
+					|| containsConjunctiveEqualityTerm(or.getRightArg());
+		}
+		return false;
+	}
+
+	private static boolean containsOnlyEqualityTerms(ValueExpr condition) {
+		if (condition instanceof Or or) {
+			return containsOnlyEqualityTerms(or.getLeftArg()) && containsOnlyEqualityTerms(or.getRightArg());
+		}
+		if (condition instanceof And and) {
+			return containsOnlyEqualityTerms(and.getLeftArg()) && containsOnlyEqualityTerms(and.getRightArg());
+		}
+		if (condition instanceof Compare compare) {
+			return compare.getOperator() == Compare.CompareOp.EQ;
+		}
+		return condition instanceof SameTerm;
+	}
+
+	private static BindingSetAssignment finiteFilterRelation(ValueExpr condition,
+			Map<String, LinkedHashSet<Value>> assignmentValues) {
+		Set<String> conditionVars = DeferredFilter.conditionBindingNames(condition);
+		if (conditionVars.size() < 2) {
+			return null;
+		}
+		LinkedHashMap<String, LinkedHashSet<Value>> domains = new LinkedHashMap<>();
+		for (String bindingName : conditionVars) {
+			LinkedHashSet<Value> values = assignmentValues.get(bindingName);
+			if (values != null && !values.isEmpty()) {
+				domains.put(bindingName, new LinkedHashSet<>(values));
+			} else {
+				domains.put(bindingName, new LinkedHashSet<>());
+			}
+		}
+		if (!collectFiniteConditionDomains(condition, domains)) {
+			return null;
+		}
+		for (LinkedHashSet<Value> values : domains.values()) {
+			if (values.isEmpty()) {
+				return null;
+			}
+		}
+		List<String> bindingNames = new ArrayList<>(domains.keySet());
+		List<BindingSet> rows = new ArrayList<>();
+		enumerateFiniteFilterRows(condition, domains, bindingNames, 0, new LinkedHashMap<>(), rows);
+		if (rows.isEmpty() || rows.size() > FINITE_FILTER_RELATION_ROW_LIMIT) {
+			return null;
+		}
+		BindingSetAssignment relation = new BindingSetAssignment();
+		relation.setBindingNames(new LinkedHashSet<>(bindingNames));
+		relation.setBindingSets(rows);
+		return relation;
+	}
+
+	private static boolean collectFiniteConditionDomains(ValueExpr condition,
+			Map<String, LinkedHashSet<Value>> domains) {
+		if (condition instanceof Or or) {
+			return collectFiniteConditionDomains(or.getLeftArg(), domains)
+					&& collectFiniteConditionDomains(or.getRightArg(), domains);
+		}
+		if (condition instanceof And and) {
+			return collectFiniteConditionDomains(and.getLeftArg(), domains)
+					&& collectFiniteConditionDomains(and.getRightArg(), domains);
+		}
+		if (condition instanceof Compare compare && compare.getOperator() == Compare.CompareOp.EQ) {
+			return collectFiniteEqualityDomains(compare.getLeftArg(), compare.getRightArg(), domains);
+		}
+		if (condition instanceof SameTerm sameTerm) {
+			return collectFiniteEqualityDomains(sameTerm.getLeftArg(), sameTerm.getRightArg(), domains);
+		}
+		if (condition instanceof ListMemberOperator list) {
+			return collectFiniteListMemberDomains(list, domains);
+		}
+		return false;
+	}
+
+	private static boolean collectFiniteListMemberDomains(ListMemberOperator list,
+			Map<String, LinkedHashSet<Value>> domains) {
 		List<ValueExpr> arguments = list.getArguments();
-		if (arguments.size() < 2 || !(arguments.get(0)instanceof Var filterVar)) {
+		if (arguments.size() < 2 || !(arguments.getFirst()instanceof Var filterVar)) {
+			return false;
+		}
+		String filterName = unboundName(filterVar);
+		LinkedHashSet<Value> filterDomain = domains.get(filterName);
+		if (filterName == null || filterDomain == null) {
 			return false;
 		}
 		for (int i = 1; i < arguments.size(); i++) {
 			ValueExpr argument = arguments.get(i);
 			if (argument instanceof ValueConstant valueConstant) {
-				if (!collector.addLiteral(filterVar, valueConstant.getValue())) {
+				if (!addFiniteDomainValue(filterDomain, valueConstant.getValue())) {
+					return false;
+				}
+			} else if (argument instanceof Var memberVar) {
+				LinkedHashSet<Value> memberDomain = finiteDomain(memberVar, domains);
+				if (memberDomain == null || memberDomain.isEmpty()) {
+					return false;
+				}
+				filterDomain.addAll(memberDomain);
+			} else {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean collectFiniteEqualityDomains(ValueExpr leftArg, ValueExpr rightArg,
+			Map<String, LinkedHashSet<Value>> domains) {
+		if (leftArg instanceof Var leftVar && rightArg instanceof ValueConstant valueConstant) {
+			return addFiniteDomainValue(finiteDomain(leftVar, domains), valueConstant.getValue());
+		}
+		if (rightArg instanceof Var rightVar && leftArg instanceof ValueConstant valueConstant) {
+			return addFiniteDomainValue(finiteDomain(rightVar, domains), valueConstant.getValue());
+		}
+		if (leftArg instanceof Var leftVar && rightArg instanceof Var rightVar) {
+			LinkedHashSet<Value> leftDomain = finiteDomain(leftVar, domains);
+			LinkedHashSet<Value> rightDomain = finiteDomain(rightVar, domains);
+			if (leftDomain == null || rightDomain == null) {
+				return false;
+			}
+			if (leftDomain.isEmpty() && rightDomain.isEmpty()) {
+				return false;
+			}
+			if (leftDomain.isEmpty()) {
+				leftDomain.addAll(rightDomain);
+			} else if (rightDomain.isEmpty()) {
+				rightDomain.addAll(leftDomain);
+			}
+			return true;
+		}
+		return false;
+	}
+
+	private static LinkedHashSet<Value> finiteDomain(Var var, Map<String, LinkedHashSet<Value>> domains) {
+		String bindingName = unboundName(var);
+		return bindingName == null ? null : domains.get(bindingName);
+	}
+
+	private static boolean addFiniteDomainValue(LinkedHashSet<Value> domain, Value value) {
+		if (domain == null || !LmdbJoinPlanSupport.isSafeValuesAnchorValue(value)) {
+			return false;
+		}
+		domain.add(value);
+		return true;
+	}
+
+	private static void enumerateFiniteFilterRows(ValueExpr condition,
+			Map<String, LinkedHashSet<Value>> domains, List<String> bindingNames, int index,
+			Map<String, Value> current, List<BindingSet> rows) {
+		if (rows.size() > FINITE_FILTER_RELATION_ROW_LIMIT) {
+			return;
+		}
+		if (index == bindingNames.size()) {
+			if (finiteConditionMatches(condition, current)) {
+				MapBindingSet row = new MapBindingSet(bindingNames.size());
+				for (String bindingName : bindingNames) {
+					row.addBinding(bindingName, current.get(bindingName));
+				}
+				rows.add(row);
+			}
+			return;
+		}
+		String bindingName = bindingNames.get(index);
+		for (Value value : domains.get(bindingName)) {
+			current.put(bindingName, value);
+			enumerateFiniteFilterRows(condition, domains, bindingNames, index + 1, current, rows);
+			current.remove(bindingName);
+		}
+	}
+
+	private static boolean finiteConditionMatches(ValueExpr condition, Map<String, Value> row) {
+		if (condition instanceof Or or) {
+			return finiteConditionMatches(or.getLeftArg(), row) || finiteConditionMatches(or.getRightArg(), row);
+		}
+		if (condition instanceof And and) {
+			return finiteConditionMatches(and.getLeftArg(), row) && finiteConditionMatches(and.getRightArg(), row);
+		}
+		if (condition instanceof Compare compare && compare.getOperator() == Compare.CompareOp.EQ) {
+			return sameFiniteValue(compare.getLeftArg(), compare.getRightArg(), row);
+		}
+		if (condition instanceof SameTerm sameTerm) {
+			return sameFiniteValue(sameTerm.getLeftArg(), sameTerm.getRightArg(), row);
+		}
+		if (condition instanceof ListMemberOperator list) {
+			return finiteListMemberMatches(list, row);
+		}
+		return false;
+	}
+
+	private static boolean finiteListMemberMatches(ListMemberOperator list, Map<String, Value> row) {
+		List<ValueExpr> arguments = list.getArguments();
+		if (arguments.size() < 2) {
+			return false;
+		}
+		Value filterValue = finiteValue(arguments.getFirst(), row);
+		if (filterValue == null) {
+			return false;
+		}
+		for (int i = 1; i < arguments.size(); i++) {
+			Value memberValue = finiteValue(arguments.get(i), row);
+			if (filterValue.equals(memberValue)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean sameFiniteValue(ValueExpr leftArg, ValueExpr rightArg, Map<String, Value> row) {
+		Value leftValue = finiteValue(leftArg, row);
+		Value rightValue = finiteValue(rightArg, row);
+		return leftValue != null && leftValue.equals(rightValue);
+	}
+
+	private static Value finiteValue(ValueExpr expression, Map<String, Value> row) {
+		if (expression instanceof ValueConstant valueConstant) {
+			return valueConstant.getValue();
+		}
+		if (expression instanceof Var var) {
+			return row.get(unboundName(var));
+		}
+		return null;
+	}
+
+	private BindingSetAssignment materializedSmallLiteralFilterAnchor(Filter filter, ValueExpr condition,
+			BindingSetAssignment anchor,
+			Set<String> assuredBindings, Set<String> mandatoryOptionalAnchorBindings) {
+		if (anchor == null) {
+			return null;
+		}
+		if (anchor.getBindingNames().size() != 1) {
+			return null;
+		}
+		String bindingName = anchor.getBindingNames().iterator().next();
+		if (!mandatoryOptionalAnchorBindings.contains(bindingName)
+				&& shouldKeepObjectFilterForCascadesCosting(filter, condition, bindingName)) {
+			return null;
+		}
+		if (assuredBindings.contains(bindingName)
+				&& !extensionElementNames(filter.getArg()).contains(bindingName)
+				&& !containsVariableScopeChangeBinding(filter.getArg(), bindingName)
+				&& !LmdbJoinPlanSupport.containsPathContextBinding(filter.getArg(), bindingName)
+				&& canMaterializeSmallLiteralFilterAnchor(filter, condition, anchor, bindingName)) {
+			return annotateFiniteAnchor(filter, condition, expandFiniteAnchor(filter, condition, anchor, bindingName),
+					bindingName);
+		}
+		return null;
+	}
+
+	private boolean shouldKeepObjectFilterForCascadesCosting(Filter filter, ValueExpr condition, String bindingName) {
+		StatementPattern pattern = localStatementPattern(filter, condition, bindingName);
+		if (pattern == null || !"object".equals(localPatternComponent(pattern, bindingName))) {
+			return false;
+		}
+		if (LmdbNullRejectingOptionalSupport.isRewrittenOptionalBinding(filter, bindingName)) {
+			return false;
+		}
+		if (containsLeftJoinRightBinding(filter.getArg(), bindingName)) {
+			return false;
+		}
+		return containsMultipleStatementPatterns(filter);
+	}
+
+	private static boolean isDuplicateInsensitiveDistinctMembershipFilter(Filter filter, ValueExpr condition,
+			String bindingName, StatementPattern pattern) {
+		if (filter == null || condition == null || bindingName == null || pattern == null) {
+			return false;
+		}
+		Set<String> conditionBindings = DeferredFilter.conditionBindingNames(condition);
+		if (conditionBindings.size() != 1 || !conditionBindings.contains(bindingName)) {
+			return false;
+		}
+		Set<String> distinctCountVars = nearestDuplicateInsensitiveDistinctCountVars(filter);
+		if (distinctCountVars.isEmpty() || distinctCountVars.contains(bindingName)) {
+			return false;
+		}
+		Set<String> patternBindings = pattern.getBindingNames();
+		if (java.util.Collections.disjoint(patternBindings, distinctCountVars)) {
+			return false;
+		}
+		return !ancestorFilterMentionsBindingBeforeGroup(filter, bindingName);
+	}
+
+	private static TupleExpr duplicateInsensitiveMembershipSemiFilter(Filter filter, ValueExpr condition,
+			BindingSetAssignment anchor, List<ValueExpr> conditions) {
+		String bindingName = singleBindingName(anchor);
+		if (bindingName == null) {
+			return null;
+		}
+		StatementPattern pattern = localStatementPattern(filter, condition, bindingName);
+		if (!isDuplicateInsensitiveDistinctMembershipFilter(filter, condition, bindingName, pattern)) {
+			return null;
+		}
+		List<ValueExpr> residualConditions = new ArrayList<>();
+		for (ValueExpr candidate : conditions == null ? List.<ValueExpr>of() : conditions) {
+			if (candidate == condition) {
+				continue;
+			}
+			if (VarNameCollector.process(candidate).contains(bindingName)) {
+				return null;
+			}
+			residualConditions.add(candidate.clone());
+		}
+		List<TupleExpr> factors = new ArrayList<>();
+		collectJoinFactors(filter.getArg(), factors);
+		int patternIndex = -1;
+		for (int i = 0; i < factors.size(); i++) {
+			if (factors.get(i) == pattern) {
+				patternIndex = i;
+				break;
+			}
+		}
+		if (patternIndex < 0 || factors.size() < 2) {
+			return null;
+		}
+		List<TupleExpr> remainingFactors = new ArrayList<>(factors.size() - 1);
+		for (int i = 0; i < factors.size(); i++) {
+			if (i != patternIndex) {
+				remainingFactors.add(factors.get(i).clone());
+			}
+		}
+		if (remainingFactors.isEmpty()) {
+			return null;
+		}
+		TupleExpr remaining = leftDeep(remainingFactors);
+		Set<String> anchorBindings = anchor.getBindingNames();
+		if (!java.util.Collections.disjoint(remaining.getBindingNames(), anchorBindings)
+				|| !java.util.Collections.disjoint(VarNameCollector.process(remaining), anchorBindings)) {
+			return null;
+		}
+		Set<String> correlationBindings = new LinkedHashSet<>(pattern.getBindingNames());
+		correlationBindings.retainAll(remaining.getBindingNames());
+		if (correlationBindings.isEmpty()) {
+			return null;
+		}
+		TupleExpr membership = new Join(anchor.clone(), pattern.clone());
+		Set<String> distinctCountVars = nearestDuplicateInsensitiveDistinctCountVars(filter);
+		boolean directJoinSafe = distinctCountVars.containsAll(correlationBindings);
+		TupleExpr replacement = directJoinSafe ? new Join(membership, remaining)
+				: new Filter(remaining,
+						new Exists(membership));
+		if (!residualConditions.isEmpty()) {
+			replacement = new Filter(replacement, LmdbJoinPlanSupport.combinedCondition(residualConditions));
+		}
+		replacement.setStringMetricPlanned("optimizer.rewriteProof",
+				new LmdbRewriteProof(LmdbRewriteProof.RewriteKind.DISTINCT_FINITE_MEMBERSHIP_SEMI_FILTER,
+						LmdbRewriteProof.EquivalenceScope.SET_EQUIVALENT,
+						Set.of("finiteFilter", "distinctCount", "unobservedMembershipBinding",
+								directJoinSafe ? "earlyMembershipJoin" : "correlatedExists"),
+						"finite filter membership is duplicate-insensitive under COUNT DISTINCT",
+						distinctMembershipSemiFilterCertificate(directJoinSafe)).metricFragment());
+		return replacement;
+	}
+
+	private static RewriteCertificate distinctMembershipSemiFilterCertificate(boolean directJoin) {
+		return new RewriteCertificate("23", "dead-finite-membership-filter",
+				directJoin ? "early-membership-join" : "correlated-exists-semi-filter",
+				RewriteSafety.builder()
+						.preservedMultiplicity(false)
+						.build(),
+				Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS,
+						RewriteAssumption.DUPLICATE_INSENSITIVE_CONTEXT));
+	}
+
+	private static void collectJoinFactors(TupleExpr tupleExpr, List<TupleExpr> factors) {
+		if (tupleExpr instanceof Join join) {
+			collectJoinFactors(join.getLeftArg(), factors);
+			collectJoinFactors(join.getRightArg(), factors);
+			return;
+		}
+		factors.add(tupleExpr);
+	}
+
+	private static TupleExpr leftDeep(List<TupleExpr> factors) {
+		TupleExpr root = factors.getFirst();
+		for (int i = 1; i < factors.size(); i++) {
+			root = new Join(root, factors.get(i));
+		}
+		return root;
+	}
+
+	private static Set<String> nearestDuplicateInsensitiveDistinctCountVars(Filter filter) {
+		QueryModelNode node = filter;
+		QueryModelNode parent = filter.getParentNode();
+		while (parent != null) {
+			if (parent instanceof Group group) {
+				return duplicateInsensitiveDistinctCountVars(group);
+			}
+			if (parent instanceof VariableScopeChange && ((VariableScopeChange) parent).isVariableScopeChange()) {
+				return Set.of();
+			}
+			node = parent;
+			parent = node.getParentNode();
+		}
+		return Set.of();
+	}
+
+	private static boolean ancestorFilterMentionsBindingBeforeGroup(Filter filter, String bindingName) {
+		QueryModelNode node = filter;
+		QueryModelNode parent = filter.getParentNode();
+		while (parent != null && !(parent instanceof Group)) {
+			if (parent instanceof Filter ancestorFilter
+					&& !java.util.Collections.disjoint(VarNameCollector.process(ancestorFilter.getCondition()),
+							Set.of(bindingName))) {
+				return true;
+			}
+			if (parent instanceof VariableScopeChange && ((VariableScopeChange) parent).isVariableScopeChange()) {
+				return true;
+			}
+			node = parent;
+			parent = node.getParentNode();
+		}
+		return false;
+	}
+
+	private static Set<String> duplicateInsensitiveDistinctCountVars(Group group) {
+		if (group == null || !group.getGroupBindingNames().isEmpty() || group.getGroupElements().isEmpty()) {
+			return Set.of();
+		}
+		Set<String> vars = new LinkedHashSet<>();
+		for (GroupElem groupElement : group.getGroupElements()) {
+			AggregateOperator operator = groupElement.getOperator();
+			if (!(operator instanceof Count count) || !count.isDistinct()
+					|| !(count.getArg()instanceof Var var) || var.hasValue() || var.getName() == null) {
+				return Set.of();
+			}
+			vars.add(var.getName());
+		}
+		return vars.isEmpty() ? Set.of() : Set.copyOf(vars);
+	}
+
+	private static boolean containsLeftJoinRightBinding(TupleExpr tupleExpr, String bindingName) {
+		if (tupleExpr == null || bindingName == null) {
+			return false;
+		}
+		boolean[] contains = { false };
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(LeftJoin leftJoin) {
+				if (!leftJoin.getLeftArg().getBindingNames().contains(bindingName)
+						&& leftJoin.getRightArg().getBindingNames().contains(bindingName)) {
+					contains[0] = true;
+					return;
+				}
+				super.meet(leftJoin);
+			}
+		});
+		return contains[0];
+	}
+
+	private boolean canMaterializeSmallLiteralFilterAnchor(Filter filter, ValueExpr condition,
+			BindingSetAssignment anchor, String bindingName) {
+		StatementPattern pattern = LmdbJoinPlanSupport.patternLocalBaseForFilterCondition(filter, condition);
+		boolean objectAnchor = pattern != null && bindingName.equals(unboundName(pattern.getObjectVar()));
+		if (pattern != null) {
+			if (!objectAnchor) {
+				return false;
+			}
+			if (LmdbNullRejectingOptionalSupport.isRewrittenOptionalBinding(filter, bindingName)
+					&& allAnchorValuesAreSafeValues(anchor, bindingName)) {
+				return true;
+			}
+			Optional<RdfTermDomain> guarantee = knownRdfTermDomain(pattern);
+			return guarantee.isPresent() && canMaterializeObjectFilterAnchor(anchor, bindingName, guarantee.get());
+		}
+		if (containsGuaranteeOnlyAnchorValue(anchor, bindingName)) {
+			return false;
+		}
+		return LmdbJoinPlanSupport.canMaterializeSmallLiteralFilterAnchor(filter, condition, anchor);
+	}
+
+	private static boolean allAnchorValuesAreSafeValues(BindingSetAssignment anchor, String bindingName) {
+		for (BindingSet bindingSet : anchor.getBindingSets()) {
+			if (!LmdbJoinPlanSupport.isSafeValuesAnchorValue(bindingSet.getValue(bindingName))) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private BindingSetAssignment expandFiniteAnchor(Filter filter, ValueExpr condition,
+			BindingSetAssignment anchor, String bindingName) {
+		Optional<RdfTermDomain> guarantee = Optional.empty();
+		StatementPattern pattern = LmdbJoinPlanSupport.patternLocalBaseForFilterCondition(filter, condition);
+		if (pattern != null && bindingName.equals(unboundName(pattern.getObjectVar()))) {
+			guarantee = knownRdfTermDomain(pattern);
+		}
+		if (!containsGuaranteeOnlyAnchorValue(anchor, bindingName)) {
+			return anchor;
+		}
+		LinkedHashSet<Value> expandedValues = new LinkedHashSet<>();
+		for (BindingSet bindingSet : anchor.getBindingSets()) {
+			Value value = bindingSet.getValue(bindingName);
+			if (RdfTermDomain.classify(value).has(RdfTermDomain.Fact.CANONICAL_INTEGER)
+					&& value instanceof Literal literal) {
+				addCanonicalIntegerFamilyValues(literal, guarantee.orElse(RdfTermDomain.CANONICAL_INTEGER),
+						expandedValues);
+			} else if (isBooleanLiteral(value) && value instanceof Literal literal) {
+				addBooleanAnchorValues(literal, expandedValues);
+			} else if (isCalendarLiteral(value) && value instanceof Literal literal) {
+				expandedValues.add(value);
+			} else {
+				expandedValues.add(value);
+			}
+		}
+		return bindingSetAssignment(bindingName, expandedValues);
+	}
+
+	private BindingSetAssignment annotateFiniteAnchor(Filter filter, ValueExpr condition, BindingSetAssignment anchor,
+			String bindingName) {
+		if (anchor == null) {
+			return null;
+		}
+		StatementPattern pattern = LmdbJoinPlanSupport.patternLocalBaseForFilterCondition(filter, condition);
+		if (pattern == null || !bindingName.equals(unboundName(pattern.getObjectVar()))) {
+			return anchor;
+		}
+		Optional<RdfTermDomain> guarantee = knownRdfTermDomain(pattern);
+		anchor.setStringMetricPlanned(OPTIMIZER_GUARANTEE_OPTION, "finite-anchor:" + bindingName);
+		anchor.setStringMetricPlanned(OPTIMIZER_GUARANTEE_OPTIONS,
+				"generated=1, selected=finite-anchor:" + bindingName);
+		anchor.setStringMetricPlanned(OPTIMIZER_GUARANTEE_ANCHOR_BINDING, bindingName);
+		anchor.setStringMetricPlanned(OPTIMIZER_GUARANTEE_ANCHOR_PREDICATE_DOMAIN,
+				String.valueOf(guarantee.orElse(RdfTermDomain.UNKNOWN)));
+		anchor.setStringMetricPlanned(OPTIMIZER_GUARANTEE_ANCHOR_DOMAIN,
+				String.valueOf(RdfTermDomain.finiteValues(anchorValues(anchor, bindingName))));
+		anchor.setStringMetricPlanned(OPTIMIZER_GUARANTEE_ANCHOR_ROLE, "object-lookup");
+		IRI predicate = constantPredicate(pattern);
+		if (predicate != null) {
+			anchor.setStringMetricPlanned(OPTIMIZER_GUARANTEE_ANCHOR_PREDICATE, predicate.stringValue());
+		}
+		return anchor;
+	}
+
+	private static void addCanonicalIntegerFamilyValues(Literal literal, RdfTermDomain guarantee,
+			LinkedHashSet<Value> values) {
+		String label = literal.getLabel();
+		CoreDatatype.XSD sourceDatatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
+		CoreDatatype.XSD guaranteedDatatype = guarantee.singleXsdDatatype();
+		if (guaranteedDatatype != null) {
+			addCanonicalIntegerValue(label, guaranteedDatatype, values);
+			return;
+		}
+		if (sourceDatatype != null) {
+			addCanonicalIntegerValue(label, sourceDatatype, values);
+		}
+		for (CoreDatatype.XSD datatype : INTEGER_ANCHOR_DATATYPES) {
+			if (datatype != sourceDatatype) {
+				addCanonicalIntegerValue(label, datatype, values);
+			}
+		}
+	}
+
+	private static void addBooleanAnchorValues(Literal literal, LinkedHashSet<Value> values) {
+		if (!XMLDatatypeUtil.isValidBoolean(literal.getLabel())) {
+			return;
+		}
+		if (XMLDatatypeUtil.parseBoolean(literal.getLabel())) {
+			values.add(VF.createLiteral("true", XSD.BOOLEAN));
+			values.add(VF.createLiteral("1", XSD.BOOLEAN));
+		} else {
+			values.add(VF.createLiteral("false", XSD.BOOLEAN));
+			values.add(VF.createLiteral("0", XSD.BOOLEAN));
+		}
+	}
+
+	private static void addCanonicalIntegerValue(String label, CoreDatatype.XSD datatype,
+			LinkedHashSet<Value> values) {
+		if (datatype.isIntegerDatatype()
+				&& XMLDatatypeUtil.isValidValue(label, datatype)
+				&& label.equals(XMLDatatypeUtil.normalize(label, datatype))) {
+			values.add(VF.createLiteral(label, datatype));
+		}
+	}
+
+	private static BindingSetAssignment bindingSetAssignment(String bindingName, LinkedHashSet<Value> values) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of(bindingName));
+		List<BindingSet> bindingSets = new ArrayList<>(values.size());
+		for (Value value : values) {
+			MapBindingSet bindingSet = new MapBindingSet(1);
+			bindingSet.addBinding(bindingName, value);
+			bindingSets.add(bindingSet);
+		}
+		assignment.setBindingSets(bindingSets);
+		return assignment;
+	}
+
+	private static LinkedHashSet<Value> anchorValues(BindingSetAssignment anchor, String bindingName) {
+		LinkedHashSet<Value> values = new LinkedHashSet<>();
+		for (BindingSet bindingSet : anchor.getBindingSets()) {
+			Value value = bindingSet.getValue(bindingName);
+			if (value != null) {
+				values.add(value);
+			}
+		}
+		return values;
+	}
+
+	private Optional<RdfTermDomain> knownRdfTermDomain(StatementPattern pattern) {
+		if (!(statistics instanceof LmdbPredicateObjectDomainSource guaranteeSource)) {
+			return Optional.empty();
+		}
+		IRI predicate = constantPredicate(pattern);
+		if (predicate == null) {
+			return Optional.empty();
+		}
+		return guaranteeSource.getKnownRdfTermDomain(predicate);
+	}
+
+	private static IRI constantPredicate(StatementPattern pattern) {
+		Var predicate = pattern.getPredicateVar();
+		if (predicate == null || !predicate.hasValue() || !(predicate.getValue() instanceof IRI)) {
+			return null;
+		}
+		return (IRI) predicate.getValue();
+	}
+
+	private static boolean canMaterializeObjectFilterAnchor(BindingSetAssignment anchor, String bindingName,
+			RdfTermDomain guarantee) {
+		if (guarantee.equals(RdfTermDomain.UNRESTRICTED)) {
+			return false;
+		}
+		if (!allAnchorValuesCompatibleWithGuarantee(anchor, bindingName, guarantee)) {
+			return false;
+		}
+		if (containsXsdNumericAnchorValue(anchor, bindingName)) {
+			return guarantee.has(RdfTermDomain.Fact.CANONICAL_INTEGER)
+					&& allXsdNumericAnchorValuesAreCanonicalIntegers(anchor, bindingName);
+		}
+		if (containsBooleanAnchorValue(anchor, bindingName)) {
+			return guarantee.hasDatatype(CoreDatatype.XSD.BOOLEAN)
+					&& allBooleanAnchorValuesAreValidBooleans(anchor, bindingName);
+		}
+		if (containsCalendarAnchorValue(anchor, bindingName)) {
+			return allCalendarAnchorValuesMatchGuarantee(anchor, bindingName, guarantee);
+		}
+		return true;
+	}
+
+	private static boolean allAnchorValuesCompatibleWithGuarantee(BindingSetAssignment anchor, String bindingName,
+			RdfTermDomain guarantee) {
+		for (BindingSet bindingSet : anchor.getBindingSets()) {
+			Value value = bindingSet.getValue(bindingName);
+			if (value == null || guarantee.combine(RdfTermDomain.classify(value))
+					.equals(
+							RdfTermDomain.UNRESTRICTED)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean isPotentialSmallLiteralAnchorValue(Value value) {
+		return LmdbJoinPlanSupport.isSafeValuesAnchorValue(value)
+				|| RdfTermDomain.classify(value).has(RdfTermDomain.Fact.CANONICAL_INTEGER)
+				|| isBooleanLiteral(value)
+				|| isCalendarLiteral(value);
+	}
+
+	private static boolean containsGuaranteeOnlyAnchorValue(BindingSetAssignment anchor, String bindingName) {
+		return containsXsdNumericAnchorValue(anchor, bindingName)
+				|| containsBooleanAnchorValue(anchor, bindingName)
+				|| containsCalendarAnchorValue(anchor, bindingName);
+	}
+
+	private static boolean containsXsdNumericAnchorValue(BindingSetAssignment anchor, String bindingName) {
+		for (BindingSet bindingSet : anchor.getBindingSets()) {
+			if (RdfTermDomain.isXsdNumericLiteral(bindingSet.getValue(bindingName))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean allXsdNumericAnchorValuesAreCanonicalIntegers(BindingSetAssignment anchor,
+			String bindingName) {
+		for (BindingSet bindingSet : anchor.getBindingSets()) {
+			Value value = bindingSet.getValue(bindingName);
+			if (RdfTermDomain.isXsdNumericLiteral(value)
+					&& !RdfTermDomain.classify(value)
+							.has(RdfTermDomain.Fact.CANONICAL_INTEGER)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean containsBooleanAnchorValue(BindingSetAssignment anchor, String bindingName) {
+		for (BindingSet bindingSet : anchor.getBindingSets()) {
+			if (isBooleanLiteral(bindingSet.getValue(bindingName))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean allBooleanAnchorValuesAreValidBooleans(BindingSetAssignment anchor,
+			String bindingName) {
+		for (BindingSet bindingSet : anchor.getBindingSets()) {
+			Value value = bindingSet.getValue(bindingName);
+			if (isBooleanLiteral(value) && !XMLDatatypeUtil.isValidBoolean(((Literal) value).getLabel())) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean containsCalendarAnchorValue(BindingSetAssignment anchor, String bindingName) {
+		for (BindingSet bindingSet : anchor.getBindingSets()) {
+			if (isCalendarLiteral(bindingSet.getValue(bindingName))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean allCalendarAnchorValuesMatchGuarantee(BindingSetAssignment anchor, String bindingName,
+			RdfTermDomain guarantee) {
+		CoreDatatype.XSD guaranteedDatatype = guarantee.singleXsdDatatype();
+		if (guaranteedDatatype == null || !guaranteedDatatype.isCalendarDatatype()) {
+			return false;
+		}
+		for (BindingSet bindingSet : anchor.getBindingSets()) {
+			Value value = bindingSet.getValue(bindingName);
+			if (!isCalendarLiteral(value)) {
+				continue;
+			}
+			Literal literal = (Literal) value;
+			CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
+			if (datatype != guaranteedDatatype
+					|| datatype == CoreDatatype.XSD.TIME
+					|| !XMLDatatypeUtil.isValidValue(literal.getLabel(), datatype)) {
+				return false;
+			}
+			RdfTermDomain literalGuarantee = RdfTermDomain.classify(literal);
+			if (literalGuarantee.has(RdfTermDomain.Fact.DATE_WITHOUT_TIMEZONE)) {
+				if (!guarantee.has(RdfTermDomain.Fact.DATE_WITHOUT_TIMEZONE)) {
 					return false;
 				}
 				continue;
 			}
-			if (argument instanceof Var memberVar) {
-				if (!collector.addMemberValues(filterVar, memberVar)) {
+			if (literalGuarantee.has(RdfTermDomain.Fact.DATE_UTC)) {
+				if (!guarantee.has(RdfTermDomain.Fact.DATE_UTC)) {
 					return false;
 				}
 				continue;
@@ -470,32 +1438,26 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		return true;
 	}
 
-	private static boolean collectValuesVariableAnchorValue(ValueExpr leftArg, ValueExpr rightArg,
-			ValuesVariableAnchorCollector collector) {
-		if (leftArg instanceof Var && rightArg instanceof ValueConstant) {
-			return collector.addLiteral((Var) leftArg, ((ValueConstant) rightArg).getValue());
-		}
-		if (rightArg instanceof Var && leftArg instanceof ValueConstant) {
-			return collector.addLiteral((Var) rightArg, ((ValueConstant) leftArg).getValue());
-		}
-		if (leftArg instanceof Var && rightArg instanceof Var) {
-			return collector.addVariableEquality((Var) leftArg, (Var) rightArg);
-		}
-		return false;
-	}
-
-	private boolean canMaterializeSmallLiteralFilterAnchor(Filter filter, ValueExpr condition,
-			BindingSetAssignment anchor,
-			Set<String> assuredBindings) {
-		if (anchor.getBindingNames().size() != 1) {
+	private static boolean isBooleanLiteral(Value value) {
+		if (!(value instanceof Literal literal)) {
 			return false;
 		}
-		String bindingName = anchor.getBindingNames().iterator().next();
-		return assuredBindings.contains(bindingName)
-				&& !extensionElementNames(filter.getArg()).contains(bindingName)
-				&& !containsVariableScopeChangeBinding(filter.getArg(), bindingName)
-				&& !LmdbJoinPlanSupport.containsPathContextBinding(filter.getArg(), bindingName)
-				&& LmdbJoinPlanSupport.canMaterializeSmallLiteralFilterAnchor(filter, condition, anchor);
+		return literal.getCoreDatatype().asXSDDatatypeOrNull() == CoreDatatype.XSD.BOOLEAN;
+	}
+
+	private static boolean isCalendarLiteral(Value value) {
+		if (!(value instanceof Literal literal)) {
+			return false;
+		}
+		CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
+		return datatype != null && datatype.isCalendarDatatype();
+	}
+
+	private static String unboundName(Var var) {
+		if (var == null || var.hasValue()) {
+			return null;
+		}
+		return var.getName();
 	}
 
 	private static boolean containsVariableScopeChangeBinding(TupleExpr tupleExpr, String bindingName) {
@@ -602,7 +1564,8 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 	}
 
 	private void annotateFilter(Filter filter) {
-		if (statistics == null) {
+		annotateIdFilters(filter);
+		if (statistics == null || LmdbJoinPlanSupport.containsExists(filter.getCondition())) {
 			return;
 		}
 		double passRatio = filter.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO);
@@ -634,77 +1597,132 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		return Double.isFinite(passRatio) && passRatio >= 0.0d && passRatio <= 1.0d;
 	}
 
-	private static final class ValuesVariableAnchorCollector {
-		private final Map<String, LinkedHashSet<Value>> assignmentValues;
-		private final LinkedHashSet<Value> values = new LinkedHashSet<>();
-		private String bindingName;
-
-		private ValuesVariableAnchorCollector(Map<String, LinkedHashSet<Value>> assignmentValues) {
-			this.assignmentValues = assignmentValues;
-		}
-
-		private boolean addLiteral(Var filterVar, Value value) {
-			String nextBindingName = unboundName(filterVar);
-			if (nextBindingName == null || !LmdbJoinPlanSupport.isSafeValuesAnchorValue(value)) {
-				return false;
+	static void annotateIdFilters(Filter filter) {
+		for (ValueExpr condition : LmdbJoinPlanSupport.splitConjuncts(filter.getCondition())) {
+			IdKindCandidate candidate = idKindCandidate(condition);
+			if (candidate == null) {
+				continue;
 			}
-			if (!setBindingName(nextBindingName)) {
-				return false;
+			StatementPattern pattern = localStatementPattern(filter, condition, candidate.bindingName());
+			if (pattern == null) {
+				continue;
 			}
-			values.add(value);
-			return true;
-		}
-
-		private boolean addMemberValues(Var filterVar, Var memberVar) {
-			String bindingName = unboundName(filterVar);
-			String memberName = unboundName(memberVar);
-			if (bindingName == null || memberName == null) {
-				return false;
+			String component = localPatternComponent(pattern, candidate.bindingName());
+			if (component == null) {
+				continue;
 			}
-			return addValues(bindingName, assignmentValues.get(memberName));
-		}
-
-		private boolean addVariableEquality(Var left, Var right) {
-			String leftName = unboundName(left);
-			String rightName = unboundName(right);
-			LinkedHashSet<Value> leftValues = assignmentValues.get(leftName);
-			LinkedHashSet<Value> rightValues = assignmentValues.get(rightName);
-			if (leftValues != null && rightValues == null) {
-				return addValues(rightName, leftValues);
+			String filterMetric = component + ":" + candidate.kind().name();
+			appendIdFilterMetric(pattern, filterMetric);
+			Var positionVar = localPatternVar(pattern, component);
+			if (positionVar != null) {
+				appendIdFilterMetric(positionVar, filterMetric);
 			}
-			if (rightValues != null && leftValues == null) {
-				return addValues(leftName, rightValues);
-			}
-			return false;
-		}
-
-		private boolean addValues(String nextBindingName, LinkedHashSet<Value> nextValues) {
-			if (nextBindingName == null || nextValues == null || nextValues.isEmpty()
-					|| !setBindingName(nextBindingName)) {
-				return false;
-			}
-			for (Value value : nextValues) {
-				if (!LmdbJoinPlanSupport.isSafeValuesAnchorValue(value)) {
-					return false;
-				}
-			}
-			values.addAll(nextValues);
-			return true;
-		}
-
-		private boolean setBindingName(String nextBindingName) {
-			if (bindingName == null) {
-				bindingName = nextBindingName;
-				return true;
-			}
-			return bindingName.equals(nextBindingName);
-		}
-
-		private static String unboundName(Var var) {
-			if (var == null || var.hasValue()) {
-				return null;
-			}
-			return var.getName();
 		}
 	}
+
+	private static IdKindCandidate idKindCandidate(ValueExpr condition) {
+		if (condition instanceof IsURI isURI) {
+			return idKindCandidate(isURI.getArg(), LmdbValueIdFilter.Kind.IRI);
+		}
+		if (condition instanceof IsBNode isBNode) {
+			return idKindCandidate(isBNode.getArg(), LmdbValueIdFilter.Kind.BNODE);
+		}
+		if (condition instanceof IsLiteral isLiteral) {
+			return idKindCandidate(isLiteral.getArg(), LmdbValueIdFilter.Kind.LITERAL);
+		}
+		if (condition instanceof IsResource isResource) {
+			return idKindCandidate(isResource.getArg(), LmdbValueIdFilter.Kind.RESOURCE);
+		}
+		if (condition instanceof IsNumeric isNumeric) {
+			return idKindCandidate(isNumeric.getArg(), LmdbValueIdFilter.Kind.NUMERIC);
+		}
+		if (condition instanceof Compare compare && compare.getOperator() == Compare.CompareOp.EQ) {
+			IdKindCandidate candidate = datatypeIdKindCandidate(compare.getLeftArg(), compare.getRightArg());
+			if (candidate != null) {
+				return candidate;
+			}
+			return datatypeIdKindCandidate(compare.getRightArg(), compare.getLeftArg());
+		}
+		return null;
+	}
+
+	private static IdKindCandidate datatypeIdKindCandidate(ValueExpr datatypeExpr, ValueExpr valueExpr) {
+		if (!(datatypeExpr instanceof Datatype datatype) || !(valueExpr instanceof ValueConstant constant)
+				|| !(constant.getValue()instanceof IRI datatypeIri)) {
+			return null;
+		}
+		return idKindCandidate(datatype.getArg(), LmdbValueIdFilter.Kind.fromDatatype(datatypeIri));
+	}
+
+	private static IdKindCandidate idKindCandidate(ValueExpr valueExpr, LmdbValueIdFilter.Kind kind) {
+		if (kind != null && valueExpr instanceof Var var && !var.hasValue() && var.getName() != null) {
+			return new IdKindCandidate(var.getName(), kind);
+		}
+		return null;
+	}
+
+	private static StatementPattern localStatementPattern(Filter filter, ValueExpr condition, String bindingName) {
+		StatementPattern pattern = LmdbJoinPlanSupport.patternLocalBaseForFilterCondition(filter, condition);
+		if (pattern != null) {
+			return pattern;
+		}
+		List<StatementPattern> matches = new ArrayList<>(1);
+		filter.getArg().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern node) {
+				if (localPatternComponent(node, bindingName) != null) {
+					matches.add(node);
+				}
+			}
+
+			@Override
+			public void meet(Union node) {
+				// An ID filter in one branch cannot be attached to the whole scoped fanout safely here.
+			}
+		});
+		return matches.size() == 1 ? matches.getFirst() : null;
+	}
+
+	private static String localPatternComponent(StatementPattern pattern, String bindingName) {
+		if (matchesUnboundVar(pattern.getSubjectVar(), bindingName)) {
+			return "subject";
+		}
+		if (matchesUnboundVar(pattern.getPredicateVar(), bindingName)) {
+			return "predicate";
+		}
+		if (matchesUnboundVar(pattern.getObjectVar(), bindingName)) {
+			return "object";
+		}
+		if (matchesUnboundVar(pattern.getContextVar(), bindingName)) {
+			return "context";
+		}
+		return null;
+	}
+
+	private static Var localPatternVar(StatementPattern pattern, String component) {
+		return switch (component) {
+		case "subject" -> pattern.getSubjectVar();
+		case "predicate" -> pattern.getPredicateVar();
+		case "object" -> pattern.getObjectVar();
+		case "context" -> pattern.getContextVar();
+		default -> null;
+		};
+	}
+
+	private static boolean matchesUnboundVar(Var var, String bindingName) {
+		return var != null && !var.hasValue() && bindingName.equals(var.getName());
+	}
+
+	private static void appendIdFilterMetric(QueryModelNode node, String filterMetric) {
+		String existing = node.getStringMetricPlanned(LmdbValueIdFilter.PLANNED_ID_FILTER);
+		if (existing == null || existing.isBlank()) {
+			node.setStringMetricPlanned(LmdbValueIdFilter.PLANNED_ID_FILTER, filterMetric);
+		} else if (!List.of(existing.split(",")).contains(filterMetric)) {
+			node.setStringMetricPlanned(LmdbValueIdFilter.PLANNED_ID_FILTER, existing + "," + filterMetric);
+		}
+	}
+
+	private record IdKindCandidate(String bindingName, LmdbValueIdFilter.Kind kind) {
+	}
+
 }

@@ -102,7 +102,9 @@ public class GenericPlanNode {
 			TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL,
 			TelemetryMetricNames.INDEX_HIT_RATE_ACTUAL,
 			TelemetryMetricNames.INDEX_NAME,
-			TelemetryMetricNames.INDEX_NAMES);
+			TelemetryMetricNames.INDEX_NAMES,
+			TelemetryMetricNames.DISTINCT_CURSOR_SKIP_COUNT_ACTUAL,
+			TelemetryMetricNames.DISTINCT_CURSOR_SKIP_SEEK_COUNT_ACTUAL);
 
 	private final String id = "UUID_" + uniqueIdPrefix + uniqueIdSuffix.incrementAndGet();
 
@@ -862,8 +864,6 @@ public class GenericPlanNode {
 		Long sourceRowsFiltered = sourceRowsFilteredForDisplay();
 		Map<String, String> metrics = new LinkedHashMap<>();
 
-		putIfKnown(metrics, "costEstimate", toHumanReadableNumber(getCostEstimate()));
-		putIfKnown(metrics, "resultSizeEstimate", toHumanReadableNumber(getResultSizeEstimate()));
 		putIfKnown(metrics, "resultSizeActual", toHumanReadableNumber(getResultSizeActual()));
 		putIfKnown(metrics, "totalTimeActual", toHumanReadableTime(getTotalTimeActual()));
 		putIfKnown(metrics, "selfTimeActual", toHumanReadableTime(getSelfTimeActual()));
@@ -1052,14 +1052,16 @@ public class GenericPlanNode {
 	private void appendPlannedMapTelemetry(Map<String, String> metrics) {
 		for (Map.Entry<String, Long> entry : longMetricsPlanned.entrySet()) {
 			Long metricValue = entry.getValue();
-			if (metricValue == null || metricValue < 0 || metrics.containsKey(entry.getKey())) {
+			if (metricValue == null || metricValue < 0 || metrics.containsKey(entry.getKey())
+					|| !displayPlannedMetric(entry.getKey())) {
 				continue;
 			}
 			putIfKnown(metrics, entry.getKey(), toHumanReadableNumber(metricValue));
 		}
 		for (Map.Entry<String, Double> entry : doubleMetricsPlanned.entrySet()) {
 			Double metricValue = entry.getValue();
-			if (metricValue == null || metricValue < 0 || metrics.containsKey(entry.getKey())) {
+			if (metricValue == null || metricValue < 0 || metrics.containsKey(entry.getKey())
+					|| !displayPlannedMetric(entry.getKey())) {
 				continue;
 			}
 			putIfKnown(metrics, entry.getKey(), toHumanReadableNumber(metricValue));
@@ -1067,15 +1069,32 @@ public class GenericPlanNode {
 		for (Map.Entry<String, String> entry : orderedStringMetricsPlanned()) {
 			String metricName = entry.getKey();
 			String metricValue = entry.getValue();
-			if (metricValue == null || metricValue.isEmpty() || metrics.containsKey(metricName)) {
+			if (metricValue == null || metricValue.isEmpty() || metrics.containsKey(metricName)
+					|| !displayPlannedMetric(metricName)) {
 				continue;
 			}
 			metrics.put(metricName, metricValue);
 		}
 	}
 
+	private boolean displayPlannedMetric(String metricName) {
+		return hasPlannerEstimateUsage() || !TelemetryMetricNames.isPlannerEstimateMetric(metricName);
+	}
+
+	private boolean hasPlannerEstimateUsage() {
+		String usage = stringMetricsPlanned.get(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE);
+		return usage != null && !usage.isEmpty()
+				&& !TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_EXPLAIN_RECOMPUTED.equals(usage);
+	}
+
 	private List<Map.Entry<String, String>> orderedStringMetricsPlanned() {
 		List<Map.Entry<String, String>> orderedEntries = new ArrayList<>();
+		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned, TelemetryMetricNames.PLANNED_ESTIMATE_USAGE);
+		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned,
+				TelemetryMetricNames.PLANNED_ESTIMATE_DECISION_ID);
+		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned,
+				TelemetryMetricNames.PLANNED_CARDINALITY_SHAPE);
+		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned, TelemetryMetricNames.PLANNED_COST_SHAPE);
 		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned, TelemetryMetricNames.PLANNED_INDEX_NAME);
 		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned,
 				TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE);
@@ -1561,9 +1580,6 @@ public class GenericPlanNode {
 				+ StringEscapeUtils.escapeHtml4(type) + "</U></td></tr>");
 		rows.add("<tr><td>Algorithm</td><td>" + (algorithm != null ? algorithm : UNKNOWN) + "</td></tr>");
 		rows.add("<tr><td><B>New scope</B></td><td>" + (newScope != null && newScope ? "<B>true</B>" : UNKNOWN)
-				+ "</td></tr>");
-		rows.add("<tr><td>Cost estimate</td><td>" + toHumanReadableNumber(getCostEstimate()) + "</td></tr>");
-		rows.add("<tr><td>Result size estimate</td><td>" + toHumanReadableNumber(getResultSizeEstimate())
 				+ "</td></tr>");
 		rows.add("<tr><td >Result size actual</td><td>" + toHumanReadableNumber(getResultSizeActual())
 				+ "</td></tr>");

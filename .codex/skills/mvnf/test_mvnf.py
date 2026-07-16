@@ -20,6 +20,27 @@ class MvnfCommandBoundaryTest(unittest.TestCase):
     def test_unit_selector_skips_failsafe_integration_tests(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._write_minimal_repo(Path(tmp))
+            ignored_sources = [
+                repo / ".git" / "src" / "test" / "java",
+                repo
+                / ".mvnf"
+                / "workspaces"
+                / "stale"
+                / "build"
+                / "org.example"
+                / "example"
+                / "1.0"
+                / "src"
+                / "test"
+                / "java",
+                repo / "module" / "target" / "generated-test-sources" / "src" / "test" / "java",
+            ]
+            for ignored_source in ignored_sources:
+                ignored_source.mkdir(parents=True)
+                (ignored_source / "ExampleTest.java").write_text(
+                    "class ExampleTest {}\n",
+                    encoding="utf-8",
+                )
             calls = repo / "calls.txt"
             fake_mvn = self._write_fake_mvn(repo, calls)
 
@@ -48,6 +69,10 @@ class MvnfCommandBoundaryTest(unittest.TestCase):
     def test_integration_selector_skips_surefire_unit_tests(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._write_minimal_repo(Path(tmp), class_name="ExampleIT")
+            other_test_dir = repo / "other-module" / "src" / "test" / "java"
+            other_test_dir.mkdir(parents=True)
+            (repo / "other-module" / "pom.xml").write_text("<project />\n", encoding="utf-8")
+            (other_test_dir / "ExampleIT.java").write_text("class ExampleIT {}\n", encoding="utf-8")
             calls = repo / "calls.txt"
             fake_mvn = self._write_fake_mvn(repo, calls)
 
@@ -57,6 +82,8 @@ class MvnfCommandBoundaryTest(unittest.TestCase):
                     str(SCRIPT),
                     "ExampleIT#runs",
                     "--it",
+                    "--module",
+                    "module",
                     "--mvn",
                     str(fake_mvn),
                     "--retain-logs",
@@ -149,8 +176,7 @@ class MvnfCommandBoundaryTest(unittest.TestCase):
                 )
 
                 self.assertNotEqual(result.returncode, 0, result.stdout)
-                self.assertIn("another mvnf", result.stdout)
-                self.assertIn("--allow-concurrent", result.stdout)
+                self.assertIn("conflicts with active `legacy`", result.stdout)
                 self.assertEqual(1, len(calls.read_text(encoding="utf-8").splitlines()))
             finally:
                 first.terminate()
@@ -160,7 +186,7 @@ class MvnfCommandBoundaryTest(unittest.TestCase):
                     first.kill()
                     first.communicate(timeout=5)
 
-    def test_allow_concurrent_overrides_repo_run_guard(self) -> None:
+    def test_allow_concurrent_without_workspace_is_rejected_before_maven(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._write_minimal_repo(Path(tmp))
             calls = repo / "calls.txt"
@@ -202,9 +228,9 @@ class MvnfCommandBoundaryTest(unittest.TestCase):
                     timeout=10,
                 )
 
-                self.assertEqual(result.returncode, 0, result.stdout)
-                self.assertIn("Continuing because --allow-concurrent was supplied", result.stdout)
-                self.assertEqual(3, len(calls.read_text(encoding="utf-8").splitlines()))
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn("use --workspace", result.stdout)
+                self.assertEqual(1, len(calls.read_text(encoding="utf-8").splitlines()))
             finally:
                 first.terminate()
                 try:

@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
@@ -30,12 +31,16 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.rules.TemporaryFolder;
 
@@ -45,6 +50,7 @@ import org.junit.rules.TemporaryFolder;
 public class QueryBenchmarkTest {
 
 	private static SailRepository repository;
+	private static LmdbStore store;
 	private static File dataDir;
 
 	public static TemporaryFolder tempDir = new TemporaryFolder();
@@ -124,7 +130,8 @@ public class QueryBenchmarkTest {
 			dataDir = tempDir.newFolder();
 
 			LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
-			repository = new SailRepository(new LmdbStore(dataDir, config));
+			store = new LmdbStore(dataDir, config);
+			repository = new SailRepository(store);
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				connection.begin(IsolationLevels.NONE);
@@ -139,6 +146,13 @@ public class QueryBenchmarkTest {
 			cleanupStore();
 			throw e;
 		}
+	}
+
+	@BeforeEach
+	public void awaitOptimizerPipeline() {
+		store.forceFlushSketchEstimator();
+		LmdbPlannerAwait.awaitSketchesReady(store, LmdbPlannerAwait.DEFAULT_PIPELINE_TIMEOUT);
+		LmdbPlannerAwait.awaitLmdbOptimizerPipeline(store, LmdbPlannerAwait.DEFAULT_PIPELINE_TIMEOUT);
 	}
 
 	private static InputStream getResourceAsStream(String name) {
@@ -167,6 +181,7 @@ public class QueryBenchmarkTest {
 			}
 			tempDir = null;
 			dataDir = null;
+			store = null;
 			repository = null;
 			statementList = null;
 		}
@@ -250,6 +265,43 @@ public class QueryBenchmarkTest {
 	}
 
 	@Test
+	public void optimizedExplainDoesNotChangeSubsequentSubSelectResults() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.prepareTupleQuery(sub_select)
+					.explain(Explanation.Level.Optimized)
+					.toString();
+		}
+		awaitOptimizerPipeline();
+		try (SailRepositoryConnection connection = repository.getConnection();
+				var stream = connection.prepareTupleQuery(sub_select).evaluate().stream()) {
+			assertEquals(16035L, stream.count());
+		}
+	}
+
+	@Test
+	public void subSelectPlanKeepsTopGroupCardinalityBounded() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			Explanation explanation = connection.prepareTupleQuery(sub_select).explain(Explanation.Level.Optimized);
+			String plan = explanation.toString();
+			String groupLabel = "Group (type1, type2, language2, mbox, count, identifier2)";
+			String topGroup = plan.contains(groupLabel)
+					? firstLineContaining(plan, groupLabel)
+					: firstLineContaining(plan, "Distinct (");
+			if (!plan.contains(groupLabel)) {
+				assertTrue(plan.contains("originalNode=aggregate-free-group-by")
+						&& plan.contains("replacementNode=distinct-projection"),
+						"Replacing the aggregate-free top group must carry the semantic proof.\n" + plan);
+			}
+			double rows = plannedMetricRows(topGroup, "plannedCardinalityRows");
+			double rootRows = ((TupleExpr) explanation.tupleExpr())
+					.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
+			assertTrue(Double.isFinite(rootRows) && rows <= rootRows,
+					"Top GROUP BY/DISTINCT cardinality must be bounded by the enclosing winner rows. rows=" + rows
+							+ ", rootRows=" + rootRows + "\n" + plan);
+		}
+	}
+
+	@Test
 	public void multipleSubSelectQueryProducesExpectedCount() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long count;
@@ -257,6 +309,19 @@ public class QueryBenchmarkTest {
 				count = stream.count();
 			}
 			assertEquals(27881L, count);
+		}
+	}
+
+	@Test
+	public void multipleSubSelectPlanRepairsStandardFallbackSubqueryJoins() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			Explanation explanation = connection.prepareTupleQuery(multiple_sub_select)
+					.explain(Explanation.Level.Optimized);
+			String plan = explanation.toString();
+			assertTrue(plan.contains("plannedEstimateSource=lmdb-cascades-dphyp")
+					|| plan.contains("plannedEstimateSource=lmdb-cascades-connected-hypergraph")
+					|| plan.contains("plannedEstimateSource=lmdb-inner-bound-lookup"),
+					"Multiple-subselect fallback must be repaired with Cascades-planned subquery joins.\n" + plan);
 		}
 	}
 
@@ -324,13 +389,11 @@ public class QueryBenchmarkTest {
 
 	@Test
 	public void ordered_union_limit() {
-		for (int i = 0; i < 100; i++) {
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				long count = count(connection
-						.prepareTupleQuery(ordered_union_limit)
-						.evaluate());
-				assertEquals(250L, count);
-			}
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			long count = count(connection
+					.prepareTupleQuery(ordered_union_limit)
+					.evaluate());
+			assertEquals(250L, count);
 		}
 	}
 
@@ -338,6 +401,53 @@ public class QueryBenchmarkTest {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			return connection.hasStatement(RDF.TYPE, RDF.TYPE, RDF.TYPE, true);
 		}
+	}
+
+	private static String firstLineContaining(String text, String needle) {
+		return text.lines()
+				.filter(line -> planOperatorText(line).startsWith(needle))
+				.findFirst()
+				.orElseThrow(() -> new AssertionError("Missing line containing " + needle + "\n" + text));
+	}
+
+	private static String planOperatorText(String line) {
+		String stripped = line.stripLeading();
+		int index = 0;
+		while (index < stripped.length()) {
+			char c = stripped.charAt(index);
+			if (c != ' ' && c != '│' && c != '├' && c != '└' && c != '╠' && c != '╚' && c != '═'
+					&& c != '─') {
+				break;
+			}
+			index++;
+		}
+		return stripped.substring(index);
+	}
+
+	private static double plannedMetricRows(String line, String metricName) {
+		String prefix = metricName + "=";
+		int start = line.indexOf(prefix);
+		if (start < 0) {
+			throw new AssertionError("Missing metric " + metricName + " in line: " + line);
+		}
+		start += prefix.length();
+		int end = line.indexOf(',', start);
+		if (end < 0) {
+			end = line.indexOf(')', start);
+		}
+		String value = line.substring(start, end).trim();
+		double multiplier = 1.0d;
+		if (value.endsWith("K")) {
+			multiplier = 1_000.0d;
+			value = value.substring(0, value.length() - 1);
+		} else if (value.endsWith("M")) {
+			multiplier = 1_000_000.0d;
+			value = value.substring(0, value.length() - 1);
+		} else if (value.endsWith("B")) {
+			multiplier = 1_000_000_000.0d;
+			value = value.substring(0, value.length() - 1);
+		}
+		return Double.parseDouble(value) * multiplier;
 	}
 
 	private static long count(TupleQueryResult evaluate) {

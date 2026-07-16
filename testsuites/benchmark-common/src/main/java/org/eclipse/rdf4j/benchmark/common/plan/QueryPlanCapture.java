@@ -52,6 +52,7 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -70,7 +71,11 @@ public final class QueryPlanCapture {
 	public static final String FEATURE_PROPERTY_PREFIX_PROPERTY = "rdf4j.query.plan.capture.featurePropertyPrefix";
 	public static final String GIT_COMMIT_PROPERTY = "rdf4j.query.plan.capture.gitCommit";
 	public static final String GIT_BRANCH_PROPERTY = "rdf4j.query.plan.capture.gitBranch";
+	private static final String TEST_OUTPUT_DIRECTORY_PROPERTY = "rdf4j.test.outputDirectory";
+	private static final String WORKSPACE_BUILD_ROOT_PROPERTY = "rdf4j.build.root";
+	private static final String ISOLATED_OUTPUT_DIRECTORY = "query-plan-capture";
 
+	private static final String OPTIMIZER_TRACE_JSON_METRIC = "optimizer.cascadesTraceJson";
 	private static final DateTimeFormatter FILE_TIMESTAMP_FORMATTER = DateTimeFormatter
 			.ofPattern("yyyyMMdd-HHmmssSSS")
 			.withZone(ZoneOffset.UTC);
@@ -107,8 +112,19 @@ public final class QueryPlanCapture {
 	}
 
 	public static Path resolveOutputDirectory() {
-		return Path.of(System.getProperty(QueryPlanCaptureContext.OUTPUT_DIRECTORY_PROPERTY,
-				DEFAULT_OUTPUT_DIRECTORY));
+		String configuredOutputDirectory = System.getProperty(QueryPlanCaptureContext.OUTPUT_DIRECTORY_PROPERTY);
+		if (configuredOutputDirectory != null && !configuredOutputDirectory.isBlank()) {
+			return Path.of(configuredOutputDirectory);
+		}
+		String testOutputDirectory = System.getProperty(TEST_OUTPUT_DIRECTORY_PROPERTY);
+		if (testOutputDirectory != null && !testOutputDirectory.isBlank()) {
+			return Path.of(testOutputDirectory).resolve(ISOLATED_OUTPUT_DIRECTORY);
+		}
+		String workspaceBuildRoot = System.getProperty(WORKSPACE_BUILD_ROOT_PROPERTY);
+		if (workspaceBuildRoot != null && !workspaceBuildRoot.isBlank()) {
+			return Path.of(workspaceBuildRoot).resolve(ISOLATED_OUTPUT_DIRECTORY);
+		}
+		return Path.of(DEFAULT_OUTPUT_DIRECTORY);
 	}
 
 	public static Map<String, String> metadataFromSystemProperties() {
@@ -177,8 +193,82 @@ public final class QueryPlanCapture {
 		snapshot.setMetadata(metadata);
 		snapshot.setFeatureFlags(featureFlags);
 		snapshot.setExplanations(explanations);
+		snapshot.setOptimizerTrace(extractOptimizerTrace(explanations));
 
 		return snapshot;
+	}
+
+	private Map<String, Object> extractOptimizerTrace(Map<String, QueryPlanExplanation> explanations) {
+		if (explanations == null || explanations.isEmpty()) {
+			return Map.of();
+		}
+		for (String level : List.of(levelKey(Explanation.Level.Optimized), levelKey(Explanation.Level.Telemetry),
+				levelKey(Explanation.Level.Unoptimized))) {
+			QueryPlanExplanation explanation = explanations.get(level);
+			if (explanation == null || explanation.getDebugMetrics() == null) {
+				continue;
+			}
+			String traceJson = explanation.getDebugMetrics().get(OPTIMIZER_TRACE_JSON_METRIC);
+			if (traceJson == null || traceJson.isBlank()) {
+				traceJson = extractOptimizerTraceJson(explanation.getExplanationJson());
+			}
+			if (traceJson == null || traceJson.isBlank()) {
+				continue;
+			}
+			try {
+				return snapshotMapper.readValue(traceJson,
+						new TypeReference<LinkedHashMap<String, Object>>() {
+						});
+			} catch (Exception e) {
+				LinkedHashMap<String, Object> parseError = new LinkedHashMap<>();
+				parseError.put("formatVersion", "1");
+				parseError.put("parseError", e.getClass().getSimpleName());
+				parseError.put("rawLength", traceJson.length());
+				return parseError;
+			}
+		}
+		return Map.of();
+	}
+
+	private static String extractOptimizerTraceJson(String explanationJson) {
+		if (explanationJson == null || explanationJson.isBlank()) {
+			return null;
+		}
+		try {
+			return findOptimizerTraceJson(JSON_MAPPER.readTree(explanationJson));
+		} catch (Exception e) {
+			return null;
+		}
+	}
+
+	private static String findOptimizerTraceJson(JsonNode node) {
+		if (node == null || node.isNull()) {
+			return null;
+		}
+		if (node.isArray()) {
+			for (JsonNode child : node) {
+				String traceJson = findOptimizerTraceJson(child);
+				if (traceJson != null && !traceJson.isBlank()) {
+					return traceJson;
+				}
+			}
+			return null;
+		}
+		if (!node.isObject()) {
+			return null;
+		}
+		JsonNode direct = node.get(OPTIMIZER_TRACE_JSON_METRIC);
+		if (direct != null && !direct.isNull()) {
+			return direct.asText();
+		}
+		var fields = node.fields();
+		while (fields.hasNext()) {
+			String traceJson = findOptimizerTraceJson(fields.next().getValue());
+			if (traceJson != null && !traceJson.isBlank()) {
+				return traceJson;
+			}
+		}
+		return null;
 	}
 
 	private static void copyUnoptimizedInputShapeMetadata(Map<String, QueryPlanExplanation> explanations,
@@ -264,6 +354,7 @@ public final class QueryPlanCapture {
 		Object tupleExprObject = explanation.tupleExpr();
 		if (tupleExprObject instanceof TupleExpr) {
 			TupleExpr tupleExpr = ((TupleExpr) tupleExprObject).clone();
+			appendOptimizerTraceJson(tupleExpr, captured.getDebugMetrics());
 			appendIteratorTelemetry(tupleExpr, captured.getDebugMetrics());
 			captured.setTupleExprTree(tupleExpr.toString());
 			captured.setTupleExprJson(tupleExprJsonCodec.toJson(tupleExpr));
@@ -273,6 +364,39 @@ public final class QueryPlanCapture {
 		}
 
 		return captured;
+	}
+
+	private static void appendOptimizerTraceJson(TupleExpr tupleExpr, Map<String, String> metrics) {
+		if (tupleExpr == null || metrics == null || metrics.containsKey(OPTIMIZER_TRACE_JSON_METRIC)) {
+			return;
+		}
+		OptimizerTraceMetricFinder finder = new OptimizerTraceMetricFinder();
+		tupleExpr.visit(finder);
+		if (finder.traceJson != null && !finder.traceJson.isBlank()) {
+			metrics.put(OPTIMIZER_TRACE_JSON_METRIC, finder.traceJson);
+		}
+	}
+
+	private static final class OptimizerTraceMetricFinder extends AbstractQueryModelVisitor<RuntimeException> {
+		private String traceJson;
+
+		@Override
+		protected void meetNode(QueryModelNode node) throws RuntimeException {
+			if (traceJson != null && !traceJson.isBlank()) {
+				return;
+			}
+			String planned = node.getStringMetricPlanned(OPTIMIZER_TRACE_JSON_METRIC);
+			if (planned != null && !planned.isBlank()) {
+				traceJson = planned;
+				return;
+			}
+			String actual = node.getStringMetricActual(OPTIMIZER_TRACE_JSON_METRIC);
+			if (actual != null && !actual.isBlank()) {
+				traceJson = actual;
+				return;
+			}
+			super.meetNode(node);
+		}
 	}
 
 	public static Map<String, String> extractDebugMetrics(String explanationJson) {
@@ -610,7 +734,10 @@ public final class QueryPlanCapture {
 		}
 		BigDecimal resultSizeEstimateValue = parseDecimalToken(node, "resultSizeEstimate");
 		BigDecimal resultSizeActualValue = parseDecimalToken(node, "resultSizeActual");
-		recordEstimateAccuracy(accumulator, resultSizeEstimateValue, resultSizeActualValue, isJoinType(normalizedType));
+		BigDecimal effectiveResultSizeEstimateValue = effectiveResultSizeEstimateForActualComparison(node,
+				resultSizeEstimateValue);
+		recordEstimateAccuracy(accumulator, effectiveResultSizeEstimateValue, resultSizeActualValue,
+				isJoinType(normalizedType));
 		BigDecimal selfTimeActual = parseDecimalToken(node, "selfTimeActual");
 		if (selfTimeActual != null) {
 			accumulator.modeledSelfTimeActualSum = accumulator.modeledSelfTimeActualSum.add(selfTimeActual);
@@ -930,6 +1057,34 @@ public final class QueryPlanCapture {
 		} catch (NumberFormatException ignored) {
 			return null;
 		}
+	}
+
+	private static BigDecimal effectiveResultSizeEstimateForActualComparison(JsonNode node,
+			BigDecimal resultSizeEstimate) {
+		if (resultSizeEstimate == null) {
+			return null;
+		}
+		BigDecimal repeatedInvocations = parseNestedDecimalToken(node, "doubleMetricsPlanned",
+				"plannedRepeatedInvocations");
+		if (repeatedInvocations == null || repeatedInvocations.compareTo(BigDecimal.ONE) <= 0) {
+			return resultSizeEstimate;
+		}
+		BigDecimal repeatedEstimate = resultSizeEstimate.multiply(repeatedInvocations);
+		BigDecimal plannedWorkRows = parseNestedDecimalToken(node, "doubleMetricsPlanned", "plannedWorkRows");
+		if (plannedWorkRows != null
+				&& plannedWorkRows.compareTo(resultSizeEstimate) >= 0
+				&& plannedWorkRows.compareTo(repeatedEstimate) < 0) {
+			repeatedEstimate = plannedWorkRows;
+		}
+		return repeatedEstimate.compareTo(resultSizeEstimate) > 0 ? repeatedEstimate : resultSizeEstimate;
+	}
+
+	private static BigDecimal parseNestedDecimalToken(JsonNode node, String objectField, String field) {
+		JsonNode object = node.get(objectField);
+		if (object == null || object.isNull()) {
+			return null;
+		}
+		return parseDecimalToken(object, field);
 	}
 
 	private static long positiveLong(long value) {

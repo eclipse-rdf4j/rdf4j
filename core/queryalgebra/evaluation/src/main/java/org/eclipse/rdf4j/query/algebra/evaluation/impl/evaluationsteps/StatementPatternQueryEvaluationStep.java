@@ -362,10 +362,12 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		try {
 			incrementIndexLookupCount();
 			if (order != null) {
-				iteration = tripleSource.getStatements(order, (Resource) subject, (IRI) predicate, object, contexts);
+				iteration = tripleSource.getStatements(statementPatternForMetrics, order, (Resource) subject,
+						(IRI) predicate, object, contexts);
 
 			} else {
-				iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
+				iteration = tripleSource.getStatements(statementPatternForMetrics, (Resource) subject,
+						(IRI) predicate, object, contexts);
 			}
 
 			if (iteration instanceof IndexReportingIterator) {
@@ -452,7 +454,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		try {
 			incrementIndexLookupCount();
-			long statementCount = tripleSource.getStatementCount((Resource) subject, (IRI) predicate, object, contexts);
+			long statementCount = tripleSource.getStatementCount(statementPatternForMetrics, (Resource) subject,
+					(IRI) predicate, object, contexts);
 			putCachedDirectLookup(directLookupKey, DirectLookupCacheEntry.count(statementCount));
 			return statementCount;
 		} catch (Throwable t) {
@@ -554,8 +557,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	private CloseableIteration<? extends Statement> reopenUncachedIteration(Resource subject, IRI predicate,
 			Value object, Resource[] contexts) {
 		incrementIndexLookupCount();
-		CloseableIteration<? extends Statement> iteration = tripleSource.getStatements(subject, predicate, object,
-				contexts);
+		CloseableIteration<? extends Statement> iteration = tripleSource.getStatements(statementPatternForMetrics,
+				subject, predicate, object, contexts);
 		if (iteration instanceof IndexReportingIterator) {
 			String indexName = ((IndexReportingIterator) iteration).getIndexName();
 			statementPattern.setIndexName(indexName);
@@ -591,9 +594,11 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		try {
 			incrementIndexLookupCount();
 			if (order != null) {
-				iteration = tripleSource.getStatements(order, (Resource) subject, (IRI) predicate, object, contexts);
+				iteration = tripleSource.getStatements(statementPatternForMetrics, order, (Resource) subject,
+						(IRI) predicate, object, contexts);
 			} else {
-				iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
+				iteration = tripleSource.getStatements(statementPatternForMetrics, (Resource) subject,
+						(IRI) predicate, object, contexts);
 			}
 			if (iteration instanceof IndexReportingIterator) {
 				String indexName = ((IndexReportingIterator) iteration).getIndexName();
@@ -992,6 +997,18 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			return metrics == null ? -1 : metrics.getSourceRowsFilteredActual();
 		}
 
+		@Override
+		public long getDistinctCursorSkipCountActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getDistinctCursorSkipCountActual();
+		}
+
+		@Override
+		public long getDistinctCursorSkipSeekCountActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getDistinctCursorSkipSeekCountActual();
+		}
+
 		private IndexReportingIterator indexReporter() {
 			return iteration instanceof IndexReportingIterator ? (IndexReportingIterator) iteration : null;
 		}
@@ -1070,6 +1087,18 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		public long getSourceRowsFilteredActual() {
 			IndexReportingIterator metrics = indexReporter();
 			return metrics == null ? -1 : metrics.getSourceRowsFilteredActual();
+		}
+
+		@Override
+		public long getDistinctCursorSkipCountActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getDistinctCursorSkipCountActual();
+		}
+
+		@Override
+		public long getDistinctCursorSkipSeekCountActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getDistinctCursorSkipSeekCountActual();
 		}
 
 		private IndexReportingIterator indexReporter() {
@@ -1188,6 +1217,18 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			}
 			long locallySeenRows = locallyMatchedRows + locallyFilteredRows;
 			return locallySeenRows > 0 ? locallyFilteredRows : -1;
+		}
+
+		@Override
+		public long getDistinctCursorSkipCountActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getDistinctCursorSkipCountActual();
+		}
+
+		@Override
+		public long getDistinctCursorSkipSeekCountActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getDistinctCursorSkipSeekCountActual();
 		}
 
 		private IndexReportingIterator indexReporter() {

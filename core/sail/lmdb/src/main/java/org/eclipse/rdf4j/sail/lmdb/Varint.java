@@ -175,6 +175,34 @@ public final class Varint {
 		}
 	}
 
+	public static int writeUnsigned(final byte[] data, final int offset, final long value) {
+		int pos = offset;
+		if (value == Long.MAX_VALUE) {
+			System.arraycopy(ENCODED_LONG_MAX, 0, data, pos, ENCODED_LONG_MAX.length);
+			return pos + ENCODED_LONG_MAX.length;
+		}
+
+		if (value < 0) {
+			throw new IllegalArgumentException("Negative value can not be encoded as varint: " + value);
+		} else if (value <= 240) {
+			data[pos++] = (byte) value;
+		} else if (value <= 2287) {
+			long v = value - 240;
+			data[pos++] = (byte) ((v >>> 8) + 241);
+			data[pos++] = (byte) v;
+		} else if (value <= 67823) {
+			long v = value - 2288;
+			data[pos++] = (byte) 249;
+			data[pos++] = (byte) (v >>> 8);
+			data[pos++] = (byte) v;
+		} else {
+			int bytes = descriptor(value) + 1;
+			data[pos++] = (byte) (250 + (bytes - 3));
+			pos = writeSignificantBits(data, pos, value, bytes);
+		}
+		return pos;
+	}
+
 	// Writes the top `bytes` significant bytes of `value` in big-endian order.
 // Uses putLong/putInt/putShort to batch writes and a single leading byte if needed.
 	private static void writeSignificantBits(ByteBuffer bb, long value, int bytes) {
@@ -214,6 +242,13 @@ public final class Varint {
 				bb.order(prev);
 			}
 		}
+	}
+
+	private static int writeSignificantBits(byte[] data, int pos, long value, int bytes) {
+		for (int shift = (bytes - 1) * 8; shift >= 0; shift -= 8) {
+			data[pos++] = (byte) (value >>> shift);
+		}
+		return pos;
 	}
 
 	/**
@@ -397,6 +432,23 @@ public final class Varint {
 		}
 	}
 
+	public static long readUnsigned(byte[] data, int pos) throws IllegalArgumentException {
+		int a0 = data[pos] & 0xFF;
+		if (a0 <= 240) {
+			return a0;
+		} else if (a0 <= 248) {
+			int a1 = data[pos + 1] & 0xFF;
+			return 240 + 256 * (a0 - 241) + a1;
+		} else if (a0 == 249) {
+			int a1 = data[pos + 1] & 0xFF;
+			int a2 = data[pos + 2] & 0xFF;
+			return 2288 + 256 * a1 + a2;
+		} else {
+			int bytes = a0 - 250 + 3;
+			return readSignificantBits(data, pos + 1, bytes);
+		}
+	}
+
 	private static final int[] FIRST_TO_LENGTH = buildFirstToLength();
 
 	private static int[] buildFirstToLength() {
@@ -529,6 +581,15 @@ public final class Varint {
 		long value = (long) (bb.get(pos++) & 0xFF) << (bytes * 8);
 		while (bytes-- > 0) {
 			value |= (long) (bb.get(pos++) & 0xFF) << (bytes * 8);
+		}
+		return value;
+	}
+
+	private static long readSignificantBits(byte[] data, int pos, int bytes) {
+		bytes--;
+		long value = (long) (data[pos++] & 0xFF) << (bytes * 8);
+		while (bytes-- > 0) {
+			value |= (long) (data[pos++] & 0xFF) << (bytes * 8);
 		}
 		return value;
 	}

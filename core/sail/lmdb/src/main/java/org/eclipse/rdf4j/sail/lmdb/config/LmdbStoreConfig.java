@@ -13,6 +13,12 @@
 package org.eclipse.rdf4j.sail.lmdb.config;
 
 import java.time.Duration;
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.Locale;
+import java.util.Set;
+import java.util.StringTokenizer;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -22,11 +28,15 @@ import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.sail.base.config.BaseSailConfig;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  *
  */
 public class LmdbStoreConfig extends BaseSailConfig {
+	private static final Logger logger = LoggerFactory.getLogger(LmdbStoreConfig.class);
+	private static final AtomicBoolean LEGACY_STRATEGY_WARNING_LOGGED = new AtomicBoolean();
 	/**
 	 * The default size of the triple database.
 	 */
@@ -61,11 +71,22 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	public static final int OPTIMIZER_SAMPLING_MAX_ROWS = 4096;
 
+	public static final int SKETCH_ESTIMATOR_COLD_SYNOPSIS_MAX_CAPACITY = 6_144;
+
+	public static final long SKETCH_ESTIMATOR_MEMORY_BUDGET_BYTES = 256L * 1024L * 1024L;
+
+	private static final long SKETCH_ESTIMATOR_MIN_MEMORY_BUDGET_BYTES = 1024L * 1024L;
+
 	public static final long BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE = 10L;
 
 	public static final long SKETCH_ESTIMATOR_THROTTLE_EVERY_N = 1024L * 1024L;
 
 	public static final long SKETCH_ESTIMATOR_THROTTLE_MILLIS = 2L;
+
+	public static final int SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_COUNT = 16;
+
+	public static final int SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX = 7;
+	public static final int SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_MAX_ENTRIES = 1_000_000;
 
 	/**
 	 * The default namespace id cache size.
@@ -114,11 +135,24 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	private int sketchEstimatorContextBucketCount = -1;
 
+	private int sketchEstimatorOmniWitnessCohortBucketCount = -1;
+
+	private int sketchEstimatorOmniWitnessCohortBucketIndex = -1;
+	private int sketchEstimatorOmniWitnessCohortMaxEntries = -1;
+
 	private boolean sketchEstimatorContextPairSketchesEnabled = false;
 
 	private long sketchEstimatorThrottleEveryN = SKETCH_ESTIMATOR_THROTTLE_EVERY_N;
 
 	private long sketchEstimatorThrottleMillis = SKETCH_ESTIMATOR_THROTTLE_MILLIS;
+
+	private String sketchEstimatorStrategy = "unified";
+
+	private String sketchEstimatorEvidenceMode = "adaptive";
+
+	private int sketchEstimatorColdSynopsisCapacity;
+
+	private long sketchEstimatorMemoryBudgetBytes = SKETCH_ESTIMATOR_MEMORY_BUDGET_BYTES;
 
 	private boolean optimizerSamplingEnabled = true;
 
@@ -129,6 +163,12 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	private boolean backgroundRawSamplingEnabled = true;
 
 	private long backgroundRawSamplingMaxMillisPerCycle = BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE;
+
+	private boolean predicateGuaranteeIndexEnabled = true;
+
+	private boolean predicateGuaranteeIndexAutoRebuild = true;
+
+	private String predicateGuaranteeExcludedPredicates = "";
 
 	/*--------------*
 	 * Constructors *
@@ -344,6 +384,43 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	public int getSketchEstimatorOmniWitnessCohortBucketCount() {
+		return sketchEstimatorOmniWitnessCohortBucketCount >= 0 ? sketchEstimatorOmniWitnessCohortBucketCount
+				: SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_COUNT;
+	}
+
+	public LmdbStoreConfig setSketchEstimatorOmniWitnessCohortBucketCount(
+			int sketchEstimatorOmniWitnessCohortBucketCount) {
+		this.sketchEstimatorOmniWitnessCohortBucketCount = Math.max(0,
+				sketchEstimatorOmniWitnessCohortBucketCount);
+		if (this.sketchEstimatorOmniWitnessCohortBucketCount == 0) {
+			this.sketchEstimatorOmniWitnessCohortBucketIndex = 0;
+		}
+		return this;
+	}
+
+	public int getSketchEstimatorOmniWitnessCohortBucketIndex() {
+		return sketchEstimatorOmniWitnessCohortBucketIndex >= 0 ? sketchEstimatorOmniWitnessCohortBucketIndex
+				: SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX;
+	}
+
+	public LmdbStoreConfig setSketchEstimatorOmniWitnessCohortBucketIndex(
+			int sketchEstimatorOmniWitnessCohortBucketIndex) {
+		this.sketchEstimatorOmniWitnessCohortBucketIndex = getSketchEstimatorOmniWitnessCohortBucketCount() == 0 ? 0
+				: Math.max(0, sketchEstimatorOmniWitnessCohortBucketIndex);
+		return this;
+	}
+
+	public int getSketchEstimatorOmniWitnessCohortMaxEntries() {
+		return sketchEstimatorOmniWitnessCohortMaxEntries >= 1 ? sketchEstimatorOmniWitnessCohortMaxEntries
+				: SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_MAX_ENTRIES;
+	}
+
+	public LmdbStoreConfig setSketchEstimatorOmniWitnessCohortMaxEntries(int maxEntries) {
+		this.sketchEstimatorOmniWitnessCohortMaxEntries = Math.max(1, maxEntries);
+		return this;
+	}
+
 	public boolean getSketchEstimatorContextPairSketchesEnabled() {
 		return sketchEstimatorContextPairSketchesEnabled;
 	}
@@ -369,6 +446,46 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	public LmdbStoreConfig setSketchEstimatorThrottleMillis(long sketchEstimatorThrottleMillis) {
 		this.sketchEstimatorThrottleMillis = Math.max(0L, sketchEstimatorThrottleMillis);
+		return this;
+	}
+
+	public String getSketchEstimatorStrategy() {
+		return sketchEstimatorStrategy;
+	}
+
+	public LmdbStoreConfig setSketchEstimatorStrategy(String sketchEstimatorStrategy) {
+		this.sketchEstimatorStrategy = normalizeSketchEstimatorStrategy(sketchEstimatorStrategy);
+		return this;
+	}
+
+	public String getSketchEstimatorEvidenceMode() {
+		return sketchEstimatorEvidenceMode;
+	}
+
+	public LmdbStoreConfig setSketchEstimatorEvidenceMode(String sketchEstimatorEvidenceMode) {
+		this.sketchEstimatorEvidenceMode = normalizeSketchEstimatorEvidenceMode(sketchEstimatorEvidenceMode);
+		return this;
+	}
+
+	public int getSketchEstimatorColdSynopsisCapacity() {
+		return sketchEstimatorColdSynopsisCapacity;
+	}
+
+	public LmdbStoreConfig setSketchEstimatorColdSynopsisCapacity(int capacity) {
+		this.sketchEstimatorColdSynopsisCapacity = Math.clamp(capacity, 0,
+				SKETCH_ESTIMATOR_COLD_SYNOPSIS_MAX_CAPACITY);
+		return this;
+	}
+
+	public long getSketchEstimatorMemoryBudgetBytes() {
+		return sketchEstimatorMemoryBudgetBytes;
+	}
+
+	public LmdbStoreConfig setSketchEstimatorMemoryBudgetBytes(long memoryBudgetBytes) {
+		if (memoryBudgetBytes < SKETCH_ESTIMATOR_MIN_MEMORY_BUDGET_BYTES) {
+			throw new IllegalArgumentException("Sketch estimator memory budget must be at least one MiB");
+		}
+		this.sketchEstimatorMemoryBudgetBytes = memoryBudgetBytes;
 		return this;
 	}
 
@@ -415,6 +532,54 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	public LmdbStoreConfig setBackgroundRawSamplingMaxMillisPerCycle(long backgroundRawSamplingMaxMillisPerCycle) {
 		this.backgroundRawSamplingMaxMillisPerCycle = Math.max(0L, backgroundRawSamplingMaxMillisPerCycle);
 		return this;
+	}
+
+	public boolean getPredicateGuaranteeIndexEnabled() {
+		return predicateGuaranteeIndexEnabled;
+	}
+
+	public LmdbStoreConfig setPredicateGuaranteeIndexEnabled(boolean predicateGuaranteeIndexEnabled) {
+		this.predicateGuaranteeIndexEnabled = predicateGuaranteeIndexEnabled;
+		return this;
+	}
+
+	public boolean getPredicateGuaranteeIndexAutoRebuild() {
+		return predicateGuaranteeIndexAutoRebuild;
+	}
+
+	public LmdbStoreConfig setPredicateGuaranteeIndexAutoRebuild(boolean predicateGuaranteeIndexAutoRebuild) {
+		this.predicateGuaranteeIndexAutoRebuild = predicateGuaranteeIndexAutoRebuild;
+		return this;
+	}
+
+	public String getPredicateGuaranteeExcludedPredicates() {
+		return predicateGuaranteeExcludedPredicates;
+	}
+
+	public LmdbStoreConfig setPredicateGuaranteeExcludedPredicates(String predicateGuaranteeExcludedPredicates) {
+		this.predicateGuaranteeExcludedPredicates = predicateGuaranteeExcludedPredicates == null
+				? ""
+				: predicateGuaranteeExcludedPredicates.trim();
+		return this;
+	}
+
+	public Set<String> getPredicateGuaranteeExcludedPredicateSet() {
+		if (predicateGuaranteeExcludedPredicates.isEmpty()) {
+			return Collections.emptySet();
+		}
+		Set<String> excludedPredicates = new LinkedHashSet<>();
+		StringTokenizer tokenizer = new StringTokenizer(predicateGuaranteeExcludedPredicates, ", \t\r\n");
+		while (tokenizer.hasMoreTokens()) {
+			String predicate = tokenizer.nextToken().trim();
+			if (predicate.length() > 1 && predicate.charAt(0) == '<'
+					&& predicate.charAt(predicate.length() - 1) == '>') {
+				predicate = predicate.substring(1, predicate.length() - 1);
+			}
+			if (!predicate.isEmpty()) {
+				excludedPredicates.add(predicate);
+			}
+		}
+		return Collections.unmodifiableSet(excludedPredicates);
 	}
 
 	@Override
@@ -490,6 +655,18 @@ public class LmdbStoreConfig extends BaseSailConfig {
 			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_CONTEXT_BUCKET_COUNT,
 					vf.createLiteral(sketchEstimatorContextBucketCount));
 		}
+		if (sketchEstimatorOmniWitnessCohortBucketCount >= 0) {
+			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_COUNT,
+					vf.createLiteral(sketchEstimatorOmniWitnessCohortBucketCount));
+		}
+		if (sketchEstimatorOmniWitnessCohortBucketIndex >= 0) {
+			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX,
+					vf.createLiteral(sketchEstimatorOmniWitnessCohortBucketIndex));
+		}
+		if (sketchEstimatorOmniWitnessCohortMaxEntries >= 1) {
+			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_MAX_ENTRIES,
+					vf.createLiteral(sketchEstimatorOmniWitnessCohortMaxEntries));
+		}
 		if (sketchEstimatorContextPairSketchesEnabled) {
 			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED,
 					vf.createLiteral(true));
@@ -501,6 +678,21 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (sketchEstimatorThrottleMillis != SKETCH_ESTIMATOR_THROTTLE_MILLIS) {
 			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_THROTTLE_MILLIS,
 					vf.createLiteral(sketchEstimatorThrottleMillis));
+		}
+		if (!"unified".equals(sketchEstimatorStrategy)) {
+			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_STRATEGY, vf.createLiteral(sketchEstimatorStrategy));
+		}
+		if (!"adaptive".equals(sketchEstimatorEvidenceMode)) {
+			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_EVIDENCE_MODE,
+					vf.createLiteral(sketchEstimatorEvidenceMode));
+		}
+		if (sketchEstimatorColdSynopsisCapacity > 0) {
+			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_COLD_SYNOPSIS_CAPACITY,
+					vf.createLiteral(sketchEstimatorColdSynopsisCapacity));
+		}
+		if (sketchEstimatorMemoryBudgetBytes != SKETCH_ESTIMATOR_MEMORY_BUDGET_BYTES) {
+			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_MEMORY_BUDGET_BYTES,
+					vf.createLiteral(sketchEstimatorMemoryBudgetBytes));
 		}
 		if (!optimizerSamplingEnabled) {
 			m.add(implNode, LmdbStoreSchema.OPTIMIZER_SAMPLING_ENABLED, vf.createLiteral(false));
@@ -518,6 +710,16 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (backgroundRawSamplingMaxMillisPerCycle != BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE) {
 			m.add(implNode, LmdbStoreSchema.BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE,
 					vf.createLiteral(backgroundRawSamplingMaxMillisPerCycle));
+		}
+		if (!predicateGuaranteeIndexEnabled) {
+			m.add(implNode, LmdbStoreSchema.PREDICATE_GUARANTEE_INDEX_ENABLED, vf.createLiteral(false));
+		}
+		if (!predicateGuaranteeIndexAutoRebuild) {
+			m.add(implNode, LmdbStoreSchema.PREDICATE_GUARANTEE_INDEX_AUTO_REBUILD, vf.createLiteral(false));
+		}
+		if (!predicateGuaranteeExcludedPredicates.isEmpty()) {
+			m.add(implNode, LmdbStoreSchema.PREDICATE_GUARANTEE_EXCLUDED_PREDICATES,
+					vf.createLiteral(predicateGuaranteeExcludedPredicates));
 		}
 		return implNode;
 	}
@@ -709,6 +911,21 @@ public class LmdbStoreConfig extends BaseSailConfig {
 							LmdbStoreSchema.SKETCH_ESTIMATOR_CONTEXT_BUCKET_COUNT)));
 
 			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_COUNT, null))
+					.ifPresent(lit -> setSketchEstimatorOmniWitnessCohortBucketCount(parseInt(lit,
+							LmdbStoreSchema.SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_COUNT)));
+
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX, null))
+					.ifPresent(lit -> setSketchEstimatorOmniWitnessCohortBucketIndex(parseInt(lit,
+							LmdbStoreSchema.SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX)));
+
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_MAX_ENTRIES, null))
+					.ifPresent(lit -> setSketchEstimatorOmniWitnessCohortMaxEntries(parseInt(lit,
+							LmdbStoreSchema.SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_MAX_ENTRIES)));
+
+			Models.objectLiteral(m.getStatements(implNode,
 					LmdbStoreSchema.SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED, null))
 					.ifPresent(lit -> {
 						try {
@@ -728,6 +945,22 @@ public class LmdbStoreConfig extends BaseSailConfig {
 			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_THROTTLE_MILLIS, null))
 					.ifPresent(lit -> setSketchEstimatorThrottleMillis(parseLong(lit,
 							LmdbStoreSchema.SKETCH_ESTIMATOR_THROTTLE_MILLIS)));
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_STRATEGY, null))
+					.ifPresent(lit -> setSketchEstimatorStrategy(lit.getLabel()));
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_EVIDENCE_MODE, null))
+					.ifPresent(lit -> setSketchEstimatorEvidenceMode(lit.getLabel()));
+
+			Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_COLD_SYNOPSIS_CAPACITY, null))
+					.ifPresent(lit -> setSketchEstimatorColdSynopsisCapacity(parseInt(lit,
+							LmdbStoreSchema.SKETCH_ESTIMATOR_COLD_SYNOPSIS_CAPACITY)));
+
+			Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_MEMORY_BUDGET_BYTES, null))
+					.ifPresent(lit -> setSketchEstimatorMemoryBudgetBytes(parseLong(lit,
+							LmdbStoreSchema.SKETCH_ESTIMATOR_MEMORY_BUDGET_BYTES)));
 
 			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.OPTIMIZER_SAMPLING_ENABLED, null))
 					.ifPresent(lit -> {
@@ -763,6 +996,35 @@ public class LmdbStoreConfig extends BaseSailConfig {
 					m.getStatements(implNode, LmdbStoreSchema.BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE, null))
 					.ifPresent(lit -> setBackgroundRawSamplingMaxMillisPerCycle(parseLong(lit,
 							LmdbStoreSchema.BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE)));
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.PREDICATE_GUARANTEE_INDEX_ENABLED, null))
+					.ifPresent(lit -> {
+						try {
+							setPredicateGuaranteeIndexEnabled(lit.booleanValue());
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException(
+									"Boolean value required for "
+											+ LmdbStoreSchema.PREDICATE_GUARANTEE_INDEX_ENABLED
+											+ " property, found " + lit);
+						}
+					});
+
+			Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.PREDICATE_GUARANTEE_INDEX_AUTO_REBUILD, null))
+					.ifPresent(lit -> {
+						try {
+							setPredicateGuaranteeIndexAutoRebuild(lit.booleanValue());
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException(
+									"Boolean value required for "
+											+ LmdbStoreSchema.PREDICATE_GUARANTEE_INDEX_AUTO_REBUILD
+											+ " property, found " + lit);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.PREDICATE_GUARANTEE_EXCLUDED_PREDICATES, null))
+					.ifPresent(lit -> setPredicateGuaranteeExcludedPredicates(lit.getLabel()));
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}
@@ -782,5 +1044,42 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		} catch (NumberFormatException e) {
 			throw new SailConfigException("Long value required for " + property + " property, found " + lit);
 		}
+	}
+
+	private static String normalizeSketchEstimatorStrategy(String value) {
+		if (value == null) {
+			throw new SailConfigException("Sketch estimator strategy value required, found null");
+		}
+		String normalized = value.trim()
+				.replace("-", "")
+				.replace("_", "")
+				.toLowerCase(Locale.ROOT);
+		return switch (normalized) {
+		case "unified" -> "unified";
+		case "omni", "fastagms", "tuple", "joinsketch", "countmin", "countmindual" -> {
+			if (LEGACY_STRATEGY_WARNING_LOGGED.compareAndSet(false, true)) {
+				logger.warn("Legacy LMDB sketch estimator strategies are deprecated; using the unified estimator");
+			}
+			yield "unified";
+		}
+		default -> throw new SailConfigException(
+				"Sketch estimator strategy value required: unified; found " + value);
+		};
+	}
+
+	private static String normalizeSketchEstimatorEvidenceMode(String value) {
+		if (value == null) {
+			throw new SailConfigException("Sketch estimator evidence mode value required, found null");
+		}
+		String normalized = value.trim()
+				.replace("-", "")
+				.replace("_", "")
+				.toLowerCase(Locale.ROOT);
+		return switch (normalized) {
+		case "snapshotonly" -> "snapshot-only";
+		case "adaptive" -> "adaptive";
+		default -> throw new SailConfigException(
+				"Sketch estimator evidence mode value required: snapshot-only or adaptive; found " + value);
+		};
 	}
 }

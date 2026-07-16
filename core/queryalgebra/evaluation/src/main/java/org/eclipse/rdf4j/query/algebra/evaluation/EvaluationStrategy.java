@@ -43,7 +43,7 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 * @param serviceUrl URL of the service.
 	 * @return the {@link FederatedService} registered for the serviceUrl.
 	 * @throws QueryEvaluationException
-	 * @see org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver#getService(java.lang.String)
+	 * @see FederatedServiceResolver#getService(String)
 	 */
 	@Override
 	FederatedService getService(String serviceUrl) throws QueryEvaluationException;

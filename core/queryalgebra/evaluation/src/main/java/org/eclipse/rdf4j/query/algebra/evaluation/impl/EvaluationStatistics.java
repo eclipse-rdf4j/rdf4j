@@ -33,6 +33,8 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ZeroLengthPathIteration;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 
@@ -57,6 +59,8 @@ public class EvaluationStatistics {
 			sb.append(i);
 		}
 	}
+
+	private static final String COST_FEEDBACK_PLANNED_REPEATED_INVOCATIONS = "plannedRepeatedInvocations";
 
 	private CardinalityCalculator calculator;
 
@@ -102,6 +106,128 @@ public class EvaluationStatistics {
 
 	public void recordFilterOutcome(Filter filter, long passedCount, long filteredCount) {
 		// no-op by default
+	}
+
+	public void recordOperatorOutcome(QueryModelNode node) {
+		// no-op by default
+	}
+
+	/**
+	 * Returns whether the evaluation strategy should attach the lightweight learned-cost feedback iterator to this
+	 * node. Implementations should keep this predicate cheap; it is evaluated during query precompilation.
+	 */
+	public boolean shouldTrackCostFeedback(QueryModelNode node) {
+		return node != null && node.isCostFeedbackTrackingEnabled();
+	}
+
+	/**
+	 * Calculates a cheap actual work-row proxy for learned operator feedback. The default deliberately avoids timing
+	 * and per-row allocation: it takes the maximum of output rows, join-side rows consumed, and source rows
+	 * scanned/matched. Store-specific statistics can interpret operator-specific counters more precisely before
+	 * recording feedback.
+	 */
+	public double costFeedbackActualWorkRows(QueryModelNode node) {
+		if (node == null) {
+			return Double.NaN;
+		}
+		double existing = node.getCostFeedbackActualWorkRows();
+		if (isFiniteNonNegative(existing)) {
+			return existing;
+		}
+		double rows = finiteOr(node.getCostFeedbackActualRows(), node.getResultSizeActual());
+		double joinWork = sumFinite(node.getJoinLeftBindingsConsumedActual(),
+				node.getJoinRightBindingsConsumedActual());
+		double sourceWork = maxFinite(node.getSourceRowsScannedActual(), node.getSourceRowsMatchedActual(),
+				node.getSourceRowsFilteredActual());
+		double pathWork = pathActualWorkRows(node, rows);
+		return maxFinite(rows, joinWork, sourceWork, pathWork);
+	}
+
+	private static double pathActualWorkRows(QueryModelNode node, double rows) {
+		if (node instanceof ArbitraryLengthPath) {
+			return maxFinite(rows,
+					longMetricActual(node, PathIteration.PATH_CANDIDATE_ROWS_ACTUAL),
+					longMetricActual(node, PathIteration.PATH_QUEUE_ENQUEUE_ROWS_ACTUAL),
+					longMetricActual(node, PathIteration.PATH_EXPANSION_ITERATIONS_ACTUAL),
+					longMetricActual(node, PathIteration.PATH_RETURNED_ROWS_ACTUAL));
+		}
+		if (node instanceof ZeroLengthPath) {
+			return maxFinite(rows, longMetricActual(node, ZeroLengthPathIteration.ZERO_LENGTH_CANDIDATE_ROWS_ACTUAL));
+		}
+		return Double.NaN;
+	}
+
+	private static double longMetricActual(QueryModelNode node, String metricName) {
+		long value = node == null ? -1L : node.getLongMetricActual(metricName);
+		return value >= 0L ? value : Double.NaN;
+	}
+
+	/**
+	 * Decides whether a lightweight operator observation should be reported to learned optimizer feedback. Reporting is
+	 * gated by completion and by a q-error threshold over expected-vs-actual rows/work, which keeps the always-on LMDB
+	 * path quiet when estimates are already close.
+	 */
+	public boolean shouldReportCostFeedback(QueryModelNode node) {
+		if (node == null || !node.isCostFeedbackTrackingEnabled() || !node.isCostFeedbackCompletedActual()) {
+			return false;
+		}
+		double plannedRepeatedInvocations = node.getDoubleMetricPlanned(COST_FEEDBACK_PLANNED_REPEATED_INVOCATIONS);
+		if (isFiniteNonNegative(plannedRepeatedInvocations) && plannedRepeatedInvocations > 1.0d
+				&& node.getCostFeedbackCloseCountActual() < Math.max(1L, Math.round(plannedRepeatedInvocations))) {
+			return false;
+		}
+		double threshold = node.getCostFeedbackReportQErrorThreshold();
+		if (!Double.isFinite(threshold) || threshold < 1.0d) {
+			threshold = 4.0d;
+		}
+		double expectedRows = finiteOr(node.getCostFeedbackExpectedRows(), node.getResultSizeEstimate());
+		double expectedWorkRows = finiteOr(node.getCostFeedbackExpectedWorkRows(), node.getCostEstimate());
+		double actualRows = finiteOr(node.getCostFeedbackActualRows(), node.getResultSizeActual());
+		double actualWorkRows = finiteOr(node.getCostFeedbackActualWorkRows(), costFeedbackActualWorkRows(node));
+		return qError(actualRows, expectedRows) >= threshold || qError(actualWorkRows, expectedWorkRows) >= threshold;
+	}
+
+	private static double finiteOr(double preferred, double fallback) {
+		return isFiniteNonNegative(preferred) ? preferred : fallback;
+	}
+
+	private static double sumFinite(double left, double right) {
+		boolean hasLeft = isFiniteNonNegative(left);
+		boolean hasRight = isFiniteNonNegative(right);
+		if (!hasLeft && !hasRight) {
+			return Double.NaN;
+		}
+		return (hasLeft ? left : 0.0d) + (hasRight ? right : 0.0d);
+	}
+
+	private static double maxFinite(double first, double... rest) {
+		double max = isFiniteNonNegative(first) ? first : Double.NaN;
+		if (rest == null) {
+			return max;
+		}
+		for (double value : rest) {
+			if (isFiniteNonNegative(value)) {
+				max = isFiniteNonNegative(max) ? Math.max(max, value) : value;
+			}
+		}
+		return max;
+	}
+
+	private static double qError(double actualRows, double estimatedRows) {
+		if (!isFiniteNonNegative(actualRows) || !isFiniteNonNegative(estimatedRows)) {
+			return Double.NaN;
+		}
+		if (actualRows == 0.0d && estimatedRows == 0.0d) {
+			return 1.0d;
+		}
+		if (actualRows == 0.0d || estimatedRows == 0.0d) {
+			return Double.POSITIVE_INFINITY;
+		}
+		return Math.max(actualRows / estimatedRows, estimatedRows / actualRows);
+	}
+
+	private static boolean isFiniteNonNegative(double value) {
+		return Double.isFinite(value) && value >= 0.0d;
 	}
 
 	public static final class FilterPassEstimate {

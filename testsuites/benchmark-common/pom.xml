@@ -4,7 +4,7 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-testsuites</artifactId>
-		<version>6.0.0-SNAPSHOT</version>
+		<version>6.1.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-benchmark-common</artifactId>
 	<name>RDF4J: benchmarks</name>
@@ -63,6 +63,12 @@
 			<groupId>org.eclipse.rdf4j</groupId>
 			<artifactId>rdf4j-queryparser-sparql</artifactId>
 			<version>${project.version}</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.jena</groupId>
+			<artifactId>jena-arq</artifactId>
+			<version>6.1.0</version>
 			<scope>test</scope>
 		</dependency>
 		<dependency>

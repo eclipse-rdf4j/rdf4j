@@ -27,7 +27,6 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
@@ -35,8 +34,10 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -46,19 +47,37 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
 final class LmdbDeferredFilterPlacer {
 
 	private static final int MAX_MATERIALIZED_BINDING_WINDOW_ROWS = 64;
 	private static final double CORRELATED_ANTI_PROBE_SELECTIVE_FILTER_MAX_PASS_RATIO = 0.50d;
-	private final LmdbUnionFilterDistributor.BranchOptimizer factorOptimizer;
-	private final LmdbUnionFilterDistributor.JoinFactory joinFactory;
-	private final LmdbUnionFilterDistributor.FilterWrapper filterWrapper;
 
-	LmdbDeferredFilterPlacer(LmdbUnionFilterDistributor.BranchOptimizer factorOptimizer,
-			LmdbUnionFilterDistributor.JoinFactory joinFactory,
-			LmdbUnionFilterDistributor.FilterWrapper filterWrapper) {
+	enum JoinTreeShape {
+		LEFT_DEEP,
+		RIGHT_DEEP,
+		BUSHY
+	}
+
+	interface BranchOptimizer {
+		TupleExpr optimize(TupleExpr tupleExpr, Set<String> boundVars);
+	}
+
+	interface JoinFactory {
+		Join create(TupleExpr left, TupleExpr right);
+	}
+
+	interface FilterWrapper {
+		TupleExpr wrap(TupleExpr root, List<DeferredFilter> filters, String placement);
+	}
+
+	private final BranchOptimizer factorOptimizer;
+	private final JoinFactory joinFactory;
+	private final FilterWrapper filterWrapper;
+
+	LmdbDeferredFilterPlacer(BranchOptimizer factorOptimizer, JoinFactory joinFactory, FilterWrapper filterWrapper) {
 		this.factorOptimizer = factorOptimizer;
 		this.joinFactory = joinFactory;
 		this.filterWrapper = filterWrapper;
@@ -71,11 +90,18 @@ final class LmdbDeferredFilterPlacer {
 
 	TupleExpr buildSegmentRoot(Deque<TupleExpr> orderedArgs, List<DeferredFilter> filters,
 			Set<String> boundBeforeSegment, Map<Integer, Integer> filterPlacementSteps) {
-		return buildSegmentRoot(orderedArgs, filters, boundBeforeSegment, filterPlacementSteps, false);
+		return buildSegmentRoot(orderedArgs, filters, boundBeforeSegment, filterPlacementSteps,
+				JoinTreeShape.LEFT_DEEP);
 	}
 
 	TupleExpr buildSegmentRoot(Deque<TupleExpr> orderedArgs, List<DeferredFilter> filters,
 			Set<String> boundBeforeSegment, Map<Integer, Integer> filterPlacementSteps, boolean rightDeepJoinTree) {
+		return buildSegmentRoot(orderedArgs, filters, boundBeforeSegment, filterPlacementSteps,
+				rightDeepJoinTree ? JoinTreeShape.RIGHT_DEEP : JoinTreeShape.LEFT_DEEP);
+	}
+
+	TupleExpr buildSegmentRoot(Deque<TupleExpr> orderedArgs, List<DeferredFilter> filters,
+			Set<String> boundBeforeSegment, Map<Integer, Integer> filterPlacementSteps, JoinTreeShape joinTreeShape) {
 		if (orderedArgs.isEmpty()) {
 			return null;
 		}
@@ -118,7 +144,7 @@ final class LmdbDeferredFilterPlacer {
 		for (SegmentFactor factor : factors) {
 			roots.addLast(factor.tupleExpr);
 		}
-		TupleExpr root = buildJoinRoot(roots, rightDeepJoinTree);
+		TupleExpr root = buildJoinRoot(roots, joinTreeShape);
 		for (DeferredFilter filter : unresolvedFilters) {
 			root = filterWrapper.wrap(root, List.of(filter), "root");
 		}
@@ -246,8 +272,7 @@ final class LmdbDeferredFilterPlacer {
 		if (prefixFilters.isEmpty()) {
 			return tupleExpr;
 		}
-		TupleExpr filtered = tupleExpr;
-		return filterWrapper.wrap(filtered, prefixFilters, "bindingPrefix");
+		return filterWrapper.wrap(tupleExpr, prefixFilters, "bindingPrefix");
 	}
 
 	private void updateFinitePrefixBindingNames(Set<String> finitePrefixBindingNames, TupleExpr tupleExpr) {
@@ -354,8 +379,13 @@ final class LmdbDeferredFilterPlacer {
 
 	private int smallestSuffixStartForRequiredVars(List<SegmentFactor> factors, Set<String> requiredVars,
 			Set<String> boundBeforeSegment) {
+		return smallestSuffixStartForRequiredVars(factors, factors.size() - 1, requiredVars, boundBeforeSegment);
+	}
+
+	private int smallestSuffixStartForRequiredVars(List<SegmentFactor> factors, int endIndex,
+			Set<String> requiredVars, Set<String> boundBeforeSegment) {
 		Set<String> availableNames = new HashSet<>(boundBeforeSegment);
-		for (int i = factors.size() - 1; i >= 0; i--) {
+		for (int i = Math.min(endIndex, factors.size() - 1); i >= 0; i--) {
 			availableNames.addAll(factors.get(i).bindingNames);
 			if (availableNames.containsAll(requiredVars)) {
 				return i;
@@ -382,6 +412,18 @@ final class LmdbDeferredFilterPlacer {
 				&& !prefixBindingNames.containsAll(conditionBindingNames)
 				&& containsAllInUnion(prefixBindingNames, assignmentBindingNames, conditionBindingNames)
 				&& !Collections.disjoint(assignmentBindingNames, conditionBindingNames)
+				&& canApplySplitPrefixFilter(deferredFilter, assignmentBindingNames, conditionBindingNames);
+	}
+
+	private boolean canApplySplitBindingPrefixFilter(DeferredFilter deferredFilter, Set<String> prefixBindingNames,
+			Set<String> assignmentBindingNames, Set<String> conditionBindingNames) {
+		return !conditionBindingNames.isEmpty()
+				&& (deferredFilter.conditionCost > JoinOrderPlanner.FILTER_COST_CHEAP
+						|| !Collections.disjoint(prefixBindingNames, conditionBindingNames))
+				&& !prefixBindingNames.containsAll(conditionBindingNames)
+				&& containsAllInUnion(prefixBindingNames, assignmentBindingNames, conditionBindingNames)
+				&& !Collections.disjoint(assignmentBindingNames, conditionBindingNames)
+				&& !assignmentBindingNames.containsAll(conditionBindingNames)
 				&& canApplySplitPrefixFilter(deferredFilter, assignmentBindingNames, conditionBindingNames);
 	}
 
@@ -517,7 +559,7 @@ final class LmdbDeferredFilterPlacer {
 		}
 		StatementPattern pattern = factor.containedPatterns.iterator()
 				.next();
-		return isSubjectTypeGuardForRequiredBinding(pattern, filter.requiredVars) || isExactDirectLookup(pattern);
+		return isExactDirectLookup(pattern);
 	}
 
 	private Set<String> plannerBindingNames(Set<String> bindingNames) {
@@ -527,20 +569,6 @@ final class LmdbDeferredFilterPlacer {
 		Set<String> plannerNames = new HashSet<>();
 		addPlannerBindingNames(plannerNames, bindingNames);
 		return plannerNames;
-	}
-
-	private boolean isSubjectTypeGuardForRequiredBinding(StatementPattern statementPattern, Set<String> requiredVars) {
-		Var subject = statementPattern.getSubjectVar();
-		Var predicate = statementPattern.getPredicateVar();
-		Var object = statementPattern.getObjectVar();
-		return subject != null
-				&& !subject.hasValue()
-				&& requiredVars.contains(subject.getName())
-				&& predicate != null
-				&& predicate.hasValue()
-				&& RDF.TYPE.equals(predicate.getValue())
-				&& object != null
-				&& object.hasValue();
 	}
 
 	private boolean isExactDirectLookup(StatementPattern statementPattern) {
@@ -604,7 +632,119 @@ final class LmdbDeferredFilterPlacer {
 		while (end + 1 < factors.size() && isCheapLocalFilterForCorrelatedFilter(factors.get(end + 1), filter)) {
 			end++;
 		}
+		if (isNonSelectiveCorrelatedExistsFilter(filter)) {
+			end = expandCorrelatedExistsWindowOverFiniteAnchorLookups(factors, filter, end);
+			end = expandCorrelatedExistsWindowOverBridgeFactors(factors, filter, end);
+		}
 		return end;
+	}
+
+	private int expandCorrelatedExistsWindowOverFiniteAnchorLookups(List<SegmentFactor> factors, DeferredFilter filter,
+			int targetIndex) {
+		Set<String> reachedNames = plannerBindingNames(filter.requiredVars);
+		if (reachedNames.isEmpty()) {
+			return targetIndex;
+		}
+		int end = targetIndex;
+		for (int i = targetIndex + 1; i < factors.size();) {
+			FiniteAnchorRun anchorRun = finiteAnchorRun(factors, i);
+			if (anchorRun == null) {
+				break;
+			}
+			int lookupIndex = anchorRun.endIndex + 1;
+			if (lookupIndex >= factors.size()
+					|| !isLookupJoinedByFiniteAnchorAndCorrelation(factors.get(lookupIndex), reachedNames,
+							anchorRun.bindingNames)) {
+				break;
+			}
+			end = lookupIndex;
+			reachedNames.addAll(anchorRun.bindingNames);
+			reachedNames.addAll(plannerBindingNames(factors.get(lookupIndex).bindingNames));
+			i = lookupIndex + 1;
+		}
+		return end;
+	}
+
+	private FiniteAnchorRun finiteAnchorRun(List<SegmentFactor> factors, int startIndex) {
+		Set<String> bindingNames = new HashSet<>();
+		int endIndex = startIndex;
+		for (int i = startIndex; i < factors.size(); i++) {
+			SegmentFactor factor = factors.get(i);
+			if (!LmdbJoinPlanSupport.isBindingOnlyFactor(factor) || containsExistsFilter(factor.tupleExpr)) {
+				break;
+			}
+			Set<String> factorNames = plannerBindingNames(factor.bindingNames);
+			if (factorNames.isEmpty()) {
+				break;
+			}
+			bindingNames.addAll(factorNames);
+			endIndex = i;
+		}
+		return bindingNames.isEmpty() ? null : new FiniteAnchorRun(endIndex, bindingNames);
+	}
+
+	private boolean isLookupJoinedByFiniteAnchorAndCorrelation(SegmentFactor factor, Set<String> reachedNames,
+			Set<String> finiteAnchorNames) {
+		Set<String> factorNames = plannerBindingNames(factor.bindingNames);
+		if (factorNames.isEmpty()
+				|| Collections.disjoint(factorNames, reachedNames)
+				|| Collections.disjoint(factorNames, finiteAnchorNames)
+				|| factor.containedPatterns.size() != 1) {
+			return false;
+		}
+		Set<String> boundNames = new HashSet<>(reachedNames);
+		boundNames.addAll(finiteAnchorNames);
+		StatementPattern pattern = factor.containedPatterns.iterator()
+				.next();
+		return LmdbJoinPlanSupport.isBoundLookupPattern(pattern, boundNames);
+	}
+
+	private int expandCorrelatedExistsWindowOverBridgeFactors(List<SegmentFactor> factors, DeferredFilter filter,
+			int targetIndex) {
+		Set<String> requiredNames = plannerBindingNames(filter.requiredVars);
+		if (requiredNames.size() < 2) {
+			return targetIndex;
+		}
+		Set<String> reachedNames = new HashSet<>(requiredNames);
+		boolean introducedBridgeName = false;
+		int end = targetIndex;
+		for (int i = targetIndex + 1; i < factors.size(); i++) {
+			Set<String> factorNames = plannerBindingNames(factors.get(i).bindingNames);
+			if (factorNames.isEmpty() || Collections.disjoint(factorNames, reachedNames)) {
+				break;
+			}
+			Set<String> reachedNonRequiredNames = new HashSet<>(reachedNames);
+			reachedNonRequiredNames.removeAll(requiredNames);
+			boolean sharesRequiredName = !Collections.disjoint(factorNames, requiredNames);
+			boolean sharesBridgeName = !Collections.disjoint(factorNames, reachedNonRequiredNames);
+			Set<String> introducedNames = new HashSet<>(factorNames);
+			introducedNames.removeAll(reachedNames);
+			if (!introducedBridgeName && introducedNames.isEmpty()) {
+				break;
+			}
+			end = i;
+			if (!introducedNames.isEmpty()) {
+				introducedBridgeName = true;
+				reachedNames.addAll(introducedNames);
+			}
+			if (introducedBridgeName && sharesRequiredName && sharesBridgeName) {
+				break;
+			}
+			reachedNames.addAll(factorNames);
+		}
+		return end;
+	}
+
+	private boolean isNonSelectiveCorrelatedExistsFilter(DeferredFilter filter) {
+		if (!isCorrelatedExistsFilter(filter)) {
+			return false;
+		}
+		double passRatio = filter.passEstimate()
+				.getPlanningPassRatio();
+		return !LmdbJoinPlanSupport.isValidPassRatio(passRatio) || passRatio >= 0.95d;
+	}
+
+	private record FiniteAnchorRun(int endIndex, Set<String> bindingNames) {
 	}
 
 	private int expandCorrelatedNotExistsWindowOverSelectiveLocalFilters(List<SegmentFactor> factors,
@@ -703,6 +843,10 @@ final class LmdbDeferredFilterPlacer {
 		if (window == null) {
 			return false;
 		}
+		Set<String> selectedBindingNames = selectedBindingNames(factors, window);
+		if (!selectedBindingNames.containsAll(conditionBindingNames(deferredFilter))) {
+			return false;
+		}
 		boolean bindingOnlySpan = isBindingOnlySpan(factors, window.startIndex, window.endIndex);
 		boolean containsExists = LmdbJoinPlanSupport.containsExists(deferredFilter.condition);
 		if (containsExists && !bindingAssignmentWindowBindsOnlyRequiredVars(factors, window, deferredFilter)) {
@@ -729,9 +873,8 @@ final class LmdbDeferredFilterPlacer {
 			firstFactorOrder = Math.min(firstFactorOrder, factor.firstFactorOrder);
 			lastFactorOrder = Math.max(lastFactorOrder, factor.lastFactorOrder);
 		}
-		TupleExpr filteredRoot = materializeFiniteBindingWindow(selectedRoots, List.of(deferredFilter))
-				.orElseGet(() -> filterWrapper.wrap(buildJoinRoot(selectedRoots), List.of(deferredFilter),
-						"bindingAssignments"));
+		TupleExpr filteredRoot = materializeFiniteBindingWindowOrWrap(selectedRoots, List.of(deferredFilter),
+				"bindingAssignments");
 		SegmentFactor groupedFactor = new SegmentFactor(filteredRoot, containedPatterns, firstFactorOrder,
 				lastFactorOrder);
 		int insertionIndex = window.startIndex;
@@ -740,6 +883,14 @@ final class LmdbDeferredFilterPlacer {
 		}
 		factors.add(insertionIndex, groupedFactor);
 		return true;
+	}
+
+	private Set<String> selectedBindingNames(List<SegmentFactor> factors, BindingAssignmentWindow window) {
+		Set<String> bindingNames = new HashSet<>();
+		for (Integer selectedIndex : window.selectedIndexes) {
+			bindingNames.addAll(factors.get(selectedIndex.intValue()).bindingNames);
+		}
+		return bindingNames;
 	}
 
 	private boolean groupDeferredFilterOnBindingPrefix(List<SegmentFactor> factors,
@@ -763,6 +914,16 @@ final class LmdbDeferredFilterPlacer {
 					factors.set(i, new SegmentFactor(filteredRoot, factor.containedPatterns, factor.firstFactorOrder,
 							factor.lastFactorOrder));
 					return true;
+				}
+				if (canApplySplitBindingPrefixFilter(deferredFilter, prefixBindingNames, assignmentBindingNames,
+						conditionBindingNames)) {
+					int startIndex = smallestSuffixStartForRequiredVars(factors, i, conditionBindingNames,
+							boundBeforeSegment);
+					if (startIndex >= 0) {
+						groupDeferredFiltersOnWindow(factors, List.of(deferredFilter), new int[] { startIndex, i },
+								"bindingPrefix");
+						return true;
+					}
 				}
 			}
 			addPrefixVisibleBindingNames(prefixBindingNames, factor);
@@ -898,8 +1059,7 @@ final class LmdbDeferredFilterPlacer {
 			windowRoots.addLast(factor.tupleExpr);
 			containedPatterns.addAll(factor.containedPatterns);
 		}
-		TupleExpr filteredRoot = materializeFiniteBindingWindow(windowRoots, filters)
-				.orElseGet(() -> filterWrapper.wrap(buildJoinRoot(windowRoots), filters, placement));
+		TupleExpr filteredRoot = materializeFiniteBindingWindowOrWrap(windowRoots, filters, placement);
 		for (int i = window[1]; i >= window[0]; i--) {
 			factors.remove(i);
 		}
@@ -907,17 +1067,33 @@ final class LmdbDeferredFilterPlacer {
 		return true;
 	}
 
+	private TupleExpr materializeFiniteBindingWindowOrWrap(Deque<TupleExpr> roots, List<DeferredFilter> filters,
+			String placement) {
+		Optional<TupleExpr> materialized = materializeFiniteBindingWindow(roots, filters);
+		if (materialized.isPresent()) {
+			for (DeferredFilter filter : filters) {
+				filter.applied = true;
+			}
+			return materialized.get();
+		}
+		return filterWrapper.wrap(buildJoinRoot(roots), filters, placement);
+	}
+
 	private Optional<TupleExpr> materializeFiniteBindingWindow(Deque<TupleExpr> roots, List<DeferredFilter> filters) {
 		if (roots.isEmpty() || filters.isEmpty()) {
 			return Optional.empty();
 		}
 
+		for (TupleExpr root : roots) {
+			if (!(root instanceof BindingSetAssignment)) {
+				return Optional.empty();
+			}
+		}
+
 		List<BindingSetAssignment> assignments = new ArrayList<>(roots.size());
 		LinkedHashSet<String> bindingNames = new LinkedHashSet<>();
 		for (TupleExpr root : roots) {
-			if (!(root instanceof BindingSetAssignment assignment)) {
-				return Optional.empty();
-			}
+			BindingSetAssignment assignment = (BindingSetAssignment) root;
 			assignments.add(assignment);
 			bindingNames.addAll(assignment.getAssuredBindingNames());
 		}
@@ -938,7 +1114,7 @@ final class LmdbDeferredFilterPlacer {
 		}
 
 		List<BindingSet> rows = new ArrayList<>(1);
-		rows.add(new MapBindingSet(0));
+		rows.add(EmptyBindingSet.getInstance());
 		List<DeferredFilter> pendingFilters = new ArrayList<>(filters);
 		Set<String> availableNames = new HashSet<>();
 		for (BindingSetAssignment assignment : assignments) {
@@ -969,7 +1145,22 @@ final class LmdbDeferredFilterPlacer {
 		BindingSetAssignment materialized = new BindingSetAssignment();
 		materialized.setBindingNames(bindingNames);
 		materialized.setBindingSets(rows);
+		copyPlannedMetrics(assignments, materialized);
 		return Optional.of(materialized);
+	}
+
+	private void copyPlannedMetrics(List<BindingSetAssignment> assignments, BindingSetAssignment materialized) {
+		for (BindingSetAssignment assignment : assignments) {
+			for (Map.Entry<String, String> entry : assignment.getStringMetricsPlanned().entrySet()) {
+				materialized.setStringMetricPlanned(entry.getKey(), entry.getValue());
+			}
+			for (Map.Entry<String, Double> entry : assignment.getDoubleMetricsPlanned().entrySet()) {
+				materialized.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
+			}
+			for (Map.Entry<String, Long> entry : assignment.getLongMetricsPlanned().entrySet()) {
+				materialized.setLongMetricPlanned(entry.getKey(), entry.getValue());
+			}
+		}
 	}
 
 	private boolean filtersCoverTouchedAssignmentBindings(List<BindingSetAssignment> assignments,
@@ -1020,6 +1211,12 @@ final class LmdbDeferredFilterPlacer {
 	}
 
 	private BindingSet joinFiniteBindingRow(BindingSet left, BindingSet right, int bindingNameCount) {
+		if (!left.iterator().hasNext()) {
+			return right;
+		}
+		if (!right.iterator().hasNext()) {
+			return left;
+		}
 		MapBindingSet joined = new MapBindingSet(bindingNameCount);
 		for (Binding binding : left) {
 			joined.addBinding(binding);
@@ -1072,6 +1269,10 @@ final class LmdbDeferredFilterPlacer {
 			return isMaterializableFiniteCondition(and.getLeftArg())
 					&& isMaterializableFiniteCondition(and.getRightArg());
 		}
+		if (condition instanceof Or or) {
+			return isMaterializableFiniteCondition(or.getLeftArg())
+					&& isMaterializableFiniteCondition(or.getRightArg());
+		}
 		if (condition instanceof Compare compare) {
 			return (compare.getOperator() == Compare.CompareOp.EQ || compare.getOperator() == Compare.CompareOp.NE)
 					&& isFiniteConditionOperand(compare.getLeftArg())
@@ -1101,6 +1302,10 @@ final class LmdbDeferredFilterPlacer {
 		if (condition instanceof And and) {
 			return containsModeSensitiveFiniteValue(and.getLeftArg(), row)
 					|| containsModeSensitiveFiniteValue(and.getRightArg(), row);
+		}
+		if (condition instanceof Or or) {
+			return containsModeSensitiveFiniteValue(or.getLeftArg(), row)
+					|| containsModeSensitiveFiniteValue(or.getRightArg(), row);
 		}
 		if (condition instanceof Compare compare) {
 			return isModeSensitiveFiniteValue(compare.getLeftArg(), row)
@@ -1135,6 +1340,9 @@ final class LmdbDeferredFilterPlacer {
 	private boolean evaluateFiniteCondition(ValueExpr condition, BindingSet row) {
 		if (condition instanceof And and) {
 			return evaluateFiniteCondition(and.getLeftArg(), row) && evaluateFiniteCondition(and.getRightArg(), row);
+		}
+		if (condition instanceof Or or) {
+			return evaluateFiniteCondition(or.getLeftArg(), row) || evaluateFiniteCondition(or.getRightArg(), row);
 		}
 		if (condition instanceof Compare compare) {
 			return evaluateFiniteCompare(compare, row);
@@ -1262,14 +1470,21 @@ final class LmdbDeferredFilterPlacer {
 	}
 
 	private TupleExpr buildJoinRoot(Deque<TupleExpr> orderedArgs) {
-		return buildJoinRoot(orderedArgs, false);
+		return buildJoinRoot(orderedArgs, JoinTreeShape.LEFT_DEEP);
 	}
 
 	private TupleExpr buildJoinRoot(Deque<TupleExpr> orderedArgs, boolean rightDeepJoinTree) {
+		return buildJoinRoot(orderedArgs, rightDeepJoinTree ? JoinTreeShape.RIGHT_DEEP : JoinTreeShape.LEFT_DEEP);
+	}
+
+	private TupleExpr buildJoinRoot(Deque<TupleExpr> orderedArgs, JoinTreeShape joinTreeShape) {
 		if (orderedArgs.isEmpty()) {
 			return null;
 		}
-		if (rightDeepJoinTree) {
+		if (joinTreeShape == JoinTreeShape.BUSHY) {
+			return buildBushyJoinRoot(new ArrayList<>(orderedArgs), 0, orderedArgs.size());
+		}
+		if (joinTreeShape == JoinTreeShape.RIGHT_DEEP) {
 			TupleExpr root = orderedArgs.removeLast();
 			while (!orderedArgs.isEmpty()) {
 				root = joinFactory.create(orderedArgs.removeLast(), root);
@@ -1281,6 +1496,16 @@ final class LmdbDeferredFilterPlacer {
 			root = joinFactory.create(root, orderedArgs.removeFirst());
 		}
 		return root;
+	}
+
+	private TupleExpr buildBushyJoinRoot(List<TupleExpr> orderedArgs, int startInclusive, int endExclusive) {
+		if (endExclusive - startInclusive == 1) {
+			return orderedArgs.get(startInclusive);
+		}
+		int split = startInclusive + ((endExclusive - startInclusive) / 2);
+		TupleExpr left = buildBushyJoinRoot(orderedArgs, startInclusive, split);
+		TupleExpr right = buildBushyJoinRoot(orderedArgs, split, endExclusive);
+		return joinFactory.create(left, right);
 	}
 
 	private static final class BindingAssignmentWindow {

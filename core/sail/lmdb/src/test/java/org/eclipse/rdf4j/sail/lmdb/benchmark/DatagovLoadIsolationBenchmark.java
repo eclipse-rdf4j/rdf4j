@@ -163,7 +163,8 @@ public class DatagovLoadIsolationBenchmark {
 	}
 
 	private LmdbStoreConfig createBenchmarkConfig() {
-		return configure(ConfigUtil.createConfig().setBulkOperationSize(bulkOperationSize));
+		return configure(ConfigUtil.createConfig());
+//				.setBulkOperationSize(bulkOperationSize));
 	}
 
 	private LmdbStoreConfig createBenchmarkConfigAllIndexes() {

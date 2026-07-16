@@ -19,8 +19,12 @@ import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
@@ -129,6 +133,21 @@ class LmdbJoinPlanSupportTest {
 		assertTrue(constraint.getConfidenceScore() > 0.5d);
 	}
 
+	@Test
+	void runtimeBindingsExcludeScalarSubqueryLocalsIndependentOfConditionShape() {
+		StatementPattern stream = pattern("entity", "outerPredicate", "value");
+		StatementPattern scalarLocal = pattern("probeLocal", "probePredicate", "probeValue");
+		Filter direct = new Filter(stream, new Exists(scalarLocal));
+		Filter wrapped = new Filter(stream.clone(), new And(new Exists(scalarLocal.clone()),
+				new ValueConstant(SimpleValueFactory.getInstance().createLiteral(true))));
+
+		assertEquals(Set.of("entity", "outerPredicate", "value"),
+				LmdbJoinPlanSupport.runtimeBindingNames(direct));
+		assertEquals(LmdbJoinPlanSupport.runtimeBindingNames(direct),
+				LmdbJoinPlanSupport.runtimeBindingNames(wrapped),
+				"Equivalent scalar condition shapes must expose one canonical tuple-stream schema");
+	}
+
 	private static JoinOrderPlanner.FilterConstraint plannerConstraint(ListMemberOperator condition) {
 		DeferredFilter deferredFilter = new DeferredFilter(condition, Set.of("name"),
 				JoinOrderPlanner.FILTER_COST_CHEAP, 0, null, Set.of(),
@@ -136,5 +155,9 @@ class LmdbJoinPlanSupportTest {
 						EvaluationStatistics.FilterPassEstimate.Source.HEURISTIC, 1L));
 		return LmdbJoinPlanSupport.toPlannerFilterConstraints(List.of(deferredFilter))
 				.getFirst();
+	}
+
+	private static StatementPattern pattern(String subject, String predicate, String object) {
+		return new StatementPattern(new Var(subject), new Var(predicate), new Var(object));
 	}
 }

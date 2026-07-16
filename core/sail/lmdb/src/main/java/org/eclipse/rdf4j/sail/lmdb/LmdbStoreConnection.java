@@ -13,14 +13,19 @@ package org.eclipse.rdf4j.sail.lmdb;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailReadOnlyException;
 import org.eclipse.rdf4j.sail.base.SailSourceConnection;
@@ -57,6 +62,18 @@ public class LmdbStoreConnection extends SailSourceConnection {
 		super(sail, sail.getSailStore(), sail.getConnectionEvaluationStrategyFactory());
 		this.lmdbStore = sail;
 		sailChangedEvent = new DefaultSailChangedEvent(sail);
+	}
+
+	@Override
+	protected EvaluationStrategy getEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
+		EvaluationStrategy strategy = super.getEvaluationStrategy(dataset, tripleSource);
+		IsolationLevel isolationLevel = getTransactionIsolation();
+		if (lmdbStore.usesDefaultAutomaticOptimizerPipeline() && isolationLevel != null
+				&& isolationLevel.isCompatibleWith(IsolationLevels.SERIALIZABLE)) {
+			EvaluationStatistics statistics = lmdbStore.getSailStore().getEvaluationStatistics();
+			strategy.setOptimizerPipeline(new LmdbQueryOptimizerPipeline(strategy, tripleSource, statistics, true));
+		}
+		return strategy;
 	}
 
 	/*---------*
@@ -132,16 +149,9 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	protected CloseableIteration<? extends BindingSet> evaluateInternal(TupleExpr tupleExpr,
 			Dataset dataset,
 			BindingSet bindings, boolean includeInferred) throws SailException {
-		// ensure that all elements of the binding set are initialized (lazy values are resolved)
-		return new IterationWrapper<BindingSet>(
-				super.evaluateInternal(tupleExpr, dataset, bindings, includeInferred)) {
-			@Override
-			public BindingSet next() throws QueryEvaluationException {
-				BindingSet bs = super.next();
-				bs.forEach(b -> initValue(b.getValue()));
-				return bs;
-			}
-		};
+		return new LmdbValueMaterializingIteration(
+				super.evaluateInternal(tupleExpr, dataset, bindings, includeInferred),
+				LmdbValueMaterializingIteration.DEFAULT_MAX_BATCH_SIZE);
 	}
 
 	@Override
@@ -150,6 +160,24 @@ public class LmdbStoreConnection extends SailSourceConnection {
 			boolean includeInferred, Resource... contexts) throws SailException {
 		return new IterationWrapper<Statement>(
 				super.getStatementsInternal(subj, pred, obj, includeInferred, contexts)) {
+			@Override
+			public Statement next() throws SailException {
+				// ensure that all elements of the statement are initialized (lazy values are resolved)
+				Statement stmt = super.next();
+				initValue(stmt.getSubject());
+				initValue(stmt.getPredicate());
+				initValue(stmt.getObject());
+				initValue(stmt.getContext());
+				return stmt;
+			}
+		};
+	}
+
+	@Override
+	protected CloseableIteration<? extends Statement> getStatementsInternal(StatementPattern statementPattern,
+			Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts) throws SailException {
+		return new IterationWrapper<Statement>(
+				super.getStatementsInternal(statementPattern, subj, pred, obj, includeInferred, contexts)) {
 			@Override
 			public Statement next() throws SailException {
 				// ensure that all elements of the statement are initialized (lazy values are resolved)

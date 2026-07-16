@@ -873,7 +873,7 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
-	public void testEstimateStabilityStatsAreHiddenUntilTelemetryLevel() {
+	public void testEstimateStabilityStatsAreHiddenWhenNoEstimateSamplesExist() {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		addData(sailRepository);
 
@@ -900,10 +900,10 @@ public class QueryPlanRetrievalTest {
 			assertThat(timed).doesNotContain("stddevActual=");
 			assertThat(timed).doesNotContain("confidenceScoreActual=");
 
-			assertThat(telemetry).contains("sampleCountActual=");
-			assertThat(telemetry).contains("varianceActual=");
-			assertThat(telemetry).contains("stddevActual=");
-			assertThat(telemetry).contains("confidenceScoreActual=");
+			assertThat(telemetry).doesNotContain("sampleCountActual=");
+			assertThat(telemetry).doesNotContain("varianceActual=");
+			assertThat(telemetry).doesNotContain("stddevActual=");
+			assertThat(telemetry).doesNotContain("confidenceScoreActual=");
 		}
 		sailRepository.shutDown();
 

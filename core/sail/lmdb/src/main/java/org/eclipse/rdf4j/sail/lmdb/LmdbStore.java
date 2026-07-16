@@ -38,7 +38,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
@@ -49,6 +48,8 @@ import org.eclipse.rdf4j.sail.base.SnapshotSailStore;
 import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
 import org.eclipse.rdf4j.sail.helpers.DirectoryLockManager;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchFootprint;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -70,6 +71,8 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	 * The current version of the LMDB store.
 	 */
 	static final int VERSION = 2;
+
+	private static final long SKETCH_BASED_JOIN_ESTIMATOR_MIN_MAX_HEAP_BYTES = 2L * 1024 * 1024 * 1024;
 
 	/**
 	 * Specifies which triple indexes this lmdb store must use.
@@ -188,10 +191,8 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		EvaluationStrategyFactory factory;
 		if (explicitEvalStratFactory != null) {
 			factory = explicitEvalStratFactory;
-		} else if (isSketchEstimatorReadyNonBlocking()) {
-			factory = getAutomaticLmdbEvaluationStrategyFactory();
 		} else {
-			factory = getAutomaticDefaultEvaluationStrategyFactory();
+			factory = getAutomaticLmdbEvaluationStrategyFactory();
 		}
 		configureEvaluationStrategyFactory(factory);
 		return factory;
@@ -445,6 +446,10 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		return disabledIsolationLockManager.isActiveLock();
 	}
 
+	synchronized boolean usesDefaultAutomaticOptimizerPipeline() {
+		return explicitEvalStratFactory == null && automaticOptimizerPipeline == null;
+	}
+
 	SailStore getSailStore() {
 		return store;
 	}
@@ -472,11 +477,27 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		return estimator != null && estimator.awaitReady(timeout, unit);
 	}
 
+	/**
+	 * Forces committed LMDB state through to the sketch-based join estimator.
+	 *
+	 * @return {@code true} when the estimator is enabled and ready after the forced flush
+	 */
+	public boolean forceFlushSketchEstimator() {
+		LmdbSailStore backingStore = this.backingStore;
+		return backingStore != null && backingStore.forceFlushSketchEstimator();
+	}
+
+	/** Returns exact primitive and serialized footprint diagnostics for the current cold filter synopsis. */
+	public Optional<SketchFootprint> getColdFilterSynopsisFootprint() {
+		LmdbSailStore backingStore = this.backingStore;
+		return backingStore == null ? Optional.empty() : backingStore.getColdFilterSynopsisFootprint();
+	}
+
 	private boolean shouldUseSketchBasedJoinEstimator() {
 		return shouldUseSketchBasedJoinEstimator(Runtime.getRuntime().maxMemory());
 	}
 
-	boolean shouldUseSketchBasedJoinEstimator(long ignoredMaxMemoryBytes) {
+	boolean shouldUseSketchBasedJoinEstimator(long maxMemoryBytes) {
 		if (explicitEvalStratFactory != null) {
 			return false;
 		}
@@ -486,7 +507,9 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			return sketchEstimatorEnabled;
 		}
 
-		return false;
+		// This branch's planner stack (cascades + sketches) is on by default when the heap can carry the
+		// sketch snapshots; upstream develop defaults the estimator off.
+		return maxMemoryBytes >= SKETCH_BASED_JOIN_ESTIMATOR_MIN_MAX_HEAP_BYTES;
 	}
 
 	private boolean isSketchEstimatorReadyNonBlocking() {

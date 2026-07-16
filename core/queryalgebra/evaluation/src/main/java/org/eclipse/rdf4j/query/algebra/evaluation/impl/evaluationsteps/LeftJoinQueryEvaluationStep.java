@@ -38,12 +38,13 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 	public static QueryEvaluationStep supply(EvaluationStrategy strategy, LeftJoin leftJoin,
 			QueryEvaluationContext context) {
 		boolean runtimeTelemetryTrackingActive = strategy.isTrackResultSize() || strategy.isTrackTime();
+		boolean metricsTrackingActive = runtimeTelemetryTrackingActive || costFeedbackTrackingActive(leftJoin);
 		QueryEvaluationStep left = JoinMetricsTracking
 				.wrapLeftInput(strategy.precompile(leftJoin.getLeftArg(), context), leftJoin, leftJoin.getLeftArg(),
-						runtimeTelemetryTrackingActive);
+						metricsTrackingActive);
 		QueryEvaluationStep right = JoinMetricsTracking
 				.wrapRightInput(strategy.precompile(leftJoin.getRightArg(), context), leftJoin, leftJoin.getRightArg(),
-						runtimeTelemetryTrackingActive);
+						metricsTrackingActive);
 		if (TupleExprs.containsSubquery(leftJoin.getRightArg())) {
 			Set<String> leftBindingNames = leftJoin.getLeftArg().getBindingNames();
 			Set<String> rightBindingNames = leftJoin.getRightArg().getBindingNames();
@@ -65,6 +66,12 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 			condition = null;
 		}
 		return new LeftJoinQueryEvaluationStep(right, condition, left, leftJoin, optionalVarCollector.getVarNames());
+	}
+
+	private static boolean costFeedbackTrackingActive(LeftJoin leftJoin) {
+		return leftJoin != null && (leftJoin.isCostFeedbackTrackingEnabled()
+				|| leftJoin.getLeftArg().isCostFeedbackTrackingEnabled()
+				|| leftJoin.getRightArg().isCostFeedbackTrackingEnabled());
 	}
 
 	public LeftJoinQueryEvaluationStep(QueryEvaluationStep right, QueryValueEvaluationStep condition,

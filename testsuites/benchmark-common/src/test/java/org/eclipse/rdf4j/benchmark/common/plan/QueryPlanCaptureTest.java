@@ -21,6 +21,8 @@ import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.EnumMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
@@ -38,6 +40,8 @@ import org.junit.jupiter.api.io.TempDir;
 class QueryPlanCaptureTest {
 
 	private static final Path EXPECTED_DEFAULT_OUTPUT_DIR = Path.of("testsuites/benchmark/src/main/resources/plan");
+	private static final String TEST_OUTPUT_DIRECTORY_PROPERTY = "rdf4j.test.outputDirectory";
+	private static final String WORKSPACE_BUILD_ROOT_PROPERTY = "rdf4j.build.root";
 
 	@TempDir
 	Path tempDir;
@@ -46,16 +50,83 @@ class QueryPlanCaptureTest {
 	void defaultsOutputDirectoryToBenchmarkResourcesPlanPath() {
 		String propertyKey = QueryPlanCaptureContext.OUTPUT_DIRECTORY_PROPERTY;
 		String previous = System.getProperty(propertyKey);
+		String previousTestOutput = System.getProperty(TEST_OUTPUT_DIRECTORY_PROPERTY);
+		String previousWorkspaceBuildRoot = System.getProperty(WORKSPACE_BUILD_ROOT_PROPERTY);
 		try {
 			System.clearProperty(propertyKey);
+			System.clearProperty(TEST_OUTPUT_DIRECTORY_PROPERTY);
+			System.clearProperty(WORKSPACE_BUILD_ROOT_PROPERTY);
 			assertEquals(EXPECTED_DEFAULT_OUTPUT_DIR, QueryPlanCapture.resolveOutputDirectory());
 			assertEquals(EXPECTED_DEFAULT_OUTPUT_DIR, QueryPlanCaptureContext.builder().build().getOutputDirectory());
 		} finally {
-			if (previous == null) {
-				System.clearProperty(propertyKey);
-			} else {
-				System.setProperty(propertyKey, previous);
-			}
+			restoreSystemProperty(propertyKey, previous);
+			restoreSystemProperty(TEST_OUTPUT_DIRECTORY_PROPERTY, previousTestOutput);
+			restoreSystemProperty(WORKSPACE_BUILD_ROOT_PROPERTY, previousWorkspaceBuildRoot);
+		}
+	}
+
+	@Test
+	void defaultsOutputDirectoryBelowTestOutputBeforeWorkspaceBuildRoot() {
+		String propertyKey = QueryPlanCaptureContext.OUTPUT_DIRECTORY_PROPERTY;
+		String previous = System.getProperty(propertyKey);
+		String previousTestOutput = System.getProperty(TEST_OUTPUT_DIRECTORY_PROPERTY);
+		String previousWorkspaceBuildRoot = System.getProperty(WORKSPACE_BUILD_ROOT_PROPERTY);
+		Path testOutput = tempDir.resolve("module-output");
+		try {
+			System.clearProperty(propertyKey);
+			System.setProperty(TEST_OUTPUT_DIRECTORY_PROPERTY, testOutput.toString());
+			System.setProperty(WORKSPACE_BUILD_ROOT_PROPERTY, tempDir.resolve("workspace-build").toString());
+			Path expected = testOutput.resolve("query-plan-capture");
+
+			assertEquals(expected, QueryPlanCapture.resolveOutputDirectory());
+			assertEquals(expected, QueryPlanCaptureContext.builder().build().getOutputDirectory());
+		} finally {
+			restoreSystemProperty(propertyKey, previous);
+			restoreSystemProperty(TEST_OUTPUT_DIRECTORY_PROPERTY, previousTestOutput);
+			restoreSystemProperty(WORKSPACE_BUILD_ROOT_PROPERTY, previousWorkspaceBuildRoot);
+		}
+	}
+
+	@Test
+	void workspaceBuildRootPreventsSourceTreeDefaultWithoutTestOutput() {
+		String propertyKey = QueryPlanCaptureContext.OUTPUT_DIRECTORY_PROPERTY;
+		String previous = System.getProperty(propertyKey);
+		String previousTestOutput = System.getProperty(TEST_OUTPUT_DIRECTORY_PROPERTY);
+		String previousWorkspaceBuildRoot = System.getProperty(WORKSPACE_BUILD_ROOT_PROPERTY);
+		Path workspaceBuildRoot = tempDir.resolve("workspace-build");
+		try {
+			System.clearProperty(propertyKey);
+			System.clearProperty(TEST_OUTPUT_DIRECTORY_PROPERTY);
+			System.setProperty(WORKSPACE_BUILD_ROOT_PROPERTY, workspaceBuildRoot.toString());
+			Path expected = workspaceBuildRoot.resolve("query-plan-capture");
+
+			assertEquals(expected, QueryPlanCapture.resolveOutputDirectory());
+			assertEquals(expected, QueryPlanCaptureContext.builder().build().getOutputDirectory());
+		} finally {
+			restoreSystemProperty(propertyKey, previous);
+			restoreSystemProperty(TEST_OUTPUT_DIRECTORY_PROPERTY, previousTestOutput);
+			restoreSystemProperty(WORKSPACE_BUILD_ROOT_PROPERTY, previousWorkspaceBuildRoot);
+		}
+	}
+
+	@Test
+	void explicitOutputDirectoryWinsOverEveryWorkspaceDefault() {
+		String propertyKey = QueryPlanCaptureContext.OUTPUT_DIRECTORY_PROPERTY;
+		String previous = System.getProperty(propertyKey);
+		String previousTestOutput = System.getProperty(TEST_OUTPUT_DIRECTORY_PROPERTY);
+		String previousWorkspaceBuildRoot = System.getProperty(WORKSPACE_BUILD_ROOT_PROPERTY);
+		Path explicitOutput = tempDir.resolve("explicit-plan-output");
+		try {
+			System.setProperty(propertyKey, explicitOutput.toString());
+			System.setProperty(TEST_OUTPUT_DIRECTORY_PROPERTY, tempDir.resolve("module-output").toString());
+			System.setProperty(WORKSPACE_BUILD_ROOT_PROPERTY, tempDir.resolve("workspace-build").toString());
+
+			assertEquals(explicitOutput, QueryPlanCapture.resolveOutputDirectory());
+			assertEquals(explicitOutput, QueryPlanCaptureContext.builder().build().getOutputDirectory());
+		} finally {
+			restoreSystemProperty(propertyKey, previous);
+			restoreSystemProperty(TEST_OUTPUT_DIRECTORY_PROPERTY, previousTestOutput);
+			restoreSystemProperty(WORKSPACE_BUILD_ROOT_PROPERTY, previousWorkspaceBuildRoot);
 		}
 	}
 
@@ -235,6 +306,78 @@ class QueryPlanCaptureTest {
 	}
 
 	@Test
+	void capturesStructuredOptimizerTraceJson() throws Exception {
+		QueryPlanCapture capture = new QueryPlanCapture();
+		String query = "SELECT ?s WHERE { ?s ?p ?o }";
+		String traceJson = """
+				{
+				  "formatVersion": "1",
+				  "ruleEvaluations": [
+				    {
+				      "ruleId": "matching-implementation",
+				      "status": "matched"
+				    }
+				  ],
+				  "alternatives": [
+				    {
+				      "ruleId": "matching-implementation",
+				      "status": "considered"
+				    }
+				  ],
+				  "winners": [
+				    {
+				      "groupId": 0,
+				      "ruleId": "matching-implementation"
+				    }
+				  ],
+				  "events": []
+				}
+				""";
+		EnumMap<Explanation.Level, Explanation> explanations = new EnumMap<>(Explanation.Level.class);
+		for (Explanation.Level level : Explanation.Level.values()) {
+			TupleExpr tupleExpr = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+			if (level == Explanation.Level.Optimized) {
+				tupleExpr.setStringMetricPlanned("optimizer.cascadesTraceJson", traceJson);
+			}
+			explanations.put(level, toExplanation(tupleExpr, level));
+		}
+
+		QueryPlanSnapshot snapshot = capture.capture(QueryPlanCaptureContext.builder()
+				.outputDirectory(tempDir)
+				.queryId("structured-trace")
+				.queryString(query)
+				.benchmark("QueryPlanCaptureTest")
+				.build(), () -> stubTupleQueryFor(explanations));
+
+		Map<String, Object> optimizerTrace = optimizerTrace(snapshot);
+		assertEquals("1", optimizerTrace.get("formatVersion"));
+		List<Map<String, Object>> ruleEvaluations = traceList(optimizerTrace, "ruleEvaluations");
+		assertEquals("matching-implementation", ruleEvaluations.getFirst().get("ruleId"));
+		assertEquals("matched", ruleEvaluations.getFirst().get("status"));
+		assertFalse(traceList(optimizerTrace, "alternatives").isEmpty());
+		assertFalse(traceList(optimizerTrace, "winners").isEmpty());
+	}
+
+	@Test
+	void estimateAccuracyUsesRepeatedInvocationRowsWhenPresent() {
+		String explanationJson = """
+				{
+				  "type" : "StatementPattern",
+				  "resultSizeEstimate" : 1.0,
+				  "resultSizeActual" : 100,
+				  "doubleMetricsPlanned" : {
+				    "plannedRepeatedInvocations" : 100.0
+				  }
+				}
+				""";
+
+		Map<String, String> metrics = QueryPlanCapture.extractDebugMetrics(explanationJson);
+
+		assertEquals("1", metrics.get("estimateActualComparableNodeCount"));
+		assertEquals("1", metrics.get("estimateActualQErrorMax"));
+	}
+
+	@Test
 	void capturesTelemetryLevelIntoTelemetrySnapshotSlot() {
 		QueryPlanCapture capture = new QueryPlanCapture();
 		String query = "SELECT ?s WHERE { ?s ?p ?o }";
@@ -321,6 +464,14 @@ class QueryPlanCaptureTest {
 		return stubTupleQueryFor(explanations);
 	}
 
+	private static void restoreSystemProperty(String name, String value) {
+		if (value == null) {
+			System.clearProperty(name);
+		} else {
+			System.setProperty(name, value);
+		}
+	}
+
 	private static TupleQuery stubTupleQueryFor(EnumMap<Explanation.Level, Explanation> explanations) {
 		return (TupleQuery) Proxy.newProxyInstance(
 				QueryPlanCaptureTest.class.getClassLoader(),
@@ -350,6 +501,20 @@ class QueryPlanCaptureTest {
 		}
 		tupleExpr.visit(converter);
 		return new ExplanationImpl(converter.getGenericPlanNode(), false, tupleExpr);
+	}
+
+	@SuppressWarnings("unchecked")
+	private static Map<String, Object> optimizerTrace(QueryPlanSnapshot snapshot) throws Exception {
+		return (Map<String, Object>) QueryPlanSnapshot.class
+				.getMethod("getOptimizerTrace")
+				.invoke(snapshot);
+	}
+
+	@SuppressWarnings("unchecked")
+	private static List<Map<String, Object>> traceList(Map<String, Object> trace, String key) {
+		Object value = trace.get(key);
+		assertTrue(value instanceof List, () -> "Expected trace field " + key + " to be a list: " + trace);
+		return (List<Map<String, Object>>) value;
 	}
 
 	private static Object primitiveDefault(Class<?> primitiveType) {

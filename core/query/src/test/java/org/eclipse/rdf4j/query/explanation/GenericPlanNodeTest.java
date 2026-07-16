@@ -71,6 +71,56 @@ class GenericPlanNodeTest {
 	}
 
 	@Test
+	void toStringAndJsonSuppressLegacyEstimatesWithoutPlannerUsage() {
+		GenericPlanNode node = new GenericPlanNode("Join");
+		node.setCostEstimate(12.0);
+		node.setResultSizeEstimate(34.0);
+		node.setResultSizeActual(21L);
+
+		String text = node.toString();
+		String json = new ExplanationImpl(node, false, null).toJson();
+
+		assertFalse(text.contains("costEstimate="), text);
+		assertFalse(text.contains("resultSizeEstimate="), text);
+		assertTrue(text.contains("resultSizeActual=21"), text);
+		assertFalse(json.contains("\"costEstimate\""), json);
+		assertFalse(json.contains("\"resultSizeEstimate\""), json);
+		assertTrue(json.contains("\"resultSizeActual\""), json);
+	}
+
+	@Test
+	void toStringRendersPlannerUsedCardinalityAndCostVectorInsteadOfLegacyScalars() {
+		GenericPlanNode node = new GenericPlanNode("Join");
+		node.setCostEstimate(12.0);
+		node.setResultSizeEstimate(34.0);
+		node.setStringMetricPlanned("plannedEstimateUsage", "join_order_candidate");
+		node.setStringMetricPlanned("plannedEstimateDecisionId", "join-order:abc123");
+		node.setStringMetricPlanned("plannedCardinalityShape", "range");
+		node.setDoubleMetricPlanned("plannedCardinalityRows", 34.0);
+		node.setDoubleMetricPlanned("plannedCardinalityLower", 30.0);
+		node.setDoubleMetricPlanned("plannedCardinalityUpper", 40.0);
+		node.setStringMetricPlanned("plannedCostShape", "vector");
+		node.setDoubleMetricPlanned("plannedCostWorkRows", 12.0);
+		node.setDoubleMetricPlanned("plannedCostLookupProbes", 4.0);
+		node.setDoubleMetricPlanned("plannedObjectiveScore", 13.0);
+
+		String actual = node.toString();
+
+		assertFalse(actual.contains("costEstimate="), actual);
+		assertFalse(actual.contains("resultSizeEstimate="), actual);
+		assertTrue(actual.contains("plannedEstimateUsage=join_order_candidate"), actual);
+		assertTrue(actual.contains("plannedEstimateDecisionId=join-order:abc123"), actual);
+		assertTrue(actual.contains("plannedCardinalityShape=range"), actual);
+		assertTrue(actual.contains("plannedCardinalityRows=34"), actual);
+		assertTrue(actual.contains("plannedCardinalityLower=30"), actual);
+		assertTrue(actual.contains("plannedCardinalityUpper=40"), actual);
+		assertTrue(actual.contains("plannedCostShape=vector"), actual);
+		assertTrue(actual.contains("plannedCostWorkRows=12"), actual);
+		assertTrue(actual.contains("plannedCostLookupProbes=4"), actual);
+		assertTrue(actual.contains("plannedObjectiveScore=13"), actual);
+	}
+
+	@Test
 	void toStringOmitsZeroTelemetryFields() {
 		GenericPlanNode node = new GenericPlanNode("Join");
 		node.setCostEstimate(1.0);
@@ -268,6 +318,29 @@ class GenericPlanNodeTest {
 		assertTrue(telemetry.contains("indexName=spoc"), telemetry);
 		assertTrue(dot.contains("<tr><td>Planned index</td><td>posc</td></tr>"), dot);
 		assertTrue(dot.contains("<tr><td>Index</td><td>spoc</td></tr>"), dot);
+	}
+
+	@Test
+	void distinctCursorSkipActualMetricsAreAccessOnly() {
+		GenericPlanNode join = new GenericPlanNode("Join");
+		join.setLongMetricActual(TelemetryMetricNames.DISTINCT_CURSOR_SKIP_COUNT_ACTUAL, 3L);
+		join.setLongMetricActual(TelemetryMetricNames.DISTINCT_CURSOR_SKIP_SEEK_COUNT_ACTUAL, 2L);
+
+		String joinPlan = join.toString();
+
+		assertFalse(joinPlan.contains(TelemetryMetricNames.DISTINCT_CURSOR_SKIP_COUNT_ACTUAL), joinPlan);
+		assertFalse(joinPlan.contains(TelemetryMetricNames.DISTINCT_CURSOR_SKIP_SEEK_COUNT_ACTUAL), joinPlan);
+
+		GenericPlanNode statementPattern = new GenericPlanNode("StatementPattern");
+		statementPattern.setLongMetricActual(TelemetryMetricNames.DISTINCT_CURSOR_SKIP_COUNT_ACTUAL, 3L);
+		statementPattern.setLongMetricActual(TelemetryMetricNames.DISTINCT_CURSOR_SKIP_SEEK_COUNT_ACTUAL, 2L);
+
+		String statementPatternPlan = statementPattern.toString();
+
+		assertTrue(statementPatternPlan.contains(TelemetryMetricNames.DISTINCT_CURSOR_SKIP_COUNT_ACTUAL),
+				statementPatternPlan);
+		assertTrue(statementPatternPlan.contains(TelemetryMetricNames.DISTINCT_CURSOR_SKIP_SEEK_COUNT_ACTUAL),
+				statementPatternPlan);
 	}
 
 	@Test

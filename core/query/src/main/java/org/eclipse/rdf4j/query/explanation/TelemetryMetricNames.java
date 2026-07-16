@@ -66,6 +66,8 @@ public final class TelemetryMetricNames {
 	public static final String INDEX_HIT_RATE_ACTUAL = "indexHitRateActual";
 	public static final String INDEX_NAME = "indexName";
 	public static final String INDEX_NAMES = "indexNames";
+	public static final String DISTINCT_CURSOR_SKIP_COUNT_ACTUAL = "distinctCursorSkipCountActual";
+	public static final String DISTINCT_CURSOR_SKIP_SEEK_COUNT_ACTUAL = "distinctCursorSkipSeekCountActual";
 
 	public static final String REMOTE_REQUEST_COUNT_ACTUAL = "remoteRequestCountActual";
 	public static final String REMOTE_ASK_REQUEST_COUNT_ACTUAL = "remoteAskRequestCountActual";
@@ -123,13 +125,48 @@ public final class TelemetryMetricNames {
 	public static final String PLANNED_FILTER_EVIDENCE_COUNT = "plannedFilterEvidenceCount";
 	public static final String PLANNED_FILTER_CONFIDENCE = "plannedFilterConfidence";
 	public static final String PLANNED_ESTIMATE_SOURCE = "plannedEstimateSource";
+	public static final String PLANNED_ESTIMATE_USAGE = "plannedEstimateUsage";
+	public static final String PLANNED_ESTIMATE_USAGE_JOIN_ORDER_CANDIDATE = "join_order_candidate";
+	public static final String PLANNED_ESTIMATE_USAGE_ALTERNATIVE_RANKING = "alternative_ranking";
+	public static final String PLANNED_ESTIMATE_USAGE_EXPLAIN_RECOMPUTED = "explain_recomputed";
+	public static final String PLANNED_ESTIMATE_DECISION_ID = "plannedEstimateDecisionId";
+	public static final String PLANNED_CARDINALITY_SHAPE = "plannedCardinalityShape";
+	public static final String PLANNED_CARDINALITY_ROWS = "plannedCardinalityRows";
+	public static final String PLANNED_CARDINALITY_LOWER = "plannedCardinalityLower";
+	public static final String PLANNED_CARDINALITY_UPPER = "plannedCardinalityUpper";
+	public static final String PLANNED_CARDINALITY_CONFIDENCE = "plannedCardinalityConfidence";
+	public static final String PLANNED_SKETCH_CONFIDENCE = "plannedSketchConfidence";
+	public static final String PLANNED_COST_SHAPE = "plannedCostShape";
+	public static final String PLANNED_COST_WORK_ROWS = "plannedCostWorkRows";
+	public static final String PLANNED_COST_LOOKUP_PROBES = "plannedCostLookupProbes";
+	public static final String PLANNED_COST_SCAN_ROWS = "plannedCostScanRows";
+	public static final String PLANNED_COST_RHS_PROBES = "plannedCostRhsProbes";
+	public static final String PLANNED_COST_MATERIALIZATION_ROWS = "plannedCostMaterializationRows";
+	public static final String PLANNED_COST_FANOUT = "plannedCostFanout";
+	public static final String PLANNED_COST_MEMORY_PRESSURE = "plannedCostMemoryPressure";
+	public static final String PLANNED_COST_BRANCH_WORK = "plannedCostBranchWork";
+	public static final String PLANNED_COST_FINAL_ROWS = "plannedCostFinalRows";
+	public static final String PLANNED_COST_MAX_INTERMEDIATE_ROWS = "plannedCostMaxIntermediateRows";
+	public static final String PLANNED_COST_UNCERTAINTY_ROWS = "plannedCostUncertaintyRows";
+	public static final String PLANNED_COST_CARTESIAN_WORK_ROWS = "plannedCostCartesianWorkRows";
+	public static final String PLANNED_OBJECTIVE_SCORE = "plannedObjectiveScore";
 	public static final String PLANNED_UNCERTAINTY_ROWS = "plannedUncertaintyRows";
 	public static final String FILTER_SELECTIVITY_SOURCE = "filterSelectivitySource";
 	public static final String PLANNED_INDEX_ACCESS_MODE = "plannedIndexAccessMode";
+	public static final String INDEX_ACCESS_MODE_DISTINCT_CURSOR_SKIP = "distinctCursorSkip";
 	public static final String PLANNED_ACCESS_ROWS = "plannedAccessRows";
 	public static final String PLANNED_ACCESS_ROWS_AFTER_FILTER = "plannedAccessRowsAfterFilter";
 	public static final String PLANNED_ACCESS_PATH_CANDIDATES = "plannedAccessPathCandidates";
 	public static final String PLANNED_MISSING_LOOKUP_COMPONENTS = "plannedMissingLookupComponents";
+	public static final String PLANNED_DISTINCT_REQUIREMENT_VARS = "plannedDistinctRequirementVars";
+	public static final String PLANNED_DISTINCT_REQUIRED_VARS_ABOVE = "plannedDistinctRequiredVarsAbove";
+	public static final String PLANNED_DISTINCT_BLOCKED_VARS = "plannedDistinctBlockedVars";
+	public static final String PLANNED_DISTINCT_REQUIREMENT_SOURCE = "plannedDistinctRequirementSource";
+	public static final String PLANNED_DISTINCT_CURSOR_SKIP_INDEX = "plannedDistinctCursorSkipIndex";
+	public static final String PLANNED_DISTINCT_CURSOR_SKIP_PREFIX = "plannedDistinctCursorSkipPrefix";
+	public static final String PLANNED_DISTINCT_CURSOR_SKIP_ROWS = "plannedDistinctCursorSkipRows";
+	public static final String PLANNED_DISTINCT_CURSOR_SKIP_NORMAL_ROWS = "plannedDistinctCursorSkipNormalRows";
+	public static final String PLANNED_DISTINCT_CURSOR_SKIP_FANOUT = "plannedDistinctCursorSkipFanout";
 	public static final String DEFERRED_FILTER_SCOPE = "deferredFilterScope";
 	public static final String SHARED_JOIN_VARS = "sharedJoinVars";
 	public static final String UNLOCKED_FILTERS = "unlockedFilters";
@@ -153,6 +190,12 @@ public final class TelemetryMetricNames {
 	public static final String OPTIMIZER_SCORE = OPTIMIZER_PREFIX + "score";
 	public static final String OPTIMIZER_SCORE_COMPONENTS = OPTIMIZER_PREFIX + "scoreComponents";
 	public static final String OPTIMIZER_CANDIDATE_COUNT = OPTIMIZER_PREFIX + "candidateCount";
+	public static final String OPTIMIZER_ACCEPTED_ALTERNATIVE_COUNT = OPTIMIZER_PREFIX + "acceptedAlternativeCount";
+	public static final String OPTIMIZER_REJECTED_ALTERNATIVE_COUNT = OPTIMIZER_PREFIX + "rejectedAlternativeCount";
+	public static final String OPTIMIZER_DOMINATED_ALTERNATIVE_COUNT = OPTIMIZER_PREFIX + "dominatedAlternativeCount";
+	public static final String OPTIMIZER_TRIMMED_ALTERNATIVE_COUNT = OPTIMIZER_PREFIX + "trimmedAlternativeCount";
+	public static final String OPTIMIZER_MAX_FRONTIER_WIDTH = OPTIMIZER_PREFIX + "maxFrontierWidth";
+	public static final String OPTIMIZER_FINAL_FRONTIER_WIDTH = OPTIMIZER_PREFIX + "finalFrontierWidth";
 	public static final String OPTIMIZER_REJECTION_REASON = OPTIMIZER_PREFIX + "rejectionReason";
 	public static final String OPTIMIZER_ESTIMATE_SOURCE = OPTIMIZER_PREFIX + "estimateSource";
 	public static final String OPTIMIZER_PLANNER_ID = OPTIMIZER_PREFIX + "plannerId";
@@ -168,5 +211,36 @@ public final class TelemetryMetricNames {
 
 	public static boolean isOptimizerMetric(String metricName) {
 		return metricName != null && metricName.startsWith(OPTIMIZER_PREFIX);
+	}
+
+	public static boolean isPlannerEstimateMetric(String metricName) {
+		if (metricName == null) {
+			return false;
+		}
+		return metricName.equals(PLANNED_ESTIMATE_SOURCE)
+				|| metricName.equals(PLANNED_ESTIMATE_USAGE)
+				|| metricName.equals(PLANNED_ESTIMATE_DECISION_ID)
+				|| metricName.equals(PLANNED_WORK_ROWS)
+				|| metricName.equals(PLANNED_ACCESS_WORK_ROWS)
+				|| metricName.equals(PLANNED_ACCESS_ROWS)
+				|| metricName.equals(PLANNED_ACCESS_ROWS_AFTER_FILTER)
+				|| metricName.equals(PLANNED_UNCERTAINTY_ROWS)
+				|| metricName.equals(FILTER_SELECTIVITY_SOURCE)
+				|| metricName.equals(OPTIMIZER_ESTIMATE_SOURCE)
+				|| metricName.equals(OPTIMIZER_RUNTIME_FEEDBACK)
+				|| metricName.equals(OPTIMIZER_RUNTIME_FEEDBACK_CONFIDENCE)
+				|| metricName.startsWith("plannedEstimate")
+				|| metricName.startsWith("plannedCardinality")
+				|| metricName.startsWith("plannedCost")
+				|| metricName.startsWith("plannedObjective")
+				|| metricName.startsWith("plannedFilter")
+				|| metricName.startsWith("plannedOperatorFeedback")
+				|| metricName.startsWith("plannedBridge")
+				|| metricName.startsWith("plannedBase")
+				|| metricName.startsWith("plannedPrefix")
+				|| metricName.startsWith("plannedLookupDomain")
+				|| metricName.startsWith("plannedRepeated")
+				|| metricName.startsWith("plannedDistinctLookup")
+				|| metricName.startsWith("plannedDistinct");
 	}
 }

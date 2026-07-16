@@ -116,11 +116,73 @@ class ThemeDataSetGeneratorTest {
 		assertTrue(model.contains(null, RDF.TYPE, sideEffectType));
 	}
 
+	@Test
+	void sparseGeneratorProducesSchemaOrgSparseFanout() throws Exception {
+		Class<?> generator = Class.forName("org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator");
+		Object config = generator.getMethod("sparseConfig").invoke(null);
+		invoke(config, "withPersonCount", 80);
+		invoke(config, "withOrganizationCount", 8);
+		invoke(config, "withDepartmentsPerOrganization", 2);
+		invoke(config, "withOffersPerDepartment", 2);
+		invoke(config, "withSparseCoveragePercent", 5);
+		invoke(config, "withReviewFanout", 120);
+		invoke(config, "withKnowsFanout", 110);
+		invoke(config, "withEmployeeFanout", 100);
+		invoke(config, "withSeed", 123L);
+
+		Method generate = generator.getMethod("generateSparse", config.getClass());
+		Model model = (Model) generate.invoke(null, config);
+		Model modelRepeat = (Model) generate.invoke(null, config);
+
+		IRI personType = Values.iri("https://schema.org/Person");
+		IRI organizationType = Values.iri("https://schema.org/Organization");
+		IRI review = Values.iri("https://schema.org/review");
+		IRI knows = Values.iri("https://schema.org/knows");
+		IRI employee = Values.iri("https://schema.org/employee");
+		IRI award = Values.iri("https://schema.org/award");
+
+		assertFalse(model.isEmpty());
+		assertTrue(model.contains(null, RDF.TYPE, personType));
+		assertTrue(model.contains(null, RDF.TYPE, organizationType));
+		assertTrue(model.contains(null, review, null));
+		assertTrue(model.contains(null, knows, null));
+		assertTrue(model.contains(null, employee, null));
+		assertTrue(maxObjectsPerSubject(model, review) >= 100);
+		assertTrue(maxObjectsPerSubject(model, knows) >= 100);
+		assertTrue(maxObjectsPerSubject(model, employee) >= 100);
+		assertTrue(sparseCoverageSubjects(model, personType, award) <= 0.07d);
+		assertTrue(sparseCoverageSubjects(model, personType, award) >= 0.03d);
+		assertTrue(model.equals(modelRepeat), "Dataset should be stable for the same seed and config");
+	}
+
 	private static Model generateModel(String configMethodName, String generateMethodName) throws Exception {
 		Class<?> generator = Class.forName("org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator");
 		Object config = generator.getMethod(configMethodName).invoke(null);
 		Method generate = generator.getMethod(generateMethodName, config.getClass());
 		return (Model) generate.invoke(null, config);
+	}
+
+	private static void invoke(Object target, String methodName, int value) throws Exception {
+		target.getClass().getMethod(methodName, int.class).invoke(target, value);
+	}
+
+	private static void invoke(Object target, String methodName, long value) throws Exception {
+		target.getClass().getMethod(methodName, long.class).invoke(target, value);
+	}
+
+	private static long maxObjectsPerSubject(Model model, IRI predicate) {
+		return model.filter(null, predicate, null)
+				.subjects()
+				.stream()
+				.mapToLong(subject -> model.filter(subject, predicate, null).objects().size())
+				.max()
+				.orElse(0L);
+	}
+
+	private static double sparseCoverageSubjects(Model model, IRI subjectType, IRI predicate) {
+		long subjects = model.filter(null, RDF.TYPE, subjectType).subjects().size();
+		long withPredicate = model.filter(null, predicate, null).subjects().size();
+		return (double) withPredicate / subjects;
 	}
 
 	private static void assertClique(Model model, IRI follows, int startId, int size) {

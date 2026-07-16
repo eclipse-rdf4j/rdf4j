@@ -16,6 +16,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -30,6 +31,7 @@ final class CollectedJoinArgs {
 	final List<TupleExpr> joinArgs = new ArrayList<>();
 	final List<Filter> deferredFilters = new ArrayList<>();
 	final List<Filter> costingOnlyFilters = new ArrayList<>();
+	final List<DeferredFilter> exactCostingOnlyFilters = new ArrayList<>();
 }
 
 final class DeferredFilter {
@@ -41,7 +43,9 @@ final class DeferredFilter {
 	final int originalIndex;
 	final StatementPattern patternLocalBase;
 	final Set<StatementPattern> originPatterns;
-	final EvaluationStatistics.FilterPassEstimate passEstimate;
+	private final Filter sourceFilter;
+	private final EvaluationStatistics statistics;
+	private EvaluationStatistics.FilterPassEstimate passEstimate;
 	boolean applied;
 
 	DeferredFilter(ValueExpr condition, Set<String> requiredVars,
@@ -54,6 +58,21 @@ final class DeferredFilter {
 	DeferredFilter(ValueExpr condition, Set<String> requiredVars, Set<String> conditionVars,
 			int conditionCost, int originalIndex, StatementPattern patternLocalBase,
 			Set<StatementPattern> originPatterns, EvaluationStatistics.FilterPassEstimate passEstimate) {
+		this(condition, requiredVars, conditionVars, conditionCost, originalIndex, patternLocalBase, originPatterns,
+				null, null, passEstimate);
+	}
+
+	DeferredFilter(ValueExpr condition, Set<String> requiredVars, Set<String> conditionVars,
+			int conditionCost, int originalIndex, StatementPattern patternLocalBase,
+			Set<StatementPattern> originPatterns, Filter sourceFilter, EvaluationStatistics statistics) {
+		this(condition, requiredVars, conditionVars, conditionCost, originalIndex, patternLocalBase, originPatterns,
+				sourceFilter, statistics, null);
+	}
+
+	private DeferredFilter(ValueExpr condition, Set<String> requiredVars, Set<String> conditionVars,
+			int conditionCost, int originalIndex, StatementPattern patternLocalBase,
+			Set<StatementPattern> originPatterns, Filter sourceFilter, EvaluationStatistics statistics,
+			EvaluationStatistics.FilterPassEstimate passEstimate) {
 		this.condition = condition;
 		this.requiredVars = Set.copyOf(requiredVars);
 		this.conditionVars = Set.copyOf(conditionVars);
@@ -61,7 +80,30 @@ final class DeferredFilter {
 		this.originalIndex = originalIndex;
 		this.patternLocalBase = patternLocalBase;
 		this.originPatterns = identityCopy(originPatterns);
+		this.sourceFilter = sourceFilter;
+		this.statistics = statistics;
 		this.passEstimate = passEstimate;
+	}
+
+	EvaluationStatistics.FilterPassEstimate passEstimate() {
+		EvaluationStatistics.FilterPassEstimate estimate = passEstimate;
+		if (estimate == null) {
+			Optional<LmdbPlannerServices> services = LmdbPlannerServices.from(statistics);
+			if (services.isPresent()) {
+				estimate = services.get()
+						.estimatePatternLocalFilterPass(condition, patternLocalBase, originPatterns)
+						.orElse(null);
+			}
+			if (estimate == null) {
+				estimate = LmdbJoinPlanSupport.estimateFilterPass(statistics, sourceFilter, condition);
+			}
+			passEstimate = estimate;
+		}
+		return estimate;
+	}
+
+	String sourceFilterStringMetric(String metricName) {
+		return sourceFilter == null ? null : sourceFilter.getStringMetricPlanned(metricName);
 	}
 
 	static Set<String> conditionBindingNames(ValueExpr condition) {

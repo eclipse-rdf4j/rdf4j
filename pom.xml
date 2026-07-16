@@ -3,7 +3,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>org.eclipse.rdf4j</groupId>
 	<artifactId>rdf4j</artifactId>
-	<version>6.0.0-SNAPSHOT</version>
+	<version>6.1.0-SNAPSHOT</version>
 	<packaging>pom</packaging>
 	<name>Eclipse RDF4J</name>
 	<description>An extensible Java framework for RDF and SPARQL</description>
@@ -45,7 +45,7 @@
 		<module>testsuites</module>
 		<module>compliance</module>
 		<module>examples</module>
-		<!-- for maven Central deployment it is important that bom is the last module -->
+        <!-- for maven Central deployment it is important that bom is the last module -->
 		<module>bom</module>
 	</modules>
 	<properties>
@@ -73,6 +73,7 @@
 		<elasticsearch.version>9.4.2</elasticsearch.version>
 		<spring.version>7.0.8</spring.version>
 		<guava.version>33.6.0-jre</guava.version>
+		<fastutil.version>8.5.18</fastutil.version>
 		<brotli4j.version>1.23.0</brotli4j.version>
 		<zstd-jni.version>1.5.7-11</zstd-jni.version>
 		<jmhVersion>1.37</jmhVersion>
@@ -80,6 +81,7 @@
 		<junit-pioneer.version>2.3.0</junit-pioneer.version>
 		<mockito.version>5.23.0</mockito.version>
 		<mockserver.version>7.2.0</mockserver.version>
+		<awaitility.version>4.3.0</awaitility.version>
 		<assertj.version>3.27.7</assertj.version>
 		<hamcrest.version>3.0</hamcrest.version>
 		<topbraid.shacl.version>1.4.4</topbraid.shacl.version>
@@ -95,9 +97,86 @@
 		<bouncycastle.version>1.84</bouncycastle.version>
 		<testcontainers.version>2.0.5</testcontainers.version>
 		<mockito.javaagent>-javaagent:${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar</mockito.javaagent>
+		<rdf4j.apidocs.directory>${maven.multiModuleProjectDirectory}/target/site/apidocs</rdf4j.apidocs.directory>
+		<rdf4j.server.war>${maven.multiModuleProjectDirectory}/tools/server/target/rdf4j-server.war</rdf4j.server.war>
+		<rdf4j.workbench.war>${maven.multiModuleProjectDirectory}/tools/workbench/target/rdf4j-workbench.war</rdf4j.workbench.war>
+		<rdf4j.test.outputDirectory>${project.build.directory}</rdf4j.test.outputDirectory>
+		<rdf4j.test.tmpDirectory>${project.build.directory}/tmp</rdf4j.test.tmpDirectory>
+		<skipTests>false</skipTests>
 		<argLine />
 	</properties>
 	<profiles>
+		<profile>
+			<id>workspace-build-root</id>
+			<activation>
+				<property>
+					<name>rdf4j.build.root</name>
+				</property>
+			</activation>
+			<properties>
+				<mockito.javaagent>-javaagent:${project.build.directory}/test-agents/mockito-core-${mockito.version}.jar</mockito.javaagent>
+				<rdf4j.apidocs.directory>${rdf4j.build.root}/org.eclipse.rdf4j/rdf4j/${project.version}/site/apidocs</rdf4j.apidocs.directory>
+				<rdf4j.server.war>${rdf4j.build.root}/org.eclipse.rdf4j/rdf4j-http-server/${project.version}/rdf4j-server.war</rdf4j.server.war>
+				<rdf4j.workbench.war>${rdf4j.build.root}/org.eclipse.rdf4j/rdf4j-http-workbench/${project.version}/rdf4j-workbench.war</rdf4j.workbench.war>
+				<rdf4j.test.tmpDirectory>${rdf4j.test.tmpRoot}/${project.groupId}/${project.artifactId}/${project.version}</rdf4j.test.tmpDirectory>
+			</properties>
+			<build>
+				<directory>${rdf4j.build.root}/${project.groupId}/${project.artifactId}/${project.version}</directory>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.felix</groupId>
+						<artifactId>maven-bundle-plugin</artifactId>
+						<configuration>
+							<obrRepository>NONE</obrRepository>
+						</configuration>
+					</plugin>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-surefire-plugin</artifactId>
+						<configuration>
+							<systemPropertyVariables>
+								<java.io.tmpdir>${rdf4j.test.tmpDirectory}</java.io.tmpdir>
+							</systemPropertyVariables>
+						</configuration>
+					</plugin>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-failsafe-plugin</artifactId>
+						<configuration>
+							<systemPropertyVariables>
+								<java.io.tmpdir>${rdf4j.test.tmpDirectory}</java.io.tmpdir>
+							</systemPropertyVariables>
+						</configuration>
+					</plugin>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-dependency-plugin</artifactId>
+						<inherited>true</inherited>
+						<executions>
+							<execution>
+								<id>stage-workspace-mockito-javaagent</id>
+								<phase>process-test-classes</phase>
+								<goals>
+									<goal>copy</goal>
+								</goals>
+								<configuration>
+									<skip>${skipTests}</skip>
+									<artifactItems>
+										<artifactItem>
+											<groupId>org.mockito</groupId>
+											<artifactId>mockito-core</artifactId>
+											<version>${mockito.version}</version>
+											<type>jar</type>
+										</artifactItem>
+									</artifactItems>
+									<outputDirectory>${project.build.directory}/test-agents</outputDirectory>
+								</configuration>
+							</execution>
+						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
 		<profile>
 			<id>ossrh</id>
 			<distributionManagement>
@@ -303,9 +382,9 @@
 						<version>1.1.0</version>
 						<configuration>
 							<failWhenReviewNeeded>true</failWhenReviewNeeded>
-							<!-- TODO: maven/mavencentral/org.openjdk.jmh/jmh-generator-annprocess/1.35, GPL-2.0-only WITH Classpath-exception-2.0, restricted, #3045 -->
+                            <!-- TODO: maven/mavencentral/org.openjdk.jmh/jmh-generator-annprocess/1.35, GPL-2.0-only WITH Classpath-exception-2.0, restricted, #3045 -->
 							<excludeGroupIds>org.openjdk.jmh</excludeGroupIds>
-							<!-- We can safely ignore the restricted label on ES, see: https://github.com/eclipse/rdf4j/pull/4355#issuecomment-1521573125 -->
+                            <!-- We can safely ignore the restricted label on ES, see: https://github.com/eclipse/rdf4j/pull/4355#issuecomment-1521573125 -->
 							<excludeArtifactIds>elasticsearch</excludeArtifactIds>
 						</configuration>
 					</plugin>
@@ -319,7 +398,7 @@
 					<plugin>
 						<groupId>org.jacoco</groupId>
 						<artifactId>jacoco-maven-plugin</artifactId>
-						<version>0.8.13</version>
+						<version>0.8.14</version>
 						<executions>
 							<execution>
 								<goals>
@@ -361,23 +440,24 @@
 								<importOrder>
 									<order>java,javax,org,com</order>
 								</importOrder>
-<!--								<removeUnusedImports /> RE-ENABLE THIS WHEN WE MOVE TO USING JAVA 25-->
+                                <!--								<removeUnusedImports /> RE-ENABLE THIS WHEN WE MOVE TO USING JAVA 25-->
 								<trimTrailingWhitespace />
 								<endWithNewline />
 							</java>
 							<formats>
 								<format>
-									<!-- All XML files, except those excluded below -->
+                                    <!-- All XML files, except those excluded below -->
 									<includes>
 										<include>**/*.xml</include>
 									</includes>
-									<!-- Mirror old xml-format-maven-plugin excludes and avoid double-formatting POMs -->
+                                    <!-- Mirror old xml-format-maven-plugin excludes and avoid double-formatting POMs -->
 									<excludes>
 										<exclude>esclipse-settings/**</exclude>
 										<exclude>**/target/**</exclude>
 										<exclude>**/site/themes/**</exclude>
 										<exclude>**/.*/**</exclude>
 										<exclude>**/dependency-reduced-pom.xml</exclude>
+										<exclude>**/dependency-reduced-pom-*.xml</exclude>
 									</excludes>
 									<eclipseWtp>
 										<type>XML</type>
@@ -462,16 +542,16 @@
 			</build>
 		</profile>
 		<profile>
-			<!--
-				Print a dependency-update report grouped by: major version updates,
-				minor/patch updates, up-to-date, unknown (fetch failed), and
-				current version unresolved (module-level BOM).
-				Queries Maven Central, so an internet connection is required.
-				Run only at the root level (non-recursive) to avoid repeating the report
-				for every sub-module:
+            <!--
+                Print a dependency-update report grouped by: major version updates,
+                minor/patch updates, up-to-date, unknown (fetch failed), and
+                current version unresolved (module-level BOM).
+                Queries Maven Central, so an internet connection is required.
+                Run only at the root level (non-recursive) to avoid repeating the report
+                for every sub-module:
 
-				    mvn -N -P dependency-updates validate
-			-->
+                    mvn -N -P dependency-updates validate
+            -->
 			<id>dependency-updates</id>
 			<build>
 				<plugins>
@@ -502,7 +582,7 @@
 	</profiles>
 	<dependencyManagement>
 		<dependencies>
-			<!-- Jackson Bill-of-Materials -->
+            <!-- Jackson Bill-of-Materials -->
 			<dependency>
 				<groupId>com.fasterxml.jackson</groupId>
 				<artifactId>jackson-bom</artifactId>
@@ -585,13 +665,13 @@
 					</exclusion>
 				</exclusions>
 			</dependency>
-			<!-- Apache Commons -->
+            <!-- Apache Commons -->
 			<dependency>
 				<groupId>commons-cli</groupId>
 				<artifactId>commons-cli</artifactId>
 				<version>1.11.0</version>
 			</dependency>
-			<!-- note this affects the xlsx query result format using apache POI -->
+            <!-- note this affects the xlsx query result format using apache POI -->
 			<dependency>
 				<groupId>commons-io</groupId>
 				<artifactId>commons-io</artifactId>
@@ -839,7 +919,12 @@
 				<artifactId>guava-testlib</artifactId>
 				<version>${guava.version}</version>
 			</dependency>
-			<!-- Logging: SLF4J and logback -->
+			<dependency>
+				<groupId>it.unimi.dsi</groupId>
+				<artifactId>fastutil</artifactId>
+				<version>${fastutil.version}</version>
+			</dependency>
+            <!-- Logging: SLF4J and logback -->
 			<dependency>
 				<groupId>org.slf4j</groupId>
 				<artifactId>slf4j-api</artifactId>
@@ -855,7 +940,7 @@
 				<artifactId>log4j-over-slf4j</artifactId>
 				<version>${slf4j.version}</version>
 			</dependency>
-			<!-- bridging component for log4j2 to slf4j -->
+            <!-- bridging component for log4j2 to slf4j -->
 			<dependency>
 				<groupId>org.apache.logging.log4j</groupId>
 				<artifactId>log4j-to-slf4j</artifactId>
@@ -881,7 +966,7 @@
 				<artifactId>logback-classic</artifactId>
 				<version>${logback.version}</version>
 			</dependency>
-			<!-- Testing: JUnit -->
+            <!-- Testing: JUnit -->
 			<dependency>
 				<groupId>org.junit</groupId>
 				<artifactId>junit-bom</artifactId>
@@ -928,6 +1013,11 @@
 						<artifactId>commons-logging</artifactId>
 					</exclusion>
 				</exclusions>
+			</dependency>
+			<dependency>
+				<groupId>org.awaitility</groupId>
+				<artifactId>awaitility</artifactId>
+				<version>${awaitility.version}</version>
 			</dependency>
 			<dependency>
 				<groupId>org.assertj</groupId>
@@ -1007,7 +1097,7 @@
 				<artifactId>hasmac-json-ld</artifactId>
 				<version>0.10.2</version>
 			</dependency>
-			<!-- kerby is used by transitive search dependencies -->
+            <!-- kerby is used by transitive search dependencies -->
 			<dependency>
 				<groupId>org.apache.kerby</groupId>
 				<artifactId>kerb-core</artifactId>
@@ -1049,6 +1139,12 @@
 					<version>3.14.0</version>
 					<configuration>
 						<fork>false</fork>
+						<compilerArgs>
+							<arg>-Xlint:-deprecation</arg>
+							<arg>-Xlint:-removal</arg>
+							<arg>-Xlint:-dep-ann</arg>
+						</compilerArgs>
+						>
 					</configuration>
 				</plugin>
 				<plugin>
@@ -1148,7 +1244,7 @@
 								<goal>write-project-properties</goal>
 							</goals>
 							<configuration>
-								<!--  make maven project properties available to read from Java -->
+                                <!--  make maven project properties available to read from Java -->
 								<outputFile>${project.build.outputDirectory}/maven-config.properties</outputFile>
 							</configuration>
 						</execution>
@@ -1159,8 +1255,16 @@
 					<artifactId>maven-surefire-plugin</artifactId>
 					<version>3.5.4</version>
 					<configuration>
-						<!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
+                        <!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
 						<argLine>@{argLine} ${mockito.javaagent} -Xmx4G -Djava.awt.headless=true</argLine>
+						<forkedProcessTimeoutInSeconds>1800</forkedProcessTimeoutInSeconds>
+						<forkedProcessExitTimeoutInSeconds>120</forkedProcessExitTimeoutInSeconds>
+						<systemPropertyVariables>
+							<rdf4j.test.outputDirectory>${project.build.directory}</rdf4j.test.outputDirectory>
+							<rdf4j.test.tmpDirectory>${rdf4j.test.tmpDirectory}</rdf4j.test.tmpDirectory>
+							<junit.jupiter.execution.timeout.default>10 m</junit.jupiter.execution.timeout.default>
+							<junit.jupiter.execution.timeout.mode.default>enabled</junit.jupiter.execution.timeout.mode.default>
+						</systemPropertyVariables>
 					</configuration>
 				</plugin>
 				<plugin>
@@ -1170,8 +1274,16 @@
 					<configuration>
 						<forkCount>1</forkCount>
 						<reuseForks>true</reuseForks>
-						<!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
+                        <!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
 						<argLine>@{argLine} ${mockito.javaagent} -Xmx4G -Djava.awt.headless=true</argLine>
+						<forkedProcessTimeoutInSeconds>1800</forkedProcessTimeoutInSeconds>
+						<forkedProcessExitTimeoutInSeconds>120</forkedProcessExitTimeoutInSeconds>
+						<systemPropertyVariables>
+							<rdf4j.test.outputDirectory>${project.build.directory}</rdf4j.test.outputDirectory>
+							<rdf4j.test.tmpDirectory>${rdf4j.test.tmpDirectory}</rdf4j.test.tmpDirectory>
+							<junit.jupiter.execution.timeout.default>10 m</junit.jupiter.execution.timeout.default>
+							<junit.jupiter.execution.timeout.mode.default>enabled</junit.jupiter.execution.timeout.mode.default>
+						</systemPropertyVariables>
 						<includes>
 							<include>**/*IT.java</include>
 						</includes>
@@ -1266,12 +1378,12 @@
 								<exclude>org.eclipse.rdf4j.model.util.RDFStarTestHelper.java</exclude>
 							</excludes>
 							<overrideCompatibilityChangeParameters>
-								<!-- The override below was previously activated, left as a comment in case we want to activate it again.
+                                <!-- The override below was previously activated, left as a comment in case we want to activate it again.
                                 <overrideCompatibilityChangeParameter>
-                                	<compatibilityChange>METHOD_ABSTRACT_ADDED_IN_IMPLEMENTED_INTERFACE</compatibilityChange>
-                                	<binaryCompatible>true</binaryCompatible>
-                                	<sourceCompatible>true</sourceCompatible>
-                                	<semanticVersionLevel>MINOR</semanticVersionLevel>
+                                    <compatibilityChange>METHOD_ABSTRACT_ADDED_IN_IMPLEMENTED_INTERFACE</compatibilityChange>
+                                    <binaryCompatible>true</binaryCompatible>
+                                    <sourceCompatible>true</sourceCompatible>
+                                    <semanticVersionLevel>MINOR</semanticVersionLevel>
                                 </overrideCompatibilityChangeParameter>
                                  -->
 								<overrideCompatibilityChangeParameter>
@@ -1296,6 +1408,9 @@
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-shade-plugin</artifactId>
 					<version>3.5.1</version>
+					<configuration>
+						<generateUniqueDependencyReducedPom>true</generateUniqueDependencyReducedPom>
+					</configuration>
 				</plugin>
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
@@ -1333,9 +1448,9 @@
 										<includes>
 											<include>org.apache.logging.log4j:log4j-to-slf4j</include>
 											<include>org.apache.logging.log4j:log4j-api</include>
-											<!-- elasticsearch-cluster-runner needs log4j-core -->
+                                            <!-- elasticsearch-cluster-runner needs log4j-core -->
 											<include>org.apache.logging.log4j:log4j-core:*:*:test</include>
-											<!-- kept for transitive embedded search server test cases -->
+                                            <!-- kept for transitive embedded search server test cases -->
 											<include>org.apache.logging.log4j:log4j-web</include>
 										</includes>
 									</bannedDependencies>
@@ -1368,11 +1483,11 @@
 								<rules>
 									<banDuplicateClasses>
 										<ignoreClasses>
-											<!-- mockserver-junit-jupiter may include these classes -->
+                                            <!-- mockserver-junit-jupiter may include these classes -->
 											<ignoreClass>org.junit.*</ignoreClass>
-											<!-- mockserver-junit-jupiter may include these classes -->
+                                            <!-- mockserver-junit-jupiter may include these classes -->
 											<ignoreClass>org.slf4j.*</ignoreClass>
-											<!-- mockserver-junit-jupiter may include these classes -->
+                                            <!-- mockserver-junit-jupiter may include these classes -->
 											<ignoreClass>org.opentest4j.*</ignoreClass>
 										</ignoreClasses>
 										<ignoreWhenIdentical>true</ignoreWhenIdentical>
@@ -1412,7 +1527,7 @@
 				<groupId>net.revelc.code.formatter</groupId>
 				<artifactId>formatter-maven-plugin</artifactId>
 				<configuration>
-	<!--suppress UnresolvedMavenProperty -->
+                    <!--suppress UnresolvedMavenProperty -->
 					<configFile>${maven.multiModuleProjectDirectory}/eclipse-settings/eclipse-rdf4j-conventions.xml</configFile>
 					<lineEnding>LF</lineEnding>
 					<skipHtmlFormatting>true</skipHtmlFormatting>

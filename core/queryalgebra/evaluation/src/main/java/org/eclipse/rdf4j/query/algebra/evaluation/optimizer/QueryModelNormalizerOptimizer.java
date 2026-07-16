@@ -152,8 +152,6 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 			difference.replaceWith(leftArg);
 		} else if (rightArg instanceof EmptySet) {
 			difference.replaceWith(leftArg);
-		} else if (leftArg instanceof SingletonSet && rightArg instanceof SingletonSet) {
-			difference.replaceWith(new EmptySet());
 		}
 	}
 

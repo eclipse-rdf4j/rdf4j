@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
@@ -25,10 +26,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConjunctiveConstrain
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.DisjunctiveConstraintOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.IterativeEvaluationOptimizer;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OrderLimitOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceChecker;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ProjectionRemovalOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryModelNormalizerOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.RegexAsStringFunctionOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SameTermFilterOptimizer;
@@ -50,39 +48,61 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	private static final SameTermFilterOptimizer SAME_TERM_FILTER_OPTIMIZER = new SameTermFilterOptimizer();
 	private static final UnionScopeChangeOptimizer UNION_SCOPE_CHANGE_OPTIMIZER = new UnionScopeChangeOptimizer();
 	private static final QueryModelNormalizerOptimizer QUERY_MODEL_NORMALIZER = new QueryModelNormalizerOptimizer();
-	private static final ProjectionRemovalOptimizer PROJECTION_REMOVAL_OPTIMIZER = new ProjectionRemovalOptimizer();
-	private static final IterativeEvaluationOptimizer ITERATIVE_EVALUATION_OPTIMIZER = new IterativeEvaluationOptimizer();
-	private static final OrderLimitOptimizer ORDER_LIMIT_OPTIMIZER = new OrderLimitOptimizer();
+	private static final LmdbEligibilitySemiJoinOptimizer ELIGIBILITY_SEMI_JOIN_OPTIMIZER = new LmdbEligibilitySemiJoinOptimizer();
 
 	private final EvaluationStrategy strategy;
 	private final TripleSource tripleSource;
 	private final EvaluationStatistics evaluationStatistics;
+	private final boolean preserveSerializableObservationOrder;
 
 	LmdbQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
+		this(strategy, tripleSource, evaluationStatistics, false);
+	}
+
+	LmdbQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
+			EvaluationStatistics evaluationStatistics, boolean preserveSerializableObservationOrder) {
 		this.strategy = strategy;
 		this.tripleSource = tripleSource;
 		this.evaluationStatistics = evaluationStatistics;
+		this.preserveSerializableObservationOrder = preserveSerializableObservationOrder;
 	}
 
 	@Override
 	public Iterable<QueryOptimizer> getOptimizers() {
-		List<QueryOptimizer> optimizers = List.of(
-				BINDING_ASSIGNER,
-				new ConstantOptimizer(strategy),
-				new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()),
-				COMPARE_OPTIMIZER,
-				CONJUNCTIVE_CONSTRAINT_SPLITTER,
-				DISJUNCTIVE_CONSTRAINT_OPTIMIZER,
-				SAME_TERM_FILTER_OPTIMIZER,
-				UNION_SCOPE_CHANGE_OPTIMIZER,
-				QUERY_MODEL_NORMALIZER,
-				PROJECTION_REMOVAL_OPTIMIZER,
-				new FilterOptimizer(null, false, false),
-				ITERATIVE_EVALUATION_OPTIMIZER,
-				new LmdbFilterSimplifierOptimizer(evaluationStatistics),
-				new LmdbSketchJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize()),
-				ORDER_LIMIT_OPTIMIZER);
+		List<QueryOptimizer> optimizers = new ArrayList<>();
+		optimizers.add(BINDING_ASSIGNER);
+		optimizers.add(new ConstantOptimizer(strategy));
+		optimizers.add(new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()));
+		Optional<LmdbPlannerServices> services = LmdbPlannerServices.from(evaluationStatistics);
+		if (services.isPresent() && services.get().valueStore() != null) {
+			optimizers.add(new LmdbValueLookupOptimizer(services.get().valueStore()));
+		}
+		optimizers.add(COMPARE_OPTIMIZER);
+		optimizers.add(CONJUNCTIVE_CONSTRAINT_SPLITTER);
+		optimizers.add(DISJUNCTIVE_CONSTRAINT_OPTIMIZER);
+		optimizers.add(SAME_TERM_FILTER_OPTIMIZER);
+		optimizers.add(UNION_SCOPE_CHANGE_OPTIMIZER);
+		optimizers.add(QUERY_MODEL_NORMALIZER);
+		optimizers.add(new LmdbOptionalNormalFormOptimizer(evaluationStatistics));
+		optimizers.add(ELIGIBILITY_SEMI_JOIN_OPTIMIZER);
+		optimizers.add(new FilterOptimizer(null, false, false));
+		optimizers.add(new LmdbBoundSimplifierOptimizer());
+		if (!preserveSerializableObservationOrder) {
+			optimizers.add(new LmdbSetSemanticsOptimizer());
+		}
+		optimizers.add(new LmdbFilterSimplifierOptimizer(evaluationStatistics));
+		if (!preserveSerializableObservationOrder) {
+			optimizers.add(new LmdbSetSemanticsOptimizer());
+		}
+		optimizers.add(ELIGIBILITY_SEMI_JOIN_OPTIMIZER);
+		if (!preserveSerializableObservationOrder && LmdbCascadesOptimizer.standardPlanBaselineCaptureEnabled()) {
+			optimizers.add(new LmdbStandardPlanBaselineOptimizer());
+		}
+		optimizers.add(new LmdbCascadesOptimizer(evaluationStatistics, strategy.isTrackResultSize(),
+				preserveSerializableObservationOrder, strategy, tripleSource));
+		optimizers.add(new LmdbCascadesExplainFinalizer(evaluationStatistics,
+				Boolean.getBoolean(LmdbCascadesExplainFinalizer.FALLBACK_ANNOTATIONS_PROPERTY)));
 
 		if (assertsEnabled) {
 			List<QueryOptimizer> checked = new ArrayList<>();
