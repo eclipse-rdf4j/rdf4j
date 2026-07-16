@@ -53,9 +53,12 @@ public final class OptimizerPipelineRunner {
 		List<QueryOptimizer> optimizerList = new ArrayList<>();
 		optimizers.forEach(optimizerList::add);
 		if (configuration.mode() == ScopeSafetyMode.SHADOW) {
-			TupleExpr candidate = root.clone();
+			// Decide sampling BEFORE cloning: at low sample rates the whole-tree clone would
+			// otherwise be built and discarded for almost every query.
+			boolean sampled = shouldSample(configuration.shadowSampleRate());
+			TupleExpr candidate = sampled ? root.clone() : null;
 			runOne(root, dataset, bindings, optimizerList, configuration);
-			if (!shouldSample(root, configuration.shadowSampleRate())) {
+			if (!sampled) {
 				ScopeSafetyTelemetry.recordShadowSkip(ShadowSkipReason.NOT_SAMPLED, configuration.telemetry());
 				ShadowOptimizationPlan.attach(root, ShadowOptimizationPlan.create(null, configuration.shadowMaxRows(),
 						ShadowSkipReason.NOT_SAMPLED, false, configuration.telemetry(),
@@ -108,15 +111,17 @@ public final class OptimizerPipelineRunner {
 		}
 	}
 
-	private static boolean shouldSample(TupleExpr root, double rate) {
+	private static boolean shouldSample(double rate) {
 		if (rate <= 0.0) {
 			return false;
 		}
 		if (rate >= 1.0) {
 			return true;
 		}
-		long unsignedHash = Integer.toUnsignedLong(root.hashCode());
-		return unsignedHash / 4_294_967_296.0 < rate;
+		// A real random coin: the previous structural-hash scheme was both badly skewed (XOR
+		// combinators cancel) and deterministic per query (a given query was always or never
+		// sampled). Reproduce shadow findings with shadowStrict and a fixed dataset instead.
+		return java.util.concurrent.ThreadLocalRandom.current().nextDouble() < rate;
 	}
 
 	private static CandidateClassification classifyCandidate(TupleExpr candidate) {

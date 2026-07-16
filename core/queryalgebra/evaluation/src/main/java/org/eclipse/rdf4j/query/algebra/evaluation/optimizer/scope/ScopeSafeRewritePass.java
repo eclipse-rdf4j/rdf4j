@@ -34,83 +34,67 @@ public final class ScopeSafeRewritePass {
 	}
 
 	public static int filters(QueryRoot root, OptimizationSession session) {
-		requireEnforce(session);
-		ScopeSafeRewriter rewriter = new ScopeSafeRewriter(root, session.analysis(), session.telemetryEnabled());
-		int rewrites = 0;
-		int maximum = Math.max(64, rewriter.analysis().arena().size() << 2);
-		while (rewrites < maximum) {
-			boolean changed = false;
-			for (Filter filter : filters(root)) {
+		return runToFixpoint(root, session, "filter", (rewriter, r) -> {
+			for (Filter filter : filters(r)) {
 				if (rewriter.distributeFilterOverUnion(filter)
 						|| rewriter.moveFilterIntoMinusLeft(filter)
 						|| rewriter.moveFilterBelowLeftJoinLeft(filter)
 						|| rewriter.moveFilterBelowJoinLeft(filter)
 						|| rewriter.moveFilterBelowJoinRight(filter)) {
-					rewrites++;
-					session.afterAcceptedRewrite(rewriter.analysis());
-					changed = true;
-					break;
+					return true;
 				}
 			}
-			if (!changed) {
-				break;
-			}
-		}
-		if (rewrites == maximum) {
-			throw new IllegalStateException("scope-safe filter rewrite did not converge");
-		}
-		session.installAnalysis(rewriter.analysis());
-		return rewrites;
+			return false;
+		});
 	}
 
 	public static int projections(QueryRoot root, OptimizationSession session) {
-		requireEnforce(session);
-		ScopeSafeRewriter rewriter = new ScopeSafeRewriter(root, session.analysis(), session.telemetryEnabled());
-		int rewrites = 0;
-		int maximum = Math.max(64, rewriter.analysis().arena().size() << 2);
-		while (rewrites < maximum) {
-			boolean changed = false;
-			for (Projection projection : projections(root)) {
+		return runToFixpoint(root, session, "projection", (rewriter, r) -> {
+			for (Projection projection : projections(r)) {
 				if (rewriter.flattenTransparentSubquery(projection)
 						|| rewriter.removeIdentityProjection(projection)) {
-					rewrites++;
-					session.afterAcceptedRewrite(rewriter.analysis());
-					changed = true;
-					break;
+					return true;
 				}
 			}
-			if (!changed) {
-				break;
-			}
-		}
-		if (rewrites == maximum) {
-			throw new IllegalStateException("scope-safe projection rewrite did not converge");
-		}
-		session.installAnalysis(rewriter.analysis());
-		return rewrites;
+			return false;
+		});
 	}
 
 	public static int algebra(QueryRoot root, OptimizationSession session) {
+		return runToFixpoint(root, session, "algebra", (rewriter, r) -> {
+			for (QueryModelNode node : algebraNodes(r)) {
+				if (rewriteAlgebraNode(rewriter, node)) {
+					return true;
+				}
+			}
+			return false;
+		});
+	}
+
+	/** One accepted rewrite per scan round (a scan applies at most the FIRST applicable rewrite and reports it). */
+	@FunctionalInterface
+	private interface RewriteRound {
+		boolean apply(ScopeSafeRewriter rewriter, QueryRoot root);
+	}
+
+	/**
+	 * The single fixpoint driver: rescan-after-every-accepted-rewrite with a convergence cap proportional to the tree
+	 * size, so a rule pair that oscillates fails loudly instead of hanging the query.
+	 */
+	private static int runToFixpoint(QueryRoot root, OptimizationSession session, String what, RewriteRound round) {
 		requireEnforce(session);
 		ScopeSafeRewriter rewriter = new ScopeSafeRewriter(root, session.analysis(), session.telemetryEnabled());
 		int rewrites = 0;
 		int maximum = Math.max(64, rewriter.analysis().arena().size() << 2);
 		while (rewrites < maximum) {
-			boolean changed = false;
-			for (QueryModelNode node : algebraNodes(root)) {
-				if (rewriteAlgebraNode(rewriter, node)) {
-					rewrites++;
-					session.afterAcceptedRewrite(rewriter.analysis());
-					changed = true;
-					break;
-				}
-			}
-			if (!changed) {
+			if (!round.apply(rewriter, root)) {
 				break;
 			}
+			rewrites++;
+			session.afterAcceptedRewrite(rewriter.analysis());
 		}
 		if (rewrites == maximum) {
-			throw new IllegalStateException("scope-safe algebra rewrite did not converge");
+			throw new IllegalStateException("scope-safe " + what + " rewrite did not converge");
 		}
 		session.installAnalysis(rewriter.analysis());
 		return rewrites;
