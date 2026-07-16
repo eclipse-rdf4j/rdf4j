@@ -13,10 +13,18 @@ package org.eclipse.rdf4j.query.algebra.json;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.InputStream;
 import java.lang.reflect.Method;
+import java.util.List;
 
+import org.eclipse.rdf4j.query.algebra.MultiProjection;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.junit.jupiter.api.Test;
 
@@ -47,5 +55,31 @@ class TupleExprJsonWriterTest {
 		assertEquals(firstExport, secondExport);
 		assertEquals(original, imported);
 		assertNotSame(original, imported);
+	}
+
+	@Test
+	void projectionElementListScopeChangeRoundTrips() throws Exception {
+		// The element list is serialized as a bare array; its scope-change flag used to be
+		// silently dropped by a round-trip (found by the equivalence differential fuzzer).
+		ProjectionElemList elements = new ProjectionElemList(new ProjectionElem("x"));
+		elements.setVariableScopeChange(true);
+		Projection projection = new Projection(new SingletonSet(), elements, false);
+
+		TupleExpr imported = new TupleExprJsonParser().parse(new TupleExprJsonWriter().toJson(projection));
+
+		Projection importedProjection = (Projection) imported;
+		assertTrue(importedProjection.getProjectionElemList().isVariableScopeChange(),
+				"projection element list scope-change flag must survive the round-trip");
+	}
+
+	@Test
+	void multiProjectionElementListScopeChangeFailsLoudly() {
+		ProjectionElemList elements = new ProjectionElemList(new ProjectionElem("x"));
+		elements.setVariableScopeChange(true);
+		MultiProjection multiProjection = new MultiProjection(new SingletonSet(), List.of(elements));
+
+		assertThrows(TupleExprJsonWriteException.class,
+				() -> new TupleExprJsonWriter().toJson(multiProjection),
+				"an unrepresentable scope flag must fail the write, not silently drop");
 	}
 }

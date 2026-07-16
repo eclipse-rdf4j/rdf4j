@@ -657,12 +657,16 @@ public final class TupleExprJsonParser {
 		}
 
 		private TupleExpr projection(ObjectNode object, String path) throws TupleExprJsonParseException {
-			checkNodeFields(object, path, "arg", "projectionElements", "projectionContext", "subquery");
+			checkNodeFields(object, path, "arg", "projectionElements", "projectionContext", "subquery",
+					"projectionElementsScopeChange");
 			TupleExpr arg = tupleExpr(required(object, "arg", path), child(path, "arg"));
 			ProjectionElemList elements = projectionElemList(
 					requireArray(required(object, "projectionElements", path), child(path, "projectionElements"),
 							"projectionElements"),
 					child(path, "projectionElements"));
+			if (optionalBoolean(object, "projectionElementsScopeChange", path, false)) {
+				elements.setVariableScopeChange(true);
+			}
 			Projection result = new Projection(arg, elements, optionalBoolean(object, "subquery", path, true));
 			Var context = optionalVariable(object, "projectionContext", path);
 			if (context != null) {
