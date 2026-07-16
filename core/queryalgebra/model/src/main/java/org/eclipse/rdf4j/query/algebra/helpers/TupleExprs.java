@@ -40,9 +40,14 @@ import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 public class TupleExprs {
 
 	/**
-	 * Verifies if the supplied {@link TupleExpr} contains a {@link Projection} with the subquery flag set to true
-	 * (default). If the supplied TupleExpr is a {@link Join} or contains a {@link Join}, projections inside that Join's
-	 * arguments will not be taken into account.
+	 * Verifies if the supplied {@link TupleExpr} contains a {@link Projection} with the subquery flag set to true. If
+	 * the supplied TupleExpr is a {@link Join} or contains a {@link Join}, projections inside that Join's arguments
+	 * will not be taken into account.
+	 * <p>
+	 * The {@link Projection#isSubquery()} flag is authoritative here: parsed sub-selects carry {@code true}, while the
+	 * top-level projection and internal optimizer-introduced projections carry {@code false} and are deliberately
+	 * treated as transparent (correlated). Code that embeds a parsed top-level projection as a join operand must set
+	 * the flag itself — see {@link Projection#isSubquery()}.
 	 *
 	 * @param t a tuple expression.
 	 * @return <code>true</code> if the TupleExpr contains a subquery projection (outside of a Join), <code>false</code>

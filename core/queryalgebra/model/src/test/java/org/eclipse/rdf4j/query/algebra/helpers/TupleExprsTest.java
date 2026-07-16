@@ -20,9 +20,14 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.junit.jupiter.api.Test;
 
@@ -78,6 +83,28 @@ public class TupleExprsTest {
 	public void constVarNameIncludesDirectedLanguageBaseDirection() {
 		assertThat(TupleExprs.getConstVarName(f.createLiteral("שלום", "he", Literal.BaseDirection.RTL)))
 				.isNotEqualTo(TupleExprs.getConstVarName(f.createLiteral("שלום", "he", Literal.BaseDirection.LTR)));
+	}
+
+	@Test
+	public void containsSubqueryHonoursTheAuthoritativeFlag() {
+		// The flag is set accurately at construction (parser: sub-selects true, top-level false;
+		// optimizers: internal transparent projections false). Flag-false projections are
+		// deliberately correlated — treating them positionally would break internal projections
+		// that must stay transparent. Composers embedding a top-level projection under a join
+		// must set the flag themselves.
+		StatementPattern pattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+		Projection transparent = new Projection(
+				new StatementPattern(new Var("s2"), new Var("p2"), new Var("o")),
+				new ProjectionElemList(new ProjectionElem("o")),
+				false);
+		Projection subselect = transparent.clone();
+		subselect.setSubquery(true);
+
+		assertThat(TupleExprs.containsSubquery(transparent)).isFalse();
+		assertThat(TupleExprs.containsSubquery(subselect)).isTrue();
+		assertThat(TupleExprs.containsSubquery(new Union(pattern.clone(), subselect.clone()))).isTrue();
+		// Projections already inside a nested Join are that join's concern, not this operand's.
+		assertThat(TupleExprs.containsSubquery(new Join(subselect.clone(), pattern.clone()))).isFalse();
 	}
 
 }
