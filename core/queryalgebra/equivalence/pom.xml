@@ -32,6 +32,12 @@
 		</dependency>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
+			<artifactId>rdf4j-queryalgebra-json</artifactId>
+			<version>${project.version}</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-queryalgebra-evaluation</artifactId>
 			<version>${project.version}</version>
 		</dependency>
@@ -49,6 +55,12 @@
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-sail-memory</artifactId>
 			<version>${project.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>${project.groupId}</groupId>
+			<artifactId>rdf4j-rio-ntriples</artifactId>
+			<version>${project.version}</version>
+			<scope>test</scope>
 		</dependency>
 	</dependencies>
 </project>

@@ -15,14 +15,19 @@ import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
-/** Immutable explicit and arbitrary-name reads from an RDF4J runtime input mapping. */
+/** Immutable read and discard effects on an RDF4J runtime input mapping. */
 final class IncomingBindingInfo {
 	private final Set<String> explicitReads;
 	private final boolean readsAnyIncomingBinding;
+	private final boolean mayDiscardIncomingBindings;
 
-	IncomingBindingInfo(Set<String> explicitReads, boolean readsAnyIncomingBinding) {
+	IncomingBindingInfo(
+			Set<String> explicitReads,
+			boolean readsAnyIncomingBinding,
+			boolean mayDiscardIncomingBindings) {
 		this.explicitReads = Collections.unmodifiableSet(new LinkedHashSet<>(explicitReads));
 		this.readsAnyIncomingBinding = readsAnyIncomingBinding;
+		this.mayDiscardIncomingBindings = mayDiscardIncomingBindings;
 	}
 
 	Set<String> explicitReads() {
@@ -31,5 +36,9 @@ final class IncomingBindingInfo {
 
 	boolean readsAnyIncomingBinding() {
 		return readsAnyIncomingBinding;
+	}
+
+	boolean mayDiscardIncomingBindings() {
+		return mayDiscardIncomingBindings;
 	}
 }
