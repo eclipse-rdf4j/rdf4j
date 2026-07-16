@@ -70,6 +70,8 @@ final class IncomingBindingAnalyzer {
 		BindingInfo rightBindings = bindings.analyze(right);
 		return overlaps(leftInfo, rightBindings.mayBind())
 				|| overlaps(rightInfo, leftBindings.mayBind())
+				|| !Collections.disjoint(leftInfo.rebinds(), rightBindings.mayBind())
+				|| !Collections.disjoint(rightInfo.rebinds(), leftBindings.mayBind())
 				|| leftInfo.mayDiscardIncomingBindings()
 				|| rightInfo.mayDiscardIncomingBindings();
 	}
@@ -104,12 +106,22 @@ final class IncomingBindingAnalyzer {
 		}
 		if (expression instanceof Extension extension) {
 			IncomingBindingInfo result = externalReads(extension.getArg());
+			Set<String> rebinds = mutable(result.rebinds());
 			for (ExtensionElem element : extension.getElements()) {
 				result = withExplicitReads(
 						result,
 						unsatisfied(ExpressionVariables.collect(element.getExpr()), extension.getArg()));
+				// ExtensionIterator overwrites the target binding, so every written name is a
+				// re-binding write regardless of what the argument binds.
+				if (element.getName() != null) {
+					rebinds.add(element.getName());
+				}
 			}
-			return result;
+			return new IncomingBindingInfo(
+					result.explicitReads(),
+					result.readsAnyIncomingBinding(),
+					result.mayDiscardIncomingBindings(),
+					rebinds);
 		}
 		if (expression instanceof Projection projection) {
 			IncomingBindingInfo inputReads = externalReads(projection.getArg());
@@ -123,7 +135,8 @@ final class IncomingBindingAnalyzer {
 			return new IncomingBindingInfo(
 					explicitReads,
 					inputReads.readsAnyIncomingBinding(),
-					isOuterProjection(projection));
+					isOuterProjection(projection),
+					inputReads.rebinds());
 		}
 		if (expression instanceof Order order) {
 			IncomingBindingInfo result = externalReads(order.getArg());
@@ -141,7 +154,16 @@ final class IncomingBindingAnalyzer {
 			return correlatedCombination(lateral.getLeftArg(), lateral.getRightArg());
 		}
 		if (expression instanceof LeftJoin leftJoin) {
-			return correlatedCombination(leftJoin.getLeftArg(), leftJoin.getRightArg());
+			IncomingBindingInfo result = correlatedCombination(leftJoin.getLeftArg(), leftJoin.getRightArg());
+			if (leftJoin.hasCondition()) {
+				// The OPTIONAL condition is evaluated in the scope of the merged solution, which
+				// can include bindings riding in from a sibling operand (well-designed exposure),
+				// so condition reads the left arg does not guarantee count as incoming reads.
+				result = withExplicitReads(
+						result,
+						unsatisfied(ExpressionVariables.collect(leftJoin.getCondition()), leftJoin.getLeftArg()));
+			}
+			return result;
 		}
 		if (expression instanceof Union union) {
 			return union(externalReads(union.getLeftArg()), externalReads(union.getRightArg()));
@@ -155,12 +177,15 @@ final class IncomingBindingAnalyzer {
 			return new IncomingBindingInfo(
 					result.explicitReads(),
 					true,
-					leftInfo.mayDiscardIncomingBindings());
+					leftInfo.mayDiscardIncomingBindings(),
+					result.rebinds());
 		}
 
 		Set<String> possibleReads = collectVariables(expression);
 		possibleReads.removeAll(bindings.analyze(expression).mustBind());
-		return new IncomingBindingInfo(possibleReads, false, true);
+		// mayDiscard=true already makes any operand pairing order-observable, so the unknown
+		// node's writes need no separate modelling here.
+		return new IncomingBindingInfo(possibleReads, false, true, Set.of());
 	}
 
 	private IncomingBindingInfo correlatedCombination(TupleExpr left, TupleExpr right) {
@@ -170,10 +195,13 @@ final class IncomingBindingAnalyzer {
 		Set<String> rightExplicitReads = mutable(rightReads.explicitReads());
 		rightExplicitReads.removeAll(bindings.analyze(left).mustBind());
 		explicitReads.addAll(rightExplicitReads);
+		Set<String> rebinds = mutable(leftReads.rebinds());
+		rebinds.addAll(rightReads.rebinds());
 		return new IncomingBindingInfo(
 				explicitReads,
 				leftReads.readsAnyIncomingBinding() || rightReads.readsAnyIncomingBinding(),
-				leftReads.mayDiscardIncomingBindings() || rightReads.mayDiscardIncomingBindings());
+				leftReads.mayDiscardIncomingBindings() || rightReads.mayDiscardIncomingBindings(),
+				rebinds);
 	}
 
 	private Set<String> unsatisfied(Set<String> reads, TupleExpr input) {
@@ -203,10 +231,13 @@ final class IncomingBindingAnalyzer {
 	private static IncomingBindingInfo union(IncomingBindingInfo left, IncomingBindingInfo right) {
 		Set<String> explicitReads = mutable(left.explicitReads());
 		explicitReads.addAll(right.explicitReads());
+		Set<String> rebinds = mutable(left.rebinds());
+		rebinds.addAll(right.rebinds());
 		return new IncomingBindingInfo(
 				explicitReads,
 				left.readsAnyIncomingBinding() || right.readsAnyIncomingBinding(),
-				left.mayDiscardIncomingBindings() || right.mayDiscardIncomingBindings());
+				left.mayDiscardIncomingBindings() || right.mayDiscardIncomingBindings(),
+				rebinds);
 	}
 
 	private static IncomingBindingInfo withExplicitReads(IncomingBindingInfo source, Set<String> additionalReads) {
@@ -215,7 +246,8 @@ final class IncomingBindingAnalyzer {
 		return new IncomingBindingInfo(
 				explicitReads,
 				source.readsAnyIncomingBinding(),
-				source.mayDiscardIncomingBindings());
+				source.mayDiscardIncomingBindings(),
+				source.rebinds());
 	}
 
 	private static boolean isOuterProjection(Projection projection) {
@@ -230,7 +262,7 @@ final class IncomingBindingAnalyzer {
 	}
 
 	private static IncomingBindingInfo empty(boolean mayDiscardIncomingBindings) {
-		return new IncomingBindingInfo(Set.of(), false, mayDiscardIncomingBindings);
+		return new IncomingBindingInfo(Set.of(), false, mayDiscardIncomingBindings, Set.of());
 	}
 
 	private static Set<String> mutable(Set<String> source) {

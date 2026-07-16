@@ -15,19 +15,22 @@ import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
-/** Immutable read and discard effects on an RDF4J runtime input mapping. */
+/** Immutable read, re-bind and discard effects on an RDF4J runtime input mapping. */
 final class IncomingBindingInfo {
 	private final Set<String> explicitReads;
 	private final boolean readsAnyIncomingBinding;
 	private final boolean mayDiscardIncomingBindings;
+	private final Set<String> rebinds;
 
 	IncomingBindingInfo(
 			Set<String> explicitReads,
 			boolean readsAnyIncomingBinding,
-			boolean mayDiscardIncomingBindings) {
+			boolean mayDiscardIncomingBindings,
+			Set<String> rebinds) {
 		this.explicitReads = Collections.unmodifiableSet(new LinkedHashSet<>(explicitReads));
 		this.readsAnyIncomingBinding = readsAnyIncomingBinding;
 		this.mayDiscardIncomingBindings = mayDiscardIncomingBindings;
+		this.rebinds = Collections.unmodifiableSet(new LinkedHashSet<>(rebinds));
 	}
 
 	Set<String> explicitReads() {
@@ -40,5 +43,14 @@ final class IncomingBindingInfo {
 
 	boolean mayDiscardIncomingBindings() {
 		return mayDiscardIncomingBindings;
+	}
+
+	/**
+	 * Names this subtree may OVERWRITE on an incoming mapping (BIND-style writes). Unlike a join of compatible
+	 * bindings, a re-binding write clobbers whatever value rode in, so a sibling operand that may bind the same name
+	 * makes evaluation order observable.
+	 */
+	Set<String> rebinds() {
+		return rebinds;
 	}
 }
