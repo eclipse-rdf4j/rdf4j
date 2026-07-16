@@ -18,13 +18,17 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.Reduced;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
@@ -121,6 +125,30 @@ public class TupleExprsTest {
 		// find, pair seed 73613).
 		assertThat(TupleExprs.containsSubquery(new Union(subselect.clone(), joinOperand.clone()))).isTrue();
 		assertThat(TupleExprs.containsSubquery(new Union(joinOperand.clone(), subselect.clone()))).isTrue();
+	}
+
+	@Test
+	public void containsResultSetModifierFlagsPushdownUnstableModifiers() {
+		StatementPattern pattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+		// a LeftJoin's optional side makes the solution domains heterogeneous: dedup over such rows
+		// collapses solutions that differ only in an unbound variable once sibling bindings are pushed
+		LeftJoin heterogeneous = new LeftJoin(pattern.clone(),
+				new StatementPattern(new Var("s"), new Var("p2"), new Var("o2")));
+
+		assertThat(TupleExprs.containsResultSetModifier(pattern.clone())).isFalse();
+		// uniform-domain dedup is push-down-stable (the parser's path? encoding relies on this)
+		assertThat(TupleExprs.containsResultSetModifier(new Distinct(pattern.clone()))).isFalse();
+		assertThat(TupleExprs.containsResultSetModifier(new Distinct(heterogeneous.clone()))).isTrue();
+		assertThat(TupleExprs.containsResultSetModifier(new Reduced(heterogeneous.clone()))).isTrue();
+		// a Slice truncates the filtered instead of the unfiltered solutions, so it always isolates
+		assertThat(TupleExprs.containsResultSetModifier(new Slice(pattern.clone(), 0, 1))).isTrue();
+		// binding push-down reaches a nested Join's operands directly, so the scan descends into Joins
+		assertThat(TupleExprs
+				.containsResultSetModifier(new Join(new Distinct(heterogeneous.clone()), pattern.clone())))
+						.isTrue();
+		assertThat(TupleExprs
+				.containsResultSetModifier(new Union(pattern.clone(), new Distinct(heterogeneous.clone()))))
+						.isTrue();
 	}
 
 }

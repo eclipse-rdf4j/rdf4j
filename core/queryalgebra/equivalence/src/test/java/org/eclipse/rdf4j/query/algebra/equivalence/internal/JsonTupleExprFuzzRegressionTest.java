@@ -33,8 +33,10 @@ import org.junit.jupiter.api.TestFactory;
 /**
  * Manifest-driven pinned repros promoted from fuzz artifacts. Each manifest row names a pair of JSON trees under
  * {@code fuzz-regressions/} and the verdict the checker must produce; every pair must also survive {@code check()}
- * without throwing. To promote a new find: copy the shrunk {@code original.json}/{@code candidate.json} from
- * {@code target/equivalence-fuzz/} into {@code fuzz-regressions/<name>.original.json} etc. and add a manifest row.
+ * without throwing, and the full {@link DifferentialOracle} must accept it again (so a pinned soundness find also
+ * guards the runtime agreement it exposed, not just the verdict). To promote a new find: copy the shrunk
+ * {@code original.json}/{@code candidate.json} from {@code target/equivalence-fuzz/} into
+ * {@code fuzz-regressions/<name>.original.json} etc. and add a manifest row.
  */
 class JsonTupleExprFuzzRegressionTest {
 	private static final String ROOT = "/org/eclipse/rdf4j/query/algebra/equivalence/internal/fuzz-regressions/";
@@ -55,10 +57,27 @@ class JsonTupleExprFuzzRegressionTest {
 								.check(original, candidate));
 
 				assertEquals(expected, result.getStatus(), result::getReason);
+
+				for (FuzzProfile profile : oracleProfiles()) {
+					TreePair pair = new TreePair(name, "fuzz-regressions", 0L, List.of(),
+							parse(name + ".original.json"), parse(name + ".candidate.json"),
+							TreePair.Expectation.UNSPECIFIED);
+					List<FuzzViolation> violations = new DifferentialOracle().judge(pair, profile);
+					assertTrue(violations.isEmpty(),
+							() -> "pinned pair violates the differential oracle again under " + profile.label() + ": "
+									+ violations);
+				}
 			}));
 		}
 		assertFalse(tests.isEmpty(), "fuzz-regressions manifest has no entries");
 		return tests;
+	}
+
+	private static List<FuzzProfile> oracleProfiles() {
+		List<FuzzProfile> profiles = new ArrayList<>();
+		profiles.add(FuzzProfile.primary(96));
+		profiles.addAll(FuzzProfile.secondary(96));
+		return profiles;
 	}
 
 	private List<String> manifestLines() throws IOException {

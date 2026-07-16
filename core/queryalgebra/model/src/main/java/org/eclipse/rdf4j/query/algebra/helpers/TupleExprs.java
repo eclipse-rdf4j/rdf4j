@@ -20,6 +20,7 @@ import java.util.List;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -27,10 +28,14 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 
 /**
  * Utility methods for {@link TupleExpr} objects.
@@ -72,6 +77,54 @@ public class TupleExprs {
 					}
 					queue.addAll(children);
 				}
+			}
+
+			n = queue != null ? queue.poll() : null;
+
+		} while (n != null);
+
+		return false;
+	}
+
+	/**
+	 * Verifies if the supplied {@link TupleExpr} contains a result-set modifier that is unstable under binding
+	 * push-down: a {@link Slice}, or a {@link Distinct}/{@link Reduced} whose argument can produce solutions with
+	 * differing domains. These operators observe the shape of the solutions they deduplicate or truncate, so merging a
+	 * sibling's bindings into their argument changes their result: two DISTINCT solutions that differ only in an
+	 * unbound variable collapse into one once the pushed binding fills the gap, and a LIMIT truncates the filtered
+	 * instead of the unfiltered solutions. Join operands containing one must be evaluated without sibling bindings,
+	 * like subqueries. A {@link Distinct}/{@link Reduced} over uniform-domain solutions (every possible name is
+	 * assuredly bound, e.g. the parser's encoding of a {@code path?} expression) is push-down-stable — extending every
+	 * solution with the same bindings is injective there — and is deliberately NOT flagged, because operators like
+	 * {@link ZeroLengthPath} inside it depend on correlation for their semantics. Unlike
+	 * {@link #containsSubquery(TupleExpr)} this scan does descend into {@link Join} operands, because a nested join
+	 * passes its input bindings straight to its own operands.
+	 *
+	 * @param t a tuple expression.
+	 * @return <code>true</code> if the TupleExpr contains a {@link Slice}, or a {@link Distinct}/{@link Reduced} over
+	 *         possibly-heterogeneous solution domains, <code>false</code> otherwise.
+	 */
+	public static boolean containsResultSetModifier(TupleExpr t) {
+
+		TupleExpr n = t;
+		Deque<TupleExpr> queue = null;
+
+		do {
+			if (n instanceof Slice) {
+				return true;
+			}
+			if ((n instanceof Distinct || n instanceof Reduced)
+					&& !((UnaryTupleOperator) n).getArg()
+							.getBindingNames()
+							.equals(((UnaryTupleOperator) n).getArg().getAssuredBindingNames())) {
+				return true;
+			}
+			List<TupleExpr> children = getChildren(n);
+			if (!children.isEmpty()) {
+				if (queue == null) {
+					queue = new ArrayDeque<>();
+				}
+				queue.addAll(children);
 			}
 
 			n = queue != null ? queue.poll() : null;
