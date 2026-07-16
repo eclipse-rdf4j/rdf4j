@@ -194,39 +194,32 @@ public class AbstractQueryModelNodeTest {
 
 	@Test
 	public void queryScopeSeedBuildsDenseDefensiveTables() {
-		QueryScopeSeed.Builder builder = QueryScopeSeed.builder().setAlgebraFingerprint(0x123456789abcdef0L);
+		QueryScopeSeed.Builder builder = QueryScopeSeed.builder();
 		int childFrame = builder.addFrame(QueryScopeSeed.ROOT_FRAME_ID);
 		int correlatedRegion = builder.addRegion(QueryScopeSeed.ROOT_REGION_ID,
 				QueryScopeSeed.RegionKind.CORRELATED);
 		int graphEnvironment = builder.addEnvironment(QueryScopeSeed.ROOT_ENVIRONMENT_ID,
 				QueryScopeSeed.EnvironmentKind.GRAPH);
-		int outer = builder.addSymbol("outer", null, QueryScopeSeed.ROOT_FRAME_ID,
-				QueryScopeSeed.SymbolVisibility.CAPTURED);
-		int projected = builder.addSymbol("projected", "projected-physical", childFrame,
-				QueryScopeSeed.SymbolVisibility.EXPORTED);
+		int outer = builder.addSymbol("outer", QueryScopeSeed.ROOT_FRAME_ID);
+		int projected = builder.addSymbol("projected", childFrame);
 		int origin = builder.addOrigin(childFrame, correlatedRegion, graphEnvironment);
-		builder.addOccurrence(origin, projected, QueryScopeSeed.OccurrenceRole.PROJECTION_SOURCE, 0);
-		builder.addOccurrence(origin, outer, QueryScopeSeed.OccurrenceRole.CAPTURE, 1);
-		int boundary = builder.addBoundary(origin, QueryScopeSeed.BoundaryKind.SUBQUERY_PROJECTION);
-		builder.addExport(boundary, projected, outer);
-		builder.addAllowedInput(boundary, outer);
+		builder.addOccurrence(origin, projected);
+		builder.addOccurrence(origin, outer);
 
 		QueryScopeSeed seed = builder.build();
-		builder.addSymbol("later", null, childFrame, QueryScopeSeed.SymbolVisibility.LOCAL);
+		builder.addSymbol("later", childFrame);
 
-		assertEquals(0x123456789abcdef0L, seed.getAlgebraFingerprint());
 		assertEquals(2, seed.getFrameCount());
 		assertEquals(QueryScopeSeed.ROOT_FRAME_ID, seed.getFrameParent(childFrame));
 		assertEquals(QueryScopeSeed.RegionKind.CORRELATED, seed.getRegionKind(correlatedRegion));
 		assertEquals(QueryScopeSeed.EnvironmentKind.GRAPH, seed.getEnvironmentKind(graphEnvironment));
 		assertEquals(2, seed.getSymbolCount());
-		assertEquals("projected-physical", seed.getSymbolPhysicalName(projected));
+		assertEquals("projected", seed.getSymbolName(projected));
+		assertEquals(childFrame, seed.getSymbolFrame(projected));
 		assertEquals(1, seed.getOriginCount());
 		assertEquals(2, seed.getOccurrenceCount());
 		assertEquals(projected, seed.getOccurrenceSymbol(seed.getOriginOccurrenceStart(origin)));
-		assertEquals(1, seed.getBoundaryCount());
-		assertEquals(projected, seed.getExportChildSymbol(seed.getBoundaryExportStart(boundary)));
-		assertEquals(outer, seed.getAllowedInputSymbol(seed.getBoundaryAllowedInputStart(boundary)));
+		assertEquals(2, seed.getOriginOccurrenceEnd(origin) - seed.getOriginOccurrenceStart(origin));
 		assertEquals(origin, QueryScopeSeed.originId(QueryScopeSeed.originTag(origin)));
 	}
 

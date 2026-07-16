@@ -19,26 +19,23 @@ import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 
 /**
  * Immutable parser provenance used to bootstrap query-local scope analysis. The seed records original lexical and
- * evaluation identity only; mutable optimizer facts and node IDs never belong here.
+ * evaluation identity only; mutable optimizer facts and node IDs never belong here. Only the sections the scope
+ * resolver actually consumes are recorded: frames, regions, environments, symbols (name and frame), origins and their
+ * occurrence ranges, and the occurrence symbols.
  */
 @InternalUseOnly
 public final class QueryScopeSeed implements Serializable {
 
-	private static final long serialVersionUID = 7291758499063806624L;
+	private static final long serialVersionUID = 7291758499063806625L;
 
 	public static final int ROOT_FRAME_ID = 0;
 	public static final int ROOT_REGION_ID = 0;
 	public static final int ROOT_ENVIRONMENT_ID = 0;
 
-	private static final OccurrenceRole[] OCCURRENCE_ROLES = OccurrenceRole.values();
-	private static final SymbolVisibility[] SYMBOL_VISIBILITIES = SymbolVisibility.values();
 	private static final RegionKind[] REGION_KINDS = RegionKind.values();
 	private static final EnvironmentKind[] ENVIRONMENT_KINDS = EnvironmentKind.values();
-	private static final BoundaryKind[] BOUNDARY_KINDS = BoundaryKind.values();
 
 	private static final QueryScopeSeed EMPTY = new Builder().build();
-
-	private final long algebraFingerprint;
 
 	private final int[] frameParent;
 	private final int[] regionParent;
@@ -47,29 +44,15 @@ public final class QueryScopeSeed implements Serializable {
 	private final byte[] environmentKind;
 
 	private final String[] symbolName;
-	private final String[] symbolPhysicalName;
 	private final int[] symbolFrame;
-	private final byte[] symbolVisibility;
 
 	private final int[] originFrame;
 	private final int[] originRegion;
 	private final int[] originEnvironment;
 	private final int[] originOccurrenceStart;
 	private final int[] occurrenceSymbol;
-	private final byte[] occurrenceRole;
-	private final int[] occurrenceOrdinal;
-
-	private final int[] boundaryOrigin;
-	private final byte[] boundaryKind;
-	private final int[] boundaryExportStart;
-	private final int[] exportChildSymbol;
-	private final int[] exportParentSymbol;
-	private final int[] boundaryAllowedInputStart;
-	private final int[] allowedInputSymbol;
 
 	private QueryScopeSeed(Builder builder) {
-		algebraFingerprint = builder.algebraFingerprint;
-
 		frameParent = builder.frameParent.toArray();
 		regionParent = builder.regionParent.toArray();
 		regionKind = builder.regionKind.toArray();
@@ -77,9 +60,7 @@ public final class QueryScopeSeed implements Serializable {
 		environmentKind = builder.environmentKind.toArray();
 
 		symbolName = builder.symbolName.toArray();
-		symbolPhysicalName = builder.symbolPhysicalName.toArray();
 		symbolFrame = builder.symbolFrame.toArray();
-		symbolVisibility = builder.symbolVisibility.toArray();
 
 		originFrame = builder.originFrame.toArray();
 		originRegion = builder.originRegion.toArray();
@@ -88,21 +69,6 @@ public final class QueryScopeSeed implements Serializable {
 		int[] occurrenceOrigins = builder.occurrenceOrigin.toArray();
 		originOccurrenceStart = starts(originFrame.length, occurrenceOrigins);
 		occurrenceSymbol = reorder(originOccurrenceStart, occurrenceOrigins, builder.occurrenceSymbol.toArray());
-		occurrenceRole = reorder(originOccurrenceStart, occurrenceOrigins, builder.occurrenceRole.toArray());
-		occurrenceOrdinal = reorder(originOccurrenceStart, occurrenceOrigins, builder.occurrenceOrdinal.toArray());
-
-		boundaryOrigin = builder.boundaryOrigin.toArray();
-		boundaryKind = builder.boundaryKind.toArray();
-
-		int[] exportBoundaries = builder.exportBoundary.toArray();
-		boundaryExportStart = starts(boundaryOrigin.length, exportBoundaries);
-		exportChildSymbol = reorder(boundaryExportStart, exportBoundaries, builder.exportChildSymbol.toArray());
-		exportParentSymbol = reorder(boundaryExportStart, exportBoundaries, builder.exportParentSymbol.toArray());
-
-		int[] inputBoundaries = builder.allowedInputBoundary.toArray();
-		boundaryAllowedInputStart = starts(boundaryOrigin.length, inputBoundaries);
-		allowedInputSymbol = reorder(boundaryAllowedInputStart, inputBoundaries,
-				builder.allowedInputSymbol.toArray());
 	}
 
 	public static QueryScopeSeed empty() {
@@ -111,10 +77,6 @@ public final class QueryScopeSeed implements Serializable {
 
 	public static Builder builder() {
 		return new Builder();
-	}
-
-	public long getAlgebraFingerprint() {
-		return algebraFingerprint;
 	}
 
 	public int getFrameCount() {
@@ -157,16 +119,8 @@ public final class QueryScopeSeed implements Serializable {
 		return symbolName[symbolId];
 	}
 
-	public String getSymbolPhysicalName(int symbolId) {
-		return symbolPhysicalName[symbolId];
-	}
-
 	public int getSymbolFrame(int symbolId) {
 		return symbolFrame[symbolId];
-	}
-
-	public SymbolVisibility getSymbolVisibility(int symbolId) {
-		return SYMBOL_VISIBILITIES[Byte.toUnsignedInt(symbolVisibility[symbolId])];
 	}
 
 	public int getOriginCount() {
@@ -201,54 +155,6 @@ public final class QueryScopeSeed implements Serializable {
 		return occurrenceSymbol[occurrenceId];
 	}
 
-	public OccurrenceRole getOccurrenceRole(int occurrenceId) {
-		return OCCURRENCE_ROLES[Byte.toUnsignedInt(occurrenceRole[occurrenceId])];
-	}
-
-	public int getOccurrenceOrdinal(int occurrenceId) {
-		return occurrenceOrdinal[occurrenceId];
-	}
-
-	public int getBoundaryCount() {
-		return boundaryOrigin.length;
-	}
-
-	public int getBoundaryOrigin(int boundaryId) {
-		return boundaryOrigin[boundaryId];
-	}
-
-	public BoundaryKind getBoundaryKind(int boundaryId) {
-		return BOUNDARY_KINDS[Byte.toUnsignedInt(boundaryKind[boundaryId])];
-	}
-
-	public int getBoundaryExportStart(int boundaryId) {
-		return boundaryExportStart[boundaryId];
-	}
-
-	public int getBoundaryExportEnd(int boundaryId) {
-		return boundaryExportStart[boundaryId + 1];
-	}
-
-	public int getExportChildSymbol(int exportId) {
-		return exportChildSymbol[exportId];
-	}
-
-	public int getExportParentSymbol(int exportId) {
-		return exportParentSymbol[exportId];
-	}
-
-	public int getBoundaryAllowedInputStart(int boundaryId) {
-		return boundaryAllowedInputStart[boundaryId];
-	}
-
-	public int getBoundaryAllowedInputEnd(int boundaryId) {
-		return boundaryAllowedInputStart[boundaryId + 1];
-	}
-
-	public int getAllowedInputSymbol(int inputId) {
-		return allowedInputSymbol[inputId];
-	}
-
 	public static long originTag(int originId) {
 		if (originId < 0 || originId == Integer.MAX_VALUE) {
 			throw new IllegalArgumentException("originId must be between 0 and Integer.MAX_VALUE - 1");
@@ -281,40 +187,6 @@ public final class QueryScopeSeed implements Serializable {
 		return result;
 	}
 
-	private static byte[] reorder(int[] starts, int[] rows, byte[] values) {
-		byte[] result = new byte[values.length];
-		int[] cursor = Arrays.copyOf(starts, starts.length - 1);
-		for (int i = 0; i < values.length; i++) {
-			result[cursor[rows[i]]++] = values[i];
-		}
-		return result;
-	}
-
-	public enum OccurrenceRole {
-		READ,
-		PATTERN_SUBJECT,
-		PATTERN_PREDICATE,
-		PATTERN_OBJECT,
-		PATTERN_CONTEXT,
-		DEFINE_EXTENSION_TARGET,
-		PROJECTION_SOURCE,
-		PROJECTION_TARGET,
-		GROUP_KEY,
-		AGGREGATE_TARGET,
-		VALUES_DECLARATION,
-		GRAPH_NAME,
-		SERVICE_NAME,
-		CAPTURE,
-		HIDDEN_TEMPORARY
-	}
-
-	public enum SymbolVisibility {
-		LOCAL,
-		EXPORTED,
-		CAPTURED,
-		HIDDEN
-	}
-
 	public enum RegionKind {
 		ORDINARY,
 		INDEPENDENT,
@@ -329,20 +201,9 @@ public final class QueryScopeSeed implements Serializable {
 		SERVICE
 	}
 
-	public enum BoundaryKind {
-		SUBQUERY_PROJECTION,
-		EXISTS,
-		LATERAL_INPUT,
-		SERVICE,
-		GRAPH,
-		MINUS
-	}
-
 	/** Mutable, single-threaded collector that produces a defensively copied immutable seed. */
 	@InternalUseOnly
 	public static final class Builder {
-
-		private long algebraFingerprint;
 
 		private final IntList frameParent = new IntList();
 		private final IntList regionParent = new IntList();
@@ -351,25 +212,13 @@ public final class QueryScopeSeed implements Serializable {
 		private final ByteList environmentKind = new ByteList();
 
 		private final StringList symbolName = new StringList();
-		private final StringList symbolPhysicalName = new StringList();
 		private final IntList symbolFrame = new IntList();
-		private final ByteList symbolVisibility = new ByteList();
 
 		private final IntList originFrame = new IntList();
 		private final IntList originRegion = new IntList();
 		private final IntList originEnvironment = new IntList();
 		private final IntList occurrenceOrigin = new IntList();
 		private final IntList occurrenceSymbol = new IntList();
-		private final ByteList occurrenceRole = new ByteList();
-		private final IntList occurrenceOrdinal = new IntList();
-
-		private final IntList boundaryOrigin = new IntList();
-		private final ByteList boundaryKind = new ByteList();
-		private final IntList exportBoundary = new IntList();
-		private final IntList exportChildSymbol = new IntList();
-		private final IntList exportParentSymbol = new IntList();
-		private final IntList allowedInputBoundary = new IntList();
-		private final IntList allowedInputSymbol = new IntList();
 
 		private Builder() {
 			frameParent.add(-1);
@@ -377,11 +226,6 @@ public final class QueryScopeSeed implements Serializable {
 			regionKind.add(RegionKind.ORDINARY.ordinal());
 			environmentParent.add(-1);
 			environmentKind.add(EnvironmentKind.DEFAULT.ordinal());
-		}
-
-		public Builder setAlgebraFingerprint(long algebraFingerprint) {
-			this.algebraFingerprint = algebraFingerprint;
-			return this;
 		}
 
 		public int addFrame(int parentFrameId) {
@@ -403,13 +247,10 @@ public final class QueryScopeSeed implements Serializable {
 			return id;
 		}
 
-		public int addSymbol(String name, String physicalName, int frameId, SymbolVisibility visibility) {
+		public int addSymbol(String name, int frameId) {
 			checkId(frameId, frameParent.size(), "frameId");
-			String logicalName = Objects.requireNonNull(name, "name");
-			int id = symbolName.add(logicalName);
-			symbolPhysicalName.add(physicalName == null ? logicalName : physicalName);
+			int id = symbolName.add(Objects.requireNonNull(name, "name"));
 			symbolFrame.add(frameId);
-			symbolVisibility.add(Objects.requireNonNull(visibility, "visibility").ordinal());
 			return id;
 		}
 
@@ -423,41 +264,11 @@ public final class QueryScopeSeed implements Serializable {
 			return id;
 		}
 
-		public Builder addOccurrence(int originId, int symbolId, OccurrenceRole role, int ordinal) {
+		public Builder addOccurrence(int originId, int symbolId) {
 			checkId(originId, originFrame.size(), "originId");
 			checkId(symbolId, symbolName.size(), "symbolId");
-			if (ordinal < 0) {
-				throw new IllegalArgumentException("ordinal must not be negative");
-			}
 			occurrenceOrigin.add(originId);
 			occurrenceSymbol.add(symbolId);
-			occurrenceRole.add(Objects.requireNonNull(role, "role").ordinal());
-			occurrenceOrdinal.add(ordinal);
-			return this;
-		}
-
-		public int addBoundary(int originId, BoundaryKind kind) {
-			checkId(originId, originFrame.size(), "originId");
-			int id = boundaryOrigin.add(originId);
-			boundaryKind.add(Objects.requireNonNull(kind, "kind").ordinal());
-			return id;
-		}
-
-		public Builder addExport(int boundaryId, int childSymbolId, int parentSymbolId) {
-			checkId(boundaryId, boundaryOrigin.size(), "boundaryId");
-			checkId(childSymbolId, symbolName.size(), "childSymbolId");
-			checkId(parentSymbolId, symbolName.size(), "parentSymbolId");
-			exportBoundary.add(boundaryId);
-			exportChildSymbol.add(childSymbolId);
-			exportParentSymbol.add(parentSymbolId);
-			return this;
-		}
-
-		public Builder addAllowedInput(int boundaryId, int symbolId) {
-			checkId(boundaryId, boundaryOrigin.size(), "boundaryId");
-			checkId(symbolId, symbolName.size(), "symbolId");
-			allowedInputBoundary.add(boundaryId);
-			allowedInputSymbol.add(symbolId);
 			return this;
 		}
 
