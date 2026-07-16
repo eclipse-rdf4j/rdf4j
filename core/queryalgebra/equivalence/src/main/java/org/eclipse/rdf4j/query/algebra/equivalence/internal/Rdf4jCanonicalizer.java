@@ -68,6 +68,9 @@ public final class Rdf4jCanonicalizer {
 	private final ExpressionSafetyAnalyzer safety;
 	private final ContextMode rootContextMode;
 	private final SemanticsTarget semanticsTarget;
+	// The expression normalize() was called with: incoming-binding walks must stop here so the
+	// verdict matches detached evaluation and ignores ancestors outside the compared expression.
+	private TupleExpr analysisRoot;
 
 	public Rdf4jCanonicalizer(CheckOptions options) {
 		this.safety = new ExpressionSafetyAnalyzer(options);
@@ -76,6 +79,7 @@ public final class Rdf4jCanonicalizer {
 	}
 
 	public Normalization normalize(TupleExpr expression, ObservationMode observationMode) {
+		this.analysisRoot = expression;
 		List<RuleApplication> trace = new ArrayList<>();
 		Mode mode;
 		switch (observationMode) {
@@ -896,7 +900,19 @@ public final class Rdf4jCanonicalizer {
 	}
 
 	private boolean runtimeJoinOrderIsObservable(Join join) {
-		return incomingBindings.orderIsObservableAcrossOperands(join.getLeftArg(), join.getRightArg());
+		// Rewrites may probe detached clones that are not connected to the normalize root; the
+		// clone itself is then the walk boundary (detached semantics).
+		QueryModelNode root = analysisRoot != null && isWithin(join, analysisRoot) ? analysisRoot : join;
+		return incomingBindings.orderIsObservableAcrossOperands(join.getLeftArg(), join.getRightArg(), root);
+	}
+
+	private static boolean isWithin(QueryModelNode node, QueryModelNode root) {
+		for (QueryModelNode ancestor = node; ancestor != null; ancestor = ancestor.getParentNode()) {
+			if (ancestor == root) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	static Optional<NormalizationCandidate> unambiguousMinimum(

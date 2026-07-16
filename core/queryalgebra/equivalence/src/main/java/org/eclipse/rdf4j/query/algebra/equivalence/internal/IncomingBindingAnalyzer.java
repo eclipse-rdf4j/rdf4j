@@ -48,24 +48,29 @@ final class IncomingBindingAnalyzer {
 	private final BindingAnalyzer bindings = new BindingAnalyzer();
 
 	boolean containsRuntimeCorrelation(QueryModelNode node) {
-		if (node instanceof Join join && orderIsObservableAcrossOperands(join.getLeftArg(), join.getRightArg())) {
+		return containsRuntimeCorrelation(node, node);
+	}
+
+	private boolean containsRuntimeCorrelation(QueryModelNode node, QueryModelNode analysisRoot) {
+		if (node instanceof Join join
+				&& orderIsObservableAcrossOperands(join.getLeftArg(), join.getRightArg(), analysisRoot)) {
 			return true;
 		}
 		if (node instanceof LeftJoin leftJoin
-				&& orderIsObservableAcrossOperands(leftJoin.getLeftArg(), leftJoin.getRightArg())) {
+				&& orderIsObservableAcrossOperands(leftJoin.getLeftArg(), leftJoin.getRightArg(), analysisRoot)) {
 			return true;
 		}
 		for (QueryModelNode child : DirectChildren.of(node)) {
-			if (containsRuntimeCorrelation(child)) {
+			if (containsRuntimeCorrelation(child, analysisRoot)) {
 				return true;
 			}
 		}
 		return false;
 	}
 
-	boolean orderIsObservableAcrossOperands(TupleExpr left, TupleExpr right) {
-		IncomingBindingInfo leftInfo = externalReads(left);
-		IncomingBindingInfo rightInfo = externalReads(right);
+	boolean orderIsObservableAcrossOperands(TupleExpr left, TupleExpr right, QueryModelNode analysisRoot) {
+		IncomingBindingInfo leftInfo = externalReads(left, analysisRoot);
+		IncomingBindingInfo rightInfo = externalReads(right, analysisRoot);
 		BindingInfo leftBindings = bindings.analyze(left);
 		BindingInfo rightBindings = bindings.analyze(right);
 		return overlaps(leftInfo, rightBindings.mayBind())
@@ -77,6 +82,15 @@ final class IncomingBindingAnalyzer {
 	}
 
 	IncomingBindingInfo externalReads(TupleExpr expression) {
+		return externalReads(expression, expression);
+	}
+
+	/**
+	 * The analysis root bounds every judgement that would otherwise depend on ancestors OUTSIDE the analyzed
+	 * expression: the checker's verdict must match evaluating the compared expressions detached (Rdf4jEvaluator clones
+	 * under a fresh QueryRoot), so parent context above the root must not influence the result.
+	 */
+	private IncomingBindingInfo externalReads(TupleExpr expression, QueryModelNode analysisRoot) {
 		if (expression instanceof VariableScopeChange scope && scope.isVariableScopeChange()) {
 			return empty(true);
 		}
@@ -88,24 +102,24 @@ final class IncomingBindingAnalyzer {
 			return empty(false);
 		}
 		if (expression instanceof QueryRoot root) {
-			return externalReads(root.getArg());
+			return externalReads(root.getArg(), analysisRoot);
 		}
 		if (expression instanceof Distinct distinct) {
-			return externalReads(distinct.getArg());
+			return externalReads(distinct.getArg(), analysisRoot);
 		}
 		if (expression instanceof Reduced reduced) {
-			return externalReads(reduced.getArg());
+			return externalReads(reduced.getArg(), analysisRoot);
 		}
 		if (expression instanceof Slice slice) {
-			return externalReads(slice.getArg());
+			return externalReads(slice.getArg(), analysisRoot);
 		}
 		if (expression instanceof Filter filter) {
 			return withExplicitReads(
-					externalReads(filter.getArg()),
+					externalReads(filter.getArg(), analysisRoot),
 					unsatisfied(ExpressionVariables.collect(filter.getCondition()), filter.getArg()));
 		}
 		if (expression instanceof Extension extension) {
-			IncomingBindingInfo result = externalReads(extension.getArg());
+			IncomingBindingInfo result = externalReads(extension.getArg(), analysisRoot);
 			Set<String> rebinds = mutable(result.rebinds());
 			for (ExtensionElem element : extension.getElements()) {
 				result = withExplicitReads(
@@ -124,7 +138,7 @@ final class IncomingBindingAnalyzer {
 					rebinds);
 		}
 		if (expression instanceof Projection projection) {
-			IncomingBindingInfo inputReads = externalReads(projection.getArg());
+			IncomingBindingInfo inputReads = externalReads(projection.getArg(), analysisRoot);
 			Set<String> explicitReads = mutable(inputReads.explicitReads());
 			Set<String> assured = bindings.analyze(projection.getArg()).mustBind();
 			for (ProjectionElem element : projection.getProjectionElemList().getElements()) {
@@ -135,11 +149,11 @@ final class IncomingBindingAnalyzer {
 			return new IncomingBindingInfo(
 					explicitReads,
 					inputReads.readsAnyIncomingBinding(),
-					isOuterProjection(projection),
+					isOuterProjection(projection, analysisRoot),
 					inputReads.rebinds());
 		}
 		if (expression instanceof Order order) {
-			IncomingBindingInfo result = externalReads(order.getArg());
+			IncomingBindingInfo result = externalReads(order.getArg(), analysisRoot);
 			for (OrderElem element : order.getElements()) {
 				result = withExplicitReads(
 						result,
@@ -148,13 +162,14 @@ final class IncomingBindingAnalyzer {
 			return result;
 		}
 		if (expression instanceof Join join) {
-			return correlatedCombination(join.getLeftArg(), join.getRightArg());
+			return correlatedCombination(join.getLeftArg(), join.getRightArg(), analysisRoot);
 		}
 		if (expression instanceof Lateral lateral) {
-			return correlatedCombination(lateral.getLeftArg(), lateral.getRightArg());
+			return correlatedCombination(lateral.getLeftArg(), lateral.getRightArg(), analysisRoot);
 		}
 		if (expression instanceof LeftJoin leftJoin) {
-			IncomingBindingInfo result = correlatedCombination(leftJoin.getLeftArg(), leftJoin.getRightArg());
+			IncomingBindingInfo result = correlatedCombination(leftJoin.getLeftArg(), leftJoin.getRightArg(),
+					analysisRoot);
 			if (leftJoin.hasCondition()) {
 				// The OPTIONAL condition is evaluated in the scope of the merged solution, which
 				// can include bindings riding in from a sibling operand (well-designed exposure),
@@ -166,11 +181,13 @@ final class IncomingBindingAnalyzer {
 			return result;
 		}
 		if (expression instanceof Union union) {
-			return union(externalReads(union.getLeftArg()), externalReads(union.getRightArg()));
+			return union(
+					externalReads(union.getLeftArg(), analysisRoot),
+					externalReads(union.getRightArg(), analysisRoot));
 		}
 		if (expression instanceof Difference difference) {
-			IncomingBindingInfo leftInfo = externalReads(difference.getLeftArg());
-			IncomingBindingInfo rightInfo = externalReads(difference.getRightArg());
+			IncomingBindingInfo leftInfo = externalReads(difference.getLeftArg(), analysisRoot);
+			IncomingBindingInfo rightInfo = externalReads(difference.getRightArg(), analysisRoot);
 			IncomingBindingInfo result = union(leftInfo, rightInfo);
 			// Both MINUS operands inherit the same input. Any inherited name can
 			// create the shared domain that makes a compatible right row harmful.
@@ -188,9 +205,9 @@ final class IncomingBindingAnalyzer {
 		return new IncomingBindingInfo(possibleReads, false, true, Set.of());
 	}
 
-	private IncomingBindingInfo correlatedCombination(TupleExpr left, TupleExpr right) {
-		IncomingBindingInfo leftReads = externalReads(left);
-		IncomingBindingInfo rightReads = externalReads(right);
+	private IncomingBindingInfo correlatedCombination(TupleExpr left, TupleExpr right, QueryModelNode analysisRoot) {
+		IncomingBindingInfo leftReads = externalReads(left, analysisRoot);
+		IncomingBindingInfo rightReads = externalReads(right, analysisRoot);
 		Set<String> explicitReads = mutable(leftReads.explicitReads());
 		Set<String> rightExplicitReads = mutable(rightReads.explicitReads());
 		rightExplicitReads.removeAll(bindings.analyze(left).mustBind());
@@ -250,9 +267,11 @@ final class IncomingBindingAnalyzer {
 				source.rebinds());
 	}
 
-	private static boolean isOuterProjection(Projection projection) {
+	private static boolean isOuterProjection(Projection projection, QueryModelNode analysisRoot) {
+		// Walk no further than the analysis root: ancestors above the compared expression do not
+		// exist when the expression is evaluated detached, so they must not influence verdicts.
 		QueryModelNode ancestor = projection;
-		while (ancestor.getParentNode() != null) {
+		while (ancestor != analysisRoot && ancestor.getParentNode() != null) {
 			ancestor = ancestor.getParentNode();
 			if (ancestor instanceof Projection || ancestor instanceof MultiProjection) {
 				return false;
