@@ -1,0 +1,2 @@
+name,expectedStatus,notes
+values-over-null-binding,UNKNOWN,"seed-42 shrink: VALUES joined over a null-binding placeholder used to crash ArrayBindingSet direct-add under -ea"
