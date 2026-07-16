@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.equivalence.internal;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -39,17 +40,21 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 final class LegacyOptimizerPairSource {
 
 	private static Map<String, QueryOptimizer> optimizers() {
-		return Map.of(
-				"QueryModelNormalizer", new QueryModelNormalizerOptimizer(),
-				"Filter", new FilterOptimizer(),
-				"ConjunctiveConstraintSplitter", new ConjunctiveConstraintSplitterOptimizer(),
-				"DisjunctiveConstraint", new DisjunctiveConstraintOptimizer(),
-				"SameTermFilter", new SameTermFilterOptimizer(),
-				"Compare", new CompareOptimizer(),
-				"ProjectionRemoval", new ProjectionRemovalOptimizer(),
-				"BindingSetAssignmentInliner", new BindingSetAssignmentInlinerOptimizer(),
-				"IterativeEvaluation", new IterativeEvaluationOptimizer(),
-				"OrderLimit", new OrderLimitOptimizer());
+		// Insertion-ordered: Map.of iteration order is salted per JVM run, which would make pair
+		// ordering — and therefore secondary-profile sampling and time-budget truncation — vary
+		// between a CI failure and its seed-pinned repro run.
+		Map<String, QueryOptimizer> optimizers = new LinkedHashMap<>();
+		optimizers.put("QueryModelNormalizer", new QueryModelNormalizerOptimizer());
+		optimizers.put("Filter", new FilterOptimizer());
+		optimizers.put("ConjunctiveConstraintSplitter", new ConjunctiveConstraintSplitterOptimizer());
+		optimizers.put("DisjunctiveConstraint", new DisjunctiveConstraintOptimizer());
+		optimizers.put("SameTermFilter", new SameTermFilterOptimizer());
+		optimizers.put("Compare", new CompareOptimizer());
+		optimizers.put("ProjectionRemoval", new ProjectionRemovalOptimizer());
+		optimizers.put("BindingSetAssignmentInliner", new BindingSetAssignmentInlinerOptimizer());
+		optimizers.put("IterativeEvaluation", new IterativeEvaluationOptimizer());
+		optimizers.put("OrderLimit", new OrderLimitOptimizer());
+		return optimizers;
 	}
 
 	List<TreePair> pairs(long seed, List<TupleExpr> seedTrees) {

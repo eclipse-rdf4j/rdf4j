@@ -42,7 +42,10 @@ class FuzzSoakTest {
 
 	@Test
 	void soak() {
-		long seed = Long.getLong("equivalence.fuzz.seed", System.nanoTime());
+		// Deterministic default: this test runs in the pr-verify slow-tests job, and a random
+		// default seed would turn latent bugs into nondeterministic CI failures on unrelated PRs.
+		// Pass -Dequivalence.fuzz.seed explicitly for exploratory campaigns.
+		long seed = Long.getLong("equivalence.fuzz.seed", 20260716L);
 		int iterations = Integer.getInteger("equivalence.fuzz.iterations", 2000);
 		int timeBudgetSeconds = Integer.getInteger("equivalence.fuzz.timeBudgetSeconds", 300);
 		String corpus = System.getProperty("equivalence.fuzz.corpus", "scope-safety");
@@ -63,6 +66,9 @@ class FuzzSoakTest {
 			pairs.addAll(corpusSource.pairs(seed, 4));
 			System.out.println("[fuzz] corpus pairs=" + pairs.size()
 					+ " skippedQueries=" + corpusSource.skippedQueries());
+			assertTrue(!pairs.isEmpty(),
+					"scope-safety corpus produced no pairs — the rdf4j-sail-testsuite resources are "
+							+ "missing or unparseable, silently losing the curated adversarial coverage");
 			List<TupleExpr> optimizerSeeds = new ArrayList<>();
 			RandomTreeGenerator generator = new RandomTreeGenerator();
 			for (int i = 0; i < 25; i++) {
@@ -74,6 +80,10 @@ class FuzzSoakTest {
 
 		FuzzRunSummary summary = harness.run(seed, pairs, Duration.ofSeconds(timeBudgetSeconds));
 		System.out.println(summary.report());
+		if (summary.pairCount() < pairs.size()) {
+			System.out.println("[fuzz] TIME BUDGET TRUNCATED the run: judged " + summary.pairCount()
+					+ " of " + pairs.size() + " pairs — raise equivalence.fuzz.timeBudgetSeconds for full coverage");
+		}
 
 		assertTrue(summary.violations().isEmpty(),
 				() -> "differential invariant violations (artifacts under " + artifactDir + "):\n" + summary.report());
