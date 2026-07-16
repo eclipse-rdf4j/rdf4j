@@ -13,9 +13,11 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
@@ -25,6 +27,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
@@ -73,6 +76,59 @@ class BindingSetAssignmentQueryEvaluationStepTest {
 		});
 		assertThat(parent.valueReadCount("b")).isZero();
 		assertThat(parent.hasBindingReadCount("b")).isEqualTo(1);
+	}
+
+	@Test
+	void emptyRowPassesIncomingBindingsThroughWhenNamesOverlap() {
+		// Found by the equivalence differential fuzzer: incoming bindings overlapping the VALUES
+		// names route evaluation through the compatibility-checked path, which used to drop the
+		// empty row instead of joining it as the identity mapping.
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of("x"));
+		assignment.setBindingSets(List.of(new MapBindingSet()));
+		BindingSetAssignmentQueryEvaluationStep step = new BindingSetAssignmentQueryEvaluationStep(assignment,
+				new QueryEvaluationContext.Minimal(null));
+		BindingSet incoming = binding("x", "bound");
+
+		List<BindingSet> results = results(step.evaluate(incoming));
+
+		assertThat(results).containsExactly(incoming);
+	}
+
+	@Test
+	void allUndefRowBehavesLikeTheEmptyRow() {
+		// A row whose declared columns are all UNDEF (name with null value, e.g. a parser-built
+		// ListBindingSet) is equal to the empty row and must evaluate identically.
+		BindingSetAssignment undefRepresentation = new BindingSetAssignment();
+		undefRepresentation.setBindingNames(Set.of("x"));
+		undefRepresentation.setBindingSets(List.of(new ListBindingSet(List.of("x"), Arrays.asList((Value) null))));
+		BindingSetAssignment emptyRepresentation = new BindingSetAssignment();
+		emptyRepresentation.setBindingNames(Set.of("x"));
+		emptyRepresentation.setBindingSets(List.of(new MapBindingSet()));
+		BindingSet incoming = binding("x", "bound");
+
+		List<BindingSet> undefResults = results(new BindingSetAssignmentQueryEvaluationStep(undefRepresentation,
+				new QueryEvaluationContext.Minimal(null)).evaluate(incoming));
+		List<BindingSet> emptyResults = results(new BindingSetAssignmentQueryEvaluationStep(emptyRepresentation,
+				new QueryEvaluationContext.Minimal(null)).evaluate(incoming));
+
+		assertThat(undefResults).isEqualTo(emptyResults);
+	}
+
+	@Test
+	void undefColumnsDoNotLeakIntoResultsWithoutIncomingBindings() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of("x", "y"));
+		assignment.setBindingSets(List.of(new ListBindingSet(
+				List.of("x", "y"),
+				Arrays.asList(SimpleValueFactory.getInstance().createLiteral("v"), null))));
+		BindingSetAssignmentQueryEvaluationStep step = new BindingSetAssignmentQueryEvaluationStep(assignment,
+				new QueryEvaluationContext.Minimal(null));
+
+		List<BindingSet> results = results(step.evaluate(EmptyBindingSet.getInstance()));
+
+		assertThat(results).hasSize(1);
+		assertThat(results.get(0).getBindingNames()).containsExactly("x");
 	}
 
 	private static List<BindingSet> results(CloseableIteration<BindingSet> iteration) {
