@@ -75,17 +75,21 @@ class FuzzSmokeTest {
 
 	@Test
 	void randomPairsUpholdAllInvariants() {
-		FuzzArtifactWriter artifacts = new FuzzArtifactWriter(Path.of("target", "equivalence-fuzz"), SEEDS[0]);
-		DifferentialFuzzHarness harness = new DifferentialFuzzHarness(
-				FuzzProfile.primary(CASE_CAP),
-				FuzzProfile.secondary(CASE_CAP),
-				new PairShrinker(),
-				artifacts,
-				true);
 		RandomTreePairSource source = new RandomTreePairSource();
 		StringBuilder failures = new StringBuilder();
 		for (long seed : SEEDS) {
+			DifferentialFuzzHarness harness = new DifferentialFuzzHarness(
+					FuzzProfile.primary(CASE_CAP),
+					FuzzProfile.secondary(CASE_CAP),
+					new PairShrinker(),
+					new FuzzArtifactWriter(Path.of("target", "equivalence-fuzz"), seed),
+					true);
 			FuzzRunSummary summary = harness.run(seed, source.pairs(seed, PAIRS_PER_SEED), Duration.ofMinutes(3));
+			// Silent truncation would let a regression among the unjudged pairs ship green — the
+			// budget only exists as a runaway backstop, so hitting it is itself a failure.
+			assertTrue(summary.pairCount() == PAIRS_PER_SEED,
+					() -> "time budget truncated the smoke battery: judged " + summary.pairCount()
+							+ " of " + PAIRS_PER_SEED + " pairs for seed " + seed);
 			if (!summary.violations().isEmpty()) {
 				failures.append(summary.report());
 			}

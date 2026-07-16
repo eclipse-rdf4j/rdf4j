@@ -42,7 +42,6 @@ class CheckerCompletenessGuardTest {
 	// coverage is guarded by the pinned counterexample regressions
 	// (JsonTupleExprCounterexampleTest, JsonTupleExprSoundnessRegressionTest), not by this set.
 	private static final int MINIMUM_EQUIVALENT = 15;
-	private static final int MINIMUM_NOT_EQUIVALENT = 0;
 
 	@Test
 	void verdictsMatchTheLedgerExactly() throws IOException {
@@ -67,8 +66,6 @@ class CheckerCompletenessGuardTest {
 		}
 		assertTrue(counts.getOrDefault(EquivalenceStatus.EQUIVALENT, 0) >= MINIMUM_EQUIVALENT,
 				"proof coverage collapsed: " + counts);
-		assertTrue(counts.getOrDefault(EquivalenceStatus.NOT_EQUIVALENT, 0) >= MINIMUM_NOT_EQUIVALENT,
-				"counterexample coverage collapsed: " + counts);
 	}
 
 	private List<TreePair> ledgerPairs() {

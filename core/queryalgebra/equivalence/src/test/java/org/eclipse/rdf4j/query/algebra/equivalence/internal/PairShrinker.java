@@ -25,7 +25,9 @@ import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 /**
  * Greedy, bounded structural shrinking: repeatedly tries pair-preserving simplifications (unwrap matching unary roots,
  * drop VALUES rows in lockstep) and keeps a simplification only while the SAME invariant still fails. Bounded so a
- * pathological failure never stalls the run.
+ * pathological failure never stalls the run. Known limitation: matching on the invariant kind (not the specific defect)
+ * means a shrink step can pivot onto a different bug of the same kind — when a shrunk artifact looks unrelated to the
+ * reported message, replay the unshrunk pair via the recorded seed.
  */
 final class PairShrinker {
 	private static final int MAX_ATTEMPTS = 40;
