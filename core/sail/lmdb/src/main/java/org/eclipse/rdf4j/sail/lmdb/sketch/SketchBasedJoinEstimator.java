@@ -23,8 +23,8 @@ import org.eclipse.rdf4j.sail.lmdb.estimation.LmdbQuadSynopsisService;
 import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity;
 
 /**
- * Compatibility facade for the LMDB estimator lifecycle. Semantic estimation is owned by the package-private
- * estimation engine; this type deliberately contains no estimation strategy or planner.
+ * Compatibility facade for the LMDB estimator lifecycle. Semantic estimation is owned by the package-private estimation
+ * engine; this type deliberately contains no estimation strategy or planner.
  */
 @Experimental
 public final class SketchBasedJoinEstimator implements AutoCloseable {
@@ -50,8 +50,8 @@ public final class SketchBasedJoinEstimator implements AutoCloseable {
 				return fallback == null ? UNIFIED : fallback;
 			}
 			return switch (value.trim().toLowerCase(Locale.ROOT).replace("-", "")) {
-				case "unified", "omni", "fastagms", "countmin", "countmindual", "tuple", "joinsketch" -> UNIFIED;
-				default -> fallback == null ? UNIFIED : fallback;
+			case "unified", "omni", "fastagms", "countmin", "countmindual", "tuple", "joinsketch" -> UNIFIED;
+			default -> fallback == null ? UNIFIED : fallback;
 			};
 		}
 	}

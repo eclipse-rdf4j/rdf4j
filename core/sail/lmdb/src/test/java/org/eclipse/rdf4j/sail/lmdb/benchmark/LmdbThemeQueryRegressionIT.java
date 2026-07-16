@@ -2148,6 +2148,15 @@ class LmdbThemeQueryRegressionIT {
 				Assertions.assertFalse(hasPositiveSelectedFiniteAnchorCartesianWork(plan, "value"),
 						"Medical q5 selected value finite-anchor plan must not win by ignoring cartesian work\n"
 								+ plan);
+				assertDoesNotContain(plan, "optimizer.cascadesCoveredByWinner",
+						"Transparent medical q5 inputs must retain their own selected memo provenance\n" + plan);
+				assertDoesNotContain(plan, "covered_by_parent_winner",
+						"Transparent medical q5 inputs must not inherit the anti-filter parent decision\n" + plan);
+				assertValuesBindingBefore(renderedQuery, "value",
+						"?obs <http://example.com/theme/medical/value> ?value",
+						"Medical q5 must evaluate the exact three-row relation before the broad value access; "
+								+ "materializing VALUES after winner costing cannot repair the join order\nPlan:\n"
+								+ plan);
 				assertBefore(renderedQuery, "?obs <http://example.com/theme/medical/value> ?value",
 						"?patient a <http://example.com/theme/medical/Patient>",
 						"Medical q5 should join the value anchor to the observation value pattern before "
@@ -2477,7 +2486,7 @@ class LmdbThemeQueryRegressionIT {
 					assertNoUnboundLeftStatementGuard(snapshot.plan(),
 							"Medical q9 should not wrap broad patient/encounter branch scans in a failed left "
 									+ "bound-statement guard");
-					assertCoveredCascadesJoinPrefixesHaveRuntimeMetrics(snapshot.plan(),
+					assertCascadesJoinPrefixesHaveRuntimeMetrics(snapshot.plan(),
 							"Medical q9 Cascades join prefixes need local planned rows/work metrics for runtime "
 									+ "operator selection");
 				});
@@ -3278,26 +3287,26 @@ class LmdbThemeQueryRegressionIT {
 		}
 	}
 
-	private static void assertCoveredCascadesJoinPrefixesHaveRuntimeMetrics(String plan, String message) {
+	private static void assertCascadesJoinPrefixesHaveRuntimeMetrics(String plan, String message) {
 		String[] lines = plan.split("\\R");
-		boolean sawCoveredJoinPrefix = false;
+		boolean sawJoinPrefix = false;
 		for (String line : lines) {
 			if (!line.contains("Join (")
-					|| !line.contains("plannedEstimateUsage=covered_by_parent_winner")
-					|| !(line.contains("plannedEstimateSource=lmdb-guarantee-options")
-							|| line.contains("plannedEstimateSource=lmdb-cascades-connected-hypergraph"))) {
+					|| !(line.contains("optimizer.cascadesRule=lmdb-guarantee-options")
+							|| line.contains("optimizer.cascadesRule=lmdb-cascades-connected-hypergraph"))) {
 				continue;
 			}
-			sawCoveredJoinPrefix = true;
+			sawJoinPrefix = true;
 			if (!line.contains(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS + "=")
-					|| !line.contains(TelemetryMetricNames.PLANNED_COST_WORK_ROWS + "=")) {
+					|| !line.contains(TelemetryMetricNames.PLANNED_COST_WORK_ROWS + "=")
+					|| line.contains("plannedEstimateUsage=covered_by_parent_winner")) {
 				throw new AssertionError(message
-						+ "\nCovered join prefix is missing local planned cardinality/work metrics:\n"
+						+ "\nTransparent join prefix is missing local planned cardinality/work metrics:\n"
 						+ line + "\nFull plan:\n" + plan);
 			}
 		}
-		if (!sawCoveredJoinPrefix) {
-			throw new AssertionError(message + "\nNo covered Cascades join prefixes found:\n" + plan);
+		if (!sawJoinPrefix) {
+			throw new AssertionError(message + "\nNo transparent Cascades join prefixes found:\n" + plan);
 		}
 	}
 
@@ -3383,6 +3392,20 @@ class LmdbThemeQueryRegressionIT {
 			}
 		}
 		throw new AssertionError(message + "\nExpected one of `" + String.join("`, `", candidates) + "` before `"
+				+ second + "` in:\n" + value);
+	}
+
+	private static void assertValuesBindingBefore(String value, String bindingName, String second, String message) {
+		int secondIndex = value.indexOf(second);
+		Matcher valuesHeader = Pattern.compile("(?m)^\\s*VALUES\\s+([^\\{\\r\\n]+)\\{").matcher(value);
+		Pattern binding = Pattern.compile("(?<![A-Za-z0-9_])\\?" + Pattern.quote(bindingName)
+				+ "(?![A-Za-z0-9_])");
+		while (valuesHeader.find()) {
+			if (valuesHeader.start() < secondIndex && binding.matcher(valuesHeader.group(1)).find()) {
+				return;
+			}
+		}
+		throw new AssertionError(message + "\nExpected a VALUES relation binding `?" + bindingName + "` before `"
 				+ second + "` in:\n" + value);
 	}
 

@@ -92,7 +92,7 @@ public record ScalarFacts(BindingMask freeVars, BindingMask correlatedVars, bool
 					!current.freeVars.isEmpty(), false, finiteAnchor, false, current.isNestedTupleExpr);
 		}
 		if (expression instanceof ScalarExpr.Exists exists) {
-			BindingMask correlated = exists.subquery().rootNode().bindings().possible();
+			BindingMask correlated = exists.correlatedVars();
 			return new ScalarFacts(BindingMask.EMPTY, correlated, true, true, false, false, false, false, true);
 		}
 		if (expression instanceof ScalarExpr.FunctionCall function) {

@@ -298,6 +298,49 @@ class FilterIteratorTelemetryTest {
 	}
 
 	@Test
+	void explicitlyStreamingExistsFilterDoesNotMaterializeUnselectedPhysicalAlternative() throws Exception {
+		Value matched = SimpleValueFactory.getInstance().createIRI("urn:matched");
+		Value filtered = SimpleValueFactory.getInstance().createIRI("urn:filtered");
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingNames(Set.of("x"));
+		left.setBindingSets(List.of(singleBindingSet("x", matched), singleBindingSet("x", matched),
+				singleBindingSet("x", filtered)));
+		BindingSetAssignment right = assignment("x", matched);
+		Exists exists = new Exists(right);
+		Filter filter = new Filter(left, exists);
+		filter.setStringMetricPlanned("optimizer.filterAlgorithmHint", "streaming-exists");
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		AtomicInteger rightEvaluations = new AtomicInteger();
+		AtomicInteger conditionEvaluations = new AtomicInteger();
+		QueryEvaluationStep leftStep = ignored -> new CloseableIteratorIteration<>(left.getBindingSets().iterator());
+		QueryEvaluationStep rightStep = ignored -> {
+			rightEvaluations.incrementAndGet();
+			return new CloseableIteratorIteration<>(right.getBindingSets().iterator());
+		};
+		QueryValueEvaluationStep conditionStep = ignored -> BooleanLiteral.FALSE;
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		doReturn(leftStep).when(strategy).precompile(eq((TupleExpr) left), eq(context));
+		doReturn(rightStep).when(strategy).precompile(eq((TupleExpr) right), eq(context));
+		doReturn(conditionStep).when(strategy).precompile(eq((ValueExpr) exists), eq(context));
+		when(strategy.isTrue(eq(conditionStep), any(BindingSet.class))).thenAnswer(invocation -> {
+			conditionEvaluations.incrementAndGet();
+			BindingSet bindings = invocation.getArgument(1);
+			return matched.equals(bindings.getValue("x"));
+		});
+
+		QueryEvaluationStep step = FilterIterator.supply(filter, strategy, context);
+
+		List<BindingSet> results;
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			results = drain(iteration);
+		}
+		assertThat(results).hasSize(2);
+		assertThat(results).allSatisfy(row -> assertThat(row.getValue("x")).isEqualTo(matched));
+		assertThat(rightEvaluations).hasValue(0);
+		assertThat(conditionEvaluations).hasValue(3);
+	}
+
+	@Test
 	void existsFilterWithNonOutputConditionVarKeepsCorrelatedFallback() throws Exception {
 		Value matched = SimpleValueFactory.getInstance().createIRI("urn:matched");
 		Value filtered = SimpleValueFactory.getInstance().createIRI("urn:filtered");

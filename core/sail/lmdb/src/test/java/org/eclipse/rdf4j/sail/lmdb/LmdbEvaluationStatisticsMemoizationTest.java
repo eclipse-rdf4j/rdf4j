@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -26,10 +27,13 @@ import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.CostContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider.QueryOptimizationScope;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
@@ -76,8 +80,60 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		var cost = statistics.estimateFactorCost(pattern, repeated).orElseThrow();
 
 		assertEquals(statistics.getCardinality(pattern), cost.getOutputRows());
-		assertEquals(4.0d, cost.getDoubleMetrics().get("plannedRepeatedInvocations"));
+		assertEquals(12.0d, cost.getDoubleMetrics().get("plannedRepeatedInvocations"),
+				"Distinct lookup bindings do not reduce nested-loop RHS executions without a cache contract");
 		assertTrue(cost.getWorkRows() >= cost.getOutputRows());
+	}
+
+	@Test
+	void emptyOuterPrefixAnnihilatesOtherwisePositiveBoundLookupCost() {
+		LmdbEvaluationStatistics statistics = statistics();
+		StatementPattern pattern = pattern("s", FIRST, "x");
+		assertTrue(statistics.getCardinality(pattern) > 0.0d,
+				"The lookup must be positive without an outer-prefix constraint");
+
+		var cost = statistics.estimateFactorCost(pattern,
+				CostContext.of(Set.of("s"), 0.0d, 7.0d, true)).orElseThrow();
+
+		assertEquals(0.0d, cost.getOutputRows(), 0.0d);
+		assertEquals(0.0d, cost.getWorkRows(), 0.0d);
+		assertEquals(0.0d, cost.getDoubleMetrics().get("plannedRowsPerInvocation"), 0.0d);
+		assertEquals(0.0d, cost.getDoubleMetrics().get("plannedRepeatedInvocations"), 0.0d);
+		assertEquals(0.0d, cost.getDoubleMetrics().get("plannedSeeks"), 0.0d);
+	}
+
+	@Test
+	void finiteValuesFactorCostRetainsDisjointOuterInvocationMass() {
+		LmdbEvaluationStatistics statistics = statistics();
+		BindingSetAssignment codes = values(200, 201, 202);
+		CostContext repeated = CostContext.of(Set.of("entity"), 66_500.0d, Double.NaN, true);
+
+		var cost = statistics.estimateFactorCost(codes, repeated).orElseThrow();
+
+		assertEquals(199_500.0d, cost.getOutputRows(), 0.0d);
+		assertEquals(199_501.0d, cost.getWorkRows(), 0.0d,
+				"Three VALUES rows plus iterator setup must be charged for every outer entity");
+		assertEquals(66_500.0d, cost.getDoubleMetrics().get("plannedRepeatedInvocations"), 0.0d);
+		assertTrue(cost.isRepeatedInvocationsCosted());
+	}
+
+	@Test
+	void filterEstimateScalesWithSelectedMemoInput() {
+		LmdbEvaluationStatistics statistics = statistics();
+		StatementPattern input = pattern("s", FIRST, "x");
+		ValueConstant trueCondition = new ValueConstant(VF.createLiteral(true));
+
+		StatisticsEstimate tenRows = selectedInputEstimate(10.0d);
+		StatisticsEstimate hundredRows = selectedInputEstimate(100.0d);
+		StatisticsEstimate tenFiltered = statistics.filter(input, trueCondition, tenRows, Set.of()).orElseThrow();
+		StatisticsEstimate hundredFiltered = statistics.filter(input, trueCondition, hundredRows, Set.of())
+				.orElseThrow();
+
+		assertEquals(tenFiltered.rows() * 10.0d, hundredFiltered.rows(), 0.0d,
+				"Filter costing must retain the selected memo input's row scale");
+		assertEquals(tenFiltered.bag().variable("s").boundRows() * 10.0d,
+				hundredFiltered.bag().variable("s").boundRows(), 0.0d,
+				"Filter costing must retain proportional selected-input binding evidence");
 	}
 
 	@Test
@@ -94,12 +150,34 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		assertFalse(statistics.estimatorRuntime().hasPlannerCache());
 	}
 
+	@Test
+	void optimizationScopeReusesStructurallyEquivalentFactorCosts() {
+		LmdbEvaluationStatistics statistics = statistics();
+		StatementPattern pattern = pattern("s", FIRST, "x");
+		CostContext context = CostContext.of(Set.of("s"), 12.0d, 4.0d, true);
+
+		try (QueryOptimizationScope ignored = statistics.beginQueryOptimizationScope()) {
+			var first = statistics.estimateFactorCost(pattern, context).orElseThrow();
+			var equivalentClone = statistics.estimateFactorCost(pattern.clone(), context).orElseThrow();
+
+			assertSame(first, equivalentClone,
+					"One optimization must estimate each structural factor and complete cost context only once");
+		}
+	}
+
 	private static LmdbEvaluationStatistics statistics() {
 		return new LmdbEvaluationStatistics(null, null, null, null, null, null);
 	}
 
 	private static StatementPattern pattern(String subject, IRI predicate, String object) {
 		return new StatementPattern(new Var(subject), new Var("predicate", predicate), new Var(object));
+	}
+
+	private static StatisticsEstimate selectedInputEstimate(double rows) {
+		BagEstimate bag = BagEstimate.exact(rows, "selected-memo-input")
+				.withVariable("s", VariableEstimate.bound(rows, rows))
+				.withVariable("x", VariableEstimate.bound(rows, rows));
+		return StatisticsEstimate.fromBag(bag, "selected-memo-input");
 	}
 
 	private static BindingSetAssignment values(int... values) {

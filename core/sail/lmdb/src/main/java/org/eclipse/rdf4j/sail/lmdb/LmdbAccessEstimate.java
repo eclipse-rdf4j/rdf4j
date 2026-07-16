@@ -17,7 +17,7 @@ record LmdbAccessEstimate(double semanticRows, double rowsPerInvocation, double 
 	LmdbAccessEstimate {
 		semanticRows = nonNegative(semanticRows, Double.MAX_VALUE);
 		rowsPerInvocation = nonNegative(rowsPerInvocation, Double.MAX_VALUE);
-		invocations = positive(invocations, 1.0d);
+		invocations = nonNegative(invocations, 1.0d);
 		totalWorkRows = nonNegative(totalWorkRows, Double.MAX_VALUE);
 		seeks = nonNegative(seeks, 0.0d);
 		memoryRows = nonNegative(memoryRows, 0.0d);
@@ -27,7 +27,4 @@ record LmdbAccessEstimate(double semanticRows, double rowsPerInvocation, double 
 		return Double.isFinite(value) && value >= 0.0d ? value : fallback;
 	}
 
-	private static double positive(double value, double fallback) {
-		return Double.isFinite(value) && value > 0.0d ? value : fallback;
-	}
 }

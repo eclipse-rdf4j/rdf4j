@@ -157,8 +157,8 @@ public final class BoundedQuadSynopsis implements QuadSynopsis {
 
 	private static Optional<DistributionSketch> mergeDistributions(QuadEvidence left, QuadEvidence right) {
 		if (left.distribution().isPresent() && right.distribution().isPresent()
-				&& left.distribution().orElseThrow() instanceof PrimitiveDistributionSketch leftSketch
-				&& right.distribution().orElseThrow() instanceof PrimitiveDistributionSketch rightSketch) {
+				&& left.distribution().orElseThrow()instanceof PrimitiveDistributionSketch leftSketch
+				&& right.distribution().orElseThrow()instanceof PrimitiveDistributionSketch rightSketch) {
 			return Optional.of(PrimitiveDistributionSketch.merge(leftSketch, rightSketch));
 		}
 		return right.distribution().isPresent() ? right.distribution() : left.distribution();

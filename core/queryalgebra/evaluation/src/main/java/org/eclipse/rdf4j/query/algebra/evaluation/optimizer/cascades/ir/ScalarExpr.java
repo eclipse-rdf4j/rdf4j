@@ -16,6 +16,7 @@ import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingMask;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingSymbol;
 
 /** Query-local scalar expression IR. Conditions are three-valued/erroring SPARQL expressions, not plain booleans. */
@@ -78,9 +79,32 @@ public sealed interface ScalarExpr permits ScalarExpr.VarRef,ScalarExpr.Constant
 		}
 	}
 
-	record Exists(PlanIr subquery, boolean negated) implements ScalarExpr {
+	record Exists(PlanIr subquery, BindingMask referencedVars, BindingMask correlatedVars, boolean negated)
+			implements ScalarExpr {
 		public Exists {
 			Objects.requireNonNull(subquery, "subquery");
+			referencedVars = referencedVars == null ? BindingMask.EMPTY : referencedVars;
+			correlatedVars = correlatedVars == null ? BindingMask.EMPTY : correlatedVars;
+			if (!referencedVars.containsAll(correlatedVars)) {
+				throw new IllegalArgumentException("correlated variables must be referenced by the EXISTS subquery");
+			}
+		}
+
+		public Exists(PlanIr subquery, boolean negated) {
+			this(subquery, referencedVars(subquery), referencedVars(subquery), negated);
+		}
+
+		public Exists(PlanIr subquery, BindingMask correlatedVars, boolean negated) {
+			this(subquery, referencedVars(subquery), correlatedVars, negated);
+		}
+
+		private static BindingMask referencedVars(PlanIr subquery) {
+			Objects.requireNonNull(subquery, "subquery");
+			BindingMask referenced = BindingMask.EMPTY;
+			for (IrNode node : subquery.nodes()) {
+				referenced = referenced.union(node.bindings().possible());
+			}
+			return referenced;
 		}
 	}
 

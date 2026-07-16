@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -22,14 +23,14 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
@@ -95,23 +96,18 @@ final class LmdbEstimatorRuntime {
 		return engine.estimate(expression, context);
 	}
 
+	BagEstimate estimateFilter(TupleExpr input, ValueExpr condition, BagEstimate inputEstimate,
+			Set<String> boundNames, EstimationTier tier, boolean exactProbePermitted) {
+		EstimateContext context = rootContext(input)
+				.withBoundNames(boundNames == null ? Set.of() : boundNames)
+				.withEstimationTier(tier)
+				.withExactProbePermission(exactProbePermitted);
+		return engine.estimateFilter(input, condition, inputEstimate, context);
+	}
+
 	BagEstimate estimate(TupleExpr expression, CostContext costContext) {
 		CostContext cost = costContext == null ? CostContext.of(Set.of(), 1.0d, 1.0d, false) : costContext;
-		EstimationTier tier = cost.getEstimationTier();
-		EstimateContext context = rootContext(expression)
-				.withBoundNames(cost.getCurrentlyBoundVars())
-				.withPrefixEstimate(BagEstimate.heuristic(positive(cost.getOuterPrefixRows(), 1.0d), "outer-prefix"))
-				.withInvocationCount(invocations(cost))
-				.withEstimationTier(tier)
-				.withMetricsPreference(cost.shouldCollectMetrics()
-						? EstimateContext.MetricsPreference.DETAILED
-						: EstimateContext.MetricsPreference.NONE)
-				.withExactProbePermission(tier != null && tier.allowsExactEstimates());
-		FiniteRelationEstimate finite = finiteBindings(cost.getFiniteBindingValues());
-		if (finite != null) {
-			context = context.withFiniteBindings(finite);
-		}
-		return engine.estimate(expression, context);
+		return engine.estimate(expression, context(expression, cost));
 	}
 
 	Optional<FactorCostEstimate> factorCost(TupleExpr expression, CostContext costContext) {
@@ -120,6 +116,16 @@ final class LmdbEstimatorRuntime {
 		}
 		CostContext cost = costContext == null ? CostContext.of(Set.of(), 1.0d, 1.0d, false) : costContext;
 		EstimateContext context = context(expression, cost);
+		OptimizationScope scope = optimizationScope.get();
+		ScopedFactorCostCacheKey cacheKey = scope == null
+				? null
+				: ScopedFactorCostCacheKey.of(expression, cost, context);
+		if (cacheKey != null) {
+			Optional<FactorCostEstimate> cached = scope.factorCosts.get(cacheKey);
+			if (cached != null) {
+				return cached;
+			}
+		}
 		BagEstimate semantic = engine.estimate(expression, context);
 		LmdbAccessEstimate access = accessCostModel.estimate(expression, context, semantic);
 		int lookupMask = lookupMask(expression, context.boundNames());
@@ -133,7 +139,11 @@ final class LmdbEstimatorRuntime {
 		FactorCostEstimate result = new FactorCostEstimate(access.totalWorkRows(), semantic.rows(), strings,
 				Map.copyOf(metrics), expression instanceof StatementPattern, lookupMask != 0, lookupMask, 0,
 				semantic.rows(), access.invocations() > 1.0d, exact).withBag(semantic);
-		return Optional.of(result);
+		Optional<FactorCostEstimate> estimate = Optional.of(result);
+		if (cacheKey != null) {
+			scope.factorCosts.put(cacheKey.toStorable(), estimate);
+		}
+		return estimate;
 	}
 
 	Optional<FeedbackCorrection> feedbackCorrection(TupleExpr expression, BagEstimate base) {
@@ -223,7 +233,7 @@ final class LmdbEstimatorRuntime {
 		}
 		FactorCostEstimate cost = factorCost(path,
 				CostContext.of(boundNames == null ? Set.of() : boundNames, 1.0d, 1.0d, false))
-				.orElseThrow();
+						.orElseThrow();
 		BagEstimate estimate = cost.getBagEstimate()
 				.orElseGet(() -> estimate(path, boundNames, EstimationTier.STANDARD, false));
 		List<String> names = path.getBindingNames().stream().sorted().toList();
@@ -308,7 +318,7 @@ final class LmdbEstimatorRuntime {
 		EstimationTier tier = cost.getEstimationTier();
 		EstimateContext context = rootContext(expression)
 				.withBoundNames(cost.getCurrentlyBoundVars())
-				.withPrefixEstimate(BagEstimate.heuristic(positive(cost.getOuterPrefixRows(), 1.0d), "outer-prefix"))
+				.withPrefixEstimate(BagEstimate.heuristic(prefixRows(cost), "outer-prefix"))
 				.withInvocationCount(invocations(cost))
 				.withEstimationTier(tier)
 				.withMetricsPreference(cost.shouldCollectMetrics()
@@ -324,14 +334,23 @@ final class LmdbEstimatorRuntime {
 			return EstimateContext.root(expression, new org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity(0L,
 					0L, Math.max(0L, tripleStore == null ? 0L : tripleStore.getDataRevision())), snapshotVersion());
 		}
-		EstimateContext context = EstimateContext.root(expression, synopsis.snapshotIdentity(), synopsis.snapshotVersion());
+		EstimateContext context = EstimateContext.root(expression, synopsis.snapshotIdentity(),
+				synopsis.snapshotVersion());
 		return synopsis.adaptiveEvidenceAllowed() ? context
 				: context.withEvidencePolicy(EstimateContext.EvidencePolicy.SNAPSHOT_ONLY);
 	}
 
 	private static double invocations(CostContext context) {
-		double distinct = context.getDistinctLookupBindings();
-		return positive(distinct, positive(context.getOuterPrefixRows(), 1.0d));
+		double outerRows = context.getOuterPrefixRows();
+		if (Double.isFinite(outerRows) && outerRows >= 0.0d) {
+			return outerRows;
+		}
+		return positive(context.getDistinctLookupBindings(), 1.0d);
+	}
+
+	private static double prefixRows(CostContext context) {
+		double outerRows = context.getOuterPrefixRows();
+		return Double.isFinite(outerRows) && outerRows >= 0.0d ? outerRows : 1.0d;
 	}
 
 	private static FiniteRelationEstimate finiteBindings(Map<String, Set<Value>> values) {
@@ -384,7 +403,8 @@ final class LmdbEstimatorRuntime {
 
 	private static boolean exact(BagEstimate estimate) {
 		return "lmdb-exact".equals(estimate.source()) || "finite-values".equals(estimate.source())
-				|| "quad-total".equals(estimate.source());
+				|| "quad-total".equals(estimate.source())
+				|| "lmdb-finite-binding-lookup".equals(estimate.source()) && estimate.confidence() == 1.0d;
 	}
 
 	private static double positive(double value, double fallback) {
@@ -402,6 +422,7 @@ final class LmdbEstimatorRuntime {
 
 	private static final class OptimizationScope {
 		private final PlanTemplateCache<Object> planTemplates = new PlanTemplateCache<>(256);
+		private final Map<ScopedFactorCostCacheKey, Optional<FactorCostEstimate>> factorCosts = new HashMap<>();
 		private int depth;
 	}
 

@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingUniv
 
 /** Typed immutable attributes attached to IR nodes. */
 @Experimental
-public sealed interface IrAttr permits IrAttr.None,IrAttr.StatementPatternAttr,IrAttr.FiniteRows,IrAttr.Condition,IrAttr.ProjectionAttr,IrAttr.ExtensionAttr,IrAttr.GroupAttr,IrAttr.SliceAttr,IrAttr.OrderAttr,IrAttr.NativeTuple,IrAttr.Generic {
+public sealed interface IrAttr permits IrAttr.None,IrAttr.StatementPatternAttr,IrAttr.ZeroLengthPathAttr,IrAttr.ArbitraryLengthPathAttr,IrAttr.ServiceAttr,IrAttr.TripleRefAttr,IrAttr.FiniteRows,IrAttr.Condition,IrAttr.ProjectionAttr,IrAttr.ExtensionAttr,IrAttr.GroupAttr,IrAttr.SliceAttr,IrAttr.OrderAttr,IrAttr.NativeTuple,IrAttr.Generic {
 
 	None NONE = new None();
 
@@ -57,6 +57,60 @@ public sealed interface IrAttr permits IrAttr.None,IrAttr.StatementPatternAttr,I
 
 		public List<BindingSymbol> nonConstantSymbols() {
 			return java.util.stream.Stream.of(subject, predicate, object, context)
+					.filter(Objects::nonNull)
+					.map(VarTerm::symbol)
+					.filter(Objects::nonNull)
+					.distinct()
+					.toList();
+		}
+	}
+
+	record ZeroLengthPathAttr(VarTerm subject, VarTerm object, VarTerm context, StatementPattern.Scope scope)
+			implements IrAttr {
+		public ZeroLengthPathAttr {
+			Objects.requireNonNull(subject, "subject");
+			Objects.requireNonNull(object, "object");
+			scope = scope == null ? StatementPattern.Scope.DEFAULT_CONTEXTS : scope;
+		}
+
+		public List<BindingSymbol> nonConstantSymbols() {
+			return pathSymbols(subject, object, context);
+		}
+	}
+
+	record ArbitraryLengthPathAttr(VarTerm subject, VarTerm object, VarTerm context, StatementPattern.Scope scope,
+			long minLength) implements IrAttr {
+		public ArbitraryLengthPathAttr {
+			Objects.requireNonNull(subject, "subject");
+			Objects.requireNonNull(object, "object");
+			scope = scope == null ? StatementPattern.Scope.DEFAULT_CONTEXTS : scope;
+		}
+
+		public List<BindingSymbol> nonConstantSymbols() {
+			return pathSymbols(subject, object, context);
+		}
+	}
+
+	record ServiceAttr(VarTerm serviceRef, String serviceExpressionString,
+			Map<String, String> prefixDeclarations, String baseUri, boolean silent,
+			String definitionFingerprint) implements IrAttr {
+		public ServiceAttr {
+			Objects.requireNonNull(serviceRef, "serviceRef");
+			Objects.requireNonNull(serviceExpressionString, "serviceExpressionString");
+			prefixDeclarations = prefixDeclarations == null ? null : Map.copyOf(prefixDeclarations);
+			Objects.requireNonNull(definitionFingerprint, "definitionFingerprint");
+		}
+	}
+
+	record TripleRefAttr(VarTerm subject, VarTerm predicate, VarTerm object, VarTerm expression) implements IrAttr {
+		public TripleRefAttr {
+			Objects.requireNonNull(subject, "subject");
+			Objects.requireNonNull(predicate, "predicate");
+			Objects.requireNonNull(object, "object");
+		}
+
+		public List<BindingSymbol> nonConstantSymbols() {
+			return java.util.stream.Stream.of(subject, predicate, object, expression)
 					.filter(Objects::nonNull)
 					.map(VarTerm::symbol)
 					.filter(Objects::nonNull)
@@ -162,16 +216,53 @@ public sealed interface IrAttr permits IrAttr.None,IrAttr.StatementPatternAttr,I
 		}
 	}
 
-	record AggregateBinding(BindingSymbol target, String function, ScalarExpr argument, boolean distinct) {
+	record AggregateBinding(BindingSymbol target, AggregateKind kind, String customFunction,
+			List<ScalarExpr> arguments, ScalarExpr separator, boolean distinct) {
 		public AggregateBinding {
 			Objects.requireNonNull(target, "target");
-			function = function == null || function.isBlank() ? "urn:rdf4j:aggregate:unknown" : function;
+			Objects.requireNonNull(kind, "kind");
+			arguments = arguments == null || arguments.isEmpty() ? List.of() : List.copyOf(arguments);
+			if (kind == AggregateKind.CUSTOM) {
+				if (customFunction == null || customFunction.isBlank()) {
+					throw new IllegalArgumentException("a custom aggregate requires its function IRI");
+				}
+			} else {
+				customFunction = null;
+			}
+			if (separator != null && kind != AggregateKind.GROUP_CONCAT) {
+				throw new IllegalArgumentException("only GROUP_CONCAT accepts a separator");
+			}
+			int arity = arguments.size();
+			if (kind == AggregateKind.COUNT ? arity > 1
+					: kind != AggregateKind.CUSTOM && arity != 1) {
+				throw new IllegalArgumentException(kind + " has invalid aggregate arity " + arity);
+			}
 		}
+	}
+
+	enum AggregateKind {
+		COUNT,
+		AVG,
+		SUM,
+		MIN,
+		MAX,
+		SAMPLE,
+		GROUP_CONCAT,
+		CUSTOM
 	}
 
 	record OrderKey(ScalarExpr expression, boolean ascending) {
 		public OrderKey {
 			Objects.requireNonNull(expression, "expression");
 		}
+	}
+
+	private static List<BindingSymbol> pathSymbols(VarTerm subject, VarTerm object, VarTerm context) {
+		return java.util.stream.Stream.of(subject, object, context)
+				.filter(Objects::nonNull)
+				.map(VarTerm::symbol)
+				.filter(Objects::nonNull)
+				.distinct()
+				.toList();
 	}
 }

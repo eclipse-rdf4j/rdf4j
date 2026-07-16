@@ -85,12 +85,12 @@ final class EstimateEvidenceResolver {
 
 	private static int sourcePriority(EstimateCandidate.Kind kind) {
 		return switch (kind) {
-			case EXACT_STORAGE -> 0;
-			case FINITE_RELATION -> 1;
-			case SYNOPSIS -> 2;
-			case FEEDBACK -> 3;
-			case STORAGE_SUMMARY -> 4;
-			case HEURISTIC -> 5;
+		case EXACT_STORAGE -> 0;
+		case FINITE_RELATION -> 1;
+		case SYNOPSIS -> 2;
+		case FEEDBACK -> 3;
+		case STORAGE_SUMMARY -> 4;
+		case HEURISTIC -> 5;
 		};
 	}
 
@@ -103,8 +103,9 @@ final class EstimateEvidenceResolver {
 			rows = MIN_INCOMPLETE_ROWS;
 			upper = Math.max(MIN_INCOMPLETE_ROWS, upper);
 		}
-		BagEstimate base = candidate.estimate().withRowsPreservingEvidence(rows, rows, evidence.confidence(),
-				candidate.estimate().source(), candidate.estimate().metrics(), evidence.complete());
+		BagEstimate base = candidate.estimate()
+				.withRowsPreservingEvidence(rows, rows, evidence.confidence(),
+						candidate.estimate().source(), candidate.estimate().metrics(), evidence.complete());
 		return withInterval(base, lower, upper, evidence.confidence());
 	}
 

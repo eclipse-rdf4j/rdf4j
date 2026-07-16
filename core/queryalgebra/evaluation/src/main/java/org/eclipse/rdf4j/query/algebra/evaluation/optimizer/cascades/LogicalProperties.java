@@ -42,8 +42,9 @@ public record LogicalProperties(Set<String> bindingNames, Set<String> assuredBin
 		if (tupleExpr == null) {
 			return EMPTY;
 		}
-		Set<String> bindingNames = tupleExpr.getBindingNames();
-		Set<String> assured = tupleExpr.getAssuredBindingNames();
+		StreamBindingSchema schema = StreamBindingSchema.from(tupleExpr);
+		Set<String> bindingNames = schema.possible();
+		Set<String> assured = schema.assured();
 		return new LogicalProperties(bindingNames, assured, nullableVars(bindingNames, assured), estimatedRows,
 				qErrorInterval);
 	}

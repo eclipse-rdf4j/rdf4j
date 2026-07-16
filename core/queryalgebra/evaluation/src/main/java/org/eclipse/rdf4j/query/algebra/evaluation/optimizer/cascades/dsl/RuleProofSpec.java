@@ -40,7 +40,6 @@ public record RuleProofSpec(String ruleId, String semanticScope, Set<String> req
 	}
 
 	public RuleProof toProof(RuleKind kind, OptimizationGoal goal) {
-		String scope = goal == null ? semanticScope : goal.semanticScope();
-		return new RuleProof(ruleId, kind, scope, requiredFacts, reason);
+		return new RuleProof(ruleId, kind, semanticScope, requiredFacts, reason);
 	}
 }

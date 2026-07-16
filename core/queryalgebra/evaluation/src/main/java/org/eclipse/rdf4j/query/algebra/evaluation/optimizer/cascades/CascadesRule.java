@@ -27,6 +27,15 @@ public interface CascadesRule {
 
 	int promise(MemoExpr expression, OptimizationGoal goal, Memo memo);
 
+	default RuleDescriptor descriptor() {
+		return RuleDescriptor.builder(id(), kind())
+				// Rules relying on the default descriptor remain conservative. Audited rule families can declare
+				// narrower dependencies and share saturation work across equivalent costing contexts.
+				.goalPropertiesRead(RuleDescriptor.GoalProperty.INVOCATION_CARDINALITY)
+				.priority(RulePriority.phase(phase()))
+				.build();
+	}
+
 	default RulePhase phase() {
 		if (kind() == RuleKind.IMPLEMENTATION) {
 			return RulePhase.PHYSICAL_IMPLEMENTATION;

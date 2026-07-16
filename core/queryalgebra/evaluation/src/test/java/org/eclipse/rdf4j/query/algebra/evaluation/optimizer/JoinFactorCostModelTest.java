@@ -17,6 +17,7 @@ import java.util.Map;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.FactorCostEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.EstimateVector;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.junit.jupiter.api.Test;
 
@@ -45,5 +46,19 @@ class JoinFactorCostModelTest {
 						TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE, 0.60d));
 
 		assertEquals(0.60d, estimate.getNormalizedEstimateVector().confidence(), 1.0e-9d);
+	}
+
+	@Test
+	void attachingExactBagPreservesCanonicalEstimateEvidence() {
+		FactorCostEstimate estimate = new FactorCostEstimate(3.0d, 3.0d)
+				.withBag(BagEstimate.exact(3.0d, "exact-finite-relation"));
+
+		EstimateVector vector = estimate.getNormalizedEstimateVector();
+
+		assertEquals(1.0d, vector.confidence(), 1.0e-9d);
+		assertEquals(1.0d, vector.rowQErrorMax(), 1.0e-9d);
+		assertEquals(1.0d, vector.workQErrorMax(), 1.0e-9d);
+		assertEquals(0.0d, vector.uncertaintyRows(), 1.0e-9d);
+		assertEquals(1.0d, estimate.getBagEstimate().orElseThrow().confidence(), 1.0e-9d);
 	}
 }

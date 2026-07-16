@@ -14,8 +14,6 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.capture;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.difference;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.minusSharedAssured;
-import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.noAnchorableFiniteFilter;
-import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.noMinusJoinPrefixPushdown;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.physical;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.ref;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.rule;
@@ -67,8 +65,6 @@ public final class LmdbRuleSpecs {
 				.promise(45)
 				.match(difference("d", capture("left"), capture("right")))
 				.where(minusSharedAssured("d"))
-				.where(noAnchorableFiniteFilter("d"))
-				.where(noMinusJoinPrefixPushdown("d"))
 				.emit(physical(IrOp.LMDB_HASH_ANTI_SEMI, ref("d")))
 				.deliveredWith((capture, declared) -> PhysicalProperties.builder()
 						.accessPath("lmdb:hash-anti-semi")

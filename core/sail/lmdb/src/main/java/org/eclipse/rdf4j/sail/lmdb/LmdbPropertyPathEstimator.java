@@ -146,7 +146,8 @@ final class LmdbPropertyPathEstimator {
 		QuadProbe projection = new QuadProbe(base.boundMask(), projectedComponent, base.subjectId(),
 				base.predicateId(), base.objectId(), base.contextId(), base.snapshotIdentity());
 		QuadEvidence evidence = synopsis.probe(projection);
-		return evidence.distribution().map(distribution -> positive(distribution.distinctRows()))
+		return evidence.distribution()
+				.map(distribution -> positive(distribution.distinctRows()))
 				.orElseGet(() -> positive(fallbackRows));
 	}
 

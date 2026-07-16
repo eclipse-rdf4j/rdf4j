@@ -20,13 +20,16 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
+import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity;
 
 record ScopedFactorCostCacheKey(Object factor, Set<String> boundVars, long outerPrefixRowsBits,
 		long distinctLookupBindingsBits, boolean nestedIteratorInvocation, boolean collectMetrics,
 		Map<String, Set<Value>> finiteBindingValues, JoinFactorCostModel.EstimationTier estimationTier,
-		FiniteBranchRowsCacheKey prefixFactors, RequestedAccessPath requestedAccessPath) {
+		FiniteBranchRowsCacheKey prefixFactors, RequestedAccessPath requestedAccessPath,
+		QuadSnapshotIdentity snapshotIdentity, long snapshotVersion) {
 
-	static ScopedFactorCostCacheKey of(TupleExpr factor, JoinFactorCostModel.CostContext context) {
+	static ScopedFactorCostCacheKey of(TupleExpr factor, JoinFactorCostModel.CostContext context,
+			EstimateContext estimateContext) {
 		JoinFactorCostModel.EstimationTier tier = context.getEstimationTier() == null
 				? JoinFactorCostModel.EstimationTier.STANDARD
 				: context.getEstimationTier();
@@ -38,7 +41,7 @@ record ScopedFactorCostCacheKey(Object factor, Set<String> boundVars, long outer
 				context.isNestedIteratorInvocation(),
 				context.shouldCollectMetrics(),
 				immutableFiniteBindingValues(context.getFiniteBindingValues()), tier, prefixFactors,
-				RequestedAccessPath.of(context));
+				RequestedAccessPath.of(context), estimateContext.snapshotIdentity(), estimateContext.snapshotVersion());
 	}
 
 	static Map<String, Set<Value>> immutableFiniteBindingValues(
@@ -60,7 +63,7 @@ record ScopedFactorCostCacheKey(Object factor, Set<String> boundVars, long outer
 		return new ScopedFactorCostCacheKey(factor, FactorCostCacheKey.immutableBoundVars(boundVars),
 				outerPrefixRowsBits, distinctLookupBindingsBits, nestedIteratorInvocation, collectMetrics,
 				immutableFiniteBindingValues(finiteBindingValues), estimationTier, prefixFactors,
-				requestedAccessPath);
+				requestedAccessPath, snapshotIdentity, snapshotVersion);
 	}
 }
 

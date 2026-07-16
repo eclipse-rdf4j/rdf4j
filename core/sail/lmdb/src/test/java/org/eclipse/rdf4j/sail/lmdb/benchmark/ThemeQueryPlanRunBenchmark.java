@@ -55,25 +55,16 @@ import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Threads;
 import org.openjdk.jmh.annotations.Warmup;
 
-@Warmup(iterations = 10, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
+@Warmup(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 3, jvmArgs = { "-Xms1G", "-Xmx16G" })
-@Measurement(iterations = 5, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
+@Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G" })
+@Measurement(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 @Threads(1)
 public class ThemeQueryPlanRunBenchmark {
 
-	private static final String TARGET_DIRECTORY_ROOT = "core/sail/lmdb/";
-	private static final File STORE_DIRECTORY;
-
-	static {
-		File target = new File("target", "lmdb-theme-query-benchmark");
-		if (target.getAbsolutePath().toLowerCase().contains(TARGET_DIRECTORY_ROOT)) {
-			STORE_DIRECTORY = target;
-		} else {
-			STORE_DIRECTORY = new File(TARGET_DIRECTORY_ROOT + "target", "lmdb-theme-query-benchmark");
-		}
-	}
+	private static final File STORE_DIRECTORY = BenchmarkPathSupport.resolveTarget("lmdb-theme-query-benchmark")
+			.toFile();
 
 	private static final String TRIPLES_DATA_FILE = "triples/data.mdb";
 	private static final String VALUES_DATA_FILE = "values/data.mdb";
@@ -143,13 +134,13 @@ public class ThemeQueryPlanRunBenchmark {
 		})
 		public String themeName;
 
-		@Param({ "false" })
+		@Param({ "true" })
 		public boolean sketchEstimatorEnabled;
 
-		@Param({ "omni" })
+		@Param({ "unified" })
 		public String sketchEstimatorStrategy;
 
-		@Param({ "false", "true" })
+		@Param({ "true" })
 		public boolean dphypEnabled = true;
 		public boolean loadSelectedThemeOnly;
 		public boolean rebuildStoreBeforeSetup;
@@ -160,6 +151,7 @@ public class ThemeQueryPlanRunBenchmark {
 		private SailRepository repository;
 		protected LmdbStore store;
 		private LmdbStoreConfig storeConfig;
+		private File resolvedStoreDirectory;
 		private Theme theme;
 		protected String query;
 		private long expectedRows;
@@ -177,6 +169,7 @@ public class ThemeQueryPlanRunBenchmark {
 				expectedRows = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
 				expectedCountBindingValue = ThemeQueryCatalog.expectedCountBindingValueFor(theme, z_queryIndex);
 
+				storeConfig = createStoreConfig();
 				File storeDirectory = storeDirectory();
 				if (rebuildStoreBeforeSetup) {
 					FileUtils.deleteDirectory(storeDirectory);
@@ -185,7 +178,6 @@ public class ThemeQueryPlanRunBenchmark {
 					throw new IOException("Unable to create fixed LMDB benchmark directory: " + storeDirectory);
 				}
 
-				storeConfig = createStoreConfig();
 				store = new LmdbStore(storeDirectory, storeConfig);
 				repository = new SailRepository(store);
 				ensureDataLoadedAndValidated();
@@ -221,6 +213,7 @@ public class ThemeQueryPlanRunBenchmark {
 			}
 			store = null;
 			storeConfig = null;
+			resolvedStoreDirectory = null;
 			if (previousDphypEnabled == null) {
 				System.clearProperty("rdf4j.optimizer.lmdb.cascades.connectedJoin.dphyp");
 			} else {
@@ -394,24 +387,26 @@ public class ThemeQueryPlanRunBenchmark {
 		}
 
 		private File storeDirectory() {
-			String strategy = storeConfig == null ? sketchEstimatorStrategyOrDefault()
-					: storeConfig.getSketchEstimatorStrategy();
-			if (strategy == null || strategy.isBlank()) {
-				strategy = "fastagms";
+			if (resolvedStoreDirectory != null) {
+				return resolvedStoreDirectory;
 			}
-			String directoryName = "fastagms".equals(strategy)
-					? "complete"
-					: "complete-" + strategy.replaceAll("[^A-Za-z0-9._-]", "_");
+			LmdbStoreConfig directoryConfig = storeConfig == null ? createStoreConfig() : storeConfig;
+			String strategy = directoryConfig.getSketchEstimatorStrategy();
+			if (strategy == null || strategy.isBlank()) {
+				strategy = "unified";
+			}
+			String directoryName = "complete-" + strategy.replaceAll("[^A-Za-z0-9._-]", "_");
 			if (loadSelectedThemeOnly) {
 				directoryName += "-" + themeName.replaceAll("[^A-Za-z0-9._-]", "_");
 			}
-			return new File(STORE_DIRECTORY, directoryName);
+			resolvedStoreDirectory = new File(STORE_DIRECTORY, directoryName);
+			return resolvedStoreDirectory;
 		}
 
 		private String sketchEstimatorStrategyOrDefault() {
 			String strategy = sketchEstimatorStrategy;
 			if (strategy == null || strategy.isBlank()) {
-				strategy = "fastagms";
+				strategy = "unified";
 			}
 			return strategy;
 		}

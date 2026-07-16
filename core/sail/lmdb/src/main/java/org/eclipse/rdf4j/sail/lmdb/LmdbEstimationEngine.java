@@ -22,8 +22,8 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
@@ -42,15 +42,19 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EstimateMath;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.SketchEvidence;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableSetKey;
 
 /** Uniform semantic estimator. Physical work is deliberately owned by {@link LmdbAccessCostModel}. */
 final class LmdbEstimationEngine {
@@ -68,18 +72,43 @@ final class LmdbEstimationEngine {
 				Objects.requireNonNull(context, "context"));
 	}
 
+	BagEstimate estimateFilter(TupleExpr input, ValueExpr condition, BagEstimate inputEstimate,
+			EstimateContext context) {
+		return filter(Objects.requireNonNull(input, "input"), Objects.requireNonNull(condition, "condition"),
+				Objects.requireNonNull(inputEstimate, "inputEstimate"), Objects.requireNonNull(context, "context"));
+	}
+
+	private BagEstimate filter(TupleExpr input, ValueExpr condition, BagEstimate inputEstimate,
+			EstimateContext context) {
+		FilterEvidence evidence = evidenceSource
+				.filterEvidence(input, condition, inputEstimate, context)
+				.orElseGet(() -> new FilterEvidence(0.5d, 0.0d, 1.0d, 0.0d, false, "uniform-filter"));
+		double ratio = !evidence.complete() && evidence.passRatio() == 0.0d
+				? Math.max(Double.MIN_NORMAL, evidence.upperBound())
+				: evidence.passRatio();
+		BagEstimate result = EstimateMath.filter(inputEstimate, ratio, evidence.source());
+		Map<String, Double> metrics = new LinkedHashMap<>(result.metrics());
+		metrics.put("optimizer.filterLowerRatio", evidence.lowerBound());
+		metrics.put("optimizer.filterUpperRatio", evidence.upperBound());
+		metrics.put("optimizer.filterConfidence", evidence.confidence());
+		return result.withMetrics(Map.copyOf(metrics));
+	}
+
 	private final class Session {
 
 		private final IdentityHashMap<TupleExpr, Map<ContextKey, BagEstimate>> estimates = new IdentityHashMap<>();
 
 		private BagEstimate estimate(TupleExpr expression, EstimateContext context) {
 			ContextKey key = ContextKey.from(context);
-			Map<ContextKey, BagEstimate> byContext = estimates.computeIfAbsent(expression, ignored -> new LinkedHashMap<>());
+			Map<ContextKey, BagEstimate> byContext = estimates.computeIfAbsent(expression,
+					ignored -> new LinkedHashMap<>());
 			BagEstimate cached = byContext.get(key);
 			if (cached != null) {
 				return cached;
 			}
-			BagEstimate computed = compose(expression, context);
+			BagEstimate computed = context.hasNoExecutions()
+					? withMissingVariables(BagEstimate.exact(0.0d, "empty-prefix"), expression)
+					: compose(expression, context);
 			byContext.put(key, computed);
 			return computed;
 		}
@@ -92,7 +121,7 @@ final class LmdbEstimationEngine {
 				return BagEstimate.exact(1.0d, "singleton-set");
 			}
 			if (expression instanceof BindingSetAssignment assignment) {
-				return finiteRelation(assignment);
+				return finiteRelation(assignment, context);
 			}
 			if (expression instanceof Lateral lateral) {
 				return lateral(lateral, context);
@@ -108,10 +137,12 @@ final class LmdbEstimationEngine {
 			if (expression instanceof Difference difference) {
 				BagEstimate left = estimate(difference.getLeftArg(), context);
 				BagEstimate right = estimate(difference.getRightArg(), context);
-				return EstimateMath.difference(left, right, sharedNames(difference.getLeftArg(), difference.getRightArg()));
+				return EstimateMath.difference(left, right,
+						sharedNames(difference.getLeftArg(), difference.getRightArg()));
 			}
 			if (expression instanceof Union union) {
-				return EstimateMath.union(estimate(union.getLeftArg(), context), estimate(union.getRightArg(), context));
+				return EstimateMath.union(estimate(union.getLeftArg(), context),
+						estimate(union.getRightArg(), context));
 			}
 			if (expression instanceof Intersection intersection) {
 				return innerJoin(intersection.getLeftArg(), intersection.getRightArg(), context);
@@ -167,24 +198,56 @@ final class LmdbEstimationEngine {
 
 		private BagEstimate innerJoin(TupleExpr leftExpression, TupleExpr rightExpression, EstimateContext context) {
 			BagEstimate left = estimate(leftExpression, context);
+			Set<String> shared = sharedNames(leftExpression, rightExpression);
+			Set<String> assuredShared = new LinkedHashSet<>(leftExpression.getAssuredBindingNames());
+			assuredShared.retainAll(shared);
+			if (!assuredShared.isEmpty()) {
+				EstimateContext rightContext = context.withBoundNames(assuredShared)
+						.withPrefixEstimate(left)
+						.withInvocationCount(left.rows());
+				FiniteRelationEstimate relation = left.relationContaining(assuredShared).orElse(null);
+				if (relation != null) {
+					rightContext = rightContext.withFiniteBindings(relation);
+				}
+				BagEstimate right = estimate(rightExpression, rightContext);
+				BagEstimate composed = EstimateMath.innerJoin(left, right, shared);
+				double workRows = saturatingSum(left.workRows(), right.workRows());
+				Map<String, Double> metrics = new LinkedHashMap<>(composed.metrics());
+				metrics.put("plannedSelectedPrefixRows", left.rows());
+				metrics.put("plannedSelectedPrefixRightRows", right.rows());
+				metrics.put("plannedSelectedPrefixRightWorkRows", right.workRows());
+				return composed.withRowsPreservingEvidence(right.rows(), workRows,
+						Math.min(left.confidence(), right.confidence()), "inner-join-selected-prefix",
+						Map.copyOf(metrics), true);
+			}
 			BagEstimate right = estimate(rightExpression, context);
-			return EstimateMath.innerJoin(left, right, sharedNames(leftExpression, rightExpression));
+			double invocations = Math.max(context.invocationCount(), context.prefixEstimate().rows());
+			if (invocations <= 1.0d) {
+				return EstimateMath.innerJoin(left, right, shared);
+			}
+
+			BagEstimate leftPerInvocation = perInvocation(left, invocations, "inner-join-left-per-invocation");
+			BagEstimate rightPerInvocation = perInvocation(right, invocations, "inner-join-right-per-invocation");
+			BagEstimate perInvocation = EstimateMath.innerJoin(leftPerInvocation, rightPerInvocation,
+					shared);
+			double outputRows = saturatingProduct(perInvocation.rows(), invocations);
+			double workRows = saturatingProduct(perInvocation.workRows(), invocations);
+			Map<String, Double> metrics = new LinkedHashMap<>(perInvocation.metrics());
+			metrics.put("plannedSharedContextInvocations", invocations);
+			metrics.put("plannedInnerJoinLeftRowsPerInvocation", leftPerInvocation.rows());
+			metrics.put("plannedInnerJoinRightRowsPerInvocation", rightPerInvocation.rows());
+			return perInvocation.withRowsPreservingEvidence(outputRows, workRows, perInvocation.confidence(),
+					"inner-join-context-total", Map.copyOf(metrics), true);
+		}
+
+		private BagEstimate perInvocation(BagEstimate total, double invocations, String source) {
+			return total.withRowsPreservingEvidence(total.rows() / invocations, total.workRows() / invocations,
+					total.confidence(), source, total.metrics(), true);
 		}
 
 		private BagEstimate filter(Filter filter, EstimateContext context) {
 			BagEstimate input = estimate(filter.getArg(), context);
-			FilterEvidence evidence = evidenceSource
-					.filterEvidence(filter.getArg(), filter.getCondition(), input, context)
-					.orElseGet(() -> new FilterEvidence(0.5d, 0.0d, 1.0d, 0.0d, false, "uniform-filter"));
-			double ratio = !evidence.complete() && evidence.passRatio() == 0.0d
-					? Math.max(Double.MIN_NORMAL, evidence.upperBound())
-					: evidence.passRatio();
-			BagEstimate result = EstimateMath.filter(input, ratio, evidence.source());
-			Map<String, Double> metrics = new LinkedHashMap<>(result.metrics());
-			metrics.put("optimizer.filterLowerRatio", evidence.lowerBound());
-			metrics.put("optimizer.filterUpperRatio", evidence.upperBound());
-			metrics.put("optimizer.filterConfidence", evidence.confidence());
-			return result.withMetrics(Map.copyOf(metrics));
+			return LmdbEstimationEngine.this.filter(filter.getArg(), filter.getCondition(), input, context);
 		}
 
 		private BagEstimate group(Group group, EstimateContext context) {
@@ -221,20 +284,175 @@ final class LmdbEstimationEngine {
 		private BagEstimate extend(Extension extension, EstimateContext context) {
 			BagEstimate result = estimate(extension.getArg(), context);
 			for (var element : extension.getElements()) {
-				if (element.getExpr() instanceof Var variable) {
+				if (element.getExpr()instanceof Var variable) {
 					result = EstimateMath.extendAlias(result, variable.getName(), element.getName());
 				} else if (element.getExpr() instanceof ValueConstant) {
 					result = EstimateMath.extendConstant(result, element.getName());
 				} else {
-					result = result.withVariable(element.getName(), VariableEstimate.bound(result.rows(), result.rows()));
+					result = result.withVariable(element.getName(),
+							VariableEstimate.bound(result.rows(), result.rows()));
 				}
 			}
 			return result;
 		}
 
 		private BagEstimate leaf(TupleExpr expression, EstimateContext context) {
-			BagEstimate estimate = evidenceResolver.resolveForDecision(evidenceSource.leafCandidates(expression, context),
+			if (expression instanceof StatementPattern pattern) {
+				BagEstimate finiteLookup = finiteBindingLookup(pattern, context);
+				if (finiteLookup != null) {
+					return withMissingVariables(finiteLookup, expression);
+				}
+			}
+			return resolvedLeaf(expression, context);
+		}
+
+		private BagEstimate finiteBindingLookup(StatementPattern pattern, EstimateContext context) {
+			FiniteRelationEstimate relation = context.finiteBindings().orElse(null);
+			if (relation == null) {
+				return null;
+			}
+			Set<String> patternVariables = new LinkedHashSet<>();
+			for (Var variable : pattern.getVarList()) {
+				if (variable != null && !variable.hasValue() && variable.getName() != null) {
+					patternVariables.add(variable.getName());
+				}
+			}
+			List<String> lookupVariables = relation.variables()
+					.stream()
+					.filter(patternVariables::contains)
+					.toList();
+			if (lookupVariables.isEmpty()) {
+				return null;
+			}
+
+			Map<List<Value>, Double> lookupFrequencies = relation.frequencyBy(lookupVariables);
+			if (lookupFrequencies.isEmpty()) {
+				return null;
+			}
+			double relationExecutions = lookupFrequencies.values()
+					.stream()
+					.mapToDouble(Double::doubleValue)
+					.sum();
+			double executionCount = Math.max(context.invocationCount(), context.prefixEstimate().rows());
+			double frequencyScale = relationExecutions > 0.0d ? executionCount / relationExecutions : 1.0d;
+			boolean inferredFrequencies = Math.abs(frequencyScale - 1.0d) > 0.000000001d;
+			EstimateContext lookupContext = context.withoutFiniteBindings().withInvocationCount(1.0d);
+			Set<String> unresolvedAssuredInputs = new LinkedHashSet<>(patternVariables);
+			unresolvedAssuredInputs.retainAll(context.boundNames());
+			unresolvedAssuredInputs.removeAll(relation.variables());
+			BagEstimate aggregate = null;
+			double invocations = 0.0d;
+			for (Map.Entry<List<Value>, Double> entry : lookupFrequencies.entrySet()) {
+				StatementPattern boundPattern = pattern.clone();
+				bindFiniteTuple(boundPattern, lookupVariables, entry.getKey());
+				double frequency = saturatingMultiply(entry.getValue(), frequencyScale);
+				BagEstimate lookup = resolvedLeaf(boundPattern, lookupContext, false);
+				if (unresolvedAssuredInputs.isEmpty()) {
+					lookup = weighted(lookup, frequency);
+				}
+				aggregate = aggregate == null ? lookup : EstimateMath.union(aggregate, lookup);
+				invocations += frequency;
+			}
+			if (aggregate == null) {
+				return null;
+			}
+			if (!unresolvedAssuredInputs.isEmpty()) {
+				BagEstimate prefix = context.prefixEstimate()
+						.withRowsPreservingEvidence(
+								context.prefixEstimate().rows(), 0.0d, context.prefixEstimate().confidence(),
+								"finite-lookup-prefix", context.prefixEstimate().metrics(), true);
+				aggregate = EstimateMath.innerJoin(prefix, aggregate, unresolvedAssuredInputs);
+			}
+			Map<String, Double> metrics = new LinkedHashMap<>(aggregate.metrics());
+			metrics.put("plannedLookupDomainAverageOutputRows", invocations > 0.0d
+					? aggregate.rows() / invocations
+					: aggregate.rows());
+			metrics.put("plannedDistinctLookupBindings", (double) lookupFrequencies.size());
+			metrics.put("plannedRepeatedInvocations", invocations);
+			boolean exactEmpty = aggregate.rows() == 0.0d && aggregate.confidence() == 1.0d;
+			double confidence = inferredFrequencies && !exactEmpty
+					? Math.min(aggregate.confidence(), 0.5d)
+					: aggregate.confidence();
+			return aggregate.withRowsPreservingEvidence(aggregate.rows(), aggregate.workRows(), confidence,
+					"lmdb-finite-binding-lookup", Map.copyOf(metrics), false);
+		}
+
+		private BagEstimate resolvedLeaf(TupleExpr expression, EstimateContext context) {
+			return resolvedLeaf(expression, context, true);
+		}
+
+		private BagEstimate resolvedLeaf(TupleExpr expression, EstimateContext context, boolean conditionOnPrefix) {
+			BagEstimate estimate = evidenceResolver.resolveForDecision(
+					evidenceSource.leafCandidates(expression, context),
 					context, () -> evidenceSource.exactCandidate(expression, context).orElse(null));
+			estimate = withMissingVariables(estimate, expression);
+			if (!conditionOnPrefix) {
+				return estimate;
+			}
+			Set<String> shared = contextBindingNames(expression, context);
+			if (!shared.isEmpty()) {
+				return conditionOnPrefix(estimate, context, shared);
+			}
+			double invocations = Math.max(context.invocationCount(), context.prefixEstimate().rows());
+			if (invocations <= 1.0d) {
+				return estimate;
+			}
+
+			Map<String, Double> metrics = new LinkedHashMap<>(estimate.metrics());
+			metrics.put("plannedRepeatedInvocations", invocations);
+			return estimate.withRowsPreservingEvidence(saturatingMultiply(estimate.rows(), invocations),
+					saturatingMultiply(estimate.workRows(), invocations), estimate.confidence(), estimate.source(),
+					Map.copyOf(metrics), false);
+		}
+
+		private Set<String> contextBindingNames(TupleExpr expression, EstimateContext context) {
+			Set<String> shared = new LinkedHashSet<>();
+			Set<String> expressionBindings;
+			if (expression instanceof StatementPattern pattern) {
+				expressionBindings = new LinkedHashSet<>();
+				for (Var variable : pattern.getVarList()) {
+					if (variable != null && !variable.hasValue() && variable.getName() != null) {
+						expressionBindings.add(variable.getName());
+					}
+				}
+			} else {
+				expressionBindings = expression.getBindingNames();
+			}
+			for (String bindingName : expressionBindings) {
+				if (context.boundNames().contains(bindingName)) {
+					shared.add(bindingName);
+				}
+			}
+			return shared.isEmpty() ? Set.of() : Set.copyOf(shared);
+		}
+
+		private BagEstimate conditionOnPrefix(BagEstimate global, EstimateContext context, Set<String> shared) {
+			BagEstimate prefix = context.prefixEstimate();
+			for (String variable : shared) {
+				VariableEstimate evidence = prefix.variable(variable);
+				if (evidence.boundRows() <= 0.0d) {
+					prefix = prefix.withVariable(variable,
+							VariableEstimate.bound(prefix.rows(), Math.max(1.0d, prefix.rows())));
+				}
+			}
+			BagEstimate zeroWorkPrefix = prefix.withRowsPreservingEvidence(prefix.rows(), 0.0d, prefix.confidence(),
+					"context-prefix", prefix.metrics(), true);
+			BagEstimate conditioned = EstimateMath.innerJoin(zeroWorkPrefix, global, shared);
+			Map<String, Double> metrics = new LinkedHashMap<>(conditioned.metrics());
+			metrics.put("plannedContextPrefixRows", prefix.rows());
+			metrics.put("plannedContextGlobalRows", global.rows());
+			metrics.put("plannedContextConditionedRows", conditioned.rows());
+			boolean exactFiniteIntersection = prefix.finiteRelation(shared).isPresent()
+					&& global.finiteRelation(shared).isPresent();
+			double confidence = exactFiniteIntersection
+					? conditioned.confidence()
+					: Math.min(0.5d, conditioned.confidence());
+			return conditioned.withRowsPreservingEvidence(conditioned.rows(),
+					Math.max(global.workRows(), conditioned.rows()), confidence, "context-conditioned-leaf",
+					Map.copyOf(metrics), exactFiniteIntersection);
+		}
+
+		private BagEstimate withMissingVariables(BagEstimate estimate, TupleExpr expression) {
 			for (String variable : expression.getBindingNames()) {
 				if (!estimate.variables().containsKey(variable)) {
 					estimate = estimate.withVariable(variable,
@@ -243,9 +461,37 @@ final class LmdbEstimationEngine {
 			}
 			return estimate;
 		}
+
+		private void bindFiniteTuple(StatementPattern pattern, List<String> variables, List<Value> tuple) {
+			Map<String, Value> bindings = new LinkedHashMap<>();
+			for (int index = 0; index < variables.size(); index++) {
+				bindings.put(variables.get(index), tuple.get(index));
+			}
+			for (Var variable : pattern.getVarList()) {
+				if (variable != null && !variable.hasValue() && bindings.get(variable.getName()) != null) {
+					pattern.replaceChildNode(variable, Var.of(variable.getName(), bindings.get(variable.getName()),
+							variable.isAnonymous(), variable.isConstant()));
+				}
+			}
+		}
+
+		private BagEstimate weighted(BagEstimate estimate, double frequency) {
+			if (frequency == 1.0d) {
+				return estimate;
+			}
+			double safeFrequency = Double.isFinite(frequency) && frequency >= 0.0d ? frequency : 1.0d;
+			return estimate.withRowsPreservingEvidence(saturatingMultiply(estimate.rows(), safeFrequency),
+					saturatingMultiply(estimate.workRows(), safeFrequency), estimate.confidence(), estimate.source(),
+					estimate.metrics(), false);
+		}
+
+		private double saturatingMultiply(double left, double right) {
+			double product = left * right;
+			return Double.isFinite(product) && product >= 0.0d ? product : Double.MAX_VALUE;
+		}
 	}
 
-	private static BagEstimate finiteRelation(BindingSetAssignment assignment) {
+	private static BagEstimate finiteRelation(BindingSetAssignment assignment, EstimateContext context) {
 		List<String> variables = assignment.getBindingNames().stream().sorted().toList();
 		List<List<Value>> rows = new ArrayList<>();
 		Iterable<BindingSet> bindingSets = assignment.getBindingSets();
@@ -259,7 +505,63 @@ final class LmdbEstimationEngine {
 			}
 		}
 		FiniteRelationEstimate relation = FiniteRelationEstimate.fromRows(variables, rows, "finite-values");
-		return BagEstimate.exact(relation.rows(), "finite-values").withFiniteRelation(relation);
+		BagEstimate local = BagEstimate.exact(relation.rows(), "finite-values").withFiniteRelation(relation);
+		double invocations = Math.max(context.invocationCount(), context.prefixEstimate().rows());
+		if (invocations <= 1.0d || relation.rows() == 0.0d) {
+			return local;
+		}
+
+		Set<String> shared = new LinkedHashSet<>(variables);
+		shared.retainAll(context.boundNames());
+		double outputRows = contextualFiniteOutputRows(local, relation, shared, context, invocations);
+		double workRows = saturatingProduct(relation.rows(), invocations);
+		Map<String, Double> metrics = new LinkedHashMap<>(local.metrics());
+		metrics.put("plannedRepeatedInvocations", invocations);
+		return local.withRowsPreservingEvidence(outputRows, workRows,
+				shared.isEmpty() ? local.confidence() : Math.min(0.5d, local.confidence()),
+				"finite-values-contextual", Map.copyOf(metrics), false);
+	}
+
+	private static double contextualFiniteOutputRows(BagEstimate local, FiniteRelationEstimate relation,
+			Set<String> shared, EstimateContext context, double invocations) {
+		if (shared.isEmpty()) {
+			return saturatingProduct(relation.rows(), invocations);
+		}
+		FiniteRelationEstimate finiteContext = context.finiteBindings().orElse(null);
+		if (finiteContext != null && finiteContext.containsAll(shared) && finiteContext.rows() > 0.0d) {
+			BagEstimate outer = BagEstimate.exact(finiteContext.rows(), "finite-context")
+					.withFiniteRelation(finiteContext);
+			double compatibleDomainRows = EstimateMath.innerJoin(outer, local, shared).rows();
+			return saturatingProduct(compatibleDomainRows, invocations / finiteContext.rows());
+		}
+		return saturatingProduct(maxCompatibleRowsPerInvocation(relation, shared), invocations);
+	}
+
+	private static double maxCompatibleRowsPerInvocation(FiniteRelationEstimate relation, Set<String> shared) {
+		List<Integer> sharedIndexes = shared.stream().map(relation.variables()::indexOf).toList();
+		boolean hasUnboundSharedValue = relation.frequencies()
+				.keySet()
+				.stream()
+				.anyMatch(tuple -> sharedIndexes.stream().anyMatch(index -> tuple.get(index) == null));
+		if (hasUnboundSharedValue) {
+			return relation.rows();
+		}
+		return relation.frequencyBy(shared)
+				.values()
+				.stream()
+				.mapToDouble(Double::doubleValue)
+				.max()
+				.orElse(0.0d);
+	}
+
+	private static double saturatingProduct(double left, double right) {
+		double product = left * right;
+		return Double.isFinite(product) && product >= 0.0d ? product : Double.MAX_VALUE;
+	}
+
+	private static double saturatingSum(double left, double right) {
+		double sum = left + right;
+		return Double.isFinite(sum) && sum >= 0.0d ? sum : Double.MAX_VALUE;
 	}
 
 	private static Set<String> sharedNames(TupleExpr left, TupleExpr right) {
@@ -268,14 +570,29 @@ final class LmdbEstimationEngine {
 		return names.isEmpty() ? Set.of() : Set.copyOf(names);
 	}
 
-	private record ContextKey(Object boundMask, Object finiteBindings, double prefixRows, double invocations,
+	private record ContextKey(Object boundMask, Object finiteBindings, PrefixEvidenceKey prefixEvidence,
+			double invocations,
 			Object evidencePolicy, Object estimationTier, Object snapshotIdentity, long snapshotVersion,
 			boolean exactProbePermitted) {
 
 		private static ContextKey from(EstimateContext context) {
-			return new ContextKey(context.boundMask(), context.finiteBindings(), context.prefixEstimate().rows(),
-					context.invocationCount(), context.evidencePolicy(), context.estimationTier(), context.snapshotIdentity(),
+			return new ContextKey(context.boundMask(), context.finiteBindings(),
+					PrefixEvidenceKey.from(context.prefixEstimate()),
+					context.invocationCount(), context.evidencePolicy(), context.estimationTier(),
+					context.snapshotIdentity(),
 					context.snapshotVersion(), context.exactProbePermitted());
+		}
+	}
+
+	private record PrefixEvidenceKey(double rows, double confidence, Map<String, VariableEstimate> variables,
+			Map<VariableSetKey, FiniteRelationEstimate> finiteRelations,
+			Map<VariableSetKey, SketchEvidence> sketches,
+			Map<VariableSetKey, SketchEvidence> supportingSketches) {
+
+		private static PrefixEvidenceKey from(BagEstimate prefix) {
+			var evidence = prefix.evidenceProfile();
+			return new PrefixEvidenceKey(evidence.rows(), evidence.confidence(), evidence.variables(),
+					evidence.finiteRelations(), evidence.sketches(), evidence.supportingSketches());
 		}
 	}
 }

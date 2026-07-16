@@ -18,7 +18,6 @@ import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.
 
 import java.util.List;
 
-import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleCapture;
@@ -32,37 +31,13 @@ final class LmdbSemanticRuleSpecs {
 	}
 
 	static List<RuleSpec> logicalRules() {
-		return List.of(removeUnusedOptional(), distinctExistsJoin(), finiteCodeTypeValues(),
-				finiteFilterValuesDistinct(), finiteFilterValues(), orFilterValues(), orFilterUnion(),
+		return List.of(removeUnusedOptional(), finiteFilterValues(), orFilterValues(), orFilterUnion(),
 				filterMinusLeftPushdown());
 	}
 
 	static RuleSpec removeUnusedOptional() {
 		return tupleRule("lmdb-remove-unused-optional", 95, LmdbCascadesRuleProvider::unusedOptionalAlternative,
 				"unusedOptionalRhs", "duplicateInsensitive", "liveBindingObserver");
-	}
-
-	static RuleSpec distinctExistsJoin() {
-		return tupleRule("lmdb-distinct-exists-join", 94, tupleExpr -> tupleExpr instanceof Group group
-				? LmdbCascadesRuleProvider.distinctExistsJoinAlternative(group)
-				: null,
-				"countDistinct", "positiveExists", "sharedDistinctVar", "unusedExistsBindings",
-				"duplicateInsensitive");
-	}
-
-	static RuleSpec finiteCodeTypeValues() {
-		return tupleRule("lmdb-finite-code-type-values-rewrite", 94, tupleExpr -> tupleExpr instanceof Group group
-				? LmdbCascadesRuleProvider.finiteCodeTypeValuesRewrite(group)
-				: null,
-				"countDistinct", "finiteCodeDomain", "factoredCommonCodePattern", "finiteTypeDomain",
-				"unusedOptionalRhs", "duplicateInsensitive");
-	}
-
-	static RuleSpec finiteFilterValuesDistinct() {
-		return tupleRule("lmdb-finite-filter-values-distinct-rewrite", 97, tupleExpr -> tupleExpr instanceof Group group
-				? LmdbCascadesRuleProvider.finiteFilterValuesDistinctAggregateAlternative(group)
-				: null,
-				"countDistinct", "finiteValuesAnchor", "argumentAssuresFilterVar", "duplicateInsensitive");
 	}
 
 	static RuleSpec finiteFilterValues() {

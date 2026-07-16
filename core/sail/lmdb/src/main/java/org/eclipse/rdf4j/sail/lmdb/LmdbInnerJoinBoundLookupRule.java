@@ -16,20 +16,15 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
-import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Memo;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MemoExpr;
@@ -37,15 +32,30 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Optimizatio
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleApplication;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleDescriptor;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleProof;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleRootOperator;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
-import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 final class LmdbInnerJoinBoundLookupRule extends LmdbRule {
 	LmdbInnerJoinBoundLookupRule(EvaluationStatistics statistics) {
-		super("lmdb-inner-join-bound-lookup", RuleKind.IMPLEMENTATION, 92, statistics);
+			super("lmdb-inner-join-bound-lookup", RuleKind.IMPLEMENTATION, 92, statistics,
+					scheduling(RuleRootOperator.JOIN)
+							.readsFacts(
+									RuleDescriptor.MemoFact.POSSIBLE_BINDINGS,
+									RuleDescriptor.MemoFact.ASSURED_BINDINGS,
+									RuleDescriptor.MemoFact.CORRELATION,
+									RuleDescriptor.MemoFact.SCOPE_BARRIER,
+									RuleDescriptor.MemoFact.REQUIRED_INPUTS)
+							.readsChildren(
+									RuleDescriptor.ChildProperty.BOUND_BINDINGS,
+									RuleDescriptor.ChildProperty.REQUIRED_INPUTS,
+									RuleDescriptor.ChildProperty.ACCESS_PATH)
+							.produces(
+									RuleDescriptor.ProducedChange.PHYSICAL_EXPRESSION,
+									RuleDescriptor.ProducedChange.PROOF));
 	}
 
 	@Override
@@ -53,8 +63,6 @@ final class LmdbInnerJoinBoundLookupRule extends LmdbRule {
 		return expression.logical()
 				&& costModel != null
 				&& expression.tupleExpr()instanceof Join join
-				&& !(LmdbHypergraphJoinPlanner.enabled()
-						&& LmdbJoinIslandConnectivity.joinProviderCanOwn(join))
 				&& !TupleExprs.isVariableScopeChange(join)
 				&& !TupleExprs.isVariableScopeChange(join.getRightArg())
 				&& !TupleExprs.containsSubquery(join.getRightArg())
@@ -66,113 +74,28 @@ final class LmdbInnerJoinBoundLookupRule extends LmdbRule {
 
 	@Override
 	public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
-		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = estimate(expression.tupleExpr(), goal, true);
-		if (estimate.isEmpty() || !"lmdb-inner-bound-lookup".equals(estimate.get()
-				.getStringMetrics()
-				.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE))) {
-			return List.of();
-		}
 		Join alternative = (Join) expression.tupleExpr().clone();
-		stampInnerBoundLookupMetrics(alternative, estimate.get());
-		stampNestedAccessPathMetrics(alternative, rootCostContext(goal));
 		PhysicalProperties delivered = PhysicalProperties.builder()
 				.boundVars(alternative.getBindingNames())
 				.inputBoundVars(inputBoundVarsForExpression(alternative, goal))
 				.accessPath("innerBoundLookup")
+				.inputConsumption(PhysicalProperties.InputConsumption.SELECTED_PREFIX)
 				.materialization(PhysicalProperties.Materialization.STREAMING)
 				.duplicateBehavior(PhysicalProperties.DuplicateBehavior.PRESERVES)
 				.build();
+		List<PhysicalProperties> inputRequirements = List.of(
+				PhysicalProperties.ANY,
+				PhysicalProperties.builder()
+						.inputConsumption(PhysicalProperties.InputConsumption.SELECTED_PREFIX)
+						.build());
 		Set<String> facts = new LinkedHashSet<>();
 		facts.add("innerJoin");
 		facts.add("rightBoundLookup");
 		facts.add("anchoredBoundVars=" + innerJoinAnchoredBoundVars(alternative));
 		RuleProof proof = proof(semanticScope(goal), facts,
-				"INNER JOIN RHS can be costed and materialized with bindings assured by the left prefix");
-		CostVector cost = decomposedInnerJoinOperatorCost(estimate.get());
-		return List.of(RuleApplication.physical(expression.groupId(), alternative, delivered, cost, proof,
-				"lmdb-inner-join-bound-lookup", snapshot(estimate.get(), cost)));
-	}
-
-	private void stampInnerBoundLookupMetrics(Join join, JoinFactorCostModel.FactorCostEstimate estimate) {
-		stampAccessPathMetrics(join, estimate);
-		join.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "lmdb-inner-bound-lookup");
-		join.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE,
-				TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_ALTERNATIVE_RANKING);
-		join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, estimate.getOutputRows());
-		join.setResultSizeEstimate(estimate.getOutputRows());
-		join.setCostEstimate(estimate.getWorkRows());
-		join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS, estimate.getWorkRows());
-		join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, estimate.getWorkRows());
-	}
-
-	private CostVector decomposedInnerJoinOperatorCost(JoinFactorCostModel.FactorCostEstimate estimate) {
-		CostVector base = cost(estimate);
-		Map<String, Double> metrics = estimate.getDoubleMetrics();
-		double outputRows = finiteMetric(metrics, "plannedInnerJoinOutputRows", estimate.getOutputRows());
-		double rightRows = finiteMetric(metrics, "plannedInnerJoinRightRows", estimate.getOutputRows());
-		double rightWorkRows = finiteMetric(metrics, "plannedInnerJoinRightWorkRows", estimate.getWorkRows());
-		double operatorWorkRows = Math.max(rightRows, rightWorkRows);
-		if (!Double.isFinite(operatorWorkRows) || operatorWorkRows < 0.0d) {
-			operatorWorkRows = estimate.getWorkRows();
-		}
-		return base.withRows(outputRows)
-				.withWorkRows(operatorWorkRows);
-	}
-
-	private JoinFactorCostModel.CostContext rootCostContext(OptimizationGoal goal) {
-		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext
-				.forOptimization(goalBoundVars(goal), Double.NaN, Double.NaN, false, true, Map.of(), List.of());
-		return goal == null ? context : context.withEstimationTier(goal.estimationTier());
-	}
-
-	private void stampNestedAccessPathMetrics(TupleExpr tupleExpr, JoinFactorCostModel.CostContext context) {
-		if (tupleExpr == null || context == null) {
-			return;
-		}
-		StatementPattern rowPreservingStatement = rowPreservingAccessPathStatement(tupleExpr);
-		if (rowPreservingStatement != null) {
-			costModel.estimateFactorCost(tupleExpr, context)
-					.ifPresent(estimate -> {
-						stampAccessPathMetrics(tupleExpr, estimate);
-						stampAccessPathMetrics(rowPreservingStatement, estimate);
-					});
-			return;
-		}
-		if (tupleExpr instanceof StatementPattern statementPattern) {
-			costModel.estimateFactorCost(statementPattern, context)
-					.ifPresent(estimate -> stampAccessPathMetrics(statementPattern, estimate));
-			return;
-		}
-		if (tupleExpr instanceof Join join
-				&& !TupleExprs.isVariableScopeChange(join)
-				&& !TupleExprs.isVariableScopeChange(join.getRightArg())
-				&& !TupleExprs.containsSubquery(join.getRightArg())) {
-			stampNestedAccessPathMetrics(join.getLeftArg(), context);
-			stampNestedAccessPathMetrics(join.getRightArg(), rightCostContext(join, context));
-			return;
-		}
-		if (tupleExpr instanceof Filter filter && !TupleExprs.isVariableScopeChange(filter)) {
-			stampNestedAccessPathMetrics(filter.getArg(), context);
-			return;
-		}
-		if (tupleExpr instanceof Union union) {
-			stampNestedAccessPathMetrics(union.getLeftArg(), context);
-			stampNestedAccessPathMetrics(union.getRightArg(), context);
-		}
-	}
-
-	private JoinFactorCostModel.CostContext rightCostContext(Join join, JoinFactorCostModel.CostContext context) {
-		Set<String> rightBoundVars = new LinkedHashSet<>(context.getCurrentlyBoundVars());
-		Set<String> sharedBindings = new LinkedHashSet<>(join.getLeftArg().getAssuredBindingNames());
-		sharedBindings.retainAll(join.getRightArg().getBindingNames());
-		rightBoundVars.addAll(sharedBindings);
-		double leftRows = costModel.estimateFactorCost(join.getLeftArg(), context)
-				.map(JoinFactorCostModel.FactorCostEstimate::getOutputRows)
-				.filter(rows -> Double.isFinite(rows) && rows > 0.0d)
-				.orElse(Double.NaN);
-		return JoinFactorCostModel.CostContext
-				.forOptimization(rightBoundVars, leftRows, Double.NaN, true, true, Map.of(), List.of())
-				.withEstimationTier(context.getEstimationTier());
+				"INNER JOIN RHS accepts bindings assured by the optimizer-selected left prefix");
+		return List.of(RuleApplication.physical(expression.groupId(), alternative, delivered, inputRequirements,
+				CostVector.ZERO, proof, "lmdb-inner-join-bound-lookup", null));
 	}
 
 	private Set<String> innerJoinAnchoredBoundVars(Join join) {

@@ -214,9 +214,17 @@ class ThemeQueryBenchmarkSmokeIT {
 			assertBefore(renderedQuery, "VALUES ?code { \"MED-1000\" \"MED-1001\" }",
 					"?med <http://example.com/theme/medical/code> ?code",
 					"VALUES ?code should feed the med:code lookup\n" + renderedQuery + "\n" + plan);
-			assertBefore(renderedQuery, "?med <http://example.com/theme/medical/code> ?code",
+			assertBefore(renderedQuery, "?med <http://example.com/theme/medical/code> ?code", "FILTER NOT EXISTS",
+					"q7 should apply the dosage anti-probe immediately after the finite code lookup\n"
+							+ renderedQuery + "\n" + plan);
+			assertBefore(renderedQuery, "FILTER NOT EXISTS",
 					"FILTER EXISTS",
-					"q7 should apply the finite code lookup before the patient EXISTS probe\n" + renderedQuery
+					"q7 should apply the selective dosage anti-probe before the patient EXISTS probe\n" + renderedQuery
+							+ "\n" + plan);
+			assertBefore(renderedQuery, "FILTER NOT EXISTS",
+					"?med a <http://example.com/theme/medical/Medication>",
+					"q7 should apply the selective dosage anti-probe before the broad Medication type guard\n"
+							+ renderedQuery
 							+ "\n" + plan);
 		} finally {
 			benchmark.tearDown();
@@ -224,7 +232,7 @@ class ThemeQueryBenchmarkSmokeIT {
 	}
 
 	private static void deleteBenchmarkStore() throws Exception {
-		Path store = Path.of("target", "lmdb-theme-query-benchmark");
+		Path store = BenchmarkPathSupport.resolveTarget("lmdb-theme-query-benchmark");
 		if (!Files.exists(store)) {
 			return;
 		}
@@ -238,7 +246,8 @@ class ThemeQueryBenchmarkSmokeIT {
 	@Test
 	@Disabled("Disabled until we can verify if this test is correct or not")
 	void secondBenchmarkTrialReusesPersistedJoinEstimatorSnapshot() throws Exception {
-		Path store = Path.of("target", "lmdb-theme-query-benchmark", "complete", "join-estimator.rjes");
+		Path store = BenchmarkPathSupport.resolveTarget(
+				"lmdb-theme-query-benchmark", "complete", "join-estimator.rjes");
 		Path metadata = store.resolve("metadata.bin");
 
 		ThemeQueryBenchmark first = newBenchmark(Theme.MEDICAL_RECORDS, 0);

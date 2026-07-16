@@ -218,6 +218,8 @@ public final class StructuralCascadesRules {
 					&& expression.tupleExpr()instanceof Projection outer
 					&& outer.getArg()instanceof Projection inner
 					&& !inner.isSubquery()
+					&& !inner.isVariableScopeChange()
+					&& inner.getProjectionContext() == null
 					&& canMergeProjections(outer, inner);
 		}
 
@@ -233,6 +235,44 @@ public final class StructuralCascadesRules {
 			RuleProof proof = proof(semanticScope(goal), Set.of("identityProjection", "projectionNamesPreserved"),
 					"nested identity projections merge when the inner projection preserves all outer names");
 			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
+		}
+	}
+
+	public static final class RedundantProjectionRemovalRule extends StandardCascadesRules.AbstractRule {
+		public RedundantProjectionRemovalRule() {
+			super("redundant-projection-removal", RuleKind.TRANSFORMATION, 65);
+		}
+
+		@Override
+		public RuleDescriptor descriptor() {
+			return RuleDescriptor.builder(id(), kind())
+					.rootOperators(RuleRootOperator.PROJECTION)
+					.factsRead(RuleDescriptor.MemoFact.POSSIBLE_BINDINGS,
+							RuleDescriptor.MemoFact.ASSURED_BINDINGS,
+							RuleDescriptor.MemoFact.SCOPE_BARRIER)
+					.wakeUpEvents(RuleWakeUpEvent.LOGICAL_EXPRESSION_ADDED,
+							RuleWakeUpEvent.LOGICAL_FACT_CHANGED,
+							RuleWakeUpEvent.CHILD_EXPRESSION_CHANGED)
+					.priority(new RulePriority(RulePhase.CHEAP_LOGICAL, 65))
+					.convergenceClass(RuleConvergenceClass.FINITE_EQUIVALENCE_EXPANSION)
+					.build();
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return redundantProjection(expression, memo) != null;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Projection projection = redundantProjection(expression, context == null ? null : context.memo());
+			if (projection == null) {
+				return List.of();
+			}
+			RuleProof proof = proof(OptimizationGoal.BAG_SEMANTICS,
+					Set.of("identityProjection", "possibleBindingsEqual", "assuredBindingsEqual", "noScopeChange"),
+					"an identity projection is redundant only when memo child binding facts prove it removes no binding");
+			return List.of(RuleApplication.transformation(expression.groupId(), projection.getArg().clone(), proof));
 		}
 	}
 
@@ -365,6 +405,32 @@ public final class StructuralCascadesRules {
 		Set<String> outerNames = CascadesRewriteSupport.identityProjectionNames(outer);
 		Set<String> innerNames = CascadesRewriteSupport.identityProjectionNames(inner);
 		return outerNames != null && innerNames != null && innerNames.containsAll(outerNames);
+	}
+
+	private static Projection redundantProjection(MemoExpr expression, Memo memo) {
+		if (expression == null || !expression.logical() || memo == null
+				|| expression.inputGroupIds().size() != 1
+				|| !(expression.tupleExpr()instanceof Projection projection)
+				|| projection.isSubquery()
+				|| projection.isVariableScopeChange()
+				|| projection.getProjectionContext() != null) {
+			return null;
+		}
+		Set<String> projectedNames = CascadesRewriteSupport.identityProjectionNames(projection);
+		if (projectedNames == null) {
+			return null;
+		}
+		BindingMask projected = memo.universe().maskOf(projectedNames);
+		if (!memo.universe().names(projected).equals(projectedNames)) {
+			return null;
+		}
+		BindingShape child = memo.group(expression.inputGroupIds().getFirst()).bindingShape();
+		BindingShape output = memo.group(expression.groupId()).bindingShape();
+		return projected.equals(child.possible())
+				&& projected.equals(output.possible())
+				&& child.assured().equals(output.assured())
+						? projection
+						: null;
 	}
 
 	private static boolean canInlineModifierFreeSubquery(Projection outer, Projection inner) {

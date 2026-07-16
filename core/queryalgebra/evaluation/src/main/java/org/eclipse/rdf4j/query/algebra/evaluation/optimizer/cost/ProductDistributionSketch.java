@@ -75,6 +75,27 @@ public final class ProductDistributionSketch implements DistributionSketch {
 	}
 
 	@Override
+	public boolean equals(Object object) {
+		return this == object
+				|| object instanceof ProductDistributionSketch other
+						&& Double.compare(distinctRows, other.distinctRows) == 0
+						&& Double.compare(totalRows, other.totalRows) == 0
+						&& sameFactorMultiset(factors, other.factors);
+	}
+
+	@Override
+	public int hashCode() {
+		int factorHash = 0;
+		for (DistributionSketch factor : factors) {
+			factorHash += factor.hashCode();
+		}
+		int result = Integer.hashCode(factors.size());
+		result = 31 * result + factorHash;
+		result = 31 * result + Double.hashCode(distinctRows);
+		return 31 * result + Double.hashCode(totalRows);
+	}
+
+	@Override
 	public OptionalDouble innerProduct(DistributionSketch other) {
 		if (other == null) {
 			return OptionalDouble.empty();
@@ -105,6 +126,27 @@ public final class ProductDistributionSketch implements DistributionSketch {
 		} else {
 			factors.add(sketch);
 		}
+	}
+
+	private static boolean sameFactorMultiset(List<DistributionSketch> left, List<DistributionSketch> right) {
+		if (left.size() != right.size()) {
+			return false;
+		}
+		boolean[] matched = new boolean[right.size()];
+		for (DistributionSketch candidate : left) {
+			boolean found = false;
+			for (int index = 0; index < right.size(); index++) {
+				if (!matched[index] && candidate.equals(right.get(index))) {
+					matched[index] = true;
+					found = true;
+					break;
+				}
+			}
+			if (!found) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private OptionalDouble productInnerProduct(ProductDistributionSketch other) {

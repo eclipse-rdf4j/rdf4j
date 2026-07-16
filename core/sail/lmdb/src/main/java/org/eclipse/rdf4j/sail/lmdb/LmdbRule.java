@@ -12,10 +12,13 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
@@ -29,13 +32,20 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingProf
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesRule;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.EstimateSnapshot;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.InputBindingContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Memo;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MemoExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleConvergenceClass;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleDescriptor;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RulePhase;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RulePriority;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleProof;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleRootOperator;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleWakeUpEvent;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.Component;
@@ -46,13 +56,16 @@ abstract class LmdbRule implements CascadesRule {
 	private final String id;
 	private final RuleKind kind;
 	private final int promise;
+	private final RuleDescriptor descriptor;
 
-	LmdbRule(String id, RuleKind kind, int promise, EvaluationStatistics statistics) {
+	LmdbRule(String id, RuleKind kind, int promise, EvaluationStatistics statistics, Scheduling scheduling) {
 		this.id = id;
 		this.kind = kind;
 		this.promise = promise;
 		this.statistics = statistics;
 		this.costModel = statistics instanceof JoinFactorCostModel model ? model : null;
+		this.descriptor = Objects.requireNonNull(scheduling, "scheduling")
+				.toDescriptor(id, kind, promise);
 	}
 
 	@Override
@@ -68,6 +81,94 @@ abstract class LmdbRule implements CascadesRule {
 	@Override
 	public int promise(MemoExpr expression, OptimizationGoal goal, Memo memo) {
 		return promise;
+	}
+
+	@Override
+	public RuleDescriptor descriptor() {
+		return descriptor;
+	}
+
+	static Scheduling scheduling(RuleRootOperator... rootOperators) {
+		return new Scheduling(rootOperators);
+	}
+
+	static final class Scheduling {
+		private final EnumSet<RuleRootOperator> rootOperators = EnumSet.noneOf(RuleRootOperator.class);
+		private final EnumSet<RuleDescriptor.MemoFact> factsRead = EnumSet.noneOf(RuleDescriptor.MemoFact.class);
+		private final EnumSet<RuleDescriptor.ChildProperty> childPropertiesRead = EnumSet
+				.noneOf(RuleDescriptor.ChildProperty.class);
+		private final EnumSet<RuleDescriptor.GoalProperty> goalPropertiesRead = EnumSet
+				.noneOf(RuleDescriptor.GoalProperty.class);
+		private final EnumSet<RuleDescriptor.ProducedChange> changesProduced = EnumSet
+				.noneOf(RuleDescriptor.ProducedChange.class);
+		private final EnumSet<RuleWakeUpEvent> wakeUpEvents = EnumSet.of(
+				RuleWakeUpEvent.LOGICAL_EXPRESSION_ADDED,
+				RuleWakeUpEvent.REQUIRED_PROPERTIES_CHANGED);
+
+		private Scheduling(RuleRootOperator... rootOperators) {
+			if (rootOperators != null) {
+				Collections.addAll(this.rootOperators, rootOperators);
+			}
+		}
+
+		Scheduling readsFacts(RuleDescriptor.MemoFact... facts) {
+			if (facts != null) {
+				Collections.addAll(factsRead, facts);
+			}
+			return this;
+		}
+
+		Scheduling readsChildren(RuleDescriptor.ChildProperty... properties) {
+			if (properties != null) {
+				Collections.addAll(childPropertiesRead, properties);
+			}
+			return this;
+		}
+
+		Scheduling readsGoalProperties(RuleDescriptor.GoalProperty... properties) {
+			if (properties != null) {
+				Collections.addAll(goalPropertiesRead, properties);
+			}
+			return this;
+		}
+
+		Scheduling produces(RuleDescriptor.ProducedChange... changes) {
+			if (changes != null) {
+				Collections.addAll(changesProduced, changes);
+			}
+			return this;
+		}
+
+		Scheduling wakesOn(RuleWakeUpEvent... events) {
+			if (events != null) {
+				Collections.addAll(wakeUpEvents, events);
+			}
+			return this;
+		}
+
+		private RuleDescriptor toDescriptor(String id, RuleKind kind, int promise) {
+			if (rootOperators.isEmpty() || rootOperators.contains(RuleRootOperator.WILDCARD)) {
+				throw new IllegalArgumentException("LMDB rule " + id + " must declare finite root operators");
+			}
+			if (!changesProduced.contains(RuleDescriptor.ProducedChange.PROOF)) {
+				throw new IllegalArgumentException("LMDB rule " + id + " must declare its proof output");
+			}
+			RulePhase phase = switch (kind) {
+			case IMPLEMENTATION -> RulePhase.PHYSICAL_IMPLEMENTATION;
+			case ENFORCER -> RulePhase.ENFORCER;
+			case TRANSFORMATION -> RulePhase.CHEAP_LOGICAL;
+			};
+			return RuleDescriptor.builder(id, kind)
+					.rootOperators(rootOperators.toArray(RuleRootOperator[]::new))
+					.factsRead(factsRead.toArray(RuleDescriptor.MemoFact[]::new))
+					.childPropertiesRead(childPropertiesRead.toArray(RuleDescriptor.ChildProperty[]::new))
+					.goalPropertiesRead(goalPropertiesRead.toArray(RuleDescriptor.GoalProperty[]::new))
+					.changesProduced(changesProduced.toArray(RuleDescriptor.ProducedChange[]::new))
+					.wakeUpEvents(wakeUpEvents.toArray(RuleWakeUpEvent[]::new))
+					.priority(new RulePriority(phase, promise))
+					.convergenceClass(RuleConvergenceClass.FINITE_EQUIVALENCE_EXPANSION)
+					.build();
+		}
 	}
 
 	RuleProof proof(String semanticScope, Set<String> facts, String reason) {
@@ -104,22 +205,21 @@ abstract class LmdbRule implements CascadesRule {
 		return value != null && Double.isFinite(value) && value >= 0.0d ? value : fallback;
 	}
 
-	double floorNonExactZeroOperatorWorkRows(double workRows,
-			JoinFactorCostModel.FactorCostEstimate left,
-			JoinFactorCostModel.FactorCostEstimate right) {
-		if (workRows != 0.0d) {
-			return workRows;
-		}
-		if (left != null && right != null && left.hasExactOutputRows() && right.hasExactOutputRows()) {
-			return workRows;
-		}
-		return 1.0d;
-	}
-
 	Optional<JoinFactorCostModel.FactorCostEstimate> estimate(TupleExpr tupleExpr, OptimizationGoal goal,
 			boolean nested) {
 		Set<String> boundVars = goal == null ? Set.of() : goal.requiredProperties().boundVars();
-		return estimate(tupleExpr, boundVars, nested);
+		InputBindingContext inputContext = goal == null ? InputBindingContext.NONE : goal.inputBindingContext();
+		if (costModel == null || tupleExpr == null) {
+			return Optional.empty();
+		}
+		return costModel.estimateFactorCost(tupleExpr,
+				JoinFactorCostModel.CostContext.forOptimization(boundVars,
+						inputContext.isPresent() ? inputContext.invocationRows() : Double.NaN,
+						inputContext.distinctBindings(boundVars).orElse(Double.NaN),
+						nested || inputContext.isPresent(), true, inputContext.finiteBindingValues(boundVars),
+						List.of())
+						.withEstimationTier(goal == null ? JoinFactorCostModel.EstimationTier.STANDARD
+								: goal.estimationTier()));
 	}
 
 	Optional<JoinFactorCostModel.FactorCostEstimate> estimate(TupleExpr tupleExpr, Set<String> boundVars,
@@ -391,6 +491,6 @@ abstract class LmdbRule implements CascadesRule {
 	}
 
 	String semanticScope(OptimizationGoal goal) {
-		return goal == null ? OptimizationGoal.BAG_SEMANTICS : goal.semanticScope();
+		return OptimizationGoal.BAG_SEMANTICS;
 	}
 }

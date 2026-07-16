@@ -33,8 +33,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Optimizatio
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleApplication;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleDescriptor.MemoFact;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleDescriptor.ProducedChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleProof;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleRootOperator;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
@@ -44,7 +47,11 @@ final class LmdbGuaranteeOptionRule extends LmdbRule {
 	private static final String GUARANTEE_OPTION = "optimizer.guaranteeOption";
 
 	LmdbGuaranteeOptionRule(EvaluationStatistics statistics) {
-		super("lmdb-guarantee-options", RuleKind.TRANSFORMATION, 125, statistics);
+		super("lmdb-guarantee-options", RuleKind.TRANSFORMATION, 125, statistics,
+				scheduling(RuleRootOperator.FILTER, RuleRootOperator.JOIN)
+						.readsFacts(MemoFact.STATISTICS_EPOCH)
+						.produces(ProducedChange.LOGICAL_EXPRESSION, ProducedChange.PHYSICAL_EXPRESSION,
+								ProducedChange.PROOF, ProducedChange.ESTIMATE));
 	}
 
 	@Override
@@ -60,6 +67,9 @@ final class LmdbGuaranteeOptionRule extends LmdbRule {
 
 	@Override
 	public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+		if (!context.claimStructuralObservation(id(), expression, expression, goal)) {
+			return List.of();
+		}
 		Segment segment = collectSegment(expression.tupleExpr());
 		if (segment.factors().isEmpty() || segment.filters().isEmpty()) {
 			return List.of();

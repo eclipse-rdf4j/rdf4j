@@ -12,10 +12,14 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleCompiler;
@@ -25,10 +29,66 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.Standar
 
 @Experimental
 public final class RuleRegistry {
+	private static final Set<String> UNIFIED_JOIN_REORDER_RULE_IDS = Set.of(
+			"join-commute",
+			"join-associate-left",
+			"join-associate-right");
+
 	private final List<CascadesRule> rules;
+	private final Map<String, RuleDescriptor> descriptorsById;
+	private final Map<RuleRootOperator, List<CascadesRule>> rulesByRootOperator;
+	private final Map<RuleWakeUpEvent, Map<RuleRootOperator, List<CascadesRule>>> rulesByWakeUpEventAndRootOperator;
 
 	private RuleRegistry(List<CascadesRule> rules) {
 		this.rules = rules == null || rules.isEmpty() ? List.of() : List.copyOf(rules);
+		this.descriptorsById = descriptors(this.rules);
+		this.rulesByRootOperator = indexByRootOperator(this.rules, descriptorsById);
+		this.rulesByWakeUpEventAndRootOperator = indexByWakeUpEventAndRootOperator(this.rules, descriptorsById);
+	}
+
+	private static Map<String, RuleDescriptor> descriptors(List<CascadesRule> rules) {
+		Map<String, RuleDescriptor> descriptors = new LinkedHashMap<>();
+		for (CascadesRule rule : rules) {
+			String id = rule.id();
+			if (descriptors.containsKey(id)) {
+				throw new IllegalArgumentException("Duplicate Cascades rule id: " + id);
+			}
+			RuleDescriptor descriptor = Objects.requireNonNull(rule.descriptor(),
+					"Rule descriptor must not be null: " + id);
+			descriptors.put(id, descriptor);
+		}
+		return Collections.unmodifiableMap(descriptors);
+	}
+
+	private static Map<RuleRootOperator, List<CascadesRule>> indexByRootOperator(List<CascadesRule> rules,
+			Map<String, RuleDescriptor> descriptorsById) {
+		Map<RuleRootOperator, List<CascadesRule>> index = new EnumMap<>(RuleRootOperator.class);
+		for (RuleRootOperator rootOperator : RuleRootOperator.values()) {
+			if (rootOperator == RuleRootOperator.WILDCARD) {
+				index.put(rootOperator, rules);
+				continue;
+			}
+			List<CascadesRule> bucket = new ArrayList<>();
+			for (CascadesRule rule : rules) {
+				if (descriptorsById.get(rule.id()).appliesTo(rootOperator)) {
+					bucket.add(rule);
+				}
+			}
+			index.put(rootOperator, List.copyOf(bucket));
+		}
+		return Collections.unmodifiableMap(index);
+	}
+
+	private static Map<RuleWakeUpEvent, Map<RuleRootOperator, List<CascadesRule>>> indexByWakeUpEventAndRootOperator(
+			List<CascadesRule> rules, Map<String, RuleDescriptor> descriptorsById) {
+		Map<RuleWakeUpEvent, Map<RuleRootOperator, List<CascadesRule>>> index = new EnumMap<>(RuleWakeUpEvent.class);
+		for (RuleWakeUpEvent event : RuleWakeUpEvent.values()) {
+			List<CascadesRule> eventRules = rules.stream()
+					.filter(rule -> descriptorsById.get(rule.id()).wakesFor(event))
+					.toList();
+			index.put(event, indexByRootOperator(eventRules, descriptorsById));
+		}
+		return Collections.unmodifiableMap(index);
 	}
 
 	public static Builder builder() {
@@ -43,10 +103,13 @@ public final class RuleRegistry {
 				.add(new StructuralCascadesRules.JoinEmptySetRule())
 				.add(new StructuralCascadesRules.JoinSingletonRule())
 				.add(new StructuralCascadesRules.UnionSimplificationRule())
+				.add(new StructuralCascadesRules.RedundantProjectionRemovalRule())
 				.add(new StructuralCascadesRules.ProjectionMergeRule())
 				.add(new StructuralCascadesRules.InlineModifierFreeSubqueryRule())
 				.add(new StructuralCascadesRules.DropUnusedSubqueryVarsRule())
 				.add(new StructuralCascadesRules.RemoveUnobservableOrderRule())
+				.add(new OrderLimitCascadesRules.OrderProjectionTransposeRule())
+				.add(new OrderLimitCascadesRules.DistinctOrderedProjectionReduceRule())
 				.add(new FilterCascadesRules.FilterProjectionPushdownRule())
 				.add(new FilterCascadesRules.FilterExtensionPushdownRule())
 				.add(new ProjectionCascadesRules.ProjectionLeftJoinPushdownRule())
@@ -71,12 +134,19 @@ public final class RuleRegistry {
 				.add(new StandardCascadesRules.JoinUnionDistributionRule())
 				.add(new SetCascadesRules.OptionalLeftUnionDistributionRule())
 				.add(new SetCascadesRules.OptionalRightUnionMutuallyExclusiveDistributionRule())
+				.add(new StandardCascadesRules.HashJoinImplementationRule())
 				.add(new StandardCascadesRules.GenericImplementationRule());
 		return builder.build();
 	}
 
 	public static List<? extends CascadesRule> standardCompiledDslRules() {
-		return RuleCompiler.compileAll(standardRuleSpecs());
+		// JoinSearchService installs commute and association alternatives directly as memo subset partitions.
+		// Re-running the legacy whole-tree rewrites for every partition duplicates the same search space and defeats
+		// memo sharing. The specs remain available to test their legality contracts independently.
+		return RuleCompiler.compileAll(standardRuleSpecs()
+				.stream()
+				.filter(spec -> !UNIFIED_JOIN_REORDER_RULE_IDS.contains(spec.id()))
+				.toList());
 	}
 
 	private static List<RuleSpec> standardRuleSpecs() {
@@ -106,15 +176,54 @@ public final class RuleRegistry {
 
 	public List<CascadesRule> applicableRules(MemoExpr expression, OptimizationGoal goal, Memo memo,
 			CascadesTelemetry telemetry) {
+		return applicableRules(expression, goal, memo, null, telemetry);
+	}
+
+	public List<CascadesRule> applicableRules(MemoExpr expression, OptimizationGoal goal, Memo memo,
+			Set<RuleWakeUpEvent> wakeUpEvents) {
+		return applicableRules(expression, goal, memo, wakeUpEvents, CascadesTelemetry.NO_OP);
+	}
+
+	public List<CascadesRule> applicableRules(MemoExpr expression, OptimizationGoal goal, Memo memo,
+			Set<RuleWakeUpEvent> wakeUpEvents, CascadesTelemetry telemetry) {
+		return applicableRules(expression, goal, memo, wakeUpEvents, null, telemetry);
+	}
+
+	public List<CascadesRule> applicableRules(MemoExpr expression, OptimizationGoal goal, Memo memo,
+			Set<RuleWakeUpEvent> wakeUpEvents, Set<RuleKind> ruleKinds, CascadesTelemetry telemetry) {
+		return applicableRules(expression, goal, memo, wakeUpEvents, Set.of(), ruleKinds, telemetry);
+	}
+
+	List<CascadesRule> applicableRules(MemoExpr expression, OptimizationGoal goal, Memo memo,
+			Set<RuleWakeUpEvent> wakeUpEvents, Set<RuleDescriptor.MemoFact> changedFacts,
+			Set<RuleKind> ruleKinds, CascadesTelemetry telemetry) {
+		if (memo != null && expression != null
+				&& memo.executionDomain(expression.groupId()) != MemoExecutionDomain.LOCAL) {
+			return List.of();
+		}
 		CascadesTelemetry safeTelemetry = telemetry == null ? CascadesTelemetry.NO_OP : telemetry;
 		List<CascadesRule> applicable = new ArrayList<>();
-		for (CascadesRule rule : rules) {
-			boolean matched = rule.matches(expression, goal, memo);
-			int promise = matched ? adjustedPromise(rule, expression, goal, memo) : 0;
-			safeTelemetry.ruleEvaluated(expression, rule, goal, matched, promise,
-					matched ? "matched" : "not_matched");
-			if (matched) {
-				applicable.add(rule);
+		RuleRootOperator rootOperator = RuleRootOperator.from(expression);
+		if (safeTelemetry == CascadesTelemetry.NO_OP) {
+			for (CascadesRule rule : rulesFor(rootOperator, wakeUpEvents, changedFacts, ruleKinds)) {
+				evaluateRule(rule, expression, goal, memo, safeTelemetry, applicable);
+			}
+		} else {
+			for (CascadesRule rule : rules) {
+				RuleDescriptor descriptor = descriptorsById.get(rule.id());
+				boolean scheduledKind = ruleKinds == null || ruleKinds.contains(descriptor.kind());
+				if (descriptor.appliesTo(rootOperator)
+						&& descriptor.wakesForAny(wakeUpEvents, changedFacts)
+						&& scheduledKind) {
+					evaluateRule(rule, expression, goal, memo, safeTelemetry, applicable);
+				} else {
+					String status = !descriptor.appliesTo(rootOperator)
+							? "not_matched"
+							: descriptor.wakesForAny(wakeUpEvents, changedFacts) && !scheduledKind
+									? "not_scheduled"
+									: "not_woken";
+					safeTelemetry.ruleEvaluated(expression, rule, goal, false, 0, status);
+				}
 			}
 		}
 		applicable.sort(Comparator.comparingInt((CascadesRule rule) -> rule.phase().priority())
@@ -123,6 +232,54 @@ public final class RuleRegistry {
 						.reversed())
 				.thenComparing(CascadesRule::id));
 		return applicable;
+	}
+
+	boolean hasCandidateRules(MemoExpr expression, Set<RuleWakeUpEvent> wakeUpEvents,
+			Set<RuleDescriptor.MemoFact> changedFacts) {
+		if (expression == null) {
+			return false;
+		}
+		return !rulesFor(RuleRootOperator.from(expression), wakeUpEvents, changedFacts, null).isEmpty();
+	}
+
+	private List<CascadesRule> rulesFor(RuleRootOperator rootOperator, Set<RuleWakeUpEvent> wakeUpEvents,
+			Set<RuleDescriptor.MemoFact> changedFacts, Set<RuleKind> ruleKinds) {
+		List<CascadesRule> candidates;
+		if (wakeUpEvents == null) {
+			candidates = rulesByRootOperator.get(rootOperator);
+		} else if (wakeUpEvents.isEmpty()) {
+			return List.of();
+		} else if (wakeUpEvents.size() == 1) {
+			RuleWakeUpEvent event = wakeUpEvents.iterator().next();
+			candidates = rulesByWakeUpEventAndRootOperator.get(event).get(rootOperator);
+		} else {
+			candidates = rulesByRootOperator.get(rootOperator)
+					.stream()
+					.filter(rule -> descriptorsById.get(rule.id()).wakesForAny(wakeUpEvents))
+					.toList();
+		}
+		if (wakeUpEvents != null && !wakeUpEvents.isEmpty()) {
+			candidates = candidates.stream()
+					.filter(rule -> descriptorsById.get(rule.id()).wakesForAny(wakeUpEvents, changedFacts))
+					.toList();
+		}
+		if (ruleKinds == null) {
+			return candidates;
+		}
+		return candidates
+				.stream()
+				.filter(rule -> ruleKinds.contains(descriptorsById.get(rule.id()).kind()))
+				.toList();
+	}
+
+	private static void evaluateRule(CascadesRule rule, MemoExpr expression, OptimizationGoal goal, Memo memo,
+			CascadesTelemetry telemetry, List<CascadesRule> applicable) {
+		boolean matched = rule.matches(expression, goal, memo);
+		int promise = matched ? adjustedPromise(rule, expression, goal, memo) : 0;
+		telemetry.ruleEvaluated(expression, rule, goal, matched, promise, matched ? "matched" : "not_matched");
+		if (matched) {
+			applicable.add(rule);
+		}
 	}
 
 	private static int adjustedPromise(CascadesRule rule, MemoExpr expression, OptimizationGoal goal, Memo memo) {
@@ -143,6 +300,14 @@ public final class RuleRegistry {
 
 	public List<CascadesRule> rules() {
 		return rules;
+	}
+
+	List<String> uncontractedRuleIds() {
+		return descriptorsById.values()
+				.stream()
+				.filter(descriptor -> !descriptor.convergenceClass().hasFiniteOrIdempotentContract())
+				.map(RuleDescriptor::id)
+				.toList();
 	}
 
 	public static final class Builder {

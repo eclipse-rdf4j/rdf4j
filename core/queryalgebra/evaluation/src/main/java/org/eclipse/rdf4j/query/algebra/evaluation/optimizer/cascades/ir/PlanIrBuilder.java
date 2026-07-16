@@ -20,6 +20,7 @@ import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingMask;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingSymbol;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingUniverse;
@@ -148,7 +149,12 @@ public final class PlanIrBuilder {
 		case LEFT_JOIN -> leftJoinShape(inputs);
 		case DIFFERENCE -> leftShape(inputs);
 		case UNION -> unionShape(inputs);
-		case FILTER, DISTINCT, SLICE, ORDER, MATERIALIZE -> unaryShape(inputs);
+		case FILTER, DISTINCT, REDUCED, SLICE, ORDER, MATERIALIZE -> unaryShape(inputs);
+		case ARBITRARY_LENGTH_PATH -> arbitraryLengthPathShape(inputs, attr);
+		case ZERO_LENGTH_PATH -> zeroLengthPathShape(inputs, attr);
+		case SERVICE -> serviceShape(inputs, attr);
+		case TRIPLE_REF -> tripleRefShape(inputs, attr);
+		case NATIVE_BOUNDARY -> nativeBoundaryShape(inputs, attr);
 		case PROJECTION -> projectionShape(inputs, attr);
 		case EXTENSION -> extensionShape(inputs, attr);
 		case GROUP -> groupShape(attr);
@@ -172,6 +178,60 @@ public final class PlanIrBuilder {
 		BindingMask possible = finiteRows.relation().possibleMask(universe);
 		BindingMask assured = finiteRows.relation().assuredMask(universe);
 		return new BindingShape(possible, assured, possible.minus(assured), possible);
+	}
+
+	private BindingShape arbitraryLengthPathShape(List<IrNodeId> inputs, IrAttr attr) {
+		if (inputs.size() != 1) {
+			throw new IllegalStateException("ARBITRARY_LENGTH_PATH requires one transparent path-expression input");
+		}
+		if (!(attr instanceof IrAttr.ArbitraryLengthPathAttr path)) {
+			return BindingShape.empty();
+		}
+		return pathShape(node(inputs.getFirst()).bindings(), path.nonConstantSymbols());
+	}
+
+	private BindingShape zeroLengthPathShape(List<IrNodeId> inputs, IrAttr attr) {
+		if (!inputs.isEmpty()) {
+			throw new IllegalStateException("ZERO_LENGTH_PATH cannot have tuple inputs");
+		}
+		if (!(attr instanceof IrAttr.ZeroLengthPathAttr path)) {
+			return BindingShape.empty();
+		}
+		return pathShape(BindingShape.empty(), path.nonConstantSymbols());
+	}
+
+	private BindingShape pathShape(BindingShape definition, List<BindingSymbol> endpointSymbols) {
+		BindingMask endpoints = BindingShape.maskOfSymbols(universe, endpointSymbols);
+		BindingMask possible = definition.possible().union(endpoints);
+		BindingMask assured = definition.assured().union(endpoints);
+		BindingMask nullable = definition.nullable().minus(assured);
+		BindingMask local = definition.localBindOutputs().union(endpoints);
+		return new BindingShape(possible, assured, nullable, local);
+	}
+
+	private BindingShape serviceShape(List<IrNodeId> inputs, IrAttr attr) {
+		if (inputs.size() != 1) {
+			throw new IllegalStateException("SERVICE requires one transparent definition input");
+		}
+		if (!(attr instanceof IrAttr.ServiceAttr service)) {
+			return BindingShape.empty();
+		}
+		TupleExpr selectedDefinition = IrToTupleExpr.convert(build(inputs.getFirst()));
+		if (!service.definitionFingerprint().equals(TupleExprToIr.definitionFingerprint(selectedDefinition))) {
+			throw new IllegalStateException("SERVICE definition input changed independently of its source text");
+		}
+		return unaryShape(inputs);
+	}
+
+	private BindingShape tripleRefShape(List<IrNodeId> inputs, IrAttr attr) {
+		if (!inputs.isEmpty()) {
+			throw new IllegalStateException("TRIPLE_REF cannot have tuple inputs");
+		}
+		if (!(attr instanceof IrAttr.TripleRefAttr tripleRef)) {
+			return BindingShape.empty();
+		}
+		BindingMask mask = BindingShape.maskOfSymbols(universe, tripleRef.nonConstantSymbols());
+		return new BindingShape(mask, mask, BindingMask.EMPTY, BindingMask.EMPTY);
 	}
 
 	private BindingShape joinShape(List<IrNodeId> inputs) {
@@ -284,6 +344,34 @@ public final class PlanIrBuilder {
 		return unaryShape(inputs);
 	}
 
+	private BindingShape nativeBoundaryShape(List<IrNodeId> inputs, IrAttr attr) {
+		if (!(attr instanceof IrAttr.NativeTuple nativeTuple)) {
+			return BindingShape.empty();
+		}
+		TupleExpr tupleExpr = nativeTuple.tupleExpr();
+		List<TupleExprInputCodec.Slot> slots = TupleExprInputCodec.slots(tupleExpr);
+		if (slots.size() != inputs.size()) {
+			throw new IllegalStateException("Native boundary/input mismatch for "
+					+ tupleExpr.getClass().getSimpleName() + ": slots=" + slots.size()
+					+ ", inputs=" + inputs.size());
+		}
+		for (int index = 0; index < slots.size(); index++) {
+			TupleExpr selectedInput = IrToTupleExpr.convert(build(inputs.get(index)));
+			TupleExprInputCodec.Slot slot = slots.get(index);
+			if (slot.use() == TupleExprInputCodec.InputUse.DEFINITION) {
+				if (!slot.input().equals(selectedInput)) {
+					throw new IllegalStateException("Native definition input changed independently of "
+							+ tupleExpr.getClass().getSimpleName());
+				}
+				continue;
+			}
+			slot.replaceWith(selectedInput);
+		}
+		BindingMask possible = universe.maskOf(tupleExpr.getBindingNames());
+		BindingMask assured = universe.maskOf(tupleExpr.getAssuredBindingNames()).intersect(possible);
+		return BindingShape.of(possible, assured);
+	}
+
 	private SemanticProps deriveSemantics(IrOp op, IrAttr attr, BindingShape shape, SemanticProps supplied) {
 		SemanticProps.Builder builder = SemanticProps.builderFrom(supplied == null ? SemanticProps.DEFAULT : supplied)
 				.visibleScope(shape.possible())
@@ -293,6 +381,9 @@ public final class PlanIrBuilder {
 		case DISTINCT -> builder.duplicateBehavior(SemanticProps.DuplicateBehavior.COLLAPSES)
 				.preservesDuplicates(false)
 				.preservesOrder(false);
+		case REDUCED -> builder.duplicateBehavior(SemanticProps.DuplicateBehavior.MAY_CHANGE)
+				.preservesDuplicates(false)
+				.preservesOrder(true);
 		case GROUP -> builder.duplicateBehavior(SemanticProps.DuplicateBehavior.MAY_CHANGE)
 				.preservesDuplicates(false)
 				.preservesOrder(false)
@@ -322,6 +413,10 @@ public final class PlanIrBuilder {
 			}
 		}
 		case SLICE, ORDER -> builder.preservesOrder(op == IrOp.ORDER);
+		case ARBITRARY_LENGTH_PATH, ZERO_LENGTH_PATH, SERVICE, NATIVE_BOUNDARY -> builder.scopeBarrier(true)
+				.duplicateBehavior(SemanticProps.DuplicateBehavior.MAY_CHANGE)
+				.preservesDuplicates(false)
+				.preservesOrder(false);
 		default -> {
 		}
 		}

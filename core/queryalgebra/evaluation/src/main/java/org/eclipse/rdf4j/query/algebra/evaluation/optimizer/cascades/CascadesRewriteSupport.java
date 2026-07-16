@@ -18,18 +18,17 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
-import org.eclipse.rdf4j.query.algebra.CompareSubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
-import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
-import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
 /**
  * Shared safety helpers for bag-equivalent Cascades SPARQL algebra rewrites.
@@ -70,15 +69,31 @@ final class CascadesRewriteSupport {
 		return intersection(null, left, right);
 	}
 
+	static Set<String> possibleStreamBindingNames(TupleExpr tupleExpr) {
+		return StreamBindingSchema.from(tupleExpr).possible();
+	}
+
 	static Set<String> assuredStreamBindingNames(TupleExpr tupleExpr) {
-		if (tupleExpr == null) {
-			return Set.of();
-		}
-		if (tupleExpr instanceof Union union) {
-			return intersection(assuredStreamBindingNames(union.getLeftArg()),
-					assuredStreamBindingNames(union.getRightArg()));
-		}
-		return plannerNames(tupleExpr.getAssuredBindingNames());
+		return StreamBindingSchema.from(tupleExpr).assured();
+	}
+
+	static boolean parameterizedRightInputIsLegal(Join join) {
+		return join != null
+				&& selectedPrefixInputIsLegal(join.getRightArg())
+				&& !"hash".equals(join.getStringMetricPlanned("optimizer.joinAlgorithmHint"));
+	}
+
+	static boolean selectedPrefixInputIsLegal(TupleExpr input) {
+		return rootAcceptsSelectedPrefix(input)
+				&& !TupleExprs.containsSubquery(input);
+	}
+
+	/**
+	 * Returns whether the expression root can consume bindings supplied by its caller. Nested scalar, subquery and
+	 * materialization boundaries route their own inputs independently and therefore do not change this root contract.
+	 */
+	static boolean rootAcceptsSelectedPrefix(TupleExpr input) {
+		return input != null && !TupleExprs.isVariableScopeChange(input);
 	}
 
 	static Set<String> intersection(BindingUniverse universe, Set<String> left, Set<String> right) {
@@ -118,41 +133,7 @@ final class CascadesRewriteSupport {
 	}
 
 	static Set<String> conditionNames(ValueExpr condition, Set<String> visibleNames) {
-		if (condition == null) {
-			return Set.of();
-		}
-		Set<String> visible = plannerNames(visibleNames);
-		Set<String> names = new HashSet<>();
-		condition.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
-			@Override
-			public void meet(Var var) {
-				String name = var.getName();
-				if (!var.hasValue() && name != null && !name.startsWith("_const_")) {
-					names.add(name);
-				}
-			}
-
-			@Override
-			protected void meetCompareSubQueryValueOperator(CompareSubQueryValueOperator node) {
-				if (node.getArg() != null) {
-					node.getArg().visit(this);
-				}
-				addCorrelatedNames(node);
-			}
-
-			@Override
-			protected void meetSubQueryValueOperator(SubQueryValueOperator node) {
-				addCorrelatedNames(node);
-			}
-
-			private void addCorrelatedNames(SubQueryValueOperator node) {
-				if (node == null || node.getSubQuery() == null || visible.isEmpty()) {
-					return;
-				}
-				names.addAll(intersection(visible, VarNameCollector.process(node.getSubQuery())));
-			}
-		});
-		return plannerNames(names);
+		return ScalarDependencyAnalyzer.conditionNames(condition, visibleNames);
 	}
 
 	static boolean isIdentityProjection(Projection projection) {

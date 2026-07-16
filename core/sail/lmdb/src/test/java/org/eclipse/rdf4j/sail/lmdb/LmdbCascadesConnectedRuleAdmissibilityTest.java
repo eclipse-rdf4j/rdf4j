@@ -62,13 +62,14 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 	private static final IRI P2 = VF.createIRI("urn:p2");
 
 	@Test
-	void connectedJoinIslandUsesBoundedConnectedPlanByDefault() {
+	void connectedJoinIslandRetainsEveryLegalImplementationAlternative() {
 		List<String> rules = applicableRuleIds(connectedJoinIsland());
 
 		assertFalse(rules.contains("lmdb-sketch-join-order-provider"), rules::toString);
 		assertFalse(rules.contains("lmdb-connected-join-plan"), rules::toString);
-		assertTrue(rules.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID), rules::toString);
-		assertFalse(rules.contains("generic-physical-implementation"), rules::toString);
+		assertFalse(rules.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID), rules::toString);
+		assertTrue(rules.contains("generic-physical-implementation"), rules::toString);
+		assertTrue(rules.contains("lmdb-inner-join-bound-lookup"), rules::toString);
 		assertFalse(rules.contains("lmdb-access-path"), rules::toString);
 	}
 
@@ -81,28 +82,27 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 	}
 
 	@Test
-	void connectedThresholdPathIslandUsesOnlyAuthoritativeHypergraphOrdering() {
+	void connectedThresholdPathIslandRetainsGenericImplementation() {
 		TupleExpr island = thresholdPathIsland();
 		List<String> rules = applicableRuleIds(island);
 
-		assertTrue(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(island));
-		assertFalse(LmdbJoinIslandConnectivity.genericImplementationAllowed(island, true, false));
-		assertTrue(rules.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID), rules::toString);
+		assertFalse(rules.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID), rules::toString);
+		assertTrue(rules.contains("generic-physical-implementation"), rules::toString);
 		assertFalse(rules.contains("lmdb-cascades-connected-join-order"), rules::toString);
 		assertFalse(rules.contains("lmdb-connected-join-plan"), rules::toString);
 		assertFalse(rules.contains("lmdb-sketch-join-order-provider"), rules::toString);
 	}
 
 	@Test
-	void dphypOwnedIslandDoesNotRepeatGenericJoinEnumeration() {
+	void connectedIslandRetainsGenericAndBoundLookupImplementations() {
 		TupleExpr island = new Join(connectedJoinIsland(),
 				new StatementPattern(new Var("o"), new Var("p1", P1), new Var("tail")));
 
 		List<String> rules = applicableRuleIds(island);
 
-		assertTrue(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(island));
-		assertTrue(rules.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID), rules::toString);
-		assertFalse(rules.contains("lmdb-inner-join-bound-lookup"), rules::toString);
+		assertFalse(rules.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID), rules::toString);
+		assertTrue(rules.contains("lmdb-inner-join-bound-lookup"), rules::toString);
+		assertTrue(rules.contains("generic-physical-implementation"), rules::toString);
 		assertFalse(rules.contains("lmdb-cascades-connected-join-order"), rules::toString);
 		assertFalse(rules.contains("join-commute"), rules::toString);
 		assertFalse(rules.contains("join-associate-left"), rules::toString);
@@ -110,7 +110,7 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 	}
 
 	@Test
-	void dphypKillSwitchRestoresStandardJoinEnumeration() {
+	void dphypKillSwitchDoesNotChangeRegistryRouting() {
 		String previous = System.setProperty(LmdbHypergraphJoinPlanner.DPHYP_PROPERTY, "false");
 		try {
 			TupleExpr island = new Join(connectedJoinIsland(),
@@ -120,8 +120,10 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 
 			assertFalse(rules.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID), rules::toString);
 			assertFalse(rules.contains("lmdb-cascades-connected-join-order"), rules::toString);
-			assertTrue(rules.contains("join-commute"), rules::toString);
-			assertTrue(rules.contains("join-associate-left"), rules::toString);
+			assertFalse(rules.contains("join-commute"), rules::toString);
+			assertFalse(rules.contains("join-associate-left"), rules::toString);
+			assertTrue(rules.contains("lmdb-inner-join-bound-lookup"), rules::toString);
+			assertTrue(rules.contains("generic-physical-implementation"), rules::toString);
 		} finally {
 			if (previous == null) {
 				System.clearProperty(LmdbHypergraphJoinPlanner.DPHYP_PROPERTY);
@@ -145,19 +147,15 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 
 		List<String> rules = applicableRuleIds(island);
 
-		assertTrue(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(island));
 		assertFalse(rules.contains("lmdb-sketch-join-order-provider"), rules::toString);
 		assertFalse(rules.contains("lmdb-connected-join-plan"), rules::toString);
-		assertTrue(rules.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID), rules::toString);
-		assertFalse(rules.contains("generic-physical-implementation"), rules::toString);
+		assertFalse(rules.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID), rules::toString);
+		assertTrue(rules.contains("generic-physical-implementation"), rules::toString);
 		assertFalse(rules.contains("lmdb-access-path"), rules::toString);
 	}
 
 	@Test
-	void projectionWrappingScopedSubqueryIsAnOpaqueConnectedFactor() {
-		// Since the opaque-factor milestones (see .agent/execplans/GH-0000-opaque-factor-join-enumeration.md),
-		// sub-SELECT factors are reorderable island members: each is a self-contained relation over its projected
-		// names, so the connected planner owns the island and the generic implementation stays suppressed.
+	void projectionWrappingScopedSubqueryRetainsGenericImplementation() {
 		Projection leftScope = projection(new Join(
 				new StatementPattern(new Var("left"), new Var("p1", P1), new Var("shared")),
 				new StatementPattern(new Var("shared"), new Var("p2", P2), new Var("leftValue"))),
@@ -173,11 +171,8 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 
 		List<String> rules = applicableRuleIds(island);
 
-		assertTrue(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(island),
-				"Sub-SELECT factors joined on their projected names are reorderable connected factors");
-		assertFalse(LmdbJoinIslandConnectivity.genericImplementationAllowed(island, true, false));
-		assertTrue(rules.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID), rules::toString);
-		assertFalse(rules.contains("generic-physical-implementation"), rules::toString);
+		assertFalse(rules.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID), rules::toString);
+		assertTrue(rules.contains("generic-physical-implementation"), rules::toString);
 	}
 
 	@Test
@@ -217,7 +212,7 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 	}
 
 	@Test
-	void genericImplementationOnlyBridgesPathDerivedDisconnectedIslands() {
+	void disconnectedIslandsRetainGenericAndBoundLookupAlternatives() {
 		Join ordinaryDisconnected = new Join(
 				new StatementPattern(new Var("left"), new Var("p1", P1), new Var("leftValue")),
 				new StatementPattern(new Var("right"), new Var("p2", P2), new Var("rightValue")));
@@ -226,17 +221,15 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 						new Var("_anon_path_end")),
 				new StatementPattern(new Var("right"), new Var("p2", P2), new Var("rightValue")));
 
-		assertTrue(LmdbJoinIslandConnectivity.joinProviderCanOwn(ordinaryDisconnected));
-		assertFalse(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(ordinaryDisconnected));
-		assertTrue(LmdbJoinIslandConnectivity.genericImplementationAllowed(ordinaryDisconnected, true, true),
-				"DPhyp owns maximal connected islands; a disconnected bridge remains a generic physical join");
 		List<String> ordinaryRules = applicableRuleIds(ordinaryDisconnected);
+		List<String> pathDerivedRules = applicableRuleIds(pathDerivedDisconnected);
+		assertTrue(ordinaryRules.contains("generic-physical-implementation"), ordinaryRules::toString);
+		assertTrue(ordinaryRules.contains("lmdb-inner-join-bound-lookup"), ordinaryRules::toString);
 		assertFalse(ordinaryRules.contains("join-commute"), ordinaryRules::toString);
 		assertFalse(ordinaryRules.contains("join-associate-left"), ordinaryRules::toString);
 		assertFalse(ordinaryRules.contains("join-associate-right"), ordinaryRules::toString);
-		assertFalse(ordinaryRules.contains("lmdb-inner-join-bound-lookup"), ordinaryRules::toString);
-		assertTrue(LmdbJoinIslandConnectivity.genericImplementationAllowed(pathDerivedDisconnected, true, true),
-				"Decomposed path factors still need a generic bridge between disconnected memo groups");
+		assertTrue(pathDerivedRules.contains("generic-physical-implementation"), pathDerivedRules::toString);
+		assertTrue(pathDerivedRules.contains("lmdb-inner-join-bound-lookup"), pathDerivedRules::toString);
 	}
 
 	@Test
@@ -272,7 +265,7 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 	}
 
 	@Test
-	void connectedProviderCoversSingleRuntimeFactorWithGroundFilter() {
+	void singleRuntimeFactorWithGroundFilterRetainsLegalImplementations() {
 		IRI subject = VF.createIRI("urn:aas:DriveUnitAAS:DU-1-1");
 		StatementPattern groundType = new StatementPattern(new Var("subject", subject), new Var("type", P1),
 				new Var("aasClass", VF.createIRI("urn:AssetAdministrationShell")));
@@ -282,10 +275,9 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 
 		List<String> rules = applicableRuleIds(join);
 
-		assertTrue(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(join));
-		assertTrue(rules.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID),
-				() -> "The runtime lookup should seed the connected plan before its ground filter: " + rules);
-		assertFalse(rules.contains("generic-physical-implementation"), rules::toString);
+		assertFalse(rules.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID), rules::toString);
+		assertTrue(rules.contains("lmdb-inner-join-bound-lookup"), rules::toString);
+		assertTrue(rules.contains("generic-physical-implementation"), rules::toString);
 	}
 
 	@Test

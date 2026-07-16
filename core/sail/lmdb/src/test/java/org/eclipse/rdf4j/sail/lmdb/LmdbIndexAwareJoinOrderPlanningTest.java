@@ -1022,8 +1022,8 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 			assertTrue(antiIndex >= 0, "The correlated anti-filter must remain visible:\n" + rendered);
 			assertTrue(optimizedPlan.contains("rule=lmdb-correlated-not-exists-anti-filter"),
 					"The dosage exclusion must use the correlated anti implementation:\n" + optimizedPlan);
-			assertTrue(optimizedPlan.contains("rule=lmdb-distinct-exists-join"),
-					"The duplicate-insensitive EXISTS branch must use its semantic join alternative:\n"
+			assertTrue(optimizedPlan.contains("rule=lmdb-materialized-exists-semi"),
+					"The duplicate-insensitive EXISTS branch must use its transparent semi-join implementation:\n"
 							+ optimizedPlan);
 			assertTrue(optimizedPlan.contains("plannedAntiExistsSharedBindingCount=1.00"),
 					"The anti probe must remain correlated on ?med:\n" + optimizedPlan);

@@ -361,6 +361,49 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 		}
 	}
 
+	@Test
+	void unifiedCascadesPlansFiniteMedicalValuesBeforePredicateSurface(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticMedicalObservations(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(medicalObservationValuesQuery())
+						.explain(Explanation.Level.Optimized);
+				TupleExpr optimized = (TupleExpr) explanation.tupleExpr();
+				List<String> executionOrder = new ArrayList<>();
+				optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+					@Override
+					public void meet(BindingSetAssignment node) {
+						if (node.getBindingNames().contains("value")) {
+							executionOrder.add("values");
+						}
+					}
+
+					@Override
+					public void meet(StatementPattern node) {
+						if (node.getPredicateVar() != null && MED_VALUE.equals(node.getPredicateVar().getValue())) {
+							executionOrder.add("medical-value");
+						}
+					}
+				});
+
+				assertTrue(executionOrder.indexOf("values") >= 0 && executionOrder.indexOf("medical-value") >= 0,
+						"Expected both the finite relation and medical value access. plan=" + explanation);
+				assertTrue(executionOrder.indexOf("values") < executionOrder.indexOf("medical-value"),
+						"The unified optimizer must use the exact three-row relation before scanning the medical value "
+								+ "predicate surface. order=" + executionOrder + ", plan=" + explanation);
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
 	private static void loadSyntheticEngineeringAssemblies(SailRepository repository) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
@@ -390,7 +433,7 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 				for (int i = 0; i < OBSERVATIONS_PER_VALUE; i++) {
 					Resource observation = VF.createIRI("urn:test:medical:observation:" + value + ":" + i);
 					Resource encounter = VF.createIRI("urn:test:medical:encounter:" + value + ":" + i);
-					connection.add(observation, MED_VALUE, VF.createLiteral(String.valueOf(value), XSD.INTEGER));
+					connection.add(observation, MED_VALUE, VF.createLiteral(String.valueOf(value), XSD.INT));
 					connection.add(encounter, MED_HAS_OBSERVATION, observation);
 				}
 			}
@@ -516,6 +559,15 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 		return "SELECT ?assembly WHERE {\n"
 				+ "  VALUES ?assemblyName { \"Assembly 1\" \"Assembly 2\" \"Assembly 3\" }\n"
 				+ "  ?assembly <" + ENG_NAME.stringValue() + "> ?assemblyName .\n"
+				+ "}";
+	}
+
+	private static String medicalObservationValuesQuery() {
+		return "SELECT ?enc ?obs ?value WHERE {\n"
+				+ "  VALUES ?value { \"50\"^^<" + XSD.INT.stringValue() + "> \"60\"^^<"
+				+ XSD.INT.stringValue() + "> \"70\"^^<" + XSD.INT.stringValue() + "> }\n"
+				+ "  ?obs <" + MED_VALUE.stringValue() + "> ?value .\n"
+				+ "  ?enc <" + MED_HAS_OBSERVATION.stringValue() + "> ?obs .\n"
 				+ "}";
 	}
 

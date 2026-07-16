@@ -102,6 +102,26 @@ final class PrimitiveDistributionSketch implements DistributionSketch {
 	}
 
 	@Override
+	public boolean equals(Object object) {
+		return this == object
+				|| object instanceof PrimitiveDistributionSketch other
+						&& complete == other.complete
+						&& Double.compare(rows, other.rows) == 0
+						&& Double.compare(distinctRows, other.distinctRows) == 0
+						&& Arrays.equals(hashes, other.hashes)
+						&& Arrays.equals(frequencies, other.frequencies);
+	}
+
+	@Override
+	public int hashCode() {
+		int result = Arrays.hashCode(hashes);
+		result = 31 * result + Arrays.hashCode(frequencies);
+		result = 31 * result + Double.hashCode(rows);
+		result = 31 * result + Double.hashCode(distinctRows);
+		return 31 * result + Boolean.hashCode(complete);
+	}
+
+	@Override
 	public OptionalDouble innerProduct(DistributionSketch other) {
 		if (!(other instanceof PrimitiveDistributionSketch right)) {
 			return OptionalDouble.empty();

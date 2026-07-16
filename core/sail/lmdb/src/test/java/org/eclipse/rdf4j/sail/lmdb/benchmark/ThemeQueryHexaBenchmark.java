@@ -67,19 +67,8 @@ import org.openjdk.jmh.runner.options.TimeValue;
 public class ThemeQueryHexaBenchmark {
 
 	private static final String STORE_NAME = "lmdb";
-	private static final String TARGET_DIRECTORY_ROOT = "core/sail/lmdb/";
-	private static final File STORE_DIRECTORY;
-
-	static {
-		File target = new File("target", "lmdb-theme-query-hexa-benchmark");
-		if (target.getAbsolutePath().toLowerCase().contains(TARGET_DIRECTORY_ROOT)) {
-			STORE_DIRECTORY = target;
-		} else {
-			// In case the benchmark is run from an IDE with a different working directory, we want to ensure the store
-			// directory is still in the target directory of the project.
-			STORE_DIRECTORY = new File(TARGET_DIRECTORY_ROOT + "target", "lmdb-theme-query-hexa-benchmark");
-		}
-	}
+	private static final File STORE_DIRECTORY = BenchmarkPathSupport.resolveTarget("lmdb-theme-query-hexa-benchmark")
+			.toFile();
 
 	private static final String TRIPLES_DATA_FILE = "triples/data.mdb";
 	private static final String VALUES_DATA_FILE = "values/data.mdb";

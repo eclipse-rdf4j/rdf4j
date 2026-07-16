@@ -29,15 +29,27 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalPro
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RdfStatisticsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleApplication;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleDescriptor;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleProof;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleRootOperator;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StandardCascadesRules;
 
 final class LmdbCorrelatedMinusAntiExistsRule extends LmdbRule {
 	private final RdfStatisticsProvider statisticsProvider;
 
 	LmdbCorrelatedMinusAntiExistsRule(EvaluationStatistics statistics) {
-		super("lmdb-correlated-minus-anti-exists", RuleKind.IMPLEMENTATION, 91, statistics);
+		super("lmdb-correlated-minus-anti-exists", RuleKind.IMPLEMENTATION, 91, statistics,
+				scheduling(RuleRootOperator.DIFFERENCE)
+						.readsFacts(RuleDescriptor.MemoFact.POSSIBLE_BINDINGS,
+								RuleDescriptor.MemoFact.ASSURED_BINDINGS,
+								RuleDescriptor.MemoFact.CORRELATION,
+								RuleDescriptor.MemoFact.SCOPE_BARRIER,
+								RuleDescriptor.MemoFact.REQUIRED_INPUTS)
+						.readsChildren(RuleDescriptor.ChildProperty.BOUND_BINDINGS,
+								RuleDescriptor.ChildProperty.REQUIRED_INPUTS)
+						.produces(RuleDescriptor.ProducedChange.PHYSICAL_EXPRESSION,
+								RuleDescriptor.ProducedChange.PROOF));
 		this.statisticsProvider = statistics instanceof RdfStatisticsProvider provider ? provider : null;
 	}
 
@@ -77,7 +89,17 @@ final class LmdbCorrelatedMinusAntiExistsRule extends LmdbRule {
 
 final class LmdbCorrelatedNotExistsAntiFilterRule extends LmdbRule {
 	LmdbCorrelatedNotExistsAntiFilterRule(EvaluationStatistics statistics) {
-		super("lmdb-correlated-not-exists-anti-filter", RuleKind.IMPLEMENTATION, 94, statistics);
+		super("lmdb-correlated-not-exists-anti-filter", RuleKind.IMPLEMENTATION, 94, statistics,
+				scheduling(RuleRootOperator.FILTER)
+						.readsFacts(RuleDescriptor.MemoFact.POSSIBLE_BINDINGS,
+								RuleDescriptor.MemoFact.ASSURED_BINDINGS,
+								RuleDescriptor.MemoFact.CORRELATION,
+								RuleDescriptor.MemoFact.SCOPE_BARRIER,
+								RuleDescriptor.MemoFact.REQUIRED_INPUTS)
+						.readsChildren(RuleDescriptor.ChildProperty.BOUND_BINDINGS,
+								RuleDescriptor.ChildProperty.REQUIRED_INPUTS)
+						.produces(RuleDescriptor.ProducedChange.PHYSICAL_EXPRESSION,
+								RuleDescriptor.ProducedChange.PROOF));
 	}
 
 	@Override

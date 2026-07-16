@@ -25,6 +25,7 @@ import java.util.function.LongFunction;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostScope;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
@@ -537,7 +538,7 @@ public interface JoinFactorCostModel {
 		private final int lookupComponentMask;
 		private final int missingLookupComponentMask;
 		private final double accessRowsBeforeFilter;
-		private final boolean repeatedInvocationsCosted;
+		private final CostScope costScope;
 		private final boolean exactOutputRows;
 		private final EstimateVector estimateVector;
 		private final org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.EstimateVector normalizedEstimateVector;
@@ -571,55 +572,74 @@ public interface JoinFactorCostModel {
 		/**
 		 * Creates a factor estimate under the supplied bound-variable context.
 		 *
-		 * The estimate may describe either one physical probe, a finite lookup-key domain, or the full outer bag
-		 * prefix. Set {@code nestedInvocationCosted} to {@code true} only for the rows represented by the estimate. If
-		 * {@code plannedRepeatedInvocations} is smaller than {@link CostContext#getOuterPrefixRows()}, the join-order
-		 * layer scales by the remaining bag multiplicity instead of relying on factor-placement heuristics.
+		 * The legacy {@code nestedInvocationCosted} flag maps directly to {@link CostScope#TOTAL_FOR_CONTEXT} when true
+		 * and {@link CostScope#PER_INVOCATION} when false. Diagnostic metrics never alter that scope.
 		 */
 		public FactorCostEstimate(double workRows, double outputRows, Map<String, String> stringMetrics,
 				Map<String, Double> doubleMetrics, boolean physicalAccessPath, boolean directLookup,
 				int lookupComponentMask, int missingLookupComponentMask, double accessRowsBeforeFilter,
 				boolean nestedInvocationCosted, boolean exactOutputRows) {
 			this(workRows, outputRows, stringMetrics, doubleMetrics, physicalAccessPath, directLookup,
-					lookupComponentMask, missingLookupComponentMask, accessRowsBeforeFilter, nestedInvocationCosted,
+					lookupComponentMask, missingLookupComponentMask, accessRowsBeforeFilter,
+					nestedInvocationCosted ? CostScope.TOTAL_FOR_CONTEXT : CostScope.PER_INVOCATION,
 					exactOutputRows, null);
+		}
+
+		/**
+		 * Creates a factor estimate with an explicit invocation cost scope.
+		 */
+		public FactorCostEstimate(double workRows, double outputRows, Map<String, String> stringMetrics,
+				Map<String, Double> doubleMetrics, boolean physicalAccessPath, boolean directLookup,
+				int lookupComponentMask, int missingLookupComponentMask, double accessRowsBeforeFilter,
+				CostScope costScope, boolean exactOutputRows) {
+			this(workRows, outputRows, stringMetrics, doubleMetrics, physicalAccessPath, directLookup,
+					lookupComponentMask, missingLookupComponentMask, accessRowsBeforeFilter, costScope, exactOutputRows,
+					null);
 		}
 
 		private FactorCostEstimate(double workRows, double outputRows, Map<String, String> stringMetrics,
 				Map<String, Double> doubleMetrics, boolean physicalAccessPath, boolean directLookup,
 				int lookupComponentMask, int missingLookupComponentMask, double accessRowsBeforeFilter,
-				boolean nestedInvocationCosted, boolean exactOutputRows, BagEstimate bagEstimate) {
+				CostScope costScope, boolean exactOutputRows, BagEstimate bagEstimate) {
 			this.workRows = workRows;
 			this.outputRows = outputRows;
 			this.stringMetrics = stringMetrics == null || stringMetrics.isEmpty()
 					? Map.of()
 					: Collections.unmodifiableMap(new HashMap<>(stringMetrics));
-			this.doubleMetrics = doubleMetrics == null || doubleMetrics.isEmpty()
+			Map<String, Double> mergedMetrics = new HashMap<>();
+			if (bagEstimate != null) {
+				mergedMetrics.putAll(bagEstimate.metrics());
+			}
+			if (doubleMetrics != null) {
+				mergedMetrics.putAll(doubleMetrics);
+			}
+			this.doubleMetrics = mergedMetrics.isEmpty()
 					? Map.of()
-					: Collections.unmodifiableMap(new HashMap<>(doubleMetrics));
+					: Collections.unmodifiableMap(mergedMetrics);
 			this.physicalAccessPath = physicalAccessPath;
 			this.directLookup = directLookup;
 			this.lookupComponentMask = lookupComponentMask;
 			this.missingLookupComponentMask = missingLookupComponentMask;
 			this.accessRowsBeforeFilter = accessRowsBeforeFilter;
-			this.repeatedInvocationsCosted = nestedInvocationCosted
-					|| (doubleMetrics != null && doubleMetrics.containsKey("plannedRepeatedInvocations"));
-			this.exactOutputRows = exactOutputRows;
-			double rowQErrorMean = rowQErrorMean(this.doubleMetrics, this.outputRows, exactOutputRows);
-			double rowQErrorMax = rowQErrorMax(this.doubleMetrics, this.outputRows, exactOutputRows);
-			double workQErrorMean = workQErrorMean(this.doubleMetrics, this.outputRows, exactOutputRows);
-			double workQErrorMax = workQErrorMax(this.doubleMetrics, this.outputRows, exactOutputRows);
-			double confidence = confidence(this.doubleMetrics);
+			this.costScope = costScope == null ? CostScope.PER_INVOCATION : costScope;
+			double bagConfidence = alignedBagConfidence(bagEstimate, this.outputRows);
+			this.exactOutputRows = exactOutputRows || bagConfidence >= 1.0d;
+			double rowQErrorMean = rowQErrorMean(this.doubleMetrics, this.outputRows, this.exactOutputRows);
+			double rowQErrorMax = rowQErrorMax(this.doubleMetrics, this.outputRows, this.exactOutputRows);
+			double workQErrorMean = workQErrorMean(this.doubleMetrics, this.outputRows, this.exactOutputRows);
+			double workQErrorMax = workQErrorMax(this.doubleMetrics, this.outputRows, this.exactOutputRows);
+			double confidence = this.exactOutputRows ? 1.0d
+					: Math.max(confidence(this.doubleMetrics), bagConfidence);
 			double memoryRows = metric(this.doubleMetrics, "plannedMemoryRows", 0.0d);
 			double seeks = metric(this.doubleMetrics, "plannedSeeks", 0.0d);
 			double pageWalkRows = pageWalkRows(this.doubleMetrics);
 			double uncertaintyRows = uncertaintyRows(this.doubleMetrics, this.outputRows, rowQErrorMax, workQErrorMax,
-					confidence, exactOutputRows);
+					confidence, this.exactOutputRows);
 			double evidenceCount = evidenceCount(this.doubleMetrics);
 			double lowerRows = Math.max(0.0d, this.outputRows - uncertaintyRows / 2.0d);
 			double upperRows = lowerRows + uncertaintyRows;
 			String source = this.stringMetrics.getOrDefault(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE,
-					"join-factor-estimate");
+					bagEstimate == null ? "join-factor-estimate" : bagEstimate.source());
 			this.normalizedEstimateVector = new org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.EstimateVector(
 					this.outputRows, lowerRows, upperRows, this.workRows,
 					memoryRows, seeks, pageWalkRows, rowQErrorMean, rowQErrorMax, workQErrorMean, workQErrorMax,
@@ -671,7 +691,11 @@ public interface JoinFactorCostModel {
 		}
 
 		public boolean isRepeatedInvocationsCosted() {
-			return repeatedInvocationsCosted;
+			return costScope == CostScope.TOTAL_FOR_CONTEXT;
+		}
+
+		public CostScope getCostScope() {
+			return costScope;
 		}
 
 		public boolean hasExactOutputRows() {
@@ -701,7 +725,7 @@ public interface JoinFactorCostModel {
 			}
 			return new FactorCostEstimate(workRows, outputRows, stringMetrics, doubleMetrics, physicalAccessPath,
 					directLookup, lookupComponentMask, missingLookupComponentMask, accessRowsBeforeFilter,
-					repeatedInvocationsCosted, exactOutputRows, normalized);
+					costScope, exactOutputRows, normalized);
 		}
 
 		private BagEstimate normalizeBagEstimate(BagEstimate bagEstimate) {
@@ -712,8 +736,16 @@ public interface JoinFactorCostModel {
 			metrics.putAll(doubleMetrics);
 			String source = stringMetrics.getOrDefault(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE,
 					bagEstimate.source());
-			return bagEstimate.withRowsPreservingEvidence(outputRows, workRows, estimateVector.confidence(), source,
-					metrics, true);
+			double confidence = Math.max(estimateVector.confidence(), alignedBagConfidence(bagEstimate, outputRows));
+			return bagEstimate.withRowsPreservingEvidence(outputRows, workRows, confidence, source, metrics, true);
+		}
+
+		private static double alignedBagConfidence(BagEstimate bagEstimate, double outputRows) {
+			if (bagEstimate == null || !Double.isFinite(outputRows)
+					|| Math.abs(bagEstimate.rows() - outputRows) >= 1.0e-9d) {
+				return 0.0d;
+			}
+			return bagEstimate.confidence();
 		}
 
 		private static double metric(Map<String, Double> metrics, String name, double fallback) {
@@ -810,6 +842,9 @@ public interface JoinFactorCostModel {
 
 		private static double firstQError(Map<String, Double> metrics, double rows, boolean exactOutputRows,
 				String... names) {
+			if (exactOutputRows) {
+				return 1.0d;
+			}
 			for (String name : names) {
 				Double value = metrics.get(name);
 				if (value != null && Double.isFinite(value) && value >= 1.0d) {
@@ -820,7 +855,7 @@ public interface JoinFactorCostModel {
 			if (Double.isFinite(boundsQError) && boundsQError >= 1.0d) {
 				return boundsQError;
 			}
-			return exactOutputRows ? 1.0d : 4.0d;
+			return 4.0d;
 		}
 
 		private static double cardinalityBoundsQError(Map<String, Double> metrics, double rows) {

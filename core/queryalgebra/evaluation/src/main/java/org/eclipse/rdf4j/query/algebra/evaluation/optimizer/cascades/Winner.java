@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -22,23 +23,111 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
  * A non-dominated physical alternative for a {@link WinnerKey}.
  */
 @Experimental
-public record Winner(MemoExpr expression, TupleExpr plan, PhysicalProperties deliveredProperties, CostVector cost,
-		List<RuleProof> proofs, boolean approximate, String reason, PlanProvenance provenance) {
+public final class Winner {
+	private final MemoExpr expression;
+	private final TupleExpr plan;
+	private final PhysicalProperties deliveredProperties;
+	private final CostVector cost;
+	private final List<RuleProof> proofs;
+	private final boolean approximate;
+	private final String reason;
+	private final PlanProvenance provenance;
+	private final InputBindingContext inputBindingContext;
+	private final CostScope costScope;
+	private final double selectedOutputRows;
+	private final BindingProfile selectedOutputProfile;
+	private final Set<String> selectedOutputNames;
+	private final boolean selectedOutputExplicit;
+	private final List<Winner> selectedInputs;
+	private final SelectedPlanMetrics selectedPlanMetrics;
+	private final WinnerStateKey stateKey;
 
-	public Winner {
-		Objects.requireNonNull(expression, "expression");
-		Objects.requireNonNull(cost, "cost");
-		deliveredProperties = deliveredProperties == null ? PhysicalProperties.ANY : deliveredProperties;
-		proofs = proofs == null || proofs.isEmpty() ? List.of() : List.copyOf(proofs);
-		reason = reason == null ? "" : reason;
-		provenance = provenance == null
-				? defaultProvenance(expression, cost, deliveredProperties, proofs, approximate, reason)
+	public Winner(MemoExpr expression, TupleExpr plan, PhysicalProperties deliveredProperties, CostVector cost,
+			List<RuleProof> proofs, boolean approximate, String reason, PlanProvenance provenance,
+			InputBindingContext inputBindingContext, CostScope costScope, double selectedOutputRows,
+			BindingProfile selectedOutputProfile, Set<String> selectedOutputNames, boolean selectedOutputExplicit) {
+		this(expression, plan, deliveredProperties, cost, proofs, approximate, reason, provenance, inputBindingContext,
+				costScope, selectedOutputRows, selectedOutputProfile, selectedOutputNames, selectedOutputExplicit, null);
+	}
+
+	Winner(MemoExpr expression, TupleExpr plan, PhysicalProperties deliveredProperties, CostVector cost,
+			List<RuleProof> proofs, boolean approximate, String reason, PlanProvenance provenance,
+			InputBindingContext inputBindingContext, CostScope costScope, double selectedOutputRows,
+			BindingProfile selectedOutputProfile, Set<String> selectedOutputNames, boolean selectedOutputExplicit,
+			List<Winner> selectedInputs) {
+		this(expression, plan, deliveredProperties, cost, proofs, approximate, reason, provenance, inputBindingContext,
+				costScope, selectedOutputRows, selectedOutputProfile, selectedOutputNames, selectedOutputExplicit,
+				selectedInputs, null);
+	}
+
+	private Winner(MemoExpr expression, TupleExpr plan, PhysicalProperties deliveredProperties, CostVector cost,
+			List<RuleProof> proofs, boolean approximate, String reason, PlanProvenance provenance,
+			InputBindingContext inputBindingContext, CostScope costScope, double selectedOutputRows,
+			BindingProfile selectedOutputProfile, Set<String> selectedOutputNames, boolean selectedOutputExplicit,
+			List<Winner> selectedInputs, SelectedPlanMetrics selectedPlanMetrics) {
+		this.expression = Objects.requireNonNull(expression, "expression");
+		this.plan = plan;
+		this.cost = Objects.requireNonNull(cost, "cost");
+		this.deliveredProperties = deliveredProperties == null ? PhysicalProperties.ANY : deliveredProperties;
+		this.proofs = proofs == null || proofs.isEmpty() ? List.of() : List.copyOf(proofs);
+		this.approximate = approximate;
+		this.reason = reason == null ? "" : reason;
+		this.provenance = provenance == null
+				? defaultProvenance(expression, cost, this.deliveredProperties, this.proofs, approximate, this.reason)
 				: provenance;
+		this.inputBindingContext = inputBindingContext == null ? InputBindingContext.NONE : inputBindingContext;
+		this.costScope = costScope == null ? CostScope.forInputContext(this.inputBindingContext) : costScope;
+		this.selectedOutputRows = finiteNonNegative(selectedOutputRows, cost.rows());
+		this.selectedOutputProfile = selectedOutputProfile == null
+				? this.deliveredProperties.bindingProfile().statisticalFacts()
+				: selectedOutputProfile.statisticalFacts();
+		this.selectedOutputNames = selectedOutputNames == null
+				? selectedOutputNames(plan, expression)
+				: Set.copyOf(selectedOutputNames);
+		this.selectedOutputExplicit = selectedOutputExplicit;
+		this.selectedInputs = selectedInputs == null ? null : List.copyOf(selectedInputs);
+		this.selectedPlanMetrics = this.selectedInputs == null
+				? null
+				: selectedPlanMetrics == null
+						? SelectedPlanMetrics.capture(expression.tupleExpr(), this.provenance)
+						: selectedPlanMetrics;
+		this.stateKey = WinnerStateKey.derive(this);
+	}
+
+	public Winner(MemoExpr expression, TupleExpr plan, PhysicalProperties deliveredProperties, CostVector cost,
+			List<RuleProof> proofs, boolean approximate, String reason, PlanProvenance provenance,
+			InputBindingContext inputBindingContext, CostScope costScope, double selectedOutputRows,
+			BindingProfile selectedOutputProfile, Set<String> selectedOutputNames) {
+		this(expression, plan, deliveredProperties, cost, proofs, approximate, reason, provenance, inputBindingContext,
+				costScope, selectedOutputRows, selectedOutputProfile, selectedOutputNames, true);
+	}
+
+	/** Compatibility constructor for winners created before selected execution output was explicit. */
+	public Winner(MemoExpr expression, TupleExpr plan, PhysicalProperties deliveredProperties, CostVector cost,
+			List<RuleProof> proofs, boolean approximate, String reason, PlanProvenance provenance,
+			InputBindingContext inputBindingContext, CostScope costScope) {
+		this(expression, plan, deliveredProperties, cost, proofs, approximate, reason, provenance, inputBindingContext,
+				costScope, cost == null ? 0.0d : cost.rows(), BindingProfile.ANY,
+				selectedOutputNames(plan, expression), false);
+	}
+
+	public Winner(MemoExpr expression, TupleExpr plan, PhysicalProperties deliveredProperties, CostVector cost,
+			List<RuleProof> proofs, boolean approximate, String reason, PlanProvenance provenance,
+			InputBindingContext inputBindingContext) {
+		this(expression, plan, deliveredProperties, cost, proofs, approximate, reason, provenance, inputBindingContext,
+				CostScope.forInputContext(inputBindingContext));
+	}
+
+	public Winner(MemoExpr expression, TupleExpr plan, PhysicalProperties deliveredProperties, CostVector cost,
+			List<RuleProof> proofs, boolean approximate, String reason, PlanProvenance provenance) {
+		this(expression, plan, deliveredProperties, cost, proofs, approximate, reason, provenance,
+				InputBindingContext.NONE, CostScope.PER_INVOCATION);
 	}
 
 	public Winner(MemoExpr expression, TupleExpr plan, PhysicalProperties deliveredProperties, CostVector cost,
 			List<RuleProof> proofs, boolean approximate, String reason) {
-		this(expression, plan, deliveredProperties, cost, proofs, approximate, reason, null);
+		this(expression, plan, deliveredProperties, cost, proofs, approximate, reason, null, InputBindingContext.NONE,
+				CostScope.PER_INVOCATION);
 	}
 
 	public Winner withAdditionalProof(RuleProof proof) {
@@ -48,21 +137,158 @@ public record Winner(MemoExpr expression, TupleExpr plan, PhysicalProperties del
 		ArrayList<RuleProof> merged = new ArrayList<>(proofs);
 		merged.add(proof);
 		return new Winner(expression, plan, deliveredProperties, cost, merged, approximate, reason,
-				provenance.withProofs(merged));
+				provenance.withProofs(merged), inputBindingContext, costScope, selectedOutputRows, selectedOutputProfile,
+				selectedOutputNames, selectedOutputExplicit, selectedInputs, selectedPlanMetrics);
 	}
 
 	public Winner markApproximate(String reason) {
 		return new Winner(expression, plan, deliveredProperties, cost, proofs, true,
 				reason == null || reason.isBlank() ? this.reason : reason,
-				provenance.withApproximation(true, reason == null || reason.isBlank() ? this.reason : reason));
+				provenance.withApproximation(true, reason == null || reason.isBlank() ? this.reason : reason),
+				inputBindingContext, costScope, selectedOutputRows, selectedOutputProfile, selectedOutputNames,
+				selectedOutputExplicit, selectedInputs, selectedPlanMetrics);
 	}
 
 	public Winner withProvenance(PlanProvenance newProvenance) {
-		return new Winner(expression, plan, deliveredProperties, cost, proofs, approximate, reason, newProvenance);
+		return new Winner(expression, plan, deliveredProperties, cost, proofs, approximate, reason, newProvenance,
+				inputBindingContext, costScope, selectedOutputRows, selectedOutputProfile, selectedOutputNames,
+				selectedOutputExplicit, selectedInputs, selectedPlanMetrics);
+	}
+
+	Winner withPlan(TupleExpr newPlan) {
+		return new Winner(expression, newPlan, deliveredProperties, cost, proofs, approximate, reason, provenance,
+				inputBindingContext, costScope, selectedOutputRows, selectedOutputProfile, selectedOutputNames,
+				selectedOutputExplicit, selectedInputs, selectedPlanMetrics);
+	}
+
+	Winner withSelectedOutputEstimate(double rows, BindingProfile profile) {
+		if (!selectedOutputExplicit) {
+			return this;
+		}
+		double normalizedRows = finiteNonNegative(rows, selectedOutputRows);
+		BindingProfile normalizedProfile = profile == null ? BindingProfile.ANY : profile.statisticalFacts();
+		if (Double.compare(selectedOutputRows, normalizedRows) == 0
+				&& selectedOutputProfile.equals(normalizedProfile)) {
+			return this;
+		}
+		return new Winner(expression, plan, deliveredProperties, cost, proofs, approximate, reason, provenance,
+				inputBindingContext, costScope, normalizedRows, normalizedProfile, selectedOutputNames, true,
+				selectedInputs, selectedPlanMetrics);
+	}
+
+	public MemoExpr expression() {
+		return expression;
+	}
+
+	public TupleExpr plan() {
+		return plan;
+	}
+
+	public PhysicalProperties deliveredProperties() {
+		return deliveredProperties;
+	}
+
+	public CostVector cost() {
+		return cost;
+	}
+
+	public List<RuleProof> proofs() {
+		return proofs;
+	}
+
+	public boolean approximate() {
+		return approximate;
+	}
+
+	public String reason() {
+		return reason;
+	}
+
+	public PlanProvenance provenance() {
+		return provenance;
+	}
+
+	public InputBindingContext inputBindingContext() {
+		return inputBindingContext;
+	}
+
+	public CostScope costScope() {
+		return costScope;
+	}
+
+	public double selectedOutputRows() {
+		return selectedOutputRows;
+	}
+
+	public BindingProfile selectedOutputProfile() {
+		return selectedOutputProfile;
+	}
+
+	public Set<String> selectedOutputNames() {
+		return selectedOutputNames;
+	}
+
+	public boolean selectedOutputExplicit() {
+		return selectedOutputExplicit;
+	}
+
+	boolean hasSelectedInputGraph() {
+		return selectedInputs != null;
+	}
+
+	List<Winner> selectedInputs() {
+		return selectedInputs == null ? List.of() : selectedInputs;
+	}
+
+	WinnerStateKey stateKey() {
+		return stateKey;
+	}
+
+	void applySelectedPlanMetrics(TupleExpr materializedPlan) {
+		if (selectedPlanMetrics != null) {
+			selectedPlanMetrics.apply(materializedPlan, provenance);
+		}
+	}
+
+	void recordSelectedPlanDoubleMetric(String name, double value) {
+		if (selectedPlanMetrics != null) {
+			selectedPlanMetrics.recordRootDoubleMetric(name, value);
+		}
 	}
 
 	public boolean satisfies(OptimizationGoal goal) {
 		return goal == null || deliveredProperties.satisfies(goal.requiredProperties());
+	}
+
+	@Override
+	public boolean equals(Object object) {
+		if (this == object) {
+			return true;
+		}
+		if (!(object instanceof Winner other)) {
+			return false;
+		}
+		return approximate == other.approximate
+				&& Double.compare(selectedOutputRows, other.selectedOutputRows) == 0
+				&& selectedOutputExplicit == other.selectedOutputExplicit
+				&& expression.equals(other.expression)
+				&& Objects.equals(plan, other.plan)
+				&& deliveredProperties.equals(other.deliveredProperties)
+				&& cost.equals(other.cost)
+				&& proofs.equals(other.proofs)
+				&& reason.equals(other.reason)
+				&& provenance.equals(other.provenance)
+				&& inputBindingContext.equals(other.inputBindingContext)
+				&& costScope == other.costScope
+				&& selectedOutputProfile.equals(other.selectedOutputProfile)
+				&& selectedOutputNames.equals(other.selectedOutputNames);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(expression, plan, deliveredProperties, cost, proofs, approximate, reason, provenance,
+				inputBindingContext, costScope, selectedOutputRows, selectedOutputProfile, selectedOutputNames,
+				selectedOutputExplicit);
 	}
 
 	private static PlanProvenance defaultProvenance(MemoExpr expression, CostVector cost,
@@ -72,5 +298,17 @@ public record Winner(MemoExpr expression, TupleExpr plan, PhysicalProperties del
 		return new PlanProvenance(expression.groupId(), expression.id(), expression.operator(), ruleId, kind, List.of(),
 				expression.estimate(), cost, PhysicalProperties.ANY, deliveredProperties, List.of(), proofs,
 				approximate, reason);
+	}
+
+	private static Set<String> selectedOutputNames(TupleExpr plan, MemoExpr expression) {
+		TupleExpr selected = plan != null ? plan : expression == null ? null : expression.tupleExpr();
+		return selected == null ? Set.of() : StreamBindingSchema.from(selected).possible();
+	}
+
+	private static double finiteNonNegative(double value, double fallback) {
+		if (Double.isFinite(value) && value >= 0.0d) {
+			return value;
+		}
+		return Double.isFinite(fallback) && fallback >= 0.0d ? fallback : 0.0d;
 	}
 }

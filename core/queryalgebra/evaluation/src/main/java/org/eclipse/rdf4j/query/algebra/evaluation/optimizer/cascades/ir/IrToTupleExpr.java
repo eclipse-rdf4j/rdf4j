@@ -17,9 +17,14 @@ import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
+import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.Avg;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
@@ -29,9 +34,13 @@ import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupConcat;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.Max;
+import org.eclipse.rdf4j.query.algebra.Min;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Order;
@@ -39,16 +48,22 @@ import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
+import org.eclipse.rdf4j.query.algebra.Sample;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
+import org.eclipse.rdf4j.query.algebra.Sum;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 
 /** Converts immutable planner IR back to fresh RDF4J TupleExpr trees. */
 @Experimental
@@ -83,10 +98,16 @@ public final class IrToTupleExpr {
 		case EXTENSION -> extension(node);
 		case GROUP -> group(node);
 		case DISTINCT -> new Distinct(visit(node.inputs().get(0)));
+		case REDUCED -> new Reduced(visit(node.inputs().get(0)));
 		case SLICE -> slice(node);
 		case ORDER -> order(node);
+		case ARBITRARY_LENGTH_PATH -> arbitraryLengthPath(node);
+		case ZERO_LENGTH_PATH -> zeroLengthPath(node);
+		case SERVICE -> service(node);
+		case TRIPLE_REF -> tripleRef(node);
 		case EMPTY -> new EmptySet();
 		case SINGLETON -> new SingletonSet();
+		case NATIVE_BOUNDARY -> nativeBoundary(node);
 		case MATERIALIZE, LMDB_ACCESS_PATH, LMDB_BOUND_LOOKUP, LMDB_HASH_ANTI_SEMI, LMDB_HASH_SEMI -> nativeOrMaterialized(
 				node);
 		};
@@ -153,9 +174,36 @@ public final class IrToTupleExpr {
 
 	private TupleExpr group(IrNode node) {
 		IrAttr.GroupAttr attr = (IrAttr.GroupAttr) node.attr();
-		Group group = new Group(visit(node.inputs().get(0)),
-				attr.groupVars().stream().map(symbol -> symbol.name()).toList(), List.of());
-		return group;
+		List<GroupElem> groupElements = attr.aggregates()
+				.stream()
+				.map(this::aggregate)
+				.toList();
+		return new Group(visit(node.inputs().get(0)),
+				attr.groupVars().stream().map(symbol -> symbol.name()).toList(), groupElements);
+	}
+
+	private GroupElem aggregate(IrAttr.AggregateBinding binding) {
+		List<ValueExpr> arguments = binding.arguments().stream().map(this::scalar).toList();
+		ValueExpr unaryArgument = arguments.isEmpty() ? null : arguments.getFirst();
+		AggregateOperator operator = switch (binding.kind()) {
+		case COUNT -> new Count(unaryArgument, binding.distinct());
+		case AVG -> new Avg(unaryArgument, binding.distinct());
+		case SUM -> new Sum(unaryArgument, binding.distinct());
+		case MIN -> new Min(unaryArgument, binding.distinct());
+		case MAX -> new Max(unaryArgument, binding.distinct());
+		case SAMPLE -> new Sample(unaryArgument, binding.distinct());
+		case GROUP_CONCAT -> groupConcat(unaryArgument, binding.separator(), binding.distinct());
+		case CUSTOM -> new AggregateFunctionCall(arguments, binding.customFunction(), binding.distinct());
+		};
+		return new GroupElem(binding.target().name(), operator);
+	}
+
+	private GroupConcat groupConcat(ValueExpr argument, ScalarExpr separator, boolean distinct) {
+		GroupConcat groupConcat = new GroupConcat(argument, distinct);
+		if (separator != null) {
+			groupConcat.setSeparator(scalar(separator));
+		}
+		return groupConcat;
 	}
 
 	private TupleExpr slice(IrNode node) {
@@ -172,6 +220,30 @@ public final class IrToTupleExpr {
 		return order;
 	}
 
+	private TupleExpr arbitraryLengthPath(IrNode node) {
+		IrAttr.ArbitraryLengthPathAttr attr = (IrAttr.ArbitraryLengthPathAttr) node.attr();
+		return new ArbitraryLengthPath(attr.scope(), attr.subject().asVar(), visit(node.inputs().getFirst()),
+				attr.object().asVar(), attr.context() == null ? null : attr.context().asVar(), attr.minLength());
+	}
+
+	private TupleExpr zeroLengthPath(IrNode node) {
+		IrAttr.ZeroLengthPathAttr attr = (IrAttr.ZeroLengthPathAttr) node.attr();
+		return new ZeroLengthPath(attr.scope(), attr.subject().asVar(), attr.object().asVar(),
+				attr.context() == null ? null : attr.context().asVar());
+	}
+
+	private TupleExpr service(IrNode node) {
+		IrAttr.ServiceAttr attr = (IrAttr.ServiceAttr) node.attr();
+		return new Service(attr.serviceRef().asVar(), visit(node.inputs().getFirst()),
+				attr.serviceExpressionString(), attr.prefixDeclarations(), attr.baseUri(), attr.silent());
+	}
+
+	private TupleExpr tripleRef(IrNode node) {
+		IrAttr.TripleRefAttr attr = (IrAttr.TripleRefAttr) node.attr();
+		return new TripleRef(attr.subject().asVar(), attr.predicate().asVar(), attr.object().asVar(),
+				attr.expression() == null ? null : attr.expression().asVar());
+	}
+
 	private TupleExpr nativeOrMaterialized(IrNode node) {
 		if (node.attr()instanceof IrAttr.NativeTuple nativeTuple) {
 			return nativeTuple.tupleExpr();
@@ -180,6 +252,32 @@ public final class IrToTupleExpr {
 			return visit(node.inputs().get(0));
 		}
 		return new SingletonSet();
+	}
+
+	private TupleExpr nativeBoundary(IrNode node) {
+		if (!(node.attr()instanceof IrAttr.NativeTuple nativeTuple)) {
+			throw new IllegalStateException("Native boundary is missing its preserved TupleExpr");
+		}
+		TupleExpr tupleExpr = nativeTuple.tupleExpr();
+		List<TupleExprInputCodec.Slot> slots = TupleExprInputCodec.slots(tupleExpr);
+		if (slots.size() != node.inputs().size()) {
+			throw new IllegalStateException("Native boundary/input mismatch for "
+					+ tupleExpr.getClass().getSimpleName() + ": slots=" + slots.size()
+					+ ", inputs=" + node.inputs().size());
+		}
+		for (int index = 0; index < slots.size(); index++) {
+			TupleExpr selectedInput = visit(node.inputs().get(index));
+			TupleExprInputCodec.Slot slot = slots.get(index);
+			if (slot.use() == TupleExprInputCodec.InputUse.DEFINITION) {
+				if (!slot.input().equals(selectedInput)) {
+					throw new IllegalStateException("Native definition input changed independently of "
+							+ tupleExpr.getClass().getSimpleName());
+				}
+				continue;
+			}
+			slot.replaceWith(selectedInput);
+		}
+		return tupleExpr;
 	}
 
 	private ValueExpr scalar(ScalarExpr expression) {

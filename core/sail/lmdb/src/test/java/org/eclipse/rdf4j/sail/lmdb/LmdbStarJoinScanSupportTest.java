@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -28,6 +29,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesTelemetry;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Memo;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MemoExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
@@ -95,8 +97,19 @@ class LmdbStarJoinScanSupportTest {
 				.getFirst();
 
 		VariableEstimate subject = application.deliveredProperties().bindingProfile().variables().get("s");
-		assertNotNull(subject, "The opaque star winner must expose its Omni subject evidence to parent operators");
+		assertNotNull(subject, "The star alternative must expose its subject evidence to parent operators");
 		assertEquals(12.0d, subject.distinctRows(), 0.0d);
+		assertFalse(application.opaque(), "A composite star must retain independently optimizable memo children");
+		assertEquals(CostVector.ZERO, application.localCost(),
+				"The rule must not price the complete star subtree before child winners are selected");
+
+		MemoExpr physical = memo
+				.addPhysicalAlternative(groupId, application.alternative(), application.deliveredProperties(),
+						application.inputRequirements(), application.metadata(), application.kind(),
+						application.localCost(), application.proofs(), application.estimate(), application.opaque())
+				.orElseThrow();
+		assertEquals(expression.inputGroupIds(), physical.inputGroupIds(),
+				"The physical star must keep both factor groups visible to memo search and recosting");
 	}
 
 	private static StatementPattern constantPredicatePattern(String subject, String predicateIri, String object) {

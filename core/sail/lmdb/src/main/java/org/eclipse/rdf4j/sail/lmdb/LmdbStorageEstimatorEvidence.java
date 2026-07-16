@@ -60,7 +60,7 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 			return statementCandidates(pattern, context);
 		}
 		if (expression instanceof ArbitraryLengthPath path) {
-			StatementPattern step = path.getPathExpression() instanceof StatementPattern pattern
+			StatementPattern step = path.getPathExpression()instanceof StatementPattern pattern
 					? unboundPathEndpoints(pattern)
 					: null;
 			List<EstimateCandidate> directCandidates = step == null
@@ -73,7 +73,8 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 		}
 		return List.of(candidate(expression, 1.0d,
 				new RowEvidence(1.0d, 0.0d, Double.MAX_VALUE, 0.0d, false, context.snapshotIdentity(),
-						context.snapshotVersion(), "algebra-leaf"), EstimateCandidate.Kind.HEURISTIC, null));
+						context.snapshotVersion(), "algebra-leaf"),
+				EstimateCandidate.Kind.HEURISTIC, null, Set.of()));
 	}
 
 	private static StatementPattern unboundPathEndpoints(StatementPattern step) {
@@ -91,14 +92,16 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 				double upper = rows == 0.0d ? 1.0d : Math.max(rows, rows * 2.0d);
 				RowEvidence evidence = new RowEvidence(rows, Math.max(0.0d, rows * 0.5d), upper, 0.55d,
 						false, context.snapshotIdentity(), context.snapshotVersion(), "lmdb-storage-summary");
-				candidates.add(candidate(pattern, rows, evidence, EstimateCandidate.Kind.STORAGE_SUMMARY, null));
+				candidates.add(candidate(pattern, rows, evidence, EstimateCandidate.Kind.STORAGE_SUMMARY, null, Set.of()));
 			}
 		}
 		if (synopsis != null) {
-			QuadEvidence evidence = synopsis.probe(probe(pattern, context));
+			QuadProbe probe = probe(pattern, context);
+			QuadEvidence evidence = synopsis.probe(probe);
 			if (evidence.usable()) {
 				candidates.add(candidate(pattern, evidence.rows().estimate(), evidence.rows(),
-						EstimateCandidate.Kind.SYNOPSIS, evidence.distribution().orElse(null)));
+						EstimateCandidate.Kind.SYNOPSIS, evidence.distribution().orElse(null),
+						projectedNames(pattern, probe.projectedMask())));
 			}
 		}
 		addFeedback(pattern, context, candidates);
@@ -120,7 +123,7 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 		RowEvidence evidence = new RowEvidence(learned.rows(), Math.max(0.0d, learned.rows() - halfWidth),
 				Math.max(learned.rows(), learned.rows() + halfWidth), learned.correctionConfidence(), false,
 				context.snapshotIdentity(), context.snapshotVersion(), learned.source());
-		candidates.add(candidate(pattern, learned.rows(), evidence, EstimateCandidate.Kind.FEEDBACK, null));
+		candidates.add(candidate(pattern, learned.rows(), evidence, EstimateCandidate.Kind.FEEDBACK, null, Set.of()));
 	}
 
 	@Override
@@ -134,7 +137,7 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 		}
 		RowEvidence evidence = new RowEvidence(rows, rows, rows, 1.0d, true, context.snapshotIdentity(),
 				context.snapshotVersion(), "lmdb-exact");
-		return Optional.of(candidate(pattern, rows, evidence, EstimateCandidate.Kind.EXACT_STORAGE, null));
+		return Optional.of(candidate(pattern, rows, evidence, EstimateCandidate.Kind.EXACT_STORAGE, null, Set.of()));
 	}
 
 	@Override
@@ -155,16 +158,15 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 	}
 
 	private static EstimateCandidate candidate(TupleExpr expression, double rows, RowEvidence evidence,
-			EstimateCandidate.Kind kind, DistributionSketch distribution) {
+			EstimateCandidate.Kind kind, DistributionSketch distribution, Set<String> distributionVariables) {
 		BagEstimate bag = kind == EstimateCandidate.Kind.EXACT_STORAGE
 				? BagEstimate.exact(rows, evidence.source())
 				: BagEstimate.heuristic(Math.max(0.0d, rows), evidence.source());
 		for (String name : expression.getBindingNames()) {
 			bag = bag.withVariable(name, VariableEstimate.bound(rows, rows));
 		}
-		Set<String> projectedNames = projectedNames(expression);
-		if (distribution != null && !projectedNames.isEmpty()) {
-			bag = bag.withSketchRelation(projectedNames, distribution);
+		if (distribution != null && distributionVariables != null && !distributionVariables.isEmpty()) {
+			bag = bag.withSketchRelation(distributionVariables, distribution);
 		}
 		return new EstimateCandidate(bag, evidence, kind, evidence.snapshotVersion());
 	}
@@ -222,13 +224,18 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 			}
 		}
 
-		int projectedMask = 0;
+		int allUnboundVariables = 0;
+		int runtimeBoundVariables = 0;
 		for (int index = 0; index < variables.length; index++) {
 			String name = variableName(variables[index]);
-			if ((boundMask & components[index]) == 0 && name != null && !context.boundNames().contains(name)) {
-				projectedMask |= components[index];
+			if ((boundMask & components[index]) == 0 && name != null) {
+				allUnboundVariables |= components[index];
+				if (context.boundNames().contains(name)) {
+					runtimeBoundVariables |= components[index];
+				}
 			}
 		}
+		int projectedMask = runtimeBoundVariables == 0 ? allUnboundVariables : runtimeBoundVariables;
 		return new QuadProbe(boundMask, projectedMask, hashes[0], hashes[1], hashes[2], hashes[3],
 				context.snapshotIdentity());
 	}
@@ -241,10 +248,18 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 		return variable.getName();
 	}
 
-	private static Set<String> projectedNames(TupleExpr expression) {
-		return expression.getBindingNames().isEmpty()
-				? Set.of()
-				: Set.copyOf(new LinkedHashSet<>(expression.getBindingNames()));
+	private static Set<String> projectedNames(StatementPattern pattern, int projectedMask) {
+		Var[] variables = { pattern.getSubjectVar(), pattern.getPredicateVar(), pattern.getObjectVar(),
+				pattern.getContextVar() };
+		int[] components = { QuadProbe.SUBJECT, QuadProbe.PREDICATE, QuadProbe.OBJECT, QuadProbe.CONTEXT };
+		Set<String> names = new LinkedHashSet<>();
+		for (int index = 0; index < variables.length; index++) {
+			String name = variableName(variables[index]);
+			if ((projectedMask & components[index]) != 0 && name != null) {
+				names.add(name);
+			}
+		}
+		return names.isEmpty() ? Set.of() : Set.copyOf(names);
 	}
 
 	private static boolean valid(double rows) {

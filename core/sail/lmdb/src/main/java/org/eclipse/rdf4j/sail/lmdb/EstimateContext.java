@@ -49,7 +49,7 @@ record EstimateContext(BindingUniverse universe, BindingMask boundMask,
 		boundMask = boundMask == null ? BindingMask.EMPTY : boundMask;
 		finiteBindings = finiteBindings == null ? Optional.empty() : finiteBindings;
 		prefixEstimate = prefixEstimate == null ? BagEstimate.exact(1.0d, "root-prefix") : prefixEstimate;
-		invocationCount = finitePositive(invocationCount, 1.0d);
+		invocationCount = finiteNonNegative(invocationCount, 1.0d);
 		evidencePolicy = evidencePolicy == null ? EvidencePolicy.ADAPTIVE : evidencePolicy;
 		estimationTier = estimationTier == null ? JoinFactorCostModel.EstimationTier.STANDARD : estimationTier;
 		snapshotIdentity = Objects.requireNonNull(snapshotIdentity, "snapshotIdentity");
@@ -86,8 +86,14 @@ record EstimateContext(BindingUniverse universe, BindingMask boundMask,
 				estimationTier, metricsPreference, exactProbePermitted);
 	}
 
+	EstimateContext withoutFiniteBindings() {
+		return copy(boundMask, Optional.empty(), prefixEstimate, invocationCount, evidencePolicy, estimationTier,
+				metricsPreference, exactProbePermitted);
+	}
+
 	EstimateContext withPrefixEstimate(BagEstimate prefix) {
-		return copy(boundMask, finiteBindings, prefix, invocationCount, evidencePolicy, estimationTier, metricsPreference,
+		return copy(boundMask, finiteBindings, prefix, invocationCount, evidencePolicy, estimationTier,
+				metricsPreference,
 				exactProbePermitted);
 	}
 
@@ -107,13 +113,18 @@ record EstimateContext(BindingUniverse universe, BindingMask boundMask,
 	}
 
 	EstimateContext withMetricsPreference(MetricsPreference preference) {
-		return copy(boundMask, finiteBindings, prefixEstimate, invocationCount, evidencePolicy, estimationTier, preference,
+		return copy(boundMask, finiteBindings, prefixEstimate, invocationCount, evidencePolicy, estimationTier,
+				preference,
 				exactProbePermitted);
 	}
 
 	EstimateContext withExactProbePermission(boolean permitted) {
 		return copy(boundMask, finiteBindings, prefixEstimate, invocationCount, evidencePolicy, estimationTier,
 				metricsPreference, permitted);
+	}
+
+	boolean hasNoExecutions() {
+		return invocationCount == 0.0d || prefixEstimate.rows() == 0.0d;
 	}
 
 	private EstimateContext copy(BindingMask mask, Optional<FiniteRelationEstimate> bindings, BagEstimate prefix,
@@ -123,7 +134,7 @@ record EstimateContext(BindingUniverse universe, BindingMask boundMask,
 				snapshotVersion, preference, exactPermission);
 	}
 
-	private static double finitePositive(double value, double fallback) {
-		return Double.isFinite(value) && value > 0.0d ? value : fallback;
+	private static double finiteNonNegative(double value, double fallback) {
+		return Double.isFinite(value) && value >= 0.0d ? value : fallback;
 	}
 }

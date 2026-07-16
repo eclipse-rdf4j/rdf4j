@@ -62,6 +62,7 @@ import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKeys;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StreamBindingSchema;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -622,30 +623,7 @@ final class LmdbJoinPlanSupport {
 	}
 
 	static Set<String> runtimeBindingNames(TupleExpr tupleExpr) {
-		if (tupleExpr == null) {
-			return Set.of();
-		}
-		if (tupleExpr instanceof BindingSetAssignment) {
-			return plannerBindingNames(tupleExpr.getBindingNames());
-		}
-		Set<String> runtimeNames = new LinkedHashSet<>();
-		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
-			@Override
-			public void meet(Var node) {
-				addRuntimeBindingName(runtimeNames, node);
-			}
-		});
-		return runtimeNames.isEmpty() ? Set.of() : Set.copyOf(runtimeNames);
-	}
-
-	private static void addRuntimeBindingName(Set<String> runtimeNames, Var var) {
-		if (var == null || var.hasValue() || var.isConstant()) {
-			return;
-		}
-		String name = var.getName();
-		if (name != null && !name.startsWith("_const_")) {
-			runtimeNames.add(name);
-		}
+		return tupleExpr == null ? Set.of() : plannerBindingNames(StreamBindingSchema.from(tupleExpr).possible());
 	}
 
 	private static boolean isBoundVar(Var var, Set<String> boundNames) {

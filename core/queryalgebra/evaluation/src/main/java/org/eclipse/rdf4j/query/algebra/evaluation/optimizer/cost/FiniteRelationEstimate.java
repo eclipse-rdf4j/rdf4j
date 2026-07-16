@@ -216,6 +216,37 @@ public record FiniteRelationEstimate(List<String> variables, Map<List<Value>, Do
 		return result;
 	}
 
+	static FiniteRelationEstimate semiJoinLeft(FiniteRelationEstimate left, FiniteRelationEstimate right,
+			Collection<String> sharedVariables, String source) {
+		if (right.frequencies.isEmpty()) {
+			return fromFrequencies(left.variables, Map.of(), source);
+		}
+		if (sharedVariables == null || sharedVariables.isEmpty()) {
+			return fromFrequencies(left.variables, left.frequencies, source);
+		}
+		Map<List<Value>, Double> output = new LinkedHashMap<>();
+		if (!hasUnbound(left, sharedVariables) && !hasUnbound(right, sharedVariables)) {
+			List<String> keyVariables = List.copyOf(sharedVariables);
+			List<Integer> leftIndexes = left.indexes(keyVariables);
+			Map<List<Value>, Double> rightFrequencies = right.frequencyBy(keyVariables);
+			for (Map.Entry<List<Value>, Double> leftEntry : left.frequencies.entrySet()) {
+				if (rightFrequencies.containsKey(project(leftEntry.getKey(), leftIndexes))) {
+					output.put(leftEntry.getKey(), leftEntry.getValue());
+				}
+			}
+		} else {
+			for (Map.Entry<List<Value>, Double> leftEntry : left.frequencies.entrySet()) {
+				for (List<Value> rightTuple : right.frequencies.keySet()) {
+					if (compatible(left, leftEntry.getKey(), right, rightTuple, sharedVariables)) {
+						output.put(leftEntry.getKey(), leftEntry.getValue());
+						break;
+					}
+				}
+			}
+		}
+		return fromFrequencies(left.variables, output, source);
+	}
+
 	static FiniteRelationEstimate innerJoin(FiniteRelationEstimate left, FiniteRelationEstimate right,
 			Collection<String> sharedVariables, String source) {
 		List<String> outputVariables = new ArrayList<>(left.variables);

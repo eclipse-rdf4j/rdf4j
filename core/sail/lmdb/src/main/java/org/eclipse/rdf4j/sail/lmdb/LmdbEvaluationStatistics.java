@@ -52,8 +52,7 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 		LmdbEstimatorRuntimeProvider {
 
 	static final String OPERATOR_FEEDBACK_TRACKING_PROPERTY = "rdf4j.optimizer.lmdb.operatorFeedbackTracking";
-	static final String OPERATOR_FEEDBACK_DETAILED_RUNTIME_PROPERTY =
-			"rdf4j.optimizer.lmdb.operatorFeedbackDetailedRuntime";
+	static final String OPERATOR_FEEDBACK_DETAILED_RUNTIME_PROPERTY = "rdf4j.optimizer.lmdb.operatorFeedbackDetailedRuntime";
 	static final String OPERATOR_FEEDBACK_APPLY_PROPERTY = "rdf4j.optimizer.lmdb.operatorFeedbackApply";
 
 	private final LmdbEstimatorRuntime runtime;
@@ -172,8 +171,9 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 			BagEstimate estimate = runtime.estimate(args.get(0), initiallyBoundVars, EstimationTier.STANDARD, false);
 			return Optional.of(new JoinOrderPlan(List.copyOf(args), estimate.rows(), estimate.workRows()));
 		}
-		return LmdbHypergraphJoinPlanner.tryPlan(List.copyOf(args), initiallyBoundVars == null ? Set.of() : initiallyBoundVars,
-				this, this, EstimationTier.STANDARD, LmdbCascadesConnectedJoinPlanner.Trace.create())
+		return LmdbHypergraphJoinPlanner
+				.tryPlan(List.copyOf(args), initiallyBoundVars == null ? Set.of() : initiallyBoundVars,
+						this, this, EstimationTier.STANDARD, LmdbCascadesConnectedJoinPlanner.Trace.create())
 				.map(plan -> new JoinOrderPlan(LmdbJoinIslandConnectivity.flattenFactors(plan.tupleExpr()),
 						plan.estimate().rows(), plan.cost().workRows(), List.of(plan.algorithm())));
 	}
@@ -190,8 +190,12 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 
 	@Override
 	public Optional<StatisticsEstimate> statementPattern(StatementPattern pattern, Set<String> boundVars) {
-		return pattern == null ? Optional.empty()
-				: Optional.of(statistics(runtime.estimate(pattern, boundVars, EstimationTier.STANDARD, false)));
+		if (pattern == null) {
+			return Optional.empty();
+		}
+		CostContext context = CostContext.of(boundVars == null ? Set.of() : boundVars, 1.0d, 1.0d, false)
+				.withEstimationTier(EstimationTier.STANDARD);
+		return estimateFactorCost(pattern, context).map(LmdbEvaluationStatistics::statistics);
 	}
 
 	@Override
@@ -202,13 +206,13 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 	}
 
 	@Override
-	public Optional<StatisticsEstimate> filter(TupleExpr input, ValueExpr condition, StatisticsEstimate ignored,
+	public Optional<StatisticsEstimate> filter(TupleExpr input, ValueExpr condition, StatisticsEstimate inputEstimate,
 			Set<String> boundVars) {
-		if (input == null || condition == null) {
+		if (input == null || condition == null || inputEstimate == null) {
 			return Optional.empty();
 		}
-		Filter filter = new Filter(input.clone(), condition.clone());
-		return Optional.of(statistics(runtime.estimate(filter, boundVars, EstimationTier.STANDARD, false)));
+		return Optional.of(statistics(runtime.estimateFilter(input, condition, inputEstimate.bag(), boundVars,
+				EstimationTier.STANDARD, false)));
 	}
 
 	@Override
@@ -251,7 +255,8 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 			String source = estimate.getStringMetrics()
 					.getOrDefault(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE,
 							"lmdb-property-path");
-			StatisticsEstimate converted = StatisticsEstimate.fromVector(estimate.getNormalizedEstimateVector(), source);
+			StatisticsEstimate converted = StatisticsEstimate.fromVector(estimate.getNormalizedEstimateVector(),
+					source);
 			return estimate.getBagEstimate().map(converted::withBag).orElse(converted);
 		});
 	}
@@ -351,6 +356,14 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 
 	private static StatisticsEstimate statistics(BagEstimate bag) {
 		return StatisticsEstimate.fromBag(bag, bag.source());
+	}
+
+	private static StatisticsEstimate statistics(FactorCostEstimate factor) {
+		String source = factor.getStringMetrics()
+				.getOrDefault(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "lmdb-statement-pattern");
+		StatisticsEstimate converted = StatisticsEstimate.fromVector(factor.getNormalizedEstimateVector(), source)
+				.withMetrics(factor.getDoubleMetrics());
+		return factor.getBagEstimate().map(converted::withBag).orElse(converted);
 	}
 
 	private static TupleExpr join(List<? extends TupleExpr> factors) {

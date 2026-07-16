@@ -91,6 +91,20 @@ class QuadSynopsisTest {
 	}
 
 	@Test
+	void equivalentPrimitiveDistributionSketchesHaveSemanticEquality() {
+		PrimitiveBottomK.ProjectionSample firstSample = new PrimitiveBottomK.ProjectionSample(
+				new long[] { 11L, 11L, 23L }, 3, 3, 3);
+		PrimitiveBottomK.ProjectionSample equivalentSample = new PrimitiveBottomK.ProjectionSample(
+				new long[] { 11L, 11L, 23L }, 3, 3, 3);
+		PrimitiveDistributionSketch first = PrimitiveDistributionSketch.from(firstSample, 3.0d, true);
+		PrimitiveDistributionSketch equivalent = PrimitiveDistributionSketch.from(equivalentSample, 3.0d, true);
+
+		assertEquals(first, equivalent,
+				"Memo evidence identity must depend on the distribution, not the sketch allocation");
+		assertEquals(first.hashCode(), equivalent.hashCode());
+	}
+
+	@Test
 	void synopsisAnswersEveryBoundShapeWithoutFalseNegativeZeros() {
 		QuadSynopsisBudget budget = QuadSynopsisBudget.create(16L * MIB, 64);
 		QuadSynopsisSnapshot snapshot = build(budget, rows());

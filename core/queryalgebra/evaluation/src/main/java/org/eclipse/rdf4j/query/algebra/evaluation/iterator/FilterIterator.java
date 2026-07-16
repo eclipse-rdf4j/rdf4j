@@ -59,6 +59,8 @@ import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 public class FilterIterator extends FilterIteration<BindingSet> implements IndexReportingIterator {
+	private static final String OPTIMIZER_FILTER_ALGORITHM_HINT = "optimizer.filterAlgorithmHint";
+	private static final String STREAMING_EXISTS = "streaming-exists";
 
 	private final QueryValueEvaluationStep condition;
 	private final EvaluationStrategy strategy;
@@ -119,7 +121,9 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 
 	private static QueryEvaluationStep supplyMaterializedExistsSemiJoin(Filter filter, EvaluationStrategy strategy,
 			QueryEvaluationContext context, EvaluationStatistics evaluationStatistics) {
-		if (!(filter.getCondition()instanceof Exists exists)
+		String algorithmHint = filter.getStringMetricPlanned(OPTIMIZER_FILTER_ALGORITHM_HINT);
+		if (STREAMING_EXISTS.equals(algorithmHint)
+				|| !(filter.getCondition()instanceof Exists exists)
 				|| filter.isVariableScopeChange()
 				|| isPartOfSubQuery(filter)) {
 			return null;

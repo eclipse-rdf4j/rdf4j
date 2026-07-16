@@ -272,10 +272,7 @@ public final class BenchmarkJoinEstimatorSupport {
 			throw new IllegalArgumentException(
 					"persistentStoreKey is required when persistent regression stores are enabled");
 		}
-		Path root = Path.of(System.getProperty(PERSISTENT_THEME_REGRESSION_STORE_ROOT,
-				DEFAULT_PERSISTENT_THEME_REGRESSION_STORE_ROOT))
-				.toAbsolutePath()
-				.normalize();
+		Path root = persistentThemeRegressionStoreRoot();
 		Path resolved = root.resolve(persistentStoreKey).normalize();
 		if (!resolved.startsWith(root)) {
 			throw new IllegalArgumentException("Persistent regression store key must stay under "
@@ -288,12 +285,18 @@ public final class BenchmarkJoinEstimatorSupport {
 		if (storeDirectory == null) {
 			return false;
 		}
-		Path root = Path.of(System.getProperty(PERSISTENT_THEME_REGRESSION_STORE_ROOT,
-				DEFAULT_PERSISTENT_THEME_REGRESSION_STORE_ROOT))
-				.toAbsolutePath()
-				.normalize();
+		Path root = persistentThemeRegressionStoreRoot();
 		Path candidate = storeDirectory.toAbsolutePath().normalize();
 		return candidate.startsWith(root);
+	}
+
+	private static Path persistentThemeRegressionStoreRoot() {
+		String configuredRoot = System.getProperty(
+				PERSISTENT_THEME_REGRESSION_STORE_ROOT);
+		Path root = configuredRoot == null
+				? BenchmarkPathSupport.resolveTarget(DEFAULT_PERSISTENT_THEME_REGRESSION_STORE_ROOT)
+				: Path.of(configuredRoot);
+		return root.toAbsolutePath().normalize();
 	}
 
 	private static void forceDeleteStoreDirectory(Path storeDirectory) {

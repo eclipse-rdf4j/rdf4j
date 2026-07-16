@@ -47,7 +47,8 @@ class EstimateEvidenceResolverTest {
 
 	@Test
 	void staleEvidenceIsRejectedBeforeRanking() {
-		QuadSnapshotIdentity staleIdentity = new QuadSnapshotIdentity(IDENTITY.storeIdHigh(), IDENTITY.storeIdLow(), 2L);
+		QuadSnapshotIdentity staleIdentity = new QuadSnapshotIdentity(IDENTITY.storeIdHigh(), IDENTITY.storeIdLow(),
+				2L);
 		EstimateCandidate staleExact = candidate(0.0d, 0.0d, 0.0d, true, EstimateCandidate.Kind.EXACT_STORAGE, 100L,
 				staleIdentity);
 		EstimateCandidate current = candidate(8.0d, 6.0d, 10.0d, true, EstimateCandidate.Kind.SYNOPSIS, 1L,

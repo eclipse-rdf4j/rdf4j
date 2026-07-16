@@ -17,10 +17,8 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
-import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
@@ -34,8 +32,6 @@ public final class CascadesPlanProvenanceAnnotator {
 	private static final String CASCADES_RULE_KIND = "optimizer.cascadesRuleKind";
 	private static final String CASCADES_PROOFS = "optimizer.cascadesProofs";
 	private static final String CASCADES_REJECTIONS = "optimizer.cascadesRejectedAlternatives";
-	private static final String CASCADES_COVERED_BY_WINNER = "optimizer.cascadesCoveredByWinner";
-	private static final String COVERED_BY_PARENT_WINNER = "covered_by_parent_winner";
 	private static final String FALLBACK_NO_WINNER = "fallback_no_winner";
 	private static final String CASCADES_FALLBACK_SOURCE = "cascades-fallback";
 	private static final String LMDB_CASCADES_FALLBACK_SOURCE = "lmdb-cascades-fallback";
@@ -109,13 +105,17 @@ public final class CascadesPlanProvenanceAnnotator {
 		}
 		annotateNode(node, provenance, plannerIdOverride);
 		List<PlanProvenance> inputs = provenance.inputs();
-		if (node instanceof UnaryTupleOperator unary && inputs.size() == 1) {
-			annotateRecursive(unary.getArg(), inputs.getFirst(), plannerIdOverride);
-		} else if (node instanceof BinaryTupleOperator binary && inputs.size() >= 2) {
-			annotateRecursive(binary.getLeftArg(), inputs.get(0), plannerIdOverride);
-			annotateRecursive(binary.getRightArg(), inputs.get(1), plannerIdOverride);
+		List<MemoInputLayout.Slot> slots = MemoInputLayout.slots(node)
+				.stream()
+				.filter(slot -> slot.use() == MemoInput.Use.EXECUTABLE)
+				.toList();
+		if (slots.size() != inputs.size()) {
+			throw new IllegalStateException("Selected provenance/input mismatch for "
+					+ node.getClass().getSimpleName() + ": slots=" + slots.size() + ", inputs=" + inputs.size());
 		}
-		annotateDescendantsCoveredByWinner(node, provenance, plannerIdOverride);
+		for (int index = 0; index < slots.size(); index++) {
+			annotateRecursive(slots.get(index).input(), inputs.get(index), plannerIdOverride);
+		}
 	}
 
 	private static void annotateNode(QueryModelNode node, PlanProvenance provenance, String plannerIdOverride) {
@@ -162,63 +162,6 @@ public final class CascadesPlanProvenanceAnnotator {
 		node.setDoubleMetricPlanned("plannedCascadesEvidenceCount", cost.evidenceCount());
 	}
 
-	private static void annotateDescendantsCoveredByWinner(TupleExpr root, PlanProvenance provenance,
-			String plannerIdOverride) {
-		root.visitChildren(new AbstractQueryModelVisitor<RuntimeException>() {
-			@Override
-			protected void meetNode(QueryModelNode node) {
-				if (node instanceof TupleExpr) {
-					annotateCoveredNode(node, provenance, plannerIdOverride);
-				}
-				node.visitChildren(this);
-			}
-		});
-	}
-
-	private static void annotateCoveredNode(QueryModelNode node, PlanProvenance provenance, String plannerIdOverride) {
-		String currentUsage = node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE);
-		if (!missingOrFallbackUsage(currentUsage) && !needsCoveredWinnerCompletion(node)) {
-			return;
-		}
-		EstimateSnapshot estimate = provenance.estimate();
-		CostVector cost = provenance.cost();
-		double plannedRows = finiteOr(cost.rows(), estimate.rows());
-		double plannedWorkRows = finiteOr(cost.workRows(), estimate.workRows());
-		String decisionId = decisionId(provenance);
-		String plannerId = isBlank(plannerIdOverride) ? estimate.plannerId() : plannerIdOverride;
-
-		setStringIfMissing(node, TelemetryMetricNames.PLANNER_ID, plannerId);
-		setEstimateSourceIfMissingOrGeneric(node, estimate.source());
-		setStringIfMissingOrFallback(node, TelemetryMetricNames.PLANNED_ESTIMATE_USAGE, COVERED_BY_PARENT_WINNER);
-		setStringIfMissing(node, TelemetryMetricNames.PLANNED_ESTIMATE_DECISION_ID, decisionId + ":covered");
-		setStringIfMissing(node, TelemetryMetricNames.PLANNED_CARDINALITY_SHAPE, "vector");
-		setStringIfMissing(node, TelemetryMetricNames.PLANNED_COST_SHAPE, "vector");
-		setStringIfMissing(node, CASCADES_RULE, provenance.ruleId());
-		setStringIfMissing(node, CASCADES_RULE_KIND, provenance.ruleKind().name());
-		setStringIfMissing(node, CASCADES_PROOFS, proofSummary(provenance.proofs()));
-		setStringIfMissing(node, CASCADES_REJECTIONS, rejectionSummary(provenance.rejectedAlternatives()));
-		setStringIfMissing(node, CASCADES_COVERED_BY_WINNER, decisionId);
-		setDoubleIfMissing(node, TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, plannedRows);
-		setDoubleIfMissing(node, TelemetryMetricNames.PLANNED_WORK_ROWS, plannedWorkRows);
-		setDoubleIfMissing(node, TelemetryMetricNames.PLANNED_COST_WORK_ROWS, cost.workRows());
-		setDoubleIfMissing(node, TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE, cost.objectiveScore());
-		setDoubleIfMissing(node, TelemetryMetricNames.PLANNED_UNCERTAINTY_ROWS, cost.uncertaintyRows());
-		setDoubleIfMissing(node, TelemetryMetricNames.PLANNED_COST_UNCERTAINTY_ROWS, cost.uncertaintyRows());
-		setDoubleIfMissing(node, TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE, cost.confidence());
-		setDoubleIfMissing(node, PLANNED_CARDINALITY_Q_ERROR, cost.rowQErrorMax());
-		setDoubleIfMissing(node, PLANNED_COST_ROW_Q_ERROR_MAX, cost.rowQErrorMax());
-		setDoubleIfMissing(node, PLANNED_COST_WORK_Q_ERROR_MAX, cost.workQErrorMax());
-		setDoubleIfMissing(node, "plannedCascadesEvidenceCount", cost.evidenceCount());
-	}
-
-	private static boolean needsCoveredWinnerCompletion(QueryModelNode node) {
-		return isBlank(node.getStringMetricPlanned(TelemetryMetricNames.PLANNER_ID))
-				|| isBlank(node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_DECISION_ID))
-				|| isBlank(node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_SHAPE))
-				|| isBlank(node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_COST_SHAPE))
-				|| fallbackCostRequired(node, false);
-	}
-
 	private static void annotateFallbackNode(TupleExpr node, String plannerId, String source, String usage,
 			Function<TupleExpr, CostVector> fallbackCostProvider) {
 		boolean replaceFallbackMetrics = missingOrFallbackUsage(
@@ -234,9 +177,7 @@ public final class CascadesPlanProvenanceAnnotator {
 		setStringIfMissing(node, TelemetryMetricNames.PLANNED_COST_SHAPE, "vector");
 		setDoubleIfMissingOrFallback(node, "optimizer.statisticMissing", 1.0d, replaceFallbackMetrics);
 		setDoubleIfMissingOrFallback(node, "optimizer.statisticMissingFallback", 1.0d, replaceFallbackMetrics);
-		if (COVERED_BY_PARENT_WINNER.equals(
-				node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE))
-				|| !fallbackCostRequired(node, replaceFallbackMetrics)) {
+		if (!fallbackCostRequired(node, replaceFallbackMetrics)) {
 			return;
 		}
 		CostVector cost = fallbackCost(node, fallbackCostProvider);
@@ -385,22 +326,6 @@ public final class CascadesPlanProvenanceAnnotator {
 		}
 	}
 
-	private static void setStringIfMissingOrFallback(QueryModelNode node, String metricName, String value) {
-		String current = node.getStringMetricPlanned(metricName);
-		if (isBlank(current)
-				|| TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_EXPLAIN_RECOMPUTED.equals(current)
-				|| FALLBACK_NO_WINNER.equals(current)) {
-			node.setStringMetricPlanned(metricName, value);
-		}
-	}
-
-	private static void setEstimateSourceIfMissingOrGeneric(QueryModelNode node, String value) {
-		String current = node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
-		if (!isSpecificSource(current)) {
-			node.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, value);
-		}
-	}
-
 	private static void setDoubleIfMissing(QueryModelNode node, String metricName, double value) {
 		double current = node.getDoubleMetricPlanned(metricName);
 		if (!Double.isFinite(current) || current < 0.0d) {
@@ -452,10 +377,6 @@ public final class CascadesPlanProvenanceAnnotator {
 				&& !"cascades-fallback".equals(source)
 				&& !"lmdb-cascades-fallback".equals(source)
 				&& !"sampled".equals(source);
-	}
-
-	private static String decisionId(PlanProvenance provenance) {
-		return provenance.ruleId() + ":g" + provenance.memoGroupId() + ":e" + provenance.expressionId();
 	}
 
 	private static CostVector fallbackCost() {

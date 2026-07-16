@@ -26,13 +26,23 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Optimizatio
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleApplication;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleDescriptor;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleProof;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleRootOperator;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 final class LmdbDistinctCursorSkipRule extends LmdbRule {
 	LmdbDistinctCursorSkipRule(EvaluationStatistics statistics) {
-		super("lmdb-distinct-cursor-skip", RuleKind.IMPLEMENTATION, 110, statistics);
+		super("lmdb-distinct-cursor-skip", RuleKind.IMPLEMENTATION, 110, statistics,
+				scheduling(RuleRootOperator.STATEMENT_PATTERN)
+						.readsGoalProperties(RuleDescriptor.GoalProperty.INVOCATION_CARDINALITY)
+						.readsFacts(RuleDescriptor.MemoFact.DUPLICATE_SEMANTICS,
+								RuleDescriptor.MemoFact.REQUIRED_INPUTS,
+								RuleDescriptor.MemoFact.STATISTICS_EPOCH)
+						.produces(RuleDescriptor.ProducedChange.PHYSICAL_EXPRESSION,
+								RuleDescriptor.ProducedChange.PROOF,
+								RuleDescriptor.ProducedChange.ESTIMATE));
 	}
 
 	@Override

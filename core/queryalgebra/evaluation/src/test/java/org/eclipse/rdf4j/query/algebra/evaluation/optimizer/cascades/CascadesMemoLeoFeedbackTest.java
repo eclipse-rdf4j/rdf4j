@@ -134,6 +134,11 @@ class CascadesMemoLeoFeedbackTest {
 		}
 
 		@Override
+		public CostVector applyCostPolicy(OptimizationGoal goal, CostVector totalCost) {
+			return delegate.applyCostPolicy(goal, totalCost);
+		}
+
+		@Override
 		public PhysicalProperties deliveredProperties(MemoExpr expression, OptimizationGoal goal,
 				List<Winner> inputWinners) {
 			return delegate.deliveredProperties(expression, goal, inputWinners);

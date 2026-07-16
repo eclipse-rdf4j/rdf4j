@@ -20,7 +20,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 /** RDF-specific row estimate with q-error interval and provenance. */
 @Experimental
 public record StatisticsEstimate(double rows, QErrorInterval qErrorInterval, double workRows, String method,
-		Map<String, Double> metrics, BagEstimate bagEstimate) {
+		Map<String, Double> metrics, BagEstimate bagEstimate, BindingProfile bindingProfile) {
+
+	public StatisticsEstimate(double rows, QErrorInterval qErrorInterval, double workRows, String method,
+			Map<String, Double> metrics, BagEstimate bagEstimate) {
+		this(rows, qErrorInterval, workRows, method, metrics, bagEstimate, null);
+	}
 
 	public StatisticsEstimate(double rows, QErrorInterval qErrorInterval, double workRows, String method,
 			Map<String, Double> metrics) {
@@ -34,6 +39,10 @@ public record StatisticsEstimate(double rows, QErrorInterval qErrorInterval, dou
 		method = method == null || method.isBlank() ? "unknown" : method;
 		metrics = metrics == null || metrics.isEmpty() ? Map.of() : Map.copyOf(metrics);
 		bagEstimate = bagEstimate == null ? null : bagEstimate;
+		BagEstimate profileBag = bagEstimate != null
+				? bagEstimate
+				: new BagEstimate(rows, workRows, 0.0d, qErrorInterval.confidence(), method, Map.of(), Map.of(), metrics);
+		bindingProfile = BindingProfile.fromBag(null, profileBag, metrics);
 	}
 
 	public static StatisticsEstimate exact(double rows, String method) {
@@ -54,7 +63,10 @@ public record StatisticsEstimate(double rows, QErrorInterval qErrorInterval, dou
 		BagEstimate safe = bag == null ? BagEstimate.heuristic(1.0d, method) : bag;
 		String effectiveMethod = method == null || method.isBlank() ? safe.source() : method;
 		Map<String, Double> metrics = metricsWithBagEvidence(safe);
-		return new StatisticsEstimate(safe.rows(), QErrorInterval.heuristic(safe.rows(), 4.0d, effectiveMethod),
+		QErrorInterval interval = safe.confidence() >= 1.0d
+				? QErrorInterval.exact(safe.rows(), effectiveMethod)
+				: QErrorInterval.heuristic(safe.rows(), 4.0d, effectiveMethod);
+		return new StatisticsEstimate(safe.rows(), interval,
 				safe.workRows(), effectiveMethod, metrics, safe.withMetrics(metrics));
 	}
 

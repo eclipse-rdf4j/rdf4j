@@ -14,15 +14,24 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mockConstruction;
+import static org.mockito.Mockito.when;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
@@ -32,10 +41,21 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoRolloutProfile;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPlan;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPlanner;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Memo;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MemoExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PlanProvenance;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Winner;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -43,55 +63,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.mockito.MockedConstruction;
 
 class LmdbCascadesContractTest {
 
-	private static final String COVERED_BY_PARENT_WINNER = "covered_by_parent_winner";
 	private static final String FALLBACK_NO_WINNER = "fallback_no_winner";
 	private static final String CASCADES_FALLBACK_SOURCE = "cascades-fallback";
 	private static final String LMDB_CASCADES_FALLBACK_SOURCE = "lmdb-cascades-fallback";
 	private static final String EMERGENCY_FALLBACK_RULE = "existing-algebra-emergency-fallback";
-
-	@Test
-	void coveredWinnerChildrenDoNotEnableCostFeedback(@TempDir Path tempDir) {
-		String previous = System.getProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY);
-		String previousDetailed = System.getProperty(
-				LmdbEvaluationStatistics.OPERATOR_FEEDBACK_DETAILED_RUNTIME_PROPERTY);
-		String previousProfile = System.getProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY);
-		try {
-			System.setProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY, "true");
-			System.setProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_DETAILED_RUNTIME_PROPERTY, "true");
-			System.setProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY, "safe-cardinality-correction");
-			LmdbOperatorFeedbackStats feedbackStats = new LmdbOperatorFeedbackStats(
-					tempDir.resolve("join-estimator.rjes"));
-			LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(null, null, null, null, feedbackStats,
-					null);
-			StatementPattern left = pattern("s", "p1", "o");
-			Union coveredUnion = new Union(pattern("s", "p2", "a"), pattern("s", "p3", "b"));
-			Join parent = new Join(left, coveredUnion);
-			stampEstimate(parent, 100.0d, 200.0d);
-			stampEstimate(coveredUnion, 10.0d, 20.0d);
-			coveredUnion.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE,
-					COVERED_BY_PARENT_WINNER);
-			coveredUnion.setStringMetricPlanned("optimizer.cascadesCoveredByWinner", "winner:g1:e1");
-
-			new LmdbCascadesExplainFinalizer(statistics, false).optimize(parent, null, EmptyBindingSet.getInstance());
-
-			assertTrue(parent.isCostFeedbackTrackingEnabled(),
-					"The selected parent winner should still collect feedback");
-			assertFalse(coveredUnion.isCostFeedbackTrackingEnabled(),
-					"Covered implementation children may be executed repeatedly under the parent winner and must not "
-							+ "collect independent operator feedback");
-		} finally {
-			restoreFeedbackTracking(previous);
-			restoreFeedbackDetailedRuntime(previousDetailed);
-			if (previousProfile == null) {
-				System.clearProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY);
-			} else {
-				System.setProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY, previousProfile);
-			}
-		}
-	}
 
 	@Test
 	void decisionDrivenSummaryEstimatesDoNotEnableCostFeedback(@TempDir Path tempDir) {
@@ -125,9 +104,124 @@ class LmdbCascadesContractTest {
 						+ "statistics; enabling feedback here wraps hot repeated RHS probes during execution");
 	}
 
+	@Test
+	void explainFinalizerPreservesContextualWinnerRowsAndCartesianWork() {
+		StatementPattern code = pattern("entity", "codePredicate", "code");
+		StatementPattern target = pattern("targetSubject", "targetPredicate", "target");
+		StatementPattern type = pattern("entity", "typePredicate", "type");
+		Join contextualRight = new Join(target, type);
+		Join selected = new Join(code, contextualRight);
+		stampEstimate(code, 66_500.0d, 66_500.0d);
+		stampEstimate(target, 133_000.0d, 133_000.0d);
+		stampEstimate(type, 49_800.0d, 315_900.0d);
+		stampEstimate(contextualRight, 49_800.0d, 315_900.0d);
+		stampEstimate(selected, 49_800.0d, 382_500.0d);
+		selected.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, 49_800.0d);
+		selected.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS, 133_000.0d);
+		selected.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE,
+				"physical-join-contextual-right");
+
+		LmdbCascadesExplainFinalizer.INSTANCE.optimize(selected, null, EmptyBindingSet.getInstance());
+
+		assertEquals(49_800.0d,
+				selected.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS), 0.0d,
+				"Explain decoration must not replace a contextual winner with a product of already-total child bags");
+		assertEquals(49_800.0d,
+				selected.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS), 0.0d);
+		assertEquals(133_000.0d,
+				selected.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS), 0.0d,
+				"The planner's invocation-aware Cartesian work is authoritative");
+		assertEquals("phase2_disconnected_components",
+				selected.getStringMetricPlanned("optimizer.connectedEnumeration"));
+		assertEquals("disconnected-components",
+				selected.getStringMetricPlanned("optimizer.cartesianFallbackReason"));
+	}
+
+	@Test
+	void explainFinalizerDoesNotInventMissingCartesianWork() {
+		StatementPattern code = pattern("entity", "codePredicate", "code");
+		StatementPattern target = pattern("targetSubject", "targetPredicate", "target");
+		StatementPattern type = pattern("entity", "typePredicate", "type");
+		Join selected = new Join(code, new Join(target, type));
+		stampEstimate(code, 66_500.0d, 66_500.0d);
+		stampEstimate(target, 133_000.0d, 133_000.0d);
+		stampEstimate(type, 49_800.0d, 315_900.0d);
+		stampEstimate(selected.getRightArg(), 49_800.0d, 315_900.0d);
+		stampEstimate(selected, 49_800.0d, 382_500.0d);
+		selected.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE,
+				"physical-join-contextual-right");
+		double missingMetric = selected
+				.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS);
+
+		LmdbCascadesExplainFinalizer.INSTANCE.optimize(selected, null, EmptyBindingSet.getInstance());
+
+		assertEquals(missingMetric,
+				selected.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS), 0.0d,
+				"Explain decoration must not invent planner-owned cost components");
+	}
+
+	@Test
+	void completeWinnerIsExtractedOnceWithoutPostSearchRepair() {
+		String previousMode = System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "exact");
+		String previousPolicy = System.setProperty(LmdbCascadesOptimizer.STANDARD_PLAN_POLICY_PROPERTY, "off");
+		AtomicInteger plannerCalls = new AtomicInteger();
+		QueryRoot selectedWinner = new QueryRoot(distinctCountWithUnusedOptional());
+		try (MockedConstruction<CascadesPlanner> planners = mockConstruction(CascadesPlanner.class,
+				(mock, context) -> when(mock.optimize(any(TupleExpr.class), any(OptimizationGoal.class)))
+						.thenAnswer(invocation -> completePlan(plannerCalls.incrementAndGet() == 1
+								? selectedWinner.clone()
+								: pattern("repair", "mustNotRun", "replacement"))))) {
+			QueryRoot root = new QueryRoot(pattern("input", "predicate", "output"));
+
+			new LmdbCascadesOptimizer(new EvaluationStatistics(), false).optimize(root, null,
+					EmptyBindingSet.getInstance());
+
+			assertEquals("COMPLETE", root.getStringMetricPlanned("optimizer.cascadesCompleteness"));
+			assertEquals(1, plannerCalls.get(),
+					"A successful COMPLETE winner is final: it must not be submitted to optimizeSubtrees or "
+							+ "semanticFallbackRepair after extraction");
+			assertEquals(1, planners.constructed().size());
+		} finally {
+			restoreProperty(LmdbCascadesOptimizer.MODE_PROPERTY, previousMode);
+			restoreProperty(LmdbCascadesOptimizer.STANDARD_PLAN_POLICY_PROPERTY, previousPolicy);
+		}
+	}
+
+	@Test
+	void missingRootFallbackKeepsExtractedGroupChildWinner() {
+		String previousMode = System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "exact");
+		String previousPolicy = System.setProperty(LmdbCascadesOptimizer.STANDARD_PLAN_POLICY_PROPERTY, "fallback");
+		AtomicInteger plannerCalls = new AtomicInteger();
+		Group selectedGroup = distinctCountWithUnusedOptional();
+		selectedGroup.setArg(pattern("planned", "selected", "o"));
+		try (MockedConstruction<CascadesPlanner> planners = mockConstruction(CascadesPlanner.class,
+				(mock, context) -> when(mock.optimize(any(TupleExpr.class), any(OptimizationGoal.class)))
+						.thenAnswer(invocation -> plannerCalls.incrementAndGet() == 1
+								? noWinnerPlan(invocation.getArgument(0))
+								: completePlan(selectedGroup.clone())))) {
+			QueryRoot root = new QueryRoot(distinctCountWithUnusedOptional());
+
+			new LmdbCascadesOptimizer(new EvaluationStatistics(), false).optimize(root, null,
+					EmptyBindingSet.getInstance());
+
+			assertEquals(2, plannerCalls.get(),
+					"A missing root winner may trigger one independent Group optimization");
+			assertTrue(root.getArg() instanceof Group);
+			Group extractedGroup = (Group) root.getArg();
+			assertTrue(extractedGroup.getArg() instanceof StatementPattern);
+			StatementPattern extractedInput = (StatementPattern) extractedGroup.getArg();
+			assertEquals("selected", extractedInput.getPredicateVar().getName(),
+					"The extracted child winner must not be replaced by a post-search semantic repair");
+			assertEquals(1, planners.constructed().size());
+		} finally {
+			restoreProperty(LmdbCascadesOptimizer.MODE_PROPERTY, previousMode);
+			restoreProperty(LmdbCascadesOptimizer.STANDARD_PLAN_POLICY_PROPERTY, previousPolicy);
+		}
+	}
+
 	@ParameterizedTest(name = "{0}")
-	@MethodSource("coveredAlgebraShapes")
-	void coveredAlgebraShapesDoNotEmitFallbackNoWinner(String name, TupleExpr tupleExpr) {
+	@MethodSource("supportedAlgebraShapes")
+	void supportedAlgebraShapesDoNotEmitFallbackOrHiddenCoverage(String name, TupleExpr tupleExpr) {
 		String previousMode = System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "exact");
 		try {
 			QueryRoot root = new QueryRoot(tupleExpr);
@@ -138,8 +232,7 @@ class LmdbCascadesContractTest {
 
 			List<String> fallbackNodes = new ArrayList<>();
 			List<String> fallbackSourceNodes = new ArrayList<>();
-			List<String> coveredUsageMismatches = new ArrayList<>();
-			List<String> coveredSourceMismatches = new ArrayList<>();
+			List<String> hiddenCoverageNodes = new ArrayList<>();
 			List<String> plannedSubtreesWithFallbackDescendants = new ArrayList<>();
 			root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 				@Override
@@ -155,11 +248,8 @@ class LmdbCascadesContractTest {
 							fallbackSourceNodes
 									.add(current.getClass().getSimpleName() + ":" + current.getSignature());
 						}
-						if (covered != null && !COVERED_BY_PARENT_WINNER.equals(usage)) {
-							coveredUsageMismatches.add(current.getClass().getSimpleName() + ":" + usage);
-						}
-						if (covered != null && fallbackSource(source)) {
-							coveredSourceMismatches.add(current.getClass().getSimpleName() + ":" + source);
+						if (covered != null || "covered_by_parent_winner".equals(usage)) {
+							hiddenCoverageNodes.add(current.getClass().getSimpleName() + ":" + usage);
 						}
 						if (plannedSubtree(current) && hasFallbackDescendant(current)) {
 							plannedSubtreesWithFallbackDescendants
@@ -174,10 +264,7 @@ class LmdbCascadesContractTest {
 					root.getStringMetricPlanned(TelemetryMetricNames.PLANNER_ID), name);
 			assertTrue(fallbackNodes.isEmpty(), name + " fallback nodes: " + fallbackNodes);
 			assertTrue(fallbackSourceNodes.isEmpty(), name + " fallback source nodes: " + fallbackSourceNodes);
-			assertTrue(coveredUsageMismatches.isEmpty(), name + " covered usage mismatches: "
-					+ coveredUsageMismatches);
-			assertTrue(coveredSourceMismatches.isEmpty(), name + " covered source mismatches: "
-					+ coveredSourceMismatches);
+			assertTrue(hiddenCoverageNodes.isEmpty(), name + " hidden coverage nodes: " + hiddenCoverageNodes);
 			assertTrue(plannedSubtreesWithFallbackDescendants.isEmpty(), name
 					+ " planned subtrees with fallback descendants: " + plannedSubtreesWithFallbackDescendants);
 		} finally {
@@ -185,7 +272,7 @@ class LmdbCascadesContractTest {
 		}
 	}
 
-	private static Stream<org.junit.jupiter.params.provider.Arguments> coveredAlgebraShapes() {
+	private static Stream<org.junit.jupiter.params.provider.Arguments> supportedAlgebraShapes() {
 		return Stream.of(
 				org.junit.jupiter.params.provider.Arguments.of("Union",
 						new Union(pattern("s", "p1", "o"), pattern("s", "p2", "o"))),
@@ -207,6 +294,46 @@ class LmdbCascadesContractTest {
 		return new Projection(arg, projection);
 	}
 
+	private static Group distinctCountWithUnusedOptional() {
+		Group group = new Group(new LeftJoin(pattern("s", "required", "o"),
+				pattern("s", "optional", "unused")));
+		group.addGroupElement(new GroupElem("count", new Count(new Var("o"), true)));
+		return group;
+	}
+
+	private static CascadesPlan completePlan(TupleExpr selectedPlan) {
+		MemoExpr expression = new MemoExpr(1, 1, "test-complete-winner", List.of(), "", selectedPlan,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		Winner winner = new Winner(expression, selectedPlan, PhysicalProperties.ANY, CostVector.ZERO, List.of(), false,
+				"complete", completeProvenance(selectedPlan, new AtomicInteger()));
+		return new CascadesPlan(new Memo(CascadesCostModel.from(new EvaluationStatistics())), 1,
+				OptimizationGoal.root(), Optional.of(winner), false, List.of("complete"));
+	}
+
+	private static CascadesPlan noWinnerPlan(TupleExpr tupleExpr) {
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		int rootGroupId = memo.intern(tupleExpr.clone());
+		return new CascadesPlan(memo, rootGroupId, OptimizationGoal.root(), Optional.empty(), false,
+				List.of("no viable root winner"));
+	}
+
+	private static PlanProvenance completeProvenance(TupleExpr tupleExpr, AtomicInteger ids) {
+		List<PlanProvenance> inputs;
+		if (tupleExpr instanceof BinaryTupleOperator binary) {
+			inputs = List.of(completeProvenance(binary.getLeftArg(), ids),
+					completeProvenance(binary.getRightArg(), ids));
+		} else if (tupleExpr instanceof UnaryTupleOperator unary) {
+			inputs = List.of(completeProvenance(unary.getArg(), ids));
+		} else {
+			inputs = List.of();
+		}
+		int id = ids.incrementAndGet();
+		String operator = tupleExpr.getClass().getSimpleName();
+		return new PlanProvenance(id, id, operator, "test-complete-winner", RuleKind.IMPLEMENTATION, inputs, null,
+				CostVector.ZERO, PhysicalProperties.ANY, PhysicalProperties.ANY, List.of(), List.of(), false,
+				"complete");
+	}
+
 	private static StatementPattern pattern(String subject, String predicate, String object) {
 		return new StatementPattern(new Var(subject), new Var(predicate), new Var(object));
 	}
@@ -218,8 +345,7 @@ class LmdbCascadesContractTest {
 
 	private static boolean plannedSubtree(TupleExpr tupleExpr) {
 		return nonFallbackPlannedMetric(tupleExpr, "optimizer.cascadesRule")
-				|| nonFallbackPlannedMetric(tupleExpr, "optimizer.cascadesWinner")
-				|| nonFallbackPlannedMetric(tupleExpr, "optimizer.cascadesCoveredByWinner");
+				|| nonFallbackPlannedMetric(tupleExpr, "optimizer.cascadesWinner");
 	}
 
 	private static boolean nonFallbackPlannedMetric(TupleExpr tupleExpr, String metricName) {
@@ -258,26 +384,15 @@ class LmdbCascadesContractTest {
 	}
 
 	private static void restoreMode(String previousMode) {
-		if (previousMode == null) {
-			System.clearProperty(LmdbCascadesOptimizer.MODE_PROPERTY);
+		restoreProperty(LmdbCascadesOptimizer.MODE_PROPERTY, previousMode);
+	}
+
+	private static void restoreProperty(String property, String previousValue) {
+		if (previousValue == null) {
+			System.clearProperty(property);
 		} else {
-			System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, previousMode);
+			System.setProperty(property, previousValue);
 		}
 	}
 
-	private static void restoreFeedbackTracking(String previous) {
-		restoreProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY, previous);
-	}
-
-	private static void restoreFeedbackDetailedRuntime(String previous) {
-		restoreProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_DETAILED_RUNTIME_PROPERTY, previous);
-	}
-
-	private static void restoreProperty(String propertyName, String previous) {
-		if (previous == null) {
-			System.clearProperty(propertyName);
-		} else {
-			System.setProperty(propertyName, previous);
-		}
-	}
 }

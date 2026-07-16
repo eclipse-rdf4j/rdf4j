@@ -29,15 +29,23 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalPro
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RdfStatisticsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleApplication;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleDescriptor;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleProof;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleRootOperator;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
 
 final class LmdbPropertyPathImplementationRule extends LmdbRule {
 	private final RdfStatisticsProvider statisticsProvider;
 
 	LmdbPropertyPathImplementationRule(EvaluationStatistics statistics) {
-		super("lmdb-property-path", RuleKind.IMPLEMENTATION, 116, statistics);
+		super("lmdb-property-path", RuleKind.IMPLEMENTATION, 116, statistics,
+				scheduling(RuleRootOperator.ARBITRARY_LENGTH_PATH, RuleRootOperator.ZERO_LENGTH_PATH)
+						.readsFacts(RuleDescriptor.MemoFact.REQUIRED_INPUTS,
+								RuleDescriptor.MemoFact.STATISTICS_EPOCH)
+						.produces(RuleDescriptor.ProducedChange.PHYSICAL_EXPRESSION,
+								RuleDescriptor.ProducedChange.PROOF,
+								RuleDescriptor.ProducedChange.ESTIMATE));
 		this.statisticsProvider = statistics instanceof RdfStatisticsProvider provider ? provider : null;
 	}
 

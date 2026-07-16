@@ -26,10 +26,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConjunctiveConstrain
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.DisjunctiveConstraintOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.IterativeEvaluationOptimizer;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OrderLimitOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceChecker;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ProjectionRemovalOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryModelNormalizerOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.RegexAsStringFunctionOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SameTermFilterOptimizer;
@@ -52,9 +49,6 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	private static final UnionScopeChangeOptimizer UNION_SCOPE_CHANGE_OPTIMIZER = new UnionScopeChangeOptimizer();
 	private static final QueryModelNormalizerOptimizer QUERY_MODEL_NORMALIZER = new QueryModelNormalizerOptimizer();
 	private static final LmdbEligibilitySemiJoinOptimizer ELIGIBILITY_SEMI_JOIN_OPTIMIZER = new LmdbEligibilitySemiJoinOptimizer();
-	private static final ProjectionRemovalOptimizer PROJECTION_REMOVAL_OPTIMIZER = new ProjectionRemovalOptimizer();
-	private static final IterativeEvaluationOptimizer ITERATIVE_EVALUATION_OPTIMIZER = new IterativeEvaluationOptimizer();
-	private static final OrderLimitOptimizer ORDER_LIMIT_OPTIMIZER = new OrderLimitOptimizer();
 
 	private final EvaluationStrategy strategy;
 	private final TripleSource tripleSource;
@@ -92,12 +86,9 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		optimizers.add(QUERY_MODEL_NORMALIZER);
 		optimizers.add(new LmdbOptionalNormalFormOptimizer(evaluationStatistics));
 		optimizers.add(ELIGIBILITY_SEMI_JOIN_OPTIMIZER);
-		optimizers.add(PROJECTION_REMOVAL_OPTIMIZER);
 		optimizers.add(new FilterOptimizer(null, false, false));
-		optimizers.add(ITERATIVE_EVALUATION_OPTIMIZER);
 		optimizers.add(new LmdbBoundSimplifierOptimizer());
 		if (!preserveSerializableObservationOrder) {
-			optimizers.add(new LmdbProjectionPushdownOptimizer());
 			optimizers.add(new LmdbSetSemanticsOptimizer());
 		}
 		optimizers.add(new LmdbFilterSimplifierOptimizer(evaluationStatistics));
@@ -110,10 +101,6 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		}
 		optimizers.add(new LmdbCascadesOptimizer(evaluationStatistics, strategy.isTrackResultSize(),
 				preserveSerializableObservationOrder, strategy, tripleSource));
-		if (!preserveSerializableObservationOrder) {
-			optimizers.add(new LmdbCorrelatedFilterPlacementOptimizer());
-		}
-		optimizers.add(ORDER_LIMIT_OPTIMIZER);
 		optimizers.add(new LmdbCascadesExplainFinalizer(evaluationStatistics,
 				Boolean.getBoolean(LmdbCascadesExplainFinalizer.FALLBACK_ANNOTATIONS_PROPERTY)));
 

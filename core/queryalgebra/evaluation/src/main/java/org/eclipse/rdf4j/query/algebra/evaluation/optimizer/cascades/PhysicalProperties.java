@@ -25,7 +25,8 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 @Experimental
 public record PhysicalProperties(List<String> ordering, Set<String> distinctVars, String accessPath,
 		Set<String> boundVars, Set<String> inputBoundVars, Materialization materialization, String graphContext,
-		DuplicateBehavior duplicateBehavior, BindingProfile bindingProfile) {
+		DuplicateBehavior duplicateBehavior, ObservationOrder observationOrder, InputConsumption inputConsumption,
+		Set<FiniteRelationContract> appliedFiniteRelations, BindingProfile bindingProfile) {
 
 	public static final String ANY_ACCESS_PATH = "*";
 	public static final String ANY_GRAPH_CONTEXT = "*";
@@ -40,7 +41,29 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 		materialization = materialization == null ? Materialization.ANY : materialization;
 		graphContext = graphContext == null || graphContext.isBlank() ? ANY_GRAPH_CONTEXT : graphContext;
 		duplicateBehavior = duplicateBehavior == null ? DuplicateBehavior.ANY : duplicateBehavior;
+		observationOrder = observationOrder == null ? ObservationOrder.ANY : observationOrder;
+		inputConsumption = inputConsumption == null ? InputConsumption.ANY : inputConsumption;
+		appliedFiniteRelations = appliedFiniteRelations == null || appliedFiniteRelations.isEmpty()
+				? Set.of()
+				: Set.copyOf(appliedFiniteRelations);
 		bindingProfile = bindingProfile == null ? BindingProfile.ANY : bindingProfile;
+	}
+
+	/** Compatibility constructor for callers created before finite-relation execution became a physical property. */
+	public PhysicalProperties(List<String> ordering, Set<String> distinctVars, String accessPath,
+			Set<String> boundVars, Set<String> inputBoundVars, Materialization materialization, String graphContext,
+			DuplicateBehavior duplicateBehavior, ObservationOrder observationOrder, InputConsumption inputConsumption,
+			BindingProfile bindingProfile) {
+		this(ordering, distinctVars, accessPath, boundVars, inputBoundVars, materialization, graphContext,
+				duplicateBehavior, observationOrder, inputConsumption, Set.of(), bindingProfile);
+	}
+
+	/** Compatibility constructor for callers created before input consumption became an executable property. */
+	public PhysicalProperties(List<String> ordering, Set<String> distinctVars, String accessPath,
+			Set<String> boundVars, Set<String> inputBoundVars, Materialization materialization, String graphContext,
+			DuplicateBehavior duplicateBehavior, ObservationOrder observationOrder, BindingProfile bindingProfile) {
+		this(ordering, distinctVars, accessPath, boundVars, inputBoundVars, materialization, graphContext,
+				duplicateBehavior, observationOrder, InputConsumption.ANY, Set.of(), bindingProfile);
 	}
 
 	public static Builder builder() {
@@ -56,7 +79,39 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 				&& materialization == Materialization.ANY
 				&& ANY_GRAPH_CONTEXT.equals(graphContext)
 				&& duplicateBehavior == DuplicateBehavior.ANY
+				&& observationOrder == ObservationOrder.ANY
+				&& inputConsumption == InputConsumption.ANY
+				&& appliedFiniteRelations.isEmpty()
 				&& bindingProfile.isAny();
+	}
+
+	/** Returns the properties that affect executable compatibility, excluding statistical costing evidence. */
+	PhysicalProperties executionContract() {
+		BindingProfile executableBindingProfile = bindingProfile.executionContract();
+		return executableBindingProfile == bindingProfile
+				? this
+				: builderFrom(this).bindingProfile(executableBindingProfile).build();
+	}
+
+	/** Hashes only executable compatibility fields for hot planner identity keys. */
+	int executionContractHashCode() {
+		int hash = 1;
+		hash = combineHash(hash, ordering);
+		hash = combineHash(hash, distinctVars);
+		hash = combineHash(hash, accessPath);
+		hash = combineHash(hash, boundVars);
+		hash = combineHash(hash, inputBoundVars);
+		hash = combineHash(hash, materialization);
+		hash = combineHash(hash, graphContext);
+		hash = combineHash(hash, duplicateBehavior);
+		hash = combineHash(hash, observationOrder);
+		hash = combineHash(hash, inputConsumption);
+		hash = combineHash(hash, appliedFiniteRelations);
+		return combineHash(hash, bindingProfile.endpointMode());
+	}
+
+	private static int combineHash(int hash, Object value) {
+		return 31 * hash + Objects.hashCode(value);
 	}
 
 	public boolean satisfies(PhysicalProperties required) {
@@ -67,11 +122,15 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 				&& distinctVars.containsAll(required.distinctVars)
 				&& satisfiesAccessPath(required.accessPath)
 				&& boundVars.containsAll(required.boundVars)
+				&& inputBoundVars.containsAll(required.inputBoundVars)
 				&& required.boundVars.containsAll(inputBoundVars)
 				&& satisfiesMaterialization(required.materialization)
 				&& satisfiesGraphContext(required.graphContext)
 				&& satisfiesDuplicateBehavior(required.duplicateBehavior)
-				&& bindingProfile.satisfies(required.bindingProfile);
+				&& satisfiesObservationOrder(required.observationOrder)
+				&& satisfiesInputConsumption(required.inputConsumption)
+				&& appliedFiniteRelations.containsAll(required.appliedFiniteRelations)
+				&& bindingProfile.satisfiesExecutionContract(required.bindingProfile);
 	}
 
 	public boolean satisfies(PhysicalProperties required, BindingUniverse universe) {
@@ -85,18 +144,22 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 				&& containsAll(universe, distinctVars, required.distinctVars)
 				&& satisfiesAccessPath(required.accessPath)
 				&& containsAll(universe, boundVars, required.boundVars)
+				&& containsAll(universe, inputBoundVars, required.inputBoundVars)
 				&& containsAll(universe, required.boundVars, inputBoundVars)
 				&& satisfiesMaterialization(required.materialization)
 				&& satisfiesGraphContext(required.graphContext)
 				&& satisfiesDuplicateBehavior(required.duplicateBehavior)
-				&& bindingProfile.satisfies(required.bindingProfile);
+				&& satisfiesObservationOrder(required.observationOrder)
+				&& satisfiesInputConsumption(required.inputConsumption)
+				&& appliedFiniteRelations.containsAll(required.appliedFiniteRelations)
+				&& bindingProfile.satisfiesExecutionContract(required.bindingProfile);
 	}
 
 	public List<String> missingRequirements(PhysicalProperties required) {
 		if (required == null) {
 			required = ANY;
 		}
-		List<String> missing = new ArrayList<>(9);
+		List<String> missing = new ArrayList<>(10);
 		if (!satisfiesOrdering(required.ordering)) {
 			missing.add("ordering");
 		}
@@ -108,6 +171,9 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 		}
 		if (!boundVars.containsAll(required.boundVars)) {
 			missing.add("boundVars");
+		}
+		if (!inputBoundVars.containsAll(required.inputBoundVars)) {
+			missing.add("requiredInputBoundVars");
 		}
 		if (!required.boundVars.containsAll(inputBoundVars)) {
 			missing.add("inputBoundVars");
@@ -121,7 +187,16 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 		if (!satisfiesDuplicateBehavior(required.duplicateBehavior)) {
 			missing.add("duplicateBehavior");
 		}
-		if (!bindingProfile.satisfies(required.bindingProfile)) {
+		if (!satisfiesObservationOrder(required.observationOrder)) {
+			missing.add("observationOrder");
+		}
+		if (!satisfiesInputConsumption(required.inputConsumption)) {
+			missing.add("inputConsumption");
+		}
+		if (!appliedFiniteRelations.containsAll(required.appliedFiniteRelations)) {
+			missing.add("appliedFiniteRelations");
+		}
+		if (!bindingProfile.satisfiesExecutionContract(required.bindingProfile)) {
 			missing.add("bindingProfile");
 		}
 		return missing.isEmpty() ? List.of() : List.copyOf(missing);
@@ -134,7 +209,7 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 		if (required == null) {
 			required = ANY;
 		}
-		List<String> missing = new ArrayList<>(9);
+		List<String> missing = new ArrayList<>(10);
 		if (!satisfiesOrdering(required.ordering)) {
 			missing.add("ordering");
 		}
@@ -146,6 +221,9 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 		}
 		if (!containsAll(universe, boundVars, required.boundVars)) {
 			missing.add("boundVars");
+		}
+		if (!containsAll(universe, inputBoundVars, required.inputBoundVars)) {
+			missing.add("requiredInputBoundVars");
 		}
 		if (!containsAll(universe, required.boundVars, inputBoundVars)) {
 			missing.add("inputBoundVars");
@@ -159,7 +237,16 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 		if (!satisfiesDuplicateBehavior(required.duplicateBehavior)) {
 			missing.add("duplicateBehavior");
 		}
-		if (!bindingProfile.satisfies(required.bindingProfile)) {
+		if (!satisfiesObservationOrder(required.observationOrder)) {
+			missing.add("observationOrder");
+		}
+		if (!satisfiesInputConsumption(required.inputConsumption)) {
+			missing.add("inputConsumption");
+		}
+		if (!appliedFiniteRelations.containsAll(required.appliedFiniteRelations)) {
+			missing.add("appliedFiniteRelations");
+		}
+		if (!bindingProfile.satisfiesExecutionContract(required.bindingProfile)) {
 			missing.add("bindingProfile");
 		}
 		return missing.isEmpty() ? List.of() : List.copyOf(missing);
@@ -185,6 +272,13 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 		builder.graphContext(ANY_GRAPH_CONTEXT.equals(graphContext) ? other.graphContext : graphContext);
 		builder.duplicateBehavior(
 				duplicateBehavior == DuplicateBehavior.ANY ? other.duplicateBehavior : duplicateBehavior);
+		builder.observationOrder(
+				observationOrder == ObservationOrder.ANY ? other.observationOrder : observationOrder);
+		builder.inputConsumption(
+				inputConsumption == InputConsumption.ANY ? other.inputConsumption : inputConsumption);
+		Set<FiniteRelationContract> mergedRelations = new LinkedHashSet<>(appliedFiniteRelations);
+		mergedRelations.addAll(other.appliedFiniteRelations);
+		builder.appliedFiniteRelations(mergedRelations);
 		builder.bindingProfile(bindingProfile.mergedWith(other.bindingProfile));
 		return builder.build();
 	}
@@ -217,8 +311,49 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 		return builderFrom(this).duplicateBehavior(duplicateBehavior).build();
 	}
 
+	public PhysicalProperties withObservationOrder(ObservationOrder observationOrder) {
+		return builderFrom(this).observationOrder(observationOrder).build();
+	}
+
+	public PhysicalProperties withInputConsumption(InputConsumption inputConsumption) {
+		return builderFrom(this).inputConsumption(inputConsumption).build();
+	}
+
+	public PhysicalProperties withAppliedFiniteRelations(Set<FiniteRelationContract> appliedFiniteRelations) {
+		return builderFrom(this).appliedFiniteRelations(appliedFiniteRelations).build();
+	}
+
 	public PhysicalProperties withBindingProfile(BindingProfile bindingProfile) {
 		return builderFrom(this).bindingProfile(bindingProfile).build();
+	}
+
+	/**
+	 * Clamps output-scoped properties to the canonical schema of the owning memo group. Input requirements and
+	 * operator-local properties are deliberately preserved.
+	 */
+	PhysicalProperties restrictOutputTo(Set<String> outputNames) {
+		Set<String> requested = outputNames == null || outputNames.isEmpty() ? Set.of() : outputNames;
+		BindingProfile restrictedProfile = bindingProfile.restrictTo(requested);
+		if (requested.containsAll(boundVars)
+				&& requested.containsAll(distinctVars)
+				&& ordering.stream().allMatch(ordered -> requested.contains(orderingName(ordered)))
+				&& restrictedProfile == bindingProfile) {
+			return this;
+		}
+		Set<String> allowed = Set.copyOf(requested);
+		Set<String> restrictedBound = new LinkedHashSet<>(boundVars);
+		restrictedBound.retainAll(allowed);
+		Set<String> restrictedDistinct = new LinkedHashSet<>(distinctVars);
+		restrictedDistinct.retainAll(allowed);
+		List<String> restrictedOrdering = ordering.stream()
+				.filter(ordered -> allowed.contains(orderingName(ordered)))
+				.toList();
+		return builderFrom(this)
+				.ordering(restrictedOrdering)
+				.distinctVars(restrictedDistinct)
+				.boundVars(restrictedBound)
+				.bindingProfile(restrictedProfile)
+				.build();
 	}
 
 	public PhysicalProperties normalized(BindingUniverse universe) {
@@ -272,6 +407,14 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 		return required == null || required == DuplicateBehavior.ANY || duplicateBehavior == required;
 	}
 
+	private boolean satisfiesObservationOrder(ObservationOrder required) {
+		return required == null || required == ObservationOrder.ANY || observationOrder == required;
+	}
+
+	private boolean satisfiesInputConsumption(InputConsumption required) {
+		return required == null || required == InputConsumption.ANY || inputConsumption == required;
+	}
+
 	private static boolean containsAll(BindingUniverse universe, Set<String> names, Set<String> required) {
 		if (required == null || required.isEmpty()) {
 			return true;
@@ -280,6 +423,11 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 			return false;
 		}
 		return universe.maskOf(names).containsAll(universe.maskOf(required));
+	}
+
+	private static String orderingName(String ordered) {
+		int separator = ordered.indexOf(':');
+		return separator < 0 ? ordered : ordered.substring(0, separator);
 	}
 
 	private static Builder builderFrom(PhysicalProperties properties) {
@@ -292,6 +440,9 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 				.materialization(properties.materialization)
 				.graphContext(properties.graphContext)
 				.duplicateBehavior(properties.duplicateBehavior)
+				.observationOrder(properties.observationOrder)
+				.inputConsumption(properties.inputConsumption)
+				.appliedFiniteRelations(properties.appliedFiniteRelations)
 				.bindingProfile(properties.bindingProfile);
 	}
 
@@ -339,6 +490,22 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 		MAY_DUPLICATE
 	}
 
+	/** Whether an alternative preserves the exact input observation sequence, including otherwise unordered ties. */
+	public enum ObservationOrder {
+		ANY,
+		EXACT_SEQUENCE
+	}
+
+	/** How a physical expression observes bindings supplied by an enclosing selected prefix. */
+	public enum InputConsumption {
+		/** No input-consumption contract is required or declared. */
+		ANY,
+		/** Incoming selected-prefix bindings are visible to this expression. */
+		SELECTED_PREFIX,
+		/** The expression is evaluated independently of a selected prefix. */
+		ISOLATED
+	}
+
 	public static final class Builder {
 		private List<String> ordering = List.of();
 		private Set<String> distinctVars = Set.of();
@@ -348,6 +515,9 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 		private Materialization materialization = Materialization.ANY;
 		private String graphContext = ANY_GRAPH_CONTEXT;
 		private DuplicateBehavior duplicateBehavior = DuplicateBehavior.ANY;
+		private ObservationOrder observationOrder = ObservationOrder.ANY;
+		private InputConsumption inputConsumption = InputConsumption.ANY;
+		private Set<FiniteRelationContract> appliedFiniteRelations = Set.of();
 		private BindingProfile bindingProfile = BindingProfile.ANY;
 
 		private Builder() {
@@ -393,6 +563,21 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 			return this;
 		}
 
+		public Builder observationOrder(ObservationOrder observationOrder) {
+			this.observationOrder = observationOrder;
+			return this;
+		}
+
+		public Builder inputConsumption(InputConsumption inputConsumption) {
+			this.inputConsumption = inputConsumption;
+			return this;
+		}
+
+		public Builder appliedFiniteRelations(Set<FiniteRelationContract> appliedFiniteRelations) {
+			this.appliedFiniteRelations = appliedFiniteRelations == null ? Set.of() : appliedFiniteRelations;
+			return this;
+		}
+
 		public Builder bindingProfile(BindingProfile bindingProfile) {
 			this.bindingProfile = bindingProfile == null ? BindingProfile.ANY : bindingProfile;
 			return this;
@@ -400,7 +585,8 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 
 		public PhysicalProperties build() {
 			return new PhysicalProperties(ordering, distinctVars, accessPath, boundVars, inputBoundVars,
-					materialization, graphContext, duplicateBehavior, bindingProfile);
+					materialization, graphContext, duplicateBehavior, observationOrder, inputConsumption,
+					appliedFiniteRelations, bindingProfile);
 		}
 	}
 }

@@ -25,6 +25,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 final class LmdbAccessCostModel {
 
 	LmdbAccessEstimate estimate(TupleExpr expression, EstimateContext context, BagEstimate semantic) {
+		if (context.hasNoExecutions()) {
+			return new LmdbAccessEstimate(0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+		}
 		double rows = finiteNonNegative(semantic.rows(), Double.MAX_VALUE);
 		double invocations = finitePositive(context.invocationCount(), 1.0d);
 		double rowsPerInvocation = safeDivide(rows, invocations);

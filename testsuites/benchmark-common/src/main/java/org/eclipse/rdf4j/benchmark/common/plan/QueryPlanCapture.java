@@ -71,6 +71,9 @@ public final class QueryPlanCapture {
 	public static final String FEATURE_PROPERTY_PREFIX_PROPERTY = "rdf4j.query.plan.capture.featurePropertyPrefix";
 	public static final String GIT_COMMIT_PROPERTY = "rdf4j.query.plan.capture.gitCommit";
 	public static final String GIT_BRANCH_PROPERTY = "rdf4j.query.plan.capture.gitBranch";
+	private static final String TEST_OUTPUT_DIRECTORY_PROPERTY = "rdf4j.test.outputDirectory";
+	private static final String WORKSPACE_BUILD_ROOT_PROPERTY = "rdf4j.build.root";
+	private static final String ISOLATED_OUTPUT_DIRECTORY = "query-plan-capture";
 
 	private static final String OPTIMIZER_TRACE_JSON_METRIC = "optimizer.cascadesTraceJson";
 	private static final DateTimeFormatter FILE_TIMESTAMP_FORMATTER = DateTimeFormatter
@@ -109,8 +112,19 @@ public final class QueryPlanCapture {
 	}
 
 	public static Path resolveOutputDirectory() {
-		return Path.of(System.getProperty(QueryPlanCaptureContext.OUTPUT_DIRECTORY_PROPERTY,
-				DEFAULT_OUTPUT_DIRECTORY));
+		String configuredOutputDirectory = System.getProperty(QueryPlanCaptureContext.OUTPUT_DIRECTORY_PROPERTY);
+		if (configuredOutputDirectory != null && !configuredOutputDirectory.isBlank()) {
+			return Path.of(configuredOutputDirectory);
+		}
+		String testOutputDirectory = System.getProperty(TEST_OUTPUT_DIRECTORY_PROPERTY);
+		if (testOutputDirectory != null && !testOutputDirectory.isBlank()) {
+			return Path.of(testOutputDirectory).resolve(ISOLATED_OUTPUT_DIRECTORY);
+		}
+		String workspaceBuildRoot = System.getProperty(WORKSPACE_BUILD_ROOT_PROPERTY);
+		if (workspaceBuildRoot != null && !workspaceBuildRoot.isBlank()) {
+			return Path.of(workspaceBuildRoot).resolve(ISOLATED_OUTPUT_DIRECTORY);
+		}
+		return Path.of(DEFAULT_OUTPUT_DIRECTORY);
 	}
 
 	public static Map<String, String> metadataFromSystemProperties() {

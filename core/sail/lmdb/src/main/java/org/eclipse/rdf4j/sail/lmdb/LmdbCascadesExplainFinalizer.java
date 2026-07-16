@@ -243,7 +243,6 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 		});
 	}
 
-
 	private static boolean hasSubtreeStringMetricValue(TupleExpr tupleExpr, String metric, String expected) {
 		boolean[] found = { false };
 		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
@@ -278,7 +277,6 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 		});
 		return exact[0];
 	}
-
 
 	private static double semanticChildRows(TupleExpr child) {
 		if (child == null) {
@@ -335,8 +333,7 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 	private void annotateCostFeedbackNode(LmdbPlannerServices services, TupleExpr tupleExpr) {
 		annotateLearnedEvidence(services, tupleExpr);
 		annotateLearnedEvidenceExplain(services, tupleExpr);
-		if (!services.supportsOperatorFeedbackTracking(tupleExpr) || coveredByParentWinner(tupleExpr)
-				|| protectedCostFeedbackSource(tupleExpr)) {
+		if (!services.supportsOperatorFeedbackTracking(tupleExpr) || protectedCostFeedbackSource(tupleExpr)) {
 			tupleExpr.setCostFeedbackTrackingEnabled(false);
 			return;
 		}
@@ -391,13 +388,6 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 		}
 	}
 
-	private static boolean coveredByParentWinner(TupleExpr tupleExpr) {
-		return tupleExpr != null
-				&& ("covered_by_parent_winner"
-						.equals(tupleExpr.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE))
-						|| tupleExpr.getStringMetricPlanned("optimizer.cascadesCoveredByWinner") != null);
-	}
-
 	private static boolean protectedCostFeedbackSource(TupleExpr tupleExpr) {
 		if (tupleExpr == null) {
 			return true;
@@ -410,7 +400,7 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 			return true;
 		}
 		for (TupleExpr child : TupleExprs.getChildren(tupleExpr)) {
-			if (!coveredByParentWinner(child) && protectedCostFeedbackSource(child)) {
+			if (protectedCostFeedbackSource(child)) {
 				return true;
 			}
 		}
@@ -814,33 +804,6 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 							.equals(join.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE))) {
 				join.setStringMetricPlanned("optimizer.connectedEnumeration", "phase2_disconnected_components");
 				join.setStringMetricPlanned("optimizer.cartesianFallbackReason", "disconnected-components");
-				double selectedRows = plannedRowsOrNaN(join);
-				double cartesianRows = cartesianWorkRows(join);
-				if (!isPositiveFinite(cartesianRows) && isPositiveFinite(selectedRows)) {
-					cartesianRows = selectedRows;
-					join.setStringMetricPlanned("optimizer.cartesianCardinalityRepair",
-							"selected_operator_estimate");
-				}
-				double totalWorkRows = plannedWorkRowsOrNaN(join);
-				if (isPositiveFinite(cartesianRows) && isPositiveFinite(totalWorkRows)
-						&& totalWorkRows > cartesianRows) {
-					cartesianRows = Math.sqrt(cartesianRows * totalWorkRows);
-					join.setStringMetricPlanned("optimizer.cartesianCardinalityRepair",
-							"disconnected_work_midpoint");
-				}
-				join.setResultSizeEstimate(cartesianRows);
-				join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, cartesianRows);
-				join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, cartesianRows);
-				join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS, cartesianRows);
-			} else if (LmdbJoinIslandConnectivity.structurallyDisconnectedJoinIsland(join, externallyBoundVars)
-					&& INNER_BOUND_LOOKUP_ESTIMATE_SOURCE.equals(
-							join.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE))) {
-				double outputRows = plannedRowsOrNaN(join);
-				double workRows = plannedWorkRowsOrNaN(join);
-				if (isPositiveFinite(outputRows) && isPositiveFinite(workRows) && workRows > outputRows) {
-					double blendedRows = Math.sqrt(outputRows * workRows);
-					setSemanticRows(join, blendedRows, "unsupported_disconnected_work_midpoint");
-				}
 			}
 			annotateDisconnectedCartesianFallback(join.getLeftArg(), externallyBoundVars);
 			annotateDisconnectedCartesianFallback(join.getRightArg(),
@@ -859,24 +822,6 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 		}
 		rightBoundVars.addAll(LmdbJoinPlanSupport.runtimeBindingNames(join.getLeftArg()));
 		return rightBoundVars.isEmpty() ? Set.of() : Set.copyOf(rightBoundVars);
-	}
-
-	private static double cartesianWorkRows(Join join) {
-		if (join == null) {
-			return 1.0d;
-		}
-		double leftRows = plannedRows(join.getLeftArg());
-		double rightRows = plannedRows(join.getRightArg());
-		double workRows = leftRows * rightRows;
-		return Double.isFinite(workRows) && workRows >= 0.0d ? workRows : 1.0d;
-	}
-
-	private static double plannedRows(TupleExpr tupleExpr) {
-		if (tupleExpr == null) {
-			return 1.0d;
-		}
-		double rows = tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
-		return Double.isFinite(rows) && rows >= 0.0d ? rows : 1.0d;
 	}
 
 	private void promoteDistinctCursorSkipRuntimeHints(TupleExpr tupleExpr) {

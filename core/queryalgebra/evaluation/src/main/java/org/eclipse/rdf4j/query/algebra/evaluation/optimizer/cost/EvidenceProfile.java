@@ -356,6 +356,35 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 				Map.of());
 	}
 
+	public EvidenceProfile semiJoin(EvidenceProfile right, Set<String> sharedVars) {
+		if (right == null || right.rows <= 0.0d || rows <= 0.0d) {
+			return filter(0.0d, "semi-join");
+		}
+		Set<String> joinVars = safeSet(sharedVars);
+		if (joinVars.isEmpty()) {
+			return new EvidenceProfile(rows, workRows + right.workRows + rows, memoryRows,
+					Math.min(confidence, right.confidence), "semi-join", variables, finiteRelations, sketches,
+					supportingSketches, metrics);
+		}
+		double matchedRows = clampRows(matchedLeftRows(right, joinVars), 0.0d, rows);
+		double passRatio = rows > 0.0d ? matchedRows / rows : 0.0d;
+		Map<String, VariableEstimate> matchedVariables = new LinkedHashMap<>();
+		for (Map.Entry<String, VariableEstimate> entry : variables.entrySet()) {
+			matchedVariables.put(entry.getKey(), entry.getValue().scale(passRatio));
+		}
+		Map<VariableSetKey, SketchEvidence> matchedSketches = Math.abs(passRatio - 1.0d) < ROW_EPSILON ? sketches
+				: Map.of();
+		Map<VariableSetKey, SketchEvidence> matchedSupporting = Math.abs(passRatio - 1.0d) < ROW_EPSILON
+				? supportingSketches
+				: staleSupportingSketches(matchedRows, "semi-join");
+		EvidenceProfile result = new EvidenceProfile(matchedRows, workRows + right.workRows + rows, 0.0d,
+				Math.min(confidence, right.confidence), "semi-join", matchedVariables, Map.of(), matchedSketches,
+				matchedSupporting, metrics);
+		return exactSemiJoinRelation(right, joinVars)
+				.map(relation -> result.toBagEstimate().withFiniteRelation(relation).evidenceProfile())
+				.orElse(result);
+	}
+
 	public EvidenceProfile difference(EvidenceProfile right, Set<String> sharedVars) {
 		if (right == null || right.isEmpty()) {
 			return this;
@@ -695,7 +724,8 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 		}
 		Optional<FiniteRelationEstimate> leftRelation = relationContaining(joinVars);
 		Optional<FiniteRelationEstimate> rightRelation = right.relationContaining(joinVars);
-		if (leftRelation.isPresent() && rightRelation.isPresent()) {
+		if (leftRelation.filter(relation -> coversAllRows(relation, rows)).isPresent()
+				&& rightRelation.filter(relation -> coversAllRows(relation, right.rows)).isPresent()) {
 			return FiniteRelationEstimate.matchedLeftRows(leftRelation.get(), rightRelation.get(), joinVars, false);
 		}
 		Optional<Map<List<Value>, Double>> rightFrequencies = right.frequencies(joinVars);
@@ -717,6 +747,22 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 		double coveredRightDistinct = estimatedCoveredDistinct(right.rows, Math.max(leftDistinct, rightDistinct));
 		double matchRatio = Math.min(1.0d, Math.min(rightDistinct, coveredRightDistinct) / leftDistinct);
 		return rows * matchRatio;
+	}
+
+	private Optional<FiniteRelationEstimate> exactSemiJoinRelation(EvidenceProfile right, Set<String> joinVars) {
+		Optional<FiniteRelationEstimate> leftRelation = relationContaining(joinVars)
+				.filter(relation -> coversAllRows(relation, rows));
+		Optional<FiniteRelationEstimate> rightRelation = right.relationContaining(joinVars)
+				.filter(relation -> coversAllRows(relation, right.rows));
+		if (leftRelation.isEmpty() || rightRelation.isEmpty()) {
+			return Optional.empty();
+		}
+		return Optional.of(FiniteRelationEstimate.semiJoinLeft(leftRelation.get(), rightRelation.get(), joinVars,
+				"semi-join-finite-relation"));
+	}
+
+	private static boolean coversAllRows(FiniteRelationEstimate relation, double rows) {
+		return relation != null && Math.abs(relation.rows() - rows) < ROW_EPSILON;
 	}
 
 	private double matchedLeftRowsForMinus(EvidenceProfile right, Set<String> joinVars) {

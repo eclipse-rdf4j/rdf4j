@@ -101,6 +101,15 @@ class StandardRuleSpecTest {
 	}
 
 	@Test
+	void standardRegistryDelegatesJoinReorderingToUnifiedSearch() {
+		List<CascadesRule> rules = RuleRegistry.standardLogicalRules().rules();
+
+		assertFalse(containsCompiledRule(rules, "join-commute"));
+		assertFalse(containsCompiledRule(rules, "join-associate-left"));
+		assertFalse(containsCompiledRule(rules, "join-associate-right"));
+	}
+
+	@Test
 	void joinCommuteCompilesToCascadesRule() {
 		CompiledRule rule = RuleCompiler.compile(StandardRuleSpecs.joinCommute());
 		Join join = new Join(pattern("s", "p1", "o"), pattern("o", "p2", "x"));

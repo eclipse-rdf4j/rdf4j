@@ -65,6 +65,28 @@ class CascadesEstimateVectorTest {
 	}
 
 	@Test
+	void rowCardinalityUncertaintyDoesNotInflateLocalWorkPricing() {
+		CostVector exactOutput = new CostVector(3.0d, 1.0d, 0.0d, 0.0d, 0.0d,
+				1.0d, 1.0d, 1.0d, 1.0d, 0.0d, 0.25d, 10.0d);
+		CostVector uncertainOutput = new CostVector(3.0d, 1.0d, 0.0d, 0.0d, 0.0d,
+				4.0d, 4.0d, 1.0d, 1.0d, 1_000.0d, 0.25d, 10.0d);
+
+		assertEquals(exactOutput.pricedWorkRows(), uncertainOutput.pricedWorkRows(), 0.0d,
+				"Output-cardinality uncertainty must not be charged once per local physical operator");
+	}
+
+	@Test
+	void canonicalObjectiveOrderingIsStableUnderParentComposition() {
+		CostVector lowerObjective = new CostVector(10, 100, 0, 0, 0, 1, 1);
+		CostVector lowerRawWork = new CostVector(10, 99, 200, 0, 0, 1, 1);
+		CostVector uncertainParent = new CostVector(1, 1, 0, 0, 0, 100, 1);
+
+		assertTrue(lowerObjective.compareTo(lowerRawWork) < 0);
+		assertTrue(lowerObjective.plus(uncertainParent).compareTo(lowerRawWork.plus(uncertainParent)) < 0,
+				"Adding the same parent cost must not reverse a canonical child ordering");
+	}
+
+	@Test
 	void filterKeepsQErrorIntervalInsteadOfCollapsingToScalarRows() {
 		EstimateVector base = EstimateVector.heuristic(1_000.0d, 5.0d, "base");
 		QErrorInterval passInterval = QErrorInterval.fromBounds(0.10d, 0.25d, 0.50d, 0.70d,
@@ -102,6 +124,19 @@ class CascadesEstimateVectorTest {
 
 		assertEquals(1.0d, vector.evidenceCount());
 		assertEquals(1.0d, vector.metrics().get("optimizer.vectorEvidenceCount"));
+	}
+
+	@Test
+	void fromBagPreservesExactCardinalityEvidence() {
+		EstimateVector vector = StatisticsEstimate.fromBag(BagEstimate.exact(20.0d, "exact-bag"),
+				"exact-provider").vector();
+
+		assertEquals(20.0d, vector.rows());
+		assertEquals(20.0d, vector.lowerRows());
+		assertEquals(20.0d, vector.upperRows());
+		assertEquals(1.0d, vector.rowQErrorMax());
+		assertEquals(0.0d, vector.uncertaintyRows());
+		assertEquals(1.0d, vector.confidence());
 	}
 
 	private record TestSketch(double distinctRows, double innerProduct) implements DistributionSketch {

@@ -17,13 +17,14 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 
 /**
- * Multi-objective physical-plan cost used by Cascades winners. {@code workRows} is the comparable memo work-row field
- * and must use a shared access-work unit at memo boundaries.
+ * Multi-objective physical-plan cost used by Cascades winners. {@code workRows} is the raw memo work-row field and
+ * must use a shared access-work unit at memo boundaries. {@code pricedWorkRows} applies uncertainty to local work
+ * once, so composing child and operator costs remains additive and cannot reverse an already established ordering.
  */
 @Experimental
 public record CostVector(double rows, double workRows, double memoryRows, double seeks, double pageWalkRows,
 		double rowQErrorMean, double rowQErrorMax, double workQErrorMean, double workQErrorMax, double uncertaintyRows,
-		double confidence, double evidenceCount) implements Comparable<CostVector> {
+		double confidence, double evidenceCount, double pricedWorkRows) implements Comparable<CostVector> {
 
 	public static final CostVector ZERO = new CostVector(0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 1.0d, 1.0d, 1.0d, 1.0d,
 			0.0d, 1.0d, 0.0d);
@@ -44,6 +45,15 @@ public record CostVector(double rows, double workRows, double memoryRows, double
 		uncertaintyRows = finiteNonNegative(uncertaintyRows, 0.0d);
 		confidence = QErrorInterval.clamp01(confidence);
 		evidenceCount = finiteNonNegative(evidenceCount, 0.0d);
+		pricedWorkRows = finiteNonNegative(pricedWorkRows);
+	}
+
+	public CostVector(double rows, double workRows, double memoryRows, double seeks, double pageWalkRows,
+			double rowQErrorMean, double rowQErrorMax, double workQErrorMean, double workQErrorMax,
+			double uncertaintyRows, double confidence, double evidenceCount) {
+		this(rows, workRows, memoryRows, seeks, pageWalkRows, rowQErrorMean, rowQErrorMax, workQErrorMean,
+				workQErrorMax, uncertaintyRows, confidence, evidenceCount,
+				priceLocalWork(workRows, workQErrorMean, workQErrorMax, confidence, evidenceCount));
 	}
 
 	public CostVector(double rows, double workRows, double memoryRows, double seeks, double pageWalkRows,
@@ -80,12 +90,13 @@ public record CostVector(double rows, double workRows, double memoryRows, double
 				Math.max(rowQErrorMax, other.rowQErrorMax),
 				weightedMean(workQErrorMean, workRows, other.workQErrorMean, other.workRows),
 				Math.max(workQErrorMax, other.workQErrorMax), uncertaintyRows + other.uncertaintyRows,
-				Math.min(confidence, other.confidence), evidenceCount + other.evidenceCount);
+				Math.min(confidence, other.confidence), evidenceCount + other.evidenceCount,
+				pricedWorkRows + other.pricedWorkRows);
 	}
 
 	public CostVector withRows(double newRows) {
 		return new CostVector(newRows, workRows, memoryRows, seeks, pageWalkRows, rowQErrorMean, rowQErrorMax,
-				workQErrorMean, workQErrorMax, uncertaintyRows, confidence, evidenceCount);
+				workQErrorMean, workQErrorMax, uncertaintyRows, confidence, evidenceCount, pricedWorkRows);
 	}
 
 	public CostVector withWorkRows(double newWorkRows) {
@@ -95,12 +106,24 @@ public record CostVector(double rows, double workRows, double memoryRows, double
 
 	public CostVector withPageWalkRows(double newPageWalkRows) {
 		return new CostVector(rows, workRows, memoryRows, seeks, newPageWalkRows, rowQErrorMean, rowQErrorMax,
-				workQErrorMean, workQErrorMax, uncertaintyRows, confidence, evidenceCount);
+				workQErrorMean, workQErrorMax, uncertaintyRows, confidence, evidenceCount, pricedWorkRows);
 	}
 
 	public CostVector withMemoryRows(double newMemoryRows) {
 		return new CostVector(rows, workRows, newMemoryRows, seeks, pageWalkRows, rowQErrorMean, rowQErrorMax,
-				workQErrorMean, workQErrorMax, uncertaintyRows, confidence, evidenceCount);
+				workQErrorMean, workQErrorMax, uncertaintyRows, confidence, evidenceCount, pricedWorkRows);
+	}
+
+	/**
+	 * Replaces output-cardinality evidence while retaining already composed resource totals and their work evidence.
+	 * Child output estimates are inputs to an operator estimate; they are not additional evidence about the parent's
+	 * output cardinality.
+	 */
+	public CostVector withOutputEstimate(CostVector outputEstimate) {
+		Objects.requireNonNull(outputEstimate, "outputEstimate");
+		return new CostVector(outputEstimate.rows, workRows, memoryRows, seeks, pageWalkRows,
+				outputEstimate.rowQErrorMean, outputEstimate.rowQErrorMax, workQErrorMean, workQErrorMax,
+				outputEstimate.uncertaintyRows, confidence, evidenceCount, pricedWorkRows);
 	}
 
 	public CostVector forEarlyStop(long rowsBeforeStop) {
@@ -131,22 +154,13 @@ public record CostVector(double rows, double workRows, double memoryRows, double
 	}
 
 	public CostVector robust() {
-		double confidenceGap = 1.0d - confidence;
-		double thinEvidencePenalty = evidenceCount <= 0.0d ? 1.0d : 1.0d / (1.0d + Math.sqrt(evidenceCount));
-		double rowPenalty = Math.max(0.0d, rowQErrorMax - 1.0d) * 0.10d;
-		double workPenalty = Math.max(0.0d, workQErrorMax - 1.0d) * 0.25d;
-		double qErrorMultiplier = 1.0d + (rowPenalty + workPenalty) * (0.5d + confidenceGap);
-		double evidenceMultiplier = 1.0d + confidenceGap * thinEvidencePenalty;
-		double robustWorkRows = workRows * qErrorMultiplier * evidenceMultiplier
-				+ uncertaintyRows * (1.0d + confidenceGap);
-		return new CostVector(rows, robustWorkRows, memoryRows, seeks, pageWalkRows, rowQErrorMean, rowQErrorMax,
-				workQErrorMean, workQErrorMax, uncertaintyRows, confidence, evidenceCount);
+		return new CostVector(rows, pricedWorkRows, memoryRows, seeks, pageWalkRows, rowQErrorMean, rowQErrorMax,
+				workQErrorMean, workQErrorMax, uncertaintyRows, confidence, evidenceCount, pricedWorkRows);
 	}
 
 	public double objectiveScore() {
-		double robustWork = robust().workRows();
 		double ioPenalty = seeks * 0.25d + pageWalkRows * 0.05d + memoryRows * 0.01d;
-		double score = robustWork + ioPenalty;
+		double score = pricedWorkRows + ioPenalty;
 		return Double.isFinite(score) && score >= 0.0d ? score : Double.MAX_VALUE;
 	}
 
@@ -235,6 +249,23 @@ public record CostVector(double rows, double workRows, double memoryRows, double
 			return comparison;
 		}
 		return -Double.compare(evidenceCount, other.evidenceCount);
+	}
+
+	private static double priceLocalWork(double workRows, double workQErrorMean, double workQErrorMax,
+			double confidence, double evidenceCount) {
+		double safeWorkRows = finiteNonNegative(workRows);
+		double safeWorkMean = finiteQError(workQErrorMean, 4.0d);
+		double safeWorkMax = Math.max(finiteQError(workQErrorMax, safeWorkMean), safeWorkMean);
+		double safeConfidence = QErrorInterval.clamp01(confidence);
+		double safeEvidenceCount = finiteNonNegative(evidenceCount, 0.0d);
+		double confidenceGap = 1.0d - safeConfidence;
+		double thinEvidencePenalty = safeEvidenceCount <= 0.0d
+				? 1.0d
+				: 1.0d / (1.0d + Math.sqrt(safeEvidenceCount));
+		double workPenalty = Math.max(0.0d, safeWorkMax - 1.0d) * 0.25d;
+		double qErrorMultiplier = 1.0d + workPenalty * (0.5d + confidenceGap);
+		double evidenceMultiplier = 1.0d + confidenceGap * thinEvidencePenalty;
+		return finiteNonNegative(safeWorkRows * qErrorMultiplier * evidenceMultiplier);
 	}
 
 	private static double finiteNonNegative(double value) {

@@ -12,8 +12,11 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -21,38 +24,59 @@ import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
-import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
-import org.eclipse.rdf4j.query.algebra.Filter;
-import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
-import org.eclipse.rdf4j.query.algebra.QueryModelNode;
-import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoMemoFeedback;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
  * Memo group: a set of logically equivalent expressions, independent of join-factor masks.
  */
 @Experimental
 public final class MemoGroup {
+	enum LogicalEstimateMerge {
+		UNCHANGED,
+		ADDED,
+		REFINED
+	}
+
 	private final int id;
+	private final MemoExecutionDomain executionDomain;
 	private LogicalProperties logicalProperties;
 	private BindingShape bindingShape;
+	private BindingProfile outputBindingProfile = BindingProfile.ANY;
+	private final Map<LogicalOutputEstimateKey, LogicalOutputEstimate> logicalOutputEstimates = new HashMap<>();
+	private final Map<SelectedLogicalOutputEstimateKey, LogicalOutputEstimate> selectedLogicalOutputEstimates = new HashMap<>();
 	private LeoMemoFeedback leoFeedback;
 	private final List<MemoExpr> expressions = new ArrayList<>();
 	private final Set<String> expressionKeys = new HashSet<>();
 	private final Map<WinnerKey, WinnerFrontier> winnersByGoal = new HashMap<>();
+	private final Map<WinnerKey, Long> winnerRevisionsByGoal = new HashMap<>();
 	private final Set<WinnerKey> failures = new HashSet<>();
+	private long logicalRevision;
+	private long joinSearchRevision;
+	private long physicalRevision;
+	private long expressionRevision;
+	private long factRevision = 1L;
+	private MemoFactRevisions factRevisions = MemoFactRevisions.initial();
+	private long dependencyRevision;
+	private long winnerRevision;
+	private long winnerClearRevision;
+	private long lastDependencyChangeToken;
 
 	MemoGroup(int id, LogicalProperties logicalProperties) {
-		this(id, logicalProperties, BindingShape.empty(), LeoMemoFeedback.empty());
+		this(id, logicalProperties, BindingShape.empty(), LeoMemoFeedback.empty(), MemoExecutionDomain.LOCAL);
 	}
 
 	MemoGroup(int id, LogicalProperties logicalProperties, BindingShape bindingShape) {
-		this(id, logicalProperties, bindingShape, LeoMemoFeedback.empty());
+		this(id, logicalProperties, bindingShape, LeoMemoFeedback.empty(), MemoExecutionDomain.LOCAL);
 	}
 
 	MemoGroup(int id, LogicalProperties logicalProperties, BindingShape bindingShape, LeoMemoFeedback leoFeedback) {
+		this(id, logicalProperties, bindingShape, leoFeedback, MemoExecutionDomain.LOCAL);
+	}
+
+	MemoGroup(int id, LogicalProperties logicalProperties, BindingShape bindingShape, LeoMemoFeedback leoFeedback,
+			MemoExecutionDomain executionDomain) {
 		this.id = id;
+		this.executionDomain = executionDomain == null ? MemoExecutionDomain.LOCAL : executionDomain;
 		this.logicalProperties = logicalProperties == null ? LogicalProperties.EMPTY : logicalProperties;
 		this.bindingShape = bindingShape == null ? BindingShape.empty() : bindingShape;
 		this.leoFeedback = leoFeedback == null ? LeoMemoFeedback.empty() : leoFeedback;
@@ -60,6 +84,10 @@ public final class MemoGroup {
 
 	public int id() {
 		return id;
+	}
+
+	public MemoExecutionDomain executionDomain() {
+		return executionDomain;
 	}
 
 	public LogicalProperties logicalProperties() {
@@ -70,33 +98,166 @@ public final class MemoGroup {
 		return bindingShape;
 	}
 
+	/** Statistical output facts shared by every executable alternative in this equivalence group. */
+	public BindingProfile outputBindingProfile() {
+		return outputBindingProfile;
+	}
+
 	public LeoMemoFeedback leoFeedback() {
 		return leoFeedback;
 	}
 
-	void mergeLogicalProperties(LogicalProperties properties) {
-		if (properties == null) {
-			return;
-		}
-		if (logicalProperties == LogicalProperties.EMPTY) {
-			logicalProperties = properties;
-		}
+	public long logicalRevision() {
+		return logicalRevision;
 	}
 
-	void mergeBindingShape(BindingShape shape) {
+	/** Revision of logical alternatives whose shape or admissibility can change join-region extraction. */
+	public long joinSearchRevision() {
+		return joinSearchRevision;
+	}
+
+	public long physicalRevision() {
+		return physicalRevision;
+	}
+
+	public long expressionRevision() {
+		return expressionRevision;
+	}
+
+	public long factRevision() {
+		return factRevision;
+	}
+
+	public long factRevision(RuleDescriptor.MemoFact fact) {
+		return factRevisions.revision(fact);
+	}
+
+	public MemoFactRevisions factRevisions() {
+		return factRevisions;
+	}
+
+	public long dependencyRevision() {
+		return dependencyRevision;
+	}
+
+	public long winnerRevision() {
+		return winnerRevision;
+	}
+
+	long winnerClearRevision() {
+		return winnerClearRevision;
+	}
+
+	long winnerRevision(WinnerKey key) {
+		return key == null ? 0L : winnerRevisionsByGoal.getOrDefault(key, 0L);
+	}
+
+	boolean mergeLogicalProperties(LogicalProperties properties) {
+		if (properties == null) {
+			return false;
+		}
+		if (logicalProperties == LogicalProperties.EMPTY && !logicalProperties.equals(properties)) {
+			logicalProperties = properties;
+			return true;
+		}
+		return false;
+	}
+
+	boolean mergeBindingShape(BindingShape shape) {
 		if (shape == null || shape.possible().isEmpty() && shape.assured().isEmpty()) {
-			return;
+			return false;
 		}
 		if (bindingShape.possible().isEmpty() && bindingShape.assured().isEmpty()) {
 			bindingShape = shape;
+			return true;
 		}
+		return false;
 	}
 
-	void mergeLeoFeedback(LeoMemoFeedback feedback) {
+	boolean mergeLeoFeedback(LeoMemoFeedback feedback) {
 		if (feedback == null || feedback.isEmpty()) {
-			return;
+			return false;
 		}
-		leoFeedback = leoFeedback.merge(feedback);
+		LeoMemoFeedback merged = leoFeedback.merge(feedback);
+		if (merged.equals(leoFeedback)) {
+			return false;
+		}
+		leoFeedback = merged;
+		return true;
+	}
+
+	Set<RuleDescriptor.MemoFact> mergeOutputBindingProfile(BindingProfile profile) {
+		BindingProfile statisticalFacts = profile == null ? BindingProfile.ANY : profile.statisticalFacts();
+		if (statisticalFacts.isAny()) {
+			return Set.of();
+		}
+		BindingProfile merged = outputBindingProfile.mergedWith(statisticalFacts).statisticalFacts();
+		if (merged.equals(outputBindingProfile)) {
+			return Set.of();
+		}
+		EnumSet<RuleDescriptor.MemoFact> changedFacts = EnumSet.of(RuleDescriptor.MemoFact.COST_ESTIMATE);
+		if (!merged.finiteDomains().equals(outputBindingProfile.finiteDomains())) {
+			changedFacts.add(RuleDescriptor.MemoFact.FINITE_DOMAIN);
+		}
+		if (!merged.finiteRelations().equals(outputBindingProfile.finiteRelations())) {
+			changedFacts.add(RuleDescriptor.MemoFact.EXACT_FINITE_RELATION);
+		}
+		outputBindingProfile = merged;
+		return Set.copyOf(changedFacts);
+	}
+
+	Optional<LogicalOutputEstimate> logicalOutputEstimate(LogicalOutputEstimateKey key) {
+		return Optional.ofNullable(logicalOutputEstimates.get(key));
+	}
+
+	LogicalEstimateMerge mergeLogicalOutputEstimate(LogicalOutputEstimateKey key, LogicalOutputEstimate candidate) {
+		Objects.requireNonNull(key, "key");
+		Objects.requireNonNull(candidate, "candidate");
+		LogicalOutputEstimate current = logicalOutputEstimates.get(key);
+		if (current == null) {
+			logicalOutputEstimates.put(key, candidate);
+			return LogicalEstimateMerge.ADDED;
+		}
+		LogicalOutputEstimate refined = current.stronger(candidate);
+		if (refined.equals(current)) {
+			return LogicalEstimateMerge.UNCHANGED;
+		}
+		logicalOutputEstimates.put(key, refined);
+		return LogicalEstimateMerge.REFINED;
+	}
+
+	Optional<LogicalOutputEstimate> selectedLogicalOutputEstimate(SelectedLogicalOutputEstimateKey key) {
+		return Optional.ofNullable(selectedLogicalOutputEstimates.get(key));
+	}
+
+	LogicalEstimateMerge mergeSelectedLogicalOutputEstimate(SelectedLogicalOutputEstimateKey key,
+			LogicalOutputEstimate candidate) {
+		Objects.requireNonNull(key, "key");
+		Objects.requireNonNull(candidate, "candidate");
+		LogicalOutputEstimate current = selectedLogicalOutputEstimates.get(key);
+		if (current == null) {
+			selectedLogicalOutputEstimates.put(key, candidate);
+			return LogicalEstimateMerge.ADDED;
+		}
+		LogicalOutputEstimate refined = current.stronger(candidate);
+		if (refined.equals(current)) {
+			return LogicalEstimateMerge.UNCHANGED;
+		}
+		selectedLogicalOutputEstimates.put(key, refined);
+		return LogicalEstimateMerge.REFINED;
+	}
+
+	Set<WinnerKey> refineSelectedWinnerFrontiers(SelectedLogicalOutputEstimateKey estimateKey,
+			LogicalOutputEstimate estimate, CascadesCostModel costModel) {
+		Set<WinnerKey> changedKeys = new LinkedHashSet<>();
+		for (Map.Entry<WinnerKey, WinnerFrontier> entry : winnersByGoal.entrySet()) {
+			WinnerKey winnerKey = entry.getKey();
+			if (estimateKey.logicalGoal().matches(winnerKey)
+					&& entry.getValue().refineSelectedOutputEstimate(estimateKey, estimate, winnerKey, costModel)) {
+				changedKeys.add(winnerKey);
+			}
+		}
+		return changedKeys.isEmpty() ? Set.of() : Set.copyOf(changedKeys);
 	}
 
 	boolean containsExpressionKey(String structuralKey) {
@@ -109,12 +270,91 @@ public final class MemoGroup {
 	}
 
 	boolean addExpression(MemoExpr expression, String structuralKey) {
+		return addExpression(expression, structuralKey, expression.logical());
+	}
+
+	boolean addExpression(MemoExpr expression, String structuralKey, boolean changesJoinSearchSpace) {
 		Objects.requireNonNull(expression, "expression");
 		if (!expressionKeys.add(structuralKey)) {
 			return false;
 		}
 		expressions.add(expression);
 		failures.clear();
+		if (expression.logical()) {
+			logicalRevision++;
+			if (changesJoinSearchSpace) {
+				joinSearchRevision++;
+			}
+		} else {
+			physicalRevision++;
+		}
+		return true;
+	}
+
+	void replaceExpression(MemoExpr expression) {
+		Objects.requireNonNull(expression, "expression");
+		for (int index = 0; index < expressions.size(); index++) {
+			if (expressions.get(index).id() == expression.id()) {
+				expressions.set(index, expression);
+				return;
+			}
+		}
+		throw new IllegalArgumentException("Unknown expression " + expression.id() + " in group " + id);
+	}
+
+	void expressionMetadataChanged() {
+		expressionRevision++;
+	}
+
+	void joinSearchSpaceChanged() {
+		joinSearchRevision++;
+	}
+
+	void factsChanged(Set<RuleDescriptor.MemoFact> changedFacts) {
+		if (changedFacts == null || changedFacts.isEmpty()) {
+			return;
+		}
+		factRevision++;
+		factRevisions = factRevisions.incremented(changedFacts);
+	}
+
+	boolean dependencyChanged(long changeToken) {
+		if (lastDependencyChangeToken == changeToken) {
+			return false;
+		}
+		lastDependencyChangeToken = changeToken;
+		dependencyRevision++;
+		return true;
+	}
+
+	void winnerChanged(WinnerKey key) {
+		winnerRevision++;
+		if (key != null) {
+			winnerRevisionsByGoal.put(key, winnerRevision);
+		}
+	}
+
+	void winnersChanged(Set<WinnerKey> keys) {
+		if (keys == null || keys.isEmpty()) {
+			return;
+		}
+		winnerRevision++;
+		for (WinnerKey key : keys) {
+			if (key != null) {
+				winnerRevisionsByGoal.put(key, winnerRevision);
+			}
+		}
+	}
+
+	boolean clearWinners() {
+		if (winnersByGoal.isEmpty() && failures.isEmpty()) {
+			return false;
+		}
+		winnersByGoal.clear();
+		winnerRevisionsByGoal.clear();
+		failures.clear();
+		winnerRevision++;
+		winnerClearRevision++;
 		return true;
 	}
 
@@ -172,65 +412,94 @@ public final class MemoGroup {
 
 	static final class WinnerFrontier {
 		private final List<Winner> entries = new ArrayList<>();
+		private final Map<WinnerStateKey, Winner> exactStates = new HashMap<>();
+		private final IdentityHashMap<Winner, WinnerStateKey> statesByWinner = new IdentityHashMap<>();
+		private final Map<WinnerStateKey.FrontierContext, List<Winner>> winnersByContext = new HashMap<>();
+		private List<Winner> entriesSnapshot = List.of();
+		private boolean entriesSnapshotDirty;
 		private int dominatedRejectedCount;
 		private int trimmedCount;
 
 		boolean canAdd(Winner winner, int frontierLimit, boolean exactMode) {
-			int insertionPoint = insertionPoint(winner);
-			if (insertionPoint < 0) {
+			WinnerStateKey state = WinnerStateKey.of(winner);
+			if (exactStates.containsKey(state) || dominatedByExisting(state, winner)) {
 				return false;
 			}
+			return fitsWithinLimit(state, winner, frontierLimit, exactMode);
+		}
+
+		private boolean fitsWithinLimit(WinnerStateKey state, Winner winner, int frontierLimit, boolean exactMode) {
 			int limit = exactMode ? Integer.MAX_VALUE : Math.max(1, frontierLimit);
-			return entries.size() < limit || insertionPoint < limit;
+			if (exactMode || entries.size() < limit) {
+				return true;
+			}
+			int remainingSize = entries.size();
+			int insertionPoint = 0;
+			for (Winner existing : entries) {
+				if (sameContext(existing, state) && parentCostDominates(winner, existing)) {
+					remainingSize--;
+					continue;
+				}
+				if (existing.cost().compareTo(winner.cost()) <= 0) {
+					insertionPoint++;
+				}
+			}
+			return remainingSize < limit || insertionPoint < limit;
 		}
 
 		boolean add(Winner winner, int frontierLimit, boolean exactMode) {
-			int insertionPoint = insertionPoint(winner);
-			if (insertionPoint < 0) {
+			WinnerStateKey state = WinnerStateKey.of(winner);
+			if (exactStates.containsKey(state) || dominatedByExisting(state, winner)) {
 				dominatedRejectedCount++;
 				return false;
 			}
-			for (int i = entries.size() - 1; i >= 0; i--) {
-				Winner existing = entries.get(i);
-				if (sameDeliveredContext(existing, winner) && winner.cost().dominates(existing.cost())
-						&& !emergencyFallbackWouldRemoveLegalWinner(existing, winner)) {
-					entries.remove(i);
-					if (i < insertionPoint) {
-						insertionPoint--;
-					}
+			if (!fitsWithinLimit(state, winner, frontierLimit, exactMode)) {
+				trimmedCount++;
+				return false;
+			}
+			WinnerStateKey.FrontierContext context = state.context();
+			List<Winner> contextEntries = winnersByContext.computeIfAbsent(context, ignored -> new ArrayList<>());
+			for (int i = contextEntries.size() - 1; i >= 0; i--) {
+				Winner existing = contextEntries.get(i);
+				if (parentCostDominates(winner, existing)) {
+					contextEntries.remove(i);
+					WinnerStateKey existingState = statesByWinner.remove(existing);
+					exactStates.remove(existingState);
+					removeIdentity(entries, existing);
+					entriesSnapshotDirty = true;
 				}
 			}
+			int insertionPoint = insertionPoint(winner);
 			int limit = exactMode ? Integer.MAX_VALUE : Math.max(1, frontierLimit);
-			if (insertionPoint > entries.size()) {
-				insertionPoint = entries.size();
-			}
 			if (entries.size() >= limit) {
 				if (insertionPoint >= limit) {
 					trimmedCount++;
 					return false;
 				}
-				entries.remove(entries.size() - 1);
+				unregister(entries.removeLast());
+				contextEntries = winnersByContext.computeIfAbsent(context, ignored -> new ArrayList<>());
 				trimmedCount++;
 			}
 			entries.add(insertionPoint, winner);
+			contextEntries.add(winner);
+			exactStates.put(state, winner);
+			statesByWinner.put(winner, state);
+			entriesSnapshotDirty = true;
 			return true;
 		}
 
 		private int insertionPoint(Winner winner) {
-			int insertionPoint = 0;
-			for (int i = 0; i < entries.size(); i++) {
-				Winner existing = entries.get(i);
-				if (sameDeliveredContext(existing, winner) && existing.cost().dominates(winner.cost())
-						&& !baselineBlocksRuleAlternative(existing, winner)
-						&& !emergencyFallbackBlocksLegalAlternative(existing, winner)
-						&& !finiteAnchorBoundInputAlternative(existing, winner)) {
-					return -1;
-				}
-				if (existing.cost().compareTo(winner.cost()) <= 0) {
-					insertionPoint = i + 1;
+			int low = 0;
+			int high = entries.size();
+			while (low < high) {
+				int middle = (low + high) >>> 1;
+				if (entries.get(middle).cost().compareTo(winner.cost()) <= 0) {
+					low = middle + 1;
+				} else {
+					high = middle;
 				}
 			}
-			return insertionPoint;
+			return low;
 		}
 
 		Optional<Winner> best() {
@@ -238,7 +507,11 @@ public final class MemoGroup {
 		}
 
 		List<Winner> entries() {
-			return List.copyOf(entries);
+			if (entriesSnapshotDirty) {
+				entriesSnapshot = List.copyOf(entries);
+				entriesSnapshotDirty = false;
+			}
+			return entriesSnapshot;
 		}
 
 		int dominatedRejectedCount() {
@@ -249,99 +522,96 @@ public final class MemoGroup {
 			return trimmedCount;
 		}
 
-		private static boolean sameDeliveredContext(Winner left, Winner right) {
-			return left.expression().groupId() == right.expression().groupId()
-					&& Objects.equals(left.deliveredProperties(), right.deliveredProperties());
-		}
-
-		private static boolean baselineBlocksRuleAlternative(Winner existing, Winner candidate) {
-			return isBaseline(existing) && !isBaseline(candidate);
-		}
-
-		private static boolean emergencyFallbackBlocksLegalAlternative(Winner existing, Winner candidate) {
-			return dependsOnEmergencyFallback(existing) && !dependsOnEmergencyFallback(candidate);
-		}
-
-		private static boolean emergencyFallbackWouldRemoveLegalWinner(Winner existing, Winner candidate) {
-			return !dependsOnEmergencyFallback(existing) && dependsOnEmergencyFallback(candidate);
-		}
-
-		private static boolean dependsOnEmergencyFallback(Winner winner) {
-			if (winner == null || winner.proofs() == null) {
-				return false;
-			}
-			return winner.proofs()
-					.stream()
-					.anyMatch(proof -> proof != null
-							&& "existing-algebra-emergency-fallback".equals(proof.ruleId()));
-		}
-
-		private static boolean finiteAnchorBoundInputAlternative(Winner existing, Winner candidate) {
-			if (candidate == null || candidate.deliveredProperties() == null
-					|| candidate.deliveredProperties().inputBoundVars().isEmpty()) {
-				return false;
-			}
-			return containsFiniteAnchor(candidate) && containsMaterializedListMemberFilter(existing);
-		}
-
-		private static boolean containsFiniteAnchor(Winner winner) {
-			return containsNode(winnerTupleExpr(winner), BindingSetAssignment.class);
-		}
-
-		private static boolean containsMaterializedListMemberFilter(Winner winner) {
-			TupleExpr tupleExpr = winnerTupleExpr(winner);
-			if (tupleExpr == null) {
-				return false;
-			}
-			boolean[] found = { false };
-			tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-				@Override
-				public void meet(Filter node) {
-					if (containsNode(node.getCondition(), ListMemberOperator.class)) {
-						found[0] = true;
-						return;
-					}
-					super.meet(node);
+		boolean refineSelectedOutputEstimate(SelectedLogicalOutputEstimateKey estimateKey,
+				LogicalOutputEstimate estimate, WinnerKey winnerKey, CascadesCostModel costModel) {
+			List<Winner> refinedEntries = new ArrayList<>(entries.size());
+			boolean changed = false;
+			OptimizationGoal goal = OptimizationGoal.exact(winnerKey.requiredProperties())
+					.withCostPolicy(winnerKey.costPolicy())
+					.withRowGoal(winnerKey.rowGoal())
+					.withSemanticScope(winnerKey.semanticScope())
+					.withInputBindingContext(winnerKey.inputBindingContext());
+			for (Winner winner : entries) {
+				Winner refined = winner;
+				if (winner.selectedOutputExplicit()
+						&& estimateKey.selectedOutputNames().equals(winner.selectedOutputNames())) {
+					PhysicalProperties selectedDelivered = estimate.applyTo(
+							winner.deliveredProperties().restrictOutputTo(winner.selectedOutputNames()));
+					CostVector selectedCost = costModel.applyOutputGoal(winner.expression(), goal, selectedDelivered,
+							estimate.evidence());
+					double selectedRows = selectedCost == null ? estimate.evidence().rows() : selectedCost.rows();
+					refined = winner.withSelectedOutputEstimate(selectedRows, estimate.bindingProfile());
 				}
-			});
-			return found[0];
-		}
-
-		private static TupleExpr winnerTupleExpr(Winner winner) {
-			if (winner == null) {
-				return null;
+				refinedEntries.add(refined);
+				changed |= refined != winner;
 			}
-			if (winner.plan() != null) {
-				return winner.plan();
-			}
-			return winner.expression() == null ? null : winner.expression().tupleExpr();
-		}
-
-		private static boolean containsNode(QueryModelNode root, Class<? extends QueryModelNode> nodeType) {
-			if (root == null || nodeType == null) {
+			if (!changed) {
 				return false;
 			}
-			boolean[] found = { false };
-			root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-				@Override
-				protected void meetNode(QueryModelNode node) {
-					if (nodeType.isInstance(node)) {
-						found[0] = true;
-						return;
-					}
-					super.meetNode(node);
+			int previousDominatedRejectedCount = dominatedRejectedCount;
+			int previousTrimmedCount = trimmedCount;
+			entries.clear();
+			exactStates.clear();
+			statesByWinner.clear();
+			winnersByContext.clear();
+			entriesSnapshotDirty = true;
+			for (Winner refined : refinedEntries) {
+				add(refined, Integer.MAX_VALUE, true);
+			}
+			dominatedRejectedCount = previousDominatedRejectedCount;
+			trimmedCount = previousTrimmedCount;
+			return true;
+		}
+
+		private boolean dominatedByExisting(WinnerStateKey state, Winner candidate) {
+			List<Winner> contextEntries = winnersByContext.get(state.context());
+			if (contextEntries == null) {
+				return false;
+			}
+			for (Winner existing : contextEntries) {
+				if (parentCostDominates(existing, candidate)) {
+					return true;
 				}
-			});
-			return found[0];
+			}
+			return false;
 		}
 
-		private static boolean isBaseline(Winner winner) {
-			if (winner == null || winner.proofs() == null || winner.proofs().isEmpty()) {
-				return false;
+		private boolean sameContext(Winner existing, WinnerStateKey candidateState) {
+			WinnerStateKey existingState = statesByWinner.get(existing);
+			return existingState != null && existingState.context().equals(candidateState.context());
+		}
+
+		private boolean parentCostDominates(Winner candidate, Winner existing) {
+			return candidate.cost().compareTo(existing.cost()) <= 0
+					&& candidate.cost().rows() <= existing.cost().rows()
+					&& candidate.cost().workRows() <= existing.cost().workRows()
+					&& candidate.selectedOutputRows() <= existing.selectedOutputRows();
+		}
+
+		private void unregister(Winner winner) {
+			WinnerStateKey state = statesByWinner.remove(winner);
+			if (state == null) {
+				return;
 			}
-			String ruleId = winner.proofs().getFirst().ruleId();
-			return "baseline-existing-algebra".equals(ruleId)
-					|| "existing-algebra-emergency-fallback".equals(ruleId);
+			exactStates.remove(state);
+			entriesSnapshotDirty = true;
+			List<Winner> contextEntries = winnersByContext.get(state.context());
+			if (contextEntries == null) {
+				return;
+			}
+			removeIdentity(contextEntries, winner);
+			if (contextEntries.isEmpty()) {
+				winnersByContext.remove(state.context());
+			}
+		}
+
+		private static void removeIdentity(List<Winner> winners, Winner target) {
+			for (int i = winners.size() - 1; i >= 0; i--) {
+				if (winners.get(i) == target) {
+					winners.remove(i);
+					return;
+				}
+			}
 		}
 	}
 }

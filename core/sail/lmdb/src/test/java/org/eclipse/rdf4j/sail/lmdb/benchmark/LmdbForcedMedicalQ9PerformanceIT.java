@@ -33,7 +33,7 @@ class LmdbForcedMedicalQ9PerformanceIT {
 	private static final int QUERY_INDEX = 9;
 	private static final int MAX_EXECUTION_TIME_SECONDS = 30;
 	private static final int WARMUPS_PER_QUERY = 2;
-	private static final Path REPORT_PATH = Path.of("target", "forced-medical-q9-performance.txt");
+	private static final Path REPORT_PATH = BenchmarkPathSupport.resolveTarget("forced-medical-q9-performance.txt");
 	private static final String FORCED_SCOPE_QUERY = """
 			SELECT (COUNT(DISTINCT ?enc) AS ?count) WHERE {
 			    ?enc a <http://example.com/theme/medical/Encounter> .

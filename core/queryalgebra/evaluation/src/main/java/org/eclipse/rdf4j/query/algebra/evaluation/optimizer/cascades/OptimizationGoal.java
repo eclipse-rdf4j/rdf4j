@@ -19,9 +19,12 @@ import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
+import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -33,7 +36,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 @Experimental
 public record OptimizationGoal(PhysicalProperties requiredProperties, String semanticScope, CostPolicy costPolicy,
 		CostVector costBound, Set<PhysicalProperties> excludedProperties, SearchMode searchMode, long deadlineNanos,
-		int taskBudget, RowGoal rowGoal, JoinFactorCostModel.EstimationTier estimationTier) {
+		int taskBudget, RowGoal rowGoal, JoinFactorCostModel.EstimationTier estimationTier,
+		InputBindingContext inputBindingContext) {
 
 	public static final String BAG_SEMANTICS = "logical-bag";
 	public static final String SET_SEMANTICS = "logical-set";
@@ -46,8 +50,15 @@ public record OptimizationGoal(PhysicalProperties requiredProperties, String sem
 				taskBudget, RowGoal.ALL, JoinFactorCostModel.EstimationTier.STANDARD);
 	}
 
+	public OptimizationGoal(PhysicalProperties requiredProperties, String semanticScope, CostPolicy costPolicy,
+			CostVector costBound, Set<PhysicalProperties> excludedProperties, SearchMode searchMode, long deadlineNanos,
+			int taskBudget, RowGoal rowGoal, JoinFactorCostModel.EstimationTier estimationTier) {
+		this(requiredProperties, semanticScope, costPolicy, costBound, excludedProperties, searchMode, deadlineNanos,
+				taskBudget, rowGoal, estimationTier, InputBindingContext.NONE);
+	}
+
 	public OptimizationGoal {
-		requiredProperties = requiredProperties == null ? PhysicalProperties.ANY : requiredProperties;
+		requiredProperties = requiredProperties == null ? PhysicalProperties.ANY : requiredProperties.executionContract();
 		semanticScope = semanticScope == null || semanticScope.isBlank() ? BAG_SEMANTICS : semanticScope;
 		costPolicy = costPolicy == null ? CostPolicy.EXACT : costPolicy;
 		costBound = costBound == null ? CostVector.INFINITE : costBound;
@@ -57,6 +68,7 @@ public record OptimizationGoal(PhysicalProperties requiredProperties, String sem
 		taskBudget = taskBudget <= 0 ? Integer.MAX_VALUE : taskBudget;
 		rowGoal = rowGoal == null ? RowGoal.ALL : rowGoal;
 		estimationTier = estimationTier == null ? JoinFactorCostModel.EstimationTier.STANDARD : estimationTier;
+		inputBindingContext = inputBindingContext == null ? InputBindingContext.NONE : inputBindingContext;
 	}
 
 	public static OptimizationGoal exact(PhysicalProperties requiredProperties) {
@@ -92,26 +104,28 @@ public record OptimizationGoal(PhysicalProperties requiredProperties, String sem
 
 	public OptimizationGoal forGroupCostBound(CostVector bound) {
 		return new OptimizationGoal(requiredProperties, semanticScope, costPolicy, bound, excludedProperties,
-				searchMode, deadlineNanos, taskBudget, rowGoal, estimationTier);
+				searchMode, deadlineNanos, taskBudget, rowGoal, estimationTier, inputBindingContext);
 	}
 
 	public OptimizationGoal withRequiredProperties(PhysicalProperties properties) {
 		return new OptimizationGoal(properties, semanticScope, costPolicy, costBound, excludedProperties, searchMode,
-				deadlineNanos, taskBudget, rowGoal, estimationTier);
+				deadlineNanos, taskBudget, rowGoal, estimationTier, inputBindingContext);
 	}
 
 	public OptimizationGoal withRowGoal(RowGoal outputGoal) {
 		RowGoal normalized = outputGoal == null ? RowGoal.ALL : outputGoal;
-		return new OptimizationGoal(requiredProperties,
-				normalized.existenceOnly() ? EXISTENCE_SEMANTICS : semanticScope,
+		String normalizedScope = normalized.existenceOnly()
+				? EXISTENCE_SEMANTICS
+				: EXISTENCE_SEMANTICS.equals(semanticScope) ? BAG_SEMANTICS : semanticScope;
+		return new OptimizationGoal(requiredProperties, normalizedScope,
 				costPolicy, costBound, excludedProperties, searchMode, deadlineNanos, taskBudget, normalized,
-				estimationTier);
+				estimationTier, inputBindingContext);
 	}
 
 	public OptimizationGoal withoutRowGoal() {
 		String scope = EXISTENCE_SEMANTICS.equals(semanticScope) ? BAG_SEMANTICS : semanticScope;
 		return new OptimizationGoal(requiredProperties, scope, costPolicy, costBound, excludedProperties, searchMode,
-				deadlineNanos, taskBudget, RowGoal.ALL, estimationTier);
+				deadlineNanos, taskBudget, RowGoal.ALL, estimationTier, inputBindingContext);
 	}
 
 	public OptimizationGoal withResultRowLimit(long rowLimit, boolean allowEarlyStop) {
@@ -124,19 +138,27 @@ public record OptimizationGoal(PhysicalProperties requiredProperties, String sem
 	}
 
 	public OptimizationGoal withSemanticScope(String newSemanticScope) {
+		RowGoal scopedRowGoal = EXISTENCE_SEMANTICS.equals(newSemanticScope)
+				? rowGoal.asExistenceOnly()
+				: rowGoal;
 		return new OptimizationGoal(requiredProperties, newSemanticScope, costPolicy, costBound, excludedProperties,
-				searchMode, deadlineNanos, taskBudget, rowGoal, estimationTier);
+				searchMode, deadlineNanos, taskBudget, scopedRowGoal, estimationTier, inputBindingContext);
 	}
 
 	public OptimizationGoal withEstimationTier(JoinFactorCostModel.EstimationTier tier) {
 		return new OptimizationGoal(requiredProperties, semanticScope, costPolicy, costBound, excludedProperties,
-				searchMode, deadlineNanos, taskBudget, rowGoal, tier);
+				searchMode, deadlineNanos, taskBudget, rowGoal, tier, inputBindingContext);
 	}
 
 	public OptimizationGoal withCostPolicy(CostPolicy policy) {
 		return new OptimizationGoal(requiredProperties, semanticScope, policy, costBound, excludedProperties,
 				searchMode,
-				deadlineNanos, taskBudget, rowGoal, estimationTier);
+				deadlineNanos, taskBudget, rowGoal, estimationTier, inputBindingContext);
+	}
+
+	public OptimizationGoal withInputBindingContext(InputBindingContext context) {
+		return new OptimizationGoal(requiredProperties, semanticScope, costPolicy, costBound, excludedProperties,
+				searchMode, deadlineNanos, taskBudget, rowGoal, estimationTier, context);
 	}
 
 	public OptimizationGoal normalized(BindingUniverse universe) {
@@ -150,7 +172,7 @@ public record OptimizationGoal(PhysicalProperties requiredProperties, String sem
 						.map(properties -> properties.normalized(universe))
 						.collect(java.util.stream.Collectors.toUnmodifiableSet());
 		return new OptimizationGoal(normalizedRequired, semanticScope, costPolicy, costBound, normalizedExcluded,
-				searchMode, deadlineNanos, taskBudget, rowGoal, estimationTier);
+				searchMode, deadlineNanos, taskBudget, rowGoal, estimationTier, inputBindingContext);
 	}
 
 	public OptimizationGoal asBudgeted(Duration timeout, int budget) {
@@ -161,11 +183,11 @@ public record OptimizationGoal(PhysicalProperties requiredProperties, String sem
 			deadline = Long.MAX_VALUE - now < nanos ? Long.MAX_VALUE : now + nanos;
 		}
 		return new OptimizationGoal(requiredProperties, semanticScope, costPolicy, costBound, excludedProperties,
-				SearchMode.BUDGETED, deadline, budget, rowGoal, estimationTier);
+				SearchMode.BUDGETED, deadline, budget, rowGoal, estimationTier, inputBindingContext);
 	}
 
 	public WinnerKey key(int groupId) {
-		return new WinnerKey(groupId, requiredProperties, semanticScope, costPolicy, rowGoal);
+		return new WinnerKey(groupId, requiredProperties, semanticScope, costPolicy, rowGoal, inputBindingContext);
 	}
 
 	public boolean excludes(PhysicalProperties properties) {
@@ -188,10 +210,38 @@ public record OptimizationGoal(PhysicalProperties requiredProperties, String sem
 		return System.nanoTime() > deadlineNanos;
 	}
 
+	@Override
+	public int hashCode() {
+		int hash = 1;
+		hash = combineHash(hash, requiredProperties.executionContractHashCode());
+		hash = combineHash(hash, semanticScope);
+		hash = combineHash(hash, costPolicy);
+		hash = combineHash(hash, costBound);
+		int excludedHash = excludedProperties.stream()
+				.mapToInt(PhysicalProperties::executionContractHashCode)
+				.sum();
+		hash = combineHash(hash, excludedHash);
+		hash = combineHash(hash, searchMode);
+		hash = combineHash(hash, Long.hashCode(deadlineNanos));
+		hash = combineHash(hash, taskBudget);
+		hash = combineHash(hash, rowGoal);
+		hash = combineHash(hash, estimationTier);
+		return combineHash(hash, inputBindingContext);
+	}
+
+	private static int combineHash(int hash, Object value) {
+		return 31 * hash + Objects.hashCode(value);
+	}
+
+	private static int combineHash(int hash, int value) {
+		return 31 * hash + value;
+	}
+
 	private static RootOutput inspectRootOutput(TupleExpr root) {
 		TupleExpr current = unwrapQueryRoot(root);
 		RowGoal rowGoal = RowGoal.ALL;
 		List<String> ordering = List.of();
+		List<Set<String>> outputProjectionNames = new ArrayList<>();
 		boolean changed = true;
 		while (current != null && changed) {
 			changed = false;
@@ -199,10 +249,20 @@ public record OptimizationGoal(PhysicalProperties requiredProperties, String sem
 				rowGoal = rowGoal.composedWith(slice.getOffset(), slice.getLimit());
 				current = slice.getArg();
 				changed = true;
-			} else if (current instanceof Order order) {
-				ordering = ordering(order);
-				current = order.getArg();
+			} else if (current instanceof Distinct distinct) {
+				current = distinct.getArg();
 				changed = true;
+			} else if (current instanceof Reduced reduced) {
+				current = reduced.getArg();
+				changed = true;
+			} else if (current instanceof Projection projection && transparentOutputProjection(projection)) {
+				outputProjectionNames.add(CascadesRewriteSupport.identityProjectionNames(projection));
+				current = projection.getArg();
+				changed = true;
+			} else if (current instanceof Order order) {
+				List<String> candidate = ordering(order);
+				ordering = orderKeysSurvive(candidate, outputProjectionNames) ? candidate : List.of();
+				break;
 			}
 		}
 		boolean existenceOnly = rowGoal.offset() == 0L && rowGoal.limit() == 1L
@@ -211,6 +271,30 @@ public record OptimizationGoal(PhysicalProperties requiredProperties, String sem
 			rowGoal = rowGoal.asExistenceOnly();
 		}
 		return new RootOutput(rowGoal, ordering, existenceOnly);
+	}
+
+	private static boolean transparentOutputProjection(Projection projection) {
+		return projection != null
+				&& !projection.isSubquery()
+				&& !projection.isVariableScopeChange()
+				&& projection.getProjectionContext() == null
+				&& CascadesRewriteSupport.identityProjectionNames(projection) != null;
+	}
+
+	private static boolean orderKeysSurvive(List<String> ordering, List<Set<String>> outputProjectionNames) {
+		if (ordering == null || ordering.isEmpty()) {
+			return false;
+		}
+		for (Set<String> projectedNames : outputProjectionNames) {
+			for (String ordered : ordering) {
+				int separator = ordered.indexOf(':');
+				String name = separator < 0 ? ordered : ordered.substring(0, separator);
+				if (!projectedNames.contains(name)) {
+					return false;
+				}
+			}
+		}
+		return true;
 	}
 
 	private static TupleExpr unwrapQueryRoot(TupleExpr root) {
@@ -243,7 +327,7 @@ public record OptimizationGoal(PhysicalProperties requiredProperties, String sem
 		}
 		Set<PhysicalProperties> copy = new LinkedHashSet<>();
 		for (PhysicalProperties property : properties) {
-			copy.add(Objects.requireNonNull(property, "excluded property"));
+			copy.add(Objects.requireNonNull(property, "excluded property").executionContract());
 		}
 		return Set.copyOf(copy);
 	}

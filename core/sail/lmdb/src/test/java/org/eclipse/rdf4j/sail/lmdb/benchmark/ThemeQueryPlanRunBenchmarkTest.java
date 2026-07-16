@@ -51,6 +51,26 @@ class ThemeQueryPlanRunBenchmarkTest {
 	}
 
 	@Test
+	void legacyEstimatorAliasKeepsCanonicalStoreDirectoryAcrossConfigInitialization() throws Exception {
+		ThemeQueryPlanRunBenchmark.BaseState state = new ThemeQueryPlanRunBenchmark.BaseState();
+		state.themeName = Theme.MEDICAL_RECORDS.name();
+		state.sketchEstimatorStrategy = "omni";
+		Method storeDirectoryMethod = ThemeQueryPlanRunBenchmark.BaseState.class.getDeclaredMethod("storeDirectory");
+		storeDirectoryMethod.setAccessible(true);
+		Method createConfigMethod = ThemeQueryPlanRunBenchmark.BaseState.class.getDeclaredMethod("createStoreConfig");
+		createConfigMethod.setAccessible(true);
+		Field storeConfigField = ThemeQueryPlanRunBenchmark.BaseState.class.getDeclaredField("storeConfig");
+		storeConfigField.setAccessible(true);
+
+		File beforeConfigInitialization = (File) storeDirectoryMethod.invoke(state);
+		storeConfigField.set(state, createConfigMethod.invoke(state));
+		File afterConfigInitialization = (File) storeDirectoryMethod.invoke(state);
+
+		assertEquals(beforeConfigInitialization, afterConfigInitialization);
+		assertEquals("complete-unified", afterConfigInitialization.getName());
+	}
+
+	@Test
 	void trialTeardownPrintsTelemetryPlan() throws Exception {
 		ThemeQueryPlanRunBenchmark.ExecutionState state = new ThemeQueryPlanRunBenchmark.ExecutionState();
 		state.themeName = Theme.MEDICAL_RECORDS.name();

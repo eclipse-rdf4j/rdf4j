@@ -71,7 +71,8 @@ final class QuadSynopsisDelta {
 				projection = sample.projectionSample(probe);
 			}
 			if (projection.matchedRows() > 0) {
-				distribution = Optional.of(PrimitiveDistributionSketch.from(projection, rows.estimate(), sampleComplete));
+				distribution = Optional
+						.of(PrimitiveDistributionSketch.from(projection, rows.estimate(), sampleComplete));
 			}
 		}
 		return new QuadEvidence(rows, distribution, true);

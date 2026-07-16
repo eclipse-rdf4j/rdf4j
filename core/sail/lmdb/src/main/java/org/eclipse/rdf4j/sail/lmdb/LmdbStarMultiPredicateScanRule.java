@@ -27,15 +27,28 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalPro
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RdfStatisticsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleApplication;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleDescriptor;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleProof;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleRootOperator;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
 
 final class LmdbStarMultiPredicateScanRule extends LmdbRule {
 	private final RdfStatisticsProvider statisticsProvider;
 
 	LmdbStarMultiPredicateScanRule(EvaluationStatistics statistics) {
-		super("lmdb-star-multi-predicate-scan", RuleKind.IMPLEMENTATION, 118, statistics);
+		super("lmdb-star-multi-predicate-scan", RuleKind.IMPLEMENTATION, 118, statistics,
+				scheduling(RuleRootOperator.JOIN)
+						.readsFacts(RuleDescriptor.MemoFact.POSSIBLE_BINDINGS,
+								RuleDescriptor.MemoFact.ASSURED_BINDINGS,
+								RuleDescriptor.MemoFact.REQUIRED_INPUTS,
+								RuleDescriptor.MemoFact.STATISTICS_EPOCH)
+						.readsChildren(RuleDescriptor.ChildProperty.BINDING_PROFILE,
+								RuleDescriptor.ChildProperty.ACCESS_PATH,
+								RuleDescriptor.ChildProperty.ESTIMATE)
+						.produces(RuleDescriptor.ProducedChange.PHYSICAL_EXPRESSION,
+								RuleDescriptor.ProducedChange.PROOF,
+								RuleDescriptor.ProducedChange.ESTIMATE));
 		this.statisticsProvider = statistics instanceof RdfStatisticsProvider provider ? provider : null;
 	}
 
@@ -70,13 +83,13 @@ final class LmdbStarMultiPredicateScanRule extends LmdbRule {
 				.duplicateBehavior(PhysicalProperties.DuplicateBehavior.PRESERVES)
 				.bindingProfile(BindingProfile.fromEstimate(alternative, starEstimate))
 				.build();
-		CostVector cost = starEstimate.vector().toCostVector();
+		CostVector estimatedTotalCost = starEstimate.vector().toCostVector();
 		RuleProof proof = proof(semanticScope(goal),
 				Set.of("subject=" + plan.get().subjectName(),
 						"predicates=" + plan.get().predicateValues().size(),
 						"batchedPredicateScan", "independentScansCompared"),
 				"LMDB can evaluate a constant-predicate subject star by scanning the subject/predicate range once");
-		return List.of(RuleApplication.opaquePhysical(expression.groupId(), alternative, delivered, cost, proof,
-				"lmdb-star-scan", snapshot(starEstimate, cost, starEstimate.method())));
+		return List.of(RuleApplication.physical(expression.groupId(), alternative, delivered, CostVector.ZERO, proof,
+				"lmdb-star-scan", snapshot(starEstimate, estimatedTotalCost, starEstimate.method())));
 	}
 }

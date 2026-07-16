@@ -13,21 +13,17 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbCascadesOptionalEliminationTestSupport.PREFIX;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbCascadesOptionalEliminationTestSupport.arguments;
-import static org.eclipse.rdf4j.sail.lmdb.LmdbCascadesOptionalEliminationTestSupport.containsExists;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbCascadesOptionalEliminationTestSupport.containsLeftJoin;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbCascadesOptionalEliminationTestSupport.containsPlannedStringMetric;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbCascadesOptionalEliminationTestSupport.diagnosticPlan;
-import static org.eclipse.rdf4j.sail.lmdb.LmdbCascadesOptionalEliminationTestSupport.firstGroup;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbCascadesOptionalEliminationTestSupport.parseTupleExpr;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbCascadesOptionalEliminationTestSupport.repairParentReferences;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbCascadesOptionalEliminationTestSupport.restoreProperty;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.stream.Stream;
 
-import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
@@ -44,33 +40,37 @@ import org.junit.jupiter.params.provider.MethodSource;
 class LmdbCascadesOptionalEliminationCoverageTest {
 
 	@Test
-	void distinctExistsAlternativeCombinesUnusedOptionalRemovalAndExistsJoin() {
-		TupleExpr tupleExpr = parseTupleExpr(PREFIX + """
-				SELECT (COUNT(DISTINCT ?enc) AS ?count) WHERE {
-				  VALUES ?code { "DX-200" "DX-201" }
-				  ?cond ex:code ?code .
-				  ?enc ex:hasCondition ?cond .
-				  ?enc a ex:Encounter .
-				  OPTIONAL {
-				    ?enc ex:handledBy ?practitioner .
-				  }
-				  FILTER EXISTS {
-				    ?enc ex:hasObservation ?obs .
-				  }
-				}
-				""");
-		Group group = firstGroup(tupleExpr);
-		assertNotNull(group, tupleExpr.toString());
+	void countDistinctUnusedOptionalBeforeMinusIsEliminated() {
+		String previousPolicy = System.setProperty("rdf4j.optimizer.lmdb.cascades.standardPlanPolicy", "off");
+		try {
+			TupleExpr tupleExpr = parseTupleExpr(PREFIX + """
+					SELECT (COUNT(DISTINCT ?enc) AS ?count) WHERE {
+					  ?enc a ex:Encounter .
+					  OPTIONAL { ?enc ex:handledBy ?practitioner . }
+					  MINUS {
+					    ?enc ex:hasObservation ?obs .
+					    ?obs ex:value ?value .
+					    FILTER (?value < 60)
+					  }
+					}
+					""");
+			repairParentReferences(tupleExpr);
+			TripleSource tripleSource = new EmptyTripleSource();
+			StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
 
-		Group alternative = LmdbCascadesRuleProvider.distinctExistsJoinAlternative(group);
+			for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+					new EvaluationStatistics()).getOptimizers()) {
+				optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+			}
+			String diagnosticPlan = diagnosticPlan(tupleExpr);
 
-		assertNotNull(alternative, tupleExpr.toString());
-		String diagnosticPlan = alternative.toString();
-		assertFalse(containsLeftJoin(alternative), diagnosticPlan);
-		assertFalse(containsExists(alternative), diagnosticPlan);
-		assertTrue(diagnosticPlan.contains("hasObservation"), diagnosticPlan);
-		assertTrue(alternative.getStringMetricPlanned("optimizer.semanticRewrite")
-				.contains("lmdb-distinct-exists-join"));
+			assertFalse(containsLeftJoin(tupleExpr), diagnosticPlan);
+			assertFalse(diagnosticPlan.contains("handledBy"), diagnosticPlan);
+			assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
+					"rule=lmdb-remove-unused-optional"), diagnosticPlan);
+		} finally {
+			restoreProperty("rdf4j.optimizer.lmdb.cascades.standardPlanPolicy", previousPolicy);
+		}
 	}
 
 	@ParameterizedTest(name = "{0}")

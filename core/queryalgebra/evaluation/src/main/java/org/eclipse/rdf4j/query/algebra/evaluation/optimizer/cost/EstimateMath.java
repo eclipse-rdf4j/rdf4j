@@ -45,6 +45,12 @@ public final class EstimateMath {
 				.orElse(result);
 	}
 
+	public static BagEstimate semiJoin(BagEstimate left, BagEstimate right, Set<String> sharedVars) {
+		return left.evidenceProfile()
+				.semiJoin(right.evidenceProfile(), sharedVars)
+				.toBagEstimate();
+	}
+
 	public static BagEstimate leftJoin(BagEstimate left, BagEstimate right, Set<String> sharedVars) {
 		return left.evidenceProfile()
 				.leftJoin(right.evidenceProfile(), sharedVars)

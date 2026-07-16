@@ -39,14 +39,29 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Optimizatio
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleApplication;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleDescriptor;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleProof;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleRootOperator;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 final class LmdbAccessPathImplementationRule extends LmdbRule {
 	LmdbAccessPathImplementationRule(EvaluationStatistics statistics) {
-		super("lmdb-access-path", RuleKind.IMPLEMENTATION, 100, statistics);
+		super("lmdb-access-path", RuleKind.IMPLEMENTATION, 100, statistics,
+				scheduling(RuleRootOperator.STATEMENT_PATTERN, RuleRootOperator.BINDING_SET_ASSIGNMENT,
+						RuleRootOperator.EMPTY, RuleRootOperator.FILTER)
+								.readsGoalProperties(RuleDescriptor.GoalProperty.INVOCATION_CARDINALITY)
+								.readsFacts(RuleDescriptor.MemoFact.POSSIBLE_BINDINGS,
+										RuleDescriptor.MemoFact.ASSURED_BINDINGS,
+										RuleDescriptor.MemoFact.FINITE_DOMAIN,
+										RuleDescriptor.MemoFact.EXACT_FINITE_RELATION,
+										RuleDescriptor.MemoFact.REQUIRED_INPUTS,
+										RuleDescriptor.MemoFact.STATISTICS_EPOCH)
+								.readsChildren(RuleDescriptor.ChildProperty.BINDING_PROFILE)
+								.produces(RuleDescriptor.ProducedChange.PHYSICAL_EXPRESSION,
+										RuleDescriptor.ProducedChange.PROOF,
+										RuleDescriptor.ProducedChange.ESTIMATE));
 	}
 
 	@Override
@@ -64,7 +79,7 @@ final class LmdbAccessPathImplementationRule extends LmdbRule {
 				"LMDB cost model selected a scan, prefix lookup or direct lookup physical alternative");
 		CostVector cost = cost(estimate.get());
 		RuleApplication base = RuleApplication.physical(expression.groupId(), expression.tupleExpr().clone(),
-				delivered(expression.tupleExpr(), estimate.get(), goal), cost, proof,
+				delivered(expression.tupleExpr(), estimate.get(), goal), CostVector.ZERO, proof,
 				"lmdb-access", snapshot(estimate.get(), cost));
 		Optional<RuleApplication> finiteValues = finiteFilterValuesAccessPath(expression, goal, context);
 		Optional<RuleApplication> inputBound = requestedInputBoundAccessPath(expression, goal, estimate.get(),
@@ -122,6 +137,8 @@ final class LmdbAccessPathImplementationRule extends LmdbRule {
 		PhysicalProperties delivered = delivered(stampedAlternative, estimate.get(), goal)
 				.withAccessPath("finiteFilterValuesLookup")
 				.withInputBoundVars(inputBoundVars);
+		List<PhysicalProperties> inputRequirements = finiteLookupInputRequirements(pattern, anchor, estimate.get(),
+				goal);
 		RuleProof proof = proof(semanticScope(goal),
 				Set.of("lmdbCostModel", "finiteValuesAnchor", "filterInValuesEquivalent",
 						"anchorBindings=" + anchor.getBindingNames()),
@@ -133,8 +150,17 @@ final class LmdbAccessPathImplementationRule extends LmdbRule {
 				+ " rows=" + estimate.get().getOutputRows()
 				+ " workRows=" + estimate.get().getWorkRows()
 				+ " inputBoundVars=" + inputBoundVars);
-		return Optional.of(RuleApplication.opaquePhysical(expression.groupId(), stampedAlternative,
-				delivered, cost, proof, "lmdb-finite-filter-values-access", snapshot(estimate.get(), cost)));
+		return Optional.of(RuleApplication.physical(expression.groupId(), stampedAlternative,
+				delivered, inputRequirements, CostVector.ZERO, proof, "lmdb-finite-filter-values-access",
+				snapshot(estimate.get(), cost)));
+	}
+
+	private List<PhysicalProperties> finiteLookupInputRequirements(StatementPattern pattern,
+			BindingSetAssignment anchor, JoinFactorCostModel.FactorCostEstimate estimate, OptimizationGoal goal) {
+		PhysicalProperties rightRequirement = delivered(pattern, estimate, goal);
+		Set<String> inputBoundVars = new LinkedHashSet<>(rightRequirement.inputBoundVars());
+		inputBoundVars.addAll(anchor.getAssuredBindingNames());
+		return List.of(PhysicalProperties.ANY, rightRequirement.withInputBoundVars(inputBoundVars));
 	}
 
 	private Optional<JoinFactorCostModel.FactorCostEstimate> estimateFiniteFilterValuesLookup(Filter filter,
@@ -291,7 +317,7 @@ final class LmdbAccessPathImplementationRule extends LmdbRule {
 				"LMDB cost model priced the access path that consumes variables already bound by the left prefix");
 		CostVector cost = cost(estimate.get());
 		return Optional.of(RuleApplication.physical(expression.groupId(), expression.tupleExpr().clone(),
-				delivered(expression.tupleExpr(), estimate.get(), goal), cost, proof,
+				delivered(expression.tupleExpr(), estimate.get(), goal), CostVector.ZERO, proof,
 				"lmdb-input-bound-access", snapshot(estimate.get(), cost)));
 	}
 
@@ -348,12 +374,14 @@ final class LmdbAccessPathImplementationRule extends LmdbRule {
 		CostVector cost = cost(estimate.get());
 		PhysicalProperties delivered = delivered(stampedAlternative, estimate.get(), goal)
 				.withAccessPath("finiteFilterInputBoundLookup");
+		List<PhysicalProperties> inputRequirements = finiteLookupInputRequirements(pattern, anchor, estimate.get(),
+				goal);
 		trace(context, "lmdb-rule id=" + id()
 				+ " finite-filter-input-bound status=applied goalBoundVars=" + goalBoundVars
 				+ " rows=" + estimate.get().getOutputRows()
 				+ " workRows=" + estimate.get().getWorkRows());
-		return Optional.of(RuleApplication.opaquePhysical(expression.groupId(), stampedAlternative,
-				delivered, cost, proof, "lmdb-finite-filter-input-bound-access",
+		return Optional.of(RuleApplication.physical(expression.groupId(), stampedAlternative,
+				delivered, inputRequirements, CostVector.ZERO, proof, "lmdb-finite-filter-input-bound-access",
 				snapshot(estimate.get(), cost)));
 	}
 

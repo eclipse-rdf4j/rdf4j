@@ -24,6 +24,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Difference;
@@ -46,10 +47,11 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EstimateMath;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
-import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity;
 import org.eclipse.rdf4j.sail.lmdb.estimation.QuadProbe;
+import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity;
 import org.eclipse.rdf4j.sail.lmdb.estimation.RowEvidence;
 import org.junit.jupiter.api.Test;
 
@@ -78,6 +80,73 @@ class LmdbEstimationEngineTest {
 				engine.estimate(new Difference(leftPattern.clone(), rightPattern.clone()), context).rows());
 		assertEquals(EstimateMath.union(left, right).rows(),
 				engine.estimate(new Union(leftPattern.clone(), rightPattern.clone()), context).rows());
+	}
+
+	@Test
+	void composesChildrenCoveringTheSameOuterContextOnlyOnce() {
+		LmdbEstimationEngine engine = new LmdbEstimationEngine(new ContextTotalEvidenceSource(),
+				new EstimateEvidenceResolver());
+		ProjectionElemList leftElements = new ProjectionElemList();
+		leftElements.addElement(new ProjectionElem("code"));
+		Projection left = new Projection(pattern("entity", P1, "code"), leftElements);
+		ProjectionElemList rightElements = new ProjectionElemList();
+		rightElements.addElement(new ProjectionElem("value"));
+		Projection right = new Projection(pattern("entity", P2, "value"), rightElements);
+		Join join = new Join(left, right);
+		EstimateContext context = EstimateContext.root(join, IDENTITY, 4L)
+				.withBoundNames(Set.of("entity"))
+				.withPrefixEstimate(BagEstimate.exact(10.0d, "outer-input"))
+				.withInvocationCount(10.0d);
+
+		BagEstimate estimate = engine.estimate(join, context);
+
+		assertEquals(7.0d, estimate.rows(),
+				"Projected children conditioned by the same ten-row outer bag must not form a global 10 x 7 product");
+		assertEquals(24.0d, estimate.workRows(),
+				"Child work and join output must each be rescaled from one per-invocation composition");
+	}
+
+	@Test
+	void disconnectedStatementPatternRepeatsForEveryOuterInvocation() {
+		RecordingEvidenceSource source = new RecordingEvidenceSource();
+		LmdbEstimationEngine engine = new LmdbEstimationEngine(source, new EstimateEvidenceResolver());
+		StatementPattern pattern = pattern("patient", P1, "encounter");
+		BindingSetAssignment outerValues = new BindingSetAssignment();
+		outerValues.setBindingNames(Set.of("value"));
+		TupleExpr planningSurface = new Join(outerValues, pattern);
+		BagEstimate outer = BagEstimate.exact(3.0d, "three-value-outer")
+				.withVariable("value", VariableEstimate.bound(3.0d, 3.0d));
+		EstimateContext context = EstimateContext.root(planningSurface, IDENTITY, 4L)
+				.withBoundNames(Set.of("value"))
+				.withPrefixEstimate(outer)
+				.withInvocationCount(3.0d);
+
+		BagEstimate estimate = engine.estimate(pattern, context);
+
+		assertEquals(12.0d, estimate.rows(),
+				"A four-row statement surface disconnected from the outer value must run for all three values");
+		assertEquals(12.0d, estimate.workRows(),
+				"Disconnected statement work must retain the complete outer invocation mass");
+	}
+
+	@Test
+	void sharedStatementPatternIsConditionedByBoundPrefix() {
+		RecordingEvidenceSource source = new RecordingEvidenceSource();
+		LmdbEstimationEngine engine = new LmdbEstimationEngine(source, new EstimateEvidenceResolver());
+		StatementPattern pattern = pattern("entity", P1, "value");
+		BagEstimate prefix = BagEstimate.exact(1.0d, "one-bound-entity")
+				.withVariable("entity", VariableEstimate.bound(1.0d, 1.0d));
+		EstimateContext context = EstimateContext.root(pattern, IDENTITY, 4L)
+				.withBoundNames(Set.of("entity"))
+				.withPrefixEstimate(prefix)
+				.withInvocationCount(1.0d);
+
+		BagEstimate estimate = engine.estimate(pattern, context);
+
+		assertEquals(2.0d, estimate.rows(),
+				"One bound subject from a two-subject four-row bucket must retain only its compatible rows");
+		assertEquals(1.0d, estimate.variable("entity").distinctRows(),
+				"Conditioning must preserve the bound prefix domain instead of restoring the global subject domain");
 	}
 
 	@Test
@@ -124,6 +193,32 @@ class LmdbEstimationEngineTest {
 	}
 
 	@Test
+	void finiteValuesComposeDisjointOuterInvocationMass() {
+		LmdbEstimationEngine engine = new LmdbEstimationEngine(new RecordingEvidenceSource(),
+				new EstimateEvidenceResolver());
+		BindingSetAssignment codes = new BindingSetAssignment();
+		MapBindingSet first = new MapBindingSet();
+		first.addBinding("code", VF.createLiteral("DX-200"));
+		MapBindingSet second = new MapBindingSet();
+		second.addBinding("code", VF.createLiteral("DX-201"));
+		MapBindingSet third = new MapBindingSet();
+		third.addBinding("code", VF.createLiteral("DX-202"));
+		codes.setBindingSets(List.of(first, second, third));
+		EstimateContext context = EstimateContext.root(codes, IDENTITY, 4L)
+				.withBoundNames(Set.of("entity"))
+				.withPrefixEstimate(BagEstimate.heuristic(66_500.0d, "outer-entities"))
+				.withInvocationCount(66_500.0d);
+
+		BagEstimate estimate = engine.estimate(codes, context);
+
+		assertEquals(199_500.0d, estimate.rows(),
+				"A disjoint three-row VALUES relation is reopened for every outer entity");
+		assertEquals(199_500.0d, estimate.workRows(),
+				"Finite-relation iteration work must retain the complete outer execution mass");
+		assertEquals(66_500.0d, estimate.metrics().get("plannedRepeatedInvocations"), 0.0d);
+	}
+
+	@Test
 	void finiteValuesTreatUndefAsUnboundDuringExactJoin() {
 		LmdbEstimationEngine engine = new LmdbEstimationEngine(new RecordingEvidenceSource(),
 				new EstimateEvidenceResolver());
@@ -144,12 +239,162 @@ class LmdbEstimationEngineTest {
 		assertEquals(0.0d, undefEstimate.variable("x").boundRows());
 		assertEquals(1.0d, undefEstimate.variable("x").nullableRows());
 		assertEquals(1.0d, estimate.rows());
-		assertEquals(P1, estimate.finiteRelation(Set.of("x")).orElseThrow().frequencies().keySet()
+		assertEquals(P1, estimate.finiteRelation(Set.of("x"))
+				.orElseThrow()
+				.frequencies()
+				.keySet()
 				.iterator()
 				.next()
 				.getFirst());
 		assertEquals(1.0d, engine.estimate(new LeftJoin(undef.clone(), bound.clone()), context).rows());
 		assertEquals(1.0d, engine.estimate(new Difference(undef.clone(), bound.clone()), context).rows());
+	}
+
+	@Test
+	void finiteBindingContextCostsEveryConcreteStatementLookup() {
+		FiniteLookupEvidenceSource source = new FiniteLookupEvidenceSource();
+		LmdbEstimationEngine engine = new LmdbEstimationEngine(source, new EstimateEvidenceResolver());
+		StatementPattern pattern = pattern("observation", P1, "value");
+		Value fifty = VF.createLiteral(50);
+		Value sixty = VF.createLiteral(60);
+		Value seventy = VF.createLiteral(70);
+		FiniteRelationEstimate finiteValues = FiniteRelationEstimate.fromRows(List.of("value"),
+				List.of(List.of(fifty), List.of(sixty), List.of(seventy)), "test-values");
+		EstimateContext context = EstimateContext.root(pattern, IDENTITY, 4L)
+				.withBoundNames(Set.of("value"))
+				.withFiniteBindings(finiteValues)
+				.withInvocationCount(3.0d);
+
+		BagEstimate estimate = engine.estimate(pattern, context);
+
+		assertEquals(900.0d, estimate.rows(),
+				"The finite domain must be costed as three concrete 300-row object lookups, not one 2,900-row "
+						+ "predicate scan");
+		assertEquals(Set.of(fifty, sixty, seventy), Set.copyOf(source.boundObjectValues));
+		assertEquals("lmdb-finite-binding-lookup", estimate.source());
+	}
+
+	@Test
+	void finiteBindingContextScalesConcreteLookupsByCompositePrefixMultiplicity() {
+		FiniteLookupEvidenceSource source = new FiniteLookupEvidenceSource();
+		LmdbEstimationEngine engine = new LmdbEstimationEngine(source, new EstimateEvidenceResolver());
+		StatementPattern pattern = pattern("observation", P1, "value");
+		FiniteRelationEstimate finiteValues = FiniteRelationEstimate.fromRows(List.of("value"),
+				List.of(List.of(VF.createLiteral(50)), List.of(VF.createLiteral(60)), List.of(VF.createLiteral(70))),
+				"test-domain");
+		EstimateContext context = EstimateContext.root(pattern, IDENTITY, 4L)
+				.withBoundNames(Set.of("value"))
+				.withFiniteBindings(finiteValues)
+				.withPrefixEstimate(BagEstimate.exact(30.0d, "composite-prefix"))
+				.withInvocationCount(3.0d);
+
+		BagEstimate estimate = engine.estimate(pattern, context);
+
+		assertEquals(9_000.0d, estimate.rows(),
+				"A finite domain chooses concrete probes, but every composite-prefix row still executes one probe");
+		assertEquals(9_000.0d, estimate.workRows(),
+				"Concrete lookup work must retain the composite-prefix execution mass");
+		assertEquals(30.0d, estimate.metrics().get("plannedRepeatedInvocations"), 0.0d,
+				"Distinct domain values must not replace the total RHS execution count");
+		assertTrue(estimate.confidence() < 1.0d,
+				"Uniformly distributing a prefix over a possible-value domain is not exact frequency evidence");
+	}
+
+	@Test
+	void finiteBindingContextPreservesExactZeroAcrossInferredMultiplicity() {
+		LmdbEstimatorEvidenceSource source = new LmdbEstimatorEvidenceSource() {
+			@Override
+			public List<EstimateCandidate> leafCandidates(TupleExpr expression, EstimateContext context) {
+				StatementPattern pattern = (StatementPattern) expression;
+				double rows = pattern.getObjectVar().hasValue() ? 0.0d : 10_000.0d;
+				String evidence = pattern.getObjectVar().hasValue() ? "exact-empty-code" : "predicate-scan";
+				BagEstimate bag = BagEstimate.exact(rows, evidence);
+				return List.of(new EstimateCandidate(bag,
+						new RowEvidence(rows, rows, rows, 1.0d, true, IDENTITY, 4L, evidence),
+						EstimateCandidate.Kind.EXACT_STORAGE, 1L));
+			}
+		};
+		LmdbEstimationEngine engine = new LmdbEstimationEngine(source, new EstimateEvidenceResolver());
+		StatementPattern pattern = pattern("medication", P1, "code");
+		FiniteRelationEstimate finiteCode = FiniteRelationEstimate.fromRows(List.of("code"),
+				List.of(List.of(VF.createLiteral("MED-1005"))), "absent-code");
+		EstimateContext context = EstimateContext.root(pattern, IDENTITY, 4L)
+				.withBoundNames(Set.of("code"))
+				.withFiniteBindings(finiteCode)
+				.withPrefixEstimate(BagEstimate.exact(2.0d, "two-prefix-invocations"))
+				.withInvocationCount(2.0d);
+
+		BagEstimate estimate = engine.estimate(pattern, context);
+
+		assertEquals(0.0d, estimate.rows());
+		assertEquals(1.0d, estimate.confidence(),
+				"Repeating a proven-empty concrete lookup cannot make its zero cardinality uncertain");
+		assertEquals("lmdb-finite-binding-lookup", estimate.source());
+	}
+
+	@Test
+	void finiteLookupConditionsGlobalBucketOnUnresolvedAssuredInput() {
+		LmdbEstimationEngine engine = new LmdbEstimationEngine(new AssuredInputEvidenceSource(),
+				new EstimateEvidenceResolver());
+		StatementPattern pattern = pattern("entity", P1, "type");
+		FiniteRelationEstimate finiteValues = FiniteRelationEstimate.fromRows(List.of("code", "type"),
+				List.of(
+						List.of(VF.createLiteral("A"), P2),
+						List.of(VF.createLiteral("B"), P2),
+						List.of(VF.createLiteral("C"), P2)),
+				"code-type-domain");
+		BagEstimate prefix = BagEstimate.exact(10.0d, "outer-entities")
+				.withVariable("entity", VariableEstimate.bound(10.0d, 10.0d));
+		EstimateContext context = EstimateContext.root(pattern, IDENTITY, 4L)
+				.withBoundNames(Set.of("entity"))
+				.withFiniteBindings(finiteValues)
+				.withPrefixEstimate(prefix)
+				.withInvocationCount(3.0d);
+
+		BagEstimate estimate = engine.estimate(pattern, context);
+
+		assertEquals(7.0d, estimate.rows(),
+				"A seven-row global type bucket covers the ten assured entities and must not be reopened ten times");
+		assertEquals(14.0d, estimate.workRows(),
+				"Conditioning charges the seven-row bucket and seven compatible outputs, but not the prefix again");
+		assertEquals(10.0d, estimate.metrics().get("plannedRepeatedInvocations"), 0.0d);
+	}
+
+	@Test
+	void connectedJoinPassesSelectedLeftBindingsIntoRightEstimate() {
+		AtomicBoolean conditionSeenByRight = new AtomicBoolean();
+		LmdbEstimatorEvidenceSource source = new LmdbEstimatorEvidenceSource() {
+			@Override
+			public List<EstimateCandidate> leafCandidates(TupleExpr expression, EstimateContext context) {
+				StatementPattern pattern = (StatementPattern) expression;
+				if (P2.equals(pattern.getPredicateVar().getValue())) {
+					conditionSeenByRight.set(context.boundNames().contains("condition"));
+				}
+				BagEstimate bag = BagEstimate.exact(1.0d, "connected-join-test");
+				for (String name : pattern.getBindingNames()) {
+					bag = bag.withVariable(name, VariableEstimate.bound(1.0d, 1.0d));
+				}
+				return List.of(new EstimateCandidate(bag,
+						new RowEvidence(1.0d, 1.0d, 1.0d, 1.0d, true, IDENTITY, 4L,
+								"connected-join-test"),
+						EstimateCandidate.Kind.EXACT_STORAGE, 1L));
+			}
+		};
+		StatementPattern codeLookup = pattern("condition", P1, "code");
+		StatementPattern encounterLookup = pattern("encounter", P2, "condition");
+		Join connected = new Join(codeLookup, encounterLookup);
+		FiniteRelationEstimate codes = FiniteRelationEstimate.fromRows(List.of("code"),
+				List.of(List.of(VF.createLiteral("DX-200")), List.of(VF.createLiteral("DX-201"))),
+				"two-code-domain");
+		EstimateContext context = EstimateContext.root(connected, IDENTITY, 4L)
+				.withBoundNames(Set.of("code"))
+				.withFiniteBindings(codes)
+				.withInvocationCount(2.0d);
+
+		new LmdbEstimationEngine(source, new EstimateEvidenceResolver()).estimate(connected, context);
+
+		assertTrue(conditionSeenByRight.get(),
+				"A connected RHS must be estimated with bindings assured by the selected left prefix");
 	}
 
 	@Test
@@ -185,6 +430,24 @@ class LmdbEstimationEngineTest {
 
 		assertTrue(source.boundNamesSeenForP2.contains("x"));
 		assertEquals(4.0d, source.prefixRowsSeenForP2);
+	}
+
+	@Test
+	void sessionCacheDistinguishesEqualRowPrefixesWithDifferentBindingEvidence() {
+		PrefixSensitiveEvidenceSource source = new PrefixSensitiveEvidenceSource();
+		LmdbEstimationEngine engine = new LmdbEstimationEngine(source, new EstimateEvidenceResolver());
+		StatementPattern shared = pattern("entity", P1, "value");
+		Lateral lateral = new Lateral(shared, shared, Set.of());
+		BagEstimate prefix = BagEstimate.exact(10.0d, "outer-prefix")
+				.withVariable("entity", VariableEstimate.bound(10.0d, 10.0d));
+		EstimateContext context = EstimateContext.root(lateral, IDENTITY, 4L)
+				.withPrefixEstimate(prefix)
+				.withInvocationCount(10.0d);
+
+		engine.estimate(lateral, context);
+
+		assertEquals(List.of(10.0d, 1.0d), source.prefixEntityDistinctRows,
+				"Equal row counts must not cache-alias prefixes with different binding evidence");
 	}
 
 	@Test
@@ -242,6 +505,21 @@ class LmdbEstimationEngineTest {
 		assertEquals(QuadProbe.SUBJECT | QuadProbe.OBJECT | QuadProbe.CONTEXT, probe.projectedMask());
 	}
 
+	@Test
+	void outerBoundJoinKeyRemainsProjectedWithoutConcreteValue() {
+		StatementPattern conditionedLookup = new StatementPattern(new Var("condition"), new Var("p", P1),
+				new Var("code", VF.createLiteral("DX-200")));
+		EstimateContext context = EstimateContext.root(conditionedLookup, IDENTITY, 4L)
+				.withBoundNames(Set.of("condition"));
+
+		QuadProbe probe = LmdbStorageEstimatorEvidence.probe(conditionedLookup, context);
+
+		assertEquals(QuadProbe.PREDICATE | QuadProbe.OBJECT, probe.boundMask());
+		assertEquals(QuadProbe.SUBJECT, probe.projectedMask(),
+				"An outer-bound variable has no concrete value in the synopsis probe, so its distribution must remain "
+						+ "projected for join-key cardinality and fanout estimation");
+	}
+
 	private static StatementPattern pattern(String subject, IRI predicate, String object) {
 		return new StatementPattern(new Var(subject), new Var("p", predicate), new Var(object));
 	}
@@ -267,7 +545,8 @@ class LmdbEstimationEngineTest {
 		}
 
 		@Override
-		public Optional<FilterEvidence> filterEvidence(TupleExpr input, org.eclipse.rdf4j.query.algebra.ValueExpr condition,
+		public Optional<FilterEvidence> filterEvidence(TupleExpr input,
+				org.eclipse.rdf4j.query.algebra.ValueExpr condition,
 				BagEstimate inputEstimate, EstimateContext context) {
 			return Optional.of(new FilterEvidence(0.5d, 0.5d, 0.5d, 1.0d, true, "exact-filter"));
 		}
@@ -282,6 +561,75 @@ class LmdbEstimationEngineTest {
 				variables.put(pattern.getObjectVar().getName(), VariableEstimate.bound(4.0d, 2.0d));
 			}
 			return new BagEstimate(4.0d, 4.0d, 0.0d, 1.0d, "exact_storage", variables, Map.of(), Map.of());
+		}
+	}
+
+	private static final class FiniteLookupEvidenceSource implements LmdbEstimatorEvidenceSource {
+		private final List<Value> boundObjectValues = new ArrayList<>();
+
+		@Override
+		public List<EstimateCandidate> leafCandidates(TupleExpr expression, EstimateContext context) {
+			StatementPattern pattern = (StatementPattern) expression;
+			Value object = pattern.getObjectVar().getValue();
+			double rows;
+			String source;
+			if (object == null) {
+				rows = 2_900.0d;
+				source = "quad-count-min";
+			} else {
+				boundObjectValues.add(object);
+				rows = 300.0d;
+				source = "bound-object-probe";
+			}
+			BagEstimate bag = BagEstimate.exact(rows, source);
+			return List.of(new EstimateCandidate(bag,
+					new RowEvidence(rows, rows, rows, 1.0d, true, IDENTITY, 4L, source),
+					EstimateCandidate.Kind.EXACT_STORAGE, 1L));
+		}
+	}
+
+	private static final class ContextTotalEvidenceSource implements LmdbEstimatorEvidenceSource {
+
+		@Override
+		public List<EstimateCandidate> leafCandidates(TupleExpr expression, EstimateContext context) {
+			StatementPattern pattern = (StatementPattern) expression;
+			double rows = P1.equals(pattern.getPredicateVar().getValue()) ? 10.0d : 7.0d;
+			BagEstimate bag = BagEstimate.exact(rows, "context-total");
+			for (String variable : pattern.getBindingNames()) {
+				bag = bag.withVariable(variable, VariableEstimate.bound(rows, rows));
+			}
+			return List.of(new EstimateCandidate(bag,
+					new RowEvidence(rows, rows, rows, 1.0d, true, IDENTITY, 4L, "context-total"),
+					EstimateCandidate.Kind.EXACT_STORAGE, 1L));
+		}
+	}
+
+	private static final class AssuredInputEvidenceSource implements LmdbEstimatorEvidenceSource {
+
+		@Override
+		public List<EstimateCandidate> leafCandidates(TupleExpr expression, EstimateContext context) {
+			StatementPattern pattern = (StatementPattern) expression;
+			assertEquals(P2, pattern.getObjectVar().getValue());
+			BagEstimate bag = BagEstimate.exact(7.0d, "global-type-bucket")
+					.withVariable("entity", VariableEstimate.bound(7.0d, 7.0d));
+			return List.of(new EstimateCandidate(bag,
+					new RowEvidence(7.0d, 7.0d, 7.0d, 1.0d, true, IDENTITY, 4L, "global-type-bucket"),
+					EstimateCandidate.Kind.EXACT_STORAGE, 1L));
+		}
+	}
+
+	private static final class PrefixSensitiveEvidenceSource implements LmdbEstimatorEvidenceSource {
+		private final List<Double> prefixEntityDistinctRows = new ArrayList<>();
+
+		@Override
+		public List<EstimateCandidate> leafCandidates(TupleExpr expression, EstimateContext context) {
+			prefixEntityDistinctRows.add(context.prefixEstimate().variable("entity").distinctRows());
+			BagEstimate bag = BagEstimate.exact(10.0d, "prefix-sensitive")
+					.withVariable("entity", VariableEstimate.bound(10.0d, 1.0d))
+					.withVariable("value", VariableEstimate.bound(10.0d, 10.0d));
+			return List.of(new EstimateCandidate(bag,
+					new RowEvidence(10.0d, 10.0d, 10.0d, 1.0d, true, IDENTITY, 4L, "prefix-sensitive"),
+					EstimateCandidate.Kind.EXACT_STORAGE, 1L));
 		}
 	}
 }

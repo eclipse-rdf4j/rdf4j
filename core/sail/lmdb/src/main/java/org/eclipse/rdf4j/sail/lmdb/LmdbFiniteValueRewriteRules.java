@@ -17,7 +17,6 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Filter;
-import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
@@ -28,12 +27,21 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Optimizatio
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleApplication;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleDescriptor.ChildProperty;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleDescriptor.MemoFact;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleDescriptor.ProducedChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleProof;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleRootOperator;
 
 final class LmdbFiniteFilterValuesRule extends LmdbRule {
 	LmdbFiniteFilterValuesRule(EvaluationStatistics statistics) {
-		super("lmdb-finite-filter-values-rewrite", RuleKind.TRANSFORMATION, 93, statistics);
+		super("lmdb-finite-filter-values-rewrite", RuleKind.TRANSFORMATION, 93, statistics,
+				scheduling(RuleRootOperator.FILTER)
+						.readsFacts(MemoFact.POSSIBLE_BINDINGS, MemoFact.ASSURED_BINDINGS,
+								MemoFact.FINITE_DOMAIN, MemoFact.EXACT_FINITE_RELATION, MemoFact.SCOPE_BARRIER)
+						.readsChildren(ChildProperty.BINDING_PROFILE)
+						.produces(ProducedChange.LOGICAL_EXPRESSION, ProducedChange.PROOF));
 	}
 
 	@Override
@@ -60,7 +68,11 @@ final class LmdbFiniteFilterValuesRule extends LmdbRule {
 
 final class LmdbUnionConstantsToValuesRule extends LmdbRule {
 	LmdbUnionConstantsToValuesRule(EvaluationStatistics statistics) {
-		super("lmdb-union-constants-to-values", RuleKind.TRANSFORMATION, 92, statistics);
+		super("lmdb-union-constants-to-values", RuleKind.TRANSFORMATION, 92, statistics,
+				scheduling(RuleRootOperator.UNION)
+						.readsFacts(MemoFact.POSSIBLE_BINDINGS)
+						.readsChildren(ChildProperty.BINDING_PROFILE)
+						.produces(ProducedChange.LOGICAL_EXPRESSION, ProducedChange.PROOF));
 	}
 
 	@Override
@@ -83,7 +95,12 @@ final class LmdbUnionConstantsToValuesRule extends LmdbRule {
 
 final class LmdbPredicateDomainFilterValuesAnchorRule extends LmdbRule {
 	LmdbPredicateDomainFilterValuesAnchorRule(EvaluationStatistics statistics) {
-		super("filter-values-anchor", RuleKind.TRANSFORMATION, 62, statistics);
+		super("lmdb-predicate-domain-filter-values-anchor", RuleKind.TRANSFORMATION, 62, statistics,
+				scheduling(RuleRootOperator.FILTER)
+						.readsFacts(MemoFact.ASSURED_BINDINGS, MemoFact.FINITE_DOMAIN,
+								MemoFact.EXACT_FINITE_RELATION, MemoFact.SCOPE_BARRIER)
+						.readsChildren(ChildProperty.BINDING_PROFILE)
+						.produces(ProducedChange.LOGICAL_EXPRESSION, ProducedChange.PROOF));
 	}
 
 	@Override
@@ -109,30 +126,5 @@ final class LmdbPredicateDomainFilterValuesAnchorRule extends LmdbRule {
 				LmdbCascadesRuleProvider.finitePredicateDomainProof(semanticScope(goal)));
 		return List.of(new RuleApplication(expression.groupId(), alternative, RuleKind.TRANSFORMATION,
 				PhysicalProperties.ANY, CostVector.ZERO, proofs, "", null, false));
-	}
-}
-
-final class LmdbSetSemanticsNormalizationRule extends LmdbRule {
-	LmdbSetSemanticsNormalizationRule(EvaluationStatistics statistics) {
-		super("lmdb-set-semantics-normalization", RuleKind.TRANSFORMATION, 75, statistics);
-	}
-
-	@Override
-	public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
-		return expression.logical() && expression.tupleExpr() instanceof Group;
-	}
-
-	@Override
-	public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
-		Group alternative = ((Group) expression.tupleExpr()).clone();
-		String before = alternative.toString();
-		new LmdbSetSemanticsOptimizer().optimize(alternative, null, null);
-		if (before.equals(alternative.toString())) {
-			return List.of();
-		}
-		RuleProof proof = proof(semanticScope(goal), Set.of("setSemantics", "groupLocalNormalization"),
-				"LMDB set-semantics rewrites are exposed as Cascades logical alternatives before physical "
-						+ "implementation costing");
-		return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
 	}
 }

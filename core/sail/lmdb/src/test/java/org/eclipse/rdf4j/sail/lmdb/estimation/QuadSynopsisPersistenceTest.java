@@ -74,7 +74,8 @@ class QuadSynopsisPersistenceTest {
 	@Test
 	void versionSevenMigratesOnlyDurableIdentity() throws IOException {
 		Path file = directory.resolve("metadata.bin");
-		try (OutputStream stream = Files.newOutputStream(file); DataOutputStream output = new DataOutputStream(stream)) {
+		try (OutputStream stream = Files.newOutputStream(file);
+				DataOutputStream output = new DataOutputStream(stream)) {
 			output.write(new byte[] { 'R', 'J', 'E', 'D' });
 			output.writeInt(7);
 			output.writeLong(IDENTITY.storeIdHigh());
@@ -93,7 +94,8 @@ class QuadSynopsisPersistenceTest {
 	@Test
 	void unknownPayloadVersionStillPreservesDurableIdentity() throws IOException {
 		Path file = directory.resolve("future.bin");
-		try (OutputStream stream = Files.newOutputStream(file); DataOutputStream output = new DataOutputStream(stream)) {
+		try (OutputStream stream = Files.newOutputStream(file);
+				DataOutputStream output = new DataOutputStream(stream)) {
 			output.writeInt(0x524a5138);
 			output.writeInt(99);
 			IDENTITY.writeTo(output);

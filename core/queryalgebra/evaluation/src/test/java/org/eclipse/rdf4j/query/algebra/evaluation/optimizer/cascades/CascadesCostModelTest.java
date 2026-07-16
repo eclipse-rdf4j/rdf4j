@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Method;
@@ -30,21 +31,27 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -54,8 +61,11 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.MinusQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.CostContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.EstimationTier;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.FactorCostEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
@@ -67,6 +77,31 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.junit.jupiter.api.Test;
 
 class CascadesCostModelTest {
+
+	@Test
+	void evaluationStatisticsAdapterRepricesStatementPatternFromBoundSubjectAndObject() {
+		EvaluationStatistics statistics = new EvaluationStatistics() {
+			@Override
+			public double getCardinality(TupleExpr expr) {
+				return 10_000.0d;
+			}
+		};
+		RdfStatisticsProvider provider = RdfStatisticsProvider.from(statistics);
+		StatementPattern pattern = new StatementPattern(new Var("entity"),
+				new Var("predicate", iri("urn:predicate")), new Var("code"));
+
+		double unbound = provider.statementPattern(pattern, Set.of()).orElseThrow().rows();
+		double subjectBound = provider.statementPattern(pattern, Set.of("entity")).orElseThrow().rows();
+		double subjectAndObjectBound = provider.statementPattern(pattern, Set.of("entity", "code"))
+				.orElseThrow()
+				.rows();
+
+		assertEquals(10_000.0d, unbound, 0.0d);
+		assertEquals(100.0d, subjectBound, 0.0d,
+				"Binding one of two variables must apply the standard cardinality exponent");
+		assertEquals(1.0d, subjectAndObjectBound, 0.0d,
+				"A fully bound statement lookup is one lookup, not a repeated broad scan");
+	}
 
 	@Test
 	void filterCallsProviderAndPreservesIntervalConfidence() {
@@ -149,12 +184,7 @@ class CascadesCostModelTest {
 	}
 
 	@Test
-	void parentJoinReusesCachedRichChildEstimateWithoutBindingProfile() {
-		// The child join is costed first with sketch-profiled inputs, so the model caches a rich estimate for the
-		// child expression (distinct(y) far below its rows). The parent join then receives a winner over that child
-		// whose delivered properties carry NO binding profile — only scalar cost. A model that already costed the
-		// child must recover the cached rich bag instead of collapsing to scalar rows, so its parent estimate
-		// differs from a cold model that never saw the child.
+	void parentJoinUsesRichChildEstimateFromWinnerDeliveredProfile() {
 		CascadesCostModel warmModel = CascadesCostModel.from(new EvaluationStatistics());
 		Join childJoin = new Join(pattern("s", "p1", "x"), pattern("x", "p2", "y"));
 		MemoExpr childExpr = new MemoExpr(20, 0, "Join", List.of(1, 2), "test", childJoin,
@@ -165,25 +195,25 @@ class CascadesCostModelTest {
 				new TestSketch(7.0d, 17.0d));
 		CostVector childCost = warmModel.localCost(childExpr, OptimizationGoal.root(),
 				List.of(childLeft, childRight));
+		PhysicalProperties childDelivered = warmModel.deliveredProperties(childExpr, OptimizationGoal.root(),
+				List.of(childLeft, childRight));
 
 		Join parentJoin = new Join(childJoin, pattern("y", "p3", "z"));
 		MemoExpr parentExpr = new MemoExpr(30, 0, "Join", List.of(20, 3), "test", parentJoin,
 				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), "parent-join");
-		Winner profileLessChildWinner = new Winner(childExpr, childJoin, PhysicalProperties.builder()
-				.boundVars(childJoin.getBindingNames())
-				.build(), childCost, List.of(), false, "");
+		Winner profiledChildWinner = new Winner(childExpr, childJoin, childDelivered, childCost, List.of(), false, "");
 		Winner rightWinner = winner(3, parentJoin.getRightArg(), 50.0d);
 
 		CostVector warm = warmModel.localCost(parentExpr, OptimizationGoal.root(),
-				List.of(profileLessChildWinner, rightWinner));
+				List.of(profiledChildWinner, rightWinner));
 		CascadesCostModel coldModel = CascadesCostModel.from(new EvaluationStatistics());
 		CostVector cold = coldModel.localCost(parentExpr, OptimizationGoal.root(),
-				List.of(profileLessChildWinner, rightWinner));
+				List.of(profiledChildWinner, rightWinner));
 
-		assertNotEquals(cold.rows(), warm.rows(),
-				"A model that already costed the child expression must reuse its cached rich estimate for parent "
-						+ "costing instead of collapsing the winner to scalar rows (cold=" + cold.rows() + ", warm="
-						+ warm.rows() + ")");
+		assertEquals(cold.rows(), warm.rows(), 0.0d,
+				"Parent costing must be a pure function of the selected Winner, not prior model-local cache entries");
+		assertNotEquals(50.0d, warm.rows(),
+				"The Winner-delivered profile must preserve child distinct/sketch evidence beyond scalar rows");
 	}
 
 	@Test
@@ -206,6 +236,61 @@ class CascadesCostModelTest {
 		assertSame(sketch, deliveredEstimate.sketch(),
 				"Sketch evidence from the factor estimate must survive the physical winner boundary");
 		assertEquals(9.0d, deliveredEstimate.boundRows(), 0.0d);
+	}
+
+	@Test
+	void contextCostedPhysicalAccessLeafDeclaresRequiredInputBindings() {
+		StatementPattern pattern = pattern("kind", "className", "name");
+		JoinFactorCostModel factorCostModel = (factor, boundVars) -> Optional.of(
+				new JoinFactorCostModel.FactorCostEstimate(1.0d, 1.0d, Map.of(), Map.of(), true, true, 1, 0,
+						1.0d, false, true));
+		CascadesCostModel model = model(RdfStatisticsProvider.EMPTY, factorCostModel);
+		MemoExpr physicalLeaf = new MemoExpr(10, 0, "StatementPattern", List.of(), "test", pattern,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), "leaf-test");
+		OptimizationGoal goal = OptimizationGoal.root()
+				.withRequiredProperties(PhysicalProperties.builder().boundVars(Set.of("kind")).build());
+
+		PhysicalProperties delivered = model.deliveredProperties(physicalLeaf, goal, List.of());
+
+		assertEquals(Set.of("kind"), delivered.inputBoundVars(),
+				"A physical access path costed with incoming bindings must expose them as an executable contract");
+	}
+
+	@Test
+	void contextDoesNotTurnUnboundScanIntoInputBoundAccess() {
+		StatementPattern pattern = pattern("kind", "className", "name");
+		JoinFactorCostModel factorCostModel = (factor, boundVars) -> Optional.of(
+				new JoinFactorCostModel.FactorCostEstimate(10_000.0d, 10_000.0d, Map.of(), Map.of(), false,
+						false, 0, 0, 10_000.0d, false, true));
+		CascadesCostModel model = model(RdfStatisticsProvider.EMPTY, factorCostModel);
+		PhysicalProperties scanProperties = PhysicalProperties.builder()
+				.accessPath("lmdbScan")
+				.boundVars(pattern.getBindingNames())
+				.build();
+		MemoExpr physicalLeaf = new MemoExpr(10, 0, "StatementPattern", List.of(), "test", pattern,
+				scanProperties, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), "scan-leaf-test");
+		OptimizationGoal goal = OptimizationGoal.root()
+				.withRequiredProperties(PhysicalProperties.builder()
+						.boundVars(Set.of("kind"))
+						.inputBoundVars(Set.of("kind"))
+						.build());
+
+		PhysicalProperties delivered = model.deliveredProperties(physicalLeaf, goal, List.of());
+
+		assertEquals(Set.of(), delivered.inputBoundVars(),
+				"Available context is not proof that a scan consumes the binding as an executable lookup");
+		assertFalse(delivered.satisfies(goal.requiredProperties()),
+				"An unbound scan must not satisfy a child goal that requires an input-bound implementation");
+	}
+
+	@Test
+	void telemetryDoesNotDeclareFactorCostScope() {
+		FactorCostEstimate estimate = new FactorCostEstimate(300.0d, 100.0d, Map.of(),
+				Map.of("plannedRepeatedInvocations", 100.0d), true, true, 1, 0, 3.0d, false, true);
+
+		assertEquals(CostScope.PER_INVOCATION, estimate.getCostScope());
+		assertFalse(estimate.isRepeatedInvocationsCosted(),
+				"Diagnostic metric names cannot decide whether an estimate is per invocation or total for its context");
 	}
 
 	@Test
@@ -234,33 +319,11 @@ class CascadesCostModelTest {
 	}
 
 	@Test
-	void opaquePhysicalBindingProfileOverridesInferredScalarProfile() {
-		CascadesCostModel model = CascadesCostModel.from(new EvaluationStatistics());
-		Join opaqueJoin = new Join(pattern("s", "p1", "o1"), pattern("s", "p2", "o2"));
-		BagEstimate declaredBag = BagEstimate.heuristic(48.0d, "declared-physical")
-				.withVariable("s", VariableEstimate.bound(48.0d, 12.0d));
-		PhysicalProperties declared = PhysicalProperties.builder()
-				.boundVars(opaqueJoin.getBindingNames())
-				.bindingProfile(BindingProfile.fromBag(opaqueJoin, declaredBag, Map.of()))
-				.build();
-		MemoExpr physicalLeaf = new MemoExpr(10, 0, "Join", List.of(), "test", opaqueJoin,
-				declared, RuleKind.IMPLEMENTATION,
-				CostVector.ofRowsAndWork(48.0d, 48.0d,
-						QErrorInterval.heuristic(48.0d, 1.5d, "declared-physical")),
-				List.of(), "declared-profile-leaf");
-
-		PhysicalProperties delivered = model.deliveredProperties(physicalLeaf, OptimizationGoal.root(), List.of());
-
-		assertEquals(12.0d, delivered.bindingProfile().variables().get("s").distinctRows(), 0.0d,
-				"An opaque rule's declared profile is authoritative over scalar inference for the same binding");
-	}
-
-	@Test
 	void feedbackCorrectionPreservesJoinedSketchProfile() {
 		SketchedFeedbackProvider provider = new SketchedFeedbackProvider();
 		CascadesCostModel model = model(provider);
 		Join join = new Join(pattern("s", "p1", "o"), pattern("o", "p2", "x"));
-		MemoExpr logicalJoin = MemoExpr.logical(10, 0, join, List.of(), "test-feedback");
+		MemoExpr logicalJoin = MemoExpr.logical(10, 0, join, List.of(1, 2), "test-feedback");
 
 		CostVector cost = model.localCost(logicalJoin, OptimizationGoal.root(), List.of());
 		PhysicalProperties delivered = model.deliveredProperties(logicalJoin, OptimizationGoal.root(), List.of());
@@ -287,7 +350,7 @@ class CascadesCostModelTest {
 		SketchedFeedbackProvider provider = new SketchedFeedbackProvider();
 		CascadesCostModel model = model(provider);
 		Join join = new Join(pattern("s", "p1", "o"), pattern("o", "p2", "x"));
-		MemoExpr logicalJoin = MemoExpr.logical(10, 0, join, List.of(), "test-feedback-profile");
+		MemoExpr logicalJoin = MemoExpr.logical(10, 0, join, List.of(1, 2), "test-feedback-profile");
 
 		CostVector cost = model.localCost(logicalJoin, OptimizationGoal.root(), List.of());
 		PhysicalProperties delivered = model.deliveredProperties(logicalJoin, OptimizationGoal.root(), List.of());
@@ -302,7 +365,7 @@ class CascadesCostModelTest {
 		SelectedFilterBagProvider provider = new SelectedFilterBagProvider();
 		CascadesCostModel model = model(provider);
 		Filter filter = new Filter(pattern("s", "p1", "o"), new Bound(new Var("o")));
-		MemoExpr logicalFilter = MemoExpr.logical(10, 0, filter, List.of(), "test-selected-filter");
+		MemoExpr logicalFilter = MemoExpr.logical(10, 0, filter, List.of(1), "test-selected-filter");
 
 		CostVector cost = model.localCost(logicalFilter, OptimizationGoal.root(), List.of());
 		PhysicalProperties delivered = model.deliveredProperties(logicalFilter, OptimizationGoal.root(), List.of());
@@ -359,6 +422,25 @@ class CascadesCostModelTest {
 	}
 
 	@Test
+	void logicalFingerprintUsesScalarSubquerySlotsInsteadOfConcreteBodies() {
+		CascadesCostModel model = CascadesCostModel.from(new EvaluationStatistics());
+		StatementPattern argument = pattern("observation", "type", "kind");
+		StatementPattern conditionCode = pattern("condition", "code", "codeValue");
+		StatementPattern conditionRecord = pattern("condition", "record", "record");
+		Join forwardRhs = new Join(conditionCode.clone(), conditionRecord.clone());
+		Join reverseRhs = new Join(conditionRecord.clone(), conditionCode.clone());
+		Filter forwardNotExists = new Filter(argument.clone(), new Not(new Exists(forwardRhs)));
+		Filter reverseNotExists = new Filter(argument.clone(), new Not(new Exists(reverseRhs)));
+		Filter forwardExists = new Filter(argument.clone(), new Exists(forwardRhs.clone()));
+
+		assertEquals(model.logicalFingerprint(forwardNotExists), model.logicalFingerprint(reverseNotExists),
+				"A scalar subquery body is identified by its authoritative memo input group, not duplicated in "
+						+ "the parent-local fingerprint");
+		assertNotEquals(model.logicalFingerprint(forwardNotExists), model.logicalFingerprint(forwardExists),
+				"Replacing a scalar body with a memo slot must preserve the surrounding scalar expression");
+	}
+
+	@Test
 	void structurallyEquivalentJoinClonesReuseProviderEstimate() {
 		TrackingProvider provider = new TrackingProvider();
 		CascadesCostModel model = model(provider);
@@ -369,6 +451,51 @@ class CascadesCostModelTest {
 
 		assertEquals(1, provider.multiPatternCalls,
 				"Equivalent cloned algebra should not repeat expensive provider join estimates");
+	}
+
+	@Test
+	void providerEstimateCacheIncludesEveryTransparentMemoInput() {
+		AtomicInteger propertyPathCalls = new AtomicInteger();
+		RdfStatisticsProvider provider = new RdfStatisticsProvider() {
+			@Override
+			public Optional<StatisticsEstimate> propertyPathNodePairs(TupleExpr path, Set<String> boundVars) {
+				propertyPathCalls.incrementAndGet();
+				return Optional.of(StatisticsEstimate.exact(5.0d, "test-path"));
+			}
+		};
+		CascadesCostModel model = model(provider);
+		ArbitraryLengthPath first = new ArbitraryLengthPath(new Var("start"),
+				pattern("pathStart", "firstPredicate", "pathEnd"), new Var("end"), 1L);
+		ArbitraryLengthPath second = new ArbitraryLengthPath(new Var("start"),
+				pattern("pathStart", "secondPredicate", "pathEnd"), new Var("end"), 1L);
+
+		model.logicalProperties(first);
+		model.logicalProperties(second);
+
+		assertEquals(2, propertyPathCalls.get(),
+				"Provider cache identity must include path and scalar memo inputs even when parent-local metadata does not");
+	}
+
+	@Test
+	void disabledCostTracingDoesNotRenderDetails() {
+		String property = "rdf4j.optimizer.cascades.costTrace";
+		String previous = System.getProperty(property);
+		AtomicInteger renders = new AtomicInteger();
+		try {
+			System.clearProperty(property);
+			CascadesCostModel.DefaultCascadesCostModel.traceCost("test", new SingletonSet(), () -> {
+				renders.incrementAndGet();
+				return "expensive-details";
+			});
+		} finally {
+			if (previous == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, previous);
+			}
+		}
+
+		assertEquals(0, renders.get(), "Disabled cost tracing must not allocate or render diagnostic details");
 	}
 
 	@Test
@@ -427,6 +554,29 @@ class CascadesCostModelTest {
 		assertEquals(10.0d, limited.rows(), 0.0d);
 		assertTrue(limited.workRows() < fullCost.workRows(),
 				"Streaming LIMIT/ASK-style goals should cost only the demanded prefix work");
+	}
+
+	@Test
+	void correlatedExistenceGoalRetainsOneProbePerOuterInvocation() {
+		CascadesCostModel model = CascadesCostModel.from(new EvaluationStatistics());
+		StatementPattern pattern = pattern("entity", "probe", "match");
+		MemoExpr expression = new MemoExpr(1, 7, "StatementPattern", List.of(), "test", pattern,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		InputBindingContext context = InputBindingContext.fromProfile(10.0d, Set.of("entity"), BindingProfile.ANY);
+		OptimizationGoal goal = OptimizationGoal.root()
+				.withInputBindingContext(context)
+				.withRowGoal(OptimizationGoal.RowGoal.ALL.asExistenceOnly());
+		CostVector fullCost = new CostVector(60.0d, 70.0d, 0.0d, 10.0d, 0.0d,
+				1.0d, 1.0d, 1.0d, 1.0d, 0.0d, 1.0d, 1.0d);
+
+		CostVector limited = model.applyOutputGoal(expression, goal, PhysicalProperties.ANY, fullCost);
+
+		assertEquals(10.0d, limited.rows(), 0.0d,
+				"EXISTS may emit at most one match for each outer invocation, not one match globally");
+		assertEquals(20.0d, limited.workRows(), 0.0d,
+				"Each correlated EXISTS invocation still pays one seek and up to one matching-row probe");
+		assertEquals(10.0d, limited.seeks(), 0.0d,
+				"Early stopping within an invocation must not remove outer-invocation seeks");
 	}
 
 	@Test
@@ -500,6 +650,38 @@ class CascadesCostModelTest {
 	}
 
 	@Test
+	void wideningExistenceRowGoalRestoresBagSemantics() {
+		OptimizationGoal existenceGoal = OptimizationGoal.root(
+				new QueryRoot(new Slice(new SingletonSet(), 0L, 1L)), PhysicalProperties.ANY);
+
+		OptimizationGoal allRowsGoal = existenceGoal.withRowGoal(OptimizationGoal.RowGoal.ALL);
+
+		assertEquals(OptimizationGoal.RowGoal.ALL, allRowsGoal.rowGoal());
+		assertEquals(OptimizationGoal.BAG_SEMANTICS, allRowsGoal.semanticScope(),
+				"A child that must enumerate all rows cannot retain an existence-only semantic scope");
+	}
+
+	@Test
+	void rootGoalCapturesOrderThroughProjectionAndDuplicateModifiers() {
+		Order order = new Order(pattern("s", "p1", "o"));
+		order.addElement(new OrderElem(new Var("o"), true));
+		Projection projectedOrder = new Projection(order, projection("o"), false);
+		OptimizationGoal goal = OptimizationGoal.root(new Slice(new Reduced(projectedOrder), 2L, 7L),
+				PhysicalProperties.ANY);
+
+		assertEquals(new OptimizationGoal.RowGoal(2L, 7L, true, false), goal.rowGoal());
+		assertEquals(List.of("o:asc"), goal.requiredProperties().ordering());
+
+		Order hiddenOrder = new Order(pattern("s", "p1", "o"));
+		hiddenOrder.addElement(new OrderElem(new Var("o"), true));
+		Projection dropsOrderKey = new Projection(hiddenOrder, projection("s"), false);
+		assertTrue(OptimizationGoal.root(dropsOrderKey, PhysicalProperties.ANY)
+				.requiredProperties()
+				.ordering()
+				.isEmpty(), "An output projection cannot promise ordering by a binding it removes");
+	}
+
+	@Test
 	void decisionRefinementUsesDecisionExactEstimatorTier() {
 		RecordingFactorCostModel factorCostModel = new RecordingFactorCostModel(3.0d);
 		CascadesCostModel model = new CascadesCostModel.DefaultCascadesCostModel(new EvaluationStatistics(),
@@ -514,6 +696,78 @@ class CascadesCostModelTest {
 				CostVector.ofRowsAndWork(11.0d, 11.0d, QErrorInterval.exact(11.0d, "test")));
 
 		assertEquals(List.of(EstimationTier.DECISION_EXACT), factorCostModel.estimationTiers);
+	}
+
+	@Test
+	void decisionRefinementCachesExactFactorEvidenceByExpressionAndInputContext() {
+		RecordingFactorCostModel factorCostModel = new RecordingFactorCostModel(3.0d);
+		CascadesCostModel model = new CascadesCostModel.DefaultCascadesCostModel(new EvaluationStatistics(),
+				factorCostModel, RdfStatisticsProvider.EMPTY);
+		StatementPattern pattern = pattern("s", "p1", "o");
+		MemoExpr expression = new MemoExpr(1, 7, "StatementPattern", List.of(), "", pattern, PhysicalProperties.ANY,
+				RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		OptimizationGoal exactGoal = OptimizationGoal.root().withEstimationTier(EstimationTier.DECISION_EXACT);
+		CostVector candidate = CostVector.ofRowsAndWork(10.0d, 10.0d, QErrorInterval.exact(10.0d, "candidate"));
+		CostVector incumbent = CostVector.ofRowsAndWork(11.0d, 11.0d, QErrorInterval.exact(11.0d, "incumbent"));
+
+		model.refineCostForDecision(expression, exactGoal, List.of(), candidate, incumbent);
+		model.refineCostForDecision(expression, exactGoal, List.of(), candidate, incumbent);
+
+		assertEquals(List.of(EstimationTier.DECISION_EXACT), factorCostModel.estimationTiers,
+				"Revisiting one physical leaf under the same canonical input context must reuse exact evidence");
+
+		InputBindingContext contextualBindings = InputBindingContext.fromProfile(2.0d, Set.of("s"),
+				BindingProfile.ANY);
+		model.refineCostForDecision(expression, exactGoal.withInputBindingContext(contextualBindings), List.of(),
+				candidate, incumbent);
+		assertEquals(List.of(EstimationTier.DECISION_EXACT, EstimationTier.DECISION_EXACT),
+				factorCostModel.estimationTiers,
+				"A different canonical input context must receive its own exact factor estimate");
+	}
+
+	@Test
+	void decisionRefinementPrefersContextAwarePhysicalFactorOverStandaloneProvider() {
+		List<CostContext> contexts = new ArrayList<>();
+		JoinFactorCostModel factorCostModel = new JoinFactorCostModel() {
+			@Override
+			public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					Set<String> currentlyBoundVars) {
+				return Optional.empty();
+			}
+
+			@Override
+			public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, CostContext context) {
+				contexts.add(context);
+				double rows = context.getOuterPrefixRows() * 3.0d;
+				return Optional.of(new FactorCostEstimate(rows, rows, Map.of(),
+						Map.of("plannedRepeatedInvocations", context.getOuterPrefixRows()), false, false, 0, 0,
+						rows, true, true));
+			}
+		};
+		CascadesCostModel model = new CascadesCostModel.DefaultCascadesCostModel(new EvaluationStatistics(),
+				factorCostModel, new ConstantDecisionProvider(3.0d));
+		BindingSetAssignment codes = valuesAssignment("code", iri("urn:code:200"), iri("urn:code:201"),
+				iri("urn:code:202"));
+		MemoExpr expression = new MemoExpr(1, 7, "BindingSetAssignment", List.of(), "", codes,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		InputBindingContext inputContext = InputBindingContext.fromProfile(66_500.0d, Set.of("entity"),
+				BindingProfile.ANY);
+		OptimizationGoal goal = OptimizationGoal.root()
+				.withInputBindingContext(inputContext)
+				.withEstimationTier(EstimationTier.DECISION_EXACT);
+		CostVector contextual = CostVector.ofRowsAndWork(199_500.0d, 199_500.0d,
+				QErrorInterval.exact(199_500.0d, "contextual-values"));
+
+		CostVector refined = model.refineCostForDecision(expression, goal, List.of(), contextual,
+				CostVector.ofRowsAndWork(200_000.0d, 200_000.0d,
+						QErrorInterval.exact(200_000.0d, "incumbent")));
+
+		assertEquals(199_500.0d, refined.rows(), 0.0d,
+				"A standalone exact relation must not erase the outer invocation mass from physical costing");
+		assertEquals(199_500.0d, refined.workRows(), 0.0d);
+		assertEquals(1, contexts.size());
+		assertEquals(66_500.0d, contexts.getFirst().getOuterPrefixRows(), 0.0d);
+		assertEquals(EstimationTier.DECISION_EXACT, contexts.getFirst().getEstimationTier());
 	}
 
 	@Test
@@ -583,10 +837,285 @@ class CascadesCostModelTest {
 				List.of(winner(2, group.getArg(), 1.0d)));
 
 		assertEquals(1.0d, cost.rows(), 0.0d);
-		assertEquals(2.0d, cost.workRows(), 0.0d,
-				"Physical unary estimates are already based on the child winner and must not count it twice");
+		assertEquals(1.0d, cost.workRows(), 0.0d,
+				"The local unary estimate must exclude the independently composed child work");
 		assertTrue(factorCostModel.estimationTiers.isEmpty(),
 				"Composite tuple algebra operators must use operator formulas, not join-factor access estimates");
+	}
+
+	@Test
+	void scalarSubqueryFilterUsesSelectedArgumentAndReportsOnlyLocalWork() {
+		TrackingProvider provider = new TrackingProvider();
+		CascadesCostModel model = model(provider);
+		StatementPattern argument = pattern("s", "p1", "o");
+		StatementPattern subquery = pattern("s", "probe", "blocked");
+		Filter filter = new Filter(argument, new Exists(subquery));
+		MemoExpr expression = new MemoExpr(1, 7, "Filter", List.of(2, 3), "", filter,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		List<Winner> inputWinners = List.of(winner(2, argument, 100.0d), winner(3, subquery, 1.0d));
+
+		CostVector local = model.localCost(expression, OptimizationGoal.root(), inputWinners);
+
+		assertEquals(10.0d, local.rows(), 0.0d,
+				"The filter estimate must use the selected tuple-argument winner, not recursively re-estimate its template");
+		assertEquals(100.0d, local.workRows(), 0.0d,
+				"The filter's local work must exclude the independently composed argument work");
+		assertTrue(model.locallyCostedInputIndexes(expression, OptimizationGoal.root(), inputWinners).isEmpty(),
+				"The contextually costed scalar winner must remain planner-owned and compose exactly once");
+	}
+
+	@Test
+	void scalarSubquerySelectedChildCostChangesParentTotalExactlyOnce() {
+		CascadesCostModel model = model(new TrackingProvider());
+		StatementPattern argument = pattern("s", "p1", "o");
+		StatementPattern subquery = pattern("s", "probe", "blocked");
+		Filter filter = new Filter(argument, new Exists(subquery));
+		MemoExpr expression = new MemoExpr(1, 7, "Filter", List.of(2, 3), "", filter,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		Winner argumentWinner = winnerWithWork(2, argument, 100.0d, 100.0d);
+		List<Winner> cheapInputs = List.of(argumentWinner, winnerWithWork(3, subquery, 1.0d, 7.0d));
+		List<Winner> expensiveInputs = List.of(argumentWinner, winnerWithWork(3, subquery, 1.0d, 23.0d));
+
+		double cheapTotal = composedWorkRows(model, expression, cheapInputs);
+		double expensiveTotal = composedWorkRows(model, expression, expensiveInputs);
+
+		assertEquals(16.0d, expensiveTotal - cheapTotal, 0.0d,
+				"Changing only the selected scalar RHS work must change parent work once, neither zero nor twice");
+	}
+
+	@Test
+	void correlatedNotExistsPricesStreamingScalarLifecycleAndLosesToMaterializedMinus() {
+		CascadesCostModel model = model(new TrackingProvider());
+		StatementPattern left = pattern("entity", "type", "kind");
+		StatementPattern right = pattern("entity", "blockedBy", "reason");
+		InputBindingContext context = InputBindingContext.fromProfile(5.0d, Set.of("entity"), BindingProfile.ANY);
+		List<Winner> inputs = List.of(winnerWithWork(2, left, 5.0d, 100.0d),
+				contextTotalWinner(3, right, 3.0d, 80.0d, context, false));
+
+		Filter correlated = new Filter(left, new Not(new Exists(right)));
+		MemoExpr correlatedExpression = new MemoExpr(1, 7, "Filter", List.of(2, 3), "streaming-not-exists",
+				correlated, PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		CostVector correlatedLocal = model.localCost(correlatedExpression, OptimizationGoal.root(), inputs);
+		double correlatedTotal = composedWorkRows(model, correlatedExpression, inputs);
+
+		Difference materializedMinus = new Difference(left, right);
+		PhysicalProperties materialized = PhysicalProperties.builder()
+				.materialization(PhysicalProperties.Materialization.MATERIALIZED)
+				.build();
+		MemoExpr materializedExpression = MemoExpr.physical(4, 7, materializedMinus, List.of(2, 3),
+				"materialized-minus", PhysicalProperties.ANY, List.of(PhysicalProperties.ANY, materialized),
+				RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		double materializedTotal = composedWorkRows(model, materializedExpression, inputs);
+
+		assertEquals(15.0d, correlatedLocal.workRows(), 0.0d,
+				"Five probes must also pay one scalar-subquery open and close per invocation");
+		assertEquals(195.0d, correlatedTotal, 0.0d);
+		assertEquals(188.0d, materializedTotal, 0.0d);
+		assertTrue(materializedTotal < correlatedTotal,
+				"Repeated scalar lifecycle work must make one reusable RHS build cheaper for this contract");
+	}
+
+	@Test
+	void materializationPropertyEnforcerDoesNotInventNonExecutableSortWork() {
+		CascadesCostModel model = model(new TrackingProvider());
+		StatementPattern input = pattern("s", "p1", "o");
+		QueryRoot root = new QueryRoot(input);
+		PhysicalProperties streaming = PhysicalProperties.builder()
+				.materialization(PhysicalProperties.Materialization.STREAMING)
+				.build();
+		PhysicalProperties materialized = streaming.materialized();
+		MemoExpr implementation = MemoExpr.physical(1, 7, root, List.of(2), "generic", streaming,
+				List.of(PhysicalProperties.ANY), RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		RuleProof proof = new RuleProof("materialize-enforcer", RuleKind.ENFORCER,
+				OptimizationGoal.BAG_SEMANTICS, Set.of("materializedCursor"),
+				"materialization property is fulfilled by the consuming runtime operator");
+		MemoExpr enforcer = MemoExpr.physical(3, 7, root.clone(), List.of(2), "materialize", materialized,
+				List.of(PhysicalProperties.ANY), RuleKind.ENFORCER, CostVector.ZERO, List.of(proof), null);
+		List<Winner> inputs = List.of(winnerWithWork(2, input, 100.0d, 100.0d));
+
+		CostVector implementationCost = model.localCost(implementation, OptimizationGoal.root(), inputs);
+		CostVector enforcerCost = model.localCost(enforcer, OptimizationGoal.root(), inputs);
+
+		assertEquals(implementationCost.workRows(), enforcerCost.workRows(), 0.0d,
+				"A property-only materialization enforcer must not charge work for an operator absent at runtime");
+	}
+
+	@Test
+	void canonicalLogicalOutputEvidenceComparesRelativeUncertaintyAtEveryPositiveScale() {
+		LogicalOutputEstimate uncertainZero = LogicalOutputEstimate.from(new CostVector(0.0d, 0.0d, 0.0d, 0.0d,
+				0.0d, 4.0d, 4.0d, 1.0d, 1.0d, 0.0d, 0.0d, 0.0d));
+		LogicalOutputEstimate fractional = LogicalOutputEstimate.from(new CostVector(0.5d, 0.0d, 0.0d, 0.0d,
+				0.0d, 4.0d, 4.0d, 1.0d, 1.0d, 1.875d, 0.0d, 0.0d));
+		LogicalOutputEstimate large = LogicalOutputEstimate.from(new CostVector(25_000.0d, 0.0d, 0.0d, 0.0d,
+				0.0d, 4.0d, 4.0d, 1.0d, 1.0d, 93_750.0d, 0.0d, 0.0d));
+
+		assertEquals(25_000.0d, fractional.stronger(large).evidence().rows(), 0.0d,
+				"Equal-quality evidence with equal relative uncertainty must converge conservatively by row count");
+		assertEquals(25_000.0d, large.stronger(fractional).evidence().rows(), 0.0d,
+				"Canonical evidence selection must be independent of discovery order");
+		assertEquals(0.5d, uncertainZero.stronger(fractional).evidence().rows(), 0.0d,
+				"An unsupported uncertain zero must not outrank a positive output estimate");
+	}
+
+	@Test
+	void immutableStatisticsEstimateReusesDerivedBindingProfile() {
+		Value firstCode = iri("urn:test:code-200");
+		Value secondCode = iri("urn:test:code-201");
+		FiniteRelationEstimate codes = FiniteRelationEstimate.fromRows(List.of("code"),
+				List.of(List.of(firstCode), List.of(secondCode)), "two-codes");
+		StatisticsEstimate estimate = StatisticsEstimate.fromBag(
+				BagEstimate.exact(2.0d, "two-codes").withFiniteRelation(codes), "two-codes");
+		Join join = new Join(pattern("condition", "codePredicate", "code"),
+				pattern("encounter", "conditionPredicate", "condition"));
+
+		BindingProfile first = BindingProfile.fromEstimate(join, estimate);
+		BindingProfile second = BindingProfile.fromEstimate(join, estimate);
+
+		assertSame(first, second,
+				"An immutable estimate must not recopy its variable and finite-relation facts for every cost candidate");
+		assertEquals(Set.of(firstCode, secondCode), first.finiteDomains().get("code").valueSet());
+		assertSame(estimate.bag().evidenceProfile(), first.evidenceProfile());
+	}
+
+	@Test
+	void outputRestrictionReusesAlreadyRestrictedImmutableFacts() {
+		Value firstCode = iri("urn:test:code-200");
+		Value secondCode = iri("urn:test:code-201");
+		FiniteRelationEstimate codes = FiniteRelationEstimate.fromRows(List.of("code"),
+				List.of(List.of(firstCode), List.of(secondCode)), "two-codes");
+		BindingProfile profile = BindingProfile.fromBag(null,
+				BagEstimate.exact(2.0d, "two-codes").withFiniteRelation(codes), Map.of());
+		PhysicalProperties properties = PhysicalProperties.builder()
+				.ordering(List.of("code:ASC"))
+				.distinctVars(Set.of("code"))
+				.boundVars(Set.of("code"))
+				.bindingProfile(profile)
+				.build();
+		Set<String> outputNames = Set.of("code");
+
+		assertSame(profile, profile.restrictTo(outputNames),
+				"An already schema-local binding profile must not rebuild all of its immutable fact maps");
+		assertSame(properties, properties.restrictOutputTo(outputNames),
+				"An already schema-local physical property set must not be copied for every cost candidate");
+	}
+
+	@Test
+	void materializedExistsSemiCountsMatchingLeftRowsNotJoinMultiplicity() {
+		CascadesCostModel model = model(new TrackingProvider());
+		StatementPattern argument = pattern("code", "p1", "leftValue");
+		StatementPattern subquery = pattern("code", "p2", "rightValue");
+		Filter filter = new Filter(argument, new Exists(subquery));
+		PhysicalProperties materialized = PhysicalProperties.builder()
+				.materialization(PhysicalProperties.Materialization.MATERIALIZED)
+				.build();
+		MemoExpr expression = MemoExpr.physical(1, 7, filter, List.of(2, 3), "materialized-exists-test",
+				PhysicalProperties.builder().accessPath("materializedExists").build(),
+				List.of(PhysicalProperties.ANY, materialized), RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(),
+				null);
+		BagEstimate left = BagEstimate.exact(100.0d, "left-frequencies")
+				.withFiniteRelation(FiniteRelationEstimate.fromFrequencies(List.of("code"),
+						Map.of(List.of(iri("urn:test:A")), 90.0d, List.of(iri("urn:test:B")), 10.0d),
+						"left-frequencies"));
+		BagEstimate right = BagEstimate.exact(100.0d, "right-frequencies")
+				.withFiniteRelation(FiniteRelationEstimate.fromFrequencies(List.of("code"),
+						Map.of(List.of(iri("urn:test:A")), 100.0d), "right-frequencies"));
+		List<Winner> inputs = List.of(profileWinner(2, argument, left),
+				profileWinner(3, subquery, right, PhysicalProperties.Materialization.MATERIALIZED));
+
+		CostVector local = model.localCost(expression, OptimizationGoal.root(), inputs);
+
+		assertEquals(90.0d, local.rows(), 0.0d,
+				"EXISTS preserves matching left multiplicity but must ignore duplicate RHS matches");
+	}
+
+	@Test
+	void materializedMinusOverflowPricesRepeatedRhsReopenings() {
+		String previousLimit = System.setProperty(MinusQueryEvaluationStep.MAX_MATERIALIZED_RIGHT_ROWS_PROPERTY, "2");
+		try {
+			CascadesCostModel model = model(new TrackingProvider());
+			StatementPattern left = pattern("entity", "p1", "value");
+			StatementPattern right = pattern("entity", "p2", "blocked");
+			Difference minus = new Difference(left, right);
+			PhysicalProperties materialized = PhysicalProperties.builder()
+					.materialization(PhysicalProperties.Materialization.MATERIALIZED)
+					.build();
+			MemoExpr expression = MemoExpr.physical(1, 7, minus, List.of(2, 3), "materialized-minus-test",
+					PhysicalProperties.builder().accessPath("materializedMinus").build(),
+					List.of(PhysicalProperties.ANY, materialized), RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(),
+					null);
+			List<Winner> inputs = List.of(winnerWithWork(2, left, 5.0d, 100.0d),
+					winnerWithWork(3, right, 3.0d, 80.0d));
+
+			CostVector local = model.localCost(expression, OptimizationGoal.root(), inputs);
+
+			assertEquals(408.0d, local.workRows(), 0.0d,
+					"Overflow must price the initial RHS scan plus reopening the selected RHS for every left row");
+			assertEquals(2.0d, local.memoryRows(), 0.0d,
+					"Overflow memory is bounded by the runtime materialization threshold");
+		} finally {
+			if (previousLimit == null) {
+				System.clearProperty(MinusQueryEvaluationStep.MAX_MATERIALIZED_RIGHT_ROWS_PROPERTY);
+			} else {
+				System.setProperty(MinusQueryEvaluationStep.MAX_MATERIALIZED_RIGHT_ROWS_PROPERTY, previousLimit);
+			}
+		}
+	}
+
+	@Test
+	void winnerBagDoesNotRecoverEqualRowEvidenceFromAnotherInputContext() {
+		CascadesCostModel model = model(new TrackingProvider());
+		StatementPattern inputPlan = pattern("x", "p", "y");
+		QueryRoot cachedPlan = new QueryRoot(inputPlan);
+		MemoExpr cachedExpression = MemoExpr.physical(10, 10, cachedPlan, List.of(11), "cached-child",
+				PhysicalProperties.ANY, List.of(PhysicalProperties.ANY), RuleKind.IMPLEMENTATION, CostVector.ZERO,
+				List.of(), null);
+		BagEstimate contextABag = BagEstimate.exact(2.0d, "context-a")
+				.withFiniteRelation(FiniteRelationEstimate.fromRows(List.of("x", "y"),
+						List.of(List.of(iri("urn:test:x1"), iri("urn:test:shared-y")),
+								List.of(iri("urn:test:x2"), iri("urn:test:shared-y"))),
+						"context-a"));
+		InputBindingContext contextA = inputContext("ctx", iri("urn:test:context-a"));
+		InputBindingContext contextB = inputContext("ctx", iri("urn:test:context-b"));
+
+		model.localCost(cachedExpression, OptimizationGoal.root().withInputBindingContext(contextA),
+				List.of(profileWinner(11, inputPlan, contextABag)));
+
+		CostVector sameRowCost = CostVector.ofRowsAndWork(2.0d, 2.0d,
+				QErrorInterval.exact(2.0d, "context-b-winner"));
+		Winner contextBWinner = new Winner(cachedExpression, cachedPlan, PhysicalProperties.ANY, sameRowCost, List.of(),
+				false, "", null, contextB);
+		QueryRoot parentPlan = new QueryRoot(cachedPlan);
+		MemoExpr parentExpression = MemoExpr.physical(20, 20, parentPlan, List.of(10), "parent",
+				PhysicalProperties.ANY, List.of(PhysicalProperties.ANY), RuleKind.IMPLEMENTATION, CostVector.ZERO,
+				List.of(), null);
+
+		PhysicalProperties delivered = model.deliveredProperties(parentExpression,
+				OptimizationGoal.root().withInputBindingContext(contextB), List.of(contextBWinner));
+
+		assertTrue(delivered.bindingProfile().finiteRelations().isEmpty(),
+				"A same-row cache entry from context A must not add exact tuple evidence to a context-B winner");
+		assertEquals(2.0d, delivered.bindingProfile().variables().get("y").distinctRows(), 0.0d,
+				"Scalar row equality cannot identify the child combination or binding evidence that produced a winner");
+	}
+
+	@Test
+	void scalarSubqueryInputRequirementIsSatisfiedByTupleArgument() {
+		CascadesCostModel model = CascadesCostModel.from(new EvaluationStatistics());
+		StatementPattern argument = pattern("entity", "type", "kind");
+		StatementPattern subquery = pattern("entity", "connectsTo", "blocked");
+		Filter filter = new Filter(argument, new Exists(subquery));
+		MemoExpr expression = new MemoExpr(1, 7, "Filter", List.of(2, 3), "", filter,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		PhysicalProperties subqueryProperties = PhysicalProperties.builder()
+				.boundVars(subquery.getBindingNames())
+				.inputBoundVars(Set.of("entity"))
+				.build();
+		List<Winner> inputs = List.of(winner(2, argument, 10.0d), winner(3, subquery, subqueryProperties, 1.0d));
+
+		PhysicalProperties delivered = model.deliveredProperties(expression, OptimizationGoal.root(), inputs);
+
+		assertTrue(delivered.inputBoundVars().isEmpty(),
+				"The tuple argument assures a correlated scalar input; that requirement is not external to the filter");
 	}
 
 	@Test
@@ -696,8 +1225,28 @@ class CascadesCostModelTest {
 				"Generic physical JoinIterator costing must use child winners, not re-estimate nested joins");
 		assertEquals(150.0d, cost.rows(), 0.0d,
 				"Disconnected generic physical joins must use concrete child winner row counts");
-		assertEquals(185.0d, cost.workRows(), 0.0d,
-				"Physical join estimates already include child work and must not count child winners twice");
+		assertEquals(150.0d, cost.workRows(), 0.0d,
+				"The local physical join estimate must exclude both selected child totals");
+	}
+
+	@Test
+	void hashJoinLocalCostOwnsBuildProbeAndOutputWork() {
+		CascadesCostModel model = CascadesCostModel.from(new EvaluationStatistics());
+		StatementPattern left = pattern("patient", "hasCondition", "condition");
+		StatementPattern right = pattern("condition", "conditionCode", "code");
+		Join hashJoin = new Join(left, right);
+		hashJoin.setStringMetricPlanned("optimizer.joinAlgorithmHint", "hash");
+		MemoExpr expression = new MemoExpr(1, 7, "Join", List.of(2, 3), "hash", hashJoin,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+
+		CostVector local = model.localCost(expression, OptimizationGoal.root(),
+				List.of(winner(2, left, 100.0d), winner(3, right, 40.0d)));
+
+		assertEquals(40.0d, local.rows(), 0.0d);
+		assertEquals(180.0d, local.workRows(), 0.0d,
+				"Hash join local work is one build/probe pass over both inputs plus output construction");
+		assertEquals(40.0d, local.memoryRows(), 0.0d,
+				"HashJoinIteration materializes the smaller input while it determines the build side");
 	}
 
 	@Test
@@ -714,7 +1263,7 @@ class CascadesCostModelTest {
 		CostVector cost = model.localCost(expression, OptimizationGoal.root(), List.of(winner(2, left, 8_000.0d),
 				winner(3, scopedUnion, 152_000.0d)));
 
-		assertTrue(cost.workRows() >= 8_000.0d * 152_000.0d,
+		assertTrue(cost.workRows() + 8_000.0d + 152_000.0d >= 8_000.0d * 152_000.0d,
 				"HashJoinIteration must price wildcard compatibility probes for scope-changing UNION branches");
 	}
 
@@ -731,7 +1280,7 @@ class CascadesCostModelTest {
 		CostVector cost = model.localCost(expression, OptimizationGoal.root(), List.of(winner(2, left, 8_000.0d),
 				winner(3, scopedUnion, 152_000.0d)));
 
-		assertTrue(cost.workRows() >= 8_000.0d * 152_000.0d,
+		assertTrue(cost.workRows() + 8_000.0d + 152_000.0d >= 8_000.0d * 152_000.0d,
 				"Scoped UNION branches that reference a sibling binding must price the generic JoinIterator as "
 						+ "wildcard compatibility work even when the scoped UNION does not assure that binding");
 	}
@@ -770,6 +1319,35 @@ class CascadesCostModelTest {
 		assertFalse(delivered.inputBoundVars().contains("topic"),
 				"A generic physical Join may satisfy RHS input bindings from the left sibling when the RHS remains "
 						+ "in the same variable scope");
+	}
+
+	@Test
+	void selectedPrefixJoinRejectsChildWithNestedIsolatedBoundary() {
+		CascadesCostModel model = model(new TrackingProvider(true, 1.0d));
+		StatementPattern left = pattern("patient", "hasObservation", "encounter");
+		StatementPattern rightTemplate = pattern("encounter", "value", "value");
+		Join join = new Join(left, rightTemplate);
+		PhysicalProperties selectedPrefix = PhysicalProperties.builder()
+				.inputConsumption(PhysicalProperties.InputConsumption.SELECTED_PREFIX)
+				.build();
+		MemoExpr expression = MemoExpr.physical(1, 7, join, List.of(2, 3), "selected-prefix-join",
+				PhysicalProperties.ANY, List.of(PhysicalProperties.ANY, selectedPrefix), RuleKind.IMPLEMENTATION,
+				CostVector.ZERO, List.of(), null);
+
+		Projection isolatedSubquery = new Projection(pattern("encounter", "excludedBy", "reason"),
+				projection("encounter"), true);
+		Difference rightPlan = new Difference(rightTemplate.clone(), new Distinct(isolatedSubquery));
+		PhysicalProperties rightDelivered = PhysicalProperties.builder()
+				.boundVars(rightPlan.getBindingNames())
+				.inputConsumption(PhysicalProperties.InputConsumption.SELECTED_PREFIX)
+				.build();
+
+		IllegalStateException failure = assertThrows(IllegalStateException.class,
+				() -> model.buildPlan(expression,
+						List.of(winner(2, left, 25_000.0d), winner(3, rightPlan, rightDelivered, 8_000.0d))));
+
+		assertTrue(failure.getMessage().contains("isolated right winner"),
+				"A selected-prefix physical edge cannot silently become the hash/isolated runtime route");
 	}
 
 	@Test
@@ -821,6 +1399,93 @@ class CascadesCostModelTest {
 	}
 
 	@Test
+	void projectionOnlyRetainsOrderingAndDistinctnessThatSurviveUnchanged() {
+		CascadesCostModel model = model(new TrackingProvider(true, 1.0d));
+		Projection projection = new Projection(pattern("s", "p", "o"), projection("o"), false);
+		MemoExpr expression = new MemoExpr(1, 7, "Projection", List.of(2), "generic", projection,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		PhysicalProperties droppedKey = PhysicalProperties.builder()
+				.ordering(List.of("s:asc"))
+				.distinctVars(Set.of("s"))
+				.boundVars(projection.getArg().getBindingNames())
+				.build();
+		PhysicalProperties retainedKey = PhysicalProperties.builder()
+				.ordering(List.of("o:asc"))
+				.distinctVars(Set.of("o"))
+				.boundVars(projection.getArg().getBindingNames())
+				.build();
+
+		PhysicalProperties dropped = model.deliveredProperties(expression, OptimizationGoal.root(),
+				List.of(winner(2, projection.getArg(), droppedKey, 100.0d)));
+		PhysicalProperties retained = model.deliveredProperties(expression, OptimizationGoal.root(),
+				List.of(winner(3, projection.getArg(), retainedKey, 100.0d)));
+
+		assertTrue(dropped.ordering().isEmpty());
+		assertTrue(dropped.distinctVars().isEmpty());
+		assertEquals(List.of("o:asc"), retained.ordering());
+		assertEquals(Set.of("o"), retained.distinctVars());
+	}
+
+	@Test
+	void onlyOrderedReducedClaimsExactDistinctnessAndUsesStreamingMemory() {
+		CascadesCostModel model = CascadesCostModel.from(new EvaluationStatistics());
+		StatementPattern input = pattern("s", "p", "o");
+		Order order = new Order(input.clone(), new OrderElem(new Var("o")));
+		PhysicalProperties orderedProperties = PhysicalProperties.builder()
+				.ordering(List.of("o:asc"))
+				.boundVars(order.getBindingNames())
+				.build();
+		Winner orderedInput = winner(2, order, orderedProperties, 100.0d);
+
+		Reduced orderedReduced = new Reduced(order.clone());
+		MemoExpr orderedReducedExpression = new MemoExpr(1, 7, "Reduced", List.of(2), "generic", orderedReduced,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		PhysicalProperties orderedDelivered = model.deliveredProperties(orderedReducedExpression,
+				OptimizationGoal.root(), List.of(orderedInput));
+
+		Reduced plainReduced = new Reduced(input.clone());
+		MemoExpr plainReducedExpression = new MemoExpr(3, 8, "Reduced", List.of(4), "generic", plainReduced,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		PhysicalProperties plainDelivered = model.deliveredProperties(plainReducedExpression,
+				OptimizationGoal.root(), List.of(winner(4, input, 100.0d)));
+
+		Distinct distinct = new Distinct(order.clone());
+		MemoExpr distinctExpression = new MemoExpr(5, 9, "Distinct", List.of(2), "generic", distinct,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		CostVector reducedCost = model.localCost(orderedReducedExpression, OptimizationGoal.root(),
+				List.of(orderedInput));
+		CostVector distinctCost = model.localCost(distinctExpression, OptimizationGoal.root(), List.of(orderedInput));
+
+		assertEquals(orderedReduced.getBindingNames(), orderedDelivered.distinctVars());
+		assertEquals(PhysicalProperties.DuplicateBehavior.ELIMINATES, orderedDelivered.duplicateBehavior());
+		assertTrue(plainDelivered.distinctVars().isEmpty());
+		assertNotEquals(PhysicalProperties.DuplicateBehavior.ELIMINATES, plainDelivered.duplicateBehavior());
+		assertTrue(reducedCost.memoryRows() < distinctCost.memoryRows(),
+				"Consecutive duplicate elimination should retain one prior row, not a full distinct set");
+	}
+
+	@Test
+	void orderCostReflectsComparedTupleWidth() {
+		CascadesCostModel model = CascadesCostModel.from(new EvaluationStatistics());
+		StatementPattern wideInput = pattern("s", "p", "o");
+		Projection narrowInput = new Projection(wideInput.clone(), projection("o"), false);
+		Order wideOrder = new Order(wideInput, new OrderElem(new Var("o")));
+		Order narrowOrder = new Order(narrowInput, new OrderElem(new Var("o")));
+		MemoExpr wideExpression = new MemoExpr(1, 7, "Order", List.of(2), "generic", wideOrder,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		MemoExpr narrowExpression = new MemoExpr(3, 8, "Order", List.of(4), "generic", narrowOrder,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+
+		CostVector wideCost = model.localCost(wideExpression, OptimizationGoal.root(),
+				List.of(winner(2, wideOrder.getArg(), 256.0d)));
+		CostVector narrowCost = model.localCost(narrowExpression, OptimizationGoal.root(),
+				List.of(winner(4, narrowOrder.getArg(), 256.0d)));
+
+		assertTrue(narrowCost.workRows() < wideCost.workRows(),
+				"Sorting projected rows must be cheaper than comparing unused hidden bindings");
+	}
+
+	@Test
 	void genericPhysicalDifferenceDoesNotSatisfyParameterizedChildInputBindings() {
 		CascadesCostModel model = model(new TrackingProvider(true, 1.0d));
 		TupleExpr left = pattern("work", "about", "topic");
@@ -852,8 +1517,8 @@ class CascadesCostModelTest {
 
 		assertEquals(0, provider.multiPatternCalls,
 				"Generic physical LeftJoinIterator costing must use child winners, not re-estimate nested inputs");
-		assertEquals(180.0d, cost.rows(), 0.0d,
-				"Disconnected generic physical left joins must use concrete child winner row counts through the left join formula");
+		assertEquals(150.0d, cost.rows(), 0.0d,
+				"Output rows must come from the left-join formula without adding selected child rows");
 	}
 
 	@Test
@@ -899,6 +1564,380 @@ class CascadesCostModelTest {
 	}
 
 	@Test
+	void parameterizedJoinCostReceivesExactFiniteValuesFromLeftWinner() {
+		TrackingParameterizedFactorCostModel factorCostModel = new TrackingParameterizedFactorCostModel();
+		CascadesCostModel model = model(new TrackingProvider(false), factorCostModel);
+		StatementPattern left = pattern("anchor", "anchorPredicate", "value");
+		StatementPattern right = pattern("observation", "medicalValuePredicate", "value");
+		Join join = new Join(left, right);
+		MemoExpr expression = new MemoExpr(1, 7, "Join", List.of(2, 3), "generic", join,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		Value value50 = iri("urn:medical:value-50");
+		Value value60 = iri("urn:medical:value-60");
+		Value value70 = iri("urn:medical:value-70");
+		FiniteRelationEstimate relation = FiniteRelationEstimate.fromRows(List.of("value"),
+				List.of(List.of(value50), List.of(value60), List.of(value70)), "test-values-anchor");
+		BindingProfile profile = BindingProfile.fromBag(left,
+				BagEstimate.exact(3.0d, "test-values-anchor").withFiniteRelation(relation), Map.of());
+		PhysicalProperties leftProperties = PhysicalProperties.builder()
+				.boundVars(left.getBindingNames())
+				.bindingProfile(profile)
+				.build();
+
+		model.localCost(expression, OptimizationGoal.root(), List.of(winner(2, left, leftProperties, 3.0d),
+				parameterizedWinner(3, right, 1.0d, Set.of("value"))));
+
+		assertEquals(Set.of(value50, value60, value70),
+				factorCostModel.lastContext.getFiniteBindingValues().get("value"),
+				"Parameterized access costing must receive exact finite VALUES domains retained by the memo winner");
+	}
+
+	@Test
+	void genericProviderOptimizesBothLookupsUnderExactMultiColumnInputContext() {
+		BoundAwareStatementProvider provider = new BoundAwareStatementProvider();
+		CascadesCostModel model = model(provider);
+		BindingSetAssignment exactPairs = valuesAssignment(List.of("type", "code"), List.of(
+				List.of(iri("urn:type:A"), iri("urn:code:200")),
+				List.of(iri("urn:type:A"), iri("urn:code:201")),
+				List.of(iri("urn:type:B"), iri("urn:code:202"))));
+		MemoExpr valuesExpression = new MemoExpr(2, 2, "BindingSetAssignment", List.of(), "values", exactPairs,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		PhysicalProperties valuesProperties = model.deliveredProperties(valuesExpression, OptimizationGoal.root(),
+				List.of());
+		Winner valuesWinner = winner(2, exactPairs, valuesProperties, 3.0d);
+
+		StatementPattern typeLookup = pattern("entity", "typePredicate", "type");
+		StatementPattern codeLookup = pattern("entity", "codePredicate", "code");
+		Join selectedRightPlan = new Join(typeLookup, codeLookup);
+		InputBindingContext context = InputBindingContext.fromProfile(valuesWinner.cost().rows(),
+				exactPairs.getAssuredBindingNames(), valuesProperties.bindingProfile());
+		OptimizationGoal goal = OptimizationGoal.root()
+				.withRequiredProperties(PhysicalProperties.builder().boundVars(Set.of("type", "code")).build())
+				.withInputBindingContext(context);
+		ContextCapturingImplementationRule implementationRule = new ContextCapturingImplementationRule();
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(implementationRule)
+				.build();
+
+		Winner rightWinner = new CascadesPlanner(model, registry, CascadesTelemetry.NO_OP)
+				.optimize(selectedRightPlan, goal)
+				.winner()
+				.orElseThrow();
+
+		assertTrue(provider.boundLookupCalls.size() >= 2,
+				"Exact search must cost both selected physical lookups under the outer pair relation");
+		assertTrue(provider.boundLookupCalls.stream().allMatch(call -> call.containsAll(Set.of("type", "code"))),
+				() -> "Every lookup alternative must retain the complete exact pair context: "
+						+ provider.boundLookupCalls);
+		List<InputBindingContext> selectedPairContexts = implementationRule.selectedPairContexts();
+		assertTrue(selectedPairContexts.size() >= 2,
+				() -> "Both selected lookups must expose their contextual goal: " + selectedPairContexts);
+		assertTrue(selectedPairContexts.stream()
+				.allMatch(selected -> context.equals(selected.restrictTo(Set.of("type", "code")))),
+				() -> "Every selected lookup must preserve the exact pair relation and frequencies: "
+						+ selectedPairContexts);
+		List<Set<String>> codeLookupRequirements = implementationRule.codeLookupRequirements();
+		assertFalse(codeLookupRequirements.isEmpty(), "The contextual code lookup goal must be observed");
+		assertTrue(codeLookupRequirements.stream()
+				.allMatch(required -> required.containsAll(Set.of("entity", "code"))
+						&& !required.contains("type")),
+				() -> "The full estimator context must not widen the code lookup's projected physical requirement: "
+						+ codeLookupRequirements);
+		assertEquals(6.0d, rightWinner.cost().workRows(), 0.0d,
+				"Three exact pairs must perform two one-row lookups without standalone RHS work");
+	}
+
+	@Test
+	void genericProviderCostsTransparentRightOncePerDuplicateInputRow() {
+		BoundAwareStatementProvider provider = new BoundAwareStatementProvider();
+		CascadesCostModel model = model(provider);
+		BindingSetAssignment duplicatePairs = valuesAssignment(List.of("type", "code"), List.of(
+				List.of(iri("urn:type:A"), iri("urn:code:200")),
+				List.of(iri("urn:type:A"), iri("urn:code:200")),
+				List.of(iri("urn:type:A"), iri("urn:code:201")),
+				List.of(iri("urn:type:B"), iri("urn:code:202"))));
+		MemoExpr valuesExpression = new MemoExpr(2, 2, "BindingSetAssignment", List.of(), "values", duplicatePairs,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		PhysicalProperties valuesProperties = model.deliveredProperties(valuesExpression, OptimizationGoal.root(),
+				List.of());
+		Join selectedRightPlan = new Join(pattern("entity", "typePredicate", "type"),
+				pattern("entity", "codePredicate", "code"));
+		InputBindingContext context = InputBindingContext.fromProfile(4.0d,
+				duplicatePairs.getAssuredBindingNames(), valuesProperties.bindingProfile());
+		OptimizationGoal goal = OptimizationGoal.root()
+				.withRequiredProperties(PhysicalProperties.builder().boundVars(Set.of("type", "code")).build())
+				.withInputBindingContext(context);
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(new StandardCascadesRules.GenericImplementationRule())
+				.build();
+
+		Winner rightWinner = new CascadesPlanner(model, registry, CascadesTelemetry.NO_OP)
+				.optimize(selectedRightPlan, goal)
+				.winner()
+				.orElseThrow();
+
+		assertEquals(8.0d, rightWinner.cost().workRows(), 0.0d,
+				"A transparent RHS runs for all four left rows; equal lookup keys do not imply an execution cache");
+	}
+
+	@Test
+	void parameterizedJoinCostRetainsFiniteDomainButNotExactRelationThroughDisconnectedPrefix() {
+		TrackingParameterizedFactorCostModel factorCostModel = new TrackingParameterizedFactorCostModel();
+		CascadesCostModel model = model(new TrackingProvider(false), factorCostModel);
+		Value value50 = iri("urn:medical:value-50");
+		Value value60 = iri("urn:medical:value-60");
+		Value value70 = iri("urn:medical:value-70");
+		BindingSetAssignment values = valuesAssignment("value", value50, value60, value70);
+		MemoExpr valuesExpression = new MemoExpr(2, 2, "BindingSetAssignment", List.of(), "values", values,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		PhysicalProperties valuesProperties = model.deliveredProperties(valuesExpression, OptimizationGoal.root(),
+				List.of());
+		Winner valuesWinner = winner(2, values, valuesProperties, 3.0d);
+		StatementPattern disconnected = pattern("patient", "patientType", "patientClass");
+		Join disconnectedPrefix = new Join(values, disconnected);
+		MemoExpr prefixExpression = new MemoExpr(4, 4, "Join", List.of(2, 3), "disconnected-prefix",
+				disconnectedPrefix, PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		PhysicalProperties prefixProperties = model.deliveredProperties(prefixExpression, OptimizationGoal.root(),
+				List.of(valuesWinner, winner(3, disconnected, 100.0d)));
+		assertTrue(prefixProperties.bindingProfile()
+				.finiteRelations()
+				.values()
+				.stream()
+				.noneMatch(relation -> relation.variables().contains("value")),
+				"The finite domain may survive, but VALUES multiplicities are not exact for the composite prefix");
+		Winner prefixWinner = winner(4, disconnectedPrefix, prefixProperties, 300.0d);
+		StatementPattern medicalValue = pattern("observation", "medicalValuePredicate", "value");
+		Join lookup = new Join(disconnectedPrefix, medicalValue);
+		MemoExpr lookupExpression = new MemoExpr(6, 6, "Join", List.of(4, 5), "parameterized-lookup", lookup,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+
+		model.localCost(lookupExpression, OptimizationGoal.root(),
+				List.of(prefixWinner, parameterizedWinner(5, medicalValue, 1.0d, Set.of("value"))));
+
+		assertEquals(Set.of(value50, value60, value70),
+				factorCostModel.lastContext.getFiniteBindingValues().get("value"),
+				"Finite domains must survive unrelated joins so later parameterized access remains finitely bounded");
+	}
+
+	@Test
+	void finiteRelationProducesOneLogicalEstimateForCompositeJoinAlternative() {
+		CompositeFiniteFactorCostModel factorCostModel = new CompositeFiniteFactorCostModel();
+		CascadesCostModel model = model(RdfStatisticsProvider.EMPTY, factorCostModel);
+		BindingSetAssignment values = valuesAssignment("code", iri("urn:code:200"), iri("urn:code:201"));
+		MemoExpr valuesExpression = new MemoExpr(2, 2, "BindingSetAssignment", List.of(), "values", values,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		PhysicalProperties valuesProperties = model.deliveredProperties(valuesExpression, OptimizationGoal.root(),
+				List.of());
+		Winner valuesWinner = new Winner(valuesExpression, values, valuesProperties,
+				CostVector.ofRowsAndWork(2.0d, 3.0d, QErrorInterval.exact(2.0d, "two-codes")), List.of(), false,
+				"", null, InputBindingContext.NONE, CostScope.PER_INVOCATION, 2.0d,
+				valuesProperties.bindingProfile(), values.getBindingNames());
+
+		Join composite = new Join(pattern("condition", "codePredicate", "code"),
+				pattern("encounter", "conditionPredicate", "condition"));
+		MemoExpr compositeExpression = new MemoExpr(3, 3, "Join", List.of(4, 5), "composite", composite,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		Winner compositeWinner = new Winner(compositeExpression, composite,
+				PhysicalProperties.builder().boundVars(composite.getBindingNames()).build(),
+				CostVector.ofRowsAndWork(50_000.0d, 100_000.0d,
+						QErrorInterval.heuristic(50_000.0d, 4.0d, "composite")),
+				List.of(), false, "");
+		Join join = new Join(values, composite);
+		MemoExpr expression = new MemoExpr(1, 1, "Join", List.of(2, 3), "physical-join", join,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+
+		StatisticsEstimate logical = model
+				.logicalOutputEstimate(expression, OptimizationGoal.root(), List.of(valuesWinner, compositeWinner))
+				.orElseThrow();
+		CostVector equivalentPhysicalCost = CostVector.ofRowsAndWork(50_001.0d, 100_002.0d,
+				QErrorInterval.heuristic(50_001.0d, 4.0d, "equivalent-composite"));
+		Winner equivalentCompositeWinner = new Winner(compositeExpression, composite.clone(),
+				compositeWinner.deliveredProperties(), equivalentPhysicalCost, List.of(), false, "");
+		StatisticsEstimate equivalentLogical = model
+				.logicalOutputEstimate(expression, OptimizationGoal.root(),
+						List.of(valuesWinner, equivalentCompositeWinner))
+				.orElseThrow();
+
+		assertEquals(42.0d, logical.rows(), 0.0d,
+				"A finite relation must logically restrict every equivalent join shape, including a composite sibling");
+		assertEquals(logical.rows(), equivalentLogical.rows(), 0.0d);
+		assertEquals(1, factorCostModel.calls,
+				"Equivalent physical winner identities must share one memo-logical composite estimate");
+		assertEquals(Set.of(iri("urn:code:200"), iri("urn:code:201")),
+				factorCostModel.lastContext.getFiniteBindingValues().get("code"));
+	}
+
+	@Test
+	void parameterizedJoinLocalCostOwnsRepricedRightWorkInsteadOfStandaloneRightCost() {
+		TrackingParameterizedFactorCostModel factorCostModel = new TrackingParameterizedFactorCostModel(3.0d, 3.0d);
+		CascadesCostModel model = model(new TrackingProvider(false), factorCostModel);
+		StatementPattern left = pattern("anchor", "anchorPredicate", "value");
+		StatementPattern right = pattern("observation", "medicalValuePredicate", "value");
+		Join join = new Join(left, right);
+		MemoExpr expression = new MemoExpr(1, 7, "Join", List.of(2, 3), "generic", join,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+
+		CostVector local = model.localCost(expression, OptimizationGoal.root(),
+				List.of(winner(2, left, 3.0d), parameterizedWinner(3, right, 50_000.0d, Set.of("value"))));
+
+		assertEquals(3.0d, local.workRows(), 0.0d,
+				"The join owns contextually repriced RHS invocation work; a stale standalone RHS total must not erase it");
+	}
+
+	@Test
+	void parameterizedCompositeRightScalesSelectedChildWorkWhenNoFactorEstimateExists() {
+		JoinFactorCostModel noCompositeEstimate = (factor, boundVars) -> Optional.empty();
+		CascadesCostModel model = model(RdfStatisticsProvider.EMPTY, noCompositeEstimate);
+		StatementPattern left = pattern("entity", "type", "kind");
+		Join right = new Join(pattern("kind", "className", "className"),
+				pattern("className", "expensiveDetail", "payload"));
+		Join join = new Join(left, right);
+		MemoExpr expression = new MemoExpr(1, 7, "Join", List.of(2, 3), "generic", join,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		MemoExpr rightExpression = new MemoExpr(3, 3, "Join", List.of(4, 5), "selected-composite", right,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		PhysicalProperties rightProperties = PhysicalProperties.builder()
+				.boundVars(right.getBindingNames())
+				.inputBoundVars(Set.of("kind"))
+				.build();
+		CostVector rightPerInvocation = CostVector.ofRowsAndWork(1.0d, 10.0d,
+				QErrorInterval.exact(1.0d, "selected-composite"));
+		Winner rightWinner = new Winner(rightExpression, right, rightProperties, rightPerInvocation, List.of(), false,
+				"");
+		List<Winner> inputs = List.of(winner(2, left, 100.0d), rightWinner);
+
+		CostVector local = model.localCost(expression, OptimizationGoal.root(), inputs);
+
+		assertEquals(1_000.0d, local.workRows(), 0.0d,
+				"A transparent parameterized composite is executed once per outer row and cannot be priced once");
+		assertEquals(Set.of(1), model.locallyCostedInputIndexes(expression, OptimizationGoal.root(), inputs),
+				"The parent join owns repeated RHS work while retaining the composite as a transparent input");
+	}
+
+	@Test
+	void parameterizedCompositeRightUsesSelectedChildrenInsteadOfOpaqueFactorEstimate() {
+		AtomicInteger compositeEstimateCalls = new AtomicInteger();
+		JoinFactorCostModel inflatedCompositeEstimate = (factor, boundVars) -> {
+			if (!(factor instanceof Join)) {
+				return Optional.empty();
+			}
+			compositeEstimateCalls.incrementAndGet();
+			double inflatedRows = 3_315_000_000.0d;
+			return Optional.of(new FactorCostEstimate(inflatedRows, inflatedRows, Map.of(),
+					Map.of("plannedRepeatedInvocations", 100.0d), false, false, 0, 0, inflatedRows, true, true));
+		};
+		CascadesCostModel model = model(RdfStatisticsProvider.EMPTY, inflatedCompositeEstimate);
+		StatementPattern left = pattern("entity", "type", "kind");
+		Join right = new Join(pattern("kind", "className", "className"),
+				pattern("className", "expensiveDetail", "payload"));
+		Join join = new Join(left, right);
+		MemoExpr expression = new MemoExpr(1, 7, "Join", List.of(2, 3), "generic", join,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		MemoExpr rightExpression = new MemoExpr(3, 3, "Join", List.of(4, 5), "selected-composite", right,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		PhysicalProperties rightProperties = PhysicalProperties.builder()
+				.boundVars(right.getBindingNames())
+				.inputBoundVars(Set.of("kind"))
+				.build();
+		CostVector rightPerInvocation = CostVector.ofRowsAndWork(1.0d, 10.0d,
+				QErrorInterval.exact(1.0d, "selected-composite"));
+		Winner rightWinner = new Winner(rightExpression, right, rightProperties, rightPerInvocation, List.of(), false,
+				"");
+		List<Winner> inputs = List.of(winner(2, left, 100.0d), rightWinner);
+
+		CostVector local = model.localCost(expression, OptimizationGoal.root(), inputs);
+
+		assertEquals(1_000.0d, local.workRows(), 0.0d,
+				"A transparent composite RHS must be priced from its selected memo children for every invocation");
+		assertEquals(0, compositeEstimateCalls.get(),
+				"The factor estimator must not replace independently selected composite children with an opaque estimate");
+	}
+
+	@Test
+	void contextTotalCompositeRightIsNotMultipliedAgain() {
+		CascadesCostModel model = CascadesCostModel.from(new EvaluationStatistics());
+		SingletonSet left = new SingletonSet();
+		Join right = new Join(new SingletonSet(), new SingletonSet());
+		Join join = new Join(left, right);
+		join.setStringMetricPlanned("optimizer.joinAlgorithmHint", "hash");
+		MemoExpr expression = new MemoExpr(1, 1, "Join", List.of(2, 3), "context-total-parent", join,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		InputBindingContext context = InputBindingContext.fromProfile(100.0d, Set.of("entity"), BindingProfile.ANY);
+		Winner leftWinner = contextTotalWinner(2, left, 100.0d, 100.0d, context, false);
+		Winner rightWinner = contextTotalWinner(3, right, 100.0d, 300.0d, context, true);
+		List<Winner> inputs = List.of(leftWinner, rightWinner);
+
+		assertEquals(CostScope.TOTAL_FOR_CONTEXT, leftWinner.costScope());
+		assertEquals(CostScope.TOTAL_FOR_CONTEXT, rightWinner.costScope());
+		CostVector local = model.localCost(expression,
+				OptimizationGoal.root().withInputBindingContext(context), inputs);
+
+		assertEquals(100.0d, local.rows(), 0.0d,
+				"Two selected child totals for the same 100 invocations represent 100 correlated results, not 10,000");
+		assertEquals(300.0d, local.workRows(), 0.0d,
+				"The parent owns local compatibility work plus one hash build/probe over both contextual inputs");
+		assertEquals(700.0d, composedWorkRows(model, expression, inputs), 0.0d,
+				"Selected child work plus local compatibility and hash build/probe work must be counted once");
+	}
+
+	@Test
+	void contextTotalJoinWithNoLocalWorkDoesNotRepriceChildUncertainty() {
+		CascadesCostModel model = CascadesCostModel.from(new EvaluationStatistics());
+		SingletonSet left = new SingletonSet();
+		SingletonSet right = new SingletonSet();
+		Join join = new Join(left, right);
+		MemoExpr expression = new MemoExpr(1, 1, "Join", List.of(2, 3), "context-total-zero-local", join,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		InputBindingContext context = InputBindingContext.fromProfile(100.0d, Set.of("entity"), BindingProfile.ANY);
+		List<Winner> inputs = List.of(
+				contextTotalWinner(2, left, 100.0d, 100.0d, context, false),
+				contextTotalWinner(3, right, 100.0d, 300.0d, context, false));
+
+		CostVector local = model.localCost(expression,
+				OptimizationGoal.root().withInputBindingContext(context), inputs);
+
+		assertEquals(0.0d, local.workRows(), 0.0d,
+				"A cumulative contextual estimate equal to its child-work sum has no local work");
+		assertEquals(0.0d, local.pricedWorkRows(), 0.0d,
+				"Zero local work must not be repriced from the cumulative output uncertainty");
+		assertEquals(0.0d, local.objectiveScore(), 0.0d,
+				"A zero-work local operator must add no canonical objective to its child totals");
+		assertEquals(0.0d, local.memoryRows(), 0.0d);
+		assertEquals(0.0d, local.seeks(), 0.0d);
+		assertEquals(0.0d, local.pageWalkRows(), 0.0d);
+	}
+
+	@Test
+	void selectedFinitePrefixRetainsInheritedInvocationMass() {
+		CascadesCostModel model = CascadesCostModel.from(new EvaluationStatistics());
+		BindingSetAssignment values = valuesAssignment("value",
+				iri("urn:medical:value-50"), iri("urn:medical:value-51"), iri("urn:medical:value-52"),
+				iri("urn:medical:value-53"), iri("urn:medical:value-54"), iri("urn:medical:value-55"),
+				iri("urn:medical:value-56"), iri("urn:medical:value-57"), iri("urn:medical:value-58"),
+				iri("urn:medical:value-59"));
+		MemoExpr valuesExpression = new MemoExpr(2, 2, "BindingSetAssignment", List.of(), "values", values,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		PhysicalProperties valuesProperties = model.deliveredProperties(valuesExpression, OptimizationGoal.root(),
+				List.of());
+		Winner perInvocationValues = winner(2, values, valuesProperties, 10.0d);
+		InputBindingContext outer = InputBindingContext.fromProfile(49_600.0d, Set.of("obs"), BindingProfile.ANY);
+
+		InputBindingContext selected = InputBindingContext.selectedPrefix(outer, perInvocationValues,
+				Set.of("value"), valuesProperties.bindingProfile(), Set.of("obs", "value"));
+
+		assertEquals(496_000.0d, selected.invocationRows(), 0.0d,
+				"Ten VALUES rows execute once for each inherited observation binding");
+		assertEquals(Set.of("obs", "value"), selected.assuredBindingNames());
+		assertEquals(10, selected.finiteBindingValues(Set.of("value")).get("value").size());
+
+		Winner contextTotalValues = contextTotalWinner(3, values, 496_000.0d, 496_000.0d, outer, false);
+		InputBindingContext alreadyTotal = InputBindingContext.selectedPrefix(outer, contextTotalValues,
+				Set.of("value"), valuesProperties.bindingProfile(), Set.of("obs", "value"));
+		assertEquals(496_000.0d, alreadyTotal.invocationRows(), 0.0d,
+				"A winner already costed for the inherited context must not be multiplied twice");
+	}
+
+	@Test
 	void genericPhysicalJoinBuildPlanRestampsParameterizedRightAccessPath() {
 		TrackingParameterizedFactorCostModel factorCostModel = new TrackingParameterizedFactorCostModel();
 		CascadesCostModel model = model(new TrackingProvider(false), factorCostModel);
@@ -916,6 +1955,49 @@ class CascadesCostModelTest {
 		assertEquals("directLookup",
 				plannedRight.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE),
 				"Physical JOIN plan assembly must preserve the access path costed with left-prefix bindings");
+	}
+
+	@Test
+	void buildPlanReplacesFilterArgumentAndExistsSubqueryIndependently() {
+		CascadesCostModel model = CascadesCostModel.from(new EvaluationStatistics());
+		StatementPattern templateArgument = pattern("templateOuter", "templatePredicate", "templateObject");
+		StatementPattern templateSubquery = pattern("templateSubquery", "templatePredicate", "templateValue");
+		Filter filter = new Filter(templateArgument, new Exists(templateSubquery));
+		MemoExpr expression = new MemoExpr(1, 7, "Filter", List.of(2, 3), "typed-inputs", filter,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		StatementPattern selectedArgument = pattern("selectedOuter", "selectedPredicate", "selectedObject");
+		StatementPattern selectedSubquery = pattern("selectedSubquery", "selectedPredicate", "selectedValue");
+
+		Filter plan = (Filter) model.buildPlan(expression,
+				List.of(winner(2, selectedArgument), winner(3, selectedSubquery)));
+		Exists plannedCondition = (Exists) plan.getCondition();
+
+		assertEquals(selectedArgument, plan.getArg());
+		assertEquals(selectedSubquery, plannedCondition.getSubQuery());
+		assertNotEquals(selectedSubquery, plan.getArg(),
+				"The scalar winner must not replace the FILTER's ordinary argument");
+		assertNotEquals(selectedArgument, plannedCondition.getSubQuery(),
+				"The ordinary winner must not replace the EXISTS subquery");
+		assertSame(templateArgument, filter.getArg(), "Plan assembly must not mutate the memo template");
+		assertSame(templateSubquery, ((Exists) filter.getCondition()).getSubQuery(),
+				"Plan assembly must not mutate the memo template's scalar tree");
+	}
+
+	@Test
+	void buildPlanReplacesArbitraryLengthPathExpressionIndependently() {
+		CascadesCostModel model = CascadesCostModel.from(new EvaluationStatistics());
+		StatementPattern templatePath = pattern("templatePathStart", "templatePathPredicate", "templatePathEnd");
+		ArbitraryLengthPath path = new ArbitraryLengthPath(new Var("start"), templatePath, new Var("end"), 1L);
+		MemoExpr expression = new MemoExpr(1, 7, "ArbitraryLengthPath", List.of(2), "typed-inputs", path,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		StatementPattern selectedPath = pattern("selectedPathStart", "selectedPathPredicate", "selectedPathEnd");
+
+		ArbitraryLengthPath plan = (ArbitraryLengthPath) model.buildPlan(expression,
+				List.of(winner(2, selectedPath)));
+
+		assertEquals(selectedPath, plan.getPathExpression());
+		assertNotSame(selectedPath, plan.getPathExpression(), "Winner plans must be cloned into the assembled plan");
+		assertSame(templatePath, path.getPathExpression(), "Plan assembly must not mutate the memo template");
 	}
 
 	@Test
@@ -961,7 +2043,7 @@ class CascadesCostModelTest {
 		LeoTrackingProvider provider = new LeoTrackingProvider();
 		CascadesCostModel model = model(provider);
 		Join join = new Join(pattern("s", "p1", "o"), pattern("o", "p2", "x"));
-		MemoExpr logicalJoin = MemoExpr.logical(10, 0, join, List.of(), "leo-feedback");
+		MemoExpr logicalJoin = MemoExpr.logical(10, 0, join, List.of(1, 2), "leo-feedback");
 
 		CostVector cost = model.localCost(logicalJoin, OptimizationGoal.root(), List.of());
 
@@ -989,6 +2071,34 @@ class CascadesCostModelTest {
 				"Zero-row physical input winners must not force a reorderable provider estimate");
 	}
 
+	@Test
+	void physicalUnionPreservesExactSelectedWinnerEvidence() {
+		TrackingProvider provider = new TrackingProvider(true, 1.0d);
+		CascadesCostModel model = model(provider);
+		StatementPattern left = pattern("left", "p1", "leftValue");
+		StatementPattern right = pattern("right", "p2", "rightValue");
+		Union union = new Union(left, right);
+		MemoExpr expression = new MemoExpr(1, 7, "Union", List.of(2, 3), "generic", union,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		OptimizationGoal contextualGoal = OptimizationGoal.root()
+				.withInputBindingContext(InputBindingContext.fromProfile(2.0d, Set.of(), BindingProfile.ANY));
+
+		List<Winner> selectedInputs = List.of(
+				profileWinner(2, left, BagEstimate.exact(0.0d, "exact-empty-left")),
+				profileWinner(3, right, BagEstimate.exact(5.0d, "exact-five-right")));
+		CostVector cost = model.localCost(expression, contextualGoal, selectedInputs);
+
+		assertEquals(5.0d, cost.rows(), 0.0d,
+				"A physical UNION must add the selected child populations, including an exact empty branch");
+		assertEquals(1.0d, cost.confidence(), 0.0d,
+				"An exact-empty plus exact-five UNION remains exact after physical child composition");
+		assertEquals(1.0d, cost.rowQErrorMax(), 0.0d);
+		assertEquals(5.0d, composedWorkRows(model, expression, selectedInputs), 0.0d,
+				"Selected child work is composed exactly once and UNION adds no hidden subtree charge");
+		assertEquals(0, provider.statementPatternCalls,
+				"Physical UNION costing must not re-estimate the unselected syntax children");
+	}
+
 	private static CascadesCostModel model(RdfStatisticsProvider provider) {
 		return new CascadesCostModel.DefaultCascadesCostModel(new EvaluationStatistics(), null, provider);
 	}
@@ -1003,6 +2113,25 @@ class CascadesCostModelTest {
 				List.of(), "winner-" + id);
 		return new Winner(expression, tupleExpr, PhysicalProperties.builder().bindingProfile(profile).build(),
 				new CostVector(1.0d, 1.0d, 0.0d, 0.0d, 0.0d, 1.0d, 1.0d), List.of(), false, "");
+	}
+
+	private static Winner profileWinner(int id, TupleExpr tupleExpr, BagEstimate bag) {
+		return profileWinner(id, tupleExpr, bag, PhysicalProperties.Materialization.ANY);
+	}
+
+	private static Winner profileWinner(int id, TupleExpr tupleExpr, BagEstimate bag,
+			PhysicalProperties.Materialization materialization) {
+		BindingProfile profile = BindingProfile.fromBag(tupleExpr, bag, Map.of());
+		PhysicalProperties delivered = PhysicalProperties.builder()
+				.boundVars(tupleExpr.getBindingNames())
+				.materialization(materialization)
+				.bindingProfile(profile)
+				.build();
+		MemoExpr expression = new MemoExpr(id, id, tupleExpr.getClass().getSimpleName(), List.of(), "test", tupleExpr,
+				delivered, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), "winner-" + id);
+		CostVector cost = CostVector.ofRowsAndWork(bag.rows(), bag.workRows(),
+				QErrorInterval.exact(bag.rows(), bag.source()));
+		return new Winner(expression, tupleExpr, delivered, cost, List.of(), false, "");
 	}
 
 	private static Winner sketchedProfileWinner(int id, TupleExpr tupleExpr, String variable, double rows,
@@ -1064,12 +2193,46 @@ class CascadesCostModelTest {
 		return SimpleValueFactory.getInstance().createIRI(value);
 	}
 
+	private static InputBindingContext inputContext(String name, Value value) {
+		QueryBindingSet bindings = new QueryBindingSet();
+		bindings.addBinding(name, value);
+		return InputBindingContext.fromBindingSet(bindings);
+	}
+
 	private static CountingBindingSetAssignment valuesAssignment(String bindingName, Value value) {
 		QueryBindingSet bindingSet = new QueryBindingSet();
 		bindingSet.addBinding(bindingName, value);
 		CountingBindingSetAssignment assignment = new CountingBindingSetAssignment();
 		assignment.setBindingNames(Set.of(bindingName));
 		assignment.setBindingSets(List.of(bindingSet));
+		return assignment;
+	}
+
+	private static BindingSetAssignment valuesAssignment(String bindingName, Value... values) {
+		List<BindingSet> bindingSets = new ArrayList<>(values.length);
+		for (Value value : values) {
+			QueryBindingSet bindingSet = new QueryBindingSet();
+			bindingSet.addBinding(bindingName, value);
+			bindingSets.add(bindingSet);
+		}
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of(bindingName));
+		assignment.setBindingSets(bindingSets);
+		return assignment;
+	}
+
+	private static BindingSetAssignment valuesAssignment(List<String> bindingNames, List<List<Value>> rows) {
+		List<BindingSet> bindingSets = new ArrayList<>(rows.size());
+		for (List<Value> row : rows) {
+			QueryBindingSet bindingSet = new QueryBindingSet();
+			for (int index = 0; index < bindingNames.size(); index++) {
+				bindingSet.addBinding(bindingNames.get(index), row.get(index));
+			}
+			bindingSets.add(bindingSet);
+		}
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.copyOf(bindingNames));
+		assignment.setBindingSets(bindingSets);
 		return assignment;
 	}
 
@@ -1085,6 +2248,14 @@ class CascadesCostModelTest {
 
 	private static StatementPattern pattern(String subject, String predicate, String object) {
 		return new StatementPattern(new Var(subject), new Var(predicate), new Var(object));
+	}
+
+	private static ProjectionElemList projection(String... names) {
+		ProjectionElemList list = new ProjectionElemList();
+		for (String name : names) {
+			list.addElement(new ProjectionElem(name));
+		}
+		return list;
 	}
 
 	private static Winner winner(int groupId, TupleExpr plan) {
@@ -1112,6 +2283,42 @@ class CascadesCostModelTest {
 		return new Winner(expression, plan, delivered, cost, List.of(), false, "");
 	}
 
+	private static Winner winnerWithWork(int groupId, TupleExpr plan, double rows, double workRows) {
+		MemoExpr expression = new MemoExpr(groupId, groupId, plan.getClass().getSimpleName(), List.of(), "", plan,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		PhysicalProperties delivered = PhysicalProperties.builder()
+				.boundVars(plan.getBindingNames())
+				.build();
+		CostVector cost = CostVector.ofRowsAndWork(rows, workRows,
+				QErrorInterval.heuristic(rows, 4.0d, "test-winner"));
+		return new Winner(expression, plan, delivered, cost, List.of(), false, "");
+	}
+
+	private static Winner contextTotalWinner(int groupId, TupleExpr plan, double rows, double workRows,
+			InputBindingContext context, boolean transparentComposite) {
+		List<Integer> inputGroups = transparentComposite ? List.of(groupId + 10, groupId + 11) : List.of();
+		MemoExpr expression = new MemoExpr(groupId, groupId, plan.getClass().getSimpleName(), inputGroups, "", plan,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		PhysicalProperties delivered = PhysicalProperties.builder()
+				.boundVars(plan.getBindingNames())
+				.build();
+		CostVector cost = CostVector.ofRowsAndWork(rows, workRows,
+				QErrorInterval.exact(rows, "context-total-test-winner"));
+		return new Winner(expression, plan, delivered, cost, List.of(), false, "", null, context,
+				CostScope.TOTAL_FOR_CONTEXT);
+	}
+
+	private static double composedWorkRows(CascadesCostModel model, MemoExpr expression, List<Winner> inputs) {
+		Set<Integer> locallyCosted = model.locallyCostedInputIndexes(expression, OptimizationGoal.root(), inputs);
+		double childWork = 0.0d;
+		for (int index = 0; index < inputs.size(); index++) {
+			if (!locallyCosted.contains(index)) {
+				childWork += inputs.get(index).cost().workRows();
+			}
+		}
+		return childWork + model.localCost(expression, OptimizationGoal.root(), inputs).workRows();
+	}
+
 	private static Winner parameterizedWinner(int groupId, TupleExpr plan, double rows, Set<String> inputBoundVars) {
 		MemoExpr expression = new MemoExpr(groupId, groupId, plan.getClass().getSimpleName(), List.of(), "", plan,
 				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
@@ -1128,6 +2335,17 @@ class CascadesCostModelTest {
 	private static final class TrackingParameterizedFactorCostModel implements JoinFactorCostModel {
 		private int nestedCalls;
 		private CostContext lastContext;
+		private final double workRows;
+		private final double outputRows;
+
+		private TrackingParameterizedFactorCostModel() {
+			this(330.0d, 300.0d);
+		}
+
+		private TrackingParameterizedFactorCostModel(double workRows, double outputRows) {
+			this.workRows = workRows;
+			this.outputRows = outputRows;
+		}
 
 		@Override
 		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
@@ -1141,12 +2359,118 @@ class CascadesCostModelTest {
 			}
 			nestedCalls++;
 			lastContext = context;
-			return Optional.of(new FactorCostEstimate(330.0d, 300.0d,
+			return Optional.of(new FactorCostEstimate(workRows, outputRows,
 					Map.of("plannedEstimateSource", "test-nested-bound-lookup",
 							TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE, "directLookup"),
 					Map.of("plannedRepeatedInvocations", 30.0d, "plannedLookupDomainAverageOutputRows", 300.0d),
 					true, true, 1, 0, 1.0d, true));
 		}
+	}
+
+	private static final class CompositeFiniteFactorCostModel implements JoinFactorCostModel {
+		private CostContext lastContext;
+		private int calls;
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			return Optional.empty();
+		}
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, CostContext context) {
+			if (!(factor instanceof Join) || context == null
+					|| !context.getFiniteBindingValues().containsKey("code")) {
+				return Optional.empty();
+			}
+			calls++;
+			lastContext = context;
+			return Optional.of(new FactorCostEstimate(84.0d, 42.0d, Map.of(), Map.of(), false, false, 0, 0,
+					42.0d, CostScope.TOTAL_FOR_CONTEXT, false));
+		}
+	}
+
+	private static final class BoundAwareStatementProvider implements RdfStatisticsProvider {
+		private final List<Set<String>> boundLookupCalls = new ArrayList<>();
+
+		@Override
+		public Optional<StatisticsEstimate> statementPattern(StatementPattern pattern, Set<String> boundVars) {
+			Set<String> snapshot = boundVars == null ? Set.of() : Set.copyOf(boundVars);
+			if (snapshot.contains(pattern.getObjectVar().getName())) {
+				boundLookupCalls.add(snapshot);
+				return Optional.of(StatisticsEstimate.exact(1.0d, "test-bound-statement-lookup"));
+			}
+			return Optional.of(StatisticsEstimate.exact(50_000.0d, "test-standalone-statement-scan"));
+		}
+
+		@Override
+		public Optional<StatisticsEstimate> multiPatternJoin(List<TupleExpr> orderedFactors, Set<String> boundVars) {
+			boolean pairBound = boundVars != null && boundVars.containsAll(Set.of("type", "code"));
+			double rows = pairBound ? 1.0d : 50_000.0d;
+			double workRows = pairBound ? 2.0d : 100_000.0d;
+			return Optional.of(new StatisticsEstimate(rows, QErrorInterval.exact(rows, "test-multi-pattern"),
+					workRows, "test-multi-pattern", Map.of()));
+		}
+	}
+
+	private static final class ContextCapturingImplementationRule implements CascadesRule {
+		private final CascadesRule delegate = new StandardCascadesRules.GenericImplementationRule();
+		private final List<ContextualLookupGoal> lookupGoals = new ArrayList<>();
+
+		@Override
+		public String id() {
+			return delegate.id();
+		}
+
+		@Override
+		public RuleKind kind() {
+			return delegate.kind();
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return delegate.matches(expression, goal, memo);
+		}
+
+		@Override
+		public int promise(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return delegate.promise(expression, goal, memo);
+		}
+
+		@Override
+		public RuleDescriptor descriptor() {
+			return delegate.descriptor();
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			if (expression.tupleExpr()instanceof StatementPattern pattern && goal != null) {
+				lookupGoals.add(new ContextualLookupGoal(pattern.getObjectVar().getName(),
+						goal.inputBindingContext(), goal.requiredProperties().boundVars()));
+			}
+			return delegate.apply(expression, goal, context);
+		}
+
+		private List<InputBindingContext> selectedPairContexts() {
+			return lookupGoals.stream()
+					.filter(goal -> Set.of("type", "code").contains(goal.objectName()))
+					.map(ContextualLookupGoal::context)
+					.filter(context -> context.assuredBindingNames().containsAll(Set.of("type", "code")))
+					.toList();
+		}
+
+		private List<Set<String>> codeLookupRequirements() {
+			return lookupGoals.stream()
+					.filter(goal -> "code".equals(goal.objectName()))
+					.filter(goal -> goal.context()
+							.assuredBindingNames()
+							.containsAll(Set.of("entity", "type", "code")))
+					.map(ContextualLookupGoal::requiredBoundVars)
+					.toList();
+		}
+	}
+
+	private record ContextualLookupGoal(String objectName, InputBindingContext context,
+			Set<String> requiredBoundVars) {
 	}
 
 	private static final class LeoTrackingProvider implements RdfStatisticsProvider, LeoSurfaceProvider {
@@ -1172,6 +2496,7 @@ class CascadesCostModelTest {
 	private static final class TrackingProvider implements RdfStatisticsProvider {
 		private int filterCalls;
 		private int multiPatternCalls;
+		private int statementPatternCalls;
 		private final List<Set<String>> rightPatternBoundVars = new ArrayList<>();
 		private final boolean provideMultiPattern;
 		private final double multiPatternRows;
@@ -1191,6 +2516,7 @@ class CascadesCostModelTest {
 
 		@Override
 		public Optional<StatisticsEstimate> statementPattern(StatementPattern pattern, Set<String> boundVars) {
+			statementPatternCalls++;
 			if ("right".equals(pattern.getPredicateVar().getName())) {
 				rightPatternBoundVars.add(boundVars == null ? Set.of() : Set.copyOf(boundVars));
 			}

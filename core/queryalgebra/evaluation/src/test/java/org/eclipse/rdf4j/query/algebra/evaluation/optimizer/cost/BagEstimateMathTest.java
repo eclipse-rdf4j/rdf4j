@@ -49,6 +49,40 @@ class BagEstimateMathTest {
 	}
 
 	@Test
+	void semiJoinPreservesMatchingLeftFrequenciesAndIgnoresRightDuplicates() {
+		BagEstimate left = finite("left", List.of("code"),
+				List.of(row("A"), row("A"), row("A"), row("B")));
+		BagEstimate right = finite("right", List.of("code"),
+				List.of(row("A"), row("A"), row("A")));
+
+		BagEstimate joined = EstimateMath.semiJoin(left, right, Set.of("code"));
+
+		assertEquals(3.0d, joined.rows(), 0.0d,
+				"Semi-join cardinality is matching left multiplicity, not inner-join multiplicity");
+		FiniteRelationEstimate relation = joined.finiteRelation(Set.of("code"))
+				.orElseThrow(() -> new AssertionError("Exact membership should retain the matched left relation"));
+		assertEquals(3.0d, relation.frequencyBy(Set.of("code")).get(row("A")), 0.0d);
+		assertFalse(relation.frequencyBy(Set.of("code")).containsKey(row("B")));
+	}
+
+	@Test
+	void semiJoinUsesRhsExistenceWhenThereAreNoSharedVariables() {
+		BagEstimate left = finite("left", List.of("code"), List.of(row("A"), row("B"), row("B")));
+		BagEstimate nonEmptyRight = finite("right", List.of("label"), List.of(row("x"), row("y")));
+		BagEstimate emptyRight = BagEstimate.exact(0.0d, "empty-right");
+
+		BagEstimate accepted = EstimateMath.semiJoin(left, nonEmptyRight, Set.of());
+		BagEstimate rejected = EstimateMath.semiJoin(left, emptyRight, Set.of());
+
+		assertEquals(3.0d, accepted.rows(), 0.0d,
+				"A non-empty uncorrelated RHS makes EXISTS true for every left row");
+		assertEquals(0.0d, rejected.rows(), 0.0d,
+				"An empty uncorrelated RHS makes EXISTS false for every left row");
+		assertEquals(left.finiteRelations(), accepted.finiteRelations(),
+				"An uncorrelated EXISTS must not alter accepted left-side evidence");
+	}
+
+	@Test
 	void innerJoinPreservesMultiColumnValuesCorrelationAndDuplicates() {
 		BagEstimate left = finite("left", List.of("code", "enc"),
 				List.of(row("A", "e1"), row("A", "e1"), row("A", "e2"), row("B", "e1")));

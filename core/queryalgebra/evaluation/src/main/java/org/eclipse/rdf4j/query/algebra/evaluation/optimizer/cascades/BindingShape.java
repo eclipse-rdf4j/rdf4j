@@ -44,8 +44,9 @@ public record BindingShape(BindingMask possible, BindingMask assured, BindingMas
 		}
 		BindingUniverse safeUniverse = universe == null ? BindingUniverse.from(tupleExpr, PhysicalProperties.ANY)
 				: universe;
-		BindingMask possible = safeUniverse.maskOf(tupleExpr.getBindingNames());
-		BindingMask assured = safeUniverse.maskOf(tupleExpr.getAssuredBindingNames());
+		StreamBindingSchema schema = StreamBindingSchema.from(tupleExpr);
+		BindingMask possible = safeUniverse.maskOf(schema.possible());
+		BindingMask assured = safeUniverse.maskOf(schema.assured());
 		return new BindingShape(possible, assured, possible.minus(assured), localBindOutputs(tupleExpr, safeUniverse));
 	}
 

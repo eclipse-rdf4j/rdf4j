@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MemoExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleApplication;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
@@ -66,6 +67,23 @@ class RuleResourceLoaderTest {
 				new Join(new Join(pattern("s", "p1", "o"), pattern("o", "p2", "x")), pattern("x", "p3", "y")));
 		assertMatchesJoin("join-associate-right",
 				new Join(pattern("s", "p1", "o"), new Join(pattern("o", "p2", "x"), pattern("x", "p3", "y"))));
+	}
+
+	@Test
+	void bagEquivalentDslRuleKeepsIntrinsicScopeUnderSetObserver() throws Exception {
+		RuleSpec spec = loadStandardRules().stream()
+				.filter(candidate -> "join-commute".equals(candidate.id()))
+				.findFirst()
+				.orElseThrow();
+		CompiledRule rule = RuleCompiler.compile(spec);
+		Join join = new Join(pattern("s", "p1", "o"), pattern("o", "p2", "x"));
+
+		RuleApplication application = rule.apply(expr(join),
+				OptimizationGoal.root().withSemanticScope(OptimizationGoal.SET_SEMANTICS), null)
+				.getFirst();
+
+		assertEquals(OptimizationGoal.BAG_SEMANTICS, application.proofs().getFirst().semanticScope(),
+				"An observer may accept a weaker route, but must not weaken a BAG-equivalent rule's proof");
 	}
 
 	@Test

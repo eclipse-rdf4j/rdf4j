@@ -25,9 +25,14 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Optimizatio
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleApplication;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleConvergenceClass;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleDescriptor;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RulePhase;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RulePriority;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleProof;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleRootOperator;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleWakeUpEvent;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.IrNodeId;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.IrOp;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.IrToTupleExpr;
@@ -51,9 +56,30 @@ public final class CompiledRule implements CascadesRule {
 	}
 
 	private final RuleSpec spec;
+	private final RuleDescriptor descriptor;
 
 	CompiledRule(RuleSpec spec) {
 		this.spec = java.util.Objects.requireNonNull(spec, "spec");
+		// A native boundary can stand in for an otherwise known TupleExpr class whose attributes are not yet
+		// structural IR, so its concrete algebra root cannot be indexed without risking a false negative.
+		RuleRootOperator rootOperator = spec.pattern()instanceof RulePattern.OpPattern pattern
+				&& pattern.op() != IrOp.NATIVE_BOUNDARY
+						? RuleRootOperator.from(pattern.op())
+						: RuleRootOperator.WILDCARD;
+		RuleDescriptor.Builder descriptorBuilder = RuleDescriptor.builder(spec.id(), spec.kind())
+				.rootOperators(rootOperator)
+				.priority(new RulePriority(spec.phase(), spec.promise()))
+				.convergenceClass(RuleConvergenceClass.FINITE_EQUIVALENCE_EXPANSION);
+		// Matching reads only the immutable TupleExpr converted to PlanIr and the goal's required properties.
+		// Memo proofs, sibling physical alternatives, winners, estimates, and statistics cannot change that match.
+		descriptorBuilder.wakeUpEvents(RuleWakeUpEvent.LOGICAL_EXPRESSION_ADDED,
+				RuleWakeUpEvent.REQUIRED_PROPERTIES_CHANGED);
+		if (spec.kind() == RuleKind.ENFORCER) {
+			descriptorBuilder.wakeUpEvents(RuleWakeUpEvent.LOGICAL_EXPRESSION_ADDED,
+					RuleWakeUpEvent.PHYSICAL_EXPRESSION_ADDED,
+					RuleWakeUpEvent.REQUIRED_PROPERTIES_CHANGED);
+		}
+		this.descriptor = descriptorBuilder.build();
 	}
 
 	public RuleSpec spec() {
@@ -73,6 +99,11 @@ public final class CompiledRule implements CascadesRule {
 	@Override
 	public RulePhase phase() {
 		return spec.phase();
+	}
+
+	@Override
+	public RuleDescriptor descriptor() {
+		return descriptor;
 	}
 
 	@Override
@@ -98,10 +129,11 @@ public final class CompiledRule implements CascadesRule {
 		TupleExpr alternative = IrToTupleExpr.convert(rewritten);
 		RuleProof proof = spec.proof().toProof(spec.kind(), goal);
 		PhysicalProperties delivered = spec.delivered(capture);
+		List<PhysicalProperties> requiredChildProperties = spec.requiredChildProperties(capture);
 		String metadata = metadata(capture, trace);
 		recordPlannerEvent(context, expression, metadata);
 		return List.of(new RuleApplication(expression.groupId(), alternative, spec.kind(), delivered,
-				spec.localCost(), List.of(proof), metadata, null, false));
+				spec.localCost(), List.of(proof), metadata, null, requiredChildProperties, false));
 	}
 
 	public MatchTrace trace(MemoExpr expression, OptimizationGoal goal) {

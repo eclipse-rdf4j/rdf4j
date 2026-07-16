@@ -43,6 +43,8 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ScalarDependencyAnalyzer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StreamBindingSchema;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -379,7 +381,8 @@ final class LmdbJoinIslandConnectivity {
 			}
 		}
 		return LmdbJoinPlanSupport.plannerBindingNames(projectedNames)
-				.equals(LmdbJoinPlanSupport.plannerBindingNames(projection.getArg().getBindingNames()));
+				.equals(LmdbJoinPlanSupport.plannerBindingNames(
+						StreamBindingSchema.from(projection.getArg()).possible()));
 	}
 
 	static boolean opaqueFactorsEnabled() {
@@ -387,7 +390,8 @@ final class LmdbJoinIslandConnectivity {
 	}
 
 	private static boolean reorderableJoin(TupleExpr tupleExpr) {
-		if (!(tupleExpr instanceof Join) || TupleExprs.isVariableScopeChange(tupleExpr)) {
+		if (!(tupleExpr instanceof Join) || TupleExprs.isVariableScopeChange(tupleExpr)
+				|| !ScalarDependencyAnalyzer.reorderingPreservesScalarScope(tupleExpr)) {
 			return false;
 		}
 		if (opaqueFactorsEnabled()) {
@@ -453,7 +457,8 @@ final class LmdbJoinIslandConnectivity {
 		if (extension.getArg() == null || TupleExprs.isVariableScopeChange(extension)) {
 			return false;
 		}
-		Set<String> argBindings = LmdbJoinPlanSupport.plannerBindingNames(extension.getArg().getBindingNames());
+		Set<String> argBindings = LmdbJoinPlanSupport
+				.plannerBindingNames(StreamBindingSchema.from(extension.getArg()).possible());
 		for (ExtensionElem element : extension.getElements()) {
 			if (element.getName() == null || argBindings.contains(element.getName())) {
 				return false;
@@ -469,28 +474,27 @@ final class LmdbJoinIslandConnectivity {
 	 */
 	static Set<String> opaqueFactorRequiredVars(TupleExpr factor) {
 		if (factor instanceof LeftJoin leftJoin && leftJoin.getCondition() != null) {
-			Set<String> required = new LinkedHashSet<>(LmdbJoinPlanSupport
-					.plannerBindingNames(VarNameCollector.process(leftJoin.getCondition())));
+			Set<String> visible = new LinkedHashSet<>();
+			visible.addAll(StreamBindingSchema.from(leftJoin.getLeftArg()).possible());
+			visible.addAll(StreamBindingSchema.from(leftJoin.getRightArg()).possible());
+			Set<String> required = new LinkedHashSet<>(
+					ScalarDependencyAnalyzer.conditionNames(leftJoin.getCondition(), visible));
 			if (leftJoin.getLeftArg() != null) {
-				required.removeAll(LmdbJoinPlanSupport
-						.plannerBindingNames(leftJoin.getLeftArg().getAssuredBindingNames()));
+				required.removeAll(StreamBindingSchema.from(leftJoin.getLeftArg()).assured());
 			}
 			if (leftJoin.getRightArg() != null) {
-				required.removeAll(LmdbJoinPlanSupport
-						.plannerBindingNames(leftJoin.getRightArg().getAssuredBindingNames()));
+				required.removeAll(StreamBindingSchema.from(leftJoin.getRightArg()).assured());
 			}
 			return required.isEmpty() ? Set.of() : Set.copyOf(required);
 		}
 		if (factor instanceof Filter filter && filter.getArg() != null && filter.getCondition() != null) {
-			Set<String> required = new LinkedHashSet<>(LmdbJoinPlanSupport
-					.plannerBindingNames(VarNameCollector.process(filter.getCondition())));
-			required.removeAll(
-					LmdbJoinPlanSupport.plannerBindingNames(filter.getArg().getAssuredBindingNames()));
+			Set<String> required = new LinkedHashSet<>(ScalarDependencyAnalyzer.conditionNames(filter.getCondition(),
+					StreamBindingSchema.from(filter.getArg()).possible()));
+			required.removeAll(StreamBindingSchema.from(filter.getArg()).assured());
 			return required.isEmpty() ? Set.of() : Set.copyOf(required);
 		}
 		if (factor instanceof Extension extension && extension.getArg() != null) {
-			Set<String> argAssured = LmdbJoinPlanSupport
-					.plannerBindingNames(extension.getArg().getAssuredBindingNames());
+			Set<String> argAssured = StreamBindingSchema.from(extension.getArg()).assured();
 			Set<String> required = new LinkedHashSet<>();
 			for (ExtensionElem element : extension.getElements()) {
 				for (String name : LmdbJoinPlanSupport
@@ -556,36 +560,36 @@ final class LmdbJoinIslandConnectivity {
 		if (factor instanceof Projection projection && TupleExprs.isVariableScopeChange(projection)) {
 			// Projected-but-not-assured names behave like optional-only vars; projected BIND outputs are an
 			// overwrite hazard when another factor joins on them. Assignments the projection hides cannot leak.
-			Set<String> maybeVars = LmdbJoinPlanSupport.plannerBindingNames(projection.getBindingNames());
-			maybeVars.removeAll(LmdbJoinPlanSupport.plannerBindingNames(projection.getAssuredBindingNames()));
+			Set<String> maybeVars = new LinkedHashSet<>(StreamBindingSchema.from(projection).possible());
+			maybeVars.removeAll(StreamBindingSchema.from(projection).assured());
 			Set<String> projectedAssignments = nestedAssignmentNames(projection);
-			projectedAssignments.retainAll(LmdbJoinPlanSupport.plannerBindingNames(projection.getBindingNames()));
+			projectedAssignments.retainAll(StreamBindingSchema.from(projection).possible());
 			maybeVars.addAll(projectedAssignments);
 			return maybeVars;
 		}
 		if (factor instanceof Group group) {
 			// Assured group keys are safe join surfaces (pre-binding a key merely filters that key's group);
 			// aggregate outputs and non-assured keys are not. Assignments the Group hides cannot leak.
-			Set<String> maybeVars = LmdbJoinPlanSupport.plannerBindingNames(group.getBindingNames());
-			maybeVars.removeAll(LmdbJoinPlanSupport.plannerBindingNames(group.getAssuredBindingNames()));
+			Set<String> maybeVars = new LinkedHashSet<>(StreamBindingSchema.from(group).possible());
+			maybeVars.removeAll(StreamBindingSchema.from(group).assured());
 			Set<String> visibleAssignments = nestedAssignmentNames(group);
-			visibleAssignments.retainAll(LmdbJoinPlanSupport.plannerBindingNames(group.getBindingNames()));
+			visibleAssignments.retainAll(StreamBindingSchema.from(group).possible());
 			maybeVars.addAll(visibleAssignments);
 			return maybeVars;
 		}
 		if (factor instanceof Lateral lateral) {
 			// The LATERAL scope boundary keeps internal BINDs from being overwritten by pushed bindings; only
 			// maybe-bound outputs (e.g. optional vars inside the pipeline) constrain reordering.
-			Set<String> maybeVars = LmdbJoinPlanSupport.plannerBindingNames(lateral.getBindingNames());
-			maybeVars.removeAll(LmdbJoinPlanSupport.plannerBindingNames(lateral.getAssuredBindingNames()));
+			Set<String> maybeVars = new LinkedHashSet<>(StreamBindingSchema.from(lateral).possible());
+			maybeVars.removeAll(StreamBindingSchema.from(lateral).assured());
 			return maybeVars;
 		}
 		if (factor instanceof LeftJoin || factor instanceof Union || factor instanceof Service) {
 			// Maybe-bound vars: optional-only vars of a LeftJoin, or vars bound in only one Union branch. Another
 			// factor joining on them relies on unbound-compatibility in written order; reordering would push real
 			// bindings into the factor and change what the optional side / branch sees.
-			Set<String> maybeVars = LmdbJoinPlanSupport.plannerBindingNames(factor.getBindingNames());
-			maybeVars.removeAll(LmdbJoinPlanSupport.plannerBindingNames(factor.getAssuredBindingNames()));
+			Set<String> maybeVars = new LinkedHashSet<>(StreamBindingSchema.from(factor).possible());
+			maybeVars.removeAll(StreamBindingSchema.from(factor).assured());
 			maybeVars.addAll(nestedAssignmentNames(factor));
 			return maybeVars;
 		}

@@ -29,12 +29,22 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Optimizatio
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleApplication;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleDescriptor.ChildProperty;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleDescriptor.GoalProperty;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleDescriptor.MemoFact;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleDescriptor.ProducedChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleProof;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleRootOperator;
 
 final class LmdbNullRejectingOptionalJoinRule extends LmdbRule {
 	LmdbNullRejectingOptionalJoinRule() {
-		super("lmdb-null-rejecting-optional-join", RuleKind.TRANSFORMATION, 96, null);
+		super("lmdb-null-rejecting-optional-join", RuleKind.TRANSFORMATION, 96, null,
+				scheduling(RuleRootOperator.FILTER)
+						.readsFacts(MemoFact.POSSIBLE_BINDINGS, MemoFact.ASSURED_BINDINGS,
+								MemoFact.NULLABILITY, MemoFact.CORRELATION, MemoFact.SCOPE_BARRIER)
+						.readsChildren(ChildProperty.BINDING_PROFILE)
+						.produces(ProducedChange.LOGICAL_EXPRESSION, ProducedChange.PROOF));
 	}
 
 	@Override
@@ -60,7 +70,16 @@ final class LmdbNullRejectingOptionalJoinRule extends LmdbRule {
 
 final class LmdbOptionalAnchoredLookupRule extends LmdbRule {
 	LmdbOptionalAnchoredLookupRule(EvaluationStatistics statistics) {
-		super("lmdb-optional-rhs-anchored-lookup", RuleKind.IMPLEMENTATION, 90, statistics);
+		super("lmdb-optional-rhs-anchored-lookup", RuleKind.IMPLEMENTATION, 90, statistics,
+				scheduling(RuleRootOperator.LEFT_JOIN)
+						.readsGoalProperties(GoalProperty.INVOCATION_CARDINALITY)
+						.readsFacts(MemoFact.POSSIBLE_BINDINGS, MemoFact.ASSURED_BINDINGS,
+								MemoFact.NULLABILITY, MemoFact.CORRELATION, MemoFact.SCOPE_BARRIER,
+								MemoFact.REQUIRED_INPUTS, MemoFact.STATISTICS_EPOCH)
+						.readsChildren(ChildProperty.BOUND_BINDINGS, ChildProperty.REQUIRED_INPUTS,
+								ChildProperty.ACCESS_PATH, ChildProperty.ESTIMATE)
+						.produces(ProducedChange.PHYSICAL_EXPRESSION, ProducedChange.PROOF,
+								ProducedChange.ESTIMATE));
 	}
 
 	@Override

@@ -97,9 +97,86 @@
 		<bouncycastle.version>1.84</bouncycastle.version>
 		<testcontainers.version>2.0.5</testcontainers.version>
 		<mockito.javaagent>-javaagent:${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar</mockito.javaagent>
+		<rdf4j.apidocs.directory>${maven.multiModuleProjectDirectory}/target/site/apidocs</rdf4j.apidocs.directory>
+		<rdf4j.server.war>${maven.multiModuleProjectDirectory}/tools/server/target/rdf4j-server.war</rdf4j.server.war>
+		<rdf4j.workbench.war>${maven.multiModuleProjectDirectory}/tools/workbench/target/rdf4j-workbench.war</rdf4j.workbench.war>
+		<rdf4j.test.outputDirectory>${project.build.directory}</rdf4j.test.outputDirectory>
+		<rdf4j.test.tmpDirectory>${project.build.directory}/tmp</rdf4j.test.tmpDirectory>
+		<skipTests>false</skipTests>
 		<argLine />
 	</properties>
 	<profiles>
+		<profile>
+			<id>workspace-build-root</id>
+			<activation>
+				<property>
+					<name>rdf4j.build.root</name>
+				</property>
+			</activation>
+			<properties>
+				<mockito.javaagent>-javaagent:${project.build.directory}/test-agents/mockito-core-${mockito.version}.jar</mockito.javaagent>
+				<rdf4j.apidocs.directory>${rdf4j.build.root}/org.eclipse.rdf4j/rdf4j/${project.version}/site/apidocs</rdf4j.apidocs.directory>
+				<rdf4j.server.war>${rdf4j.build.root}/org.eclipse.rdf4j/rdf4j-http-server/${project.version}/rdf4j-server.war</rdf4j.server.war>
+				<rdf4j.workbench.war>${rdf4j.build.root}/org.eclipse.rdf4j/rdf4j-http-workbench/${project.version}/rdf4j-workbench.war</rdf4j.workbench.war>
+				<rdf4j.test.tmpDirectory>${rdf4j.test.tmpRoot}/${project.groupId}/${project.artifactId}/${project.version}</rdf4j.test.tmpDirectory>
+			</properties>
+			<build>
+				<directory>${rdf4j.build.root}/${project.groupId}/${project.artifactId}/${project.version}</directory>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.felix</groupId>
+						<artifactId>maven-bundle-plugin</artifactId>
+						<configuration>
+							<obrRepository>NONE</obrRepository>
+						</configuration>
+					</plugin>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-surefire-plugin</artifactId>
+						<configuration>
+							<systemPropertyVariables>
+								<java.io.tmpdir>${rdf4j.test.tmpDirectory}</java.io.tmpdir>
+							</systemPropertyVariables>
+						</configuration>
+					</plugin>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-failsafe-plugin</artifactId>
+						<configuration>
+							<systemPropertyVariables>
+								<java.io.tmpdir>${rdf4j.test.tmpDirectory}</java.io.tmpdir>
+							</systemPropertyVariables>
+						</configuration>
+					</plugin>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-dependency-plugin</artifactId>
+						<inherited>true</inherited>
+						<executions>
+							<execution>
+								<id>stage-workspace-mockito-javaagent</id>
+								<phase>process-test-classes</phase>
+								<goals>
+									<goal>copy</goal>
+								</goals>
+								<configuration>
+									<skip>${skipTests}</skip>
+									<artifactItems>
+										<artifactItem>
+											<groupId>org.mockito</groupId>
+											<artifactId>mockito-core</artifactId>
+											<version>${mockito.version}</version>
+											<type>jar</type>
+										</artifactItem>
+									</artifactItems>
+									<outputDirectory>${project.build.directory}/test-agents</outputDirectory>
+								</configuration>
+							</execution>
+						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
 		<profile>
 			<id>ossrh</id>
 			<distributionManagement>
@@ -380,6 +457,7 @@
 										<exclude>**/site/themes/**</exclude>
 										<exclude>**/.*/**</exclude>
 										<exclude>**/dependency-reduced-pom.xml</exclude>
+										<exclude>**/dependency-reduced-pom-*.xml</exclude>
 									</excludes>
 									<eclipseWtp>
 										<type>XML</type>
@@ -1182,6 +1260,8 @@
 						<forkedProcessTimeoutInSeconds>1800</forkedProcessTimeoutInSeconds>
 						<forkedProcessExitTimeoutInSeconds>120</forkedProcessExitTimeoutInSeconds>
 						<systemPropertyVariables>
+							<rdf4j.test.outputDirectory>${project.build.directory}</rdf4j.test.outputDirectory>
+							<rdf4j.test.tmpDirectory>${rdf4j.test.tmpDirectory}</rdf4j.test.tmpDirectory>
 							<junit.jupiter.execution.timeout.default>10 m</junit.jupiter.execution.timeout.default>
 							<junit.jupiter.execution.timeout.mode.default>enabled</junit.jupiter.execution.timeout.mode.default>
 						</systemPropertyVariables>
@@ -1199,6 +1279,8 @@
 						<forkedProcessTimeoutInSeconds>1800</forkedProcessTimeoutInSeconds>
 						<forkedProcessExitTimeoutInSeconds>120</forkedProcessExitTimeoutInSeconds>
 						<systemPropertyVariables>
+							<rdf4j.test.outputDirectory>${project.build.directory}</rdf4j.test.outputDirectory>
+							<rdf4j.test.tmpDirectory>${rdf4j.test.tmpDirectory}</rdf4j.test.tmpDirectory>
 							<junit.jupiter.execution.timeout.default>10 m</junit.jupiter.execution.timeout.default>
 							<junit.jupiter.execution.timeout.mode.default>enabled</junit.jupiter.execution.timeout.mode.default>
 						</systemPropertyVariables>
@@ -1326,6 +1408,9 @@
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-shade-plugin</artifactId>
 					<version>3.5.1</version>
+					<configuration>
+						<generateUniqueDependencyReducedPom>true</generateUniqueDependencyReducedPom>
+					</configuration>
 				</plugin>
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>

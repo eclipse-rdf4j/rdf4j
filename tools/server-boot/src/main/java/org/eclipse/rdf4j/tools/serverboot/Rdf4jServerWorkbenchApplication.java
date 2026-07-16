@@ -58,6 +58,7 @@ public class Rdf4jServerWorkbenchApplication {
 
 	private static final Logger logger = LoggerFactory.getLogger(Rdf4jServerWorkbenchApplication.class);
 	private static final String APP_DATA_BASEDIR_PROPERTY = Platform.APPDATA_BASEDIR_PROPERTY;
+	private static final String TEST_OUTPUT_DIRECTORY_PROPERTY = "rdf4j.test.outputDirectory";
 	private static final String[] APPLICATION_IDS = { "Server", "webapp-base" };
 
 	public static void main(String[] args) {
@@ -72,6 +73,13 @@ public class Rdf4jServerWorkbenchApplication {
 		if (System.getProperty(APP_DATA_BASEDIR_PROPERTY) != null) {
 			return;
 		}
+		String testOutputDirectory = System.getProperty(TEST_OUTPUT_DIRECTORY_PROPERTY);
+		if (testOutputDirectory != null && !testOutputDirectory.isBlank()) {
+			configureFallbackAppDataBase(resolveFallbackAppDataBase(
+					Paths.get(System.getProperty("user.dir")), testOutputDirectory));
+			return;
+		}
+
 		boolean defaultWritable = Arrays.stream(APPLICATION_IDS)
 				.map(appId -> PlatformFactory.getPlatform().getApplicationDataDir(appId).toPath())
 				.allMatch(Rdf4jServerWorkbenchApplication::ensureWritableDirectory);
@@ -79,7 +87,11 @@ public class Rdf4jServerWorkbenchApplication {
 			return;
 		}
 
-		Path fallback = Paths.get(System.getProperty("user.dir"), "target", "rdf4j-appdata").toAbsolutePath();
+		configureFallbackAppDataBase(resolveFallbackAppDataBase(
+				Paths.get(System.getProperty("user.dir")), null));
+	}
+
+	private static void configureFallbackAppDataBase(Path fallback) {
 		boolean fallbackWritable = Arrays.stream(APPLICATION_IDS)
 				.map(appId -> fallback.resolve(
 						PlatformFactory.getPlatform().getRelativeApplicationDataDir(appId)))
@@ -92,6 +104,13 @@ public class Rdf4jServerWorkbenchApplication {
 
 		System.setProperty(APP_DATA_BASEDIR_PROPERTY, fallback.toString());
 		logger.warn("Using fallback RDF4J application data directory at {}", fallback);
+	}
+
+	static Path resolveFallbackAppDataBase(Path userDirectory, String testOutputDirectory) {
+		Path outputDirectory = testOutputDirectory == null || testOutputDirectory.isBlank()
+				? userDirectory.resolve("target")
+				: Paths.get(testOutputDirectory);
+		return outputDirectory.resolve("rdf4j-appdata").toAbsolutePath();
 	}
 
 	private static boolean ensureWritableDirectory(Path directory) {

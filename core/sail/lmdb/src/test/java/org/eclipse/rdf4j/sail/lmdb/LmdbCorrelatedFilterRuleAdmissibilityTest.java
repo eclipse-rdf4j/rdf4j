@@ -25,8 +25,10 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -44,13 +46,19 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesTel
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Memo;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MemoExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MemoGroup;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationCompleteness;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PlanProvenance;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.QErrorInterval;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RdfStatisticsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleApplication;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StandardCascadesRules;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSearchService;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.junit.jupiter.api.Test;
 
@@ -58,15 +66,48 @@ class LmdbCorrelatedFilterRuleAdmissibilityTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final IRI TYPE = VF.createIRI("urn:type");
+	private static final IRI CLASS_NAME = VF.createIRI("urn:className");
+	private static final IRI EXPENSIVE_DETAIL = VF.createIRI("urn:expensiveDetail");
 	private static final IRI CONNECTS_TO = VF.createIRI("urn:connectsTo");
 
 	@Test
-	void correlatedNotExistsFilterUsesCostedLmdbAlternativeInsteadOfGenericIterator() {
+	void cascadesPlacesCorrelatedNotExistsAtEarliestAssuredPrefixWithoutPostPass() {
+		StatementPattern anchor = statement("entity", TYPE, "kind");
+		StatementPattern middle = statement("kind", CLASS_NAME, "className");
+		StatementPattern expensive = statement("className", EXPENSIVE_DETAIL, "payload");
+		StatementPattern probe = statement("entity", CONNECTS_TO, "block");
+		Filter input = new Filter(new Join(new Join(anchor, middle), expensive), new Not(new Exists(probe)));
+		PrefixCostStatistics statistics = new PrefixCostStatistics();
+
+		CascadesPlan plan = new CascadesPlanner(CascadesCostModel.from(statistics),
+				LmdbCascadesRuleProvider.rules(statistics), CascadesTelemetry.NO_OP)
+						.optimize(input, OptimizationGoal.root(input, PhysicalProperties.ANY));
+
+		assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness(),
+				() -> plan.pendingTasks() + " " + plan.diagnostics());
+		assertTrue(plan.pendingTasks().isEmpty(), plan.pendingTasks()::toString);
+		TupleExpr selected = plan.tupleExpr().orElseThrow();
+		TupleExpr antiInput = findCorrelatedAntiInput(selected);
+		assertTrue(antiInput instanceof StatementPattern pattern
+				&& TYPE.equals(pattern.getPredicateVar().getValue()),
+				() -> selected + "\n" + predicateStateDiagnostics(plan));
+		assertTrue(containsPredicate(selected, CLASS_NAME), selected::toString);
+		assertTrue(containsPredicate(selected, EXPENSIVE_DETAIL), selected::toString);
+		assertFalse(containsPredicate(antiInput, CLASS_NAME), selected::toString);
+		assertFalse(containsPredicate(antiInput, EXPENSIVE_DETAIL), selected::toString);
+		PlanProvenance provenance = plan.provenance().orElseThrow();
+		assertTrue(provenanceContainsRule(provenance, JoinSearchService.ROUTE_ID), provenance::toString);
+	}
+
+	@Test
+	void correlatedNotExistsFilterKeepsSpecializedAndGenericImplementationsEligible() {
 		Filter filter = correlatedNotExistsFilter();
 		List<String> rules = applicableRuleIds(filter);
 
 		assertTrue(rules.contains("lmdb-guarantee-options"), rules::toString);
-		assertFalse(rules.contains("generic-physical-implementation"), rules::toString);
+		assertTrue(rules.contains("lmdb-correlated-not-exists-anti-filter"), rules::toString);
+		assertTrue(rules.contains("generic-physical-implementation"),
+				"Specialized eligibility must not suppress the generic implementation: " + rules);
 	}
 
 	@Test
@@ -125,6 +166,37 @@ class LmdbCorrelatedFilterRuleAdmissibilityTest {
 		assertTrue(rules.contains("generic-physical-implementation"), rules::toString);
 	}
 
+	@Test
+	void leftOnlyMinusFilterKeepsGenericImplementationEligible() {
+		StatementPattern left = new StatementPattern(new Var("node"), new Var("type", TYPE), new Var("kind"));
+		StatementPattern right = new StatementPattern(new Var("node"), new Var("connectsTo", CONNECTS_TO),
+				new Var("target"));
+		Filter filter = new Filter(new Difference(left, right),
+				new Compare(new Var("kind"), new ValueConstant(VF.createLiteral("excluded")), Compare.CompareOp.NE));
+
+		List<String> rules = applicableRuleIds(filter);
+
+		assertTrue(rules.contains("generic-physical-implementation"),
+				"A specialized MINUS rewrite may add alternatives but must not suppress generic implementation: "
+						+ rules);
+	}
+
+	@Test
+	void positiveExistsAboveAntiExistsKeepsGenericImplementationEligible() {
+		StatementPattern input = new StatementPattern(new Var("node"), new Var("type", TYPE), new Var("kind"));
+		StatementPattern antiProbe = new StatementPattern(new Var("node"), new Var("connectsTo", CONNECTS_TO),
+				new Var("blocked"));
+		StatementPattern positiveProbe = new StatementPattern(new Var("node"), new Var("connectsTo", CONNECTS_TO),
+				new Var("allowed"));
+		Filter filter = new Filter(new Filter(input, new Not(new Exists(antiProbe))), new Exists(positiveProbe));
+
+		List<String> rules = applicableRuleIds(filter);
+
+		assertTrue(rules.contains("generic-physical-implementation"),
+				"A specialized EXISTS reorder may add alternatives but must not suppress generic implementation: "
+						+ rules);
+	}
+
 	private static List<String> applicableRuleIds(TupleExpr tupleExpr) {
 		CostedStatistics statistics = new CostedStatistics();
 		RuleRegistry registry = LmdbCascadesRuleProvider.rules(statistics);
@@ -158,6 +230,156 @@ class LmdbCorrelatedFilterRuleAdmissibilityTest {
 		StatementPattern probe = new StatementPattern(new Var("other"), new Var("connectsTo", CONNECTS_TO),
 				new Var("target"));
 		return new Filter(input, new Not(new Exists(probe)));
+	}
+
+	private static StatementPattern statement(String subject, IRI predicate, String object) {
+		return new StatementPattern(new Var(subject), new Var("predicate", predicate), new Var(object));
+	}
+
+	private static TupleExpr findCorrelatedAntiInput(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof Filter filter) {
+			if (filter.getCondition()instanceof Not not && not.getArg() instanceof Exists) {
+				return filter.getArg();
+			}
+			return findCorrelatedAntiInput(filter.getArg());
+		}
+		if (tupleExpr instanceof Difference difference) {
+			return difference.getLeftArg();
+		}
+		if (tupleExpr instanceof Join join) {
+			TupleExpr left = findCorrelatedAntiInput(join.getLeftArg());
+			return left == null ? findCorrelatedAntiInput(join.getRightArg()) : left;
+		}
+		return null;
+	}
+
+	private static boolean containsPredicate(TupleExpr tupleExpr, IRI predicate) {
+		if (tupleExpr instanceof StatementPattern pattern) {
+			return predicate.equals(pattern.getPredicateVar().getValue());
+		}
+		if (tupleExpr instanceof Filter filter) {
+			return containsPredicate(filter.getArg(), predicate);
+		}
+		if (tupleExpr instanceof Join join) {
+			return containsPredicate(join.getLeftArg(), predicate) || containsPredicate(join.getRightArg(), predicate);
+		}
+		return false;
+	}
+
+	private static boolean provenanceContainsRule(PlanProvenance provenance, String ruleId) {
+		return ruleId.equals(provenance.ruleId())
+				|| provenance.proofs().stream().anyMatch(proof -> ruleId.equals(proof.ruleId()))
+				|| provenance.inputs().stream().anyMatch(input -> provenanceContainsRule(input, ruleId));
+	}
+
+	private static String predicateStateDiagnostics(CascadesPlan plan) {
+		StringBuilder diagnostics = new StringBuilder("predicate-state winners:\n");
+		for (MemoGroup group : plan.memo().groups()) {
+			boolean predicateGroup = group.expressions()
+					.stream()
+					.filter(MemoExpr::logical)
+					.map(MemoExpr::tupleExpr)
+					.anyMatch(tupleExpr -> tupleExpr instanceof Filter filter
+							&& filter.getCondition()instanceof Not not && not.getArg() instanceof Exists);
+			if (!predicateGroup && group.id() != plan.rootGroupId()) {
+				continue;
+			}
+			diagnostics.append("group ")
+					.append(group.id())
+					.append(" logical=")
+					.append(group.expressions()
+							.stream()
+							.filter(MemoExpr::logical)
+							.map(expression -> expression.operator() + expression.tupleExpr().getBindingNames())
+							.toList())
+					.append(" winners=");
+			diagnostics.append(group.winnerSnapshot()
+					.entrySet()
+					.stream()
+					.map(entry -> entry.getKey().requiredProperties().boundVars() + " -> " + entry.getValue()
+							.stream()
+							.map(winner -> winner.expression().operator() + winner.cost())
+							.toList())
+					.toList());
+			diagnostics.append('\n');
+		}
+		return diagnostics.toString();
+	}
+
+	private static final class PrefixCostStatistics extends EvaluationStatistics
+			implements JoinFactorCostModel, RdfStatisticsProvider {
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			return estimateFactorCost(expr, Set.of()).map(FactorCostEstimate::getOutputRows).orElse(10.0d);
+		}
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			if (!(factor instanceof StatementPattern pattern) || pattern.getPredicateVar().getValue() == null) {
+				return Optional.empty();
+			}
+			IRI predicate = (IRI) pattern.getPredicateVar().getValue();
+			if (TYPE.equals(predicate)) {
+				return Optional.of(exactFactor(100.0d, 100.0d, false));
+			}
+			if (CLASS_NAME.equals(predicate)) {
+				return currentlyBoundVars.contains("kind")
+						? Optional.of(exactFactor(10.0d, 1.0d, false))
+						: Optional.of(exactFactor(1_000_000.0d, 1_000_000.0d, false));
+			}
+			if (EXPENSIVE_DETAIL.equals(predicate)) {
+				return currentlyBoundVars.contains("className")
+						? Optional.of(exactFactor(1_000.0d, 1.0d, false))
+						: Optional.of(exactFactor(1_000_000_000.0d, 1_000_000_000.0d, false));
+			}
+			if (CONNECTS_TO.equals(predicate)) {
+				return currentlyBoundVars.contains("entity")
+						? Optional.of(exactFactor(1.0d, 1.0d, false))
+						: Optional.of(exactFactor(1_000_000.0d, 1_000_000.0d, false));
+			}
+			return Optional.empty();
+		}
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, CostContext context) {
+			Set<String> boundVars = context == null ? Set.of() : context.getCurrentlyBoundVars();
+			if (context == null || !context.isNestedIteratorInvocation()
+					|| !Double.isFinite(context.getOuterPrefixRows())) {
+				return estimateFactorCost(factor, boundVars);
+			}
+			if (!(factor instanceof StatementPattern pattern) || pattern.getPredicateVar().getValue() == null) {
+				return Optional.empty();
+			}
+			double outerRows = context.getOuterPrefixRows();
+			IRI predicate = (IRI) pattern.getPredicateVar().getValue();
+			if (CLASS_NAME.equals(predicate) && boundVars.contains("kind")) {
+				return Optional.of(exactFactor(outerRows * 10.0d, outerRows, true));
+			}
+			if (EXPENSIVE_DETAIL.equals(predicate) && boundVars.contains("className")) {
+				return Optional.of(exactFactor(outerRows * 1_000.0d, outerRows, true));
+			}
+			if (CONNECTS_TO.equals(predicate) && boundVars.contains("entity")) {
+				return Optional.of(exactFactor(outerRows, outerRows, true));
+			}
+			return estimateFactorCost(factor, boundVars);
+		}
+
+		private static FactorCostEstimate exactFactor(double workRows, double outputRows,
+				boolean repeatedInvocationsCosted) {
+			return new FactorCostEstimate(workRows, outputRows, Map.of(), Map.of(), true, false, 0, 0, workRows,
+					repeatedInvocationsCosted, true);
+		}
+
+		@Override
+		public Optional<StatisticsEstimate> filter(TupleExpr input,
+				org.eclipse.rdf4j.query.algebra.ValueExpr condition, StatisticsEstimate inputEstimate,
+				Set<String> boundVars) {
+			double rows = Math.max(1.0d, inputEstimate.rows() * 0.01d);
+			return Optional.of(new StatisticsEstimate(rows,
+					QErrorInterval.exact(rows, "prefix-filter"),
+					inputEstimate.workRows() + inputEstimate.rows(), "prefix-filter", Map.of()));
+		}
 	}
 
 	private static final class CostedStatistics extends EvaluationStatistics

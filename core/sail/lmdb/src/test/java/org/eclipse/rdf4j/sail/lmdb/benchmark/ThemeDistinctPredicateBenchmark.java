@@ -60,17 +60,9 @@ import org.openjdk.jmh.infra.Blackhole;
 @Threads(1)
 public class ThemeDistinctPredicateBenchmark {
 
-	private static final String TARGET_DIRECTORY_ROOT = "core/sail/lmdb/";
-	private static final File STORE_DIRECTORY;
-
-	static {
-		File target = new File("target", "lmdb-theme-distinct-predicate-benchmark");
-		if (target.getAbsolutePath().toLowerCase().contains(TARGET_DIRECTORY_ROOT)) {
-			STORE_DIRECTORY = target;
-		} else {
-			STORE_DIRECTORY = new File(TARGET_DIRECTORY_ROOT + "target", "lmdb-theme-distinct-predicate-benchmark");
-		}
-	}
+	private static final File STORE_DIRECTORY = BenchmarkPathSupport
+			.resolveTarget("lmdb-theme-distinct-predicate-benchmark")
+			.toFile();
 
 	private static final String QUERY = """
 			SELECT DISTINCT ?p WHERE {

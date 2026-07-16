@@ -25,14 +25,29 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Memo;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MemoExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleApplication;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleDescriptor;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleProof;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleRootOperator;
 
 final class LmdbRowPreservingSubplanAccessPathRule extends LmdbRule {
 	LmdbRowPreservingSubplanAccessPathRule(EvaluationStatistics statistics) {
-		super("lmdb-row-preserving-subplan-access-path", RuleKind.IMPLEMENTATION, 95, statistics);
+		super("lmdb-row-preserving-subplan-access-path", RuleKind.IMPLEMENTATION, 95, statistics,
+				scheduling(RuleRootOperator.EXTENSION)
+						.readsGoalProperties(RuleDescriptor.GoalProperty.INVOCATION_CARDINALITY)
+						.readsFacts(RuleDescriptor.MemoFact.POSSIBLE_BINDINGS,
+								RuleDescriptor.MemoFact.ASSURED_BINDINGS,
+								RuleDescriptor.MemoFact.REQUIRED_INPUTS,
+								RuleDescriptor.MemoFact.STATISTICS_EPOCH)
+						.readsChildren(RuleDescriptor.ChildProperty.BINDING_PROFILE,
+								RuleDescriptor.ChildProperty.ACCESS_PATH,
+								RuleDescriptor.ChildProperty.ESTIMATE)
+						.produces(RuleDescriptor.ProducedChange.PHYSICAL_EXPRESSION,
+								RuleDescriptor.ProducedChange.PROOF,
+								RuleDescriptor.ProducedChange.ESTIMATE));
 	}
 
 	@Override
@@ -59,8 +74,9 @@ final class LmdbRowPreservingSubplanAccessPathRule extends LmdbRule {
 				Set.of("lmdbCostModel", "rowPreservingSubplan", "accessPathCosted"),
 				"LMDB cost model selected an access path through a row-preserving wrapper subplan");
 		CostVector cost = cost(estimate.get());
-		applications.add(RuleApplication.opaquePhysical(expression.groupId(), alternative,
-				delivered(alternative, estimate.get(), goal), cost, proof,
+		PhysicalProperties childRequirement = delivered(statementPattern, estimate.get(), goal);
+		applications.add(RuleApplication.physical(expression.groupId(), alternative,
+				delivered(alternative, estimate.get(), goal), List.of(childRequirement), CostVector.ZERO, proof,
 				"lmdb-row-preserving-subplan-access", snapshot(estimate.get(), cost)));
 		requestedInputBoundAccessPath(expression, goal, estimate.get()).ifPresent(applications::add);
 		return List.copyOf(applications);
@@ -101,8 +117,9 @@ final class LmdbRowPreservingSubplanAccessPathRule extends LmdbRule {
 				"LMDB cost model priced the row-preserving wrapper access path that consumes variables already "
 						+ "bound by the left prefix");
 		CostVector cost = cost(estimate.get());
-		return Optional.of(RuleApplication.opaquePhysical(expression.groupId(), alternative,
-				delivered(alternative, estimate.get(), goal), cost, proof,
+		PhysicalProperties childRequirement = delivered(statementPattern, estimate.get(), goal);
+		return Optional.of(RuleApplication.physical(expression.groupId(), alternative,
+				delivered(alternative, estimate.get(), goal), List.of(childRequirement), CostVector.ZERO, proof,
 				"lmdb-row-preserving-input-bound-access", snapshot(estimate.get(), cost)));
 	}
 }

@@ -65,7 +65,8 @@ public final class LmdbQuadSynopsisService implements AutoCloseable {
 		this.throttleEveryN = throttleEveryN <= 0L ? Long.MAX_VALUE : throttleEveryN;
 		this.throttleMillis = Math.max(0L, throttleMillis);
 		UUID storeId = UUID.randomUUID();
-		this.identity = new QuadSnapshotIdentity(storeId.getMostSignificantBits(), storeId.getLeastSignificantBits(), 0L);
+		this.identity = new QuadSnapshotIdentity(storeId.getMostSignificantBits(), storeId.getLeastSignificantBits(),
+				0L);
 		this.publishedSnapshot = emptySnapshot(identity);
 		this.synopsis = new BoundedQuadSynopsis(publishedSnapshot, budget, this::requestRebuild);
 	}
@@ -296,7 +297,8 @@ public final class LmdbQuadSynopsisService implements AutoCloseable {
 			try (CloseableIteration<? extends Statement> statements = statementSource.getStatements(null, null, null)) {
 				while (statements.hasNext()) {
 					Statement statement = statements.next();
-					builder.add(QuadValueHash.hash(statement.getSubject()), QuadValueHash.hash(statement.getPredicate()),
+					builder.add(QuadValueHash.hash(statement.getSubject()),
+							QuadValueHash.hash(statement.getPredicate()),
 							QuadValueHash.hash(statement.getObject()), QuadValueHash.hash(statement.getContext()));
 					scanned++;
 					throttle(scanned);

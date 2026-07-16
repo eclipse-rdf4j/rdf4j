@@ -20,19 +20,36 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Memo;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MemoExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleApplication;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleDescriptor;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleProof;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleRootOperator;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 final class LmdbConnectedHypergraphJoinImplementationRule extends LmdbRule {
 	LmdbConnectedHypergraphJoinImplementationRule(EvaluationStatistics statistics) {
-		super(LmdbCascadesConnectedJoinPlanner.RULE_ID, RuleKind.IMPLEMENTATION, 130, statistics);
+		super(LmdbCascadesConnectedJoinPlanner.RULE_ID, RuleKind.IMPLEMENTATION, 130, statistics,
+				scheduling(RuleRootOperator.JOIN)
+						.readsFacts(RuleDescriptor.MemoFact.POSSIBLE_BINDINGS,
+								RuleDescriptor.MemoFact.ASSURED_BINDINGS,
+								RuleDescriptor.MemoFact.CORRELATION,
+								RuleDescriptor.MemoFact.SCOPE_BARRIER,
+								RuleDescriptor.MemoFact.REQUIRED_INPUTS,
+								RuleDescriptor.MemoFact.STATISTICS_EPOCH)
+						.readsChildren(RuleDescriptor.ChildProperty.BOUND_BINDINGS,
+								RuleDescriptor.ChildProperty.REQUIRED_INPUTS,
+								RuleDescriptor.ChildProperty.ACCESS_PATH,
+								RuleDescriptor.ChildProperty.ESTIMATE)
+						.produces(RuleDescriptor.ProducedChange.PHYSICAL_EXPRESSION,
+								RuleDescriptor.ProducedChange.PROOF,
+								RuleDescriptor.ProducedChange.ESTIMATE));
 	}
 
 	@Override
@@ -87,8 +104,7 @@ final class LmdbConnectedHypergraphJoinImplementationRule extends LmdbRule {
 						+ "and treats zero-variable factors and small finite bridge anchors as bounded Cartesian "
 						+ "filters; "
 						+ "it does not delegate to JoinOrderPlanner");
-		return List
-				.of(RuleApplication.opaquePhysical(expression.groupId(), ordered, delivered, connectedPlan.cost(),
-						proof, LmdbCascadesConnectedJoinPlanner.ESTIMATE_SOURCE, connectedPlan.estimate()));
+		return List.of(RuleApplication.physical(expression.groupId(), ordered, delivered, CostVector.ZERO, proof,
+				LmdbCascadesConnectedJoinPlanner.ESTIMATE_SOURCE, connectedPlan.estimate()));
 	}
 }

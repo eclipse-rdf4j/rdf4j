@@ -121,7 +121,8 @@ class LmdbSailStoreEstimatorPersistenceTest {
 	private static long exactStatementCount(LmdbStore store) {
 		long count = 0L;
 		try (NotifyingSailConnection connection = store.getConnection();
-				CloseableIteration<? extends Statement> statements = connection.getStatements(null, null, null, false)) {
+				CloseableIteration<? extends Statement> statements = connection.getStatements(null, null, null,
+						false)) {
 			while (statements.hasNext()) {
 				statements.next();
 				count++;

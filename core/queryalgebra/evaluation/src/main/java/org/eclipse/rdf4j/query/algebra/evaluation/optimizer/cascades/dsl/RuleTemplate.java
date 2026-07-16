@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.PlanIrBu
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.ScalarExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.ScalarFacts;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.SemanticProps;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.TupleExprToIr;
 
 /** Output IR template builder for compiled DSL rules. */
 @Experimental
@@ -223,9 +224,12 @@ public interface RuleTemplate {
 	static RuleTemplate antiExistsFromDifference(String differenceCaptureName) {
 		return (capture, builder) -> {
 			IrNode difference = capture.node(differenceCaptureName);
+			IrNode sourceLeft = capture.ir().node(difference.inputs().get(0));
+			IrNode sourceRight = capture.ir().node(difference.inputs().get(1));
+			BindingMask shared = sourceLeft.bindings().possible().intersect(sourceRight.bindings().possible());
 			IrNodeId left = builder.copySubtreeFrom(capture.ir(), difference.inputs().get(0));
 			PlanIr subquery = new PlanIr(capture.ir().universe(), difference.inputs().get(1), capture.ir().nodes());
-			return builder.filter(left, new ScalarExpr.Exists(subquery, true));
+			return builder.filter(left, new ScalarExpr.Exists(subquery, shared, true));
 		};
 	}
 
@@ -236,7 +240,7 @@ public interface RuleTemplate {
 			IrNode right = capture.ir().node(difference.inputs().get(1));
 			BindingMask shared = left.bindings().possible().intersect(right.bindings().possible());
 			PlanIr subquery = new PlanIr(capture.ir().universe(), difference.inputs().get(1), capture.ir().nodes());
-			ScalarExpr antiExists = new ScalarExpr.Exists(subquery, true);
+			ScalarExpr antiExists = new ScalarExpr.Exists(subquery, shared, true);
 			IrNodeId pushed = pushFilterToSmallestAssuredInput(capture.ir(), builder, difference.inputs().get(0),
 					antiExists, shared);
 			return pushed == null ? builder.filter(builder.copySubtreeFrom(capture.ir(), difference.inputs().get(0)),
@@ -300,7 +304,7 @@ public interface RuleTemplate {
 			if (tupleExpr == null) {
 				throw new IllegalStateException("Tuple template did not emit an alternative");
 			}
-			return builder.add(IrOp.MATERIALIZE, List.of(), new IrAttr.NativeTuple(tupleExpr));
+			return TupleExprToIr.append(tupleExpr, builder);
 		};
 	}
 
