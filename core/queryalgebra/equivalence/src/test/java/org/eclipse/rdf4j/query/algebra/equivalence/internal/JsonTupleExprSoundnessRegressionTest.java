@@ -26,6 +26,9 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.equivalence.AlgebraEquivalenceChecker;
 import org.eclipse.rdf4j.query.algebra.equivalence.CheckOptions;
@@ -122,6 +125,28 @@ class JsonTupleExprSoundnessRegressionTest {
 		assertFalse(originalOutcome.sameAs(transformedOutcome, ObservationMode.ASK),
 				() -> "one row versus none must differ even under ASK: " + originalOutcome + " versus "
 						+ transformedOutcome);
+
+		CheckOptions options = checkOptions(dataset);
+		assertDatasetIsVerifiedWitness(options, original, transformed);
+		assertNotEquivalentWithVerifiedCounterexample(options, original, transformed);
+	}
+
+	/**
+	 * Ancestors OUTSIDE the compared expressions must not influence the verdict: the same join pair used to flip from
+	 * NOT_EQUIVALENT (detached) to EQUIVALENT when still attached under a live outer Projection, because the
+	 * binding-discard walk escaped the analyzed root.
+	 */
+	@Test
+	void ambientParentsOutsideTheComparedTreesDoNotChangeTheVerdict() throws Exception {
+		TupleExpr original = parseTupleExpr("join-projection-drops-bindings.json");
+		TupleExpr transformed = commuteTopLevelJoin(original);
+		EvaluationCase dataset = parseDataset("join-projection-drops-bindings.nt",
+				"projection drops inherited JOIN bindings");
+		// Attach BOTH compared joins under outer Projections that are NOT part of the check; the
+		// wrappers only exist to give the joins live parent chains (one detached side alone would
+		// already diverge structurally and mask the defect).
+		new Projection(original, new ProjectionElemList(new ProjectionElem("label")), false);
+		new Projection(transformed, new ProjectionElemList(new ProjectionElem("label")), false);
 
 		CheckOptions options = checkOptions(dataset);
 		assertDatasetIsVerifiedWitness(options, original, transformed);
