@@ -25,6 +25,7 @@ public final class ShadowOptimizationPlan {
 	private final ShadowSkipReason skipReason;
 	private final boolean ordered;
 	private boolean telemetryEnabled;
+	private boolean strict;
 
 	public ShadowOptimizationPlan(TupleExpr candidate, long maxRows, ShadowSkipReason skipReason, boolean ordered) {
 		this.candidate = candidate;
@@ -49,6 +50,11 @@ public final class ShadowOptimizationPlan {
 		return telemetryEnabled;
 	}
 
+	/** When true (the {@code shadowStrict} property), shadow divergences fail the query instead of being recorded. */
+	public boolean strict() {
+		return strict;
+	}
+
 	public String skipReasonCode() {
 		return skipReason == null ? ShadowSkipReason.NONE.name() : skipReason.name();
 	}
@@ -58,9 +64,10 @@ public final class ShadowOptimizationPlan {
 	}
 
 	static ShadowOptimizationPlan create(TupleExpr candidate, long maxRows, ShadowSkipReason skipReason,
-			boolean ordered, boolean telemetryEnabled) {
+			boolean ordered, boolean telemetryEnabled, boolean strict) {
 		ShadowOptimizationPlan plan = new ShadowOptimizationPlan(candidate, maxRows, skipReason, ordered);
 		plan.telemetryEnabled = telemetryEnabled;
+		plan.strict = strict;
 		return plan;
 	}
 
@@ -78,5 +85,7 @@ enum ShadowSkipReason {
 	SERVICE,
 	UNSUPPORTED,
 	ROW_LIMIT,
-	PARTIAL_CONSUMPTION
+	PARTIAL_CONSUMPTION,
+	NONDETERMINISTIC,
+	CANDIDATE_ERROR
 }

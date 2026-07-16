@@ -17,14 +17,27 @@ import java.util.List;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Reduced;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.ContextAwareQueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceChecker;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Executes one optimizer pipeline with a single lazy query-local fact session. */
 @InternalUseOnly
 public final class OptimizerPipelineRunner {
+
+	private static final Logger logger = LoggerFactory.getLogger(OptimizerPipelineRunner.class);
 
 	private OptimizerPipelineRunner() {
 	}
@@ -45,19 +58,35 @@ public final class OptimizerPipelineRunner {
 			if (!shouldSample(root, configuration.shadowSampleRate())) {
 				ScopeSafetyTelemetry.recordShadowSkip(ShadowSkipReason.NOT_SAMPLED, configuration.telemetry());
 				ShadowOptimizationPlan.attach(root, ShadowOptimizationPlan.create(null, configuration.shadowMaxRows(),
-						ShadowSkipReason.NOT_SAMPLED, false, configuration.telemetry()));
+						ShadowSkipReason.NOT_SAMPLED, false, configuration.telemetry(),
+						configuration.shadowStrict()));
 				return;
 			}
 			ScopeSafetyConfiguration enforce = new ScopeSafetyConfiguration(ScopeSafetyMode.ENFORCE,
 					configuration.shapeCap(), configuration.periodicAuditRebuild(), configuration.telemetry(),
 					configuration.shadowSampleRate(), configuration.shadowMaxRows(), configuration.shadowStrict());
-			runOne(candidate, dataset, bindings, optimizerList, enforce);
-			CandidateClassification classification = classifyCandidate(candidate);
+			CandidateClassification classification;
+			try {
+				runOne(candidate, dataset, bindings, optimizerList, enforce);
+				classification = classifyCandidate(candidate);
+			} catch (RuntimeException failure) {
+				// SHADOW is an observation mode: a defect in the experimental candidate pipeline
+				// must never fail the user's query.
+				if (configuration.shadowStrict()) {
+					throw failure;
+				}
+				logger.warn("Shadow candidate preparation failed; skipping shadow comparison", failure);
+				ScopeSafetyTelemetry.recordShadowSkip(ShadowSkipReason.CANDIDATE_ERROR, configuration.telemetry());
+				ShadowOptimizationPlan.attach(root, ShadowOptimizationPlan.create(null,
+						configuration.shadowMaxRows(), ShadowSkipReason.CANDIDATE_ERROR, false,
+						configuration.telemetry(), configuration.shadowStrict()));
+				return;
+			}
 			ScopeSafetyTelemetry.recordShadowSkip(classification.skipReason(), configuration.telemetry());
 			ShadowOptimizationPlan.attach(root, ShadowOptimizationPlan.create(
 					classification.skipReason() == ShadowSkipReason.NONE ? candidate : null,
 					configuration.shadowMaxRows(), classification.skipReason(), classification.ordered(),
-					configuration.telemetry()));
+					configuration.telemetry(), configuration.shadowStrict()));
 			return;
 		}
 		runOne(root, dataset, bindings, optimizerList, configuration);
@@ -94,7 +123,9 @@ public final class OptimizerPipelineRunner {
 		try (ScopeAnalysis analysis = ScopeAnalysis.analyze(candidate)) {
 			int rootId = analysis.arena().id(candidate);
 			int flags = analysis.facts().flags(rootId);
-			boolean ordered = analysis.facts().resultKind(rootId) == AbstractFactIndex.RESULT_SEQUENCE;
+			// Sequence comparison is only sound when the ROOT result is totally ordered; an Order
+			// or Slice buried in a subquery must not force a strict sequence compare of the root.
+			boolean ordered = orderReachedThroughOrderPreservingChain(candidate);
 			if ((flags & FactFlags.HAS_SERVICE) != 0) {
 				return new CandidateClassification(ShadowSkipReason.SERVICE, ordered);
 			}
@@ -107,8 +138,70 @@ public final class OptimizerPipelineRunner {
 			if ((flags & (FactFlags.HAS_UNKNOWN_NODE | FactFlags.HAS_UNKNOWN_FUNCTION)) != 0) {
 				return new CandidateClassification(ShadowSkipReason.UNSUPPORTED, ordered);
 			}
+			if (containsSliceWithoutBackingOrder(candidate)) {
+				// A LIMIT/OFFSET over an unordered input may legitimately return a different row
+				// subset per evaluation; two valid plans cannot be compared at all.
+				return new CandidateClassification(ShadowSkipReason.NONDETERMINISTIC, ordered);
+			}
 			return new CandidateClassification(ShadowSkipReason.NONE, ordered);
 		}
+	}
+
+	/** True when the root's result order is guaranteed by an Order reached through order-preserving operators. */
+	private static boolean orderReachedThroughOrderPreservingChain(TupleExpr root) {
+		TupleExpr current = root;
+		while (true) {
+			if (current instanceof Order) {
+				return true;
+			}
+			TupleExpr next = orderPreservingArg(current);
+			if (next == null) {
+				return false;
+			}
+			current = next;
+		}
+	}
+
+	private static TupleExpr orderPreservingArg(TupleExpr expression) {
+		if (expression instanceof QueryRoot node) {
+			return node.getArg();
+		}
+		if (expression instanceof Slice node) {
+			return node.getArg();
+		}
+		if (expression instanceof Distinct node) {
+			return node.getArg();
+		}
+		if (expression instanceof Reduced node) {
+			return node.getArg();
+		}
+		if (expression instanceof Projection node) {
+			return node.getArg();
+		}
+		if (expression instanceof Filter node) {
+			return node.getArg();
+		}
+		if (expression instanceof Extension node) {
+			return node.getArg();
+		}
+		return null;
+	}
+
+	private static boolean containsSliceWithoutBackingOrder(TupleExpr candidate) {
+		List<Slice> slices = new ArrayList<>();
+		candidate.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Slice slice) {
+				slices.add(slice);
+				super.meet(slice);
+			}
+		});
+		for (Slice slice : slices) {
+			if (!orderReachedThroughOrderPreservingChain(slice.getArg())) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private record CandidateClassification(ShadowSkipReason skipReason, boolean ordered) {
