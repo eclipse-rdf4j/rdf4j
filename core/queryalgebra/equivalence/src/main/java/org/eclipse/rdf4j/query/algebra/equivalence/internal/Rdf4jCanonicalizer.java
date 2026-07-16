@@ -896,7 +896,7 @@ public final class Rdf4jCanonicalizer {
 	}
 
 	private boolean runtimeJoinOrderIsObservable(Join join) {
-		return incomingBindings.readsAcrossOperands(join.getLeftArg(), join.getRightArg());
+		return incomingBindings.orderIsObservableAcrossOperands(join.getLeftArg(), join.getRightArg());
 	}
 
 	static Optional<NormalizationCandidate> unambiguousMinimum(

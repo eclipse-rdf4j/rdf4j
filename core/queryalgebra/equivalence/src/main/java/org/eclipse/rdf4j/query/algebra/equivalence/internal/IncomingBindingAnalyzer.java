@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
@@ -42,16 +43,16 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
-/** Finds explicit and arbitrary-name dependencies on an RDF4J runtime input mapping. */
+/** Finds read and discard effects on an RDF4J runtime input mapping. */
 final class IncomingBindingAnalyzer {
 	private final BindingAnalyzer bindings = new BindingAnalyzer();
 
 	boolean containsRuntimeCorrelation(QueryModelNode node) {
-		if (node instanceof Join join && readsAcrossOperands(join.getLeftArg(), join.getRightArg())) {
+		if (node instanceof Join join && orderIsObservableAcrossOperands(join.getLeftArg(), join.getRightArg())) {
 			return true;
 		}
 		if (node instanceof LeftJoin leftJoin
-				&& readsAcrossOperands(leftJoin.getLeftArg(), leftJoin.getRightArg())) {
+				&& orderIsObservableAcrossOperands(leftJoin.getLeftArg(), leftJoin.getRightArg())) {
 			return true;
 		}
 		for (QueryModelNode child : DirectChildren.of(node)) {
@@ -62,25 +63,27 @@ final class IncomingBindingAnalyzer {
 		return false;
 	}
 
-	boolean readsAcrossOperands(TupleExpr left, TupleExpr right) {
-		IncomingBindingInfo leftReads = externalReads(left);
-		IncomingBindingInfo rightReads = externalReads(right);
+	boolean orderIsObservableAcrossOperands(TupleExpr left, TupleExpr right) {
+		IncomingBindingInfo leftInfo = externalReads(left);
+		IncomingBindingInfo rightInfo = externalReads(right);
 		BindingInfo leftBindings = bindings.analyze(left);
 		BindingInfo rightBindings = bindings.analyze(right);
-		return overlaps(leftReads, rightBindings.mayBind())
-				|| overlaps(rightReads, leftBindings.mayBind());
+		return overlaps(leftInfo, rightBindings.mayBind())
+				|| overlaps(rightInfo, leftBindings.mayBind())
+				|| leftInfo.mayDiscardIncomingBindings()
+				|| rightInfo.mayDiscardIncomingBindings();
 	}
 
 	IncomingBindingInfo externalReads(TupleExpr expression) {
 		if (expression instanceof VariableScopeChange scope && scope.isVariableScopeChange()) {
-			return empty();
+			return empty(true);
 		}
 		if (expression instanceof EmptySet
 				|| expression instanceof SingletonSet
 				|| expression instanceof StatementPattern
 				|| expression instanceof TripleRef
 				|| expression instanceof BindingSetAssignment) {
-			return empty();
+			return empty(false);
 		}
 		if (expression instanceof QueryRoot root) {
 			return externalReads(root.getArg());
@@ -117,7 +120,10 @@ final class IncomingBindingAnalyzer {
 					explicitReads.add(element.getName());
 				}
 			}
-			return new IncomingBindingInfo(explicitReads, inputReads.readsAnyIncomingBinding());
+			return new IncomingBindingInfo(
+					explicitReads,
+					inputReads.readsAnyIncomingBinding(),
+					isOuterProjection(projection));
 		}
 		if (expression instanceof Order order) {
 			IncomingBindingInfo result = externalReads(order.getArg());
@@ -141,17 +147,20 @@ final class IncomingBindingAnalyzer {
 			return union(externalReads(union.getLeftArg()), externalReads(union.getRightArg()));
 		}
 		if (expression instanceof Difference difference) {
-			IncomingBindingInfo result = union(
-					externalReads(difference.getLeftArg()),
-					externalReads(difference.getRightArg()));
+			IncomingBindingInfo leftInfo = externalReads(difference.getLeftArg());
+			IncomingBindingInfo rightInfo = externalReads(difference.getRightArg());
+			IncomingBindingInfo result = union(leftInfo, rightInfo);
 			// Both MINUS operands inherit the same input. Any inherited name can
 			// create the shared domain that makes a compatible right row harmful.
-			return new IncomingBindingInfo(result.explicitReads(), true);
+			return new IncomingBindingInfo(
+					result.explicitReads(),
+					true,
+					leftInfo.mayDiscardIncomingBindings());
 		}
 
 		Set<String> possibleReads = collectVariables(expression);
 		possibleReads.removeAll(bindings.analyze(expression).mustBind());
-		return new IncomingBindingInfo(possibleReads, false);
+		return new IncomingBindingInfo(possibleReads, false, true);
 	}
 
 	private IncomingBindingInfo correlatedCombination(TupleExpr left, TupleExpr right) {
@@ -163,7 +172,8 @@ final class IncomingBindingAnalyzer {
 		explicitReads.addAll(rightExplicitReads);
 		return new IncomingBindingInfo(
 				explicitReads,
-				leftReads.readsAnyIncomingBinding() || rightReads.readsAnyIncomingBinding());
+				leftReads.readsAnyIncomingBinding() || rightReads.readsAnyIncomingBinding(),
+				leftReads.mayDiscardIncomingBindings() || rightReads.mayDiscardIncomingBindings());
 	}
 
 	private Set<String> unsatisfied(Set<String> reads, TupleExpr input) {
@@ -195,17 +205,32 @@ final class IncomingBindingAnalyzer {
 		explicitReads.addAll(right.explicitReads());
 		return new IncomingBindingInfo(
 				explicitReads,
-				left.readsAnyIncomingBinding() || right.readsAnyIncomingBinding());
+				left.readsAnyIncomingBinding() || right.readsAnyIncomingBinding(),
+				left.mayDiscardIncomingBindings() || right.mayDiscardIncomingBindings());
 	}
 
 	private static IncomingBindingInfo withExplicitReads(IncomingBindingInfo source, Set<String> additionalReads) {
 		Set<String> explicitReads = mutable(source.explicitReads());
 		explicitReads.addAll(additionalReads);
-		return new IncomingBindingInfo(explicitReads, source.readsAnyIncomingBinding());
+		return new IncomingBindingInfo(
+				explicitReads,
+				source.readsAnyIncomingBinding(),
+				source.mayDiscardIncomingBindings());
 	}
 
-	private static IncomingBindingInfo empty() {
-		return new IncomingBindingInfo(Set.of(), false);
+	private static boolean isOuterProjection(Projection projection) {
+		QueryModelNode ancestor = projection;
+		while (ancestor.getParentNode() != null) {
+			ancestor = ancestor.getParentNode();
+			if (ancestor instanceof Projection || ancestor instanceof MultiProjection) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static IncomingBindingInfo empty(boolean mayDiscardIncomingBindings) {
+		return new IncomingBindingInfo(Set.of(), false, mayDiscardIncomingBindings);
 	}
 
 	private static Set<String> mutable(Set<String> source) {
