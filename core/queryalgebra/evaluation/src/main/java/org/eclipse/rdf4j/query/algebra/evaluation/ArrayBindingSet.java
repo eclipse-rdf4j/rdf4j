@@ -181,7 +181,11 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			return null;
 		}
 		return (v, a) -> {
-			assert a.values[index] == null;
+			// A NULL_VALUE slot is a null-binding placeholder (e.g. installed by ExtensionIterator
+			// when a BIND errors): it reads as unbound via getValue(), so callers that verified
+			// "no existing binding" may legitimately add over it — the same overwrite this lambda
+			// always performed with assertions disabled.
+			assert a.values[index] == null || a.values[index] == NULL_VALUE;
 			a.values[index] = v == null ? NULL_VALUE : v;
 			a.empty = false;
 			a.updateActiveBindingMask(index, true);

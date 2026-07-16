@@ -41,6 +41,23 @@ public class ArrayBindingSetNullHandlingTest {
 	}
 
 	@Test
+	public void directAddMayOverwriteANullBindingPlaceholder() {
+		// ExtensionIterator installs a null-binding when a BIND errors; the variable then reads as
+		// unbound, so a later VALUES join may legitimately bind it. The direct-add fast path used
+		// to assert the slot was never written and crashed under -ea (found by the equivalence
+		// differential fuzzer via BindingSetAssignmentQueryEvaluationStep).
+		ArrayBindingSet bs = new ArrayBindingSet("myVar", "other");
+		bs.getDirectSetBinding("myVar").accept(null, bs);
+		// The placeholder is present but reads as unbound — exactly the state a "no existing
+		// binding" check observes before choosing the direct-add path.
+		assertEquals(null, bs.getValue("myVar"));
+
+		assertDoesNotThrow(() -> bs.getDirectAddBinding("myVar").accept(OWL.EQUIVALENTCLASS, bs));
+
+		assertEquals(OWL.EQUIVALENTCLASS, bs.getValue("myVar"));
+	}
+
+	@Test
 	public void copyingToQueryBindingSetMustSkipUndefBindings() {
 		ArrayBindingSet bs = new ArrayBindingSet("myVar", "unbound", "mappingProp", "const");
 		// myVar is explicitly present with UNDEF value
