@@ -96,9 +96,6 @@ final class QueryScopeSeedRecorder {
 
 	private static final class Finalizer extends AbstractQueryModelVisitor<RuntimeException> {
 
-		private static final long FINGERPRINT_OFFSET = 0xcbf29ce484222325L;
-		private static final long FINGERPRINT_PRIME = 0x100000001b3L;
-
 		private final Set<Projection> subqueryProjections;
 		private final Set<Exists> existsBoundaries;
 		private final Set<Difference> minusBoundaries;
@@ -110,12 +107,10 @@ final class QueryScopeSeedRecorder {
 		private final IdentityHashMap<QueryModelNode, Integer> origins = new IdentityHashMap<>();
 		private final List<Map<String, Integer>> frameSymbols = new ArrayList<>();
 		private final Map<String, Integer> graphEnvironments = new LinkedHashMap<>();
-		private final Set<String> graphBoundaries = new java.util.LinkedHashSet<>();
 
 		private int frameId = QueryScopeSeed.ROOT_FRAME_ID;
 		private int regionId = QueryScopeSeed.ROOT_REGION_ID;
 		private int environmentId = QueryScopeSeed.ROOT_ENVIRONMENT_ID;
-		private long fingerprint = FINGERPRINT_OFFSET;
 
 		private Finalizer(Set<Projection> subqueryProjections, Set<Exists> existsBoundaries,
 				Set<Difference> minusBoundaries, Set<Lateral> lateralBoundaries, Set<Service> serviceBoundaries,
@@ -131,7 +126,7 @@ final class QueryScopeSeedRecorder {
 		}
 
 		QueryScopeSeed build() {
-			return seed.setAlgebraFingerprint(fingerprint).build();
+			return seed.build();
 		}
 
 		@Override
@@ -151,38 +146,26 @@ final class QueryScopeSeedRecorder {
 			}
 
 			int parentFrame = frameId;
-			int projectionOrigin = recordNode(projection);
+			recordNode(projection);
 			boolean subquery = subqueryProjections.contains(projection) || projection.isSubquery();
 			int childFrame = parentFrame;
-			int boundaryId = -1;
 			if (subquery) {
 				childFrame = seed.addFrame(parentFrame);
 				frameSymbols.add(new LinkedHashMap<>());
-				boundaryId = seed.addBoundary(projectionOrigin, QueryScopeSeed.BoundaryKind.SUBQUERY_PROJECTION);
 			}
 
 			ProjectionElemList elements = projection.getProjectionElemList();
 			recordNode(elements);
-			Set<String> projectedSources = new LinkedHashSet<>();
-			for (ProjectionElem element : elements.getElements()) {
-				projectedSources.add(element.getName());
-			}
 			for (String declaration : projectionDeclarations.getOrDefault(projection, Collections.emptySet())) {
-				symbol(declaration, declaration, childFrame, projectedSources.contains(declaration)
-						? QueryScopeSeed.SymbolVisibility.EXPORTED
-						: QueryScopeSeed.SymbolVisibility.LOCAL);
+				symbol(declaration, childFrame);
 			}
 			for (ProjectionElem element : elements.getElements()) {
 				int elementOrigin = recordNode(element);
-				int source = symbol(element.getName(), element.getName(), childFrame,
-						QueryScopeSeed.SymbolVisibility.EXPORTED);
+				int source = symbol(element.getName(), childFrame);
 				String targetName = element.getProjectionAlias().orElse(element.getName());
-				int target = symbol(targetName, targetName, parentFrame, QueryScopeSeed.SymbolVisibility.EXPORTED);
-				seed.addOccurrence(elementOrigin, source, QueryScopeSeed.OccurrenceRole.PROJECTION_SOURCE, 0);
-				seed.addOccurrence(elementOrigin, target, QueryScopeSeed.OccurrenceRole.PROJECTION_TARGET, 1);
-				if (boundaryId >= 0) {
-					seed.addExport(boundaryId, source, target);
-				}
+				int target = symbol(targetName, parentFrame);
+				seed.addOccurrence(elementOrigin, source);
+				seed.addOccurrence(elementOrigin, target);
 			}
 
 			withFrame(childFrame, () -> projection.getArg().visit(this));
@@ -194,11 +177,7 @@ final class QueryScopeSeedRecorder {
 				meetNode(exists);
 				return;
 			}
-			int originId = recordNode(exists);
-			int boundaryId = seed.addBoundary(originId, QueryScopeSeed.BoundaryKind.EXISTS);
-			for (int symbolId : frameSymbols.get(frameId).values()) {
-				seed.addAllowedInput(boundaryId, symbolId);
-			}
+			recordNode(exists);
 			int correlatedRegion = seed.addRegion(regionId, QueryScopeSeed.RegionKind.CORRELATED);
 			withRegion(correlatedRegion, () -> exists.getSubQuery().visit(this));
 		}
@@ -209,8 +188,7 @@ final class QueryScopeSeedRecorder {
 				meetNode(difference);
 				return;
 			}
-			int originId = recordNode(difference);
-			seed.addBoundary(originId, QueryScopeSeed.BoundaryKind.MINUS);
+			recordNode(difference);
 			difference.getLeftArg().visit(this);
 			int minusRegion = seed.addRegion(regionId, QueryScopeSeed.RegionKind.MINUS_RIGHT);
 			withRegion(minusRegion, () -> difference.getRightArg().visit(this));
@@ -222,13 +200,8 @@ final class QueryScopeSeedRecorder {
 				meetNode(lateral);
 				return;
 			}
-			int originId = recordNode(lateral);
-			int boundaryId = seed.addBoundary(originId, QueryScopeSeed.BoundaryKind.LATERAL_INPUT);
+			recordNode(lateral);
 			lateral.getLeftArg().visit(this);
-			for (String name : lateral.getRightInputBindingNames()) {
-				seed.addAllowedInput(boundaryId,
-						symbol(name, name, frameId, QueryScopeSeed.SymbolVisibility.CAPTURED));
-			}
 			int lateralRegion = seed.addRegion(regionId, QueryScopeSeed.RegionKind.LATERAL);
 			withRegion(lateralRegion, () -> lateral.getRightArg().visit(this));
 		}
@@ -240,13 +213,9 @@ final class QueryScopeSeedRecorder {
 				return;
 			}
 			int originId = recordNode(service);
-			int boundaryId = seed.addBoundary(originId, QueryScopeSeed.BoundaryKind.SERVICE);
 			Var serviceRef = service.getServiceRef();
 			if (!serviceRef.hasValue()) {
-				int serviceSymbol = symbol(serviceRef.getName(), serviceRef.getName(), frameId,
-						QueryScopeSeed.SymbolVisibility.CAPTURED);
-				seed.addOccurrence(originId, serviceSymbol, QueryScopeSeed.OccurrenceRole.SERVICE_NAME, 0);
-				seed.addAllowedInput(boundaryId, serviceSymbol);
+				seed.addOccurrence(originId, symbol(serviceRef.getName(), frameId));
 			}
 			serviceRef.visit(this);
 			int serviceEnvironment = seed.addEnvironment(environmentId, QueryScopeSeed.EnvironmentKind.SERVICE);
@@ -270,9 +239,6 @@ final class QueryScopeSeedRecorder {
 			int targetEnvironment = graphEnvironment;
 			withEnvironment(targetEnvironment, () -> {
 				int originId = recordNode(pattern);
-				if (graphBoundaries.add(graphKey)) {
-					seed.addBoundary(originId, QueryScopeSeed.BoundaryKind.GRAPH);
-				}
 				recordOccurrences(pattern, originId);
 				pattern.visitChildren(this);
 			});
@@ -287,53 +253,42 @@ final class QueryScopeSeedRecorder {
 			int originId = seed.addOrigin(frameId, regionId, environmentId);
 			origins.put(node, originId);
 			node.setOptimizationTag(QueryScopeSeed.originTag(originId));
-			fingerprint = updateFingerprint(fingerprint, node.getClass().getName());
 			return originId;
 		}
 
 		private void recordOccurrences(QueryModelNode node, int originId) {
 			if (node instanceof StatementPattern pattern) {
-				recordVar(originId, pattern.getSubjectVar(), QueryScopeSeed.OccurrenceRole.PATTERN_SUBJECT, 0);
-				recordVar(originId, pattern.getPredicateVar(), QueryScopeSeed.OccurrenceRole.PATTERN_PREDICATE, 1);
-				recordVar(originId, pattern.getObjectVar(), QueryScopeSeed.OccurrenceRole.PATTERN_OBJECT, 2);
+				recordVar(originId, pattern.getSubjectVar());
+				recordVar(originId, pattern.getPredicateVar());
+				recordVar(originId, pattern.getObjectVar());
 				if (pattern.getContextVar() != null) {
-					recordVar(originId, pattern.getContextVar(), QueryScopeSeed.OccurrenceRole.PATTERN_CONTEXT, 3);
+					recordVar(originId, pattern.getContextVar());
 				}
 			} else if (node instanceof BindingSetAssignment assignment) {
-				int ordinal = 0;
 				for (String name : assignment.getDeclaredBindingNames()) {
-					int symbolId = symbol(name, name, frameId, QueryScopeSeed.SymbolVisibility.LOCAL);
-					seed.addOccurrence(originId, symbolId, QueryScopeSeed.OccurrenceRole.VALUES_DECLARATION,
-							ordinal++);
+					seed.addOccurrence(originId, symbol(name, frameId));
 				}
 			} else if (node instanceof ExtensionElem extension) {
-				int symbolId = symbol(extension.getName(), extension.getName(), frameId,
-						QueryScopeSeed.SymbolVisibility.LOCAL);
-				seed.addOccurrence(originId, symbolId, QueryScopeSeed.OccurrenceRole.DEFINE_EXTENSION_TARGET, 0);
+				seed.addOccurrence(originId, symbol(extension.getName(), frameId));
 			} else if (node instanceof Var var && !var.hasValue()) {
-				recordVar(originId, var, QueryScopeSeed.OccurrenceRole.READ, 0);
+				recordVar(originId, var);
 			}
 		}
 
-		private void recordVar(int originId, Var var, QueryScopeSeed.OccurrenceRole role, int ordinal) {
+		private void recordVar(int originId, Var var) {
 			if (var == null || var.hasValue()) {
 				return;
 			}
-			QueryScopeSeed.SymbolVisibility visibility = var.isAnonymous() || isGeneratedName(var.getName())
-					? QueryScopeSeed.SymbolVisibility.HIDDEN
-					: QueryScopeSeed.SymbolVisibility.LOCAL;
-			int symbolId = symbol(var.getName(), var.getName(), frameId, visibility);
-			seed.addOccurrence(originId, symbolId, role, ordinal);
+			seed.addOccurrence(originId, symbol(var.getName(), frameId));
 		}
 
-		private int symbol(String name, String physicalName, int symbolFrame,
-				QueryScopeSeed.SymbolVisibility visibility) {
+		private int symbol(String name, int symbolFrame) {
 			Map<String, Integer> symbols = frameSymbols.get(symbolFrame);
 			Integer existing = symbols.get(name);
 			if (existing != null) {
 				return existing;
 			}
-			int symbolId = seed.addSymbol(name, physicalName, symbolFrame, visibility);
+			int symbolId = seed.addSymbol(name, symbolFrame);
 			symbols.put(name, symbolId);
 			return symbolId;
 		}
@@ -375,15 +330,6 @@ final class QueryScopeSeedRecorder {
 					|| name.startsWith(TupleExprBuilder.ANON_BNODE_)
 					|| name.startsWith(TupleExprBuilder.ANON_COLLECTION_)
 					|| name.startsWith(TupleExprBuilder.ANON_);
-		}
-
-		private static long updateFingerprint(long current, String text) {
-			long result = current;
-			for (int i = 0; i < text.length(); i++) {
-				result ^= text.charAt(i);
-				result *= FINGERPRINT_PRIME;
-			}
-			return result;
 		}
 	}
 }

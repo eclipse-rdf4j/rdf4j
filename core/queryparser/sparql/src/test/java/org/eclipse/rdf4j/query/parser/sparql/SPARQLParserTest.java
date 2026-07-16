@@ -49,6 +49,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.DeleteData;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -167,15 +168,14 @@ public class SPARQLParserTest {
 			assertThat(originId).isBetween(0, seed.getOriginCount() - 1);
 		});
 		assertThat(seed.getFrameCount()).isEqualTo(2);
-		assertThat(seed.getBoundaryCount()).isEqualTo(1);
-		assertThat(seed.getBoundaryKind(0)).isEqualTo(QueryScopeSeed.BoundaryKind.SUBQUERY_PROJECTION);
-		assertThat(seed.getBoundaryExportEnd(0) - seed.getBoundaryExportStart(0)).isEqualTo(1);
-		int exportId = seed.getBoundaryExportStart(0);
-		int childSymbol = seed.getExportChildSymbol(exportId);
-		int parentSymbol = seed.getExportParentSymbol(exportId);
-		assertThat(seed.getSymbolName(childSymbol)).isEqualTo("inner");
-		assertThat(seed.getSymbolName(parentSymbol)).isEqualTo("inner");
-		assertThat(seed.getSymbolFrame(childSymbol)).isNotEqualTo(seed.getSymbolFrame(parentSymbol));
+		List<Integer> innerSymbolFrames = new ArrayList<>();
+		for (int symbolId = 0; symbolId < seed.getSymbolCount(); symbolId++) {
+			if ("inner".equals(seed.getSymbolName(symbolId))) {
+				innerSymbolFrames.add(seed.getSymbolFrame(symbolId));
+			}
+		}
+		assertThat(innerSymbolFrames).hasSize(2);
+		assertThat(innerSymbolFrames.get(0)).isNotEqualTo(innerSymbolFrames.get(1));
 
 		List<StatementPattern> patterns = nodes.stream()
 				.filter(StatementPattern.class::isInstance)
@@ -199,7 +199,7 @@ public class SPARQLParserTest {
 	}
 
 	@Test
-	public void parsedSeedRecordsCorrelationAndEnvironmentBoundaries() {
+	public void parsedSeedRecordsCorrelationRegionsAndEnvironments() {
 		QueryRoot root = parseQueryWithScopeSeed("""
 				SELECT * WHERE {
 				  ?s <urn:base> ?base .
@@ -211,10 +211,6 @@ public class SPARQLParserTest {
 				}
 				""");
 		QueryScopeSeed seed = root.getQueryScopeSeed();
-		Set<QueryScopeSeed.BoundaryKind> boundaryKinds = new HashSet<>();
-		for (int i = 0; i < seed.getBoundaryCount(); i++) {
-			boundaryKinds.add(seed.getBoundaryKind(i));
-		}
 		Set<QueryScopeSeed.RegionKind> regionKinds = new HashSet<>();
 		for (int i = 0; i < seed.getRegionCount(); i++) {
 			regionKinds.add(seed.getRegionKind(i));
@@ -224,10 +220,6 @@ public class SPARQLParserTest {
 			environmentKinds.add(seed.getEnvironmentKind(i));
 		}
 
-		assertThat(boundaryKinds).contains(QueryScopeSeed.BoundaryKind.SUBQUERY_PROJECTION,
-				QueryScopeSeed.BoundaryKind.EXISTS, QueryScopeSeed.BoundaryKind.MINUS,
-				QueryScopeSeed.BoundaryKind.LATERAL_INPUT, QueryScopeSeed.BoundaryKind.GRAPH,
-				QueryScopeSeed.BoundaryKind.SERVICE);
 		assertThat(regionKinds).contains(QueryScopeSeed.RegionKind.CORRELATED,
 				QueryScopeSeed.RegionKind.MINUS_RIGHT, QueryScopeSeed.RegionKind.LATERAL);
 		assertThat(environmentKinds).contains(QueryScopeSeed.EnvironmentKind.GRAPH,
@@ -256,7 +248,7 @@ public class SPARQLParserTest {
 	}
 
 	@Test
-	public void wildcardAndSeedShareVisibleDeclarationsWhileGeneratedNamesStayHidden() {
+	public void wildcardSeedRecordsValuesDeclarationsIncludingAllUndefColumns() {
 		QueryRoot root = parseQueryWithScopeSeed("""
 				SELECT * WHERE {
 				  ?s (<urn:path-a>/<urn:path-b>*) ?o .
@@ -267,26 +259,24 @@ public class SPARQLParserTest {
 				""");
 		Projection projection = (Projection) root.getArg();
 		QueryScopeSeed seed = root.getQueryScopeSeed();
-		Set<String> exported = new HashSet<>();
-		Set<String> hidden = new HashSet<>();
-		for (int symbolId = 0; symbolId < seed.getSymbolCount(); symbolId++) {
-			if (seed.getSymbolVisibility(symbolId) == QueryScopeSeed.SymbolVisibility.EXPORTED) {
-				exported.add(seed.getSymbolName(symbolId));
-			} else if (seed.getSymbolVisibility(symbolId) == QueryScopeSeed.SymbolVisibility.HIDDEN) {
-				hidden.add(seed.getSymbolName(symbolId));
+
+		List<BindingSetAssignment> assignments = new ArrayList<>();
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(BindingSetAssignment node) {
+				assignments.add(node);
 			}
-		}
+		});
+		assertThat(assignments).hasSize(1);
+		int valuesOrigin = QueryScopeSeed.originId(assignments.get(0).getOptimizationTag());
 		Set<String> valuesDeclarations = new HashSet<>();
-		for (int occurrenceId = 0; occurrenceId < seed.getOccurrenceCount(); occurrenceId++) {
-			if (seed.getOccurrenceRole(occurrenceId) == QueryScopeSeed.OccurrenceRole.VALUES_DECLARATION) {
-				valuesDeclarations.add(seed.getSymbolName(seed.getOccurrenceSymbol(occurrenceId)));
-			}
+		for (int occurrenceId = seed.getOriginOccurrenceStart(valuesOrigin); occurrenceId < seed
+				.getOriginOccurrenceEnd(valuesOrigin); occurrenceId++) {
+			valuesDeclarations.add(seed.getSymbolName(seed.getOccurrenceSymbol(occurrenceId)));
 		}
 
 		assertThat(projection.getBindingNames())
 				.containsExactlyInAnyOrder("s", "o", "alias", "declared", "allUndef");
-		assertThat(exported).contains("s", "o", "alias", "declared", "allUndef").doesNotContain("existsLocal");
-		assertThat(hidden).isNotEmpty();
 		assertThat(valuesDeclarations).containsExactlyInAnyOrder("declared", "allUndef");
 	}
 
