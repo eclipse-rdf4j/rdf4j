@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
@@ -96,7 +97,9 @@ public final class CanonicalEncoding {
 		} else if (value instanceof Literal literal) {
 			target.append('L');
 			appendPart(target, literal.getLabel());
-			appendOptional(target, literal.getLanguage().orElse(null));
+			// RDF4J literal equality compares language tags case-insensitively; the canonical
+			// encoding must not distinguish term-equal literals.
+			appendOptional(target, literal.getLanguage().map(tag -> tag.toLowerCase(Locale.ROOT)).orElse(null));
 			appendOptional(target,
 					literal.getBaseDirection() == null || literal.getBaseDirection() == Literal.BaseDirection.NONE
 							? null
