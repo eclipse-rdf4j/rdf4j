@@ -12,7 +12,9 @@
 package org.eclipse.rdf4j.query.algebra.equivalence.internal;
 
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.Literal;
@@ -29,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Group;
@@ -78,7 +81,10 @@ public final class SemanticAnalyzerImpl {
 		BindingInfo bindings = bindingAnalyzer.analyze(expression);
 		IncomingBindingInfo incomingBindings = incomingBindingAnalyzer.externalReads(expression);
 		Scan scan = new Scan();
-		scan(expression, scan, new HashSet<>());
+		// Identity-based visited set: node equals() ignores semantic state such as
+		// isVariableScopeChange, so a value-equality set would skip an equal-looking node whose
+		// flags differ and silently drop its facts.
+		scan(expression, scan, Collections.newSetFromMap(new IdentityHashMap<>()));
 
 		return new SemanticSummary(
 				bindings.mayBind(),
@@ -295,6 +301,13 @@ public final class SemanticAnalyzerImpl {
 			return duplicateFree(slice.getArg());
 		}
 		if (expression instanceof Extension extension) {
+			Set<String> mayBind = bindingAnalyzer.analyze(extension.getArg()).mayBind();
+			for (ExtensionElem element : extension.getElements()) {
+				if (mayBind.contains(element.getName())) {
+					// Overwriting an already-bound name can collapse distinct rows into duplicates.
+					return false;
+				}
+			}
 			return duplicateFree(extension.getArg());
 		}
 		if (expression instanceof Difference difference) {
