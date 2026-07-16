@@ -561,6 +561,12 @@ public final class TupleExprJsonWriter {
 			if (!expression.isSubquery()) {
 				json.put("subquery", false);
 			}
+			// The element list is serialized as a bare array, so its own scope-change flag needs a
+			// dedicated field or it would be silently dropped by a round-trip.
+			if (expression.getProjectionElemList() != null
+					&& expression.getProjectionElemList().isVariableScopeChange()) {
+				json.put("projectionElementsScopeChange", true);
+			}
 			return json;
 		}
 
@@ -570,8 +576,14 @@ public final class TupleExprJsonWriter {
 			json.set("arg", tupleExpr(expression.getArg(), child(path, "arg"), depth + 1));
 			ArrayNode projections = json.putArray("projections");
 			for (int i = 0; i < expression.getProjections().size(); i++) {
-				projections.add(projectionElemList(expression.getProjections().get(i),
-						index(child(path, "projections"), i), depth + 1));
+				ProjectionElemList list = expression.getProjections().get(i);
+				if (list != null && list.isVariableScopeChange()) {
+					// No representation exists for a per-list scope flag here; fail loudly rather
+					// than round-tripping to a semantically different tree.
+					throw error(index(child(path, "projections"), i),
+							"projection element list scope change is not representable for MultiProjection");
+				}
+				projections.add(projectionElemList(list, index(child(path, "projections"), i), depth + 1));
 			}
 			return json;
 		}
