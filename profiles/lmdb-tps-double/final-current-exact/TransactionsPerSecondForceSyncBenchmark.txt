@@ -1,7 +1,0 @@
-"Benchmark","Mode","Threads","Samples","Score","Score Error (99.9%)","Unit"
-"org.eclipse.rdf4j.sail.lmdb.benchmark.TransactionsPerSecondForceSyncBenchmark.largerTransaction","thrpt",1,5,163.655012,1.903565,"ops/s"
-"org.eclipse.rdf4j.sail.lmdb.benchmark.TransactionsPerSecondForceSyncBenchmark.largerTransactionLevelNone","thrpt",1,5,176.550667,1.801971,"ops/s"
-"org.eclipse.rdf4j.sail.lmdb.benchmark.TransactionsPerSecondForceSyncBenchmark.mediumTransactionsLevelNone","thrpt",1,5,7428.543825,382.198514,"ops/s"
-"org.eclipse.rdf4j.sail.lmdb.benchmark.TransactionsPerSecondForceSyncBenchmark.transactions","thrpt",1,5,11987.247907,152.857853,"ops/s"
-"org.eclipse.rdf4j.sail.lmdb.benchmark.TransactionsPerSecondForceSyncBenchmark.transactionsLevelNone","thrpt",1,5,12072.244973,413.670299,"ops/s"
-"org.eclipse.rdf4j.sail.lmdb.benchmark.TransactionsPerSecondForceSyncBenchmark.veryLargerTransactionLevelNone","thrpt",1,5,1.688247,0.037301,"ops/s"

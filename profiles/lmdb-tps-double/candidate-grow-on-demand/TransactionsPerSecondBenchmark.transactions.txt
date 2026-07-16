@@ -1,2 +1,0 @@
-Benchmark                                     Mode  Cnt      Score      Error  Units
-TransactionsPerSecondBenchmark.transactions  thrpt    5  30638.657 ± 1894.834  ops/s

@@ -1,2 +1,0 @@
-Benchmark                                                     Mode  Cnt    Score    Error  Units
-TransactionsPerSecondBenchmarkFoaf.transaction10kxLevelNone  thrpt    5  268.522 ± 11.847  ops/s

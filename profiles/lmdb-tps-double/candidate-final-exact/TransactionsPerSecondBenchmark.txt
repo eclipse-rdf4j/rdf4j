@@ -1,7 +1,0 @@
-Benchmark                                                       Mode  Cnt      Score       Error  Units
-TransactionsPerSecondBenchmark.largerTransaction               thrpt    5     66.599 ±    51.765  ops/s
-TransactionsPerSecondBenchmark.largerTransactionLevelNone      thrpt    5    182.395 ±    44.688  ops/s
-TransactionsPerSecondBenchmark.mediumTransactionsLevelNone     thrpt    5  48626.538 ±  7014.260  ops/s
-TransactionsPerSecondBenchmark.transactions                    thrpt    5  82428.444 ± 11088.290  ops/s
-TransactionsPerSecondBenchmark.transactionsLevelNone           thrpt    5  73599.338 ± 19189.576  ops/s
-TransactionsPerSecondBenchmark.veryLargerTransactionLevelNone  thrpt    5      1.367 ±     1.187  ops/s

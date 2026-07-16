@@ -18,6 +18,9 @@ target/
 /logs/
 /maven-build.log
 /initial-evidence.txt
+/scripts/initial-evidence.txt
+/final-suite-summary.txt
+/profiles/
 /.verify.log
 /.initial-verify.log
 /*.verify.log
