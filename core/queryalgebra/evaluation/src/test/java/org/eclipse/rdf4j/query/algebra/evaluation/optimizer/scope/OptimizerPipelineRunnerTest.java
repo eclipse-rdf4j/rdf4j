@@ -73,7 +73,7 @@ public class OptimizerPipelineRunnerTest {
 			}
 		};
 		run(root, List.of(optimizer),
-				new ScopeSafetyConfiguration(ScopeSafetyMode.SHADOW, 8, 0, false, 1.0, 10_000));
+				new ScopeSafetyConfiguration(ScopeSafetyMode.SHADOW, 8, 0, false, 1.0, 10_000, false));
 
 		assertThat(root.getArg()).isInstanceOf(SingletonSet.class);
 		Class<?> type = Class.forName(
@@ -91,7 +91,7 @@ public class OptimizerPipelineRunnerTest {
 				new ValueConstant(SimpleValueFactory.getInstance().createLiteral(1)));
 		QueryRoot root = new QueryRoot(new Filter(new SingletonSet(), comparison));
 		run(root, List.of(),
-				new ScopeSafetyConfiguration(ScopeSafetyMode.SHADOW, 8, 0, false, 1.0, 10_000));
+				new ScopeSafetyConfiguration(ScopeSafetyMode.SHADOW, 8, 0, false, 1.0, 10_000, false));
 
 		Class<?> type = Class.forName(
 				"org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope.ShadowOptimizationPlan");
@@ -110,7 +110,7 @@ public class OptimizerPipelineRunnerTest {
 
 	private static void run(TupleExpr root, Iterable<QueryOptimizer> optimizers, ScopeSafetyMode mode)
 			throws Exception {
-		run(root, optimizers, new ScopeSafetyConfiguration(mode, 8, 0, false, 0.0, 10_000));
+		run(root, optimizers, new ScopeSafetyConfiguration(mode, 8, 0, false, 0.0, 10_000, false));
 	}
 
 	private static void run(TupleExpr root, Iterable<? extends QueryOptimizer> optimizers,

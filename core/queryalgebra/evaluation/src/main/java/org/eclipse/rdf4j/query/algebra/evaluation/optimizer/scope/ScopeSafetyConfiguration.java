@@ -12,16 +12,84 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope;
 
 import java.util.Locale;
+import java.util.Objects;
 import java.util.function.Function;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Immutable snapshot of the internal scope-safety system properties. */
 record ScopeSafetyConfiguration(ScopeSafetyMode mode, int shapeCap, int periodicAuditRebuild, boolean telemetry,
-		double shadowSampleRate, long shadowMaxRows) {
+		double shadowSampleRate, long shadowMaxRows, boolean shadowStrict) {
 
 	private static final String PREFIX = "org.eclipse.rdf4j.query.scopeSafety.";
 
-	static ScopeSafetyConfiguration readSystemProperties() {
-		return read(System::getProperty);
+	private static final Logger logger = LoggerFactory.getLogger(ScopeSafetyConfiguration.class);
+
+	static final ScopeSafetyConfiguration DISABLED = new ScopeSafetyConfiguration(
+			ScopeSafetyMode.OFF, 8, 0, false, 0.0, 10_000L, false);
+
+	/** Raw property strings paired with the configuration parsed from them. */
+	private record CachedRead(String mode, String shapeCap, String periodicAuditRebuild, String telemetry,
+			String shadowSampleRate, String shadowMaxRows, String shadowStrict,
+			ScopeSafetyConfiguration configuration) {
+
+		boolean matches(String mode, String shapeCap, String periodicAuditRebuild, String telemetry,
+				String shadowSampleRate, String shadowMaxRows, String shadowStrict) {
+			return Objects.equals(this.mode, mode)
+					&& Objects.equals(this.shapeCap, shapeCap)
+					&& Objects.equals(this.periodicAuditRebuild, periodicAuditRebuild)
+					&& Objects.equals(this.telemetry, telemetry)
+					&& Objects.equals(this.shadowSampleRate, shadowSampleRate)
+					&& Objects.equals(this.shadowMaxRows, shadowMaxRows)
+					&& Objects.equals(this.shadowStrict, shadowStrict);
+		}
+	}
+
+	private static volatile CachedRead cache;
+
+	/**
+	 * Per-query configuration read: memoized on the raw property strings (re-parsed only when a property actually
+	 * changes) and NEVER throwing — a malformed value logs one warning per distinct bad tuple and disables the
+	 * scope-safety features instead of failing every query in the JVM.
+	 */
+	static ScopeSafetyConfiguration readSystemPropertiesSafely() {
+		String mode = System.getProperty(PREFIX + "mode");
+		String shapeCap = System.getProperty(PREFIX + "shapeCap");
+		String periodicAuditRebuild = System.getProperty(PREFIX + "periodicAuditRebuild");
+		String telemetry = System.getProperty(PREFIX + "telemetry");
+		String shadowSampleRate = System.getProperty(PREFIX + "shadowSampleRate");
+		String shadowMaxRows = System.getProperty(PREFIX + "shadowMaxRows");
+		String shadowStrict = System.getProperty(PREFIX + "shadowStrict");
+
+		CachedRead cached = cache;
+		if (cached != null && cached.matches(mode, shapeCap, periodicAuditRebuild, telemetry, shadowSampleRate,
+				shadowMaxRows, shadowStrict)) {
+			return cached.configuration();
+		}
+
+		// Parse from the captured strings, not from live properties: a concurrent mutation between
+		// capture and parse must not associate a config with raw values it was not parsed from.
+		java.util.Map<String, String> captured = new java.util.HashMap<>();
+		captured.put(PREFIX + "mode", mode);
+		captured.put(PREFIX + "shapeCap", shapeCap);
+		captured.put(PREFIX + "periodicAuditRebuild", periodicAuditRebuild);
+		captured.put(PREFIX + "telemetry", telemetry);
+		captured.put(PREFIX + "shadowSampleRate", shadowSampleRate);
+		captured.put(PREFIX + "shadowMaxRows", shadowMaxRows);
+		captured.put(PREFIX + "shadowStrict", shadowStrict);
+
+		ScopeSafetyConfiguration parsed;
+		try {
+			parsed = read(captured::get);
+		} catch (IllegalArgumentException failure) {
+			logger.warn("Invalid {}* configuration; scope-safety features disabled: {}", PREFIX,
+					failure.getMessage());
+			parsed = DISABLED;
+		}
+		cache = new CachedRead(mode, shapeCap, periodicAuditRebuild, telemetry, shadowSampleRate, shadowMaxRows,
+				shadowStrict, parsed);
+		return parsed;
 	}
 
 	static ScopeSafetyConfiguration read(Function<String, String> property) {
@@ -31,11 +99,12 @@ record ScopeSafetyConfiguration(ScopeSafetyMode mode, int shapeCap, int periodic
 		boolean telemetry = parseBoolean(property.apply(PREFIX + "telemetry"), "telemetry", false);
 		double shadowSampleRate = parseDouble(property.apply(PREFIX + "shadowSampleRate"), "shadowSampleRate", 0.0);
 		long shadowMaxRows = parseLong(property, "shadowMaxRows", 10_000L, 1L);
+		boolean shadowStrict = parseBoolean(property.apply(PREFIX + "shadowStrict"), "shadowStrict", false);
 		if (!Double.isFinite(shadowSampleRate) || shadowSampleRate < 0.0 || shadowSampleRate > 1.0) {
 			throw invalid("shadowSampleRate", Double.toString(shadowSampleRate));
 		}
 		return new ScopeSafetyConfiguration(mode, shapeCap, periodicAuditRebuild, telemetry, shadowSampleRate,
-				shadowMaxRows);
+				shadowMaxRows, shadowStrict);
 	}
 
 	private static ScopeSafetyMode parseMode(String value) {

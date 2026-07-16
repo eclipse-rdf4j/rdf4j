@@ -34,7 +34,7 @@ public final class OptimizationSession implements AutoCloseable {
 	private boolean closed;
 
 	public static OptimizationSession open(TupleExpr root, Dataset dataset, BindingSet initialBindings) {
-		return open(root, dataset, initialBindings, ScopeSafetyConfiguration.readSystemProperties());
+		return open(root, dataset, initialBindings, ScopeSafetyConfiguration.readSystemPropertiesSafely());
 	}
 
 	static OptimizationSession open(TupleExpr root, Dataset dataset, BindingSet initialBindings,

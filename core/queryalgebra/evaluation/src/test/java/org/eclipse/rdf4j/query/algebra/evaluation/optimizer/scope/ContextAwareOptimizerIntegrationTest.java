@@ -97,7 +97,7 @@ public class ContextAwareOptimizerIntegrationTest {
 
 	private static OptimizationSession session(TupleExpr root, ScopeSafetyMode mode) {
 		return OptimizationSession.open(root, null, null,
-				new ScopeSafetyConfiguration(mode, 8, 0, false, 0.0, 10_000));
+				new ScopeSafetyConfiguration(mode, 8, 0, false, 0.0, 10_000, false));
 	}
 
 	private static QueryRoot filteredJoin() {

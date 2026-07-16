@@ -77,7 +77,7 @@ public class ScopeSafeRewritePassTest {
 
 	private static OptimizationSession session(QueryRoot root) {
 		return OptimizationSession.open(root, null, null,
-				new ScopeSafetyConfiguration(ScopeSafetyMode.ENFORCE, 8, 0, false, 0.0, 10_000));
+				new ScopeSafetyConfiguration(ScopeSafetyMode.ENFORCE, 8, 0, false, 0.0, 10_000, false));
 	}
 
 	private static StatementPattern pattern(String first, String second) {
