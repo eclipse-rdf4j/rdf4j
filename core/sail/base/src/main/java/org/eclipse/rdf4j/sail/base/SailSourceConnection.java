@@ -249,8 +249,13 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		if (!(tupleExpr instanceof QueryRoot)) {
 			// Add a dummy root node to the tuple expressions to allow the
 			// optimizers to modify the actual root node
-			tupleExpr = new QueryRoot(tupleExpr);
+			QueryRoot queryRoot = new QueryRoot(tupleExpr);
+			queryRoot.setRuntimeTelemetryEnabled(tupleExpr.isRuntimeTelemetryEnabled());
+			queryRoot.setExecutionSummaryEnabled(tupleExpr.isExecutionSummaryEnabled());
+			tupleExpr = queryRoot;
 		}
+		boolean runtimeTelemetryEnabled = tupleExpr.isRuntimeTelemetryEnabled();
+		boolean executionSummaryEnabled = tupleExpr.isExecutionSummaryEnabled();
 
 		SailSource branch = null;
 		SailDataset rdfDataset = null;
@@ -271,6 +276,12 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			}
 
 			tupleExpr = strategy.optimize(tupleExpr, store.getEvaluationStatistics(), bindings);
+			if (runtimeTelemetryEnabled) {
+				setRuntimeTelemetryEnabled(tupleExpr, true);
+			}
+			if (executionSummaryEnabled) {
+				setExecutionSummaryEnabled(tupleExpr, true);
+			}
 			SlowQueryLogInfo slowQueryLogInfo = null;
 			if (slowQueryLoggingEnabled) {
 				slowQueryLogInfo = new SlowQueryLogInfo(getSailBase().getClass().getName(),
@@ -319,12 +330,15 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	public Explanation explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset,
 			BindingSet bindings, boolean includeInferred, int timeoutSeconds) {
 		boolean queryTimedOut = false;
+		clearMetricsActual(tupleExpr);
 		setRuntimeTelemetryEnabled(tupleExpr, false);
+		setExecutionSummaryEnabled(tupleExpr, false);
 
 		try {
 
 			switch (level) {
 			case Telemetry:
+				setExecutionSummaryEnabled(tupleExpr, true);
 				setRuntimeTelemetryEnabled(tupleExpr, true);
 				this.trackResultSize = true;
 				this.cloneTupleExpression = false;
@@ -333,6 +347,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				break;
 
 			case Timed:
+				setExecutionSummaryEnabled(tupleExpr, true);
 				this.trackTime = true;
 				this.trackResultSize = true;
 				this.cloneTupleExpression = false;
@@ -341,6 +356,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				break;
 
 			case Executed:
+				setExecutionSummaryEnabled(tupleExpr, true);
 				this.trackResultSize = true;
 				this.cloneTupleExpression = false;
 
@@ -348,9 +364,13 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				break;
 
 			case Optimized:
+				// Native evaluators use this transient flag to retain plan-time diagnostics without paying to
+				// render them during ordinary query compilation. Optimized output still excludes runtime summaries.
+				setExecutionSummaryEnabled(tupleExpr, true);
 				this.cloneTupleExpression = false;
 
 				evaluate(tupleExpr, dataset, bindings, includeInferred).close();
+				setExecutionSummaryEnabled(tupleExpr, false);
 
 				break;
 
@@ -371,10 +391,24 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 		} finally {
 			setRuntimeTelemetryEnabled(tupleExpr, false);
+			setExecutionSummaryEnabled(tupleExpr, false);
 			this.cloneTupleExpression = true;
 			this.trackResultSize = false;
 			this.trackTime = false;
 		}
+	}
+
+	private static void clearMetricsActual(TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return;
+		}
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				node.clearMetricsActual();
+				super.meetNode(node);
+			}
+		});
 	}
 
 	private boolean runQueryForExplain(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings,
@@ -440,6 +474,19 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			@Override
 			protected void meetNode(QueryModelNode node) {
 				node.setRuntimeTelemetryEnabled(enabled);
+				super.meetNode(node);
+			}
+		});
+	}
+
+	private static void setExecutionSummaryEnabled(TupleExpr tupleExpr, boolean enabled) {
+		if (tupleExpr == null) {
+			return;
+		}
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				node.setExecutionSummaryEnabled(enabled);
 				super.meetNode(node);
 			}
 		});

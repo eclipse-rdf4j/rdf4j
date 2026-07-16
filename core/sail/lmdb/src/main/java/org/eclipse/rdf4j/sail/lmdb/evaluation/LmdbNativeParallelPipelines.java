@@ -432,7 +432,7 @@ final class LmdbNativeParallelPipelines {
 			this.tasks = new CountDownLatch(workerPlans.length + (partitions != null ? 0 : 1));
 			this.futures = new ArrayList<>(workerPlans.length + 1);
 			this.reservation = reservation;
-			this.attemptMetrics = LmdbNativeAttemptMetrics.root();
+			this.attemptMetrics = LmdbNativeAttemptMetrics.root(step.originalExpr);
 			this.workerMetrics = new LmdbNativeAttemptMetrics[workerPlans.length];
 			for (int i = 0; i < workerMetrics.length; i++) {
 				workerMetrics[i] = attemptMetrics.child();

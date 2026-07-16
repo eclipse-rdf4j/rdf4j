@@ -28,10 +28,11 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 @Experimental
 final class LmdbNativeAttemptMetrics {
 
-	private static final LmdbNativeAttemptMetrics DIRECT = new LmdbNativeAttemptMetrics(null, true);
+	private static final LmdbNativeAttemptMetrics DIRECT = new LmdbNativeAttemptMetrics(null, true, null);
 
 	private final LmdbNativeAttemptMetrics parent;
 	private final boolean direct;
+	private final TupleExpr explainTarget;
 	private boolean committed;
 
 	private long parallelRuns;
@@ -44,6 +45,8 @@ final class LmdbNativeAttemptMetrics {
 	private long orderedFactorizedTopK;
 	private long nativeSortPackedRows;
 	private long nativeSorts;
+	private long nativeSpillRuns;
+	private long nativeSpilledRows;
 	private long nativeTopKCandidates;
 	private long nativeTopKReplacements;
 	private long chunkEngaged;
@@ -66,9 +69,10 @@ final class LmdbNativeAttemptMetrics {
 	private TupleExpr strategyTarget;
 	private String strategy;
 
-	private LmdbNativeAttemptMetrics(LmdbNativeAttemptMetrics parent, boolean direct) {
+	private LmdbNativeAttemptMetrics(LmdbNativeAttemptMetrics parent, boolean direct, TupleExpr explainTarget) {
 		this.parent = parent;
 		this.direct = direct;
+		this.explainTarget = explainTarget;
 	}
 
 	static LmdbNativeAttemptMetrics direct() {
@@ -76,11 +80,15 @@ final class LmdbNativeAttemptMetrics {
 	}
 
 	static LmdbNativeAttemptMetrics root() {
-		return DIRECT.child();
+		return root(null);
+	}
+
+	static LmdbNativeAttemptMetrics root(TupleExpr explainTarget) {
+		return new LmdbNativeAttemptMetrics(DIRECT, false, explainTarget);
 	}
 
 	LmdbNativeAttemptMetrics child() {
-		return new LmdbNativeAttemptMetrics(this, false);
+		return new LmdbNativeAttemptMetrics(this, false, explainTarget);
 	}
 
 	/** Publishes this child once. Callers abandon the object instead when an attempt fails or falls back. */
@@ -93,7 +101,7 @@ final class LmdbNativeAttemptMetrics {
 	}
 
 	void deferStrategy(TupleExpr target, String executedStrategy) {
-		if (target == null || executedStrategy == null || !LmdbNativeExplain.recordsStrategies(target)) {
+		if (target == null || executedStrategy == null || !LmdbNativeExplain.recordsExecutionPaths(target)) {
 			return;
 		}
 		if (committed) {
@@ -101,7 +109,7 @@ final class LmdbNativeAttemptMetrics {
 			return;
 		}
 		if (direct) {
-			LmdbNativeExplain.recordStrategy(target, executedStrategy);
+			LmdbNativeExplain.recordExecutionPath(target, executedStrategy);
 		} else {
 			strategyTarget = target;
 			strategy = executedStrategy;
@@ -221,6 +229,20 @@ final class LmdbNativeAttemptMetrics {
 			NativeSortBuffer.SORTS.incrementAndGet();
 		} else {
 			nativeSorts++;
+		}
+	}
+
+	void recordNativeSpill(long rows) {
+		if (committed) {
+			parent.recordNativeSpill(rows);
+			return;
+		}
+		if (direct) {
+			NativeSpillSort.SPILL_RUNS.incrementAndGet();
+			NativeSpillSort.SPILLED_ROWS.addAndGet(rows);
+		} else {
+			nativeSpillRuns++;
+			nativeSpilledRows += rows;
 		}
 	}
 
@@ -453,6 +475,8 @@ final class LmdbNativeAttemptMetrics {
 		orderedFactorizedTopK += child.orderedFactorizedTopK;
 		nativeSortPackedRows += child.nativeSortPackedRows;
 		nativeSorts += child.nativeSorts;
+		nativeSpillRuns += child.nativeSpillRuns;
+		nativeSpilledRows += child.nativeSpilledRows;
 		nativeTopKCandidates += child.nativeTopKCandidates;
 		nativeTopKReplacements += child.nativeTopKReplacements;
 		chunkEngaged += child.chunkEngaged;
@@ -488,6 +512,8 @@ final class LmdbNativeAttemptMetrics {
 		add(NativeRowsStep.ORDERED_FACTORIZED_TOPK, completed.orderedFactorizedTopK);
 		add(NativeSortBuffer.PACKED_ROWS, completed.nativeSortPackedRows);
 		add(NativeSortBuffer.SORTS, completed.nativeSorts);
+		add(NativeSpillSort.SPILL_RUNS, completed.nativeSpillRuns);
+		add(NativeSpillSort.SPILLED_ROWS, completed.nativeSpilledRows);
 		add(NativeSortBuffer.TOP_K_CANDIDATES, completed.nativeTopKCandidates);
 		add(NativeTopKBuffer.REPLACEMENTS, completed.nativeTopKReplacements);
 		add(LmdbNativeChunkPipeline.ENGAGED, completed.chunkEngaged);
@@ -506,9 +532,56 @@ final class LmdbNativeAttemptMetrics {
 		add(NativeGroupIteration.PRIMITIVE_COUNT_GROUP_ROWS, completed.primitiveCountGroupRows);
 		add(NativeGroupIteration.ORDERED_GROUP_ROWS, completed.orderedGroupRows);
 		add(NativeGroupIteration.ORDERED_GROUPS, completed.orderedGroups);
+		publishExplainMetrics(completed);
 		if (completed.strategyTarget != null) {
-			LmdbNativeExplain.recordStrategy(completed.strategyTarget, completed.strategy);
+			LmdbNativeExplain.recordExecutionPath(completed.strategyTarget, completed.strategy);
 		}
+	}
+
+	private static void publishExplainMetrics(LmdbNativeAttemptMetrics completed) {
+		TupleExpr target = completed.explainTarget;
+		if (target == null || !target.isRuntimeTelemetryEnabled()) {
+			return;
+		}
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeParallelRunsActual", completed.parallelRuns);
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeFactorizedTailEngagedActual",
+				completed.factorizedTailEngaged);
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeFactorizedTailScanOnceBuildsActual",
+				completed.factorizedTailScanOnceBuilds);
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeFactorizedTailMemoBypassesActual",
+				completed.factorizedTailMemoBypasses);
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeFactorizedRowsEngagedActual",
+				completed.factorizedRowsEngaged);
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeFactorizedRowsMemoBypassesActual",
+				completed.factorizedRowsMemoBypasses);
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeOrderedFactorizedSortsActual",
+				completed.orderedFactorizedSorts);
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeOrderedFactorizedTopKActual",
+				completed.orderedFactorizedTopK);
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeSortPackedRowsActual", completed.nativeSortPackedRows);
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeSortsActual", completed.nativeSorts);
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeSpillRunsActual", completed.nativeSpillRuns);
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeSpilledRowsActual", completed.nativeSpilledRows);
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeTopKCandidatesActual", completed.nativeTopKCandidates);
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeTopKReplacementsActual", completed.nativeTopKReplacements);
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeChunkEngagedActual", completed.chunkEngaged);
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeChunkRunReplaysActual", completed.chunkRunReplays);
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeChunkMemoReplaysActual", completed.chunkMemoReplays);
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeChunkCsrBackedProbesActual", completed.chunkCsrBackedProbes);
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeChunkHashBuildsActual", completed.chunkHashBuilds);
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeChunkHashReplayRowsActual", completed.chunkHashReplayRows);
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeChunkMergeWalksActual", completed.chunkMergeWalks);
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeChunkMergeSeeksActual", completed.chunkMergeSeeks);
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeChunkMergeFallbacksActual", completed.chunkMergeFallbacks);
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeChunkSipMasksActual", completed.chunkSipMasks);
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeChunkSipMaskedRowsActual", completed.chunkSipMaskedRows);
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeChunkSipSeeksActual", completed.chunkSipSeeks);
+		LmdbNativeExplain.addRuntimeMetric(target, "nativePrimitiveTupleGroupRowsActual",
+				completed.primitiveTupleGroupRows);
+		LmdbNativeExplain.addRuntimeMetric(target, "nativePrimitiveCountGroupRowsActual",
+				completed.primitiveCountGroupRows);
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeOrderedGroupRowsActual", completed.orderedGroupRows);
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeOrderedGroupsActual", completed.orderedGroups);
 	}
 
 	private static void add(AtomicLong counter, long delta) {

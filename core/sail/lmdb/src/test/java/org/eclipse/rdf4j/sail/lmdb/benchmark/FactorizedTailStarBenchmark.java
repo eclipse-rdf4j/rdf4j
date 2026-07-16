@@ -192,7 +192,7 @@ public class FactorizedTailStarBenchmark {
 					.toGenericPlanNode();
 			String strategy = findStrategy(plan);
 			if (strategy == null) {
-				throw new IllegalStateException("sumHubValue: explanation did not report nativeExecutionStrategy");
+				throw new IllegalStateException("sumHubValue: explanation did not report nativeExecutionPath");
 			}
 			return strategy;
 		}
@@ -202,7 +202,7 @@ public class FactorizedTailStarBenchmark {
 		if (node == null) {
 			return null;
 		}
-		String strategy = node.getStringMetricActual("nativeExecutionStrategy");
+		String strategy = node.getStringMetricActual("nativeExecutionPath");
 		if (strategy != null) {
 			return strategy;
 		}

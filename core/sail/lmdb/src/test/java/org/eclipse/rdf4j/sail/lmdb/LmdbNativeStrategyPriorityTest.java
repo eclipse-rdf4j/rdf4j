@@ -33,7 +33,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Strategy-priority contract between the native row strategies, asserted through the {@code
- * nativeExecutionStrategy} explain metric. Both patterns clear the hash join's minimum-rows gate (4096), so before the
+ * nativeExecutionPath} explain metric. Both patterns clear the hash join's minimum-rows gate (4096), so before the
  * priority fix the batch hash join claimed even queries whose trailing legs are never consumed — enumerating the full
  * join where factorization collapses the legs to per-key counts. Parallel execution is disabled so the sequential
  * dispatch order is what gets exercised.
@@ -185,7 +185,7 @@ public class LmdbNativeStrategyPriorityTest {
 					.explain(Explanation.Level.Telemetry)
 					.toGenericPlanNode();
 			String strategy = findStrategy(plan);
-			assertThat(strategy).as("expected a nativeExecutionStrategy metric in the explanation").isNotNull();
+			assertThat(strategy).as("expected a nativeExecutionPath metric in the explanation").isNotNull();
 			return strategy;
 		}
 	}
@@ -218,7 +218,7 @@ public class LmdbNativeStrategyPriorityTest {
 		if (node == null) {
 			return null;
 		}
-		String value = node.getStringMetricActual("nativeExecutionStrategy");
+		String value = node.getStringMetricActual("nativeExecutionPath");
 		if (value != null) {
 			return value;
 		}

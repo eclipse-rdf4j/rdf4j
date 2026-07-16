@@ -146,6 +146,7 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 		if (hasOptionalOnlyBinding(bindings)) {
+			LmdbNativeExplain.recordExecutionPath(originalExpr, "genericFallback(optionalOnlyBinding)");
 			return genericStep().evaluate(bindings);
 		}
 		return new NativeGroupIteration(source, arg, layout, groupSlots, aggregates, strictCompare, bindings,
@@ -173,7 +174,7 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 		StringBuilder sb = new StringBuilder("NativeGroup(arg=")
 				.append(LmdbNativeExplain.describe(distinctPlan.arg, layout))
 				.append(", groupSlots=")
-				.append(Arrays.toString(groupSlots))
+				.append(LmdbNativeExplain.describeSlots(groupSlots, layout))
 				.append(", aggregates=")
 				.append(aggregates.length)
 				.append(", distinctChannelCount=")
@@ -283,10 +284,13 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 	List<BindingSet> evaluateAll() {
 		RowState row = new RowState(source, layout, base);
 		if (!initialize(row)) {
+			LmdbNativeExplain.recordExecutionPath(explainTarget, "emptySeed");
 			return noInputResult();
 		}
+		LmdbNativeExplain.recordRuntimeEntryPlan(explainTarget, arg, layout, row.boundMask());
+		LmdbNativeExplain.addRuntimeMetric(explainTarget, "nativeInvocationsActual", 1L);
 		if (!SlotPlan.encounterOrderReplaySafe(arg)) {
-			LmdbNativeAttemptMetrics metrics = LmdbNativeAttemptMetrics.root();
+			LmdbNativeAttemptMetrics metrics = LmdbNativeAttemptMetrics.root(explainTarget);
 			try {
 				List<BindingSet> results = evaluateSequential(row, aggContext, metrics);
 				metrics.commitToParent();
@@ -298,7 +302,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		}
 		NativeFilterLease filterLease = new NativeFilterLease();
 		NativeGroupIteration speculative = withArg(filterLease.borrow(arg));
-		LmdbNativeAttemptMetrics metrics = LmdbNativeAttemptMetrics.root();
+		LmdbNativeAttemptMetrics metrics = LmdbNativeAttemptMetrics.root(explainTarget);
 		try {
 			List<BindingSet> results = speculative.evaluateSpeculative(row, metrics);
 			filterLease.commit();
@@ -372,7 +376,10 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 				}
 				if (parallel != null) {
 					factorized.close();
-					metrics.deferStrategy(explainTarget, LmdbNativeParallelAggregation.consumeLastStrategyLabel());
+					if (LmdbNativeExplain.recordsExecutionPaths(explainTarget)) {
+						metrics.deferStrategy(explainTarget,
+								LmdbNativeParallelAggregation.consumeLastStrategyLabel());
+					}
 					return parallel;
 				}
 				return evaluateFactorized(row, directMultiJoin, derived, factorized);
@@ -393,7 +400,9 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		if (parallelPlan != null) {
 			List<BindingSet> parallel = LmdbNativeParallelAggregation.tryEvaluate(this, parallelPlan, row, metrics);
 			if (parallel != null) {
-				metrics.deferStrategy(explainTarget, LmdbNativeParallelAggregation.consumeLastStrategyLabel());
+				if (LmdbNativeExplain.recordsExecutionPaths(explainTarget)) {
+					metrics.deferStrategy(explainTarget, LmdbNativeParallelAggregation.consumeLastStrategyLabel());
+				}
 				return parallel;
 			}
 		}
@@ -419,7 +428,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		if (!initialize(row)) {
 			return noInputResult();
 		}
-		LmdbNativeAttemptMetrics metrics = LmdbNativeAttemptMetrics.root();
+		LmdbNativeAttemptMetrics metrics = LmdbNativeAttemptMetrics.root(explainTarget);
 		List<BindingSet> results = evaluateSequential(row, new AggContext(source, strictCompare), metrics);
 		metrics.commitToParent();
 		return results;
@@ -702,7 +711,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 			}
 			throw problem;
 		}
-		String strategy = LmdbNativeExplain.recordsStrategies(explainTarget) ? tail.describeEngagement() : null;
+		String strategy = LmdbNativeExplain.recordsExecutionPaths(explainTarget) ? tail.describeEngagement() : null;
 		tail.close();
 		tail.recordEngagement();
 		tail.metrics.deferStrategy(explainTarget, strategy);

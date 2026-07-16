@@ -132,15 +132,15 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 			genericPlanNode.setStringMetricsActual(new LinkedHashMap<>(node.getStringMetricsActual()));
 			applyVariableShapeMetrics(node, genericPlanNode);
 		} else if (level.includesEvaluationAnnotations()) {
-			copyOptimizerMetrics(node, genericPlanNode);
+			copyVisibleActualMetrics(node, genericPlanNode);
 		}
 		if (level.includesEvaluationAnnotations()) {
 			genericPlanNode.setLongMetricsPlanned(new LinkedHashMap<>(node.getLongMetricsPlanned()));
 			genericPlanNode.setDoubleMetricsPlanned(new LinkedHashMap<>(node.getDoubleMetricsPlanned()));
 			genericPlanNode.setStringMetricsPlanned(new LinkedHashMap<>(node.getStringMetricsPlanned()));
 		}
-		if (node == topTupleExpr && optimizerMetricWrapper != null) {
-			copyOptimizerMetricsIfAbsent(optimizerMetricWrapper, genericPlanNode);
+		if (level.includesEvaluationAnnotations() && node == topTupleExpr && optimizerMetricWrapper != null) {
+			copyVisibleActualMetricsIfAbsent(optimizerMetricWrapper, genericPlanNode);
 		}
 		if (level.includesEvaluationAnnotations()) {
 			applyExplainAnnotations(node, genericPlanNode, incomingBindings);
@@ -167,43 +167,55 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		return -1;
 	}
 
-	private static void copyOptimizerMetrics(QueryModelNode node, GenericPlanNode genericPlanNode) {
+	private void copyVisibleActualMetrics(QueryModelNode node, GenericPlanNode genericPlanNode) {
 		for (Map.Entry<String, Long> entry : node.getLongMetricsActual().entrySet()) {
-			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())) {
+			if (isVisibleActualMetric(entry.getKey())) {
 				genericPlanNode.setLongMetricActual(entry.getKey(), entry.getValue());
 			}
 		}
 		for (Map.Entry<String, Double> entry : node.getDoubleMetricsActual().entrySet()) {
-			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())) {
+			if (isVisibleActualMetric(entry.getKey())) {
 				genericPlanNode.setDoubleMetricActual(entry.getKey(), entry.getValue());
 			}
 		}
 		for (Map.Entry<String, String> entry : node.getStringMetricsActual().entrySet()) {
-			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())) {
+			if (isVisibleActualMetric(entry.getKey())) {
 				genericPlanNode.setStringMetricActual(entry.getKey(), entry.getValue());
 			}
 		}
 	}
 
-	private static void copyOptimizerMetricsIfAbsent(QueryModelNode node, GenericPlanNode genericPlanNode) {
+	private void copyVisibleActualMetricsIfAbsent(QueryModelNode node, GenericPlanNode genericPlanNode) {
 		for (Map.Entry<String, Long> entry : node.getLongMetricsActual().entrySet()) {
-			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())
+			if (isVisibleActualMetric(entry.getKey())
 					&& genericPlanNode.getLongMetricActual(entry.getKey()) == null) {
 				genericPlanNode.setLongMetricActual(entry.getKey(), entry.getValue());
 			}
 		}
 		for (Map.Entry<String, Double> entry : node.getDoubleMetricsActual().entrySet()) {
-			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())
+			if (isVisibleActualMetric(entry.getKey())
 					&& genericPlanNode.getDoubleMetricActual(entry.getKey()) == null) {
 				genericPlanNode.setDoubleMetricActual(entry.getKey(), entry.getValue());
 			}
 		}
 		for (Map.Entry<String, String> entry : node.getStringMetricsActual().entrySet()) {
-			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())
+			if (isVisibleActualMetric(entry.getKey())
 					&& genericPlanNode.getStringMetricActual(entry.getKey()) == null) {
 				genericPlanNode.setStringMetricActual(entry.getKey(), entry.getValue());
 			}
 		}
+	}
+
+	private boolean isVisibleActualMetric(String metricName) {
+		return level.includesRuntimeTelemetry()
+				|| TelemetryMetricNames.isOptimizerMetric(metricName)
+				|| includesExecutionSummary() && TelemetryMetricNames.isExecutionSummaryMetric(metricName);
+	}
+
+	private boolean includesExecutionSummary() {
+		return level == Explanation.Level.Executed
+				|| level == Explanation.Level.Timed
+				|| level == Explanation.Level.Telemetry;
 	}
 
 	private static Explanation.Level defaultExplanationLevel(QueryModelNode node) {

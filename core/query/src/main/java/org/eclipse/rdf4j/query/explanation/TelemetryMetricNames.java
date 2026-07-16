@@ -66,6 +66,7 @@ public final class TelemetryMetricNames {
 	public static final String INDEX_HIT_RATE_ACTUAL = "indexHitRateActual";
 	public static final String INDEX_NAME = "indexName";
 	public static final String INDEX_NAMES = "indexNames";
+	public static final String NATIVE_EXECUTION_PATH = "nativeExecutionPath";
 
 	public static final String REMOTE_REQUEST_COUNT_ACTUAL = "remoteRequestCountActual";
 	public static final String REMOTE_ASK_REQUEST_COUNT_ACTUAL = "remoteAskRequestCountActual";
@@ -170,5 +171,9 @@ public final class TelemetryMetricNames {
 
 	public static boolean isOptimizerMetric(String metricName) {
 		return metricName != null && metricName.startsWith(OPTIMIZER_PREFIX);
+	}
+
+	public static boolean isExecutionSummaryMetric(String metricName) {
+		return NATIVE_EXECUTION_PATH.equals(metricName);
 	}
 }

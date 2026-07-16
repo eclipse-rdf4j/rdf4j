@@ -259,8 +259,9 @@ class LmdbNativeFeatureFlagForkTest {
 
 			checkEquals(expectedSelect, parallelSelect, "chunk-off parallel SELECT result parity");
 			checkEquals(expectedAggregate, parallelAggregate, "chunk-off parallel aggregate result parity");
-			checkEquals("parallelPipelines", parallelSelectStrategy, "chunk-off parallel SELECT strategy");
-			checkEquals("parallelAggregation", parallelAggregateStrategy,
+			checkEquals("parallelPipelines(rangePartitioned=2)", parallelSelectStrategy,
+					"chunk-off parallel SELECT strategy");
+			checkEquals("parallelAggregation(rangePartitioned=2)", parallelAggregateStrategy,
 					"chunk-off parallel aggregate strategy");
 			check(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get() > parallelRowsBefore,
 					"chunk-off parallel SELECT must still start workers");
@@ -350,7 +351,7 @@ class LmdbNativeFeatureFlagForkTest {
 
 			checkEquals(expectedFull, actualFull, "ordered-factorized-off full-sort result parity");
 			checkEquals(expectedBounded, actualBounded, "ordered-factorized-off bounded result parity");
-			checkEquals("orderedSpillSort", fullStrategy, "ordered-factorized-off full-sort strategy");
+			checkEquals("orderedFullSort", fullStrategy, "ordered-factorized-off full-sort strategy");
 			checkEquals("orderedTopK", boundedStrategy, "ordered-factorized-off bounded strategy");
 			checkEquals(sortsBefore, NativeRowsStep.ORDERED_FACTORIZED_SORTS.get(),
 					"ordered-factorized-off execution must not sort flat rows");
@@ -399,7 +400,7 @@ class LmdbNativeFeatureFlagForkTest {
 				String strategy = findStrategy(connection.prepareTupleQuery(query)
 						.explain(Explanation.Level.Telemetry)
 						.toGenericPlanNode());
-				check(strategy != null, "expected nativeExecutionStrategy telemetry for " + query);
+				check(strategy != null, "expected nativeExecutionPath telemetry for " + query);
 				return strategy;
 			}
 		}
@@ -408,7 +409,7 @@ class LmdbNativeFeatureFlagForkTest {
 			if (node == null) {
 				return null;
 			}
-			String value = node.getStringMetricActual(LmdbNativeExplain.EXECUTION_STRATEGY);
+			String value = node.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH);
 			if (value != null) {
 				return value;
 			}

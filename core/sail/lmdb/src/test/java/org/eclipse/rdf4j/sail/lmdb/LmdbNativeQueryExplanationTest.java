@@ -20,10 +20,16 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,6 +42,9 @@ public class LmdbNativeQueryExplanationTest {
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String PLANNED_EXECUTION_ENGINE = "plannedExecutionEngine";
 	private static final String PLANNED_EXECUTION_KIND = "plannedExecutionKind";
+	private static final String NATIVE_EXECUTION_PATH = "nativeExecutionPath";
+	private static final String NATIVE_RUNTIME_ENTRY_PLAN = "nativeRuntimeEntryPlan";
+	private static final String NATIVE_CHUNK_ENGAGED_ACTUAL = "nativeChunkEngagedActual";
 	private static final String LMDB_NATIVE = "lmdb-native";
 
 	@TempDir
@@ -105,6 +114,157 @@ public class LmdbNativeQueryExplanationTest {
 	}
 
 	@Test
+	public void optimizedExplanationNamesNativePhysicalPlanSlotsWithoutRuntimeDetails() {
+		Explanation explanation = explain(Explanation.Level.Optimized, rowQuery());
+		String rendered = explanation.toString();
+
+		assertThat(rendered).contains("nativePhysicalPlan=NativeRows(");
+		assertThat(rendered).contains("sourceSlots=[?s#0, ?price#1]");
+		assertThat(rendered).contains("indexName=");
+		assertThat(rendered).doesNotContain(NATIVE_EXECUTION_PATH);
+		assertThat(rendered).doesNotContain(NATIVE_RUNTIME_ENTRY_PLAN);
+		assertThat(rendered).doesNotContain(NATIVE_CHUNK_ENGAGED_ACTUAL);
+		assertThat(explanation.toJson()).contains("sourceSlots=[?s#0, ?price#1]");
+	}
+
+	@Test
+	public void optimizedExplanationRetainsNativeFragmentsCreatedByJoinOptimization() {
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s ?price WHERE { "
+				+ "{ ?mid a ex:Item . ?mid ex:price ?price } "
+				+ "UNION "
+				+ "{ ?s ex:link+ ?mid } "
+				+ "}";
+
+		Explanation optimized = explain(Explanation.Level.Optimized, query);
+
+		assertThat(hasPlannedMetricOnType(optimized.toGenericPlanNode(), "Join", PLANNED_EXECUTION_KIND, "bgp"))
+				.as(optimized.toString())
+				.isTrue();
+		assertThat(optimized.toString()).contains("nativePhysicalPlan=NativeRows(");
+
+		Explanation executed = explain(Explanation.Level.Executed, query);
+
+		assertThat(hasActualMetricOnType(executed.toGenericPlanNode(), "Join", NATIVE_EXECUTION_PATH))
+				.as(executed.toString())
+				.isTrue();
+	}
+
+	@Test
+	public void executedExplanationShowsConciseNativeRuntimeStrategy() {
+		Explanation explanation = explain(Explanation.Level.Executed, rowQuery());
+		String rendered = explanation.toString();
+
+		assertThat(rendered).contains(NATIVE_EXECUTION_PATH + "=");
+		assertThat(rendered).doesNotContain(NATIVE_RUNTIME_ENTRY_PLAN);
+		assertThat(rendered).doesNotContain(NATIVE_CHUNK_ENGAGED_ACTUAL);
+		assertThat(explanation.toJson()).contains("\"" + NATIVE_EXECUTION_PATH + "\"");
+		assertThat(explanation.toDot()).contains("Native execution path").contains("chunkPipeline");
+	}
+
+	@Test
+	public void telemetryExplanationShowsVerbosePerQueryNativeRuntimeDetails() {
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s WHERE { ?s a ex:Item . ?s ex:price ?price }";
+		Explanation explanation = explain(Explanation.Level.Telemetry, query);
+		String rendered = explanation.toString();
+
+		assertThat(rendered).contains(NATIVE_EXECUTION_PATH + "=chunkPipeline");
+		assertThat(rendered).contains(NATIVE_RUNTIME_ENTRY_PLAN + "=");
+		assertThat(rendered).contains("nativeInitialBoundMask=");
+		assertThat(rendered).contains(NATIVE_CHUNK_ENGAGED_ACTUAL + "=");
+		assertThat(explanation.toJson()).contains("\"" + NATIVE_CHUNK_ENGAGED_ACTUAL + "\"");
+	}
+
+	@Test
+	public void directSailExplanationPreservesRuntimeFlagsAcrossQueryRootWrapping() {
+		ValueFactory vf = repository.getValueFactory();
+		TupleExpr tupleExpr = new StatementPattern(
+				Var.of("s"),
+				Var.of("type", RDF.TYPE),
+				Var.of("item", vf.createIRI(EX, "Item")));
+
+		try (SailConnection connection = repository.getSail().getConnection()) {
+			Explanation explanation = connection.explain(Explanation.Level.Executed, tupleExpr, null,
+					EmptyBindingSet.getInstance(), true, 10);
+
+			assertThat(explanation.toString()).contains(NATIVE_EXECUTION_PATH + "=");
+		}
+	}
+
+	@Test
+	public void repeatedDirectExplanationClearsRuntimeStateOnReusedQueryRoot() {
+		ValueFactory vf = repository.getValueFactory();
+		QueryRoot tupleExpr = new QueryRoot(new StatementPattern(
+				Var.of("s"),
+				Var.of("type", RDF.TYPE),
+				Var.of("item", vf.createIRI(EX, "Item"))));
+
+		try (SailConnection connection = repository.getSail().getConnection()) {
+			connection.explain(Explanation.Level.Telemetry, tupleExpr, null, EmptyBindingSet.getInstance(), true, 10);
+			tupleExpr.setRuntimeTelemetryEnabled(true);
+			tupleExpr.setExecutionSummaryEnabled(true);
+			tupleExpr.setStringMetricActual(NATIVE_EXECUTION_PATH, "staleExecutionPath");
+			tupleExpr.setStringMetricActual(NATIVE_RUNTIME_ENTRY_PLAN, "staleRuntimeEntryPlan");
+			tupleExpr.setLongMetricActual("nativeStaleCounterActual", 7L);
+			tupleExpr.setRuntimeTelemetryEnabled(false);
+			tupleExpr.setExecutionSummaryEnabled(false);
+
+			Explanation explanation = connection.explain(Explanation.Level.Telemetry, tupleExpr, null,
+					EmptyBindingSet.getInstance(), true, 10);
+
+			assertThat(explanation.toString())
+					.contains(NATIVE_EXECUTION_PATH + "=")
+					.contains(NATIVE_RUNTIME_ENTRY_PLAN + "=")
+					.doesNotContain("staleExecutionPath")
+					.doesNotContain("staleRuntimeEntryPlan")
+					.doesNotContain("nativeStaleCounterActual");
+		}
+	}
+
+	@Test
+	public void telemetryExplanationIncludesOrdinaryNativeSortWork() {
+		String ordered = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s ?price WHERE { ?s a ex:Item ; ex:price ?price } ORDER BY ?price LIMIT 2";
+		Explanation topK = explain(Explanation.Level.Telemetry, ordered);
+
+		assertThat(topK.toString())
+				.contains(NATIVE_EXECUTION_PATH + "=orderedTopK")
+				.contains("nativeSortPackedRowsActual=")
+				.contains("nativeSortsActual=")
+				.contains("nativeTopKCandidatesActual=");
+
+		String unbounded = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s ?price WHERE { ?s a ex:Item ; ex:price ?price } ORDER BY ?price";
+		Explanation spillSort = explain(Explanation.Level.Telemetry, unbounded);
+
+		assertThat(spillSort.toString())
+				.contains(NATIVE_EXECUTION_PATH + "=orderedFullSort")
+				.contains("nativeSortPackedRowsActual=")
+				.contains("nativeSortsActual=")
+				.doesNotContain("nativeSpillRunsActual");
+	}
+
+	@Test
+	public void telemetryExplanationDistinguishesActualDiskSpillsFromInMemoryFullSort() {
+		String previous = System.getProperty("rdf4j.lmdb.nativeSort.maxBytes");
+		try {
+			System.setProperty("rdf4j.lmdb.nativeSort.maxBytes", "16");
+			String query = "PREFIX ex: <" + EX + ">\n"
+					+ "SELECT ?s ?price WHERE { ?s a ex:Item ; ex:price ?price } ORDER BY ?price";
+
+			Explanation explanation = explain(Explanation.Level.Telemetry, query);
+
+			assertThat(explanation.toString())
+					.contains(NATIVE_EXECUTION_PATH + "=orderedFullSort")
+					.contains("nativeSpillRunsActual=4")
+					.contains("nativeSpilledRowsActual=4");
+		} finally {
+			restoreProperty(previous, "rdf4j.lmdb.nativeSort.maxBytes");
+		}
+	}
+
+	@Test
 	public void telemetryExplanationShowsChunkPipelineEngagement() {
 		// ?price is unprojected, so the trailing price pattern becomes a factorized tail branch and the
 		// chunk pipeline drives the all-pattern prefix; the telemetry explanation must say so, or silent
@@ -114,7 +274,7 @@ public class LmdbNativeQueryExplanationTest {
 				+ "SELECT ?s WHERE { ?s a ex:Item . ?s ex:price ?price }";
 		Explanation explanation = explain(Explanation.Level.Telemetry, query);
 
-		assertThat(explanation.toString()).contains("nativeExecutionStrategy=chunkPipeline");
+		assertThat(explanation.toString()).contains("nativeExecutionPath=chunkPipeline");
 	}
 
 	@Test
@@ -123,7 +283,7 @@ public class LmdbNativeQueryExplanationTest {
 				+ "SELECT (COUNT(?price) AS ?c) WHERE { ?s a ex:Item . ?s ex:price ?price }";
 		Explanation explanation = explain(Explanation.Level.Telemetry, query);
 
-		assertThat(explanation.toString()).contains("nativeExecutionStrategy=factorizedTail");
+		assertThat(explanation.toString()).contains("nativeExecutionPath=factorizedTail");
 	}
 
 	@Test
@@ -195,11 +355,47 @@ public class LmdbNativeQueryExplanationTest {
 				.anyMatch(child -> hasPlannedMetric(child, metricName, metricValue));
 	}
 
+	private static boolean hasPlannedMetricOnType(GenericPlanNode node, String type, String metricName,
+			String metricValue) {
+		if (node == null) {
+			return false;
+		}
+		if (Objects.equals(type, node.getType())
+				&& Objects.equals(metricValue, node.getStringMetricPlanned(metricName))) {
+			return true;
+		}
+		if (node.getPlans() == null) {
+			return false;
+		}
+		return node.getPlans()
+				.stream()
+				.anyMatch(child -> hasPlannedMetricOnType(child, type, metricName, metricValue));
+	}
+
+	private static boolean hasActualMetricOnType(GenericPlanNode node, String type, String metricName) {
+		if (node == null) {
+			return false;
+		}
+		if (Objects.equals(type, node.getType()) && node.getStringMetricActual(metricName) != null) {
+			return true;
+		}
+		if (node.getPlans() == null) {
+			return false;
+		}
+		return node.getPlans()
+				.stream()
+				.anyMatch(child -> hasActualMetricOnType(child, type, metricName));
+	}
+
 	private static void restoreProperty(String previous) {
+		restoreProperty(previous, NATIVE_FLAG);
+	}
+
+	private static void restoreProperty(String previous, String property) {
 		if (previous == null) {
-			System.clearProperty(NATIVE_FLAG);
+			System.clearProperty(property);
 		} else {
-			System.setProperty(NATIVE_FLAG, previous);
+			System.setProperty(property, previous);
 		}
 	}
 }

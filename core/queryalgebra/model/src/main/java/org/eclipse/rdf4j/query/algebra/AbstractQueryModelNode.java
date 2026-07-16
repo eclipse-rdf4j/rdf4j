@@ -59,6 +59,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	private long sourceRowsFilteredActual = -1;
 	private long indexLookupCountActual = -1;
 	private boolean runtimeTelemetryEnabled;
+	private boolean executionSummaryEnabled;
 	private Map<String, Long> longMetricsActual = Collections.emptyMap();
 	private Map<String, Double> doubleMetricsActual = Collections.emptyMap();
 	private Map<String, String> stringMetricsActual = Collections.emptyMap();
@@ -144,6 +145,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 			clone.queryModelMetadata = queryModelMetadata.isEmpty() ? Collections.emptyMap()
 					: new HashMap<>(queryModelMetadata);
 			clone.indexLookupCountActual = indexLookupCountActual;
+			clone.executionSummaryEnabled = executionSummaryEnabled;
 			return clone;
 		} catch (CloneNotSupportedException e) {
 			throw new RuntimeException("Query model nodes are required to be cloneable", e);
@@ -339,7 +341,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 
 	@Override
 	public void setLongMetricActual(String metricName, long metricValue) {
-		if (metricName == null || !runtimeTelemetryEnabled && !TelemetryMetricNames.isOptimizerMetric(metricName)) {
+		if (!isActualMetricCollectionEnabled(metricName)) {
 			return;
 		}
 		if (TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL.equals(metricName)) {
@@ -354,7 +356,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 
 	@Override
 	public long incrementLongMetricActual(String metricName) {
-		if (metricName == null || !runtimeTelemetryEnabled && !TelemetryMetricNames.isOptimizerMetric(metricName)) {
+		if (!isActualMetricCollectionEnabled(metricName)) {
 			return -1L;
 		}
 		long next = Math.max(0L, getLongMetricActual(metricName)) + 1L;
@@ -374,7 +376,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 
 	@Override
 	public void setDoubleMetricActual(String metricName, double metricValue) {
-		if (metricName == null || !runtimeTelemetryEnabled && !TelemetryMetricNames.isOptimizerMetric(metricName)) {
+		if (!isActualMetricCollectionEnabled(metricName)) {
 			return;
 		}
 		if (doubleMetricsActual.isEmpty()) {
@@ -395,13 +397,34 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 
 	@Override
 	public void setStringMetricActual(String metricName, String metricValue) {
-		if (metricName == null || !runtimeTelemetryEnabled && !TelemetryMetricNames.isOptimizerMetric(metricName)) {
+		if (!isActualMetricCollectionEnabled(metricName)) {
 			return;
 		}
 		if (stringMetricsActual.isEmpty()) {
 			stringMetricsActual = new HashMap<>();
 		}
 		stringMetricsActual.put(metricName, metricValue);
+	}
+
+	@Override
+	public void clearMetricsActual() {
+		resultSizeActual = -1L;
+		totalTimeNanosActual = -1L;
+		hasNextCallCountActual = -1L;
+		hasNextTrueCountActual = -1L;
+		hasNextTimeNanosActual = -1L;
+		nextCallCountActual = -1L;
+		nextTimeNanosActual = -1L;
+		joinRightIteratorsCreatedActual = -1L;
+		joinLeftBindingsConsumedActual = -1L;
+		joinRightBindingsConsumedActual = -1L;
+		sourceRowsScannedActual = -1L;
+		sourceRowsMatchedActual = -1L;
+		sourceRowsFilteredActual = -1L;
+		indexLookupCountActual = -1L;
+		longMetricsActual = Collections.emptyMap();
+		doubleMetricsActual = Collections.emptyMap();
+		stringMetricsActual = Collections.emptyMap();
 	}
 
 	@Override
@@ -475,6 +498,23 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	@Override
 	public void setRuntimeTelemetryEnabled(boolean runtimeTelemetryEnabled) {
 		this.runtimeTelemetryEnabled = runtimeTelemetryEnabled;
+	}
+
+	@Override
+	public boolean isExecutionSummaryEnabled() {
+		return executionSummaryEnabled;
+	}
+
+	@Override
+	public void setExecutionSummaryEnabled(boolean executionSummaryEnabled) {
+		this.executionSummaryEnabled = executionSummaryEnabled;
+	}
+
+	private boolean isActualMetricCollectionEnabled(String metricName) {
+		return metricName != null
+				&& (runtimeTelemetryEnabled
+						|| TelemetryMetricNames.isOptimizerMetric(metricName)
+						|| executionSummaryEnabled && TelemetryMetricNames.isExecutionSummaryMetric(metricName));
 	}
 
 	@Override

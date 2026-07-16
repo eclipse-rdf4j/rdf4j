@@ -72,7 +72,9 @@ final class LmdbNativeAggregateCompiler {
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
 		CompileResult result = compile(expr, context, strategy, source);
 		if (result.step != null) {
-			LmdbNativeExplain.mark(expr, result.kind, result.physicalPlan);
+			if (LmdbNativeExplain.recordsExecutionPaths(expr)) {
+				LmdbNativeExplain.mark(expr, result.kind, physicalPlan(result.step));
+			}
 			// bare BGP fragments (the generic evaluator recursing into native-accelerated pieces) do not
 			// count as "the native compiler claimed this query" — tests use COMPILED to pin fallbacks
 			if (!LmdbNativeExplain.KIND_BGP.equals(result.kind)) {
@@ -88,7 +90,7 @@ final class LmdbNativeAggregateCompiler {
 		if (result.step == null) {
 			return false;
 		}
-		LmdbNativeExplain.mark(expr, result.kind, result.physicalPlan);
+		LmdbNativeExplain.mark(expr, result.kind, physicalPlan(result.step));
 		return true;
 	}
 
@@ -112,7 +114,7 @@ final class LmdbNativeAggregateCompiler {
 				kind = LmdbNativeExplain.KIND_BGP;
 			}
 		}
-		return new CompileResult(step, kind, physicalPlan(step));
+		return new CompileResult(step, kind);
 	}
 
 	/** Native claim for projection-less BGP fragments (the deleted legacy compiler's shapes). */
@@ -126,7 +128,7 @@ final class LmdbNativeAggregateCompiler {
 		return null;
 	}
 
-	private record CompileResult(QueryEvaluationStep step, String kind, String physicalPlan) {
+	private record CompileResult(QueryEvaluationStep step, String kind) {
 	}
 
 	static boolean validValueForField(Value value, NativePatternField field) {

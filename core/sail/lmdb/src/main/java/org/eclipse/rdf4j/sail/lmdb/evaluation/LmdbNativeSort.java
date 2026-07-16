@@ -61,11 +61,15 @@ final class NativeSortBuffer {
 	private boolean closed;
 
 	NativeSortBuffer(int slotCount, int expectedRows) {
+		this(slotCount, expectedRows, LmdbNativeAttemptMetrics.direct());
+	}
+
+	NativeSortBuffer(int slotCount, int expectedRows, LmdbNativeAttemptMetrics metrics) {
 		this.slotCount = slotCount;
 		int capacity = Math.max(1, expectedRows);
 		this.initialCapacity = capacity;
 		this.budget = null;
-		this.metrics = LmdbNativeAttemptMetrics.direct();
+		this.metrics = metrics;
 		this.rows = new long[capacity * slotCount];
 		this.ordinals = new long[capacity];
 	}
@@ -345,8 +349,13 @@ final class NativeTopKBuffer {
 	int heapSize;
 
 	NativeTopKBuffer(int slotCount, int capacity, PackedRowComparator comparator) {
+		this(slotCount, capacity, comparator, LmdbNativeAttemptMetrics.direct());
+	}
+
+	NativeTopKBuffer(int slotCount, int capacity, PackedRowComparator comparator,
+			LmdbNativeAttemptMetrics metrics) {
 		this.capacity = Math.max(0, capacity);
-		this.buffer = new NativeSortBuffer(slotCount, Math.max(1, capacity));
+		this.buffer = new NativeSortBuffer(slotCount, Math.max(1, capacity), metrics);
 		this.heap = new int[Math.max(1, capacity)];
 		this.comparator = comparator;
 		this.budget = null;
@@ -665,17 +674,23 @@ final class NativeSpillSort implements AutoCloseable {
 	final int slotCount;
 	final PackedRowComparator comparator;
 	final int maxRows;
+	final LmdbNativeAttemptMetrics metrics;
 	final List<Path> runs = new ArrayList<>();
 	NativeSortBuffer buffer;
 	boolean finished;
 
 	NativeSpillSort(int slotCount, PackedRowComparator comparator) {
+		this(slotCount, comparator, LmdbNativeAttemptMetrics.direct());
+	}
+
+	NativeSpillSort(int slotCount, PackedRowComparator comparator, LmdbNativeAttemptMetrics metrics) {
 		this.slotCount = slotCount;
 		this.comparator = comparator;
+		this.metrics = metrics;
 		long configured = configuredMaxBytes();
 		long rowBytes = Math.max(16L, (slotCount + 1L) * Long.BYTES);
 		this.maxRows = (int) Math.max(1L, Math.min(Integer.MAX_VALUE, configured / rowBytes));
-		this.buffer = new NativeSortBuffer(slotCount, Math.min(1024, maxRows));
+		this.buffer = new NativeSortBuffer(slotCount, Math.min(1024, maxRows), metrics);
 	}
 
 	void add(long[] row, long ordinal) throws IOException {
@@ -724,9 +739,8 @@ final class NativeSpillSort implements AutoCloseable {
 			}
 		}
 		runs.add(path);
-		SPILL_RUNS.incrementAndGet();
-		SPILLED_ROWS.addAndGet(order.length);
-		buffer = new NativeSortBuffer(slotCount, Math.min(1024, maxRows));
+		metrics.recordNativeSpill(order.length);
+		buffer = new NativeSortBuffer(slotCount, Math.min(1024, maxRows), metrics);
 	}
 
 	@Override

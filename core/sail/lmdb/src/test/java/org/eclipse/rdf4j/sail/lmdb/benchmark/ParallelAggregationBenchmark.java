@@ -241,7 +241,7 @@ public class ParallelAggregationBenchmark {
 					.toGenericPlanNode();
 			String strategy = findStrategy(plan);
 			if (strategy == null) {
-				throw new IllegalStateException(variant + ": explanation did not report nativeExecutionStrategy");
+				throw new IllegalStateException(variant + ": explanation did not report nativeExecutionPath");
 			}
 			return strategy;
 		}
@@ -251,7 +251,7 @@ public class ParallelAggregationBenchmark {
 		if (node == null) {
 			return null;
 		}
-		String strategy = node.getStringMetricActual("nativeExecutionStrategy");
+		String strategy = node.getStringMetricActual("nativeExecutionPath");
 		if (strategy != null) {
 			return strategy;
 		}

@@ -161,7 +161,7 @@ public class ChunkPipelineChainBenchmark {
 		if (node == null) {
 			return null;
 		}
-		String value = node.getStringMetricActual("nativeExecutionStrategy");
+		String value = node.getStringMetricActual("nativeExecutionPath");
 		if (value != null) {
 			return value;
 		}

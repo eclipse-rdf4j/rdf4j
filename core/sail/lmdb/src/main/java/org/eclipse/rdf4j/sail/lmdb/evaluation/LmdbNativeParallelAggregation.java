@@ -201,8 +201,10 @@ final class LmdbNativeParallelAggregation {
 			LmdbNativeParallelPipelines.RANGE_PARTITION_RUNS.incrementAndGet();
 			LmdbNativeParallelPipelines.RANGE_PARTITIONS_PLANNED.addAndGet(partitions.length);
 			LmdbNativeParallelPipelines.LAST_RANGE_REJECTION.set(null);
-			LAST_STRATEGY_LABEL.set("parallelAggregation(rangePartitioned=" + partitions.length + ")");
-		} else {
+			if (LmdbNativeExplain.recordsExecutionPaths(it.explainTarget)) {
+				LAST_STRATEGY_LABEL.set("parallelAggregation(rangePartitioned=" + partitions.length + ")");
+			}
+		} else if (LmdbNativeExplain.recordsExecutionPaths(it.explainTarget)) {
 			LAST_STRATEGY_LABEL.set("parallelAggregation");
 		}
 		return results;

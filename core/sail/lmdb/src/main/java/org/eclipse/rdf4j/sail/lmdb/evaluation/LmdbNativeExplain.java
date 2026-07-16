@@ -20,39 +20,97 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 @Experimental
 final class LmdbNativeExplain {
+	private static final int MAX_REPORTED_PATHS = 8;
+	private static final Object EXECUTION_PATH_SUMMARY_KEY = new Object();
 
 	static final String ENGINE = "lmdb-native";
 	static final String KIND_AGGREGATE = "aggregate";
 	static final String KIND_ROW = "row";
 	static final String KIND_BGP = "bgp";
 	static final String PHYSICAL_PLAN = "nativePhysicalPlan";
-	static final String EXECUTION_STRATEGY = "nativeExecutionStrategy";
+	static final String EXECUTION_PATH = TelemetryMetricNames.NATIVE_EXECUTION_PATH;
+	static final String RUNTIME_ENTRY_PLAN = "nativeRuntimeEntryPlan";
+	static final String INITIAL_BOUND_MASK = "nativeInitialBoundMask";
 
 	private LmdbNativeExplain() {
 	}
 
 	/**
-	 * Records which physical execution strategy actually ran, as an "actual" explain metric on the compiled expression.
-	 * The strategy choice happens at evaluation time (it depends on the runtime bound mask and per-strategy gates), so
-	 * it cannot be part of the planned physical plan; without this, a regression that silently disqualifies a strategy
-	 * such as factorization is invisible in {@code explain(Executed)}.
+	 * Records the physical path or terminal outcome actually observed, as an "actual" explain metric on the compiled
+	 * expression. Dispatch happens at evaluation time (it depends on the runtime bound mask and execution gates), so it
+	 * cannot be part of the planned physical plan; without this, a regression that silently disqualifies a path such as
+	 * factorization is invisible in {@code explain(Executed)}.
 	 */
-	static void recordStrategy(TupleExpr expr, String strategy) {
-		if (expr == null || strategy == null) {
+	static void recordExecutionPath(TupleExpr expr, String path) {
+		if (expr == null || path == null || !recordsExecutionPaths(expr)) {
 			return;
 		}
-		expr.setStringMetricActual(EXECUTION_STRATEGY, strategy);
-		if (expr instanceof QueryRoot) {
-			((QueryRoot) expr).getArg().setStringMetricActual(EXECUTION_STRATEGY, strategy);
+		synchronized (expr) {
+			ExecutionPathSummary summary = expr.getStringMetricActual(EXECUTION_PATH) == null
+					? null
+					: (ExecutionPathSummary) expr.getQueryModelMetadata(EXECUTION_PATH_SUMMARY_KEY);
+			ExecutionPathSummary updated = summary == null ? ExecutionPathSummary.first(path) : summary.add(path);
+			if (updated == null) {
+				return;
+			}
+			expr.setQueryModelMetadata(EXECUTION_PATH_SUMMARY_KEY, updated);
+			expr.setStringMetricActual(EXECUTION_PATH, updated.rendered);
+			if (expr instanceof QueryRoot) {
+				TupleExpr arg = ((QueryRoot) expr).getArg();
+				synchronized (arg) {
+					arg.setStringMetricActual(EXECUTION_PATH, updated.rendered);
+				}
+			}
 		}
 	}
 
 	/**
-	 * True when the expression collects runtime telemetry — {@code setStringMetricActual} is a no-op otherwise, so
-	 * callers whose strategy string is built dynamically can skip the string construction entirely.
+	 * True when the expression collects a concise execution summary or full runtime telemetry. Callers whose path label
+	 * is built dynamically can use this to skip the string construction entirely.
 	 */
-	static boolean recordsStrategies(TupleExpr expr) {
-		return expr != null && expr.isRuntimeTelemetryEnabled();
+	static boolean recordsExecutionPaths(TupleExpr expr) {
+		return expr != null && (expr.isExecutionSummaryEnabled() || expr.isRuntimeTelemetryEnabled());
+	}
+
+	/** Records the first bound-derived plan entering runtime dispatch, before specialized path selection. */
+	static void recordRuntimeEntryPlan(TupleExpr expr, SlotPlan plan, NativeSlotLayout layout, long boundMask) {
+		if (expr == null || !expr.isRuntimeTelemetryEnabled()) {
+			return;
+		}
+		synchronized (expr) {
+			if (expr.getStringMetricActual(RUNTIME_ENTRY_PLAN) != null) {
+				return;
+			}
+			String[] slotNames = layout.slotNames();
+			String runtimePlan = describe(plan, slotNames, boundMask);
+			String initialBoundMask = describeBoundMask(boundMask, slotNames);
+			expr.setStringMetricActual(RUNTIME_ENTRY_PLAN, runtimePlan);
+			expr.setStringMetricActual(INITIAL_BOUND_MASK, initialBoundMask);
+			if (expr instanceof QueryRoot) {
+				TupleExpr arg = ((QueryRoot) expr).getArg();
+				synchronized (arg) {
+					arg.setStringMetricActual(RUNTIME_ENTRY_PLAN, runtimePlan);
+					arg.setStringMetricActual(INITIAL_BOUND_MASK, initialBoundMask);
+				}
+			}
+		}
+	}
+
+	static void addRuntimeMetric(TupleExpr expr, String metricName, long delta) {
+		if (expr == null || !expr.isRuntimeTelemetryEnabled() || delta == 0L) {
+			return;
+		}
+		addRuntimeMetricNode(expr, metricName, delta);
+		if (expr instanceof QueryRoot) {
+			addRuntimeMetricNode(((QueryRoot) expr).getArg(), metricName, delta);
+		}
+	}
+
+	private static void addRuntimeMetricNode(TupleExpr expr, String metricName, long delta) {
+		synchronized (expr) {
+			long current = expr.getLongMetricActual(metricName);
+			expr.setLongMetricActual(metricName, Math.max(0L, current) + delta);
+		}
 	}
 
 	static void mark(TupleExpr expr, String kind) {
@@ -86,10 +144,14 @@ final class LmdbNativeExplain {
 	}
 
 	static String describe(SlotPlan plan, NativeSlotLayout layout) {
-		return describe(plan, layout.slotNames());
+		return describe(plan, layout.slotNames(), 0L);
 	}
 
-	private static String describe(SlotPlan plan, String[] slotNames) {
+	static String describeSlots(int[] slots, NativeSlotLayout layout) {
+		return describeSlots(slots, layout.slotNames());
+	}
+
+	private static String describe(SlotPlan plan, String[] slotNames, long boundMask) {
 		if (plan == EmptyPlan.INSTANCE) {
 			return "Empty";
 		}
@@ -106,13 +168,13 @@ final class LmdbNativeExplain {
 		}
 		if (plan instanceof MultiJoinPlan) {
 			MultiJoinPlan multiJoin = (MultiJoinPlan) plan;
-			MultiJoinPlan.OrderedPlan ordered = multiJoin.derive(0L);
+			MultiJoinPlan.OrderedPlan ordered = multiJoin.derive(boundMask);
 			StringBuilder sb = new StringBuilder("MultiJoin(order=[");
 			for (int i = 0; i < ordered.order.length; i++) {
 				if (i > 0) {
 					sb.append(" -> ");
 				}
-				sb.append(describe(ordered.order[i], slotNames));
+				sb.append(describe(ordered.order[i], slotNames, boundMask));
 			}
 			sb.append("]");
 			if (ordered.filterDepth.length > 0) {
@@ -122,37 +184,41 @@ final class LmdbNativeExplain {
 		}
 		if (plan instanceof JoinPlan) {
 			JoinPlan join = (JoinPlan) plan;
-			return "Join(left=" + describe(join.left, slotNames) + ", right=" + describe(join.right, slotNames)
-					+ ")";
+			return "Join(left=" + describe(join.left, slotNames, boundMask) + ", right="
+					+ describe(join.right, slotNames, boundMask) + ")";
 		}
 		if (plan instanceof LeftJoinPlan) {
 			LeftJoinPlan leftJoin = (LeftJoinPlan) plan;
-			return "LeftJoin(left=" + describe(leftJoin.left, slotNames) + ", right="
-					+ describe(leftJoin.right, slotNames) + ")";
+			return "LeftJoin(left=" + describe(leftJoin.left, slotNames, boundMask) + ", right="
+					+ describe(leftJoin.right, slotNames, boundMask) + ")";
 		}
 		if (plan instanceof UnionPlan) {
 			UnionPlan union = (UnionPlan) plan;
-			return "Union(left=" + describe(union.left, slotNames) + ", right=" + describe(union.right, slotNames)
-					+ ")";
+			return "Union(left=" + describe(union.left, slotNames, boundMask) + ", right="
+					+ describe(union.right, slotNames, boundMask) + ")";
 		}
 		if (plan instanceof OrderedUnionPlan) {
 			OrderedUnionPlan union = (OrderedUnionPlan) plan;
-			return "OrderedUnion(orderSlots=" + Arrays.toString(union.orderSlots) + ", left="
-					+ describe(union.left, slotNames) + ", right=" + describe(union.right, slotNames) + ")";
+			return "OrderedUnion(orderSlots=" + describeSlots(union.orderSlots, slotNames) + ", left="
+					+ describe(union.left, slotNames, boundMask) + ", right="
+					+ describe(union.right, slotNames, boundMask) + ")";
 		}
 		if (plan instanceof FilterPlan) {
 			FilterPlan filter = (FilterPlan) plan;
-			return "Filter(mask=" + filter.filterMask + ", arg=" + describe(filter.arg, slotNames) + ")";
+			String filterMask = filter.filterMask < 0L ? "sticky" : describeBoundMask(filter.filterMask, slotNames);
+			return "Filter(mask=" + filterMask + ", arg="
+					+ describe(filter.arg, slotNames, boundMask) + ")";
 		}
 		if (plan instanceof ExtensionPlan) {
 			ExtensionPlan extension = (ExtensionPlan) plan;
 			return "Extension(copies=" + extension.copies.length + ", arg="
-					+ describe(extension.arg, slotNames) + ")";
+					+ describe(extension.arg, slotNames, boundMask) + ")";
 		}
 		if (plan instanceof MinusPlan) {
 			MinusPlan minus = (MinusPlan) plan;
-			return "Minus(left=" + describe(minus.left, slotNames) + ", right=" + describe(minus.right, slotNames)
-					+ ", sharedMask=" + minus.sharedMask + ")";
+			return "Minus(left=" + describe(minus.left, slotNames, boundMask) + ", right="
+					+ describe(minus.right, slotNames, boundMask) + ", sharedMask="
+					+ describeBoundMask(minus.sharedMask, slotNames) + ")";
 		}
 		if (plan instanceof ValuesPlan) {
 			ValuesPlan values = (ValuesPlan) plan;
@@ -194,6 +260,28 @@ final class LmdbNativeExplain {
 		return "#" + slot;
 	}
 
+	private static String describeSlots(int[] slots, String[] slotNames) {
+		StringBuilder sb = new StringBuilder("[");
+		for (int i = 0; i < slots.length; i++) {
+			if (i > 0) {
+				sb.append(", ");
+			}
+			sb.append(slot(slots[i], slotNames));
+		}
+		return sb.append(']').toString();
+	}
+
+	private static String describeBoundMask(long boundMask, String[] slotNames) {
+		int[] slots = new int[Long.bitCount(boundMask)];
+		int cursor = 0;
+		for (int slot = 0; slot < Long.SIZE; slot++) {
+			if ((boundMask & 1L << slot) != 0L) {
+				slots[cursor++] = slot;
+			}
+		}
+		return "0x" + Long.toHexString(boundMask) + " " + describeSlots(slots, slotNames);
+	}
+
 	private static String contexts(ContextConstraint contexts) {
 		if (contexts.isEmpty()) {
 			return "empty";
@@ -202,6 +290,38 @@ final class LmdbNativeExplain {
 			return "any";
 		}
 		return "fixed(" + contexts.ids.length + ")";
+	}
+
+	private static final class ExecutionPathSummary {
+		private final String[] paths;
+		private final boolean truncated;
+		private final String rendered;
+
+		private ExecutionPathSummary(String[] paths, boolean truncated) {
+			this.paths = paths;
+			this.truncated = truncated;
+			this.rendered = String.join(" | ", paths) + (truncated ? " | ..." : "");
+		}
+
+		private static ExecutionPathSummary first(String path) {
+			return new ExecutionPathSummary(new String[] { path }, false);
+		}
+
+		private ExecutionPathSummary add(String path) {
+			int index = Arrays.binarySearch(paths, path);
+			if (index >= 0 || truncated) {
+				return null;
+			}
+			if (paths.length == MAX_REPORTED_PATHS) {
+				return new ExecutionPathSummary(paths, true);
+			}
+			int insertionPoint = -index - 1;
+			String[] expanded = new String[paths.length + 1];
+			System.arraycopy(paths, 0, expanded, 0, insertionPoint);
+			expanded[insertionPoint] = path;
+			System.arraycopy(paths, insertionPoint, expanded, insertionPoint + 1, paths.length - insertionPoint);
+			return new ExecutionPathSummary(expanded, false);
+		}
 	}
 }
 

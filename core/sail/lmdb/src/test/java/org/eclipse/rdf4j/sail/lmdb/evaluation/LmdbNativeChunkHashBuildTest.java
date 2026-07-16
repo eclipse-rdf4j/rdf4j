@@ -367,9 +367,9 @@ class LmdbNativeChunkHashBuildTest {
 			assertThat(OrderedAttemptTelemetry.capture())
 					.as("a discarded physical-buffer attempt must publish no ordered, factorized, memo, or chunk telemetry")
 					.isEqualTo(telemetryBefore);
-			assertThat(telemetry.getStringMetricActual(LmdbNativeExplain.EXECUTION_STRATEGY))
+			assertThat(telemetry.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH))
 					.as("the final strategy must describe the restarted classic sort")
-					.isEqualTo("orderedSpillSort");
+					.isEqualTo("orderedFullSort");
 			assertThat(source.newProbeCalls)
 					.as("one retained probe set belongs to the refused attempt and one to the classic restart")
 					.isEqualTo(2 * ORDERED_ENUM_BRANCHES);

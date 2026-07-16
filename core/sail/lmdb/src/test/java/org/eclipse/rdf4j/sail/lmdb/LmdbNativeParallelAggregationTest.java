@@ -868,7 +868,7 @@ public class LmdbNativeParallelAggregationTest {
 			String strategy = findStrategy(connection.prepareTupleQuery(query)
 					.explain(Explanation.Level.Telemetry)
 					.toGenericPlanNode());
-			assertThat(strategy).as("expected a nativeExecutionStrategy metric in the explanation").isNotNull();
+			assertThat(strategy).as("expected a nativeExecutionPath metric in the explanation").isNotNull();
 			return strategy;
 		}
 	}
@@ -877,7 +877,7 @@ public class LmdbNativeParallelAggregationTest {
 		if (node == null) {
 			return null;
 		}
-		String value = node.getStringMetricActual("nativeExecutionStrategy");
+		String value = node.getStringMetricActual("nativeExecutionPath");
 		if (value != null) {
 			return value;
 		}

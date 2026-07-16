@@ -304,6 +304,14 @@ public interface QueryModelNode extends Cloneable, Serializable {
 		// no-op
 	}
 
+	/**
+	 * Clears runtime measurements from an earlier evaluation while retaining estimates and planned metrics.
+	 */
+	@Experimental
+	default void clearMetricsActual() {
+		// no-op
+	}
+
 	@Experimental
 	default Map<String, Long> getLongMetricsPlanned() {
 		return Collections.emptyMap();
@@ -356,6 +364,16 @@ public interface QueryModelNode extends Cloneable, Serializable {
 
 	@Experimental
 	default void setRuntimeTelemetryEnabled(boolean runtimeTelemetryEnabled) {
+		// no-op
+	}
+
+	@Experimental
+	default boolean isExecutionSummaryEnabled() {
+		return false;
+	}
+
+	@Experimental
+	default void setExecutionSummaryEnabled(boolean executionSummaryEnabled) {
 		// no-op
 	}
 

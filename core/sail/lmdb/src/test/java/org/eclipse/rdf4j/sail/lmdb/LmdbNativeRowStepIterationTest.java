@@ -26,6 +26,8 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.junit.jupiter.api.Test;
@@ -136,9 +138,60 @@ class LmdbNativeRowStepIterationTest {
 		assertThat(LmdbNativeChunkPipeline.ENGAGED.get())
 				.as("an attempt that fails on its first prefix fill must not claim chunk engagement")
 				.isEqualTo(chunkBefore);
-		assertThat(telemetry.getStringMetricActual(LmdbNativeExplain.EXECUTION_STRATEGY))
+		assertThat(telemetry.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH))
 				.as("failed speculative execution must not report the chunk/factorized strategy")
 				.isNull();
+	}
+
+	@Test
+	void optionalOnlyBindingReportsGenericFallbackStrategy() {
+		SingletonSet explanationTarget = new SingletonSet();
+		explanationTarget.setExecutionSummaryEnabled(true);
+		NativeRowsStep step = new NativeRowsStep(null, new RecordingPlan(0), NativeSlotLayout.empty(), new int[0],
+				new String[0], false, new int[0], new boolean[0], 0, -1, true, null, explanationTarget, null,
+				Set.of("optional"), null, null);
+		step.genericStep = ignored -> QueryEvaluationStep.EMPTY_ITERATION;
+		QueryBindingSet bindings = new QueryBindingSet();
+		bindings.addBinding("optional", VF.createLiteral("bound"));
+
+		step.evaluate(bindings).close();
+
+		assertThat(explanationTarget.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH))
+				.isEqualTo("genericFallback(optionalOnlyBinding)");
+	}
+
+	@Test
+	void zeroLimitReportsEarlyExitStrategy() {
+		SingletonSet explanationTarget = new SingletonSet();
+		explanationTarget.setExecutionSummaryEnabled(true);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("s", 0), null);
+		layout.freeze(List.of("s"));
+		NativeRowsStep step = new NativeRowsStep(null, new RecordingPlan(0), layout, new int[] { 0 },
+				new String[] { "s" }, false, new int[] { 0 }, new boolean[] { true }, 0, 0, true, null,
+				explanationTarget, null, Set.of(), null, null);
+
+		step.evaluate(EmptyBindingSet.getInstance()).close();
+
+		assertThat(explanationTarget.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH))
+				.isEqualTo("limitZero");
+	}
+
+	@Test
+	void exhaustedPositiveLimitDoesNotReportZeroLimitEarlyExit() {
+		SingletonSet explanationTarget = new SingletonSet();
+		explanationTarget.setExecutionSummaryEnabled(true);
+		NativeRowsStep step = new NativeRowsStep(null, new RecordingPlan(2), NativeSlotLayout.empty(), new int[0],
+				new String[0], false, new int[0], new boolean[0], 0, 1, true, null, explanationTarget, null,
+				Set.of(), null, null);
+
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(iteration.hasNext()).isTrue();
+			iteration.next();
+			assertThat(iteration.hasNext()).isFalse();
+		}
+
+		assertThat(explanationTarget.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH))
+				.isEqualTo("nestedLoop");
 	}
 
 	private static PatternPlan pattern(int subjectSlot, long predicate, int objectSlot) {
