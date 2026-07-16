@@ -501,9 +501,23 @@ final class LmdbNativeOrderPlanner {
 	}
 
 	private static NativeOrderedPlan bestMultiJoin(MultiJoinPlan plan, int[] requested, RowState row) {
-		NativeOrderedPlan best = new NativeOrderedPlan(plan, NativeSlotOrder.NONE);
-		int bestPrefix = 0;
-		for (int outer = 0; outer < plan.children.length; outer++) {
+		if (plan.children.length == 0) {
+			return new NativeOrderedPlan(plan, NativeSlotOrder.NONE);
+		}
+
+		NativeOrderedPlan first = best(plan.children[0], requested, row);
+		SlotPlan[] original = plan.children.clone();
+		original[0] = first.plan;
+		NativeSlotOrder originalOrder = plan.children.length > 1 ? first.order.withBarrier() : first.order;
+		NativeOrderedPlan best = new NativeOrderedPlan(new MultiJoinPlan(original, plan.filters), originalOrder);
+		int bestPrefix = originalOrder.exactPrefixLength(requested, best.plan.producedMask());
+
+		int patternPrefixLength = 0;
+		while (patternPrefixLength < plan.children.length
+				&& plan.children[patternPrefixLength] instanceof PatternPlan) {
+			patternPrefixLength++;
+		}
+		for (int outer = 1; outer < patternPrefixLength; outer++) {
 			NativeOrderedPlan child = best(plan.children[outer], requested, row);
 			SlotPlan[] reordered = new SlotPlan[plan.children.length];
 			reordered[0] = child.plan;
@@ -514,7 +528,11 @@ final class LmdbNativeOrderPlanner {
 				}
 			}
 			NativeSlotOrder order = plan.children.length > 1 ? child.order.withBarrier() : child.order;
-			NativeOrderedPlan candidate = new NativeOrderedPlan(new MultiJoinPlan(reordered, plan.filters), order);
+			MultiJoinPlan candidatePlan = new MultiJoinPlan(reordered, plan.filters);
+			if (!safeOrderedPromotion(plan, candidatePlan, outer + 1, row.boundMask())) {
+				continue;
+			}
+			NativeOrderedPlan candidate = new NativeOrderedPlan(candidatePlan, order);
 			int prefix = order.exactPrefixLength(requested, candidate.plan.producedMask());
 			if (prefix > bestPrefix || (prefix == bestPrefix && betterEstimate(candidate, best, row))) {
 				best = candidate;
@@ -522,6 +540,79 @@ final class LmdbNativeOrderPlanner {
 			}
 		}
 		return best;
+	}
+
+	private static boolean safeOrderedPromotion(MultiJoinPlan original, MultiJoinPlan candidate,
+			int promotedPrefixLength, long initialBoundMask) {
+		if (!connectedPatternPrefix(candidate.children, promotedPrefixLength, initialBoundMask)
+				|| delaysFilter(original, candidate, initialBoundMask)) {
+			return false;
+		}
+		double originalWork = cumulativePatternWork(original.children, promotedPrefixLength, initialBoundMask);
+		double candidateWork = cumulativePatternWork(candidate.children, promotedPrefixLength, initialBoundMask);
+		return originalWork < Double.MAX_VALUE && candidateWork < Double.MAX_VALUE
+				&& candidateWork <= originalWork;
+	}
+
+	private static boolean connectedPatternPrefix(SlotPlan[] children, int prefixLength, long initialBoundMask) {
+		long prefixMask = 0L;
+		for (int i = 0; i < prefixLength; i++) {
+			prefixMask |= children[i].producedMask();
+		}
+		long connected = initialBoundMask & prefixMask;
+		for (int i = 0; i < prefixLength; i++) {
+			long patternMask = children[i].producedMask();
+			if ((i > 0 || connected != 0L) && (patternMask & connected) == 0L) {
+				return false;
+			}
+			connected |= patternMask;
+		}
+		return true;
+	}
+
+	private static boolean delaysFilter(MultiJoinPlan original, MultiJoinPlan candidate, long initialBoundMask) {
+		int[] originalDepth = original.derive(initialBoundMask).filterDepth;
+		int[] candidateDepth = candidate.derive(initialBoundMask).filterDepth;
+		for (int i = 0; i < originalDepth.length; i++) {
+			if (candidateDepth[i] > originalDepth[i]) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	static double cumulativePatternWork(SlotPlan[] children, int prefixLength, long initialBoundMask) {
+		double inputRows = 1D;
+		double work = 0D;
+		long boundMask = initialBoundMask;
+		for (int i = 0; i < prefixLength; i++) {
+			if (!(children[i] instanceof PatternPlan)) {
+				return Double.MAX_VALUE;
+			}
+			PatternPlan pattern = (PatternPlan) children[i];
+			double rowsPerProbe = pattern.estimateForBoundMask(boundMask);
+			if (!Double.isFinite(rowsPerProbe) || rowsPerProbe < 0D) {
+				return Double.MAX_VALUE;
+			}
+			work = saturatedAdd(work, saturatedMultiply(inputRows, saturatedAdd(1D, rowsPerProbe)));
+			inputRows = saturatedMultiply(inputRows, rowsPerProbe);
+			if (work == Double.MAX_VALUE || inputRows == Double.MAX_VALUE) {
+				return Double.MAX_VALUE;
+			}
+			boundMask |= pattern.producedMask();
+		}
+		return work;
+	}
+
+	private static double saturatedAdd(double left, double right) {
+		return left > Double.MAX_VALUE - right ? Double.MAX_VALUE : left + right;
+	}
+
+	private static double saturatedMultiply(double left, double right) {
+		if (left == 0D || right == 0D) {
+			return 0D;
+		}
+		return left > Double.MAX_VALUE / right ? Double.MAX_VALUE : left * right;
 	}
 
 	private static NativeOrderedPlan bestPattern(PatternPlan pattern, int[] requested, RowState row) {

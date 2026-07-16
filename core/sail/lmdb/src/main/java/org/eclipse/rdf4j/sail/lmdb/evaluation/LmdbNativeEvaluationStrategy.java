@@ -23,10 +23,12 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.ArrayBindingBasedQueryEvaluationContext;
@@ -106,6 +108,19 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 		Optional<LmdbStableOrderPlanner.Resolution> resolution = stableOrderPlanner.plan(node.getArg());
 		if (resolution.isPresent()) {
 			return preparePartitioned(node.getArg(), resolution.get(), context);
+		}
+		return super.prepare(node, context);
+	}
+
+	@Override
+	protected QueryValueEvaluationStep prepare(Exists node, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		if (nativeEnabled && nativeSource != null && nativeSource.hasStatementsInSource()) {
+			QueryValueEvaluationStep existsStep = LmdbNativeAggregateCompiler.tryCompileExists(node.getSubQuery(),
+					context, this, nativeSource);
+			if (existsStep != null) {
+				return existsStep;
+			}
 		}
 		return super.prepare(node, context);
 	}

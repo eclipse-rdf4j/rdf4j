@@ -15,19 +15,27 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.junit.jupiter.api.Test;
@@ -54,6 +62,343 @@ class LmdbNativeRowStepIterationTest {
 		}
 
 		assertThat(plan.closeCalls).as("active cursor closes with the result iteration").isOne();
+	}
+
+	@Test
+	void foreignBoundBareFragmentUsesDirectCursorWithoutBulkSetup() {
+		String previousBatch = System.getProperty(NativeBatch.ENABLED_PROPERTY);
+		System.setProperty(NativeBatch.ENABLED_PROPERTY, "true");
+		try {
+			RecordingNativeSource source = new RecordingNativeSource();
+			BareRecordingPlan plan = new BareRecordingPlan();
+			SingletonSet explanationTarget = new SingletonSet();
+			explanationTarget.setExecutionSummaryEnabled(true);
+			QueryEvaluationStep step = bareStep(source, plan, explanationTarget);
+			QueryBindingSet base = new QueryBindingSet();
+			base.addBinding("foreign", VF.createLiteral("outside-the-fragment"));
+			long batchRoots = NativeBatch.ROOT_ITERATIONS.get();
+			long factorized = LmdbNativeFactorizedRows.ENGAGED.get();
+			long chunks = LmdbNativeChunkPipeline.ENGAGED.get();
+			long parallel = LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get();
+
+			try (CloseableIteration<BindingSet> iteration = step.evaluate(base)) {
+				assertThat(plan.openCalls).as("evaluate must stay lazy").hasValue(0);
+				assertThat(plan.openBatchCalls).as("evaluate must not construct bulk state").hasValue(0);
+				assertThat(iteration.hasNext()).isTrue();
+				assertThat(iteration.next().getValue("foreign")).isEqualTo(base.getValue("foreign"));
+			}
+
+			assertThat(plan.openCalls).as("dependent bare evaluation opens its SlotPlan cursor directly").hasValue(1);
+			assertThat(plan.openBatchCalls).as("dependent bare evaluation bypasses openBatch").hasValue(0);
+			assertThat(plan.rowCloseCalls).as("early close releases the direct cursor").hasValue(1);
+			assertThat(plan.batchCloseCalls).hasValue(0);
+			assertThat(NativeBatch.ROOT_ITERATIONS.get()).isEqualTo(batchRoots);
+			assertThat(LmdbNativeFactorizedRows.ENGAGED.get()).isEqualTo(factorized);
+			assertThat(LmdbNativeChunkPipeline.ENGAGED.get()).isEqualTo(chunks);
+			assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get()).isEqualTo(parallel);
+			assertThat(explanationTarget.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH))
+					.isEqualTo("bareDirect");
+		} finally {
+			restoreProperty(NativeBatch.ENABLED_PROPERTY, previousBatch);
+		}
+	}
+
+	@Test
+	void emptyBareFragmentRetainsBulkDispatcher() {
+		String previousBatch = System.getProperty(NativeBatch.ENABLED_PROPERTY);
+		System.setProperty(NativeBatch.ENABLED_PROPERTY, "true");
+		try {
+			RecordingNativeSource source = new RecordingNativeSource();
+			BareRecordingPlan plan = new BareRecordingPlan();
+			SingletonSet explanationTarget = new SingletonSet();
+			explanationTarget.setExecutionSummaryEnabled(true);
+			QueryEvaluationStep step = bareStep(source, plan, explanationTarget);
+
+			try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+				assertThat(plan.openBatchCalls).as("bulk setup remains lazy").hasValue(0);
+				assertThat(iteration.hasNext()).isTrue();
+			}
+
+			assertThat(plan.openBatchCalls).as("empty roots retain bulk batch dispatch").hasValue(1);
+			assertThat(plan.openCalls).hasValue(0);
+			assertThat(plan.batchCloseCalls).as("bulk cursor closes with the iteration").hasValue(1);
+			assertThat(explanationTarget.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH))
+					.contains("bareBulk")
+					.contains("batch");
+		} finally {
+			restoreProperty(NativeBatch.ENABLED_PROPERTY, previousBatch);
+		}
+	}
+
+	@Test
+	void dependentBareFragmentClosesCursorAfterFailure() {
+		IOException failure = new IOException("synthetic direct cursor failure");
+		FailingBarePlan plan = new FailingBarePlan(failure);
+		SingletonSet explanationTarget = new SingletonSet();
+		explanationTarget.setExecutionSummaryEnabled(true);
+		QueryBindingSet base = new QueryBindingSet();
+		base.addBinding("foreign", VF.createLiteral("bound"));
+		QueryEvaluationStep step = bareStep(new RecordingNativeSource(), plan, explanationTarget);
+
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(base)) {
+			assertThatThrownBy(iteration::hasNext)
+					.isInstanceOf(QueryEvaluationException.class)
+					.hasCause(failure);
+		}
+
+		assertThat(plan.closeCalls).as("failure closes the evaluation-local cursor exactly once").hasValue(1);
+		assertThat(explanationTarget.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH))
+				.isEqualTo("bareDirect");
+	}
+
+	@Test
+	void concurrentDependentBareEvaluationsKeepIndependentState() throws Exception {
+		RecordingNativeSource source = new RecordingNativeSource();
+		BareRecordingPlan plan = new BareRecordingPlan();
+		QueryEvaluationStep step = bareStep(source, plan, new SingletonSet());
+		CyclicBarrier start = new CyclicBarrier(2);
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		try {
+			Future<Value> first = executor.submit(() -> dependentForeignValue(step, "first", start));
+			Future<Value> second = executor.submit(() -> dependentForeignValue(step, "second", start));
+
+			assertThat(List.of(first.get(), second.get()))
+					.containsExactlyInAnyOrder(VF.createLiteral("first"), VF.createLiteral("second"));
+		} finally {
+			executor.shutdownNow();
+		}
+
+		assertThat(plan.openCalls).as("each evaluation owns one direct cursor").hasValue(2);
+		assertThat(plan.openBatchCalls).hasValue(0);
+		assertThat(plan.rowCloseCalls).as("both evaluation-local cursors close").hasValue(2);
+	}
+
+	@Test
+	void existsUsesBooleanLookupForFullyBoundPatternSuffix() {
+		RecordingNativeSource source = new RecordingNativeSource();
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("subject", 0, "middle", 1), null);
+		layout.freeze(List.of("subject", "middle"));
+		PatternPlan root = pattern(0, P1, 1);
+		PatternPlan suffix = new PatternPlan(Term.slot(1), Term.constant(P2), Term.constant(P3), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 1);
+		MultiJoinPlan join = new MultiJoinPlan(new SlotPlan[] { root, suffix }, new MaskedFilter[0]);
+		SingletonSet explanationTarget = new SingletonSet();
+		explanationTarget.setExecutionSummaryEnabled(true);
+		NativeBareRowsStep rows = NativeRowsStep.bareFragment(source, join, layout, new int[] { 0, 1 },
+				new String[] { "subject", "middle" }, true, null, explanationTarget, null);
+		QueryValueEvaluationStep exists = rows.existsStep();
+
+		assertThat(exists).isNotNull();
+		assertThat(exists.evaluate(EmptyBindingSet.getInstance())).isEqualTo(BooleanLiteral.TRUE);
+		assertThat(source.statementCalls).as("only the producing root needs a range scan").hasValue(1);
+		assertThat(source.hasCalls).as("the fully bound suffix becomes a boolean lookup").hasValue(1);
+		assertThat(source.closedIterators).as("early success closes the root range cursor").hasValue(1);
+		assertThat(explanationTarget.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH))
+				.isEqualTo("bareExists");
+	}
+
+	@Test
+	void filteredExistsAppliesEarlyFilterBeforeFullyBoundSuffix() {
+		RecordingNativeSource source = new RecordingNativeSource();
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("subject", 0, "middle", 1), null);
+		layout.freeze(List.of("subject", "middle"));
+		PatternPlan root = pattern(0, P1, 1);
+		PatternPlan suffix = new PatternPlan(Term.slot(1), Term.constant(P2), Term.constant(P3), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 1);
+		AtomicInteger filterCalls = new AtomicInteger();
+		AtomicInteger filterCloses = new AtomicInteger();
+		NativeBooleanFilter filter = new NativeBooleanFilter() {
+			@Override
+			public boolean accept(RowState row) {
+				filterCalls.incrementAndGet();
+				return row.slots[1] == 21L;
+			}
+
+			@Override
+			public void close() {
+				filterCloses.incrementAndGet();
+			}
+		};
+		MultiJoinPlan join = new MultiJoinPlan(new SlotPlan[] { root, suffix },
+				new MaskedFilter[] { new MaskedFilter(filter, 1L << 1) });
+		NativeBareRowsStep rows = NativeRowsStep.bareFragment(source, join, layout, new int[] { 0, 1 },
+				new String[] { "subject", "middle" }, true, null, new SingletonSet(), null);
+		QueryValueEvaluationStep exists = rows.existsStep();
+
+		assertThat(exists).as("filtered pattern-only joins are still boolean-only under EXISTS").isNotNull();
+		assertThat(exists.evaluate(EmptyBindingSet.getInstance())).isEqualTo(BooleanLiteral.TRUE);
+		assertThat(filterCalls).as("the filter rejects the first root row and accepts the second").hasValue(2);
+		assertThat(source.hasCalls).as("the rejected row never opens the fully bound suffix").hasValue(1);
+		assertThat(filterCloses).as("the compiled filter closes once with the evaluation cursor").hasValue(1);
+	}
+
+	@Test
+	void filteredExistsReturnsFalseWithoutOpeningRejectedSuffixes() {
+		RecordingNativeSource source = new RecordingNativeSource();
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("subject", 0, "middle", 1), null);
+		layout.freeze(List.of("subject", "middle"));
+		PatternPlan root = pattern(0, P1, 1);
+		PatternPlan suffix = new PatternPlan(Term.slot(1), Term.constant(P2), Term.constant(P3), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 1);
+		AtomicInteger filterCalls = new AtomicInteger();
+		AtomicInteger filterCloses = new AtomicInteger();
+		NativeBooleanFilter rejectAll = new NativeBooleanFilter() {
+			@Override
+			public boolean accept(RowState row) {
+				filterCalls.incrementAndGet();
+				return false;
+			}
+
+			@Override
+			public void close() {
+				filterCloses.incrementAndGet();
+			}
+		};
+		MultiJoinPlan join = new MultiJoinPlan(new SlotPlan[] { root, suffix },
+				new MaskedFilter[] { new MaskedFilter(rejectAll, 1L << 1) });
+		NativeBareRowsStep rows = NativeRowsStep.bareFragment(source, join, layout, new int[] { 0, 1 },
+				new String[] { "subject", "middle" }, true, null, new SingletonSet(), null);
+		QueryValueEvaluationStep exists = rows.existsStep();
+
+		assertThat(exists).isNotNull();
+		assertThat(exists.evaluate(EmptyBindingSet.getInstance())).isEqualTo(BooleanLiteral.FALSE);
+		assertThat(filterCalls).as("every root row is rejected at its earliest legal depth").hasValue(3);
+		assertThat(source.hasCalls).as("no rejected row reaches the fully bound suffix").hasValue(0);
+		assertThat(source.statementCalls).as("only the root range cursor opens").hasValue(1);
+		assertThat(source.closedIterators).as("the exhausted root cursor closes").hasValue(1);
+		assertThat(filterCloses).hasValue(1);
+	}
+
+	@Test
+	void filteredExistsClosesFiltersInNestedCursorOrder() {
+		RecordingNativeSource source = new RecordingNativeSource();
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("subject", 0, "middle", 1, "leaf", 2), null);
+		layout.freeze(List.of("subject", "middle", "leaf"));
+		PatternPlan root = pattern(0, P1, 1);
+		PatternPlan suffix = pattern(1, P2, 2);
+		List<String> closes = new ArrayList<>();
+		MaskedFilter later = new MaskedFilter(acceptingFilter("later", closes), 1L << 2);
+		MaskedFilter earlyFirst = new MaskedFilter(acceptingFilter("earlyFirst", closes), 1L << 1);
+		MaskedFilter earlySecond = new MaskedFilter(acceptingFilter("earlySecond", closes), 1L << 1);
+		MultiJoinPlan join = new MultiJoinPlan(new SlotPlan[] { root, suffix },
+				new MaskedFilter[] { later, earlyFirst, earlySecond });
+		NativeBareRowsStep rows = NativeRowsStep.bareFragment(source, join, layout, new int[] { 0, 1, 2 },
+				new String[] { "subject", "middle", "leaf" }, true, null, new SingletonSet(), null);
+
+		assertThat(rows.existsStep().evaluate(EmptyBindingSet.getInstance())).isEqualTo(BooleanLiteral.TRUE);
+		assertThat(closes).as("inner filters close before outer filters, preserving their insertion order")
+				.containsExactly("earlyFirst", "earlySecond", "later");
+	}
+
+	@Test
+	void singlePatternFilteredExistsUsesBooleanCursor() {
+		RecordingNativeSource source = new RecordingNativeSource();
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("subject", 0, "object", 1), null);
+		layout.freeze(List.of("subject", "object"));
+		AtomicInteger filterCalls = new AtomicInteger();
+		AtomicInteger filterCloses = new AtomicInteger();
+		NativeBooleanFilter filter = new NativeBooleanFilter() {
+			@Override
+			public boolean accept(RowState row) {
+				filterCalls.incrementAndGet();
+				return row.slots[1] == 21L;
+			}
+
+			@Override
+			public void close() {
+				filterCloses.incrementAndGet();
+			}
+		};
+		FilterPlan filtered = new FilterPlan(pattern(0, P1, 1), filter, 1L << 1);
+		NativeBareRowsStep rows = NativeRowsStep.bareFragment(source, filtered, layout, new int[] { 0, 1 },
+				new String[] { "subject", "object" }, true, null, new SingletonSet(), null);
+		QueryValueEvaluationStep exists = rows.existsStep();
+
+		assertThat(exists).as("a filtered single pattern remains boolean-only under EXISTS").isNotNull();
+		assertThat(exists.evaluate(EmptyBindingSet.getInstance())).isEqualTo(BooleanLiteral.TRUE);
+		assertThat(filterCalls).as("the filter rejects the first row and accepts the second").hasValue(2);
+		assertThat(source.statementCalls).as("the filtered pattern keeps one lazy range cursor").hasValue(1);
+		assertThat(filterCloses).hasValue(1);
+	}
+
+	@Test
+	void nativeExistsFilterUsesBooleanCursorForPatternJoin() {
+		RecordingNativeSource source = new RecordingNativeSource();
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("subject", 0, "middle", 1), null);
+		layout.freeze(List.of("subject", "middle"));
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		assertThat(LmdbNativeAggregateCompiler.initializeRow(row, row.base, source, layout)).isTrue();
+		PatternPlan root = pattern(0, P1, 1);
+		PatternPlan suffix = new PatternPlan(Term.slot(1), Term.constant(P2), Term.constant(P3), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 1);
+		ExistsFilter filter = new ExistsFilter(
+				new MultiJoinPlan(new SlotPlan[] { root, suffix }, new MaskedFilter[0]));
+
+		assertThat(filter.accept(row)).isTrue();
+		assertThat(source.statementCalls).as("only the producing root needs a range scan").hasValue(1);
+		assertThat(source.hasCalls).as("the fully bound suffix becomes a boolean lookup").hasValue(1);
+		assertThat(source.closedIterators).as("early success closes the root range cursor").hasValue(1);
+	}
+
+	@Test
+	void existsBooleanCursorRejectsValuesJoin() {
+		RecordingNativeSource source = new RecordingNativeSource();
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("subject", 0, "object", 1), null);
+		layout.freeze(List.of("subject", "object"));
+		ValuesPlan values = new ValuesPlan(new ValuesRow[] { new ValuesRow(new int[] { 0 }, new long[] { 10L }) });
+		MultiJoinPlan join = new MultiJoinPlan(new SlotPlan[] { values, pattern(0, P1, 1) }, new MaskedFilter[0]);
+		NativeBareRowsStep rows = NativeRowsStep.bareFragment(source, join, layout, new int[] { 0, 1 },
+				new String[] { "subject", "object" }, true, null, new SingletonSet(), null);
+
+		assertThat(rows.existsStep()).as("VALUES remains on the ordinary evaluator until its row semantics are proven")
+				.isNull();
+	}
+
+	@Test
+	void ordinaryFullyBoundPatternRetainsMatchingQuadMultiplicity() throws Exception {
+		RecordingNativeSource source = new RecordingNativeSource();
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("subject", 0, "object", 1), null);
+		layout.freeze(List.of("subject", "object"));
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		row.slots[0] = 10L;
+		row.slots[1] = 20L;
+		row.recomputeBoundMask();
+		PatternPlan pattern = pattern(0, P1, 1);
+
+		try (PatternCursor cursor = pattern.openRaw(row)) {
+			assertThat(countRows(cursor)).as("ordinary row evaluation preserves all matching quads").isEqualTo(3);
+		}
+		assertThat(source.statementCalls).hasValue(1);
+		assertThat(source.hasCalls).hasValue(0);
+
+		try (PatternCursor cursor = pattern.openRawForExistence(row)) {
+			assertThat(countRows(cursor)).as("boolean evaluation collapses matching quads").isOne();
+		}
+		assertThat(source.statementCalls).as("boolean evaluation must not add a range scan").hasValue(1);
+		assertThat(source.hasCalls).hasValue(1);
+	}
+
+	@Test
+	void concurrentExistsEvaluationsKeepIndependentCursorState() throws Exception {
+		RecordingNativeSource source = new RecordingNativeSource();
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("subject", 0, "object", 1), null);
+		layout.freeze(List.of("subject", "object"));
+		NativeBareRowsStep rows = NativeRowsStep.bareFragment(source, pattern(0, P1, 1), layout,
+				new int[] { 0, 1 }, new String[] { "subject", "object" }, true, null, new SingletonSet(), null);
+		QueryValueEvaluationStep exists = rows.existsStep();
+		CyclicBarrier start = new CyclicBarrier(2);
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		try {
+			Future<Value> first = executor.submit(() -> evaluateExists(exists, start));
+			Future<Value> second = executor.submit(() -> evaluateExists(exists, start));
+
+			assertThat(List.of(first.get(), second.get())).containsOnly(BooleanLiteral.TRUE);
+		} finally {
+			executor.shutdownNow();
+		}
+
+		assertThat(source.statementCalls).as("each evaluation owns its root cursor").hasValue(2);
+		assertThat(source.closedIterators).as("both evaluation-local cursors close").hasValue(2);
 	}
 
 	@Test
@@ -92,16 +437,16 @@ class LmdbNativeRowStepIterationTest {
 		long engagements = LmdbNativeFactorizedRows.ENGAGED.get();
 
 		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
-			assertThat(source.statementCalls).as("factorized scans before iteration demand").isZero();
+			assertThat(source.statementCalls).as("factorized scans before iteration demand").hasValue(0);
 			assertThat(iteration.hasNext()).isTrue();
 			assertThat(LmdbNativeFactorizedRows.ENGAGED.get()).isEqualTo(engagements + 1);
-			assertThat(source.statementCalls).as("each independent tail branch scans once").isEqualTo(2);
-			assertThat(source.lazyValueCalls).as("projection keeps the first row as native ids").isZero();
+			assertThat(source.statementCalls).as("each independent tail branch scans once").hasValue(2);
+			assertThat(source.lazyValueCalls).as("projection keeps the first row as native ids").hasValue(0);
 			assertThat(iteration.next()).hasSize(4);
-			assertThat(source.lazyValueCalls).as("inspecting that row materializes only its four values").isEqualTo(4);
+			assertThat(source.lazyValueCalls).as("inspecting that row materializes only its four values").hasValue(4);
 		}
 
-		assertThat(source.closedIterators).as("retained tail probes close on early result close").isEqualTo(2);
+		assertThat(source.closedIterators).as("retained tail probes close on early result close").hasValue(2);
 	}
 
 	@Test
@@ -199,6 +544,60 @@ class LmdbNativeRowStepIterationTest {
 				ContextConstraint.UNRESTRICTED, false, 3);
 	}
 
+	private static NativeBooleanFilter acceptingFilter(String name, List<String> closes) {
+		return new NativeBooleanFilter() {
+			@Override
+			public boolean accept(RowState row) {
+				return true;
+			}
+
+			@Override
+			public void close() {
+				closes.add(name);
+			}
+		};
+	}
+
+	private static QueryEvaluationStep bareStep(RecordingNativeSource source, SlotPlan plan,
+			SingletonSet explanationTarget) {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("x", 0), null);
+		layout.freeze(List.of("x"));
+		return NativeRowsStep.bareFragment(source, plan, layout, new int[] { 0 }, new String[] { "x" }, true, null,
+				explanationTarget, null);
+	}
+
+	private static Value dependentForeignValue(QueryEvaluationStep step, String value, CyclicBarrier start)
+			throws Exception {
+		QueryBindingSet base = new QueryBindingSet();
+		base.addBinding("foreign", VF.createLiteral(value));
+		start.await();
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(base)) {
+			assertThat(iteration.hasNext()).isTrue();
+			return iteration.next().getValue("foreign");
+		}
+	}
+
+	private static Value evaluateExists(QueryValueEvaluationStep step, CyclicBarrier start) throws Exception {
+		start.await();
+		return step.evaluate(EmptyBindingSet.getInstance());
+	}
+
+	private static int countRows(PatternCursor cursor) throws IOException {
+		int count = 0;
+		while (cursor.next() != null) {
+			count++;
+		}
+		return count;
+	}
+
+	private static void restoreProperty(String name, String previous) {
+		if (previous == null) {
+			System.clearProperty(name);
+		} else {
+			System.setProperty(name, previous);
+		}
+	}
+
 	private static final class RecordingPlan implements SlotPlan {
 		private final int rows;
 		private int openCalls;
@@ -234,11 +633,115 @@ class LmdbNativeRowStepIterationTest {
 		}
 	}
 
+	private static final class BareRecordingPlan implements SlotPlan {
+		private final AtomicInteger openCalls = new AtomicInteger();
+		private final AtomicInteger openBatchCalls = new AtomicInteger();
+		private final AtomicInteger rowCloseCalls = new AtomicInteger();
+		private final AtomicInteger batchCloseCalls = new AtomicInteger();
+
+		@Override
+		public RowCursor open(RowState row) {
+			openCalls.incrementAndGet();
+			return new RowCursor() {
+				private boolean emitted;
+				private boolean closed;
+
+				@Override
+				public boolean next() {
+					if (closed || emitted) {
+						return false;
+					}
+					emitted = true;
+					row.slots[0] = 41L;
+					row.recomputeBoundMask();
+					return true;
+				}
+
+				@Override
+				public void close() {
+					if (!closed) {
+						closed = true;
+						rowCloseCalls.incrementAndGet();
+					}
+				}
+			};
+		}
+
+		@Override
+		public BatchCursor openBatch(RowState row, int capacity) {
+			openBatchCalls.incrementAndGet();
+			return new BatchCursor() {
+				private boolean emitted;
+				private boolean closed;
+
+				@Override
+				public int fill(NativeBatch batch) {
+					batch.clear();
+					if (closed || emitted) {
+						return 0;
+					}
+					emitted = true;
+					batch.set(0, 0, 41L);
+					batch.finishRows(1);
+					return 1;
+				}
+
+				@Override
+				public void close() {
+					if (!closed) {
+						closed = true;
+						batchCloseCalls.incrementAndGet();
+					}
+				}
+			};
+		}
+
+		@Override
+		public long producedMask() {
+			return 1L;
+		}
+	}
+
+	private static final class FailingBarePlan implements SlotPlan {
+		private final IOException failure;
+		private final AtomicInteger closeCalls = new AtomicInteger();
+
+		private FailingBarePlan(IOException failure) {
+			this.failure = failure;
+		}
+
+		@Override
+		public RowCursor open(RowState row) {
+			return new RowCursor() {
+				private boolean closed;
+
+				@Override
+				public boolean next() throws IOException {
+					throw failure;
+				}
+
+				@Override
+				public void close() {
+					if (!closed) {
+						closed = true;
+						closeCalls.incrementAndGet();
+					}
+				}
+			};
+		}
+
+		@Override
+		public long producedMask() {
+			return 1L;
+		}
+	}
+
 	private static final class RecordingNativeSource implements NativeLmdbQuerySource {
 		private final IOException statementsFailure;
-		private int statementCalls;
-		private int lazyValueCalls;
-		private int closedIterators;
+		private final AtomicInteger statementCalls = new AtomicInteger();
+		private final AtomicInteger hasCalls = new AtomicInteger();
+		private final AtomicInteger lazyValueCalls = new AtomicInteger();
+		private final AtomicInteger closedIterators = new AtomicInteger();
 
 		private RecordingNativeSource() {
 			this(null);
@@ -255,7 +758,7 @@ class LmdbNativeRowStepIterationTest {
 
 		@Override
 		public Value lazyValue(long id) {
-			lazyValueCalls++;
+			lazyValueCalls.incrementAndGet();
 			return VF.createIRI("urn:test:id:" + id);
 		}
 
@@ -266,7 +769,7 @@ class LmdbNativeRowStepIterationTest {
 
 		@Override
 		public RecordIterator statements(long subj, long pred, long obj, long context) throws IOException {
-			statementCalls++;
+			statementCalls.incrementAndGet();
 			if (statementsFailure != null) {
 				throw statementsFailure;
 			}
@@ -280,15 +783,19 @@ class LmdbNativeRowStepIterationTest {
 					if (closed || index == 3) {
 						return null;
 					}
-					long id = base + index++;
-					return new long[] { id, pred, id + 10, 0 };
+					long id = base + index;
+					long rowSubj = subj == UNKNOWN_ID ? id : subj;
+					long rowObj = obj == UNKNOWN_ID ? id + 10 : obj;
+					long rowContext = context == UNKNOWN_ID ? index : context;
+					index++;
+					return new long[] { rowSubj, pred, rowObj, rowContext };
 				}
 
 				@Override
 				public void close() {
 					if (!closed) {
 						closed = true;
-						closedIterators++;
+						closedIterators.incrementAndGet();
 					}
 				}
 			};
@@ -301,6 +808,7 @@ class LmdbNativeRowStepIterationTest {
 
 		@Override
 		public boolean has(long subj, long pred, long obj, long context) {
+			hasCalls.incrementAndGet();
 			return true;
 		}
 

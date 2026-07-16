@@ -328,6 +328,7 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 @Experimental
 final class ExistsFilter implements NativeBooleanFilter {
 	final SlotPlan subPlan;
+	final NativeExistsPatternCursor.Plan existsPlan;
 	/**
 	 * When the subplan's outcome depends only on the current values of a known slot set (see {@link #memoReadMask}),
 	 * the per-row existence probe is memoized on those values instead of reopening the whole subplan cursor tree per
@@ -339,6 +340,7 @@ final class ExistsFilter implements NativeBooleanFilter {
 
 	ExistsFilter(SlotPlan subPlan) {
 		this.subPlan = subPlan;
+		this.existsPlan = NativeExistsPatternCursor.plan(subPlan);
 		long readMask = memoReadMask(subPlan);
 		this.memoSlots = readMask < 0L ? null : slotsOf(readMask);
 		this.membershipProbe = subPlan instanceof PatternPlan
@@ -372,8 +374,15 @@ final class ExistsFilter implements NativeBooleanFilter {
 	}
 
 	boolean exists(RowState row) {
-		try (RowCursor cursor = subPlan.open(row)) {
-			return cursor.next();
+		try {
+			if (existsPlan != null) {
+				try (NativeExistsPatternCursor cursor = new NativeExistsPatternCursor(existsPlan, row)) {
+					return cursor.exists();
+				}
+			}
+			try (RowCursor cursor = subPlan.open(row)) {
+				return cursor.next();
+			}
 		} catch (IOException e) {
 			throw new SailException(e);
 		}

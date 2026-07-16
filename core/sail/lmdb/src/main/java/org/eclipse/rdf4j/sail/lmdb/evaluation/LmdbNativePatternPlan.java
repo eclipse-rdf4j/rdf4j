@@ -169,6 +169,20 @@ final class PatternPlan implements SlotPlan {
 	 * repositioned across probes instead of re-created.
 	 */
 	PatternCursor openRaw(RowState row, NativeLmdbQuerySource.NativeProbe probe) throws IOException {
+		return openRaw(row, probe, false);
+	}
+
+	/**
+	 * Opens this pattern for a boolean existence search. Fully bound patterns may use a one-shot lookup even when
+	 * several quads could match across contexts: unlike ordinary row evaluation, existence testing does not observe
+	 * that multiplicity.
+	 */
+	PatternCursor openRawForExistence(RowState row) throws IOException {
+		return openRaw(row, null, true);
+	}
+
+	private PatternCursor openRaw(RowState row, NativeLmdbQuerySource.NativeProbe probe, boolean existenceOnly)
+			throws IOException {
 		if (contexts.isEmpty()) {
 			return PatternCursor.empty();
 		}
@@ -179,7 +193,7 @@ final class PatternPlan implements SlotPlan {
 		if (namedContextScope && context == NULL_CONTEXT_ID) {
 			return PatternCursor.empty();
 		}
-		if (doesNotProduceBindings(row.slots) && atMostOneQuadCanMatch(context)) {
+		if (doesNotProduceBindings(row.slots) && (existenceOnly || atMostOneQuadCanMatch(context))) {
 			return openAsExistenceCheck(row.source, subj, pred, obj, context);
 		}
 		if (contexts.isFixed()) {
@@ -349,6 +363,50 @@ final class PatternPlan implements SlotPlan {
 			return Math.max(0D, staticEstimate);
 		}
 		return structural;
+	}
+
+	/**
+	 * Planning-only estimate for a hypothetical join prefix. Unlike {@link #estimate(RowState)}, this does not need a
+	 * materialized row and therefore lets the ordered planner compare child sequences without mutating shared state or
+	 * performing LMDB I/O.
+	 */
+	double estimateForBoundMask(long boundMask) {
+		if ((producedMask & boundMask) == 0L && Double.isFinite(staticEstimate)) {
+			return Math.max(0D, staticEstimate);
+		}
+		return structuralEstimate(boundMask);
+	}
+
+	private long structuralEstimate(long boundMask) {
+		long estimate = 1L;
+		estimate = multiplyEstimate(estimate, termPseudoCardinality(s, boundMask, NativePatternField.SUBJECT));
+		estimate = multiplyEstimate(estimate, termPseudoCardinality(p, boundMask, NativePatternField.PREDICATE));
+		estimate = multiplyEstimate(estimate, termPseudoCardinality(o, boundMask, NativePatternField.OBJECT));
+		estimate = multiplyEstimate(estimate, termPseudoCardinality(c, boundMask, NativePatternField.CONTEXT));
+		if (contexts.isFixed()) {
+			if (contexts.ids.length == 0) {
+				return 0L;
+			}
+			if (!termKnown(c, boundMask)) {
+				estimate = multiplyEstimate(estimate, contexts.ids.length);
+			}
+		}
+		return estimate;
+	}
+
+	private long termPseudoCardinality(Term term, long boundMask, NativePatternField field) {
+		if (termKnown(term, boundMask)) {
+			return 1L;
+		}
+		return switch (field) {
+		case PREDICATE -> 64L;
+		case CONTEXT -> 256L;
+		case SUBJECT, OBJECT -> 4_096L;
+		};
+	}
+
+	private boolean termKnown(Term term, long boundMask) {
+		return term.isConstant() || (term.slot >= 0 && (boundMask & (1L << term.slot)) != 0L);
 	}
 
 	long structuralEstimate(RowState row) {

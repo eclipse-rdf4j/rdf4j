@@ -508,6 +508,11 @@ abstract class LmdbNativeAggregatePlannerBase {
 		return next;
 	}
 
+	int existingSlot(String name) {
+		Integer existing = slots.get(name);
+		return existing == null ? -1 : existing;
+	}
+
 	long idOf(Value value) {
 		return source.idOf(value);
 	}

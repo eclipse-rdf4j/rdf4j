@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 
@@ -92,6 +93,24 @@ final class LmdbNativeAggregateCompiler {
 		}
 		LmdbNativeExplain.mark(expr, result.kind, physicalPlan(result.step));
 		return true;
+	}
+
+	/**
+	 * Compiles an LMDB-local basic graph pattern specifically for boolean existence testing. Unlike the ordinary bare
+	 * fragment route, this evaluator may collapse duplicate matching quads because EXISTS observes only whether at
+	 * least one complete solution exists.
+	 */
+	static QueryValueEvaluationStep tryCompileExists(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
+		QueryEvaluationStep rows = new LmdbNativeAggregatePlanner(context, strategy, source).compileBareRoot(expr);
+		if (!(rows instanceof NativeBareRowsStep)) {
+			return null;
+		}
+		QueryValueEvaluationStep existsStep = ((NativeBareRowsStep) rows).existsStep();
+		if (existsStep != null && LmdbNativeExplain.recordsExecutionPaths(expr)) {
+			LmdbNativeExplain.mark(expr, LmdbNativeExplain.KIND_BGP, physicalPlan(rows));
+		}
+		return existsStep;
 	}
 
 	private static CompileResult compile(TupleExpr expr, QueryEvaluationContext context,

@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -699,6 +700,35 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	void trainFiveRetainsCorrelatedThreshold(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.TRAIN;
+		Path themeDir = prepareThemeStore(dataDir, theme, 5);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				String query = ThemeQueryCatalog.queryFor(theme, 5);
+				BenchmarkJoinEstimatorSupport.assertQueryRegressionPassesWithinThirtySeconds("TRAIN:5 count binding",
+						() -> {
+							try (SailRepositoryConnection connection = repository.getConnection();
+									var result = connection.prepareTupleQuery(query).evaluate()) {
+								Assertions.assertTrue(result.hasNext(), "TRAIN:5 should return its aggregate row");
+								BindingSet row = result.next();
+								Assertions.assertFalse(result.hasNext(),
+										"TRAIN:5 should return exactly one aggregate row");
+								Assertions.assertInstanceOf(Literal.class, row.getValue("count"));
+								Assertions.assertEquals(24L, ((Literal) row.getValue("count")).longValue());
+							}
+						});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
 	void trainQ9ChargesOptionalOperationalPointFanout(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.TRAIN;
 		Path themeDir = prepareThemeStore(dataDir, theme, 9);
@@ -1343,6 +1373,37 @@ class LmdbThemeQueryRegressionIT {
 						&& orderedArgs.indexOf(targetType) < orderedArgs.indexOf(inPathway)
 						&& orderedArgs.indexOf(inPathway) < orderedArgs.indexOf(targets)
 						&& orderedArgs.indexOf(targets) < orderedArgs.indexOf(drugType), diagnostics);
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	void pharmaQ10CorrelatedExistsUsesDedicatedNativeExistencePath(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.PHARMA;
+		Path themeDir = prepareThemeStore(dataDir, theme, 10);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				repository.init();
+				BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "pharma-q10-exists", 60,
+						TimeUnit.SECONDS);
+				String query = ThemeQueryCatalog.queryFor(theme, 10);
+				BenchmarkJoinEstimatorSupport.assertQueryRegressionPassesWithinThirtySeconds("PHARMA:10 exists path",
+						() -> {
+							try (SailRepositoryConnection connection = repository.getConnection()) {
+								String plan = connection.prepareTupleQuery(query)
+										.explain(Explanation.Level.Telemetry)
+										.toString();
+								assertContains(plan, "nativeExecutionPath=bareExists",
+										"PHARMA q10's correlated multi-pattern EXISTS should use the lean "
+												+ "existence cursor instead of constructing a result-row cursor per outer row");
+							}
+						});
 			} finally {
 				shutdownAndRelease(repository, store);
 			}

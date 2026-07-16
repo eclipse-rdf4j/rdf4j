@@ -400,7 +400,7 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			return compileGenericBoolean(expr);
 		}
 		LmdbNativeCompiledBoolean nativeExpression = LmdbNativeExpressionCompiler
-				.compileBoolean(expr, source, this::slot, strictCompare());
+				.compileBoolean(expr, source, this::existingSlot, strictCompare());
 		if (nativeExpression != null) {
 			return nativeExpression;
 		}
@@ -448,14 +448,10 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 	}
 
 	NativeBooleanFilter compileGenericBoolean(ValueExpr expr) {
-		Set<String> names = VarNameCollector.process(expr);
-		for (String name : names) {
-			slot(name);
-		}
 		QueryValueEvaluationStep step;
 		try {
-			// the slot-aware context resolves each variable's slot index once at precompile time, so the
-			// per-row accessor is a direct slot read instead of a name lookup
+			// The slot-aware context resolves fragment-owned variables to direct slot reads. Variables owned by an
+			// outer fragment deliberately remain name-based and resolve through RowBindingSetView's base bindings.
 			step = strategy.precompile(expr, slotAwareContext());
 		} catch (QueryEvaluationException e) {
 			// a condition that fails to precompile (e.g. a constant sub-expression that always raises a
@@ -543,7 +539,10 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 		if (var.hasValue()) {
 			return null;
 		}
-		int slot = slot(var.getName());
+		int slot = existingSlot(var.getName());
+		if (slot < 0) {
+			return null;
+		}
 		long[] accepted = new long[args.size() - 1];
 		Value[] acceptedValues = new Value[args.size() - 1];
 		int acceptedSize = 0;
@@ -627,7 +626,8 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 				long id = idOf(var.getValue());
 				return id == UNKNOWN ? null : IdOperand.constant(id);
 			}
-			return IdOperand.slot(slot(var.getName()));
+			int slot = existingSlot(var.getName());
+			return slot < 0 ? null : IdOperand.slot(slot);
 		}
 		if (expr instanceof ValueConstant) {
 			long id = idOf(((ValueConstant) expr).getValue());

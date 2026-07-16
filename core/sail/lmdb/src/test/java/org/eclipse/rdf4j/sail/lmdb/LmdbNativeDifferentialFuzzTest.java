@@ -181,6 +181,10 @@ public class LmdbNativeDifferentialFuzzTest {
 			for (int[] e : edges) {
 				data.add(new Statement4(subjects[e[0]], edge, subjects[e[1]], null));
 			}
+			IRI scheduledTime = iri(vf, "scheduledTime");
+			data.add(new Statement4(subjects[0], scheduledTime, vf.createLiteral("08:00:00", XSD.TIME), null));
+			data.add(new Statement4(subjects[0], scheduledTime, vf.createLiteral("11:00:00", XSD.TIME), null));
+			data.add(new Statement4(subjects[1], scheduledTime, vf.createLiteral("09:00:00", XSD.TIME), null));
 
 			for (Statement4 st : data) {
 				if (st.c == null) {
@@ -622,6 +626,16 @@ public class LmdbNativeDifferentialFuzzTest {
 		for (String query : queries) {
 			assertSameResults(query);
 		}
+	}
+
+	@Test
+	public void correlatedSyntheticOuterValueFallsBackToBaseBinding() {
+		assertSameResults(CALENDAR_PREFIX + "SELECT (COUNT(?service) AS ?c) WHERE { "
+				+ "VALUES ?threshold { \"10:00:00\"^^xsd:time } "
+				+ "?service <" + EX + "scheduledTime> ?time . "
+				+ "FILTER(?time IN (\"08:00:00\"^^xsd:time, \"09:00:00\"^^xsd:time)) "
+				+ "FILTER NOT EXISTS { ?service <" + EX + "scheduledTime> ?late . "
+				+ "FILTER(?late > ?threshold) } }");
 	}
 
 	/**

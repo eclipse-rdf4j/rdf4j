@@ -70,7 +70,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 4)
+@Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 6)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G" })
 @Measurement(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
@@ -123,7 +123,7 @@ public class ThemeQueryBenchmark {
 	public int z_queryIndex;
 
 	@Param({
-			"MEDICAL_RECORDS",
+//			"MEDICAL_RECORDS",
 			"SOCIAL_MEDIA",
 			"LIBRARY",
 			"ENGINEERING",

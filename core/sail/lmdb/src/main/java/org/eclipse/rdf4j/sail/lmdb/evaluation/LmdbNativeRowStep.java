@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
@@ -179,16 +180,19 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	 * instead of projections — the contract for BGP fragments the generic evaluator drives with its own bindings.
 	 */
 	boolean snapshotRows;
+	/** Optional route label recorded before this step's ordinary bulk dispatcher chooses its concrete strategy. */
+	String entryPath;
 	QueryEvaluationStep genericStep;
 
 	/** A bare BGP fragment: no projection, distinct, order, or slice — snapshot rows over the whole slot layout. */
-	static NativeRowsStep bareFragment(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout,
+	static NativeBareRowsStep bareFragment(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout,
 			int[] sourceSlots, String[] targetNames, boolean strictCompare, LmdbNativeEvaluationStrategy strategy,
 			TupleExpr originalExpr, QueryEvaluationContext context) {
-		NativeRowsStep step = new NativeRowsStep(source, arg, layout, sourceSlots, targetNames, false, new int[0],
+		NativeRowsStep bulk = new NativeRowsStep(source, arg, layout, sourceSlots, targetNames, false, new int[0],
 				new boolean[0], 0L, -1L, strictCompare, strategy, originalExpr, context, Set.of(), null, null);
-		step.snapshotRows = true;
-		return step;
+		bulk.snapshotRows = true;
+		bulk.entryPath = "bareBulk";
+		return new NativeBareRowsStep(source, arg, layout, originalExpr, bulk);
 	}
 
 	NativeRowsStep(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout, int[] sourceSlots,
@@ -723,6 +727,393 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 }
 
 @Experimental
+final class NativeBareRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPlan {
+	final NativeLmdbQuerySource source;
+	final SlotPlan arg;
+	final NativeSlotLayout layout;
+	final TupleExpr originalExpr;
+	final NativeRowsStep bulk;
+
+	NativeBareRowsStep(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout, TupleExpr originalExpr,
+			NativeRowsStep bulk) {
+		this.source = source;
+		this.arg = arg;
+		this.layout = layout;
+		this.originalExpr = originalExpr;
+		this.bulk = bulk;
+	}
+
+	@Override
+	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
+		if (bindings == null || bindings.isEmpty()) {
+			return bulk.evaluate(bindings);
+		}
+		return new NativeBareRowsIteration(this, bindings);
+	}
+
+	@Override
+	public String nativePhysicalPlan() {
+		return bulk.nativePhysicalPlan();
+	}
+
+	QueryValueEvaluationStep existsStep() {
+		NativeExistsPatternCursor.Plan existsPlan = NativeExistsPatternCursor.plan(arg);
+		return existsPlan == null ? null : new NativeExistsValueStep(this, existsPlan);
+	}
+
+	BindingSet snapshot(long[] slots, BindingSet base) {
+		return new RowBindingSetView(source, layout, base, Arrays.copyOf(slots, slots.length), true);
+	}
+}
+
+/** Evaluation-local boolean cursor for a native basic graph pattern reached through EXISTS. */
+@Experimental
+final class NativeExistsValueStep implements QueryValueEvaluationStep {
+	final NativeBareRowsStep step;
+	final NativeExistsPatternCursor.Plan existsPlan;
+
+	NativeExistsValueStep(NativeBareRowsStep step, NativeExistsPatternCursor.Plan existsPlan) {
+		this.step = step;
+		this.existsPlan = existsPlan;
+	}
+
+	@Override
+	public Value evaluate(BindingSet bindings) {
+		RowState row = new RowState(step.source, step.layout, bindings);
+		if (!initializeRow(row, bindings, step.source, step.layout)) {
+			LmdbNativeExplain.recordExecutionPath(step.originalExpr, "emptySeed");
+			return BooleanLiteral.FALSE;
+		}
+		LmdbNativeExplain.recordRuntimeEntryPlan(step.originalExpr, step.arg, step.layout, row.boundMask());
+		LmdbNativeExplain.addRuntimeMetric(step.originalExpr, "nativeInvocationsActual", 1L);
+		LmdbNativeExplain.recordExecutionPath(step.originalExpr, "bareExists");
+		try (NativeExistsPatternCursor cursor = new NativeExistsPatternCursor(existsPlan, row)) {
+			return BooleanLiteral.valueOf(cursor.exists());
+		} catch (IOException e) {
+			throw new QueryEvaluationException(e);
+		}
+	}
+}
+
+/**
+ * Compact depth-first search over a pattern-only SlotPlan. No cursor or mutable row state is shared between EXISTS
+ * evaluations, so correlated evaluation remains lazy, concurrent, and deterministically closeable.
+ */
+@Experimental
+final class NativeExistsPatternCursor implements AutoCloseable {
+	static final MaskedFilter[] NO_FILTERS = new MaskedFilter[0];
+	static final int[] NO_FILTER_DEPTHS = new int[0];
+	static final NativeBooleanFilter[] NO_TRAILING_FILTERS = new NativeBooleanFilter[0];
+
+	final PatternPlan[] patterns;
+	final MaskedFilter[] filters;
+	final int[] filterDepth;
+	final NativeBooleanFilter[] trailingFilters;
+	final RowState row;
+	final Frame[] frames;
+	boolean closed;
+
+	NativeExistsPatternCursor(Plan plan, RowState row) {
+		this.patterns = plan.patterns;
+		this.filters = plan.join == null ? NO_FILTERS : plan.join.filters;
+		this.filterDepth = filters.length == 0 ? NO_FILTER_DEPTHS : plan.join.derivedPlan(row).filterDepth;
+		this.trailingFilters = plan.trailingFilters;
+		this.row = row;
+		this.frames = new Frame[patterns.length];
+		for (int i = 0; i < frames.length; i++) {
+			frames[i] = new Frame();
+		}
+	}
+
+	static Plan plan(SlotPlan arg) {
+		ArrayList<NativeBooleanFilter> outerToInner = null;
+		while (arg instanceof FilterPlan) {
+			FilterPlan filter = (FilterPlan) arg;
+			if (outerToInner == null) {
+				outerToInner = new ArrayList<>();
+			}
+			outerToInner.add(filter.filter);
+			arg = filter.arg;
+		}
+		NativeBooleanFilter[] trailingFilters = trailingFilters(outerToInner);
+		if (arg instanceof PatternPlan) {
+			return new Plan(new PatternPlan[] { (PatternPlan) arg }, null, trailingFilters);
+		}
+		if (!(arg instanceof MultiJoinPlan)) {
+			return null;
+		}
+		MultiJoinPlan join = (MultiJoinPlan) arg;
+		if (join.children.length == 0) {
+			return null;
+		}
+		PatternPlan[] patterns = new PatternPlan[join.children.length];
+		for (int i = 0; i < patterns.length; i++) {
+			if (!(join.children[i] instanceof PatternPlan)) {
+				return null;
+			}
+			patterns[i] = (PatternPlan) join.children[i];
+		}
+		return new Plan(patterns, join, trailingFilters);
+	}
+
+	private static NativeBooleanFilter[] trailingFilters(ArrayList<NativeBooleanFilter> outerToInner) {
+		if (outerToInner == null) {
+			return NO_TRAILING_FILTERS;
+		}
+		NativeBooleanFilter[] filters = new NativeBooleanFilter[outerToInner.size()];
+		for (int i = 0; i < filters.length; i++) {
+			filters[i] = outerToInner.get(filters.length - 1 - i);
+		}
+		return filters;
+	}
+
+	boolean exists() throws IOException {
+		int depth = 0;
+		while (!closed && depth >= 0) {
+			Frame frame = frames[depth];
+			if (!frame.opened) {
+				frame.open(patterns[depth], row);
+			}
+			if (frame.advance(patterns[depth], row)) {
+				if (!filtersAccept(depth)) {
+					continue;
+				}
+				if (depth == patterns.length - 1) {
+					return true;
+				}
+				depth++;
+				continue;
+			}
+			frame.close(row);
+			depth--;
+		}
+		return false;
+	}
+
+	private boolean filtersAccept(int depth) {
+		for (int i = 0; i < filters.length; i++) {
+			if (filterDepth[i] == depth && !filters[i].filter.accept(row)) {
+				return false;
+			}
+		}
+		if (depth == patterns.length - 1) {
+			for (NativeBooleanFilter filter : trailingFilters) {
+				if (!filter.accept(row)) {
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	@Override
+	public void close() {
+		if (closed) {
+			return;
+		}
+		closed = true;
+		Throwable failure = null;
+		for (int i = frames.length - 1; i >= 0; i--) {
+			try {
+				frames[i].close(row);
+			} catch (RuntimeException | Error problem) {
+				failure = appendFailure(failure, problem);
+			}
+		}
+		for (int depth = 0; depth < patterns.length; depth++) {
+			for (int i = 0; i < filters.length; i++) {
+				if (filterDepth[i] != depth) {
+					continue;
+				}
+				try {
+					filters[i].filter.close();
+				} catch (RuntimeException | Error problem) {
+					failure = appendFailure(failure, problem);
+				}
+			}
+		}
+		for (NativeBooleanFilter filter : trailingFilters) {
+			try {
+				filter.close();
+			} catch (RuntimeException | Error problem) {
+				failure = appendFailure(failure, problem);
+			}
+		}
+		if (failure instanceof RuntimeException runtimeException) {
+			throw runtimeException;
+		}
+		if (failure instanceof Error error) {
+			throw error;
+		}
+	}
+
+	private static Throwable appendFailure(Throwable failure, Throwable problem) {
+		if (failure == null) {
+			return problem;
+		}
+		if (failure != problem) {
+			failure.addSuppressed(problem);
+		}
+		return failure;
+	}
+
+	static final class Plan {
+		final PatternPlan[] patterns;
+		final MultiJoinPlan join;
+		final NativeBooleanFilter[] trailingFilters;
+
+		Plan(PatternPlan[] patterns, MultiJoinPlan join, NativeBooleanFilter[] trailingFilters) {
+			this.patterns = patterns;
+			this.join = join;
+			this.trailingFilters = trailingFilters;
+		}
+	}
+
+	static final class Frame {
+		PatternCursor cursor;
+		boolean opened;
+		int activeMark = -1;
+
+		void open(PatternPlan pattern, RowState row) throws IOException {
+			cursor = pattern.openRawForExistence(row);
+			opened = true;
+		}
+
+		boolean advance(PatternPlan pattern, RowState row) throws IOException {
+			release(row);
+			long[] quad;
+			while ((quad = cursor.next()) != null) {
+				int mark = row.mark();
+				if (pattern.bind(quad, row)) {
+					activeMark = mark;
+					return true;
+				}
+				row.rollback(mark);
+			}
+			return false;
+		}
+
+		void close(RowState row) {
+			release(row);
+			PatternCursor activeCursor = cursor;
+			cursor = null;
+			opened = false;
+			if (activeCursor != null) {
+				activeCursor.close();
+			}
+		}
+
+		private void release(RowState row) {
+			if (activeMark >= 0) {
+				row.rollback(activeMark);
+				activeMark = -1;
+			}
+		}
+	}
+}
+
+@Experimental
+final class NativeBareRowsIteration implements CloseableIteration<BindingSet> {
+	NativeBareRowsStep step;
+	BindingSet base;
+	volatile boolean closed;
+	boolean initialized;
+	RowState row;
+	RowCursor cursor;
+	BindingSet next;
+
+	NativeBareRowsIteration(NativeBareRowsStep step, BindingSet base) {
+		this.step = step;
+		this.base = base;
+	}
+
+	@Override
+	public synchronized boolean hasNext() {
+		if (closed) {
+			return false;
+		}
+		if (next != null) {
+			return true;
+		}
+		try {
+			if (!initialized && !initialize()) {
+				finish();
+				return false;
+			}
+			if (cursor.next()) {
+				next = step.snapshot(row.slots, base);
+				return true;
+			}
+			finish();
+			return false;
+		} catch (IOException e) {
+			finish();
+			throw new QueryEvaluationException(e);
+		} catch (RuntimeException | Error e) {
+			finish();
+			throw e;
+		}
+	}
+
+	private boolean initialize() throws IOException {
+		initialized = true;
+		row = new RowState(step.source, step.layout, base);
+		if (!initializeRow(row, base, step.source, step.layout)) {
+			LmdbNativeExplain.recordExecutionPath(step.originalExpr, "emptySeed");
+			return false;
+		}
+		LmdbNativeExplain.recordRuntimeEntryPlan(step.originalExpr, step.arg, step.layout, row.boundMask());
+		LmdbNativeExplain.addRuntimeMetric(step.originalExpr, "nativeInvocationsActual", 1L);
+		cursor = step.arg.open(row);
+		LmdbNativeExplain.recordExecutionPath(step.originalExpr, "bareDirect");
+		return true;
+	}
+
+	@Override
+	public BindingSet next() {
+		if (!hasNext()) {
+			throw new NoSuchElementException();
+		}
+		BindingSet result = next;
+		next = null;
+		return result;
+	}
+
+	@Override
+	public void remove() {
+		throw new UnsupportedOperationException();
+	}
+
+	@Override
+	public void close() {
+		closed = true;
+		synchronized (this) {
+			closeResources();
+		}
+	}
+
+	private void finish() {
+		closed = true;
+		closeResources();
+	}
+
+	private void closeResources() {
+		RowCursor activeCursor = cursor;
+		cursor = null;
+		try {
+			if (activeCursor != null) {
+				activeCursor.close();
+			}
+		} finally {
+			step = null;
+			base = null;
+			row = null;
+			next = null;
+		}
+	}
+}
+
+@Experimental
 final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 	NativeRowsStep step;
 	BindingSet base;
@@ -868,6 +1259,9 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 				: NativeTupleDistinctPlan.global(step.arg, step.sourceSlots);
 		LmdbNativeExplain.recordRuntimeEntryPlan(step.originalExpr, distinctPlan.arg, step.layout, row.boundMask());
 		LmdbNativeExplain.addRuntimeMetric(step.originalExpr, "nativeInvocationsActual", 1L);
+		if (step.entryPath != null) {
+			LmdbNativeExplain.recordExecutionPath(step.originalExpr, step.entryPath);
+		}
 		distinctRows = step.distinct ? new NativeOrderedDistinctTracker(distinctPlan) : null;
 		cursor = step.openPrefixRunCursor(row);
 		if (cursor != null) {
