@@ -61,11 +61,10 @@ public class TupleExprs {
 		do {
 			if (n instanceof Projection && ((Projection) n).isSubquery()) {
 				return true;
-			} else if (n instanceof Join) {
-				// projections already inside a Join need not be
-				// taken into account
-				return false;
-			} else {
+			} else if (!(n instanceof Join)) {
+				// projections already inside a Join need not be taken into account (that Join's own
+				// evaluation is responsible for them), so a Join subtree is opaque — but the scan must
+				// go on with the queued siblings, otherwise the answer would depend on operand order
 				List<TupleExpr> children = getChildren(n);
 				if (!children.isEmpty()) {
 					if (queue == null) {

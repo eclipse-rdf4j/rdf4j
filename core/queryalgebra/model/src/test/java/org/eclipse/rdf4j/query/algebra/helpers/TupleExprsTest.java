@@ -107,4 +107,20 @@ public class TupleExprsTest {
 		assertThat(TupleExprs.containsSubquery(new Join(subselect.clone(), pattern.clone()))).isFalse();
 	}
 
+	@Test
+	public void containsSubqueryScansSiblingsPastAJoinOperand() {
+		StatementPattern pattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+		Projection subselect = new Projection(
+				new StatementPattern(new Var("s2"), new Var("p2"), new Var("o")),
+				new ProjectionElemList(new ProjectionElem("o")),
+				true);
+		Join joinOperand = new Join(pattern.clone(), pattern.clone());
+
+		// A Join operand is opaque, but it must not end the scan: the sibling sub-select is visible on
+		// either side of it, otherwise scope isolation would depend on Union branch order (GH-5905 fuzz
+		// find, pair seed 73613).
+		assertThat(TupleExprs.containsSubquery(new Union(subselect.clone(), joinOperand.clone()))).isTrue();
+		assertThat(TupleExprs.containsSubquery(new Union(joinOperand.clone(), subselect.clone()))).isTrue();
+	}
+
 }
