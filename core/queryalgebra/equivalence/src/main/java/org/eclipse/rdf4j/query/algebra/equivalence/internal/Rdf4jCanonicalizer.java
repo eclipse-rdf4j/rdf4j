@@ -442,7 +442,11 @@ public final class Rdf4jCanonicalizer {
 				LeftJoin leftJoin = (LeftJoin) argument;
 				boolean innerConditionSafe = !leftJoin.hasCondition()
 						|| safety.isRelocatable(leftJoin.getCondition());
+				// A variable-scope boundary must survive canonicalization: pushing the filter
+				// inside would rebuild the LeftJoin without its flag and prove trees differing
+				// only in that flag equivalent.
 				if (innerConditionSafe
+						&& !hasScopeBoundary(leftJoin)
 						&& safety.isReorderSafe(leftJoin.getRightArg())
 						&& canPushToLeft(condition, leftJoin.getLeftArg(), leftJoin.getRightArg())) {
 					trace.add(new RuleApplication(
