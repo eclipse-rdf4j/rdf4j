@@ -66,7 +66,7 @@ final class LmdbCsrAdjacencyCache {
 	private static final int SWEEP_PASSES = 2;
 
 	static boolean enabled() {
-		return Boolean.parseBoolean(System.getProperty("rdf4j.lmdb.csrCache.enabled", "false"));
+		return Boolean.parseBoolean(System.getProperty("rdf4j.lmdb.csrCache.enabled", "true"));
 	}
 
 	/** Whether full root scans over cached predicates are served from entries (phase 11 M1). */

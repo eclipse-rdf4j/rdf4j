@@ -124,7 +124,7 @@ final class LmdbNativeParallelPipelines {
 	}
 
 	static boolean rangePartitionEnabled() {
-		return Boolean.parseBoolean(System.getProperty("rdf4j.lmdb.parallel.rangePartition.enabled", "false"));
+		return Boolean.parseBoolean(System.getProperty("rdf4j.lmdb.parallel.rangePartition.enabled", "true"));
 	}
 
 	static int rangePartitionFactor() {
