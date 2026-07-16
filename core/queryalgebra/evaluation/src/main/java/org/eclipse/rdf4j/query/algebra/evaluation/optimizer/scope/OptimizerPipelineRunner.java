@@ -31,7 +31,7 @@ public final class OptimizerPipelineRunner {
 
 	public static void run(TupleExpr root, Dataset dataset, BindingSet bindings,
 			Iterable<? extends QueryOptimizer> optimizers) {
-		run(root, dataset, bindings, optimizers, ScopeSafetyConfiguration.readSystemProperties());
+		run(root, dataset, bindings, optimizers, ScopeSafetyConfiguration.readSystemPropertiesSafely());
 	}
 
 	static void run(TupleExpr root, Dataset dataset, BindingSet bindings,
@@ -50,7 +50,7 @@ public final class OptimizerPipelineRunner {
 			}
 			ScopeSafetyConfiguration enforce = new ScopeSafetyConfiguration(ScopeSafetyMode.ENFORCE,
 					configuration.shapeCap(), configuration.periodicAuditRebuild(), configuration.telemetry(),
-					configuration.shadowSampleRate(), configuration.shadowMaxRows());
+					configuration.shadowSampleRate(), configuration.shadowMaxRows(), configuration.shadowStrict());
 			runOne(candidate, dataset, bindings, optimizerList, enforce);
 			CandidateClassification classification = classifyCandidate(candidate);
 			ScopeSafetyTelemetry.recordShadowSkip(classification.skipReason(), configuration.telemetry());

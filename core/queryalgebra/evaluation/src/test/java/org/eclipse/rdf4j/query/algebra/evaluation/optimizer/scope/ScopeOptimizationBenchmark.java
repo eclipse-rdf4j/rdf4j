@@ -104,6 +104,6 @@ public class ScopeOptimizationBenchmark {
 	}
 
 	private static ScopeSafetyConfiguration configuration(ScopeSafetyMode mode) {
-		return new ScopeSafetyConfiguration(mode, 8, 0, false, 0.0, 10_000);
+		return new ScopeSafetyConfiguration(mode, 8, 0, false, 0.0, 10_000, false);
 	}
 }

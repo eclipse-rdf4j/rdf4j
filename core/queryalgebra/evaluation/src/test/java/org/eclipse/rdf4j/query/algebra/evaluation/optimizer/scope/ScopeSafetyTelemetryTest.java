@@ -40,11 +40,11 @@ class ScopeSafetyTelemetryTest {
 		ContextAwareQueryOptimizer rewrite = (tupleExpr, dataset, bindings, session) -> ScopeSafeRewritePass
 				.projections((QueryRoot) tupleExpr, session);
 		OptimizerPipelineRunner.run(enforceRoot, null, null, List.of(rewrite),
-				new ScopeSafetyConfiguration(ScopeSafetyMode.ENFORCE, 8, 1, true, 0.0, 10_000));
+				new ScopeSafetyConfiguration(ScopeSafetyMode.ENFORCE, 8, 1, true, 0.0, 10_000, false));
 
 		QueryRoot shadowRoot = new QueryRoot(new StatementPattern(new Var("s"), new Var("p"), new Var("o")));
 		OptimizerPipelineRunner.run(shadowRoot, null, null, List.of(),
-				new ScopeSafetyConfiguration(ScopeSafetyMode.SHADOW, 8, 0, true, 0.0, 10_000));
+				new ScopeSafetyConfiguration(ScopeSafetyMode.SHADOW, 8, 0, true, 0.0, 10_000, false));
 
 		Map<?, ?> snapshot = (Map<?, ?>) telemetryMethod("snapshot").invoke(null);
 		assertThat(counter(snapshot, "QUERY_ENFORCE")).isEqualTo(1L);
