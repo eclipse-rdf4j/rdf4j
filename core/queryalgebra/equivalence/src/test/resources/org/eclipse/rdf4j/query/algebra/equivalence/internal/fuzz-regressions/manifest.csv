@@ -1,2 +1,3 @@
 name,expectedStatus,notes
 values-over-null-binding,UNKNOWN,"seed-42 shrink: VALUES joined over a null-binding placeholder used to crash ArrayBindingSet direct-add under -ea"
+union-branch-order-scope-isolation,EQUIVALENT,"seed-71601 shrink: TupleExprs.containsSubquery aborted its scan at a Join operand, so LeftJoin scope isolation depended on Union branch order"
