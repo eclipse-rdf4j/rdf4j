@@ -423,6 +423,30 @@ class AlgebraEquivalenceRegressionTest {
 	}
 
 	@Test
+	void languageTagCaseDoesNotBlockSetDeduplication() {
+		// RDF4J literal equality compares language tags case-insensitively, so under SET observation
+		// the two rows are the same solution and must deduplicate to the single-row VALUES.
+		BindingSetAssignment mixedCase = new BindingSetAssignment();
+		mixedCase.setBindingNames(Set.of("x"));
+		mixedCase.setBindingSets(List.of(
+				new ListBindingSet(List.of("x"), VF.createLiteral("a", "en")),
+				new ListBindingSet(List.of("x"), VF.createLiteral("a", "EN"))));
+		BindingSetAssignment lowerCase = new BindingSetAssignment();
+		lowerCase.setBindingNames(Set.of("x"));
+		lowerCase.setBindingSets(List.of(
+				new ListBindingSet(List.of("x"), VF.createLiteral("a", "en"))));
+		CheckOptions options = CheckOptions.builder()
+				.observationMode(ObservationMode.SET)
+				.boundedCounterexampleSearch(false)
+				.addEvaluationCase(EvaluationCase.builder("empty dataset").build())
+				.build();
+
+		EquivalenceResult result = new AlgebraEquivalenceChecker(options).check(mixedCase, lowerCase);
+
+		assertEquals(EquivalenceStatus.EQUIVALENT, result.getStatus(), result::getReason);
+	}
+
+	@Test
 	void unsetValuesRowsCanonicalizeWithoutCrashing() {
 		// new BindingSetAssignment() with declared names but no rows is API-legal bean state that
 		// the analyzers already null-guard; canonicalization must not crash on it either.
