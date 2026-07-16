@@ -32,7 +32,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 @FunctionalInterface
 interface RewriteBuilder {
 
-	QueryModelNode build(TransactionalTreeEditor editor);
+	QueryModelNode build();
 }
 
 /** Accepted-rewrite-only atomic edit with exact boundary verification. */
@@ -58,14 +58,10 @@ final class RewriteTransaction {
 		return new RewriteTransaction(root, original, analysis);
 	}
 
-	TransactionalTreeEditor editor() {
-		return editor;
-	}
-
 	ScopeAnalysis commit(RewriteBuilder builder) {
 		ensureOpen();
 		try {
-			QueryModelNode replacement = Objects.requireNonNull(builder.build(editor), "rewrite replacement");
+			QueryModelNode replacement = Objects.requireNonNull(builder.build(), "rewrite replacement");
 			editor.install(replacement);
 			ScopeAnalysis afterAnalysis = beforeAnalysis.repair(root, replacement);
 			BoundaryDifference difference = before.compare(afterAnalysis, replacement);
@@ -158,9 +154,6 @@ final class TransactionalTreeEditor {
 	private final QueryModelNode originalParent;
 	private final NodeArena arena;
 	private final int boundaryOrigin;
-	private QueryModelNode[] moved = new QueryModelNode[16];
-	private QueryModelNode[] oldParents = new QueryModelNode[16];
-	private int moveCount;
 	private QueryModelNode replacement;
 	private boolean installed;
 
@@ -169,61 +162,6 @@ final class TransactionalTreeEditor {
 		originalParent = original.getParentNode();
 		arena = analysis.arena();
 		boundaryOrigin = arena.origin(original);
-	}
-
-	<T extends QueryModelNode> T move(T node) {
-		ensureCapacity(moveCount + 1);
-		moved[moveCount] = node;
-		oldParents[moveCount] = node.getParentNode();
-		moveCount++;
-		return node;
-	}
-
-	Join join(TupleExpr left, TupleExpr right) {
-		Join result = new Join();
-		result.setLeftArg(move(left));
-		result.setRightArg(move(right));
-		return result;
-	}
-
-	Union union(TupleExpr left, TupleExpr right) {
-		Union result = new Union();
-		result.setLeftArg(move(left));
-		result.setRightArg(move(right));
-		return result;
-	}
-
-	Filter filter(TupleExpr arg, ValueExpr condition) {
-		Filter result = new Filter();
-		result.setArg(move(arg));
-		result.setCondition(condition.clone());
-		return result;
-	}
-
-	Difference difference(TupleExpr left, TupleExpr right) {
-		Difference result = new Difference();
-		result.setLeftArg(move(left));
-		result.setRightArg(move(right));
-		return result;
-	}
-
-	LeftJoin leftJoin(TupleExpr left, TupleExpr right, ValueExpr condition) {
-		LeftJoin result = new LeftJoin();
-		result.setLeftArg(move(left));
-		result.setRightArg(move(right));
-		if (condition != null) {
-			result.setCondition(condition.clone());
-		}
-		return result;
-	}
-
-	Extension extensionLike(Extension source, TupleExpr arg) {
-		Extension result = new Extension();
-		result.setArg(move(arg));
-		for (ExtensionElem element : source.getElements()) {
-			result.addElement(element.clone());
-		}
-		return result;
 	}
 
 	void install(QueryModelNode replacement) {
@@ -256,15 +194,6 @@ final class TransactionalTreeEditor {
 		if (installed) {
 			originalParent.replaceChildNode(replacement, original);
 		}
-		for (int index = moveCount - 1; index >= 0; index--) {
-			QueryModelNode node = moved[index];
-			QueryModelNode parent = oldParents[index];
-			if (parent == null) {
-				node.setParentNode(null);
-			} else {
-				parent.replaceChildNode(node, node);
-			}
-		}
 		clear();
 	}
 
@@ -272,22 +201,7 @@ final class TransactionalTreeEditor {
 		clear();
 	}
 
-	private void ensureCapacity(int required) {
-		if (required <= moved.length) {
-			return;
-		}
-		int capacity = moved.length << 1;
-		while (capacity < required) {
-			capacity <<= 1;
-		}
-		moved = Arrays.copyOf(moved, capacity);
-		oldParents = Arrays.copyOf(oldParents, capacity);
-	}
-
 	private void clear() {
-		Arrays.fill(moved, 0, moveCount, null);
-		Arrays.fill(oldParents, 0, moveCount, null);
-		moveCount = 0;
 		replacement = null;
 		installed = false;
 	}

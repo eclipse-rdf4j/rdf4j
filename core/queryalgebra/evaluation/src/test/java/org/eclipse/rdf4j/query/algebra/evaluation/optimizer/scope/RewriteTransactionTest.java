@@ -55,14 +55,14 @@ public class RewriteTransactionTest {
 		QueryRoot root = new QueryRoot(original);
 		RewriteTransaction transaction = RewriteTransaction.begin(root, original, ScopeAnalysis.analyze(root));
 
-		ScopeAnalysis after = transaction.commit(editor -> editor.join(right, left));
+		ScopeAnalysis after = transaction.commit(() -> new Join(right.clone(), left.clone()));
 
 		assertThat(root.getArg()).isInstanceOf(Join.class).isNotSameAs(original);
 		Join replacement = (Join) root.getArg();
-		assertThat(replacement.getLeftArg()).isSameAs(right);
-		assertThat(replacement.getRightArg()).isSameAs(left);
-		assertThat(right.getParentNode()).isSameAs(replacement);
-		assertThat(left.getParentNode()).isSameAs(replacement);
+		assertThat(replacement.getLeftArg()).isEqualTo(right);
+		assertThat(replacement.getRightArg()).isEqualTo(left);
+		assertThat(replacement.getLeftArg().getParentNode()).isSameAs(replacement);
+		assertThat(replacement.getRightArg().getParentNode()).isSameAs(replacement);
 		assertThat(after.names(SemanticMask.SCOPE_OUT, replacement))
 				.containsExactlyInAnyOrder("shared", "leftOnly", "rightOnly");
 	}
@@ -78,7 +78,7 @@ public class RewriteTransactionTest {
 		FactIndex facts = before.facts();
 		RewriteTransaction transaction = RewriteTransaction.begin(root, original, before);
 
-		ScopeAnalysis after = transaction.commit(editor -> editor.join(right, left));
+		ScopeAnalysis after = transaction.commit(() -> new Join(right.clone(), left.clone()));
 
 		assertThat(after).isSameAs(before);
 		assertThat(after.arena()).isSameAs(arena);
@@ -95,7 +95,7 @@ public class RewriteTransactionTest {
 		QueryRoot root = new QueryRoot(original);
 		RewriteTransaction transaction = RewriteTransaction.begin(root, original, ScopeAnalysis.analyze(root));
 
-		assertThatThrownBy(() -> transaction.commit(editor -> pattern("replacement", "different")))
+		assertThatThrownBy(() -> transaction.commit(() -> pattern("replacement", "different")))
 				.isInstanceOf(RewriteRejectedException.class)
 				.hasMessageContaining("rewrite changed boundary");
 
@@ -108,15 +108,14 @@ public class RewriteTransactionTest {
 	}
 
 	@Test
-	public void builderFailureRestoresEveryMovedChildInReverseOrder() {
+	public void builderFailureRollsBackTheInstallAndKeepsTheOriginalChild() {
 		StatementPattern left = pattern("shared", "leftOnly");
 		StatementPattern right = pattern("shared", "rightOnly");
 		Join original = new Join(left, right);
 		QueryRoot root = new QueryRoot(original);
 		RewriteTransaction transaction = RewriteTransaction.begin(root, original, ScopeAnalysis.analyze(root));
 
-		assertThatThrownBy(() -> transaction.commit(editor -> {
-			editor.join(right, left);
+		assertThatThrownBy(() -> transaction.commit(() -> {
 			throw new IllegalStateException("injected builder failure");
 		})).isInstanceOf(IllegalStateException.class).hasMessage("injected builder failure");
 

@@ -67,9 +67,9 @@ public final class ScopeSafeRewritePass {
 		requireEnforce(session);
 		ScopeSafeRewriter rewriter = new ScopeSafeRewriter(root, session.analysis(), session.telemetryEnabled());
 		int rewrites = 0;
-		boolean changed;
-		do {
-			changed = false;
+		int maximum = Math.max(64, rewriter.analysis().arena().size() << 2);
+		while (rewrites < maximum) {
+			boolean changed = false;
 			for (Projection projection : projections(root)) {
 				if (rewriter.flattenTransparentSubquery(projection)
 						|| rewriter.removeIdentityProjection(projection)) {
@@ -79,7 +79,13 @@ public final class ScopeSafeRewritePass {
 					break;
 				}
 			}
-		} while (changed);
+			if (!changed) {
+				break;
+			}
+		}
+		if (rewrites == maximum) {
+			throw new IllegalStateException("scope-safe projection rewrite did not converge");
+		}
 		session.installAnalysis(rewriter.analysis());
 		return rewrites;
 	}

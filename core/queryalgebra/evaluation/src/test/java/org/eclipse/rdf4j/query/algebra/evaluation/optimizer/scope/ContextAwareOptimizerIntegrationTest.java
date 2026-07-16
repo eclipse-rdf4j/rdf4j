@@ -88,6 +88,23 @@ public class ContextAwareOptimizerIntegrationTest {
 		}
 	}
 
+	@Test
+	public void enforceNeverRunsAScopeUnsafeLegacyPassOnFragments() throws Exception {
+		// A non-QueryRoot fragment in ENFORCE used to fall through to the legacy scope-unsafe
+		// pass for REPLACE-policy optimizers; the shared dispatch must skip instead.
+		FilterOptimizer optimizer = new FilterOptimizer(null, false, false);
+		Filter fragment = new Filter(
+				new Join(pattern("shared", "leftOnly"), pattern("shared", "rightOnly")),
+				Var.of("leftOnly"));
+		Filter untouched = fragment.clone();
+		QueryRoot sessionRoot = new QueryRoot(new Join(pattern("s", "o"), pattern("s", "o2")));
+		try (OptimizationSession session = session(sessionRoot, ScopeSafetyMode.ENFORCE)) {
+			optimize(optimizer, fragment, session);
+		}
+
+		assertThat(fragment).isEqualTo(untouched);
+	}
+
 	private static void optimize(Object optimizer, TupleExpr root, OptimizationSession session) throws Exception {
 		Method method = optimizer.getClass()
 				.getMethod("optimize", TupleExpr.class, Dataset.class, BindingSet.class,

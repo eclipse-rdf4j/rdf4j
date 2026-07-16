@@ -38,11 +38,10 @@ public class UnionScopeChangeOptimizer implements ContextAwareQueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, OptimizationSession session) {
-		optimize(tupleExpr, dataset, bindings);
-		if (session.mode() != ScopeSafetyMode.OFF) {
-			session.afterLegacyOptimizer(getClass());
-			session.refresh();
-		}
+		// The scope-flag relaxation only fires under its own guards and moves no nodes, so the
+		// legacy pass is scope-safe and may run in ENFORCE too.
+		ContextAwareQueryOptimizer.dispatch(tupleExpr, dataset, bindings, session, EnforcePolicy.RUN_LEGACY,
+				this::optimize, null);
 	}
 
 	private static class UnionScopeChangeFixer extends AbstractSimpleQueryModelVisitor<RuntimeException> {

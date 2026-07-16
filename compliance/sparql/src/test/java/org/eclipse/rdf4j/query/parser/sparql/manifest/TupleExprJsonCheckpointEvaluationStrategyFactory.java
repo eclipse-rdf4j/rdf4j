@@ -257,7 +257,7 @@ final class TupleExprJsonCheckpointEvaluationStrategyFactory extends DefaultEval
 			} else {
 				optimizer.optimize(root, dataset, bindings);
 				if (!(optimizer instanceof ParentReferenceChecker)) {
-					session.afterLegacyOptimizer(optimizer.getClass());
+					session.afterLegacyOptimizer();
 				}
 			}
 		}

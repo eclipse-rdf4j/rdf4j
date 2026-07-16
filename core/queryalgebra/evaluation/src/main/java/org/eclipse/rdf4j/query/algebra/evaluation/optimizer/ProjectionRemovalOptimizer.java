@@ -54,17 +54,8 @@ public class ProjectionRemovalOptimizer implements ContextAwareQueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, OptimizationSession session) {
-		if (session.mode() == ScopeSafetyMode.OFF) {
-			optimize(tupleExpr, dataset, bindings);
-			return;
-		}
-		if (session.mode() == ScopeSafetyMode.ENFORCE && tupleExpr instanceof QueryRoot root) {
-			ScopeSafeRewritePass.projections(root, session);
-			return;
-		}
-		optimize(tupleExpr, dataset, bindings);
-		session.afterLegacyOptimizer(getClass());
-		session.refresh();
+		ContextAwareQueryOptimizer.dispatch(tupleExpr, dataset, bindings, session, EnforcePolicy.REPLACE,
+				this::optimize, ScopeSafeRewritePass::projections);
 	}
 
 	private static class VariableFinder extends AbstractSimpleQueryModelVisitor<RuntimeException> {
