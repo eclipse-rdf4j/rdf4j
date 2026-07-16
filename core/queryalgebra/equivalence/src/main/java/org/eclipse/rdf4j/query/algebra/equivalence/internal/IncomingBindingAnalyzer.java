@@ -232,7 +232,9 @@ final class IncomingBindingAnalyzer {
 		node.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			public void meet(Var variable) {
-				if (!variable.hasValue() && variable.getName() != null) {
+				// Match the runtime's isConstant() discrimination: a valued-but-not-constant
+				// variable still binds (and can read) its name.
+				if (!variable.isConstant() && variable.getName() != null) {
 					result.add(variable.getName());
 				}
 			}
