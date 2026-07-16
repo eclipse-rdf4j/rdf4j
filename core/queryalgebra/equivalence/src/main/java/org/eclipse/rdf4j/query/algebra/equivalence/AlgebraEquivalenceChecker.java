@@ -67,7 +67,7 @@ public final class AlgebraEquivalenceChecker {
 
 		if (ExactTreeEquality.equal(original, candidate)) {
 			StructuralEqualityProof proof = new StructuralEqualityProof();
-			if (!proofKernel.verify(original, candidate, proof)) {
+			if (options.isDeepProofVerification() && !proofKernel.verify(original, candidate, proof)) {
 				throw new AssertionError("Proof kernel rejected structural equality");
 			}
 			return EquivalenceResult.equivalent(
@@ -88,7 +88,9 @@ public final class AlgebraEquivalenceChecker {
 					originalNormalization.canonicalEncoding(),
 					originalNormalization.getSteps(),
 					candidateNormalization.getSteps());
-			if (!proofKernel.verify(original, candidate, proof)) {
+			// The proof was derived from the normalizations computed just above; re-deriving it
+			// through the kernel doubles the cost of every successful check and is opt-in.
+			if (options.isDeepProofVerification() && !proofKernel.verify(original, candidate, proof)) {
 				throw new AssertionError("Proof kernel rejected normalization proof");
 			}
 			return EquivalenceResult.equivalent(

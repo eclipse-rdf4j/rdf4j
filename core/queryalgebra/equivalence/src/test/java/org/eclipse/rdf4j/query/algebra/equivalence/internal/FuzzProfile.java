@@ -50,6 +50,7 @@ record FuzzProfile(
 				.observationMode(mode)
 				.contextMode(contextMode)
 				.boundedCounterexampleSearch(true)
+				.deepProofVerification(true)
 				.maxEvaluationCases(maxEvaluationCases)
 				.evaluationCases(FuzzEvaluationMatrix.cases(contextMode))
 				.build();

@@ -32,6 +32,7 @@ public final class CheckOptions {
 	private final ObservationMode observationMode;
 	private final ContextMode contextMode;
 	private final boolean boundedCounterexampleSearch;
+	private final boolean deepProofVerification;
 	private final int maxGeneratedStatements;
 	private final int maxInstantiationsPerPattern;
 	private final int maxDatasetSize;
@@ -46,6 +47,7 @@ public final class CheckOptions {
 		this.observationMode = builder.observationMode;
 		this.contextMode = builder.contextMode;
 		this.boundedCounterexampleSearch = builder.boundedCounterexampleSearch;
+		this.deepProofVerification = builder.deepProofVerification;
 		this.maxGeneratedStatements = positive(builder.maxGeneratedStatements, "maxGeneratedStatements");
 		this.maxInstantiationsPerPattern = positive(
 				builder.maxInstantiationsPerPattern,
@@ -80,6 +82,15 @@ public final class CheckOptions {
 
 	public boolean isBoundedCounterexampleSearch() {
 		return boundedCounterexampleSearch;
+	}
+
+	/**
+	 * When true, every EQUIVALENT verdict re-derives its proof from scratch through the ProofKernel before being
+	 * returned (roughly doubling the cost of a successful check). Defaults to false; the proof was just computed by the
+	 * same code, so re-derivation is a self-check intended for test harnesses, not production.
+	 */
+	public boolean isDeepProofVerification() {
+		return deepProofVerification;
 	}
 
 	public int getMaxGeneratedStatements() {
@@ -151,6 +162,7 @@ public final class CheckOptions {
 		private ObservationMode observationMode = ObservationMode.BAG;
 		private ContextMode contextMode = ContextMode.ALL_BINDINGS;
 		private boolean boundedCounterexampleSearch;
+		private boolean deepProofVerification;
 		private int maxGeneratedStatements = 12;
 		private int maxInstantiationsPerPattern = 16;
 		private int maxDatasetSize = 2;
@@ -175,6 +187,11 @@ public final class CheckOptions {
 
 		public Builder contextMode(ContextMode contextMode) {
 			this.contextMode = Objects.requireNonNull(contextMode, "contextMode");
+			return this;
+		}
+
+		public Builder deepProofVerification(boolean enabled) {
+			this.deepProofVerification = enabled;
 			return this;
 		}
 

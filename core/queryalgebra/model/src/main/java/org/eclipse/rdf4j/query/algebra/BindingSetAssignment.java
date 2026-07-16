@@ -132,10 +132,10 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 
 	@Override
 	public BindingSetAssignment clone() {
-		BindingSetAssignment clone = (BindingSetAssignment) super.clone();
-		clone.possibleBindingNames = null;
-		clone.assuredBindingNames = null;
-		return clone;
+		// The derived name caches depend solely on the bindingSets reference, which the clone
+		// shares, and they are unmodifiable — carrying them avoids an O(#rows) rebuild on every
+		// per-execution clone. setBindingSets still resets them when the rows change.
+		return (BindingSetAssignment) super.clone();
 	}
 
 	@Override
