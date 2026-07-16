@@ -178,7 +178,8 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 
 	@Override
 	public String getSignature() {
-		return super.getSignature() + " (" + this.getBindingSets().toString() + ")";
+		Iterable<BindingSet> sets = getBindingSets();
+		return super.getSignature() + " (" + (sets == null ? "<unset>" : sets.toString()) + ")";
 	}
 
 	@Override

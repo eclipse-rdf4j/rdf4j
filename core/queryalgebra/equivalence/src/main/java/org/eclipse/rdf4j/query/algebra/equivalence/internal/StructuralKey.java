@@ -14,8 +14,11 @@ package org.eclipse.rdf4j.query.algebra.equivalence.internal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.Collection;
 import java.util.List;
 
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 
@@ -47,7 +50,11 @@ public final class StructuralKey {
 
 	private static void append(QueryModelNode node, StringBuilder builder) {
 		builder.append(node.getClass().getName()).append('{');
-		appendEscaped(node.getSignature(), builder);
+		if (node instanceof BindingSetAssignment) {
+			appendEscaped(assignmentKey((BindingSetAssignment) node), builder);
+		} else {
+			appendEscaped(node.getSignature(), builder);
+		}
 		if (node instanceof VariableScopeChange) {
 			builder.append("|scope=")
 					.append(((VariableScopeChange) node).isVariableScopeChange());
@@ -59,6 +66,32 @@ public final class StructuralKey {
 			builder.append(';');
 		}
 		builder.append(']');
+	}
+
+	/**
+	 * The generic signature embeds the rows' {@code toString()}, which depends on each row's binding iteration order —
+	 * equal assignments would render differently and equals-equal trees would get distinct canonical encodings. Rows
+	 * are therefore rendered through the order-insensitive {@link CanonicalEncoding}. Unset and non-materialized row
+	 * sources become explicit placeholders: a one-shot {@link Iterable} must not be consumed by diagnostics, and
+	 * canonical equality never trusts this string (opaque nodes compare via {@link ExactTreeEquality}), so the
+	 * placeholder cannot conflate unequal trees.
+	 */
+	private static String assignmentKey(BindingSetAssignment assignment) {
+		StringBuilder result = new StringBuilder(64);
+		result.append("declared=")
+				.append(CanonicalEncoding.names(assignment.getDeclaredBindingNames()))
+				.append("|rows=");
+		Iterable<BindingSet> rows = assignment.getBindingSets();
+		if (rows == null) {
+			return result.append("<unset>").toString();
+		}
+		if (!(rows instanceof Collection<?>)) {
+			return result.append("<non-collection:").append(rows.getClass().getName()).append('>').toString();
+		}
+		for (BindingSet row : rows) {
+			result.append(CanonicalEncoding.bindings(row)).append(',');
+		}
+		return result.toString();
 	}
 
 	private static void appendEscaped(String value, StringBuilder builder) {
