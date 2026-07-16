@@ -344,20 +344,50 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				try (CloseableIteration<BindingSet> candidate = candidateStep.evaluate(EmptyBindingSet.getInstance())) {
 					candidateRows = readAtMost(candidate, plan.maxRows());
 				}
-			} catch (RuntimeException | Error failure) {
+			} catch (Error failure) {
 				ScopeSafetyTelemetry.recordShadowMismatch(plan.telemetryEnabled());
 				throw failure;
+			} catch (RuntimeException failure) {
+				// SHADOW is an observation mode: a defect in the experimental candidate plan must
+				// never fail the user's query. The legacy rows are already materialized.
+				ScopeSafetyTelemetry.recordShadowMismatch(plan.telemetryEnabled());
+				logger.warn("Shadow candidate evaluation failed; returning legacy results", failure);
+				if (plan.strict()) {
+					throw failure;
+				}
+				return new CloseableIteratorIteration<>(legacyRows.iterator());
 			}
 			if (candidateRows.size() <= plan.maxRows()) {
 				try {
 					ShadowResultComparator.compare(legacyRows, candidateRows, plan.ordered());
 					ScopeSafetyTelemetry.recordShadowMatch(plan.telemetryEnabled());
-				} catch (RuntimeException | Error failure) {
+				} catch (Error failure) {
 					ScopeSafetyTelemetry.recordShadowMismatch(plan.telemetryEnabled());
 					throw failure;
+				} catch (RuntimeException failure) {
+					// A sequence divergence with agreeing multisets is ordering noise (e.g. ties),
+					// not a semantic mismatch — record it under its own counter.
+					if (plan.ordered() && sameMultiset(legacyRows, candidateRows)) {
+						ScopeSafetyTelemetry.recordShadowOrderDivergence(plan.telemetryEnabled());
+					} else {
+						ScopeSafetyTelemetry.recordShadowMismatch(plan.telemetryEnabled());
+						logger.warn("Shadow candidate results diverged; returning legacy results", failure);
+						if (plan.strict()) {
+							throw failure;
+						}
+					}
 				}
 			} else {
-				ScopeSafetyTelemetry.recordShadowRowLimit(plan.telemetryEnabled());
+				// The legacy result was fully enumerated (<= maxRows), so a candidate that produces
+				// MORE rows is a proven mismatch, not a row-limit artifact.
+				ScopeSafetyTelemetry.recordShadowMismatch(plan.telemetryEnabled());
+				logger.warn("Shadow candidate produced more rows than the complete legacy result "
+						+ "(legacyRows={}, maxRows={}); returning legacy results", legacyRows.size(), plan.maxRows());
+				if (plan.strict()) {
+					throw new IllegalStateException("scope shadow mismatch: candidate produced more than maxRows="
+							+ plan.maxRows() + " rows while the legacy result was complete with legacyRows="
+							+ legacyRows.size());
+				}
 			}
 			return new CloseableIteratorIteration<>(legacyRows.iterator());
 		} finally {
@@ -374,6 +404,24 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			rows.add(new QueryBindingSet(iteration.next()));
 		}
 		return rows;
+	}
+
+	private static boolean sameMultiset(List<BindingSet> left, List<BindingSet> right) {
+		if (left.size() != right.size()) {
+			return false;
+		}
+		Map<BindingSet, Integer> counts = new HashMap<>();
+		for (BindingSet row : left) {
+			counts.merge(row, 1, Integer::sum);
+		}
+		for (BindingSet row : right) {
+			Integer remaining = counts.get(row);
+			if (remaining == null || remaining == 0) {
+				return false;
+			}
+			counts.put(row, remaining - 1);
+		}
+		return true;
 	}
 
 	private static final class PrefixIteration implements CloseableIteration<BindingSet> {

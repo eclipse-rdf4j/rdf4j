@@ -50,8 +50,11 @@ public final class ScopeSafetyTelemetry {
 		SHADOW_SKIP_UNSUPPORTED,
 		SHADOW_SKIP_ROW_LIMIT,
 		SHADOW_SKIP_PARTIAL_CONSUMPTION,
+		SHADOW_SKIP_NONDETERMINISTIC,
+		SHADOW_SKIP_CANDIDATE_ERROR,
 		SHADOW_MATCH,
-		SHADOW_MISMATCH
+		SHADOW_MISMATCH,
+		SHADOW_ORDER_DIVERGENCE
 	}
 
 	private static final Counter[] COUNTERS = Counter.values();
@@ -116,6 +119,10 @@ public final class ScopeSafetyTelemetry {
 
 	public static void recordShadowMismatch(boolean enabled) {
 		recordIfEnabled(Counter.SHADOW_MISMATCH, enabled);
+	}
+
+	public static void recordShadowOrderDivergence(boolean enabled) {
+		recordIfEnabled(Counter.SHADOW_ORDER_DIVERGENCE, enabled);
 	}
 
 	static void resetForTests() {

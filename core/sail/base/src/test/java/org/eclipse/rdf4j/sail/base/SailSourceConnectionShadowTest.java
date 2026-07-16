@@ -20,6 +20,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.List;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -36,9 +37,29 @@ import org.junit.jupiter.api.Test;
 class SailSourceConnectionShadowTest {
 
 	@Test
-	void semanticMismatchIsFatal() throws Exception {
+	void semanticMismatchIsRecordedAndLegacyRowsReturned() throws Exception {
 		TupleExpr candidate = new EmptySet();
-		ShadowOptimizationPlan plan = newPlan(candidate, 10L, false);
+		ShadowOptimizationPlan plan = newPlan(candidate, 10L, false, false);
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.precompile(candidate)).thenReturn(QueryEvaluationStep.empty());
+
+		QueryBindingSet row = new QueryBindingSet();
+		row.addBinding("x", Values.literal(1));
+		QueryEvaluationStep legacy = bindings -> new CloseableIteratorIteration<>(
+				List.<BindingSet>of(row).iterator());
+		long mismatchesBefore = ScopeSafetyTelemetry.snapshot().get(Counter.SHADOW_MISMATCH);
+
+		List<BindingSet> rows = drain(invokeShadow(strategy, legacy, plan));
+
+		assertThat(rows).containsExactly(row);
+		assertThat(ScopeSafetyTelemetry.snapshot().get(Counter.SHADOW_MISMATCH))
+				.isEqualTo(mismatchesBefore + 1L);
+	}
+
+	@Test
+	void semanticMismatchIsFatalWhenStrict() throws Exception {
+		TupleExpr candidate = new EmptySet();
+		ShadowOptimizationPlan plan = newPlan(candidate, 10L, false, true);
 		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
 		when(strategy.precompile(candidate)).thenReturn(QueryEvaluationStep.empty());
 
@@ -55,8 +76,95 @@ class SailSourceConnectionShadowTest {
 				.hasMessageContaining("scope shadow mismatch")
 				.hasMessageContaining("legacyRows=1")
 				.hasMessageContaining("candidateRows=0");
-		long mismatchesAfter = ScopeSafetyTelemetry.snapshot().get(Counter.SHADOW_MISMATCH);
-		assertThat(mismatchesAfter).isEqualTo(mismatchesBefore + 1L);
+		assertThat(ScopeSafetyTelemetry.snapshot().get(Counter.SHADOW_MISMATCH))
+				.isEqualTo(mismatchesBefore + 1L);
+	}
+
+	@Test
+	void candidateEvaluationFailureReturnsLegacyRows() throws Exception {
+		TupleExpr candidate = new EmptySet();
+		ShadowOptimizationPlan plan = newPlan(candidate, 10L, false, false);
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		QueryEvaluationStep throwingCandidate = bindings -> {
+			throw new IllegalStateException("candidate plan defect");
+		};
+		when(strategy.precompile(candidate)).thenReturn(throwingCandidate);
+
+		QueryBindingSet row = new QueryBindingSet();
+		row.addBinding("x", Values.literal(1));
+		QueryEvaluationStep legacy = bindings -> new CloseableIteratorIteration<>(
+				List.<BindingSet>of(row).iterator());
+		long mismatchesBefore = ScopeSafetyTelemetry.snapshot().get(Counter.SHADOW_MISMATCH);
+
+		List<BindingSet> rows = drain(invokeShadow(strategy, legacy, plan));
+
+		assertThat(rows).containsExactly(row);
+		assertThat(ScopeSafetyTelemetry.snapshot().get(Counter.SHADOW_MISMATCH))
+				.isEqualTo(mismatchesBefore + 1L);
+	}
+
+	@Test
+	void candidateRowOverflowOfCompleteLegacyResultIsAMismatch() throws Exception {
+		TupleExpr candidate = new EmptySet();
+		ShadowOptimizationPlan plan = newPlan(candidate, 1L, false, false);
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		QueryBindingSet extra1 = binding("x", 1);
+		QueryBindingSet extra2 = binding("x", 2);
+		QueryBindingSet extra3 = binding("x", 3);
+		QueryEvaluationStep overflowingCandidate = bindings -> new CloseableIteratorIteration<>(
+				List.<BindingSet>of(extra1, extra2, extra3).iterator());
+		when(strategy.precompile(candidate)).thenReturn(overflowingCandidate);
+
+		QueryEvaluationStep legacy = bindings -> new CloseableIteratorIteration<>(
+				List.<BindingSet>of(extra1).iterator());
+		long mismatchesBefore = ScopeSafetyTelemetry.snapshot().get(Counter.SHADOW_MISMATCH);
+		long rowLimitsBefore = ScopeSafetyTelemetry.snapshot().get(Counter.SHADOW_SKIP_ROW_LIMIT);
+
+		List<BindingSet> rows = drain(invokeShadow(strategy, legacy, plan));
+
+		assertThat(rows).containsExactly(extra1);
+		assertThat(ScopeSafetyTelemetry.snapshot().get(Counter.SHADOW_MISMATCH))
+				.isEqualTo(mismatchesBefore + 1L);
+		assertThat(ScopeSafetyTelemetry.snapshot().get(Counter.SHADOW_SKIP_ROW_LIMIT))
+				.isEqualTo(rowLimitsBefore);
+	}
+
+	@Test
+	void orderDivergenceWithAgreeingMultisetsIsNotAMismatch() throws Exception {
+		TupleExpr candidate = new EmptySet();
+		ShadowOptimizationPlan plan = newPlan(candidate, 10L, true, false);
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		QueryBindingSet first = binding("x", 1);
+		QueryBindingSet second = binding("x", 2);
+		QueryEvaluationStep reorderedCandidate = bindings -> new CloseableIteratorIteration<>(
+				List.<BindingSet>of(second, first).iterator());
+		when(strategy.precompile(candidate)).thenReturn(reorderedCandidate);
+
+		QueryEvaluationStep legacy = bindings -> new CloseableIteratorIteration<>(
+				List.<BindingSet>of(first, second).iterator());
+		long mismatchesBefore = ScopeSafetyTelemetry.snapshot().get(Counter.SHADOW_MISMATCH);
+		long divergencesBefore = ScopeSafetyTelemetry.snapshot().get(Counter.SHADOW_ORDER_DIVERGENCE);
+
+		List<BindingSet> rows = drain(invokeShadow(strategy, legacy, plan));
+
+		assertThat(rows).containsExactly(first, second);
+		assertThat(ScopeSafetyTelemetry.snapshot().get(Counter.SHADOW_MISMATCH))
+				.isEqualTo(mismatchesBefore);
+		assertThat(ScopeSafetyTelemetry.snapshot().get(Counter.SHADOW_ORDER_DIVERGENCE))
+				.isEqualTo(divergencesBefore + 1L);
+	}
+
+	private static QueryBindingSet binding(String name, int value) {
+		QueryBindingSet bindings = new QueryBindingSet();
+		bindings.addBinding(name, Values.literal(value));
+		return bindings;
+	}
+
+	@SuppressWarnings("unchecked")
+	private static List<BindingSet> drain(Object iterationObject) {
+		try (CloseableIteration<BindingSet> iteration = (CloseableIteration<BindingSet>) iterationObject) {
+			return iteration.stream().toList();
+		}
 	}
 
 	private static Object invokeShadow(EvaluationStrategy strategy, QueryEvaluationStep legacy,
@@ -67,13 +175,14 @@ class SailSourceConnectionShadowTest {
 		return method.invoke(null, strategy, legacy, plan);
 	}
 
-	private static ShadowOptimizationPlan newPlan(TupleExpr candidate, long maxRows, boolean ordered) throws Exception {
+	private static ShadowOptimizationPlan newPlan(TupleExpr candidate, long maxRows, boolean ordered, boolean strict)
+			throws Exception {
 		Class<?> reasonType = Class.forName(
 				"org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope.ShadowSkipReason");
 		Object noSkip = reasonType.getEnumConstants()[0];
 		Method create = ShadowOptimizationPlan.class.getDeclaredMethod("create", TupleExpr.class, long.class,
-				reasonType, boolean.class, boolean.class);
+				reasonType, boolean.class, boolean.class, boolean.class);
 		create.setAccessible(true);
-		return (ShadowOptimizationPlan) create.invoke(null, candidate, maxRows, noSkip, ordered, true);
+		return (ShadowOptimizationPlan) create.invoke(null, candidate, maxRows, noSkip, ordered, true, strict);
 	}
 }
