@@ -604,4 +604,28 @@ class TupleExprJsonParserTest {
 	private static String quote(String value) {
 		return '"' + value.replace("\\", "\\\\").replace("\"", "\\\"") + '"';
 	}
+
+	@Test
+	void parseOfDeepJsonNodeFailsWithParseExceptionNotStackOverflow() {
+		// The stream nesting limit does not guard the JsonNode entry point; the decoder's own
+		// depth counter must turn a hostile-depth tree into a parse exception.
+		com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+		com.fasterxml.jackson.databind.node.ObjectNode leaf = mapper.createObjectNode().put("type", "SingletonSet");
+		com.fasterxml.jackson.databind.node.ObjectNode expression = leaf;
+		for (int i = 0; i < 5_000; i++) {
+			com.fasterxml.jackson.databind.node.ObjectNode wrapper = mapper.createObjectNode();
+			wrapper.put("type", "Distinct");
+			wrapper.set("arg", expression);
+			expression = wrapper;
+		}
+		com.fasterxml.jackson.databind.node.ObjectNode document = mapper.createObjectNode();
+		document.put("format", "rdf4j-tuple-expr");
+		document.put("version", 1);
+		document.set("expression", expression);
+		com.fasterxml.jackson.databind.node.ObjectNode deepDocument = document;
+
+		org.junit.jupiter.api.Assertions.assertThrows(TupleExprJsonParseException.class,
+				() -> new TupleExprJsonParser().parse(deepDocument));
+	}
+
 }

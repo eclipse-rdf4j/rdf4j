@@ -289,6 +289,23 @@ public final class TupleExprJsonParser {
 
 	private static final class Decoder {
 
+		/**
+		 * The stream-level nesting limit only guards the String/Reader/InputStream entry points; a caller-supplied
+		 * JsonNode can be arbitrarily deep, so the decoder counts its own recursion depth to fail with a parse
+		 * exception instead of a StackOverflowError.
+		 */
+		private int depth;
+
+		private void enter(String path) throws TupleExprJsonParseException {
+			if (++depth > MAX_JSON_DEPTH) {
+				throw error(path, "maximum JSON/model depth of " + MAX_JSON_DEPTH + " exceeded");
+			}
+		}
+
+		private void leave() {
+			depth--;
+		}
+
 		private final ValueFactory valueFactory;
 
 		private Decoder(ValueFactory valueFactory) {
@@ -314,6 +331,15 @@ public final class TupleExprJsonParser {
 		}
 
 		private TupleExpr tupleExpr(JsonNode node, String path) throws TupleExprJsonParseException {
+			enter(path);
+			try {
+				return tupleExprAtDepth(node, path);
+			} finally {
+				leave();
+			}
+		}
+
+		private TupleExpr tupleExprAtDepth(JsonNode node, String path) throws TupleExprJsonParseException {
 			ObjectNode object = requireObject(node, path, "tuple expression");
 			String type = requiredText(object, "type", path);
 			try {
@@ -356,6 +382,15 @@ public final class TupleExprJsonParser {
 		}
 
 		private ValueExpr valueExpr(JsonNode node, String path) throws TupleExprJsonParseException {
+			enter(path);
+			try {
+				return valueExprAtDepth(node, path);
+			} finally {
+				leave();
+			}
+		}
+
+		private ValueExpr valueExprAtDepth(JsonNode node, String path) throws TupleExprJsonParseException {
 			ObjectNode object = requireObject(node, path, "value expression");
 			String type = requiredText(object, "type", path);
 			try {

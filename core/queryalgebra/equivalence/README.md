@@ -17,3 +17,17 @@ Counterexamples use cloned algebra trees and a MemoryStore configured with an em
 `VerifiedRewriteEngine.apply` invokes an `AlgebraRewrite` on a detached clone, checks the result, and snapshots the accepted before/after plans. Its accessors return further clones. A custom `FunctionSafetyPolicy` must authorize purity, relocation, and duplication; deterministic return values alone are insufficient.
 
 The proof calculus is intentionally incomplete. Operators without a checked semantic rule remain structurally opaque, and `NativeAlgebraCoverageTest` requires every concrete RDF4J tuple/value expression to be explicitly classified as supported or conservatively opaque.
+
+## Scope-safety modes and their cost
+
+The `org.eclipse.rdf4j.query.scopeSafety.mode` system property selects how the optimizer pipeline
+uses this machinery: `OFF` (default, legacy pipeline only), `AUDIT` (legacy plans, fail-fast
+cross-check of the scope analysis — a diagnostic/canary mode), `ENFORCE`, and `SHADOW` (legacy
+results always returned; a sampled fraction of queries additionally runs a scope-safe candidate
+plan and divergences are recorded as telemetry; set `shadowStrict=true` to make them fatal in CI).
+
+`ENFORCE` runs ONLY scope-safe rewrites. Legacy optimizers without a scope-safe replacement are
+skipped — notably join reordering (`QueryJoinOptimizer`) and query-model normalization — so a
+query written with a poorly ordered basic graph pattern executes in written order and can be
+dramatically slower. ENFORCE trades optimization for provable scope safety and is not a
+general-purpose production configuration.
