@@ -2608,7 +2608,11 @@ public class TupleExprToIrConverter {
 		@Override
 		public void meet(final BindingSetAssignment bsa) {
 			IrValues v = new IrValues(false);
-			List<String> names = new ArrayList<>(bsa.getBindingNames());
+			// Prefer the declared VALUES header: derived binding names omit columns that are UNDEF
+			// in every row, which would silently drop the column from the rendered query.
+			List<String> names = new ArrayList<>(bsa.getDeclaredBindingNames().isEmpty()
+					? bsa.getBindingNames()
+					: bsa.getDeclaredBindingNames());
 			if (!cfg.valuesPreserveOrder) {
 				Collections.sort(names);
 			}
