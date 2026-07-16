@@ -117,17 +117,8 @@ public class FilterOptimizer implements ContextAwareQueryOptimizer {
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, OptimizationSession session) {
 		Objects.requireNonNull(tupleExpr, "tupleExpr must not be null");
-		if (session.mode() == ScopeSafetyMode.OFF) {
-			optimize(tupleExpr, dataset, bindings);
-			return;
-		}
-		if (session.mode() == ScopeSafetyMode.ENFORCE && tupleExpr instanceof QueryRoot root) {
-			ScopeSafeRewritePass.filters(root, session);
-			return;
-		}
-		optimize(tupleExpr, dataset, bindings);
-		session.afterLegacyOptimizer(getClass());
-		session.refresh();
+		ContextAwareQueryOptimizer.dispatch(tupleExpr, dataset, bindings, session, EnforcePolicy.REPLACE,
+				this::optimize, ScopeSafeRewritePass::filters);
 	}
 
 	/**

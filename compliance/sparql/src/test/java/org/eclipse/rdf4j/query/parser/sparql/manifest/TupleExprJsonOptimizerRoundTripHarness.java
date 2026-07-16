@@ -90,7 +90,7 @@ final class TupleExprJsonOptimizerRoundTripHarness {
 		} else {
 			optimizer.optimize(root, dataset, bindings);
 			if (!(optimizer instanceof ParentReferenceChecker)) {
-				session.afterLegacyOptimizer(optimizer.getClass());
+				session.afterLegacyOptimizer();
 			}
 		}
 	}

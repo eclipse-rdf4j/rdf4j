@@ -63,7 +63,7 @@ final class ScopeSafeRewriter {
 			return false;
 		}
 
-		return commit(filter, editor -> {
+		return commit(filter, () -> {
 			Filter relocated = filter.clone();
 			relocated.setArg(join.getLeftArg().clone());
 			Join replacement = join.clone();
@@ -77,7 +77,7 @@ final class ScopeSafeRewriter {
 		if (guard.canSwapJoin(join.getLeftArg(), join.getRightArg()) != ScopeRewriteGuard.ACCEPT) {
 			return false;
 		}
-		return commit(join, editor -> {
+		return commit(join, () -> {
 			Join replacement = join.clone();
 			replacement.setLeftArg(join.getRightArg().clone());
 			replacement.setRightArg(join.getLeftArg().clone());
@@ -90,7 +90,7 @@ final class ScopeSafeRewriter {
 				|| guard.filterOverUnion(filter, union) != ScopeRewriteGuard.ACCEPT) {
 			return false;
 		}
-		return commit(filter, editor -> {
+		return commit(filter, () -> {
 			Filter left = filter.clone();
 			left.setArg(union.getLeftArg().clone());
 			Filter right = filter.clone();
@@ -108,7 +108,7 @@ final class ScopeSafeRewriter {
 						leftJoin.getRightArg()) != ScopeRewriteGuard.ACCEPT) {
 			return false;
 		}
-		return commit(filter, editor -> {
+		return commit(filter, () -> {
 			Filter relocated = filter.clone();
 			relocated.setArg(leftJoin.getLeftArg().clone());
 			LeftJoin replacement = leftJoin.clone();
@@ -124,7 +124,7 @@ final class ScopeSafeRewriter {
 						difference.getRightArg()) != ScopeRewriteGuard.ACCEPT) {
 			return false;
 		}
-		return commit(filter, editor -> {
+		return commit(filter, () -> {
 			Filter relocated = filter.clone();
 			relocated.setArg(difference.getLeftArg().clone());
 			Difference replacement = difference.clone();
@@ -138,7 +138,7 @@ final class ScopeSafeRewriter {
 		if (guard.identityProjection(projection) != ScopeRewriteGuard.ACCEPT) {
 			return false;
 		}
-		return commit(projection, editor -> projection.getArg().clone());
+		return commit(projection, () -> projection.getArg().clone());
 	}
 
 	boolean flattenTransparentSubquery(Projection projection) {
@@ -149,7 +149,7 @@ final class ScopeSafeRewriter {
 		int frame = analysis.facts().frame(projectionId);
 		int region = analysis.facts().region(projectionId);
 		int environment = analysis.facts().environment(projectionId);
-		return commit(projection, editor -> {
+		return commit(projection, () -> {
 			TupleExpr replacement = projection.getArg().clone();
 			ScopeContextOverride.apply(replacement, frame, region, environment, true);
 			return replacement;
@@ -161,7 +161,7 @@ final class ScopeSafeRewriter {
 				|| guard.associateJoin(outer, inner) != ScopeRewriteGuard.ACCEPT) {
 			return false;
 		}
-		return commit(outer, editor -> {
+		return commit(outer, () -> {
 			Join replacement = outer.clone();
 			replacement.setLeftArg(inner.getLeftArg().clone());
 			Join grouped = inner.clone();
@@ -177,7 +177,7 @@ final class ScopeSafeRewriter {
 				|| guard.filterBelowJoin(filter, join.getRightArg(), join.getLeftArg()) != ScopeRewriteGuard.ACCEPT) {
 			return false;
 		}
-		return commit(filter, editor -> {
+		return commit(filter, () -> {
 			Filter relocated = filter.clone();
 			relocated.setArg(join.getRightArg().clone());
 			Join replacement = join.clone();
@@ -195,7 +195,7 @@ final class ScopeSafeRewriter {
 						union.getRightArg()) != ScopeRewriteGuard.ACCEPT) {
 			return false;
 		}
-		return commit(leftJoin, editor -> {
+		return commit(leftJoin, () -> {
 			LeftJoin left = leftJoin.clone();
 			left.setLeftArg(union.getLeftArg().clone());
 			left.setRightArg(leftJoin.getRightArg().clone());
@@ -215,7 +215,7 @@ final class ScopeSafeRewriter {
 						union.getRightArg()) != ScopeRewriteGuard.ACCEPT) {
 			return false;
 		}
-		return commit(difference, editor -> {
+		return commit(difference, () -> {
 			Difference left = difference.clone();
 			left.setLeftArg(union.getLeftArg().clone());
 			left.setRightArg(difference.getRightArg().clone());
@@ -234,7 +234,7 @@ final class ScopeSafeRewriter {
 				|| guard.minusRightUnionSequence(difference, union) != ScopeRewriteGuard.ACCEPT) {
 			return false;
 		}
-		return commit(difference, editor -> {
+		return commit(difference, () -> {
 			Difference first = difference.clone();
 			first.setLeftArg(difference.getLeftArg().clone());
 			first.setRightArg(union.getLeftArg().clone());
@@ -250,7 +250,7 @@ final class ScopeSafeRewriter {
 				|| guard.extensionOverUnion(extension, union) != ScopeRewriteGuard.ACCEPT) {
 			return false;
 		}
-		return commit(extension, editor -> {
+		return commit(extension, () -> {
 			Extension left = extension.clone();
 			left.setArg(union.getLeftArg().clone());
 			Extension right = extension.clone();
@@ -268,7 +268,7 @@ final class ScopeSafeRewriter {
 						join.getRightArg()) != ScopeRewriteGuard.ACCEPT) {
 			return false;
 		}
-		return commit(extension, editor -> {
+		return commit(extension, () -> {
 			Extension relocated = extension.clone();
 			relocated.setArg(join.getLeftArg().clone());
 			Join replacement = join.clone();
@@ -309,7 +309,7 @@ final class ScopeSafeRewriter {
 		Set<String> rightInterface = new LinkedHashSet<>(rightNames);
 		rightInterface.addAll(leftKeep);
 
-		return commit(projection, editor -> {
+		return commit(projection, () -> {
 			Projection left = branchProjection(projection, join.getLeftArg().clone(), leftNames, leftKeep);
 			Projection right = branchProjection(projection, join.getRightArg().clone(), rightInterface, rightKeep);
 			Join replacementJoin = join.clone();

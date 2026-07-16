@@ -107,14 +107,8 @@ public class QueryJoinOptimizer implements ContextAwareQueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, OptimizationSession session) {
-		if (session.mode() == ScopeSafetyMode.ENFORCE) {
-			return;
-		}
-		optimize(tupleExpr, dataset, bindings);
-		if (session.mode() != ScopeSafetyMode.OFF) {
-			session.afterLegacyOptimizer(getClass());
-			session.refresh();
-		}
+		ContextAwareQueryOptimizer.dispatch(tupleExpr, dataset, bindings, session, EnforcePolicy.SKIP,
+				this::optimize, null);
 	}
 
 	/**

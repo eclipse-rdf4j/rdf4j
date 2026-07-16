@@ -119,8 +119,7 @@ public final class OptimizationSession implements AutoCloseable {
 		}
 	}
 
-	public void afterLegacyOptimizer(Class<?> optimizerType) {
-		Objects.requireNonNull(optimizerType, "optimizerType");
+	public void afterLegacyOptimizer() {
 		invalidate();
 	}
 
