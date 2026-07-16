@@ -29,45 +29,38 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.equivalence.AlgebraEquivalenceChecker;
 import org.eclipse.rdf4j.query.algebra.equivalence.CheckOptions;
+import org.eclipse.rdf4j.query.algebra.equivalence.Counterexample;
 import org.eclipse.rdf4j.query.algebra.equivalence.EquivalenceResult;
 import org.eclipse.rdf4j.query.algebra.equivalence.EquivalenceStatus;
 import org.eclipse.rdf4j.query.algebra.equivalence.EvaluationCase;
 import org.eclipse.rdf4j.query.algebra.equivalence.EvaluationOutcome;
-import org.eclipse.rdf4j.query.algebra.equivalence.NormalizationProof;
 import org.eclipse.rdf4j.query.algebra.equivalence.ObservationMode;
-import org.eclipse.rdf4j.query.algebra.equivalence.RuleId;
 import org.eclipse.rdf4j.query.algebra.json.TupleExprJsonParser;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.junit.jupiter.api.Test;
 
 /**
- * Executable counterexamples where {@link AlgebraEquivalenceChecker} unsoundly reports {@code EQUIVALENT} although
- * evaluating both trees against a concrete dataset yields meaningfully different results. Each test parses the original
- * tuple expression from a JSON resource, derives the transformed tree with a join-commutation transformer, shows that
- * the checker certifies the pair equivalent with a {@code JOIN_COMMUTATIVE} normalization proof, and then exhibits a
- * dataset on which the two trees disagree — a dataset the checker's own {@link BoundedCounterexampleFinder} verifies as
- * a witness of non-equivalence. The proof path short-circuits before any registered evaluation case is consulted, so
- * registering the witness dataset does not save the verdict.
- *
- * These tests pin the current defective behaviour of {@link IncomingBindingAnalyzer}: it neither collects variables
- * read by a {@link org.eclipse.rdf4j.query.algebra.LeftJoin} condition nor models re-binding writes performed by an
- * {@link org.eclipse.rdf4j.query.algebra.Extension}. Once the analyzer accounts for those, the {@code EQUIVALENT}
- * assertions here must be flipped to {@code NOT_EQUIVALENT}.
+ * Soundness regressions for former false-{@code EQUIVALENT} verdicts. Each test parses the original tuple expression
+ * from a JSON resource, derives the transformed tree with a join-commutation transformer, evaluates both against a
+ * bundled dataset that distinguishes them, and asserts the checker now refuses the commutation and returns
+ * {@code NOT_EQUIVALENT} with a verified {@link Counterexample}. {@link IncomingBindingAnalyzer} used to make these
+ * pairs prove {@code EQUIVALENT}: it neither collected variables read by a
+ * {@link org.eclipse.rdf4j.query.algebra.LeftJoin} condition nor modelled re-binding writes performed by an
+ * {@link org.eclipse.rdf4j.query.algebra.Extension}.
  */
-class JsonTupleExprFalseEquivalenceTest {
+class JsonTupleExprSoundnessRegressionTest {
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 	private static final String RESOURCE_ROOT = "/org/eclipse/rdf4j/query/algebra/equivalence/internal/";
 
 	/**
 	 * The LeftJoin condition {@code ?x > 5} reads {@code ?x} bound by the sibling join operand. Because {@code ?x} is a
 	 * may-bind name of the LeftJoin's left arg (second Union branch), RDF4J's well-designed-left-join check exposes the
-	 * sibling's binding to the condition at runtime, so join order is observable — but
-	 * {@code IncomingBindingAnalyzer.externalReads(LeftJoin)} never looks at the condition, so the canonicalizer
-	 * commutes the join and the checker proves a false {@code EQUIVALENT}.
+	 * sibling's binding to the condition at runtime, so join order is observable and the analyzer must count the
+	 * condition's unsatisfied reads as incoming reads.
 	 */
 	@Test
-	void leftJoinConditionReadIsInvisibleToJoinCommutation() throws Exception {
+	void leftJoinConditionReadBlocksJoinCommutation() throws Exception {
 		TupleExpr original = parseTupleExpr("leftjoin-condition-blind-spot.json");
 		TupleExpr transformed = commuteTopLevelJoin(original);
 		EvaluationCase dataset = parseDataset("leftjoin-condition-blind-spot.nt",
@@ -93,18 +86,17 @@ class JsonTupleExprFalseEquivalenceTest {
 
 		CheckOptions options = checkOptions(dataset);
 		assertDatasetIsVerifiedWitness(options, original, transformed);
-		assertFalseEquivalentByJoinCommutation(options, original, transformed);
+		assertNotEquivalentWithVerifiedCounterexample(options, original, transformed);
 	}
 
 	/**
 	 * The Extension re-binds {@code ?x}, a variable the sibling join operand also binds. {@code ExtensionIterator}
 	 * overwrites incoming bindings, so join order decides whether the statement pattern is probed with the data value
-	 * or with the overwritten constant — but {@code IncomingBindingAnalyzer.orderIsObservableAcrossOperands} only
-	 * models reads and discards, never writes, so the checker proves a false {@code EQUIVALENT}. The difference is
-	 * visible even under {@code ASK}: one row versus none.
+	 * or with the overwritten constant — the analyzer must treat written names that overlap a sibling's may-bind set as
+	 * order-observable. The difference is visible even under {@code ASK}: one row versus none.
 	 */
 	@Test
-	void extensionOverwriteIsInvisibleToJoinCommutation() throws Exception {
+	void extensionOverwriteBlocksJoinCommutation() throws Exception {
 		TupleExpr original = parseTupleExpr("extension-overwrite-blind-spot.json");
 		TupleExpr transformed = commuteTopLevelJoin(original);
 		EvaluationCase dataset = parseDataset("extension-overwrite-blind-spot.nt",
@@ -133,7 +125,7 @@ class JsonTupleExprFalseEquivalenceTest {
 
 		CheckOptions options = checkOptions(dataset);
 		assertDatasetIsVerifiedWitness(options, original, transformed);
-		assertFalseEquivalentByJoinCommutation(options, original, transformed);
+		assertNotEquivalentWithVerifiedCounterexample(options, original, transformed);
 	}
 
 	private static CheckOptions checkOptions(EvaluationCase dataset) {
@@ -153,20 +145,12 @@ class JsonTupleExprFalseEquivalenceTest {
 				() -> "the bundled dataset should be a verified witness of non-equivalence: " + search.getReason());
 	}
 
-	private static void assertFalseEquivalentByJoinCommutation(CheckOptions options, TupleExpr original,
+	private static void assertNotEquivalentWithVerifiedCounterexample(CheckOptions options, TupleExpr original,
 			TupleExpr transformed) {
 		EquivalenceResult result = new AlgebraEquivalenceChecker(options).check(original, transformed);
 
-		// DEFECT UNDER TEST: the verdict contradicts the verified runtime counterexample above. Flip this to
-		// NOT_EQUIVALENT once IncomingBindingAnalyzer models LeftJoin-condition reads and Extension writes.
-		assertEquals(EquivalenceStatus.EQUIVALENT, result.getStatus(), result::getReason);
-		NormalizationProof proof = assertInstanceOf(NormalizationProof.class, result.getEvidence().orElseThrow());
-		assertTrue(
-				proof.getOriginalSteps().stream().anyMatch(step -> step.getRule() == RuleId.JOIN_COMMUTATIVE)
-						|| proof.getCandidateSteps()
-								.stream()
-								.anyMatch(step -> step.getRule() == RuleId.JOIN_COMMUTATIVE),
-				() -> "Expected the unsound JOIN_COMMUTATIVE proof: " + result);
+		assertEquals(EquivalenceStatus.NOT_EQUIVALENT, result.getStatus(), result::getReason);
+		assertInstanceOf(Counterexample.class, result.getEvidence().orElseThrow());
 	}
 
 	private static TupleExpr commuteTopLevelJoin(TupleExpr expression) {
@@ -193,7 +177,7 @@ class JsonTupleExprFalseEquivalenceTest {
 	}
 
 	private static InputStream resource(String resourceName) {
-		InputStream input = JsonTupleExprFalseEquivalenceTest.class
+		InputStream input = JsonTupleExprSoundnessRegressionTest.class
 				.getResourceAsStream(RESOURCE_ROOT + resourceName);
 		if (input == null) {
 			throw new IllegalArgumentException("Missing test resource: " + resourceName);
