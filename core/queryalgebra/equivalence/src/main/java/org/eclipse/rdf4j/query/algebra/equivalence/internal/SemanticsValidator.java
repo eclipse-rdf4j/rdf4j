@@ -86,12 +86,17 @@ public final class SemanticsValidator {
 				}
 				if (node instanceof BindingSetAssignment assignment) {
 					Iterable<BindingSet> rows = assignment.getBindingSets();
-					if (rows != null) {
-						for (BindingSet row : rows) {
-							for (String name : row.getBindingNames()) {
-								if (rejectValue(row.getValue(name))) {
-									return;
-								}
+					if (rows == null) {
+						// Evaluating such a node fails at precompile time, so no algebraic proof
+						// about it can be checked against runtime behaviour.
+						problem[0] = "BindingSetAssignment has no binding sets: evaluation would fail before "
+								+ "producing a result";
+						return;
+					}
+					for (BindingSet row : rows) {
+						for (String name : row.getBindingNames()) {
+							if (rejectValue(row.getValue(name))) {
+								return;
 							}
 						}
 					}

@@ -206,11 +206,19 @@ final class BindingAnalyzer {
 		Iterator<BindingSet> iterator = source.iterator();
 		while (iterator.hasNext()) {
 			BindingSet row = iterator.next();
-			may.addAll(row.getBindingNames());
+			// A name with a null value is a declared-but-UNDEF column: it binds nothing, and
+			// counting it would make equal rows that represent UNDEF differently analyze apart.
+			Set<String> rowNames = new LinkedHashSet<>();
+			for (String name : row.getBindingNames()) {
+				if (row.getValue(name) != null) {
+					rowNames.add(name);
+				}
+			}
+			may.addAll(rowNames);
 			if (must == null) {
-				must = new LinkedHashSet<>(row.getBindingNames());
+				must = new LinkedHashSet<>(rowNames);
 			} else {
-				must.retainAll(row.getBindingNames());
+				must.retainAll(rowNames);
 			}
 		}
 		return new BindingInfo(may, must == null ? Collections.emptySet() : must);

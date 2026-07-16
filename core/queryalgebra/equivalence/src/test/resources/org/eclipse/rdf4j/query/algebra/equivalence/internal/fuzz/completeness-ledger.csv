@@ -17,7 +17,7 @@ random-15,values-unset-rows,UNKNOWN
 random-16,json-round-trip,EQUIVALENT
 random-17,scope-flag-toggle,UNKNOWN
 random-18,values-column-reorder+join-commute,UNKNOWN
-random-19,slice-jitter+values-unset-rows,NOT_EQUIVALENT
+random-19,slice-jitter+values-unset-rows,UNKNOWN
 random-20,slice-jitter,UNKNOWN
 random-21,extension-overwrite-inject+distinct-wrap,UNKNOWN
 random-22,json-round-trip,EQUIVALENT

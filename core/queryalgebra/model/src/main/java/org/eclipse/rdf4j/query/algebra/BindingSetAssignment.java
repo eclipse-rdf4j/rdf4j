@@ -67,7 +67,7 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 		Set<String> assured = null;
 		if (bindingSets != null) {
 			for (BindingSet bindingSet : bindingSets) {
-				Set<String> rowNames = bindingSet.getBindingNames();
+				Set<String> rowNames = boundNames(bindingSet);
 				possible.addAll(rowNames);
 				if (assured == null) {
 					assured = new LinkedHashSet<>(rowNames);
@@ -80,6 +80,21 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 		possibleBindingNames = possible.isEmpty() ? Collections.emptySet() : Collections.unmodifiableSet(possible);
 		assuredBindingNames = assured == null || assured.isEmpty() ? Collections.emptySet()
 				: Collections.unmodifiableSet(assured);
+	}
+
+	/**
+	 * A row can carry a declared-but-UNDEF column as a name with a null value (e.g. a parser-built ListBindingSet);
+	 * such a column binds nothing, so it must not count as a possible or assured name — otherwise two equal rows that
+	 * merely represent UNDEF differently would disagree on the derived names.
+	 */
+	private static Set<String> boundNames(BindingSet row) {
+		Set<String> names = new LinkedHashSet<>();
+		for (String name : row.getBindingNames()) {
+			if (row.getValue(name) != null) {
+				names.add(name);
+			}
+		}
+		return names;
 	}
 
 	@Override
