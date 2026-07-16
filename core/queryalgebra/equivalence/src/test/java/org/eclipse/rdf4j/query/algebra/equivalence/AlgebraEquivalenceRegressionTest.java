@@ -29,12 +29,14 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
@@ -420,6 +422,27 @@ class AlgebraEquivalenceRegressionTest {
 				() -> runtimeCheckerWithEmptyCase().check(original, candidate));
 
 		assertEquals(EquivalenceStatus.EQUIVALENT, result.getStatus(), result::getReason);
+	}
+
+	@Test
+	void filterPushIntoLeftJoinKeepsTheScopeBoundary() {
+		// Trees differing ONLY in the LeftJoin's variableScopeChange flag must not canonicalize
+		// identically: the flag decides whether incoming bindings flow into the OPTIONAL, and the
+		// filter push-down used to erase it.
+		EquivalenceResult result = runtimeCheckerWithEmptyCase().check(
+				filteredLeftJoin(true),
+				filteredLeftJoin(false));
+
+		assertNotEquals(EquivalenceStatus.EQUIVALENT, result.getStatus(), result::getReason);
+	}
+
+	private static Filter filteredLeftJoin(boolean scopeBoundary) {
+		LeftJoin leftJoin = new LeftJoin(pattern("a", P1, "x"), pattern("a", P2, "c"));
+		leftJoin.setVariableScopeChange(scopeBoundary);
+		return new Filter(leftJoin, new Compare(
+				Var.of("x"),
+				new ValueConstant(VF.createLiteral(5)),
+				Compare.CompareOp.GT));
 	}
 
 	@Test
