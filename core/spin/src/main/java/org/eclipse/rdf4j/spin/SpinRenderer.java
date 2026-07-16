@@ -1208,7 +1208,11 @@ public class SpinRenderer {
 			Resource bindingList = valueFactory.createBNode();
 			handler.handleStatement(valueFactory.createStatement(subject, SP.BINDINGS_PROPERTY, bindingList));
 			ListContext bindingCtx = newList(bindingList);
-			List<String> bindingVars = new ArrayList<>(node.getBindingNames());
+			// Prefer the declared VALUES header: derived binding names omit columns that are UNDEF
+			// in every row, which would silently drop the column from the rendered form.
+			List<String> bindingVars = new ArrayList<>(node.getDeclaredBindingNames().isEmpty()
+					? node.getBindingNames()
+					: node.getDeclaredBindingNames());
 			for (BindingSet bs : node.getBindingSets()) {
 				listEntry();
 				ListContext setCtx = newList(subject);
