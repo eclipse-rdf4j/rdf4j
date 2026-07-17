@@ -336,12 +336,14 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	 */
 	@Override
 	public TupleExpr optimize(TupleExpr expr, EvaluationStatistics evaluationStatistics, BindingSet bindings) {
-		QueryEvaluationUtility.pinFunctions(expr);
-
-		for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
-			optimizer.optimize(expr, dataset, bindings);
-		}
-		return expr;
+		boolean ignoreFunctionRepeatability = getQueryEvaluationMode() != QueryEvaluationMode.STRICT;
+		return QueryEvaluationUtility.withFunctionRepeatabilityPolicy(ignoreFunctionRepeatability, () -> {
+			QueryEvaluationUtility.pinFunctions(expr, ignoreFunctionRepeatability);
+			for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
+				optimizer.optimize(expr, dataset, bindings);
+			}
+			return expr;
+		});
 	}
 
 	@Deprecated(forRemoval = true) // this method is still in use and I think that there is quite a lot of work left

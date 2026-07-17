@@ -23,9 +23,11 @@ import static org.mockito.Mockito.verify;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -36,14 +38,23 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
+import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Sample;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
@@ -55,6 +66,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.hash.MD5;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.spoof.UnmarkedSpoofFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryModelNormalizerOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
@@ -112,6 +124,158 @@ public class StrictEvaluationStrategyTest {
 		strategy.optimize(expr, stats, bindings);
 		verify(optimizer1, times(1)).optimize(expr, null, bindings);
 		verify(optimizer2, times(1)).optimize(expr, null, bindings);
+	}
+
+	@Test
+	public void nonStrictEvaluationOptimizesNonRepeatableFunctions() {
+		FunctionCall first = new FunctionCall("RAND");
+		Filter filter = new Filter(new SingletonSet(), new Or(first, first.clone()));
+		QueryRoot query = new QueryRoot(filter);
+		strategy.setQueryEvaluationMode(QueryEvaluationMode.STANDARD);
+		strategy.setOptimizerPipeline(() -> List.of(new QueryModelNormalizerOptimizer()));
+
+		strategy.optimize(query, new EvaluationStatistics(), EmptyBindingSet.getInstance());
+
+		assertThat(filter.getCondition()).isInstanceOf(FunctionCall.class);
+	}
+
+	@Test
+	public void nonStrictEvaluationOptimizesNonRepeatableFunctionsCreatedByOptimizers() {
+		Filter filter = new Filter(new SingletonSet(),
+				new ValueConstant(SimpleValueFactory.getInstance().createLiteral(true)));
+		QueryRoot query = new QueryRoot(filter);
+		QueryOptimizer functionCreatingOptimizer = (tupleExpr, dataset, bindings) -> {
+			FunctionCall first = new FunctionCall("RAND");
+			filter.setCondition(new Or(first, first.clone()));
+		};
+		strategy.setQueryEvaluationMode(QueryEvaluationMode.STANDARD);
+		strategy.setOptimizerPipeline(
+				() -> List.of(functionCreatingOptimizer, new QueryModelNormalizerOptimizer()));
+
+		strategy.optimize(query, new EvaluationStatistics(), EmptyBindingSet.getInstance());
+
+		assertThat(filter.getCondition()).isInstanceOf(FunctionCall.class);
+	}
+
+	@Test
+	public void nonStrictEvaluationOptimizesDetachedFunctionsCreatedByOptimizers() {
+		ValueExpr[] optimizedCondition = new ValueExpr[1];
+		QueryOptimizer detachedFunctionOptimizer = (tupleExpr, dataset, bindings) -> {
+			FunctionCall first = new FunctionCall("RAND");
+			Filter detached = new Filter(new SingletonSet(), new Or(first, first.clone()));
+			new QueryModelNormalizerOptimizer().optimize(detached, dataset, bindings);
+			optimizedCondition[0] = detached.getCondition();
+		};
+		strategy.setQueryEvaluationMode(QueryEvaluationMode.STANDARD);
+		strategy.setOptimizerPipeline(() -> List.of(detachedFunctionOptimizer));
+
+		strategy.optimize(new QueryRoot(new SingletonSet()), new EvaluationStatistics(),
+				EmptyBindingSet.getInstance());
+
+		assertThat(optimizedCondition[0]).isInstanceOf(FunctionCall.class);
+		assertThat(QueryEvaluationUtility.isRepeatable(new FunctionCall("RAND"))).isFalse();
+	}
+
+	@Test
+	public void strictEvaluationKeepsNonRepeatableFunctionBarrier() {
+		FunctionCall first = new FunctionCall("RAND");
+		Filter filter = new Filter(new SingletonSet(), new Or(first, first.clone()));
+		QueryRoot query = new QueryRoot(filter);
+		strategy.setOptimizerPipeline(() -> List.of(new QueryModelNormalizerOptimizer()));
+
+		strategy.optimize(query, new EvaluationStatistics(), EmptyBindingSet.getInstance());
+
+		assertThat(filter.getCondition()).isInstanceOf(Or.class);
+	}
+
+	@Test
+	public void nonStrictEvaluationOptimizesBNodeGenerators() {
+		BNodeGenerator first = new BNodeGenerator();
+		Filter filter = new Filter(new SingletonSet(), new Or(first, first.clone()));
+		QueryRoot query = new QueryRoot(filter);
+		strategy.setQueryEvaluationMode(QueryEvaluationMode.STANDARD);
+		strategy.setOptimizerPipeline(() -> List.of(new QueryModelNormalizerOptimizer()));
+
+		strategy.optimize(query, new EvaluationStatistics(), EmptyBindingSet.getInstance());
+
+		assertThat(filter.getCondition()).isInstanceOf(BNodeGenerator.class);
+	}
+
+	@Test
+	public void nonStrictEvaluationOptimizesNonRepeatableAggregates() {
+		Sample first = new Sample(Var.of("sample"));
+		Filter sampleFilter = new Filter(new SingletonSet(), new Or(first, first.clone()));
+		AggregateFunctionCall aggregate = new AggregateFunctionCall(List.of(Var.of("aggregate")),
+				"urn:test:aggregate", false);
+		Filter aggregateFilter = new Filter(sampleFilter, new Or(aggregate, aggregate.clone()));
+		QueryRoot query = new QueryRoot(aggregateFilter);
+		strategy.setQueryEvaluationMode(QueryEvaluationMode.STANDARD);
+		strategy.setOptimizerPipeline(() -> List.of(new QueryModelNormalizerOptimizer()));
+
+		strategy.optimize(query, new EvaluationStatistics(), EmptyBindingSet.getInstance());
+
+		assertThat(sampleFilter.getCondition()).isInstanceOf(Sample.class);
+		assertThat(aggregateFilter.getCondition()).isInstanceOf(AggregateFunctionCall.class);
+	}
+
+	@Test
+	public void nonStrictEvaluationOptimizesTupleFunctions() {
+		TupleFunctionCall function = new TupleFunctionCall();
+		function.setURI("urn:test:tuple-function");
+		function.addResultVar(Var.of("result"));
+		Join join = new Join(new Union(statementPattern("left"), statementPattern("right")), function);
+		QueryRoot query = new QueryRoot(join);
+		strategy.setQueryEvaluationMode(QueryEvaluationMode.STANDARD);
+		strategy.setOptimizerPipeline(() -> List.of(new QueryModelNormalizerOptimizer()));
+
+		strategy.optimize(query, new EvaluationStatistics(), EmptyBindingSet.getInstance());
+
+		assertThat(query.getArg()).isInstanceOf(Union.class);
+	}
+
+	@Test
+	public void nonStrictEvaluationKeepsServiceRepeatabilityBarrier() {
+		Service service = new Service(Var.of("service"), new SingletonSet(), "{ VALUES ?x { 1 } }", Map.of(), null,
+				false);
+		Join join = new Join(new Union(statementPattern("left"), statementPattern("right")), service);
+		QueryRoot query = new QueryRoot(join);
+		strategy.setQueryEvaluationMode(QueryEvaluationMode.STANDARD);
+		strategy.setOptimizerPipeline(() -> List.of(new QueryModelNormalizerOptimizer()));
+
+		strategy.optimize(query, new EvaluationStatistics(), EmptyBindingSet.getInstance());
+
+		assertThat(query.getArg()).isSameAs(join);
+	}
+
+	@Test
+	public void queryModeRetaggingOverridesClonedFunctionMetadata() {
+		FunctionCall first = new FunctionCall("RAND");
+		Filter filter = new Filter(new SingletonSet(), new Or(first, first.clone()));
+		QueryRoot query = new QueryRoot(filter);
+		strategy.setQueryEvaluationMode(QueryEvaluationMode.STANDARD);
+		strategy.setOptimizerPipeline(List::of);
+		strategy.optimize(query, new EvaluationStatistics(), EmptyBindingSet.getInstance());
+
+		filter.setCondition(filter.getCondition().clone());
+		strategy.setQueryEvaluationMode(QueryEvaluationMode.STRICT);
+		strategy.setOptimizerPipeline(() -> List.of(new QueryModelNormalizerOptimizer()));
+		strategy.optimize(query, new EvaluationStatistics(), EmptyBindingSet.getInstance());
+
+		assertThat(filter.getCondition()).isInstanceOf(Or.class);
+	}
+
+	@Test
+	public void nonStrictEvaluationDoesNotConstantFoldNonRepeatableFunctions() {
+		strategy.setQueryEvaluationMode(QueryEvaluationMode.STANDARD);
+
+		QueryValueEvaluationStep step = strategy.precompile(new FunctionCall("RAND"),
+				new QueryEvaluationContext.Minimal(null));
+
+		assertThat(step.isConstant()).isFalse();
+	}
+
+	private static StatementPattern statementPattern(String suffix) {
+		return new StatementPattern(Var.of("s" + suffix), Var.of("p" + suffix), Var.of("o" + suffix));
 	}
 
 	@Test

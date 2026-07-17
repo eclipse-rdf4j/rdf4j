@@ -36,7 +36,9 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Sample;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
@@ -186,6 +188,16 @@ public class QueryEvaluationUtilityTest {
 				"urn:test:aggregate-function", false);
 
 		assertFalse(QueryEvaluationUtility.isRepeatable(call));
+	}
+
+	@Test
+	public void outerStrictConfigurationOverridesStaleStandardFunctionMetadata() {
+		FunctionCall staleStandardCall = QueryEvaluationUtility.pinFunctions(new FunctionCall("RAND"), true);
+		Filter strictFilter = new Filter(new SingletonSet(), new ValueConstant(f.createLiteral(true)));
+		QueryEvaluationUtility.pinFunctions(strictFilter, false);
+		strictFilter.setCondition(staleStandardCall);
+
+		assertFalse(QueryEvaluationUtility.isRepeatable(new QueryRoot(strictFilter)));
 	}
 
 	@Test
