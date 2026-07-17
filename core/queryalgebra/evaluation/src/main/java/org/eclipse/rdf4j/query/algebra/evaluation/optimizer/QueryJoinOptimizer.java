@@ -401,6 +401,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			// Copy input into a mutable list
 			List<TupleExpr> tupleExprs = new ArrayList<>(orderedJoinArgs);
 			Deque<TupleExpr> ret = new ArrayDeque<>();
+			Set<String> availableBindings = new HashSet<>(initiallyBoundVars);
 
 			// Memo table: for each (a, b), stores statistics.getCardinality(new Join(a,b))
 			Map<TupleExpr, Map<TupleExpr, Double>> cardCache = new HashMap<>();
@@ -422,27 +423,33 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			while (!tupleExprs.isEmpty()) {
 				if (ret.isEmpty()) {
-					TupleExpr bestStart = selectBestStartingExpr(tupleExprs, getCard);
+					TupleExpr bestStart = selectBestStartingExpr(tupleExprs, getCard, availableBindings);
 					if (bestStart != null) {
 						tupleExprs.remove(bestStart);
 						ret.addLast(bestStart);
+						availableBindings.addAll(bestStart.getBindingNames());
 						continue;
 					}
 				}
 
 				// If ret is empty or next isn’t a StatementPattern, just drain in original order
 				if (ret.isEmpty() || !(tupleExprs.getFirst() instanceof StatementPattern)) {
-					ret.addLast(tupleExprs.removeFirst());
+					TupleExpr next = tupleExprs.removeFirst();
+					ret.addLast(next);
+					availableBindings.addAll(next.getBindingNames());
 					continue;
 				}
 
 				// Find the tupleExpr in tupleExprs whose join with any in ret has minimal cardinality
 				TupleExpr bestCandidate = null;
 				double bestCost = Double.MAX_VALUE;
+				boolean bestCandidateUsesExistingBinding = false;
 				for (TupleExpr cand : tupleExprs) {
 					if (!statementPatternWithMinimumOneConstant(cand)) {
 						continue;
 					}
+					boolean candidateUsesExistingBinding = usesExistingBinding(cand,
+							((StatementPattern) cand).getVarList(), availableBindings);
 
 					// compute the minimum join‐cost between cand and anything in ret
 					for (TupleExpr prev : ret) {
@@ -450,9 +457,13 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 							continue;
 						}
 						double cost = getCard.apply(prev, cand);
-						if (cost < bestCost) {
+						if (bestCandidate == null
+								|| (candidateUsesExistingBinding && !bestCandidateUsesExistingBinding)
+								|| (candidateUsesExistingBinding == bestCandidateUsesExistingBinding
+										&& cost < bestCost)) {
 							bestCost = cost;
 							bestCandidate = cand;
+							bestCandidateUsesExistingBinding = candidateUsesExistingBinding;
 						}
 					}
 				}
@@ -461,8 +472,11 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				if (bestCandidate != null) {
 					tupleExprs.remove(bestCandidate);
 					ret.addLast(bestCandidate);
+					availableBindings.addAll(bestCandidate.getBindingNames());
 				} else {
-					ret.addLast(tupleExprs.removeFirst());
+					TupleExpr next = tupleExprs.removeFirst();
+					ret.addLast(next);
+					availableBindings.addAll(next.getBindingNames());
 				}
 			}
 
@@ -539,7 +553,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		private TupleExpr selectBestStartingExpr(List<TupleExpr> tupleExprs,
-				BiFunction<TupleExpr, TupleExpr, Double> getCard) {
+				BiFunction<TupleExpr, TupleExpr, Double> getCard, Set<String> existingBindings) {
 			List<TupleExpr> candidates = new ArrayList<>();
 			for (TupleExpr tupleExpr : tupleExprs) {
 				if (statementPatternWithMinimumOneConstant(tupleExpr)) {
@@ -557,7 +571,16 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				singleCard.put(candidate, statistics.getCardinality(candidate));
 			}
 
-			List<TupleExpr> primary = new ArrayList<>(candidates);
+			List<TupleExpr> primary = new ArrayList<>();
+			for (TupleExpr candidate : candidates) {
+				if (usesExistingBinding(candidate, ((StatementPattern) candidate).getVarList(), existingBindings)) {
+					primary.add(candidate);
+				}
+			}
+			boolean preferExistingBinding = !primary.isEmpty();
+			if (!preferExistingBinding) {
+				primary.addAll(candidates);
+			}
 			if (primary.size() > FULL_PAIRWISE_START_LIMIT) {
 				primary.sort(Comparator.comparingDouble(singleCard::get));
 				primary = new ArrayList<>(primary.subList(0, Math.min(3, primary.size())));
@@ -588,6 +611,11 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			double cardA = singleCard.get(bestA);
 			double cardB = singleCard.get(bestB);
+
+			if (preferExistingBinding
+					&& !usesExistingBinding(bestB, ((StatementPattern) bestB).getVarList(), existingBindings)) {
+				return bestA;
+			}
 
 			return cardA <= cardB ? bestA : bestB;
 		}
@@ -899,9 +927,13 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		private boolean usesExistingBinding(TupleExpr tupleExpr, List<Var> vars) {
+			return usesExistingBinding(tupleExpr, vars, boundVars);
+		}
+
+		private boolean usesExistingBinding(TupleExpr tupleExpr, List<Var> vars, Set<String> existingBindings) {
 			if (vars != null && !vars.isEmpty()) {
 				for (Var var : vars) {
-					if (!var.hasValue() && var.getName() != null && boundVars.contains(var.getName())) {
+					if (!var.hasValue() && var.getName() != null && existingBindings.contains(var.getName())) {
 						return true;
 					}
 				}
@@ -909,7 +941,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 
 			for (String bindingName : tupleExpr.getBindingNames()) {
-				if (boundVars.contains(bindingName)) {
+				if (existingBindings.contains(bindingName)) {
 					return true;
 				}
 			}

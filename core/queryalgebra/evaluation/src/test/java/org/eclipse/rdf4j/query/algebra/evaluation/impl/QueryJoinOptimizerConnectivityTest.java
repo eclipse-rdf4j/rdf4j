@@ -19,11 +19,13 @@ import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
@@ -51,6 +53,58 @@ public class QueryJoinOptimizerConnectivityTest {
 		assertThat(order).containsExactly("ex:pAnchor", "ex:pConnected", "ex:pDisconnected");
 	}
 
+	@Test
+	public void joinEstimationDoesNotReintroduceCheaperCrossJoin() {
+		String query = String.join("\n",
+				"PREFIX ex: <ex:>",
+				"SELECT * WHERE {",
+				"  ?root ex:pAnchor ?shared .",
+				"  ?shared ex:pConnected ?next .",
+				"  ?other ex:pDisconnected ?value .",
+				"}");
+
+		ParsedQuery parsedQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		QueryRoot root = new QueryRoot(parsedQuery.getTupleExpr());
+		new QueryJoinOptimizer(new MisleadingJoinStatistics(), new EmptyTripleSource()).optimize(root, null, null);
+
+		List<String> order = joinArgs(root).stream()
+				.map(QueryJoinOptimizerConnectivityTest::predicate)
+				.collect(Collectors.toList());
+
+		assertThat(order)
+				.as("join estimation must prefer a connected expression over a cheaper cross join")
+				.containsExactly("ex:pAnchor", "ex:pConnected", "ex:pDisconnected");
+	}
+
+	@Test
+	public void joinEstimationUsesBindingsInheritedByLateral() {
+		String query = String.join("\n",
+				"PREFIX ex: <ex:>",
+				"SELECT * WHERE {",
+				"  ?s ex:pOuter ?o .",
+				"  LATERAL {",
+				"    ?s ex:pBound ?shared .",
+				"    ?shared ex:pConnected ?next .",
+				"    ?other ex:pDisconnected ?value .",
+				"  }",
+				"}");
+
+		ParsedQuery parsedQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		QueryRoot root = new QueryRoot(parsedQuery.getTupleExpr());
+		new QueryJoinOptimizer(new InheritedBindingJoinStatistics(), new EmptyTripleSource()).optimize(root, null,
+				null);
+
+		LateralFinder finder = new LateralFinder();
+		root.visit(finder);
+		List<String> order = joinArgs(finder.getLateral().getRightArg()).stream()
+				.map(QueryJoinOptimizerConnectivityTest::predicate)
+				.collect(Collectors.toList());
+
+		assertThat(order)
+				.as("join estimation must retain a connection to bindings inherited by the lateral scope")
+				.containsExactly("ex:pBound", "ex:pConnected", "ex:pDisconnected");
+	}
+
 	private static List<TupleExpr> joinArgs(TupleExpr tupleExpr) {
 		List<TupleExpr> args = new ArrayList<>();
 		collectJoinArgs(tupleExpr, args);
@@ -72,6 +126,10 @@ public class QueryJoinOptimizerConnectivityTest {
 		return ((StatementPattern) tupleExpr).getPredicateVar().getValue().stringValue();
 	}
 
+	private static boolean isPair(String left, String right, String first, String second) {
+		return left.equals(first) && right.equals(second) || left.equals(second) && right.equals(first);
+	}
+
 	private static final class ConnectedJoinStatistics extends EvaluationStatistics {
 
 		@Override
@@ -85,6 +143,95 @@ public class QueryJoinOptimizerConnectivityTest {
 				};
 			}
 			return super.getCardinality(tupleExpr);
+		}
+	}
+
+	private static final class MisleadingJoinStatistics extends EvaluationStatistics {
+
+		@Override
+		public boolean supportsJoinEstimation() {
+			return true;
+		}
+
+		@Override
+		public double getCardinality(TupleExpr tupleExpr) {
+			if (tupleExpr instanceof StatementPattern) {
+				return switch (predicate(tupleExpr)) {
+				case "ex:pAnchor" -> 1;
+				case "ex:pConnected" -> 10_000;
+				case "ex:pDisconnected" -> 10;
+				default -> throw new AssertionError("Unexpected predicate: " + predicate(tupleExpr));
+				};
+			}
+			if (tupleExpr instanceof Join join) {
+				String left = predicate(join.getLeftArg());
+				String right = predicate(join.getRightArg());
+				if (isPair(left, right, "ex:pAnchor", "ex:pDisconnected")) {
+					return 2;
+				}
+				if (isPair(left, right, "ex:pConnected", "ex:pDisconnected")) {
+					return 3;
+				}
+				if (isPair(left, right, "ex:pAnchor", "ex:pConnected")) {
+					return 100;
+				}
+				throw new AssertionError("Unexpected join pair: " + left + ", " + right);
+			}
+			return super.getCardinality(tupleExpr);
+		}
+
+	}
+
+	private static final class InheritedBindingJoinStatistics extends EvaluationStatistics {
+
+		@Override
+		public boolean supportsJoinEstimation() {
+			return true;
+		}
+
+		@Override
+		public double getCardinality(TupleExpr tupleExpr) {
+			if (tupleExpr instanceof StatementPattern) {
+				return switch (predicate(tupleExpr)) {
+				case "ex:pOuter" -> 1;
+				case "ex:pBound" -> 100;
+				case "ex:pConnected" -> 10_000;
+				case "ex:pDisconnected" -> 10;
+				default -> throw new AssertionError("Unexpected predicate: " + predicate(tupleExpr));
+				};
+			}
+			if (tupleExpr instanceof Join join) {
+				String left = predicate(join.getLeftArg());
+				String right = predicate(join.getRightArg());
+				if (isPair(left, right, "ex:pBound", "ex:pDisconnected")) {
+					return 2;
+				}
+				if (isPair(left, right, "ex:pConnected", "ex:pDisconnected")) {
+					return 3;
+				}
+				if (isPair(left, right, "ex:pBound", "ex:pConnected")) {
+					return 100;
+				}
+				throw new AssertionError("Unexpected join pair: " + left + ", " + right);
+			}
+			return super.getCardinality(tupleExpr);
+		}
+	}
+
+	private static final class LateralFinder extends AbstractQueryModelVisitor<RuntimeException> {
+
+		private Lateral lateral;
+
+		@Override
+		public void meet(Lateral lateral) {
+			this.lateral = lateral;
+		}
+
+		private Lateral getLateral() {
+			if (lateral == null) {
+				throw new AssertionError("Expected a lateral expression");
+			}
+			return lateral;
 		}
 	}
 }
