@@ -10,7 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.rio;
 
-import java.io.*;
+import java.io.IOException;
+import java.io.InputStream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
