@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.http.server.repository;
 
 import static jakarta.servlet.http.HttpServletResponse.SC_INTERNAL_SERVER_ERROR;
 import static jakarta.servlet.http.HttpServletResponse.SC_OK;
-import static jakarta.servlet.http.HttpServletResponse.SC_SERVICE_UNAVAILABLE;
 
 import java.io.IOException;
 import java.io.OutputStream;
