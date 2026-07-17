@@ -13,9 +13,7 @@ package org.eclipse.rdf4j.testsuite.rio.trig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.nquads.NQuadsParser;
-import org.eclipse.rdf4j.rio.ntriples.NTriplesParser;
 import org.eclipse.rdf4j.rio.trig.TriGParser;
-import org.eclipse.rdf4j.rio.turtle.TurtleParser;
 import org.eclipse.rdf4j.testsuite.rio.AbstractParserTestSuite;
 
 /**
