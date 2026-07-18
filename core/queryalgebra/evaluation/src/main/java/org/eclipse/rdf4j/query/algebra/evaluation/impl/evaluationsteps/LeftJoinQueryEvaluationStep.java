@@ -65,11 +65,14 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		// evaluates each operand independently, so the bind join is permitted only when re-evaluation is
 		// observationally equivalent (replay-stable — no fresh UUID/BNODE identities or other volatile
 		// outcomes) AND pushing the left bindings in cannot be observed (the binding-injection contract).
-		// Otherwise the right operand is evaluated exactly once and replayed.
+		// Otherwise the right operand is evaluated exactly once and replayed. Mapping-parameterized operands
+		// (property paths, SERVICE, extension operators) are exempt: correlated per-input evaluation is their
+		// defined semantics (GH-3053), so they always keep the bind-join path.
 		TupleExpr rightArg = leftJoin.getRightArg();
-		boolean safeForBoundEvaluation = QueryEvaluationUtility.isRepeatable(rightArg)
-				&& QueryEvaluationUtility.permitsBindingInjection(rightArg,
-						leftJoin.getLeftArg().getBindingNames());
+		boolean safeForBoundEvaluation = QueryEvaluationUtility.usesMappingParameterizedEvaluation(rightArg)
+				|| (QueryEvaluationUtility.isRepeatable(rightArg)
+						&& QueryEvaluationUtility.permitsBindingInjection(rightArg,
+								leftJoin.getLeftArg().getBindingNames()));
 		if (!safeForBoundEvaluation) {
 			QueryValueEvaluationStep scopedCondition = leftJoin.hasCondition()
 					? new ScopedQueryValueEvaluationStep(leftJoin.getBindingNames(),

@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.query.algebra.Sample;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -331,11 +332,13 @@ public class QueryEvaluationUtility {
 	 * per-variable one: {@code FILTER(!BOUND(?x) || !BOUND(?y))} is safe for {?x} alone and for {?y} alone but not for
 	 * {?x,?y} — so callers must ask about the exact set they intend to inject and must never union per-variable
 	 * answers. This initial analysis is conservative: it permits injection only into positive pattern shapes (statement
-	 * patterns, property paths, joins, unions, nested optionals, VALUES) where injected names act purely as
-	 * pattern-variable selections, and rejects the subtree outright when any expression reads an injected name or any
-	 * BIND target collides with one (an {@code Extend} whose target is pre-bound is undefined in the algebra and
-	 * RDF4J's evaluation would overwrite it). Every conservative rejection is a candidate for later refinement, not a
-	 * semantic claim.
+	 * patterns, joins, unions, nested optionals, VALUES) where injected names act purely as pattern-variable
+	 * selections, and rejects the subtree outright when any expression reads an injected name that the subtree does not
+	 * assuredly bind, when any BIND target collides with one (an {@code Extend} whose target is pre-bound is undefined
+	 * in the algebra and RDF4J's evaluation would overwrite it), and for mapping-parameterized operators such as
+	 * property paths, whose seeded evaluation observably differs from independent evaluation (see
+	 * {@link #usesMappingParameterizedEvaluation(TupleExpr)}). Every conservative rejection is a candidate for later
+	 * refinement, not a semantic claim.
 	 */
 	public static boolean permitsBindingInjection(TupleExpr subtree, Set<String> injectedNames) {
 		if (injectedNames.isEmpty()) {
@@ -344,6 +347,65 @@ public class QueryEvaluationUtility {
 		BindingInjectionCollector collector = new BindingInjectionCollector(injectedNames);
 		subtree.visit(collector);
 		return collector.safe;
+	}
+
+	/**
+	 * Returns whether the subtree contains an operator whose RDF4J evaluation is intentionally a function of the input
+	 * mapping (mapping-parameterized): zero-length and arbitrary-length property paths (GH-3053 — an endpoint bound by
+	 * another part of the query matches itself even when the term does not occur in the graph), SERVICE (evaluated
+	 * through the federated-service pipeline, which receives the input bindings), LATERAL (per-left-row evaluation by
+	 * definition), triple-reference patterns (whose seeded and unseeded physical evaluations are not established as
+	 * equivalent), and tuple-function or other non-standard extension operators (whose SPI receives the input
+	 * bindings). For such subtrees the correlated per-input evaluation IS the defined semantics — "independent
+	 * evaluation plus compatible-mapping join" is not an equivalent baseline — so physical strategies must keep the
+	 * correlated evaluation path and must never reroute these subtrees through independent-evaluation replay.
+	 */
+	public static boolean usesMappingParameterizedEvaluation(TupleExpr subtree) {
+		MappingParameterizedCollector collector = new MappingParameterizedCollector();
+		subtree.visit(collector);
+		return collector.mappingParameterized;
+	}
+
+	private static final class MappingParameterizedCollector extends AbstractQueryModelVisitor<RuntimeException> {
+
+		private boolean mappingParameterized;
+
+		@Override
+		public void meet(ZeroLengthPath node) {
+			mappingParameterized = true;
+		}
+
+		@Override
+		public void meet(ArbitraryLengthPath node) {
+			mappingParameterized = true;
+		}
+
+		@Override
+		public void meet(Service node) {
+			mappingParameterized = true;
+		}
+
+		@Override
+		public void meet(Lateral node) {
+			// LATERAL's per-left-row evaluation is its defining semantics
+			mappingParameterized = true;
+		}
+
+		@Override
+		public void meet(TripleRef node) {
+			// TripleRef/ReifiedTripleRef evaluation dispatches on which input variables carry values (a bound
+			// triple/reifier is decomposed; unbound patterns enumerate) — the seeded and unseeded physical
+			// evaluations are not established as observationally equivalent, so the correlated path is kept.
+			// Refinement candidate: prove seeded == unseeded + join for each triple-term source.
+			mappingParameterized = true;
+		}
+
+		@Override
+		public void meetOther(QueryModelNode node) {
+			// tuple functions and third-party extension operators receive the input bindings through their
+			// SPI — correlated evaluation is their established contract
+			mappingParameterized = true;
+		}
 	}
 
 	private static final class BindingInjectionCollector extends AbstractQueryModelVisitor<RuntimeException> {
@@ -357,7 +419,7 @@ public class QueryEvaluationUtility {
 
 		@Override
 		public void meet(Filter node) {
-			checkExpression(node.getCondition());
+			checkExpression(node.getCondition(), node.getArg().getAssuredBindingNames());
 			if (safe) {
 				node.getArg().visit(this);
 			}
@@ -365,13 +427,14 @@ public class QueryEvaluationUtility {
 
 		@Override
 		public void meet(Extension node) {
+			Set<String> assuredByArg = node.getArg().getAssuredBindingNames();
 			for (ExtensionElem elem : node.getElements()) {
 				if (injectedNames.contains(elem.getName())) {
 					// the Extend target would already be bound in the injected mapping
 					safe = false;
 					return;
 				}
-				checkExpression(elem.getExpr());
+				checkExpression(elem.getExpr(), assuredByArg);
 				if (!safe) {
 					return;
 				}
@@ -382,7 +445,7 @@ public class QueryEvaluationUtility {
 		@Override
 		public void meet(LeftJoin node) {
 			if (node.hasCondition()) {
-				checkExpression(node.getCondition());
+				checkExpression(node.getCondition(), node.getAssuredBindingNames());
 			}
 			if (safe) {
 				node.getLeftArg().visit(this);
@@ -399,12 +462,18 @@ public class QueryEvaluationUtility {
 
 		@Override
 		public void meet(ZeroLengthPath node) {
-			// endpoint injection seeds the path search — a selection over the path solutions
+			// Path endpoint injection is NOT equivalent to independent evaluation plus a join: a zero-length
+			// path seeded with an injected term matches that term even when it is absent from the graph
+			// (GH-3053), while independent evaluation only enumerates graph terms. Injection is these
+			// operators' DEFINED evaluation (see usesMappingParameterizedEvaluation), which is precisely why a
+			// rewrite that newly introduces injection — e.g. Filter-to-VALUES-join — changes observable results.
+			safe = false;
 		}
 
 		@Override
 		public void meet(ArbitraryLengthPath node) {
-			// endpoint injection seeds the path search — a selection over the path solutions
+			// see meet(ZeroLengthPath) — same mapping-parameterized contract (zero-length step included)
+			safe = false;
 		}
 
 		@Override
@@ -443,11 +512,13 @@ public class QueryEvaluationUtility {
 			}
 		}
 
-		private void checkExpression(ValueExpr expression) {
+		private void checkExpression(ValueExpr expression, Set<String> assuredBySubtree) {
 			for (String name : VarNameCollector.process(expression)) {
-				if (injectedNames.contains(name)) {
-					// an expression observing an injected name (value or BOUND-ness) can distinguish
-					// injected evaluation from independent evaluation
+				if (injectedNames.contains(name) && !assuredBySubtree.contains(name)) {
+					// an expression observing an injected name that the subtree does not itself assuredly
+					// bind can distinguish injected evaluation (value present) from independent evaluation
+					// (unbound). When the subtree assuredly binds the name, the expression observes the
+					// pattern-produced value in both cases — injection is then a plain selection.
 					safe = false;
 					return;
 				}

@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -96,8 +97,25 @@ public class BindingInjectionSafetyTest {
 								Compare.CompareOp.GT)));
 		assertTrue(QueryEvaluationUtility.permitsBindingInjection(filtered, Set.of("a")),
 				"expressions over names the subtree itself produces do not observe the injection");
-		assertFalse(QueryEvaluationUtility.permitsBindingInjection(filtered, Set.of("a", "b")),
-				"?b is read by BOUND, so injecting it becomes observable");
+		assertTrue(QueryEvaluationUtility.permitsBindingInjection(filtered, Set.of("a", "b")),
+				"?b is assuredly bound by the pattern itself, so the expression observes the pattern-produced "
+						+ "value under injection and independent evaluation alike — injection is a selection");
+	}
+
+	@Test
+	public void mappingParameterizedOperatorsKeepCorrelatedEvaluation() {
+		ZeroLengthPath path = new ZeroLengthPath(Var.of("x"), Var.of("r"));
+
+		assertFalse(QueryEvaluationUtility.permitsBindingInjection(path, Set.of("x")),
+				"a seeded zero-length path matches terms absent from the graph (GH-3053) — injection is not a "
+						+ "selection over independent evaluation, so injection-introducing rewrites must be rejected");
+		assertTrue(QueryEvaluationUtility.usesMappingParameterizedEvaluation(path),
+				"correlated per-input evaluation is the path's defined semantics — physical strategies keep the "
+						+ "bind-join path instead of rerouting through independent-evaluation replay");
+		assertTrue(QueryEvaluationUtility.usesMappingParameterizedEvaluation(
+				new Join(pattern("a", "p", "b"), path.clone())),
+				"the contract is contagious: any subtree containing such an operator stays correlated");
+		assertFalse(QueryEvaluationUtility.usesMappingParameterizedEvaluation(pattern("a", "p", "b")));
 	}
 
 	@Test

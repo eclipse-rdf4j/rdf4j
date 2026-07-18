@@ -265,7 +265,7 @@ QueryModelNode metadata API being retained), the LMDB native compilers (`isRepea
       green (barriers for RAND/unknown/BNODE/Sample/custom-aggregate/TupleFunctionCall/Service across
       Or/And-collapse, join-over-union, union factor-out, SameTerm split, order hoist; MD5 + NOW positive
       controls fire in both modes).
-- [ ] S1a: module sweep green; committed.
+- [x] S1a: module sweep green; committed (`e3b97a51f1`).
 - [x] 2026-07-18T07:45Z S1b: witnesses failing pre-fix — unit level (`doesNotSplitNonDisjointDisjunction`
       showed the Union split) and end-to-end (`MemoryDisjunctiveFilterMultisetTest`: expected 1 row, got 2
       through the full memory-store pipeline). Fix: `DisjunctiveConstraintOptimizer` made a documented no-op
@@ -354,9 +354,32 @@ QueryModelNode metadata API being retained), the LMDB native compilers (`isRepea
       `permitsBindingInjection(arg, valuesVars)` (the rewrite's bind join injects VALUES rows into the cloned
       arg; B2's Extension shape is now excluded by proof rather than by accident). The remaining audit is
       recorded as surviving-guard citations + blocked removals (below), per the performance principle.
-- [ ] S3: ORDER BY stabilization.
-- [ ] S4: guard re-audit items (individually benchmarked).
-- [ ] S5: determinism SPI.
+- [x] 2026-07-18T11:15Z (local) S2 (part 2c — inner-Join routing) DONE: `JoinQueryEvaluationStep` now routes
+      non-scope-change right operands that fail (replay-stable ∧ injection-safe) to
+      `MaterializedReplayJoinIterator` — witnessed at the algebra level by `JoinIndependentOperandTest`
+      (`Join(VALUES{1,2}, Extend(SingletonSet, STRUUID→u))`, not parser-reachable but public-API-reachable):
+      pre-fix 2 distinct ?u, post-fix 1. The injection analyzer gained the assured-binding refinement
+      (expression reads of injected names are permitted when the subtree assuredly binds the name — the
+      expression observes the pattern-produced value either way, so injection is pure selection).
+- [x] 2026-07-18T11:45Z (local) Mapping-parameterized evaluation classification
+      (`QueryEvaluationUtility.usesMappingParameterizedEvaluation`): ZeroLengthPath/ArbitraryLengthPath
+      (GH-3053: a seeded endpoint matches itself even when absent from the graph), Service, Lateral, TripleRef
+      (seeded/unseeded physical equivalence not established), and meetOther extension operators (TupleFunctionCall
+      etc.) keep the correlated bind-join path in BOTH join routings — for them per-input evaluation IS the
+      defined semantics, so independent-evaluation replay would change results (witnessed:
+      `MemoryStoreTest.testZeroOrOnePropPathNonExisting` failed under unguarded routing; SPARQL 1.2
+      reified-triple compliance [34]/[35] failed until TripleRef was classified). Correspondingly,
+      `permitsBindingInjection` now REJECTS paths (the earlier "seeding is a selection" claim was wrong in the
+      rewrite direction: a Filter→VALUES-join rewrite over a path arg would newly match non-graph terms).
+      Zero-length-path witnesses added to `JoinIndependentOperandTest` (inner + OPTIONAL correlated forms).
+- [x] 2026-07-18T13:50Z (local) Compliance attribution via pre-series worktree (`bfc4cad70d`, cloned
+      `.m2_repo`): the committed series FIXED `LmdbSPARQL11Query[22]` and INTRODUCED only
+      `minusScope[9]` (T12) on memory/native — resolved by updating T12's expectations to the bottom-up
+      algebra result (MINUS domain-disjointness keeps `{maybe→1}`; the old expectation encoded bind-join
+      substitution, defect class B1). All remaining compliance failures are LMDB-only and pre-date the series
+      (update suite ×12, aggregate[21], bind[8], builtinFunction[20], defaultGraph[1], filterScope[1][5],
+      minus[1], minusScope[9][12][13], SPARQL12[46], SPARQL11 [31][35]) — they belong to the branch's earlier
+      LMDB work, out of this effort's scope. Memory+Native compliance suites fully green (338/338).
 
 
 ## Surviving guards and blocked removals (Stage 4 audit record)
@@ -364,10 +387,11 @@ QueryModelNode metadata API being retained), the LMDB native compilers (`isRepea
 Per the performance principle, each surviving guard cites the observable violation it prevents; each blocked
 removal cites its blocker:
 
-- `QueryJoinOptimizer` volatile reorder barrier (:178) SURVIVES: reordering can place a volatile subtree into
-  the right position of a nested-loop inner join, and inner-Join routing for non-scope-change unsafe rights was
-  deliberately NOT built (no failing witness exists — every parser-reachable unsafe inner-join right is a scope
-  change → hash join). Removal is blocked on that routing existing.
+- `QueryJoinOptimizer` volatile reorder barrier (:178): inner-Join routing for non-scope-change unsafe rights
+  now EXISTS (`MaterializedReplayJoinIterator` branch in `JoinQueryEvaluationStep`), so the removal is
+  unblocked in principle — but it remains benchmark-gated (the reorder changes which operand becomes the
+  replayed side, a cost decision), and mapping-parameterized subtrees (paths/TripleRef/extensions) still keep
+  correlated evaluation, so reorders across them remain barred.
 - `OrderLimitOptimizer` volatile guard (:60) SURVIVES: the Projection/Order swap re-anchors the ordering
   expressions relative to the projection — a volatile expression's variables may be projected away, changing
   its keys from values to unbound; and `Distinct → Reduced` under a volatile key breaks REDUCED's
@@ -463,6 +487,19 @@ removal cites its blocker:
   through to the guarded default) rather than individually wrapped — simpler and those paths are BGP-shaped in
   practice. The empty-left Service invocation uses `fs.select` with an empty binding set (one logical
   Invocation, result drained for its error effect only).
+- 2026-07-18 (implementation, S2 part 2c): a THIRD classification joined replay-stability and injection
+  safety — mapping-parameterized evaluation. For ZeroLengthPath/ArbitraryLengthPath (GH-3053), TripleRef,
+  Lateral, Service, and unrecognized extension operators, correlated per-input evaluation is the DEFINED
+  semantics, so the independent-evaluation baseline the other two predicates compare against does not exist;
+  both join routings exempt such subtrees (they keep the legacy bind-join), and `permitsBindingInjection`
+  rejects them so injection-introducing REWRITES (FilterInValues) stay barred. Unknown operators therefore
+  keep their historical correlated behavior — compatibility-preserving default for third-party nodes.
+- 2026-07-18 (implementation): `SparqlMinusScopingTests.T12` expectations updated to the bottom-up algebra
+  result (all rows extended with `?maybe=1`): the OPTIONAL group `Minus(Extend(Z,maybe,1), BGP(?s :q ?w))`
+  evaluates independently, and MINUS's domain-disjointness clause keeps `{maybe→1}`. The old expectation
+  encoded bind-join substitution (injected `?s` creating domain overlap) — exactly defect class B1 under
+  contract #5. Note the suite itself was already split-brained: T15/T16 assert the bottom-up reading while
+  T12 asserted substitution; after the fix the suite is uniformly bottom-up and green on memory/native.
 
 
 ## Outcomes & Retrospective
