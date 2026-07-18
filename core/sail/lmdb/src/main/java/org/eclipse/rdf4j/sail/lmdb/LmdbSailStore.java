@@ -1335,7 +1335,7 @@ class LmdbSailStore implements SailStore {
 			}
 			return new LmdbStatementIterator(
 					tripleStore.getTriples(txn, statementOrder, subjID, predID, objID, contextID, explicit),
-					valueStore);
+					valueStore, statementOrder, subjID, predID, objID, contextID);
 		}
 
 		CloseableIteration<? extends Statement> iterator = CloseableIteration.EMPTY_STATEMENT_ITERATION;

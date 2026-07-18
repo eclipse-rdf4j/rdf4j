@@ -285,7 +285,7 @@ final class LmdbNativeChunkPipeline {
 	}
 
 	/** Whether the sweep index yields the key fields as its leading varying fields, in the given slot sequence. */
-	private static boolean sweepAligned(String sweepIndex, PatternPlan pattern, RowState row, int[] keySeqSlots,
+	static boolean sweepAligned(String sweepIndex, PatternPlan pattern, RowState row, int[] keySeqSlots,
 			long keyMask) {
 		if (sweepIndex.length() != 4) {
 			return false;
@@ -334,7 +334,7 @@ final class LmdbNativeChunkPipeline {
 		};
 	}
 
-	private static StatementOrder statementOrderOf(int field) {
+	static StatementOrder statementOrderOf(int field) {
 		return switch (field) {
 		case TripleIndex.SUBJ_IDX -> StatementOrder.S;
 		case TripleIndex.PRED_IDX -> StatementOrder.P;

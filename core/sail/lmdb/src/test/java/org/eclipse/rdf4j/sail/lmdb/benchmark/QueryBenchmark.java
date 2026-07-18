@@ -141,7 +141,7 @@ public class QueryBenchmark {
 	public void beforeClass() throws IOException {
 		file = Files.newTemporaryFolder();
 
-		repository = new SailRepository(new LmdbStore(file, ConfigUtil.createConfig()));
+		repository = new SailRepository(new LmdbStore(file, ConfigUtil.createConfig().setSketchEstimatorEnabled(false)));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);

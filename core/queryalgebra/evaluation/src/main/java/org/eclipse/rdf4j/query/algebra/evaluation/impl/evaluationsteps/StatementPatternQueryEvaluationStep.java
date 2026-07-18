@@ -1067,6 +1067,20 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		}
 
 		@Override
+		public void seek(Value minValue, boolean minInclusive, Value maxValue, boolean maxInclusive) {
+			// the statement order component of the wrapped iteration is the join variable this iteration is
+			// ordered on, so the bounds translate directly
+			if (!closed) {
+				iteration.seek(minValue, minInclusive, maxValue, maxInclusive);
+			}
+		}
+
+		@Override
+		public boolean supportsSeek() {
+			return !closed && iteration.supportsSeek();
+		}
+
+		@Override
 		public String getIndexName() {
 			IndexReportingIterator metrics = indexReporter();
 			return metrics == null ? "" : metrics.getIndexName();
@@ -1144,6 +1158,20 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 				closed = true;
 				iteration.close();
 			}
+		}
+
+		@Override
+		public void seek(Value minValue, boolean minInclusive, Value maxValue, boolean maxInclusive) {
+			// the statement order component of the wrapped iteration is the join variable this iteration is
+			// ordered on, so the bounds translate directly
+			if (!closed) {
+				iteration.seek(minValue, minInclusive, maxValue, maxInclusive);
+			}
+		}
+
+		@Override
+		public boolean supportsSeek() {
+			return !closed && iteration.supportsSeek();
 		}
 
 		@Override

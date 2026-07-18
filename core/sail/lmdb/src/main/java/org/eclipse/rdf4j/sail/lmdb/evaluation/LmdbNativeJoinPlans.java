@@ -75,6 +75,10 @@ final class MultiJoinPlan implements SlotPlan {
 
 	@Override
 	public BatchCursor openBatch(RowState row, int capacity) {
+		BatchCursor mergeJoin = LmdbNativeMergeJoin.tryOpen(this, row, capacity);
+		if (mergeJoin != null) {
+			return mergeJoin;
+		}
 		return LmdbNativeHashJoin.tryOpen(this, row, capacity);
 	}
 
