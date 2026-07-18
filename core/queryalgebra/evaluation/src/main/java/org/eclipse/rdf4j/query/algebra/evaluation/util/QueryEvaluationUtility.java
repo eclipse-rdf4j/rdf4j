@@ -32,15 +32,26 @@ import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Sample;
 import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Day;
@@ -103,6 +114,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.UnsignedLongCast;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.UnsignedShortCast;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 /**
  * This class will take over for QueryEvaluationUtil. Currently marked as InternalUseOnly because there may still be
@@ -288,6 +300,137 @@ public class QueryEvaluationUtility {
 	 */
 	public static boolean canDiscardWithoutEvaluation(QueryModelNode subtree) {
 		return !mayRaiseQueryFatalError(subtree);
+	}
+
+	/**
+	 * Returns whether pushing the given set of bindings into the subtree as evaluation-time input is proven equivalent
+	 * to evaluating the subtree independently and applying a compatible-mapping join afterwards (the binding-injection
+	 * contract behind physical bind joins). Injection safety is a JOINT property of the injected set, not a
+	 * per-variable one: {@code FILTER(!BOUND(?x) || !BOUND(?y))} is safe for {?x} alone and for {?y} alone but not for
+	 * {?x,?y} — so callers must ask about the exact set they intend to inject and must never union per-variable
+	 * answers. This initial analysis is conservative: it permits injection only into positive pattern shapes (statement
+	 * patterns, property paths, joins, unions, nested optionals, VALUES) where injected names act purely as
+	 * pattern-variable selections, and rejects the subtree outright when any expression reads an injected name or any
+	 * BIND target collides with one (an {@code Extend} whose target is pre-bound is undefined in the algebra and
+	 * RDF4J's evaluation would overwrite it). Every conservative rejection is a candidate for later refinement, not a
+	 * semantic claim.
+	 */
+	public static boolean permitsBindingInjection(TupleExpr subtree, Set<String> injectedNames) {
+		if (injectedNames.isEmpty()) {
+			return true;
+		}
+		BindingInjectionCollector collector = new BindingInjectionCollector(injectedNames);
+		subtree.visit(collector);
+		return collector.safe;
+	}
+
+	private static final class BindingInjectionCollector extends AbstractQueryModelVisitor<RuntimeException> {
+
+		private final Set<String> injectedNames;
+		private boolean safe = true;
+
+		private BindingInjectionCollector(Set<String> injectedNames) {
+			this.injectedNames = injectedNames;
+		}
+
+		@Override
+		public void meet(Filter node) {
+			checkExpression(node.getCondition());
+			if (safe) {
+				node.getArg().visit(this);
+			}
+		}
+
+		@Override
+		public void meet(Extension node) {
+			for (ExtensionElem elem : node.getElements()) {
+				if (injectedNames.contains(elem.getName())) {
+					// the Extend target would already be bound in the injected mapping
+					safe = false;
+					return;
+				}
+				checkExpression(elem.getExpr());
+				if (!safe) {
+					return;
+				}
+			}
+			node.getArg().visit(this);
+		}
+
+		@Override
+		public void meet(LeftJoin node) {
+			if (node.hasCondition()) {
+				checkExpression(node.getCondition());
+			}
+			if (safe) {
+				node.getLeftArg().visit(this);
+			}
+			if (safe) {
+				node.getRightArg().visit(this);
+			}
+		}
+
+		@Override
+		public void meet(StatementPattern node) {
+			// pattern-variable injection is a selection over the pattern's solutions — always equivalent
+		}
+
+		@Override
+		public void meet(ZeroLengthPath node) {
+			// endpoint injection seeds the path search — a selection over the path solutions
+		}
+
+		@Override
+		public void meet(ArbitraryLengthPath node) {
+			// endpoint injection seeds the path search — a selection over the path solutions
+		}
+
+		@Override
+		public void meet(BindingSetAssignment node) {
+			// evaluated as a compatible-mapping merge with the input — equivalent by definition
+		}
+
+		@Override
+		public void meet(SingletonSet node) {
+		}
+
+		@Override
+		public void meet(Join node) {
+			node.getLeftArg().visit(this);
+			if (safe) {
+				node.getRightArg().visit(this);
+			}
+		}
+
+		@Override
+		public void meet(Union node) {
+			// Union distributes over a compatible-mapping join: (A ∪ B) ⋈ μ = (A ⋈ μ) ∪ (B ⋈ μ)
+			node.getLeftArg().visit(this);
+			if (safe) {
+				node.getRightArg().visit(this);
+			}
+		}
+
+		@Override
+		protected void meetNode(QueryModelNode node) {
+			if (node instanceof TupleExpr) {
+				// unknown or not-yet-analyzed operator: conservatively unsafe for injection
+				safe = false;
+			} else {
+				super.meetNode(node);
+			}
+		}
+
+		private void checkExpression(ValueExpr expression) {
+			for (String name : VarNameCollector.process(expression)) {
+				if (injectedNames.contains(name)) {
+					// an expression observing an injected name (value or BOUND-ness) can distinguish
+					// injected evaluation from independent evaluation
+					safe = false;
+					return;
+				}
+			}
+		}
 	}
 
 	private static final class QueryFatalErrorCollector extends AbstractQueryModelVisitor<RuntimeException> {

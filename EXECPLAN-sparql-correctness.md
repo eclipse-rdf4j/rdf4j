@@ -287,7 +287,23 @@ QueryModelNode metadata API being retained), the LMDB native compilers (`isRepea
       Invocation on empty left. Post-fix 9/9 green. Module sweeps green: evaluation 891, memory 804,
       lmdb 1905, model 48. W3C SPARQL 1.1 compliance (memory) 176/176 after the NAryValueOperator parent fix
       (see Surprises).
-- [ ] S2a-d: injection safety, profile, Join/LeftJoin, SERVICE.
+- [x] 2026-07-18T09:10Z S2 (part 1): witnesses in `MemoryIndependentOperandSemanticsTest` — pre-fix the
+      UUID/STRUUID/BNODE-in-OPTIONAL trio failed (2 distinct values instead of 1: per-left-row re-evaluation);
+      nested-group UUID passed already (scope change → hash join; kept as pin); bare-BIND controls passed.
+      Fix: (2a) `QueryEvaluationUtility.permitsBindingInjection` — JOINT injection-safety analyzer
+      (conservative: positive pattern shapes only; rejects expression reads of injected names, Extend-target
+      collisions, unknown operators; `BindingInjectionSafetyTest` 5/5 incl. the two-var BOUND joint
+      counterexample); (2c) `LeftJoinQueryEvaluationStep.supply` routes rights that are not
+      (replay-stable ∧ injection-safe) to the new `MaterializedReplayLeftJoinIterator` — right operand
+      evaluated exactly once with join-entry bindings, snapshotted, replayed per left row with
+      compatible-mapping merge and `Filter(Join) ∪ Diff` condition semantics (condition error = not satisfied,
+      row-local); right materialized BEFORE left is consumed (fatal errors surface on empty left). All 7
+      witnesses green. NOTE: buffer is in-memory ArrayList — parity with HashJoinIteration's default cache;
+      genuine spill = follow-up via the same hook pattern.
+- [ ] S2 (part 1): module sweeps + compliance green; committed.
+- [ ] S2 (part 2): inner-Join routing for unsafe non-scope-change rights; B2 FilterInValues execution-level
+      witness under forced nested loop; SERVICE pushdown≠partitioning + SILENT failure-atomicity + fresh
+      row-correlation variable (2d).
 - [ ] S3: ORDER BY stabilization.
 - [ ] S4: guard re-audit items (individually benchmarked).
 - [ ] S5: determinism SPI.
@@ -308,6 +324,18 @@ QueryModelNode metadata API being retained), the LMDB native compilers (`isRepea
   line ~454) and `FederationEvaluationStrategy` (references the
   `StandardQueryOptimizerPipeline.DISJUNCTIVE_CONSTRAINT_OPTIMIZER` constant in its own optimizer list) —
   which is why the public constant was retained rather than deleted.
+- Stage-1 benchmark gate (SOCIAL_MEDIA q8, local, ThemeQueryBenchmark with the user's shortened 2s
+  iterations): my tree ≈609–641 ms; worktree at `bfc4cad70d` (before ANY of this effort's commits)
+  ≈534–541 ms — overlapping error bars, so **no demonstrated Stage-1 regression**, but BOTH are ~8× the
+  2026-07-16 local baseline (67–72 ms). The regression window is `e8c3227158..bfc4cad70d` (the user's
+  "merge join and seeking" + the STANDARD-relaxation commit; the benchmark store runs default STRICT, so the
+  relaxation commit is an unlikely cause). RESOLVED attribution: `e8c3227158` (before BOTH 07-17 commits) also
+  measures ≈603 ms — the slowdown predates the merge-join commit too and sits in the user's own
+  `7b837882bb..e8c3227158` window (includes the develop merge) or is benchmark-methodology drift (the
+  uncommitted ThemeQueryBenchmark tweak shortens warmups 6s→2s; 07-16 numbers used the longer warmups). The
+  native merge-join sysprops do NOT restore performance. **Stage-1 gate satisfied: this effort's commits
+  measure within noise of all three pre-work points.** Chip task_3b20e1e6 spawned for the user to bisect with
+  original warmup settings.
 - The post-S1c W3C compliance spot-run (MemorySPARQL11QueryComplianceTest) surfaced a pre-existing model bug,
   unrelated to this effort's changes and identical on `develop`: `NAryValueOperator.replaceChildNode` (used by
   `Coalesce`) swapped the child in its argument list WITHOUT setting the replacement's parent reference —
@@ -316,6 +344,13 @@ QueryModelNode metadata API being retained), the LMDB native compilers (`isRepea
   the assertions-only ParentReferenceChecker. One-line root fix + `NAryValueOperatorTest`; compliance then
   176/176. Bonus finding recorded: `NAryValueOperator.setArguments` stores the caller's list without copying,
   so an immutable argument list would make `replaceChildNode` throw — not fixed (aliasing change out of scope).
+- BNODE("label") locality is keyed on BindingSet OBJECT IDENTITY in
+  `QueryEvaluationContext.Minimal.getOrCreateBNode`. Chained `BIND(BNODE("k"))... BIND(BNODE("k"))...`
+  therefore yields distinct bnodes (each Extend produces a new extended mapping object) — but that is
+  DEFENSIBLE: successive Extends produce successive solution mappings, and SPARQL does not settle whether they
+  count as "one solution mapping" for BNODE's label scope. The original witness over-claimed and was reshaped
+  to the unambiguous form (two SELECT expressions over one row), which RDF4J already satisfies. Recorded per
+  the algebra-result contract: do not test outcomes the spec does not distinguish.
 
 
 ## Decision Log
