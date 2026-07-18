@@ -12,8 +12,10 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
@@ -23,6 +25,7 @@ import java.util.function.Supplier;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
@@ -94,6 +97,7 @@ import org.eclipse.rdf4j.query.algebra.Namespace;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
@@ -169,6 +173,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ExtensionIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.GroupIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.MultiProjectionIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.OrderIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.OrderComparator;
@@ -711,11 +716,109 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 		ValueComparator vcmp = new ValueComparator();
 		vcmp.setStrict(getQueryEvaluationMode() == QueryEvaluationMode.STRICT);
-		OrderComparator cmp = new OrderComparator(this, node, vcmp, context);
 		boolean reduced = isReducedOrDistinct(node);
 		long limit = getLimit(node);
 		QueryEvaluationStep preparedArg = precompile(node.getArg(), context);
+
+		boolean stableKeys = node.getElements()
+				.stream()
+				.allMatch(element -> element.getExpr() instanceof Var
+						|| QueryEvaluationUtility.isRepeatable(element.getExpr()));
+		if (!stableKeys) {
+			// A non-stable ordering expression evaluated inside the comparator gives the same solution
+			// different keys during one sort, violating the comparator contract, and the comparator's
+			// error handling would swallow query-fatal errors. Instead, a stable ordering key is
+			// established once per solution occurrence BEFORE sorting, stored as a synthetic binding (so
+			// it survives parallel comparison and disk spilling), and stripped from the output. A
+			// row-local expression error leaves the key absent (sorting as an unbound value); a
+			// query-fatal error propagates and fails the query.
+			return prepareVolatileKeyOrder(node, context, vcmp, limit, preparedArg);
+		}
+
+		OrderComparator cmp = new OrderComparator(this, node, vcmp, context);
 		return new OrderQueryEvaluationStep(node, cmp, limit, reduced, preparedArg, iterationCacheSyncThreshold);
+	}
+
+	private QueryEvaluationStep prepareVolatileKeyOrder(Order node, QueryEvaluationContext context,
+			ValueComparator vcmp, long limit, QueryEvaluationStep preparedArg) {
+
+		List<OrderElem> elements = node.getElements();
+		Set<String> visibleNames = node.getBindingNames();
+		String[] keyNames = new String[elements.size()];
+		QueryValueEvaluationStep[] keySteps = new QueryValueEvaluationStep[elements.size()];
+		String[] compareNames = new String[elements.size()];
+		boolean[] ascending = new boolean[elements.size()];
+		for (int i = 0; i < elements.size(); i++) {
+			OrderElem element = elements.get(i);
+			ascending[i] = element.isAscending();
+			if (element.getExpr() instanceof Var) {
+				compareNames[i] = ((Var) element.getExpr()).getName();
+			} else {
+				String candidate = "__orderKey" + i;
+				while (visibleNames.contains(candidate)) {
+					candidate = "_" + candidate;
+				}
+				keyNames[i] = candidate;
+				compareNames[i] = candidate;
+				keySteps[i] = precompile(element.getExpr(), context);
+			}
+		}
+
+		// tie-breaking total order over the full (decorated) binding sets; the stored keys take part in the
+		// value comparison, so the tie-break is deterministic
+		OrderComparator contentsComparator = new OrderComparator(this, new Order(), vcmp, context);
+		Comparator<BindingSet> comparator = (o1, o2) -> {
+			for (int i = 0; i < compareNames.length; i++) {
+				int compare = vcmp.compare(o1.getValue(compareNames[i]), o2.getValue(compareNames[i]));
+				if (compare != 0) {
+					return ascending[i] ? compare : -compare;
+				}
+			}
+			return contentsComparator.compare(o1, o2);
+		};
+
+		return bindings -> {
+			CloseableIteration<BindingSet> source = preparedArg.evaluate(bindings);
+			CloseableIteration<BindingSet> decorated = new ConvertingIteration<>(source) {
+
+				@Override
+				protected BindingSet convert(BindingSet sourceRow) {
+					QueryBindingSet withKeys = new QueryBindingSet(sourceRow);
+					for (int i = 0; i < keySteps.length; i++) {
+						if (keySteps[i] == null) {
+							continue;
+						}
+						try {
+							// evaluated against the ORIGINAL solution: keys must not observe each other
+							Value key = keySteps[i].evaluate(sourceRow);
+							if (key != null) {
+								withKeys.setBinding(keyNames[i], key);
+							}
+						} catch (ValueExprEvaluationException e) {
+							// row-local: the key stays absent and sorts as an unbound value
+						}
+					}
+					return withKeys;
+				}
+			};
+			// distinct pre-deduplication is disabled: decorated duplicates carry distinct keys; any parent
+			// DISTINCT/REDUCED node still enforces its own semantics on the stripped output
+			CloseableIteration<BindingSet> ordered = new OrderIterator(decorated, comparator, limit, false,
+					iterationCacheSyncThreshold);
+			return new ConvertingIteration<>(ordered) {
+
+				@Override
+				protected BindingSet convert(BindingSet decoratedRow) {
+					QueryBindingSet stripped = new QueryBindingSet(decoratedRow);
+					for (String keyName : keyNames) {
+						if (keyName != null) {
+							stripped.removeBinding(keyName);
+						}
+					}
+					return stripped;
+				}
+			};
+		};
 	}
 
 	protected QueryEvaluationStep prepare(BindingSetAssignment node, QueryEvaluationContext context)
@@ -1296,7 +1399,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	 */
 	private boolean determineIfFunctionCallWillBeAConstant(QueryEvaluationContext context, Function function,
 			List<ValueExpr> args, QueryValueEvaluationStep[] argSteps) {
-		boolean allConstant = QueryEvaluationUtility.isRepeatable(function);
+		// plan-level constant folding is stricter than within-execution repeatability: a prepared query can be
+		// executed repeatedly, so only functions immutable across executions may be folded into the plan
+		boolean allConstant = QueryEvaluationUtility.isSafeForPlanConstantFolding(function);
 		for (int i = 0; i < args.size(); i++) {
 			argSteps[i] = precompile(args.get(i), context);
 			if (!argSteps[i].isConstant()) {
