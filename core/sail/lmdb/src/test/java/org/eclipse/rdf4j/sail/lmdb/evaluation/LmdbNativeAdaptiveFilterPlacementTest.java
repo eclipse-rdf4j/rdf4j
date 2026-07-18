@@ -34,7 +34,6 @@ import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
 
@@ -50,8 +49,8 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 		};
 		Class<?> metadataClass = Class
 				.forName("org.eclipse.rdf4j.sail.lmdb.evaluation.AdaptiveFilterMetadata");
-		Method eligible = metadataClass.getDeclaredMethod("eligible", int.class, int.class, double.class, long.class);
-		Object metadata = eligible.invoke(null, 7, 4, 0.5d, -1L);
+		Method eligible = metadataClass.getDeclaredMethod("eligible", int.class, int.class);
+		Object metadata = eligible.invoke(null, 7, 4);
 		Constructor<MaskedFilter> constructor = MaskedFilter.class
 				.getDeclaredConstructor(NativeBooleanFilter.class, long.class, metadataClass);
 		MaskedFilter target = constructor.newInstance((NativeBooleanFilter) row -> true, 1L << 0, metadata);
@@ -72,39 +71,41 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 	}
 
 	@Test
-	void filterMetadataClassifiesCostSafetyAndEvidence() throws Exception {
+	void filterMetadataClassifiesCostAndSafety() throws Exception {
 		Class<?> metadataClass = Class
 				.forName("org.eclipse.rdf4j.sail.lmdb.evaluation.AdaptiveFilterMetadata");
-		Method forFilter = metadataClass.getDeclaredMethod("forFilter", int.class, Filter.class,
-				EvaluationStatistics.class);
+		Method forFilter = metadataClass.getDeclaredMethod("forFilter", int.class, Filter.class);
 		Filter comparison = new Filter(new SingletonSet(),
 				new Compare(new Var("left"), new Var("right"), Compare.CompareOp.EQ));
-		comparison.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO, 0.25d);
-		comparison.setLongMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_EVIDENCE_COUNT, 128L);
-		Object comparisonMetadata = forFilter.invoke(null, 11, comparison, new EvaluationStatistics());
+		Object comparisonMetadata = forFilter.invoke(null, 11, comparison);
 		Object volatileMetadata = forFilter.invoke(null, 12,
-				new Filter(new SingletonSet(), new FunctionCall("RAND")), new EvaluationStatistics());
+				new Filter(new SingletonSet(), new FunctionCall("RAND")));
 		Object castMetadata = forFilter.invoke(null, 14,
-				new Filter(new SingletonSet(), new FunctionCall(XSD.INTEGER.stringValue(), new Var("left"))),
-				new EvaluationStatistics());
+				new Filter(new SingletonSet(), new FunctionCall(XSD.INTEGER.stringValue(), new Var("left"))));
 
 		assertThat(intField(comparisonMetadata, "filterId")).isEqualTo(11);
 		assertThat(intField(comparisonMetadata, "estimatedCostUnits")).isEqualTo(4);
-		assertThat(doubleField(comparisonMetadata, "plannedPassRatio")).isEqualTo(0.25d);
-		assertThat(longField(comparisonMetadata, "plannedEvidenceCount")).isEqualTo(128L);
 		assertThat(booleanField(comparisonMetadata, "adaptiveEligible")).isTrue();
 		assertThat(booleanField(volatileMetadata, "adaptiveEligible")).isFalse();
 		assertThat(field(volatileMetadata, "declineReason").toString()).isEqualTo("VOLATILE_FILTER");
 		assertThat(intField(castMetadata, "estimatedCostUnits")).isEqualTo(4);
 		Object existsMetadata = forFilter.invoke(null, 13,
-				new Filter(new SingletonSet(), new Exists(new SingletonSet())), new EvaluationStatistics());
+				new Filter(new SingletonSet(), new Exists(new SingletonSet())));
 		assertThat(booleanField(existsMetadata, "adaptiveEligible")).isFalse();
 		assertThat(field(existsMetadata, "declineReason").toString()).isEqualTo("EXISTS_FILTER");
 	}
 
 	@Test
+	void filterMetadataAdmissionDoesNotRequestPlannerEstimates() {
+		Filter filter = new Filter(new SingletonSet(),
+				new Compare(new Var("left"), new Var("right"), Compare.CompareOp.EQ));
+
+		assertThat(AdaptiveFilterMetadata.forFilter(15, filter).adaptiveEligible).isTrue();
+	}
+
+	@Test
 	void legacyMaskedFilterConstructorStaysIneligible() {
-		AdaptiveFilterMetadata metadata = AdaptiveFilterMetadata.eligible(21, 4, 0.5d, 64L);
+		AdaptiveFilterMetadata metadata = AdaptiveFilterMetadata.eligible(21, 4);
 		RecordingNativeBooleanFilter recording = new RecordingNativeBooleanFilter(row -> true,
 				new Filter(new SingletonSet(), new Compare(new Var("left"), new Var("right"))),
 				new EvaluationStatistics(), metadata);
@@ -125,7 +126,7 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 			children[i] = new MaskPlan(1L << i);
 		}
 		MaskedFilter target = new MaskedFilter(row -> true, 1L << 2,
-				AdaptiveFilterMetadata.eligible(31, 4, 0.5d, -1L));
+				AdaptiveFilterMetadata.eligible(31, 4));
 		MultiJoinPlan plan = new MultiJoinPlan(children, new MaskedFilter[] { target });
 
 		MultiJoinPlan.OrderedPlan unbound = plan.derive(0L);
@@ -144,7 +145,7 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 			evaluations.incrementAndGet();
 			return true;
 		};
-		AdaptiveFilterMetadata metadata = AdaptiveFilterMetadata.eligible(41, 4, 0.5d, -1L).withRequiredMask(1L);
+		AdaptiveFilterMetadata metadata = AdaptiveFilterMetadata.eligible(41, 4).withRequiredMask(1L);
 		FilterPlacementEnvelope envelope = new FilterPlacementEnvelope(41, new int[] { 0, 1, 2 });
 		Class<?> sessionType = Class
 				.forName("org.eclipse.rdf4j.sail.lmdb.evaluation.AdaptiveFilterSession");
@@ -270,7 +271,7 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 				new Compare(new Var("left"), new Var("right"), Compare.CompareOp.EQ));
 		Filter fixedNode = new Filter(new SingletonSet(),
 				new Compare(new Var("left"), new Var("right"), Compare.CompareOp.EQ));
-		AdaptiveFilterMetadata metadata = AdaptiveFilterMetadata.eligible(71, 4, 0.5d, -1L);
+		AdaptiveFilterMetadata metadata = AdaptiveFilterMetadata.eligible(71, 4);
 		RecordingNativeBooleanFilter target = new RecordingNativeBooleanFilter(targetDelegate, targetNode, statistics,
 				metadata);
 		RecordingNativeBooleanFilter fixed = new RecordingNativeBooleanFilter(fixedDelegate, fixedNode, statistics);
@@ -295,7 +296,7 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 	}
 
 	@Test
-	void finalNestedLoopFallbackDispatchesAdaptiveOnlyWhenEnabled() throws Exception {
+	void adaptiveDispatchOutranksBatchOnlyWhenEnabled() throws Exception {
 		NativeSlotLayout layout = new NativeSlotLayout(Map.of("left", 0, "right", 1), null);
 		layout.freeze(List.of("left", "right"));
 		MultiJoinPlan plan = admittedPlan();
@@ -305,7 +306,7 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 		String adaptive = System.getProperty(LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY);
 		String batch = System.getProperty(NativeBatch.ENABLED_PROPERTY);
 		String parallel = System.getProperty("rdf4j.lmdb.parallel.enabled");
-		System.setProperty(NativeBatch.ENABLED_PROPERTY, "false");
+		System.setProperty(NativeBatch.ENABLED_PROPERTY, "true");
 		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 		try {
 			System.setProperty(LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY, "true");
@@ -374,7 +375,7 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 	}
 
 	@Test
-	void enabledDeclineExplainsShortLimitButDisabledIsInvisible() throws Exception {
+	void enabledShortLimitAdmitsButDisabledIsInvisible() throws Exception {
 		NativeSlotLayout layout = new NativeSlotLayout(Map.of("left", 0, "right", 1), null);
 		layout.freeze(List.of("left", "right"));
 		MultiJoinPlan plan = admittedPlan();
@@ -384,10 +385,11 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 		String previous = System.getProperty(LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY);
 		try {
 			System.setProperty(LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY, "true");
-			assertThat(LmdbNativeAdaptiveFilterPlacement.tryOpen(shortLimit, plan, row(layout))).isNull();
-			assertThat(declinedTelemetry.getLongMetricActual("adaptiveFilterPlacementAdmitted")).isZero();
-			assertThat(declinedTelemetry.getStringMetricActual("adaptiveFilterPlacementReason"))
-					.isEqualTo("FINITE_LIMIT_TOO_SMALL");
+			try (RowCursor cursor = LmdbNativeAdaptiveFilterPlacement.tryOpen(shortLimit, plan, row(layout))) {
+				assertThat(cursor).isInstanceOf(AdaptiveOwningCursor.class);
+			}
+			assertThat(declinedTelemetry.getLongMetricActual("adaptiveFilterPlacementAdmitted")).isOne();
+			assertThat(declinedTelemetry.getStringMetricActual("adaptiveFilterPlacementReason")).isEqualTo("ADMITTED");
 
 			SingletonSet disabledTelemetry = new SingletonSet();
 			disabledTelemetry.setRuntimeTelemetryEnabled(true);
@@ -421,6 +423,28 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 		assertThat(telemetry.getLongMetricActual("adaptiveFilterPlacementEligible")).isZero();
 		assertThat(telemetry.getStringMetricActual("adaptiveFilterPlacementReason"))
 				.isEqualTo("NO_ELIGIBLE_FILTER");
+	}
+
+	@Test
+	void safeAdmissionUsesRuntimeMeasurementsInsteadOfPlannerEstimatesOrLimit() throws Exception {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("left", 0, "right", 1), null);
+		layout.freeze(List.of("left", "right"));
+		AdaptiveFilterMetadata metadata = AdaptiveFilterMetadata.eligible(91, 1);
+		MultiJoinPlan plan = new MultiJoinPlan(
+				new SlotPlan[] { new EstimateFailurePlan(1L), values(1) },
+				new MaskedFilter[] { new MaskedFilter(row -> true, 1L, metadata) });
+		String previous = System.getProperty(LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY);
+		RowCursor adaptive = null;
+		try {
+			System.setProperty(LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY, "true");
+			adaptive = LmdbNativeAdaptiveFilterPlacement.tryOpen(step(plan, layout, null, 1L), plan, row(layout));
+			assertThat(adaptive).isInstanceOf(AdaptiveOwningCursor.class);
+		} finally {
+			if (adaptive != null) {
+				adaptive.close();
+			}
+			restoreAdaptiveProperty(previous);
+		}
 	}
 
 	@Test
@@ -495,7 +519,7 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 				new Compare(new Var("left"), new Var("right"), Compare.CompareOp.EQ));
 		Filter fixedNode = new Filter(new SingletonSet(),
 				new Compare(new Var("left"), new Var("right"), Compare.CompareOp.EQ));
-		AdaptiveFilterMetadata metadata = AdaptiveFilterMetadata.eligible(81, 4, 0.5d, -1L);
+		AdaptiveFilterMetadata metadata = AdaptiveFilterMetadata.eligible(81, 4);
 		RecordingNativeBooleanFilter target = new RecordingNativeBooleanFilter(targetDelegate, targetNode, statistics,
 				metadata);
 		RecordingNativeBooleanFilter fixed = new RecordingNativeBooleanFilter(fixedDelegate, fixedNode, statistics);
@@ -530,7 +554,7 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 		ArrayList<MaskedFilter> filters = new ArrayList<>();
 		NativeBooleanFilter target = row -> row.slots[0] % 3L != 0L;
 		filters.add(new MaskedFilter(target, 1L,
-				AdaptiveFilterMetadata.eligible(100 + seed, 4, 0.6d, -1L)));
+				AdaptiveFilterMetadata.eligible(100 + seed, 4)));
 		int last = childCount - 1;
 		filters.add(new MaskedFilter(row -> row.slots[last] != 99L, 1L << last));
 		if (childCount > 3) {
@@ -583,7 +607,7 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 
 	private static AdaptiveFilterSession policySession(NativeBooleanFilter filter) {
 		return new AdaptiveFilterSession(filter,
-				AdaptiveFilterMetadata.eligible(61, 4, 0.5d, -1L).withRequiredMask(1L),
+				AdaptiveFilterMetadata.eligible(61, 4).withRequiredMask(1L),
 				new FilterPlacementEnvelope(61, new int[] { 0, 1, 2 }));
 	}
 
@@ -608,7 +632,7 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 	private static MultiJoinPlan admittedPlan() {
 		NativeBooleanFilter even = row -> (row.slots[0] & 1L) == 0L;
 		MaskedFilter target = new MaskedFilter(even, 1L,
-				AdaptiveFilterMetadata.eligible(51, 4, 0.5d, -1L));
+				AdaptiveFilterMetadata.eligible(51, 4));
 		return new MultiJoinPlan(new SlotPlan[] { values(0, 4_096), values(1, 25) },
 				new MaskedFilter[] { target });
 	}
@@ -657,10 +681,6 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 
 	private static long longField(Object target, String name) throws ReflectiveOperationException {
 		return target.getClass().getDeclaredField(name).getLong(target);
-	}
-
-	private static double doubleField(Object target, String name) throws ReflectiveOperationException {
-		return target.getClass().getDeclaredField(name).getDouble(target);
 	}
 
 	private static boolean booleanField(Object target, String name) throws ReflectiveOperationException {
@@ -754,7 +774,7 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 
 		@Override
 		public double estimate(RowState row) {
-			throw new AssertionError("metadata-ineligible admission must not estimate the plan");
+			throw new AssertionError("adaptive admission must not consult planner estimates");
 		}
 	}
 

@@ -44,6 +44,7 @@ public final class ThemeDataSetGenerator {
 		TRAIN,
 		ELECTRICAL_GRID,
 		PHARMA,
+		ADAPTIVE_FILTER_PLACEMENT,
 		REAL_ESTATE
 	}
 
@@ -56,6 +57,7 @@ public final class ThemeDataSetGenerator {
 	private static final String TRAIN_NS = BASE + "train/";
 	private static final String GRID_NS = BASE + "grid/";
 	private static final String PHARMA_NS = BASE + "pharma/";
+	private static final String ADAPTIVE_FILTER_NS = BASE + "adaptive-filter/";
 	private static final String REALESTATE_NS = BASE + "realestate/";
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
@@ -102,6 +104,10 @@ public final class ThemeDataSetGenerator {
 		return new PharmaConfig();
 	}
 
+	public static AdaptiveFilterPlacementConfig adaptiveFilterPlacementConfig() {
+		return new AdaptiveFilterPlacementConfig();
+	}
+
 	public static RealEstateConfig realEstateConfig() {
 		return new RealEstateConfig();
 	}
@@ -137,6 +143,9 @@ public final class ThemeDataSetGenerator {
 			break;
 		case PHARMA:
 			generatePharma(pharmaConfig(), handler);
+			break;
+		case ADAPTIVE_FILTER_PLACEMENT:
+			generateAdaptiveFilterPlacement(adaptiveFilterPlacementConfig(), handler);
 			break;
 		case REAL_ESTATE:
 			generateRealEstate(realEstateConfig(), handler);
@@ -983,6 +992,44 @@ public final class ThemeDataSetGenerator {
 		handler.endRDF();
 	}
 
+	public static Model generateAdaptiveFilterPlacement(AdaptiveFilterPlacementConfig config) {
+		return generateModel(handler -> generateAdaptiveFilterPlacement(config, handler));
+	}
+
+	public static void generateAdaptiveFilterPlacement(AdaptiveFilterPlacementConfig config, RDFHandler handler) {
+		Objects.requireNonNull(config, "config");
+		Objects.requireNonNull(handler, "handler");
+		config.validate();
+
+		IRI probeType = iri(ADAPTIVE_FILTER_NS, "Probe");
+		IRI payload = iri(ADAPTIVE_FILTER_NS, "payload");
+		IRI routedThrough = iri(ADAPTIVE_FILTER_NS, "routedThrough");
+		IRI qualified = iri(ADAPTIVE_FILTER_NS, "qualified");
+
+		handler.startRDF();
+		handler.handleNamespace("af", ADAPTIVE_FILTER_NS);
+
+		for (int i = 0; i < config.probeCount; i++) {
+			IRI probe = entity(ADAPTIVE_FILTER_NS, "probe", i);
+			add(handler, probe, RDF.TYPE, probeType);
+			add(handler, probe, payload, literal("accepted-" + i));
+			for (int routeIndex = 0; routeIndex < config.routesPerProbe; routeIndex++) {
+				IRI route = entity(ADAPTIVE_FILTER_NS, "route", i * config.routesPerProbe + routeIndex);
+				add(handler, probe, routedThrough, route);
+				if (routeIndex == 0 && i < config.qualifyingProbeCount) {
+					add(handler, route, qualified, VF.createLiteral(true));
+				}
+			}
+		}
+
+		for (int i = 0; i < config.decoyRouteCount; i++) {
+			IRI route = entity(ADAPTIVE_FILTER_NS, "decoy-route", i);
+			add(handler, route, qualified, VF.createLiteral(true));
+		}
+
+		handler.endRDF();
+	}
+
 	public static Model generateRealEstate(RealEstateConfig config) {
 		return generateModel(handler -> generateRealEstate(config, handler));
 	}
@@ -1750,6 +1797,43 @@ public final class ThemeDataSetGenerator {
 			requirePositive(indicationsPerDrug, "indicationsPerDrug");
 			requirePositive(drugsPerCombination, "drugsPerCombination");
 			requirePositive(comparatorCount, "comparatorCount");
+		}
+	}
+
+	public static final class AdaptiveFilterPlacementConfig {
+		private int probeCount = 16_384;
+		private int qualifyingProbeCount = 256;
+		private int routesPerProbe = 8;
+		private int decoyRouteCount = 32_768;
+
+		public AdaptiveFilterPlacementConfig withProbeCount(int probeCount) {
+			this.probeCount = requirePositive(probeCount, "probeCount");
+			return this;
+		}
+
+		public AdaptiveFilterPlacementConfig withQualifyingProbeCount(int qualifyingProbeCount) {
+			this.qualifyingProbeCount = requirePositive(qualifyingProbeCount, "qualifyingProbeCount");
+			return this;
+		}
+
+		public AdaptiveFilterPlacementConfig withRoutesPerProbe(int routesPerProbe) {
+			this.routesPerProbe = requirePositive(routesPerProbe, "routesPerProbe");
+			return this;
+		}
+
+		public AdaptiveFilterPlacementConfig withDecoyRouteCount(int decoyRouteCount) {
+			this.decoyRouteCount = requirePositive(decoyRouteCount, "decoyRouteCount");
+			return this;
+		}
+
+		private void validate() {
+			requirePositive(probeCount, "probeCount");
+			requirePositive(qualifyingProbeCount, "qualifyingProbeCount");
+			requirePositive(routesPerProbe, "routesPerProbe");
+			requirePositive(decoyRouteCount, "decoyRouteCount");
+			if (qualifyingProbeCount > probeCount) {
+				throw new IllegalArgumentException("qualifyingProbeCount must not exceed probeCount");
+			}
 		}
 	}
 

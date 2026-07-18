@@ -109,7 +109,7 @@ abstract class LmdbNativeAggregatePlannerBase {
 			return delegate;
 		}
 		return new RecordingNativeBooleanFilter(delegate, filter, strategy.evaluationStatistics(),
-				AdaptiveFilterMetadata.forFilter(nextAdaptiveFilterId++, filter, strategy.evaluationStatistics()));
+				AdaptiveFilterMetadata.forFilter(nextAdaptiveFilterId++, filter));
 	}
 
 	Filter feedbackFilterForValuesFold(TupleExpr dataExpr, Filter valuesFilter) {

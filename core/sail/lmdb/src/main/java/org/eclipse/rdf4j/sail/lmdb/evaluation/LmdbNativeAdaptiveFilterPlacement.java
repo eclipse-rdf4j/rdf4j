@@ -34,91 +34,72 @@ import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Regex;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
-import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 @Experimental
 final class LmdbNativeAdaptiveFilterPlacement {
 	static final String ENABLED_PROPERTY = "rdf4j.lmdb.adaptiveFilterPlacement.enabled";
-	static final double MIN_PLAN_WORK = 100_000.0d;
-	static final double MIN_STATIC_EVALUATIONS = 4_096.0d;
-	static final double MAX_ENVELOPE_FAN_OUT = 16_384.0d;
-	static final long MIN_FINITE_OUTPUT_ROWS = 256L;
 
 	private LmdbNativeAdaptiveFilterPlacement() {
 	}
 
+	static RowCursor tryOpen(NativeRowsStep step, RowState row) throws IOException {
+		return tryOpenWrapped(step, step.arg, row);
+	}
+
+	private static RowCursor tryOpenWrapped(NativeRowsStep step, SlotPlan plan, RowState row) throws IOException {
+		if (plan instanceof MultiJoinPlan multiJoin && multiJoin.children.length > 0) {
+			return tryOpen(step, multiJoin, row);
+		}
+		if (plan instanceof ExtensionPlan extension) {
+			RowCursor adaptive = tryOpenWrapped(step, extension.arg, row);
+			return adaptive == null ? null : new ExtensionCursor(adaptive, extension.copies, row);
+		}
+		return null;
+	}
+
 	static RowCursor tryOpen(NativeRowsStep step, MultiJoinPlan plan, RowState row) throws IOException {
+		return tryOpen(step.originalExpr, step.orderSlots.length != 0, plan, row);
+	}
+
+	static RowCursor tryOpen(TupleExpr telemetryExpr, boolean orderedExecution, MultiJoinPlan plan, RowState row)
+			throws IOException {
 		if (!Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "true"))) {
 			return null;
 		}
 		if (plan.children.length < 2) {
-			decline(step, "TOO_FEW_CHILDREN", false);
+			decline(telemetryExpr, "TOO_FEW_CHILDREN", false);
 			return null;
 		}
 		if (!hasEligibleMetadata(plan)) {
-			decline(step, "NO_ELIGIBLE_FILTER", false);
+			decline(telemetryExpr, "NO_ELIGIBLE_FILTER", false);
 			return null;
 		}
-		if (step.orderSlots.length != 0 || containsOrderedScan(plan)) {
-			decline(step, "ORDERED_EXECUTION", true);
+		if (orderedExecution || containsOrderedScan(plan)) {
+			decline(telemetryExpr, "ORDERED_EXECUTION", true);
 			return null;
 		}
 		if ((plan.producedMask() & row.boundMask()) != 0L) {
-			decline(step, "CORRELATED_ENTRY", true);
+			decline(telemetryExpr, "CORRELATED_ENTRY", true);
 			return null;
 		}
-		if (finiteOutputRows(step) < MIN_FINITE_OUTPUT_ROWS) {
-			decline(step, "FINITE_LIMIT_TOO_SMALL", true);
-			return null;
-		}
-
 		MultiJoinPlan.OrderedPlan ordered = plan.derivedPlan(row);
-		double[] prefixRows = estimatePrefixes(ordered.order, row);
-		if (prefixRows == null) {
-			decline(step, "NONFINITE_ESTIMATE", true);
-			return null;
-		}
-		double planWork = 0.0d;
-		for (double prefix : prefixRows) {
-			planWork += prefix;
-		}
-		if (!Double.isFinite(planWork) || planWork < MIN_PLAN_WORK) {
-			decline(step, "PLAN_WORK_TOO_SMALL", true);
-			return null;
-		}
-
 		int targetIndex = -1;
-		double bestScore = Double.NEGATIVE_INFINITY;
 		int bestFilterId = Integer.MAX_VALUE;
 		for (int i = 0; i < plan.filters.length; i++) {
 			FilterPlacementEnvelope envelope = ordered.placement[i];
 			AdaptiveFilterMetadata metadata = plan.filters[i].adaptive;
-			if (envelope == null || metadata.estimatedCostUnits < AdaptiveFilterMetadata.MEDIUM) {
+			if (envelope == null) {
 				continue;
 			}
-			double staticEvaluations = prefixRows[ordered.filterDepth[i]];
-			double earliestRows = prefixRows[envelope.earliestLegalDepth];
-			double deepestRows = prefixRows[envelope.deepestLegalDepth];
-			double fanOut = deepestRows / Math.max(1.0d, earliestRows);
-			if (!Double.isFinite(staticEvaluations) || staticEvaluations < MIN_STATIC_EVALUATIONS
-					|| !Double.isFinite(fanOut) || fanOut > MAX_ENVELOPE_FAN_OUT) {
-				continue;
-			}
-			double uncertainty = metadata.plannedEvidenceCount < 0L ? 2.0d
-					: 1.0d + 64.0d / (metadata.plannedEvidenceCount + 64.0d);
-			double alternatives = envelope.candidateDepths.length - 1.0d;
-			double score = metadata.estimatedCostUnits * staticEvaluations * alternatives * uncertainty;
-			if (score > bestScore || (score == bestScore && metadata.filterId < bestFilterId)) {
+			if (metadata.filterId < bestFilterId) {
 				targetIndex = i;
-				bestScore = score;
 				bestFilterId = metadata.filterId;
 			}
 		}
 		if (targetIndex < 0) {
-			decline(step, "NO_ADMISSIBLE_FILTER", true);
+			decline(telemetryExpr, "NO_ADMISSIBLE_FILTER", true);
 			return null;
 		}
 
@@ -129,7 +110,7 @@ final class LmdbNativeAdaptiveFilterPlacement {
 			MultiJoinPlan.OrderedPlan borrowedOrder = borrowed.derive(row.boundMask());
 			MaskedFilter target = borrowed.filters[targetIndex];
 			session = new AdaptiveFilterSession(target.filter, target.adaptive,
-					borrowedOrder.placement[targetIndex], step.originalExpr);
+					borrowedOrder.placement[targetIndex], telemetryExpr);
 			RowCursor chain = openChain(borrowed, borrowedOrder, targetIndex, row, session);
 			return new AdaptiveOwningCursor(chain, session, lease);
 		} catch (IOException | RuntimeException | Error failure) {
@@ -150,21 +131,13 @@ final class LmdbNativeAdaptiveFilterPlacement {
 		return false;
 	}
 
-	private static void decline(NativeRowsStep step, String reason, boolean eligible) {
-		if (step.originalExpr == null || !step.originalExpr.isRuntimeTelemetryEnabled()) {
+	private static void decline(TupleExpr telemetryExpr, String reason, boolean eligible) {
+		if (telemetryExpr == null || !telemetryExpr.isRuntimeTelemetryEnabled()) {
 			return;
 		}
-		LmdbNativeExplain.setRuntimeMetric(step.originalExpr, "adaptiveFilterPlacementEligible", eligible ? 1L : 0L);
-		LmdbNativeExplain.setRuntimeMetric(step.originalExpr, "adaptiveFilterPlacementAdmitted", 0L);
-		LmdbNativeExplain.setRuntimeMetric(step.originalExpr, "adaptiveFilterPlacementReason", reason);
-	}
-
-	private static long finiteOutputRows(NativeRowsStep step) {
-		if (step.limit < 0L) {
-			return Long.MAX_VALUE;
-		}
-		long offset = Math.max(0L, step.offset);
-		return Long.MAX_VALUE - offset < step.limit ? Long.MAX_VALUE : offset + step.limit;
+		LmdbNativeExplain.setRuntimeMetric(telemetryExpr, "adaptiveFilterPlacementEligible", eligible ? 1L : 0L);
+		LmdbNativeExplain.setRuntimeMetric(telemetryExpr, "adaptiveFilterPlacementAdmitted", 0L);
+		LmdbNativeExplain.setRuntimeMetric(telemetryExpr, "adaptiveFilterPlacementReason", reason);
 	}
 
 	private static boolean containsOrderedScan(MultiJoinPlan plan) {
@@ -174,28 +147,6 @@ final class LmdbNativeAdaptiveFilterPlacement {
 			}
 		}
 		return false;
-	}
-
-	private static double[] estimatePrefixes(SlotPlan[] order, RowState row) {
-		double[] prefixRows = new double[order.length];
-		double prefix = 1.0d;
-		long boundMask = row.boundMask();
-		for (int i = 0; i < order.length; i++) {
-			SlotPlan child = order[i];
-			double estimate = child instanceof PatternPlan pattern
-					? pattern.estimateForBoundMask(boundMask)
-					: child.estimate(row);
-			if (!Double.isFinite(estimate) || estimate < 0.0d) {
-				return null;
-			}
-			prefix *= Math.max(1.0d, estimate);
-			if (!Double.isFinite(prefix)) {
-				return null;
-			}
-			prefixRows[i] = prefix;
-			boundMask |= child.producedMask();
-		}
-		return prefixRows;
 	}
 
 	private static RowCursor openChain(MultiJoinPlan plan, MultiJoinPlan.OrderedPlan ordered, int targetIndex,
@@ -260,75 +211,48 @@ final class AdaptiveFilterMetadata {
 	static final int EXPENSIVE = 16;
 	static final int MAX_COMPOSITE_COST = 64;
 
-	private static final AdaptiveFilterMetadata MISSING = new AdaptiveFilterMetadata(-1, -1L, 0, -1.0d, -1L,
-			false, AdaptiveDeclineReason.MISSING_METADATA);
+	private static final AdaptiveFilterMetadata MISSING = new AdaptiveFilterMetadata(-1, -1L, 0, false,
+			AdaptiveDeclineReason.MISSING_METADATA);
 
 	final int filterId;
 	final long requiredMask;
 	final int estimatedCostUnits;
-	final double plannedPassRatio;
-	final long plannedEvidenceCount;
 	final boolean adaptiveEligible;
 	final AdaptiveDeclineReason declineReason;
 
-	private AdaptiveFilterMetadata(int filterId, long requiredMask, int estimatedCostUnits, double plannedPassRatio,
-			long plannedEvidenceCount, boolean adaptiveEligible, AdaptiveDeclineReason declineReason) {
+	private AdaptiveFilterMetadata(int filterId, long requiredMask, int estimatedCostUnits, boolean adaptiveEligible,
+			AdaptiveDeclineReason declineReason) {
 		this.filterId = filterId;
 		this.requiredMask = requiredMask;
 		this.estimatedCostUnits = estimatedCostUnits;
-		this.plannedPassRatio = plannedPassRatio;
-		this.plannedEvidenceCount = plannedEvidenceCount;
 		this.adaptiveEligible = adaptiveEligible;
 		this.declineReason = declineReason;
 	}
 
-	static AdaptiveFilterMetadata eligible(int filterId, int estimatedCostUnits, double plannedPassRatio,
-			long plannedEvidenceCount) {
-		return new AdaptiveFilterMetadata(filterId, -1L, estimatedCostUnits, plannedPassRatio, plannedEvidenceCount,
-				true, AdaptiveDeclineReason.NONE);
+	static AdaptiveFilterMetadata eligible(int filterId, int estimatedCostUnits) {
+		return new AdaptiveFilterMetadata(filterId, -1L, estimatedCostUnits, true, AdaptiveDeclineReason.NONE);
 	}
 
-	static AdaptiveFilterMetadata ineligible(int filterId, int estimatedCostUnits, double plannedPassRatio,
-			long plannedEvidenceCount, AdaptiveDeclineReason reason) {
-		return new AdaptiveFilterMetadata(filterId, -1L, estimatedCostUnits, plannedPassRatio, plannedEvidenceCount,
-				false, reason);
+	static AdaptiveFilterMetadata ineligible(int filterId, int estimatedCostUnits, AdaptiveDeclineReason reason) {
+		return new AdaptiveFilterMetadata(filterId, -1L, estimatedCostUnits, false, reason);
 	}
 
 	static AdaptiveFilterMetadata missing() {
 		return MISSING;
 	}
 
-	static AdaptiveFilterMetadata forFilter(int filterId, Filter filter, EvaluationStatistics statistics) {
+	static AdaptiveFilterMetadata forFilter(int filterId, Filter filter) {
 		ValueExpr condition = filter.getCondition();
 		CostClassifier classifier = new CostClassifier();
 		condition.visit(classifier);
 
-		double passRatio = filter.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO);
-		long evidenceCount = filter.getLongMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_EVIDENCE_COUNT);
-		if ((!validPassRatio(passRatio) || evidenceCount < 0L) && statistics != null) {
-			EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(filter);
-			if (!validPassRatio(passRatio) && estimate != null
-					&& validPassRatio(estimate.getPlanningPassRatio())) {
-				passRatio = estimate.getPlanningPassRatio();
-			}
-			if (evidenceCount < 0L && estimate != null) {
-				evidenceCount = estimate.getEvidenceCount();
-			}
-		}
-
 		if (classifier.containsExists) {
-			return ineligible(filterId, classifier.cost(), passRatio, evidenceCount,
-					AdaptiveDeclineReason.EXISTS_FILTER);
+			return ineligible(filterId, classifier.cost(), AdaptiveDeclineReason.EXISTS_FILTER);
 		}
 		if (!QueryEvaluationUtility.isRepeatableWithinPreparation(condition)) {
-			return ineligible(filterId, classifier.cost(), passRatio, evidenceCount,
-					AdaptiveDeclineReason.VOLATILE_FILTER);
+			return ineligible(filterId, classifier.cost(), AdaptiveDeclineReason.VOLATILE_FILTER);
 		}
-		return eligible(filterId, classifier.cost(), passRatio, evidenceCount);
-	}
-
-	private static boolean validPassRatio(double passRatio) {
-		return Double.isFinite(passRatio) && passRatio >= 0.0d && passRatio <= 1.0d;
+		return eligible(filterId, classifier.cost());
 	}
 
 	AdaptiveFilterMetadata withRequiredMask(long requiredMask) {
@@ -336,11 +260,10 @@ final class AdaptiveFilterMetadata {
 			return this;
 		}
 		if (requiredMask < 0L) {
-			return new AdaptiveFilterMetadata(filterId, requiredMask, estimatedCostUnits, plannedPassRatio,
-					plannedEvidenceCount, false, AdaptiveDeclineReason.STICKY_FILTER);
+			return new AdaptiveFilterMetadata(filterId, requiredMask, estimatedCostUnits, false,
+					AdaptiveDeclineReason.STICKY_FILTER);
 		}
-		return new AdaptiveFilterMetadata(filterId, requiredMask, estimatedCostUnits, plannedPassRatio,
-				plannedEvidenceCount, adaptiveEligible, declineReason);
+		return new AdaptiveFilterMetadata(filterId, requiredMask, estimatedCostUnits, adaptiveEligible, declineReason);
 	}
 
 	private static final class CostClassifier extends AbstractQueryModelVisitor<RuntimeException> {

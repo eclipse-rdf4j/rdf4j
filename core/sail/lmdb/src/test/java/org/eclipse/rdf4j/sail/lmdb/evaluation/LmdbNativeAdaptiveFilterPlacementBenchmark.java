@@ -148,7 +148,7 @@ public class LmdbNativeAdaptiveFilterPlacementBenchmark {
 			CostlyPrefixFilter filter = new CostlyPrefixFilter();
 			AdaptiveFilterSession session = adaptive
 					? new AdaptiveFilterSession(filter,
-							AdaptiveFilterMetadata.eligible(101, AdaptiveFilterMetadata.MEDIUM, 0.5d, -1L)
+							AdaptiveFilterMetadata.eligible(101, AdaptiveFilterMetadata.MEDIUM)
 									.withRequiredMask(1L),
 							new FilterPlacementEnvelope(101, new int[] { 0, 1, 2 }))
 					: null;
