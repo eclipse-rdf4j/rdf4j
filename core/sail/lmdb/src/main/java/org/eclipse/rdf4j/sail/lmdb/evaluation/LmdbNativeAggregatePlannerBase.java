@@ -17,9 +17,10 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.SYNTHETIC_VALUE_BASE;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.isNullContextValue;
-import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.safeResourceId;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.validValueForField;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.valueProbeSafeId;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -61,6 +62,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 @Experimental
@@ -82,6 +84,7 @@ abstract class LmdbNativeAggregatePlannerBase {
 	final HashMap<Long, Value> syntheticValuesById = new HashMap<>();
 	final HashMap<Value, Long> syntheticIdsByValue = new HashMap<>();
 	final java.util.HashSet<String> syntheticVarNames = new java.util.HashSet<>();
+	private int nextAdaptiveFilterId;
 
 	LmdbNativeAggregatePlannerBase(QueryEvaluationContext context, LmdbNativeEvaluationStrategy strategy,
 			NativeLmdbQuerySource source) {
@@ -101,7 +104,8 @@ abstract class LmdbNativeAggregatePlannerBase {
 		if (filter == null || strategy.evaluationStatistics() == null) {
 			return delegate;
 		}
-		return new RecordingNativeBooleanFilter(delegate, filter, strategy.evaluationStatistics());
+		return new RecordingNativeBooleanFilter(delegate, filter, strategy.evaluationStatistics(),
+				AdaptiveFilterMetadata.forFilter(nextAdaptiveFilterId++, filter));
 	}
 
 	Filter feedbackFilterForValuesFold(TupleExpr dataExpr, Filter valuesFilter) {
@@ -200,7 +204,11 @@ abstract class LmdbNativeAggregatePlannerBase {
 			@Override
 			public void meet(StatementPattern node) {
 				for (Var var : node.getVarList()) {
-					if (!var.hasValue()) {
+					// BindingSetAssignmentInlinerOptimizer can turn a named statement variable into a
+					// valued Var while retaining its variable identity. It must still use the store's
+					// raw term id: assigning the corresponding VALUES binding a synthetic id would make
+					// the two occurrences incompatible even though they represent the same RDF term.
+					if (var.getName() != null && !var.isAnonymous() && !var.isConstant()) {
 						patternOrCopyVars.add(var.getName());
 					}
 				}
@@ -223,7 +231,7 @@ abstract class LmdbNativeAggregatePlannerBase {
 						Value value = binding.getValue();
 						long id = idOf(value);
 						boolean unknown = id == UNKNOWN;
-						boolean unsafeEligible = !unknown && !safeResourceId(id)
+						boolean unsafeEligible = !unknown && !valueProbeSafeId(id, value)
 								&& !patternOrCopyVars.contains(binding.getName());
 						if (!unknown && !unsafeEligible) {
 							continue;
@@ -238,6 +246,24 @@ abstract class LmdbNativeAggregatePlannerBase {
 				}
 			}
 		});
+	}
+
+	/**
+	 * Whether a compiled root contains a nested variable-scope boundary. The root itself may legitimately be a scope
+	 * boundary when the generic evaluator compiles it as an isolated operand, but a native root must not flatten a
+	 * descendant boundary into the same slot row: doing so would make sibling/outer bindings visible where SPARQL says
+	 * they are out of scope.
+	 */
+	boolean containsNestedVariableScopeChange(TupleExpr root) {
+		ArrayDeque<TupleExpr> pending = new ArrayDeque<>(TupleExprs.getChildren(root));
+		while (!pending.isEmpty()) {
+			TupleExpr current = pending.removeFirst();
+			if (TupleExprs.isVariableScopeChange(current)) {
+				return true;
+			}
+			pending.addAll(TupleExprs.getChildren(current));
+		}
+		return false;
 	}
 
 	Set<String> aggregateRequiredNames(Group group) {

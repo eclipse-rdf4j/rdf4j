@@ -32,6 +32,8 @@ class ThemeQueryCatalogExpectedCountTest {
 				Theme.TRAIN, new long[] { 1, 1, 3, 1, 1, 1, 7836, 1, 1, 67388, 1, 1, 943354 },
 				Theme.ELECTRICAL_GRID, new long[] { 1, 1, 10, 1, 1, 1, 9364, 1, 0, 1, 1, 1, 621654 },
 				Theme.PHARMA, new long[] { 1, 80, 0, 2216, 1, 1, 1, 1, 1635, 1, 51, 1, 25710 },
+				Theme.ADAPTIVE_FILTER_PLACEMENT,
+				new long[] { 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256 },
 				Theme.REAL_ESTATE, new long[] { 35, 1, 25, 75, 1, 75, 1, 1, 1, 75, 520, 99720, 108771 }
 		);
 
@@ -58,6 +60,8 @@ class ThemeQueryCatalogExpectedCountTest {
 				Theme.TRAIN, new long[] { 8268, 3, -1, 67380, 2, 24, -1, 1, 9, -1, 18788, -1, -1 },
 				Theme.ELECTRICAL_GRID, new long[] { 7396, 6, -1, 59629, 5, 47, -1, 6, -1, 0, 0, -1, -1 },
 				Theme.PHARMA, new long[] { 18, -1, -1, -1, 4972, 32, -1, 2885, -1, 13, -1, -1, -1 },
+				Theme.ADAPTIVE_FILTER_PLACEMENT,
+				new long[] { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 },
 				Theme.REAL_ESTATE, new long[] { -1, -1, -1, -1, 39314, -1, 333, 18524, 519, -1, -1, -1, -1 }
 		);
 

@@ -171,7 +171,7 @@ interface SlotPlan {
 		} else if (plan instanceof FilterPlan) {
 			FilterPlan filterPlan = (FilterPlan) plan;
 			collectFlattenable(filterPlan.arg, children, filters);
-			filters.add(new MaskedFilter(filterPlan.filter, filterPlan.filterMask));
+			filters.add(MultiJoinPlan.compiledFilter(filterPlan.filter, filterPlan.filterMask));
 		} else {
 			children.add(plan);
 		}

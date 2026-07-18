@@ -57,8 +57,15 @@ final class MultiJoinPlan implements SlotPlan {
 
 	MultiJoinPlan withFilter(NativeBooleanFilter filter, long mask) {
 		MaskedFilter[] newFilters = Arrays.copyOf(filters, filters.length + 1);
-		newFilters[filters.length] = new MaskedFilter(filter, mask);
+		newFilters[filters.length] = compiledFilter(filter, mask);
 		return new MultiJoinPlan(children, newFilters);
+	}
+
+	static MaskedFilter compiledFilter(NativeBooleanFilter filter, long mask) {
+		AdaptiveFilterMetadata metadata = filter instanceof RecordingNativeBooleanFilter recording
+				? recording.adaptive
+				: AdaptiveFilterMetadata.missing();
+		return new MaskedFilter(filter, mask, metadata);
 	}
 
 	@Override
@@ -226,7 +233,55 @@ final class MultiJoinPlan implements SlotPlan {
 				filterDepth[f] = depth;
 			}
 		}
-		return new OrderedPlan(ordered, filterDepth);
+		return new OrderedPlan(ordered, filterDepth, derivePlacement(filterDepth));
+	}
+
+	private FilterPlacementEnvelope[] derivePlacement(int[] filterDepth) {
+		FilterPlacementEnvelope[] placement = new FilterPlacementEnvelope[filters.length];
+		for (int target = 0; target < filters.length; target++) {
+			AdaptiveFilterMetadata metadata = filters[target].adaptive;
+			if (!metadata.adaptiveEligible || metadata.requiredMask < 0L) {
+				continue;
+			}
+			int earliest = filterDepth[target];
+			int[] candidates = new int[Math.min(children.length - earliest,
+					FilterPlacementEnvelope.MAX_CANDIDATES + 1)];
+			int count = 0;
+			for (int depth = earliest; depth < children.length; depth++) {
+				if (!preservesFilterOrder(target, depth, filterDepth)) {
+					break;
+				}
+				if (count == candidates.length) {
+					count++;
+					break;
+				}
+				candidates[count++] = depth;
+			}
+			if (count >= 2 && count <= FilterPlacementEnvelope.MAX_CANDIDATES) {
+				placement[target] = new FilterPlacementEnvelope(metadata.filterId,
+						Arrays.copyOf(candidates, count));
+			}
+		}
+		return placement;
+	}
+
+	private static boolean preservesFilterOrder(int target, int candidateDepth, int[] filterDepth) {
+		for (int other = 0; other < filterDepth.length; other++) {
+			if (other == target) {
+				continue;
+			}
+			int original = comparePlacement(filterDepth[target], target, filterDepth[other], other);
+			int candidate = comparePlacement(candidateDepth, target, filterDepth[other], other);
+			if (Integer.signum(original) != Integer.signum(candidate)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static int comparePlacement(int leftDepth, int leftIndex, int rightDepth, int rightIndex) {
+		int byDepth = Integer.compare(leftDepth, rightDepth);
+		return byDepth != 0 ? byDepth : Integer.compare(leftIndex, rightIndex);
 	}
 
 	/**
@@ -355,10 +410,16 @@ final class MultiJoinPlan implements SlotPlan {
 	static final class OrderedPlan {
 		final SlotPlan[] order;
 		final int[] filterDepth;
+		final FilterPlacementEnvelope[] placement;
 
 		OrderedPlan(SlotPlan[] order, int[] filterDepth) {
+			this(order, filterDepth, new FilterPlacementEnvelope[filterDepth.length]);
+		}
+
+		OrderedPlan(SlotPlan[] order, int[] filterDepth, FilterPlacementEnvelope[] placement) {
 			this.order = order;
 			this.filterDepth = filterDepth;
+			this.placement = placement;
 		}
 	}
 

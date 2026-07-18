@@ -106,6 +106,38 @@ final class LmdbNativeExplain {
 		}
 	}
 
+	static void setRuntimeMetric(TupleExpr expr, String metricName, long value) {
+		if (expr == null || !expr.isRuntimeTelemetryEnabled()) {
+			return;
+		}
+		setLongRuntimeMetricNode(expr, metricName, value);
+		if (expr instanceof QueryRoot) {
+			setLongRuntimeMetricNode(((QueryRoot) expr).getArg(), metricName, value);
+		}
+	}
+
+	static void setRuntimeMetric(TupleExpr expr, String metricName, String value) {
+		if (expr == null || value == null || !expr.isRuntimeTelemetryEnabled()) {
+			return;
+		}
+		setStringRuntimeMetricNode(expr, metricName, value);
+		if (expr instanceof QueryRoot) {
+			setStringRuntimeMetricNode(((QueryRoot) expr).getArg(), metricName, value);
+		}
+	}
+
+	private static void setLongRuntimeMetricNode(TupleExpr expr, String metricName, long value) {
+		synchronized (expr) {
+			expr.setLongMetricActual(metricName, value);
+		}
+	}
+
+	private static void setStringRuntimeMetricNode(TupleExpr expr, String metricName, String value) {
+		synchronized (expr) {
+			expr.setStringMetricActual(metricName, value);
+		}
+	}
+
 	private static void addRuntimeMetricNode(TupleExpr expr, String metricName, long delta) {
 		synchronized (expr) {
 			long current = expr.getLongMetricActual(metricName);

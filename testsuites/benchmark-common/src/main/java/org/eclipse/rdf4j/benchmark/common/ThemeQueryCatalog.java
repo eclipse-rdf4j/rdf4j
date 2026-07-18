@@ -1681,6 +1681,11 @@ public final class ThemeQueryCatalog {
 								"}"),
 						25710L)));
 
+		String adaptiveFilterPrefix = String.join("\n",
+				"PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>",
+				"");
+		QUERIES.put(Theme.ADAPTIVE_FILTER_PLACEMENT, adaptiveFilterPlacementQueries(adaptiveFilterPrefix));
+
 		String realEstatePrefix = String.join("\n",
 				"PREFIX re: <http://example.com/theme/realestate/>",
 				"PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>",
@@ -1956,6 +1961,8 @@ public final class ThemeQueryCatalog {
 				7396, 6, -1, 59629, 5, 47, -1, 6, -1, 0, 0, -1, -1));
 		EXPECTED_COUNT_BINDING_VALUES.put(Theme.PHARMA, expectedCountBindingValues(
 				18, -1, -1, -1, 4972, 32, -1, 2885, -1, 13, -1, -1, -1));
+		EXPECTED_COUNT_BINDING_VALUES.put(Theme.ADAPTIVE_FILTER_PLACEMENT, expectedCountBindingValues(
+				-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1));
 		EXPECTED_COUNT_BINDING_VALUES.put(Theme.REAL_ESTATE, expectedCountBindingValues(
 				-1, -1, -1, -1, 39314, -1, 333, 18524, 519, -1, -1, -1, -1));
 	}
@@ -1971,6 +1978,44 @@ public final class ThemeQueryCatalog {
 			throw new IllegalArgumentException("No queries registered for theme " + theme);
 		}
 		return queries;
+	}
+
+	private static List<BenchmarkQuery> adaptiveFilterPlacementQueries(String prefix) {
+		return List.of(
+				adaptiveFilterPlacementQuery(prefix, "regex payload", "REGEX(STR(?payload), \"^accepted-[0-9]+$\")"),
+				adaptiveFilterPlacementQuery(prefix, "lower-case contains",
+						"CONTAINS(LCASE(STR(?payload)), \"accepted-\")"),
+				adaptiveFilterPlacementQuery(prefix, "string prefix",
+						"STRSTARTS(STR(?payload), \"accepted-\")"),
+				adaptiveFilterPlacementQuery(prefix, "suffix or prefix",
+						"STRENDS(STR(?payload), \"0\") || STRSTARTS(STR(?payload), \"accepted-\")"),
+				adaptiveFilterPlacementQuery(prefix, "nonempty length", "STRLEN(STR(?payload)) > 0"),
+				adaptiveFilterPlacementQuery(prefix, "URI encoding", "ENCODE_FOR_URI(STR(?payload)) != \"\""),
+				adaptiveFilterPlacementQuery(prefix, "prefix replacement",
+						"REPLACE(STR(?payload), \"accepted-\", \"\") != \"\""),
+				adaptiveFilterPlacementQuery(prefix, "upper-case payload", "UCASE(STR(?payload)) != \"\""),
+				adaptiveFilterPlacementQuery(prefix, "plain literal language", "LANG(?payload) = \"\""),
+				adaptiveFilterPlacementQuery(prefix, "string datatype", "DATATYPE(?payload) = xsd:string"),
+				adaptiveFilterPlacementQuery(prefix, "accepted substring",
+						"SUBSTR(STR(?payload), 1, 8) = \"accepted\""),
+				adaptiveFilterPlacementQuery(prefix, "prefix before separator",
+						"STRBEFORE(STR(?payload), \"-\") = \"accepted\""),
+				adaptiveFilterPlacementQuery(prefix, "suffix after prefix",
+						"STRAFTER(STR(?payload), \"accepted-\") != \"\""));
+	}
+
+	private static BenchmarkQuery adaptiveFilterPlacementQuery(String prefix, String name, String condition) {
+		return query("Adaptive filter: " + name,
+				prefix + String.join("\n",
+						"SELECT ?bucket ?probe ?selectedProbe WHERE {",
+						"  VALUES ?bucket { \"all\" }",
+						"  ?probe <http://example.com/theme/adaptive-filter/payload> ?payload .",
+						"  FILTER((" + condition + ") || ?payload = \"__never__\")",
+						"  ?probe <http://example.com/theme/adaptive-filter/routedThrough> ?route .",
+						"  ?route <http://example.com/theme/adaptive-filter/qualified> true .",
+						"  BIND(?probe AS ?selectedProbe)",
+						"}"),
+				256L);
 	}
 
 	private static BenchmarkQuery query(String name, String query, long expectedCount) {
