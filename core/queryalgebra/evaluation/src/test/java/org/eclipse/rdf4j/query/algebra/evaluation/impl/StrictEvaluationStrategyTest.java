@@ -127,7 +127,7 @@ public class StrictEvaluationStrategyTest {
 	}
 
 	@Test
-	public void nonStrictEvaluationOptimizesNonRepeatableFunctions() {
+	public void standardEvaluationKeepsNonRepeatableFunctionBarrier() {
 		FunctionCall first = new FunctionCall("RAND");
 		Filter filter = new Filter(new SingletonSet(), new Or(first, first.clone()));
 		QueryRoot query = new QueryRoot(filter);
@@ -136,11 +136,11 @@ public class StrictEvaluationStrategyTest {
 
 		strategy.optimize(query, new EvaluationStatistics(), EmptyBindingSet.getInstance());
 
-		assertThat(filter.getCondition()).isInstanceOf(FunctionCall.class);
+		assertThat(filter.getCondition()).isInstanceOf(Or.class);
 	}
 
 	@Test
-	public void nonStrictEvaluationOptimizesNonRepeatableFunctionsCreatedByOptimizers() {
+	public void standardEvaluationKeepsBarrierForFunctionsCreatedByOptimizers() {
 		Filter filter = new Filter(new SingletonSet(),
 				new ValueConstant(SimpleValueFactory.getInstance().createLiteral(true)));
 		QueryRoot query = new QueryRoot(filter);
@@ -154,11 +154,11 @@ public class StrictEvaluationStrategyTest {
 
 		strategy.optimize(query, new EvaluationStatistics(), EmptyBindingSet.getInstance());
 
-		assertThat(filter.getCondition()).isInstanceOf(FunctionCall.class);
+		assertThat(filter.getCondition()).isInstanceOf(Or.class);
 	}
 
 	@Test
-	public void nonStrictEvaluationOptimizesDetachedFunctionsCreatedByOptimizers() {
+	public void standardEvaluationKeepsBarrierForDetachedFunctionsCreatedByOptimizers() {
 		ValueExpr[] optimizedCondition = new ValueExpr[1];
 		QueryOptimizer detachedFunctionOptimizer = (tupleExpr, dataset, bindings) -> {
 			FunctionCall first = new FunctionCall("RAND");
@@ -172,7 +172,7 @@ public class StrictEvaluationStrategyTest {
 		strategy.optimize(new QueryRoot(new SingletonSet()), new EvaluationStatistics(),
 				EmptyBindingSet.getInstance());
 
-		assertThat(optimizedCondition[0]).isInstanceOf(FunctionCall.class);
+		assertThat(optimizedCondition[0]).isInstanceOf(Or.class);
 		assertThat(QueryEvaluationUtility.isRepeatable(new FunctionCall("RAND"))).isFalse();
 	}
 
@@ -189,7 +189,7 @@ public class StrictEvaluationStrategyTest {
 	}
 
 	@Test
-	public void nonStrictEvaluationOptimizesBNodeGenerators() {
+	public void standardEvaluationKeepsBNodeGeneratorBarrier() {
 		BNodeGenerator first = new BNodeGenerator();
 		Filter filter = new Filter(new SingletonSet(), new Or(first, first.clone()));
 		QueryRoot query = new QueryRoot(filter);
@@ -198,11 +198,11 @@ public class StrictEvaluationStrategyTest {
 
 		strategy.optimize(query, new EvaluationStatistics(), EmptyBindingSet.getInstance());
 
-		assertThat(filter.getCondition()).isInstanceOf(BNodeGenerator.class);
+		assertThat(filter.getCondition()).isInstanceOf(Or.class);
 	}
 
 	@Test
-	public void nonStrictEvaluationOptimizesNonRepeatableAggregates() {
+	public void standardEvaluationKeepsAggregateBarriers() {
 		Sample first = new Sample(Var.of("sample"));
 		Filter sampleFilter = new Filter(new SingletonSet(), new Or(first, first.clone()));
 		AggregateFunctionCall aggregate = new AggregateFunctionCall(List.of(Var.of("aggregate")),
@@ -214,12 +214,12 @@ public class StrictEvaluationStrategyTest {
 
 		strategy.optimize(query, new EvaluationStatistics(), EmptyBindingSet.getInstance());
 
-		assertThat(sampleFilter.getCondition()).isInstanceOf(Sample.class);
-		assertThat(aggregateFilter.getCondition()).isInstanceOf(AggregateFunctionCall.class);
+		assertThat(sampleFilter.getCondition()).isInstanceOf(Or.class);
+		assertThat(aggregateFilter.getCondition()).isInstanceOf(Or.class);
 	}
 
 	@Test
-	public void nonStrictEvaluationOptimizesTupleFunctions() {
+	public void standardEvaluationKeepsTupleFunctionBarrier() {
 		TupleFunctionCall function = new TupleFunctionCall();
 		function.setURI("urn:test:tuple-function");
 		function.addResultVar(Var.of("result"));
@@ -230,7 +230,7 @@ public class StrictEvaluationStrategyTest {
 
 		strategy.optimize(query, new EvaluationStatistics(), EmptyBindingSet.getInstance());
 
-		assertThat(query.getArg()).isInstanceOf(Union.class);
+		assertThat(query.getArg()).isSameAs(join);
 	}
 
 	@Test
@@ -245,23 +245,6 @@ public class StrictEvaluationStrategyTest {
 		strategy.optimize(query, new EvaluationStatistics(), EmptyBindingSet.getInstance());
 
 		assertThat(query.getArg()).isSameAs(join);
-	}
-
-	@Test
-	public void queryModeRetaggingOverridesClonedFunctionMetadata() {
-		FunctionCall first = new FunctionCall("RAND");
-		Filter filter = new Filter(new SingletonSet(), new Or(first, first.clone()));
-		QueryRoot query = new QueryRoot(filter);
-		strategy.setQueryEvaluationMode(QueryEvaluationMode.STANDARD);
-		strategy.setOptimizerPipeline(List::of);
-		strategy.optimize(query, new EvaluationStatistics(), EmptyBindingSet.getInstance());
-
-		filter.setCondition(filter.getCondition().clone());
-		strategy.setQueryEvaluationMode(QueryEvaluationMode.STRICT);
-		strategy.setOptimizerPipeline(() -> List.of(new QueryModelNormalizerOptimizer()));
-		strategy.optimize(query, new EvaluationStatistics(), EmptyBindingSet.getInstance());
-
-		assertThat(filter.getCondition()).isInstanceOf(Or.class);
 	}
 
 	@Test

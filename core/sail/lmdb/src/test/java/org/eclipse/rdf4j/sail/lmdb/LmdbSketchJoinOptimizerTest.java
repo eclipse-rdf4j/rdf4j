@@ -52,7 +52,6 @@ import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
@@ -244,21 +243,6 @@ class LmdbSketchJoinOptimizerTest {
 		Filter retained = assertInstanceOf(Filter.class, root.getArg());
 		assertInstanceOf(Join.class, retained.getArg());
 		assertEquals(1, countFunctionCalls(root.getArg(), condition.getURI()));
-	}
-
-	@Test
-	void standardModeLetsLmdbPlanThroughUnmarkedFunctionFilter() {
-		StatementPattern first = statementPattern("s1", "p1", "o1");
-		StatementPattern second = statementPattern("s1", "p2", "o2");
-		FunctionCall condition = new FunctionCall("urn:rdf4j:test:unmarked-standard-function", new Var("o1"));
-		QueryRoot root = new QueryRoot(new Filter(new Join(first, second), condition));
-		PlanningStatistics statistics = PlanningStatistics.withPlan(List.of(second, first));
-		QueryEvaluationUtility.pinFunctions(root, true);
-
-		new LmdbSketchJoinOptimizer(statistics, false).optimize(root, null, null);
-
-		assertEquals(List.of(second, first), statementPatterns(root.getArg()));
-		assertEquals(1, statistics.planningAttempts);
 	}
 
 	@Test

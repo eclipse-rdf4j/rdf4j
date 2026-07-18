@@ -18,7 +18,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.Supplier;
 
 import javax.xml.datatype.DatatypeConstants;
 import javax.xml.datatype.Duration;
@@ -41,7 +40,6 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Sample;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
@@ -103,7 +101,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.UnsignedByteCast;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.UnsignedIntCast;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.UnsignedLongCast;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.UnsignedShortCast;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 
 /**
@@ -115,9 +112,6 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
  */
 @InternalUseOnly()
 public class QueryEvaluationUtility {
-	private static final Object IGNORE_FUNCTION_REPEATABILITY_FOR_OPTIMIZATION = new Object();
-	private static final ThreadLocal<Boolean> IGNORE_FUNCTION_REPEATABILITY_SCOPE = new ThreadLocal<>();
-
 	@SuppressWarnings("deprecation")
 	private static final Set<Class<?>> DETERMINISTIC_FUNCTION_CLASSES = Set.of(
 			Day.class,
@@ -186,10 +180,9 @@ public class QueryEvaluationUtility {
 			org.eclipse.rdf4j.query.algebra.evaluation.function.StringCast.class);
 
 	/**
-	 * Returns whether a query-model subtree is safe for repeatability-sensitive optimizer rewrites. Unresolved function
-	 * calls are conservative barriers, and a pinned function call is repeatable only when its captured implementation
-	 * is an exact known built-in class. Non-strict evaluation can explicitly ignore function repeatability for
-	 * optimization without changing runtime function evaluation.
+	 * Returns whether evaluating a query-model subtree again with the same bindings is guaranteed to produce the same
+	 * result. Unresolved function calls are conservative barriers; a pinned function call is repeatable only when its
+	 * captured implementation is an exact known built-in class.
 	 */
 	public static boolean isRepeatable(QueryModelNode node) {
 		return querySafetySnapshot(node).isRepeatable(node);
@@ -198,35 +191,12 @@ public class QueryEvaluationUtility {
 	/**
 	 * Classifies repeatability and lateral containment for one query tree in a single pass. Each matching leaf marks
 	 * its ancestors only up to the first ancestor already marked by another leaf, keeping propagation linear in the
-	 * number of visited nodes plus the starting node's ancestor depth.
+	 * number of nodes.
 	 */
 	public static QuerySafetySnapshot querySafetySnapshot(QueryModelNode node) {
 		QuerySafetySnapshot result = new QuerySafetySnapshot();
-		Boolean ignoreFunctionRepeatability = IGNORE_FUNCTION_REPEATABILITY_SCOPE.get();
-		if (ignoreFunctionRepeatability == null) {
-			ignoreFunctionRepeatability = configuredIgnoreFunctionRepeatability(node);
-		}
-		node.visit(new QuerySafetyCollector(result, ignoreFunctionRepeatability));
+		node.visit(new QuerySafetyCollector(result));
 		return result;
-	}
-
-	/**
-	 * Runs optimizer work under a query's function-repeatability policy. The thread-confined scope covers temporary
-	 * detached trees; metadata attached during preparation preserves the policy on the query tree and its clones.
-	 */
-	public static <T> T withFunctionRepeatabilityPolicy(boolean ignoreFunctionRepeatability, Supplier<T> operation) {
-		Objects.requireNonNull(operation, "operation");
-		Boolean previous = IGNORE_FUNCTION_REPEATABILITY_SCOPE.get();
-		IGNORE_FUNCTION_REPEATABILITY_SCOPE.set(ignoreFunctionRepeatability);
-		try {
-			return operation.get();
-		} finally {
-			if (previous == null) {
-				IGNORE_FUNCTION_REPEATABILITY_SCOPE.remove();
-			} else {
-				IGNORE_FUNCTION_REPEATABILITY_SCOPE.set(previous);
-			}
-		}
 	}
 
 	/**
@@ -237,30 +207,14 @@ public class QueryEvaluationUtility {
 	}
 
 	/**
-	 * Atomically captures every known-repeatable scalar function implementation referenced by a query subtree, so later
-	 * registry replacement cannot invalidate optimizer decisions. Any optimizer policy already attached to the tree is
-	 * preserved.
+	 * Atomically captures every function implementation referenced by a query subtree. Captured calls retain only the
+	 * function instance (or its absence), so later registry replacement cannot invalidate optimizer decisions.
 	 */
-	public static <T extends QueryModelNode> T pinFunctions(T node) {
-		return pinFunctions(node, null);
-	}
-
-	/**
-	 * Atomically captures repeatable scalar function implementations and configures whether function repeatability is a
-	 * barrier to optimizer rewrites. This optimizer-only setting does not change runtime function evaluation.
-	 */
-	public static <T extends QueryModelNode> T pinFunctions(T node, boolean ignoreFunctionRepeatability) {
-		return pinFunctions(node, Boolean.valueOf(ignoreFunctionRepeatability));
-	}
-
 	@SuppressWarnings("unchecked")
-	private static <T extends QueryModelNode> T pinFunctions(T node, Boolean ignoreFunctionRepeatability) {
-		if (ignoreFunctionRepeatability != null && !(node instanceof FunctionCall)) {
-			node.setQueryModelMetadata(IGNORE_FUNCTION_REPEATABILITY_FOR_OPTIMIZATION, ignoreFunctionRepeatability);
-		}
+	public static <T extends QueryModelNode> T pinFunctions(T node) {
 		FunctionRegistry registry = FunctionRegistry.getInstance();
 		synchronized (registry) {
-			FunctionPinningVisitor visitor = new FunctionPinningVisitor(registry, ignoreFunctionRepeatability);
+			FunctionPinningVisitor visitor = new FunctionPinningVisitor(registry);
 			if (node instanceof FunctionCall && !(node instanceof PinnedFunctionCall)) {
 				Function function = registry.get(((FunctionCall) node).getURI()).orElse(null);
 				if (function == null || !isRepeatable(function)) {
@@ -325,50 +279,39 @@ public class QueryEvaluationUtility {
 		}
 	}
 
-	private static final class QuerySafetyCollector extends AbstractQueryModelVisitor<RuntimeException> {
+	private static final class QuerySafetyCollector extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
 		private final QuerySafetySnapshot result;
-		private final boolean fixedFunctionRepeatabilityMode;
-		private Boolean ignoreFunctionRepeatability;
 
-		private QuerySafetyCollector(QuerySafetySnapshot result, Boolean ignoreFunctionRepeatability) {
+		private QuerySafetyCollector(QuerySafetySnapshot result) {
+			super(false);
 			this.result = result;
-			this.fixedFunctionRepeatabilityMode = ignoreFunctionRepeatability != null;
-			this.ignoreFunctionRepeatability = ignoreFunctionRepeatability;
 		}
 
 		@Override
 		public void meet(FunctionCall node) {
-			if (!ignoreFunctionRepeatabilityFor(node)) {
-				Function function = node instanceof PinnedFunctionCall ? resolveFunction(node).orElse(null) : null;
-				if (function == null || !isRepeatable(function)) {
-					mark(node);
-				}
+			Function function = node instanceof PinnedFunctionCall ? resolveFunction(node).orElse(null) : null;
+			if (function == null || !isRepeatable(function)) {
+				mark(node);
 			}
 			super.meet(node);
 		}
 
 		@Override
 		public void meet(BNodeGenerator node) {
-			if (!ignoreFunctionRepeatabilityFor(node)) {
-				mark(node);
-			}
+			mark(node);
 			super.meet(node);
 		}
 
 		@Override
 		public void meet(AggregateFunctionCall node) {
-			if (!ignoreFunctionRepeatabilityFor(node)) {
-				mark(node);
-			}
+			mark(node);
 			super.meet(node);
 		}
 
 		@Override
 		public void meet(Sample node) {
-			if (!ignoreFunctionRepeatabilityFor(node)) {
-				mark(node);
-			}
+			mark(node);
 			super.meet(node);
 		}
 
@@ -386,46 +329,10 @@ public class QueryEvaluationUtility {
 
 		@Override
 		public void meetOther(QueryModelNode node) {
-			if (node instanceof TupleExpr
-					&& (!(node instanceof TupleFunctionCall) || !ignoreFunctionRepeatabilityFor(node))) {
+			if (node instanceof TupleExpr) {
 				mark(node);
 			}
 			super.meetOther(node);
-		}
-
-		private boolean ignoreFunctionRepeatabilityFor(QueryModelNode node) {
-			Boolean configured = ignoreFunctionRepeatability;
-			if (!fixedFunctionRepeatabilityMode && configured == null) {
-				Object value = node.getQueryModelMetadata(IGNORE_FUNCTION_REPEATABILITY_FOR_OPTIMIZATION);
-				if (value instanceof Boolean) {
-					configured = (Boolean) value;
-				}
-			}
-			if (configured != null) {
-				node.setQueryModelMetadata(IGNORE_FUNCTION_REPEATABILITY_FOR_OPTIMIZATION, configured);
-			}
-			return Boolean.TRUE.equals(configured);
-		}
-
-		@Override
-		protected void meetNode(QueryModelNode node) {
-			if (fixedFunctionRepeatabilityMode) {
-				node.visitChildren(this);
-				return;
-			}
-
-			Boolean previous = ignoreFunctionRepeatability;
-			if (ignoreFunctionRepeatability == null) {
-				Object value = node.getQueryModelMetadata(IGNORE_FUNCTION_REPEATABILITY_FOR_OPTIMIZATION);
-				if (value instanceof Boolean) {
-					ignoreFunctionRepeatability = (Boolean) value;
-				}
-			}
-			try {
-				node.visitChildren(this);
-			} finally {
-				ignoreFunctionRepeatability = previous;
-			}
 		}
 
 		private void mark(QueryModelNode node) {
@@ -440,81 +347,29 @@ public class QueryEvaluationUtility {
 		}
 	}
 
-	private static Boolean configuredIgnoreFunctionRepeatability(QueryModelNode node) {
-		Boolean result = null;
-		QueryModelNode current = node;
-		while (current != null) {
-			Object value = current.getQueryModelMetadata(IGNORE_FUNCTION_REPEATABILITY_FOR_OPTIMIZATION);
-			if (value instanceof Boolean) {
-				// The outermost configured query mode overrides metadata retained by a detached subtree clone.
-				result = (Boolean) value;
-			}
-			current = current.getParentNode();
-		}
-		return result;
-	}
-
 	private static final class FunctionPinningVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
 		private final FunctionRegistry registry;
-		private final Boolean ignoreFunctionRepeatability;
 
-		private FunctionPinningVisitor(FunctionRegistry registry, Boolean ignoreFunctionRepeatability) {
+		private FunctionPinningVisitor(FunctionRegistry registry) {
 			super(false);
 			this.registry = registry;
-			this.ignoreFunctionRepeatability = ignoreFunctionRepeatability;
 		}
 
 		@Override
 		public void meet(FunctionCall node) {
 			if (node instanceof PinnedFunctionCall || node.getParentNode() == null) {
-				setFunctionMetadata(node);
 				super.meet(node);
 				return;
 			}
 			Function function = registry.get(node.getURI()).orElse(null);
 			if (function == null || !isRepeatable(function)) {
-				setFunctionMetadata(node);
 				super.meet(node);
 				return;
 			}
 			PinnedFunctionCall pinned = new PinnedFunctionCall(node, function);
-			setFunctionMetadata(pinned);
 			node.replaceWith(pinned);
 			super.meet(pinned);
-		}
-
-		@Override
-		public void meet(BNodeGenerator node) {
-			setFunctionMetadata(node);
-			super.meet(node);
-		}
-
-		@Override
-		public void meet(AggregateFunctionCall node) {
-			setFunctionMetadata(node);
-			super.meet(node);
-		}
-
-		@Override
-		public void meet(Sample node) {
-			setFunctionMetadata(node);
-			super.meet(node);
-		}
-
-		@Override
-		public void meetOther(QueryModelNode node) {
-			if (node instanceof TupleFunctionCall) {
-				setFunctionMetadata(node);
-			}
-			super.meetOther(node);
-		}
-
-		private void setFunctionMetadata(QueryModelNode node) {
-			if (ignoreFunctionRepeatability != null) {
-				node.setQueryModelMetadata(IGNORE_FUNCTION_REPEATABILITY_FOR_OPTIMIZATION,
-						ignoreFunctionRepeatability);
-			}
 		}
 	}
 
