@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
@@ -62,7 +63,8 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 		TupleExpr leftArg = join.getLeftArg();
 		TupleExpr rightArg = join.getRightArg();
 
-		if (leftArg instanceof EmptySet || rightArg instanceof EmptySet) {
+		if (leftArg instanceof EmptySet && QueryEvaluationUtility.canDiscardWithoutEvaluation(rightArg)
+				|| rightArg instanceof EmptySet && QueryEvaluationUtility.canDiscardWithoutEvaluation(leftArg)) {
 			join.replaceWith(new EmptySet());
 		} else if (leftArg instanceof SingletonSet) {
 			join.replaceWith(rightArg);
@@ -111,7 +113,7 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 		TupleExpr rightArg = leftJoin.getRightArg();
 		ValueExpr condition = leftJoin.getCondition();
 
-		if (leftArg instanceof EmptySet) {
+		if (leftArg instanceof EmptySet && QueryEvaluationUtility.canDiscardWithoutEvaluation(rightArg)) {
 			leftJoin.replaceWith(leftArg);
 		} else if (rightArg instanceof EmptySet) {
 			leftJoin.replaceWith(leftArg);
@@ -123,8 +125,11 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 					.orElse(false);
 
 			if (!conditionValue) {
-				// Constraint is always false
-				leftJoin.replaceWith(leftArg);
+				// Constraint is always false; the unextended left solutions remain, but the right operand may
+				// only be discarded unevaluated when it cannot raise an observable query-fatal error
+				if (QueryEvaluationUtility.canDiscardWithoutEvaluation(rightArg)) {
+					leftJoin.replaceWith(leftArg);
+				}
 			} else {
 				leftJoin.setCondition(null);
 			}
@@ -152,7 +157,7 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 		TupleExpr leftArg = difference.getLeftArg();
 		TupleExpr rightArg = difference.getRightArg();
 
-		if (leftArg instanceof EmptySet) {
+		if (leftArg instanceof EmptySet && QueryEvaluationUtility.canDiscardWithoutEvaluation(rightArg)) {
 			difference.replaceWith(leftArg);
 		} else if (rightArg instanceof EmptySet) {
 			difference.replaceWith(leftArg);
@@ -168,7 +173,8 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 		TupleExpr leftArg = intersection.getLeftArg();
 		TupleExpr rightArg = intersection.getRightArg();
 
-		if (leftArg instanceof EmptySet || rightArg instanceof EmptySet) {
+		if (leftArg instanceof EmptySet && QueryEvaluationUtility.canDiscardWithoutEvaluation(rightArg)
+				|| rightArg instanceof EmptySet && QueryEvaluationUtility.canDiscardWithoutEvaluation(leftArg)) {
 			intersection.replaceWith(new EmptySet());
 		}
 	}
@@ -177,7 +183,10 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 	protected void meetUnaryTupleOperator(UnaryTupleOperator node) {
 		super.meetUnaryTupleOperator(node);
 
-		if (node.getArg() instanceof EmptySet) {
+		if (node.getArg() instanceof EmptySet
+				&& !(node instanceof Service && !((Service) node).isSilent())) {
+			// a non-silent SERVICE still denotes one remote invocation whose failure is observable, even when
+			// its locally parsed pattern is empty
 			node.replaceWith(node.getArg());
 		}
 	}
@@ -197,8 +206,11 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 					.orElse(false);
 
 			if (!conditionValue) {
-				// Constraint is always false
-				node.replaceWith(new EmptySet());
+				// Constraint is always false; the filter result is empty, but the argument may only be
+				// discarded unevaluated when it cannot raise an observable query-fatal error
+				if (QueryEvaluationUtility.canDiscardWithoutEvaluation(arg)) {
+					node.replaceWith(new EmptySet());
+				}
 			} else {
 				node.replaceWith(arg);
 			}

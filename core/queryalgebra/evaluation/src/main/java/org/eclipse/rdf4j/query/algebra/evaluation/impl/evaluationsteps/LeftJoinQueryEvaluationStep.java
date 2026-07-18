@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.Sc
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LeftJoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
@@ -50,7 +51,11 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 			String[] joinAttributes = leftBindingNames.stream()
 					.filter(rightBindingNames::contains)
 					.toArray(String[]::new);
-			return bs -> new HashJoinIteration(left, right, bs, true, joinAttributes, context);
+			if (QueryEvaluationUtility.canDiscardWithoutEvaluation(leftJoin.getRightArg())) {
+				return bs -> new HashJoinIteration(left, right, bs, true, joinAttributes, context);
+			}
+			return bs -> JoinQueryEvaluationStep.withGuaranteedRightEvaluation(right, bs,
+					trackedRight -> new HashJoinIteration(left, trackedRight, bs, true, joinAttributes, context));
 		}
 
 		// Check whether optional join is "well designed" as defined in section
@@ -176,7 +181,10 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 			Set<String> scopeBindingNames) {
 		if (joinCondition == null) {
 			return prepareRightArg;
-		} else if (canEvaluateConditionBasedOnLeftHandSide(join)) {
+		} else if (canEvaluateConditionBasedOnLeftHandSide(join)
+				&& QueryEvaluationUtility.canDiscardWithoutEvaluation(join.getRightArg())) {
+			// pre-filtering skips right-hand evaluation for rejected left solutions, which is only permitted
+			// when the skipped operand cannot raise an observable query-fatal error
 			return new PreFilterQueryEvaluationStep(
 					prepareRightArg,
 					new ScopedQueryValueEvaluationStep(join.getAssuredBindingNames(), joinCondition),

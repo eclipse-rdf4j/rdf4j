@@ -271,7 +271,22 @@ QueryModelNode metadata API being retained), the LMDB native compilers (`isRepea
       through the full memory-store pipeline). Fix: `DisjunctiveConstraintOptimizer` made a documented no-op
       and excluded from `StandardQueryOptimizerPipeline` + `LmdbQueryOptimizerPipeline`. Post-fix green:
       DisjunctiveConstraintOptimizerTest 5/5, MemoryDisjunctiveFilterMultisetTest 2/2.
-- [ ] S1c: ErrorEffect + discard gates; witnesses green.
+- [x] 2026-07-18T08:05Z S1c: nine witnesses in `MemoryFatalServiceErrorPreservationTest` (throwing
+      FederatedService mock modeling real vectored behavior — no request for an empty binding stream, SILENT
+      handled in evaluate per the vectored contract). Pre-fix: 5 failures (constant-false filter, empty join
+      operand, impossible sameTerm, OPTIONAL constant-false, hash-join empty left); UNION+LIMIT and ASK
+      witnesses already passed (UnionQueryEvaluationStep constructs both branch iterations eagerly — kept as
+      regression pins against future lazy unions). Fix: `mayRaiseQueryFatalError`/`canDiscardWithoutEvaluation`
+      classifier in QueryEvaluationUtility (Service !silent fatal; unknown TupleExpr conservative-fatal;
+      expression errors row-local); gates in QueryModelNormalizerOptimizer (Join/LeftJoin/Difference/
+      Intersection annihilation, LeftJoin+Filter constant-false, non-silent Service(EmptySet) unary collapse),
+      SameTermFilterOptimizer, FilterInValuesOptimizer merge path; eval-time: LeftJoin PreFilter only for
+      discardable rights, subquery-hash + inner hash/nested-loop wrapped with `withGuaranteedRightEvaluation`
+      (drains the right operand once when the join completes without opening it; caller close() exempt),
+      specialized join fast paths gated to discardable rights, ServiceJoinIterator performs one non-silent
+      Invocation on empty left. Post-fix 9/9 green. Module sweeps green: evaluation 891, memory 804,
+      lmdb 1905, model 48. W3C SPARQL 1.1 compliance (memory) 176/176 after the NAryValueOperator parent fix
+      (see Surprises).
 - [ ] S2a-d: injection safety, profile, Join/LeftJoin, SERVICE.
 - [ ] S3: ORDER BY stabilization.
 - [ ] S4: guard re-audit items (individually benchmarked).
@@ -293,6 +308,14 @@ QueryModelNode metadata API being retained), the LMDB native compilers (`isRepea
   line ~454) and `FederationEvaluationStrategy` (references the
   `StandardQueryOptimizerPipeline.DISJUNCTIVE_CONSTRAINT_OPTIMIZER` constant in its own optimizer list) —
   which is why the public constant was retained rather than deleted.
+- The post-S1c W3C compliance spot-run (MemorySPARQL11QueryComplianceTest) surfaced a pre-existing model bug,
+  unrelated to this effort's changes and identical on `develop`: `NAryValueOperator.replaceChildNode` (used by
+  `Coalesce`) swapped the child in its argument list WITHOUT setting the replacement's parent reference —
+  every sibling implementation delegates to parent-setting setters. Function pinning replaces a whitelisted
+  cast FunctionCall under COALESCE via `replaceWith`, leaving the pinned node with a null parent and tripping
+  the assertions-only ParentReferenceChecker. One-line root fix + `NAryValueOperatorTest`; compliance then
+  176/176. Bonus finding recorded: `NAryValueOperator.setArguments` stores the caller's list without copying,
+  so an immutable argument list would make `replaceChildNode` throw — not fixed (aliasing change out of scope).
 
 
 ## Decision Log
@@ -317,6 +340,13 @@ QueryModelNode metadata API being retained), the LMDB native compilers (`isRepea
   excluding it from both pipelines, rather than deleting the class: `FederationEvaluationStrategy` references
   the public pipeline constant and `LuceneSailConnection` instantiates the optimizer directly, so the no-op
   fixes those callers without any API break; the pipeline exclusion avoids a wasted per-query tree walk.
+- 2026-07-18 (implementation, S1c): shipped the boolean `mayRaiseQueryFatalError`/`canDiscardWithoutEvaluation`
+  pair instead of the full `ErrorEffect` enum — the discard gates only need the fatal/not-fatal distinction;
+  the ROW_LOCAL tier is introduced in Stage 3 where the ORDER sentinel logic actually consumes it. Specialized
+  join fast paths (merge, bound-statement-pattern lefts) are made ineligible for fatal-capable rights (falling
+  through to the guarded default) rather than individually wrapped — simpler and those paths are BGP-shaped in
+  practice. The empty-left Service invocation uses `fs.select` with an empty binding set (one logical
+  Invocation, result drained for its error effect only).
 
 
 ## Outcomes & Retrospective

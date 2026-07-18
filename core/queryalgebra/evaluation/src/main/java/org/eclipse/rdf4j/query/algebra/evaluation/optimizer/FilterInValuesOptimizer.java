@@ -143,6 +143,10 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 		}
 
 		if (mergedBindingSets.isEmpty()) {
+			if (!QueryEvaluationUtility.canDiscardWithoutEvaluation(filter.getArg())) {
+				// skip the merge: the empty result may not suppress a query-fatal error in the argument
+				return false;
+			}
 			filter.replaceWith(new EmptySet());
 			return true;
 		}
