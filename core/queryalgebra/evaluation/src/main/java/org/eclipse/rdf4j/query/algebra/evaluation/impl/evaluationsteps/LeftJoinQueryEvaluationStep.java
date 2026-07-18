@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.Sc
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LeftJoinIterator;
-import org.eclipse.rdf4j.query.algebra.evaluation.iterator.MaterializedReplayLeftJoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.MaterializedReplayJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -75,8 +75,8 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 					? new ScopedQueryValueEvaluationStep(leftJoin.getBindingNames(),
 							strategy.precompile(leftJoin.getCondition(), context))
 					: null;
-			leftJoin.setAlgorithm(MaterializedReplayLeftJoinIterator.class.getSimpleName());
-			return bs -> new MaterializedReplayLeftJoinIterator(left, right, scopedCondition, bs);
+			leftJoin.setAlgorithm(MaterializedReplayJoinIterator.class.getSimpleName());
+			return bs -> new MaterializedReplayJoinIterator(left, right, scopedCondition, bs, true);
 		}
 
 		// Check whether optional join is "well designed" as defined in section

@@ -308,7 +308,7 @@ public class QueryPlanRetrievalTest {
 					"║     ProjectionElem \"g\"\n" +
 					// The OPTIONAL's BIND reads ?s via EXISTS: pushing left bindings in would be observable
 					// (unintended correlation), so the right operand is evaluated once and replayed.
-					"╚══ LeftJoin (MaterializedReplayLeftJoinIterator)\n" +
+					"╚══ LeftJoin (MaterializedReplayJoinIterator)\n" +
 					"      Compare (>)\n" +
 					"      ╠══ PinnedFunctionCall (http://www.w3.org/2005/xpath-functions#string-length)\n" +
 					"      ║     Str\n" +

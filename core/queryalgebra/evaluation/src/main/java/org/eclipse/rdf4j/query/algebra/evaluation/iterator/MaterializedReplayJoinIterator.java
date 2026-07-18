@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 
 /**
- * Left join over an independently evaluated right operand. The SPARQL algebra defines
+ * Join or left join over an independently evaluated right operand. The SPARQL algebra defines
  * {@code eval(LeftJoin(P1, P2, F)) = LeftJoin(eval(P1), eval(P2), F)} — the right operand denotes ONE solution multiset
  * — and the left join itself as {@code Filter(F, Join(Ω1, Ω2)) ∪ Diff(Ω1, Ω2, F)}. This iterator is used when the right
  * operand is not proven safe for the usual per-left-row bind join (it may be non-replay-stable, for example containing
@@ -39,12 +39,13 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
  * The materialization buffer is in-memory, matching {@link HashJoinIteration}'s default iteration cache; spill-to-disk
  * support follows the same extension-hook pattern as a follow-up.
  */
-public class MaterializedReplayLeftJoinIterator extends LookAheadIteration<BindingSet> {
+public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSet> {
 
 	private final QueryEvaluationStep left;
 	private final QueryEvaluationStep right;
 	private final QueryValueEvaluationStep condition;
 	private final BindingSet bindings;
+	private final boolean leftJoin;
 
 	private CloseableIteration<BindingSet> leftIter;
 	private List<BindingSet> rightRows;
@@ -57,13 +58,15 @@ public class MaterializedReplayLeftJoinIterator extends LookAheadIteration<Bindi
 	 * @param right     the prepared right operand; evaluated exactly once with the join-entry bindings.
 	 * @param condition the join condition, already scoped to the left join's binding names, or {@code null}.
 	 * @param bindings  the join-entry bindings.
+	 * @param leftJoin  whether unmatched left solutions are emitted unextended (Diff semantics).
 	 */
-	public MaterializedReplayLeftJoinIterator(QueryEvaluationStep left, QueryEvaluationStep right,
-			QueryValueEvaluationStep condition, BindingSet bindings) {
+	public MaterializedReplayJoinIterator(QueryEvaluationStep left, QueryEvaluationStep right,
+			QueryValueEvaluationStep condition, BindingSet bindings, boolean leftJoin) {
 		this.left = left;
 		this.right = right;
 		this.condition = condition;
 		this.bindings = bindings;
+		this.leftJoin = leftJoin;
 	}
 
 	@Override
@@ -92,7 +95,7 @@ public class MaterializedReplayLeftJoinIterator extends LookAheadIteration<Bindi
 				currentLeftMatched = true;
 				return merged;
 			}
-			BindingSet unextended = currentLeftMatched ? null : currentLeft;
+			BindingSet unextended = leftJoin && !currentLeftMatched ? currentLeft : null;
 			currentLeft = null;
 			if (unextended != null) {
 				return unextended;

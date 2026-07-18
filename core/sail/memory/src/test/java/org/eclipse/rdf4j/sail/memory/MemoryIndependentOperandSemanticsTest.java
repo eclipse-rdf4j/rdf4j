@@ -126,6 +126,22 @@ public class MemoryIndependentOperandSemanticsTest {
 	}
 
 	/**
+	 * A deterministic witness for the binding-injection contract, no volatiles involved. The optimizer rewrites the IN
+	 * filter into a join with a VALUES operand; independently evaluated, the BIND produces exactly one
+	 * {@code ?x = <urn:test:a>} solution which is compatible with exactly one VALUES row. A physical bind join that
+	 * pushes each VALUES row into the cloned BIND would pre-bind the Extend target (undefined in the algebra; RDF4J's
+	 * Extension overwrites it) and duplicate the row.
+	 */
+	@Test
+	public void filterInValuesRewriteDoesNotDuplicateViaInjection() {
+		List<BindingSet> rows = evaluate(
+				"SELECT ?x WHERE { BIND(<urn:test:a> AS ?x) FILTER(?x IN (<urn:test:a>, <urn:test:b>)) }");
+
+		assertEquals(1, rows.size(),
+				"the Extend produces one solution; a VALUES-driven bind join must not duplicate it");
+	}
+
+	/**
 	 * Both projection expressions are evaluated over the same solution mapping, so BNODE("k") must map the shared label
 	 * to one blank node per row and to distinct blank nodes across rows. Chained
 	 * {@code BIND(BNODE("k") ...) BIND(BNODE("k") ...)} is deliberately NOT asserted: each BIND's Extend produces a

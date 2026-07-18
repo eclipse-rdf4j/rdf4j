@@ -300,10 +300,22 @@ QueryModelNode metadata API being retained), the LMDB native compilers (`isRepea
       row-local); right materialized BEFORE left is consumed (fatal errors surface on empty left). All 7
       witnesses green. NOTE: buffer is in-memory ArrayList — parity with HashJoinIteration's default cache;
       genuine spill = follow-up via the same hook pattern.
-- [ ] S2 (part 1): module sweeps + compliance green; committed.
-- [ ] S2 (part 2): inner-Join routing for unsafe non-scope-change rights; B2 FilterInValues execution-level
-      witness under forced nested loop; SERVICE pushdown≠partitioning + SILENT failure-atomicity + fresh
-      row-correlation variable (2d).
+- [x] 2026-07-18T09:40Z S2 (part 1): sweeps green — evaluation 896, memory 811 (one plan-snapshot updated:
+      `QueryPlanRetrievalTest.testSpecificFilterScopeScenario` legitimately routes to the materialized
+      iterator because its OPTIONAL's BIND observes ?s via EXISTS), W3C compliance 176/176, lmdb 1905.
+      Committed `cfeb2ccbea`.
+- [x] 2026-07-18T09:55Z S2 (part 2a): iterator generalized to `MaterializedReplayJoinIterator` (leftJoin
+      flag); B2 FilterInValues execution witness added — it PASSES on the current engine (the predicted
+      duplication does not reproduce end-to-end), so per test-first path discovery it is kept as a regression
+      pin and NO speculative inner-Join routing was built: every parser-reachable unsafe inner-join right is a
+      scope change (→ hash join, evaluated once) and no failing witness exists. The analyzer + iterator are
+      ready if a failing shape is ever demonstrated.
+- [ ] S2 (part 2b, NOT STARTED): SERVICE pushdown ≠ partitioning predicates, ALL fallback paths under the
+      partition contract (`evaluateInternalFallback` per-binding select!), SILENT failure-atomicity
+      (MUST_COMPLETE_BEFORE_EXPOSURE buffered exposure replacing the SilentIteration catch-in-hasNext), fresh
+      row-correlation variable replacing `ROW_IDX_VAR = "__rowIdx"`; tests incl. >block-size UUID case,
+      mid-stream failure atomicity, `?__rowIdx` collision queries. Files:
+      `core/repository/sparql/.../federation/RepositoryFederatedService.java`, `ServiceJoinIterator`.
 - [ ] S3: ORDER BY stabilization.
 - [ ] S4: guard re-audit items (individually benchmarked).
 - [ ] S5: determinism SPI.
