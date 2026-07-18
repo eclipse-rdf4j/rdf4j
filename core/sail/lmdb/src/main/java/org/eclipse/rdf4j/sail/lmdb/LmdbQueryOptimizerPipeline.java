@@ -24,7 +24,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingAssignerOptim
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.CompareOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConjunctiveConstraintSplitterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.DisjunctiveConstraintOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.IterativeEvaluationOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OrderLimitOptimizer;
@@ -48,7 +47,6 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 	private static final BindingAssignerOptimizer BINDING_ASSIGNER = new BindingAssignerOptimizer();
 	private static final CompareOptimizer COMPARE_OPTIMIZER = new CompareOptimizer();
 	private static final ConjunctiveConstraintSplitterOptimizer CONJUNCTIVE_CONSTRAINT_SPLITTER = new ConjunctiveConstraintSplitterOptimizer();
-	private static final DisjunctiveConstraintOptimizer DISJUNCTIVE_CONSTRAINT_OPTIMIZER = new DisjunctiveConstraintOptimizer();
 	private static final SameTermFilterOptimizer SAME_TERM_FILTER_OPTIMIZER = new SameTermFilterOptimizer();
 	private static final UnionScopeChangeOptimizer UNION_SCOPE_CHANGE_OPTIMIZER = new UnionScopeChangeOptimizer();
 	private static final QueryModelNormalizerOptimizer QUERY_MODEL_NORMALIZER = new QueryModelNormalizerOptimizer();
@@ -76,7 +74,8 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 				new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()),
 				COMPARE_OPTIMIZER,
 				CONJUNCTIVE_CONSTRAINT_SPLITTER,
-				DISJUNCTIVE_CONSTRAINT_OPTIMIZER,
+				// DisjunctiveConstraintOptimizer is excluded: its split is not multiset-preserving for
+				// non-disjoint disjuncts. See that class's javadoc.
 				SAME_TERM_FILTER_OPTIMIZER,
 				UNION_SCOPE_CHANGE_OPTIMIZER,
 				QUERY_MODEL_NORMALIZER,

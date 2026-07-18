@@ -75,7 +75,8 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()),
 				COMPARE_OPTIMIZER,
 				CONJUNCTIVE_CONSTRAINT_SPLITTER,
-				DISJUNCTIVE_CONSTRAINT_OPTIMIZER,
+				// DISJUNCTIVE_CONSTRAINT_OPTIMIZER is excluded: its split is not multiset-preserving for
+				// non-disjoint disjuncts. See DisjunctiveConstraintOptimizer's javadoc.
 				SAME_TERM_FILTER_OPTIMIZER,
 				UNION_SCOPE_CHANGE_OPTIMIZER,
 				QUERY_MODEL_NORMALIZER,

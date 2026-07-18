@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
+import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -51,6 +52,29 @@ public class DisjunctiveConstraintOptimizerTest extends QueryOptimizerTest {
 
 		assertThat(root.getArg()).isSameAs(filter);
 		assertThat(filter.getArg()).isSameAs(volatileArg);
+		assertThat(filter.getCondition()).isSameAs(condition);
+		assertThat(findUnion(root)).isNull();
+	}
+
+	/**
+	 * The disjunctive split is only algebra-preserving when the disjuncts are mutually exclusive: a solution satisfying
+	 * more than one disjunct must appear once in the filter result but would appear once per satisfied branch in the
+	 * rewritten union. The optimizer has no disjointness proof, so it must not split.
+	 */
+	@Test
+	public void doesNotSplitNonDisjointDisjunction() {
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		Or condition = new Or(
+				new SameTerm(Var.of("o"),
+						new ValueConstant(SimpleValueFactory.getInstance().createIRI("urn:test:a"))),
+				new Bound(Var.of("o")));
+		Filter filter = new Filter(pattern, condition);
+		QueryRoot root = new QueryRoot(filter);
+
+		getOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+
+		assertThat(root.getArg()).isSameAs(filter);
+		assertThat(filter.getArg()).isSameAs(pattern);
 		assertThat(filter.getCondition()).isSameAs(condition);
 		assertThat(findUnion(root)).isNull();
 	}

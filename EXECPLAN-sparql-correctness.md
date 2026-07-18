@@ -266,7 +266,11 @@ QueryModelNode metadata API being retained), the LMDB native compilers (`isRepea
       Or/And-collapse, join-over-union, union factor-out, SameTerm split, order hoist; MD5 + NOW positive
       controls fire in both modes).
 - [ ] S1a: module sweep green; committed.
-- [ ] S1b: disjunctive duplication witness failing; optimizer disabled; develop reproduction noted.
+- [x] 2026-07-18T07:45Z S1b: witnesses failing pre-fix — unit level (`doesNotSplitNonDisjointDisjunction`
+      showed the Union split) and end-to-end (`MemoryDisjunctiveFilterMultisetTest`: expected 1 row, got 2
+      through the full memory-store pipeline). Fix: `DisjunctiveConstraintOptimizer` made a documented no-op
+      and excluded from `StandardQueryOptimizerPipeline` + `LmdbQueryOptimizerPipeline`. Post-fix green:
+      DisjunctiveConstraintOptimizerTest 5/5, MemoryDisjunctiveFilterMultisetTest 2/2.
 - [ ] S1c: ErrorEffect + discard gates; witnesses green.
 - [ ] S2a-d: injection safety, profile, Join/LeftJoin, SERVICE.
 - [ ] S3: ORDER BY stabilization.
@@ -280,6 +284,15 @@ QueryModelNode metadata API being retained), the LMDB native compilers (`isRepea
   OPTIONAL witness is expected to fail on `develop` too. To be verified when writing S2 tests.
 - `MapDb3CollectionFactory.createList()` does not spill (delegates to in-memory); only the queue-based
   binding-set structures spill. Discovered during plan review; S2c uses `createBindingSetQueue`.
+- The `DisjunctiveConstraintOptimizer` disjointness bug (defect D) exists verbatim on `develop`
+  (`git show develop:...` shows the same unguarded `containsSameTerm` + clone rewrite) — candidate for an
+  upstream issue/report. End-to-end proof on this branch: `SELECT ?o WHERE { VALUES ?o { <urn:test:a> }
+  FILTER(sameTerm(?o, <urn:test:a>) || BOUND(?o)) }` returned 2 rows instead of 1.
+- Two additional consumers invoked the disjunctive rewrite outside the standard pipelines and are silently
+  fixed by the no-op: `LuceneSailConnection` (direct `new DisjunctiveConstraintOptimizer().optimize(...)` call,
+  line ~454) and `FederationEvaluationStrategy` (references the
+  `StandardQueryOptimizerPipeline.DISJUNCTIVE_CONSTRAINT_OPTIMIZER` constant in its own optimizer list) —
+  which is why the public constant was retained rather than deleted.
 
 
 ## Decision Log
@@ -300,6 +313,10 @@ QueryModelNode metadata API being retained), the LMDB native compilers (`isRepea
   are single-flight and spill-persistent; DisjunctiveConstraintOptimizer is disabled outright in Stage 1.
 - 2026-07-18 (implementation): ExecPlan stored at repo root as `EXECPLAN-sparql-correctness.md`; approved plan
   file remains authoritative for design detail.
+- 2026-07-18 (implementation, S1b): disabled the disjunctive rewrite by making the class a documented no-op AND
+  excluding it from both pipelines, rather than deleting the class: `FederationEvaluationStrategy` references
+  the public pipeline constant and `LuceneSailConnection` instantiates the optimizer directly, so the no-op
+  fixes those callers without any API break; the pipeline exclusion avoids a wasted per-query tree walk.
 
 
 ## Outcomes & Retrospective
