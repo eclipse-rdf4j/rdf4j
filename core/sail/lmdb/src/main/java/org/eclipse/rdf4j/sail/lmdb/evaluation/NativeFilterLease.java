@@ -23,7 +23,16 @@ final class NativeFilterLease {
 
 	private final IdentityHashMap<NativeBooleanFilter, Entry> borrowed = new IdentityHashMap<>();
 	private final ArrayList<Entry> entries = new ArrayList<>();
+	private final boolean suppressFeedback;
 	private boolean finished;
+
+	NativeFilterLease() {
+		this(false);
+	}
+
+	NativeFilterLease(boolean suppressFeedback) {
+		this.suppressFeedback = suppressFeedback;
+	}
 
 	NativeBooleanFilter borrow(NativeBooleanFilter original) {
 		if (finished) {
@@ -38,7 +47,8 @@ final class NativeFilterLease {
 		RecordingNativeBooleanFilter recorder = null;
 		if (original instanceof RecordingNativeBooleanFilter recording) {
 			NativeBooleanFilter delegate = borrow(recording.delegate);
-			recorder = new RecordingNativeBooleanFilter(delegate, recording.filter, recording.statistics);
+			recorder = new RecordingNativeBooleanFilter(delegate, recording.filter, recording.statistics,
+					recording.adaptive);
 			attempt = recorder;
 		} else if (original instanceof ExistsFilter exists) {
 			attempt = new ExistsFilter(borrow(exists.subPlan));
@@ -85,13 +95,13 @@ final class NativeFilterLease {
 		MaskedFilter[] filters = new MaskedFilter[plan.filters.length];
 		for (int i = 0; i < filters.length; i++) {
 			MaskedFilter filter = plan.filters[i];
-			filters[i] = new MaskedFilter(borrow(filter.filter), filter.mask);
+			filters[i] = new MaskedFilter(borrow(filter.filter), filter.mask, filter.adaptive);
 		}
 		return new MultiJoinPlan(children, filters);
 	}
 
 	void commit() {
-		finish(true, null);
+		finish(!suppressFeedback, null);
 	}
 
 	void discard() {
@@ -118,7 +128,7 @@ final class NativeFilterLease {
 		Throwable failure = primary;
 		for (int i = entries.size() - 1; i >= 0; i--) {
 			Entry entry = entries.get(i);
-			if (!entry.used) {
+			if (!entry.used && !suppressFeedback) {
 				continue;
 			}
 			if (!publishFeedback && entry.recorder != null) {

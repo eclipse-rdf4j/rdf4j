@@ -74,6 +74,9 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	}
 
 	QueryEvaluationStep compileGroup(Group group, ValueExpr havingCondition, TupleExpr originalExpr) {
+		if (containsUnsafeNestedVariableScopeChange(group.getArg())) {
+			return null;
+		}
 		this.requiredAggregateNames = aggregateRequiredNames(group);
 		AggregateSpec[] aggregates = compileAggregates(group.getGroupElements());
 		if (aggregates == null) {
@@ -176,6 +179,9 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				return null;
 			}
 		}
+		if (containsUnsafeNestedVariableScopeChange(node)) {
+			return null;
+		}
 
 		List<ProjectionElem> elems = projection.getProjectionElemList().getElements();
 		String[] sourceNames = new String[elems.size()];
@@ -258,6 +264,9 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		TupleExpr node = expr;
 		if (node instanceof QueryRoot) {
 			node = ((QueryRoot) node).getArg();
+		}
+		if (containsUnsafeNestedVariableScopeChange(node)) {
+			return null;
 		}
 		if (!isBareBgpFragment(node)) {
 			return null;

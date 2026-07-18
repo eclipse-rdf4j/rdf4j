@@ -61,19 +61,27 @@ final class RecordingNativeBooleanFilter implements NativeBooleanFilter {
 	final NativeBooleanFilter delegate;
 	final Filter filter;
 	final EvaluationStatistics statistics;
+	final AdaptiveFilterMetadata adaptive;
 	final AtomicLong passed = new AtomicLong();
 	final AtomicLong filtered = new AtomicLong();
 	private final RecordingNativeBooleanFilter outcomeTarget;
 
 	RecordingNativeBooleanFilter(NativeBooleanFilter delegate, Filter filter, EvaluationStatistics statistics) {
-		this(delegate, filter, statistics, null);
+		this(delegate, filter, statistics, AdaptiveFilterMetadata.missing(), null);
+	}
+
+	RecordingNativeBooleanFilter(NativeBooleanFilter delegate, Filter filter, EvaluationStatistics statistics,
+			AdaptiveFilterMetadata adaptive) {
+		this(delegate, filter, statistics, adaptive, null);
 	}
 
 	private RecordingNativeBooleanFilter(NativeBooleanFilter delegate, Filter filter,
-			EvaluationStatistics statistics, RecordingNativeBooleanFilter outcomeTarget) {
+			EvaluationStatistics statistics, AdaptiveFilterMetadata adaptive,
+			RecordingNativeBooleanFilter outcomeTarget) {
 		this.delegate = delegate;
 		this.filter = filter;
 		this.statistics = statistics;
+		this.adaptive = adaptive;
 		this.outcomeTarget = outcomeTarget;
 	}
 
@@ -101,7 +109,7 @@ final class RecordingNativeBooleanFilter implements NativeBooleanFilter {
 	NativeBooleanFilter forkForParallelWorker(RecordingNativeBooleanFilter target) {
 		NativeBooleanFilter workerDelegate = delegate.forkForParallelWorker();
 		return workerDelegate == null ? null
-				: new RecordingNativeBooleanFilter(workerDelegate, filter, statistics, target);
+				: new RecordingNativeBooleanFilter(workerDelegate, filter, statistics, adaptive, target);
 	}
 
 	@Override

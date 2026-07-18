@@ -113,10 +113,16 @@ final class FilterPlan implements SlotPlan {
 final class MaskedFilter {
 	final NativeBooleanFilter filter;
 	final long mask;
+	final AdaptiveFilterMetadata adaptive;
 
 	MaskedFilter(NativeBooleanFilter filter, long mask) {
+		this(filter, mask, AdaptiveFilterMetadata.missing());
+	}
+
+	MaskedFilter(NativeBooleanFilter filter, long mask, AdaptiveFilterMetadata adaptive) {
 		this.filter = filter;
 		this.mask = mask;
+		this.adaptive = adaptive.withRequiredMask(mask);
 	}
 }
 

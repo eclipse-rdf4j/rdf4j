@@ -17,7 +17,7 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.allSafeExactIds;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.allValueProbeSafeIds;
-import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.safeResourceId;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.valueProbeSafeId;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -358,12 +358,13 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 			long[] rowValues = new long[bindings.size()];
 			int size = 0;
 			for (Binding binding : bindings) {
-				long id = idOf(binding.getValue());
-				if (id == UNKNOWN || !safeResourceId(id)) {
+				Value value = binding.getValue();
+				long id = idOf(value);
+				if (id == UNKNOWN || !valueProbeSafeId(id, value)) {
 					// allocated by collectSyntheticValues before compilation started; only variables it
 					// marked may carry synthetic ids (others must keep raw-id semantics and fall back)
 					Long synthetic = syntheticVarNames.contains(binding.getName())
-							? syntheticIdsByValue.get(binding.getValue())
+							? syntheticIdsByValue.get(value)
 							: null;
 					if (synthetic == null) {
 						return null;

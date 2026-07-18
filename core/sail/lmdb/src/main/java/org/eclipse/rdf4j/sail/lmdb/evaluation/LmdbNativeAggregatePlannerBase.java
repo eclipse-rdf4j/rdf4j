@@ -17,12 +17,13 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.SYNTHETIC_VALUE_BASE;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.isNullContextValue;
-import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.safeResourceId;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.validValueForField;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.valueProbeSafeId;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -43,6 +44,8 @@ import org.eclipse.rdf4j.query.algebra.Avg;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Count;
+import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
@@ -56,11 +59,14 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.Sum;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 @Experimental
@@ -82,6 +88,7 @@ abstract class LmdbNativeAggregatePlannerBase {
 	final HashMap<Long, Value> syntheticValuesById = new HashMap<>();
 	final HashMap<Value, Long> syntheticIdsByValue = new HashMap<>();
 	final java.util.HashSet<String> syntheticVarNames = new java.util.HashSet<>();
+	private int nextAdaptiveFilterId;
 
 	LmdbNativeAggregatePlannerBase(QueryEvaluationContext context, LmdbNativeEvaluationStrategy strategy,
 			NativeLmdbQuerySource source) {
@@ -101,7 +108,8 @@ abstract class LmdbNativeAggregatePlannerBase {
 		if (filter == null || strategy.evaluationStatistics() == null) {
 			return delegate;
 		}
-		return new RecordingNativeBooleanFilter(delegate, filter, strategy.evaluationStatistics());
+		return new RecordingNativeBooleanFilter(delegate, filter, strategy.evaluationStatistics(),
+				AdaptiveFilterMetadata.forFilter(nextAdaptiveFilterId++, filter, strategy.evaluationStatistics()));
 	}
 
 	Filter feedbackFilterForValuesFold(TupleExpr dataExpr, Filter valuesFilter) {
@@ -195,12 +203,17 @@ abstract class LmdbNativeAggregatePlannerBase {
 	 * (value-materializing) path.
 	 */
 	void collectSyntheticValues(TupleExpr expr) {
-		java.util.HashSet<String> patternOrCopyVars = new java.util.HashSet<>();
+		HashSet<String> patternOrCopyVars = new HashSet<>();
+		HashSet<String> computedExtensionVars = new HashSet<>();
 		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			public void meet(StatementPattern node) {
 				for (Var var : node.getVarList()) {
-					if (!var.hasValue()) {
+					// BindingSetAssignmentInlinerOptimizer can turn a named statement variable into a
+					// valued Var while retaining its variable identity. It must still use the store's
+					// raw term id: assigning the corresponding VALUES binding a synthetic id would make
+					// the two occurrences incompatible even though they represent the same RDF term.
+					if (var.getName() != null && !var.isAnonymous() && !var.isConstant()) {
 						patternOrCopyVars.add(var.getName());
 					}
 				}
@@ -211,6 +224,8 @@ abstract class LmdbNativeAggregatePlannerBase {
 				patternOrCopyVars.add(node.getName());
 				if (node.getExpr() instanceof Var) {
 					patternOrCopyVars.add(((Var) node.getExpr()).getName());
+				} else {
+					computedExtensionVars.addAll(VarNameCollector.process(node.getExpr()));
 				}
 				super.meet(node);
 			}
@@ -223,7 +238,14 @@ abstract class LmdbNativeAggregatePlannerBase {
 						Value value = binding.getValue();
 						long id = idOf(value);
 						boolean unknown = id == UNKNOWN;
-						boolean unsafeEligible = !unknown && !safeResourceId(id)
+						if ((unknown || !valueProbeSafeId(id, value))
+								&& computedExtensionVars.contains(binding.getName())) {
+							// Computed inline expressions decode through the physical LMDB codec. A
+							// plan-local synthetic id is outside that codec's domain, so leave this
+							// binding unallocated and make compileValues decline the native root.
+							continue;
+						}
+						boolean unsafeEligible = !unknown && !valueProbeSafeId(id, value)
 								&& !patternOrCopyVars.contains(binding.getName());
 						if (!unknown && !unsafeEligible) {
 							continue;
@@ -238,6 +260,110 @@ abstract class LmdbNativeAggregatePlannerBase {
 				}
 			}
 		});
+	}
+
+	/**
+	 * Whether compiling this root into one mutable slot row would let a descendant scope observe bindings that generic
+	 * evaluation hides. The root itself may legitimately be a scope boundary when the generic evaluator compiles it as
+	 * an isolated operand. Positive graph patterns remain safe under binding injection, so scope markers on UNION/MINUS
+	 * branches do not by themselves disable their native operators; expressions are unsafe only when they can observe a
+	 * hidden incoming name that their local operand does not assure.
+	 */
+	boolean containsUnsafeNestedVariableScopeChange(TupleExpr root) {
+		return containsUnsafeScopeChange(root, Set.of(), Set.of(), false);
+	}
+
+	boolean containsVariableScopeChange(TupleExpr root) {
+		if (TupleExprs.isVariableScopeChange(root)) {
+			return true;
+		}
+		for (TupleExpr child : TupleExprs.getChildren(root)) {
+			if (containsVariableScopeChange(child)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean containsUnsafeScopeChange(TupleExpr node, Set<String> available, Set<String> hidden,
+			boolean nested) {
+		Set<String> effectiveHidden = hidden;
+		if (nested && TupleExprs.isVariableScopeChange(node) && !available.isEmpty()) {
+			effectiveHidden = unionNames(hidden, available);
+			if (!QueryEvaluationUtility.isRepeatable(node)
+					|| QueryEvaluationUtility.usesMappingParameterizedEvaluation(node)) {
+				return true;
+			}
+		}
+
+		if (node instanceof Filter filter) {
+			if (expressionObservesHidden(filter.getCondition(), filter.getArg().getAssuredBindingNames(),
+					effectiveHidden)) {
+				return true;
+			}
+			return containsUnsafeScopeChange(filter.getArg(), available, effectiveHidden, true);
+		}
+		if (node instanceof Extension extension) {
+			Set<String> assured = extension.getArg().getAssuredBindingNames();
+			for (ExtensionElem elem : extension.getElements()) {
+				if (effectiveHidden.contains(elem.getName())
+						|| expressionObservesHidden(elem.getExpr(), assured, effectiveHidden)) {
+					return true;
+				}
+			}
+			return containsUnsafeScopeChange(extension.getArg(), available, effectiveHidden, true);
+		}
+		if (node instanceof Join join) {
+			return containsUnsafeScopeChange(join.getLeftArg(), available, effectiveHidden, true)
+					|| containsUnsafeScopeChange(join.getRightArg(),
+							unionNames(available, join.getLeftArg().getBindingNames()), effectiveHidden, true);
+		}
+		if (node instanceof LeftJoin leftJoin) {
+			if (leftJoin.hasCondition()
+					&& expressionObservesHidden(leftJoin.getCondition(), leftJoin.getAssuredBindingNames(),
+							effectiveHidden)) {
+				return true;
+			}
+			return containsUnsafeScopeChange(leftJoin.getLeftArg(), available, effectiveHidden, true)
+					|| containsUnsafeScopeChange(leftJoin.getRightArg(),
+							unionNames(available, leftJoin.getLeftArg().getBindingNames()), effectiveHidden, true);
+		}
+		if (node instanceof Difference difference) {
+			return containsUnsafeScopeChange(difference.getLeftArg(), available, effectiveHidden, true)
+					|| containsUnsafeScopeChange(difference.getRightArg(),
+							unionNames(available, difference.getLeftArg().getBindingNames()), effectiveHidden, true);
+		}
+		if (node instanceof Union union) {
+			return containsUnsafeScopeChange(union.getLeftArg(), available, effectiveHidden, true)
+					|| containsUnsafeScopeChange(union.getRightArg(), available, effectiveHidden, true);
+		}
+		for (TupleExpr child : TupleExprs.getChildren(node)) {
+			if (containsUnsafeScopeChange(child, available, effectiveHidden, true)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean expressionObservesHidden(ValueExpr expression, Set<String> assured, Set<String> hidden) {
+		for (String name : VarNameCollector.process(expression)) {
+			if (hidden.contains(name) && !assured.contains(name)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private Set<String> unionNames(Set<String> left, Set<String> right) {
+		if (left.isEmpty()) {
+			return right;
+		}
+		if (right.isEmpty() || left.containsAll(right)) {
+			return left;
+		}
+		java.util.HashSet<String> union = new java.util.HashSet<>(left);
+		union.addAll(right);
+		return union;
 	}
 
 	Set<String> aggregateRequiredNames(Group group) {

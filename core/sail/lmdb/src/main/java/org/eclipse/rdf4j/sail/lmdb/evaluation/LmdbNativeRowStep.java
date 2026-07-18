@@ -1271,6 +1271,13 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 				return true;
 			}
 		}
+		if (multiJoin != null) {
+			cursor = LmdbNativeAdaptiveFilterPlacement.tryOpen(step, multiJoin, row);
+			if (cursor != null) {
+				LmdbNativeExplain.recordExecutionPath(step.originalExpr, "adaptiveFilterPlacement");
+				return true;
+			}
+		}
 		cursor = step.arg.open(row);
 		LmdbNativeExplain.recordExecutionPath(step.originalExpr, "nestedLoop");
 		return true;

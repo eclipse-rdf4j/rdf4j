@@ -433,6 +433,7 @@ final class LmdbNativeOrderPlanner {
 		}
 		return candidate.eliminatedHashChannels > 0
 				&& candidate.arg.estimate(row) < current.arg.estimate(row) ? candidate : current;
+//		return current;
 	}
 
 	static boolean completeGroupPrefix(NativeAggregateDistinctPlan plan, int[] groupSlots) {

@@ -384,11 +384,15 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			return arg == null ? null : row -> !arg.accept(row);
 		}
 		if (expr instanceof Exists) {
-			NativeBooleanFilter direct = compileDirectExists((Exists) expr);
+			Exists exists = (Exists) expr;
+			if (containsVariableScopeChange(exists.getSubQuery())) {
+				return null;
+			}
+			NativeBooleanFilter direct = compileDirectExists(exists);
 			if (direct != null) {
 				return direct;
 			}
-			SlotPlan subPlan = compileTuple(((Exists) expr).getSubQuery(), false);
+			SlotPlan subPlan = compileTuple(exists.getSubQuery(), false);
 			return subPlan == null ? null : new ExistsFilter(subPlan);
 		}
 		if (expr instanceof ListMemberOperator) {
