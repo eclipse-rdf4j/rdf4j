@@ -310,16 +310,75 @@ QueryModelNode metadata API being retained), the LMDB native compilers (`isRepea
       pin and NO speculative inner-Join routing was built: every parser-reachable unsafe inner-join right is a
       scope change (→ hash join, evaluated once) and no failing witness exists. The analyzer + iterator are
       ready if a failing shape is ever demonstrated.
-- [ ] S2 (part 2b, NOT STARTED): SERVICE pushdown ≠ partitioning predicates, ALL fallback paths under the
-      partition contract (`evaluateInternalFallback` per-binding select!), SILENT failure-atomicity
-      (MUST_COMPLETE_BEFORE_EXPOSURE buffered exposure replacing the SilentIteration catch-in-hasNext), fresh
-      row-correlation variable replacing `ROW_IDX_VAR = "__rowIdx"`; tests incl. >block-size UUID case,
-      mid-stream failure atomicity, `?__rowIdx` collision queries. Files:
-      `core/repository/sparql/.../federation/RepositoryFederatedService.java`, `ServiceJoinIterator`.
+- [x] 2026-07-18T11:30Z S2 (part 2b — SERVICE) DONE in `RepositoryFederatedService` +
+      `ServiceJoinConversionIteration`: (i) batching gated behind an explicit
+      `setPartitionToleranceDeclared(true)` capability declaration (javadoc carries the outcome-equivalence
+      contract); without it, ≤blockSize inputs go in ONE VALUES request and larger inputs use
+      `evaluateOnceAndJoinLocally` (one Invocation of the original pattern + streaming compatible-mapping local
+      join); (ii) the per-binding `evaluateInternalFallback` is GONE — the malformed-query fallback is
+      once+local-join, EXCEPT under the documented `?__rowIdx` projection opt-in (see Surprises) where
+      correlated per-binding evaluation is the requested contract; (iii) SILENT failure-atomicity: silent
+      results are fully buffered before exposure (`bufferSilently`) — a mid-stream failure discards all partial
+      rows and substitutes the input pass-through — in both `select()` and the VALUES path; (iv) fresh
+      row-correlation variable (`freshRowIndexVariable` avoiding serviceVars/binding names/pattern text) with
+      `ServiceJoinConversionIteration` parameterized; (v) subselect service patterns are never pushed into
+      (pre-bound vars pierce subquery scope; VALUES-around-subselect constrains before LIMIT) except under the
+      opt-in; (vi) `ServiceJoinConversionIteration.convert` merge made compatible-mapping tolerant (the
+      BindingSet-runtime-type-dependent assert path is gone). Witnesses:
+      `RepositoryFederatedServiceSemanticsTest` 6/6 (>blockSize one-Invocation UUID, within-block control,
+      SILENT mid-stream atomicity via a fail-after-first-row repository wrapper, non-silent failure, `?__rowIdx`
+      collision, declared-partition batching control). Sweeps: repo-sparql 29, compliance/repository 1244
+      (test3/test5a/test6/test6b resolved — see Surprises), FedX 208, W3C 176 — all green.
+- [x] 2026-07-18T11:50Z S3 (ORDER BY) DONE in `DefaultEvaluationStrategy.prepare(Order)`: when any order
+      element is neither Var nor stable, each solution's keys are evaluated ONCE against the original row
+      before sorting, stored as fresh synthetic bindings (trivially single-flight, `parallelSort`-safe, and
+      spill-persistent — the spill serializes BindingSets), sorted by stored values with a deterministic
+      tie-break (empty-Order OrderComparator tail over the decorated rows), stripped on output; row-local
+      `ValueExprEvaluationException` → absent key (sorts as unbound); query-fatal errors propagate at
+      decoration (the comparator catch-all no longer hides them); DISTINCT/REDUCED parents keep their own
+      semantics (pre-dedup disabled on the volatile path). Deterministic fast path untouched. Witnesses
+      `MemoryVolatileOrderByTest` 4/4 (pre-fix: 1 failure + 3 errors): canary key evaluated exactly once per
+      occurrence (internal mechanism regression), RAND permutation, spill run (threshold=2) without
+      re-evaluation, fatal EXISTS/SERVICE order expression fails the query.
+- [x] 2026-07-18T12:05Z S5 (Determinism SPI) DONE: `Function.Determinism { DETERMINISTIC, VOLATILE }` +
+      `default getDeterminism() = VOLATILE` (QUERY_STABLE deferred — no execution-context hook in the SPI; NOW
+      stays the dedicated special case). Consumers: `isRepeatable(Function)` = must-differ dominance → declared
+      DETERMINISTIC ∨ Now ∨ whitelist (within-execution rewrites); NEW `isSafeForPlanConstantFolding(Function)`
+      = must-differ dominance → declared DETERMINISTIC ∨ whitelist, EXCLUDING Now (prepared plans re-execute;
+      NOW folding would leak values across executions) — routed into
+      `determineIfFunctionCallWillBeAConstant`. `FunctionDeterminismTest` 12/12 (unlock in both modes,
+      default barrier, must-differ dominance, plan folding, Now-never-folded, whitelist control);
+      `DeterministicFunctionProbeTest` 3/3 (registry-wide double-evaluation probe with the mandated
+      "passing does not establish determinism" disclaimer, ≥25-functions floor, must-differ audit).
+- [x] 2026-07-18T12:10Z S4 (guard re-audit — proof-carrying part): `FilterInValuesOptimizer` hardened with
+      `permitsBindingInjection(arg, valuesVars)` (the rewrite's bind join injects VALUES rows into the cloned
+      arg; B2's Extension shape is now excluded by proof rather than by accident). The remaining audit is
+      recorded as surviving-guard citations + blocked removals (below), per the performance principle.
 - [ ] S3: ORDER BY stabilization.
 - [ ] S4: guard re-audit items (individually benchmarked).
 - [ ] S5: determinism SPI.
 
+
+## Surviving guards and blocked removals (Stage 4 audit record)
+
+Per the performance principle, each surviving guard cites the observable violation it prevents; each blocked
+removal cites its blocker:
+
+- `QueryJoinOptimizer` volatile reorder barrier (:178) SURVIVES: reordering can place a volatile subtree into
+  the right position of a nested-loop inner join, and inner-Join routing for non-scope-change unsafe rights was
+  deliberately NOT built (no failing witness exists — every parser-reachable unsafe inner-join right is a scope
+  change → hash join). Removal is blocked on that routing existing.
+- `OrderLimitOptimizer` volatile guard (:60) SURVIVES: the Projection/Order swap re-anchors the ordering
+  expressions relative to the projection — a volatile expression's variables may be projected away, changing
+  its keys from values to unbound; and `Distinct → Reduced` under a volatile key breaks REDUCED's
+  adjacent-duplicate rationale. The executor-side stable-key fix (S3) does not make the algebra-level move
+  safe.
+- `FilterOptimizer` sibling/optional guards SURVIVE: pushing a filter into one operand changes how often the
+  nested-loop sibling is re-evaluated (recompute contract) until inner-join routing exists; conditions crossing
+  cardinality/scope boundaries remain unsafe independently.
+- Benchmark-gated refinements (aggregate-by-kind, REDUCED/Slice sequence-stability, backend sequence traits)
+  are RECORDED but not implemented: the local benchmark rig currently carries an unexplained pre-existing ~8×
+  q8 regression (chip task_3b20e1e6), so no meaningful gating is possible until that is resolved.
 
 ## Surprises & Discoveries
 
@@ -356,6 +415,16 @@ QueryModelNode metadata API being retained), the LMDB native compilers (`isRepea
   the assertions-only ParentReferenceChecker. One-line root fix + `NAryValueOperatorTest`; compliance then
   176/176. Bonus finding recorded: `NAryValueOperator.setArguments` stores the caller's list without copying,
   so an immutable argument list would make `replaceChildNode` throw — not fixed (aliasing change out of scope).
+- The compliance federation tests encoded THREE distinct legacy behaviors: (a) test3's subselect-service shape
+  produced remote rows carrying the correlated variable, and `ServiceJoinConversionIteration.convert`'s
+  `addAll` only tolerated that on one BindingSet-runtime-type path (`SPARQLQueryBindingSet.putAll` silently
+  overwrites; every other type asserts "variable already bound") — fixed by explicit compatible-mapping
+  merging; (b) test6/test6b's `cnt=1` came from per-binding `setBinding` piercing the remote aggregate subquery
+  (via the malformed-VALUES fallback and the single-binding path) — that correlated evaluation is now
+  reachable ONLY via the documented `?__rowIdx` projection opt-in (test5a's own comment calls the projection a
+  "workaround", showing implicit correlation was already known broken); (c) test5b relied on implicit
+  correlated injection into a subselect WITHOUT the opt-in — its expectation was updated to the conforming
+  one-Invocation outcome (?output unbound) with an explanatory comment.
 - BNODE("label") locality is keyed on BindingSet OBJECT IDENTITY in
   `QueryEvaluationContext.Minimal.getOrCreateBNode`. Chained `BIND(BNODE("k"))... BIND(BNODE("k"))...`
   therefore yields distinct bnodes (each Extend produces a new extended mapping object) — but that is
@@ -398,7 +467,23 @@ QueryModelNode metadata API being retained), the LMDB native compilers (`isRepea
 
 ## Outcomes & Retrospective
 
-(To be written at milestone completions.)
+2026-07-18: All five stages landed (S4 as its proof-carrying subset + audit record). What a user can now
+observe that they could not before: STANDARD mode refuses the same result-changing volatile rewrites as
+STRICT; `FILTER(sameTerm(?o,:a) || BOUND(?o))` no longer duplicates rows; a failing non-silent SERVICE fails
+the query even under constant-false filters, empty operands, or hash-join short-circuits; `OPTIONAL {
+BIND(UUID() AS ?u) }` yields one shared UUID; a >block-size SERVICE input is one logical Invocation (one UUID,
+not one per block); a SILENT service that breaks mid-stream exposes zero partial rows; `ORDER BY RAND()` sorts
+without comparator-contract violations and a fatal ordering expression fails the query; a third-party function
+can declare DETERMINISTIC and gain every whitelist optimization including plan-level constant folding.
+
+Lessons: (1) test-first path discovery repeatedly beat prediction — B2's duplication did not reproduce, the
+UNION/ASK fatal witnesses passed for free (eager union construction), and the nested-group UUID case was
+already correct — speculative fixes for all of these were avoided; (2) legacy federation tests encode
+*implementation* behaviors, and distinguishing spec-conforming expectations from pinned workarounds (the
+`?__rowIdx` opt-in) was the hardest judgment call of the effort; (3) storing once-evaluated ORDER keys as
+synthetic bindings made single-flight, parallel-sort safety, and spill persistence fall out of one design
+decision instead of three mechanisms. Remaining follow-ups are recorded in "Surviving guards and blocked
+removals" and the chips (upstream disjunctive report, q8 benchmark bisect).
 
 
 ## Artifacts and Notes
