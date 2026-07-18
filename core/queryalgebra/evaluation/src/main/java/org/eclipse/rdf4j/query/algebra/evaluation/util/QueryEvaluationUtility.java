@@ -265,10 +265,32 @@ public class QueryEvaluationUtility {
 	}
 
 	/**
-	 * Returns whether a resolved function implementation is safe to evaluate repeatedly with the same arguments.
+	 * Returns whether a resolved function implementation is stable within one query execution: equal argument tuples
+	 * produce equal RDF terms or equivalent errors, so the optimizer may collapse equal expressions and re-evaluate
+	 * calls with equal arguments. True for exact whitelisted builtin classes, for RDF4J's query-constant NOW
+	 * implementation, and for third-party functions that declare {@link Function.Determinism#DETERMINISTIC}. A
+	 * {@link Function#mustReturnDifferentResult() must-differ} freshness guarantee dominates any declaration.
 	 */
 	public static boolean isRepeatable(Function function) {
-		return isQueryStable(function) || DETERMINISTIC_FUNCTION_CLASSES.contains(function.getClass());
+		if (function.mustReturnDifferentResult()) {
+			return false;
+		}
+		return isQueryStable(function) || DETERMINISTIC_FUNCTION_CLASSES.contains(function.getClass())
+				|| function.getDeterminism() == Function.Determinism.DETERMINISTIC;
+	}
+
+	/**
+	 * Returns whether a resolved function implementation may be constant-folded into a REUSABLE prepared query plan.
+	 * This is strictly stronger than {@link #isRepeatable(Function)}: a prepared plan can be executed repeatedly, so
+	 * only functions that are immutable across executions qualify. RDF4J's query-constant NOW is deliberately excluded
+	 * — its per-execution value is handled by a dedicated evaluation path with a fresh scope per execution.
+	 */
+	public static boolean isSafeForPlanConstantFolding(Function function) {
+		if (function.mustReturnDifferentResult()) {
+			return false;
+		}
+		return DETERMINISTIC_FUNCTION_CLASSES.contains(function.getClass())
+				|| function.getDeterminism() == Function.Determinism.DETERMINISTIC;
 	}
 
 	/**
