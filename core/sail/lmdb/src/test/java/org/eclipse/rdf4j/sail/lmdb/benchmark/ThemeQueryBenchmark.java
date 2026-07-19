@@ -128,9 +128,9 @@ public class ThemeQueryBenchmark {
 //			"LIBRARY",
 //			"ENGINEERING",
 //			"HIGHLY_CONNECTED",
-			"TRAIN",
+//			"TRAIN",
 //			"ELECTRICAL_GRID",
-			"PHARMA",
+//			"PHARMA",
 			"ADAPTIVE_FILTER_PLACEMENT"
 	})
 	public String themeName;

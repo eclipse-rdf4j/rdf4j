@@ -26,6 +26,7 @@ import java.util.HashMap;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 
 @Experimental
@@ -45,7 +46,7 @@ final class Branch {
 	/** Distinct probe keys before the scan-once switch is even considered. */
 	static final int SCAN_ONCE_MIN_MISSES = 1024;
 	/** Approximate cost of one repositioning probe, expressed in scanned-key equivalents. */
-	static final int SEEK_COST_KEYS = 8;
+	static final int SEEK_COST_KEYS = RuntimeBuildAdmission.SEEK_WORK_UNITS;
 	static final BranchResult ZERO_RESULT = new BranchResult(0, null);
 
 	final PatternPlan pattern;
@@ -63,11 +64,16 @@ final class Branch {
 	final int[] freshQuadPos;
 	final long[] batch = new long[FILL_ROWS * 4];
 	final FactorizedTail.MemoBudget budget;
+	final RuntimeBuildAdmission scanOnceAdmission;
 	NativeLmdbQuerySource.NativeProbe probe;
 	HashMap<GroupKey, BranchResult> memo;
 	GroupKey probeKey;
-	int memoMisses;
-	long cumulativeScanned;
+	LongHashSet scanOnceProbeKeys;
+	long lastScanRows;
+	long pendingScanOnceDistinct;
+	long pendingScanOnceSeeks;
+	long pendingScanOnceRows;
+	long pendingScanOnceMatches;
 	int reservedEntries;
 	long reservedValues;
 	/** Non-null once the branch flipped to scan-once mode: one sequential sweep, bucketed by key. */
@@ -91,6 +97,9 @@ final class Branch {
 		this.filters = filters;
 		this.freshSlots = freshSlots;
 		this.freshQuadPos = freshQuadPos;
+		this.scanOnceAdmission = memoEnabled && varyingSlot >= 0
+				? new RuntimeBuildAdmission(SCAN_ONCE_MIN_MISSES)
+				: null;
 	}
 
 	NativeLmdbQuerySource.NativeProbe probe(RowState row) {
@@ -105,6 +114,11 @@ final class Branch {
 			return;
 		}
 		closed = true;
+		if (scanOnceAdmission != null) {
+			flushScanOnceProbeBatch();
+			scanOnceAdmission.close();
+		}
+		scanOnceProbeKeys = null;
 		Throwable failure = null;
 		NativeLmdbQuerySource.NativeProbe ownedProbe = probe;
 		probe = null;
@@ -177,18 +191,11 @@ final class Branch {
 		// a cache-served probe still pays O(run length) per COUNT scan, so the scan-once count table's O(1)
 		// per-key flip below stays essential; only the per-key VALUE memo would duplicate the shared cache
 		boolean cacheBacked = probe != null && probe.adjacencyCacheBacked();
-		memoMisses++;
-		cumulativeScanned += result.count;
-		// only trust a finite, positive sweep estimate: NaN or negative would cast to a tiny long and
-		// flip prematurely into a full-range sweep (PatternPlan.estimate has the same guard)
-		double sweepEstimate = pattern.staticEstimate;
-		if (!scanOnceRefused && varyingSlot >= 0 && memoMisses >= SCAN_ONCE_MIN_MISSES
-				&& Double.isFinite(sweepEstimate) && sweepEstimate > 0
-				&& memoMisses * (long) SEEK_COST_KEYS + cumulativeScanned >= (long) sweepEstimate) {
-			// probing has cost about as much as one sequential sweep of the whole branch range:
-			// flip to hash-join-style evaluation — scan once, bucket counts per correlated key.
-			// The dropped memo returns its budget so sibling memos regain the headroom.
-			if (buildCountTable(row)) {
+		if (recordScanOnceProbe(row, result) && scanOnceAdmission.tryStartBuild()) {
+			scanOnceProbeKeys = null;
+			// After the complete 1,024-distinct-probe floor, observed work owns admission. Static estimates may
+			// size storage in operators that need it, but they cannot veto this one bounded transactional sweep.
+			if (tryBuildCountTable(row)) {
 				memo.clear();
 				memo = null;
 				probeKey = null;
@@ -219,6 +226,52 @@ final class Branch {
 			memo.put(probeKey.storedCopy(), TOO_LARGE);
 		}
 		return result;
+	}
+
+	private boolean recordScanOnceProbe(RowState row, BranchResult result) {
+		if (scanOnceAdmission == null || scanOnceAdmission.state() != RuntimeBuildAdmission.State.PROBING) {
+			return false;
+		}
+		if (scanOnceProbeKeys == null) {
+			scanOnceProbeKeys = new LongHashSet(SCAN_ONCE_MIN_MISSES);
+		}
+		if (scanOnceProbeKeys.add(row.slots[varyingSlot])) {
+			pendingScanOnceDistinct++;
+		}
+		pendingScanOnceSeeks++;
+		pendingScanOnceRows += lastScanRows;
+		pendingScanOnceMatches += result.count;
+		if (pendingScanOnceSeeks < FILL_ROWS
+				&& scanOnceAdmission.distinctProbes() + pendingScanOnceDistinct < SCAN_ONCE_MIN_MISSES) {
+			return false;
+		}
+		flushScanOnceProbeBatch();
+		return true;
+	}
+
+	private void flushScanOnceProbeBatch() {
+		if (pendingScanOnceSeeks == 0L || scanOnceAdmission.state() != RuntimeBuildAdmission.State.PROBING) {
+			return;
+		}
+		scanOnceAdmission.recordProbeBatch(pendingScanOnceDistinct, pendingScanOnceSeeks, pendingScanOnceRows,
+				pendingScanOnceMatches);
+		pendingScanOnceDistinct = 0L;
+		pendingScanOnceSeeks = 0L;
+		pendingScanOnceRows = 0L;
+		pendingScanOnceMatches = 0L;
+	}
+
+	private boolean tryBuildCountTable(RowState row) {
+		try {
+			return buildCountTable(row, scanOnceAdmission);
+		} catch (QueryInterruptedException e) {
+			scanOnceAdmission.refuse(RuntimeBuildAdmission.RefusalReason.CANCELLED);
+			throw e;
+		} catch (IOException | QueryEvaluationException e) {
+			scanOnceAdmission.refuse(RuntimeBuildAdmission.RefusalReason.FAILED);
+			scanOnceRefused = true;
+			return false;
+		}
 	}
 
 	private static long retainedValueCapacity(BranchResult result) {
@@ -252,6 +305,10 @@ final class Branch {
 	}
 
 	boolean buildCountTable(RowState row) throws IOException {
+		return buildCountTable(row, null);
+	}
+
+	private boolean buildCountTable(RowState row, RuntimeBuildAdmission admission) throws IOException {
 		if (countTable != null) {
 			return true;
 		}
@@ -261,24 +318,66 @@ final class Branch {
 		LongCountMap table = new LongCountMap(budget);
 		if (!table.isAllocated()) {
 			scanOnceRefused = true;
+			if (admission != null) {
+				admission.refuse(RuntimeBuildAdmission.RefusalReason.BUDGET);
+			}
 			return false;
 		}
 		boolean published = false;
 		try {
+			if (admission != null && !admission.canPayBuildWork(1L, 0L)) {
+				admission.refuse(RuntimeBuildAdmission.RefusalReason.WORK_LIMIT);
+				scanOnceRefused = true;
+				return false;
+			}
 			try (PatternCursor cursor = pattern.openRawUnbinding(row, 1L << varyingSlot, probe(row))) {
-				int rows;
-				while ((rows = cursor.fill(batch, FILL_ROWS)) > 0) {
+				if (admission != null && !admission.recordBuildBatch(1L, 0L, 0L)) {
+					scanOnceRefused = true;
+					return false;
+				}
+				while (true) {
+					int fillRows = FILL_ROWS;
+					if (admission != null) {
+						long remainingWork = admission.maximumBuildWorkUnits() - admission.buildWorkUnits();
+						if (remainingWork <= 0L) {
+							admission.refuseAfterBuildBoundary(RuntimeBuildAdmission.RefusalReason.WORK_LIMIT);
+							scanOnceRefused = true;
+							return false;
+						}
+						fillRows = (int) Math.min(fillRows, remainingWork);
+					}
+					int rows = cursor.fill(batch, fillRows);
+					if (rows == 0) {
+						break;
+					}
+					long matches = 0L;
+					boolean budgetRefused = false;
 					for (int i = 0; i < rows; i++) {
 						int offset = i * 4;
 						if (rejectNullContext && batch[offset + TripleIndex.CONTEXT_IDX] == NULL_CONTEXT_ID) {
 							continue;
 						}
 						if (!table.tryIncrement(batch[offset + varyingQuadPos])) {
-							scanOnceRefused = true;
-							return false;
+							budgetRefused = true;
+							break;
 						}
+						matches++;
+					}
+					if (admission != null && !admission.recordBuildBatch(0L, rows, matches)) {
+						scanOnceRefused = true;
+						return false;
+					}
+					if (budgetRefused) {
+						scanOnceRefused = true;
+						if (admission != null) {
+							admission.refuseAfterBuildBoundary(RuntimeBuildAdmission.RefusalReason.BUDGET);
+						}
+						return false;
 					}
 				}
+			}
+			if (admission != null && !admission.commit()) {
+				return false;
 			}
 			countTable = table;
 			published = true;
@@ -293,6 +392,7 @@ final class Branch {
 
 	BranchResult scan(RowState row) throws IOException {
 		long count = 0;
+		lastScanRows = 0L;
 		long[][] values = null;
 		if (valueQuadPos.length > 0) {
 			values = new long[valueQuadPos.length][16];
@@ -303,6 +403,7 @@ final class Branch {
 			int max = existenceOnly && filters.length == 0 && !rejectNullContext ? 1 : FILL_ROWS;
 			int rows;
 			while ((rows = cursor.fill(batch, max)) > 0) {
+				lastScanRows += rows;
 				for (int i = 0; i < rows; i++) {
 					int offset = i * 4;
 					if (rejectNullContext && batch[offset + TripleIndex.CONTEXT_IDX] == NULL_CONTEXT_ID) {

@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
@@ -1103,6 +1104,159 @@ class LmdbNativeChunkHashBuildTest {
 	}
 
 	@Test
+	void factorizedScanOnceTrialIsNotBlockedByAnInfiniteEstimateAfterTheProbeFloor() throws Exception {
+		BranchMaterializationFixture fixture = new BranchMaterializationFixture(
+				32 + SCAN_ONCE_COUNT_TABLE_INITIAL_PHYSICAL_LONGS, true, Double.POSITIVE_INFINITY);
+		try {
+			for (int i = 0; i < Branch.SCAN_ONCE_MIN_MISSES - 1; i++) {
+				fixture.row.slots[0] = 100L + i;
+				fixture.row.recomputeBoundMask();
+				assertThat(fixture.branch.result(fixture.row).count).isEqualTo(17L);
+			}
+			assertThat(fixture.branch.countTable)
+					.as("the complete 1,024-distinct-probe observation floor must be paid before a trial")
+					.isNull();
+
+			fixture.row.slots[0] = 100L + Branch.SCAN_ONCE_MIN_MISSES - 1L;
+			fixture.row.recomputeBoundMask();
+			assertThat(fixture.branch.result(fixture.row).count).isEqualTo(17L);
+
+			assertThat(fixture.branch.countTable)
+					.as("observed work at the 1,024-probe floor must admit one bounded trial regardless of estimate")
+					.isNotNull();
+			assertThat(fixture.source.sweepRowsDelivered).isEqualTo(17L * (Branch.SCAN_ONCE_MIN_MISSES + 1L));
+		} finally {
+			fixture.branch.close();
+		}
+	}
+
+	@Test
+	void factorizedProbeTelemetryUsesTheExistingOperatorBatchBoundary() throws Exception {
+		RuntimeFactorizedScanOnceFixture fixture = new RuntimeFactorizedScanOnceFixture(256, 1D);
+		try {
+			for (int i = 0; i < FactorizedTail.FILL_ROWS - 1; i++) {
+				fixture.row.slots[0] = 100L + i;
+				fixture.row.recomputeBoundMask();
+				assertThat(fixture.branch.result(fixture.row).count).isZero();
+			}
+			assertThat(fixture.branch.scanOnceAdmission.probeSeeks())
+					.as("a partial physical batch must not sample and publish timing counters per row")
+					.isZero();
+
+			fixture.row.slots[0] = 100L + FactorizedTail.FILL_ROWS - 1L;
+			fixture.row.recomputeBoundMask();
+			assertThat(fixture.branch.result(fixture.row).count).isZero();
+			assertThat(fixture.branch.scanOnceAdmission.probeSeeks()).isEqualTo(FactorizedTail.FILL_ROWS);
+			assertThat(fixture.branch.scanOnceAdmission.distinctProbes()).isEqualTo(FactorizedTail.FILL_ROWS);
+		} finally {
+			fixture.branch.close();
+		}
+	}
+
+	@Test
+	void factorizedAdmissionCountsRepeatedCompletedProbesTowardTheObservationFloor() throws Exception {
+		RuntimeFactorizedScanOnceFixture fixture = new RuntimeFactorizedScanOnceFixture(256,
+				Double.POSITIVE_INFINITY);
+		try {
+			assertThat(fixture.budget.tryReserve(FactorizedTail.MEMO_MAX_ENTRIES, 0L)).isTrue();
+			fixture.row.slots[0] = 100L;
+			fixture.row.recomputeBoundMask();
+			for (int i = 0; i < Branch.SCAN_ONCE_MIN_MISSES - 1; i++) {
+				assertThat(fixture.branch.result(fixture.row).count).isZero();
+			}
+			assertThat(fixture.branch.countTable).isNull();
+
+			assertThat(fixture.branch.result(fixture.row).count).isZero();
+			assertThat(fixture.branch.countTable)
+					.as("1,024 completed paid probes must admit the bounded trial even when the key repeats")
+					.isNotNull();
+			assertThat(fixture.branch.scanOnceAdmission.probeSeeks()).isEqualTo(Branch.SCAN_ONCE_MIN_MISSES);
+		} finally {
+			fixture.branch.close();
+		}
+	}
+
+	@Test
+	void factorizedScanOnceRefusesBeforeBuildWorkExceedsTwicePaidProbeWork() throws Exception {
+		RuntimeFactorizedScanOnceFixture fixture = new RuntimeFactorizedScanOnceFixture(20_000, 1D);
+		try {
+			for (int i = 0; i < Branch.SCAN_ONCE_MIN_MISSES; i++) {
+				fixture.row.slots[0] = 100L + i;
+				fixture.row.recomputeBoundMask();
+				assertThat(fixture.branch.result(fixture.row).count).isZero();
+			}
+
+			assertThat(fixture.branch.countTable)
+					.as("an over-budget sweep must never publish its partial count table")
+					.isNull();
+			assertThat((long) fixture.source.sweepRowsDelivered + Branch.SEEK_COST_KEYS)
+					.as("build seek plus rows must stay within twice the 1,024 paid direct seeks")
+					.isLessThanOrEqualTo(2L * Branch.SCAN_ONCE_MIN_MISSES * Branch.SEEK_COST_KEYS);
+
+			long rowsAfterRefusal = fixture.source.sweepRowsDelivered;
+			fixture.row.slots[0]++;
+			fixture.row.recomputeBoundMask();
+			assertThat(fixture.branch.result(fixture.row).count).isZero();
+			assertThat(fixture.source.sweepRowsDelivered)
+					.as("a refused execution-local build must not retry")
+					.isEqualTo(rowsAfterRefusal);
+		} finally {
+			fixture.branch.close();
+		}
+	}
+
+	@Test
+	void factorizedFailedScanOnceBuildFallsBackWithoutPublishingOrRetrying() throws Exception {
+		RuntimeFactorizedScanOnceFixture fixture = new RuntimeFactorizedScanOnceFixture(256, 1D, 8,
+				new QueryEvaluationException("synthetic factorized sweep failure"));
+		try {
+			for (int i = 0; i < Branch.SCAN_ONCE_MIN_MISSES; i++) {
+				fixture.row.slots[0] = 100L + i;
+				fixture.row.recomputeBoundMask();
+				assertThat(fixture.branch.result(fixture.row).count).isZero();
+			}
+
+			assertThat(fixture.branch.countTable).isNull();
+			assertThat(fixture.branch.scanOnceAdmission.state()).isEqualTo(RuntimeBuildAdmission.State.REFUSED);
+			assertThat(fixture.branch.scanOnceAdmission.refusalReason())
+					.isEqualTo(RuntimeBuildAdmission.RefusalReason.FAILED);
+			assertThat(fixture.source.sweepRowsDelivered).isEqualTo(8L);
+
+			fixture.row.slots[0]++;
+			fixture.row.recomputeBoundMask();
+			assertThat(fixture.branch.result(fixture.row).count).isZero();
+			assertThat(fixture.source.sweepRowsDelivered).isEqualTo(8L);
+		} finally {
+			fixture.branch.close();
+		}
+	}
+
+	@Test
+	void factorizedCancelledScanOnceBuildPropagatesInterruptionWithoutPublishing() throws Exception {
+		RuntimeFactorizedScanOnceFixture fixture = new RuntimeFactorizedScanOnceFixture(256, 1D, 8,
+				new QueryInterruptedException("synthetic factorized cancellation"));
+		try {
+			for (int i = 0; i < Branch.SCAN_ONCE_MIN_MISSES - 1; i++) {
+				fixture.row.slots[0] = 100L + i;
+				fixture.row.recomputeBoundMask();
+				assertThat(fixture.branch.result(fixture.row).count).isZero();
+			}
+			fixture.row.slots[0] = 100L + Branch.SCAN_ONCE_MIN_MISSES - 1L;
+			fixture.row.recomputeBoundMask();
+
+			assertThatThrownBy(() -> fixture.branch.result(fixture.row))
+					.isInstanceOf(QueryInterruptedException.class)
+					.hasMessageContaining("synthetic factorized cancellation");
+			assertThat(fixture.branch.countTable).isNull();
+			assertThat(fixture.branch.scanOnceAdmission.state()).isEqualTo(RuntimeBuildAdmission.State.REFUSED);
+			assertThat(fixture.branch.scanOnceAdmission.refusalReason())
+					.isEqualTo(RuntimeBuildAdmission.RefusalReason.CANCELLED);
+		} finally {
+			fixture.branch.close();
+		}
+	}
+
+	@Test
 	void factorizedTailBranchAccountsPhysicalValueCapacityAndReleasesDroppedState() throws Exception {
 		// Seventeen values grow the branch's primitive value array from 16 to 32 slots. Logical length 17 fits this
 		// budget, but physical capacity 32 does not: the current result must remain usable without publishing it.
@@ -1161,11 +1315,11 @@ class LmdbNativeChunkHashBuildTest {
 		// Atomic replacement temporarily owns both the retained 32-long memo and the unpublished 129-long table.
 		BranchMaterializationFixture flipped = new BranchMaterializationFixture(
 				32 + SCAN_ONCE_COUNT_TABLE_INITIAL_PHYSICAL_LONGS, true);
-		assertThat(flipped.branch.result(flipped.row).values[0]).hasSize(32);
-		flipped.branch.memoMisses = Branch.SCAN_ONCE_MIN_MISSES - 1;
-		flipped.row.slots[0] = 101;
-		flipped.row.recomputeBoundMask();
-		assertThat(flipped.branch.result(flipped.row).count).isEqualTo(17);
+		for (int i = 0; i < Branch.SCAN_ONCE_MIN_MISSES; i++) {
+			flipped.row.slots[0] = 100L + i;
+			flipped.row.recomputeBoundMask();
+			assertThat(flipped.branch.result(flipped.row).count).isEqualTo(17);
+		}
 		assertThat(flipped.branch.countTable).isNotNull();
 		assertThat(flipped.branch.memo).isNull();
 		assertThat(flipped.branch.reservedEntries).isZero();
@@ -1898,6 +2052,10 @@ class LmdbNativeChunkHashBuildTest {
 		private final Branch branch;
 
 		private BranchMaterializationFixture(long valueHeadroom, boolean scanOnce) {
+			this(valueHeadroom, scanOnce, 17D);
+		}
+
+		private BranchMaterializationFixture(long valueHeadroom, boolean scanOnce, double staticEstimate) {
 			NativeSlotLayout layout = new NativeSlotLayout(Map.of("memoKey", 0), null);
 			layout.freeze(List.of("memoKey"));
 			row = new RowState(source, layout, EmptyBindingSet.getInstance());
@@ -1905,7 +2063,7 @@ class LmdbNativeChunkHashBuildTest {
 			row.slots[0] = 100;
 			row.recomputeBoundMask();
 			PatternPlan pattern = new PatternPlan(Term.unbound(), Term.constant(7), Term.unbound(), Term.unbound(),
-					ContextConstraint.UNRESTRICTED, false, 17);
+					ContextConstraint.UNRESTRICTED, false, staticEstimate);
 			if (!budget.tryReserve(FactorizedTail.MEMO_MAX_ENTRIES - 1,
 					FactorizedTail.MEMO_MAX_STORED_VALUES - valueHeadroom)) {
 				throw new AssertionError("unable to reserve the fixture's baseline memo budget");
@@ -1943,11 +2101,38 @@ class LmdbNativeChunkHashBuildTest {
 		}
 	}
 
+	private static final class RuntimeFactorizedScanOnceFixture {
+		private final CountingSource source;
+		private final FactorizedTail.MemoBudget budget = new FactorizedTail.MemoBudget(
+				FactorizedTail.MEMO_BYPASSES);
+		private final RowState row;
+		private final Branch branch;
+
+		private RuntimeFactorizedScanOnceFixture(int sweepRows, double staticEstimate) {
+			this(sweepRows, staticEstimate, -1, null);
+		}
+
+		private RuntimeFactorizedScanOnceFixture(int sweepRows, double staticEstimate, int throwAfterSweep,
+				QueryEvaluationException sweepFailure) {
+			source = new CountingSource(sweepRows, false, false, throwAfterSweep, sweepFailure);
+			NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0), null);
+			layout.freeze(List.of("key"));
+			row = new RowState(source, layout, EmptyBindingSet.getInstance());
+			Arrays.fill(row.slots, UNKNOWN);
+			row.recomputeBoundMask();
+			PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(7), Term.unbound(), Term.unbound(),
+					ContextConstraint.UNRESTRICTED, false, staticEstimate);
+			branch = new Branch(pattern, new int[] { 0 }, new int[0], false, true, 0,
+					TripleIndex.SUBJ_IDX, budget, new NativeBooleanFilter[0], new int[0], new int[0]);
+		}
+	}
+
 	private static final class CountingSource implements NativeLmdbQuerySource {
 		private final int sweepSize;
 		private final boolean repeatedKey;
 		private final boolean matchBoundKeys;
 		private final int throwAfterSweep;
+		private final QueryEvaluationException sweepFailure;
 		private int sweepRowsDelivered;
 
 		private CountingSource(int sweepSize) {
@@ -1963,10 +2148,17 @@ class LmdbNativeChunkHashBuildTest {
 		}
 
 		private CountingSource(int sweepSize, boolean repeatedKey, boolean matchBoundKeys, int throwAfterSweep) {
+			this(sweepSize, repeatedKey, matchBoundKeys, throwAfterSweep,
+					throwAfterSweep < 0 ? null : new QueryEvaluationException("synthetic hash sweep failure"));
+		}
+
+		private CountingSource(int sweepSize, boolean repeatedKey, boolean matchBoundKeys, int throwAfterSweep,
+				QueryEvaluationException sweepFailure) {
 			this.sweepSize = sweepSize;
 			this.repeatedKey = repeatedKey;
 			this.matchBoundKeys = matchBoundKeys;
 			this.throwAfterSweep = throwAfterSweep;
+			this.sweepFailure = sweepFailure;
 		}
 
 		@Override
@@ -2024,8 +2216,8 @@ class LmdbNativeChunkHashBuildTest {
 
 			@Override
 			public long[] next() {
-				if (countRows && index == throwAfterSweep) {
-					throw new QueryEvaluationException("synthetic hash sweep failure");
+				if (countRows && index == throwAfterSweep && sweepFailure != null) {
+					throw sweepFailure;
 				}
 				if (index >= size) {
 					return null;
