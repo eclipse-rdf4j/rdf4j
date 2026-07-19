@@ -20,6 +20,7 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -284,6 +285,61 @@ public class LmdbNativeQueryExplanationTest {
 		Explanation explanation = explain(Explanation.Level.Telemetry, query);
 
 		assertThat(explanation.toString()).contains("nativeExecutionPath=factorizedTail");
+	}
+
+	@Test
+	public void telemetryExplanationSeparatesExactValuesProbesAndMatchedRows() {
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s WHERE { ?s a ex:Item . FILTER(?s IN (ex:item0, ex:item2)) }";
+
+		Explanation explanation = explain(Explanation.Level.Telemetry, query);
+
+		assertThat(explanation.toString())
+				.contains("Values(rows=2)")
+				.contains("nativeExactValuesProbesActual=2")
+				.contains("nativeExactValuesMatchedRowsActual=2");
+	}
+
+	@Test
+	public void telemetryExplanationCountsExactValuesMatchesConsumedByFactorizedAggregation() {
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (COUNT(*) AS ?count) WHERE { ?s a ex:Item . FILTER(?s IN (ex:item0, ex:item2)) }";
+
+		Explanation explanation = explain(Explanation.Level.Telemetry, query);
+
+		assertThat(explanation.toString())
+				.contains("nativeExecutionPath=factorizedTail")
+				.contains("nativeExactValuesProbesActual=2")
+				.contains("nativeExactValuesMatchedRowsActual=2");
+	}
+
+	@Test
+	public void exactValuesTelemetryExcludesMissingIdsBeforePhysicalProbing() {
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s WHERE { ?s a ex:Item . FILTER(?s IN (ex:item0, ex:missing)) }";
+
+		Explanation explanation = explain(Explanation.Level.Telemetry, query);
+
+		assertThat(explanation.toString())
+				.contains("Values(rows=2)")
+				.contains("nativeExactValuesProbesActual=2")
+				.contains("nativeExactValuesMatchedRowsActual=1");
+	}
+
+	@Test
+	public void userAuthoredDuplicateValuesRetainMultiplicityWithoutExactFilterTelemetry() {
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s WHERE { VALUES ?s { ex:item0 ex:item0 } ?s a ex:Item }";
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			assertThat(QueryResults.asList(connection.prepareTupleQuery(query).evaluate())).hasSize(2);
+		}
+		Explanation explanation = explain(Explanation.Level.Telemetry, query);
+
+		assertThat(explanation.toString())
+				.contains("Values(rows=2)")
+				.doesNotContain("nativeExactValuesProbesActual")
+				.doesNotContain("nativeExactValuesMatchedRowsActual");
 	}
 
 	@Test

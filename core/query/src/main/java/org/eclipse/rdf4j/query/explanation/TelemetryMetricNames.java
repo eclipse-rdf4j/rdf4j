@@ -165,6 +165,7 @@ public final class TelemetryMetricNames {
 	public static final String OPTIMIZER_STRUCTURAL_SUMMARY = OPTIMIZER_PREFIX + "structuralSummary";
 	public static final String OPTIMIZER_LOGICAL_EXPLORATION = OPTIMIZER_PREFIX + "logicalExploration";
 	public static final String OPTIMIZER_PHYSICAL_REFINEMENT = OPTIMIZER_PREFIX + "physicalRefinement";
+	public static final String OPTIMIZER_EXACT_VALUES = OPTIMIZER_PREFIX + "exactValues";
 	public static final String OPTIMIZER_RUNTIME_HINTS = OPTIMIZER_PREFIX + "runtimeHints";
 	public static final String OPTIMIZER_RUNTIME_FEEDBACK = OPTIMIZER_PREFIX + "runtimeFeedback";
 	public static final String OPTIMIZER_RUNTIME_FEEDBACK_CONFIDENCE = OPTIMIZER_PREFIX + "runtimeFeedbackConfidence";

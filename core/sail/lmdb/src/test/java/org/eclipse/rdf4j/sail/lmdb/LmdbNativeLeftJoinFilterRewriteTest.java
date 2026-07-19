@@ -236,14 +236,9 @@ public class LmdbNativeLeftJoinFilterRewriteTest {
 				+ "}");
 	}
 
-	/**
-	 * String-family literals never collapse distinct lexical forms into one value, so a disjunction of string
-	 * equalities over a pattern variable can probe the index by exact id instead of scanning the pattern and
-	 * value-comparing every row. (A plain IN in this position is rewritten to a VALUES join by the upstream optimizer
-	 * before the native compiler sees it; OR-of-equals reaches the filter pushdown directly.)
-	 */
+	/** OR-of-equalities remains a filter unless the shared optimizer grows that rewrite shape. */
 	@Test
-	public void literalEqualityFilterFoldsIntoPatternProbes() {
+	public void topLevelLiteralEqualityDisjunctionDoesNotBypassOptimizerPipeline() {
 		long before = LmdbNativeAggregateCompiler.FILTER_INTO_PATTERN_PUSHDOWNS.get();
 		assertSameAsGeneric("PREFIX ex: <" + EX + ">\n"
 				+ "SELECT (COUNT(?a) AS ?count) WHERE {\n"
@@ -251,8 +246,8 @@ public class LmdbNativeLeftJoinFilterRewriteTest {
 				+ "  FILTER(?n = \"user0\" || ?n = \"user4b\" || ?n = \"user5\")\n"
 				+ "}");
 		assertThat(LmdbNativeAggregateCompiler.FILTER_INTO_PATTERN_PUSHDOWNS.get())
-				.as("string equality filter folded into exact pattern probes")
-				.isGreaterThan(before);
+				.as("top-level native compilation must not invent an OR-of-equalities rewrite")
+				.isEqualTo(before);
 	}
 
 	/** The q8 shape end-to-end: the OPTIONAL's IN filter becomes exact name probes that seed the triangle join. */
@@ -299,4 +294,5 @@ public class LmdbNativeLeftJoinFilterRewriteTest {
 				.as("BOUND filter compiled as inner join")
 				.isGreaterThan(before);
 	}
+
 }

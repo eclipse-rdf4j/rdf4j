@@ -14,9 +14,12 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 
+import java.util.concurrent.atomic.AtomicLong;
+
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 @Experimental
 final class RowState {
@@ -25,19 +28,36 @@ final class RowState {
 	final BindingSet base;
 	final long[] slots;
 	final RowBindingSetView view;
+	final ExactValuesRuntimeMetrics exactValuesMetrics;
 	final int[] trailSlots;
 	final long[] trailOldValues;
 	int trailSize;
 	long boundMask;
 
 	RowState(NativeLmdbQuerySource source, NativeSlotLayout layout, BindingSet base) {
+		this(source, layout, base, (ExactValuesRuntimeMetrics) null);
+	}
+
+	RowState(NativeLmdbQuerySource source, NativeSlotLayout layout, BindingSet base, TupleExpr telemetryTarget) {
+		this(source, layout, base, ExactValuesRuntimeMetrics.create(telemetryTarget));
+	}
+
+	RowState(NativeLmdbQuerySource source, NativeSlotLayout layout, BindingSet base,
+			ExactValuesRuntimeMetrics exactValuesMetrics) {
 		this.source = source;
 		this.layout = layout;
 		this.base = base;
 		this.slots = new long[layout.slotNames().length];
 		this.view = new RowBindingSetView(source, layout, base, slots, false);
+		this.exactValuesMetrics = exactValuesMetrics;
 		this.trailSlots = new int[Math.max(8, slots.length * 4)];
 		this.trailOldValues = new long[this.trailSlots.length];
+	}
+
+	void recordExactValuesMatched(long rows) {
+		if (exactValuesMetrics != null) {
+			exactValuesMetrics.recordMatchedRows(rows);
+		}
 	}
 
 	boolean bind(int slot, long id) {
@@ -86,6 +106,47 @@ final class RowState {
 		}
 		boundMask = mask;
 		view.slotsReplaced();
+	}
+}
+
+/** Execution-local counters enabled only for telemetry explanations. */
+@Experimental
+final class ExactValuesRuntimeMetrics {
+	private final TupleExpr target;
+	private final AtomicLong probes = new AtomicLong();
+	private final AtomicLong matchedRows = new AtomicLong();
+	private volatile boolean active;
+
+	private ExactValuesRuntimeMetrics(TupleExpr target) {
+		this.target = target;
+	}
+
+	static ExactValuesRuntimeMetrics create(TupleExpr target) {
+		return target != null && target.isRuntimeTelemetryEnabled() ? new ExactValuesRuntimeMetrics(target) : null;
+	}
+
+	void recordProbes(long count) {
+		if (count <= 0L) {
+			return;
+		}
+		active = true;
+		probes.addAndGet(count);
+	}
+
+	void recordMatchedRows(long count) {
+		if (active && count > 0L) {
+			matchedRows.addAndGet(count);
+		}
+	}
+
+	void publish() {
+		long completedProbes = probes.getAndSet(0L);
+		long completedMatches = matchedRows.getAndSet(0L);
+		if (completedProbes == 0L && completedMatches == 0L) {
+			return;
+		}
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeExactValuesProbesActual", completedProbes);
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeExactValuesMatchedRowsActual", completedMatches);
 	}
 }
 

@@ -233,7 +233,11 @@ interface SlotPlan {
 	}
 
 	static SlotPlan values(ValuesRow[] rows) {
-		return rows.length == 0 ? EmptyPlan.INSTANCE : new ValuesPlan(rows);
+		return values(rows, false);
+	}
+
+	static SlotPlan values(ValuesRow[] rows, boolean exactFilterRewrite) {
+		return rows.length == 0 ? EmptyPlan.INSTANCE : new ValuesPlan(rows, exactFilterRewrite);
 	}
 }
 

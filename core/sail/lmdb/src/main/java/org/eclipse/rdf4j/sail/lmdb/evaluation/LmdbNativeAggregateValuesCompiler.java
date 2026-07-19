@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 @Experimental
 abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatternCompiler {
@@ -294,7 +295,8 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 			}
 			rows[i] = new ValuesRow(Arrays.copyOf(rowSlots, size), Arrays.copyOf(rowValues, size));
 		}
-		return SlotPlan.values(rows);
+		return SlotPlan.values(rows,
+				values.getLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES) == 1L);
 	}
 
 }

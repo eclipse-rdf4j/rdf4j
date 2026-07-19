@@ -35,8 +35,8 @@ active runtime. All Maven commands use the workspace-local `.m2_repo`; tests nev
 - [x] (2026-07-19 12:18Z) Prevent ordered access-path promotion across an optimizer-planned filter boundary.
 - [x] (2026-07-19 12:36Z) Pass Slice 1 adaptive overhead, allocation, and target-workload performance gates; keep rollout opt-in.
 - [x] (2026-07-19 18:26Z) Diagnose the adaptive-theme regression and restore default-on rollout at the user's direction.
-- [ ] **In progress:** reuse the standard Filter-to-VALUES optimizer in the LMDB sketch pipeline and remove native telemetry gating.
-- [ ] Add shared observed-work build admission and migrate membership, factorized, chunk, and left-join operators.
+- [x] (2026-07-19 18:45Z) Reuse the standard Filter-to-VALUES optimizer, remove native telemetry gating, and pass correctness/performance gates.
+- [ ] **In progress:** add shared observed-work build admission and migrate membership, factorized, chunk, and left-join operators.
 - [ ] Add measurement-only telemetry and boundary benchmarks for broader fixed thresholds.
 - [ ] Run focused/module verification, query-plan snapshots, paired JMH gates, formatting, and final install.
 
@@ -92,6 +92,25 @@ active runtime. All Maven commands use the workspace-local `.m2_repo`; tests nev
   Evidence: `results-2026-07-19.md`, `results-2026-07-19-2.md`, commit `40e31982d9`, and the three-fork JDK 26
   query-zero checks (41.529 ms/op enabled versus 80.242 ms/op disabled).
 
+- Observation: Removing hidden query priming exposed five historical sketch-plan assertions. Engineering 2 and
+  Social 5 were intentional shared Filter-to-VALUES changes; Library 9, Train 5, and Pharma 3 were explicitly
+  learned-statistics-dependent fast-plan sentinels. The latter three remain green when only their own query is
+  primed. The user subsequently excluded Cascades memo and sketch-planner tests from this work's acceptance gate.
+  Evidence: `logs/mvnf/20260719-171908-verify.log`, `logs/mvnf/20260719-183455-verify.log`, and
+  `logs/mvnf/20260719-183641-verify.log`.
+
+- Observation: Exact-filter parity is a large cold-path win without harming the 65-constant non-converted neighbor.
+  At 64 distinct constants the candidate median is 259.281 microseconds versus 7,926.969 for the baseline, a
+  96.729% improvement. At 65 constants the candidate is 2.647% faster than baseline. Result counts and plan-shape
+  guards match in every run.
+  Evidence: `/tmp/lmdb-exact-filter-v4-{64,65}-{b,c}{1,2,3}.json` and `initial-evidence.txt`.
+
+- Observation: An exact filter intersected into an existing `VALUES` anchor removed the filter correctly but lost
+  optimizer provenance, suppressing physical exact-VALUES telemetry for that execution shape. Marking the narrowed
+  anchor fixes observability without marking untouched user-authored `VALUES`.
+  Evidence: failing and passing `FilterOptimizerTest#filterInValuesMarksExistingValuesWhenItAppliesExactIntersection`
+  reports in `initial-evidence.txt`.
+
 
 ## Decision Log
 
@@ -136,6 +155,13 @@ active runtime. All Maven commands use the workspace-local `.m2_repo`; tests nev
   integration test now cover the default path.
   Date/Author: 2026-07-19 / Håvard and Codex.
 
+- Decision: Exclude unrelated Cascades memo and sketch-heuristic regression tests from subsequent acceptance and
+  triage, while retaining the focused LMDB pipeline parity contract needed by this slice. Do not disable or delete
+  the excluded tests.
+  Rationale: The user explicitly removed those experimental planner tests from scope. The exact-filter change is
+  verified at the shared optimizer, pipeline boundary, native execution, result-equality, and benchmark layers.
+  Date/Author: 2026-07-19 / Håvard and Codex.
+
 - Decision: Measure the 4,096, 50,000, 100,000, 32,768, and 32-value thresholds without changing production
   behavior in this plan.
   Rationale: These thresholds bound startup or memory work. Actual miss evidence is required before designing a
@@ -151,6 +177,10 @@ single documented benchmark-fixture exclusion. Ordinary plans retain early, midd
 adaptive placement starts at the planned depth, samples at most eight depths, and adapts one highest-regret filter.
 After the adaptive-theme regression audit, the user selected default-on rollout; explicit false remains the opt-out.
 The unset-property unit contract and default-path theme integration test pass.
+Slice 2 now uses the standard exact-filter optimizer in both LMDB pipelines, removes the native learned-statistics
+gate, preserves the separately justified left-join path, records only physical exact-VALUES probes and matched rows,
+preserves rewrite provenance when intersecting existing `VALUES`, and passes its focused result-equality, boundary,
+telemetry, and performance gates.
 
 
 ## Context and Orientation

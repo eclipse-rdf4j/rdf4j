@@ -130,7 +130,7 @@ class LmdbThemeTopRegressionSnapshotIT {
 		Map<String, String> fastestQueries = parseFastestOptimizedQueries();
 		for (Map.Entry<Theme, List<TargetQuery>> entry : targetsByTheme().entrySet()) {
 			System.out.println("Preparing theme " + entry.getKey());
-			Path storeDirectory = prepareThemeStore(dataDir, entry.getKey(), entry.getValue());
+			Path storeDirectory = prepareThemeStore(dataDir, entry.getKey());
 			LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
 			System.out.println("Prepared store for theme " + entry.getKey().name());
@@ -253,12 +253,11 @@ class LmdbThemeTopRegressionSnapshotIT {
 		throw new AssertionError("Unable to locate theme query benchmark results directory");
 	}
 
-	private static Path prepareThemeStore(Path dataDir, Theme theme, List<TargetQuery> targetQueries) throws Exception {
-		List<TargetQuery> primedQueries = learnedFilterPrimeQueries(targetQueries);
+	private static Path prepareThemeStore(Path dataDir, Theme theme) throws Exception {
 		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
 				.prepareThemeRegressionStore(
 						dataDir.resolve("top-regression-" + theme.name()),
-						PERSISTENT_STORE_KEY_PREFIX + "/" + theme.name() + "/" + primeIndexKey(primedQueries),
+						PERSISTENT_STORE_KEY_PREFIX + "/" + theme.name() + "/cold",
 						storeDirectory -> {
 							LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
 							SailRepository repository = new SailRepository(store);
@@ -266,7 +265,6 @@ class LmdbThemeTopRegressionSnapshotIT {
 								BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
 								loadData(repository, theme);
 								BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
-								primeLearnedFilterStats(repository, primedQueries);
 								BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
 							} finally {
 								shutdownAndRelease(repository, store);
@@ -279,22 +277,6 @@ class LmdbThemeTopRegressionSnapshotIT {
 		return preparedStore.storeDirectory();
 	}
 
-	private static List<TargetQuery> learnedFilterPrimeQueries(List<TargetQuery> targetQueries) {
-		return targetQueries.stream()
-				.filter(targetQuery -> targetQuery.theme == Theme.HIGHLY_CONNECTED)
-				.filter(targetQuery -> targetQuery.queryIndex == 5)
-				.collect(Collectors.toList());
-	}
-
-	private static String primeIndexKey(List<TargetQuery> targetQueries) {
-		String key = targetQueries.stream()
-				.map(targetQuery -> Integer.toString(targetQuery.queryIndex))
-				.distinct()
-				.sorted()
-				.collect(Collectors.joining("-"));
-		return key.isEmpty() ? "no-prime" : key;
-	}
-
 	private static void loadData(SailRepository repository, Theme theme) throws IOException {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.READ_COMMITTED);
@@ -303,28 +285,6 @@ class LmdbThemeTopRegressionSnapshotIT {
 			connection.commit();
 		}
 		System.out.println("Loaded data for theme " + theme.name());
-	}
-
-	private static void primeLearnedFilterStats(SailRepository repository, List<TargetQuery> targetQueries) {
-		for (TargetQuery targetQuery : targetQueries) {
-			String query = ThemeQueryCatalog.queryFor(targetQuery.theme, targetQuery.queryIndex);
-			long expected = ThemeQueryCatalog.expectedCountFor(targetQuery.theme, targetQuery.queryIndex);
-			long actual = executeQuery(repository, query);
-			if (actual != expected) {
-				throw new AssertionError("Unable to prime learned filter stats: theme=" + targetQuery.theme
-						+ ", queryIndex=" + targetQuery.queryIndex + ", expected=" + expected + ", actual="
-						+ actual);
-			}
-		}
-	}
-
-	private static long executeQuery(SailRepository repository, String query) {
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection.prepareTupleQuery(query)
-					.evaluate()
-					.stream()
-					.count();
-		}
 	}
 
 	private static String explainOptimized(SailRepository repository, TargetQuery targetQuery) {
@@ -383,7 +343,7 @@ class LmdbThemeTopRegressionSnapshotIT {
 			return normalizedActual.contains("VALUES ?u { <http://example.com/theme/social/user/7>")
 					&& normalizedActual
 							.contains("VALUES ?optName { \"user7\" \"user8\" \"user9\" \"user10\" \"user11\" }")
-					&& normalizedActual
+					&& !normalizedActual
 							.contains("FILTER (?optName IN (\"user7\", \"user8\", \"user9\", \"user10\", \"user11\"))")
 					&& planHasBoundPredicateAccess(plan, "http://example.com/theme/social/follows")
 					&& planHasBoundPredicateAccess(plan, "http://example.com/theme/social/authored")

@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
 /**
@@ -160,6 +161,7 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 		}
 
 		existingAssignment.setBindingSets(mergedBindingSets);
+		existingAssignment.setLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES, 1L);
 		filter.replaceWith(filter.getArg().clone());
 		return true;
 	}
@@ -221,6 +223,7 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setBindingNames(Set.of(bindingName));
+		assignment.setLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES, 1L);
 		List<BindingSet> bindingSets = new ArrayList<>(values.size());
 		for (Value value : values) {
 			MapBindingSet bindingSet = new MapBindingSet(1);

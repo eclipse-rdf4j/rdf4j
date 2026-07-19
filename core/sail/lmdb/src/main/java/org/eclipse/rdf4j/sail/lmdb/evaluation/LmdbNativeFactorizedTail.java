@@ -548,6 +548,7 @@ final class FactorizedTail {
 				}
 			}
 		}
+		row.recordExactValuesMatched(product);
 		return true;
 	}
 

@@ -526,10 +526,6 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		}
 		if (expr instanceof Filter) {
 			Filter filter = (Filter) expr;
-			SlotPlan pushedIntoPattern = compileFilterIntoStatementPattern(filter);
-			if (pushedIntoPattern != null) {
-				return pushedIntoPattern;
-			}
 			SlotPlan innerJoined = compileLeftJoinFilterAsInnerJoin(filter, duplicateInsensitive);
 			if (innerJoined != null) {
 				return innerJoined;

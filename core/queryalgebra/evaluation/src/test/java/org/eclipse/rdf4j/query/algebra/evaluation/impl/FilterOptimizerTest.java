@@ -143,7 +143,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		Filter filter = new Filter(volatileInput, condition);
 		QueryRoot root = new QueryRoot(filter);
 
-		QueryOptimizer optimizer = StandardQueryOptimizerPipeline.FILTER_IN_VALUES_OPTIMIZER;
+		QueryOptimizer optimizer = StandardQueryOptimizerPipeline.getFilterInValuesOptimizer();
 		optimizer.optimize(root, null, EmptyBindingSet.getInstance());
 
 		assertThat(root.getArg()).isSameAs(filter);
@@ -170,12 +170,36 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		Filter filter = new Filter(input, condition);
 		QueryRoot root = new QueryRoot(filter);
 
-		QueryOptimizer optimizer = StandardQueryOptimizerPipeline.FILTER_IN_VALUES_OPTIMIZER;
+		QueryOptimizer optimizer = StandardQueryOptimizerPipeline.getFilterInValuesOptimizer();
 		optimizer.optimize(root, null, EmptyBindingSet.getInstance());
 
 		assertThat(root.getArg()).isSameAs(filter);
 		assertThat(filter.getArg()).isSameAs(input);
 		assertThat(values(existingValues, "label")).containsExactly("\"kept\"", "\"dropped\"");
+	}
+
+	@Test
+	public void filterInValuesMarksExistingValuesWhenItAppliesExactIntersection() {
+		MapBindingSet kept = new MapBindingSet(1);
+		kept.addBinding("label", SimpleValueFactory.getInstance().createLiteral("kept"));
+		MapBindingSet dropped = new MapBindingSet(1);
+		dropped.addBinding("label", SimpleValueFactory.getInstance().createLiteral("dropped"));
+		BindingSetAssignment existingValues = new BindingSetAssignment();
+		existingValues.setBindingNames(Set.of("label"));
+		existingValues.setBindingSets(List.of(kept, dropped));
+
+		Join input = new Join(existingValues, pattern("label", "existingValuesIntersection"));
+		ListMemberOperator condition = new ListMemberOperator();
+		condition.addArgument(Var.of("label"));
+		condition.addArgument(new ValueConstant(SimpleValueFactory.getInstance().createLiteral("kept")));
+		QueryRoot root = new QueryRoot(new Filter(input, condition));
+
+		StandardQueryOptimizerPipeline.getFilterInValuesOptimizer()
+				.optimize(root, null, EmptyBindingSet.getInstance());
+
+		BindingSetAssignment rewrittenAnchor = singleValuesAnchor(root, "label");
+		assertThat(values(rewrittenAnchor, "label")).containsExactly("\"kept\"");
+		assertThat(rewrittenAnchor.getLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES)).isEqualTo(1L);
 	}
 
 	@Test
@@ -535,6 +559,19 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 
 		ParsedQuery expectedParsedQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, expectedQuery, null);
 		assertEquals(expectedParsedQuery.getTupleExpr(), optimized);
+	}
+
+	@Test
+	public void exactFilterValuesProvenanceDoesNotMarkUserAuthoredValues() {
+		TupleExpr rewritten = optimizeWithStandardPipeline(
+				"SELECT ?s WHERE { ?s <urn:label> ?label . FILTER(?label IN (\"Eclipse\", \"RDF4J\")) }");
+		BindingSetAssignment rewrittenAnchor = singleValuesAnchor(rewritten, "label");
+		assertThat(rewrittenAnchor.getLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES)).isEqualTo(1L);
+
+		TupleExpr userValues = optimizeWithStandardPipeline(
+				"SELECT ?s WHERE { VALUES ?label { \"Eclipse\" \"RDF4J\" } ?s <urn:label> ?label }");
+		BindingSetAssignment userAnchor = singleValuesAnchor(userValues, "label");
+		assertThat(userAnchor.getLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES)).isEqualTo(-1L);
 	}
 
 	private TupleExpr optimizeWithStandardPipeline(String actualQuery) {

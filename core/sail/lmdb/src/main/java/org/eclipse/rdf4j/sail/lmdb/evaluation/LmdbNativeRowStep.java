@@ -254,7 +254,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	}
 
 	List<BindingSet> evaluateAll(BindingSet base) {
-		RowState row = new RowState(source, layout, base);
+		RowState row = new RowState(source, layout, base, originalExpr);
 		if (!initializeRow(row, base, source, layout)) {
 			LmdbNativeExplain.recordExecutionPath(originalExpr, "emptySeed");
 			return List.of();
@@ -369,7 +369,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 				|| ((MultiJoinPlan) arg).children.length == 0 || !SlotPlan.encounterOrderReplaySafe(arg)) {
 			return null;
 		}
-		RowState row = new RowState(source, layout, base);
+		RowState row = new RowState(source, layout, base, originalExpr);
 		if (!initializeRow(row, base, source, layout)) {
 			return null;
 		}
@@ -725,7 +725,7 @@ final class NativeExistsValueStep implements QueryValueEvaluationStep {
 
 	@Override
 	public Value evaluate(BindingSet bindings) {
-		RowState row = new RowState(step.source, step.layout, bindings);
+		RowState row = new RowState(step.source, step.layout, bindings, step.originalExpr);
 		if (!initializeRow(row, bindings, step.source, step.layout)) {
 			LmdbNativeExplain.recordExecutionPath(step.originalExpr, "emptySeed");
 			return BooleanLiteral.FALSE;
@@ -1003,7 +1003,7 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet> {
 
 	private boolean initialize() throws IOException {
 		initialized = true;
-		row = new RowState(step.source, step.layout, base);
+		row = new RowState(step.source, step.layout, base, step.originalExpr);
 		if (!initializeRow(row, base, step.source, step.layout)) {
 			LmdbNativeExplain.recordExecutionPath(step.originalExpr, "emptySeed");
 			return false;
@@ -1146,6 +1146,7 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 			long multiplicity = cursor instanceof FactorizedRowCursor
 					? ((FactorizedRowCursor) cursor).multiplicity()
 					: 1L;
+			row.recordExactValuesMatched(multiplicity);
 			if (step.distinct && !distinctHandledByCursor) {
 				if (!distinctRows.add(row.slots)) {
 					continue;
@@ -1171,9 +1172,11 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 	private BindingSet getNextBatchElement() throws IOException {
 		while (!closed) {
 			if (batchIndex >= batch.selectedCount) {
-				if (batchCursor.fill(batch) == 0) {
+				int filled = batchCursor.fill(batch);
+				if (filled == 0) {
 					return null;
 				}
+				row.recordExactValuesMatched(batch.selectedCount);
 				batchIndex = 0;
 			}
 			int physicalRow = batch.selection[batchIndex++];
@@ -1194,7 +1197,7 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 
 	private boolean initialize() throws IOException {
 		initialized = true;
-		row = new RowState(step.source, step.layout, base);
+		row = new RowState(step.source, step.layout, base, step.originalExpr);
 		if (!initializeRow(row, base, step.source, step.layout)) {
 			LmdbNativeExplain.recordExecutionPath(step.originalExpr, "emptySeed");
 			return false;

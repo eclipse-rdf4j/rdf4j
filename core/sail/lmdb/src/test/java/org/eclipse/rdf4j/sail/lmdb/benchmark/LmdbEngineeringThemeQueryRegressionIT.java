@@ -40,7 +40,7 @@ class LmdbEngineeringThemeQueryRegressionIT {
 	@Test
 	void requirementExistsMinusUsesDevelopPlanShape(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ENGINEERING;
-		Path themeDir = prepareThemeStore(dataDir, theme, 7);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -59,7 +59,7 @@ class LmdbEngineeringThemeQueryRegressionIT {
 	@Test
 	void assemblyOptionalMinusUsesDevelopPlanShape(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ENGINEERING;
-		Path themeDir = prepareThemeStore(dataDir, theme, 10);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -79,7 +79,7 @@ class LmdbEngineeringThemeQueryRegressionIT {
 	@Test
 	void componentNameFilterUsesFiniteValuesAnchor(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ENGINEERING;
-		Path themeDir = prepareThemeStore(dataDir, theme, 4);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -97,7 +97,7 @@ class LmdbEngineeringThemeQueryRegressionIT {
 	@Test
 	void assemblyComponentCountsKeepsFastValuesFilterPlanShape(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ENGINEERING;
-		Path themeDir = prepareThemeStore(dataDir, theme, 2);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -115,7 +115,7 @@ class LmdbEngineeringThemeQueryRegressionIT {
 	@Test
 	void componentRequirementAggregationKeepsBoundLookupCardinality(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ENGINEERING;
-		Path themeDir = prepareThemeStore(dataDir, theme, 8);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -134,7 +134,7 @@ class LmdbEngineeringThemeQueryRegressionIT {
 	@Test
 	void engineeringQ9KeepsOptionalNameExistsCombinedFilterShape(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ENGINEERING;
-		Path themeDir = prepareThemeStore(dataDir, theme, 9);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -151,11 +151,11 @@ class LmdbEngineeringThemeQueryRegressionIT {
 		}
 	}
 
-	private static Path prepareThemeStore(Path dataDir, Theme theme, int queryIndexToPrime) throws Exception {
+	private static Path prepareThemeStore(Path dataDir, Theme theme) throws Exception {
 		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
 				.prepareThemeRegressionStore(
 						dataDir.resolve(theme.name()),
-						PERSISTENT_STORE_KEY_PREFIX + "/" + theme.name() + "-q" + queryIndexToPrime,
+						PERSISTENT_STORE_KEY_PREFIX + "/" + theme.name() + "/cold",
 						storeDirectory -> {
 							LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
 							SailRepository repository = new SailRepository(store);
@@ -163,7 +163,6 @@ class LmdbEngineeringThemeQueryRegressionIT {
 								BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
 								loadData(repository, theme);
 								BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
-								primeLearnedFilterStats(repository, theme, queryIndexToPrime);
 								BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
 							} finally {
 								shutdownAndRelease(repository, store);
@@ -182,25 +181,6 @@ class LmdbEngineeringThemeQueryRegressionIT {
 			RDFInserter inserter = new RDFInserter(connection);
 			ThemeDataSetGenerator.generate(theme, inserter);
 			connection.commit();
-		}
-	}
-
-	private static void primeLearnedFilterStats(SailRepository repository, Theme theme, int queryIndex) {
-		String query = ThemeQueryCatalog.queryFor(theme, queryIndex);
-		long expected = ThemeQueryCatalog.expectedCountFor(theme, queryIndex);
-		long actual = executeQuery(repository, query);
-		if (actual != expected) {
-			throw new AssertionError("Unable to prime learned filter stats: theme=" + theme + ", queryIndex="
-					+ queryIndex + ", expected=" + expected + ", actual=" + actual);
-		}
-	}
-
-	private static long executeQuery(SailRepository repository, String query) {
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection.prepareTupleQuery(query)
-					.evaluate()
-					.stream()
-					.count();
 		}
 	}
 
@@ -287,7 +267,9 @@ class LmdbEngineeringThemeQueryRegressionIT {
 
 	private static void assertEngineeringQ2FastPlanShape(String renderedQuery, String plan) {
 		assertContains(renderedQuery, "VALUES ?assemblyName { \"Assembly 1\" \"Assembly 2\" \"Assembly 3\" }");
-		assertContains(renderedQuery, "FILTER (?assemblyName IN (\"Assembly 1\", \"Assembly 2\", \"Assembly 3\"))");
+		assertDoesNotContain(renderedQuery,
+				"FILTER (?assemblyName IN (\"Assembly 1\", \"Assembly 2\", \"Assembly 3\"))",
+				"Engineering q2 should consume the optimizer-produced VALUES domain without a redundant filter");
 		assertBefore(renderedQuery,
 				"VALUES ?assemblyName { \"Assembly 1\" \"Assembly 2\" \"Assembly 3\" }",
 				"?assembly <http://example.com/theme/engineering/name> ?assemblyName .",
@@ -319,7 +301,7 @@ class LmdbEngineeringThemeQueryRegressionIT {
 				"value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
 				"value=http://example.com/theme/engineering/partOf",
 				"Engineering q2 should resolve assemblies before optional partOf expansion");
-		assertAssemblyNameLookupUsesLocalValuesFilter(plan);
+		assertAssemblyNameLookupUsesExactValues(plan);
 		assertPartOfUsesBoundAssembly(plan);
 	}
 
@@ -372,7 +354,7 @@ class LmdbEngineeringThemeQueryRegressionIT {
 		assertNamePatternUsesBoundValue(plan, "Engineering q4", false);
 	}
 
-	private static void assertAssemblyNameLookupUsesLocalValuesFilter(String plan) {
+	private static void assertAssemblyNameLookupUsesExactValues(String plan) {
 		int predicateIndex = plan.indexOf("value=http://example.com/theme/engineering/name");
 		if (predicateIndex < 0) {
 			throw new AssertionError("Engineering q2 plan should include the assembly name pattern:\n" + plan);
@@ -382,21 +364,10 @@ class LmdbEngineeringThemeQueryRegressionIT {
 		assertContains(pattern, "o: Var (name=assemblyName) (bindingState=bound)");
 		assertContains(pattern, "plannedLookupComponents=[P, O]");
 		assertContains(pattern, "plannedIndexAccessMode=directLookup");
-
-		int filterIndex = plan.lastIndexOf("Filter (", predicateIndex);
-		int typeIndex = plan.indexOf("value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type", predicateIndex);
-		if (filterIndex < 0 || typeIndex < 0 || filterIndex >= typeIndex) {
-			throw new AssertionError("Engineering q2 name lookup should be wrapped by a local VALUES filter:\n" + plan);
-		}
-
-		String filteredLookup = plan.substring(filterIndex, typeIndex);
-		assertContains(filteredLookup, "ListMemberOperator");
-		assertContains(filteredLookup, "Var (name=assemblyName) (bindingState=bound)");
-		assertContains(filteredLookup, "ValueConstant (value=\"Assembly 1\")");
-		assertContains(filteredLookup, "ValueConstant (value=\"Assembly 2\")");
-		assertContains(filteredLookup, "ValueConstant (value=\"Assembly 3\")");
-		assertContains(filteredLookup, "deferredFilterScope=localPattern");
-		assertContains(filteredLookup, "filterSelectivitySource=learned_filter");
+		assertContains(plan,
+				"BindingSetAssignment ([[assemblyName=\"Assembly 1\"], [assemblyName=\"Assembly 2\"], [assemblyName=\"Assembly 3\"]]) (optimizer.exactValues=1)");
+		assertDoesNotContain(plan, "ListMemberOperator",
+				"Engineering q2 should not retain the IN expression after exact VALUES generation");
 	}
 
 	private static void assertEngineeringQ8FastPlanShape(String renderedQuery, String plan) {

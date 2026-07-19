@@ -42,7 +42,7 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 	private static final Theme THEME = Theme.PHARMA;
 	private static final int MAX_QUERY_INDEX = 10;
 	private static final String QUERY_INDEXES_PROPERTY = "rdf4j.lmdb.pharmaRegression.queryIndexes";
-	private static final String PERSISTENT_STORE_KEY = "pharma-regression/all-themes";
+	private static final String PERSISTENT_STORE_KEY = "pharma-regression/all-themes/cold";
 	private static final String PERSISTENT_STORE_HINT = "Set -D"
 			+ BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreEnabledPropertyName()
 			+ "=true to reuse cached stores under persistent-lmdb-theme-store.";
@@ -62,7 +62,6 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 								BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
 								loadData(repository);
 								BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
-								primeLearnedFilterStats(repository);
 								BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
 							} finally {
 								shutdownAndRelease(repository, store);
@@ -97,27 +96,6 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 				ThemeDataSetGenerator.generate(themeDataset, inserter);
 			}
 			connection.commit();
-		}
-	}
-
-	private static void primeLearnedFilterStats(SailRepository repository) {
-		for (int queryIndex = 0; queryIndex <= MAX_QUERY_INDEX; queryIndex++) {
-			String query = ThemeQueryCatalog.queryFor(THEME, queryIndex);
-			long expected = ThemeQueryCatalog.expectedCountFor(THEME, queryIndex);
-			long actual = executeQuery(repository, query);
-			if (actual != expected) {
-				throw new AssertionError("Unable to prime learned filter stats for PHARMA query " + queryIndex
-						+ ": expected=" + expected + ", actual=" + actual);
-			}
-		}
-	}
-
-	private static long executeQuery(SailRepository repository, String query) {
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection.prepareTupleQuery(query)
-					.evaluate()
-					.stream()
-					.count();
 		}
 	}
 

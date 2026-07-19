@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ProjectionRemovalOpt
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryModelNormalizerOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.RegexAsStringFunctionOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SameTermFilterOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.UnionScopeChangeOptimizer;
 
 @InternalUseOnly
@@ -84,6 +85,7 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 				ITERATIVE_EVALUATION_OPTIMIZER,
 				new LmdbFilterSimplifierOptimizer(evaluationStatistics),
 				new LmdbSketchJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize()),
+				StandardQueryOptimizerPipeline.getFilterInValuesOptimizer(),
 				ORDER_LIMIT_OPTIMIZER,
 				new LmdbOrderByOptimizer(tripleSource));
 

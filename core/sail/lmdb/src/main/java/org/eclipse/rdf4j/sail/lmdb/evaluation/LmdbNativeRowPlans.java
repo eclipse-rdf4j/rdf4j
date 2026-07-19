@@ -384,9 +384,15 @@ final class ValuesPlan implements SlotPlan {
 	 * — such plans must not join the reorderable bag, whose planners treat produced slots as bound.
 	 */
 	final boolean bindsAllSlotsEveryRow;
+	final boolean exactFilterRewrite;
 
 	ValuesPlan(ValuesRow[] rows) {
+		this(rows, false);
+	}
+
+	ValuesPlan(ValuesRow[] rows, boolean exactFilterRewrite) {
 		this.rows = rows;
+		this.exactFilterRewrite = exactFilterRewrite;
 		long mask = 0L;
 		for (ValuesRow row : rows) {
 			for (int slot : row.slots) {
@@ -410,12 +416,12 @@ final class ValuesPlan implements SlotPlan {
 
 	@Override
 	public RowCursor open(RowState row) {
-		return new ValuesCursor(rows, row);
+		return new ValuesCursor(rows, row, exactFilterRewrite);
 	}
 
 	@Override
 	public BatchCursor openBatch(RowState row, int capacity) {
-		return new ValuesBatchCursor(rows, row);
+		return new ValuesBatchCursor(rows, row, exactFilterRewrite);
 	}
 
 	@Override
@@ -433,12 +439,18 @@ final class ValuesPlan implements SlotPlan {
 final class ValuesCursor implements RowCursor {
 	final ValuesRow[] rows;
 	final RowState row;
+	final boolean exactFilterRewrite;
 	int index;
 	int activeMark = -1;
 
 	ValuesCursor(ValuesRow[] rows, RowState row) {
+		this(rows, row, false);
+	}
+
+	ValuesCursor(ValuesRow[] rows, RowState row, boolean exactFilterRewrite) {
 		this.rows = rows;
 		this.row = row;
+		this.exactFilterRewrite = exactFilterRewrite;
 	}
 
 	@Override
@@ -456,6 +468,9 @@ final class ValuesCursor implements RowCursor {
 			}
 			if (ok) {
 				activeMark = mark;
+				if (exactFilterRewrite && row.exactValuesMetrics != null) {
+					row.exactValuesMetrics.recordProbes(1L);
+				}
 				return true;
 			}
 			row.rollback(mark);
@@ -467,6 +482,9 @@ final class ValuesCursor implements RowCursor {
 	public void close() {
 		release();
 		index = rows.length;
+		if (exactFilterRewrite && row.exactValuesMetrics != null) {
+			row.exactValuesMetrics.publish();
+		}
 	}
 
 	void release() {

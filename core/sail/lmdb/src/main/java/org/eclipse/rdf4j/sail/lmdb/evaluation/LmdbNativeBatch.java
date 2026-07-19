@@ -267,12 +267,18 @@ final class PatternBatchCursor implements BatchCursor {
 final class ValuesBatchCursor implements BatchCursor {
 	final ValuesRow[] rows;
 	final long[] seedSlots;
+	final ExactValuesRuntimeMetrics exactValuesMetrics;
 	int index;
 	boolean closed;
 
 	ValuesBatchCursor(ValuesRow[] rows, RowState row) {
+		this(rows, row, false);
+	}
+
+	ValuesBatchCursor(ValuesRow[] rows, RowState row, boolean exactFilterRewrite) {
 		this.rows = rows;
 		this.seedSlots = Arrays.copyOf(row.slots, row.slots.length);
+		this.exactValuesMetrics = exactFilterRewrite ? row.exactValuesMetrics : null;
 	}
 
 	@Override
@@ -304,6 +310,9 @@ final class ValuesBatchCursor implements BatchCursor {
 			closed = true;
 		}
 		batch.finishRows(outputRows);
+		if (exactValuesMetrics != null && outputRows > 0) {
+			exactValuesMetrics.recordProbes(outputRows);
+		}
 		if (outputRows > 0) {
 			NativeBatch.DIRECT_VALUES_FILLS.incrementAndGet();
 		}
@@ -314,6 +323,9 @@ final class ValuesBatchCursor implements BatchCursor {
 	public void close() {
 		closed = true;
 		index = rows.length;
+		if (exactValuesMetrics != null) {
+			exactValuesMetrics.publish();
+		}
 	}
 }
 

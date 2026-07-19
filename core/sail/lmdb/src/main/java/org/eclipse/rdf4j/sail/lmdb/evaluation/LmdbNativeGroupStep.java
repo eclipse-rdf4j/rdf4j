@@ -232,7 +232,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 	}
 
 	List<BindingSet> evaluateAll() {
-		RowState row = new RowState(source, layout, base);
+		RowState row = new RowState(source, layout, base, explainTarget);
 		if (!initialize(row)) {
 			LmdbNativeExplain.recordExecutionPath(explainTarget, "emptySeed");
 			return noInputResult();
@@ -374,7 +374,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 	}
 
 	List<BindingSet> evaluateSequentialFallback() {
-		RowState row = new RowState(source, layout, base);
+		RowState row = new RowState(source, layout, base, explainTarget);
 		if (!initialize(row)) {
 			return noInputResult();
 		}

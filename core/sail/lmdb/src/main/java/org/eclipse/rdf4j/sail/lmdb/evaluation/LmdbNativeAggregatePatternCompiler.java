@@ -30,7 +30,6 @@ import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
-import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -38,8 +37,8 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 
 @Experimental
@@ -48,22 +47,6 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 	LmdbNativeAggregatePatternCompiler(QueryEvaluationContext context, LmdbNativeEvaluationStrategy strategy,
 			NativeLmdbQuerySource source) {
 		super(context, strategy, source);
-	}
-
-	SlotPlan compileFilterIntoStatementPattern(Filter filter) {
-		if (!(filter.getArg() instanceof StatementPattern)) {
-			return null;
-		}
-		EvaluationStatistics statistics = strategy.evaluationStatistics();
-		if (statistics != null && statistics.supportsFilterSelectivityCosting()) {
-			EvaluationStatistics.FilterPassEstimate.Source source = statistics.estimateFilterPass(filter).getSource();
-			if (source != EvaluationStatistics.FilterPassEstimate.Source.EXACT
-					&& source != EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER) {
-				// Keep one exact-key observation at the original filter boundary before replacing it with probes.
-				return null;
-			}
-		}
-		return compileFilterIntoStatementPattern((StatementPattern) filter.getArg(), filter.getCondition());
 	}
 
 	SlotPlan compileFilterIntoStatementPattern(StatementPattern pattern, ValueExpr condition) {
@@ -377,7 +360,8 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 			}
 			rows[i] = new ValuesRow(Arrays.copyOf(rowSlots, size), Arrays.copyOf(rowValues, size));
 		}
-		return SlotPlan.values(rows);
+		return SlotPlan.values(rows,
+				values.getLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES) == 1L);
 	}
 
 }
