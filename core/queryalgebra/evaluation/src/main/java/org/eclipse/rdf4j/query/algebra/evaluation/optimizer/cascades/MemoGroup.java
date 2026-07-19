@@ -495,8 +495,8 @@ public final class MemoGroup {
 		if (changedChildStates == null || changedChildStates.isEmpty()) {
 			return WinnerFrontierChanges.NONE;
 		}
-		Set<WinnerKey> changedParentKeys = new LinkedHashSet<>();
-		Set<WinnerStateInvalidation> removedParentStates = new LinkedHashSet<>();
+		Set<WinnerKey> changedParentKeys = null;
+		Set<WinnerStateInvalidation> removedParentStates = null;
 		Iterator<Map.Entry<WinnerKey, WinnerFrontier>> frontierIterator = winnersByGoal.entrySet().iterator();
 		while (frontierIterator.hasNext()) {
 			Map.Entry<WinnerKey, WinnerFrontier> entry = frontierIterator.next();
@@ -506,6 +506,10 @@ public final class MemoGroup {
 			if (removed.isEmpty()) {
 				continue;
 			}
+			if (changedParentKeys == null) {
+				changedParentKeys = new LinkedHashSet<>();
+				removedParentStates = new LinkedHashSet<>();
+			}
 			changedParentKeys.add(entry.getKey());
 			for (Winner winner : removed) {
 				removedParentStates.add(WinnerStateInvalidation.of(winner));
@@ -514,10 +518,12 @@ public final class MemoGroup {
 				frontierIterator.remove();
 			}
 		}
+		if (changedParentKeys == null) {
+			return WinnerFrontierChanges.NONE;
+		}
 		winnersChanged(changedParentKeys);
 		winnerStatesInvalidated(removedParentStates);
-		return changedParentKeys.isEmpty() ? WinnerFrontierChanges.NONE
-				: new WinnerFrontierChanges(changedParentKeys, removedParentStates);
+		return new WinnerFrontierChanges(changedParentKeys, removedParentStates);
 	}
 
 	private static boolean dependsOn(Winner winner, MemoExpr parentExpression, int childGroupId,
@@ -750,15 +756,18 @@ public final class MemoGroup {
 
 		List<Winner> removeMatching(Predicate<Winner> predicate) {
 			Objects.requireNonNull(predicate, "predicate");
-			List<Winner> removed = new ArrayList<>();
+			ArrayList<Winner> removed = null;
 			for (int index = entries.size() - 1; index >= 0; index--) {
 				Winner winner = entries.get(index);
 				if (predicate.test(winner)) {
+					if (removed == null) {
+						removed = new ArrayList<>();
+					}
 					removed.add(winner);
 					unregister(winner);
 				}
 			}
-			return removed.isEmpty() ? List.of() : List.copyOf(removed);
+			return removed == null ? List.of() : List.copyOf(removed);
 		}
 
 		boolean isEmpty() {

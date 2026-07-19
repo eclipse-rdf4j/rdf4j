@@ -1376,6 +1376,9 @@ class CascadesRuleEngineTest {
 				OptimizationGoal.SearchMode.EXACT);
 		state.observeStatisticsEpoch(0L);
 		state.enqueueCostWork(memo, parentPhysical, goal, "physical_expression_added");
+		for (int duplicate = 0; duplicate < 64; duplicate++) {
+			state.enqueueCostWork(memo, parentPhysical, goal, "duplicate_physical_wake");
+		}
 
 		for (int revision = 0; revision < 32; revision++) {
 			memo.addPhysicalAlternative(childGroupId, child.clone(),
@@ -1386,6 +1389,9 @@ class CascadesRuleEngineTest {
 
 		assertAll(
 				() -> assertTrue(state.hasCostWork(), "The coalesced cost task must remain runnable"),
+				() -> assertTrue(state.diagnostics().contains("costWorkBaseKeys=1"),
+						"Repeated wake-ups for one expression and canonical goal must reuse one scheduler key: "
+								+ state.diagnostics()),
 				() -> assertTrue(state.diagnostics().contains("deferredCostRecordsCreated=1"),
 						"A queued task reads current memo revisions when drained, so intermediate dependency changes must "
 								+ "not rebuild its immutable work record: " + state.diagnostics()));

@@ -4548,7 +4548,7 @@ public final class CascadesPlanner {
 	private record MaterializedJoinState(int groupId, TupleExpr template, JoinState state) {
 	}
 
-	private static CostWorkKey costWorkKey(Memo memo, MemoExpr expression, OptimizationGoal goal,
+	private static CostWorkKey costWorkKey(Memo memo, MemoExpr expression, CostWorkBaseKey base,
 			long statisticsEpoch, Collection<Integer> dependencyGroupIds, Collection<WinnerKey> blockingWinnerKeys) {
 		Map<WinnerKey, WinnerDependencyRevision> blockingWinnerRevisions = new LinkedHashMap<>();
 		if (blockingWinnerKeys != null) {
@@ -4559,10 +4559,10 @@ public final class CascadesPlanner {
 				}
 			}
 		}
-		return costWorkKey(memo, expression, goal, statisticsEpoch, dependencyGroupIds, blockingWinnerRevisions);
+		return costWorkKey(memo, expression, base, statisticsEpoch, dependencyGroupIds, blockingWinnerRevisions);
 	}
 
-	private static CostWorkKey costWorkKey(Memo memo, MemoExpr expression, OptimizationGoal goal,
+	private static CostWorkKey costWorkKey(Memo memo, MemoExpr expression, CostWorkBaseKey base,
 			long statisticsEpoch, Collection<Integer> dependencyGroupIds,
 			Map<WinnerKey, WinnerDependencyRevision> blockingWinnerRevisions) {
 		TreeSet<Integer> structuralGroupIds = new TreeSet<>();
@@ -4574,7 +4574,7 @@ public final class CascadesPlanner {
 		List<CostDependencyRevision> dependencyRevisions = structuralGroupIds.stream()
 				.map(groupId -> costDependencyRevision(memo.group(groupId)))
 				.toList();
-		return new CostWorkKey(new CostWorkBaseKey(expression.id(), goal), Math.max(0L, statisticsEpoch),
+		return new CostWorkKey(base, Math.max(0L, statisticsEpoch),
 				dependencyRevisions, blockingWinnerRevisions);
 	}
 
@@ -4583,10 +4583,35 @@ public final class CascadesPlanner {
 				group.factRevision(), group.winnerClearRevision());
 	}
 
-	private record CostWorkBaseKey(int expressionId, OptimizationGoal goal) {
+	private static final class CostWorkBaseKey {
+		private final int expressionId;
+		private final OptimizationGoal goal;
+		private final int hash;
 
-		private CostWorkBaseKey {
-			Objects.requireNonNull(goal, "goal");
+		private CostWorkBaseKey(int expressionId, OptimizationGoal goal) {
+			this.expressionId = expressionId;
+			this.goal = Objects.requireNonNull(goal, "goal");
+			this.hash = 31 * Integer.hashCode(expressionId) + System.identityHashCode(goal);
+		}
+
+		private int expressionId() {
+			return expressionId;
+		}
+
+		private OptimizationGoal goal() {
+			return goal;
+		}
+
+		@Override
+		public boolean equals(Object object) {
+			return this == object || object instanceof CostWorkBaseKey other
+					&& expressionId == other.expressionId
+					&& goal == other.goal;
+		}
+
+		@Override
+		public int hashCode() {
+			return hash;
 		}
 	}
 
@@ -5016,6 +5041,9 @@ public final class CascadesPlanner {
 		private final Map<DependentTraversalKey, DependentTraversalStamp> dependentTraversals = new HashMap<>();
 		private final Map<InputBindingContext, InputBindingContext> canonicalInputBindingContexts = new HashMap<>();
 		private final Map<OptimizationGoal, OptimizationGoal> canonicalGoals = new HashMap<>();
+		private final Set<OptimizationGoal> canonicalGoalIdentities = Collections
+				.newSetFromMap(new IdentityHashMap<>());
+		private final List<IdentityHashMap<OptimizationGoal, CostWorkBaseKey>> costWorkBaseKeysByExpression = new ArrayList<>();
 		private final IdentityHashMap<OptimizationGoal, Map<Integer, WinnerKey>> winnerKeys = new IdentityHashMap<>();
 		private final Map<SelectedPrefixWinnerKey, Map<SelectedPrefixTransitionKey, InputBindingContext>> selectedPrefixTransitions = new HashMap<>();
 		private final Set<String> patternExplorationMemory = new HashSet<>();
@@ -5073,6 +5101,7 @@ public final class CascadesPlanner {
 		private boolean freshExplorePreemptionAvailable = true;
 		private int deadlineCheckCountdown = DEADLINE_CHECK_GRANULARITY;
 		private long deferredCostRecordsCreated;
+		private int costWorkBaseKeyCount;
 		private long joinDiscoveryRequests;
 		private long joinDiscoveriesExecuted;
 		private long joinDiscoveryCacheHits;
@@ -5125,12 +5154,41 @@ public final class CascadesPlanner {
 
 		OptimizationGoal canonicalGoal(OptimizationGoal goal) {
 			Objects.requireNonNull(goal, "goal");
+			if (canonicalGoalIdentities.contains(goal)) {
+				return goal;
+			}
 			InputBindingContext canonicalContext = canonicalInputBindingContext(goal.inputBindingContext());
 			OptimizationGoal candidate = canonicalContext == goal.inputBindingContext()
 					? goal
 					: goal.withInputBindingContext(canonicalContext);
 			OptimizationGoal existing = canonicalGoals.putIfAbsent(candidate, candidate);
-			return existing == null ? candidate : existing;
+			OptimizationGoal canonical = existing == null ? candidate : existing;
+			canonicalGoalIdentities.add(canonical);
+			return canonical;
+		}
+
+		private CostWorkBaseKey costWorkBase(int expressionId, OptimizationGoal goal) {
+			if (expressionId < 0) {
+				throw new IllegalArgumentException("Cost-work expression ID must be non-negative");
+			}
+			OptimizationGoal canonical = canonicalGoal(goal);
+			while (costWorkBaseKeysByExpression.size() <= expressionId) {
+				costWorkBaseKeysByExpression.add(null);
+			}
+			IdentityHashMap<OptimizationGoal, CostWorkBaseKey> expressionKeys = costWorkBaseKeysByExpression
+					.get(expressionId);
+			if (expressionKeys == null) {
+				expressionKeys = new IdentityHashMap<>();
+				costWorkBaseKeysByExpression.set(expressionId, expressionKeys);
+			}
+			CostWorkBaseKey existing = expressionKeys.get(canonical);
+			if (existing != null) {
+				return existing;
+			}
+			CostWorkBaseKey created = new CostWorkBaseKey(expressionId, canonical);
+			expressionKeys.put(canonical, created);
+			costWorkBaseKeyCount++;
+			return created;
 		}
 
 		boolean requestGroupGoal(int groupId, OptimizationGoal goal) {
@@ -6031,7 +6089,7 @@ public final class CascadesPlanner {
 				return;
 			}
 			OptimizationGoal canonicalGoal = canonicalGoal(goal);
-			CostWorkBaseKey base = new CostWorkBaseKey(expression.id(), canonicalGoal);
+			CostWorkBaseKey base = costWorkBase(expression.id(), canonicalGoal);
 			CostWork previous = deferredCostWork.get(base);
 			boolean demandDriven = demandDrivenCostWork(reason);
 			boolean requestedPriority = prioritize || demandDriven;
@@ -6051,7 +6109,7 @@ public final class CascadesPlanner {
 					}
 					return;
 				}
-				CostWorkKey currentKey = costWorkKey(memo, expression, canonicalGoal, statisticsEpoch(),
+				CostWorkKey currentKey = costWorkKey(memo, expression, base, statisticsEpoch(),
 						previous.dependencyGroupIds(), previous.blockingWinnerKeys());
 				if (currentKey.equals(previous.key())) {
 					return;
@@ -6071,7 +6129,7 @@ public final class CascadesPlanner {
 			TreeSet<Integer> dependencies = new TreeSet<>();
 			dependencies.add(expression.groupId());
 			expression.executableInputs().stream().map(MemoInput::groupId).forEach(dependencies::add);
-			CostWorkKey key = costWorkKey(memo, expression, canonicalGoal, statisticsEpoch(), dependencies, Set.of());
+			CostWorkKey key = costWorkKey(memo, expression, base, statisticsEpoch(), dependencies, Set.of());
 			if (previous != null) {
 				removeCostSubscriptions(base, previous.dependencyGroupIds());
 			} else {
@@ -6137,7 +6195,7 @@ public final class CascadesPlanner {
 				return;
 			}
 			OptimizationGoal canonicalGoal = canonicalGoal(goal);
-			CostWorkBaseKey base = new CostWorkBaseKey(expression.id(), canonicalGoal);
+			CostWorkBaseKey base = costWorkBase(expression.id(), canonicalGoal);
 			CostWork previous = deferredCostWork.get(base);
 			Map<WinnerKey, WinnerDependencyRevision> safeBlockingWinnerRevisions;
 			if (blockingWinnerRevisions == null || blockingWinnerRevisions.isEmpty()) {
@@ -6164,7 +6222,7 @@ public final class CascadesPlanner {
 			for (WinnerKey blockingWinnerKey : safeBlockingWinnerKeys) {
 				dependencies.add(blockingWinnerKey.groupId());
 			}
-			CostWorkKey key = costWorkKey(memo, expression, canonicalGoal, statisticsEpoch(), dependencies,
+			CostWorkKey key = costWorkKey(memo, expression, base, statisticsEpoch(), dependencies,
 					safeBlockingWinnerRevisions);
 			String wakeUpReason = CostWork.normalizedWakeUpReason(reason);
 			boolean prioritized = demandDrivenCostWork(wakeUpReason)
@@ -6210,7 +6268,7 @@ public final class CascadesPlanner {
 				return;
 			}
 			OptimizationGoal canonicalGoal = canonicalGoal(goal);
-			CostWorkBaseKey base = new CostWorkBaseKey(expression.id(), canonicalGoal);
+			CostWorkBaseKey base = costWorkBase(expression.id(), canonicalGoal);
 			CostWork resolved = deferredCostWork.remove(base);
 			queuedCostWork.remove(base);
 			promotedCostWork.remove(base);
@@ -6283,7 +6341,7 @@ public final class CascadesPlanner {
 				return;
 			}
 			MemoExpr expression = memo.expression(base.expressionId());
-			CostWorkKey currentKey = costWorkKey(memo, expression, base.goal(), statisticsEpoch,
+			CostWorkKey currentKey = costWorkKey(memo, expression, base, statisticsEpoch,
 					deferred.dependencyGroupIds(), deferred.blockingWinnerKeys());
 			if (currentKey.equals(deferred.key())) {
 				return;
@@ -6965,6 +7023,7 @@ public final class CascadesPlanner {
 			diagnostics.add("selectedPrefixTransitions=canonical:" + selectedPrefixTransitions.size());
 			diagnostics.add("deferredCosts=" + deferredCostWork.size() + ", runnableCosts=" + queuedCostWork.size());
 			diagnostics.add("deferredCostPresenceIndex=" + deferredCostPresence.size());
+			diagnostics.add("costWorkBaseKeys=" + costWorkBaseKeyCount);
 			diagnostics.add("deferredCostRecordsCreated=" + deferredCostRecordsCreated);
 			diagnostics.add("groupsExplored=" + exploredGroups.size());
 			diagnostics.add("patternsExplored=" + patternExplorationMemory.size());
