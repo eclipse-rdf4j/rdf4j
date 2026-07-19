@@ -14,11 +14,14 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -26,8 +29,10 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterValuesAnchorSupport;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 import org.eclipse.rdf4j.sail.lmdb.estimation.LmdbQuadSynopsisService;
 import org.eclipse.rdf4j.sail.lmdb.estimation.QuadEvidence;
@@ -37,20 +42,23 @@ import org.eclipse.rdf4j.sail.lmdb.estimation.RowEvidence;
 
 /** Collects storage and synopsis evidence without embedding selection policy. */
 final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource {
+	private static final int MAX_BOUND_JOIN_DISTINCT_PREFIXES = 65_536;
 
 	private final LmdbStatementPatternCardinalitySource cardinalities;
 	private final LmdbQuadSynopsisService synopsis;
 	private final LmdbFilterSelectivityStats filters;
 	private final LmdbOperatorFeedbackStats feedback;
 	private final LmdbPropertyPathEstimator propertyPaths;
+	private final LmdbFiniteJoinSurfaceEstimator finiteJoinSurfaceEstimator;
 
 	LmdbStorageEstimatorEvidence(LmdbStatementPatternCardinalitySource cardinalities,
 			LmdbQuadSynopsisService synopsis, LmdbFilterSelectivityStats filters,
-			LmdbOperatorFeedbackStats feedback) {
+			LmdbOperatorFeedbackStats feedback, LmdbFiniteJoinSurfaceEstimator finiteJoinSurfaceEstimator) {
 		this.cardinalities = cardinalities;
 		this.synopsis = synopsis;
 		this.filters = filters;
 		this.feedback = feedback;
+		this.finiteJoinSurfaceEstimator = finiteJoinSurfaceEstimator;
 		propertyPaths = new LmdbPropertyPathEstimator(synopsis);
 	}
 
@@ -92,7 +100,8 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 				double upper = rows == 0.0d ? 1.0d : Math.max(rows, rows * 2.0d);
 				RowEvidence evidence = new RowEvidence(rows, Math.max(0.0d, rows * 0.5d), upper, 0.55d,
 						false, context.snapshotIdentity(), context.snapshotVersion(), "lmdb-storage-summary");
-				candidates.add(candidate(pattern, rows, evidence, EstimateCandidate.Kind.STORAGE_SUMMARY, null, Set.of()));
+				candidates.add(
+						candidate(pattern, rows, evidence, EstimateCandidate.Kind.STORAGE_SUMMARY, null, Set.of()));
 			}
 		}
 		if (synopsis != null) {
@@ -105,7 +114,37 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 			}
 		}
 		addFeedback(pattern, context, candidates);
+		addBoundVariableEvidence(pattern, context, candidates);
 		return candidates;
+	}
+
+	private void addBoundVariableEvidence(StatementPattern pattern, EstimateContext context,
+			List<EstimateCandidate> candidates) {
+		if (cardinalities == null || candidates.isEmpty() || context.boundMask().isEmpty()) {
+			return;
+		}
+		Set<String> boundNames = context.boundNames();
+		Set<String> enrichedNames = new LinkedHashSet<>();
+		for (Var variable : pattern.getVarList()) {
+			String name = variableName(variable);
+			if (name == null || !boundNames.contains(name) || !enrichedNames.add(name)) {
+				continue;
+			}
+			OptionalDouble distinct = cardinalities.estimateDistinct(pattern, name,
+					MAX_BOUND_JOIN_DISTINCT_PREFIXES);
+			if (distinct.isEmpty()) {
+				continue;
+			}
+			double distinctRows = distinct.getAsDouble();
+			for (int index = 0; index < candidates.size(); index++) {
+				EstimateCandidate candidate = candidates.get(index);
+				BagEstimate enriched = candidate.estimate()
+						.withSketchRelation(Set.of(name),
+								new ExactDistinctCountSketch(distinctRows, candidate.estimate().rows()));
+				candidates.set(index, new EstimateCandidate(enriched, candidate.evidence(), candidate.kind(),
+						candidate.freshness()));
+			}
+		}
 	}
 
 	private void addFeedback(StatementPattern pattern, EstimateContext context,
@@ -155,6 +194,21 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 		boolean complete = estimate.getSource() == EvaluationStatistics.FilterPassEstimate.Source.EXACT;
 		return Optional.of(new FilterEvidence(ratio, estimate.getLower95PassRatio(), estimate.getUpper95PassRatio(),
 				estimate.getConfidenceScore(), complete, estimate.getSource().name().toLowerCase()));
+	}
+
+	@Override
+	public Optional<FiniteRelationEstimate> finiteFilterRelation(TupleExpr input, ValueExpr condition,
+			EstimateContext context) {
+		if (finiteJoinSurfaceEstimator == null || !(input instanceof StatementPattern)) {
+			return Optional.empty();
+		}
+		BindingSetAssignment anchor = FilterValuesAnchorSupport.safeValuesAnchor(condition);
+		if (anchor == null || !input.getAssuredBindingNames().containsAll(anchor.getBindingNames())) {
+			return Optional.empty();
+		}
+		return finiteJoinSurfaceEstimator.estimate(List.of(anchor), input, Map.of())
+				.filter(LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate::exact)
+				.map(LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate::relation);
 	}
 
 	private static EstimateCandidate candidate(TupleExpr expression, double rows, RowEvidence evidence,
@@ -264,5 +318,12 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 
 	private static boolean valid(double rows) {
 		return Double.isFinite(rows) && rows >= 0.0d;
+	}
+
+	private record ExactDistinctCountSketch(double distinctRows, double rowMass) implements DistributionSketch {
+		@Override
+		public OptionalDouble totalRows() {
+			return OptionalDouble.of(rowMass);
+		}
 	}
 }

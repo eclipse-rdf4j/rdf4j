@@ -27,4 +27,13 @@ public final class MemoJoinSearchTestAccess {
 				memo.intern(alternative.getRightArg()));
 		return memo.addJoinSearchAlternativeWithInputs(groupId, alternative, inputGroupIds, proofs).orElseThrow();
 	}
+
+	/**
+	 * Creates a detached logical Join for read-only tests that must exercise defensive handling of malformed memo
+	 * graphs. The expression is deliberately not published through {@link Memo}, whose insertion contract rejects
+	 * logical dependency cycles.
+	 */
+	public static MemoExpr detachedLogicalJoin(int groupId, Join expression, List<Integer> inputGroupIds) {
+		return MemoExpr.logical(-1, groupId, expression, inputGroupIds, "detached-test-fixture");
+	}
 }

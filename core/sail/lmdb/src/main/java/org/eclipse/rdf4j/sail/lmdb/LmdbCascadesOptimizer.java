@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -67,6 +68,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPla
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesTelemetry;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.InputBindingContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationCompleteness;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
@@ -165,7 +167,6 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		mode = serializableSafeMode(mode);
 		try (QueryOptimizationScopeProvider.QueryOptimizationScope scope = beginQueryOptimizationScope()) {
 			Set<String> initiallyBoundVars = bindings == null ? Set.of() : bindings.getBindingNames();
-			boolean budgetedSearch = usesBudgetedSearch(mode);
 			PhysicalProperties required = PhysicalProperties.builder()
 					.boundVars(initiallyBoundVars)
 					.observationOrder(preserveSerializableObservationOrder
@@ -174,14 +175,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 					.build();
 			OptimizationGoal goal = OptimizationGoal.root(tupleExpr, required)
 					.withInputBindingContext(InputBindingContext.fromBindingSet(bindings));
-			if (budgetedSearch) {
-				goal = goal.asBudgeted(Duration.ofMillis(configuredTimeoutMillis()),
-						intProperty(BUDGET_PROPERTY, DEFAULT_BUDGET));
-			} else if (mode == Mode.SHADOW) {
-				goal = new OptimizationGoal(goal.requiredProperties(), goal.semanticScope(), goal.costPolicy(),
-						CostVector.INFINITE, Set.of(), OptimizationGoal.SearchMode.SHADOW, Long.MAX_VALUE,
-						Integer.MAX_VALUE, goal.rowGoal(), goal.estimationTier(), goal.inputBindingContext());
-			}
+			goal = configuredSearchGoal(mode, goal);
 
 			annotateDistinctPhysicalRequirements(tupleExpr);
 			StandardPlanPolicy standardPlanPolicy = standardPlanPolicy();
@@ -191,19 +185,15 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			CascadesTelemetry.Recording telemetry = traceEnabled
 					? new CascadesTelemetry.Recording(intProperty(TRACE_LIMIT_PROPERTY, DEFAULT_TRACE_LIMIT))
 					: null;
-			CascadesCostModel cascadesCostModel = CascadesCostModel.from(statistics);
-			RuleRegistry ruleRegistry = LmdbCascadesRuleProvider.rules(statistics);
 			CascadesTelemetry plannerTelemetry = traceEnabled ? telemetry : CascadesTelemetry.NO_OP;
-			CascadesPlanner planner = statistics instanceof JoinFactorCostModel joinFactorCostModel
-					? new CascadesPlanner(cascadesCostModel, ruleRegistry, plannerTelemetry,
-							LmdbJoinSearchProvider.create(joinFactorCostModel, statistics))
-					: new CascadesPlanner(cascadesCostModel, ruleRegistry, plannerTelemetry);
+			CascadesPlanner planner = newPlanner(plannerTelemetry);
 			CascadesPlan plan = planner.optimize(tupleExpr, searchGoal);
+			boolean applicationPermitted = permitsPlanApplication(mode, plan);
 			if (!standardPlan.isPresent() && needsFallbackStandardPlan(mode, standardPlanPolicy, plan)) {
 				standardPlan = standardPlanCandidate(tupleExpr, dataset, bindings, standardPlanPolicy);
 			}
 			boolean standardWinner = standardPlanWins(mode, standardPlanPolicy, standardPlan, plan);
-			boolean appliesPlan = mode.replacesAlgebra()
+			boolean appliesPlan = applicationPermitted
 					&& (standardWinner || (!standardWinner && plan.tupleExpr().isPresent()));
 			annotate(tupleExpr, mode, plan, telemetry, appliesPlan, standardPlanPolicy, standardPlan,
 					standardWinner);
@@ -214,7 +204,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 					replaceRootIfSafe(tupleExpr, plan.tupleExpr().get());
 				}
 			}
-			if (!standardWinner) {
+			if (appliesPlan && !standardWinner) {
 				plan.provenance()
 						.ifPresent(provenance -> CascadesPlanProvenanceAnnotator.annotate(tupleExpr, provenance,
 								LmdbCascadesExplainFinalizer.PLANNER_ID));
@@ -223,11 +213,52 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 					&& shouldRepairStandardFallbackSubtrees(standardPlanPolicy, plan)) {
 				optimizeSubtrees(tupleExpr, planner, searchGoal);
 			}
-			if (appliesPlan && !preserveSerializableObservationOrder) {
-				new LmdbSetSemanticsOptimizer().optimize(tupleExpr, dataset, bindings);
-			}
 			annotateObjectGuarantees(tupleExpr);
 		}
+	}
+
+	private OptimizationGoal configuredSearchGoal(Mode mode, OptimizationGoal baseGoal) {
+		if (mode == Mode.BUDGETED || mode == Mode.SHADOW_BUDGETED) {
+			OptimizationGoal budgeted = baseGoal.asBudgeted(Duration.ofMillis(configuredTimeoutMillis()),
+					intProperty(BUDGET_PROPERTY, DEFAULT_BUDGET));
+			if (mode == Mode.BUDGETED) {
+				return budgeted;
+			}
+			return new OptimizationGoal(budgeted.requiredProperties(), budgeted.semanticScope(), budgeted.costPolicy(),
+					budgeted.costBound(), budgeted.excludedProperties(), OptimizationGoal.SearchMode.SHADOW_BUDGETED,
+					budgeted.deadlineNanos(), budgeted.taskBudget(), budgeted.rowGoal(), budgeted.estimationTier(),
+					budgeted.inputBindingContext());
+		}
+		if (mode == Mode.AUTO) {
+			return new OptimizationGoal(baseGoal.requiredProperties(), baseGoal.semanticScope(), baseGoal.costPolicy(),
+					baseGoal.costBound(), baseGoal.excludedProperties(), OptimizationGoal.SearchMode.AUTO,
+					Long.MAX_VALUE,
+					DEFAULT_BUDGET, baseGoal.rowGoal(), baseGoal.estimationTier(), baseGoal.inputBindingContext());
+		}
+		if (mode == Mode.SHADOW) {
+			return new OptimizationGoal(baseGoal.requiredProperties(), baseGoal.semanticScope(), baseGoal.costPolicy(),
+					baseGoal.costBound(), baseGoal.excludedProperties(), OptimizationGoal.SearchMode.SHADOW,
+					Long.MAX_VALUE, Integer.MAX_VALUE, baseGoal.rowGoal(), baseGoal.estimationTier(),
+					baseGoal.inputBindingContext());
+		}
+		return baseGoal;
+	}
+
+	CascadesPlan planPreparedInput(TupleExpr tupleExpr, OptimizationGoal goal) {
+		try (QueryOptimizationScopeProvider.QueryOptimizationScope scope = beginQueryOptimizationScope()) {
+			annotateDistinctPhysicalRequirements(tupleExpr);
+			return newPlanner(CascadesTelemetry.NO_OP).optimize(tupleExpr, goal);
+		}
+	}
+
+	private CascadesPlanner newPlanner(CascadesTelemetry telemetry) {
+		CascadesCostModel costModel = CascadesCostModel.from(statistics);
+		RuleRegistry ruleRegistry = LmdbCascadesRuleProvider.rules(statistics);
+		if (statistics instanceof JoinFactorCostModel joinFactorCostModel) {
+			return new CascadesPlanner(costModel, ruleRegistry, telemetry,
+					LmdbJoinSearchProvider.create(joinFactorCostModel, statistics));
+		}
+		return new CascadesPlanner(costModel, ruleRegistry, telemetry);
 	}
 
 	private QueryOptimizationScopeProvider.QueryOptimizationScope beginQueryOptimizationScope() {
@@ -270,7 +301,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	}
 
 	private boolean needsFallbackStandardPlan(Mode mode, StandardPlanPolicy policy, CascadesPlan cascadesPlan) {
-		if (mode == null || !mode.replacesAlgebra() || policy == null || !policy.fallbacks()) {
+		if (!permitsPlanApplication(mode, cascadesPlan) || policy == null || !policy.fallbacks()) {
 			return false;
 		}
 		return cascadesPlan == null || cascadesPlan.tupleExpr().isEmpty();
@@ -278,10 +309,18 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 
 	private boolean standardPlanWins(Mode mode, StandardPlanPolicy policy, StandardPlanCandidate candidate,
 			CascadesPlan cascadesPlan) {
-		if (!mode.replacesAlgebra() || !candidate.isPresent()) {
+		if (!permitsPlanApplication(mode, cascadesPlan) || !candidate.isPresent()) {
 			return false;
 		}
 		return policy.fallbacks() && (cascadesPlan == null || cascadesPlan.tupleExpr().isEmpty());
+	}
+
+	private boolean permitsPlanApplication(Mode mode, CascadesPlan cascadesPlan) {
+		if (mode == null || !mode.replacesAlgebra()) {
+			return false;
+		}
+		return mode != Mode.EXACT || cascadesPlan != null
+				&& cascadesPlan.completeness() == OptimizationCompleteness.COMPLETE;
 	}
 
 	private boolean shouldRepairStandardFallbackSubtrees(StandardPlanPolicy policy, CascadesPlan cascadesPlan) {
@@ -1074,6 +1113,25 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		tupleExpr.setStringMetricPlanned(SKIP_SKETCH_JOIN_ORDER_METRIC, "false");
 		tupleExpr.setStringMetricPlanned("optimizer.cascadesDiagnostics", String.join("; ", plan.diagnostics()));
 		tupleExpr.setStringMetricPlanned("optimizer.cascadesCompleteness", plan.completeness().name());
+		tupleExpr.setStringMetricPlanned("optimizer.cascadesLimitCauses", plan.searchStatus()
+				.limitCauses()
+				.stream()
+				.sorted()
+				.map(Enum::name)
+				.collect(Collectors.joining(",")));
+		var counters = plan.searchStatus().counters();
+		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesRuleWork", counters.ruleWork());
+		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesDphypPairProbes", counters.dphypPairProbes());
+		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesPartitionProbes", counters.partitionProbes());
+		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesCandidateEvaluations", counters.candidateEvaluations());
+		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesPredicateProbes", counters.predicateProbes());
+		var retention = plan.searchStatus().retention();
+		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesRetainedCandidates",
+				retention.currentRetainedCandidates());
+		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesRetainedCandidateHighWaterMark",
+				retention.retainedCandidateHighWaterMark());
+		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesFrontierHighWaterMark",
+				retention.frontierHighWaterMark());
 		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesRootCostWorkRows", plan.cost().workRows());
 		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesRootRows", plan.cost().rows());
 		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesRootQError", plan.cost().qError());
@@ -1524,10 +1582,6 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			return Mode.AUTO;
 		}
 		return Mode.OFF;
-	}
-
-	private boolean usesBudgetedSearch(Mode mode) {
-		return mode == Mode.BUDGETED || mode == Mode.SHADOW_BUDGETED;
 	}
 
 	private int countNodes(TupleExpr tupleExpr) {

@@ -18,6 +18,9 @@ import java.util.TreeSet;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MemoInput;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.SemanticScope;
 
 /** One mobile scalar predicate retained as part of a join region's logical identity. */
 @Experimental
@@ -26,10 +29,22 @@ public final class JoinPredicate {
 	private final int id;
 	private final ValueExpr conditionTemplate;
 	private final Set<String> requiredBindingNames;
+	private final List<MemoInput> scalarInputs;
 	private final List<Integer> scalarInputGroupIds;
 
 	public JoinPredicate(int id, ValueExpr conditionTemplate, Set<String> requiredBindingNames,
 			List<Integer> scalarInputGroupIds) {
+		this(id, conditionTemplate, requiredBindingNames, legacyScalarInputs(scalarInputGroupIds), true);
+	}
+
+	public static JoinPredicate withScalarInputs(int id, ValueExpr conditionTemplate,
+			Set<String> requiredBindingNames, List<MemoInput> scalarInputs) {
+		return new JoinPredicate(id, conditionTemplate, requiredBindingNames,
+				scalarInputs == null || scalarInputs.isEmpty() ? List.of() : List.copyOf(scalarInputs), true);
+	}
+
+	private JoinPredicate(int id, ValueExpr conditionTemplate, Set<String> requiredBindingNames,
+			List<MemoInput> scalarInputs, boolean typedScalarInputs) {
 		if (id < 0) {
 			throw new IllegalArgumentException("join predicate ID must be non-negative");
 		}
@@ -38,12 +53,16 @@ public final class JoinPredicate {
 		this.requiredBindingNames = requiredBindingNames == null || requiredBindingNames.isEmpty()
 				? Set.of()
 				: Set.copyOf(new TreeSet<>(requiredBindingNames));
-		this.scalarInputGroupIds = scalarInputGroupIds == null || scalarInputGroupIds.isEmpty()
-				? List.of()
-				: List.copyOf(scalarInputGroupIds);
-		if (this.scalarInputGroupIds.stream().anyMatch(groupId -> groupId == null || groupId < 0)) {
-			throw new IllegalArgumentException("scalar-input group IDs must be non-negative");
+		this.scalarInputs = scalarInputs;
+		for (MemoInput scalarInput : scalarInputs) {
+			if (scalarInput == null
+					|| scalarInput.role() != MemoInput.Role.SCALAR_SUBQUERY
+					|| scalarInput.use() != MemoInput.Use.EXECUTABLE) {
+				throw new IllegalArgumentException(
+						"join-predicate scalar inputs must be executable SCALAR_SUBQUERY inputs");
+			}
 		}
+		this.scalarInputGroupIds = scalarInputs.stream().map(MemoInput::groupId).toList();
 	}
 
 	public int id() {
@@ -62,6 +81,10 @@ public final class JoinPredicate {
 		return scalarInputGroupIds;
 	}
 
+	public List<MemoInput> scalarInputs() {
+		return scalarInputs;
+	}
+
 	@Override
 	public boolean equals(Object other) {
 		if (this == other) {
@@ -73,17 +96,33 @@ public final class JoinPredicate {
 		return id == that.id
 				&& conditionTemplate.equals(that.conditionTemplate)
 				&& requiredBindingNames.equals(that.requiredBindingNames)
-				&& scalarInputGroupIds.equals(that.scalarInputGroupIds);
+				&& scalarInputs.equals(that.scalarInputs);
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(id, conditionTemplate, requiredBindingNames, scalarInputGroupIds);
+		return Objects.hash(id, conditionTemplate, requiredBindingNames, scalarInputs);
 	}
 
 	@Override
 	public String toString() {
 		return "JoinPredicate[id=" + id + ", required=" + requiredBindingNames + ", scalarInputs="
-				+ scalarInputGroupIds + "]";
+				+ scalarInputs + "]";
+	}
+
+	private static List<MemoInput> legacyScalarInputs(List<Integer> scalarInputGroupIds) {
+		if (scalarInputGroupIds == null || scalarInputGroupIds.isEmpty()) {
+			return List.of();
+		}
+		List<MemoInput> inputs = new java.util.ArrayList<>(scalarInputGroupIds.size());
+		for (int ordinal = 0; ordinal < scalarInputGroupIds.size(); ordinal++) {
+			Integer groupId = scalarInputGroupIds.get(ordinal);
+			if (groupId == null || groupId < 0) {
+				throw new IllegalArgumentException("scalar-input group IDs must be non-negative");
+			}
+			inputs.add(new MemoInput(groupId, MemoInput.Role.SCALAR_SUBQUERY, ordinal, PhysicalProperties.ANY,
+					SemanticScope.BAG, true, MemoInput.Use.EXECUTABLE));
+		}
+		return List.copyOf(inputs);
 	}
 }

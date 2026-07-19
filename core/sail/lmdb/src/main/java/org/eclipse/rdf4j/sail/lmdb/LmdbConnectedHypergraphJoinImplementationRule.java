@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleDescrip
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleProof;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleRootOperator;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.MemoJoinRegionExtractor;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 final class LmdbConnectedHypergraphJoinImplementationRule extends LmdbRule {
@@ -58,10 +59,25 @@ final class LmdbConnectedHypergraphJoinImplementationRule extends LmdbRule {
 				&& LmdbHypergraphJoinPlanner.enabled()
 				&& costModel != null
 				&& expression.tupleExpr() instanceof Join
+				&& (goal == null || goal.requiredProperties()
+						.observationOrder() != PhysicalProperties.ObservationOrder.EXACT_SEQUENCE)
 				&& LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(expression.tupleExpr())
 				&& !LmdbCascadesRuleProvider.isNestedFilterSegmentChild(expression.tupleExpr())
 				&& !LmdbCascadesRuleProvider.containsAnchorableFiniteFilter(expression.tupleExpr())
-				&& LmdbJoinIslandConnectivity.flattenFactors(expression.tupleExpr()).size() > 1;
+				&& LmdbJoinIslandConnectivity.flattenFactors(expression.tupleExpr()).size() > 1
+				&& canonicalJoinGap(expression, goal, memo);
+	}
+
+	private static boolean canonicalJoinGap(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+		OptimizationGoal effectiveGoal = goal == null ? OptimizationGoal.root() : goal;
+		MemoJoinRegionExtractor.Result extraction = MemoJoinRegionExtractor.extract(memo, expression.groupId(),
+				expression, LmdbOpaqueJoinFactorPolicy.INSTANCE);
+		return memo.isAdmissible(expression, effectiveGoal)
+				&& !extraction.supported()
+				&& extraction.boundaries()
+						.stream()
+						.anyMatch(boundary -> boundary
+								.reason() == MemoJoinRegionExtractor.BoundaryReason.NON_JOIN_COMPOSITE);
 	}
 
 	@Override

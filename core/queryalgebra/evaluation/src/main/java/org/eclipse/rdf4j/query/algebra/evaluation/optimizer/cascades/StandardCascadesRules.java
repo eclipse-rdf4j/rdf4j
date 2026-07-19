@@ -354,14 +354,17 @@ public final class StandardCascadesRules {
 		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
 			return expression.logical()
 					&& expression.tupleExpr() instanceof Difference
-					&& childInput(expression, MemoInput.Role.LEFT) != null
-					&& childInput(expression, MemoInput.Role.RIGHT) != null;
+					&& executableChildInput(expression, MemoInput.Role.LEFT) != null
+					&& executableChildInput(expression, MemoInput.Role.RIGHT) != null;
 		}
 
 		@Override
 		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
-			MemoInput leftInput = childInput(expression, MemoInput.Role.LEFT);
-			MemoInput rightInput = childInput(expression, MemoInput.Role.RIGHT);
+			if (context == null) {
+				return List.of();
+			}
+			MemoInput leftInput = executableChildInput(expression, MemoInput.Role.LEFT);
+			MemoInput rightInput = executableChildInput(expression, MemoInput.Role.RIGHT);
 			if (leftInput == null || rightInput == null) {
 				return List.of();
 			}
@@ -404,27 +407,6 @@ public final class StandardCascadesRules {
 					applications.add(candidate);
 				}
 			}
-		}
-
-		private MemoInput childInput(MemoExpr expression, MemoInput.Role role) {
-			for (MemoInput input : expression.inputs()) {
-				if (input.use() == MemoInput.Use.EXECUTABLE && input.role() == role) {
-					return input;
-				}
-			}
-			return null;
-		}
-
-		private List<MemoExpr> logicalChildAlternatives(Memo memo, MemoInput input, OptimizationGoal goal) {
-			OptimizationGoal childGoal = goal
-					.withSemanticScope(input.requiredSemanticScope().externalName())
-					.withRequiredProperties(input.requiredProperties());
-			return memo.group(input.groupId())
-					.expressions()
-					.stream()
-					.filter(MemoExpr::logical)
-					.filter(alternative -> memo.isAdmissible(alternative, childGoal))
-					.toList();
 		}
 
 		private void addMinusJoinPrefixPushdown(List<RuleApplication> applications, MemoExpr expression,
@@ -1270,7 +1252,7 @@ public final class StandardCascadesRules {
 
 	public static final class RestrictVariableGraphUniverseRule extends AbstractRule {
 		public RestrictVariableGraphUniverseRule() {
-			super("restrict-variable-graph-universe", RuleKind.TRANSFORMATION, 50);
+			super("restrict-variable-graph-universe", RuleKind.IMPLEMENTATION, 50);
 		}
 
 		@Override
@@ -1279,29 +1261,47 @@ public final class StandardCascadesRules {
 				return false;
 			}
 			String contextName = variableGraphContextName(pattern);
-			return contextName != null && !incomingBindingNames(goal).contains(contextName);
+			return contextName != null && !incomingBindingContains(goal, contextName);
 		}
 
 		@Override
 		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			if (context == null || context.memo() == null) {
+				return List.of();
+			}
 			StatementPattern pattern = (StatementPattern) expression.tupleExpr();
-			RewriteMetadata metadata = context == null ? RewriteMetadata.empty() : context.rewriteMetadata();
+			RewriteMetadata metadata = context.rewriteMetadata();
 			TupleExpr alternative = variableGraphUniverseAlternative(pattern, goal, metadata);
-			if (alternative == null) {
+			if (!(alternative instanceof Join join)) {
 				return List.of();
 			}
 			String contextName = variableGraphContextName(pattern);
 			Set<IRI> graphs = metadata.completeGraphUniverse().orElse(Set.of());
-			RuleProof proof = new RuleProof("43", RuleKind.TRANSFORMATION, semanticScope(goal),
+			RuleProof proof = new RuleProof("43", RuleKind.IMPLEMENTATION, semanticScope(goal),
 					Set.of("metadataCompleteForDataset", "completeGraphUniverse", "contextVar=" + contextName,
 							"graphs=" + graphs.size()),
-					"a complete named-graph universe can be represented as VALUES joined with the variable GRAPH "
-							+ "pattern",
+					"a complete named-graph universe can drive a parameterized GRAPH access without creating a "
+							+ "recursive logical equivalence",
 					new RewriteCertificate("43", "variable-graph-statement-pattern",
 							"complete-graph-universe-values", RewriteSafety.all(),
 							Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS,
 									RewriteAssumption.COMPLETE_GRAPH_UNIVERSE)));
-			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
+			int valuesGroupId = context.memo().intern(join.getLeftArg());
+			PhysicalProperties rightRequirement = PhysicalProperties.builder()
+					.boundVars(Set.of(contextName))
+					.inputBoundVars(Set.of(contextName))
+					.inputConsumption(PhysicalProperties.InputConsumption.SELECTED_PREFIX)
+					.build();
+			PhysicalProperties delivered = PhysicalProperties.builder()
+					.boundVars(join.getBindingNames())
+					.duplicateBehavior(PhysicalProperties.DuplicateBehavior.PRESERVES)
+					.materialization(PhysicalProperties.Materialization.STREAMING)
+					.inputConsumption(PhysicalProperties.InputConsumption.ISOLATED)
+					.build();
+			return List.of(RuleApplication.withInputGroups(expression.groupId(), join, kind(), delivered,
+					CostVector.ZERO, List.of(proof), "complete-graph-universe", null,
+					List.of(PhysicalProperties.ANY, rightRequirement),
+					List.of(valuesGroupId, expression.groupId()), false));
 		}
 	}
 
@@ -1691,13 +1691,30 @@ public final class StandardCascadesRules {
 
 		@Override
 		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
-			if (!expression.logical() || !(expression.tupleExpr() instanceof Join join) || barrier(join)) {
+			if (!expression.logical() || !(expression.tupleExpr()instanceof Join join)) {
 				return false;
 			}
 			if (join.getRightArg() instanceof Service
 					|| TupleExprs.isVariableScopeChange(join.getRightArg())
 					|| TupleExprs.containsSubquery(join.getRightArg())) {
 				return false;
+			}
+			if (!TupleExprs.isVariableScopeChange(join)
+					&& join.getLeftArg()instanceof ScopedMemoInputReference leftReference
+					&& join.getRightArg()instanceof ScopedMemoInputReference rightReference
+					&& leftReference.sharesBindingUniverseWith(rightReference)) {
+				return leftReference.possibleBindings().intersects(rightReference.possibleBindings());
+			}
+			if (barrier(join, memo == null ? null : memo.universe())) {
+				return false;
+			}
+			MemoInput leftInput = executableChildInput(expression, MemoInput.Role.LEFT);
+			MemoInput rightInput = executableChildInput(expression, MemoInput.Role.RIGHT);
+			if (memo != null && leftInput != null && rightInput != null) {
+				return memo.group(leftInput.groupId())
+						.bindingShape()
+						.possible()
+						.intersects(memo.group(rightInput.groupId()).bindingShape().possible());
 			}
 			return CascadesRewriteSupport.intersects(
 					CascadesRewriteSupport.possibleStreamBindingNames(join.getLeftArg()),
@@ -1785,8 +1802,12 @@ public final class StandardCascadesRules {
 	}
 
 	private static boolean barrier(TupleExpr tupleExpr) {
+		return barrier(tupleExpr, null);
+	}
+
+	private static boolean barrier(TupleExpr tupleExpr, BindingUniverse universe) {
 		return TupleExprs.isVariableScopeChange(tupleExpr)
-				|| !ScalarDependencyAnalyzer.reorderingPreservesScalarScope(tupleExpr);
+				|| !ScalarDependencyAnalyzer.reorderingPreservesScalarScope(tupleExpr, universe);
 	}
 
 	private static Union unionLike(Union original, TupleExpr left, TupleExpr right) {
@@ -1872,8 +1893,8 @@ public final class StandardCascadesRules {
 		if (union == null
 				|| !(union.getLeftArg()instanceof Join leftJoin)
 				|| !(union.getRightArg()instanceof Join rightJoin)
-				|| barrier(leftJoin)
-				|| barrier(rightJoin)) {
+				|| barrier(leftJoin, universe)
+				|| barrier(rightJoin, universe)) {
 			return null;
 		}
 		TupleExpr leftPrefix = leftJoin.getLeftArg();
@@ -1894,8 +1915,8 @@ public final class StandardCascadesRules {
 		if (union == null
 				|| !(union.getLeftArg()instanceof Join leftJoin)
 				|| !(union.getRightArg()instanceof Join rightJoin)
-				|| barrier(leftJoin)
-				|| barrier(rightJoin)) {
+				|| barrier(leftJoin, universe)
+				|| barrier(rightJoin, universe)) {
 			return null;
 		}
 		TupleExpr leftResidual = leftJoin.getLeftArg();
@@ -2122,7 +2143,7 @@ public final class StandardCascadesRules {
 			RewriteMetadata metadata) {
 		String contextName = variableGraphContextName(pattern);
 		if (contextName == null
-				|| incomingBindingNames(goal).contains(contextName)
+				|| incomingBindingContains(goal, contextName)
 				|| metadata == null
 				|| !metadata.completeForDataset()
 				|| metadata.completeGraphUniverse().isEmpty()
@@ -3048,12 +3069,20 @@ public final class StandardCascadesRules {
 		return incomingBindingNames(goal, Set.of());
 	}
 
+	private static boolean incomingBindingContains(OptimizationGoal goal, String bindingName) {
+		return goal != null
+				&& bindingName != null
+				&& (goal.requiredProperties().inputBoundVars().contains(bindingName)
+						|| goal.inputBindingContext().assuredBindingNames().contains(bindingName));
+	}
+
 	private static Set<String> incomingBindingNames(OptimizationGoal goal, Set<String> contextualIncomingBindings) {
 		Set<String> contextual = plannerNames(contextualIncomingBindings);
 		if (goal == null || goal.requiredProperties() == null) {
 			return contextual;
 		}
 		Set<String> incoming = new HashSet<>(plannerNames(goal.requiredProperties().inputBoundVars()));
+		incoming.addAll(plannerNames(goal.inputBindingContext().assuredBindingNames()));
 		incoming.addAll(contextual);
 		return incoming.isEmpty() ? Set.of() : Set.copyOf(incoming);
 	}
@@ -3078,7 +3107,8 @@ public final class StandardCascadesRules {
 				|| prefix instanceof BindingSetAssignment
 				|| extension == null
 				|| !extension.isVariableScopeChange()
-				|| extension.getArg() == null) {
+				|| extension.getArg() == null
+				|| !extensionEvaluationIsSafe(extension)) {
 			return null;
 		}
 		Set<String> prefixNames = plannerNames(prefix.getBindingNames());
@@ -3113,7 +3143,8 @@ public final class StandardCascadesRules {
 
 	private static boolean canPushFiniteBindingsIntoScopeChangingExtension(BindingSetAssignment finite,
 			Extension extension) {
-		if (finite == null || extension == null || !extension.isVariableScopeChange() || extension.getArg() == null) {
+		if (finite == null || extension == null || !extension.isVariableScopeChange() || extension.getArg() == null
+				|| !extensionEvaluationIsSafe(extension)) {
 			return false;
 		}
 		Set<String> finiteNames = plannerNames(finite.getBindingNames());
@@ -3143,6 +3174,12 @@ public final class StandardCascadesRules {
 			}
 		}
 		return names;
+	}
+
+	private static boolean extensionEvaluationIsSafe(Extension extension) {
+		return extension != null && extension.getElements()
+				.stream()
+				.allMatch(element -> ScalarEvaluationEffects.reorderingIsSafe(element.getExpr()));
 	}
 
 	private static Set<String> extensionExpressionNames(Extension extension) {
@@ -3195,6 +3232,9 @@ public final class StandardCascadesRules {
 					&& isSimpleCorrelatableMinusRhs(join.getRightArg());
 		}
 		if (tupleExpr instanceof Filter filter) {
+			if (!ScalarEvaluationEffects.reorderingIsSafe(filter.getCondition())) {
+				return false;
+			}
 			Set<String> conditionNames = plannerNames(VarNameCollector.process(filter.getCondition()));
 			if (!plannerNames(filter.getArg().getAssuredBindingNames()).containsAll(conditionNames)) {
 				return false;
@@ -3212,6 +3252,9 @@ public final class StandardCascadesRules {
 		Set<String> argAssuredBindings = plannerNames(extension.getArg().getAssuredBindingNames());
 		for (ExtensionElem element : extension.getElements()) {
 			if (element.getName() == null || argBindings.contains(element.getName())) {
+				return false;
+			}
+			if (!ScalarEvaluationEffects.reorderingIsSafe(element.getExpr())) {
 				return false;
 			}
 			Set<String> expressionNames = plannerNames(VarNameCollector.process(element.getExpr()));

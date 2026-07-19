@@ -17,7 +17,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingMask
 /** Semantic flags and masks that DSL guards may inspect before approving a rewrite. */
 @Experimental
 public record SemanticProps(BindingMask visibleScope, BindingMask localOutputs, DuplicateBehavior duplicateBehavior,
-		boolean scopeBarrier, boolean subqueryBoundary, boolean deterministic, boolean mayIntroduceErrors,
+		boolean scopeBarrier, boolean subqueryBoundary, boolean explicitScopeChange, boolean deterministic,
+		boolean mayIntroduceErrors,
 		boolean preservesDuplicates, boolean preservesOrder) {
 
 	public static final SemanticProps DEFAULT = builder().build();
@@ -64,6 +65,7 @@ public record SemanticProps(BindingMask visibleScope, BindingMask localOutputs, 
 					.duplicateBehavior(props.duplicateBehavior)
 					.scopeBarrier(props.scopeBarrier)
 					.subqueryBoundary(props.subqueryBoundary)
+					.explicitScopeChange(props.explicitScopeChange)
 					.deterministic(props.deterministic)
 					.mayIntroduceErrors(props.mayIntroduceErrors)
 					.preservesDuplicates(props.preservesDuplicates)
@@ -85,6 +87,7 @@ public record SemanticProps(BindingMask visibleScope, BindingMask localOutputs, 
 		private DuplicateBehavior duplicateBehavior = DuplicateBehavior.PRESERVES;
 		private boolean scopeBarrier;
 		private boolean subqueryBoundary;
+		private boolean explicitScopeChange;
 		private boolean deterministic = true;
 		private boolean mayIntroduceErrors;
 		private boolean preservesDuplicates = true;
@@ -118,6 +121,11 @@ public record SemanticProps(BindingMask visibleScope, BindingMask localOutputs, 
 			return this;
 		}
 
+		public Builder explicitScopeChange(boolean explicitScopeChange) {
+			this.explicitScopeChange = explicitScopeChange;
+			return this;
+		}
+
 		public Builder deterministic(boolean deterministic) {
 			this.deterministic = deterministic;
 			return this;
@@ -140,7 +148,7 @@ public record SemanticProps(BindingMask visibleScope, BindingMask localOutputs, 
 
 		public SemanticProps build() {
 			return new SemanticProps(visibleScope, localOutputs, duplicateBehavior, scopeBarrier, subqueryBoundary,
-					deterministic, mayIntroduceErrors, preservesDuplicates, preservesOrder);
+					explicitScopeChange, deterministic, mayIntroduceErrors, preservesDuplicates, preservesOrder);
 		}
 	}
 }

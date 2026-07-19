@@ -55,10 +55,11 @@ public sealed interface IrAttr permits IrAttr.None,IrAttr.StatementPatternAttr,I
 			this(subject, predicate, object, context, scope, Map.of(), Map.of(), Map.of());
 		}
 
-		public List<BindingSymbol> nonConstantSymbols() {
+		public List<BindingSymbol> outputSymbols(BindingUniverse universe) {
+			Objects.requireNonNull(universe, "universe");
 			return java.util.stream.Stream.of(subject, predicate, object, context)
 					.filter(Objects::nonNull)
-					.map(VarTerm::symbol)
+					.map(term -> term.statementPatternOutputSymbol(universe))
 					.filter(Objects::nonNull)
 					.distinct()
 					.toList();
@@ -131,9 +132,14 @@ public sealed interface IrAttr permits IrAttr.None,IrAttr.StatementPatternAttr,I
 		}
 	}
 
-	record ProjectionAttr(List<ProjectionBinding> bindings, boolean subquery) implements IrAttr {
+	record ProjectionAttr(List<ProjectionBinding> bindings, boolean subquery, VarTerm projectionContext)
+			implements IrAttr {
 		public ProjectionAttr {
 			bindings = bindings == null || bindings.isEmpty() ? List.of() : List.copyOf(bindings);
+		}
+
+		public ProjectionAttr(List<ProjectionBinding> bindings, boolean subquery) {
+			this(bindings, subquery, null);
 		}
 	}
 
@@ -191,6 +197,11 @@ public sealed interface IrAttr permits IrAttr.None,IrAttr.StatementPatternAttr,I
 			Value value = var.hasValue() ? var.getValue() : null;
 			BindingSymbol symbol = value == null ? universe.intern(var.getName()) : null;
 			return new VarTerm(var.getName(), symbol, value, var.isAnonymous(), var.isConstant());
+		}
+
+		public BindingSymbol statementPatternOutputSymbol(BindingUniverse universe) {
+			Objects.requireNonNull(universe, "universe");
+			return constant ? null : universe.intern(name);
 		}
 
 		public Var asVar() {

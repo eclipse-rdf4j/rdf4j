@@ -410,6 +410,20 @@ class BagEstimateMathTest {
 	}
 
 	@Test
+	void distinctUsesCurrentTupleSketchBeforeIndependentVariableProduct() {
+		BagEstimate input = BagEstimate.exact(100.0d, "input")
+				.withVariable("a", VariableEstimate.bound(100.0d, 40.0d))
+				.withVariable("b", VariableEstimate.bound(100.0d, 40.0d))
+				.withSketchRelation(Set.of("a", "b"),
+						new RowMassSketch(7.0d, 100.0d, OptionalDouble.empty(), OptionalDouble.empty()));
+
+		BagEstimate distinct = EstimateMath.distinct(input, Set.of("a", "b"));
+
+		assertEquals(7.0d, distinct.rows(), 0.0d,
+				"DISTINCT should use a current tuple NDV sketch before assuming independent variable domains");
+	}
+
+	@Test
 	void groupDoesNotExposePreGroupFrequencySketchesAsCurrent() {
 		VariableSetKey key = VariableSetKey.of(Set.of("a", "b"));
 		BagEstimate input = BagEstimate.exact(100.0d, "input")

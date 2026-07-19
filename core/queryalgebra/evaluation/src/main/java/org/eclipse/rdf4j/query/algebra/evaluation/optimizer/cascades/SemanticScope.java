@@ -18,9 +18,9 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 /**
  * Multiplicity-observation lattice used to prove whether one memo route is admissible for an observer.
  * <p>
- * BAG is the strongest semantic contract: a BAG-equivalent route is valid for every observer. SET permits routes
- * that may change multiplicity while preserving membership, and EXISTENCE permits routes that only preserve whether
- * at least one row exists.
+ * BAG is the strongest semantic contract: a BAG-equivalent route is valid for every observer. SET permits routes that
+ * may change multiplicity while preserving membership, and EXISTENCE permits routes that only preserve whether at least
+ * one row exists.
  */
 @Experimental
 public enum SemanticScope {

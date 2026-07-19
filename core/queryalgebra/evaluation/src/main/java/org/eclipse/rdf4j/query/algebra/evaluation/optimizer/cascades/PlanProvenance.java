@@ -35,13 +35,18 @@ public record PlanProvenance(int memoGroupId, int expressionId, String operator,
 		deliveredProperties = deliveredProperties == null ? PhysicalProperties.ANY : deliveredProperties;
 		rejectedAlternatives = rejectedAlternatives == null || rejectedAlternatives.isEmpty() ? List.of()
 				: List.copyOf(rejectedAlternatives);
-		proofs = proofs == null || proofs.isEmpty() ? List.of() : List.copyOf(proofs);
+		proofs = RuleProofLineage.immutable(proofs);
 		reason = reason == null ? "" : reason;
 	}
 
 	public PlanProvenance withRejectedAlternatives(List<RejectedAlternative> rejected) {
 		return new PlanProvenance(memoGroupId, expressionId, operator, ruleId, ruleKind, inputs, estimate, cost,
 				requiredProperties, deliveredProperties, rejected, proofs, approximate, reason);
+	}
+
+	public PlanProvenance withInputs(List<PlanProvenance> newInputs) {
+		return new PlanProvenance(memoGroupId, expressionId, operator, ruleId, ruleKind, newInputs, estimate, cost,
+				requiredProperties, deliveredProperties, rejectedAlternatives, proofs, approximate, reason);
 	}
 
 	public PlanProvenance withProofs(List<RuleProof> newProofs) {

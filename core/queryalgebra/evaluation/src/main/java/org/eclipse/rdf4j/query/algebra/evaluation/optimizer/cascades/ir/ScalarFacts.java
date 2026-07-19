@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingMask;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingSymbol;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingUniverse;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ScalarEvaluationEffects;
 
 /** Derived scalar facts consumed by DSL guards. */
 @Experimental
@@ -100,7 +101,8 @@ public record ScalarFacts(BindingMask freeVars, BindingMask correlatedVars, bool
 			for (ScalarExpr arg : function.args()) {
 				current = combine(current, of(universe, arg), false, false, false);
 			}
-			return new ScalarFacts(current.freeVars, current.correlatedVars, false, false,
+			return new ScalarFacts(current.freeVars, current.correlatedVars,
+					current.deterministic && ScalarEvaluationEffects.reorderingIsSafe(function), false,
 					!current.freeVars.isEmpty(), false, false, false, current.isNestedTupleExpr);
 		}
 		return EMPTY;
@@ -189,7 +191,8 @@ public record ScalarFacts(BindingMask freeVars, BindingMask correlatedVars, bool
 			return false;
 		}
 		ScalarFacts facts = of(ir.universe(), condition.expression());
-		return !facts.isNestedTupleExpr()
+		return facts.deterministic()
+				&& !facts.isNestedTupleExpr()
 				&& ir.node(node.inputs().get(0)).bindings().assured().containsAll(facts.freeVars());
 	}
 
@@ -205,7 +208,7 @@ public record ScalarFacts(BindingMask freeVars, BindingMask correlatedVars, bool
 				return false;
 			}
 			ScalarFacts facts = of(ir.universe(), binding.expression());
-			if (!argAssured.containsAll(facts.freeVars())) {
+			if (!facts.deterministic() || facts.isNestedTupleExpr() || !argAssured.containsAll(facts.freeVars())) {
 				return false;
 			}
 		}

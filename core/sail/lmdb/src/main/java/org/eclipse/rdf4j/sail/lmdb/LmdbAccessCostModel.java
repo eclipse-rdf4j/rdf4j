@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Order;
@@ -25,17 +26,26 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 final class LmdbAccessCostModel {
 
 	LmdbAccessEstimate estimate(TupleExpr expression, EstimateContext context, BagEstimate semantic) {
+		return estimate(expression, context, semantic, semantic.rows());
+	}
+
+	LmdbAccessEstimate estimate(TupleExpr expression, EstimateContext context, BagEstimate semantic,
+			double accessRows) {
 		if (context.hasNoExecutions()) {
-			return new LmdbAccessEstimate(0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+			return new LmdbAccessEstimate(0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
 		}
 		double rows = finiteNonNegative(semantic.rows(), Double.MAX_VALUE);
+		double physicalRows = finiteNonNegative(accessRows, rows);
 		double invocations = finitePositive(context.invocationCount(), 1.0d);
 		double rowsPerInvocation = safeDivide(rows, invocations);
+		double accessRowsPerInvocation = safeDivide(physicalRows, invocations);
 		double seeks = accessSeeks(expression, context, invocations);
-		double work = saturatingAdd(rows, seeks);
+		double work = physicalRows;
 		double memory = 0.0d;
 
-		if (expression instanceof Order) {
+		if (expression instanceof BindingSetAssignment) {
+			work = saturatingAdd(work, 1.0d);
+		} else if (expression instanceof Order) {
 			work = saturatingAdd(work, sortWork(rows));
 			memory = rows;
 		} else if (expression instanceof Group || expression instanceof Distinct) {
@@ -45,7 +55,8 @@ final class LmdbAccessCostModel {
 				&& !(bound(path.getSubjectVar(), context) && bound(path.getObjectVar(), context))) {
 			memory = rowsPerInvocation;
 		}
-		return new LmdbAccessEstimate(rows, rowsPerInvocation, invocations, work, seeks, memory);
+		return new LmdbAccessEstimate(rows, rowsPerInvocation, accessRowsPerInvocation, invocations, work, seeks,
+				memory);
 	}
 
 	private static double accessSeeks(TupleExpr expression, EstimateContext context, double invocations) {

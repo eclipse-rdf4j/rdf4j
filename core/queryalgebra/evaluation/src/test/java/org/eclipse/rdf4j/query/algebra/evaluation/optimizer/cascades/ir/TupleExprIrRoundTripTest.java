@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
@@ -27,6 +28,7 @@ import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.DescribeOperator;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -34,6 +36,9 @@ import org.eclipse.rdf4j.query.algebra.IRIFunction;
 import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.ReifiedTripleRef;
 import org.eclipse.rdf4j.query.algebra.Service;
@@ -255,6 +260,33 @@ class TupleExprIrRoundTripTest {
 	}
 
 	@Test
+	void existsCorrelationMasksSpanMultipleWordsWithoutLeakingSubqueryLocals() {
+		TupleExpr outer = null;
+		TupleExpr subquery = null;
+		for (int factor = 0; factor < 24; factor++) {
+			int first = factor * 3;
+			StatementPattern outerFactor = pattern("outer" + first, "outer" + (first + 1),
+					"outer" + (first + 2));
+			StatementPattern subqueryFactor = outerFactor.clone();
+			outer = outer == null ? outerFactor : new Join(outer, outerFactor);
+			subquery = subquery == null ? subqueryFactor : new Join(subquery, subqueryFactor);
+		}
+		subquery = new Join(subquery, pattern("localSubject", "localPredicate", "localObject"));
+
+		PlanIr ir = TupleExprToIr.convert(new Filter(outer, new Exists(subquery)));
+		IrAttr.Condition condition = (IrAttr.Condition) ir.rootNode().attr();
+		ScalarExpr.Exists exists = (ScalarExpr.Exists) condition.expression();
+
+		assertEquals(72, exists.correlatedVars().size());
+		assertEquals(75, exists.referencedVars().size());
+		assertTrue(exists.correlatedVars().nextSetBit(64) >= 64,
+				"EXISTS correlation must retain visible bindings beyond the first mask word");
+		assertEquals(outer.getBindingNames(), ir.universe().names(exists.correlatedVars()));
+		assertEquals(Set.of("localSubject", "localPredicate", "localObject"),
+				ir.universe().names(exists.referencedVars().minus(exists.correlatedVars())));
+	}
+
+	@Test
 	void roundTripPreservesFilterScopeChangeFlag() {
 		Filter filter = new Filter(pattern("drug", "p", "label"), new Bound(new Var("drug")));
 		filter.setVariableScopeChange(true);
@@ -283,6 +315,23 @@ class TupleExprIrRoundTripTest {
 		TupleExpr rendered = IrToTupleExpr.convert(TupleExprToIr.convert(extension));
 
 		assertTrue(((Extension) rendered).isVariableScopeChange());
+	}
+
+	@Test
+	void roundTripPreservesProjectionSemanticState() {
+		Projection projection = new Projection(pattern("source", "predicate", "other"),
+				new ProjectionElemList(new ProjectionElem("source", "target"), new ProjectionElem("other")));
+		projection.setProjectionContext(Var.of("context", VF.createIRI("urn:projection-context")));
+		projection.setSubquery(true);
+		projection.setVariableScopeChange(true);
+
+		Projection rendered = (Projection) IrToTupleExpr.convert(TupleExprToIr.convert(projection));
+
+		assertEquals(projection.getProjectionElemList(), rendered.getProjectionElemList());
+		assertEquals(projection.getProjectionContext(), rendered.getProjectionContext());
+		assertTrue(rendered.isSubquery());
+		assertTrue(rendered.isVariableScopeChange(),
+				"Explicit scope-change state must survive independently of the derived subquery barrier");
 	}
 
 	@Test

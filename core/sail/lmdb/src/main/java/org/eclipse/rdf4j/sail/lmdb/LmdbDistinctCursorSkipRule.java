@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -20,6 +21,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.InputBindingContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Memo;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MemoExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
@@ -56,7 +58,23 @@ final class LmdbDistinctCursorSkipRule extends LmdbRule {
 
 	@Override
 	public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
-		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = estimate(expression.tupleExpr(), goal, false);
+		Set<String> boundVars = goal == null ? Set.of() : goal.requiredProperties().boundVars();
+		InputBindingContext inputContext = goal == null ? null : goal.inputBindingContext();
+		JoinFactorCostModel.CostContext costContext = JoinFactorCostModel.CostContext
+				.forOptimization(boundVars,
+						inputContext != null && inputContext.isPresent()
+								? inputContext.invocationRows()
+								: Double.NaN,
+						inputContext == null
+								? Double.NaN
+								: inputContext.distinctBindings(boundVars).orElse(Double.NaN),
+						inputContext != null && inputContext.isPresent(), true,
+						inputContext == null ? Map.of() : inputContext.finiteBindingValues(boundVars),
+						List.of())
+				.withEstimationTier(goal == null ? JoinFactorCostModel.EstimationTier.STANDARD : goal.estimationTier())
+				.withRequestedAccessPath(LmdbDistinctCursorSkipSupport.ACCESS_MODE, 0, 0, false);
+		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = costModel
+				.estimateFactorCost(expression.tupleExpr(), costContext);
 		if (estimate.isEmpty()) {
 			return List.of();
 		}
@@ -69,7 +87,7 @@ final class LmdbDistinctCursorSkipRule extends LmdbRule {
 				.get();
 		PhysicalProperties delivered = delivered(expression.tupleExpr(), estimate.get(), goal)
 				.withDistinctVars(requirement.distinctVars());
-		RuleProof proof = proof(OptimizationGoal.BAG_SEMANTICS,
+		RuleProof proof = proof(OptimizationGoal.SET_SEMANTICS,
 				Set.of("distinctVars=" + requirement.distinctVars(), "cursorSkipCosted", "normalScanCompared"),
 				"LMDB DISTINCT cursor skip is a physical alternative and is selected only when costed cheaper");
 		CostVector cost = cost(estimate.get());

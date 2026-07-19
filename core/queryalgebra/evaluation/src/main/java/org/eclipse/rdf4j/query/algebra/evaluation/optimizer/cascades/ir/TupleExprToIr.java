@@ -56,8 +56,8 @@ import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.Sum;
-import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -66,8 +66,10 @@ import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingMask;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingSymbol;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingUniverse;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MaterializeTupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ScalarDependencyAnalyzer;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
 /** Converts RDF4J TupleExpr trees into the query-local immutable planner IR. */
 @Experimental
@@ -92,7 +94,13 @@ public final class TupleExprToIr {
 
 	public static PlanIr convert(TupleExpr root, PhysicalProperties requiredProperties) {
 		Objects.requireNonNull(root, "root");
-		BindingUniverse universe = BindingUniverse.from(root, requiredProperties);
+		return convert(root, requiredProperties, BindingUniverse.from(root, requiredProperties));
+	}
+
+	/** Converts using an existing query-local symbol universe so every imported mask retains its authoritative ids. */
+	public static PlanIr convert(TupleExpr root, PhysicalProperties requiredProperties, BindingUniverse universe) {
+		Objects.requireNonNull(root, "root");
+		Objects.requireNonNull(universe, "universe");
 		BindingMask inheritedVisible = requiredProperties == null
 				? BindingMask.EMPTY
 				: universe.maskOf(requiredProperties.boundVars())
@@ -112,8 +120,7 @@ public final class TupleExprToIr {
 
 	public static ScalarExpr scalar(BindingUniverse universe, ValueExpr expression) {
 		TupleExprToIr converter = new TupleExprToIr(universe);
-		return converter.scalar(expression,
-				universe.maskOf(ScalarDependencyAnalyzer.scalarReferences(expression)));
+		return converter.scalar(expression, ScalarDependencyAnalyzer.scalarReferenceMask(expression, universe));
 	}
 
 	/**
@@ -132,6 +139,7 @@ public final class TupleExprToIr {
 			return !supportedGroup(group);
 		}
 		return !(tupleExpr instanceof StatementPattern
+				|| tupleExpr instanceof MaterializeTupleExpr
 				|| tupleExpr instanceof ArbitraryLengthPath
 				|| tupleExpr instanceof ZeroLengthPath
 				|| tupleExpr.getClass() == Service.class
@@ -154,6 +162,9 @@ public final class TupleExprToIr {
 		if (isNativeBoundary(tupleExpr)) {
 			return nativeTuple(tupleExpr);
 		}
+		if (tupleExpr instanceof MaterializeTupleExpr materialize) {
+			return add(tupleExpr, IrOp.MATERIALIZE, List.of(visit(materialize.getArg())), IrAttr.NONE);
+		}
 		if (tupleExpr instanceof StatementPattern pattern) {
 			IrAttr.StatementPatternAttr attr = new IrAttr.StatementPatternAttr(
 					IrAttr.VarTerm.fromVar(pattern.getSubjectVar(), builder.universe()),
@@ -163,10 +174,10 @@ public final class TupleExprToIr {
 							: IrAttr.VarTerm.fromVar(pattern.getContextVar(), builder.universe()),
 					pattern.getScope(), pattern.getStringMetricsPlanned(), pattern.getDoubleMetricsPlanned(),
 					pattern.getLongMetricsPlanned());
-			return builder.statementPattern(attr);
+			return add(tupleExpr, IrOp.STATEMENT_PATTERN, List.of(), attr);
 		}
 		if (tupleExpr instanceof ZeroLengthPath path) {
-			return builder.add(IrOp.ZERO_LENGTH_PATH, List.of(),
+			return add(tupleExpr, IrOp.ZERO_LENGTH_PATH, List.of(),
 					new IrAttr.ZeroLengthPathAttr(
 							IrAttr.VarTerm.fromVar(path.getSubjectVar(), builder.universe()),
 							IrAttr.VarTerm.fromVar(path.getObjectVar(), builder.universe()),
@@ -175,7 +186,7 @@ public final class TupleExprToIr {
 							path.getScope()));
 		}
 		if (tupleExpr instanceof ArbitraryLengthPath path) {
-			return builder.unary(IrOp.ARBITRARY_LENGTH_PATH, visit(path.getPathExpression()),
+			return add(tupleExpr, IrOp.ARBITRARY_LENGTH_PATH, List.of(visit(path.getPathExpression())),
 					new IrAttr.ArbitraryLengthPathAttr(
 							IrAttr.VarTerm.fromVar(path.getSubjectVar(), builder.universe()),
 							IrAttr.VarTerm.fromVar(path.getObjectVar(), builder.universe()),
@@ -185,7 +196,7 @@ public final class TupleExprToIr {
 		}
 		if (tupleExpr instanceof Service service) {
 			IrNodeId definition = visit(service.getServiceExpr());
-			return builder.unary(IrOp.SERVICE, definition,
+			return add(tupleExpr, IrOp.SERVICE, List.of(definition),
 					new IrAttr.ServiceAttr(
 							IrAttr.VarTerm.fromVar(service.getServiceRef(), builder.universe()),
 							service.getServiceExpressionString(), service.getPrefixDeclarations(),
@@ -193,7 +204,7 @@ public final class TupleExprToIr {
 							definitionFingerprint(service.getServiceExpr())));
 		}
 		if (tupleExpr instanceof TripleRef tripleRef) {
-			return builder.add(IrOp.TRIPLE_REF, List.of(),
+			return add(tupleExpr, IrOp.TRIPLE_REF, List.of(),
 					new IrAttr.TripleRefAttr(
 							IrAttr.VarTerm.fromVar(tripleRef.getSubjectVar(), builder.universe()),
 							IrAttr.VarTerm.fromVar(tripleRef.getPredicateVar(), builder.universe()),
@@ -202,10 +213,11 @@ public final class TupleExprToIr {
 									: IrAttr.VarTerm.fromVar(tripleRef.getExprVar(), builder.universe())));
 		}
 		if (tupleExpr instanceof BindingSetAssignment assignment) {
-			return builder.values(FiniteRelation.from(assignment, builder.universe()));
+			return add(tupleExpr, IrOp.BINDING_SET_ASSIGNMENT, List.of(),
+					new IrAttr.FiniteRows(FiniteRelation.from(assignment, builder.universe())));
 		}
 		if (tupleExpr instanceof Join join) {
-			return builder.join(visit(join.getLeftArg()), visit(join.getRightArg()));
+			return add(tupleExpr, IrOp.JOIN, List.of(visit(join.getLeftArg()), visit(join.getRightArg())), IrAttr.NONE);
 		}
 		if (tupleExpr instanceof LeftJoin leftJoin) {
 			IrNodeId left = visit(leftJoin.getLeftArg());
@@ -213,28 +225,23 @@ public final class TupleExprToIr {
 			BindingMask visible = inheritedVisible
 					.union(builder.node(left).bindings().possible())
 					.union(builder.node(right).bindings().possible());
-			return builder.leftJoin(left, right,
-					leftJoin.hasCondition() ? scalar(leftJoin.getCondition(), visible) : null);
+			return add(tupleExpr, IrOp.LEFT_JOIN, List.of(left, right), leftJoin.hasCondition()
+					? new IrAttr.Condition(scalar(leftJoin.getCondition(), visible))
+					: IrAttr.NONE);
 		}
 		if (tupleExpr instanceof Difference difference) {
-			return builder.difference(visit(difference.getLeftArg()), visit(difference.getRightArg()));
+			return add(tupleExpr, IrOp.DIFFERENCE,
+					List.of(visit(difference.getLeftArg()), visit(difference.getRightArg())), IrAttr.NONE);
 		}
 		if (tupleExpr instanceof Union union) {
-			SemanticProps semantics = union.isVariableScopeChange()
-					? SemanticProps.builder().scopeBarrier(true).build()
-					: null;
-			return builder.add(IrOp.UNION, List.of(visit(union.getLeftArg()), visit(union.getRightArg())), IrAttr.NONE,
-					semantics, PhysicalProperties.ANY, List.of());
+			return add(tupleExpr, IrOp.UNION, List.of(visit(union.getLeftArg()), visit(union.getRightArg())),
+					IrAttr.NONE);
 		}
 		if (tupleExpr instanceof Filter filter) {
 			IrNodeId input = visit(filter.getArg());
-			SemanticProps semantics = filter.isVariableScopeChange()
-					? SemanticProps.builder().scopeBarrier(true).build()
-					: null;
 			BindingMask visible = inheritedVisible.union(builder.node(input).bindings().possible());
-			return builder.add(IrOp.FILTER, List.of(input),
-					new IrAttr.Condition(scalar(filter.getCondition(), visible)),
-					semantics, PhysicalProperties.ANY, List.of());
+			return add(tupleExpr, IrOp.FILTER, List.of(input),
+					new IrAttr.Condition(scalar(filter.getCondition(), visible)));
 		}
 		if (tupleExpr instanceof Projection projection) {
 			List<IrAttr.ProjectionBinding> bindings = new ArrayList<>();
@@ -247,8 +254,10 @@ public final class TupleExprToIr {
 					bindings.add(new IrAttr.ProjectionBinding(source, target));
 				}
 			}
-			return builder.unary(IrOp.PROJECTION, visit(projection.getArg()),
-					new IrAttr.ProjectionAttr(bindings, projection.isSubquery()));
+			return add(tupleExpr, IrOp.PROJECTION, List.of(visit(projection.getArg())),
+					new IrAttr.ProjectionAttr(bindings, projection.isSubquery(),
+							projection.getProjectionContext() == null ? null
+									: IrAttr.VarTerm.fromVar(projection.getProjectionContext(), builder.universe())));
 		}
 		if (tupleExpr instanceof Extension extension) {
 			IrNodeId input = visit(extension.getArg());
@@ -259,11 +268,7 @@ public final class TupleExprToIr {
 						scalar(element.getExpr(), visible)));
 				visible = visible.union(builder.universe().maskOf(List.of(element.getName())));
 			}
-			SemanticProps semantics = extension.isVariableScopeChange()
-					? SemanticProps.builder().scopeBarrier(true).build()
-					: null;
-			return builder.add(IrOp.EXTENSION, List.of(input), new IrAttr.ExtensionAttr(bindings),
-					semantics, PhysicalProperties.ANY, List.of());
+			return add(tupleExpr, IrOp.EXTENSION, List.of(input), new IrAttr.ExtensionAttr(bindings));
 		}
 		if (tupleExpr instanceof Group group) {
 			IrNodeId input = visit(group.getArg());
@@ -276,16 +281,16 @@ public final class TupleExprToIr {
 					.stream()
 					.map(element -> aggregate(element, visible))
 					.toList();
-			return builder.unary(IrOp.GROUP, input, new IrAttr.GroupAttr(groupVars, aggregates));
+			return add(tupleExpr, IrOp.GROUP, List.of(input), new IrAttr.GroupAttr(groupVars, aggregates));
 		}
 		if (tupleExpr instanceof Distinct distinct) {
-			return builder.unary(IrOp.DISTINCT, visit(distinct.getArg()), IrAttr.NONE);
+			return add(tupleExpr, IrOp.DISTINCT, List.of(visit(distinct.getArg())), IrAttr.NONE);
 		}
 		if (tupleExpr instanceof Reduced reduced) {
-			return builder.unary(IrOp.REDUCED, visit(reduced.getArg()), IrAttr.NONE);
+			return add(tupleExpr, IrOp.REDUCED, List.of(visit(reduced.getArg())), IrAttr.NONE);
 		}
 		if (tupleExpr instanceof Slice slice) {
-			return builder.unary(IrOp.SLICE, visit(slice.getArg()),
+			return add(tupleExpr, IrOp.SLICE, List.of(visit(slice.getArg())),
 					new IrAttr.SliceAttr(slice.getOffset(), slice.getLimit()));
 		}
 		if (tupleExpr instanceof Order order) {
@@ -295,13 +300,13 @@ public final class TupleExprToIr {
 					.stream()
 					.map(element -> new IrAttr.OrderKey(scalar(element.getExpr(), visible), element.isAscending()))
 					.toList();
-			return builder.unary(IrOp.ORDER, input, new IrAttr.OrderAttr(keys));
+			return add(tupleExpr, IrOp.ORDER, List.of(input), new IrAttr.OrderAttr(keys));
 		}
 		if (tupleExpr instanceof EmptySet) {
-			return builder.empty();
+			return add(tupleExpr, IrOp.EMPTY, List.of(), IrAttr.NONE);
 		}
 		if (tupleExpr instanceof SingletonSet) {
-			return builder.singleton();
+			return add(tupleExpr, IrOp.SINGLETON, List.of(), IrAttr.NONE);
 		}
 		return nativeTuple(tupleExpr);
 	}
@@ -326,7 +331,8 @@ public final class TupleExprToIr {
 		return group.getGroupBindingNames().stream().allMatch(TupleExprToIr::plannerName)
 				&& group.getGroupElements()
 						.stream()
-						.allMatch(element -> plannerName(element.getName()) && supportedAggregate(element.getOperator()));
+						.allMatch(
+								element -> plannerName(element.getName()) && supportedAggregate(element.getOperator()));
 	}
 
 	private static boolean supportedAggregate(AggregateOperator operator) {
@@ -400,7 +406,14 @@ public final class TupleExprToIr {
 		for (TupleExprInputCodec.Slot slot : TupleExprInputCodec.slots(tupleExpr)) {
 			inputs.add(visit(slot.input()));
 		}
-		return builder.add(IrOp.NATIVE_BOUNDARY, inputs, new IrAttr.NativeTuple(tupleExpr));
+		return add(tupleExpr, IrOp.NATIVE_BOUNDARY, inputs, new IrAttr.NativeTuple(tupleExpr));
+	}
+
+	private IrNodeId add(TupleExpr source, IrOp operator, List<IrNodeId> inputs, IrAttr attributes) {
+		SemanticProps semantics = SemanticProps.builder()
+				.explicitScopeChange(TupleExprs.isVariableScopeChange(source))
+				.build();
+		return builder.add(operator, inputs, attributes, semantics, PhysicalProperties.ANY, List.of());
 	}
 
 	private static boolean plannerName(String name) {
@@ -483,9 +496,8 @@ public final class TupleExprToIr {
 	}
 
 	private ScalarExpr.Exists exists(TupleExpr subQuery, BindingMask visibleBindings, boolean negated) {
-		BindingMask referenced = builder.universe().maskOf(ScalarDependencyAnalyzer.subqueryReferences(subQuery));
-		BindingMask correlated = builder.universe().maskOf(ScalarDependencyAnalyzer.correlatedNames(subQuery,
-				builder.universe().names(visibleBindings)));
+		BindingMask referenced = ScalarDependencyAnalyzer.subqueryReferenceMask(subQuery, builder.universe());
+		BindingMask correlated = referenced.intersect(visibleBindings);
 		return new ScalarExpr.Exists(convertWithUniverse(subQuery, visibleBindings), referenced, correlated, negated);
 	}
 

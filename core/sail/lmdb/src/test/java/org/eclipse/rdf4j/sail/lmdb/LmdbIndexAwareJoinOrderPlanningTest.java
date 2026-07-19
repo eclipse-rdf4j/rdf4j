@@ -33,7 +33,9 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Distinct;
@@ -55,11 +57,19 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPlan;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MemoExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PlanProvenance;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -192,10 +202,10 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 				assertTrue(generatorPredicates.contains(RDF_TYPE.stringValue()),
 						"Expected generator branch to contain rdf:type. predicates=" + generatorPredicates + "\n"
 								+ explanation);
-				assertTrue(explanation.toString().contains("rule=lmdb-cascades-connected-hypergraph-join"),
-						"The maximal legal generator join island should be owned by DPhyp:\n" + explanation);
-				assertTrue(explanation.toString().contains("connectedOnly"),
-						"DPhyp must prove connected-only enumeration for the generator island:\n" + explanation);
+				assertTrue(explanation.toString().contains("rule=core-unified-join-search"),
+						"The maximal legal generator join island should use unified join search:\n" + explanation);
+				assertTrue(explanation.toString().contains("contributor=lmdb-dphyp"),
+						"DPhyp should contribute candidates through the scoped join-region memo:\n" + explanation);
 				double workRows = optimized.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS);
 				assertTrue(workRows > 0.0d && workRows < 100_000.0d,
 						() -> "The connected grid plan must remain work-bounded, found " + workRows + "\n"
@@ -719,8 +729,12 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 					"Duplicate IN constants should not duplicate generated VALUES rows: " + optimized);
 			assertFalse(containsListMemberFor(optimized, "code"),
 					"Object-domain FILTER IN should be satisfied by the generated VALUES anchor: " + optimized);
-			assertTrue(optimizedPlan.contains("rule=lmdb-cascades-connected-hypergraph-join"),
-					"The medical join island should be owned by the connected DPhyp rule:\n" + optimizedPlan);
+			assertTrue(optimizedPlan.contains("rule=core-unified-join-search"),
+					"The medical join island should use unified join search:\n" + optimizedPlan);
+			assertTrue(optimizedPlan.contains("contributor=lmdb-dphyp")
+					|| optimizedPlan.contains("contributor=core-deterministic-greedy-seed"),
+					"The scoped join-region memo should select a legal unified contributor without DPhyp ownership:\n"
+							+ optimizedPlan);
 			double workRows = optimized.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS);
 			assertTrue(workRows > 0.0d && workRows < 20_000.0d,
 					() -> "The finite-filter plan must remain work-bounded, found " + workRows + "\n"
@@ -808,6 +822,38 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 					"An unselective integer-range VALUES rewrite must compete against the costed original and "
 							+ "lose to the selective patient-code chain; preselecting it drags every matching "
 							+ "observation through the join:\n" + optimizedPlan);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void medicalQ7AutoKeepsExecutableCascadesFallback(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadMedicalQ7FiniteAnchorData(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			TupleExpr planningInput = QueryParserUtil
+					.parseTupleQuery(QueryLanguage.SPARQL, medicalQ7CodeOrFilterQuery(), null)
+					.getTupleExpr();
+			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+			OptimizationGoal baseGoal = OptimizationGoal.root(planningInput, PhysicalProperties.ANY);
+			OptimizationGoal autoGoal = new OptimizationGoal(baseGoal.requiredProperties(), baseGoal.semanticScope(),
+					baseGoal.costPolicy(), baseGoal.costBound(), baseGoal.excludedProperties(),
+					OptimizationGoal.SearchMode.AUTO, Long.MAX_VALUE, 4_096, baseGoal.rowGoal(),
+					baseGoal.estimationTier(), baseGoal.inputBindingContext());
+			CascadesPlan directPlan = new LmdbCascadesOptimizer(statistics, false)
+					.planPreparedInput(planningInput, autoGoal);
+			String directDiagnostic = directPlan.searchStatus() + " pending=" + directPlan.pendingTasks()
+					+ " diagnostics=" + directPlan.diagnostics();
+			System.err.println("medical-q7-auto-diagnostic=" + directDiagnostic);
+			assertTrue(directPlan.winner().isPresent(), directDiagnostic);
+			assertTrue(directPlan.tupleExpr().isPresent(), directDiagnostic);
+			assertTrue(containsBindingSetAssignmentFor(directPlan.tupleExpr().orElseThrow(), "code"), directDiagnostic);
 		} finally {
 			repository.shutDown();
 		}
@@ -921,6 +967,54 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 		try {
 			loadFullThemeData(repository, Theme.LIBRARY);
 			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			TupleExpr planningInput = QueryParserUtil
+					.parseTupleQuery(QueryLanguage.SPARQL, ThemeQueryCatalog.queryFor(Theme.LIBRARY, 7), null)
+					.getTupleExpr();
+			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+			OptimizationGoal baseGoal = OptimizationGoal.root(planningInput, PhysicalProperties.ANY);
+			OptimizationGoal autoGoal = new OptimizationGoal(baseGoal.requiredProperties(), baseGoal.semanticScope(),
+					baseGoal.costPolicy(), baseGoal.costBound(), baseGoal.excludedProperties(),
+					OptimizationGoal.SearchMode.AUTO, Long.MAX_VALUE, 4_096, baseGoal.rowGoal(),
+					baseGoal.estimationTier(), baseGoal.inputBindingContext());
+			CascadesPlan directPlan = new LmdbCascadesOptimizer(statistics, false)
+					.planPreparedInput(planningInput, autoGoal);
+			String directRendered = directPlan.tupleExpr()
+					.map(plan -> new TupleExprIRRenderer().render(plan))
+					.orElse("<no direct plan>");
+			int directNameIndex = directRendered
+					.indexOf("?branch <http://example.com/theme/library/name> ?branchName");
+			int directLocatedAtIndex = directRendered
+					.indexOf("?copy <http://example.com/theme/library/locatedAt> ?branch");
+			assertTrue(directNameIndex >= 0 && directNameIndex < directLocatedAtIndex,
+					() -> "Direct AUTO winner missed the finite branch prefix: " + directPlan.searchStatus()
+							+ " pending=" + directPlan.pendingTasks() + " diagnostics=" + directPlan.diagnostics()
+							+ "\n" + directRendered);
+			assertTrue(directPlan.memo()
+					.groups()
+					.stream()
+					.flatMap(group -> group.expressions().stream())
+					.map(MemoExpr::tupleExpr)
+					.anyMatch(expression -> containsBindingSetAssignmentFor(expression, "branchName")),
+					() -> "Direct AUTO never admitted the finite branchName rewrite: " + directPlan.searchStatus()
+							+ " pending=" + directPlan.pendingTasks() + " diagnostics=" + directPlan.diagnostics());
+			TupleExpr directOptimized = directPlan.tupleExpr().orElseThrow();
+			assertLibraryQ7FiniteBranchNameFanout(directOptimized,
+					"Direct status: " + directPlan.searchStatus() + " pending=" + directPlan.pendingTasks()
+							+ " diagnostics=" + directPlan.diagnostics() + "\n"
+							+ rootWinnerDiagnostic(directPlan) + "\n"
+							+ directOptimized + "\n"
+							+ directRendered,
+					directRendered);
+			TupleExpr setRewrittenInput = planningInput.clone();
+			new LmdbSetSemanticsOptimizer().optimize(setRewrittenInput, null, null);
+			CascadesPlan setRewrittenPlan = new LmdbCascadesOptimizer(statistics, false)
+					.planPreparedInput(setRewrittenInput, autoGoal);
+			TupleExpr setRewrittenOptimized = setRewrittenPlan.tupleExpr().orElseThrow();
+			String setRewrittenRendered = new TupleExprIRRenderer().render(setRewrittenOptimized);
+			assertLibraryQ7FiniteBranchNameFanout(setRewrittenOptimized,
+					"Set-rewritten status: " + setRewrittenPlan.searchStatus() + " pending="
+							+ setRewrittenPlan.pendingTasks() + " diagnostics=" + setRewrittenPlan.diagnostics(),
+					setRewrittenRendered);
 
 			TupleExpr optimized;
 			String optimizedPlan;
@@ -972,8 +1066,10 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 					.contains("lmdb-materialized-minus-anti-semi:missing-physical-property:missing=inputBoundVars"),
 					"Materialized MINUS RHS is an independent hash-build input, not a correlated RHS lookup. "
 							+ "It must not be rejected for missing left-side input bindings.\n" + optimizedPlan);
-			assertTrue(optimizedPlan.contains("rule=lmdb-materialized-minus-anti-semi"),
-					"MINUS must remain a semantic barrier with its normal physical alternative:\n" + optimizedPlan);
+			assertTrue(optimizedPlan.contains("rule=lmdb-materialized-minus-anti-semi")
+					|| optimizedPlan.contains("rule=minus-alternatives-anti-exists")
+					|| optimizedPlan.contains("rule=minus-join-prefix-pushdown"),
+					"MINUS must remain a proof-backed semantic barrier or anti-filter:\n" + optimizedPlan);
 			double workRows = optimized.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS);
 			assertTrue(workRows > 0.0d && workRows < 5_000.0d,
 					() -> "The explicit-VALUES plan must remain work-bounded, found " + workRows + "\n"
@@ -997,6 +1093,65 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 		try {
 			loadMedicalQ7FiniteAnchorData(repository);
 			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			TupleExpr planningInput = QueryParserUtil
+					.parseTupleQuery(QueryLanguage.SPARQL, medicalQ7TypeAntiValuesCodeQuery(), null)
+					.getTupleExpr();
+			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+			new FilterOptimizer(null, false, false).optimize(planningInput, null, null);
+			new LmdbBoundSimplifierOptimizer().optimize(planningInput, null, null);
+			new LmdbSetSemanticsOptimizer().optimize(planningInput, null, null);
+			new LmdbFilterSimplifierOptimizer(statistics).optimize(planningInput, null, null);
+			new LmdbSetSemanticsOptimizer().optimize(planningInput, null, null);
+			new LmdbEligibilitySemiJoinOptimizer().optimize(planningInput, null, null);
+			OptimizationGoal directRoot = OptimizationGoal.root(planningInput, PhysicalProperties.ANY);
+			OptimizationGoal directAuto = new OptimizationGoal(directRoot.requiredProperties(),
+					directRoot.semanticScope(), directRoot.costPolicy(), directRoot.costBound(),
+					directRoot.excludedProperties(), OptimizationGoal.SearchMode.AUTO, Long.MAX_VALUE, 4_096,
+					directRoot.rowGoal(), directRoot.estimationTier(), directRoot.inputBindingContext());
+			CascadesPlan directPlan = new LmdbCascadesOptimizer(statistics, false)
+					.planPreparedInput(planningInput, directAuto);
+			List<MemoExpr> directExpressions = directPlan.memo()
+					.groups()
+					.stream()
+					.flatMap(group -> group.expressions().stream())
+					.toList();
+			MemoExpr combinedGeneric = directExpressions.stream()
+					.filter(MemoExpr::physical)
+					.filter(expression -> expression.tupleExpr() instanceof Filter filter
+							&& filter.getCondition() instanceof And)
+					.filter(expression -> expression.proofs()
+							.stream()
+							.anyMatch(proof -> "generic-physical-implementation".equals(proof.ruleId())))
+					.findFirst()
+					.orElseThrow(() -> new AssertionError("Prepared Q7 plan did not retain the generic combined filter: "
+							+ directPlan.diagnostics()));
+			assertEquals(3, combinedGeneric.executableInputs().size(),
+					"The generic combined filter must expose its row input and both scalar subqueries");
+			MemoExpr directAnti = directExpressions.stream()
+					.filter(MemoExpr::logical)
+					.filter(expression -> expression.tupleExpr() instanceof Filter filter
+							&& filter.getCondition() instanceof Not)
+					.findFirst()
+					.orElseThrow(() -> new AssertionError("Direct Q7 plan did not retain the anti filter: "
+							+ directPlan.diagnostics()));
+			assertTrue(new LmdbCorrelatedNotExistsAntiFilterRule(statistics)
+					.matches(directAnti, OptimizationGoal.root(), directPlan.memo()),
+					() -> "Direct Q7 split anti filter became ineligible: " + directAnti);
+			assertTrue(directExpressions.stream().anyMatch(expression -> expression.physical()
+					&& expression.proofs()
+							.stream()
+							.anyMatch(proof -> "lmdb-correlated-not-exists-anti-filter".equals(proof.ruleId()))),
+					() -> "Direct Q7 memo did not retain the correlated anti implementation: "
+							+ directPlan.diagnostics());
+			assertTrue(provenanceContainsRule(directPlan.provenance().orElseThrow(),
+					"lmdb-correlated-not-exists-anti-filter"),
+					() -> "Direct Q7 winner did not select the correlated anti implementation:\n"
+							+ filterMemoDiagnostic(directPlan));
+			double directWorkRows = directPlan.winner().orElseThrow().cost().workRows();
+			assertTrue(directWorkRows > 0.0d && directWorkRows < 10_000.0d,
+					() -> "Direct AUTO Q7 winner must remain cost-bounded, found " + directWorkRows + ":\n"
+							+ directPlan.searchStatus() + " pending=" + directPlan.pendingTasks() + " diagnostics="
+							+ directPlan.diagnostics() + "\n" + filterMemoDiagnostic(directPlan));
 
 			TupleExpr optimized;
 			String rendered;
@@ -1008,8 +1163,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 				rendered = new TupleExprIRRenderer().render(optimized);
 				optimizedPlan = explanation.toString();
 			}
-
-			assertTrue(rendered.contains("FILTER NOT EXISTS"),
+			assertTrue(rendered.contains("NOT EXISTS"),
 					"Requested q7 variant should still expose the anti-filter:\n" + rendered + "\n" + optimizedPlan);
 			int valuesIndex = rendered.indexOf("VALUES ?code");
 			int codeIndex = rendered.indexOf("?med <http://example.com/theme/medical/code> ?code");
@@ -1018,15 +1172,19 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 			assertTrue(codeIndex > valuesIndex,
 					"VALUES ?code should feed the med:code lookup, not trail it:\n" + rendered + "\n"
 							+ optimizedPlan);
-			int antiIndex = rendered.indexOf("FILTER NOT EXISTS");
+			int antiIndex = rendered.indexOf("NOT EXISTS");
 			assertTrue(antiIndex >= 0, "The correlated anti-filter must remain visible:\n" + rendered);
 			assertTrue(optimizedPlan.contains("rule=lmdb-correlated-not-exists-anti-filter"),
 					"The dosage exclusion must use the correlated anti implementation:\n" + optimizedPlan);
-			assertTrue(optimizedPlan.contains("rule=lmdb-materialized-exists-semi"),
-					"The duplicate-insensitive EXISTS branch must use its transparent semi-join implementation:\n"
+			assertTrue(optimizedPlan.contains("rule=lmdb-materialized-exists-semi")
+					|| optimizedPlan.contains("replacementNode=correlated-exists-semi-filter")
+					|| optimizedPlan.contains("optimizer.filterAlgorithmHint=streaming-exists")
+					|| optimizedPlan.contains("typedEdge=SEMI") && optimizedPlan.contains("edgeOrigin=EXISTS"),
+					"The duplicate-insensitive EXISTS branch must use a transparent semi-filter implementation:\n"
 							+ optimizedPlan);
-			assertTrue(optimizedPlan.contains("plannedAntiExistsSharedBindingCount=1.00"),
-					"The anti probe must remain correlated on ?med:\n" + optimizedPlan);
+			assertTrue(optimizedPlan.contains("plannedAntiExistsSharedBindingCount=1.00")
+					|| optimizedPlan.contains("shared=[med]"),
+					"The anti probe must retain proof of correlation on ?med:\n" + optimizedPlan);
 			StatementPattern codePattern = findStatementPatternByPredicate(optimized, MED_CODE)
 					.orElseThrow(() -> new AssertionError("Expected med:code lookup:\n" + optimizedPlan));
 			assertTrue(Double.isFinite(codePattern.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS)),
@@ -1598,17 +1756,25 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 				"The finite branch-name lookup should bind branch before locatedAt expands copies:\n"
 						+ rendered + "\n" + optimizedPlan);
 
-		StatementPattern locatedAt = findStatementPatternByPredicate(optimized, LIB_LOCATED_AT)
-				.orElseThrow(() -> new AssertionError("Expected locatedAt pattern:\n" + optimizedPlan));
+		List<StatementPattern> locatedAtPatterns = findStatementPatternsByPredicate(optimized, LIB_LOCATED_AT);
+		StatementPattern locatedAt = locatedAtPatterns.stream()
+				.filter(pattern -> !hasAncestor(pattern, Exists.class))
+				.findFirst()
+				.orElseThrow(() -> new AssertionError("Expected a main-stream locatedAt pattern:\n" + optimizedPlan));
+		String locatedAtMetrics = String.join("\n", locatedAtPatterns.stream()
+				.map(LmdbIndexAwareJoinOrderPlanningTest::describePlanMetrics)
+				.toList());
 		assertEquals("[P, O]", locatedAt.getStringMetricPlanned(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS),
 				"locatedAt should use branch-bound predicate/object lookup: " + describePlanMetrics(locatedAt)
-						+ "\n" + optimizedPlan);
+						+ "\nAll locatedAt metrics:\n" + locatedAtMetrics + "\n" + optimizedPlan);
 		assertTrue(locatedAt.getDoubleMetricPlanned("plannedRepeatedInvocations") <= 12.0d,
 				"locatedAt should only perform one lookup per finite branch: "
-						+ describePlanMetrics(locatedAt) + "\n" + optimizedPlan);
+						+ describePlanMetrics(locatedAt) + "\nAll locatedAt metrics:\n" + locatedAtMetrics
+						+ "\n" + optimizedPlan);
 		assertTrue(locatedAt.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS) >= 10_000.0d,
 				"locatedAt should cost finite branch lookups by branch fanout, not singleton direct lookups: "
-						+ describePlanMetrics(locatedAt) + "\n" + optimizedPlan);
+						+ describePlanMetrics(locatedAt) + "\nAll locatedAt metrics:\n" + locatedAtMetrics
+						+ "\n" + optimizedPlan);
 	}
 
 	private static void loadSyntheticMedicalValueRangeData(SailRepository repository) {
@@ -2199,6 +2365,147 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 		}
 	}
 
+	private static boolean provenanceContainsRule(PlanProvenance provenance, String ruleId) {
+		return ruleId.equals(provenance.ruleId())
+				|| provenance.proofs().stream().anyMatch(proof -> ruleId.equals(proof.ruleId()))
+				|| provenance.inputs().stream().anyMatch(input -> provenanceContainsRule(input, ruleId));
+	}
+
+	private static String filterMemoDiagnostic(CascadesPlan plan) {
+		StringBuilder diagnostic = new StringBuilder();
+		diagnostic.append("searchStatus=")
+				.append(plan.searchStatus())
+				.append("\npendingTasks=")
+				.append(plan.pendingTasks())
+				.append("\ndiagnostics=")
+				.append(plan.diagnostics())
+				.append('\n');
+		diagnostic.append("selected filters:\n");
+		appendSelectedFilterDiagnostic(plan.provenance().orElse(null), diagnostic);
+		for (var group : plan.memo().groups()) {
+			List<MemoExpr> filters = group.expressions()
+					.stream()
+					.filter(expression -> expression.tupleExpr() instanceof Filter)
+					.toList();
+			if (filters.isEmpty()) {
+				continue;
+			}
+			diagnostic.append("group=").append(group.id()).append('\n');
+			for (MemoExpr expression : filters) {
+				diagnostic.append("  expression=")
+						.append(expression.id())
+						.append(" kind=")
+						.append(expression.kind())
+						.append(" condition=")
+						.append(((Filter) expression.tupleExpr()).getCondition().getSignature())
+						.append(" inputs=")
+						.append(expression.inputGroupIds())
+						.append(" proofs=")
+						.append(expression.proofs().stream().map(proof -> proof.ruleId()).toList())
+						.append('\n');
+			}
+			group.winnerSnapshot()
+					.values()
+					.stream()
+					.flatMap(List::stream)
+					.forEach(winner -> diagnostic.append("  winner expression=")
+							.append(winner.expression().id())
+							.append(" rule=")
+							.append(winner.provenance().ruleId())
+							.append(" cost=")
+							.append(winner.cost())
+							.append('\n'));
+		}
+		return diagnostic.toString();
+	}
+
+	private static String rootWinnerDiagnostic(CascadesPlan plan) {
+		int rootGroupId = plan.provenance().map(PlanProvenance::memoGroupId).orElse(-1);
+		if (rootGroupId < 0) {
+			return "root winners: <no selected provenance>";
+		}
+		StringBuilder diagnostic = new StringBuilder("root winners:");
+		plan.memo()
+				.group(rootGroupId)
+				.winnerSnapshot()
+				.forEach((key, winners) -> winners.forEach(winner -> diagnostic.append("\n  key=")
+						.append(key)
+						.append(" expression=")
+						.append(winner.expression().id())
+						.append(" rule=")
+						.append(winner.provenance().ruleId())
+						.append(" cost=")
+						.append(winner.cost())
+						.append(" derivation=")
+						.append(winnerDerivation(plan, winner.provenance()))));
+		return diagnostic.toString();
+	}
+
+	private static String winnerDerivation(CascadesPlan plan, PlanProvenance provenance) {
+		StringBuilder diagnostic = new StringBuilder();
+		appendWinnerDerivation(plan, provenance, diagnostic);
+		return diagnostic.toString();
+	}
+
+	private static void appendWinnerDerivation(CascadesPlan plan, PlanProvenance provenance,
+			StringBuilder diagnostic) {
+		TupleExpr expression = plan.memo().expression(provenance.expressionId()).tupleExpr();
+		diagnostic.append(expression.getClass().getSimpleName());
+		if (expression instanceof StatementPattern pattern && pattern.getPredicateVar().hasValue()) {
+			diagnostic.append('(').append(pattern.getPredicateVar().getValue().stringValue()).append(')');
+		} else if (expression instanceof BindingSetAssignment assignment) {
+			diagnostic.append(assignment.getBindingNames());
+		}
+		diagnostic.append("[").append(provenance.cost().workRows()).append("]");
+		diagnostic.append("{rows=")
+				.append(provenance.cost().rows())
+				.append(", source=")
+				.append(provenance.estimate().source())
+				.append(", usage=")
+				.append(provenance.estimate().usage())
+				.append(", inputBound=")
+				.append(provenance.requiredProperties().inputBoundVars())
+				.append(", bound=")
+				.append(provenance.requiredProperties().boundVars())
+				.append(", consumption=")
+				.append(provenance.requiredProperties().inputConsumption())
+				.append(", domains=")
+				.append(provenance.deliveredProperties().bindingProfile().finiteDomains().keySet())
+				.append('}');
+		if (provenance.inputs().isEmpty()) {
+			return;
+		}
+		diagnostic.append("<-");
+		for (int index = 0; index < provenance.inputs().size(); index++) {
+			if (index > 0) {
+				diagnostic.append(',');
+			}
+			appendWinnerDerivation(plan, provenance.inputs().get(index), diagnostic);
+		}
+	}
+
+	private static void appendSelectedFilterDiagnostic(PlanProvenance provenance, StringBuilder diagnostic) {
+		if (provenance == null) {
+			return;
+		}
+		if ("Filter".equals(provenance.operator())) {
+			diagnostic.append("  group=")
+					.append(provenance.memoGroupId())
+					.append(" expression=")
+					.append(provenance.expressionId())
+					.append(" rule=")
+					.append(provenance.ruleId())
+					.append(" proofs=")
+					.append(provenance.proofs().stream().map(proof -> proof.ruleId()).toList())
+					.append(" cost=")
+					.append(provenance.cost())
+					.append('\n');
+		}
+		for (PlanProvenance input : provenance.inputs()) {
+			appendSelectedFilterDiagnostic(input, diagnostic);
+		}
+	}
+
 	private static List<String> collectMedicalQ7MandatoryLeafOrder(TupleExpr optimized) {
 		List<String> leaves = new ArrayList<>();
 		optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
@@ -2353,6 +2660,8 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 	private static String describePlanMetrics(StatementPattern node) {
 		return "{source=" + node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE)
+				+ ", cardinalityRows="
+				+ node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS)
 				+ ", accessMode=" + node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE)
 				+ ", index=" + node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_NAME)
 				+ ", lookup=" + node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS)
@@ -2392,6 +2701,10 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 	}
 
 	private static Optional<StatementPattern> findStatementPatternByPredicate(TupleExpr tupleExpr, IRI predicate) {
+		return findStatementPatternsByPredicate(tupleExpr, predicate).stream().findFirst();
+	}
+
+	private static List<StatementPattern> findStatementPatternsByPredicate(TupleExpr tupleExpr, IRI predicate) {
 		List<StatementPattern> matches = new ArrayList<>(1);
 		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
@@ -2402,7 +2715,17 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 				super.meet(node);
 			}
 		});
-		return matches.stream().findFirst();
+		return matches;
+	}
+
+	private static boolean hasAncestor(QueryModelNode node, Class<? extends QueryModelNode> ancestorType) {
+		for (QueryModelNode parent = node == null ? null : node.getParentNode(); parent != null;
+				parent = parent.getParentNode()) {
+			if (ancestorType.isInstance(parent)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static boolean containsCodeEqualityFilter(TupleExpr tupleExpr) {

@@ -47,13 +47,14 @@ public record JoinSearchDependencyStamp(List<FactorRevision> factorRevisions) {
 	}
 
 	/** Exact candidate-space revisions read from one memo group participating in region extraction. */
-	public record FactorRevision(int groupId, long logicalCandidateRevision, LogicalFactRevision logicalFacts) {
+	public record FactorRevision(int groupId, long logicalCandidateRevision, LogicalFactRevision logicalFacts,
+			long winnerRevision, long winnerClearRevision) {
 
 		public FactorRevision {
 			if (groupId < 0) {
 				throw new IllegalArgumentException("dependency group ID must be non-negative");
 			}
-			if (logicalCandidateRevision < 0L) {
+			if (logicalCandidateRevision < 0L || winnerRevision < 0L || winnerClearRevision < 0L) {
 				throw new IllegalArgumentException("dependency revisions must be non-negative");
 			}
 			logicalFacts = logicalFacts == null ? LogicalFactRevision.NONE : logicalFacts;
@@ -63,7 +64,7 @@ public record JoinSearchDependencyStamp(List<FactorRevision> factorRevisions) {
 		public FactorRevision(int groupId, long logicalCandidateRevision, long physicalRevision, long factRevision,
 				long dependencyRevision, long winnerRevision) {
 			this(groupId, logicalCandidateRevision,
-					LogicalFactRevision.legacy(factRevision, dependencyRevision, winnerRevision));
+					LogicalFactRevision.legacy(factRevision, dependencyRevision, winnerRevision), winnerRevision, 0L);
 		}
 	}
 

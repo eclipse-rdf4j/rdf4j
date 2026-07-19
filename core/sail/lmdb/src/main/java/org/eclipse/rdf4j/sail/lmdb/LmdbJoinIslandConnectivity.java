@@ -44,6 +44,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ScalarDependencyAnalyzer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ScalarEvaluationEffects;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StreamBindingSchema;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
@@ -224,6 +225,9 @@ final class LmdbJoinIslandConnectivity {
 					&& simpleCorrelatableMinusRhs(join.getRightArg());
 		}
 		if (tupleExpr instanceof Filter filter) {
+			if (!ScalarEvaluationEffects.reorderingIsSafe(filter.getCondition())) {
+				return false;
+			}
 			Set<String> conditionNames = conditionNames(filter.getCondition(),
 					filter.getArg().getAssuredBindingNames());
 			return LmdbJoinPlanSupport.plannerBindingNames(filter.getArg().getAssuredBindingNames())
@@ -246,6 +250,9 @@ final class LmdbJoinIslandConnectivity {
 				.plannerBindingNames(extension.getArg().getAssuredBindingNames());
 		for (ExtensionElem element : extension.getElements()) {
 			if (element.getName() == null || argBindings.contains(element.getName())) {
+				return false;
+			}
+			if (!ScalarEvaluationEffects.reorderingIsSafe(element.getExpr())) {
 				return false;
 			}
 			Set<String> expressionNames = LmdbJoinPlanSupport.plannerBindingNames(VarNameCollector.process(
@@ -368,7 +375,7 @@ final class LmdbJoinIslandConnectivity {
 		factors.add(tupleExpr);
 	}
 
-	private static boolean transparentProjection(Projection projection) {
+	static boolean transparentProjection(Projection projection) {
 		if (projection == null || TupleExprs.isVariableScopeChange(projection)) {
 			return false;
 		}
@@ -553,7 +560,7 @@ final class LmdbJoinIslandConnectivity {
 		return true;
 	}
 
-	private static Set<String> unsafeSharedNames(TupleExpr factor) {
+	static Set<String> unsafeSharedNames(TupleExpr factor) {
 		if (factor instanceof Extension extension) {
 			return nestedAssignmentNames(extension);
 		}

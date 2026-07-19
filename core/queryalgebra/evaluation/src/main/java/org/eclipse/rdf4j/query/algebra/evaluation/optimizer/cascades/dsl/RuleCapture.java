@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -29,10 +30,16 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.ScalarFa
 /** Captures produced by matching a {@link RulePattern} against a {@link PlanIr}. */
 @Experimental
 public record RuleCapture(PlanIr ir, IrNodeId root, Map<String, IrNodeId> nodes, Map<String, ScalarExpr> scalars,
-		OptimizationGoal goal, MemoExpr expression) {
+		OptimizationGoal goal, MemoExpr expression, Map<IrNodeId, Integer> memoGroupIds,
+		Map<IrNodeId, BindingShape> memoBindingShapes, List<ScalarMemoInput> scalarMemoInputs) {
 
 	public RuleCapture(PlanIr ir, IrNodeId root, Map<String, IrNodeId> nodes, Map<String, ScalarExpr> scalars) {
-		this(ir, root, nodes, scalars, null, null);
+		this(ir, root, nodes, scalars, null, null, Map.of(), Map.of(), List.of());
+	}
+
+	public RuleCapture(PlanIr ir, IrNodeId root, Map<String, IrNodeId> nodes, Map<String, ScalarExpr> scalars,
+			OptimizationGoal goal, MemoExpr expression) {
+		this(ir, root, nodes, scalars, goal, expression, Map.of(), Map.of(), List.of());
 	}
 
 	public RuleCapture {
@@ -40,6 +47,13 @@ public record RuleCapture(PlanIr ir, IrNodeId root, Map<String, IrNodeId> nodes,
 		Objects.requireNonNull(root, "root");
 		nodes = nodes == null || nodes.isEmpty() ? Map.of() : Map.copyOf(nodes);
 		scalars = scalars == null || scalars.isEmpty() ? Map.of() : Map.copyOf(scalars);
+		memoGroupIds = memoGroupIds == null || memoGroupIds.isEmpty() ? Map.of() : Map.copyOf(memoGroupIds);
+		memoBindingShapes = memoBindingShapes == null || memoBindingShapes.isEmpty()
+				? Map.of()
+				: Map.copyOf(memoBindingShapes);
+		scalarMemoInputs = scalarMemoInputs == null || scalarMemoInputs.isEmpty()
+				? List.of()
+				: List.copyOf(scalarMemoInputs);
 	}
 
 	public IrNodeId nodeId(String name) {
@@ -55,7 +69,8 @@ public record RuleCapture(PlanIr ir, IrNodeId root, Map<String, IrNodeId> nodes,
 	}
 
 	public BindingShape shape(String name) {
-		return node(name).bindings();
+		IrNodeId nodeId = nodeId(name);
+		return memoBindingShapes.getOrDefault(nodeId, ir.node(nodeId).bindings());
 	}
 
 	public ScalarExpr scalar(String name) {
@@ -68,6 +83,20 @@ public record RuleCapture(PlanIr ir, IrNodeId root, Map<String, IrNodeId> nodes,
 
 	public ScalarFacts scalarFacts(String name) {
 		return ScalarFacts.of(ir.universe(), scalar(name));
+	}
+
+	public Integer memoGroupId(IrNodeId nodeId) {
+		return memoGroupIds.get(nodeId);
+	}
+
+	/** Returns the authoritative memo group for one nested scalar-subquery IR by identity. */
+	public Integer scalarMemoGroupId(PlanIr subquery) {
+		for (ScalarMemoInput input : scalarMemoInputs) {
+			if (input.subquery() == subquery) {
+				return input.groupId();
+			}
+		}
+		return null;
 	}
 
 	public BindingMask incomingBindingMask() {
@@ -92,15 +121,32 @@ public record RuleCapture(PlanIr ir, IrNodeId root, Map<String, IrNodeId> nodes,
 	}
 
 	Builder toBuilder() {
-		return new Builder(ir, root, nodes, scalars, goal, expression);
+		return new Builder(ir, root, nodes, scalars, goal, expression, memoGroupIds, memoBindingShapes,
+				scalarMemoInputs);
 	}
 
 	static Builder builder(PlanIr ir, IrNodeId root) {
-		return new Builder(ir, root, Map.of(), Map.of(), null, null);
+		return new Builder(ir, root, Map.of(), Map.of(), null, null, Map.of(), Map.of(), List.of());
 	}
 
 	static Builder builder(PlanIr ir, IrNodeId root, OptimizationGoal goal, MemoExpr expression) {
-		return new Builder(ir, root, Map.of(), Map.of(), goal, expression);
+		return new Builder(ir, root, Map.of(), Map.of(), goal, expression, Map.of(), Map.of(), List.of());
+	}
+
+	static Builder builder(PlanIr ir, IrNodeId root, OptimizationGoal goal, MemoExpr expression,
+			Map<IrNodeId, Integer> memoGroupIds, Map<IrNodeId, BindingShape> memoBindingShapes,
+			List<ScalarMemoInput> scalarMemoInputs) {
+		return new Builder(ir, root, Map.of(), Map.of(), goal, expression, memoGroupIds, memoBindingShapes,
+				scalarMemoInputs);
+	}
+
+	public record ScalarMemoInput(PlanIr subquery, int groupId) {
+		public ScalarMemoInput {
+			Objects.requireNonNull(subquery, "subquery");
+			if (groupId < 0) {
+				throw new IllegalArgumentException("groupId must be non-negative");
+			}
+		}
 	}
 
 	static final class Builder {
@@ -110,15 +156,28 @@ public record RuleCapture(PlanIr ir, IrNodeId root, Map<String, IrNodeId> nodes,
 		private final Map<String, ScalarExpr> scalars;
 		private final OptimizationGoal goal;
 		private final MemoExpr expression;
+		private final Map<IrNodeId, Integer> memoGroupIds;
+		private final Map<IrNodeId, BindingShape> memoBindingShapes;
+		private final List<ScalarMemoInput> scalarMemoInputs;
 
 		private Builder(PlanIr ir, IrNodeId root, Map<String, IrNodeId> nodes, Map<String, ScalarExpr> scalars,
-				OptimizationGoal goal, MemoExpr expression) {
+				OptimizationGoal goal, MemoExpr expression, Map<IrNodeId, Integer> memoGroupIds,
+				Map<IrNodeId, BindingShape> memoBindingShapes, List<ScalarMemoInput> scalarMemoInputs) {
 			this.ir = Objects.requireNonNull(ir, "ir");
 			this.root = Objects.requireNonNull(root, "root");
 			this.nodes = new LinkedHashMap<>(nodes);
 			this.scalars = new LinkedHashMap<>(scalars);
 			this.goal = goal;
 			this.expression = expression;
+			this.memoGroupIds = memoGroupIds == null || memoGroupIds.isEmpty()
+					? Map.of()
+					: Map.copyOf(memoGroupIds);
+			this.memoBindingShapes = memoBindingShapes == null || memoBindingShapes.isEmpty()
+					? Map.of()
+					: Map.copyOf(memoBindingShapes);
+			this.scalarMemoInputs = scalarMemoInputs == null || scalarMemoInputs.isEmpty()
+					? List.of()
+					: List.copyOf(scalarMemoInputs);
 		}
 
 		boolean captureNode(String name, IrNodeId id) {
@@ -146,7 +205,8 @@ public record RuleCapture(PlanIr ir, IrNodeId root, Map<String, IrNodeId> nodes,
 		}
 
 		RuleCapture build() {
-			return new RuleCapture(ir, root, nodes, scalars, goal, expression);
+			return new RuleCapture(ir, root, nodes, scalars, goal, expression, memoGroupIds, memoBindingShapes,
+					scalarMemoInputs);
 		}
 	}
 }

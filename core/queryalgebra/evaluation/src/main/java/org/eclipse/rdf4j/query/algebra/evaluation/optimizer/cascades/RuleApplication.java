@@ -12,8 +12,10 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -22,7 +24,8 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 public record RuleApplication(int targetGroupId, TupleExpr alternative, RuleKind kind,
 		PhysicalProperties deliveredProperties, CostVector localCost, List<RuleProof> proofs, String metadata,
 		EstimateSnapshot estimate, List<PhysicalProperties> inputRequirements,
-		List<SemanticScope> inputSemanticRequirements, boolean opaque) {
+		List<SemanticScope> inputSemanticRequirements, List<Integer> inputGroupIds,
+		List<LogicalInputRecipe> logicalInputRecipes, Set<Integer> locallyCostedInputIndexes, boolean opaque) {
 
 	public RuleApplication {
 		Objects.requireNonNull(alternative, "alternative");
@@ -34,6 +37,39 @@ public record RuleApplication(int targetGroupId, TupleExpr alternative, RuleKind
 		estimate = estimate == null ? EstimateSnapshot.cascades(localCost) : estimate.withRuleCost(localCost);
 		inputRequirements = normalizeInputRequirements(alternative, kind, inputRequirements, opaque);
 		inputSemanticRequirements = normalizeInputSemanticRequirements(alternative, inputSemanticRequirements, opaque);
+		inputGroupIds = normalizeInputGroupIds(alternative, inputGroupIds, opaque);
+		logicalInputRecipes = normalizeLogicalInputRecipes(alternative, kind, inputGroupIds, logicalInputRecipes,
+				opaque);
+		locallyCostedInputIndexes = normalizeLocallyCostedInputIndexes(alternative, kind,
+				locallyCostedInputIndexes, opaque);
+	}
+
+	/** Compatibility constructor for applications created before local physical input ownership was explicit. */
+	public RuleApplication(int targetGroupId, TupleExpr alternative, RuleKind kind,
+			PhysicalProperties deliveredProperties, CostVector localCost, List<RuleProof> proofs, String metadata,
+			EstimateSnapshot estimate, List<PhysicalProperties> inputRequirements,
+			List<SemanticScope> inputSemanticRequirements, List<Integer> inputGroupIds,
+			List<LogicalInputRecipe> logicalInputRecipes, boolean opaque) {
+		this(targetGroupId, alternative, kind, deliveredProperties, localCost, proofs, metadata, estimate,
+				inputRequirements, inputSemanticRequirements, inputGroupIds, logicalInputRecipes, Set.of(), opaque);
+	}
+
+	/** Compatibility constructor for applications created before deferred logical input recipes were explicit. */
+	public RuleApplication(int targetGroupId, TupleExpr alternative, RuleKind kind,
+			PhysicalProperties deliveredProperties, CostVector localCost, List<RuleProof> proofs, String metadata,
+			EstimateSnapshot estimate, List<PhysicalProperties> inputRequirements,
+			List<SemanticScope> inputSemanticRequirements, List<Integer> inputGroupIds, boolean opaque) {
+		this(targetGroupId, alternative, kind, deliveredProperties, localCost, proofs, metadata, estimate,
+				inputRequirements, inputSemanticRequirements, inputGroupIds, List.of(), Set.of(), opaque);
+	}
+
+	/** Compatibility constructor for applications created before authoritative physical input groups were explicit. */
+	public RuleApplication(int targetGroupId, TupleExpr alternative, RuleKind kind,
+			PhysicalProperties deliveredProperties, CostVector localCost, List<RuleProof> proofs, String metadata,
+			EstimateSnapshot estimate, List<PhysicalProperties> inputRequirements,
+			List<SemanticScope> inputSemanticRequirements, boolean opaque) {
+		this(targetGroupId, alternative, kind, deliveredProperties, localCost, proofs, metadata, estimate,
+				inputRequirements, inputSemanticRequirements, List.of(), opaque);
 	}
 
 	/** Compatibility constructor for applications created before semantic child requirements were explicit. */
@@ -88,6 +124,15 @@ public record RuleApplication(int targetGroupId, TupleExpr alternative, RuleKind
 	}
 
 	public static RuleApplication physical(int targetGroupId, TupleExpr alternative, PhysicalProperties delivered,
+			List<PhysicalProperties> inputRequirements, Set<Integer> locallyCostedInputIndexes, CostVector localCost,
+			RuleProof proof, String metadata, EstimateSnapshot estimate) {
+		return new RuleApplication(targetGroupId, alternative, RuleKind.IMPLEMENTATION, delivered, localCost,
+				proof == null ? List.of() : List.of(proof), metadata, estimate, inputRequirements,
+				MemoInputLayout.semanticRequirements(alternative), List.of(), List.of(), locallyCostedInputIndexes,
+				false);
+	}
+
+	public static RuleApplication physical(int targetGroupId, TupleExpr alternative, PhysicalProperties delivered,
 			List<PhysicalProperties> inputRequirements, List<SemanticScope> inputSemanticRequirements,
 			CostVector localCost, RuleProof proof, String metadata, EstimateSnapshot estimate) {
 		return new RuleApplication(targetGroupId, alternative, RuleKind.IMPLEMENTATION, delivered, localCost,
@@ -119,6 +164,25 @@ public record RuleApplication(int targetGroupId, TupleExpr alternative, RuleKind
 		return new RuleApplication(targetGroupId, alternative, RuleKind.ENFORCER, delivered, localCost,
 				proof == null ? List.of() : List.of(proof), metadata, null, List.of(),
 				MemoInputLayout.semanticRequirements(alternative), false);
+	}
+
+	/** Creates an application whose child slots already have authoritative memo group identities. */
+	public static RuleApplication withInputGroups(int targetGroupId, TupleExpr alternative, RuleKind kind,
+			PhysicalProperties delivered, CostVector localCost, List<RuleProof> proofs, String metadata,
+			EstimateSnapshot estimate, List<PhysicalProperties> inputRequirements, List<Integer> inputGroupIds,
+			boolean opaque) {
+		return new RuleApplication(targetGroupId, alternative, kind, delivered, localCost, proofs, metadata, estimate,
+				inputRequirements, MemoInputLayout.semanticRequirements(alternative), inputGroupIds, opaque);
+	}
+
+	/** Creates a logical application whose emitted helper groups must be committed transactionally by the memo. */
+	public static RuleApplication withLogicalInputRecipes(int targetGroupId, TupleExpr alternative,
+			PhysicalProperties delivered, CostVector localCost, List<RuleProof> proofs, String metadata,
+			EstimateSnapshot estimate, List<PhysicalProperties> inputRequirements,
+			List<LogicalInputRecipe> logicalInputRecipes) {
+		return new RuleApplication(targetGroupId, alternative, RuleKind.TRANSFORMATION, delivered, localCost, proofs,
+				metadata, estimate, inputRequirements, MemoInputLayout.semanticRequirements(alternative), List.of(),
+				logicalInputRecipes, false);
 	}
 
 	private static List<PhysicalProperties> normalizeInputRequirements(TupleExpr alternative, RuleKind kind,
@@ -160,4 +224,68 @@ public record RuleApplication(int targetGroupId, TupleExpr alternative, RuleKind
 		}
 		return MemoInputLayout.normalizeSemanticRequirements(inputCount, inputSemanticRequirements);
 	}
+
+	private static List<Integer> normalizeInputGroupIds(TupleExpr alternative, List<Integer> inputGroupIds,
+			boolean opaque) {
+		List<Integer> groups = inputGroupIds == null || inputGroupIds.isEmpty() ? List.of()
+				: List.copyOf(inputGroupIds);
+		if (groups.isEmpty()) {
+			return List.of();
+		}
+		if (opaque) {
+			throw new IllegalArgumentException("Atomic physical applications cannot declare child groups");
+		}
+		int inputCount = MemoInputLayout.slots(alternative).size();
+		if (groups.size() != inputCount) {
+			throw new IllegalArgumentException("Input group count " + groups.size() + " does not match input count "
+					+ inputCount + " for " + alternative.getClass().getSimpleName());
+		}
+		if (groups.stream().anyMatch(groupId -> groupId == null || groupId < 0)) {
+			throw new IllegalArgumentException("Input group ids must be non-negative");
+		}
+		return groups;
+	}
+
+	private static List<LogicalInputRecipe> normalizeLogicalInputRecipes(TupleExpr alternative, RuleKind kind,
+			List<Integer> inputGroupIds, List<LogicalInputRecipe> logicalInputRecipes, boolean opaque) {
+		List<LogicalInputRecipe> recipes = logicalInputRecipes == null || logicalInputRecipes.isEmpty()
+				? List.of()
+				: List.copyOf(logicalInputRecipes);
+		if (recipes.isEmpty()) {
+			return List.of();
+		}
+		if (opaque || kind != RuleKind.TRANSFORMATION) {
+			throw new IllegalArgumentException("Deferred logical input recipes require a transparent transformation");
+		}
+		if (!inputGroupIds.isEmpty()) {
+			throw new IllegalArgumentException("A rule application cannot declare both input groups and input recipes");
+		}
+		int inputCount = MemoInputLayout.slots(alternative).size();
+		if (recipes.size() != inputCount) {
+			throw new IllegalArgumentException("Logical input recipe count " + recipes.size()
+					+ " does not match input count " + inputCount + " for "
+					+ alternative.getClass().getSimpleName());
+		}
+		return recipes;
+	}
+
+	private static Set<Integer> normalizeLocallyCostedInputIndexes(TupleExpr alternative, RuleKind kind,
+			Set<Integer> locallyCostedInputIndexes, boolean opaque) {
+		if (locallyCostedInputIndexes == null || locallyCostedInputIndexes.isEmpty()) {
+			return Set.of();
+		}
+		if (opaque || kind == RuleKind.TRANSFORMATION) {
+			throw new IllegalArgumentException("Only transparent physical applications may own child runtime cost");
+		}
+		int executableInputCount = (int) MemoInputLayout.slots(alternative)
+				.stream()
+				.filter(slot -> slot.use() == MemoInput.Use.EXECUTABLE)
+				.count();
+		List<Integer> ordered = locallyCostedInputIndexes.stream().sorted().toList();
+		if (ordered.stream().anyMatch(index -> index == null || index < 0 || index >= executableInputCount)) {
+			throw new IllegalArgumentException("Locally costed input indexes must identify executable inputs");
+		}
+		return Collections.unmodifiableSet(new LinkedHashSet<>(ordered));
+	}
+
 }

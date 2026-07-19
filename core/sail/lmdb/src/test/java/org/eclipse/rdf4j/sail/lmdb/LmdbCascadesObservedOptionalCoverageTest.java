@@ -54,7 +54,12 @@ class LmdbCascadesObservedOptionalCoverageTest {
 			}
 			String diagnosticPlan = diagnosticPlan(tupleExpr);
 
-			assertTrue(containsLeftJoin(tupleExpr), diagnosticPlan);
+			if ("bound optional filter".equals(rewriteCase.name())) {
+				assertFalse(containsLeftJoin(tupleExpr),
+						"A null-rejecting BOUND filter should safely turn OPTIONAL into INNER:\n" + diagnosticPlan);
+			} else {
+				assertTrue(containsLeftJoin(tupleExpr), diagnosticPlan);
+			}
 			for (String fragment : rewriteCase.eliminatedFragments()) {
 				assertTrue(diagnosticPlan.contains(fragment), diagnosticPlan);
 			}

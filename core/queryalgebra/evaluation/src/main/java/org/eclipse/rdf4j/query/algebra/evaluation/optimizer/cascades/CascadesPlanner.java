@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -29,12 +30,16 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
@@ -44,21 +49,30 @@ import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.ExhaustiveLegalJoinSearchContributor;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinEdge;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinFactor;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinFactorDescriptor;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinImplementationProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinMemoEnumerationResult;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinPredicate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinRegion;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinRegionCandidate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinRegionMemo;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinRegionRecipe;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSearchCompleteness;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSearchContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSearchDependencyStamp;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSearchRequest;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSearchService;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSearchWork;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinState;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinStateEnumerator;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinStateExpression;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinStateExpression.ApplyPredicate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinStateExpression.JoinTransition;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSubset;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.MemoJoinRegionExtractor;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.ScopedJoinSearch;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoLearnedEvidenceService;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanCandidate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanRanking;
@@ -71,11 +85,13 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 @Experimental
 public final class CascadesPlanner {
 	private static final int DEFAULT_FRONTIER_LIMIT = 16;
+	private static final int AUTO_EXPORTED_ROOT_LIMIT = 1;
 	private static final int MINOR_TASK_BUDGET_GRANULARITY = 32;
 	private static final int DEADLINE_CHECK_GRANULARITY = 64;
 	private static final double DECISION_REFINEMENT_CLOSE_RATIO = 4.0d;
 	private static final double PLAN_CHANGING_REPORT_Q_ERROR_THRESHOLD = 1.5d;
 	private static final String GENERIC_PHYSICAL_IMPLEMENTATION_RULE = "generic-physical-implementation";
+	private static final CascadesRule RESERVED_GENERIC_IMPLEMENTATION_RULE = new StandardCascadesRules.GenericImplementationRule();
 	static final String PLANNED_DECISION_SENSITIVE = "plannedCascadesDecisionSensitive";
 	static final String PLANNED_DECISION_EXACT_REFINEMENT = "plannedCascadesDecisionExactRefinement";
 	static final String PLANNED_WINNER_OBJECTIVE_GAP_RATIO = "plannedCascadesWinnerObjectiveGapRatio";
@@ -99,6 +115,7 @@ public final class CascadesPlanner {
 	private final RewriteMetadata rewriteMetadata;
 	private final JoinSearchService joinSearchService;
 	private final JoinRegionDiscovery joinRegionDiscovery;
+	private final SearchLimits fixedSearchLimits;
 
 	public CascadesPlanner(CascadesCostModel costModel, RuleRegistry ruleRegistry, CascadesTelemetry telemetry) {
 		this(costModel, ruleRegistry, telemetry, DEFAULT_FRONTIER_LIMIT);
@@ -127,13 +144,26 @@ public final class CascadesPlanner {
 
 	public CascadesPlanner(CascadesCostModel costModel, RuleRegistry ruleRegistry, CascadesTelemetry telemetry,
 			int boundedFrontierLimit, RewriteMetadata rewriteMetadata, JoinSearchService joinSearchService) {
-		this(costModel, ruleRegistry, telemetry, boundedFrontierLimit, rewriteMetadata, joinSearchService,
-				MemoJoinRegionExtractor::extractAlternatives);
+		this(costModel, ruleRegistry, telemetry, boundedFrontierLimit, rewriteMetadata, joinSearchService, null);
+	}
+
+	CascadesPlanner(CascadesCostModel costModel, RuleRegistry ruleRegistry, CascadesTelemetry telemetry,
+			SearchLimits fixedSearchLimits) {
+		this(costModel, ruleRegistry, telemetry, DEFAULT_FRONTIER_LIMIT, RewriteMetadata.empty(),
+				new JoinSearchService(List.of(new ExhaustiveLegalJoinSearchContributor())),
+				null, Objects.requireNonNull(fixedSearchLimits, "fixedSearchLimits"));
 	}
 
 	CascadesPlanner(CascadesCostModel costModel, RuleRegistry ruleRegistry, CascadesTelemetry telemetry,
 			int boundedFrontierLimit, RewriteMetadata rewriteMetadata, JoinSearchService joinSearchService,
 			JoinRegionDiscovery joinRegionDiscovery) {
+		this(costModel, ruleRegistry, telemetry, boundedFrontierLimit, rewriteMetadata, joinSearchService,
+				joinRegionDiscovery, null);
+	}
+
+	private CascadesPlanner(CascadesCostModel costModel, RuleRegistry ruleRegistry, CascadesTelemetry telemetry,
+			int boundedFrontierLimit, RewriteMetadata rewriteMetadata, JoinSearchService joinSearchService,
+			JoinRegionDiscovery joinRegionDiscovery, SearchLimits fixedSearchLimits) {
 		this.costModel = costModel;
 		this.ruleRegistry = ruleRegistry == null ? RuleRegistry.standardLogicalRules() : ruleRegistry;
 		this.telemetry = telemetry == null ? CascadesTelemetry.NO_OP : telemetry;
@@ -143,8 +173,9 @@ public final class CascadesPlanner {
 				? new JoinSearchService(List.of(new ExhaustiveLegalJoinSearchContributor()))
 				: joinSearchService;
 		this.joinRegionDiscovery = joinRegionDiscovery == null
-				? MemoJoinRegionExtractor::extractAlternatives
+				? this.joinSearchService::discoverJoinRegions
 				: joinRegionDiscovery;
+		this.fixedSearchLimits = fixedSearchLimits;
 	}
 
 	@FunctionalInterface
@@ -153,10 +184,23 @@ public final class CascadesPlanner {
 				Predicate<MemoExpr> admissibleExpression);
 	}
 
+	private static boolean exactLike(OptimizationGoal.SearchMode mode) {
+		return mode == OptimizationGoal.SearchMode.EXACT || mode == OptimizationGoal.SearchMode.SHADOW;
+	}
+
+	private static boolean timedBudgeted(OptimizationGoal.SearchMode mode) {
+		return mode == OptimizationGoal.SearchMode.BUDGETED
+				|| mode == OptimizationGoal.SearchMode.SHADOW_BUDGETED;
+	}
+
+	private static boolean boundedSearch(OptimizationGoal.SearchMode mode) {
+		return mode == OptimizationGoal.SearchMode.AUTO || timedBudgeted(mode);
+	}
+
 	public CascadesPlan optimize(TupleExpr root, OptimizationGoal goal) {
 		OptimizationGoal normalizedGoal = goal == null ? OptimizationGoal.root(root, PhysicalProperties.ANY) : goal;
 		List<String> uncontractedRuleIds = ruleRegistry.uncontractedRuleIds();
-		if (normalizedGoal.searchMode() != OptimizationGoal.SearchMode.BUDGETED
+		if (exactLike(normalizedGoal.searchMode())
 				&& !uncontractedRuleIds.isEmpty()) {
 			throw new IllegalArgumentException("Exact Cascades optimization requires a convergence contract: "
 					+ String.join(", ", uncontractedRuleIds));
@@ -165,12 +209,58 @@ public final class CascadesPlanner {
 		normalizedGoal = normalizedGoal.normalized(universe);
 		Memo memo = new Memo(costModel, universe);
 		int rootGroup = memo.intern(root);
-		SearchState state = new SearchState(normalizedGoal.taskBudget(), normalizedGoal.searchMode());
+		SearchState state = fixedSearchLimits == null
+				? new SearchState(normalizedGoal.taskBudget(), normalizedGoal.searchMode())
+				: new SearchState(normalizedGoal.searchMode(), fixedSearchLimits);
 		normalizedGoal = state.canonicalGoal(normalizedGoal);
-		enqueueMemoChanges(memo, state, normalizedGoal);
-		if (normalizedGoal.searchMode() != OptimizationGoal.SearchMode.BUDGETED) {
-			drainRuleWork(memo, normalizedGoal, state);
+		WinnerKey rootWinnerKey = state.winnerKey(normalizedGoal, rootGroup);
+		if (!timedBudgeted(normalizedGoal.searchMode())) {
+			requestGroupWork(memo, rootGroup, normalizedGoal, state, "root_goal_requested");
+			// The reservation is uncharged and remains available after either quiescence or a hard stop. Installing it
+			// before exploration would make a provisional physical winner influence join discovery and contextual goals.
+			boolean originalExecutableReservationAttempted = false;
+			boolean repeat;
+			do {
+				repeat = enqueueMemoChanges(memo, state, normalizedGoal);
+				drainRuleWork(memo, normalizedGoal, state);
+				if (!state.shouldStop(normalizedGoal) && !state.hasRuleWork() && !memo.hasPendingChanges()) {
+					if (!state.ruleWorkExhausted()) {
+						repeat |= publishNextQuiescentGoalFailure(memo, state);
+					}
+					if (!repeat && !originalExecutableReservationAttempted && !state.joinHardLimitReached()) {
+						originalExecutableReservationAttempted = true;
+						reserveOriginalExecutableWinner(memo, rootGroup, normalizedGoal, state, new HashSet<>());
+						repeat |= state.hasRuleWork() || memo.hasPendingChanges();
+					}
+				}
+				repeat |= state.hasRuleWork() || memo.hasPendingChanges();
+			} while (repeat && !state.shouldStop(normalizedGoal));
+			if (normalizedGoal.searchMode() == OptimizationGoal.SearchMode.AUTO && state.ruleWorkExhausted()) {
+				stabilizeDiscoveredAutoCosts(memo, normalizedGoal, state);
+			}
+			if (!state.shouldStop(normalizedGoal)) {
+				for (CostWork deferred : state.finalizeDeferredCostWork()) {
+					telemetry.plannerEvent("cost-finalized expression=" + deferred.key().base().expressionId()
+							+ " group=" + deferred.groupId()
+							+ " status=permanently-infeasible reason=" + deferred.wakeUpReason());
+				}
+				recordUnsupportedAtomicBoundaries(memo, rootGroup, state, normalizedGoal);
+			}
+			state.resetOriginalExecutableReservations();
+			reserveOriginalExecutableWinner(memo, rootGroup, normalizedGoal, state, new HashSet<>());
+			state.capturePendingExpressionWork();
+			Winner queuedWinner = memo.bestWinner(rootWinnerKey)
+					.or(() -> state.originalExecutableFallback(rootWinnerKey))
+					.orElse(null);
+			if (queuedWinner != null) {
+				queuedWinner = state.withCurrentRejections(queuedWinner, normalizedGoal);
+				queuedWinner = SelectedPlanMaterializer.extract(costModel, queuedWinner);
+				telemetry.winnerChosen(state.winnerKey(normalizedGoal, rootGroup), queuedWinner);
+			}
+			return new CascadesPlan(memo, rootGroup, normalizedGoal, Optional.ofNullable(queuedWinner),
+					state.searchStatus(queuedWinner), state.pendingTasks(), state.diagnostics());
 		}
+		enqueueMemoChanges(memo, state, normalizedGoal);
 		Winner winner = null;
 		boolean repeat;
 		do {
@@ -189,6 +279,8 @@ public final class CascadesPlanner {
 			}
 			recordUnsupportedAtomicBoundaries(memo, rootGroup, state, normalizedGoal);
 		}
+		state.resetOriginalExecutableReservations();
+		reserveOriginalExecutableWinner(memo, rootGroup, normalizedGoal, state, new HashSet<>());
 		winner = memo.bestWinner(state.winnerKey(normalizedGoal, rootGroup)).orElse(null);
 		if (winner != null) {
 			winner = state.withCurrentRejections(winner, normalizedGoal);
@@ -199,7 +291,189 @@ public final class CascadesPlanner {
 			telemetry.winnerChosen(state.winnerKey(normalizedGoal, rootGroup), winner);
 		}
 		return new CascadesPlan(memo, rootGroup, normalizedGoal, Optional.ofNullable(winner),
-				state.completeness(winner), state.pendingTasks(), diagnostics);
+				state.searchStatus(winner), state.pendingTasks(), diagnostics);
+	}
+
+	private void stabilizeDiscoveredAutoCosts(Memo memo, OptimizationGoal goal, SearchState state) {
+		// RULE_WORK bounds exploration. Once it fires, AUTO must still choose among physical alternatives that were
+		// already admitted; otherwise fair-lane position, rather than CostOrdering, decides the bounded winner.
+		state.beginCostOnlyStabilization();
+		try {
+			enqueueMemoChanges(memo, state, goal);
+			enqueueUncostedPhysicalApplications(memo, state);
+			while (state.hasCostWork() || memo.hasPendingChanges()) {
+				if (state.hasCostWork()) {
+					drainCostWork(memo, state);
+				}
+				enqueueMemoChanges(memo, state, goal);
+			}
+		} finally {
+			state.endCostOnlyStabilization();
+		}
+	}
+
+	private void enqueueUncostedPhysicalApplications(Memo memo, SearchState state) {
+		for (MemoGroup group : memo.groups()) {
+			if (group.executionDomain() != MemoExecutionDomain.LOCAL) {
+				continue;
+			}
+			for (OptimizationGoal groupGoal : state.requestedGroupGoals(group.id())) {
+				WinnerKey winnerKey = state.winnerKey(groupGoal, group.id());
+				Set<Integer> costedExpressionIds = memo.winners(winnerKey)
+						.stream()
+						.map(winner -> winner.expression().id())
+						.collect(Collectors.toSet());
+				for (MemoExpr expression : group.expressions()) {
+					if (expression.physical()
+							&& !costedExpressionIds.contains(expression.id())
+							&& state.physicalApplicationRegistered(expression, groupGoal)) {
+						state.enqueueCostWork(memo, expression, groupGoal, "auto_final_physical_stabilization");
+					}
+				}
+			}
+		}
+	}
+
+	private boolean publishNextQuiescentGoalFailure(Memo memo, SearchState state) {
+		for (MemoGroup group : memo.groups()) {
+			if (group.executionDomain() != MemoExecutionDomain.LOCAL) {
+				continue;
+			}
+			for (OptimizationGoal goal : state.requestedGroupGoals(group.id())) {
+				WinnerKey key = state.winnerKey(goal, group.id());
+				if (memo.bestWinner(key).isPresent()
+						|| memo.hasFailure(key)
+						|| state.hasPendingJoinWork(key)) {
+					continue;
+				}
+				memo.recordFailure(key);
+				state.wakeDeferredCostWork(memo, group.id(), state.statisticsEpoch(), "group_goal_exhausted");
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Establishes one executable plan for the imported topology before exploratory work is charged. Only one
+	 * implementation rule is selected per original logical expression; no transformation or join enumeration runs on
+	 * this path.
+	 */
+	private Optional<Winner> reserveOriginalExecutableWinner(Memo memo, int groupId, OptimizationGoal goal,
+			SearchState state, Set<WinnerKey> activeGoals) {
+		OptimizationGoal canonicalGoal = state.canonicalGoal(goal);
+		WinnerKey winnerKey = state.winnerKey(canonicalGoal, groupId);
+		Optional<Winner> existing = memo.bestWinner(winnerKey);
+		if ((existing.isPresent() && state.originalExecutableReserved(memo, winnerKey))
+				|| !activeGoals.add(winnerKey)) {
+			return existing;
+		}
+		try {
+			MemoExpr logical = memo.group(groupId)
+					.expressions()
+					.stream()
+					.filter(MemoExpr::logical)
+					.filter(expression -> memo.isAdmissible(expression, canonicalGoal))
+					.min(java.util.Comparator.comparingInt(MemoExpr::id))
+					.orElse(null);
+			if (logical == null) {
+				return Optional.empty();
+			}
+			if (existing.isPresent()
+					&& !genericPhysicalImplementation(existing.orElseThrow().expression())) {
+				// Any specialized executable winner already satisfies the fallback contract, including a specialized
+				// implementation of the original logical expression. Preserve it while a generic wrapper above is
+				// refreshed against the current child frontier.
+				return existing;
+			}
+			CascadesRule selectedRule = implementationSeedRules(logical, canonicalGoal, memo).stream()
+					.filter(this::genericImplementationRule)
+					.findFirst()
+					.orElse(null);
+			if (selectedRule == null
+					&& boundedSearch(canonicalGoal.searchMode())
+					&& RESERVED_GENERIC_IMPLEMENTATION_RULE.matches(logical, canonicalGoal, memo)) {
+				selectedRule = RESERVED_GENERIC_IMPLEMENTATION_RULE;
+			}
+			if (selectedRule == null) {
+				reserveOriginalLogicalInputs(memo, logical, canonicalGoal, state, activeGoals);
+				return Optional.empty();
+			}
+
+			RuleContext context = new RuleContext(memo, costModel, telemetry, state, rewriteMetadata);
+			applyRule(memo, logical, selectedRule, canonicalGoal, context, state, false, false);
+			List<MemoExpr> physicalCandidates = memo.group(groupId)
+					.expressions()
+					.stream()
+					.filter(expression -> originalGenericImplementation(memo, logical, expression))
+					.sorted(java.util.Comparator.comparingInt(MemoExpr::id))
+					.toList();
+			for (MemoExpr physical : physicalCandidates) {
+				List<OptimizationGoal> childGoals = inputGoals(memo, physical, canonicalGoal);
+				List<MemoInput> inputs = physical.executableInputs();
+				if (inputs.size() != childGoals.size()) {
+					continue;
+				}
+				DependentInputLayout dependentLayout = hasSelectedPrefixDependentInput(physical)
+						? new DependentInputLayout(memo, physical, canonicalGoal, state)
+						: null;
+				DependentPrefixPath dependentPrefix = dependentLayout == null ? null : dependentLayout.rootPrefix();
+				List<Winner> childWinners = new ArrayList<>(inputs.size());
+				boolean executable = true;
+				for (int inputIndex = 0; inputIndex < inputs.size(); inputIndex++) {
+					OptimizationGoal childGoal = dependentPrefix == null
+							? childGoals.get(inputIndex)
+							: dependentPrefix.target().goal();
+					Optional<Winner> child = reserveOriginalExecutableWinner(memo, inputs.get(inputIndex).groupId(),
+							childGoal, state, activeGoals);
+					if (child.isEmpty()) {
+						executable = false;
+						break;
+					}
+					Winner childWinner = child.get();
+					childWinners.add(childWinner);
+					if (dependentLayout != null && inputIndex + 1 < inputs.size()) {
+						dependentPrefix = dependentLayout.extend(dependentPrefix, childWinner);
+					}
+				}
+				if (!executable) {
+					continue;
+				}
+				Optional<Winner> reserved = optimizeExpressionWithInputs(memo, physical, canonicalGoal, state, false,
+						List.copyOf(childWinners), false);
+				if (reserved.isPresent()) {
+					state.recordOriginalExecutableReservation(memo, winnerKey);
+					return memo.bestWinner(winnerKey);
+				}
+			}
+			return memo.bestWinner(winnerKey);
+		} finally {
+			activeGoals.remove(winnerKey);
+		}
+	}
+
+	private void reserveOriginalLogicalInputs(Memo memo, MemoExpr logical, OptimizationGoal goal, SearchState state,
+			Set<WinnerKey> activeGoals) {
+		List<MemoInput> inputs = logical.executableInputs();
+		List<OptimizationGoal> childGoals = inputGoals(memo, logical, goal);
+		if (inputs.size() != childGoals.size()) {
+			return;
+		}
+		for (int inputIndex = 0; inputIndex < inputs.size(); inputIndex++) {
+			reserveOriginalExecutableWinner(memo, inputs.get(inputIndex).groupId(), childGoals.get(inputIndex), state,
+					activeGoals);
+		}
+	}
+
+	private boolean originalGenericImplementation(Memo memo, MemoExpr logical, MemoExpr physical) {
+		return originalExecutableImplementation(memo, logical, physical)
+				&& genericPhysicalImplementation(physical);
+	}
+
+	private boolean originalExecutableImplementation(Memo memo, MemoExpr logical, MemoExpr physical) {
+		return physical.physical()
+				&& physical.inputGroupIds().equals(logical.inputGroupIds())
+				&& memo.isPhysicalImplementationOf(physical, logical);
 	}
 
 	private void recordUnsupportedAtomicBoundaries(Memo memo, int rootGroupId, SearchState state,
@@ -248,7 +522,21 @@ public final class CascadesPlanner {
 		}
 	}
 
+	private static List<OptimizationGoal> activeGroupGoals(SearchState state, int groupId,
+			OptimizationGoal fallbackGoal) {
+		List<OptimizationGoal> requested = state.requestedGroupGoals(groupId);
+		if (!requested.isEmpty()) {
+			return requested;
+		}
+		return fallbackGoal != null && timedBudgeted(fallbackGoal.searchMode())
+				? List.of(state.canonicalGoal(fallbackGoal))
+				: List.of();
+	}
+
 	private boolean enqueueMemoChanges(Memo memo, SearchState state, OptimizationGoal goal) {
+		if (state.costOnlyStabilization()) {
+			return enqueueCostOnlyMemoChanges(memo, state, goal);
+		}
 		long statisticsEpoch = Math.max(0L, costModel.statisticsEpoch());
 		boolean statisticsChanged = state.observeStatisticsEpoch(statisticsEpoch);
 		LinkedHashMap<Integer, MemoChangeBatch> batches = new LinkedHashMap<>();
@@ -263,15 +551,22 @@ public final class CascadesPlanner {
 			}
 			MemoChangeBatch batch = entry.getValue();
 			String reason = batch.wakeUpReason();
+			List<OptimizationGoal> groupGoals = activeGroupGoals(state, group.id(), goal);
 			if (batch.requiresWholeGroup()) {
 				for (MemoExpr expression : group.expressions()) {
 					Set<RuleWakeUpEvent> events = batch.eventsFor(expression.id());
-					if (ruleRegistry.hasCandidateRules(expression, events, batch.changedFacts())) {
-						state.enqueueRuleWork(expression, ruleRevision(group, statisticsEpoch), events,
-								batch.changedFacts(), reason);
-					}
-					if (batch.wakesJoinSearch(expression.id())) {
-						enqueueJoinDiscovery(memo, state, goal, expression, reason, statisticsEpoch);
+					for (OptimizationGoal groupGoal : groupGoals) {
+						if (expression.physical() && wakesPhysicalCost(events)
+								&& state.physicalApplicationRegistered(expression, groupGoal)) {
+							state.enqueueCostWork(memo, expression, groupGoal, reason);
+						}
+						if (ruleRegistry.hasCandidateRules(expression, events, batch.changedFacts())) {
+							state.enqueueRuleWork(expression, groupGoal, ruleRevision(group, statisticsEpoch), events,
+									batch.changedFacts(), reason);
+						}
+						if (batch.wakesJoinSearch(expression.id())) {
+							enqueueJoinDiscovery(memo, state, groupGoal, expression, reason, statisticsEpoch);
+						}
 					}
 				}
 				continue;
@@ -279,12 +574,18 @@ public final class CascadesPlanner {
 			for (Integer expressionId : batch.expressionIds()) {
 				MemoExpr expression = memo.expression(expressionId);
 				Set<RuleWakeUpEvent> events = batch.eventsFor(expressionId);
-				if (ruleRegistry.hasCandidateRules(expression, events, batch.changedFacts())) {
-					state.enqueueRuleWork(expression, ruleRevision(group, statisticsEpoch), events,
-							batch.changedFacts(), reason);
-				}
-				if (batch.wakesJoinSearch(expressionId)) {
-					enqueueJoinDiscovery(memo, state, goal, expression, reason, statisticsEpoch);
+				for (OptimizationGoal groupGoal : groupGoals) {
+					if (expression.physical() && wakesPhysicalCost(events)
+							&& state.physicalApplicationRegistered(expression, groupGoal)) {
+						state.enqueueCostWork(memo, expression, groupGoal, reason);
+					}
+					if (ruleRegistry.hasCandidateRules(expression, events, batch.changedFacts())) {
+						state.enqueueRuleWork(expression, groupGoal, ruleRevision(group, statisticsEpoch), events,
+								batch.changedFacts(), reason);
+					}
+					if (batch.wakesJoinSearch(expressionId)) {
+						enqueueJoinDiscovery(memo, state, groupGoal, expression, reason, statisticsEpoch);
+					}
 				}
 			}
 		}
@@ -294,10 +595,16 @@ public final class CascadesPlanner {
 					continue;
 				}
 				RuleDependencyRevision revision = ruleRevision(group, statisticsEpoch);
-				for (MemoExpr expression : group.expressions()) {
-					state.enqueueRuleWork(expression, revision, Set.of(RuleWakeUpEvent.STATISTICS_CHANGED),
-							Set.of(), "statistics_changed");
-					enqueueJoinDiscovery(memo, state, goal, expression, "statistics_changed", statisticsEpoch);
+				for (OptimizationGoal groupGoal : activeGroupGoals(state, group.id(), goal)) {
+					for (MemoExpr expression : group.expressions()) {
+						if (expression.physical() && state.physicalApplicationRegistered(expression, groupGoal)) {
+							state.enqueueCostWork(memo, expression, groupGoal, "statistics_changed");
+						}
+						state.enqueueRuleWork(expression, groupGoal, revision,
+								Set.of(RuleWakeUpEvent.STATISTICS_CHANGED), Set.of(), "statistics_changed");
+						enqueueJoinDiscovery(memo, state, groupGoal, expression, "statistics_changed",
+								statisticsEpoch);
+					}
 				}
 			}
 		}
@@ -311,8 +618,21 @@ public final class CascadesPlanner {
 				state.wakeDeferredCostWork(memo, entry.getKey(), statisticsEpoch, reason);
 			}
 			if (batch.wakesJoinSubscriptions()) {
-				for (Integer sourceExpressionId : state.subscribedJoinSourceExpressions(entry.getKey())) {
-					enqueueJoinDiscovery(memo, state, goal, memo.expression(sourceExpressionId), reason,
+				for (JoinWork subscribedWork : state.subscribedJoinWork(entry.getKey())) {
+					MemoExpr sourceExpression = memo.expression(subscribedWork.sourceExpressionId());
+					enqueueJoinDiscovery(memo, state, subscribedWork.goal(), sourceExpression, reason, statisticsEpoch);
+				}
+			}
+			if (batch.wakesJoinWinnerSubscriptions()) {
+				state.wakeDeferredJoinWinnerWork(memo, entry.getKey());
+				for (JoinWork subscribedWork : state.subscribedJoinWinnerWork(entry.getKey())) {
+					JoinSearchDependencyStamp currentStamp = joinDependencyStamp(memo,
+							subscribedWork.extraction(), state, subscribedWork.goal());
+					if (currentStamp.equals(subscribedWork.key().dependencyStamp())) {
+						continue;
+					}
+					MemoExpr sourceExpression = memo.expression(subscribedWork.sourceExpressionId());
+					enqueueJoinDiscovery(memo, state, subscribedWork.goal(), sourceExpression, reason,
 							statisticsEpoch);
 				}
 			}
@@ -326,43 +646,163 @@ public final class CascadesPlanner {
 		return statisticsChanged || !batches.isEmpty();
 	}
 
+	private boolean enqueueCostOnlyMemoChanges(Memo memo, SearchState state, OptimizationGoal goal) {
+		long statisticsEpoch = Math.max(0L, costModel.statisticsEpoch());
+		boolean statisticsChanged = state.observeStatisticsEpoch(statisticsEpoch);
+		LinkedHashMap<Integer, MemoChangeBatch> batches = new LinkedHashMap<>();
+		while (memo.hasPendingChanges()) {
+			MemoChange change = memo.pollChange().orElseThrow();
+			batches.computeIfAbsent(change.groupId(), ignored -> new MemoChangeBatch()).add(change);
+		}
+		for (Map.Entry<Integer, MemoChangeBatch> entry : batches.entrySet()) {
+			MemoGroup group = memo.group(entry.getKey());
+			if (group.executionDomain() != MemoExecutionDomain.LOCAL) {
+				continue;
+			}
+			MemoChangeBatch batch = entry.getValue();
+			String reason = batch.wakeUpReason();
+			List<OptimizationGoal> groupGoals = activeGroupGoals(state, group.id(), goal);
+			if (batch.requiresWholeGroup()) {
+				for (MemoExpr expression : group.expressions()) {
+					Set<RuleWakeUpEvent> events = batch.eventsFor(expression.id());
+					for (OptimizationGoal groupGoal : groupGoals) {
+						if (expression.physical() && wakesPhysicalCost(events)
+								&& state.physicalApplicationRegistered(expression, groupGoal)) {
+							state.enqueueCostWork(memo, expression, groupGoal, reason);
+						}
+					}
+				}
+			} else {
+				for (Integer expressionId : batch.expressionIds()) {
+					MemoExpr expression = memo.expression(expressionId);
+					Set<RuleWakeUpEvent> events = batch.eventsFor(expressionId);
+					for (OptimizationGoal groupGoal : groupGoals) {
+						if (expression.physical() && wakesPhysicalCost(events)
+								&& state.physicalApplicationRegistered(expression, groupGoal)) {
+							state.enqueueCostWork(memo, expression, groupGoal, reason);
+						}
+					}
+				}
+			}
+			if (batch.wakesDependentWork()) {
+				state.wakeDeferredCostWork(memo, group.id(), statisticsEpoch, reason);
+			}
+		}
+		if (statisticsChanged) {
+			for (MemoGroup group : memo.groups()) {
+				if (group.executionDomain() != MemoExecutionDomain.LOCAL) {
+					continue;
+				}
+				for (OptimizationGoal groupGoal : activeGroupGoals(state, group.id(), goal)) {
+					for (MemoExpr expression : group.expressions()) {
+						if (expression.physical()
+								&& state.physicalApplicationRegistered(expression, groupGoal)) {
+							state.enqueueCostWork(memo, expression, groupGoal, "statistics_changed");
+						}
+					}
+				}
+			}
+			state.wakeAllDeferredCostWork(memo, statisticsEpoch, "statistics_changed");
+		}
+		return statisticsChanged || !batches.isEmpty();
+	}
+
+	private static boolean wakesPhysicalCost(Set<RuleWakeUpEvent> events) {
+		return events.contains(RuleWakeUpEvent.PHYSICAL_EXPRESSION_ADDED)
+				|| events.contains(RuleWakeUpEvent.CHILD_EXPRESSION_CHANGED)
+				|| events.contains(RuleWakeUpEvent.CHILD_WINNER_CHANGED)
+				|| events.contains(RuleWakeUpEvent.LOGICAL_FACT_CHANGED)
+				|| events.contains(RuleWakeUpEvent.ESTIMATE_CHANGED)
+				|| events.contains(RuleWakeUpEvent.STATISTICS_CHANGED);
+	}
+
+	private void requestGroupWork(Memo memo, int groupId, OptimizationGoal goal, SearchState state,
+			String wakeUpReason) {
+		OptimizationGoal canonicalGoal = state.canonicalGoal(goal);
+		if (!state.requestGroupGoal(groupId, canonicalGoal)) {
+			return;
+		}
+		MemoGroup group = memo.group(groupId);
+		if (group.executionDomain() != MemoExecutionDomain.LOCAL) {
+			return;
+		}
+		RuleDependencyRevision revision = ruleRevision(group, state.statisticsEpoch());
+		Set<RuleWakeUpEvent> events = Set.of(RuleWakeUpEvent.LOGICAL_EXPRESSION_ADDED,
+				RuleWakeUpEvent.REQUIRED_PROPERTIES_CHANGED);
+		String reason = wakeUpReason == null || wakeUpReason.isBlank() ? "group_goal_requested" : wakeUpReason;
+		for (MemoExpr expression : group.expressions()) {
+			if (state.costOnlyStabilization()) {
+				if (expression.physical() && state.physicalApplicationRegistered(expression, canonicalGoal)) {
+					state.enqueueCostWork(memo, expression, canonicalGoal, reason);
+				}
+				continue;
+			}
+			if (expression.logical()) {
+				if (ruleRegistry.hasCandidateRules(expression, events, Set.of())) {
+					state.enqueueRequestedGroupRuleWork(expression, canonicalGoal, revision, events, Set.of(), reason);
+				}
+				enqueueJoinDiscovery(memo, state, canonicalGoal, expression, reason, state.statisticsEpoch());
+			} else if (expression.physical() && state.physicalApplicationRegistered(expression, canonicalGoal)) {
+				state.enqueueCostWork(memo, expression, canonicalGoal, reason);
+			}
+		}
+	}
+
 	private void drainRuleWork(Memo memo, OptimizationGoal goal, SearchState state) {
 		while (state.hasRuleWork() && !state.shouldStop(goal)) {
-			if (state.hasCostWork()) {
+			WorkLane lane = state.pollWorkLane();
+			if (lane == null) {
+				break;
+			}
+			if (lane == WorkLane.COST) {
 				drainCostWork(memo, state);
 				enqueueMemoChanges(memo, state, goal);
 				continue;
 			}
-			if (!state.hasExploreWork() && state.hasJoinDiscoveryWork()) {
-				drainJoinDiscovery(memo, goal, state);
+			if (lane == WorkLane.JOIN_DISCOVERY) {
+				drainJoinDiscovery(memo, state);
 				continue;
 			}
-			if (!state.hasExploreWork() && state.hasJoinWork()) {
-				drainJoinWork(memo, goal, state);
+			if (lane == WorkLane.JOIN) {
+				drainJoinWork(memo, state);
 				continue;
 			}
-			ExpressionWork work = state.pollExpressionWork();
-			MemoExpr expression = memo.expression(work.expressionId());
-			if (!memo.isAdmissible(expression, goal)) {
-				state.markRulePass(work.kind(), expression, goal);
-				continue;
-			}
-			RuleContext context = new RuleContext(memo, costModel, telemetry, state, rewriteMetadata);
-			for (CascadesRule rule : ruleRegistry.applicableRules(expression, goal, memo, work.wakeUpEvents(),
-					work.changedFacts(), ruleKinds(work.kind()), telemetry)) {
-				applyRule(memo, expression, rule, goal, context, state);
-				enqueueMemoChanges(memo, state, goal);
-				if (state.shouldStop(goal)) {
-					break;
-				}
-			}
-			if (!state.shouldStop(goal)) {
-				state.markRulePass(work.kind(), expression, goal);
-			}
+			drainExpressionRuleWork(memo, goal, state, lane);
 		}
 		if (state.shouldStop(goal)) {
 			state.capturePendingRuleWork();
 		}
+	}
+
+	private void drainExpressionRuleWork(Memo memo, OptimizationGoal goal, SearchState state, WorkLane lane) {
+		ExpressionWork work = state.pollExpressionWork(lane);
+		OptimizationGoal workGoal = work.goal();
+		MemoExpr expression = memo.expression(work.expressionId());
+		if (!memo.isAdmissible(expression, workGoal)) {
+			state.markRulePass(work.kind(), expression, workGoal);
+			return;
+		}
+		List<CascadesRule> applicable = work.ruleAgenda();
+		if (applicable == null) {
+			applicable = ruleRegistry.applicableRules(expression, workGoal, memo, work.wakeUpEvents(),
+					work.changedFacts(), ruleKinds(work.kind()), telemetry);
+		}
+		if (applicable.isEmpty()) {
+			state.markRulePass(work.kind(), expression, workGoal);
+			return;
+		}
+
+		CascadesRule rule = applicable.getFirst();
+		RuleContext context = new RuleContext(memo, costModel, telemetry, state, rewriteMetadata);
+		applyRule(memo, expression, rule, workGoal, context, state);
+		if (state.shouldStop(workGoal) || state.ruleWorkExhausted()) {
+			state.requeueRuleWork(work.withRuleAgenda(applicable));
+		} else if (applicable.size() > 1) {
+			state.requeueRuleWork(work.withRuleAgenda(applicable.subList(1, applicable.size())));
+		} else {
+			state.markRulePass(work.kind(), expression, workGoal);
+		}
+		enqueueMemoChanges(memo, state, workGoal);
 	}
 
 	private void drainCostWork(Memo memo, SearchState state) {
@@ -370,8 +810,26 @@ public final class CascadesPlanner {
 		if (work == null) {
 			return;
 		}
+		OptimizationGoal workGoal = work.key().base().goal();
 		MemoExpr expression = memo.expression(work.key().base().expressionId());
-		optimizeExpression(memo, expression, work.key().base().goal(), state);
+		if (!state.physicalApplicationRegistered(expression, workGoal)) {
+			state.resolveDeferredCostWork(expression, workGoal);
+			return;
+		}
+		if (timedBudgeted(workGoal.searchMode())
+				&& genericPhysicalImplementation(expression)
+				&& memo.winners(state.winnerKey(workGoal, expression.groupId()))
+						.stream()
+						.anyMatch(this::seededNativeWinner)) {
+			state.resolveDeferredCostWork(expression, workGoal);
+			return;
+		}
+		state.beginScheduledCostWork(expression.id());
+		try {
+			optimizeExpression(memo, expression, workGoal, state, false);
+		} finally {
+			state.endScheduledCostWork(expression.id());
+		}
 	}
 
 	private static Set<RuleKind> ruleKinds(PendingOptimizationTask.Kind workKind) {
@@ -384,28 +842,36 @@ public final class CascadesPlanner {
 	private void enqueueJoinDiscovery(Memo memo, SearchState state, OptimizationGoal goal, MemoExpr expression,
 			String wakeUpReason, long statisticsEpoch) {
 		if (expression == null || !expression.logical()
+				|| !joinReorderingAllowed(goal)
 				|| !memo.isAdmissible(expression, goal)
 				|| memo.executionDomain(expression.groupId()) != MemoExecutionDomain.LOCAL
-				|| !reorderableJoinRoot(expression.tupleExpr())) {
+				|| !reorderableJoinRoot(memo, expression)
+				|| coveredByMaximalInnerJoinParent(memo, expression, goal)) {
 			return;
 		}
 		if (memo.isJoinRouteOnly(expression)) {
 			return;
 		}
 		OptimizationGoal canonicalGoal = state.canonicalGoal(goal);
-		JoinDiscoveryKey key = new JoinDiscoveryKey(expression.groupId(), expression.id(), canonicalGoal);
-		state.enqueueJoinDiscovery(new JoinDiscoveryWork(key, Math.max(0L, statisticsEpoch),
+		MemoLogicalRouteKey routeKey = MemoLogicalRouteKey.of(memo.logicalKey(expression), expression);
+		JoinDiscoveryKey key = new JoinDiscoveryKey(expression.groupId(), routeKey, canonicalGoal);
+		state.enqueueJoinDiscovery(new JoinDiscoveryWork(key, expression.id(), Math.max(0L, statisticsEpoch),
 				wakeUpReason == null || wakeUpReason.isBlank() ? "memo_change" : wakeUpReason));
 	}
 
-	private void drainJoinDiscovery(Memo memo, OptimizationGoal goal, SearchState state) {
+	private void drainJoinDiscovery(Memo memo, SearchState state) {
 		JoinDiscoveryWork work = state.pollJoinDiscovery();
-		MemoExpr sourceExpression = memo.expression(work.key().sourceExpressionId());
+		MemoExpr sourceExpression = memo.expression(work.sourceExpressionId());
 		if (!sourceExpression.logical()
+				|| !work.key()
+						.routeKey()
+						.equals(MemoLogicalRouteKey.of(memo.logicalKey(sourceExpression), sourceExpression))
+				|| !joinReorderingAllowed(work.key().goal())
 				|| memo.isJoinRouteOnly(sourceExpression)
 				|| !memo.isAdmissible(sourceExpression, work.key().goal())
 				|| memo.executionDomain(sourceExpression.groupId()) != MemoExecutionDomain.LOCAL
-				|| !reorderableJoinRoot(sourceExpression.tupleExpr())) {
+				|| !reorderableJoinRoot(memo, sourceExpression)
+				|| coveredByMaximalInnerJoinParent(memo, sourceExpression, work.key().goal())) {
 			state.completeJoinDiscovery(work.key());
 			return;
 		}
@@ -416,7 +882,8 @@ public final class CascadesPlanner {
 			extractions = snapshot.extractions();
 			state.recordJoinDiscoveryCacheHit();
 		} else {
-			if (!state.consumeMajor("discoverJoin:" + work.key().rootGroupId())) {
+			if (timedBudgeted(work.key().goal().searchMode())
+					&& !state.consumeMajor("discoverJoin:" + work.key().rootGroupId())) {
 				state.markJoinDiscoveryPending(work, "task budget exhausted before join-region discovery");
 				return;
 			}
@@ -426,57 +893,139 @@ public final class CascadesPlanner {
 		}
 		state.completeJoinDiscovery(work.key());
 		enqueueJoinExtractions(memo, state, work.key().goal(), sourceExpression, work.wakeUpReason(),
-				Math.max(work.statisticsEpoch(), Math.max(0L, costModel.statisticsEpoch())), extractions);
+				Math.max(work.statisticsEpoch(), Math.max(0L, costModel.statisticsEpoch())), work.key(), extractions);
 	}
 
 	private void enqueueJoinExtractions(Memo memo, SearchState state, OptimizationGoal goal,
 			MemoExpr expression, String wakeUpReason, long statisticsEpoch,
+			JoinDiscoveryKey discoveryKey,
 			List<MemoJoinRegionExtractor.Result> extractions) {
 		List<MemoJoinRegionExtractor.Result> supportedExtractions = extractions.stream()
 				.filter(MemoJoinRegionExtractor.Result::supported)
 				.toList();
 		if (supportedExtractions.isEmpty()) {
-			if (!extractions.isEmpty()) {
-				state.recordUnsupportedJoinBoundary(expression, extractions.getFirst(), wakeUpReason);
+			MemoJoinRegionExtractor.Result declined = extractions.isEmpty() ? null : extractions.getFirst();
+			if (declined != null && declined.completenessBlocking()) {
+				state.recordUnsupportedJoinBoundary(discoveryKey, expression, declined, wakeUpReason);
 			}
 			return;
 		}
+		state.recordSupportedJoinRoute(discoveryKey);
 		for (MemoJoinRegionExtractor.Result extraction : supportedExtractions) {
-			JoinSearchDependencyStamp dependencyStamp = joinDependencyStamp(memo, extraction);
+			JoinSearchDependencyStamp dependencyStamp = joinDependencyStamp(memo, extraction, state, goal);
 			JoinWorkKey key = new JoinWorkKey(expression.groupId(), extraction.identity(),
 					state.winnerKey(goal, expression.groupId()), statisticsEpoch, dependencyStamp);
-			state.enqueueJoinWork(new JoinWork(key, expression.id(), extraction,
+			state.enqueueJoinWork(new JoinWork(key, expression.id(), JoinRouteScope.of(expression), extraction,
+					state.canonicalGoal(goal),
 					wakeUpReason == null || wakeUpReason.isBlank() ? "memo_change" : wakeUpReason));
 		}
 	}
 
-	private static boolean reorderableJoinRoot(TupleExpr tupleExpr) {
-		return (tupleExpr instanceof Join join && !TupleExprs.isVariableScopeChange(join))
-				|| (tupleExpr instanceof Filter filter
-						&& filter.getArg() instanceof Join
-						&& !TupleExprs.isVariableScopeChange(filter));
+	private static boolean joinReorderingAllowed(OptimizationGoal goal) {
+		return goal == null || goal.requiredProperties()
+				.observationOrder() != PhysicalProperties.ObservationOrder.EXACT_SEQUENCE;
 	}
 
-	private void drainJoinWork(Memo memo, OptimizationGoal goal, SearchState state) {
+	private static boolean reorderableJoinRoot(Memo memo, MemoExpr expression) {
+		TupleExpr tupleExpr = expression.tupleExpr();
+		return (tupleExpr instanceof Join join && !TupleExprs.isVariableScopeChange(join))
+				|| (tupleExpr instanceof LeftJoin leftJoin && !TupleExprs.isVariableScopeChange(leftJoin))
+				|| (tupleExpr instanceof Difference difference && !TupleExprs.isVariableScopeChange(difference))
+				|| (tupleExpr instanceof Filter filter
+						&& filter.getArg() instanceof Join
+						&& !TupleExprs.isVariableScopeChange(filter))
+				|| typedScalarJoinRoot(memo, expression);
+	}
+
+	private static boolean coveredByMaximalInnerJoinParent(Memo memo, MemoExpr expression, OptimizationGoal goal) {
+		if (!(expression.tupleExpr() instanceof Join join) || TupleExprs.isVariableScopeChange(join)) {
+			return false;
+		}
+		List<MemoExpr> executableLogicalParents = memo.parentExpressions(expression.groupId())
+				.stream()
+				.filter(MemoExpr::logical)
+				.filter(parent -> !memo.isJoinRouteOnly(parent))
+				.filter(parent -> parent.inputs()
+						.stream()
+						.anyMatch(input -> input.groupId() == expression.groupId()
+								&& input.use() == MemoInput.Use.EXECUTABLE))
+				.toList();
+		return !executableLogicalParents.isEmpty()
+				&& executableLogicalParents.stream()
+						.allMatch(parent -> parent.groupId() != expression.groupId()
+								&& parent.tupleExpr() instanceof Join parentJoin
+								&& !TupleExprs.isVariableScopeChange(parentJoin)
+								&& memo.executionDomain(parent.groupId()) == MemoExecutionDomain.LOCAL
+								&& memo.isAdmissible(parent, goal)
+								&& parent.inputs()
+										.stream()
+										.anyMatch(input -> input.groupId() == expression.groupId()
+												&& input.use() == MemoInput.Use.EXECUTABLE
+												&& !input.semanticBarrier()
+												&& (input.role() == MemoInput.Role.LEFT
+														|| input.role() == MemoInput.Role.RIGHT)));
+	}
+
+	private static boolean typedScalarJoinRoot(Memo memo, MemoExpr expression) {
+		if (!(expression.tupleExpr() instanceof Filter)
+				|| memo.logicalKey(expression)
+						.operatorKey()
+						.explicitScopeChange() == LogicalOperatorKey.ExplicitScopeChange.NEW_SCOPE
+				|| !(memo.logicalKey(expression)
+						.operatorKey()
+						.attributes()instanceof LogicalOperatorKey.ConditionAttributes attributes)) {
+			return false;
+		}
+		return containsScalarExists(attributes.condition());
+	}
+
+	private static boolean containsScalarExists(LogicalOperatorKey.ScalarKey scalar) {
+		if (scalar instanceof LogicalOperatorKey.ScalarExists) {
+			return true;
+		}
+		if (scalar instanceof LogicalOperatorKey.ScalarBinary binary) {
+			return containsScalarExists(binary.left()) || containsScalarExists(binary.right());
+		}
+		if (scalar instanceof LogicalOperatorKey.ScalarUnary unary) {
+			return containsScalarExists(unary.argument());
+		}
+		if (scalar instanceof LogicalOperatorKey.ScalarIn in) {
+			return containsScalarExists(in.value())
+					|| in.candidates().stream().anyMatch(CascadesPlanner::containsScalarExists);
+		}
+		if (scalar instanceof LogicalOperatorKey.ScalarFunction function) {
+			return function.arguments().stream().anyMatch(CascadesPlanner::containsScalarExists);
+		}
+		return false;
+	}
+
+	private void drainJoinWork(Memo memo, SearchState state) {
 		JoinWork work = state.pollJoinWork();
+		OptimizationGoal goal = work.goal();
 		MemoExpr sourceExpression = memo.expression(work.sourceExpressionId());
+		MemoJoinRegionExtractor.Result current = work.extraction();
+		if (scopedRegionSupported(current.region())) {
+			if (ensureScopedFactorWinners(memo, state, goal, current, work)) {
+				enqueueMemoChanges(memo, state, goal);
+				return;
+			}
+		}
 		JoinWorkKey currentKey = new JoinWorkKey(work.key().rootGroupId(), work.extraction().identity(),
 				state.winnerKey(goal, work.key().rootGroupId()), Math.max(0L, costModel.statisticsEpoch()),
-				joinDependencyStamp(memo, work.extraction()));
+				joinDependencyStamp(memo, work.extraction(), state, goal));
 		if (!currentKey.equals(work.key())) {
 			enqueueJoinDiscovery(memo, state, goal, sourceExpression, "join_dependency_revision_changed",
 					currentKey.statisticsEpoch());
 			return;
 		}
-		if (!state.consumeMajor("enumerateJoin:" + work.key().rootGroupId())) {
+		if (timedBudgeted(goal.searchMode()) && !state.consumeMajor("enumerateJoin:" + work.key().rootGroupId())) {
 			state.markJoinPending(work, "task budget exhausted before join enumeration");
 			return;
 		}
 
-		JoinSearchRequest.Mode mode = goal.searchMode() == OptimizationGoal.SearchMode.EXACT
+		JoinSearchRequest.Mode mode = exactLike(goal.searchMode())
 				? JoinSearchRequest.Mode.COMPLETE
 				: JoinSearchRequest.Mode.BOUNDED;
-		MemoJoinRegionExtractor.Result current = work.extraction();
 		JoinSearchContext context = joinSearchContext(memo, current, goal);
 		JoinSearchRequest request = mode == JoinSearchRequest.Mode.COMPLETE
 				? JoinSearchRequest.enumeration(current.region(), mode, work.key().statisticsEpoch(),
@@ -484,8 +1033,91 @@ public final class CascadesPlanner {
 				: JoinSearchRequest.boundedEnumeration(current.region(), work.key().statisticsEpoch(),
 						work.key().dependencyStamp(),
 						state.joinCandidateBudget(), context);
-		JoinMemoEnumerationResult result = joinSearchService.enumerateMemoExpressions(request, ignored -> {
-		});
+		if (scopedRegionSupported(current.region())) {
+			ScopedJoinTopologyKey topologyKey = ScopedJoinTopologyKey.of(work.key());
+			ScopedJoinSearchAccess scopedAccess = state.scopedJoinSearch(work.key(), topologyKey,
+					() -> createScopedJoinSearch(memo, state, goal, current, context, work));
+			if (scopedAccess == null) {
+				state.deferJoinUntilFactorWinner(work, "base factor winner unavailable for scoped join search");
+				return;
+			}
+			ScopedJoinSearch scoped = scopedAccess.search();
+			int topologiesBeforeEnumeration = scoped.topologyCount();
+			JoinMemoEnumerationResult result = scopedAccess.topologyAvailable()
+					? state.scopedJoinTopologyResult(topologyKey)
+					: null;
+			if (result == null) {
+				result = joinSearchService.enumerateScopedMemoExpressions(request, state.joinSearchWork(), scoped);
+				if (result.complete()) {
+					state.recordScopedJoinTopology(topologyKey, result);
+				}
+			}
+			boolean topologyChanged = scoped.topologyCount() > topologiesBeforeEnumeration;
+			int candidatesBeforeDrain = scoped.memo().candidateCount();
+			boolean scopedComplete = scopedAccess.topologyReplayComplete() && scoped.drain();
+			boolean scopedChanged = scoped.memo().candidateCount() > candidatesBeforeDrain;
+			int rootLimit = boundedSearch(goal.searchMode()) ? AUTO_EXPORTED_ROOT_LIMIT : Integer.MAX_VALUE;
+			List<Integer> eligibleRoots = scoped.rootCandidateIds(rootLimit);
+			List<Integer> exportedRoots = eligibleRoots.isEmpty()
+					? scoped.enforceableRootCandidateIds(rootLimit)
+					: eligibleRoots;
+			Integer bestExportedRootId = exportedRoots.stream()
+					.min(Comparator.comparingDouble(candidateId -> scoped.winner(candidateId).cost().objectiveScore()))
+					.orElse(null);
+			Winner bestExportedRoot = bestExportedRootId == null ? null : scoped.winner(bestExportedRootId);
+			String bestExportedRootRecipe = bestExportedRootId == null
+					? "none"
+					: scoped.memo().candidate(bestExportedRootId).recipe().toString();
+			String bestExportedRootDag = bestExportedRootId == null
+					? "none"
+					: scoped.reachableCandidates(List.of(bestExportedRootId))
+							.stream()
+							.map(CascadesPlanner::scopedCandidateSummary)
+							.collect(Collectors.joining(" -> "));
+			double bestExportedRootObjective = bestExportedRoot == null
+					? Double.NaN
+					: bestExportedRoot.cost().objectiveScore();
+			telemetry.plannerEvent("scopedJoin rootGroup=" + work.key().rootGroupId()
+					+ " factors=" + current.region().factors().size()
+					+ " candidates=" + scoped.memo().candidateCount()
+					+ " eligibleRoots=" + eligibleRoots.size()
+					+ " exportedRoots=" + exportedRoots.size()
+					+ " bestRootObjective=" + bestExportedRootObjective
+					+ " bestRootRecipe=" + bestExportedRootRecipe);
+			state.recordScopedJoinRoots(current.region().factors().size(), scoped.memo().candidateCount(),
+					eligibleRoots.size(), exportedRoots.size(), bestExportedRoot, bestExportedRootRecipe,
+					bestExportedRootDag);
+			boolean rootsAvailable = !exportedRoots.isEmpty();
+			boolean searchExhausted = result.complete() && scopedComplete;
+			boolean complete = searchExhausted && rootsAvailable;
+			if (!exactLike(goal.searchMode()) || complete) {
+				exportScopedJoinRoots(memo, state, work, scoped, exportedRoots, goal);
+			}
+			if (searchExhausted) {
+				state.markJoinSaturated(work.key());
+				state.markJoinRouteProcessed(work);
+			}
+			state.recordJoinResult(work, result);
+			if (!scopedComplete) {
+				if (!scoped.predicateInputsPending()) {
+					state.markJoinPending(work, "scoped join candidate-evaluation or retention limit exhausted");
+				}
+			}
+			enqueueMemoChanges(memo, state, goal);
+			boolean retryableIncompleteCoverage = result.completeness() == JoinSearchCompleteness.BUDGET_EXHAUSTED
+					|| result.completeness() == JoinSearchCompleteness.MISSING_EXHAUSTIVE_COVERAGE
+							&& (topologyChanged || scopedChanged);
+			if (!complete && retryableIncompleteCoverage && exactLike(goal.searchMode())
+					&& !state.joinHardLimitReached()) {
+				state.enqueueJoinWork(new JoinWork(work.key(), work.sourceExpressionId(), work.routeScope(),
+						work.extraction(), goal,
+						"resume_incomplete_exact_enumeration"));
+			}
+			return;
+		}
+		JoinMemoEnumerationResult result = joinSearchService.enumerateMemoExpressions(request, state.joinSearchWork(),
+				ignored -> {
+				});
 		registerJoinStateGroups(memo, work);
 		for (JoinStateExpression expression : JoinStateEnumerator.enumerate(current.region(), context,
 				result.candidates())) {
@@ -493,29 +1125,622 @@ public final class CascadesPlanner {
 		}
 		if (result.complete()) {
 			state.markJoinSaturated(work.key());
+			state.markJoinRouteProcessed(work);
 		}
 		state.recordJoinResult(work, result);
 		enqueueMemoChanges(memo, state, goal);
 		if (!result.complete()
 				&& result.completeness() == JoinSearchCompleteness.BUDGET_EXHAUSTED
-				&& goal.searchMode() == OptimizationGoal.SearchMode.EXACT) {
-			state.enqueueJoinWork(new JoinWork(work.key(), work.sourceExpressionId(), work.extraction(),
+				&& exactLike(goal.searchMode())
+				&& !state.joinHardLimitReached()) {
+			state.enqueueJoinWork(new JoinWork(work.key(), work.sourceExpressionId(), work.routeScope(),
+					work.extraction(), goal,
 					"resume_incomplete_exact_enumeration"));
 		}
+	}
+
+	private static String scopedCandidateSummary(JoinRegionCandidate candidate) {
+		String operator = candidate.operator().value();
+		int separator = operator.indexOf('|');
+		if (separator >= 0) {
+			operator = operator.substring(0, separator);
+		}
+		return candidate.group().subset().size() + "f#" + candidate.id()
+				+ ":" + operator
+				+ ":" + candidate.recipe()
+				+ ":rows=" + candidate.cardinality().rows()
+				+ ":work=" + candidate.cost().totalWork()
+				+ ":children=" + candidate.leftCandidateId() + "/" + candidate.rightCandidateId();
+	}
+
+	private static boolean scopedRegionSupported(JoinRegion region) {
+		if (region == null) {
+			return false;
+		}
+		if (region.edges().isEmpty()) {
+			return region.dependencies().isEmpty()
+					|| region.hasProducerClauses() && region.dependencies()
+							.stream()
+							.allMatch(dependency -> dependency.requiredOccurrenceIds().isEmpty());
+		}
+		if (!region.predicates().isEmpty()) {
+			return false;
+		}
+		if (region.factors().size() > 2) {
+			return scopedIndependentDirectedStar(region);
+		}
+		if (region.factors().size() != 2 || region.edges().size() != 1) {
+			return false;
+		}
+		JoinEdge edge = region.edges().getFirst();
+		JoinSubset all = JoinSubset.ofOrdinals(0, 1);
+		if ((edge.kind() != JoinEdge.Kind.LEFT && edge.kind() != JoinEdge.Kind.SEMI
+				&& edge.kind() != JoinEdge.Kind.ANTI)
+				|| edge.leftFactors().size() != 1
+				|| edge.rightFactors().size() != 1
+				|| !edge.totalEligibilitySet().equals(all)
+				|| !edge.conflictRules().isEmpty()) {
+			return false;
+		}
+		int leftOrdinal = singleFactorOrdinal(edge.leftFactors(), region.factors().size());
+		int rightOrdinal = singleFactorOrdinal(edge.rightFactors(), region.factors().size());
+		if (leftOrdinal < 0 || rightOrdinal < 0) {
+			return false;
+		}
+		int leftOccurrenceId = region.factors().get(leftOrdinal).occurrenceId();
+		int rightOccurrenceId = region.factors().get(rightOrdinal).occurrenceId();
+		return region.dependencies().size() == 1
+				&& region.requiredBefore(leftOccurrenceId).isEmpty()
+				&& region.requiredBefore(rightOccurrenceId).equals(Set.of(leftOccurrenceId));
+	}
+
+	private static boolean scopedIndependentDirectedStar(JoinRegion region) {
+		int factorCount = region.factors().size();
+		if (factorCount < 3 || region.edges().size() != factorCount - 1
+				|| region.dependencies().size() != factorCount - 1) {
+			return false;
+		}
+		int baseOrdinal = -1;
+		DirectedStarFamily family = null;
+		boolean[] branchOrdinals = new boolean[factorCount];
+		for (JoinEdge edge : region.edges()) {
+			DirectedStarFamily edgeFamily = directedStarFamily(edge);
+			if (edgeFamily == null || (family != null && family != edgeFamily)
+					|| edge.leftFactors().size() != 1 || edge.rightFactors().size() != 1
+					|| !edge.totalEligibilitySet().equals(edge.leftFactors().union(edge.rightFactors()))
+					|| !edge.conflictRules().isEmpty()) {
+				return false;
+			}
+			family = edgeFamily;
+			int edgeBaseOrdinal = singleFactorOrdinal(edge.leftFactors(), factorCount);
+			int branchOrdinal = singleFactorOrdinal(edge.rightFactors(), factorCount);
+			if (edgeBaseOrdinal < 0 || branchOrdinal < 0 || edgeBaseOrdinal == branchOrdinal
+					|| branchOrdinals[branchOrdinal]) {
+				return false;
+			}
+			if (baseOrdinal < 0) {
+				baseOrdinal = edgeBaseOrdinal;
+			} else if (baseOrdinal != edgeBaseOrdinal) {
+				return false;
+			}
+			branchOrdinals[branchOrdinal] = true;
+		}
+		if (baseOrdinal < 0 || branchOrdinals[baseOrdinal]) {
+			return false;
+		}
+		int baseOccurrenceId = region.factors().get(baseOrdinal).occurrenceId();
+		if (!region.requiredBefore(baseOccurrenceId).isEmpty()) {
+			return false;
+		}
+		for (int ordinal = 0; ordinal < factorCount; ordinal++) {
+			if (ordinal == baseOrdinal) {
+				continue;
+			}
+			if (!branchOrdinals[ordinal]) {
+				return false;
+			}
+			Set<Integer> required = region.requiredBefore(region.factors().get(ordinal).occurrenceId());
+			if (required.size() != 1 || !required.contains(baseOccurrenceId)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static DirectedStarFamily directedStarFamily(JoinEdge edge) {
+		if (edge.kind() == JoinEdge.Kind.LEFT && edge.origin() == JoinEdge.Origin.LEFT_JOIN) {
+			return DirectedStarFamily.LEFT;
+		}
+		if ((edge.kind() == JoinEdge.Kind.SEMI && edge.origin() == JoinEdge.Origin.EXISTS)
+				|| (edge.kind() == JoinEdge.Kind.ANTI && edge.origin() == JoinEdge.Origin.NOT_EXISTS)) {
+			return DirectedStarFamily.EXISTS_FILTER;
+		}
+		return null;
+	}
+
+	private enum DirectedStarFamily {
+		LEFT,
+		EXISTS_FILTER
+	}
+
+	private static int singleFactorOrdinal(JoinSubset subset, int factorCount) {
+		for (int ordinal = 0; ordinal < factorCount; ordinal++) {
+			if (subset.contains(ordinal)) {
+				return ordinal;
+			}
+		}
+		return -1;
+	}
+
+	private boolean ensureScopedFactorWinners(Memo memo, SearchState state, OptimizationGoal goal,
+			MemoJoinRegionExtractor.Result extraction, JoinWork work) {
+		boolean changed = false;
+		boolean optimizeSynchronously = timedBudgeted(goal.searchMode());
+		for (JoinFactor factor : extraction.region().factors()) {
+			OptimizationGoal factorGoal = scopedFactorGoal(memo, state, goal, extraction.region(), factor);
+			if (!optimizeSynchronously) {
+				requestGroupWork(memo, factor.groupId(), factorGoal, state, "scoped_join_factor_requested");
+			}
+			WinnerKey factorKey = state.winnerKey(factorGoal, factor.groupId());
+			if (!scopedFactorWinners(memo, factorKey).isEmpty()) {
+				continue;
+			}
+			if (optimizeSynchronously) {
+				long before = memo.group(factor.groupId()).winnerRevision();
+				optimizeGroup(memo, factor.groupId(), factorGoal, state);
+				changed |= memo.group(factor.groupId()).winnerRevision() != before;
+			} else {
+				state.deferJoinUntilWinner(memo, work, factorKey,
+						"base factor winner unavailable for scoped join search");
+				changed = true;
+			}
+		}
+		return changed;
+	}
+
+	private static OptimizationGoal scopedFactorGoal(Memo memo, SearchState state, OptimizationGoal goal,
+			JoinRegion region, JoinFactor factor) {
+		OptimizationGoal safeGoal = goal == null ? OptimizationGoal.root() : goal;
+		int factorGroupId = factor.groupId();
+		BindingUniverse universe = memo.universe();
+		BindingMask possible = memo.group(factorGroupId).bindingShape().possible();
+		PhysicalProperties rootRequired = safeGoal.requiredProperties();
+		BindingMask explicitlyRequiredInputs = universe.maskOf(rootRequired.inputBoundVars()).intersect(possible);
+		BindingMask allowedExternalInputs = universe.maskOf(rootRequired.boundVars())
+				.union(explicitlyRequiredInputs)
+				.union(universe.maskOf(safeGoal.inputBindingContext().assuredBindingNames()))
+				.intersect(possible);
+		PhysicalProperties factorRequired = allowedExternalInputs.isEmpty()
+				? PhysicalProperties.ANY
+				: PhysicalProperties.builder()
+						.boundVars(universe.names(allowedExternalInputs))
+						.inputBoundVars(universe.names(explicitlyRequiredInputs))
+						.build();
+		OptimizationGoal factorGoal = safeGoal.withRequiredProperties(factorRequired).withoutRowGoal();
+		if (requiresExistenceScope(region, factor)) {
+			factorGoal = factorGoal.withSemanticScope(SemanticScope.EXISTENCE.externalName());
+		}
+		return state.canonicalGoal(factorGoal);
+	}
+
+	private static boolean requiresExistenceScope(JoinRegion region, JoinFactor factor) {
+		int ordinal = region.factors().indexOf(factor);
+		if (ordinal < 0) {
+			throw new IllegalArgumentException("factor is not a member of its scoped join region");
+		}
+		return region.edges()
+				.stream()
+				.anyMatch(edge -> (edge.origin() == JoinEdge.Origin.EXISTS
+						|| edge.origin() == JoinEdge.Origin.NOT_EXISTS)
+						&& edge.rightFactors().contains(ordinal));
+	}
+
+	private ScopedJoinSearch createScopedJoinSearch(Memo memo, SearchState state, OptimizationGoal goal,
+			MemoJoinRegionExtractor.Result extraction, JoinSearchContext context, JoinWork work) {
+		Map<JoinFactor, List<Winner>> factorWinners = new LinkedHashMap<>();
+		for (JoinFactor factor : extraction.region().factors()) {
+			OptimizationGoal factorGoal = scopedFactorGoal(memo, state, goal, extraction.region(), factor);
+			WinnerKey factorKey = state.winnerKey(factorGoal, factor.groupId());
+			List<Winner> winners = scopedFactorWinners(memo, factorKey);
+			if (winners.isEmpty()) {
+				return null;
+			}
+			factorWinners.put(factor, winners);
+		}
+		JoinRegionMemo.Retention retention = exactLike(goal.searchMode())
+				? JoinRegionMemo.Retention.exact(state.retainedJoinCandidateLimit())
+				: JoinRegionMemo.Retention.auto(state.joinFrontierCandidateLimit(),
+						state.retainedJoinCandidateLimit());
+		ScopedJoinSearch scoped = new ScopedJoinSearch(extraction.region(), context,
+				CostOrdering.forPolicy(goal.costPolicy()), retention, state.joinSearchWork(),
+				new CascadesJoinImplementationProvider(costModel, memo.universe(), ruleRegistry, telemetry), goal,
+				TypedPhysicalPropertyBridge.required(goal.requiredProperties(), memo.universe()),
+				(predicateOrdinal, predicate, input) -> scopedPredicateInputCombinations(memo, state, goal,
+						predicateOrdinal, predicate, input, work));
+		for (Map.Entry<JoinFactor, List<Winner>> entry : factorWinners.entrySet()) {
+			for (Winner winner : entry.getValue()) {
+				scoped.seedFactor(entry.getKey().occurrenceId(), winner,
+						TypedPhysicalPropertyBridge.provided(winner.deliveredProperties(), memo.universe(),
+								winner.physicalOperatorId()));
+			}
+		}
+		return scoped;
+	}
+
+	private Optional<List<List<JoinImplementationProvider.ScalarInput>>> scopedPredicateInputCombinations(Memo memo,
+			SearchState state, OptimizationGoal parentGoal, int predicateOrdinal, JoinPredicate predicate,
+			JoinImplementationProvider.Input input, JoinWork work) {
+		if (predicate.scalarInputs().isEmpty()) {
+			return Optional.of(List.of(List.of()));
+		}
+		BindingUniverse universe = memo.universe();
+		Set<String> assuredOutputNames = input.bindingUniverse().names(input.assuredBindings());
+		BindingMask predicateRequired = universe.maskOf(predicate.requiredBindingNames());
+		BindingMask visibleBindings = input.possibleBindings();
+		List<BindingMask> scalarRelevantBindings = new ArrayList<>(predicate.scalarInputs().size());
+		for (MemoInput scalarInput : predicate.scalarInputs()) {
+			PhysicalProperties contract = scalarInput.requiredProperties();
+			BindingMask relevant = memo.group(scalarInput.groupId())
+					.bindingShape()
+					.possible()
+					.union(predicateRequired)
+					.union(universe.maskOf(contract.boundVars()))
+					.union(universe.maskOf(contract.inputBoundVars()));
+			scalarRelevantBindings.add(relevant);
+			visibleBindings = visibleBindings.union(relevant);
+		}
+		InputBindingContext prefixContext = state.selectedPrefixContext(parentGoal.inputBindingContext(),
+				input.winner(),
+				assuredOutputNames, input.winner().selectedOutputProfile(), universe.names(visibleBindings), telemetry);
+		List<List<JoinImplementationProvider.ScalarInput>> frontiers = new ArrayList<>(predicate.scalarInputs().size());
+		for (int scalarOrdinal = 0; scalarOrdinal < predicate.scalarInputs().size(); scalarOrdinal++) {
+			MemoInput scalarInput = predicate.scalarInputs().get(scalarOrdinal);
+			MemoGroup inputGroup = memo.group(scalarInput.groupId());
+			BindingMask relevantBindings = scalarRelevantBindings.get(scalarOrdinal);
+			Set<String> relevantNames = universe.names(relevantBindings);
+			InputBindingContext scalarContext = state.canonicalInputBindingContext(
+					prefixContext.restrictToConnected(relevantNames));
+			BindingMask contextualBindings = universe.maskOf(scalarContext.assuredBindingNames())
+					.intersect(relevantBindings);
+			PhysicalProperties contextualRequirement = contextualBindings.isEmpty()
+					? PhysicalProperties.ANY
+					: PhysicalProperties.builder().boundVars(universe.names(contextualBindings)).build();
+			PhysicalProperties required = scalarInput.requiredProperties().mergedWith(contextualRequirement);
+			OptimizationGoal scalarGoal = state.canonicalGoal(parentGoal.withRequiredProperties(required)
+					.withoutRowGoal()
+					.withSemanticScope(scalarInput.requiredSemanticScope().externalName())
+					.withInputBindingContext(scalarContext));
+			WinnerKey scalarKey = state.winnerKey(scalarGoal, scalarInput.groupId());
+			if (timedBudgeted(parentGoal.searchMode())) {
+				optimizeGroup(memo, scalarInput.groupId(), scalarGoal, state);
+			}
+			List<Winner> winners = memo.winners(scalarKey);
+			if (winners.isEmpty()) {
+				state.deferJoinUntilWinner(memo, work, scalarKey,
+						"scoped predicate scalar-input winner unavailable");
+				requestGroupWork(memo, scalarInput.groupId(), scalarGoal, state,
+						"scoped_predicate_scalar_input_requested");
+				return Optional.empty();
+			}
+			state.observeJoinWinner(memo, work, scalarKey);
+			List<JoinImplementationProvider.ScalarInput> frontier = winners.stream()
+					.map(winner -> new JoinImplementationProvider.ScalarInput(scalarInput, winner, universe,
+							inputGroup.bindingShape().possible(), inputGroup.bindingShape().assured(),
+							TypedPhysicalPropertyBridge.provided(winner.deliveredProperties(), universe,
+									winner.physicalOperatorId())))
+					.toList();
+			frontiers.add(frontier);
+		}
+		return Optional.of(scalarInputProduct(frontiers));
+	}
+
+	private static List<List<JoinImplementationProvider.ScalarInput>> scalarInputProduct(
+			List<List<JoinImplementationProvider.ScalarInput>> frontiers) {
+		List<List<JoinImplementationProvider.ScalarInput>> combinations = List.of(List.of());
+		for (List<JoinImplementationProvider.ScalarInput> frontier : frontiers) {
+			List<List<JoinImplementationProvider.ScalarInput>> expanded = new ArrayList<>(
+					Math.max(1, combinations.size() * frontier.size()));
+			for (List<JoinImplementationProvider.ScalarInput> prefix : combinations) {
+				for (JoinImplementationProvider.ScalarInput input : frontier) {
+					ArrayList<JoinImplementationProvider.ScalarInput> combination = new ArrayList<>(prefix.size() + 1);
+					combination.addAll(prefix);
+					combination.add(input);
+					expanded.add(List.copyOf(combination));
+				}
+			}
+			combinations = List.copyOf(expanded);
+		}
+		return combinations;
+	}
+
+	private static List<Winner> scopedFactorWinners(Memo memo, WinnerKey desiredKey) {
+		List<Winner> exact = memo.winners(desiredKey);
+		if (!exact.isEmpty()) {
+			return exact;
+		}
+		return memo.group(desiredKey.groupId())
+				.winnerSnapshot()
+				.entrySet()
+				.stream()
+				.filter(entry -> entry.getKey().costPolicy() == desiredKey.costPolicy())
+				.filter(entry -> entry.getKey().semanticScope().equals(desiredKey.semanticScope()))
+				.filter(entry -> entry.getKey().rowGoal().equals(desiredKey.rowGoal()))
+				.filter(entry -> entry.getKey().inputBindingContext().equals(desiredKey.inputBindingContext()))
+				.sorted(Comparator.comparing(entry -> entry.getKey().requiredProperties().toString()))
+				.flatMap(entry -> entry.getValue().stream())
+				.toList();
+	}
+
+	private void exportScopedJoinRoots(Memo memo, SearchState searchState, JoinWork work, ScopedJoinSearch scoped,
+			Collection<Integer> rootCandidateIds, OptimizationGoal goal) {
+		if (rootCandidateIds == null || rootCandidateIds.isEmpty()) {
+			return;
+		}
+		JoinRegion region = work.extraction().region();
+		int ownerGroupId = work.key().rootGroupId();
+		Map<Integer, Integer> globalGroupsByCandidate = new HashMap<>();
+		Map<Integer, JoinState> statesByCandidate = new HashMap<>();
+		Map<Integer, TupleExpr> templatesByCandidate = new HashMap<>();
+		List<ScopedPhysicalExport> physicalExports = new ArrayList<>();
+		List<RuleProof> sourceProofs = memo.expression(work.sourceExpressionId()).proofs();
+		for (JoinRegionCandidate candidate : scoped.reachableCandidates(rootCandidateIds)) {
+			JoinRegionRecipe recipe = candidate.recipe();
+			if (recipe instanceof JoinRegionRecipe.Factor factorRecipe) {
+				JoinFactor factor = region.factor(factorRecipe.occurrenceId());
+				JoinState state = JoinState.unfiltered(Set.of(factor.occurrenceId()));
+				globalGroupsByCandidate.put(candidate.id(), factor.groupId());
+				statesByCandidate.put(candidate.id(), state);
+				templatesByCandidate.put(candidate.id(), logicalRepresentative(memo, factor.groupId(), goal));
+				memo.registerJoinStateGroupForRoute(ownerGroupId, region.identity(), work.routeScope(), state,
+						factor.groupId());
+				continue;
+			}
+			TupleExpr alternative;
+			List<Integer> inputGroups;
+			List<PhysicalProperties> inputRequirements = List.of();
+			List<SemanticScope> inputSemanticRequirements = List.of();
+			JoinState state;
+			RuleProof proof;
+			if (recipe instanceof JoinRegionRecipe.Join joinRecipe) {
+				int leftGroupId = requireExportedGroup(globalGroupsByCandidate, candidate.leftCandidateId());
+				int rightGroupId = requireExportedGroup(globalGroupsByCandidate, candidate.rightCandidateId());
+				state = unionState(requireExportedState(statesByCandidate, candidate.leftCandidateId()),
+						requireExportedState(statesByCandidate, candidate.rightCandidateId()));
+				proof = new RuleProof(JoinSearchService.ROUTE_ID, RuleKind.TRANSFORMATION,
+						OptimizationGoal.BAG_SEMANTICS, Set.of("joinRegion", "scopedJoinRegionMemo",
+								"contributor=" + joinRecipe.contributorId()),
+						"Exported selected root-reachable join-region derivation");
+				alternative = new Join(requireExportedTemplate(templatesByCandidate, candidate.leftCandidateId()),
+						requireExportedTemplate(templatesByCandidate, candidate.rightCandidateId()));
+				inputGroups = List.of(leftGroupId, rightGroupId);
+			} else if (recipe instanceof JoinRegionRecipe.Edge edgeRecipe) {
+				int leftGroupId = requireExportedGroup(globalGroupsByCandidate, candidate.leftCandidateId());
+				int rightGroupId = requireExportedGroup(globalGroupsByCandidate, candidate.rightCandidateId());
+				state = unionState(requireExportedState(statesByCandidate, candidate.leftCandidateId()),
+						requireExportedState(statesByCandidate, candidate.rightCandidateId()));
+				JoinEdge edge = region.edges()
+						.stream()
+						.filter(candidateEdge -> candidateEdge.id() == edgeRecipe.edgeId())
+						.findFirst()
+						.orElseThrow(() -> new IllegalStateException(
+								"Scoped candidate references unknown typed edge " + edgeRecipe.edgeId()));
+				if (edge.kind() != edgeRecipe.kind() || edge.origin() != edgeRecipe.origin()
+						|| (edge.kind() != JoinEdge.Kind.LEFT && edge.kind() != JoinEdge.Kind.SEMI
+								&& edge.kind() != JoinEdge.Kind.ANTI)) {
+					throw new IllegalStateException("Scoped typed edge recipe does not match its region edge");
+				}
+				proof = new RuleProof(JoinSearchService.ROUTE_ID, RuleKind.TRANSFORMATION,
+						OptimizationGoal.BAG_SEMANTICS, Set.of("joinRegion", "scopedJoinRegionMemo",
+								"typedEdge=" + edge.kind().name(),
+								"edgeOrigin=" + edge.origin().name(),
+								"edge=" + edge.id(), "contributor=" + edgeRecipe.contributorId()),
+						"Exported a directed " + edge.kind() + " edge without changing its logical operator");
+				TupleExpr left = requireExportedTemplate(templatesByCandidate, candidate.leftCandidateId());
+				TupleExpr right = requireExportedTemplate(templatesByCandidate, candidate.rightCandidateId());
+				alternative = switch (edge.origin()) {
+				case LEFT_JOIN -> new LeftJoin(left, right);
+				case MINUS -> new Difference(left, right);
+				case EXISTS -> new Filter(left, new Exists(right));
+				case NOT_EXISTS -> new Filter(left, new Not(new Exists(right)));
+				case INNER_JOIN -> throw new IllegalStateException(
+						"INNER joins must not use a typed edge reconstruction recipe");
+				};
+				inputGroups = List.of(leftGroupId, rightGroupId);
+			} else if (recipe instanceof JoinRegionRecipe.Predicate predicateRecipe) {
+				int inputGroupId = requireExportedGroup(globalGroupsByCandidate, candidate.leftCandidateId());
+				state = requireExportedState(statesByCandidate, candidate.leftCandidateId())
+						.withPredicate(predicateRecipe.predicateId());
+				proof = new RuleProof(JoinSearchService.ROUTE_ID, RuleKind.TRANSFORMATION,
+						OptimizationGoal.BAG_SEMANTICS, Set.of("joinRegion", "scopedJoinRegionMemo",
+								"predicate=" + predicateRecipe.predicateId()),
+						"Exported selected root-reachable predicate placement");
+				alternative = new Filter(requireExportedTemplate(templatesByCandidate, candidate.leftCandidateId()),
+						region.predicate(predicateRecipe.predicateId()).conditionTemplate().clone());
+				ArrayList<Integer> predicateInputs = new ArrayList<>();
+				predicateInputs.add(inputGroupId);
+				JoinPredicate predicate = region.predicate(predicateRecipe.predicateId());
+				predicateInputs.addAll(predicate.scalarInputGroupIds());
+				inputGroups = List.copyOf(predicateInputs);
+				ArrayList<PhysicalProperties> predicateRequirements = new ArrayList<>(
+						1 + predicate.scalarInputs().size());
+				predicateRequirements.add(PhysicalProperties.ANY);
+				predicate.scalarInputs()
+						.stream()
+						.map(MemoInput::requiredProperties)
+						.forEach(predicateRequirements::add);
+				inputRequirements = List.copyOf(predicateRequirements);
+				ArrayList<SemanticScope> predicateSemanticRequirements = new ArrayList<>(
+						1 + predicate.scalarInputs().size());
+				predicateSemanticRequirements.add(SemanticScope.BAG);
+				predicate.scalarInputs()
+						.stream()
+						.map(MemoInput::requiredSemanticScope)
+						.forEach(predicateSemanticRequirements::add);
+				inputSemanticRequirements = List.copyOf(predicateSemanticRequirements);
+			} else {
+				throw new IllegalStateException("Unsupported scoped reconstruction recipe: " + recipe);
+			}
+			boolean completeSourceRoute = state.equals(region.requiredState());
+			List<RuleProof> routeProofs = joinRouteProofs(sourceProofs, proof, completeSourceRoute);
+			int targetGroupId;
+			if (completeSourceRoute) {
+				targetGroupId = ownerGroupId;
+				memo.registerJoinStateGroupForRoute(ownerGroupId, region.identity(), work.routeScope(), state,
+						ownerGroupId);
+			} else {
+				targetGroupId = memo.joinStateGroupForRoute(ownerGroupId, region.identity(), work.routeScope(), state)
+						.orElseGet(() -> memo.ensureJoinStateGroupForRoute(ownerGroupId, region.identity(),
+								work.routeScope(), state, alternative, inputGroups, routeProofs));
+			}
+			Optional<MemoExpr> logicalInsertion = memo.addJoinSearchAlternativeWithInputs(targetGroupId, alternative,
+					inputGroups, routeProofs,
+					inputRequirements, inputSemanticRequirements.isEmpty()
+							? MemoInputLayout.semanticRequirements(alternative)
+							: inputSemanticRequirements);
+			Winner scopedWinner = scoped.winner(candidate.id());
+			MemoExpr scopedPhysical = scopedWinner.expression();
+			TupleExpr physicalAlternative = exportedScopedPhysicalTemplate(scopedPhysical, alternative);
+			List<RuleProof> physicalProofs = exportedScopedPhysicalProofs(scopedPhysical, routeProofs);
+			RuleDescriptor descriptor = scopedPhysicalDescriptor(scopedPhysical);
+			boolean publishesMemoFacts = descriptor != null && descriptor.changesProduced()
+					.contains(RuleDescriptor.ProducedChange.MEMO_FACT);
+			Optional<Memo.PhysicalAlternativeInsertion> physicalInsertion = memo
+					.retainPhysicalAlternativeWithInputs(targetGroupId, physicalAlternative, inputGroups,
+							scopedWinner.deliveredProperties(), scopedPhysical.inputRequirements(),
+							scopedPhysical.inputSemanticRequirements(), scopedPhysical.locallyCostedInputIndexes(),
+							scopedPhysical.localMetadata(),
+							scopedPhysical.kind(), scopedPhysical.ruleCost(), physicalProofs, scopedPhysical.estimate(),
+							false, SemanticScope.requirementOf(physicalProofs), publishesMemoFacts);
+			if (physicalInsertion.isPresent()) {
+				MemoExpr retained = physicalInsertion.orElseThrow().retained();
+				logicalInsertion.ifPresent(logical -> memo.recordPhysicalImplementationSource(retained, logical));
+				OptimizationGoal candidateGoal = completeSourceRoute
+						? goal
+						: goal.withRequiredProperties(PhysicalProperties.ANY).withoutRowGoal();
+				physicalExports.add(new ScopedPhysicalExport(retained, candidateGoal, descriptor,
+						candidate.cardinality()));
+			}
+			globalGroupsByCandidate.put(candidate.id(), targetGroupId);
+			statesByCandidate.put(candidate.id(), state);
+			templatesByCandidate.put(candidate.id(), alternative.clone());
+		}
+		for (int exportIndex = physicalExports.size() - 1; exportIndex >= 0; exportIndex--) {
+			ScopedPhysicalExport export = physicalExports.get(exportIndex);
+			if (searchState.registerReusablePhysicalRecipe(export.expression(), export.goal(), export.descriptor(),
+					export.cardinality())) {
+				searchState.enqueueNewPhysicalCostWork(memo, export.expression(), export.goal(),
+						"scoped_join_root_dag_export");
+			}
+		}
+	}
+
+	private static TupleExpr exportedScopedPhysicalTemplate(MemoExpr scopedPhysical, TupleExpr logicalAlternative) {
+		TupleExpr physicalAlternative = scopedPhysical.tupleExpr().clone();
+		List<MemoInputLayout.Slot> physicalInputs = MemoInputLayout.slots(physicalAlternative);
+		List<MemoInputLayout.Slot> logicalInputs = MemoInputLayout.slots(logicalAlternative);
+		if (physicalInputs.size() != logicalInputs.size()) {
+			throw new IllegalStateException("Scoped physical input count differs from its exported logical recipe");
+		}
+		for (int inputIndex = 0; inputIndex < physicalInputs.size(); inputIndex++) {
+			MemoInputLayout.Slot physicalInput = physicalInputs.get(inputIndex);
+			MemoInputLayout.Slot logicalInput = logicalInputs.get(inputIndex);
+			if (physicalInput.role() != logicalInput.role()
+					|| physicalInput.ordinal() != logicalInput.ordinal()
+					|| physicalInput.use() != logicalInput.use()) {
+				throw new IllegalStateException("Scoped physical input layout differs from its exported logical recipe");
+			}
+			physicalInput.replaceWith(logicalInput.input().clone());
+		}
+		return physicalAlternative;
+	}
+
+	private static List<RuleProof> exportedScopedPhysicalProofs(MemoExpr scopedPhysical,
+			List<RuleProof> routeProofs) {
+		ArrayList<RuleProof> proofs = new ArrayList<>(scopedPhysical.proofs().size() + routeProofs.size());
+		proofs.addAll(scopedPhysical.proofs());
+		proofs.addAll(routeProofs);
+		return MemoProofLineage.normalize(proofs);
+	}
+
+	private RuleDescriptor scopedPhysicalDescriptor(MemoExpr scopedPhysical) {
+		for (RuleProof proof : scopedPhysical.proofs()) {
+			for (CascadesRule rule : ruleRegistry.rules()) {
+				if (rule.id().equals(proof.ruleId())) {
+					return rule.descriptor();
+				}
+			}
+		}
+		return null;
+	}
+
+	private record ScopedPhysicalExport(MemoExpr expression, OptimizationGoal goal, RuleDescriptor descriptor,
+			CardinalityEstimate cardinality) {
+		private ScopedPhysicalExport {
+			Objects.requireNonNull(expression, "expression");
+			Objects.requireNonNull(goal, "goal");
+			Objects.requireNonNull(cardinality, "cardinality");
+		}
+	}
+
+	private static List<RuleProof> joinRouteProofs(List<RuleProof> sourceProofs, RuleProof routeProof,
+			boolean completeSourceRoute) {
+		if (!completeSourceRoute || sourceProofs == null || sourceProofs.isEmpty()) {
+			return List.of(routeProof);
+		}
+		ArrayList<RuleProof> proofs = new ArrayList<>(sourceProofs.size() + 1);
+		proofs.addAll(sourceProofs);
+		proofs.add(routeProof);
+		return MemoProofLineage.normalize(proofs);
+	}
+
+	private static int requireExportedGroup(Map<Integer, Integer> groupsByCandidate, int candidateId) {
+		Integer groupId = groupsByCandidate.get(candidateId);
+		if (groupId == null) {
+			throw new IllegalStateException(
+					"Scoped join export reached a parent before child candidate " + candidateId);
+		}
+		return groupId;
+	}
+
+	private static TupleExpr requireExportedTemplate(Map<Integer, TupleExpr> templatesByCandidate, int candidateId) {
+		TupleExpr template = templatesByCandidate.get(candidateId);
+		if (template == null) {
+			throw new IllegalStateException(
+					"Scoped join export is missing child template for candidate " + candidateId);
+		}
+		return template.clone();
+	}
+
+	private static JoinState requireExportedState(Map<Integer, JoinState> statesByCandidate, int candidateId) {
+		JoinState state = statesByCandidate.get(candidateId);
+		if (state == null) {
+			throw new IllegalStateException("Scoped join export is missing child state for candidate " + candidateId);
+		}
+		return state;
+	}
+
+	private static JoinState unionState(JoinState left, JoinState right) {
+		TreeSet<Integer> occurrences = new TreeSet<>(left.occurrenceIds());
+		occurrences.addAll(right.occurrenceIds());
+		TreeSet<Integer> predicates = new TreeSet<>(left.appliedPredicateIds());
+		predicates.addAll(right.appliedPredicateIds());
+		return new JoinState(occurrences, predicates);
 	}
 
 	private static void registerJoinStateGroups(Memo memo, JoinWork work) {
 		JoinRegion region = work.extraction().region();
 		int ownerGroupId = work.key().rootGroupId();
 		for (JoinFactor factor : region.factors()) {
-			memo.registerJoinStateGroup(ownerGroupId, region.identity(),
+			memo.registerJoinStateGroupForRoute(ownerGroupId, region.identity(), work.routeScope(),
 					JoinState.unfiltered(Set.of(factor.occurrenceId())), factor.groupId());
 		}
-		if (memo.joinStateGroup(ownerGroupId, region.identity(), region.unfilteredState()).isEmpty()) {
-			memo.registerJoinStateGroup(ownerGroupId, region.identity(), region.unfilteredState(),
-					work.extraction().topologyRootGroupId());
+		if (memo.joinStateGroupForRoute(ownerGroupId, region.identity(), work.routeScope(), region.unfilteredState())
+				.isEmpty()) {
+			memo.registerJoinStateGroupForRoute(ownerGroupId, region.identity(), work.routeScope(),
+					region.unfilteredState(), work.extraction().topologyRootGroupId());
 		}
-		memo.registerJoinStateGroup(ownerGroupId, region.identity(), region.requiredState(), ownerGroupId);
+		memo.registerJoinStateGroupForRoute(ownerGroupId, region.identity(), work.routeScope(), region.requiredState(),
+				ownerGroupId);
 	}
 
 	private void materializeJoinStateExpression(Memo memo, JoinWork work, JoinStateExpression expression,
@@ -529,7 +1754,8 @@ public final class CascadesPlanner {
 
 	private void materializeJoinTransition(Memo memo, JoinWork work, JoinTransition transition,
 			OptimizationGoal goal) {
-		RuleProof proof = new RuleProof(JoinSearchService.ROUTE_ID, RuleKind.TRANSFORMATION, goal.semanticScope(),
+		RuleProof proof = new RuleProof(JoinSearchService.ROUTE_ID, RuleKind.TRANSFORMATION,
+				OptimizationGoal.BAG_SEMANTICS,
 				Set.of("joinRegion", "joinState", "contributor=" + transition.contributorId()),
 				"Enumerated legal join-state transition " + transition.topology().canonicalForm());
 		MaterializedJoinState left = resolveJoinState(memo, work, transition.leftState(), goal);
@@ -537,10 +1763,14 @@ public final class CascadesPlanner {
 		Join join = new Join(left.template().clone(), right.template().clone());
 		List<Integer> inputGroups = List.of(left.groupId(), right.groupId());
 		int ownerGroupId = work.key().rootGroupId();
-		int targetGroupId = memo.joinStateGroup(ownerGroupId, work.extraction().identity(), transition.resultState())
-				.orElseGet(() -> memo.ensureJoinStateGroup(ownerGroupId, work.extraction().identity(),
-						transition.resultState(), join, inputGroups, List.of(proof)));
-		memo.addJoinSearchAlternativeWithInputs(targetGroupId, join, inputGroups, List.of(proof));
+		boolean completeSourceRoute = transition.resultState().equals(work.extraction().region().requiredState());
+		List<RuleProof> routeProofs = joinRouteProofs(memo.expression(work.sourceExpressionId()).proofs(), proof,
+				completeSourceRoute);
+		int targetGroupId = memo.joinStateGroupForRoute(ownerGroupId, work.extraction().identity(),
+				work.routeScope(), transition.resultState())
+				.orElseGet(() -> memo.ensureJoinStateGroupForRoute(ownerGroupId, work.extraction().identity(),
+						work.routeScope(), transition.resultState(), join, inputGroups, routeProofs));
+		memo.addJoinSearchAlternativeWithInputs(targetGroupId, join, inputGroups, routeProofs);
 	}
 
 	private void materializePredicateApplication(Memo memo, JoinWork work, ApplyPredicate application,
@@ -550,19 +1780,25 @@ public final class CascadesPlanner {
 		ArrayList<Integer> inputGroups = new ArrayList<>(1 + application.predicate().scalarInputGroupIds().size());
 		inputGroups.add(input.groupId());
 		inputGroups.addAll(application.predicate().scalarInputGroupIds());
-		RuleProof proof = new RuleProof(JoinSearchService.ROUTE_ID, RuleKind.TRANSFORMATION, goal.semanticScope(),
+		RuleProof proof = new RuleProof(JoinSearchService.ROUTE_ID, RuleKind.TRANSFORMATION,
+				OptimizationGoal.BAG_SEMANTICS,
 				Set.of("joinRegion", "predicateState", "predicate=" + application.predicate().id()),
 				"Applied a mobile predicate at every assured join state where it is legal");
 		int ownerGroupId = work.key().rootGroupId();
-		int targetGroupId = memo.joinStateGroup(ownerGroupId, work.extraction().identity(), application.resultState())
-				.orElseGet(() -> memo.ensureJoinStateGroup(ownerGroupId, work.extraction().identity(),
-						application.resultState(), filter, inputGroups, List.of(proof)));
-		memo.addJoinSearchAlternativeWithInputs(targetGroupId, filter, inputGroups, List.of(proof));
+		boolean completeSourceRoute = application.resultState().equals(work.extraction().region().requiredState());
+		List<RuleProof> routeProofs = joinRouteProofs(memo.expression(work.sourceExpressionId()).proofs(), proof,
+				completeSourceRoute);
+		int targetGroupId = memo.joinStateGroupForRoute(ownerGroupId, work.extraction().identity(),
+				work.routeScope(), application.resultState())
+				.orElseGet(() -> memo.ensureJoinStateGroupForRoute(ownerGroupId, work.extraction().identity(),
+						work.routeScope(), application.resultState(), filter, inputGroups, routeProofs));
+		memo.addJoinSearchAlternativeWithInputs(targetGroupId, filter, inputGroups, routeProofs);
 	}
 
 	private MaterializedJoinState resolveJoinState(Memo memo, JoinWork work, JoinState state,
 			OptimizationGoal goal) {
-		int groupId = memo.joinStateGroup(work.key().rootGroupId(), work.extraction().identity(), state)
+		int groupId = memo.joinStateGroupForRoute(work.key().rootGroupId(), work.extraction().identity(),
+				work.routeScope(), state)
 				.orElseThrow(() -> new IllegalStateException(
 						"Join-state enumerator emitted a parent before child state " + state));
 		return new MaterializedJoinState(groupId, logicalRepresentative(memo, groupId, goal), state);
@@ -582,31 +1818,54 @@ public final class CascadesPlanner {
 	}
 
 	private static JoinSearchDependencyStamp joinDependencyStamp(Memo memo,
-			MemoJoinRegionExtractor.Result extraction) {
+			MemoJoinRegionExtractor.Result extraction, SearchState state, OptimizationGoal goal) {
 		TreeSet<Integer> dependencyGroupIds = new TreeSet<>(extraction.expandedGroupIds());
 		dependencyGroupIds.addAll(extraction.leafGroupIds());
+		Set<Integer> winnerDependencyGroupIds = new HashSet<>(extraction.leafGroupIds());
 		extraction.region()
 				.predicates()
 				.stream()
 				.flatMap(predicate -> predicate.scalarInputGroupIds().stream())
-				.forEach(dependencyGroupIds::add);
+				.forEach(groupId -> {
+					dependencyGroupIds.add(groupId);
+					winnerDependencyGroupIds.add(groupId);
+				});
+		boolean scopedFactors = scopedRegionSupported(extraction.region());
 		List<JoinSearchDependencyStamp.FactorRevision> factorRevisions = dependencyGroupIds
 				.stream()
 				.map(groupId -> {
 					MemoGroup group = memo.group(groupId);
-					JoinSearchDependencyStamp.LogicalFactRevision logicalFacts =
-							new JoinSearchDependencyStamp.LogicalFactRevision(
-									group.factRevision(RuleDescriptor.MemoFact.POSSIBLE_BINDINGS),
-									group.factRevision(RuleDescriptor.MemoFact.ASSURED_BINDINGS),
-									group.factRevision(RuleDescriptor.MemoFact.NULLABILITY),
-									group.factRevision(RuleDescriptor.MemoFact.FINITE_DOMAIN),
-									group.factRevision(RuleDescriptor.MemoFact.EXACT_FINITE_RELATION),
-									group.factRevision(RuleDescriptor.MemoFact.DUPLICATE_SEMANTICS),
-									group.factRevision(RuleDescriptor.MemoFact.CORRELATION),
-									group.factRevision(RuleDescriptor.MemoFact.SCOPE_BARRIER),
-									group.factRevision(RuleDescriptor.MemoFact.REQUIRED_INPUTS),
-									group.factRevision(RuleDescriptor.MemoFact.ORDERING));
-					return new JoinSearchDependencyStamp.FactorRevision(groupId, group.joinSearchRevision(), logicalFacts);
+					JoinSearchDependencyStamp.LogicalFactRevision logicalFacts = new JoinSearchDependencyStamp.LogicalFactRevision(
+							group.factRevision(RuleDescriptor.MemoFact.POSSIBLE_BINDINGS),
+							group.factRevision(RuleDescriptor.MemoFact.ASSURED_BINDINGS),
+							group.factRevision(RuleDescriptor.MemoFact.NULLABILITY),
+							group.factRevision(RuleDescriptor.MemoFact.FINITE_DOMAIN),
+							group.factRevision(RuleDescriptor.MemoFact.EXACT_FINITE_RELATION),
+							group.factRevision(RuleDescriptor.MemoFact.DUPLICATE_SEMANTICS),
+							group.factRevision(RuleDescriptor.MemoFact.CORRELATION),
+							group.factRevision(RuleDescriptor.MemoFact.SCOPE_BARRIER),
+							group.factRevision(RuleDescriptor.MemoFact.REQUIRED_INPUTS),
+							group.factRevision(RuleDescriptor.MemoFact.ORDERING));
+					boolean winnerDependency = winnerDependencyGroupIds.contains(groupId);
+					boolean scopedFactor = scopedFactors && extraction.leafGroupIds().contains(groupId);
+					JoinFactor factor = scopedFactor
+							? extraction.region()
+									.factors()
+									.stream()
+									.filter(candidate -> candidate.groupId() == groupId)
+									.findFirst()
+									.orElseThrow()
+							: null;
+					OptimizationGoal factorGoal = scopedFactor
+							? scopedFactorGoal(memo, state, goal, extraction.region(), factor)
+							: null;
+					long winnerRevision = scopedFactor
+							? memo.winnerRevision(state.winnerKey(factorGoal, groupId))
+							: group.winnerRevision();
+					return new JoinSearchDependencyStamp.FactorRevision(groupId, group.joinSearchRevision(),
+							logicalFacts,
+							winnerDependency ? winnerRevision : 0L,
+							winnerDependency ? memo.winnerClearRevision(groupId) : 0L);
 				})
 				.toList();
 		return new JoinSearchDependencyStamp(factorRevisions);
@@ -627,19 +1886,22 @@ public final class CascadesPlanner {
 							.orElseThrow(() -> new IllegalStateException(
 									"Join factor group has no logical expression: " + factor.groupId()));
 					BindingShape shape = group.bindingShape();
-					Set<String> requiredInputs = representative.inputs()
+					BindingMask requiredInputs = representative.inputs()
 							.stream()
-							.flatMap(input -> input.requiredProperties().inputBoundVars().stream())
-							.collect(java.util.stream.Collectors.toUnmodifiableSet());
+							.map(input -> memo.universe().maskOf(input.requiredProperties().inputBoundVars()))
+							.reduce(BindingMask.EMPTY, BindingMask::union)
+							.union(extraction.region().requiredInputBindings(factor.occurrenceId()));
 					return new JoinFactorDescriptor(factor.occurrenceId(), factor.groupId(),
-							representative.tupleExpr(), memo.universe().names(shape.possible()),
-							memo.universe().names(shape.assured()), requiredInputs);
+							representative.tupleExpr(), memo.universe(), shape.possible(), shape.assured(),
+							requiredInputs);
 				})
 				.toList();
-		LinkedHashSet<String> initiallyBound = new LinkedHashSet<>(goal.requiredProperties().boundVars());
-		initiallyBound.addAll(goal.requiredProperties().inputBoundVars());
-		return new JoinSearchContext(descriptors, initiallyBound, goal.requiredProperties(), goal.semanticScope(),
-				goal.rowGoal(), goal.estimationTier());
+		BindingMask initiallyBound = memo.universe()
+				.maskOf(goal.requiredProperties().boundVars())
+				.union(memo.universe().maskOf(goal.requiredProperties().inputBoundVars()))
+				.union(memo.universe().maskOf(goal.inputBindingContext().assuredBindingNames()));
+		return new JoinSearchContext(descriptors, memo.universe(), initiallyBound, goal.requiredProperties(),
+				goal.semanticScope(), goal.rowGoal(), goal.estimationTier());
 	}
 
 	private static RuleDependencyRevision ruleRevision(MemoGroup group, long statisticsEpoch) {
@@ -667,13 +1929,20 @@ public final class CascadesPlanner {
 		boolean explorationStarted = false;
 		boolean explorationCompleted = false;
 		try {
-			if (!state.consumeMajor("optimizeGroup:" + groupId) || state.expired(goal)) {
+			if (timedBudgeted(goal.searchMode()) && !state.consumeMajor("optimizeGroup:" + groupId)) {
+				state.recordPendingGroupOptimization(groupId,
+						"deterministic work limit before optimizing group " + groupId);
+				state.markApproximate("budget-or-timeout optimizing group " + groupId);
+				return memo.bestWinner(key);
+			}
+			if (state.expired(goal)) {
+				state.recordPendingGroupOptimization(groupId, "deadline before optimizing group " + groupId);
 				state.markApproximate("budget-or-timeout optimizing group " + groupId);
 				return memo.bestWinner(key);
 			}
 			state.beginGroupExploration(key);
 			explorationStarted = true;
-			boolean budgetedTransformationsApply = goal.searchMode() == OptimizationGoal.SearchMode.BUDGETED
+			boolean budgetedTransformationsApply = timedBudgeted(goal.searchMode())
 					&& hasApplicableTransformation(memo, groupId, goal);
 			seedPhysicalWinners(memo, groupId, goal, state, !budgetedTransformationsApply);
 			Optional<Winner> seededWinner = budgetedTransformationsApply
@@ -687,7 +1956,7 @@ public final class CascadesPlanner {
 			MemoGroup group = memo.group(groupId);
 			List<MemoExpr> snapshot = List.copyOf(group.mutableExpressionsView());
 			for (MemoExpr expression : snapshot) {
-				optimizeExpression(memo, expression, goal, state);
+				optimizeExpression(memo, expression, goal, state, timedBudgeted(goal.searchMode()));
 			}
 			Optional<Winner> best = memo.bestWinner(key);
 			if (best.isEmpty()) {
@@ -713,7 +1982,7 @@ public final class CascadesPlanner {
 
 	private Optional<Winner> budgetedSeededNativeWinner(Memo memo, int groupId, OptimizationGoal goal,
 			SearchState state) {
-		if (goal.searchMode() != OptimizationGoal.SearchMode.BUDGETED) {
+		if (!timedBudgeted(goal.searchMode())) {
 			return Optional.empty();
 		}
 		Optional<Winner> winner = memo.bestWinner(state.winnerKey(goal, groupId));
@@ -766,7 +2035,7 @@ public final class CascadesPlanner {
 			return;
 		}
 		List<MemoExpr> physicalSnapshot = List.copyOf(memo.group(groupId).mutableExpressionsView());
-		boolean skipGenericFallbacks = goal.searchMode() == OptimizationGoal.SearchMode.BUDGETED
+		boolean skipGenericFallbacks = timedBudgeted(goal.searchMode())
 				&& groupHasNativePhysicalAlternative(memo, goal, physicalSnapshot);
 		for (MemoExpr expression : physicalSnapshot) {
 			if (!memo.isAdmissible(expression, goal)) {
@@ -836,7 +2105,7 @@ public final class CascadesPlanner {
 	}
 
 	private void exploreGroup(Memo memo, int groupId, OptimizationGoal goal, SearchState state) {
-		if (!state.consumeMajor("exploreGroup:" + groupId)) {
+		if (timedBudgeted(goal.searchMode()) && !state.consumeMajor("exploreGroup:" + groupId)) {
 			state.markApproximate("budget while exploring group " + groupId);
 			return;
 		}
@@ -860,7 +2129,7 @@ public final class CascadesPlanner {
 				for (CascadesRule rule : ruleRegistry.applicableRules(expression, goal, memo,
 						Set.of(RuleWakeUpEvent.REQUIRED_PROPERTIES_CHANGED), ruleKinds(kind), telemetry)) {
 					applyRule(memo, expression, rule, goal, context, state);
-					if (state.approximate && goal.searchMode() == OptimizationGoal.SearchMode.BUDGETED
+					if (state.approximate && timedBudgeted(goal.searchMode())
 							&& memo.bestWinner(state.winnerKey(goal, groupId)).isEmpty()) {
 						return;
 					}
@@ -892,16 +2161,17 @@ public final class CascadesPlanner {
 				state.ruleApplicationGoal(goal, descriptor),
 				ruleRevision(memo.group(expression.groupId()), state.statisticsEpoch())
 						.relevantTo(descriptor));
-		if (!state.ruleFired.add(firedKey)) {
+		if (state.ruleFired.contains(firedKey)) {
 			telemetry.ruleOutcome(expression, rule, goal, "skipped_duplicate",
 					"expression=" + expression.id() + ",rule=" + rule.id());
 			return false;
 		}
-		if (chargeBudget && !state.consumeMinor("applyRule:" + rule.id())) {
+		if (chargeBudget && !state.consumeScheduledWork("applyRule:" + rule.id())) {
 			state.markApproximate("budget applying rule " + rule.id());
-			telemetry.ruleOutcome(expression, rule, goal, "skipped_budget", "minor budget exhausted");
+			telemetry.ruleOutcome(expression, rule, goal, "skipped_budget", "rule-work budget exhausted");
 			return false;
 		}
+		state.ruleFired.add(firedKey);
 		List<RuleApplication> applications = rule.apply(expression, goal, context);
 		if (applications == null || applications.isEmpty()) {
 			state.recordPatternExploration(expression.structuralKey());
@@ -909,6 +2179,8 @@ public final class CascadesPlanner {
 			return false;
 		}
 		boolean addedOpaqueAlternative = false;
+		boolean publishesMemoFacts = descriptor.changesProduced()
+				.contains(RuleDescriptor.ProducedChange.MEMO_FACT);
 		for (RuleApplication application : applications) {
 			RuleProof ruleProof = application.proofs().isEmpty() ? rule.proof(expression, goal, context)
 					: application.proofs().getFirst();
@@ -920,32 +2192,56 @@ public final class CascadesPlanner {
 			telemetry.alternativeConsidered(application.targetGroupId(), rule.id(), application.kind(),
 					application.deliveredProperties(), application.localCost(), application.metadata(),
 					application.alternative());
-				telemetry.ruleFired(expression.groupId(), rule.id(), ruleProof);
-				if (application.kind() == RuleKind.TRANSFORMATION) {
-					List<PhysicalProperties> inputRequirements = inheritedInputRequirements(expression, application);
+			telemetry.ruleFired(expression.groupId(), rule.id(), ruleProof);
+			if (application.kind() == RuleKind.TRANSFORMATION) {
+				List<PhysicalProperties> inputRequirements = inheritedInputRequirements(expression, application);
+				if (!application.logicalInputRecipes().isEmpty()) {
+					memo.addLogicalAlternativeWithInputRecipes(application.targetGroupId(), application.alternative(),
+							application.logicalInputRecipes(), transformationProofs(expression, application, ruleProof),
+							derivedScope, inputRequirements, application.inputSemanticRequirements());
+				} else if (application.inputGroupIds().isEmpty()) {
 					memo.addLogicalAlternative(application.targetGroupId(), application.alternative(),
 							transformationProofs(expression, application, ruleProof), derivedScope,
 							inputRequirements, application.inputSemanticRequirements());
 				} else {
-					List<PhysicalProperties> inputRequirements = inheritedInputRequirements(expression, application);
-					List<Integer> reusableInputs = reusablePhysicalInputGroupIds(expression, application);
-					Optional<MemoExpr> added = reusableInputs == null
-							? memo.addPhysicalAlternative(application.targetGroupId(), application.alternative(),
-									application.deliveredProperties(), inputRequirements,
-									application.inputSemanticRequirements(), application.metadata(), application.kind(),
-									application.localCost(), physicalProofs(expression, application, ruleProof),
-									application.estimate(), application.opaque(), derivedScope, false)
-							: memo.addPhysicalAlternativeWithInputs(application.targetGroupId(),
-									application.alternative(), reusableInputs, application.deliveredProperties(),
-									inputRequirements, application.inputSemanticRequirements(), application.metadata(),
-									application.kind(), application.localCost(),
-									physicalProofs(expression, application, ruleProof), application.estimate(),
-									application.opaque(), derivedScope, false);
+					memo.addLogicalAlternativeWithInputs(application.targetGroupId(), application.alternative(),
+							application.inputGroupIds(), transformationProofs(expression, application, ruleProof),
+							derivedScope, inputRequirements, application.inputSemanticRequirements());
+				}
+			} else {
+				List<PhysicalProperties> inputRequirements = inheritedInputRequirements(expression, application);
+				List<Integer> reusableInputs = reusablePhysicalInputGroupIds(expression, application);
+				Optional<Memo.PhysicalAlternativeInsertion> insertion = reusableInputs == null
+						? memo.retainPhysicalAlternative(application.targetGroupId(), application.alternative(),
+								application.deliveredProperties(), inputRequirements,
+								application.inputSemanticRequirements(), application.locallyCostedInputIndexes(),
+								application.metadata(), application.kind(),
+								application.localCost(), physicalProofs(expression, application, ruleProof),
+								application.estimate(), application.opaque(), derivedScope, publishesMemoFacts)
+						: memo.retainPhysicalAlternativeWithInputs(application.targetGroupId(),
+								application.alternative(), reusableInputs, application.deliveredProperties(),
+								inputRequirements, application.inputSemanticRequirements(),
+								application.locallyCostedInputIndexes(), application.metadata(),
+								application.kind(), application.localCost(),
+								physicalProofs(expression, application, ruleProof), application.estimate(),
+								application.opaque(), derivedScope, publishesMemoFacts);
+				if (insertion.isPresent()) {
+					Memo.PhysicalAlternativeInsertion retained = insertion.get();
+					if (expression.logical() && retained.retained().groupId() == expression.groupId()) {
+						memo.recordPhysicalImplementationSource(retained.retained(), expression);
+					}
+					boolean registered = state.registerPhysicalApplication(retained.retained(), goal, descriptor);
+					if (chargeBudget && registered && !timedBudgeted(goal.searchMode())) {
+						state.enqueueNewPhysicalCostWork(memo, retained.retained(), goal,
+								"implementation_goal_registered:" + rule.id());
+					}
+				}
 				addedOpaqueAlternative |= application.opaque();
 				if (optimizeBudgetedPhysical
-						&& added.isPresent() && goal.searchMode() == OptimizationGoal.SearchMode.BUDGETED
+						&& insertion.filter(Memo.PhysicalAlternativeInsertion::added).isPresent()
+						&& timedBudgeted(goal.searchMode())
 						&& memo.bestWinner(state.winnerKey(goal, application.targetGroupId())).isEmpty()) {
-					optimizeExpression(memo, added.get(), goal, state, false);
+					optimizeExpression(memo, insertion.orElseThrow().retained(), goal, state, false);
 				}
 			}
 		}
@@ -993,6 +2289,9 @@ public final class CascadesPlanner {
 	private List<Integer> reusablePhysicalInputGroupIds(MemoExpr sourceExpression, RuleApplication application) {
 		if (sourceExpression == null || application == null || application.opaque()) {
 			return null;
+		}
+		if (!application.inputGroupIds().isEmpty()) {
+			return application.inputGroupIds();
 		}
 		List<MemoInputLayout.Slot> sourceInputs = MemoInputLayout.slots(sourceExpression.tupleExpr());
 		List<MemoInputLayout.Slot> alternativeInputs = MemoInputLayout.slots(application.alternative());
@@ -1052,6 +2351,10 @@ public final class CascadesPlanner {
 	private Optional<Winner> optimizeExpression(Memo memo, MemoExpr expression, OptimizationGoal goal,
 			SearchState state, boolean chargeBudget, boolean enforceCostBound) {
 		goal = state.canonicalGoal(goal);
+		if (expression.physical() && !state.physicalApplicationRegistered(expression, goal)) {
+			state.resolveDeferredCostWork(expression, goal);
+			return Optional.empty();
+		}
 		if (!memo.isAdmissible(expression, goal)) {
 			state.resolveDeferredCostWork(expression, goal);
 			return Optional.empty();
@@ -1100,26 +2403,70 @@ public final class CascadesPlanner {
 		if (stableTraversal != null) {
 			state.observeGroupDependencies(memo, parentKey, stableTraversal.inputFrontiers().keySet());
 			long expressionFactRevision = memo.group(expression.groupId()).factRevision();
-			if (cachedWinner.isPresent()
+			if (stableTraversal.complete()
+					&& stableTraversal.inputFrontiersCurrent(memo, state.statisticsEpoch())
+					&& cachedWinner.isPresent()
 					&& expressionFactRevision == stableTraversal.expressionFactRevision()) {
 				state.resolveDeferredCostWork(expression, goal);
 				return cachedWinner;
 			}
 			DependentInputLayout layout = new DependentInputLayout(memo, expression, goal, state);
+			int terminalDepth = layout.inputCount() - 1;
 			CombinationResult replay = new CombinationResult();
+			Map<WinnerKey, WinnerDependencyRevision> terminalRevisionsAtReplayStart = stableTraversal
+					.terminalWinnerKeys(terminalDepth)
+					.stream()
+					.collect(java.util.stream.Collectors.toMap(key -> key,
+							key -> WinnerDependencyRevision.capture(memo, key), (left, right) -> left,
+							LinkedHashMap::new));
 			replayDependentTerminalPrefixes(memo, expression, goal, state, chargeBudget, enforceCostBound, layout,
 					stableTraversal.nonterminalPrefixes(), replay);
 			if (telemetry != CascadesTelemetry.NO_OP) {
 				telemetry.plannerEvent("dependent-input-prefixes-replayed expression=" + expression.id()
 						+ " prefixes=" + stableTraversal.nonterminalPrefixes().size());
 			}
+			LinkedHashMap<WinnerKey, WinnerDependencyRevision> replayWakeUps = new LinkedHashMap<>(
+					replay.blockingWinnerRevisions());
+			boolean terminalFrontiersStable = true;
+			for (Map.Entry<WinnerKey, WinnerDependencyRevision> entry : terminalRevisionsAtReplayStart.entrySet()) {
+				WinnerKey key = entry.getKey();
+				WinnerDependencyRevision revision = entry.getValue();
+				if (!revision.current(memo, key)) {
+					terminalFrontiersStable = false;
+					replayWakeUps.putIfAbsent(key, revision);
+				}
+			}
+			boolean terminallyFailedWakeUps = !replayWakeUps.isEmpty()
+					&& replayWakeUps.keySet().stream().allMatch(memo::hasFailure);
 			if (!replay.stop()
+					&& replayWakeUps.isEmpty()
+					&& terminalFrontiersStable
 					&& expressionFactRevision == memo.group(expression.groupId()).factRevision()
-					&& stableTraversal.inputFrontiersCurrent(memo, state.statisticsEpoch())) {
+					&& stableTraversal.replayable(memo, state.statisticsEpoch(), terminalDepth)) {
+				state.rememberDependentTraversal(expression, goal,
+						stableTraversal.completedAfterReplay(memo, expressionFactRevision, terminalDepth));
+			} else if (!replayWakeUps.isEmpty()
+					&& !terminallyFailedWakeUps
+					&& stableTraversal.replayable(memo, state.statisticsEpoch(), terminalDepth)) {
 				state.rememberDependentTraversal(expression, goal,
 						stableTraversal.withExpressionFactRevision(expressionFactRevision));
 			} else {
 				state.clearDependentTraversal(expression, goal);
+			}
+			if (!replayWakeUps.isEmpty()) {
+				if (terminallyFailedWakeUps) {
+					state.resolveDeferredCostWork(expression, goal);
+					state.rememberDependentTraversal(expression, goal,
+							stableTraversal.completedAfterReplay(memo, expressionFactRevision, terminalDepth));
+					return replay.bestAccepted().or(() -> cachedWinner);
+				} else {
+					String reason = replay.missingReason() == null
+							? terminalFrontiersStable ? "missing-dependent-terminal-winner"
+									: "dependent-terminal-frontier-changed-during-replay"
+							: replay.missingReason();
+					state.deferCostWorkForWinnerKeys(memo, expression, goal, replayWakeUps, reason);
+					return cachedWinner;
+				}
 			}
 			state.resolveDeferredCostWork(expression, goal);
 			Optional<Winner> replayedWinner = replay.bestAccepted()
@@ -1135,28 +2482,35 @@ public final class CascadesPlanner {
 				state.statisticsEpoch());
 		runDependentPrefixAgenda(memo, expression, goal, state, chargeBudget, enforceCostBound, layout, result,
 				observation);
-		if (result.bestAccepted().isPresent()) {
-			state.resolveDeferredCostWork(expression, goal);
-			if (!result.stop()) {
-				state.finishDependentTraversal(memo, expression, goal, observation);
-			}
-			return result.bestAccepted();
-		}
 		if (!result.blockingWinnerKeys().isEmpty()) {
+			boolean terminallyFailedBlockers = result.blockingWinnerKeys().stream().allMatch(memo::hasFailure);
+			if (terminallyFailedBlockers) {
+				state.resolveDeferredCostWork(expression, goal);
+				state.finishDependentTraversal(memo, expression, goal, observation);
+				return result.bestAccepted().or(() -> memo.bestWinner(parentKey));
+			}
 			String reason = result.missingReason() == null ? "missing-dependent-input-winner"
 					: result.missingReason();
-			LinkedHashSet<WinnerKey> wakeUpKeys = new LinkedHashSet<>(observation.observedWinnerKeys());
-			wakeUpKeys.addAll(result.blockingWinnerKeys());
-			state.deferCostWorkForWinnerKeys(memo, expression, goal, wakeUpKeys, reason);
+			LinkedHashMap<WinnerKey, WinnerDependencyRevision> wakeUpRevisions = new LinkedHashMap<>(
+					observation.observedWinnerRevisions());
+			wakeUpRevisions.putAll(result.blockingWinnerRevisions());
+			state.deferCostWorkForWinnerKeys(memo, expression, goal, wakeUpRevisions, reason);
+			state.rememberBlockedDependentTraversal(memo, expression, goal, observation);
 			telemetry.plannerEvent("cost-deferred expression=" + expression.id()
 					+ " group=" + expression.groupId()
 					+ " rule=" + primaryRuleId(expression)
-					+ " blockers=" + wakeUpKeys
+					+ " blockers=" + wakeUpRevisions.keySet()
 					+ " reason=" + reason);
+			if (result.bestAccepted().isPresent()) {
+				return result.bestAccepted();
+			}
 		} else {
 			state.resolveDeferredCostWork(expression, goal);
 			if (!result.stop()) {
 				state.finishDependentTraversal(memo, expression, goal, observation);
+			}
+			if (result.bestAccepted().isPresent()) {
+				return result.bestAccepted();
 			}
 		}
 		return memo.bestWinner(parentKey);
@@ -1165,6 +2519,7 @@ public final class CascadesPlanner {
 	private void runDependentPrefixAgenda(Memo memo, MemoExpr expression, OptimizationGoal goal, SearchState state,
 			boolean chargeBudget, boolean enforceCostBound, DependentInputLayout layout, CombinationResult result,
 			DependentTraversalObservation observation) {
+		WinnerKey parentKey = state.winnerKey(goal, expression.groupId());
 		ArrayDeque<DependentPrefixPath> agenda = new ArrayDeque<>();
 		DependentPrefixPath rootPrefix = layout.rootPrefix();
 		observation.recordPrefix(rootPrefix);
@@ -1181,34 +2536,39 @@ public final class CascadesPlanner {
 			int inputGroupId = input.groupId();
 			OptimizationGoal inputGoal = prefix.target().goal();
 			WinnerKey inputKey = prefix.target().key();
+			if (inputKey.equals(parentKey)) {
+				String reason = "non-descending-selected-prefix-self-input[inputIndex=" + prefix.depth()
+						+ ",inputGroup=" + inputGroupId + ",inputGoal=" + inputGoalSummary(inputGoal) + "]";
+				state.recordRejected(expression.groupId(), primaryRuleId(expression), reason, CostVector.ZERO);
+				telemetry.alternativeDiscarded(expression.groupId(), primaryRuleId(expression), reason,
+						CostVector.ZERO, expression.tupleExpr());
+				continue;
+			}
 			if (state.groupOptimizationActive(inputKey)) {
 				observation.observe(memo, inputKey);
-				result.recordMissing(inputKey, "cyclic-dependent-input-goal[inputIndex=" + prefix.depth()
+				result.recordMissing(memo, inputKey, "cyclic-dependent-input-goal[inputIndex=" + prefix.depth()
 						+ ",inputGroup=" + inputGroupId + ",inputGoal=" + inputGoalSummary(inputGoal) + "]");
 				continue;
 			}
-			Optional<Winner> inputWinner = optimizeGroup(memo, inputGroupId, inputGoal, state);
+			Optional<Winner> inputWinner;
+			if (timedBudgeted(goal.searchMode())) {
+				inputWinner = optimizeGroup(memo, inputGroupId, inputGoal, state);
+			} else {
+				requestGroupWork(memo, inputGroupId, inputGoal, state, "dependent_input_goal_requested");
+				inputWinner = memo.bestWinner(inputKey);
+			}
 			state.observeGroupDependency(memo, state.winnerKey(goal, expression.groupId()), inputKey);
-			observation.observe(memo, inputKey);
 			if (inputWinner.isEmpty()) {
-				result.recordMissing(inputKey,
+				result.recordMissing(memo, inputKey,
 						missingInputWinnerReason(prefix.depth(), inputGroupId, inputGoal, state));
 				continue;
 			}
+			observation.observe(memo, inputKey);
 			List<Winner> frontier = memo.winners(inputKey);
 			if (frontier.isEmpty()) {
 				frontier = List.of(inputWinner.get());
 			}
-			if (telemetry != CascadesTelemetry.NO_OP) {
-				telemetry.plannerEvent("dependent-input-frontier expression=" + expression.id()
-						+ " group=" + expression.groupId()
-						+ " rule=" + primaryRuleId(expression)
-						+ " inputIndex=" + prefix.depth()
-						+ " inputGroup=" + inputGroupId
-						+ " inputGoal=" + inputGoalSummary(inputGoal)
-						+ " frontierSize=" + frontier.size()
-						+ " context=" + inputGoal.inputBindingContext());
-			}
+			recordDependentInputFrontier(expression, prefix.depth(), inputGroupId, inputGoal, frontier);
 			for (Winner winner : frontier) {
 				if (prefix.depth() + 1 == layout.inputCount()) {
 					costDependentTerminal(memo, expression, goal, state, chargeBudget, enforceCostBound,
@@ -1235,19 +2595,40 @@ public final class CascadesPlanner {
 			}
 			List<Winner> frontier = memo.winners(prefix.target().key());
 			if (frontier.isEmpty()) {
-				memo.bestWinner(prefix.target().key()).ifPresent(winner ->
-						costDependentTerminal(memo, expression, goal, state, chargeBudget, enforceCostBound,
-								prefix.materialize(winner, layout.inputCount()), result));
-			} else {
-				for (Winner winner : frontier) {
-					costDependentTerminal(memo, expression, goal, state, chargeBudget, enforceCostBound,
-							prefix.materialize(winner, layout.inputCount()), result);
-					if (result.stop()) {
-						return;
-					}
+				frontier = memo.bestWinner(prefix.target().key()).map(List::of).orElse(List.of());
+			}
+			if (frontier.isEmpty()) {
+				result.recordMissing(memo, prefix.target().key(),
+						"missing-dependent-terminal-winner[inputIndex=" + terminalDepth
+								+ ",inputGroup=" + prefix.target().key().groupId()
+								+ ",inputGoal=" + inputGoalSummary(prefix.target().goal()) + "]");
+				continue;
+			}
+			recordDependentInputFrontier(expression, terminalDepth, prefix.target().key().groupId(),
+					prefix.target().goal(), frontier);
+			for (Winner winner : frontier) {
+				costDependentTerminal(memo, expression, goal, state, chargeBudget, enforceCostBound,
+						prefix.materialize(winner, layout.inputCount()), result);
+				if (result.stop()) {
+					return;
 				}
 			}
 		}
+	}
+
+	private void recordDependentInputFrontier(MemoExpr expression, int inputIndex, int inputGroupId,
+			OptimizationGoal inputGoal, List<Winner> frontier) {
+		if (telemetry == CascadesTelemetry.NO_OP) {
+			return;
+		}
+		telemetry.plannerEvent("dependent-input-frontier expression=" + expression.id()
+				+ " group=" + expression.groupId()
+				+ " rule=" + primaryRuleId(expression)
+				+ " inputIndex=" + inputIndex
+				+ " inputGroup=" + inputGroupId
+				+ " inputGoal=" + inputGoalSummary(inputGoal)
+				+ " frontierSize=" + frontier.size()
+				+ " context=" + inputGoal.inputBindingContext());
 	}
 
 	private void costDependentTerminal(Memo memo, MemoExpr expression, OptimizationGoal goal, SearchState state,
@@ -1300,7 +2681,7 @@ public final class CascadesPlanner {
 			return true;
 		}
 		return tupleExpr instanceof Difference
-				&& input.requiredProperties().materialization() != PhysicalProperties.Materialization.MATERIALIZED;
+				&& consumption == PhysicalProperties.InputConsumption.SELECTED_PREFIX;
 	}
 
 	private void enumerateInputWinnerCombinations(Memo memo, MemoExpr expression, OptimizationGoal goal,
@@ -1340,8 +2721,15 @@ public final class CascadesPlanner {
 
 	private Optional<Winner> optimizeExpressionWithInputs(Memo memo, MemoExpr expression, OptimizationGoal goal,
 			SearchState state, boolean enforceCostBound, List<Winner> inputWinners) {
-		CostApplicationClaim claim = state.beginCostApplication(memo, expression, goal, inputWinners);
-		if (claim == null) {
+		return optimizeExpressionWithInputs(memo, expression, goal, state, enforceCostBound, inputWinners, true);
+	}
+
+	private Optional<Winner> optimizeExpressionWithInputs(Memo memo, MemoExpr expression, OptimizationGoal goal,
+			SearchState state, boolean enforceCostBound, List<Winner> inputWinners, boolean recordCostApplication) {
+		CostApplicationClaim claim = recordCostApplication
+				? state.beginCostApplication(memo, expression, goal, inputWinners)
+				: null;
+		if (recordCostApplication && claim == null) {
 			return Optional.empty();
 		}
 		List<MemoExpr> touchedCostingExpressions = new ArrayList<>();
@@ -1353,14 +2741,18 @@ public final class CascadesPlanner {
 				state.recordRejected(expression.groupId(), ruleId, reason, CostVector.ZERO);
 				telemetry.alternativeDiscarded(expression.groupId(), ruleId, reason, CostVector.ZERO,
 						expression.tupleExpr());
-				state.finishCostApplication(claim, memo, expression, goal, inputWinners);
+				if (recordCostApplication) {
+					state.finishCostApplication(claim, memo, expression, goal, inputWinners);
+				}
 				return Optional.empty();
 			}
 			CostApplicationPreparation preparation = prepareCostApplication(memo, expression, goal, inputWinners,
 					touchedCostingExpressions);
 			Optional<Winner> result = costExpressionWithInputs(memo, expression, goal, state, enforceCostBound,
 					inputWinners, preparation);
-			state.finishCostApplication(claim, memo, expression, goal, inputWinners);
+			if (recordCostApplication) {
+				state.finishCostApplication(claim, memo, expression, goal, inputWinners);
+			}
 			return result;
 		} finally {
 			if (costModel instanceof CascadesCostModel.DefaultCascadesCostModel defaultCostModel) {
@@ -1371,27 +2763,34 @@ public final class CascadesPlanner {
 
 	private InputRouteIncompatibility selectedPrefixRouteIncompatibility(MemoExpr expression,
 			List<Winner> inputWinners) {
-		if (expression == null || !expression.physical() || !(expression.tupleExpr() instanceof Join template)
+		if (expression == null || !expression.physical() || !(expression.tupleExpr()instanceof Join template)
 				|| inputWinners == null || inputWinners.isEmpty()) {
 			return null;
 		}
 		List<MemoInput> inputs = expression.executableInputs();
 		int inputCount = Math.min(inputs.size(), inputWinners.size());
+		boolean selectedPrefixExecution = false;
 		for (int inputIndex = 0; inputIndex < inputCount; inputIndex++) {
 			MemoInput input = inputs.get(inputIndex);
 			if (input.role() != MemoInput.Role.RIGHT) {
 				continue;
 			}
 			PhysicalProperties.InputConsumption consumption = input.requiredProperties().inputConsumption();
-			boolean selectedPrefix = consumption == PhysicalProperties.InputConsumption.SELECTED_PREFIX
+			selectedPrefixExecution = consumption == PhysicalProperties.InputConsumption.SELECTED_PREFIX
 					|| consumption == PhysicalProperties.InputConsumption.ANY
 							&& CascadesRewriteSupport.parameterizedRightInputIsLegal(template);
-			if (!selectedPrefix) {
+			break;
+		}
+		if (!selectedPrefixExecution) {
+			return null;
+		}
+		for (int inputIndex = 0; inputIndex < inputCount; inputIndex++) {
+			MemoInput input = inputs.get(inputIndex);
+			if (input.role() != MemoInput.Role.LEFT && input.role() != MemoInput.Role.RIGHT) {
 				continue;
 			}
 			Winner inputWinner = inputWinners.get(inputIndex);
-			TupleExpr selectedInputPlan = SelectedPlanMaterializer.materialize(costModel, inputWinner);
-			if (selectedInputPlan == null || CascadesRewriteSupport.selectedPrefixInputIsLegal(selectedInputPlan)) {
+			if (inputWinner.selectedPrefixRouteSafe()) {
 				continue;
 			}
 			int childExpressionId = inputWinner.expression() == null ? -1 : inputWinner.expression().id();
@@ -1402,23 +2801,24 @@ public final class CascadesPlanner {
 
 	private CostApplicationPreparation prepareCostApplication(Memo memo, MemoExpr expression, OptimizationGoal goal,
 			List<Winner> inputWinners, List<MemoExpr> touchedCostingExpressions) {
-		Set<String> selectedOutputNames = CascadesRewriteSupport.possibleStreamBindingNames(expression.tupleExpr());
+		BindingMask selectedOutputMask = memo.bindingShape(expression).possible();
 		touchedCostingExpressions.add(expression);
 		PhysicalProperties expressionDelivered = costModel.deliveredProperties(expression, goal, inputWinners);
-		PhysicalProperties selectedDelivered = expressionDelivered.restrictOutputTo(selectedOutputNames);
+		PhysicalProperties selectedDelivered = expressionDelivered.restrictOutputTo(selectedOutputMask,
+				memo.universe());
 		MemoExpr costingExpression = goal.inputBindingContext().isNone()
 				? expression.withOutputBindingProfile(memo.group(expression.groupId()).outputBindingProfile())
 				: expression;
-		Set<String> outputNames = memo.universe()
-				.names(memo.group(expression.groupId()).bindingShape().possible());
+		BindingMask outputMask = memo.group(expression.groupId()).bindingShape().possible();
 		if (costingExpression != expression) {
 			touchedCostingExpressions.add(costingExpression);
 		}
 		PhysicalProperties delivered = (costingExpression == expression
 				? expressionDelivered
 				: costModel.deliveredProperties(costingExpression, goal, inputWinners))
-						.restrictOutputTo(outputNames);
-		return new CostApplicationPreparation(costingExpression, delivered, selectedDelivered, selectedOutputNames);
+						.restrictOutputTo(outputMask, memo.universe());
+		return new CostApplicationPreparation(costingExpression, delivered, selectedDelivered, selectedOutputMask,
+				memo.possibleBindingNames(expression), selectedOutputMask.equals(outputMask));
 	}
 
 	private Optional<Winner> costExpressionWithInputs(Memo memo, MemoExpr expression, OptimizationGoal goal,
@@ -1429,9 +2829,11 @@ public final class CascadesPlanner {
 		String ruleId = primaryRuleId(expression);
 		WinnerKey winnerKey = state.winnerKey(goal, expression.groupId());
 		Optional<Winner> incumbent = memo.bestWinner(winnerKey);
-		Set<Integer> locallyCostedInputIndexes = CostVector.ZERO.equals(expression.ruleCost())
-				? costModel.locallyCostedInputIndexes(costingExpression, goal, inputWinners)
-				: Set.of();
+		Set<Integer> locallyCostedInputIndexes = expression.locallyCostedInputIndexes();
+		if (CostVector.ZERO.equals(expression.ruleCost())) {
+			locallyCostedInputIndexes = unionLocallyCostedInputs(locallyCostedInputIndexes,
+					costModel.locallyCostedInputIndexes(costingExpression, goal, inputWinners));
+		}
 		Optional<CostVector> inputLowerBound = budgetedInputLowerBound(inputWinners, expression.ruleCost(), goal,
 				locallyCostedInputIndexes);
 		if (incumbent.isPresent() && inputLowerBound.isPresent()
@@ -1457,18 +2859,24 @@ public final class CascadesPlanner {
 			return Optional.empty();
 		}
 		incumbent = memo.bestWinner(winnerKey);
+		Optional<CardinalityEstimate> scopedCanonicalCardinality = state.scopedCanonicalCardinality(expression, goal);
 		CostVector localCost = CostVector.ZERO.equals(expression.ruleCost())
-				? costModel.localCost(costingExpression, goal, inputWinners)
-				: expression.ruleCost();
-		CostVector selectedLocalCost = costingExpression == expression || !CostVector.ZERO.equals(expression.ruleCost())
+				? costModel.localCost(costingExpression, goal, inputWinners, scopedCanonicalCardinality)
+				: scopedCanonicalCardinality
+						.map(cardinality -> expression.ruleCost().withRows(cardinality.rows()))
+						.orElseGet(expression::ruleCost);
+		CostVector selectedLocalCost = preparation.fullOutputSurface()
+				|| costingExpression == expression
+				|| !CostVector.ZERO.equals(expression.ruleCost())
 				? localCost
 				: costModel.localCost(expression, goal, inputWinners);
 		selectedLocalCost = selectedLocalCost.withRows(selectedOutputRows(preparation.selectedDelivered(),
-				selectedLocalCost, preparation.selectedOutputNames()));
+				selectedLocalCost, preparation.selectedOutputMask(), memo.universe(), goal.inputBindingContext()));
 		BindingProfile selectedOutputProfile = preparation.selectedDelivered().bindingProfile();
 		Set<String> selectedOutputNames = preparation.selectedOutputNames();
-		Optional<StatisticsEstimate> declaredLogicalOutput = costModel.logicalOutputEstimate(costingExpression, goal,
-				inputWinners);
+		Optional<StatisticsEstimate> declaredLogicalOutput = scopedCanonicalCardinality.isPresent()
+				? Optional.empty()
+				: costModel.logicalOutputEstimate(costingExpression, goal, inputWinners);
 		CostVector implementationLocalCost = localCost;
 		CostVector logicalOutputCost = declaredLogicalOutput
 				.map(estimate -> implementationLocalCost.withOutputEstimate(estimate.vector().toCostVector()))
@@ -1476,16 +2884,19 @@ public final class CascadesPlanner {
 		BindingProfile logicalOutputProfile = declaredLogicalOutput
 				.map(estimate -> BindingProfile.fromEstimate(costingExpression.tupleExpr(), estimate))
 				.orElse(delivered.bindingProfile());
-		CascadesCostModel.OutputEvidenceScope outputEvidenceScope = costModel.outputEvidenceScope(costingExpression,
-				goal, inputWinners, logicalOutputCost);
-		LogicalOutputEstimate canonicalOutput = canonicalizeLogicalOutputEstimate(memo, expression, goal,
+		CascadesCostModel.OutputEvidenceScope outputEvidenceScope = scopedCanonicalCardinality.isPresent()
+				? CascadesCostModel.OutputEvidenceScope.LOGICAL_EQUIVALENCE_FOR_GOAL
+				: costModel.outputEvidenceScope(costingExpression, goal, inputWinners, logicalOutputCost);
+		PendingLogicalOutputEstimate pendingOutput = prepareLogicalOutputEstimate(memo, expression, goal,
 				logicalOutputCost, logicalOutputProfile, outputEvidenceScope);
-		localCost = canonicalOutput.applyTo(localCost);
+		LogicalOutputEstimate canonicalOutput = pendingOutput.canonical();
+		localCost = enforceJoinEmissionWorkFloor(costingExpression, goal, canonicalOutput.applyTo(localCost));
+		localCost = enforceContextualJoinOutputUpperBound(costingExpression, goal, locallyCostedInputIndexes,
+				implementationLocalCost.rows(), localCost);
 		delivered = canonicalOutput.applyTo(delivered);
 		incumbent = memo.bestWinner(winnerKey);
 		CostVector cost = composePhysicalCost(inputWinners, localCost, locallyCostedInputIndexes);
-		cost = costModel.applyCostPolicy(goal, cost);
-		boolean budgetedInitialChoice = goal.searchMode() == OptimizationGoal.SearchMode.BUDGETED
+		boolean budgetedInitialChoice = timedBudgeted(goal.searchMode())
 				&& incumbent.isEmpty()
 				&& !goal.estimationTier().allowsExactEstimates();
 		boolean decisionSensitive = budgetedInitialChoice || decisionSensitive(incumbent.orElse(null), cost);
@@ -1498,8 +2909,9 @@ public final class CascadesPlanner {
 					goal.withEstimationTier(JoinFactorCostModel.EstimationTier.DECISION_EXACT), inputWinners, cost,
 					incumbent.map(Winner::cost).orElse(CostVector.INFINITE));
 			if (refined != null && !CostVector.INFINITE.equals(refined) && refined.compareTo(cost) != 0) {
-				cost = costModel.applyCostPolicy(goal,
-						applyCanonicalLogicalOutputEstimate(memo, expression, goal, refined));
+				cost = enforceJoinEmissionWorkFloor(costingExpression, goal, canonicalOutput.applyTo(refined));
+				cost = enforceContextualJoinOutputUpperBound(costingExpression, goal, locallyCostedInputIndexes,
+						implementationLocalCost.rows(), cost);
 				exactRefined = true;
 			}
 			CostVector selectedRefined = costModel.refineCostForDecision(expression,
@@ -1507,18 +2919,30 @@ public final class CascadesPlanner {
 					selectedLocalCost, CostVector.INFINITE);
 			if (selectedRefined != null && !CostVector.INFINITE.equals(selectedRefined)) {
 				selectedLocalCost = selectedRefined.withRows(selectedOutputRows(preparation.selectedDelivered(),
-						selectedRefined, preparation.selectedOutputNames()));
+						selectedRefined, preparation.selectedOutputMask(), memo.universe(),
+						goal.inputBindingContext()));
 			}
 		}
-		LogicalOutputEstimate canonicalSelectedOutput = canonicalizeSelectedLogicalOutputEstimate(memo, expression,
-				goal, selectedLocalCost, selectedOutputProfile, selectedOutputNames);
-		selectedLocalCost = canonicalSelectedOutput.applyTo(selectedLocalCost);
+		cost = costModel.applyOutputGoal(costingExpression, goal, delivered, cost);
+		if (preparation.fullOutputSurface()) {
+			// A full-surface implementation selects the memo group's logical population. Reusing a separately
+			// estimated local syntax cardinality here can make equivalent physical implementations disagree and
+			// inflate every contextual parent goal. Narrow physical surfaces still retain their own estimate below.
+			selectedLocalCost = cost;
+		}
+		PendingSelectedLogicalOutputEstimate pendingSelectedOutput = prepareSelectedLogicalOutputEstimate(memo,
+				expression, goal, selectedLocalCost, selectedOutputProfile, selectedOutputNames, outputEvidenceScope);
+		double selectedContextualJoinOutputUpperBound = selectedLocalCost.rows();
+		LogicalOutputEstimate canonicalSelectedOutput = pendingSelectedOutput.canonical();
+		selectedLocalCost = enforceJoinEmissionWorkFloor(expression, goal,
+				canonicalSelectedOutput.applyTo(selectedLocalCost));
 		selectedOutputProfile = canonicalSelectedOutput.bindingProfile();
 		selectedLocalCost = costModel.applyOutputGoal(expression, goal, preparation.selectedDelivered(),
 				selectedLocalCost);
+		selectedLocalCost = enforceContextualJoinOutputUpperBound(expression, goal, locallyCostedInputIndexes,
+				selectedContextualJoinOutputUpperBound, selectedLocalCost);
 		double selectedOutputRows = selectedLocalCost.rows();
 		incumbent = memo.bestWinner(winnerKey);
-		cost = costModel.applyOutputGoal(costingExpression, goal, delivered, cost);
 		LeoPlanRanking leoPlanRanking = stampLeoPlanRankingShadow(expression, ruleId, cost, incumbent.orElse(null));
 		cost = applyLeoPlanReranking(expression, cost, leoPlanRanking);
 		Map<String, Double> decisionMetrics = decisionMetrics(goal, incumbent.orElse(null), cost, decisionSensitive,
@@ -1529,17 +2953,16 @@ public final class CascadesPlanner {
 		telemetry.alternativeCosted(expression.groupId(), ruleId, goal.requiredProperties(), delivered, cost,
 				expression.tupleExpr());
 		observeLeoPlanCandidate(expression, ruleId, cost, memo.winners(winnerKey).size(), false);
-		if (enforceCostBound && goal.searchMode() == OptimizationGoal.SearchMode.BUDGETED
+		if (enforceCostBound && timedBudgeted(goal.searchMode())
 				&& cost.exceeds(goal.costBound())) {
 			recordLeoPlanCandidateObservation(expression, ruleId, cost, false, "cost-bound");
 			state.recordRejected(expression.groupId(), ruleId, "cost-bound", cost);
 			telemetry.alternativeDiscarded(expression.groupId(), ruleId, "cost-bound", cost, expression.tupleExpr());
 			return Optional.empty();
 		}
-		List<RuleProof> proofs = new ArrayList<>(expression.proofs());
-		for (Winner inputWinner : inputWinners) {
-			proofs.addAll(inputWinner.proofs());
-		}
+		commitLogicalOutputEstimate(memo, expression, pendingOutput);
+		commitSelectedLogicalOutputEstimate(memo, expression, pendingSelectedOutput);
+		List<RuleProof> proofs = RuleProofLineage.selected(expression.proofs(), inputWinners);
 		ruleId = primaryRuleId(expression, proofs);
 		RuleKind ruleKind = primaryRuleKind(expression, proofs);
 		List<PlanProvenance> inputProvenance = inputWinners.stream()
@@ -1550,55 +2973,94 @@ public final class CascadesPlanner {
 				ruleId, ruleKind, inputProvenance, estimate, cost, goal.requiredProperties(), delivered,
 				state.rejectionsFor(expression.groupId()), proofs, winnerApproximation.approximate(),
 				winnerApproximation.reason());
-		Winner candidate = new Winner(expression, null, delivered, cost, proofs, winnerApproximation.approximate(),
-				winnerApproximation.reason(), provenance, goal.inputBindingContext(),
-				CostScope.forInputContext(goal.inputBindingContext()), selectedOutputRows, selectedOutputProfile,
-				selectedOutputNames);
-		if (!memo.canAddWinner(winnerKey, candidate, boundedFrontierLimit,
-				goal.searchMode() != OptimizationGoal.SearchMode.BUDGETED)) {
-			recordLeoPlanCandidateObservation(expression, ruleId, cost, false, "dominated-or-trimmed");
-			state.recordRejected(expression.groupId(), ruleId, "dominated-or-trimmed", cost);
-			observeLeoPlanCandidate(expression, ruleId, cost, memo.winners(winnerKey).size(), false);
-			telemetry.alternativeDiscarded(expression.groupId(), ruleId, "dominated-or-trimmed", cost,
-					expression.tupleExpr());
-			return Optional.empty();
-		}
 		TupleExpr plan = expression.tupleExpr();
 		stampDoubleMetrics(plan, decisionMetrics);
-		LeoPlanCandidate physicalCandidate = planCandidate("candidate", ruleId, expression.tupleExpr(), cost);
-		stampLeoCandidateMetrics(plan, physicalCandidate, false);
+		LeoPlanCandidate physicalCandidate = null;
+		if (costModel.leoSurfaceProvider() instanceof LeoLearnedEvidenceService) {
+			physicalCandidate = planCandidate("candidate", ruleId, expression.tupleExpr(), cost);
+			stampLeoCandidateMetrics(plan, physicalCandidate, false);
+		}
 		Winner winner = new Winner(expression, plan, delivered, cost, proofs, winnerApproximation.approximate(),
 				winnerApproximation.reason(), provenance, goal.inputBindingContext(),
 				CostScope.forInputContext(goal.inputBindingContext()), selectedOutputRows, selectedOutputProfile,
-				selectedOutputNames, true, inputWinners);
-		if (goal.searchMode() == OptimizationGoal.SearchMode.BUDGETED
-				&& memo.winners(winnerKey).size() >= boundedFrontierLimit) {
-			state.markApproximate("bounded winner frontier reached for group " + expression.groupId());
+				selectedOutputNames, true, inputWinners).withOptimizationKey(winnerKey);
+		List<Winner> frontierBeforeInsertion = memo.winners(winnerKey);
+		int trimmedBefore = memo.winnerFrontierTrimmedCount(winnerKey);
+		MemoGroup.WinnerFrontierInsertion insertion = memo.addWinnerWithChanges(winnerKey, winner,
+				boundedFrontierLimit, exactLike(goal.searchMode()));
+		boolean accepted = insertion.accepted();
+		if (accepted && !frontierBeforeInsertion.isEmpty()) {
+			recordEvictedWinners(memo, winnerKey, frontierBeforeInsertion, state);
 		}
-		boolean accepted = memo.addWinner(winnerKey, winner, boundedFrontierLimit,
-				goal.searchMode() != OptimizationGoal.SearchMode.BUDGETED);
+		int frontierSize = memo.winners(winnerKey).size();
+		state.observeFrontierSize(frontierSize);
+		if (boundedSearch(goal.searchMode())
+				&& memo.winnerFrontierTrimmedCount(winnerKey) > trimmedBefore) {
+			state.recordFrontierTruncation("bounded winner frontier trimmed for group " + expression.groupId());
+		}
 		if (!accepted) {
 			recordLeoPlanCandidateObservation(expression, ruleId, cost, false, "dominated-or-trimmed");
 			state.recordRejected(expression.groupId(), ruleId, "dominated-or-trimmed", cost);
 			observeLeoPlanCandidate(expression, ruleId, cost, memo.winners(winnerKey).size(), false);
 			telemetry.alternativeDiscarded(expression.groupId(), ruleId, "dominated-or-trimmed", cost, plan);
 		} else {
-			stampLeoCandidateMetrics(plan, physicalCandidate, true);
-			winner.recordSelectedPlanDoubleMetric(PLANNED_LEO_CANDIDATE_ACCEPTED, 1.0d);
+			for (Winner displaced : insertion.displaced()) {
+				String displacedRuleId = primaryRuleId(displaced.expression(), displaced.proofs());
+				state.recordRejected(displaced.expression().groupId(), displacedRuleId, "dominated-or-trimmed",
+						displaced.cost());
+				telemetry.alternativeDiscarded(displaced.expression().groupId(), displacedRuleId,
+						"dominated-or-trimmed", displaced.cost(), displaced.plan());
+			}
+			if (physicalCandidate != null) {
+				stampLeoCandidateMetrics(plan, physicalCandidate, true);
+				winner.recordSelectedPlanDoubleMetric(PLANNED_LEO_CANDIDATE_ACCEPTED, 1.0d);
+			}
 			recordLeoPlanCandidateObservation(expression, ruleId, cost, true, "accepted");
 			observeLeoPlanCandidate(expression, ruleId, cost, memo.winners(winnerKey).size(), true);
 			telemetry.alternativeAccepted(expression.groupId(), ruleId, cost, plan);
+			if (!timedBudgeted(goal.searchMode())) {
+				memo.bestWinner(winnerKey)
+						.filter(best -> best == winner)
+						.ifPresent(best -> telemetry.winnerChosen(winnerKey, best));
+			}
 		}
 		return accepted ? Optional.of(winner) : Optional.empty();
 	}
 
+	private void recordEvictedWinners(Memo memo, WinnerKey winnerKey, List<Winner> previousFrontier,
+			SearchState state) {
+		List<Winner> retainedFrontier = memo.winners(winnerKey);
+		for (Winner previous : previousFrontier) {
+			boolean retained = false;
+			for (Winner candidate : retainedFrontier) {
+				if (candidate == previous) {
+					retained = true;
+					break;
+				}
+			}
+			if (retained) {
+				continue;
+			}
+			String previousRuleId = previous.provenance() == null
+					? primaryRuleId(previous.expression(), previous.proofs())
+					: previous.provenance().ruleId();
+			state.recordRejected(previous.expression().groupId(), previousRuleId, "dominated-or-trimmed",
+					previous.cost(), winnerKey.requiredProperties(), previous.deliveredProperties());
+			telemetry.alternativeDiscarded(previous.expression().groupId(), previousRuleId,
+					"dominated-or-trimmed", previous.cost(), previous.plan());
+		}
+	}
+
 	private double selectedOutputRows(PhysicalProperties selectedDelivered, CostVector selectedCost,
-			Set<String> selectedOutputNames) {
+			BindingMask selectedOutputMask, BindingUniverse universe, InputBindingContext inputBindingContext) {
+		if (CostScope.forInputContext(inputBindingContext) == CostScope.TOTAL_FOR_CONTEXT) {
+			return selectedCost == null ? 0.0d : selectedCost.rows();
+		}
 		BindingProfile profile = selectedDelivered == null ? BindingProfile.ANY : selectedDelivered.bindingProfile();
-		Set<String> names = selectedOutputNames == null ? Set.of() : selectedOutputNames;
-		if (profile != null && !names.isEmpty()) {
+		BindingMask mask = selectedOutputMask == null ? BindingMask.EMPTY : selectedOutputMask;
+		if (profile != null && !mask.isEmpty()) {
 			for (var relation : profile.finiteRelations().values()) {
-				if (Set.copyOf(relation.variables()).equals(names)) {
+				if (universe.matches(mask, relation.variables())) {
 					return relation.rows();
 				}
 			}
@@ -1623,11 +3085,13 @@ public final class CascadesPlanner {
 	}
 
 	private record CostApplicationPreparation(MemoExpr costingExpression, PhysicalProperties delivered,
-			PhysicalProperties selectedDelivered, Set<String> selectedOutputNames) {
+			PhysicalProperties selectedDelivered, BindingMask selectedOutputMask, Set<String> selectedOutputNames,
+			boolean fullOutputSurface) {
 		private CostApplicationPreparation {
 			Objects.requireNonNull(costingExpression, "costingExpression");
 			delivered = delivered == null ? PhysicalProperties.ANY : delivered;
 			selectedDelivered = selectedDelivered == null ? PhysicalProperties.ANY : selectedDelivered;
+			selectedOutputMask = selectedOutputMask == null ? BindingMask.EMPTY : selectedOutputMask;
 			selectedOutputNames = selectedOutputNames == null ? Set.of() : Set.copyOf(selectedOutputNames);
 		}
 	}
@@ -1655,7 +3119,7 @@ public final class CascadesPlanner {
 
 	private Optional<CostVector> budgetedInputLowerBound(List<Winner> inputWinners, CostVector ruleCost,
 			OptimizationGoal goal, Set<Integer> locallyCostedInputIndexes) {
-		if (goal.searchMode() != OptimizationGoal.SearchMode.BUDGETED || inputWinners == null
+		if (!timedBudgeted(goal.searchMode()) || inputWinners == null
 				|| inputWinners.isEmpty()) {
 			return Optional.empty();
 		}
@@ -1674,6 +3138,18 @@ public final class CascadesPlanner {
 			lowerBound = lowerBound.plus(ruleCost);
 		}
 		return Optional.of(lowerBound);
+	}
+
+	private static Set<Integer> unionLocallyCostedInputs(Set<Integer> declared, Set<Integer> inferred) {
+		if (declared == null || declared.isEmpty()) {
+			return inferred == null ? Set.of() : inferred;
+		}
+		if (inferred == null || inferred.isEmpty() || declared.containsAll(inferred)) {
+			return declared;
+		}
+		LinkedHashSet<Integer> combined = new LinkedHashSet<>(declared);
+		combined.addAll(inferred);
+		return Collections.unmodifiableSet(combined);
 	}
 
 	private boolean cannotBeatIncumbent(CostVector lowerBound, CostVector incumbentCost) {
@@ -1779,17 +3255,10 @@ public final class CascadesPlanner {
 
 	private LeoPlanCandidate planCandidate(String candidateId, String ruleId, TupleExpr tupleExpr, CostVector cost) {
 		CostVector safeCost = cost == null ? CostVector.INFINITE : cost;
-		String logicalFingerprint = logicalFingerprint(tupleExpr);
+		String logicalFingerprint = tupleExpr == null ? "" : costModel.feedbackFingerprint(tupleExpr);
 		String physicalFingerprint = (ruleId == null ? "" : ruleId) + "|" + logicalFingerprint;
 		return new LeoPlanCandidate(candidateId, ruleId, tupleExpr, safeCost.rows(), safeCost.workRows(),
 				safeCost.objectiveScore(), logicalFingerprint, physicalFingerprint, "");
-	}
-
-	private static String logicalFingerprint(TupleExpr tupleExpr) {
-		if (tupleExpr == null) {
-			return "";
-		}
-		return tupleExpr.getClass().getName() + "|bindings=" + new java.util.TreeSet<>(tupleExpr.getBindingNames());
 	}
 
 	private void markPlanChangingFeedbackThreshold(Winner winner) {
@@ -1878,38 +3347,122 @@ public final class CascadesPlanner {
 		return selectedChildTotals.plus(local).withOutputEstimate(local);
 	}
 
-	private LogicalOutputEstimate canonicalizeLogicalOutputEstimate(Memo memo, MemoExpr expression,
+	static CostVector enforceJoinEmissionWorkFloor(MemoExpr expression, CostVector cost) {
+		return enforceJoinEmissionWorkFloor(expression, OptimizationGoal.root(), cost);
+	}
+
+	private static CostVector enforceJoinEmissionWorkFloor(MemoExpr expression, OptimizationGoal goal,
+			CostVector cost) {
+		if (expression == null || !(expression.tupleExpr() instanceof Join) || cost == null
+				|| cost.workRows() >= cost.rows()
+				|| contextSpecificPhysicalJoinOutput(expression)
+						&& goal != null && goal.inputBindingContext().isPresent()) {
+			return cost;
+		}
+		return cost.withWorkRows(cost.rows());
+	}
+
+	private static CostVector enforceContextualJoinOutputUpperBound(MemoExpr expression,
+			OptimizationGoal goal, Set<Integer> locallyCostedInputIndexes, double maximumRows, CostVector cost) {
+		if (expression == null
+				|| !(expression.tupleExpr()instanceof Join)
+				|| goal == null
+				|| goal.inputBindingContext().isNone()
+				|| (locallyCostedInputIndexes == null || locallyCostedInputIndexes.isEmpty())
+						&& !contextSpecificPhysicalJoinOutput(expression)
+				|| !Double.isFinite(maximumRows)
+				|| maximumRows < 0.0d
+				|| cost == null) {
+			return cost;
+		}
+		return cost.rows() <= maximumRows ? cost : cost.withRows(maximumRows);
+	}
+
+	private static boolean contextSpecificPhysicalJoinOutput(MemoExpr expression) {
+		TupleExpr tupleExpr = expression == null ? null : expression.tupleExpr();
+		if (!(tupleExpr instanceof Join)) {
+			return false;
+		}
+		String source = tupleExpr.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+		return "physical-join-contextual-right".equals(source)
+				|| "physical-join-context-total".equals(source);
+	}
+
+	private PendingLogicalOutputEstimate prepareLogicalOutputEstimate(Memo memo, MemoExpr expression,
 			OptimizationGoal goal, CostVector estimate, BindingProfile bindingProfile,
 			CascadesCostModel.OutputEvidenceScope outputEvidenceScope) {
 		LogicalOutputEstimate candidate = LogicalOutputEstimate.from(estimate, bindingProfile);
 		LogicalOutputEstimateKey key = LogicalOutputEstimateKey.of(goal, costModel.statisticsEpoch());
+		if (memo.semanticScope(expression) != SemanticScope.BAG) {
+			return new PendingLogicalOutputEstimate(key, candidate, candidate, false);
+		}
 		if (canonicalLogicalOutputEligible(memo, expression, estimate, outputEvidenceScope)) {
-			return memo.mergeLogicalOutputEstimate(expression.groupId(), expression.id(), key, candidate);
+			LogicalOutputEstimate canonical = memo.logicalOutputEstimate(expression.groupId(), key)
+					.map(current -> current.stronger(candidate))
+					.orElse(candidate);
+			return new PendingLogicalOutputEstimate(key, candidate, canonical, true);
 		}
 		// Publishing authority and consumption are separate contracts. A local implementation cannot overwrite a
 		// trusted logical estimate, but it must still be recosted when another producer has established one.
-		return memo.logicalOutputEstimate(expression.groupId(), key).orElse(candidate);
+		LogicalOutputEstimate canonical = memo.logicalOutputEstimate(expression.groupId(), key).orElse(candidate);
+		return new PendingLogicalOutputEstimate(key, candidate, canonical, false);
 	}
 
-	private LogicalOutputEstimate canonicalizeSelectedLogicalOutputEstimate(Memo memo, MemoExpr expression,
-			OptimizationGoal goal, CostVector estimate, BindingProfile bindingProfile, Set<String> selectedOutputNames) {
+	private PendingSelectedLogicalOutputEstimate prepareSelectedLogicalOutputEstimate(Memo memo,
+			MemoExpr expression,
+			OptimizationGoal goal, CostVector estimate, BindingProfile bindingProfile,
+			Set<String> selectedOutputNames, CascadesCostModel.OutputEvidenceScope outputEvidenceScope) {
 		LogicalOutputEstimate candidate = LogicalOutputEstimate.from(estimate, bindingProfile);
 		SelectedLogicalOutputEstimateKey key = SelectedLogicalOutputEstimateKey.of(goal, costModel.statisticsEpoch(),
 				selectedOutputNames);
-		return memo.mergeSelectedLogicalOutputEstimate(expression.groupId(), expression.id(), key, candidate);
+		Optional<LogicalOutputEstimate> current = memo.selectedLogicalOutputEstimate(expression.groupId(), key);
+		boolean publishable = outputEvidenceScope == CascadesCostModel.OutputEvidenceScope.LOGICAL_EQUIVALENCE_FOR_GOAL;
+		LogicalOutputEstimate canonical = publishable
+				? current.map(existing -> existing.stronger(candidate)).orElse(candidate)
+				: current.orElse(candidate);
+		return new PendingSelectedLogicalOutputEstimate(key, candidate, canonical, publishable);
 	}
 
-	private CostVector applyCanonicalLogicalOutputEstimate(Memo memo, MemoExpr expression, OptimizationGoal goal,
-			CostVector estimate) {
-		if (estimate == null
-				|| CostVector.INFINITE.equals(estimate)
-				|| memo.semanticScope(expression) != SemanticScope.BAG) {
-			return estimate;
+	private void commitLogicalOutputEstimate(Memo memo, MemoExpr expression,
+			PendingLogicalOutputEstimate pending) {
+		if (!pending.publishable()) {
+			return;
 		}
-		LogicalOutputEstimateKey key = LogicalOutputEstimateKey.of(goal, costModel.statisticsEpoch());
-		return memo.logicalOutputEstimate(expression.groupId(), key)
-				.orElseGet(() -> LogicalOutputEstimate.from(estimate))
-				.applyTo(estimate);
+		LogicalOutputEstimate committed = memo.mergeLogicalOutputEstimate(expression.groupId(), expression.id(),
+				pending.key(), pending.candidate());
+		if (!committed.equals(pending.canonical())) {
+			throw new IllegalStateException("Logical output evidence changed during single-threaded costing");
+		}
+	}
+
+	private void commitSelectedLogicalOutputEstimate(Memo memo, MemoExpr expression,
+			PendingSelectedLogicalOutputEstimate pending) {
+		if (!pending.publishable()) {
+			return;
+		}
+		LogicalOutputEstimate committed = memo.mergeSelectedLogicalOutputEstimate(expression.groupId(), expression.id(),
+				pending.key(), pending.candidate());
+		if (!committed.equals(pending.canonical())) {
+			throw new IllegalStateException("Selected logical output evidence changed during single-threaded costing");
+		}
+	}
+
+	private record PendingLogicalOutputEstimate(LogicalOutputEstimateKey key, LogicalOutputEstimate candidate,
+			LogicalOutputEstimate canonical, boolean publishable) {
+		private PendingLogicalOutputEstimate {
+			Objects.requireNonNull(key, "key");
+			Objects.requireNonNull(candidate, "candidate");
+			Objects.requireNonNull(canonical, "canonical");
+		}
+	}
+
+	private record PendingSelectedLogicalOutputEstimate(SelectedLogicalOutputEstimateKey key,
+			LogicalOutputEstimate candidate, LogicalOutputEstimate canonical, boolean publishable) {
+		private PendingSelectedLogicalOutputEstimate {
+			Objects.requireNonNull(key, "key");
+			Objects.requireNonNull(candidate, "candidate");
+			Objects.requireNonNull(canonical, "canonical");
+		}
 	}
 
 	private boolean canonicalLogicalOutputEligible(Memo memo, MemoExpr expression, CostVector estimate,
@@ -1974,7 +3527,13 @@ public final class CascadesPlanner {
 						+ reason);
 				return InputFrontierResult.missing(reason, inputKey);
 			}
-			Optional<Winner> inputWinner = optimizeGroup(memo, inputGroupId, inputGoal, state);
+			Optional<Winner> inputWinner;
+			if (timedBudgeted(goal.searchMode())) {
+				inputWinner = optimizeGroup(memo, inputGroupId, inputGoal, state);
+			} else {
+				requestGroupWork(memo, inputGroupId, inputGoal, state, "input_goal_requested");
+				inputWinner = memo.bestWinner(inputKey);
+			}
 			state.observeGroupDependency(memo, state.winnerKey(goal, expression.groupId()), inputKey);
 			if (inputWinner.isEmpty()) {
 				String reason = missingInputWinnerReason(i, inputGroupId, inputGoal, state);
@@ -2111,7 +3670,7 @@ public final class CascadesPlanner {
 		private Winner bestAccepted;
 		private boolean stop;
 		private String missingReason;
-		private final Set<WinnerKey> blockingWinnerKeys = new LinkedHashSet<>();
+		private final Map<WinnerKey, WinnerDependencyRevision> blockingWinnerRevisions = new LinkedHashMap<>();
 
 		void recordAccepted(Winner winner) {
 			if (winner != null && (bestAccepted == null || winner.cost().compareTo(bestAccepted.cost()) < 0)) {
@@ -2131,9 +3690,9 @@ public final class CascadesPlanner {
 			this.stop = stop;
 		}
 
-		void recordMissing(WinnerKey key, String reason) {
+		void recordMissing(Memo memo, WinnerKey key, String reason) {
 			if (key != null) {
-				blockingWinnerKeys.add(key);
+				blockingWinnerRevisions.putIfAbsent(key, WinnerDependencyRevision.capture(memo, key));
 			}
 			if (missingReason == null && reason != null && !reason.isBlank()) {
 				missingReason = reason;
@@ -2145,7 +3704,11 @@ public final class CascadesPlanner {
 		}
 
 		Set<WinnerKey> blockingWinnerKeys() {
-			return blockingWinnerKeys.isEmpty() ? Set.of() : Set.copyOf(blockingWinnerKeys);
+			return blockingWinnerRevisions.isEmpty() ? Set.of() : Set.copyOf(blockingWinnerRevisions.keySet());
+		}
+
+		Map<WinnerKey, WinnerDependencyRevision> blockingWinnerRevisions() {
+			return blockingWinnerRevisions.isEmpty() ? Map.of() : Map.copyOf(blockingWinnerRevisions);
 		}
 	}
 
@@ -2187,13 +3750,13 @@ public final class CascadesPlanner {
 			MemoInput input = memoInputs.get(i);
 			MemoInputLayout.Slot slot = slots.get(i);
 			Set<String> contextualBoundVars = switch (input.role()) {
-				case RIGHT -> rightInputContext(expression, input, tupleExpr);
+			case RIGHT -> rightInputContext(expression, input, tupleExpr);
 			case SCALAR_SUBQUERY -> input.requiredProperties()
 					.materialization() == PhysicalProperties.Materialization.MATERIALIZED ? Set.of() : scalarContext;
 			case LEFT, ARGUMENT, PATH_EXPRESSION, STRUCTURAL_CHILD -> Set.of();
 			};
 			OptimizationGoal childGoal = inputGoal(memo, input.groupId(), goal, slot.input(), contextualBoundVars,
-					tupleExpr, i, input.requiredSemanticScope());
+					tupleExpr, i, input.requiredSemanticScope(), requiresCompleteExistenceProbe(slot));
 			if (!PhysicalProperties.ANY.equals(input.requiredProperties())) {
 				childGoal = childGoal.withRequiredProperties(
 						childGoal.requiredProperties().mergedWith(input.requiredProperties()));
@@ -2232,21 +3795,22 @@ public final class CascadesPlanner {
 	}
 
 	private Set<String> differenceRightContextualBoundVars(MemoExpr expression, Difference difference) {
-		if (expression != null
-				&& expression.physical()
-				&& expression.inputs()
-						.stream()
-						.anyMatch(input -> input.role() == MemoInput.Role.RIGHT
-								&& input.requiredProperties()
-										.materialization() == PhysicalProperties.Materialization.MATERIALIZED)) {
-			return Set.of();
+		if (expression != null && expression.physical()) {
+			for (MemoInput input : expression.inputs()) {
+				if (input.role() == MemoInput.Role.RIGHT) {
+					return input.requiredProperties()
+							.inputConsumption() == PhysicalProperties.InputConsumption.SELECTED_PREFIX
+									? CascadesRewriteSupport.assuredStreamBindingNames(difference.getLeftArg())
+									: Set.of();
+				}
+			}
 		}
-		return CascadesRewriteSupport.assuredStreamBindingNames(difference.getLeftArg());
+		return Set.of();
 	}
 
 	private OptimizationGoal inputGoal(Memo memo, int inputGroupId, OptimizationGoal goal, TupleExpr input,
 			Set<String> contextualBoundVars, TupleExpr parent, int inputIndex,
-			SemanticScope inputSemanticRequirement) {
+			SemanticScope inputSemanticRequirement, boolean completeExistenceProbe) {
 		OptimizationGoal safeGoal = goal == null ? OptimizationGoal.root() : goal;
 		Set<String> candidateBoundVars = childBoundVars(memo, inputGroupId, safeGoal, input, contextualBoundVars);
 		Set<String> boundVars = visibleChildBoundVars(memo, parent, input, candidateBoundVars);
@@ -2265,7 +3829,25 @@ public final class CascadesPlanner {
 		OptimizationGoal childGoal = safeGoal.withRequiredProperties(required).withRowGoal(rowGoal);
 		SemanticScope observer = SemanticScope.fromExternalName(childGoal.semanticScope());
 		observer = observer.constrainedBy(inputSemanticRequirement);
-		return childGoal.withSemanticScope(observer.externalName());
+		OptimizationGoal scopedGoal = childGoal.withSemanticScope(observer.externalName());
+		return completeExistenceProbe && observer == SemanticScope.EXISTENCE
+				? scopedGoal.withRowGoalPreservingSemanticScope(OptimizationGoal.RowGoal.ALL)
+				: scopedGoal;
+	}
+
+	private static boolean requiresCompleteExistenceProbe(MemoInputLayout.Slot slot) {
+		if (slot == null
+				|| slot.role() != MemoInput.Role.SCALAR_SUBQUERY
+				|| !(slot.delegate().owner()instanceof Exists exists)) {
+			return false;
+		}
+		boolean negated = false;
+		var parent = exists.getParentNode();
+		while (parent instanceof Not not) {
+			negated = !negated;
+			parent = not.getParentNode();
+		}
+		return negated;
 	}
 
 	private static String nodeSummary(TupleExpr tupleExpr) {
@@ -2432,7 +4014,8 @@ public final class CascadesPlanner {
 					logicalExpressions ? logical : 0L,
 					physicalFrontier || estimates ? physical : 0L,
 					relevantFacts,
-					proofs || childExpressions || childPhysicalFrontier || childWinners || estimates ? dependencies : 0L,
+					proofs || childExpressions || childPhysicalFrontier || childWinners || estimates ? dependencies
+							: 0L,
 					childWinners || estimates ? winners : 0L,
 					events.contains(RuleWakeUpEvent.STATISTICS_CHANGED) ? statisticsEpoch : 0L);
 		}
@@ -2446,19 +4029,69 @@ public final class CascadesPlanner {
 			OptimizationGoal goal, long statisticsEpoch) {
 	}
 
+	private record StructuralRuleRouteObservationKey(String ruleId, int observerExpressionId,
+			List<Integer> expressionPath, OptimizationGoal goal, long statisticsEpoch) {
+		private StructuralRuleRouteObservationKey {
+			expressionPath = expressionPath == null || expressionPath.isEmpty()
+					? List.of()
+					: List.copyOf(expressionPath);
+		}
+	}
+
 	private record GroupSearchRevision(long logical, long physical, long facts, long expressionMetadata,
 			long dependencies) {
 	}
 
-	private record WinnerDependencyRevision(long clearRevision, long winnerRevision) {
+	private record WinnerDependencyRevision(long clearRevision, long winnerRevision, boolean failed) {
 
 		private static WinnerDependencyRevision capture(Memo memo, WinnerKey key) {
-			return new WinnerDependencyRevision(memo.winnerClearRevision(key.groupId()), memo.winnerRevision(key));
+			return new WinnerDependencyRevision(memo.winnerClearRevision(key.groupId()), memo.winnerRevision(key),
+					memo.hasFailure(key));
 		}
 
 		private boolean current(Memo memo, WinnerKey key) {
 			return clearRevision == memo.winnerClearRevision(key.groupId())
-					&& winnerRevision == memo.winnerRevision(key);
+					&& winnerRevision == memo.winnerRevision(key)
+					&& failed == memo.hasFailure(key);
+		}
+	}
+
+	private record OriginalExecutableReservation(long winnerClearRevision, long dependencyRevision,
+			Map<WinnerKey, WinnerDependencyRevision> selectedDependencies) {
+
+		private OriginalExecutableReservation {
+			selectedDependencies = selectedDependencies == null || selectedDependencies.isEmpty()
+					? Map.of()
+					: Map.copyOf(selectedDependencies);
+		}
+
+		private static OriginalExecutableReservation capture(Memo memo, WinnerKey key) {
+			MemoGroup group = memo.group(key.groupId());
+			LinkedHashMap<WinnerKey, WinnerDependencyRevision> dependencies = new LinkedHashMap<>();
+			memo.bestWinner(key).ifPresent(winner -> captureSelectedDependencies(memo, winner, dependencies));
+			return new OriginalExecutableReservation(memo.winnerClearRevision(key.groupId()),
+					group.dependencyRevision(), dependencies);
+		}
+
+		private static void captureSelectedDependencies(Memo memo, Winner winner,
+				Map<WinnerKey, WinnerDependencyRevision> dependencies) {
+			for (Winner input : winner.selectedInputs()) {
+				WinnerKey inputKey = input.optimizationKey();
+				if (inputKey == null || dependencies.putIfAbsent(inputKey,
+						WinnerDependencyRevision.capture(memo, inputKey)) != null) {
+					continue;
+				}
+				captureSelectedDependencies(memo, input, dependencies);
+			}
+		}
+
+		private boolean current(Memo memo, WinnerKey key) {
+			MemoGroup group = memo.group(key.groupId());
+			return winnerClearRevision == memo.winnerClearRevision(key.groupId())
+					&& dependencyRevision == group.dependencyRevision()
+					&& selectedDependencies.entrySet()
+							.stream()
+							.allMatch(entry -> entry.getValue().current(memo, entry.getKey()));
 		}
 	}
 
@@ -2480,24 +4113,46 @@ public final class CascadesPlanner {
 		}
 	}
 
+	private enum WorkLane {
+		EXPLORE,
+		IMPLEMENT,
+		COST,
+		JOIN_DISCOVERY,
+		JOIN
+	}
+
+	private static final WorkLane[] WORK_LANES = WorkLane.values();
+
 	private record ExpressionWork(PendingOptimizationTask.Kind kind, int groupId, int expressionId,
+			OptimizationGoal goal,
 			RuleDependencyRevision revision, Set<RuleWakeUpEvent> wakeUpEvents,
-			Set<RuleDescriptor.MemoFact> changedFacts, String wakeUpReason) {
+			Set<RuleDescriptor.MemoFact> changedFacts, String wakeUpReason, List<CascadesRule> ruleAgenda,
+			boolean prioritizeContinuation, boolean freshExploration) {
+		private static final String COALESCED_WAKE_UP_REASON = "\u0000coalesced-wake-up-events";
 
 		private ExpressionWork {
+			Objects.requireNonNull(goal, "goal");
 			wakeUpEvents = immutableWakeUpEvents(wakeUpEvents);
 			changedFacts = immutableMemoFacts(changedFacts);
 		}
 
 		PendingOptimizationTask pendingTask() {
-			return new PendingOptimizationTask(kind, groupId, expressionId, "", wakeUpReason);
+			return new PendingOptimizationTask(kind, groupId, expressionId, "", diagnosticWakeUpReason());
+		}
+
+		private String diagnosticWakeUpReason() {
+			if (!COALESCED_WAKE_UP_REASON.equals(wakeUpReason)) {
+				return wakeUpReason;
+			}
+			return "coalesced:" + wakeUpEvents.stream().map(Enum::name).sorted().toList();
 		}
 
 		ExpressionWork merge(ExpressionWork later) {
 			if (later == null) {
 				return this;
 			}
-			if (kind != later.kind || groupId != later.groupId || expressionId != later.expressionId) {
+			if (kind != later.kind || groupId != later.groupId || expressionId != later.expressionId
+					|| !goal.equals(later.goal)) {
 				throw new IllegalArgumentException("Cannot merge work for different memo expressions");
 			}
 			EnumSet<RuleWakeUpEvent> events = EnumSet.noneOf(RuleWakeUpEvent.class);
@@ -2508,13 +4163,27 @@ public final class CascadesPlanner {
 			facts.addAll(later.changedFacts);
 			String reason = wakeUpReason.equals(later.wakeUpReason)
 					? wakeUpReason
-					: "coalesced:" + events.stream().map(Enum::name).sorted().toList();
-			return new ExpressionWork(kind, groupId, expressionId, revision.merge(later.revision), events, facts,
-					reason);
+					: COALESCED_WAKE_UP_REASON;
+			List<CascadesRule> mergedAgenda = null;
+			if (ruleAgenda != null && later.ruleAgenda != null) {
+				mergedAgenda = ruleAgenda.size() <= later.ruleAgenda.size() ? ruleAgenda : later.ruleAgenda;
+			}
+			return new ExpressionWork(kind, groupId, expressionId, goal, revision.merge(later.revision), events, facts,
+					reason, mergedAgenda, prioritizeContinuation || later.prioritizeContinuation,
+					freshExploration);
+		}
+
+		ExpressionWork withRuleAgenda(List<CascadesRule> remaining) {
+			return new ExpressionWork(kind, groupId, expressionId, goal, revision, wakeUpEvents, changedFacts,
+					wakeUpReason,
+					remaining == null ? null : List.copyOf(remaining), prioritizeContinuation, freshExploration);
 		}
 	}
 
-	private record ExpressionWorkKey(PendingOptimizationTask.Kind kind, int expressionId) {
+	private record ExpressionWorkKey(PendingOptimizationTask.Kind kind, int expressionId, OptimizationGoal goal) {
+		private ExpressionWorkKey {
+			Objects.requireNonNull(goal, "goal");
+		}
 	}
 
 	private record RulePassKey(PendingOptimizationTask.Kind kind, int expressionId, WinnerKey goalKey) {
@@ -2553,6 +4222,10 @@ public final class CascadesPlanner {
 			case PROOFS_CHANGED -> addExpressionEvent(change.expressionId(), RuleWakeUpEvent.PROOF_CHANGED);
 			case ADMISSIBILITY_CHANGED -> addExpressionEvent(change.expressionId(),
 					RuleWakeUpEvent.REQUIRED_PROPERTIES_CHANGED);
+			case GOAL_ESTIMATE_CHANGED -> {
+				changedFacts.add(RuleDescriptor.MemoFact.COST_ESTIMATE);
+				addExpressionEvent(change.expressionId(), RuleWakeUpEvent.ESTIMATE_CHANGED);
+			}
 			case FACTS_CHANGED -> {
 				changedFacts.addAll(change.changedFacts());
 				groupEvents.add(RuleWakeUpEvent.LOGICAL_FACT_CHANGED);
@@ -2606,15 +4279,15 @@ public final class CascadesPlanner {
 		}
 
 		private boolean wakesJoinSearch(int expressionId) {
-			return eventsFor(expressionId).stream().anyMatch(event -> event != RuleWakeUpEvent.PHYSICAL_EXPRESSION_ADDED
-					&& event != RuleWakeUpEvent.PHYSICAL_FRONTIER_CHANGED
-					&& event != RuleWakeUpEvent.CHILD_PHYSICAL_FRONTIER_CHANGED
-					&& event != RuleWakeUpEvent.CHILD_WINNER_CHANGED);
+			return eventsFor(expressionId).stream()
+					.anyMatch(event -> event != RuleWakeUpEvent.PHYSICAL_EXPRESSION_ADDED
+							&& event != RuleWakeUpEvent.PHYSICAL_FRONTIER_CHANGED
+							&& event != RuleWakeUpEvent.CHILD_PHYSICAL_FRONTIER_CHANGED
+							&& event != RuleWakeUpEvent.CHILD_WINNER_CHANGED);
 		}
 
 		private boolean wakesJoinSubscriptions() {
 			if (kinds.contains(MemoChange.Kind.LOGICAL_EXPRESSION_ADDED)
-					|| kinds.contains(MemoChange.Kind.PROOFS_CHANGED)
 					|| kinds.contains(MemoChange.Kind.ADMISSIBILITY_CHANGED)) {
 				return true;
 			}
@@ -2622,9 +4295,12 @@ public final class CascadesPlanner {
 					&& changedFacts.stream().anyMatch(fact -> fact != RuleDescriptor.MemoFact.COST_ESTIMATE);
 		}
 
+		private boolean wakesJoinWinnerSubscriptions() {
+			return kinds.contains(MemoChange.Kind.WINNER_FRONTIER_CHANGED);
+		}
+
 		private boolean wakesDependentWork() {
-			return kinds.stream().anyMatch(kind -> kind != MemoChange.Kind.PHYSICAL_EXPRESSION_ADDED
-					&& kind != MemoChange.Kind.CHILD_PHYSICAL_FRONTIER_CHANGED);
+			return kinds.contains(MemoChange.Kind.WINNER_FRONTIER_CHANGED);
 		}
 
 		private String wakeUpReason() {
@@ -2639,18 +4315,76 @@ public final class CascadesPlanner {
 			long statisticsEpoch, JoinSearchDependencyStamp dependencyStamp) {
 	}
 
-	private record JoinDiscoveryKey(int rootGroupId, int sourceExpressionId, OptimizationGoal goal) {
-		private JoinDiscoveryKey {
-			if (rootGroupId < 0 || sourceExpressionId < 0) {
-				throw new IllegalArgumentException("join-discovery IDs must be non-negative");
+	private record ScopedJoinSessionKey(int rootGroupId, JoinRegion.Identity regionIdentity, WinnerKey goalKey) {
+
+		private static ScopedJoinSessionKey of(JoinWorkKey key) {
+			return new ScopedJoinSessionKey(key.rootGroupId(), key.regionIdentity(), key.goalKey());
+		}
+	}
+
+	private record ScopedJoinTopologyKey(ScopedJoinSessionKey sessionKey, long statisticsEpoch,
+			JoinSearchDependencyStamp legalityStamp) {
+
+		private ScopedJoinTopologyKey {
+			Objects.requireNonNull(sessionKey, "sessionKey");
+			Objects.requireNonNull(legalityStamp, "legalityStamp");
+		}
+
+		private static ScopedJoinTopologyKey of(JoinWorkKey key) {
+			List<JoinSearchDependencyStamp.FactorRevision> legalityRevisions = key.dependencyStamp()
+					.factorRevisions()
+					.stream()
+					.map(revision -> new JoinSearchDependencyStamp.FactorRevision(revision.groupId(),
+							revision.logicalCandidateRevision(), revision.logicalFacts(), 0L, 0L))
+					.toList();
+			return new ScopedJoinTopologyKey(ScopedJoinSessionKey.of(key), key.statisticsEpoch(),
+					new JoinSearchDependencyStamp(legalityRevisions));
+		}
+	}
+
+	private record CachedScopedJoinTopology(ScopedJoinTopologyKey key, JoinMemoEnumerationResult result) {
+
+		private CachedScopedJoinTopology {
+			Objects.requireNonNull(key, "key");
+			Objects.requireNonNull(result, "result");
+			if (!result.complete()) {
+				throw new IllegalArgumentException("Only complete legal topology enumeration may be cached");
 			}
+		}
+	}
+
+	private record ScopedJoinSearchAccess(ScopedJoinSearch search, boolean topologyAvailable,
+			boolean topologyReplayComplete) {
+
+		private ScopedJoinSearchAccess {
+			Objects.requireNonNull(search, "search");
+		}
+	}
+
+	private record JoinDiscoveryKey(int rootGroupId, MemoLogicalRouteKey routeKey, OptimizationGoal goal) {
+		private JoinDiscoveryKey {
+			if (rootGroupId < 0) {
+				throw new IllegalArgumentException("join-discovery group ID must be non-negative");
+			}
+			Objects.requireNonNull(routeKey, "routeKey");
 			Objects.requireNonNull(goal, "goal");
 		}
 	}
 
-	private record JoinDiscoveryWork(JoinDiscoveryKey key, long statisticsEpoch, String wakeUpReason) {
+	private record JoinCoverageKey(int rootGroupId, OptimizationGoal goal) {
+
+		private static JoinCoverageKey of(JoinDiscoveryKey key) {
+			return new JoinCoverageKey(key.rootGroupId(), key.goal());
+		}
+	}
+
+	private record JoinDiscoveryWork(JoinDiscoveryKey key, int sourceExpressionId, long statisticsEpoch,
+			String wakeUpReason) {
 		private JoinDiscoveryWork {
 			Objects.requireNonNull(key, "key");
+			if (sourceExpressionId < 0) {
+				throw new IllegalArgumentException("join-discovery expression ID must be non-negative");
+			}
 			statisticsEpoch = Math.max(0L, statisticsEpoch);
 			wakeUpReason = wakeUpReason == null || wakeUpReason.isBlank() ? "memo_change" : wakeUpReason;
 		}
@@ -2662,12 +4396,13 @@ public final class CascadesPlanner {
 			String mergedReason = wakeUpReason.equals(newer.wakeUpReason())
 					? wakeUpReason
 					: wakeUpReason + "," + newer.wakeUpReason();
-			return new JoinDiscoveryWork(key, Math.max(statisticsEpoch, newer.statisticsEpoch()), mergedReason);
+			return new JoinDiscoveryWork(key, Math.min(sourceExpressionId, newer.sourceExpressionId()),
+					Math.max(statisticsEpoch, newer.statisticsEpoch()), mergedReason);
 		}
 
 		private PendingOptimizationTask pendingTask(String reason) {
 			return new PendingOptimizationTask(PendingOptimizationTask.Kind.ENUMERATE_JOIN, key.rootGroupId(),
-					key.sourceExpressionId(), JoinSearchService.ROUTE_ID,
+					sourceExpressionId, JoinSearchService.ROUTE_ID,
 					reason == null || reason.isBlank() ? wakeUpReason : reason);
 		}
 	}
@@ -2719,8 +4454,26 @@ public final class CascadesPlanner {
 		}
 	}
 
-	record JoinWork(JoinWorkKey key, int sourceExpressionId, MemoJoinRegionExtractor.Result extraction,
+	record JoinWork(JoinWorkKey key, int sourceExpressionId, JoinRouteScope routeScope,
+			MemoJoinRegionExtractor.Result extraction,
+			OptimizationGoal goal,
 			String wakeUpReason) {
+
+		JoinWork {
+			Objects.requireNonNull(routeScope, "routeScope");
+			Objects.requireNonNull(goal, "goal");
+		}
+
+		JoinWork(JoinWorkKey key, int sourceExpressionId, MemoJoinRegionExtractor.Result extraction,
+				String wakeUpReason) {
+			this(key, sourceExpressionId, JoinRouteScope.of(List.of()), extraction,
+					new OptimizationGoal(key.goalKey().requiredProperties(), key.goalKey().semanticScope(),
+							key.goalKey().costPolicy(), CostVector.INFINITE, Set.of(),
+							OptimizationGoal.SearchMode.EXACT, Long.MAX_VALUE, Integer.MAX_VALUE,
+							key.goalKey().rowGoal(), JoinFactorCostModel.EstimationTier.STANDARD,
+							key.goalKey().inputBindingContext()),
+					wakeUpReason);
+		}
 
 		PendingOptimizationTask pendingTask(String reason) {
 			return new PendingOptimizationTask(PendingOptimizationTask.Kind.ENUMERATE_JOIN, key.rootGroupId(), -1,
@@ -2729,10 +4482,67 @@ public final class CascadesPlanner {
 		}
 	}
 
-	private record JoinSubscriptionKey(int rootGroupId, JoinRegion.Identity regionIdentity, int sourceExpressionId) {
+	private record JoinSubscriptionKey(int rootGroupId, JoinRegion.Identity regionIdentity, int sourceExpressionId,
+			WinnerKey goalKey) {
+		private JoinSubscriptionKey {
+			Objects.requireNonNull(regionIdentity, "regionIdentity");
+			Objects.requireNonNull(goalKey, "goalKey");
+		}
 	}
 
-	private record JoinSubscription(JoinSubscriptionKey key, int sourceExpressionId) {
+	private record JoinWorkRouteKey(JoinWorkKey workKey, JoinRouteScope routeScope) {
+
+		private JoinWorkRouteKey {
+			Objects.requireNonNull(workKey, "workKey");
+		}
+
+		private static JoinWorkRouteKey of(JoinWork work) {
+			return new JoinWorkRouteKey(work.key(), work.routeScope());
+		}
+	}
+
+	private static final class JoinSubscription {
+		private final JoinSubscriptionKey key;
+		private JoinWork work;
+
+		private JoinSubscription(JoinSubscriptionKey key, JoinWork work) {
+			this.key = Objects.requireNonNull(key, "key");
+			update(work);
+		}
+
+		private void update(JoinWork work) {
+			JoinWork candidate = Objects.requireNonNull(work, "work");
+			JoinSubscriptionKey candidateKey = new JoinSubscriptionKey(candidate.key().rootGroupId(),
+					candidate.key().regionIdentity(), candidate.sourceExpressionId(), candidate.key().goalKey());
+			if (!key.equals(candidateKey)) {
+				throw new IllegalArgumentException("join subscription update must preserve its exact route and goal");
+			}
+			this.work = candidate;
+		}
+
+		private JoinWork work() {
+			return work;
+		}
+
+		private int sourceExpressionId() {
+			return work.sourceExpressionId();
+		}
+	}
+
+	private record DeferredJoinWinnerDependencyKey(JoinWorkKey joinWorkKey, WinnerKey winnerKey) {
+		private DeferredJoinWinnerDependencyKey {
+			Objects.requireNonNull(joinWorkKey, "joinWorkKey");
+			Objects.requireNonNull(winnerKey, "winnerKey");
+		}
+	}
+
+	private record DeferredJoinWinnerDependency(DeferredJoinWinnerDependencyKey key, JoinWork work,
+			long observedWinnerRevision) {
+		private DeferredJoinWinnerDependency {
+			Objects.requireNonNull(key, "key");
+			Objects.requireNonNull(work, "work");
+			observedWinnerRevision = Math.max(0L, observedWinnerRevision);
+		}
 	}
 
 	private record MaterializedJoinState(int groupId, TupleExpr template, JoinState state) {
@@ -2740,15 +4550,6 @@ public final class CascadesPlanner {
 
 	private static CostWorkKey costWorkKey(Memo memo, MemoExpr expression, OptimizationGoal goal,
 			long statisticsEpoch, Collection<Integer> dependencyGroupIds, Collection<WinnerKey> blockingWinnerKeys) {
-		TreeSet<Integer> structuralGroupIds = new TreeSet<>();
-		structuralGroupIds.add(expression.groupId());
-		expression.executableInputs().stream().map(MemoInput::groupId).forEach(structuralGroupIds::add);
-		if (dependencyGroupIds != null) {
-			structuralGroupIds.addAll(dependencyGroupIds);
-		}
-		List<CostDependencyRevision> dependencyRevisions = structuralGroupIds.stream()
-				.map(groupId -> costDependencyRevision(memo.group(groupId)))
-				.toList();
 		Map<WinnerKey, WinnerDependencyRevision> blockingWinnerRevisions = new LinkedHashMap<>();
 		if (blockingWinnerKeys != null) {
 			for (WinnerKey blockingWinnerKey : blockingWinnerKeys) {
@@ -2758,6 +4559,21 @@ public final class CascadesPlanner {
 				}
 			}
 		}
+		return costWorkKey(memo, expression, goal, statisticsEpoch, dependencyGroupIds, blockingWinnerRevisions);
+	}
+
+	private static CostWorkKey costWorkKey(Memo memo, MemoExpr expression, OptimizationGoal goal,
+			long statisticsEpoch, Collection<Integer> dependencyGroupIds,
+			Map<WinnerKey, WinnerDependencyRevision> blockingWinnerRevisions) {
+		TreeSet<Integer> structuralGroupIds = new TreeSet<>();
+		structuralGroupIds.add(expression.groupId());
+		expression.executableInputs().stream().map(MemoInput::groupId).forEach(structuralGroupIds::add);
+		if (dependencyGroupIds != null) {
+			structuralGroupIds.addAll(dependencyGroupIds);
+		}
+		List<CostDependencyRevision> dependencyRevisions = structuralGroupIds.stream()
+				.map(groupId -> costDependencyRevision(memo.group(groupId)))
+				.toList();
 		return new CostWorkKey(new CostWorkBaseKey(expression.id(), goal), Math.max(0L, statisticsEpoch),
 				dependencyRevisions, blockingWinnerRevisions);
 	}
@@ -2813,6 +4629,12 @@ public final class CascadesPlanner {
 			if (groupId < 0) {
 				return true;
 			}
+			if (!blockingWinnerRevisions.isEmpty()) {
+				return blockingWinnerRevisions.entrySet()
+						.stream()
+						.filter(entry -> entry.getKey().groupId() == groupId)
+						.allMatch(entry -> entry.getValue().current(memo, entry.getKey()));
+			}
 			for (CostDependencyRevision revision : dependencyRevisions) {
 				if (revision.groupId() == groupId && !revision.current(memo.group(groupId))) {
 					return false;
@@ -2826,10 +4648,18 @@ public final class CascadesPlanner {
 			}
 			return true;
 		}
+
+		private boolean waitingForCurrentBlockers(Memo memo, long currentStatisticsEpoch) {
+			return statisticsEpoch == Math.max(0L, currentStatisticsEpoch)
+					&& !blockingWinnerRevisions.isEmpty()
+					&& blockingWinnerRevisions.entrySet()
+							.stream()
+							.allMatch(entry -> entry.getValue().current(memo, entry.getKey()));
+		}
 	}
 
 	private record CostWork(CostWorkKey key, int groupId, Set<Integer> dependencyGroupIds,
-			Set<WinnerKey> blockingWinnerKeys, String wakeUpReason) {
+			Set<WinnerKey> blockingWinnerKeys, String wakeUpReason, boolean prioritized) {
 
 		private CostWork {
 			Objects.requireNonNull(key, "key");
@@ -2956,7 +4786,8 @@ public final class CascadesPlanner {
 					? PhysicalProperties.ANY
 					: PhysicalProperties.builder().boundVars(contextualInputBindings).build();
 			OptimizationGoal targetGoal = state.canonicalGoal(baseGoals.get(depth)
-					.withRequiredProperties(baseGoals.get(depth).requiredProperties().mergedWith(contextualRequirements))
+					.withRequiredProperties(
+							baseGoals.get(depth).requiredProperties().mergedWith(contextualRequirements))
 					.withInputBindingContext(targetContext));
 			return new DependentGoal(targetGoal, state.winnerKey(targetGoal, input.groupId()));
 		}
@@ -3029,36 +4860,27 @@ public final class CascadesPlanner {
 		}
 	}
 
-	private record DependentGroupRevision(long logicalRevision, long physicalRevision, long factRevision) {
-
-		private static DependentGroupRevision capture(MemoGroup group) {
-			return new DependentGroupRevision(group.logicalRevision(), group.physicalRevision(), group.factRevision());
-		}
-	}
-
-	private record DependentFrontierRevision(WinnerKey key, long clearRevision, long winnerRevision,
-			DependentGroupRevision groupRevision) {
+	private record DependentFrontierRevision(WinnerKey key, long clearRevision, long winnerRevision, boolean failed) {
 
 		private DependentFrontierRevision {
 			Objects.requireNonNull(key, "key");
-			Objects.requireNonNull(groupRevision, "groupRevision");
 		}
 
 		private static DependentFrontierRevision capture(Memo memo, WinnerKey key) {
 			return new DependentFrontierRevision(key, memo.winnerClearRevision(key.groupId()), memo.winnerRevision(key),
-					DependentGroupRevision.capture(memo.group(key.groupId())));
+					memo.hasFailure(key));
 		}
 
 		private boolean current(Memo memo) {
 			return clearRevision == memo.winnerClearRevision(key.groupId())
 					&& winnerRevision == memo.winnerRevision(key)
-					&& groupRevision.equals(DependentGroupRevision.capture(memo.group(key.groupId())));
+					&& failed == memo.hasFailure(key);
 		}
 	}
 
 	private record DependentTraversalStamp(long statisticsEpoch, long expressionFactRevision,
 			Map<WinnerKey, DependentFrontierRevision> inputFrontiers,
-			List<DependentPrefixPath> nonterminalPrefixes) {
+			List<DependentPrefixPath> nonterminalPrefixes, boolean complete) {
 
 		private DependentTraversalStamp {
 			inputFrontiers = inputFrontiers == null || inputFrontiers.isEmpty()
@@ -3076,8 +4898,44 @@ public final class CascadesPlanner {
 			return inputFrontiers.values().stream().allMatch(frontier -> frontier.current(memo));
 		}
 
+		private boolean replayable(Memo memo, long currentStatisticsEpoch, int terminalDepth) {
+			if (statisticsEpoch != currentStatisticsEpoch) {
+				return false;
+			}
+			Set<WinnerKey> terminalKeys = terminalWinnerKeys(terminalDepth);
+			return inputFrontiers.entrySet()
+					.stream()
+					.filter(entry -> !terminalKeys.contains(entry.getKey()))
+					.allMatch(entry -> entry.getValue().current(memo));
+		}
+
+		private boolean hasTerminalPrefix(int terminalDepth) {
+			return terminalDepth >= 0
+					&& nonterminalPrefixes.stream().anyMatch(prefix -> prefix.depth() == terminalDepth);
+		}
+
+		private Set<WinnerKey> terminalWinnerKeys(int terminalDepth) {
+			if (terminalDepth < 0) {
+				return Set.of();
+			}
+			return nonterminalPrefixes.stream()
+					.filter(prefix -> prefix.depth() == terminalDepth)
+					.map(prefix -> prefix.target().key())
+					.collect(java.util.stream.Collectors.toUnmodifiableSet());
+		}
+
 		private DependentTraversalStamp withExpressionFactRevision(long revision) {
-			return new DependentTraversalStamp(statisticsEpoch, revision, inputFrontiers, nonterminalPrefixes);
+			return new DependentTraversalStamp(statisticsEpoch, revision, inputFrontiers, nonterminalPrefixes,
+					complete);
+		}
+
+		private DependentTraversalStamp completedAfterReplay(Memo memo, long revision, int terminalDepth) {
+			Map<WinnerKey, DependentFrontierRevision> completedFrontiers = new LinkedHashMap<>(inputFrontiers);
+			for (WinnerKey terminalKey : terminalWinnerKeys(terminalDepth)) {
+				completedFrontiers.put(terminalKey, DependentFrontierRevision.capture(memo, terminalKey));
+			}
+			return new DependentTraversalStamp(statisticsEpoch, revision, completedFrontiers, nonterminalPrefixes,
+					true);
 		}
 	}
 
@@ -3111,23 +4969,47 @@ public final class CascadesPlanner {
 			return inputFrontiers.isEmpty() ? Set.of() : Set.copyOf(inputFrontiers.keySet());
 		}
 
-		private boolean inputFrontiersCurrent(Memo memo, long currentStatisticsEpoch) {
-			return consistent && stamp().inputFrontiersCurrent(memo, currentStatisticsEpoch);
+		private Map<WinnerKey, WinnerDependencyRevision> observedWinnerRevisions() {
+			if (inputFrontiers.isEmpty()) {
+				return Map.of();
+			}
+			Map<WinnerKey, WinnerDependencyRevision> revisions = new LinkedHashMap<>();
+			inputFrontiers.forEach((key, frontier) -> revisions.put(key,
+					new WinnerDependencyRevision(frontier.clearRevision(), frontier.winnerRevision(),
+							frontier.failed())));
+			return revisions;
 		}
 
-		private DependentTraversalStamp stamp() {
+		private boolean inputFrontiersCurrent(Memo memo, long currentStatisticsEpoch) {
+			return consistent && stamp(false).inputFrontiersCurrent(memo, currentStatisticsEpoch);
+		}
+
+		private DependentTraversalStamp stamp(boolean complete) {
 			return new DependentTraversalStamp(statisticsEpoch, expressionFactRevision, inputFrontiers,
-					nonterminalPrefixes);
+					nonterminalPrefixes, complete);
+		}
+
+		private DependentTraversalStamp stampAtCurrentParentRevision(Memo memo, MemoExpr expression,
+				boolean complete) {
+			return stamp(complete).withExpressionFactRevision(memo.group(expression.groupId()).factRevision());
 		}
 	}
 
 	public static final class SearchState {
 		private int remainingBudget;
 		private final OptimizationGoal.SearchMode mode;
+		private final SearchWorkLedger workLedger;
+		private boolean deterministicStop;
+		private boolean ruleWorkExhausted;
 		private boolean approximate;
 		private String approximateReason = "";
 		private final Set<RuleApplicationLedgerKey> ruleFired = new HashSet<>();
+		private final Map<Integer, LinkedHashMap<OptimizationGoal, Boolean>> physicalApplicationScopes = new HashMap<>();
+		private final Set<Integer> goalInvariantPhysicalApplications = new HashSet<>();
+		private final Set<Integer> reusablePhysicalRecipes = new HashSet<>();
+		private final Map<CostApplicationScopeKey, CardinalityEstimate> scopedCanonicalCardinalities = new HashMap<>();
 		private final Set<StructuralRuleObservationKey> structuralRuleObservations = new HashSet<>();
+		private final Set<StructuralRuleRouteObservationKey> structuralRuleRouteObservations = new HashSet<>();
 		private final Set<SemanticFamilyClaimKey> semanticFamilyClaims = new HashSet<>();
 		private final Map<CostApplicationScopeKey, CostApplicationGeneration> costApplications = new HashMap<>();
 		private final Map<WinnerStateKey, Integer> canonicalWinnerStateIds = new HashMap<>();
@@ -3135,32 +5017,47 @@ public final class CascadesPlanner {
 		private final Map<InputBindingContext, InputBindingContext> canonicalInputBindingContexts = new HashMap<>();
 		private final Map<OptimizationGoal, OptimizationGoal> canonicalGoals = new HashMap<>();
 		private final IdentityHashMap<OptimizationGoal, Map<Integer, WinnerKey>> winnerKeys = new IdentityHashMap<>();
-		private final Map<SelectedPrefixWinnerKey, Map<SelectedPrefixTransitionKey, InputBindingContext>> selectedPrefixTransitions =
-				new HashMap<>();
+		private final Map<SelectedPrefixWinnerKey, Map<SelectedPrefixTransitionKey, InputBindingContext>> selectedPrefixTransitions = new HashMap<>();
 		private final Set<String> patternExplorationMemory = new HashSet<>();
 		private final Map<WinnerKey, GroupSearchStamp> exploredGroups = new HashMap<>();
-		private final Map<WinnerKey, LinkedHashMap<WinnerKey, WinnerDependencyRevision>> activeGroupDependencies =
-				new HashMap<>();
+		private final Map<WinnerKey, LinkedHashMap<WinnerKey, WinnerDependencyRevision>> activeGroupDependencies = new HashMap<>();
 		private final Set<WinnerKey> activeGroupOptimizations = new HashSet<>();
+		private final Map<WinnerKey, OriginalExecutableReservation> originalExecutableReservations = new HashMap<>();
+		private final Map<WinnerKey, Winner> originalExecutableFallbacks = new HashMap<>();
+		private final Map<Integer, LinkedHashSet<OptimizationGoal>> requestedGroupGoals = new LinkedHashMap<>();
 		private final Map<Integer, LinkedHashMap<RejectionDiagnosticKey, RejectedAlternative>> rejectedAlternativesByGroup = new HashMap<>();
 		private final ArrayDeque<ExpressionWorkKey> exploreWork = new ArrayDeque<>();
+		private final ArrayDeque<CostWorkBaseKey> prioritizedCostWork = new ArrayDeque<>();
 		private final ArrayDeque<CostWorkBaseKey> costWork = new ArrayDeque<>();
+		private final ArrayDeque<JoinDiscoveryKey> prioritizedJoinDiscoveryWork = new ArrayDeque<>();
 		private final ArrayDeque<JoinDiscoveryKey> joinDiscoveryWork = new ArrayDeque<>();
+		private final ArrayDeque<JoinWork> prioritizedJoinWork = new ArrayDeque<>();
 		private final ArrayDeque<JoinWork> joinWork = new ArrayDeque<>();
 		private final ArrayDeque<ExpressionWorkKey> implementWork = new ArrayDeque<>();
 		private final Map<ExpressionWorkKey, ExpressionWork> queuedRuleWork = new HashMap<>();
 		private final Map<CostWorkBaseKey, CostWork> deferredCostWork = new LinkedHashMap<>();
 		private final Map<DeferredCostPresenceKey, Integer> deferredCostPresence = new HashMap<>();
 		private final Set<CostWorkBaseKey> queuedCostWork = new LinkedHashSet<>();
+		private final Set<CostWorkBaseKey> promotedCostWork = new HashSet<>();
 		private final Map<Integer, Set<CostWorkBaseKey>> costSubscriptionsByGroup = new HashMap<>();
 		private final Set<RulePassKey> completedRulePasses = new HashSet<>();
 		private final Map<JoinDiscoveryKey, JoinDiscoveryWork> queuedJoinDiscoveryWork = new LinkedHashMap<>();
+		private final Set<JoinDiscoveryKey> promotedJoinDiscoveryWork = new HashSet<>();
 		private final Map<JoinDiscoveryKey, JoinDiscoverySnapshot> joinDiscoverySnapshots = new HashMap<>();
-		private final Set<JoinWorkKey> queuedJoinWork = new HashSet<>();
+		private final Set<JoinWorkRouteKey> queuedJoinWork = new HashSet<>();
+		private final Set<JoinWorkRouteKey> processedJoinRoutes = new HashSet<>();
 		private final Set<JoinWorkKey> saturatedJoinWork = new HashSet<>();
+		private final Map<JoinWorkKey, ScopedJoinSearch> scopedJoinSearches = new HashMap<>();
+		private final Map<ScopedJoinSessionKey, JoinWorkKey> activeScopedJoinKeys = new HashMap<>();
+		private final Map<ScopedJoinSessionKey, CachedScopedJoinTopology> scopedJoinTopologies = new HashMap<>();
 		private final Map<JoinSubscriptionKey, JoinSubscription> joinSubscriptions = new HashMap<>();
 		private final Map<Integer, Set<JoinSubscription>> joinSubscriptionsByGroup = new HashMap<>();
-		private final Set<String> unsupportedJoinBoundaries = new HashSet<>();
+		private final Map<Integer, Set<JoinSubscription>> joinWinnerSubscriptionsByGroup = new HashMap<>();
+		private final Map<Integer, LinkedHashMap<DeferredJoinWinnerDependencyKey, DeferredJoinWinnerDependency>> deferredJoinWinnerDependenciesByGroup = new HashMap<>();
+		private final Map<JoinWorkKey, LinkedHashSet<DeferredJoinWinnerDependencyKey>> deferredJoinWinnerDependenciesByJoin = new HashMap<>();
+		private final Set<JoinWorkKey> joinsAwaitingDeferredWinner = new HashSet<>();
+		private final Map<JoinDiscoveryKey, PendingOptimizationTask> unsupportedJoinBoundaries = new LinkedHashMap<>();
+		private final Set<JoinCoverageKey> supportedJoinCoverage = new HashSet<>();
 		private final Set<Integer> unsupportedAtomicExpressions = new HashSet<>();
 		private final List<PendingOptimizationTask> pendingTasks = new ArrayList<>();
 		private final Set<PendingOptimizationTask> pendingTaskSet = new LinkedHashSet<>();
@@ -3171,18 +5068,53 @@ public final class CascadesPlanner {
 		private int majorTaskCount;
 		private int minorTaskCount;
 		private int minorTasksSinceCharge;
+		private int scheduledCostExpressionId = -1;
+		private int workLaneCursor;
+		private boolean freshExplorePreemptionAvailable = true;
 		private int deadlineCheckCountdown = DEADLINE_CHECK_GRANULARITY;
 		private long deferredCostRecordsCreated;
 		private long joinDiscoveryRequests;
 		private long joinDiscoveriesExecuted;
 		private long joinDiscoveryCacheHits;
 		private long joinDiscoveryCoalesced;
+		private long scopedJoinRootObservations;
+		private long scopedJoinEligibleRoots;
+		private long scopedJoinExportedRoots;
+		private long scopedJoinRootMisses;
+		private int largestScopedJoin;
+		private int largestScopedCandidateCount;
+		private double largestScopedBestRootObjective = Double.NaN;
+		private String largestScopedBestRoot = "";
+		private int largestRootlessScopedJoin;
+		private int largestRootlessScopedCandidateCount;
+		private int largestUnsupportedJoinExpansion;
+		private String largestUnsupportedJoinBoundary = "";
 		private long statisticsEpoch = Long.MIN_VALUE;
+		private boolean costOnlyStabilization;
 
 		SearchState(int budget, OptimizationGoal.SearchMode mode) {
-			this.remainingBudget = budget <= 0 ? Integer.MAX_VALUE : budget;
+			this(mode, limitsFor(budget, mode));
+		}
+
+		SearchState(OptimizationGoal.SearchMode mode, SearchLimits limits) {
 			this.mode = mode == null ? OptimizationGoal.SearchMode.EXACT : mode;
+			SearchLimits resolvedLimits = Objects.requireNonNull(limits, "limits");
+			this.workLedger = new SearchWorkLedger(resolvedLimits);
+			this.remainingBudget = diagnosticBudget(resolvedLimits.ruleWork());
 			canonicalInputBindingContexts.put(InputBindingContext.NONE, InputBindingContext.NONE);
+		}
+
+		private static SearchLimits limitsFor(int budget, OptimizationGoal.SearchMode mode) {
+			OptimizationGoal.SearchMode resolvedMode = mode == null ? OptimizationGoal.SearchMode.EXACT : mode;
+			return switch (resolvedMode) {
+			case AUTO -> SearchLimits.AUTO;
+			case EXACT, SHADOW -> SearchLimits.EXACT;
+			case BUDGETED, SHADOW_BUDGETED -> SearchLimits.budgeted(budget);
+			};
+		}
+
+		private static int diagnosticBudget(long limit) {
+			return limit >= Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) limit;
 		}
 
 		InputBindingContext canonicalInputBindingContext(InputBindingContext context) {
@@ -3201,16 +5133,122 @@ public final class CascadesPlanner {
 			return existing == null ? candidate : existing;
 		}
 
+		boolean requestGroupGoal(int groupId, OptimizationGoal goal) {
+			OptimizationGoal canonical = canonicalGoal(goal);
+			return requestedGroupGoals.computeIfAbsent(groupId, ignored -> new LinkedHashSet<>()).add(canonical);
+		}
+
+		List<OptimizationGoal> requestedGroupGoals(int groupId) {
+			Set<OptimizationGoal> goals = requestedGroupGoals.get(groupId);
+			return goals == null || goals.isEmpty() ? List.of() : List.copyOf(goals);
+		}
+
 		OptimizationGoal ruleApplicationGoal(OptimizationGoal goal, RuleDescriptor descriptor) {
+			boolean invocationCardinalitySensitive = invocationCardinalitySensitive(descriptor);
+			return physicalApplicationGoal(goal, invocationCardinalitySensitive);
+		}
+
+		boolean registerPhysicalApplication(MemoExpr expression, OptimizationGoal goal,
+				RuleDescriptor descriptor) {
+			if (expression == null || !expression.physical() || goal == null) {
+				return false;
+			}
+			boolean previouslyEligible = physicalApplicationRegistered(expression, goal);
+			boolean invocationCardinalitySensitive = invocationCardinalitySensitive(descriptor);
+			OptimizationGoal applicationGoal = physicalApplicationGoal(goal, invocationCardinalitySensitive);
+			physicalApplicationScopes.computeIfAbsent(expression.id(), ignored -> new LinkedHashMap<>())
+					.merge(applicationGoal, invocationCardinalitySensitive, (left, right) -> left && right);
+			if (!invocationCardinalitySensitive) {
+				goalInvariantPhysicalApplications.add(expression.id());
+			}
+			return !previouslyEligible && physicalApplicationRegistered(expression, goal);
+		}
+
+		boolean registerReusablePhysicalRecipe(MemoExpr expression, OptimizationGoal goal,
+				RuleDescriptor descriptor, CardinalityEstimate canonicalCardinality) {
+			if (expression == null || !expression.physical() || goal == null) {
+				return false;
+			}
+			boolean previouslyEligible = physicalApplicationRegistered(expression, goal);
+			boolean invocationCardinalitySensitive = invocationCardinalitySensitive(descriptor);
+			OptimizationGoal applicationGoal = physicalApplicationGoal(goal, invocationCardinalitySensitive);
+			physicalApplicationScopes.computeIfAbsent(expression.id(), ignored -> new LinkedHashMap<>())
+					.merge(applicationGoal, invocationCardinalitySensitive, (left, right) -> left && right);
+			// A scoped export is already an implemented, transparent physical recipe. Its declared delivered and child
+			// properties remain the legality contract when another parent requests a contextual goal; requiring the
+			// originating implementation rule to fire again would make bounded winner selection depend on queue position.
+			reusablePhysicalRecipes.add(expression.id());
+			if (canonicalCardinality != null) {
+				scopedCanonicalCardinalities.put(
+						new CostApplicationScopeKey(expression.id(), canonicalGoal(goal)), canonicalCardinality);
+			}
+			return !previouslyEligible;
+		}
+
+		Optional<CardinalityEstimate> scopedCanonicalCardinality(MemoExpr expression, OptimizationGoal goal) {
+			if (expression == null || goal == null) {
+				return Optional.empty();
+			}
+			return Optional.ofNullable(scopedCanonicalCardinalities
+					.get(new CostApplicationScopeKey(expression.id(), canonicalGoal(goal))));
+		}
+
+		private static boolean invocationCardinalitySensitive(RuleDescriptor descriptor) {
+			return descriptor == null || descriptor.goalPropertiesRead()
+					.contains(RuleDescriptor.GoalProperty.INVOCATION_CARDINALITY);
+		}
+
+		void beginCostOnlyStabilization() {
+			costOnlyStabilization = true;
+		}
+
+		void endCostOnlyStabilization() {
+			costOnlyStabilization = false;
+		}
+
+		boolean costOnlyStabilization() {
+			return costOnlyStabilization;
+		}
+
+		boolean physicalApplicationRegistered(MemoExpr expression, OptimizationGoal goal) {
+			if (expression == null || !expression.physical() || goal == null) {
+				return false;
+			}
+			if (reusablePhysicalRecipes.contains(expression.id())) {
+				return true;
+			}
+			if (costOnlyStabilization && goalInvariantPhysicalApplications.contains(expression.id())) {
+				return true;
+			}
+			Map<OptimizationGoal, Boolean> scopes = physicalApplicationScopes.get(expression.id());
+			if (scopes == null || scopes.isEmpty()) {
+				return false;
+			}
+			OptimizationGoal canonical = canonicalGoal(goal);
+			for (Map.Entry<OptimizationGoal, Boolean> entry : scopes.entrySet()) {
+				OptimizationGoal candidate = physicalApplicationGoal(canonical, entry.getValue());
+				if (entry.getKey().equals(candidate)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private OptimizationGoal physicalApplicationGoal(OptimizationGoal goal,
+				boolean invocationCardinalitySensitive) {
 			OptimizationGoal canonical = canonicalGoal(Objects.requireNonNull(goal, "goal"));
-			if (descriptor == null || descriptor.goalPropertiesRead()
-					.contains(RuleDescriptor.GoalProperty.INVOCATION_CARDINALITY)) {
+			InputBindingContext context = invocationCardinalitySensitive
+					? canonical.inputBindingContext()
+					: canonical.inputBindingContext().withoutInvocationCardinality();
+			PhysicalProperties required = canonical.requiredProperties();
+			PhysicalProperties applicationRequired = required.inputConsumption() == PhysicalProperties.InputConsumption.ANY
+					? required
+					: required.withInputConsumption(PhysicalProperties.InputConsumption.ANY);
+			if (context == canonical.inputBindingContext() && applicationRequired == required) {
 				return canonical;
 			}
-			InputBindingContext shape = canonical.inputBindingContext().withoutInvocationCardinality();
-			return shape == canonical.inputBindingContext()
-					? canonical
-					: canonicalGoal(canonical.withInputBindingContext(shape));
+			return canonicalGoal(canonical.withRequiredProperties(applicationRequired)
+					.withInputBindingContext(context));
 		}
 
 		boolean claimStructuralObservation(Memo memo, String ruleId, MemoExpr observer, MemoExpr observed,
@@ -3224,6 +5262,18 @@ public final class CascadesPlanner {
 							goal == null ? null : canonicalGoal(goal), statisticsEpoch()));
 		}
 
+		boolean claimStructuralRouteObservation(Memo memo, String ruleId, MemoExpr observer,
+				List<Integer> expressionPath, OptimizationGoal goal) {
+			Objects.requireNonNull(memo, "memo");
+			Objects.requireNonNull(ruleId, "ruleId");
+			Objects.requireNonNull(observer, "observer");
+			if (expressionPath == null || expressionPath.isEmpty()) {
+				return false;
+			}
+			return structuralRuleRouteObservations.add(new StructuralRuleRouteObservationKey(ruleId, observer.id(),
+					expressionPath, goal == null ? null : canonicalGoal(goal), statisticsEpoch()));
+		}
+
 		boolean claimSemanticFamily(String familyId, int targetGroupId, int leftGroupId, int scalarRhsGroupId,
 				Set<String> assuredSharedKeys, SemanticScope semanticScope) {
 			return semanticFamilyClaims.add(new SemanticFamilyClaimKey(familyId, targetGroupId, leftGroupId,
@@ -3234,6 +5284,29 @@ public final class CascadesPlanner {
 			OptimizationGoal canonicalGoal = canonicalGoal(goal);
 			return winnerKeys.computeIfAbsent(canonicalGoal, ignored -> new HashMap<>())
 					.computeIfAbsent(groupId, canonicalGoal::key);
+		}
+
+		boolean originalExecutableReserved(Memo memo, WinnerKey winnerKey) {
+			OriginalExecutableReservation reservation = originalExecutableReservations.get(winnerKey);
+			return reservation != null && reservation.current(memo, winnerKey);
+		}
+
+		void recordOriginalExecutableReservation(Memo memo, WinnerKey winnerKey) {
+			originalExecutableReservations.put(winnerKey, OriginalExecutableReservation.capture(memo, winnerKey));
+		}
+
+		void resetOriginalExecutableReservations() {
+			originalExecutableReservations.clear();
+		}
+
+		void recordOriginalExecutableFallback(WinnerKey winnerKey, Winner winner) {
+			if (winnerKey != null && winner != null) {
+				originalExecutableFallbacks.putIfAbsent(winnerKey, winner);
+			}
+		}
+
+		Optional<Winner> originalExecutableFallback(WinnerKey winnerKey) {
+			return Optional.ofNullable(originalExecutableFallbacks.get(winnerKey));
 		}
 
 		InputBindingContext selectedPrefixContext(InputBindingContext inheritedContext, Winner winner,
@@ -3282,7 +5355,10 @@ public final class CascadesPlanner {
 			}
 			DependentTraversalKey key = new DependentTraversalKey(expression.id(), goal);
 			DependentTraversalStamp stamp = dependentTraversals.get(key);
-			if (stamp != null && stamp.inputFrontiersCurrent(memo, statisticsEpoch())) {
+			int terminalDepth = expression.executableInputs().size() - 1;
+			if (stamp != null
+					&& stamp.hasTerminalPrefix(terminalDepth)
+					&& stamp.replayable(memo, statisticsEpoch(), terminalDepth)) {
 				return stamp;
 			}
 			dependentTraversals.remove(key);
@@ -3302,7 +5378,20 @@ public final class CascadesPlanner {
 			}
 			DependentTraversalKey key = new DependentTraversalKey(expression.id(), goal);
 			if (observation.inputFrontiersCurrent(memo, statisticsEpoch())) {
-				dependentTraversals.put(key, observation.stamp());
+				dependentTraversals.put(key, observation.stampAtCurrentParentRevision(memo, expression, true));
+			} else {
+				dependentTraversals.remove(key);
+			}
+		}
+
+		void rememberBlockedDependentTraversal(Memo memo, MemoExpr expression, OptimizationGoal goal,
+				DependentTraversalObservation observation) {
+			if (memo == null || expression == null || goal == null || observation == null) {
+				return;
+			}
+			DependentTraversalKey key = new DependentTraversalKey(expression.id(), goal);
+			if (observation.inputFrontiersCurrent(memo, statisticsEpoch())) {
+				dependentTraversals.put(key, observation.stampAtCurrentParentRevision(memo, expression, false));
 			} else {
 				dependentTraversals.remove(key);
 			}
@@ -3321,14 +5410,28 @@ public final class CascadesPlanner {
 				return null;
 			}
 			CostApplicationGeneration generation = costApplications.get(application.scopeKey());
-			if (generation == null || !generation.revision().equals(application.revision())) {
+			if (generation == null || !generation.sameGeneration(application.revision())) {
 				generation = new CostApplicationGeneration(application.revision(), application.inputState().arity());
 				costApplications.put(application.scopeKey(), generation);
 			}
-			if (!generation.add(application.inputState())) {
+			if (!generation.claim(application.inputState(), application.revision())) {
 				return null;
 			}
 			return new CostApplicationClaim(application.scopeKey(), application.inputState(), application.revision());
+		}
+
+		void beginScheduledCostWork(int expressionId) {
+			if (scheduledCostExpressionId >= 0) {
+				throw new IllegalStateException("Nested scheduled cost work is not supported");
+			}
+			scheduledCostExpressionId = expressionId;
+		}
+
+		void endScheduledCostWork(int expressionId) {
+			if (scheduledCostExpressionId != expressionId) {
+				throw new IllegalStateException("Scheduled cost work ended out of order");
+			}
+			scheduledCostExpressionId = -1;
 		}
 
 		void finishCostApplication(CostApplicationClaim claim, Memo memo, MemoExpr expression, OptimizationGoal goal,
@@ -3346,19 +5449,19 @@ public final class CascadesPlanner {
 				rollbackCostApplication(claim);
 			}
 			CostApplicationGeneration generation = costApplications.get(current.scopeKey());
-			if (generation == null || !generation.revision().equals(current.revision())) {
+			if (generation == null || !generation.sameGeneration(current.revision())) {
 				generation = new CostApplicationGeneration(current.revision(), current.inputState().arity());
 				costApplications.put(current.scopeKey(), generation);
 			}
-			generation.add(current.inputState());
+			generation.record(current.inputState(), current.revision());
 		}
 
 		private void rollbackCostApplication(CostApplicationClaim claim) {
 			CostApplicationGeneration generation = costApplications.get(claim.scopeKey());
-			if (generation == null || !generation.revision().equals(claim.initialRevision())) {
+			if (generation == null || !generation.sameGeneration(claim.initialRevision())) {
 				return;
 			}
-			generation.remove(claim.inputState());
+			generation.remove(claim.inputState(), claim.initialRevision());
 			if (generation.isEmpty()) {
 				costApplications.remove(claim.scopeKey(), generation);
 			}
@@ -3375,7 +5478,7 @@ public final class CascadesPlanner {
 				return null;
 			}
 			int[] winnerStateIds = new int[winners.size()];
-			long[] childRevisions = new long[winners.size() * 2];
+			long[] childRevisions = new long[winners.size() * 3];
 			for (int index = 0; index < winners.size(); index++) {
 				Winner inputWinner = winners.get(index);
 				if (inputWinner == null || inputWinner.expression() == null) {
@@ -3386,12 +5489,17 @@ public final class CascadesPlanner {
 					return null;
 				}
 				winnerStateIds[index] = winnerStateId(inputWinner);
-				childRevisions[index * 2] = memo.group(childGroupId).factRevision();
-				childRevisions[index * 2 + 1] = memo.winnerClearRevision(childGroupId);
+				childRevisions[index * 3] = memo.group(childGroupId).factRevision();
+				childRevisions[index * 3 + 1] = memo.winnerClearRevision(childGroupId);
+				childRevisions[index * 3 + 2] = memo.winnerInvalidationRevision(inputWinner.optimizationKey(),
+						WinnerStateKey.of(inputWinner));
 			}
 			CostApplicationScopeKey scopeKey = new CostApplicationScopeKey(expression.id(), canonicalGoal(goal));
+			LogicalOutputEstimateKey estimateKey = LogicalOutputEstimateKey.of(goal, statisticsEpoch());
 			CostApplicationRevision revision = new CostApplicationRevision(statisticsEpoch(),
-					memo.group(expression.groupId()).factRevision(), memo.winnerClearRevision(expression.groupId()),
+					memo.group(expression.groupId()).factRevision(),
+					memo.group(expression.groupId()).logicalOutputEstimateRevision(estimateKey),
+					memo.winnerClearRevision(expression.groupId()),
 					childRevisions);
 			return new CostApplicationState(scopeKey, CostApplicationInputState.of(winnerStateIds), revision);
 		}
@@ -3407,43 +5515,143 @@ public final class CascadesPlanner {
 		}
 
 		boolean consumeMajor(String taskName) {
+			if (ruleWorkExhausted) {
+				return false;
+			}
+			if (!chargeBudget(taskName)) {
+				return false;
+			}
 			majorTaskCount++;
-			return chargeBudget(taskName);
+			return true;
 		}
 
 		boolean consumeMinor(String taskName) {
-			minorTaskCount++;
-			minorTasksSinceCharge++;
-			if (minorTasksSinceCharge < MINOR_TASK_BUDGET_GRANULARITY) {
+			if (deterministicStop) {
+				return false;
+			}
+			if (minorTasksSinceCharge + 1 < MINOR_TASK_BUDGET_GRANULARITY) {
+				minorTasksSinceCharge++;
+				minorTaskCount++;
 				return true;
 			}
+			if (!chargeBudget(taskName)) {
+				return false;
+			}
 			minorTasksSinceCharge = 0;
-			return chargeBudget(taskName);
+			minorTaskCount++;
+			return true;
+		}
+
+		boolean consumeScheduledWork(String taskName) {
+			return timedBudgeted(mode) ? consumeMinor(taskName) : consumeMajor(taskName);
 		}
 
 		long joinCandidateBudget() {
-			if (mode != OptimizationGoal.SearchMode.BUDGETED || remainingBudget == Integer.MAX_VALUE) {
+			if (exactLike(mode)) {
+				return Long.MAX_VALUE;
+			}
+			if (mode == OptimizationGoal.SearchMode.AUTO) {
+				return Math.max(1L, workLedger.remainingCandidateEvaluations());
+			}
+			if (remainingBudget == Integer.MAX_VALUE) {
 				return Long.MAX_VALUE;
 			}
 			return Math.max(1L, (long) Math.max(0, remainingBudget) * MINOR_TASK_BUDGET_GRANULARITY);
 		}
 
+		JoinSearchWork joinSearchWork() {
+			return workLedger;
+		}
+
+		long retainedJoinCandidateLimit() {
+			return Math.max(1L, workLedger.retainedCandidateLimit());
+		}
+
+		long joinFrontierCandidateLimit() {
+			return Math.max(1L, workLedger.frontierCandidateLimit());
+		}
+
+		ScopedJoinSearch scopedJoinSearch(JoinWorkKey key, Supplier<ScopedJoinSearch> factory) {
+			ScopedJoinSearchAccess access = scopedJoinSearch(key, ScopedJoinTopologyKey.of(key), factory);
+			return access == null ? null : access.search();
+		}
+
+		ScopedJoinSearchAccess scopedJoinSearch(JoinWorkKey key, ScopedJoinTopologyKey topologyKey,
+				Supplier<ScopedJoinSearch> factory) {
+			ScopedJoinSearch existing = scopedJoinSearches.get(key);
+			if (existing != null) {
+				boolean topologyAvailable = scopedJoinTopologyResult(topologyKey) != null;
+				return new ScopedJoinSearchAccess(existing, topologyAvailable, true);
+			}
+			ScopedJoinSessionKey sessionKey = ScopedJoinSessionKey.of(key);
+			JoinWorkKey previousKey = activeScopedJoinKeys.put(sessionKey, key);
+			ScopedJoinSearch obsolete = previousKey == null || previousKey.equals(key)
+					? null
+					: scopedJoinSearches.remove(previousKey);
+			if (previousKey != null && !previousKey.equals(key)) {
+				clearDeferredJoinWinnerDependencies(previousKey);
+				pendingJoinTasks.remove(previousKey);
+				pendingJoinCompleteness.remove(previousKey);
+				saturatedJoinWork.remove(previousKey);
+			}
+			ScopedJoinSearch created = Objects.requireNonNull(factory, "factory").get();
+			if (created == null) {
+				if (obsolete != null) {
+					obsolete.close();
+				}
+				return null;
+			}
+			boolean topologyAvailable = obsolete != null && scopedJoinTopologyResult(topologyKey) != null;
+			boolean replayComplete = !topologyAvailable || obsolete.replayTopologyInto(created);
+			if (obsolete != null) {
+				obsolete.close();
+			}
+			scopedJoinSearches.put(key, created);
+			return new ScopedJoinSearchAccess(created, topologyAvailable, replayComplete);
+		}
+
+		JoinMemoEnumerationResult scopedJoinTopologyResult(ScopedJoinTopologyKey key) {
+			if (key == null) {
+				return null;
+			}
+			CachedScopedJoinTopology cached = scopedJoinTopologies.get(key.sessionKey());
+			return cached != null && cached.key().equals(key) ? cached.result() : null;
+		}
+
+		void recordScopedJoinTopology(ScopedJoinTopologyKey key, JoinMemoEnumerationResult result) {
+			if (key != null && result != null) {
+				scopedJoinTopologies.put(key.sessionKey(), new CachedScopedJoinTopology(key, result));
+			}
+		}
+
+		boolean joinHardLimitReached() {
+			return workLedger.joinHardLimitReached();
+		}
+
 		private boolean chargeBudget(String taskName) {
-			if (remainingBudget == Integer.MAX_VALUE) {
+			if (deterministicStop) {
+				return false;
+			}
+			if (workLedger.tryRuleWork()) {
+				if (remainingBudget != Integer.MAX_VALUE && remainingBudget > 0) {
+					remainingBudget--;
+				}
 				return true;
 			}
-			remainingBudget--;
-			if (remainingBudget >= 0) {
-				return true;
+			ruleWorkExhausted = true;
+			if (mode != OptimizationGoal.SearchMode.AUTO) {
+				deterministicStop = true;
 			}
-			if (mode == OptimizationGoal.SearchMode.BUDGETED) {
-				markApproximate("task budget exhausted at " + taskName);
-			}
-			return mode != OptimizationGoal.SearchMode.BUDGETED;
+			markApproximate("deterministic rule-work limit exhausted at " + taskName);
+			return false;
+		}
+
+		boolean ruleWorkExhausted() {
+			return ruleWorkExhausted;
 		}
 
 		boolean expired(OptimizationGoal goal) {
-			if (goal == null) {
+			if (goal == null || !usesDeadline(mode)) {
 				return false;
 			}
 			deadlineCheckCountdown--;
@@ -3451,7 +5659,11 @@ public final class CascadesPlanner {
 				return false;
 			}
 			deadlineCheckCountdown = DEADLINE_CHECK_GRANULARITY;
-			return goal.expired();
+			if (!goal.expired()) {
+				return false;
+			}
+			recordDeadlineStop();
+			return true;
 		}
 
 		boolean groupExplored(Memo memo, WinnerKey key, GroupSearchRevision revision) {
@@ -3504,16 +5716,37 @@ public final class CascadesPlanner {
 			}
 		}
 
-		void enqueueRuleWork(MemoExpr expression, RuleDependencyRevision revision,
+		void enqueueRuleWork(MemoExpr expression, OptimizationGoal goal, RuleDependencyRevision revision,
 				Set<RuleWakeUpEvent> wakeUpEvents, Set<RuleDescriptor.MemoFact> changedFacts, String wakeUpReason) {
-			if (expression == null || revision == null || wakeUpEvents == null || wakeUpEvents.isEmpty()) {
+			enqueueRuleWork(expression, goal, revision, wakeUpEvents, changedFacts, wakeUpReason, false);
+		}
+
+		void enqueueRequestedGroupRuleWork(MemoExpr expression, OptimizationGoal goal,
+				RuleDependencyRevision revision, Set<RuleWakeUpEvent> wakeUpEvents,
+				Set<RuleDescriptor.MemoFact> changedFacts, String wakeUpReason) {
+			enqueueRuleWork(expression, goal, revision, wakeUpEvents, changedFacts, wakeUpReason, true);
+		}
+
+		private void enqueueRuleWork(MemoExpr expression, OptimizationGoal goal, RuleDependencyRevision revision,
+				Set<RuleWakeUpEvent> wakeUpEvents, Set<RuleDescriptor.MemoFact> changedFacts, String wakeUpReason,
+				boolean prioritize) {
+			if (expression == null || goal == null || revision == null || wakeUpEvents == null
+					|| wakeUpEvents.isEmpty()) {
 				return;
 			}
-			enqueueRuleWork(PendingOptimizationTask.Kind.EXPLORE_EXPRESSION, expression, revision, wakeUpEvents,
-					changedFacts, wakeUpReason);
-			if (mode != OptimizationGoal.SearchMode.BUDGETED) {
-				enqueueRuleWork(PendingOptimizationTask.Kind.IMPLEMENT_EXPRESSION, expression, revision, wakeUpEvents,
-						changedFacts, wakeUpReason);
+			OptimizationGoal canonicalGoal = canonicalGoal(goal);
+			enqueueRuleWork(PendingOptimizationTask.Kind.EXPLORE_EXPRESSION, expression, canonicalGoal, revision,
+					wakeUpEvents,
+					changedFacts, wakeUpReason, prioritize);
+			if (!timedBudgeted(mode)) {
+				enqueueRuleWork(PendingOptimizationTask.Kind.IMPLEMENT_EXPRESSION, expression, canonicalGoal, revision,
+						wakeUpEvents,
+						changedFacts, wakeUpReason, prioritize);
+			}
+			if (prioritize) {
+				// A newly requested group must establish its initial logical fixed point before implementations consume
+				// it. Once a lane starts, prioritized continuations still drain that finite rule agenda contiguously.
+				workLaneCursor = WorkLane.EXPLORE.ordinal();
 			}
 		}
 
@@ -3543,24 +5776,77 @@ public final class CascadesPlanner {
 			}
 		}
 
-		private void enqueueRuleWork(PendingOptimizationTask.Kind kind, MemoExpr expression,
+		private void enqueueRuleWork(PendingOptimizationTask.Kind kind, MemoExpr expression, OptimizationGoal goal,
 				RuleDependencyRevision revision, Set<RuleWakeUpEvent> wakeUpEvents,
-				Set<RuleDescriptor.MemoFact> changedFacts, String wakeUpReason) {
-			ExpressionWorkKey key = new ExpressionWorkKey(kind, expression.id());
-			ExpressionWork work = new ExpressionWork(kind, expression.groupId(), expression.id(), revision,
+				Set<RuleDescriptor.MemoFact> changedFacts, String wakeUpReason, boolean prioritize) {
+			boolean freshLogicalExpression = wakeUpEvents.contains(RuleWakeUpEvent.LOGICAL_EXPRESSION_ADDED);
+			boolean freshExploration = freshLogicalExpression
+					&& !prioritize
+					&& kind == PendingOptimizationTask.Kind.EXPLORE_EXPRESSION;
+			boolean prioritizeContinuation = prioritize || freshLogicalExpression;
+			boolean freshExplorePreemption = freshExploration && freshExplorePreemptionAvailable;
+			// A fresh logical expression may preempt one older EXPLORE item, which preserves causal child-before-parent
+			// scheduling. The next fresh derivation joins the tail until older exploration runs and replenishes the
+			// preemption token. This prevents a recursively productive rule from becoming an unbounded LIFO stream.
+			// IMPLEMENT retains head priority so a fresh alternative can become executable before stale implementations.
+			boolean prioritizeInsertion = prioritize
+					|| freshLogicalExpression && kind != PendingOptimizationTask.Kind.EXPLORE_EXPRESSION
+					|| freshExplorePreemption;
+			// A new expression must expose the rules it opens before parents invalidated by that same expression.
+			// Parent dependency work is enqueued after the causal expression and therefore preserves that order without
+			// allowing later expressions to leapfrog older exploration.
+			boolean childPhysicalPreemption = kind == PendingOptimizationTask.Kind.EXPLORE_EXPRESSION
+					&& wakeUpEvents.contains(RuleWakeUpEvent.CHILD_PHYSICAL_FRONTIER_CHANGED);
+			boolean preemptLane = prioritizeContinuation || childPhysicalPreemption;
+			ExpressionWorkKey key = new ExpressionWorkKey(kind, expression.id(), goal);
+			ExpressionWork work = new ExpressionWork(kind, expression.groupId(), expression.id(), goal, revision,
 					wakeUpEvents, changedFacts,
-					wakeUpReason == null || wakeUpReason.isBlank() ? "memo_change" : wakeUpReason);
+					wakeUpReason == null || wakeUpReason.isBlank() ? "memo_change" : wakeUpReason, null,
+					prioritizeContinuation, freshExploration);
 			ExpressionWork queued = queuedRuleWork.get(key);
 			if (queued != null) {
 				queuedRuleWork.put(key, queued.merge(work));
+				boolean newlyPrioritized = prioritizeContinuation && !queued.prioritizeContinuation();
+				boolean prioritizeQueuedInsertion = prioritize
+						|| freshLogicalExpression && kind != PendingOptimizationTask.Kind.EXPLORE_EXPRESSION;
+				if (prioritizeQueuedInsertion) {
+					ArrayDeque<ExpressionWorkKey> queue = kind == PendingOptimizationTask.Kind.EXPLORE_EXPRESSION
+							? exploreWork
+							: implementWork;
+					queue.remove(key);
+					queue.addFirst(key);
+				}
+				if (newlyPrioritized || childPhysicalPreemption) {
+					workLaneCursor = expressionWorkLane(kind).ordinal();
+				}
 				return;
 			}
 			queuedRuleWork.put(key, work);
 			if (kind == PendingOptimizationTask.Kind.EXPLORE_EXPRESSION) {
-				exploreWork.addLast(key);
+				if (prioritizeInsertion) {
+					exploreWork.addFirst(key);
+				} else {
+					exploreWork.addLast(key);
+				}
 			} else {
-				implementWork.addLast(key);
+				if (prioritizeInsertion) {
+					implementWork.addFirst(key);
+				} else {
+					implementWork.addLast(key);
+				}
 			}
+			if (freshExplorePreemption) {
+				freshExplorePreemptionAvailable = false;
+			}
+			if (preemptLane) {
+				workLaneCursor = expressionWorkLane(kind).ordinal();
+			}
+		}
+
+		private static WorkLane expressionWorkLane(PendingOptimizationTask.Kind kind) {
+			return kind == PendingOptimizationTask.Kind.EXPLORE_EXPRESSION
+					? WorkLane.EXPLORE
+					: WorkLane.IMPLEMENT;
 		}
 
 		void enqueueJoinDiscovery(JoinDiscoveryWork work) {
@@ -3570,21 +5856,47 @@ public final class CascadesPlanner {
 			joinDiscoveryRequests++;
 			JoinDiscoveryWork queued = queuedJoinDiscoveryWork.get(work.key());
 			if (queued != null) {
-				queuedJoinDiscoveryWork.put(work.key(), queued.merge(work));
+				JoinDiscoveryWork merged = queued.merge(work);
+				queuedJoinDiscoveryWork.put(work.key(), merged);
+				if (demandDrivenJoinDiscovery(merged) && promotedJoinDiscoveryWork.add(work.key())) {
+					prioritizedJoinDiscoveryWork.addLast(work.key());
+					workLaneCursor = WorkLane.JOIN_DISCOVERY.ordinal();
+				}
 				joinDiscoveryCoalesced++;
 				return;
 			}
 			queuedJoinDiscoveryWork.put(work.key(), work);
-			joinDiscoveryWork.addLast(work.key());
+			if (demandDrivenJoinDiscovery(work)) {
+				promotedJoinDiscoveryWork.add(work.key());
+				prioritizedJoinDiscoveryWork.addLast(work.key());
+				workLaneCursor = WorkLane.JOIN_DISCOVERY.ordinal();
+			} else {
+				joinDiscoveryWork.addLast(work.key());
+			}
 		}
 
 		JoinDiscoveryWork pollJoinDiscovery() {
-			JoinDiscoveryKey key = joinDiscoveryWork.removeFirst();
-			JoinDiscoveryWork work = queuedJoinDiscoveryWork.remove(key);
-			if (work == null) {
-				throw new IllegalStateException("Missing queued join discovery for " + key);
+			while (!prioritizedJoinDiscoveryWork.isEmpty()) {
+				JoinDiscoveryKey key = prioritizedJoinDiscoveryWork.removeFirst();
+				if (!promotedJoinDiscoveryWork.remove(key)) {
+					continue;
+				}
+				JoinDiscoveryWork work = queuedJoinDiscoveryWork.remove(key);
+				if (work != null) {
+					return work;
+				}
 			}
-			return work;
+			while (!joinDiscoveryWork.isEmpty()) {
+				JoinDiscoveryKey key = joinDiscoveryWork.removeFirst();
+				if (promotedJoinDiscoveryWork.contains(key)) {
+					continue;
+				}
+				JoinDiscoveryWork work = queuedJoinDiscoveryWork.remove(key);
+				if (work != null) {
+					return work;
+				}
+			}
+			throw new IllegalStateException("Missing queued join discovery work");
 		}
 
 		JoinDiscoverySnapshot joinDiscoverySnapshot(JoinDiscoveryKey key) {
@@ -3617,19 +5929,181 @@ public final class CascadesPlanner {
 				return;
 			}
 			JoinSubscriptionKey subscriptionKey = new JoinSubscriptionKey(work.key().rootGroupId(),
-					work.key().regionIdentity(), work.sourceExpressionId());
+					work.key().regionIdentity(), work.sourceExpressionId(), work.key().goalKey());
 			JoinSubscription subscription = joinSubscriptions.computeIfAbsent(subscriptionKey,
-					ignored -> new JoinSubscription(subscriptionKey, work.sourceExpressionId()));
+					ignored -> new JoinSubscription(subscriptionKey, work));
+			subscription.update(work);
 			TreeSet<Integer> subscribedGroups = new TreeSet<>(work.extraction().expandedGroupIds());
 			subscribedGroups.addAll(work.extraction().leafGroupIds());
+			TreeSet<Integer> winnerSubscribedGroups = new TreeSet<>(work.extraction().leafGroupIds());
+			work.extraction()
+					.region()
+					.predicates()
+					.stream()
+					.flatMap(predicate -> predicate.scalarInputGroupIds().stream())
+					.forEach(groupId -> {
+						subscribedGroups.add(groupId);
+						winnerSubscribedGroups.add(groupId);
+					});
 			for (Integer groupId : subscribedGroups) {
 				joinSubscriptionsByGroup.computeIfAbsent(groupId, ignored -> new LinkedHashSet<>())
 						.add(subscription);
 			}
-			if (saturatedJoinWork.contains(work.key()) || !queuedJoinWork.add(work.key())) {
+			for (Integer groupId : winnerSubscribedGroups) {
+				joinWinnerSubscriptionsByGroup.computeIfAbsent(groupId, ignored -> new LinkedHashSet<>())
+						.add(subscription);
+			}
+			JoinWorkRouteKey routeKey = JoinWorkRouteKey.of(work);
+			if (processedJoinRoutes.contains(routeKey) || !queuedJoinWork.add(routeKey)) {
 				return;
 			}
-			joinWork.addLast(work);
+			if (demandDrivenJoinWork(work)) {
+				prioritizedJoinWork.addLast(work);
+			} else {
+				joinWork.addLast(work);
+			}
+		}
+
+		private static boolean demandDrivenJoinWork(JoinWork work) {
+			if (work == null || work.wakeUpReason() == null) {
+				return false;
+			}
+			return demandDrivenJoinReason(work.wakeUpReason());
+		}
+
+		private static boolean demandDrivenJoinDiscovery(JoinDiscoveryWork work) {
+			return work != null && demandDrivenJoinReason(work.wakeUpReason());
+		}
+
+		private static boolean demandDrivenJoinReason(String reason) {
+			if (reason == null || reason.isBlank()) {
+				return false;
+			}
+			return containsDemandDrivenCause(reason, 0);
+		}
+
+		private static boolean demandDrivenCostWork(String reason) {
+			if (reason == null || reason.isBlank()) {
+				return false;
+			}
+			int start = 0;
+			String dependencyPrefix = "dependency_change:";
+			while (reason.startsWith(dependencyPrefix, start)) {
+				start += dependencyPrefix.length();
+			}
+			return containsDemandDrivenCause(reason, start);
+		}
+
+		private static boolean containsDemandDrivenCause(String reason, int start) {
+			int length = reason.length();
+			while (start <= length) {
+				int comma = reason.indexOf(',', start);
+				int end = comma < 0 ? length : comma;
+				if (matchesCause(reason, start, end, "dependent_input_goal_requested")
+						|| matchesCause(reason, start, end, "input_goal_requested")
+						|| matchesCause(reason, start, end, "scoped_join_factor_requested")
+						|| matchesCause(reason, start, end, "scoped_predicate_scalar_input_requested")) {
+					return true;
+				}
+				if (comma < 0) {
+					return false;
+				}
+				start = comma + 1;
+			}
+			return false;
+		}
+
+		private static boolean matchesCause(String reason, int start, int end, String cause) {
+			return end - start == cause.length() && reason.regionMatches(start, cause, 0, cause.length());
+		}
+
+		void enqueueCostWork(Memo memo, MemoExpr expression, OptimizationGoal goal, String reason) {
+			enqueueCostWork(memo, expression, goal, reason, false);
+		}
+
+		void enqueueNewPhysicalCostWork(Memo memo, MemoExpr expression, OptimizationGoal goal, String reason) {
+			enqueueCostWork(memo, expression, goal, reason, true);
+		}
+
+		private void enqueueCostWork(Memo memo, MemoExpr expression, OptimizationGoal goal, String reason,
+				boolean prioritize) {
+			if (memo == null || expression == null || goal == null || !expression.physical()) {
+				return;
+			}
+			OptimizationGoal canonicalGoal = canonicalGoal(goal);
+			CostWorkBaseKey base = new CostWorkBaseKey(expression.id(), canonicalGoal);
+			CostWork previous = deferredCostWork.get(base);
+			boolean demandDriven = demandDrivenCostWork(reason);
+			boolean requestedPriority = prioritize || demandDriven;
+			if (previous != null && queuedCostWork.contains(base)) {
+				enqueueCostBase(base, previous.prioritized() || requestedPriority);
+				if (demandDriven) {
+					workLaneCursor = WorkLane.COST.ordinal();
+				}
+				return;
+			}
+			if (previous != null && !previous.blockingWinnerKeys().isEmpty()) {
+				if (previous.key().waitingForCurrentBlockers(memo, statisticsEpoch())) {
+					if (requestedPriority && !previous.prioritized()) {
+						deferredCostWork.put(base, new CostWork(previous.key(), previous.groupId(),
+								previous.dependencyGroupIds(), previous.blockingWinnerKeys(),
+								previous.wakeUpReason(), true));
+					}
+					return;
+				}
+				CostWorkKey currentKey = costWorkKey(memo, expression, canonicalGoal, statisticsEpoch(),
+						previous.dependencyGroupIds(), previous.blockingWinnerKeys());
+				if (currentKey.equals(previous.key())) {
+					return;
+				}
+				CostWork refreshed = new CostWork(currentKey, previous.groupId(), previous.dependencyGroupIds(),
+						previous.blockingWinnerKeys(),
+						"dependency_change:" + CostWork.normalizedWakeUpReason(reason),
+						previous.prioritized() || requestedPriority);
+				deferredCostRecordsCreated++;
+				deferredCostWork.put(base, refreshed);
+				enqueueCostBase(base, refreshed.prioritized());
+				if (demandDriven) {
+					workLaneCursor = WorkLane.COST.ordinal();
+				}
+				return;
+			}
+			TreeSet<Integer> dependencies = new TreeSet<>();
+			dependencies.add(expression.groupId());
+			expression.executableInputs().stream().map(MemoInput::groupId).forEach(dependencies::add);
+			CostWorkKey key = costWorkKey(memo, expression, canonicalGoal, statisticsEpoch(), dependencies, Set.of());
+			if (previous != null) {
+				removeCostSubscriptions(base, previous.dependencyGroupIds());
+			} else {
+				DeferredCostPresenceKey presenceKey = new DeferredCostPresenceKey(expression.groupId(), canonicalGoal);
+				deferredCostPresence.merge(presenceKey, 1, Integer::sum);
+			}
+			CostWork work = new CostWork(key, expression.groupId(), dependencies, Set.of(),
+					CostWork.normalizedWakeUpReason(reason), requestedPriority);
+			deferredCostRecordsCreated++;
+			deferredCostWork.put(base, work);
+			for (Integer dependencyGroupId : dependencies) {
+				costSubscriptionsByGroup.computeIfAbsent(dependencyGroupId, ignored -> new LinkedHashSet<>()).add(base);
+			}
+			enqueueCostBase(base, work.prioritized());
+			if (demandDriven) {
+				workLaneCursor = WorkLane.COST.ordinal();
+			}
+		}
+
+		private void enqueueCostBase(CostWorkBaseKey base, boolean prioritize) {
+			if (!queuedCostWork.add(base)) {
+				if (prioritize && promotedCostWork.add(base)) {
+					prioritizedCostWork.addLast(base);
+				}
+				return;
+			}
+			if (prioritize) {
+				promotedCostWork.add(base);
+				prioritizedCostWork.addLast(base);
+			} else {
+				costWork.addLast(base);
+			}
 		}
 
 		void deferCostWork(Memo memo, MemoExpr expression, OptimizationGoal goal, Set<Integer> blockingGroupIds,
@@ -3645,15 +6119,45 @@ public final class CascadesPlanner {
 
 		void deferCostWorkForWinnerKeys(Memo memo, MemoExpr expression, OptimizationGoal goal,
 				Set<WinnerKey> blockingWinnerKeys, String reason) {
+			Map<WinnerKey, WinnerDependencyRevision> blockingWinnerRevisions = new LinkedHashMap<>();
+			if (blockingWinnerKeys != null) {
+				for (WinnerKey blockingWinnerKey : blockingWinnerKeys) {
+					if (blockingWinnerKey != null) {
+						blockingWinnerRevisions.put(blockingWinnerKey,
+								WinnerDependencyRevision.capture(memo, blockingWinnerKey));
+					}
+				}
+			}
+			deferCostWorkForWinnerKeys(memo, expression, goal, blockingWinnerRevisions, reason);
+		}
+
+		void deferCostWorkForWinnerKeys(Memo memo, MemoExpr expression, OptimizationGoal goal,
+				Map<WinnerKey, WinnerDependencyRevision> blockingWinnerRevisions, String reason) {
 			if (memo == null || expression == null || goal == null) {
 				return;
 			}
 			OptimizationGoal canonicalGoal = canonicalGoal(goal);
 			CostWorkBaseKey base = new CostWorkBaseKey(expression.id(), canonicalGoal);
 			CostWork previous = deferredCostWork.get(base);
-			Set<WinnerKey> safeBlockingWinnerKeys = blockingWinnerKeys == null || blockingWinnerKeys.isEmpty()
+			Map<WinnerKey, WinnerDependencyRevision> safeBlockingWinnerRevisions;
+			if (blockingWinnerRevisions == null || blockingWinnerRevisions.isEmpty()) {
+				safeBlockingWinnerRevisions = Map.of();
+			} else {
+				LinkedHashMap<WinnerKey, WinnerDependencyRevision> activeBlockers = new LinkedHashMap<>();
+				blockingWinnerRevisions.forEach((key, revision) -> {
+					if (key != null && revision != null) {
+						activeBlockers.put(key, revision);
+					}
+				});
+				safeBlockingWinnerRevisions = activeBlockers.isEmpty() ? Map.of() : Map.copyOf(activeBlockers);
+			}
+			if (safeBlockingWinnerRevisions.isEmpty()) {
+				resolveDeferredCostWork(expression, canonicalGoal);
+				return;
+			}
+			Set<WinnerKey> safeBlockingWinnerKeys = safeBlockingWinnerRevisions.isEmpty()
 					? Set.of()
-					: Set.copyOf(blockingWinnerKeys);
+					: safeBlockingWinnerRevisions.keySet();
 			TreeSet<Integer> dependencies = new TreeSet<>();
 			dependencies.add(expression.groupId());
 			expression.executableInputs().stream().map(MemoInput::groupId).forEach(dependencies::add);
@@ -3661,13 +6165,21 @@ public final class CascadesPlanner {
 				dependencies.add(blockingWinnerKey.groupId());
 			}
 			CostWorkKey key = costWorkKey(memo, expression, canonicalGoal, statisticsEpoch(), dependencies,
-					safeBlockingWinnerKeys);
+					safeBlockingWinnerRevisions);
 			String wakeUpReason = CostWork.normalizedWakeUpReason(reason);
+			boolean prioritized = demandDrivenCostWork(wakeUpReason)
+					|| previous != null && previous.prioritized();
 			if (previous != null
 					&& previous.key().equals(key)
 					&& previous.dependencyGroupIds().equals(dependencies)
 					&& previous.blockingWinnerKeys().equals(safeBlockingWinnerKeys)) {
+				if (prioritized && !previous.prioritized()) {
+					deferredCostWork.put(base, new CostWork(previous.key(), previous.groupId(),
+							previous.dependencyGroupIds(), previous.blockingWinnerKeys(),
+							previous.wakeUpReason(), true));
+				}
 				queuedCostWork.remove(base);
+				promotedCostWork.remove(base);
 				return;
 			}
 			if (previous != null) {
@@ -3677,12 +6189,19 @@ public final class CascadesPlanner {
 				deferredCostPresence.merge(presenceKey, 1, Integer::sum);
 			}
 			CostWork deferred = new CostWork(key, expression.groupId(), dependencies, safeBlockingWinnerKeys,
-					wakeUpReason);
+					wakeUpReason, prioritized);
 			deferredCostRecordsCreated++;
 			deferredCostWork.put(base, deferred);
 			queuedCostWork.remove(base);
+			promotedCostWork.remove(base);
 			for (Integer dependencyGroupId : dependencies) {
 				costSubscriptionsByGroup.computeIfAbsent(dependencyGroupId, ignored -> new LinkedHashSet<>()).add(base);
+			}
+			boolean blockerChangedBeforeSubscription = safeBlockingWinnerRevisions.entrySet()
+					.stream()
+					.anyMatch(entry -> !entry.getValue().current(memo, entry.getKey()));
+			if (blockerChangedBeforeSubscription) {
+				enqueueCostBase(base, deferred.prioritized());
 			}
 		}
 
@@ -3694,6 +6213,7 @@ public final class CascadesPlanner {
 			CostWorkBaseKey base = new CostWorkBaseKey(expression.id(), canonicalGoal);
 			CostWork resolved = deferredCostWork.remove(base);
 			queuedCostWork.remove(base);
+			promotedCostWork.remove(base);
 			if (resolved != null) {
 				DeferredCostPresenceKey presenceKey = new DeferredCostPresenceKey(resolved.groupId(), canonicalGoal);
 				deferredCostPresence.computeIfPresent(presenceKey,
@@ -3707,6 +6227,23 @@ public final class CascadesPlanner {
 				return false;
 			}
 			return deferredCostPresence.containsKey(new DeferredCostPresenceKey(groupId, canonicalGoal(goal)));
+		}
+
+		boolean hasPendingJoinWork(WinnerKey key) {
+			if (key == null) {
+				return false;
+			}
+			boolean pendingEnumeration = pendingJoinTasks.keySet()
+					.stream()
+					.anyMatch(joinKey -> joinKey.rootGroupId() == key.groupId()
+							&& joinKey.goalKey().equals(key));
+			if (pendingEnumeration) {
+				return true;
+			}
+			return pendingJoinDiscoveryTasks.keySet()
+					.stream()
+					.anyMatch(discoveryKey -> discoveryKey.rootGroupId() == key.groupId()
+							&& winnerKey(discoveryKey.goal(), discoveryKey.rootGroupId()).equals(key));
 		}
 
 		void wakeDeferredCostWork(Memo memo, int changedGroupId, long statisticsEpoch, String reason) {
@@ -3734,6 +6271,14 @@ public final class CascadesPlanner {
 			if (deferred == null) {
 				return;
 			}
+			if (queuedCostWork.contains(base)) {
+				boolean demandDriven = demandDrivenCostWork(reason);
+				enqueueCostBase(base, deferred.prioritized() || demandDriven);
+				if (demandDriven) {
+					workLaneCursor = WorkLane.COST.ordinal();
+				}
+				return;
+			}
 			if (deferred.key().currentForGroup(memo, changedGroupId, statisticsEpoch)) {
 				return;
 			}
@@ -3745,11 +6290,13 @@ public final class CascadesPlanner {
 			}
 			CostWork refreshed = new CostWork(currentKey, deferred.groupId(), deferred.dependencyGroupIds(),
 					deferred.blockingWinnerKeys(),
-					"dependency_change:" + (reason == null || reason.isBlank() ? "memo_change" : reason));
+					"dependency_change:" + (reason == null || reason.isBlank() ? "memo_change" : reason),
+					deferred.prioritized());
 			deferredCostRecordsCreated++;
 			deferredCostWork.put(base, refreshed);
-			if (queuedCostWork.add(base)) {
-				costWork.addLast(base);
+			enqueueCostBase(base, refreshed.prioritized());
+			if (demandDrivenCostWork(refreshed.wakeUpReason())) {
+				workLaneCursor = WorkLane.COST.ordinal();
 			}
 		}
 
@@ -3767,21 +6314,44 @@ public final class CascadesPlanner {
 		}
 
 		boolean hasCostWork() {
-			while (!costWork.isEmpty()) {
-				CostWorkBaseKey base = costWork.peekFirst();
-				if (queuedCostWork.contains(base) && deferredCostWork.containsKey(base)) {
+			if (hasCostWork(prioritizedCostWork, true)) {
+				return true;
+			}
+			return hasCostWork(costWork, false);
+		}
+
+		private boolean hasCostWork(ArrayDeque<CostWorkBaseKey> queue, boolean prioritized) {
+			while (!queue.isEmpty()) {
+				CostWorkBaseKey base = queue.peekFirst();
+				if (queuedCostWork.contains(base)
+						&& deferredCostWork.containsKey(base)
+						&& (!prioritized || promotedCostWork.contains(base))) {
 					return true;
 				}
-				costWork.removeFirst();
+				queue.removeFirst();
+				if (prioritized) {
+					promotedCostWork.remove(base);
+				}
 			}
 			return false;
 		}
 
 		CostWork pollCostWork() {
-			while (!costWork.isEmpty()) {
-				CostWorkBaseKey base = costWork.removeFirst();
+			CostWork prioritized = pollCostWork(prioritizedCostWork, true);
+			return prioritized == null ? pollCostWork(costWork, false) : prioritized;
+		}
+
+		private CostWork pollCostWork(ArrayDeque<CostWorkBaseKey> queue, boolean prioritized) {
+			while (!queue.isEmpty()) {
+				CostWorkBaseKey base = queue.removeFirst();
+				if (prioritized && !promotedCostWork.remove(base)) {
+					continue;
+				}
 				if (!queuedCostWork.remove(base)) {
 					continue;
+				}
+				if (!prioritized) {
+					promotedCostWork.remove(base);
 				}
 				CostWork deferred = deferredCostWork.get(base);
 				if (deferred != null) {
@@ -3799,6 +6369,8 @@ public final class CascadesPlanner {
 			deferredCostWork.clear();
 			deferredCostPresence.clear();
 			queuedCostWork.clear();
+			promotedCostWork.clear();
+			prioritizedCostWork.clear();
 			costWork.clear();
 			costSubscriptionsByGroup.clear();
 			return finalized;
@@ -3816,26 +6388,63 @@ public final class CascadesPlanner {
 					.toList();
 		}
 
+		List<JoinWork> subscribedJoinWork(int changedGroupId) {
+			Set<JoinSubscription> subscriptions = joinSubscriptionsByGroup.get(changedGroupId);
+			if (subscriptions == null || subscriptions.isEmpty()) {
+				return List.of();
+			}
+			return subscriptions.stream().map(JoinSubscription::work).toList();
+		}
+
+		List<Integer> subscribedJoinWinnerSourceExpressions(int changedGroupId) {
+			Set<JoinSubscription> subscriptions = joinWinnerSubscriptionsByGroup.get(changedGroupId);
+			if (subscriptions == null || subscriptions.isEmpty()) {
+				return List.of();
+			}
+			return subscriptions.stream()
+					.map(JoinSubscription::sourceExpressionId)
+					.distinct()
+					.sorted()
+					.toList();
+		}
+
+		List<JoinWork> subscribedJoinWinnerWork(int changedGroupId) {
+			Set<JoinSubscription> subscriptions = joinWinnerSubscriptionsByGroup.get(changedGroupId);
+			if (subscriptions == null || subscriptions.isEmpty()) {
+				return List.of();
+			}
+			return subscriptions.stream().map(JoinSubscription::work).toList();
+		}
+
 		boolean hasExploreWork() {
 			return !exploreWork.isEmpty();
 		}
 
 		boolean hasJoinWork() {
-			return !joinWork.isEmpty();
+			return !prioritizedJoinWork.isEmpty() || !joinWork.isEmpty();
 		}
 
 		boolean hasJoinDiscoveryWork() {
-			return !joinDiscoveryWork.isEmpty();
+			return !queuedJoinDiscoveryWork.isEmpty();
 		}
 
 		JoinWork pollJoinWork() {
-			JoinWork work = joinWork.removeFirst();
-			queuedJoinWork.remove(work.key());
+			JoinWork work = prioritizedJoinWork.isEmpty() ? joinWork.removeFirst() : prioritizedJoinWork.removeFirst();
+			queuedJoinWork.remove(JoinWorkRouteKey.of(work));
 			return work;
+		}
+
+		void markJoinRouteProcessed(JoinWork work) {
+			if (work != null) {
+				processedJoinRoutes.add(JoinWorkRouteKey.of(work));
+			}
 		}
 
 		void markJoinSaturated(JoinWorkKey key) {
 			if (key != null) {
+				joinsAwaitingDeferredWinner.remove(key);
+				pendingJoinTasks.remove(key);
+				pendingJoinCompleteness.remove(key);
 				saturatedJoinWork.add(key);
 			}
 		}
@@ -3844,7 +6453,7 @@ public final class CascadesPlanner {
 			if (work == null || result == null) {
 				return;
 			}
-			if (result.complete()) {
+			if (result.complete() && !joinsAwaitingDeferredWinner.contains(work.key())) {
 				pendingJoinTasks.remove(work.key());
 				pendingJoinCompleteness.remove(work.key());
 				return;
@@ -3853,10 +6462,56 @@ public final class CascadesPlanner {
 					? "join enumeration did not complete: " + result.completeness()
 					: String.join("; ", result.pendingReasons());
 			recordPendingJoin(work, result.completeness(), reason);
-			if (result.completeness() == JoinSearchCompleteness.BUDGET_EXHAUSTED
-					&& mode == OptimizationGoal.SearchMode.BUDGETED) {
+			if (result.completeness() == JoinSearchCompleteness.BUDGET_EXHAUSTED && boundedSearch(mode)) {
 				markApproximate(reason);
 			}
+		}
+
+		void recordScopedJoinRoots(int factorCount, int candidateCount, int eligibleRoots, int exportedRoots,
+				Winner bestRoot, String bestRootRecipe, String bestRootDag) {
+			double bestRootObjective = bestRoot == null ? Double.NaN : bestRoot.cost().objectiveScore();
+			scopedJoinRootObservations++;
+			scopedJoinEligibleRoots += Math.max(0, eligibleRoots);
+			scopedJoinExportedRoots += Math.max(0, exportedRoots);
+			if (factorCount > largestScopedJoin
+					|| factorCount == largestScopedJoin && Double.isFinite(bestRootObjective)
+							&& (!Double.isFinite(largestScopedBestRootObjective)
+									|| bestRootObjective < largestScopedBestRootObjective)) {
+				largestScopedJoin = factorCount;
+				largestScopedCandidateCount = Math.max(0, candidateCount);
+				largestScopedBestRootObjective = bestRootObjective;
+				largestScopedBestRoot = scopedRootSummary(bestRoot, bestRootRecipe, bestRootDag);
+			}
+			if (exportedRoots <= 0) {
+				scopedJoinRootMisses++;
+				if (factorCount > largestRootlessScopedJoin) {
+					largestRootlessScopedJoin = factorCount;
+					largestRootlessScopedCandidateCount = Math.max(0, candidateCount);
+				}
+			}
+		}
+
+		private static String scopedRootSummary(Winner winner, String recipe, String dag) {
+			if (winner == null) {
+				return "none";
+			}
+			String rules = winner.proofs()
+					.stream()
+					.map(RuleProof::ruleId)
+					.distinct()
+					.sorted()
+					.collect(Collectors.joining("|"));
+			String operator = winner.physicalOperatorId().value();
+			int separator = operator.indexOf('|');
+			if (separator >= 0) {
+				operator = operator.substring(0, separator);
+			}
+			return "operator=" + operator
+					+ ", recipe=" + recipe
+					+ ", cost=" + winner.cost()
+					+ ", routeSafe=" + winner.selectedPrefixRouteSafe()
+					+ ", rules=" + rules
+					+ ", dag=" + dag;
 		}
 
 		void markJoinPending(JoinWork work, String reason) {
@@ -3866,15 +6521,103 @@ public final class CascadesPlanner {
 			markApproximate(reason);
 		}
 
+		void deferJoinUntilFactorWinner(JoinWork work, String reason) {
+			if (work != null) {
+				recordPendingJoin(work, JoinSearchCompleteness.BUDGET_EXHAUSTED, reason);
+			}
+		}
+
+		void deferJoinUntilWinner(Memo memo, JoinWork work, WinnerKey winnerKey, String reason) {
+			if (memo == null || work == null || winnerKey == null) {
+				return;
+			}
+			observeJoinWinner(memo, work, winnerKey);
+			joinsAwaitingDeferredWinner.add(work.key());
+			recordPendingJoin(work, JoinSearchCompleteness.BUDGET_EXHAUSTED, reason);
+		}
+
+		void observeJoinWinner(Memo memo, JoinWork work, WinnerKey winnerKey) {
+			if (memo == null || work == null || winnerKey == null) {
+				return;
+			}
+			DeferredJoinWinnerDependencyKey dependencyKey = new DeferredJoinWinnerDependencyKey(work.key(), winnerKey);
+			DeferredJoinWinnerDependency dependency = new DeferredJoinWinnerDependency(dependencyKey, work,
+					memo.winnerRevision(winnerKey));
+			deferredJoinWinnerDependenciesByGroup
+					.computeIfAbsent(winnerKey.groupId(), ignored -> new LinkedHashMap<>())
+					.put(dependencyKey, dependency);
+			deferredJoinWinnerDependenciesByJoin
+					.computeIfAbsent(work.key(), ignored -> new LinkedHashSet<>())
+					.add(dependencyKey);
+		}
+
+		void wakeDeferredJoinWinnerWork(Memo memo, int changedGroupId) {
+			LinkedHashMap<DeferredJoinWinnerDependencyKey, DeferredJoinWinnerDependency> dependencies = deferredJoinWinnerDependenciesByGroup
+					.get(changedGroupId);
+			if (memo == null || dependencies == null || dependencies.isEmpty()) {
+				return;
+			}
+			LinkedHashMap<JoinWorkKey, JoinWork> wakeable = new LinkedHashMap<>();
+			for (DeferredJoinWinnerDependency dependency : dependencies.values()) {
+				WinnerKey winnerKey = dependency.key().winnerKey();
+				if (memo.winnerRevision(winnerKey) != dependency.observedWinnerRevision()) {
+					wakeable.putIfAbsent(dependency.work().key(), dependency.work());
+				}
+			}
+			for (Map.Entry<JoinWorkKey, JoinWork> entry : wakeable.entrySet()) {
+				clearDeferredJoinWinnerDependencies(entry.getKey());
+				pendingJoinTasks.remove(entry.getKey());
+				pendingJoinCompleteness.remove(entry.getKey());
+				saturatedJoinWork.remove(entry.getKey());
+				JoinWork work = entry.getValue();
+				enqueueJoinWork(new JoinWork(work.key(), work.sourceExpressionId(), work.routeScope(),
+						work.extraction(), work.goal(),
+						"scoped_predicate_scalar_winner_changed"));
+			}
+		}
+
+		private void clearDeferredJoinWinnerDependencies(JoinWorkKey joinWorkKey) {
+			joinsAwaitingDeferredWinner.remove(joinWorkKey);
+			LinkedHashSet<DeferredJoinWinnerDependencyKey> dependencyKeys = deferredJoinWinnerDependenciesByJoin
+					.remove(joinWorkKey);
+			if (dependencyKeys == null || dependencyKeys.isEmpty()) {
+				return;
+			}
+			for (DeferredJoinWinnerDependencyKey dependencyKey : dependencyKeys) {
+				int groupId = dependencyKey.winnerKey().groupId();
+				LinkedHashMap<DeferredJoinWinnerDependencyKey, DeferredJoinWinnerDependency> groupDependencies = deferredJoinWinnerDependenciesByGroup
+						.get(groupId);
+				if (groupDependencies == null) {
+					continue;
+				}
+				groupDependencies.remove(dependencyKey);
+				if (groupDependencies.isEmpty()) {
+					deferredJoinWinnerDependenciesByGroup.remove(groupId);
+				}
+			}
+		}
+
 		private void recordPendingJoin(JoinWork work, JoinSearchCompleteness completeness, String reason) {
 			pendingJoinTasks.put(work.key(), work.pendingTask(reason));
 			pendingJoinCompleteness.put(work.key(), completeness);
 		}
 
-		void recordUnsupportedJoinBoundary(MemoExpr expression, MemoJoinRegionExtractor.Result extraction,
+		void recordUnsupportedJoinBoundary(JoinDiscoveryKey discoveryKey, MemoExpr expression,
+				MemoJoinRegionExtractor.Result extraction,
 				String wakeUpReason) {
-			if (expression == null || extraction == null
-					|| extraction.status() == MemoJoinRegionExtractor.Status.UNSUPPORTED_ROOT) {
+			if (discoveryKey == null || expression == null || extraction == null
+					|| !extraction.completenessBlocking()
+					|| supportedJoinCoverage.contains(JoinCoverageKey.of(discoveryKey))) {
+				return;
+			}
+			if (!extraction.boundaries().isEmpty()
+					&& extraction.boundaries()
+							.stream()
+							.allMatch(boundary -> boundary
+									.reason() == MemoJoinRegionExtractor.BoundaryReason.MISSING_LOGICAL_EXPRESSION)) {
+				// A mutable bridge route can become stale after another logical alternative is interned. The
+				// extractor must fail that route closed, but the mismatch does not represent unsupported algebra:
+				// generic memo optimization remains authoritative for the expression.
 				return;
 			}
 			String reasons = extraction.boundaries()
@@ -3883,14 +6626,28 @@ public final class CascadesPlanner {
 					.sorted()
 					.reduce((left, right) -> left + "," + right)
 					.orElse(extraction.status().name());
-			String key = expression.groupId() + ":" + expression.id() + ":" + reasons;
-			if (!unsupportedJoinBoundaries.add(key)) {
-				return;
+			if (extraction.expandedGroupIds().size() > largestUnsupportedJoinExpansion) {
+				largestUnsupportedJoinExpansion = extraction.expandedGroupIds().size();
+				largestUnsupportedJoinBoundary = extraction.boundaries()
+						.stream()
+						.map(boundary -> boundary.reason() + "@group" + boundary.groupId()
+								+ ":" + boundary.operator() + ":" + boundary.detail())
+						.sorted()
+						.collect(Collectors.joining("|"));
 			}
-			unsupportedAtomicBoundary = true;
-			addPendingTask(new PendingOptimizationTask(PendingOptimizationTask.Kind.ENUMERATE_JOIN,
-					expression.groupId(), -1, JoinSearchService.ROUTE_ID,
-					"unsupported join boundary " + reasons + " after " + wakeUpReason));
+			unsupportedJoinBoundaries.put(discoveryKey,
+					new PendingOptimizationTask(PendingOptimizationTask.Kind.ENUMERATE_JOIN,
+							expression.groupId(), -1, JoinSearchService.ROUTE_ID,
+							"unsupported join boundary " + reasons + " for route " + discoveryKey.routeKey()
+									+ " after " + wakeUpReason));
+		}
+
+		void recordSupportedJoinRoute(JoinDiscoveryKey discoveryKey) {
+			if (discoveryKey != null) {
+				JoinCoverageKey coverage = JoinCoverageKey.of(discoveryKey);
+				supportedJoinCoverage.add(coverage);
+				unsupportedJoinBoundaries.keySet().removeIf(key -> JoinCoverageKey.of(key).equals(coverage));
+			}
 		}
 
 		void recordUnsupportedAtomicBoundary(MemoExpr expression) {
@@ -3904,29 +6661,116 @@ public final class CascadesPlanner {
 							+ " requires an explicit executable-leaf implementation"));
 		}
 
-		boolean hasRuleWork() {
-			return hasCostWork() || !exploreWork.isEmpty() || !joinDiscoveryWork.isEmpty() || !joinWork.isEmpty()
-					|| !implementWork.isEmpty();
+		void recordUnsupportedRepresentation(String ruleId, MemoExpr expression, String reason) {
+			workLedger.recordUnsupportedRepresentation();
+			markApproximate(reason == null ? "unsupported compiled rewrite representation" : reason);
+			if (expression != null) {
+				addPendingTask(new PendingOptimizationTask(PendingOptimizationTask.Kind.EXPLORE_EXPRESSION,
+						expression.groupId(), expression.id(), ruleId,
+						reason == null ? "compiled rewrite could not preserve memo provenance" : reason));
+			}
 		}
 
-		ExpressionWork pollExpressionWork() {
-			ExpressionWorkKey key = exploreWork.isEmpty() ? implementWork.removeFirst() : exploreWork.removeFirst();
+		boolean hasRuleWork() {
+			return hasCostWork()
+					|| !ruleWorkExhausted && (!exploreWork.isEmpty() || !implementWork.isEmpty())
+					|| !queuedJoinDiscoveryWork.isEmpty()
+					|| hasJoinWork();
+		}
+
+		boolean hasImplementationWork() {
+			return !implementWork.isEmpty();
+		}
+
+		WorkLane pollWorkLane() {
+			for (int offset = 0; offset < WORK_LANES.length; offset++) {
+				int laneIndex = (workLaneCursor + offset) % WORK_LANES.length;
+				WorkLane lane = WORK_LANES[laneIndex];
+				if (!hasWork(lane)) {
+					continue;
+				}
+				workLaneCursor = (laneIndex + 1) % WORK_LANES.length;
+				return lane;
+			}
+			return null;
+		}
+
+		private boolean hasWork(WorkLane lane) {
+			return switch (lane) {
+			case EXPLORE -> !ruleWorkExhausted && !exploreWork.isEmpty();
+			case IMPLEMENT -> !ruleWorkExhausted && !implementWork.isEmpty();
+			case COST -> hasCostWork();
+			case JOIN_DISCOVERY -> !queuedJoinDiscoveryWork.isEmpty();
+			case JOIN -> hasJoinWork();
+			};
+		}
+
+		ExpressionWork pollExpressionWork(WorkLane lane) {
+			if (lane != WorkLane.EXPLORE && lane != WorkLane.IMPLEMENT) {
+				throw new IllegalArgumentException("Not an expression-work lane: " + lane);
+			}
+			ExpressionWorkKey key = (lane == WorkLane.EXPLORE ? exploreWork : implementWork).removeFirst();
 			ExpressionWork work = queuedRuleWork.remove(key);
 			if (work == null) {
 				throw new IllegalStateException("Missing queued expression work for " + key);
 			}
+			if (lane == WorkLane.EXPLORE) {
+				freshExplorePreemptionAvailable = !work.freshExploration();
+			}
 			return work;
 		}
 
+		void requeueRuleWork(ExpressionWork work) {
+			if (work == null) {
+				return;
+			}
+			ExpressionWorkKey key = new ExpressionWorkKey(work.kind(), work.expressionId(), work.goal());
+			ExpressionWork queued = queuedRuleWork.get(key);
+			if (queued != null) {
+				queuedRuleWork.put(key, queued.merge(work));
+				return;
+			}
+			queuedRuleWork.put(key, work);
+			if (work.kind() == PendingOptimizationTask.Kind.EXPLORE_EXPRESSION) {
+				// One high-promise rule is enough to expose the facts and parent matches opened by a fresh expression.
+				// Yield its remaining, lower-promise agenda so those causal dependents can run before unrelated local
+				// continuations; the expression remains queued and therefore still reaches saturation.
+				if (work.prioritizeContinuation() && !work.freshExploration()) {
+					exploreWork.addFirst(key);
+				} else {
+					exploreWork.addLast(key);
+				}
+			} else {
+				if (work.prioritizeContinuation()) {
+					implementWork.addFirst(key);
+				} else {
+					implementWork.addLast(key);
+				}
+			}
+			if (work.prioritizeContinuation() && exactLike(mode)) {
+				workLaneCursor = expressionWorkLane(work.kind()).ordinal();
+			}
+		}
+
 		boolean shouldStop(OptimizationGoal goal) {
-			if (mode == OptimizationGoal.SearchMode.BUDGETED && approximate) {
+			if (deterministicStop) {
 				return true;
 			}
-			if (mode != OptimizationGoal.SearchMode.EXACT && goal != null && goal.expired()) {
-				markApproximate("deadline expired with optimizer work pending");
+			if (usesDeadline(mode) && goal != null && goal.expired()) {
+				recordDeadlineStop();
 				return true;
 			}
 			return false;
+		}
+
+		private void recordDeadlineStop() {
+			workLedger.recordDeadline();
+			deterministicStop = true;
+			markApproximate("deadline expired with optimizer work pending");
+		}
+
+		private static boolean usesDeadline(OptimizationGoal.SearchMode mode) {
+			return timedBudgeted(mode);
 		}
 
 		void capturePendingRuleWork() {
@@ -3936,11 +6780,10 @@ public final class CascadesPlanner {
 			for (ExpressionWorkKey key : exploreWork) {
 				addPendingTask(queuedRuleWork.get(key).pendingTask());
 			}
-			for (JoinDiscoveryKey key : joinDiscoveryWork) {
-				JoinDiscoveryWork work = queuedJoinDiscoveryWork.get(key);
-				if (work != null) {
-					pendingJoinDiscoveryTasks.put(key, work.pendingTask(work.wakeUpReason()));
-				}
+			queuedJoinDiscoveryWork.forEach((key, work) -> pendingJoinDiscoveryTasks.put(key,
+					work.pendingTask(work.wakeUpReason())));
+			for (JoinWork work : prioritizedJoinWork) {
+				recordPendingJoin(work, JoinSearchCompleteness.BUDGET_EXHAUSTED, work.wakeUpReason());
 			}
 			for (JoinWork work : joinWork) {
 				recordPendingJoin(work, JoinSearchCompleteness.BUDGET_EXHAUSTED, work.wakeUpReason());
@@ -3950,26 +6793,83 @@ public final class CascadesPlanner {
 			}
 		}
 
+		void capturePendingExpressionWork() {
+			if (!ruleWorkExhausted) {
+				return;
+			}
+			for (ExpressionWorkKey key : exploreWork) {
+				ExpressionWork work = queuedRuleWork.get(key);
+				if (work != null) {
+					addPendingTask(work.pendingTask());
+				}
+			}
+			for (ExpressionWorkKey key : implementWork) {
+				ExpressionWork work = queuedRuleWork.get(key);
+				if (work != null) {
+					addPendingTask(work.pendingTask());
+				}
+			}
+		}
+
 		private void addPendingTask(PendingOptimizationTask task) {
 			if (task != null && pendingTaskSet.add(task)) {
 				pendingTasks.add(task);
 			}
 		}
 
+		void recordPendingGroupOptimization(int groupId, String reason) {
+			addPendingTask(new PendingOptimizationTask(PendingOptimizationTask.Kind.COST_EXPRESSION, groupId, -1, "",
+					reason));
+		}
+
 		List<PendingOptimizationTask> pendingTasks() {
-			if (pendingTasks.isEmpty() && pendingJoinTasks.isEmpty() && pendingJoinDiscoveryTasks.isEmpty()) {
+			if (pendingTasks.isEmpty() && pendingJoinTasks.isEmpty() && pendingJoinDiscoveryTasks.isEmpty()
+					&& unsupportedJoinBoundaries.isEmpty()) {
 				return List.of();
 			}
 			ArrayList<PendingOptimizationTask> combined = new ArrayList<>(pendingTasks.size()
-					+ pendingJoinTasks.size() + pendingJoinDiscoveryTasks.size());
+					+ pendingJoinTasks.size() + pendingJoinDiscoveryTasks.size() + unsupportedJoinBoundaries.size());
 			combined.addAll(pendingTasks);
 			combined.addAll(pendingJoinDiscoveryTasks.values());
 			combined.addAll(pendingJoinTasks.values());
+			combined.addAll(unsupportedJoinBoundaries.values());
 			return List.copyOf(combined);
 		}
 
+		OptimizationSearchStatus searchStatus(Winner winner) {
+			OptimizationCompleteness completeness = completeness(winner);
+			return new OptimizationSearchStatus(completeness, workLedger.limitCauses(), workLedger.counterSnapshot(),
+					workLedger.retentionSnapshot());
+		}
+
+		void observeFrontierSize(long size) {
+			workLedger.observeFrontierSize(size);
+		}
+
+		void recordFrontierTruncation(String reason) {
+			workLedger.recordFrontierTruncation();
+			markApproximate(reason);
+		}
+
 		OptimizationCompleteness completeness(Winner winner) {
-			if (unsupportedAtomicBoundary || pendingJoinCompleteness.values()
+			Set<OptimizationLimitCause> limitCauses = workLedger.limitCauses();
+			if (limitCauses.contains(OptimizationLimitCause.DEADLINE)) {
+				return OptimizationCompleteness.DEADLINE_EXPIRED;
+			}
+			if (limitCauses.contains(OptimizationLimitCause.RULE_WORK)
+					|| limitCauses.contains(OptimizationLimitCause.PARTITION_PROBES)
+					|| limitCauses.contains(OptimizationLimitCause.CANDIDATE_EVALUATIONS)
+					|| limitCauses.contains(OptimizationLimitCause.PREDICATE_PROBES)
+					|| limitCauses.contains(OptimizationLimitCause.RETAINED_STATE)
+					|| limitCauses.contains(OptimizationLimitCause.FRONTIER_TRUNCATION)) {
+				return exactLike(mode)
+						? OptimizationCompleteness.RESOURCE_LIMIT_EXCEEDED
+						: OptimizationCompleteness.BUDGET_EXHAUSTED;
+			}
+			if (limitCauses.contains(OptimizationLimitCause.UNSUPPORTED_REPRESENTATION)) {
+				return OptimizationCompleteness.UNSUPPORTED_ATOMIC_BOUNDARY;
+			}
+			if (unsupportedAtomicBoundary || !unsupportedJoinBoundaries.isEmpty() || pendingJoinCompleteness.values()
 					.stream()
 					.anyMatch(status -> status == JoinSearchCompleteness.MISSING_EXHAUSTIVE_COVERAGE)) {
 				return OptimizationCompleteness.UNSUPPORTED_ATOMIC_BOUNDARY;
@@ -3978,17 +6878,16 @@ public final class CascadesPlanner {
 					.stream()
 					.anyMatch(status -> status == JoinSearchCompleteness.BUDGET_EXHAUSTED)
 					|| !pendingJoinDiscoveryTasks.isEmpty()) {
-				return OptimizationCompleteness.BUDGET_EXHAUSTED;
+				return exactLike(mode)
+						? OptimizationCompleteness.RESOURCE_LIMIT_EXCEEDED
+						: OptimizationCompleteness.BUDGET_EXHAUSTED;
 			}
 			if (!approximate && (winner == null || !winner.approximate())) {
 				return OptimizationCompleteness.COMPLETE;
 			}
-			String reason = approximateReason;
-			if ((reason != null && (reason.contains("timeout") || reason.contains("deadline")))
-					|| mode != OptimizationGoal.SearchMode.EXACT && reason != null && reason.contains("time")) {
-				return OptimizationCompleteness.DEADLINE_EXPIRED;
-			}
-			return OptimizationCompleteness.BUDGET_EXHAUSTED;
+			return exactLike(mode)
+					? OptimizationCompleteness.RESOURCE_LIMIT_EXCEEDED
+					: OptimizationCompleteness.BUDGET_EXHAUSTED;
 		}
 
 		void markApproximate(String reason) {
@@ -4050,6 +6949,11 @@ public final class CascadesPlanner {
 			List<String> diagnostics = new ArrayList<>();
 			diagnostics.add("tasks=major:" + majorTaskCount + ", minor:" + minorTaskCount
 					+ ", remainingBudget:" + remainingBudget);
+			diagnostics.add("queuedWork=explore:" + exploreWork.size()
+					+ ", implement:" + implementWork.size()
+					+ ", cost:" + queuedCostWork.size()
+					+ ", joinDiscovery:" + queuedJoinDiscoveryWork.size()
+					+ ", join:" + (prioritizedJoinWork.size() + joinWork.size()));
 			diagnostics.add("ruleFired=" + ruleFired.size());
 			int sealedCostApplications = costApplications.values()
 					.stream()
@@ -4069,6 +6973,16 @@ public final class CascadesPlanner {
 					+ ", cacheHits=" + joinDiscoveryCacheHits
 					+ ", coalesced=" + joinDiscoveryCoalesced);
 			diagnostics.add("joinRegionsSaturated=" + saturatedJoinWork.size());
+			diagnostics.add("scopedJoinRoots=observations:" + scopedJoinRootObservations
+					+ ", eligible:" + scopedJoinEligibleRoots
+					+ ", exported:" + scopedJoinExportedRoots
+					+ ", misses:" + scopedJoinRootMisses
+					+ ", largestFactors:" + largestScopedJoin
+					+ ", largestCandidates:" + largestScopedCandidateCount
+					+ ", largestBestObjective:" + largestScopedBestRootObjective
+					+ ", largestBestRoot:{" + largestScopedBestRoot + "}"
+					+ ", largestRootlessFactors:" + largestRootlessScopedJoin
+					+ ", largestRootlessCandidates:" + largestRootlessScopedCandidateCount);
 			int retainedPrefixes = 0;
 			for (DependentTraversalStamp traversal : dependentTraversals.values()) {
 				retainedPrefixes += traversal.nonterminalPrefixes().size();
@@ -4077,6 +6991,11 @@ public final class CascadesPlanner {
 			diagnostics.add("dependentTerminalCombinationsRetained=0");
 			if (!unsupportedAtomicExpressions.isEmpty()) {
 				diagnostics.add("unsupportedAtomicBoundaries=" + unsupportedAtomicExpressions.size());
+			}
+			if (!unsupportedJoinBoundaries.isEmpty()) {
+				diagnostics.add("unsupportedJoinRoutes=" + unsupportedJoinBoundaries.size()
+						+ ", largestExpansion=" + largestUnsupportedJoinExpansion
+						+ ", largestBoundary={" + largestUnsupportedJoinBoundary + "}");
 			}
 			if (approximate) {
 				diagnostics.add("approximate=" + approximateReason);
@@ -4094,13 +7013,16 @@ public final class CascadesPlanner {
 	private static final class CostApplicationRevision {
 		private final long statisticsEpoch;
 		private final long expressionFactRevision;
+		private final long logicalOutputEstimateRevision;
 		private final long expressionWinnerClearRevision;
 		private final long[] childRevisions;
 
 		private CostApplicationRevision(long statisticsEpoch, long expressionFactRevision,
+				long logicalOutputEstimateRevision,
 				long expressionWinnerClearRevision, long[] childRevisions) {
 			this.statisticsEpoch = statisticsEpoch;
 			this.expressionFactRevision = expressionFactRevision;
+			this.logicalOutputEstimateRevision = logicalOutputEstimateRevision;
 			this.expressionWinnerClearRevision = expressionWinnerClearRevision;
 			this.childRevisions = childRevisions == null ? new long[0] : childRevisions;
 		}
@@ -4111,15 +7033,35 @@ public final class CascadesPlanner {
 					|| object instanceof CostApplicationRevision other
 							&& statisticsEpoch == other.statisticsEpoch
 							&& expressionFactRevision == other.expressionFactRevision
+							&& logicalOutputEstimateRevision == other.logicalOutputEstimateRevision
 							&& expressionWinnerClearRevision == other.expressionWinnerClearRevision
 							&& Arrays.equals(childRevisions, other.childRevisions);
 		}
 
 		@Override
 		public int hashCode() {
-			int result = Objects.hash(statisticsEpoch, expressionFactRevision, expressionWinnerClearRevision);
+			int result = Objects.hash(statisticsEpoch, expressionFactRevision, logicalOutputEstimateRevision,
+					expressionWinnerClearRevision);
 			return 31 * result + Arrays.hashCode(childRevisions);
 		}
+
+		private boolean sameGeneration(CostApplicationRevision other) {
+			if (other == null
+					|| statisticsEpoch != other.statisticsEpoch
+					|| expressionFactRevision != other.expressionFactRevision
+					|| logicalOutputEstimateRevision != other.logicalOutputEstimateRevision
+					|| expressionWinnerClearRevision != other.expressionWinnerClearRevision
+					|| childRevisions.length != other.childRevisions.length) {
+				return false;
+			}
+			for (int index = 0; index < childRevisions.length; index++) {
+				if (index % 3 != 2 && childRevisions[index] != other.childRevisions[index]) {
+					return false;
+				}
+			}
+			return true;
+		}
+
 	}
 
 	private static final class CostApplicationInputState {
@@ -4175,29 +7117,48 @@ public final class CascadesPlanner {
 	private static final class CostApplicationGeneration {
 		private final CostApplicationRevision revision;
 		private final int arity;
-		private final CompactLongSet compactStates;
-		private final Set<CostApplicationInputState> extendedStates;
+		private final CompactLongRevisionMap compactStates;
+		private final Map<CostApplicationInputState, CostApplicationRevision> extendedStates;
 
 		private CostApplicationGeneration(CostApplicationRevision revision, int arity) {
 			this.revision = Objects.requireNonNull(revision, "revision");
 			this.arity = arity;
-			this.compactStates = arity <= 2 ? new CompactLongSet() : null;
-			this.extendedStates = arity <= 2 ? null : new HashSet<>();
+			this.compactStates = arity <= 2 ? new CompactLongRevisionMap() : null;
+			this.extendedStates = arity <= 2 ? null : new HashMap<>();
 		}
 
-		private CostApplicationRevision revision() {
-			return revision;
+		private boolean sameGeneration(CostApplicationRevision candidate) {
+			return revision.sameGeneration(candidate);
 		}
 
-		private boolean add(CostApplicationInputState inputState) {
+		private boolean claim(CostApplicationInputState inputState, CostApplicationRevision revision) {
 			requireArity(inputState);
-			return compactStates != null ? compactStates.add(inputState.compactKey()) : extendedStates.add(inputState);
+			Objects.requireNonNull(revision, "revision");
+			if (compactStates != null) {
+				return compactStates.putIfChanged(inputState.compactKey(), revision);
+			}
+			CostApplicationRevision current = extendedStates.get(inputState);
+			if (revision.equals(current)) {
+				return false;
+			}
+			extendedStates.put(inputState, revision);
+			return true;
 		}
 
-		private boolean remove(CostApplicationInputState inputState) {
+		private void record(CostApplicationInputState inputState, CostApplicationRevision revision) {
 			requireArity(inputState);
-			return compactStates != null ? compactStates.remove(inputState.compactKey())
-					: extendedStates.remove(inputState);
+			Objects.requireNonNull(revision, "revision");
+			if (compactStates != null) {
+				compactStates.put(inputState.compactKey(), revision);
+			} else {
+				extendedStates.put(inputState, revision);
+			}
+		}
+
+		private boolean remove(CostApplicationInputState inputState, CostApplicationRevision revision) {
+			requireArity(inputState);
+			return compactStates != null ? compactStates.remove(inputState.compactKey(), revision)
+					: extendedStates.remove(inputState, revision);
 		}
 
 		private int size() {
@@ -4215,49 +7176,81 @@ public final class CascadesPlanner {
 		}
 	}
 
-	private static final class CompactLongSet {
+	private static final class CompactLongRevisionMap {
 		private static final double LOAD_FACTOR = 0.65d;
-		private long[] table = new long[16];
-		private int threshold = threshold(table.length);
+		private long[] keys = new long[16];
+		private CostApplicationRevision[] revisions = new CostApplicationRevision[16];
+		private int threshold = threshold(keys.length);
 		private int size;
-		private boolean containsZero;
+		private CostApplicationRevision zeroRevision;
 
-		private boolean add(long value) {
-			if (value == 0L) {
-				if (containsZero) {
-					return false;
+		private boolean putIfChanged(long key, CostApplicationRevision revision) {
+			Objects.requireNonNull(revision, "revision");
+			CostApplicationRevision current = get(key);
+			if (revision.equals(current)) {
+				return false;
+			}
+			put(key, revision);
+			return true;
+		}
+
+		private CostApplicationRevision get(long key) {
+			if (key == 0L) {
+				return zeroRevision;
+			}
+			int mask = keys.length - 1;
+			int index = hash(key) & mask;
+			while (keys[index] != 0L) {
+				if (keys[index] == key) {
+					return revisions[index];
 				}
-				containsZero = true;
-				size++;
-				return true;
+				index = (index + 1) & mask;
+			}
+			return null;
+		}
+
+		private void put(long key, CostApplicationRevision revision) {
+			Objects.requireNonNull(revision, "revision");
+			if (key == 0L) {
+				if (zeroRevision == null) {
+					size++;
+				}
+				zeroRevision = revision;
+				return;
 			}
 			if (nonZeroSize() + 1 > threshold) {
 				resize();
 			}
-			return insertNonZero(value);
+			insertNonZero(key, revision);
 		}
 
-		private boolean remove(long value) {
-			if (value == 0L) {
-				if (!containsZero) {
+		private boolean remove(long key, CostApplicationRevision revision) {
+			if (key == 0L) {
+				if (zeroRevision == null || !zeroRevision.equals(revision)) {
 					return false;
 				}
-				containsZero = false;
+				zeroRevision = null;
 				size--;
 				return true;
 			}
-			int mask = table.length - 1;
-			int index = hash(value) & mask;
-			while (table[index] != 0L) {
-				if (table[index] == value) {
-					table[index] = 0L;
+			int mask = keys.length - 1;
+			int index = hash(key) & mask;
+			while (keys[index] != 0L) {
+				if (keys[index] == key) {
+					if (!Objects.equals(revisions[index], revision)) {
+						return false;
+					}
+					keys[index] = 0L;
+					revisions[index] = null;
 					size--;
 					int shifted = (index + 1) & mask;
-					while (table[shifted] != 0L) {
-						long displaced = table[shifted];
-						table[shifted] = 0L;
+					while (keys[shifted] != 0L) {
+						long displacedKey = keys[shifted];
+						CostApplicationRevision displacedRevision = revisions[shifted];
+						keys[shifted] = 0L;
+						revisions[shifted] = null;
 						size--;
-						insertNonZero(displaced);
+						insertNonZero(displacedKey, displacedRevision);
 						shifted = (shifted + 1) & mask;
 					}
 					return true;
@@ -4272,31 +7265,34 @@ public final class CascadesPlanner {
 		}
 
 		private int nonZeroSize() {
-			return containsZero ? size - 1 : size;
+			return zeroRevision == null ? size : size - 1;
 		}
 
-		private boolean insertNonZero(long value) {
-			int mask = table.length - 1;
-			int index = hash(value) & mask;
-			while (table[index] != 0L) {
-				if (table[index] == value) {
-					return false;
+		private void insertNonZero(long key, CostApplicationRevision revision) {
+			int mask = keys.length - 1;
+			int index = hash(key) & mask;
+			while (keys[index] != 0L) {
+				if (keys[index] == key) {
+					revisions[index] = revision;
+					return;
 				}
 				index = (index + 1) & mask;
 			}
-			table[index] = value;
+			keys[index] = key;
+			revisions[index] = revision;
 			size++;
-			return true;
 		}
 
 		private void resize() {
-			long[] previous = table;
-			table = new long[previous.length << 1];
-			threshold = threshold(table.length);
-			size = containsZero ? 1 : 0;
-			for (long value : previous) {
-				if (value != 0L) {
-					insertNonZero(value);
+			long[] previousKeys = keys;
+			CostApplicationRevision[] previousRevisions = revisions;
+			keys = new long[previousKeys.length << 1];
+			revisions = new CostApplicationRevision[keys.length];
+			threshold = threshold(keys.length);
+			size = zeroRevision == null ? 0 : 1;
+			for (int index = 0; index < previousKeys.length; index++) {
+				if (previousKeys[index] != 0L) {
+					insertNonZero(previousKeys[index], previousRevisions[index]);
 				}
 			}
 		}

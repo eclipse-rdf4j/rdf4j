@@ -20,6 +20,7 @@ import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingMask;
 
 /**
  * Deterministic exhaustive enumerator for small regions. A subset-state recurrence enumerates every dependency-legal
@@ -54,14 +55,40 @@ public final class ExhaustiveLegalJoinSearchContributor implements JoinSearchCon
 
 	@Override
 	public Outcome contribute(JoinSearchRequest request, CandidateSink sink) {
-		new MemoCoverEnumerator(request.region()).enumerateCoveringTrees(Objects.requireNonNull(sink, "sink"));
+		Outcome boundedLimit = boundedLimit(request);
+		if (boundedLimit != null) {
+			return boundedLimit;
+		}
+		new MemoCoverEnumerator(request.region(), request.context().initiallyBoundBindings())
+				.enumerateCoveringTrees(Objects.requireNonNull(sink, "sink"));
 		return Outcome.completed();
 	}
 
 	@Override
 	public Outcome contributeMemoExpressions(JoinSearchRequest request, MemoExpressionSink sink) {
-		new MemoCoverEnumerator(request.region()).enumerateExpressions(Objects.requireNonNull(sink, "sink"));
+		Outcome boundedLimit = boundedLimit(request);
+		if (boundedLimit != null) {
+			return boundedLimit;
+		}
+		new MemoCoverEnumerator(request.region(), request.context().initiallyBoundBindings())
+				.enumerateExpressions(Objects.requireNonNull(sink, "sink"));
 		return Outcome.completed();
+	}
+
+	@Override
+	public Outcome contributeScopedMemoExpressions(JoinSearchRequest request, MemoExpressionSink sink) {
+		new MemoCoverEnumerator(request.region(), request.context().initiallyBoundBindings())
+				.enumerateExpressions(Objects.requireNonNull(sink, "sink"));
+		return Outcome.completed();
+	}
+
+	private Outcome boundedLimit(JoinSearchRequest request) {
+		JoinRegion region = request.region();
+		if (request.mode() != JoinSearchRequest.Mode.BOUNDED || region.factors().size() <= maxFactors) {
+			return null;
+		}
+		return Outcome.unsupported(
+				"bounded region has " + region.factors().size() + " factors; exhaustive limit is " + maxFactors);
 	}
 
 	@Override
@@ -71,7 +98,8 @@ public final class ExhaustiveLegalJoinSearchContributor implements JoinSearchCon
 			return Outcome.unsupported(
 					"region has " + region.factors().size() + " factors; exhaustive limit is " + maxFactors);
 		}
-		new FullTreeEnumerator(region).enumerate(Objects.requireNonNull(sink, "sink"));
+		new FullTreeEnumerator(region, request.context().initiallyBoundBindings())
+				.enumerate(Objects.requireNonNull(sink, "sink"));
 		return Outcome.completed();
 	}
 
@@ -82,25 +110,23 @@ public final class ExhaustiveLegalJoinSearchContributor implements JoinSearchCon
 
 		private final List<JoinFactor> factors;
 		private final Map<Integer, Integer> indexesByOccurrenceId = new HashMap<>();
-		private final BigInteger[] requiredBefore;
+		private final JoinDependencyReadiness readiness;
+		private final BindingMask outerBindings;
+		private final boolean tracksAvailabilityContext;
 		private final BigInteger allFactors;
 		private final Map<SubsetState, Boolean> feasibility = new HashMap<>();
 		private final Map<SubsetState, JoinTree> representatives = new HashMap<>();
 		private final Set<SubsetState> visitedStates = new HashSet<>();
 		private final Set<PartitionState> emittedPartitions = new HashSet<>();
 
-		private MemoCoverEnumerator(JoinRegion region) {
+		private MemoCoverEnumerator(JoinRegion region, BindingMask outerBindings) {
 			this.factors = region.factors();
+			this.readiness = JoinDependencyReadiness.create(region);
+			this.outerBindings = outerBindings == null ? BindingMask.EMPTY : outerBindings;
+			this.tracksAvailabilityContext = !region.dependencies().isEmpty()
+					|| region.edges().stream().anyMatch(edge -> edge.kind() != JoinEdge.Kind.INNER);
 			for (int index = 0; index < factors.size(); index++) {
 				indexesByOccurrenceId.put(factors.get(index).occurrenceId(), index);
-			}
-			this.requiredBefore = new BigInteger[factors.size()];
-			for (int index = 0; index < factors.size(); index++) {
-				BigInteger requirements = ZERO;
-				for (Integer requiredOccurrenceId : region.requiredBefore(factors.get(index).occurrenceId())) {
-					requirements = requirements.setBit(indexesByOccurrenceId.get(requiredOccurrenceId));
-				}
-				requiredBefore[index] = requirements;
 			}
 			this.allFactors = ONE.shiftLeft(factors.size()).subtract(ONE);
 		}
@@ -120,7 +146,8 @@ public final class ExhaustiveLegalJoinSearchContributor implements JoinSearchCon
 		}
 
 		private void emit(BigInteger remaining, BigInteger availableBefore, MemoExpressionSink sink) {
-			SubsetState state = new SubsetState(remaining, availableBefore);
+			BigInteger identityContext = identityContext(availableBefore);
+			SubsetState state = new SubsetState(remaining, identityContext);
 			if (remaining.bitCount() < 2 || !visitedStates.add(state) || !hasLegalOrder(remaining, availableBefore)) {
 				return;
 			}
@@ -134,8 +161,8 @@ public final class ExhaustiveLegalJoinSearchContributor implements JoinSearchCon
 				}
 				emit(left, availableBefore, sink);
 				emit(right, availableBeforeRight, sink);
-				if (emittedPartitions.add(new PartitionState(remaining, left, right))) {
-					sink.accept(new JoinMemoExpression(toOccurrences(availableBefore),
+				if (emittedPartitions.add(new PartitionState(remaining, identityContext, left, right))) {
+					sink.accept(new JoinMemoExpression(toOccurrences(identityContext),
 							representative(left, availableBefore),
 							representative(right, availableBeforeRight)));
 				}
@@ -158,7 +185,7 @@ public final class ExhaustiveLegalJoinSearchContributor implements JoinSearchCon
 		}
 
 		private JoinTree representative(BigInteger remaining, BigInteger availableBefore) {
-			SubsetState state = new SubsetState(remaining, availableBefore);
+			SubsetState state = new SubsetState(remaining, identityContext(availableBefore));
 			JoinTree cached = representatives.get(state);
 			if (cached != null) {
 				return cached;
@@ -168,7 +195,7 @@ public final class ExhaustiveLegalJoinSearchContributor implements JoinSearchCon
 				candidates = candidates.clearBit(index);
 				BigInteger factorMask = ONE.shiftLeft(index);
 				BigInteger rest = remaining.clearBit(index);
-				if (requiredBefore[index].andNot(availableBefore).signum() != 0
+				if (!readiness.ready(index, availableBefore, outerBindings)
 						|| !hasLegalOrder(rest, availableBefore.or(factorMask))) {
 					continue;
 				}
@@ -187,7 +214,7 @@ public final class ExhaustiveLegalJoinSearchContributor implements JoinSearchCon
 			if (remaining.signum() == 0) {
 				return true;
 			}
-			SubsetState state = new SubsetState(remaining, availableBefore);
+			SubsetState state = new SubsetState(remaining, identityContext(availableBefore));
 			Boolean cached = feasibility.get(state);
 			if (cached != null) {
 				return cached;
@@ -195,7 +222,7 @@ public final class ExhaustiveLegalJoinSearchContributor implements JoinSearchCon
 			for (BigInteger candidates = remaining; candidates.signum() > 0;) {
 				int index = candidates.getLowestSetBit();
 				candidates = candidates.clearBit(index);
-				if (requiredBefore[index].andNot(availableBefore).signum() == 0
+				if (readiness.ready(index, availableBefore, outerBindings)
 						&& hasLegalOrder(remaining.clearBit(index), availableBefore.setBit(index))) {
 					feasibility.put(state, true);
 					return true;
@@ -223,10 +250,15 @@ public final class ExhaustiveLegalJoinSearchContributor implements JoinSearchCon
 			return mask;
 		}
 
+		private BigInteger identityContext(BigInteger availableBefore) {
+			return tracksAvailabilityContext ? availableBefore : ZERO;
+		}
+
 		private record SubsetState(BigInteger remaining, BigInteger availableBefore) {
 		}
 
-		private record PartitionState(BigInteger result, BigInteger left, BigInteger right) {
+		private record PartitionState(BigInteger result, BigInteger availableBefore, BigInteger left,
+				BigInteger right) {
 		}
 	}
 
@@ -236,25 +268,15 @@ public final class ExhaustiveLegalJoinSearchContributor implements JoinSearchCon
 		private static final BigInteger ONE = BigInteger.ONE;
 
 		private final List<JoinFactor> factors;
-		private final BigInteger[] requiredBefore;
+		private final JoinDependencyReadiness readiness;
+		private final BindingMask outerBindings;
 		private final BigInteger allFactors;
 		private final Map<SubsetState, Boolean> feasibility = new HashMap<>();
 
-		private FullTreeEnumerator(JoinRegion region) {
+		private FullTreeEnumerator(JoinRegion region, BindingMask outerBindings) {
 			this.factors = region.factors();
-			Map<Integer, Integer> indexesByOccurrenceId = new HashMap<>();
-			for (int index = 0; index < factors.size(); index++) {
-				indexesByOccurrenceId.put(factors.get(index).occurrenceId(), index);
-			}
-
-			this.requiredBefore = new BigInteger[factors.size()];
-			for (int index = 0; index < factors.size(); index++) {
-				BigInteger requirements = ZERO;
-				for (Integer requiredOccurrenceId : region.requiredBefore(factors.get(index).occurrenceId())) {
-					requirements = requirements.setBit(indexesByOccurrenceId.get(requiredOccurrenceId));
-				}
-				requiredBefore[index] = requirements;
-			}
+			this.readiness = JoinDependencyReadiness.create(region);
+			this.outerBindings = outerBindings == null ? BindingMask.EMPTY : outerBindings;
 			this.allFactors = ONE.shiftLeft(factors.size()).subtract(ONE);
 		}
 
@@ -299,7 +321,7 @@ public final class ExhaustiveLegalJoinSearchContributor implements JoinSearchCon
 			for (BigInteger candidates = remaining; candidates.signum() > 0;) {
 				int index = candidates.getLowestSetBit();
 				candidates = candidates.clearBit(index);
-				if (requiredBefore[index].andNot(availableBefore).signum() == 0
+				if (readiness.ready(index, availableBefore, outerBindings)
 						&& hasLegalOrder(remaining.clearBit(index), availableBefore.setBit(index))) {
 					feasibility.put(state, true);
 					return true;

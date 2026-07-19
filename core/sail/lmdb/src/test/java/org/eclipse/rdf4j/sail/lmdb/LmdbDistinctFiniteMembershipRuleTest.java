@@ -167,6 +167,32 @@ class LmdbDistinctFiniteMembershipRuleTest {
 	}
 
 	@Test
+	void descendantFiniteAlternativeReactivatesObserverAcrossTransparentWrappers() {
+		EvaluationStatistics statistics = new EvaluationStatistics();
+		CascadesRule observerRule = registeredGroupSetSemanticsRule(statistics);
+		AtomicInteger descendantApplications = new AtomicInteger();
+		Group root = distinctCountGroup(nestedFiniteMembershipFilter(), "med");
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(observerRule)
+				.add(new DescendantFiniteMembershipRule(descendantApplications))
+				.add(new StandardCascadesRules.GenericImplementationRule())
+				.build();
+
+		CascadesPlan plan = new CascadesPlanner(CascadesCostModel.from(statistics), registry,
+				CascadesTelemetry.NO_OP).optimize(root, OptimizationGoal.root());
+
+		assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness(), plan.diagnostics()::toString);
+		assertTrue(descendantApplications.get() > 0, "The nested finite relation should be introduced");
+		assertTrue(plan.memo()
+				.group(plan.rootGroupId())
+				.expressions()
+				.stream()
+				.filter(MemoExpr::logical)
+				.anyMatch(expression -> hasProof(expression, observerRule.id())),
+				"A descendant rewrite below FILTER and MINUS must reactivate the COUNT DISTINCT observer");
+	}
+
+	@Test
 	void stagedChildAlternativesAreEachRewrittenOnlyOnce() {
 		EvaluationStatistics statistics = new EvaluationStatistics();
 		CascadesRule registeredGroupRule = registeredGroupSetSemanticsRule(statistics);
@@ -599,6 +625,22 @@ class LmdbDistinctFiniteMembershipRuleTest {
 		return finiteMembershipInput("user0", "user1", "user2");
 	}
 
+	private static TupleExpr nestedFiniteMembershipFilter() {
+		StatementPattern membership = new StatementPattern(new Var("med"),
+				new Var("codePredicate", VF.createIRI("urn:code")), new Var("code"));
+		Filter finiteFilter = new Filter(membership,
+				new Compare(new Var("code"), new ValueConstant(VF.createLiteral("MED-1000")),
+						Compare.CompareOp.EQ));
+		StatementPattern remaining = new StatementPattern(new Var("med"),
+				new Var("typePredicate", VF.createIRI("urn:type")), new Var("type"));
+		StatementPattern observation = new StatementPattern(new Var("patient"),
+				new Var("medicationPredicate", VF.createIRI("urn:medication")), new Var("med"));
+		Filter positive = new Filter(new Join(remaining, finiteFilter), new Exists(observation));
+		StatementPattern excluded = new StatementPattern(new Var("med"),
+				new Var("excludedPredicate", VF.createIRI("urn:excluded")), new Var("reason"));
+		return new Difference(positive, excluded);
+	}
+
 	private static TupleExpr finiteMembershipInput(String... names) {
 		BindingSetAssignment finiteNames = values("optName", names);
 		StatementPattern membership = new StatementPattern(new Var("a"),
@@ -940,6 +982,61 @@ class LmdbDistinctFiniteMembershipRuleTest {
 					Set.of("projectionIdentity", "lateChildAlternative"),
 					"A projection retaining every binding is equivalent to its input");
 			return List.of(RuleApplication.transformation(childGroupId, finiteMembershipInput.clone(), proof));
+		}
+	}
+
+	private record DescendantFiniteMembershipRule(AtomicInteger applications) implements CascadesRule {
+
+		private static final String ID = "test-descendant-finite-membership";
+		private static final RuleDescriptor DESCRIPTOR = RuleDescriptor.builder(ID, RuleKind.TRANSFORMATION)
+				.rootOperators(RuleRootOperator.FILTER)
+				.changesProduced(RuleDescriptor.ProducedChange.LOGICAL_EXPRESSION,
+						RuleDescriptor.ProducedChange.PROOF)
+				.priority(new RulePriority(RulePhase.CHEAP_LOGICAL, 1))
+				.convergenceClass(RuleConvergenceClass.FINITE_EQUIVALENCE_EXPANSION)
+				.build();
+
+		@Override
+		public String id() {
+			return ID;
+		}
+
+		@Override
+		public RuleKind kind() {
+			return RuleKind.TRANSFORMATION;
+		}
+
+		@Override
+		public RuleDescriptor descriptor() {
+			return DESCRIPTOR;
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& expression.tupleExpr()instanceof Filter filter
+					&& filter.getArg() instanceof StatementPattern
+					&& filter.getCondition() instanceof Compare;
+		}
+
+		@Override
+		public int promise(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return 1;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			if (!matches(expression, goal, context.memo())) {
+				return List.of();
+			}
+			Filter filter = (Filter) expression.tupleExpr();
+			BindingSetAssignment assignment = values("code", "MED-1000");
+			applications.incrementAndGet();
+			RuleProof proof = new RuleProof(id(), kind(), OptimizationGoal.BAG_SEMANTICS,
+					Set.of("finiteMembership", "descendantAlternative"),
+					"A safe RDF-term equality is equivalent to a one-row finite relation");
+			return List.of(RuleApplication.transformation(expression.groupId(),
+					new Join(assignment, filter.getArg().clone()), proof));
 		}
 	}
 }

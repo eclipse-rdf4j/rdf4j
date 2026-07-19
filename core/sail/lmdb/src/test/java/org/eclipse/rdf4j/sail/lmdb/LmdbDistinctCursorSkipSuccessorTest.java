@@ -56,4 +56,17 @@ class LmdbDistinctCursorSkipSuccessorTest {
 		assertTrue(!LmdbDistinctCursorSkipSupport.successorQuad("posc".toCharArray(),
 				new long[] { 7L, Long.MAX_VALUE, 13L, 0L }, 1, new long[4]));
 	}
+
+	@Test
+	void suffixComparisonCannotSkipAcrossAnUnboundEarlierComponent() {
+		int comparison = LmdbDistinctCursorSkipSupport.compareFixedSuffixAfterPrefix(
+				"ospc".toCharArray(),
+				new long[] { 11L, 7L, 13L, 0L },
+				new long[] { -1L, 5L, -1L, -1L },
+				1);
+
+		assertEquals(0, comparison,
+				"The unbound subject sorts before the fixed predicate, so the predicate cannot prove that the "
+						+ "current object prefix is before or after the requested suffix");
+	}
 }

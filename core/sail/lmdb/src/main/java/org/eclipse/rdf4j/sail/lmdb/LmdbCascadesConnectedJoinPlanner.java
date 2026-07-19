@@ -120,6 +120,10 @@ final class LmdbCascadesConnectedJoinPlanner {
 		}
 		Optional<Plan> planned = LmdbHypergraphJoinPlanner.tryPlan(factors, initialBoundVars, costModel,
 				fallbackStatistics, tier, trace);
+		if (trace.enabled()) {
+			planned.ifPresent(plan -> plan.tupleExpr()
+					.setStringMetricPlanned(CONNECTED_JOIN_TRACE_METRIC, trace.snapshot()));
+		}
 		if (!trace.enabled() && planned.isPresent()) {
 			cacheDphypPlan(scopedStatistics, cacheKey, planned.get());
 		}
@@ -130,7 +134,8 @@ final class LmdbCascadesConnectedJoinPlanner {
 		if (factors == null || factors.isEmpty()) {
 			return List.of();
 		}
-		if (services.isEmpty()) {
+		if (services.isEmpty()
+				|| factors.stream().anyMatch(LmdbOpaqueJoinFactorPolicy::requiresScalarPlacementBarrier)) {
 			return List.copyOf(factors);
 		}
 		List<TupleExpr> canonical = new ArrayList<>(factors);
@@ -234,7 +239,8 @@ final class LmdbCascadesConnectedJoinPlanner {
 				.withEstimationTier(estimationTier == null ? EstimationTier.STANDARD : estimationTier);
 		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = costModel.estimateFactorCost(factor, context);
 		JoinFactorCostModel.FactorCostEstimate factorEstimate = estimate
-				.orElseGet(() -> fallbackEstimate(factor, fallbackStatistics));
+				.filter(LmdbCascadesConnectedJoinPlanner::validFactorEstimate)
+				.orElseGet(() -> fallbackEstimate(factor, prefixFactors, fallbackStatistics));
 		if (factorEstimate == null) {
 			return null;
 		}
@@ -320,17 +326,45 @@ final class LmdbCascadesConnectedJoinPlanner {
 	}
 
 	private static JoinFactorCostModel.FactorCostEstimate fallbackEstimate(TupleExpr factor,
+			List<TupleExpr> prefixFactors,
 			EvaluationStatistics fallbackStatistics) {
-		double rows = fallbackStatistics == null || factor == null ? Double.NaN
-				: fallbackStatistics.getCardinality(factor);
+		TupleExpr fallbackInput = fallbackInput(prefixFactors, factor);
+		double rows = fallbackStatistics == null || fallbackInput == null ? Double.NaN
+				: fallbackStatistics.getCardinality(fallbackInput);
 		if (!Double.isFinite(rows) || rows < 0.0d) {
-			rows = 1.0d;
+			return null;
 		}
 		Map<String, String> strings = Map.of(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE,
 				"lmdb-cascades-connected-fallback");
 		Map<String, Double> doubles = Map.of(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, rows,
 				TelemetryMetricNames.PLANNED_WORK_ROWS, rows);
 		return new JoinFactorCostModel.FactorCostEstimate(rows, rows, strings, doubles);
+	}
+
+	private static TupleExpr fallbackInput(List<TupleExpr> prefixFactors, TupleExpr factor) {
+		if (factor == null) {
+			return null;
+		}
+		TupleExpr input = null;
+		if (prefixFactors != null) {
+			for (TupleExpr prefixFactor : prefixFactors) {
+				if (prefixFactor == null) {
+					continue;
+				}
+				TupleExpr prefixClone = prefixFactor.clone();
+				input = input == null ? prefixClone : new Join(input, prefixClone);
+			}
+		}
+		TupleExpr factorClone = factor.clone();
+		return input == null ? factorClone : new Join(input, factorClone);
+	}
+
+	private static boolean validFactorEstimate(JoinFactorCostModel.FactorCostEstimate estimate) {
+		return estimate != null
+				&& Double.isFinite(estimate.getOutputRows())
+				&& estimate.getOutputRows() >= 0.0d
+				&& Double.isFinite(estimate.getWorkRows())
+				&& estimate.getWorkRows() >= 0.0d;
 	}
 
 	private static Map<String, Set<Value>> finiteBindingValues(List<TupleExpr> prefixFactors,

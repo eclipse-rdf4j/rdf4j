@@ -12,27 +12,21 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.HashSet;
-import java.util.LinkedHashSet;
 import java.util.Set;
 
-import org.eclipse.rdf4j.query.algebra.And;
-import org.eclipse.rdf4j.query.algebra.Bound;
-import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
-import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
-import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
-import org.eclipse.rdf4j.query.algebra.ValueConstant;
-import org.eclipse.rdf4j.query.algebra.ValueExpr;
-import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.NullRejectingOptionalSemantics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteAssumption;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteCertificate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteSafety;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.IrNode;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.PlanIr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.TupleExprToIr;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
-import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 final class LmdbNullRejectingOptionalSupport {
 
@@ -43,39 +37,45 @@ final class LmdbNullRejectingOptionalSupport {
 	private LmdbNullRejectingOptionalSupport() {
 	}
 
-	static boolean matches(Filter filter) {
+	static TupleExpr rewrite(Filter filter, Set<String> incomingBindings) {
 		if (filter == null
 				|| !(filter.getArg()instanceof LeftJoin leftJoin)
 				|| leftJoin.hasCondition()
 				|| TupleExprs.isVariableScopeChange(leftJoin)) {
-			return false;
-		}
-		Set<String> optionalBindings = optionalDirectProducedBindingNames(leftJoin);
-		return !optionalBindings.isEmpty()
-				&& hasNullRejectingOptionalProof(filter.getCondition(), optionalBindings,
-						LmdbJoinPlanSupport.plannerBindingNames(leftJoin.getLeftArg().getAssuredBindingNames()));
-	}
-
-	static TupleExpr rewrite(Filter filter) {
-		if (!matches(filter)) {
 			return null;
 		}
-		LeftJoin leftJoin = (LeftJoin) filter.getArg();
-		Set<String> optionalBindings = optionalDirectProducedBindingNames(leftJoin);
-		Filter replacement = new Filter(mandatoryJoinArg(leftJoin), filter.getCondition().clone());
+		ScopedFanoutHoist hoist = scopedFanoutHoist(leftJoin.getLeftArg(), leftJoin.getRightArg());
+		Filter proofSurface = proofSurface(filter, leftJoin, hoist);
+		PlanIr ir = TupleExprToIr.convert(proofSurface);
+		IrNode proofFilter = ir.rootNode();
+		NullRejectingOptionalSemantics.Analysis analysis = NullRejectingOptionalSemantics.analyze(ir, proofFilter,
+				ir.node(proofFilter.inputs().getFirst()), ir.universe().maskOf(incomingBindings));
+		if (!analysis.safe()) {
+			return null;
+		}
+		Set<String> optionalBindings = ir.universe().names(analysis.proof().optionalOnlyBindings());
+		Filter replacement = new Filter(mandatoryJoinArg(leftJoin, hoist), filter.getCondition().clone());
 		markRewrittenOptionalBindings(replacement, "filter-simplifier", optionalBindings);
 		return replacement;
 	}
 
-	private static TupleExpr mandatoryJoinArg(LeftJoin leftJoin) {
-		TupleExpr hoisted = hoistMandatoryRightArgAheadOfScopedFanout(leftJoin.getLeftArg(), leftJoin.getRightArg());
-		if (hoisted != null) {
-			return hoisted;
+	private static Filter proofSurface(Filter filter, LeftJoin leftJoin, ScopedFanoutHoist hoist) {
+		if (hoist == null) {
+			return filter;
+		}
+		return new Filter(new LeftJoin(hoist.seedArg().clone(), leftJoin.getRightArg().clone()),
+				filter.getCondition().clone());
+	}
+
+	private static TupleExpr mandatoryJoinArg(LeftJoin leftJoin, ScopedFanoutHoist hoist) {
+		if (hoist != null) {
+			return new Join(new Join(hoist.seedArg().clone(), leftJoin.getRightArg().clone()),
+					hoist.fanoutArg().clone());
 		}
 		return new Join(leftJoin.getLeftArg().clone(), leftJoin.getRightArg().clone());
 	}
 
-	private static TupleExpr hoistMandatoryRightArgAheadOfScopedFanout(TupleExpr leftArg, TupleExpr rightArg) {
+	private static ScopedFanoutHoist scopedFanoutHoist(TupleExpr leftArg, TupleExpr rightArg) {
 		if (!(leftArg instanceof Join leftJoin)) {
 			return null;
 		}
@@ -92,7 +92,7 @@ final class LmdbNullRejectingOptionalSupport {
 			return null;
 		}
 
-		return new Join(new Join(seedArg.clone(), rightArg.clone()), fanoutArg.clone());
+		return new ScopedFanoutHoist(seedArg, fanoutArg);
 	}
 
 	static String rewriteMetric(String source, Set<String> optionalBindings) {
@@ -121,99 +121,7 @@ final class LmdbNullRejectingOptionalSupport {
 						Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS)));
 	}
 
-	private static Set<String> optionalDirectProducedBindingNames(LeftJoin leftJoin) {
-		Set<String> optionalBindings = new LinkedHashSet<>(
-				LmdbJoinPlanSupport.plannerBindingNames(leftJoin.getRightArg().getBindingNames()));
-		optionalBindings.removeAll(LmdbJoinPlanSupport.plannerBindingNames(leftJoin.getLeftArg().getBindingNames()));
-		return optionalBindings.isEmpty() ? Set.of() : Set.copyOf(optionalBindings);
+	private record ScopedFanoutHoist(TupleExpr seedArg, TupleExpr fanoutArg) {
 	}
 
-	private static boolean hasNullRejectingOptionalProof(ValueExpr expression, Set<String> optionalBindings,
-			Set<String> leftAssuredBindings) {
-		if (optionalBindings.isEmpty()) {
-			return false;
-		}
-		if (!LmdbJoinPlanSupport.containsExists(expression)) {
-			return isNullRejectingOptionalExpression(expression, optionalBindings, leftAssuredBindings);
-		}
-		if (expression instanceof And and) {
-			return hasNullRejectingOptionalProof(and.getLeftArg(), optionalBindings, leftAssuredBindings)
-					|| hasNullRejectingOptionalProof(and.getRightArg(), optionalBindings, leftAssuredBindings);
-		}
-		if (expression instanceof Or or) {
-			return hasNullRejectingOptionalProof(or.getLeftArg(), optionalBindings, leftAssuredBindings)
-					&& hasNullRejectingOptionalProof(or.getRightArg(), optionalBindings, leftAssuredBindings);
-		}
-		return false;
-	}
-
-	private static boolean isNullRejectingOptionalExpression(ValueExpr expression, Set<String> optionalBindings,
-			Set<String> leftAssuredBindings) {
-		if (expression instanceof And and) {
-			return isNullRejectingOptionalExpression(and.getLeftArg(), optionalBindings, leftAssuredBindings)
-					|| isNullRejectingOptionalExpression(and.getRightArg(), optionalBindings, leftAssuredBindings);
-		}
-		if (expression instanceof Or or) {
-			return isNullRejectingOptionalExpression(or.getLeftArg(), optionalBindings, leftAssuredBindings)
-					&& isNullRejectingOptionalExpression(or.getRightArg(), optionalBindings, leftAssuredBindings);
-		}
-		if (expression instanceof Bound bound) {
-			Var var = bound.getArg();
-			return var != null && !var.hasValue() && optionalBindings.contains(var.getName());
-		}
-		if (expression instanceof Compare compare) {
-			return isNullRejectingOptionalCompare(compare, optionalBindings, leftAssuredBindings);
-		}
-		if (expression instanceof ListMemberOperator listMember) {
-			return isNullRejectingOptionalListMember(listMember, optionalBindings, leftAssuredBindings);
-		}
-		return false;
-	}
-
-	private static boolean isNullRejectingOptionalCompare(Compare compare, Set<String> optionalBindings,
-			Set<String> leftAssuredBindings) {
-		return isSupportedCompareOperand(compare.getLeftArg())
-				&& isSupportedCompareOperand(compare.getRightArg())
-				&& referencesAnyOptionalBinding(compare, optionalBindings)
-				&& nonOptionalOperandIsAssured(compare.getLeftArg(), optionalBindings, leftAssuredBindings)
-				&& nonOptionalOperandIsAssured(compare.getRightArg(), optionalBindings, leftAssuredBindings);
-	}
-
-	private static boolean isNullRejectingOptionalListMember(ListMemberOperator listMember,
-			Set<String> optionalBindings, Set<String> leftAssuredBindings) {
-		for (ValueExpr argument : listMember.getArguments()) {
-			if (!isSupportedCompareOperand(argument)
-					|| !nonOptionalOperandIsAssured(argument, optionalBindings, leftAssuredBindings)) {
-				return false;
-			}
-		}
-		return referencesAnyOptionalBinding(listMember, optionalBindings);
-	}
-
-	private static boolean isSupportedCompareOperand(ValueExpr expression) {
-		return expression instanceof Var || expression instanceof ValueConstant;
-	}
-
-	private static boolean referencesAnyOptionalBinding(ValueExpr expression, Set<String> optionalBindings) {
-		Set<String> referenced = VarNameCollector.process(expression);
-		for (String bindingName : optionalBindings) {
-			if (referenced.contains(bindingName)) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	private static boolean nonOptionalOperandIsAssured(ValueExpr expression, Set<String> optionalBindings,
-			Set<String> leftAssuredBindings) {
-		if (expression instanceof ValueConstant) {
-			return true;
-		}
-		if (expression instanceof Var var) {
-			return var.hasValue()
-					|| optionalBindings.contains(var.getName())
-					|| leftAssuredBindings.contains(var.getName());
-		}
-		return false;
-	}
 }

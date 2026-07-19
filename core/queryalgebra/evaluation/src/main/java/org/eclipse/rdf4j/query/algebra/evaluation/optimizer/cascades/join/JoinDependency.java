@@ -13,16 +13,29 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join;
 
 import java.util.Collections;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingMask;
 
 /**
- * Correlation constraint requiring other factor occurrences to be available before a dependent occurrence is evaluated.
+ * Correlation constraint for one dependent factor. Required occurrences are unconditional scope/order predecessors;
+ * producer clauses describe binding requirements that an outer binding or any one exact producer state may satisfy.
  */
 @Experimental
-public record JoinDependency(int dependentOccurrenceId, Set<Integer> requiredOccurrenceIds) {
+public record JoinDependency(int dependentOccurrenceId, Set<Integer> requiredOccurrenceIds,
+		BindingMask requiredInputBindings, List<ProducerClause> producerClauses) {
+
+	public JoinDependency(int dependentOccurrenceId, Set<Integer> requiredOccurrenceIds) {
+		this(dependentOccurrenceId, requiredOccurrenceIds, BindingMask.EMPTY, List.of());
+	}
+
+	public JoinDependency(int dependentOccurrenceId, Set<Integer> requiredOccurrenceIds,
+			BindingMask requiredInputBindings) {
+		this(dependentOccurrenceId, requiredOccurrenceIds, requiredInputBindings, List.of());
+	}
 
 	public JoinDependency {
 		if (dependentOccurrenceId < 0) {
@@ -43,6 +56,16 @@ public record JoinDependency(int dependentOccurrenceId, Set<Integer> requiredOcc
 		requiredOccurrenceIds = ordered.isEmpty()
 				? Set.of()
 				: Collections.unmodifiableSet(new LinkedHashSet<>(ordered));
+		requiredInputBindings = requiredInputBindings == null ? BindingMask.EMPTY : requiredInputBindings;
+		producerClauses = producerClauses == null || producerClauses.isEmpty()
+				? List.of()
+				: List.copyOf(producerClauses);
+		for (ProducerClause clause : producerClauses) {
+			if (!requiredInputBindings.containsAll(clause.requiredBindings())) {
+				throw new IllegalArgumentException(
+						"producer-clause bindings must be included in the dependency required-input mask");
+			}
+		}
 	}
 
 	/**

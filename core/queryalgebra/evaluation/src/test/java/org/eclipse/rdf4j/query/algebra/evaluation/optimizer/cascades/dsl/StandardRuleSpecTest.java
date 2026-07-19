@@ -37,13 +37,18 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.Sample;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -72,6 +77,8 @@ class StandardRuleSpecTest {
 		assertTrue(ids.contains("join-commute"));
 		assertTrue(ids.contains("join-associate-left"));
 		assertTrue(ids.contains("join-associate-right"));
+		assertTrue(ids.contains("join-filter-left-pullup"));
+		assertTrue(ids.contains("join-filter-right-pullup"));
 		assertTrue(ids.contains("filter-conjunct-pushdown"));
 		assertTrue(ids.contains("filter-values-anchor"));
 		assertTrue(ids.contains("filter-conjunct-values-anchor"));
@@ -89,6 +96,7 @@ class StandardRuleSpecTest {
 		assertTrue(ids.contains("minus-alternatives-left-union"));
 		assertTrue(ids.contains("distinct-enforcer"));
 		assertTrue(ids.contains("materialize-enforcer"));
+		assertTrue(ids.contains("sort-enforcer"));
 	}
 
 	@Test
@@ -228,6 +236,49 @@ class StandardRuleSpecTest {
 	}
 
 	@Test
+	void deterministicCorrelatedFilterCanMoveAfterIndependentJoinInput() {
+		CascadesRule rule = RuleRegistry.standardLogicalRules()
+				.rules()
+				.stream()
+				.filter(candidate -> "join-filter-left-pullup".equals(candidate.id()))
+				.findFirst()
+				.orElseThrow();
+		Filter patientExists = new Filter(pattern("med", "codePredicate", "code"),
+				new Exists(pattern("patient", "hasMedicationPredicate", "med")));
+		BindingSetAssignment codeValues = values("code", VF.createIRI("urn:code:1000"),
+				VF.createIRI("urn:code:1001"));
+
+		List<RuleApplication> applications = rule.apply(expr(new Join(patientExists, codeValues)), null, null);
+
+		Filter delayed = assertInstanceOf(Filter.class, applications.getFirst().alternative());
+		Join joinedBeforeFilter = assertInstanceOf(Join.class, delayed.getArg());
+		assertInstanceOf(StatementPattern.class, joinedBeforeFilter.getLeftArg());
+		assertInstanceOf(BindingSetAssignment.class, joinedBeforeFilter.getRightArg());
+		assertInstanceOf(Exists.class, delayed.getCondition());
+	}
+
+	@Test
+	void correlatedFilterCannotMoveAfterJoinInputThatSuppliesItsDependency() {
+		CompiledRule rule = RuleCompiler.compile(StandardRuleSpecs.joinFilteredLeftPullup());
+		Filter patientExists = new Filter(pattern("drug", "codePredicate", "code"),
+				new Exists(pattern("patient", "hasMedicationPredicate", "med")));
+		BindingSetAssignment medicationValues = values("med", VF.createIRI("urn:med:1000"));
+
+		assertFalse(rule.matches(expr(new Join(patientExists, medicationValues)), null, null),
+				"moving the filter would turn a previously uncorrelated subquery name into a sibling-supplied correlation");
+	}
+
+	@Test
+	void ordinaryFilterDoesNotCreateGlobalPullupPlacementAcrossValues() {
+		CompiledRule rule = RuleCompiler.compile(StandardRuleSpecs.joinFilteredLeftPullup());
+		Filter ordinaryFilter = new Filter(pattern("med", "codePredicate", "code"), new Bound(new Var("med")));
+		BindingSetAssignment codeValues = values("code", VF.createIRI("urn:code:1000"));
+
+		assertFalse(rule.matches(expr(new Join(ordinaryFilter, codeValues)), null, null),
+				"ordinary scalar filters are already placed by scoped join search and must not expand the global memo");
+	}
+
+	@Test
 	void filterLeftJoinLeftPushdownAcceptsOnlyLeftAssuredCondition() {
 		CompiledRule rule = RuleCompiler.compile(StandardRuleSpecs.filterLeftJoinLeftPushdown());
 		IRI value = VF.createIRI("urn:o");
@@ -335,6 +386,29 @@ class StandardRuleSpecTest {
 	}
 
 	@Test
+	void optionalNegatedBoundAntiJoinRejectsIncomingTestedBinding() {
+		CompiledRule rule = RuleCompiler.compile(StandardRuleSpecs.optionalNegatedBoundAntiJoin());
+		Filter filter = new Filter(new LeftJoin(pattern("s", "p1", "o"), pattern("s", "p2", "rhs")),
+				new Not(new Bound(new Var("rhs"))));
+		OptimizationGoal goal = OptimizationGoal.exact(PhysicalProperties.builder()
+				.inputBoundVars(Set.of("rhs"))
+				.build());
+
+		assertFalse(rule.matches(expr(filter), goal, null));
+	}
+
+	@Test
+	void optionalNegatedBoundAntiJoinRejectsUnassuredAggregateOutput() {
+		CompiledRule rule = RuleCompiler.compile(StandardRuleSpecs.optionalNegatedBoundAntiJoin());
+		Group right = new Group(pattern("s", "p2", "value"), List.of("s"),
+				List.of(new GroupElem("rhs", new Sample(new Var("missing")))));
+		Filter filter = new Filter(new LeftJoin(pattern("s", "p1", "o"), right),
+				new Not(new Bound(new Var("rhs"))));
+
+		assertFalse(rule.matches(expr(filter), OptimizationGoal.root(), null));
+	}
+
+	@Test
 	void minusAntiExistsAlternativeEmitsNegatedExistsFilter() {
 		CompiledRule rule = RuleCompiler.compile(StandardRuleSpecs.minusAntiExistsAlternative());
 		Difference difference = new Difference(pattern("s", "p1", "o"), pattern("s", "p2", "rhs"));
@@ -344,6 +418,16 @@ class StandardRuleSpecTest {
 		assertEquals(1, applications.size());
 		Filter alternative = assertInstanceOf(Filter.class, applications.get(0).alternative());
 		assertInstanceOf(Not.class, alternative.getCondition());
+	}
+
+	@Test
+	void minusAntiExistsGuardRejectsVolatileRhsExtension() {
+		CompiledRule rule = RuleCompiler.compile(StandardRuleSpecs.minusAntiExistsAlternative());
+		Extension rhs = new Extension(pattern("s", "p2", "rhs"),
+				new ExtensionElem(new FunctionCall("UUID"), "token"));
+		Difference difference = new Difference(pattern("s", "p1", "o"), rhs);
+
+		assertFalse(rule.matches(expr(difference), null, null));
 	}
 
 	@Test
@@ -414,6 +498,50 @@ class StandardRuleSpecTest {
 	}
 
 	@Test
+	void distinctEnforcerOverridesInputDuplicateBehavior() {
+		CompiledRule rule = RuleCompiler.compile(StandardRuleSpecs.distinctEnforcer());
+		OptimizationGoal goal = OptimizationGoal.exact(PhysicalProperties.builder()
+				.distinctVars(Set.of("s"))
+				.duplicateBehavior(PhysicalProperties.DuplicateBehavior.ELIMINATES)
+				.build());
+		PhysicalProperties preservesDuplicates = PhysicalProperties.builder()
+				.duplicateBehavior(PhysicalProperties.DuplicateBehavior.PRESERVES)
+				.build();
+
+		RuleApplication application = rule
+				.apply(expr(pattern("s", "p", "o"), RuleKind.IMPLEMENTATION, preservesDuplicates), goal, null)
+				.getFirst();
+
+		assertEquals(PhysicalProperties.DuplicateBehavior.ELIMINATES,
+				application.deliveredProperties().duplicateBehavior());
+	}
+
+	@Test
+	void distinctEnforcerClearsOnlyDistinctChildRequirement() {
+		CompiledRule rule = RuleCompiler.compile(StandardRuleSpecs.distinctEnforcer());
+		PhysicalProperties required = PhysicalProperties.builder()
+				.ordering(List.of("s:asc"))
+				.distinctVars(Set.of("s"))
+				.boundVars(Set.of("s"))
+				.materialization(PhysicalProperties.Materialization.MATERIALIZED)
+				.duplicateBehavior(PhysicalProperties.DuplicateBehavior.ELIMINATES)
+				.observationOrder(PhysicalProperties.ObservationOrder.EXACT_SEQUENCE)
+				.build();
+		OptimizationGoal goal = OptimizationGoal.exact(required);
+
+		List<RuleApplication> applications = rule.apply(expr(pattern("s", "p", "o"), RuleKind.IMPLEMENTATION,
+				PhysicalProperties.ANY), goal, null);
+
+		assertEquals(1, applications.size());
+		assertEquals(PhysicalProperties.builder()
+				.ordering(List.of("s:asc"))
+				.boundVars(Set.of("s"))
+				.materialization(PhysicalProperties.Materialization.MATERIALIZED)
+				.observationOrder(PhysicalProperties.ObservationOrder.EXACT_SEQUENCE)
+				.build(), applications.get(0).inputRequirements().get(0));
+	}
+
+	@Test
 	void materializeEnforcerAppliesWhenMaterializationRequired() {
 		CompiledRule rule = RuleCompiler.compile(StandardRuleSpecs.materializeEnforcer());
 		OptimizationGoal goal = OptimizationGoal.exact(PhysicalProperties.builder()
@@ -426,6 +554,71 @@ class StandardRuleSpecTest {
 		assertEquals(1, applications.size());
 		assertEquals(PhysicalProperties.Materialization.MATERIALIZED,
 				applications.get(0).deliveredProperties().materialization());
+	}
+
+	@Test
+	void materializeEnforcerClearsOnlyMaterializationChildRequirement() {
+		CompiledRule rule = RuleCompiler.compile(StandardRuleSpecs.materializeEnforcer());
+		PhysicalProperties required = PhysicalProperties.builder()
+				.ordering(List.of("s:asc"))
+				.distinctVars(Set.of("s"))
+				.boundVars(Set.of("s"))
+				.materialization(PhysicalProperties.Materialization.MATERIALIZED)
+				.duplicateBehavior(PhysicalProperties.DuplicateBehavior.ELIMINATES)
+				.observationOrder(PhysicalProperties.ObservationOrder.EXACT_SEQUENCE)
+				.build();
+		OptimizationGoal goal = OptimizationGoal.exact(required);
+
+		List<RuleApplication> applications = rule.apply(expr(pattern("s", "p", "o"), RuleKind.IMPLEMENTATION,
+				PhysicalProperties.ANY), goal, null);
+
+		assertEquals(1, applications.size());
+		assertEquals(PhysicalProperties.builder()
+				.ordering(List.of("s:asc"))
+				.distinctVars(Set.of("s"))
+				.boundVars(Set.of("s"))
+				.duplicateBehavior(PhysicalProperties.DuplicateBehavior.ELIMINATES)
+				.observationOrder(PhysicalProperties.ObservationOrder.EXACT_SEQUENCE)
+				.build(), applications.get(0).inputRequirements().get(0));
+	}
+
+	@Test
+	void sortEnforcerClearsOnlyOrderingChildRequirement() {
+		RuleSpec spec = StandardRuleSpecs.allRules()
+				.stream()
+				.filter(candidate -> "sort-enforcer".equals(candidate.id()))
+				.findFirst()
+				.orElseThrow();
+		CompiledRule rule = RuleCompiler.compile(spec);
+		PhysicalProperties required = PhysicalProperties.builder()
+				.ordering(List.of("s:desc", "o:asc"))
+				.distinctVars(Set.of("s"))
+				.boundVars(Set.of("s", "o"))
+				.materialization(PhysicalProperties.Materialization.MATERIALIZED)
+				.duplicateBehavior(PhysicalProperties.DuplicateBehavior.ELIMINATES)
+				.observationOrder(PhysicalProperties.ObservationOrder.EXACT_SEQUENCE)
+				.build();
+
+		List<RuleApplication> applications = rule.apply(expr(pattern("s", "p", "o"), RuleKind.IMPLEMENTATION,
+				PhysicalProperties.ANY), OptimizationGoal.exact(required), null);
+
+		assertEquals(1, applications.size());
+		Order order = assertInstanceOf(Order.class, applications.get(0).alternative());
+		assertEquals(2, order.getElements().size());
+		OrderElem first = order.getElements().get(0);
+		OrderElem second = order.getElements().get(1);
+		assertEquals("s", assertInstanceOf(Var.class, first.getExpr()).getName());
+		assertFalse(first.isAscending());
+		assertEquals("o", assertInstanceOf(Var.class, second.getExpr()).getName());
+		assertTrue(second.isAscending());
+		assertEquals(List.of("s:desc", "o:asc"), applications.get(0).deliveredProperties().ordering());
+		assertEquals(PhysicalProperties.builder()
+				.distinctVars(Set.of("s"))
+				.boundVars(Set.of("s", "o"))
+				.materialization(PhysicalProperties.Materialization.MATERIALIZED)
+				.duplicateBehavior(PhysicalProperties.DuplicateBehavior.ELIMINATES)
+				.observationOrder(PhysicalProperties.ObservationOrder.EXACT_SEQUENCE)
+				.build(), applications.get(0).inputRequirements().get(0));
 	}
 
 	private static MemoExpr expr(TupleExpr tupleExpr) {

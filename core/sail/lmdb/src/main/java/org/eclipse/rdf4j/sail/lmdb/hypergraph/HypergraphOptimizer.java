@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.sail.lmdb.hypergraph;
 
 import java.util.Optional;
 
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinCardinalityModel;
+
 /**
  * Facade: run DPhyp with a {@link CostingReceiver} over a {@link PlanHypergraph} and return the best plan covering
  * every node. Empty when the graph is empty or disconnected (no Cartesian products are proposed) or when the pair
@@ -62,7 +64,11 @@ public final class HypergraphOptimizer {
 				}
 				JoinPlan scan = JoinPlan.scan(node, graph.cardinality(node),
 						costs.scanCost(node, graph.cardinality(node)));
-				double rows = plan.rows() * scan.rows() * graph.newlySatisfiedSelectivity(plan.nodes(), bit);
+				JoinCardinalityModel.Estimate estimate = graph.cardinalityEstimate(plan.nodes() | bit);
+				if (estimate.hasUnavailableEvidence() && !estimate.exactZero()) {
+					continue;
+				}
+				double rows = estimate.rows();
 				JoinPlan candidate;
 				if (graph.requiredNodes(node) != 0L) {
 					if (!NodeSets.isSubset(graph.requiredNodes(node), plan.nodes())) {

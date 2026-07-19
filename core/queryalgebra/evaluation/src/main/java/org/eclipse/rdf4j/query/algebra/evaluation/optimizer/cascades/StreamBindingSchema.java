@@ -15,26 +15,11 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
-import org.eclipse.rdf4j.query.algebra.Difference;
-import org.eclipse.rdf4j.query.algebra.Extension;
-import org.eclipse.rdf4j.query.algebra.Filter;
-import org.eclipse.rdf4j.query.algebra.Group;
-import org.eclipse.rdf4j.query.algebra.Intersection;
-import org.eclipse.rdf4j.query.algebra.Join;
-import org.eclipse.rdf4j.query.algebra.Lateral;
-import org.eclipse.rdf4j.query.algebra.LeftJoin;
-import org.eclipse.rdf4j.query.algebra.MultiProjection;
-import org.eclipse.rdf4j.query.algebra.Projection;
-import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
-import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
-import org.eclipse.rdf4j.query.algebra.Union;
-import org.eclipse.rdf4j.query.algebra.Var;
 
 /**
- * Scope-aware tuple-stream schema. Scalar-subquery locals and valued tuple variables are inputs or syntax, never
- * output bindings.
+ * Scope-aware tuple-stream schema. Scalar-subquery locals and true constant tuple terms are inputs or syntax, never
+ * output bindings. A value-bearing, nonconstant statement-pattern variable remains an output binding.
  */
 @Experimental
 public record StreamBindingSchema(Set<String> possible, Set<String> assured) {
@@ -52,92 +37,9 @@ public record StreamBindingSchema(Set<String> possible, Set<String> assured) {
 		if (tupleExpr == null) {
 			return EMPTY;
 		}
-		if (tupleExpr instanceof StatementPattern pattern) {
-			Set<String> names = new LinkedHashSet<>();
-			addUnboundName(names, pattern.getSubjectVar());
-			addUnboundName(names, pattern.getPredicateVar());
-			addUnboundName(names, pattern.getObjectVar());
-			addUnboundName(names, pattern.getContextVar());
-			return new StreamBindingSchema(names, names);
-		}
-		if (tupleExpr instanceof Filter filter) {
-			return from(filter.getArg());
-		}
-		if (tupleExpr instanceof Difference difference) {
-			return from(difference.getLeftArg());
-		}
-		if (tupleExpr instanceof Intersection intersection) {
-			StreamBindingSchema left = from(intersection.getLeftArg());
-			StreamBindingSchema right = from(intersection.getRightArg());
-			return new StreamBindingSchema(intersection(left.possible(), right.possible()),
-					intersection(left.assured(), right.assured()));
-		}
-		if (tupleExpr instanceof LeftJoin leftJoin) {
-			StreamBindingSchema left = from(leftJoin.getLeftArg());
-			StreamBindingSchema right = from(leftJoin.getRightArg());
-			return new StreamBindingSchema(union(left.possible(), right.possible()), left.assured());
-		}
-		if (tupleExpr instanceof Union union) {
-			StreamBindingSchema left = from(union.getLeftArg());
-			StreamBindingSchema right = from(union.getRightArg());
-			return new StreamBindingSchema(union(left.possible(), right.possible()),
-					intersection(left.assured(), right.assured()));
-		}
-		if (tupleExpr instanceof Join join) {
-			StreamBindingSchema left = from(join.getLeftArg());
-			StreamBindingSchema right = from(join.getRightArg());
-			return new StreamBindingSchema(union(left.possible(), right.possible()),
-					union(left.assured(), right.assured()));
-		}
-		if (tupleExpr instanceof Lateral lateral) {
-			StreamBindingSchema left = from(lateral.getLeftArg());
-			StreamBindingSchema right = from(lateral.getRightArg());
-			return new StreamBindingSchema(union(left.possible(), right.possible()),
-					union(left.assured(), right.assured()));
-		}
-		if (tupleExpr instanceof Extension extension) {
-			StreamBindingSchema argument = from(extension.getArg());
-			Set<String> possible = new LinkedHashSet<>(argument.possible());
-			for (var element : extension.getElements()) {
-				possible.add(element.getName());
-			}
-			return new StreamBindingSchema(possible, argument.assured());
-		}
-		if (tupleExpr instanceof Projection projection) {
-			StreamBindingSchema argument = from(projection.getArg());
-			return new StreamBindingSchema(projection.getProjectionElemList().getProjectedNames(),
-					projection.getProjectionElemList().getProjectedNamesFor(argument.assured()));
-		}
-		if (tupleExpr instanceof MultiProjection multiProjection) {
-			StreamBindingSchema argument = from(multiProjection.getArg());
-			Set<String> assured = null;
-			for (ProjectionElemList projection : multiProjection.getProjections()) {
-				Set<String> projected = projection.getProjectedNamesFor(argument.assured());
-				assured = assured == null ? new LinkedHashSet<>(projected) : intersection(assured, projected);
-			}
-			return new StreamBindingSchema(multiProjection.getBindingNames(), assured == null ? Set.of() : assured);
-		}
-		if (tupleExpr instanceof Group group) {
-			StreamBindingSchema argument = from(group.getArg());
-			return new StreamBindingSchema(group.getBindingNames(),
-					intersection(group.getGroupBindingNames(), argument.assured()));
-		}
-		if (tupleExpr instanceof UnaryTupleOperator unary) {
-			return from(unary.getArg());
-		}
-		return new StreamBindingSchema(tupleExpr.getBindingNames(), tupleExpr.getAssuredBindingNames());
-	}
-
-	private static Set<String> union(Set<String> left, Set<String> right) {
-		Set<String> result = new LinkedHashSet<>(immutablePlannerNames(left));
-		result.addAll(immutablePlannerNames(right));
-		return result.isEmpty() ? Set.of() : Set.copyOf(result);
-	}
-
-	private static Set<String> intersection(Set<String> left, Set<String> right) {
-		Set<String> result = new LinkedHashSet<>(immutablePlannerNames(left));
-		result.retainAll(immutablePlannerNames(right));
-		return result.isEmpty() ? Set.of() : Set.copyOf(result);
+		BindingUniverse universe = BindingUniverse.create();
+		BindingShape shape = new BindingShapeAnalyzer(universe).analyze(tupleExpr);
+		return new StreamBindingSchema(universe.names(shape.possible()), universe.names(shape.assured()));
 	}
 
 	private static Set<String> immutablePlannerNames(Set<String> names) {
@@ -153,9 +55,4 @@ public record StreamBindingSchema(Set<String> possible, Set<String> assured) {
 		return result.isEmpty() ? Set.of() : Set.copyOf(result);
 	}
 
-	private static void addUnboundName(Set<String> names, Var var) {
-		if (var != null && !var.hasValue() && BindingUniverse.plannerName(var.getName())) {
-			names.add(var.getName());
-		}
-	}
 }

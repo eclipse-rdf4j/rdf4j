@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.ExhaustiveLegalJoinSearchContributor;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinMemoExpression;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSearchContributor;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSearchDependencyStamp;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSearchRequest;
@@ -31,6 +32,41 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinTr
 import org.junit.jupiter.api.Test;
 
 class CascadesIncompleteJoinWorkLifecycleTest {
+
+	@Test
+	void duplicateRawJoinPartitionsAreChargedBeforeMemoDeduplication() {
+		AtomicInteger callbacks = new AtomicInteger();
+		JoinSearchContributor duplicatePartitions = new JoinSearchContributor() {
+			private final Descriptor descriptor = new Descriptor("duplicate-partitions", Coverage.EXHAUSTIVE_LEGAL,
+					100);
+
+			@Override
+			public Descriptor descriptor() {
+				return descriptor;
+			}
+
+			@Override
+			public Outcome contribute(JoinSearchRequest request, CandidateSink sink) {
+				throw new AssertionError("production Cascades search must request memo-local expressions");
+			}
+
+			@Override
+			public Outcome contributeMemoExpressions(JoinSearchRequest request, MemoExpressionSink sink) {
+				JoinMemoExpression expression = JoinMemoExpression.decompose(reversedTwoFactorTree(request)).getFirst();
+				callbacks.incrementAndGet();
+				sink.accept(expression);
+				callbacks.incrementAndGet();
+				sink.accept(expression);
+				return Outcome.completed();
+			}
+		};
+
+		CascadesPlan plan = planner(List.of(duplicatePartitions)).optimize(twoFactorJoin(), OptimizationGoal.root());
+
+		assertEquals(2, callbacks.get());
+		assertEquals(2L, plan.searchStatus().counters().partitionProbes(),
+				"Every raw partition callback must be charged even when memo deduplication rejects it");
+	}
 
 	@Test
 	void exactModeResumesPartiallyEnumeratedJoinWorkUntilComplete() {
@@ -62,6 +98,8 @@ class CascadesIncompleteJoinWorkLifecycleTest {
 
 		assertEquals(2, incompleteRevisionCalls.get(),
 				"Exact mode must resume the same incomplete region revision exactly once");
+		assertEquals(3L, plan.searchStatus().counters().partitionProbes(),
+				"One partial callback and both oriented exhaustive callbacks must share the retry ledger");
 		assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness(), plan.diagnostics().toString());
 		assertNoPendingJoinWork(plan);
 	}

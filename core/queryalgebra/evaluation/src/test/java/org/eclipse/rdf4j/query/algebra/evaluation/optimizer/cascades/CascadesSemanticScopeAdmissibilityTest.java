@@ -23,16 +23,17 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Distinct;
-import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSearchService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -60,11 +61,41 @@ class CascadesSemanticScopeAdmissibilityTest {
 	}
 
 	@Test
-	void structuralDuplicateMergeKeepsLeastRestrictiveAdmissibleRouteAndWakesMemo() {
+	void sameScopeLogicalRouteMergesProofsWithoutAddingAnotherExpression() {
 		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
-		int groupId = memo.intern(new EmptySet());
+		StatementPattern pattern = pattern("s", "p", "o");
+		int groupId = memo.intern(pattern);
 		drainChanges(memo);
+		long logicalRevision = memo.group(groupId).logicalRevision();
+		RuleProof proof = new RuleProof("same-bag-route", RuleKind.TRANSFORMATION,
+				OptimizationGoal.BAG_SEMANTICS, Set.of("proofIndependentIdentity"),
+				"The same BAG route gained another certificate");
+
+		assertTrue(memo.addLogicalAlternative(groupId, pattern.clone(), List.of(proof), SemanticScope.BAG).isEmpty(),
+				"Proof lineage must not create another typed logical expression");
+
+		List<MemoExpr> logicalExpressions = memo.group(groupId)
+				.expressions()
+				.stream()
+				.filter(MemoExpr::logical)
+				.toList();
+		assertEquals(1, logicalExpressions.size());
+		assertEquals(logicalRevision, memo.group(groupId).logicalRevision());
+		assertTrue(logicalExpressions.getFirst()
+				.proofs()
+				.stream()
+				.anyMatch(candidate -> "same-bag-route".equals(candidate.ruleId())));
+		List<MemoChange> changes = drainChanges(memo);
+		assertTrue(changes.stream().anyMatch(change -> change.kind() == MemoChange.Kind.PROOFS_CHANGED));
+		assertFalse(changes.stream().anyMatch(change -> change.kind() == MemoChange.Kind.LOGICAL_EXPRESSION_ADDED));
+	}
+
+	@Test
+	void structuralDuplicateProofDerivationsRemainDistinctAndWakeMemo() {
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
 		StatementPattern alternative = pattern("s", "p", "o");
+		int groupId = memo.intern(new SetOnlyStatementPattern(alternative));
+		drainChanges(memo);
 		RuleProof setProof = new RuleProof("set-route", RuleKind.TRANSFORMATION,
 				OptimizationGoal.SET_SEMANTICS, Set.of("setOnly"), "SET-only derivation");
 		MemoExpr expression = memo.addLogicalAlternative(groupId, alternative, List.of(setProof), SemanticScope.SET)
@@ -72,25 +103,124 @@ class CascadesSemanticScopeAdmissibilityTest {
 		assertEquals(SemanticScope.SET, memo.semanticScope(expression));
 		assertFalse(memo.isAdmissible(expression, OptimizationGoal.root()));
 		drainChanges(memo);
-		long dependencyRevision = memo.group(groupId).dependencyRevision();
+		long logicalRevision = memo.group(groupId).logicalRevision();
 
 		RuleProof bagProof = new RuleProof("bag-route", RuleKind.TRANSFORMATION,
 				OptimizationGoal.BAG_SEMANTICS, Set.of("bagEquivalent"), "BAG-equivalent derivation");
-		assertTrue(memo.addLogicalAlternative(groupId, alternative.clone(), List.of(bagProof), SemanticScope.BAG)
-				.isEmpty());
+		MemoExpr bagExpression = memo
+				.addLogicalAlternative(groupId, alternative.clone(), List.of(bagProof), SemanticScope.BAG)
+				.orElseThrow();
 
-		assertEquals(SemanticScope.BAG, memo.semanticScope(expression),
-				"A structural duplicate with a BAG route must broaden, not overwrite, the existing SET route");
-		assertTrue(memo.isAdmissible(expression, OptimizationGoal.root()));
-		assertTrue(memo.group(groupId).dependencyRevision() > dependencyRevision);
+		assertEquals(SemanticScope.SET, memo.semanticScope(expression),
+				"The canonical SET derivation must retain its own admissibility and proofs");
+		assertFalse(memo.isAdmissible(expression, OptimizationGoal.root()));
+		assertEquals(SemanticScope.BAG, memo.semanticScope(bagExpression));
+		assertTrue(memo.isAdmissible(bagExpression, OptimizationGoal.root()));
+		assertTrue(memo.group(groupId).logicalRevision() > logicalRevision);
 		List<MemoChange> changes = drainChanges(memo);
-		assertTrue(changes.stream().anyMatch(change -> change.kind() == MemoChange.Kind.ADMISSIBILITY_CHANGED));
-		assertTrue(changes.stream().anyMatch(change -> change.kind() == MemoChange.Kind.PROOFS_CHANGED));
-		assertTrue(memo.expression(expression.id())
+		assertTrue(changes.stream().anyMatch(change -> change.kind() == MemoChange.Kind.LOGICAL_EXPRESSION_ADDED));
+		assertFalse(changes.stream().anyMatch(change -> change.kind() == MemoChange.Kind.PROOFS_CHANGED));
+		assertFalse(memo.expression(expression.id())
 				.proofs()
 				.stream()
 				.anyMatch(proof -> "bag-route".equals(proof.ruleId())),
-				"Route broadening must preserve both derivation proofs for provenance");
+				"A later derivation must not contaminate the canonical route");
+		assertTrue(memo.expression(bagExpression.id())
+				.proofs()
+				.stream()
+				.anyMatch(proof -> "bag-route".equals(proof.ruleId())));
+	}
+
+	@Test
+	void physicalDuplicateRetainsAllExactRouteProofsIndependentOfRegistrationOrder() {
+		RuleProof implementation = new RuleProof("implementation", RuleKind.IMPLEMENTATION,
+				OptimizationGoal.BAG_SEMANTICS, Set.of("executable"), "Executable implementation");
+		RuleProof rewrite = new RuleProof("rewrite", RuleKind.TRANSFORMATION,
+				OptimizationGoal.BAG_SEMANTICS, Set.of("alternative"), "Alternative logical derivation");
+
+		Memo rewrittenFirst = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		StatementPattern rewrittenFirstPattern = pattern("s", "p", "o");
+		int rewrittenFirstGroup = rewrittenFirst.intern(rewrittenFirstPattern);
+		drainChanges(rewrittenFirst);
+		rewrittenFirst
+				.addPhysicalAlternative(rewrittenFirstGroup, rewrittenFirstPattern.clone(), PhysicalProperties.ANY,
+						"same-route", RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(implementation, rewrite))
+				.orElseThrow();
+		drainChanges(rewrittenFirst);
+		assertTrue(rewrittenFirst.addPhysicalAlternative(rewrittenFirstGroup, rewrittenFirstPattern.clone(),
+				PhysicalProperties.ANY, "same-route", RuleKind.IMPLEMENTATION, CostVector.ZERO,
+				List.of(implementation)).isEmpty());
+		drainChanges(rewrittenFirst);
+
+		Memo canonicalFirst = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		StatementPattern canonicalFirstPattern = pattern("s", "p", "o");
+		int canonicalFirstGroup = canonicalFirst.intern(canonicalFirstPattern);
+		drainChanges(canonicalFirst);
+		canonicalFirst
+				.addPhysicalAlternative(canonicalFirstGroup, canonicalFirstPattern.clone(), PhysicalProperties.ANY,
+						"same-route", RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(implementation))
+				.orElseThrow();
+		drainChanges(canonicalFirst);
+		assertTrue(canonicalFirst.addPhysicalAlternative(canonicalFirstGroup, canonicalFirstPattern.clone(),
+				PhysicalProperties.ANY, "same-route", RuleKind.IMPLEMENTATION, CostVector.ZERO,
+				List.of(implementation, rewrite)).isEmpty());
+		List<MemoChange> unionChanges = drainChanges(canonicalFirst);
+
+		assertEquals(List.of("implementation", "rewrite"),
+				physicalProofRuleIds(rewrittenFirst, rewrittenFirstGroup));
+		assertEquals(List.of("implementation", "rewrite"),
+				physicalProofRuleIds(canonicalFirst, canonicalFirstGroup));
+		assertTrue(unionChanges.stream().anyMatch(change -> change.kind() == MemoChange.Kind.PROOFS_CHANGED),
+				"Exact-route proof union must preserve PROOFS_CHANGED wake compatibility");
+	}
+
+	@Test
+	void logicalProofRefinementRefreshesRecordedPhysicalImplementation() {
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		StatementPattern pattern = pattern("s", "p", "o");
+		int groupId = memo.intern(pattern);
+		MemoExpr logical = memo.group(groupId)
+				.expressions()
+				.stream()
+				.filter(MemoExpr::logical)
+				.findFirst()
+				.orElseThrow();
+		RuleProof implementation = new RuleProof("implementation", RuleKind.IMPLEMENTATION,
+				OptimizationGoal.BAG_SEMANTICS, Set.of("executable"), "Executable implementation");
+		MemoExpr physical = memo
+				.addPhysicalAlternative(groupId, pattern.clone(), PhysicalProperties.ANY, "same-route",
+						RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(implementation))
+				.orElseThrow();
+		memo.recordPhysicalImplementationSource(physical, logical);
+		drainChanges(memo);
+
+		RuleProof rewrite = new RuleProof("rewrite", RuleKind.TRANSFORMATION,
+				OptimizationGoal.BAG_SEMANTICS, Set.of("certifiedRewrite"), "Certified logical derivation");
+		assertTrue(memo.addLogicalAlternative(groupId, pattern.clone(), List.of(rewrite)).isEmpty());
+		List<MemoChange> proofChanges = drainChanges(memo);
+
+		assertEquals(List.of("implementation", "rewrite"), memo.expression(physical.id())
+				.proofs()
+				.stream()
+				.map(RuleProof::ruleId)
+				.toList());
+		assertTrue(proofChanges.stream()
+				.anyMatch(change -> change.kind() == MemoChange.Kind.PROOFS_CHANGED
+						&& change.expressionId() == physical.id()),
+				"A late logical certificate must wake and refresh its recorded executable implementation");
+	}
+
+	private static List<String> physicalProofRuleIds(Memo memo, int groupId) {
+		return memo.group(groupId)
+				.expressions()
+				.stream()
+				.filter(MemoExpr::physical)
+				.findFirst()
+				.orElseThrow()
+				.proofs()
+				.stream()
+				.map(RuleProof::ruleId)
+				.toList();
 	}
 
 	@Test
@@ -142,6 +272,24 @@ class CascadesSemanticScopeAdmissibilityTest {
 				.findFirst()
 				.orElseThrow()
 				.requiredSemanticScope());
+	}
+
+	@Test
+	void setOnlyPhysicalRouteRetainsItsOwnEmittedCardinality() {
+		StatementPattern root = pattern("s", "p", "o");
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(new SetScopedCardinalityImplementationRule())
+				.build();
+
+		Winner winner = new CascadesPlanner(new SetScopedCardinalityCostModel(), registry, CascadesTelemetry.NO_OP)
+				.optimize(root, OptimizationGoal.root().withSemanticScope(OptimizationGoal.SET_SEMANTICS))
+				.winner()
+				.orElseThrow();
+
+		assertEquals(SetScopedCardinalityImplementationRule.SET_ACCESS_PATH,
+				winner.deliveredProperties().accessPath());
+		assertEquals(12.0d, winner.cost().rows(), 0.0d,
+				"A SET-equivalent physical route may emit fewer duplicate rows than the BAG-equivalent route");
 	}
 
 	@Test
@@ -290,6 +438,31 @@ class CascadesSemanticScopeAdmissibilityTest {
 				() -> "Observer-derived proof scopes polluted the implementation route: " + physicalChild.proofs());
 	}
 
+	@Test
+	void scopedInnerJoinProofRemainsBagEquivalentBelowSetObserver() {
+		Join join = new Join(new Join(pattern("left", "p1", "shared"), pattern("shared", "p2", "middle")),
+				pattern("middle", "p3", "right"));
+		Group duplicateInsensitiveGroup = new Group(join);
+		duplicateInsensitiveGroup.addGroupElement(new GroupElem("count", new Count(new Var("right"), true)));
+		CascadesPlan plan = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()),
+				RuleRegistry.standardLogicalRules(), CascadesTelemetry.NO_OP)
+						.optimize(duplicateInsensitiveGroup, OptimizationGoal.root());
+
+		List<RuleProof> joinProofs = plan.memo()
+				.groups()
+				.stream()
+				.flatMap(group -> group.expressions().stream())
+				.filter(MemoExpr::logical)
+				.flatMap(expression -> expression.proofs().stream())
+				.filter(proof -> JoinSearchService.ROUTE_ID.equals(proof.ruleId()))
+				.toList();
+
+		assertFalse(joinProofs.isEmpty(), "The duplicate-insensitive child must still use unified join search");
+		assertTrue(joinProofs.stream()
+				.allMatch(proof -> OptimizationGoal.BAG_SEMANTICS.equals(proof.semanticScope())),
+				() -> "A SET observer must not weaken BAG-equivalent inner-join proofs: " + joinProofs);
+	}
+
 	private static boolean hasProof(Winner winner, String ruleId) {
 		return winner.proofs().stream().anyMatch(proof -> ruleId.equals(proof.ruleId()));
 	}
@@ -320,6 +493,15 @@ class CascadesSemanticScopeAdmissibilityTest {
 		}
 
 		@Override
+		public RuleDescriptor descriptor() {
+			return RuleDescriptor.builder(id(), kind())
+					.wakeUpEvents(RuleWakeUpEvent.LOGICAL_EXPRESSION_ADDED,
+							RuleWakeUpEvent.REQUIRED_PROPERTIES_CHANGED)
+					.convergenceClass(RuleConvergenceClass.FINITE_EQUIVALENCE_EXPANSION)
+					.build();
+		}
+
+		@Override
 		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
 			return expression.logical()
 					&& expression.tupleExpr() != null
@@ -335,7 +517,8 @@ class CascadesSemanticScopeAdmissibilityTest {
 		@Override
 		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
 			applications.incrementAndGet();
-			SetOnlyStatementPattern alternative = new SetOnlyStatementPattern((StatementPattern) expression.tupleExpr());
+			SetOnlyStatementPattern alternative = new SetOnlyStatementPattern(
+					(StatementPattern) expression.tupleExpr());
 			RuleProof proof = new RuleProof(id(), kind(), OptimizationGoal.SET_SEMANTICS,
 					Set.of("setSemanticsOnly"), "Test rewrite valid only when multiplicity is unobservable");
 			return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
@@ -381,10 +564,93 @@ class CascadesSemanticScopeAdmissibilityTest {
 		}
 	}
 
+	private static final class SetScopedCardinalityImplementationRule implements FiniteTestCascadesRule {
+		private static final String BAG_ACCESS_PATH = "test-bag-cardinality";
+		private static final String SET_ACCESS_PATH = "test-set-cardinality";
+
+		@Override
+		public String id() {
+			return "semantic-scope-cardinality-implementation";
+		}
+
+		@Override
+		public RuleKind kind() {
+			return RuleKind.IMPLEMENTATION;
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical() && expression.tupleExpr() instanceof StatementPattern;
+		}
+
+		@Override
+		public int promise(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return 100;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			PhysicalProperties bagDelivered = PhysicalProperties.builder()
+					.accessPath(BAG_ACCESS_PATH)
+					.build();
+			PhysicalProperties setDelivered = PhysicalProperties.builder()
+					.accessPath(SET_ACCESS_PATH)
+					.build();
+			RuleProof bagProof = new RuleProof(id(), kind(), OptimizationGoal.BAG_SEMANTICS,
+					Set.of("bagEquivalent"), "Test BAG-equivalent physical route");
+			RuleProof setProof = new RuleProof(id(), kind(), OptimizationGoal.SET_SEMANTICS,
+					Set.of("setEquivalent"), "Test SET-equivalent duplicate-eliding physical route");
+			return List.of(
+					RuleApplication.atomicPhysical(expression.groupId(), expression.tupleExpr().clone(), bagDelivered,
+							CostVector.ZERO, bagProof, BAG_ACCESS_PATH, null),
+					RuleApplication.atomicPhysical(expression.groupId(), expression.tupleExpr().clone(), setDelivered,
+							CostVector.ZERO, setProof, SET_ACCESS_PATH, null));
+		}
+	}
+
+	private static final class SetScopedCardinalityCostModel implements CascadesCostModel {
+		private final CascadesCostModel delegate = CascadesCostModel.from(new EvaluationStatistics());
+
+		@Override
+		public LogicalProperties logicalProperties(TupleExpr tupleExpr) {
+			return delegate.logicalProperties(tupleExpr);
+		}
+
+		@Override
+		public String logicalFingerprint(TupleExpr tupleExpr) {
+			return delegate.logicalFingerprint(tupleExpr);
+		}
+
+		@Override
+		public CostVector localCost(MemoExpr expression, OptimizationGoal goal, List<Winner> inputWinners) {
+			return switch (expression.deliveredProperties().accessPath()) {
+			case SetScopedCardinalityImplementationRule.BAG_ACCESS_PATH -> exactCost(240.0d);
+			case SetScopedCardinalityImplementationRule.SET_ACCESS_PATH -> exactCost(12.0d);
+			default -> exactCost(1_000.0d);
+			};
+		}
+
+		@Override
+		public OutputEvidenceScope outputEvidenceScope(MemoExpr expression, OptimizationGoal goal,
+				List<Winner> inputWinners, CostVector localEstimate) {
+			return SetScopedCardinalityImplementationRule.BAG_ACCESS_PATH
+					.equals(expression.deliveredProperties().accessPath())
+							? OutputEvidenceScope.LOGICAL_EQUIVALENCE_FOR_GOAL
+							: OutputEvidenceScope.IMPLEMENTATION_LOCAL;
+		}
+
+		@Override
+		public PhysicalProperties deliveredProperties(MemoExpr expression, OptimizationGoal goal,
+				List<Winner> inputWinners) {
+			return expression.deliveredProperties();
+		}
+	}
+
 	private static final class SetOnlyStatementPattern extends StatementPattern {
 		private SetOnlyStatementPattern(StatementPattern source) {
 			super(source.getScope(), source.getSubjectVar().clone(), source.getPredicateVar().clone(),
-					source.getObjectVar().clone(), source.getContextVar() == null ? null : source.getContextVar().clone());
+					source.getObjectVar().clone(),
+					source.getContextVar() == null ? null : source.getContextVar().clone());
 		}
 	}
 

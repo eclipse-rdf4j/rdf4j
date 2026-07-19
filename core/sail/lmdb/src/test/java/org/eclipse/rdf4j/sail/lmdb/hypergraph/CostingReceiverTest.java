@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.List;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.LogSelectivity;
 import org.junit.jupiter.api.Test;
 
 class CostingReceiverTest {
@@ -74,9 +75,9 @@ class CostingReceiverTest {
 		int a = planGraph.addNode("A", 100);
 		int b = planGraph.addNode("B", 100);
 		int c = planGraph.addNode("C", 100);
-		planGraph.addJoinEdge(NodeSets.bit(a), NodeSets.bit(b), 0.1d, "s");
-		planGraph.addJoinEdge(NodeSets.bit(b), NodeSets.bit(c), 0.1d, "s");
-		planGraph.addJoinEdge(NodeSets.bit(a), NodeSets.bit(c), 0.1d, "s");
+		planGraph.addEqualityJoinEdge(NodeSets.bit(a), NodeSets.bit(b), 0.1d, "s");
+		planGraph.addEqualityJoinEdge(NodeSets.bit(b), NodeSets.bit(c), 0.1d, "s");
+		planGraph.addEqualityJoinEdge(NodeSets.bit(a), NodeSets.bit(c), 0.1d, "s");
 
 		CostingReceiver receiver = run(planGraph, CostModel.DEFAULT);
 		JoinPlan best = receiver.planFor(planGraph.graph().allNodes());
@@ -84,6 +85,159 @@ class CostingReceiverTest {
 		assertNotNull(best);
 		assertEquals(10_000.0d, best.rows(), 1e-6,
 				"three same-variable joins have two independent equality predicates, not three");
+	}
+
+	@Test
+	void sameLabelForestReplacementKeepsCanonicalRows() {
+		PlanHypergraph planGraph = new PlanHypergraph();
+		int a = planGraph.addNode("A", 1.0d);
+		int b = planGraph.addNode("B", 1.0d);
+		int c = planGraph.addNode("C", 1.0d);
+		planGraph.addEqualityJoinEdge(NodeSets.bit(a), NodeSets.bit(b), 0.01d, "s");
+		planGraph.addEqualityJoinEdge(NodeSets.bit(b), NodeSets.bit(c), 0.9d, "s");
+		planGraph.addEqualityJoinEdge(NodeSets.bit(a), NodeSets.bit(c), 0.9d, "s");
+
+		double abThenC = rowsForAssociation(planGraph, a, b, c);
+		double bcThenA = rowsForAssociation(planGraph, b, c, a);
+		double acThenB = rowsForAssociation(planGraph, a, c, b);
+
+		assertEquals(0.81d, abThenC, 1e-12, "the stronger full-set forest must replace the weak AB edge");
+		assertEquals(abThenC, bcThenA, 1e-12, "cardinality must not depend on join association");
+		assertEquals(abThenC, acThenB, 1e-12, "cardinality must not depend on join association");
+	}
+
+	@Test
+	void diagnosticLabelsDoNotTurnOrdinaryPredicatesIntoEqualities() {
+		PlanHypergraph planGraph = new PlanHypergraph();
+		int a = planGraph.addNode("A", 1.0d);
+		int b = planGraph.addNode("B", 1.0d);
+		long pair = NodeSets.bit(a) | NodeSets.bit(b);
+		planGraph.addJoinEdge(NodeSets.bit(a), NodeSets.bit(b), 0.5d, "same-diagnostic-label");
+		planGraph.addPredicate(pair, 0.5d, "same-diagnostic-label");
+
+		JoinPlan best = run(planGraph, CostModel.DEFAULT).planFor(pair);
+
+		assertNotNull(best);
+		assertEquals(0.25d, best.rows(), 1e-12,
+				"ordinary predicate semantics must not be inferred from repeated diagnostic text");
+	}
+
+	@Test
+	void unavailablePredicateStateIsNotCostedAsNeutral() {
+		PlanHypergraph planGraph = new PlanHypergraph();
+		int a = planGraph.addNode("A", 10.0d);
+		int b = planGraph.addNode("B", 10.0d);
+		long pair = NodeSets.bit(a) | NodeSets.bit(b);
+		planGraph.addJoinEdge(NodeSets.bit(a), NodeSets.bit(b), LogSelectivity.unavailable(), "missing");
+
+		CostingReceiver receiver = run(planGraph, CostModel.DEFAULT);
+
+		assertNull(receiver.planFor(pair), "missing selectivity must not be silently treated as one");
+	}
+
+	@Test
+	void exactZeroStateDoesNotNeedUnavailablePredicateEvidence() {
+		PlanHypergraph planGraph = new PlanHypergraph();
+		int empty = planGraph.addNode("empty", 0.0d);
+		int other = planGraph.addNode("other", 10.0d);
+		long pair = NodeSets.bit(empty) | NodeSets.bit(other);
+		planGraph.addJoinEdge(NodeSets.bit(empty), NodeSets.bit(other), LogSelectivity.unavailable(), "missing");
+
+		JoinPlan best = run(planGraph, CostModel.DEFAULT).planFor(pair);
+
+		assertNotNull(best, "proven emptiness makes unrelated missing evidence immaterial");
+		assertEquals(0.0d, best.rows());
+	}
+
+	@Test
+	void largeProductsAndSelectivePredicatesCancelInLogSpace() {
+		PlanHypergraph planGraph = new PlanHypergraph();
+		int[] nodes = new int[8];
+		for (int i = 0; i < nodes.length; i++) {
+			nodes[i] = planGraph.addNode("n" + i, 1e50d);
+		}
+		for (int left = 0; left < nodes.length; left++) {
+			for (int right = left + 1; right < nodes.length; right++) {
+				planGraph.addJoinEdge(NodeSets.bit(nodes[left]), NodeSets.bit(nodes[right]), 1e-12d,
+						"p" + left + '-' + right);
+			}
+		}
+
+		JoinPlan best = run(planGraph, CostModel.DEFAULT).planFor(planGraph.graph().allNodes());
+
+		assertNotNull(best);
+		assertEquals(64.0d, Math.log10(best.rows()), 1e-10,
+				"1e400 base rows and 1e-336 predicate selectivity must combine to 1e64");
+	}
+
+	@Test
+	void sameLabelCliqueUsesOnlyItsMaximumSpanningForest() {
+		PlanHypergraph planGraph = new PlanHypergraph();
+		int[] nodes = new int[8];
+		for (int i = 0; i < nodes.length; i++) {
+			nodes[i] = planGraph.addNode("n" + i, 10.0d);
+		}
+		for (int left = 0; left < nodes.length; left++) {
+			for (int right = left + 1; right < nodes.length; right++) {
+				planGraph.addEqualityJoinEdge(NodeSets.bit(nodes[left]), NodeSets.bit(nodes[right]), 0.1d, "s");
+			}
+		}
+
+		JoinPlan best = run(planGraph, CostModel.DEFAULT).planFor(planGraph.graph().allNodes());
+
+		assertNotNull(best);
+		assertEquals(10.0d, best.rows(), 1e-10, "eight factors require seven independent equalities");
+	}
+
+	@Test
+	void positiveUnderflowSaturatesToSmallestPositiveRows() {
+		PlanHypergraph planGraph = new PlanHypergraph();
+		int a = planGraph.addNode("A", 1e-300d);
+		int b = planGraph.addNode("B", 1e-300d);
+		planGraph.addJoinEdge(NodeSets.bit(a), NodeSets.bit(b), 1.0d, "ab");
+
+		JoinPlan best = run(planGraph, CostModel.DEFAULT).planFor(planGraph.graph().allNodes());
+
+		assertNotNull(best);
+		assertEquals(Double.MIN_VALUE, best.rows(), "positive cardinality must not become exact zero");
+	}
+
+	@Test
+	void overflowSaturatesToLargestFiniteRows() {
+		PlanHypergraph planGraph = new PlanHypergraph();
+		int a = planGraph.addNode("A", 1e308d);
+		int b = planGraph.addNode("B", 1e308d);
+		planGraph.addJoinEdge(NodeSets.bit(a), NodeSets.bit(b), 1.0d, "ab");
+
+		JoinPlan best = run(planGraph, CostModel.DEFAULT).planFor(planGraph.graph().allNodes());
+
+		assertNotNull(best);
+		assertEquals(Double.MAX_VALUE, best.rows(), "cardinality must remain finite at the cost boundary");
+	}
+
+	@Test
+	void exactZeroBaseCardinalityRemainsZero() {
+		PlanHypergraph planGraph = new PlanHypergraph();
+		int a = planGraph.addNode("A", 0.0d);
+		int b = planGraph.addNode("B", 1e300d);
+		planGraph.addJoinEdge(NodeSets.bit(a), NodeSets.bit(b), 1.0d, "ab");
+
+		JoinPlan best = run(planGraph, CostModel.DEFAULT).planFor(planGraph.graph().allNodes());
+
+		assertNotNull(best);
+		assertEquals(0.0d, best.rows(), "a proven empty factor makes the logical join state empty");
+	}
+
+	private static double rowsForAssociation(PlanHypergraph planGraph, int leftNode, int rightNode, int finalNode) {
+		CostingReceiver receiver = new CostingReceiver(planGraph, CostModel.DEFAULT, Long.MAX_VALUE);
+		receiver.foundSingleNode(leftNode);
+		receiver.foundSingleNode(rightNode);
+		receiver.foundSingleNode(finalNode);
+		long left = NodeSets.bit(leftNode);
+		long right = NodeSets.bit(rightNode);
+		receiver.foundSubgraphPair(left, right, 0);
+		receiver.foundSubgraphPair(left | right, NodeSets.bit(finalNode), 0);
+		return receiver.planFor(planGraph.graph().allNodes()).rows();
 	}
 
 	@Test

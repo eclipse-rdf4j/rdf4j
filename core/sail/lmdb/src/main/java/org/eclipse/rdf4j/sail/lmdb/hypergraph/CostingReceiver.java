@@ -16,15 +16,14 @@ import java.util.List;
 import java.util.Map;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinCardinalityModel;
 
 /**
  * The dynamic-programming layer: keeps the best {@link JoinPlan} per connected node set while
  * {@link SubgraphEnumerator} feeds it csg-cmp pairs.
  * <p>
- * Row estimates are canonical per node set: rows(S) = product of the base cardinalities of S's nodes times the
- * selectivity of every predicate whose TES fits inside S. Because a predicate's TES becomes newly satisfied at exactly
- * one cut of any join tree, computing this incrementally at each join applies every predicate exactly once and yields
- * the same estimate for a set no matter which join order produced it — which keeps the DP stable.
+ * Row estimates are read directly from the canonical logical node-set estimate. Child estimates are inputs to local
+ * operator costing; they are never multiplied back together to reconstruct a parent's cardinality.
  * <p>
  * Plan retention is keyed by node set, required outer nodes, and physical properties. Candidates compete only inside
  * one such state, allowing parameterized plans and interesting orders to survive beside a cheaper unordered plan.
@@ -69,14 +68,15 @@ public final class CostingReceiver implements SubgraphEnumerator.Receiver {
 		List<JoinPlan> leftPlans = plansFor(left);
 		List<JoinPlan> rightPlans = plansFor(right);
 		if (leftPlans.isEmpty() || rightPlans.isEmpty()) {
-			// Cannot happen for a correct enumerator (DP order guarantees both sides are planned); stay safe.
-			throw new IllegalStateException("csg-cmp pair emitted before both sides were planned: "
-					+ NodeSets.describe(left) + " | " + NodeSets.describe(right));
+			return false;
 		}
+		JoinCardinalityModel.Estimate estimate = planGraph.cardinalityEstimate(left | right);
+		if (estimate.hasUnavailableEvidence() && !estimate.exactZero()) {
+			return false;
+		}
+		double rows = estimate.rows();
 		for (JoinPlan leftPlan : leftPlans) {
 			for (JoinPlan rightPlan : rightPlans) {
-				double rows = leftPlan.rows() * rightPlan.rows()
-						* planGraph.newlySatisfiedSelectivity(left, right);
 				if (!crossesParameterDependency(left, right) && !crossesParameterDependency(right, left)) {
 					propose(JoinPlan.join(JoinPlan.Kind.HASH_JOIN, leftPlan, rightPlan, rows,
 							leftPlan.cost() + rightPlan.cost()

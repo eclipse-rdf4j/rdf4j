@@ -57,13 +57,15 @@ import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.Sum;
-import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MaterializeTupleExpr;
 
 /** Converts immutable planner IR back to fresh RDF4J TupleExpr trees. */
 @Experimental
@@ -86,7 +88,7 @@ public final class IrToTupleExpr {
 
 	private TupleExpr visit(IrNodeId id) {
 		IrNode node = ir.node(id);
-		return switch (node.op()) {
+		TupleExpr tupleExpr = switch (node.op()) {
 		case STATEMENT_PATTERN -> statementPattern(node);
 		case BINDING_SET_ASSIGNMENT -> finiteRows(node);
 		case JOIN -> new Join(visit(node.inputs().get(0)), visit(node.inputs().get(1)));
@@ -108,9 +110,14 @@ public final class IrToTupleExpr {
 		case EMPTY -> new EmptySet();
 		case SINGLETON -> new SingletonSet();
 		case NATIVE_BOUNDARY -> nativeBoundary(node);
-		case MATERIALIZE, LMDB_ACCESS_PATH, LMDB_BOUND_LOOKUP, LMDB_HASH_ANTI_SEMI, LMDB_HASH_SEMI -> nativeOrMaterialized(
+		case MATERIALIZE -> new MaterializeTupleExpr(visit(node.inputs().getFirst()));
+		case LMDB_ACCESS_PATH, LMDB_BOUND_LOOKUP, LMDB_HASH_ANTI_SEMI, LMDB_HASH_SEMI -> nativeOrMaterialized(
 				node);
 		};
+		if (tupleExpr instanceof VariableScopeChange scopeChange) {
+			scopeChange.setVariableScopeChange(node.semantics().explicitScopeChange());
+		}
+		return tupleExpr;
 	}
 
 	private TupleExpr statementPattern(IrNode node) {
@@ -134,15 +141,11 @@ public final class IrToTupleExpr {
 	}
 
 	private TupleExpr union(IrNode node) {
-		Union union = new Union(visit(node.inputs().get(0)), visit(node.inputs().get(1)));
-		union.setVariableScopeChange(node.semantics().scopeBarrier());
-		return union;
+		return new Union(visit(node.inputs().get(0)), visit(node.inputs().get(1)));
 	}
 
 	private TupleExpr filter(IrNode node) {
-		Filter filter = new Filter(visit(node.inputs().get(0)), condition(node));
-		filter.setVariableScopeChange(node.semantics().scopeBarrier());
-		return filter;
+		return new Filter(visit(node.inputs().get(0)), condition(node));
 	}
 
 	private ValueExpr condition(IrNode node) {
@@ -159,6 +162,8 @@ public final class IrToTupleExpr {
 		}
 		Projection projection = new Projection(visit(node.inputs().get(0)), list);
 		projection.setSubquery(attr.subquery());
+		projection.setProjectionContext(
+				attr.projectionContext() == null ? null : attr.projectionContext().asVar());
 		return projection;
 	}
 
@@ -168,7 +173,6 @@ public final class IrToTupleExpr {
 		for (IrAttr.ExtensionBinding binding : attr.bindings()) {
 			extension.addElement(new ExtensionElem(scalar(binding.expression()), binding.target().name()));
 		}
-		extension.setVariableScopeChange(node.semantics().scopeBarrier());
 		return extension;
 	}
 

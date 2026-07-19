@@ -39,7 +39,10 @@ public final class Winner {
 	private final Set<String> selectedOutputNames;
 	private final boolean selectedOutputExplicit;
 	private final List<Winner> selectedInputs;
+	private final PhysicalOperatorId physicalOperatorId;
+	private final boolean selectedPrefixRouteSafe;
 	private final SelectedPlanMetrics selectedPlanMetrics;
+	private final WinnerKey optimizationKey;
 	private final WinnerStateKey stateKey;
 
 	public Winner(MemoExpr expression, TupleExpr plan, PhysicalProperties deliveredProperties, CostVector cost,
@@ -47,7 +50,8 @@ public final class Winner {
 			InputBindingContext inputBindingContext, CostScope costScope, double selectedOutputRows,
 			BindingProfile selectedOutputProfile, Set<String> selectedOutputNames, boolean selectedOutputExplicit) {
 		this(expression, plan, deliveredProperties, cost, proofs, approximate, reason, provenance, inputBindingContext,
-				costScope, selectedOutputRows, selectedOutputProfile, selectedOutputNames, selectedOutputExplicit, null);
+				costScope, selectedOutputRows, selectedOutputProfile, selectedOutputNames, selectedOutputExplicit,
+				null);
 	}
 
 	Winner(MemoExpr expression, TupleExpr plan, PhysicalProperties deliveredProperties, CostVector cost,
@@ -57,19 +61,19 @@ public final class Winner {
 			List<Winner> selectedInputs) {
 		this(expression, plan, deliveredProperties, cost, proofs, approximate, reason, provenance, inputBindingContext,
 				costScope, selectedOutputRows, selectedOutputProfile, selectedOutputNames, selectedOutputExplicit,
-				selectedInputs, null);
+				selectedInputs, null, null);
 	}
 
 	private Winner(MemoExpr expression, TupleExpr plan, PhysicalProperties deliveredProperties, CostVector cost,
 			List<RuleProof> proofs, boolean approximate, String reason, PlanProvenance provenance,
 			InputBindingContext inputBindingContext, CostScope costScope, double selectedOutputRows,
 			BindingProfile selectedOutputProfile, Set<String> selectedOutputNames, boolean selectedOutputExplicit,
-			List<Winner> selectedInputs, SelectedPlanMetrics selectedPlanMetrics) {
+			List<Winner> selectedInputs, SelectedPlanMetrics selectedPlanMetrics, WinnerKey optimizationKey) {
 		this.expression = Objects.requireNonNull(expression, "expression");
 		this.plan = plan;
 		this.cost = Objects.requireNonNull(cost, "cost");
 		this.deliveredProperties = deliveredProperties == null ? PhysicalProperties.ANY : deliveredProperties;
-		this.proofs = proofs == null || proofs.isEmpty() ? List.of() : List.copyOf(proofs);
+		this.proofs = RuleProofLineage.immutable(proofs);
 		this.approximate = approximate;
 		this.reason = reason == null ? "" : reason;
 		this.provenance = provenance == null
@@ -86,11 +90,15 @@ public final class Winner {
 				: Set.copyOf(selectedOutputNames);
 		this.selectedOutputExplicit = selectedOutputExplicit;
 		this.selectedInputs = selectedInputs == null ? null : List.copyOf(selectedInputs);
+		this.physicalOperatorId = PhysicalOperatorId.from(expression);
+		this.selectedPrefixRouteSafe = CascadesRewriteSupport.selectedPrefixRouteIsLegal(expression, plan,
+				this.selectedInputs);
 		this.selectedPlanMetrics = this.selectedInputs == null
 				? null
 				: selectedPlanMetrics == null
 						? SelectedPlanMetrics.capture(expression.tupleExpr(), this.provenance)
 						: selectedPlanMetrics;
+		this.optimizationKey = optimizationKey;
 		this.stateKey = WinnerStateKey.derive(this);
 	}
 
@@ -137,8 +145,50 @@ public final class Winner {
 		ArrayList<RuleProof> merged = new ArrayList<>(proofs);
 		merged.add(proof);
 		return new Winner(expression, plan, deliveredProperties, cost, merged, approximate, reason,
-				provenance.withProofs(merged), inputBindingContext, costScope, selectedOutputRows, selectedOutputProfile,
-				selectedOutputNames, selectedOutputExplicit, selectedInputs, selectedPlanMetrics);
+				provenance.withProofs(merged), inputBindingContext, costScope, selectedOutputRows,
+				selectedOutputProfile,
+				selectedOutputNames, selectedOutputExplicit, selectedInputs, selectedPlanMetrics, optimizationKey);
+	}
+
+	Winner refreshExpressionProofs(MemoExpr original, MemoExpr replacement) {
+		Objects.requireNonNull(original, "original");
+		Objects.requireNonNull(replacement, "replacement");
+		if (original.id() != replacement.id()) {
+			throw new IllegalArgumentException("A winner expression refresh must preserve the memo expression ID");
+		}
+		boolean expressionChanged = expression.id() == original.id();
+		List<Winner> refreshedInputs = selectedInputs;
+		boolean inputChanged = false;
+		if (selectedInputs != null) {
+			ArrayList<Winner> candidates = new ArrayList<>(selectedInputs.size());
+			for (Winner input : selectedInputs) {
+				Winner refreshed = input.refreshExpressionProofs(original, replacement);
+				candidates.add(refreshed);
+				inputChanged |= refreshed != input;
+			}
+			if (inputChanged) {
+				refreshedInputs = List.copyOf(candidates);
+			}
+		}
+		if (!expressionChanged && !inputChanged) {
+			return this;
+		}
+
+		ArrayList<RuleProof> candidateProofs = new ArrayList<>(proofs);
+		if (expressionChanged) {
+			candidateProofs.addAll(replacement.proofs());
+		}
+		List<RuleProof> refreshedProofs = MemoProofLineage.normalize(candidateProofs);
+		PlanProvenance refreshedProvenance = provenance.withProofs(refreshedProofs);
+		if (refreshedInputs != null) {
+			refreshedProvenance = refreshedProvenance.withInputs(refreshedInputs.stream()
+					.map(Winner::provenance)
+					.toList());
+		}
+		return new Winner(expressionChanged ? replacement : expression, plan, deliveredProperties, cost,
+				refreshedProofs, approximate, reason, refreshedProvenance, inputBindingContext, costScope,
+				selectedOutputRows, selectedOutputProfile, selectedOutputNames, selectedOutputExplicit, refreshedInputs,
+				selectedPlanMetrics, optimizationKey);
 	}
 
 	public Winner markApproximate(String reason) {
@@ -146,19 +196,19 @@ public final class Winner {
 				reason == null || reason.isBlank() ? this.reason : reason,
 				provenance.withApproximation(true, reason == null || reason.isBlank() ? this.reason : reason),
 				inputBindingContext, costScope, selectedOutputRows, selectedOutputProfile, selectedOutputNames,
-				selectedOutputExplicit, selectedInputs, selectedPlanMetrics);
+				selectedOutputExplicit, selectedInputs, selectedPlanMetrics, optimizationKey);
 	}
 
 	public Winner withProvenance(PlanProvenance newProvenance) {
 		return new Winner(expression, plan, deliveredProperties, cost, proofs, approximate, reason, newProvenance,
 				inputBindingContext, costScope, selectedOutputRows, selectedOutputProfile, selectedOutputNames,
-				selectedOutputExplicit, selectedInputs, selectedPlanMetrics);
+				selectedOutputExplicit, selectedInputs, selectedPlanMetrics, optimizationKey);
 	}
 
 	Winner withPlan(TupleExpr newPlan) {
 		return new Winner(expression, newPlan, deliveredProperties, cost, proofs, approximate, reason, provenance,
 				inputBindingContext, costScope, selectedOutputRows, selectedOutputProfile, selectedOutputNames,
-				selectedOutputExplicit, selectedInputs, selectedPlanMetrics);
+				selectedOutputExplicit, selectedInputs, selectedPlanMetrics, optimizationKey);
 	}
 
 	Winner withSelectedOutputEstimate(double rows, BindingProfile profile) {
@@ -173,7 +223,21 @@ public final class Winner {
 		}
 		return new Winner(expression, plan, deliveredProperties, cost, proofs, approximate, reason, provenance,
 				inputBindingContext, costScope, normalizedRows, normalizedProfile, selectedOutputNames, true,
-				selectedInputs, selectedPlanMetrics);
+				selectedInputs, selectedPlanMetrics, optimizationKey);
+	}
+
+	Winner withOptimizationKey(WinnerKey key) {
+		Objects.requireNonNull(key, "key");
+		if (key.groupId() != expression.groupId()) {
+			throw new IllegalArgumentException("Winner key group " + key.groupId()
+					+ " does not match expression group " + expression.groupId());
+		}
+		if (key.equals(optimizationKey)) {
+			return this;
+		}
+		return new Winner(expression, plan, deliveredProperties, cost, proofs, approximate, reason, provenance,
+				inputBindingContext, costScope, selectedOutputRows, selectedOutputProfile, selectedOutputNames,
+				selectedOutputExplicit, selectedInputs, selectedPlanMetrics, key);
 	}
 
 	public MemoExpr expression() {
@@ -190,6 +254,43 @@ public final class Winner {
 
 	public CostVector cost() {
 		return cost;
+	}
+
+	public ExecutionCost executionCost() {
+		return cost.executionCost();
+	}
+
+	public CardinalityEstimate cardinalityEstimate() {
+		return cost.cardinalityEstimate(expression.estimate().source());
+	}
+
+	public EstimateRisk estimateRisk() {
+		return cost.estimateRisk(expression.estimate().source());
+	}
+
+	public PhysicalOperatorId physicalOperatorId() {
+		return physicalOperatorId;
+	}
+
+	/** Stable preorder identity for the complete selected physical derivation. */
+	int comparePhysicalDerivationTo(Winner other) {
+		Objects.requireNonNull(other, "other");
+		int comparison = physicalOperatorId.compareTo(other.physicalOperatorId);
+		if (comparison != 0) {
+			return comparison;
+		}
+		int commonInputs = Math.min(selectedInputCount(), other.selectedInputCount());
+		for (int index = 0; index < commonInputs; index++) {
+			comparison = selectedInputs.get(index).comparePhysicalDerivationTo(other.selectedInputs.get(index));
+			if (comparison != 0) {
+				return comparison;
+			}
+		}
+		return Integer.compare(selectedInputCount(), other.selectedInputCount());
+	}
+
+	private int selectedInputCount() {
+		return selectedInputs == null ? 0 : selectedInputs.size();
 	}
 
 	public List<RuleProof> proofs() {
@@ -240,13 +341,26 @@ public final class Winner {
 		return selectedInputs == null ? List.of() : selectedInputs;
 	}
 
+	/** Returns whether this selected plan can consume a caller-provided binding prefix through its full child DAG. */
+	public boolean selectedPrefixRouteSafe() {
+		return selectedPrefixRouteSafe;
+	}
+
+	WinnerKey optimizationKey() {
+		return optimizationKey;
+	}
+
 	WinnerStateKey stateKey() {
 		return stateKey;
 	}
 
 	void applySelectedPlanMetrics(TupleExpr materializedPlan) {
+		applySelectedPlanMetrics(materializedPlan, provenance);
+	}
+
+	void applySelectedPlanMetrics(TupleExpr materializedPlan, PlanProvenance materializedProvenance) {
 		if (selectedPlanMetrics != null) {
-			selectedPlanMetrics.apply(materializedPlan, provenance);
+			selectedPlanMetrics.apply(materializedPlan, materializedProvenance);
 		}
 	}
 
@@ -271,6 +385,7 @@ public final class Winner {
 		return approximate == other.approximate
 				&& Double.compare(selectedOutputRows, other.selectedOutputRows) == 0
 				&& selectedOutputExplicit == other.selectedOutputExplicit
+				&& selectedPrefixRouteSafe == other.selectedPrefixRouteSafe
 				&& expression.equals(other.expression)
 				&& Objects.equals(plan, other.plan)
 				&& deliveredProperties.equals(other.deliveredProperties)
@@ -288,7 +403,7 @@ public final class Winner {
 	public int hashCode() {
 		return Objects.hash(expression, plan, deliveredProperties, cost, proofs, approximate, reason, provenance,
 				inputBindingContext, costScope, selectedOutputRows, selectedOutputProfile, selectedOutputNames,
-				selectedOutputExplicit);
+				selectedOutputExplicit, selectedPrefixRouteSafe);
 	}
 
 	private static PlanProvenance defaultProvenance(MemoExpr expression, CostVector cost,

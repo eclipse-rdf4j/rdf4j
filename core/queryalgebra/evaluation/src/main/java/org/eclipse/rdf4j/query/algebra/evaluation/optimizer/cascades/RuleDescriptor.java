@@ -53,6 +53,41 @@ public record RuleDescriptor(String id, RuleKind kind, Set<RuleRootOperator> roo
 				|| rootOperators.contains(rootOperator);
 	}
 
+	/** Returns whether this rule's declared goal requirements are present. */
+	public boolean canMatchGoal(OptimizationGoal goal) {
+		if (kind != RuleKind.ENFORCER || goal == null || goalPropertiesRead.isEmpty()) {
+			return true;
+		}
+		PhysicalProperties required = goal.requiredProperties();
+		boolean declaresRequiredProperty = false;
+		for (GoalProperty property : goalPropertiesRead) {
+			switch (property) {
+			case REQUIRED_DISTINCTNESS -> {
+				declaresRequiredProperty = true;
+				if (!required.distinctVars().isEmpty()) {
+					return true;
+				}
+			}
+			case REQUIRED_MATERIALIZATION -> {
+				declaresRequiredProperty = true;
+				if (required.materialization() == PhysicalProperties.Materialization.MATERIALIZED) {
+					return true;
+				}
+			}
+			case REQUIRED_ORDERING -> {
+				declaresRequiredProperty = true;
+				if (!required.ordering().isEmpty()) {
+					return true;
+				}
+			}
+			case INVOCATION_CARDINALITY -> {
+				// This property affects a rule's result but does not require a non-empty physical goal.
+			}
+			}
+		}
+		return !declaresRequiredProperty;
+	}
+
 	/** Returns whether this rule must be reconsidered for one typed optimizer event. */
 	public boolean wakesFor(RuleWakeUpEvent event) {
 		if (event == null) {
@@ -62,8 +97,7 @@ public record RuleDescriptor(String id, RuleKind kind, Set<RuleRootOperator> roo
 			return true;
 		}
 		return (event == RuleWakeUpEvent.LOGICAL_EXPRESSION_ADDED
-				|| event == RuleWakeUpEvent.PHYSICAL_EXPRESSION_ADDED
-				|| event == RuleWakeUpEvent.PHYSICAL_FRONTIER_CHANGED)
+				|| event == RuleWakeUpEvent.PHYSICAL_EXPRESSION_ADDED)
 				&& wakeUpEvents.contains(RuleWakeUpEvent.EXPRESSION_ADDED);
 	}
 
@@ -272,6 +306,9 @@ public record RuleDescriptor(String id, RuleKind kind, Set<RuleRootOperator> roo
 
 	/** Optimization-goal values that can change the alternatives produced by a rule. */
 	public enum GoalProperty {
+		REQUIRED_DISTINCTNESS,
+		REQUIRED_MATERIALIZATION,
+		REQUIRED_ORDERING,
 		INVOCATION_CARDINALITY
 	}
 

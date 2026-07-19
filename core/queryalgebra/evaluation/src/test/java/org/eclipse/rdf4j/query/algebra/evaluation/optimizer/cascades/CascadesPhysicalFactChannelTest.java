@@ -26,8 +26,13 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
@@ -104,6 +109,36 @@ class CascadesPhysicalFactChannelTest {
 		assertTrue(memo.addWinner(OptimizationGoal.root().key(groupId), locallyCheaper, 8, true));
 		assertFalse(memo.addWinner(OptimizationGoal.root().key(groupId), finiteAnchor, 8, true),
 				"A redundant costlier implementation must not survive merely by carrying the shared facts again");
+	}
+
+	@Test
+	void equivalentLogicalValuesRewritePublishesFiniteFactsBeforePhysicalSelection() {
+		Value first = iri("urn:test:first");
+		Value second = iri("urn:test:second");
+		StatementPattern pattern = pattern("s", "p", "o");
+		Filter filter = new Filter(pattern,
+				new Or(new Compare(new Var("o"), new ValueConstant(first), Compare.CompareOp.EQ),
+						new Compare(new Var("o"), new ValueConstant(second), Compare.CompareOp.EQ)));
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setBindingNames(Set.of("o"));
+		MapBindingSet firstRow = new MapBindingSet();
+		firstRow.addBinding("o", first);
+		MapBindingSet secondRow = new MapBindingSet();
+		secondRow.addBinding("o", second);
+		values.setBindingSets(List.of(firstRow, secondRow));
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		int filterGroupId = memo.intern(filter);
+
+		MemoExpr rewrite = memo.addLogicalAlternative(filterGroupId, new Join(values, pattern.clone())).orElseThrow();
+
+		int valuesGroupId = rewrite.inputGroupIds().getFirst();
+		assertFalse(memo.group(valuesGroupId).outputBindingProfile().finiteRelations().isEmpty(),
+				"A VALUES leaf is an exact finite relation before implementation selection");
+		FiniteDomainFact filterDomain = memo.group(filterGroupId).outputBindingProfile().finiteDomains().get("o");
+		assertTrue(filterDomain != null,
+				"An equivalent VALUES rewrite must publish its finite domain to every route in the logical group");
+		assertEquals(Set.of(first, second), Set.copyOf(filterDomain.values()));
+		assertTrue(filterDomain.assuredBound());
 	}
 
 	@Test
@@ -198,13 +233,156 @@ class CascadesPhysicalFactChannelTest {
 
 		Winner refined = memo.bestWinner(winnerKey).orElseThrow();
 		assertNotSame(original, refined, "The canonical selected output is part of the winner state");
-		assertEquals(original.cost(), refined.cost(), "Selected-output refinement must not reprice local operator work");
+		assertEquals(original.cost(), refined.cost(),
+				"Selected-output refinement must not reprice local operator work");
 		assertEquals(100.0d, refined.selectedOutputRows(), 0.0d);
 		assertTrue(memo.pollChange()
 				.filter(change -> change.kind() == MemoChange.Kind.WINNER_FRONTIER_CHANGED)
 				.isPresent(), "The refined winner frontier must wake dependent costing");
 		assertFalse(memo.hasPendingChanges(),
 				"A selected-output refinement must not masquerade as a group-global logical fact change");
+	}
+
+	@Test
+	void selectedEstimateRefinementInvalidatesOnlyMatchingParentGoal() {
+		StatementPattern childPlan = pattern("s", "p", "o");
+		Filter parentPlan = new Filter(childPlan, new Bound(Var.of("o")));
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		int parentGroupId = memo.intern(parentPlan);
+		MemoExpr parentLogical = memo.group(parentGroupId).expressions().getFirst();
+		int childGroupId = parentLogical.inputGroupIds().getFirst();
+		MemoExpr childPhysical = memo.addPhysicalAlternative(childGroupId, childPlan.clone(), PhysicalProperties.ANY,
+				"selected-child", RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of()).orElseThrow();
+		MemoExpr parentPhysical = memo.addPhysicalAlternative(parentGroupId, parentPlan.clone(), PhysicalProperties.ANY,
+				"selected-parent", RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of()).orElseThrow();
+		OptimizationGoal rootGoal = OptimizationGoal.root();
+		InputBindingContext otherInput = InputBindingContext.fromProfile(3.0d, Set.of("s"), BindingProfile.ANY);
+		OptimizationGoal otherGoal = OptimizationGoal.root().withInputBindingContext(otherInput);
+		SelectedLogicalOutputEstimateKey estimateKey = SelectedLogicalOutputEstimateKey.of(rootGoal, 7L, Set.of("o"));
+		LogicalOutputEstimate weak = LogicalOutputEstimate.from(
+				new CostVector(1.0d, 0.0d, 0.0d, 0.0d, 0.0d, 4.0d, 0.0d));
+		LogicalOutputEstimate exact = LogicalOutputEstimate.from(
+				new CostVector(100.0d, 0.0d, 0.0d, 0.0d, 0.0d, 1.0d, 1.0d));
+		memo.mergeSelectedLogicalOutputEstimate(childGroupId, childPhysical.id(), estimateKey, weak);
+
+		Winner rootChild = new Winner(childPhysical, childPlan.clone(), PhysicalProperties.ANY,
+				new CostVector(1.0d, 1.0d, 0.0d, 0.0d, 0.0d, 1.0d, 1.0d), List.of(), false, "", null,
+				InputBindingContext.NONE, CostScope.PER_INVOCATION, 1.0d, BindingProfile.ANY, Set.of("o"), true,
+				List.of());
+		Winner otherChild = new Winner(childPhysical, childPlan.clone(), PhysicalProperties.ANY,
+				new CostVector(1.0d, 1.0d, 0.0d, 0.0d, 0.0d, 1.0d, 1.0d), List.of(), false, "", null,
+				otherInput, CostScope.TOTAL_FOR_CONTEXT, 1.0d, BindingProfile.ANY, Set.of("o"), true, List.of());
+		WinnerKey rootChildKey = rootGoal.key(childGroupId);
+		WinnerKey otherChildKey = otherGoal.key(childGroupId);
+		assertTrue(memo.addWinner(rootChildKey, rootChild, 8, true));
+		assertTrue(memo.addWinner(otherChildKey, otherChild, 8, true));
+		rootChild = memo.bestWinner(rootChildKey).orElseThrow();
+		otherChild = memo.bestWinner(otherChildKey).orElseThrow();
+
+		CostVector parentCost = new CostVector(1.0d, 2.0d, 0.0d, 0.0d, 0.0d, 1.0d, 1.0d);
+		Winner rootParent = new Winner(parentPhysical, parentPlan.clone(), PhysicalProperties.ANY, parentCost,
+				List.of(),
+				false, "", null, InputBindingContext.NONE, CostScope.PER_INVOCATION, 1.0d, BindingProfile.ANY,
+				parentPlan.getBindingNames(), false, List.of(rootChild));
+		Winner otherParent = new Winner(parentPhysical, parentPlan.clone(), PhysicalProperties.ANY, parentCost,
+				List.of(), false, "", null, otherInput, CostScope.TOTAL_FOR_CONTEXT, 1.0d, BindingProfile.ANY,
+				parentPlan.getBindingNames(), false, List.of(otherChild));
+		WinnerKey rootParentKey = rootGoal.key(parentGroupId);
+		WinnerKey otherParentKey = otherGoal.key(parentGroupId);
+		assertTrue(memo.addWinner(rootParentKey, rootParent, 8, true));
+		assertTrue(memo.addWinner(otherParentKey, otherParent, 8, true));
+		drainChanges(memo);
+
+		memo.mergeSelectedLogicalOutputEstimate(childGroupId, childPhysical.id(), estimateKey, exact);
+
+		assertTrue(memo.bestWinner(rootParentKey).isEmpty(),
+				"The parent that selected the refined child goal must be recosted");
+		assertTrue(memo.bestWinner(otherParentKey).isPresent(),
+				"Refining one selected-output goal must preserve an unrelated parent context");
+	}
+
+	@Test
+	void selectedEstimateRefinementPreservesUnaffectedWinnerStateWithinSameGoal() {
+		StatementPattern childPlan = pattern("s", "p", "o");
+		Filter parentPlan = new Filter(childPlan, new Bound(Var.of("o")));
+		Filter grandparentPlan = new Filter(parentPlan, new Bound(Var.of("s")));
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		int grandparentGroupId = memo.intern(grandparentPlan);
+		MemoExpr grandparentLogical = memo.group(grandparentGroupId).expressions().getFirst();
+		int parentGroupId = grandparentLogical.inputGroupIds().getFirst();
+		MemoExpr parentLogical = memo.group(parentGroupId).expressions().getFirst();
+		int childGroupId = parentLogical.inputGroupIds().getFirst();
+		MemoExpr childPhysical = memo.addPhysicalAlternative(childGroupId, childPlan.clone(), PhysicalProperties.ANY,
+				"state-child", RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of()).orElseThrow();
+		MemoExpr parentPhysical = memo.addPhysicalAlternative(parentGroupId, parentPlan.clone(), PhysicalProperties.ANY,
+				"state-parent", RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of()).orElseThrow();
+		MemoExpr grandparentPhysical = memo.addPhysicalAlternative(grandparentGroupId, grandparentPlan.clone(),
+				PhysicalProperties.ANY, "state-grandparent", RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of())
+				.orElseThrow();
+		OptimizationGoal goal = OptimizationGoal.root();
+		SelectedLogicalOutputEstimateKey estimateKey = SelectedLogicalOutputEstimateKey.of(goal, 11L, Set.of("o"));
+		LogicalOutputEstimate weak = LogicalOutputEstimate.from(
+				new CostVector(1.0d, 0.0d, 0.0d, 0.0d, 0.0d, 4.0d, 0.0d));
+		LogicalOutputEstimate exact = LogicalOutputEstimate.from(
+				new CostVector(100.0d, 0.0d, 0.0d, 0.0d, 0.0d, 1.0d, 1.0d));
+		memo.mergeSelectedLogicalOutputEstimate(childGroupId, childPhysical.id(), estimateKey, weak);
+
+		CostVector childCost = new CostVector(1.0d, 1.0d, 0.0d, 0.0d, 0.0d, 1.0d, 1.0d);
+		Winner selectedObject = new Winner(childPhysical, childPlan.clone(), PhysicalProperties.ANY, childCost,
+				List.of(),
+				false, "", null, InputBindingContext.NONE, CostScope.PER_INVOCATION, 1.0d, BindingProfile.ANY,
+				Set.of("o"), true, List.of());
+		Winner selectedSubject = new Winner(childPhysical, childPlan.clone(), PhysicalProperties.ANY, childCost,
+				List.of(), false, "", null, InputBindingContext.NONE, CostScope.PER_INVOCATION, 1.0d,
+				BindingProfile.ANY, Set.of("s"), true, List.of());
+		WinnerKey childKey = goal.key(childGroupId);
+		assertTrue(memo.addWinner(childKey, selectedObject, 8, true));
+		assertTrue(memo.addWinner(childKey, selectedSubject, 8, true));
+		selectedObject = memo.winners(childKey)
+				.stream()
+				.filter(winner -> winner.selectedOutputNames().equals(Set.of("o")))
+				.findFirst()
+				.orElseThrow();
+		selectedSubject = memo.winners(childKey)
+				.stream()
+				.filter(winner -> winner.selectedOutputNames().equals(Set.of("s")))
+				.findFirst()
+				.orElseThrow();
+
+		PhysicalProperties objectParentProperties = PhysicalProperties.builder().accessPath("parent-object").build();
+		PhysicalProperties subjectParentProperties = PhysicalProperties.builder().accessPath("parent-subject").build();
+		CostVector parentCost = new CostVector(1.0d, 2.0d, 0.0d, 0.0d, 0.0d, 1.0d, 1.0d);
+		Winner objectParent = new Winner(parentPhysical, parentPlan.clone(), objectParentProperties, parentCost,
+				List.of(),
+				false, "", null, InputBindingContext.NONE, CostScope.PER_INVOCATION, 1.0d, BindingProfile.ANY,
+				parentPlan.getBindingNames(), false, List.of(selectedObject));
+		Winner subjectParent = new Winner(parentPhysical, parentPlan.clone(), subjectParentProperties, parentCost,
+				List.of(), false, "", null, InputBindingContext.NONE, CostScope.PER_INVOCATION, 1.0d,
+				BindingProfile.ANY, parentPlan.getBindingNames(), false, List.of(selectedSubject));
+		WinnerKey parentKey = goal.key(parentGroupId);
+		assertTrue(memo.addWinner(parentKey, objectParent, 8, true));
+		assertTrue(memo.addWinner(parentKey, subjectParent, 8, true));
+		subjectParent = memo.winners(parentKey)
+				.stream()
+				.filter(winner -> "parent-subject".equals(winner.deliveredProperties().accessPath()))
+				.findFirst()
+				.orElseThrow();
+
+		CostVector grandparentCost = new CostVector(1.0d, 3.0d, 0.0d, 0.0d, 0.0d, 1.0d, 1.0d);
+		Winner grandparent = new Winner(grandparentPhysical, grandparentPlan.clone(), PhysicalProperties.ANY,
+				grandparentCost, List.of(), false, "", null, InputBindingContext.NONE, CostScope.PER_INVOCATION, 1.0d,
+				BindingProfile.ANY, grandparentPlan.getBindingNames(), false, List.of(subjectParent));
+		WinnerKey grandparentKey = goal.key(grandparentGroupId);
+		assertTrue(memo.addWinner(grandparentKey, grandparent, 8, true));
+		drainChanges(memo);
+
+		memo.mergeSelectedLogicalOutputEstimate(childGroupId, childPhysical.id(), estimateKey, exact);
+
+		assertEquals(1, memo.winners(parentKey).size(),
+				"Only the parent state that selected the refined child state must be removed");
+		assertEquals("parent-subject", memo.bestWinner(parentKey).orElseThrow().deliveredProperties().accessPath());
+		assertTrue(memo.bestWinner(grandparentKey).isPresent(),
+				"An ancestor that selected the unaffected parent state must remain valid");
 	}
 
 	@Test

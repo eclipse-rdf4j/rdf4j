@@ -17,6 +17,7 @@ import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.atLeastOneValuesAnchorConjunct;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.barrierFree;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.capture;
+import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.captureRoute;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.conditionVars;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.conjunction;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.deterministic;
@@ -40,7 +41,10 @@ import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.negatedBoundRhsOnlyAssured;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.noCrossBindOutputs;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.noLeftJoinCondition;
+import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.noNewScalarSubqueryCorrelation;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.noScopeChange;
+import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.nestedTupleExpression;
+import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.nullRejectingOptional;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.opNotIn;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.projection;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.projectionDifferencePushdown;
@@ -49,22 +53,31 @@ import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.ref;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.requiredDistinctNotDelivered;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.requiredMaterializationNotDelivered;
+import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.requiredOrderingNotDelivered;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.rule;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.scalar;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.scalarRef;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.scopeChangeRemovalSafe;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.shape;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.simpleCorrelatableMinusRhs;
+import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.tuple;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.union;
+import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.values;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.valuesAnchor;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.vars;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.withoutScopeChange;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.OrderElem;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleDescriptor;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RulePhase;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.IrOp;
@@ -79,6 +92,7 @@ public final class StandardRuleSpecs {
 		List<RuleSpec> rules = new ArrayList<>(logicalRules());
 		rules.add(distinctEnforcer());
 		rules.add(materializeEnforcer());
+		rules.add(sortEnforcer());
 		return List.copyOf(rules);
 	}
 
@@ -89,6 +103,8 @@ public final class StandardRuleSpecs {
 				joinAssociateRight(),
 				filterJoinLeftPushdown(),
 				filterJoinRightPushdown(),
+				joinFilteredLeftPullup(),
+				joinFilteredRightPullup(),
 				filterConjunctPushdown(),
 				filterValuesAnchor(),
 				filterConjunctValuesAnchor(),
@@ -100,6 +116,7 @@ public final class StandardRuleSpecs {
 				safeScopeChangeRemoval(),
 				safeScopeChangeRemovalJoinLeft(),
 				safeScopeChangeRemovalJoinRight(),
+				filterNullRejectingOptionalToInner(),
 				optionalNegatedBoundAntiJoin(),
 				minusAntiExistsAlternative(),
 				minusAntiExistsPushedAlternative(),
@@ -177,6 +194,46 @@ public final class StandardRuleSpecs {
 				.emit(join(ref("left"), filter(ref("right"), scalarRef("cond"))))
 				.proof("conditionVarsVisible", "noScopeChange")
 				.reason("FILTER can push to the right JOIN input when that input assures all condition variables")
+				.build();
+	}
+
+	public static RuleSpec joinFilteredLeftPullup() {
+		return rule("join-filter-left-pullup")
+				.kind(RuleKind.TRANSFORMATION)
+				.phase(RulePhase.CHEAP_LOGICAL)
+				.promise(88)
+				.match(join("j", filter("f", capture("input"), scalar("cond")), values("other")))
+				.where(conditionVars("cond").subsetOf(shape("input").assured()))
+				.where(deterministic("cond"))
+				.where(nestedTupleExpression("cond"))
+				.where(noScopeChange("j"))
+				.where(noScopeChange("f"))
+				.where(barrierFree("other"))
+				.where(noNewScalarSubqueryCorrelation("cond", "other"))
+				.emit(filter(join(ref("input"), ref("other")), scalarRef("cond")))
+				.proof("conditionVarsAlreadyAssured", "independentJoinInput", "costedFilterPlacement",
+						"scopeSafe")
+				.reason("a deterministic filter remains a costed placement after an independent join input is added")
+				.build();
+	}
+
+	public static RuleSpec joinFilteredRightPullup() {
+		return rule("join-filter-right-pullup")
+				.kind(RuleKind.TRANSFORMATION)
+				.phase(RulePhase.CHEAP_LOGICAL)
+				.promise(87)
+				.match(join("j", values("other"), filter("f", capture("input"), scalar("cond"))))
+				.where(conditionVars("cond").subsetOf(shape("input").assured()))
+				.where(deterministic("cond"))
+				.where(nestedTupleExpression("cond"))
+				.where(noScopeChange("j"))
+				.where(noScopeChange("f"))
+				.where(barrierFree("other"))
+				.where(noNewScalarSubqueryCorrelation("cond", "other"))
+				.emit(filter(join(ref("other"), ref("input")), scalarRef("cond")))
+				.proof("conditionVarsAlreadyAssured", "independentJoinInput", "costedFilterPlacement",
+						"scopeSafe")
+				.reason("a deterministic filter remains a costed placement after an independent join input is added")
 				.build();
 	}
 
@@ -365,6 +422,20 @@ public final class StandardRuleSpecs {
 				.build();
 	}
 
+	public static RuleSpec filterNullRejectingOptionalToInner() {
+		return rule("filter-null-rejecting-optional-to-inner")
+				.kind(RuleKind.TRANSFORMATION)
+				.phase(RulePhase.CHEAP_LOGICAL)
+				.promise(96)
+				.match(filter("f", leftJoin("lj", capture("left"), capture("right")), scalar("cond")))
+				.where(nullRejectingOptional("f", "lj"))
+				.emit(filter(join(ref("left"), ref("right")), scalarRef("cond")))
+				.proof("rhsOnlyBinding", "nullRejectingFilter", "optionalToInnerJoin", "scopeSafe",
+						"incomingWitnessAbsent")
+				.reason("FILTER over OPTIONAL can use an inner join when a typed RHS-only witness rejects every unmatched row")
+				.build();
+	}
+
 	public static RuleSpec minusAntiExistsAlternative() {
 		return rule("minus-alternatives-anti-exists")
 				.kind(RuleKind.TRANSFORMATION)
@@ -384,7 +455,7 @@ public final class StandardRuleSpecs {
 				.kind(RuleKind.TRANSFORMATION)
 				.phase(RulePhase.CHEAP_LOGICAL)
 				.promise(56)
-				.match(difference("d", capture("left"), capture("right")))
+				.match(difference("d", captureRoute("left"), capture("right")))
 				.where(minusSharedAssured("d"))
 				.where(simpleCorrelatableMinusRhs("d"))
 				.where(minusAntiExistsCanPushToSmallestAssuredInput("d"))
@@ -436,6 +507,7 @@ public final class StandardRuleSpecs {
 	public static RuleSpec distinctEnforcer() {
 		return rule("distinct-enforcer")
 				.kind(RuleKind.ENFORCER)
+				.goalPropertiesRead(RuleDescriptor.GoalProperty.REQUIRED_DISTINCTNESS)
 				.phase(RulePhase.ENFORCER)
 				.promise(20)
 				.match(capture("input"))
@@ -444,9 +516,9 @@ public final class StandardRuleSpecs {
 				.deliveredWith((capture, declared) -> capture.expression()
 						.deliveredProperties()
 						.withDistinctVars(capture.goal().requiredProperties().distinctVars())
-						.mergedWith(PhysicalProperties.builder()
-								.duplicateBehavior(PhysicalProperties.DuplicateBehavior.ELIMINATES)
-								.build()))
+						.withDuplicateBehavior(PhysicalProperties.DuplicateBehavior.ELIMINATES))
+				.requiredChildPropertiesWith(capture -> List.of(
+						withoutDistinctRequirement(capture.goal().requiredProperties())))
 				.proof("enforcesDistinct", "physicalPropertyEnforcer")
 				.reason("DISTINCT enforcer supplies required duplicate behavior")
 				.build();
@@ -455,14 +527,71 @@ public final class StandardRuleSpecs {
 	public static RuleSpec materializeEnforcer() {
 		return rule("materialize-enforcer")
 				.kind(RuleKind.ENFORCER)
+				.goalPropertiesRead(RuleDescriptor.GoalProperty.REQUIRED_MATERIALIZATION)
 				.phase(RulePhase.ENFORCER)
 				.promise(5)
 				.match(capture("input"))
 				.where(requiredMaterializationNotDelivered())
 				.emit(materialize(ref("input")))
 				.deliveredWith((capture, declared) -> capture.expression().deliveredProperties().materialized())
+				.requiredChildPropertiesWith(capture -> List.of(
+						withoutMaterializationRequirement(capture.goal().requiredProperties())))
 				.proof("materializedCursor", "physicalPropertyEnforcer")
 				.reason("materialization enforcer marks this alternative as reusable")
 				.build();
+	}
+
+	public static RuleSpec sortEnforcer() {
+		return rule("sort-enforcer")
+				.kind(RuleKind.ENFORCER)
+				.goalPropertiesRead(RuleDescriptor.GoalProperty.REQUIRED_ORDERING)
+				.phase(RulePhase.ENFORCER)
+				.promise(10)
+				.match(capture("input"))
+				.where(requiredOrderingNotDelivered())
+				.emit(tuple(StandardRuleSpecs::sortAlternative))
+				.deliveredWith((capture, declared) -> capture.expression()
+						.deliveredProperties()
+						.withOrdering(capture.goal().requiredProperties().ordering()))
+				.requiredChildPropertiesWith(capture -> List.of(
+						withoutOrderingRequirement(capture.goal().requiredProperties())))
+				.proof("enforcesOrdering", "physicalPropertyEnforcer")
+				.reason("Sort enforcer supplies the requested ordered prefix")
+				.build();
+	}
+
+	private static TupleExpr sortAlternative(RuleCapture capture) {
+		Order order = new Order(capture.expression().tupleExpr().clone());
+		for (String encoded : capture.goal().requiredProperties().ordering()) {
+			int separator = encoded.lastIndexOf(':');
+			String variable = separator < 0 ? encoded : encoded.substring(0, separator);
+			String direction = separator < 0 ? "asc" : encoded.substring(separator + 1);
+			if (variable.isBlank() || !("asc".equals(direction) || "desc".equals(direction))) {
+				throw new IllegalArgumentException("Unsupported ordering key: " + encoded);
+			}
+			order.addElement(new OrderElem(new Var(variable), "asc".equals(direction)));
+		}
+		return order;
+	}
+
+	private static PhysicalProperties withoutDistinctRequirement(PhysicalProperties required) {
+		return new PhysicalProperties(required.ordering(), Set.of(), required.accessPath(), required.boundVars(),
+				required.inputBoundVars(), required.materialization(), required.graphContext(),
+				PhysicalProperties.DuplicateBehavior.ANY, required.observationOrder(), required.inputConsumption(),
+				required.appliedFiniteRelations(), required.bindingProfile());
+	}
+
+	private static PhysicalProperties withoutMaterializationRequirement(PhysicalProperties required) {
+		return new PhysicalProperties(required.ordering(), required.distinctVars(), required.accessPath(),
+				required.boundVars(), required.inputBoundVars(), PhysicalProperties.Materialization.ANY,
+				required.graphContext(), required.duplicateBehavior(), required.observationOrder(),
+				required.inputConsumption(), required.appliedFiniteRelations(), required.bindingProfile());
+	}
+
+	private static PhysicalProperties withoutOrderingRequirement(PhysicalProperties required) {
+		return new PhysicalProperties(List.of(), required.distinctVars(), required.accessPath(), required.boundVars(),
+				required.inputBoundVars(), required.materialization(), required.graphContext(),
+				required.duplicateBehavior(), required.observationOrder(), required.inputConsumption(),
+				required.appliedFiniteRelations(), required.bindingProfile());
 	}
 }

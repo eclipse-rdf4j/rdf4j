@@ -12,14 +12,17 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
@@ -79,6 +82,7 @@ final class CascadesRewriteSupport {
 
 	static boolean parameterizedRightInputIsLegal(Join join) {
 		return join != null
+				&& selectedPrefixInputIsLegal(join.getLeftArg())
 				&& selectedPrefixInputIsLegal(join.getRightArg())
 				&& !"hash".equals(join.getStringMetricPlanned("optimizer.joinAlgorithmHint"));
 	}
@@ -88,12 +92,45 @@ final class CascadesRewriteSupport {
 				&& !TupleExprs.containsSubquery(input);
 	}
 
+	static boolean selectedPrefixRouteIsLegal(MemoExpr expression, TupleExpr plan, List<Winner> selectedInputs) {
+		if (expression == null || !rootAcceptsSelectedPrefix(expression.tupleExpr())) {
+			return false;
+		}
+		if (selectedInputs == null) {
+			TupleExpr selectedPlan = plan == null ? expression.tupleExpr() : plan;
+			return selectedPrefixInputIsLegal(selectedPlan);
+		}
+		if (expression.tupleExpr() instanceof Join) {
+			return true;
+		}
+		int selectedInputIndex = 0;
+		for (MemoInput input : expression.inputs()) {
+			if (input.use() == MemoInput.Use.DEFINITION) {
+				return false;
+			}
+			if (selectedInputIndex >= selectedInputs.size()
+					|| !selectedInputs.get(selectedInputIndex++).selectedPrefixRouteSafe()) {
+				return false;
+			}
+		}
+		if (selectedInputIndex != selectedInputs.size()) {
+			throw new IllegalStateException("Selected-prefix route input mismatch for expression " + expression.id()
+					+ ": inputs=" + selectedInputIndex + ", winners=" + selectedInputs.size());
+		}
+		return true;
+	}
+
 	/**
-	 * Returns whether the expression root can consume bindings supplied by its caller. Nested scalar, subquery and
-	 * materialization boundaries route their own inputs independently and therefore do not change this root contract.
+	 * Returns whether the expression root can consume and preserve bindings supplied by its caller. An outer Projection
+	 * or MultiProjection intentionally emits only its declared columns, so it cannot satisfy RDF4J's selected-prefix
+	 * contract for arbitrary caller bindings. Nested scalar, subquery and materialization boundaries route their own
+	 * inputs independently and therefore do not change this root contract.
 	 */
 	static boolean rootAcceptsSelectedPrefix(TupleExpr input) {
-		return input != null && !TupleExprs.isVariableScopeChange(input);
+		return input != null
+				&& !(input instanceof Projection)
+				&& !(input instanceof MultiProjection)
+				&& !TupleExprs.isVariableScopeChange(input);
 	}
 
 	static Set<String> intersection(BindingUniverse universe, Set<String> left, Set<String> right) {
@@ -104,11 +141,53 @@ final class CascadesRewriteSupport {
 
 	static BindingMask mask(BindingUniverse universe, Set<String> names) {
 		BindingUniverse safeUniverse = universe == null ? BindingUniverse.create() : universe;
-		return safeUniverse.maskOf(plannerNames(names));
+		return safeUniverse.maskOf(names);
 	}
 
 	static BindingMask branchLocalBindOrValuesMask(TupleExpr tupleExpr, BindingUniverse universe) {
-		return mask(universe, branchLocalBindOrValuesNames(tupleExpr));
+		BindingUniverse safeUniverse = universe == null ? BindingUniverse.create() : universe;
+		BitSet symbolIds = new BitSet(safeUniverse.size());
+		if (tupleExpr == null) {
+			return BindingMask.EMPTY;
+		}
+		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Extension extension) {
+				for (var element : extension.getElements()) {
+					add(element.getName());
+				}
+				super.meet(extension);
+			}
+
+			@Override
+			public void meet(BindingSetAssignment assignment) {
+				for (String name : assignment.getBindingNames()) {
+					add(name);
+				}
+			}
+
+			@Override
+			public void meet(Projection projection) {
+				if (!projection.isSubquery()) {
+					super.meet(projection);
+				}
+			}
+
+			@Override
+			public void meet(Union union) {
+				if (!union.isVariableScopeChange()) {
+					super.meet(union);
+				}
+			}
+
+			private void add(String name) {
+				BindingSymbol symbol = safeUniverse.intern(name);
+				if (symbol != null) {
+					symbolIds.set(symbol.id());
+				}
+			}
+		});
+		return BindingMask.fromOwned(symbolIds.toLongArray());
 	}
 
 	static List<ValueExpr> splitConjuncts(ValueExpr expression) {

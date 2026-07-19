@@ -110,6 +110,20 @@ final class LmdbStarJoinScanSupport {
 		}
 	}
 
+	static boolean canConsumeExternalBindings(Plan plan, Set<String> boundVars) {
+		if (plan == null || boundVars == null || boundVars.isEmpty() || boundVars.contains(plan.subjectName())) {
+			return true;
+		}
+		for (StatementPattern pattern : plan.patterns()) {
+			for (String bindingName : pattern.getBindingNames()) {
+				if (!plan.subjectName().equals(bindingName) && boundVars.contains(bindingName)) {
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
 	private static boolean flatten(TupleExpr tupleExpr, List<StatementPattern> patterns) {
 		if (tupleExpr instanceof Join join && !TupleExprs.isVariableScopeChange(join)) {
 			return flatten(join.getLeftArg(), patterns) && flatten(join.getRightArg(), patterns);

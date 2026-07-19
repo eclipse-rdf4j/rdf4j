@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingMask;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingSymbol;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingUniverse;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptionalNegatedBoundSemantics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleProof;
 
@@ -32,6 +33,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleProof;
 public final class PlanIrBuilder {
 	private final BindingUniverse universe;
 	private final List<IrNode> nodes = new ArrayList<>();
+	private final List<CopySource> copiedSourceNodes = new ArrayList<>();
 
 	public PlanIrBuilder(BindingUniverse universe) {
 		this.universe = universe == null ? BindingUniverse.create() : universe;
@@ -47,6 +49,12 @@ public final class PlanIrBuilder {
 
 	public List<IrNode> nodes() {
 		return List.copyOf(nodes);
+	}
+
+	/** Returns the source IR and node copied verbatim into {@code id}, or {@code null} for a newly built node. */
+	public CopySource copiedFrom(IrNodeId id) {
+		Objects.requireNonNull(id, "id");
+		return copiedSourceNodes.get(id.value());
 	}
 
 	public IrNodeId statementPattern(IrAttr.StatementPatternAttr attr) {
@@ -111,6 +119,7 @@ public final class PlanIrBuilder {
 		SemanticProps derivedSemantics = deriveSemantics(op, safeAttr, shape, semantics);
 		IrNodeId id = IrNodeId.of(nodes.size());
 		nodes.add(new IrNode(id, op, safeInputs, safeAttr, shape, derivedSemantics, physical, proofs));
+		copiedSourceNodes.add(null);
 		return id;
 	}
 
@@ -133,12 +142,20 @@ public final class PlanIrBuilder {
 		}
 		IrNodeId copied = add(sourceNode.op(), copiedInputs, sourceNode.attr(), sourceNode.semantics(),
 				sourceNode.physical(), sourceNode.proofs());
+		copiedSourceNodes.set(copied.value(), new CopySource(source, sourceId));
 		remap.put(sourceId, copied);
 		return copied;
 	}
 
 	public PlanIr build(IrNodeId root) {
 		return new PlanIr(universe, root, nodes);
+	}
+
+	public record CopySource(PlanIr ir, IrNodeId nodeId) {
+		public CopySource {
+			Objects.requireNonNull(ir, "ir");
+			Objects.requireNonNull(nodeId, "nodeId");
+		}
 	}
 
 	private BindingShape deriveShape(IrOp op, List<IrNodeId> inputs, IrAttr attr) {
@@ -149,7 +166,8 @@ public final class PlanIrBuilder {
 		case LEFT_JOIN -> leftJoinShape(inputs);
 		case DIFFERENCE -> leftShape(inputs);
 		case UNION -> unionShape(inputs);
-		case FILTER, DISTINCT, REDUCED, SLICE, ORDER, MATERIALIZE -> unaryShape(inputs);
+		case FILTER -> filterShape(inputs, attr);
+		case DISTINCT, REDUCED, SLICE, ORDER, MATERIALIZE -> unaryShape(inputs);
 		case ARBITRARY_LENGTH_PATH -> arbitraryLengthPathShape(inputs, attr);
 		case ZERO_LENGTH_PATH -> zeroLengthPathShape(inputs, attr);
 		case SERVICE -> serviceShape(inputs, attr);
@@ -157,7 +175,7 @@ public final class PlanIrBuilder {
 		case NATIVE_BOUNDARY -> nativeBoundaryShape(inputs, attr);
 		case PROJECTION -> projectionShape(inputs, attr);
 		case EXTENSION -> extensionShape(inputs, attr);
-		case GROUP -> groupShape(attr);
+		case GROUP -> groupShape(inputs, attr);
 		case EMPTY, SINGLETON -> BindingShape.empty();
 		case LMDB_ACCESS_PATH, LMDB_BOUND_LOOKUP, LMDB_HASH_ANTI_SEMI, LMDB_HASH_SEMI -> physicalShape(inputs, attr);
 		};
@@ -167,7 +185,7 @@ public final class PlanIrBuilder {
 		if (!(attr instanceof IrAttr.StatementPatternAttr pattern)) {
 			return BindingShape.empty();
 		}
-		BindingMask mask = BindingShape.maskOfSymbols(universe, pattern.nonConstantSymbols());
+		BindingMask mask = BindingShape.maskOfSymbols(universe, pattern.outputSymbols(universe));
 		return new BindingShape(mask, mask, BindingMask.EMPTY, BindingMask.EMPTY);
 	}
 
@@ -276,6 +294,24 @@ public final class PlanIrBuilder {
 		return inputs.isEmpty() ? BindingShape.empty() : node(inputs.get(0)).bindings();
 	}
 
+	private BindingShape filterShape(List<IrNodeId> inputs, IrAttr attr) {
+		if (inputs.size() != 1) {
+			return BindingShape.empty();
+		}
+		IrNode input = node(inputs.getFirst());
+		if (input.op() == IrOp.LEFT_JOIN
+				&& input.inputs().size() == 2
+				&& input.attr() instanceof IrAttr.None
+				&& attr instanceof IrAttr.Condition condition) {
+			BindingShape left = node(input.inputs().get(0)).bindings();
+			BindingShape right = node(input.inputs().get(1)).bindings();
+			if (OptionalNegatedBoundSemantics.retainsOnlyLeft(universe, condition.expression(), left, right)) {
+				return left;
+			}
+		}
+		return input.bindings();
+	}
+
 	private BindingShape unaryShape(List<IrNodeId> inputs) {
 		return inputs.isEmpty() ? BindingShape.empty() : node(inputs.get(0)).bindings();
 	}
@@ -291,13 +327,15 @@ public final class PlanIrBuilder {
 		for (IrAttr.ProjectionBinding binding : projection.bindings()) {
 			BindingMask source = BindingShape.maskOfSymbol(universe, binding.source());
 			BindingMask target = BindingShape.maskOfSymbol(universe, binding.target());
-			if (input.possible().containsAll(source)) {
+			boolean sourcePossible = input.possible().containsAll(source);
+			if (sourcePossible) {
 				possible = possible.union(target);
 			}
 			if (input.assured().containsAll(source)) {
 				assured = assured.union(target);
 			}
-			if (!binding.source().equals(binding.target()) || input.localBindOutputs().intersects(source)) {
+			if (sourcePossible
+					&& (!binding.source().equals(binding.target()) || input.localBindOutputs().intersects(source))) {
 				local = local.union(target);
 			}
 		}
@@ -317,23 +355,27 @@ public final class PlanIrBuilder {
 			possible = possible.union(output);
 			local = local.union(output);
 			ScalarFacts facts = ScalarFacts.of(universe, binding.expression());
-			if (facts.totalWhenAssured() && input.assures(facts.freeVars())) {
+			if (facts.totalWhenAssured() && assured.containsAll(facts.freeVars())) {
 				assured = assured.union(output);
 			}
 		}
 		return new BindingShape(possible, assured, possible.minus(assured), local);
 	}
 
-	private BindingShape groupShape(IrAttr attr) {
+	private BindingShape groupShape(List<IrNodeId> inputs, IrAttr attr) {
 		if (!(attr instanceof IrAttr.GroupAttr group)) {
 			return BindingShape.empty();
 		}
-		List<BindingSymbol> outputs = new ArrayList<>(group.groupVars());
+		BindingShape input = inputs.isEmpty() ? BindingShape.empty() : node(inputs.get(0)).bindings();
+		BindingMask groupVars = BindingShape.maskOfSymbols(universe, group.groupVars());
+		List<BindingSymbol> aggregateOutputs = new ArrayList<>();
 		for (IrAttr.AggregateBinding aggregate : group.aggregates()) {
-			outputs.add(aggregate.target());
+			aggregateOutputs.add(aggregate.target());
 		}
-		BindingMask mask = BindingShape.maskOfSymbols(universe, outputs);
-		return BindingShape.local(mask);
+		BindingMask local = BindingShape.maskOfSymbols(universe, aggregateOutputs);
+		BindingMask possible = groupVars.union(local);
+		BindingMask assured = groupVars.intersect(input.assured());
+		return new BindingShape(possible, assured, possible.minus(assured), local);
 	}
 
 	private BindingShape physicalShape(List<IrNodeId> inputs, IrAttr attr) {
@@ -376,6 +418,9 @@ public final class PlanIrBuilder {
 		SemanticProps.Builder builder = SemanticProps.builderFrom(supplied == null ? SemanticProps.DEFAULT : supplied)
 				.visibleScope(shape.possible())
 				.localOutputs(shape.localBindOutputs());
+		if (supplied != null && supplied.explicitScopeChange()) {
+			builder.scopeBarrier(true);
+		}
 		switch (op) {
 		case UNION, LEFT_JOIN, DIFFERENCE -> builder.preservesOrder(false);
 		case DISTINCT -> builder.duplicateBehavior(SemanticProps.DuplicateBehavior.COLLAPSES)

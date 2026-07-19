@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.benchmark;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayOutputStream;
@@ -167,10 +168,12 @@ class AASQueriesBenchmarkTest {
 			String output = out.toString(StandardCharsets.UTF_8);
 			assertTrue(output.contains("value=\"ratedPower\""), output);
 			assertTrue(output.contains("value=https://admin-shell.io/aas/3/value"), output);
-			assertTrue(output.contains("plannerAlgorithm=DPHYP_BUSHY"), output);
-			assertTrue(output.contains("optimizer.connectedComponentCount=1.00"), output);
-			assertTrue(output.contains("plannedCostCartesianWorkRows=0"), output);
-			assertTrue(output.contains("plannedBoundJoinProductJoinVar=prop"), output);
+			assertTrue(output.contains("rule=core-unified-join-search"), output);
+			assertTrue(output.contains("contributor=lmdb-dphyp"), output);
+			assertTrue(output.contains("optimizer.cascadesDphypPairProbes="), output);
+			assertTrue(output.contains("optimizer.cascadesCandidateEvaluations="), output);
+			assertFalse(output.contains("optimizer.cartesianFallbackReason="), output);
+			assertTrue(output.contains("plannedEstimateSource=physical-join-bound-lookup"), output);
 			assertTrue(output.contains("plannedIndexAccessMode=directLookup"), output);
 		} finally {
 			System.setOut(previousOut);

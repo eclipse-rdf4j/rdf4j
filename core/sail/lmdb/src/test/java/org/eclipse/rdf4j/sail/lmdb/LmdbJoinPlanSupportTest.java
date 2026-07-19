@@ -16,22 +16,58 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MemoExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
 import org.junit.jupiter.api.Test;
 
 class LmdbJoinPlanSupportTest {
+
+	@Test
+	void sharedBindingCheckSkipsSchemasWhenRightHasNoLocalExtension() {
+		AtomicInteger schemaReads = new AtomicInteger();
+		Join join = new Join(new CountingBindingLeaf(schemaReads), new CountingBindingLeaf(schemaReads));
+
+		assertFalse(LmdbJoinPlanSupport.rightLocallyProducesSharedBinding(join));
+		assertEquals(0, schemaReads.get(),
+				"An extension-free RHS cannot locally produce a shared binding and needs no stream schema");
+	}
+
+	@Test
+	void boundLookupRuleSkipsRightSchemaWhenLeftHasNoPath() {
+		AtomicInteger schemaReads = new AtomicInteger();
+		Join join = new Join(new CountingBindingLeaf(schemaReads), new CountingBindingLeaf(schemaReads));
+		MemoExpr expression = new MemoExpr(1, 1, "Join", List.of(2, 3), "no-path-schema-test", join,
+				PhysicalProperties.ANY, RuleKind.TRANSFORMATION, CostVector.ZERO, List.of(), "no-path-schema-test");
+
+		assertTrue(new LmdbInnerJoinBoundLookupRule(new FactorStatistics())
+				.matches(expression, OptimizationGoal.root(), null));
+		assertEquals(0, schemaReads.get(),
+				"A left input with no path endpoint cannot be anchored by the right stream schema");
+	}
 
 	@Test
 	void marksListMemberFiltersLookupCompatibleWhenAllArgumentsAreLookupOperands() {
@@ -159,5 +195,53 @@ class LmdbJoinPlanSupportTest {
 
 	private static StatementPattern pattern(String subject, String predicate, String object) {
 		return new StatementPattern(new Var(subject), new Var(predicate), new Var(object));
+	}
+
+	private static final class CountingBindingLeaf extends AbstractQueryModelNode implements TupleExpr {
+
+		private final AtomicInteger schemaReads;
+
+		private CountingBindingLeaf(AtomicInteger schemaReads) {
+			this.schemaReads = schemaReads;
+		}
+
+		@Override
+		public Set<String> getBindingNames() {
+			schemaReads.incrementAndGet();
+			return Set.of("shared");
+		}
+
+		@Override
+		public Set<String> getAssuredBindingNames() {
+			schemaReads.incrementAndGet();
+			return Set.of("shared");
+		}
+
+		@Override
+		public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
+			visitor.meetOther(this);
+		}
+
+		@Override
+		public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) {
+		}
+
+		@Override
+		public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
+			throw new IllegalArgumentException("Counting leaf has no children");
+		}
+
+		@Override
+		public CountingBindingLeaf clone() {
+			return (CountingBindingLeaf) super.clone();
+		}
+	}
+
+	private static final class FactorStatistics extends EvaluationStatistics implements JoinFactorCostModel {
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			return Optional.of(new FactorCostEstimate(1.0d, 1.0d));
+		}
 	}
 }

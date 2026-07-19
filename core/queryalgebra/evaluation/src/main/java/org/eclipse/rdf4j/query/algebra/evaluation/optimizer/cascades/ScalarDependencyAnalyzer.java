@@ -12,18 +12,22 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.BitSet;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.CompareSubQueryValueOperator;
+import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
@@ -77,8 +81,123 @@ public final class ScalarDependencyAnalyzer {
 		return subquery == null ? Set.of() : immutablePlannerNames(VarNameCollector.process(subquery));
 	}
 
+	/** Collects tuple-subquery references directly into the query-local dense binding universe. */
+	public static BindingMask subqueryReferenceMask(TupleExpr subquery, BindingUniverse universe) {
+		if (subquery == null) {
+			return BindingMask.EMPTY;
+		}
+		BindingUniverse safeUniverse = universe == null ? BindingUniverse.create() : universe;
+		BitSet references = new BitSet();
+		subquery.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var var) {
+				if (!var.hasValue() && plannerName(var.getName())) {
+					references.set(safeUniverse.symbol(var.getName()).id());
+				}
+			}
+		});
+		return BindingMask.fromOwned(references.toLongArray());
+	}
+
 	public static Set<String> scalarReferences(ValueExpr expression) {
 		return expression == null ? Set.of() : immutablePlannerNames(VarNameCollector.process(expression));
+	}
+
+	/** Collects scalar references directly into the query-local dense binding universe. */
+	public static BindingMask scalarReferenceMask(ValueExpr expression, BindingUniverse universe) {
+		if (expression == null) {
+			return BindingMask.EMPTY;
+		}
+		BindingUniverse safeUniverse = universe == null ? BindingUniverse.create() : universe;
+		BitSet references = new BitSet();
+		expression.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var var) {
+				if (!var.hasValue() && plannerName(var.getName())) {
+					references.set(safeUniverse.symbol(var.getName()).id());
+				}
+			}
+		});
+		return BindingMask.fromOwned(references.toLongArray());
+	}
+
+	/** Collects only references inside scalar tuple subqueries into the query-local binding universe. */
+	public static BindingMask scalarSubqueryReferenceMask(ValueExpr expression, BindingUniverse universe) {
+		if (expression == null) {
+			return BindingMask.EMPTY;
+		}
+		BindingUniverse safeUniverse = universe == null ? BindingUniverse.create() : universe;
+		BitSet references = new BitSet();
+		expression.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetCompareSubQueryValueOperator(CompareSubQueryValueOperator node) {
+				if (node.getArg() != null) {
+					node.getArg().visit(this);
+				}
+				addSubquery(node);
+			}
+
+			@Override
+			protected void meetSubQueryValueOperator(SubQueryValueOperator node) {
+				addSubquery(node);
+			}
+
+			private void addSubquery(SubQueryValueOperator node) {
+				if (node == null || node.getSubQuery() == null) {
+					return;
+				}
+				node.getSubQuery().visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+					@Override
+					public void meet(Var var) {
+						if (!var.hasValue() && plannerName(var.getName())) {
+							references.set(safeUniverse.symbol(var.getName()).id());
+						}
+					}
+				});
+			}
+		});
+		return BindingMask.fromOwned(references.toLongArray());
+	}
+
+	/** Collects the tuple bindings a scalar condition reads, retaining only visible subquery correlations. */
+	public static BindingMask conditionReferenceMask(ValueExpr condition, BindingMask visibleBindings,
+			BindingUniverse universe) {
+		if (condition == null) {
+			return BindingMask.EMPTY;
+		}
+		BindingUniverse safeUniverse = universe == null ? BindingUniverse.create() : universe;
+		BindingMask visible = visibleBindings == null ? BindingMask.EMPTY : visibleBindings;
+		BitSet references = new BitSet();
+		condition.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var var) {
+				if (!var.hasValue() && plannerName(var.getName())) {
+					references.set(safeUniverse.symbol(var.getName()).id());
+				}
+			}
+
+			@Override
+			protected void meetCompareSubQueryValueOperator(CompareSubQueryValueOperator node) {
+				if (node.getArg() != null) {
+					node.getArg().visit(this);
+				}
+				addVisibleSubqueryReferences(node);
+			}
+
+			@Override
+			protected void meetSubQueryValueOperator(SubQueryValueOperator node) {
+				addVisibleSubqueryReferences(node);
+			}
+
+			private void addVisibleSubqueryReferences(SubQueryValueOperator node) {
+				BindingMask correlated = scalarSubqueryReferenceMask(node, safeUniverse).intersect(visible);
+				for (int symbolId = correlated.nextSetBit(0); symbolId >= 0; symbolId = correlated
+						.nextSetBit(symbolId + 1)) {
+					references.set(symbolId);
+				}
+			}
+		});
+		return BindingMask.fromOwned(references.toLongArray());
 	}
 
 	/** Returns only names occurring inside scalar tuple subqueries, excluding ordinary scalar operands. */
@@ -116,29 +235,85 @@ public final class ScalarDependencyAnalyzer {
 	 * earlier would turn the name into a correlation.
 	 */
 	public static boolean reorderingPreservesScalarScope(TupleExpr tupleExpr) {
+		return reorderingPreservesScalarScope(tupleExpr, BindingUniverse.create());
+	}
+
+	static boolean reorderingPreservesScalarScope(TupleExpr tupleExpr, BindingUniverse universe) {
 		if (!(tupleExpr instanceof Join)) {
 			return true;
 		}
+		BindingUniverse safeUniverse = universe == null ? BindingUniverse.create() : universe;
+		BindingShapeAnalyzer shapeAnalyzer = new BindingShapeAnalyzer(safeUniverse);
 		List<TupleExpr> factors = new ArrayList<>();
 		flattenJoinFactors(tupleExpr, factors);
+		BindingShape[] factorShapes = new BindingShape[factors.size()];
 		for (int factorIndex = 0; factorIndex < factors.size(); factorIndex++) {
-			TupleExpr factor = factors.get(factorIndex);
-			if (!(factor instanceof Filter filter)) {
-				continue;
+			factorShapes[factorIndex] = shapeAnalyzer.analyze(factors.get(factorIndex));
+		}
+		int[] supplierCounts = new int[safeUniverse.size()];
+		for (int factorIndex = 0; factorIndex < factors.size(); factorIndex++) {
+			BindingMask possible = factorShapes[factorIndex].possible();
+			for (int symbolId = possible.nextSetBit(0); symbolId >= 0; symbolId = possible.nextSetBit(symbolId + 1)) {
+				supplierCounts[symbolId]++;
 			}
-			Set<String> externalScalarNames = new LinkedHashSet<>(scalarSubqueryReferences(filter.getCondition()));
-			externalScalarNames.removeAll(StreamBindingSchema.from(filter.getArg()).possible());
-			if (externalScalarNames.isEmpty()) {
-				continue;
-			}
-			for (int otherIndex = 0; otherIndex < factors.size(); otherIndex++) {
-				if (otherIndex != factorIndex && !Collections.disjoint(externalScalarNames,
-						StreamBindingSchema.from(factors.get(otherIndex)).possible())) {
-					return false;
-				}
+		}
+		for (int factorIndex = 0; factorIndex < factors.size(); factorIndex++) {
+			if (hasSiblingSuppliedScalarDependency(factors.get(factorIndex), factorShapes[factorIndex].possible(),
+					supplierCounts, safeUniverse, shapeAnalyzer)) {
+				return false;
 			}
 		}
 		return true;
+	}
+
+	private static boolean hasSiblingSuppliedScalarDependency(TupleExpr tupleExpr, BindingMask factorPossible,
+			int[] supplierCounts, BindingUniverse universe, BindingShapeAnalyzer shapeAnalyzer) {
+		if (tupleExpr == null || TupleExprs.isVariableScopeChange(tupleExpr)
+				|| tupleExpr instanceof Projection projection && projection.isSubquery()) {
+			return false;
+		}
+		if (tupleExpr instanceof Filter filter
+				&& scalarDependencySuppliedBySibling(filter.getCondition(), filter.getArg(), factorPossible,
+						supplierCounts, universe, shapeAnalyzer)) {
+			return true;
+		}
+		if (tupleExpr instanceof Extension extension) {
+			for (var element : extension.getElements()) {
+				if (scalarDependencySuppliedBySibling(element.getExpr(), extension.getArg(), factorPossible,
+						supplierCounts, universe, shapeAnalyzer)) {
+					return true;
+				}
+			}
+		}
+		if (tupleExpr instanceof UnaryTupleOperator unary) {
+			return hasSiblingSuppliedScalarDependency(unary.getArg(), factorPossible, supplierCounts, universe,
+					shapeAnalyzer);
+		}
+		if (tupleExpr instanceof BinaryTupleOperator binary) {
+			return hasSiblingSuppliedScalarDependency(binary.getLeftArg(), factorPossible, supplierCounts, universe,
+					shapeAnalyzer)
+					|| hasSiblingSuppliedScalarDependency(binary.getRightArg(), factorPossible, supplierCounts,
+							universe,
+							shapeAnalyzer);
+		}
+		return false;
+	}
+
+	private static boolean scalarDependencySuppliedBySibling(ValueExpr expression, TupleExpr localInput,
+			BindingMask factorPossible, int[] supplierCounts, BindingUniverse universe,
+			BindingShapeAnalyzer shapeAnalyzer) {
+		BindingMask external = scalarSubqueryReferenceMask(expression, universe)
+				.minus(shapeAnalyzer.analyze(localInput).possible());
+		for (int symbolId = external.nextSetBit(0); symbolId >= 0; symbolId = external.nextSetBit(symbolId + 1)) {
+			if (symbolId >= supplierCounts.length) {
+				continue;
+			}
+			int sameFactorContribution = factorPossible.contains(symbolId) ? 1 : 0;
+			if (supplierCounts[symbolId] > sameFactorContribution) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	public static Set<String> correlatedNames(TupleExpr subquery, Set<String> visibleNames) {

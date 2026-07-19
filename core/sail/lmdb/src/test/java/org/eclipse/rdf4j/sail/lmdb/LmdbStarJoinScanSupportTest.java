@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Memo;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MemoExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.QErrorInterval;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RdfStatisticsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleApplication;
@@ -110,6 +111,28 @@ class LmdbStarJoinScanSupportTest {
 				.orElseThrow();
 		assertEquals(expression.inputGroupIds(), physical.inputGroupIds(),
 				"The physical star must keep both factor groups visible to memo search and recosting");
+	}
+
+	@Test
+	void starMultiPredicateRuleDeclinesObjectBoundStarWithUnboundSubject() {
+		TupleExpr join = new Join(constantPredicatePattern("copy", "urn:locatedAt", "branch"),
+				new StatementPattern(new Var("copy"),
+						new Var("typePredicate", SimpleValueFactory.getInstance().createIRI("urn:type")),
+						new Var("copyType", SimpleValueFactory.getInstance().createIRI("urn:Copy"))));
+		StarStatistics statistics = new StarStatistics();
+		CascadesCostModel costModel = CascadesCostModel.from(statistics);
+		Memo memo = new Memo(costModel);
+		int groupId = memo.intern(join);
+		MemoExpr expression = memo.group(groupId).expressions().getFirst();
+		OptimizationGoal goal = OptimizationGoal.root()
+				.withRequiredProperties(PhysicalProperties.builder().boundVars(Set.of("branch")).build());
+
+		List<RuleApplication> applications = new LmdbStarMultiPredicateScanRule(statistics)
+				.apply(expression, goal, new RuleContext(memo, costModel, CascadesTelemetry.NO_OP, null));
+
+		assertTrue(applications.isEmpty(),
+				"An object-bound star with an unbound shared subject needs ordinary join ordering; a subject-prefix "
+						+ "batch scan cannot consume the external object key as a whole-star access path");
 	}
 
 	private static StatementPattern constantPredicatePattern(String subject, String predicateIri, String object) {

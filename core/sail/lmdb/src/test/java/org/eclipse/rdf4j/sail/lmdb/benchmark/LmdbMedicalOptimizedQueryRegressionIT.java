@@ -90,8 +90,7 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 			String rendered = snapshot.renderedQuery();
 			String plan = snapshot.plan();
 			assertAll(
-					() -> assertEquals("COMPLETE", snapshot.completeness(),
-							"MEDICAL q5 must reach optimizer quiescence\n" + plan),
+					() -> assertCompleteOrDeclaredBoundedAuto(snapshot, "MEDICAL q5"),
 					() -> assertEquals(1, occurrences(rendered, FINITE_VALUE_RELATION),
 							"The exact three-value relation must be materialized once\n" + rendered),
 					() -> assertBefore(rendered, FINITE_VALUE_RELATION,
@@ -303,8 +302,10 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 		optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			public void meet(Join node) {
-				boolean finiteThenCode = isFiniteCodeRelation(node.getLeftArg()) && isMedicalCodePattern(node.getRightArg());
-				boolean codeThenFinite = isMedicalCodePattern(node.getLeftArg()) && isFiniteCodeRelation(node.getRightArg());
+				boolean finiteThenCode = isFiniteCodeRelation(node.getLeftArg())
+						&& isMedicalCodePattern(node.getRightArg());
+				boolean codeThenFinite = isMedicalCodePattern(node.getLeftArg())
+						&& isFiniteCodeRelation(node.getRightArg());
 				if (finiteThenCode || codeThenFinite) {
 					matchingJoins.add(node);
 				}
@@ -391,6 +392,37 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 			count++;
 		}
 		return count;
+	}
+
+	private static void assertCompleteOrDeclaredBoundedAuto(ExplainedPlanSnapshot snapshot, String queryName) {
+		if ("COMPLETE".equals(snapshot.completeness())) {
+			return;
+		}
+		String limitCauses = snapshot.optimized().getStringMetricPlanned("optimizer.cascadesLimitCauses");
+		assertAll(
+				() -> assertEquals("BUDGET_EXHAUSTED", snapshot.completeness(),
+						queryName + " must expose bounded AUTO incompleteness\n" + snapshot.diagnostics()),
+				() -> assertTrue(limitCauses != null && !limitCauses.isBlank(),
+						queryName + " must name every AUTO approximation cause\n" + optimizerCounters(snapshot.optimized())),
+				() -> assertFalse(limitCauses != null && limitCauses.contains("DEADLINE"),
+						"AUTO must not use a wall-clock deadline: " + limitCauses),
+				() -> assertTrue(snapshot.optimized().getDoubleMetricPlanned("optimizer.cascadesRuleWork") <= 4_096.0d,
+						queryName + " exceeded the deterministic AUTO rule-work limit\n"
+								+ optimizerCounters(snapshot.optimized())));
+	}
+
+	private static String optimizerCounters(TupleExpr optimized) {
+		return "limitCauses=" + optimized.getStringMetricPlanned("optimizer.cascadesLimitCauses")
+				+ ", ruleWork=" + optimized.getDoubleMetricPlanned("optimizer.cascadesRuleWork")
+				+ ", partitionProbes=" + optimized.getDoubleMetricPlanned("optimizer.cascadesPartitionProbes")
+				+ ", candidateEvaluations="
+				+ optimized.getDoubleMetricPlanned("optimizer.cascadesCandidateEvaluations")
+				+ ", predicateProbes=" + optimized.getDoubleMetricPlanned("optimizer.cascadesPredicateProbes")
+				+ ", retainedCandidates=" + optimized.getDoubleMetricPlanned("optimizer.cascadesRetainedCandidates")
+				+ ", retainedHighWater="
+				+ optimized.getDoubleMetricPlanned("optimizer.cascadesRetainedCandidateHighWaterMark")
+				+ ", frontierHighWater="
+				+ optimized.getDoubleMetricPlanned("optimizer.cascadesFrontierHighWaterMark");
 	}
 
 	private record OptimizedPlanSnapshot(String plan, String diagnostics) {

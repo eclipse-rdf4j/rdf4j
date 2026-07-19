@@ -31,46 +31,68 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 
 /**
  * Canonical input bindings under which one memo group is optimized.
  * <p>
- * This value deliberately excludes estimate provenance, source labels, relation column order and all other
- * diagnostic evidence. Exact sparse relations remain separate conjuncts: independent finite domains are never
- * expanded into an invented Cartesian relation merely to form a memo key.
+ * This value deliberately excludes estimate provenance, source labels, relation column order and all other diagnostic
+ * evidence. Exact sparse relations remain separate conjuncts: independent finite domains are never expanded into an
+ * invented Cartesian relation merely to form a memo key.
  */
 @Experimental
 public final class InputBindingContext {
 
-	public static final InputBindingContext NONE = new InputBindingContext(false, 1.0d, Set.of(), List.of(), Map.of());
+	public static final InputBindingContext NONE = new InputBindingContext(false, 1.0d, Set.of(), List.of(), Map.of(),
+			PrefixDerivation.EMPTY);
 
 	private final boolean present;
 	private final double invocationRows;
 	private final Set<String> assuredBindingNames;
 	private final List<ExactRelation> exactRelations;
 	private final Map<String, FiniteDomain> finiteDomains;
+	private final PrefixDerivation prefixDerivation;
 	private final int hash;
 	private final InputBindingContext withoutInvocationCardinality;
 
 	private InputBindingContext(boolean present, double invocationRows, Set<String> assuredBindingNames,
 			List<ExactRelation> exactRelations, Map<String, FiniteDomain> finiteDomains) {
-		this(present, invocationRows, assuredBindingNames, exactRelations, finiteDomains, false);
+		this(present, invocationRows, assuredBindingNames, exactRelations, finiteDomains, PrefixDerivation.EMPTY,
+				false);
 	}
 
 	private InputBindingContext(boolean present, double invocationRows, Set<String> assuredBindingNames,
-			List<ExactRelation> exactRelations, Map<String, FiniteDomain> finiteDomains, boolean trustedCanonicalFacts) {
+			List<ExactRelation> exactRelations, Map<String, FiniteDomain> finiteDomains,
+			PrefixDerivation prefixDerivation) {
+		this(present, invocationRows, assuredBindingNames, exactRelations, finiteDomains, prefixDerivation, false);
+	}
+
+	private InputBindingContext(boolean present, double invocationRows, Set<String> assuredBindingNames,
+			List<ExactRelation> exactRelations, Map<String, FiniteDomain> finiteDomains,
+			PrefixDerivation prefixDerivation,
+			boolean trustedCanonicalFacts) {
 		this.present = present;
 		this.invocationRows = canonicalRows(invocationRows, present);
 		this.assuredBindingNames = trustedCanonicalFacts ? assuredBindingNames : canonicalNames(assuredBindingNames);
 		this.exactRelations = trustedCanonicalFacts ? exactRelations : canonicalRelations(exactRelations);
 		this.finiteDomains = trustedCanonicalFacts ? finiteDomains : canonicalDomains(finiteDomains);
+		this.prefixDerivation = prefixDerivation == null ? PrefixDerivation.EMPTY : prefixDerivation;
 		this.hash = Objects.hash(this.present, this.invocationRows, this.assuredBindingNames, this.exactRelations,
-				this.finiteDomains);
-		this.withoutInvocationCardinality = !present || this.invocationRows == 1.0d
-				? this
-				: new InputBindingContext(true, 1.0d, this.assuredBindingNames, this.exactRelations,
-						this.finiteDomains, true);
+				this.finiteDomains, this.prefixDerivation);
+		if (!present) {
+			this.withoutInvocationCardinality = this;
+		} else if (this.assuredBindingNames.isEmpty() && this.exactRelations.isEmpty() && this.finiteDomains.isEmpty()
+				&& this.prefixDerivation.isEmpty()) {
+			this.withoutInvocationCardinality = NONE;
+		} else if (this.invocationRows == 1.0d) {
+			this.withoutInvocationCardinality = this;
+		} else {
+			this.withoutInvocationCardinality = new InputBindingContext(true, 1.0d, this.assuredBindingNames,
+					this.exactRelations, this.finiteDomains, this.prefixDerivation, true);
+		}
 	}
 
 	public static InputBindingContext fromBindingSet(BindingSet bindings) {
@@ -98,7 +120,10 @@ public final class InputBindingContext {
 		Map<String, FiniteDomain> domains = new LinkedHashMap<>();
 		Set<String> assured = new LinkedHashSet<>(assuredBindingNames == null ? Set.of() : assuredBindingNames);
 		if (profile != null) {
-			profile.finiteRelations().values().stream().map(ExactRelation::canonical)
+			profile.finiteRelations()
+					.values()
+					.stream()
+					.map(ExactRelation::canonical)
 					.flatMap(java.util.Optional::stream)
 					.forEach(relations::add);
 			profile.finiteDomains().forEach((name, fact) -> {
@@ -163,7 +188,9 @@ public final class InputBindingContext {
 		if (winner.costScope() == CostScope.PER_INVOCATION && base.isPresent()) {
 			invocationRows = saturatedProduct(base.invocationRows, invocationRows);
 		}
-		return new InputBindingContext(true, invocationRows, assured, relations, domains)
+		PrefixDerivation derivation = base.prefixDerivation
+				.merge(PrefixDerivation.from(SelectedPlanMaterializer.selectedJoinFactors(winner)));
+		return new InputBindingContext(true, invocationRows, assured, relations, domains, derivation)
 				.restrictTo(visibleNames);
 	}
 
@@ -185,6 +212,10 @@ public final class InputBindingContext {
 
 	public Set<String> assuredBindingNames() {
 		return assuredBindingNames;
+	}
+
+	List<TupleExpr> prefixFactors() {
+		return prefixDerivation.isFiniteJoinPrefix() ? prefixDerivation.factors() : List.of();
 	}
 
 	public Map<String, Set<Value>> finiteBindingValues(Collection<String> relevantNames) {
@@ -255,7 +286,7 @@ public final class InputBindingContext {
 				domains.put(name, domain);
 			}
 		});
-		return new InputBindingContext(true, invocationRows, assured, relations, domains);
+		return new InputBindingContext(true, invocationRows, assured, relations, domains, prefixDerivation);
 	}
 
 	InputBindingContext restrictToConnected(Collection<String> visibleNames) {
@@ -284,7 +315,8 @@ public final class InputBindingContext {
 						&& Double.compare(invocationRows, other.invocationRows) == 0
 						&& assuredBindingNames.equals(other.assuredBindingNames)
 						&& exactRelations.equals(other.exactRelations)
-						&& finiteDomains.equals(other.finiteDomains);
+						&& finiteDomains.equals(other.finiteDomains)
+						&& prefixDerivation.equals(other.prefixDerivation);
 	}
 
 	@Override
@@ -300,7 +332,8 @@ public final class InputBindingContext {
 		return "InputBindingContext[invocationRows=" + invocationRows
 				+ ", assured=" + assuredBindingNames
 				+ ", exactRelations=" + exactRelations.size()
-				+ ", finiteDomains=" + finiteDomains.keySet() + ']';
+				+ ", finiteDomains=" + finiteDomains.keySet()
+				+ ", prefixFactors=" + prefixDerivation.factors().size() + ']';
 	}
 
 	private static double canonicalRows(double rows, boolean present) {
@@ -344,7 +377,7 @@ public final class InputBindingContext {
 		List<ExactRelation> canonical = relations.stream()
 				.filter(Objects::nonNull)
 				.distinct()
-				.sorted(Comparator.comparing(ExactRelation::identity))
+				.sorted(ExactRelation::compareCanonical)
 				.toList();
 		return canonical.isEmpty() ? List.of() : List.copyOf(canonical);
 	}
@@ -419,46 +452,212 @@ public final class InputBindingContext {
 		return safe.length() + ":" + safe;
 	}
 
-	private record FiniteDomain(List<Value> values, FiniteDomainFact.Precision precision) {
+	private static final class PrefixDerivation {
 
-		private FiniteDomain {
-			values = canonicalValues(values);
-			precision = precision == null ? FiniteDomainFact.Precision.UPPER_BOUND : precision;
+		private static final PrefixDerivation EMPTY = new PrefixDerivation(List.of(), List.of(), false, false);
+
+		private final List<LogicalOperatorKey> identity;
+		private final List<TupleExpr> factors;
+		private final boolean finiteAnchor;
+		private final boolean statementFactor;
+		private final int hash;
+
+		private PrefixDerivation(List<LogicalOperatorKey> identity, List<TupleExpr> factors, boolean finiteAnchor,
+				boolean statementFactor) {
+			this.identity = identity;
+			this.factors = factors;
+			this.finiteAnchor = finiteAnchor;
+			this.statementFactor = statementFactor;
+			this.hash = identity.hashCode();
+		}
+
+		static PrefixDerivation from(List<TupleExpr> selectedFactors) {
+			if (selectedFactors == null || selectedFactors.isEmpty()) {
+				return EMPTY;
+			}
+			List<LogicalOperatorKey> identity = new ArrayList<>(selectedFactors.size());
+			List<TupleExpr> factors = new ArrayList<>(selectedFactors.size());
+			boolean finiteAnchor = false;
+			boolean statementFactor = false;
+			for (TupleExpr factor : selectedFactors) {
+				if (!(factor instanceof BindingSetAssignment) && !(factor instanceof StatementPattern)) {
+					return EMPTY;
+				}
+				BindingUniverse universe = BindingUniverse.create();
+				factor.getBindingNames()
+						.stream()
+						.filter(BindingUniverse::plannerName)
+						.sorted()
+						.forEach(universe::intern);
+				identity.add(new MemoLogicalKeyFactory(universe).operatorKey(factor, MemoExecutionDomain.LOCAL));
+				factors.add(factor);
+				finiteAnchor |= factor instanceof BindingSetAssignment;
+				statementFactor |= factor instanceof StatementPattern;
+			}
+			return new PrefixDerivation(List.copyOf(identity), List.copyOf(factors), finiteAnchor, statementFactor);
+		}
+
+		PrefixDerivation merge(PrefixDerivation selected) {
+			if (selected == null || selected.isEmpty()) {
+				return this;
+			}
+			if (isEmpty()) {
+				return selected.finiteAnchor ? selected : EMPTY;
+			}
+			if (startsWith(selected.identity, identity)) {
+				return selected;
+			}
+			if (startsWith(identity, selected.identity) || endsWith(identity, selected.identity)) {
+				return this;
+			}
+			List<LogicalOperatorKey> mergedIdentity = new ArrayList<>(identity.size() + selected.identity.size());
+			mergedIdentity.addAll(identity);
+			mergedIdentity.addAll(selected.identity);
+			List<TupleExpr> mergedFactors = new ArrayList<>(factors.size() + selected.factors.size());
+			mergedFactors.addAll(factors);
+			mergedFactors.addAll(selected.factors);
+			return new PrefixDerivation(List.copyOf(mergedIdentity), List.copyOf(mergedFactors),
+					finiteAnchor || selected.finiteAnchor, statementFactor || selected.statementFactor);
+		}
+
+		boolean isEmpty() {
+			return identity.isEmpty();
+		}
+
+		boolean isFiniteJoinPrefix() {
+			return finiteAnchor && statementFactor;
+		}
+
+		List<TupleExpr> factors() {
+			return factors;
+		}
+
+		@Override
+		public boolean equals(Object object) {
+			return this == object
+					|| object instanceof PrefixDerivation other
+							&& hash == other.hash
+							&& identity.equals(other.identity);
+		}
+
+		@Override
+		public int hashCode() {
+			return hash;
+		}
+
+		private static boolean startsWith(List<LogicalOperatorKey> values, List<LogicalOperatorKey> prefix) {
+			return values.size() >= prefix.size() && values.subList(0, prefix.size()).equals(prefix);
+		}
+
+		private static boolean endsWith(List<LogicalOperatorKey> values, List<LogicalOperatorKey> suffix) {
+			return values.size() >= suffix.size()
+					&& values.subList(values.size() - suffix.size(), values.size()).equals(suffix);
+		}
+	}
+
+	private static final class FiniteDomain {
+
+		private final FiniteDomainFact fact;
+
+		private FiniteDomain(List<Value> values, FiniteDomainFact.Precision precision) {
+			FiniteDomainFact.Precision resolved = precision == null
+					? FiniteDomainFact.Precision.UPPER_BOUND
+					: precision;
+			this.fact = resolved == FiniteDomainFact.Precision.EXACT
+					? FiniteDomainFact.exact(values, true, "input-binding-context")
+					: FiniteDomainFact.upperBound(values, true, "input-binding-context");
+		}
+
+		private FiniteDomain(FiniteDomainFact fact) {
+			this.fact = Objects.requireNonNull(fact, "fact");
 		}
 
 		static FiniteDomain of(FiniteDomainFact fact) {
-			return new FiniteDomain(fact == null ? List.of() : fact.values(),
-					fact == null ? FiniteDomainFact.Precision.UPPER_BOUND : fact.precision());
+			return fact == null
+					? new FiniteDomain(List.of(), FiniteDomainFact.Precision.UPPER_BOUND)
+					: new FiniteDomain(fact);
+		}
+
+		List<Value> values() {
+			return fact.values();
+		}
+
+		FiniteDomainFact.Precision precision() {
+			return fact.precision();
 		}
 
 		FiniteDomain stronger(FiniteDomain other) {
 			if (other == null || equals(other)) {
 				return this;
 			}
-			FiniteDomainFact.Precision combinedPrecision = precision == FiniteDomainFact.Precision.EXACT
-					&& other.precision == FiniteDomainFact.Precision.EXACT
+			FiniteDomainFact.Precision combinedPrecision = precision() == FiniteDomainFact.Precision.EXACT
+					&& other.precision() == FiniteDomainFact.Precision.EXACT
 							? FiniteDomainFact.Precision.EXACT
 							: FiniteDomainFact.Precision.UPPER_BOUND;
-			return new FiniteDomain(intersection(values, other.values), combinedPrecision);
-		}
-	}
-
-	private record ExactRelation(List<String> variables, Map<List<Value>, Double> frequencies, String identity) {
-
-		private ExactRelation {
-			variables = List.copyOf(variables);
-			frequencies = Collections.unmodifiableMap(new LinkedHashMap<>(frequencies));
-			identity = Objects.requireNonNull(identity, "identity");
+			return new FiniteDomain(intersection(values(), other.values()), combinedPrecision);
 		}
 
 		@Override
 		public boolean equals(Object object) {
-			return this == object || object instanceof ExactRelation other && identity.equals(other.identity);
+			return this == object || object instanceof FiniteDomain other && fact.equals(other.fact);
 		}
 
 		@Override
 		public int hashCode() {
-			return identity.hashCode();
+			return fact.hashCode();
+		}
+	}
+
+	private static final class ExactRelation {
+
+		private final List<String> variables;
+		private final Map<List<Value>, Double> frequencies;
+		private final String identity;
+		private final int hash;
+
+		private ExactRelation(List<String> variables, Map<List<Value>, Double> frequencies) {
+			this.variables = List.copyOf(variables);
+			this.frequencies = Objects.requireNonNull(frequencies, "frequencies");
+			this.hash = Objects.hash(this.variables, this.frequencies);
+			StringBuilder builder = new StringBuilder("R").append(this.variables.size()).append(':');
+			for (String variable : this.variables) {
+				builder.append(framed(variable));
+			}
+			this.identity = builder.append('#')
+					.append(this.frequencies.size())
+					.append(':')
+					.append(Integer.toUnsignedString(this.frequencies.hashCode(), 16))
+					.toString();
+		}
+
+		List<String> variables() {
+			return variables;
+		}
+
+		String identity() {
+			return identity;
+		}
+
+		@Override
+		public boolean equals(Object object) {
+			return this == object
+					|| object instanceof ExactRelation other
+							&& hash == other.hash
+							&& variables.equals(other.variables)
+							&& frequencies.equals(other.frequencies);
+		}
+
+		@Override
+		public int hashCode() {
+			return hash;
+		}
+
+		private static int compareCanonical(ExactRelation left, ExactRelation right) {
+			int compact = left.identity.compareTo(right.identity);
+			if (compact != 0 || left.equals(right)) {
+				return compact;
+			}
+			return left.fullIdentity().compareTo(right.fullIdentity());
 		}
 
 		static java.util.Optional<ExactRelation> canonical(FiniteRelationEstimate source) {
@@ -466,6 +665,9 @@ public final class InputBindingContext {
 				return java.util.Optional.empty();
 			}
 			List<String> variables = source.variables().stream().sorted().toList();
+			if (variables.equals(source.variables())) {
+				return java.util.Optional.of(new ExactRelation(variables, source.frequencies()));
+			}
 			Map<List<Value>, Double> frequencies = project(source.variables(), source.frequencies(), variables);
 			return java.util.Optional.of(of(variables, frequencies));
 		}
@@ -503,24 +705,21 @@ public final class InputBindingContext {
 		}
 
 		private static ExactRelation of(List<String> variables, Map<List<Value>, Double> frequencies) {
+			FiniteRelationEstimate canonical = FiniteRelationEstimate.fromFrequencies(variables, frequencies,
+					"input-binding-context");
+			return new ExactRelation(variables, canonical.frequencies());
+		}
+
+		private String fullIdentity() {
 			List<Map.Entry<List<Value>, Double>> entries = new ArrayList<>(frequencies.entrySet());
 			entries.sort(Comparator.comparing(entry -> tupleIdentity(entry.getKey())));
-			Map<List<Value>, Double> sorted = new LinkedHashMap<>();
-			StringBuilder identity = new StringBuilder("R").append(variables.size()).append(':');
-			for (String variable : variables) {
-				identity.append(framed(variable));
-			}
+			StringBuilder builder = new StringBuilder(identity).append(':');
 			for (Map.Entry<List<Value>, Double> entry : entries) {
-				List<Value> tuple = immutableTuple(entry.getKey());
-				double frequency = entry.getValue() == null ? 0.0d : entry.getValue();
-				if (Double.isFinite(frequency) && frequency > 0.0d) {
-					sorted.merge(tuple, frequency, Double::sum);
-					identity.append(framed(tupleIdentity(tuple)))
-							.append(Long.toHexString(Double.doubleToLongBits(frequency)))
-							.append(';');
-				}
+				builder.append(framed(tupleIdentity(entry.getKey())))
+						.append(Long.toHexString(Double.doubleToLongBits(entry.getValue())))
+						.append(';');
 			}
-			return new ExactRelation(variables, sorted, identity.toString());
+			return builder.toString();
 		}
 
 		private static Map<List<Value>, Double> project(List<String> sourceVariables,

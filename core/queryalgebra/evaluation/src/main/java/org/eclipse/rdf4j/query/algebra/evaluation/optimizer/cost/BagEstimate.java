@@ -138,10 +138,12 @@ public final class BagEstimate {
 			return this;
 		}
 		VariableSetKey key = VariableSetKey.of(names);
+		Map<String, VariableEstimate> variableCopy = new LinkedHashMap<>(variables());
+		mergeVariableSketch(variableCopy, key, sketch);
 		Map<VariableSetKey, SketchEvidence> copy = new LinkedHashMap<>(evidenceProfile.sketches());
 		copy.put(key, new SketchEvidence(key, sketch, rows(), sketch.distinctRows(),
 				names.size() > 1 ? EvidenceQuality.TUPLE_SKETCH : EvidenceQuality.VARIABLE_SKETCH, source()));
-		return withProfile(rows(), workRows(), memoryRows(), confidence(), source(), variables(), finiteRelations(),
+		return withProfile(rows(), workRows(), memoryRows(), confidence(), source(), variableCopy, finiteRelations(),
 				copy, evidenceProfile.supportingSketches(), metrics());
 	}
 
@@ -149,9 +151,11 @@ public final class BagEstimate {
 		if (sketches == null || sketches.isEmpty()) {
 			return this;
 		}
+		Map<String, VariableEstimate> variableCopy = new LinkedHashMap<>(variables());
 		Map<VariableSetKey, SketchEvidence> copy = new LinkedHashMap<>(evidenceProfile.sketches());
 		for (Map.Entry<VariableSetKey, DistributionSketch> entry : sketches.entrySet()) {
 			if (entry.getKey() != null && entry.getValue() != null) {
+				mergeVariableSketch(variableCopy, entry.getKey(), entry.getValue());
 				copy.put(entry.getKey(), new SketchEvidence(entry.getKey(), entry.getValue(), rows(),
 						entry.getValue().distinctRows(),
 						entry.getKey().names().size() > 1 ? EvidenceQuality.TUPLE_SKETCH
@@ -159,8 +163,23 @@ public final class BagEstimate {
 						source()));
 			}
 		}
-		return withProfile(rows(), workRows(), memoryRows(), confidence(), source(), variables(), finiteRelations(),
+		return withProfile(rows(), workRows(), memoryRows(), confidence(), source(), variableCopy, finiteRelations(),
 				copy, evidenceProfile.supportingSketches(), metrics());
+	}
+
+	private void mergeVariableSketch(Map<String, VariableEstimate> variableCopy, VariableSetKey key,
+			DistributionSketch sketch) {
+		if (key.names().size() != 1) {
+			return;
+		}
+		String name = key.names().getFirst();
+		VariableEstimate current = variableCopy.get(name);
+		double boundRows = current == null || current.boundRows() <= 0.0d ? rows() : current.boundRows();
+		double nullableRows = current == null ? 0.0d : current.nullableRows();
+		double distinctRows = relationContaining(Set.of(name))
+				.map(relation -> relation.distinctBoundRows(name))
+				.orElseGet(sketch::distinctRows);
+		variableCopy.put(name, new VariableEstimate(distinctRows, boundRows, nullableRows, sketch));
 	}
 
 	public BagEstimate withRows(double rows, String source) {

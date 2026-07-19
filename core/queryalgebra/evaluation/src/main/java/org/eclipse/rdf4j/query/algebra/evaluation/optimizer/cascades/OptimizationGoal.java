@@ -58,7 +58,8 @@ public record OptimizationGoal(PhysicalProperties requiredProperties, String sem
 	}
 
 	public OptimizationGoal {
-		requiredProperties = requiredProperties == null ? PhysicalProperties.ANY : requiredProperties.executionContract();
+		requiredProperties = requiredProperties == null ? PhysicalProperties.ANY
+				: requiredProperties.executionContract();
 		semanticScope = semanticScope == null || semanticScope.isBlank() ? BAG_SEMANTICS : semanticScope;
 		costPolicy = costPolicy == null ? CostPolicy.EXACT : costPolicy;
 		costBound = costBound == null ? CostVector.INFINITE : costBound;
@@ -120,6 +121,12 @@ public record OptimizationGoal(PhysicalProperties requiredProperties, String sem
 		return new OptimizationGoal(requiredProperties, normalizedScope,
 				costPolicy, costBound, excludedProperties, searchMode, deadlineNanos, taskBudget, normalized,
 				estimationTier, inputBindingContext);
+	}
+
+	OptimizationGoal withRowGoalPreservingSemanticScope(RowGoal outputGoal) {
+		RowGoal normalized = outputGoal == null ? RowGoal.ALL : outputGoal;
+		return new OptimizationGoal(requiredProperties, semanticScope, costPolicy, costBound, excludedProperties,
+				searchMode, deadlineNanos, taskBudget, normalized, estimationTier, inputBindingContext);
 	}
 
 	public OptimizationGoal withoutRowGoal() {
@@ -217,9 +224,10 @@ public record OptimizationGoal(PhysicalProperties requiredProperties, String sem
 		hash = combineHash(hash, semanticScope);
 		hash = combineHash(hash, costPolicy);
 		hash = combineHash(hash, costBound);
-		int excludedHash = excludedProperties.stream()
-				.mapToInt(PhysicalProperties::executionContractHashCode)
-				.sum();
+		int excludedHash = 0;
+		for (PhysicalProperties excluded : excludedProperties) {
+			excludedHash += excluded.executionContractHashCode();
+		}
 		hash = combineHash(hash, excludedHash);
 		hash = combineHash(hash, searchMode);
 		hash = combineHash(hash, Long.hashCode(deadlineNanos));
@@ -407,8 +415,10 @@ public record OptimizationGoal(PhysicalProperties requiredProperties, String sem
 	}
 
 	public enum SearchMode {
+		AUTO,
 		EXACT,
 		BUDGETED,
-		SHADOW
+		SHADOW,
+		SHADOW_BUDGETED
 	}
 }

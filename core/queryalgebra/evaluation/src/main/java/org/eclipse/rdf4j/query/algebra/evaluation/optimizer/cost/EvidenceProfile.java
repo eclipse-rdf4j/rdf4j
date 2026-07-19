@@ -260,10 +260,7 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 
 	public EvidenceProfile distinct(Set<String> distinctVars) {
 		Set<String> vars = safeSet(distinctVars);
-		double distinctRows = vars.isEmpty() ? rows
-				: relationContaining(vars)
-						.map(relation -> relation.distinctRows(vars))
-						.orElse(Math.min(rows, productDistinct(vars)));
+		double distinctRows = vars.isEmpty() ? rows : Math.min(rows, tupleDistinct(vars));
 		distinctRows = clampRows(distinctRows, 0.0d, finiteNonNegative(rows));
 		Map<String, VariableEstimate> distinctVariables = projectedBoundVariables(vars, distinctRows);
 		Map<VariableSetKey, FiniteRelationEstimate> distinctFinite = distinctFiniteRelation(vars, "distinct")

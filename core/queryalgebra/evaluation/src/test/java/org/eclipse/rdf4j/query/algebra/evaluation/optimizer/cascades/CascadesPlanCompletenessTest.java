@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -116,6 +117,32 @@ class CascadesPlanCompletenessTest {
 		assertEquals(OptimizationCompleteness.BUDGET_EXHAUSTED, plan.completeness());
 		assertEquals(List.of(task), plan.pendingTasks());
 		assertTrue(plan.approximate());
+	}
+
+	@Test
+	void structuredStatusPreservesMultipleLimitCausesAndExactSnapshots() {
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		int rootGroupId = memo.intern(new SingletonSet());
+		LinkedHashSet<OptimizationLimitCause> mutableCauses = new LinkedHashSet<>();
+		mutableCauses.add(OptimizationLimitCause.RULE_WORK);
+		mutableCauses.add(OptimizationLimitCause.PARTITION_PROBES);
+		SearchCounterSnapshot counters = new SearchCounterSnapshot(4_096L, 17L, 23L, 101L, 211L);
+		SearchRetentionSnapshot retention = new SearchRetentionSnapshot(11L, 19L, 7L);
+		OptimizationSearchStatus status = new OptimizationSearchStatus(
+				OptimizationCompleteness.RESOURCE_LIMIT_EXCEEDED, mutableCauses, counters, retention);
+
+		CascadesPlan plan = new CascadesPlan(memo, rootGroupId, OptimizationGoal.root(), Optional.empty(), status,
+				List.of(), List.of("deterministic hard limit reached"));
+		mutableCauses.clear();
+
+		assertEquals(OptimizationCompleteness.RESOURCE_LIMIT_EXCEEDED, plan.completeness());
+		assertEquals(Set.of(OptimizationLimitCause.RULE_WORK, OptimizationLimitCause.PARTITION_PROBES),
+				plan.searchStatus().limitCauses());
+		assertEquals(counters, plan.searchStatus().counters());
+		assertEquals(retention, plan.searchStatus().retention());
+		assertTrue(plan.approximate());
+		assertThrows(UnsupportedOperationException.class,
+				() -> plan.searchStatus().limitCauses().add(OptimizationLimitCause.DEADLINE));
 	}
 
 	@Test

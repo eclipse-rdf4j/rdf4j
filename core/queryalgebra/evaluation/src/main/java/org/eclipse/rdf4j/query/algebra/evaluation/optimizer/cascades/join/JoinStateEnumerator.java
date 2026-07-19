@@ -25,6 +25,7 @@ import java.util.Set;
 import java.util.TreeSet;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingMask;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinStateExpression.ApplyPredicate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinStateExpression.JoinTransition;
 
@@ -64,6 +65,8 @@ public final class JoinStateEnumerator {
 		private final List<JoinStateExpression> expressions = new ArrayList<>();
 		private final Set<JoinTransition> emittedJoins = new HashSet<>();
 		private final Set<ApplyPredicate> emittedPredicates = new HashSet<>();
+		private final Map<Integer, BindingMask> requiredBindingsByPredicateId = new HashMap<>();
+		private final Map<Set<Integer>, BindingMask> assuredBindingsByOccurrences = new HashMap<>();
 		private int stateCount;
 
 		private Enumeration(JoinRegion region, JoinSearchContext context,
@@ -71,6 +74,10 @@ public final class JoinStateEnumerator {
 			this.region = region;
 			this.context = context;
 			this.topology = topology;
+			for (JoinPredicate predicate : region.predicates()) {
+				requiredBindingsByPredicateId.put(predicate.id(),
+						context.bindingUniverse().maskOf(predicate.requiredBindingNames()));
+			}
 		}
 
 		private List<JoinStateExpression> run() {
@@ -132,14 +139,20 @@ public final class JoinStateEnumerator {
 		}
 
 		private boolean eligible(JoinPredicate predicate, JoinState state) {
-			if (predicate.requiredBindingNames().isEmpty()) {
+			BindingMask required = requiredBindingsByPredicateId.get(predicate.id());
+			if (required == null || required.isEmpty()) {
 				return true;
 			}
-			HashSet<String> assured = new HashSet<>(context.initiallyBoundVars());
-			for (Integer occurrenceId : state.occurrenceIds()) {
-				assured.addAll(context.factor(occurrenceId).assuredBindingNames());
+			BindingMask assured = assuredBindingsByOccurrences.get(state.occurrenceIds());
+			if (assured == null) {
+				assured = context.initiallyBoundBindings();
+				for (Integer occurrenceId : state.occurrenceIds()) {
+					assured = assured.union(context.factor(occurrenceId)
+							.assuredBindings(context.bindingUniverse()));
+				}
+				assuredBindingsByOccurrences.put(state.occurrenceIds(), assured);
 			}
-			return assured.containsAll(predicate.requiredBindingNames());
+			return assured.containsAll(required);
 		}
 
 		private boolean addState(JoinState state) {

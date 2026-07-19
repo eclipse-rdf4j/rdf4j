@@ -26,23 +26,67 @@ final class SelectedPlanMaterializer {
 		if (winner == null || !winner.hasSelectedInputGraph()) {
 			return winner;
 		}
-		return winner.withPlan(materialize(costModel, winner));
+		MaterializedSelection materialized = materializeSelection(costModel, winner);
+		return winner.withPlan(materialized.plan()).withProvenance(materialized.provenance());
 	}
 
 	static TupleExpr materialize(CascadesCostModel costModel, Winner winner) {
+		return materializeSelection(costModel, winner).plan();
+	}
+
+	private static MaterializedSelection materializeSelection(CascadesCostModel costModel, Winner winner) {
 		if (winner == null) {
-			return null;
+			return new MaterializedSelection(null, null);
 		}
 		if (!winner.hasSelectedInputGraph()) {
-			return winner.plan();
+			return new MaterializedSelection(winner.plan(), winner.provenance());
 		}
 		List<Winner> materializedInputs = new ArrayList<>(winner.selectedInputs().size());
+		List<PlanProvenance> materializedInputProvenance = new ArrayList<>(winner.selectedInputs().size());
 		for (Winner input : winner.selectedInputs()) {
-			materializedInputs.add(input.withPlan(materialize(costModel, input)));
+			MaterializedSelection materializedInput = materializeSelection(costModel, input);
+			materializedInputs.add(input.withPlan(materializedInput.plan())
+					.withProvenance(materializedInput.provenance()));
+			materializedInputProvenance.add(materializedInput.provenance());
 		}
 		TupleExpr materialized = costModel.buildPlan(winner.expression(), materializedInputs);
-		winner.applySelectedPlanMetrics(materialized);
-		return materialized;
+		PlanProvenance materializedProvenance = winner.provenance().withInputs(materializedInputProvenance);
+		if (materialized instanceof MaterializeTupleExpr marker) {
+			winner.applySelectedPlanMetrics(materialized, materializedProvenance);
+			return new MaterializedSelection(unwrapMaterialize(marker),
+					unwrapMaterializeProvenance(materializedProvenance));
+		}
+		winner.applySelectedPlanMetrics(materialized, materializedProvenance);
+		return new MaterializedSelection(materialized, materializedProvenance);
+	}
+
+	private static TupleExpr unwrapMaterialize(MaterializeTupleExpr marker) {
+		TupleExpr unwrapped = marker.getArg();
+		marker.getStringMetricsPlanned().forEach(unwrapped::setStringMetricPlanned);
+		marker.getDoubleMetricsPlanned().forEach(unwrapped::setDoubleMetricPlanned);
+		marker.getLongMetricsPlanned().forEach(unwrapped::setLongMetricPlanned);
+		if (Double.isFinite(marker.getResultSizeEstimate()) && marker.getResultSizeEstimate() >= 0.0d) {
+			unwrapped.setResultSizeEstimate(marker.getResultSizeEstimate());
+		}
+		if (Double.isFinite(marker.getCostEstimate()) && marker.getCostEstimate() >= 0.0d) {
+			unwrapped.setCostEstimate(marker.getCostEstimate());
+		}
+		unwrapped.setParentNode(null);
+		return unwrapped;
+	}
+
+	private static PlanProvenance unwrapMaterializeProvenance(PlanProvenance marker) {
+		if (marker == null || marker.inputs().size() != 1) {
+			throw new IllegalStateException("Materialize provenance must have exactly one input");
+		}
+		PlanProvenance child = marker.inputs().getFirst();
+		List<RejectedAlternative> rejected = marker.rejectedAlternatives().isEmpty()
+				? child.rejectedAlternatives()
+				: marker.rejectedAlternatives();
+		List<RuleProof> proofs = marker.proofs().isEmpty() ? child.proofs() : marker.proofs();
+		return new PlanProvenance(child.memoGroupId(), child.expressionId(), child.operator(), child.ruleId(),
+				child.ruleKind(), child.inputs(), marker.estimate(), marker.cost(), marker.requiredProperties(),
+				marker.deliveredProperties(), rejected, proofs, marker.approximate(), marker.reason());
 	}
 
 	static List<TupleExpr> selectedJoinFactors(Winner winner) {
@@ -78,5 +122,8 @@ final class SelectedPlanMaterializer {
 		} else if (tupleExpr != null) {
 			factors.add(tupleExpr);
 		}
+	}
+
+	private record MaterializedSelection(TupleExpr plan, PlanProvenance provenance) {
 	}
 }

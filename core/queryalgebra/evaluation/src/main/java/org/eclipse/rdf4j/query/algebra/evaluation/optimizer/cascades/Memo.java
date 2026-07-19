@@ -19,6 +19,7 @@ import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -43,11 +44,17 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 public final class Memo {
 	private final CascadesCostModel costModel;
 	private final BindingUniverse universe;
+	private final MemoLogicalKeyFactory logicalKeyFactory;
+	private final LegacyLogicalKeyDiscrepancyRecorder legacyKeyRecorder;
 	private final List<MemoGroup> groups = new ArrayList<>();
-	private final Map<String, Integer> groupByLogicalExpression = new HashMap<>();
-	private final Map<MemoExecutionDomain, IdentityHashMap<TupleExpr, Integer>> groupByNodeIdentity =
-			new EnumMap<>(MemoExecutionDomain.class);
+	private final Map<MemoLogicalExpressionKey, Integer> groupByLogicalExpression = new HashMap<>();
+	private final Map<MemoLogicalExpressionKey, Set<Integer>> aliasedGroupsByLogicalExpression = new HashMap<>();
 	private final List<MemoExpr> expressionsById = new ArrayList<>();
+	private final List<MemoLogicalExpressionKey> logicalKeysByExpressionId = new ArrayList<>();
+	private int[] primaryImplementationSourceByExpressionId = new int[16];
+	private final Map<Integer, BitSet> additionalImplementationSourcesByExpressionId = new HashMap<>();
+	private final List<BindingShape> bindingShapesByExpressionId = new ArrayList<>();
+	private final List<Set<String>> possibleBindingNamesByExpressionId = new ArrayList<>();
 	private final BitSet joinRouteOnlyExpressions = new BitSet();
 	private final List<SemanticScope> semanticScopesByExpressionId = new ArrayList<>();
 	private final List<List<MemoExpr>> parentExpressionsByChildGroup = new ArrayList<>();
@@ -66,6 +73,8 @@ public final class Memo {
 	public Memo(CascadesCostModel costModel, BindingUniverse universe) {
 		this.costModel = Objects.requireNonNull(costModel, "costModel");
 		this.universe = universe == null ? BindingUniverse.create() : universe;
+		this.logicalKeyFactory = new MemoLogicalKeyFactory(this.universe);
+		this.legacyKeyRecorder = new LegacyLogicalKeyDiscrepancyRecorder(Memo.class.desiredAssertionStatus());
 	}
 
 	public BindingUniverse universe() {
@@ -73,36 +82,45 @@ public final class Memo {
 	}
 
 	public int intern(TupleExpr tupleExpr) {
-		return intern(tupleExpr, true, true, MemoExecutionDomain.LOCAL);
+		return intern(tupleExpr, true, MemoExecutionDomain.LOCAL);
+	}
+
+	/**
+	 * Interns a logical expression whose direct child slots already have authoritative memo identities. This is the
+	 * group-creating counterpart of {@link #addLogicalAlternativeWithInputs(int, TupleExpr, List, List)} and is used
+	 * when a compiled rewrite creates a new child around memo-local captures.
+	 */
+	public int intern(TupleExpr tupleExpr, List<Integer> inputGroupIds) {
+		return internWithInputs(tupleExpr, inputGroupIds, MemoExecutionDomain.LOCAL);
 	}
 
 	int intern(TupleExpr tupleExpr, boolean recurse) {
-		return intern(tupleExpr, recurse, true, MemoExecutionDomain.LOCAL);
+		return intern(tupleExpr, recurse, MemoExecutionDomain.LOCAL);
 	}
 
-	private int intern(TupleExpr tupleExpr, boolean recurse, boolean cacheExistingNodeIdentity,
-			MemoExecutionDomain executionDomain) {
+	private int intern(TupleExpr tupleExpr, boolean recurse, MemoExecutionDomain executionDomain) {
 		if (tupleExpr == null) {
 			throw new IllegalArgumentException("tupleExpr must not be null");
 		}
 		MemoExecutionDomain domain = executionDomain == null ? MemoExecutionDomain.LOCAL : executionDomain;
-		IdentityHashMap<TupleExpr, Integer> identityGroups = identityGroups(domain);
-		Integer identityGroup = identityGroups.get(tupleExpr);
-		if (identityGroup != null) {
-			return identityGroup;
-		}
-		List<Integer> inputs = recurse ? internInputs(tupleExpr, cacheExistingNodeIdentity, domain) : List.of();
-		String metadata = localMetadata(tupleExpr);
+		List<Integer> inputs = recurse ? internInputs(tupleExpr, domain) : List.of();
+		return internWithInputs(tupleExpr, inputs, domain);
+	}
+
+	private int internWithInputs(TupleExpr tupleExpr, List<Integer> inputGroupIds,
+			MemoExecutionDomain executionDomain) {
+		Objects.requireNonNull(tupleExpr, "tupleExpr");
+		MemoExecutionDomain domain = executionDomain == null ? MemoExecutionDomain.LOCAL : executionDomain;
+		List<Integer> inputs = validateInputGroups(tupleExpr, inputGroupIds, domain);
+		String metadata = feedbackFingerprint(tupleExpr);
 		List<SemanticScope> inputSemanticRequirements = inputs.isEmpty()
 				? List.of()
 				: MemoInputLayout.semanticRequirements(tupleExpr);
-		String logicalKey = domainKey(domain,
-				MemoExpr.logicalKey(tupleExpr, inputs, metadata, inputSemanticRequirements));
+		MemoLogicalExpressionKey logicalKey = logicalKeyFactory.key(tupleExpr, inputs, domain,
+				inputSemanticRequirements);
+		recordLegacyKey(tupleExpr, inputs, metadata, inputSemanticRequirements, domain, logicalKey);
 		Integer existingGroup = groupByLogicalExpression.get(logicalKey);
 		if (existingGroup != null) {
-			if (cacheExistingNodeIdentity) {
-				identityGroups.put(tupleExpr, existingGroup);
-			}
 			MemoGroup existing = group(existingGroup);
 			if (domain == MemoExecutionDomain.LOCAL
 					&& existing.logicalProperties() == LogicalProperties.EMPTY
@@ -115,7 +133,7 @@ public final class Memo {
 			}
 			return existingGroup;
 		}
-		return createLogicalGroup(tupleExpr, inputs, metadata, logicalKey, List.of(), inputSemanticRequirements, true,
+		return createLogicalGroup(tupleExpr, inputs, metadata, logicalKey, List.of(), inputSemanticRequirements,
 				domain, false);
 	}
 
@@ -140,6 +158,29 @@ public final class Memo {
 			throw new IndexOutOfBoundsException("Unknown memo expression: " + expressionId);
 		}
 		return expressionsById.get(expressionId);
+	}
+
+	BindingShape bindingShape(MemoExpr expression) {
+		Objects.requireNonNull(expression, "expression");
+		int expressionId = expression.id();
+		if (expressionId < 0 || expressionId >= bindingShapesByExpressionId.size()) {
+			throw new IndexOutOfBoundsException("Unknown memo expression: " + expressionId);
+		}
+		return bindingShapesByExpressionId.get(expressionId);
+	}
+
+	Set<String> possibleBindingNames(MemoExpr expression) {
+		Objects.requireNonNull(expression, "expression");
+		int expressionId = expression.id();
+		if (expressionId < 0 || expressionId >= possibleBindingNamesByExpressionId.size()) {
+			throw new IndexOutOfBoundsException("Unknown memo expression: " + expressionId);
+		}
+		Set<String> names = possibleBindingNamesByExpressionId.get(expressionId);
+		if (names == null) {
+			names = universe.names(bindingShapesByExpressionId.get(expressionId).possible());
+			possibleBindingNamesByExpressionId.set(expressionId, names);
+		}
+		return names;
 	}
 
 	/** Returns whether this expression originated solely from unified join-search materialization. */
@@ -222,7 +263,7 @@ public final class Memo {
 		Objects.requireNonNull(alternative, "alternative");
 		MemoGroup group = group(groupId);
 		requireEquivalentPossibleBindings(group, alternative);
-		List<Integer> inputs = internInputs(alternative, false, group.executionDomain());
+		List<Integer> inputs = internInputs(alternative, group.executionDomain());
 		return addLogicalAlternativeWithInputs(groupId, alternative, inputs, proofs, semanticScope,
 				inputRequirements, inputSemanticRequirements);
 	}
@@ -257,10 +298,80 @@ public final class Memo {
 				inputRequirements, inputSemanticRequirements, false);
 	}
 
+	/** Performs a read-only validation of an entire emitted helper DAG. */
+	public LogicalInputValidation validateLogicalInputRecipes(int targetGroupId, TupleExpr alternative,
+			List<LogicalInputRecipe> inputRecipes) {
+		PreparedLogicalInputs prepared = prepareLogicalInputRecipes(targetGroupId, alternative, inputRecipes);
+		return prepared.supported()
+				? LogicalInputValidation.supportedValidation()
+				: LogicalInputValidation.unsupported(prepared.failureReason());
+	}
+
+	/** Resolves helper recipes and publishes their root alternative only after every preflight check succeeds. */
+	public Optional<MemoExpr> addLogicalAlternativeWithInputRecipes(int groupId, TupleExpr alternative,
+			List<LogicalInputRecipe> inputRecipes, List<RuleProof> proofs, SemanticScope semanticScope,
+			List<PhysicalProperties> inputRequirements, List<SemanticScope> inputSemanticRequirements) {
+		Objects.requireNonNull(alternative, "alternative");
+		MemoGroup targetGroup = group(groupId);
+		PreparedLogicalInputs prepared = prepareLogicalInputRecipes(groupId, alternative, inputRecipes);
+		if (!prepared.supported()) {
+			return Optional.empty();
+		}
+		requireEquivalentPossibleBindings(targetGroup, alternative);
+		List<SemanticScope> semanticRequirements = MemoInputLayout.normalizeSemanticRequirements(
+				prepared.rootInputGroupIds().size(), inputSemanticRequirements);
+		List<PhysicalProperties> physicalRequirements = normalizeInputRequirements(prepared.rootInputGroupIds(),
+				inputRequirements);
+		String metadata = feedbackFingerprint(alternative);
+		MemoLogicalExpressionKey logicalKey = logicalKeyFactory.key(alternative, prepared.rootInputGroupIds(),
+				targetGroup.executionDomain(), semanticRequirements);
+		MemoLogicalRouteKey routeKey = MemoLogicalRouteKey.of(logicalKey, alternative,
+				prepared.rootInputGroupIds(), physicalRequirements, semanticRequirements);
+		MemoLogicalDerivationKey derivationKey = MemoLogicalDerivationKey.of(routeKey, proofs);
+		if (targetGroup.containsLogicalExpressionDerivation(derivationKey)) {
+			if (!prepared.newGroups().isEmpty()) {
+				throw new IllegalStateException("A route containing a fresh helper group cannot already exist");
+			}
+			mergeLogicalExpressionScopeAndOrigin(targetGroup, derivationKey,
+					semanticScope == null ? SemanticScope.BAG : semanticScope, false);
+			return Optional.empty();
+		}
+		MemoExpr retainedRoute = logicalExpressionForRoute(targetGroup, routeKey,
+				semanticScope == null ? SemanticScope.BAG : semanticScope);
+		if (retainedRoute != null) {
+			if (!prepared.newGroups().isEmpty()) {
+				throw new IllegalStateException("A proof-only duplicate route cannot retain fresh helper groups");
+			}
+			targetGroup.recordLogicalExpressionDerivation(derivationKey);
+			mergeLogicalExpressionMetadata(targetGroup, retainedRoute, derivationKey.proofLineage(), false);
+			return Optional.empty();
+		}
+		PreparedLogicalAlternative preparedRoot = prepareLogicalAlternative(groupId, alternative,
+				prepared.rootInputGroupIds(), proofs, semanticScope, physicalRequirements, semanticRequirements,
+				prepared.newGroups(), logicalKey, derivationKey);
+		for (PreparedLogicalGroup planned : prepared.newGroups()) {
+			recordLegacyKey(planned.template(), planned.inputGroupIds(), planned.feedbackFingerprint(),
+					planned.inputSemanticRequirements(), planned.executionDomain(), planned.logicalKey());
+		}
+		recordLegacyKey(alternative, prepared.rootInputGroupIds(), metadata, physicalRequirements,
+				semanticRequirements, targetGroup.executionDomain(), logicalKey);
+		for (PreparedLogicalGroup planned : prepared.newGroups()) {
+			commitPreparedLogicalGroup(planned);
+		}
+		return Optional.of(commitPreparedLogicalAlternative(preparedRoot));
+	}
+
 	Optional<MemoExpr> addJoinSearchAlternativeWithInputs(int groupId, TupleExpr alternative,
 			List<Integer> inputGroupIds, List<RuleProof> proofs) {
+		return addJoinSearchAlternativeWithInputs(groupId, alternative, inputGroupIds, proofs, List.of(),
+				MemoInputLayout.semanticRequirements(alternative));
+	}
+
+	Optional<MemoExpr> addJoinSearchAlternativeWithInputs(int groupId, TupleExpr alternative,
+			List<Integer> inputGroupIds, List<RuleProof> proofs, List<PhysicalProperties> inputRequirements,
+			List<SemanticScope> inputSemanticRequirements) {
 		return addLogicalAlternativeWithInputs(groupId, alternative, inputGroupIds, proofs,
-				SemanticScope.requirementOf(proofs), List.of(), MemoInputLayout.semanticRequirements(alternative), true);
+				SemanticScope.requirementOf(proofs), inputRequirements, inputSemanticRequirements, true);
 	}
 
 	private Optional<MemoExpr> addLogicalAlternativeWithInputs(int groupId, TupleExpr alternative,
@@ -272,23 +383,40 @@ public final class Memo {
 		requireEquivalentPossibleBindings(group, alternative);
 		SemanticScope routeScope = semanticScope == null ? SemanticScope.BAG : semanticScope;
 		List<Integer> inputs = validateInputGroups(alternative, inputGroupIds, group.executionDomain());
+		if (wouldIntroduceLogicalDependencyCycle(groupId, inputs)) {
+			return Optional.empty();
+		}
 		List<SemanticScope> semanticRequirements = MemoInputLayout.normalizeSemanticRequirements(inputs.size(),
 				inputSemanticRequirements);
 		List<PhysicalProperties> physicalRequirements = normalizeInputRequirements(inputs, inputRequirements);
-		String metadata = localMetadata(alternative);
+		String metadata = feedbackFingerprint(alternative);
 		String structuralKey = MemoExpr.logicalKey(alternative, inputs, metadata, physicalRequirements,
 				semanticRequirements);
-		if (group.containsExpressionKey(structuralKey)) {
-			mergeExpressionProofsAndScope(group, structuralKey, proofs, routeScope, true, joinRouteOnly);
+		MemoLogicalExpressionKey logicalKey = logicalKeyFactory.key(alternative, inputs, group.executionDomain(),
+				semanticRequirements);
+		recordLegacyKey(alternative, inputs, metadata, physicalRequirements, semanticRequirements,
+				group.executionDomain(), logicalKey);
+		Integer mappedGroupId = groupByLogicalExpression.get(logicalKey);
+		MemoLogicalRouteKey routeKey = MemoLogicalRouteKey.of(logicalKey, alternative, inputs, physicalRequirements,
+				semanticRequirements);
+		MemoLogicalDerivationKey derivationKey = MemoLogicalDerivationKey.of(routeKey, proofs);
+		if (group.containsLogicalExpressionDerivation(derivationKey)) {
+			mergeLogicalExpressionScopeAndOrigin(group, derivationKey, routeScope, joinRouteOnly);
+			return Optional.empty();
+		}
+		MemoExpr retainedRoute = logicalExpressionForRoute(group, routeKey, routeScope);
+		if (retainedRoute != null) {
+			group.recordLogicalExpressionDerivation(derivationKey);
+			mergeLogicalExpressionMetadata(group, retainedRoute, derivationKey.proofLineage(), joinRouteOnly);
 			return Optional.empty();
 		}
 		TupleExpr memoTemplate = memoOwnedTemplate(alternative, false);
 		MemoExpr expression = MemoExpr.logical(nextExpressionId(), groupId, memoTemplate, inputs, metadata,
-				proofs, physicalRequirements, semanticRequirements, structuralKey);
-		if (!group.addExpression(expression, structuralKey, !joinRouteOnly)) {
+				derivationKey.proofLineage(), physicalRequirements, semanticRequirements, structuralKey);
+		if (!group.addLogicalExpression(expression, derivationKey, !joinRouteOnly)) {
 			return Optional.empty();
 		}
-		registerExpression(expression, routeScope, joinRouteOnly);
+		registerExpression(expression, logicalKey, routeScope, joinRouteOnly);
 		BindingShape previousShape = group.bindingShape();
 		BindingShape alternativeShape = BindingShape.from(alternative, universe);
 		EnumSet<RuleDescriptor.MemoFact> changedFacts = group.mergeBindingShape(alternativeShape)
@@ -297,20 +425,212 @@ public final class Memo {
 		if (group.mergeLeoFeedback(memoFeedback(alternative, group.bindingShape()))) {
 			changedFacts.add(RuleDescriptor.MemoFact.COST_ESTIMATE);
 		}
+		changedFacts.addAll(group.mergeOutputBindingProfile(logicalOutputBindingFacts(alternative, inputs)));
 		if (!changedFacts.isEmpty()) {
 			recordFactsChanged(group, expression.id(), changedFacts);
 		}
-		groupByLogicalExpression.putIfAbsent(domainKey(group.executionDomain(), structuralKey), groupId);
-		identityGroups(group.executionDomain()).put(memoTemplate, groupId);
+		if (mappedGroupId == null || mappedGroupId == groupId) {
+			publishLogicalGroup(logicalKey, groupId);
+		} else {
+			registerLogicalAlias(logicalKey, mappedGroupId, groupId);
+		}
 		return Optional.of(expression);
 	}
 
+	/**
+	 * Returns whether adding a logical expression to {@code targetGroupId} with the supplied direct inputs would make
+	 * the logical memo graph cyclic. Physical enforcer self-inputs are intentionally outside this check.
+	 */
+	public boolean wouldIntroduceLogicalDependencyCycle(int targetGroupId, List<Integer> inputGroupIds) {
+		group(targetGroupId);
+		List<Integer> inputs = inputGroupIds == null ? List.of() : inputGroupIds;
+		if (inputs.isEmpty()) {
+			return false;
+		}
+		BitSet visited = new BitSet(groups.size());
+		ArrayDeque<Integer> pending = new ArrayDeque<>(inputs.size());
+		for (Integer inputGroupId : inputs) {
+			if (inputGroupId == null || inputGroupId < 0 || inputGroupId >= groups.size()) {
+				throw new IllegalArgumentException("Unknown memo input group: " + inputGroupId);
+			}
+			pending.addLast(inputGroupId);
+		}
+		while (!pending.isEmpty()) {
+			int groupId = pending.removeLast();
+			if (groupId == targetGroupId) {
+				return true;
+			}
+			if (visited.get(groupId)) {
+				continue;
+			}
+			visited.set(groupId);
+			for (MemoExpr expression : group(groupId).expressions()) {
+				if (!expression.logical()) {
+					continue;
+				}
+				for (Integer childGroupId : expression.inputGroupIds()) {
+					pending.addLast(childGroupId);
+				}
+			}
+		}
+		return false;
+	}
+
+	private PreparedLogicalInputs prepareLogicalInputRecipes(int targetGroupId, TupleExpr alternative,
+			List<LogicalInputRecipe> inputRecipes) {
+		Objects.requireNonNull(alternative, "alternative");
+		MemoGroup targetGroup = group(targetGroupId);
+		List<LogicalInputRecipe> recipes = inputRecipes == null || inputRecipes.isEmpty()
+				? List.of()
+				: List.copyOf(inputRecipes);
+		List<MemoInputLayout.Slot> rootSlots = MemoInputLayout.slots(alternative);
+		if (rootSlots.size() != recipes.size()) {
+			return PreparedLogicalInputs.unsupported("logical input recipe count " + recipes.size()
+					+ " does not match root input count " + rootSlots.size());
+		}
+		LogicalRecipePreparation preparation = new LogicalRecipePreparation(targetGroupId);
+		List<Integer> rootInputGroupIds = new ArrayList<>(recipes.size());
+		for (int index = 0; index < recipes.size(); index++) {
+			MemoExecutionDomain expectedDomain = childDomain(targetGroup.executionDomain(), rootSlots.get(index));
+			ResolvedLogicalRecipe resolved = preparation.resolve(recipes.get(index), expectedDomain);
+			if (!resolved.supported()) {
+				return PreparedLogicalInputs.unsupported(resolved.failureReason());
+			}
+			if (resolved.reachesTarget()) {
+				return PreparedLogicalInputs.unsupported(
+						"compiled rewrite would introduce a logical dependency cycle at group " + targetGroupId);
+			}
+			rootInputGroupIds.add(resolved.groupId());
+		}
+		return PreparedLogicalInputs.supported(rootInputGroupIds, preparation.newGroups);
+	}
+
+	private final class LogicalRecipePreparation {
+		private final int targetGroupId;
+		private final IdentityHashMap<LogicalInputRecipe, ResolvedLogicalRecipe> resolvedByRecipe = new IdentityHashMap<>();
+		private final Map<MemoLogicalExpressionKey, ResolvedLogicalRecipe> resolvedByTypedKey = new HashMap<>();
+		private final List<PreparedLogicalGroup> newGroups = new ArrayList<>();
+
+		private LogicalRecipePreparation(int targetGroupId) {
+			this.targetGroupId = targetGroupId;
+		}
+
+		private ResolvedLogicalRecipe resolve(LogicalInputRecipe recipe, MemoExecutionDomain expectedDomain) {
+			if (recipe == null) {
+				return ResolvedLogicalRecipe.unsupported("logical input recipe must not be null");
+			}
+			ResolvedLogicalRecipe resolved = resolvedByRecipe.get(recipe);
+			if (resolved != null) {
+				return resolved.executionDomain() == expectedDomain
+						? resolved
+						: ResolvedLogicalRecipe.unsupported("one emitted helper is reused across incompatible domains");
+			}
+			if (recipe instanceof LogicalInputRecipe.ExistingGroup existing) {
+				if (existing.groupId() >= groups.size()) {
+					return ResolvedLogicalRecipe.unsupported("unknown captured memo group " + existing.groupId());
+				}
+				MemoExecutionDomain actualDomain = group(existing.groupId()).executionDomain();
+				if (actualDomain != expectedDomain) {
+					return ResolvedLogicalRecipe.unsupported("captured memo input domain mismatch: expected="
+							+ expectedDomain + ", actual=" + actualDomain);
+				}
+				resolved = ResolvedLogicalRecipe.existing(existing.groupId(), actualDomain,
+						wouldIntroduceLogicalDependencyCycle(targetGroupId, List.of(existing.groupId())));
+				resolvedByRecipe.put(recipe, resolved);
+				return resolved;
+			}
+
+			LogicalInputRecipe.NewGroup emitted = (LogicalInputRecipe.NewGroup) recipe;
+			TupleExpr template = emitted.template();
+			List<MemoInputLayout.Slot> slots = MemoInputLayout.slots(template);
+			if (slots.size() != emitted.inputs().size()) {
+				return ResolvedLogicalRecipe.unsupported("emitted helper input count " + emitted.inputs().size()
+						+ " does not match typed slot count " + slots.size() + " for "
+						+ template.getClass().getSimpleName());
+			}
+			List<Integer> inputGroupIds = new ArrayList<>(slots.size());
+			boolean reachesTarget = false;
+			for (int index = 0; index < slots.size(); index++) {
+				ResolvedLogicalRecipe child = resolve(emitted.inputs().get(index), childDomain(expectedDomain,
+						slots.get(index)));
+				if (!child.supported()) {
+					return child;
+				}
+				inputGroupIds.add(child.groupId());
+				reachesTarget |= child.reachesTarget();
+			}
+			List<SemanticScope> semanticRequirements = MemoInputLayout.semanticRequirements(template);
+			MemoLogicalExpressionKey logicalKey = logicalKeyFactory.key(template, inputGroupIds, expectedDomain,
+					semanticRequirements);
+			if (logicalKey.operatorKey().opaqueOccurrenceId() != LogicalOperatorKey.NO_OPAQUE_OCCURRENCE) {
+				return ResolvedLogicalRecipe.unsupported(
+						"a fresh opaque/native helper has no authoritative capture occurrence");
+			}
+			ResolvedLogicalRecipe staged = resolvedByTypedKey.get(logicalKey);
+			if (staged != null) {
+				resolvedByRecipe.put(recipe, staged);
+				return staged;
+			}
+			LogicalGroupMembership membership = logicalGroupMembership(logicalKey);
+			if (!membership.groupIds().isEmpty()) {
+				int existingGroupId = cycleSafeLogicalGroup(membership);
+				resolved = ResolvedLogicalRecipe.existing(existingGroupId, expectedDomain,
+						wouldIntroduceLogicalDependencyCycle(targetGroupId, List.of(existingGroupId)));
+				resolvedByRecipe.put(recipe, resolved);
+				resolvedByTypedKey.put(logicalKey, resolved);
+				return resolved;
+			}
+			int plannedGroupId = groups.size() + newGroups.size();
+			int plannedExpressionId = expressionsById.size() + newGroups.size();
+			String metadata = feedbackFingerprint(template);
+			PreparedLogicalGroup planned = prepareLogicalGroup(plannedGroupId, plannedExpressionId, template,
+					List.copyOf(inputGroupIds), metadata, logicalKey, List.of(), semanticRequirements, expectedDomain,
+					false);
+			newGroups.add(planned);
+			resolved = ResolvedLogicalRecipe.planned(plannedGroupId, expectedDomain, reachesTarget);
+			resolvedByRecipe.put(recipe, resolved);
+			resolvedByTypedKey.put(logicalKey, resolved);
+			return resolved;
+		}
+
+		private int cycleSafeLogicalGroup(LogicalGroupMembership membership) {
+			int canonicalGroupId = membership.canonicalGroupId();
+			if (canonicalGroupId >= 0
+					&& !wouldIntroduceLogicalDependencyCycle(targetGroupId, List.of(canonicalGroupId))) {
+				return canonicalGroupId;
+			}
+			for (int groupId : membership.groupIds()) {
+				if (groupId != canonicalGroupId
+						&& !wouldIntroduceLogicalDependencyCycle(targetGroupId, List.of(groupId))) {
+					return groupId;
+				}
+			}
+			return canonicalGroupId >= 0 ? canonicalGroupId : membership.groupIds().getFirst();
+		}
+	}
+
+	private LogicalGroupMembership logicalGroupMembership(MemoLogicalExpressionKey logicalKey) {
+		TreeSet<Integer> groupIds = new TreeSet<>();
+		Integer canonical = groupByLogicalExpression.get(logicalKey);
+		if (canonical != null) {
+			groupIds.add(canonical);
+		}
+		Set<Integer> aliases = aliasedGroupsByLogicalExpression.get(logicalKey);
+		if (aliases != null) {
+			groupIds.addAll(aliases);
+		}
+		return new LogicalGroupMembership(canonical == null ? -1 : canonical, List.copyOf(groupIds));
+	}
+
 	private void requireEquivalentPossibleBindings(MemoGroup group, TupleExpr alternative) {
-		Set<String> expected = universe.names(group.bindingShape().possible());
-		Set<String> actual = StreamBindingSchema.from(alternative).possible();
+		BindingUniverse validationUniverse = universe.validationOverlay();
+		BindingMask expected = group.bindingShape().possible();
+		BindingMask actual = BindingShape.from(alternative, validationUniverse).possible();
 		if (!actual.equals(expected)) {
-			throw new IllegalArgumentException("Logical alternative possible bindings " + new TreeSet<>(actual)
-					+ " do not match memo group " + group.id() + " possible bindings " + new TreeSet<>(expected));
+			throw new IllegalArgumentException("Logical alternative possible bindings "
+					+ new TreeSet<>(validationUniverse.names(actual))
+					+ " do not match memo group " + group.id() + " possible bindings "
+					+ new TreeSet<>(universe.names(expected)));
 		}
 	}
 
@@ -329,50 +649,157 @@ public final class Memo {
 				.toList();
 	}
 
-	private void mergeExpressionProofsAndScope(MemoGroup group, String structuralKey,
-			List<RuleProof> additionalProofs, SemanticScope candidateScope, boolean logical,
-			boolean candidateJoinRouteOnly) {
+	/**
+	 * A canonical expression owns only the proofs that created that route. A later duplicate derivation remains visible
+	 * through rule-application telemetry, but may only broaden the route's admissibility or origin here.
+	 */
+	private void mergeLogicalExpressionScopeAndOrigin(MemoGroup group, MemoLogicalDerivationKey derivationKey,
+			SemanticScope candidateScope, boolean candidateJoinRouteOnly) {
 		for (MemoExpr expression : group.mutableExpressionsView()) {
-			if (expression.logical() != logical || !Objects.equals(structuralKey, expression.structuralKey())) {
+			if (!expression.logical()
+					|| !Objects.equals(derivationKey,
+							MemoLogicalDerivationKey.of(MemoLogicalRouteKey.of(logicalKey(expression), expression),
+									expression.proofs()))) {
 				continue;
 			}
-			LinkedHashSet<RuleProof> merged = new LinkedHashSet<>(expression.proofs());
-			boolean routeOnlyBefore = logical && isJoinRouteOnly(expression);
+			boolean routeOnlyBefore = isJoinRouteOnly(expression);
 			boolean routeOnlyAfter = routeOnlyBefore && candidateJoinRouteOnly;
 			boolean originChanged = routeOnlyBefore != routeOnlyAfter;
-			boolean proofsChanged = additionalProofs != null && merged.addAll(additionalProofs);
 			SemanticScope currentScope = semanticScope(expression);
 			SemanticScope mergedScope = currentScope.broadenedWith(candidateScope);
 			boolean admissibilityChanged = mergedScope != currentScope;
-			if (!proofsChanged && !admissibilityChanged && !originChanged) {
+			if (!admissibilityChanged && !originChanged) {
 				return;
 			}
-			MemoExpr replacement = expression;
-			if (proofsChanged) {
-				replacement = expression.withProofs(List.copyOf(merged));
-				group.replaceExpression(replacement);
-				expressionsById.set(replacement.id(), replacement);
-				replaceParentExpressionReferences(expression, replacement);
-			}
 			if (admissibilityChanged) {
-				semanticScopesByExpressionId.set(replacement.id(), mergedScope);
+				semanticScopesByExpressionId.set(expression.id(), mergedScope);
 			}
 			if (originChanged) {
-				joinRouteOnlyExpressions.clear(replacement.id());
+				joinRouteOnlyExpressions.clear(expression.id());
 			}
-			if (logical && (admissibilityChanged || routeOnlyBefore != routeOnlyAfter)) {
+			if (admissibilityChanged || routeOnlyBefore != routeOnlyAfter) {
 				group.joinSearchSpaceChanged();
 			}
 			group.expressionMetadataChanged();
 			group.dependencyChanged(++dependencyChangeToken);
-			if (proofsChanged) {
-				recordChange(MemoChange.Kind.PROOFS_CHANGED, group, replacement.id());
-			}
 			if (admissibilityChanged) {
-				recordChange(MemoChange.Kind.ADMISSIBILITY_CHANGED, group, replacement.id());
+				recordChange(MemoChange.Kind.ADMISSIBILITY_CHANGED, group, expression.id());
 			}
 			invalidateDependentParents(group.id());
 			return;
+		}
+	}
+
+	private MemoExpr logicalExpressionForRoute(MemoGroup group, MemoLogicalRouteKey routeKey,
+			SemanticScope routeScope) {
+		for (MemoExpr expression : group.mutableExpressionsView()) {
+			if (expression.logical()
+					&& semanticScope(expression) == routeScope
+					&& routeKey.equals(MemoLogicalRouteKey.of(logicalKey(expression), expression))) {
+				return expression;
+			}
+		}
+		return null;
+	}
+
+	private MemoExpr mergeLogicalExpressionMetadata(MemoGroup group, MemoExpr expression,
+			List<RuleProof> candidateProofs, boolean candidateJoinRouteOnly) {
+		ArrayList<RuleProof> combinedProofs = new ArrayList<>(expression.proofs().size()
+				+ (candidateProofs == null ? 0 : candidateProofs.size()));
+		combinedProofs.addAll(expression.proofs());
+		if (candidateProofs != null) {
+			combinedProofs.addAll(candidateProofs);
+		}
+		List<RuleProof> mergedProofs = MemoProofLineage.normalize(combinedProofs);
+		boolean proofsChanged = !mergedProofs.equals(expression.proofs());
+		MemoExpr retained = expression;
+		if (proofsChanged) {
+			retained = expression.withProofs(mergedProofs);
+			group.replaceExpression(retained);
+			expressionsById.set(retained.id(), retained);
+			replaceParentExpressionReferences(expression, retained);
+			refreshWinnerExpressionProofs(expression, retained);
+			refreshPhysicalImplementationProofs(group, retained);
+		}
+		boolean routeOnlyBefore = isJoinRouteOnly(expression);
+		boolean routeOnlyAfter = routeOnlyBefore && candidateJoinRouteOnly;
+		boolean originChanged = routeOnlyBefore != routeOnlyAfter;
+		if (originChanged) {
+			joinRouteOnlyExpressions.clear(retained.id());
+			group.joinSearchSpaceChanged();
+		}
+		if (!proofsChanged && !originChanged) {
+			return retained;
+		}
+		group.expressionMetadataChanged();
+		group.dependencyChanged(++dependencyChangeToken);
+		if (proofsChanged) {
+			recordChange(MemoChange.Kind.PROOFS_CHANGED, group, retained.id());
+		}
+		invalidateDependentParents(group.id());
+		return retained;
+	}
+
+	/**
+	 * Coalesces one exact executable route while retaining every route-local certificate. Physical identity and cost
+	 * remain proof-independent; normalization makes metadata independent of registration order.
+	 */
+	private MemoExpr mergePhysicalExpressionMetadata(MemoGroup group, MemoExpr candidate,
+			SemanticScope candidateScope) {
+		for (MemoExpr expression : group.mutableExpressionsView()) {
+			if (expression.logical() || !Objects.equals(candidate.structuralKey(), expression.structuralKey())) {
+				continue;
+			}
+			ArrayList<RuleProof> combinedProofs = new ArrayList<>(expression.proofs().size()
+					+ candidate.proofs().size());
+			combinedProofs.addAll(expression.proofs());
+			combinedProofs.addAll(candidate.proofs());
+			List<RuleProof> mergedProofs = MemoProofLineage.normalize(combinedProofs);
+			boolean proofsChanged = !mergedProofs.equals(expression.proofs());
+			MemoExpr retained = expression;
+			if (proofsChanged) {
+				retained = expression.withProofs(mergedProofs);
+				group.replaceExpression(retained);
+				expressionsById.set(retained.id(), retained);
+				replaceParentExpressionReferences(expression, retained);
+				refreshWinnerExpressionProofs(expression, retained);
+			}
+			SemanticScope currentScope = semanticScope(expression);
+			SemanticScope mergedScope = currentScope.broadenedWith(candidateScope);
+			boolean admissibilityChanged = mergedScope != currentScope;
+			if (!proofsChanged && !admissibilityChanged) {
+				return retained;
+			}
+			if (admissibilityChanged) {
+				semanticScopesByExpressionId.set(retained.id(), mergedScope);
+			}
+			group.expressionMetadataChanged();
+			group.dependencyChanged(++dependencyChangeToken);
+			if (proofsChanged) {
+				recordChange(MemoChange.Kind.PROOFS_CHANGED, group, retained.id());
+			}
+			if (admissibilityChanged) {
+				recordChange(MemoChange.Kind.ADMISSIBILITY_CHANGED, group, retained.id());
+			}
+			invalidateDependentParents(group.id());
+			return retained;
+		}
+		throw new IllegalStateException("Physical expression key was retained without an expression in group "
+				+ group.id());
+	}
+
+	private void refreshPhysicalImplementationProofs(MemoGroup group, MemoExpr logical) {
+		if (logical.proofs().isEmpty()) {
+			return;
+		}
+		List<MemoExpr> implementations = group.mutableExpressionsView()
+				.stream()
+				.filter(MemoExpr::physical)
+				.filter(physical -> isPhysicalImplementationOf(physical, logical))
+				.filter(physical -> !physical.proofs().containsAll(logical.proofs()))
+				.toList();
+		for (MemoExpr physical : implementations) {
+			mergePhysicalExpressionMetadata(group, physical.withProofs(logical.proofs()), semanticScope(physical));
 		}
 	}
 
@@ -383,6 +810,22 @@ public final class Memo {
 				if (parents.get(index).id() == original.id()) {
 					parents.set(index, replacement);
 				}
+			}
+		}
+	}
+
+	private void refreshWinnerExpressionProofs(MemoExpr original, MemoExpr replacement) {
+		ArrayDeque<Integer> pendingGroups = new ArrayDeque<>();
+		Set<Integer> visitedGroups = new LinkedHashSet<>();
+		pendingGroups.addLast(original.groupId());
+		while (!pendingGroups.isEmpty()) {
+			int groupId = pendingGroups.removeFirst();
+			if (!visitedGroups.add(groupId)) {
+				continue;
+			}
+			group(groupId).refreshWinnerExpressionProofs(original, replacement);
+			for (MemoExpr parentExpression : parentExpressionsByChildGroup.get(groupId)) {
+				pendingGroups.addLast(parentExpression.groupId());
 			}
 		}
 	}
@@ -402,9 +845,14 @@ public final class Memo {
 	/** Registers an existing memo group as the canonical group for one predicate-aware join state. */
 	public void registerJoinStateGroup(int ownerGroupId, JoinRegion.Identity regionIdentity, JoinState state,
 			int groupId) {
+		registerJoinStateGroupForRoute(ownerGroupId, regionIdentity, JoinRouteScope.unscoped(), state, groupId);
+	}
+
+	void registerJoinStateGroupForRoute(int ownerGroupId, JoinRegion.Identity regionIdentity, JoinRouteScope routeScope,
+			JoinState state, int groupId) {
 		group(ownerGroupId);
 		group(groupId);
-		JoinStateKey stateKey = new JoinStateKey(ownerGroupId, regionIdentity, state);
+		JoinStateKey stateKey = new JoinStateKey(ownerGroupId, regionIdentity, routeScope, state);
 		Integer existing = joinStateGroups.putIfAbsent(stateKey, groupId);
 		if (existing != null && existing != groupId) {
 			throw new IllegalStateException("join state " + state + " under root-region owner group " + ownerGroupId
@@ -415,25 +863,33 @@ public final class Memo {
 	/** Creates or returns the query-local equivalence group for one predicate-aware join state. */
 	public int ensureJoinStateGroup(int ownerGroupId, JoinRegion.Identity regionIdentity, JoinState state,
 			TupleExpr representative, List<Integer> inputGroupIds, List<RuleProof> proofs) {
+		return ensureJoinStateGroupForRoute(ownerGroupId, regionIdentity, JoinRouteScope.unscoped(), state,
+				representative,
+				inputGroupIds, proofs);
+	}
+
+	int ensureJoinStateGroupForRoute(int ownerGroupId, JoinRegion.Identity regionIdentity, JoinRouteScope routeScope,
+			JoinState state, TupleExpr representative, List<Integer> inputGroupIds, List<RuleProof> proofs) {
 		group(ownerGroupId);
 		Objects.requireNonNull(representative, "representative");
-		JoinStateKey stateKey = new JoinStateKey(ownerGroupId, regionIdentity, state);
+		JoinStateKey stateKey = new JoinStateKey(ownerGroupId, regionIdentity, routeScope, state);
 		Integer cached = joinStateGroups.get(stateKey);
 		if (cached != null) {
 			return cached;
 		}
 		List<Integer> inputs = validateInputGroups(representative, inputGroupIds, MemoExecutionDomain.LOCAL);
-		String metadata = localMetadata(representative);
+		String metadata = feedbackFingerprint(representative);
 		List<SemanticScope> inputSemanticRequirements = MemoInputLayout.semanticRequirements(representative);
 		String structuralKey = MemoExpr.logicalKey(representative, inputs, metadata, inputSemanticRequirements);
-		String logicalKey = domainKey(MemoExecutionDomain.LOCAL, structuralKey);
+		MemoLogicalExpressionKey logicalKey = logicalKeyFactory.key(representative, inputs,
+				MemoExecutionDomain.LOCAL, inputSemanticRequirements);
+		recordLegacyKey(MemoExecutionDomain.LOCAL, structuralKey, logicalKey);
 		Integer existingGroup = groupByLogicalExpression.get(logicalKey);
 		int groupId = existingGroup == null
-				? createLogicalGroup(representative, inputs, metadata, logicalKey, proofs, inputSemanticRequirements, true,
+				? createLogicalGroup(representative, inputs, metadata, logicalKey, proofs, inputSemanticRequirements,
 						MemoExecutionDomain.LOCAL, true)
 				: existingGroup;
 		joinStateGroups.put(stateKey, groupId);
-		identityGroups(MemoExecutionDomain.LOCAL).put(representative, groupId);
 		return groupId;
 	}
 
@@ -445,14 +901,31 @@ public final class Memo {
 
 	/** Returns a previously registered predicate-aware join-state group. */
 	public OptionalInt joinStateGroup(int ownerGroupId, JoinRegion.Identity regionIdentity, JoinState state) {
+		return joinStateGroupForRoute(ownerGroupId, regionIdentity, JoinRouteScope.unscoped(), state);
+	}
+
+	OptionalInt joinStateGroupForRoute(int ownerGroupId, JoinRegion.Identity regionIdentity, JoinRouteScope routeScope,
+			JoinState state) {
 		group(ownerGroupId);
-		Integer groupId = joinStateGroups.get(new JoinStateKey(ownerGroupId, regionIdentity, state));
+		Integer groupId = joinStateGroups
+				.get(new JoinStateKey(ownerGroupId, regionIdentity, routeScope, state));
 		return groupId == null ? OptionalInt.empty() : OptionalInt.of(groupId);
 	}
 
-	private int createLogicalGroup(TupleExpr tupleExpr, List<Integer> inputs, String metadata, String logicalKey,
-			List<RuleProof> proofs, List<SemanticScope> inputSemanticRequirements, boolean cacheNodeIdentity,
+	private int createLogicalGroup(TupleExpr tupleExpr, List<Integer> inputs, String metadata,
+			MemoLogicalExpressionKey logicalKey,
+			List<RuleProof> proofs, List<SemanticScope> inputSemanticRequirements,
 			MemoExecutionDomain executionDomain, boolean joinRouteOnly) {
+		PreparedLogicalGroup prepared = prepareLogicalGroup(groups.size(), nextExpressionId(), tupleExpr, inputs,
+				metadata, logicalKey, proofs, inputSemanticRequirements, executionDomain, joinRouteOnly);
+		commitPreparedLogicalGroup(prepared);
+		return prepared.groupId();
+	}
+
+	private PreparedLogicalGroup prepareLogicalGroup(int groupId, int expressionId, TupleExpr tupleExpr,
+			List<Integer> inputs, String metadata, MemoLogicalExpressionKey logicalKey, List<RuleProof> proofs,
+			List<SemanticScope> inputSemanticRequirements, MemoExecutionDomain executionDomain,
+			boolean joinRouteOnly) {
 		LogicalProperties properties = executionDomain == MemoExecutionDomain.LOCAL
 				? costModel.logicalProperties(tupleExpr)
 				: LogicalProperties.from(tupleExpr, 1.0d,
@@ -461,29 +934,110 @@ public final class Memo {
 		LeoMemoFeedback feedback = executionDomain == MemoExecutionDomain.LOCAL
 				? memoFeedback(tupleExpr, bindingShape)
 				: LeoMemoFeedback.empty();
-		int groupId = groups.size();
 		MemoGroup group = new MemoGroup(groupId, properties, bindingShape, feedback, executionDomain);
-		groups.add(group);
+		List<SemanticScope> semanticRequirements = MemoInputLayout.normalizeSemanticRequirements(inputs.size(),
+				inputSemanticRequirements);
+		String structuralKey = MemoExpr.logicalKey(tupleExpr, inputs, metadata, semanticRequirements);
+		TupleExpr memoTemplate = memoOwnedTemplate(tupleExpr, false);
+		BindingShape expressionBindingShape = BindingShape.from(memoTemplate, universe);
+		MemoLogicalDerivationKey derivationKey = MemoLogicalDerivationKey.of(
+				MemoLogicalRouteKey.of(logicalKey, tupleExpr, inputs, List.of(), semanticRequirements), proofs);
+		MemoExpr expression = MemoExpr.logical(expressionId, groupId, memoTemplate, inputs, metadata,
+				derivationKey.proofLineage(),
+				semanticRequirements, structuralKey);
+		if (!group.addLogicalExpression(expression, derivationKey, !joinRouteOnly)) {
+			throw new IllegalStateException("Initial memo expression was rejected for group " + groupId);
+		}
+		return new PreparedLogicalGroup(groupId, tupleExpr, List.copyOf(inputs), metadata, logicalKey,
+				semanticRequirements, executionDomain, group, expression, expressionBindingShape,
+				SemanticScope.requirementOf(proofs), joinRouteOnly);
+	}
+
+	private void commitPreparedLogicalGroup(PreparedLogicalGroup prepared) {
+		if (groups.size() != prepared.groupId()) {
+			throw new IllegalStateException("Logical group reservation changed before commit: expected "
+					+ prepared.groupId() + ", next=" + groups.size());
+		}
+		if (expressionsById.size() != prepared.expression().id()) {
+			throw new IllegalStateException("Logical expression reservation changed before commit: expected "
+					+ prepared.expression().id() + ", next=" + expressionsById.size());
+		}
+		groups.add(prepared.group());
 		parentExpressionsByChildGroup.add(new ArrayList<>());
 		pendingFactChangesByGroup.add(null);
 		int[] groupExpressionIds = new int[MemoChange.Kind.values().length];
 		Arrays.fill(groupExpressionIds, MemoChange.NO_EXPRESSION_ID);
 		pendingGroupExpressionIds.add(groupExpressionIds);
-		List<SemanticScope> semanticRequirements = MemoInputLayout.normalizeSemanticRequirements(inputs.size(),
-				inputSemanticRequirements);
-		String structuralKey = MemoExpr.logicalKey(tupleExpr, inputs, metadata, semanticRequirements);
-		TupleExpr memoTemplate = memoOwnedTemplate(tupleExpr, false);
-		MemoExpr expression = MemoExpr.logical(nextExpressionId(), groupId, memoTemplate, inputs, metadata, proofs,
-				semanticRequirements, structuralKey);
-		if (!group.addExpression(expression, structuralKey, !joinRouteOnly)) {
-			throw new IllegalStateException("Initial memo expression was rejected for group " + groupId);
+		prepared.group().mergeOutputBindingProfile(
+				logicalOutputBindingFacts(prepared.template(), prepared.inputGroupIds()));
+		registerExpression(prepared.expression(), prepared.logicalKey(), prepared.semanticScope(),
+				prepared.joinRouteOnly(), prepared.expressionBindingShape());
+		publishLogicalGroup(prepared.logicalKey(), prepared.groupId());
+	}
+
+	private PreparedLogicalAlternative prepareLogicalAlternative(int groupId, TupleExpr alternative,
+			List<Integer> inputs, List<RuleProof> proofs, SemanticScope semanticScope,
+			List<PhysicalProperties> physicalRequirements, List<SemanticScope> semanticRequirements,
+			List<PreparedLogicalGroup> newGroups, MemoLogicalExpressionKey logicalKey,
+			MemoLogicalDerivationKey derivationKey) {
+		MemoGroup targetGroup = group(groupId);
+		String metadata = feedbackFingerprint(alternative);
+		String structuralKey = MemoExpr.logicalKey(alternative, inputs, metadata, physicalRequirements,
+				semanticRequirements);
+		TupleExpr memoTemplate = memoOwnedTemplate(alternative, false);
+		BindingShape expressionBindingShape = BindingShape.from(memoTemplate, universe);
+		BindingShape alternativeBindingShape = BindingShape.from(alternative, universe);
+		LeoMemoFeedback feedback = memoFeedback(alternative, targetGroup.bindingShape());
+		int expressionId = expressionsById.size() + newGroups.size();
+		MemoExpr expression = MemoExpr.logical(expressionId, groupId, memoTemplate, inputs, metadata,
+				derivationKey.proofLineage(), physicalRequirements, semanticRequirements, structuralKey);
+		Integer mappedGroupId = groupByLogicalExpression.get(logicalKey);
+		if (mappedGroupId == null) {
+			for (PreparedLogicalGroup planned : newGroups) {
+				if (planned.logicalKey().equals(logicalKey)) {
+					mappedGroupId = planned.groupId();
+					break;
+				}
+			}
 		}
-		registerExpression(expression, SemanticScope.requirementOf(proofs), joinRouteOnly);
-		groupByLogicalExpression.put(logicalKey, groupId);
-		if (cacheNodeIdentity) {
-			identityGroups(executionDomain).put(tupleExpr, groupId);
+		return new PreparedLogicalAlternative(targetGroup, expression, logicalKey, derivationKey,
+				expressionBindingShape, alternativeBindingShape, feedback,
+				semanticScope == null ? SemanticScope.BAG : semanticScope, mappedGroupId);
+	}
+
+	private MemoExpr commitPreparedLogicalAlternative(PreparedLogicalAlternative prepared) {
+		MemoGroup targetGroup = prepared.targetGroup();
+		MemoExpr expression = prepared.expression();
+		if (expressionsById.size() != expression.id()) {
+			throw new IllegalStateException("Logical root expression reservation changed before commit: expected "
+					+ expression.id() + ", next=" + expressionsById.size());
 		}
-		return groupId;
+		if (targetGroup.containsLogicalExpressionDerivation(prepared.derivationKey())
+				|| !targetGroup.addLogicalExpression(expression, prepared.derivationKey(), true)) {
+			throw new IllegalStateException("A preflighted logical rewrite was rejected after helper commit");
+		}
+		registerExpression(expression, prepared.logicalKey(), prepared.semanticScope(), false,
+				prepared.expressionBindingShape());
+		BindingShape previousShape = targetGroup.bindingShape();
+		EnumSet<RuleDescriptor.MemoFact> changedFacts = targetGroup.mergeBindingShape(
+				prepared.alternativeBindingShape())
+						? bindingShapeChanges(previousShape, targetGroup.bindingShape())
+						: EnumSet.noneOf(RuleDescriptor.MemoFact.class);
+		if (targetGroup.mergeLeoFeedback(prepared.feedback())) {
+			changedFacts.add(RuleDescriptor.MemoFact.COST_ESTIMATE);
+		}
+		changedFacts.addAll(targetGroup.mergeOutputBindingProfile(
+				logicalOutputBindingFacts(expression.tupleExpr(), expression.inputGroupIds())));
+		if (!changedFacts.isEmpty()) {
+			recordFactsChanged(targetGroup, expression.id(), changedFacts);
+		}
+		Integer mappedGroupId = prepared.mappedGroupId();
+		if (mappedGroupId == null || mappedGroupId == targetGroup.id()) {
+			publishLogicalGroup(prepared.logicalKey(), targetGroup.id());
+		} else {
+			registerLogicalAlias(prepared.logicalKey(), mappedGroupId, targetGroup.id());
+		}
+		return expression;
 	}
 
 	private List<Integer> validateInputGroups(TupleExpr tupleExpr, List<Integer> inputGroupIds,
@@ -568,11 +1122,33 @@ public final class Memo {
 			List<PhysicalProperties> inputRequirements, List<SemanticScope> inputSemanticRequirements, String metadata,
 			RuleKind kind, CostVector ruleCost, List<RuleProof> proofs, EstimateSnapshot estimate,
 			boolean atomicPhysical, SemanticScope semanticScope, boolean publishContextFreeOutputFacts) {
+		return retainPhysicalAlternative(groupId, alternative, delivered, inputRequirements, inputSemanticRequirements,
+				metadata, kind, ruleCost, proofs, estimate, atomicPhysical, semanticScope,
+				publishContextFreeOutputFacts)
+						.filter(PhysicalAlternativeInsertion::added)
+						.map(PhysicalAlternativeInsertion::retained);
+	}
+
+	Optional<PhysicalAlternativeInsertion> retainPhysicalAlternative(int groupId, TupleExpr alternative,
+			PhysicalProperties delivered, List<PhysicalProperties> inputRequirements,
+			List<SemanticScope> inputSemanticRequirements, String metadata, RuleKind kind, CostVector ruleCost,
+			List<RuleProof> proofs, EstimateSnapshot estimate, boolean atomicPhysical, SemanticScope semanticScope,
+			boolean publishContextFreeOutputFacts) {
+		return retainPhysicalAlternative(groupId, alternative, delivered, inputRequirements,
+				inputSemanticRequirements, Set.of(), metadata, kind, ruleCost, proofs, estimate, atomicPhysical,
+				semanticScope, publishContextFreeOutputFacts);
+	}
+
+	Optional<PhysicalAlternativeInsertion> retainPhysicalAlternative(int groupId, TupleExpr alternative,
+			PhysicalProperties delivered, List<PhysicalProperties> inputRequirements,
+			List<SemanticScope> inputSemanticRequirements, Set<Integer> locallyCostedInputIndexes, String metadata,
+			RuleKind kind, CostVector ruleCost, List<RuleProof> proofs, EstimateSnapshot estimate,
+			boolean atomicPhysical, SemanticScope semanticScope, boolean publishContextFreeOutputFacts) {
 		MemoExecutionDomain executionDomain = group(groupId).executionDomain();
-		List<Integer> inputs = atomicPhysical ? List.of() : internInputs(alternative, true, executionDomain);
-		return addPhysicalAlternativeWithResolvedInputs(groupId, alternative, inputs, delivered, inputRequirements,
-				inputSemanticRequirements, metadata, kind, ruleCost, proofs, estimate, atomicPhysical, semanticScope,
-				publishContextFreeOutputFacts);
+		List<Integer> inputs = atomicPhysical ? List.of() : internInputs(alternative, executionDomain);
+		return retainPhysicalAlternativeWithResolvedInputs(groupId, alternative, inputs, delivered, inputRequirements,
+				inputSemanticRequirements, locallyCostedInputIndexes, metadata, kind, ruleCost, proofs, estimate,
+				atomicPhysical, semanticScope, publishContextFreeOutputFacts);
 	}
 
 	Optional<MemoExpr> addPhysicalAlternativeWithInputs(int groupId, TupleExpr alternative,
@@ -580,21 +1156,46 @@ public final class Memo {
 			List<SemanticScope> inputSemanticRequirements, String metadata, RuleKind kind, CostVector ruleCost,
 			List<RuleProof> proofs, EstimateSnapshot estimate, boolean atomicPhysical, SemanticScope semanticScope,
 			boolean publishContextFreeOutputFacts) {
-		List<Integer> inputs = inputGroupIds == null || inputGroupIds.isEmpty() ? List.of() : List.copyOf(inputGroupIds);
+		return retainPhysicalAlternativeWithInputs(groupId, alternative, inputGroupIds, delivered, inputRequirements,
+				inputSemanticRequirements, metadata, kind, ruleCost, proofs, estimate, atomicPhysical, semanticScope,
+				publishContextFreeOutputFacts)
+						.filter(PhysicalAlternativeInsertion::added)
+						.map(PhysicalAlternativeInsertion::retained);
+	}
+
+	Optional<PhysicalAlternativeInsertion> retainPhysicalAlternativeWithInputs(int groupId, TupleExpr alternative,
+			List<Integer> inputGroupIds, PhysicalProperties delivered, List<PhysicalProperties> inputRequirements,
+			List<SemanticScope> inputSemanticRequirements, String metadata, RuleKind kind, CostVector ruleCost,
+			List<RuleProof> proofs, EstimateSnapshot estimate, boolean atomicPhysical, SemanticScope semanticScope,
+			boolean publishContextFreeOutputFacts) {
+		return retainPhysicalAlternativeWithInputs(groupId, alternative, inputGroupIds, delivered, inputRequirements,
+				inputSemanticRequirements, Set.of(), metadata, kind, ruleCost, proofs, estimate, atomicPhysical,
+				semanticScope, publishContextFreeOutputFacts);
+	}
+
+	Optional<PhysicalAlternativeInsertion> retainPhysicalAlternativeWithInputs(int groupId, TupleExpr alternative,
+			List<Integer> inputGroupIds, PhysicalProperties delivered, List<PhysicalProperties> inputRequirements,
+			List<SemanticScope> inputSemanticRequirements, Set<Integer> locallyCostedInputIndexes, String metadata,
+			RuleKind kind, CostVector ruleCost, List<RuleProof> proofs, EstimateSnapshot estimate,
+			boolean atomicPhysical, SemanticScope semanticScope, boolean publishContextFreeOutputFacts) {
+		List<Integer> inputs = inputGroupIds == null || inputGroupIds.isEmpty() ? List.of()
+				: List.copyOf(inputGroupIds);
 		int expectedInputs = atomicPhysical ? 0 : MemoInputLayout.slots(alternative).size();
 		if (inputs.size() != expectedInputs) {
 			throw new IllegalArgumentException("Physical input group count " + inputs.size()
 					+ " does not match input count " + expectedInputs + " for "
 					+ alternative.getClass().getSimpleName());
 		}
-		return addPhysicalAlternativeWithResolvedInputs(groupId, alternative, inputs, delivered, inputRequirements,
-				inputSemanticRequirements, metadata, kind, ruleCost, proofs, estimate, atomicPhysical, semanticScope,
-				publishContextFreeOutputFacts);
+		return retainPhysicalAlternativeWithResolvedInputs(groupId, alternative, inputs, delivered, inputRequirements,
+				inputSemanticRequirements, locallyCostedInputIndexes, metadata, kind, ruleCost, proofs, estimate,
+				atomicPhysical, semanticScope, publishContextFreeOutputFacts);
 	}
 
-	private Optional<MemoExpr> addPhysicalAlternativeWithResolvedInputs(int groupId, TupleExpr alternative,
+	private Optional<PhysicalAlternativeInsertion> retainPhysicalAlternativeWithResolvedInputs(int groupId,
+			TupleExpr alternative,
 			List<Integer> inputs, PhysicalProperties delivered, List<PhysicalProperties> inputRequirements,
-			List<SemanticScope> inputSemanticRequirements, String metadata, RuleKind kind, CostVector ruleCost,
+			List<SemanticScope> inputSemanticRequirements, Set<Integer> locallyCostedInputIndexes, String metadata,
+			RuleKind kind, CostVector ruleCost,
 			List<RuleProof> proofs, EstimateSnapshot estimate, boolean atomicPhysical, SemanticScope semanticScope,
 			boolean publishContextFreeOutputFacts) {
 		Objects.requireNonNull(alternative, "alternative");
@@ -611,6 +1212,9 @@ public final class Memo {
 		}
 		PhysicalProperties enrichedDelivered = enrichDeliveredBindingProfile(alternative, delivered)
 				.normalized(universe);
+		PhysicalProperties expressionDelivered = publishContextFreeOutputFacts
+				? enrichedDelivered.executionContract()
+				: enrichedDelivered;
 		TupleExpr memoTemplate = memoOwnedTemplate(alternative, atomicPhysical);
 		BindingProfile outputFacts = publishContextFreeOutputFacts
 				? enrichedDelivered.bindingProfile().statisticalFacts()
@@ -618,28 +1222,69 @@ public final class Memo {
 		List<PhysicalProperties> executableInputRequirements = inputRequirements == null
 				? List.of()
 				: inputRequirements.stream()
-						.map(requirement -> requirement == null ? PhysicalProperties.ANY : requirement.executionContract())
+						.map(requirement -> requirement == null ? PhysicalProperties.ANY
+								: requirement.executionContract())
 						.toList();
+		validatePhysicalSelfInputs(groupId, alternative, inputs, executableInputRequirements, normalizedKind);
 		List<SemanticScope> semanticRequirements = MemoInputLayout.normalizeSemanticRequirements(inputs.size(),
 				inputSemanticRequirements);
 		MemoExpr expression = MemoExpr.physical(nextExpressionId(), groupId, memoTemplate, inputs, metadata,
-				enrichedDelivered, executableInputRequirements, semanticRequirements, normalizedKind, ruleCost, proofs,
+				expressionDelivered, executableInputRequirements, semanticRequirements, normalizedKind, ruleCost,
+				proofs,
 				estimate,
-				atomicPhysical ? MemoExpr.ImplementationForm.ATOMIC : MemoExpr.ImplementationForm.TRANSPARENT);
-		boolean added = group.addExpression(expression);
+				atomicPhysical ? MemoExpr.ImplementationForm.ATOMIC : MemoExpr.ImplementationForm.TRANSPARENT,
+				locallyCostedInputIndexes);
+		boolean added = group.addPhysicalExpression(expression);
 		Set<RuleDescriptor.MemoFact> changedFacts = group.mergeOutputBindingProfile(outputFacts);
 		if (!added) {
-			mergeExpressionProofsAndScope(group, expression.structuralKey(), proofs, routeScope, false, false);
+			MemoExpr retained = mergePhysicalExpressionMetadata(group, expression, routeScope);
 			if (!changedFacts.isEmpty()) {
 				recordFactsChanged(group, MemoChange.NO_EXPRESSION_ID, changedFacts);
 			}
-			return Optional.empty();
+			return Optional.of(new PhysicalAlternativeInsertion(retained, false));
 		}
-		registerExpression(expression, routeScope, false);
+		registerExpression(expression, null, routeScope, false);
 		if (!changedFacts.isEmpty()) {
 			recordFactsChanged(group, expression.id(), changedFacts);
 		}
-		return Optional.of(expression);
+		return Optional.of(new PhysicalAlternativeInsertion(expression, true));
+	}
+
+	record PhysicalAlternativeInsertion(MemoExpr retained, boolean added) {
+		PhysicalAlternativeInsertion {
+			Objects.requireNonNull(retained, "retained");
+		}
+	}
+
+	private static void validatePhysicalSelfInputs(int targetGroupId, TupleExpr alternative, List<Integer> inputs,
+			List<PhysicalProperties> inputRequirements, RuleKind kind) {
+		List<MemoInputLayout.Slot> slots = MemoInputLayout.slots(alternative);
+		int selfInputCount = 0;
+		for (int inputIndex = 0; inputIndex < inputs.size(); inputIndex++) {
+			if (inputs.get(inputIndex) != targetGroupId) {
+				continue;
+			}
+			selfInputCount++;
+			if (kind == RuleKind.ENFORCER && inputs.size() == 1) {
+				continue;
+			}
+			MemoInputLayout.Slot slot = slots.get(inputIndex);
+			PhysicalProperties requirement = inputIndex < inputRequirements.size()
+					? inputRequirements.get(inputIndex)
+					: PhysicalProperties.ANY;
+			boolean parameterizedDescent = slot.use() == MemoInput.Use.EXECUTABLE
+					&& slot.role() == MemoInput.Role.RIGHT
+					&& requirement.inputConsumption() == PhysicalProperties.InputConsumption.SELECTED_PREFIX
+					&& !requirement.inputBoundVars().isEmpty()
+					&& requirement.boundVars().containsAll(requirement.inputBoundVars());
+			if (!parameterizedDescent) {
+				throw new IllegalArgumentException("non-progressing physical self input for "
+						+ alternative.getClass().getSimpleName() + " at input " + inputIndex);
+			}
+		}
+		if (kind == RuleKind.ENFORCER && selfInputCount > 1) {
+			throw new IllegalArgumentException("physical enforcer may contain only one self input");
+		}
 	}
 
 	private static TupleExpr memoOwnedTemplate(TupleExpr alternative, boolean atomicPhysical) {
@@ -699,8 +1344,17 @@ public final class Memo {
 			LogicalOutputEstimate candidate) {
 		MemoGroup group = group(groupId);
 		MemoGroup.LogicalEstimateMerge merge = group.mergeLogicalOutputEstimate(key, candidate);
-		if (merge == MemoGroup.LogicalEstimateMerge.REFINED) {
-			recordFactsChanged(group, expressionId, Set.of(RuleDescriptor.MemoFact.COST_ESTIMATE));
+		MemoGroup.WinnerFrontierChanges winnerChanges = merge == MemoGroup.LogicalEstimateMerge.UNCHANGED
+				? MemoGroup.WinnerFrontierChanges.NONE
+				: group.clearWinners(key);
+		if (merge != MemoGroup.LogicalEstimateMerge.UNCHANGED) {
+			for (MemoExpr affected : group.mutableExpressionsView()) {
+				recordChange(MemoChange.Kind.GOAL_ESTIMATE_CHANGED, group, affected.id());
+			}
+		}
+		if (!winnerChanges.winnerKeys().isEmpty()) {
+			recordChange(MemoChange.Kind.WINNER_FRONTIER_CHANGED, group, expressionId);
+			invalidateDependentWinnerFrontiers(group.id(), winnerChanges.removedStates());
 		}
 		return group.logicalOutputEstimate(key).orElse(candidate);
 	}
@@ -715,12 +1369,12 @@ public final class Memo {
 		MemoGroup.LogicalEstimateMerge merge = group.mergeSelectedLogicalOutputEstimate(key, candidate);
 		if (merge == MemoGroup.LogicalEstimateMerge.REFINED) {
 			LogicalOutputEstimate refined = group.selectedLogicalOutputEstimate(key).orElseThrow();
-			Set<WinnerKey> changedWinnerKeys = group.refineSelectedWinnerFrontiers(key, refined, costModel);
-			if (!changedWinnerKeys.isEmpty()) {
-				group.winnersChanged(changedWinnerKeys);
+			MemoGroup.WinnerFrontierChanges winnerChanges = group.refineSelectedWinnerFrontiers(key, refined,
+					costModel);
+			if (!winnerChanges.winnerKeys().isEmpty()) {
+				group.winnersChanged(winnerChanges.winnerKeys());
 				recordChange(MemoChange.Kind.WINNER_FRONTIER_CHANGED, group, expressionId);
-				invalidateDependentWinnerFrontiers(group.id());
-				invalidateDependentParents(group.id(), MemoChange.Kind.CHILD_WINNER_CHANGED);
+				invalidateDependentWinnerFrontiers(group.id(), winnerChanges.removedStates());
 			}
 		}
 		return group.selectedLogicalOutputEstimate(key).orElse(candidate);
@@ -741,19 +1395,32 @@ public final class Memo {
 	}
 
 	public boolean addWinner(WinnerKey key, Winner winner, int frontierLimit, boolean exactMode) {
+		return addWinnerWithChanges(key, winner, frontierLimit, exactMode).accepted();
+	}
+
+	MemoGroup.WinnerFrontierInsertion addWinnerWithChanges(WinnerKey key, Winner winner, int frontierLimit,
+			boolean exactMode) {
 		if (!semanticScope(winner.expression())
 				.isAdmissibleFor(SemanticScope.fromExternalName(key.semanticScope()))) {
-			return false;
+			return MemoGroup.WinnerFrontierInsertion.REJECTED;
 		}
 		MemoGroup group = group(key.groupId());
-		boolean accepted = group.addWinner(key, winner, frontierLimit, exactMode);
-		if (!accepted) {
-			return false;
+		Winner keyedWinner = winner.withOptimizationKey(key);
+		MemoGroup.WinnerFrontierInsertion insertion = group.addWinner(key, keyedWinner, frontierLimit, exactMode);
+		if (!insertion.accepted()) {
+			return insertion;
 		}
 		group.winnerChanged(key);
-		recordChange(MemoChange.Kind.WINNER_FRONTIER_CHANGED, group, winner.expression().id());
-		invalidateDependentParents(group.id(), MemoChange.Kind.CHILD_WINNER_CHANGED);
-		return true;
+		recordChange(MemoChange.Kind.WINNER_FRONTIER_CHANGED, group, keyedWinner.expression().id());
+		if (!insertion.displaced().isEmpty()) {
+			Set<MemoGroup.WinnerStateInvalidation> displacedStates = insertion.displaced()
+					.stream()
+					.map(MemoGroup.WinnerStateInvalidation::of)
+					.collect(java.util.stream.Collectors.toUnmodifiableSet());
+			invalidateDependentWinnerFrontiers(group.id(), displacedStates);
+		}
+		notifyDirectParentsOfWinnerFrontier(group.id());
+		return insertion;
 	}
 
 	public boolean canAddWinner(WinnerKey key, Winner winner, int frontierLimit, boolean exactMode) {
@@ -772,8 +1439,16 @@ public final class Memo {
 		return group(key.groupId()).winners(key);
 	}
 
+	int winnerFrontierTrimmedCount(WinnerKey key) {
+		return key == null ? 0 : group(key.groupId()).winnerFrontierTrimmedCount(key);
+	}
+
 	long winnerRevision(WinnerKey key) {
 		return key == null ? 0L : group(key.groupId()).winnerRevision(key);
+	}
+
+	long winnerInvalidationRevision(WinnerKey key, WinnerStateKey state) {
+		return key == null ? 0L : group(key.groupId()).winnerInvalidationRevision(key, state);
 	}
 
 	long winnerClearRevision(int groupId) {
@@ -792,12 +1467,112 @@ public final class Memo {
 		return expressionsById.size();
 	}
 
-	private void registerExpression(MemoExpr expression, SemanticScope semanticScope, boolean joinRouteOnly) {
+	/** Returns the authoritative typed key for a logical memo expression. */
+	public MemoLogicalExpressionKey logicalKey(MemoExpr expression) {
+		Objects.requireNonNull(expression, "expression");
+		if (!expression.logical()) {
+			throw new IllegalArgumentException("Physical memo expression " + expression.id()
+					+ " has no logical equivalence key");
+		}
+		int expressionId = expression.id();
+		if (expressionId < 0 || expressionId >= logicalKeysByExpressionId.size()) {
+			throw new IndexOutOfBoundsException("Unknown memo expression: " + expressionId);
+		}
+		MemoLogicalExpressionKey key = logicalKeysByExpressionId.get(expressionId);
+		if (key == null) {
+			throw new IllegalStateException("Logical memo expression " + expressionId + " has no typed key");
+		}
+		return key;
+	}
+
+	/** Returns whether a mutable bridge node has the same typed local operator semantics as a logical expression. */
+	public boolean hasSameLogicalOperator(MemoExpr expression, TupleExpr tupleExpr) {
+		Objects.requireNonNull(expression, "expression");
+		Objects.requireNonNull(tupleExpr, "tupleExpr");
+		return logicalKey(expression).operatorKey()
+				.equals(logicalKeyFactory.operatorKey(tupleExpr, group(expression.groupId()).executionDomain()));
+	}
+
+	/** Records the immutable logical expression identity from which a physical implementation was produced. */
+	void recordPhysicalImplementationSource(MemoExpr physical, MemoExpr logical) {
+		Objects.requireNonNull(physical, "physical");
+		Objects.requireNonNull(logical, "logical");
+		if (!physical.physical() || !logical.logical()) {
+			throw new IllegalArgumentException(
+					"Physical implementation sources require physical and logical expressions");
+		}
+		if (physical.groupId() != logical.groupId()) {
+			throw new IllegalArgumentException("Physical implementation source group mismatch: physical="
+					+ physical.groupId() + ", logical=" + logical.groupId());
+		}
+		int physicalId = physical.id();
+		ensureImplementationSourceCapacity(physicalId);
+		int encodedLogicalId = logical.id() + 1;
+		int primary = primaryImplementationSourceByExpressionId[physicalId];
+		if (primary == 0) {
+			primaryImplementationSourceByExpressionId[physicalId] = encodedLogicalId;
+			return;
+		}
+		if (primary == encodedLogicalId) {
+			return;
+		}
+		BitSet additional = additionalImplementationSourcesByExpressionId.computeIfAbsent(physicalId,
+				ignored -> new BitSet());
+		additional.set(primary - 1);
+		additional.set(logical.id());
+	}
+
+	/** Returns whether a physical expression was produced from this exact memo-local logical identity. */
+	boolean isPhysicalImplementationOf(MemoExpr physical, MemoExpr logical) {
+		Objects.requireNonNull(physical, "physical");
+		Objects.requireNonNull(logical, "logical");
+		if (!physical.physical() || !logical.logical() || physical.groupId() != logical.groupId()) {
+			return false;
+		}
+		int physicalId = physical.id();
+		if (physicalId < 0 || physicalId >= primaryImplementationSourceByExpressionId.length) {
+			return false;
+		}
+		if (primaryImplementationSourceByExpressionId[physicalId] == logical.id() + 1) {
+			return true;
+		}
+		BitSet additional = additionalImplementationSourcesByExpressionId.get(physicalId);
+		return additional != null && additional.get(logical.id());
+	}
+
+	/** Returns whether two logical derivations describe the same proof-independent executable route. */
+	public boolean hasSameLogicalRoute(MemoExpr left, MemoExpr right) {
+		Objects.requireNonNull(left, "left");
+		Objects.requireNonNull(right, "right");
+		return MemoLogicalRouteKey.of(logicalKey(left), left)
+				.equals(MemoLogicalRouteKey.of(logicalKey(right), right));
+	}
+
+	LegacyLogicalKeyDiscrepancyRecorder.Snapshot legacyLogicalKeyDiscrepancies() {
+		return legacyKeyRecorder.snapshot();
+	}
+
+	private void registerExpression(MemoExpr expression, MemoLogicalExpressionKey logicalKey,
+			SemanticScope semanticScope, boolean joinRouteOnly) {
+		registerExpression(expression, logicalKey, semanticScope, joinRouteOnly,
+				BindingShape.from(expression.tupleExpr(), universe));
+	}
+
+	private void registerExpression(MemoExpr expression, MemoLogicalExpressionKey logicalKey,
+			SemanticScope semanticScope, boolean joinRouteOnly, BindingShape expressionBindingShape) {
 		if (expression.id() != expressionsById.size()) {
 			throw new IllegalStateException("Memo expression ids must remain dense: expected "
 					+ expressionsById.size() + " but received " + expression.id());
 		}
+		ensureImplementationSourceCapacity(expression.id());
+		if (expression.logical() != (logicalKey != null)) {
+			throw new IllegalArgumentException("Typed logical key presence must match expression kind for expression "
+					+ expression.id());
+		}
 		expressionsById.add(expression);
+		logicalKeysByExpressionId.add(logicalKey);
+		bindingShapesByExpressionId.add(Objects.requireNonNull(expressionBindingShape, "expressionBindingShape"));
+		possibleBindingNamesByExpressionId.add(null);
 		if (expression.logical() && joinRouteOnly) {
 			joinRouteOnlyExpressions.set(expression.id());
 		}
@@ -813,6 +1588,17 @@ public final class Memo {
 		} else {
 			notifyDirectParentsOfPhysicalFrontier(changedGroup.id());
 		}
+	}
+
+	private void ensureImplementationSourceCapacity(int expressionId) {
+		if (expressionId < primaryImplementationSourceByExpressionId.length) {
+			return;
+		}
+		int capacity = primaryImplementationSourceByExpressionId.length;
+		while (capacity <= expressionId) {
+			capacity = Math.max(capacity + 1, capacity << 1);
+		}
+		primaryImplementationSourceByExpressionId = Arrays.copyOf(primaryImplementationSourceByExpressionId, capacity);
 	}
 
 	private void registerParentUses(MemoExpr expression) {
@@ -841,6 +1627,44 @@ public final class Memo {
 		recordChange(MemoChange.Kind.FACTS_CHANGED, group, expressionId, changedFacts);
 		invalidateWinnerFrontiers(group.id());
 		invalidateDependentParents(group.id());
+		propagateLogicalOutputFacts(group.id());
+	}
+
+	private BindingProfile logicalOutputBindingFacts(TupleExpr expression, List<Integer> inputGroupIds) {
+		List<BindingProfile> inputs = inputGroupIds == null || inputGroupIds.isEmpty()
+				? List.of()
+				: inputGroupIds.stream().map(groupId -> group(groupId).outputBindingProfile()).toList();
+		return LogicalOutputBindingFacts.derive(expression, inputs, universe);
+	}
+
+	private void propagateLogicalOutputFacts(int changedGroupId) {
+		ArrayDeque<Integer> pending = new ArrayDeque<>();
+		BitSet enqueued = new BitSet(groups.size());
+		pending.addLast(changedGroupId);
+		enqueued.set(changedGroupId);
+		while (!pending.isEmpty()) {
+			int childGroupId = pending.removeFirst();
+			enqueued.clear(childGroupId);
+			for (MemoExpr parent : List.copyOf(parentExpressionsByChildGroup.get(childGroupId))) {
+				if (!parent.logical()) {
+					continue;
+				}
+				MemoGroup parentGroup = group(parent.groupId());
+				Set<RuleDescriptor.MemoFact> parentChanges = parentGroup.mergeOutputBindingProfile(
+						logicalOutputBindingFacts(parent.tupleExpr(), parent.inputGroupIds()));
+				if (parentChanges.isEmpty()) {
+					continue;
+				}
+				parentGroup.factsChanged(parentChanges);
+				recordChange(MemoChange.Kind.FACTS_CHANGED, parentGroup, parent.id(), parentChanges);
+				invalidateWinnerFrontiers(parentGroup.id());
+				invalidateDependentParents(parentGroup.id());
+				if (!enqueued.get(parentGroup.id())) {
+					enqueued.set(parentGroup.id());
+					pending.addLast(parentGroup.id());
+				}
+			}
+		}
 	}
 
 	private void invalidateWinnerFrontiers(int changedGroupId) {
@@ -884,6 +1708,43 @@ public final class Memo {
 		}
 	}
 
+	private void invalidateDependentWinnerFrontiers(int changedGroupId,
+			Set<MemoGroup.WinnerStateInvalidation> changedWinnerStates) {
+		if (changedWinnerStates == null || changedWinnerStates.isEmpty()) {
+			return;
+		}
+		ArrayDeque<WinnerInvalidation> pending = new ArrayDeque<>();
+		pending.addLast(new WinnerInvalidation(changedGroupId, changedWinnerStates));
+		while (!pending.isEmpty()) {
+			WinnerInvalidation invalidation = pending.removeFirst();
+			Map<Integer, MemoGroup.WinnerFrontierChanges> changesByParentGroup = new LinkedHashMap<>();
+			for (MemoExpr parentExpression : parentExpressionsByChildGroup.get(invalidation.groupId())) {
+				MemoGroup parentGroup = group(parentExpression.groupId());
+				MemoGroup.WinnerFrontierChanges parentChanges = parentGroup.removeWinnersDependingOn(parentExpression,
+						invalidation.groupId(), invalidation.winnerStates());
+				if (parentChanges.winnerKeys().isEmpty()) {
+					continue;
+				}
+				recordChange(MemoChange.Kind.CHILD_WINNER_CHANGED, parentGroup, parentExpression.id());
+				changesByParentGroup.merge(parentGroup.id(), parentChanges,
+						MemoGroup.WinnerFrontierChanges::mergedWith);
+			}
+			for (Map.Entry<Integer, MemoGroup.WinnerFrontierChanges> entry : changesByParentGroup.entrySet()) {
+				MemoGroup parentGroup = group(entry.getKey());
+				recordChange(MemoChange.Kind.WINNER_FRONTIER_CHANGED, parentGroup, MemoChange.NO_EXPRESSION_ID);
+				if (!entry.getValue().removedStates().isEmpty()) {
+					pending.addLast(new WinnerInvalidation(parentGroup.id(), entry.getValue().removedStates()));
+				}
+			}
+		}
+	}
+
+	private record WinnerInvalidation(int groupId, Set<MemoGroup.WinnerStateInvalidation> winnerStates) {
+		private WinnerInvalidation {
+			winnerStates = winnerStates == null || winnerStates.isEmpty() ? Set.of() : Set.copyOf(winnerStates);
+		}
+	}
+
 	private void invalidateDependentParents(int childGroupId) {
 		invalidateDependentParents(childGroupId, MemoChange.Kind.DEPENDENCY_CHANGED);
 	}
@@ -894,6 +1755,15 @@ public final class Memo {
 			MemoGroup parentGroup = group(parentExpression.groupId());
 			parentGroup.dependencyChanged(changeToken);
 			recordChange(MemoChange.Kind.CHILD_PHYSICAL_FRONTIER_CHANGED, parentGroup, parentExpression.id());
+		}
+	}
+
+	private void notifyDirectParentsOfWinnerFrontier(int childGroupId) {
+		long changeToken = ++dependencyChangeToken;
+		for (MemoExpr parentExpression : parentExpressionsByChildGroup.get(childGroupId)) {
+			MemoGroup parentGroup = group(parentExpression.groupId());
+			parentGroup.dependencyChanged(changeToken);
+			recordChange(MemoChange.Kind.CHILD_WINNER_CHANGED, parentGroup, parentExpression.id());
 		}
 	}
 
@@ -967,9 +1837,7 @@ public final class Memo {
 	private record PendingChangeKey(MemoChange.Kind kind, int groupId, int expressionId) {
 		private static PendingChangeKey of(MemoChange.Kind kind, int groupId, int expressionId) {
 			int scopedExpressionId = switch (kind) {
-			case LOGICAL_EXPRESSION_ADDED, PHYSICAL_EXPRESSION_ADDED, PROOFS_CHANGED, ADMISSIBILITY_CHANGED,
-					DEPENDENCY_CHANGED, CHILD_PHYSICAL_FRONTIER_CHANGED,
-					CHILD_WINNER_CHANGED -> expressionId;
+			case LOGICAL_EXPRESSION_ADDED, PHYSICAL_EXPRESSION_ADDED, PROOFS_CHANGED, ADMISSIBILITY_CHANGED, GOAL_ESTIMATE_CHANGED, DEPENDENCY_CHANGED, CHILD_PHYSICAL_FRONTIER_CHANGED, CHILD_WINNER_CHANGED -> expressionId;
 			case FACTS_CHANGED, WINNER_FRONTIER_CHANGED -> MemoChange.NO_EXPRESSION_ID;
 			};
 			return new PendingChangeKey(kind, groupId, scopedExpressionId);
@@ -996,29 +1864,16 @@ public final class Memo {
 		return changed;
 	}
 
-	private List<Integer> internInputs(TupleExpr tupleExpr) {
-		return internInputs(tupleExpr, true, MemoExecutionDomain.LOCAL);
-	}
-
-	private List<Integer> internInputs(TupleExpr tupleExpr, boolean cacheExistingNodeIdentity) {
-		return internInputs(tupleExpr, cacheExistingNodeIdentity, MemoExecutionDomain.LOCAL);
-	}
-
-	private List<Integer> internInputs(TupleExpr tupleExpr, boolean cacheExistingNodeIdentity,
-			MemoExecutionDomain parentDomain) {
+	private List<Integer> internInputs(TupleExpr tupleExpr, MemoExecutionDomain parentDomain) {
 		List<MemoInputLayout.Slot> slots = MemoInputLayout.slots(tupleExpr);
 		if (slots.isEmpty()) {
 			return List.of();
 		}
 		List<Integer> inputs = new ArrayList<>(slots.size());
 		for (MemoInputLayout.Slot slot : slots) {
-			inputs.add(intern(slot.input(), true, cacheExistingNodeIdentity, childDomain(parentDomain, slot)));
+			inputs.add(intern(slot.input(), true, childDomain(parentDomain, slot)));
 		}
 		return List.copyOf(inputs);
-	}
-
-	private IdentityHashMap<TupleExpr, Integer> identityGroups(MemoExecutionDomain executionDomain) {
-		return groupByNodeIdentity.computeIfAbsent(executionDomain, ignored -> new IdentityHashMap<>());
 	}
 
 	private static MemoExecutionDomain childDomain(MemoExecutionDomain parentDomain, MemoInputLayout.Slot slot) {
@@ -1027,20 +1882,181 @@ public final class Memo {
 				: MemoExecutionDomain.LOCAL;
 	}
 
+	private void publishLogicalGroup(MemoLogicalExpressionKey logicalKey, int groupId) {
+		Integer existing = groupByLogicalExpression.putIfAbsent(logicalKey, groupId);
+		if (existing != null && existing != groupId) {
+			throw new IllegalStateException("Typed logical expression already belongs to memo group " + existing
+					+ ", not " + groupId + ": " + logicalKey);
+		}
+	}
+
+	private void registerLogicalAlias(MemoLogicalExpressionKey logicalKey, int canonicalGroupId, int aliasGroupId) {
+		if (canonicalGroupId == aliasGroupId) {
+			return;
+		}
+		Integer authoritativeGroupId = groupByLogicalExpression.get(logicalKey);
+		if (!Objects.equals(authoritativeGroupId, canonicalGroupId)) {
+			throw new IllegalStateException("Cannot alias typed logical key without its authoritative group: "
+					+ logicalKey);
+		}
+		aliasedGroupsByLogicalExpression.compute(logicalKey, (ignored, current) -> {
+			LinkedHashSet<Integer> groupsForKey = current == null ? new LinkedHashSet<>()
+					: new LinkedHashSet<>(current);
+			groupsForKey.add(canonicalGroupId);
+			groupsForKey.add(aliasGroupId);
+			return Set.copyOf(groupsForKey);
+		});
+	}
+
+	private void recordLegacyKey(TupleExpr tupleExpr, List<Integer> inputs, String feedbackFingerprint,
+			List<SemanticScope> semanticRequirements, MemoExecutionDomain executionDomain,
+			MemoLogicalExpressionKey logicalKey) {
+		String legacyKey = MemoExpr.logicalKey(tupleExpr, inputs, feedbackFingerprint, semanticRequirements);
+		recordLegacyKey(executionDomain, legacyKey, logicalKey);
+	}
+
+	private void recordLegacyKey(TupleExpr tupleExpr, List<Integer> inputs, String feedbackFingerprint,
+			List<PhysicalProperties> physicalRequirements, List<SemanticScope> semanticRequirements,
+			MemoExecutionDomain executionDomain, MemoLogicalExpressionKey logicalKey) {
+		String legacyKey = MemoExpr.logicalKey(tupleExpr, inputs, feedbackFingerprint, physicalRequirements,
+				semanticRequirements);
+		recordLegacyKey(executionDomain, legacyKey, logicalKey);
+	}
+
+	private void recordLegacyKey(MemoExecutionDomain executionDomain, String legacyKey,
+			MemoLogicalExpressionKey logicalKey) {
+		legacyKeyRecorder.record(domainKey(executionDomain, legacyKey), logicalKey);
+	}
+
 	private static String domainKey(MemoExecutionDomain executionDomain, String logicalKey) {
 		return executionDomain + "|" + logicalKey;
 	}
 
-	private String localMetadata(TupleExpr tupleExpr) {
-		return costModel.logicalFingerprint(tupleExpr);
+	private String feedbackFingerprint(TupleExpr tupleExpr) {
+		return costModel.feedbackFingerprint(tupleExpr);
 	}
 
-	private record JoinStateKey(int ownerGroupId, JoinRegion.Identity regionIdentity, JoinState state) {
+	/** Result of a read-only deferred-input validation. */
+	public record LogicalInputValidation(boolean supported, String failureReason) {
+		public LogicalInputValidation {
+			failureReason = failureReason == null ? "" : failureReason;
+			if (supported && !failureReason.isEmpty()) {
+				throw new IllegalArgumentException("A supported logical-input validation cannot have a failure reason");
+			}
+		}
+
+		private static LogicalInputValidation supportedValidation() {
+			return new LogicalInputValidation(true, "");
+		}
+
+		private static LogicalInputValidation unsupported(String reason) {
+			return new LogicalInputValidation(false,
+					reason == null || reason.isBlank() ? "logical input recipe is unsupported" : reason);
+		}
+	}
+
+	private record LogicalGroupMembership(int canonicalGroupId, List<Integer> groupIds) {
+		private LogicalGroupMembership {
+			groupIds = groupIds == null || groupIds.isEmpty() ? List.of() : List.copyOf(groupIds);
+		}
+	}
+
+	private record PreparedLogicalInputs(List<Integer> rootInputGroupIds, List<PreparedLogicalGroup> newGroups,
+			String failureReason) {
+		private PreparedLogicalInputs {
+			rootInputGroupIds = rootInputGroupIds == null || rootInputGroupIds.isEmpty()
+					? List.of()
+					: List.copyOf(rootInputGroupIds);
+			newGroups = newGroups == null || newGroups.isEmpty() ? List.of() : List.copyOf(newGroups);
+			failureReason = failureReason == null ? "" : failureReason;
+		}
+
+		private static PreparedLogicalInputs supported(List<Integer> rootInputGroupIds,
+				List<PreparedLogicalGroup> newGroups) {
+			return new PreparedLogicalInputs(rootInputGroupIds, newGroups, "");
+		}
+
+		private static PreparedLogicalInputs unsupported(String reason) {
+			return new PreparedLogicalInputs(List.of(), List.of(),
+					reason == null || reason.isBlank() ? "logical input recipe is unsupported" : reason);
+		}
+
+		private boolean supported() {
+			return failureReason.isEmpty();
+		}
+	}
+
+	private record PreparedLogicalGroup(int groupId, TupleExpr template, List<Integer> inputGroupIds,
+			String feedbackFingerprint, MemoLogicalExpressionKey logicalKey,
+			List<SemanticScope> inputSemanticRequirements, MemoExecutionDomain executionDomain,
+			MemoGroup group, MemoExpr expression, BindingShape expressionBindingShape,
+			SemanticScope semanticScope, boolean joinRouteOnly) {
+		private PreparedLogicalGroup {
+			Objects.requireNonNull(template, "template");
+			inputGroupIds = inputGroupIds == null || inputGroupIds.isEmpty() ? List.of() : List.copyOf(inputGroupIds);
+			feedbackFingerprint = feedbackFingerprint == null ? "" : feedbackFingerprint;
+			Objects.requireNonNull(logicalKey, "logicalKey");
+			inputSemanticRequirements = inputSemanticRequirements == null || inputSemanticRequirements.isEmpty()
+					? List.of()
+					: List.copyOf(inputSemanticRequirements);
+			Objects.requireNonNull(executionDomain, "executionDomain");
+			Objects.requireNonNull(group, "group");
+			Objects.requireNonNull(expression, "expression");
+			Objects.requireNonNull(expressionBindingShape, "expressionBindingShape");
+			semanticScope = semanticScope == null ? SemanticScope.BAG : semanticScope;
+		}
+	}
+
+	private record PreparedLogicalAlternative(MemoGroup targetGroup, MemoExpr expression,
+			MemoLogicalExpressionKey logicalKey, MemoLogicalDerivationKey derivationKey,
+			BindingShape expressionBindingShape, BindingShape alternativeBindingShape,
+			LeoMemoFeedback feedback, SemanticScope semanticScope, Integer mappedGroupId) {
+		private PreparedLogicalAlternative {
+			Objects.requireNonNull(targetGroup, "targetGroup");
+			Objects.requireNonNull(expression, "expression");
+			Objects.requireNonNull(logicalKey, "logicalKey");
+			Objects.requireNonNull(derivationKey, "derivationKey");
+			Objects.requireNonNull(expressionBindingShape, "expressionBindingShape");
+			Objects.requireNonNull(alternativeBindingShape, "alternativeBindingShape");
+			feedback = feedback == null ? LeoMemoFeedback.empty() : feedback;
+			semanticScope = semanticScope == null ? SemanticScope.BAG : semanticScope;
+		}
+	}
+
+	private record ResolvedLogicalRecipe(int groupId, MemoExecutionDomain executionDomain, boolean reachesTarget,
+			String failureReason) {
+		private ResolvedLogicalRecipe {
+			failureReason = failureReason == null ? "" : failureReason;
+		}
+
+		private static ResolvedLogicalRecipe existing(int groupId, MemoExecutionDomain executionDomain,
+				boolean reachesTarget) {
+			return new ResolvedLogicalRecipe(groupId, executionDomain, reachesTarget, "");
+		}
+
+		private static ResolvedLogicalRecipe planned(int groupId, MemoExecutionDomain executionDomain,
+				boolean reachesTarget) {
+			return new ResolvedLogicalRecipe(groupId, executionDomain, reachesTarget, "");
+		}
+
+		private static ResolvedLogicalRecipe unsupported(String reason) {
+			return new ResolvedLogicalRecipe(-1, null, false,
+					reason == null || reason.isBlank() ? "logical input recipe is unsupported" : reason);
+		}
+
+		private boolean supported() {
+			return groupId >= 0 && failureReason.isEmpty();
+		}
+	}
+
+	private record JoinStateKey(int ownerGroupId, JoinRegion.Identity regionIdentity, JoinRouteScope routeScope,
+			JoinState state) {
 		private JoinStateKey {
 			if (ownerGroupId < 0) {
 				throw new IllegalArgumentException("root-region owner group ID must be non-negative");
 			}
 			Objects.requireNonNull(regionIdentity, "join-region identity");
+			Objects.requireNonNull(routeScope, "join route scope");
 			Objects.requireNonNull(state, "join state");
 		}
 	}

@@ -72,6 +72,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.StringTokenizer;
 import java.util.concurrent.atomic.AtomicLong;
@@ -1228,6 +1229,31 @@ class TripleStore implements Closeable {
 
 	Optional<LmdbDistinctCursorSkipSupport.Plan> distinctCursorSkipPlan(StatementPattern statementPattern) {
 		return LmdbDistinctCursorSkipSupport.choosePlan(statementPattern, indexAccessPaths(0));
+	}
+
+	OptionalLong boundedDistinctCursorSkipCardinality(StatementPattern statementPattern, long subj, long pred,
+			long obj, long context, int maximumPrefixes) throws IOException {
+		if (statementPattern == null || maximumPrefixes < 1) {
+			return OptionalLong.empty();
+		}
+		long prefixes = 0L;
+		try (TxnManager.Txn txn = txnManager.createReadTxn()) {
+			for (boolean explicit : new boolean[] { true, false }) {
+				Optional<RecordIterator> records = getTriplesWithDistinctCursorSkip(txn, statementPattern, subj, pred,
+						obj, context, explicit, LmdbValueIdFilter.none());
+				if (records.isEmpty()) {
+					return OptionalLong.empty();
+				}
+				try (RecordIterator iterator = records.orElseThrow()) {
+					while (iterator.next() != null) {
+						if (++prefixes > maximumPrefixes) {
+							return OptionalLong.empty();
+						}
+					}
+				}
+			}
+		}
+		return OptionalLong.of(prefixes);
 	}
 
 	boolean hasTriples(boolean explicit) throws IOException {

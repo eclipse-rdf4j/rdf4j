@@ -192,6 +192,8 @@ class CascadesVersionedOutputFactTest {
 			return RuleDescriptor.builder(id(), kind())
 					.rootOperators(RuleRootOperator.STATEMENT_PATTERN, RuleRootOperator.FILTER)
 					.wakeUpEvents(RuleWakeUpEvent.LOGICAL_EXPRESSION_ADDED)
+					.changesProduced(RuleDescriptor.ProducedChange.PHYSICAL_EXPRESSION,
+							RuleDescriptor.ProducedChange.MEMO_FACT)
 					.convergenceClass(RuleConvergenceClass.FINITE_EQUIVALENCE_EXPANSION)
 					.build();
 		}
@@ -326,7 +328,11 @@ class CascadesVersionedOutputFactTest {
 
 		@Override
 		public CostVector localCost(MemoExpr expression, OptimizationGoal goal, List<Winner> inputWinners) {
-			if (expression.physical() && expression.tupleExpr() instanceof Filter && !inputWinners.isEmpty()) {
+			if (expression.physical()
+					&& expression.groupId() < 1_000_000_000
+					&& expression.tupleExpr() instanceof Filter
+					&& "versioned-output-fact".equals(expression.localMetadata())
+					&& !inputWinners.isEmpty()) {
 				parentCostApplications.incrementAndGet();
 			}
 			return exactCost(1.0d);

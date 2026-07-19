@@ -16,12 +16,14 @@ import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoMemoFeedback;
@@ -37,18 +39,67 @@ public final class MemoGroup {
 		REFINED
 	}
 
+	record WinnerStateInvalidation(WinnerKey winnerKey, WinnerStateKey winnerState) {
+		WinnerStateInvalidation {
+			Objects.requireNonNull(winnerKey, "winnerKey");
+			Objects.requireNonNull(winnerState, "winnerState");
+		}
+
+		static WinnerStateInvalidation of(Winner winner) {
+			Objects.requireNonNull(winner, "winner");
+			WinnerKey winnerKey = Objects.requireNonNull(winner.optimizationKey(), "winner.optimizationKey");
+			return new WinnerStateInvalidation(winnerKey, WinnerStateKey.of(winner));
+		}
+	}
+
+	record WinnerFrontierChanges(Set<WinnerKey> winnerKeys, Set<WinnerStateInvalidation> removedStates) {
+
+		static final WinnerFrontierChanges NONE = new WinnerFrontierChanges(Set.of(), Set.of());
+
+		WinnerFrontierChanges {
+			winnerKeys = winnerKeys == null || winnerKeys.isEmpty() ? Set.of() : Set.copyOf(winnerKeys);
+			removedStates = removedStates == null || removedStates.isEmpty() ? Set.of() : Set.copyOf(removedStates);
+		}
+
+		WinnerFrontierChanges mergedWith(WinnerFrontierChanges other) {
+			if (other == null || other.winnerKeys().isEmpty()) {
+				return this;
+			}
+			if (winnerKeys.isEmpty()) {
+				return other;
+			}
+			Set<WinnerKey> mergedKeys = new LinkedHashSet<>(winnerKeys);
+			mergedKeys.addAll(other.winnerKeys());
+			Set<WinnerStateInvalidation> mergedStates = new LinkedHashSet<>(removedStates);
+			mergedStates.addAll(other.removedStates());
+			return new WinnerFrontierChanges(mergedKeys, mergedStates);
+		}
+	}
+
+	record WinnerFrontierInsertion(boolean accepted, List<Winner> displaced) {
+
+		static final WinnerFrontierInsertion REJECTED = new WinnerFrontierInsertion(false, List.of());
+
+		WinnerFrontierInsertion {
+			displaced = displaced == null || displaced.isEmpty() ? List.of() : List.copyOf(displaced);
+		}
+	}
+
 	private final int id;
 	private final MemoExecutionDomain executionDomain;
 	private LogicalProperties logicalProperties;
 	private BindingShape bindingShape;
 	private BindingProfile outputBindingProfile = BindingProfile.ANY;
 	private final Map<LogicalOutputEstimateKey, LogicalOutputEstimate> logicalOutputEstimates = new HashMap<>();
+	private final Map<LogicalOutputEstimateKey, Long> logicalOutputEstimateRevisions = new HashMap<>();
 	private final Map<SelectedLogicalOutputEstimateKey, LogicalOutputEstimate> selectedLogicalOutputEstimates = new HashMap<>();
 	private LeoMemoFeedback leoFeedback;
 	private final List<MemoExpr> expressions = new ArrayList<>();
-	private final Set<String> expressionKeys = new HashSet<>();
+	private final Set<MemoLogicalDerivationKey> logicalExpressionDerivations = new HashSet<>();
+	private final Set<String> physicalExpressionKeys = new HashSet<>();
 	private final Map<WinnerKey, WinnerFrontier> winnersByGoal = new HashMap<>();
 	private final Map<WinnerKey, Long> winnerRevisionsByGoal = new HashMap<>();
+	private final Map<WinnerStateInvalidation, Long> winnerInvalidationRevisionsByState = new HashMap<>();
 	private final Set<WinnerKey> failures = new HashSet<>();
 	private long logicalRevision;
 	private long joinSearchRevision;
@@ -58,6 +109,7 @@ public final class MemoGroup {
 	private MemoFactRevisions factRevisions = MemoFactRevisions.initial();
 	private long dependencyRevision;
 	private long winnerRevision;
+	private long winnerInvalidationRevision;
 	private long winnerClearRevision;
 	private long lastDependencyChangeToken;
 
@@ -152,6 +204,12 @@ public final class MemoGroup {
 		return key == null ? 0L : winnerRevisionsByGoal.getOrDefault(key, 0L);
 	}
 
+	long winnerInvalidationRevision(WinnerKey key, WinnerStateKey state) {
+		return key == null || state == null
+				? 0L
+				: winnerInvalidationRevisionsByState.getOrDefault(new WinnerStateInvalidation(key, state), 0L);
+	}
+
 	boolean mergeLogicalProperties(LogicalProperties properties) {
 		if (properties == null) {
 			return false;
@@ -210,12 +268,17 @@ public final class MemoGroup {
 		return Optional.ofNullable(logicalOutputEstimates.get(key));
 	}
 
+	long logicalOutputEstimateRevision(LogicalOutputEstimateKey key) {
+		return key == null ? 0L : logicalOutputEstimateRevisions.getOrDefault(key, 0L);
+	}
+
 	LogicalEstimateMerge mergeLogicalOutputEstimate(LogicalOutputEstimateKey key, LogicalOutputEstimate candidate) {
 		Objects.requireNonNull(key, "key");
 		Objects.requireNonNull(candidate, "candidate");
 		LogicalOutputEstimate current = logicalOutputEstimates.get(key);
 		if (current == null) {
 			logicalOutputEstimates.put(key, candidate);
+			logicalOutputEstimateRevisions.merge(key, 1L, Long::sum);
 			return LogicalEstimateMerge.ADDED;
 		}
 		LogicalOutputEstimate refined = current.stronger(candidate);
@@ -223,6 +286,7 @@ public final class MemoGroup {
 			return LogicalEstimateMerge.UNCHANGED;
 		}
 		logicalOutputEstimates.put(key, refined);
+		logicalOutputEstimateRevisions.merge(key, 1L, Long::sum);
 		return LogicalEstimateMerge.REFINED;
 	}
 
@@ -247,46 +311,64 @@ public final class MemoGroup {
 		return LogicalEstimateMerge.REFINED;
 	}
 
-	Set<WinnerKey> refineSelectedWinnerFrontiers(SelectedLogicalOutputEstimateKey estimateKey,
+	WinnerFrontierChanges refineSelectedWinnerFrontiers(SelectedLogicalOutputEstimateKey estimateKey,
 			LogicalOutputEstimate estimate, CascadesCostModel costModel) {
 		Set<WinnerKey> changedKeys = new LinkedHashSet<>();
+		Set<WinnerStateInvalidation> removedStates = new LinkedHashSet<>();
 		for (Map.Entry<WinnerKey, WinnerFrontier> entry : winnersByGoal.entrySet()) {
 			WinnerKey winnerKey = entry.getKey();
-			if (estimateKey.logicalGoal().matches(winnerKey)
-					&& entry.getValue().refineSelectedOutputEstimate(estimateKey, estimate, winnerKey, costModel)) {
+			Set<WinnerStateKey> refinedStates = estimateKey.logicalGoal().matches(winnerKey)
+					? entry.getValue().refineSelectedOutputEstimate(estimateKey, estimate, winnerKey, costModel)
+					: Set.of();
+			if (!refinedStates.isEmpty()) {
 				changedKeys.add(winnerKey);
+				for (WinnerStateKey refinedState : refinedStates) {
+					removedStates.add(new WinnerStateInvalidation(winnerKey, refinedState));
+				}
 			}
 		}
-		return changedKeys.isEmpty() ? Set.of() : Set.copyOf(changedKeys);
+		winnerStatesInvalidated(removedStates);
+		return changedKeys.isEmpty() ? WinnerFrontierChanges.NONE
+				: new WinnerFrontierChanges(changedKeys, removedStates);
 	}
 
-	boolean containsExpressionKey(String structuralKey) {
-		return expressionKeys.contains(structuralKey);
+	boolean containsLogicalExpressionDerivation(MemoLogicalDerivationKey derivationKey) {
+		return logicalExpressionDerivations.contains(derivationKey);
 	}
 
-	boolean addExpression(MemoExpr expression) {
+	boolean recordLogicalExpressionDerivation(MemoLogicalDerivationKey derivationKey) {
+		return logicalExpressionDerivations.add(Objects.requireNonNull(derivationKey, "derivationKey"));
+	}
+
+	boolean addPhysicalExpression(MemoExpr expression) {
 		Objects.requireNonNull(expression, "expression");
-		return addExpression(expression, expression.structuralKey());
-	}
-
-	boolean addExpression(MemoExpr expression, String structuralKey) {
-		return addExpression(expression, structuralKey, expression.logical());
-	}
-
-	boolean addExpression(MemoExpr expression, String structuralKey, boolean changesJoinSearchSpace) {
-		Objects.requireNonNull(expression, "expression");
-		if (!expressionKeys.add(structuralKey)) {
+		if (expression.logical()) {
+			throw new IllegalArgumentException("A logical expression requires a typed logical key");
+		}
+		if (!physicalExpressionKeys.add(expression.structuralKey())) {
 			return false;
 		}
 		expressions.add(expression);
 		failures.clear();
-		if (expression.logical()) {
-			logicalRevision++;
-			if (changesJoinSearchSpace) {
-				joinSearchRevision++;
-			}
-		} else {
-			physicalRevision++;
+		physicalRevision++;
+		return true;
+	}
+
+	boolean addLogicalExpression(MemoExpr expression, MemoLogicalDerivationKey derivationKey,
+			boolean changesJoinSearchSpace) {
+		Objects.requireNonNull(expression, "expression");
+		Objects.requireNonNull(derivationKey, "derivationKey");
+		if (!expression.logical()) {
+			throw new IllegalArgumentException("A physical expression cannot use a logical memo key");
+		}
+		if (!logicalExpressionDerivations.add(derivationKey)) {
+			return false;
+		}
+		expressions.add(expression);
+		failures.clear();
+		logicalRevision++;
+		if (changesJoinSearchSpace) {
+			joinSearchRevision++;
 		}
 		return true;
 	}
@@ -300,6 +382,12 @@ public final class MemoGroup {
 			}
 		}
 		throw new IllegalArgumentException("Unknown expression " + expression.id() + " in group " + id);
+	}
+
+	void refreshWinnerExpressionProofs(MemoExpr original, MemoExpr replacement) {
+		for (WinnerFrontier frontier : winnersByGoal.values()) {
+			frontier.refreshExpressionProofs(original, replacement);
+		}
 	}
 
 	void expressionMetadataChanged() {
@@ -346,20 +434,126 @@ public final class MemoGroup {
 		}
 	}
 
+	private void winnerStatesInvalidated(Set<WinnerStateInvalidation> states) {
+		if (states == null || states.isEmpty()) {
+			return;
+		}
+		winnerInvalidationRevision++;
+		for (WinnerStateInvalidation state : states) {
+			if (state != null) {
+				winnerInvalidationRevisionsByState.put(state, winnerInvalidationRevision);
+			}
+		}
+	}
+
 	boolean clearWinners() {
 		if (winnersByGoal.isEmpty() && failures.isEmpty()) {
 			return false;
 		}
 		winnersByGoal.clear();
 		winnerRevisionsByGoal.clear();
+		winnerInvalidationRevisionsByState.clear();
 		failures.clear();
 		winnerRevision++;
 		winnerClearRevision++;
 		return true;
 	}
 
+	WinnerFrontierChanges clearWinners(LogicalOutputEstimateKey estimateKey) {
+		Objects.requireNonNull(estimateKey, "estimateKey");
+		Set<WinnerKey> changedKeys = new LinkedHashSet<>();
+		Set<WinnerStateInvalidation> removedStates = new LinkedHashSet<>();
+		Iterator<Map.Entry<WinnerKey, WinnerFrontier>> winnerIterator = winnersByGoal.entrySet().iterator();
+		while (winnerIterator.hasNext()) {
+			Map.Entry<WinnerKey, WinnerFrontier> entry = winnerIterator.next();
+			WinnerKey winnerKey = entry.getKey();
+			if (estimateKey.matches(winnerKey)) {
+				for (Winner winner : entry.getValue().entries()) {
+					removedStates.add(WinnerStateInvalidation.of(winner));
+				}
+				winnerIterator.remove();
+				changedKeys.add(winnerKey);
+			}
+		}
+		Iterator<WinnerKey> failureIterator = failures.iterator();
+		while (failureIterator.hasNext()) {
+			WinnerKey winnerKey = failureIterator.next();
+			if (estimateKey.matches(winnerKey)) {
+				failureIterator.remove();
+				changedKeys.add(winnerKey);
+			}
+		}
+		winnersChanged(changedKeys);
+		winnerStatesInvalidated(removedStates);
+		return changedKeys.isEmpty() ? WinnerFrontierChanges.NONE
+				: new WinnerFrontierChanges(changedKeys, removedStates);
+	}
+
+	WinnerFrontierChanges removeWinnersDependingOn(MemoExpr parentExpression, int childGroupId,
+			Set<WinnerStateInvalidation> changedChildStates) {
+		Objects.requireNonNull(parentExpression, "parentExpression");
+		if (changedChildStates == null || changedChildStates.isEmpty()) {
+			return WinnerFrontierChanges.NONE;
+		}
+		Set<WinnerKey> changedParentKeys = new LinkedHashSet<>();
+		Set<WinnerStateInvalidation> removedParentStates = new LinkedHashSet<>();
+		Iterator<Map.Entry<WinnerKey, WinnerFrontier>> frontierIterator = winnersByGoal.entrySet().iterator();
+		while (frontierIterator.hasNext()) {
+			Map.Entry<WinnerKey, WinnerFrontier> entry = frontierIterator.next();
+			WinnerFrontier frontier = entry.getValue();
+			List<Winner> removed = frontier.removeMatching(
+					winner -> dependsOn(winner, parentExpression, childGroupId, changedChildStates));
+			if (removed.isEmpty()) {
+				continue;
+			}
+			changedParentKeys.add(entry.getKey());
+			for (Winner winner : removed) {
+				removedParentStates.add(WinnerStateInvalidation.of(winner));
+			}
+			if (frontier.isEmpty()) {
+				frontierIterator.remove();
+			}
+		}
+		winnersChanged(changedParentKeys);
+		winnerStatesInvalidated(removedParentStates);
+		return changedParentKeys.isEmpty() ? WinnerFrontierChanges.NONE
+				: new WinnerFrontierChanges(changedParentKeys, removedParentStates);
+	}
+
+	private static boolean dependsOn(Winner winner, MemoExpr parentExpression, int childGroupId,
+			Set<WinnerStateInvalidation> changedChildStates) {
+		if (winner == null || winner.expression().id() != parentExpression.id() || !winner.hasSelectedInputGraph()) {
+			return false;
+		}
+		List<MemoInput> inputs = winner.expression().executableInputs();
+		List<Winner> selectedInputs = winner.selectedInputs();
+		if (inputs.size() != selectedInputs.size()) {
+			throw new IllegalStateException("Winner input graph does not match expression " + winner.expression().id());
+		}
+		for (int index = 0; index < inputs.size(); index++) {
+			if (inputs.get(index).groupId() == childGroupId
+					&& changedChildStates.contains(WinnerStateInvalidation.of(selectedInputs.get(index)))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	public List<MemoExpr> expressions() {
 		return List.copyOf(expressions);
+	}
+
+	/**
+	 * Returns the current append-only frontier size without copying it. A caller that scans by index must capture this
+	 * value once so alternatives appended during the scan are handled by the memo's normal reactivation event.
+	 */
+	public int expressionCount() {
+		return expressions.size();
+	}
+
+	/** Returns one frontier expression without materializing a snapshot list. */
+	public MemoExpr expressionAt(int index) {
+		return expressions.get(index);
 	}
 
 	List<MemoExpr> mutableExpressionsView() {
@@ -376,15 +570,20 @@ public final class MemoGroup {
 		return frontier == null ? List.of() : frontier.entries();
 	}
 
-	boolean addWinner(WinnerKey key, Winner winner, int frontierLimit, boolean exactMode) {
+	int winnerFrontierTrimmedCount(WinnerKey key) {
+		WinnerFrontier frontier = winnersByGoal.get(key);
+		return frontier == null ? 0 : frontier.trimmedCount();
+	}
+
+	WinnerFrontierInsertion addWinner(WinnerKey key, Winner winner, int frontierLimit, boolean exactMode) {
 		Objects.requireNonNull(key, "key");
 		Objects.requireNonNull(winner, "winner");
-		WinnerFrontier frontier = winnersByGoal.computeIfAbsent(key, ignored -> new WinnerFrontier());
-		boolean accepted = frontier.add(winner, frontierLimit, exactMode);
-		if (accepted) {
+		WinnerFrontier frontier = winnersByGoal.computeIfAbsent(key, ignored -> new WinnerFrontier(key.costPolicy()));
+		WinnerFrontierInsertion insertion = frontier.add(winner, frontierLimit, exactMode);
+		if (insertion.accepted()) {
 			failures.remove(key);
 		}
-		return accepted;
+		return insertion;
 	}
 
 	boolean canAddWinner(WinnerKey key, Winner winner, int frontierLimit, boolean exactMode) {
@@ -411,6 +610,7 @@ public final class MemoGroup {
 	}
 
 	static final class WinnerFrontier {
+		private final CostOrdering costOrdering;
 		private final List<Winner> entries = new ArrayList<>();
 		private final Map<WinnerStateKey, Winner> exactStates = new HashMap<>();
 		private final IdentityHashMap<Winner, WinnerStateKey> statesByWinner = new IdentityHashMap<>();
@@ -420,9 +620,17 @@ public final class MemoGroup {
 		private int dominatedRejectedCount;
 		private int trimmedCount;
 
+		private WinnerFrontier(OptimizationGoal.CostPolicy costPolicy) {
+			costOrdering = CostOrdering.forPolicy(costPolicy);
+		}
+
 		boolean canAdd(Winner winner, int frontierLimit, boolean exactMode) {
-			WinnerStateKey state = WinnerStateKey.of(winner);
-			if (exactStates.containsKey(state) || dominatedByExisting(state, winner)) {
+			WinnerStateKey state = WinnerStateKey.of(winner, costOrdering);
+			Winner sameState = exactStates.get(state);
+			if (sameState != null && !canonicalReplacement(winner, sameState)) {
+				return false;
+			}
+			if (sameState == null && dominatedByExisting(state, winner)) {
 				return false;
 			}
 			return fitsWithinLimit(state, winner, frontierLimit, exactMode);
@@ -430,32 +638,45 @@ public final class MemoGroup {
 
 		private boolean fitsWithinLimit(WinnerStateKey state, Winner winner, int frontierLimit, boolean exactMode) {
 			int limit = exactMode ? Integer.MAX_VALUE : Math.max(1, frontierLimit);
-			if (exactMode || entries.size() < limit) {
+			if (exactMode) {
 				return true;
 			}
-			int remainingSize = entries.size();
-			int insertionPoint = 0;
-			for (Winner existing : entries) {
-				if (sameContext(existing, state) && parentCostDominates(winner, existing)) {
+			List<Winner> contextEntries = winnersByContext.get(state.context());
+			if (contextEntries == null || contextEntries.size() < limit) {
+				return true;
+			}
+			int remainingSize = contextEntries.size();
+			Winner worst = null;
+			for (Winner existing : contextEntries) {
+				if (parentCostDominates(winner, existing)) {
 					remainingSize--;
 					continue;
 				}
-				if (existing.cost().compareTo(winner.cost()) <= 0) {
-					insertionPoint++;
+				if (worst == null || compare(existing, worst) > 0) {
+					worst = existing;
 				}
 			}
-			return remainingSize < limit || insertionPoint < limit;
+			return remainingSize < limit || worst != null && compare(winner, worst) < 0;
 		}
 
-		boolean add(Winner winner, int frontierLimit, boolean exactMode) {
-			WinnerStateKey state = WinnerStateKey.of(winner);
-			if (exactStates.containsKey(state) || dominatedByExisting(state, winner)) {
+		WinnerFrontierInsertion add(Winner winner, int frontierLimit, boolean exactMode) {
+			WinnerStateKey state = WinnerStateKey.of(winner, costOrdering);
+			Winner sameState = exactStates.get(state);
+			if (sameState != null && !canonicalReplacement(winner, sameState)) {
 				dominatedRejectedCount++;
-				return false;
+				return WinnerFrontierInsertion.REJECTED;
+			}
+			ArrayList<Winner> displaced = null;
+			if (sameState != null) {
+				unregister(sameState);
+				displaced = displaced(displaced, sameState);
+			} else if (dominatedByExisting(state, winner)) {
+				dominatedRejectedCount++;
+				return WinnerFrontierInsertion.REJECTED;
 			}
 			if (!fitsWithinLimit(state, winner, frontierLimit, exactMode)) {
 				trimmedCount++;
-				return false;
+				return WinnerFrontierInsertion.REJECTED;
 			}
 			WinnerStateKey.FrontierContext context = state.context();
 			List<Winner> contextEntries = winnersByContext.computeIfAbsent(context, ignored -> new ArrayList<>());
@@ -467,25 +688,34 @@ public final class MemoGroup {
 					exactStates.remove(existingState);
 					removeIdentity(entries, existing);
 					entriesSnapshotDirty = true;
+					displaced = displaced(displaced, existing);
 				}
 			}
-			int insertionPoint = insertionPoint(winner);
 			int limit = exactMode ? Integer.MAX_VALUE : Math.max(1, frontierLimit);
-			if (entries.size() >= limit) {
-				if (insertionPoint >= limit) {
+			if (contextEntries.size() >= limit) {
+				Winner worst = worst(contextEntries);
+				if (compare(winner, worst) >= 0) {
 					trimmedCount++;
-					return false;
+					return WinnerFrontierInsertion.REJECTED;
 				}
-				unregister(entries.removeLast());
+				unregister(worst);
+				displaced = displaced(displaced, worst);
 				contextEntries = winnersByContext.computeIfAbsent(context, ignored -> new ArrayList<>());
 				trimmedCount++;
 			}
+			int insertionPoint = insertionPoint(winner);
 			entries.add(insertionPoint, winner);
 			contextEntries.add(winner);
 			exactStates.put(state, winner);
 			statesByWinner.put(winner, state);
 			entriesSnapshotDirty = true;
-			return true;
+			return new WinnerFrontierInsertion(true, displaced);
+		}
+
+		private static ArrayList<Winner> displaced(ArrayList<Winner> displaced, Winner winner) {
+			ArrayList<Winner> result = displaced == null ? new ArrayList<>() : displaced;
+			result.add(winner);
+			return result;
 		}
 
 		private int insertionPoint(Winner winner) {
@@ -493,7 +723,7 @@ public final class MemoGroup {
 			int high = entries.size();
 			while (low < high) {
 				int middle = (low + high) >>> 1;
-				if (entries.get(middle).cost().compareTo(winner.cost()) <= 0) {
+				if (compare(entries.get(middle), winner) <= 0) {
 					low = middle + 1;
 				} else {
 					high = middle;
@@ -514,6 +744,64 @@ public final class MemoGroup {
 			return entriesSnapshot;
 		}
 
+		boolean removeIf(Predicate<Winner> predicate) {
+			return !removeMatching(predicate).isEmpty();
+		}
+
+		List<Winner> removeMatching(Predicate<Winner> predicate) {
+			Objects.requireNonNull(predicate, "predicate");
+			List<Winner> removed = new ArrayList<>();
+			for (int index = entries.size() - 1; index >= 0; index--) {
+				Winner winner = entries.get(index);
+				if (predicate.test(winner)) {
+					removed.add(winner);
+					unregister(winner);
+				}
+			}
+			return removed.isEmpty() ? List.of() : List.copyOf(removed);
+		}
+
+		boolean isEmpty() {
+			return entries.isEmpty();
+		}
+
+		private void refreshExpressionProofs(MemoExpr original, MemoExpr replacement) {
+			if (entries.isEmpty()) {
+				return;
+			}
+			ArrayList<Winner> refreshedEntries = new ArrayList<>(entries.size());
+			ArrayList<WinnerStateKey> retainedStates = new ArrayList<>(entries.size());
+			boolean changed = false;
+			for (Winner winner : entries) {
+				WinnerStateKey retainedState = statesByWinner.get(winner);
+				Winner refreshed = winner.refreshExpressionProofs(original, replacement);
+				WinnerStateKey refreshedState = WinnerStateKey.of(refreshed, costOrdering);
+				if (!Objects.equals(retainedState, refreshedState)) {
+					throw new IllegalStateException("Proof metadata changed executable winner state for expression "
+							+ original.id());
+				}
+				refreshedEntries.add(refreshed);
+				retainedStates.add(retainedState);
+				changed |= refreshed != winner;
+			}
+			if (!changed) {
+				return;
+			}
+			entries.clear();
+			entries.addAll(refreshedEntries);
+			exactStates.clear();
+			statesByWinner.clear();
+			winnersByContext.clear();
+			for (int index = 0; index < refreshedEntries.size(); index++) {
+				Winner refreshed = refreshedEntries.get(index);
+				WinnerStateKey state = retainedStates.get(index);
+				exactStates.put(state, refreshed);
+				statesByWinner.put(refreshed, state);
+				winnersByContext.computeIfAbsent(state.context(), ignored -> new ArrayList<>()).add(refreshed);
+			}
+			entriesSnapshotDirty = true;
+		}
+
 		int dominatedRejectedCount() {
 			return dominatedRejectedCount;
 		}
@@ -522,14 +810,14 @@ public final class MemoGroup {
 			return trimmedCount;
 		}
 
-		boolean refineSelectedOutputEstimate(SelectedLogicalOutputEstimateKey estimateKey,
+		Set<WinnerStateKey> refineSelectedOutputEstimate(SelectedLogicalOutputEstimateKey estimateKey,
 				LogicalOutputEstimate estimate, WinnerKey winnerKey, CascadesCostModel costModel) {
 			List<Winner> refinedEntries = new ArrayList<>(entries.size());
-			boolean changed = false;
+			Set<WinnerStateKey> refinedStates = new LinkedHashSet<>();
 			OptimizationGoal goal = OptimizationGoal.exact(winnerKey.requiredProperties())
 					.withCostPolicy(winnerKey.costPolicy())
-					.withRowGoal(winnerKey.rowGoal())
 					.withSemanticScope(winnerKey.semanticScope())
+					.withRowGoalPreservingSemanticScope(winnerKey.rowGoal())
 					.withInputBindingContext(winnerKey.inputBindingContext());
 			for (Winner winner : entries) {
 				Winner refined = winner;
@@ -543,10 +831,12 @@ public final class MemoGroup {
 					refined = winner.withSelectedOutputEstimate(selectedRows, estimate.bindingProfile());
 				}
 				refinedEntries.add(refined);
-				changed |= refined != winner;
+				if (refined != winner) {
+					refinedStates.add(WinnerStateKey.of(winner));
+				}
 			}
-			if (!changed) {
-				return false;
+			if (refinedStates.isEmpty()) {
+				return Set.of();
 			}
 			int previousDominatedRejectedCount = dominatedRejectedCount;
 			int previousTrimmedCount = trimmedCount;
@@ -560,7 +850,7 @@ public final class MemoGroup {
 			}
 			dominatedRejectedCount = previousDominatedRejectedCount;
 			trimmedCount = previousTrimmedCount;
-			return true;
+			return Set.copyOf(refinedStates);
 		}
 
 		private boolean dominatedByExisting(WinnerStateKey state, Winner candidate) {
@@ -576,16 +866,44 @@ public final class MemoGroup {
 			return false;
 		}
 
-		private boolean sameContext(Winner existing, WinnerStateKey candidateState) {
-			WinnerStateKey existingState = statesByWinner.get(existing);
-			return existingState != null && existingState.context().equals(candidateState.context());
+		private Winner worst(List<Winner> contextEntries) {
+			Winner worst = null;
+			for (Winner existing : contextEntries) {
+				if (worst == null || compare(existing, worst) > 0) {
+					worst = existing;
+				}
+			}
+			if (worst == null) {
+				throw new IllegalStateException("a full winner frontier context has no retained winner");
+			}
+			return worst;
 		}
 
 		private boolean parentCostDominates(Winner candidate, Winner existing) {
-			return candidate.cost().compareTo(existing.cost()) <= 0
-					&& candidate.cost().rows() <= existing.cost().rows()
-					&& candidate.cost().workRows() <= existing.cost().workRows()
-					&& candidate.selectedOutputRows() <= existing.selectedOutputRows();
+			if (candidate.cardinalityEstimate().rows() > existing.cardinalityEstimate().rows()
+					|| candidate.selectedOutputRows() > existing.selectedOutputRows()) {
+				return false;
+			}
+			CostOrdering.RankedCost candidateCost = ranked(candidate);
+			CostOrdering.RankedCost existingCost = ranked(existing);
+			boolean equalResources = candidateCost.resources().equals(existingCost.resources());
+			return (equalResources || costOrdering.dominates(candidateCost, existingCost))
+					&& (!equalResources
+							|| candidate.cardinalityEstimate().rows() < existing.cardinalityEstimate().rows()
+							|| candidate.selectedOutputRows() < existing.selectedOutputRows());
+		}
+
+		private boolean canonicalReplacement(Winner candidate, Winner existing) {
+			return compare(candidate, existing) < 0;
+		}
+
+		private int compare(Winner left, Winner right) {
+			int comparison = costOrdering.compare(ranked(left), ranked(right));
+			return comparison != 0 ? comparison : left.comparePhysicalDerivationTo(right);
+		}
+
+		private CostOrdering.RankedCost ranked(Winner winner) {
+			return costOrdering.rank(winner.executionCost(), winner.estimateRisk(), winner.physicalOperatorId());
 		}
 
 		private void unregister(Winner winner) {
@@ -594,6 +912,7 @@ public final class MemoGroup {
 				return;
 			}
 			exactStates.remove(state);
+			removeIdentity(entries, winner);
 			entriesSnapshotDirty = true;
 			List<Winner> contextEntries = winnersByContext.get(state.context());
 			if (contextEntries == null) {

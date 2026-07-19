@@ -590,6 +590,37 @@ class LmdbFilterSimplifierOptimizerTest {
 	}
 
 	@Test
+	void keepsOptionalWhenRightOnlyBindingAppearsOnlyAsInCandidate() {
+		StatementPattern required = statementPattern("s", "type", "leftAssured");
+		StatementPattern optional = statementPattern("s", "name", "rhsOnly");
+		ListMemberOperator condition = new ListMemberOperator();
+		condition.addArgument(new Var("leftAssured"));
+		condition.addArgument(new ValueConstant(VF.createLiteral("matching constant")));
+		condition.addArgument(new Var("rhsOnly"));
+		QueryRoot root = new QueryRoot(new Filter(new LeftJoin(required, optional), condition));
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		assertTrue(containsLeftJoin(root.getArg()),
+				"A matching constant can retain an unmatched OPTIONAL row before the unbound RHS candidate is tested");
+	}
+
+	@Test
+	void keepsOptionalWhenRightOnlyWitnessIsPreboundByIncomingBindings() {
+		StatementPattern required = statementPattern("s", "type", "leftAssured");
+		StatementPattern optional = statementPattern("s", "name", "rhsOnly");
+		QueryRoot root = new QueryRoot(new Filter(new LeftJoin(required, optional),
+				new Bound(new Var("rhsOnly"))));
+		MapBindingSet incoming = new MapBindingSet(1);
+		incoming.addBinding("rhsOnly", VF.createLiteral("already bound"));
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, incoming);
+
+		assertTrue(containsLeftJoin(root.getArg()),
+				"A prebound RHS-only name is not an unbound witness on unmatched OPTIONAL rows");
+	}
+
+	@Test
 	void rewritesNullRejectingOptionalConjunctWithNestedExistsToMandatoryJoin() {
 		StatementPattern member = statementPattern("member", "type", "memberType");
 		StatementPattern loan = statementPattern("loan", "borrowedBy", "member");

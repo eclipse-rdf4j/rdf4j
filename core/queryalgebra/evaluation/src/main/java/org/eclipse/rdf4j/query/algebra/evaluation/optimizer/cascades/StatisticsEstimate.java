@@ -41,7 +41,8 @@ public record StatisticsEstimate(double rows, QErrorInterval qErrorInterval, dou
 		bagEstimate = bagEstimate == null ? null : bagEstimate;
 		BagEstimate profileBag = bagEstimate != null
 				? bagEstimate
-				: new BagEstimate(rows, workRows, 0.0d, qErrorInterval.confidence(), method, Map.of(), Map.of(), metrics);
+				: new BagEstimate(rows, workRows, 0.0d, qErrorInterval.confidence(), method, Map.of(), Map.of(),
+						metrics);
 		bindingProfile = BindingProfile.fromBag(null, profileBag, metrics);
 	}
 

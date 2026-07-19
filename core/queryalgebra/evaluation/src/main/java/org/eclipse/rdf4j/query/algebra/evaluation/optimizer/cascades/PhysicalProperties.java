@@ -256,18 +256,15 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 		if (other == null || other.isAny()) {
 			return this;
 		}
+		if (isAny()) {
+			return other;
+		}
 		Builder builder = builder();
 		builder.ordering(ordering.isEmpty() ? other.ordering : ordering);
-		Set<String> mergedDistinct = new LinkedHashSet<>(distinctVars);
-		mergedDistinct.addAll(other.distinctVars);
-		builder.distinctVars(mergedDistinct);
+		builder.distinctVars(union(distinctVars, other.distinctVars));
 		builder.accessPath(ANY_ACCESS_PATH.equals(accessPath) ? other.accessPath : accessPath);
-		Set<String> mergedBound = new LinkedHashSet<>(boundVars);
-		mergedBound.addAll(other.boundVars);
-		builder.boundVars(mergedBound);
-		Set<String> mergedInputBound = new LinkedHashSet<>(inputBoundVars);
-		mergedInputBound.addAll(other.inputBoundVars);
-		builder.inputBoundVars(mergedInputBound);
+		builder.boundVars(union(boundVars, other.boundVars));
+		builder.inputBoundVars(union(inputBoundVars, other.inputBoundVars));
 		builder.materialization(materialization == Materialization.ANY ? other.materialization : materialization);
 		builder.graphContext(ANY_GRAPH_CONTEXT.equals(graphContext) ? other.graphContext : graphContext);
 		builder.duplicateBehavior(
@@ -276,30 +273,43 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 				observationOrder == ObservationOrder.ANY ? other.observationOrder : observationOrder);
 		builder.inputConsumption(
 				inputConsumption == InputConsumption.ANY ? other.inputConsumption : inputConsumption);
-		Set<FiniteRelationContract> mergedRelations = new LinkedHashSet<>(appliedFiniteRelations);
-		mergedRelations.addAll(other.appliedFiniteRelations);
-		builder.appliedFiniteRelations(mergedRelations);
+		builder.appliedFiniteRelations(union(appliedFiniteRelations, other.appliedFiniteRelations));
 		builder.bindingProfile(bindingProfile.mergedWith(other.bindingProfile));
 		return builder.build();
 	}
 
 	public PhysicalProperties withOrdering(List<String> ordering) {
+		if (this.ordering == ordering || this.ordering.equals(ordering)) {
+			return this;
+		}
 		return builderFrom(this).ordering(ordering).build();
 	}
 
 	public PhysicalProperties withAccessPath(String accessPath) {
+		if (Objects.equals(this.accessPath, accessPath)) {
+			return this;
+		}
 		return builderFrom(this).accessPath(accessPath).build();
 	}
 
 	public PhysicalProperties withDistinctVars(Set<String> distinctVars) {
+		if (this.distinctVars == distinctVars || this.distinctVars.equals(distinctVars)) {
+			return this;
+		}
 		return builderFrom(this).distinctVars(distinctVars).build();
 	}
 
 	public PhysicalProperties withBoundVars(Set<String> boundVars) {
+		if (this.boundVars == boundVars || this.boundVars.equals(boundVars)) {
+			return this;
+		}
 		return builderFrom(this).boundVars(boundVars).build();
 	}
 
 	public PhysicalProperties withInputBoundVars(Set<String> inputBoundVars) {
+		if (this.inputBoundVars == inputBoundVars || this.inputBoundVars.equals(inputBoundVars)) {
+			return this;
+		}
 		return builderFrom(this).inputBoundVars(inputBoundVars).build();
 	}
 
@@ -316,6 +326,9 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 	}
 
 	public PhysicalProperties withInputConsumption(InputConsumption inputConsumption) {
+		if (this.inputConsumption == inputConsumption) {
+			return this;
+		}
 		return builderFrom(this).inputConsumption(inputConsumption).build();
 	}
 
@@ -324,6 +337,9 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 	}
 
 	public PhysicalProperties withBindingProfile(BindingProfile bindingProfile) {
+		if (this.bindingProfile == bindingProfile || this.bindingProfile.equals(bindingProfile)) {
+			return this;
+		}
 		return builderFrom(this).bindingProfile(bindingProfile).build();
 	}
 
@@ -347,6 +363,38 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 		restrictedDistinct.retainAll(allowed);
 		List<String> restrictedOrdering = ordering.stream()
 				.filter(ordered -> allowed.contains(orderingName(ordered)))
+				.toList();
+		return builderFrom(this)
+				.ordering(restrictedOrdering)
+				.distinctVars(restrictedDistinct)
+				.boundVars(restrictedBound)
+				.bindingProfile(restrictedProfile)
+				.build();
+	}
+
+	/** Bitmap-native output restriction for repeated candidate costing. */
+	PhysicalProperties restrictOutputTo(BindingMask outputMask, BindingUniverse universe) {
+		Objects.requireNonNull(universe, "universe");
+		BindingMask requested = outputMask == null ? BindingMask.EMPTY : outputMask;
+		BindingProfile restrictedProfile = bindingProfile.restrictTo(requested, universe);
+		boolean orderingWithinOutput = true;
+		for (int index = 0; index < ordering.size(); index++) {
+			String ordered = ordering.get(index);
+			if (!universe.contains(requested, orderingName(ordered))) {
+				orderingWithinOutput = false;
+				break;
+			}
+		}
+		if (requested.containsAll(universe.maskOfStableSet(boundVars))
+				&& requested.containsAll(universe.maskOfStableSet(distinctVars))
+				&& orderingWithinOutput
+				&& restrictedProfile == bindingProfile) {
+			return this;
+		}
+		Set<String> restrictedBound = restrictNames(boundVars, requested, universe);
+		Set<String> restrictedDistinct = restrictNames(distinctVars, requested, universe);
+		List<String> restrictedOrdering = ordering.stream()
+				.filter(ordered -> universe.contains(requested, orderingName(ordered)))
 				.toList();
 		return builderFrom(this)
 				.ordering(restrictedOrdering)
@@ -428,6 +476,22 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 	private static String orderingName(String ordered) {
 		int separator = ordered.indexOf(':');
 		return separator < 0 ? ordered : ordered.substring(0, separator);
+	}
+
+	private static Set<String> restrictNames(Set<String> names, BindingMask requested, BindingUniverse universe) {
+		return universe.restrictStableSet(names, requested);
+	}
+
+	private static <T> Set<T> union(Set<T> left, Set<T> right) {
+		if (right.isEmpty() || left.containsAll(right)) {
+			return left;
+		}
+		if (left.isEmpty()) {
+			return right;
+		}
+		LinkedHashSet<T> merged = new LinkedHashSet<>(left);
+		merged.addAll(right);
+		return merged;
 	}
 
 	private static Builder builderFrom(PhysicalProperties properties) {

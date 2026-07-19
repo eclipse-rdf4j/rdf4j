@@ -21,7 +21,10 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingMask;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingSymbol;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.NullRejectingOptionalSemantics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptionalNegatedBoundSemantics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleDescriptor.MemoFact;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.BindingShape;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.IrAttr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.IrNode;
@@ -43,6 +46,15 @@ public final class RuleDsl {
 
 	public static RulePattern capture(String name) {
 		return RulePattern.capture(name);
+	}
+
+	public static RulePattern captureRoute(String name) {
+		return RulePattern.captureRoute(name);
+	}
+
+	/** Captures a full structural route only when its memo closure can contain the required logical operator. */
+	public static RulePattern captureRouteContaining(String name, IrOp requiredOperator) {
+		return RulePattern.captureRouteContaining(name, requiredOperator);
 	}
 
 	public static RulePattern statementPattern(String alias) {
@@ -329,6 +341,60 @@ public final class RuleDsl {
 				: RuleGuard.GuardResult.fail("non-deterministic scalar: " + scalarCaptureName);
 	}
 
+	public static RuleGuard nestedTupleExpression(String scalarCaptureName) {
+		return capture -> capture.scalarFacts(scalarCaptureName).isNestedTupleExpr()
+				? RuleGuard.GuardResult.ok("nestedTupleExpression(" + scalarCaptureName + ")")
+				: RuleGuard.GuardResult.fail("scalar has no nested tuple expression: " + scalarCaptureName);
+	}
+
+	public static RuleGuard noNewScalarSubqueryCorrelation(String scalarCaptureName, String inputCaptureName) {
+		return capture -> {
+			BindingMask newlyVisible = capture.node(inputCaptureName).bindings().possible();
+			BindingMask currentlyLocal = locallyReferencedSubqueryVars(capture.scalar(scalarCaptureName));
+			return currentlyLocal.intersects(newlyVisible)
+					? RuleGuard.GuardResult.fail("new scalar-subquery correlation from " + inputCaptureName)
+					: RuleGuard.GuardResult.ok("noNewScalarSubqueryCorrelation(" + scalarCaptureName + ","
+							+ inputCaptureName + ")");
+		};
+	}
+
+	private static BindingMask locallyReferencedSubqueryVars(ScalarExpr expression) {
+		if (expression instanceof ScalarExpr.Exists exists) {
+			return exists.referencedVars().minus(exists.correlatedVars());
+		}
+		if (expression instanceof ScalarExpr.Not not) {
+			return locallyReferencedSubqueryVars(not.arg());
+		}
+		if (expression instanceof ScalarExpr.And and) {
+			return locallyReferencedSubqueryVars(and.left()).union(locallyReferencedSubqueryVars(and.right()));
+		}
+		if (expression instanceof ScalarExpr.Or or) {
+			return locallyReferencedSubqueryVars(or.left()).union(locallyReferencedSubqueryVars(or.right()));
+		}
+		if (expression instanceof ScalarExpr.Eq eq) {
+			return locallyReferencedSubqueryVars(eq.left()).union(locallyReferencedSubqueryVars(eq.right()));
+		}
+		if (expression instanceof ScalarExpr.SameTerm sameTerm) {
+			return locallyReferencedSubqueryVars(sameTerm.left())
+					.union(locallyReferencedSubqueryVars(sameTerm.right()));
+		}
+		if (expression instanceof ScalarExpr.In in) {
+			BindingMask referenced = locallyReferencedSubqueryVars(in.value());
+			for (ScalarExpr candidate : in.candidates()) {
+				referenced = referenced.union(locallyReferencedSubqueryVars(candidate));
+			}
+			return referenced;
+		}
+		if (expression instanceof ScalarExpr.FunctionCall function) {
+			BindingMask referenced = BindingMask.EMPTY;
+			for (ScalarExpr argument : function.args()) {
+				referenced = referenced.union(locallyReferencedSubqueryVars(argument));
+			}
+			return referenced;
+		}
+		return BindingMask.EMPTY;
+	}
+
 	public static RuleGuard atLeastOneJoinConjunctPushable(String joinCaptureName, String scalarCaptureName) {
 		return capture -> {
 			IrNode join = capture.node(joinCaptureName);
@@ -408,31 +474,29 @@ public final class RuleDsl {
 	public static RuleGuard negatedBoundRhsOnlyAssured(String scalarCaptureName, String leftCaptureName,
 			String rightCaptureName) {
 		return capture -> {
-			BindingSymbol symbol = ScalarFacts.negatedBoundVariable(capture.scalar(scalarCaptureName));
-			if (symbol == null) {
-				return RuleGuard.GuardResult.fail("not a negated BOUND expression: " + scalarCaptureName);
-			}
-			BindingMask mask = BindingShape.maskOfSymbol(capture.ir().universe(), symbol);
-			if (capture.node(leftCaptureName).bindings().possible().intersects(mask)) {
-				return RuleGuard.GuardResult.fail("negated BOUND variable is produced by left input");
-			}
-			if (!capture.node(rightCaptureName).bindings().assured().containsAll(mask)) {
-				return RuleGuard.GuardResult.fail("negated BOUND variable is not assured by right input");
-			}
-			BindingMask shared = capture.node(leftCaptureName)
-					.bindings()
-					.possible()
-					.intersect(capture.node(rightCaptureName).bindings().possible());
-			if (shared.isEmpty()) {
-				return RuleGuard.GuardResult.fail("OPTIONAL anti-join has no shared variables");
-			}
-			if (!capture.node(leftCaptureName).bindings().assured().containsAll(shared)) {
-				return RuleGuard.GuardResult.fail("OPTIONAL anti-join shared variables are not left-assured");
-			}
-			if (!capture.node(rightCaptureName).bindings().assured().containsAll(shared)) {
-				return RuleGuard.GuardResult.fail("OPTIONAL anti-join shared variables are not right-assured");
-			}
-			return RuleGuard.GuardResult.ok("rhsOnlyAssuredNegatedBound");
+			boolean proved = OptionalNegatedBoundSemantics.retainsOnlyLeft(
+					capture.ir().universe(),
+					capture.scalar(scalarCaptureName),
+					capture.node(leftCaptureName).bindings(),
+					capture.node(rightCaptureName).bindings(),
+					capture.incomingBindingMask());
+			return proved
+					? RuleGuard.GuardResult.ok("rhsOnlyAssuredNegatedBound")
+					: RuleGuard.GuardResult.fail("OPTIONAL anti-join proof failed");
+		};
+	}
+
+	public static RuleGuard nullRejectingOptional(String filterCaptureName, String leftJoinCaptureName) {
+		return capture -> {
+			NullRejectingOptionalSemantics.Analysis analysis = NullRejectingOptionalSemantics.analyze(
+					capture.ir(),
+					capture.node(filterCaptureName),
+					capture.node(leftJoinCaptureName),
+					capture.incomingBindingMask());
+			return analysis.safe()
+					? RuleGuard.GuardResult.ok("nullRejectingOptional(witness="
+							+ analysis.proof().witnessBindings() + ")")
+					: RuleGuard.GuardResult.fail("OPTIONAL-to-inner proof failed: " + analysis.rejection());
 		};
 	}
 
@@ -441,15 +505,29 @@ public final class RuleDsl {
 			IrNode difference = capture.node(differenceCaptureName);
 			IrNode left = capture.ir().node(difference.inputs().get(0));
 			IrNode right = capture.ir().node(difference.inputs().get(1));
-			BindingMask shared = left.bindings().possible().intersect(right.bindings().possible());
-			if (shared.isEmpty()) {
+			BindingMask possibleShared = left.bindings().possible().intersect(right.bindings().possible());
+			if (possibleShared.isEmpty()) {
 				return RuleGuard.GuardResult.fail("MINUS has no shared variables");
 			}
-			if (!left.bindings().assured().containsAll(shared) || !right.bindings().assured().containsAll(shared)) {
+			BindingMask shared = assuredMinusSharedDomain(left.bindings().possible(), left.bindings().assured(),
+					right.bindings().possible(), right.bindings().assured());
+			if (shared.isEmpty()) {
 				return RuleGuard.GuardResult.fail("MINUS shared variables are not assured on both sides");
 			}
 			return RuleGuard.GuardResult.ok("minusSharedVarsAssured");
 		};
+	}
+
+	/** Returns the non-empty shared domain only when both MINUS inputs assure every shared binding. */
+	public static BindingMask assuredMinusSharedDomain(BindingMask leftPossible, BindingMask leftAssured,
+			BindingMask rightPossible, BindingMask rightAssured) {
+		BindingMask shared = Objects.requireNonNull(leftPossible, "leftPossible")
+				.intersect(Objects.requireNonNull(rightPossible, "rightPossible"));
+		return !shared.isEmpty()
+				&& Objects.requireNonNull(leftAssured, "leftAssured").containsAll(shared)
+				&& Objects.requireNonNull(rightAssured, "rightAssured").containsAll(shared)
+						? shared
+						: BindingMask.EMPTY;
 	}
 
 	public static RuleGuard simpleCorrelatableMinusRhs(String differenceCaptureName) {
@@ -640,8 +718,10 @@ public final class RuleDsl {
 		if (!(node.attr()instanceof IrAttr.Condition condition) || node.inputs().isEmpty()) {
 			return false;
 		}
-		BindingMask conditionVars = ScalarFacts.of(ir.universe(), condition.expression()).freeVars();
-		return ir.node(node.inputs().get(0)).bindings().assured().containsAll(conditionVars);
+		ScalarFacts facts = ScalarFacts.of(ir.universe(), condition.expression());
+		return facts.deterministic()
+				&& !facts.isNestedTupleExpr()
+				&& ir.node(node.inputs().get(0)).bindings().assured().containsAll(facts.freeVars());
 	}
 
 	private static boolean rhsExtensionRowPreservingNonShadowing(PlanIr ir, IrNode node) {
@@ -657,8 +737,8 @@ public final class RuleDsl {
 			if (inputPossible.intersects(target)) {
 				return false;
 			}
-			BindingMask expressionVars = ScalarFacts.of(ir.universe(), binding.expression()).freeVars();
-			if (!inputAssured.containsAll(expressionVars)) {
+			ScalarFacts facts = ScalarFacts.of(ir.universe(), binding.expression());
+			if (!facts.deterministic() || facts.isNestedTupleExpr() || !inputAssured.containsAll(facts.freeVars())) {
 				return false;
 			}
 		}
@@ -787,7 +867,34 @@ public final class RuleDsl {
 		};
 	}
 
-	public record MaskExpression(String label, RuleGuard.MaskExpr delegate) implements RuleGuard.MaskExpr {
+	public static RuleGuard requiredOrderingNotDelivered() {
+		return capture -> {
+			if (capture.goal() == null || capture.goal().requiredProperties().ordering().isEmpty()) {
+				return RuleGuard.GuardResult.fail("ordering not required");
+			}
+			PhysicalProperties requiredOrdering = PhysicalProperties.builder()
+					.ordering(capture.goal().requiredProperties().ordering())
+					.build();
+			if (capture.expression() != null
+					&& capture.expression().deliveredProperties().satisfies(requiredOrdering)) {
+				return RuleGuard.GuardResult.fail("ordering already delivered");
+			}
+			return RuleGuard.GuardResult.ok("requiredOrderingNotDelivered");
+		};
+	}
+
+	public record MaskExpression(String label, RuleGuard.MaskExpr delegate,
+			RuleGuard.DependencyMetadata dependencies) implements RuleGuard.MaskExpr {
+
+		public MaskExpression(String label, RuleGuard.MaskExpr delegate) {
+			this(label, delegate, RuleGuard.DependencyMetadata.NONE);
+		}
+
+		public MaskExpression {
+			Objects.requireNonNull(delegate, "delegate");
+			dependencies = dependencies == null ? RuleGuard.DependencyMetadata.NONE : dependencies;
+		}
+
 		@Override
 		public BindingMask eval(RuleCapture capture) {
 			return delegate.eval(capture);
@@ -795,17 +902,20 @@ public final class RuleDsl {
 
 		public MaskExpression union(RuleGuard.MaskExpr other) {
 			return new MaskExpression(label + " union " + other,
-					capture -> eval(capture).union(other.eval(capture)));
+					capture -> eval(capture).union(other.eval(capture)),
+					dependencies.mergedWith(other.dependencies()));
 		}
 
 		public MaskExpression intersect(RuleGuard.MaskExpr other) {
 			return new MaskExpression(label + " intersect " + other,
-					capture -> eval(capture).intersect(other.eval(capture)));
+					capture -> eval(capture).intersect(other.eval(capture)),
+					dependencies.mergedWith(other.dependencies()));
 		}
 
 		public MaskExpression minus(RuleGuard.MaskExpr other) {
 			return new MaskExpression(label + " minus " + other,
-					capture -> eval(capture).minus(other.eval(capture)));
+					capture -> eval(capture).minus(other.eval(capture)),
+					dependencies.mergedWith(other.dependencies()));
 		}
 
 		@Override
@@ -817,17 +927,20 @@ public final class RuleDsl {
 	public record ShapeExpression(String captureName) {
 		public MaskExpression possible() {
 			return new MaskExpression("shape(" + captureName + ").possible",
-					capture -> capture.shape(captureName).possible());
+					capture -> capture.shape(captureName).possible(),
+					RuleGuard.DependencyMetadata.bindingShape(MemoFact.POSSIBLE_BINDINGS));
 		}
 
 		public MaskExpression assured() {
 			return new MaskExpression("shape(" + captureName + ").assured",
-					capture -> capture.shape(captureName).assured());
+					capture -> capture.shape(captureName).assured(),
+					RuleGuard.DependencyMetadata.bindingShape(MemoFact.ASSURED_BINDINGS));
 		}
 
 		public MaskExpression nullable() {
 			return new MaskExpression("shape(" + captureName + ").nullable",
-					capture -> capture.shape(captureName).nullable());
+					capture -> capture.shape(captureName).nullable(),
+					RuleGuard.DependencyMetadata.bindingShape(MemoFact.NULLABILITY));
 		}
 	}
 }

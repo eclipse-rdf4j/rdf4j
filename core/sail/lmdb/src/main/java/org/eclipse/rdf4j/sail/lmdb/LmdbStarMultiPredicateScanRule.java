@@ -67,6 +67,9 @@ final class LmdbStarMultiPredicateScanRule extends LmdbRule {
 			return List.of();
 		}
 		Set<String> boundVars = goal == null ? Set.of() : goal.requiredProperties().boundVars();
+		if (!LmdbStarJoinScanSupport.canConsumeExternalBindings(plan.get(), boundVars)) {
+			return List.of();
+		}
 		Optional<StatisticsEstimate> estimate = statisticsProvider.starMultiPredicateScan(plan.get().patterns(),
 				boundVars);
 		if (estimate.isEmpty()) {

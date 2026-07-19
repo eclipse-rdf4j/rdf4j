@@ -12,12 +12,15 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MemoExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.BindingShape;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.IrAttr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.IrNode;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.IrNodeId;
@@ -26,7 +29,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.PlanIr;
 
 /** Pattern AST for matching IR nodes. */
 @Experimental
-public sealed interface RulePattern permits RulePattern.Capture,RulePattern.OpPattern {
+public sealed interface RulePattern permits RulePattern.Capture,RulePattern.RouteCapture,RulePattern.OpPattern {
 
 	Optional<RuleCapture> match(PlanIr ir, IrNodeId root);
 
@@ -35,10 +38,26 @@ public sealed interface RulePattern permits RulePattern.Capture,RulePattern.OpPa
 		return matchInto(ir, root, builder) ? Optional.of(builder.build()) : Optional.empty();
 	}
 
+	default Optional<RuleCapture> match(PlanIr ir, IrNodeId root, OptimizationGoal goal, MemoExpr expression,
+			Map<IrNodeId, Integer> memoGroupIds, Map<IrNodeId, BindingShape> memoBindingShapes,
+			List<RuleCapture.ScalarMemoInput> scalarMemoInputs) {
+		RuleCapture.Builder builder = RuleCapture.builder(ir, root, goal, expression, memoGroupIds, memoBindingShapes,
+				scalarMemoInputs);
+		return matchInto(ir, root, builder) ? Optional.of(builder.build()) : Optional.empty();
+	}
+
 	boolean matchInto(PlanIr ir, IrNodeId id, RuleCapture.Builder builder);
 
 	static RulePattern capture(String name) {
 		return new Capture(name);
+	}
+
+	static RulePattern captureRoute(String name) {
+		return new RouteCapture(name, Set.of());
+	}
+
+	static RulePattern captureRouteContaining(String name, IrOp requiredOperator) {
+		return new RouteCapture(name, Set.of(Objects.requireNonNull(requiredOperator, "requiredOperator")));
 	}
 
 	static RulePattern op(String alias, IrOp op, List<RulePattern> inputs) {
@@ -50,6 +69,26 @@ public sealed interface RulePattern permits RulePattern.Capture,RulePattern.OpPa
 	}
 
 	record Capture(String name) implements RulePattern {
+		@Override
+		public Optional<RuleCapture> match(PlanIr ir, IrNodeId root) {
+			RuleCapture.Builder builder = RuleCapture.builder(ir, root);
+			return matchInto(ir, root, builder) ? Optional.of(builder.build()) : Optional.empty();
+		}
+
+		@Override
+		public boolean matchInto(PlanIr ir, IrNodeId id, RuleCapture.Builder builder) {
+			return builder.captureNode(name, id);
+		}
+	}
+
+	/** Captures one node while asking the memo matcher to preserve its complete structural derivation route. */
+	record RouteCapture(String name, Set<IrOp> requiredOperators) implements RulePattern {
+		public RouteCapture {
+			requiredOperators = requiredOperators == null || requiredOperators.isEmpty()
+					? Set.of()
+					: Set.copyOf(requiredOperators);
+		}
+
 		@Override
 		public Optional<RuleCapture> match(PlanIr ir, IrNodeId root) {
 			RuleCapture.Builder builder = RuleCapture.builder(ir, root);

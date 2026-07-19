@@ -32,13 +32,11 @@ import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
-import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.CompareAll;
 import org.eclipse.rdf4j.query.algebra.CompareAny;
-import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Datatype;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Exists;
@@ -46,8 +44,6 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
-import org.eclipse.rdf4j.query.algebra.Group;
-import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.IsBNode;
 import org.eclipse.rdf4j.query.algebra.IsLiteral;
 import org.eclipse.rdf4j.query.algebra.IsNumeric;
@@ -114,10 +110,13 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		Objects.requireNonNull(tupleExpr, "tupleExpr must not be null");
-		optimizeScope(tupleExpr);
+		Set<String> incomingBindingNames = bindings == null || bindings.isEmpty()
+				? Set.of()
+				: Set.copyOf(bindings.getBindingNames());
+		optimizeScope(tupleExpr, incomingBindingNames);
 	}
 
-	private void optimizeScope(TupleExpr expr) {
+	private void optimizeScope(TupleExpr expr, Set<String> incomingBindingNames) {
 		expr.visit(new AbstractQueryModelVisitor<>() {
 			final TupleExpr current = expr;
 
@@ -125,20 +124,22 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 			protected void meetNode(QueryModelNode node) {
 				if (node != current && node instanceof TupleExpr && node instanceof VariableScopeChange
 						&& ((VariableScopeChange) node).isVariableScopeChange()) {
-					optimizeScope((TupleExpr) node);
+					optimizeScope((TupleExpr) node, incomingBindingNames);
 				} else {
 					super.meetNode(node);
 				}
 			}
 		});
 
-		expr.visit(new FilterMerger());
+		expr.visit(new FilterMerger(incomingBindingNames));
 	}
 
 	private final class FilterMerger extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+		private final Set<String> incomingBindingNames;
 
-		private FilterMerger() {
+		private FilterMerger(Set<String> incomingBindingNames) {
 			super(false);
+			this.incomingBindingNames = incomingBindingNames;
 		}
 
 		@Override
@@ -158,7 +159,8 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 				filter.setCondition(mergeConditions(childFilter.getCondition(), filter.getCondition()));
 				filter.setArg(childFilter.getArg());
 			}
-			TupleExpr nullRejectingOptionalRewrite = LmdbNullRejectingOptionalSupport.rewrite(filter);
+			TupleExpr nullRejectingOptionalRewrite = LmdbNullRejectingOptionalSupport.rewrite(filter,
+					incomingBindingNames);
 			if (nullRejectingOptionalRewrite != null) {
 				filter.replaceWith(nullRejectingOptionalRewrite);
 				nullRejectingOptionalRewrite.visit(this);
@@ -284,12 +286,6 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 						mandatoryOptionalAnchorBindings);
 			}
 			if (materializedAnchor != null) {
-				TupleExpr semiFilter = duplicateInsensitiveMembershipSemiFilter(filter, condition, materializedAnchor,
-						conditions);
-				if (semiFilter != null) {
-					filter.replaceWith(semiFilter);
-					return true;
-				}
 				if (!equivalentSmallLiteralAssignmentExists(materializedAnchor, assignmentValues)) {
 					anchors.add(materializedAnchor);
 				}
@@ -948,107 +944,6 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		return containsMultipleStatementPatterns(filter);
 	}
 
-	private static boolean isDuplicateInsensitiveDistinctMembershipFilter(Filter filter, ValueExpr condition,
-			String bindingName, StatementPattern pattern) {
-		if (filter == null || condition == null || bindingName == null || pattern == null) {
-			return false;
-		}
-		Set<String> conditionBindings = DeferredFilter.conditionBindingNames(condition);
-		if (conditionBindings.size() != 1 || !conditionBindings.contains(bindingName)) {
-			return false;
-		}
-		Set<String> distinctCountVars = nearestDuplicateInsensitiveDistinctCountVars(filter);
-		if (distinctCountVars.isEmpty() || distinctCountVars.contains(bindingName)) {
-			return false;
-		}
-		Set<String> patternBindings = pattern.getBindingNames();
-		if (java.util.Collections.disjoint(patternBindings, distinctCountVars)) {
-			return false;
-		}
-		return !ancestorFilterMentionsBindingBeforeGroup(filter, bindingName);
-	}
-
-	private static TupleExpr duplicateInsensitiveMembershipSemiFilter(Filter filter, ValueExpr condition,
-			BindingSetAssignment anchor, List<ValueExpr> conditions) {
-		String bindingName = singleBindingName(anchor);
-		if (bindingName == null) {
-			return null;
-		}
-		StatementPattern pattern = localStatementPattern(filter, condition, bindingName);
-		if (!isDuplicateInsensitiveDistinctMembershipFilter(filter, condition, bindingName, pattern)) {
-			return null;
-		}
-		List<ValueExpr> residualConditions = new ArrayList<>();
-		for (ValueExpr candidate : conditions == null ? List.<ValueExpr>of() : conditions) {
-			if (candidate == condition) {
-				continue;
-			}
-			if (VarNameCollector.process(candidate).contains(bindingName)) {
-				return null;
-			}
-			residualConditions.add(candidate.clone());
-		}
-		List<TupleExpr> factors = new ArrayList<>();
-		collectJoinFactors(filter.getArg(), factors);
-		int patternIndex = -1;
-		for (int i = 0; i < factors.size(); i++) {
-			if (factors.get(i) == pattern) {
-				patternIndex = i;
-				break;
-			}
-		}
-		if (patternIndex < 0 || factors.size() < 2) {
-			return null;
-		}
-		List<TupleExpr> remainingFactors = new ArrayList<>(factors.size() - 1);
-		for (int i = 0; i < factors.size(); i++) {
-			if (i != patternIndex) {
-				remainingFactors.add(factors.get(i).clone());
-			}
-		}
-		if (remainingFactors.isEmpty()) {
-			return null;
-		}
-		TupleExpr remaining = leftDeep(remainingFactors);
-		Set<String> anchorBindings = anchor.getBindingNames();
-		if (!java.util.Collections.disjoint(remaining.getBindingNames(), anchorBindings)
-				|| !java.util.Collections.disjoint(VarNameCollector.process(remaining), anchorBindings)) {
-			return null;
-		}
-		Set<String> correlationBindings = new LinkedHashSet<>(pattern.getBindingNames());
-		correlationBindings.retainAll(remaining.getBindingNames());
-		if (correlationBindings.isEmpty()) {
-			return null;
-		}
-		TupleExpr membership = new Join(anchor.clone(), pattern.clone());
-		Set<String> distinctCountVars = nearestDuplicateInsensitiveDistinctCountVars(filter);
-		boolean directJoinSafe = distinctCountVars.containsAll(correlationBindings);
-		TupleExpr replacement = directJoinSafe ? new Join(membership, remaining)
-				: new Filter(remaining,
-						new Exists(membership));
-		if (!residualConditions.isEmpty()) {
-			replacement = new Filter(replacement, LmdbJoinPlanSupport.combinedCondition(residualConditions));
-		}
-		replacement.setStringMetricPlanned("optimizer.rewriteProof",
-				new LmdbRewriteProof(LmdbRewriteProof.RewriteKind.DISTINCT_FINITE_MEMBERSHIP_SEMI_FILTER,
-						LmdbRewriteProof.EquivalenceScope.SET_EQUIVALENT,
-						Set.of("finiteFilter", "distinctCount", "unobservedMembershipBinding",
-								directJoinSafe ? "earlyMembershipJoin" : "correlatedExists"),
-						"finite filter membership is duplicate-insensitive under COUNT DISTINCT",
-						distinctMembershipSemiFilterCertificate(directJoinSafe)).metricFragment());
-		return replacement;
-	}
-
-	private static RewriteCertificate distinctMembershipSemiFilterCertificate(boolean directJoin) {
-		return new RewriteCertificate("23", "dead-finite-membership-filter",
-				directJoin ? "early-membership-join" : "correlated-exists-semi-filter",
-				RewriteSafety.builder()
-						.preservedMultiplicity(false)
-						.build(),
-				Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS,
-						RewriteAssumption.DUPLICATE_INSENSITIVE_CONTEXT));
-	}
-
 	private static void collectJoinFactors(TupleExpr tupleExpr, List<TupleExpr> factors) {
 		if (tupleExpr instanceof Join join) {
 			collectJoinFactors(join.getLeftArg(), factors);
@@ -1064,56 +959,6 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 			root = new Join(root, factors.get(i));
 		}
 		return root;
-	}
-
-	private static Set<String> nearestDuplicateInsensitiveDistinctCountVars(Filter filter) {
-		QueryModelNode node = filter;
-		QueryModelNode parent = filter.getParentNode();
-		while (parent != null) {
-			if (parent instanceof Group group) {
-				return duplicateInsensitiveDistinctCountVars(group);
-			}
-			if (parent instanceof VariableScopeChange && ((VariableScopeChange) parent).isVariableScopeChange()) {
-				return Set.of();
-			}
-			node = parent;
-			parent = node.getParentNode();
-		}
-		return Set.of();
-	}
-
-	private static boolean ancestorFilterMentionsBindingBeforeGroup(Filter filter, String bindingName) {
-		QueryModelNode node = filter;
-		QueryModelNode parent = filter.getParentNode();
-		while (parent != null && !(parent instanceof Group)) {
-			if (parent instanceof Filter ancestorFilter
-					&& !java.util.Collections.disjoint(VarNameCollector.process(ancestorFilter.getCondition()),
-							Set.of(bindingName))) {
-				return true;
-			}
-			if (parent instanceof VariableScopeChange && ((VariableScopeChange) parent).isVariableScopeChange()) {
-				return true;
-			}
-			node = parent;
-			parent = node.getParentNode();
-		}
-		return false;
-	}
-
-	private static Set<String> duplicateInsensitiveDistinctCountVars(Group group) {
-		if (group == null || !group.getGroupBindingNames().isEmpty() || group.getGroupElements().isEmpty()) {
-			return Set.of();
-		}
-		Set<String> vars = new LinkedHashSet<>();
-		for (GroupElem groupElement : group.getGroupElements()) {
-			AggregateOperator operator = groupElement.getOperator();
-			if (!(operator instanceof Count count) || !count.isDistinct()
-					|| !(count.getArg()instanceof Var var) || var.hasValue() || var.getName() == null) {
-				return Set.of();
-			}
-			vars.add(var.getName());
-		}
-		return vars.isEmpty() ? Set.of() : Set.copyOf(vars);
 	}
 
 	private static boolean containsLeftJoinRightBinding(TupleExpr tupleExpr, String bindingName) {

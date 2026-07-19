@@ -16,10 +16,12 @@ import static org.assertj.core.api.Assertions.tuple;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingMask;
 import org.junit.jupiter.api.Test;
 
 class JoinRegionIdentityTest {
@@ -52,6 +54,24 @@ class JoinRegionIdentityTest {
 	}
 
 	@Test
+	void identityIncludesCanonicalDisjunctiveProducerStates() {
+		List<JoinFactor> factors = List.of(new JoinFactor(0, 10), new JoinFactor(1, 20),
+				new JoinFactor(2, 30));
+		BindingMask seed = BindingMask.single(0);
+		ProducerState first = new ProducerState(JoinSubset.ofOrdinals(0));
+		ProducerState second = new ProducerState(JoinSubset.ofOrdinals(1));
+		JoinRegion eitherProducer = new JoinRegion(factors, List.of(new JoinDependency(2, Set.of(), seed,
+				List.of(new ProducerClause(seed, List.of(first, second))))));
+		JoinRegion reversedAlternatives = new JoinRegion(factors, List.of(new JoinDependency(2, Set.of(), seed,
+				List.of(new ProducerClause(seed, List.of(second, first))))));
+		JoinRegion firstOnly = new JoinRegion(factors, List.of(new JoinDependency(2, Set.of(), seed,
+				List.of(new ProducerClause(seed, List.of(first))))));
+
+		assertThat(identity(reversedAlternatives)).isEqualTo(identity(eitherProducer));
+		assertThat(identity(firstOnly)).isNotEqualTo(identity(eitherProducer));
+	}
+
+	@Test
 	void identityPreservesRepeatedGroupOccurrences() {
 		List<JoinFactor> repeatedGroupFactors = List.of(new JoinFactor(10, 7), new JoinFactor(11, 7),
 				new JoinFactor(12, 8));
@@ -70,6 +90,45 @@ class JoinRegionIdentityTest {
 		assertThat(identity(dependsOnFirstOccurrence)).isNotEqualTo(identity(differentSecondGroup));
 	}
 
+	@Test
+	void identityIncludesTypedEdgeKindEligibilityAndConflictRules() {
+		List<JoinFactor> factors = List.of(new JoinFactor(0, 10), new JoinFactor(1, 20),
+				new JoinFactor(2, 30));
+		Object firstRule = conflictRule(JoinSubset.ofOrdinals(1), JoinSubset.ofOrdinals(0));
+		Object secondRule = conflictRule(JoinSubset.ofOrdinals(2), JoinSubset.ofOrdinals(0, 1));
+		Object inner = edge(7, "INNER", JoinSubset.ofOrdinals(0), JoinSubset.ofOrdinals(1),
+				JoinSubset.ofOrdinals(0, 1), List.of(firstRule, secondRule));
+		Object trailing = edge(8, "INNER", JoinSubset.ofOrdinals(1), JoinSubset.ofOrdinals(2),
+				JoinSubset.ofOrdinals(1, 2), List.of());
+
+		Object canonical = identity(regionWithEdges(factors, List.of(inner, trailing)));
+		Object reordered = identity(regionWithEdges(factors, List.of(trailing,
+				edge(7, "INNER", JoinSubset.ofOrdinals(0), JoinSubset.ofOrdinals(1),
+						JoinSubset.ofOrdinals(0, 1), List.of(secondRule, firstRule)))));
+		Object left = identity(regionWithEdges(factors, List.of(
+				edge(7, "LEFT", JoinSubset.ofOrdinals(0), JoinSubset.ofOrdinals(1),
+						JoinSubset.ofOrdinals(0, 1), List.of(firstRule, secondRule)),
+				trailing)));
+		Object reversedLeft = identity(regionWithEdges(factors, List.of(
+				edge(7, "LEFT", JoinSubset.ofOrdinals(1), JoinSubset.ofOrdinals(0),
+						JoinSubset.ofOrdinals(0, 1), List.of(firstRule, secondRule)),
+				trailing)));
+		Object widerEligibility = identity(regionWithEdges(factors, List.of(
+				edge(7, "INNER", JoinSubset.ofOrdinals(0), JoinSubset.ofOrdinals(1),
+						JoinSubset.ofOrdinals(0, 1, 2), List.of(firstRule, secondRule)),
+				trailing)));
+		Object differentConflict = identity(regionWithEdges(factors, List.of(
+				edge(7, "INNER", JoinSubset.ofOrdinals(0), JoinSubset.ofOrdinals(1),
+						JoinSubset.ofOrdinals(0, 1), List.of(firstRule)),
+				trailing)));
+
+		assertThat(reordered).isEqualTo(canonical);
+		assertThat(left).isNotEqualTo(canonical);
+		assertThat(reversedLeft).isNotEqualTo(left);
+		assertThat(widerEligibility).isNotEqualTo(canonical);
+		assertThat(differentConflict).isNotEqualTo(canonical);
+	}
+
 	private static Object identity(JoinRegion region) {
 		try {
 			Method identityMethod = JoinRegion.class.getMethod("identity");
@@ -81,6 +140,46 @@ class JoinRegionIdentityTest {
 			throw new AssertionError("JoinRegion must expose a typed identity() value", e);
 		} catch (IllegalAccessException | InvocationTargetException e) {
 			throw new AssertionError("JoinRegion identity() must be accessible", e);
+		}
+	}
+
+	private static Object conflictRule(JoinSubset activation, JoinSubset required) {
+		try {
+			Class<?> type = Class.forName(JoinRegion.class.getPackageName() + ".ConflictRule");
+			return type.getConstructor(JoinSubset.class, JoinSubset.class).newInstance(activation, required);
+		} catch (ClassNotFoundException | NoSuchMethodException e) {
+			throw new AssertionError("typed ConflictRule vocabulary must be available", e);
+		} catch (InstantiationException | IllegalAccessException | InvocationTargetException e) {
+			throw new AssertionError("typed ConflictRule must be constructible", e);
+		}
+	}
+
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+	private static Object edge(int id, String kindName, JoinSubset left, JoinSubset right, JoinSubset eligibility,
+			Collection<?> conflictRules) {
+		try {
+			Class<?> edgeType = Class.forName(JoinRegion.class.getPackageName() + ".JoinEdge");
+			Class<? extends Enum> kindType = (Class<? extends Enum>) Class
+					.forName(JoinRegion.class.getPackageName() + ".JoinEdge$Kind");
+			Object kind = Enum.valueOf(kindType, kindName);
+			return edgeType.getConstructor(int.class, kindType, JoinSubset.class, JoinSubset.class, JoinSubset.class,
+					Collection.class).newInstance(id, kind, left, right, eligibility, conflictRules);
+		} catch (ClassNotFoundException | NoSuchMethodException e) {
+			throw new AssertionError("typed JoinEdge vocabulary must be available", e);
+		} catch (InstantiationException | IllegalAccessException | InvocationTargetException e) {
+			throw new AssertionError("typed JoinEdge must be constructible", e);
+		}
+	}
+
+	private static JoinRegion regionWithEdges(List<JoinFactor> factors, Collection<?> edges) {
+		try {
+			return JoinRegion.class
+					.getConstructor(Collection.class, Collection.class, Collection.class, Collection.class)
+					.newInstance(factors, List.of(), List.of(), edges);
+		} catch (NoSuchMethodException e) {
+			throw new AssertionError("JoinRegion must accept typed edges", e);
+		} catch (InstantiationException | IllegalAccessException | InvocationTargetException e) {
+			throw new AssertionError("JoinRegion typed-edge constructor must be accessible", e);
 		}
 	}
 

@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import java.util.Collection;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -35,14 +36,34 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 @Experimental
 public final class BindingUniverse {
 
+	private final BindingUniverse inherited;
+	private final int inheritedSize;
 	private final Map<String, BindingSymbol> symbolsByName = new LinkedHashMap<>();
 	private final List<BindingSymbol> symbols = new java.util.ArrayList<>();
+	private final Map<Set<String>, BindingMask> stableSetMasks = new IdentityHashMap<>();
+	private final Map<Set<String>, Map<BindingMask, Set<String>>> restrictedStableSets = new IdentityHashMap<>();
+	private final Map<BindingProfile, BindingMask> bindingProfileFactMasks = new IdentityHashMap<>();
+	private final Map<BindingProfile, Map<BindingMask, BindingProfile>> restrictedBindingProfiles = new IdentityHashMap<>();
 
 	private BindingUniverse() {
+		this(null);
+	}
+
+	private BindingUniverse(BindingUniverse inherited) {
+		this.inherited = inherited;
+		this.inheritedSize = inherited == null ? 0 : inherited.size();
 	}
 
 	public static BindingUniverse create() {
 		return new BindingUniverse();
+	}
+
+	/**
+	 * Returns a short-lived overlay that preserves every existing symbol ID while keeping newly discovered names
+	 * private. The base universe must not be mutated while the overlay is in use.
+	 */
+	BindingUniverse validationOverlay() {
+		return new BindingUniverse(this);
 	}
 
 	public static BindingUniverse from(TupleExpr root, PhysicalProperties requiredProperties) {
@@ -64,8 +85,12 @@ public final class BindingUniverse {
 		if (!plannerName(name)) {
 			return null;
 		}
+		BindingSymbol inheritedSymbol = inherited == null ? null : inherited.existingSymbol(name);
+		if (inheritedSymbol != null) {
+			return inheritedSymbol;
+		}
 		return symbolsByName.computeIfAbsent(name, key -> {
-			BindingSymbol symbol = new BindingSymbol(symbols.size(), key);
+			BindingSymbol symbol = new BindingSymbol(inheritedSize + symbols.size(), key);
 			symbols.add(symbol);
 			return symbol;
 		});
@@ -80,14 +105,40 @@ public final class BindingUniverse {
 	}
 
 	public boolean containsName(String name) {
-		return symbolsByName.containsKey(name);
+		return existingSymbol(name) != null;
+	}
+
+	boolean contains(BindingMask mask, String name) {
+		if (mask == null || mask.isEmpty()) {
+			return false;
+		}
+		BindingSymbol symbol = existingSymbol(name);
+		return symbol != null && mask.contains(symbol);
+	}
+
+	boolean matches(BindingMask mask, Collection<String> names) {
+		BindingMask requested = mask == null ? BindingMask.EMPTY : mask;
+		if (names == null || names.isEmpty()) {
+			return requested.isEmpty();
+		}
+		int plannerNameCount = 0;
+		for (String name : names) {
+			if (!plannerName(name)) {
+				continue;
+			}
+			plannerNameCount++;
+			if (!contains(requested, name)) {
+				return false;
+			}
+		}
+		return requested.size() == plannerNameCount;
 	}
 
 	public BindingMask maskOf(Collection<String> names) {
 		if (names == null || names.isEmpty()) {
 			return BindingMask.EMPTY;
 		}
-		long[] words = new long[Math.max(1, (symbols.size() + 63) >>> 6)];
+		long[] words = new long[Math.max(1, (size() + 63) >>> 6)];
 		for (String name : names) {
 			BindingSymbol symbol = intern(name);
 			if (symbol == null) {
@@ -102,21 +153,115 @@ public final class BindingUniverse {
 		return BindingMask.fromOwned(words);
 	}
 
+	BindingMask maskOfStableSet(Set<String> names) {
+		if (names == null || names.isEmpty()) {
+			return BindingMask.EMPTY;
+		}
+		BindingMask cached = stableSetMasks.get(names);
+		if (cached != null) {
+			return cached;
+		}
+		BindingMask mask = maskOf(names);
+		stableSetMasks.put(names, mask);
+		return mask;
+	}
+
+	/** Restricts an immutable planner set once per query-local mask and reuses the normalized legacy boundary. */
+	Set<String> restrictStableSet(Set<String> names, BindingMask outputMask) {
+		if (names == null || names.isEmpty()) {
+			return Set.of();
+		}
+		BindingMask requested = outputMask == null ? BindingMask.EMPTY : outputMask;
+		if (requested.containsAll(maskOfStableSet(names))) {
+			return names;
+		}
+		Map<BindingMask, Set<String>> byOutputMask = restrictedStableSets.computeIfAbsent(names,
+				ignored -> new LinkedHashMap<>());
+		Set<String> cached = byOutputMask.get(requested);
+		if (cached != null) {
+			return cached;
+		}
+		LinkedHashSet<String> restricted = new LinkedHashSet<>();
+		for (String name : names) {
+			if (contains(requested, name)) {
+				restricted.add(name);
+			}
+		}
+		Set<String> result = restricted.isEmpty() ? Set.of() : Set.copyOf(restricted);
+		byOutputMask.put(requested, result);
+		return result;
+	}
+
+	BindingMask bindingProfileFactMask(BindingProfile profile) {
+		if (profile == null || profile.isAny()) {
+			return BindingMask.EMPTY;
+		}
+		BindingMask cached = bindingProfileFactMasks.get(profile);
+		if (cached != null) {
+			return cached;
+		}
+		BindingMask mask = profile.factMask(this);
+		bindingProfileFactMasks.put(profile, mask);
+		return mask;
+	}
+
+	BindingProfile restrictBindingProfile(BindingProfile profile, BindingMask outputMask) {
+		if (profile == null || profile.isAny()) {
+			return profile == null ? BindingProfile.ANY : profile;
+		}
+		BindingMask requested = outputMask == null ? BindingMask.EMPTY : outputMask;
+		BindingMask factMask = bindingProfileFactMask(profile);
+		if (requested.containsAll(factMask)) {
+			return profile;
+		}
+		Map<BindingMask, BindingProfile> byOutputMask = restrictedBindingProfiles.computeIfAbsent(profile,
+				ignored -> new LinkedHashMap<>());
+		BindingProfile cached = byOutputMask.get(requested);
+		if (cached != null) {
+			return cached;
+		}
+		BindingProfile restricted = profile.restrictTo(names(requested.intersect(factMask)));
+		byOutputMask.put(requested, restricted);
+		return restricted;
+	}
+
+	BindingMask maskOfName(String name) {
+		BindingSymbol symbol = intern(name);
+		return symbol == null ? BindingMask.EMPTY : BindingMask.single(symbol.id());
+	}
+
 	public Set<String> names(BindingMask mask) {
 		if (mask == null || mask.isEmpty()) {
 			return Set.of();
 		}
 		LinkedHashSet<String> names = new LinkedHashSet<>();
 		mask.forEachSymbolId(id -> {
-			if (id >= 0 && id < symbols.size()) {
-				names.add(symbols.get(id).name());
+			BindingSymbol symbol = symbolById(id);
+			if (symbol != null) {
+				names.add(symbol.name());
 			}
 		});
 		return names.isEmpty() ? Set.of() : Set.copyOf(names);
 	}
 
 	public int size() {
-		return symbols.size();
+		return inheritedSize + symbols.size();
+	}
+
+	private BindingSymbol existingSymbol(String name) {
+		BindingSymbol symbol = symbolsByName.get(name);
+		return symbol != null || inherited == null ? symbol : inherited.existingSymbol(name);
+	}
+
+	private BindingSymbol symbolById(int id) {
+		if (id < 0) {
+			return null;
+		}
+		if (inherited != null && id < inheritedSize) {
+			return inherited.symbolById(id);
+		}
+		int localId = id - inheritedSize;
+		return localId >= 0 && localId < symbols.size() ? symbols.get(localId) : null;
 	}
 
 	void collect(TupleExpr root) {

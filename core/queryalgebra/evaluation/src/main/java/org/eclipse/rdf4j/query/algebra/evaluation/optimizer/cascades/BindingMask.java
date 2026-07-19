@@ -49,7 +49,8 @@ public final class BindingMask {
 		return new BindingMask(words, false);
 	}
 
-	static BindingMask single(int symbolId) {
+	/** Creates a query-local mask containing exactly one non-negative symbol ID. */
+	public static BindingMask single(int symbolId) {
 		if (symbolId < 0) {
 			return EMPTY;
 		}
@@ -80,6 +81,27 @@ public final class BindingMask {
 		}
 		int wordIndex = symbolId >>> 6;
 		return wordIndex < words.length && (words[wordIndex] & (1L << symbolId)) != 0L;
+	}
+
+	/** Returns the next present query-local symbol id, or {@code -1} when no later symbol is present. */
+	public int nextSetBit(int fromIndex) {
+		if (fromIndex < 0) {
+			throw new IndexOutOfBoundsException("fromIndex must be non-negative: " + fromIndex);
+		}
+		int wordIndex = fromIndex >>> 6;
+		if (wordIndex >= words.length) {
+			return -1;
+		}
+		long word = words[wordIndex] & (-1L << fromIndex);
+		while (true) {
+			if (word != 0L) {
+				return (wordIndex << 6) + Long.numberOfTrailingZeros(word);
+			}
+			if (++wordIndex >= words.length) {
+				return -1;
+			}
+			word = words[wordIndex];
+		}
 	}
 
 	public boolean containsAll(BindingMask other) {

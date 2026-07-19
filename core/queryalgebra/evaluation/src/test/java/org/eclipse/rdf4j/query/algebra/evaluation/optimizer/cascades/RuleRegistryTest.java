@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -76,6 +77,23 @@ class RuleRegistryTest {
 				RuleWakeUpEvent.REQUIRED_PROPERTIES_CHANGED), rule.descriptor().wakeUpEvents());
 	}
 
+	@Test
+	void repeatedMatchingReusesRegisteredDescriptor() {
+		AtomicInteger descriptorCalls = new AtomicInteger();
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(new DescriptorCountingRule(descriptorCalls))
+				.build();
+		MemoExpr expression = MemoExpr.logical(1, 1,
+				new Join(pattern("s", "p1", "o"), pattern("o", "p2", "x")), List.of(), "");
+
+		for (int index = 0; index < 100; index++) {
+			registry.applicableRules(expression, OptimizationGoal.root(), null);
+		}
+
+		assertEquals(1, descriptorCalls.get(),
+				"Rule descriptors are immutable registration metadata and must not be rebuilt on the match hot path");
+	}
+
 	private static StatementPattern pattern(String subject, String predicate, String object) {
 		return new StatementPattern(new Var(subject), new Var(predicate), new Var(object));
 	}
@@ -102,6 +120,43 @@ class RuleRegistryTest {
 		@Override
 		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
 			matches.add(id);
+			return true;
+		}
+
+		@Override
+		public int promise(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return 1;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			return List.of();
+		}
+	}
+
+	private record DescriptorCountingRule(AtomicInteger descriptorCalls) implements FiniteTestCascadesRule {
+
+		@Override
+		public String id() {
+			return "descriptor-counting";
+		}
+
+		@Override
+		public RuleKind kind() {
+			return RuleKind.IMPLEMENTATION;
+		}
+
+		@Override
+		public RuleDescriptor descriptor() {
+			descriptorCalls.incrementAndGet();
+			return RuleDescriptor.builder(id(), kind())
+					.rootOperators(RuleRootOperator.JOIN)
+					.convergenceClass(RuleConvergenceClass.FINITE_EQUIVALENCE_EXPANSION)
+					.build();
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
 			return true;
 		}
 

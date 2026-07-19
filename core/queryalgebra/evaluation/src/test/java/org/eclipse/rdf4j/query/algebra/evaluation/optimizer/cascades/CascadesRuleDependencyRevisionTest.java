@@ -47,8 +47,8 @@ class CascadesRuleDependencyRevisionTest {
 
 		assertEquals(List.of(
 				new DependencyObservation(0L, 0L, 0L, false),
-				new DependencyObservation(0L, 1L, 0L, true)), observations,
-				"The physical expression itself must wake the consumer before winner selection can mask the gap");
+				new DependencyObservation(0L, 1L, 1L, true)), observations,
+				"The physical expression itself must wake the consumer even when fair scheduling costs it first");
 	}
 
 	@Test
@@ -70,7 +70,7 @@ class CascadesRuleDependencyRevisionTest {
 				"A physical memo addition must be filtered before a logical-only compiled rule converts shared IR");
 		assertEquals(List.of(
 				new DependencyObservation(0L, 0L, 0L, false),
-				new DependencyObservation(0L, 1L, 0L, true)), observations,
+				new DependencyObservation(0L, 1L, 1L, true)), observations,
 				"Legacy default-all descriptors must observe the explicit sibling physical-frontier event once");
 	}
 

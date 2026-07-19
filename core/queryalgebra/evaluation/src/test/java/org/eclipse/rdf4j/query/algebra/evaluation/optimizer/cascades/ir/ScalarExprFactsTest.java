@@ -66,4 +66,18 @@ class ScalarExprFactsTest {
 		assertFalse(facts.mayErrorOnUnbound());
 		assertTrue(facts.totalWhenAssured());
 	}
+
+	@Test
+	void canonicalStringFunctionIsRepeatableWhileVolatileAndUnknownCallsAreUnsafe() {
+		BindingUniverse universe = BindingUniverse.create();
+		ScalarExpr argument = new ScalarExpr.VarRef(universe.symbol("value"));
+
+		assertTrue(ScalarFacts
+				.of(universe, new ScalarExpr.FunctionCall(TupleExprToIr.FN_STRING_IRI, List.of(argument)))
+				.deterministic());
+		assertFalse(ScalarFacts.of(universe, new ScalarExpr.FunctionCall("RAND", List.of())).deterministic());
+		assertFalse(ScalarFacts.of(universe, new ScalarExpr.FunctionCall("UUID", List.of())).deterministic());
+		assertFalse(ScalarFacts.of(universe, new ScalarExpr.FunctionCall("urn:test:unknown", List.of(argument)))
+				.deterministic());
+	}
 }

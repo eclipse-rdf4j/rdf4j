@@ -41,21 +41,17 @@ import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
 final class LmdbInnerJoinBoundLookupRule extends LmdbRule {
 	LmdbInnerJoinBoundLookupRule(EvaluationStatistics statistics) {
-			super("lmdb-inner-join-bound-lookup", RuleKind.IMPLEMENTATION, 92, statistics,
-					scheduling(RuleRootOperator.JOIN)
-							.readsFacts(
-									RuleDescriptor.MemoFact.POSSIBLE_BINDINGS,
-									RuleDescriptor.MemoFact.ASSURED_BINDINGS,
-									RuleDescriptor.MemoFact.CORRELATION,
-									RuleDescriptor.MemoFact.SCOPE_BARRIER,
-									RuleDescriptor.MemoFact.REQUIRED_INPUTS)
-							.readsChildren(
-									RuleDescriptor.ChildProperty.BOUND_BINDINGS,
-									RuleDescriptor.ChildProperty.REQUIRED_INPUTS,
-									RuleDescriptor.ChildProperty.ACCESS_PATH)
-							.produces(
-									RuleDescriptor.ProducedChange.PHYSICAL_EXPRESSION,
-									RuleDescriptor.ProducedChange.PROOF));
+		super("lmdb-inner-join-bound-lookup", RuleKind.IMPLEMENTATION, 92, statistics,
+				scheduling(RuleRootOperator.JOIN)
+						.readsFacts(
+								RuleDescriptor.MemoFact.POSSIBLE_BINDINGS,
+								RuleDescriptor.MemoFact.ASSURED_BINDINGS,
+								RuleDescriptor.MemoFact.CORRELATION,
+								RuleDescriptor.MemoFact.SCOPE_BARRIER,
+								RuleDescriptor.MemoFact.REQUIRED_INPUTS)
+						.produces(
+								RuleDescriptor.ProducedChange.PHYSICAL_EXPRESSION,
+								RuleDescriptor.ProducedChange.PROOF));
 	}
 
 	@Override
@@ -108,12 +104,15 @@ final class LmdbInnerJoinBoundLookupRule extends LmdbRule {
 		if (join == null || join.getLeftArg() == null || join.getRightArg() == null) {
 			return false;
 		}
+		Set<String> pathEndpointNames = pathEndpointNames(join.getLeftArg());
+		if (pathEndpointNames.isEmpty()) {
+			return false;
+		}
 		Set<String> rightNames = LmdbJoinPlanSupport.runtimeBindingNames(join.getRightArg());
 		if (rightNames.isEmpty()) {
 			return false;
 		}
-		return pathEndpointNames(join.getLeftArg()).stream()
-				.anyMatch(rightNames::contains);
+		return pathEndpointNames.stream().anyMatch(rightNames::contains);
 	}
 
 	private boolean leftBroadStatementPatternSubjectAnchoredByRight(Join join) {

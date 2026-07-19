@@ -17,9 +17,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
-import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
-import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
@@ -36,37 +34,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleDescrip
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleProof;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleRootOperator;
-
-final class LmdbNullRejectingOptionalJoinRule extends LmdbRule {
-	LmdbNullRejectingOptionalJoinRule() {
-		super("lmdb-null-rejecting-optional-join", RuleKind.TRANSFORMATION, 96, null,
-				scheduling(RuleRootOperator.FILTER)
-						.readsFacts(MemoFact.POSSIBLE_BINDINGS, MemoFact.ASSURED_BINDINGS,
-								MemoFact.NULLABILITY, MemoFact.CORRELATION, MemoFact.SCOPE_BARRIER)
-						.readsChildren(ChildProperty.BINDING_PROFILE)
-						.produces(ProducedChange.LOGICAL_EXPRESSION, ProducedChange.PROOF));
-	}
-
-	@Override
-	public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
-		return expression.logical()
-				&& expression.tupleExpr()instanceof Filter filter
-				&& LmdbNullRejectingOptionalSupport.matches(filter);
-	}
-
-	@Override
-	public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
-		Filter filter = (Filter) expression.tupleExpr();
-		TupleExpr alternative = LmdbNullRejectingOptionalSupport.rewrite(filter);
-		if (alternative == null) {
-			return List.of();
-		}
-		RuleProof proof = proof(semanticScope(goal), Set.of("rhsOnlyBinding", "nullRejectingFilter",
-				"optionalToInnerJoin"),
-				"OPTIONAL guarded by a null-rejecting RHS filter is equivalent to an inner join");
-		return List.of(RuleApplication.transformation(expression.groupId(), alternative, proof));
-	}
-}
 
 final class LmdbOptionalAnchoredLookupRule extends LmdbRule {
 	LmdbOptionalAnchoredLookupRule(EvaluationStatistics statistics) {
@@ -115,8 +82,13 @@ final class LmdbOptionalAnchoredLookupRule extends LmdbRule {
 		CostVector cost = decomposedOptionalOperatorCost(estimate.get());
 		tracePhysicalDecision(context, expression, goal, false, "lmdb-optional-anchor-decomposed", cost,
 				estimate.get());
+		List<PhysicalProperties> inputRequirements = List.of(
+				PhysicalProperties.ANY,
+				PhysicalProperties.builder()
+						.inputConsumption(PhysicalProperties.InputConsumption.SELECTED_PREFIX)
+						.build());
 		return List.of(RuleApplication.physical(expression.groupId(), expression.tupleExpr().clone(),
-				delivered, cost, proof, "lmdb-optional-anchor-decomposed",
+				delivered, inputRequirements, Set.of(1), cost, proof, "lmdb-optional-anchor-decomposed",
 				snapshot(estimate.get(), cost)));
 	}
 

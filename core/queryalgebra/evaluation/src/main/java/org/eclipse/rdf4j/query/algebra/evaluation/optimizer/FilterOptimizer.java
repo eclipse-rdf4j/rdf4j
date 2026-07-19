@@ -42,6 +42,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ScalarEvaluationEffects;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -256,7 +257,8 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Filter filter) {
-			if (filter.getCondition()instanceof And and) {
+			if (filter.getCondition()instanceof And and
+					&& ScalarEvaluationEffects.reorderingIsSafe(filter.getCondition())) {
 				filter.setCondition(and.getLeftArg().clone());
 				Filter newFilter = new Filter(filter.getArg().clone(), and.getRightArg().clone());
 				transferScopeChange(filter, newFilter); // preserve scope flag
@@ -278,7 +280,10 @@ public class FilterOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Filter filter) {
 			super.meet(filter);
-			if (filter.getArg()instanceof Filter childFilter && filter.getParentNode() != null) {
+			if (filter.getArg()instanceof Filter childFilter
+					&& filter.getParentNode() != null
+					&& ScalarEvaluationEffects.reorderingIsSafe(filter.getCondition())
+					&& ScalarEvaluationEffects.reorderingIsSafe(childFilter.getCondition())) {
 
 				QueryModelNode parent = filter.getParentNode();
 				And merge = mergeConditionsInFilterOrder(childFilter.getArg(), childFilter.getCondition(),
@@ -306,7 +311,9 @@ public class FilterOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Filter filter) {
 			super.meet(filter);
-			FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost);
+			if (ScalarEvaluationEffects.reorderingIsSafe(filter.getCondition())) {
+				FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost);
+			}
 			FilterSelectivityTelemetry.annotate(filter, statistics);
 		}
 	}
@@ -326,7 +333,9 @@ public class FilterOptimizer implements QueryOptimizer {
 		}
 
 		public static void optimize(Filter filter, EvaluationStatistics statistics, boolean considerJoinPlacementCost) {
-			filter.visit(new FilterRelocator(filter, statistics, considerJoinPlacementCost));
+			if (ScalarEvaluationEffects.reorderingIsSafe(filter.getCondition())) {
+				filter.visit(new FilterRelocator(filter, statistics, considerJoinPlacementCost));
+			}
 		}
 
 		@Override
@@ -415,7 +424,7 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Extension node) {
-			if (node.getArg().getBindingNames().containsAll(filterVars)) {
+			if (node.getArg().getBindingNames().containsAll(filterVars) && extensionEvaluationIsSafe(node)) {
 				node.getArg().visit(this);
 			} else {
 				relocate(filter, node);
@@ -431,9 +440,12 @@ public class FilterOptimizer implements QueryOptimizer {
 		}
 
 		@Override
-		public void meet(Filter filter) {
-			// Filters are commutative
-			filter.getArg().visit(this);
+		public void meet(Filter childFilter) {
+			if (ScalarEvaluationEffects.reorderingIsSafe(childFilter.getCondition())) {
+				childFilter.getArg().visit(this);
+			} else {
+				relocate(filter, childFilter);
+			}
 		}
 
 		@Override
@@ -495,6 +507,12 @@ public class FilterOptimizer implements QueryOptimizer {
 			double candidateInputRows = estimateFilteredInputRows(candidateArg);
 			return isFiniteNonNegative(currentInputRows) && isFiniteNonNegative(candidateInputRows)
 					&& currentInputRows < candidateInputRows;
+		}
+
+		private boolean extensionEvaluationIsSafe(Extension extension) {
+			return extension.getElements()
+					.stream()
+					.allMatch(element -> ScalarEvaluationEffects.reorderingIsSafe(element.getExpr()));
 		}
 
 		private OptionalWorkRows estimateWorkRows(JoinFactorCostModel costModel, TupleExpr tupleExpr) {

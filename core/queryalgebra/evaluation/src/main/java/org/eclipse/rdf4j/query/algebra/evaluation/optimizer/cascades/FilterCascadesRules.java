@@ -205,6 +205,10 @@ public final class FilterCascadesRules {
 					&& filter.getArg()instanceof Extension extension
 					&& !filter.isVariableScopeChange()
 					&& !extension.isVariableScopeChange()
+					&& ScalarEvaluationEffects.reorderingIsSafe(filter.getCondition())
+					&& extension.getElements()
+							.stream()
+							.allMatch(element -> ScalarEvaluationEffects.reorderingIsSafe(element.getExpr()))
 					&& !CascadesRewriteSupport.intersects(universe(memo), conditionNames(filter.getCondition()),
 							extensionNames(extension));
 		}

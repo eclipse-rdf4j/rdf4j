@@ -23,8 +23,11 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Memo;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MemoExpr;
 
 /**
  * One deterministic route that admits every registered contributor, validates its trees, applies one cost contract, and
@@ -34,6 +37,12 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 public final class JoinSearchService {
 
 	public static final String ROUTE_ID = "core-unified-join-search";
+	private static final JoinSearchContributor.Descriptor DETERMINISTIC_GREEDY_SEED_DESCRIPTOR = new JoinSearchContributor.Descriptor(
+			DeterministicGreedyJoinSeed.ID,
+			JoinSearchContributor.Coverage.HEURISTIC, Integer.MIN_VALUE);
+	private static final JoinSearchContributor.Descriptor FINITE_RELATION_SEED_DESCRIPTOR = new JoinSearchContributor.Descriptor(
+			FiniteRelationJoinSeed.ID,
+			JoinSearchContributor.Coverage.HEURISTIC, Integer.MIN_VALUE + 1);
 
 	private static final Comparator<JoinSearchCandidate> BEST_FIRST = Comparator
 			.comparing(JoinSearchCandidate::cost)
@@ -41,14 +50,30 @@ public final class JoinSearchService {
 			.thenComparing(JoinSearchCandidate::contributorId);
 
 	private final List<RegisteredContributor> contributors;
+	private final Optional<OpaqueJoinFactorPolicy> opaqueFactorPolicy;
 
 	public JoinSearchService(Collection<? extends JoinSearchContributor> contributors) {
+		this(contributors, Optional.empty());
+	}
+
+	/** Creates a join-search service with one immutable backend policy for intentionally atomic composite factors. */
+	public JoinSearchService(Collection<? extends JoinSearchContributor> contributors,
+			OpaqueJoinFactorPolicy opaqueFactorPolicy) {
+		this(contributors, Optional.of(Objects.requireNonNull(opaqueFactorPolicy, "opaqueFactorPolicy")));
+	}
+
+	private JoinSearchService(Collection<? extends JoinSearchContributor> contributors,
+			Optional<OpaqueJoinFactorPolicy> opaqueFactorPolicy) {
 		Objects.requireNonNull(contributors, "contributors");
 		ArrayList<RegisteredContributor> ordered = new ArrayList<>(contributors.size());
 		Set<String> ids = new HashSet<>();
 		for (JoinSearchContributor contributor : contributors) {
 			JoinSearchContributor checked = Objects.requireNonNull(contributor, "contributor");
 			JoinSearchContributor.Descriptor descriptor = Objects.requireNonNull(checked.descriptor(), "descriptor");
+			if (DeterministicGreedyJoinSeed.ID.equals(descriptor.id())
+					|| FiniteRelationJoinSeed.ID.equals(descriptor.id())) {
+				throw new IllegalArgumentException("join-search contributor ID is reserved: " + descriptor.id());
+			}
 			if (!ids.add(descriptor.id())) {
 				throw new IllegalArgumentException("duplicate join-search contributor ID: " + descriptor.id());
 			}
@@ -57,6 +82,18 @@ public final class JoinSearchService {
 		ordered.sort(Comparator.comparingInt((RegisteredContributor contributor) -> contributor.descriptor().priority())
 				.thenComparing(contributor -> contributor.descriptor().id()));
 		this.contributors = List.copyOf(ordered);
+		this.opaqueFactorPolicy = Objects.requireNonNull(opaqueFactorPolicy, "opaqueFactorPolicy");
+	}
+
+	/** Discovers join regions using this service's immutable backend factor policy, when one was configured. */
+	public List<MemoJoinRegionExtractor.Result> discoverJoinRegions(Memo memo, int rootGroupId, MemoExpr rootExpression,
+			Predicate<MemoExpr> admissibleExpression) {
+		if (opaqueFactorPolicy.isEmpty()) {
+			return MemoJoinRegionExtractor.extractAlternatives(memo, rootGroupId, rootExpression,
+					admissibleExpression);
+		}
+		return MemoJoinRegionExtractor.extractAlternatives(memo, rootGroupId, rootExpression, admissibleExpression,
+				opaqueFactorPolicy.orElseThrow());
 	}
 
 	public JoinSearchResult search(JoinSearchRequest request) {
@@ -75,6 +112,13 @@ public final class JoinSearchService {
 
 		for (RegisteredContributor registered : contributors) {
 			JoinSearchContributor.Descriptor descriptor = registered.descriptor();
+			if (dphypDependencyUnsupported(registered, request)) {
+				attempts.add(new JoinSearchResult.Attempt(descriptor,
+						JoinSearchContributor.Outcome.unsupported(
+								"DPhyp does not represent join-region dependency clauses"),
+						0L));
+				continue;
+			}
 			long[] offered = { 0L };
 			JoinSearchContributor.Outcome outcome;
 			try {
@@ -122,6 +166,13 @@ public final class JoinSearchService {
 		CandidateBudget candidateBudget = new CandidateBudget(request.candidateBudget());
 		for (RegisteredContributor registered : contributors) {
 			JoinSearchContributor.Descriptor descriptor = registered.descriptor();
+			if (dphypDependencyUnsupported(registered, request)) {
+				attempts.add(new JoinSearchResult.Attempt(descriptor,
+						JoinSearchContributor.Outcome.unsupported(
+								"DPhyp does not represent join-region dependency clauses"),
+						0L));
+				continue;
+			}
 			long[] offered = { 0L };
 			JoinSearchContributor.Outcome outcome;
 			try {
@@ -153,28 +204,48 @@ public final class JoinSearchService {
 	 */
 	public JoinMemoEnumerationResult enumerateMemoExpressions(JoinSearchRequest request,
 			Consumer<JoinMemoExpressionCandidate> candidateConsumer) {
+		return enumerateMemoExpressions(request, JoinSearchWork.unlimited(), candidateConsumer);
+	}
+
+	public JoinMemoEnumerationResult enumerateMemoExpressions(JoinSearchRequest request, JoinSearchWork work,
+			Consumer<JoinMemoExpressionCandidate> candidateConsumer) {
 		Objects.requireNonNull(request, "request");
+		Objects.requireNonNull(work, "work");
 		Objects.requireNonNull(candidateConsumer, "candidateConsumer");
 
-		LinkedHashMap<String, JoinMemoExpressionCandidate> distinctCandidates = new LinkedHashMap<>();
+		LinkedHashMap<JoinMemoExpressionKey, JoinMemoExpressionCandidate> distinctCandidates = new LinkedHashMap<>();
+		Map<Integer, Integer> occurrenceOrdinals = JoinMemoExpressionKey.denseOccurrenceOrdinals(request.region());
 		ArrayList<JoinSearchResult.Attempt> attempts = new ArrayList<>(contributors.size());
 		CandidateBudget candidateBudget = new CandidateBudget(request.candidateBudget());
 		for (RegisteredContributor registered : contributors) {
 			JoinSearchContributor.Descriptor descriptor = registered.descriptor();
+			if (dphypDependencyUnsupported(registered, request)) {
+				attempts.add(new JoinSearchResult.Attempt(descriptor,
+						JoinSearchContributor.Outcome.unsupported(
+								"DPhyp does not represent join-region dependency clauses"),
+						0L));
+				continue;
+			}
 			long[] offered = { 0L };
 			JoinSearchContributor.Outcome outcome;
 			try {
 				outcome = Objects
 						.requireNonNull(registered.contributor().contributeMemoExpressions(request, expression -> {
-							String fingerprint = expression.canonicalForm();
-							if (distinctCandidates.containsKey(fingerprint)) {
+							if (!work.tryPartitionProbe()) {
+								throw new SharedWorkBudgetExhausted("shared partition-probe limit exhausted");
+							}
+							JoinMemoExpressionKey expressionKey = JoinMemoExpressionKey.from(expression,
+									occurrenceOrdinals);
+							if (distinctCandidates.containsKey(expressionKey)) {
 								return;
 							}
 							candidateBudget.consume();
 							offered[0]++;
-							acceptMemoExpressionCandidate(descriptor.id(), expression, request, distinctCandidates,
-									candidateConsumer);
+							acceptMemoExpressionCandidate(descriptor.id(), expression, expressionKey, request,
+									distinctCandidates, candidateConsumer);
 						}), () -> "join-search contributor returned no outcome: " + descriptor.id());
+			} catch (SharedWorkBudgetExhausted exhausted) {
+				outcome = JoinSearchContributor.Outcome.budgetExhausted(exhausted.detail());
 			} catch (CandidateBudgetExhausted ignored) {
 				outcome = JoinSearchContributor.Outcome.budgetExhausted(candidateBudget.detail());
 			}
@@ -191,20 +262,227 @@ public final class JoinSearchService {
 				pendingReasons(completeness, attempts));
 	}
 
+	/**
+	 * Enumerates directly into one scoped join-region memo. Primitive DPhyp contributors stream raw masks and every
+	 * other contributor retains the ordinary transparent memo-expression contract.
+	 */
+	public JoinMemoEnumerationResult enumerateScopedMemoExpressions(JoinSearchRequest request, JoinSearchWork work,
+			ScopedMemoTarget target) {
+		Objects.requireNonNull(request, "request");
+		Objects.requireNonNull(work, "work");
+		Objects.requireNonNull(target, "target");
+
+		LinkedHashMap<JoinMemoExpressionKey, JoinMemoExpressionCandidate> distinctCandidates = new LinkedHashMap<>();
+		Map<Integer, Integer> occurrenceOrdinals = JoinMemoExpressionKey.denseOccurrenceOrdinals(request.region());
+		ArrayList<JoinSearchResult.Attempt> attempts = new ArrayList<>(contributors.size() + 2);
+		CandidateBudget candidateBudget = new CandidateBudget(request.candidateBudget());
+		GreedySeedInstallation greedyInstallation = installDeterministicGreedySeed(request, target);
+		greedyInstallation.attempt().ifPresent(attempts::add);
+		DeterministicGreedyJoinSeed.SeedOrder greedySeed = greedyInstallation.seedOrder();
+		installFiniteRelationSeed(request, work, target, greedySeed, occurrenceOrdinals, distinctCandidates,
+				candidateBudget).ifPresent(attempts::add);
+		for (RegisteredContributor registered : contributors) {
+			JoinSearchContributor.Descriptor descriptor = registered.descriptor();
+			if (dphypDependencyUnsupported(registered, request)) {
+				attempts.add(new JoinSearchResult.Attempt(descriptor,
+						JoinSearchContributor.Outcome.unsupported(
+								"DPhyp does not represent join-region dependency clauses"),
+						0L));
+				continue;
+			}
+			long[] offered = { 0L };
+			JoinSearchContributor.Outcome outcome;
+			if (registered.contributor()instanceof PrimitiveDphypJoinSearchContributor primitive) {
+				String[] stopped = { null };
+				long configuredLimit = Math.max(0L, primitive.configuredPairProbeLimit());
+				outcome = Objects.requireNonNull(primitive.contributePartitions(request, target::hasCandidate,
+						(leftMask, rightMask) -> {
+							if (offered[0] >= configuredLimit) {
+								work.recordDphypPairLimit();
+								stopped[0] = "configured DPhyp pair-probe limit exhausted after "
+										+ configuredLimit + " pairs";
+								return true;
+							}
+							if (!work.tryDphypPairProbe()) {
+								stopped[0] = "shared DPhyp or partition-probe limit exhausted";
+								return true;
+							}
+							offered[0]++;
+							boolean abort = target.acceptDphypPair(descriptor.id(), leftMask, rightMask);
+							if (abort) {
+								stopped[0] = "scoped join target stopped primitive DPhyp enumeration";
+							}
+							return abort;
+						}), () -> "primitive DPhyp contributor returned no outcome: " + descriptor.id());
+				if (stopped[0] != null) {
+					outcome = JoinSearchContributor.Outcome.budgetExhausted(stopped[0]);
+				}
+			} else {
+				try {
+					outcome = Objects.requireNonNull(
+							registered.contributor().contributeScopedMemoExpressions(request, expression -> {
+								if (!work.tryPartitionProbe()) {
+									throw new SharedWorkBudgetExhausted(
+											"shared partition-probe limit exhausted");
+								}
+								JoinMemoExpressionKey expressionKey = JoinMemoExpressionKey.from(expression,
+										occurrenceOrdinals);
+								if (distinctCandidates.containsKey(expressionKey)) {
+									return;
+								}
+								candidateBudget.consume();
+								offered[0]++;
+								acceptMemoExpressionCandidate(descriptor.id(), expression, expressionKey, request,
+										distinctCandidates, target::acceptMemoExpression);
+							}), () -> "join-search contributor returned no outcome: " + descriptor.id());
+				} catch (SharedWorkBudgetExhausted exhausted) {
+					outcome = JoinSearchContributor.Outcome.budgetExhausted(exhausted.detail());
+				} catch (CandidateBudgetExhausted ignored) {
+					outcome = JoinSearchContributor.Outcome.budgetExhausted(candidateBudget.detail());
+				}
+			}
+			if (offered[0] > 0L && (outcome.status() == JoinSearchContributor.Status.DISABLED
+					|| outcome.status() == JoinSearchContributor.Status.UNSUPPORTED)) {
+				throw new IllegalStateException(
+						"disabled or unsupported contributor emitted candidates: " + descriptor.id());
+			}
+			attempts.add(new JoinSearchResult.Attempt(descriptor, outcome, offered[0]));
+		}
+
+		JoinSearchCompleteness completeness = completeness(attempts);
+		return new JoinMemoEnumerationResult(ROUTE_ID, List.copyOf(distinctCandidates.values()), completeness, attempts,
+				pendingReasons(completeness, attempts));
+	}
+
+	/** Target contract for scoped memo enumeration without global partition materialization. */
+	public interface ScopedMemoTarget {
+
+		boolean hasCandidate(long factorMask);
+
+		boolean acceptDphypPair(String contributorId, long leftMask, long rightMask);
+
+		void acceptMemoExpression(JoinMemoExpressionCandidate candidate);
+
+		/** Schedules one exploratory seed before the ordinary topology order without exempting it from work limits. */
+		default void acceptPriorityMemoExpression(JoinMemoExpressionCandidate candidate) {
+			acceptMemoExpression(candidate);
+		}
+
+		default double factorLowerBoundRows(int occurrenceId) {
+			return 1.0d;
+		}
+
+		default double factorLowerBoundWork(int occurrenceId) {
+			return 0.0d;
+		}
+
+		/**
+		 * Installs the one reserved seed chain before contributors consume exploratory work. Recording and
+		 * compatibility targets retain the topology-only behavior; the scoped memo overrides this to retain one
+		 * executable chain.
+		 */
+		default void installReservedMemoExpressions(List<JoinMemoExpressionCandidate> candidates) {
+			for (JoinMemoExpressionCandidate candidate : candidates) {
+				acceptMemoExpression(candidate);
+			}
+		}
+
+		/**
+		 * Installs the primitive reserved order. Compatibility targets may use this adapter; the production scoped memo
+		 * overrides it so no prefix trees, sets, or canonical strings are materialized.
+		 */
+		default void installReservedSeedOrder(DeterministicGreedyJoinSeed.SeedOrder order) {
+			Objects.requireNonNull(order, "order");
+			if (order.size() < 2) {
+				return;
+			}
+			JoinTree tree = JoinTree.factor(order.occurrenceIdAt(0));
+			for (int index = 1; index < order.size(); index++) {
+				tree = JoinTree.join(tree, JoinTree.factor(order.occurrenceIdAt(index)));
+			}
+			List<JoinMemoExpressionCandidate> candidates = JoinMemoExpression.decompose(tree)
+					.stream()
+					.map(expression -> new JoinMemoExpressionCandidate(DeterministicGreedyJoinSeed.ID, expression))
+					.toList();
+			installReservedMemoExpressions(candidates);
+		}
+	}
+
+	private static GreedySeedInstallation installDeterministicGreedySeed(JoinSearchRequest request,
+			ScopedMemoTarget target) {
+		DeterministicGreedyJoinSeed.SeedOrder seed = DeterministicGreedyJoinSeed.buildOrder(request.region(),
+				request.context(), factor -> target.factorLowerBoundRows(factor.occurrenceId()),
+				factor -> target.factorLowerBoundWork(factor.occurrenceId()));
+		if (seed.outcome().status() != JoinSearchContributor.Status.COMPLETED) {
+			return new GreedySeedInstallation(seed,
+					Optional.of(
+							new JoinSearchResult.Attempt(DETERMINISTIC_GREEDY_SEED_DESCRIPTOR, seed.outcome(), 0L)));
+		}
+		target.installReservedSeedOrder(seed);
+		return new GreedySeedInstallation(seed, Optional.empty());
+	}
+
+	private static Optional<JoinSearchResult.Attempt> installFiniteRelationSeed(JoinSearchRequest request,
+			JoinSearchWork work, ScopedMemoTarget target, DeterministicGreedyJoinSeed.SeedOrder greedySeed,
+			Map<Integer, Integer> occurrenceOrdinals,
+			Map<JoinMemoExpressionKey, JoinMemoExpressionCandidate> distinctCandidates,
+			CandidateBudget candidateBudget) {
+		Optional<List<JoinMemoExpression>> seed = FiniteRelationJoinSeed.expressions(request.region(),
+				request.context(),
+				greedySeed);
+		if (seed.isEmpty()) {
+			return Optional.empty();
+		}
+		long offered = 0L;
+		JoinSearchContributor.Outcome outcome = JoinSearchContributor.Outcome.completed();
+		try {
+			for (JoinMemoExpression expression : seed.orElseThrow()) {
+				if (!work.tryPartitionProbe()) {
+					outcome = JoinSearchContributor.Outcome.budgetExhausted(
+							"shared partition-probe limit exhausted while scheduling finite-relation seed");
+					break;
+				}
+				JoinMemoExpressionKey key = JoinMemoExpressionKey.from(expression, occurrenceOrdinals);
+				if (distinctCandidates.containsKey(key)) {
+					continue;
+				}
+				candidateBudget.consume();
+				JoinMemoExpressionCandidate candidate = new JoinMemoExpressionCandidate(FiniteRelationJoinSeed.ID,
+						expression);
+				distinctCandidates.put(key, candidate);
+				target.acceptPriorityMemoExpression(candidate);
+				offered++;
+			}
+		} catch (CandidateBudgetExhausted exhausted) {
+			outcome = JoinSearchContributor.Outcome.budgetExhausted(candidateBudget.detail());
+		}
+		return Optional.of(new JoinSearchResult.Attempt(FINITE_RELATION_SEED_DESCRIPTOR, outcome, offered));
+	}
+
+	private record GreedySeedInstallation(DeterministicGreedyJoinSeed.SeedOrder seedOrder,
+			Optional<JoinSearchResult.Attempt> attempt) {
+
+		private GreedySeedInstallation {
+			Objects.requireNonNull(seedOrder, "seedOrder");
+			attempt = attempt == null ? Optional.empty() : attempt;
+		}
+	}
+
 	private static void acceptMemoExpressionCandidate(String contributorId, JoinMemoExpression expression,
-			JoinSearchRequest request, Map<String, JoinMemoExpressionCandidate> distinctCandidates,
+			JoinMemoExpressionKey expressionKey, JoinSearchRequest request,
+			Map<JoinMemoExpressionKey, JoinMemoExpressionCandidate> distinctCandidates,
 			Consumer<JoinMemoExpressionCandidate> candidateConsumer) {
 		Objects.requireNonNull(expression, "join-search memo expression");
-		if (!request.region().isLegal(expression)) {
+		if (!request.region().isLegal(expression, request.context().initiallyBoundBindings())) {
 			throw new IllegalArgumentException("contributor " + contributorId
 					+ " emitted an illegal join memo expression: " + expression.canonicalForm());
 		}
-		String fingerprint = expression.canonicalForm();
-		if (distinctCandidates.containsKey(fingerprint)) {
+		JoinMemoExpressionKey checkedKey = Objects.requireNonNull(expressionKey, "join memo-expression key");
+		if (distinctCandidates.containsKey(checkedKey)) {
 			return;
 		}
 		JoinMemoExpressionCandidate candidate = new JoinMemoExpressionCandidate(contributorId, expression);
-		distinctCandidates.put(fingerprint, candidate);
+		distinctCandidates.put(checkedKey, candidate);
 		candidateConsumer.accept(candidate);
 	}
 
@@ -212,7 +490,7 @@ public final class JoinSearchService {
 			Map<String, JoinEnumerationCandidate> distinctCandidates,
 			Consumer<JoinEnumerationCandidate> candidateConsumer) {
 		Objects.requireNonNull(tree, "join-search candidate tree");
-		if (!request.region().isLegal(tree)) {
+		if (!request.region().isLegal(tree, request.context().initiallyBoundBindings())) {
 			throw new IllegalArgumentException(
 					"contributor " + contributorId + " emitted an illegal join tree: " + tree.canonicalForm());
 		}
@@ -229,7 +507,7 @@ public final class JoinSearchService {
 			Map<String, JoinSearchCandidate> distinctCandidates, Map<JoinTree, JoinSearchCost> costCache,
 			Consumer<JoinSearchCandidate> candidateConsumer) {
 		Objects.requireNonNull(tree, "join-search candidate tree");
-		if (!request.region().isLegal(tree)) {
+		if (!request.region().isLegal(tree, request.context().initiallyBoundBindings())) {
 			throw new IllegalArgumentException(
 					"contributor " + contributorId + " emitted an illegal join tree: " + tree.canonicalForm());
 		}
@@ -301,6 +579,11 @@ public final class JoinSearchService {
 		return List.of("no exhaustive legal join-search contributor completed");
 	}
 
+	private static boolean dphypDependencyUnsupported(RegisteredContributor contributor, JoinSearchRequest request) {
+		return contributor.contributor() instanceof PrimitiveDphypJoinSearchContributor
+				&& !request.region().dependencies().isEmpty();
+	}
+
 	private record RegisteredContributor(JoinSearchContributor.Descriptor descriptor,
 			JoinSearchContributor contributor) {
 	}
@@ -334,6 +617,20 @@ public final class JoinSearchService {
 
 		private CandidateBudgetExhausted() {
 			super(null, null, false, false);
+		}
+	}
+
+	private static final class SharedWorkBudgetExhausted extends RuntimeException {
+		private static final long serialVersionUID = 1L;
+		private final String detail;
+
+		private SharedWorkBudgetExhausted(String detail) {
+			super(null, null, false, false);
+			this.detail = detail;
+		}
+
+		private String detail() {
+			return detail;
 		}
 	}
 }

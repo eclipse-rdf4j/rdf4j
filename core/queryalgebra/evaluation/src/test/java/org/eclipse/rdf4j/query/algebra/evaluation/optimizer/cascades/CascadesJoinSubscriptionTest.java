@@ -16,6 +16,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinFactor;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinRegion;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSearchDependencyStamp;
@@ -23,6 +26,21 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.MemoJo
 import org.junit.jupiter.api.Test;
 
 class CascadesJoinSubscriptionTest {
+
+	@Test
+	void dependentInputJoinWorkPreemptsStaleEnumerationBacklog() {
+		CascadesPlanner.JoinWork stale = joinWork(50, 101, "statistics_changed");
+		CascadesPlanner.JoinWork demanded = joinWork(60, 202, "dependent_input_goal_requested");
+		CascadesPlanner.SearchState state = new CascadesPlanner.SearchState(0,
+				OptimizationGoal.SearchMode.EXACT);
+
+		state.enqueueJoinWork(stale);
+		state.enqueueJoinWork(demanded);
+
+		assertThat(state.pollJoinWork())
+				.as("a parent-requested child join must receive its bounded enumeration turn before stale backlog")
+				.isEqualTo(demanded);
+	}
 
 	@Test
 	void sameRegionRetainsEverySourceExpressionSubscription() {
@@ -48,6 +66,62 @@ class CascadesJoinSubscriptionTest {
 		assertThat(state.subscribedJoinSourceExpressions(40)).containsExactly(101, 202);
 		assertThat(state.subscribedJoinSourceExpressions(rootGroupId)).containsExactly(101, 202);
 		assertThat(state.subscribedJoinSourceExpressions(999)).isEmpty();
+	}
+
+	@Test
+	void exactScalarWinnerRevisionReactivatesSaturatedJoinButUnrelatedWinnerDoesNot() {
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		StatementPattern scalarPlan = new StatementPattern(new Var("subject"), new Var("predicate"), new Var("object"));
+		int scalarGroupId = memo.intern(scalarPlan);
+		MemoExpr scalarPhysical = memo.addPhysicalAlternative(scalarGroupId, scalarPlan.clone(), PhysicalProperties.ANY,
+				"scalar-input", RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of()).orElseThrow();
+		WinnerKey exactScalarKey = OptimizationGoal.root().key(scalarGroupId);
+		WinnerKey unrelatedScalarKey = new WinnerKey(scalarGroupId, PhysicalProperties.ANY,
+				OptimizationGoal.BAG_SEMANTICS, OptimizationGoal.CostPolicy.ROBUST);
+
+		int rootGroupId = 50;
+		JoinRegion region = new JoinRegion(List.of(new JoinFactor(0, 30), new JoinFactor(1, 40)), List.of());
+		CascadesPlanner.JoinWorkKey joinKey = new CascadesPlanner.JoinWorkKey(rootGroupId, region.identity(),
+				OptimizationGoal.root().key(rootGroupId), 0L, JoinSearchDependencyStamp.EMPTY);
+		CascadesPlanner.JoinWork joinWork = new CascadesPlanner.JoinWork(joinKey, 101,
+				extraction(region, Set.of(rootGroupId), Set.of(30, 40)), "test_scalar_winner_change");
+		CascadesPlanner.SearchState state = new CascadesPlanner.SearchState(0,
+				OptimizationGoal.SearchMode.EXACT);
+
+		state.deferJoinUntilWinner(memo, joinWork, exactScalarKey, "initial scalar winner unavailable");
+		memo.addWinner(exactScalarKey, winner(scalarPhysical, 10.0d), 16, true);
+		state.wakeDeferredJoinWinnerWork(memo, scalarGroupId);
+		assertThat(state.hasJoinWork()).isTrue();
+		state.pollJoinWork();
+
+		state.deferJoinUntilWinner(memo, joinWork, exactScalarKey, "observe exact scalar frontier");
+		state.markJoinSaturated(joinKey);
+		memo.addWinner(unrelatedScalarKey, winner(scalarPhysical, 0.5d), 16, true);
+		state.wakeDeferredJoinWinnerWork(memo, scalarGroupId);
+		assertThat(state.hasJoinWork()).isFalse();
+
+		memo.addWinner(exactScalarKey, winner(scalarPhysical, 1.0d), 16, true);
+		state.wakeDeferredJoinWinnerWork(memo, scalarGroupId);
+		assertThat(state.hasJoinWork())
+				.as("a cheaper winner on the observed exact scalar frontier must reactivate its scoped join")
+				.isTrue();
+	}
+
+	private static Winner winner(MemoExpr expression, double work) {
+		CostVector cost = new CostVector(1.0d, work, 0.0d, 0.0d, 0.0d, 1.0d, 1.0d);
+		return new Winner(expression, expression.tupleExpr().clone(), PhysicalProperties.ANY, cost, List.of(), false,
+				"");
+	}
+
+	private static CascadesPlanner.JoinWork joinWork(int rootGroupId, int sourceExpressionId, String wakeUpReason) {
+		JoinRegion region = new JoinRegion(
+				List.of(new JoinFactor(0, rootGroupId + 1), new JoinFactor(1, rootGroupId + 2)), List.of());
+		WinnerKey goalKey = new WinnerKey(rootGroupId, PhysicalProperties.ANY, OptimizationGoal.BAG_SEMANTICS,
+				OptimizationGoal.CostPolicy.EXACT);
+		CascadesPlanner.JoinWorkKey key = new CascadesPlanner.JoinWorkKey(rootGroupId, region.identity(), goalKey,
+				0L, JoinSearchDependencyStamp.EMPTY);
+		return new CascadesPlanner.JoinWork(key, sourceExpressionId,
+				extraction(region, Set.of(rootGroupId), Set.of(rootGroupId + 1, rootGroupId + 2)), wakeUpReason);
 	}
 
 	private static MemoJoinRegionExtractor.Result extraction(JoinRegion region, Set<Integer> expandedGroupIds,

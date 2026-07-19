@@ -218,6 +218,7 @@ public interface RuleTemplate {
 				SemanticProps.builderFrom(capture.node(captureName).semantics())
 						.scopeBarrier(false)
 						.subqueryBoundary(false)
+						.explicitScopeChange(false)
 						.build());
 	}
 
@@ -230,6 +231,22 @@ public interface RuleTemplate {
 			IrNodeId left = builder.copySubtreeFrom(capture.ir(), difference.inputs().get(0));
 			PlanIr subquery = new PlanIr(capture.ir().universe(), difference.inputs().get(1), capture.ir().nodes());
 			return builder.filter(left, new ScalarExpr.Exists(subquery, shared, true));
+		};
+	}
+
+	/** Rewrites {@code FILTER(DIFFERENCE(left, right), condition)} as condition-on-left followed by anti-EXISTS. */
+	static RuleTemplate filterDifferenceAsAntiExists(String differenceCaptureName, String conditionCaptureName) {
+		Objects.requireNonNull(differenceCaptureName, "differenceCaptureName");
+		Objects.requireNonNull(conditionCaptureName, "conditionCaptureName");
+		return (capture, builder) -> {
+			IrNode difference = capture.node(differenceCaptureName);
+			IrNode sourceLeft = capture.ir().node(difference.inputs().get(0));
+			IrNode sourceRight = capture.ir().node(difference.inputs().get(1));
+			BindingMask shared = sourceLeft.bindings().possible().intersect(sourceRight.bindings().possible());
+			IrNodeId left = builder.copySubtreeFrom(capture.ir(), difference.inputs().get(0));
+			IrNodeId filteredLeft = builder.filter(left, capture.scalar(conditionCaptureName));
+			PlanIr subquery = new PlanIr(capture.ir().universe(), difference.inputs().get(1), capture.ir().nodes());
+			return builder.filter(filteredLeft, new ScalarExpr.Exists(subquery, shared, true));
 		};
 	}
 

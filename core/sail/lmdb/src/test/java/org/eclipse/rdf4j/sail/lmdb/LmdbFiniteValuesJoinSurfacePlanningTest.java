@@ -27,22 +27,38 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPlan;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationCompleteness;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -69,6 +85,8 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 	private static final int COMPONENTS_PER_ASSEMBLY = 140;
 	private static final int COPIES_PER_SELECTED_LIBRARY_BRANCH = 100;
 	private static final int LIBRARY_NOISE_BRANCH_COUNT = 500;
+	private static final int HIGH_FANOUT_LIBRARY_BRANCH_COUNT = 32;
+	private static final int COPIES_PER_HIGH_FANOUT_LIBRARY_BRANCH = 32;
 	private static final int OBSERVATIONS_PER_VALUE = 300;
 
 	@Test
@@ -191,6 +209,44 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 	}
 
 	@Test
+	void finiteLiteralFilterPublishesExactOutputRelationWithoutDiscountingScanWork(@TempDir File dataDir)
+			throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticLibraryBranches(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			StatementPattern name = new StatementPattern(Var.of("branch"), Var.of("namePredicate", LIB_NAME),
+					Var.of("branchName"));
+			Or selectedNames = new Or(
+					new Compare(Var.of("branchName"), new ValueConstant(VF.createLiteral("Branch 0")),
+							Compare.CompareOp.EQ),
+					new Compare(Var.of("branchName"), new ValueConstant(VF.createLiteral("Branch 1")),
+							Compare.CompareOp.EQ));
+			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics();
+			StatisticsEstimate input = statistics.statementPattern(name, Set.of()).orElseThrow();
+			StatisticsEstimate filtered = statistics.filter(name, selectedNames, input, Set.of()).orElseThrow();
+
+			FiniteRelationEstimate relation = filtered.bag()
+					.relationContaining(Set.of("branch", "branchName"))
+					.orElseThrow(() -> new AssertionError(
+							"The safe finite filter must publish the exact selected output relation: " + filtered));
+			assertEquals(2.0d, relation.rows(), 0.0d);
+			assertEquals(2.0d, filtered.rows(), 0.0d);
+			assertTrue(filtered.workRows() >= input.workRows() + input.rows(),
+					"Exact output evidence must retain the broad scan plus filter work. input=" + input
+							+ ", filtered=" + filtered);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
 	void cascadesConnectedPlannerUsesFiniteDerivedFanoutOverCheapBoundLookupAverage(@TempDir File dataDir)
 			throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
@@ -244,6 +300,167 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			assertFiniteDerivedLibraryFanout(costModel, statistics, join, JoinFactorCostModel.EstimationTier.STANDARD);
 			assertFiniteDerivedLibraryFanout(costModel, statistics, join,
 					JoinFactorCostModel.EstimationTier.DECISION_EXACT);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void unifiedScopedExactKeepsFiniteBranchFanoutBeforeCopyTypeGuard(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticLibraryBranches(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			BindingSetAssignment branchNames = branchNameBindings();
+			StatementPattern name = new StatementPattern(Var.of("branch"), Var.of("namePredicate", LIB_NAME),
+					Var.of("branchName"));
+			StatementPattern locatedAt = new StatementPattern(Var.of("copy"),
+					Var.of("locatedAtPredicate", LIB_LOCATED_AT), Var.of("branch"));
+			StatementPattern copyType = new StatementPattern(Var.of("copy"), Var.of("rdfType", RDF_TYPE),
+					Var.of("copyType", LIB_COPY));
+			TupleExpr join = new Join(new Join(new Join(branchNames, name), locatedAt), copyType);
+			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+			CascadesPlan plan = new LmdbCascadesOptimizer(statistics, false)
+					.planPreparedInput(join, OptimizationGoal.root(join, PhysicalProperties.ANY));
+
+			assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness(), plan.diagnostics().toString());
+			StatementPattern plannedLocatedAt = findStatementPattern(plan.tupleExpr().orElseThrow(), LIB_LOCATED_AT,
+					"branch");
+			assertTrue(plannedLocatedAt != null, "Expected planned locatedAt lookup. plan=" + plan.tupleExpr());
+			assertEquals("[P, O]",
+					plannedLocatedAt.getStringMetricPlanned(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS),
+					"The finite branch prefix must drive locatedAt before the copy type guard. metrics="
+							+ plannedLocatedAt + ", plan=" + plan.tupleExpr());
+			assertTrue(plannedLocatedAt.getResultSizeEstimate() >= 150.0d,
+					"The selected branch lookup must preserve its derived copy fanout. metrics=" + plannedLocatedAt
+							+ ", plan=" + plan.tupleExpr());
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void unifiedScopedExactKeepsFiniteBranchPrefixAcrossMobileScalarFilter(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticLibraryBranches(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			BindingSetAssignment branchNames = branchNameBindings();
+			StatementPattern name = new StatementPattern(Var.of("branch"), Var.of("namePredicate", LIB_NAME),
+					Var.of("branchName"));
+			StatementPattern locatedAt = new StatementPattern(Var.of("copy"),
+					Var.of("locatedAtPredicate", LIB_LOCATED_AT), Var.of("branch"));
+			Filter residual = new Filter(new Join(name, locatedAt),
+					new Not(new FunctionCall(FN.CONTAINS.stringValue(), new Str(Var.of("branch")),
+							new ValueConstant(VF.createLiteral("branch/0")))));
+			TupleExpr join = new Join(branchNames, residual);
+			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+
+			CascadesPlan plan = new LmdbCascadesOptimizer(statistics, false)
+					.planPreparedInput(join, OptimizationGoal.root(join, PhysicalProperties.ANY));
+
+			assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness(), plan.diagnostics().toString());
+			StatementPattern plannedLocatedAt = findStatementPattern(plan.tupleExpr().orElseThrow(), LIB_LOCATED_AT,
+					"branch");
+			assertTrue(plannedLocatedAt != null, "Expected planned locatedAt lookup. plan=" + plan.tupleExpr());
+			assertEquals("[P, O]",
+					plannedLocatedAt.getStringMetricPlanned(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS),
+					"The finite branch prefix must drive locatedAt across the mobile scalar filter. metrics="
+							+ plannedLocatedAt + ", plan=" + plan.tupleExpr());
+			assertTrue(plannedLocatedAt.getDoubleMetricPlanned("plannedRepeatedInvocations") <= 4.0d,
+					"locatedAt must be invoked once per finite branch rather than once per broad name row. metrics="
+							+ plannedLocatedAt + ", plan=" + plan.tupleExpr());
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void unifiedAutoKeepsFiniteBranchPrefixAcrossSemiAndAntiPredicates(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticLibraryBranches(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			String query = String.join("\n",
+					"PREFIX lib: <http://example.com/theme/library/>",
+					"SELECT (COUNT(DISTINCT ?copy) AS ?count) WHERE {",
+					"  ?copy a lib:Copy ; lib:locatedAt ?branch .",
+					"  ?branch lib:name ?branchName .",
+					"  FILTER(?branchName = \"Branch 0\" || ?branchName = \"Branch 1\")",
+					"  FILTER EXISTS { ?copy a lib:Copy . }",
+					"  MINUS { ?copy lib:locatedAt ?branch . FILTER(CONTAINS(STR(?branch), \"branch/0\")) }",
+					"}");
+			TupleExpr input = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+			OptimizationGoal baseGoal = OptimizationGoal.root(input, PhysicalProperties.ANY);
+			OptimizationGoal autoGoal = new OptimizationGoal(baseGoal.requiredProperties(), baseGoal.semanticScope(),
+					baseGoal.costPolicy(), baseGoal.costBound(), baseGoal.excludedProperties(),
+					OptimizationGoal.SearchMode.AUTO, Long.MAX_VALUE, 4_096, baseGoal.rowGoal(),
+					baseGoal.estimationTier(), baseGoal.inputBindingContext());
+			CascadesPlan plan = new LmdbCascadesOptimizer(store.getBackingStore().getEvaluationStatistics(), false)
+					.planPreparedInput(input, autoGoal);
+
+			TupleExpr optimized = plan.tupleExpr().orElseThrow();
+			StatementPattern plannedLocatedAt = findStatementPattern(optimized, LIB_LOCATED_AT, "branch");
+			assertTrue(plannedLocatedAt != null, "Expected planned locatedAt lookup. plan=" + optimized);
+			assertEquals("[P, O]",
+					plannedLocatedAt.getStringMetricPlanned(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS),
+					"AUTO must admit the finite-prefix winner before exhausting rule work. status="
+							+ plan.searchStatus() + ", metrics=" + plannedLocatedAt + ", plan=" + optimized);
+			assertTrue(plannedLocatedAt.getDoubleMetricPlanned("plannedRepeatedInvocations") <= 4.0d,
+					"AUTO must not invoke locatedAt once per broad branch-name row. status=" + plan.searchStatus()
+							+ ", metrics=" + plannedLocatedAt + ", plan=" + optimized);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void boundLookupUsesSharedVariableDistinctEvidenceForBroadPrefix(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setSketchEstimatorEnabled(false);
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadHighFanoutLibraryBranches(repository);
+
+			StatementPattern name = new StatementPattern(Var.of("branch"), Var.of("namePredicate", LIB_NAME),
+					Var.of("branchName"));
+			StatementPattern locatedAt = new StatementPattern(Var.of("copy"),
+					Var.of("locatedAtPredicate", LIB_LOCATED_AT), Var.of("branch"));
+			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+			JoinFactorCostModel costModel = (JoinFactorCostModel) statistics;
+			double prefixRows = statistics.getCardinality(name);
+			double expectedSurfaceRows =
+					HIGH_FANOUT_LIBRARY_BRANCH_COUNT * COPIES_PER_HIGH_FANOUT_LIBRARY_BRANCH;
+
+			JoinFactorCostModel.FactorCostEstimate estimate = costModel
+					.estimateFactorCost(locatedAt, JoinFactorCostModel.CostContext.forOptimization(
+							Set.of("branch"), prefixRows, prefixRows, true, true, Map.of(), List.of(name)))
+					.orElseThrow();
+
+			assertEquals(HIGH_FANOUT_LIBRARY_BRANCH_COUNT, prefixRows, 0.0d);
+			assertTrue(estimate.getOutputRows() >= expectedSurfaceRows * 0.9d,
+					"A prefix covering every shared ?branch must retain the broad locatedAt fanout instead of "
+							+ "treating each locatedAt row as a distinct branch. expectedSurfaceRows="
+							+ expectedSurfaceRows + ", estimate=" + estimate.getStringMetrics()
+							+ estimate.getDoubleMetrics());
 		} finally {
 			repository.shutDown();
 		}
@@ -468,6 +685,22 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 		}
 	}
 
+	private static void loadHighFanoutLibraryBranches(SailRepository repository) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			for (int branchIndex = 0; branchIndex < HIGH_FANOUT_LIBRARY_BRANCH_COUNT; branchIndex++) {
+				Resource branch = VF.createIRI("urn:test:library:high-fanout-branch:" + branchIndex);
+				connection.add(branch, LIB_NAME, VF.createLiteral("High Fanout Branch " + branchIndex));
+				for (int copyIndex = 0; copyIndex < COPIES_PER_HIGH_FANOUT_LIBRARY_BRANCH; copyIndex++) {
+					Resource copy = VF.createIRI(
+							"urn:test:library:high-fanout-copy:" + branchIndex + ":" + copyIndex);
+					connection.add(copy, LIB_LOCATED_AT, branch);
+				}
+			}
+			connection.commit();
+		}
+	}
+
 	private static Resource assembly(int index) {
 		return VF.createIRI("urn:test:engineering:assembly:" + index);
 	}
@@ -521,7 +754,8 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 		assertTrue(plannedRows >= expectedRows * 0.75d,
 				"The connected Cascades planner should keep the finite-derived fanout when finite names derive "
 						+ "high-fanout branches. tier=" + tier + ", plannedRows=" + plannedRows + ", expectedRows="
-						+ expectedRows + ", metrics=" + plannedLocatedAt);
+						+ expectedRows + ", metrics=" + plannedLocatedAt + ", plan=" + plan.tupleExpr()
+						+ ", cost=" + plan.cost() + ", estimate=" + plan.estimate());
 	}
 
 	private static BindingSetAssignment observationValueBindings() {

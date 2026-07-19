@@ -105,7 +105,7 @@ public final class OrderLimitCascadesRules {
 	}
 
 	private static ProjectionOrder projectionOrder(MemoExpr expression, OptimizationGoal goal, Memo memo) {
-		if (expression == null || !expression.logical() || !(expression.tupleExpr() instanceof Projection projection)) {
+		if (expression == null || !expression.logical() || !(expression.tupleExpr()instanceof Projection projection)) {
 			return null;
 		}
 		Order order = orderInput(expression, projection, memo);
@@ -113,11 +113,11 @@ public final class OrderLimitCascadesRules {
 	}
 
 	private static ProjectionOrder distinctProjectionOrder(MemoExpr expression, OptimizationGoal goal, Memo memo) {
-		if (expression == null || !expression.logical() || !(expression.tupleExpr() instanceof Distinct distinct)) {
+		if (expression == null || !expression.logical() || !(expression.tupleExpr()instanceof Distinct distinct)) {
 			return null;
 		}
-		if (distinct.getArg() instanceof Projection projection) {
-			Order order = projection.getArg() instanceof Order direct ? direct : null;
+		if (distinct.getArg()instanceof Projection projection) {
+			Order order = projection.getArg()instanceof Order direct ? direct : null;
 			if (canTranspose(projection, order, goal)) {
 				return new ProjectionOrder(projection, order);
 			}
@@ -135,7 +135,7 @@ public final class OrderLimitCascadesRules {
 	}
 
 	private static Order orderInput(MemoExpr expression, Projection projection, Memo memo) {
-		if (projection.getArg() instanceof Order direct) {
+		if (projection.getArg()instanceof Order direct) {
 			return direct;
 		}
 		if (memo == null || expression.inputGroupIds().isEmpty()) {

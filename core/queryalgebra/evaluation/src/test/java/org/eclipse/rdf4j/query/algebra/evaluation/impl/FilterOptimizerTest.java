@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -30,7 +31,10 @@ import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Projection;
@@ -141,6 +145,20 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		String query = "SELECT * WHERE {?branch <urn:name> ?branchName . ?copy <urn:locatedAt> ?branch . FILTER(?branchName = \"Branch 0\") }";
 
 		testOptimizer(expectedQuery, query, new SelectiveJoinStatistics(200.0d, 100.0d, 20.0d));
+	}
+
+	@Test
+	public void volatileExtensionStaysBeforeFilterRelocation() {
+		StatementPattern pattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+		Extension extension = new Extension(pattern, new ExtensionElem(new FunctionCall("UUID"), "token"));
+		Filter filter = new Filter(extension,
+				new Compare(new Var("o"), new ValueConstant(SimpleValueFactory.getInstance().createLiteral("value"))));
+		QueryRoot root = new QueryRoot(filter);
+
+		getOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+
+		Filter retained = assertInstanceOf(Filter.class, root.getArg());
+		assertInstanceOf(Extension.class, retained.getArg());
 	}
 
 	@Test

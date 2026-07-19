@@ -30,7 +30,9 @@ final class LmdbJoinSearchProvider {
 		Objects.requireNonNull(fallbackStatistics, "fallbackStatistics");
 		return new JoinSearchService(List.of(
 				new LmdbDphypJoinSearchContributor(request -> LmdbHypergraphJoinPlanner.tryCandidate(request,
-						costModel, fallbackStatistics)),
-				new ExhaustiveLegalJoinSearchContributor()));
+						costModel, fallbackStatistics),
+						(request, hasCandidateSubset, sink) -> LmdbHypergraphJoinPlanner.contributePartitions(request,
+								hasCandidateSubset, sink)),
+				new ExhaustiveLegalJoinSearchContributor()), LmdbOpaqueJoinFactorPolicy.INSTANCE);
 	}
 }

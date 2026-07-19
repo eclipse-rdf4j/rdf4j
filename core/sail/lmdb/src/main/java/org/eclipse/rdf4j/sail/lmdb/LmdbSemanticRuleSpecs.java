@@ -12,17 +12,43 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.capture;
+import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.captureRouteContaining;
+import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.conditionVars;
+import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.difference;
+import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.filter;
+import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.noScopeChange;
+import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.ref;
 import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.rule;
-import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.tuple;
-import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.tupleAlternativeAvailable;
+import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.scalar;
+import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.scalarRef;
+import static org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl.shape;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
-import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingMask;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingSymbol;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.SemanticScope;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleCapture;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleGuard;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RulePattern;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleSpec;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleTemplate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.BindingShape;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.FiniteRelation;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.IrAttr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.IrNode;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.IrNodeId;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.IrOp;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.PlanIrBuilder;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.ScalarExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.ScalarFacts;
 
 /** LMDB-local semantic alternatives declared through the Cascades rule DSL. */
 final class LmdbSemanticRuleSpecs {
@@ -31,56 +57,900 @@ final class LmdbSemanticRuleSpecs {
 	}
 
 	static List<RuleSpec> logicalRules() {
-		return List.of(removeUnusedOptional(), finiteFilterValues(), orFilterValues(), orFilterUnion(),
-				filterMinusLeftPushdown());
+		return List.of(removeUnusedOptionalGroup(), removeUnusedOptionalDistinct(), removeUnusedOptionalReduced(),
+				removeUnusedOptionalPositiveHaving(), finiteFilterValues(), orFilterValues(), orFilterUnion(),
+				filterMinusLeftPushdown(), filterPositiveExistsBelowAntiExists(), splitFilterBeforeAntiExists());
 	}
 
-	static RuleSpec removeUnusedOptional() {
-		return tupleRule("lmdb-remove-unused-optional", 95, LmdbCascadesRuleProvider::unusedOptionalAlternative,
-				"unusedOptionalRhs", "duplicateInsensitive", "liveBindingObserver");
+	static RuleSpec removeUnusedOptionalGroup() {
+		return unusedOptionalObserverRule("lmdb-remove-unused-optional", IrOp.GROUP, 95);
 	}
 
-	static RuleSpec finiteFilterValues() {
-		return tupleRule("lmdb-finite-filter-values-rewrite", 92,
-				LmdbCascadesRuleProvider::finiteFilterValuesAlternative, "finiteValuesAnchor", "scopeSafe",
-				"subquerySafe");
+	private static RuleSpec removeUnusedOptionalDistinct() {
+		return unusedOptionalObserverRule("lmdb-remove-unused-optional-distinct", IrOp.DISTINCT, 95);
 	}
 
-	static RuleSpec orFilterValues() {
-		return tupleRule("lmdb-or-filter-values-rewrite", 96, LmdbCascadesRuleProvider::orFilterValuesAlternative,
-				"finiteValuesAnchor", "orDnf", "tupleArityPreserved", "valueIdentityPreserved");
+	private static RuleSpec removeUnusedOptionalReduced() {
+		return unusedOptionalObserverRule("lmdb-remove-unused-optional-reduced", IrOp.REDUCED, 94);
 	}
 
-	static RuleSpec orFilterUnion() {
-		return tupleRule("lmdb-or-filter-union-rewrite", 93, LmdbCascadesRuleProvider::orFilterUnionAlternative,
-				"duplicateInsensitive", "orBranches", "scopeSafe", "branchOverlapSafe");
-	}
-
-	static RuleSpec filterMinusLeftPushdown() {
-		return tupleRule("lmdb-filter-minus-left-pushdown", 93,
-				LmdbCascadesRuleProvider::filterMinusLeftPushdownAlternative, "minus", "leftOnlyFilter",
-				"scopeSafe");
-	}
-
-	private static RuleSpec tupleRule(String id, int promise, TupleAlternative alternative, String... proofFacts) {
-		RuleTemplate.TupleEmitter emitter = capture -> alternative.rewrite(rootTuple(capture));
+	private static RuleSpec unusedOptionalObserverRule(String id, IrOp observer, int promise) {
 		return rule(id)
 				.kind(RuleKind.TRANSFORMATION)
 				.promise(promise)
-				.match(capture("root"))
-				.where(tupleAlternativeAvailable(emitter))
-				.emit(tuple(emitter))
-				.proof(proofFacts)
-				.reason("LMDB semantic query alternative emitted by a compiled Cascades DSL rule")
+				.match(RulePattern.op("root", observer,
+						List.of(captureRouteContaining("input", IrOp.LEFT_JOIN))))
+				.where(capture -> guard(unusedOptionalObserverRewrite(capture) != null,
+						"unused OPTIONAL below duplicate-insensitive observer"))
+				.emit(unusedOptionalObserverTemplate())
+				.proof("unusedOptionalRhs", "duplicateInsensitive", "liveBindingObserver", "bindingMaskLiveness")
+				.reason("A duplicate-insensitive observer does not consume bindings introduced only by the OPTIONAL RHS")
 				.build();
 	}
 
-	private static TupleExpr rootTuple(RuleCapture capture) {
-		return capture == null || capture.expression() == null ? null : capture.expression().tupleExpr();
+	private static RuleSpec removeUnusedOptionalPositiveHaving() {
+		return rule("lmdb-remove-unused-optional-positive-having")
+				.kind(RuleKind.TRANSFORMATION)
+				.promise(95)
+				.match(filter("root", capture("input"), scalar("condition")))
+				.where(capture -> guard(positiveHavingRewrite(capture) != null,
+						"positive HAVING over duplicate-insensitive aggregates"))
+				.emit(unusedOptionalPositiveHavingTemplate())
+				.proof("unusedOptionalRhs", "duplicateInsensitive", "positiveHaving", "bindingMaskLiveness")
+				.reason("A proven-positive COUNT observer does not consume bindings introduced only by the OPTIONAL RHS")
+				.build();
 	}
 
-	@FunctionalInterface
-	private interface TupleAlternative {
-		TupleExpr rewrite(TupleExpr tupleExpr);
+	private static UnusedOptionalRewrite unusedOptionalObserverRewrite(RuleCapture capture) {
+		IrNode root = capture.node("root");
+		IrNodeId input = capture.nodeId("input");
+		BindingMask live = switch (root.op()) {
+		case GROUP -> duplicateInsensitiveGroupLiveMask(capture, root);
+		case DISTINCT, REDUCED -> bindingShape(capture, root.id()).possible();
+		default -> null;
+		};
+		return live != null && hasRemovableOptional(capture, input, live)
+				? new UnusedOptionalRewrite(input, live)
+				: null;
+	}
+
+	private static RuleTemplate unusedOptionalObserverTemplate() {
+		return (capture, builder) -> {
+			UnusedOptionalRewrite rewrite = unusedOptionalObserverRewrite(capture);
+			if (rewrite == null) {
+				throw new IllegalStateException("observer no longer contains a removable OPTIONAL");
+			}
+			IrNode root = capture.node("root");
+			IrNodeId input = emitPrunedOptionals(capture, rewrite.input(), rewrite.live(), builder);
+			return rebuild(root, List.of(input), builder);
+		};
+	}
+
+	private static PositiveHavingRewrite positiveHavingRewrite(RuleCapture capture) {
+		IrNode observerInput = capture.node("input");
+		IrNodeId groupId = observerInput.op() == IrOp.GROUP
+				? observerInput.id()
+				: observerInput.op() == IrOp.EXTENSION
+						&& observerInput.inputs().size() == 1
+						&& capture.ir().node(observerInput.inputs().get(0)).op() == IrOp.GROUP
+								? observerInput.inputs().get(0)
+								: null;
+		if (groupId == null || !(capture.ir().node(groupId).attr()instanceof IrAttr.GroupAttr group)) {
+			return null;
+		}
+		IrNode groupInput = capture.ir().node(capture.ir().node(groupId).inputs().get(0));
+		BindingMask conditionVars = scalarVars(capture, capture.scalar("condition"));
+		BindingMask live = BindingShape.maskOfSymbols(capture.ir().universe(), group.groupVars());
+		BindingMask stableOutputs = live;
+		BindingMask positiveCountOutputs = BindingMask.EMPTY;
+		for (IrAttr.AggregateBinding aggregate : group.aggregates()) {
+			BindingMask target = BindingShape.maskOfSymbol(capture.ir().universe(), aggregate.target());
+			BindingMask arguments = aggregateArgumentVars(capture, aggregate);
+			if (aggregate.kind() == IrAttr.AggregateKind.COUNT && !aggregate.distinct()
+					&& conditionVars.intersects(target)) {
+				if (arguments.isEmpty() || !groupInput.bindings().assured().containsAll(arguments)) {
+					return null;
+				}
+				positiveCountOutputs = positiveCountOutputs.union(target);
+				stableOutputs = stableOutputs.union(target);
+				live = live.union(arguments);
+			} else if (duplicateInsensitiveAggregate(aggregate)) {
+				if (aggregate.kind() == IrAttr.AggregateKind.COUNT && aggregate.arguments().isEmpty()) {
+					return null;
+				}
+				stableOutputs = stableOutputs.union(target);
+				live = live.union(arguments);
+			} else {
+				return null;
+			}
+		}
+		if (positiveCountOutputs.isEmpty()
+				|| !positiveHavingCondition(capture, capture.scalar("condition"), positiveCountOutputs,
+						stableOutputs)) {
+			return null;
+		}
+		IrNodeId groupInputId = capture.ir().node(groupId).inputs().get(0);
+		return hasRemovableOptional(capture, groupInputId, live)
+				? new PositiveHavingRewrite(groupId, live)
+				: null;
+	}
+
+	private static RuleTemplate unusedOptionalPositiveHavingTemplate() {
+		return (capture, builder) -> {
+			PositiveHavingRewrite rewrite = positiveHavingRewrite(capture);
+			if (rewrite == null) {
+				throw new IllegalStateException("positive HAVING no longer contains a removable OPTIONAL");
+			}
+			IrNode group = capture.ir().node(rewrite.group());
+			IrNodeId groupInput = emitPrunedOptionals(capture, group.inputs().get(0), rewrite.live(), builder);
+			IrNodeId rewrittenGroup = rebuild(group, List.of(groupInput), builder);
+			IrNode observerInput = capture.node("input");
+			IrNodeId rewrittenInput = observerInput.id().equals(group.id())
+					? rewrittenGroup
+					: rebuild(observerInput, List.of(rewrittenGroup), builder);
+			return rebuild(capture.node("root"), List.of(rewrittenInput), builder);
+		};
+	}
+
+	private static BindingMask duplicateInsensitiveGroupLiveMask(RuleCapture capture, IrNode node) {
+		if (!(node.attr()instanceof IrAttr.GroupAttr group)) {
+			return null;
+		}
+		BindingMask live = BindingShape.maskOfSymbols(capture.ir().universe(), group.groupVars());
+		for (IrAttr.AggregateBinding aggregate : group.aggregates()) {
+			if (!duplicateInsensitiveAggregate(aggregate)
+					|| aggregate.kind() == IrAttr.AggregateKind.COUNT && aggregate.arguments().isEmpty()) {
+				return null;
+			}
+			live = live.union(aggregateArgumentVars(capture, aggregate));
+		}
+		return live;
+	}
+
+	private static boolean duplicateInsensitiveAggregate(IrAttr.AggregateBinding aggregate) {
+		return aggregate.kind() == IrAttr.AggregateKind.COUNT && aggregate.distinct()
+				|| aggregate.kind() == IrAttr.AggregateKind.MIN
+				|| aggregate.kind() == IrAttr.AggregateKind.MAX;
+	}
+
+	private static BindingMask aggregateArgumentVars(RuleCapture capture, IrAttr.AggregateBinding aggregate) {
+		BindingMask variables = BindingMask.EMPTY;
+		for (ScalarExpr argument : aggregate.arguments()) {
+			variables = variables.union(scalarVars(capture, argument));
+		}
+		if (aggregate.separator() != null) {
+			variables = variables.union(scalarVars(capture, aggregate.separator()));
+		}
+		return variables;
+	}
+
+	private static boolean positiveHavingCondition(RuleCapture capture, ScalarExpr condition,
+			BindingMask positiveCountOutputs, BindingMask stableOutputs) {
+		if (condition instanceof ScalarExpr.And and) {
+			return positiveHavingCondition(capture, and.left(), positiveCountOutputs, stableOutputs)
+					&& positiveHavingCondition(capture, and.right(), positiveCountOutputs, stableOutputs);
+		}
+		if (positiveCountComparison(condition, positiveCountOutputs)) {
+			return true;
+		}
+		BindingMask conditionVariables = scalarVars(capture, condition);
+		return !conditionVariables.intersects(positiveCountOutputs)
+				&& stableOutputs.containsAll(conditionVariables);
+	}
+
+	private static boolean positiveCountComparison(ScalarExpr condition, BindingMask positiveCountOutputs) {
+		if (!(condition instanceof ScalarExpr.FunctionCall call)
+				|| !call.iri().startsWith("urn:rdf4j:compare:")
+				|| call.args().size() != 2) {
+			return false;
+		}
+		ScalarExpr left = call.args().get(0);
+		ScalarExpr right = call.args().get(1);
+		if (left instanceof ScalarExpr.VarRef count
+				&& positiveCountOutputs.contains(count.symbol())
+				&& right instanceof ScalarExpr.Constant constant) {
+			return positiveCountThreshold(call.iri(), constant, true);
+		}
+		return right instanceof ScalarExpr.VarRef count
+				&& positiveCountOutputs.contains(count.symbol())
+				&& left instanceof ScalarExpr.Constant constant
+				&& positiveCountThreshold(call.iri(), constant, false);
+	}
+
+	private static boolean positiveCountThreshold(String comparison, ScalarExpr.Constant constant,
+			boolean countOnLeft) {
+		if (!(constant.value()instanceof Literal literal)) {
+			return false;
+		}
+		long threshold;
+		try {
+			threshold = literal.longValue();
+		} catch (NumberFormatException e) {
+			return false;
+		}
+		String operator = comparison.substring("urn:rdf4j:compare:".length());
+		return countOnLeft
+				? "GT".equals(operator) && threshold == 0L || "GE".equals(operator) && threshold == 1L
+				: "LT".equals(operator) && threshold == 0L || "LE".equals(operator) && threshold == 1L;
+	}
+
+	private static boolean hasRemovableOptional(RuleCapture capture, IrNodeId nodeId, BindingMask live) {
+		IrNode node = capture.ir().node(nodeId);
+		if (!node.semantics().deterministic()) {
+			return false;
+		}
+		return switch (node.op()) {
+		case FILTER -> hasRemovableOptional(capture, node.inputs().get(0), filterInputLive(capture, node, live));
+		case PROJECTION -> hasRemovableOptional(capture, node.inputs().get(0),
+				projectionInputLive(capture, node, live));
+		case EXTENSION -> hasRemovableOptional(capture, node.inputs().get(0), extensionInputLive(capture, node, live));
+		case DISTINCT, REDUCED, SLICE -> hasRemovableOptional(capture, node.inputs().get(0), live);
+		case ORDER -> hasRemovableOptional(capture, node.inputs().get(0), orderInputLive(capture, node, live));
+		case UNION -> node.semantics().noScopeChange()
+				&& (hasRemovableOptional(capture, node.inputs().get(0), live)
+						|| hasRemovableOptional(capture, node.inputs().get(1), live));
+		case DIFFERENCE -> node.semantics().noScopeChange() && hasRemovableOptionalInDifference(capture, node, live);
+		case JOIN -> node.semantics().noScopeChange() && hasRemovableOptionalInJoin(capture, node, live);
+		case LEFT_JOIN -> removableLeftJoin(capture, node, live) || hasRemovableOptionalInLeftJoin(capture, node, live);
+		default -> false;
+		};
+	}
+
+	private static IrNodeId emitPrunedOptionals(RuleCapture capture, IrNodeId nodeId, BindingMask live,
+			PlanIrBuilder builder) {
+		IrNode node = capture.ir().node(nodeId);
+		return switch (node.op()) {
+		case FILTER -> rebuild(node,
+				List.of(copyOrPrune(capture, node.inputs().get(0), filterInputLive(capture, node, live), builder)),
+				builder);
+		case PROJECTION -> rebuild(node,
+				List.of(copyOrPrune(capture, node.inputs().get(0), projectionInputLive(capture, node, live), builder)),
+				builder);
+		case EXTENSION -> rebuild(node,
+				List.of(copyOrPrune(capture, node.inputs().get(0), extensionInputLive(capture, node, live), builder)),
+				builder);
+		case DISTINCT, REDUCED, SLICE -> rebuild(node,
+				List.of(copyOrPrune(capture, node.inputs().get(0), live, builder)), builder);
+		case ORDER -> rebuild(node,
+				List.of(copyOrPrune(capture, node.inputs().get(0), orderInputLive(capture, node, live), builder)),
+				builder);
+		case UNION -> rebuild(node,
+				List.of(copyOrPrune(capture, node.inputs().get(0), live, builder),
+						copyOrPrune(capture, node.inputs().get(1), live, builder)),
+				builder);
+		case DIFFERENCE -> emitPrunedDifference(capture, node, live, builder);
+		case JOIN -> emitPrunedJoin(capture, node, live, builder);
+		case LEFT_JOIN -> emitPrunedLeftJoin(capture, node, live, builder);
+		default -> throw new IllegalStateException("no removable OPTIONAL below " + node.op());
+		};
+	}
+
+	private static IrNodeId copyOrPrune(RuleCapture capture, IrNodeId nodeId, BindingMask live,
+			PlanIrBuilder builder) {
+		return hasRemovableOptional(capture, nodeId, live)
+				? emitPrunedOptionals(capture, nodeId, live, builder)
+				: builder.copySubtreeFrom(capture.ir(), nodeId);
+	}
+
+	private static boolean hasRemovableOptionalInDifference(RuleCapture capture, IrNode node, BindingMask live) {
+		IrNodeId leftId = node.inputs().get(0);
+		IrNodeId rightId = node.inputs().get(1);
+		BindingMask shared = bindingShape(capture, leftId).possible()
+				.intersect(bindingShape(capture, rightId).possible());
+		return hasRemovableOptional(capture, leftId, live.union(shared))
+				|| hasRemovableOptional(capture, rightId, shared);
+	}
+
+	private static IrNodeId emitPrunedDifference(RuleCapture capture, IrNode node, BindingMask live,
+			PlanIrBuilder builder) {
+		IrNodeId leftId = node.inputs().get(0);
+		IrNodeId rightId = node.inputs().get(1);
+		BindingMask shared = bindingShape(capture, leftId).possible()
+				.intersect(bindingShape(capture, rightId).possible());
+		return rebuild(node, List.of(copyOrPrune(capture, leftId, live.union(shared), builder),
+				copyOrPrune(capture, rightId, shared, builder)), builder);
+	}
+
+	private static boolean hasRemovableOptionalInJoin(RuleCapture capture, IrNode node, BindingMask live) {
+		IrNodeId leftId = node.inputs().get(0);
+		IrNodeId rightId = node.inputs().get(1);
+		return hasRemovableOptional(capture, leftId, live.union(bindingShape(capture, rightId).possible()))
+				|| hasRemovableOptional(capture, rightId, live.union(bindingShape(capture, leftId).possible()));
+	}
+
+	private static IrNodeId emitPrunedJoin(RuleCapture capture, IrNode node, BindingMask live,
+			PlanIrBuilder builder) {
+		IrNodeId leftId = node.inputs().get(0);
+		IrNodeId rightId = node.inputs().get(1);
+		return rebuild(node,
+				List.of(copyOrPrune(capture, leftId, live.union(bindingShape(capture, rightId).possible()), builder),
+						copyOrPrune(capture, rightId, live.union(bindingShape(capture, leftId).possible()), builder)),
+				builder);
+	}
+
+	private static boolean removableLeftJoin(RuleCapture capture, IrNode node, BindingMask live) {
+		BindingMask left = bindingShape(capture, node.inputs().get(0)).assured();
+		BindingMask rightOnly = bindingShape(capture, node.inputs().get(1)).possible().minus(left);
+		return !rightOnly.intersects(live);
+	}
+
+	private static boolean hasRemovableOptionalInLeftJoin(RuleCapture capture, IrNode node, BindingMask live) {
+		BindingMask condition = nodeConditionVars(capture, node);
+		IrNodeId leftId = node.inputs().get(0);
+		IrNodeId rightId = node.inputs().get(1);
+		return hasRemovableOptional(capture, leftId,
+				live.union(condition).union(bindingShape(capture, rightId).possible()))
+				|| hasRemovableOptional(capture, rightId,
+						live.union(condition).union(bindingShape(capture, leftId).possible()));
+	}
+
+	private static IrNodeId emitPrunedLeftJoin(RuleCapture capture, IrNode node, BindingMask live,
+			PlanIrBuilder builder) {
+		IrNodeId leftId = node.inputs().get(0);
+		if (removableLeftJoin(capture, node, live)) {
+			return copyOrPrune(capture, leftId, live, builder);
+		}
+		IrNodeId rightId = node.inputs().get(1);
+		BindingMask condition = nodeConditionVars(capture, node);
+		return rebuild(node,
+				List.of(copyOrPrune(capture, leftId,
+						live.union(condition).union(bindingShape(capture, rightId).possible()), builder),
+						copyOrPrune(capture, rightId,
+								live.union(condition).union(bindingShape(capture, leftId).possible()), builder)),
+				builder);
+	}
+
+	private static BindingMask filterInputLive(RuleCapture capture, IrNode node, BindingMask live) {
+		return live.union(nodeConditionVars(capture, node));
+	}
+
+	private static BindingMask projectionInputLive(RuleCapture capture, IrNode node, BindingMask live) {
+		if (!(node.attr()instanceof IrAttr.ProjectionAttr projection)) {
+			return live;
+		}
+		BindingMask input = BindingMask.EMPTY;
+		for (IrAttr.ProjectionBinding binding : projection.bindings()) {
+			if (live.contains(binding.target())) {
+				input = input.union(BindingShape.maskOfSymbol(capture.ir().universe(), binding.source()));
+			}
+		}
+		return input;
+	}
+
+	private static BindingMask extensionInputLive(RuleCapture capture, IrNode node, BindingMask live) {
+		if (!(node.attr()instanceof IrAttr.ExtensionAttr extension)) {
+			return live;
+		}
+		BindingMask input = live;
+		for (IrAttr.ExtensionBinding binding : extension.bindings()) {
+			BindingMask target = BindingShape.maskOfSymbol(capture.ir().universe(), binding.target());
+			input = input.minus(target);
+			if (live.intersects(target)) {
+				input = input.union(scalarVars(capture, binding.expression()));
+			}
+		}
+		return input;
+	}
+
+	private static BindingMask orderInputLive(RuleCapture capture, IrNode node, BindingMask live) {
+		BindingMask input = live;
+		if (node.attr()instanceof IrAttr.OrderAttr order) {
+			for (IrAttr.OrderKey key : order.keys()) {
+				input = input.union(scalarVars(capture, key.expression()));
+			}
+		}
+		return input;
+	}
+
+	private static BindingMask nodeConditionVars(RuleCapture capture, IrNode node) {
+		return node.attr()instanceof IrAttr.Condition condition
+				? scalarVars(capture, condition.expression())
+				: BindingMask.EMPTY;
+	}
+
+	private static BindingMask scalarVars(RuleCapture capture, ScalarExpr expression) {
+		ScalarFacts facts = ScalarFacts.of(capture.ir().universe(), expression);
+		return facts.freeVars().union(facts.correlatedVars());
+	}
+
+	private static BindingShape bindingShape(RuleCapture capture, IrNodeId nodeId) {
+		return capture.memoBindingShapes().getOrDefault(nodeId, capture.ir().node(nodeId).bindings());
+	}
+
+	private static IrNodeId rebuild(IrNode source, List<IrNodeId> inputs, PlanIrBuilder builder) {
+		return builder.add(source.op(), inputs, source.attr(), source.semantics(), source.physical(), source.proofs());
+	}
+
+	private record UnusedOptionalRewrite(IrNodeId input, BindingMask live) {
+	}
+
+	private record PositiveHavingRewrite(IrNodeId group, BindingMask live) {
+	}
+
+	static RuleSpec finiteFilterValues() {
+		return rule("lmdb-finite-filter-values-rewrite")
+				.kind(RuleKind.TRANSFORMATION)
+				.promise(92)
+				.match(filter("root", capture("input"), scalar("condition")))
+				.where(capture -> guard(finiteFilterRewrite(capture) != null, "finite FILTER relation available"))
+				.where(noScopeChange("root"))
+				.emit(finiteValuesTemplate(false))
+				.proof("finiteValuesAnchor", "scopeSafe", "subquerySafe")
+				.reason("A safe finite FILTER relation can become a memo-local VALUES join")
+				.build();
+	}
+
+	static RuleSpec orFilterValues() {
+		return rule("lmdb-or-filter-values-rewrite")
+				.kind(RuleKind.TRANSFORMATION)
+				.promise(96)
+				.match(filter("root", capture("input"), scalar("condition")))
+				.where(capture -> guard(orFilterRewrite(capture) != null, "finite OR relation available"))
+				.where(noScopeChange("root"))
+				.emit(finiteValuesTemplate(true))
+				.proof("finiteValuesAnchor", "orDnf", "tupleArityPreserved", "valueIdentityPreserved")
+				.reason("A finite OR relation can become memo-local VALUES while residual conjuncts remain outside")
+				.build();
+	}
+
+	private static RuleTemplate finiteValuesTemplate(boolean requireOr) {
+		return (capture, builder) -> {
+			FiniteFilterRewrite rewrite = requireOr ? orFilterRewrite(capture) : finiteFilterRewrite(capture);
+			if (rewrite == null) {
+				throw new IllegalStateException("FILTER no longer has a finite relation rewrite");
+			}
+			IrNodeId values = builder.values(rewrite.relation());
+			IrNodeId input = builder.copySubtreeFrom(capture.ir(), capture.nodeId("input"));
+			IrNodeId result = builder.join(values, input);
+			ScalarExpr residual = ScalarFacts.combineConjuncts(rewrite.residual());
+			return residual == null ? result : builder.filter(result, residual);
+		};
+	}
+
+	private static FiniteFilterRewrite finiteFilterRewrite(RuleCapture capture) {
+		FiniteRelation relation = finiteRelation(capture.scalar("condition"), false);
+		if (relation == null || relation.arity() != 1 || relation.rowCount() > 32) {
+			return null;
+		}
+		BindingMask bindings = relation.possibleMask(capture.ir().universe());
+		if (!capture.shape("input").assured().containsAll(bindings)
+				|| containsFiniteRelationFor(capture, capture.nodeId("input"), bindings)) {
+			return null;
+		}
+		return new FiniteFilterRewrite(relation, List.of());
+	}
+
+	private static FiniteFilterRewrite orFilterRewrite(RuleCapture capture) {
+		List<ScalarExpr> conjuncts = ScalarFacts.splitConjuncts(capture.scalar("condition"));
+		for (int index = 0; index < conjuncts.size(); index++) {
+			ScalarExpr conjunct = conjuncts.get(index);
+			FiniteRelation relation = finiteRelation(conjunct, true);
+			if (relation == null || !capture.shape("input")
+					.assured()
+					.containsAll(relation.possibleMask(capture.ir().universe()))) {
+				continue;
+			}
+			List<ScalarExpr> residual = new ArrayList<>(conjuncts.size() - 1);
+			for (int residualIndex = 0; residualIndex < conjuncts.size(); residualIndex++) {
+				if (residualIndex != index) {
+					residual.add(conjuncts.get(residualIndex));
+				}
+			}
+			return new FiniteFilterRewrite(relation, List.copyOf(residual));
+		}
+		return null;
+	}
+
+	private static FiniteRelation finiteRelation(ScalarExpr condition, boolean requireOr) {
+		if (condition == null || (requireOr && !containsOr(condition))) {
+			return null;
+		}
+		List<LinkedHashMap<BindingSymbol, Value>> rows = finiteRows(condition);
+		if (rows == null || rows.isEmpty() || rows.size() > 256) {
+			return null;
+		}
+		List<BindingSymbol> columns = List.copyOf(rows.getFirst().keySet());
+		if (columns.isEmpty()) {
+			return null;
+		}
+		LinkedHashMap<List<Value>, FiniteRelation.Row> uniqueRows = new LinkedHashMap<>();
+		for (Map<BindingSymbol, Value> row : rows) {
+			boolean sameSchema = row.size() == columns.size();
+			for (int column = 0; sameSchema && column < columns.size(); column++) {
+				sameSchema = row.containsKey(columns.get(column));
+			}
+			if (!sameSchema) {
+				return null;
+			}
+			List<Value> values = new ArrayList<>(columns.size());
+			List<FiniteRelation.Cell> cells = new ArrayList<>(columns.size());
+			for (BindingSymbol column : columns) {
+				Value value = row.get(column);
+				values.add(value);
+				cells.add(FiniteRelation.Cell.bound(value));
+			}
+			uniqueRows.putIfAbsent(List.copyOf(values), new FiniteRelation.Row(cells));
+		}
+		return uniqueRows.isEmpty() || uniqueRows.size() > 256
+				? null
+				: new FiniteRelation(columns, List.copyOf(uniqueRows.values()));
+	}
+
+	private static List<LinkedHashMap<BindingSymbol, Value>> finiteRows(ScalarExpr condition) {
+		if (condition instanceof ScalarExpr.Or or) {
+			List<LinkedHashMap<BindingSymbol, Value>> left = finiteRows(or.left());
+			List<LinkedHashMap<BindingSymbol, Value>> right = finiteRows(or.right());
+			if (left == null || right == null) {
+				return null;
+			}
+			List<LinkedHashMap<BindingSymbol, Value>> rows = new ArrayList<>(left.size() + right.size());
+			rows.addAll(left);
+			rows.addAll(right);
+			return rows;
+		}
+		if (condition instanceof ScalarExpr.And and) {
+			List<LinkedHashMap<BindingSymbol, Value>> left = finiteRows(and.left());
+			List<LinkedHashMap<BindingSymbol, Value>> right = finiteRows(and.right());
+			if (left == null || right == null) {
+				return null;
+			}
+			List<LinkedHashMap<BindingSymbol, Value>> rows = new ArrayList<>(left.size() * right.size());
+			for (Map<BindingSymbol, Value> leftRow : left) {
+				for (Map<BindingSymbol, Value> rightRow : right) {
+					LinkedHashMap<BindingSymbol, Value> combined = combineFiniteRows(leftRow, rightRow);
+					if (combined != null) {
+						rows.add(combined);
+					}
+				}
+			}
+			return rows;
+		}
+		if (condition instanceof ScalarExpr.Eq equal) {
+			return finiteValueRows(equal.left(), equal.right(), false);
+		}
+		if (condition instanceof ScalarExpr.SameTerm sameTerm) {
+			return finiteValueRows(sameTerm.left(), sameTerm.right(), true);
+		}
+		if (condition instanceof ScalarExpr.In in && in.value()instanceof ScalarExpr.VarRef variable) {
+			List<Value> values = new ArrayList<>(in.candidates().size());
+			for (ScalarExpr candidate : in.candidates()) {
+				if (!(candidate instanceof ScalarExpr.Constant constant) || !(constant.value()instanceof Value value)) {
+					return null;
+				}
+				values.add(value);
+			}
+			return finiteValueRows(variable, values, false);
+		}
+		return null;
+	}
+
+	private static LinkedHashMap<BindingSymbol, Value> combineFiniteRows(Map<BindingSymbol, Value> left,
+			Map<BindingSymbol, Value> right) {
+		LinkedHashMap<BindingSymbol, Value> combined = new LinkedHashMap<>(left);
+		for (Map.Entry<BindingSymbol, Value> entry : right.entrySet()) {
+			Value previous = combined.putIfAbsent(entry.getKey(), entry.getValue());
+			if (previous != null && !previous.equals(entry.getValue())) {
+				return null;
+			}
+		}
+		return combined;
+	}
+
+	private static List<LinkedHashMap<BindingSymbol, Value>> finiteValueRows(ScalarExpr left, ScalarExpr right,
+			boolean exactTermComparison) {
+		if (left instanceof ScalarExpr.VarRef variable
+				&& right instanceof ScalarExpr.Constant constant
+				&& constant.value()instanceof Value value) {
+			return finiteValueRows(variable, List.of(value), exactTermComparison);
+		}
+		if (right instanceof ScalarExpr.VarRef variable
+				&& left instanceof ScalarExpr.Constant constant
+				&& constant.value()instanceof Value value) {
+			return finiteValueRows(variable, List.of(value), exactTermComparison);
+		}
+		return null;
+	}
+
+	private static List<LinkedHashMap<BindingSymbol, Value>> finiteValueRows(ScalarExpr.VarRef variable,
+			List<Value> values, boolean exactTermComparison) {
+		if (values == null || values.isEmpty()) {
+			return null;
+		}
+		List<LinkedHashMap<BindingSymbol, Value>> rows = new ArrayList<>(values.size());
+		for (Value value : values) {
+			if (!(exactTermComparison ? value instanceof IRI || value instanceof Literal
+					: LmdbJoinPlanSupport.isSafeValuesAnchorValue(value))) {
+				return null;
+			}
+			LinkedHashMap<BindingSymbol, Value> row = new LinkedHashMap<>();
+			row.put(variable.symbol(), value);
+			rows.add(row);
+		}
+		return rows;
+	}
+
+	private static boolean containsOr(ScalarExpr condition) {
+		return condition instanceof ScalarExpr.Or
+				|| condition instanceof ScalarExpr.And and
+						&& (containsOr(and.left()) || containsOr(and.right()));
+	}
+
+	private static boolean containsFiniteRelationFor(RuleCapture capture, IrNodeId nodeId, BindingMask bindings) {
+		var node = capture.ir().node(nodeId);
+		if (node.op() == IrOp.BINDING_SET_ASSIGNMENT && node.bindings().possible().intersects(bindings)) {
+			return true;
+		}
+		for (IrNodeId input : node.inputs()) {
+			if (containsFiniteRelationFor(capture, input, bindings)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private record FiniteFilterRewrite(FiniteRelation relation, List<ScalarExpr> residual) {
+	}
+
+	static RuleSpec orFilterUnion() {
+		return rule("lmdb-or-filter-union-rewrite")
+				.kind(RuleKind.TRANSFORMATION)
+				.promise(93)
+				.match(filter("root", capture("input"), scalar("condition")))
+				.where(capture -> guard(duplicateInsensitiveGoal(capture), "duplicate-insensitive observer"))
+				.where(capture -> guard(orUnionRewrite(capture) != null, "independent OR branches available"))
+				.where(noScopeChange("root"))
+				.emit(orUnionTemplate())
+				.proofSemanticScope(SemanticScope.SET)
+				.proof("duplicateInsensitive", "orBranches", "scopeSafe", "branchOverlapSafe")
+				.reason("A SET observer can cost independent OR branches as a memo-local UNION")
+				.build();
+	}
+
+	private static RuleTemplate orUnionTemplate() {
+		return (capture, builder) -> {
+			OrUnionRewrite rewrite = orUnionRewrite(capture);
+			if (rewrite == null) {
+				throw new IllegalStateException("FILTER no longer has independent OR branches");
+			}
+			IrNodeId union = null;
+			for (List<ScalarExpr> branch : rewrite.branches()) {
+				IrNodeId next = anchoredUnionBranch(capture, builder, branch);
+				union = union == null ? next : builder.union(union, next);
+			}
+			if (union == null) {
+				throw new IllegalStateException("OR rewrite emitted no branches");
+			}
+			return union;
+		};
+	}
+
+	private static OrUnionRewrite orUnionRewrite(RuleCapture capture) {
+		List<ScalarExpr> conjuncts = ScalarFacts.splitConjuncts(capture.scalar("condition"));
+		for (int index = 0; index < conjuncts.size(); index++) {
+			ScalarExpr conjunct = conjuncts.get(index);
+			if (!containsOr(conjunct) || finiteRelation(conjunct, false) != null) {
+				continue;
+			}
+			List<ScalarExpr> branches = flattenOrBranches(conjunct);
+			boolean hasExists = false;
+			for (int branchIndex = 0; !hasExists && branchIndex < branches.size(); branchIndex++) {
+				hasExists = containsExists(branches.get(branchIndex));
+			}
+			if (branches.size() < 2 || hasExists) {
+				continue;
+			}
+			ScalarFacts facts = ScalarFacts.of(capture.ir().universe(), capture.scalar("condition"));
+			BindingMask conditionVariables = facts.freeVars().union(facts.correlatedVars());
+			if (!capture.shape("input").assured().containsAll(conditionVariables)) {
+				continue;
+			}
+			List<List<ScalarExpr>> branchConditions = new ArrayList<>(branches.size());
+			for (ScalarExpr branch : branches) {
+				List<ScalarExpr> branchConjuncts = new ArrayList<>(conjuncts.size());
+				for (int conjunctIndex = 0; conjunctIndex < conjuncts.size(); conjunctIndex++) {
+					branchConjuncts.add(conjunctIndex == index ? branch : conjuncts.get(conjunctIndex));
+				}
+				branchConditions.add(List.copyOf(branchConjuncts));
+			}
+			return new OrUnionRewrite(List.copyOf(branchConditions));
+		}
+		return null;
+	}
+
+	private static IrNodeId anchoredUnionBranch(RuleCapture capture, PlanIrBuilder builder,
+			List<ScalarExpr> conjuncts) {
+		IrNodeId result = builder.copySubtreeFrom(capture.ir(), capture.nodeId("input"));
+		List<ScalarExpr> residual = new ArrayList<>();
+		BindingMask anchored = BindingMask.EMPTY;
+		for (ScalarExpr conjunct : conjuncts) {
+			FiniteRelation relation = finiteRelation(conjunct, false);
+			BindingMask relationBindings = relation == null
+					? BindingMask.EMPTY
+					: relation.possibleMask(capture.ir().universe());
+			if (relation != null
+					&& capture.shape("input").assured().containsAll(relationBindings)
+					&& !anchored.intersects(relationBindings)) {
+				result = builder.join(builder.values(relation), result);
+				anchored = anchored.union(relationBindings);
+			} else {
+				residual.add(conjunct);
+			}
+		}
+		ScalarExpr residualCondition = ScalarFacts.combineConjuncts(residual);
+		return residualCondition == null ? result : builder.filter(result, residualCondition);
+	}
+
+	private static boolean duplicateInsensitiveGoal(RuleCapture capture) {
+		return capture.goal() != null
+				&& SemanticScope.fromExternalName(capture.goal().semanticScope()) != SemanticScope.BAG;
+	}
+
+	private static List<ScalarExpr> flattenOrBranches(ScalarExpr condition) {
+		List<ScalarExpr> branches = new ArrayList<>();
+		collectOrBranches(condition, branches);
+		return List.copyOf(branches);
+	}
+
+	private static void collectOrBranches(ScalarExpr condition, List<ScalarExpr> branches) {
+		if (condition instanceof ScalarExpr.Or or) {
+			collectOrBranches(or.left(), branches);
+			collectOrBranches(or.right(), branches);
+		} else {
+			branches.add(condition);
+		}
+	}
+
+	private static boolean containsExists(ScalarExpr condition) {
+		if (condition instanceof ScalarExpr.Exists) {
+			return true;
+		}
+		if (condition instanceof ScalarExpr.And and) {
+			return containsExists(and.left()) || containsExists(and.right());
+		}
+		if (condition instanceof ScalarExpr.Or or) {
+			return containsExists(or.left()) || containsExists(or.right());
+		}
+		if (condition instanceof ScalarExpr.Not not) {
+			return containsExists(not.arg());
+		}
+		return false;
+	}
+
+	private record OrUnionRewrite(List<List<ScalarExpr>> branches) {
+	}
+
+	static RuleSpec filterMinusLeftPushdown() {
+		return rule("lmdb-filter-minus-left-pushdown")
+				.kind(RuleKind.TRANSFORMATION)
+				.promise(93)
+				.match(filter("root",
+						difference("difference", capture("left"), capture("right")),
+						scalar("condition")))
+				.where(conditionVars("condition").subsetOf(shape("left").possible()))
+				.where(capture -> conditionVarsPresent(capture, "condition"))
+				.where(noScopeChange("root"))
+				.emit(RuleTemplate.filterDifferenceAsAntiExists("difference", "condition"))
+				.proof("minus", "leftOnlyFilter", "scopeSafe")
+				.reason("A FILTER over MINUS can evaluate its left-only condition before a memo-local anti-EXISTS")
+				.build();
+	}
+
+	private static RuleSpec filterPositiveExistsBelowAntiExists() {
+		return rule("lmdb-filter-positive-exists-below-anti-exists")
+				.kind(RuleKind.TRANSFORMATION)
+				.promise(93)
+				.match(filter("outer",
+						filter("inner", capture("input"), scalar("antiCondition")),
+						scalar("positiveCondition")))
+				.where(capture -> guard(positiveExistsOnly(capture.scalar("positiveCondition")),
+						"positive EXISTS without anti-EXISTS"))
+				.where(capture -> guard(containsAntiExists(capture.scalar("antiCondition")),
+						"anti-EXISTS condition"))
+				.where(capture -> guard(conditionUsesOnlyInput(capture, "positiveCondition", "input"),
+						"condition uses only input bindings"))
+				.where(noScopeChange("inner"))
+				.emit(filter(filter(ref("input"), scalarRef("positiveCondition")), scalarRef("antiCondition")))
+				.proof("positiveExists", "antiExists", "leftOnlyFilter", "scopeSafe")
+				.reason("A positive EXISTS filter can run before an existing anti-EXISTS filter on the same input")
+				.build();
+	}
+
+	private static RuleSpec splitFilterBeforeAntiExists() {
+		return rule("lmdb-filter-conjuncts-before-anti-exists")
+				.kind(RuleKind.TRANSFORMATION)
+				.promise(92)
+				.match(filter("root", capture("input"), scalar("condition")))
+				.where(capture -> guard(splitFilterParts(capture) != null, "splittable anti-EXISTS conjuncts"))
+				.where(noScopeChange("root"))
+				.emit(splitFilterBeforeAntiExistsTemplate())
+				.proof("antiExists", "conjunctsSplit", "leftOnlyFilter", "scopeSafe")
+				.reason("Input-local FILTER conjuncts can run before anti-EXISTS while residuals remain outside")
+				.build();
+	}
+
+	private static RuleTemplate splitFilterBeforeAntiExistsTemplate() {
+		return (capture, builder) -> {
+			SplitFilterParts parts = splitFilterParts(capture);
+			if (parts == null) {
+				throw new IllegalStateException("FILTER no longer has a splittable anti-EXISTS condition");
+			}
+			IrNodeId input = builder.copySubtreeFrom(capture.ir(), capture.nodeId("input"));
+			IrNodeId pushed = builder.filter(input, ScalarFacts.combineConjuncts(parts.pushed()));
+			return builder.filter(pushed, ScalarFacts.combineConjuncts(parts.outer()));
+		};
+	}
+
+	private static SplitFilterParts splitFilterParts(RuleCapture capture) {
+		List<ScalarExpr> conjuncts = ScalarFacts.splitConjuncts(capture.scalar("condition"));
+		if (conjuncts.size() < 2) {
+			return null;
+		}
+		List<ScalarExpr> antiExists = new java.util.ArrayList<>();
+		List<ScalarExpr> pushed = new java.util.ArrayList<>();
+		List<ScalarExpr> residual = new java.util.ArrayList<>();
+		for (ScalarExpr conjunct : conjuncts) {
+			if (isAntiExists(conjunct)) {
+				antiExists.add(conjunct);
+			} else if (conditionUsesOnlyInput(capture, conjunct, "input")) {
+				pushed.add(conjunct);
+			} else {
+				residual.add(conjunct);
+			}
+		}
+		if (antiExists.isEmpty() || pushed.isEmpty()) {
+			return null;
+		}
+		List<ScalarExpr> outer = new java.util.ArrayList<>(antiExists.size() + residual.size());
+		outer.addAll(antiExists);
+		outer.addAll(residual);
+		return new SplitFilterParts(List.copyOf(pushed), List.copyOf(outer));
+	}
+
+	private static RuleGuard.GuardResult conditionVarsPresent(RuleCapture capture, String scalarCaptureName) {
+		var facts = capture.scalarFacts(scalarCaptureName);
+		return guard(!facts.freeVars().union(facts.correlatedVars()).isEmpty(), "condition variables present");
+	}
+
+	private static RuleGuard.GuardResult guard(boolean accepted, String reason) {
+		return accepted ? RuleGuard.GuardResult.ok(reason) : RuleGuard.GuardResult.fail(reason);
+	}
+
+	private static boolean conditionUsesOnlyInput(RuleCapture capture, String scalarCaptureName,
+			String inputCaptureName) {
+		return conditionUsesOnlyInput(capture, capture.scalar(scalarCaptureName), inputCaptureName);
+	}
+
+	private static boolean conditionUsesOnlyInput(RuleCapture capture, ScalarExpr condition,
+			String inputCaptureName) {
+		ScalarFacts facts = ScalarFacts.of(capture.ir().universe(), condition);
+		var variables = facts.freeVars().union(facts.correlatedVars());
+		return !variables.isEmpty() && capture.shape(inputCaptureName).possible().containsAll(variables);
+	}
+
+	private static boolean positiveExistsOnly(ScalarExpr condition) {
+		return containsPositiveExists(condition) && !containsAntiExists(condition);
+	}
+
+	private static boolean containsPositiveExists(ScalarExpr condition) {
+		if (condition instanceof ScalarExpr.Exists exists) {
+			return !exists.negated();
+		}
+		return condition instanceof ScalarExpr.And and
+				&& (containsPositiveExists(and.left()) || containsPositiveExists(and.right()));
+	}
+
+	private static boolean containsAntiExists(ScalarExpr condition) {
+		if (condition instanceof ScalarExpr.Exists exists) {
+			return exists.negated();
+		}
+		return condition instanceof ScalarExpr.And and
+				&& (containsAntiExists(and.left()) || containsAntiExists(and.right()));
+	}
+
+	private static boolean isAntiExists(ScalarExpr condition) {
+		return condition instanceof ScalarExpr.Exists exists && exists.negated();
+	}
+
+	private record SplitFilterParts(List<ScalarExpr> pushed, List<ScalarExpr> outer) {
 	}
 }

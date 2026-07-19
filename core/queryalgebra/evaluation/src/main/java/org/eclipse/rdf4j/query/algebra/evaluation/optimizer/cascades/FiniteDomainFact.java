@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
@@ -49,6 +50,7 @@ public final class FiniteDomainFact {
 	private final boolean assuredBound;
 	private final Precision precision;
 	private final String provenance;
+	private final int hash;
 
 	private FiniteDomainFact(Collection<? extends Value> values, boolean assuredBound, Precision precision,
 			String provenance) {
@@ -57,6 +59,7 @@ public final class FiniteDomainFact {
 		this.assuredBound = assuredBound;
 		this.precision = Objects.requireNonNull(precision, "precision");
 		this.provenance = provenance == null ? "" : provenance;
+		this.hash = Objects.hash(this.valueIdentities, this.assuredBound, this.precision);
 	}
 
 	public static FiniteDomainFact exact(Collection<? extends Value> values, boolean assuredBound,
@@ -106,8 +109,9 @@ public final class FiniteDomainFact {
 	FiniteDomainFact intersectedWith(FiniteDomainFact other, boolean assured, String source) {
 		Objects.requireNonNull(other, "other");
 		List<Value> intersection = new ArrayList<>();
+		Set<String> otherIdentities = equalityIdentities(other.values);
 		for (Value value : values) {
-			if (containsValue(other.values, value)) {
+			if (otherIdentities.contains(stableEqualityIdentity(value))) {
 				intersection.add(value);
 			}
 		}
@@ -117,8 +121,9 @@ public final class FiniteDomainFact {
 	FiniteDomainFact unionWith(FiniteDomainFact other, boolean assured, String source) {
 		Objects.requireNonNull(other, "other");
 		List<Value> union = new ArrayList<>(values);
+		Set<String> unionIdentities = equalityIdentities(values);
 		for (Value value : other.values) {
-			if (!containsValue(union, value)) {
+			if (unionIdentities.add(stableEqualityIdentity(value))) {
 				union.add(value);
 			}
 		}
@@ -160,8 +165,9 @@ public final class FiniteDomainFact {
 			return List.of();
 		}
 		List<Value> canonical = new ArrayList<>(source.size());
+		Set<String> identities = HashSet.newHashSet(source.size());
 		for (Value value : source) {
-			if (value != null && !containsValue(canonical, value)) {
+			if (value != null && identities.add(stableEqualityIdentity(value))) {
 				canonical.add(value);
 			}
 		}
@@ -169,13 +175,36 @@ public final class FiniteDomainFact {
 		return canonical.isEmpty() ? List.of() : List.copyOf(canonical);
 	}
 
-	private static boolean containsValue(Collection<? extends Value> values, Value candidate) {
+	private static Set<String> equalityIdentities(Collection<? extends Value> values) {
+		Set<String> identities = HashSet.newHashSet(values.size());
 		for (Value value : values) {
-			if (FiniteRelationEstimate.sameValue(value, candidate)) {
-				return true;
+			if (value != null) {
+				identities.add(stableEqualityIdentity(value));
 			}
 		}
-		return false;
+		return identities;
+	}
+
+	private static String stableEqualityIdentity(Value value) {
+		if (value instanceof Literal literal) {
+			return "L" + framed(literal.getLabel()) + framed(literal.getLanguage().orElse(""))
+					+ framed(literal.getDatatype() == null ? "" : literal.getDatatype().stringValue());
+		}
+		if (value.isIRI()) {
+			return "I" + framed(value.stringValue());
+		}
+		if (value.isBNode()) {
+			return "B" + framed(value.stringValue());
+		}
+		if (value.isTripleTerm()) {
+			return "T" + framed(value.stringValue());
+		}
+		return "V" + framed(value.getClass().getName()) + framed(value.stringValue());
+	}
+
+	private static String framed(String value) {
+		String safe = value == null ? "" : value;
+		return safe.length() + ":" + safe;
 	}
 
 	private static String stableValueIdentity(Value value) {
@@ -219,7 +248,7 @@ public final class FiniteDomainFact {
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(valueIdentities, assuredBound, precision);
+		return hash;
 	}
 
 	@Override

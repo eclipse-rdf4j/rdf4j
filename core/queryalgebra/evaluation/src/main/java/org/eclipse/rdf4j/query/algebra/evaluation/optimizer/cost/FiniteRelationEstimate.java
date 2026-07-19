@@ -328,6 +328,7 @@ public record FiniteRelationEstimate(List<String> variables, Map<List<Value>, Do
 	private static final class StableValueTupleMap extends AbstractMap<List<Value>, Double> {
 
 		private final Map<List<Value>, Double> delegate;
+		private final int hash;
 
 		private StableValueTupleMap(Map<List<Value>, Double> values) {
 			Map<List<Value>, Double> canonical = new LinkedHashMap<>();
@@ -335,11 +336,17 @@ public record FiniteRelationEstimate(List<String> variables, Map<List<Value>, Do
 				canonical.merge(tupleKey(entry.getKey()), entry.getValue(), Double::sum);
 			}
 			this.delegate = Map.copyOf(canonical);
+			this.hash = delegate.hashCode();
 		}
 
 		@Override
 		public Set<Entry<List<Value>, Double>> entrySet() {
 			return delegate.entrySet();
+		}
+
+		@Override
+		public int hashCode() {
+			return hash;
 		}
 
 		@Override

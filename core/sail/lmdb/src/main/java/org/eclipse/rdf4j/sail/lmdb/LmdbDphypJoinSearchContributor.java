@@ -14,28 +14,37 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
+import java.util.function.LongPredicate;
 
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSearchContributor;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSearchRequest;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.PrimitiveDphypJoinSearchContributor;
 
 /**
- * Adapts an LMDB DPhyp candidate into the unified join-search route.
+ * Adapts LMDB DPhyp into the unified join-search route.
  * <p>
- * The injected source retains the LMDB planning context that the backend-neutral request deliberately does not carry.
- * This contributor exports only the candidate tree: DPhyp's private rows and rank cost remain diagnostic text, while
- * {@code JoinSearchService} validates the tree and assigns its canonical cost through the shared cost model.
+ * Scoped search streams raw connected-subgraph/complement masks into the core join-region memo. The legacy candidate
+ * source remains available during migration, but its private rows and rank cost are diagnostic only: the unified route
+ * validates the tree and assigns canonical cost through the shared cost model.
  */
-final class LmdbDphypJoinSearchContributor implements JoinSearchContributor {
+final class LmdbDphypJoinSearchContributor implements PrimitiveDphypJoinSearchContributor {
 
 	static final String ID = "lmdb-dphyp";
 
-	private static final Descriptor DESCRIPTOR = new Descriptor(ID, Coverage.HEURISTIC, 100);
+	private static final Descriptor DESCRIPTOR = new Descriptor(ID, Coverage.EXHAUSTIVE_CONNECTED, 100);
 
 	private final Function<JoinSearchRequest, Optional<LmdbDphypJoinCandidate>> candidateSource;
+	private final PartitionSource partitionSource;
 
 	LmdbDphypJoinSearchContributor(
 			Function<JoinSearchRequest, Optional<LmdbDphypJoinCandidate>> candidateSource) {
+		this(candidateSource, null);
+	}
+
+	LmdbDphypJoinSearchContributor(
+			Function<JoinSearchRequest, Optional<LmdbDphypJoinCandidate>> candidateSource,
+			PartitionSource partitionSource) {
 		this.candidateSource = Objects.requireNonNull(candidateSource, "candidateSource");
+		this.partitionSource = partitionSource;
 	}
 
 	@Override
@@ -60,5 +69,31 @@ final class LmdbDphypJoinSearchContributor implements JoinSearchContributor {
 		LmdbDphypJoinCandidate contributed = candidate.orElseThrow();
 		sink.accept(contributed.tree());
 		return new Outcome(Status.COMPLETED, contributed.diagnostics());
+	}
+
+	@Override
+	public long configuredPairProbeLimit() {
+		return LmdbHypergraphJoinPlanner.pairBudget();
+	}
+
+	@Override
+	public Outcome contributePartitions(JoinSearchRequest request, LongPredicate hasCandidateSubset,
+			PartitionSink sink) {
+		Objects.requireNonNull(request, "request");
+		Objects.requireNonNull(hasCandidateSubset, "hasCandidateSubset");
+		Objects.requireNonNull(sink, "sink");
+		if (!LmdbHypergraphJoinPlanner.enabled()) {
+			return Outcome.disabled("disabled by " + LmdbHypergraphJoinPlanner.DPHYP_PROPERTY);
+		}
+		if (partitionSource == null) {
+			return Outcome.unsupported("LMDB DPhyp primitive partition source is unavailable");
+		}
+		return Objects.requireNonNull(partitionSource.contribute(request, hasCandidateSubset, sink),
+				"DPhyp partition source outcome");
+	}
+
+	@FunctionalInterface
+	interface PartitionSource {
+		Outcome contribute(JoinSearchRequest request, LongPredicate hasCandidateSubset, PartitionSink sink);
 	}
 }

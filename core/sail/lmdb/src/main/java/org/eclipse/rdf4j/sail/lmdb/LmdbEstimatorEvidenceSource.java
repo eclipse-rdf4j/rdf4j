@@ -17,6 +17,7 @@ import java.util.Optional;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 
 interface LmdbEstimatorEvidenceSource {
 
@@ -27,6 +28,11 @@ interface LmdbEstimatorEvidenceSource {
 	}
 
 	default Optional<FilterEvidence> filterEvidence(TupleExpr input, ValueExpr condition, BagEstimate inputEstimate,
+			EstimateContext context) {
+		return Optional.empty();
+	}
+
+	default Optional<FiniteRelationEstimate> finiteFilterRelation(TupleExpr input, ValueExpr condition,
 			EstimateContext context) {
 		return Optional.empty();
 	}

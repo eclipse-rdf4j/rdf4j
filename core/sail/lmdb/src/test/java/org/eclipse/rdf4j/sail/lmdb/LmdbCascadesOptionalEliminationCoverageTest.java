@@ -16,19 +16,40 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbCascadesOptionalEliminationTestSup
 import static org.eclipse.rdf4j.sail.lmdb.LmdbCascadesOptionalEliminationTestSupport.containsLeftJoin;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbCascadesOptionalEliminationTestSupport.containsPlannedStringMetric;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbCascadesOptionalEliminationTestSupport.diagnosticPlan;
+import static org.eclipse.rdf4j.sail.lmdb.LmdbCascadesOptionalEliminationTestSupport.firstGroup;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbCascadesOptionalEliminationTestSupport.parseTupleExpr;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbCascadesOptionalEliminationTestSupport.repairParentReferences;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbCascadesOptionalEliminationTestSupport.restoreProperty;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPlan;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesTelemetry;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.LogicalInputRecipe;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Memo;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MemoExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MemoInput;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleApplication;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.SemanticScope;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.CompiledRule;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleCompiler;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.IrOp;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.TupleExprToIr;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbCascadesOptionalEliminationTestSupport.EmptyTripleSource;
 import org.eclipse.rdf4j.sail.lmdb.LmdbCascadesOptionalEliminationTestSupport.RewriteCase;
@@ -38,6 +59,270 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 class LmdbCascadesOptionalEliminationCoverageTest {
+
+	@Test
+	void nullableLeftNameCanStillBeContributedByOptionalRhs() {
+		TupleExpr tupleExpr = parseTupleExpr(PREFIX + """
+				SELECT (COUNT(DISTINCT ?value) AS ?count) WHERE {
+				  ?s a ex:Entity .
+				  OPTIONAL { ?s ex:firstValue ?value . }
+				  OPTIONAL { ?s ex:fallbackValue ?value . }
+				}
+				""");
+		var group = firstGroup(tupleExpr);
+		assertTrue(group.getArg() instanceof LeftJoin,
+				() -> "Expected the second OPTIONAL to remain the Group input, got " + group.getArg());
+		LeftJoin outerOptional = (LeftJoin) group.getArg();
+		assertTrue(outerOptional.getLeftArg().getBindingNames().contains("value"));
+		assertFalse(outerOptional.getLeftArg().getAssuredBindingNames().contains("value"));
+		assertTrue(outerOptional.getRightArg().getBindingNames().contains("value"));
+
+		CascadesCostModel costModel = CascadesCostModel.from(new EvaluationStatistics());
+		Memo memo = new Memo(costModel);
+		int groupId = memo.intern(group);
+		MemoExpr expression = memo.group(groupId)
+				.expressions()
+				.stream()
+				.filter(MemoExpr::logical)
+				.findFirst()
+				.orElseThrow();
+		MemoInput argument = expression.inputs()
+				.stream()
+				.filter(input -> input.role() == MemoInput.Role.ARGUMENT)
+				.findFirst()
+				.orElseThrow();
+		assertEquals(SemanticScope.SET, argument.requiredSemanticScope());
+
+		CompiledRule rule = RuleCompiler.compile(LmdbSemanticRuleSpecs.removeUnusedOptionalGroup());
+		CascadesTelemetry.Recording telemetry = new CascadesTelemetry.Recording();
+		List<RuleApplication> applications = rule.apply(expression, OptimizationGoal.root(),
+				new RuleContext(memo, costModel, telemetry, null));
+
+		assertTrue(applications.isEmpty(), () -> "The fallback OPTIONAL can still bind ?value; applications="
+				+ applications + "\n" + String.join("\n", telemetry.trace()));
+	}
+
+	@Test
+	void nondeterministicRetainedFilterRefusesOptionalPruningAndKeepsExistsInputAuthoritative() {
+		ObserverRuleFixture deterministic = observerRuleFixture("BOUND(?enc)");
+		assertEquals(1, deterministic.applications().size(),
+				() -> "The deterministic control must prove copied scalar provenance:\n"
+						+ String.join("\n", deterministic.telemetry().trace()));
+
+		ObserverRuleFixture nondeterministic = observerRuleFixture("RAND() < 0.5");
+		var ir = TupleExprToIr.convert(nondeterministic.expression().tupleExpr());
+		var filterNode = ir.nodes()
+				.stream()
+				.filter(node -> node.op() == IrOp.FILTER)
+				.findFirst()
+				.orElseThrow();
+		assertFalse(filterNode.semantics().deterministic());
+
+		MemoInput groupArgument = nondeterministic.expression()
+				.inputs()
+				.stream()
+				.filter(input -> input.role() == MemoInput.Role.ARGUMENT)
+				.findFirst()
+				.orElseThrow();
+		assertEquals(SemanticScope.SET, groupArgument.requiredSemanticScope());
+		MemoExpr filter = nondeterministic.memo()
+				.groups()
+				.stream()
+				.flatMap(group -> group.expressions().stream())
+				.filter(MemoExpr::logical)
+				.filter(expression -> expression.tupleExpr() instanceof Filter)
+				.findFirst()
+				.orElseThrow();
+		MemoInput scalarSubquery = filter.inputs()
+				.stream()
+				.filter(input -> input.role() == MemoInput.Role.SCALAR_SUBQUERY)
+				.findFirst()
+				.orElseThrow();
+		assertTrue(scalarSubquery.semanticBarrier());
+		assertEquals(SemanticScope.EXISTENCE, scalarSubquery.requiredSemanticScope());
+		assertTrue(nondeterministic.memo()
+				.group(scalarSubquery.groupId())
+				.expressions()
+				.stream()
+				.anyMatch(expression -> expression.tupleExpr().toString().contains("hasObservation")));
+
+		assertTrue(nondeterministic.applications().isEmpty(),
+				() -> "OPTIONAL multiplicity changes retained RAND evaluation count; applications="
+						+ nondeterministic.applications() + "\n"
+						+ String.join("\n", nondeterministic.telemetry().trace()));
+	}
+
+	@Test
+	void countDistinctGroupRuleProducesStructuralOptionalPruningAlternative() {
+		TupleExpr tupleExpr = parseTupleExpr(PREFIX + """
+				SELECT (COUNT(DISTINCT ?enc) AS ?count) WHERE {
+				  ?enc a ex:Encounter .
+				  OPTIONAL { ?enc ex:handledBy ?practitioner . }
+				  MINUS {
+				    ?enc ex:hasObservation ?obs .
+				    ?obs ex:value ?value .
+				    FILTER (?value < 60)
+				  }
+				}
+				""");
+		var group = firstGroup(tupleExpr);
+		CascadesCostModel costModel = CascadesCostModel.from(new EvaluationStatistics());
+		Memo memo = new Memo(costModel);
+		int groupId = memo.intern(group);
+		MemoExpr expression = memo.group(groupId)
+				.expressions()
+				.stream()
+				.filter(MemoExpr::logical)
+				.findFirst()
+				.orElseThrow();
+		CompiledRule rule = RuleCompiler.compile(LmdbSemanticRuleSpecs.removeUnusedOptionalGroup());
+		CascadesTelemetry.Recording telemetry = new CascadesTelemetry.Recording();
+		List<RuleApplication> applications = rule.apply(expression, OptimizationGoal.root(),
+				new RuleContext(memo, costModel, telemetry, null));
+
+		assertEquals(1, applications.size(), () -> "memoMatch="
+				+ rule.matches(expression, OptimizationGoal.root(), memo)
+				+ "\ngroups=" + memo.groups()
+						.stream()
+						.map(memoGroup -> memoGroup.id() + ":" + memoGroup.bindingShape())
+						.toList()
+				+ "\n" + rule.trace(expression, OptimizationGoal.root())
+				+ "\n" + String.join("\n", telemetry.trace()));
+		assertFalse(containsLeftJoin(applications.getFirst().alternative()),
+				applications.getFirst().alternative().toString());
+	}
+
+	@Test
+	void autoPlannerRetainsAndSelectsStructuralOptionalPruningAlternative() {
+		TupleExpr tupleExpr = parseTupleExpr(PREFIX + """
+				SELECT (COUNT(DISTINCT ?enc) AS ?count) WHERE {
+				  ?enc a ex:Encounter .
+				  OPTIONAL { ?enc ex:handledBy ?practitioner . }
+				  MINUS {
+				    ?enc ex:hasObservation ?obs .
+				    ?obs ex:value ?value .
+				    FILTER (?value < 60)
+				  }
+				}
+				""");
+		CascadesPlan plan = new LmdbCascadesOptimizer(new EvaluationStatistics(), false)
+				.planPreparedInput(tupleExpr, autoGoal(tupleExpr));
+		List<MemoExpr> proofCarriers = plan.memo()
+				.groups()
+				.stream()
+				.flatMap(group -> group.expressions().stream())
+				.filter(expression -> expression.proofs()
+						.stream()
+						.anyMatch(proof -> "lmdb-remove-unused-optional".equals(proof.ruleId())))
+				.toList();
+
+		assertFalse(proofCarriers.isEmpty(), () -> plan.searchStatus() + "\n" + plan.memo()
+				.groups()
+				.stream()
+				.flatMap(group -> group.expressions().stream())
+				.filter(MemoExpr::logical)
+				.map(expression -> "g" + expression.groupId() + ":e" + expression.id() + ":"
+						+ expression.operator() + ":" + expression.proofs())
+				.toList());
+		assertFalse(containsLeftJoin(plan.tupleExpr().orElseThrow()), plan.tupleExpr().orElseThrow()::toString);
+	}
+
+	@Test
+	void structuralOptionalPruningRebuildsCapturedDescendantsAsMemoLocalRecipes() {
+		TupleExpr preprocessed = parseTupleExpr(PREFIX + """
+				SELECT (COUNT(DISTINCT ?enc) AS ?count) WHERE {
+				  ?enc a ex:Encounter .
+				  OPTIONAL { ?enc ex:handledBy ?practitioner . }
+				  MINUS {
+				    ?enc ex:hasObservation ?obs .
+				    ?obs ex:value ?value .
+				    FILTER (?value < 60)
+				  }
+				}
+				""");
+		repairParentReferences(preprocessed);
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+				new EvaluationStatistics()).getOptimizers()) {
+			if (optimizer instanceof LmdbCascadesOptimizer) {
+				break;
+			}
+			optimizer.optimize(preprocessed, null, EmptyBindingSet.getInstance());
+		}
+
+		CascadesCostModel costModel = CascadesCostModel.from(new EvaluationStatistics());
+		Memo memo = new Memo(costModel);
+		memo.intern(preprocessed);
+		MemoExpr expression = memo.groups()
+				.stream()
+				.flatMap(group -> group.expressions().stream())
+				.filter(MemoExpr::logical)
+				.filter(candidate -> "Group".equals(candidate.operator()))
+				.findFirst()
+				.orElseThrow();
+		CompiledRule rule = RuleCompiler.compile(LmdbSemanticRuleSpecs.removeUnusedOptionalGroup());
+		CascadesTelemetry.Recording telemetry = new CascadesTelemetry.Recording();
+		List<RuleApplication> applications = rule.apply(expression, autoGoal(preprocessed),
+				new RuleContext(memo, costModel, telemetry, null));
+
+		assertEquals(1, applications.size(), () -> String.join("\n", telemetry.trace()));
+		assertFalse(applications.getFirst().logicalInputRecipes().isEmpty(),
+				"The pruned nested Difference must be represented by capture-local logical recipes");
+		assertFalse(containsLeftJoin(applications.getFirst().alternative()),
+				applications.getFirst().alternative()::toString);
+	}
+
+	@Test
+	void groupObserverRuleRetainsAuthoritativeExistsScalarRecipe() {
+		TupleExpr preprocessed = parseTupleExpr(PREFIX + """
+				SELECT (COUNT(DISTINCT ?enc) AS ?count) WHERE {
+				  VALUES ?code { "DX-200" "DX-201" }
+				  ?cond ex:code ?code .
+				  ?enc ex:hasCondition ?cond .
+				  ?enc a ex:Encounter .
+				  OPTIONAL { ?enc ex:handledBy ?practitioner . }
+				  FILTER EXISTS { ?enc ex:hasObservation ?obs . }
+				}
+				""");
+		repairParentReferences(preprocessed);
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+				new EvaluationStatistics()).getOptimizers()) {
+			if (optimizer instanceof LmdbCascadesOptimizer) {
+				break;
+			}
+			optimizer.optimize(preprocessed, null, EmptyBindingSet.getInstance());
+		}
+
+		CascadesCostModel costModel = CascadesCostModel.from(new EvaluationStatistics());
+		Memo memo = new Memo(costModel);
+		memo.intern(preprocessed);
+		MemoExpr group = memo.groups()
+				.stream()
+				.flatMap(candidate -> candidate.expressions().stream())
+				.filter(MemoExpr::logical)
+				.filter(candidate -> "Group".equals(candidate.operator()))
+				.findFirst()
+				.orElseThrow();
+		CompiledRule rule = RuleCompiler.compile(LmdbSemanticRuleSpecs.removeUnusedOptionalGroup());
+		CascadesTelemetry.Recording telemetry = new CascadesTelemetry.Recording();
+		List<RuleApplication> applications = rule.apply(group, autoGoal(preprocessed),
+				new RuleContext(memo, costModel, telemetry, null));
+
+		assertEquals(1, applications.size(), () -> String.join("\n", telemetry.trace()));
+		RuleApplication application = applications.getFirst();
+		assertFalse(application.logicalInputRecipes().isEmpty(),
+				"The retained FILTER and EXISTS subquery must use authoritative memo input recipes");
+		assertTrue(application.logicalInputRecipes().getFirst()instanceof LogicalInputRecipe.NewGroup filtered
+				&& filtered.inputs().size() == 2
+				&& filtered.inputs().stream().allMatch(LogicalInputRecipe.ExistingGroup.class::isInstance),
+				() -> "Expected FILTER(left-group, EXISTS-group), got " + application.logicalInputRecipes());
+		assertTrue(memo.validateLogicalInputRecipes(application.targetGroupId(), application.alternative(),
+				application.logicalInputRecipes()).supported());
+		assertFalse(containsLeftJoin(application.alternative()), application.alternative()::toString);
+	}
 
 	@Test
 	void countDistinctUnusedOptionalBeforeMinusIsEliminated() {
@@ -71,6 +356,75 @@ class LmdbCascadesOptionalEliminationCoverageTest {
 		} finally {
 			restoreProperty("rdf4j.optimizer.lmdb.cascades.standardPlanPolicy", previousPolicy);
 		}
+	}
+
+	@Test
+	void countDistinctUnusedOptionalBelowExistsFilterIsEliminated() {
+		String previousPolicy = System.setProperty("rdf4j.optimizer.lmdb.cascades.standardPlanPolicy", "off");
+		try {
+			TupleExpr tupleExpr = parseTupleExpr(PREFIX + """
+					SELECT (COUNT(DISTINCT ?enc) AS ?count) WHERE {
+					  VALUES ?code { "DX-200" "DX-201" }
+					  ?cond ex:code ?code .
+					  ?enc ex:hasCondition ?cond .
+					  ?enc a ex:Encounter .
+					  OPTIONAL { ?enc ex:handledBy ?practitioner . }
+					  FILTER EXISTS { ?enc ex:hasObservation ?obs . }
+					}
+					""");
+			repairParentReferences(tupleExpr);
+			TripleSource tripleSource = new EmptyTripleSource();
+			StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+
+			for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+					new EvaluationStatistics()).getOptimizers()) {
+				optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+			}
+			String diagnosticPlan = diagnosticPlan(tupleExpr);
+
+			assertFalse(containsLeftJoin(tupleExpr), diagnosticPlan);
+			assertFalse(diagnosticPlan.contains("handledBy"), diagnosticPlan);
+			assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
+					"rule=lmdb-remove-unused-optional"), diagnosticPlan);
+		} finally {
+			restoreProperty("rdf4j.optimizer.lmdb.cascades.standardPlanPolicy", previousPolicy);
+		}
+	}
+
+	private static OptimizationGoal autoGoal(TupleExpr input) {
+		OptimizationGoal base = OptimizationGoal.root(input, PhysicalProperties.ANY);
+		return new OptimizationGoal(base.requiredProperties(), base.semanticScope(), base.costPolicy(),
+				base.costBound(), base.excludedProperties(), OptimizationGoal.SearchMode.AUTO, Long.MAX_VALUE, 4096,
+				base.rowGoal(), base.estimationTier(), base.inputBindingContext());
+	}
+
+	private static ObserverRuleFixture observerRuleFixture(String retainedCondition) {
+		TupleExpr tupleExpr = parseTupleExpr(PREFIX + """
+				SELECT (COUNT(DISTINCT ?enc) AS ?count) WHERE {
+				  ?enc a ex:Encounter .
+				  OPTIONAL { ?enc ex:handledBy ?practitioner . }
+				  FILTER (EXISTS { ?enc ex:hasObservation ?obs . } && %s)
+				}
+				""".formatted(retainedCondition));
+		var group = firstGroup(tupleExpr);
+		CascadesCostModel costModel = CascadesCostModel.from(new EvaluationStatistics());
+		Memo memo = new Memo(costModel);
+		int groupId = memo.intern(group);
+		MemoExpr expression = memo.group(groupId)
+				.expressions()
+				.stream()
+				.filter(MemoExpr::logical)
+				.findFirst()
+				.orElseThrow();
+		CompiledRule rule = RuleCompiler.compile(LmdbSemanticRuleSpecs.removeUnusedOptionalGroup());
+		CascadesTelemetry.Recording telemetry = new CascadesTelemetry.Recording();
+		List<RuleApplication> applications = rule.apply(expression, OptimizationGoal.root(),
+				new RuleContext(memo, costModel, telemetry, null));
+		return new ObserverRuleFixture(memo, expression, applications, telemetry);
+	}
+
+	private record ObserverRuleFixture(Memo memo, MemoExpr expression, List<RuleApplication> applications,
+			CascadesTelemetry.Recording telemetry) {
 	}
 
 	@ParameterizedTest(name = "{0}")

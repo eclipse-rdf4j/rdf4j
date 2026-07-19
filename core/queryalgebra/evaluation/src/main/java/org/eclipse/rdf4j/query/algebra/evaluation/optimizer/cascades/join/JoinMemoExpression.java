@@ -64,7 +64,8 @@ public record JoinMemoExpression(Set<Integer> availableBeforeOccurrenceIds, Join
 	}
 
 	public String canonicalForm() {
-		return "partition(" + leftOccurrenceIds + "," + rightOccurrenceIds + ")";
+		return "partition(before=" + availableBeforeOccurrenceIds + ",left=" + leftOccurrenceIds + ",right="
+				+ rightOccurrenceIds + ")";
 	}
 
 	/** Decomposes one full tree into bottom-up memo expressions in its legal left-to-right evaluation context. */

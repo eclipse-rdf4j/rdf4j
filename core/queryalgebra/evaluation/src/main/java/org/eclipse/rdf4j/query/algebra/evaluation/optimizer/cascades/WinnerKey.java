@@ -35,7 +35,8 @@ public record WinnerKey(int groupId, PhysicalProperties requiredProperties, Stri
 	}
 
 	public WinnerKey {
-		requiredProperties = requiredProperties == null ? PhysicalProperties.ANY : requiredProperties.executionContract();
+		requiredProperties = requiredProperties == null ? PhysicalProperties.ANY
+				: requiredProperties.executionContract();
 		semanticScope = semanticScope == null || semanticScope.isBlank() ? OptimizationGoal.BAG_SEMANTICS
 				: semanticScope;
 		costPolicy = costPolicy == null ? OptimizationGoal.CostPolicy.EXACT : costPolicy;

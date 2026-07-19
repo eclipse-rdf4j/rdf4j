@@ -43,10 +43,14 @@ import org.junit.jupiter.api.Test;
 class LmdbUnifiedJoinRoutingTest {
 
 	@Test
-	void productionRegistryDoesNotInstallLegacyConnectedJoinOwner() {
+	void productionRegistryInstallsLegacyOwnerWithoutApplyingItToPureInnerJoins() {
 		List<String> ruleIds = registry().rules().stream().map(CascadesRule::id).toList();
+		List<String> applicableRuleIds = applicableRuleIds(connectedJoin());
 
-		assertFalse(ruleIds.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID), ruleIds::toString);
+		assertAll(
+				() -> assertTrue(ruleIds.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID), ruleIds::toString),
+				() -> assertFalse(applicableRuleIds.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID),
+						applicableRuleIds::toString));
 	}
 
 	@Test
@@ -73,12 +77,10 @@ class LmdbUnifiedJoinRoutingTest {
 			RoutingObservation exhaustive = optimizeConnectedJoin(false);
 
 			assertAll(
-					() -> assertTrue(dphyp.evidence().contains("contributor=" + LmdbDphypJoinSearchContributor.ID),
+					() -> assertTrue(dphyp.evidence().contains("joinRegionsSaturated=1"),
 							dphyp::evidence),
 					() -> assertEquals("COMPLETE", dphyp.completeness(), dphyp::evidence),
-					() -> assertTrue(
-							exhaustive.evidence()
-									.contains("contributor=core-exhaustive-legal"),
+					() -> assertTrue(exhaustive.evidence().contains("joinRegionsSaturated=1"),
 							exhaustive::evidence),
 					() -> assertEquals("COMPLETE", exhaustive.completeness(), exhaustive::evidence));
 		} finally {
@@ -106,9 +108,11 @@ class LmdbUnifiedJoinRoutingTest {
 	private static TupleExpr connectedJoin() {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		return new Join(
-				new StatementPattern(new Var("subject"), new Var("leftPredicate", values.createIRI("urn:left")),
+				new StatementPattern(new Var("subject"),
+						Var.of("leftPredicate", values.createIRI("urn:left"), false, true),
 						new Var("shared")),
-				new StatementPattern(new Var("shared"), new Var("rightPredicate", values.createIRI("urn:right")),
+				new StatementPattern(new Var("shared"),
+						Var.of("rightPredicate", values.createIRI("urn:right"), false, true),
 						new Var("object")));
 	}
 

@@ -14,16 +14,13 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 import java.util.Objects;
 
 /**
- * Parent-visible physical state represented by one memo winner. Logical output facts belong to the memo group and
- * input context; derivation identity, provenance, and winner-local statistical estimates must never fork the physical
+ * Parent-visible physical state represented by one memo winner. Logical output facts belong to the memo group and input
+ * context; derivation identity, provenance, and winner-local statistical estimates must never fork the physical
  * frontier.
  */
 record WinnerStateKey(PhysicalProperties deliveredProperties, CanonicalCost cost,
 		Admissibility admissibility, InputBindingContext inputBindingContext,
-		InputBindingContext selectedOutputContext) {
-
-	private static final String BASELINE_RULE = "baseline-existing-algebra";
-	private static final String EMERGENCY_RULE = "existing-algebra-emergency-fallback";
+		InputBindingContext selectedOutputContext, boolean selectedPrefixRouteSafe) {
 
 	WinnerStateKey {
 		PhysicalProperties originalProperties = deliveredProperties == null
@@ -41,48 +38,44 @@ record WinnerStateKey(PhysicalProperties deliveredProperties, CanonicalCost cost
 		return winner.stateKey();
 	}
 
+	static WinnerStateKey of(Winner winner, CostOrdering ordering) {
+		Objects.requireNonNull(winner, "winner");
+		return derive(winner, Objects.requireNonNull(ordering, "ordering"));
+	}
+
 	static WinnerStateKey derive(Winner winner) {
+		return derive(winner, CostOrdering.forPolicy(OptimizationGoal.CostPolicy.EXACT));
+	}
+
+	private static WinnerStateKey derive(Winner winner, CostOrdering ordering) {
 		Objects.requireNonNull(winner, "winner");
 		PhysicalProperties delivered = winner.deliveredProperties();
 		InputBindingContext selectedOutput = !winner.selectedOutputExplicit()
-						? InputBindingContext.NONE
-						: InputBindingContext.fromProfile(winner.selectedOutputRows(), winner.selectedOutputNames(),
-								winner.selectedOutputProfile())
-								.restrictTo(winner.selectedOutputNames());
-		return new WinnerStateKey(delivered, CanonicalCost.of(winner.cost()), admissibility(winner),
-				winner.inputBindingContext(), selectedOutput);
+				? InputBindingContext.NONE
+				: InputBindingContext.fromProfile(winner.selectedOutputRows(), winner.selectedOutputNames(),
+						winner.selectedOutputProfile())
+						.restrictTo(winner.selectedOutputNames());
+		return new WinnerStateKey(delivered, CanonicalCost.of(winner, ordering), admissibility(winner),
+				winner.inputBindingContext(), selectedOutput, winner.selectedPrefixRouteSafe());
 	}
 
 	FrontierContext context() {
 		return new FrontierContext(deliveredProperties, admissibility, inputBindingContext,
-				selectedOutputContext.withoutInvocationCardinality());
+				selectedOutputContext.withoutInvocationCardinality(), selectedPrefixRouteSafe);
 	}
 
 	private static Admissibility admissibility(Winner winner) {
-		boolean baseline = false;
-		for (RuleProof proof : winner.proofs()) {
-			if (proof == null) {
-				continue;
-			}
-			if (EMERGENCY_RULE.equals(proof.ruleId())) {
-				return Admissibility.INCOMPLETE_FALLBACK;
-			}
-			baseline |= BASELINE_RULE.equals(proof.ruleId());
-		}
-		if (winner.approximate()) {
-			return Admissibility.INCOMPLETE_FALLBACK;
-		}
-		return baseline ? Admissibility.BASELINE_SHADOW : Admissibility.LEGAL;
+		return winner.approximate() ? Admissibility.INCOMPLETE_FALLBACK : Admissibility.LEGAL;
 	}
 
 	enum Admissibility {
 		LEGAL,
-		BASELINE_SHADOW,
 		INCOMPLETE_FALLBACK
 	}
 
 	record FrontierContext(PhysicalProperties deliveredProperties, Admissibility admissibility,
-			InputBindingContext inputBindingContext, InputBindingContext selectedOutputContext) {
+			InputBindingContext inputBindingContext, InputBindingContext selectedOutputContext,
+			boolean selectedPrefixRouteSafe) {
 		FrontierContext {
 			deliveredProperties = deliveredProperties == null ? PhysicalProperties.ANY : deliveredProperties;
 			admissibility = admissibility == null ? Admissibility.LEGAL : admissibility;
@@ -91,21 +84,13 @@ record WinnerStateKey(PhysicalProperties deliveredProperties, CanonicalCost cost
 		}
 	}
 
-	/**
-	 * The cost dimensions observed by {@link CostVector#compareTo(CostVector)} after its derived objective score. Keep
-	 * this record synchronized with that comparison contract: dimensions used only as diagnostic evidence must not
-	 * split a canonical memo state.
-	 */
-	record CanonicalCost(double pricedWorkRows, double workRows, double rows, double memoryRows, double seeks,
-			double pageWalkRows,
-			double rowQErrorMax, double workQErrorMax, double uncertaintyRows, double confidence,
-			double evidenceCount) {
+	/** Policy-ranked resources and parent-visible rows. Estimate risk and provenance never split exact states. */
+	record CanonicalCost(ExecutionCost resources, double rows) {
 
-		static CanonicalCost of(CostVector cost) {
-			Objects.requireNonNull(cost, "cost");
-			return new CanonicalCost(cost.pricedWorkRows(), cost.workRows(), cost.rows(), cost.memoryRows(), cost.seeks(),
-					cost.pageWalkRows(), cost.rowQErrorMax(), cost.workQErrorMax(), cost.uncertaintyRows(),
-					cost.confidence(), cost.evidenceCount());
+		static CanonicalCost of(Winner winner, CostOrdering ordering) {
+			CostOrdering.RankedCost ranked = ordering.rank(winner.executionCost(), winner.estimateRisk(),
+					winner.physicalOperatorId());
+			return new CanonicalCost(ranked.resources(), winner.cardinalityEstimate().rows());
 		}
 	}
 }

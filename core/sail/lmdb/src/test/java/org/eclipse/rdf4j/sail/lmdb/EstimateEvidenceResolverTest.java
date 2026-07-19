@@ -13,14 +13,17 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
 import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity;
 import org.eclipse.rdf4j.sail.lmdb.estimation.RowEvidence;
 import org.junit.jupiter.api.Test;
@@ -43,6 +46,31 @@ class EstimateEvidenceResolverTest {
 
 		assertEquals(4.0d, resolved.rows());
 		assertEquals("exact_storage", resolved.source());
+	}
+
+	@Test
+	void exactRowsRetainCurrentSynopsisDistributionEvidence() {
+		EstimateContext context = context(JoinFactorCostModel.EstimationTier.STANDARD, false);
+		DistributionSketch branchDistribution = () -> 2.0d;
+		BagEstimate synopsisEstimate = BagEstimate.heuristic(386_343.0d, "synopsis")
+				.withSketchRelation(Set.of("branch"), branchDistribution);
+		EstimateCandidate synopsis = new EstimateCandidate(synopsisEstimate,
+				new RowEvidence(386_343.0d, 360_000.0d, 410_000.0d, 0.8d, true, IDENTITY, 9L, "synopsis"),
+				EstimateCandidate.Kind.SYNOPSIS, 20L);
+		EstimateCandidate exact = candidate(386_342.0d, 386_342.0d, 386_342.0d, true,
+				EstimateCandidate.Kind.EXACT_STORAGE, 21L, IDENTITY);
+
+		BagEstimate resolved = new EstimateEvidenceResolver().resolve(List.of(synopsis, exact), context);
+
+		assertEquals(386_342.0d, resolved.rows(), "Exact storage remains authoritative for scalar row count");
+		assertEquals("exact_storage", resolved.source());
+		assertSame(branchDistribution, resolved.evidenceProfile()
+				.sketchEvidence(Set.of("branch"))
+				.orElseThrow()
+				.sketch(), "Orthogonal current-snapshot synopsis evidence must survive scalar winner selection");
+		assertEquals(2.0d, resolved.variable("branch").distinctRows(),
+				"A single-binding distribution must remain usable by prefix conditioning after exact-row rebasing");
+		assertEquals(386_342.0d, resolved.variable("branch").boundRows());
 	}
 
 	@Test

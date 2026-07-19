@@ -81,11 +81,6 @@ final class LmdbJoinPlanSupport {
 		if (join == null || join.getLeftArg() == null || join.getRightArg() == null) {
 			return false;
 		}
-		Set<String> sharedBindings = new HashSet<>(plannerBindingNames(join.getLeftArg().getAssuredBindingNames()));
-		sharedBindings.retainAll(plannerBindingNames(join.getRightArg().getBindingNames()));
-		if (sharedBindings.isEmpty()) {
-			return false;
-		}
 		Set<String> localExtensionBindings = new HashSet<>();
 		join.getRightArg().visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
 			@Override
@@ -98,6 +93,11 @@ final class LmdbJoinPlanSupport {
 				super.meet(extension);
 			}
 		});
+		if (localExtensionBindings.isEmpty()) {
+			return false;
+		}
+		Set<String> sharedBindings = new HashSet<>(plannerBindingNames(join.getLeftArg().getAssuredBindingNames()));
+		sharedBindings.retainAll(plannerBindingNames(join.getRightArg().getBindingNames()));
 		return !Collections.disjoint(sharedBindings, localExtensionBindings);
 	}
 

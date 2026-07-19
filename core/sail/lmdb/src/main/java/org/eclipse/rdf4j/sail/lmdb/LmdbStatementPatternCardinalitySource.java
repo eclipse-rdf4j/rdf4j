@@ -13,6 +13,9 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
 import java.util.Map;
+import java.util.OptionalDouble;
+import java.util.OptionalLong;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -26,6 +29,10 @@ final class LmdbStatementPatternCardinalitySource {
 
 	private static final int SHARED_CACHE_MAX_ENTRIES = 262_144;
 	private static final Map<SharedCardinalityKey, Double> SHARED_CARDINALITY_CACHE = new ConcurrentHashMap<>();
+	private static final Map<SharedExactCardinalityKey, Double> SHARED_EXACT_CARDINALITY_CACHE =
+			new ConcurrentHashMap<>();
+	private static final Map<SharedDistinctCardinalityKey, DistinctCardinalityProbe> SHARED_DISTINCT_CARDINALITY_CACHE =
+			new ConcurrentHashMap<>();
 
 	private final ValueStore valueStore;
 	private final TripleStore tripleStore;
@@ -72,12 +79,66 @@ final class LmdbStatementPatternCardinalitySource {
 				return 0.0d;
 			}
 			int repeatedMask = repeatedComponentPairMask(pattern);
-			return repeatedMask == 0
+			SharedExactCardinalityKey key = new SharedExactCardinalityKey(tripleStoreIdentity,
+					tripleStore.getDataRevision(), subjId, predId, objId, ctxId, repeatedMask);
+			Double cached = SHARED_EXACT_CARDINALITY_CACHE.get(key);
+			if (cached != null) {
+				return cached;
+			}
+			double cardinality = repeatedMask == 0
 					? tripleStore.exactCardinality(subjId, predId, objId, ctxId)
 					: tripleStore.repeatedVariableCardinality(subjId, predId, objId, ctxId, repeatedMask);
+			cacheSharedExactCardinality(key, cardinality);
+			return cardinality;
 		} catch (IOException | RuntimeException e) {
 			return -1.0d;
 		}
+	}
+
+	OptionalDouble estimateDistinctCursorSkip(StatementPattern pattern, int maximumPrefixes) {
+		if (pattern == null || maximumPrefixes < 1) {
+			return OptionalDouble.empty();
+		}
+		try {
+			long subjId = resolveId(constantValue(pattern.getSubjectVar()));
+			long predId = resolveId(constantValue(pattern.getPredicateVar()));
+			long objId = resolveId(constantValue(pattern.getObjectVar()));
+			long ctxId = resolveId(constantValue(pattern.getContextVar()));
+			if (subjId == Long.MIN_VALUE || predId == Long.MIN_VALUE || objId == Long.MIN_VALUE
+					|| ctxId == Long.MIN_VALUE) {
+				return OptionalDouble.of(0.0d);
+			}
+			int distinctComponentMask = distinctComponentMask(pattern);
+			if (distinctComponentMask == 0) {
+				return OptionalDouble.empty();
+			}
+			SharedDistinctCardinalityKey key = new SharedDistinctCardinalityKey(tripleStoreIdentity,
+					tripleStore.getDataRevision(), subjId, predId, objId, ctxId, distinctComponentMask);
+			DistinctCardinalityProbe cached = SHARED_DISTINCT_CARDINALITY_CACHE.get(key);
+			if (cached != null && (cached.complete() || cached.probedLimit() >= maximumPrefixes)) {
+				return cached.cardinality();
+			}
+			OptionalLong prefixes = tripleStore.boundedDistinctCursorSkipCardinality(pattern, subjId, predId, objId,
+					ctxId, maximumPrefixes);
+			DistinctCardinalityProbe probe = prefixes.isPresent()
+					? DistinctCardinalityProbe.complete(prefixes.getAsLong())
+					: DistinctCardinalityProbe.incomplete(maximumPrefixes);
+			cacheSharedDistinctCardinality(key, probe);
+			return probe.cardinality();
+		} catch (IOException | RuntimeException e) {
+			return OptionalDouble.empty();
+		}
+	}
+
+	OptionalDouble estimateDistinct(StatementPattern pattern, String variableName, int maximumPrefixes) {
+		if (pattern == null || variableName == null || variableName.isBlank() || maximumPrefixes < 1
+				|| !pattern.getBindingNames().contains(variableName)) {
+			return OptionalDouble.empty();
+		}
+		StatementPattern projected = pattern.clone();
+		new LmdbDistinctRequirement(Set.of(variableName), Set.of(), Set.of(), "join-key-evidence")
+				.annotate(projected);
+		return estimateDistinctCursorSkip(projected, maximumPrefixes);
 	}
 
 	private double estimate(StatementPattern pattern, boolean planning) {
@@ -224,6 +285,27 @@ final class LmdbStatementPatternCardinalitySource {
 		return mask;
 	}
 
+	private static int distinctComponentMask(StatementPattern pattern) {
+		LmdbDistinctRequirement requirement = LmdbDistinctRequirement.from(pattern).orElse(null);
+		if (requirement == null) {
+			return 0;
+		}
+		Var[] vars = {
+				pattern.getSubjectVar(),
+				pattern.getPredicateVar(),
+				pattern.getObjectVar(),
+				pattern.getContextVar()
+		};
+		int mask = 0;
+		for (int component = 0; component < vars.length; component++) {
+			Var var = vars[component];
+			if (var != null && !var.hasValue() && requirement.distinctVars().contains(var.getName())) {
+				mask |= 1 << component;
+			}
+		}
+		return mask;
+	}
+
 	private static String repeatedVariableName(Var var) {
 		if (var == null || var.getName() == null || var.getName().isBlank()) {
 			return null;
@@ -244,6 +326,54 @@ final class LmdbStatementPatternCardinalitySource {
 			SHARED_CARDINALITY_CACHE.clear();
 		}
 		SHARED_CARDINALITY_CACHE.put(key, cardinality);
+	}
+
+	private static void cacheSharedExactCardinality(SharedExactCardinalityKey key, double cardinality) {
+		if (SHARED_EXACT_CARDINALITY_CACHE.size() >= SHARED_CACHE_MAX_ENTRIES) {
+			SHARED_EXACT_CARDINALITY_CACHE.clear();
+		}
+		SHARED_EXACT_CARDINALITY_CACHE.put(key, cardinality);
+	}
+
+	private static void cacheSharedDistinctCardinality(SharedDistinctCardinalityKey key,
+			DistinctCardinalityProbe probe) {
+		if (SHARED_DISTINCT_CARDINALITY_CACHE.size() >= SHARED_CACHE_MAX_ENTRIES) {
+			SHARED_DISTINCT_CARDINALITY_CACHE.clear();
+		}
+		SHARED_DISTINCT_CARDINALITY_CACHE.merge(key, probe, DistinctCardinalityProbe::stronger);
+	}
+
+	private record SharedDistinctCardinalityKey(int tripleStoreIdentity, long dataRevision, long subjId, long predId,
+			long objId, long ctxId, int distinctComponentMask) {
+	}
+
+	private record SharedExactCardinalityKey(int tripleStoreIdentity, long dataRevision, long subjId, long predId,
+			long objId, long ctxId, int repeatedComponentPairMask) {
+	}
+
+	private record DistinctCardinalityProbe(int probedLimit, double rows, boolean complete) {
+
+		private static DistinctCardinalityProbe complete(long rows) {
+			return new DistinctCardinalityProbe(Integer.MAX_VALUE, Math.max(0L, rows), true);
+		}
+
+		private static DistinctCardinalityProbe incomplete(int probedLimit) {
+			return new DistinctCardinalityProbe(Math.max(0, probedLimit), Double.NaN, false);
+		}
+
+		private OptionalDouble cardinality() {
+			return complete ? OptionalDouble.of(rows) : OptionalDouble.empty();
+		}
+
+		private DistinctCardinalityProbe stronger(DistinctCardinalityProbe other) {
+			if (complete || other == null) {
+				return this;
+			}
+			if (other.complete || other.probedLimit > probedLimit) {
+				return other;
+			}
+			return this;
+		}
 	}
 
 	private static final class SharedCardinalityKey {

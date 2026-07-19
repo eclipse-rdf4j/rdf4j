@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
@@ -45,6 +46,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EstimateMath;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
@@ -216,6 +218,29 @@ class LmdbEstimationEngineTest {
 		assertEquals(199_500.0d, estimate.workRows(),
 				"Finite-relation iteration work must retain the complete outer execution mass");
 		assertEquals(66_500.0d, estimate.metrics().get("plannedRepeatedInvocations"), 0.0d);
+	}
+
+	@Test
+	void finiteValuesFactorCostRetainsRepeatedIterationWork() {
+		BindingSetAssignment values = new BindingSetAssignment();
+		List<BindingSet> rows = new ArrayList<>();
+		for (int value = 0; value < 40; value++) {
+			MapBindingSet row = new MapBindingSet();
+			row.addBinding("value", VF.createLiteral(value));
+			rows.add(row);
+		}
+		values.setBindingSets(rows);
+		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(Set.of("value"), 1_000.0d,
+				40.0d, true);
+
+		var estimate = new LmdbEstimatorRuntime(null, null, null, null, null, null)
+				.factorCost(values, context)
+				.orElseThrow();
+
+		assertEquals(1_000.0d, estimate.getOutputRows(),
+				"One matching VALUES row is emitted for each outer binding");
+		assertEquals(40_000.0d, estimate.getWorkRows(),
+				"A nested VALUES scan must retain relation width times outer invocation count");
 	}
 
 	@Test

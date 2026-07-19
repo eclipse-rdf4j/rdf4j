@@ -20,21 +20,28 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 @Experimental
 public record CascadesPlan(Memo memo, int rootGroupId, OptimizationGoal goal, Optional<Winner> winner,
-		OptimizationCompleteness completeness, List<PendingOptimizationTask> pendingTasks, List<String> diagnostics) {
+		OptimizationSearchStatus searchStatus, List<PendingOptimizationTask> pendingTasks, List<String> diagnostics) {
 
 	public CascadesPlan {
 		goal = goal == null ? OptimizationGoal.root() : goal;
 		winner = winner == null ? Optional.empty() : winner;
-		completeness = completeness == null ? OptimizationCompleteness.COMPLETE : completeness;
+		searchStatus = searchStatus == null ? OptimizationSearchStatus.COMPLETE : searchStatus;
 		pendingTasks = pendingTasks == null || pendingTasks.isEmpty() ? List.of() : List.copyOf(pendingTasks);
 		diagnostics = diagnostics == null || diagnostics.isEmpty() ? List.of() : List.copyOf(diagnostics);
-		if (completeness == OptimizationCompleteness.COMPLETE && !pendingTasks.isEmpty()) {
+		if (searchStatus.completeness() == OptimizationCompleteness.COMPLETE && !pendingTasks.isEmpty()) {
 			throw new IllegalArgumentException("complete plans cannot contain pending optimization tasks");
 		}
-		if (completeness == OptimizationCompleteness.COMPLETE && winner.isEmpty()) {
-			completeness = OptimizationCompleteness.NO_VIABLE_PHYSICAL_PLAN;
+		if (searchStatus.completeness() == OptimizationCompleteness.COMPLETE && winner.isEmpty()) {
+			searchStatus = searchStatus.withCompleteness(OptimizationCompleteness.NO_VIABLE_PHYSICAL_PLAN);
 			diagnostics = appendDiagnostic(diagnostics, "no viable physical winner for root group " + rootGroupId);
 		}
+	}
+
+	/** Source-compatible constructor for callers that only report primary completeness. */
+	public CascadesPlan(Memo memo, int rootGroupId, OptimizationGoal goal, Optional<Winner> winner,
+			OptimizationCompleteness completeness, List<PendingOptimizationTask> pendingTasks,
+			List<String> diagnostics) {
+		this(memo, rootGroupId, goal, winner, OptimizationSearchStatus.of(completeness), pendingTasks, diagnostics);
 	}
 
 	/**
@@ -42,14 +49,20 @@ public record CascadesPlan(Memo memo, int rootGroupId, OptimizationGoal goal, Op
 	 */
 	public CascadesPlan(Memo memo, int rootGroupId, OptimizationGoal goal, Optional<Winner> winner,
 			boolean approximate, List<String> diagnostics) {
-		this(memo, rootGroupId, goal, winner, legacyCompleteness(approximate, diagnostics), List.of(), diagnostics);
+		this(memo, rootGroupId, goal, winner, OptimizationSearchStatus.of(legacyCompleteness(approximate, diagnostics)),
+				List.of(), diagnostics);
+	}
+
+	/** Compatibility view retained while callers migrate to {@link #searchStatus()}. */
+	public OptimizationCompleteness completeness() {
+		return searchStatus.completeness();
 	}
 
 	/**
 	 * Compatibility view retained while callers migrate to {@link #completeness()}.
 	 */
 	public boolean approximate() {
-		return completeness != OptimizationCompleteness.COMPLETE || winner.map(Winner::approximate).orElse(false);
+		return searchStatus.approximate() || winner.map(Winner::approximate).orElse(false);
 	}
 
 	public Optional<TupleExpr> tupleExpr() {

@@ -92,9 +92,6 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 			optimizers.add(new LmdbSetSemanticsOptimizer());
 		}
 		optimizers.add(new LmdbFilterSimplifierOptimizer(evaluationStatistics));
-		if (!preserveSerializableObservationOrder) {
-			optimizers.add(new LmdbSetSemanticsOptimizer());
-		}
 		optimizers.add(ELIGIBILITY_SEMI_JOIN_OPTIMIZER);
 		if (!preserveSerializableObservationOrder && LmdbCascadesOptimizer.standardPlanBaselineCaptureEnabled()) {
 			optimizers.add(new LmdbStandardPlanBaselineOptimizer());

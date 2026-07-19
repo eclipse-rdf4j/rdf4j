@@ -171,7 +171,8 @@ public record BindingProfile(Map<String, VariableEstimate> variables,
 		if (ANY_ENDPOINT_MODE.equals(endpointMode)) {
 			return this;
 		}
-		return new BindingProfile(variables, finiteRelations, finiteDomains, sketchRelations, jointDistinctRows, sketchVars,
+		return new BindingProfile(variables, finiteRelations, finiteDomains, sketchRelations, jointDistinctRows,
+				sketchVars,
 				overlapEvidence, ANY_ENDPOINT_MODE, evidenceProfile);
 	}
 
@@ -283,6 +284,12 @@ public record BindingProfile(Map<String, VariableEstimate> variables,
 				restrictedJoint, restrictedSketchVars, overlapEvidence, endpointMode, evidenceProfile.project(allowed));
 	}
 
+	/** Bitmap-native restriction for planner hot paths; names are materialized only when facts must be removed. */
+	BindingProfile restrictTo(BindingMask outputMask, BindingUniverse universe) {
+		Objects.requireNonNull(universe, "universe");
+		return universe.restrictBindingProfile(this, outputMask);
+	}
+
 	private boolean factsWithin(Set<String> allowed) {
 		return allowed.containsAll(variables.keySet())
 				&& relationKeysWithin(allowed, finiteRelations.keySet())
@@ -303,6 +310,27 @@ public record BindingProfile(Map<String, VariableEstimate> variables,
 			}
 		}
 		return true;
+	}
+
+	BindingMask factMask(BindingUniverse universe) {
+		LinkedHashSet<String> names = new LinkedHashSet<>();
+		names.addAll(variables.keySet());
+		addRelationNames(names, finiteRelations.keySet());
+		names.addAll(finiteDomains.keySet());
+		addRelationNames(names, sketchRelations.keySet());
+		addRelationNames(names, jointDistinctRows.keySet());
+		names.addAll(sketchVars);
+		names.addAll(evidenceProfile.variables().keySet());
+		addRelationNames(names, evidenceProfile.finiteRelations().keySet());
+		addRelationNames(names, evidenceProfile.sketches().keySet());
+		addRelationNames(names, evidenceProfile.supportingSketches().keySet());
+		return universe.maskOf(names);
+	}
+
+	private static void addRelationNames(Set<String> target, Set<VariableSetKey> keys) {
+		for (VariableSetKey key : keys) {
+			target.addAll(key.names());
+		}
 	}
 
 	public BagEstimate toBagEstimate(double rows, double workRows, double memoryRows, double confidence, String source,

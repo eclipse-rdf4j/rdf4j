@@ -206,7 +206,7 @@ public final class RuleRegistry {
 		RuleRootOperator rootOperator = RuleRootOperator.from(expression);
 		if (safeTelemetry == CascadesTelemetry.NO_OP) {
 			for (CascadesRule rule : rulesFor(rootOperator, wakeUpEvents, changedFacts, ruleKinds)) {
-				evaluateRule(rule, expression, goal, memo, safeTelemetry, applicable);
+				evaluateRule(rule, descriptorsById.get(rule.id()), expression, goal, memo, safeTelemetry, applicable);
 			}
 		} else {
 			for (CascadesRule rule : rules) {
@@ -215,7 +215,7 @@ public final class RuleRegistry {
 				if (descriptor.appliesTo(rootOperator)
 						&& descriptor.wakesForAny(wakeUpEvents, changedFacts)
 						&& scheduledKind) {
-					evaluateRule(rule, expression, goal, memo, safeTelemetry, applicable);
+					evaluateRule(rule, descriptor, expression, goal, memo, safeTelemetry, applicable);
 				} else {
 					String status = !descriptor.appliesTo(rootOperator)
 							? "not_matched"
@@ -272,8 +272,12 @@ public final class RuleRegistry {
 				.toList();
 	}
 
-	private static void evaluateRule(CascadesRule rule, MemoExpr expression, OptimizationGoal goal, Memo memo,
-			CascadesTelemetry telemetry, List<CascadesRule> applicable) {
+	private static void evaluateRule(CascadesRule rule, RuleDescriptor descriptor, MemoExpr expression,
+			OptimizationGoal goal, Memo memo, CascadesTelemetry telemetry, List<CascadesRule> applicable) {
+		if (!descriptor.canMatchGoal(goal)) {
+			telemetry.ruleEvaluated(expression, rule, goal, false, 0, "goal_not_required");
+			return;
+		}
 		boolean matched = rule.matches(expression, goal, memo);
 		int promise = matched ? adjustedPromise(rule, expression, goal, memo) : 0;
 		telemetry.ruleEvaluated(expression, rule, goal, matched, promise, matched ? "matched" : "not_matched");

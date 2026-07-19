@@ -14,13 +14,14 @@ package org.eclipse.rdf4j.sail.lmdb.hypergraph;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinCardinalityModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.LogSelectivity;
 
 /**
  * A {@link Hypergraph} plus the payloads costing needs: per-node base cardinalities and a list of join predicates.
@@ -32,18 +33,23 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalPro
  * hyperpredicates are each applied exactly once without extra bookkeeping.
  */
 public final class PlanHypergraph {
-
-	/** Selectivities are clamped into this range; 0 or negative would zero out or invert the dynamic programming. */
-	private static final double MIN_SELECTIVITY = 1e-12;
+	public enum PredicateKind {
+		ORDINARY,
+		EQUALITY
+	}
 
 	public static final class JoinPredicate {
 		private final long tes;
-		private final double selectivity;
+		private final LogSelectivity selectivity;
+		private final PredicateKind kind;
+		private final String equalityClass;
 		private final String label;
 
-		JoinPredicate(long tes, double selectivity, String label) {
+		JoinPredicate(long tes, LogSelectivity selectivity, PredicateKind kind, String equalityClass, String label) {
 			this.tes = tes;
 			this.selectivity = selectivity;
+			this.kind = kind;
+			this.equalityClass = equalityClass;
 			this.label = label;
 		}
 
@@ -52,7 +58,19 @@ public final class PlanHypergraph {
 		}
 
 		public double selectivity() {
+			return selectivity.linearValue();
+		}
+
+		public LogSelectivity logSelectivity() {
 			return selectivity;
+		}
+
+		public PredicateKind kind() {
+			return kind;
+		}
+
+		public String equalityClass() {
+			return equalityClass;
 		}
 
 		public String label() {
@@ -66,7 +84,7 @@ public final class PlanHypergraph {
 	private final List<Long> requiredNodes = new ArrayList<>();
 	private final List<List<PhysicalProperties>> scanAlternatives = new ArrayList<>();
 	private final List<JoinPredicate> predicates = new ArrayList<>();
-	private final Map<Long, Double> selectivityProductCache = new HashMap<>();
+	private final Map<Long, JoinCardinalityModel.Estimate> cardinalityCache = new HashMap<>();
 
 	public int addNode(String name, double cardinality) {
 		if (!(cardinality >= 0.0d) || Double.isInfinite(cardinality)) {
@@ -77,7 +95,7 @@ public final class PlanHypergraph {
 		cardinalities.add(cardinality);
 		requiredNodes.add(0L);
 		scanAlternatives.add(new ArrayList<>(List.of(PhysicalProperties.ANY)));
-		selectivityProductCache.clear();
+		cardinalityCache.clear();
 		return idx;
 	}
 
@@ -113,9 +131,28 @@ public final class PlanHypergraph {
 	 * selectivity. Returns the undirected edge index.
 	 */
 	public int addJoinEdge(long left, long right, double selectivity, String label) {
+		return addJoinEdge(left, right, LogSelectivity.fromLinear(selectivity).cappedAtOne(), label);
+	}
+
+	public int addJoinEdge(long left, long right, LogSelectivity selectivity, String label) {
 		int edge = graph.addEdge(left, right);
-		addPredicate(left | right, selectivity, label);
+		addPredicate(left | right, selectivity, PredicateKind.ORDINARY, null, label);
 		return edge;
+	}
+
+	public int addEqualityJoinEdge(long left, long right, double selectivity, String equalityClass) {
+		return addEqualityJoinEdge(left, right, LogSelectivity.fromLinear(selectivity).cappedAtOne(), equalityClass);
+	}
+
+	public int addEqualityJoinEdge(long left, long right, LogSelectivity selectivity, String equalityClass) {
+		int edge = graph.addEdge(left, right);
+		addPredicate(left | right, selectivity, PredicateKind.EQUALITY, equalityClass, equalityClass);
+		return edge;
+	}
+
+	/** Adds connectivity without inventing a cardinality predicate. */
+	public int addConnectivityEdge(long left, long right) {
+		return graph.addEdge(left, right);
 	}
 
 	/**
@@ -124,12 +161,32 @@ public final class PlanHypergraph {
 	 * node's base cardinality by the caller).
 	 */
 	public void addPredicate(long tes, double selectivity, String label) {
+		addPredicate(tes, LogSelectivity.fromLinear(selectivity).cappedAtOne(), label);
+	}
+
+	public void addPredicate(long tes, LogSelectivity selectivity, String label) {
+		addPredicate(tes, selectivity, PredicateKind.ORDINARY, null, label);
+	}
+
+	public void addEqualityPredicate(long tes, LogSelectivity selectivity, String equalityClass) {
+		addPredicate(tes, selectivity, PredicateKind.EQUALITY, equalityClass, equalityClass);
+	}
+
+	private void addPredicate(long tes, LogSelectivity selectivity, PredicateKind kind, String equalityClass,
+			String label) {
 		if (NodeSets.count(tes) < 2) {
 			throw new IllegalArgumentException("predicate TES must span at least two nodes: " + NodeSets.describe(tes));
 		}
-		double clamped = Double.isNaN(selectivity) ? 1.0d : Math.min(1.0d, Math.max(MIN_SELECTIVITY, selectivity));
-		predicates.add(new JoinPredicate(tes, clamped, label));
-		selectivityProductCache.clear();
+		PredicateKind safeKind = Objects.requireNonNull(kind, "kind");
+		if (safeKind == PredicateKind.EQUALITY && (equalityClass == null || equalityClass.isBlank())) {
+			throw new IllegalArgumentException("equality predicates require a non-blank equality class");
+		}
+		if (safeKind == PredicateKind.EQUALITY && NodeSets.count(tes) != 2) {
+			throw new IllegalArgumentException("binary equality predicates require exactly two nodes");
+		}
+		predicates.add(new JoinPredicate(tes, Objects.requireNonNull(selectivity, "selectivity").cappedAtOne(),
+				safeKind, equalityClass, label));
+		cardinalityCache.clear();
 	}
 
 	public Hypergraph graph() {
@@ -148,104 +205,43 @@ public final class PlanHypergraph {
 		return cardinalities.get(nodeIdx);
 	}
 
+	/** Canonical cardinality for a complete logical node set, independent of its join association. */
+	public double cardinality(long nodeSet) {
+		return cardinalityEstimate(nodeSet).rows();
+	}
+
+	public JoinCardinalityModel.Estimate cardinalityEstimate(long nodeSet) {
+		if (!NodeSets.isSubset(nodeSet, graph.allNodes())) {
+			throw new IllegalArgumentException("unknown nodes in cardinality subset: " + NodeSets.describe(nodeSet));
+		}
+		return cardinalityCache.computeIfAbsent(nodeSet, this::uncachedCardinality);
+	}
+
 	public List<JoinPredicate> predicates() {
 		return Collections.unmodifiableList(predicates);
 	}
 
-	/**
-	 * Product of the selectivities of every predicate that becomes newly applicable when {@code left} and {@code right}
-	 * are joined: TES contained in the union but in neither side alone.
-	 */
-	double newlySatisfiedSelectivity(long left, long right) {
-		long union = left | right;
-		double denominator = selectivityProduct(left) * selectivityProduct(right);
-		if (!(Double.isFinite(denominator) && denominator > 0.0d)) {
-			return 1.0d;
+	private JoinCardinalityModel.Estimate uncachedCardinality(long nodeSet) {
+		double[] baseRows = new double[NodeSets.count(nodeSet)];
+		int baseIndex = 0;
+		for (long rest = nodeSet; rest != 0L; rest &= rest - 1L) {
+			baseRows[baseIndex++] = cardinalities.get(Long.numberOfTrailingZeros(rest));
 		}
-		double ratio = selectivityProduct(union) / denominator;
-		if (!Double.isFinite(ratio)) {
-			return 1.0d;
-		}
-		return Math.min(1.0d, Math.max(MIN_SELECTIVITY, ratio));
-	}
-
-	private double selectivityProduct(long nodeSet) {
-		return selectivityProductCache.computeIfAbsent(nodeSet, this::uncachedSelectivityProduct);
-	}
-
-	private double uncachedSelectivityProduct(long nodeSet) {
-		double product = 1.0d;
-		Map<String, List<JoinPredicate>> sameEqualityPredicates = new LinkedHashMap<>();
+		List<JoinCardinalityModel.PredicateTerm> appliedPredicates = new ArrayList<>();
 		for (int i = 0; i < predicates.size(); i++) {
 			JoinPredicate predicate = predicates.get(i);
 			if (!NodeSets.isSubset(predicate.tes, nodeSet)) {
 				continue;
 			}
-			if (isBinaryLabeledPredicate(predicate)) {
-				sameEqualityPredicates.computeIfAbsent(predicate.label, ignored -> new ArrayList<>()).add(predicate);
+			if (predicate.kind() == PredicateKind.EQUALITY) {
+				appliedPredicates.add(JoinCardinalityModel.PredicateTerm.equality(predicate.logSelectivity(),
+						predicate.equalityClass(), NodeSets.lowestIndex(predicate.tes()),
+						NodeSets.highestIndex(predicate.tes()), i));
 			} else {
-				product *= predicate.selectivity;
+				appliedPredicates.add(JoinCardinalityModel.PredicateTerm.ordinary(predicate.logSelectivity(), i));
 			}
 		}
-		for (List<JoinPredicate> group : sameEqualityPredicates.values()) {
-			product *= independentEqualitySelectivity(group);
-		}
-		return product;
-	}
-
-	private static boolean isBinaryLabeledPredicate(JoinPredicate predicate) {
-		return predicate.label != null && !predicate.label.isBlank() && NodeSets.count(predicate.tes) == 2;
-	}
-
-	private static double independentEqualitySelectivity(List<JoinPredicate> predicates) {
-		if (predicates.size() == 1) {
-			return predicates.get(0).selectivity;
-		}
-		List<JoinPredicate> candidates = new ArrayList<>(predicates);
-		candidates.sort(Comparator.comparingDouble(JoinPredicate::selectivity).reversed());
-		DisjointSet components = new DisjointSet();
-		double product = 1.0d;
-		for (JoinPredicate predicate : candidates) {
-			int left = NodeSets.lowestIndex(predicate.tes);
-			int right = NodeSets.highestIndex(predicate.tes);
-			if (components.union(left, right)) {
-				product *= predicate.selectivity;
-			}
-		}
-		return product;
-	}
-
-	private static final class DisjointSet {
-		private final int[] parent = new int[Long.SIZE];
-
-		private DisjointSet() {
-			for (int i = 0; i < parent.length; i++) {
-				parent[i] = i;
-			}
-		}
-
-		private int find(int node) {
-			int root = node;
-			while (parent[root] != root) {
-				root = parent[root];
-			}
-			while (parent[node] != node) {
-				int next = parent[node];
-				parent[node] = root;
-				node = next;
-			}
-			return root;
-		}
-
-		private boolean union(int left, int right) {
-			int leftRoot = find(left);
-			int rightRoot = find(right);
-			if (leftRoot == rightRoot) {
-				return false;
-			}
-			parent[rightRoot] = leftRoot;
-			return true;
-		}
+		return JoinCardinalityModel.estimate(baseRows, appliedPredicates);
 	}
 
 	public String toDot() {

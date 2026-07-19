@@ -20,6 +20,7 @@ import static org.mockito.Mockito.when;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -51,10 +52,15 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPla
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Memo;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MemoExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationCompleteness;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationLimitCause;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationSearchStatus;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PlanProvenance;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.SearchCounterSnapshot;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.SearchRetentionSnapshot;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Winner;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -188,7 +194,98 @@ class LmdbCascadesContractTest {
 	}
 
 	@Test
-	void missingRootFallbackKeepsExtractedGroupChildWinner() {
+	void exactDoesNotApplyResourceLimitedCascadesWinner() {
+		String previousMode = System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "exact");
+		String previousPolicy = System.setProperty(LmdbCascadesOptimizer.STANDARD_PLAN_POLICY_PROPERTY, "off");
+		QueryRoot selectedWinner = new QueryRoot(pattern("selected", "selectedPredicate", "selectedOutput"));
+		try (MockedConstruction<CascadesPlanner> planners = mockConstruction(CascadesPlanner.class,
+				(mock, context) -> when(mock.optimize(any(TupleExpr.class), any(OptimizationGoal.class)))
+						.thenAnswer(invocation -> incompletePlan(selectedWinner.clone(), invocation.getArgument(1),
+								OptimizationCompleteness.RESOURCE_LIMIT_EXCEEDED)))) {
+			QueryRoot root = new QueryRoot(pattern("input", "inputPredicate", "inputOutput"));
+
+			new LmdbCascadesOptimizer(new EvaluationStatistics(), false).optimize(root, null,
+					EmptyBindingSet.getInstance());
+
+			assertEquals("false", root.getStringMetricPlanned("optimizer.cascadesApplied"));
+			assertEquals("RESOURCE_LIMIT_EXCEEDED",
+					root.getStringMetricPlanned("optimizer.cascadesCompleteness"));
+			assertEquals("inputPredicate", ((StatementPattern) root.getArg()).getPredicateVar().getName(),
+					"EXACT must leave the input algebra unchanged when exhaustive proof is incomplete");
+			String unappliedRule = root.getArg().getStringMetricPlanned("optimizer.cascadesRule");
+			assertTrue(unappliedRule == null || unappliedRule.isBlank(),
+					"EXACT must not decorate unchanged algebra with provenance from an unapplied winner");
+			assertEquals(1, planners.constructed().size());
+		} finally {
+			restoreProperty(LmdbCascadesOptimizer.MODE_PROPERTY, previousMode);
+			restoreProperty(LmdbCascadesOptimizer.STANDARD_PLAN_POLICY_PROPERTY, previousPolicy);
+		}
+	}
+
+	@Test
+	void autoAppliesIncompleteLegalCascadesWinner() {
+		String previousMode = System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "auto");
+		String previousPolicy = System.setProperty(LmdbCascadesOptimizer.STANDARD_PLAN_POLICY_PROPERTY, "off");
+		QueryRoot selectedWinner = new QueryRoot(pattern("selected", "selectedPredicate", "selectedOutput"));
+		try (MockedConstruction<CascadesPlanner> planners = mockConstruction(CascadesPlanner.class,
+				(mock, context) -> when(mock.optimize(any(TupleExpr.class), any(OptimizationGoal.class)))
+						.thenAnswer(invocation -> incompletePlan(selectedWinner.clone(), invocation.getArgument(1),
+								OptimizationCompleteness.BUDGET_EXHAUSTED)))) {
+			QueryRoot root = new QueryRoot(pattern("input", "inputPredicate", "inputOutput"));
+
+			new LmdbCascadesOptimizer(new EvaluationStatistics(), false).optimize(root, null,
+					EmptyBindingSet.getInstance());
+
+			assertEquals("true", root.getStringMetricPlanned("optimizer.cascadesApplied"));
+			assertEquals("BUDGET_EXHAUSTED", root.getStringMetricPlanned("optimizer.cascadesCompleteness"));
+			assertEquals("selectedPredicate", ((StatementPattern) root.getArg()).getPredicateVar().getName(),
+					"AUTO may apply its best legal winner when deterministic bounded search is incomplete");
+			assertEquals(1, planners.constructed().size());
+		} finally {
+			restoreProperty(LmdbCascadesOptimizer.MODE_PROPERTY, previousMode);
+			restoreProperty(LmdbCascadesOptimizer.STANDARD_PLAN_POLICY_PROPERTY, previousPolicy);
+		}
+	}
+
+	@Test
+	void structuredSearchStatusIsFullyAnnotatedOnRoot() {
+		String previousMode = System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "auto");
+		String previousPolicy = System.setProperty(LmdbCascadesOptimizer.STANDARD_PLAN_POLICY_PROPERTY, "off");
+		QueryRoot selectedWinner = new QueryRoot(pattern("selected", "selectedPredicate", "selectedOutput"));
+		EnumSet<OptimizationLimitCause> limitCauses = EnumSet.allOf(OptimizationLimitCause.class);
+		OptimizationSearchStatus status = new OptimizationSearchStatus(OptimizationCompleteness.BUDGET_EXHAUSTED,
+				limitCauses, new SearchCounterSnapshot(11L, 13L, 17L, 19L, 23L),
+				new SearchRetentionSnapshot(29L, 31L, 37L));
+		try (MockedConstruction<CascadesPlanner> planners = mockConstruction(CascadesPlanner.class,
+				(mock, context) -> when(mock.optimize(any(TupleExpr.class), any(OptimizationGoal.class)))
+						.thenAnswer(invocation -> searchStatusPlan(selectedWinner.clone(), invocation.getArgument(1),
+								status)))) {
+			QueryRoot root = new QueryRoot(pattern("input", "inputPredicate", "inputOutput"));
+
+			new LmdbCascadesOptimizer(new EvaluationStatistics(), false).optimize(root, null,
+					EmptyBindingSet.getInstance());
+
+			assertEquals("BUDGET_EXHAUSTED", root.getStringMetricPlanned("optimizer.cascadesCompleteness"));
+			assertEquals(String.join(",", limitCauses.stream().map(Enum::name).toList()),
+					root.getStringMetricPlanned("optimizer.cascadesLimitCauses"));
+			assertEquals(11.0d, root.getDoubleMetricPlanned("optimizer.cascadesRuleWork"), 0.0d);
+			assertEquals(13.0d, root.getDoubleMetricPlanned("optimizer.cascadesDphypPairProbes"), 0.0d);
+			assertEquals(17.0d, root.getDoubleMetricPlanned("optimizer.cascadesPartitionProbes"), 0.0d);
+			assertEquals(19.0d, root.getDoubleMetricPlanned("optimizer.cascadesCandidateEvaluations"), 0.0d);
+			assertEquals(23.0d, root.getDoubleMetricPlanned("optimizer.cascadesPredicateProbes"), 0.0d);
+			assertEquals(29.0d, root.getDoubleMetricPlanned("optimizer.cascadesRetainedCandidates"), 0.0d);
+			assertEquals(31.0d,
+					root.getDoubleMetricPlanned("optimizer.cascadesRetainedCandidateHighWaterMark"), 0.0d);
+			assertEquals(37.0d, root.getDoubleMetricPlanned("optimizer.cascadesFrontierHighWaterMark"), 0.0d);
+			assertEquals(1, planners.constructed().size());
+		} finally {
+			restoreProperty(LmdbCascadesOptimizer.MODE_PROPERTY, previousMode);
+			restoreProperty(LmdbCascadesOptimizer.STANDARD_PLAN_POLICY_PROPERTY, previousPolicy);
+		}
+	}
+
+	@Test
+	void exactMissingRootWinnerLeavesOriginalAlgebraWithoutSubtreeRepair() {
 		String previousMode = System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "exact");
 		String previousPolicy = System.setProperty(LmdbCascadesOptimizer.STANDARD_PLAN_POLICY_PROPERTY, "fallback");
 		AtomicInteger plannerCalls = new AtomicInteger();
@@ -204,14 +301,15 @@ class LmdbCascadesContractTest {
 			new LmdbCascadesOptimizer(new EvaluationStatistics(), false).optimize(root, null,
 					EmptyBindingSet.getInstance());
 
-			assertEquals(2, plannerCalls.get(),
-					"A missing root winner may trigger one independent Group optimization");
+			assertEquals(1, plannerCalls.get(),
+					"Transactional EXACT must not repair or apply a subtree after the root search is incomplete");
+			assertEquals("false", root.getStringMetricPlanned("optimizer.cascadesApplied"));
+			assertEquals("NO_VIABLE_PHYSICAL_PLAN",
+					root.getStringMetricPlanned("optimizer.cascadesCompleteness"));
 			assertTrue(root.getArg() instanceof Group);
-			Group extractedGroup = (Group) root.getArg();
-			assertTrue(extractedGroup.getArg() instanceof StatementPattern);
-			StatementPattern extractedInput = (StatementPattern) extractedGroup.getArg();
-			assertEquals("selected", extractedInput.getPredicateVar().getName(),
-					"The extracted child winner must not be replaced by a post-search semantic repair");
+			Group originalGroup = (Group) root.getArg();
+			assertTrue(originalGroup.getArg() instanceof LeftJoin,
+					"EXACT must leave the original incomplete algebra topology unchanged");
 			assertEquals(1, planners.constructed().size());
 		} finally {
 			restoreProperty(LmdbCascadesOptimizer.MODE_PROPERTY, previousMode);
@@ -308,6 +406,26 @@ class LmdbCascadesContractTest {
 				"complete", completeProvenance(selectedPlan, new AtomicInteger()));
 		return new CascadesPlan(new Memo(CascadesCostModel.from(new EvaluationStatistics())), 1,
 				OptimizationGoal.root(), Optional.of(winner), false, List.of("complete"));
+	}
+
+	private static CascadesPlan incompletePlan(TupleExpr selectedPlan, OptimizationGoal goal,
+			OptimizationCompleteness completeness) {
+		MemoExpr expression = new MemoExpr(1, 1, "test-incomplete-winner", List.of(), "", selectedPlan,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		Winner winner = new Winner(expression, selectedPlan, PhysicalProperties.ANY, CostVector.ZERO, List.of(), true,
+				completeness.name().toLowerCase(), completeProvenance(selectedPlan, new AtomicInteger()));
+		return new CascadesPlan(new Memo(CascadesCostModel.from(new EvaluationStatistics())), 1, goal,
+				Optional.of(winner), completeness, List.of(), List.of(completeness.name().toLowerCase()));
+	}
+
+	private static CascadesPlan searchStatusPlan(TupleExpr selectedPlan, OptimizationGoal goal,
+			OptimizationSearchStatus status) {
+		MemoExpr expression = new MemoExpr(1, 1, "test-structured-status-winner", List.of(), "", selectedPlan,
+				PhysicalProperties.ANY, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+		Winner winner = new Winner(expression, selectedPlan, PhysicalProperties.ANY, CostVector.ZERO, List.of(), true,
+				status.completeness().name().toLowerCase(), completeProvenance(selectedPlan, new AtomicInteger()));
+		return new CascadesPlan(new Memo(CascadesCostModel.from(new EvaluationStatistics())), 1, goal,
+				Optional.of(winner), status, List.of(), List.of("structured search status"));
 	}
 
 	private static CascadesPlan noWinnerPlan(TupleExpr tupleExpr) {

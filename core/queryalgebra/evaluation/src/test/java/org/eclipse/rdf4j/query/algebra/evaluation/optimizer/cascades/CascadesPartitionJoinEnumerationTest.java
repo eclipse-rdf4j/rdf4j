@@ -21,10 +21,13 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.ExhaustiveLegalJoinSearchContributor;
@@ -32,15 +35,46 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSe
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSearchRequest;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSearchService;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinTree;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.PrimitiveDphypJoinSearchContributor;
 import org.junit.jupiter.api.Test;
 
 class CascadesPartitionJoinEnumerationTest {
 
 	private static final String PREDICATE_PREFIX = "partitionPredicate";
 	private static final int EIGHT_FACTOR_PARTITION_BOUND = 6_050;
+	private static final int AUTO_EXPORTED_ROOT_LIMIT = 16;
 
 	@Test
-	void disconnectedEightFactorRegionUsesPartitionScaleMemoEnumeration() {
+	void autoFiveFactorRegionExportsOnlySelectedRootReachableDags() {
+		int factorCount = 5;
+		CascadesPlan plan = planner(new JoinSearchService(List.of(new ExhaustiveLegalJoinSearchContributor())))
+				.optimize(disconnectedJoin(factorCount), autoGoal());
+
+		long exploredPartitions = plan.searchStatus().counters().partitionProbes();
+		long exportedJoinRecipes = plan.memo()
+				.groups()
+				.stream()
+				.flatMap(group -> group.expressions().stream())
+				.filter(MemoExpr::logical)
+				.filter(expression -> expression.tupleExpr() instanceof Join)
+				.filter(expression -> expression.proofs()
+						.stream()
+						.anyMatch(proof -> JoinSearchService.ROUTE_ID.equals(proof.ruleId())))
+				.count();
+
+		assertTrue(exploredPartitions > 0L, "The scoped route must still explore legal partitions");
+		assertTrue(exportedJoinRecipes > 0L,
+				"The selected join DAG must be exported into the global memo: status=" + plan.searchStatus()
+						+ ", diagnostics=" + plan.diagnostics());
+		assertTrue(exportedJoinRecipes <= (long) AUTO_EXPORTED_ROOT_LIMIT * (factorCount - 1),
+				"AUTO global export must be bounded by selected root DAGs, not all explored partitions: "
+						+ exportedJoinRecipes);
+		assertTrue(exportedJoinRecipes < exploredPartitions,
+				"Explored join-region states must remain local instead of all entering the global memo");
+	}
+
+	@Test
+	void disconnectedEightFactorRegionExploresPartitionScaleWithoutGlobalMaterialization() {
 		Set<String> uniqueMemoExpressions = new HashSet<>();
 		ExhaustiveLegalJoinSearchContributor delegate = new ExhaustiveLegalJoinSearchContributor();
 		JoinSearchContributor cappedExhaustive = new JoinSearchContributor() {
@@ -65,7 +99,8 @@ class CascadesPartitionJoinEnumerationTest {
 							&& uniqueMemoExpressions.size() > EIGHT_FACTOR_PARTITION_BOUND) {
 						throw new AssertionError("Exhaustive memo enumeration expanded more than "
 								+ EIGHT_FACTOR_PARTITION_BOUND
-								+ " unique subset partitions; it is retaining complete join trees instead");
+								+ " unique subset partitions; it is retaining complete join trees instead: dependencies="
+								+ request.region().dependencies() + ", edges=" + request.region().edges());
 					}
 					sink.accept(expression);
 				});
@@ -75,33 +110,119 @@ class CascadesPartitionJoinEnumerationTest {
 				.optimize(disconnectedJoin(8), OptimizationGoal.root());
 
 		assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness(), plan.diagnostics().toString());
-		assertTrue(uniqueMemoExpressions.size() <= EIGHT_FACTOR_PARTITION_BOUND,
-				"Eight factors need at most 3^8 - 2*2^8 + 1 oriented subset partitions");
+		assertEquals(EIGHT_FACTOR_PARTITION_BOUND, uniqueMemoExpressions.size(),
+				"Exact search must still explore every oriented eight-factor subset partition");
 		Set<MemoPartition> expected = allOrientedPartitions(8);
 		assertEquals(EIGHT_FACTOR_PARTITION_BOUND, expected.size());
-		assertTrue(memoPartitions(plan.memo()).containsAll(expected),
-				"The memo must retain every legal subset partition without expanding every complete tree");
+		assertTrue(memoPartitions(plan.memo()).size() < uniqueMemoExpressions.size(),
+				"Explored partitions must remain scoped instead of all entering the global memo");
 	}
 
 	@Test
-	void subsetPartitionsRepresentIndependentBruteForceWinners() {
+	void selectedScopedWinnersHaveCompleteExportedDags() {
 		for (int factorCount = 2; factorCount <= 5; factorCount++) {
 			CascadesPlan plan = planner(new JoinSearchService(List.of(new ExhaustiveLegalJoinSearchContributor())))
 					.optimize(disconnectedJoin(factorCount), OptimizationGoal.root());
-			JoinTree oracleWinner = bruteForceWinner(factorCount);
-			Set<MemoPartition> requiredPartitions = treePartitions(oracleWinner);
+			JoinTree selectedWinner = selectedTree(plan.tupleExpr().orElseThrow());
+			Set<MemoPartition> requiredPartitions = treePartitions(selectedWinner);
 
 			assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness(), "factorCount=" + factorCount);
 			assertTrue(memoPartitions(plan.memo()).containsAll(requiredPartitions),
-					"Memo alternatives cannot compose independent oracle winner "
-							+ oracleWinner.canonicalForm() + " for factorCount=" + factorCount);
+					"Global export is missing part of selected scoped winner "
+							+ selectedWinner.canonicalForm() + " for factorCount=" + factorCount);
 		}
+	}
+
+	@Test
+	void completeOrderingGoalDoesNotHideJoinRootsFromTheSortEnforcer() {
+		PhysicalProperties required = PhysicalProperties.builder()
+				.ordering(List.of("subject0:asc"))
+				.build();
+		CascadesPlan plan = planner(new JoinSearchService(List.of(new ExhaustiveLegalJoinSearchContributor())))
+				.optimize(disconnectedJoin(2), OptimizationGoal.exact(required));
+
+		boolean exportedEnforceableRoot = plan.memo()
+				.group(plan.rootGroupId())
+				.expressions()
+				.stream()
+				.filter(MemoExpr::logical)
+				.filter(expression -> expression.tupleExpr() instanceof Join)
+				.anyMatch(expression -> expression.proofs()
+						.stream()
+						.anyMatch(proof -> JoinSearchService.ROUTE_ID.equals(proof.ruleId())));
+
+		assertTrue(plan.winner()
+				.map(winner -> winner.deliveredProperties().satisfies(required, plan.memo().universe()))
+				.orElse(true), "An applied winner must satisfy the requested ordering");
+		assertTrue(plan.completeness() != OptimizationCompleteness.COMPLETE || exportedEnforceableRoot,
+				"COMPLETE must not hide every scoped join root from the property-enforcer lifecycle");
+	}
+
+	@Test
+	void scopedPlannerStreamsPrimitiveDphypPairsWithoutRequestingWinnerTree() {
+		AtomicInteger treeCalls = new AtomicInteger();
+		AtomicInteger primitiveCalls = new AtomicInteger();
+		AtomicInteger emittedPairs = new AtomicInteger();
+		PrimitiveDphypJoinSearchContributor primitive = new PrimitiveDphypJoinSearchContributor() {
+			private final Descriptor descriptor = new Descriptor("primitive-dphyp", Coverage.EXHAUSTIVE_CONNECTED, 10);
+
+			@Override
+			public Descriptor descriptor() {
+				return descriptor;
+			}
+
+			@Override
+			public Outcome contribute(
+					org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSearchRequest request,
+					CandidateSink sink) {
+				treeCalls.incrementAndGet();
+				return Outcome.unsupported("scoped planning must not request a privately selected DPhyp tree");
+			}
+
+			@Override
+			public long configuredPairProbeLimit() {
+				return Long.MAX_VALUE;
+			}
+
+			@Override
+			public Outcome contributePartitions(
+					org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSearchRequest request,
+					java.util.function.LongPredicate hasCandidate, PartitionSink sink) {
+				primitiveCalls.incrementAndGet();
+				long prefix = 1L;
+				assertTrue(hasCandidate.test(prefix));
+				for (int ordinal = 1; ordinal < request.region().factors().size(); ordinal++) {
+					long next = 1L << ordinal;
+					assertTrue(hasCandidate.test(next));
+					assertEquals(false, sink.accept(prefix, next));
+					emittedPairs.incrementAndGet();
+					prefix |= next;
+					assertTrue(hasCandidate.test(prefix),
+							"Every raw pair must immediately create its union frontier for later DPhyp callbacks");
+				}
+				return Outcome.completed();
+			}
+		};
+		CascadesPlan plan = planner(new JoinSearchService(
+				List.of(primitive, new ExhaustiveLegalJoinSearchContributor())))
+						.optimize(disconnectedJoin(3), OptimizationGoal.root());
+
+		assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness(), plan.diagnostics().toString());
+		assertTrue(primitiveCalls.get() > 0);
+		assertEquals(0, treeCalls.get());
+		assertEquals(emittedPairs.get(), plan.searchStatus().counters().dphypPairProbes());
 	}
 
 	private static CascadesPlanner planner(JoinSearchService joinSearchService) {
 		return new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()),
 				RuleRegistry.standardLogicalRules(), CascadesTelemetry.NO_OP, 16, RewriteMetadata.empty(),
 				joinSearchService);
+	}
+
+	private static OptimizationGoal autoGoal() {
+		return new OptimizationGoal(PhysicalProperties.ANY, OptimizationGoal.BAG_SEMANTICS,
+				OptimizationGoal.CostPolicy.EXACT, CostVector.INFINITE, Set.of(),
+				OptimizationGoal.SearchMode.AUTO, Long.MAX_VALUE, 4_096);
 	}
 
 	private static TupleExpr disconnectedJoin(int factorCount) {
@@ -194,6 +315,23 @@ class CascadesPartitionJoinEnumerationTest {
 				.min(Comparator.comparing(CascadesPartitionJoinEnumerationTest::oracleCost)
 						.thenComparing(JoinTree::canonicalForm))
 				.orElseThrow();
+	}
+
+	private static JoinTree selectedTree(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof StatementPattern statementPattern) {
+			String predicateName = statementPattern.getPredicateVar().getName();
+			if (!predicateName.startsWith(PREDICATE_PREFIX)) {
+				throw new IllegalArgumentException("Unexpected selected factor " + predicateName);
+			}
+			return JoinTree.factor(Integer.parseInt(predicateName.substring(PREDICATE_PREFIX.length())));
+		}
+		if (tupleExpr instanceof BinaryTupleOperator binary) {
+			return JoinTree.join(selectedTree(binary.getLeftArg()), selectedTree(binary.getRightArg()));
+		}
+		if (tupleExpr instanceof UnaryTupleOperator unary) {
+			return selectedTree(unary.getArg());
+		}
+		throw new IllegalArgumentException("Unexpected selected join node " + tupleExpr.getClass().getName());
 	}
 
 	private static List<JoinTree> enumerateTrees(Set<Integer> factorIds, Map<Set<Integer>, List<JoinTree>> cache) {

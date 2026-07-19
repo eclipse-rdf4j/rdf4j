@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -29,7 +30,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingMask;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingUniverse;
 import org.junit.jupiter.api.Test;
 
 class JoinSearchServiceTest {
@@ -65,6 +69,338 @@ class JoinSearchServiceTest {
 				() -> Class.forName(
 						"org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSearchService"),
 				"The generic optimizer must expose one backend-neutral join-search route");
+	}
+
+	@Test
+	void exposesPrimitiveDphypPartitionContributorContract() {
+		assertDoesNotThrow(
+				() -> Class.forName(
+						"org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.PrimitiveDphypJoinSearchContributor"),
+				"DPhyp contributors need a core primitive-mask seam that bypasses private winner selection");
+	}
+
+	@Test
+	void primitiveDphypPairsAreChargedBeforeScopedDelivery() throws ReflectiveOperationException {
+		RecordingJoinSearchWork work = new RecordingJoinSearchWork();
+		AtomicInteger delivered = new AtomicInteger();
+		PrimitiveDphypJoinSearchContributor contributor = new PrimitiveDphypJoinSearchContributor() {
+			private final Descriptor descriptor = new Descriptor("primitive-dphyp", Coverage.EXHAUSTIVE_CONNECTED, 10);
+
+			@Override
+			public Descriptor descriptor() {
+				return descriptor;
+			}
+
+			@Override
+			public Outcome contribute(JoinSearchRequest request, CandidateSink sink) {
+				return Outcome.unsupported("scoped route must not request a privately selected tree");
+			}
+
+			@Override
+			public long configuredPairProbeLimit() {
+				return Long.MAX_VALUE;
+			}
+
+			@Override
+			public Outcome contributePartitions(JoinSearchRequest request,
+					java.util.function.LongPredicate hasCandidate,
+					PartitionSink sink) {
+				assertTrue(hasCandidate.test(1L));
+				assertTrue(hasCandidate.test(2L));
+				if (sink.accept(1L, 2L) || sink.accept(3L, 4L)) {
+					return Outcome.budgetExhausted("scoped target stopped primitive enumeration");
+				}
+				return Outcome.completed();
+			}
+		};
+		JoinSearchService service = new JoinSearchService(List.of(contributor));
+		Class<?> targetType = Class.forName(JoinSearchService.class.getName() + "$ScopedMemoTarget");
+		Object target = Proxy.newProxyInstance(targetType.getClassLoader(), new Class<?>[] { targetType },
+				(proxy, method, arguments) -> switch (method.getName()) {
+				case "hasCandidate" -> true;
+				case "factorLowerBoundRows" -> 1.0d;
+				case "factorLowerBoundWork" -> 0.0d;
+				case "acceptDphypPair" -> {
+				int expectedCharge = delivered.get() + 1;
+				assertEquals(expectedCharge, work.dphypPairProbes);
+				assertEquals(expectedCharge, work.partitionProbes);
+				delivered.incrementAndGet();
+				yield false;
+				}
+				case "installReservedSeedOrder", "installReservedMemoExpressions" -> null;
+				case "acceptMemoExpression" -> null;
+				default -> throw new UnsupportedOperationException(method.toString());
+				});
+		Method scopedRoute = JoinSearchService.class.getMethod("enumerateScopedMemoExpressions",
+				JoinSearchRequest.class, JoinSearchWork.class, targetType);
+
+		JoinMemoEnumerationResult result = (JoinMemoEnumerationResult) scopedRoute.invoke(service,
+				JoinSearchRequest.complete(region(3, List.of()), COST_MODEL), work, target);
+
+		assertEquals(2, delivered.get());
+		assertEquals(2, work.dphypPairProbes);
+		assertEquals(2, work.partitionProbes);
+		assertEquals(2L, result.attempts().getFirst().offeredCandidateCount());
+		assertEquals(JoinSearchContributor.Status.COMPLETED, result.attempts().getFirst().outcome().status());
+	}
+
+	@Test
+	void primitiveDphypMemoEnumerationNeverRequestsPrivateWinnerTree() {
+		AtomicInteger privateWinnerCalls = new AtomicInteger();
+		PrimitiveDphypJoinSearchContributor primitive = new PrimitiveDphypJoinSearchContributor() {
+			private final Descriptor descriptor = new Descriptor("primitive-dphyp", Coverage.EXHAUSTIVE_CONNECTED, 10);
+
+			@Override
+			public Descriptor descriptor() {
+				return descriptor;
+			}
+
+			@Override
+			public Outcome contribute(JoinSearchRequest request, CandidateSink sink) {
+				privateWinnerCalls.incrementAndGet();
+				throw new AssertionError("Global memo enumeration must not request a privately selected DPhyp tree");
+			}
+
+			@Override
+			public long configuredPairProbeLimit() {
+				return Long.MAX_VALUE;
+			}
+
+			@Override
+			public Outcome contributePartitions(JoinSearchRequest request,
+					java.util.function.LongPredicate hasCandidateSubset, PartitionSink sink) {
+				throw new AssertionError("Global memo enumeration must not request primitive DPhyp partitions");
+			}
+		};
+
+		JoinMemoEnumerationResult result = new JoinSearchService(
+				List.of(primitive, new ExhaustiveLegalJoinSearchContributor()))
+						.enumerateMemoExpressions(JoinSearchRequest.complete(region(3, List.of()), COST_MODEL),
+								ignored -> {
+								});
+		JoinSearchResult.Attempt primitiveAttempt = result.attempts()
+				.stream()
+				.filter(attempt -> attempt.descriptor().id().equals("primitive-dphyp"))
+				.findFirst()
+				.orElseThrow();
+		JoinSearchResult.Attempt exhaustiveAttempt = result.attempts()
+				.stream()
+				.filter(attempt -> attempt.descriptor().id().equals(ExhaustiveLegalJoinSearchContributor.ID))
+				.findFirst()
+				.orElseThrow();
+
+		assertEquals(0, privateWinnerCalls.get());
+		assertEquals(JoinSearchContributor.Status.UNSUPPORTED, primitiveAttempt.outcome().status());
+		assertEquals(
+				"primitive DPhyp requires scoped partition delivery; global memo enumeration uses generic contributors",
+				primitiveAttempt.outcome().detail());
+		assertEquals(0L, primitiveAttempt.offeredCandidateCount());
+		assertEquals(JoinSearchContributor.Status.COMPLETED, exhaustiveAttempt.outcome().status());
+		assertEquals(JoinSearchCompleteness.COMPLETE, result.completeness());
+		assertTrue(result.complete());
+	}
+
+	@Test
+	void unschedulableGreedySeedDoesNotSuppressCompleteContributor() {
+		JoinRegion cyclic = region(2, List.of(
+				new JoinDependency(0, Set.of(1)),
+				new JoinDependency(1, Set.of(0))));
+		JoinSearchService.ScopedMemoTarget target = new JoinSearchService.ScopedMemoTarget() {
+
+			@Override
+			public boolean hasCandidate(long factorMask) {
+				return true;
+			}
+
+			@Override
+			public boolean acceptDphypPair(String contributorId, long leftMask, long rightMask) {
+				throw new AssertionError("The test route has no primitive contributor");
+			}
+
+			@Override
+			public void acceptMemoExpression(JoinMemoExpressionCandidate candidate) {
+				throw new AssertionError("A cyclic region has no dependency-legal memo expression");
+			}
+		};
+
+		JoinMemoEnumerationResult result = assertDoesNotThrow(() -> new JoinSearchService(
+				List.of(new ExhaustiveLegalJoinSearchContributor()))
+						.enumerateScopedMemoExpressions(JoinSearchRequest.complete(cyclic, COST_MODEL),
+								JoinSearchWork.unlimited(), target));
+		JoinSearchResult.Attempt seedAttempt = result.attempts()
+				.stream()
+				.filter(attempt -> DeterministicGreedyJoinSeed.ID.equals(attempt.descriptor().id()))
+				.findFirst()
+				.orElseThrow();
+		JoinSearchResult.Attempt exhaustiveAttempt = result.attempts()
+				.stream()
+				.filter(attempt -> ExhaustiveLegalJoinSearchContributor.ID.equals(attempt.descriptor().id()))
+				.findFirst()
+				.orElseThrow();
+
+		assertEquals(JoinSearchContributor.Coverage.HEURISTIC, seedAttempt.descriptor().coverage());
+		assertEquals(JoinSearchContributor.Status.UNSUPPORTED, seedAttempt.outcome().status());
+		assertTrue(seedAttempt.outcome().detail().contains("dependency-legal greedy extension"));
+		assertEquals(0L, seedAttempt.offeredCandidateCount());
+		assertEquals(JoinSearchContributor.Status.COMPLETED, exhaustiveAttempt.outcome().status());
+		assertEquals(JoinSearchCompleteness.COMPLETE, result.completeness());
+		assertTrue(result.pendingReasons().isEmpty());
+		assertTrue(result.candidates().isEmpty());
+	}
+
+	@Test
+	void alternativeProducerClausesRemainDisjunctiveAcrossExactAndScopedEnumeration() {
+		BindingUniverse universe = BindingUniverse.create();
+		BindingMask seed = universe.maskOf(Set.of("seed"));
+		JoinRegion region = alternativeProducerRegion(seed);
+		AtomicInteger dphypCalls = new AtomicInteger();
+		PrimitiveDphypJoinSearchContributor dphyp = new PrimitiveDphypJoinSearchContributor() {
+			private final Descriptor descriptor = new Descriptor("dependency-blind-dphyp",
+					Coverage.EXHAUSTIVE_CONNECTED, 10);
+
+			@Override
+			public Descriptor descriptor() {
+				return descriptor;
+			}
+
+			@Override
+			public Outcome contribute(JoinSearchRequest request, CandidateSink sink) {
+				dphypCalls.incrementAndGet();
+				throw new AssertionError("DPhyp must fail closed before seeing a dependency region");
+			}
+
+			@Override
+			public long configuredPairProbeLimit() {
+				return Long.MAX_VALUE;
+			}
+
+			@Override
+			public Outcome contributePartitions(JoinSearchRequest request,
+					java.util.function.LongPredicate hasCandidateSubset, PartitionSink sink) {
+				dphypCalls.incrementAndGet();
+				throw new AssertionError("DPhyp must fail closed before seeing a dependency region");
+			}
+		};
+		JoinSearchService service = new JoinSearchService(
+				List.of(dphyp, new ExhaustiveLegalJoinSearchContributor()));
+		JoinSearchRequest request = JoinSearchRequest.complete(region, COST_MODEL);
+
+		JoinSearchResult expanded = service.search(request);
+		JoinMemoEnumerationResult memo = service.enumerateMemoExpressions(request, ignored -> {
+		});
+
+		assertEquals(0, dphypCalls.get());
+		assertEquals(JoinSearchContributor.Status.UNSUPPORTED,
+				attempt(expanded, "dependency-blind-dphyp").outcome().status());
+		assertEquals(JoinSearchCompleteness.COMPLETE, expanded.completeness());
+		assertEquals(8L, expanded.distinctCandidateCount(),
+				"Four legal leaf orders times two binary associations must remain available");
+		assertEquals(13, memo.candidates().size(),
+				"Contextual memo expressions must cover both producer alternatives without a conjunction");
+		assertTrue(memo.candidates()
+				.stream()
+				.map(JoinMemoExpressionCandidate::expression)
+				.anyMatch(expression -> expression.leftOccurrenceIds().equals(Set.of(1))
+						&& expression.rightOccurrenceIds().equals(Set.of(0))));
+		assertTrue(memo.candidates()
+				.stream()
+				.map(JoinMemoExpressionCandidate::expression)
+				.anyMatch(expression -> expression.leftOccurrenceIds().equals(Set.of(2))
+						&& expression.rightOccurrenceIds().equals(Set.of(0))));
+	}
+
+	@Test
+	void externallyBoundProducerClauseAllowsGreedyDependentFirst() {
+		BindingUniverse universe = BindingUniverse.create();
+		BindingMask seed = universe.maskOf(Set.of("seed"));
+		JoinRegion region = alternativeProducerRegion(seed);
+		JoinSearchContext unbound = new JoinSearchContext(List.of(), universe, BindingMask.EMPTY, null, null, null,
+				null);
+		JoinSearchContext bound = new JoinSearchContext(List.of(), universe, seed, null, null, null, null);
+
+		DeterministicGreedyJoinSeed.SeedOrder unboundOrder = DeterministicGreedyJoinSeed.buildOrder(region, unbound,
+				ignored -> 1.0d, ignored -> 0.0d);
+		DeterministicGreedyJoinSeed.SeedOrder boundOrder = DeterministicGreedyJoinSeed.buildOrder(region, bound,
+				ignored -> 1.0d, ignored -> 0.0d);
+
+		assertTrue(unboundOrder.outcome().status() == JoinSearchContributor.Status.COMPLETED);
+		assertTrue(boundOrder.outcome().status() == JoinSearchContributor.Status.COMPLETED);
+		assertEquals(1, unboundOrder.occurrenceIdAt(0), "An unbound dependent cannot precede every producer");
+		assertEquals(0, boundOrder.occurrenceIdAt(0),
+				"An outer binding satisfies the clause and restores the stable occurrence-ID tie break");
+		assertDoesNotThrow(() -> DeterministicGreedyJoinSeed.build(region, bound, ignored -> 1.0d,
+				ignored -> 0.0d),
+				"Outer-aware seed validation must accept the same legal order selected by buildOrder");
+	}
+
+	@Test
+	void scopedRouteInstallsReservedSeedAsPrimitiveOrder() {
+		AtomicInteger primitiveInstalls = new AtomicInteger();
+		AtomicInteger legacyExpressionInstalls = new AtomicInteger();
+		JoinSearchService.ScopedMemoTarget target = (JoinSearchService.ScopedMemoTarget) Proxy.newProxyInstance(
+				JoinSearchService.ScopedMemoTarget.class.getClassLoader(),
+				new Class<?>[] { JoinSearchService.ScopedMemoTarget.class },
+				(proxy, method, arguments) -> switch (method.getName()) {
+				case "hasCandidate" -> true;
+				case "factorLowerBoundRows" -> 1.0d;
+				case "factorLowerBoundWork" -> 0.0d;
+				case "installReservedSeedOrder" -> {
+				primitiveInstalls.incrementAndGet();
+				yield null;
+				}
+				case "installReservedMemoExpressions" -> {
+				legacyExpressionInstalls.incrementAndGet();
+				yield null;
+				}
+				case "acceptMemoExpression" -> throw new AssertionError(
+						"A zero exploratory budget must stop before expression delivery");
+				case "acceptDphypPair" -> throw new AssertionError("The test route has no primitive contributor");
+				default -> throw new UnsupportedOperationException(method.toString());
+				});
+		JoinSearchRequest request = JoinSearchRequest.boundedEnumeration(region(3, List.of()), 0L, 0L, 1L);
+
+		JoinMemoEnumerationResult result = new JoinSearchService(
+				List.of(new ExhaustiveLegalJoinSearchContributor()))
+						.enumerateScopedMemoExpressions(request, NoPartitionJoinSearchWork.INSTANCE, target);
+
+		assertEquals(1, primitiveInstalls.get());
+		assertEquals(0, legacyExpressionInstalls.get());
+		assertTrue(result.candidates().isEmpty(),
+				"The reserved physical fallback must not enter the contributor-expression result set");
+	}
+
+	@Test
+	void memoPartitionIdentityIncludesAvailableBeforeContext() {
+		JoinRegion producerAnchorDependent = region(3,
+				List.of(new JoinDependency(2, Set.of(0))));
+		RecordingJoinSearchWork work = new RecordingJoinSearchWork();
+
+		JoinMemoEnumerationResult result = new JoinSearchService(
+				List.of(new ExhaustiveLegalJoinSearchContributor()))
+						.enumerateMemoExpressions(
+								JoinSearchRequest.complete(producerAnchorDependent, COST_MODEL), work, ignored -> {
+								});
+		List<JoinMemoExpression> producerDependentPartitions = result.candidates()
+				.stream()
+				.map(JoinMemoExpressionCandidate::expression)
+				.filter(expression -> expression.leftOccurrenceIds().equals(Set.of(0)))
+				.filter(expression -> expression.rightOccurrenceIds().equals(Set.of(2)))
+				.toList();
+		Set<Set<Integer>> availabilityContexts = producerDependentPartitions.stream()
+				.map(JoinMemoExpression::availableBeforeOccurrenceIds)
+				.collect(Collectors.toUnmodifiableSet());
+
+		assertEquals(Set.of(Set.of(), Set.of(1)), availabilityContexts,
+				"P | D is a distinct memo expression when independent A is already available");
+		assertEquals(2L, producerDependentPartitions.stream()
+				.map(JoinMemoExpression::canonicalForm)
+				.distinct()
+				.count(), "Diagnostics must preserve the available-before context");
+		assertEquals(10, work.partitionProbes,
+				"Every raw exhaustive partition callback is charged before typed deduplication");
+		assertEquals(10, result.candidates().size());
+		assertEquals(10L, result.attempts().getFirst().offeredCandidateCount(),
+				"Only context-distinct memo expressions consume the candidate budget");
 	}
 
 	@Test
@@ -288,6 +624,14 @@ class JoinSearchServiceTest {
 		return new JoinRegion(factors, dependencies);
 	}
 
+	private static JoinRegion alternativeProducerRegion(BindingMask seed) {
+		ProducerClause clause = new ProducerClause(seed,
+				List.of(new ProducerState(JoinSubset.ofOrdinals(1)),
+						new ProducerState(JoinSubset.ofOrdinals(2))));
+		JoinDependency dependency = new JoinDependency(0, Set.of(), seed, List.of(clause));
+		return new JoinRegion(List.of(new JoinFactor(0), new JoinFactor(1), new JoinFactor(2)), List.of(dependency));
+	}
+
 	private static List<JoinDependency> dependencyChain(int factorCount) {
 		ArrayList<JoinDependency> dependencies = new ArrayList<>();
 		for (int occurrenceId = 1; occurrenceId < factorCount; occurrenceId++) {
@@ -358,6 +702,100 @@ class JoinSearchServiceTest {
 		private OracleWinner {
 			assertNotNull(tree);
 			assertNotNull(cost);
+		}
+	}
+
+	private static final class RecordingJoinSearchWork implements JoinSearchWork {
+		private int dphypPairProbes;
+		private int partitionProbes;
+
+		@Override
+		public boolean tryPartitionProbe() {
+			partitionProbes++;
+			return true;
+		}
+
+		@Override
+		public boolean tryDphypPairProbe() {
+			dphypPairProbes++;
+			partitionProbes++;
+			return true;
+		}
+
+		@Override
+		public boolean tryCandidateEvaluation() {
+			return true;
+		}
+
+		@Override
+		public boolean tryPredicateProbe() {
+			return true;
+		}
+
+		@Override
+		public boolean tryRetainCandidate() {
+			return true;
+		}
+
+		@Override
+		public void releaseRetainedCandidate() {
+		}
+
+		@Override
+		public void observeFrontierSize(long size) {
+		}
+
+		@Override
+		public void recordFrontierTruncation() {
+		}
+
+		@Override
+		public void recordRetentionLimit() {
+		}
+	}
+
+	private enum NoPartitionJoinSearchWork implements JoinSearchWork {
+		INSTANCE;
+
+		@Override
+		public boolean tryPartitionProbe() {
+			return false;
+		}
+
+		@Override
+		public boolean tryDphypPairProbe() {
+			return false;
+		}
+
+		@Override
+		public boolean tryCandidateEvaluation() {
+			return true;
+		}
+
+		@Override
+		public boolean tryPredicateProbe() {
+			return true;
+		}
+
+		@Override
+		public boolean tryRetainCandidate() {
+			return true;
+		}
+
+		@Override
+		public void releaseRetainedCandidate() {
+		}
+
+		@Override
+		public void observeFrontierSize(long size) {
+		}
+
+		@Override
+		public void recordFrontierTruncation() {
+		}
+
+		@Override
+		public void recordRetentionLimit() {
 		}
 	}
 }

@@ -240,6 +240,9 @@ class LmdbOptimizerPipelineTest {
 				LmdbSetSemanticsOptimizer.class));
 		assertTrue(indexOf(optimizers, LmdbSetSemanticsOptimizer.class) < indexOf(optimizers,
 				LmdbFilterSimplifierOptimizer.class));
+		assertEquals(1L, optimizers.stream().filter(LmdbSetSemanticsOptimizer.class::isInstance).count(),
+				"Finite membership semi-filters are Cascades alternatives; a second eager set-semantics pass would "
+						+ "suppress the reorderable finite-anchor join before costing");
 		assertTrue(indexOf(optimizers, LmdbFilterSimplifierOptimizer.class) < cascadesIndex);
 		assertTrue(optimizers.subList(handoffBaselineIndex + 1, cascadesIndex)
 				.stream()

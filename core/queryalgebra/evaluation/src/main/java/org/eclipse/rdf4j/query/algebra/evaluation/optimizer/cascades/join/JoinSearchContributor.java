@@ -39,6 +39,14 @@ public interface JoinSearchContributor {
 	}
 
 	/**
+	 * Streams expressions into the scoped join-region memo. Contributors with a legacy global-materialization size
+	 * guard may override this path because the scoped caller enforces deterministic work and retention limits.
+	 */
+	default Outcome contributeScopedMemoExpressions(JoinSearchRequest request, MemoExpressionSink sink) {
+		return contributeMemoExpressions(request, sink);
+	}
+
+	/**
 	 * Compatibility path for the legacy scalar search API. Production Cascades planning never uses this expanded-tree
 	 * route.
 	 */

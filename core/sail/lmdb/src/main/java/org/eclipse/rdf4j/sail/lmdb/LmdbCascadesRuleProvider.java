@@ -123,7 +123,6 @@ final class LmdbCascadesRuleProvider {
 				.add(new StructuralCascadesRules.ProjectionMergeRule())
 				.add(new FilterCascadesRules.FilterProjectionPushdownRule())
 				.add(new FilterCascadesRules.FilterExtensionPushdownRule())
-				.add(new LmdbNullRejectingOptionalJoinRule())
 				.add(new ProjectionCascadesRules.ProjectionLeftJoinPushdownRule())
 				.add(new StandardCascadesRules.ProjectionPushdownRule())
 				.add(new StandardCascadesRules.ProjectionUnionDistributionRule())
@@ -164,6 +163,8 @@ final class LmdbCascadesRuleProvider {
 				.add(new LmdbCorrelatedNotExistsAntiFilterRule(statistics))
 				.add(new LmdbCorrelatedMinusAntiExistsRule(statistics))
 				.add(new LmdbOptionalAnchoredLookupRule(statistics))
+				.add(new LmdbInnerJoinBoundLookupRule(statistics))
+				.add(new LmdbConnectedHypergraphJoinImplementationRule(statistics))
 				.add(new StandardCascadesRules.HashJoinImplementationRule())
 				.add(new StandardCascadesRules.GenericImplementationRule());
 		return builder.build();
@@ -483,12 +484,30 @@ final class LmdbCascadesRuleProvider {
 		return rewritten;
 	}
 
+	/** Cascades-local finite relation rewrite; parent wrappers and scalar subqueries are separate memo inputs. */
+	static TupleExpr cascadesFiniteFilterValuesAlternative(TupleExpr tupleExpr) {
+		if (!(tupleExpr instanceof Filter filter) || TupleExprs.isVariableScopeChange(filter)) {
+			return null;
+		}
+		BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(filter.getCondition());
+		if (!safeFiniteFilterValuesAnchor(filter.getCondition(), filter.getArg(), anchor)) {
+			return null;
+		}
+		anchor.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-finite-filter-values-rewrite");
+		annotateFiniteFilterValuesAnchor(anchor, filter.getCondition());
+		Join alternative = new Join(anchor, filter.getArg().clone());
+		alternative.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-finite-filter-values-rewrite");
+		return alternative;
+	}
+
 	static TupleExpr unionConstantsToValuesAlternative(TupleExpr tupleExpr) {
 		if (!(tupleExpr instanceof Union union)) {
 			return null;
 		}
 		if (!(union.getLeftArg()instanceof StatementPattern left)
 				|| !(union.getRightArg()instanceof StatementPattern right)
+				|| hasObservableValuedVar(left)
+				|| hasObservableValuedVar(right)
 				|| !sameUnionVar(left.getContextVar(), right.getContextVar())) {
 			return null;
 		}
@@ -563,7 +582,20 @@ final class LmdbCascadesRuleProvider {
 				&& right != null
 				&& left.hasValue()
 				&& right.hasValue()
+				&& left.isConstant()
+				&& right.isConstant()
 				&& !left.getValue().equals(right.getValue());
+	}
+
+	private static boolean hasObservableValuedVar(StatementPattern pattern) {
+		return observableValued(pattern.getSubjectVar())
+				|| observableValued(pattern.getPredicateVar())
+				|| observableValued(pattern.getObjectVar())
+				|| observableValued(pattern.getContextVar());
+	}
+
+	private static boolean observableValued(Var var) {
+		return var != null && var.hasValue() && !var.isConstant();
 	}
 
 	private static String freshUnionConstantName(StatementPattern left, StatementPattern right, int position) {
@@ -658,20 +690,33 @@ final class LmdbCascadesRuleProvider {
 		return leftDeepJoin(factors);
 	}
 
-	static TupleExpr orFilterValuesAlternative(TupleExpr tupleExpr) {
-		return rewriteOrFilterValues(tupleExpr);
+	/** Cascades-local OR relation rewrite; parent wrappers and scalar subqueries are separate memo inputs. */
+	static TupleExpr cascadesOrFilterValuesAlternative(TupleExpr tupleExpr) {
+		if (!(tupleExpr instanceof Filter filter) || TupleExprs.isVariableScopeChange(filter)) {
+			return null;
+		}
+		OrValuesRewrite rewrite = orValuesRewrite(filter.getCondition(), filter.getArg().getAssuredBindingNames());
+		if (rewrite == null) {
+			return null;
+		}
+		TupleExpr rewritten = new Join(rewrite.assignment(), filter.getArg().clone());
+		if (!rewrite.residualConditions().isEmpty()) {
+			rewritten = new Filter(rewritten, LmdbJoinPlanSupport.combinedCondition(rewrite.residualConditions()));
+		}
+		rewritten.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-or-filter-values-rewrite");
+		return rewritten;
 	}
 
 	static TupleExpr orFilterUnionAlternative(TupleExpr tupleExpr) {
 		return rewriteDuplicateInsensitiveOrFilterUnion(tupleExpr);
 	}
 
-	static TupleExpr filterMinusLeftPushdownAlternative(TupleExpr tupleExpr) {
-		return rewriteFilterMinusLeftPushdown(tupleExpr);
-	}
-
-	private static TupleExpr rewriteFilterMinusLeftPushdown(TupleExpr tupleExpr) {
-		if (tupleExpr instanceof Filter filter && filter.getArg()instanceof Difference difference
+	/** Cascades-local Filter/MINUS rewrite; parent wrappers are separate memo expressions. */
+	static TupleExpr cascadesFilterMinusLeftPushdownAlternative(TupleExpr tupleExpr) {
+		if (!(tupleExpr instanceof Filter filter)) {
+			return null;
+		}
+		if (filter.getArg()instanceof Difference difference
 				&& filterConditionUsesOnlyMinusLeft(filter, difference)) {
 			Filter pushedFilter = new Filter(difference.getLeftArg().clone(), filter.getCondition().clone());
 			pushedFilter.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-filter-minus-left-pushdown");
@@ -680,27 +725,11 @@ final class LmdbCascadesRuleProvider {
 			alternative.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-filter-minus-left-pushdown");
 			return alternative;
 		}
-		if (tupleExpr instanceof Filter filter) {
-			TupleExpr reordered = reorderPositiveExistsBelowAntiExists(filter);
-			if (reordered != null) {
-				return reordered;
-			}
-			TupleExpr antiExistsAlternative = splitLeftOnlyFiltersBelowAntiExists(filter);
-			if (antiExistsAlternative != null) {
-				return antiExistsAlternative;
-			}
+		TupleExpr reordered = reorderPositiveExistsBelowAntiExists(filter);
+		if (reordered != null) {
+			return reordered;
 		}
-		if (tupleExpr instanceof Filter filter) {
-			TupleExpr rewrittenArg = rewriteFilterMinusLeftPushdown(filter.getArg());
-			if (rewrittenArg != null) {
-				Filter alternative = filter.clone();
-				alternative.setArg(rewrittenArg);
-				alternative.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-filter-minus-left-pushdown");
-				return alternative;
-			}
-		}
-		return rewriteUnaryOrBinaryChild(tupleExpr, LmdbCascadesRuleProvider::rewriteFilterMinusLeftPushdown,
-				"lmdb-filter-minus-left-pushdown");
+		return splitLeftOnlyFiltersBelowAntiExists(filter);
 	}
 
 	static boolean leftOnlyFilterAboveDifference(TupleExpr tupleExpr) {
@@ -800,30 +829,6 @@ final class LmdbCascadesRuleProvider {
 		Set<String> outputNames = LmdbJoinPlanSupport.plannerBindingNames(difference.getBindingNames());
 		Set<String> conditionNames = LmdbJoinPlanSupport.conditionBindingNames(filter.getCondition(), outputNames);
 		return !conditionNames.isEmpty() && leftNames.containsAll(conditionNames);
-	}
-
-	private static TupleExpr rewriteOrFilterValues(TupleExpr tupleExpr) {
-		if (tupleExpr instanceof Filter filter && !TupleExprs.isVariableScopeChange(filter)) {
-			OrValuesRewrite rewrite = orValuesRewrite(filter.getCondition(), filter.getArg().getAssuredBindingNames());
-			if (rewrite == null) {
-				TupleExpr rewrittenArg = rewriteOrFilterValues(filter.getArg());
-				if (rewrittenArg == null) {
-					return null;
-				}
-				Filter alternative = filter.clone();
-				alternative.setArg(rewrittenArg);
-				alternative.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-or-filter-values-rewrite");
-				return alternative;
-			}
-			TupleExpr rewritten = new Join(rewrite.assignment(), filter.getArg().clone());
-			if (!rewrite.residualConditions().isEmpty()) {
-				rewritten = new Filter(rewritten, LmdbJoinPlanSupport.combinedCondition(rewrite.residualConditions()));
-			}
-			rewritten.setStringMetricPlanned("optimizer.semanticRewrite", "lmdb-or-filter-values-rewrite");
-			return rewritten;
-		}
-		return rewriteUnaryOrBinaryChild(tupleExpr, LmdbCascadesRuleProvider::rewriteOrFilterValues,
-				"lmdb-or-filter-values-rewrite");
 	}
 
 	private static TupleExpr rewriteDuplicateInsensitiveOrFilterUnion(TupleExpr tupleExpr) {

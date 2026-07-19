@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Extension;
@@ -30,11 +31,17 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.PlanIr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.TupleExprToIr;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
@@ -49,6 +56,23 @@ class BindingShapeTest {
 		assertShapeMatches(new Join(left, right));
 		assertShapeMatches(new LeftJoin(left.clone(), right.clone()));
 		assertShapeMatches(new Union(left.clone(), right.clone()));
+	}
+
+	@Test
+	void valuedNonconstantStatementVariableRemainsAnOutputBinding() {
+		Var valuedOutput = Var.of("predicate", VF.createIRI("urn:predicate"), false, false);
+		Var trueConstant = Var.of("constantObject", VF.createIRI("urn:object"), false, true);
+		StatementPattern pattern = new StatementPattern(new Var("subject"), valuedOutput, trueConstant);
+		BindingUniverse universe = BindingUniverse.from(pattern, PhysicalProperties.ANY);
+
+		BindingShape tupleShape = BindingShape.from(pattern, universe);
+		PlanIr ir = TupleExprToIr.convert(pattern);
+		var irShape = ir.rootNode().bindings();
+
+		assertEquals(Set.of("subject", "predicate"), universe.names(tupleShape.possible()));
+		assertEquals(Set.of("subject", "predicate"), universe.names(tupleShape.assured()));
+		assertEquals(Set.of("subject", "predicate"), ir.universe().names(irShape.possible()));
+		assertEquals(Set.of("subject", "predicate"), ir.universe().names(irShape.assured()));
 	}
 
 	@Test
@@ -71,7 +95,7 @@ class BindingShapeTest {
 		BindingUniverse extensionUniverse = BindingUniverse.from(extension, PhysicalProperties.ANY);
 		BindingShape extensionShape = BindingShape.from(extension, extensionUniverse);
 		assertEquals(extension.getBindingNames(), extensionUniverse.names(extensionShape.possible()));
-		assertEquals(extension.getAssuredBindingNames(), extensionUniverse.names(extensionShape.assured()));
+		assertEquals(Set.of("s", "p", "o", "label"), extensionUniverse.names(extensionShape.assured()));
 		assertEquals(Set.of("label"), extensionUniverse.names(extensionShape.localBindOutputs()));
 
 		Group group = new Group(pattern("s", "p", "o"), List.of("s"),
@@ -79,7 +103,7 @@ class BindingShapeTest {
 		BindingUniverse groupUniverse = BindingUniverse.from(group, PhysicalProperties.ANY);
 		BindingShape groupShape = BindingShape.from(group, groupUniverse);
 		assertEquals(group.getBindingNames(), groupUniverse.names(groupShape.possible()));
-		assertEquals(group.getAssuredBindingNames(), groupUniverse.names(groupShape.assured()));
+		assertEquals(Set.of("s"), groupUniverse.names(groupShape.assured()));
 		assertEquals(Set.of("count"), groupUniverse.names(groupShape.localBindOutputs()));
 
 		BindingSetAssignment assignment = new BindingSetAssignment();
@@ -92,6 +116,53 @@ class BindingShapeTest {
 		assertEquals(assignment.getBindingNames(), assignmentUniverse.names(assignmentShape.possible()));
 		assertEquals(assignment.getAssuredBindingNames(), assignmentUniverse.names(assignmentShape.assured()));
 		assertEquals(assignment.getBindingNames(), assignmentUniverse.names(assignmentShape.localBindOutputs()));
+	}
+
+	@Test
+	void maskNativeFiniteRelationHonorsItsAuthoritativeSchema() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of("declared"));
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding("declared", VF.createIRI("urn:declared"));
+		row.addBinding("rowOnly", VF.createIRI("urn:row-only"));
+		assignment.setBindingSets(List.of(row));
+
+		assertShapeMatchesIr(assignment);
+	}
+
+	@Test
+	void maskNativeDerivationRetainsNestedLocalOutputs() {
+		Extension extension = new Extension(pattern("s", "p", "o"),
+				new ExtensionElem(new Var("o"), "derived"));
+		TupleExpr wrapped = new Slice(new Join(extension, pattern("derived", "p2", "label")), 0, 10);
+
+		assertShapeMatchesIr(wrapped);
+	}
+
+	@Test
+	void maskNativeProjectionMatchesCanonicalAliasesAndAbsentSources() {
+		Extension extension = new Extension(pattern("s", "p", "o"),
+				new ExtensionElem(new Var("o"), "derived"));
+		Projection projection = new Projection(extension,
+				new ProjectionElemList(new ProjectionElem("derived", "renamed"),
+						new ProjectionElem("absent", "phantom")));
+
+		assertShapeMatchesIr(projection);
+	}
+
+	@Test
+	void maskNativePathAndTripleRefShapesExcludeConstantTerms() {
+		Var constantSubject = Var.of("constantSubject", VF.createIRI("urn:subject"), true, true);
+		Var constantContext = Var.of("constantContext", VF.createIRI("urn:graph"), false, true);
+		assertShapeMatchesIr(new ZeroLengthPath(Scope.NAMED_CONTEXTS, constantSubject, new Var("object"),
+				constantContext));
+
+		StatementPattern step = pattern("stepStart", "predicate", "stepEnd");
+		assertShapeMatchesIr(new ArbitraryLengthPath(Scope.NAMED_CONTEXTS, constantSubject.clone(), step,
+				new Var("pathObject"), constantContext.clone(), 1L));
+
+		assertShapeMatchesIr(new TripleRef(constantSubject.clone(), new Var("triplePredicate"),
+				new Var("tripleObject"), new Var("triple")));
 	}
 
 	@Test
@@ -124,6 +195,17 @@ class BindingShapeTest {
 		for (String assured : tupleExpr.getAssuredBindingNames()) {
 			assertFalse(nullable.contains(assured));
 		}
+	}
+
+	private static void assertShapeMatchesIr(TupleExpr tupleExpr) {
+		BindingUniverse universe = BindingUniverse.from(tupleExpr, PhysicalProperties.ANY);
+		BindingShape shape = BindingShape.from(tupleExpr, universe);
+		PlanIr ir = TupleExprToIr.convert(tupleExpr);
+		var irShape = ir.rootNode().bindings();
+		assertEquals(ir.universe().names(irShape.possible()), universe.names(shape.possible()));
+		assertEquals(ir.universe().names(irShape.assured()), universe.names(shape.assured()));
+		assertEquals(ir.universe().names(irShape.nullable()), universe.names(shape.nullable()));
+		assertEquals(ir.universe().names(irShape.localBindOutputs()), universe.names(shape.localBindOutputs()));
 	}
 
 	private static StatementPattern pattern(String subject, String predicate, String object) {

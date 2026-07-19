@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
@@ -20,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -50,9 +52,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSe
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSearchRequest;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSearchResult;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSearchService;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSearchWork;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinTree;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class LmdbDphypJoinSearchContributorTest {
 
@@ -191,9 +196,156 @@ class LmdbDphypJoinSearchContributorTest {
 						"Each raw-search read must receive a defensive template clone"));
 	}
 
+	@ParameterizedTest(name = "{0} factors")
+	@ValueSource(ints = { 65, 128 })
+	void oversizedRegionIsRejectedBeforeLongBackedHypergraphConstruction(int factorCount) {
+		FailOnProbeCostModel costModel = new FailOnProbeCostModel();
+
+		Optional<LmdbDphypJoinCandidate> candidate = assertDoesNotThrow(
+				() -> LmdbHypergraphJoinPlanner.tryCandidate(oversizedRequest(factorCount), costModel, costModel),
+				"DPhyp must reject " + factorCount + " factors before building or probing its long-backed graph");
+
+		assertAll(
+				() -> assertTrue(candidate.isEmpty(), "An oversized DPhyp region must be reported as unsupported"),
+				() -> assertEquals(0, costModel.probeCount(),
+						"Capacity rejection must happen before estimator or fallback-statistics probes"));
+	}
+
+	@Test
+	void scopedRouteStreamsAllTrianglePairsIntoSharedWorkLedger() {
+		List<JoinFactor> factors = List.of(new JoinFactor(10, 51), new JoinFactor(11, 52), new JoinFactor(12, 53));
+		List<JoinFactorDescriptor> descriptors = List.of(
+				descriptor(10, 51, pattern("shared", "a", "objectA")),
+				descriptor(11, 52, pattern("shared", "b", "objectB")),
+				descriptor(12, 53, pattern("shared", "c", "objectC")));
+		JoinSearchContext context = new JoinSearchContext(descriptors, Set.of(), PhysicalProperties.ANY,
+				OptimizationGoal.BAG_SEMANTICS, OptimizationGoal.RowGoal.ALL,
+				JoinFactorCostModel.EstimationTier.STANDARD);
+		JoinSearchRequest request = request(new JoinRegion(factors, List.of()), context);
+		OccurrenceCostModel costs = new OccurrenceCostModel().table("a", 10.0d).table("b", 10.0d).table("c", 10.0d);
+		CountingJoinSearchWork work = new CountingJoinSearchWork();
+		CountingScopedTarget target = new CountingScopedTarget(work, factors.size());
+
+		org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinMemoEnumerationResult result = LmdbJoinSearchProvider
+				.create(costs, costs)
+				.enumerateScopedMemoExpressions(request, work, target);
+		JoinSearchResult.Attempt dphyp = attempt(
+				new JoinSearchResult(result.routeId(), Optional.empty(), result.completeness(), result.attempts(), 0L,
+						result.pendingReasons()),
+				CONTRIBUTOR_ID);
+
+		assertAll(
+				() -> assertEquals(6, target.rawPairCount(), "A three-factor clique has six CSG-CMP pairs"),
+				() -> assertEquals(6, work.dphypPairProbes),
+				() -> assertEquals(6L, dphyp.offeredCandidateCount()),
+				() -> assertEquals(JoinSearchContributor.Coverage.EXHAUSTIVE_CONNECTED,
+						dphyp.descriptor().coverage()),
+				() -> assertEquals(JoinSearchContributor.Status.COMPLETED, dphyp.outcome().status()));
+	}
+
+	@Test
+	void scopedTopologyDoesNotConsultPrivateCardinalityEvidence() {
+		List<JoinFactor> factors = List.of(new JoinFactor(10, 51), new JoinFactor(11, 52), new JoinFactor(12, 53));
+		List<JoinFactorDescriptor> descriptors = List.of(
+				descriptor(10, 51, pattern("shared", "a", "objectA")),
+				descriptor(11, 52, pattern("shared", "b", "objectB")),
+				descriptor(12, 53, pattern("shared", "c", "objectC")));
+		JoinSearchContext context = new JoinSearchContext(descriptors, Set.of(), PhysicalProperties.ANY,
+				OptimizationGoal.BAG_SEMANTICS, OptimizationGoal.RowGoal.ALL,
+				JoinFactorCostModel.EstimationTier.STANDARD);
+		JoinSearchRequest request = request(new JoinRegion(factors, List.of()), context);
+		RejectingPrivateEvidenceModel privateEvidence = new RejectingPrivateEvidenceModel();
+		CountingJoinSearchWork work = new CountingJoinSearchWork();
+		CountingScopedTarget target = new CountingScopedTarget(work, factors.size());
+
+		org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinMemoEnumerationResult result = assertDoesNotThrow(
+				() -> LmdbJoinSearchProvider.create(privateEvidence, privateEvidence)
+						.enumerateScopedMemoExpressions(request, work, target));
+		JoinSearchResult.Attempt dphyp = attempt(
+				new JoinSearchResult(result.routeId(), Optional.empty(), result.completeness(), result.attempts(), 0L,
+						result.pendingReasons()),
+				CONTRIBUTOR_ID);
+
+		assertAll(
+				() -> assertEquals(6, target.rawPairCount()),
+				() -> assertEquals(6, work.dphypPairProbes),
+				() -> assertEquals(0, privateEvidence.probeCount(),
+						"Topology discovery must not consult LMDB-private cost or cardinality evidence"),
+				() -> assertEquals(JoinSearchContributor.Status.COMPLETED, dphyp.outcome().status()));
+	}
+
+	@Test
+	void missingLateSingletonEmitsNoPrimitivePairs() {
+		List<JoinFactor> factors = List.of(new JoinFactor(10, 51), new JoinFactor(11, 52), new JoinFactor(12, 53));
+		List<JoinFactorDescriptor> descriptors = List.of(
+				descriptor(10, 51, pattern("shared", "a", "objectA")),
+				descriptor(11, 52, pattern("shared", "b", "objectB")),
+				descriptor(12, 53, pattern("shared", "c", "objectC")));
+		JoinSearchContext context = new JoinSearchContext(descriptors, Set.of(), PhysicalProperties.ANY,
+				OptimizationGoal.BAG_SEMANTICS, OptimizationGoal.RowGoal.ALL,
+				JoinFactorCostModel.EstimationTier.STANDARD);
+		JoinSearchRequest request = request(new JoinRegion(factors, List.of()), context);
+		OccurrenceCostModel costs = new OccurrenceCostModel().table("a", 10.0d).table("b", 10.0d).table("c", 10.0d);
+		CountingJoinSearchWork work = new CountingJoinSearchWork();
+		CountingScopedTarget target = new CountingScopedTarget(work, factors.size());
+		target.removeSingleton(0);
+
+		org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinMemoEnumerationResult result = assertDoesNotThrow(
+				() -> LmdbJoinSearchProvider.create(costs, costs)
+						.enumerateScopedMemoExpressions(request, work, target));
+		JoinSearchResult.Attempt dphyp = attempt(
+				new JoinSearchResult(result.routeId(), Optional.empty(), result.completeness(), result.attempts(), 0L,
+						result.pendingReasons()),
+				CONTRIBUTOR_ID);
+
+		assertAll(
+				() -> assertEquals(0, target.rawPairCount(),
+						"Every singleton must be preflighted before the first primitive callback"),
+				() -> assertEquals(0, work.dphypPairProbes),
+				() -> assertEquals(JoinSearchContributor.Status.UNSUPPORTED, dphyp.outcome().status()));
+	}
+
+	@Test
+	void genericDisconnectedSubsetCannotMasqueradeAsDphypConnected() {
+		List<JoinFactor> factors = List.of(new JoinFactor(10, 51), new JoinFactor(11, 52), new JoinFactor(12, 53));
+		List<JoinFactorDescriptor> descriptors = List.of(
+				descriptor(10, 51, pattern("left", "a", "x")),
+				descriptor(11, 52, pattern("x", "b", "y")),
+				descriptor(12, 53, pattern("y", "c", "right")));
+		JoinSearchContext context = new JoinSearchContext(descriptors, Set.of(), PhysicalProperties.ANY,
+				OptimizationGoal.BAG_SEMANTICS, OptimizationGoal.RowGoal.ALL,
+				JoinFactorCostModel.EstimationTier.STANDARD);
+		JoinSearchRequest request = request(new JoinRegion(factors, List.of()), context);
+		OccurrenceCostModel costs = new OccurrenceCostModel().table("a", 10.0d).table("b", 10.0d).table("c", 10.0d);
+		CountingJoinSearchWork cleanWork = new CountingJoinSearchWork();
+		CountingScopedTarget clean = new CountingScopedTarget(cleanWork, factors.size());
+		CountingJoinSearchWork preseededWork = new CountingJoinSearchWork();
+		CountingScopedTarget preseeded = CountingScopedTarget.withEverySubset(preseededWork, factors.size());
+
+		LmdbJoinSearchProvider.create(costs, costs).enumerateScopedMemoExpressions(request, cleanWork, clean);
+		LmdbJoinSearchProvider.create(costs, costs).enumerateScopedMemoExpressions(request, preseededWork, preseeded);
+
+		assertEquals(clean.rawPairs(), preseeded.rawPairs(),
+				"Only DPhyp-produced connected states may satisfy the enumerator's connectivity oracle");
+	}
+
 	private static JoinSearchRequest request(JoinRegion region, JoinSearchContext context) {
 		return new JoinSearchRequest(region, canonicalCostModel(), JoinSearchRequest.Mode.COMPLETE, 0L,
 				JoinSearchDependencyStamp.EMPTY, Long.MAX_VALUE, context);
+	}
+
+	private static JoinSearchRequest oversizedRequest(int factorCount) {
+		List<JoinFactor> factors = new ArrayList<>(factorCount);
+		List<JoinFactorDescriptor> descriptors = new ArrayList<>(factorCount);
+		for (int index = 0; index < factorCount; index++) {
+			StatementPattern factor = pattern("shared", "factor_" + index, "object_" + index);
+			factors.add(new JoinFactor(index, 1_000 + index));
+			descriptors.add(descriptor(index, 1_000 + index, factor));
+		}
+		JoinSearchContext context = new JoinSearchContext(descriptors, Set.of(), PhysicalProperties.ANY,
+				OptimizationGoal.BAG_SEMANTICS, OptimizationGoal.RowGoal.ALL,
+				JoinFactorCostModel.EstimationTier.STANDARD);
+		return request(new JoinRegion(factors, List.of()), context);
 	}
 
 	private static JoinSearchResult.Attempt attempt(JoinSearchResult result, String contributorId) {
@@ -260,6 +412,154 @@ class LmdbDphypJoinSearchContributorTest {
 			String predicate = ((IRI) pattern.getPredicateVar().getValue()).getLocalName();
 			Double rows = rowsByPredicate.get(predicate);
 			return rows == null ? Optional.empty() : Optional.of(new FactorCostEstimate(rows, rows));
+		}
+	}
+
+	private static final class FailOnProbeCostModel extends EvaluationStatistics implements JoinFactorCostModel {
+
+		private int probeCount;
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			probeCount++;
+			throw new AssertionError("DPhyp probed a factor after exceeding its 64-factor capacity");
+		}
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			probeCount++;
+			throw new AssertionError("DPhyp consulted fallback statistics after exceeding its 64-factor capacity");
+		}
+
+		private int probeCount() {
+			return probeCount;
+		}
+	}
+
+	private static final class RejectingPrivateEvidenceModel extends EvaluationStatistics
+			implements JoinFactorCostModel {
+
+		private int probeCount;
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			probeCount++;
+			throw new AssertionError("Scoped DPhyp topology consulted the private factor cost model");
+		}
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			probeCount++;
+			throw new AssertionError("Scoped DPhyp topology consulted fallback cardinality statistics");
+		}
+
+		private int probeCount() {
+			return probeCount;
+		}
+	}
+
+	private static final class CountingJoinSearchWork implements JoinSearchWork {
+		private int dphypPairProbes;
+		private int partitionProbes;
+
+		@Override
+		public boolean tryPartitionProbe() {
+			partitionProbes++;
+			return true;
+		}
+
+		@Override
+		public boolean tryDphypPairProbe() {
+			dphypPairProbes++;
+			partitionProbes++;
+			return true;
+		}
+
+		@Override
+		public boolean tryCandidateEvaluation() {
+			return true;
+		}
+
+		@Override
+		public boolean tryPredicateProbe() {
+			return true;
+		}
+
+		@Override
+		public boolean tryRetainCandidate() {
+			return true;
+		}
+
+		@Override
+		public void releaseRetainedCandidate() {
+		}
+
+		@Override
+		public void observeFrontierSize(long size) {
+		}
+
+		@Override
+		public void recordFrontierTruncation() {
+		}
+
+		@Override
+		public void recordRetentionLimit() {
+		}
+	}
+
+	private static final class CountingScopedTarget implements JoinSearchService.ScopedMemoTarget {
+		private final CountingJoinSearchWork work;
+		private final Set<Long> seen = new HashSet<>();
+		private final List<String> rawPairs = new ArrayList<>();
+		private int rawPairCount;
+
+		private CountingScopedTarget(CountingJoinSearchWork work, int factorCount) {
+			this.work = work;
+			for (int ordinal = 0; ordinal < factorCount; ordinal++) {
+				seen.add(1L << ordinal);
+			}
+		}
+
+		private static CountingScopedTarget withEverySubset(CountingJoinSearchWork work, int factorCount) {
+			CountingScopedTarget target = new CountingScopedTarget(work, factorCount);
+			long limit = 1L << factorCount;
+			for (long subset = 1L; subset < limit; subset++) {
+				target.seen.add(subset);
+			}
+			return target;
+		}
+
+		private void removeSingleton(int ordinal) {
+			seen.remove(1L << ordinal);
+		}
+
+		@Override
+		public boolean hasCandidate(long factorMask) {
+			return seen.contains(factorMask);
+		}
+
+		@Override
+		public boolean acceptDphypPair(String contributorId, long leftMask, long rightMask) {
+			assertEquals(CONTRIBUTOR_ID, contributorId);
+			assertEquals(rawPairCount + 1, work.dphypPairProbes,
+					"The shared ledger must charge before delivering a raw pair");
+			rawPairCount++;
+			rawPairs.add(leftMask + ":" + rightMask);
+			seen.add(leftMask | rightMask);
+			return false;
+		}
+
+		@Override
+		public void acceptMemoExpression(
+				org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinMemoExpressionCandidate candidate) {
+		}
+
+		private int rawPairCount() {
+			return rawPairCount;
+		}
+
+		private List<String> rawPairs() {
+			return List.copyOf(rawPairs);
 		}
 	}
 

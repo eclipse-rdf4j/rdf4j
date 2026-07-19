@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Projection;
@@ -186,6 +187,25 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 
 		assertFalse(rules.contains("lmdb-inner-join-bound-lookup"),
 				() -> "A right-local BIND target cannot be consumed as an external lookup key: " + rules);
+	}
+
+	@Test
+	void innerBoundLookupRemainsAvailableWhenRightContainsCorrelatedExists() {
+		BindingSetAssignment selectedNames = values("branchName", VF.createLiteral("Branch 0"),
+				VF.createLiteral("Branch 1"));
+		StatementPattern name = new StatementPattern(new Var("branch"), new Var("namePredicate", P1),
+				new Var("branchName"));
+		StatementPattern locatedAt = new StatementPattern(new Var("copy"), new Var("locatedAtPredicate", P2),
+				new Var("branch"));
+		StatementPattern copyType = new StatementPattern(new Var("copy"), new Var("typePredicate", P1),
+				new Var("copyClass", VF.createIRI("urn:Copy")));
+		Filter right = new Filter(new Join(name, locatedAt), new Exists(copyType));
+
+		List<String> rules = applicableRuleIds(new Join(selectedNames, right));
+
+		assertTrue(rules.contains("lmdb-inner-join-bound-lookup"),
+				() -> "A correlated EXISTS inside the RHS must not suppress the legal VALUES-driven outer lookup: "
+						+ rules);
 	}
 
 	@Test

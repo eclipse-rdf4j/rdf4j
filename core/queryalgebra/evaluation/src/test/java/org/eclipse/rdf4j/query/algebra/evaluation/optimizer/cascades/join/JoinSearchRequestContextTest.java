@@ -27,6 +27,8 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingMask;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingUniverse;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Memo;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
@@ -36,6 +38,66 @@ import org.junit.jupiter.api.Test;
 class JoinSearchRequestContextTest {
 
 	private static final String JOIN_PACKAGE = "org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.";
+
+	@Test
+	void legacyContextRebasesDescriptorMasksIntoOneUniverseBeyondTheFirstWord() {
+		List<JoinFactorDescriptor> descriptors = new ArrayList<>();
+		for (int index = 0; index < 70; index++) {
+			String binding = "binding" + index;
+			descriptors.add(new JoinFactorDescriptor(index, index,
+					statementPattern("s" + index, "p", "o" + index), Set.of(binding), Set.of(binding),
+					index == 69 ? Set.of("binding68") : Set.of()));
+		}
+		JoinSearchContext context = new JoinSearchContext(descriptors, Set.of("binding67"), PhysicalProperties.ANY,
+				OptimizationGoal.BAG_SEMANTICS, OptimizationGoal.RowGoal.ALL,
+				JoinFactorCostModel.EstimationTier.STANDARD);
+
+		for (int index = 0; index < descriptors.size(); index++) {
+			JoinFactorDescriptor descriptor = context.factor(index);
+			assertThat(context.bindingUniverse().names(descriptor.possibleBindings()))
+					.containsExactly("binding" + index);
+			assertThat(context.bindingUniverse().names(descriptor.assuredBindings()))
+					.containsExactly("binding" + index);
+		}
+		JoinFactorDescriptor finalDescriptor = context.factor(69);
+		assertThat(finalDescriptor.possibleBindings().contains(context.bindingUniverse().symbol("binding69"))).isTrue();
+		assertThat(context.bindingUniverse().names(finalDescriptor.requiredInputBindings()))
+				.containsExactly("binding68");
+		assertThat(context.initiallyBoundBindings().contains(context.bindingUniverse().symbol("binding67"))).isTrue();
+	}
+
+	@Test
+	void contributorContextCarriesQueryLocalMasksBeyondTheFirstWord() throws Exception {
+		BindingUniverse universe = BindingUniverse.create();
+		List<String> names = new ArrayList<>();
+		for (int index = 0; index < 70; index++) {
+			names.add("binding" + index);
+		}
+		BindingMask possible = universe.maskOf(names);
+		BindingMask required = universe.maskOf(Set.of("binding69"));
+
+		Class<?> descriptorType = Class.forName(JOIN_PACKAGE + "JoinFactorDescriptor");
+		Constructor<?> descriptorConstructor = descriptorType.getConstructor(int.class, int.class, TupleExpr.class,
+				BindingUniverse.class, BindingMask.class, BindingMask.class, BindingMask.class);
+		Object descriptor = descriptorConstructor.newInstance(0, 1, statementPattern("s", "p", "o"), universe,
+				possible, possible, required);
+
+		Class<?> contextType = Class.forName(JOIN_PACKAGE + "JoinSearchContext");
+		Constructor<?> contextConstructor = contextType.getConstructor(List.class, BindingUniverse.class,
+				BindingMask.class, PhysicalProperties.class, String.class, OptimizationGoal.RowGoal.class,
+				JoinFactorCostModel.EstimationTier.class);
+		Object context = contextConstructor.newInstance(List.of(descriptor), universe, required,
+				PhysicalProperties.ANY, OptimizationGoal.BAG_SEMANTICS, OptimizationGoal.RowGoal.ALL,
+				JoinFactorCostModel.EstimationTier.STANDARD);
+
+		assertThat(invoke(descriptor, "possibleBindings")).isEqualTo(possible);
+		assertThat(invoke(descriptor, "requiredInputBindings")).isEqualTo(required);
+		assertThat(invoke(context, "bindingUniverse")).isSameAs(universe);
+		assertThat(invokeUnchecked(context, "factor", int.class, 0)).isSameAs(descriptor);
+		assertThat(invoke(context, "initiallyBoundBindings")).isEqualTo(required);
+		assertThat(((BindingMask) invoke(context, "initiallyBoundBindings")).contains(universe.symbol("binding69")))
+				.isTrue();
+	}
 
 	@Test
 	void contributorContextIsOccurrenceScopedGoalAwareAndMutationIsolated() throws Exception {

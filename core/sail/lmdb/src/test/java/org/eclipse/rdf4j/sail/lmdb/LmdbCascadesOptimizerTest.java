@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -31,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Bound;
@@ -220,6 +222,33 @@ class LmdbCascadesOptimizerTest {
 	}
 
 	@Test
+	void statementPatternExactEstimateIsCachedPerDataRevision() throws IOException {
+		ValueStore valueStore = mock(ValueStore.class);
+		TripleStore tripleStore = mock(TripleStore.class);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		org.eclipse.rdf4j.model.IRI predicate = vf.createIRI("urn:test:p");
+		StatementPattern pattern = new StatementPattern(new Var("s"), new Var("p", predicate), new Var("o"));
+		AtomicLong dataRevision = new AtomicLong(7L);
+		when(valueStore.getId(predicate)).thenReturn(2L);
+		when(tripleStore.getDataRevision()).thenAnswer(ignored -> dataRevision.get());
+		when(tripleStore.exactCardinality(LmdbValue.UNKNOWN_ID, 2L, LmdbValue.UNKNOWN_ID,
+				LmdbValue.UNKNOWN_ID)).thenAnswer(ignored -> dataRevision.get() == 7L ? 3.0d : 4.0d);
+
+		LmdbStatementPatternCardinalitySource source = new LmdbStatementPatternCardinalitySource(valueStore,
+				tripleStore);
+
+		assertEquals(3.0d, source.estimateExact(pattern));
+		assertEquals(3.0d, source.estimateExact(pattern));
+		verify(tripleStore).exactCardinality(LmdbValue.UNKNOWN_ID, 2L, LmdbValue.UNKNOWN_ID,
+				LmdbValue.UNKNOWN_ID);
+
+		dataRevision.incrementAndGet();
+		assertEquals(4.0d, source.estimateExact(pattern));
+		verify(tripleStore, times(2)).exactCardinality(LmdbValue.UNKNOWN_ID, 2L, LmdbValue.UNKNOWN_ID,
+				LmdbValue.UNKNOWN_ID);
+	}
+
+	@Test
 	void factorCostEstimateExposesRobustEstimateVector() {
 		JoinFactorCostModel.FactorCostEstimate estimate = new JoinFactorCostModel.FactorCostEstimate(50.0d, 10.0d,
 				Map.of(), robustMetrics(), true, true, 0, 0, 12.0d);
@@ -337,6 +366,8 @@ class LmdbCascadesOptimizerTest {
 				"Optional anchored lookup is a costed RDF4J LeftJoin alternative, not a separate executable subtree; "
 						+ "Cascades must still plan and install child winners");
 		assertEquals("lmdb-optional-anchor-decomposed", application.metadata());
+		assertEquals(Set.of(1), application.locallyCostedInputIndexes(),
+				"The local OPTIONAL lookup cost reprices its selected RHS; the planner must not add that child twice");
 	}
 
 	@Test
@@ -621,10 +652,13 @@ class LmdbCascadesOptimizerTest {
 						.optimize(optional, OptimizationGoal.root(optional, PhysicalProperties.ANY)
 								.asBudgeted(Duration.ofSeconds(10), 4096));
 
-		String trace = String.join("\n", telemetry.trace());
-		assertTrue(plan.winner().isPresent(), trace);
-		assertTrue(trace.contains("accepted group=") && trace.contains("rule=lmdb-optional-rhs-anchored-lookup"),
-				"Budgeted search must retain the decomposed optional alternative when child winners are costed.\n"
+		String trace = "searchStatus=" + plan.searchStatus() + "\n" + String.join("\n", telemetry.trace());
+		Winner winner = plan.winner().orElseThrow(() -> new AssertionError(trace));
+		assertEquals("optionalAnchoredLookup", winner.deliveredProperties().accessPath(), trace);
+		assertTrue(winner.proofs()
+				.stream()
+				.anyMatch(proof -> "lmdb-optional-rhs-anchored-lookup".equals(proof.ruleId())),
+				"Budgeted search must select the decomposed optional alternative after costing its child winners.\n"
 						+ trace);
 		assertFalse(trace.contains("lmdb-optional-rhs-anchored-lookup reason=missing-input-winner"), trace);
 	}

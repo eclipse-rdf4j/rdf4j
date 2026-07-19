@@ -13,7 +13,6 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -22,6 +21,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.function.LongPredicate;
 
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -34,20 +34,28 @@ import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.EstimationTier;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingMask;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingUniverse;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.EstimateSnapshot;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ScalarDependencyAnalyzer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StreamBindingSchema;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinCardinalityModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinFactor;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinFactorDescriptor;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSearchContributor;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSearchRequest;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinTree;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.LogSelectivity;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.PrimitiveDphypJoinSearchContributor;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.lmdb.hypergraph.CostModel;
+import org.eclipse.rdf4j.sail.lmdb.hypergraph.Hypergraph;
 import org.eclipse.rdf4j.sail.lmdb.hypergraph.HypergraphOptimizer;
 import org.eclipse.rdf4j.sail.lmdb.hypergraph.JoinPlan;
 import org.eclipse.rdf4j.sail.lmdb.hypergraph.NodeSets;
 import org.eclipse.rdf4j.sail.lmdb.hypergraph.PlanHypergraph;
+import org.eclipse.rdf4j.sail.lmdb.hypergraph.SubgraphEnumerator;
 
 /**
  * Flag-gated DPhyp adapter for {@link LmdbCascadesConnectedJoinPlanner}: maps an inner-join island onto the
@@ -59,10 +67,9 @@ import org.eclipse.rdf4j.sail.lmdb.hypergraph.PlanHypergraph;
  * variable, and the island must have at least two factors whose dependency hypergraph is connected. Opaque required
  * bindings become hyperedges, so an opaque factor cannot enter before the factors that supply its inputs.
  * <p>
- * Estimates reuse the same {@link JoinFactorCostModel} probes as the left-deep planner: base cardinalities come from
- * unbound-context probes, per-edge join selectivities are derived from pairwise conditional probes (selectivity =
- * rows(j joined onto i) / (rows(i) × rows(j))), and nested-loop lookup costs from bound-context probes. Row estimates
- * inside the search are canonical per node set, so every join tree of the same factors gets the same cardinality.
+ * The scoped Cascades route builds a payload-free connectivity graph and streams raw CSG-CMP pairs into the shared
+ * join-region memo. The compatibility winner-tree route still reuses the LMDB {@link JoinFactorCostModel} probes while
+ * migration parity is established.
  */
 final class LmdbHypergraphJoinPlanner {
 
@@ -107,9 +114,14 @@ final class LmdbHypergraphJoinPlanner {
 	static Optional<LmdbCascadesConnectedJoinPlanner.Plan> tryPlan(List<TupleExpr> factors,
 			Set<String> initialBoundVars, JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics,
 			EstimationTier estimationTier, LmdbCascadesConnectedJoinPlanner.Trace trace) {
+		if (factors.size() > Hypergraph.MAX_NODES) {
+			traceDecline(trace, "factor-count=" + factors.size() + " exceeds-long-hypergraph-capacity="
+					+ Hypergraph.MAX_NODES);
+			return Optional.empty();
+		}
 		List<FactorInput> factorInputs = factorInputs(factors, initialBoundVars);
 		Optional<RawPlan> rawPlan = tryRawPlan(factorInputs, initialBoundVars, costModel, fallbackStatistics,
-				estimationTier, trace, null);
+				estimationTier, trace, scalarPlacementDependencies(factors));
 		if (rawPlan.isEmpty()) {
 			return Optional.empty();
 		}
@@ -122,22 +134,32 @@ final class LmdbHypergraphJoinPlanner {
 		return Optional.of(plan);
 	}
 
+	private static long[] scalarPlacementDependencies(List<TupleExpr> factors) {
+		long[] requiredNodes = new long[factors.size()];
+		for (int barrier = 0; barrier < factors.size(); barrier++) {
+			if (!LmdbOpaqueJoinFactorPolicy.requiresScalarPlacementBarrier(factors.get(barrier))) {
+				continue;
+			}
+			for (int earlier = 0; earlier < barrier; earlier++) {
+				requiredNodes[barrier] |= NodeSets.bit(earlier);
+			}
+			for (int later = barrier + 1; later < factors.size(); later++) {
+				requiredNodes[later] |= NodeSets.bit(barrier);
+			}
+		}
+		return requiredNodes;
+	}
+
 	static Optional<LmdbDphypJoinCandidate> tryCandidate(JoinSearchRequest request,
 			JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics) {
 		List<JoinFactor> regionFactors = request.region().factors();
+		if (regionFactors.size() > Hypergraph.MAX_NODES) {
+			return Optional.empty();
+		}
 		if (request.context().factorDescriptors().size() < regionFactors.size()) {
 			return Optional.empty();
 		}
-		List<FactorInput> factorInputs = new ArrayList<>(regionFactors.size());
-		for (JoinFactor factor : regionFactors) {
-			JoinFactorDescriptor descriptor = request.context().factor(factor.occurrenceId());
-			if (descriptor.groupId() != factor.groupId()) {
-				throw new IllegalArgumentException("join-factor occurrence " + factor.occurrenceId()
-						+ " maps to memo group " + descriptor.groupId() + " but region requires " + factor.groupId());
-			}
-			factorInputs.add(new FactorInput(descriptor.tupleExprTemplate(), descriptor.possibleBindingNames(),
-					descriptor.assuredBindingNames(), descriptor.requiredInputBindingNames()));
-		}
+		List<FactorInput> factorInputs = requestFactorInputs(request, regionFactors);
 		Optional<RawPlan> rawPlan = tryRawPlan(factorInputs, request.context().initiallyBoundVars(), costModel,
 				fallbackStatistics, request.context().estimationTier(),
 				LmdbCascadesConnectedJoinPlanner.Trace.create(), requiredNodes(request, regionFactors));
@@ -154,13 +176,125 @@ final class LmdbHypergraphJoinPlanner {
 				raw.degraded()));
 	}
 
+	static JoinSearchContributor.Outcome contributePartitions(JoinSearchRequest request,
+			LongPredicate hasCandidateSubset,
+			PrimitiveDphypJoinSearchContributor.PartitionSink sink) {
+		List<JoinFactor> regionFactors = request.region().factors();
+		int factorCount = regionFactors.size();
+		if (factorCount > Hypergraph.MAX_NODES) {
+			return JoinSearchContributor.Outcome.unsupported("factor-count=" + factorCount
+					+ " exceeds-long-hypergraph-capacity=" + Hypergraph.MAX_NODES);
+		}
+		int configuredMaxFactors = maxFactors();
+		if (factorCount > configuredMaxFactors) {
+			return JoinSearchContributor.Outcome.unsupported("factor-count=" + factorCount
+					+ " exceeds configured DPhyp eligibility=" + configuredMaxFactors);
+		}
+		if (request.context().factorDescriptors().size() < factorCount) {
+			return JoinSearchContributor.Outcome.unsupported("missing factor descriptors for DPhyp region");
+		}
+		List<FactorInput> factorInputs = requestFactorInputs(request, regionFactors);
+		long[] requiredNodes = requiredNodes(request, regionFactors);
+		Optional<Hypergraph> topology = prepareTopologyGraph(factorInputs,
+				request.context().initiallyBoundBindings(), requiredNodes);
+		if (topology.isEmpty()) {
+			return JoinSearchContributor.Outcome.unsupported(
+					"LMDB DPhyp could not prepare a dependency-free inner topology for this join region");
+		}
+
+		for (int node = 0; node < factorCount; node++) {
+			long singleton = NodeSets.bit(node);
+			if (!hasCandidateSubset.test(singleton)) {
+				return JoinSearchContributor.Outcome.unsupported(
+						"scoped memo has no candidate for DPhyp base factor " + node);
+			}
+		}
+
+		boolean[] stoppedBySink = { false };
+		boolean aborted = SubgraphEnumerator.enumerateConnectedPartitions(topology.orElseThrow(),
+				new SubgraphEnumerator.Receiver() {
+					@Override
+					public boolean hasSeen(long nodeSet) {
+						return hasCandidateSubset.test(nodeSet);
+					}
+
+					@Override
+					public boolean foundSingleNode(int nodeIdx) {
+						return false;
+					}
+
+					@Override
+					public boolean foundSubgraphPair(long left, long right, int edgeIdx) {
+						stoppedBySink[0] = sink.accept(left, right);
+						return stoppedBySink[0];
+					}
+				});
+		if (aborted || stoppedBySink[0]) {
+			return JoinSearchContributor.Outcome.budgetExhausted("DPhyp partition sink stopped enumeration");
+		}
+		return new JoinSearchContributor.Outcome(JoinSearchContributor.Status.COMPLETED,
+				"enumerated connected DPhyp partitions");
+	}
+
+	/** Builds only the structural graph used to discover connected partitions for the shared Cascades memo. */
+	private static Optional<Hypergraph> prepareTopologyGraph(List<FactorInput> factorInputs,
+			BindingMask initiallyBoundBindings, long[] requiredNodes) {
+		int factorCount = factorInputs.size();
+		if (factorCount < MIN_FACTORS || factorCount > Hypergraph.MAX_NODES
+				|| requiredNodes == null || requiredNodes.length != factorCount) {
+			return Optional.empty();
+		}
+		factorBindingUniverse(factorInputs);
+		BindingMask initial = initiallyBoundBindings == null ? BindingMask.EMPTY : initiallyBoundBindings;
+		List<BindingMask> factorJoinBindings = new ArrayList<>(factorCount);
+		Hypergraph graph = new Hypergraph();
+		for (int node = 0; node < factorCount; node++) {
+			FactorInput input = factorInputs.get(node);
+			if (!LmdbJoinIslandConnectivity.supportedFactor(input.tupleExpr()) || requiredNodes[node] != 0L) {
+				return Optional.empty();
+			}
+			BindingMask unresolvedInputs = input.requiredInputBindings().minus(initial);
+			if (!unresolvedInputs.isEmpty()) {
+				return Optional.empty();
+			}
+			factorJoinBindings.add(input.possibleBindings().minus(initial));
+			graph.addNode();
+		}
+		for (int left = 0; left < factorCount; left++) {
+			for (int right = left + 1; right < factorCount; right++) {
+				if (factorJoinBindings.get(left).intersects(factorJoinBindings.get(right))) {
+					graph.addEdge(NodeSets.bit(left), NodeSets.bit(right));
+				}
+			}
+		}
+		return Optional.of(graph);
+	}
+
+	private static List<FactorInput> requestFactorInputs(JoinSearchRequest request, List<JoinFactor> regionFactors) {
+		BindingUniverse universe = request.context().bindingUniverse();
+		List<FactorInput> factorInputs = new ArrayList<>(regionFactors.size());
+		for (JoinFactor factor : regionFactors) {
+			JoinFactorDescriptor descriptor = request.context().factor(factor.occurrenceId());
+			if (descriptor.groupId() != factor.groupId()) {
+				throw new IllegalArgumentException("join-factor occurrence " + factor.occurrenceId()
+						+ " maps to memo group " + descriptor.groupId() + " but region requires " + factor.groupId());
+			}
+			factorInputs.add(new FactorInput(descriptor.tupleExprTemplate(), universe, descriptor.possibleBindings(),
+					descriptor.assuredBindings(), descriptor.requiredInputBindings()));
+		}
+		return factorInputs;
+	}
+
 	private static List<FactorInput> factorInputs(List<TupleExpr> factors, Set<String> initialBoundVars) {
 		Set<String> availableBefore = new HashSet<>(LmdbJoinPlanSupport.plannerBindingNames(initialBoundVars));
+		BindingUniverse universe = BindingUniverse.create();
+		universe.maskOf(availableBefore);
 		List<FactorInput> inputs = new ArrayList<>(factors.size());
 		for (TupleExpr factor : factors) {
 			StreamBindingSchema schema = StreamBindingSchema.from(factor);
 			Set<String> requiredInputs = occurrenceRequiredInputs(factor, availableBefore);
-			inputs.add(new FactorInput(factor, schema.possible(), schema.assured(), requiredInputs));
+			inputs.add(new FactorInput(factor, universe, universe.maskOf(schema.possible()),
+					universe.maskOf(schema.assured()), universe.maskOf(requiredInputs)));
 			availableBefore.addAll(schema.possible());
 		}
 		return List.copyOf(inputs);
@@ -183,25 +317,62 @@ final class LmdbHypergraphJoinPlanner {
 	private static Optional<RawPlan> tryRawPlan(List<FactorInput> factorInputs, Set<String> initialBoundVars,
 			JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics, EstimationTier estimationTier,
 			LmdbCascadesConnectedJoinPlanner.Trace trace, long[] requiredNodesFromRegion) {
+		Optional<PreparedGraph> preparedResult = prepareGraph(factorInputs, initialBoundVars, costModel,
+				fallbackStatistics, estimationTier, trace, requiredNodesFromRegion);
+		if (preparedResult.isEmpty()) {
+			return Optional.empty();
+		}
+		PreparedGraph prepared = preparedResult.orElseThrow();
+		ProbingCostModel adapterCostModel = new ProbingCostModel(prepared.factors(), prepared.bindingUniverse(),
+				prepared.factorJoinBindings(), prepared.initialBindings(), prepared.seedSteps(), costModel,
+				fallbackStatistics, prepared.tier());
+		Optional<JoinPlan> best = prepared.simplified()
+				? Optional.empty()
+				: HypergraphOptimizer.bestPlan(prepared.planGraph(), adapterCostModel, pairBudget());
+		boolean degraded = prepared.simplified() || best.isEmpty();
+		if (degraded) {
+			best = HypergraphOptimizer.greedyPlan(prepared.planGraph(), adapterCostModel);
+		}
+		if (best.isEmpty()) {
+			traceDecline(trace, "no-full-plan (disconnected island or pair budget exhausted)");
+			return Optional.empty();
+		}
+		JoinPlan winner = best.get();
+		if (trace.enabled()) {
+			trace.add("dphyp winner " + winner.describe(prepared.planGraph()::nodeName) + " rows="
+					+ winner.rows() + " rankCost=" + winner.cost());
+		}
+		return Optional.of(new RawPlan(winner, prepared.factorInputs(), prepared.seedSteps(), prepared.factorCount(),
+				adapterCostModel, degraded));
+	}
+
+	private static Optional<PreparedGraph> prepareGraph(List<FactorInput> factorInputs, Set<String> initialBoundVars,
+			JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics, EstimationTier estimationTier,
+			LmdbCascadesConnectedJoinPlanner.Trace trace, long[] requiredNodesFromRegion) {
 		EstimationTier tier = estimationTier == null ? EstimationTier.STANDARD : estimationTier;
 		int factorCount = factorInputs.size();
+		if (factorCount > Hypergraph.MAX_NODES) {
+			traceDecline(trace, "factor-count=" + factorCount + " exceeds-long-hypergraph-capacity="
+					+ Hypergraph.MAX_NODES);
+			return Optional.empty();
+		}
 		if (factorCount < MIN_FACTORS) {
 			traceDecline(trace, "factor-count=" + factorCount);
 			return Optional.empty();
 		}
 		boolean simplified = factorCount > maxFactors();
-		Set<String> initial = LmdbJoinPlanSupport.plannerBindingNames(initialBoundVars);
+		BindingUniverse universe = factorBindingUniverse(factorInputs);
+		BindingMask initialBindings = universe.maskOf(initialBoundVars);
+		Set<String> initial = universe.names(initialBindings);
 		List<TupleExpr> factors = factorInputs.stream().map(FactorInput::tupleExpr).toList();
-		List<Set<String>> factorJoinVars = new ArrayList<>(factorCount);
+		List<BindingMask> factorJoinBindings = new ArrayList<>(factorCount);
 		for (FactorInput factorInput : factorInputs) {
 			TupleExpr factor = factorInput.tupleExpr();
 			if (!LmdbJoinIslandConnectivity.supportedFactor(factor)) {
 				traceDecline(trace, "unsupported factor " + factor.getSignature());
 				return Optional.empty();
 			}
-			Set<String> vars = new HashSet<>(factorInput.possibleBindingNames());
-			vars.removeAll(initial);
-			factorJoinVars.add(vars);
+			factorJoinBindings.add(factorInput.possibleBindings().minus(initialBindings));
 		}
 		PlanHypergraph planGraph = new PlanHypergraph();
 		LmdbCascadesConnectedJoinPlanner.Step[] seedSteps = new LmdbCascadesConnectedJoinPlanner.Step[factorCount];
@@ -214,67 +385,66 @@ final class LmdbHypergraphJoinPlanner {
 				return Optional.empty();
 			}
 			seedSteps[i] = step;
-			baseRows[i] = step.outputRows() == 0.0d && !step.exactOutputRows()
-					? MIN_NON_EXACT_ROWS
-					: Math.max(step.outputRows(), MIN_ROWS);
+			double outputRows = step.outputRows();
+			if (!(Double.isFinite(outputRows) && outputRows >= 0.0d)) {
+				traceDecline(trace, "invalid-seed-estimate f" + i + " rows=" + outputRows);
+				return Optional.empty();
+			}
+			baseRows[i] = outputRows == 0.0d && !step.exactOutputRows() ? MIN_NON_EXACT_ROWS : outputRows;
 			planGraph.addNode("f" + i, baseRows[i]);
+			if (trace.enabled()) {
+				trace.add("dphyp seed f" + i + " rows=" + baseRows[i] + " work=" + step.workRows()
+						+ " exact=" + step.exactOutputRows() + " source="
+						+ step.stringMetrics().get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
+			}
 		}
-		long[] dependencyNodes = dependencyNodes(factorInputs, factors, factorJoinVars, initial, baseRows, costModel,
-				fallbackStatistics, tier);
+		long[] dependencyNodes = dependencyNodes(factorInputs, factors, universe, factorJoinBindings, initialBindings,
+				baseRows, costModel, fallbackStatistics, tier);
 		mergeRequiredNodes(dependencyNodes, requiredNodesFromRegion);
 		for (int i = 0; i < factorCount; i++) {
 			planGraph.setRequiredNodes(i, dependencyNodes[i]);
 		}
 		for (int i = 0; i < factorCount; i++) {
 			for (int j = i + 1; j < factorCount; j++) {
-				Set<String> shared = new TreeSet<>(factorJoinVars.get(i));
-				shared.retainAll(factorJoinVars.get(j));
+				BindingMask shared = factorJoinBindings.get(i).intersect(factorJoinBindings.get(j));
 				if (shared.isEmpty()) {
 					continue;
 				}
-				double selectivity = edgeSelectivity(factors, i, j, initial, factorJoinVars, baseRows, costModel,
-						fallbackStatistics, tier);
+				LogSelectivity selectivity = edgeSelectivity(factors, i, j, universe, initialBindings,
+						factorJoinBindings, baseRows, costModel, fallbackStatistics, tier);
+				if (trace.enabled()) {
+					trace.add("dphyp edge f" + i + "-f" + j + " selectivity=" + selectivity);
+				}
+				String equalityClass = String.join(",", new TreeSet<>(universe.names(shared)));
 				boolean additionalPathEndpoint = (path(factors.get(i)) && dependencyNodes[i] != 0L
 						&& !NodeSets.overlaps(dependencyNodes[i], NodeSets.bit(j)))
 						|| (path(factors.get(j)) && dependencyNodes[j] != 0L
 								&& !NodeSets.overlaps(dependencyNodes[j], NodeSets.bit(i)));
 				if ((dependencyNodes[i] != 0L || dependencyNodes[j] != 0L) && !additionalPathEndpoint) {
-					planGraph.addPredicate(NodeSets.bit(i) | NodeSets.bit(j), selectivity, String.join(",", shared));
+					planGraph.addEqualityPredicate(NodeSets.bit(i) | NodeSets.bit(j), selectivity,
+							equalityClass);
 				} else {
-					planGraph.addJoinEdge(NodeSets.bit(i), NodeSets.bit(j), selectivity, String.join(",", shared));
+					planGraph.addEqualityJoinEdge(NodeSets.bit(i), NodeSets.bit(j), selectivity,
+							equalityClass);
 				}
 			}
 		}
-		addFiniteAnchorSimplificationEdges(planGraph, factors, factorJoinVars, baseRows);
+		addFiniteAnchorSimplificationEdges(planGraph, factors, factorJoinBindings, baseRows);
 		for (int i = 0; i < factorCount; i++) {
 			long requiredNodes = dependencyNodes[i];
 			if (requiredNodes != 0L) {
-				planGraph.addJoinEdge(requiredNodes, NodeSets.bit(i), 1.0d,
-						"opaque-required:" + String.join(",",
-								new TreeSet<>(factorInputs.get(i).requiredInputBindingNames())));
+				planGraph.addConnectivityEdge(requiredNodes, NodeSets.bit(i));
 			}
 		}
-
-		ProbingCostModel adapterCostModel = new ProbingCostModel(factors, factorJoinVars, initial, seedSteps, costModel,
-				fallbackStatistics, tier);
-		Optional<JoinPlan> best = simplified
-				? Optional.empty()
-				: HypergraphOptimizer.bestPlan(planGraph, adapterCostModel, pairBudget());
-		boolean degraded = simplified || best.isEmpty();
-		if (degraded) {
-			best = HypergraphOptimizer.greedyPlan(planGraph, adapterCostModel);
-		}
-		if (best.isEmpty()) {
-			traceDecline(trace, "no-full-plan (disconnected island or pair budget exhausted)");
+		JoinCardinalityModel.Estimate fullCardinality = planGraph.cardinalityEstimate(planGraph.graph().allNodes());
+		if (fullCardinality.hasUnavailableEvidence() && !fullCardinality.exactZero()) {
+			traceDecline(trace, "unavailable-join-selectivity after estimator fallback count="
+					+ fullCardinality.unavailableEvidenceCount());
 			return Optional.empty();
 		}
-		JoinPlan winner = best.get();
-		if (trace.enabled()) {
-			trace.add("dphyp winner " + winner.describe(planGraph::nodeName) + " rows="
-					+ winner.rows() + " rankCost=" + winner.cost());
-		}
-		return Optional.of(new RawPlan(winner, List.copyOf(factorInputs), seedSteps, factorCount, adapterCostModel,
-				degraded));
+
+		return Optional.of(new PreparedGraph(planGraph, List.copyOf(factorInputs), seedSteps, factorCount,
+				List.copyOf(factors), universe, List.copyOf(factorJoinBindings), initialBindings, tier, simplified));
 	}
 
 	private static long[] requiredNodes(JoinSearchRequest request, List<JoinFactor> factors) {
@@ -328,24 +498,46 @@ final class LmdbHypergraphJoinPlanner {
 			boolean degraded) {
 	}
 
-	private record FactorInput(TupleExpr tupleExpr, Set<String> possibleBindingNames,
-			Set<String> assuredBindingNames, Set<String> requiredInputBindingNames) {
+	private record PreparedGraph(PlanHypergraph planGraph, List<FactorInput> factorInputs,
+			LmdbCascadesConnectedJoinPlanner.Step[] seedSteps, int factorCount, List<TupleExpr> factors,
+			BindingUniverse bindingUniverse, List<BindingMask> factorJoinBindings, BindingMask initialBindings,
+			EstimationTier tier, boolean simplified) {
+	}
+
+	private record FactorInput(TupleExpr tupleExpr, BindingUniverse bindingUniverse, BindingMask possibleBindings,
+			BindingMask assuredBindings, BindingMask requiredInputBindings) {
 
 		private FactorInput {
 			if (tupleExpr == null) {
 				throw new IllegalArgumentException("join factor template must not be null");
 			}
-			possibleBindingNames = LmdbJoinPlanSupport.plannerBindingNames(possibleBindingNames);
-			assuredBindingNames = LmdbJoinPlanSupport.plannerBindingNames(assuredBindingNames);
-			requiredInputBindingNames = LmdbJoinPlanSupport.plannerBindingNames(requiredInputBindingNames);
-			if (!possibleBindingNames.containsAll(assuredBindingNames)) {
+			if (bindingUniverse == null) {
+				throw new IllegalArgumentException("join factor binding universe must not be null");
+			}
+			possibleBindings = possibleBindings == null ? BindingMask.EMPTY : possibleBindings;
+			assuredBindings = assuredBindings == null ? BindingMask.EMPTY : assuredBindings;
+			requiredInputBindings = requiredInputBindings == null ? BindingMask.EMPTY : requiredInputBindings;
+			if (!possibleBindings.containsAll(assuredBindings)) {
 				throw new IllegalArgumentException("assured factor bindings must be possible outputs");
 			}
 		}
 	}
 
+	private static BindingUniverse factorBindingUniverse(List<FactorInput> factorInputs) {
+		if (factorInputs.isEmpty()) {
+			throw new IllegalArgumentException("join factors must not be empty");
+		}
+		BindingUniverse universe = factorInputs.get(0).bindingUniverse();
+		for (int index = 1; index < factorInputs.size(); index++) {
+			if (factorInputs.get(index).bindingUniverse() != universe) {
+				throw new IllegalArgumentException("join factor masks must share one binding universe");
+			}
+		}
+		return universe;
+	}
+
 	private static void addFiniteAnchorSimplificationEdges(PlanHypergraph graph, List<TupleExpr> factors,
-			List<Set<String>> factorJoinVars, double[] baseRows) {
+			List<BindingMask> factorJoinBindings, double[] baseRows) {
 		for (int left = 0; left < factors.size(); left++) {
 			if (!(factors.get(left) instanceof BindingSetAssignment) || baseRows[left] > MAX_FINITE_ANCHOR_ROWS) {
 				continue;
@@ -353,20 +545,20 @@ final class LmdbHypergraphJoinPlanner {
 			for (int right = left + 1; right < factors.size(); right++) {
 				if (!(factors.get(right) instanceof BindingSetAssignment)
 						|| baseRows[right] > MAX_FINITE_ANCHOR_ROWS
-						|| !Collections.disjoint(factorJoinVars.get(left), factorJoinVars.get(right))
-						|| !hasCommonBridge(left, right, factorJoinVars)) {
+						|| factorJoinBindings.get(left).intersects(factorJoinBindings.get(right))
+						|| !hasCommonBridge(left, right, factorJoinBindings)) {
 					continue;
 				}
-				graph.addJoinEdge(NodeSets.bit(left), NodeSets.bit(right), 1.0d, "bounded-finite-anchor");
+				graph.addConnectivityEdge(NodeSets.bit(left), NodeSets.bit(right));
 			}
 		}
 	}
 
-	private static boolean hasCommonBridge(int left, int right, List<Set<String>> factorJoinVars) {
-		for (int bridge = 0; bridge < factorJoinVars.size(); bridge++) {
+	private static boolean hasCommonBridge(int left, int right, List<BindingMask> factorJoinBindings) {
+		for (int bridge = 0; bridge < factorJoinBindings.size(); bridge++) {
 			if (bridge != left && bridge != right
-					&& !Collections.disjoint(factorJoinVars.get(left), factorJoinVars.get(bridge))
-					&& !Collections.disjoint(factorJoinVars.get(right), factorJoinVars.get(bridge))) {
+					&& factorJoinBindings.get(left).intersects(factorJoinBindings.get(bridge))
+					&& factorJoinBindings.get(right).intersects(factorJoinBindings.get(bridge))) {
 				return true;
 			}
 		}
@@ -374,36 +566,35 @@ final class LmdbHypergraphJoinPlanner {
 	}
 
 	private static long[] dependencyNodes(List<FactorInput> factorInputs, List<TupleExpr> factors,
-			List<Set<String>> factorJoinVars, Set<String> initialBoundVars, double[] baseRows,
-			JoinFactorCostModel costModel,
+			BindingUniverse universe, List<BindingMask> factorJoinBindings, BindingMask initialBindings,
+			double[] baseRows, JoinFactorCostModel costModel,
 			EvaluationStatistics fallbackStatistics, EstimationTier tier) {
 		long[] dependencies = new long[factors.size()];
 		for (int i = 0; i < factors.size(); i++) {
-			if (factorJoinVars.get(i).isEmpty()) {
+			if (factorJoinBindings.get(i).isEmpty()) {
 				dependencies[i] = allNodesExcept(factors.size(), i);
 				continue;
 			}
-			Set<String> requiredVars = new HashSet<>(factorInputs.get(i).requiredInputBindingNames());
-			requiredVars.removeAll(initialBoundVars);
+			BindingMask requiredBindings = factorInputs.get(i).requiredInputBindings().minus(initialBindings);
 			long requiredNodes = 0L;
-			if (!requiredVars.isEmpty()) {
+			if (!requiredBindings.isEmpty()) {
 				for (int j = 0; j < factors.size(); j++) {
 					if (i == j) {
 						continue;
 					}
-					Set<String> supplied = new HashSet<>(factorJoinVars.get(j));
-					supplied.retainAll(requiredVars);
-					if (!supplied.isEmpty()) {
+					if (factorJoinBindings.get(j).intersects(requiredBindings)) {
 						requiredNodes |= NodeSets.bit(j);
 					}
 				}
 			}
-			if (path(factors.get(i))
-					&& pathEndpointNames(factors.get(i)).stream().noneMatch(initialBoundVars::contains)) {
-				long endpointProducer = cheapestEndpointProducer(i, pathEndpointNames(factors.get(i)), factors,
-						factorJoinVars, initialBoundVars, baseRows, costModel, fallbackStatistics, tier);
-				if (endpointProducer != 0L) {
-					requiredNodes |= endpointProducer;
+			if (path(factors.get(i))) {
+				BindingMask endpointBindings = universe.maskOf(pathEndpointNames(factors.get(i)));
+				if (!endpointBindings.intersects(initialBindings)) {
+					long endpointProducer = cheapestEndpointProducer(i, endpointBindings, factors, universe,
+							factorJoinBindings, initialBindings, baseRows, costModel, fallbackStatistics, tier);
+					if (endpointProducer != 0L) {
+						requiredNodes |= endpointProducer;
+					}
 				}
 			}
 			dependencies[i] = requiredNodes;
@@ -411,18 +602,18 @@ final class LmdbHypergraphJoinPlanner {
 		return dependencies;
 	}
 
-	private static long cheapestEndpointProducer(int pathNode, Set<String> endpoints, List<TupleExpr> factors,
-			List<Set<String>> factorJoinVars, Set<String> initialBoundVars, double[] baseRows,
-			JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics, EstimationTier tier) {
+	private static long cheapestEndpointProducer(int pathNode, BindingMask endpointBindings, List<TupleExpr> factors,
+			BindingUniverse universe, List<BindingMask> factorJoinBindings, BindingMask initialBindings,
+			double[] baseRows, JoinFactorCostModel costModel, EvaluationStatistics fallbackStatistics,
+			EstimationTier tier) {
 		int bestNode = -1;
 		int bestAnchorRank = Integer.MAX_VALUE;
 		double bestCost = Double.POSITIVE_INFINITY;
-		for (int i = 0; i < factorJoinVars.size(); i++) {
-			if (i == pathNode || factorJoinVars.get(i).stream().noneMatch(endpoints::contains)) {
+		for (int i = 0; i < factorJoinBindings.size(); i++) {
+			if (i == pathNode || !factorJoinBindings.get(i).intersects(endpointBindings)) {
 				continue;
 			}
-			Set<String> boundVars = new HashSet<>(initialBoundVars);
-			boundVars.addAll(factorJoinVars.get(i));
+			Set<String> boundVars = universe.names(initialBindings.union(factorJoinBindings.get(i)));
 			double outerRows = i < baseRows.length ? baseRows[i] : Double.NaN;
 			LmdbCascadesConnectedJoinPlanner.Step pathStep = LmdbCascadesConnectedJoinPlanner.estimateStep(factors,
 					pathNode, boundVars, outerRows, true, List.of(factors.get(i)), costModel, fallbackStatistics, tier);
@@ -483,44 +674,35 @@ final class LmdbHypergraphJoinPlanner {
 	 * {@code i}'s variables bound and {@code rows(i)} prefix rows yields the joined row count, so selectivity = output
 	 * / (rows(i) × rows(j)). In theory both probe directions describe the same joined cardinality; real estimators can
 	 * disagree, so both directions are probed and combined with a geometric mean (the natural average for
-	 * multiplicative quantities). Falls back to 1.0 (no reduction) when both probes fail; the clamp into (0, 1] happens
-	 * in {@link PlanHypergraph#addPredicate}.
+	 * multiplicative quantities). If both directions remain unavailable after the estimator's ordinary statistics
+	 * fallback, the typed unavailable result makes this DPhyp attempt decline instead of silently pricing the edge as
+	 * selectivity 1.
 	 */
-	private static double edgeSelectivity(List<TupleExpr> factors, int i, int j, Set<String> initial,
-			List<Set<String>> factorJoinVars, double[] baseRows, JoinFactorCostModel costModel,
+	private static LogSelectivity edgeSelectivity(List<TupleExpr> factors, int i, int j, BindingUniverse universe,
+			BindingMask initialBindings, List<BindingMask> factorJoinBindings, double[] baseRows,
+			JoinFactorCostModel costModel,
 			EvaluationStatistics fallbackStatistics, EstimationTier tier) {
-		double forward = directionalSelectivity(factors, i, j, initial, factorJoinVars, baseRows, costModel,
-				fallbackStatistics, tier);
-		double backward = directionalSelectivity(factors, j, i, initial, factorJoinVars, baseRows, costModel,
-				fallbackStatistics, tier);
-		if (Double.isNaN(forward)) {
-			return Double.isNaN(backward) ? 1.0d : backward;
-		}
-		if (Double.isNaN(backward)) {
-			return forward;
-		}
-		return Math.sqrt(forward * backward);
+		LogSelectivity forward = directionalSelectivity(factors, i, j, universe, initialBindings,
+				factorJoinBindings, baseRows, costModel, fallbackStatistics, tier);
+		LogSelectivity backward = directionalSelectivity(factors, j, i, universe, initialBindings,
+				factorJoinBindings, baseRows, costModel, fallbackStatistics, tier);
+		return LogSelectivity.geometricMean(forward, backward).cappedAtOne();
 	}
 
-	private static double directionalSelectivity(List<TupleExpr> factors, int boundFactor, int probedFactor,
-			Set<String> initial, List<Set<String>> factorJoinVars, double[] baseRows, JoinFactorCostModel costModel,
+	private static LogSelectivity directionalSelectivity(List<TupleExpr> factors, int boundFactor, int probedFactor,
+			BindingUniverse universe, BindingMask initialBindings, List<BindingMask> factorJoinBindings,
+			double[] baseRows, JoinFactorCostModel costModel,
 			EvaluationStatistics fallbackStatistics, EstimationTier tier) {
-		Set<String> boundVars = new HashSet<>(initial);
-		boundVars.addAll(factorJoinVars.get(boundFactor));
+		Set<String> boundVars = universe.names(initialBindings.union(factorJoinBindings.get(boundFactor)));
 		LmdbCascadesConnectedJoinPlanner.Step conditional = LmdbCascadesConnectedJoinPlanner.estimateStep(factors,
 				probedFactor, boundVars, baseRows[boundFactor], true, List.of(factors.get(boundFactor)), costModel,
 				fallbackStatistics, tier);
 		if (conditional == null) {
-			return Double.NaN;
+			return LogSelectivity.unavailable();
 		}
 		double joined = conditional.outputRows();
-		if (!Double.isFinite(joined) || joined < 0.0d) {
-			return Double.NaN;
-		}
-		if (joined == 0.0d && !conditional.exactOutputRows()) {
-			return Double.NaN;
-		}
-		return joined / (baseRows[boundFactor] * baseRows[probedFactor]);
+		return JoinCardinalityModel.directionalSelectivity(joined, conditional.exactOutputRows(),
+				baseRows[boundFactor], baseRows[probedFactor]);
 	}
 
 	/**
@@ -530,20 +712,23 @@ final class LmdbHypergraphJoinPlanner {
 	 */
 	private static final class ProbingCostModel implements CostModel {
 		private final List<TupleExpr> factors;
-		private final List<Set<String>> factorJoinVars;
-		private final Set<String> initial;
+		private final BindingUniverse bindingUniverse;
+		private final List<BindingMask> factorJoinBindings;
+		private final BindingMask initialBindings;
 		private final LmdbCascadesConnectedJoinPlanner.Step[] seedSteps;
 		private final JoinFactorCostModel costModel;
 		private final EvaluationStatistics fallbackStatistics;
 		private final EstimationTier tier;
 		private final Map<LookupKey, LookupProbe> lookupProbeCache = new HashMap<>();
 
-		private ProbingCostModel(List<TupleExpr> factors, List<Set<String>> factorJoinVars, Set<String> initial,
+		private ProbingCostModel(List<TupleExpr> factors, BindingUniverse bindingUniverse,
+				List<BindingMask> factorJoinBindings, BindingMask initialBindings,
 				LmdbCascadesConnectedJoinPlanner.Step[] seedSteps, JoinFactorCostModel costModel,
 				EvaluationStatistics fallbackStatistics, EstimationTier tier) {
 			this.factors = factors;
-			this.factorJoinVars = factorJoinVars;
-			this.initial = initial;
+			this.bindingUniverse = bindingUniverse;
+			this.factorJoinBindings = factorJoinBindings;
+			this.initialBindings = initialBindings;
 			this.seedSteps = seedSteps;
 			this.costModel = costModel;
 			this.fallbackStatistics = fallbackStatistics;
@@ -571,15 +756,16 @@ final class LmdbHypergraphJoinPlanner {
 			if (cached != null) {
 				return cached;
 			}
-			Set<String> boundVars = new HashSet<>(initial);
+			BindingMask boundBindings = initialBindings;
 			List<TupleExpr> prefixFactors = new ArrayList<>();
 			for (long rest = boundNodes; rest != 0; rest &= rest - 1L) {
 				int idx = Long.numberOfTrailingZeros(rest);
-				boundVars.addAll(factorJoinVars.get(idx));
+				boundBindings = boundBindings.union(factorJoinBindings.get(idx));
 				prefixFactors.add(factors.get(idx));
 			}
+			Set<String> boundVars = bindingUniverse.names(boundBindings);
 			LmdbCascadesConnectedJoinPlanner.Step step = LmdbCascadesConnectedJoinPlanner.estimateStep(factors,
-					nodeIdx, boundVars, Math.max(outerRows, MIN_ROWS), true, prefixFactors, costModel,
+					nodeIdx, boundVars, outerRows, true, prefixFactors, costModel,
 					fallbackStatistics, tier);
 			LookupProbe probe = step == null
 					? new LookupProbe(null, Double.NaN, Double.NaN)
@@ -610,7 +796,7 @@ final class LmdbHypergraphJoinPlanner {
 			workQErrorMax = Math.max(workQErrorMax, step.workQErrorMax());
 			confidence = Math.min(confidence, step.confidence());
 			evidenceCount += step.evidenceCount();
-			if (factorInputs.get(i).possibleBindingNames().isEmpty()) {
+			if (factorInputs.get(i).possibleBindings().isEmpty()) {
 				zeroVarFactorCount++;
 				cartesianFilterWorkRows += step.workRows();
 			}
@@ -677,19 +863,6 @@ final class LmdbHypergraphJoinPlanner {
 					? seedSteps[plan.right().scanNode()]
 					: lookupProbe.step();
 			boolean exactZeroLookup = rightStep.exactOutputRows() && lookupRows == 0.0d;
-			double lookupPassRatio = directLookupPassRatio(rightStep, factors.get(rightFactorIndex));
-			boolean physicalLookupEstimate = rightStep.stringMetrics()
-					.containsKey(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE);
-			if (exactZeroLookup) {
-				rows = 0.0d;
-			} else if (lookupRows > 0.0d && (physicalLookupEstimate || lookupPassRatio < 1.0d)) {
-				// The canonical node-set estimate already accounts for shared-variable equality. Only an additional
-				// local filter or a concrete LMDB access-path estimate may refine it during materialization.
-				rows = Math.min(rows, lookupRows);
-			}
-			if (singleRowDirectLookup(rightStep)) {
-				rows = Math.min(rows, left.rows() * lookupPassRatio);
-			}
 			double rightRows = lookupRows > 0.0d || exactZeroLookup ? lookupRows : plan.right().rows();
 			right = scanTupleExpr(plan.right(), factors, rightStep, rightRows, lookupWorkRows,
 					lookupWorkRows, exactZeroLookup);
@@ -698,10 +871,7 @@ final class LmdbHypergraphJoinPlanner {
 			right = toTupleExpr(plan.right(), factors, seedSteps, costModel);
 			workRows = left.workRows() + right.workRows();
 		}
-		boolean exactZeroRows = left.exactZeroRows() || right.exactZeroRows();
-		if (exactZeroRows) {
-			rows = 0.0d;
-		}
+		boolean exactZeroRows = rows == 0.0d;
 		Join join = new Join(left.tupleExpr(), right.tupleExpr());
 		join.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, ESTIMATE_SOURCE);
 		join.setStringMetricPlanned(TelemetryMetricNames.PLANNER_ALGORITHM, PLANNER_ALGORITHM_METRIC_VALUE);
@@ -716,27 +886,6 @@ final class LmdbHypergraphJoinPlanner {
 			join.setStringMetricPlanned("optimizer.joinAlgorithmHint", "hash");
 		}
 		return new ExportedPlan(join, rows, workRows, exactZeroRows);
-	}
-
-	private static boolean singleRowDirectLookup(LmdbCascadesConnectedJoinPlanner.Step step) {
-		if (step == null
-				|| !"directLookup".equals(
-						step.stringMetrics().get(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE))) {
-			return false;
-		}
-		double accessRows = step.doubleMetrics()
-				.getOrDefault(TelemetryMetricNames.PLANNED_ACCESS_ROWS,
-						Double.NaN);
-		return Double.isFinite(accessRows) && accessRows >= 0.0d && accessRows <= 1.0d;
-	}
-
-	private static double directLookupPassRatio(LmdbCascadesConnectedJoinPlanner.Step step, TupleExpr factor) {
-		double passRatio = step.doubleMetrics()
-				.getOrDefault(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO, Double.NaN);
-		if (!Double.isFinite(passRatio) && factor != null) {
-			passRatio = factor.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO);
-		}
-		return Double.isFinite(passRatio) && passRatio >= 0.0d && passRatio <= 1.0d ? passRatio : 1.0d;
 	}
 
 	private static ExportedPlan scanTupleExpr(JoinPlan plan, List<TupleExpr> factors,

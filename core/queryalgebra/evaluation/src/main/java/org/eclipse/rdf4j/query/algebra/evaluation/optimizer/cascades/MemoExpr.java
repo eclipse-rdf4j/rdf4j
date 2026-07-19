@@ -12,8 +12,10 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -27,7 +29,8 @@ public record MemoExpr(int id, int groupId, String operator, List<Integer> input
 		TupleExpr tupleExpr, PhysicalProperties deliveredProperties, List<PhysicalProperties> inputRequirements,
 		List<SemanticScope> inputSemanticRequirements, RuleKind kind, CostVector ruleCost,
 		List<RuleProof> proofs, EstimateSnapshot estimate, String structuralKey,
-		ImplementationForm implementationForm, List<MemoInput> inputs, List<MemoInput> executableInputs) {
+		ImplementationForm implementationForm, Set<Integer> locallyCostedInputIndexes, List<MemoInput> inputs,
+		List<MemoInput> executableInputs) {
 
 	public MemoExpr {
 		operator = operator == null || operator.isBlank() ? operatorName(tupleExpr) : operator;
@@ -42,13 +45,15 @@ public record MemoExpr(int id, int groupId, String operator, List<Integer> input
 		if (implementationForm == ImplementationForm.ATOMIC && !inputGroupIds.isEmpty()) {
 			throw new IllegalArgumentException("Atomic physical memo expression must not contain child groups");
 		}
+		locallyCostedInputIndexes = normalizeLocallyCostedInputIndexes(tupleExpr, kind, implementationForm,
+				locallyCostedInputIndexes);
 		ruleCost = ruleCost == null ? CostVector.ZERO : ruleCost;
 		proofs = proofs == null || proofs.isEmpty() ? List.of() : List.copyOf(proofs);
 		estimate = estimate == null ? EstimateSnapshot.cascades(ruleCost) : estimate.withRuleCost(ruleCost);
 		structuralKey = structuralKey == null || structuralKey.isBlank()
 				? structuralKey(operator, inputGroupIds, localMetadata, tupleExpr, deliveredProperties,
 						inputRequirements, inputSemanticRequirements,
-						kind, implementationForm, false)
+						kind, implementationForm, locallyCostedInputIndexes, false)
 				: structuralKey;
 		try {
 			inputs = MemoInputLayout.memoInputs(tupleExpr, inputGroupIds, inputRequirements,
@@ -61,6 +66,17 @@ public record MemoExpr(int id, int groupId, String operator, List<Integer> input
 		executableInputs = executableInputs(inputs);
 	}
 
+	/** Compatibility constructor for expressions created before physical child cost ownership was explicit. */
+	public MemoExpr(int id, int groupId, String operator, List<Integer> inputGroupIds, String localMetadata,
+			TupleExpr tupleExpr, PhysicalProperties deliveredProperties, List<PhysicalProperties> inputRequirements,
+			List<SemanticScope> inputSemanticRequirements, RuleKind kind, CostVector ruleCost,
+			List<RuleProof> proofs, EstimateSnapshot estimate, String structuralKey,
+			ImplementationForm implementationForm, List<MemoInput> inputs, List<MemoInput> executableInputs) {
+		this(id, groupId, operator, inputGroupIds, localMetadata, tupleExpr, deliveredProperties, inputRequirements,
+				inputSemanticRequirements, kind, ruleCost, proofs, estimate, structuralKey, implementationForm, Set.of(),
+				inputs, executableInputs);
+	}
+
 	/** Compatibility constructor for expressions created before typed child layouts were memo-local state. */
 	public MemoExpr(int id, int groupId, String operator, List<Integer> inputGroupIds, String localMetadata,
 			TupleExpr tupleExpr, PhysicalProperties deliveredProperties, List<PhysicalProperties> inputRequirements,
@@ -68,7 +84,8 @@ public record MemoExpr(int id, int groupId, String operator, List<Integer> input
 			List<RuleProof> proofs, EstimateSnapshot estimate, String structuralKey,
 			ImplementationForm implementationForm) {
 		this(id, groupId, operator, inputGroupIds, localMetadata, tupleExpr, deliveredProperties, inputRequirements,
-				inputSemanticRequirements, kind, ruleCost, proofs, estimate, structuralKey, implementationForm, null, null);
+				inputSemanticRequirements, kind, ruleCost, proofs, estimate, structuralKey, implementationForm, null,
+				null);
 	}
 
 	/** Compatibility constructor for expressions created before semantic child requirements were explicit. */
@@ -163,8 +180,30 @@ public record MemoExpr(int id, int groupId, String operator, List<Integer> input
 			PhysicalProperties deliveredProperties, List<PhysicalProperties> inputRequirements,
 			List<SemanticScope> inputSemanticRequirements, RuleKind kind, CostVector ruleCost, List<RuleProof> proofs,
 			EstimateSnapshot estimate, ImplementationForm implementationForm) {
+		return physical(id, groupId, tupleExpr, inputs, metadata, deliveredProperties, inputRequirements,
+				inputSemanticRequirements, kind, ruleCost, proofs, estimate, implementationForm, Set.of());
+	}
+
+	static MemoExpr physical(int id, int groupId, TupleExpr tupleExpr, List<Integer> inputs, String metadata,
+			PhysicalProperties deliveredProperties, List<PhysicalProperties> inputRequirements,
+			List<SemanticScope> inputSemanticRequirements, RuleKind kind, CostVector ruleCost, List<RuleProof> proofs,
+			EstimateSnapshot estimate, ImplementationForm implementationForm,
+			Set<Integer> locallyCostedInputIndexes) {
 		return new MemoExpr(id, groupId, operatorName(tupleExpr), inputs, metadata, tupleExpr, deliveredProperties,
-				inputRequirements, inputSemanticRequirements, kind, ruleCost, proofs, estimate, null, implementationForm);
+				inputRequirements, inputSemanticRequirements, kind, ruleCost, proofs, estimate, null,
+				implementationForm, locallyCostedInputIndexes, null, null);
+	}
+
+	static MemoExpr scopedPhysical(int id, int groupId, TupleExpr tupleExpr, List<Integer> inputs, String metadata,
+			PhysicalProperties deliveredProperties, List<PhysicalProperties> inputRequirements,
+			List<SemanticScope> inputSemanticRequirements, RuleKind kind, CostVector ruleCost, List<RuleProof> proofs,
+			EstimateSnapshot estimate, ImplementationForm implementationForm, String implementationId) {
+		if (implementationId == null || implementationId.isBlank()) {
+			throw new IllegalArgumentException("scoped physical implementation id must not be blank");
+		}
+		return new MemoExpr(id, groupId, operatorName(tupleExpr), inputs, metadata, tupleExpr, deliveredProperties,
+				inputRequirements, inputSemanticRequirements, kind, ruleCost, proofs, estimate,
+				"scoped-physical:" + implementationId, implementationForm, Set.of(), null, null);
 	}
 
 	public boolean logical() {
@@ -186,7 +225,9 @@ public record MemoExpr(int id, int groupId, String operator, List<Integer> input
 				: MemoInputLayout.memoInputs(tupleExpr, inputGroupIds, inputRequirements, inputSemanticRequirements);
 	}
 
-	/** Returns only children executed by this physical operator; definition inputs remain visible in {@link #inputs()}. */
+	/**
+	 * Returns only children executed by this physical operator; definition inputs remain visible in {@link #inputs()}.
+	 */
 	public List<MemoInput> executableInputs() {
 		return executableInputs != null ? executableInputs : executableInputs(inputs());
 	}
@@ -211,13 +252,14 @@ public record MemoExpr(int id, int groupId, String operator, List<Integer> input
 	public MemoExpr asGroupExpression(int newId, int newGroupId) {
 		return new MemoExpr(newId, newGroupId, operator, inputGroupIds, localMetadata, tupleExpr, deliveredProperties,
 				inputRequirements, inputSemanticRequirements, kind, ruleCost, proofs, estimate, structuralKey,
-				implementationForm);
+				implementationForm, locallyCostedInputIndexes, null, null);
 	}
 
 	MemoExpr withProofs(List<RuleProof> replacementProofs) {
 		return new MemoExpr(id, groupId, operator, inputGroupIds, localMetadata, tupleExpr, deliveredProperties,
-				inputRequirements, inputSemanticRequirements, kind, ruleCost, replacementProofs, estimate, structuralKey,
-				implementationForm);
+				inputRequirements, inputSemanticRequirements, kind, ruleCost, replacementProofs, estimate,
+				structuralKey,
+				implementationForm, locallyCostedInputIndexes, null, null);
 	}
 
 	MemoExpr withOutputBindingProfile(BindingProfile outputBindingProfile) {
@@ -227,19 +269,21 @@ public record MemoExpr(int id, int groupId, String operator, List<Integer> input
 		}
 		return new MemoExpr(id, groupId, operator, inputGroupIds, localMetadata, tupleExpr,
 				deliveredProperties.withBindingProfile(merged), inputRequirements, inputSemanticRequirements, kind,
-				ruleCost, proofs, estimate, structuralKey, implementationForm);
+				ruleCost, proofs, estimate, structuralKey, implementationForm, locallyCostedInputIndexes, null, null);
 	}
 
 	static String structuralKey(String operator, List<Integer> inputGroupIds, String localMetadata, TupleExpr tupleExpr,
 			PhysicalProperties deliveredProperties, RuleKind kind) {
 		return structuralKey(operator, inputGroupIds, localMetadata, tupleExpr, deliveredProperties, List.of(),
-				defaultSemanticRequirements(tupleExpr, inputGroupIds), kind, defaultImplementationForm(kind), false);
+				defaultSemanticRequirements(tupleExpr, inputGroupIds), kind, defaultImplementationForm(kind), Set.of(),
+				false);
 	}
 
 	static String structuralKey(String operator, List<Integer> inputGroupIds, String localMetadata, TupleExpr tupleExpr,
 			PhysicalProperties deliveredProperties, List<PhysicalProperties> inputRequirements, RuleKind kind) {
 		return structuralKey(operator, inputGroupIds, localMetadata, tupleExpr, deliveredProperties, inputRequirements,
-				defaultSemanticRequirements(tupleExpr, inputGroupIds), kind, defaultImplementationForm(kind), false);
+				defaultSemanticRequirements(tupleExpr, inputGroupIds), kind, defaultImplementationForm(kind), Set.of(),
+				false);
 	}
 
 	private static void appendIntList(StringBuilder builder, List<Integer> values) {
@@ -271,7 +315,7 @@ public record MemoExpr(int id, int groupId, String operator, List<Integer> input
 			List<PhysicalProperties> inputRequirements, List<SemanticScope> inputSemanticRequirements) {
 		return structuralKey(operatorName(tupleExpr), inputGroupIds, metadata, tupleExpr, PhysicalProperties.ANY,
 				inputRequirements, inputSemanticRequirements, RuleKind.TRANSFORMATION, ImplementationForm.LOGICAL,
-				metadata != null && !metadata.isBlank());
+				Set.of(), metadata != null && !metadata.isBlank());
 	}
 
 	private static String operatorName(TupleExpr tupleExpr) {
@@ -281,7 +325,7 @@ public record MemoExpr(int id, int groupId, String operator, List<Integer> input
 	private static String structuralKey(String operator, List<Integer> inputGroupIds, String localMetadata,
 			TupleExpr tupleExpr, PhysicalProperties deliveredProperties, List<PhysicalProperties> inputRequirements,
 			List<SemanticScope> inputSemanticRequirements, RuleKind kind, ImplementationForm implementationForm,
-			boolean metadataHasSignature) {
+			Set<Integer> locallyCostedInputIndexes, boolean metadataHasSignature) {
 		StringBuilder builder = new StringBuilder(128);
 		builder.append(kind);
 		if (kind != RuleKind.TRANSFORMATION) {
@@ -319,6 +363,9 @@ public record MemoExpr(int id, int groupId, String operator, List<Integer> input
 		if (kind != RuleKind.TRANSFORMATION) {
 			builder.append('|')
 					.append(Objects.toString(executionContract(deliveredProperties), "*"));
+			if (!locallyCostedInputIndexes.isEmpty()) {
+				builder.append("|locallyCostedInputs=").append(locallyCostedInputIndexes);
+			}
 		}
 		return builder.toString();
 	}
@@ -356,10 +403,12 @@ public record MemoExpr(int id, int groupId, String operator, List<Integer> input
 				? defaultImplementationForm(kind)
 				: implementationForm;
 		if (kind == RuleKind.TRANSFORMATION && normalized != ImplementationForm.LOGICAL) {
-			throw new IllegalArgumentException("Logical memo expressions cannot declare a physical implementation form");
+			throw new IllegalArgumentException(
+					"Logical memo expressions cannot declare a physical implementation form");
 		}
 		if (kind != RuleKind.TRANSFORMATION && normalized == ImplementationForm.LOGICAL) {
-			throw new IllegalArgumentException("Physical memo expressions must declare an executable implementation form");
+			throw new IllegalArgumentException(
+					"Physical memo expressions must declare an executable implementation form");
 		}
 		return normalized;
 	}
@@ -383,6 +432,25 @@ public record MemoExpr(int id, int groupId, String operator, List<Integer> input
 		return safeRequirements.stream()
 				.map(requirement -> requirement == null ? PhysicalProperties.ANY : requirement)
 				.toList();
+	}
+
+	private static Set<Integer> normalizeLocallyCostedInputIndexes(TupleExpr tupleExpr, RuleKind kind,
+			ImplementationForm implementationForm, Set<Integer> locallyCostedInputIndexes) {
+		if (locallyCostedInputIndexes == null || locallyCostedInputIndexes.isEmpty()) {
+			return Set.of();
+		}
+		if (kind == RuleKind.TRANSFORMATION || implementationForm == ImplementationForm.ATOMIC) {
+			throw new IllegalArgumentException("Only transparent physical expressions may own child runtime cost");
+		}
+		int executableInputCount = (int) MemoInputLayout.slots(tupleExpr)
+				.stream()
+				.filter(slot -> slot.use() == MemoInput.Use.EXECUTABLE)
+				.count();
+		List<Integer> ordered = locallyCostedInputIndexes.stream().sorted().toList();
+		if (ordered.stream().anyMatch(index -> index == null || index < 0 || index >= executableInputCount)) {
+			throw new IllegalArgumentException("Locally costed input indexes must identify executable inputs");
+		}
+		return Collections.unmodifiableSet(new LinkedHashSet<>(ordered));
 	}
 
 	private static String safeSignature(TupleExpr tupleExpr) {

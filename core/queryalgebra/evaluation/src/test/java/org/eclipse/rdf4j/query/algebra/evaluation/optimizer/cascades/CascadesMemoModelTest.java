@@ -41,14 +41,21 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinFactor;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinRegion;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinState;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceProfile;
@@ -57,14 +64,84 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationE
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.SketchEvidence;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableSetKey;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinFactor;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinRegion;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinState;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 class CascadesMemoModelTest {
+
+	@Test
+	void projectionSourceMappingIsPartOfLogicalIdentity() {
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		StatementPattern input = pattern("a", "predicate", "b");
+		Projection first = new Projection(input,
+				new ProjectionElemList(new ProjectionElem("a", "x"), new ProjectionElem("b", "y")));
+		Projection swappedSources = new Projection(input.clone(),
+				new ProjectionElemList(new ProjectionElem("b", "x"), new ProjectionElem("a", "y")));
+
+		int firstGroupId = memo.intern(first);
+		int cloneGroupId = memo.intern(first.clone());
+		int swappedGroupId = memo.intern(swappedSources);
+
+		assertEquals(firstGroupId, cloneGroupId,
+				"An exact typed clone must still deduplicate into the original memo group");
+		assertNotEquals(firstGroupId, swappedGroupId,
+				"Projection source-to-target mappings change evaluation and must be part of logical identity");
+		assertNotEquals(memo.logicalKey(memo.group(firstGroupId).expressions().getFirst()),
+				memo.logicalKey(memo.group(swappedGroupId).expressions().getFirst()));
+		assertFalse(memo.legacyLogicalKeyDiscrepancies().historicalFalseMerges().isEmpty(),
+				"The bounded diagnostic recorder should expose the known historical projection collision");
+		assertTrue(
+				memo.legacyLogicalKeyDiscrepancies().observations() <= LegacyLogicalKeyDiscrepancyRecorder.MAX_ENTRIES);
+	}
+
+	@Test
+	void projectionContextIsPartOfLogicalIdentity() {
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		Projection first = projection(pattern("a", "predicate", "b"));
+		first.setProjectionContext(Var.of("context", iri("urn:context:first")));
+		Projection second = projection(pattern("a", "predicate", "b"));
+		second.setProjectionContext(Var.of("context", iri("urn:context:second")));
+
+		assertNotEquals(memo.intern(first), memo.intern(second),
+				"Projection context changes evaluation and must be part of logical identity");
+	}
+
+	@Test
+	void projectionSubqueryStateIsPartOfLogicalIdentity() {
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		Projection ordinary = projection(pattern("a", "predicate", "b"));
+		ordinary.setSubquery(false);
+		Projection subquery = ordinary.clone();
+		subquery.setSubquery(true);
+
+		assertNotEquals(memo.intern(ordinary), memo.intern(subquery),
+				"A subquery projection has a distinct evaluation scope and must not coalesce");
+	}
+
+	@Test
+	void explicitScopeChangeIsPartOfLogicalIdentity() {
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		Projection ordinary = projection(pattern("a", "predicate", "b"));
+		Projection scopeChange = ordinary.clone();
+		scopeChange.setVariableScopeChange(true);
+
+		assertNotEquals(memo.intern(ordinary), memo.intern(scopeChange),
+				"Explicit scope-change state is semantic identity, independently of derived barriers");
+	}
+
+	@Test
+	void unsupportedNativeOccurrencesNeverCoalesceByShape() {
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		DescribeOperator first = new DescribeOperator(pattern("s", "p", "o"));
+		DescribeOperator secondOccurrence = (DescribeOperator) first.clone();
+
+		int firstGroupId = memo.intern(first);
+
+		assertEquals(firstGroupId, memo.intern(first), "The same imported occurrence remains stable");
+		assertNotEquals(firstGroupId, memo.intern(secondOccurrence),
+				"Opaque native occurrences must never coalesce by class, signature, or binding names");
+	}
 
 	@Test
 	void joinStateOwnershipIsScopedByRootRegionGroup() throws Exception {
@@ -73,7 +150,7 @@ class CascadesMemoModelTest {
 		int secondFactorGroupId = memo.intern(pattern("shared", "rightPredicate", "right"));
 		JoinRegion.Identity regionIdentity = new JoinRegion(
 				List.of(new JoinFactor(0, firstFactorGroupId), new JoinFactor(1, secondFactorGroupId)), List.of())
-				.identity();
+						.identity();
 		JoinState state = JoinState.unfiltered(Set.of(0, 1));
 		int firstOwnerGroupId = memo.intern(pattern("firstOwner", "ownerPredicate", "ownerValue"));
 		int secondOwnerGroupId = memo.intern(pattern("secondOwner", "ownerPredicate", "ownerValue"));
@@ -95,6 +172,38 @@ class CascadesMemoModelTest {
 				() -> register.invoke(memo, firstOwnerGroupId, regionIdentity, state, secondStateGroupId));
 		assertTrue(conflict.getCause() instanceof IllegalStateException,
 				"A conflicting state mapping inside one root-region owner remains an invariant failure");
+	}
+
+	@Test
+	void joinStateOwnershipIsScopedBySourceDerivation() {
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		int firstFactorGroupId = memo.intern(pattern("left", "leftPredicate", "shared"));
+		int secondFactorGroupId = memo.intern(pattern("shared", "rightPredicate", "right"));
+		JoinRegion.Identity regionIdentity = new JoinRegion(
+				List.of(new JoinFactor(0, firstFactorGroupId), new JoinFactor(1, secondFactorGroupId)), List.of())
+						.identity();
+		JoinState state = JoinState.unfiltered(Set.of(0, 1));
+		StatementPattern ownerTemplate = pattern("owner", "ownerPredicate", "ownerValue");
+		int ownerGroupId = memo.intern(ownerTemplate);
+		MemoExpr firstSource = memo.group(ownerGroupId).expressions().getFirst();
+		MemoExpr secondSource = memo.addLogicalAlternative(ownerGroupId, ownerTemplate.clone(), List.of(new RuleProof(
+				"proof-dependent-route", RuleKind.TRANSFORMATION, SemanticScope.SET.externalName(),
+				Set.of("routeLocal"),
+				"A distinct proof lineage must own distinct join-state mappings"))).orElseThrow();
+		int firstStateGroupId = memo.intern(pattern("firstState", "statePredicate", "stateValue"));
+		int secondStateGroupId = memo.intern(pattern("secondState", "statePredicate", "stateValue"));
+
+		memo.registerJoinStateGroupForRoute(ownerGroupId, regionIdentity, JoinRouteScope.of(firstSource), state,
+				firstStateGroupId);
+		memo.registerJoinStateGroupForRoute(ownerGroupId, regionIdentity, JoinRouteScope.of(secondSource), state,
+				secondStateGroupId);
+
+		assertEquals(OptionalInt.of(firstStateGroupId),
+				memo.joinStateGroupForRoute(ownerGroupId, regionIdentity, JoinRouteScope.of(firstSource), state));
+		assertEquals(OptionalInt.of(secondStateGroupId),
+				memo.joinStateGroupForRoute(ownerGroupId, regionIdentity, JoinRouteScope.of(secondSource), state));
+		assertTrue(memo.joinStateGroup(ownerGroupId, regionIdentity, state).isEmpty(),
+				"Route-local state ownership must not leak into the unscoped compatibility view");
 	}
 
 	@Test
@@ -243,12 +352,12 @@ class CascadesMemoModelTest {
 				new And(exists.clone(), new ValueConstant(iri("urn:outer-condition"))));
 
 		assertTrue(nested.getBindingNames().containsAll(Set.of("code", "probePredicate", "streamPredicate")),
-				"The mutable tuple API exposes syntax-local and valued vars that the memo must normalize");
-		assertEquals(Set.of("o", "s"), memo.universe().names(shape.possible()),
-				"Scalar-subquery locals are not tuple-stream outputs");
-		assertEquals(Set.of("o", "s"), memo.universe().names(shape.assured()));
-		assertEquals(Set.of("o", "s"), properties.bindingNames());
-		assertEquals(Set.of("o", "s"), properties.assuredBindingNames());
+				"The mutable tuple API exposes both scalar-subquery locals and the valued stream variable");
+		assertEquals(Set.of("o", "s", "streamPredicate"), memo.universe().names(shape.possible()),
+				"Scalar-subquery locals are not tuple-stream outputs, while a valued nonconstant stream variable is");
+		assertEquals(Set.of("o", "s", "streamPredicate"), memo.universe().names(shape.assured()));
+		assertEquals(Set.of("o", "s", "streamPredicate"), properties.bindingNames());
+		assertEquals(Set.of("o", "s", "streamPredicate"), properties.assuredBindingNames());
 		assertTrue(memo.addLogicalAlternative(groupId, merged).isPresent(),
 				"Equivalent scalar condition syntax must not change the memo stream schema");
 	}
@@ -507,6 +616,35 @@ class CascadesMemoModelTest {
 	}
 
 	@Test
+	void acceptedWinnerChangeWakesOnlyDirectParentsUntilTheirFrontierChanges() {
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		StatementPattern leaf = pattern("s", "p", "o");
+		Filter middle = new Filter(leaf, new SameTerm(new Var("o"), new Var("o")));
+		Filter root = new Filter(middle, new SameTerm(new Var("s"), new Var("s")));
+		int rootGroupId = memo.intern(root);
+		MemoExpr rootExpression = memo.group(rootGroupId).expressions().getFirst();
+		int middleGroupId = rootExpression.inputGroupIds().getFirst();
+		MemoExpr middleExpression = memo.group(middleGroupId).expressions().getFirst();
+		int leafGroupId = middleExpression.inputGroupIds().getFirst();
+		drainChanges(memo);
+		MemoExpr leafPhysical = memo.addPhysicalAlternative(leafGroupId, leaf.clone(), PhysicalProperties.ANY,
+				"leaf-physical", RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of()).orElseThrow();
+		drainChanges(memo);
+		long rootDependencyRevision = memo.group(rootGroupId).dependencyRevision();
+		Winner leafWinner = new Winner(leafPhysical, leaf.clone(), PhysicalProperties.ANY,
+				new CostVector(10, 10, 0, 0, 0, 1, 1), List.of(), false, "");
+
+		assertTrue(memo.addWinner(OptimizationGoal.root().key(leafGroupId), leafWinner, 8, true));
+
+		List<MemoChange> changes = drainChanges(memo);
+		assertEquals(List.of(MemoChange.Kind.WINNER_FRONTIER_CHANGED, MemoChange.Kind.CHILD_WINNER_CHANGED),
+				changes.stream().map(MemoChange::kind).toList(),
+				"A descendant winner must wake its direct parent; the grandparent wakes only if the parent frontier changes");
+		assertEquals(middleExpression.id(), changes.get(1).expressionId());
+		assertEquals(rootDependencyRevision, memo.group(rootGroupId).dependencyRevision());
+	}
+
+	@Test
 	void pendingWinnerChangesCoalesceToLatestRevisionsBeforeSchedulerDrain() {
 		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
 		StatementPattern child = pattern("s", "p", "o");
@@ -628,7 +766,7 @@ class CascadesMemoModelTest {
 	}
 
 	@Test
-	void equalLegalAndEmergencyStatesRemainDistinct() {
+	void equalCompleteAndIncompleteStatesRemainDistinct() {
 		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
 		StatementPattern pattern = pattern("s", "p", "o");
 		int groupId = memo.intern(pattern);
@@ -636,17 +774,45 @@ class CascadesMemoModelTest {
 				"admissibility-state", RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of()).orElseThrow();
 		WinnerKey key = OptimizationGoal.root().key(groupId);
 		CostVector cost = new CostVector(10, 10, 0, 0, 0, 1, 1);
-		RuleProof emergencyProof = new RuleProof("existing-algebra-emergency-fallback", RuleKind.IMPLEMENTATION,
-				OptimizationGoal.BAG_SEMANTICS, Set.of("emergencyFallback"), "test incomplete boundary");
-
 		assertTrue(memo.addWinner(key,
-				new Winner(physical, pattern.clone(), PhysicalProperties.ANY, cost, List.of(emergencyProof), true,
+				new Winner(physical, pattern.clone(), PhysicalProperties.ANY, cost, List.of(), true,
 						"test incomplete boundary"),
 				8, true));
 		assertTrue(memo.addWinner(key,
 				new Winner(physical, pattern.clone(), PhysicalProperties.ANY, cost, List.of(), false, ""),
 				8, true), "A complete legal state must not be hidden by an equal-cost incomplete fallback");
 		assertEquals(2, memo.winners(key).size());
+	}
+
+	@Test
+	void legacyFallbackProofIdsDoNotForkCompleteWinnerState() {
+		for (String legacyRuleId : List.of("baseline-existing-algebra", "existing-algebra-emergency-fallback")) {
+			for (boolean proofFirst : List.of(false, true)) {
+				Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+				StatementPattern pattern = pattern("s", "p", "o");
+				int groupId = memo.intern(pattern);
+				MemoExpr physical = memo.addPhysicalAlternative(groupId, pattern.clone(), PhysicalProperties.ANY,
+						"proof-independent-frontier", RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of())
+						.orElseThrow();
+				WinnerKey key = OptimizationGoal.root().key(groupId);
+				CostVector cost = new CostVector(10, 10, 0, 0, 0, 1, 1);
+				RuleProof legacyProof = new RuleProof(legacyRuleId, RuleKind.IMPLEMENTATION,
+						OptimizationGoal.BAG_SEMANTICS, Set.of("legacyMetadata"),
+						"Historical proof metadata must not define physical frontier identity");
+				Winner withProof = new Winner(physical, pattern.clone(), PhysicalProperties.ANY, cost,
+						List.of(legacyProof), false, "");
+				Winner withoutProof = new Winner(physical, pattern.clone(), PhysicalProperties.ANY, cost, List.of(),
+						false, "");
+				Winner first = proofFirst ? withProof : withoutProof;
+				Winner second = proofFirst ? withoutProof : withProof;
+
+				assertTrue(memo.addWinner(key, first, 8, true));
+				assertFalse(memo.addWinner(key, second, 8, true),
+						() -> "Complete winner identity must ignore legacy proof rule " + legacyRuleId
+								+ " regardless of registration order");
+				assertEquals(1, memo.winners(key).size());
+			}
+		}
 	}
 
 	@Test
@@ -797,7 +963,165 @@ class CascadesMemoModelTest {
 	}
 
 	@Test
-	void exactModeKeepsOneCanonicalWinnerPerExecutionContract() {
+	void exactFrontierIgnoresRiskAndCanonicalizesByPhysicalIdentity() {
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		StatementPattern pattern = pattern("s", "p", "o");
+		int groupId = memo.intern(pattern);
+		PhysicalProperties delivered = PhysicalProperties.builder()
+				.boundVars(Set.of("s", "p", "o"))
+				.build();
+		MemoExpr zetaExpression = memo.addPhysicalAlternative(groupId, pattern.clone(), delivered,
+				"zeta-scan", RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of()).orElseThrow();
+		MemoExpr alphaExpression = memo.addPhysicalAlternative(groupId, pattern.clone(), delivered,
+				"alpha-scan", RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of()).orElseThrow();
+		WinnerKey key = OptimizationGoal.root().key(groupId);
+		CostVector strongEvidence = new CostVector(10, 100, 0, 0, 0,
+				1, 1, 1, 1, 0, 1, 100);
+		CostVector weakEvidence = new CostVector(10, 100, 0, 0, 0,
+				3, 3, 3, 3, 0, 1, 0);
+		Winner zeta = new Winner(zetaExpression, pattern.clone(), delivered, strongEvidence, List.of(), false, "");
+		Winner alpha = new Winner(alphaExpression, pattern.clone(), delivered, weakEvidence, List.of(), false, "");
+
+		assertTrue(memo.addWinner(key, zeta, 8, true));
+		assertTrue(memo.addWinner(key, alpha, 8, true),
+				"Equal raw resources must canonicalize by stable physical identity, not insertion or estimate evidence");
+
+		assertEquals(List.of(alpha), memo.winners(key));
+		Winner selected = memo.bestWinner(key).orElseThrow();
+		assertEquals(alpha, selected);
+		assertEquals(key, selected.optimizationKey(),
+				"Retained winners carry the exact goal key used by dependency-state invalidation");
+	}
+
+	@Test
+	void equalResourceParentTieUsesCompletePhysicalDerivationIdentity() {
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		StatementPattern childPlan = pattern("s", "p", "o");
+		Filter parentPlan = new Filter(childPlan, new SameTerm(new Var("o"), new Var("o")));
+		int parentGroupId = memo.intern(parentPlan);
+		int childGroupId = memo.group(parentGroupId)
+				.expressions()
+				.getFirst()
+				.executableInputs()
+				.getFirst()
+				.groupId();
+		PhysicalProperties genericDelivered = PhysicalProperties.builder()
+				.boundVars(childPlan.getBindingNames())
+				.build();
+		PhysicalProperties specializedDelivered = genericDelivered.withAccessPath("correlatedProbe");
+		RuleProof genericProof = new RuleProof("generic-physical-implementation", RuleKind.IMPLEMENTATION,
+				OptimizationGoal.BAG_SEMANTICS, Set.of("generic"), "generic child");
+		RuleProof specializedProof = new RuleProof("specialized-correlated-probe", RuleKind.IMPLEMENTATION,
+				OptimizationGoal.BAG_SEMANTICS, Set.of("specialized"), "specialized child");
+		MemoExpr genericChildExpression = memo.addPhysicalAlternative(childGroupId, childPlan.clone(), genericDelivered,
+				"generic", RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(genericProof)).orElseThrow();
+		MemoExpr specializedChildExpression = memo.addPhysicalAlternative(childGroupId, childPlan.clone(),
+				specializedDelivered, "specialized", RuleKind.IMPLEMENTATION, CostVector.ZERO,
+				List.of(specializedProof)).orElseThrow();
+		CostVector childCost = new CostVector(1, 1, 0, 0, 0, 1, 1);
+		Winner genericChild = new Winner(genericChildExpression, childPlan.clone(), genericDelivered, childCost,
+				List.of(genericProof), false, "");
+		Winner specializedChild = new Winner(specializedChildExpression, childPlan.clone(), specializedDelivered,
+				childCost, List.of(specializedProof), false, "");
+
+		PhysicalProperties parentDelivered = PhysicalProperties.builder()
+				.boundVars(parentPlan.getBindingNames())
+				.build();
+		MemoExpr parentExpression = memo.addPhysicalAlternative(parentGroupId, parentPlan.clone(), parentDelivered,
+				"parent", RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of()).orElseThrow();
+		CostVector parentCost = new CostVector(1, 2, 0, 0, 0, 1, 1);
+		Winner genericParent = new Winner(parentExpression, parentPlan.clone(), parentDelivered, parentCost, List.of(),
+				false, "", null, InputBindingContext.NONE, CostScope.PER_INVOCATION, 1.0d, BindingProfile.ANY,
+				parentPlan.getBindingNames(), true, List.of(genericChild));
+		Winner specializedParent = new Winner(parentExpression, parentPlan.clone(), parentDelivered, parentCost,
+				List.of(), false, "", null, InputBindingContext.NONE, CostScope.PER_INVOCATION, 1.0d,
+				BindingProfile.ANY, parentPlan.getBindingNames(), true, List.of(specializedChild));
+		WinnerKey key = OptimizationGoal.root().key(parentGroupId);
+
+		assertTrue(memo.addWinner(key, genericParent, 8, true));
+		assertTrue(memo.addWinner(key, specializedParent, 8, true),
+				"A late specialized child must replace an equal-cost parent derivation that selected a generic child");
+		assertEquals(specializedChild,
+				memo.bestWinner(key).orElseThrow().selectedInputs().getFirst(),
+				"Stable physical ties must include the complete selected derivation, not only the parent operator");
+	}
+
+	@Test
+	void exactFrontierRetainsExecutableResourceTradeoffsWithinOneContract() {
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		StatementPattern pattern = pattern("s", "p", "o");
+		int groupId = memo.intern(pattern);
+		PhysicalProperties delivered = PhysicalProperties.builder()
+				.boundVars(Set.of("s", "p", "o"))
+				.materialization(PhysicalProperties.Materialization.STREAMING)
+				.build();
+		MemoExpr memoryFrugalExpression = memo.addPhysicalAlternative(groupId, pattern.clone(), delivered,
+				"memory-frugal-scan", RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of()).orElseThrow();
+		MemoExpr workFrugalExpression = memo.addPhysicalAlternative(groupId, pattern.clone(), delivered,
+				"work-frugal-scan", RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of()).orElseThrow();
+		WinnerKey key = OptimizationGoal.root().key(groupId);
+		Winner memoryFrugal = new Winner(memoryFrugalExpression, pattern.clone(), delivered,
+				new CostVector(10, 12, 0, 0, 0, 1, 1), List.of(), false, "");
+		Winner workFrugal = new Winner(workFrugalExpression, pattern.clone(), delivered,
+				new CostVector(10, 10, 100, 0, 0, 1, 1), List.of(), false, "");
+
+		assertTrue(memo.addWinner(key, memoryFrugal, 8, true));
+		assertTrue(memo.addWinner(key, workFrugal, 8, true));
+
+		List<Winner> winners = memo.winners(key);
+		assertEquals(2, winners.size(), "Neither side of an executable-resource tradeoff may dominate the other");
+		assertTrue(winners.contains(memoryFrugal));
+		assertTrue(winners.contains(workFrugal));
+	}
+
+	@Test
+	void robustFrontierReversesRawWorkOrderingExactlyOnce() {
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		StatementPattern pattern = pattern("s", "p", "o");
+		int groupId = memo.intern(pattern);
+		PhysicalProperties delivered = PhysicalProperties.builder()
+				.boundVars(Set.of("s", "p", "o"))
+				.build();
+		MemoExpr riskyExpression = memo.addPhysicalAlternative(groupId, pattern.clone(), delivered,
+				"risky-raw-100", RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of()).orElseThrow();
+		MemoExpr stableExpression = memo.addPhysicalAlternative(groupId, pattern.clone(), delivered,
+				"stable-raw-work", RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of()).orElseThrow();
+		CostVector riskyRawHundred = new CostVector(10, 100, 0, 0, 0,
+				3, 3, 3, 3, 0, 1, 1);
+		CostVector stableRawTwoHundredFifty = new CostVector(10, 250, 0, 0, 0,
+				1, 1, 1, 1, 0, 1, 1);
+		CostVector stableRawFiveHundred = new CostVector(10, 500, 0, 0, 0,
+				1, 1, 1, 1, 0, 1, 1);
+		Winner riskyReversal = new Winner(riskyExpression, pattern.clone(), delivered,
+				riskyRawHundred, List.of(), false, "");
+		Winner stableReversal = new Winner(stableExpression, pattern.clone(), delivered,
+				stableRawTwoHundredFifty, List.of(), false, "");
+		WinnerKey reversalKey = OptimizationGoal.root()
+				.withCostPolicy(OptimizationGoal.CostPolicy.ROBUST)
+				.key(groupId);
+
+		assertTrue(memo.addWinner(reversalKey, riskyReversal, 8, true));
+		assertTrue(memo.addWinner(reversalKey, stableReversal, 8, true));
+		assertEquals(List.of(stableReversal), memo.winners(reversalKey),
+				"ROBUST must rank threefold-risk work 100 as 300, allowing stable work 250 to win");
+
+		Winner stableSingle = new Winner(stableExpression, pattern.clone(), delivered,
+				stableRawFiveHundred, List.of(), false, "");
+		Winner riskySingle = new Winner(riskyExpression, pattern.clone(), delivered,
+				riskyRawHundred, List.of(), false, "");
+		WinnerKey singleAdjustmentKey = OptimizationGoal.root()
+				.withCostPolicy(OptimizationGoal.CostPolicy.ROBUST)
+				.withResultRowLimit(1, true)
+				.key(groupId);
+
+		assertTrue(memo.addWinner(singleAdjustmentKey, stableSingle, 8, true));
+		assertTrue(memo.addWinner(singleAdjustmentKey, riskySingle, 8, true));
+		assertEquals(List.of(riskySingle), memo.winners(singleAdjustmentKey),
+				"The same risk adjustment must stop at 300; applying it twice would incorrectly make work 500 win");
+	}
+
+	@Test
+	void exactModeKeepsExecutableResourceTradeoffsPerExecutionContract() {
 		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
 		int groupId = memo.intern(pattern("s", "p", "o"));
 		MemoExpr expression = memo.group(groupId).expressions().getFirst();
@@ -819,8 +1143,40 @@ class CascadesMemoModelTest {
 		assertTrue(memo.addWinner(key, lowerMemory, 1, true));
 		assertTrue(memo.addWinner(key, lowerCanonicalCost, 1, true));
 
-		assertEquals(List.of(lowerCanonicalCost), memo.winners(key),
-				"Exact search evaluates every legal alternative but parents need only the canonical winner for one contract");
+		assertEquals(2, memo.winners(key).size(),
+				"Exact frontiers retain work/memory tradeoffs until a parent requirement makes one dominant");
+		assertTrue(memo.winners(key).contains(lowerMemory));
+		assertTrue(memo.winners(key).contains(lowerCanonicalCost));
+	}
+
+	@Test
+	void boundedFrontierLimitAppliesPerExecutionContract() {
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		StatementPattern pattern = pattern("s", "p", "o");
+		int groupId = memo.intern(pattern);
+		WinnerKey key = OptimizationGoal.root().key(groupId);
+		PhysicalProperties directLookup = PhysicalProperties.builder()
+				.accessPath("directLookup")
+				.boundVars(Set.of("s", "p", "o"))
+				.build();
+		PhysicalProperties scan = PhysicalProperties.builder()
+				.accessPath("scan")
+				.boundVars(Set.of("s", "p", "o"))
+				.build();
+		MemoExpr directExpression = memo.addPhysicalAlternative(groupId, pattern.clone(), directLookup,
+				"bounded-direct", RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of()).orElseThrow();
+		MemoExpr scanExpression = memo.addPhysicalAlternative(groupId, pattern.clone(), scan,
+				"bounded-scan", RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of()).orElseThrow();
+		Winner direct = new Winner(directExpression, pattern.clone(), directLookup,
+				new CostVector(10, 10, 0, 0, 0, 1, 1), List.of(), false, "");
+		Winner scanned = new Winner(scanExpression, pattern.clone(), scan,
+				new CostVector(10, 12, 0, 0, 0, 1, 1), List.of(), false, "");
+
+		assertTrue(memo.addWinner(key, direct, 1, false));
+		assertTrue(memo.addWinner(key, scanned, 1, false));
+		assertEquals(List.of(direct, scanned), memo.winners(key),
+				"The bounded limit applies independently to each parent-visible execution contract");
+		assertEquals(0, memo.winnerFrontierTrimmedCount(key));
 	}
 
 	@Test
@@ -850,7 +1206,9 @@ class CascadesMemoModelTest {
 	@Test
 	void canonicalDominanceRejectsCostlierFiniteBoundInputAlternative() {
 		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
-		int groupId = memo.intern(pattern("s", "p", "code"));
+		ProjectionElemList targetBindings = new ProjectionElemList(
+				new ProjectionElem("s"), new ProjectionElem("p"), new ProjectionElem("code"));
+		int groupId = memo.intern(new Projection(pattern("s", "p", "code"), targetBindings, false));
 		WinnerKey key = OptimizationGoal.root().key(groupId);
 		PhysicalProperties delivered = PhysicalProperties.builder()
 				.accessPath("directLookup")
@@ -884,29 +1242,29 @@ class CascadesMemoModelTest {
 	}
 
 	@Test
-	void legalPhysicalWinnerSurvivesCheaperEmergencyDependentWinner() {
+	void completePhysicalWinnerSurvivesCheaperIncompleteDependentWinner() {
 		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
 		int groupId = memo.intern(pattern("s", "p", "o"));
 		MemoExpr expression = memo.group(groupId).expressions().getFirst();
 		WinnerKey key = OptimizationGoal.root().key(groupId);
 		RuleProof generic = new RuleProof("generic-physical-implementation", RuleKind.IMPLEMENTATION,
 				OptimizationGoal.BAG_SEMANTICS, Set.of("rdf4jIteratorImplementation"), "generic wrapper");
-		RuleProof emergency = new RuleProof("existing-algebra-emergency-fallback", RuleKind.IMPLEMENTATION,
-				OptimizationGoal.BAG_SEMANTICS, Set.of("emergencyFallback"), "opaque child");
-
-		Winner emergencyDependent = new Winner(expression, expression.tupleExpr(), PhysicalProperties.ANY,
-				new CostVector(1, 1, 0, 0, 0, 1, 1), List.of(generic, emergency), true,
+		Winner incompleteDependent = new Winner(expression, expression.tupleExpr(), PhysicalProperties.ANY,
+				new CostVector(1, 1, 0, 0, 0, 1, 1), List.of(generic), true,
 				"opaque child fallback");
-		Winner legal = new Winner(expression, expression.tupleExpr(), PhysicalProperties.ANY,
+		Winner complete = new Winner(expression, expression.tupleExpr(), PhysicalProperties.ANY,
 				new CostVector(10, 10, 0, 0, 0, 1, 1), List.of(generic), false, "");
 
-		assertTrue(memo.addWinner(key, emergencyDependent, 8, true));
-		assertTrue(memo.addWinner(key, legal, 8, true),
-				"An emergency-dependent incumbent must not dominate a fully costed physical alternative");
-		assertEquals(List.of(emergencyDependent, legal), memo.winners(key),
-				"The legal alternative must remain available for a standard-plan comparison");
-		assertSame(emergencyDependent, memo.bestWinner(key).orElseThrow(),
-				"Normal cost ordering remains intact until the standard-plan comparison boundary");
+		assertTrue(memo.addWinner(key, incompleteDependent, 8, true));
+		assertTrue(memo.addWinner(key, complete, 8, true),
+				"An incomplete incumbent must not dominate a complete physical alternative");
+		assertEquals(List.of(incompleteDependent, complete), memo.winners(key),
+				"The complete alternative must remain available for transactional exact selection");
+		Winner selected = memo.bestWinner(key).orElseThrow();
+		assertEquals(incompleteDependent, selected,
+				"Normal cost ordering remains intact until the completeness application boundary");
+		assertEquals(key, selected.optimizationKey(),
+				"Frontier insertion must stamp the dependency identity without changing cost order");
 	}
 
 	@Test
@@ -1108,6 +1466,24 @@ class CascadesMemoModelTest {
 	}
 
 	@Test
+	void memoRejectsNonProgressingPhysicalSelfInput() {
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		StatementPattern pattern = pattern("s", "p", "o");
+		int groupId = memo.intern(pattern);
+		int prefixGroupId = memo.intern(new SingletonSet());
+		Join alternative = new Join(new SingletonSet(), pattern.clone());
+
+		IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
+				() -> memo.addPhysicalAlternativeWithInputs(groupId, alternative,
+						List.of(prefixGroupId, groupId), PhysicalProperties.ANY,
+						List.of(PhysicalProperties.ANY, PhysicalProperties.ANY),
+						MemoInputLayout.semanticRequirements(alternative), "invalid-self-input",
+						RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null, false, SemanticScope.BAG, true));
+
+		assertTrue(failure.getMessage().contains("non-progressing physical self input"), failure::getMessage);
+	}
+
+	@Test
 	void requiredPropertyRejectionCarriesMismatchDetails() throws Exception {
 		PhysicalProperties required = PhysicalProperties.builder()
 				.accessPath("directLookup")
@@ -1230,6 +1606,11 @@ class CascadesMemoModelTest {
 
 	private static StatementPattern pattern(String subject, String predicate, String object) {
 		return new StatementPattern(new Var(subject), new Var(predicate), new Var(object));
+	}
+
+	private static Projection projection(TupleExpr input) {
+		return new Projection(input,
+				new ProjectionElemList(new ProjectionElem("a", "x"), new ProjectionElem("b", "y")));
 	}
 
 	private static List<MemoChange> drainChanges(Memo memo) {

@@ -17,9 +17,9 @@ import java.util.Set;
 
 /**
  * Canonical logical output evidence shared by equivalent physical expressions in one memo group and input context.
- * Implementation work is deliberately excluded: equivalent operators may have different local CPU, I/O and memory
- * costs even though they describe the same logical output under the same input context. Cardinality and binding facts
- * are selected atomically so a parent never observes rows from one derivation and finite/sketch evidence from another.
+ * Implementation work is deliberately excluded: equivalent operators may have different local CPU, I/O and memory costs
+ * even though they describe the same logical output under the same input context. Cardinality and binding facts are
+ * selected atomically so a parent never observes rows from one derivation and finite/sketch evidence from another.
  */
 record LogicalOutputEstimate(CostVector evidence, BindingProfile bindingProfile) {
 

@@ -43,6 +43,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.CostContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.ExhaustiveLegalJoinSearchContributor;
@@ -254,9 +255,10 @@ class LmdbHypergraphJoinPlannerTest {
 				() -> assertEquals(JoinSearchService.ROUTE_ID, result.routeId()),
 				() -> assertEquals(JoinSearchCompleteness.COMPLETE, result.completeness(),
 						"The exhaustive contributor keeps complete search available beside DPhyp"),
-				() -> assertEquals(JoinSearchContributor.Status.COMPLETED, dphyp.outcome().status()),
-				() -> assertTrue(dphyp.offeredCandidateCount() > 0L,
-						"DPhyp must contribute transparent memo expressions through the unified route"),
+				() -> assertEquals(JoinSearchContributor.Status.UNSUPPORTED, dphyp.outcome().status(),
+						"The global route must not materialize DPhyp's privately costed tree"),
+				() -> assertEquals(0L, dphyp.offeredCandidateCount(),
+						"DPhyp streams partitions into the scoped memo instead of exporting a global candidate"),
 				() -> assertEquals(JoinSearchContributor.Status.COMPLETED, exhaustive.outcome().status()),
 				() -> assertTrue(exhaustive.offeredCandidateCount() > 0L,
 						"The specialized contribution must not suppress exhaustive legal enumeration"));
@@ -602,6 +604,174 @@ class LmdbHypergraphJoinPlannerTest {
 				* Math.sqrt(0.1d * 0.01d)
 				* Math.sqrt(0.1d * 0.001d);
 		assertEquals(expectedRows, result.cost().rows(), expectedRows * 0.01d);
+	}
+
+	@Test
+	void geometricMeanRemainsRepresentableWhenDirectionalProductUnderflows() {
+		System.setProperty(LmdbHypergraphJoinPlanner.DPHYP_PROPERTY, "true");
+		SyntheticCostModel model = new SyntheticCostModel()
+				.table("a", 1e100d)
+				.boundSelectivity("a", "s", 1e-200d)
+				.table("b", 1e100d)
+				.boundSelectivity("b", "s", 1e-200d);
+		TupleExpr island = joinIsland(pattern("s", "a", "o1"), pattern("s", "b", "o2"));
+
+		LmdbCascadesConnectedJoinPlanner.Plan result = plan(island, model).orElseThrow();
+
+		assertEquals(1.0d, result.cost().rows(), 1e-12,
+				"exp((log(1e-200) + log(1e-200)) / 2) must remain 1e-200");
+	}
+
+	@Test
+	void positiveSeedBelowLegacyFloorRetainsItsEstimate() {
+		System.setProperty(LmdbHypergraphJoinPlanner.DPHYP_PROPERTY, "true");
+		SyntheticCostModel model = new SyntheticCostModel()
+				.table("a", 1e-20d)
+				.table("b", 10.0d);
+		TupleExpr island = joinIsland(pattern("s", "a", "o1"), pattern("s", "b", "o2"));
+
+		LmdbCascadesConnectedJoinPlanner.Plan result = plan(island, model).orElseThrow();
+
+		assertEquals(1e-19d, result.cost().rows(), 1e-30d,
+				"a positive estimate below the former search floor must stay positive and unchanged");
+	}
+
+	@Test
+	void physicalLookupEvidenceDoesNotOverwriteCanonicalLogicalRows() {
+		System.setProperty(LmdbHypergraphJoinPlanner.DPHYP_PROPERTY, "true");
+		JoinFactorCostModel asymmetricLookupModel = new JoinFactorCostModel() {
+			@Override
+			public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> boundVars) {
+				return Optional.of(new FactorCostEstimate(10.0d, 10.0d));
+			}
+
+			@Override
+			public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, CostContext context) {
+				if (context.getCurrentlyBoundVars().isEmpty()) {
+					return estimateFactorCost(factor, Set.of());
+				}
+				StatementPattern pattern = (StatementPattern) factor;
+				String predicate = ((IRI) pattern.getPredicateVar().getValue()).getLocalName();
+				if ("b".equals(predicate)) {
+					return Optional.of(new FactorCostEstimate(1.0d, 1.0d,
+							Map.of(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE, "directLookup"),
+							Map.of(TelemetryMetricNames.PLANNED_ACCESS_ROWS, 1.0d,
+									TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO, 0.1d),
+							true, true, 0, 0, 1.0d));
+				}
+				return Optional.of(new FactorCostEstimate(100.0d, 100.0d));
+			}
+		};
+		TupleExpr island = joinIsland(pattern("s", "a", "o1"), pattern("s", "b", "o2"));
+
+		LmdbCascadesConnectedJoinPlanner.Plan result = plan(island, asymmetricLookupModel).orElseThrow();
+
+		assertEquals(10.0d, result.cost().rows(), 1e-12,
+				"physical lookup rows are local evidence and must not replace canonical logical cardinality");
+		assertEquals(1.0d, result.tupleExpr().getDoubleMetricPlanned("optimizer.dphypNestedLookupRows"), 0.0d);
+	}
+
+	@Test
+	void nestedLookupReceivesTinyPositiveOuterRowsWithoutFloor() {
+		System.setProperty(LmdbHypergraphJoinPlanner.DPHYP_PROPERTY, "true");
+		List<Double> observedBPrefixRows = new ArrayList<>();
+		JoinFactorCostModel observingModel = new JoinFactorCostModel() {
+			@Override
+			public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> boundVars) {
+				String predicate = predicateName(factor);
+				double rows = "a".equals(predicate) ? 1e-20d : 10.0d;
+				return Optional.of(new FactorCostEstimate(rows, rows));
+			}
+
+			@Override
+			public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, CostContext context) {
+				if (context.getCurrentlyBoundVars().isEmpty()) {
+					return estimateFactorCost(factor, Set.of());
+				}
+				String predicate = predicateName(factor);
+				if ("b".equals(predicate)) {
+					observedBPrefixRows.add(context.getOuterPrefixRows());
+				}
+				double baseRows = "a".equals(predicate) ? 1e-20d : 10.0d;
+				double rows = context.getOuterPrefixRows() * baseRows;
+				return Optional.of(new FactorCostEstimate(rows, rows));
+			}
+		};
+		TupleExpr island = joinIsland(pattern("s", "a", "o1"), pattern("s", "b", "o2"));
+
+		assertTrue(plan(island, observingModel).isPresent());
+		assertFalse(observedBPrefixRows.isEmpty());
+		assertTrue(observedBPrefixRows.stream().allMatch(rows -> rows == 1e-20d),
+				"the physical nested probe must receive the canonical positive outer estimate: "
+						+ observedBPrefixRows);
+	}
+
+	private static String predicateName(TupleExpr factor) {
+		StatementPattern pattern = (StatementPattern) factor;
+		return ((IRI) pattern.getPredicateVar().getValue()).getLocalName();
+	}
+
+	@Test
+	void invalidDirectionalEvidenceDeclinesInsteadOfBecomingNeutralSelectivity() {
+		System.setProperty(LmdbHypergraphJoinPlanner.DPHYP_PROPERTY, "true");
+		JoinFactorCostModel seedOnlyModel = (factor, boundVars) -> boundVars.isEmpty()
+				? Optional.of(new JoinFactorCostModel.FactorCostEstimate(10.0d, 10.0d))
+				: Optional.empty();
+		EvaluationStatistics invalidFallback = new EvaluationStatistics() {
+			@Override
+			public double getCardinality(TupleExpr tupleExpr) {
+				return Double.NaN;
+			}
+		};
+		TupleExpr island = joinIsland(pattern("s", "a", "o1"), pattern("s", "b", "o2"));
+
+		Optional<LmdbCascadesConnectedJoinPlanner.Plan> result = LmdbCascadesConnectedJoinPlanner.plan(island,
+				Set.of(), seedOnlyModel, invalidFallback);
+
+		assertTrue(result.isEmpty(),
+				"invalid primary and fallback evidence must decline DPhyp instead of silently using selectivity one");
+	}
+
+	@Test
+	void invalidPresentDirectionalEstimateUsesFallbackInsteadOfMaximumRows() {
+		System.setProperty(LmdbHypergraphJoinPlanner.DPHYP_PROPERTY, "true");
+		JoinFactorCostModel invalidConditionalModel = (factor, boundVars) -> boundVars.isEmpty()
+				? Optional.of(new JoinFactorCostModel.FactorCostEstimate(10.0d, 10.0d))
+				: Optional.of(new JoinFactorCostModel.FactorCostEstimate(10.0d, Double.NaN));
+		EvaluationStatistics invalidFallback = new EvaluationStatistics() {
+			@Override
+			public double getCardinality(TupleExpr tupleExpr) {
+				return Double.NaN;
+			}
+		};
+		TupleExpr island = joinIsland(pattern("s", "a", "o1"), pattern("s", "b", "o2"));
+
+		Optional<LmdbCascadesConnectedJoinPlanner.Plan> result = LmdbCascadesConnectedJoinPlanner.plan(island,
+				Set.of(), invalidConditionalModel, invalidFallback);
+
+		assertTrue(result.isEmpty(),
+				"a present NaN estimate must not be normalized into maximum rows and treated as usable evidence");
+	}
+
+	@Test
+	void contextualFallbackUsesJoinedCardinalityUnits() {
+		System.setProperty(LmdbHypergraphJoinPlanner.DPHYP_PROPERTY, "true");
+		JoinFactorCostModel seedOnlyModel = (factor, boundVars) -> boundVars.isEmpty()
+				? Optional.of(new JoinFactorCostModel.FactorCostEstimate(10.0d, 10.0d))
+				: Optional.empty();
+		EvaluationStatistics fallback = new EvaluationStatistics() {
+			@Override
+			public double getCardinality(TupleExpr tupleExpr) {
+				return tupleExpr instanceof Join ? 50.0d : 10.0d;
+			}
+		};
+		TupleExpr island = joinIsland(pattern("s", "a", "o1"), pattern("s", "b", "o2"));
+
+		LmdbCascadesConnectedJoinPlanner.Plan result = LmdbCascadesConnectedJoinPlanner.plan(island, Set.of(),
+				seedOnlyModel, fallback).orElseThrow();
+
+		assertEquals(50.0d, result.cost().rows(), 1e-12,
+				"conditional fallback must estimate prefix join factor, not reinterpret factor rows as joined rows");
 	}
 
 	@Test

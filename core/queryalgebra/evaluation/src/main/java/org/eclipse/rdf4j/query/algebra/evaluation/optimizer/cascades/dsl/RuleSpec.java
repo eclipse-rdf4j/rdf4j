@@ -20,15 +20,17 @@ import java.util.Set;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleDescriptor.GoalProperty;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RulePhase;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.SemanticScope;
 
 /** Declarative Cascades rule definition. */
 @Experimental
 public record RuleSpec(String id, RuleKind kind, RulePhase phase, int promise, RulePattern pattern,
 		List<RuleGuard> guards, RuleTemplate template, RuleProofSpec proof, PhysicalProperties deliveredProperties,
 		DeliveredProperties deliveredPropertiesFn, ChildProperties requiredChildPropertiesFn, CostVector localCost,
-		String reason) {
+		Set<GoalProperty> goalPropertiesRead, String reason) {
 
 	public RuleSpec {
 		if (id == null || id.isBlank()) {
@@ -50,6 +52,9 @@ public record RuleSpec(String id, RuleKind kind, RulePhase phase, int promise, R
 		requiredChildPropertiesFn = requiredChildPropertiesFn == null ? ChildProperties.none()
 				: requiredChildPropertiesFn;
 		localCost = localCost == null ? CostVector.ZERO : localCost;
+		goalPropertiesRead = goalPropertiesRead == null || goalPropertiesRead.isEmpty()
+				? Set.of()
+				: Set.copyOf(goalPropertiesRead);
 		reason = reason == null ? "" : reason;
 	}
 
@@ -108,11 +113,13 @@ public record RuleSpec(String id, RuleKind kind, RulePhase phase, int promise, R
 		private final List<RuleGuard> guards = new ArrayList<>();
 		private RuleTemplate template;
 		private final List<String> proofFacts = new ArrayList<>();
+		private SemanticScope proofSemanticScope = SemanticScope.BAG;
 		private PhysicalProperties deliveredProperties = PhysicalProperties.ANY;
 		private DeliveredProperties deliveredPropertiesFn = DeliveredProperties
 				.staticProperties(PhysicalProperties.ANY);
 		private ChildProperties requiredChildPropertiesFn = ChildProperties.none();
 		private CostVector localCost = CostVector.ZERO;
+		private Set<GoalProperty> goalPropertiesRead = Set.of();
 		private String reason = "";
 
 		private Builder(String id) {
@@ -182,6 +189,13 @@ public record RuleSpec(String id, RuleKind kind, RulePhase phase, int promise, R
 			return this;
 		}
 
+		public Builder goalPropertiesRead(GoalProperty... properties) {
+			this.goalPropertiesRead = properties == null || properties.length == 0
+					? Set.of()
+					: Set.copyOf(Arrays.asList(properties));
+			return this;
+		}
+
 		public Builder proof(String... facts) {
 			if (facts != null) {
 				for (String fact : facts) {
@@ -193,6 +207,12 @@ public record RuleSpec(String id, RuleKind kind, RulePhase phase, int promise, R
 			return this;
 		}
 
+		/** Declares the weakest multiplicity semantics for which this alternative is proven equivalent. */
+		public Builder proofSemanticScope(SemanticScope semanticScope) {
+			this.proofSemanticScope = semanticScope == null ? SemanticScope.BAG : semanticScope;
+			return this;
+		}
+
 		public Builder reason(String reason) {
 			this.reason = reason == null ? "" : reason;
 			return this;
@@ -200,8 +220,9 @@ public record RuleSpec(String id, RuleKind kind, RulePhase phase, int promise, R
 
 		public RuleSpec build() {
 			return new RuleSpec(id, kind, phase, promise, pattern, guards, template,
-					RuleProofSpec.of(id, reason, proofFacts), deliveredProperties, deliveredPropertiesFn,
-					requiredChildPropertiesFn, localCost, reason);
+					new RuleProofSpec(id, proofSemanticScope.externalName(), Set.copyOf(proofFacts), reason),
+					deliveredProperties, deliveredPropertiesFn,
+					requiredChildPropertiesFn, localCost, goalPropertiesRead, reason);
 		}
 	}
 }

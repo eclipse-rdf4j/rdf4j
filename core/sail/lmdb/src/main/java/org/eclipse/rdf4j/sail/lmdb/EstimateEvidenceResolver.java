@@ -14,12 +14,17 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.SketchEvidence;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableSetKey;
 import org.eclipse.rdf4j.sail.lmdb.estimation.RowEvidence;
 
 /** Central, deterministic selection of current-snapshot evidence. */
@@ -29,13 +34,14 @@ final class EstimateEvidenceResolver {
 
 	BagEstimate resolve(List<EstimateCandidate> candidates, EstimateContext context) {
 		Objects.requireNonNull(context, "context");
-		EstimateCandidate winner = currentCandidates(candidates, context).stream()
+		List<EstimateCandidate> current = currentCandidates(candidates, context);
+		EstimateCandidate winner = current.stream()
 				.min(candidateOrder())
 				.orElse(null);
 		if (winner == null) {
 			return withInterval(BagEstimate.heuristic(1.0d, "no-current-evidence"), 0.0d, Double.MAX_VALUE, 0.0d);
 		}
-		return normalize(winner);
+		return retainOrthogonalSketchEvidence(normalize(winner), current);
 	}
 
 	BagEstimate resolveForDecision(List<EstimateCandidate> candidates, EstimateContext context,
@@ -107,6 +113,37 @@ final class EstimateEvidenceResolver {
 				.withRowsPreservingEvidence(rows, rows, evidence.confidence(),
 						candidate.estimate().source(), candidate.estimate().metrics(), evidence.complete());
 		return withInterval(base, lower, upper, evidence.confidence());
+	}
+
+	private static BagEstimate retainOrthogonalSketchEvidence(BagEstimate resolved,
+			List<EstimateCandidate> currentCandidates) {
+		Set<VariableSetKey> retainedKeys = new LinkedHashSet<>(resolved.evidenceProfile().allSketches().keySet());
+		BagEstimate enriched = resolved;
+		for (EstimateCandidate candidate : currentCandidates.stream().sorted(candidateOrder()).toList()) {
+			for (Map.Entry<VariableSetKey, SketchEvidence> entry : candidate.estimate()
+					.evidenceProfile()
+					.allSketches()
+					.entrySet()) {
+				SketchEvidence evidence = entry.getValue();
+				if (evidence == null || evidence.sketch() == null || !evidence.current() || evidence.stale()
+						|| !retainedKeys.add(entry.getKey())) {
+					continue;
+				}
+				if (entry.getKey().names().size() == 1) {
+					String variable = entry.getKey().names().getFirst();
+					VariableEstimate current = enriched.variable(variable);
+					double boundRows = current.boundRows() > 0.0d ? current.boundRows() : enriched.rows();
+					double distinctRows = evidence.distinctRows() > 0.0d
+							? evidence.distinctRows()
+							: evidence.sketch().distinctRows();
+					enriched = enriched.withVariable(variable, new VariableEstimate(distinctRows, boundRows,
+							current.nullableRows(), evidence.sketch()));
+				} else {
+					enriched = enriched.withSketchRelation(Set.copyOf(entry.getKey().names()), evidence.sketch());
+				}
+			}
+		}
+		return enriched;
 	}
 
 	private static BagEstimate withInterval(BagEstimate estimate, double lower, double upper, double confidence) {

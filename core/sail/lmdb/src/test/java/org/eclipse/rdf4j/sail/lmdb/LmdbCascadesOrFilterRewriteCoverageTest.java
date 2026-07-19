@@ -14,24 +14,50 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
+import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.FactorCostEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPlan;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesTelemetry;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Memo;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MemoExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationCompleteness;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PlanProvenance;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleApplication;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.SemanticScope;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.CompiledRule;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleCompiler;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
@@ -47,19 +73,102 @@ class LmdbCascadesOrFilterRewriteCoverageTest {
 			PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 			""";
 
+	@Test
+	void orUnionAlternativeIsLocalToSetObserversAndCannotEscapeIntoBagSearch() {
+		StatementPattern code = new StatementPattern(new Var("entity"), new Var("codePredicate"), new Var("code"));
+		StatementPattern status = new StatementPattern(new Var("entity"), new Var("statusPredicate"),
+				new Var("status"));
+		Filter filter = new Filter(new Join(code, status),
+				new Or(new Bound(new Var("code")), new Bound(new Var("status"))));
+		CascadesCostModel costModel = CascadesCostModel.from(new EvaluationStatistics());
+		Memo memo = new Memo(costModel);
+		int groupId = memo.intern(filter);
+		MemoExpr expression = memo.group(groupId)
+				.expressions()
+				.stream()
+				.filter(MemoExpr::logical)
+				.findFirst()
+				.orElseThrow();
+		CompiledRule rule = RuleCompiler.compile(LmdbSemanticRuleSpecs.orFilterUnion());
+		RuleContext context = new RuleContext(memo, costModel, CascadesTelemetry.NO_OP, null);
+
+		List<RuleApplication> bagApplications = rule.apply(expression, OptimizationGoal.root(), context);
+		List<RuleApplication> setApplications = rule.apply(expression,
+				OptimizationGoal.root().withSemanticScope(SemanticScope.SET.externalName()), context);
+
+		assertTrue(bagApplications.isEmpty(),
+				"Overlapping OR branches are not a bag-equivalent local Filter rewrite");
+		assertEquals(1, setApplications.size(),
+				"A duplicate-insensitive observer must expose one local OR-to-UNION alternative");
+		assertTrue(setApplications.getFirst().alternative() instanceof Union);
+		assertTrue(setApplications.getFirst()
+				.proofs()
+				.stream()
+				.allMatch(proof -> SemanticScope.SET.externalName().equals(proof.semanticScope())),
+				"The local alternative must remain SET-only in every downstream memo context");
+	}
+
 	@ParameterizedTest(name = "{0}")
 	@MethodSource("valuesRewriteQueries")
 	void cascadesRewritesFiniteOrFilterToValues(RewriteCase rewriteCase) {
-		TupleExpr tupleExpr = optimizeWithCascades(PREFIX + rewriteCase.query());
+		TupleExpr input = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, PREFIX + rewriteCase.query(), null)
+				.getTupleExpr();
+		LmdbCascadesOptimizer optimizer = new LmdbCascadesOptimizer(new EvaluationStatistics(), false);
+		CascadesPlan plan = optimizer.planPreparedInput(input, searchModeGoal(input, OptimizationGoal.SearchMode.AUTO));
+		TupleExpr tupleExpr = plan.tupleExpr().orElseThrow();
 		String diagnosticPlan = tupleExpr.toString();
+		List<MemoExpr> proofCarriers = plan.memo()
+				.groups()
+				.stream()
+				.flatMap(group -> group.expressions().stream())
+				.filter(LmdbCascadesOrFilterRewriteCoverageTest::hasOrValuesRewriteProof)
+				.toList();
 
 		for (ExpectedAssignment expectedAssignment : rewriteCase.expectedAssignments()) {
 			assertBindingSetAssignment(tupleExpr, expectedAssignment.bindingNames(), expectedAssignment.rowCount());
 		}
 		assertFalse(containsOr(tupleExpr), diagnosticPlan);
 		assertFalse(containsUnion(tupleExpr), diagnosticPlan);
-		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
-				"rule=lmdb-or-filter-values-rewrite"), diagnosticPlan);
+		assertFalse(proofCarriers.isEmpty(), "The memo must retain the selected OR-to-VALUES proof");
+		assertTrue(proofCarriers.stream()
+				.allMatch(expression -> groupContainsMatchingOrFilter(plan.memo(), expression.groupId())),
+				() -> "An OR-to-VALUES proof escaped its matching Filter group: " + proofCarriers);
+	}
+
+	@Test
+	void orValuesRewriteProofIsEmittedOnlyForMatchingFilterGroup() {
+		TupleExpr input = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, PREFIX + """
+				SELECT ?enc WHERE {
+				  ?enc ex:code ?code .
+				  FILTER (?code = "DX-200" || ?code = "DX-201")
+				}
+				""", null).getTupleExpr();
+		EvaluationStatistics statistics = new EvaluationStatistics();
+		Memo memo = new Memo(CascadesCostModel.from(statistics));
+		memo.intern(input);
+		CompiledRule rule = RuleCompiler.compile(LmdbSemanticRuleSpecs.orFilterValues());
+		List<MemoExpr> proofSources = new ArrayList<>();
+
+		for (var group : memo.groups()) {
+			for (MemoExpr expression : group.expressions()) {
+				if (!expression.logical()) {
+					continue;
+				}
+				List<RuleApplication> applications = rule.apply(expression, OptimizationGoal.root(), null);
+				if (applications.stream()
+						.flatMap(application -> application.proofs().stream())
+						.anyMatch(proof -> "lmdb-or-filter-values-rewrite".equals(proof.ruleId()))) {
+					proofSources.add(expression);
+				}
+			}
+		}
+
+		assertTrue(proofSources.stream().anyMatch(expression -> expression.tupleExpr() instanceof Filter),
+				() -> "The matching Filter must emit an OR-to-VALUES proof: " + proofSources);
+		assertTrue(proofSources.stream().allMatch(expression -> expression.tupleExpr() instanceof Filter),
+				() -> "Transparent parents emitted a child-local OR-to-VALUES proof: " + proofSources.stream()
+						.map(expression -> expression.tupleExpr().getSignature())
+						.toList());
 	}
 
 	@Test
@@ -106,6 +215,40 @@ class LmdbCascadesOrFilterRewriteCoverageTest {
 	}
 
 	@Test
+	void sameShapeUnionToValuesDeclinesObservableValuedVariables() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		IRI code = values.createIRI("urn:code");
+		IRI status = values.createIRI("urn:status");
+		IRI fixedSubject = values.createIRI("urn:fixed-subject");
+		Union differingObservablePredicates = new Union(
+				new StatementPattern(Var.of("entity"), Var.of("p_code", code), Var.of("value")),
+				new StatementPattern(Var.of("entity"), Var.of("p_status", status), Var.of("value")));
+		Union unchangedObservableSubject = new Union(
+				new StatementPattern(Var.of("fixed", fixedSubject), Var.of("_code", code, false, true),
+						Var.of("value")),
+				new StatementPattern(Var.of("fixed", fixedSubject), Var.of("_status", status, false, true),
+						Var.of("value")));
+
+		assertNull(LmdbCascadesRuleProvider.unionConstantsToValuesAlternative(differingObservablePredicates));
+		assertNull(LmdbCascadesRuleProvider.unionConstantsToValuesAlternative(unchangedObservableSubject));
+		assertFalse(unionConstantsRuleMatches(differingObservablePredicates));
+		assertFalse(unionConstantsRuleMatches(unchangedObservableSubject));
+	}
+
+	private static boolean unionConstantsRuleMatches(Union union) {
+		EvaluationStatistics statistics = new EvaluationStatistics();
+		Memo memo = new Memo(CascadesCostModel.from(statistics));
+		int groupId = memo.intern(union);
+		MemoExpr expression = memo.group(groupId)
+				.expressions()
+				.stream()
+				.filter(MemoExpr::logical)
+				.findFirst()
+				.orElseThrow();
+		return new LmdbUnionConstantsToValuesRule(statistics).matches(expression, OptimizationGoal.root(), memo);
+	}
+
+	@Test
 	void sameShapeUnionToValuesPreservesNamedGraphScope() {
 		TupleExpr tupleExpr = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, PREFIX + """
 				SELECT ?g ?entity ?value WHERE {
@@ -142,6 +285,65 @@ class LmdbCascadesOrFilterRewriteCoverageTest {
 				"rule=lmdb-or-filter-union-rewrite"), diagnosticPlan);
 	}
 
+	@Test
+	void selectedOrUnionRewriteRetainsItsRouteLocalProofInProvenance() {
+		TupleExpr input = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, PREFIX + """
+				SELECT DISTINCT ?enc WHERE {
+				  ?enc ex:code ?code .
+				  ?enc ex:status ?status .
+				  FILTER (?code = "DX-200" || ?status = "active")
+				}
+				""", null).getTupleExpr();
+		LmdbCascadesOptimizer optimizer = new LmdbCascadesOptimizer(new EvaluationStatistics(), false);
+
+		CascadesPlan plan = optimizer.planPreparedInput(input,
+				searchModeGoal(input, OptimizationGoal.SearchMode.AUTO));
+		List<PlanProvenance> selectedRoutes = provenanceNodes(plan.provenance().orElseThrow());
+		List<PlanProvenance> unionRoutes = selectedRoutes
+				.stream()
+				.filter(provenance -> "Union".equals(provenance.operator()))
+				.toList();
+
+		assertFalse(unionRoutes.isEmpty(), "The selected rewrite route must retain its UNION operator");
+		assertTrue(plan.memo()
+				.groups()
+				.stream()
+				.flatMap(group -> group.expressions().stream())
+				.anyMatch(expression -> expression.proofs()
+						.stream()
+						.anyMatch(proof -> "lmdb-or-filter-union-rewrite".equals(proof.ruleId()))),
+				"The memo must retain the explored logical rewrite route");
+		PlanProvenance selectedJoin = selectedRoutes.stream()
+				.filter(provenance -> "Join".equals(provenance.operator()))
+				.findFirst()
+				.orElseThrow();
+		List<MemoExpr> selectedJoinPhysicalRoutes = plan.memo()
+				.group(selectedJoin.memoGroupId())
+				.expressions()
+				.stream()
+				.filter(MemoExpr::physical)
+				.toList();
+		assertTrue(selectedJoinPhysicalRoutes.stream()
+				.anyMatch(expression -> expression.proofs()
+						.stream()
+						.anyMatch(proof -> "lmdb-or-filter-union-rewrite".equals(proof.ruleId()))),
+				() -> "The selected Join group never implemented the proved route: "
+						+ proofSummary(selectedJoinPhysicalRoutes));
+		MemoExpr selectedJoinExpression = plan.memo().expression(selectedJoin.expressionId());
+		assertTrue(selectedJoinExpression.proofs()
+				.stream()
+				.anyMatch(proof -> "lmdb-or-filter-union-rewrite".equals(proof.ruleId())),
+				() -> "The selected Join expression used an unproved route: selected="
+						+ proofSummary(List.of(selectedJoinExpression)) + ", physical="
+						+ proofSummary(selectedJoinPhysicalRoutes) + ", owner="
+						+ proofSummary(plan.memo().group(selectedJoin.memoGroupId()).expressions()));
+		assertTrue(selectedRoutes.stream()
+				.anyMatch(provenance -> provenance.proofs()
+						.stream()
+						.anyMatch(proof -> "lmdb-or-filter-union-rewrite".equals(proof.ruleId()))),
+				() -> "Selected OR-to-UNION route lost its local rewrite proof: " + selectedRoutes);
+	}
+
 	@ParameterizedTest(name = "{0}")
 	@MethodSource("unsafeValueEqualityQueries")
 	void cascadesDoesNotRewriteValueEqualityWhenValuesWouldChangeSemantics(RewriteCase rewriteCase) {
@@ -155,7 +357,7 @@ class LmdbCascadesOrFilterRewriteCoverageTest {
 
 	@Test
 	void cascadesRewritesSafeInFilterInsideCorrelatedNotExistsToValues() {
-		TupleExpr tupleExpr = optimizeWithCascades(PREFIX + """
+		String query = PREFIX + """
 				SELECT (COUNT(DISTINCT ?enc) AS ?count) WHERE {
 				  ?enc ex:code ?code .
 				  FILTER NOT EXISTS {
@@ -163,18 +365,63 @@ class LmdbCascadesOrFilterRewriteCoverageTest {
 				    FILTER (?status IN ("closed", "cancelled"))
 				  }
 				}
-				""");
-		String diagnosticPlan = tupleExpr.toString();
+				""";
+		TupleExpr input = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		LmdbCascadesOptimizer optimizer = new LmdbCascadesOptimizer(new EvaluationStatistics(), false);
+		CascadesPlan plan = optimizer.planPreparedInput(input, searchModeGoal(input, OptimizationGoal.SearchMode.AUTO));
+		TupleExpr selectedPlan = plan.tupleExpr().orElseThrow();
 
-		assertBindingSetAssignment(tupleExpr, Set.of("status"), 2);
-		assertFalse(containsListMemberOperator(tupleExpr), diagnosticPlan);
-		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
-				"rule=lmdb-finite-filter-values-rewrite"), diagnosticPlan);
+		assertBindingSetAssignment(selectedPlan, Set.of("status"), 2);
+		assertFalse(containsListMemberOperator(selectedPlan), selectedPlan::toString);
+		assertTrue(plan.memo()
+				.groups()
+				.stream()
+				.flatMap(group -> group.expressions().stream())
+				.filter(LmdbCascadesOrFilterRewriteCoverageTest::hasFiniteValuesRewriteProof)
+				.map(MemoExpr::tupleExpr)
+				.anyMatch(expression -> bindingSetAssignments(expression)
+						.stream()
+						.anyMatch(assignment -> assignment.getBindingNames().equals(Set.of("status"))
+								&& bindingSetCount(assignment) == 2)),
+				"The memo must retain the finite VALUES alternative and its local rewrite proof");
 	}
 
 	@Test
-	void cascadesRewritesSafeInFilterInsideCorrelatedExistsToValues() {
-		TupleExpr tupleExpr = optimizeWithCascades(PREFIX + """
+	void cascadesExploresOrValuesInsideCorrelatedNotExistsFromLocalFilterGroup() {
+		String query = PREFIX + """
+				SELECT (COUNT(DISTINCT ?enc) AS ?count) WHERE {
+				  ?enc ex:code ?code .
+				  FILTER NOT EXISTS {
+				    ?enc ex:status ?status .
+				    FILTER (?status = "closed" || ?status = "cancelled")
+				  }
+				}
+				""";
+		TupleExpr input = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		LmdbCascadesOptimizer optimizer = new LmdbCascadesOptimizer(new EvaluationStatistics(), false);
+		CascadesPlan plan = optimizer.planPreparedInput(input, searchModeGoal(input, OptimizationGoal.SearchMode.AUTO));
+		List<MemoExpr> proofCarriers = plan.memo()
+				.groups()
+				.stream()
+				.flatMap(group -> group.expressions().stream())
+				.filter(LmdbCascadesOrFilterRewriteCoverageTest::hasOrValuesRewriteProof)
+				.toList();
+
+		assertTrue(proofCarriers.stream()
+				.map(MemoExpr::tupleExpr)
+				.anyMatch(expression -> bindingSetAssignments(expression)
+						.stream()
+						.anyMatch(assignment -> assignment.getBindingNames().equals(Set.of("status"))
+								&& bindingSetCount(assignment) == 2)),
+				"The scalar subquery Filter must expose its OR-to-VALUES alternative in the memo");
+		assertTrue(proofCarriers.stream()
+				.allMatch(expression -> groupContainsMatchingOrFilter(plan.memo(), expression.groupId())),
+				() -> "An OR-to-VALUES proof escaped its matching Filter group: " + proofCarriers);
+	}
+
+	@Test
+	void cascadesExploresFiniteValuesInsideCorrelatedExistsWhileCheaperOriginalWins() {
+		String query = PREFIX + """
 				SELECT (COUNT(DISTINCT ?enc) AS ?count) WHERE {
 				  ?enc ex:code ?code .
 				  FILTER EXISTS {
@@ -182,13 +429,192 @@ class LmdbCascadesOrFilterRewriteCoverageTest {
 				    FILTER (?status IN ("closed", "cancelled"))
 				  }
 				}
-				""");
-		String diagnosticPlan = tupleExpr.toString();
+				""";
+		TupleExpr input = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		LmdbCascadesOptimizer optimizer = new LmdbCascadesOptimizer(new EvaluationStatistics(), false);
+		CascadesPlan plan = optimizer.planPreparedInput(input, searchModeGoal(input, OptimizationGoal.SearchMode.AUTO));
+		TupleExpr selectedPlan = plan.tupleExpr().orElseThrow();
 
-		assertBindingSetAssignment(tupleExpr, Set.of("status"), 2);
-		assertFalse(containsListMemberOperator(tupleExpr), diagnosticPlan);
-		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
-				"rule=lmdb-finite-filter-values-rewrite"), diagnosticPlan);
+		assertTrue(containsListMemberOperator(selectedPlan), selectedPlan::toString);
+		assertTrue(bindingSetAssignments(selectedPlan).isEmpty(), selectedPlan::toString);
+		assertTrue(plan.memo()
+				.groups()
+				.stream()
+				.flatMap(group -> group.expressions().stream())
+				.filter(LmdbCascadesOrFilterRewriteCoverageTest::hasFiniteValuesRewriteProof)
+				.map(MemoExpr::tupleExpr)
+				.anyMatch(expression -> bindingSetAssignments(expression)
+						.stream()
+						.anyMatch(assignment -> assignment.getBindingNames().equals(Set.of("status"))
+								&& bindingSetCount(assignment) == 2)),
+				"The memo must retain the finite VALUES alternative and its local rewrite proof");
+		assertFalse(plan.winner()
+				.orElseThrow()
+				.proofs()
+				.stream()
+				.anyMatch(proof -> "lmdb-finite-filter-values-rewrite".equals(proof.ruleId())),
+				() -> "The selected original route inherited an unselected rewrite proof: "
+						+ plan.winner().orElseThrow().proofs());
+	}
+
+	@Test
+	void selectedOriginalRouteDoesNotInheritOrValuesRewriteProof() {
+		String query = PREFIX + """
+				SELECT (COUNT(DISTINCT ?enc) AS ?count) WHERE {
+				  ?enc ex:code ?code .
+				  FILTER EXISTS {
+				    ?enc ex:status ?status .
+				    FILTER (?status = "closed" || ?status = "cancelled")
+				  }
+				}
+				""";
+		TupleExpr input = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		LmdbCascadesOptimizer optimizer = new LmdbCascadesOptimizer(new EvaluationStatistics(), false);
+		CascadesPlan plan = optimizer.planPreparedInput(input, searchModeGoal(input, OptimizationGoal.SearchMode.AUTO));
+		TupleExpr selectedPlan = plan.tupleExpr().orElseThrow();
+
+		assertTrue(containsOr(selectedPlan), selectedPlan::toString);
+		assertTrue(bindingSetAssignments(selectedPlan).isEmpty(), selectedPlan::toString);
+		assertTrue(plan.memo()
+				.groups()
+				.stream()
+				.flatMap(group -> group.expressions().stream())
+				.filter(LmdbCascadesOrFilterRewriteCoverageTest::hasOrValuesRewriteProof)
+				.map(MemoExpr::tupleExpr)
+				.anyMatch(expression -> bindingSetAssignments(expression)
+						.stream()
+						.anyMatch(assignment -> assignment.getBindingNames().equals(Set.of("status"))
+								&& bindingSetCount(assignment) == 2)),
+				"The memo must retain the unselected OR-to-VALUES alternative and its local proof");
+		assertFalse(plan.winner()
+				.orElseThrow()
+				.proofs()
+				.stream()
+				.anyMatch(proof -> "lmdb-or-filter-values-rewrite".equals(proof.ruleId())),
+				() -> "The selected original route inherited an unselected OR-to-VALUES proof: "
+						+ plan.winner().orElseThrow().proofs());
+	}
+
+	@Test
+	void autoKeepsExecutableFallbackForCombinedExistsMinusAndOrValuesRewrite() {
+		String query = PREFIX + """
+				SELECT (COUNT(DISTINCT ?med) AS ?count) WHERE {
+				  ?med a ex:Medication .
+				  ?med ex:code ?code .
+				  FILTER (?code = "MED-1000" || ?code = "MED-1001")
+				  FILTER EXISTS { ?patient ex:hasMedication ?med . }
+				  MINUS {
+				    ?med ex:dosage ?dose .
+				    FILTER(CONTAINS(LCASE(STR(?dose)), "x"))
+				  }
+				}
+				""";
+		TupleExpr input = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		LmdbCascadesOptimizer optimizer = new LmdbCascadesOptimizer(new EvaluationStatistics(), false);
+
+		CascadesPlan plan = optimizer.planPreparedInput(input,
+				searchModeGoal(input, OptimizationGoal.SearchMode.AUTO));
+		String diagnostic = plan.searchStatus() + " pending=" + plan.pendingTasks()
+				+ " diagnostics=" + plan.diagnostics();
+
+		assertTrue(plan.winner().isPresent(), diagnostic);
+		assertTrue(plan.tupleExpr().isPresent(), diagnostic);
+	}
+
+	@Test
+	void exactSearchRetainsCheapestCompleteAutoWinner() {
+		String query = PREFIX + """
+				SELECT ?entity WHERE {
+				  ?entity ex:code ?code .
+				  ?entity a ?type .
+				  FILTER ((?code = "DX-200" && ?type = ex:Condition)
+				    || (?code = "RX-100" && ?type = ex:Medication))
+				}
+				""";
+		TupleExpr autoInput = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		TupleExpr exactInput = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		EvaluationStatistics statistics = new EvaluationStatistics();
+		LmdbCascadesOptimizer optimizer = new LmdbCascadesOptimizer(statistics, false);
+		CascadesPlan auto = optimizer.planPreparedInput(autoInput, searchModeGoal(autoInput,
+				OptimizationGoal.SearchMode.AUTO));
+		CascadesPlan exact = optimizer.planPreparedInput(exactInput, searchModeGoal(exactInput,
+				OptimizationGoal.SearchMode.EXACT));
+		double autoWork = auto.winner().orElseThrow().executionCost().totalWork();
+		double exactWork = exact.winner().orElseThrow().executionCost().totalWork();
+
+		assertEquals("COMPLETE", auto.completeness().name(), auto.searchStatus()::toString);
+		assertEquals("COMPLETE", exact.completeness().name(), exact.searchStatus()::toString);
+		assertTrue(exactWork <= autoWork,
+				() -> "EXACT lost a complete AUTO frontier: exact=" + exactWork + " auto=" + autoWork
+						+ " exactPlan=" + exact.tupleExpr().orElseThrow() + " autoPlan="
+						+ auto.tupleExpr().orElseThrow());
+	}
+
+	@Test
+	void pharmaQuerySevenHasCompleteExactCascadesPlan() {
+		TupleExpr input = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				ThemeQueryCatalog.queryFor(Theme.PHARMA, 7), null).getTupleExpr();
+		LmdbCascadesOptimizer optimizer = new LmdbCascadesOptimizer(new UniformJoinStatistics(), false);
+
+		CascadesPlan plan = optimizer.planPreparedInput(input,
+				searchModeGoal(input, OptimizationGoal.SearchMode.EXACT));
+		String diagnostic = plan.searchStatus() + " pending=" + plan.pendingTasks()
+				+ " diagnostics=" + plan.diagnostics();
+
+		assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness(), diagnostic);
+		assertFalse(plan.approximate(), diagnostic);
+		assertTrue(plan.searchStatus().limitCauses().isEmpty(), diagnostic);
+		assertTrue(plan.pendingTasks().isEmpty(), diagnostic);
+		assertTrue(plan.winner().isPresent(), diagnostic);
+		assertTrue(plan.tupleExpr().isPresent(), diagnostic);
+		assertTrue(plan.provenance().isPresent(), diagnostic);
+	}
+
+	private static boolean hasFiniteValuesRewriteProof(MemoExpr expression) {
+		return expression.proofs()
+				.stream()
+				.anyMatch(proof -> "lmdb-finite-filter-values-rewrite".equals(proof.ruleId()));
+	}
+
+	private static boolean hasOrValuesRewriteProof(MemoExpr expression) {
+		return expression.proofs()
+				.stream()
+				.anyMatch(proof -> "lmdb-or-filter-values-rewrite".equals(proof.ruleId()));
+	}
+
+	private static boolean groupContainsMatchingOrFilter(Memo memo, int groupId) {
+		return memo.group(groupId)
+				.expressions()
+				.stream()
+				.anyMatch(expression -> expression.logical()
+						&& expression.tupleExpr()instanceof Filter filter
+						&& containsOr(filter.getCondition()));
+	}
+
+	private static OptimizationGoal searchModeGoal(TupleExpr input, OptimizationGoal.SearchMode mode) {
+		OptimizationGoal base = OptimizationGoal.root(input, PhysicalProperties.ANY);
+		if (mode == OptimizationGoal.SearchMode.EXACT) {
+			return base;
+		}
+		return new OptimizationGoal(base.requiredProperties(), base.semanticScope(), base.costPolicy(),
+				base.costBound(), base.excludedProperties(), mode, Long.MAX_VALUE, 4096, base.rowGoal(),
+				base.estimationTier(), base.inputBindingContext());
+	}
+
+	private static final class UniformJoinStatistics extends EvaluationStatistics implements JoinFactorCostModel {
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+				Set<String> currentlyBoundVars) {
+			boolean bound = factor.getBindingNames().stream().anyMatch(currentlyBoundVars::contains);
+			double rows = bound ? 1.0d : 100.0d;
+			return Optional.of(new FactorCostEstimate(rows, rows));
+		}
+
+		@Override
+		public double getCardinality(TupleExpr expression) {
+			return 100.0d;
+		}
 	}
 
 	static Stream<Arguments> valuesRewriteQueries() {
@@ -295,10 +721,8 @@ class LmdbCascadesOrFilterRewriteCoverageTest {
 	}
 
 	private static TupleExpr optimizeWithCascades(String query) {
-		String previousMode = System.setProperty("rdf4j.optimizer.lmdb.cascades.mode", "budgeted");
+		String previousMode = System.setProperty("rdf4j.optimizer.lmdb.cascades.mode", "auto");
 		String previousPolicy = System.setProperty("rdf4j.optimizer.lmdb.cascades.standardPlanPolicy", "off");
-		String previousBudget = System.setProperty("rdf4j.optimizer.lmdb.cascades.budget", "512");
-		String previousTimeout = System.setProperty("rdf4j.optimizer.lmdb.cascades.timeoutMillis", "200");
 		try {
 			TupleExpr tupleExpr = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
 			new LmdbCascadesOptimizer(new EvaluationStatistics(), false).optimize(tupleExpr, null,
@@ -307,8 +731,6 @@ class LmdbCascadesOrFilterRewriteCoverageTest {
 		} finally {
 			restoreProperty("rdf4j.optimizer.lmdb.cascades.mode", previousMode);
 			restoreProperty("rdf4j.optimizer.lmdb.cascades.standardPlanPolicy", previousPolicy);
-			restoreProperty("rdf4j.optimizer.lmdb.cascades.budget", previousBudget);
-			restoreProperty("rdf4j.optimizer.lmdb.cascades.timeoutMillis", previousTimeout);
 		}
 	}
 
@@ -457,6 +879,28 @@ class LmdbCascadesOrFilterRewriteCoverageTest {
 			}
 		});
 		return found[0];
+	}
+
+	private static List<PlanProvenance> provenanceNodes(PlanProvenance root) {
+		List<PlanProvenance> nodes = new ArrayList<>();
+		List<PlanProvenance> pending = new ArrayList<>();
+		pending.add(root);
+		while (!pending.isEmpty()) {
+			PlanProvenance current = pending.removeLast();
+			nodes.add(current);
+			pending.addAll(current.inputs());
+		}
+		return List.copyOf(nodes);
+	}
+
+	private static List<String> proofSummary(List<MemoExpr> expressions) {
+		return expressions.stream()
+				.map(expression -> expression.id() + ":" + expression.operator() + expression.inputGroupIds() + "="
+						+ expression.proofs()
+								.stream()
+								.map(proof -> proof.ruleId())
+								.toList())
+				.toList();
 	}
 
 	private static void restoreProperty(String property, String previousValue) {

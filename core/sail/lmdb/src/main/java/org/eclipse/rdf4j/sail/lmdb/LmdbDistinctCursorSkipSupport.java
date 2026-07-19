@@ -108,15 +108,18 @@ final class LmdbDistinctCursorSkipSupport {
 		}
 		for (int i = Math.min(prefixLength, fields.length); i < fields.length; i++) {
 			int componentIndex = quadIndex(fields[i]);
-			if (isFixedLowerBoundComponent(lowerBoundTemplate, componentIndex)) {
-				long current = quad[componentIndex];
-				long lowerBound = lowerBoundTemplate[componentIndex];
-				if (current < lowerBound) {
-					return -1;
-				}
-				if (current > lowerBound) {
-					return 1;
-				}
+			if (!isFixedLowerBoundComponent(lowerBoundTemplate, componentIndex)) {
+				// A later fixed component is not monotonic while this earlier key component remains unconstrained.
+				// Comparing through the gap can seek back to the same key or skip a matching row in this prefix.
+				return 0;
+			}
+			long current = quad[componentIndex];
+			long lowerBound = lowerBoundTemplate[componentIndex];
+			if (current < lowerBound) {
+				return -1;
+			}
+			if (current > lowerBound) {
+				return 1;
 			}
 		}
 		return 0;

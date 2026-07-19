@@ -79,6 +79,21 @@ class LmdbRuleRegistryCoverageTest {
 	}
 
 	@Test
+	void boundLookupImplementationLeavesChildFrontierReactivityToMemoCosting() {
+		RuleDescriptor descriptor = new LmdbInnerJoinBoundLookupRule(new EvaluationStatistics()).descriptor();
+
+		assertEquals(Set.of(), descriptor.childPropertiesRead(),
+				"The stable join recipe must be recosted, not regenerated, when a child frontier changes");
+		assertEquals(Set.of(), descriptor.goalPropertiesRead(),
+				"Invocation row counts price child winners; they do not change the physical join recipe");
+		assertEquals(Set.of(
+				RuleWakeUpEvent.LOGICAL_EXPRESSION_ADDED,
+				RuleWakeUpEvent.LOGICAL_FACT_CHANGED,
+				RuleWakeUpEvent.REQUIRED_PROPERTIES_CHANGED),
+				descriptor.wakeUpEvents());
+	}
+
+	@Test
 	void lmdbOwnedRulesDeclareNarrowSchedulerDependencies() {
 		List<String> imprecise = new ArrayList<>();
 		Set<String> invocationSensitive = new java.util.TreeSet<>();
@@ -111,8 +126,8 @@ class LmdbRuleRegistryCoverageTest {
 
 		assertEquals(List.of(), imprecise,
 				"LMDB-specific rules must declare finite roots and only the dependencies their matching or application reads");
-		assertEquals(Set.of("lmdb-access-path", "lmdb-distinct-cursor-skip", "lmdb-inner-join-bound-lookup",
-				"lmdb-optional-rhs-anchored-lookup", "lmdb-row-preserving-subplan-access-path"),
+		assertEquals(Set.of("lmdb-access-path", "lmdb-distinct-cursor-skip", "lmdb-optional-rhs-anchored-lookup",
+				"lmdb-row-preserving-subplan-access-path"),
 				invocationSensitive,
 				"Only LMDB rules that directly estimate an access path from invocation cardinality may retain it");
 	}

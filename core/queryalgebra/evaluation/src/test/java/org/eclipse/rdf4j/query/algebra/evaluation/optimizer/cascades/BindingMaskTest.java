@@ -38,6 +38,11 @@ class BindingMaskTest {
 		assertEquals(Set.of("v64", "v129"), universe.names(left.intersect(right)));
 		assertEquals(Set.of("v0", "v63"), universe.names(left.minus(right)));
 		assertTrue(left.union(right).containsAll(universe.maskOf(Set.of("v0", "v1", "v64", "v127", "v129"))));
+		assertEquals(0, left.nextSetBit(0));
+		assertEquals(63, left.nextSetBit(1));
+		assertEquals(64, left.nextSetBit(64));
+		assertEquals(129, left.nextSetBit(65));
+		assertEquals(-1, left.nextSetBit(130));
 	}
 
 	@Test

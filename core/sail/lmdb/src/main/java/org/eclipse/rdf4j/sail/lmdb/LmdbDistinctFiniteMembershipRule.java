@@ -90,21 +90,15 @@ final class LmdbDistinctFiniteMembershipRule extends LmdbRule {
 			return List.of();
 		}
 
-		Memo memo = context.memo();
-		int childGroupId = expression.inputGroupIds().getFirst();
 		OptimizationGoal setObserver = OptimizationGoal.root()
 				.withSemanticScope(OptimizationGoal.SET_SEMANTICS);
 		List<RuleApplication> applications = new ArrayList<>();
 		List<TupleExpr> emittedGroups = new ArrayList<>();
-		for (MemoExpr childExpression : memo.group(childGroupId).expressions()) {
-			if (!childExpression.logical()
-					|| !memo.isAdmissible(childExpression, setObserver)) {
-				continue;
-			}
-			if (!context.claimStructuralObservation(id(), expression, childExpression)) {
-				continue;
-			}
-			for (MembershipRewrite rewrite : rewriteFiniteMembershipAlternatives(childExpression.tupleExpr(),
+		context.visitLogicalDescendantRoutes(id(), expression, 0, setObserver,
+				RuleRootOperator.BINDING_SET_ASSIGNMENT,
+				candidate -> candidate.tupleExpr()instanceof BindingSetAssignment assignment
+						&& isFiniteAssignment(assignment), childRoute -> {
+			for (MembershipRewrite rewrite : rewriteFiniteMembershipAlternatives(childRoute.tupleExpr(),
 					distinctCountVars)) {
 				SaturatedMembershipRewrite saturated = saturateFiniteMembership(rewrite, distinctCountVars);
 				Group observerAlternative = group.clone();
@@ -125,11 +119,15 @@ final class LmdbDistinctFiniteMembershipRule extends LmdbRule {
 				PhysicalProperties finiteRelationsApplied = PhysicalProperties.builder()
 						.appliedFiniteRelations(saturated.appliedRelations())
 						.build();
+				List<RuleProof> composedProofs = new ArrayList<>(childRoute.proofs().size() + 1);
+				composedProofs.addAll(childRoute.proofs());
+				composedProofs.add(observerProof);
 				applications.add(new RuleApplication(expression.groupId(), observerAlternative, RuleKind.TRANSFORMATION,
-						PhysicalProperties.ANY, CostVector.ZERO, List.of(observerProof), "", null,
+						PhysicalProperties.ANY, CostVector.ZERO, List.copyOf(composedProofs), "", null,
 						List.of(finiteRelationsApplied), false));
 			}
-		}
+			return true;
+		});
 		return applications.isEmpty() ? List.of() : List.copyOf(applications);
 	}
 

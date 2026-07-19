@@ -25,9 +25,9 @@ import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.TupleExprInputCodec;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.TupleExprToIr;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
 /** Compatibility bridge between mutable tuple trees and typed memo-local child slots. */
 final class MemoInputLayout {
@@ -139,7 +139,7 @@ final class MemoInputLayout {
 			AggregateOperator operator = groupElement.getOperator();
 			if (!(operator instanceof Count count)
 					|| !count.isDistinct()
-					|| !(count.getArg() instanceof Var var)
+					|| !(count.getArg()instanceof Var var)
 					|| var.hasValue()
 					|| var.getName() == null) {
 				return false;

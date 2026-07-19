@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -20,6 +21,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -27,13 +29,17 @@ import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.ExhaustiveLegalJoinSearchContributor;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSearchContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSearchContributor;
@@ -42,10 +48,88 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSe
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinSearchService;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.JoinTree;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.MemoJoinRegionExtractor;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.OpaqueFactorDescriptor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.junit.jupiter.api.Test;
 
 class CascadesJoinRegionEnumerationTest {
+
+	@Test
+	void registeredJoinImplementationParticipatesBeforeRootDagExport() {
+		AtomicInteger scopedApplications = new AtomicInteger();
+		RegisteredScopedJoinImplementationRule registered = new RegisteredScopedJoinImplementationRule(
+				scopedApplications);
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(registered)
+				.addAll(RuleRegistry.standardLogicalRules())
+				.build();
+		PhysicalProperties required = PhysicalProperties.builder()
+				.materialization(PhysicalProperties.Materialization.MATERIALIZED)
+				.build();
+		Join root = new Join(pattern("left", "leftPredicate", "shared"),
+				pattern("shared", "rightPredicate", "right"));
+
+		CascadesPlan plan = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry,
+				CascadesTelemetry.NO_OP).optimize(root, OptimizationGoal.exact(required));
+
+		assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness(),
+				() -> "diagnostics=" + plan.diagnostics() + ", pending=" + plan.pendingTasks());
+		assertTrue(scopedApplications.get() > 0,
+				"A registered local JOIN implementation must compete in JoinRegionMemo before root-DAG export");
+		assertTrue(plan.memo()
+				.groups()
+				.stream()
+				.flatMap(group -> group.expressions().stream())
+				.filter(MemoExpr::physical)
+				.flatMap(expression -> expression.proofs().stream())
+				.anyMatch(proof -> registered.id().equals(proof.ruleId())),
+				"The registered implementation must remain available to the ordinary global physical lifecycle");
+		assertFalse(plan.memo()
+				.groups()
+				.stream()
+				.flatMap(group -> group.expressions().stream())
+				.map(MemoExpr::tupleExpr)
+				.anyMatch(CascadesJoinRegionEnumerationTest::containsScopedInputReference),
+				"Scoped candidate references must remain local to JoinRegionMemo");
+	}
+
+	@Test
+	void scopedOnlyJoinImplementationSurvivesRootDagExport() {
+		AtomicInteger scopedApplications = new AtomicInteger();
+		ScopedOnlyJoinImplementationRule scopedOnly = new ScopedOnlyJoinImplementationRule(scopedApplications);
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(scopedOnly)
+				.addAll(RuleRegistry.standardLogicalRules())
+				.build();
+		PhysicalProperties required = PhysicalProperties.builder()
+				.materialization(PhysicalProperties.Materialization.MATERIALIZED)
+				.build();
+		Join root = new Join(pattern("left", "leftPredicate", "shared"),
+				pattern("shared", "rightPredicate", "right"));
+
+		CascadesPlan plan = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry,
+				CascadesTelemetry.NO_OP).optimize(root, OptimizationGoal.exact(required));
+
+		assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness(),
+				() -> "diagnostics=" + plan.diagnostics() + ", pending=" + plan.pendingTasks());
+		assertTrue(scopedApplications.get() > 0,
+				"The scoped-only implementation must participate inside JoinRegionMemo");
+		assertTrue(plan.memo()
+				.groups()
+				.stream()
+				.flatMap(group -> group.expressions().stream())
+				.filter(MemoExpr::physical)
+				.flatMap(expression -> expression.proofs().stream())
+				.anyMatch(proof -> scopedOnly.id().equals(proof.ruleId())),
+				"Root-DAG export must retain a chosen physical implementation that cannot be reapplied globally");
+		assertFalse(plan.memo()
+				.groups()
+				.stream()
+				.flatMap(group -> group.expressions().stream())
+				.map(MemoExpr::tupleExpr)
+				.anyMatch(CascadesJoinRegionEnumerationTest::containsScopedInputReference),
+				"Scoped candidate references must not escape into the global memo");
+	}
 
 	@Test
 	void unifiedJoinSearchInstallsRouteProvenTransparentAlternatives() {
@@ -84,7 +168,8 @@ class CascadesJoinRegionEnumerationTest {
 		CascadesPlan plan = planner.optimize(root, OptimizationGoal.root());
 		List<MemoExpr> rootExpressions = plan.memo().group(plan.rootGroupId()).expressions();
 
-		assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness(), plan.diagnostics().toString());
+		assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness(),
+				() -> "diagnostics=" + plan.diagnostics() + ", pending=" + plan.pendingTasks());
 		assertTrue(rootExpressions.stream()
 				.filter(MemoExpr::logical)
 				.flatMap(expression -> expression.proofs().stream())
@@ -122,7 +207,7 @@ class CascadesJoinRegionEnumerationTest {
 				.expressions()
 				.stream()
 				.filter(MemoExpr::physical)
-				.anyMatch(expression -> expression.tupleExpr() instanceof Join join
+				.anyMatch(expression -> expression.tupleExpr()instanceof Join join
 						&& join.isVariableScopeChange()
 						&& expression.inputGroupIds().size() == 2),
 				"The supported barrier must retain independently optimized physical children");
@@ -186,7 +271,7 @@ class CascadesJoinRegionEnumerationTest {
 	}
 
 	@Test
-	void exactJoinSearchEnumeratesCorrelatedNotExistsAtEveryAssuredPrefix() {
+	void exactJoinSearchExportsOnlyLegalRootReachableCorrelatedNotExistsPrefixes() {
 		StatementPattern arm = pattern("arm", "armPredicate", "armValue");
 		StatementPattern guard = pattern("guard", "guardPredicate", "guardValue");
 		StatementPattern tail = pattern("tail", "tailPredicate", "tailValue");
@@ -204,19 +289,68 @@ class CascadesJoinRegionEnumerationTest {
 				.map(MemoExpr::tupleExpr)
 				.filter(Filter.class::isInstance)
 				.map(Filter.class::cast)
-				.filter(filter -> filter.getCondition() instanceof Not not && not.getArg() instanceof Exists)
+				.filter(filter -> filter.getCondition()instanceof Not not && not.getArg() instanceof Exists)
 				.map(filter -> filter.getArg()
 						.getBindingNames()
 						.stream()
 						.filter(scopeMarkers::contains)
 						.collect(Collectors.toUnmodifiableSet()))
 				.collect(Collectors.toUnmodifiableSet());
+		List<MemoExpr> routedExpressions = plan.memo()
+				.groups()
+				.stream()
+				.flatMap(group -> group.expressions().stream())
+				.filter(MemoExpr::logical)
+				.filter(expression -> expression.proofs()
+						.stream()
+						.anyMatch(proof -> JoinSearchService.ROUTE_ID.equals(proof.ruleId())))
+				.toList();
 
-		assertEquals(Set.of(Set.of("arm"), Set.of("arm", "guard"), Set.of("arm", "tail"), scopeMarkers),
-				predicateScopes,
-				"Exact join search must retain every state where the correlated predicate becomes legal, independent of "
-						+ "the input join syntax: " + plan.diagnostics());
+		assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness(),
+				() -> "diagnostics=" + plan.diagnostics() + ", pending=" + plan.pendingTasks());
+		assertTrue(predicateScopes.contains(Set.of("arm")),
+				"The selected root DAG must retain the earliest legal correlated predicate placement: "
+						+ predicateScopes);
+		assertTrue(predicateScopes.contains(scopeMarkers),
+				"The selected root DAG must retain the complete correlated predicate placement: " + predicateScopes);
+		assertTrue(predicateScopes.stream().allMatch(scope -> scope.contains("arm")),
+				"Every exported NOT EXISTS placement must assure its correlated arm binding: " + predicateScopes);
+		assertTrue(routedExpressions.stream()
+				.flatMap(expression -> expression.proofs().stream())
+				.anyMatch(proof -> proof.facts().contains("scopedJoinRegionMemo")),
+				"Correlated scalar-subquery predicates must remain inside JoinRegionMemo closure");
+		assertFalse(routedExpressions.stream()
+				.flatMap(expression -> expression.proofs().stream())
+				.anyMatch(proof -> proof.facts().contains("joinState")
+						|| proof.facts().contains("predicateState")),
+				"Correlated scalar-subquery predicates must not materialize global join-state expressions");
+	}
+
+	@Test
+	void scalarFreeFilterUsesScopedPredicateClosureAndReachableExport() {
+		Filter root = new Filter(
+				new Join(pattern("left", "leftPredicate", "shared"),
+						pattern("shared", "rightPredicate", "right")),
+				new Bound(new Var("shared")));
+
+		CascadesPlan plan = planner(new JoinSearchService(List.of(new ExhaustiveLegalJoinSearchContributor())))
+				.optimize(root, OptimizationGoal.root());
+
 		assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness(), plan.diagnostics().toString());
+		assertTrue(plan.searchStatus().counters().predicateProbes() > 0L,
+				"Scoped predicate eligibility must use the shared deterministic work ledger");
+		assertTrue(plan.memo()
+				.groups()
+				.stream()
+				.flatMap(group -> group.expressions().stream())
+				.filter(MemoExpr::logical)
+				.filter(expression -> expression.tupleExpr() instanceof Filter)
+				.flatMap(expression -> expression.proofs().stream())
+				.anyMatch(proof -> proof.facts().containsAll(Set.of("scopedJoinRegionMemo", "predicate=0"))),
+				"Only root-reachable scoped predicate recipes should be exported into the global memo");
+		assertFalse(plan.pendingTasks()
+				.stream()
+				.anyMatch(task -> task.kind() == PendingOptimizationTask.Kind.ENUMERATE_JOIN));
 	}
 
 	@Test
@@ -239,7 +373,11 @@ class CascadesJoinRegionEnumerationTest {
 						.stream()
 						.map(factor -> factor.occurrenceId() + "->" + factor.groupId())
 						.toList()
-						+ ":stats=" + request.statisticsEpoch();
+						+ ":stats=" + request.statisticsEpoch()
+						+ ":bound=" + request.context().initiallyBoundBindings()
+						+ ":properties=" + request.context().requiredProperties()
+						+ ":scope=" + request.context().semanticScope()
+						+ ":rowGoal=" + request.context().rowGoal();
 				revisions.computeIfAbsent(signature, ignored -> new ArrayList<>()).add(request.dependencyStamp());
 				invocations.add(signature);
 				return delegate.contribute(request, sink);
@@ -252,16 +390,63 @@ class CascadesJoinRegionEnumerationTest {
 
 		assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness());
 		assertTrue(revisions.values().stream().allMatch(stamps -> stamps.size() == 1),
-				() -> "A child winner changes costing inputs, not the legal join candidate space: " + revisions
-						+ "; groups=" + plan.memo().groups().stream()
+				() -> "A child winner changes costing inputs, not the legal join candidate space for one goal: "
+						+ revisions
+						+ "; groups=" + plan.memo()
+								.groups()
+								.stream()
 								.map(group -> group.id() + "[logical=" + group.logicalRevision() + ",join="
-										+ group.joinSearchRevision() + ",expressions=" + group.expressions().stream()
+										+ group.joinSearchRevision() + ",expressions=" + group.expressions()
+												.stream()
 												.map(expression -> expression.id() + ":" + expression.logical() + ":"
 														+ expression.tupleExpr().getClass().getSimpleName() + ":"
 														+ expression.proofs().stream().map(RuleProof::ruleId).toList())
-												.toList() + "]")
+												.toList()
+										+ "]")
 								.toList());
 		assertFalse(invocations.isEmpty());
+	}
+
+	@Test
+	void rootWinnerRevisionDoesNotRestartScopedFactorSnapshot() {
+		AtomicReference<Memo> observedMemo = new AtomicReference<>();
+		AtomicInteger observedRootGroupId = new AtomicInteger(-1);
+		AtomicInteger invocations = new AtomicInteger();
+		JoinSearchContributor countingExact = new JoinSearchContributor() {
+			private final Descriptor descriptor = new Descriptor("root-winner-counting-exact",
+					Coverage.EXHAUSTIVE_LEGAL, 1_000);
+			private final ExhaustiveLegalJoinSearchContributor delegate = new ExhaustiveLegalJoinSearchContributor();
+
+			@Override
+			public Descriptor descriptor() {
+				return descriptor;
+			}
+
+			@Override
+			public Outcome contribute(JoinSearchRequest request, CandidateSink sink) {
+				if (invocations.incrementAndGet() == 1) {
+					observedMemo.get().group(observedRootGroupId.get()).winnerChanged(null);
+				}
+				return delegate.contribute(request, sink);
+			}
+		};
+		CascadesPlanner.JoinRegionDiscovery discovery = (memo, rootGroupId, rootExpression, admissible) -> {
+			observedMemo.compareAndSet(null, memo);
+			observedRootGroupId.compareAndSet(-1, rootGroupId);
+			return MemoJoinRegionExtractor.extractAlternatives(memo, rootGroupId, rootExpression, admissible);
+		};
+		CascadesPlanner planner = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()),
+				RuleRegistry.standardLogicalRules(), CascadesTelemetry.NO_OP, 16, RewriteMetadata.empty(),
+				new JoinSearchService(List.of(countingExact)), discovery);
+
+		CascadesPlan plan = planner.optimize(new Join(pattern("a", "p1", "b"), pattern("b", "p2", "c")),
+				OptimizationGoal.root());
+
+		assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness(), plan.diagnostics().toString());
+		assertEquals(1, invocations.get(),
+				"A root winner is an output of scoped search, not a factor input that may invalidate its snapshot");
+		assertEquals(2L, plan.searchStatus().counters().partitionProbes(),
+				"The two oriented partitions must be charged exactly once");
 	}
 
 	@Test
@@ -284,7 +469,16 @@ class CascadesJoinRegionEnumerationTest {
 			}
 		};
 		CascadesPlanner.JoinRegionDiscovery discovery = (memo, rootGroupId, rootExpression, admissible) -> {
-			discoveries.incrementAndGet();
+			if (discoveries.incrementAndGet() == 1) {
+				RuleProof implementation = new RuleProof("test-local-implementation", RuleKind.IMPLEMENTATION,
+						OptimizationGoal.BAG_SEMANTICS, Set.of("samePhysicalRoute"),
+						"A test-local executable route");
+				RuleProof lateCertificate = new RuleProof("late-local-certificate", RuleKind.IMPLEMENTATION,
+						OptimizationGoal.BAG_SEMANTICS, Set.of("samePhysicalRoute"),
+						"An exact physical route gained another local certificate");
+				assertTrue(addTestPhysicalRoute(memo, rootGroupId, rootExpression, implementation).isPresent());
+				assertTrue(addTestPhysicalRoute(memo, rootGroupId, rootExpression, lateCertificate).isEmpty());
+			}
 			return MemoJoinRegionExtractor.extractAlternatives(memo, rootGroupId, rootExpression, admissible);
 		};
 		CascadesPlanner planner = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()),
@@ -293,13 +487,62 @@ class CascadesJoinRegionEnumerationTest {
 
 		CascadesPlan plan = planner.optimize(new Join(pattern("a", "p1", "b"), pattern("b", "p2", "c")),
 				OptimizationGoal.root());
+		AtomicInteger baselineDiscoveries = new AtomicInteger();
+		CascadesPlanner.JoinRegionDiscovery baselineDiscovery = (memo, rootGroupId, rootExpression, admissible) -> {
+			if (baselineDiscoveries.incrementAndGet() == 1) {
+				RuleProof implementation = new RuleProof("test-local-implementation",
+						RuleKind.IMPLEMENTATION, OptimizationGoal.BAG_SEMANTICS,
+						Set.of("samePhysicalRoute"), "A test-local executable route");
+				assertTrue(addTestPhysicalRoute(memo, rootGroupId, rootExpression, implementation).isPresent());
+			}
+			return MemoJoinRegionExtractor.extractAlternatives(memo, rootGroupId, rootExpression, admissible);
+		};
+		CascadesPlan baseline = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()),
+				RuleRegistry.standardLogicalRules(), CascadesTelemetry.NO_OP, 16, RewriteMetadata.empty(),
+				new JoinSearchService(List.of(new ExhaustiveLegalJoinSearchContributor())), baselineDiscovery)
+						.optimize(new Join(pattern("a", "p1", "b"), pattern("b", "p2", "c")),
+								OptimizationGoal.root());
 
 		assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness(), plan.diagnostics().toString());
+		assertEquals(OptimizationCompleteness.COMPLETE, baseline.completeness(), baseline.diagnostics().toString());
 		assertEquals(1, discoveries.get(),
-				"Unchanged route materialization and child facts must reuse one captured region discovery: "
+				"A route-local physical proof merge must not rediscover an unchanged logical join region: "
 						+ plan.diagnostics());
+		assertEquals(joinDiscoveryRequests(baseline), joinDiscoveryRequests(plan),
+				"A physical proof-only merge must not enqueue proof-irrelevant join discovery");
 		assertEquals(1, enumerations.get(),
 				"An unchanged dependency stamp must enumerate the region only once: " + plan.diagnostics());
+	}
+
+	@Test
+	void nestedInnerJoinsAreDiscoveredOnlyThroughTheirMaximalRegionRoot() {
+		List<Integer> discoveryRoots = new ArrayList<>();
+		List<Integer> discoveredFactorCounts = new ArrayList<>();
+		CascadesPlanner.JoinRegionDiscovery discovery = (memo, rootGroupId, rootExpression, admissible) -> {
+			List<MemoJoinRegionExtractor.Result> results = MemoJoinRegionExtractor.extractAlternatives(memo,
+					rootGroupId, rootExpression, admissible);
+			for (MemoJoinRegionExtractor.Result result : results) {
+				if (result.supported()) {
+					discoveryRoots.add(rootGroupId);
+					discoveredFactorCounts.add(result.region().factors().size());
+				}
+			}
+			return results;
+		};
+		Join root = new Join(
+				new Join(pattern("a", "p1", "b"), pattern("b", "p2", "c")),
+				new Join(pattern("c", "p3", "d"), pattern("d", "p4", "e")));
+		CascadesPlan plan = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()),
+				RuleRegistry.standardLogicalRules(), CascadesTelemetry.NO_OP, 16, RewriteMetadata.empty(),
+				new JoinSearchService(List.of(new ExhaustiveLegalJoinSearchContributor())), discovery)
+						.optimize(root, OptimizationGoal.root());
+
+		assertFalse(discoveryRoots.isEmpty(), "The maximal inner-join region must be discovered");
+		assertTrue(discoveryRoots.stream().allMatch(rootGroupId -> rootGroupId == plan.rootGroupId()),
+				() -> "Nested join prefixes must not own overlapping scoped searches: roots=" + discoveryRoots
+						+ ", maximal=" + plan.rootGroupId());
+		assertEquals(Set.of(4), Set.copyOf(discoveredFactorCounts),
+				"Every supported discovery must cover the complete maximal region");
 	}
 
 	@Test
@@ -316,13 +559,14 @@ class CascadesJoinRegionEnumerationTest {
 		CascadesPlan plan = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry,
 				CascadesTelemetry.NO_OP).optimize(root, OptimizationGoal.root());
 
-		assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness(), plan.diagnostics().toString());
+		assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness(),
+				() -> "diagnostics=" + plan.diagnostics() + ", pending=" + plan.pendingTasks());
 		assertTrue(plan.memo()
 				.group(plan.rootGroupId())
 				.expressions()
 				.stream()
 				.filter(MemoExpr::logical)
-				.filter(expression -> expression.tupleExpr() instanceof Filter filter
+				.filter(expression -> expression.tupleExpr()instanceof Filter filter
 						&& filter.getArg() instanceof Join)
 				.count() >= 2,
 				"The regression requires distinct equivalent Filter-over-Join derivations in one owner group");
@@ -366,7 +610,7 @@ class CascadesJoinRegionEnumerationTest {
 	}
 
 	@Test
-	void equivalentTwoFactorSubsetsReuseOneMemoGroup() {
+	void selectedRootDagExportsOnlyItsReachableTwoFactorSubset() {
 		CascadesPlan plan = planner(new JoinSearchService(List.of(new ExhaustiveLegalJoinSearchContributor())))
 				.optimize(new Join(pattern("a", "p1", "b"),
 						new Join(pattern("b", "p2", "c"), pattern("c", "p3", "d"))),
@@ -381,20 +625,45 @@ class CascadesJoinRegionEnumerationTest {
 				.map(MemoGroup::id)
 				.collect(Collectors.toUnmodifiableSet());
 		Map<Set<Integer>, Set<Integer>> groupsBySubset = new HashMap<>();
+		Map<Set<Integer>, Set<Integer>> routedGroupsBySubset = new HashMap<>();
 		for (MemoGroup group : plan.memo().groups()) {
 			for (MemoExpr expression : group.expressions()) {
 				if (expression.logical() && expression.tupleExpr() instanceof Join
 						&& expression.inputGroupIds().size() == 2
 						&& leafGroups.containsAll(expression.inputGroupIds())) {
-					groupsBySubset.computeIfAbsent(Set.copyOf(expression.inputGroupIds()), ignored -> new HashSet<>())
-							.add(group.id());
+					Set<Integer> subset = Set.copyOf(expression.inputGroupIds());
+					groupsBySubset.computeIfAbsent(subset, ignored -> new HashSet<>()).add(group.id());
+					if (expression.proofs()
+							.stream()
+							.anyMatch(proof -> JoinSearchService.ROUTE_ID.equals(proof.ruleId())
+									&& proof.facts().contains("scopedJoinRegionMemo"))) {
+						routedGroupsBySubset.computeIfAbsent(subset, ignored -> new HashSet<>()).add(group.id());
+					}
 				}
 			}
 		}
+		Set<List<Integer>> routedRootTopologies = plan.memo()
+				.group(plan.rootGroupId())
+				.expressions()
+				.stream()
+				.filter(MemoExpr::logical)
+				.filter(expression -> expression.tupleExpr() instanceof Join)
+				.filter(expression -> expression.proofs()
+						.stream()
+						.anyMatch(proof -> JoinSearchService.ROUTE_ID.equals(proof.ruleId())
+								&& proof.facts().contains("scopedJoinRegionMemo")))
+				.map(MemoExpr::inputGroupIds)
+				.collect(Collectors.toUnmodifiableSet());
 
-		assertEquals(3, groupsBySubset.size());
+		assertFalse(routedRootTopologies.isEmpty(), "The fixture must export at least one selected root topology");
+		assertTrue(groupsBySubset.size() <= routedRootTopologies.size() + 1,
+				() -> "Only the written topology and selected full-region root DAGs may own global two-factor "
+						+ "intermediates; the written nested region is independently route-proven: roots="
+						+ routedRootTopologies + ", all=" + groupsBySubset + ", routed=" + routedGroupsBySubset);
 		assertTrue(groupsBySubset.values().stream().allMatch(groupIds -> groupIds.size() == 1),
-				"Every occurrence subset must map to exactly one memo group: " + groupsBySubset);
+				"Every exported occurrence subset must map to exactly one memo group: " + groupsBySubset);
+		assertTrue(routedGroupsBySubset.values().stream().allMatch(groupIds -> groupIds.size() == 1),
+				"Every selected occurrence subset must map to exactly one memo group: " + routedGroupsBySubset);
 	}
 
 	@Test
@@ -422,12 +691,23 @@ class CascadesJoinRegionEnumerationTest {
 				.build();
 		Join root = new Join(pattern("tenant", "p1", "b"), pattern("b", "p2", "c"));
 
-		CascadesPlan plan = planner(new JoinSearchService(
-				List.of(observer, new ExhaustiveLegalJoinSearchContributor())))
-						.optimize(root, OptimizationGoal.exact(required));
+		JoinFactorCostModel factorCostModel = (factor, boundVars) -> Optional.of(
+				new JoinFactorCostModel.FactorCostEstimate(1.0d, 1.0d, Map.of(), Map.of(), true, true,
+						boundVars.isEmpty() ? 0 : 1, 0, 1.0d, false, true));
+		CascadesCostModel costModel = new CascadesCostModel.DefaultCascadesCostModel(new EvaluationStatistics(),
+				factorCostModel, RdfStatisticsProvider.EMPTY);
+		CascadesPlanner planner = new CascadesPlanner(costModel, RuleRegistry.standardLogicalRules(),
+				CascadesTelemetry.NO_OP, 16, RewriteMetadata.empty(),
+				new JoinSearchService(List.of(observer, new ExhaustiveLegalJoinSearchContributor())));
+
+		CascadesPlan plan = planner.optimize(root, OptimizationGoal.exact(required));
 		JoinSearchContext context = observed.get();
 
-		assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness());
+		assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness(),
+				() -> "diagnostics=" + plan.diagnostics() + ", pending=" + plan.pendingTasks());
+		assertSame(plan.memo().universe(), context.bindingUniverse(),
+				"Join search must retain the memo's authoritative binding IDs without a name-set remap");
+		assertEquals(plan.memo().universe().maskOf(Set.of("tenant")), context.initiallyBoundBindings());
 		assertEquals(Set.of("tenant"), context.initiallyBoundVars());
 		assertEquals(required, context.requiredProperties());
 		assertEquals(OptimizationGoal.BAG_SEMANTICS, context.semanticScope());
@@ -440,6 +720,132 @@ class CascadesJoinRegionEnumerationTest {
 						.equals(descriptor.tupleExprTemplate().getBindingNames())));
 	}
 
+	@Test
+	void schedulerIncludesAssuredInputContextInInitiallyBoundJoinBindings() {
+		AtomicReference<JoinSearchContext> observed = new AtomicReference<>();
+		JoinSearchContributor observer = new JoinSearchContributor() {
+			private final Descriptor descriptor = new Descriptor("input-context-observer", Coverage.HEURISTIC, 10);
+
+			@Override
+			public Descriptor descriptor() {
+				return descriptor;
+			}
+
+			@Override
+			public Outcome contribute(JoinSearchRequest request, CandidateSink sink) {
+				observed.compareAndSet(null, request.context());
+				return Outcome.completed();
+			}
+		};
+		Join root = new Join(pattern("subject", "p1", "object"), pattern("object", "p2", "tail"));
+		OptimizationGoal goal = OptimizationGoal.exact(PhysicalProperties.ANY)
+				.withInputBindingContext(InputBindingContext.fromProfile(1.0d, Set.of("tenant"), BindingProfile.ANY));
+
+		CascadesPlan plan = planner(new JoinSearchService(
+				List.of(observer, new ExhaustiveLegalJoinSearchContributor()))).optimize(root, goal);
+		JoinSearchContext context = observed.get();
+
+		assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness(), plan.diagnostics().toString());
+		assertTrue(context != null, () -> "diagnostics=" + plan.diagnostics() + ", pending=" + plan.pendingTasks());
+		assertEquals(plan.memo().universe().maskOf(Set.of("tenant")), context.initiallyBoundBindings(),
+				"Join legality must see assured external inputs even when they are not physical requirements");
+	}
+
+	@Test
+	void schedulerCarriesOpaqueFactorRequiredInputsIntoJoinSearchContext() {
+		AtomicReference<JoinSearchContext> observed = new AtomicReference<>();
+		JoinSearchContributor observer = new JoinSearchContributor() {
+			private final Descriptor descriptor = new Descriptor("opaque-required-input-observer", Coverage.HEURISTIC,
+					10);
+
+			@Override
+			public Descriptor descriptor() {
+				return descriptor;
+			}
+
+			@Override
+			public Outcome contribute(JoinSearchRequest request, CandidateSink sink) {
+				observed.compareAndSet(null, request.context());
+				return Outcome.completed();
+			}
+		};
+		JoinSearchService service = new JoinSearchService(
+				List.of(observer, new ExhaustiveLegalJoinSearchContributor()), expression -> {
+					if (!(expression.tupleExpr() instanceof Extension)) {
+						return Optional.empty();
+					}
+					StreamBindingSchema schema = StreamBindingSchema.from(expression.tupleExpr());
+					return Optional.of(new OpaqueFactorDescriptor(schema.possible(), schema.assured(), Set.of("seed"),
+							Set.of("derived"), Set.of()));
+				});
+		Extension extension = new Extension(pattern("row", "rowPredicate", "value"),
+				new ExtensionElem(new Str(new Var("seed")), "derived"));
+		Join root = new Join(extension, pattern("seed", "seedPredicate", "seedValue"));
+
+		CascadesPlan plan = planner(service).optimize(root, OptimizationGoal.root());
+		JoinSearchContext context = observed.get();
+
+		assertTrue(context != null, () -> "diagnostics=" + plan.diagnostics() + ", pending=" + plan.pendingTasks());
+		var extensionDescriptor = context.factorDescriptors()
+				.stream()
+				.filter(descriptor -> descriptor.tupleExprTemplate() instanceof Extension)
+				.findFirst()
+				.orElseThrow();
+		assertEquals(context.bindingUniverse().maskOf(Set.of("seed")), extensionDescriptor.requiredInputBindings());
+		assertEquals(Set.of("seed"), extensionDescriptor.requiredInputBindingNames());
+	}
+
+	@Test
+	void dependentOpaqueFactorUsesScopedMemoWithoutGlobalJoinStates() {
+		JoinSearchService service = new JoinSearchService(
+				List.of(new ExhaustiveLegalJoinSearchContributor()), expression -> {
+					if (!(expression.tupleExpr() instanceof Extension)) {
+						return Optional.empty();
+					}
+					StreamBindingSchema schema = StreamBindingSchema.from(expression.tupleExpr());
+					return Optional.of(new OpaqueFactorDescriptor(schema.possible(), schema.assured(), Set.of("seed"),
+							Set.of("derived"), Set.of()));
+				});
+		Extension dependent = new Extension(pattern("row", "rowPredicate", "value"),
+				new ExtensionElem(new Str(new Var("seed")), "derived"));
+		Join root = new Join(dependent, pattern("seed", "seedPredicate", "seedValue"));
+
+		CascadesPlan plan = planner(service).optimize(root, OptimizationGoal.root());
+		List<MemoExpr> routedExpressions = plan.memo()
+				.groups()
+				.stream()
+				.flatMap(group -> group.expressions().stream())
+				.filter(MemoExpr::logical)
+				.filter(expression -> expression.proofs()
+						.stream()
+						.anyMatch(proof -> JoinSearchService.ROUTE_ID.equals(proof.ruleId())))
+				.toList();
+
+		assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness(),
+				() -> "diagnostics=" + plan.diagnostics() + ", pending=" + plan.pendingTasks());
+		assertTrue(routedExpressions.stream()
+				.flatMap(expression -> expression.proofs().stream())
+				.anyMatch(proof -> proof.facts().contains("scopedJoinRegionMemo")),
+				"A single assured sibling producer must keep the pure-inner dependency inside JoinRegionMemo");
+		assertFalse(routedExpressions.stream()
+				.flatMap(expression -> expression.proofs().stream())
+				.anyMatch(proof -> proof.facts().contains("joinState")
+						|| proof.facts().contains("predicateState")),
+				"The scoped route must not materialize global join-state expressions");
+		assertTrue(routedExpressions.stream()
+				.filter(expression -> expression.tupleExpr() instanceof Join)
+				.allMatch(expression -> expression.groupId() == plan.rootGroupId()),
+				"A two-factor scoped root has no reachable intermediate join recipe to export");
+		assertTrue(routedExpressions.stream()
+				.anyMatch(expression -> expression.tupleExpr()instanceof Join join
+						&& join.getLeftArg()instanceof StatementPattern pattern
+						&& "seedPredicate".equals(pattern.getPredicateVar().getName())
+						&& join.getRightArg() instanceof Extension),
+				"The required-input factor must remain to the right of its unique assured producer");
+		assertEquals(1L, plan.searchStatus().counters().partitionProbes(),
+				"Exact enumeration must charge the one dependency-legal oriented partition exactly once");
+	}
+
 	private static CascadesPlanner planner(JoinSearchService joinSearchService) {
 		return new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()),
 				RuleRegistry.standardLogicalRules(), CascadesTelemetry.NO_OP, 16, RewriteMetadata.empty(),
@@ -448,6 +854,27 @@ class CascadesJoinRegionEnumerationTest {
 
 	private static StatementPattern pattern(String subject, String predicate, String object) {
 		return new StatementPattern(new Var(subject), new Var(predicate), new Var(object));
+	}
+
+	private static Optional<MemoExpr> addTestPhysicalRoute(Memo memo, int rootGroupId, MemoExpr rootExpression,
+			RuleProof proof) {
+		return memo.addPhysicalAlternative(rootGroupId, rootExpression.tupleExpr().clone(), PhysicalProperties.ANY,
+				List.of(PhysicalProperties.ANY, PhysicalProperties.ANY), "test-proof-merge", RuleKind.IMPLEMENTATION,
+				CostVector.ZERO, List.of(proof), null, false);
+	}
+
+	private static int joinDiscoveryRequests(CascadesPlan plan) {
+		String prefix = "joinDiscoveryRequests=";
+		for (String diagnostic : plan.diagnostics()) {
+			int start = diagnostic.indexOf(prefix);
+			if (start < 0) {
+				continue;
+			}
+			start += prefix.length();
+			int end = diagnostic.indexOf(',', start);
+			return Integer.parseInt(end < 0 ? diagnostic.substring(start) : diagnostic.substring(start, end));
+		}
+		throw new AssertionError("Missing join-discovery diagnostics: " + plan.diagnostics());
 	}
 
 	private static void collectReorderableFactors(TupleExpr tupleExpr, List<TupleExpr> factors) {
@@ -472,6 +899,137 @@ class CascadesJoinRegionEnumerationTest {
 		return tupleExpr instanceof StatementPattern pattern ? pattern.getPredicateVar().getName() : "";
 	}
 
+	private static boolean containsScopedInputReference(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof ScopedMemoInputReference) {
+			return true;
+		}
+		return MemoInputLayout.slots(tupleExpr)
+				.stream()
+				.map(MemoInputLayout.Slot::input)
+				.anyMatch(CascadesJoinRegionEnumerationTest::containsScopedInputReference);
+	}
+
+	private static final class RegisteredScopedJoinImplementationRule implements FiniteTestCascadesRule {
+		private static final String ID = "test-registered-scoped-join-implementation";
+		private final AtomicInteger scopedApplications;
+
+		private RegisteredScopedJoinImplementationRule(AtomicInteger scopedApplications) {
+			this.scopedApplications = scopedApplications;
+		}
+
+		@Override
+		public String id() {
+			return ID;
+		}
+
+		@Override
+		public RuleKind kind() {
+			return RuleKind.IMPLEMENTATION;
+		}
+
+		@Override
+		public RuleDescriptor descriptor() {
+			return RuleDescriptor.builder(id(), kind())
+					.rootOperators(RuleRootOperator.JOIN)
+					.wakeUpEvents(RuleWakeUpEvent.LOGICAL_EXPRESSION_ADDED,
+							RuleWakeUpEvent.REQUIRED_PROPERTIES_CHANGED)
+					.convergenceClass(RuleConvergenceClass.FINITE_EQUIVALENCE_EXPANSION)
+					.build();
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical() && expression.tupleExpr() instanceof Join;
+		}
+
+		@Override
+		public int promise(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return 200;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			Join implementation = ((Join) expression.tupleExpr()).clone();
+			if (implementation.getLeftArg() instanceof ScopedMemoInputReference
+					&& implementation.getRightArg() instanceof ScopedMemoInputReference) {
+				scopedApplications.incrementAndGet();
+			}
+			PhysicalProperties delivered = PhysicalProperties.builder()
+					.boundVars(implementation.getBindingNames())
+					.materialization(PhysicalProperties.Materialization.MATERIALIZED)
+					.duplicateBehavior(PhysicalProperties.DuplicateBehavior.PRESERVES)
+					.build();
+			CostVector localCost = new CostVector(1.0d, 0.01d, 0.0d, 0.0d, 0.0d, 1.0d, 1.0d);
+			RuleProof proof = new RuleProof(id(), kind(), OptimizationGoal.BAG_SEMANTICS,
+					Set.of("registeredJoinImplementation", "localOperator"),
+					"Registered local JOIN implementation participates in both scoped and global costing");
+			return List.of(RuleApplication.physical(expression.groupId(), implementation, delivered,
+					List.of(PhysicalProperties.ANY, PhysicalProperties.ANY), expression.inputSemanticRequirements(),
+					localCost, proof, ID, null));
+		}
+	}
+
+	private static final class ScopedOnlyJoinImplementationRule implements FiniteTestCascadesRule {
+		private static final String ID = "test-scoped-only-join-implementation";
+		private final AtomicInteger scopedApplications;
+
+		private ScopedOnlyJoinImplementationRule(AtomicInteger scopedApplications) {
+			this.scopedApplications = scopedApplications;
+		}
+
+		@Override
+		public String id() {
+			return ID;
+		}
+
+		@Override
+		public RuleKind kind() {
+			return RuleKind.IMPLEMENTATION;
+		}
+
+		@Override
+		public RuleDescriptor descriptor() {
+			return RuleDescriptor.builder(id(), kind())
+					.rootOperators(RuleRootOperator.JOIN)
+					.wakeUpEvents(RuleWakeUpEvent.LOGICAL_EXPRESSION_ADDED,
+							RuleWakeUpEvent.REQUIRED_PROPERTIES_CHANGED)
+					.convergenceClass(RuleConvergenceClass.FINITE_EQUIVALENCE_EXPANSION)
+					.build();
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			if (!expression.logical() || !(expression.tupleExpr()instanceof Join join)) {
+				return false;
+			}
+			return join.getLeftArg() instanceof ScopedMemoInputReference
+					&& join.getRightArg() instanceof ScopedMemoInputReference;
+		}
+
+		@Override
+		public int promise(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return 300;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			scopedApplications.incrementAndGet();
+			Join implementation = ((Join) expression.tupleExpr()).clone();
+			PhysicalProperties delivered = PhysicalProperties.builder()
+					.boundVars(implementation.getBindingNames())
+					.materialization(PhysicalProperties.Materialization.MATERIALIZED)
+					.duplicateBehavior(PhysicalProperties.DuplicateBehavior.PRESERVES)
+					.build();
+			CostVector localCost = new CostVector(1.0d, 0.001d, 0.0d, 0.0d, 0.0d, 1.0d, 1.0d);
+			RuleProof proof = new RuleProof(id(), kind(), OptimizationGoal.BAG_SEMANTICS,
+					Set.of("scopedOnly", "registeredJoinImplementation", "localOperator"),
+					"Scoped-only JOIN implementation must survive root-DAG export");
+			return List.of(RuleApplication.physical(expression.groupId(), implementation, delivered,
+					List.of(PhysicalProperties.ANY, PhysicalProperties.ANY), expression.inputSemanticRequirements(),
+					localCost, proof, ID, null));
+		}
+	}
+
 	private static final class EquivalentFilterJoinTopologyRule implements FiniteTestCascadesRule {
 
 		@Override
@@ -487,8 +1045,8 @@ class CascadesJoinRegionEnumerationTest {
 		@Override
 		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
 			return expression.logical()
-					&& expression.tupleExpr() instanceof Filter filter
-					&& filter.getArg() instanceof Join join
+					&& expression.tupleExpr()instanceof Filter filter
+					&& filter.getArg()instanceof Join join
 					&& join.getLeftArg() instanceof Join;
 		}
 

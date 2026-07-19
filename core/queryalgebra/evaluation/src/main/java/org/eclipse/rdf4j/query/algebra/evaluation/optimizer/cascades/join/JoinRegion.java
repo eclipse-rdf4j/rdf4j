@@ -25,6 +25,7 @@ import java.util.Set;
 import java.util.TreeSet;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingMask;
 
 /**
  * Immutable logical join region. Dependencies define left-to-right correlation eligibility; unrelated factors remain
@@ -36,19 +37,29 @@ public final class JoinRegion {
 	private final List<JoinFactor> factors;
 	private final List<JoinDependency> dependencies;
 	private final List<JoinPredicate> predicates;
+	private final List<JoinEdge> edges;
 	private final Map<Integer, JoinFactor> factorsByOccurrenceId;
+	private final Map<Integer, Integer> factorOrdinalsByOccurrenceId;
 	private final Map<Integer, JoinPredicate> predicatesById;
+	private final Map<Integer, JoinEdge> edgesById;
 	private final Map<Integer, Set<Integer>> requiredBefore;
+	private final Map<Integer, BindingMask> requiredInputBindings;
+	private final List<List<ProducerClause>> producerClausesByFactor;
 	private final Set<Integer> occurrenceIds;
 	private final Set<Integer> predicateIds;
 	private final Identity identity;
 
 	public JoinRegion(Collection<JoinFactor> factors, Collection<JoinDependency> dependencies) {
-		this(factors, dependencies, List.of());
+		this(factors, dependencies, List.of(), List.of());
 	}
 
 	public JoinRegion(Collection<JoinFactor> factors, Collection<JoinDependency> dependencies,
 			Collection<JoinPredicate> predicates) {
+		this(factors, dependencies, predicates, List.of());
+	}
+
+	public JoinRegion(Collection<JoinFactor> factors, Collection<JoinDependency> dependencies,
+			Collection<JoinPredicate> predicates, Collection<JoinEdge> edges) {
 		Objects.requireNonNull(factors, "factors");
 		if (factors.isEmpty()) {
 			throw new IllegalArgumentException("a join region must contain at least one factor");
@@ -69,6 +80,11 @@ public final class JoinRegion {
 		this.factors = List.copyOf(orderedFactors);
 		this.factorsByOccurrenceId = Collections.unmodifiableMap(mutableFactorsByOccurrenceId);
 		this.occurrenceIds = Collections.unmodifiableSet(new LinkedHashSet<>(mutableFactorsByOccurrenceId.keySet()));
+		LinkedHashMap<Integer, Integer> mutableFactorOrdinals = new LinkedHashMap<>();
+		for (int ordinal = 0; ordinal < orderedFactors.size(); ordinal++) {
+			mutableFactorOrdinals.put(orderedFactors.get(ordinal).occurrenceId(), ordinal);
+		}
+		this.factorOrdinalsByOccurrenceId = Collections.unmodifiableMap(mutableFactorOrdinals);
 
 		ArrayList<JoinDependency> orderedDependencies = new ArrayList<>();
 		if (dependencies != null) {
@@ -77,7 +93,9 @@ public final class JoinRegion {
 			}
 		}
 		orderedDependencies.sort(Comparator.comparingInt(JoinDependency::dependentOccurrenceId)
-				.thenComparing(dependency -> dependency.requiredOccurrenceIds().toString()));
+				.thenComparing(dependency -> dependency.requiredOccurrenceIds().toString())
+				.thenComparing(dependency -> dependency.requiredInputBindings().toString())
+				.thenComparing(dependency -> dependency.producerClauses().toString()));
 		this.dependencies = List.copyOf(orderedDependencies);
 
 		ArrayList<JoinPredicate> orderedPredicates = new ArrayList<>();
@@ -97,16 +115,48 @@ public final class JoinRegion {
 		this.predicatesById = Collections.unmodifiableMap(mutablePredicatesById);
 		this.predicateIds = Collections.unmodifiableSet(new LinkedHashSet<>(mutablePredicatesById.keySet()));
 
+		ArrayList<JoinEdge> orderedEdges = new ArrayList<>();
+		if (edges != null) {
+			for (JoinEdge edge : edges) {
+				orderedEdges.add(Objects.requireNonNull(edge, "edge"));
+			}
+		}
+		orderedEdges.sort(Comparator.comparingInt(JoinEdge::id));
+		LinkedHashMap<Integer, JoinEdge> mutableEdgesById = new LinkedHashMap<>();
+		for (JoinEdge edge : orderedEdges) {
+			if (mutableEdgesById.putIfAbsent(edge.id(), edge) != null) {
+				throw new IllegalArgumentException("duplicate join edge ID: " + edge.id());
+			}
+			validateEdge(edge);
+		}
+		this.edges = List.copyOf(orderedEdges);
+		this.edgesById = Collections.unmodifiableMap(mutableEdgesById);
+
 		LinkedHashMap<Integer, Set<Integer>> mutableRequiredBefore = new LinkedHashMap<>();
+		LinkedHashMap<Integer, BindingMask> mutableRequiredInputBindings = new LinkedHashMap<>();
+		LinkedHashMap<Integer, List<ProducerClause>> mutableProducerClauses = new LinkedHashMap<>();
 		for (JoinDependency dependency : orderedDependencies) {
 			validateDependency(dependency);
 			mutableRequiredBefore.computeIfAbsent(dependency.dependentOccurrenceId(), ignored -> new TreeSet<>())
 					.addAll(dependency.requiredOccurrenceIds());
+			mutableRequiredInputBindings.merge(dependency.dependentOccurrenceId(), dependency.requiredInputBindings(),
+					BindingMask::union);
+			if (!dependency.producerClauses().isEmpty()) {
+				mutableProducerClauses.computeIfAbsent(dependency.dependentOccurrenceId(), ignored -> new ArrayList<>())
+						.addAll(dependency.producerClauses());
+			}
 		}
 		mutableRequiredBefore.replaceAll((ignored, required) -> Collections
 				.unmodifiableSet(new LinkedHashSet<>(required)));
 		this.requiredBefore = Collections.unmodifiableMap(mutableRequiredBefore);
-		this.identity = new Identity(this.factors, this.dependencies, this.predicates);
+		this.requiredInputBindings = Collections.unmodifiableMap(mutableRequiredInputBindings);
+		ArrayList<List<ProducerClause>> indexedProducerClauses = new ArrayList<>(orderedFactors.size());
+		for (JoinFactor factor : orderedFactors) {
+			List<ProducerClause> clauses = mutableProducerClauses.get(factor.occurrenceId());
+			indexedProducerClauses.add(clauses == null || clauses.isEmpty() ? List.of() : List.copyOf(clauses));
+		}
+		this.producerClausesByFactor = List.copyOf(indexedProducerClauses);
+		this.identity = new Identity(this.factors, this.dependencies, this.predicates, this.edges);
 	}
 
 	public List<JoinFactor> factors() {
@@ -119,6 +169,36 @@ public final class JoinRegion {
 
 	public List<JoinPredicate> predicates() {
 		return predicates;
+	}
+
+	public List<JoinEdge> edges() {
+		return edges;
+	}
+
+	/** Returns whether the declared edge can legally connect the two disjoint memo-local subsets. */
+	public boolean isEdgeEligible(int edgeId, JoinSubset left, JoinSubset right) {
+		JoinEdge edge = edgesById.get(edgeId);
+		if (edge == null) {
+			throw new IllegalArgumentException("unknown join edge ID: " + edgeId);
+		}
+		if (left == null || right == null || left.isEmpty() || right.isEmpty() || left.intersects(right)
+				|| !left.containsOnlyBelow(factors.size()) || !right.containsOnlyBelow(factors.size())) {
+			return false;
+		}
+		JoinSubset result = left.union(right);
+		if (!result.containsAll(edge.totalEligibilitySet())) {
+			return false;
+		}
+		for (ConflictRule rule : edge.conflictRules()) {
+			if (result.intersects(rule.activationSubset()) && !result.containsAll(rule.requiredSubset())) {
+				return false;
+			}
+		}
+		if (edge.kind() != JoinEdge.Kind.INNER) {
+			return left.containsAll(edge.leftFactors()) && right.equals(edge.rightFactors());
+		}
+		boolean forward = left.containsAll(edge.leftFactors()) && right.containsAll(edge.rightFactors());
+		return forward || left.containsAll(edge.rightFactors()) && right.containsAll(edge.leftFactors());
 	}
 
 	public Set<Integer> occurrenceIds() {
@@ -175,11 +255,73 @@ public final class JoinRegion {
 		return requiredBefore.getOrDefault(occurrenceId, Set.of());
 	}
 
+	/** Returns the query-local binding mask that the occurrence requires from its declared predecessors. */
+	public BindingMask requiredInputBindings(int occurrenceId) {
+		if (!factorsByOccurrenceId.containsKey(occurrenceId)) {
+			throw new IllegalArgumentException("unknown join factor occurrence ID: " + occurrenceId);
+		}
+		return requiredInputBindings.getOrDefault(occurrenceId, BindingMask.EMPTY);
+	}
+
+	/** Returns the conjunctive producer clauses for one factor; alternatives inside each clause are disjunctive. */
+	public List<ProducerClause> producerClauses(int occurrenceId) {
+		return producerClausesByFactor.get(factorOrdinal(occurrenceId));
+	}
+
+	/** Returns whether this region contains any binding requirement with alternative producer states. */
+	public boolean hasProducerClauses() {
+		for (List<ProducerClause> clauses : producerClausesByFactor) {
+			if (!clauses.isEmpty()) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Returns whether a factor may execute after the supplied dense factor subset. Mandatory predecessors are
+	 * conjunctive. Producer clauses are conjunctive, while their exact producer states are disjunctive.
+	 */
+	public boolean isReady(int occurrenceId, JoinSubset availableBefore, BindingMask outerBindings) {
+		int factorOrdinal = factorOrdinal(occurrenceId);
+		JoinSubset available = availableBefore == null ? JoinSubset.EMPTY : availableBefore;
+		if (!available.containsOnlyBelow(factors.size()) || available.contains(factorOrdinal)) {
+			return false;
+		}
+		for (Integer requiredOccurrenceId : requiredBefore.getOrDefault(occurrenceId, Set.of())) {
+			if (!available.contains(factorOrdinal(requiredOccurrenceId))) {
+				return false;
+			}
+		}
+		BindingMask external = outerBindings == null ? BindingMask.EMPTY : outerBindings;
+		for (ProducerClause clause : producerClausesByFactor.get(factorOrdinal)) {
+			if (external.containsAll(clause.requiredBindings())) {
+				continue;
+			}
+			boolean satisfied = false;
+			for (ProducerState alternative : clause.alternatives()) {
+				if (available.containsAll(alternative.producers())) {
+					satisfied = true;
+					break;
+				}
+			}
+			if (!satisfied) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	/**
 	 * Returns whether the tree contains every factor exactly once and satisfies all correlation dependencies in its
 	 * left-to-right evaluation order.
 	 */
 	public boolean isLegal(JoinTree tree) {
+		return isLegal(tree, BindingMask.EMPTY);
+	}
+
+	/** Returns whether a complete tree is legal with the supplied query-external bindings. */
+	public boolean isLegal(JoinTree tree, BindingMask outerBindings) {
 		if (tree == null) {
 			return false;
 		}
@@ -187,20 +329,24 @@ public final class JoinRegion {
 		if (leafOrder.size() != factors.size()) {
 			return false;
 		}
-		HashSet<Integer> seen = new HashSet<>(leafOrder.size());
+		JoinSubset seen = JoinSubset.EMPTY;
 		for (Integer occurrenceId : leafOrder) {
-			if (!factorsByOccurrenceId.containsKey(occurrenceId) || !seen.add(occurrenceId)) {
+			Integer ordinal = factorOrdinalsByOccurrenceId.get(occurrenceId);
+			if (ordinal == null || seen.contains(ordinal) || !isReady(occurrenceId, seen, outerBindings)) {
 				return false;
 			}
-			if (!seen.containsAll(requiredBefore.getOrDefault(occurrenceId, Set.of()))) {
-				return false;
-			}
+			seen = seen.union(JoinSubset.ofOrdinals(ordinal));
 		}
-		return seen.equals(occurrenceIds);
+		return seen.size() == factors.size();
 	}
 
 	/** Returns whether a memo-local expression is legal in its declared external-availability context. */
 	public boolean isLegal(JoinMemoExpression expression) {
+		return isLegal(expression, BindingMask.EMPTY);
+	}
+
+	/** Returns whether a memo-local expression is legal with the supplied query-external bindings. */
+	public boolean isLegal(JoinMemoExpression expression, BindingMask outerBindings) {
 		if (expression == null
 				|| !occurrenceIds.containsAll(expression.availableBeforeOccurrenceIds())
 				|| !occurrenceIds.containsAll(expression.resultOccurrenceIds())
@@ -212,12 +358,13 @@ public final class JoinRegion {
 				|| !new HashSet<>(leafOrder).equals(expression.resultOccurrenceIds())) {
 			return false;
 		}
-		HashSet<Integer> seen = new HashSet<>(expression.availableBeforeOccurrenceIds());
+		JoinSubset seen = subsetOfOccurrences(expression.availableBeforeOccurrenceIds());
 		for (Integer occurrenceId : leafOrder) {
-			if (!seen.add(occurrenceId)
-					|| !seen.containsAll(requiredBefore.getOrDefault(occurrenceId, Set.of()))) {
+			Integer ordinal = factorOrdinalsByOccurrenceId.get(occurrenceId);
+			if (ordinal == null || seen.contains(ordinal) || !isReady(occurrenceId, seen, outerBindings)) {
 				return false;
 			}
+			seen = seen.union(JoinSubset.ofOrdinals(ordinal));
 		}
 		return true;
 	}
@@ -234,26 +381,74 @@ public final class JoinRegion {
 						"dependency references unknown required occurrence ID: " + requiredOccurrenceId);
 			}
 		}
+		int dependentOrdinal = factorOrdinal(dependency.dependentOccurrenceId());
+		for (ProducerClause clause : dependency.producerClauses()) {
+			for (ProducerState alternative : clause.alternatives()) {
+				if (!alternative.producers().containsOnlyBelow(factors.size())) {
+					throw new IllegalArgumentException("producer state references a factor outside this region");
+				}
+				if (alternative.producers().contains(dependentOrdinal)) {
+					throw new IllegalArgumentException("a join factor cannot produce its own required inputs");
+				}
+			}
+		}
+	}
+
+	private int factorOrdinal(int occurrenceId) {
+		Integer ordinal = factorOrdinalsByOccurrenceId.get(occurrenceId);
+		if (ordinal == null) {
+			throw new IllegalArgumentException("unknown join factor occurrence ID: " + occurrenceId);
+		}
+		return ordinal;
+	}
+
+	private JoinSubset subsetOfOccurrences(Collection<Integer> occurrences) {
+		JoinSubset subset = JoinSubset.EMPTY;
+		for (Integer occurrenceId : occurrences) {
+			subset = subset.union(JoinSubset.ofOrdinals(factorOrdinal(occurrenceId)));
+		}
+		return subset;
+	}
+
+	private void validateEdge(JoinEdge edge) {
+		if (!edge.leftFactors().containsOnlyBelow(factors.size())
+				|| !edge.rightFactors().containsOnlyBelow(factors.size())
+				|| !edge.totalEligibilitySet().containsOnlyBelow(factors.size())) {
+			throw new IllegalArgumentException("join edge references a factor outside this region: " + edge.id());
+		}
+		for (ConflictRule rule : edge.conflictRules()) {
+			if (!rule.activationSubset().containsOnlyBelow(factors.size())
+					|| !rule.requiredSubset().containsOnlyBelow(factors.size())) {
+				throw new IllegalArgumentException(
+						"join edge conflict rule references a factor outside this region: " + edge.id());
+			}
+		}
 	}
 
 	@Override
 	public String toString() {
 		return "JoinRegion[factors=" + factors + ", dependencies=" + dependencies + ", predicates=" + predicates
-				+ "]";
+				+ ", edges=" + edges + "]";
 	}
 
 	/** Complete structural identity of the semantics currently represented by a join region. */
 	public record Identity(List<JoinFactor> factors, List<JoinDependency> dependencies,
-			List<JoinPredicate> predicates) {
+			List<JoinPredicate> predicates, List<JoinEdge> edges) {
 
 		public Identity(List<JoinFactor> factors, List<JoinDependency> dependencies) {
-			this(factors, dependencies, List.of());
+			this(factors, dependencies, List.of(), List.of());
+		}
+
+		public Identity(List<JoinFactor> factors, List<JoinDependency> dependencies,
+				List<JoinPredicate> predicates) {
+			this(factors, dependencies, predicates, List.of());
 		}
 
 		public Identity {
 			factors = factors == null || factors.isEmpty() ? List.of() : List.copyOf(factors);
 			dependencies = dependencies == null || dependencies.isEmpty() ? List.of() : List.copyOf(dependencies);
 			predicates = predicates == null || predicates.isEmpty() ? List.of() : List.copyOf(predicates);
+			edges = edges == null || edges.isEmpty() ? List.of() : List.copyOf(edges);
 			if (factors.isEmpty()) {
 				throw new IllegalArgumentException("join-region identity must contain at least one factor");
 			}

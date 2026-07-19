@@ -16,6 +16,8 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingMask;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingUniverse;
 
 /**
  * Immutable, occurrence-scoped factor facts exposed to join-search contributors. Tuple expressions are compatibility
@@ -28,12 +30,38 @@ public final class JoinFactorDescriptor {
 	private final int occurrenceId;
 	private final int groupId;
 	private final TupleExpr tupleExprTemplate;
-	private final Set<String> possibleBindingNames;
-	private final Set<String> assuredBindingNames;
-	private final Set<String> requiredInputBindingNames;
+	private final BindingUniverse bindingUniverse;
+	private final BindingMask possibleBindings;
+	private final BindingMask assuredBindings;
+	private final BindingMask requiredInputBindings;
+	private volatile Set<String> possibleBindingNames;
+	private volatile Set<String> assuredBindingNames;
+	private volatile Set<String> requiredInputBindingNames;
 
 	public JoinFactorDescriptor(int occurrenceId, int groupId, TupleExpr tupleExprTemplate,
 			Set<String> possibleBindingNames, Set<String> assuredBindingNames,
+			Set<String> requiredInputBindingNames) {
+		this(occurrenceId, groupId, tupleExprTemplate,
+				legacyBindings(possibleBindingNames, assuredBindingNames, requiredInputBindingNames));
+	}
+
+	private JoinFactorDescriptor(int occurrenceId, int groupId, TupleExpr tupleExprTemplate,
+			LegacyBindings legacyBindings) {
+		this(occurrenceId, groupId, tupleExprTemplate, legacyBindings.universe(), legacyBindings.possible(),
+				legacyBindings.assured(), legacyBindings.required(), legacyBindings.possibleNames(),
+				legacyBindings.assuredNames(), legacyBindings.requiredNames());
+	}
+
+	public JoinFactorDescriptor(int occurrenceId, int groupId, TupleExpr tupleExprTemplate,
+			BindingUniverse bindingUniverse, BindingMask possibleBindings, BindingMask assuredBindings,
+			BindingMask requiredInputBindings) {
+		this(occurrenceId, groupId, tupleExprTemplate, bindingUniverse, possibleBindings, assuredBindings,
+				requiredInputBindings, null, null, null);
+	}
+
+	private JoinFactorDescriptor(int occurrenceId, int groupId, TupleExpr tupleExprTemplate,
+			BindingUniverse bindingUniverse, BindingMask possibleBindings, BindingMask assuredBindings,
+			BindingMask requiredInputBindings, Set<String> possibleBindingNames, Set<String> assuredBindingNames,
 			Set<String> requiredInputBindingNames) {
 		if (occurrenceId < 0 || groupId < 0) {
 			throw new IllegalArgumentException("join-factor occurrence and group IDs must be non-negative");
@@ -41,10 +69,14 @@ public final class JoinFactorDescriptor {
 		this.occurrenceId = occurrenceId;
 		this.groupId = groupId;
 		this.tupleExprTemplate = Objects.requireNonNull(tupleExprTemplate, "tupleExprTemplate").clone();
-		this.possibleBindingNames = immutableNames(possibleBindingNames);
-		this.assuredBindingNames = immutableNames(assuredBindingNames);
-		this.requiredInputBindingNames = immutableNames(requiredInputBindingNames);
-		if (!this.possibleBindingNames.containsAll(this.assuredBindingNames)) {
+		this.bindingUniverse = Objects.requireNonNull(bindingUniverse, "bindingUniverse");
+		this.possibleBindings = possibleBindings == null ? BindingMask.EMPTY : possibleBindings;
+		this.assuredBindings = assuredBindings == null ? BindingMask.EMPTY : assuredBindings;
+		this.requiredInputBindings = requiredInputBindings == null ? BindingMask.EMPTY : requiredInputBindings;
+		this.possibleBindingNames = possibleBindingNames;
+		this.assuredBindingNames = assuredBindingNames;
+		this.requiredInputBindingNames = requiredInputBindingNames;
+		if (!this.possibleBindings.containsAll(this.assuredBindings)) {
 			throw new IllegalArgumentException("assured bindings must be a subset of possible bindings");
 		}
 	}
@@ -62,18 +94,72 @@ public final class JoinFactorDescriptor {
 	}
 
 	public Set<String> possibleBindingNames() {
-		return possibleBindingNames;
+		Set<String> names = possibleBindingNames;
+		if (names == null) {
+			names = bindingUniverse.names(possibleBindings);
+			possibleBindingNames = names;
+		}
+		return names;
 	}
 
 	public Set<String> assuredBindingNames() {
-		return assuredBindingNames;
+		Set<String> names = assuredBindingNames;
+		if (names == null) {
+			names = bindingUniverse.names(assuredBindings);
+			assuredBindingNames = names;
+		}
+		return names;
 	}
 
 	public Set<String> requiredInputBindingNames() {
-		return requiredInputBindingNames;
+		Set<String> names = requiredInputBindingNames;
+		if (names == null) {
+			names = bindingUniverse.names(requiredInputBindings);
+			requiredInputBindingNames = names;
+		}
+		return names;
+	}
+
+	public BindingMask possibleBindings() {
+		return possibleBindings;
+	}
+
+	public BindingMask assuredBindings() {
+		return assuredBindings;
+	}
+
+	public BindingMask requiredInputBindings() {
+		return requiredInputBindings;
+	}
+
+	BindingMask possibleBindings(BindingUniverse targetUniverse) {
+		return targetUniverse == bindingUniverse ? possibleBindings : targetUniverse.maskOf(possibleBindingNames());
+	}
+
+	BindingMask assuredBindings(BindingUniverse targetUniverse) {
+		return targetUniverse == bindingUniverse ? assuredBindings : targetUniverse.maskOf(assuredBindingNames());
+	}
+
+	BindingMask requiredInputBindings(BindingUniverse targetUniverse) {
+		return targetUniverse == bindingUniverse
+				? requiredInputBindings
+				: targetUniverse.maskOf(requiredInputBindingNames());
 	}
 
 	private static Set<String> immutableNames(Set<String> names) {
 		return names == null || names.isEmpty() ? Set.of() : Set.copyOf(names);
+	}
+
+	private static LegacyBindings legacyBindings(Set<String> possible, Set<String> assured, Set<String> required) {
+		Set<String> possibleNames = immutableNames(possible);
+		Set<String> assuredNames = immutableNames(assured);
+		Set<String> requiredNames = immutableNames(required);
+		BindingUniverse universe = BindingUniverse.create();
+		return new LegacyBindings(universe, universe.maskOf(possibleNames), universe.maskOf(assuredNames),
+				universe.maskOf(requiredNames), possibleNames, assuredNames, requiredNames);
+	}
+
+	private record LegacyBindings(BindingUniverse universe, BindingMask possible, BindingMask assured,
+			BindingMask required, Set<String> possibleNames, Set<String> assuredNames, Set<String> requiredNames) {
 	}
 }

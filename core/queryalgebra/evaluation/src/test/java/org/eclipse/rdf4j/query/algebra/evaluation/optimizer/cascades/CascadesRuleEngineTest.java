@@ -30,9 +30,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.RandomAccess;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.IntFunction;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
@@ -58,6 +60,7 @@ import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Order;
@@ -80,9 +83,15 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleCompiler;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleDsl;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.RuleSpec;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.dsl.StandardRuleSpecs;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.join.MemoJoinRegionExtractor;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableSetKey;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoLearnedEvidenceService;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -105,14 +114,51 @@ class CascadesRuleEngineTest {
 	}
 
 	@Test
+	void plannerLeavesCostPolicyAdjustmentToTheWinnerFrontier() {
+		AtomicInteger legacyPolicyApplications = new AtomicInteger();
+		CascadesCostModel costModel = new PolicyApplicationCountingCostModel(
+				CascadesCostModel.from(new EvaluationStatistics()), legacyPolicyApplications);
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(new StandardCascadesRules.GenericImplementationRule())
+				.build();
+
+		CascadesPlan plan = new CascadesPlanner(costModel, registry, CascadesTelemetry.NO_OP)
+				.optimize(pattern("s", "p", "o"), OptimizationGoal.root()
+						.withCostPolicy(OptimizationGoal.CostPolicy.ROBUST));
+
+		assertTrue(plan.winner().isPresent());
+		assertEquals(0, legacyPolicyApplications.get(),
+				"The planner must store raw costs and let CostOrdering apply risk exactly once in the frontier");
+	}
+
+	@Test
+	void leoCandidateUsesCostModelFeedbackFingerprint() {
+		AtomicInteger feedbackFingerprintCalls = new AtomicInteger();
+		CascadesCostModel delegate = CascadesCostModel.from(new EvaluationStatistics());
+		CascadesCostModel costModel = new FeedbackFingerprintCostModel(delegate, feedbackFingerprintCalls);
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(new StandardCascadesRules.GenericImplementationRule())
+				.build();
+
+		Winner winner = new CascadesPlanner(costModel, registry, CascadesTelemetry.NO_OP)
+				.optimize(pattern("s", "p", "o"), OptimizationGoal.root())
+				.winner()
+				.orElseThrow();
+
+		assertEquals("cost-model-feedback-fingerprint",
+				winner.plan().getStringMetricPlanned("plannedLeoCandidateLogicalFingerprint"));
+		assertTrue(feedbackFingerprintCalls.get() > 0,
+				"LEO candidate construction must use the cost model's cached semantic fingerprint surface");
+	}
+
+	@Test
 	void genericExistsImplementationDeclaresStreamingExecutorContract() {
 		Filter existsFilter = new Filter(pattern("s", "p", "o"), new Exists(pattern("s", "name", "name")));
 		CascadesCostModel costModel = CascadesCostModel.from(new EvaluationStatistics());
 		Memo memo = new Memo(costModel);
 		int groupId = memo.intern(existsFilter);
 		MemoExpr expression = memo.group(groupId).expressions().getFirst();
-		StandardCascadesRules.GenericImplementationRule rule =
-				new StandardCascadesRules.GenericImplementationRule();
+		StandardCascadesRules.GenericImplementationRule rule = new StandardCascadesRules.GenericImplementationRule();
 
 		RuleApplication application = rule.apply(expression, OptimizationGoal.root(),
 				new RuleContext(memo, costModel, CascadesTelemetry.NO_OP, null)).getFirst();
@@ -189,7 +235,6 @@ class CascadesRuleEngineTest {
 				CascadesTelemetry.NO_OP);
 
 		CascadesPlan plan = planner.optimize(root, OptimizationGoal.root());
-
 		assertTrue(plan.winner().isPresent());
 		assertTrue(attempts.get() >= 2,
 				"The consumer must be retried after the producer adds its memo dependency");
@@ -230,9 +275,481 @@ class CascadesRuleEngineTest {
 				"The parent must be retried while its own physical and winner revisions are still zero");
 		assertEquals(1, successfulApplications.get(),
 				"A newly qualifying child alternative must wake and fire the parent consumer exactly once");
-		assertEquals(0L, childGroup.winnerRevision(),
-				"Child alternative insertion must reactivate parents without relying on a child winner change");
+		assertTrue(childGroup.winnerRevision() > 0L,
+				"After the dependency observer fires before any winner, the child implementation must remain costable");
 		assertTrue(memoContainsProof(plan, "child-alternative-parent-consumer"));
+	}
+
+	@Test
+	void compiledTransformationMatchesLateChildAlternativeAndPreservesItsAuthoritativeInputs() {
+		StatementPattern base = pattern("s", "p", "o");
+		Filter initialChild = new Filter(base, new ValueConstant(VF.createLiteral(true)));
+		Filter root = new Filter(initialChild, new Bound(new Var("o")));
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(RuleCompiler.compile(StandardRuleSpecs.filterMinusPushdown()))
+				.add(new LateDifferenceChildWithAuthoritativeInputsRule())
+				.add(new StandardCascadesRules.GenericImplementationRule())
+				.build();
+
+		CascadesPlan plan = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry,
+				CascadesTelemetry.NO_OP).optimize(root, OptimizationGoal.root());
+
+		MemoExpr parent = plan.memo()
+				.group(plan.rootGroupId())
+				.expressions()
+				.stream()
+				.filter(MemoExpr::logical)
+				.filter(expression -> expression.tupleExpr()instanceof Filter filter
+						&& filter.getArg() instanceof Filter)
+				.findFirst()
+				.orElseThrow();
+		MemoExpr lateDifference = plan.memo()
+				.group(parent.inputGroupIds().getFirst())
+				.expressions()
+				.stream()
+				.filter(MemoExpr::logical)
+				.filter(expression -> expression.tupleExpr() instanceof Difference)
+				.filter(expression -> expression.proofs()
+						.stream()
+						.anyMatch(proof -> LateDifferenceChildWithAuthoritativeInputsRule.ID.equals(proof.ruleId())))
+				.findFirst()
+				.orElseThrow();
+		int authoritativeRightGroupId = lateDifference.inputGroupIds().get(1);
+		Optional<MemoExpr> pushed = plan.memo()
+				.group(plan.rootGroupId())
+				.expressions()
+				.stream()
+				.filter(MemoExpr::logical)
+				.filter(expression -> expression.tupleExpr() instanceof Difference)
+				.filter(expression -> expression.proofs()
+						.stream()
+						.anyMatch(proof -> "filter-minus-pushdown".equals(proof.ruleId())))
+				.findFirst();
+
+		assertAll(
+				() -> assertTrue(plan.memo()
+						.group(authoritativeRightGroupId)
+						.expressions()
+						.stream()
+						.map(MemoExpr::tupleExpr)
+						.anyMatch(EmptySet.class::isInstance),
+						"The late child transformation must retain its declared memo input instead of re-interning its placeholder"),
+				() -> assertTrue(pushed.isPresent(),
+						"A compiled parent pattern must be rematched against a late logical alternative in its child group"),
+				() -> assertEquals(authoritativeRightGroupId,
+						pushed.map(expression -> expression.inputGroupIds().get(1)).orElse(-1),
+						"The compiled rewrite must reuse the child match's authoritative nested input group"),
+				() -> assertTrue(pushed.map(expression -> plan.memo()
+						.group(expression.inputGroupIds().getFirst())
+						.expressions()
+						.stream()
+						.filter(MemoExpr::logical)
+						.flatMap(helper -> helper.proofs().stream())
+						.noneMatch(proof -> "filter-minus-pushdown".equals(proof.ruleId()))).orElse(false),
+						"Interned helper groups must not inherit the parent transformation proof"));
+	}
+
+	@Test
+	void compiledDirectChildShapeGuardDeclaresAndReactsToAuthoritativeFactDependencies() {
+		String ruleId = "test-direct-child-binding-fact-consumer";
+		RuleSpec spec = RuleDsl.rule(ruleId)
+				.kind(RuleKind.TRANSFORMATION)
+				.match(RuleDsl.filter("filter", RuleDsl.capture("input"), RuleDsl.scalar("condition")))
+				.where(RuleDsl.shape("input").possible().intersects(RuleDsl.vars("condition")))
+				.where(RuleDsl.shape("input").assured().intersects(RuleDsl.vars("condition")))
+				.where(RuleDsl.shape("input").nullable().intersects(RuleDsl.shape("input").possible()))
+				.emit(RuleDsl.ref("input"))
+				.proof("authoritativeBindingShape")
+				.reason("Test-only direct child binding-fact consumer")
+				.build();
+		CascadesRule compiled = RuleCompiler.compile(spec);
+		RuleRegistry registry = RuleRegistry.builder().add(compiled).build();
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		int rootGroupId = memo.intern(new Filter(new SingletonSet(), new Bound(new Var("x"))));
+		MemoExpr parent = memo.group(rootGroupId)
+				.expressions()
+				.stream()
+				.filter(MemoExpr::logical)
+				.findFirst()
+				.orElseThrow();
+		MemoGroup childGroup = memo.group(parent.inputGroupIds().getFirst());
+		OptimizationGoal goal = OptimizationGoal.root();
+
+		assertFalse(compiled.matches(parent, goal, memo));
+		BindingMask possible = memo.universe().maskOf(Set.of("x", "nullable"));
+		BindingMask assured = memo.universe().maskOf(Set.of("x"));
+		BindingMask nullable = memo.universe().maskOf(Set.of("nullable"));
+		assertTrue(childGroup.mergeBindingShape(new BindingShape(possible, assured, nullable, BindingMask.EMPTY)));
+		childGroup.factsChanged(Set.of(RuleDescriptor.MemoFact.POSSIBLE_BINDINGS,
+				RuleDescriptor.MemoFact.ASSURED_BINDINGS, RuleDescriptor.MemoFact.NULLABILITY));
+
+		assertAll(
+				() -> assertEquals(Set.of(RuleDescriptor.MemoFact.POSSIBLE_BINDINGS,
+						RuleDescriptor.MemoFact.ASSURED_BINDINGS, RuleDescriptor.MemoFact.NULLABILITY),
+						compiled.descriptor().factsRead()),
+				() -> assertTrue(compiled.descriptor()
+						.childPropertiesRead()
+						.contains(RuleDescriptor.ChildProperty.BINDING_PROFILE)),
+				() -> assertTrue(compiled.descriptor().wakesFor(RuleWakeUpEvent.CHILD_EXPRESSION_CHANGED)),
+				() -> assertTrue(registry
+						.applicableRules(parent, goal, memo,
+								Set.of(RuleWakeUpEvent.CHILD_EXPRESSION_CHANGED), CascadesTelemetry.NO_OP)
+						.contains(compiled),
+						"A direct captured child must be reconsidered after its authoritative binding facts strengthen"));
+	}
+
+	@Test
+	void autoSkipsNestedTypedRootRejectionsWithoutChargingRuleWork() {
+		RuleSpec spec = RuleDsl.rule("test-charged-nested-frontier-scan")
+				.kind(RuleKind.TRANSFORMATION)
+				.match(RuleDsl.projection("projection",
+						RuleDsl.difference("minus", RuleDsl.capture("left"), RuleDsl.capture("right"))))
+				.emit(RuleDsl.projectionLike("projection", RuleDsl.ref("left")))
+				.proof("chargedMemoFrontierScan")
+				.reason("Test-only nested memo frontier scan")
+				.build();
+		CascadesRule compiled = RuleCompiler.compile(spec);
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		StatementPattern base = pattern("s", "p", "o");
+		Filter initialChild = new Filter(base, new ValueConstant(VF.createLiteral(true)));
+		Projection root = new Projection(initialChild, projection("s", "p", "o"), false);
+		int rootGroupId = memo.intern(root);
+		MemoExpr parent = memo.group(rootGroupId)
+				.expressions()
+				.stream()
+				.filter(MemoExpr::logical)
+				.findFirst()
+				.orElseThrow();
+		int childGroupId = parent.inputGroupIds().getFirst();
+		MemoExpr initial = memo.group(childGroupId)
+				.expressions()
+				.stream()
+				.filter(MemoExpr::logical)
+				.findFirst()
+				.orElseThrow();
+		int baseGroupId = initial.inputGroupIds().getFirst();
+		for (int index = 0; index < 32; index++) {
+			Filter rejected = new Filter(base.clone(), new ValueConstant(VF.createLiteral("rejected-" + index)));
+			memo.addLogicalAlternativeWithInputs(childGroupId, rejected, List.of(baseGroupId), List.of())
+					.orElseThrow();
+		}
+		assertTrue(memo.group(childGroupId).expressions().size() > 3);
+
+		SearchLimits limits = new SearchLimits(1L, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+				Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE);
+		CascadesPlanner.SearchState state = new CascadesPlanner.SearchState(OptimizationGoal.SearchMode.AUTO, limits);
+		OptimizationGoal goal = new OptimizationGoal(PhysicalProperties.ANY, OptimizationGoal.BAG_SEMANTICS,
+				OptimizationGoal.CostPolicy.EXACT, CostVector.INFINITE, Set.of(), OptimizationGoal.SearchMode.AUTO,
+				Long.MAX_VALUE, 1);
+
+		assertTrue(compiled.apply(parent, goal,
+				new RuleContext(memo, CascadesCostModel.from(new EvaluationStatistics()), CascadesTelemetry.NO_OP,
+						state))
+				.isEmpty());
+		assertTrue(state.consumeMajor("sentinel"),
+				"A typed child-root mismatch is rejected by the operator index before it consumes rule work");
+		assertEquals(1L, state.searchStatus(null).counters().ruleWork());
+	}
+
+	@Test
+	void autoLogicalMatcherDoesNotChargePhysicalChildAlternatives() {
+		RuleSpec spec = RuleDsl.rule("test-logical-matcher-skips-physical-frontier")
+				.kind(RuleKind.TRANSFORMATION)
+				.match(RuleDsl.projection("projection",
+						RuleDsl.difference("minus", RuleDsl.capture("left"), RuleDsl.capture("right"))))
+				.emit(RuleDsl.projectionLike("projection", RuleDsl.ref("left")))
+				.proof("logicalMatcherSkipsPhysicalFrontier")
+				.reason("Test-only logical matcher frontier")
+				.build();
+		CascadesRule compiled = RuleCompiler.compile(spec);
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		StatementPattern base = pattern("s", "p", "o");
+		Filter initialChild = new Filter(base, new ValueConstant(VF.createLiteral(true)));
+		Projection root = new Projection(initialChild, projection("s", "p", "o"), false);
+		int rootGroupId = memo.intern(root);
+		MemoExpr parent = memo.group(rootGroupId)
+				.expressions()
+				.stream()
+				.filter(MemoExpr::logical)
+				.findFirst()
+				.orElseThrow();
+		int childGroupId = parent.inputGroupIds().getFirst();
+		for (int index = 0; index < 32; index++) {
+			PhysicalProperties delivered = PhysicalProperties.builder()
+					.accessPath("test-physical-frontier-" + index)
+					.build();
+			memo.addPhysicalAlternative(childGroupId, initialChild.clone(), delivered,
+					"test-physical-frontier-" + index, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of())
+					.orElseThrow();
+		}
+
+		SearchLimits limits = new SearchLimits(3L, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+				Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE);
+		CascadesPlanner.SearchState state = new CascadesPlanner.SearchState(OptimizationGoal.SearchMode.AUTO, limits);
+		OptimizationGoal goal = new OptimizationGoal(PhysicalProperties.ANY, OptimizationGoal.BAG_SEMANTICS,
+				OptimizationGoal.CostPolicy.EXACT, CostVector.INFINITE, Set.of(), OptimizationGoal.SearchMode.AUTO,
+				Long.MAX_VALUE, 2);
+
+		assertTrue(compiled.apply(parent, goal,
+				new RuleContext(memo, CascadesCostModel.from(new EvaluationStatistics()), CascadesTelemetry.NO_OP,
+						state))
+				.isEmpty());
+		assertTrue(state.consumeMajor("sentinel"),
+				"Physical implementations are not candidates for a compiled logical matcher");
+		assertEquals(1L, state.searchStatus(null).counters().ruleWork(),
+				"The operator index must reject every physical child without charging matcher work");
+	}
+
+	@Test
+	void compiledTransformationRecursivelyMatchesLateGrandchildAlternative() {
+		String ruleId = "test-projection-filter-minus-pushdown";
+		RuleSpec recursiveSpec = RuleDsl.rule(ruleId)
+				.kind(RuleKind.TRANSFORMATION)
+				.promise(87)
+				.match(RuleDsl.projection("projection",
+						RuleDsl.filter("filter",
+								RuleDsl.difference("minus", RuleDsl.capture("left"), RuleDsl.capture("right")),
+								RuleDsl.scalar("condition"))))
+				.emit(RuleDsl.projectionLike("projection",
+						RuleDsl.difference(
+								RuleDsl.filter(RuleDsl.ref("left"), RuleDsl.scalarRef("condition")),
+								RuleDsl.ref("right"))))
+				.proof("recursiveMemoMatch", "authoritativeInputGroups")
+				.reason("Test-only recursive compiled rewrite")
+				.build();
+		Filter initialChild = new Filter(pattern("s", "p", "o"),
+				new ValueConstant(VF.createLiteral(true)));
+		Filter outerFilter = new Filter(initialChild, new Bound(new Var("o")));
+		Projection root = new Projection(outerFilter, projection("s", "p", "o"), false);
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(RuleCompiler.compile(recursiveSpec))
+				.add(new LateDifferenceChildWithAuthoritativeInputsRule())
+				.add(new StandardCascadesRules.GenericImplementationRule())
+				.build();
+
+		CascadesPlan plan = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry,
+				CascadesTelemetry.NO_OP).optimize(root, OptimizationGoal.root());
+
+		MemoExpr lateDifference = plan.memo()
+				.groups()
+				.stream()
+				.flatMap(group -> group.expressions().stream())
+				.filter(MemoExpr::logical)
+				.filter(expression -> expression.tupleExpr() instanceof Difference)
+				.filter(expression -> expression.proofs()
+						.stream()
+						.anyMatch(proof -> LateDifferenceChildWithAuthoritativeInputsRule.ID.equals(proof.ruleId())))
+				.findFirst()
+				.orElseThrow();
+		int authoritativeRightGroupId = lateDifference.inputGroupIds().get(1);
+		Optional<MemoExpr> rewrittenRoot = plan.memo()
+				.group(plan.rootGroupId())
+				.expressions()
+				.stream()
+				.filter(MemoExpr::logical)
+				.filter(expression -> expression.tupleExpr() instanceof Projection)
+				.filter(expression -> expression.proofs()
+						.stream()
+						.anyMatch(proof -> ruleId.equals(proof.ruleId())))
+				.findFirst();
+		Optional<MemoExpr> helperDifference = rewrittenRoot.flatMap(expression -> plan.memo()
+				.group(expression.inputGroupIds().getFirst())
+				.expressions()
+				.stream()
+				.filter(MemoExpr::logical)
+				.filter(helper -> helper.tupleExpr() instanceof Difference)
+				.findFirst());
+
+		assertAll(
+				() -> assertTrue(rewrittenRoot.isPresent(),
+						"A nested compiled pattern must follow a late alternative more than one memo edge below its root"),
+				() -> assertEquals(authoritativeRightGroupId,
+						helperDifference.map(expression -> expression.inputGroupIds().get(1)).orElse(-1),
+						"Recursive matching must retain the grandchild alternative's authoritative nested RHS group"),
+				() -> assertTrue(helperDifference.map(expression -> expression.proofs()
+						.stream()
+						.noneMatch(proof -> ruleId.equals(proof.ruleId()))).orElse(false),
+						"The recursive root proof must not leak into its interned helper Difference"));
+	}
+
+	@Test
+	void compiledTransformationPreservesScalarSubqueryInputAcrossLateChildAlternative() {
+		StatementPattern base = pattern("s", "p", "o");
+		Filter initialChild = new Filter(base, new ValueConstant(VF.createLiteral(true)));
+		Filter root = new Filter(initialChild, new Exists(pattern("s", "eligible", "candidate")));
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(RuleCompiler.compile(StandardRuleSpecs.filterMinusPushdown()))
+				.add(new LateDifferenceChildWithAuthoritativeInputsRule())
+				.add(new StandardCascadesRules.GenericImplementationRule())
+				.build();
+
+		CascadesPlan plan = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry,
+				CascadesTelemetry.NO_OP).optimize(root, OptimizationGoal.root());
+
+		MemoExpr originalFilter = plan.memo()
+				.group(plan.rootGroupId())
+				.expressions()
+				.stream()
+				.filter(MemoExpr::logical)
+				.filter(expression -> expression.tupleExpr()instanceof Filter filter
+						&& filter.getCondition() instanceof Exists)
+				.findFirst()
+				.orElseThrow();
+		int authoritativeExistsGroupId = originalFilter.inputs()
+				.stream()
+				.filter(input -> input.role() == MemoInput.Role.SCALAR_SUBQUERY)
+				.mapToInt(MemoInput::groupId)
+				.findFirst()
+				.orElseThrow();
+		Optional<MemoExpr> pushedDifference = plan.memo()
+				.group(plan.rootGroupId())
+				.expressions()
+				.stream()
+				.filter(MemoExpr::logical)
+				.filter(expression -> expression.tupleExpr() instanceof Difference)
+				.filter(expression -> expression.proofs()
+						.stream()
+						.anyMatch(proof -> "filter-minus-pushdown".equals(proof.ruleId())))
+				.findFirst();
+		Optional<MemoExpr> pushedFilter = pushedDifference.flatMap(expression -> plan.memo()
+				.group(expression.inputGroupIds().getFirst())
+				.expressions()
+				.stream()
+				.filter(MemoExpr::logical)
+				.filter(helper -> helper.tupleExpr()instanceof Filter filter
+						&& filter.getCondition() instanceof Exists)
+				.findFirst());
+
+		assertAll(
+				() -> assertTrue(pushedDifference.isPresent(),
+						"An EXISTS condition must not make the memo-composed FILTER/MINUS rewrite disappear"),
+				() -> assertEquals(authoritativeExistsGroupId,
+						pushedFilter.flatMap(helper -> helper.inputs()
+								.stream()
+								.filter(input -> input.role() == MemoInput.Role.SCALAR_SUBQUERY)
+								.map(input -> Optional.of(input.groupId()))
+								.findFirst())
+								.orElse(Optional.empty())
+								.orElse(-1),
+						"The pushed helper must reuse the original EXISTS subquery memo group"));
+	}
+
+	@Test
+	void compiledTransformationPreservesDirectCaptureInputGroups() {
+		String ruleId = "test-direct-difference-capture-lineage";
+		RuleSpec directCaptureSpec = RuleDsl.rule(ruleId)
+				.kind(RuleKind.TRANSFORMATION)
+				.promise(86)
+				.match(RuleDsl.difference("minus", RuleDsl.capture("left"), RuleDsl.capture("right")))
+				.emit(RuleDsl.difference(RuleDsl.ref("left"), RuleDsl.ref("right")))
+				.proof("directCapture", "authoritativeInputGroups")
+				.reason("Test-only direct-capture lineage rewrite")
+				.build();
+		Filter root = new Filter(pattern("s", "p", "o"), new ValueConstant(VF.createLiteral(true)));
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(RuleCompiler.compile(directCaptureSpec))
+				.add(new LateDifferenceChildWithAuthoritativeInputsRule())
+				.add(new StandardCascadesRules.GenericImplementationRule())
+				.build();
+
+		CascadesPlan plan = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry,
+				CascadesTelemetry.NO_OP).optimize(root, OptimizationGoal.root());
+
+		MemoExpr sourceDifference = plan.memo()
+				.group(plan.rootGroupId())
+				.expressions()
+				.stream()
+				.filter(MemoExpr::logical)
+				.filter(expression -> expression.proofs()
+						.stream()
+						.anyMatch(proof -> LateDifferenceChildWithAuthoritativeInputsRule.ID.equals(proof.ruleId())))
+				.findFirst()
+				.orElseThrow();
+		MemoExpr copiedDifference = plan.memo()
+				.group(plan.rootGroupId())
+				.expressions()
+				.stream()
+				.filter(MemoExpr::logical)
+				.filter(expression -> expression.proofs().stream().anyMatch(proof -> ruleId.equals(proof.ruleId())))
+				.findFirst()
+				.orElseThrow();
+
+		assertEquals(sourceDifference.inputGroupIds(), copiedDifference.inputGroupIds(),
+				"Capture-only child patterns must preserve the matched expression's authoritative memo inputs");
+	}
+
+	@Test
+	void compiledTransformationRejectsRootCaptureDependencyCycleAndReportsIncompleteness() {
+		String ruleId = "test-root-capture-wrapper-cycle";
+		RuleSpec cyclicSpec = RuleDsl.rule(ruleId)
+				.kind(RuleKind.TRANSFORMATION)
+				.promise(90)
+				.match(RuleDsl.filter("root", RuleDsl.capture("input"), RuleDsl.scalar("condition")))
+				.emit(RuleDsl.filter(RuleDsl.ref("root"), RuleDsl.scalarRef("condition")))
+				.proof("testOnlyCycle")
+				.reason("Test-only illegal wrapper around its own target group")
+				.build();
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(RuleCompiler.compile(cyclicSpec))
+				.add(new StandardCascadesRules.GenericImplementationRule())
+				.build();
+
+		CascadesPlan plan = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry,
+				CascadesTelemetry.NO_OP)
+						.optimize(new Filter(pattern("s", "p", "o"), new Bound(new Var("o"))),
+								OptimizationGoal.root());
+
+		assertAll(
+				() -> assertFalse(plan.memo()
+						.group(plan.rootGroupId())
+						.expressions()
+						.stream()
+						.anyMatch(expression -> expression.inputGroupIds().contains(plan.rootGroupId())),
+						"A logical alternative must never depend on its own target group"),
+				() -> assertFalse(memoContainsProof(plan, ruleId),
+						"The rejected cyclic transformation must not publish its proof"),
+				() -> assertEquals(OptimizationCompleteness.UNSUPPORTED_ATOMIC_BOUNDARY, plan.completeness(),
+						"Fail-closed compiled rewrite resolution must not report exact optimization as complete"),
+				() -> assertTrue(plan.searchStatus()
+						.limitCauses()
+						.contains(OptimizationLimitCause.UNSUPPORTED_REPRESENTATION),
+						"The rejected representation must remain visible in structured search status"));
+	}
+
+	@Test
+	void rejectedCompiledTransformationDoesNotInternPartialHelperGroups() {
+		String ruleId = "test-transactional-root-capture-cycle";
+		RuleSpec cyclicSpec = RuleDsl.rule(ruleId)
+				.kind(RuleKind.TRANSFORMATION)
+				.promise(90)
+				.match(RuleDsl.difference("root", RuleDsl.capture("left"), RuleDsl.capture("right")))
+				.emit(RuleDsl.difference(
+						RuleDsl.join(RuleDsl.ref("left"), RuleDsl.ref("right")),
+						RuleDsl.ref("root")))
+				.proof("testOnlyTransactionalCycle")
+				.reason("Test-only late failure after resolving a fresh helper")
+				.build();
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(RuleCompiler.compile(cyclicSpec))
+				.add(new StandardCascadesRules.GenericImplementationRule())
+				.build();
+
+		CascadesPlan plan = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry,
+				CascadesTelemetry.NO_OP)
+						.optimize(new Difference(pattern("s", "p", "o"), pattern("s", "blockedBy", "blocker")),
+								OptimizationGoal.root());
+
+		assertAll(
+				() -> assertEquals(3, plan.memo().groups().size(),
+						"Rejected recipe resolution must not leave an orphan helper group in the memo"),
+				() -> assertFalse(plan.memo()
+						.groups()
+						.stream()
+						.flatMap(group -> group.expressions().stream())
+						.filter(MemoExpr::logical)
+						.anyMatch(expression -> expression.tupleExpr() instanceof Join),
+						"No partially resolved helper expression may survive a rejected application"),
+				() -> assertEquals(OptimizationCompleteness.UNSUPPORTED_ATOMIC_BOUNDARY, plan.completeness()));
 	}
 
 	@Test
@@ -250,20 +767,37 @@ class CascadesRuleEngineTest {
 				CascadesTelemetry.NO_OP);
 
 		CascadesPlan plan = planner.optimize(root, OptimizationGoal.root());
-
-		assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness(), plan.diagnostics().toString());
-		assertTrue(plan.pendingTasks().isEmpty(), plan.pendingTasks().toString());
-		assertTrue(plan.memo()
+		MemoExpr rootExpression = plan.memo()
 				.group(plan.rootGroupId())
 				.expressions()
 				.stream()
 				.filter(MemoExpr::logical)
-				.map(MemoExpr::tupleExpr)
-				.filter(Join.class::isInstance)
-				.map(Join.class::cast)
-				.anyMatch(join -> join.getRightArg() instanceof Join right
-						&& bindingRows(right, "condCode") == 3),
-				"A child group's new reorderable Join topology must become a parent Join alternative");
+				.findFirst()
+				.orElseThrow();
+		List<MemoJoinRegionExtractor.Result> discovered = MemoJoinRegionExtractor.extractAlternatives(plan.memo(),
+				plan.rootGroupId(), rootExpression, ignored -> true);
+		int childGroupId = rootExpression.inputGroupIds().get(1);
+		MemoGroup childGroup = plan.memo().group(childGroupId);
+
+		assertAll(
+				() -> assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness(),
+						plan.diagnostics().toString()),
+				() -> assertTrue(plan.pendingTasks().isEmpty(), plan.pendingTasks().toString()),
+				() -> assertTrue(childGroup.expressions()
+						.stream()
+						.filter(MemoExpr::logical)
+						.map(MemoExpr::tupleExpr)
+						.filter(Join.class::isInstance)
+						.anyMatch(alternative -> bindingRows(alternative, "condCode") == 3),
+						"The finite child Join alternative must remain in the referenced child group"),
+				() -> assertTrue(rootExpression.proofs()
+						.stream()
+						.anyMatch(proof -> "core-unified-join-search".equals(proof.ruleId())),
+						"The canonical parent expression must record that unified join search consumed the child route"),
+				() -> assertTrue(discovered.stream()
+						.filter(MemoJoinRegionExtractor.Result::supported)
+						.anyMatch(result -> result.region().factors().size() == 3),
+						"Surrounding join discovery must expose the expanded three-factor region"));
 	}
 
 	@Test
@@ -287,6 +821,34 @@ class CascadesRuleEngineTest {
 		}
 		assertEquals(finiteRuleFirst.winner().orElseThrow().cost(), finiteRuleLast.winner().orElseThrow().cost(),
 				"Canonical equivalent-expression evidence must make registration order irrelevant");
+	}
+
+	@Test
+	void budgetedEstimateRefinementCannotDropReservedOriginalFallback() {
+		StatementPattern root = pattern("patient", "hasEncounter", "encounter");
+		CostBoundEstimateCostModel costModel = new CostBoundEstimateCostModel();
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(new CostBoundEstimatePublishingRule())
+				.add(new StandardCascadesRules.GenericImplementationRule())
+				.build();
+		OptimizationGoal goal = OptimizationGoal.root()
+				.asBudgeted(null, Integer.MAX_VALUE)
+				.forGroupCostBound(exactCost(10.0d));
+
+		CascadesPlan plan = new CascadesPlanner(costModel, registry, CascadesTelemetry.NO_OP)
+				.optimize(root, goal);
+
+		assertTrue(costModel.estimatePublishingCosts() > 0,
+				"The later implementation must reach goal-wide logical-output publication before cost-bound rejection");
+		Winner winner = plan.winner()
+				.orElseThrow(() -> new AssertionError(
+						"Rejecting an estimate-publishing implementation dropped the reserved executable fallback: "
+								+ plan.searchStatus() + " " + plan.pendingTasks() + " " + plan.diagnostics()));
+		assertAll(
+				() -> assertInstanceOf(StatementPattern.class, winner.plan()),
+				() -> assertEquals("generic-physical-implementation", winner.provenance().ruleId()),
+				() -> assertEquals(exactCost(20.0d), winner.cost(),
+						"The original executable topology is reserved outside exploratory cost bounds"));
 	}
 
 	@Test
@@ -352,7 +914,7 @@ class CascadesRuleEngineTest {
 		}
 		return new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry.build(),
 				CascadesTelemetry.NO_OP)
-					.optimize(root.clone(), OptimizationGoal.root());
+						.optimize(root.clone(), OptimizationGoal.root());
 	}
 
 	private CascadesPlan equivalentEvidencePlan(Projection root, OptimizationGoal goal, boolean finiteRuleFirst) {
@@ -417,6 +979,8 @@ class CascadesRuleEngineTest {
 		assertTrue(winner.proofs()
 				.stream()
 				.anyMatch(proof -> "proof-dependent-consumer".equals(proof.ruleId())));
+		assertFalse(winner.proofs() instanceof RandomAccess,
+				"A winner must expose transitive proofs through a structurally shared lineage, not an eager array copy");
 		PlanProvenance childProvenance = winner.provenance().inputs().getFirst();
 		assertEquals(ProofDerivedStatementPattern.class.getSimpleName(), childProvenance.operator());
 		assertTrue(childProvenance.proofs()
@@ -488,6 +1052,23 @@ class CascadesRuleEngineTest {
 	}
 
 	@Test
+	void optionalNegatedBoundWithAssuredExtensionOutputKeepsEquivalentSchemas() {
+		Extension right = new Extension(pattern("s", "p2", "source"),
+				new ExtensionElem(new ValueConstant(VF.createIRI("urn:rhs")), "rhsOnly"));
+		Filter filter = new Filter(new LeftJoin(pattern("s", "p1", "o1"), right),
+				new Not(new Bound(new Var("rhsOnly"))));
+
+		CascadesPlan plan = planner().optimize(filter, OptimizationGoal.root());
+
+		assertTrue(plan.memo()
+				.group(plan.rootGroupId())
+				.expressions()
+				.stream()
+				.anyMatch(expr -> expr.tupleExpr() instanceof Difference));
+		assertEquals(Set.of("s", "p1", "o1"), StreamBindingSchema.from(filter).possible());
+	}
+
+	@Test
 	void optionalNegatedBoundDoesNotRewriteWithoutSharedVariables() {
 		LeftJoin optional = new LeftJoin(pattern("s", "p1", "o1"), pattern("x", "p2", "rhsOnly"));
 		Filter filter = new Filter(optional, new Not(new Bound(new Var("rhsOnly"))));
@@ -515,7 +1096,7 @@ class CascadesRuleEngineTest {
 	@Test
 	void budgetedModeReturnsSeededNativeWinnerWhenNoTransformationsApply() {
 		RuleRegistry registry = RuleRegistry.builder()
-				.add(new TestImplementationRule("native-implementation", 1.0d))
+				.add(new TestImplementationRule("native-implementation", 0.25d))
 				.build();
 		CascadesPlanner planner = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry,
 				CascadesTelemetry.NO_OP);
@@ -532,7 +1113,7 @@ class CascadesRuleEngineTest {
 	void budgetedModeAppliesTransformationsBeforeSeededNativeWinnerShortcut() {
 		AtomicInteger transformationApplications = new AtomicInteger();
 		RuleRegistry registry = RuleRegistry.builder()
-				.add(new TestImplementationRule("native-implementation", 1.0d))
+				.add(new TestImplementationRule("native-implementation", 0.25d))
 				.add(new RecordingTransformationRule(transformationApplications))
 				.build();
 		CascadesPlanner planner = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry,
@@ -572,7 +1153,7 @@ class CascadesRuleEngineTest {
 	@Test
 	void budgetedModeReturnsWrapperAroundSeededNativeWinnerWhenNoTransformationsApply() {
 		RuleRegistry registry = RuleRegistry.builder()
-				.add(new LeafOnlyImplementationRule("native-leaf", 1.0d))
+				.add(new LeafOnlyImplementationRule("native-leaf", 0.25d))
 				.add(new StandardCascadesRules.GenericImplementationRule())
 				.build();
 		CascadesPlanner planner = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry,
@@ -588,7 +1169,9 @@ class CascadesRuleEngineTest {
 				.get()
 				.proofs()
 				.stream()
-				.anyMatch(proof -> "native-leaf".equals(proof.ruleId())));
+				.anyMatch(proof -> "native-leaf".equals(proof.ruleId())),
+				() -> "The wrapper must retain its selected native leaf provenance: "
+						+ plan.winner().orElseThrow().proofs() + " " + plan.diagnostics());
 		assertTrue(plan.approximate());
 	}
 
@@ -691,6 +1274,65 @@ class CascadesRuleEngineTest {
 	}
 
 	@Test
+	void exactQuiescencePublishesOnlyTerminalDeferredGoalsAndReawakensTheirParents() {
+		Union root = new Union(pattern("left", "leftPredicate", "leftValue"),
+				pattern("right", "rightPredicate", "rightValue"));
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(new QuiescentMutualDependencyImplementationRule())
+				.build();
+		CascadesTelemetry.Recording telemetry = new CascadesTelemetry.Recording(256);
+		CascadesPlan plan = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry,
+				telemetry).optimize(root, OptimizationGoal.root());
+		OptimizationGoal normalizedGoal = plan.goal();
+		WinnerKey rootKey = new WinnerKey(plan.rootGroupId(), normalizedGoal.requiredProperties(),
+				normalizedGoal.semanticScope(), normalizedGoal.costPolicy(), normalizedGoal.rowGoal(),
+				normalizedGoal.inputBindingContext());
+		MemoExpr rootLogical = plan.memo()
+				.group(plan.rootGroupId())
+				.expressions()
+				.stream()
+				.filter(MemoExpr::logical)
+				.filter(expression -> expression.tupleExpr() instanceof Union)
+				.findFirst()
+				.orElseThrow();
+		List<Integer> cyclicGroups = rootLogical.inputGroupIds();
+		List<WinnerKey> cyclicKeys = cyclicGroups.stream()
+				.map(groupId -> new WinnerKey(groupId, normalizedGoal.requiredProperties(),
+						normalizedGoal.semanticScope(), normalizedGoal.costPolicy(), normalizedGoal.rowGoal(),
+						normalizedGoal.inputBindingContext()))
+				.toList();
+		List<Long> deferredAttempts = cyclicGroups.stream()
+				.map(groupId -> plan.memo()
+						.group(groupId)
+						.expressions()
+						.stream()
+						.filter(MemoExpr::physical)
+						.filter(expression -> expression.tupleExpr() instanceof Projection)
+						.findFirst()
+						.orElseThrow())
+				.map(expression -> telemetry.trace()
+						.stream()
+						.filter(event -> event.contains("cost-deferred expression=" + expression.id()))
+						.count())
+				.toList();
+
+		assertAll(
+				() -> assertTrue(plan.winner().isPresent(),
+						"The legal atomic route must survive an unrelated cyclic child route"),
+				() -> assertInstanceOf(SingletonSet.class, plan.winner().orElseThrow().plan()),
+				() -> assertTrue(cyclicKeys.stream().allMatch(plan.memo()::hasFailure),
+						"Global quiescence must publish both mutually dependent child goals as failed: "
+								+ cyclicKeys),
+				() -> assertFalse(plan.memo().hasFailure(rootKey),
+						"Publishing a failed child goal must not blanket-fail a parent goal with a legal route"),
+				() -> assertTrue(deferredAttempts.stream().allMatch(attempts -> attempts >= 2),
+						"Every mutually blocked child application must be reawakened after its dependency fails: "
+								+ telemetry.trace()),
+				() -> assertTrue(plan.pendingTasks().isEmpty(),
+						"Exact fixed-point failure propagation must leave no registered work"));
+	}
+
+	@Test
 	void deferredCostExpressionWakesAfterChildWinnerRevisionChanges() {
 		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
 		StatementPattern child = pattern("s", "p", "o");
@@ -718,6 +1360,104 @@ class CascadesRuleEngineTest {
 		state.wakeDeferredCostWork(memo, childGroupId, 0L, "child_winner_changed");
 
 		assertTrue(state.hasCostWork(), "A child winner revision must reactivate its dependent cost expression");
+	}
+
+	@Test
+	void queuedCostCoalescesDependencyRevisionsUntilItIsDrained() {
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		StatementPattern child = pattern("s", "p", "o");
+		Filter root = new Filter(child, new Bound(new Var("o")));
+		int rootGroupId = memo.intern(root);
+		int childGroupId = memo.group(rootGroupId).expressions().getFirst().inputGroupIds().getFirst();
+		MemoExpr parentPhysical = memo.addPhysicalAlternative(rootGroupId, root.clone(), PhysicalProperties.ANY,
+				"parent-physical", RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of()).orElseThrow();
+		OptimizationGoal goal = OptimizationGoal.root();
+		CascadesPlanner.SearchState state = new CascadesPlanner.SearchState(Integer.MAX_VALUE,
+				OptimizationGoal.SearchMode.EXACT);
+		state.observeStatisticsEpoch(0L);
+		state.enqueueCostWork(memo, parentPhysical, goal, "physical_expression_added");
+
+		for (int revision = 0; revision < 32; revision++) {
+			memo.addPhysicalAlternative(childGroupId, child.clone(),
+					PhysicalProperties.builder().accessPath("child-" + revision).build(),
+					"child-physical-" + revision, RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of());
+			state.wakeDeferredCostWork(memo, childGroupId, 0L, "child_physical_frontier_changed");
+		}
+
+		assertAll(
+				() -> assertTrue(state.hasCostWork(), "The coalesced cost task must remain runnable"),
+				() -> assertTrue(state.diagnostics().contains("deferredCostRecordsCreated=1"),
+						"A queued task reads current memo revisions when drained, so intermediate dependency changes must "
+								+ "not rebuild its immutable work record: " + state.diagnostics()));
+	}
+
+	@Test
+	void unrelatedPhysicalCostWakePreservesExactDeferredBlocker() {
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		Filter root = new Filter(pattern("s", "parentPredicate", "o"), new Bound(new Var("o")));
+		int rootGroupId = memo.intern(root);
+		MemoExpr parentPhysical = memo.addPhysicalAlternative(rootGroupId, root.clone(), PhysicalProperties.ANY,
+				"parent-physical", RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of()).orElseThrow();
+		StatementPattern blocker = pattern("x", "exactBlockerPredicate", "y");
+		int blockerGroupId = memo.intern(blocker);
+		MemoExpr blockerPhysical = memo.addPhysicalAlternative(blockerGroupId, blocker.clone(), PhysicalProperties.ANY,
+				"blocker-physical", RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of()).orElseThrow();
+		OptimizationGoal goal = OptimizationGoal.root();
+		CascadesPlanner.SearchState state = new CascadesPlanner.SearchState(Integer.MAX_VALUE,
+				OptimizationGoal.SearchMode.EXACT);
+		state.observeStatisticsEpoch(0L);
+		state.deferCostWorkForWinnerKeys(memo, parentPhysical, goal, Set.of(goal.key(blockerGroupId)),
+				"exact-blocker");
+
+		state.enqueueCostWork(memo, parentPhysical, goal, "child_winner_changed");
+
+		assertAll(
+				() -> assertFalse(state.hasCostWork(),
+						"An unrelated physical wake must not make exact-blocked work runnable"),
+				() -> assertTrue(state.diagnostics().contains("deferredCostRecordsCreated=1"),
+						"An unchanged exact blocker must retain one deferred record and its subscriptions"));
+
+		Winner blockerWinner = new Winner(blockerPhysical, blocker.clone(), PhysicalProperties.ANY,
+				new CostVector(1, 1, 0, 0, 0, 1, 1), List.of(), false, "");
+		assertTrue(memo.addWinner(goal.key(blockerGroupId), blockerWinner, 8, true));
+		state.wakeDeferredCostWork(memo, blockerGroupId, 0L, "exact_blocker_winner_changed");
+
+		assertTrue(state.hasCostWork(), "The preserved exact blocker subscription must wake on its own revision");
+	}
+
+	@Test
+	void deferredCostWaitsForExactBlockerWinnerInsteadOfIntermediateFrontierChanges() {
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		Filter root = new Filter(pattern("s", "parentPredicate", "o"), new Bound(new Var("o")));
+		int rootGroupId = memo.intern(root);
+		MemoExpr parentPhysical = memo.addPhysicalAlternative(rootGroupId, root.clone(), PhysicalProperties.ANY,
+				"parent-physical", RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of()).orElseThrow();
+		StatementPattern blocker = pattern("x", "exactBlockerPredicate", "y");
+		int blockerGroupId = memo.intern(blocker);
+		OptimizationGoal goal = OptimizationGoal.root();
+		CascadesPlanner.SearchState state = new CascadesPlanner.SearchState(Integer.MAX_VALUE,
+				OptimizationGoal.SearchMode.EXACT);
+		state.observeStatisticsEpoch(0L);
+		state.deferCostWorkForWinnerKeys(memo, parentPhysical, goal, Set.of(goal.key(blockerGroupId)),
+				"exact-blocker");
+
+		MemoExpr blockerPhysical = memo.addPhysicalAlternative(blockerGroupId, blocker.clone(),
+				PhysicalProperties.builder().accessPath("new-blocker-frontier").build(), "blocker-physical",
+				RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of()).orElseThrow();
+		state.wakeDeferredCostWork(memo, blockerGroupId, 0L, "blocker_physical_frontier_changed");
+
+		assertAll(
+				() -> assertFalse(state.hasCostWork(),
+						"A blocked parent must wait until its exact contextual winner changes"),
+				() -> assertTrue(state.diagnostics().contains("deferredCostRecordsCreated=1"),
+						"Intermediate physical alternatives must not rebuild the same blocked cost record"));
+
+		Winner blockerWinner = new Winner(blockerPhysical, blocker.clone(), blockerPhysical.deliveredProperties(),
+				new CostVector(1, 1, 0, 0, 0, 1, 1), List.of(), false, "");
+		assertTrue(memo.addWinner(goal.key(blockerGroupId), blockerWinner, 8, true));
+		state.wakeDeferredCostWork(memo, blockerGroupId, 0L, "exact_blocker_winner_changed");
+
+		assertTrue(state.hasCostWork(), "The exact blocker winner revision must reactivate its parent cost");
 	}
 
 	@Test
@@ -1030,12 +1770,12 @@ class CascadesRuleEngineTest {
 
 		assertTrue(applications.stream()
 				.anyMatch(application -> application.kind() == RuleKind.IMPLEMENTATION
-						&& application.alternative() instanceof Join candidate
+						&& application.alternative()instanceof Join candidate
 						&& candidate.getStringMetricPlanned("optimizer.joinAlgorithmHint") == null),
 				"The ordinary iterator join must remain available for canonical costing");
 		RuleApplication hashJoin = applications.stream()
 				.filter(application -> application.kind() == RuleKind.IMPLEMENTATION)
-				.filter(application -> application.alternative() instanceof Join candidate
+				.filter(application -> application.alternative()instanceof Join candidate
 						&& "hash".equals(candidate.getStringMetricPlanned("optimizer.joinAlgorithmHint")))
 				.findFirst()
 				.orElseThrow(() -> new AssertionError(
@@ -1085,11 +1825,11 @@ class CascadesRuleEngineTest {
 	}
 
 	@Test
-	void differenceRightGoalUsesLeftAssuredBindings() {
+	void selectedPrefixDifferenceRightGoalUsesLeftAssuredBindings() {
 		StatementPattern left = pattern("s", "left", "leftValue");
 		StatementPattern right = pattern("s", "minusRight", "rightValue");
 		Difference difference = new Difference(left, right);
-		RecordingImplementationRule implementation = new RecordingImplementationRule("minusRight");
+		RecordingImplementationRule implementation = new RecordingImplementationRule("minusRight", true);
 		CascadesPlanner planner = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()),
 				RuleRegistry.builder().add(implementation).build(), CascadesTelemetry.NO_OP);
 
@@ -1111,7 +1851,14 @@ class CascadesRuleEngineTest {
 		OptimizationGoal goal = OptimizationGoal.exact(
 				PhysicalProperties.builder().boundVars(Set.of("enc")).build())
 				.withInputBindingContext(context);
-		CascadesPlanner planner = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()),
+		JoinFactorCostModel factorCostModel = (factor, boundVars) -> factor instanceof StatementPattern
+				&& boundVars.contains("enc")
+						? Optional.of(new JoinFactorCostModel.FactorCostEstimate(1.0d, 1.0d, Map.of(), Map.of(),
+								true, true, 1, 0, 1.0d, false, true))
+						: Optional.empty();
+		CascadesCostModel costModel = new CascadesCostModel.DefaultCascadesCostModel(new EvaluationStatistics(),
+				factorCostModel, RdfStatisticsProvider.EMPTY);
+		CascadesPlanner planner = new CascadesPlanner(costModel,
 				RuleRegistry.builder().add(new StandardCascadesRules.GenericImplementationRule()).build(),
 				CascadesTelemetry.NO_OP);
 
@@ -1156,6 +1903,24 @@ class CascadesRuleEngineTest {
 						&& goal.rowGoal().existenceOnly()),
 				"A transparent scalar EXISTS input must be optimized for one match per outer invocation: "
 						+ implementation.observedGoals);
+	}
+
+	@Test
+	void notExistsSubqueryGoalPricesCompleteProbeForAbsentMatches() {
+		StatementPattern outer = pattern("s", "outer", "outerValue");
+		StatementPattern subquery = pattern("s", "existsRight", "rightValue");
+		Filter filter = new Filter(outer, new Not(new Exists(subquery)));
+		RecordingImplementationRule implementation = new RecordingImplementationRule("existsRight");
+		CascadesPlanner planner = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()),
+				RuleRegistry.builder().add(implementation).build(), CascadesTelemetry.NO_OP);
+
+		planner.optimize(filter, OptimizationGoal.root());
+
+		assertTrue(implementation.observedGoals.stream()
+				.anyMatch(goal -> OptimizationGoal.EXISTENCE_SEMANTICS.equals(goal.semanticScope())
+						&& goal.rowGoal().isAll()),
+				"A negated scalar EXISTS must preserve existence equivalence while pricing the complete probe needed "
+						+ "to prove absence: " + implementation.observedGoals);
 	}
 
 	@Test
@@ -1341,9 +2106,10 @@ class CascadesRuleEngineTest {
 		Projection projectedOrder = new Projection(
 				new Order(pattern("s", "p", "o"), new OrderElem(new Var("o"))), projection("o"), false);
 		Distinct distinct = new Distinct(projectedOrder.clone());
-		OptimizationGoal exactSequence = OptimizationGoal.root().withRequiredProperties(PhysicalProperties.builder()
-				.observationOrder(PhysicalProperties.ObservationOrder.EXACT_SEQUENCE)
-				.build());
+		OptimizationGoal exactSequence = OptimizationGoal.root()
+				.withRequiredProperties(PhysicalProperties.builder()
+						.observationOrder(PhysicalProperties.ObservationOrder.EXACT_SEQUENCE)
+						.build());
 
 		assertFalse(hasRuleApplication(projectedOrder, exactSequence, "order-projection-transpose"),
 				"Transposition must not change an otherwise unordered serializable observation sequence");
@@ -1355,9 +2121,10 @@ class CascadesRuleEngineTest {
 	void exactObservationSequenceGoalRetainsAnExecutableOriginalWinner() {
 		Projection projectedOrder = new Projection(
 				new Order(pattern("s", "p", "o"), new OrderElem(new Var("o"))), projection("o"), false);
-		OptimizationGoal exactSequence = OptimizationGoal.root().withRequiredProperties(PhysicalProperties.builder()
-				.observationOrder(PhysicalProperties.ObservationOrder.EXACT_SEQUENCE)
-				.build());
+		OptimizationGoal exactSequence = OptimizationGoal.root()
+				.withRequiredProperties(PhysicalProperties.builder()
+						.observationOrder(PhysicalProperties.ObservationOrder.EXACT_SEQUENCE)
+						.build());
 
 		CascadesPlan plan = planner().optimize(projectedOrder, exactSequence);
 
@@ -1448,8 +2215,7 @@ class CascadesRuleEngineTest {
 		context.setProjectionContext(new Var("context"));
 		Projection scopeChange = new Projection(rows.clone(), projection("s", "p", "o"), false);
 		scopeChange.setVariableScopeChange(true);
-		StructuralCascadesRules.RedundantProjectionRemovalRule rule =
-				new StructuralCascadesRules.RedundantProjectionRemovalRule();
+		StructuralCascadesRules.RedundantProjectionRemovalRule rule = new StructuralCascadesRules.RedundantProjectionRemovalRule();
 
 		assertAll(
 				() -> assertTrue(apply(rule, alias).isEmpty()),
@@ -1987,6 +2753,24 @@ class CascadesRuleEngineTest {
 	}
 
 	@Test
+	void volatileExtensionEvaluationDoesNotMoveAcrossFilterOrJoinBoundaries() {
+		Extension extension = new Extension(pattern("s", "p", "o"),
+				new ExtensionElem(new FunctionCall("UUID"), "token"));
+
+		assertTrue(apply(new FilterCascadesRules.FilterExtensionPushdownRule(),
+				new Filter(extension.clone(), new Bound(new Var("s")))).isEmpty(),
+				"A FILTER must not move before a volatile BIND");
+
+		extension.setVariableScopeChange(true);
+		assertTrue(apply(new StandardCascadesRules.FiniteBindingsExtensionPushdownRule(),
+				new Join(values("s"), extension.clone())).isEmpty(),
+				"VALUES must not multiply or delay a volatile scope-changing BIND");
+		assertTrue(apply(new StandardCascadesRules.JoinExtensionPushdownRule(),
+				new Join(pattern("subject", "links", "s"), extension.clone())).isEmpty(),
+				"A join prefix must not move inside a volatile scope-changing BIND");
+	}
+
+	@Test
 	void optionalLeftUnionDistributionPreservesLeftBranchMultiplicity() {
 		Union leftUnion = new Union(pattern("s", "p1", "leftValue"), pattern("s", "p2", "rightValue"));
 		LeftJoin optional = new LeftJoin(leftUnion, pattern("s", "p3", "optionalValue"));
@@ -2190,9 +2974,9 @@ class CascadesRuleEngineTest {
 				.expressions()
 				.stream()
 				.filter(MemoExpr::logical)
-				.filter(candidate -> candidate.tupleExpr() instanceof Join join
+				.filter(candidate -> candidate.tupleExpr()instanceof Join join
 						&& join.getLeftArg().equals(common)
-						&& join.getRightArg() instanceof Union union
+						&& join.getRightArg()instanceof Union union
 						&& union.isVariableScopeChange())
 				.findFirst()
 				.orElseThrow(() -> new AssertionError(
@@ -2216,6 +3000,661 @@ class CascadesRuleEngineTest {
 				() -> assertTrue(containsBindingSetAssignment(residuals.getLeftArg(), "medicationCode")),
 				() -> assertTrue(containsBindingSetAssignment(residuals.getRightArg(), "encounterCode")),
 				() -> assertFalse(containsStatementPattern(residuals, "patient", "type", "patientType")));
+	}
+
+	@Test
+	void autoCostsLateScopedUnionHelperAtDeterministicFixedPoint() {
+		StatementPattern common = pattern("patient", "type", "patientType");
+		TupleExpr medicationResidual = new Join(
+				values("medicationCode", VF.createLiteral("RX-100"), VF.createLiteral("RX-200")),
+				pattern("patient", "medicationCode", "medicationCode"));
+		TupleExpr encounterResidual = new Join(
+				values("encounterCode", VF.createLiteral("ENC-10"), VF.createLiteral("ENC-20")),
+				pattern("patient", "encounterCode", "encounterCode"));
+		Union root = new Union(new Join(common.clone(), medicationResidual.clone()),
+				new Join(encounterResidual.clone(), common.clone()));
+		root.setVariableScopeChange(true);
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(new StandardCascadesRules.UnionCommonPrefixFactoringRule())
+				.add(new LateScopedUnionBranchAlternativeRule(common, encounterResidual))
+				.add(new StandardCascadesRules.GenericImplementationRule())
+				.build();
+		CascadesCostModel costModel = new LateScopedHelperCostModel();
+		OptimizationGoal base = OptimizationGoal.root(root, PhysicalProperties.ANY);
+		IntFunction<CascadesPlan> optimizeWithLimit = workLimit -> {
+			SearchLimits limits = new SearchLimits(workLimit, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+					Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE);
+			OptimizationGoal auto = new OptimizationGoal(base.requiredProperties(), base.semanticScope(),
+					base.costPolicy(), base.costBound(), base.excludedProperties(), OptimizationGoal.SearchMode.AUTO,
+					Long.MAX_VALUE, workLimit, base.rowGoal(), base.estimationTier(), base.inputBindingContext());
+			return new CascadesPlanner(costModel, registry, CascadesTelemetry.NO_OP, limits)
+					.optimize(root.clone(), auto);
+		};
+		CascadesPlan reference = optimizeWithLimit.apply(4_096);
+		assertEquals(OptimizationCompleteness.COMPLETE, reference.completeness(), reference.diagnostics().toString());
+		int fixedPointWork = Math.toIntExact(reference.searchStatus().counters().ruleWork());
+		assertTrue(fixedPointWork > 0);
+		CascadesPlan beforeFixedPoint = optimizeWithLimit.apply(fixedPointWork - 1);
+		CascadesPlan plan = optimizeWithLimit.apply(fixedPointWork);
+		CascadesPlan repeated = optimizeWithLimit.apply(fixedPointWork);
+
+		assertTrue(plan.memo()
+				.group(plan.rootGroupId())
+				.expressions()
+				.stream()
+				.anyMatch(expression -> expression.logical()
+						&& expression.proofs().stream().anyMatch(proof -> "17".equals(proof.ruleId()))),
+				"The fixture must publish the late transactional common-prefix helper");
+		Winner winner = plan.winner()
+				.orElseThrow(() -> new AssertionError(plan.searchStatus() + " "
+						+ plan.pendingTasks() + " " + plan.diagnostics()));
+		assertAll(
+				() -> assertEquals(OptimizationCompleteness.BUDGET_EXHAUSTED, beforeFixedPoint.completeness()),
+				() -> assertEquals(fixedPointWork - 1L, beforeFixedPoint.searchStatus().counters().ruleWork()),
+				() -> assertFalse(beforeFixedPoint.pendingTasks().isEmpty()),
+				() -> assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness()),
+				() -> assertEquals(fixedPointWork, plan.searchStatus().counters().ruleWork()),
+				() -> assertTrue(plan.pendingTasks().isEmpty()),
+				() -> assertTrue(winner.proofs().stream().anyMatch(proof -> "17".equals(proof.ruleId())),
+						() -> "AUTO must implement and cost the cheaper late helper at its deterministic fixed point: "
+								+ plan.searchStatus() + " " + plan.pendingTasks() + " " + plan.diagnostics()
+								+ " winner=" + winner.proofs()),
+				() -> assertEquals(reference.searchStatus().counters(), plan.searchStatus().counters()),
+				() -> assertEquals(plan.searchStatus().counters(), repeated.searchStatus().counters()),
+				() -> assertEquals(winner.cost(), repeated.winner().orElseThrow().cost()));
+	}
+
+	@Test
+	void autoDoesNotOptimizeLateAlternativeOutsideFairScheduler() {
+		StatementPattern root = pattern("s", "p", "o");
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(new RootFiniteAlternativeRule())
+				.add(new StandardCascadesRules.GenericImplementationRule())
+				.build();
+		SearchLimits limits = new SearchLimits(1L, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+				Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE);
+		OptimizationGoal base = OptimizationGoal.root(root, PhysicalProperties.ANY);
+		OptimizationGoal auto = new OptimizationGoal(base.requiredProperties(), base.semanticScope(), base.costPolicy(),
+				base.costBound(), base.excludedProperties(), OptimizationGoal.SearchMode.AUTO, Long.MAX_VALUE, 1,
+				base.rowGoal(), base.estimationTier(), base.inputBindingContext());
+
+		CascadesPlan plan = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry,
+				CascadesTelemetry.NO_OP, limits).optimize(root, auto);
+
+		assertTrue(plan.memo()
+				.group(plan.rootGroupId())
+				.expressions()
+				.stream()
+				.anyMatch(expression -> expression.logical() && expression.tupleExpr() instanceof BindingSetAssignment),
+				"The single charged rewrite must revise the root group before AUTO stops");
+		Winner winner = plan.winner()
+				.orElseThrow(() -> new AssertionError(
+						"Bounded AUTO lost its only executable fallback after the root revision: "
+								+ plan.searchStatus() + " " + plan.pendingTasks() + " " + plan.diagnostics()));
+		assertAll(
+				() -> assertEquals(OptimizationCompleteness.BUDGET_EXHAUSTED, plan.completeness()),
+				() -> assertEquals(1L, plan.searchStatus().counters().ruleWork()),
+				() -> assertInstanceOf(StatementPattern.class, winner.plan(),
+						"AUTO must not implement or cost the late alternative outside the fair scheduler"),
+					() -> assertEquals("generic-physical-implementation", winner.provenance().ruleId()));
+	}
+
+	@Test
+	void autoFreshLogicalExpressionsCannotStarveOlderRewriteAgenda() {
+		StatementPattern root = pattern("s", "p", "o");
+		AtomicInteger olderRewriteApplications = new AtomicInteger();
+		CascadesRule olderRewrite = new FiniteTestCascadesRule() {
+			@Override
+			public String id() {
+				return "test-older-root-rewrite";
+			}
+
+			@Override
+			public RuleKind kind() {
+				return RuleKind.TRANSFORMATION;
+			}
+
+			@Override
+			public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+				return expression.logical() && expression.tupleExpr() instanceof StatementPattern;
+			}
+
+			@Override
+			public int promise(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+				return 0;
+			}
+
+			@Override
+			public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+				olderRewriteApplications.incrementAndGet();
+				return List.of();
+			}
+		};
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(new RootFiniteAlternativeRule())
+				.add(new FiniteValuesAlternativeChainRule())
+				.add(olderRewrite)
+				.build();
+		SearchLimits limits = new SearchLimits(4L, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+				Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE);
+		OptimizationGoal base = OptimizationGoal.root(root, PhysicalProperties.ANY);
+		OptimizationGoal auto = new OptimizationGoal(base.requiredProperties(), base.semanticScope(), base.costPolicy(),
+				base.costBound(), base.excludedProperties(), OptimizationGoal.SearchMode.AUTO, Long.MAX_VALUE, 4,
+				base.rowGoal(), base.estimationTier(), base.inputBindingContext());
+
+		CascadesPlan plan = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry,
+				CascadesTelemetry.NO_OP, limits).optimize(root, auto);
+
+		assertAll(
+				() -> assertEquals(OptimizationCompleteness.BUDGET_EXHAUSTED, plan.completeness()),
+				() -> assertEquals(4L, plan.searchStatus().counters().ruleWork()),
+				() -> assertEquals(1, olderRewriteApplications.get(),
+						"An unbounded stream of fresh alternatives must not leapfrog older exploration forever"));
+	}
+
+	@Test
+	void autoImplementsNewLogicalRootAlternativeBeforeStaleImplementationWork() {
+		StatementPattern root = pattern("s", "p", "o");
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(new RootFiniteAlternativeRule())
+				.add(new StandardCascadesRules.GenericImplementationRule())
+				.build();
+		SearchLimits limits = new SearchLimits(2L, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+				Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE);
+		OptimizationGoal base = OptimizationGoal.root(root, PhysicalProperties.ANY);
+		OptimizationGoal auto = new OptimizationGoal(base.requiredProperties(), base.semanticScope(), base.costPolicy(),
+				base.costBound(), base.excludedProperties(), OptimizationGoal.SearchMode.AUTO, Long.MAX_VALUE, 2,
+				base.rowGoal(), base.estimationTier(), base.inputBindingContext());
+
+		CascadesPlan plan = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry,
+				CascadesTelemetry.NO_OP, limits).optimize(root, auto);
+
+		Winner winner = plan.winner().orElseThrow();
+		assertAll(
+				() -> assertEquals(2L, plan.searchStatus().counters().ruleWork()),
+				() -> assertInstanceOf(BindingSetAssignment.class, winner.plan(),
+						"A newly published logical root alternative must receive an implementation before stale "
+								+ "implementation work for the already-reserved original root consumes bounded AUTO"));
+	}
+
+	@Test
+	void autoExploresNewLogicalAlternativeBeforeStaleExpressionAgenda() {
+		StatementPattern root = pattern("s", "p", "o");
+		AtomicInteger openedApplications = new AtomicInteger();
+		CascadesRule staleRootRule = new FiniteTestCascadesRule() {
+			@Override
+			public String id() {
+				return "stale-root-work";
+			}
+
+			@Override
+			public RuleKind kind() {
+				return RuleKind.TRANSFORMATION;
+			}
+
+			@Override
+			public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+				return expression.logical() && expression.tupleExpr() instanceof StatementPattern;
+			}
+
+			@Override
+			public int promise(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+				return 0;
+			}
+
+			@Override
+			public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+				return List.of();
+			}
+		};
+		CascadesRule openedMatch = new FiniteTestCascadesRule() {
+			@Override
+			public String id() {
+				return "opened-logical-match";
+			}
+
+			@Override
+			public RuleKind kind() {
+				return RuleKind.TRANSFORMATION;
+			}
+
+			@Override
+			public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+				return expression.logical() && expression.tupleExpr() instanceof BindingSetAssignment;
+			}
+
+			@Override
+			public int promise(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+				return 100;
+			}
+
+			@Override
+			public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+				openedApplications.incrementAndGet();
+				return List.of();
+			}
+		};
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(new RootFiniteAlternativeRule())
+				.add(staleRootRule)
+				.add(openedMatch)
+				.build();
+		SearchLimits limits = new SearchLimits(2L, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+				Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE);
+		OptimizationGoal base = OptimizationGoal.root(root, PhysicalProperties.ANY);
+		OptimizationGoal auto = new OptimizationGoal(base.requiredProperties(), base.semanticScope(), base.costPolicy(),
+				base.costBound(), base.excludedProperties(), OptimizationGoal.SearchMode.AUTO, Long.MAX_VALUE, 2,
+				base.rowGoal(), base.estimationTier(), base.inputBindingContext());
+
+		CascadesPlan plan = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry,
+				CascadesTelemetry.NO_OP, limits).optimize(root, auto);
+
+		assertEquals(1, openedApplications.get(),
+				() -> "A newly published expression must expose its newly opened rewrite before stale agenda work: "
+						+ plan.searchStatus() + " " + plan.pendingTasks());
+	}
+
+	@Test
+	void autoExploresNewChildAlternativeBeforeReactivatedParentObserver() {
+		Projection root = new Projection(pattern("s", "p", "o"), projection("s", "p", "o"), false);
+		AtomicInteger openedApplications = new AtomicInteger();
+		AtomicInteger parentObservations = new AtomicInteger();
+		AtomicInteger parentImplementations = new AtomicInteger();
+		AtomicInteger childAlternatives = new AtomicInteger();
+		AtomicInteger staleChildApplications = new AtomicInteger();
+		List<String> causalOrder = new ArrayList<>();
+		CascadesRule parentImplementation = new FiniteTestCascadesRule() {
+			@Override
+			public String id() {
+				return "transparent-parent-implementation";
+			}
+
+			@Override
+			public RuleKind kind() {
+				return RuleKind.IMPLEMENTATION;
+			}
+
+			@Override
+			public RuleDescriptor descriptor() {
+				return RuleDescriptor.builder(id(), kind())
+						.rootOperators(RuleRootOperator.PROJECTION)
+						.convergenceClass(RuleConvergenceClass.FINITE_EQUIVALENCE_EXPANSION)
+						.build();
+			}
+
+			@Override
+			public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+				return expression.logical()
+						&& expression.tupleExpr() instanceof Projection
+						&& memo.group(expression.groupId()).expressions().stream().noneMatch(MemoExpr::physical);
+			}
+
+			@Override
+			public int promise(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+				return 300;
+			}
+
+			@Override
+			public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+				parentImplementations.incrementAndGet();
+				return List.of(RuleApplication.physical(expression.groupId(), expression.tupleExpr().clone(),
+						PhysicalProperties.ANY, CostVector.ZERO, proof(expression, goal, context), id()));
+			}
+		};
+		CascadesRule childAlternative = new FiniteTestCascadesRule() {
+			@Override
+			public String id() {
+				return "publish-child-alternative";
+			}
+
+			@Override
+			public RuleKind kind() {
+				return RuleKind.TRANSFORMATION;
+			}
+
+			@Override
+			public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+				return expression.logical()
+						&& expression.tupleExpr() instanceof Projection
+						&& memo.group(expression.groupId()).expressions().stream().anyMatch(MemoExpr::physical)
+						&& memo.group(expression.inputGroupIds().getFirst())
+								.expressions()
+								.stream()
+								.noneMatch(candidate -> candidate.tupleExpr() instanceof BindingSetAssignment);
+			}
+
+			@Override
+			public int promise(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+				return 200;
+			}
+
+			@Override
+			public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+				childAlternatives.incrementAndGet();
+				MapBindingSet row = new MapBindingSet(3);
+				row.addBinding("s", VF.createIRI("urn:test:s"));
+				row.addBinding("p", VF.createIRI("urn:test:p"));
+				row.addBinding("o", VF.createIRI("urn:test:o"));
+				BindingSetAssignment finite = new BindingSetAssignment();
+				finite.setBindingNames(Set.of("s", "p", "o"));
+				finite.setBindingSets(List.of(row));
+				return List.of(RuleApplication.transformation(expression.inputGroupIds().getFirst(), finite,
+						proof(expression, goal, context)));
+			}
+		};
+		CascadesRule parentObserver = new FiniteTestCascadesRule() {
+			@Override
+			public String id() {
+				return "reactivated-parent-observer";
+			}
+
+			@Override
+			public RuleKind kind() {
+				return RuleKind.TRANSFORMATION;
+			}
+
+			@Override
+			public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+				return expression.logical()
+						&& expression.tupleExpr() instanceof Projection
+						&& memo.group(expression.inputGroupIds().getFirst())
+								.expressions()
+								.stream()
+								.anyMatch(candidate -> candidate.tupleExpr() instanceof BindingSetAssignment);
+			}
+
+			@Override
+			public int promise(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+				return 100;
+			}
+
+			@Override
+			public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+				parentObservations.incrementAndGet();
+				causalOrder.add("parent");
+				return List.of();
+			}
+		};
+		CascadesRule openedMatch = new FiniteTestCascadesRule() {
+			@Override
+			public String id() {
+				return "opened-child-match";
+			}
+
+			@Override
+			public RuleKind kind() {
+				return RuleKind.TRANSFORMATION;
+			}
+
+			@Override
+			public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+				return expression.logical() && expression.tupleExpr() instanceof BindingSetAssignment;
+			}
+
+			@Override
+			public int promise(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+				return 300;
+			}
+
+			@Override
+			public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+				openedApplications.incrementAndGet();
+				causalOrder.add("child");
+				return List.of();
+			}
+		};
+		CascadesRule staleChildRule = new FiniteTestCascadesRule() {
+			@Override
+			public String id() {
+				return "stale-child-rule";
+			}
+
+			@Override
+			public RuleKind kind() {
+				return RuleKind.TRANSFORMATION;
+			}
+
+			@Override
+			public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+				return expression.logical() && expression.tupleExpr() instanceof BindingSetAssignment;
+			}
+
+			@Override
+			public int promise(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+				return 0;
+			}
+
+			@Override
+			public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+				staleChildApplications.incrementAndGet();
+				return List.of();
+			}
+		};
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(parentImplementation)
+				.add(childAlternative)
+				.add(parentObserver)
+				.add(openedMatch)
+				.add(staleChildRule)
+				.build();
+		SearchLimits limits = new SearchLimits(4L, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+				Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE);
+		OptimizationGoal base = OptimizationGoal.root(root, PhysicalProperties.ANY);
+		OptimizationGoal auto = new OptimizationGoal(base.requiredProperties(), base.semanticScope(), base.costPolicy(),
+				base.costBound(), base.excludedProperties(), OptimizationGoal.SearchMode.AUTO, Long.MAX_VALUE, 4,
+				base.rowGoal(), base.estimationTier(), base.inputBindingContext());
+
+		CascadesPlan plan = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry,
+				CascadesTelemetry.NO_OP, limits).optimize(root, auto);
+
+		assertAll(
+				() -> assertEquals(1, parentImplementations.get()),
+				() -> assertEquals(1, childAlternatives.get()),
+				() -> assertEquals(1, openedApplications.get(),
+						"A fresh child expression must run before a parent reactivated by that expression"),
+				() -> assertEquals(1, parentObservations.get(),
+						"The direct parent dependency wake-up must not be buried behind unrelated exploration"),
+				() -> assertEquals(0, staleChildApplications.get(),
+						"A low-promise continuation must yield to the newly enabled causal parent"),
+				() -> assertEquals(List.of("child", "parent"), causalOrder,
+						"The causal child must still run before its reactivated parent"),
+				() -> assertEquals(4L, plan.searchStatus().counters().ruleWork()));
+	}
+
+	@Test
+	void autoCostsNewPhysicalAlternativeBeforeImplementationAgendaDrains() {
+		StatementPattern root = pattern("s", "p", "o");
+		RecordingImplementationRule physicalRule = new RecordingImplementationRule("p");
+		CascadesRule lowerPriorityRule = new FiniteTestCascadesRule() {
+			@Override
+			public String id() {
+				return "lower-priority-empty-implementation";
+			}
+
+			@Override
+			public RuleKind kind() {
+				return RuleKind.IMPLEMENTATION;
+			}
+
+			@Override
+			public RuleDescriptor descriptor() {
+				return RuleDescriptor.builder(id(), kind())
+						.wakeUpEvents(RuleWakeUpEvent.LOGICAL_EXPRESSION_ADDED,
+								RuleWakeUpEvent.REQUIRED_PROPERTIES_CHANGED)
+						.convergenceClass(RuleConvergenceClass.FINITE_EQUIVALENCE_EXPANSION)
+						.build();
+			}
+
+			@Override
+			public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+				return expression.logical() && expression.tupleExpr() instanceof StatementPattern;
+			}
+
+			@Override
+			public int promise(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+				return 0;
+			}
+
+			@Override
+			public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+				return List.of();
+			}
+		};
+		AtomicInteger costedPhysicalAlternatives = new AtomicInteger();
+		CascadesTelemetry telemetry = new CascadesTelemetry() {
+			@Override
+			public void alternativeCosted(int memoGroupId, String ruleId, PhysicalProperties requiredProperties,
+					PhysicalProperties deliveredProperties, CostVector cost, QueryModelNode plan) {
+				if (physicalRule.id().equals(ruleId)) {
+					costedPhysicalAlternatives.incrementAndGet();
+				}
+			}
+		};
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(physicalRule)
+				.add(lowerPriorityRule)
+				.build();
+		SearchLimits limits = new SearchLimits(2L, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+				Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE);
+		OptimizationGoal base = OptimizationGoal.root(root, PhysicalProperties.ANY);
+		OptimizationGoal auto = new OptimizationGoal(base.requiredProperties(), base.semanticScope(), base.costPolicy(),
+				base.costBound(), base.excludedProperties(), OptimizationGoal.SearchMode.AUTO, Long.MAX_VALUE, 4,
+				base.rowGoal(), base.estimationTier(), base.inputBindingContext());
+
+		CascadesPlan plan = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry, telemetry,
+				limits).optimize(root, auto);
+
+		assertEquals(1, costedPhysicalAlternatives.get(),
+				"A newly created implementation must enter the fair COST lane before the rest of its rule agenda drains: "
+						+ plan.diagnostics() + ", observedGoals=" + physicalRule.observedGoals);
+	}
+
+	@Test
+	void demandDrivenCostPriorityPreservesArrivalOrder() {
+		StatementPattern root = pattern("s", "p", "o");
+		CascadesRule priorityRule = new FiniteTestCascadesRule() {
+			@Override
+			public String id() {
+				return "ordered-priority-implementations";
+			}
+
+			@Override
+			public RuleKind kind() {
+				return RuleKind.IMPLEMENTATION;
+			}
+
+			@Override
+			public RuleDescriptor descriptor() {
+				return RuleDescriptor.builder(id(), kind())
+						.wakeUpEvents(RuleWakeUpEvent.LOGICAL_EXPRESSION_ADDED,
+								RuleWakeUpEvent.REQUIRED_PROPERTIES_CHANGED)
+						.convergenceClass(RuleConvergenceClass.FINITE_EQUIVALENCE_EXPANSION)
+						.build();
+			}
+
+			@Override
+			public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+				return expression.logical() && expression.tupleExpr() instanceof StatementPattern;
+			}
+
+			@Override
+			public int promise(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+				return 100;
+			}
+
+			@Override
+			public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+				List<RuleApplication> applications = new ArrayList<>();
+				for (int index = 0; index < 3; index++) {
+					PhysicalProperties delivered = PhysicalProperties.builder()
+							.accessPath("priority-" + index)
+							.build();
+					applications.add(RuleApplication.physical(expression.groupId(), expression.tupleExpr().clone(),
+							delivered, exactCost(1.0d), proof(expression, goal, context), id()));
+				}
+				return applications;
+			}
+
+			@Override
+			public RuleProof proof(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+				return new RuleProof(id(), RuleKind.IMPLEMENTATION, OptimizationGoal.BAG_SEMANTICS,
+						Set.of("test", "stablePriorityOrder"),
+						"Test-only demand-driven implementations retained in their deterministic arrival order");
+			}
+		};
+		List<String> costedAccessPaths = new ArrayList<>();
+		CascadesTelemetry telemetry = new CascadesTelemetry() {
+			@Override
+			public void alternativeCosted(int memoGroupId, String ruleId,
+					PhysicalProperties requiredProperties, PhysicalProperties deliveredProperties, CostVector cost,
+					QueryModelNode plan) {
+				if (priorityRule.id().equals(ruleId)) {
+					costedAccessPaths.add(deliveredProperties.accessPath());
+				}
+			}
+		};
+		RuleRegistry registry = RuleRegistry.builder().add(priorityRule).build();
+		OptimizationGoal base = OptimizationGoal.root(root, PhysicalProperties.ANY);
+		OptimizationGoal auto = new OptimizationGoal(base.requiredProperties(), base.semanticScope(), base.costPolicy(),
+				base.costBound(), base.excludedProperties(), OptimizationGoal.SearchMode.AUTO, Long.MAX_VALUE, 4_096,
+				base.rowGoal(), base.estimationTier(), base.inputBindingContext());
+
+		CascadesPlan plan = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry,
+				telemetry).optimize(root, auto);
+
+		assertAll(
+				() -> assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness(),
+						plan.diagnostics()::toString),
+				() -> assertEquals(List.of("priority-0", "priority-1", "priority-2"), costedAccessPaths,
+						"Fresh demand-driven work must not repeatedly jump ahead of older work in the same priority "
+								+ "class"));
+	}
+
+	@Test
+	void autoRefreshesReservedParentAfterChildFactRevision() {
+		Filter root = new Filter(pattern("s", "p", "o"), new ValueConstant(VF.createLiteral(true)));
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(new RootChildFactPublishingRule())
+				.add(new StandardCascadesRules.GenericImplementationRule())
+				.build();
+		SearchLimits limits = new SearchLimits(1L, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+				Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE);
+		OptimizationGoal base = OptimizationGoal.root(root, PhysicalProperties.ANY);
+		OptimizationGoal auto = new OptimizationGoal(base.requiredProperties(), base.semanticScope(), base.costPolicy(),
+				base.costBound(), base.excludedProperties(), OptimizationGoal.SearchMode.AUTO, Long.MAX_VALUE, 1,
+				base.rowGoal(), base.estimationTier(), base.inputBindingContext());
+
+		CascadesPlan plan = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry,
+				CascadesTelemetry.NO_OP, limits).optimize(root, auto);
+
+		MemoExpr originalRoot = plan.memo()
+				.group(plan.rootGroupId())
+				.expressions()
+				.stream()
+				.filter(MemoExpr::logical)
+				.filter(expression -> expression.tupleExpr() instanceof Filter)
+				.findFirst()
+				.orElseThrow();
+		int childGroupId = originalRoot.inputGroupIds().getFirst();
+		assertTrue(plan.memo()
+				.group(childGroupId)
+				.expressions()
+				.stream()
+				.anyMatch(expression -> expression.physical() && expression.proofs()
+						.stream()
+						.anyMatch(proof -> "test-root-child-fact-publisher".equals(proof.ruleId()))),
+				"The charged child implementation must refine memo facts and invalidate the parent frontier");
+		Winner winner = plan.winner()
+				.orElseThrow(() -> new AssertionError(
+						"AUTO kept a stale reservation stamp after the child revision cleared its parent winner: "
+								+ plan.searchStatus() + " " + plan.pendingTasks() + " " + plan.diagnostics()));
+		assertAll(
+				() -> assertEquals(OptimizationCompleteness.BUDGET_EXHAUSTED, plan.completeness()),
+				() -> assertTrue(plan.searchStatus().limitCauses().contains(OptimizationLimitCause.RULE_WORK)),
+				() -> assertEquals(1L, plan.searchStatus().counters().ruleWork()),
+				() -> assertFalse(plan.pendingTasks().isEmpty()),
+				() -> assertInstanceOf(Filter.class, winner.plan()),
+				() -> assertEquals("generic-physical-implementation", winner.provenance().ruleId()));
 	}
 
 	@Test
@@ -2634,8 +4073,62 @@ class CascadesRuleEngineTest {
 						CascadesTelemetry.NO_OP, metadata);
 
 		CascadesPlan plan = planner.optimize(graphPattern, OptimizationGoal.root());
+		MemoExpr finiteUniverse = plan.memo()
+				.group(plan.rootGroupId())
+				.expressions()
+				.stream()
+				.filter(MemoExpr::physical)
+				.filter(expression -> expression.proofs().stream().anyMatch(proof -> "43".equals(proof.ruleId())))
+				.findFirst()
+				.orElseThrow(() -> new AssertionError(
+						"Planner-created RuleContext should expose rewrite metadata through a physical route"));
+		CascadesPlan alreadyBound = planner.optimize(graphPattern.clone(), OptimizationGoal.root()
+				.withInputBindingContext(InputBindingContext.fromProfile(1.0d, Set.of("g"), BindingProfile.ANY)));
 
-		assertTrue(memoContainsProof(plan, "43"), "Planner-created RuleContext should expose rewrite metadata");
+		assertAll(
+				() -> assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness(),
+						plan.diagnostics()::toString),
+				() -> assertTrue(plan.pendingTasks().isEmpty(), plan.pendingTasks()::toString),
+				() -> assertEquals(RuleKind.IMPLEMENTATION, finiteUniverse.kind()),
+				() -> assertEquals(List.of(finiteUniverse.inputGroupIds().getFirst(), plan.rootGroupId()),
+						finiteUniverse.inputGroupIds(),
+						"The finite graph universe must parameterize the original relation, not clone its logical group"),
+				() -> assertTrue(finiteUniverse.inputs().get(1).requiredProperties().inputBoundVars().contains("g")),
+				() -> assertEquals(PhysicalProperties.InputConsumption.SELECTED_PREFIX,
+						finiteUniverse.inputs().get(1).requiredProperties().inputConsumption()),
+				() -> assertEquals(OptimizationCompleteness.COMPLETE, alreadyBound.completeness(),
+						alreadyBound.diagnostics()::toString),
+				() -> assertTrue(alreadyBound.pendingTasks().isEmpty(), alreadyBound.pendingTasks()::toString),
+				() -> assertFalse(memoContainsProof(alreadyBound, "43"),
+						"An already incoming graph binding must make the finite-universe route inapplicable"));
+	}
+
+	@Test
+	void selectedPrefixSelfInputRouteMustStrictlyDescend() {
+		List<String> plannerEvents = new ArrayList<>();
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(new ParameterizedSelfInputImplementationRule())
+				.add(new StandardCascadesRules.GenericImplementationRule())
+				.build();
+		CascadesPlanner planner = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry,
+				new PlannerEventTelemetry(plannerEvents));
+
+		CascadesPlan unbound = planner.optimize(pattern("s", "p", "g"), OptimizationGoal.root());
+		OptimizationGoal boundGoal = OptimizationGoal.root()
+				.withInputBindingContext(InputBindingContext.fromProfile(1.0d, Set.of("g"), BindingProfile.ANY));
+		CascadesPlan alreadyBound = planner.optimize(pattern("s", "p", "g"), boundGoal);
+
+		assertAll(
+				() -> assertEquals(OptimizationCompleteness.COMPLETE, unbound.completeness(),
+						unbound.diagnostics()::toString),
+				() -> assertTrue(unbound.pendingTasks().isEmpty(), unbound.pendingTasks()::toString),
+				() -> assertEquals(1L, memoProofCount(unbound, ParameterizedSelfInputImplementationRule.ID)),
+				() -> assertEquals(OptimizationCompleteness.COMPLETE, alreadyBound.completeness(),
+						alreadyBound.diagnostics()::toString),
+				() -> assertTrue(alreadyBound.pendingTasks().isEmpty(), alreadyBound.pendingTasks()::toString),
+				() -> assertEquals(1L, memoProofCount(alreadyBound, ParameterizedSelfInputImplementationRule.ID)),
+				() -> assertFalse(plannerEvents.stream()
+						.anyMatch(event -> event.contains("cyclic-dependent-input-goal")), plannerEvents::toString));
 	}
 
 	@Test
@@ -3392,6 +4885,16 @@ class CascadesRuleEngineTest {
 				.filter(expression -> expression.tupleExpr() instanceof Difference)
 				.findFirst()
 				.orElseThrow();
+		MemoExpr originalLeft = plan.memo()
+				.group(source.inputGroupIds().getFirst())
+				.expressions()
+				.stream()
+				.filter(MemoExpr::logical)
+				.filter(expression -> expression.tupleExpr() instanceof Join)
+				.min(java.util.Comparator.comparingInt(MemoExpr::id))
+				.orElseThrow();
+		List<Integer> reversedInputs = List.of(originalLeft.inputGroupIds().get(1),
+				originalLeft.inputGroupIds().getFirst());
 		assertAll(
 				() -> assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness(),
 						plan.diagnostics().toString()),
@@ -3401,8 +4904,11 @@ class CascadesRuleEngineTest {
 						.expressions()
 						.stream()
 						.filter(MemoExpr::logical)
-						.count() > 1,
-								"The fixture must add an alternative only to the MINUS left-child group"),
+						.anyMatch(expression -> expression.proofs()
+								.stream()
+								.anyMatch(proof -> DifferenceLeftChildAlternativeRule.ID.equals(proof.ruleId()))
+								&& expression.inputGroupIds().equals(reversedInputs)),
+						"The fixture must add its commuted alternative only to the MINUS left-child group"),
 				() -> assertTrue(invocations.stream()
 						.filter(invocation -> invocation.expressionId() == source.id())
 						.filter(invocation -> invocation.goal().equals(plan.goal()))
@@ -3413,12 +4919,33 @@ class CascadesRuleEngineTest {
 						.expressions()
 						.stream()
 						.filter(MemoExpr::logical)
-						.map(MemoExpr::tupleExpr)
-						.anyMatch(alternative -> alternative instanceof Filter filter
-								&& filter.getArg() instanceof Join join
-								&& (join.getLeftArg() instanceof Difference
-										|| join.getRightArg() instanceof Difference)),
-						"The rule must rebuild a pushed MINUS from the authoritative late child alternative"));
+						.anyMatch(alternative -> alternative.logical()
+								&& alternative.proofs()
+										.stream()
+										.anyMatch(proof -> "minus-join-prefix-pushdown".equals(proof.ruleId()))
+								&& (alternative.inputGroupIds()
+										.equals(List.of(originalLeft.inputGroupIds().get(1),
+												pushedDifferenceGroup(plan.memo(),
+														originalLeft.inputGroupIds().getFirst(),
+														source.inputGroupIds().get(1))))
+										|| alternative.inputGroupIds()
+												.equals(List.of(pushedDifferenceGroup(plan.memo(),
+														originalLeft.inputGroupIds().get(1),
+														source.inputGroupIds().get(1)),
+														originalLeft.inputGroupIds().getFirst())))),
+						"The rule must rebuild a pushed MINUS from the authoritative commuted child alternative"));
+	}
+
+	private static int pushedDifferenceGroup(Memo memo, int prefixGroupId, int minusRightGroupId) {
+		return memo.groups()
+				.stream()
+				.flatMap(group -> group.expressions().stream())
+				.filter(MemoExpr::logical)
+				.filter(expression -> expression.tupleExpr() instanceof Difference)
+				.filter(expression -> expression.inputGroupIds().equals(List.of(prefixGroupId, minusRightGroupId)))
+				.mapToInt(MemoExpr::groupId)
+				.findFirst()
+				.orElse(-1);
 	}
 
 	@Test
@@ -3484,6 +5011,17 @@ class CascadesRuleEngineTest {
 						&& !containsDifference(filter.getArg())),
 				"Expected row-preserving RHS Extension to remain safe for a negated correlated EXISTS: "
 						+ applications);
+	}
+
+	@Test
+	void minusWithVolatileRhsExtensionDoesNotBecomeNegatedExists() {
+		StatementPattern namedUser = pattern("user", "name", "name");
+		StatementPattern selfLoop = pattern("user", "follows", "user");
+		Extension rhs = new Extension(selfLoop, new ExtensionElem(new FunctionCall("UUID"), "token"));
+		Difference minus = new Difference(namedUser, rhs);
+
+		assertTrue(apply(new StandardCascadesRules.MinusAlternativeRule(), minus).isEmpty(),
+				"Correlated NOT EXISTS would reopen a volatile RHS Extension once per left row");
 	}
 
 	@Test
@@ -3593,17 +5131,19 @@ class CascadesRuleEngineTest {
 		LeftJoin root = new LeftJoin(pattern("left", "leftPredicate", "shared"),
 				pattern("shared", "rightPredicate", "right"));
 		AtomicInteger dependentFrontierVisits = new AtomicInteger();
+		List<String> dependentFrontierEvents = new ArrayList<>();
 		RuleRegistry registry = RuleRegistry.builder()
 				.add(new StandardCascadesRules.GenericImplementationRule())
 				.build();
 		CascadesPlanner planner = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry,
-				new DependentFrontierCountingTelemetry(dependentFrontierVisits));
+				new DependentFrontierCountingTelemetry(dependentFrontierVisits, dependentFrontierEvents));
 
 		CascadesPlan plan = planner.optimize(root, OptimizationGoal.root());
 
 		assertTrue(plan.winner().isPresent());
 		assertEquals(2, dependentFrontierVisits.get(),
-				"One stable binary dependent expression must visit its left and contextual-right frontiers once each");
+				() -> "One stable binary dependent expression must visit its left and contextual-right frontiers once each: "
+						+ dependentFrontierEvents);
 	}
 
 	@Test
@@ -3660,39 +5200,40 @@ class CascadesRuleEngineTest {
 		LeftJoin root = new LeftJoin(left, nested);
 		AtomicInteger nestedGroupId = new AtomicInteger(-1);
 		AtomicInteger nestedFrontierVisits = new AtomicInteger();
+		List<String> nestedFrontierEvents = new ArrayList<>();
 		RuleRegistry registry = RuleRegistry.builder()
 				.add(new DualLeftAccessImplementationRule())
-				.add(new StandardCascadesRules.GenericImplementationRule(tupleExpr ->
-						!(tupleExpr instanceof StatementPattern pattern)
+				.add(new StandardCascadesRules.GenericImplementationRule(
+						tupleExpr -> !(tupleExpr instanceof StatementPattern pattern)
 								|| !("leftPredicate".equals(pattern.getPredicateVar().getName())
 										|| "blockedPredicate".equals(pattern.getPredicateVar().getName()))))
 				.build();
 		CascadesTelemetry telemetry = new DeferredEmptyFrontierCountingTelemetry(nestedGroupId,
-				nestedFrontierVisits);
+				nestedFrontierVisits, nestedFrontierEvents);
 
 		CascadesPlan plan = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry,
 				telemetry).optimize(root, OptimizationGoal.root());
 
 		assertTrue(nestedGroupId.get() >= 0,
 				() -> "The nested deferred LeftJoin was not implemented: " + plan.diagnostics());
-		assertEquals(2, nestedFrontierVisits.get(),
-				() -> "A current explored group with a deferred empty frontier must be reused until an exact blocker "
-						+ "revision changes: visits=" + nestedFrontierVisits + " diagnostics=" + plan.diagnostics());
+		assertEquals(1, nestedFrontierVisits.get(),
+				() -> "A current explored prefix with a deferred empty frontier must be reused while only the terminal "
+						+ "blocker revision changes: visits=" + nestedFrontierVisits + " events=" + nestedFrontierEvents
+						+ " diagnostics=" + plan.diagnostics());
 	}
 
 	@Test
 	void lateContextualWinnerInvalidatesStableDependentTraversal() {
 		LeftJoin root = new LeftJoin(pattern("left", "leftPredicate", "shared"),
 				pattern("shared", "rightPredicate", "right"));
-		AtomicReference<Memo> memo = new AtomicReference<>();
-		AtomicReference<OptimizationGoal> missingGoal = new AtomicReference<>();
 		AtomicInteger lateWinnerInjections = new AtomicInteger();
+		List<String> traversalEvents = new ArrayList<>();
 		RuleRegistry registry = RuleRegistry.builder()
 				.add(new SplitDependentPrefixImplementationRule())
-				.add(new ContextualRightImplementationRule(memo, missingGoal))
+				.add(new ContextualRightImplementationRule(lateWinnerInjections))
 				.add(new StandardCascadesRules.GenericImplementationRule(tupleExpr -> tupleExpr instanceof LeftJoin))
 				.build();
-		CascadesTelemetry telemetry = new LateContextualWinnerTelemetry(memo, missingGoal, lateWinnerInjections);
+		CascadesTelemetry telemetry = new LateContextualWinnerTelemetry(traversalEvents);
 
 		CascadesPlan plan = new CascadesPlanner(new ParentRecostCostModel(), registry, telemetry)
 				.optimize(root, OptimizationGoal.root());
@@ -3700,9 +5241,15 @@ class CascadesRuleEngineTest {
 		assertTrue(plan.winner().isPresent(),
 				() -> "A late contextual winner must leave an executable parent winner: " + plan.diagnostics());
 		Winner winner = plan.winner().orElseThrow();
+		traversalEvents.add("final-inputs=" + winner.selectedInputs()
+				.stream()
+				.map(input -> input.cost().workRows() + ":" + input.inputBindingContext() + ":"
+						+ input.proofs().stream().map(RuleProof::ruleId).toList())
+				.toList());
 		assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness());
 		assertEquals(3.0d, winner.cost().workRows(), 0.0d,
-				"A late winner for a previously missing contextual key must reopen the stable dependent traversal");
+				() -> "A late winner for a previously missing contextual key must reopen the stable dependent traversal: "
+						+ traversalEvents);
 		assertTrue(winner.proofs().stream().anyMatch(proof -> "late-contextual-rhs".equals(proof.ruleId())),
 				"The final parent winner must include the newly opened contextual RHS branch");
 		assertEquals(1, lateWinnerInjections.get());
@@ -3734,8 +5281,8 @@ class CascadesRuleEngineTest {
 		List<WinnerKey> rightUnionGoals = new ArrayList<>();
 		RuleRegistry registry = RuleRegistry.builder()
 				.add(new DualLeftAccessImplementationRule())
-				.add(new StandardCascadesRules.GenericImplementationRule(tupleExpr ->
-						!(tupleExpr instanceof StatementPattern pattern)
+				.add(new StandardCascadesRules.GenericImplementationRule(
+						tupleExpr -> !(tupleExpr instanceof StatementPattern pattern)
 								|| !"leftPredicate".equals(pattern.getPredicateVar().getName())))
 				.build();
 		CascadesPlanner planner = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry,
@@ -3757,12 +5304,12 @@ class CascadesRuleEngineTest {
 		List<WinnerKey> rightUnionGoals = new ArrayList<>();
 		RuleRegistry registry = RuleRegistry.builder()
 				.add(new DivergentSelectedCardinalityImplementationRule())
-				.add(new StandardCascadesRules.GenericImplementationRule(tupleExpr ->
-						!(tupleExpr instanceof StatementPattern pattern)
+				.add(new StandardCascadesRules.GenericImplementationRule(
+						tupleExpr -> !(tupleExpr instanceof StatementPattern pattern)
 								|| !"leftPredicate".equals(pattern.getPredicateVar().getName())))
 				.build();
 
-		CascadesPlan plan = new CascadesPlanner(new ParentRecostCostModel(), registry,
+		CascadesPlan plan = new CascadesPlanner(new ParentRecostCostModel(true), registry,
 				new UnionWinnerCountingTelemetry(rightUnionGoals))
 						.optimize(root, OptimizationGoal.root());
 
@@ -3783,7 +5330,7 @@ class CascadesRuleEngineTest {
 				.add(new DivergentSelectedCardinalityImplementationRule())
 				.build();
 
-		Winner winner = new CascadesPlanner(new ParentRecostCostModel(), registry, CascadesTelemetry.NO_OP)
+		Winner winner = new CascadesPlanner(new ParentRecostCostModel(true), registry, CascadesTelemetry.NO_OP)
 				.optimize(root, OptimizationGoal.root())
 				.winner()
 				.orElseThrow();
@@ -3796,6 +5343,23 @@ class CascadesRuleEngineTest {
 	}
 
 	@Test
+	void implementationLocalEstimateDoesNotPublishCanonicalSelectedOutput() {
+		StatementPattern root = pattern("left", "leftPredicate", "shared");
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(new DivergentSelectedCardinalityImplementationRule())
+				.build();
+
+		Winner winner = new CascadesPlanner(new ParentRecostCostModel(), registry, CascadesTelemetry.NO_OP)
+				.optimize(root, OptimizationGoal.root())
+				.winner()
+				.orElseThrow();
+
+		assertEquals("low-work-low-estimate", winner.deliveredProperties().accessPath());
+		assertEquals(1.0d, winner.selectedOutputRows(), 0.0d,
+				"An implementation-local estimate from a dominated candidate must not become a memo-wide fact");
+	}
+
+	@Test
 	void equivalentSelectedPrefixesReuseOneSearchLocalBindingContext() {
 		LeftJoin root = new LeftJoin(pattern("left", "leftPredicate", "shared"),
 				new Union(pattern("shared", "rightPredicateA", "right"),
@@ -3803,8 +5367,8 @@ class CascadesRuleEngineTest {
 		AtomicInteger canonicalContextReuses = new AtomicInteger();
 		RuleRegistry registry = RuleRegistry.builder()
 				.add(new DualLeftAccessImplementationRule())
-				.add(new StandardCascadesRules.GenericImplementationRule(tupleExpr ->
-						!(tupleExpr instanceof StatementPattern pattern)
+				.add(new StandardCascadesRules.GenericImplementationRule(
+						tupleExpr -> !(tupleExpr instanceof StatementPattern pattern)
 								|| !"leftPredicate".equals(pattern.getPredicateVar().getName())))
 				.build();
 		CascadesPlanner planner = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry,
@@ -3844,6 +5408,32 @@ class CascadesRuleEngineTest {
 	}
 
 	@Test
+	void contextualFiniteRelationWinnerKeepsContextTotalRowUnit() {
+		BindingSetAssignment values = values("value",
+				VF.createLiteral(50), VF.createLiteral(51), VF.createLiteral(52), VF.createLiteral(53),
+				VF.createLiteral(54), VF.createLiteral(55), VF.createLiteral(56), VF.createLiteral(57),
+				VF.createLiteral(58), VF.createLiteral(59));
+		InputBindingContext outer = InputBindingContext.fromProfile(49_600.0d, Set.of("observation"),
+				BindingProfile.ANY);
+		RuleRegistry registry = RuleRegistry.builder()
+				.add(new StandardCascadesRules.GenericImplementationRule())
+				.build();
+
+		Winner winner = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), registry,
+				CascadesTelemetry.NO_OP)
+						.optimize(values, OptimizationGoal.root().withInputBindingContext(outer))
+						.winner()
+						.orElseThrow();
+
+		assertEquals(CostScope.TOTAL_FOR_CONTEXT, winner.costScope());
+		assertEquals(496_000.0d, winner.cost().rows(), 0.0d);
+		assertEquals(496_000.0d, winner.selectedOutputRows(), 0.0d,
+				"Selected output cardinality must use the same context-total unit as the winner cost");
+		assertEquals(10.0d, winner.selectedOutputProfile().finiteRelations().values().iterator().next().rows(),
+				0.0d, "The exact finite relation remains a ten-row per-invocation fact");
+	}
+
+	@Test
 	void selectedBarrierFreeChildRetainsOuterInvocationMassAcrossFinitePrefix() {
 		StatementPattern observations = pattern("encounter", "hasObservation", "observation");
 		BindingSetAssignment values = values("value",
@@ -3863,8 +5453,8 @@ class CascadesRuleEngineTest {
 				.optimize(new Join(observations, scopedRight), OptimizationGoal.root());
 
 		assertTrue(plan.winner().isPresent());
-		assertTrue(costModel.valueAccessContexts.stream().anyMatch(context ->
-				context.invocationRows() == 496_000.0d
+		assertTrue(costModel.valueAccessContexts.stream()
+				.anyMatch(context -> context.invocationRows() == 496_000.0d
 						&& context.assuredBindingNames().equals(Set.of("observation", "value"))
 						&& context.finiteBindingValues(Set.of("value"))
 								.getOrDefault("value", Set.of())
@@ -3888,8 +5478,8 @@ class CascadesRuleEngineTest {
 				.optimize(new Join(new Join(codes, conditionCodes), conditionLookup), OptimizationGoal.root());
 
 		assertTrue(plan.winner().isPresent());
-		assertTrue(costModel.codeAccessContexts.stream().anyMatch(context ->
-				context.invocationRows() == 6.0d
+		assertTrue(costModel.codeAccessContexts.stream()
+				.anyMatch(context -> context.invocationRows() == 6.0d
 						&& context.assuredBindingNames().contains("conditionCode")
 						&& context.finiteBindingValues(Set.of("conditionCode"))
 								.getOrDefault("conditionCode", Set.of())
@@ -3920,8 +5510,9 @@ class CascadesRuleEngineTest {
 				telemetry)
 						.optimize(materializedAnti, selectedPrefixGoal);
 
-		Winner winner = plan.winner().orElseThrow(() -> new AssertionError(
-				plan.diagnostics() + "\n" + String.join("\n", telemetry.trace())));
+		Winner winner = plan.winner()
+				.orElseThrow(() -> new AssertionError(
+						plan.diagnostics() + "\n" + String.join("\n", telemetry.trace())));
 		assertEquals(PhysicalProperties.InputConsumption.SELECTED_PREFIX,
 				winner.deliveredProperties().inputConsumption(),
 				"A materialized anti-key child has its own routing boundary; it must not make the transparent "
@@ -3929,10 +5520,30 @@ class CascadesRuleEngineTest {
 	}
 
 	@Test
+	void projectionRootCannotConsumeArbitrarySelectedPrefixBindings() {
+		Projection projection = new Projection(pattern("entity", "kind", "shared"),
+				projection("entity", "shared"), false);
+		MultiProjection multiProjection = new MultiProjection(pattern("entity", "kind", "shared"),
+				List.of(projection("entity", "shared")));
+		Join projectionOnLeft = new Join(projection,
+				pattern("shared", "valuePredicate", "value"));
+
+		assertAll(
+				() -> assertFalse(CascadesRewriteSupport.selectedPrefixInputIsLegal(projection),
+						"RDF4J's outer ProjectionIterator drops caller bindings absent from its projection list"),
+				() -> assertFalse(CascadesRewriteSupport.selectedPrefixInputIsLegal(multiProjection),
+						"RDF4J's MultiProjectionIterator also drops arbitrary caller bindings"),
+				() -> assertTrue(CascadesRewriteSupport.selectedPrefixInputIsLegal(projectionOnLeft.getRightArg()),
+						"The right-hand statement pattern must be individually selected-prefix-safe"),
+				() -> assertFalse(CascadesRewriteSupport.parameterizedRightInputIsLegal(projectionOnLeft),
+						"A nested-loop Join cannot recover caller bindings discarded by its left input"));
+	}
+
+	@Test
 	void childSubqueryAlternativeReactivatesParentIntoHashRoute() {
 		StatementPattern observations = pattern("patient", "hasObservation", "encounter");
 		StatementPattern valueLookup = new StatementPattern(new Var("encounter"),
-				new Var("valuePredicate", VF.createIRI("urn:test:valuePredicate")), new Var("value"));
+				Var.of("valuePredicate", VF.createIRI("urn:test:valuePredicate"), false, true), new Var("value"));
 		Join root = new Join(observations, valueLookup);
 		RuleRegistry registry = RuleRegistry.builder()
 				.add(new NestedBoundaryAlternativeRule())
@@ -4027,6 +5638,27 @@ class CascadesRuleEngineTest {
 				"Comparing an already canonicalized context must not revisit tuple Value equality or hashing");
 	}
 
+	@Test
+	void repeatedInputContextCanonicalizationReusesTheSameExactRelationFacts() {
+		AtomicInteger identityReads = new AtomicInteger();
+		List<List<Value>> rows = new ArrayList<>();
+		for (int index = 0; index < 512; index++) {
+			rows.add(List.of(new CountingContextValue("urn:medical:value:" + index, identityReads)));
+		}
+		FiniteRelationEstimate relation = FiniteRelationEstimate.fromRows(List.of("value"), rows, "range-values");
+		BindingProfile profile = profile(relation);
+		identityReads.set(0);
+
+		InputBindingContext expected = InputBindingContext.fromProfile(512.0d, Set.of("value"), profile);
+		for (int iteration = 0; iteration < 32; iteration++) {
+			assertEquals(expected, InputBindingContext.fromProfile(512.0d, Set.of("value"), profile));
+		}
+
+		assertTrue(identityReads.get() < rows.size() * 16,
+				() -> "Repeatedly canonicalizing one immutable exact relation performed " + identityReads.get()
+						+ " RDF value identity reads; candidate state keys must reuse canonical relation facts");
+	}
+
 	private static BindingProfile profile(FiniteRelationEstimate relation) {
 		return new BindingProfile(Map.of(), Map.of(VariableSetKey.of(relation.variables()), relation), Map.of(),
 				Map.of(), Set.of(), Map.of(), BindingProfile.ANY_ENDPOINT_MODE);
@@ -4067,6 +5699,15 @@ class CascadesRuleEngineTest {
 				throw new AssertionError("Canonical context equality must not rehash finite-relation tuple values");
 			}
 			return value.hashCode();
+		}
+	}
+
+	private record CountingContextValue(String value, AtomicInteger identityReads) implements Value {
+
+		@Override
+		public String stringValue() {
+			identityReads.incrementAndGet();
+			return value;
 		}
 	}
 
@@ -4305,12 +5946,17 @@ class CascadesRuleEngineTest {
 	}
 
 	private static boolean memoContainsProof(CascadesPlan plan, String ruleId) {
+		return memoProofCount(plan, ruleId) > 0L;
+	}
+
+	private static long memoProofCount(CascadesPlan plan, String ruleId) {
 		return plan.memo()
 				.groups()
 				.stream()
 				.flatMap(group -> group.expressions().stream())
 				.flatMap(expression -> expression.proofs().stream())
-				.anyMatch(proof -> ruleId.equals(proof.ruleId()));
+				.filter(proof -> ruleId.equals(proof.ruleId()))
+				.count();
 	}
 
 	@SuppressWarnings("unchecked")
@@ -4859,7 +6505,7 @@ class CascadesRuleEngineTest {
 			MemoInput leftInput = unionInput(expression, MemoInput.Role.LEFT);
 			MemoInput rightInput = unionInput(expression, MemoInput.Role.RIGHT);
 			return expression.logical()
-					&& expression.tupleExpr() instanceof Union union
+					&& expression.tupleExpr()instanceof Union union
 					&& union.isVariableScopeChange()
 					&& leftInput != null
 					&& rightInput != null
@@ -4867,13 +6513,13 @@ class CascadesRuleEngineTest {
 							.expressions()
 							.stream()
 							.filter(MemoExpr::logical)
-							.anyMatch(candidate -> candidate.tupleExpr() instanceof Join join
+							.anyMatch(candidate -> candidate.tupleExpr()instanceof Join join
 									&& join.getLeftArg().equals(common))
 					&& memo.group(rightInput.groupId())
 							.expressions()
 							.stream()
 							.filter(MemoExpr::logical)
-							.noneMatch(candidate -> candidate.tupleExpr() instanceof Join join
+							.noneMatch(candidate -> candidate.tupleExpr()instanceof Join join
 									&& join.getLeftArg().equals(common)
 									&& join.getRightArg().equals(rightResidual));
 		}
@@ -4920,7 +6566,7 @@ class CascadesRuleEngineTest {
 	}
 
 	private static String leftUnionPredicate(MemoExpr expression) {
-		return expression != null && expression.logical() && expression.tupleExpr() instanceof Union union
+		return expression != null && expression.logical() && expression.tupleExpr()instanceof Union union
 				? statementPredicate(union.getLeftArg())
 				: null;
 	}
@@ -4929,6 +6575,65 @@ class CascadesRuleEngineTest {
 		return tupleExpr instanceof StatementPattern pattern && pattern.getPredicateVar().hasValue()
 				? pattern.getPredicateVar().getValue().stringValue()
 				: null;
+	}
+
+	private static final class QuiescentMutualDependencyImplementationRule implements FiniteTestCascadesRule {
+		private static final String ID = "test-quiescent-mutual-dependency";
+
+		@Override
+		public String id() {
+			return ID;
+		}
+
+		@Override
+		public RuleKind kind() {
+			return RuleKind.IMPLEMENTATION;
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& (expression.tupleExpr() instanceof StatementPattern || expression.tupleExpr() instanceof Union);
+		}
+
+		@Override
+		public int promise(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return 100;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			RuleProof proof = new RuleProof(ID, kind(), OptimizationGoal.BAG_SEMANTICS,
+					Set.of("test", "mutuallyDependentChildGoals"),
+					"Test-only physical routes whose child groups depend on each other at exact quiescence");
+			if (expression.tupleExpr() instanceof Union) {
+				RuleApplication transparent = RuleApplication.physical(expression.groupId(),
+						expression.tupleExpr().clone(), PhysicalProperties.ANY, CostVector.ZERO, proof,
+						"transparent-union");
+				RuleApplication legal = RuleApplication.atomicPhysical(expression.groupId(), new SingletonSet(),
+						PhysicalProperties.ANY, CostVector.ZERO, proof, "legal-atomic-route", null);
+				return List.of(transparent, legal);
+			}
+			StatementPattern pattern = (StatementPattern) expression.tupleExpr();
+			String counterpartPredicate = "leftPredicate".equals(pattern.getPredicateVar().getName())
+					? "rightPredicate"
+					: "leftPredicate";
+			MemoExpr counterpart = context.memo()
+					.groups()
+					.stream()
+					.flatMap(group -> group.expressions().stream())
+					.filter(MemoExpr::logical)
+					.filter(candidate -> candidate.tupleExpr()instanceof StatementPattern candidatePattern
+							&& counterpartPredicate.equals(candidatePattern.getPredicateVar().getName()))
+					.findFirst()
+					.orElseThrow();
+			StatementPattern counterpartPattern = (StatementPattern) counterpart.tupleExpr();
+			Projection cyclic = new Projection(counterpartPattern.clone(),
+					projection(counterpartPattern.getObjectVar().getName()), false);
+			return List.of(RuleApplication.withInputGroups(expression.groupId(), cyclic, kind(),
+					PhysicalProperties.ANY, CostVector.ZERO, List.of(proof), "mutual-cycle", null,
+					List.of(PhysicalProperties.ANY), List.of(counterpart.groupId()), false));
+		}
 	}
 
 	private record TestImplementationRule(String id, double rows) implements FiniteTestCascadesRule {
@@ -4966,6 +6671,52 @@ class CascadesRuleEngineTest {
 		}
 	}
 
+	private static final class ParameterizedSelfInputImplementationRule implements FiniteTestCascadesRule {
+		private static final String ID = "test-parameterized-self-input-implementation";
+
+		@Override
+		public String id() {
+			return ID;
+		}
+
+		@Override
+		public RuleKind kind() {
+			return RuleKind.IMPLEMENTATION;
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical() && expression.tupleExpr() instanceof StatementPattern;
+		}
+
+		@Override
+		public int promise(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return 100;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			BindingSetAssignment prefix = values("g", VF.createIRI("urn:test:graph"));
+			Join alternative = new Join(prefix, expression.tupleExpr().clone());
+			PhysicalProperties rightRequirement = PhysicalProperties.builder()
+					.boundVars(Set.of("g"))
+					.inputBoundVars(Set.of("g"))
+					.inputConsumption(PhysicalProperties.InputConsumption.SELECTED_PREFIX)
+					.build();
+			PhysicalProperties delivered = PhysicalProperties.builder()
+					.boundVars(alternative.getBindingNames())
+					.duplicateBehavior(PhysicalProperties.DuplicateBehavior.PRESERVES)
+					.materialization(PhysicalProperties.Materialization.STREAMING)
+					.inputConsumption(PhysicalProperties.InputConsumption.SELECTED_PREFIX)
+					.build();
+			RuleProof proof = new RuleProof(ID, kind(), OptimizationGoal.BAG_SEMANTICS,
+					Set.of("selectedPrefix", "strictlyStrongerSelfInput"),
+					"Test-only parameterized route whose right input consumes the selected VALUES prefix");
+			return List.of(RuleApplication.physical(expression.groupId(), alternative, delivered,
+					List.of(PhysicalProperties.ANY, rightRequirement), CostVector.ZERO, proof, ID, null));
+		}
+	}
+
 	private record WeakEstimateImplementationRule(String id, double rows, double confidence, double evidenceCount)
 			implements FiniteTestCascadesRule {
 
@@ -4996,6 +6747,89 @@ class CascadesRuleEngineTest {
 		public RuleProof proof(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
 			return new RuleProof(id, RuleKind.IMPLEMENTATION, OptimizationGoal.BAG_SEMANTICS, Set.of("test"),
 					"weak physical estimate without direct evidence");
+		}
+	}
+
+	private static final class CostBoundEstimatePublishingRule implements FiniteTestCascadesRule {
+		private static final String ID = "test-cost-bound-estimate-publisher";
+		private static final String ACCESS_PATH = "test-cost-bound-estimate";
+
+		@Override
+		public String id() {
+			return ID;
+		}
+
+		@Override
+		public RuleKind kind() {
+			return RuleKind.IMPLEMENTATION;
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical() && expression.tupleExpr() instanceof StatementPattern;
+		}
+
+		@Override
+		public int promise(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return 100;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			PhysicalProperties delivered = PhysicalProperties.builder()
+					.accessPath(ACCESS_PATH)
+					.build();
+			return List.of(RuleApplication.atomicPhysical(expression.groupId(), expression.tupleExpr().clone(),
+					delivered, CostVector.ZERO, proof(expression, goal, context), ID, null));
+		}
+
+		@Override
+		public RuleProof proof(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			return new RuleProof(ID, kind(), OptimizationGoal.BAG_SEMANTICS, Set.of("test", "logicalOutputEvidence"),
+					"Test-only implementation that publishes stronger logical evidence but exceeds the cost bound");
+		}
+	}
+
+	private static final class CostBoundEstimateCostModel implements CascadesCostModel {
+		private final CascadesCostModel delegate = CascadesCostModel.from(new EvaluationStatistics());
+		private final AtomicInteger estimatePublishingCosts = new AtomicInteger();
+
+		@Override
+		public LogicalProperties logicalProperties(TupleExpr tupleExpr) {
+			return delegate.logicalProperties(tupleExpr);
+		}
+
+		@Override
+		public String logicalFingerprint(TupleExpr tupleExpr) {
+			return delegate.logicalFingerprint(tupleExpr);
+		}
+
+		@Override
+		public CostVector localCost(MemoExpr expression, OptimizationGoal goal, List<Winner> inputWinners) {
+			if (CostBoundEstimatePublishingRule.ACCESS_PATH.equals(expression.deliveredProperties().accessPath())) {
+				estimatePublishingCosts.incrementAndGet();
+				return new CostVector(1.0d, 100.0d, 0.0d, 0.0d, 0.0d,
+						1.0d, 1.0d, 1.0d, 1.0d, 0.0d, 1.0d, 1.0d);
+			}
+			return exactCost(20.0d);
+		}
+
+		@Override
+		public OutputEvidenceScope outputEvidenceScope(MemoExpr expression, OptimizationGoal goal,
+				List<Winner> inputWinners, CostVector localEstimate) {
+			return CostBoundEstimatePublishingRule.ACCESS_PATH.equals(expression.deliveredProperties().accessPath())
+					? OutputEvidenceScope.LOGICAL_EQUIVALENCE_FOR_GOAL
+					: OutputEvidenceScope.IMPLEMENTATION_LOCAL;
+		}
+
+		@Override
+		public PhysicalProperties deliveredProperties(MemoExpr expression, OptimizationGoal goal,
+				List<Winner> inputWinners) {
+			return expression.deliveredProperties();
+		}
+
+		private int estimatePublishingCosts() {
+			return estimatePublishingCosts.get();
 		}
 	}
 
@@ -5157,6 +6991,132 @@ class CascadesRuleEngineTest {
 		}
 	}
 
+	private static final class RootFiniteAlternativeRule implements FiniteTestCascadesRule {
+
+		@Override
+		public String id() {
+			return "test-root-singleton-alternative";
+		}
+
+		@Override
+		public RuleKind kind() {
+			return RuleKind.TRANSFORMATION;
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical() && expression.tupleExpr() instanceof StatementPattern;
+		}
+
+		@Override
+		public int promise(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return 1;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			MapBindingSet row = new MapBindingSet(3);
+			row.addBinding("s", VF.createIRI("urn:test:s"));
+			row.addBinding("p", VF.createIRI("urn:test:p"));
+			row.addBinding("o", VF.createIRI("urn:test:o"));
+			BindingSetAssignment finite = new BindingSetAssignment();
+			finite.setBindingNames(Set.of("s", "p", "o"));
+			finite.setBindingSets(List.of(row));
+			return List.of(RuleApplication.transformation(expression.groupId(), finite,
+					proof(expression, goal, context)));
+		}
+	}
+
+	private static final class FiniteValuesAlternativeChainRule implements FiniteTestCascadesRule {
+
+		private int nextValue;
+
+		@Override
+		public String id() {
+			return "test-finite-values-alternative-chain";
+		}
+
+		@Override
+		public RuleKind kind() {
+			return RuleKind.TRANSFORMATION;
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical()
+					&& expression.tupleExpr() instanceof BindingSetAssignment
+					&& nextValue < 100;
+		}
+
+		@Override
+		public int promise(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return 100;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			MapBindingSet row = new MapBindingSet(3);
+			row.addBinding("s", VF.createIRI("urn:test:s"));
+			row.addBinding("p", VF.createIRI("urn:test:p"));
+			row.addBinding("o", VF.createIRI("urn:test:chain:" + nextValue++));
+			BindingSetAssignment finite = new BindingSetAssignment();
+			finite.setBindingNames(Set.of("s", "p", "o"));
+			finite.setBindingSets(List.of(row));
+			return List.of(RuleApplication.transformation(expression.groupId(), finite,
+					proof(expression, goal, context)));
+		}
+	}
+
+	private static final class RootChildFactPublishingRule implements FiniteTestCascadesRule {
+
+		@Override
+		public String id() {
+			return "test-root-child-fact-publisher";
+		}
+
+		@Override
+		public RuleKind kind() {
+			return RuleKind.IMPLEMENTATION;
+		}
+
+		@Override
+		public RuleDescriptor descriptor() {
+			return RuleDescriptor.builder(id(), kind())
+					.rootOperators(RuleRootOperator.FILTER)
+					.wakeUpEvents(RuleWakeUpEvent.LOGICAL_EXPRESSION_ADDED)
+					.changesProduced(RuleDescriptor.ProducedChange.PHYSICAL_EXPRESSION,
+							RuleDescriptor.ProducedChange.MEMO_FACT)
+					.convergenceClass(RuleConvergenceClass.FINITE_EQUIVALENCE_EXPANSION)
+					.build();
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return expression.logical() && expression.tupleExpr() instanceof Filter;
+		}
+
+		@Override
+		public int promise(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return 100;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			StatementPattern child = (StatementPattern) ((Filter) expression.tupleExpr()).getArg();
+			BindingProfile finite = new BindingProfile(Map.of(), Map.of(),
+					Map.of("s", FiniteDomainFact.upperBound(List.of(VF.createIRI("urn:test:s")), true,
+							"test-root-child-fact")),
+					Map.of(), Map.of(), Set.of(), Map.of(), BindingProfile.ANY_ENDPOINT_MODE, null);
+			PhysicalProperties delivered = PhysicalProperties.builder()
+					.accessPath("test-root-child-fact")
+					.bindingProfile(finite)
+					.build();
+			return List.of(RuleApplication.physical(expression.inputGroupIds().getFirst(), child.clone(), delivered,
+					CostVector.ZERO, proof(expression, goal, context), id(),
+					EstimateSnapshot.cascades(CostVector.ZERO)));
+		}
+	}
+
 	private record RecordingRule(CascadesRule delegate,
 			List<RuleInvocationKey> invocations) implements CascadesRule {
 
@@ -5196,11 +7156,12 @@ class CascadesRuleEngineTest {
 	}
 
 	private static final class DifferenceLeftChildAlternativeRule implements FiniteTestCascadesRule {
+		private static final String ID = "test-difference-left-child-alternative";
 		private boolean emitted;
 
 		@Override
 		public String id() {
-			return "test-difference-left-child-alternative";
+			return ID;
 		}
 
 		@Override
@@ -5227,10 +7188,21 @@ class CascadesRuleEngineTest {
 			}
 			emitted = true;
 			Difference difference = (Difference) expression.tupleExpr();
-			Filter alternative = new Filter(difference.getLeftArg().clone(),
-					new ValueConstant(VF.createLiteral(true)));
-			return List.of(RuleApplication.transformation(expression.inputGroupIds().getFirst(), alternative,
-					proof(expression, goal, context)));
+			MemoExpr authoritativeLeft = context.memo()
+					.group(expression.inputGroupIds().getFirst())
+					.expressions()
+					.stream()
+					.filter(MemoExpr::logical)
+					.filter(candidate -> candidate.tupleExpr() instanceof Join)
+					.findFirst()
+					.orElseThrow();
+			Join left = (Join) difference.getLeftArg();
+			Join alternative = new Join(left.getRightArg().clone(), left.getLeftArg().clone());
+			return List.of(RuleApplication.withInputGroups(expression.inputGroupIds().getFirst(), alternative, kind(),
+					PhysicalProperties.ANY, CostVector.ZERO, List.of(proof(expression, goal, context)), ID, null,
+					List.of(), List.of(authoritativeLeft.inputGroupIds().get(1),
+							authoritativeLeft.inputGroupIds().getFirst()),
+					false));
 		}
 	}
 
@@ -5339,6 +7311,53 @@ class CascadesRuleEngineTest {
 		}
 	}
 
+	private static final class LateDifferenceChildWithAuthoritativeInputsRule implements FiniteTestCascadesRule {
+		private static final String ID = "test-late-difference-authoritative-inputs";
+		private boolean emitted;
+
+		@Override
+		public String id() {
+			return ID;
+		}
+
+		@Override
+		public RuleKind kind() {
+			return RuleKind.TRANSFORMATION;
+		}
+
+		@Override
+		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return !emitted
+					&& expression.logical()
+					&& expression.tupleExpr()instanceof Filter filter
+					&& filter.getArg() instanceof StatementPattern
+					&& filter.getCondition()instanceof ValueConstant constant
+					&& VF.createLiteral(true).equals(constant.getValue());
+		}
+
+		@Override
+		public int promise(MemoExpr expression, OptimizationGoal goal, Memo memo) {
+			return 1;
+		}
+
+		@Override
+		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
+			if (emitted) {
+				return List.of();
+			}
+			emitted = true;
+			Filter filter = (Filter) expression.tupleExpr();
+			int emptyGroupId = context.memo().intern(new EmptySet());
+			Difference placeholder = new Difference(filter.getArg().clone(), new SingletonSet());
+			RuleProof proof = new RuleProof(ID, kind(), OptimizationGoal.BAG_SEMANTICS,
+					Set.of("lateChildAlternative", "authoritativeInputGroups"),
+					"Test-only equivalent child whose right placeholder differs from its authoritative memo input");
+			return List.of(RuleApplication.withInputGroups(expression.groupId(), placeholder, kind(),
+					PhysicalProperties.ANY, CostVector.ZERO, List.of(proof), ID, null, List.of(),
+					List.of(expression.inputGroupIds().getFirst(), emptyGroupId), false));
+		}
+	}
+
 	private static final class ParentTriggeredChildPhysicalAlternativeRule implements FiniteTestCascadesRule {
 
 		@Override
@@ -5433,7 +7452,7 @@ class CascadesRuleEngineTest {
 		@Override
 		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
 			return expression.logical()
-					&& expression.tupleExpr() instanceof Filter filter
+					&& expression.tupleExpr()instanceof Filter filter
 					&& filter.getCondition() instanceof ListMemberOperator;
 		}
 
@@ -5467,7 +7486,7 @@ class CascadesRuleEngineTest {
 		@Override
 		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
 			return expression.logical()
-					&& expression.tupleExpr() instanceof StatementPattern pattern
+					&& expression.tupleExpr()instanceof StatementPattern pattern
 					&& "valuePredicate".equals(pattern.getPredicateVar().getName());
 		}
 
@@ -5548,7 +7567,6 @@ class CascadesRuleEngineTest {
 			return expression.logical()
 					&& expression.tupleExpr() instanceof Filter
 					&& memo.group(expression.groupId()).winnerRevision() > 0L
-					&& !memo.hasPendingChanges()
 					&& memo.group(expression.inputGroupIds().getFirst())
 							.expressions()
 							.stream()
@@ -5701,6 +7719,42 @@ class CascadesRuleEngineTest {
 		}
 	}
 
+	private record PolicyApplicationCountingCostModel(CascadesCostModel delegate, AtomicInteger applications)
+			implements CascadesCostModel {
+
+		@Override
+		public LogicalProperties logicalProperties(TupleExpr tupleExpr) {
+			return delegate.logicalProperties(tupleExpr);
+		}
+
+		@Override
+		public String logicalFingerprint(TupleExpr tupleExpr) {
+			return delegate.logicalFingerprint(tupleExpr);
+		}
+
+		@Override
+		public CostVector localCost(MemoExpr expression, OptimizationGoal goal, List<Winner> inputWinners) {
+			return delegate.localCost(expression, goal, inputWinners);
+		}
+
+		@Override
+		public CostVector applyCostPolicy(OptimizationGoal goal, CostVector totalCost) {
+			applications.incrementAndGet();
+			return delegate.applyCostPolicy(goal, totalCost);
+		}
+
+		@Override
+		public PhysicalProperties deliveredProperties(MemoExpr expression, OptimizationGoal goal,
+				List<Winner> inputWinners) {
+			return delegate.deliveredProperties(expression, goal, inputWinners);
+		}
+
+		@Override
+		public TupleExpr buildPlan(MemoExpr expression, List<Winner> inputWinners) {
+			return delegate.buildPlan(expression, inputWinners);
+		}
+	}
+
 	private record ProofDerivedCostModel(CascadesCostModel delegate) implements CascadesCostModel {
 
 		@Override
@@ -5776,12 +7830,24 @@ class CascadesRuleEngineTest {
 		}
 	}
 
-	private record DependentFrontierCountingTelemetry(AtomicInteger visits) implements CascadesTelemetry {
+	private record DependentFrontierCountingTelemetry(AtomicInteger visits, List<String> events)
+			implements CascadesTelemetry {
 
 		@Override
 		public void plannerEvent(String event) {
 			if (event != null && event.startsWith("dependent-input-frontier ")) {
 				visits.incrementAndGet();
+				events.add(event);
+			}
+		}
+	}
+
+	private record PlannerEventTelemetry(List<String> events) implements CascadesTelemetry {
+
+		@Override
+		public void plannerEvent(String event) {
+			if (event != null) {
+				events.add(event);
 			}
 		}
 	}
@@ -5810,14 +7876,15 @@ class CascadesRuleEngineTest {
 		}
 	}
 
-	private record DeferredEmptyFrontierCountingTelemetry(AtomicInteger nestedGroupId, AtomicInteger visits)
+	private record DeferredEmptyFrontierCountingTelemetry(AtomicInteger nestedGroupId, AtomicInteger visits,
+			List<String> events)
 			implements CascadesTelemetry {
 
 		@Override
 		public void alternativeConsidered(int memoGroupId, String ruleId, RuleKind kind,
 				PhysicalProperties deliveredProperties, CostVector localCost, String metadata, QueryModelNode plan) {
 			if (plan instanceof LeftJoin leftJoin
-					&& leftJoin.getRightArg() instanceof StatementPattern pattern
+					&& leftJoin.getRightArg()instanceof StatementPattern pattern
 					&& "blockedPredicate".equals(pattern.getPredicateVar().getName())) {
 				nestedGroupId.compareAndSet(-1, memoGroupId);
 			}
@@ -5830,7 +7897,10 @@ class CascadesRuleEngineTest {
 					&& event != null
 					&& event.startsWith("dependent-input-frontier ")
 					&& event.contains(" group=" + groupId + " ")) {
-				visits.incrementAndGet();
+				events.add(event);
+				if (event.contains(" inputIndex=0 ")) {
+					visits.incrementAndGet();
+				}
 			}
 		}
 	}
@@ -5871,7 +7941,7 @@ class CascadesRuleEngineTest {
 		@Override
 		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
 			return expression.logical()
-					&& expression.tupleExpr() instanceof StatementPattern pattern
+					&& expression.tupleExpr()instanceof StatementPattern pattern
 					&& "leftPredicate".equals(pattern.getPredicateVar().getName());
 		}
 
@@ -5896,8 +7966,7 @@ class CascadesRuleEngineTest {
 		}
 	}
 
-	private record ContextualRightImplementationRule(AtomicReference<Memo> memo,
-			AtomicReference<OptimizationGoal> missingGoal)
+	private record ContextualRightImplementationRule(AtomicInteger lateWinnerInjections)
 			implements FiniteTestCascadesRule {
 
 		@Override
@@ -5913,7 +7982,7 @@ class CascadesRuleEngineTest {
 		@Override
 		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
 			return expression.logical()
-					&& expression.tupleExpr() instanceof StatementPattern pattern
+					&& expression.tupleExpr()instanceof StatementPattern pattern
 					&& "rightPredicate".equals(pattern.getPredicateVar().getName());
 		}
 
@@ -5924,10 +7993,31 @@ class CascadesRuleEngineTest {
 
 		@Override
 		public List<RuleApplication> apply(MemoExpr expression, OptimizationGoal goal, RuleContext context) {
-			memo.compareAndSet(null, context.memo());
 			InputBindingContext inputContext = goal.inputBindingContext();
 			if (inputContext.assuredBindingNames().contains("shared")) {
-				missingGoal.compareAndSet(null, goal);
+				if (lateWinnerInjections.get() == 0) {
+					CostVector cost = exactCost(1.0d);
+					PhysicalProperties delivered = PhysicalProperties.builder().boundVars(Set.of("shared")).build();
+					RuleProof proof = new RuleProof("late-contextual-rhs", RuleKind.IMPLEMENTATION,
+							goal.semanticScope(), Set.of("testLateContextualWinner"),
+							"Inject the exact contextual winner after the parent traversal is cached");
+					MemoExpr physical = context.memo()
+							.groups()
+							.stream()
+							.flatMap(group -> group.expressions().stream())
+							.filter(MemoExpr::physical)
+							.filter(candidate -> candidate.proofs()
+									.stream()
+									.anyMatch(candidateProof -> id().equals(candidateProof.ruleId())))
+							.findFirst()
+							.orElseThrow();
+					Winner lateWinner = new Winner(physical, physical.tupleExpr().clone(), delivered, cost,
+							List.of(proof), false, "", null, inputContext);
+					if (!context.memo().addWinner(goal.key(expression.groupId()), lateWinner, 16, true)) {
+						throw new IllegalStateException("Late contextual winner was not accepted");
+					}
+					lateWinnerInjections.incrementAndGet();
+				}
 				return List.of();
 			}
 			CostVector cost = exactCost(100.0d);
@@ -5938,43 +8028,42 @@ class CascadesRuleEngineTest {
 		}
 	}
 
-	private record LateContextualWinnerTelemetry(AtomicReference<Memo> memo,
-			AtomicReference<OptimizationGoal> missingGoal, AtomicInteger injections) implements CascadesTelemetry {
+	private record LateContextualWinnerTelemetry(List<String> traversalEvents)
+			implements CascadesTelemetry {
 
 		@Override
-		public void winnerChosen(WinnerKey key, Winner chosenWinner) {
-			if (injections.get() > 0
-					|| chosenWinner == null
-					|| !(chosenWinner.expression().tupleExpr() instanceof LeftJoin)) {
-				return;
+		public void plannerEvent(String event) {
+			if (event != null && (event.startsWith("dependent-input-frontier ")
+					|| event.startsWith("dependent-input-prefixes-replayed ")
+					|| event.startsWith("cost-deferred "))) {
+				traversalEvents.add(event);
 			}
-			Memo currentMemo = memo.get();
-			OptimizationGoal contextualGoal = missingGoal.get();
-			if (currentMemo == null || contextualGoal == null) {
-				return;
-			}
-			CostVector cost = exactCost(1.0d);
-			PhysicalProperties delivered = PhysicalProperties.builder().boundVars(Set.of("shared")).build();
-			RuleProof proof = new RuleProof("late-contextual-rhs", RuleKind.IMPLEMENTATION,
-					contextualGoal.semanticScope(), Set.of("testLateContextualWinner"),
-					"Inject the exact contextual winner after the parent traversal is cached");
-			MemoExpr physical = currentMemo.groups()
-					.stream()
-					.flatMap(group -> group.expressions().stream())
-					.filter(MemoExpr::physical)
-					.filter(candidate -> candidate.proofs()
-							.stream()
-							.anyMatch(candidateProof -> "contextual-right-before-late-winner"
-									.equals(candidateProof.ruleId())))
-					.findFirst()
-					.orElseThrow();
-			Winner lateWinner = new Winner(physical, physical.tupleExpr().clone(), delivered, cost, List.of(proof), false,
-					"", null, contextualGoal.inputBindingContext());
-			if (!currentMemo.addWinner(contextualGoal.key(physical.groupId()), lateWinner, 16, true)) {
-				throw new IllegalStateException("Late contextual winner was not accepted");
-			}
-			injections.incrementAndGet();
 		}
+
+		@Override
+		public void alternativeCosted(int memoGroupId, String ruleId, PhysicalProperties requiredProperties,
+				PhysicalProperties deliveredProperties, CostVector cost, QueryModelNode plan) {
+			if (plan instanceof LeftJoin) {
+				traversalEvents.add("costed group=" + memoGroupId + " rule=" + ruleId + " cost=" + cost.workRows());
+			}
+		}
+
+		@Override
+		public void alternativeAccepted(int memoGroupId, String ruleId, CostVector cost, QueryModelNode plan) {
+			if (plan instanceof LeftJoin) {
+				traversalEvents.add("accepted group=" + memoGroupId + " rule=" + ruleId + " cost=" + cost.workRows());
+			}
+		}
+
+		@Override
+		public void alternativeDiscarded(int memoGroupId, String ruleId, String reason, CostVector cost,
+				QueryModelNode plan) {
+			if (plan instanceof LeftJoin) {
+				traversalEvents.add("discarded group=" + memoGroupId + " rule=" + ruleId + " reason=" + reason
+						+ " cost=" + cost.workRows());
+			}
+		}
+
 	}
 
 	private static final class DualLeftAccessImplementationRule implements FiniteTestCascadesRule {
@@ -5992,7 +8081,7 @@ class CascadesRuleEngineTest {
 		@Override
 		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
 			return expression.logical()
-					&& expression.tupleExpr() instanceof StatementPattern pattern
+					&& expression.tupleExpr()instanceof StatementPattern pattern
 					&& "leftPredicate".equals(pattern.getPredicateVar().getName());
 		}
 
@@ -6034,7 +8123,7 @@ class CascadesRuleEngineTest {
 		@Override
 		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
 			return expression.logical()
-					&& expression.tupleExpr() instanceof StatementPattern pattern
+					&& expression.tupleExpr()instanceof StatementPattern pattern
 					&& "leftPredicate".equals(pattern.getPredicateVar().getName());
 		}
 
@@ -6167,6 +8256,9 @@ class CascadesRuleEngineTest {
 				parentCosts.incrementAndGet();
 				return exactCost(1.0d);
 			}
+			if (expression.tupleExpr() instanceof StatementPattern) {
+				return exactCost(1_000.0d);
+			}
 			return CostVector.ZERO;
 		}
 
@@ -6280,6 +8372,15 @@ class CascadesRuleEngineTest {
 	}
 
 	private static final class ParentRecostCostModel implements CascadesCostModel {
+		private final boolean publishLogicalOutput;
+
+		private ParentRecostCostModel() {
+			this(false);
+		}
+
+		private ParentRecostCostModel(boolean publishLogicalOutput) {
+			this.publishLogicalOutput = publishLogicalOutput;
+		}
 
 		@Override
 		public LogicalProperties logicalProperties(TupleExpr tupleExpr) {
@@ -6302,6 +8403,43 @@ class CascadesRuleEngineTest {
 			}
 			if (expression.tupleExpr()instanceof StatementPattern pattern) {
 				return exactCost("leftPredicate".equals(pattern.getPredicateVar().getName()) ? 100.0d : 1.0d);
+			}
+			return exactCost(1.0d);
+		}
+
+		@Override
+		public OutputEvidenceScope outputEvidenceScope(MemoExpr expression, OptimizationGoal goal,
+				List<Winner> inputWinners, CostVector localEstimate) {
+			return publishLogicalOutput && expression.tupleExpr() instanceof StatementPattern pattern
+					&& "leftPredicate".equals(pattern.getPredicateVar().getName())
+							? OutputEvidenceScope.LOGICAL_EQUIVALENCE_FOR_GOAL
+							: OutputEvidenceScope.IMPLEMENTATION_LOCAL;
+		}
+
+		@Override
+		public PhysicalProperties deliveredProperties(MemoExpr expression, OptimizationGoal goal,
+				List<Winner> inputWinners) {
+			return expression.deliveredProperties();
+		}
+	}
+
+	private static final class LateScopedHelperCostModel implements CascadesCostModel {
+
+		@Override
+		public LogicalProperties logicalProperties(TupleExpr tupleExpr) {
+			return LogicalProperties.from(tupleExpr, 1.0d, QErrorInterval.exact(1.0d, "test"));
+		}
+
+		@Override
+		public String logicalFingerprint(TupleExpr tupleExpr) {
+			return tupleExpr == null ? "<null>" : tupleExpr.getClass().getName() + ':' + tupleExpr.getSignature();
+		}
+
+		@Override
+		public CostVector localCost(MemoExpr expression, OptimizationGoal goal, List<Winner> inputWinners) {
+			if (expression.tupleExpr() instanceof Union
+					&& containsStatementPattern(expression.tupleExpr(), "patient", "type", "patientType")) {
+				return exactCost(1_000.0d);
 			}
 			return exactCost(1.0d);
 		}
@@ -6366,7 +8504,7 @@ class CascadesRuleEngineTest {
 
 		@Override
 		public CostVector localCost(MemoExpr expression, OptimizationGoal goal, List<Winner> inputWinners) {
-			if (expression.tupleExpr() instanceof StatementPattern pattern
+			if (expression.tupleExpr()instanceof StatementPattern pattern
 					&& "left".equals(pattern.getPredicateVar().getName())) {
 				costedLeftGoals.add(goal.rowGoal());
 			}
@@ -6397,7 +8535,7 @@ class CascadesRuleEngineTest {
 
 		@Override
 		public CostVector localCost(MemoExpr expression, OptimizationGoal goal, List<Winner> inputWinners) {
-			if (expression.tupleExpr() instanceof StatementPattern pattern) {
+			if (expression.tupleExpr()instanceof StatementPattern pattern) {
 				String predicateName = pattern.getPredicateVar().getName();
 				if ("hasObservation".equals(predicateName)) {
 					return exactCost(49_600.0d);
@@ -6439,7 +8577,7 @@ class CascadesRuleEngineTest {
 					&& inputWinners.stream().anyMatch(winner -> winner.plan() instanceof Difference)) {
 				return exactCost(1.0d);
 			}
-			if (expression.tupleExpr() instanceof StatementPattern pattern
+			if (expression.tupleExpr()instanceof StatementPattern pattern
 					&& "valuePredicate".equals(pattern.getPredicateVar().getName())) {
 				return exactCost(10_000_000.0d);
 			}
@@ -6584,7 +8722,7 @@ class CascadesRuleEngineTest {
 		@Override
 		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
 			return expression.logical()
-					&& expression.tupleExpr() instanceof BindingSetAssignment assignment
+					&& expression.tupleExpr()instanceof BindingSetAssignment assignment
 					&& assignment.getBindingNames().equals(Set.of("type", "code"));
 		}
 
@@ -6599,7 +8737,7 @@ class CascadesRuleEngineTest {
 			FiniteRelationEstimate relation = FiniteRelationEstimate.fromRows(List.of("type"),
 					List.of(List.of(condition), List.of(medication)), "selected-two-types");
 			BagEstimate bag = BagEstimate.exact(2.0d, "selected-two-types")
-							.withFiniteRelation(relation);
+					.withFiniteRelation(relation);
 			PhysicalProperties delivered = PhysicalProperties.builder()
 					.accessPath("narrow")
 					.boundVars(Set.of("type"))
@@ -6701,6 +8839,42 @@ class CascadesRuleEngineTest {
 		}
 	}
 
+	private record FeedbackFingerprintCostModel(CascadesCostModel delegate, AtomicInteger calls)
+			implements CascadesCostModel {
+
+		@Override
+		public LogicalProperties logicalProperties(TupleExpr tupleExpr) {
+			return delegate.logicalProperties(tupleExpr);
+		}
+
+		@Override
+		public String feedbackFingerprint(TupleExpr tupleExpr) {
+			calls.incrementAndGet();
+			return "cost-model-feedback-fingerprint";
+		}
+
+		@Override
+		public String logicalFingerprint(TupleExpr tupleExpr) {
+			return delegate.logicalFingerprint(tupleExpr);
+		}
+
+		@Override
+		public LeoLearnedEvidenceService leoSurfaceProvider() {
+			return LeoLearnedEvidenceService.empty();
+		}
+
+		@Override
+		public CostVector localCost(MemoExpr expression, OptimizationGoal goal, List<Winner> inputWinners) {
+			return delegate.localCost(expression, goal, inputWinners);
+		}
+
+		@Override
+		public PhysicalProperties deliveredProperties(MemoExpr expression, OptimizationGoal goal,
+				List<Winner> inputWinners) {
+			return delegate.deliveredProperties(expression, goal, inputWinners);
+		}
+	}
+
 	private record PlanBuildRecordingModel(CascadesCostModel delegate, AtomicInteger planBuilds)
 			implements CascadesCostModel {
 
@@ -6744,11 +8918,17 @@ class CascadesRuleEngineTest {
 
 	private static final class RecordingImplementationRule implements FiniteTestCascadesRule {
 		private final String predicateName;
+		private final boolean selectedPrefixDifferenceRight;
 		private final List<Set<String>> observedBoundVars = new ArrayList<>();
 		private final List<OptimizationGoal> observedGoals = new ArrayList<>();
 
 		private RecordingImplementationRule(String predicateName) {
+			this(predicateName, false);
+		}
+
+		private RecordingImplementationRule(String predicateName, boolean selectedPrefixDifferenceRight) {
 			this.predicateName = predicateName;
+			this.selectedPrefixDifferenceRight = selectedPrefixDifferenceRight;
 		}
 
 		@Override
@@ -6759,6 +8939,16 @@ class CascadesRuleEngineTest {
 		@Override
 		public RuleKind kind() {
 			return RuleKind.IMPLEMENTATION;
+		}
+
+		@Override
+		public RuleDescriptor descriptor() {
+			return RuleDescriptor.builder(id(), kind())
+					.wakeUpEvents(RuleWakeUpEvent.LOGICAL_EXPRESSION_ADDED,
+							RuleWakeUpEvent.REQUIRED_PROPERTIES_CHANGED)
+					.goalPropertiesRead(RuleDescriptor.GoalProperty.INVOCATION_CARDINALITY)
+					.convergenceClass(RuleConvergenceClass.FINITE_EQUIVALENCE_EXPANSION)
+					.build();
 		}
 
 		@Override
@@ -6787,6 +8977,13 @@ class CascadesRuleEngineTest {
 			PhysicalProperties delivered = PhysicalProperties.builder()
 					.boundVars(tupleExpr == null ? Set.of() : tupleExpr.getBindingNames())
 					.build();
+			if (selectedPrefixDifferenceRight && tupleExpr instanceof Difference) {
+				PhysicalProperties selectedPrefix = PhysicalProperties.builder()
+						.inputConsumption(PhysicalProperties.InputConsumption.SELECTED_PREFIX)
+						.build();
+				return List.of(RuleApplication.physical(expression.groupId(), tupleExpr.clone(), delivered,
+						List.of(PhysicalProperties.ANY, selectedPrefix), cost, proof, id(), estimate));
+			}
 			return List.of(RuleApplication.physical(expression.groupId(), tupleExpr.clone(), delivered, cost, proof,
 					id(), estimate));
 		}

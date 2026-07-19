@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -32,7 +33,6 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.junit.jupiter.api.Test;
 
 class CascadesCostApplicationLedgerTest {
@@ -51,9 +51,20 @@ class CascadesCostApplicationLedgerTest {
 				.optimize(root, OptimizationGoal.root());
 
 		assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness(), plan.diagnostics()::toString);
-		assertEquals(Map.of("initial", 1), costModel.parentCostApplications(),
-				"Publishing the costed expression's canonical facts must not make the same dependent input state "
-						+ "eligible again");
+		assertTrue(costModel.globalParentCostApplications().getOrDefault("initial", 0) > 0,
+				"The global implementation must be priced against an initial child winner");
+		assertTrue(costModel.scopedParentCostApplications().getOrDefault("initial", 0) > 0,
+				"Scoped typed-edge search must independently price the implementation");
+		assertTrue(costModel.duplicateParentCostApplications().isEmpty(),
+				() -> "Every ordered child-state combination must be priced once: "
+						+ costModel.duplicateParentCostApplications());
+		assertTrue(plan.memo()
+				.group(plan.rootGroupId())
+				.expressions()
+				.stream()
+				.flatMap(candidate -> candidate.proofs().stream())
+				.anyMatch(proof -> "core-unified-join-search".equals(proof.ruleId())),
+				"The memo must retain the scoped route proof merged after its first costing");
 	}
 
 	@Test
@@ -70,9 +81,12 @@ class CascadesCostApplicationLedgerTest {
 				.optimize(root, OptimizationGoal.root());
 
 		assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness());
-		assertEquals(Map.of("initial", 1, "late", 1), costModel.parentCostApplications(),
+		assertEquals(Map.of("initial", 1, "late", 1), costModel.globalParentCostApplications(),
 				"An unrelated child proof wake must not recost an existing combination, while the late child winner "
-						+ "must add exactly one new combination");
+						+ "must add exactly one new combination: " + costModel.parentApplicationsByCombination());
+		assertTrue(costModel.duplicateParentCostApplications().isEmpty(),
+				() -> "Every ordered child-state combination must be priced once: "
+						+ costModel.duplicateParentCostApplications());
 		assertTrue(plan.winner()
 				.orElseThrow()
 				.proofs()
@@ -113,6 +127,77 @@ class CascadesCostApplicationLedgerTest {
 		assertTrue(state.diagnostics().contains("costApplications=1"), state.diagnostics()::toString);
 		assertNull(state.beginCostApplication(memo, physical, goal, List.of()),
 				"The same canonical application at the current revision must remain sealed");
+	}
+
+	@Test
+	void logicalEstimateRevisionReopensOnlyItsMatchingGoal() {
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		StatementPattern pattern = pattern();
+		int groupId = memo.intern(pattern);
+		MemoExpr physical = memo.addPhysicalAlternative(groupId, pattern.clone(), PhysicalProperties.ANY,
+				"goal-estimate-generation", RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of()).orElseThrow();
+		CascadesPlanner.SearchState state = new CascadesPlanner.SearchState(Integer.MAX_VALUE,
+				OptimizationGoal.SearchMode.EXACT);
+		OptimizationGoal rootGoal = OptimizationGoal.root();
+		OptimizationGoal otherContext = OptimizationGoal.root()
+				.withInputBindingContext(InputBindingContext.fromProfile(3.0d, Set.of("s"), BindingProfile.ANY));
+
+		var rootClaim = state.beginCostApplication(memo, physical, rootGoal, List.of());
+		var contextClaim = state.beginCostApplication(memo, physical, otherContext, List.of());
+		assertNotNull(rootClaim);
+		assertNotNull(contextClaim);
+		state.finishCostApplication(rootClaim, memo, physical, rootGoal, List.of());
+		state.finishCostApplication(contextClaim, memo, physical, otherContext, List.of());
+		assertNull(state.beginCostApplication(memo, physical, rootGoal, List.of()));
+		assertNull(state.beginCostApplication(memo, physical, otherContext, List.of()));
+
+		LogicalOutputEstimateKey rootEstimateKey = LogicalOutputEstimateKey.of(rootGoal, 0L);
+		memo.mergeLogicalOutputEstimate(groupId, physical.id(), rootEstimateKey,
+				LogicalOutputEstimate.from(exactCost(3.0d)));
+
+		assertNotNull(state.beginCostApplication(memo, physical, rootGoal, List.of()),
+				"New goal-wide evidence must reopen a sealed application even when no winner existed to clear");
+		assertNull(state.beginCostApplication(memo, physical, otherContext, List.of()),
+				"A goal-local estimate revision must not reopen an unrelated input context");
+	}
+
+	@Test
+	void targetedChildFrontierInvalidationReopensParentCostCombination() {
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		Filter root = new Filter(pattern(), new Bound(Var.of("o")));
+		int rootGroupId = memo.intern(root);
+		MemoExpr rootExpression = memo.group(rootGroupId).expressions().getFirst();
+		int childGroupId = rootExpression.inputGroupIds().getFirst();
+		MemoExpr childPhysical = memo.addPhysicalAlternative(childGroupId, pattern(), PhysicalProperties.ANY,
+				"invalidation-child", RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of()).orElseThrow();
+		MemoExpr parentPhysical = memo.addPhysicalAlternative(rootGroupId, root.clone(), PhysicalProperties.ANY,
+				"invalidation-parent", RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of()).orElseThrow();
+		OptimizationGoal goal = OptimizationGoal.root();
+		WinnerKey childKey = goal.key(childGroupId);
+		Winner child = new Winner(childPhysical, childPhysical.tupleExpr(), PhysicalProperties.ANY, exactCost(1.0d),
+				List.of(), false, "");
+		assertTrue(memo.addWinner(childKey, child, 8, true));
+		Winner keyedChild = memo.bestWinner(childKey).orElseThrow();
+		CascadesPlanner.SearchState state = new CascadesPlanner.SearchState(Integer.MAX_VALUE,
+				OptimizationGoal.SearchMode.EXACT);
+
+		var initialClaim = state.beginCostApplication(memo, parentPhysical, goal, List.of(keyedChild));
+		assertNotNull(initialClaim);
+		state.finishCostApplication(initialClaim, memo, parentPhysical, goal, List.of(keyedChild));
+		assertNull(state.beginCostApplication(memo, parentPhysical, goal, List.of(keyedChild)));
+
+		LogicalOutputEstimateKey estimateKey = LogicalOutputEstimateKey.of(goal, 0L);
+		memo.mergeLogicalOutputEstimate(childGroupId, childPhysical.id(), estimateKey,
+				LogicalOutputEstimate.from(exactCost(1.0d)));
+		assertTrue(memo.bestWinner(childKey).isEmpty(),
+				"The goal-targeted estimate change must invalidate the old child frontier");
+		Winner equivalent = new Winner(childPhysical, childPhysical.tupleExpr(), PhysicalProperties.ANY,
+				exactCost(1.0d), List.of(), false, "");
+		assertTrue(memo.addWinner(childKey, equivalent, 8, true));
+		Winner readdedChild = memo.bestWinner(childKey).orElseThrow();
+
+		assertNotNull(state.beginCostApplication(memo, parentPhysical, goal, List.of(readdedChild)),
+				"Rebuilding a targeted child frontier must reopen the equivalent parent cost combination");
 	}
 
 	@Test
@@ -248,7 +333,7 @@ class CascadesCostApplicationLedgerTest {
 
 		CascadesPlan plan = new CascadesPlanner(CascadesCostModel.from(new EvaluationStatistics()), rules,
 				CascadesTelemetry.NO_OP)
-					.optimize(pattern(), OptimizationGoal.root());
+						.optimize(pattern(), OptimizationGoal.root());
 
 		assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness(), plan.diagnostics()::toString);
 		assertTrue(plan.memo().group(plan.rootGroupId()).outputBindingProfile().isAny(),
@@ -280,6 +365,22 @@ class CascadesCostApplicationLedgerTest {
 				"Installing an estimate for a new context must not invalidate another context's winner");
 		assertTrue(memo.logicalOutputEstimate(groupId, estimateKey).isPresent(),
 				"The new context must retain its canonical logical estimate");
+		Set<Integer> changedExpressions = new LinkedHashSet<>();
+		MemoChange change;
+		while ((change = memo.pollChange().orElse(null)) != null) {
+			assertEquals(MemoChange.Kind.GOAL_ESTIMATE_CHANGED, change.kind(),
+					"A context-local estimate must use the targeted estimate wake-up channel");
+			assertTrue(change.expressionId() >= 0,
+					"Goal-local estimate changes must not be promoted to a group-scoped wake-up");
+			changedExpressions.add(change.expressionId());
+		}
+		assertEquals(
+				memo.group(groupId)
+						.expressions()
+						.stream()
+						.map(MemoExpr::id)
+						.collect(java.util.stream.Collectors.toSet()),
+				changedExpressions);
 		assertFalse(memo.hasPendingChanges(),
 				"A first context-local estimate must not emit a group-global cost-estimate wake-up");
 	}
@@ -324,6 +425,49 @@ class CascadesCostApplicationLedgerTest {
 		assertNotEquals(state.ruleApplicationGoal(oneInvocation, cardinalitySensitive),
 				state.ruleApplicationGoal(manyInvocations, cardinalitySensitive),
 				"A rule that prices access paths retains invocation cardinality in its ledger identity");
+	}
+
+	@Test
+	void admittedPhysicalOperatorRemainsScopedDuringExploration() {
+		Memo memo = new Memo(CascadesCostModel.from(new EvaluationStatistics()));
+		int groupId = memo.intern(pattern());
+		MemoExpr reusable = memo.addPhysicalAlternative(groupId, pattern().clone(),
+				PhysicalProperties.builder().accessPath("goal-invariant").build(), "goal-invariant",
+				RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of()).orElseThrow();
+		MemoExpr invocationSensitive = memo.addPhysicalAlternative(groupId, pattern().clone(),
+				PhysicalProperties.builder().accessPath("invocation-sensitive").build(), "invocation-sensitive",
+				RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of()).orElseThrow();
+		CascadesPlanner.SearchState state = new CascadesPlanner.SearchState(Integer.MAX_VALUE,
+				OptimizationGoal.SearchMode.EXACT);
+		RuleDescriptor invariantDescriptor = RuleDescriptor.builder("goal-invariant", RuleKind.IMPLEMENTATION)
+				.build();
+		RuleDescriptor sensitiveDescriptor = RuleDescriptor.builder("invocation-sensitive", RuleKind.IMPLEMENTATION)
+				.goalPropertiesRead(RuleDescriptor.GoalProperty.INVOCATION_CARDINALITY)
+				.build();
+		OptimizationGoal firstGoal = OptimizationGoal.root()
+				.withInputBindingContext(InputBindingContext.fromProfile(1.0d, Set.of("s"), BindingProfile.ANY));
+		OptimizationGoal laterGoal = OptimizationGoal.root()
+				.withInputBindingContext(InputBindingContext.fromProfile(10_000.0d, Set.of("o"), BindingProfile.ANY));
+
+		assertTrue(state.registerPhysicalApplication(reusable, firstGoal, invariantDescriptor));
+		assertTrue(state.registerPhysicalApplication(invocationSensitive, firstGoal, sensitiveDescriptor));
+
+		assertFalse(state.physicalApplicationRegistered(reusable, laterGoal),
+				"Normal exploration must not eagerly reopen every admitted operator under every contextual goal");
+		assertFalse(state.physicalApplicationRegistered(invocationSensitive, laterGoal),
+				"A local cost derived from invocation cardinality must remain registered only for that exact context");
+
+		state.beginCostOnlyStabilization();
+		try {
+			assertTrue(state.physicalApplicationRegistered(reusable, laterGoal),
+					"Final stabilization may cost an admitted goal-invariant operator under a late contextual goal");
+			assertFalse(state.physicalApplicationRegistered(invocationSensitive, laterGoal),
+					"Final stabilization must not reuse a locally invocation-priced operator outside its scope");
+		} finally {
+			state.endCostOnlyStabilization();
+		}
+		assertFalse(state.physicalApplicationRegistered(reusable, laterGoal),
+				"Cross-goal reuse must end with the cost-only stabilization phase");
 	}
 
 	private static StatementPattern pattern() {
@@ -501,8 +645,10 @@ class CascadesCostApplicationLedgerTest {
 	}
 
 	private static final class ParentCombinationCostModel implements CascadesCostModel {
-		private final Map<String, Integer> parentCostApplications = new LinkedHashMap<>();
+		private final Map<String, Integer> globalParentCostApplications = new LinkedHashMap<>();
+		private final Map<String, Integer> scopedParentCostApplications = new LinkedHashMap<>();
 		private final Map<String, Integer> parentDeliveredApplications = new LinkedHashMap<>();
+		private final Map<String, Integer> parentApplicationsByCombination = new LinkedHashMap<>();
 
 		@Override
 		public LogicalProperties logicalProperties(TupleExpr tupleExpr) {
@@ -516,9 +662,22 @@ class CascadesCostApplicationLedgerTest {
 
 		@Override
 		public CostVector localCost(MemoExpr expression, OptimizationGoal goal, List<Winner> inputWinners) {
-			if (expression.tupleExpr() instanceof Filter && !inputWinners.isEmpty()) {
-				String childState = inputWinners.getFirst().deliveredProperties().accessPath();
-				parentCostApplications.merge(childState, 1, Integer::sum);
+			if (expression.tupleExpr() instanceof Filter && trackedParent(expression)
+					&& !inputWinners.isEmpty()) {
+				Winner child = inputWinners.getFirst();
+				String childState = child.deliveredProperties().accessPath();
+				Map<String, Integer> applications = expression.groupId() >= 1_000_000_000
+						? scopedParentCostApplications
+						: globalParentCostApplications;
+				if (!"*".equals(childState)) {
+					applications.merge(childState, 1, Integer::sum);
+				}
+				parentApplicationsByCombination.merge(
+						expression.id() + ":" + expression.localMetadata() + ":goal=" + goal + ":inputs="
+								+ inputWinners.stream()
+										.map(winner -> winner.expression().id() + ":" + winner.stateKey())
+										.toList(),
+						1, Integer::sum);
 				return exactCost(1.0d);
 			}
 			return CostVector.ZERO;
@@ -527,20 +686,46 @@ class CascadesCostApplicationLedgerTest {
 		@Override
 		public PhysicalProperties deliveredProperties(MemoExpr expression, OptimizationGoal goal,
 				List<Winner> inputWinners) {
-			if (expression.tupleExpr() instanceof Filter && !inputWinners.isEmpty()) {
+			if (expression.tupleExpr() instanceof Filter && trackedParent(expression) && !inputWinners.isEmpty()) {
 				String childState = inputWinners.getFirst().deliveredProperties().accessPath();
-				parentDeliveredApplications.merge(childState, 1, Integer::sum);
+				if (!"*".equals(childState)) {
+					parentDeliveredApplications.merge(childState, 1, Integer::sum);
+				}
 			}
 			return expression.tupleExpr() instanceof Filter ? PhysicalProperties.ANY
 					: expression.deliveredProperties();
 		}
 
-		Map<String, Integer> parentCostApplications() {
-			return Map.copyOf(parentCostApplications);
+		private static boolean trackedParent(MemoExpr expression) {
+			return "dependent-parent".equals(expression.localMetadata())
+					|| "parent-primary".equals(expression.localMetadata())
+					|| "parent-dominated".equals(expression.localMetadata());
+		}
+
+		Map<String, Integer> globalParentCostApplications() {
+			return Map.copyOf(globalParentCostApplications);
+		}
+
+		Map<String, Integer> scopedParentCostApplications() {
+			return Map.copyOf(scopedParentCostApplications);
 		}
 
 		Map<String, Integer> parentDeliveredApplications() {
 			return Map.copyOf(parentDeliveredApplications);
+		}
+
+		Map<String, Integer> parentApplicationsByCombination() {
+			return Map.copyOf(parentApplicationsByCombination);
+		}
+
+		Map<String, Integer> duplicateParentCostApplications() {
+			Map<String, Integer> duplicates = new LinkedHashMap<>();
+			for (Map.Entry<String, Integer> entry : parentApplicationsByCombination.entrySet()) {
+				if (entry.getValue() > 1) {
+					duplicates.put(entry.getKey(), entry.getValue());
+				}
+			}
+			return Map.copyOf(duplicates);
 		}
 	}
 

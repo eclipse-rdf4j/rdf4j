@@ -122,14 +122,14 @@ public class ThemeQueryPlanRunBenchmark {
 		public int z_queryIndex;
 
 		@Param({
-				"MEDICAL_RECORDS",
+//				"MEDICAL_RECORDS",
 //				"SOCIAL_MEDIA",
 //				"LIBRARY",
 //				"ENGINEERING",
 //				"HIGHLY_CONNECTED",
 //				"TRAIN",
 //				"ELECTRICAL_GRID",
-//				"PHARMA",
+				"PHARMA",
 //				"SPARSE"
 		})
 		public String themeName;
@@ -418,6 +418,14 @@ public class ThemeQueryPlanRunBenchmark {
 		protected LmdbBenchmarkQueryPlan preparePlan(boolean captureOptimizedPlan) {
 			return LmdbBenchmarkQueryPlan.prepare(store, connection, query, QUERY_TIMEOUT_SECONDS,
 					captureOptimizedPlan);
+		}
+
+		protected long evaluateQueryAndAssertExpectedResult() {
+			try (LmdbBenchmarkQueryPlan plan = preparePlan(false)) {
+				QueryResultSummary result = evaluate(plan);
+				assertExpectedResult(result);
+				return benchmarkResult(result);
+			}
 		}
 
 		protected boolean profiling() {

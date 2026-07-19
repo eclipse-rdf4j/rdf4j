@@ -19,8 +19,7 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 
 /** A finite state transition produced after topology contributors have offered join partitions. */
 @Experimental
-public sealed interface JoinStateExpression permits JoinStateExpression.JoinTransition,
-		JoinStateExpression.ApplyPredicate {
+public sealed interface JoinStateExpression permits JoinStateExpression.JoinTransition,JoinStateExpression.ApplyPredicate {
 
 	JoinState resultState();
 

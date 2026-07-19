@@ -91,7 +91,16 @@ final class LmdbEstimationEngine {
 		metrics.put("optimizer.filterLowerRatio", evidence.lowerBound());
 		metrics.put("optimizer.filterUpperRatio", evidence.upperBound());
 		metrics.put("optimizer.filterConfidence", evidence.confidence());
-		return result.withMetrics(Map.copyOf(metrics));
+		result = result.withMetrics(Map.copyOf(metrics));
+		FiniteRelationEstimate exactRelation = evidenceSource.finiteFilterRelation(input, condition, context)
+				.orElse(null);
+		if (exactRelation == null) {
+			return result;
+		}
+		metrics.put("optimizer.finiteFilterRows", exactRelation.rows());
+		return result.withRowsPreservingEvidence(exactRelation.rows(), result.workRows(), 1.0d,
+				"lmdb-finite-filter-surface", Map.copyOf(metrics), false)
+				.withFiniteRelation(exactRelation);
 	}
 
 	private final class Session {

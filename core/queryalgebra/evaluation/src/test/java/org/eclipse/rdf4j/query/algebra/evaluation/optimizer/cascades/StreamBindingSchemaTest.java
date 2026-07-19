@@ -12,11 +12,16 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.management.ManagementFactory;
 import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Exists;
@@ -28,6 +33,7 @@ import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
@@ -36,6 +42,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 class StreamBindingSchemaTest {
@@ -69,6 +76,44 @@ class StreamBindingSchemaTest {
 	}
 
 	@Test
+	void negatedBoundOptionalExposesOnlyLeftOutputs() {
+		StatementPattern left = pattern("shared", "leftOnly");
+		StatementPattern right = pattern("shared", "rightOnly");
+		Filter antiOptional = new Filter(new LeftJoin(left, right),
+				new Not(new Bound(new Var("rightOnly"))));
+
+		assertSchema(antiOptional, Set.of("shared", "leftOnly"), Set.of("shared", "leftOnly"));
+	}
+
+	@Test
+	void negatedBoundOptionalWithUndefRhsRetainsRhsOutputs() {
+		StatementPattern left = pattern("shared", "leftOnly");
+		BindingSetAssignment right = new BindingSetAssignment();
+		MapBindingSet bound = new MapBindingSet();
+		bound.addBinding("shared", VF.createIRI("urn:shared"));
+		bound.addBinding("rhs", VF.createIRI("urn:rhs"));
+		bound.addBinding("rightOnly", VF.createIRI("urn:right:bound"));
+		MapBindingSet undefined = new MapBindingSet();
+		undefined.addBinding("shared", VF.createIRI("urn:shared"));
+		undefined.addBinding("rightOnly", VF.createIRI("urn:right:undefined"));
+		right.setBindingSets(List.of(bound, undefined));
+		Filter antiOptional = new Filter(new LeftJoin(left, right), new Not(new Bound(new Var("rhs"))));
+
+		assertSchema(antiOptional, Set.of("shared", "leftOnly", "rhs", "rightOnly"),
+				Set.of("shared", "leftOnly"));
+	}
+
+	@Test
+	void reservedNegatedBoundNameCannotProveAntiOptional() {
+		StatementPattern left = pattern("shared", "leftOnly");
+		StatementPattern right = pattern("shared", "rightOnly");
+		Filter antiOptional = new Filter(new LeftJoin(left, right),
+				new Not(new Bound(new Var("_const_hidden"))));
+
+		assertSchema(antiOptional, Set.of("shared", "leftOnly", "rightOnly"), Set.of("shared", "leftOnly"));
+	}
+
+	@Test
 	void unaryOperatorsSeparateOutputsFromScalarRequirements() {
 		StatementPattern stream = pattern("entity", "value");
 		Extension extension = new Extension(stream.clone(),
@@ -84,8 +129,92 @@ class StreamBindingSchemaTest {
 		assertSchema(new Slice(stream, 0, 10), Set.of("entity", "value"), Set.of("entity", "value"));
 	}
 
+	@Test
+	void scalarScopeAnalysisUsesQueryLocalBindingMasks() {
+		TupleExpr join = null;
+		for (int i = 0; i < 192; i++) {
+			Filter factor = new Filter(pattern("stream" + i, "value" + i),
+					new Exists(pattern("external" + i, "probe" + i)));
+			join = join == null ? factor : new Join(join, factor);
+		}
+		com.sun.management.ThreadMXBean threadMxBean = (com.sun.management.ThreadMXBean) ManagementFactory
+				.getThreadMXBean();
+		assertTrue(threadMxBean.isThreadAllocatedMemorySupported());
+		boolean allocationTrackingEnabled = threadMxBean.isThreadAllocatedMemoryEnabled();
+		try {
+			if (!allocationTrackingEnabled) {
+				threadMxBean.setThreadAllocatedMemoryEnabled(true);
+			}
+			assertTrue(ScalarDependencyAnalyzer.reorderingPreservesScalarScope(join));
+			long before = threadMxBean.getThreadAllocatedBytes(Thread.currentThread().threadId());
+
+			boolean preservesScope = ScalarDependencyAnalyzer.reorderingPreservesScalarScope(join);
+
+			long allocatedBytes = threadMxBean.getThreadAllocatedBytes(Thread.currentThread().threadId()) - before;
+			assertTrue(preservesScope);
+			assertTrue(allocatedBytes < 2_000_000,
+					() -> "Expected bitmap scope analysis to allocate less than 2 MB, allocated " + allocatedBytes);
+		} finally {
+			if (!allocationTrackingEnabled) {
+				threadMxBean.setThreadAllocatedMemoryEnabled(false);
+			}
+		}
+	}
+
+	@Test
+	void scalarScopeAnalysisFindsCorrelationsBeyondTheFirstMaskWord() {
+		BindingUniverse universe = BindingUniverse.create();
+		for (int i = 0; i < 65; i++) {
+			universe.maskOfName("padding" + i);
+		}
+		Filter consumer = new Filter(pattern("consumer", "value"),
+				new Exists(pattern("wordTwoProducer", "probe")));
+		Join join = new Join(consumer, pattern("wordTwoProducer", "producedValue"));
+
+		assertFalse(ScalarDependencyAnalyzer.reorderingPreservesScalarScope(join, universe));
+	}
+
+	@Test
+	void scalarScopeAnalysisFindsCorrelationBelowTransparentProjectionBeyondFirstMaskWord() {
+		BindingUniverse universe = BindingUniverse.create();
+		for (int i = 0; i < 65; i++) {
+			universe.maskOfName("padding" + i);
+		}
+		Filter consumer = new Filter(pattern("consumer", "value"),
+				new Exists(pattern("wordTwoProducer", "probe")));
+		Projection transparent = new Projection(consumer,
+				new ProjectionElemList(new ProjectionElem("consumer"), new ProjectionElem("value")), false);
+		Join join = new Join(transparent, pattern("wordTwoProducer", "producedValue"));
+
+		assertFalse(ScalarDependencyAnalyzer.reorderingPreservesScalarScope(join, universe));
+	}
+
+	@Test
+	void scalarScopeAnalysisRespectsSubqueryProjectionIsolation() {
+		Filter consumer = new Filter(pattern("consumer", "value"),
+				new Exists(pattern("outerProducer", "probe")));
+		Projection subquery = new Projection(consumer,
+				new ProjectionElemList(new ProjectionElem("consumer"), new ProjectionElem("value")), true);
+
+		assertTrue(ScalarDependencyAnalyzer.reorderingPreservesScalarScope(
+				new Join(subquery, pattern("outerProducer", "producedValue"))));
+	}
+
+	@Test
+	void scalarScopeAnalysisDoesNotTreatSameFactorAliasAsSiblingSupplier() {
+		Filter consumer = new Filter(pattern("consumer", "value"),
+				new Exists(pattern("factorAlias", "probe")));
+		Projection alias = new Projection(consumer,
+				new ProjectionElemList(new ProjectionElem("consumer", "factorAlias"), new ProjectionElem("value")),
+				false);
+
+		assertTrue(ScalarDependencyAnalyzer.reorderingPreservesScalarScope(
+				new Join(alias, pattern("unrelated", "producedValue"))));
+	}
+
 	private static StatementPattern pattern(String subject, String object) {
-		return new StatementPattern(new Var(subject), new Var("predicateConstant", VF.createIRI("urn:predicate")),
+		return new StatementPattern(new Var(subject),
+				Var.of("predicateConstant", VF.createIRI("urn:predicate"), false, true),
 				new Var(object));
 	}
 
