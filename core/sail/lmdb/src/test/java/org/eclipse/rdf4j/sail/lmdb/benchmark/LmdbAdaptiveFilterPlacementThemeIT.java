@@ -39,10 +39,10 @@ class LmdbAdaptiveFilterPlacementThemeIT {
 
 	@Test
 	@Timeout(60)
-	void catalogQueriesRemainCorrectAndAdaptiveMovesAfterPlannedObservation(@TempDir Path dataDir) {
+	void catalogQueriesRemainCorrectAndAdaptiveMovesByDefaultAfterPlannedObservation(@TempDir Path dataDir) {
 		String previousAdaptive = System.getProperty(ADAPTIVE_ENABLED_PROPERTY);
 		String previousNative = System.getProperty(NATIVE_ENABLED_PROPERTY);
-		System.setProperty(ADAPTIVE_ENABLED_PROPERTY, Boolean.TRUE.toString());
+		System.clearProperty(ADAPTIVE_ENABLED_PROPERTY);
 		System.setProperty(NATIVE_ENABLED_PROPERTY, Boolean.TRUE.toString());
 		LmdbStore store = new LmdbStore(dataDir.toFile(), ConfigUtil.createConfig().setSketchEstimatorEnabled(false));
 		SailRepository repository = new SailRepository(store);

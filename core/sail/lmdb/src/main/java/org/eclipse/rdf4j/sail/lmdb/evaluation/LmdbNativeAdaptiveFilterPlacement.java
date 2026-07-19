@@ -74,7 +74,7 @@ final class LmdbNativeAdaptiveFilterPlacement {
 
 	private static RowCursor tryOpen(TupleExpr telemetryExpr, boolean orderedExecution, long offset, long limit,
 			MultiJoinPlan plan, RowState row) throws IOException {
-		if (!Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "false"))) {
+		if (!Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "true"))) {
 			return null;
 		}
 		if (plan.children.length < 2) {

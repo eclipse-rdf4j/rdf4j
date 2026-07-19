@@ -386,7 +386,7 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 	}
 
 	@Test
-	void unsetPropertyLeavesAdaptiveFinalFallbackDisabled() throws Exception {
+	void unsetPropertyEnablesAdaptiveFinalFallback() throws Exception {
 		NativeSlotLayout layout = new NativeSlotLayout(Map.of("left", 0, "right", 1), null);
 		layout.freeze(List.of("left", "right"));
 		MultiJoinPlan plan = admittedPlan();
@@ -395,7 +395,7 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 		try {
 			System.clearProperty(LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY);
 			adaptive = LmdbNativeAdaptiveFilterPlacement.tryOpen(step(plan, layout), plan, row(layout));
-			assertThat(adaptive).isNull();
+			assertThat(adaptive).isInstanceOf(AdaptiveOwningCursor.class);
 		} finally {
 			if (adaptive != null) {
 				adaptive.close();

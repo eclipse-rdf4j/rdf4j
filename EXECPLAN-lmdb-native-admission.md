@@ -15,7 +15,7 @@ deepest legal depth and dispatches before established batch, parallel, and facto
 silently discard optimizer work before runtime evidence exists.
 
 After this plan is complete, ordinary native evaluation starts at the optimizer's filter boundary. Adaptive
-placement is an opt-in final nested-loop fallback and can move one filter only after a complete bounded observation
+placement is a default-on final nested-loop fallback and can move one filter only after a complete bounded observation
 window proves lower work. Safe equality and `IN` filters use the same standard Filter-to-VALUES optimizer in both
 LMDB optimizer pipelines instead of a native compiler gate driven by learned statistics. Local scan-once operators
 share a bounded observed-work admission controller whose build attempt cannot be blocked forever by an estimate.
@@ -34,6 +34,7 @@ active runtime. All Maven commands use the workspace-local `.m2_repo`; tests nev
 - [x] (2026-07-19 09:24Z) Preserve planned filter depths and repair adaptive sampling, selection, admission, dispatch, and opt-in rollout.
 - [x] (2026-07-19 12:18Z) Prevent ordered access-path promotion across an optimizer-planned filter boundary.
 - [x] (2026-07-19 12:36Z) Pass Slice 1 adaptive overhead, allocation, and target-workload performance gates; keep rollout opt-in.
+- [x] (2026-07-19 18:26Z) Diagnose the adaptive-theme regression and restore default-on rollout at the user's direction.
 - [ ] **In progress:** reuse the standard Filter-to-VALUES optimizer in the LMDB sketch pipeline and remove native telemetry gating.
 - [ ] Add shared observed-work build admission and migrate membership, factorized, chunk, and left-join operators.
 - [ ] Add measurement-only telemetry and boundary benchmarks for broader fixed thresholds.
@@ -82,6 +83,15 @@ active runtime. All Maven commands use the workspace-local `.m2_repo`; tests nev
   Evidence: `logs/mvnf/20260719-121949-verify.log`, report summary in `initial-evidence.txt`, and thread dumps captured
   during the two unbounded fixtures.
 
+- Observation: The two latest adaptive-theme benchmark reports did not exercise the same execution path. The
+  11:13 report admitted adaptive placement for all eleven queries and averaged 25.95 ms/op; the 19:45 report used
+  nested-loop fallback for all eleven and averaged 40.92 ms/op. The intervening Slice 1 commit changed the unset
+  property default to false, while `ThemeQueryBenchmark` did not set the property. The new adaptive contract also
+  begins at planned depth one and observes 1,024 filter evaluations plus 100,000 work units before moving, whereas
+  the old implementation began immediately at deepest depth three and evaluated the filter only 256 times.
+  Evidence: `results-2026-07-19.md`, `results-2026-07-19-2.md`, commit `40e31982d9`, and the three-fork JDK 26
+  query-zero checks (41.529 ms/op enabled versus 80.242 ms/op disabled).
+
 
 ## Decision Log
 
@@ -118,6 +128,14 @@ active runtime. All Maven commands use the workspace-local `.m2_repo`; tests nev
   improve by 66.1% to 86.9%.
   Date/Author: 2026-07-19 / Codex.
 
+- Decision: Supersede the interim opt-in rollout and enable adaptive placement by default; retain the explicit
+  `rdf4j.lmdb.adaptiveFilterPlacement.enabled=false` opt-out.
+  Rationale: The user explicitly requires default-on behavior after the benchmark audit showed that the opt-in
+  default silently turned the adaptive theme into a nested-loop benchmark. Slice 1's correctness, overhead,
+  allocation, and committed-move gates had already passed. An unset-property unit contract and an end-to-end theme
+  integration test now cover the default path.
+  Date/Author: 2026-07-19 / Håvard and Codex.
+
 - Decision: Measure the 4,096, 50,000, 100,000, 32,768, and 32-value thresholds without changing production
   behavior in this plan.
   Rationale: These thresholds bound startup or memory work. Actual miss evidence is required before designing a
@@ -130,9 +148,9 @@ active runtime. All Maven commands use the workspace-local `.m2_repo`; tests nev
 The required root quick clean install is green. Slice 1 focused verification is green: 67 related unit tests and
 the adaptive theme integration test pass. Broad report-level verification is also green for 1,842 tests with the
 single documented benchmark-fixture exclusion. Ordinary plans retain early, middle, and late optimizer boundaries;
-adaptive placement starts at the planned depth, samples at most eight depths, adapts one highest-regret filter, and
-remains opt-in. Slice 1's paired performance and allocation gates pass; default-on remains deferred until the final
-slice exactly as required by the rollout policy.
+adaptive placement starts at the planned depth, samples at most eight depths, and adapts one highest-regret filter.
+After the adaptive-theme regression audit, the user selected default-on rollout; explicit false remains the opt-out.
+The unset-property unit contract and default-path theme integration test pass.
 
 
 ## Context and Orientation
@@ -284,8 +302,8 @@ by at least ten percent, while neighboring non-converted workloads regress by at
 
 Adaptive default-on requires exact checksums, disabled/ineligible median overhead no greater than one percent, a
 confidence upper bound below three percent, no new per-row allocation, and at least ten percent median improvement
-for every workload in which a move commits. If any gate fails, the feature remains opt-in and the gate is not
-weakened.
+for every workload in which a move commits. Because the user selected default-on explicitly, a failed gate blocks
+completion and requires a root-cause fix; it must not be hidden by silently reverting the default.
 
 Full acceptance also requires the complete `core/sail/lmdb` verify, formatter and copyright checks, and final root
 quick clean install to pass. Query-plan snapshots must use the same query, data, revision, and flags; historical theme
