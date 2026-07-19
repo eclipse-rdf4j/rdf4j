@@ -16,6 +16,7 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.readTransaction;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.transaction;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
+import static org.lwjgl.util.lmdb.LMDB.MDB_CP_COMPACT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_KEYEXIST;
@@ -39,6 +40,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_del;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_close;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_copy2;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
@@ -59,16 +61,20 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.StringTokenizer;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
@@ -148,6 +154,7 @@ class TripleStore implements Closeable {
 	private final int[] leadingFieldRadixOffsets = new int[256];
 	private final LmdbPageCardinalityEstimator pageEstimator;
 	private final AtomicLong dataRevision = new AtomicLong();
+	private volatile long lastCommittedTxnId;
 
 	private TxnRecordCache recordCache = null;
 
@@ -243,6 +250,7 @@ class TripleStore implements Closeable {
 		}
 
 		resetAlignedWriteCursorState();
+		lastCommittedTxnId = getCurrentCommittedTransactionId();
 	}
 
 	private Set<String> getIndexSpecs() throws SailException {
@@ -265,6 +273,47 @@ class TripleStore implements Closeable {
 
 	long getDataRevision() {
 		return dataRevision.get();
+	}
+
+	long getCurrentCommittedTransactionId() throws IOException {
+		return txnManager.doWith((stack, txn) -> mdb_txn_id(txn));
+	}
+
+	long getLastCommittedTxnId() {
+		return lastCommittedTxnId;
+	}
+
+	void copyEnvironment(Path targetDir, boolean compact) throws IOException {
+		Files.createDirectories(targetDir);
+		E(mdb_env_copy2(env, targetDir.toAbsolutePath().toString(), compact ? MDB_CP_COMPACT : 0));
+	}
+
+	/**
+	 * Parses a comma/whitespace-separated list of index specifications. Index specifications are required to consists
+	 * of 4 characters: 's', 'p', 'o' and 'c'.
+	 *
+	 * @param indexSpecStr A string like "spoc, pocs, cosp".
+	 * @return A Set containing the parsed index specifications.
+	 */
+	private Set<String> parseIndexSpecList(String indexSpecStr) throws SailException {
+		Set<String> indexes = new LinkedHashSet<>();
+
+		if (indexSpecStr != null) {
+			StringTokenizer tok = new StringTokenizer(indexSpecStr, ", \t");
+			while (tok.hasMoreTokens()) {
+				String index = tok.nextToken().toLowerCase();
+
+				// sanity checks
+				if (index.length() != 4 || index.indexOf('s') == -1 || index.indexOf('p') == -1
+						|| index.indexOf('o') == -1 || index.indexOf('c') == -1) {
+					throw new SailException("invalid value '" + index + "' in index specification: " + indexSpecStr);
+				}
+
+				indexes.add(index);
+			}
+		}
+
+		return indexes;
 	}
 
 	private void initIndexes(Set<String> indexSpecs) throws IOException {
@@ -1535,6 +1584,7 @@ class TripleStore implements Closeable {
 						throw new SailException(e);
 					}
 					try {
+						long committedTxnId = mdb_txn_id(writeTxn);
 						E(mdb_txn_commit(writeTxn));
 						if (recordCache != null) {
 							try {
@@ -1550,6 +1600,7 @@ class TripleStore implements Closeable {
 								}
 								updateFromCache();
 								// finally, commit write transaction
+								committedTxnId = mdb_txn_id(writeTxn);
 								E(mdb_txn_commit(writeTxn));
 							} finally {
 								recordCache = null;
@@ -1560,6 +1611,7 @@ class TripleStore implements Closeable {
 							// otherwise iterators won't see the updated data
 							txnManager.reset();
 						}
+						lastCommittedTxnId = committedTxnId;
 						dataRevision.incrementAndGet();
 					} catch (IOException e) {
 						// abort transaction if exception occurred while committing

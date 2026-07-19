@@ -16,8 +16,12 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -74,8 +78,11 @@ class LmdbSailStore implements SailStore {
 
 	private static final Logger logger = LoggerFactory.getLogger(LmdbSailStore.class);
 	private static final String JOIN_ESTIMATOR_FILE_NAME = "join-estimator.rjes";
+	private static final String TRIPLES_DIR_NAME = "triples";
+	private static final String VALUES_DIR_NAME = "values";
 
 	private final TripleStore tripleStore;
+	private final File dataDir;
 
 	private final ValueStore valueStore;
 	private final int bulkOperationSize;
@@ -111,6 +118,13 @@ class LmdbSailStore implements SailStore {
 	private volatile ScheduledFuture<?> backgroundSamplingFuture;
 	private final long estimatorPersistDelayMillis = 1000L;
 	private final long backgroundRawSamplingMaxMillisPerCycle;
+	private volatile CommitListener commitListener;
+
+	interface CommitListener {
+		void onCommit(long transactionId, List<Statement> additions, List<Statement> removals);
+
+		void onCommitFailure(long transactionId, List<Statement> additions, List<Statement> removals, Throwable error);
+	}
 
 	/**
 	 * A fast non-blocking circular buffer backed by an array.
@@ -178,6 +192,7 @@ class LmdbSailStore implements SailStore {
 		Value obj;
 		Resource context;
 		Consumer<Statement> estimatorCallback;
+		Consumer<Statement> backupCallback;
 
 		@Override
 		public void execute() throws IOException {
@@ -192,9 +207,14 @@ class LmdbSailStore implements SailStore {
 				unusedIds.remove(c);
 			}
 			boolean added = tripleStore.storeTriple(s, p, o, c, explicit);
-			if (added && explicit && estimatorCallback != null) {
+			if (added && (estimatorCallback != null || backupCallback != null)) {
 				Statement st = valueStore.createStatement(subj, pred, obj, context);
-				estimatorCallback.accept(st);
+				if (explicit && estimatorCallback != null) {
+					estimatorCallback.accept(st);
+				}
+				if (backupCallback != null) {
+					backupCallback.accept(st);
+				}
 			}
 		}
 	}
@@ -208,6 +228,7 @@ class LmdbSailStore implements SailStore {
 		final boolean explicit;
 		final int capacity;
 		Consumer<Statement> estimatorCallback;
+		Consumer<Statement> backupCallback;
 		int size;
 
 		BulkAddQuadsOperation(boolean explicit) {
@@ -253,8 +274,14 @@ class LmdbSailStore implements SailStore {
 				for (int i = 0; i < size; i++) {
 					boolean added = tripleStore.storeTriple(subjects[i], predicates[i], objects[i], contexts[i],
 							explicit);
-					if (added && explicit && estimatorCallback != null) {
-						estimatorCallback.accept(statements[i]);
+					if (added) {
+						Statement st = statements[i];
+						if (explicit && estimatorCallback != null) {
+							estimatorCallback.accept(st);
+						}
+						if (backupCallback != null) {
+							backupCallback.accept(st);
+						}
 					}
 				}
 				return;
@@ -263,6 +290,9 @@ class LmdbSailStore implements SailStore {
 					statementIndex -> {
 						if (explicit && estimatorCallback != null) {
 							estimatorCallback.accept(statements[statementIndex]);
+						}
+						if (backupCallback != null) {
+							backupCallback.accept(statements[statementIndex]);
 						}
 					});
 		}
@@ -301,6 +331,7 @@ class LmdbSailStore implements SailStore {
 	public LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
 			boolean sketchBasedJoinEstimatorEnabled)
 			throws IOException, SailException {
+		this.dataDir = dataDir;
 		this.setFactory = new PersistentSetFactory<>(dataDir);
 		this.bulkOperationSize = config.getBulkOperationSize();
 		this.backgroundRawSamplingMaxMillisPerCycle = config.getBackgroundRawSamplingMaxMillisPerCycle();
@@ -345,6 +376,60 @@ class LmdbSailStore implements SailStore {
 			if (!initialized) {
 				close();
 			}
+		}
+	}
+
+	void setCommitListener(CommitListener commitListener) {
+		this.commitListener = commitListener;
+	}
+
+	long getCurrentCommittedTxnId() throws IOException {
+		return tripleStore.getCurrentCommittedTransactionId();
+	}
+
+	void createOnlineSnapshot(Path targetDir, boolean compact) throws IOException {
+		sinkStoreAccessLock.lock();
+		try {
+			Files.createDirectories(targetDir);
+			tripleStore.copyEnvironment(targetDir.resolve(TRIPLES_DIR_NAME), compact);
+			valueStore.copyEnvironment(targetDir.resolve(VALUES_DIR_NAME), compact);
+			copySupplementaryStoreFiles(targetDir);
+		} finally {
+			sinkStoreAccessLock.unlock();
+		}
+	}
+
+	private void copySupplementaryStoreFiles(Path targetDir) throws IOException {
+		try (var children = Files.list(dataDir.toPath())) {
+			for (Path child : (Iterable<Path>) children::iterator) {
+				String name = child.getFileName().toString();
+				if (TRIPLES_DIR_NAME.equals(name) || VALUES_DIR_NAME.equals(name)) {
+					continue;
+				}
+				copyRecursively(child, targetDir.resolve(name));
+			}
+		}
+	}
+
+	private static void copyRecursively(Path source, Path target) throws IOException {
+		if (Files.isDirectory(source)) {
+			Files.walkFileTree(source, new SimpleFileVisitor<>() {
+				@Override
+				public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
+					Path relative = source.relativize(dir);
+					Files.createDirectories(target.resolve(relative));
+					return FileVisitResult.CONTINUE;
+				}
+
+				@Override
+				public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+					Path relative = source.relativize(file);
+					Files.copy(file, target.resolve(relative), StandardCopyOption.REPLACE_EXISTING);
+					return FileVisitResult.CONTINUE;
+				}
+			});
+		} else {
+			Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
 		}
 	}
 
@@ -907,6 +992,8 @@ class LmdbSailStore implements SailStore {
 
 		private final boolean explicit;
 		private volatile boolean estimatorTouchedInTransaction;
+		private final List<Statement> committedAdds = new ArrayList<>();
+		private final List<Statement> committedRemovals = new ArrayList<>();
 
 		public LmdbSailSink(boolean explicit, IsolationLevel level) throws SailException {
 			this.explicit = explicit;
@@ -938,6 +1025,19 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		private void queueBackupAdd(Statement st) {
+			committedAdds.add(st);
+		}
+
+		private void queueBackupRemove(Statement st) {
+			committedRemovals.add(st);
+		}
+
+		private void clearCommittedDelta() {
+			committedAdds.clear();
+			committedRemovals.clear();
+		}
+
 		private void discardEstimatorUpdatesIfTouched() {
 			if (estimatorTouchedInTransaction && estimatorTouchedSinceStoreTxnStart.getAndSet(false)
 					&& sketchBasedJoinEstimator != null) {
@@ -964,6 +1064,7 @@ class LmdbSailStore implements SailStore {
 			if (storeTxnStarted.get()) {
 				discardEstimatorUpdatesIfTouched();
 			}
+			clearCommittedDelta();
 		}
 
 		@Override
@@ -1041,17 +1142,33 @@ class LmdbSailStore implements SailStore {
 								logger.warn("Failed to schedule join estimator persistence after commit", e);
 							}
 						}
+						CommitListener listener = commitListener;
+						if (listener != null && (!committedAdds.isEmpty() || !committedRemovals.isEmpty())) {
+							List<Statement> additions = List.copyOf(committedAdds);
+							List<Statement> removals = List.copyOf(committedRemovals);
+							clearCommittedDelta();
+							try {
+								listener.onCommit(tripleStore.getLastCommittedTxnId(), additions, removals);
+							} catch (RuntimeException e) {
+								logger.warn("Failed to publish LMDB commit delta for backup", e);
+								listener.onCommitFailure(tripleStore.getLastCommittedTxnId(), additions, removals, e);
+							}
+						} else {
+							clearCommittedDelta();
+						}
 					}
 				}
 			} catch (IOException e) {
 				rollback();
 				discardEstimatorUpdatesIfTouched();
+				clearCommittedDelta();
 				running.set(false);
 				logger.error("Encountered an unexpected problem while trying to commit", e);
 				throw new SailException(e);
 			} catch (RuntimeException e) {
 				rollback();
 				discardEstimatorUpdatesIfTouched();
+				clearCommittedDelta();
 				running.set(false);
 				logger.error("Encountered an unexpected problem while trying to commit", e);
 				throw e;
@@ -1122,6 +1239,7 @@ class LmdbSailStore implements SailStore {
 				long previousSubjectId = LmdbValue.UNKNOWN_ID;
 				BulkAddQuadsOperation bulk = new BulkAddQuadsOperation(explicit);
 				bulk.estimatorCallback = this::queueEstimatorAdd;
+				bulk.backupCallback = this::queueBackupAdd;
 
 				for (Statement statement : approved) {
 					last = statement;
@@ -1176,6 +1294,7 @@ class LmdbSailStore implements SailStore {
 						submitOperation(bulk);
 						bulk = new BulkAddQuadsOperation(explicit);
 						bulk.estimatorCallback = this::queueEstimatorAdd;
+						bulk.backupCallback = this::queueBackupAdd;
 					}
 				}
 
@@ -1185,6 +1304,7 @@ class LmdbSailStore implements SailStore {
 			} catch (IOException | RuntimeException e) {
 				rollback();
 				discardEstimatorUpdatesIfTouched();
+				clearCommittedDelta();
 				if (multiThreadingActive) {
 					logger.error("Encountered an unexpected problem while trying to add a statement.", e);
 				} else {
@@ -1271,6 +1391,7 @@ class LmdbSailStore implements SailStore {
 					q.pred = pred;
 					q.obj = obj;
 					q.estimatorCallback = this::queueEstimatorAdd;
+					q.backupCallback = this::queueBackupAdd;
 
 					if (multiThreadingActive) {
 						while (!opQueue.add(q)) {
@@ -1286,6 +1407,7 @@ class LmdbSailStore implements SailStore {
 			} catch (IOException | RuntimeException e) {
 				rollback();
 				discardEstimatorUpdatesIfTouched();
+				clearCommittedDelta();
 				if (multiThreadingActive) {
 					logger.error("Encountered an unexpected problem while trying to add a statement.", e);
 				} else {
@@ -1418,15 +1540,18 @@ class LmdbSailStore implements SailStore {
 				q.pred = pred;
 				q.obj = obj;
 				q.estimatorCallback = this::queueEstimatorAdd;
+				q.backupCallback = this::queueBackupAdd;
 
 				submitOperation(q);
 			} catch (IOException e) {
 				rollback();
 				discardEstimatorUpdatesIfTouched();
+				clearCommittedDelta();
 				throw new SailException(e);
 			} catch (RuntimeException e) {
 				rollback();
 				discardEstimatorUpdatesIfTouched();
+				clearCommittedDelta();
 				logger.error("Encountered an unexpected problem while trying to add a statement", e);
 				throw e;
 			} finally {
@@ -1460,12 +1585,14 @@ class LmdbSailStore implements SailStore {
 				for (long contextId : contexts) {
 					tripleStore.removeTriplesByContext(subj, pred, obj, contextId, explicit, quad -> {
 						removeCount[0]++;
-						if (explicit) {
-							try {
-								queueEstimatorRemove(quadToStatement(quad));
-							} catch (IOException e) {
-								throw new UncheckedIOException(e);
+						try {
+							Statement removedStatement = quadToStatement(quad);
+							queueBackupRemove(removedStatement);
+							if (explicit) {
+								queueEstimatorRemove(removedStatement);
 							}
+						} catch (IOException e) {
+							throw new UncheckedIOException(e);
 						}
 						for (long id : quad) {
 							if (id != 0L && !ValueIds.isInlined(id)) {
@@ -1569,10 +1696,12 @@ class LmdbSailStore implements SailStore {
 			} catch (IOException e) {
 				rollback();
 				discardEstimatorUpdatesIfTouched();
+				clearCommittedDelta();
 				throw new SailException(e);
 			} catch (RuntimeException e) {
 				rollback();
 				discardEstimatorUpdatesIfTouched();
+				clearCommittedDelta();
 				logger.error("Encountered an unexpected problem while trying to remove statements", e);
 				throw e;
 			} finally {
