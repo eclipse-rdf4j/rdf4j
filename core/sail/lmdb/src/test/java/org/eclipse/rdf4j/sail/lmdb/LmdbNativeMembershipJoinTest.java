@@ -13,21 +13,28 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 
 import java.io.File;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -35,8 +42,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 /**
  * Differential tests for materialized-membership semi/anti-joins (MINUS, EXISTS, NOT EXISTS whose right side is a
  * single statement pattern correlated on one variable): results must be identical across the per-row probe path
- * (membership disabled), the LongHashSet membership set, and the generic evaluator. The miss threshold is forced to 0
- * so the materialized path engages even on tiny datasets.
+ * (membership disabled), the membership set, and the generic evaluator. Fixtures cross the 64-distinct-probe floor so
+ * the materialized path engages without weakening production admission.
  */
 public class LmdbNativeMembershipJoinTest {
 
@@ -52,7 +59,7 @@ public class LmdbNativeMembershipJoinTest {
 
 	@BeforeEach
 	public void setUp() {
-		System.setProperty(MEMBERSHIP_THRESHOLD, "0");
+		System.setProperty(MEMBERSHIP_THRESHOLD, "64");
 		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
@@ -61,7 +68,7 @@ public class LmdbNativeMembershipJoinTest {
 			IRI sold = vf.createIRI(EX, "sold");
 			IRI offerFor = vf.createIRI(EX, "offerFor");
 			IRI inGraph = vf.createIRI(EX, "g1");
-			for (int i = 0; i < 40; i++) {
+			for (int i = 0; i < 80; i++) {
 				IRI subject = vf.createIRI(EX, "item" + i);
 				conn.add(subject, type, item);
 				if (i % 3 == 0) {
@@ -148,5 +155,142 @@ public class LmdbNativeMembershipJoinTest {
 			"SELECT DISTINCT ?s WHERE { ?s ex:type ex:Item . FILTER NOT EXISTS { ?s ex:sold ?d } }" })
 	void membershipModesAgree(String body) {
 		assertAllModesAgree(q(body));
+	}
+
+	@Test
+	void oversizedMembershipBuildStopsAtTwiceObservedProbeWorkWithoutPublishing() {
+		System.setProperty(MEMBERSHIP_THRESHOLD, "64");
+		CountingMembershipSource source = new CountingMembershipSource(2_000);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0), null);
+		layout.freeze(List.of("key"));
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, UNKNOWN);
+		row.recomputeBoundMask();
+		PatternMembershipProbe probe = PatternMembershipProbe.tryCreate(Term.slot(0), Term.constant(7),
+				Term.unbound(), Term.unbound(), ContextConstraint.UNRESTRICTED, false);
+
+		int result = PatternMembershipProbe.NOT_APPLICABLE;
+		for (int i = 0; i <= 64; i++) {
+			row.slots[0] = 100L + i;
+			row.recomputeBoundMask();
+			result = probe.test(row);
+		}
+
+		assertThat(result).isEqualTo(PatternMembershipProbe.NOT_APPLICABLE);
+		assertThat(probe.membership).isNull();
+		assertThat(probe.disabled).isTrue();
+		assertThat(source.rowsDelivered)
+				.as("one build seek plus scanned rows must stay within twice 64 paid probe seeks")
+				.isLessThanOrEqualTo(2L * 64L * Branch.SEEK_COST_KEYS);
+	}
+
+	@Test
+	void configuredZeroCannotBypassTheSixtyFourProbeFloor() {
+		System.setProperty(MEMBERSHIP_THRESHOLD, "0");
+		CountingMembershipSource source = new CountingMembershipSource(16);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0), null);
+		layout.freeze(List.of("key"));
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, UNKNOWN);
+		row.slots[0] = 100L;
+		row.recomputeBoundMask();
+		PatternMembershipProbe probe = PatternMembershipProbe.tryCreate(Term.slot(0), Term.constant(7),
+				Term.unbound(), Term.unbound(), ContextConstraint.UNRESTRICTED, false);
+
+		assertThat(probe.test(row)).isEqualTo(PatternMembershipProbe.NOT_APPLICABLE);
+		assertThat(probe.admission.state()).isEqualTo(RuntimeBuildAdmission.State.PROBING);
+		assertThat(probe.admission.distinctProbes()).isOne();
+		assertThat(source.rowsDelivered).isZero();
+	}
+
+	@Test
+	void completeMembershipBuildPublishesOnlyAfterTheBoundedSweepFinishes() {
+		System.setProperty(MEMBERSHIP_THRESHOLD, "64");
+		CountingMembershipSource source = new CountingMembershipSource(512);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0), null);
+		layout.freeze(List.of("key"));
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, UNKNOWN);
+		row.recomputeBoundMask();
+		PatternMembershipProbe probe = PatternMembershipProbe.tryCreate(Term.slot(0), Term.constant(7),
+				Term.unbound(), Term.unbound(), ContextConstraint.UNRESTRICTED, false);
+
+		int result = PatternMembershipProbe.NOT_APPLICABLE;
+		for (int i = 0; i <= 64; i++) {
+			row.slots[0] = 100L + i;
+			row.recomputeBoundMask();
+			result = probe.test(row);
+		}
+
+		assertThat(result).isOne();
+		assertThat(probe.membership).isNotNull();
+		assertThat(probe.admission.state()).isEqualTo(RuntimeBuildAdmission.State.COMMITTED);
+		assertThat(source.rowsDelivered).isEqualTo(512L);
+	}
+
+	private static final class CountingMembershipSource implements NativeLmdbQuerySource {
+		private final int sweepRows;
+		private long rowsDelivered;
+
+		private CountingMembershipSource(int sweepRows) {
+			this.sweepRows = sweepRows;
+		}
+
+		@Override
+		public long idOf(Value value) {
+			return UNKNOWN_ID;
+		}
+
+		@Override
+		public Value lazyValue(long id) {
+			throw new UnsupportedOperationException();
+		}
+
+		@Override
+		public Object idSpace() {
+			return this;
+		}
+
+		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context) {
+			return new RecordIterator() {
+				private int index;
+
+				@Override
+				public long[] next() {
+					if (index == sweepRows) {
+						return null;
+					}
+					long key = 100L + index++;
+					rowsDelivered++;
+					return new long[] { key, 7L, 10_000L + key, 1L };
+				}
+
+				@Override
+				public void close() {
+					index = sweepRows;
+				}
+			};
+		}
+
+		@Override
+		public long count(long subj, long pred, long obj, long context) {
+			return sweepRows;
+		}
+
+		@Override
+		public boolean has(long subj, long pred, long obj, long context) {
+			return false;
+		}
+
+		@Override
+		public double estimate(long subj, long pred, long obj, long context) {
+			return sweepRows;
+		}
+
+		@Override
+		public boolean hasStatementsInSource() {
+			return true;
+		}
 	}
 }

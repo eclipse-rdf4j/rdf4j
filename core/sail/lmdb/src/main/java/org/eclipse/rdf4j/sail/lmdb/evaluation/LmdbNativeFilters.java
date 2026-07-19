@@ -236,6 +236,9 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 			return cached;
 		}
 		boolean result = evaluate(subj, pred, obj, context);
+		if (membershipProbe != null) {
+			membershipProbe.recordDirectResult(result);
+		}
 		memo.memoPut(row.slots, varyingSlots, result);
 		return result;
 	}
@@ -315,6 +318,9 @@ final class ExistsFilter implements NativeBooleanFilter {
 			return cached;
 		}
 		boolean result = exists(row);
+		if (membershipProbe != null) {
+			membershipProbe.recordDirectResult(result);
+		}
 		memo.memoPut(row.slots, memoSlots, result);
 		return result;
 	}

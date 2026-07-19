@@ -36,6 +36,7 @@ active runtime. All Maven commands use the workspace-local `.m2_repo`; tests nev
 - [x] (2026-07-19 12:36Z) Pass Slice 1 adaptive overhead, allocation, and target-workload performance gates; keep rollout opt-in.
 - [x] (2026-07-19 18:26Z) Diagnose the adaptive-theme regression and restore default-on rollout at the user's direction.
 - [x] (2026-07-19 18:45Z) Reuse the standard Filter-to-VALUES optimizer, remove native telemetry gating, and pass correctness/performance gates.
+- [x] (2026-07-19 19:36Z) Migrate membership to shared bounded runtime-build admission and pass correctness/regret/performance gates.
 - [ ] **In progress:** add shared observed-work build admission and migrate membership, factorized, chunk, and left-join operators.
 - [ ] Add measurement-only telemetry and boundary benchmarks for broader fixed thresholds.
 - [ ] Run focused/module verification, query-plan snapshots, paired JMH gates, formatting, and final install.
@@ -111,6 +112,13 @@ active runtime. All Maven commands use the workspace-local `.m2_repo`; tests nev
   Evidence: failing and passing `FilterOptimizerTest#filterInValuesMarksExistingValuesWhenItAppliesExactIntersection`
   reports in `initial-evidence.txt`.
 
+- Observation: Membership conversion was gated by a raw invocation count, not distinct paid probes, and its full
+  sweep could exceed the work already sunk into direct probes. The first shared-admission migration now refuses before
+  publication when build work exceeds twice paid probe work. A controller review also found that work-limit refusal
+  sampled the same build boundary twice; the deterministic clock test failed with four reads instead of three.
+  Evidence: failing/green membership and controller reports in `initial-evidence.txt` and three-fork JMH artifacts
+  `/tmp/lmdb-membership-{c,b}{1,2,3}.json`.
+
 
 ## Decision Log
 
@@ -168,6 +176,14 @@ active runtime. All Maven commands use the workspace-local `.m2_repo`; tests nev
   replacement, and parallel queue backlog cannot be observed before parallel resources exist.
   Date/Author: 2026-07-19 / Codex.
 
+- Decision: Preserve membership's 64-distinct-probe amortization floor, then allow exactly one estimate-independent,
+  transactional sweep whose seek/row work cannot exceed twice the paid direct-probe work. Refusal is terminal for the
+  execution and partial sets remain private.
+  Rationale: This removes the estimate gate without discarding the deliberate amortization and memory safeguards.
+  The converted JDK 25 workload improves by 82.173% at the median; the short non-converted neighbor regresses 1.426%,
+  within the three-percent gate.
+  Date/Author: 2026-07-19 / Codex.
+
 
 ## Outcomes & Retrospective
 
@@ -181,6 +197,9 @@ Slice 2 now uses the standard exact-filter optimizer in both LMDB pipelines, rem
 gate, preserves the separately justified left-join path, records only physical exact-VALUES probes and matched rows,
 preserves rewrite provenance when intersecting existing `VALUES`, and passes its focused result-equality, boundary,
 telemetry, and performance gates.
+The first Slice 3 migration is complete: membership uses primitive execution-local admission with a hard 64-distinct-
+probe floor, boundary-only clock sampling, a two-times sunk-work ceiling, terminal refusal, and atomic publication.
+Its focused 15-test gate passes; the target median improves 82.173% and the short neighbor remains within 1.426%.
 
 
 ## Context and Orientation

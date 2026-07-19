@@ -31,10 +31,16 @@ import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 @Experimental
 final class PatternMembershipProbe {
 	static final int NOT_APPLICABLE = -1;
+	private static final int MINIMUM_PROBES = 64;
+	private static final int BUILD_BATCH_ROWS = 64;
+	private static final int[] OBSERVED_KEY_SLOTS = { 0, 1 };
 
 	final Term[] terms;
 	final int[] varyingIdx;
-	int misses;
+	final RuntimeBuildAdmission admission;
+	final long[] observedKey = new long[2];
+	KeyedMatches observedProbeKeys;
+	boolean pendingProbeOutcome;
 	boolean disabled;
 	int builtIdx = -1;
 	KeyedMatches membership;
@@ -42,6 +48,9 @@ final class PatternMembershipProbe {
 	PatternMembershipProbe(Term[] terms, int[] varyingIdx) {
 		this.terms = terms;
 		this.varyingIdx = varyingIdx;
+		this.admission = new RuntimeBuildAdmission(
+				Math.max(MINIMUM_PROBES,
+						Integer.getInteger("rdf4j.lmdb.membership.missThreshold", MINIMUM_PROBES)));
 	}
 
 	static PatternMembershipProbe tryCreate(Term s, Term p, Term o, Term c, ContextConstraint contexts,
@@ -71,6 +80,7 @@ final class PatternMembershipProbe {
 
 	/** 1 = pattern matches for this row, 0 = no match, -1 = not applicable (use the direct probe). */
 	int test(RowState row) {
+		pendingProbeOutcome = false;
 		if (disabled) {
 			return NOT_APPLICABLE;
 		}
@@ -88,11 +98,18 @@ final class PatternMembershipProbe {
 			return NOT_APPLICABLE;
 		}
 		if (membership == null) {
-			if (misses++ < Integer.getInteger("rdf4j.lmdb.membership.missThreshold", 64)) {
-				return NOT_APPLICABLE;
-			}
-			if (!build(row, boundIdx)) {
-				disabled = true;
+			if (admission.tryStartBuild()) {
+				observedProbeKeys = null;
+				if (!build(row, boundIdx)) {
+					disabled = true;
+					return NOT_APPLICABLE;
+				}
+			} else {
+				long key = terms[boundIdx].lookup(row.slots);
+				if (recordDistinctProbe(boundIdx, key)) {
+					admission.recordProbeBatch(1L, 1L, 0L, 0L);
+					pendingProbeOutcome = true;
+				}
 				return NOT_APPLICABLE;
 			}
 		} else if (builtIdx != boundIdx) {
@@ -101,8 +118,31 @@ final class PatternMembershipProbe {
 		return membership.contains(terms[boundIdx].lookup(row.slots)) ? 1 : 0;
 	}
 
+	void recordDirectResult(boolean matched) {
+		if (!pendingProbeOutcome) {
+			return;
+		}
+		pendingProbeOutcome = false;
+		admission.recordProbeOutcome(matched ? 1L : 0L, matched ? 1L : 0L);
+	}
+
+	private boolean recordDistinctProbe(int boundIdx, long key) {
+		if (observedProbeKeys == null) {
+			int expected = (int) Math.min(256L, Math.max(2L, admission.minimumDistinctProbes()));
+			observedProbeKeys = new KeyedMatches(2, expected);
+		}
+		observedKey[0] = boundIdx;
+		observedKey[1] = key;
+		if (observedProbeKeys.find(observedKey, OBSERVED_KEY_SLOTS) >= 0) {
+			return false;
+		}
+		observedProbeKeys.findOrInsert(observedKey, OBSERVED_KEY_SLOTS);
+		return true;
+	}
+
 	boolean build(RowState row, int keyIdx) {
 		if (!"hash".equals(System.getProperty("rdf4j.lmdb.membership.impl", "hash"))) {
+			admission.refuse(RuntimeBuildAdmission.RefusalReason.FAILED);
 			return false;
 		}
 		KeyedMatches set = new KeyedMatches(1, 1024);
@@ -111,20 +151,50 @@ final class PatternMembershipProbe {
 		for (int i = 0; i < 4; i++) {
 			pattern[i] = i == keyIdx ? UNKNOWN : terms[i].lookup(row.slots);
 		}
-		long n = 0;
+		long n = 0L;
+		long batchRows = 0L;
 		try (RecordIterator records = row.source.statements(pattern[0], pattern[1], pattern[2], pattern[3])) {
-			long[] record;
-			while ((record = records.next()) != null) {
+			if (!admission.recordBuildBatch(1L, 0L, 0L)) {
+				return false;
+			}
+			while (admission.canPayBuildWork(0L, batchRows + 1L)) {
+				long[] record = records.next();
+				if (record == null) {
+					if (batchRows > 0L && !admission.recordBuildBatch(0L, batchRows, batchRows)) {
+						return false;
+					}
+					if (!admission.commit()) {
+						return false;
+					}
+					membership = set;
+					builtIdx = keyIdx;
+					return true;
+				}
 				set.findOrInsert(record[keyIdx]);
-				if (++n > maxSize) {
+				n++;
+				batchRows++;
+				if (n > maxSize) {
+					if (!admission.recordBuildBatch(0L, batchRows, batchRows)) {
+						return false;
+					}
+					admission.refuseAfterBuildBoundary(RuntimeBuildAdmission.RefusalReason.BUDGET);
 					return false;
 				}
+				if (batchRows == BUILD_BATCH_ROWS) {
+					if (!admission.recordBuildBatch(0L, batchRows, batchRows)) {
+						return false;
+					}
+					batchRows = 0L;
+				}
 			}
-		} catch (IOException e) {
-			throw new QueryEvaluationException(e);
+			if (batchRows > 0L && !admission.recordBuildBatch(0L, batchRows, batchRows)) {
+				return false;
+			}
+			admission.refuseAfterBuildBoundary(RuntimeBuildAdmission.RefusalReason.WORK_LIMIT);
+			return false;
+		} catch (IOException | QueryEvaluationException e) {
+			admission.refuse(RuntimeBuildAdmission.RefusalReason.FAILED);
+			return false;
 		}
-		membership = set;
-		builtIdx = keyIdx;
-		return true;
 	}
 }

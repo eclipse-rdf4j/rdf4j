@@ -364,6 +364,9 @@ final class MinusCursor implements RowCursor {
 			return cached;
 		}
 		boolean result = openAndCheckRight();
+		if (membershipProbe != null) {
+			membershipProbe.recordDirectResult(result);
+		}
 		memo.put(probe.storedCopy(), result);
 		return result;
 	}
