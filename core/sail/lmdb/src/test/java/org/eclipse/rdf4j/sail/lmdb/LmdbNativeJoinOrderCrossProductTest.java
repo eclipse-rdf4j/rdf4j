@@ -142,6 +142,21 @@ public class LmdbNativeJoinOrderCrossProductTest {
 	}
 
 	@Test
+	public void orderedDistinctDoesNotPromoteAcrossPlannedFilterBoundary() {
+		PatternPlan plannedPrefix = pattern(Term.slot(S), Term.constant(KNOWS), Term.slot(X), 1_000D);
+		PatternPlan ordered = pattern(Term.slot(S), Term.constant(EDGE), Term.slot(O), 1D);
+		MaskedFilter filter = new MaskedFilter(row -> true, 1L << S, 0);
+
+		NativeAggregateDistinctPlan plan = orderedDistinctPlan(new SlotPlan[] { plannedPrefix, ordered },
+				new MaskedFilter[] { filter }, O);
+
+		assertThat(((MultiJoinPlan) plan.arg).children)
+				.as("an ordered access path must not replace the optimizer-planned filter prefix")
+				.startsWith(plannedPrefix);
+		assertThat(plan.channels.modes).containsExactly(NativeDistinctChannelMode.HASH);
+	}
+
+	@Test
 	public void orderedDistinctDoesNotCreateCartesianPrefix() {
 		PatternPlan connectedComponent = pattern(Term.slot(S), Term.constant(KNOWS), Term.slot(O), 10D);
 		PatternPlan disconnectedOrdered = pattern(Term.slot(X), Term.constant(EDGE), Term.constant(17L), 1D);

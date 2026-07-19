@@ -53,6 +53,10 @@ final class LmdbNativeAdaptiveFilterPlacement {
 			return tryOpen(step, multiJoin, row);
 		}
 		if (plan instanceof ExtensionPlan extension) {
+			if (!SlotPlan.encounterOrderReplaySafe(extension)) {
+				decline(step.originalExpr, "UNSAFE_EXTENSION", true);
+				return null;
+			}
 			RowCursor adaptive = tryOpenWrapped(step, extension.arg, row);
 			return adaptive == null ? null : new ExtensionCursor(adaptive, extension.copies, row);
 		}
@@ -60,12 +64,17 @@ final class LmdbNativeAdaptiveFilterPlacement {
 	}
 
 	static RowCursor tryOpen(NativeRowsStep step, MultiJoinPlan plan, RowState row) throws IOException {
-		return tryOpen(step.originalExpr, step.orderSlots.length != 0, plan, row);
+		return tryOpen(step.originalExpr, step.orderSlots.length != 0, step.offset, step.limit, plan, row);
 	}
 
 	static RowCursor tryOpen(TupleExpr telemetryExpr, boolean orderedExecution, MultiJoinPlan plan, RowState row)
 			throws IOException {
-		if (!Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "true"))) {
+		return tryOpen(telemetryExpr, orderedExecution, 0L, Long.MAX_VALUE, plan, row);
+	}
+
+	private static RowCursor tryOpen(TupleExpr telemetryExpr, boolean orderedExecution, long offset, long limit,
+			MultiJoinPlan plan, RowState row) throws IOException {
+		if (!Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "false"))) {
 			return null;
 		}
 		if (plan.children.length < 2) {
@@ -74,6 +83,10 @@ final class LmdbNativeAdaptiveFilterPlacement {
 		}
 		if (!hasEligibleMetadata(plan)) {
 			decline(telemetryExpr, "NO_ELIGIBLE_FILTER", false);
+			return null;
+		}
+		if (isShortFiniteSlice(offset, limit)) {
+			decline(telemetryExpr, "SHORT_LIMIT", true);
 			return null;
 		}
 		if (orderedExecution || containsOrderedScan(plan)) {
@@ -86,6 +99,7 @@ final class LmdbNativeAdaptiveFilterPlacement {
 		}
 		MultiJoinPlan.OrderedPlan ordered = plan.derivedPlan(row);
 		int targetIndex = -1;
+		long bestScore = Long.MIN_VALUE;
 		int bestFilterId = Integer.MAX_VALUE;
 		for (int i = 0; i < plan.filters.length; i++) {
 			FilterPlacementEnvelope envelope = ordered.placement[i];
@@ -93,8 +107,11 @@ final class LmdbNativeAdaptiveFilterPlacement {
 			if (envelope == null) {
 				continue;
 			}
-			if (metadata.filterId < bestFilterId) {
+			long score = saturatingMultiply(metadata.estimatedCostUnits,
+					Math.max(1, envelope.legalDepthCount - 1));
+			if (score > bestScore || score == bestScore && metadata.filterId < bestFilterId) {
 				targetIndex = i;
+				bestScore = score;
 				bestFilterId = metadata.filterId;
 			}
 		}
@@ -119,6 +136,18 @@ final class LmdbNativeAdaptiveFilterPlacement {
 			}
 			lease.abort(failure);
 			throw failure;
+		}
+	}
+
+	private static boolean isShortFiniteSlice(long offset, long limit) {
+		return offset >= 0L && limit >= 0L && limit < Long.MAX_VALUE && offset < 256L && limit < 256L - offset;
+	}
+
+	private static long saturatingMultiply(long left, long right) {
+		try {
+			return Math.multiplyExact(left, right);
+		} catch (ArithmeticException overflow) {
+			return Long.MAX_VALUE;
 		}
 	}
 
@@ -347,12 +376,20 @@ final class FilterPlacementEnvelope {
 	static final int MAX_CANDIDATES = 8;
 
 	final int filterId;
+	final int plannedDepth;
+	final int legalDepthCount;
 	final int earliestLegalDepth;
 	final int deepestLegalDepth;
 	final int[] candidateDepths;
 
 	FilterPlacementEnvelope(int filterId, int[] candidateDepths) {
+		this(filterId, candidateDepths[candidateDepths.length - 1], candidateDepths.length, candidateDepths);
+	}
+
+	FilterPlacementEnvelope(int filterId, int plannedDepth, int legalDepthCount, int[] candidateDepths) {
 		this.filterId = filterId;
+		this.plannedDepth = plannedDepth;
+		this.legalDepthCount = legalDepthCount;
 		this.candidateDepths = candidateDepths;
 		this.earliestLegalDepth = candidateDepths[0];
 		this.deepestLegalDepth = candidateDepths[candidateDepths.length - 1];
@@ -377,6 +414,7 @@ final class AdaptiveFilterSession {
 	static final long MIN_TRIAL_PREFIXES = 128L;
 	static final long MIN_ABSOLUTE_CHANGE = 2_048L;
 	static final long HARD_PREFIX_WORK = 16_384L;
+	static final long MIN_INITIAL_OBSERVED_WORK = 100_000L;
 
 	final NativeBooleanFilter target;
 	final AdaptiveFilterMetadata metadata;
@@ -437,8 +475,8 @@ final class AdaptiveFilterSession {
 		this.windowEvaluations = new long[envelope.candidateDepths.length];
 		this.windowPassed = new long[envelope.candidateDepths.length];
 		this.windowFiltered = new long[envelope.candidateDepths.length];
-		this.placement = new PlacementState(0L, envelope.deepestLegalDepth);
-		this.provenDepth = envelope.deepestLegalDepth;
+		this.placement = new PlacementState(0L, envelope.plannedDepth);
+		this.provenDepth = envelope.plannedDepth;
 	}
 
 	void requestMove(int depth) {
@@ -464,7 +502,7 @@ final class AdaptiveFilterSession {
 		if (prefixWork > HARD_PREFIX_WORK) {
 			if (trial) {
 				rollbackTrial();
-			} else if (placement.activeDepth() != envelope.earliestLegalDepth) {
+			} else if (moves > 0L && placement.activeDepth() != envelope.earliestLegalDepth) {
 				installMove(envelope.earliestLegalDepth, currentNormalizedWork());
 			}
 			return;
@@ -495,6 +533,9 @@ final class AdaptiveFilterSession {
 		windows++;
 		if (windowStartPrefix < cooldownUntil) {
 			resetWindow();
+			return;
+		}
+		if (moves == 0L && windowWork() < MIN_INITIAL_OBSERVED_WORK) {
 			return;
 		}
 		int nextDepth = proposeMove();
@@ -700,7 +741,9 @@ final class AdaptiveFilterSession {
 		LmdbNativeExplain.setRuntimeMetric(telemetryExpr, "adaptiveFilterPlacementCostUnits",
 				metadata.estimatedCostUnits);
 		LmdbNativeExplain.setRuntimeMetric(telemetryExpr, "adaptiveFilterPlacementInitialDepth",
-				envelope.deepestLegalDepth);
+				envelope.plannedDepth);
+		LmdbNativeExplain.setRuntimeMetric(telemetryExpr, "adaptiveFilterPlacementPlannedDepth",
+				envelope.plannedDepth);
 		LmdbNativeExplain.setRuntimeMetric(telemetryExpr, "adaptiveFilterPlacementFinalDepth",
 				placement.activeDepth());
 		LmdbNativeExplain.setRuntimeMetric(telemetryExpr, "adaptiveFilterPlacementGeneration",

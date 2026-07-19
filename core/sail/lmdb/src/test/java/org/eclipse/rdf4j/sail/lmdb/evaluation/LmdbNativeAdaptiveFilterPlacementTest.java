@@ -71,6 +71,31 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 	}
 
 	@Test
+	void flattenedFilterKeepsOptimizerSelectedDepth() {
+		SlotPlan optimizedPrefix = SlotPlan.join(values(0), values(1));
+		SlotPlan filteredPrefix = SlotPlan.filter(optimizedPrefix, row -> true, 1L << 0);
+		MultiJoinPlan flattened = (MultiJoinPlan) SlotPlan.join(filteredPrefix, values(2));
+
+		assertThat(flattened.derive(0L).filterDepth).containsExactly(1);
+		assertThat(flattened.derive((1L << 0) | (1L << 1)).filterDepth).containsExactly(1);
+	}
+
+	@Test
+	void earlyMiddleAndLateOptimizerBoundariesRemainDistinct() {
+		MultiJoinPlan early = (MultiJoinPlan) SlotPlan.join(
+				SlotPlan.filter(values(0), row -> true, 1L), values(1));
+		MultiJoinPlan middle = (MultiJoinPlan) SlotPlan.join(
+				SlotPlan.filter(SlotPlan.join(values(0), values(1)), row -> true, 1L), values(2));
+		SlotPlan threeChildren = SlotPlan.join(SlotPlan.join(values(0), values(1)), values(2));
+		MultiJoinPlan late = (MultiJoinPlan) SlotPlan.join(
+				SlotPlan.filter(threeChildren, row -> true, 1L), values(3));
+
+		assertThat(early.derive(0L).filterDepth).containsExactly(0);
+		assertThat(middle.derive(0L).filterDepth).containsExactly(1);
+		assertThat(late.derive(0L).filterDepth).containsExactly(2);
+	}
+
+	@Test
 	void filterMetadataClassifiesCostAndSafety() throws Exception {
 		Class<?> metadataClass = Class
 				.forName("org.eclipse.rdf4j.sail.lmdb.evaluation.AdaptiveFilterMetadata");
@@ -120,22 +145,29 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 	}
 
 	@Test
-	void envelopesAreBoundMaskSpecificAndBounded() {
-		SlotPlan[] children = new SlotPlan[9];
+	void wideEnvelopesSampleEightDepthsAroundThePlannedDepth() {
+		SlotPlan[] children = new SlotPlan[12];
 		for (int i = 0; i < children.length; i++) {
 			children[i] = new MaskPlan(1L << i);
 		}
-		MaskedFilter target = new MaskedFilter(row -> true, 1L << 2,
-				AdaptiveFilterMetadata.eligible(31, 4));
+		MaskedFilter target = new MaskedFilter(row -> true, 1L,
+				AdaptiveFilterMetadata.eligible(31, 4), 5);
 		MultiJoinPlan plan = new MultiJoinPlan(children, new MaskedFilter[] { target });
 
 		MultiJoinPlan.OrderedPlan unbound = plan.derive(0L);
-		MultiJoinPlan.OrderedPlan prebound = plan.derive(1L << 2);
+		MultiJoinPlan.OrderedPlan prebound = plan.derive(1L);
 
-		assertThat(unbound.filterDepth).containsExactly(2);
-		assertThat(unbound.placement[0].candidateDepths).containsExactly(2, 3, 4, 5, 6, 7, 8);
-		assertThat(prebound.filterDepth).containsExactly(0);
-		assertThat(prebound.placement[0]).as("nine candidates exceed the bounded adaptive envelope").isNull();
+		assertThat(unbound.filterDepth).containsExactly(5);
+		assertThat(unbound.placement[0].candidateDepths).containsExactly(0, 1, 2, 3, 4, 5, 8, 11);
+		assertThat(prebound.filterDepth).containsExactly(5);
+		assertThat(prebound.placement[0].candidateDepths).containsExactly(0, 1, 2, 3, 4, 5, 8, 11);
+	}
+
+	@Test
+	void twoEightAndNineDepthEnvelopesRespectTheCandidateCap() {
+		assertThat(candidateDepths(2, 0)).containsExactly(0, 1);
+		assertThat(candidateDepths(8, 3)).containsExactly(0, 1, 2, 3, 4, 5, 6, 7);
+		assertThat(candidateDepths(9, 4)).containsExactly(0, 1, 2, 3, 4, 5, 6, 8);
 	}
 
 	@Test
@@ -178,12 +210,14 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 	}
 
 	@Test
-	void admittedPlanStartsDeepestAndPreservesRows() throws Exception {
-		NativeSlotLayout layout = new NativeSlotLayout(Map.of("left", 0, "right", 1), null);
-		layout.freeze(List.of("left", "right"));
-		MultiJoinPlan adaptivePlan = admittedPlan();
-		NativeRowsStep step = new NativeRowsStep(null, adaptivePlan, layout, new int[] { 0, 1 },
-				new String[] { "left", "right" }, false, new int[0], new boolean[0], 0L, 256L, false, null,
+	void admittedPlanStartsAtOptimizerDepthAndPreservesRows() throws Exception {
+		NativeSlotLayout layout = layout(3);
+		AdaptiveFilterMetadata metadata = AdaptiveFilterMetadata.eligible(51, 4);
+		MultiJoinPlan adaptivePlan = new MultiJoinPlan(
+				new SlotPlan[] { values(0, 4_096), values(1, 25), values(2, 1) },
+				new MaskedFilter[] { new MaskedFilter(row -> (row.slots[0] & 1L) == 0L, 1L, metadata, 1) });
+		NativeRowsStep step = new NativeRowsStep(null, adaptivePlan, layout, new int[] { 0, 1, 2 },
+				new String[] { "v0", "v1", "v2" }, false, new int[0], new boolean[0], 0L, 256L, false, null,
 				null, null, Set.of(), null, null);
 		RowState adaptiveRow = row(layout);
 		Class<?> placementType = Class
@@ -199,7 +233,10 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 			assertThat(activeDepth(session)).isEqualTo(1);
 			List<String> adaptiveRows = take(adaptive, adaptiveRow, 64);
 
-			MultiJoinPlan staticPlan = admittedPlan();
+			MultiJoinPlan staticPlan = new MultiJoinPlan(
+					new SlotPlan[] { values(0, 4_096), values(1, 25), values(2, 1) },
+					new MaskedFilter[] {
+							new MaskedFilter(row -> (row.slots[0] & 1L) == 0L, 1L, metadata, 1) });
 			RowState staticRow = row(layout);
 			List<String> staticRows = take(staticPlan.open(staticRow), staticRow, 64);
 			assertThat(adaptiveRows).containsExactlyElementsOf(staticRows);
@@ -296,7 +333,27 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 	}
 
 	@Test
-	void adaptiveDispatchOutranksBatchOnlyWhenEnabled() throws Exception {
+	void higherPotentialRegretFilterWinsTargetSelection() throws Exception {
+		NativeSlotLayout layout = layout(4);
+		AdaptiveFilterMetadata cheap = AdaptiveFilterMetadata.eligible(1, 4);
+		AdaptiveFilterMetadata expensive = AdaptiveFilterMetadata.eligible(9, 16);
+		MultiJoinPlan plan = new MultiJoinPlan(
+				new SlotPlan[] { values(0), values(1), values(2), values(3) },
+				new MaskedFilter[] { new MaskedFilter(row -> true, 1L, cheap, 0),
+						new MaskedFilter(row -> true, 1L << 1, expensive, 1) });
+		String previous = System.getProperty(LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY);
+		System.setProperty(LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY, "true");
+		try (RowCursor cursor = LmdbNativeAdaptiveFilterPlacement.tryOpen(step(plan, layout), plan, row(layout))) {
+			assertThat(cursor).isInstanceOf(AdaptiveOwningCursor.class);
+			Object session = field(cursor, "session");
+			assertThat(intField(field(session, "metadata"), "filterId")).isEqualTo(9);
+		} finally {
+			restoreAdaptiveProperty(previous);
+		}
+	}
+
+	@Test
+	void adaptiveDispatchRemainsTheFinalFallbackWhenEnabled() throws Exception {
 		NativeSlotLayout layout = new NativeSlotLayout(Map.of("left", 0, "right", 1), null);
 		layout.freeze(List.of("left", "right"));
 		MultiJoinPlan plan = admittedPlan();
@@ -329,7 +386,7 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 	}
 
 	@Test
-	void unsetPropertyEnablesEligibleFinalFallbackByDefault() throws Exception {
+	void unsetPropertyLeavesAdaptiveFinalFallbackDisabled() throws Exception {
 		NativeSlotLayout layout = new NativeSlotLayout(Map.of("left", 0, "right", 1), null);
 		layout.freeze(List.of("left", "right"));
 		MultiJoinPlan plan = admittedPlan();
@@ -338,11 +395,49 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 		try {
 			System.clearProperty(LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY);
 			adaptive = LmdbNativeAdaptiveFilterPlacement.tryOpen(step(plan, layout), plan, row(layout));
-			assertThat(adaptive).isInstanceOf(AdaptiveOwningCursor.class);
+			assertThat(adaptive).isNull();
 		} finally {
 			if (adaptive != null) {
 				adaptive.close();
 			}
+			restoreAdaptiveProperty(previous);
+		}
+	}
+
+	@Test
+	void unsafeExtensionIsNotPeeledForAdaptiveExecution() throws Exception {
+		NativeSlotLayout layout = layout(3);
+		MultiJoinPlan plan = admittedPlan();
+		LmdbNativeCompiledInlineId nonRepeatable = new LmdbNativeCompiledInlineId(0L, false, row -> 1L);
+		ExtensionPlan extension = new ExtensionPlan(plan,
+				new CopyBinding[] { CopyBinding.computed(2, nonRepeatable) });
+		SingletonSet telemetry = new SingletonSet();
+		telemetry.setRuntimeTelemetryEnabled(true);
+		String previous = System.getProperty(LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY);
+		System.setProperty(LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY, "true");
+		try {
+			assertThat(LmdbNativeAdaptiveFilterPlacement.tryOpen(step(extension, layout, telemetry), row(layout)))
+					.isNull();
+		} finally {
+			restoreAdaptiveProperty(previous);
+		}
+
+		assertThat(telemetry.getStringMetricActual("adaptiveFilterPlacementReason"))
+				.isEqualTo("UNSAFE_EXTENSION");
+	}
+
+	@Test
+	void safeExtensionIsReappliedAroundAdaptiveExecution() throws Exception {
+		NativeSlotLayout layout = layout(3);
+		MultiJoinPlan plan = admittedPlan();
+		ExtensionPlan extension = new ExtensionPlan(plan,
+				new CopyBinding[] { CopyBinding.slot(2, 0) });
+		String previous = System.getProperty(LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY);
+		System.setProperty(LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY, "true");
+		try (RowCursor cursor = LmdbNativeAdaptiveFilterPlacement.tryOpen(step(extension, layout, null), row(layout))) {
+			assertThat(cursor).isInstanceOf(ExtensionCursor.class);
+			assertThat(cursor.next()).isTrue();
+		} finally {
 			restoreAdaptiveProperty(previous);
 		}
 	}
@@ -369,13 +464,14 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 		assertThat(telemetry.getLongMetricActual("adaptiveFilterPlacementAdmitted")).isEqualTo(1L);
 		assertThat(telemetry.getStringMetricActual("adaptiveFilterPlacementReason")).isEqualTo("ADMITTED");
 		assertThat(telemetry.getLongMetricActual("adaptiveFilterPlacementTargetId")).isEqualTo(51L);
-		assertThat(telemetry.getLongMetricActual("adaptiveFilterPlacementFinalDepth")).isEqualTo(1L);
+		assertThat(telemetry.getLongMetricActual("adaptiveFilterPlacementPlannedDepth")).isZero();
+		assertThat(telemetry.getLongMetricActual("adaptiveFilterPlacementFinalDepth")).isZero();
 		assertThat(telemetry.getStringMetricActual("adaptiveFilterPlacementCandidateDepths")).isEqualTo("[0, 1]");
 		assertThat(telemetry.getLongMetricActual("adaptiveFilterPlacementEvaluations")).isPositive();
 	}
 
 	@Test
-	void enabledShortLimitAdmitsButDisabledIsInvisible() throws Exception {
+	void enabledShortLimitDeclinesButDisabledIsInvisible() throws Exception {
 		NativeSlotLayout layout = new NativeSlotLayout(Map.of("left", 0, "right", 1), null);
 		layout.freeze(List.of("left", "right"));
 		MultiJoinPlan plan = admittedPlan();
@@ -385,11 +481,10 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 		String previous = System.getProperty(LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY);
 		try {
 			System.setProperty(LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY, "true");
-			try (RowCursor cursor = LmdbNativeAdaptiveFilterPlacement.tryOpen(shortLimit, plan, row(layout))) {
-				assertThat(cursor).isInstanceOf(AdaptiveOwningCursor.class);
-			}
-			assertThat(declinedTelemetry.getLongMetricActual("adaptiveFilterPlacementAdmitted")).isOne();
-			assertThat(declinedTelemetry.getStringMetricActual("adaptiveFilterPlacementReason")).isEqualTo("ADMITTED");
+			assertThat(LmdbNativeAdaptiveFilterPlacement.tryOpen(shortLimit, plan, row(layout))).isNull();
+			assertThat(declinedTelemetry.getLongMetricActual("adaptiveFilterPlacementAdmitted")).isZero();
+			assertThat(declinedTelemetry.getStringMetricActual("adaptiveFilterPlacementReason"))
+					.isEqualTo("SHORT_LIMIT");
 
 			SingletonSet disabledTelemetry = new SingletonSet();
 			disabledTelemetry.setRuntimeTelemetryEnabled(true);
@@ -426,7 +521,7 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 	}
 
 	@Test
-	void safeAdmissionUsesRuntimeMeasurementsInsteadOfPlannerEstimatesOrLimit() throws Exception {
+	void shortLimitDeclinesBeforeConsultingPlannerEstimates() throws Exception {
 		NativeSlotLayout layout = new NativeSlotLayout(Map.of("left", 0, "right", 1), null);
 		layout.freeze(List.of("left", "right"));
 		AdaptiveFilterMetadata metadata = AdaptiveFilterMetadata.eligible(91, 1);
@@ -434,17 +529,23 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 				new SlotPlan[] { new EstimateFailurePlan(1L), values(1) },
 				new MaskedFilter[] { new MaskedFilter(row -> true, 1L, metadata) });
 		String previous = System.getProperty(LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY);
-		RowCursor adaptive = null;
 		try {
 			System.setProperty(LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY, "true");
-			adaptive = LmdbNativeAdaptiveFilterPlacement.tryOpen(step(plan, layout, null, 1L), plan, row(layout));
-			assertThat(adaptive).isInstanceOf(AdaptiveOwningCursor.class);
+			assertThat(LmdbNativeAdaptiveFilterPlacement.tryOpen(step(plan, layout, null, 1L), plan, row(layout)))
+					.isNull();
 		} finally {
-			if (adaptive != null) {
-				adaptive.close();
-			}
 			restoreAdaptiveProperty(previous);
 		}
+	}
+
+	@Test
+	void insufficientObservedWorkDoesNotMoveTheFilter() throws Exception {
+		AdaptiveFilterSession session = policySession(new AlternatingFilter());
+
+		drive(session, 1, 4, 16, 1L, 1_024);
+
+		assertThat(session.placement.activeDepth()).isEqualTo(2);
+		assertThat(session.moves).isZero();
 	}
 
 	@Test
@@ -574,15 +675,15 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 		return result;
 	}
 
-	private static NativeRowsStep step(MultiJoinPlan plan, NativeSlotLayout layout) {
+	private static NativeRowsStep step(SlotPlan plan, NativeSlotLayout layout) {
 		return step(plan, layout, null);
 	}
 
-	private static NativeRowsStep step(MultiJoinPlan plan, NativeSlotLayout layout, SingletonSet telemetry) {
+	private static NativeRowsStep step(SlotPlan plan, NativeSlotLayout layout, SingletonSet telemetry) {
 		return step(plan, layout, telemetry, 256L);
 	}
 
-	private static NativeRowsStep step(MultiJoinPlan plan, NativeSlotLayout layout, SingletonSet telemetry,
+	private static NativeRowsStep step(SlotPlan plan, NativeSlotLayout layout, SingletonSet telemetry,
 			long limit) {
 		String[] names = layout.slotNames();
 		int[] sourceSlots = new int[names.length];
@@ -635,6 +736,16 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 				AdaptiveFilterMetadata.eligible(51, 4));
 		return new MultiJoinPlan(new SlotPlan[] { values(0, 4_096), values(1, 25) },
 				new MaskedFilter[] { target });
+	}
+
+	private static int[] candidateDepths(int childCount, int plannedDepth) {
+		SlotPlan[] children = new SlotPlan[childCount];
+		for (int i = 0; i < childCount; i++) {
+			children[i] = new MaskPlan(1L << i);
+		}
+		MaskedFilter filter = new MaskedFilter(row -> true, 1L,
+				AdaptiveFilterMetadata.eligible(500 + childCount, 4), plannedDepth);
+		return new MultiJoinPlan(children, new MaskedFilter[] { filter }).derive(0L).placement[0].candidateDepths;
 	}
 
 	private static SlotPlan values(int slot, int count) {

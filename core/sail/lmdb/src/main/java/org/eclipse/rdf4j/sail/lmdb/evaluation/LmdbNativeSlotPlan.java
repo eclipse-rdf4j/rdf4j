@@ -166,12 +166,15 @@ interface SlotPlan {
 	static void collectFlattenable(SlotPlan plan, ArrayList<SlotPlan> children, ArrayList<MaskedFilter> filters) {
 		if (plan instanceof MultiJoinPlan) {
 			MultiJoinPlan multiJoin = (MultiJoinPlan) plan;
+			int depthOffset = children.size();
 			children.addAll(Arrays.asList(multiJoin.children));
-			filters.addAll(Arrays.asList(multiJoin.filters));
+			for (MaskedFilter filter : multiJoin.filters) {
+				filters.add(filter.withDepthOffset(depthOffset));
+			}
 		} else if (plan instanceof FilterPlan) {
 			FilterPlan filterPlan = (FilterPlan) plan;
 			collectFlattenable(filterPlan.arg, children, filters);
-			filters.add(MultiJoinPlan.compiledFilter(filterPlan.filter, filterPlan.filterMask));
+			filters.add(MultiJoinPlan.compiledFilter(filterPlan.filter, filterPlan.filterMask, children.size() - 1));
 		} else {
 			children.add(plan);
 		}

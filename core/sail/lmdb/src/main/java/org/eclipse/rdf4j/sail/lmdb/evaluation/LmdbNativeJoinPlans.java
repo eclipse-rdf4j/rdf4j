@@ -57,15 +57,15 @@ final class MultiJoinPlan implements SlotPlan {
 
 	MultiJoinPlan withFilter(NativeBooleanFilter filter, long mask) {
 		MaskedFilter[] newFilters = Arrays.copyOf(filters, filters.length + 1);
-		newFilters[filters.length] = compiledFilter(filter, mask);
+		newFilters[filters.length] = compiledFilter(filter, mask, children.length - 1);
 		return new MultiJoinPlan(children, newFilters);
 	}
 
-	static MaskedFilter compiledFilter(NativeBooleanFilter filter, long mask) {
+	static MaskedFilter compiledFilter(NativeBooleanFilter filter, long mask, int plannedDepth) {
 		AdaptiveFilterMetadata metadata = filter instanceof RecordingNativeBooleanFilter recording
 				? recording.adaptive
 				: AdaptiveFilterMetadata.missing();
-		return new MaskedFilter(filter, mask, metadata);
+		return new MaskedFilter(filter, mask, metadata, plannedDepth);
 	}
 
 	@Override
@@ -213,6 +213,7 @@ final class MultiJoinPlan implements SlotPlan {
 			sinkUnconsumedPatterns(ordered, initialBoundMask, filters);
 		}
 		int[] filterDepth = new int[filters.length];
+		int[] earliestLegalDepth = new int[filters.length];
 		if (filters.length > 0) {
 			int last = ordered.length - 1;
 			long bound = initialBoundMask;
@@ -222,47 +223,98 @@ final class MultiJoinPlan implements SlotPlan {
 				cumulative[d] = bound;
 			}
 			for (int f = 0; f < filters.length; f++) {
-				int depth = last;
+				int earliest = last;
 				long mask = filters[f].mask;
 				for (int d = 0; d < ordered.length; d++) {
 					if ((mask & ~cumulative[d]) == 0L) {
-						depth = d;
+						earliest = d;
 						break;
 					}
 				}
-				filterDepth[f] = depth;
+				int planned = filters[f].plannedDepth;
+				earliestLegalDepth[f] = earliest;
+				filterDepth[f] = sinkUnconsumed || planned < 0
+						? earliest
+						: Math.max(earliest, Math.min(planned, last));
 			}
 		}
-		return new OrderedPlan(ordered, filterDepth, derivePlacement(filterDepth));
+		return new OrderedPlan(ordered, filterDepth, derivePlacement(filterDepth, earliestLegalDepth));
 	}
 
-	private FilterPlacementEnvelope[] derivePlacement(int[] filterDepth) {
+	private FilterPlacementEnvelope[] derivePlacement(int[] filterDepth, int[] earliestLegalDepth) {
 		FilterPlacementEnvelope[] placement = new FilterPlacementEnvelope[filters.length];
 		for (int target = 0; target < filters.length; target++) {
 			AdaptiveFilterMetadata metadata = filters[target].adaptive;
 			if (!metadata.adaptiveEligible || metadata.requiredMask < 0L) {
 				continue;
 			}
-			int earliest = filterDepth[target];
-			int[] candidates = new int[Math.min(children.length - earliest,
-					FilterPlacementEnvelope.MAX_CANDIDATES + 1)];
+			int planned = filterDepth[target];
+			int[] legal = new int[children.length - earliestLegalDepth[target]];
 			int count = 0;
-			for (int depth = earliest; depth < children.length; depth++) {
-				if (!preservesFilterOrder(target, depth, filterDepth)) {
-					break;
+			for (int depth = earliestLegalDepth[target]; depth < children.length; depth++) {
+				if (preservesFilterOrder(target, depth, filterDepth)) {
+					legal[count++] = depth;
 				}
-				if (count == candidates.length) {
-					count++;
-					break;
-				}
-				candidates[count++] = depth;
 			}
-			if (count >= 2 && count <= FilterPlacementEnvelope.MAX_CANDIDATES) {
-				placement[target] = new FilterPlacementEnvelope(metadata.filterId,
-						Arrays.copyOf(candidates, count));
+			if (count >= 2) {
+				placement[target] = new FilterPlacementEnvelope(metadata.filterId, planned, count,
+						sampleCandidateDepths(legal, count, planned));
 			}
 		}
 		return placement;
+	}
+
+	private static int[] sampleCandidateDepths(int[] legal, int legalCount, int plannedDepth) {
+		if (legalCount <= FilterPlacementEnvelope.MAX_CANDIDATES) {
+			return Arrays.copyOf(legal, legalCount);
+		}
+		boolean[] selected = new boolean[legalCount];
+		int selectedCount = 0;
+		selectedCount += selectDepth(legal, legalCount, selected, legal[0]);
+		selectedCount += selectDepth(legal, legalCount, selected, plannedDepth);
+		selectedCount += selectDepth(legal, legalCount, selected, legal[legalCount - 1]);
+		while (selectedCount < FilterPlacementEnvelope.MAX_CANDIDATES) {
+			int best = -1;
+			int bestDistance = -1;
+			for (int candidate = 0; candidate < legalCount; candidate++) {
+				if (selected[candidate]) {
+					continue;
+				}
+				int distance = Integer.MAX_VALUE;
+				for (int selectedIndex = 0; selectedIndex < legalCount; selectedIndex++) {
+					if (selected[selectedIndex]) {
+						distance = Math.min(distance, Math.abs(legal[candidate] - legal[selectedIndex]));
+					}
+				}
+				if (distance > bestDistance) {
+					best = candidate;
+					bestDistance = distance;
+				}
+			}
+			selected[best] = true;
+			selectedCount++;
+		}
+		int[] sampled = new int[FilterPlacementEnvelope.MAX_CANDIDATES];
+		int out = 0;
+		for (int i = 0; i < legalCount; i++) {
+			if (selected[i]) {
+				sampled[out++] = legal[i];
+			}
+		}
+		return sampled;
+	}
+
+	private static int selectDepth(int[] legal, int legalCount, boolean[] selected, int depth) {
+		for (int i = 0; i < legalCount; i++) {
+			if (legal[i] == depth) {
+				if (!selected[i]) {
+					selected[i] = true;
+					return 1;
+				}
+				return 0;
+			}
+		}
+		throw new IllegalArgumentException("planned filter depth is not legal: " + depth);
 	}
 
 	private static boolean preservesFilterOrder(int target, int candidateDepth, int[] filterDepth) {

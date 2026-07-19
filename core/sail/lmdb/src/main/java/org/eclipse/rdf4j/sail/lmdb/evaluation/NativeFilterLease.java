@@ -95,7 +95,7 @@ final class NativeFilterLease {
 		MaskedFilter[] filters = new MaskedFilter[plan.filters.length];
 		for (int i = 0; i < filters.length; i++) {
 			MaskedFilter filter = plan.filters[i];
-			filters[i] = new MaskedFilter(borrow(filter.filter), filter.mask, filter.adaptive);
+			filters[i] = new MaskedFilter(borrow(filter.filter), filter.mask, filter.adaptive, filter.plannedDepth);
 		}
 		return new MultiJoinPlan(children, filters);
 	}

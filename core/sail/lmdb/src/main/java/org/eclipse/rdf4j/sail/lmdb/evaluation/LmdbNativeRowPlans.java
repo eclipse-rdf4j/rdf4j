@@ -111,18 +111,36 @@ final class FilterPlan implements SlotPlan {
 
 @Experimental
 final class MaskedFilter {
+	static final int UNPLANNED_DEPTH = -1;
+
 	final NativeBooleanFilter filter;
 	final long mask;
 	final AdaptiveFilterMetadata adaptive;
+	final int plannedDepth;
 
 	MaskedFilter(NativeBooleanFilter filter, long mask) {
-		this(filter, mask, AdaptiveFilterMetadata.missing());
+		this(filter, mask, AdaptiveFilterMetadata.missing(), UNPLANNED_DEPTH);
 	}
 
 	MaskedFilter(NativeBooleanFilter filter, long mask, AdaptiveFilterMetadata adaptive) {
+		this(filter, mask, adaptive, UNPLANNED_DEPTH);
+	}
+
+	MaskedFilter(NativeBooleanFilter filter, long mask, int plannedDepth) {
+		this(filter, mask, AdaptiveFilterMetadata.missing(), plannedDepth);
+	}
+
+	MaskedFilter(NativeBooleanFilter filter, long mask, AdaptiveFilterMetadata adaptive, int plannedDepth) {
 		this.filter = filter;
 		this.mask = mask;
 		this.adaptive = adaptive.withRequiredMask(mask);
+		this.plannedDepth = plannedDepth;
+	}
+
+	MaskedFilter withDepthOffset(int offset) {
+		return plannedDepth < 0 || offset == 0
+				? this
+				: new MaskedFilter(filter, mask, adaptive, Math.addExact(plannedDepth, offset));
 	}
 }
 

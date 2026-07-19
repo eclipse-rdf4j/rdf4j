@@ -271,7 +271,8 @@ final class LmdbNativeParallelPipelines {
 				if (copy == null) {
 					throw new IllegalStateException("parallel filter preflight disagreed with worker fork");
 				}
-				copies[i] = new MaskedFilter(new CloseOnceNativeBooleanFilter(copy), filters[i].mask);
+				copies[i] = new MaskedFilter(new CloseOnceNativeBooleanFilter(copy), filters[i].mask,
+						filters[i].adaptive, filters[i].plannedDepth);
 			}
 			return copies;
 		} catch (RuntimeException | Error problem) {

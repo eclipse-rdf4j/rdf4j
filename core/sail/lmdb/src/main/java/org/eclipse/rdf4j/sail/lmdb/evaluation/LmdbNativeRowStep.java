@@ -1233,11 +1233,6 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 		// masks — the factorization itself is built at its own dispatch slot below.
 		boolean countingBranch = multiJoin != null && LmdbNativeFactorizedRows.plansCountingBranch(multiJoin,
 				multiJoin.derivedFactorizedPlan(row), row.boundMask(), step.sourceSlots);
-		cursor = LmdbNativeAdaptiveFilterPlacement.tryOpen(step, row);
-		if (cursor != null) {
-			LmdbNativeExplain.recordExecutionPath(step.originalExpr, "adaptiveFilterPlacement");
-			return true;
-		}
 		if (!correlatedEntry && NativeBatch.enabled() && !countingBranch) {
 			int capacity = NativeBatch.configuredRows();
 			BatchCursor candidate = step.arg.openBatch(row, capacity);
@@ -1275,6 +1270,11 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 				}
 				return true;
 			}
+		}
+		cursor = LmdbNativeAdaptiveFilterPlacement.tryOpen(step, row);
+		if (cursor != null) {
+			LmdbNativeExplain.recordExecutionPath(step.originalExpr, "adaptiveFilterPlacement");
+			return true;
 		}
 		cursor = step.arg.open(row);
 		LmdbNativeExplain.recordExecutionPath(step.originalExpr, "nestedLoop");

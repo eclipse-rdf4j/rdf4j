@@ -44,6 +44,7 @@ public class LmdbNativeStrategyPriorityTest {
 	private static final int SUBJECTS = 4200;
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String PARALLEL_FLAG = "rdf4j.lmdb.parallel.enabled";
+	private static final String ADAPTIVE_FILTER_FLAG = "rdf4j.lmdb.adaptiveFilterPlacement.enabled";
 
 	@TempDir
 	File dataDir;
@@ -130,6 +131,24 @@ public class LmdbNativeStrategyPriorityTest {
 		String query = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT ?s WHERE { VALUES ?s { ex:s1 ex:s2 ex:s3 } ?s ex:p1 ?a . ?s ex:p2 ?b }";
 		assertThat(strategy(query)).startsWith("factorizedRows");
+	}
+
+	@Test
+	public void factorizedRowsOutrankEligibleAdaptivePlacement() {
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s WHERE { VALUES ?s { ex:s1 ex:s2 ex:s3 } "
+				+ "?s ex:p1 ?a . ?s ex:p2 ?b . FILTER(?s != ex:missing) }";
+		String previous = System.getProperty(ADAPTIVE_FILTER_FLAG);
+		try {
+			System.setProperty(ADAPTIVE_FILTER_FLAG, "true");
+			assertThat(strategy(query)).startsWith("factorizedRows");
+		} finally {
+			if (previous == null) {
+				System.clearProperty(ADAPTIVE_FILTER_FLAG);
+			} else {
+				System.setProperty(ADAPTIVE_FILTER_FLAG, previous);
+			}
+		}
 	}
 
 	@Test

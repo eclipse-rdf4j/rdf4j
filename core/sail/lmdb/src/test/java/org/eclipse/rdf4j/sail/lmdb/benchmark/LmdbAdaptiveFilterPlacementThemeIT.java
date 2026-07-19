@@ -39,7 +39,7 @@ class LmdbAdaptiveFilterPlacementThemeIT {
 
 	@Test
 	@Timeout(60)
-	void catalogQueryZeroEvaluatesExpensiveFilterOnlyForQualifiedRoutes(@TempDir Path dataDir) {
+	void catalogQueriesRemainCorrectAndAdaptiveMovesAfterPlannedObservation(@TempDir Path dataDir) {
 		String previousAdaptive = System.getProperty(ADAPTIVE_ENABLED_PROPERTY);
 		String previousNative = System.getProperty(NATIVE_ENABLED_PROPERTY);
 		System.setProperty(ADAPTIVE_ENABLED_PROPERTY, Boolean.TRUE.toString());
@@ -84,11 +84,15 @@ class LmdbAdaptiveFilterPlacementThemeIT {
 			assertNotNull(adaptiveNode, () -> "Expected adaptive placement telemetry; explanation="
 					+ telemetryExplanation + "; plan=" + telemetry);
 			assertEquals(1L, adaptiveNode.getLongMetricActual("adaptiveFilterPlacementAdmitted"));
-			assertEquals(adaptiveNode.getLongMetricActual("adaptiveFilterPlacementInitialDepth"),
-					adaptiveNode.getLongMetricActual("adaptiveFilterPlacementFinalDepth"));
+			assertEquals(1L, adaptiveNode.getLongMetricActual("adaptiveFilterPlacementPlannedDepth"));
+			assertEquals(1L, adaptiveNode.getLongMetricActual("adaptiveFilterPlacementInitialDepth"));
+			assertEquals(3L, adaptiveNode.getLongMetricActual("adaptiveFilterPlacementFinalDepth"));
 			assertEquals(16_384L, adaptiveNode.getLongMetricActual("adaptiveFilterPlacementPrefixes"));
 			assertTrue(adaptiveNode.getLongMetricActual("adaptiveFilterPlacementWindows") > 0L);
-			assertEquals(256L, adaptiveNode.getLongMetricActual("adaptiveFilterPlacementEvaluations"));
+			assertEquals(1_024L, adaptiveNode.getLongMetricActual("adaptiveFilterPlacementEvaluations"));
+			assertEquals(1L, adaptiveNode.getLongMetricActual("adaptiveFilterPlacementMoves"));
+			assertEquals(1L, adaptiveNode.getLongMetricActual("adaptiveFilterPlacementCommits"));
+			assertEquals(0L, adaptiveNode.getLongMetricActual("adaptiveFilterPlacementRollbacks"));
 			assertEquals("[1, 2, 3]",
 					adaptiveNode.getStringMetricActual("adaptiveFilterPlacementCandidateDepths"));
 			assertEquals("[16384, 131072, 256]",

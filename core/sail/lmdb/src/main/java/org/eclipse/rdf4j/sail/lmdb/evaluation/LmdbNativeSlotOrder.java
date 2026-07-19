@@ -545,7 +545,8 @@ final class LmdbNativeOrderPlanner {
 
 	private static boolean safeOrderedPromotion(MultiJoinPlan original, MultiJoinPlan candidate,
 			int promotedPrefixLength, long initialBoundMask) {
-		if (!connectedPatternPrefix(candidate.children, promotedPrefixLength, initialBoundMask)
+		if (crossesPlannedFilterBoundary(original.filters, promotedPrefixLength - 1)
+				|| !connectedPatternPrefix(candidate.children, promotedPrefixLength, initialBoundMask)
 				|| delaysFilter(original, candidate, initialBoundMask)) {
 			return false;
 		}
@@ -553,6 +554,15 @@ final class LmdbNativeOrderPlanner {
 		double candidateWork = cumulativePatternWork(candidate.children, promotedPrefixLength, initialBoundMask);
 		return originalWork < Double.MAX_VALUE && candidateWork < Double.MAX_VALUE
 				&& candidateWork <= originalWork;
+	}
+
+	private static boolean crossesPlannedFilterBoundary(MaskedFilter[] filters, int promotedDepth) {
+		for (MaskedFilter filter : filters) {
+			if (filter.plannedDepth >= 0 && promotedDepth > filter.plannedDepth) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static boolean connectedPatternPrefix(SlotPlan[] children, int prefixLength, long initialBoundMask) {
