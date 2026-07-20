@@ -22,6 +22,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
@@ -80,7 +81,7 @@ public final class Rdf4jCanonicalizer {
 
 	public Normalization normalize(TupleExpr expression, ObservationMode observationMode) {
 		this.analysisRoot = expression;
-		List<RuleApplication> trace = new ArrayList<>();
+		CertificateTrace trace = CertificateTrace.root();
 		Mode mode;
 		switch (observationMode) {
 		case BAG:
@@ -96,7 +97,8 @@ public final class Rdf4jCanonicalizer {
 		default:
 			throw new AssertionError("Unhandled observation mode: " + observationMode);
 		}
-		return new Normalization(tuple(expression, mode, rootContextMode, trace), trace);
+		CanonicalNode result = tuple(expression, mode, rootContextMode, trace);
+		return new Normalization(result, trace, trace.certificateSteps());
 	}
 
 	private CanonicalNode tuple(
@@ -104,15 +106,34 @@ public final class Rdf4jCanonicalizer {
 			Mode mode,
 			ContextMode incomingContext,
 			List<RuleApplication> trace) {
+		if (!(trace instanceof CertificateTrace certificateTrace)) {
+			throw new IllegalArgumentException("Normalization requires a certificate trace");
+		}
+		CertificateTrace.Frame frame = certificateTrace.enter(expression);
+		try {
+			CanonicalNode result = tupleUnchecked(expression, mode, incomingContext, trace);
+			certificateTrace.complete(frame, result);
+			return result;
+		} finally {
+			certificateTrace.exit(frame);
+		}
+	}
+
+	private CanonicalNode tupleUnchecked(
+			TupleExpr expression,
+			Mode mode,
+			ContextMode incomingContext,
+			List<RuleApplication> trace) {
 		if (expression instanceof QueryRoot) {
-			QueryRoot root = (QueryRoot) expression;
-			// Keep the root because it has query-run semantics (notably NOW
-			// state in RDF4J), but still compare its child with the checked
-			// calculus.
-			return ordered(
-					"QUERY_ROOT",
-					scopeAttribute(root),
-					tuple(root.getArg(), mode, incomingContext, trace));
+			// QueryRoot carries query-run state, including QueryScopeSeed and NOW scope. Until a
+			// context-congruence theorem models that state, only field-complete structural identity is sound.
+			return CanonicalNode.opaque(expression);
+		}
+		if (expression instanceof BinaryTupleOperator binary && binary.getAlgorithmName() != null) {
+			return CanonicalNode.opaque(expression);
+		}
+		if (expression instanceof Join join && (join.isMergeJoin() || join.isCacheable())) {
+			return CanonicalNode.opaque(expression);
 		}
 		if (expression instanceof EmptySet) {
 			if (hasScopeBoundary(expression)) {
@@ -127,7 +148,7 @@ public final class Rdf4jCanonicalizer {
 			return CanonicalNode.UNIT;
 		}
 		if (expression instanceof BindingSetAssignment) {
-			return assignment((BindingSetAssignment) expression, mode, trace);
+			return assignment((BindingSetAssignment) expression, mode, incomingContext, trace);
 		}
 		if (expression instanceof Join) {
 			return join((Join) expression, mode, incomingContext, trace);
@@ -244,7 +265,10 @@ public final class Rdf4jCanonicalizer {
 		}
 
 		if (flattened) {
-			trace.add(new RuleApplication(RuleId.JOIN_ASSOCIATIVE, "Flattened nested pure joins"));
+			CertificateTrace.record(
+					trace,
+					new RuleApplication(RuleId.JOIN_ASSOCIATIVE, "Flattened nested pure joins"),
+					CanonicalNode.ordered("JOIN_FLAT", "", operands));
 		}
 		if (operands.isEmpty()) {
 			return CanonicalNode.UNIT;
@@ -253,10 +277,14 @@ public final class Rdf4jCanonicalizer {
 			return operands.get(0);
 		}
 
-		trace.add(new RuleApplication(
-				RuleId.JOIN_COMMUTATIVE,
-				"Represented pure join operands as an unordered multiset"));
-		return CanonicalNode.multiset("JOIN_AC", "", operands);
+		CanonicalNode result = CanonicalNode.multiset("JOIN_AC", "", operands);
+		CertificateTrace.record(
+				trace,
+				new RuleApplication(
+						RuleId.JOIN_COMMUTATIVE,
+						"Represented pure join operands as an unordered multiset"),
+				result);
+		return result;
 	}
 
 	private CanonicalNode union(
@@ -309,7 +337,10 @@ public final class Rdf4jCanonicalizer {
 		}
 
 		if (flattened) {
-			trace.add(new RuleApplication(RuleId.UNION_ASSOCIATIVE, "Flattened nested pure unions"));
+			CertificateTrace.record(
+					trace,
+					new RuleApplication(RuleId.UNION_ASSOCIATIVE, "Flattened nested pure unions"),
+					CanonicalNode.ordered("UNION_FLAT", mode.name(), operands));
 		}
 		if (operands.isEmpty()) {
 			return CanonicalNode.EMPTY;
@@ -319,19 +350,26 @@ public final class Rdf4jCanonicalizer {
 			int before = operands.size();
 			operands = deduplicate(operands);
 			if (operands.size() != before) {
-				trace.add(new RuleApplication(
-						RuleId.UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,
-						"Removed duplicate pure union branches because multiplicity is hidden"));
+				CertificateTrace.record(
+						trace,
+						new RuleApplication(
+								RuleId.UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,
+								"Removed duplicate pure union branches because multiplicity is hidden"),
+						CanonicalNode.ordered("UNION_DEDUP", mode.name(), operands));
 			}
 		}
 
 		if (operands.size() == 1) {
 			return operands.get(0);
 		}
-		trace.add(new RuleApplication(
-				RuleId.UNION_COMMUTATIVE,
-				"Represented pure union branches as an unordered multiset"));
-		return CanonicalNode.multiset("UNION_AC", mode.name(), operands);
+		CanonicalNode result = CanonicalNode.multiset("UNION_AC", mode.name(), operands);
+		CertificateTrace.record(
+				trace,
+				new RuleApplication(
+						RuleId.UNION_COMMUTATIVE,
+						"Represented pure union branches as an unordered multiset"),
+				result);
+		return result;
 	}
 
 	private CanonicalNode filter(
@@ -364,7 +402,10 @@ public final class Rdf4jCanonicalizer {
 
 		Optional<Boolean> constant = constantBoolean(condition);
 		if (constant.isPresent() && constant.get()) {
-			trace.add(new RuleApplication(RuleId.FILTER_TRUE_IDENTITY, "FILTER(true) is the identity"));
+			CertificateTrace.record(
+					trace,
+					new RuleApplication(RuleId.FILTER_TRUE_IDENTITY, "FILTER(true) is the identity"),
+					CanonicalNode.opaque(argument));
 			return tuple(argument, mode, incomingContext, trace);
 		}
 		if (constant.isPresent()
@@ -379,9 +420,15 @@ public final class Rdf4jCanonicalizer {
 		if (mode != Mode.SEQUENCE) {
 			if (argument instanceof Union && safety.isReorderSafe(argument)) {
 				Union union = (Union) argument;
-				trace.add(new RuleApplication(
-						RuleId.FILTER_DISTRIBUTES_OVER_UNION,
-						"Distributed a pure, relocatable mapping-local filter over UNION"));
+				TupleExpr distributed = new Union(
+						new Filter(union.getLeftArg().clone(), condition.clone()),
+						new Filter(union.getRightArg().clone(), condition.clone()));
+				CertificateTrace.record(
+						trace,
+						new RuleApplication(
+								RuleId.FILTER_DISTRIBUTES_OVER_UNION,
+								"Distributed a pure, relocatable mapping-local filter over UNION"),
+						CanonicalNode.opaque(distributed));
 				return makeUnion(asList(
 						filter(condition, union.getLeftArg(), mode, incomingContext, trace),
 						filter(condition, union.getRightArg(), mode, incomingContext, trace)),
@@ -399,10 +446,15 @@ public final class Rdf4jCanonicalizer {
 				List<NormalizationCandidate> candidates = new ArrayList<>(2);
 
 				if (pushLeft) {
-					List<RuleApplication> candidateTrace = new ArrayList<>();
-					candidateTrace.add(new RuleApplication(
-							RuleId.FILTER_PUSHED_TO_JOIN_LEFT,
-							"Every filter dependency is stable on the left join operand"));
+					List<RuleApplication> candidateTrace = CertificateTrace.fork(trace);
+					CertificateTrace.record(
+							candidateTrace,
+							new RuleApplication(
+									RuleId.FILTER_PUSHED_TO_JOIN_LEFT,
+									"Every filter dependency is stable on the left join operand"),
+							CanonicalNode.opaque(new Join(
+									new Filter(join.getLeftArg().clone(), condition.clone()),
+									join.getRightArg().clone())));
 					candidates.add(new NormalizationCandidate(
 							makeJoin(asList(
 									filter(condition, join.getLeftArg(), mode, incomingContext, candidateTrace),
@@ -415,10 +467,15 @@ public final class Rdf4jCanonicalizer {
 							candidateTrace));
 				}
 				if (pushRight) {
-					List<RuleApplication> candidateTrace = new ArrayList<>();
-					candidateTrace.add(new RuleApplication(
-							RuleId.FILTER_PUSHED_TO_JOIN_RIGHT,
-							"Every filter dependency is stable on the right join operand"));
+					List<RuleApplication> candidateTrace = CertificateTrace.fork(trace);
+					CertificateTrace.record(
+							candidateTrace,
+							new RuleApplication(
+									RuleId.FILTER_PUSHED_TO_JOIN_RIGHT,
+									"Every filter dependency is stable on the right join operand"),
+							CanonicalNode.opaque(new Join(
+									join.getLeftArg().clone(),
+									new Filter(join.getRightArg().clone(), condition.clone()))));
 					candidates.add(new NormalizationCandidate(
 							makeJoin(asList(
 									tuple(join.getLeftArg(), mode, incomingContext, candidateTrace),
@@ -448,12 +505,20 @@ public final class Rdf4jCanonicalizer {
 				if (innerConditionSafe
 						&& !hasScopeBoundary(leftJoin)
 						&& safety.isReorderSafe(leftJoin.getRightArg())
-						&& canPushToLeft(condition, leftJoin.getLeftArg(), leftJoin.getRightArg())) {
-					trace.add(new RuleApplication(
-							RuleId.FILTER_PUSHED_TO_LEFT_JOIN_LEFT,
-							"The optional side cannot add or change a filter dependency"));
+						&& canPushIntoLeftJoinLeft(condition, leftJoin.getLeftArg(), leftJoin.getRightArg())) {
+					Filter pushedLeft = new Filter(leftJoin.getLeftArg().clone(), condition.clone());
+					LeftJoin rebuilt = leftJoin.hasCondition()
+							? new LeftJoin(pushedLeft.clone(), leftJoin.getRightArg().clone(),
+									leftJoin.getCondition().clone())
+							: new LeftJoin(pushedLeft.clone(), leftJoin.getRightArg().clone());
+					CertificateTrace.record(
+							trace,
+							new RuleApplication(
+									RuleId.FILTER_PUSHED_TO_LEFT_JOIN_LEFT,
+									"The optional side cannot add or change a filter dependency"),
+							CanonicalNode.opaque(rebuilt));
 					return leftJoin(
-							new Filter(leftJoin.getLeftArg().clone(), condition.clone()),
+							pushedLeft,
 							leftJoin.getRightArg(),
 							leftJoin.getCondition(),
 							false,
@@ -513,15 +578,21 @@ public final class Rdf4jCanonicalizer {
 		}
 
 		if (rightExpression instanceof EmptySet) {
-			trace.add(new RuleApplication(
-					RuleId.LEFT_JOIN_EMPTY_RIGHT,
-					"OPTIONAL with an empty right side preserves its left side"));
+			CertificateTrace.record(
+					trace,
+					new RuleApplication(
+							RuleId.LEFT_JOIN_EMPTY_RIGHT,
+							"OPTIONAL with an empty right side preserves its left side"),
+					CanonicalNode.opaque(leftExpression));
 			return tuple(leftExpression, mode, incomingContext, trace);
 		}
 		if (rightExpression instanceof SingletonSet && conditionSafe) {
-			trace.add(new RuleApplication(
-					RuleId.LEFT_JOIN_UNIT_RIGHT,
-					"The empty right mapping either matches or produces the identical fallback"));
+			CertificateTrace.record(
+					trace,
+					new RuleApplication(
+							RuleId.LEFT_JOIN_UNIT_RIGHT,
+							"The empty right mapping either matches or produces the identical fallback"),
+					CanonicalNode.opaque(leftExpression));
 			return tuple(leftExpression, mode, incomingContext, trace);
 		}
 		if (leftExpression instanceof EmptySet
@@ -539,9 +610,18 @@ public final class Rdf4jCanonicalizer {
 				&& safety.isReorderSafe(leftExpression)
 				&& safety.isReorderSafe(rightExpression)) {
 			Union union = (Union) leftExpression;
-			trace.add(new RuleApplication(
-					RuleId.LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,
-					"LeftJoin decides witnesses and fallback independently per left occurrence"));
+			LeftJoin first = condition == null
+					? new LeftJoin(union.getLeftArg().clone(), rightExpression.clone())
+					: new LeftJoin(union.getLeftArg().clone(), rightExpression.clone(), condition.clone());
+			LeftJoin second = condition == null
+					? new LeftJoin(union.getRightArg().clone(), rightExpression.clone())
+					: new LeftJoin(union.getRightArg().clone(), rightExpression.clone(), condition.clone());
+			CertificateTrace.record(
+					trace,
+					new RuleApplication(
+							RuleId.LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,
+							"LeftJoin decides witnesses and fallback independently per left occurrence"),
+					CanonicalNode.opaque(new Union(first, second)));
 			return makeUnion(asList(
 					leftJoin(
 							union.getLeftArg(),
@@ -591,7 +671,10 @@ public final class Rdf4jCanonicalizer {
 		}
 
 		if (rightExpression instanceof EmptySet) {
-			trace.add(new RuleApplication(RuleId.MINUS_EMPTY_RIGHT, "MINUS empty preserves the left bag"));
+			CertificateTrace.record(
+					trace,
+					new RuleApplication(RuleId.MINUS_EMPTY_RIGHT, "MINUS empty preserves the left bag"),
+					CanonicalNode.opaque(leftExpression));
 			return tuple(leftExpression, mode, incomingContext, trace);
 		}
 		if (leftExpression instanceof EmptySet && safety.isReorderSafe(rightExpression)) {
@@ -602,9 +685,12 @@ public final class Rdf4jCanonicalizer {
 		}
 
 		if (incomingContext == ContextMode.TOP_LEVEL_EMPTY && rightExpression instanceof SingletonSet) {
-			trace.add(new RuleApplication(
-					RuleId.MINUS_UNIT_RIGHT,
-					"At empty top-level context the empty mapping shares no variable with the left side"));
+			CertificateTrace.record(
+					trace,
+					new RuleApplication(
+							RuleId.MINUS_UNIT_RIGHT,
+							"At empty top-level context the empty mapping shares no variable with the left side"),
+					CanonicalNode.opaque(leftExpression));
 			return tuple(leftExpression, mode, incomingContext, trace);
 		}
 
@@ -613,9 +699,12 @@ public final class Rdf4jCanonicalizer {
 			BindingInfo rightBindings = bindings.analyze(rightExpression);
 			if (Collections.disjoint(leftBindings.mayBind(), rightBindings.mayBind())
 					&& safety.isReorderSafe(rightExpression)) {
-				trace.add(new RuleApplication(
-						RuleId.MINUS_DISJOINT_DOMAINS,
-						"At empty top-level context no variable can occur on both sides of MINUS"));
+				CertificateTrace.record(
+						trace,
+						new RuleApplication(
+								RuleId.MINUS_DISJOINT_DOMAINS,
+								"At empty top-level context no variable can occur on both sides of MINUS"),
+						CanonicalNode.opaque(leftExpression));
 				return tuple(leftExpression, mode, incomingContext, trace);
 			}
 		}
@@ -651,9 +740,16 @@ public final class Rdf4jCanonicalizer {
 		}
 
 		if ("UNION_AC".equals(left.getOperator())) {
-			trace.add(new RuleApplication(
-					RuleId.MINUS_DISTRIBUTES_OVER_LEFT_UNION,
-					"MINUS filters each left occurrence independently"));
+			List<CanonicalNode> distributedBranches = new ArrayList<>();
+			for (CanonicalNode branch : left.getChildren()) {
+				distributedBranches.add(ordered("MINUS_BINARY", "", branch, right));
+			}
+			CertificateTrace.record(
+					trace,
+					new RuleApplication(
+							RuleId.MINUS_DISTRIBUTES_OVER_LEFT_UNION,
+							"MINUS filters each left occurrence independently"),
+					CanonicalNode.ordered("MINUS_DISTRIBUTED", mode.name(), distributedBranches));
 			List<CanonicalNode> branches = new ArrayList<>();
 			for (CanonicalNode branch : left.getChildren()) {
 				branches.add(makeMinus(branch, right, mode, incomingContext, trace));
@@ -669,10 +765,17 @@ public final class Rdf4jCanonicalizer {
 		}
 
 		if ("UNION_AC".equals(right.getOperator())) {
-			trace.add(new RuleApplication(
-					RuleId.MINUS_RIGHT_UNION_TO_CHAIN,
-					"A MINUS (B UNION C) equals (A MINUS B) MINUS C"));
 			blockers.addAll(right.getChildren());
+			CertificateTrace.record(
+					trace,
+					new RuleApplication(
+							RuleId.MINUS_RIGHT_UNION_TO_CHAIN,
+							"A MINUS (B UNION C) equals (A MINUS B) MINUS C"),
+					ordered(
+							"MINUS_CHAIN_ORDERED",
+							"",
+							base,
+							CanonicalNode.ordered("MINUS_BLOCKERS_ORDERED", "", blockers)));
 		} else {
 			blockers.add(right);
 		}
@@ -680,18 +783,29 @@ public final class Rdf4jCanonicalizer {
 		int before = blockers.size();
 		blockers = deduplicate(blockers);
 		if (blockers.size() != before) {
-			trace.add(new RuleApplication(
-					RuleId.MINUS_CHAIN_REORDER,
-					"Duplicate MINUS blockers are existence-equivalent"));
-		}
-		if (blockers.size() > 1) {
-			trace.add(new RuleApplication(
-					RuleId.MINUS_CHAIN_REORDER,
-					"Successive MINUS blockers are an unordered set of harmful-witness tests"));
+			CertificateTrace.record(
+					trace,
+					new RuleApplication(
+							RuleId.MINUS_CHAIN_REORDER,
+							"Duplicate MINUS blockers are existence-equivalent"),
+					ordered(
+							"MINUS_CHAIN_DEDUP",
+							"",
+							base,
+							CanonicalNode.ordered("MINUS_BLOCKERS_ORDERED", "", blockers)));
 		}
 
 		CanonicalNode blockerSet = CanonicalNode.multiset("MINUS_BLOCKERS", "SET", blockers);
-		return ordered("MINUS_CHAIN", "", base, blockerSet);
+		CanonicalNode result = ordered("MINUS_CHAIN", "", base, blockerSet);
+		if (blockers.size() > 1) {
+			CertificateTrace.record(
+					trace,
+					new RuleApplication(
+							RuleId.MINUS_CHAIN_REORDER,
+							"Successive MINUS blockers are an unordered set of harmful-witness tests"),
+					result);
+		}
+		return result;
 	}
 
 	private CanonicalNode distinct(
@@ -707,7 +821,10 @@ public final class Rdf4jCanonicalizer {
 					tuple(argument, mode, incomingContext, trace));
 		}
 		if (argument instanceof Distinct) {
-			trace.add(new RuleApplication(RuleId.DISTINCT_IDEMPOTENT, "Nested DISTINCT is idempotent"));
+			CertificateTrace.record(
+					trace,
+					new RuleApplication(RuleId.DISTINCT_IDEMPOTENT, "Nested DISTINCT is idempotent"),
+					CanonicalNode.opaque(argument));
 			return distinct((Distinct) argument, mode, incomingContext, trace);
 		}
 
@@ -720,9 +837,12 @@ public final class Rdf4jCanonicalizer {
 
 		CanonicalNode setInput = tuple(argument, Mode.SET, incomingContext, trace);
 		if (mode == Mode.SET) {
-			trace.add(new RuleApplication(
-					RuleId.DISTINCT_OR_SET_OBSERVATION,
-					"DISTINCT is invisible when only support or emptiness is observed"));
+			CertificateTrace.record(
+					trace,
+					new RuleApplication(
+							RuleId.DISTINCT_OR_SET_OBSERVATION,
+							"DISTINCT is invisible when only support or emptiness is observed"),
+					CanonicalNode.opaque(argument));
 			return setInput;
 		}
 		return ordered("DISTINCT_RESULT", scopeAttribute(distinct), setInput);
@@ -739,7 +859,7 @@ public final class Rdf4jCanonicalizer {
 					scopeAttribute(reduced),
 					tuple(reduced.getArg(), mode, incomingContext, trace));
 		}
-		if (mode == Mode.SET) {
+		if (mode == Mode.SET && !semanticsTarget.isRuntimeTarget()) {
 			trace.add(new RuleApplication(
 					RuleId.REDUCED_HIDDEN_BY_SET_OBSERVATION,
 					"REDUCED preserves support and emptiness"));
@@ -758,13 +878,30 @@ public final class Rdf4jCanonicalizer {
 			ContextMode incomingContext,
 			List<RuleApplication> trace) {
 		List<CanonicalNode> children = new ArrayList<>();
-		children.add(projectionElements(projection.getProjectionElemList(), mode, trace));
+		children.add(projectionElementsAtChildPath(projection.getProjectionElemList(), mode, trace));
 		children.add(tuple(projection.getArg(), mode, incomingContext, trace));
 		if (projection.getProjectionContext() != null) {
 			children.add(CanonicalNode.opaque(projection.getProjectionContext()));
 		}
 		String attributes = "subquery=" + projection.isSubquery() + scopeAttribute(projection);
 		return CanonicalNode.ordered("PROJECTION", attributes, children);
+	}
+
+	private CanonicalNode projectionElementsAtChildPath(
+			ProjectionElemList elements,
+			Mode mode,
+			List<RuleApplication> trace) {
+		if (!(trace instanceof CertificateTrace certificateTrace)) {
+			throw new IllegalArgumentException("Normalization requires a certificate trace");
+		}
+		CertificateTrace.Frame frame = certificateTrace.enter(elements);
+		try {
+			CanonicalNode result = projectionElements(elements, mode, trace);
+			certificateTrace.complete(frame, result);
+			return result;
+		} finally {
+			certificateTrace.exit(frame);
+		}
 	}
 
 	private CanonicalNode projectionElements(
@@ -853,6 +990,7 @@ public final class Rdf4jCanonicalizer {
 	private CanonicalNode assignment(
 			BindingSetAssignment assignment,
 			Mode mode,
+			ContextMode incomingContext,
 			List<RuleApplication> trace) {
 		if (hasScopeBoundary(assignment)) {
 			return CanonicalNode.opaque(assignment);
@@ -877,7 +1015,9 @@ public final class Rdf4jCanonicalizer {
 			trace.add(new RuleApplication(RuleId.VALUES_EMPTY, "VALUES with no rows is empty"));
 			return CanonicalNode.EMPTY;
 		}
-		if (rows.size() == 1 && !iterable.iterator().next().iterator().hasNext()) {
+		if ((semanticsTarget.isRuntimeTarget() || incomingContext == ContextMode.TOP_LEVEL_EMPTY)
+				&& rows.size() == 1
+				&& !iterable.iterator().next().iterator().hasNext()) {
 			trace.add(new RuleApplication(
 					RuleId.VALUES_UNIT,
 					"One empty VALUES row is the incoming-mapping identity"));
@@ -901,6 +1041,19 @@ public final class Rdf4jCanonicalizer {
 			}
 		}
 		return true;
+	}
+
+	private boolean canPushIntoLeftJoinLeft(ValueExpr condition, TupleExpr left, TupleExpr right) {
+		if (!canPushToLeft(condition, left, right)) {
+			return false;
+		}
+		Set<String> dependencies = ExpressionVariables.collect(condition);
+		IncomingBindingInfo leftEffects = incomingBindings.externalReads(left);
+		IncomingBindingInfo rightEffects = incomingBindings.externalReads(right);
+		return Collections.disjoint(dependencies, rightEffects.rebinds())
+				&& (!leftEffects.mayDiscardIncomingBindings()
+						|| Collections.disjoint(dependencies, bindings.analyze(right).mayBind()))
+				&& (dependencies.isEmpty() || !rightEffects.mayDiscardIncomingBindings());
 	}
 
 	private boolean runtimeJoinOrderIsObservable(Join join) {

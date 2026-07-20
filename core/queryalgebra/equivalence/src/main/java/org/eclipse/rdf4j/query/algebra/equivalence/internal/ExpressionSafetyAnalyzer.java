@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Sample;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.Slice;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
@@ -114,6 +115,22 @@ final class ExpressionSafetyAnalyzer {
 		@Override
 		public void meet(Service node) {
 			safe = false;
+		}
+
+		@Override
+		public void meet(StatementPattern node) {
+			if (!precheck(node)) {
+				return;
+			}
+			if (mode == Mode.REORDER
+					&& semanticsTarget.isRuntimeTarget()
+					&& node.getStatementOrder() != null) {
+				// A requested physical order is backend-dependent. Reordering or eliding this
+				// evaluation can therefore change a runtime failure into a successful result.
+				safe = false;
+				return;
+			}
+			node.visitChildren(this);
 		}
 
 		@Override

@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.equivalence;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -25,6 +26,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -37,6 +39,7 @@ import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.UnregisteredNativeTupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -57,7 +60,8 @@ class AlgebraEquivalenceCheckerTest {
 				expression.clone());
 
 		assertEquals(EquivalenceStatus.EQUIVALENT, result.getStatus());
-		assertTrue(result.getEvidence().orElseThrow() instanceof StructuralEqualityProof);
+		NormalizationProof proof = assertInstanceOf(NormalizationProof.class, result.getEvidence().orElseThrow());
+		assertTrue(proof.getCertificate().isPresent());
 	}
 
 	@Test
@@ -84,7 +88,27 @@ class AlgebraEquivalenceCheckerTest {
 	}
 
 	@Test
-	void pureJoinIsCommutativeUnderBagSemantics() {
+	void certificateEncodingFailureReturnsUnknown() {
+		Service service = new Service(
+				Var.of("service", VF.createIRI("urn:test:service")),
+				new SingletonSet(),
+				"SERVICE <urn:test:service> { }",
+				Map.of("", "urn:test:default-prefix:"),
+				"urn:test:base",
+				false);
+		TupleExpr original = new Union(new EmptySet(), service.clone());
+
+		EquivalenceResult result = new AlgebraEquivalenceChecker().check(original, service);
+		EquivalenceResult structural = new AlgebraEquivalenceChecker().check(service, service.clone());
+
+		assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
+		assertTrue(result.getEvidence().isEmpty());
+		assertEquals(EquivalenceStatus.UNKNOWN, structural.getStatus(), structural::getReason);
+		assertTrue(structural.getEvidence().isEmpty());
+	}
+
+	@Test
+	void pureJoinCommutativityIsUnknownWithoutATotalityTheorem() {
 		StatementPattern a = pattern("s", P1, "x");
 		StatementPattern b = pattern("s", P2, "y");
 
@@ -93,8 +117,7 @@ class AlgebraEquivalenceCheckerTest {
 
 		EquivalenceResult result = new AlgebraEquivalenceChecker().check(original, reordered);
 
-		assertEquals(EquivalenceStatus.EQUIVALENT, result.getStatus(), result::getReason);
-		assertTrue(result.getEvidence().orElseThrow() instanceof NormalizationProof);
+		assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
 	}
 
 	@Test
@@ -147,7 +170,7 @@ class AlgebraEquivalenceCheckerTest {
 	}
 
 	@Test
-	void stableFilterPushdownIsProved() {
+	void stableFilterPushdownIsUnknownWithoutATotalityTheorem() {
 		StatementPattern left = pattern("s", P1, "x");
 		StatementPattern right = pattern("s", P2, "y");
 		Compare condition = new Compare(
@@ -164,7 +187,7 @@ class AlgebraEquivalenceCheckerTest {
 
 		EquivalenceResult result = new AlgebraEquivalenceChecker().check(original, pushed);
 
-		assertEquals(EquivalenceStatus.EQUIVALENT, result.getStatus(), result::getReason);
+		assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
 	}
 
 	@Test
@@ -187,7 +210,7 @@ class AlgebraEquivalenceCheckerTest {
 	}
 
 	@Test
-	void leftJoinDistributesOverUnionOnItsLeft() {
+	void leftJoinDistributionIsUnknownWithoutAnExecutableTheorem() {
 		StatementPattern a = pattern("s", P1, "x");
 		StatementPattern b = pattern("s", P2, "y");
 		StatementPattern c = pattern("s", P3, "z");
@@ -199,11 +222,11 @@ class AlgebraEquivalenceCheckerTest {
 
 		EquivalenceResult result = new AlgebraEquivalenceChecker().check(original, distributed);
 
-		assertEquals(EquivalenceStatus.EQUIVALENT, result.getStatus(), result::getReason);
+		assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
 	}
 
 	@Test
-	void minusRightUnionBecomesSuccessiveMinus() {
+	void minusRightUnionRewriteIsUnknownWithoutATotalityTheorem() {
 		StatementPattern a = pattern("s", P1, "x");
 		StatementPattern b = pattern("s", P2, "y");
 		StatementPattern c = pattern("s", P3, "z");
@@ -213,7 +236,7 @@ class AlgebraEquivalenceCheckerTest {
 
 		EquivalenceResult result = new AlgebraEquivalenceChecker().check(original, chained);
 
-		assertEquals(EquivalenceStatus.EQUIVALENT, result.getStatus(), result::getReason);
+		assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
 	}
 
 	@Test
@@ -228,7 +251,7 @@ class AlgebraEquivalenceCheckerTest {
 		EquivalenceResult topLevelResult = new AlgebraEquivalenceChecker(topLevel).check(
 				minus.clone(),
 				left.clone());
-		assertEquals(EquivalenceStatus.EQUIVALENT, topLevelResult.getStatus(), topLevelResult::getReason);
+		assertEquals(EquivalenceStatus.UNKNOWN, topLevelResult.getStatus(), topLevelResult::getReason);
 
 		CheckOptions contextual = CheckOptions.builder()
 				.contextMode(ContextMode.ALL_BINDINGS)
@@ -250,7 +273,7 @@ class AlgebraEquivalenceCheckerTest {
 		EquivalenceResult topLevel = new AlgebraEquivalenceChecker(
 				CheckOptions.builder().contextMode(ContextMode.TOP_LEVEL_EMPTY).build())
 						.check(minusUnit.clone(), left.clone());
-		assertEquals(EquivalenceStatus.EQUIVALENT, topLevel.getStatus(), topLevel::getReason);
+		assertEquals(EquivalenceStatus.UNKNOWN, topLevel.getStatus(), topLevel::getReason);
 
 		EquivalenceResult contextual = new AlgebraEquivalenceChecker(
 				CheckOptions.builder().contextMode(ContextMode.ALL_BINDINGS).build())
@@ -310,6 +333,16 @@ class AlgebraEquivalenceCheckerTest {
 	}
 
 	@Test
+	void booleanFacadesPreserveConcreteVerdicts() {
+		TupleExpr expression = pattern("s", P1, "o");
+		AlgebraEquivalenceChecker checker = new AlgebraEquivalenceChecker();
+
+		assertTrue(checker.isProvenEquivalent(expression, expression.clone()));
+		assertTrue(checker.equivalentOrThrow(expression, expression.clone()));
+		assertFalse(counterexampleChecker().equivalentOrThrow(new EmptySet(), new SingletonSet()));
+	}
+
+	@Test
 	void specificationTargetSkipsNonEmptyRdf4jInputBindingsAsCounterexampleEvidence() {
 		MapBindingSet input = new MapBindingSet();
 		input.setBinding("x", VF.createIRI("urn:test:bound"));
@@ -327,7 +360,34 @@ class AlgebraEquivalenceCheckerTest {
 				new org.eclipse.rdf4j.query.algebra.EmptySet());
 
 		assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
+		assertTrue(result.getReason().contains("1 case(s) were skipped"), result::getReason);
 		assertTrue(result.getReason().contains("incompatible with the selected semantic target"));
+	}
+
+	@Test
+	void specificationTargetDoesNotUseRdf4jEvaluationAsACounterexampleOracle() {
+		CheckOptions options = CheckOptions.builder()
+				.semanticsTarget(SemanticsTarget.SPARQL_1_1)
+				.boundedCounterexampleSearch(false)
+				.addEvaluationCase(EvaluationCase.builder("empty specification case").build())
+				.build();
+
+		EquivalenceResult result = new AlgebraEquivalenceChecker(options).check(
+				new SingletonSet(),
+				new org.eclipse.rdf4j.query.algebra.EmptySet());
+
+		assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
+		assertTrue(result.getReason().contains("formal specification oracle"), result::getReason);
+	}
+
+	@Test
+	void unregisteredNativeNodeFailsClosed() {
+		UnregisteredNativeTupleExpr expression = new UnregisteredNativeTupleExpr();
+
+		EquivalenceResult result = new AlgebraEquivalenceChecker().check(expression, expression);
+
+		assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
+		assertTrue(result.getReason().contains("not registered in the semantic schema"), result::getReason);
 	}
 
 	@Test
@@ -407,7 +467,7 @@ class AlgebraEquivalenceCheckerTest {
 	}
 
 	@Test
-	void provesJoinReorderingForParsedSelectQueries() throws Exception {
+	void parsedJoinReorderingIsUnknownWithoutATotalityTheorem() throws Exception {
 		TupleExpr original = SparqlAlgebra.parseTupleExpr(
 				"SELECT * WHERE { ?s <urn:test:p1> ?x . ?s <urn:test:p2> ?y }");
 		TupleExpr reordered = SparqlAlgebra.parseTupleExpr(
@@ -415,7 +475,7 @@ class AlgebraEquivalenceCheckerTest {
 
 		EquivalenceResult result = new AlgebraEquivalenceChecker().check(original, reordered);
 
-		assertEquals(EquivalenceStatus.EQUIVALENT, result.getStatus(), result::getReason);
+		assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
 	}
 
 	@Test

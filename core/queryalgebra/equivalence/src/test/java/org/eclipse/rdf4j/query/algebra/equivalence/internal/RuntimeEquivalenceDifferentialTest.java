@@ -30,6 +30,8 @@ import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -312,41 +314,35 @@ class RuntimeEquivalenceDifferentialTest {
 
 	private static List<EquivalentPair> equivalentPairs() {
 		StatementPattern a = pattern(P1, "x");
-		StatementPattern b = pattern(P2, "y");
-		StatementPattern c = pattern(P3, "z");
-		Compare condition = new Compare(
-				Var.of("x"),
-				new ValueConstant(VF.createIRI("urn:test:object")),
-				Compare.CompareOp.EQ);
 		List<EquivalentPair> result = new ArrayList<>();
 		result.add(new EquivalentPair(
 				"structural clone",
 				a.clone(),
 				a.clone()));
 		result.add(new EquivalentPair(
-				"independent join order",
-				new Join(a.clone(), b.clone()),
-				new Join(b.clone(), a.clone())));
-		result.add(new EquivalentPair(
-				"bag union order",
-				new Union(a.clone(), b.clone()),
-				new Union(b.clone(), a.clone())));
-		result.add(new EquivalentPair(
-				"stable filter pushdown",
-				new Filter(new Join(a.clone(), b.clone()), condition.clone()),
-				new Join(new Filter(a.clone(), condition.clone()), b.clone())));
-		result.add(new EquivalentPair(
-				"left join distribution",
-				new LeftJoin(new Union(a.clone(), b.clone()), c.clone()),
-				new Union(new LeftJoin(a.clone(), c.clone()), new LeftJoin(b.clone(), c.clone()))));
-		result.add(new EquivalentPair(
-				"minus right union chain",
-				new Difference(a.clone(), new Union(b.clone(), c.clone())),
-				new Difference(new Difference(a.clone(), b.clone()), c.clone())));
-		result.add(new EquivalentPair(
 				"join unit",
 				new Join(a.clone(), new SingletonSet()),
 				a.clone()));
+		result.add(new EquivalentPair(
+				"union empty identity",
+				new Union(a.clone(), new EmptySet()),
+				a.clone()));
+		result.add(new EquivalentPair(
+				"filter true identity",
+				new Filter(a.clone(), new ValueConstant(VF.createLiteral(true))),
+				a.clone()));
+		result.add(new EquivalentPair(
+				"left join empty identity",
+				new LeftJoin(a.clone(), new EmptySet()),
+				a.clone()));
+		result.add(new EquivalentPair(
+				"minus empty identity",
+				new Difference(a.clone(), new EmptySet()),
+				a.clone()));
+		result.add(new EquivalentPair(
+				"distinct idempotence",
+				new Distinct(new Distinct(a.clone())),
+				new Distinct(a.clone())));
 		return result;
 	}
 

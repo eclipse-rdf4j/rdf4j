@@ -19,16 +19,41 @@ public final class Counterexample implements EquivalenceEvidence {
 	private final EvaluationOutcome originalOutcome;
 	private final EvaluationOutcome candidateOutcome;
 	private final ObservationMode observationMode;
+	private final SemanticsTarget semanticsTarget;
+	private final String oracleVersion;
 
+	/** @deprecated Use the target-aware constructor; this compatibility path is explicitly unversioned. */
+	@Deprecated(since = "6.0")
 	public Counterexample(
 			EvaluationCase evaluationCase,
 			EvaluationOutcome originalOutcome,
 			EvaluationOutcome candidateOutcome,
 			ObservationMode observationMode) {
+		this(
+				evaluationCase,
+				originalOutcome,
+				candidateOutcome,
+				observationMode,
+				SemanticsTarget.RDF4J_RUNTIME,
+				"unversioned RDF4J runtime compatibility oracle");
+	}
+
+	public Counterexample(
+			EvaluationCase evaluationCase,
+			EvaluationOutcome originalOutcome,
+			EvaluationOutcome candidateOutcome,
+			ObservationMode observationMode,
+			SemanticsTarget semanticsTarget,
+			String oracleVersion) {
 		this.evaluationCase = Objects.requireNonNull(evaluationCase, "evaluationCase");
 		this.originalOutcome = Objects.requireNonNull(originalOutcome, "originalOutcome");
 		this.candidateOutcome = Objects.requireNonNull(candidateOutcome, "candidateOutcome");
 		this.observationMode = Objects.requireNonNull(observationMode, "observationMode");
+		this.semanticsTarget = Objects.requireNonNull(semanticsTarget, "semanticsTarget");
+		this.oracleVersion = Objects.requireNonNull(oracleVersion, "oracleVersion");
+		if (oracleVersion.isBlank()) {
+			throw new IllegalArgumentException("oracleVersion must not be blank");
+		}
 	}
 
 	public EvaluationCase getEvaluationCase() {
@@ -47,9 +72,17 @@ public final class Counterexample implements EquivalenceEvidence {
 		return observationMode;
 	}
 
+	public SemanticsTarget getSemanticsTarget() {
+		return semanticsTarget;
+	}
+
+	public String getOracleVersion() {
+		return oracleVersion;
+	}
+
 	@Override
 	public String summary() {
-		return "Different " + observationMode + " outcomes for evaluation case '"
-				+ evaluationCase.getLabel() + "'";
+		return "Different " + observationMode + " outcomes under " + semanticsTarget
+				+ " (" + oracleVersion + ") for evaluation case '" + evaluationCase.getLabel() + "'";
 	}
 }

@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.net.URI;
 import java.nio.file.Files;
@@ -26,98 +27,19 @@ import java.util.TreeSet;
 import java.util.jar.JarFile;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.junit.jupiter.api.Test;
 
 class NativeAlgebraCoverageTest {
 	private static final String PACKAGE_NAME = "org.eclipse.rdf4j.query.algebra";
 	private static final String PACKAGE_PATH = "org/eclipse/rdf4j/query/algebra/";
 
-	private static final Set<String> SUPPORTED = Set.of(
-			"BindingSetAssignment",
-			"Difference",
-			"Distinct",
-			"EmptySet",
-			"Extension",
-			"Filter",
-			"Join",
-			"Lateral",
-			"LeftJoin",
-			"Order",
-			"Projection",
-			"QueryRoot",
-			"Reduced",
-			"SingletonSet",
-			"Slice",
-			"Union",
-			"ValueConstant");
-
-	private static final Set<String> CONSERVATIVELY_OPAQUE = Set.of(
-			"AggregateFunctionCall",
-			"And",
-			"AnnotationTripleRef",
-			"ArbitraryLengthPath",
-			"Avg",
-			"BNodeGenerator",
-			"Bound",
-			"Coalesce",
-			"Compare",
-			"CompareAll",
-			"CompareAny",
-			"Count",
-			"Datatype",
-			"DescribeOperator",
-			"Exists",
-			"FunctionCall",
-			"Group",
-			"GroupConcat",
-			"HasLang",
-			"HasLangDir",
-			"IRIFunction",
-			"If",
-			"In",
-			"Intersection",
-			"IsBNode",
-			"IsLiteral",
-			"IsNumeric",
-			"IsResource",
-			"IsTriple",
-			"IsURI",
-			"Label",
-			"Lang",
-			"LangDir",
-			"LangMatches",
-			"ListMemberOperator",
-			"LocalName",
-			"MathExpr",
-			"Max",
-			"Min",
-			"MultiProjection",
-			"Namespace",
-			"Not",
-			"Or",
-			"Regex",
-			"ReifiedTripleRef",
-			"SameTerm",
-			"Sample",
-			"Service",
-			"StatementPattern",
-			"Str",
-			"StrLangDir",
-			"Sum",
-			"TripleComponent",
-			"TripleRef",
-			"TupleFunctionCall",
-			"ValueExprTripleRef",
-			"Var",
-			"ZeroLengthPath");
-
 	@Test
 	void everyConcreteNativeAlgebraNodeHasAnExplicitClassification() throws Exception {
 		Set<String> actual = concreteNativeAlgebraClasses();
-		Set<String> classified = new TreeSet<>(SUPPORTED);
-		classified.addAll(CONSERVATIVELY_OPAQUE);
+		Set<String> classified = new TreeSet<>(NativeAlgebraSchema.classifiedNames());
 		Set<String> missing = new TreeSet<>(actual);
 		missing.removeAll(classified);
 		Set<String> stale = new TreeSet<>(classified);
@@ -126,6 +48,28 @@ class NativeAlgebraCoverageTest {
 		assertTrue(missing.isEmpty(), () -> "Unclassified native algebra nodes: " + missing);
 		assertTrue(stale.isEmpty(), () -> "Stale native algebra classifications: " + stale);
 		assertEquals(actual, classified);
+		assertEquals(actual, new TreeSet<>(ExactTreeEquality.explicitlyComparedTypeNames()),
+				"Every native node classification must have an explicit structural-field schema");
+	}
+
+	@Test
+	void everyNativeInstanceFieldHasAnExplicitSemanticClassification() throws Exception {
+		Set<String> semantic = new TreeSet<>(NativeAlgebraSchema.semanticInstanceFields());
+		Set<String> nonSemantic = new TreeSet<>(NativeAlgebraSchema.nonSemanticInstanceFields());
+		Set<String> overlap = new TreeSet<>(semantic);
+		overlap.retainAll(nonSemantic);
+		Set<String> classified = new TreeSet<>(semantic);
+		classified.addAll(nonSemantic);
+
+		assertTrue(overlap.isEmpty(), () -> "Fields classified both semantic and non-semantic: " + overlap);
+		assertEquals(nativeInstanceFields(), classified,
+				"New or removed query-model fields require an explicit certification classification");
+	}
+
+	@Test
+	void servicePreparedQueriesAreEvaluationSemanticFields() {
+		assertTrue(NativeAlgebraSchema.semanticInstanceFields().contains("Service.preparedAskQueryString"));
+		assertTrue(NativeAlgebraSchema.semanticInstanceFields().contains("Service.preparedSelectQueryString"));
 	}
 
 	private static Set<String> concreteNativeAlgebraClasses() throws Exception {
@@ -140,8 +84,31 @@ class NativeAlgebraCoverageTest {
 			if (type.getPackageName().equals(PACKAGE_NAME)
 					&& !type.isInterface()
 					&& !Modifier.isAbstract(modifiers)
-					&& (TupleExpr.class.isAssignableFrom(type) || ValueExpr.class.isAssignableFrom(type))) {
+					&& QueryModelNode.class.isAssignableFrom(type)
+					&& !UpdateExpr.class.isAssignableFrom(type)) {
 				result.add(type.getSimpleName());
+			}
+		}
+		return result;
+	}
+
+	private static Set<String> nativeInstanceFields() throws Exception {
+		URI location = TupleExpr.class.getProtectionDomain().getCodeSource().getLocation().toURI();
+		Path path = Paths.get(location);
+		Set<String> classNames = Files.isDirectory(path) ? classesInDirectory(path) : classesInJar(path);
+		Set<String> result = new TreeSet<>();
+		ClassLoader loader = TupleExpr.class.getClassLoader();
+		for (String className : classNames) {
+			Class<?> type = Class.forName(className, false, loader);
+			if (!type.getPackageName().equals(PACKAGE_NAME)
+					|| !QueryModelNode.class.isAssignableFrom(type)
+					|| UpdateExpr.class.isAssignableFrom(type)) {
+				continue;
+			}
+			for (Field field : type.getDeclaredFields()) {
+				if (!Modifier.isStatic(field.getModifiers()) && !field.isSynthetic()) {
+					result.add(type.getSimpleName() + "." + field.getName());
+				}
 			}
 		}
 		return result;

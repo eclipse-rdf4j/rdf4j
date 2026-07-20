@@ -39,9 +39,7 @@ import org.eclipse.rdf4j.query.algebra.equivalence.EquivalenceResult;
 import org.eclipse.rdf4j.query.algebra.equivalence.EquivalenceStatus;
 import org.eclipse.rdf4j.query.algebra.equivalence.EvaluationCase;
 import org.eclipse.rdf4j.query.algebra.equivalence.EvaluationOutcome;
-import org.eclipse.rdf4j.query.algebra.equivalence.NormalizationProof;
 import org.eclipse.rdf4j.query.algebra.equivalence.ObservationMode;
-import org.eclipse.rdf4j.query.algebra.equivalence.RuleId;
 import org.eclipse.rdf4j.query.algebra.equivalence.SemanticsTarget;
 import org.eclipse.rdf4j.query.algebra.json.TupleExprJsonParser;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -136,7 +134,7 @@ class JsonTupleExprCounterexampleTest {
 	}
 
 	@Test
-	void enclosingProjectionMakesInnerProjectionOrderSafe() throws Exception {
+	void enclosingProjectionJoinReorderingRemainsUnknownWithoutATotalityTheorem() throws Exception {
 		TupleExpr originalJoin = parseTupleExpr("join-projection-drops-bindings.json");
 		TupleExpr transformedJoin = commuteTopLevelJoin(originalJoin);
 		TupleExpr original = enclosingProjection(originalJoin);
@@ -152,12 +150,11 @@ class JsonTupleExprCounterexampleTest {
 				.build();
 		EquivalenceResult result = new AlgebraEquivalenceChecker(options).check(original, transformed);
 
-		assertEquals(EquivalenceStatus.EQUIVALENT, result.getStatus(), result::getReason);
-		assertJoinCommutativityProof(result);
+		assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
 	}
 
 	@Test
-	void specificationTargetKeepsJoinCommutative() throws Exception {
+	void specificationJoinReorderingRemainsUnknownWithoutATotalityTheorem() throws Exception {
 		TupleExpr original = parseTupleExpr("join-projection-drops-bindings.json");
 		TupleExpr transformed = commuteTopLevelJoin(original);
 		CheckOptions options = CheckOptions.builder()
@@ -167,20 +164,7 @@ class JsonTupleExprCounterexampleTest {
 
 		EquivalenceResult result = new AlgebraEquivalenceChecker(options).check(original, transformed);
 
-		assertEquals(EquivalenceStatus.EQUIVALENT, result.getStatus(), result::getReason);
-		assertJoinCommutativityProof(result);
-	}
-
-	private static void assertJoinCommutativityProof(EquivalenceResult result) {
-		NormalizationProof proof = assertInstanceOf(
-				NormalizationProof.class,
-				result.getEvidence().orElseThrow());
-		assertTrue(
-				proof.getOriginalSteps().stream().anyMatch(step -> step.getRule() == RuleId.JOIN_COMMUTATIVE)
-						|| proof.getCandidateSteps()
-								.stream()
-								.anyMatch(step -> step.getRule() == RuleId.JOIN_COMMUTATIVE),
-				() -> "Expected a JOIN_COMMUTATIVE proof: " + result);
+		assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
 	}
 
 	private static AlgebraEquivalenceChecker checker(ObservationMode observationMode, EvaluationCase dataset) {
