@@ -126,23 +126,30 @@ campaigns compare the Java producer, Java kernel, Lean kernel, and target evalua
 - [x] (2026-07-20 09:15Z) Fetched both dated specification documents from their official W3C URLs, reproduced the
   recorded SHA-256 hashes byte-for-byte (487,771-byte SPARQL 1.1 and 1,019,152-byte SPARQL 1.2), and retained the
   downloads under `/tmp/` for reviewers.
-- [x] (2026-07-20 09:19Z) Audited GH-5905 read-only and confirmed that it has no comments, assignees, pull request, or
-  independent review decision. Added copy-ready role-specific requests and strict returned-review acceptance criteria
-  in `reviews/REVIEW_REQUEST.md` without altering the frozen semantic source bundle.
+- [x] (2026-07-20 09:19Z) Audited GH-5905 read-only and confirmed that the issue has no comments, assignees, or
+  independent review decision. The issue-number PR lookup showed only that #5905 is not itself a PR; a later
+  commit-based lookup corrected the initial inference about related PR state. Added copy-ready role-specific requests
+  and strict returned-review acceptance criteria in `reviews/REVIEW_REQUEST.md` without altering the frozen semantic
+  source bundle.
 - [x] (2026-07-20 09:22Z) Packaged the verified 155-file source bundle and ten review/evidence records into the
   238,643-byte `/tmp/GH-5905-algebra-equivalence-candidate-a693a564.tar.gz` transport archive and recorded SHA-256
   `7ad8b85292bebc85f0358d49f4dee44220954e3611a72b564b0a14f3c6985d22` for reviewer handoff. Extracted it into a fresh
   directory and revalidated the authoritative manifest and all 155 files.
+- [x] (2026-07-20 09:30Z) Committed the 101-file certification change as
+  `3c0818fa99f9f1ad3921f8ef6644648c08a1e1f6`, excluding user-owned `AGENTS.md` and ignored evidence artifacts, and
+  pushed `GH-5905-algebra-equivalence`. Commit-based GitHub resolution found existing open PR #5948 at that exact head;
+  it had zero reviews and no requested reviewers.
 - [ ] Obtain independent RDF4J evaluator and formal-methods approvals for the identified candidate bundle before
   changing `CERTIFICATION.md` from `NOT CERTIFIED`.
 
 ## Surprises & Discoveries
 
-- Observation: GH-5905 itself cannot currently supply either independent sign-off: it is an open issue with no
-  comments, assignees, or pull request. Its timeline references implementation commits, including the frozen base
-  commit, but contains no human review decision tied to the candidate digest.
-  Evidence: the read-only `gh-read-inspector issue --repo eclipse-rdf4j/rdf4j --issue 5905` result at
-  2026-07-20 09:19Z reported `comments: 0`, an empty assignee list, and no pull-request identity.
+- Observation: GH-5905 itself cannot supply either independent sign-off: it is an open issue with no comments or
+  assignees. The initial issue-number PR lookup proved only that #5905 was not itself a PR; after publishing the
+  candidate, commit-based resolution identified existing open PR #5948. That PR still supplies no sign-off because it
+  has zero reviews and no requested reviewers.
+  Evidence: the read-only `gh-read-inspector` issue result at 2026-07-20 09:19Z and commit result at 09:30Z; PR #5948
+  names head `3c0818fa99f9f1ad3921f8ef6644648c08a1e1f6` and contains empty reviewer/review collections.
 
 - Observation: Local history offers credible routing candidates for the RDF4J evaluator gate but not a substitute for
   a decision: excluding the implementation author, Jeen Broekstra and Jerven Bolleman have 195 and 116 authored commits

@@ -4,6 +4,8 @@ These requests apply only to candidate
 `bf9edabb0006bca3b422b45f10c38723ed8863af+a693a564067c036baaa91b7eb1ea4d9f645879678bad8f74d9cd6e34c7142d7c`.
 They are ready to copy into a pull-request review request, issue comment, or direct message to a qualified reviewer.
 The implementation author must not complete either sign-off record on a reviewer's behalf.
+The published review location is `https://github.com/eclipse-rdf4j/rdf4j/pull/5948`, currently at transport commit
+`3c0818fa99f9f1ad3921f8ef6644648c08a1e1f6`.
 
 ## RDF4J evaluator reviewer
 
