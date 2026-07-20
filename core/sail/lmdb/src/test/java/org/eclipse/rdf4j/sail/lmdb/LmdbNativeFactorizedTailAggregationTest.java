@@ -532,12 +532,14 @@ public class LmdbNativeFactorizedTailAggregationTest {
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
 			assertThat(result).singleElement().satisfies(row -> {
+				// The ordered-v1 POSC scan encounters the decimal id before the ordered-integer id. The
+				// optimized path must preserve that exact first comparator-equal RDF term.
 				Literal min = (Literal) row.getValue("min");
 				Literal max = (Literal) row.getValue("max");
-				assertThat(min.getCoreDatatype()).isEqualTo(CoreDatatype.XSD.INT);
-				assertThat(min.getLabel()).isEqualTo("1");
-				assertThat(max.getCoreDatatype()).isEqualTo(CoreDatatype.XSD.INT);
-				assertThat(max.getLabel()).isEqualTo("1");
+				assertThat(min.getCoreDatatype()).isEqualTo(CoreDatatype.XSD.DECIMAL);
+				assertThat(min.getLabel()).isEqualTo("1.0");
+				assertThat(max.getCoreDatatype()).isEqualTo(CoreDatatype.XSD.DECIMAL);
+				assertThat(max.getLabel()).isEqualTo("1.0");
 			});
 		}
 		assertThat(strategy(query))

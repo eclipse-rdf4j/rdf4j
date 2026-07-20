@@ -130,7 +130,7 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 			if (arg == null) {
 				return null;
 			}
-			NativeBooleanFilter condition = compileBoolean(filter.getCondition());
+			NativeBooleanFilter condition = compileBoolean(filter.getCondition(), SlotPlan.assuredMask(arg));
 			return condition == null ? null
 					: SlotPlan.filter(arg, recordFilterOutcomes(filter, condition),
 							placeableFilterMask(filter.getCondition()));

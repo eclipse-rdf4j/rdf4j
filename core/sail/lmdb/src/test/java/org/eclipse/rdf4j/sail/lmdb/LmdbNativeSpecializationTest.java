@@ -14,11 +14,15 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -82,6 +86,146 @@ public class LmdbNativeSpecializationTest {
 	}
 
 	@Test
+	public void chunkFilterStageUsesSharedSpecializationPath() throws Exception {
+		RowState row = row(3);
+		NativeBooleanFilter evenMiddleSlot = candidate -> (candidate.slots[1] & 1L) == 0L;
+		NativeBatch output = new NativeBatch(3, 8);
+		try (StageOwner stage = new StageOwner(new LmdbNativeChunkPipeline.FilterStage(
+				new TwoPageBatchStage(), evenMiddleSlot, row))) {
+			assertThat(stage.delegate.fill(output)).isEqualTo(4);
+			assertThat(LmdbNativeSpecialization.awaitFilterKernel(3, 5, TimeUnit.SECONDS)).isNotNull();
+
+			assertThat(stage.delegate.fill(output)).isEqualTo(4);
+			assertThat(LmdbNativeSpecialization.SPECIALIZED_ROWS.get()).isEqualTo(8L);
+			assertThat(LmdbNativeAttemptMetrics.specializationMetrics())
+					.isEqualTo(new LmdbNativeAttemptMetrics.SpecializationMetrics(1L, 1L, 1L));
+		}
+	}
+
+	@Test
+	public void compiledScalarDirectAndKernelSelectionsAgreeForRandomBatches() throws Exception {
+		long uri1 = ValueIds.createId(ValueIds.T_URI, 1L);
+		long uri3 = ValueIds.createId(ValueIds.T_URI, 3L);
+		long zero = orderedInteger(0L);
+		List<NativeBooleanFilter> filters = List.of(
+				new LmdbNativeCompiledBoolean(0b1001L, slots -> sameTerm(slots.id(0), slots.id(3))),
+				new LmdbNativeCompiledBoolean(0b0100L,
+						slots -> membership(slots.id(2), uri1, uri3)),
+				new LmdbNativeCompiledBoolean(0b1001L,
+						slots -> and(even(slots.id(0)), positive(slots.id(3)))),
+				new ValueSetFilter(null, 2, new long[] { uri1, uri3 }),
+				new CachedCompareFilter(1, zero, false, Compare.CompareOp.GT, true,
+						ignored -> {
+							throw new AssertionError("ordered integers must not materialize");
+						}, null));
+		Random random = new Random(0x5eedL);
+
+		for (NativeBooleanFilter filter : filters) {
+			Object cacheOwner = new Object();
+			long readMask = filter.batchReadMask();
+			assertThat(LmdbNativeSpecialization.filterKernel(cacheOwner, 4, readMask, 1L)).isNull();
+			NativeBatchFilterKernel kernel = LmdbNativeSpecialization.awaitFilterKernel(cacheOwner, 4, readMask, 5,
+					TimeUnit.SECONDS);
+			assertThat(kernel).isNotNull();
+			for (int iteration = 0; iteration < 100; iteration++) {
+				NativeBatch input = randomBatch(random, 31);
+				NativeBatch scalar = copy(input);
+				NativeBatch direct = copy(input);
+				NativeBatch generated = copy(input);
+				RowState directScratch = row(4);
+				Arrays.fill(directScratch.slots, Long.MIN_VALUE + 7L);
+
+				int expected = scalarSelect(scalar, row(4), filter);
+				int selected = filter.selectBatch(direct, direct.selection, direct.selectedCount, directScratch);
+				direct.selectedCount = selected;
+				int compiled = kernel.apply(generated, row(4), filter);
+
+				assertThat(selected).as("direct count for iteration %s", iteration).isEqualTo(expected);
+				assertThat(compiled).as("kernel count for iteration %s", iteration).isEqualTo(expected);
+				assertThat(Arrays.copyOf(direct.selection, selected))
+						.as("direct selection for iteration %s", iteration)
+						.isEqualTo(Arrays.copyOf(scalar.selection, expected));
+				assertThat(Arrays.copyOf(generated.selection, compiled))
+						.as("kernel selection for iteration %s", iteration)
+						.isEqualTo(Arrays.copyOf(scalar.selection, expected));
+				assertThat(directScratch.slots).containsOnly(Long.MIN_VALUE + 7L);
+			}
+		}
+	}
+
+	@Test
+	public void cachedCompareBatchFallsBackWhenCodecCannotDecide() {
+		long constant = ValueIds.createId(ValueIds.T_LITERAL, 41L);
+		NativeBatch scalar = new NativeBatch(1, 4);
+		for (int physicalRow = 0; physicalRow < 4; physicalRow++) {
+			scalar.set(0, physicalRow, ValueIds.createId(ValueIds.T_LITERAL, 42L + physicalRow));
+		}
+		scalar.finishRows(4);
+		NativeBatch direct = copy(scalar);
+		CachedCompareFilter scalarFilter = new CachedCompareFilter(0, constant, false, Compare.CompareOp.EQ, true,
+				ignored -> true, null);
+		CachedCompareFilter directFilter = new CachedCompareFilter(0, constant, false, Compare.CompareOp.EQ, true,
+				ignored -> true, null);
+
+		int expected = scalarSelect(scalar, row(1), scalarFilter);
+		int actual = directFilter.selectBatch(direct, direct.selection, direct.selectedCount, row(1));
+
+		assertThat(expected).isEqualTo(4);
+		assertThat(actual).isEqualTo(expected);
+		assertThat(Arrays.copyOf(direct.selection, actual)).isEqualTo(Arrays.copyOf(scalar.selection, expected));
+	}
+
+	@Test
+	public void generatedKernelCopiesOnlyProvenReadSlots() throws Exception {
+		Object cacheOwner = new Object();
+		long readMask = 1L << 1;
+		NativeBooleanFilter filter = new NativeBooleanFilter() {
+			@Override
+			public boolean accept(RowState candidate) {
+				return (candidate.slots[1] & 1L) == 0L;
+			}
+
+			@Override
+			public long batchReadMask() {
+				return readMask;
+			}
+		};
+		NativeBatch expected = batch(3, 12, 0L);
+		NativeBatch actual = batch(3, 12, 0L);
+		int expectedCount = scalarSelect(expected, row(3), filter);
+		assertThat(LmdbNativeSpecialization.filterKernel(cacheOwner, 3, readMask, 1L)).isNull();
+		NativeBatchFilterKernel kernel = LmdbNativeSpecialization.awaitFilterKernel(cacheOwner, 3, readMask, 5,
+				TimeUnit.SECONDS);
+		RowState scratch = row(3);
+		Arrays.fill(scratch.slots, -7L);
+
+		int actualCount = kernel.apply(actual, scratch, filter);
+
+		assertThat(Arrays.copyOf(actual.selection, actualCount))
+				.isEqualTo(Arrays.copyOf(expected.selection, expectedCount));
+		assertThat(scratch.slots[0]).isEqualTo(-7L);
+		assertThat(scratch.slots[2]).isEqualTo(-7L);
+		assertThat(scratch.slots[1]).isNotEqualTo(-7L);
+	}
+
+	@Test
+	public void kernelsAreIsolatedByStoreAndReadMask() throws Exception {
+		Object firstStore = new Object();
+		Object secondStore = new Object();
+		NativeBatchFilterKernel first = compile(firstStore, 3, 1L);
+		NativeBatchFilterKernel otherMask = compile(firstStore, 3, 2L);
+		NativeBatchFilterKernel otherStore = compile(secondStore, 3, 1L);
+
+		assertThat(first).isNotSameAs(otherMask).isNotSameAs(otherStore);
+		assertThat(otherMask).isNotSameAs(otherStore);
+		assertThat(LmdbNativeSpecialization.storeCacheCountForTests()).isEqualTo(2);
+		assertThat(LmdbNativeSpecialization.DEFAULT_MAX_ENTRIES).isEqualTo(128);
+		assertThat(LmdbNativeSpecialization.metricsSnapshot().cacheMisses()).isEqualTo(3L);
+		assertThat(LmdbNativeSpecialization.filterKernel(firstStore, 3, 1L, 1L)).isSameAs(first);
+		assertThat(LmdbNativeSpecialization.metricsSnapshot().cacheHits()).isOne();
+	}
+
+	@Test
 	public void lruEntryAndByteCapsKeepFallbackBounded() throws Exception {
 		System.setProperty(LmdbNativeSpecialization.MAX_ENTRIES_PROPERTY, "1");
 		LmdbNativeSpecialization.filterKernel(2, 1L);
@@ -111,7 +255,7 @@ public class LmdbNativeSpecializationTest {
 	}
 
 	private static RowState row(int slots) {
-		java.util.LinkedHashMap<String, Integer> names = new java.util.LinkedHashMap<>();
+		LinkedHashMap<String, Integer> names = new LinkedHashMap<>();
 		for (int i = 0; i < slots; i++) {
 			names.put("slot" + i, i);
 		}
@@ -129,6 +273,95 @@ public class LmdbNativeSpecializationTest {
 		}
 		batch.finishRows(rows);
 		return batch;
+	}
+
+	private static NativeBatch randomBatch(Random random, int rows) {
+		NativeBatch batch = new NativeBatch(4, rows);
+		for (int physicalRow = 0; physicalRow < rows; physicalRow++) {
+			batch.set(0, physicalRow, random.nextInt(8) == 0 ? NativeLmdbQuerySource.UNKNOWN_ID : random.nextInt(9));
+			batch.set(1, physicalRow,
+					random.nextInt(8) == 0 ? NativeLmdbQuerySource.UNKNOWN_ID
+							: orderedInteger(random.nextInt(21) - 10L));
+			batch.set(2, physicalRow, random.nextInt(8) == 0 ? NativeLmdbQuerySource.UNKNOWN_ID
+					: ValueIds.createId(ValueIds.T_URI, 1L + random.nextInt(4)));
+			batch.set(3, physicalRow, random.nextInt(8) == 0 ? NativeLmdbQuerySource.UNKNOWN_ID : random.nextInt(9));
+		}
+		batch.finishRows(rows);
+		for (int i = rows - 1; i > 0; i--) {
+			int other = random.nextInt(i + 1);
+			int value = batch.selection[i];
+			batch.selection[i] = batch.selection[other];
+			batch.selection[other] = value;
+		}
+		batch.selectedCount = random.nextInt(rows + 1);
+		return batch;
+	}
+
+	private static NativeBatch copy(NativeBatch source) {
+		NativeBatch copy = new NativeBatch(source.slotCount, source.capacity);
+		System.arraycopy(source.slots, 0, copy.slots, 0, source.slots.length);
+		System.arraycopy(source.selection, 0, copy.selection, 0, source.selection.length);
+		copy.rowCount = source.rowCount;
+		copy.selectedCount = source.selectedCount;
+		return copy;
+	}
+
+	private static int scalarSelect(NativeBatch batch, RowState scratch, NativeBooleanFilter filter) {
+		int accepted = 0;
+		int candidates = batch.selectedCount;
+		for (int i = 0; i < candidates; i++) {
+			int physicalRow = batch.selection[i];
+			batch.copyToRow(physicalRow, scratch.slots);
+			scratch.recomputeBoundMask();
+			if (filter.accept(scratch)) {
+				batch.selection[accepted++] = physicalRow;
+			}
+		}
+		batch.selectedCount = accepted;
+		return accepted;
+	}
+
+	private static NativeBatchFilterKernel compile(Object owner, int slotCount, long readMask) throws Exception {
+		assertThat(LmdbNativeSpecialization.filterKernel(owner, slotCount, readMask, 1L)).isNull();
+		NativeBatchFilterKernel kernel = LmdbNativeSpecialization.awaitFilterKernel(owner, slotCount, readMask, 5,
+				TimeUnit.SECONDS);
+		assertThat(kernel).isNotNull();
+		return kernel;
+	}
+
+	private static long orderedInteger(long value) {
+		return ValueIds.createId(ValueIds.T_ORD_INTEGER, value + ValueIds.ORDERED_BIAS);
+	}
+
+	private static LmdbNativeTruth sameTerm(long left, long right) {
+		return left != NativeLmdbQuerySource.UNKNOWN_ID && right != NativeLmdbQuerySource.UNKNOWN_ID && left == right
+				? LmdbNativeTruth.TRUE
+				: LmdbNativeTruth.FALSE;
+	}
+
+	private static LmdbNativeTruth membership(long value, long first, long second) {
+		if (value == NativeLmdbQuerySource.UNKNOWN_ID) {
+			return LmdbNativeTruth.ERROR;
+		}
+		return value == first || value == second ? LmdbNativeTruth.TRUE : LmdbNativeTruth.FALSE;
+	}
+
+	private static LmdbNativeTruth even(long value) {
+		return value == NativeLmdbQuerySource.UNKNOWN_ID ? LmdbNativeTruth.ERROR
+				: (value & 1L) == 0L ? LmdbNativeTruth.TRUE : LmdbNativeTruth.FALSE;
+	}
+
+	private static LmdbNativeTruth positive(long value) {
+		return value == NativeLmdbQuerySource.UNKNOWN_ID ? LmdbNativeTruth.ERROR
+				: value > 0L ? LmdbNativeTruth.TRUE : LmdbNativeTruth.FALSE;
+	}
+
+	private static LmdbNativeTruth and(LmdbNativeTruth left, LmdbNativeTruth right) {
+		if (left == LmdbNativeTruth.FALSE || right == LmdbNativeTruth.FALSE) {
+			return LmdbNativeTruth.FALSE;
+		}
+		return left == LmdbNativeTruth.ERROR || right == LmdbNativeTruth.ERROR ? LmdbNativeTruth.ERROR
+				: LmdbNativeTruth.TRUE;
 	}
 
 	private static final class TwoPageBatchCursor implements BatchCursor {
@@ -153,6 +386,33 @@ public class LmdbNativeSpecializationTest {
 		@Override
 		public void close() {
 			page = 2;
+		}
+	}
+
+	private static final class TwoPageBatchStage implements LmdbNativeChunkPipeline.BatchStage {
+		private final TwoPageBatchCursor delegate = new TwoPageBatchCursor();
+
+		@Override
+		public int fill(NativeBatch target) {
+			return delegate.fill(target);
+		}
+
+		@Override
+		public void close() {
+			delegate.close();
+		}
+	}
+
+	private static final class StageOwner implements AutoCloseable {
+		private final LmdbNativeChunkPipeline.FilterStage delegate;
+
+		private StageOwner(LmdbNativeChunkPipeline.FilterStage delegate) {
+			this.delegate = delegate;
+		}
+
+		@Override
+		public void close() {
+			delegate.close();
 		}
 	}
 }

@@ -45,6 +45,7 @@ final class NativeSortBuffer {
 	private static final long[] EMPTY_LONGS = new long[0];
 
 	static final AtomicLong PACKED_ROWS = new AtomicLong();
+	static final AtomicLong PACKED_VALUES = new AtomicLong();
 	static final AtomicLong SORTS = new AtomicLong();
 	static final AtomicLong TOP_K_CANDIDATES = new AtomicLong();
 
@@ -261,7 +262,7 @@ final class NativeSortBuffer {
 		System.arraycopy(row, 0, rows, size * slotCount, copiedSlots);
 		ordinals[size] = ordinal;
 		size++;
-		metrics.recordNativeSortPackedRow();
+		metrics.recordNativeSortPackedRow(copiedSlots);
 	}
 
 	void recordTopKCandidate() {
@@ -368,6 +369,15 @@ final class NativeTopKBuffer {
 		this.heap = new int[0];
 		this.comparator = comparator;
 		this.budget = budget;
+	}
+
+	static boolean fitsMemoBudget(int slotCount, int capacity) {
+		if (slotCount <= 0 || capacity < 0) {
+			return false;
+		}
+		long indexValues = NativeSortBuffer.intArrayValues(capacity);
+		long retainedValues = (long) capacity * (slotCount + 1L) + 3L * indexValues;
+		return retainedValues <= FactorizedTail.MEMO_MAX_STORED_VALUES;
 	}
 
 	void add(long[] row, long ordinal) {
@@ -667,35 +677,74 @@ final class NativeSpillSort implements AutoCloseable {
 
 	static final String MAX_BYTES_PROPERTY = "rdf4j.lmdb.nativeSort.maxBytes";
 	static final long DEFAULT_MAX_BYTES = 64L << 20;
+	static final int MIN_REDUCE_ROWS = 64;
 	static final AtomicLong SPILL_RUNS = new AtomicLong();
 	static final AtomicLong SPILLED_ROWS = new AtomicLong();
 	static final AtomicLong DELETED_RUNS = new AtomicLong();
 
 	final int slotCount;
+	final int keyCount;
 	final PackedRowComparator comparator;
 	final int maxRows;
+	final int retainRows;
 	final LmdbNativeAttemptMetrics metrics;
 	final List<Path> runs = new ArrayList<>();
 	NativeSortBuffer buffer;
+	long[] boundary;
+	long boundaryOrdinal;
 	boolean finished;
 
 	NativeSpillSort(int slotCount, PackedRowComparator comparator) {
-		this(slotCount, comparator, LmdbNativeAttemptMetrics.direct());
+		this(slotCount, slotCount, comparator, -1, LmdbNativeAttemptMetrics.direct());
 	}
 
 	NativeSpillSort(int slotCount, PackedRowComparator comparator, LmdbNativeAttemptMetrics metrics) {
+		this(slotCount, slotCount, comparator, -1, metrics);
+	}
+
+	NativeSpillSort(int slotCount, PackedRowComparator comparator, int retainRows,
+			LmdbNativeAttemptMetrics metrics) {
+		this(slotCount, slotCount, comparator, retainRows, metrics);
+	}
+
+	NativeSpillSort(int slotCount, int keyCount, PackedRowComparator comparator) {
+		this(slotCount, keyCount, comparator, -1, LmdbNativeAttemptMetrics.direct());
+	}
+
+	NativeSpillSort(int slotCount, int keyCount, PackedRowComparator comparator,
+			LmdbNativeAttemptMetrics metrics) {
+		this(slotCount, keyCount, comparator, -1, metrics);
+	}
+
+	NativeSpillSort(int slotCount, int keyCount, PackedRowComparator comparator, int retainRows,
+			LmdbNativeAttemptMetrics metrics) {
+		if (keyCount < 0 || keyCount > slotCount) {
+			throw new IllegalArgumentException("keyCount must be between zero and slotCount");
+		}
 		this.slotCount = slotCount;
+		this.keyCount = keyCount;
 		this.comparator = comparator;
+		this.retainRows = retainRows;
 		this.metrics = metrics;
 		long configured = configuredMaxBytes();
 		long rowBytes = Math.max(16L, (slotCount + 1L) * Long.BYTES);
-		this.maxRows = (int) Math.max(1L, Math.min(Integer.MAX_VALUE, configured / rowBytes));
+		long configuredRows = Math.max(1L, Math.min(Integer.MAX_VALUE, configured / rowBytes));
+		long reduceRows = retainRows < 0
+				? Integer.MAX_VALUE
+				: Math.max(MIN_REDUCE_ROWS, Math.min(Integer.MAX_VALUE, 2L * retainRows));
+		this.maxRows = (int) Math.min(configuredRows, reduceRows);
 		this.buffer = new NativeSortBuffer(slotCount, Math.min(1024, maxRows), metrics);
 	}
 
 	void add(long[] row, long ordinal) throws IOException {
 		if (buffer.size >= maxRows) {
 			spillRun();
+		}
+		if (retainRows >= 0) {
+			buffer.recordTopKCandidate();
+			if (isOutsideBoundary(row, ordinal)) {
+				return;
+			}
 		}
 		buffer.append(row, ordinal);
 	}
@@ -711,7 +760,7 @@ final class NativeSpillSort implements AutoCloseable {
 		if (buffer.size > 0) {
 			spillRun();
 		}
-		return new MergedRunRows(slotCount, comparator, List.copyOf(runs));
+		return new MergedRunRows(slotCount, keyCount, comparator, List.copyOf(runs));
 	}
 
 	private void spillRun() throws IOException {
@@ -719,16 +768,25 @@ final class NativeSpillSort implements AutoCloseable {
 			return;
 		}
 		int[] order = buffer.sortedOrder(comparator);
+		int writtenRows = retainRows < 0 ? order.length : Math.min(order.length, retainRows);
 		Path path = Files.createTempFile("rdf4j-lmdb-native-sort-", ".run");
 		boolean complete = false;
 		try (DataOutputStream out = new DataOutputStream(
 				new BufferedOutputStream(Files.newOutputStream(path), 64 * 1024))) {
 			out.writeInt(slotCount);
-			out.writeInt(order.length);
-			for (int row : order) {
+			out.writeInt(keyCount);
+			out.writeInt(writtenRows);
+			for (int position = 0; position < writtenRows; position++) {
+				int row = order[position];
 				out.writeLong(buffer.ordinals[row]);
 				int offset = row * slotCount;
-				for (int slot = 0; slot < slotCount; slot++) {
+				for (int slot = 0; slot < keyCount; slot++) {
+					out.writeLong(buffer.rows[offset + slot]);
+				}
+			}
+			for (int position = 0; position < writtenRows; position++) {
+				int offset = order[position] * slotCount;
+				for (int slot = keyCount; slot < slotCount; slot++) {
 					out.writeLong(buffer.rows[offset + slot]);
 				}
 			}
@@ -739,12 +797,39 @@ final class NativeSpillSort implements AutoCloseable {
 			}
 		}
 		runs.add(path);
-		metrics.recordNativeSpill(order.length);
+		if (retainRows >= 0 && writtenRows == retainRows) {
+			updateBoundary(order[writtenRows - 1]);
+		}
+		metrics.recordNativeSpill(writtenRows);
+		buffer.close();
 		buffer = new NativeSortBuffer(slotCount, Math.min(1024, maxRows), metrics);
+	}
+
+	private boolean isOutsideBoundary(long[] row, long ordinal) {
+		if (boundary == null) {
+			return false;
+		}
+		int compared = comparator.compare(row, 0, boundary, 0);
+		return compared > 0 || compared == 0 && ordinal >= boundaryOrdinal;
+	}
+
+	private void updateBoundary(int row) {
+		long ordinal = buffer.ordinals[row];
+		if (boundary != null) {
+			int compared = comparator.compare(buffer.rows, row * slotCount, boundary, 0);
+			if (compared > 0 || compared == 0 && ordinal >= boundaryOrdinal) {
+				return;
+			}
+		} else {
+			boundary = new long[slotCount];
+		}
+		buffer.copyRow(row, boundary);
+		boundaryOrdinal = ordinal;
 	}
 
 	@Override
 	public void close() {
+		buffer.close();
 		for (Path run : runs) {
 			try {
 				if (Files.deleteIfExists(run)) {
@@ -772,20 +857,22 @@ final class NativeSpillSort implements AutoCloseable {
 
 final class MergedRunRows implements NativeSortedRows {
 	final int slotCount;
+	final int keyCount;
 	final PackedRowComparator comparator;
 	final List<RunReader> readers = new ArrayList<>();
 	final PriorityQueue<RunReader> queue;
 
-	MergedRunRows(int slotCount, PackedRowComparator comparator, List<Path> paths) throws IOException {
+	MergedRunRows(int slotCount, int keyCount, PackedRowComparator comparator, List<Path> paths) throws IOException {
 		this.slotCount = slotCount;
+		this.keyCount = keyCount;
 		this.comparator = comparator;
 		this.queue = new PriorityQueue<>((left, right) -> {
-			int compared = comparator.compare(left.row, 0, right.row, 0);
+			int compared = comparator.compare(left.keys, 0, right.keys, 0);
 			return compared != 0 ? compared : Long.compare(left.ordinal, right.ordinal);
 		});
 		try {
 			for (Path path : paths) {
-				RunReader reader = new RunReader(path, slotCount);
+				RunReader reader = new RunReader(path, slotCount, keyCount);
 				readers.add(reader);
 				if (reader.advance()) {
 					queue.add(reader);
@@ -803,7 +890,7 @@ final class MergedRunRows implements NativeSortedRows {
 		if (reader == null) {
 			return false;
 		}
-		System.arraycopy(reader.row, 0, target, 0, slotCount);
+		reader.copyCurrent(target);
 		if (reader.advance()) {
 			queue.add(reader);
 		}
@@ -822,29 +909,53 @@ final class MergedRunRows implements NativeSortedRows {
 
 final class RunReader implements AutoCloseable {
 	final Path path;
-	final DataInputStream input;
-	final long[] row;
+	final DataInputStream keyInput;
+	final DataInputStream payloadInput;
+	final long[] keys;
+	final int slotCount;
+	final int keyCount;
 	int remaining;
 	long ordinal;
 	boolean closed;
 
-	RunReader(Path path, int expectedSlotCount) throws IOException {
+	RunReader(Path path, int expectedSlotCount, int expectedKeyCount) throws IOException {
 		this.path = path;
-		DataInputStream opened = new DataInputStream(new BufferedInputStream(Files.newInputStream(path), 64 * 1024));
+		DataInputStream openedKeys = new DataInputStream(
+				new BufferedInputStream(Files.newInputStream(path), 64 * 1024));
+		DataInputStream openedPayload = null;
 		try {
-			int slotCount = opened.readInt();
+			int slotCount = openedKeys.readInt();
 			if (slotCount != expectedSlotCount) {
 				throw new IOException(
 						"Native sort run slot count changed from " + expectedSlotCount + " to " + slotCount);
 			}
-			this.remaining = opened.readInt();
-			this.row = new long[slotCount];
-			this.input = opened;
+			int keyCount = openedKeys.readInt();
+			if (keyCount != expectedKeyCount) {
+				throw new IOException(
+						"Native sort run key count changed from " + expectedKeyCount + " to " + keyCount);
+			}
+			this.remaining = openedKeys.readInt();
+			this.slotCount = slotCount;
+			this.keyCount = keyCount;
+			this.keys = new long[keyCount];
+			long payloadOffset = 3L * Integer.BYTES
+					+ (long) remaining * (1L + keyCount) * Long.BYTES;
+			openedPayload = new DataInputStream(
+					new BufferedInputStream(Files.newInputStream(path), 64 * 1024));
+			openedPayload.skipNBytes(payloadOffset);
+			this.keyInput = openedKeys;
+			this.payloadInput = openedPayload;
 		} catch (IOException | RuntimeException e) {
 			try {
-				opened.close();
+				openedKeys.close();
 			} finally {
-				Files.deleteIfExists(path);
+				try {
+					if (openedPayload != null) {
+						openedPayload.close();
+					}
+				} finally {
+					Files.deleteIfExists(path);
+				}
 			}
 			throw e;
 		}
@@ -854,12 +965,19 @@ final class RunReader implements AutoCloseable {
 		if (remaining == 0) {
 			return false;
 		}
-		ordinal = input.readLong();
-		for (int slot = 0; slot < row.length; slot++) {
-			row[slot] = input.readLong();
+		ordinal = keyInput.readLong();
+		for (int slot = 0; slot < keyCount; slot++) {
+			keys[slot] = keyInput.readLong();
 		}
 		remaining--;
 		return true;
+	}
+
+	void copyCurrent(long[] target) throws IOException {
+		System.arraycopy(keys, 0, target, 0, keyCount);
+		for (int slot = keyCount; slot < slotCount; slot++) {
+			target[slot] = payloadInput.readLong();
+		}
 	}
 
 	@Override
@@ -869,14 +987,19 @@ final class RunReader implements AutoCloseable {
 		}
 		closed = true;
 		try {
-			input.close();
+			keyInput.close();
 		} catch (IOException ignored) {
 		}
 		try {
-			if (Files.deleteIfExists(path)) {
-				NativeSpillSort.DELETED_RUNS.incrementAndGet();
-			}
+			payloadInput.close();
 		} catch (IOException ignored) {
+		} finally {
+			try {
+				if (Files.deleteIfExists(path)) {
+					NativeSpillSort.DELETED_RUNS.incrementAndGet();
+				}
+			} catch (IOException ignored) {
+			}
 		}
 	}
 }

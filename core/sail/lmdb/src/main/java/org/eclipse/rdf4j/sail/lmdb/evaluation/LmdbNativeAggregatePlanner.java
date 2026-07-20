@@ -16,6 +16,8 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.NULL_CONTEXT_ID;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
@@ -44,6 +46,7 @@ import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
@@ -401,40 +404,94 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	}
 
 	/**
-	 * Compiles a SPARQL {@code +}/{@code *} path over a single constant predicate into a native BFS plan (see
-	 * {@link PathPlan}). Anything outside that shape — sequences, alternations, graph-variable scoping, unknown
-	 * constant ids, both endpoints the same variable — returns null so the whole fragment falls back to the generic
-	 * evaluator, whose PathIteration remains the semantics oracle.
+	 * Compiles a SPARQL {@code +}/{@code *} path over one or more alternative constant predicate steps into a native
+	 * BFS plan (see {@link PathPlan}). Anything outside that shape — sequences, negated property sets, graph-variable
+	 * scoping, or unknown constant ids — returns null so the whole fragment falls back to the generic evaluator, whose
+	 * PathIteration remains the semantics oracle.
 	 */
 	SlotPlan compilePath(ArbitraryLengthPath alp) {
 		if (!PathPlan.ENABLED || alp.getMinLength() > 1L) {
 			return null;
 		}
-		if (!(alp.getPathExpression() instanceof StatementPattern)) {
+		List<CompiledPathStep> alternatives = new ArrayList<>(2);
+		if (!compilePathAlternatives(alp.getPathExpression(), alp.getSubjectVar(), alp.getObjectVar(), alternatives)
+				|| alternatives.isEmpty()) {
 			return null;
 		}
-		StatementPattern sp = (StatementPattern) alp.getPathExpression();
-		Var subjVar = alp.getSubjectVar();
-		Var objVar = alp.getObjectVar();
-		if (subjVar.getName().equals(objVar.getName())) {
-			return null;
+		CompiledPathStep first = alternatives.get(0);
+		for (int i = 1; i < alternatives.size(); i++) {
+			if (!compatiblePathStep(first, alternatives.get(i))) {
+				return null;
+			}
 		}
-		PatternPlan step = compileStatementPattern(sp);
-		if (step == null) {
-			return null;
+		PathStep[] steps = new PathStep[alternatives.size()];
+		int distinct = 0;
+		for (CompiledPathStep alternative : alternatives) {
+			PathStep step = new PathStep(alternative.pattern, alternative.subjPos, alternative.objPos);
+			boolean duplicate = false;
+			for (int i = 0; i < distinct; i++) {
+				if (steps[i].predicate == step.predicate && steps[i].subjPos == step.subjPos
+						&& steps[i].objPos == step.objPos) {
+					duplicate = true;
+					break;
+				}
+			}
+			if (!duplicate) {
+				steps[distinct++] = step;
+			}
 		}
-		if (!step.p.isConstant() || step.p.hasSlot() || step.c.hasSlot() || step.hasRepeatedSlot()) {
-			return null;
+		if (distinct != steps.length) {
+			steps = Arrays.copyOf(steps, distinct);
 		}
-		int subjPos = endpointPosition(sp, subjVar);
-		int objPos = endpointPosition(sp, objVar);
+		return new PathPlan(first.pattern, steps, first.subjTerm.slot, first.subjTerm.constant, first.objTerm.slot,
+				first.objTerm.constant, alp.getMinLength() == 0L);
+	}
+
+	private boolean compilePathAlternatives(TupleExpr expression, Var subjVar, Var objVar,
+			List<CompiledPathStep> alternatives) {
+		if (expression instanceof Union) {
+			Union union = (Union) expression;
+			return !union.isVariableScopeChange()
+					&& compilePathAlternatives(union.getLeftArg(), subjVar, objVar, alternatives)
+					&& compilePathAlternatives(union.getRightArg(), subjVar, objVar, alternatives);
+		}
+		if (!(expression instanceof StatementPattern)) {
+			return false;
+		}
+		StatementPattern statement = (StatementPattern) expression;
+		PatternPlan pattern = compileStatementPattern(statement);
+		if (pattern == null || !pattern.p.isConstant() || pattern.p.hasSlot() || pattern.c.hasSlot()) {
+			return false;
+		}
+		boolean sameEndpoint = subjVar.getName().equals(objVar.getName());
+		int subjPos = sameEndpoint ? TripleIndex.SUBJ_IDX : endpointPosition(statement, subjVar);
+		int objPos = sameEndpoint ? TripleIndex.OBJ_IDX : endpointPosition(statement, objVar);
+		if (sameEndpoint && (!statement.getSubjectVar().getName().equals(subjVar.getName())
+				|| !statement.getObjectVar().getName().equals(objVar.getName()))) {
+			return false;
+		}
 		if (subjPos < 0 || objPos < 0 || subjPos == objPos) {
-			return null;
+			return false;
 		}
-		Term subjTerm = subjPos == TripleIndex.SUBJ_IDX ? step.s : step.o;
-		Term objTerm = objPos == TripleIndex.SUBJ_IDX ? step.s : step.o;
-		return new PathPlan(step, subjTerm.slot, subjTerm.constant, objTerm.slot, objTerm.constant, subjPos, objPos,
-				alp.getMinLength() == 0L);
+		Term subjTerm = subjPos == TripleIndex.SUBJ_IDX ? pattern.s : pattern.o;
+		Term objTerm = objPos == TripleIndex.SUBJ_IDX ? pattern.s : pattern.o;
+		if (pattern.hasRepeatedSlot() && (subjTerm.slot < 0 || subjTerm.slot != objTerm.slot)) {
+			return false;
+		}
+		alternatives.add(new CompiledPathStep(pattern, subjTerm, objTerm, subjPos, objPos));
+		return true;
+	}
+
+	private static boolean compatiblePathStep(CompiledPathStep left, CompiledPathStep right) {
+		return sameTerm(left.subjTerm, right.subjTerm)
+				&& sameTerm(left.objTerm, right.objTerm)
+				&& sameTerm(left.pattern.c, right.pattern.c)
+				&& left.pattern.namedContextScope == right.pattern.namedContextScope
+				&& Arrays.equals(left.pattern.contexts.ids, right.pattern.contexts.ids);
+	}
+
+	private static boolean sameTerm(Term left, Term right) {
+		return left.slot == right.slot && left.constant == right.constant && left.bindConstant == right.bindConstant;
 	}
 
 	static int endpointPosition(StatementPattern sp, Var endpoint) {
@@ -445,6 +502,22 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			return TripleIndex.OBJ_IDX;
 		}
 		return -1;
+	}
+
+	private static final class CompiledPathStep {
+		final PatternPlan pattern;
+		final Term subjTerm;
+		final Term objTerm;
+		final int subjPos;
+		final int objPos;
+
+		CompiledPathStep(PatternPlan pattern, Term subjTerm, Term objTerm, int subjPos, int objPos) {
+			this.pattern = pattern;
+			this.subjTerm = subjTerm;
+			this.objTerm = objTerm;
+			this.subjPos = subjPos;
+			this.objPos = objPos;
+		}
 	}
 
 	SlotPlan compileTuple(TupleExpr expr, boolean duplicateInsensitive) {
@@ -494,7 +567,8 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			}
 			ValueExpr condition = leftJoin.getCondition();
 			if (condition != null) {
-				NativeBooleanFilter filter = compileBoolean(condition);
+				NativeBooleanFilter filter = compileBoolean(condition,
+						SlotPlan.assuredMask(left) | SlotPlan.assuredMask(right));
 				if (filter == null) {
 					return null;
 				}
@@ -540,11 +614,18 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			requiredAggregateNames = filterRequired;
 			SlotPlan arg;
 			try {
-				arg = compileTuple(filter.getArg(), duplicateInsensitive);
+				arg = filter.getArg() instanceof StatementPattern
+						? compileRangeFilterIntoStatementPattern((StatementPattern) filter.getArg(),
+								filter.getCondition())
+						: null;
+				if (arg == null) {
+					arg = compileTuple(filter.getArg(), duplicateInsensitive);
+				}
 			} finally {
 				requiredAggregateNames = previousRequired;
 			}
-			NativeBooleanFilter condition = compileBoolean(filter.getCondition());
+			NativeBooleanFilter condition = arg == null ? null
+					: compileBoolean(filter.getCondition(), SlotPlan.assuredMask(arg));
 			return arg == null || condition == null ? null
 					: SlotPlan.filter(arg, recordFilterOutcomes(filter, condition),
 							placeableFilterMask(filter.getCondition()));

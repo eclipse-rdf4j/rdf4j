@@ -177,7 +177,7 @@ public class ParallelAggregationBenchmark {
 		}
 		executeQuery();
 		String actualStrategy = strategy();
-		// strategy labels may carry an engagement suffix, e.g. parallelAggregation(rangePartitioned=12)
+		// strategy labels carry actual admission, e.g. parallelAggregation(workers=4,rangePartitioned=12)
 		if (expectedStrategy != null && actualStrategy != null && !actualStrategy.equals(expectedStrategy)
 				&& !actualStrategy.startsWith(expectedStrategy + "(")) {
 			throw new IllegalStateException(

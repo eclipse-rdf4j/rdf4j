@@ -136,7 +136,8 @@ final class FactorizedTail {
 	}
 
 	String describeEngagement() {
-		return "factorizedTail(prefix=" + prefixStrategy + ", branches=" + branches.length
+		return LmdbNativeAttemptMetrics.PATH_FACTORIZED_TAIL + "(prefix=" + prefixStrategy + ", branches="
+				+ branches.length
 				+ (groupsByTail() ? ", groupedByTail" : "") + ")";
 	}
 

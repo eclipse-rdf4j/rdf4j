@@ -38,6 +38,7 @@ final class RuntimeBuildAdmission {
 	}
 
 	private final long minimumDistinctProbes;
+	private final long minimumProbeSeeks;
 	private final LongSupplier nanoTime;
 
 	private State state = State.PROBING;
@@ -54,11 +55,20 @@ final class RuntimeBuildAdmission {
 	private long lastBoundaryNanos = Long.MIN_VALUE;
 
 	RuntimeBuildAdmission(long minimumDistinctProbes) {
-		this(minimumDistinctProbes, System::nanoTime);
+		this(minimumDistinctProbes, 0L, System::nanoTime);
 	}
 
 	RuntimeBuildAdmission(long minimumDistinctProbes, LongSupplier nanoTime) {
+		this(minimumDistinctProbes, 0L, nanoTime);
+	}
+
+	RuntimeBuildAdmission(long minimumDistinctProbes, long minimumProbeSeeks) {
+		this(minimumDistinctProbes, minimumProbeSeeks, System::nanoTime);
+	}
+
+	RuntimeBuildAdmission(long minimumDistinctProbes, long minimumProbeSeeks, LongSupplier nanoTime) {
 		this.minimumDistinctProbes = Math.max(0L, minimumDistinctProbes);
+		this.minimumProbeSeeks = Math.max(0L, minimumProbeSeeks);
 		this.nanoTime = nanoTime;
 	}
 
@@ -82,7 +92,7 @@ final class RuntimeBuildAdmission {
 	}
 
 	boolean tryStartBuild() {
-		if (state != State.PROBING || distinctProbes < minimumDistinctProbes) {
+		if (state != State.PROBING || distinctProbes < minimumDistinctProbes || probeSeeks < minimumProbeSeeks) {
 			return false;
 		}
 		sampleBoundary(false);

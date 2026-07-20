@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalDouble;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -80,7 +81,11 @@ public class LmdbNativeJoinOrderCrossProductTest {
 
 	private static NativeAggregateDistinctPlan orderedDistinctPlan(SlotPlan[] children, MaskedFilter[] filters,
 			int distinctSlot) {
-		RecordingNativeSource source = new RecordingNativeSource();
+		return orderedDistinctPlan(children, filters, distinctSlot, new RecordingNativeSource());
+	}
+
+	private static NativeAggregateDistinctPlan orderedDistinctPlan(SlotPlan[] children, MaskedFilter[] filters,
+			int distinctSlot, RecordingNativeSource source) {
 		return LmdbNativeOrderPlanner.aggregate(new MultiJoinPlan(children, filters), new int[0],
 				new AggregateSpec[] { AggregateSpec.slot("c", distinctSlot, true, AggKind.COUNT) }, emptyRow(source));
 	}
@@ -194,6 +199,40 @@ public class LmdbNativeJoinOrderCrossProductTest {
 	}
 
 	@Test
+	public void orderedDistinctRejectsAsymmetricDirectPromotionCosts() {
+		PatternPlan selective = pattern(Term.slot(S), Term.constant(KNOWS), Term.constant(17L), 1D);
+		PatternPlan ordered = pattern(Term.slot(S), Term.constant(EDGE), Term.slot(O), 4D);
+		RecordingNativeSource source = new RecordingNativeSource(1D);
+
+		NativeAggregateDistinctPlan plan = orderedDistinctPlan(new SlotPlan[] { selective, ordered },
+				new MaskedFilter[0], O, source);
+
+		assertThat(source.fanOutQueries)
+				.as("the ordered-promotion gate must detect the one-sided measured fan-out")
+				.isPositive();
+		assertThat(plan.specialized()).isFalse();
+		assertThat(((MultiJoinPlan) plan.arg).children).startsWith(selective);
+		assertThat(plan.channels.modes).containsExactly(NativeDistinctChannelMode.HASH);
+	}
+
+	@Test
+	public void orderedDistinctComparesPromotionCostsInOneEstimateDomain() {
+		PatternPlan broad = pattern(Term.slot(S), Term.constant(KNOWS), Term.slot(X), 1_000D);
+		PatternPlan ordered = pattern(Term.slot(S), Term.constant(EDGE), Term.slot(O), 4D);
+		RecordingNativeSource source = new RecordingNativeSource(1D);
+
+		NativeAggregateDistinctPlan plan = orderedDistinctPlan(new SlotPlan[] { broad, ordered },
+				new MaskedFilter[0], O, source);
+
+		assertThat(source.fanOutQueries)
+				.as("both candidate orders must be costed from measured fan-out")
+				.isGreaterThanOrEqualTo(2);
+		assertThat(plan.specialized()).isTrue();
+		assertThat(((PatternPlan) ((MultiJoinPlan) plan.arg).children[0]).o.slot).isEqualTo(O);
+		assertThat(plan.channels.modes).containsExactly(NativeDistinctChannelMode.MONOTONIC);
+	}
+
+	@Test
 	public void rowCompilerOpensPatternsInAlgebraOrder() {
 		// the batch hash join may scan its build side first (physical refinement, same rows); every
 		// order-driven execution path must still open the first algebra pattern first, so it is
@@ -264,6 +303,16 @@ public class LmdbNativeJoinOrderCrossProductTest {
 
 	private static final class RecordingNativeSource implements NativeLmdbQuerySource {
 		final List<PatternCall> calls = new ArrayList<>();
+		final double subjectFanOut;
+		int fanOutQueries;
+
+		private RecordingNativeSource() {
+			this(Double.NaN);
+		}
+
+		private RecordingNativeSource(double subjectFanOut) {
+			this.subjectFanOut = subjectFanOut;
+		}
 
 		@Override
 		public long idOf(Value value) {
@@ -304,6 +353,14 @@ public class LmdbNativeJoinOrderCrossProductTest {
 		@Override
 		public double estimate(long subj, long pred, long obj, long context) {
 			return pred == EDGE ? 1_000D : 1D;
+		}
+
+		@Override
+		public OptionalDouble meanFanOut(long predicate, boolean bySubject) {
+			fanOutQueries++;
+			return bySubject && Double.isFinite(subjectFanOut)
+					? OptionalDouble.of(subjectFanOut)
+					: OptionalDouble.empty();
 		}
 
 		@Override

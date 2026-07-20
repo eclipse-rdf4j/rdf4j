@@ -17,9 +17,7 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -27,14 +25,13 @@ import org.eclipse.rdf4j.query.BindingSet;
 /**
  * The one arity-adaptive group table behind every native aggregation consumer. The group-key arity picks the backing
  * store once at construction: zero keys keep a single {@link AggState}; one key uses the primitive open-addressed
- * {@link LongAggStateMap}; two to four keys use the {@link PrimitiveTupleTable} (with a pure-counts fast path when
- * every aggregate is a non-DISTINCT COUNT and the caller allows it); wider keys fall back to a boxed
- * {@code HashMap<GroupKey, AggState>}. Callers accumulate through {@link #add(RowState)} (one solution row) or
- * {@link #aggregateFactorized(RowState, FactorizedTail)} (one prefix row whose tail multiplicities the
- * {@link FactorizedTail} folds in; group states register only once the tail produced a match, preserving inner-join
- * semantics for zero-match prefix rows). Parallel workers each fill their own table and the coordinator merges them
- * with {@link #mergeFrom(NativeGroupTable)} (exact for everything except value-typed DISTINCT aggregates, which the
- * parallel gate refuses — see {@link AggState#mergeFrom(AggState)}).
+ * {@link LongAggStateMap}; two or more keys use the {@link PrimitiveTupleTable} (with a pure-counts fast path when
+ * every aggregate is a non-DISTINCT COUNT and the caller allows it). Callers accumulate through {@link #add(RowState)}
+ * (one solution row) or {@link #aggregateFactorized(RowState, FactorizedTail)} (one prefix row whose tail
+ * multiplicities the {@link FactorizedTail} folds in; group states register only once the tail produced a match,
+ * preserving inner-join semantics for zero-match prefix rows). Parallel workers each fill their own table and the
+ * coordinator merges them with {@link #mergeFrom(NativeGroupTable)} (exact for everything except value-typed DISTINCT
+ * aggregates, which the parallel gate refuses — see {@link AggState#mergeFrom(AggState)}).
  */
 @Experimental
 final class NativeGroupTable {
@@ -44,12 +41,10 @@ final class NativeGroupTable {
 		ZERO,
 		/** One group key: primitive long -&gt; AggState map. */
 		SINGLE_SLOT,
-		/** 2..4 group keys, all aggregates plain COUNT: dense count columns, no per-group AggState. */
+		/** Two or more group keys, all aggregates plain COUNT: dense count columns, no per-group AggState. */
 		TUPLE_COUNTS,
-		/** 2..4 group keys: primitive tuple table with parallel AggState array. */
-		TUPLE_STATES,
-		/** More than 4 group keys: boxed HashMap with reusable probe key. */
-		GENERIC
+		/** Two or more group keys: primitive tuple table with parallel AggState array. */
+		TUPLE_STATES
 	}
 
 	final int[] groupSlots;
@@ -74,8 +69,6 @@ final class NativeGroupTable {
 	PrimitiveTupleTable tuples;
 	long[] tupleCounts;
 	AggState[] tupleStates;
-	HashMap<GroupKey, AggState> hashGroups;
-	GroupKey probe;
 
 	private NativeGroupTable(int[] groupSlots, AggregateSpec[] aggregates, AggContext ctx,
 			AggregateDistinctChannels channels, Mode mode, boolean rowMetrics) {
@@ -93,16 +86,12 @@ final class NativeGroupTable {
 			this.longGroups = new LongAggStateMap();
 			break;
 		case TUPLE_COUNTS:
-			this.tuples = new PrimitiveTupleTable(groupSlots.length, 256);
+			this.tuples = new PrimitiveTupleTable(groupSlots.length, 256, rowMetrics);
 			this.tupleCounts = new long[Math.max(16, aggregates.length * 16)];
 			break;
 		case TUPLE_STATES:
-			this.tuples = new PrimitiveTupleTable(groupSlots.length, 256);
+			this.tuples = new PrimitiveTupleTable(groupSlots.length, 256, rowMetrics);
 			this.tupleStates = new AggState[16];
-			break;
-		case GENERIC:
-			this.hashGroups = new HashMap<>();
-			this.probe = new GroupKey(new long[groupSlots.length]);
 			break;
 		}
 	}
@@ -114,10 +103,8 @@ final class NativeGroupTable {
 			mode = Mode.ZERO;
 		} else if (groupSlots.length == 1) {
 			mode = Mode.SINGLE_SLOT;
-		} else if (groupSlots.length <= 4) {
-			mode = allowCountFastPath && pureCounts(aggregates) ? Mode.TUPLE_COUNTS : Mode.TUPLE_STATES;
 		} else {
-			mode = Mode.GENERIC;
+			mode = allowCountFastPath && pureCounts(aggregates) ? Mode.TUPLE_COUNTS : Mode.TUPLE_STATES;
 		}
 		return new NativeGroupTable(groupSlots, aggregates, ctx, channels, mode, rowMetrics);
 	}
@@ -143,10 +130,9 @@ final class NativeGroupTable {
 	/** The historical explain-strategy name for this table's arity, recorded by the final dispatch in evaluateAll. */
 	String strategyName() {
 		return switch (mode) {
-		case ZERO -> "aggState";
-		case SINGLE_SLOT -> "singleSlotGroups";
-		case TUPLE_COUNTS, TUPLE_STATES -> "primitiveTupleGroups";
-		case GENERIC -> "hashGroups";
+		case ZERO -> LmdbNativeAttemptMetrics.PATH_AGG_STATE;
+		case SINGLE_SLOT -> LmdbNativeAttemptMetrics.PATH_SINGLE_SLOT_GROUPS;
+		case TUPLE_COUNTS, TUPLE_STATES -> LmdbNativeAttemptMetrics.PATH_PRIMITIVE_TUPLE_GROUPS;
 		};
 	}
 
@@ -204,16 +190,6 @@ final class NativeGroupTable {
 			}
 			break;
 		}
-		case GENERIC: {
-			probe.refill(row.slots, groupSlots);
-			AggState state = hashGroups.get(probe);
-			if (state == null) {
-				state = newGroupState();
-				hashGroups.put(probe.storedCopy(), state);
-			}
-			state.add(row);
-			break;
-		}
 		}
 	}
 
@@ -253,18 +229,6 @@ final class NativeGroupTable {
 			}
 			break;
 		}
-		case GENERIC: {
-			probe.refill(row.slots, groupSlots);
-			AggState state = hashGroups.get(probe);
-			boolean fresh = state == null;
-			if (fresh) {
-				state = newGroupState();
-			}
-			if (tail.aggregate(row, state) && fresh) {
-				hashGroups.put(probe.storedCopy(), state);
-			}
-			break;
-		}
 		case TUPLE_COUNTS:
 			// the count fast path is only built by direct-add callers (allowCountFastPath)
 			throw new IllegalStateException("factorized aggregation over a counts-only table");
@@ -272,10 +236,17 @@ final class NativeGroupTable {
 	}
 
 	/**
-	 * Merges a parallel worker's table into this one. Only valid for COUNT-kind aggregates (the parallel gate
-	 * guarantees {@link AggregateSpec#allCounts}); both tables must share the construction parameters.
+	 * Merges a parallel worker's table into this one. Each aggregate state owns merge semantics for its kind, including
+	 * union-only partials for deferred DISTINCT SUM/AVG; both tables must share the construction parameters.
 	 */
 	void mergeFrom(NativeGroupTable other) {
+		if (rowMetrics) {
+			primitiveCountRows += other.primitiveCountRows;
+			primitiveTupleRows += other.primitiveTupleRows;
+			if (tuples != null) {
+				tuples.mergeMetricsFrom(other.tuples);
+			}
+		}
 		switch (mode) {
 		case ZERO:
 			single.mergeFrom(other.single);
@@ -333,16 +304,6 @@ final class NativeGroupTable {
 			}
 			break;
 		}
-		case GENERIC:
-			for (Map.Entry<GroupKey, AggState> entry : other.hashGroups.entrySet()) {
-				AggState existing = hashGroups.get(entry.getKey());
-				if (existing == null) {
-					hashGroups.put(entry.getKey(), entry.getValue());
-				} else {
-					existing.mergeFrom(entry.getValue());
-				}
-			}
-			break;
 		}
 	}
 
@@ -391,13 +352,6 @@ final class NativeGroupTable {
 			commitRowMetrics(metrics);
 			return results;
 		}
-		case GENERIC: {
-			ArrayList<BindingSet> results = new ArrayList<>(hashGroups.size());
-			for (Map.Entry<GroupKey, AggState> entry : hashGroups.entrySet()) {
-				results.add(it.toBindingSet(entry.getKey(), entry.getValue(), true));
-			}
-			return results;
-		}
 		}
 		throw new IllegalStateException("unreachable");
 	}
@@ -407,6 +361,9 @@ final class NativeGroupTable {
 			return;
 		}
 		rowMetricsCommitted = true;
+		if (tuples != null) {
+			tuples.commitMetrics();
+		}
 		metrics.recordPrimitiveCountGroupRows(primitiveCountRows);
 		metrics.recordPrimitiveTupleGroupRows(primitiveTupleRows);
 	}

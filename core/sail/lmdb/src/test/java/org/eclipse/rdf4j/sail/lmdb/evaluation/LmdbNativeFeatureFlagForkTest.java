@@ -130,6 +130,11 @@ class LmdbNativeFeatureFlagForkTest {
 				+ "?subject <" + EX + "number> ?number . "
 				+ "?subject <" + EX + "aggregateBranch> ?ignored . "
 				+ "}";
+		private static final String PARALLEL_AGGREGATE_QUERY = "SELECT (SUM(?number) AS ?sum) "
+				+ "(COUNT(?ignored) AS ?count) (MIN(DISTINCT ?ignored) AS ?min) WHERE { "
+				+ "?subject <" + EX + "number> ?number . "
+				+ "?subject <" + EX + "aggregateBranch> ?ignored . "
+				+ "}";
 		private static final String ORDERED_QUERY = SELECT_QUERY + " ORDER BY ?tail ?subject";
 		private static final String ORDERED_BOUNDED_QUERY = ORDERED_QUERY + " LIMIT 17";
 
@@ -219,7 +224,8 @@ class LmdbNativeFeatureFlagForkTest {
 
 		private static void verifyChunkFallback(SailRepository repository) {
 			List<String> expectedSelect = genericRows(repository, SELECT_QUERY, false);
-			List<String> expectedAggregate = genericRows(repository, AGGREGATE_QUERY, false);
+			List<String> expectedSerialAggregate = genericRows(repository, AGGREGATE_QUERY, false);
+			List<String> expectedParallelAggregate = genericRows(repository, PARALLEL_AGGREGATE_QUERY, false);
 			long chunkBefore = LmdbNativeChunkPipeline.ENGAGED.get();
 			long rowsBefore = LmdbNativeFactorizedRows.ENGAGED.get();
 			long tailBefore = FactorizedTail.ENGAGED.get();
@@ -232,7 +238,7 @@ class LmdbNativeFeatureFlagForkTest {
 			List<String> serialAggregate = nativeRows(repository, AGGREGATE_QUERY, false);
 
 			checkEquals(expectedSelect, serialSelect, "chunk-off serial SELECT result parity");
-			checkEquals(expectedAggregate, serialAggregate, "chunk-off serial aggregate result parity");
+			checkEquals(expectedSerialAggregate, serialAggregate, "chunk-off serial aggregate result parity");
 			check(serialSelectStrategy.startsWith("factorizedRows(")
 					&& serialSelectStrategy.contains("prefix=chunkedMemo"),
 					"chunk-off serial SELECT must retain the memoized factorized prefix, got "
@@ -253,15 +259,15 @@ class LmdbNativeFeatureFlagForkTest {
 
 			System.setProperty("rdf4j.lmdb.parallel.minRootEstimate", "0");
 			String parallelSelectStrategy = strategy(repository, SELECT_QUERY);
-			String parallelAggregateStrategy = strategy(repository, AGGREGATE_QUERY);
+			String parallelAggregateStrategy = strategy(repository, PARALLEL_AGGREGATE_QUERY);
 			List<String> parallelSelect = nativeRows(repository, SELECT_QUERY, false);
-			List<String> parallelAggregate = nativeRows(repository, AGGREGATE_QUERY, false);
+			List<String> parallelAggregate = nativeRows(repository, PARALLEL_AGGREGATE_QUERY, false);
 
 			checkEquals(expectedSelect, parallelSelect, "chunk-off parallel SELECT result parity");
-			checkEquals(expectedAggregate, parallelAggregate, "chunk-off parallel aggregate result parity");
-			checkEquals("parallelPipelines(rangePartitioned=2)", parallelSelectStrategy,
+			checkEquals(expectedParallelAggregate, parallelAggregate, "chunk-off parallel aggregate result parity");
+			checkEquals("parallelPipelines(workers=2,rangePartitioned=2)", parallelSelectStrategy,
 					"chunk-off parallel SELECT strategy");
-			checkEquals("parallelAggregation(rangePartitioned=2)", parallelAggregateStrategy,
+			checkEquals("parallelAggregation(workers=2,rangePartitioned=2)", parallelAggregateStrategy,
 					"chunk-off parallel aggregate strategy");
 			check(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get() > parallelRowsBefore,
 					"chunk-off parallel SELECT must still start workers");

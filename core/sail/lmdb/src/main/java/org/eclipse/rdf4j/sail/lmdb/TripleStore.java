@@ -77,6 +77,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.OptionalDouble;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -192,8 +193,11 @@ class TripleStore implements Closeable {
 			.withInitial(PreparedSortWorkspace::new);
 	private final LmdbPageCardinalityEstimator pageEstimator;
 	private final AtomicLong dataRevision = new AtomicLong();
+	private final LmdbFanOutStats explicitFanOutStats = new LmdbFanOutStats();
+	private final LmdbFanOutStats inferredFanOutStats = new LmdbFanOutStats();
 
 	private TxnRecordCache recordCache = null;
+	private boolean fanOutStatsDirty;
 	private boolean trackResizeChecks;
 	private int trackedResizeChecks;
 
@@ -330,6 +334,10 @@ class TripleStore implements Closeable {
 
 	long getDataRevision() {
 		return dataRevision.get();
+	}
+
+	OptionalDouble meanFanOut(long predicate, boolean bySubject, boolean explicit) {
+		return fanOutStats(explicit).meanFanOut(predicate, bySubject);
 	}
 
 	Map<String, Long> explicitIndexEntryCounts() throws IOException {
@@ -2765,14 +2773,20 @@ class TripleStore implements Closeable {
 				if (!statementAdded) {
 					return false;
 				}
+				boolean removedInferred = false;
 				if (explicit) {
 					TxnRecordCache.RecordState inferredCacheState = recordCache.getRecordState(quad, false);
 					if (recordExistsInCacheOrMain(inferredCacheState, mainInferredExists)) {
 						recordCache.removeRecord(quad, false, true);
+						removedInferred = true;
 					}
 				}
 				// put record in cache and return immediately
 				recordCache.storeRecord(quad, explicit, explicit ? !mainExplicitExists : !mainInferredExists);
+				if (removedInferred) {
+					recordFanOutRemoved(subj, pred, obj, false);
+				}
+				recordFanOutAdded(subj, pred, obj, explicit);
 				return true;
 			}
 
@@ -2805,6 +2819,10 @@ class TripleStore implements Closeable {
 				}
 
 				incrementContext(stack, context);
+				if (foundImplicit) {
+					recordFanOutRemoved(subj, pred, obj, false);
+				}
+				recordFanOutAdded(subj, pred, obj, explicit);
 			}
 		}
 
@@ -2816,6 +2834,28 @@ class TripleStore implements Closeable {
 	private boolean recordExistsInCacheOrMain(TxnRecordCache.RecordState cacheState, boolean mainExists) {
 		return cacheState == TxnRecordCache.RecordState.ADD
 				|| cacheState == TxnRecordCache.RecordState.ABSENT && mainExists;
+	}
+
+	private LmdbFanOutStats fanOutStats(boolean explicit) {
+		return explicit ? explicitFanOutStats : inferredFanOutStats;
+	}
+
+	private void recordFanOutAdded(long subject, long predicate, long object, boolean explicit) {
+		fanOutStats(explicit).recordAdded(subject, predicate, object);
+		fanOutStatsDirty = true;
+	}
+
+	private void recordFanOutRemoved(long subject, long predicate, long object, boolean explicit) {
+		fanOutStats(explicit).recordRemoved(subject, predicate, object);
+		fanOutStatsDirty = true;
+	}
+
+	private void clearFanOutStatsIfDirty() {
+		if (fanOutStatsDirty) {
+			explicitFanOutStats.clear();
+			inferredFanOutStats.clear();
+			fanOutStatsDirty = false;
+		}
 	}
 
 	@Experimental
@@ -2897,6 +2937,8 @@ class TripleStore implements Closeable {
 								int contextId = quads[quadOffset + 3];
 								long context = contextId < 0 ? 0 : valueIds[contextId];
 								contextIncrements.addToValue(context, 1);
+								recordFanOutAdded(valueIds[quads[quadOffset]], valueIds[quads[quadOffset + 1]],
+										valueIds[quads[quadOffset + 2]], true);
 								addedCount++;
 							}
 						}
@@ -3027,6 +3069,10 @@ class TripleStore implements Closeable {
 						promotedFromImplicit[statementIndex] = mdb_del(writeTxn, mainIndex.getDB(false),
 								keyVal, dataVal) == MDB_SUCCESS;
 					}
+					if (promotedFromImplicit != null && promotedFromImplicit[statementIndex]) {
+						recordFanOutRemoved(subj[statementIndex], pred[statementIndex], obj[statementIndex], false);
+					}
+					recordFanOutAdded(subj[statementIndex], pred[statementIndex], obj[statementIndex], explicit);
 					contextIncrements.addToValue(context[statementIndex], 1);
 				}
 			}
@@ -3435,6 +3481,8 @@ class TripleStore implements Closeable {
 				}
 				if (recordCache != null) {
 					recordCache.removeRecord(quad, explicit, true);
+					recordFanOutRemoved(quad[TripleIndex.SUBJ_IDX], quad[TripleIndex.PRED_IDX],
+							quad[TripleIndex.OBJ_IDX], explicit);
 					handler.accept(quad);
 					continue;
 				}
@@ -3451,6 +3499,8 @@ class TripleStore implements Closeable {
 				}
 
 				decrementContext(stack, quad[TripleIndex.CONTEXT_IDX]);
+				recordFanOutRemoved(quad[TripleIndex.SUBJ_IDX], quad[TripleIndex.PRED_IDX],
+						quad[TripleIndex.OBJ_IDX], explicit);
 				handler.accept(quad);
 			}
 		}
@@ -3630,15 +3680,18 @@ class TripleStore implements Closeable {
 							txnManager.reset();
 						}
 						dataRevision.incrementAndGet();
+						fanOutStatsDirty = false;
 					} catch (IOException e) {
 						// abort transaction if exception occurred while committing
 						mdb_txn_abort(writeTxn);
+						clearFanOutStatsIfDirty();
 						throw e;
 					} finally {
 						lockManager.unlockWrite(stamp);
 					}
 				} else {
 					mdb_txn_abort(writeTxn);
+					clearFanOutStatsIfDirty();
 				}
 			} finally {
 				writeTxn = 0;

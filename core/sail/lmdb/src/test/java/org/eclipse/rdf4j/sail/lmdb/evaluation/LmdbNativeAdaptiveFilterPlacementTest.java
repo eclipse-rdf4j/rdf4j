@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.IOException;
 import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -24,8 +25,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Exists;
@@ -35,6 +42,7 @@ import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.junit.jupiter.api.Test;
 
 class LmdbNativeAdaptiveFilterPlacementTest {
@@ -78,6 +86,21 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 
 		assertThat(flattened.derive(0L).filterDepth).containsExactly(1);
 		assertThat(flattened.derive((1L << 0) | (1L << 1)).filterDepth).containsExactly(1);
+	}
+
+	@Test
+	void factorizedPlanKeepsOptimizerSelectedDepthAndEnvelope() {
+		MaskedFilter filter = new MaskedFilter(row -> true, 1L,
+				AdaptiveFilterMetadata.eligible(8, 4), 1);
+		MultiJoinPlan plan = new MultiJoinPlan(
+				new SlotPlan[] { values(0), values(1), values(2) },
+				new MaskedFilter[] { filter });
+
+		MultiJoinPlan.OrderedPlan factorized = plan.derivedFactorizedPlan(row(layout(3)));
+
+		assertThat(factorized.filterDepth).containsExactly(1);
+		assertThat(factorized.placement[0].plannedDepth).isEqualTo(1);
+		assertThat(factorized.placement[0].candidateDepths).containsExactly(0, 1, 2);
 	}
 
 	@Test
@@ -246,6 +269,158 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 			} else {
 				System.setProperty("rdf4j.lmdb.adaptiveFilterPlacement.enabled", previous);
 			}
+		}
+	}
+
+	@Test
+	void workerHostedSessionMakesTheSequentialMovementDecision() throws Exception {
+		NativeSlotLayout layout = layout(3);
+		MultiJoinPlan sequentialPlan = movementPlan();
+		SingletonSet sequentialTelemetry = new SingletonSet();
+		sequentialTelemetry.setRuntimeTelemetryEnabled(true);
+		RowState sequentialRow = row(layout);
+		String previous = System.getProperty(LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY);
+		System.setProperty(LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY, "true");
+		try {
+			long sequentialRows;
+			try (RowCursor cursor = LmdbNativeAdaptiveFilterPlacement.tryOpen(sequentialTelemetry, false,
+					sequentialPlan, sequentialRow)) {
+				sequentialRows = count(cursor);
+			}
+
+			MultiJoinPlan workerPlan = movementPlan();
+			SingletonSet workerTelemetry = new SingletonSet();
+			workerTelemetry.setRuntimeTelemetryEnabled(true);
+			RowState workerRow = row(layout);
+			MultiJoinPlan.OrderedPlan workerOrder = workerPlan.derivedFactorizedPlan(workerRow);
+			RowCursor depth0 = workerOrder.order[0].open(workerRow);
+			Method tryOpenFrom = LmdbNativeAdaptiveFilterPlacement.class.getDeclaredMethod("tryOpenFrom",
+					org.eclipse.rdf4j.query.algebra.TupleExpr.class, MultiJoinPlan.class, RowState.class,
+					RowCursor.class);
+			RowCursor workerCursor = (RowCursor) tryOpenFrom.invoke(null, workerTelemetry, workerPlan, workerRow,
+					depth0);
+			assertThat(workerCursor).isNotNull();
+			long workerRows;
+			try (workerCursor) {
+				workerRows = count(workerCursor);
+			}
+
+			assertThat(workerRows).isEqualTo(sequentialRows);
+			assertThat(workerTelemetry.getLongMetricActual("adaptiveFilterPlacementMoves"))
+					.isEqualTo(sequentialTelemetry.getLongMetricActual("adaptiveFilterPlacementMoves"));
+			assertThat(workerTelemetry.getLongMetricActual("adaptiveFilterPlacementFinalDepth"))
+					.isEqualTo(sequentialTelemetry.getLongMetricActual("adaptiveFilterPlacementFinalDepth"));
+		} finally {
+			restoreAdaptiveProperty(previous);
+		}
+	}
+
+	@Test
+	void parallelRunWorkerHostsAdaptiveDecorator() throws Exception {
+		NativeSlotLayout layout = layout(3);
+		MultiJoinPlan plan = movementPlan();
+		PatternPlan root = new PatternPlan(Term.slot(0), Term.constant(7), Term.constant(8), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 4_096D);
+		SingletonSet telemetry = new SingletonSet();
+		telemetry.setRuntimeTelemetryEnabled(true);
+		NoopParallelSource worker = new NoopParallelSource();
+		NoopParallelSource producer = new NoopParallelSource();
+		NativeRowsStep step = new NativeRowsStep(worker, plan, layout, new int[] { 0, 1, 2 },
+				new String[] { "v0", "v1", "v2" }, false, new int[0], new boolean[0], 0L, -1L, false, null,
+				telemetry, null, Set.of(), null, null);
+		RowState consumerRow = new RowState(worker, layout, EmptyBindingSet.getInstance());
+		LmdbNativeParallelPipelines.ParallelRowCursor cursor = new LmdbNativeParallelPipelines.ParallelRowCursor(
+				step, consumerRow, root, new MultiJoinPlan[] { plan },
+				new NativeLmdbQuerySource.ParallelSource[] { worker, producer },
+				new LmdbNativeParallelPipelines.TaskReservation(0), false);
+		String previousAdaptive = System.setProperty(LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY, "true");
+		String previousChunk = System.setProperty("rdf4j.lmdb.chunkPipeline.externalRoot.experimental", "false");
+		try {
+			cursor.input.add(new LmdbNativeExchange.Morsel(new long[] { 2L, 7L, 8L, 0L }, 1));
+			cursor.input.add(LmdbNativeExchange.Morsel.POISON);
+
+			cursor.runWorker(0);
+
+			LmdbNativeParallelPipelines.OutputPage page = cursor.output.remove();
+			assertThat(page.batch.selectedCount).isEqualTo(25);
+			assertThat(cursor.output.remove()).isSameAs(LmdbNativeParallelPipelines.OutputPage.END);
+			assertThat(telemetry.getLongMetricActual("adaptiveFilterPlacementAdmitted"))
+					.as("runWorker must decorate its externally supplied root cursor")
+					.isEqualTo(1L);
+		} finally {
+			restoreAdaptiveProperty(previousAdaptive);
+			restoreProperty("rdf4j.lmdb.chunkPipeline.externalRoot.experimental", previousChunk);
+			worker.close();
+			producer.close();
+		}
+	}
+
+	@Test
+	void concurrentParallelWorkersOwnIndependentAdaptiveLeases() throws Exception {
+		int workers = 4;
+		NativeSlotLayout layout = layout(3);
+		CountDownLatch entered = new CountDownLatch(workers);
+		CountDownLatch release = new CountDownLatch(1);
+		AtomicInteger closes = new AtomicInteger();
+		ForkableCloseTrackingFilter filter = new ForkableCloseTrackingFilter(entered, release, closes);
+		MultiJoinPlan ownerPlan = new MultiJoinPlan(
+				new SlotPlan[] { values(0, 4_096), values(1, 25), values(2, 1) },
+				new MaskedFilter[] { new MaskedFilter(filter, 1L,
+						AdaptiveFilterMetadata.eligible(53, 4), 1) });
+		MultiJoinPlan[] workerPlans = LmdbNativeParallelPipelines.forkWorkerPlans(ownerPlan, workers);
+		PatternPlan root = new PatternPlan(Term.slot(0), Term.constant(7), Term.constant(8), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 4_096D);
+		SingletonSet telemetry = new SingletonSet();
+		telemetry.setRuntimeTelemetryEnabled(true);
+		NativeLmdbQuerySource.ParallelSource[] sources = new NativeLmdbQuerySource.ParallelSource[workers + 1];
+		for (int i = 0; i < sources.length; i++) {
+			sources[i] = new NoopParallelSource();
+		}
+		NativeRowsStep step = new NativeRowsStep(sources[0], ownerPlan, layout, new int[] { 0, 1, 2 },
+				new String[] { "v0", "v1", "v2" }, false, new int[0], new boolean[0], 0L, -1L, false, null,
+				telemetry, null, Set.of(), null, null);
+		RowState consumerRow = new RowState(sources[0], layout, EmptyBindingSet.getInstance());
+		LmdbNativeParallelPipelines.ParallelRowCursor cursor = new LmdbNativeParallelPipelines.ParallelRowCursor(
+				step, consumerRow, root, workerPlans, sources,
+				new LmdbNativeParallelPipelines.TaskReservation(0), false);
+		ExecutorService executor = Executors.newFixedThreadPool(workers);
+		String previousAdaptive = System.setProperty(LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY, "true");
+		String previousChunk = System.setProperty("rdf4j.lmdb.chunkPipeline.externalRoot.experimental", "false");
+		try {
+			for (int worker = 0; worker < workers; worker++) {
+				cursor.input.add(new LmdbNativeExchange.Morsel(
+						new long[] { 2L * (worker + 1L), 7L, 8L, 0L }, 1));
+			}
+			for (int worker = 0; worker < workers; worker++) {
+				cursor.input.add(LmdbNativeExchange.Morsel.POISON);
+			}
+			List<Future<?>> tasks = new ArrayList<>(workers);
+			for (int worker = 0; worker < workers; worker++) {
+				int workerIndex = worker;
+				tasks.add(executor.submit(() -> cursor.runTask(() -> cursor.runWorker(workerIndex),
+						workerPlans[workerIndex], sources[workerIndex])));
+			}
+
+			assertThat(entered.await(10, TimeUnit.SECONDS))
+					.as("all adaptive worker sessions overlap before the stress gate opens")
+					.isTrue();
+			release.countDown();
+			for (Future<?> task : tasks) {
+				task.get(10, TimeUnit.SECONDS);
+			}
+
+			assertThat(cursor.failure.get()).isNull();
+			assertThat(cursor.cleanupFailure.get()).isNull();
+			assertThat(cursor.tasks.getCount()).isZero();
+			assertThat(closes).as("every worker-confined adaptive filter closes exactly once").hasValue(workers);
+			assertThat(telemetry.getLongMetricActual("adaptiveFilterPlacementAdmitted")).isEqualTo(1L);
+		} finally {
+			release.countDown();
+			executor.shutdownNow();
+			cursor.close();
+			LmdbNativeParallelPipelines.closePlanFilters(ownerPlan, null);
+			restoreAdaptiveProperty(previousAdaptive);
+			restoreProperty("rdf4j.lmdb.chunkPipeline.externalRoot.experimental", previousChunk);
 		}
 	}
 
@@ -738,6 +913,22 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 				new MaskedFilter[] { target });
 	}
 
+	private static MultiJoinPlan movementPlan() {
+		AdaptiveFilterMetadata metadata = AdaptiveFilterMetadata.eligible(52, 4);
+		return new MultiJoinPlan(
+				new SlotPlan[] { values(0, 4_096), values(1, 25), values(2, 1) },
+				new MaskedFilter[] {
+						new MaskedFilter(row -> (row.slots[0] & 1L) == 0L, 1L, metadata, 1) });
+	}
+
+	private static long count(RowCursor cursor) throws Exception {
+		long rows = 0L;
+		while (cursor.next()) {
+			rows++;
+		}
+		return rows;
+	}
+
 	private static int[] candidateDepths(int childCount, int plannedDepth) {
 		SlotPlan[] children = new SlotPlan[childCount];
 		for (int i = 0; i < childCount; i++) {
@@ -862,6 +1053,101 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 		@Override
 		public void close() {
 			closeCalls++;
+		}
+	}
+
+	private static final class ForkableCloseTrackingFilter implements NativeBooleanFilter {
+		private final CountDownLatch entered;
+		private final CountDownLatch release;
+		private final AtomicInteger closes;
+		private boolean firstAccept = true;
+		private boolean closed;
+
+		private ForkableCloseTrackingFilter(CountDownLatch entered, CountDownLatch release, AtomicInteger closes) {
+			this.entered = entered;
+			this.release = release;
+			this.closes = closes;
+		}
+
+		@Override
+		public boolean accept(RowState row) {
+			if (firstAccept) {
+				firstAccept = false;
+				entered.countDown();
+				try {
+					if (!release.await(10, TimeUnit.SECONDS)) {
+						throw new IllegalStateException("adaptive worker stress gate timed out");
+					}
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new IllegalStateException("adaptive worker stress gate interrupted", e);
+				}
+			}
+			return (row.slots[0] & 1L) == 0L;
+		}
+
+		@Override
+		public boolean parallelWorkerForkable() {
+			return true;
+		}
+
+		@Override
+		public NativeBooleanFilter forkForParallelWorker() {
+			return new ForkableCloseTrackingFilter(entered, release, closes);
+		}
+
+		@Override
+		public void close() {
+			if (!closed) {
+				closed = true;
+				closes.incrementAndGet();
+			}
+		}
+	}
+
+	private static final class NoopParallelSource implements NativeLmdbQuerySource.ParallelSource {
+		@Override
+		public long idOf(Value value) {
+			throw new UnsupportedOperationException();
+		}
+
+		@Override
+		public Value lazyValue(long id) {
+			throw new UnsupportedOperationException();
+		}
+
+		@Override
+		public Object idSpace() {
+			return this;
+		}
+
+		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context) throws IOException {
+			throw new UnsupportedOperationException();
+		}
+
+		@Override
+		public long count(long subj, long pred, long obj, long context) {
+			return 0L;
+		}
+
+		@Override
+		public boolean has(long subj, long pred, long obj, long context) {
+			return false;
+		}
+
+		@Override
+		public double estimate(long subj, long pred, long obj, long context) {
+			return 0D;
+		}
+
+		@Override
+		public boolean hasStatementsInSource() {
+			return false;
+		}
+
+		@Override
+		public void close() {
 		}
 	}
 

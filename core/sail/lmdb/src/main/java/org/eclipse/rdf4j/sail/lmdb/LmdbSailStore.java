@@ -29,6 +29,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.OptionalDouble;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -1006,6 +1008,9 @@ class LmdbSailStore implements SailStore {
 
 	@Override
 	public void close() throws SailException {
+		if (csrCache != null) {
+			csrCache.close();
+		}
 		try {
 			try {
 				cancelAndDrainScheduledBackgroundSampling();
@@ -1722,6 +1727,9 @@ class LmdbSailStore implements SailStore {
 							freshValueSession = null;
 						}
 						// The triple/value stores are authoritative once both commits succeed.
+						if (csrCache != null) {
+							csrCache.committedWrite();
+						}
 						storeTxnStarted.set(false);
 						estimatorTouchedInTransaction = false;
 						estimatorTouchedSinceStoreTxnStart.set(false);
@@ -2831,6 +2839,112 @@ class LmdbSailStore implements SailStore {
 	 * locally, flushing accumulated counts into the shared cache every {@code PROBE_FLUSH_INTERVAL} opens and on close
 	 * so the adaptive build trigger sees cross-query traffic.
 	 */
+	private OptionalDouble fanOutMean(long predicate, boolean bySubject, boolean explicit, boolean csrEligible) {
+		if (csrCache != null && csrEligible) {
+			OptionalDouble cached = csrCache.meanFanOut(predicate, bySubject, explicit);
+			if (cached.isPresent()) {
+				return cached;
+			}
+		}
+		return tripleStore.meanFanOut(predicate, bySubject, explicit);
+	}
+
+	private OptionalLong fanOutDegree(long predicate, long key, boolean bySubject, boolean explicit,
+			boolean csrEligible) {
+		return csrCache == null || !csrEligible ? OptionalLong.empty()
+				: csrCache.exactDegree(predicate, key, bySubject, explicit);
+	}
+
+	private NativeLmdbQuerySource.OrderedIntegerDomain orderedIntegerDomain(long subj, long pred, long obj,
+			long context, int varyingField, boolean explicit, boolean csrEligible) {
+		if (csrCache == null || !csrEligible || pred <= 0) {
+			return null;
+		}
+		int direction = switch (varyingField) {
+		case TripleIndex.OBJ_IDX -> LmdbCsrAdjacencyCache.BY_SUBJECT;
+		case TripleIndex.SUBJ_IDX -> LmdbCsrAdjacencyCache.BY_OBJECT;
+		default -> -1;
+		};
+		if (direction < 0) {
+			return null;
+		}
+		LmdbCsrAdjacencyCache.CsrEntry entry = csrCache.lookup(pred, direction, explicit);
+		if (entry == null || entry.neighbors.length == 0 || !entry.allNeighborsOrderedIntegers) {
+			return null;
+		}
+		String indexName = tripleStore.getIndexName(subj, pred, obj, context);
+		if (firstVaryingField(indexName, subj, pred, obj, context) != varyingField) {
+			return null;
+		}
+		return new NativeLmdbQuerySource.OrderedIntegerDomain(indexName,
+				ValueIds.orderedIntegerValue(entry.neighborMinId),
+				ValueIds.orderedIntegerValue(entry.neighborMaxId));
+	}
+
+	private boolean rangeApplies(LmdbKeyRange range, long subj, long pred, long obj, long context) {
+		String indexName = tripleStore.getIndexName(subj, pred, obj, context);
+		return range.indexFieldSeq().equals(indexName)
+				&& (range.firstVaryingField() < 0
+						|| firstVaryingField(indexName, subj, pred, obj, context) == range.firstVaryingField());
+	}
+
+	private static int firstVaryingField(String indexName, long subj, long pred, long obj, long context) {
+		for (int i = 0; i < indexName.length(); i++) {
+			int field = switch (indexName.charAt(i)) {
+			case 's' -> TripleIndex.SUBJ_IDX;
+			case 'p' -> TripleIndex.PRED_IDX;
+			case 'o' -> TripleIndex.OBJ_IDX;
+			case 'c' -> TripleIndex.CONTEXT_IDX;
+			default -> -1;
+			};
+			boolean bound = switch (field) {
+			case TripleIndex.SUBJ_IDX -> subj > 0;
+			case TripleIndex.PRED_IDX -> pred > 0;
+			case TripleIndex.OBJ_IDX -> obj > 0;
+			case TripleIndex.CONTEXT_IDX -> context >= 0;
+			default -> false;
+			};
+			if (!bound) {
+				return field;
+			}
+		}
+		return -1;
+	}
+
+	/** Borrowed primitive adapter; the owning probe's read/snapshot lease defines its valid lifetime. */
+	private static final class CsrNativeAdjacency implements NativeLmdbQuerySource.NativeAdjacency {
+		private final LmdbCsrAdjacencyCache.CsrEntry entry;
+
+		private CsrNativeAdjacency(LmdbCsrAdjacencyCache.CsrEntry entry) {
+			this.entry = entry;
+		}
+
+		@Override
+		public int denseIdOf(long key) {
+			return entry.denseIdOf(key);
+		}
+
+		@Override
+		public int runStart(int dense) {
+			return entry.runStart[dense];
+		}
+
+		@Override
+		public int runEnd(int dense) {
+			return entry.runStart[dense + 1];
+		}
+
+		@Override
+		public long neighborAt(int index) {
+			return entry.neighbors[index];
+		}
+
+		@Override
+		public long contextAt(int index) {
+			return entry.contexts == null ? 0L : entry.contexts[index];
+		}
+	}
+
 	private final class CsrProbeSupport {
 		private final Txn txn;
 		private final boolean explicit;
@@ -2839,6 +2953,9 @@ class LmdbSailStore implements SailStore {
 		private int pendingDirection;
 		private int pendingCount;
 		private boolean servedFromCache;
+		private long[] servedKeys;
+		private LmdbCsrAdjacencyCache.CsrEntry adjacencyEntry;
+		private NativeLmdbQuerySource.NativeAdjacency adjacency;
 
 		CsrProbeSupport(Txn txn, boolean explicit) {
 			this.txn = txn;
@@ -2847,6 +2964,25 @@ class LmdbSailStore implements SailStore {
 
 		boolean servedFromCache() {
 			return servedFromCache;
+		}
+
+		long[] servedKeys() {
+			return servedKeys;
+		}
+
+		NativeLmdbQuerySource.NativeAdjacency adjacency(long pred, boolean bySubject) {
+			int direction = bySubject ? LmdbCsrAdjacencyCache.BY_SUBJECT : LmdbCsrAdjacencyCache.BY_OBJECT;
+			LmdbCsrAdjacencyCache.CsrEntry entry = csrCache.lookup(pred, direction, explicit);
+			if (entry == null) {
+				return null;
+			}
+			servedFromCache = true;
+			servedKeys = entry.keysByDense;
+			if (entry != adjacencyEntry) {
+				adjacencyEntry = entry;
+				adjacency = new CsrNativeAdjacency(entry);
+			}
+			return adjacency;
 		}
 
 		/** Serves the probe from the cache, or returns {@code null} for the ordinary LMDB path. */
@@ -2863,6 +2999,7 @@ class LmdbSailStore implements SailStore {
 				iterator.init(entry, direction == LmdbCsrAdjacencyCache.BY_SUBJECT ? subj : obj, pred, context,
 						direction);
 				servedFromCache = true;
+				servedKeys = entry.keysByDense;
 				return iterator;
 			}
 			if (pred != pendingPred || direction != pendingDirection) {
@@ -2989,11 +3126,30 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context, LmdbKeyRange range)
+				throws IOException {
+			checkOpen();
+			if (!hasStatementsInSource()) {
+				return EmptyRecordIterator.INSTANCE;
+			}
+			return rangeApplies(range, subj, pred, obj, context)
+					? tripleStore.getTriplesRange(txn, subj, pred, obj, context, explicit, range)
+					: statements(subj, pred, obj, context);
+		}
+
+		@Override
 		public LmdbRootScanPartition[] planRootScanPartitions(long subj, long pred, long obj, long context,
 				int targetPartitions) throws IOException {
 			checkOpen();
 			if (!hasStatementsInSource()) {
 				return new LmdbRootScanPartition[0];
+			}
+			if (csrCache != null) {
+				LmdbRootScanPartition[] cached = csrCache.tryPlanRootScanPartitions(subj, pred, obj, context,
+						explicit, targetPartitions);
+				if (cached != null) {
+					return cached;
+				}
 			}
 			return toRootScanPartitions(
 					tripleStore.planRootSplitKeys(txn, subj, pred, obj, context, explicit, targetPartitions),
@@ -3007,6 +3163,12 @@ class LmdbSailStore implements SailStore {
 			if (!hasStatementsInSource()) {
 				return EmptyRecordIterator.INSTANCE;
 			}
+			if (partition.isCsrSlice()) {
+				if (csrCache == null) {
+					throw new IllegalStateException("CSR partition cannot be opened without its owning cache");
+				}
+				return csrCache.tryPartitionedScan(subj, pred, obj, context, explicit, partition);
+			}
 			return tripleStore.getTriplesRange(txn, subj, pred, obj, context, explicit, partition.range());
 		}
 
@@ -3016,6 +3178,12 @@ class LmdbSailStore implements SailStore {
 			checkOpen();
 			if (!hasStatementsInSource()) {
 				return EmptyRecordIterator.INSTANCE;
+			}
+			if (csrCache != null) {
+				RecordIterator scan = csrCache.tryOrderedScan(order, subj, pred, obj, context, explicit);
+				if (scan != null) {
+					return scan;
+				}
 			}
 			return tripleStore.getTriples(txn, order, subj, pred, obj, context, explicit);
 		}
@@ -3083,6 +3251,17 @@ class LmdbSailStore implements SailStore {
 				}
 
 				@Override
+				public long[] adjacencyCacheKeys() {
+					return csr != null ? csr.servedKeys() : null;
+				}
+
+				@Override
+				public NativeLmdbQuerySource.NativeAdjacency adjacency(long predicate, boolean bySubject) {
+					checkOpen();
+					return csr != null && hasStatementsInSource() ? csr.adjacency(predicate, bySubject) : null;
+				}
+
+				@Override
 				public void close() {
 					if (csr != null) {
 						csr.flushPending();
@@ -3136,6 +3315,29 @@ class LmdbSailStore implements SailStore {
 			} catch (IOException | RuntimeException e) {
 				return Double.POSITIVE_INFINITY;
 			}
+		}
+
+		@Override
+		public OptionalDouble meanFanOut(long predicate, boolean bySubject) {
+			checkOpen();
+			return hasStatementsInSource() ? fanOutMean(predicate, bySubject, explicit, true)
+					: OptionalDouble.empty();
+		}
+
+		@Override
+		public OptionalLong exactDegree(long predicate, long key, boolean bySubject) {
+			checkOpen();
+			return hasStatementsInSource() ? fanOutDegree(predicate, key, bySubject, explicit, true)
+					: OptionalLong.empty();
+		}
+
+		@Override
+		public OrderedIntegerDomain orderedIntegerDomain(long subj, long pred, long obj, long context,
+				int varyingField) {
+			checkOpen();
+			return hasStatementsInSource()
+					? LmdbSailStore.this.orderedIntegerDomain(subj, pred, obj, context, varyingField, explicit, true)
+					: null;
 		}
 
 		@Override
@@ -3242,6 +3444,29 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context, LmdbKeyRange range)
+				throws IOException {
+			if (!rangeApplies(range, subj, pred, obj, context)) {
+				return statements(subj, pred, obj, context);
+			}
+			long readStamp = acquireNativeSourceReadLock();
+			boolean releaseReadLock = true;
+			try {
+				assertNativeSourceOpen();
+				if (!hasStatementsInSource()) {
+					return EmptyRecordIterator.INSTANCE;
+				}
+				RecordIterator iterator = tripleStore.getTriplesRange(txn, subj, pred, obj, context, explicit, range);
+				releaseReadLock = false;
+				return new NativeSourceReadLockedRecordIterator(iterator, readStamp);
+			} finally {
+				if (releaseReadLock) {
+					nativeSourceLock.unlockRead(readStamp);
+				}
+			}
+		}
+
+		@Override
 		public RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context)
 				throws IOException {
 			long readStamp = acquireNativeSourceReadLock();
@@ -3250,6 +3475,13 @@ class LmdbSailStore implements SailStore {
 				assertNativeSourceOpen();
 				if (!hasStatementsInSource()) {
 					return EmptyRecordIterator.INSTANCE;
+				}
+				if (csrCache != null && csrEligible) {
+					RecordIterator scan = csrCache.tryOrderedScan(order, subj, pred, obj, context, explicit);
+					if (scan != null) {
+						// pure in-memory iterator: no LMDB cursor to guard, the read stamp can be released now
+						return scan;
+					}
 				}
 				RecordIterator iterator = tripleStore.getTriples(txn, order, subj, pred, obj, context, explicit);
 				releaseReadLock = false;
@@ -3270,6 +3502,13 @@ class LmdbSailStore implements SailStore {
 				if (!hasStatementsInSource()) {
 					return new LmdbRootScanPartition[0];
 				}
+				if (csrCache != null && csrEligible) {
+					LmdbRootScanPartition[] cached = csrCache.tryPlanRootScanPartitions(subj, pred, obj, context,
+							explicit, targetPartitions);
+					if (cached != null) {
+						return cached;
+					}
+				}
 				return toRootScanPartitions(
 						tripleStore.planRootSplitKeys(txn, subj, pred, obj, context, explicit, targetPartitions),
 						tripleStore.getIndexName(subj, pred, obj, context));
@@ -3287,6 +3526,12 @@ class LmdbSailStore implements SailStore {
 				assertNativeSourceOpen();
 				if (!hasStatementsInSource()) {
 					return EmptyRecordIterator.INSTANCE;
+				}
+				if (partition.isCsrSlice()) {
+					if (csrCache == null || !csrEligible) {
+						throw new IllegalStateException("CSR partition cannot be opened by this source");
+					}
+					return csrCache.tryPartitionedScan(subj, pred, obj, context, explicit, partition);
 				}
 				RecordIterator iterator = tripleStore.getTriplesRange(txn, subj, pred, obj, context, explicit,
 						partition.range());
@@ -3412,6 +3657,30 @@ class LmdbSailStore implements SailStore {
 			}
 
 			@Override
+			public long[] adjacencyCacheKeys() {
+				return csr != null ? csr.servedKeys() : null;
+			}
+
+			@Override
+			public NativeLmdbQuerySource.NativeAdjacency adjacency(long predicate, boolean bySubject)
+					throws IOException {
+				if (closed) {
+					throw new SailException("Probe has been closed");
+				}
+				if (!stampHeld) {
+					readStamp = acquireNativeSourceReadLock();
+					stampHeld = true;
+				}
+				try {
+					assertNativeSourceOpen();
+					return csr != null && hasStatementsInSource() ? csr.adjacency(predicate, bySubject) : null;
+				} catch (RuntimeException | Error failure) {
+					close();
+					throw failure;
+				}
+			}
+
+			@Override
 			public void close() {
 				if (closed) {
 					return;
@@ -3485,6 +3754,30 @@ class LmdbSailStore implements SailStore {
 			} catch (IOException | RuntimeException e) {
 				return Double.POSITIVE_INFINITY;
 			}
+		}
+
+		@Override
+		public OptionalDouble meanFanOut(long predicate, boolean bySubject) {
+			assertNativeSourceOpen();
+			return hasStatementsInSource() ? fanOutMean(predicate, bySubject, explicit, csrEligible)
+					: OptionalDouble.empty();
+		}
+
+		@Override
+		public OptionalLong exactDegree(long predicate, long key, boolean bySubject) {
+			assertNativeSourceOpen();
+			return hasStatementsInSource() ? fanOutDegree(predicate, key, bySubject, explicit, csrEligible)
+					: OptionalLong.empty();
+		}
+
+		@Override
+		public OrderedIntegerDomain orderedIntegerDomain(long subj, long pred, long obj, long context,
+				int varyingField) {
+			assertNativeSourceOpen();
+			return hasStatementsInSource()
+					? LmdbSailStore.this.orderedIntegerDomain(subj, pred, obj, context, varyingField, explicit,
+							csrEligible)
+					: null;
 		}
 
 		@Override
@@ -3710,6 +4003,7 @@ class LmdbSailStore implements SailStore {
 			private final RecordIterator delegate;
 			private final long readStamp;
 			private boolean closed;
+			private boolean seekForwardMode;
 			private int singlePulls;
 			private long[] batch;
 			private long[] scratch;
@@ -3732,7 +4026,7 @@ class LmdbSailStore implements SailStore {
 						return nextFromBatch();
 					}
 					assertNativeSourceOpen();
-					if (singlePulls < SINGLE_PULLS_BEFORE_BATCHING) {
+					if (seekForwardMode || singlePulls < SINGLE_PULLS_BEFORE_BATCHING) {
 						singlePulls++;
 						long[] record = delegate.next();
 						if (record == null) {
@@ -3800,6 +4094,11 @@ class LmdbSailStore implements SailStore {
 				}
 				try {
 					assertNativeSourceOpen();
+					// A seek-driven cursor must not prefetch beyond its current frontier key: fill() may exhaust and
+					// close the delegate while later seek targets still exist only in this wrapper's buffer.
+					if (batch == null) {
+						seekForwardMode = true;
+					}
 					boolean sought = delegate.seekForward(subj, pred, obj, context);
 					if (sought && batch != null) {
 						// buffered rows precede the seek target: drop them so the next pull refills from there
@@ -3810,6 +4109,11 @@ class LmdbSailStore implements SailStore {
 					close();
 					throw e;
 				}
+			}
+
+			@Override
+			public String getIndexName() {
+				return delegate.getIndexName();
 			}
 
 			@Override

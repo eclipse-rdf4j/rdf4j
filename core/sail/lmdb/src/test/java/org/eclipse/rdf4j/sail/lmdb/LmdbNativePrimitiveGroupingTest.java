@@ -60,6 +60,25 @@ public class LmdbNativePrimitiveGroupingTest {
 	}
 
 	@Test
+	void eightKeyGroupsUseThePrimitiveTupleTable() {
+		int[] slots = { 0, 1, 2, 3, 4, 5, 6, 7 };
+		PrimitiveTupleTable tuples = new PrimitiveTupleTable(slots.length, 4);
+		long[] first = { 10, 20, 30, 40, 50, 60, 70, 80 };
+		long[] second = { 10, 20, 30, 40, 50, 60, 70, 81 };
+
+		assertThat(tuples.findOrInsert(first, slots, false)).isZero();
+		assertThat(tuples.findOrInsert(first, slots, false)).isZero();
+		assertThat(tuples.findOrInsert(second, slots, false)).isOne();
+		assertThat(tuples.groupKey(0).ids).containsExactly(first);
+
+		AggregateSpec[] aggregates = { AggregateSpec.star("count") };
+		NativeGroupTable groups = NativeGroupTable.create(slots, aggregates, null,
+				AggregateDistinctChannels.allHash(aggregates), true, false);
+		assertThat(groups.mode).isEqualTo(NativeGroupTable.Mode.TUPLE_COUNTS);
+		assertThat(groups.strategyName()).isEqualTo(LmdbNativeAttemptMetrics.PATH_PRIMITIVE_TUPLE_GROUPS);
+	}
+
+	@Test
 	void plainAggregateStatesShareEmptyDistinctStorage() {
 		AggregateSpec[] specs = { AggregateSpec.star("count") };
 		AggregateDistinctChannels channels = AggregateDistinctChannels.allHash(specs);
@@ -102,6 +121,28 @@ public class LmdbNativePrimitiveGroupingTest {
 		assertThat(NativeGroupIteration.PRIMITIVE_COUNT_GROUP_ROWS.get()).isEqualTo(600L);
 		assertThat(NativeGroupIteration.PRIMITIVE_TUPLE_GROUP_ROWS.get()).isZero();
 		assertThat(PrimitiveTupleTable.INSERTIONS.get()).isEqualTo(15L);
+	}
+
+	@Test
+	public void eightKeyAggregateMatchesGenericAndUsesPrimitiveState() {
+		String query = """
+				SELECT ?p ?o (COUNT(?s) AS ?c)
+				WHERE {
+				  { ?s ?p ?o } UNION { ?s ?p ?o }
+				  BIND(?p AS ?p2)
+				  BIND(?p AS ?p3)
+				  BIND(?p AS ?p4)
+				  BIND(?o AS ?o2)
+				  BIND(?o AS ?o3)
+				  BIND(?o AS ?o4)
+				}
+				GROUP BY ?p ?o ?p2 ?p3 ?p4 ?o2 ?o3 ?o4
+				""";
+
+		assertNativeMatchesGeneric(repository, query);
+
+		assertThat(strategy(repository, query)).isEqualTo("primitiveTupleGroups");
+		assertThat(PrimitiveTupleTable.INSERTIONS.get()).isGreaterThanOrEqualTo(15L);
 	}
 
 	@Test

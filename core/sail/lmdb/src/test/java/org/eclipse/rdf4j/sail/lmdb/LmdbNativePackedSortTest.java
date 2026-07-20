@@ -13,7 +13,11 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.BufferedInputStream;
+import java.io.DataInputStream;
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -41,6 +45,7 @@ public class LmdbNativePackedSortTest {
 
 	private static final String EX = "http://example.com/";
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
+	private static final String ORDERED_FACTORIZED_FLAG = "rdf4j.lmdb.orderedFactorizedRows.enabled";
 	private static final List<String> ALL_CALENDAR_STANDARD_ORDER = List.of(
 			"gYear:2000",
 			"date:2000-02-29Z",
@@ -117,6 +122,40 @@ public class LmdbNativePackedSortTest {
 	}
 
 	@Test
+	public void fullSortPacksKeyPrefixAndOnlyLiveProjectionColumns() {
+		String query = wideValuesQuery(64);
+		String previous = System.getProperty(ORDERED_FACTORIZED_FLAG);
+		try {
+			System.setProperty(ORDERED_FACTORIZED_FLAG, "false");
+			List<String> generic = rowsWithProperty(NATIVE_FLAG, "false", query);
+			resetCounters();
+			List<String> nativeRows = rowsWithProperty(NativeSpillSort.MAX_BYTES_PROPERTY, "67108864", query);
+
+			assertThat(nativeRows).hasSize(64).containsExactlyElementsOf(generic);
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				String optimized = connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.Optimized)
+						.toString();
+				assertThat(optimized)
+						.contains("sortLiveToPlan=[?v6#6, ?root#0, ?v10#10, ?v11#11]")
+						.contains("sortKeyWidth=1")
+						.contains("sortPackedWidth=4");
+				assertThat(connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toString())
+						.contains("nativeSortInputWidthActual=12")
+						.contains("nativeSortPackedWidthActual=4")
+						.contains("nativeSortKeyPrefixWidthActual=1")
+						.contains("nativeSortPackedValuesActual=256");
+			}
+		} finally {
+			if (previous == null) {
+				System.clearProperty(ORDERED_FACTORIZED_FLAG);
+			} else {
+				System.setProperty(ORDERED_FACTORIZED_FLAG, previous);
+			}
+		}
+	}
+
+	@Test
 	public void packedTopKMatchesGenericWithoutCreatingRuns() {
 		String query = query(" LIMIT 13");
 		List<String> generic = rowsWithProperty(NATIVE_FLAG, "false", query);
@@ -127,6 +166,104 @@ public class LmdbNativePackedSortTest {
 		assertThat(NativeSortBuffer.TOP_K_CANDIDATES.get()).isEqualTo(500L);
 		assertThat(NativeSpillSort.SPILL_RUNS.get()).isZero();
 		assertThat(NativeSortBuffer.PACKED_ROWS.get()).isEqualTo(13L);
+	}
+
+	@Test
+	public void declaredLimitJustAboveLegacyCliffStillUsesBoundedTopK() {
+		String query = query(" LIMIT 100001");
+		List<String> generic = rowsWithProperty(NATIVE_FLAG, "false", query);
+		resetCounters();
+		List<String> nativeRows = rowsWithProperty(NativeSpillSort.MAX_BYTES_PROPERTY, "256", query);
+
+		assertThat(nativeRows).isEqualTo(generic);
+		assertThat(NativeSortBuffer.TOP_K_CANDIDATES.get()).isEqualTo(500L);
+		assertThat(NativeSpillSort.SPILL_RUNS.get()).isZero();
+	}
+
+	@Test
+	public void declaredLimitBeyondSafeIntCapacityNeverSelectsTopK() {
+		String query = query(" LIMIT " + ((long) Integer.MAX_VALUE + 1L));
+		List<String> generic = rowsWithProperty(NATIVE_FLAG, "false", query);
+		resetCounters();
+		List<String> nativeRows = rowsWithProperty(NativeSpillSort.MAX_BYTES_PROPERTY, "256", query);
+
+		assertThat(nativeRows).isEqualTo(generic);
+		assertThat(NativeSortBuffer.TOP_K_CANDIDATES.get()).isZero();
+	}
+
+	@Test
+	public void reducingTopKTruncatesRunsAndFiltersAgainstTheBoundary() throws IOException {
+		PackedRowComparator comparator = (left, leftOffset, right, rightOffset) -> Long.compare(
+				left[leftOffset], right[rightOffset]);
+		resetCounters();
+		List<Long> rows = new ArrayList<>();
+
+		try (NativeSpillSort sort = new NativeSpillSort(1, comparator, 3, LmdbNativeAttemptMetrics.direct())) {
+			for (int value = 0; value < 200; value++) {
+				sort.add(new long[] { value }, value);
+			}
+			try (NativeSortedRows sorted = sort.sortedRows()) {
+				long[] row = new long[1];
+				while (sorted.next(row)) {
+					rows.add(row[0]);
+				}
+			}
+		}
+
+		assertThat(rows).containsExactly(0L, 1L, 2L);
+		assertThat(NativeSortBuffer.TOP_K_CANDIDATES.get()).isEqualTo(200L);
+		assertThat(NativeSpillSort.SPILL_RUNS.get()).isEqualTo(1L);
+		assertThat(NativeSpillSort.SPILLED_ROWS.get()).isEqualTo(3L);
+		assertThat(NativeSpillSort.DELETED_RUNS.get()).isEqualTo(1L);
+	}
+
+	@Test
+	public void spillRunStoresTheKeyRegionBeforeDeferredPayloadRows() throws IOException {
+		PackedRowComparator comparator = (left, leftOffset, right, rightOffset) -> Long.compare(
+				left[leftOffset], right[rightOffset]);
+		String previous = System.getProperty(NativeSpillSort.MAX_BYTES_PROPERTY);
+		try {
+			System.setProperty(NativeSpillSort.MAX_BYTES_PROPERTY, "64");
+			try (NativeSpillSort sort = new NativeSpillSort(3, 1, comparator)) {
+				sort.add(new long[] { 2L, 200L, 2_000L }, 0L);
+				sort.add(new long[] { 1L, 100L, 1_000L }, 1L);
+				sort.add(new long[] { 3L, 300L, 3_000L }, 2L);
+
+				assertThat(sort.runs).hasSize(1);
+				try (DataInputStream input = new DataInputStream(
+						new BufferedInputStream(Files.newInputStream(sort.runs.get(0))))) {
+					assertThat(input.readInt()).isEqualTo(3);
+					assertThat(input.readInt()).isEqualTo(1);
+					assertThat(input.readInt()).isEqualTo(2);
+					assertThat(input.readLong()).isEqualTo(1L);
+					assertThat(input.readLong()).isEqualTo(1L);
+					assertThat(input.readLong()).isZero();
+					assertThat(input.readLong()).isEqualTo(2L);
+					assertThat(input.readLong()).isEqualTo(100L);
+					assertThat(input.readLong()).isEqualTo(1_000L);
+					assertThat(input.readLong()).isEqualTo(200L);
+					assertThat(input.readLong()).isEqualTo(2_000L);
+				}
+
+				List<List<Long>> rows = new ArrayList<>();
+				try (NativeSortedRows sorted = sort.sortedRows()) {
+					long[] row = new long[3];
+					while (sorted.next(row)) {
+						rows.add(List.of(row[0], row[1], row[2]));
+					}
+				}
+				assertThat(rows).containsExactly(
+						List.of(1L, 100L, 1_000L),
+						List.of(2L, 200L, 2_000L),
+						List.of(3L, 300L, 3_000L));
+			}
+		} finally {
+			if (previous == null) {
+				System.clearProperty(NativeSpillSort.MAX_BYTES_PROPERTY);
+			} else {
+				System.setProperty(NativeSpillSort.MAX_BYTES_PROPERTY, previous);
+			}
+		}
 	}
 
 	@Test
@@ -223,6 +360,28 @@ public class LmdbNativePackedSortTest {
 				+ " ORDER BY ?bucket DESC(?score) ?s" + suffix;
 	}
 
+	private String wideValuesQuery(int rows) {
+		StringBuilder query = new StringBuilder("SELECT ?root ?v10 ?v11 WHERE { VALUES (");
+		for (int slot = 0; slot < 12; slot++) {
+			query.append(slot == 0 ? "?root" : "?v" + slot).append(' ');
+		}
+		query.append(") { ");
+		for (int row = 0; row < rows; row++) {
+			query.append('(');
+			for (int slot = 0; slot < 12; slot++) {
+				query.append('<')
+						.append(EX)
+						.append("wide/value/")
+						.append(slot)
+						.append('/')
+						.append(rows - row)
+						.append("> ");
+			}
+			query.append(") ");
+		}
+		return query.append("} } ORDER BY ?v6").toString();
+	}
+
 	private List<String> rowsWithProperty(String property, String value, String query) {
 		String previous = System.getProperty(property);
 		try {
@@ -249,6 +408,7 @@ public class LmdbNativePackedSortTest {
 
 	private static void resetCounters() {
 		NativeSortBuffer.PACKED_ROWS.set(0L);
+		NativeSortBuffer.PACKED_VALUES.set(0L);
 		NativeSortBuffer.SORTS.set(0L);
 		NativeSortBuffer.TOP_K_CANDIDATES.set(0L);
 		NativeSpillSort.SPILL_RUNS.set(0L);

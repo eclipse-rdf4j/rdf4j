@@ -39,6 +39,29 @@ import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 interface NativeBooleanFilter {
 	boolean accept(RowState row);
 
+	/**
+	 * Compacts {@code sel[0..n)} in encounter order and returns the surviving count. The default is the scalar
+	 * three-valued/error boundary used before batch specialization: populate the caller-owned scratch row, then invoke
+	 * {@link #accept(RowState)} once per candidate.
+	 */
+	default int selectBatch(NativeBatch batch, int[] sel, int n, RowState scratch) {
+		int accepted = 0;
+		for (int i = 0; i < n; i++) {
+			int physicalRow = sel[i];
+			batch.copyToRow(physicalRow, scratch.slots);
+			scratch.recomputeBoundMask();
+			if (accept(scratch)) {
+				sel[accepted++] = physicalRow;
+			}
+		}
+		return accepted;
+	}
+
+	/** Exact slot read-set for masked batch specialization, or {@code -1} when it is not intrinsic to the filter. */
+	default long batchReadMask() {
+		return -1L;
+	}
+
 	/** Whether this filter can create an independent owner for one parallel worker. */
 	default boolean parallelWorkerForkable() {
 		return false;
@@ -94,6 +117,19 @@ final class RecordingNativeBooleanFilter implements NativeBooleanFilter {
 			filtered.incrementAndGet();
 		}
 		return accepted;
+	}
+
+	@Override
+	public int selectBatch(NativeBatch batch, int[] sel, int n, RowState scratch) {
+		int accepted = delegate.selectBatch(batch, sel, n, scratch);
+		passed.addAndGet(accepted);
+		filtered.addAndGet(n - accepted);
+		return accepted;
+	}
+
+	@Override
+	public long batchReadMask() {
+		return delegate.batchReadMask();
 	}
 
 	@Override
@@ -154,6 +190,16 @@ final class CloseOnceNativeBooleanFilter implements NativeBooleanFilter {
 	@Override
 	public boolean accept(RowState row) {
 		return delegate.accept(row);
+	}
+
+	@Override
+	public int selectBatch(NativeBatch batch, int[] sel, int n, RowState scratch) {
+		return delegate.selectBatch(batch, sel, n, scratch);
+	}
+
+	@Override
+	public long batchReadMask() {
+		return delegate.batchReadMask();
 	}
 
 	@Override
@@ -243,6 +289,53 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 		return result;
 	}
 
+	@Override
+	public int selectBatch(NativeBatch batch, int[] sel, int n, RowState scratch) {
+		if (varyingSlots.length < 2 || varyingSlots.length > 4) {
+			return NativeBooleanFilter.super.selectBatch(batch, sel, n, scratch);
+		}
+		if (memo == null) {
+			memo = new KeyedMatches(varyingSlots.length, 256).withVerdicts();
+		}
+		memo.prepareBatch(batch, sel, n, varyingSlots);
+		int accepted = 0;
+		for (int i = 0; i < n; i++) {
+			int physicalRow = sel[i];
+			batch.copyToRow(physicalRow, scratch.slots);
+			scratch.recomputeBoundMask();
+			if (acceptPrepared(batch, physicalRow, i, scratch)) {
+				sel[accepted++] = physicalRow;
+			}
+		}
+		return accepted;
+	}
+
+	private boolean acceptPrepared(NativeBatch batch, int physicalRow, int preparedIndex, RowState row) {
+		if (membershipProbe != null) {
+			int result = membershipProbe.test(row);
+			if (result >= 0) {
+				return result == 1;
+			}
+		}
+		long subj = s.lookup(row.slots);
+		long pred = p.lookup(row.slots);
+		long obj = o.lookup(row.slots);
+		long context = c.lookup(row.slots);
+		if (namedContextScope && context == NULL_CONTEXT_ID) {
+			return false;
+		}
+		Boolean cached = memo.memoGetPrepared(batch, physicalRow, varyingSlots, preparedIndex);
+		if (cached != null) {
+			return cached;
+		}
+		boolean result = evaluate(subj, pred, obj, context);
+		if (membershipProbe != null) {
+			membershipProbe.recordDirectResult(result);
+		}
+		memo.memoPutPrepared(row.slots, varyingSlots, preparedIndex, result);
+		return result;
+	}
+
 	boolean evaluate(long subj, long pred, long obj, long context) {
 		try {
 			if (contexts.isFixed()) {
@@ -325,6 +418,46 @@ final class ExistsFilter implements NativeBooleanFilter {
 		return result;
 	}
 
+	@Override
+	public int selectBatch(NativeBatch batch, int[] sel, int n, RowState scratch) {
+		if (memoSlots == null || memoSlots.length < 2 || memoSlots.length > 4) {
+			return NativeBooleanFilter.super.selectBatch(batch, sel, n, scratch);
+		}
+		if (memo == null) {
+			memo = new KeyedMatches(memoSlots.length, 256).withVerdicts();
+		}
+		memo.prepareBatch(batch, sel, n, memoSlots);
+		int accepted = 0;
+		for (int i = 0; i < n; i++) {
+			int physicalRow = sel[i];
+			batch.copyToRow(physicalRow, scratch.slots);
+			scratch.recomputeBoundMask();
+			if (acceptPrepared(batch, physicalRow, i, scratch)) {
+				sel[accepted++] = physicalRow;
+			}
+		}
+		return accepted;
+	}
+
+	private boolean acceptPrepared(NativeBatch batch, int physicalRow, int preparedIndex, RowState row) {
+		if (membershipProbe != null) {
+			int result = membershipProbe.test(row);
+			if (result >= 0) {
+				return result == 1;
+			}
+		}
+		Boolean cached = memo.memoGetPrepared(batch, physicalRow, memoSlots, preparedIndex);
+		if (cached != null) {
+			return cached;
+		}
+		boolean result = exists(row);
+		if (membershipProbe != null) {
+			membershipProbe.recordDirectResult(result);
+		}
+		memo.memoPutPrepared(row.slots, memoSlots, preparedIndex, result);
+		return result;
+	}
+
 	boolean exists(RowState row) {
 		try {
 			if (existsPlan != null) {
@@ -343,11 +476,11 @@ final class ExistsFilter implements NativeBooleanFilter {
 
 @Experimental
 final class ValueSetFilter implements NativeBooleanFilter {
-	final NativeLmdbQuerySource source;
 	final int slot;
 	final long[] accepted;
 	final Value[] queryValues;
 	final Value[] acceptedValues;
+	final boolean checkBound;
 	final KeyedMatches memo = new KeyedMatches(1, 256).withVerdicts();
 
 	ValueSetFilter(NativeLmdbQuerySource source, int slot, long[] accepted) {
@@ -355,17 +488,52 @@ final class ValueSetFilter implements NativeBooleanFilter {
 	}
 
 	ValueSetFilter(NativeLmdbQuerySource source, int slot, long[] accepted, Value[] queryValues) {
-		this.source = source;
+		this(source, slot, accepted, queryValues, true);
+	}
+
+	ValueSetFilter(NativeLmdbQuerySource source, int slot, long[] accepted, Value[] queryValues, boolean checkBound) {
 		this.slot = slot;
 		this.accepted = accepted;
 		this.queryValues = queryValues;
 		this.acceptedValues = new Value[accepted.length];
+		this.checkBound = checkBound;
 	}
 
 	@Override
 	public boolean accept(RowState row) {
-		long id = row.slots[slot];
-		if (id == UNKNOWN) {
+		return acceptId(row.slots[slot], row.source);
+	}
+
+	@Override
+	public int selectBatch(NativeBatch batch, int[] sel, int n, RowState scratch) {
+		int acceptedCount = 0;
+		int columnOffset = slot * batch.capacity;
+		for (int i = 0; i < n; i++) {
+			int physicalRow = sel[i];
+			if (acceptId(batch.slots[columnOffset + physicalRow], scratch.source)) {
+				sel[acceptedCount++] = physicalRow;
+			}
+		}
+		return acceptedCount;
+	}
+
+	@Override
+	public long batchReadMask() {
+		return 1L << slot;
+	}
+
+	@Override
+	public boolean parallelWorkerForkable() {
+		return true;
+	}
+
+	@Override
+	public ValueSetFilter forkForParallelWorker() {
+		return new ValueSetFilter(null, slot, accepted, queryValues, checkBound);
+	}
+
+	private boolean acceptId(long id, NativeLmdbQuerySource source) {
+		if (checkBound && id == UNKNOWN) {
 			return false;
 		}
 		for (long candidate : accepted) {
@@ -381,7 +549,7 @@ final class ValueSetFilter implements NativeBooleanFilter {
 		try {
 			Value value = source.lazyValue(id);
 			for (int i = 0; i < accepted.length; i++) {
-				Value acceptedValue = acceptedValue(i);
+				Value acceptedValue = acceptedValue(i, source);
 				if (acceptedValue != null && QueryEvaluationUtil.compareEQ(value, acceptedValue, false)) {
 					result = true;
 					break;
@@ -394,7 +562,7 @@ final class ValueSetFilter implements NativeBooleanFilter {
 		return result;
 	}
 
-	Value acceptedValue(int index) {
+	Value acceptedValue(int index, NativeLmdbQuerySource source) {
 		if (queryValues != null) {
 			return queryValues[index];
 		}
@@ -418,16 +586,27 @@ final class CachedCompareFilter implements NativeBooleanFilter {
 	final LmdbNativeValueCodec codec;
 	final LmdbNativeValueCodec.DecodedValue constantDecoded;
 	final Long constantIntegerValue;
+	final boolean checkBound;
 	final KeyedMatches memo = new KeyedMatches(1, 512).withVerdicts();
 
 	CachedCompareFilter(NativeLmdbQuerySource source, int slot, long constant, boolean constantOnLeft,
 			Compare.CompareOp op, boolean strict,
 			Predicate<BindingSet> fallback) {
-		this(slot, constant, constantOnLeft, op, strict, fallback, source.nativeValueCodec());
+		this(slot, constant, constantOnLeft, op, strict, fallback, source.nativeValueCodec(), true);
 	}
 
-	private CachedCompareFilter(int slot, long constant, boolean constantOnLeft, Compare.CompareOp op,
+	CachedCompareFilter(NativeLmdbQuerySource source, int slot, long constant, boolean constantOnLeft,
+			Compare.CompareOp op, boolean strict, Predicate<BindingSet> fallback, boolean checkBound) {
+		this(slot, constant, constantOnLeft, op, strict, fallback, source.nativeValueCodec(), checkBound);
+	}
+
+	CachedCompareFilter(int slot, long constant, boolean constantOnLeft, Compare.CompareOp op,
 			boolean strict, Predicate<BindingSet> fallback, LmdbNativeValueCodec codec) {
+		this(slot, constant, constantOnLeft, op, strict, fallback, codec, true);
+	}
+
+	CachedCompareFilter(int slot, long constant, boolean constantOnLeft, Compare.CompareOp op,
+			boolean strict, Predicate<BindingSet> fallback, LmdbNativeValueCodec codec, boolean checkBound) {
 		this.slot = slot;
 		this.constant = constant;
 		this.constantOnLeft = constantOnLeft;
@@ -437,6 +616,7 @@ final class CachedCompareFilter implements NativeBooleanFilter {
 		this.codec = codec;
 		this.constantDecoded = codec == null ? null : codec.decode(constant);
 		this.constantIntegerValue = exactIntegerValue(constant, constantDecoded);
+		this.checkBound = checkBound;
 	}
 
 	/**
@@ -465,13 +645,43 @@ final class CachedCompareFilter implements NativeBooleanFilter {
 
 	@Override
 	public NativeBooleanFilter forkForParallelWorker() {
-		return new CachedCompareFilter(slot, constant, constantOnLeft, op, strict, fallback, codec);
+		return new CachedCompareFilter(slot, constant, constantOnLeft, op, strict, fallback, codec, checkBound);
 	}
 
 	@Override
 	public boolean accept(RowState row) {
 		long id = row.slots[slot];
-		if (id == UNKNOWN) {
+		Boolean decision = nativeDecision(id);
+		return decision != null ? decision : fallbackDecision(id, row);
+	}
+
+	@Override
+	public int selectBatch(NativeBatch batch, int[] sel, int n, RowState scratch) {
+		int acceptedCount = 0;
+		int columnOffset = slot * batch.capacity;
+		for (int i = 0; i < n; i++) {
+			int physicalRow = sel[i];
+			long id = batch.slots[columnOffset + physicalRow];
+			Boolean decision = nativeDecision(id);
+			if (decision == null) {
+				batch.copyToRow(physicalRow, scratch.slots);
+				scratch.recomputeBoundMask();
+				decision = fallbackDecision(id, scratch);
+			}
+			if (decision) {
+				sel[acceptedCount++] = physicalRow;
+			}
+		}
+		return acceptedCount;
+	}
+
+	@Override
+	public long batchReadMask() {
+		return 1L << slot;
+	}
+
+	private Boolean nativeDecision(long id) {
+		if (checkBound && id == UNKNOWN) {
 			return false;
 		}
 		if ((op == Compare.CompareOp.EQ || op == Compare.CompareOp.NE) && safeResourceId(id)
@@ -509,9 +719,95 @@ final class CachedCompareFilter implements NativeBooleanFilter {
 				return result;
 			}
 		}
-		boolean result = fallback.test(row.view);
+		return null;
+	}
+
+	private boolean fallbackDecision(long id, RowState fallbackRow) {
+		boolean result = fallback.test(fallbackRow.view);
 		memo.memoPut(id, result);
 		return result;
+	}
+}
+
+@Experimental
+final class OrderedSlotCompareFilter implements NativeBooleanFilter {
+	final int leftSlot;
+	final int rightSlot;
+	final Compare.CompareOp op;
+	final Predicate<BindingSet> fallback;
+	final boolean checkLeftBound;
+	final boolean checkRightBound;
+
+	OrderedSlotCompareFilter(int leftSlot, int rightSlot, Compare.CompareOp op, Predicate<BindingSet> fallback,
+			boolean checkLeftBound, boolean checkRightBound) {
+		this.leftSlot = leftSlot;
+		this.rightSlot = rightSlot;
+		this.op = op;
+		this.fallback = fallback;
+		this.checkLeftBound = checkLeftBound;
+		this.checkRightBound = checkRightBound;
+	}
+
+	@Override
+	public boolean accept(RowState row) {
+		long left = row.slots[leftSlot];
+		long right = row.slots[rightSlot];
+		Boolean nativeDecision = nativeDecision(left, right);
+		return nativeDecision != null ? nativeDecision : fallback.test(row.view);
+	}
+
+	@Override
+	public int selectBatch(NativeBatch batch, int[] sel, int n, RowState scratch) {
+		int accepted = 0;
+		int leftOffset = leftSlot * batch.capacity;
+		int rightOffset = rightSlot * batch.capacity;
+		for (int i = 0; i < n; i++) {
+			int physicalRow = sel[i];
+			Boolean decision = nativeDecision(batch.slots[leftOffset + physicalRow],
+					batch.slots[rightOffset + physicalRow]);
+			if (decision == null) {
+				batch.copyToRow(physicalRow, scratch.slots);
+				scratch.recomputeBoundMask();
+				decision = fallback.test(scratch.view);
+			}
+			if (decision) {
+				sel[accepted++] = physicalRow;
+			}
+		}
+		return accepted;
+	}
+
+	@Override
+	public long batchReadMask() {
+		return 1L << leftSlot | 1L << rightSlot;
+	}
+
+	@Override
+	public boolean parallelWorkerForkable() {
+		return true;
+	}
+
+	@Override
+	public NativeBooleanFilter forkForParallelWorker() {
+		return new OrderedSlotCompareFilter(leftSlot, rightSlot, op, fallback, checkLeftBound, checkRightBound);
+	}
+
+	private Boolean nativeDecision(long left, long right) {
+		if ((checkLeftBound && left == UNKNOWN) || (checkRightBound && right == UNKNOWN)) {
+			return false;
+		}
+		if (!ValueIds.isOrderedInteger(left) || !ValueIds.isOrderedInteger(right)) {
+			return null;
+		}
+		int comparison = ValueIds.compareOrderedIntegers(left, right);
+		return switch (op) {
+		case LT -> comparison < 0;
+		case LE -> comparison <= 0;
+		case GT -> comparison > 0;
+		case GE -> comparison >= 0;
+		case EQ -> comparison == 0;
+		case NE -> comparison != 0;
+		};
 	}
 }
 
@@ -519,18 +815,24 @@ final class CachedCompareFilter implements NativeBooleanFilter {
 final class IdOperand {
 	final int slot;
 	final long constant;
+	final boolean assured;
 
-	IdOperand(int slot, long constant) {
+	IdOperand(int slot, long constant, boolean assured) {
 		this.slot = slot;
 		this.constant = constant;
+		this.assured = assured;
 	}
 
 	static IdOperand slot(int slot) {
-		return new IdOperand(slot, UNKNOWN);
+		return slot(slot, false);
+	}
+
+	static IdOperand slot(int slot, boolean assured) {
+		return new IdOperand(slot, UNKNOWN, assured);
 	}
 
 	static IdOperand constant(long id) {
-		return new IdOperand(-1, id);
+		return new IdOperand(-1, id, true);
 	}
 
 	long id(RowState row) {
@@ -543,5 +845,9 @@ final class IdOperand {
 
 	boolean isConstant() {
 		return slot < 0;
+	}
+
+	boolean checkBound() {
+		return isSlot() && !assured;
 	}
 }

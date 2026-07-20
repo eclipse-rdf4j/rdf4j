@@ -13,12 +13,16 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.io.IOException;
+import java.util.Objects;
+import java.util.OptionalDouble;
+import java.util.OptionalLong;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
@@ -51,6 +55,15 @@ public interface NativeLmdbQuerySource {
 	Object idSpace();
 
 	RecordIterator statements(long subj, long pred, long obj, long context) throws IOException;
+
+	/**
+	 * Opens the pattern scan inside a preplanned raw key range. Implementations that cannot apply the range safely must
+	 * fall back to {@link #statements(long, long, long, long)} rather than risk dropping matches.
+	 */
+	default RecordIterator statements(long subj, long pred, long obj, long context, LmdbKeyRange range)
+			throws IOException {
+		return statements(subj, pred, obj, context);
+	}
 
 	default RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context)
 			throws IOException {
@@ -116,8 +129,43 @@ public interface NativeLmdbQuerySource {
 			return false;
 		}
 
+		/**
+		 * The immutable, unsigned-ascending probe-key vector owned by the adjacency entry serving this probe, or
+		 * {@code null} when no single entry owns every result. The returned array is borrowed: callers may retain the
+		 * reference for the probe stage's lifetime but must never mutate it.
+		 */
+		default long[] adjacencyCacheKeys() {
+			return null;
+		}
+
+		/**
+		 * Returns a borrowed, immutable, revision-valid adjacency view for this predicate and direction, or
+		 * {@code null} when no cache entry can serve the complete probe stage. Implementations must hold whatever
+		 * snapshot/read lease makes the view valid until this probe closes.
+		 */
+		default NativeAdjacency adjacency(long predicate, boolean bySubject) throws IOException {
+			return null;
+		}
+
 		@Override
 		void close();
+	}
+
+	/**
+	 * Read-only primitive view over one immutable adjacency entry. A successful dense lookup identifies the half-open
+	 * neighbor slice {@code [runStart(dense), runEnd(dense))}; contexts use id {@code 0} for the null graph.
+	 */
+	interface NativeAdjacency {
+
+		int denseIdOf(long key);
+
+		int runStart(int dense);
+
+		int runEnd(int dense);
+
+		long neighborAt(int index);
+
+		long contextAt(int index);
 	}
 
 	long count(long subj, long pred, long obj, long context) throws IOException;
@@ -125,6 +173,35 @@ public interface NativeLmdbQuerySource {
 	boolean has(long subj, long pred, long obj, long context) throws IOException;
 
 	double estimate(long subj, long pred, long obj, long context);
+
+	/** Advisory expected degree for a predicate probe keyed by subject or object. */
+	default OptionalDouble meanFanOut(long predicate, boolean bySubject) {
+		return OptionalDouble.empty();
+	}
+
+	/** Exact degree when a revision-valid adjacency entry contains the requested predicate direction. */
+	default OptionalLong exactDegree(long predicate, long key, boolean bySubject) {
+		return OptionalLong.empty();
+	}
+
+	/** A revision-valid ordered-integer zone map together with the index whose varying field it describes. */
+	record OrderedIntegerDomain(String indexFieldSeq, long minValue, long maxValue) {
+		public OrderedIntegerDomain {
+			Objects.requireNonNull(indexFieldSeq, "indexFieldSeq");
+			if (minValue > maxValue) {
+				throw new IllegalArgumentException("ordered-integer domain minimum exceeds maximum");
+			}
+		}
+	}
+
+	/**
+	 * Returns an ordered-integer-only proof for the requested varying quad field, or {@code null} when no sound proof
+	 * is available. The default is deliberately conservative.
+	 */
+	default OrderedIntegerDomain orderedIntegerDomain(long subj, long pred, long obj, long context,
+			int varyingField) {
+		return null;
+	}
 
 	boolean hasStatementsInSource();
 
@@ -156,10 +233,11 @@ public interface NativeLmdbQuerySource {
 	}
 
 	/**
-	 * Plans disjoint key subranges tiling this pattern's scan for range-partitioned parallel root scans, or
-	 * {@code null} when unsupported (the default). A non-null result may contain any number of partitions (including
-	 * zero for an empty source); callers decide whether enough partitions exist to engage. Partitions planned on one
-	 * member of a same-snapshot parallel source family are valid on every sibling.
+	 * Plans disjoint partitions tiling this pattern's scan for parallel root scans, or {@code null} when unsupported
+	 * (the default). A partition may own a raw index-key range or borrow a dense-key slice of an immutable in-memory
+	 * adjacency entry. A non-null result may contain any number of partitions (including zero for an empty source);
+	 * callers decide whether enough partitions exist to engage. Partitions planned on one member of a same-snapshot
+	 * parallel source family are valid on every sibling.
 	 */
 	default LmdbRootScanPartition[] planRootScanPartitions(long subj, long pred, long obj, long context,
 			int targetPartitions) throws IOException {
@@ -167,8 +245,8 @@ public interface NativeLmdbQuerySource {
 	}
 
 	/**
-	 * Opens the bounded scan for one partition previously planned by {@link #planRootScanPartitions} on this source or
-	 * on a same-snapshot family sibling.
+	 * Opens the bounded scan for one raw or in-memory partition previously planned by {@link #planRootScanPartitions}
+	 * on this source or on a same-snapshot family sibling.
 	 */
 	default RecordIterator statements(long subj, long pred, long obj, long context, LmdbRootScanPartition partition)
 			throws IOException {

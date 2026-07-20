@@ -17,12 +17,13 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.IntUnaryOperator;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 
 /**
- * Open-addressed one-to-four-column native-id table. Buckets contain dense insertion-order indexes plus one, so every
- * long value (including zero) remains a legal key and operator state can live in parallel arrays indexed by group.
+ * Open-addressed native-id tuple table. Buckets contain dense insertion-order indexes plus one, so every long value
+ * (including zero) remains a legal key and operator state can live in parallel arrays indexed by group.
  */
 @Experimental
 final class PrimitiveTupleTable {
@@ -31,36 +32,62 @@ final class PrimitiveTupleTable {
 	static final AtomicLong INSERTIONS = new AtomicLong();
 
 	final int width;
+	final boolean metricsEnabled;
+	final IntUnaryOperator hashHook;
 	long[] keys;
+	int[] fullHashes;
 	int[] buckets;
+	byte[] fingerprints;
 	int size;
 	int threshold;
+	long version;
+	long probes;
+	long insertions;
+	boolean metricsCommitted;
 
 	PrimitiveTupleTable(int width, int expectedSize) {
-		if (width < 1 || width > 4) {
-			throw new IllegalArgumentException("Primitive tuple width must be between one and four: " + width);
+		this(width, expectedSize, false, IntUnaryOperator.identity());
+	}
+
+	PrimitiveTupleTable(int width, int expectedSize, boolean metricsEnabled) {
+		this(width, expectedSize, metricsEnabled, IntUnaryOperator.identity());
+	}
+
+	PrimitiveTupleTable(int width, int expectedSize, boolean metricsEnabled, IntUnaryOperator hashHook) {
+		if (width < 1) {
+			throw new IllegalArgumentException("Primitive tuple width must be positive: " + width);
 		}
 		this.width = width;
+		this.metricsEnabled = metricsEnabled;
+		this.hashHook = hashHook;
 		int bucketCapacity = 4;
 		int requested = Math.max(2, expectedSize);
 		while (bucketCapacity < requested * 2) {
 			bucketCapacity <<= 1;
 		}
 		this.buckets = new int[bucketCapacity];
+		this.fingerprints = new byte[bucketCapacity];
 		this.threshold = bucketCapacity * 3 >>> 2;
 		this.keys = new long[Math.max(4, requested) * width];
+		this.fullHashes = new int[Math.max(4, requested)];
 	}
 
 	int find(long[] row, int[] slots, boolean nullAsUnknown) {
-		PROBES.incrementAndGet();
-		int bucket = hash(row, slots, nullAsUnknown) & (buckets.length - 1);
+		recordProbe();
+		return find(row, slots, nullAsUnknown, hash(row, slots, nullAsUnknown));
+	}
+
+	private int find(long[] row, int[] slots, boolean nullAsUnknown, int hash) {
+		int bucket = hash & (buckets.length - 1);
+		byte fingerprint = fingerprint(hash);
 		while (true) {
 			int stored = buckets[bucket];
 			if (stored == 0) {
 				return -1;
 			}
 			int index = stored - 1;
-			if (matches(index, row, slots, nullAsUnknown)) {
+			if (fingerprints[bucket] == fingerprint && fullHashes[index] == hash
+					&& matches(index, row, slots, nullAsUnknown)) {
 				return index;
 			}
 			bucket = bucket + 1 & (buckets.length - 1);
@@ -68,26 +95,144 @@ final class PrimitiveTupleTable {
 	}
 
 	int findOrInsert(long[] row, int[] slots, boolean nullAsUnknown) {
-		PROBES.incrementAndGet();
+		recordProbe();
+		return findOrInsertHashed(row, slots, nullAsUnknown, hash(row, slots, nullAsUnknown));
+	}
+
+	int findOrInsert(NativeBatch batch, int row, int[] slots, boolean nullAsUnknown) {
+		recordProbe();
+		return findOrInsertHashed(batch, row, slots, nullAsUnknown, hash(batch, row, slots, nullAsUnknown));
+	}
+
+	int findOrInsertHashed(long[] row, int[] slots, boolean nullAsUnknown, int hash) {
 		if (size >= threshold) {
 			rehash(buckets.length << 1);
 		}
-		int bucket = hash(row, slots, nullAsUnknown) & (buckets.length - 1);
+		int bucket = hash & (buckets.length - 1);
+		byte fingerprint = fingerprint(hash);
 		while (true) {
 			int stored = buckets[bucket];
 			if (stored == 0) {
 				int index = size++;
-				ensureKeyCapacity(size);
+				ensureEntryCapacity(size);
 				store(index, row, slots, nullAsUnknown);
+				fullHashes[index] = hash;
 				buckets[bucket] = index + 1;
-				INSERTIONS.incrementAndGet();
+				fingerprints[bucket] = fingerprint;
+				version++;
+				recordInsertion();
 				return index;
 			}
 			int index = stored - 1;
-			if (matches(index, row, slots, nullAsUnknown)) {
+			if (fingerprints[bucket] == fingerprint && fullHashes[index] == hash
+					&& matches(index, row, slots, nullAsUnknown)) {
 				return index;
 			}
 			bucket = bucket + 1 & (buckets.length - 1);
+		}
+	}
+
+	int findOrInsertHashed(NativeBatch batch, int row, int[] slots, boolean nullAsUnknown, int hash) {
+		if (size >= threshold) {
+			rehash(buckets.length << 1);
+		}
+		int bucket = hash & (buckets.length - 1);
+		byte fingerprint = fingerprint(hash);
+		while (true) {
+			int stored = buckets[bucket];
+			if (stored == 0) {
+				int index = size++;
+				ensureEntryCapacity(size);
+				store(index, batch, row, slots, nullAsUnknown);
+				fullHashes[index] = hash;
+				buckets[bucket] = index + 1;
+				fingerprints[bucket] = fingerprint;
+				version++;
+				recordInsertion();
+				return index;
+			}
+			int index = stored - 1;
+			if (fingerprints[bucket] == fingerprint && fullHashes[index] == hash
+					&& matches(index, batch, row, slots, nullAsUnknown)) {
+				return index;
+			}
+			bucket = bucket + 1 & (buckets.length - 1);
+		}
+	}
+
+	void hashBatch(NativeBatch batch, int[] rows, int rowCount, int[] slots, boolean nullAsUnknown,
+			long[] hashState, int[] hashes) {
+		Arrays.fill(hashState, 0, rowCount, 0x9e3779b97f4a7c15L ^ width);
+		for (int slot : slots) {
+			int columnOffset = slot * batch.capacity;
+			for (int i = 0; i < rowCount; i++) {
+				long value = normalize(batch.slots[columnOffset + rows[i]], nullAsUnknown);
+				value ^= value >>> 33;
+				value *= 0xff51afd7ed558ccdL;
+				value ^= value >>> 33;
+				long hash = hashState[i];
+				hashState[i] = hash ^ (value + 0x9e3779b97f4a7c15L + (hash << 6) + (hash >>> 2));
+			}
+		}
+		for (int i = 0; i < rowCount; i++) {
+			hashes[i] = hashHook.applyAsInt(finalizeHash(hashState[i]));
+		}
+	}
+
+	void headBatch(int[] hashes, int rowCount, int[] preparedBuckets, int[] preparedEntries) {
+		int mask = buckets.length - 1;
+		for (int i = 0; i < rowCount; i++) {
+			int bucket = hashes[i] & mask;
+			preparedBuckets[i] = bucket;
+			preparedEntries[i] = buckets[bucket];
+		}
+	}
+
+	int findPrepared(NativeBatch batch, int row, int[] slots, boolean nullAsUnknown, int hash,
+			int preparedBucket, int preparedEntry, long preparedVersion) {
+		int mask = buckets.length - 1;
+		int bucket = hash & mask;
+		int stored = preparedVersion == version && preparedBucket == bucket ? preparedEntry : buckets[bucket];
+		byte fingerprint = fingerprint(hash);
+		while (true) {
+			if (stored == 0) {
+				return -1;
+			}
+			int index = stored - 1;
+			if (fingerprints[bucket] == fingerprint && fullHashes[index] == hash
+					&& matches(index, batch, row, slots, nullAsUnknown)) {
+				return index;
+			}
+			bucket = bucket + 1 & mask;
+			stored = buckets[bucket];
+		}
+	}
+
+	void mergeMetricsFrom(PrimitiveTupleTable other) {
+		if (metricsEnabled) {
+			probes += other.probes;
+			insertions += other.insertions;
+		}
+	}
+
+	void commitMetrics() {
+		if (!metricsEnabled || metricsCommitted) {
+			return;
+		}
+		metricsCommitted = true;
+		PROBES.addAndGet(probes);
+		INSERTIONS.addAndGet(insertions);
+	}
+
+	private void recordProbe() {
+		if (metricsEnabled) {
+			probes++;
+		}
+	}
+
+	private void recordInsertion() {
+		if (metricsEnabled) {
+			insertions++;
 		}
 	}
 
@@ -104,20 +249,25 @@ final class PrimitiveTupleTable {
 	void clear() {
 		int mask = buckets.length - 1;
 		for (int index = 0; index < size; index++) {
-			int bucket = storedHash(index) & mask;
+			int bucket = fullHashes[index] & mask;
 			int stored = index + 1;
 			while (buckets[bucket] != stored) {
 				bucket = bucket + 1 & mask;
 			}
 			buckets[bucket] = 0;
+			fingerprints[bucket] = 0;
 		}
 		size = 0;
+		version++;
 	}
 
-	private void ensureKeyCapacity(int tupleCount) {
+	private void ensureEntryCapacity(int tupleCount) {
 		int required = tupleCount * width;
 		if (required > keys.length) {
 			keys = Arrays.copyOf(keys, Math.max(required, keys.length << 1));
+		}
+		if (tupleCount > fullHashes.length) {
+			fullHashes = Arrays.copyOf(fullHashes, Math.max(tupleCount, fullHashes.length << 1));
 		}
 	}
 
@@ -125,6 +275,13 @@ final class PrimitiveTupleTable {
 		int offset = index * width;
 		for (int i = 0; i < width; i++) {
 			keys[offset + i] = normalize(row[slots[i]], nullAsUnknown);
+		}
+	}
+
+	private void store(int index, NativeBatch batch, int row, int[] slots, boolean nullAsUnknown) {
+		int offset = index * width;
+		for (int i = 0; i < width; i++) {
+			keys[offset + i] = normalize(batch.get(slots[i], row), nullAsUnknown);
 		}
 	}
 
@@ -141,8 +298,43 @@ final class PrimitiveTupleTable {
 				&& keys[offset + 1] == normalize(row[slots[1]], nullAsUnknown)
 				&& keys[offset + 2] == normalize(row[slots[2]], nullAsUnknown)
 				&& keys[offset + 3] == normalize(row[slots[3]], nullAsUnknown);
-		default -> false;
+		default -> matchesWide(offset, row, slots, nullAsUnknown);
 		};
+	}
+
+	private boolean matches(int index, NativeBatch batch, int row, int[] slots, boolean nullAsUnknown) {
+		int offset = index * width;
+		return switch (width) {
+		case 1 -> keys[offset] == normalize(batch.get(slots[0], row), nullAsUnknown);
+		case 2 -> keys[offset] == normalize(batch.get(slots[0], row), nullAsUnknown)
+				&& keys[offset + 1] == normalize(batch.get(slots[1], row), nullAsUnknown);
+		case 3 -> keys[offset] == normalize(batch.get(slots[0], row), nullAsUnknown)
+				&& keys[offset + 1] == normalize(batch.get(slots[1], row), nullAsUnknown)
+				&& keys[offset + 2] == normalize(batch.get(slots[2], row), nullAsUnknown);
+		case 4 -> keys[offset] == normalize(batch.get(slots[0], row), nullAsUnknown)
+				&& keys[offset + 1] == normalize(batch.get(slots[1], row), nullAsUnknown)
+				&& keys[offset + 2] == normalize(batch.get(slots[2], row), nullAsUnknown)
+				&& keys[offset + 3] == normalize(batch.get(slots[3], row), nullAsUnknown);
+		default -> matchesWide(offset, batch, row, slots, nullAsUnknown);
+		};
+	}
+
+	private boolean matchesWide(int offset, long[] row, int[] slots, boolean nullAsUnknown) {
+		for (int i = 0; i < width; i++) {
+			if (keys[offset + i] != normalize(row[slots[i]], nullAsUnknown)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private boolean matchesWide(int offset, NativeBatch batch, int row, int[] slots, boolean nullAsUnknown) {
+		for (int i = 0; i < width; i++) {
+			if (keys[offset + i] != normalize(batch.get(slots[i], row), nullAsUnknown)) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private int hash(long[] row, int[] slots, boolean nullAsUnknown) {
@@ -154,39 +346,48 @@ final class PrimitiveTupleTable {
 			value ^= value >>> 33;
 			hash ^= value + 0x9e3779b97f4a7c15L + (hash << 6) + (hash >>> 2);
 		}
-		hash ^= hash >>> 33;
-		hash *= 0xc4ceb9fe1a85ec53L;
-		hash ^= hash >>> 33;
-		return (int) hash;
+		return hashHook.applyAsInt(finalizeHash(hash));
 	}
 
-	private int storedHash(int index) {
+	private int hash(NativeBatch batch, int row, int[] slots, boolean nullAsUnknown) {
 		long hash = 0x9e3779b97f4a7c15L ^ width;
-		int offset = index * width;
 		for (int i = 0; i < width; i++) {
-			long value = keys[offset + i];
+			long value = normalize(batch.get(slots[i], row), nullAsUnknown);
 			value ^= value >>> 33;
 			value *= 0xff51afd7ed558ccdL;
 			value ^= value >>> 33;
 			hash ^= value + 0x9e3779b97f4a7c15L + (hash << 6) + (hash >>> 2);
 		}
+		return hashHook.applyAsInt(finalizeHash(hash));
+	}
+
+	private static int finalizeHash(long hash) {
 		hash ^= hash >>> 33;
 		hash *= 0xc4ceb9fe1a85ec53L;
 		hash ^= hash >>> 33;
 		return (int) hash;
 	}
 
+	private static byte fingerprint(int hash) {
+		return (byte) (hash ^ (hash >>> 8) ^ (hash >>> 16) ^ (hash >>> 24));
+	}
+
 	private void rehash(int capacity) {
 		int[] replacement = new int[capacity];
+		byte[] replacementFingerprints = new byte[capacity];
 		for (int index = 0; index < size; index++) {
-			int bucket = storedHash(index) & (capacity - 1);
+			int hash = fullHashes[index];
+			int bucket = hash & (capacity - 1);
 			while (replacement[bucket] != 0) {
 				bucket = bucket + 1 & (capacity - 1);
 			}
 			replacement[bucket] = index + 1;
+			replacementFingerprints[bucket] = fingerprint(hash);
 		}
 		buckets = replacement;
+		fingerprints = replacementFingerprints;
 		threshold = capacity * 3 >>> 2;
+		version++;
 	}
 
 	private static long normalize(long value, boolean nullAsUnknown) {
@@ -206,6 +407,13 @@ final class NativeDistinctTracker {
 	final HashMap<GroupKey, Boolean> objects;
 	final GroupKey probe;
 	boolean emptySeen;
+	long primitiveRows;
+	long objectRows;
+	boolean metricsCommitted;
+	long[] batchHashState = new long[0];
+	int[] batchHashes = new int[0];
+	int[] batchBuckets = new int[0];
+	int[] batchEntries = new int[0];
 
 	NativeDistinctTracker(int[] slots) {
 		this.slots = slots;
@@ -223,7 +431,7 @@ final class NativeDistinctTracker {
 		if (primitive != null) {
 			int before = primitive.size;
 			primitive.findOrInsert(row, slots, true);
-			PRIMITIVE_ROWS.incrementAndGet();
+			primitiveRows++;
 			return primitive.size != before;
 		}
 		for (int i = 0; i < slots.length; i++) {
@@ -231,12 +439,95 @@ final class NativeDistinctTracker {
 			probe.ids[i] = id == NULL_CONTEXT_ID ? UNKNOWN : id;
 		}
 		probe.rehash();
-		OBJECT_ROWS.incrementAndGet();
+		objectRows++;
 		if (objects.containsKey(probe)) {
 			return false;
 		}
 		objects.put(probe.storedCopy(), Boolean.TRUE);
 		return true;
+	}
+
+	boolean add(NativeBatch batch, int row) {
+		if (slots.length == 0) {
+			boolean fresh = !emptySeen;
+			emptySeen = true;
+			return fresh;
+		}
+		if (primitive != null) {
+			int before = primitive.size;
+			primitive.findOrInsert(batch, row, slots, true);
+			primitiveRows++;
+			return primitive.size != before;
+		}
+		for (int i = 0; i < slots.length; i++) {
+			long id = batch.get(slots[i], row);
+			probe.ids[i] = id == NULL_CONTEXT_ID ? UNKNOWN : id;
+		}
+		probe.rehash();
+		objectRows++;
+		if (objects.containsKey(probe)) {
+			return false;
+		}
+		objects.put(probe.storedCopy(), Boolean.TRUE);
+		return true;
+	}
+
+	int selectBatch(NativeBatch batch, int[] selection, int count) {
+		if (slots.length == 0) {
+			if (count == 0 || emptySeen) {
+				return 0;
+			}
+			emptySeen = true;
+			return 1;
+		}
+		if (primitive == null) {
+			int accepted = 0;
+			for (int i = 0; i < count; i++) {
+				int row = selection[i];
+				if (add(batch, row)) {
+					selection[accepted++] = row;
+				}
+			}
+			return accepted;
+		}
+		ensureBatchCapacity(count);
+		primitive.hashBatch(batch, selection, count, slots, true, batchHashState, batchHashes);
+		primitive.headBatch(batchHashes, count, batchBuckets, batchEntries);
+		long preparedVersion = primitive.version;
+		primitiveRows += count;
+		int accepted = 0;
+		for (int i = 0; i < count; i++) {
+			int row = selection[i];
+			int before = primitive.size;
+			int existing = primitive.findPrepared(batch, row, slots, true, batchHashes[i], batchBuckets[i],
+					batchEntries[i], preparedVersion);
+			if (existing < 0) {
+				primitive.findOrInsertHashed(batch, row, slots, true, batchHashes[i]);
+			}
+			if (primitive.size != before) {
+				selection[accepted++] = row;
+			}
+		}
+		return accepted;
+	}
+
+	private void ensureBatchCapacity(int capacity) {
+		if (batchHashes.length >= capacity) {
+			return;
+		}
+		batchHashState = new long[capacity];
+		batchHashes = new int[capacity];
+		batchBuckets = new int[capacity];
+		batchEntries = new int[capacity];
+	}
+
+	void commitMetrics() {
+		if (metricsCommitted) {
+			return;
+		}
+		metricsCommitted = true;
+		PRIMITIVE_ROWS.addAndGet(primitiveRows);
+		OBJECT_ROWS.addAndGet(objectRows);
 	}
 
 	void clear() {
@@ -288,6 +579,43 @@ final class NativeOrderedDistinctTracker {
 		return fresh;
 	}
 
+	int selectBatch(NativeBatch batch, int[] selection, int count) {
+		if (plan.strategy == NativeDistinctStrategy.GLOBAL_HASH) {
+			int accepted = residual.selectBatch(batch, selection, count);
+			if (plan.keySlots.length == 0 && accepted > 0) {
+				emptySeen = true;
+			}
+			return accepted;
+		}
+		int accepted = 0;
+		for (int i = 0; i < count; i++) {
+			int row = selection[i];
+			boolean fresh = switch (plan.strategy) {
+			case GLOBAL_HASH -> throw new AssertionError();
+			case ADJACENT -> transition(batch, row, plan.keySlots);
+			case PARTITIONED_HASH -> {
+				if (transition(batch, row, plan.partitionSlots)) {
+					residual.clear();
+				}
+				yield residual.add(batch, row);
+			}
+			};
+			if (fresh) {
+				selection[accepted++] = row;
+			}
+		}
+		if (plan.keySlots.length == 0 && accepted > 0) {
+			emptySeen = true;
+		}
+		return accepted;
+	}
+
+	void commitMetrics() {
+		if (residual != null) {
+			residual.commitMetrics();
+		}
+	}
+
 	private boolean transition(long[] row, int[] slots) {
 		boolean changed = !initialized;
 		for (int i = 0; i < slots.length; i++) {
@@ -299,6 +627,23 @@ final class NativeOrderedDistinctTracker {
 		if (changed) {
 			for (int i = 0; i < slots.length; i++) {
 				previous[i] = normalize(row[slots[i]]);
+			}
+			initialized = true;
+		}
+		return changed;
+	}
+
+	private boolean transition(NativeBatch batch, int row, int[] slots) {
+		boolean changed = !initialized;
+		for (int i = 0; i < slots.length; i++) {
+			long value = normalize(batch.get(slots[i], row));
+			if (!changed && previous[i] != value) {
+				changed = true;
+			}
+		}
+		if (changed) {
+			for (int i = 0; i < slots.length; i++) {
+				previous[i] = normalize(batch.get(slots[i], row));
 			}
 			initialized = true;
 		}

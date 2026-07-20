@@ -336,14 +336,27 @@ final class FilterBatchCursor implements BatchCursor {
 	final NativeBooleanFilter filter;
 	final RowState row;
 	final long[] entrySlots;
+	final long readMask;
 	long observedRows;
 	boolean closed;
 
 	FilterBatchCursor(BatchCursor arg, NativeBooleanFilter filter, RowState row) {
+		this(arg, filter, row, LmdbNativeSpecialization.allSlotsMask(row.slots.length));
+	}
+
+	FilterBatchCursor(BatchCursor arg, NativeBooleanFilter filter, RowState row, long readMask) {
 		this.arg = arg;
 		this.filter = filter;
 		this.row = row;
 		this.entrySlots = Arrays.copyOf(row.slots, row.slots.length);
+		this.readMask = readMask;
+	}
+
+	static BatchCursor wrapAll(BatchCursor arg, MaskedFilter[] filters, RowState row) {
+		for (MaskedFilter filter : filters) {
+			arg = new FilterBatchCursor(arg, filter.filter, row, filter.mask);
+		}
+		return arg;
 	}
 
 	@Override
@@ -353,7 +366,7 @@ final class FilterBatchCursor implements BatchCursor {
 		}
 		while (arg.fill(batch) > 0) {
 			observedRows += batch.selectedCount;
-			int accepted = LmdbNativeSpecialization.applyFilter(batch, row, filter, observedRows);
+			int accepted = LmdbNativeSpecialization.applyFilter(batch, row, filter, observedRows, readMask);
 			NativeBatch.FILTER_BATCHES.incrementAndGet();
 			if (accepted > 0) {
 				return accepted;

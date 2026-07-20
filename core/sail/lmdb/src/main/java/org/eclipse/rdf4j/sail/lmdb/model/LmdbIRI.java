@@ -107,6 +107,11 @@ public class LmdbIRI implements LmdbResource, IRI {
 		return internalID;
 	}
 
+	@Override
+	public long retainedLexicalLength() {
+		return iriString == null ? -1L : iriString.length();
+	}
+
 	private void setIRIString(String iriString) {
 		Objects.requireNonNull(iriString, "iriString must not be null");
 

@@ -43,10 +43,10 @@ import org.eclipse.rdf4j.sail.lmdb.ValueIds;
  *
  * Gates (all must hold, otherwise the sequential path runs): parallelism enabled and ≥2 worker threads configured; the
  * plan is a {@code MultiJoinPlan} of plain statement patterns whose filters can create worker-confined owners; every
- * aggregate merges exactly across workers (all kinds except value-typed DISTINCT — see {@link #parallelMergeable}); the
- * source supports same-snapshot siblings; the root pattern's estimate meets
- * {@code rdf4j.lmdb.parallel.minRootEstimate}. Each worker derives and owns its physical plan and creates its own
- * {@code FactorizedTail} when the shape allows, so factorization and parallelism multiply.
+ * aggregate merges exactly across workers, including deferred recomputation for value-typed DISTINCT; the source
+ * supports same-snapshot siblings; the plan's estimated work meets the shared parallel-pipeline admission floor. Each
+ * worker derives and owns its physical plan and creates its own {@code FactorizedTail} when the shape allows, so
+ * factorization and parallelism multiply.
  */
 @Experimental
 final class LmdbNativeParallelAggregation {
@@ -57,20 +57,6 @@ final class LmdbNativeParallelAggregation {
 	private LmdbNativeParallelAggregation() {
 	}
 
-	/**
-	 * Whether every aggregate merges exactly across workers (Phase 6): plain counts add, COUNT(DISTINCT) unions its id
-	 * set, SUM/AVG add running sums, MIN/MAX keep the comparator winner. Value-typed DISTINCT aggregates cannot —
-	 * per-worker distinct-then-accumulate double-counts values seen by several workers.
-	 */
-	static boolean parallelMergeable(AggregateSpec[] specs) {
-		for (AggregateSpec spec : specs) {
-			if (spec.distinct && spec.kind != AggKind.COUNT) {
-				return false;
-			}
-		}
-		return true;
-	}
-
 	/** Runs the aggregation in parallel, or returns null when a gate fails and the sequential path must run. */
 	static List<BindingSet> tryEvaluate(NativeGroupIteration it, MultiJoinPlan plan, RowState row) {
 		return tryEvaluate(it, plan, row, LmdbNativeAttemptMetrics.direct());
@@ -79,36 +65,52 @@ final class LmdbNativeParallelAggregation {
 	/** Runs one nested parallel attempt, publishing its metrics to {@code parentMetrics} only after cleanup. */
 	static List<BindingSet> tryEvaluate(NativeGroupIteration it, MultiJoinPlan plan, RowState row,
 			LmdbNativeAttemptMetrics parentMetrics) {
-		if (!LmdbNativeParallelPipelines.enabled() || !SlotPlan.encounterOrderReplaySafe(plan)) {
+		LmdbNativeStrategyProposal<List<BindingSet>> proposal = propose(it, plan, row, parentMetrics);
+		if (proposal == null) {
 			return null;
+		}
+		try {
+			return proposal.open();
+		} catch (IOException e) {
+			throw new QueryEvaluationException(e);
+		} finally {
+			proposal.close();
+		}
+	}
+
+	/** Performs aggregate admission and cost calculation while deferring sources, worker plans, and execution. */
+	static LmdbNativeStrategyProposal<List<BindingSet>> propose(NativeGroupIteration it, MultiJoinPlan plan,
+			RowState row, LmdbNativeAttemptMetrics parentMetrics) {
+		if (!LmdbNativeParallelPipelines.enabled()) {
+			return reject(it, "disabled");
+		}
+		if (!SlotPlan.encounterOrderReplaySafe(plan)) {
+			return reject(it, "encounter-order");
 		}
 		for (SlotPlan child : plan.children) {
 			if (!(child instanceof PatternPlan)) {
-				return null;
+				return reject(it, "non-pattern-child");
 			}
 		}
 		if (!LmdbNativeParallelPipelines.parallelWorkerForkable(plan.filters)) {
-			return null;
+			return reject(it, "stateful-filter");
 		}
-		if (!parallelMergeable(it.aggregates)) {
-			return null;
+		int desiredWorkers = LmdbNativeParallelPipelines.configuredThreads();
+		if (desiredWorkers < 1) {
+			return reject(it, "single-thread");
 		}
-		int threads = LmdbNativeParallelPipelines.configuredThreads();
-		if (threads < 2) {
-			return null;
+		double totalWork = plan.estimate(row);
+		if (!(totalWork >= LmdbNativeParallelPipelines.minimumWorkEstimate())) {
+			return reject(it, "below-threshold");
 		}
 		MultiJoinPlan.OrderedPlan derived = plan.derivedFactorizedPlan(row);
 		PatternPlan root = (PatternPlan) derived.order[0];
-		long minRootEstimate = Long.getLong("rdf4j.lmdb.parallel.minRootEstimate", 50_000L);
-		if (!(root.estimate(row) >= minRootEstimate)) {
-			return null;
-		}
 		long preflightAggregateSlots = preflightAggregateSlots(it, plan, derived, root, row);
 		LmdbRootScanPartition[] partitions = null;
 		if (LmdbNativeParallelPipelines.rangePartitionEnabled()) {
 			try {
 				partitions = LmdbNativeExchange.tryPlanRootPartitions(it.source, root, row,
-						LmdbNativeParallelPipelines.rangePartitionTarget(threads, root.estimate(row)));
+						LmdbNativeParallelPipelines.rangePartitionTarget(desiredWorkers, root.estimate(row)));
 			} catch (IOException e) {
 				// split planning is best-effort: an IO hiccup falls back to the morsel producer, never fails the query
 				LmdbNativeParallelPipelines.rejectRangePartitioning("planning-failed");
@@ -117,16 +119,38 @@ final class LmdbNativeParallelAggregation {
 		} else {
 			LmdbNativeParallelPipelines.rejectRangePartitioning("flag-off");
 		}
-		PreparedRootScan preparedRoot = null;
-		LmdbNativeParallelPipelines.TaskReservation reservation = LmdbNativeParallelPipelines.tryReserveTasks(threads);
+		boolean morselMode = partitions == null;
+		LmdbNativeParallelPipelines.TaskReservation reservation = LmdbNativeParallelPipelines
+				.tryReserveTasks(morselMode, desiredWorkers);
 		if (reservation == null) {
-			return null;
+			return reject(it, "task-budget");
 		}
-		int sourceCount = threads + (partitions != null ? 0 : 1);
+		int threads = reservation.grantedWorkers();
+		int sourceCount = threads + (morselMode ? 1 : 0);
+		double estCost = LmdbNativeStrategyProposal.parallelCost(totalWork, threads);
+		AggregateCandidate candidate = new AggregateCandidate(it, plan, parentMetrics, derived, root,
+				preflightAggregateSlots, partitions, reservation, threads, sourceCount);
+		return new LmdbNativeStrategyProposal<>(candidate::open, estCost,
+				LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION, reservation::close);
+	}
+
+	private static List<BindingSet> open(AggregateCandidate candidate) {
+		NativeGroupIteration it = candidate.it;
+		MultiJoinPlan plan = candidate.plan;
+		LmdbNativeAttemptMetrics parentMetrics = candidate.parentMetrics;
+		MultiJoinPlan.OrderedPlan derived = candidate.derived;
+		PatternPlan root = candidate.root;
+		long preflightAggregateSlots = candidate.preflightAggregateSlots;
+		LmdbRootScanPartition[] partitions = candidate.partitions;
+		LmdbNativeParallelPipelines.TaskReservation reservation = candidate.reservation;
+		int threads = candidate.threads;
+		int sourceCount = candidate.sourceCount;
+		PreparedRootScan preparedRoot = null;
 		MultiJoinPlan[] workerPlans = null;
 		NativeLmdbQuerySource.ParallelSource[] sources = null;
 		LmdbNativeAttemptMetrics metrics = null;
 		List<BindingSet> results = null;
+		String dynamicDecline = null;
 		Throwable primaryFailure = null;
 		try {
 			metrics = parentMetrics.child();
@@ -157,7 +181,11 @@ final class LmdbNativeParallelAggregation {
 				}
 				if (setupReady) {
 					workerPlans = LmdbNativeParallelPipelines.forkWorkerPlans(plan, threads);
+				} else {
+					dynamicDecline = "preflight-unavailable";
 				}
+			} else {
+				dynamicDecline = "snapshot-unavailable";
 			}
 		} catch (IOException e) {
 			primaryFailure = new QueryEvaluationException(e);
@@ -180,9 +208,7 @@ final class LmdbNativeParallelAggregation {
 		}
 		primaryFailure = LmdbNativeParallelPipelines.closeWorkerPlans(workerPlans, 0, primaryFailure);
 		primaryFailure = LmdbNativeParallelPipelines.closeSources(sources, primaryFailure);
-		if (reservation != null) {
-			reservation.close();
-		}
+		reservation.close();
 		if (primaryFailure != null) {
 			if (primaryFailure instanceof RuntimeException) {
 				throw (RuntimeException) primaryFailure;
@@ -190,7 +216,7 @@ final class LmdbNativeParallelAggregation {
 			throw (Error) primaryFailure;
 		}
 		if (workerPlans == null) {
-			return null;
+			return reject(it, dynamicDecline != null ? dynamicDecline : "worker-plan-unavailable");
 		}
 		metrics.recordParallelRun();
 		metrics.commitToParent();
@@ -199,12 +225,53 @@ final class LmdbNativeParallelAggregation {
 			LmdbNativeParallelPipelines.RANGE_PARTITIONS_PLANNED.addAndGet(partitions.length);
 			LmdbNativeParallelPipelines.LAST_RANGE_REJECTION.set(null);
 			if (LmdbNativeExplain.recordsExecutionPaths(it.explainTarget)) {
-				LAST_STRATEGY_LABEL.set("parallelAggregation(rangePartitioned=" + partitions.length + ")");
+				LAST_STRATEGY_LABEL.set(LmdbNativeParallelPipelines.parallelStrategyLabel(
+						LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION, threads, partitions.length));
 			}
 		} else if (LmdbNativeExplain.recordsExecutionPaths(it.explainTarget)) {
-			LAST_STRATEGY_LABEL.set("parallelAggregation");
+			LAST_STRATEGY_LABEL.set(LmdbNativeParallelPipelines
+					.parallelStrategyLabel(LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION, threads, 0));
 		}
 		return results;
+	}
+
+	private static <T> T reject(NativeGroupIteration it, String reason) {
+		LmdbNativeAttemptMetrics.recordDecline(it.explainTarget,
+				LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION, reason);
+		return null;
+	}
+
+	private static final class AggregateCandidate {
+		final NativeGroupIteration it;
+		final MultiJoinPlan plan;
+		final LmdbNativeAttemptMetrics parentMetrics;
+		final MultiJoinPlan.OrderedPlan derived;
+		final PatternPlan root;
+		final long preflightAggregateSlots;
+		final LmdbRootScanPartition[] partitions;
+		final LmdbNativeParallelPipelines.TaskReservation reservation;
+		final int threads;
+		final int sourceCount;
+
+		AggregateCandidate(NativeGroupIteration it, MultiJoinPlan plan, LmdbNativeAttemptMetrics parentMetrics,
+				MultiJoinPlan.OrderedPlan derived, PatternPlan root,
+				long preflightAggregateSlots, LmdbRootScanPartition[] partitions,
+				LmdbNativeParallelPipelines.TaskReservation reservation, int threads, int sourceCount) {
+			this.it = it;
+			this.plan = plan;
+			this.parentMetrics = parentMetrics;
+			this.derived = derived;
+			this.root = root;
+			this.preflightAggregateSlots = preflightAggregateSlots;
+			this.partitions = partitions;
+			this.reservation = reservation;
+			this.threads = threads;
+			this.sourceCount = sourceCount;
+		}
+
+		List<BindingSet> open() {
+			return LmdbNativeParallelAggregation.open(this);
+		}
 	}
 
 	/**
@@ -216,7 +283,7 @@ final class LmdbNativeParallelAggregation {
 	static String consumeLastStrategyLabel() {
 		String label = LAST_STRATEGY_LABEL.get();
 		LAST_STRATEGY_LABEL.remove();
-		return label != null ? label : "parallelAggregation";
+		return label != null ? label : LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION;
 	}
 
 	/**
@@ -678,7 +745,7 @@ final class LmdbNativeParallelAggregation {
 				throw new IllegalStateException("worker physical root diverged from the shared morsel root");
 			}
 		}
-		AggContext ctx = new AggContext(source, it.strictCompare, true);
+		AggContext ctx = new AggContext(source, it.strictCompare, true, true);
 		FactorizedTail tail = derived.order.length >= 2
 				? FactorizedTail.probe(derived, plan.filters, row.boundMask(), it.groupSlots, it.aggregates, metrics)
 				: null;
@@ -694,7 +761,7 @@ final class LmdbNativeParallelAggregation {
 			NativeGroupTable table = tail != null && tail.groupsByTail()
 					? NativeGroupTable.tailGrouped(it.aggregates, ctx, it.hashDistinctChannels)
 					: NativeGroupTable.create(it.groupSlots, it.aggregates, ctx, it.hashDistinctChannels, false,
-							false);
+							true);
 			RowCursor prefix = LmdbNativeChunkPipeline.externalRootCandidateEnabled()
 					? LmdbNativeChunkPipeline.tryOpenPrefixFrom(plan, derived, chainLength, row, leftmost, prefixBudget)
 					: null;

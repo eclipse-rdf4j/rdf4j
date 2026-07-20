@@ -160,7 +160,10 @@ public class LmdbNativeQueryExplanationTest {
 		assertThat(rendered).doesNotContain(NATIVE_RUNTIME_ENTRY_PLAN);
 		assertThat(rendered).doesNotContain(NATIVE_CHUNK_ENGAGED_ACTUAL);
 		assertThat(explanation.toJson()).contains("\"" + NATIVE_EXECUTION_PATH + "\"");
-		assertThat(explanation.toDot()).contains("Native execution path").contains("chunkPipeline");
+		assertThat(explanation.toDot())
+				.contains("Native execution path")
+				.contains("factorizedRows")
+				.contains("enumBranches=1");
 	}
 
 	@Test
@@ -170,7 +173,9 @@ public class LmdbNativeQueryExplanationTest {
 		Explanation explanation = explain(Explanation.Level.Telemetry, query);
 		String rendered = explanation.toString();
 
-		assertThat(rendered).contains(NATIVE_EXECUTION_PATH + "=chunkPipeline");
+		assertThat(rendered)
+				.contains(NATIVE_EXECUTION_PATH + "=factorizedRows(")
+				.contains("countBranches=1");
 		assertThat(rendered).contains(NATIVE_RUNTIME_ENTRY_PLAN + "=");
 		assertThat(rendered).contains("nativeInitialBoundMask=");
 		assertThat(rendered).contains(NATIVE_CHUNK_ENGAGED_ACTUAL + "=");
@@ -230,8 +235,11 @@ public class LmdbNativeQueryExplanationTest {
 		Explanation topK = explain(Explanation.Level.Telemetry, ordered);
 
 		assertThat(topK.toString())
-				.contains(NATIVE_EXECUTION_PATH + "=orderedTopK")
+				.contains(NATIVE_EXECUTION_PATH + "=")
+				.contains("orderedTopK")
 				.contains("nativeSortPackedRowsActual=")
+				.contains("nativeSortPackedWidthActual=2")
+				.contains("nativeSortKeyPrefixWidthActual=1")
 				.contains("nativeSortsActual=")
 				.contains("nativeTopKCandidatesActual=");
 
@@ -240,8 +248,11 @@ public class LmdbNativeQueryExplanationTest {
 		Explanation spillSort = explain(Explanation.Level.Telemetry, unbounded);
 
 		assertThat(spillSort.toString())
-				.contains(NATIVE_EXECUTION_PATH + "=orderedFullSort")
+				.contains(NATIVE_EXECUTION_PATH + "=")
+				.contains("orderedFullSort")
 				.contains("nativeSortPackedRowsActual=")
+				.contains("nativeSortPackedWidthActual=2")
+				.contains("nativeSortKeyPrefixWidthActual=1")
 				.contains("nativeSortsActual=")
 				.doesNotContain("nativeSpillRunsActual");
 	}
@@ -257,7 +268,8 @@ public class LmdbNativeQueryExplanationTest {
 			Explanation explanation = explain(Explanation.Level.Telemetry, query);
 
 			assertThat(explanation.toString())
-					.contains(NATIVE_EXECUTION_PATH + "=orderedFullSort")
+					.contains(NATIVE_EXECUTION_PATH + "=")
+					.contains("orderedFullSort")
 					.contains("nativeSpillRunsActual=4")
 					.contains("nativeSpilledRowsActual=4");
 		} finally {
@@ -266,16 +278,18 @@ public class LmdbNativeQueryExplanationTest {
 	}
 
 	@Test
-	public void telemetryExplanationShowsChunkPipelineEngagement() {
-		// ?price is unprojected, so the trailing price pattern becomes a factorized tail branch and the
-		// chunk pipeline drives the all-pattern prefix; the telemetry explanation must say so, or silent
-		// disqualification regressions stay invisible
+	public void telemetryExplanationShowsFactorizedRowProducerAndChunkSubstrateEngagement() {
+		// ?price is unprojected, so factorized rows selects a count branch while its chunk substrate still
+		// publishes engagement telemetry; both facts must remain visible or priority/substrate regressions stay hidden
 		// (generic actual string metrics surface at the Telemetry level by framework design)
 		String query = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT ?s WHERE { ?s a ex:Item . ?s ex:price ?price }";
 		Explanation explanation = explain(Explanation.Level.Telemetry, query);
 
-		assertThat(explanation.toString()).contains("nativeExecutionPath=chunkPipeline");
+		assertThat(explanation.toString())
+				.contains("nativeExecutionPath=factorizedRows(")
+				.contains("countBranches=1")
+				.contains(NATIVE_CHUNK_ENGAGED_ACTUAL + "=1");
 	}
 
 	@Test

@@ -73,7 +73,6 @@ public class LmdbNativeParallelAggregationTest {
 		System.setProperty(THRESHOLD_FLAG, "0");
 		System.setProperty(THREADS_FLAG, "4");
 		System.setProperty(MAX_TASKS_FLAG, "4");
-		System.setProperty(EXTERNAL_ROOT_CANDIDATE_FLAG, "true");
 		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
@@ -251,18 +250,35 @@ public class LmdbNativeParallelAggregationTest {
 	}
 
 	@Test
-	public void factorizedDistinctStarKeepsParallelAggregation() {
+	public void smallFactorizedDistinctStarBeatsParallelStartupCost() {
 		String query = star("(COUNT(DISTINCT ?b) AS ?d)", "");
-		long before = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
-		rows(query);
+		long parallelBefore = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
+		long factorizedBefore = FactorizedTail.ENGAGED.get();
+
+		GenericPlanNode plan = explain(query);
+
+		assertThat(findMetric(plan, "nativeExecutionPath")).startsWith("factorizedTail(");
+		assertThat(findMetric(plan, "nativeStrategyProposalCosts"))
+				.contains("factorizedTail=")
+				.contains("parallelAggregation=");
+		assertThat(findMetric(plan, "nativeStrategyDeclines"))
+				.contains("parallelAggregation:higher-cost");
 		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
-				.as("a multiply-factorized multi-join must not be replaced by a sequential ordered scan")
-				.isGreaterThan(before);
+				.as("parallel startup must not run when the factorized proposal is cheaper")
+				.isEqualTo(parallelBefore);
+		assertThat(FactorizedTail.ENGAGED.get()).isGreaterThan(factorizedBefore);
+		try (LmdbNativeParallelPipelines.TaskReservation reservation = LmdbNativeParallelPipelines
+				.tryReserveTasks(false, 4)) {
+			assertThat(reservation)
+					.as("the losing parallel aggregate proposal must release its complete elastic grant")
+					.isNotNull();
+			assertThat(reservation.grantedWorkers()).isEqualTo(4);
+		}
 	}
 
 	@Test
 	public void parallelMultiPatternAggregationEngagesChunkPipelineInsideWorkers() {
-		String query = star("(COUNT(DISTINCT ?b) AS ?d)", "");
+		String query = star("(COUNT(DISTINCT ?b) AS ?d) (MIN(DISTINCT ?b) AS ?min)", "");
 		long parallelBefore = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
 		long chunkBefore = LmdbNativeChunkPipeline.ENGAGED.get();
 
@@ -278,10 +294,10 @@ public class LmdbNativeParallelAggregationTest {
 	}
 
 	@Test
-	public void parallelAggregationKeepsUnprovenExternalRootCandidateDisabledByDefault() {
+	public void parallelAggregationUsesExternalRootChunkByDefault() {
 		String prior = System.clearProperty(EXTERNAL_ROOT_CANDIDATE_FLAG);
 		try {
-			String query = star("(COUNT(DISTINCT ?b) AS ?d)", "");
+			String query = star("(COUNT(DISTINCT ?b) AS ?d) (MIN(DISTINCT ?b) AS ?min)", "");
 			long parallelBefore = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
 			long chunkBefore = LmdbNativeChunkPipeline.ENGAGED.get();
 
@@ -289,7 +305,31 @@ public class LmdbNativeParallelAggregationTest {
 
 			assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get()).isGreaterThan(parallelBefore);
 			assertThat(LmdbNativeChunkPipeline.ENGAGED.get())
-					.as("the measured aggregate row chain must remain the default until the candidate proves a win")
+					.as("parallel aggregate workers must use the external-root chunk chain by default")
+					.isGreaterThan(chunkBefore);
+			assertThat(parallel).isEqualTo(rowsWithProperty(PARALLEL_FLAG, "false", query));
+		} finally {
+			if (prior == null) {
+				System.clearProperty(EXTERNAL_ROOT_CANDIDATE_FLAG);
+			} else {
+				System.setProperty(EXTERNAL_ROOT_CANDIDATE_FLAG, prior);
+			}
+		}
+	}
+
+	@Test
+	public void externalRootChunkKillSwitchKeepsAggregateScalarFallback() {
+		String prior = System.setProperty(EXTERNAL_ROOT_CANDIDATE_FLAG, "false");
+		try {
+			String query = star("(COUNT(DISTINCT ?b) AS ?d) (MIN(DISTINCT ?b) AS ?min)", "");
+			long parallelBefore = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
+			long chunkBefore = LmdbNativeChunkPipeline.ENGAGED.get();
+
+			List<String> parallel = rows(query);
+
+			assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get()).isGreaterThan(parallelBefore);
+			assertThat(LmdbNativeChunkPipeline.ENGAGED.get())
+					.as("the explicit kill switch must retain the aggregate scalar worker fallback")
 					.isEqualTo(chunkBefore);
 			assertThat(parallel).isEqualTo(rowsWithProperty(PARALLEL_FLAG, "false", query));
 		} finally {
@@ -323,7 +363,7 @@ public class LmdbNativeParallelAggregationTest {
 		}
 
 		String query = "PREFIX ex: <" + EX + ">\n"
-				+ "SELECT ?subject (COUNT(?leaf) AS ?count) WHERE {\n"
+				+ "SELECT ?subject (COUNT(?leaf) AS ?count) (MIN(DISTINCT ?leaf) AS ?min) WHERE {\n"
 				+ "  ?subject ex:refillAggregateRoot ?middle .\n"
 				+ "  ?middle ex:refillAggregateValue ?value .\n"
 				+ "  ?value ex:refillAggregateTail ?leaf .\n"
@@ -366,7 +406,8 @@ public class LmdbNativeParallelAggregationTest {
 
 	@Test
 	public void deterministicFilteredQueryRunsParallelAndMatchesGeneric() {
-		String query = star("(COUNT(?s) AS ?c)", "  FILTER(?b != ex:b1)\n");
+		String query = star("(COUNT(?s) AS ?c) (MIN(DISTINCT ?b) AS ?min)",
+				"  FILTER(?b != ex:b1)\n");
 		long before = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
 		List<String> nativeRows = rows(query);
 		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
@@ -397,12 +438,21 @@ public class LmdbNativeParallelAggregationTest {
 	public void valueAggregatesRunParallel() {
 		// Phase 6: SUM/AVG/MIN/MAX merge exactly across workers, so the COUNT-only gate is gone
 		assertParallelEngagesAndAllThreeAgree(starWithValues(
-				"?s (SUM(?v) AS ?sum) (AVG(?v) AS ?avg) (MIN(?v) AS ?min) (MAX(?v) AS ?max)") + " GROUP BY ?s");
+				"?s (SUM(?v) AS ?sum) (AVG(?v) AS ?avg) (MIN(?v) AS ?min) (MAX(?v) AS ?max) "
+						+ "(MIN(DISTINCT ?v) AS ?distinctMin)")
+				+ " GROUP BY ?s");
 	}
 
 	@Test
 	public void valueAggregatesWithoutGroupingRunParallel() {
-		assertParallelEngagesAndAllThreeAgree(starWithValues("(SUM(?v) AS ?sum) (MAX(?v) AS ?max)"));
+		assertParallelEngagesAndAllThreeAgree(
+				starWithValues("(SUM(?v) AS ?sum) (MAX(?v) AS ?max) (MIN(DISTINCT ?v) AS ?distinctMin)"));
+	}
+
+	@Test
+	public void distinctExtremaRunParallel() {
+		assertParallelEngagesAndAllThreeAgree(
+				starWithValues("(MIN(DISTINCT ?v) AS ?min) (MAX(DISTINCT ?v) AS ?max)"));
 	}
 
 	@Test
@@ -427,7 +477,8 @@ public class LmdbNativeParallelAggregationTest {
 				.as("an aborted floating-point attempt must not claim a successful parallel run")
 				.isEqualTo(before);
 
-		String exactQuery = starWithValues("(COUNT(*) AS ?count) (SUM(?v) AS ?sum) (AVG(?v) AS ?avg)");
+		String exactQuery = starWithValues(
+				"(COUNT(*) AS ?count) (SUM(?v) AS ?sum) (AVG(?v) AS ?avg) (MIN(DISTINCT ?v) AS ?min)");
 		long exactBefore = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
 		assertAllThreeAgree(exactQuery);
 		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
@@ -680,7 +731,8 @@ public class LmdbNativeParallelAggregationTest {
 					vf.createLiteral("1.0", CoreDatatype.XSD.DECIMAL));
 		}
 		String query = "PREFIX ex: <" + EX + ">\n"
-				+ "SELECT (MIN(?v) AS ?min) (MAX(?v) AS ?max) WHERE { ?s ex:equivalentExtreme ?v }";
+				+ "SELECT (MIN(DISTINCT ?v) AS ?min) (MAX(DISTINCT ?v) AS ?max) "
+				+ "WHERE { ?s ex:equivalentExtreme ?v }";
 
 		SpeculativeCounters before = SpeculativeCounters.snapshot();
 		List<String> actual = rows(query);
@@ -729,12 +781,14 @@ public class LmdbNativeParallelAggregationTest {
 					.isEqualTo(before);
 			assertThat(result).singleElement().satisfies(row -> {
 				assertThat(((Literal) row.getValue("count")).longValue()).isEqualTo(2L);
+				// Ordered-v1 POSC encounters the decimal id first; fallback must preserve that exact
+				// comparator-equal RDF term while avoiding a replay of the unmarked function.
 				Literal min = (Literal) row.getValue("min");
 				Literal max = (Literal) row.getValue("max");
-				assertThat(min.getCoreDatatype()).isEqualTo(CoreDatatype.XSD.INT);
-				assertThat(min.getLabel()).isEqualTo("1");
-				assertThat(max.getCoreDatatype()).isEqualTo(CoreDatatype.XSD.INT);
-				assertThat(max.getLabel()).isEqualTo("1");
+				assertThat(min.getCoreDatatype()).isEqualTo(CoreDatatype.XSD.DECIMAL);
+				assertThat(min.getLabel()).isEqualTo("1.0");
+				assertThat(max.getCoreDatatype()).isEqualTo(CoreDatatype.XSD.DECIMAL);
+				assertThat(max.getLabel()).isEqualTo("1.0");
 			});
 			List<String> actual = serializedRows(result);
 			function.reset();
@@ -750,14 +804,49 @@ public class LmdbNativeParallelAggregationTest {
 	}
 
 	@Test
-	public void distinctValueAggregateStaysSequentialButCorrect() {
-		String query = starWithValues("(SUM(DISTINCT ?v) AS ?sum)");
-		long before = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
-		List<String> nativeRows = rows(query);
-		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
-				.as("per-worker distinct-then-accumulate cannot merge without double counting: the gate must hold")
+	public void distinctSumAndAvgRunParallelAcrossWorkerDuplicates() {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			ValueFactory vf = conn.getValueFactory();
+			IRI rootPredicate = vf.createIRI(EX, "distinctAggregateRoot");
+			IRI valuePredicate = vf.createIRI(EX, "distinctAggregateValue");
+			IRI root = vf.createIRI(EX, "distinctAggregateRootValue");
+			conn.begin();
+			for (int i = 0; i < 2_048; i++) {
+				IRI subject = vf.createIRI(EX, "distinctAggregate/subject" + i);
+				conn.add(subject, rootPredicate, root);
+				conn.add(subject, valuePredicate, vf.createLiteral(10));
+			}
+			conn.add(vf.createIRI(EX, "distinctAggregate/subject0"), valuePredicate, vf.createLiteral(1));
+			conn.commit();
+		}
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (SUM(DISTINCT ?v) AS ?sum) (AVG(DISTINCT ?v) AS ?avg) WHERE {\n"
+				+ "  ?s ex:distinctAggregateRoot ex:distinctAggregateRootValue .\n"
+				+ "  ?s ex:distinctAggregateValue ?v .\n"
+				+ "}";
+
+		assertParallelEngagesAndAllThreeAgree(query);
+	}
+
+	@Test
+	public void floatingDistinctSumAndAvgFallBackAtDeferredRecompute() {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			ValueFactory vf = conn.getValueFactory();
+			conn.add(vf.createIRI(EX, "hub0"), vf.createIRI(EX, "p3"), vf.createLiteral(0.1d));
+		}
+		String query = starWithValues("(SUM(DISTINCT ?v) AS ?sum) (AVG(DISTINCT ?v) AS ?avg)");
+
+		SpeculativeCounters before = SpeculativeCounters.snapshot();
+		List<String> actual = rows(query);
+		assertThat(SpeculativeCounters.snapshot())
+				.as("floating DISTINCT recompute must discard every speculative parallel counter")
 				.isEqualTo(before);
-		assertThat(nativeRows).isEqualTo(rowsWithProperty(NATIVE_FLAG, "false", query));
+		assertThat(actual).isEqualTo(rowsWithProperty(PARALLEL_FLAG, "false", query));
+		assertThat(actual).isEqualTo(rowsWithProperty(NATIVE_FLAG, "false", query));
+		assertThat(strategy(query)).isEqualTo("aggState");
+		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
+				.as("floating DISTINCT recompute must restart sequentially")
+				.isEqualTo(before.parallelRuns());
 	}
 
 	private static String starWithValues(String select) {
@@ -818,7 +907,7 @@ public class LmdbNativeParallelAggregationTest {
 
 	private static String cancellationSequenceQuery(String family) {
 		return "PREFIX ex: <" + EX + ">\n"
-				+ "SELECT (SUM(?v) AS ?sum) WHERE {\n"
+				+ "SELECT (SUM(DISTINCT ?v) AS ?sum) WHERE {\n"
 				+ "  <" + EX + family + "/sequence> ex:" + family + "Item ?node .\n"
 				+ "  ?node ex:" + family + "Value ?v .\n"
 				+ "}";
@@ -864,26 +953,30 @@ public class LmdbNativeParallelAggregationTest {
 	}
 
 	private String strategy(String query) {
+		String strategy = findMetric(explain(query), "nativeExecutionPath");
+		assertThat(strategy).as("expected a nativeExecutionPath metric in the explanation").isNotNull();
+		return strategy;
+	}
+
+	private GenericPlanNode explain(String query) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			String strategy = findStrategy(connection.prepareTupleQuery(query)
+			return connection.prepareTupleQuery(query)
 					.explain(Explanation.Level.Telemetry)
-					.toGenericPlanNode());
-			assertThat(strategy).as("expected a nativeExecutionPath metric in the explanation").isNotNull();
-			return strategy;
+					.toGenericPlanNode();
 		}
 	}
 
-	private static String findStrategy(GenericPlanNode node) {
+	private static String findMetric(GenericPlanNode node, String metricName) {
 		if (node == null) {
 			return null;
 		}
-		String value = node.getStringMetricActual("nativeExecutionPath");
+		String value = node.getStringMetricActual(metricName);
 		if (value != null) {
 			return value;
 		}
 		if (node.getPlans() != null) {
 			for (GenericPlanNode child : node.getPlans()) {
-				String found = findStrategy(child);
+				String found = findMetric(child, metricName);
 				if (found != null) {
 					return found;
 				}

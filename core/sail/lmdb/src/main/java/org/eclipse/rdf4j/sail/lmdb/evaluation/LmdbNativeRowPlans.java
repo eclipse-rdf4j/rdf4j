@@ -100,7 +100,7 @@ final class FilterPlan implements SlotPlan {
 	@Override
 	public BatchCursor openBatch(RowState row, int capacity) throws IOException {
 		BatchCursor batch = arg.openBatch(row, capacity);
-		return batch == null ? null : new FilterBatchCursor(batch, filter, row);
+		return batch == null ? null : new FilterBatchCursor(batch, filter, row, filterMask);
 	}
 
 	@Override

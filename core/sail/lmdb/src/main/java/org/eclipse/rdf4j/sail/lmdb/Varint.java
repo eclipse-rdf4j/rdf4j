@@ -15,11 +15,13 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 import org.eclipse.rdf4j.sail.lmdb.util.SignificantBytesBE;
+import org.lwjgl.system.MemoryUtil;
 
 /**
  * Encodes and decodes unsigned values using variable-length encoding.
  */
 public final class Varint {
+	private static final boolean NATIVE_LITTLE_ENDIAN = ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN;
 
 	static final byte[] ENCODED_LONG_MAX = new byte[] {
 			(byte) 0xFF, // header: 8 payload bytes
@@ -427,11 +429,46 @@ public final class Varint {
 		}
 
 		final int bytes = a0 - 247; // 250 -> 3 payload bytes, 255 -> 8 payload bytes
-		long value = 0;
-		for (int i = 1; i <= bytes; i++) {
-			value = (value << 8) | (LmdbUtil.getByte(address + i) & 0xFFL);
+		return readSignificantBits(address + 1, bytes);
+	}
+
+	private static long readSignificantBits(long address, int bytes) {
+		switch (bytes) {
+		case 8:
+			return getLongBigEndian(address);
+		case 7:
+			return ((LmdbUtil.getByte(address) & 0xFFL) << 48)
+					| ((getIntBigEndian(address + 1) & 0xFFFF_FFFFL) << 16)
+					| (getShortBigEndian(address + 5) & 0xFFFFL);
+		case 6:
+			return ((getShortBigEndian(address) & 0xFFFFL) << 32)
+					| (getIntBigEndian(address + 2) & 0xFFFF_FFFFL);
+		case 5:
+			return ((LmdbUtil.getByte(address) & 0xFFL) << 32)
+					| (getIntBigEndian(address + 1) & 0xFFFF_FFFFL);
+		case 4:
+			return getIntBigEndian(address) & 0xFFFF_FFFFL;
+		case 3:
+			return ((getShortBigEndian(address) & 0xFFFFL) << 8)
+					| (LmdbUtil.getByte(address + 2) & 0xFFL);
+		default:
+			throw new IllegalArgumentException("Bytes is not in [3,8]: " + bytes);
 		}
-		return value;
+	}
+
+	private static short getShortBigEndian(long address) {
+		short value = MemoryUtil.memGetShort(address);
+		return NATIVE_LITTLE_ENDIAN ? Short.reverseBytes(value) : value;
+	}
+
+	private static int getIntBigEndian(long address) {
+		int value = MemoryUtil.memGetInt(address);
+		return NATIVE_LITTLE_ENDIAN ? Integer.reverseBytes(value) : value;
+	}
+
+	private static long getLongBigEndian(long address) {
+		long value = MemoryUtil.memGetLong(address);
+		return NATIVE_LITTLE_ENDIAN ? Long.reverseBytes(value) : value;
 	}
 
 	/**

@@ -176,14 +176,14 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 		}
 		SlotPlan plan = SlotPlan.join(left, right);
 		if (leftJoin.hasCondition()) {
-			NativeBooleanFilter joinCondition = compileBoolean(leftJoin.getCondition());
+			NativeBooleanFilter joinCondition = compileBoolean(leftJoin.getCondition(), SlotPlan.assuredMask(plan));
 			if (joinCondition == null) {
 				return null;
 			}
 			plan = SlotPlan.filter(plan, joinCondition, placeableFilterMask(leftJoin.getCondition()));
 		}
 		if (!conditionFolded) {
-			NativeBooleanFilter condition = compileBoolean(filter.getCondition());
+			NativeBooleanFilter condition = compileBoolean(filter.getCondition(), SlotPlan.assuredMask(plan));
 			if (condition == null) {
 				return null;
 			}
@@ -265,7 +265,8 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 		}
 		SlotPlan left = compileTuple(leftJoin.getLeftArg(), true);
 		SlotPlan right = compileTuple(leftJoin.getRightArg(), true);
-		NativeBooleanFilter condition = compileBoolean(filter.getCondition());
+		NativeBooleanFilter condition = left == null || right == null ? null
+				: compileBoolean(filter.getCondition(), SlotPlan.assuredMask(left) | SlotPlan.assuredMask(right));
 		if (left == null || right == null || condition == null) {
 			return null;
 		}
@@ -353,35 +354,43 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 	}
 
 	NativeBooleanFilter compileBoolean(ValueExpr expr) {
+		return compileBoolean(expr, 0L);
+	}
+
+	NativeBooleanFilter compileBoolean(ValueExpr expr, long assuredMask) {
 		if (!syntheticVarNames.isEmpty()
 				&& !Collections.disjoint(VarNameCollector.process(expr), syntheticVarNames)) {
 			// raw-id shortcuts (IN, sameTerm, = against constants) must never compare a plan-local
 			// synthetic id against a real store id; the generic path materializes values instead
 			return compileGenericBoolean(expr);
 		}
-		LmdbNativeCompiledBoolean nativeExpression = LmdbNativeExpressionCompiler
-				.compileBoolean(expr, source, this::existingSlot, strictCompare());
-		if (nativeExpression != null) {
-			return nativeExpression;
+		if (expr instanceof Compare) {
+			NativeBooleanFilter comparison = compileCompare((Compare) expr, assuredMask);
+			if (comparison != null) {
+				LmdbNativeExpressionCompiler.recordCompiledFilter();
+				return comparison;
+			}
 		}
 		if (expr instanceof And) {
-			NativeBooleanFilter left = compileBoolean(((And) expr).getLeftArg());
-			NativeBooleanFilter right = compileBoolean(((And) expr).getRightArg());
+			NativeBooleanFilter left = compileBoolean(((And) expr).getLeftArg(), assuredMask);
+			NativeBooleanFilter right = compileBoolean(((And) expr).getRightArg(), assuredMask);
 			return left == null || right == null ? null : row -> left.accept(row) && right.accept(row);
 		}
 		if (expr instanceof Or) {
-			NativeBooleanFilter left = compileBoolean(((Or) expr).getLeftArg());
-			NativeBooleanFilter right = compileBoolean(((Or) expr).getRightArg());
+			NativeBooleanFilter left = compileBoolean(((Or) expr).getLeftArg(), assuredMask);
+			NativeBooleanFilter right = compileBoolean(((Or) expr).getRightArg(), assuredMask);
 			return left == null || right == null ? null : row -> left.accept(row) || right.accept(row);
 		}
 		if (expr instanceof Not && cannotProduceError(((Not) expr).getArg())) {
-			// Native leaves collapse type errors (e.g. comparisons against unbound OPTIONAL vars) to
-			// false, which is safe under And/Or and at the row gate, but Not would turn that false
-			// into true while SPARQL three-valued logic keeps the error and drops the row. Only
-			// negate natively when the argument cannot produce an error; otherwise the expression
-			// falls through to the generic evaluator below, which implements full three-valued logic.
-			NativeBooleanFilter arg = compileBoolean(((Not) expr).getArg());
+			// Native leaves collapse type errors to false at the row gate. Negation is safe only when the
+			// operand cannot produce an error; otherwise the generic evaluator must preserve ERROR under Not.
+			NativeBooleanFilter arg = compileBoolean(((Not) expr).getArg(), assuredMask);
 			return arg == null ? null : row -> !arg.accept(row);
+		}
+		LmdbNativeCompiledBoolean nativeExpression = LmdbNativeExpressionCompiler
+				.compileBoolean(expr, source, this::existingSlot, strictCompare(), assuredMask);
+		if (nativeExpression != null) {
+			return nativeExpression;
 		}
 		if (expr instanceof Exists) {
 			Exists exists = (Exists) expr;
@@ -396,15 +405,9 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			return subPlan == null ? null : new ExistsFilter(subPlan);
 		}
 		if (expr instanceof ListMemberOperator) {
-			NativeBooleanFilter membership = compileListMember((ListMemberOperator) expr);
+			NativeBooleanFilter membership = compileListMember((ListMemberOperator) expr, assuredMask);
 			if (membership != null) {
 				return membership;
-			}
-		}
-		if (expr instanceof Compare) {
-			NativeBooleanFilter comparison = compileCompare((Compare) expr);
-			if (comparison != null) {
-				return comparison;
 			}
 		}
 
@@ -495,6 +498,10 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 	}
 
 	NativeBooleanFilter compileListMember(ListMemberOperator list) {
+		return compileListMember(list, 0L);
+	}
+
+	NativeBooleanFilter compileListMember(ListMemberOperator list, long assuredMask) {
 		List<ValueExpr> args = list.getArguments();
 		if (args.size() < 2 || !(args.get(0) instanceof Var)) {
 			return null;
@@ -534,13 +541,18 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 		return new ValueSetFilter(source, slot,
 				acceptedSize == accepted.length ? accepted : Arrays.copyOf(accepted, acceptedSize),
 				acceptedSize == acceptedValues.length ? acceptedValues
-						: Arrays.copyOf(acceptedValues, acceptedSize));
+						: Arrays.copyOf(acceptedValues, acceptedSize),
+				(assuredMask & 1L << slot) == 0L);
 	}
 
 	NativeBooleanFilter compileCompare(Compare compare) {
+		return compileCompare(compare, 0L);
+	}
+
+	NativeBooleanFilter compileCompare(Compare compare, long assuredMask) {
 		Compare.CompareOp op = compare.getOperator();
-		IdOperand left = compileIdOperand(compare.getLeftArg());
-		IdOperand right = compileIdOperand(compare.getRightArg());
+		IdOperand left = compileIdOperand(compare.getLeftArg(), assuredMask);
+		IdOperand right = compileIdOperand(compare.getRightArg(), assuredMask);
 		if (left == null || right == null) {
 			return null;
 		}
@@ -553,7 +565,7 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			return row -> {
 				long l = left.id(row);
 				long r = right.id(row);
-				if (l == UNKNOWN || r == UNKNOWN) {
+				if ((left.checkBound() && l == UNKNOWN) || (right.checkBound() && r == UNKNOWN)) {
 					return false;
 				}
 				if (safeResourceId(l) && safeResourceId(r)) {
@@ -567,7 +579,8 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 		return cached != null ? cached : row -> {
 			long l = left.id(row);
 			long r = right.id(row);
-			return l != UNKNOWN && r != UNKNOWN && fallback.test(row.view);
+			return (!left.checkBound() || l != UNKNOWN) && (!right.checkBound() || r != UNKNOWN)
+					&& fallback.test(row.view);
 		};
 	}
 
@@ -575,15 +588,25 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			Predicate<BindingSet> fallback) {
 		boolean strict = strictCompare();
 		if (left.isSlot() && right.isConstant()) {
-			return new CachedCompareFilter(source, left.slot, right.constant, false, op, strict, fallback);
+			return new CachedCompareFilter(source, left.slot, right.constant, false, op, strict, fallback,
+					left.checkBound());
 		}
 		if (left.isConstant() && right.isSlot()) {
-			return new CachedCompareFilter(source, right.slot, left.constant, true, op, strict, fallback);
+			return new CachedCompareFilter(source, right.slot, left.constant, true, op, strict, fallback,
+					right.checkBound());
+		}
+		if (left.isSlot() && right.isSlot()) {
+			return new OrderedSlotCompareFilter(left.slot, right.slot, op, fallback, left.checkBound(),
+					right.checkBound());
 		}
 		return null;
 	}
 
 	IdOperand compileIdOperand(ValueExpr expr) {
+		return compileIdOperand(expr, 0L);
+	}
+
+	IdOperand compileIdOperand(ValueExpr expr, long assuredMask) {
 		if (expr instanceof Var) {
 			Var var = (Var) expr;
 			if (var.hasValue()) {
@@ -591,7 +614,7 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 				return id == UNKNOWN ? null : IdOperand.constant(id);
 			}
 			int slot = existingSlot(var.getName());
-			return slot < 0 ? null : IdOperand.slot(slot);
+			return slot < 0 ? null : IdOperand.slot(slot, (assuredMask & 1L << slot) != 0L);
 		}
 		if (expr instanceof ValueConstant) {
 			long id = idOf(((ValueConstant) expr).getValue());

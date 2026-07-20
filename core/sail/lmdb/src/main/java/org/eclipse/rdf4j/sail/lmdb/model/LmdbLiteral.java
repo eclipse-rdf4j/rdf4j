@@ -197,6 +197,11 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	}
 
 	@Override
+	public long retainedLexicalLength() {
+		return label == null ? -1L : label.length();
+	}
+
+	@Override
 	public IRI getDatatype() {
 		init();
 		return datatype;

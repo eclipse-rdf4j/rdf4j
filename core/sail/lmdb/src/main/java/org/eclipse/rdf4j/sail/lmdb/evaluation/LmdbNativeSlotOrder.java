@@ -530,7 +530,7 @@ final class LmdbNativeOrderPlanner {
 			}
 			NativeSlotOrder order = plan.children.length > 1 ? child.order.withBarrier() : child.order;
 			MultiJoinPlan candidatePlan = new MultiJoinPlan(reordered, plan.filters);
-			if (!safeOrderedPromotion(plan, candidatePlan, outer + 1, row.boundMask())) {
+			if (!safeOrderedPromotion(plan, candidatePlan, outer + 1, row)) {
 				continue;
 			}
 			NativeOrderedPlan candidate = new NativeOrderedPlan(candidatePlan, order);
@@ -544,14 +544,28 @@ final class LmdbNativeOrderPlanner {
 	}
 
 	private static boolean safeOrderedPromotion(MultiJoinPlan original, MultiJoinPlan candidate,
-			int promotedPrefixLength, long initialBoundMask) {
+			int promotedPrefixLength, RowState row) {
+		long initialBoundMask = row.boundMask();
 		if (crossesPlannedFilterBoundary(original.filters, promotedPrefixLength - 1)
 				|| !connectedPatternPrefix(candidate.children, promotedPrefixLength, initialBoundMask)
 				|| delaysFilter(original, candidate, initialBoundMask)) {
 			return false;
 		}
-		double originalWork = cumulativePatternWork(original.children, promotedPrefixLength, initialBoundMask);
-		double candidateWork = cumulativePatternWork(candidate.children, promotedPrefixLength, initialBoundMask);
+		// Never compare a measured fan-out on one order with pseudo-cardinality fallback on the other. If only
+		// one prefix can be measured, the pseudo estimates are not a common cost domain and cannot safely admit
+		// an order-changing promotion.
+		boolean originalDirect = hasDirectPatternWork(original.children, promotedPrefixLength, initialBoundMask,
+				row.source);
+		boolean candidateDirect = hasDirectPatternWork(candidate.children, promotedPrefixLength, initialBoundMask,
+				row.source);
+		if (originalDirect != candidateDirect) {
+			return false;
+		}
+		NativeLmdbQuerySource costSource = originalDirect ? row.source : null;
+		double originalWork = cumulativePatternWork(original.children, promotedPrefixLength, initialBoundMask,
+				costSource);
+		double candidateWork = cumulativePatternWork(candidate.children, promotedPrefixLength, initialBoundMask,
+				costSource);
 		return originalWork < Double.MAX_VALUE && candidateWork < Double.MAX_VALUE
 				&& candidateWork <= originalWork;
 	}
@@ -593,6 +607,11 @@ final class LmdbNativeOrderPlanner {
 	}
 
 	static double cumulativePatternWork(SlotPlan[] children, int prefixLength, long initialBoundMask) {
+		return cumulativePatternWork(children, prefixLength, initialBoundMask, null);
+	}
+
+	static double cumulativePatternWork(SlotPlan[] children, int prefixLength, long initialBoundMask,
+			NativeLmdbQuerySource source) {
 		double inputRows = 1D;
 		double work = 0D;
 		long boundMask = initialBoundMask;
@@ -601,7 +620,7 @@ final class LmdbNativeOrderPlanner {
 				return Double.MAX_VALUE;
 			}
 			PatternPlan pattern = (PatternPlan) children[i];
-			double rowsPerProbe = pattern.estimateForBoundMask(boundMask);
+			double rowsPerProbe = pattern.estimateForBoundMask(boundMask, source);
 			if (!Double.isFinite(rowsPerProbe) || rowsPerProbe < 0D) {
 				return Double.MAX_VALUE;
 			}
@@ -613,6 +632,22 @@ final class LmdbNativeOrderPlanner {
 			boundMask |= pattern.producedMask();
 		}
 		return work;
+	}
+
+	private static boolean hasDirectPatternWork(SlotPlan[] children, int prefixLength, long initialBoundMask,
+			NativeLmdbQuerySource source) {
+		long boundMask = initialBoundMask;
+		for (int i = 0; i < prefixLength; i++) {
+			if (!(children[i] instanceof PatternPlan)) {
+				return false;
+			}
+			PatternPlan pattern = (PatternPlan) children[i];
+			if (!pattern.hasDirectEstimateForBoundMask(boundMask, source)) {
+				return false;
+			}
+			boundMask |= pattern.producedMask();
+		}
+		return true;
 	}
 
 	private static double saturatedAdd(double left, double right) {

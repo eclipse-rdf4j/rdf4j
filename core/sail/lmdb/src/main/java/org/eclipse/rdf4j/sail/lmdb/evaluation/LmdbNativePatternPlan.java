@@ -18,9 +18,12 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.OptionalDouble;
+import java.util.OptionalLong;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 
@@ -34,6 +37,7 @@ final class PatternPlan implements SlotPlan {
 	final boolean namedContextScope;
 	final StatementOrder statementOrder;
 	final String indexName;
+	final LmdbKeyRange range;
 	final long producedMask;
 	final double staticEstimate;
 
@@ -49,6 +53,11 @@ final class PatternPlan implements SlotPlan {
 
 	PatternPlan(Term s, Term p, Term o, Term c, ContextConstraint contexts, boolean namedContextScope,
 			StatementOrder statementOrder, String indexName, double staticEstimate) {
+		this(s, p, o, c, contexts, namedContextScope, statementOrder, indexName, null, staticEstimate);
+	}
+
+	PatternPlan(Term s, Term p, Term o, Term c, ContextConstraint contexts, boolean namedContextScope,
+			StatementOrder statementOrder, String indexName, LmdbKeyRange range, double staticEstimate) {
 		this.s = s;
 		this.p = p;
 		this.o = o;
@@ -57,6 +66,7 @@ final class PatternPlan implements SlotPlan {
 		this.namedContextScope = namedContextScope;
 		this.statementOrder = statementOrder;
 		this.indexName = indexName;
+		this.range = range;
 		long mask = 0L;
 		if (s.hasSlot()) {
 			mask |= 1L << s.slot;
@@ -144,7 +154,7 @@ final class PatternPlan implements SlotPlan {
 	 * derive identical ids from their identically seeded rows.
 	 */
 	long[] partitionableScanQuad(RowState row) {
-		if (statementOrder != null || contexts.isEmpty()) {
+		if (statementOrder != null || range != null || contexts.isEmpty()) {
 			return null;
 		}
 		long subj = s.lookup(row.slots);
@@ -203,13 +213,16 @@ final class PatternPlan implements SlotPlan {
 		if (statementOrder != null) {
 			return source.statements(statementOrder, subj, pred, obj, context);
 		}
+		if (range != null) {
+			return source.statements(subj, pred, obj, context, range);
+		}
 		return probe != null ? probe.open(subj, pred, obj, context) : source.statements(subj, pred, obj, context);
 	}
 
 	private PatternCursor openContexts(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe,
 			long subj, long pred, long obj, long[] contextIds) throws IOException {
 		if (statementOrder == null) {
-			return PatternCursor.contexts(source, probe, subj, pred, obj, contextIds);
+			return PatternCursor.contexts(source, probe, subj, pred, obj, contextIds, range);
 		}
 		List<RecordIterator> iterators = new ArrayList<>(contextIds.length);
 		try {
@@ -286,7 +299,7 @@ final class PatternPlan implements SlotPlan {
 		// Static LMDB estimates are captured once at compile time. At runtime, use them only for
 		// completely uncorrelated patterns; once another pattern has bound one of our slots, a cheap
 		// structural estimate is a better proxy for a direct lookup.
-		long structural = structuralEstimate(row);
+		double structural = structuralEstimate(row);
 		if (!hasRuntimeBoundSlot(row) && Double.isFinite(staticEstimate)) {
 			return Math.max(0D, staticEstimate);
 		}
@@ -299,10 +312,31 @@ final class PatternPlan implements SlotPlan {
 	 * performing LMDB I/O.
 	 */
 	double estimateForBoundMask(long boundMask) {
+		return estimateForBoundMask(boundMask, null);
+	}
+
+	double estimateForBoundMask(long boundMask, NativeLmdbQuerySource source) {
 		if ((producedMask & boundMask) == 0L && Double.isFinite(staticEstimate)) {
 			return Math.max(0D, staticEstimate);
 		}
-		return structuralEstimate(boundMask);
+		OptionalDouble fanOut = fanOutForBoundMask(boundMask, source);
+		return fanOut.isPresent() ? fanOut.getAsDouble() : structuralEstimate(boundMask);
+	}
+
+	/** Whether planning can cost this shape without falling back to pseudo-cardinalities. */
+	boolean hasDirectEstimateForBoundMask(long boundMask, NativeLmdbQuerySource source) {
+		return (producedMask & boundMask) == 0L && Double.isFinite(staticEstimate)
+				|| fanOutForBoundMask(boundMask, source).isPresent();
+	}
+
+	private OptionalDouble fanOutForBoundMask(long boundMask, NativeLmdbQuerySource source) {
+		if (source == null || !p.isConstant()) {
+			return OptionalDouble.empty();
+		}
+		boolean subjectKnown = termKnown(s, boundMask);
+		boolean objectKnown = termKnown(o, boundMask);
+		return subjectKnown == objectKnown ? OptionalDouble.empty()
+				: validFanOut(source.meanFanOut(p.constant, subjectKnown));
 	}
 
 	private long structuralEstimate(long boundMask) {
@@ -337,7 +371,11 @@ final class PatternPlan implements SlotPlan {
 		return term.isConstant() || (term.slot >= 0 && (boundMask & (1L << term.slot)) != 0L);
 	}
 
-	long structuralEstimate(RowState row) {
+	double structuralEstimate(RowState row) {
+		OptionalDouble fanOut = fanOutForRow(row);
+		if (fanOut.isPresent()) {
+			return fanOut.getAsDouble();
+		}
 		long estimate = 1L;
 		estimate = multiplyEstimate(estimate, termPseudoCardinality(s, row.slots, NativePatternField.SUBJECT));
 		estimate = multiplyEstimate(estimate, termPseudoCardinality(p, row.slots, NativePatternField.PREDICATE));
@@ -352,6 +390,33 @@ final class PatternPlan implements SlotPlan {
 			}
 		}
 		return estimate;
+	}
+
+	private OptionalDouble fanOutForRow(RowState row) {
+		long predicate = p.lookup(row.slots);
+		if (predicate == UNKNOWN || row.source == null) {
+			return OptionalDouble.empty();
+		}
+		long subject = s.lookup(row.slots);
+		long object = o.lookup(row.slots);
+		boolean subjectKnown = subject != UNKNOWN;
+		boolean objectKnown = object != UNKNOWN;
+		if (subjectKnown == objectKnown) {
+			return OptionalDouble.empty();
+		}
+		boolean bySubject = subjectKnown;
+		long key = bySubject ? subject : object;
+		OptionalLong exact = row.source.exactDegree(predicate, key, bySubject);
+		if (exact.isPresent() && exact.getAsLong() >= 0L) {
+			return OptionalDouble.of(exact.getAsLong());
+		}
+		return validFanOut(row.source.meanFanOut(predicate, bySubject));
+	}
+
+	private OptionalDouble validFanOut(OptionalDouble fanOut) {
+		return fanOut.isPresent() && Double.isFinite(fanOut.getAsDouble()) && fanOut.getAsDouble() >= 0D
+				? fanOut
+				: OptionalDouble.empty();
 	}
 
 	boolean hasRuntimeBoundSlot(RowState row) {

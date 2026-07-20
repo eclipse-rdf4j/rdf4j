@@ -39,6 +39,7 @@ import org.junit.jupiter.api.io.TempDir;
 public class LmdbNativeExpressionFilterTest {
 
 	private static final String EX = "http://example.com/";
+	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
 
 	@TempDir
 	File dataDir;
@@ -51,6 +52,7 @@ public class LmdbNativeExpressionFilterTest {
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			IRI price = vf.createIRI(EX, "price");
+			IRI other = vf.createIRI(EX, "other");
 			IRI label = vf.createIRI(EX, "label");
 
 			IRI s0 = vf.createIRI(EX, "s0");
@@ -60,6 +62,11 @@ public class LmdbNativeExpressionFilterTest {
 			conn.add(s0, price, vf.createLiteral(120));
 			conn.add(s1, price, vf.createLiteral(121));
 			conn.add(s2, price, vf.createLiteral("00121", XSD.INTEGER));
+			conn.add(s0, other, vf.createLiteral(121));
+			conn.add(s1, other, vf.createLiteral(120.0));
+			conn.add(s2, other, vf.createLiteral(Double.NaN));
+			conn.add(vf.createIRI(EX, "s3"), other, vf.createLiteral(-0.0d));
+			conn.add(vf.createIRI(EX, "s4"), other, vf.createLiteral(0.0d));
 
 			conn.add(s0, label, vf.createLiteral("Alphabetical stored literal"));
 			conn.add(s1, label, vf.createLiteral("Alphabetical stored literal"));
@@ -77,6 +84,20 @@ public class LmdbNativeExpressionFilterTest {
 			List<BindingSet> rows = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
 			assertThat(rows).hasSize(1);
 			return ((Literal) rows.get(0).getValue("c")).longValue();
+		}
+	}
+
+	private long count(String query, boolean nativeEnabled) {
+		String previous = System.getProperty(NATIVE_FLAG);
+		System.setProperty(NATIVE_FLAG, Boolean.toString(nativeEnabled));
+		try {
+			return count(query);
+		} finally {
+			if (previous == null) {
+				System.clearProperty(NATIVE_FLAG);
+			} else {
+				System.setProperty(NATIVE_FLAG, previous);
+			}
 		}
 	}
 
@@ -147,5 +168,109 @@ public class LmdbNativeExpressionFilterTest {
 
 		assertThat(result).isEqualTo(3);
 		assertThat(LmdbNativeExpressionCompiler.COMPILED_FILTERS.get()).isZero();
+	}
+
+	@Test
+	public void slotComparisonMatchesGenericForMixedNumbersAndNan() {
+		String comparisonQuery = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (COUNT(?s) AS ?c) WHERE {\n"
+				+ "  ?s ex:price ?price; ex:other ?other .\n"
+				+ "  FILTER(?price < ?other)\n"
+				+ "}";
+		String nanEqualityQuery = "PREFIX ex: <" + EX + ">\n"
+				+ "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\n"
+				+ "SELECT (COUNT(?s) AS ?c) WHERE {\n"
+				+ "  ?s ex:other ?other .\n"
+				+ "  FILTER(?other = \"NaN\"^^xsd:double)\n"
+				+ "}";
+		String signedZeroEqualityQuery = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (COUNT(?s) AS ?c) WHERE {\n"
+				+ "  ?s ex:other ?other .\n"
+				+ "  FILTER(?other = 0.0)\n"
+				+ "}";
+
+		long genericComparison = count(comparisonQuery, false);
+		long genericNanEquality = count(nanEqualityQuery, false);
+		long genericSignedZeroEquality = count(signedZeroEqualityQuery, false);
+		assertThat(genericNanEquality).isZero();
+		assertThat(genericSignedZeroEquality).isEqualTo(2);
+		assertThat(count(comparisonQuery, true)).isEqualTo(genericComparison);
+		assertThat(count(nanEqualityQuery, true)).isEqualTo(genericNanEquality);
+		assertThat(count(signedZeroEqualityQuery, true)).isEqualTo(genericSignedZeroEquality);
+	}
+
+	@Test
+	public void ifAndCoalescePreserveUnboundAndErrorSemantics() {
+		String ifQuery = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (COUNT(?s) AS ?c) WHERE {\n"
+				+ "  ?s ex:price ?price .\n"
+				+ "  OPTIONAL { ?s ex:missing ?missing }\n"
+				+ "  FILTER(IF(BOUND(?missing), ?missing < 0, ?price > 120))\n"
+				+ "}";
+		String coalesceQuery = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (COUNT(?s) AS ?c) WHERE {\n"
+				+ "  ?s ex:price ?price .\n"
+				+ "  OPTIONAL { ?s ex:missing ?missing }\n"
+				+ "  FILTER(COALESCE(?missing + 1, ?price) > 120)\n"
+				+ "}";
+
+		long genericIf = count(ifQuery, false);
+		long genericCoalesce = count(coalesceQuery, false);
+		resetNativeExpressionCounters();
+		assertThat(count(ifQuery, true)).isEqualTo(genericIf);
+		assertThat(count(coalesceQuery, true)).isEqualTo(genericCoalesce);
+		assertThat(LmdbNativeExpressionCompiler.COMPILED_FILTERS.get()).isGreaterThanOrEqualTo(2);
+		assertThat(LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.get()).isZero();
+	}
+
+	@Test
+	public void unsafeIfConditionDeclinesToGenericEvaluation() {
+		resetNativeExpressionCounters();
+
+		long result = count("PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (COUNT(?s) AS ?c) WHERE {\n"
+				+ "  ?s ex:price ?price .\n"
+				+ "  OPTIONAL { ?s ex:missing ?missing }\n"
+				+ "  FILTER(IF(?missing > 0, true, ?price > 120))\n"
+				+ "}");
+
+		assertThat(result).isZero();
+		assertThat(LmdbNativeExpressionCompiler.COMPILED_FILTERS.get()).isZero();
+	}
+
+	@Test
+	public void orderedIntegerNumericBuiltinsMatchGenericEvaluation() {
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (COUNT(?s) AS ?c) WHERE {\n"
+				+ "  ?s ex:price ?price .\n"
+				+ "  FILTER(ABS(?price) = 121\n"
+				+ "      && DATATYPE(ABS(?price)) = DATATYPE(?price)\n"
+				+ "      && CEIL(?price) = ?price\n"
+				+ "      && FLOOR(?price) = ?price\n"
+				+ "      && ROUND(?price) = ?price)\n"
+				+ "}";
+
+		long generic = count(query, false);
+		resetNativeExpressionCounters();
+		assertThat(count(query, true)).isEqualTo(generic);
+		assertThat(LmdbNativeExpressionCompiler.COMPILED_FILTERS.get()).isGreaterThan(0);
+		assertThat(LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.get()).isZero();
+	}
+
+	@Test
+	public void inlineStringPredicatesMatchGenericEvaluation() {
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (COUNT(?s) AS ?c) WHERE {\n"
+				+ "  ?s ex:label ?label .\n"
+				+ "  FILTER(STRSTARTS(?label, \"be\")\n"
+				+ "      && STRENDS(?label, \"ta\")\n"
+				+ "      && CONTAINS(?label, \"et\"))\n"
+				+ "}";
+
+		long generic = count(query, false);
+		resetNativeExpressionCounters();
+		assertThat(count(query, true)).isEqualTo(generic);
+		assertThat(LmdbNativeExpressionCompiler.COMPILED_FILTERS.get()).isGreaterThan(0);
+		assertThat(LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.get()).isZero();
 	}
 }

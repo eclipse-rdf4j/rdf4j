@@ -15,15 +15,20 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,6 +41,8 @@ class LmdbNativeHashJoinBatchTest {
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String QUERY = "PREFIX ex: <" + EX + ">\n"
 			+ "SELECT ?left ?key ?right WHERE { ?left ex:key ?key . ?right ex:key ?key }";
+	private static final String FILTERED_QUERY = "PREFIX ex: <" + EX + ">\n"
+			+ "SELECT ?s ?o ?v WHERE { ?s ex:p ?o . ?s ex:q ?v . FILTER(?v > 10) }";
 
 	@TempDir
 	File dataDir;
@@ -65,6 +72,7 @@ class LmdbNativeHashJoinBatchTest {
 		System.clearProperty(LmdbNativeHashJoin.ENABLED_PROPERTY);
 		System.clearProperty(LmdbNativeHashJoin.MIN_ROWS_PROPERTY);
 		System.clearProperty(LmdbNativeHashJoin.MAX_BUILD_ROWS_PROPERTY);
+		System.clearProperty(LmdbNativeMergeJoin.ENABLED_PROPERTY);
 		repository.shutDown();
 	}
 
@@ -83,9 +91,70 @@ class LmdbNativeHashJoinBatchTest {
 	void buildCapFallsBackBeforeEmittingRows() {
 		List<String> generic = genericRows();
 		resetCounters();
-		System.setProperty(LmdbNativeHashJoin.MAX_BUILD_ROWS_PROPERTY, "5");
+		System.setProperty(LmdbNativeHashJoin.MAX_BUILD_ROWS_PROPERTY, "64");
 
 		assertThat(rows()).isEqualTo(generic).hasSize(2000);
+		assertThat(LmdbNativeHashJoin.BUILDS.get()).isZero();
+		assertThat(LmdbNativeHashJoin.CAP_FALLBACKS.get()).isOne();
+	}
+
+	@Test
+	void placeableFilterUsesHashJoinAndMatchesGeneric() {
+		addFilteredJoinData();
+		List<String> generic = genericRows(FILTERED_QUERY);
+		resetCounters();
+		System.setProperty(LmdbNativeMergeJoin.ENABLED_PROPERTY, "false");
+
+		assertThat(rows(FILTERED_QUERY)).isEqualTo(generic).hasSize(29);
+		assertThat(LmdbNativeHashJoin.BUILDS.get()).isOne();
+		assertThat(LmdbNativeHashJoin.PROBE_BATCHES.get()).isPositive();
+	}
+
+	@Test
+	void buildCapFallbackAppliesAbsorbedFilterExactlyOnce() throws Exception {
+		AtomicInteger evaluations = new AtomicInteger();
+		AtomicInteger closes = new AtomicInteger();
+		NativeBooleanFilter countingFilter = new NativeBooleanFilter() {
+			@Override
+			public boolean accept(RowState candidate) {
+				evaluations.incrementAndGet();
+				return true;
+			}
+
+			@Override
+			public void close() {
+				closes.incrementAndGet();
+			}
+		};
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("s", 0, "left", 1, "right", 2), null);
+		layout.freeze(List.of("s", "left", "right"));
+		CountingJoinSource source = new CountingJoinSource();
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		assertThat(LmdbNativeAggregateCompiler.initializeRow(row, EmptyBindingSet.getInstance(), source, layout))
+				.isTrue();
+		PatternPlan left = new PatternPlan(Term.slot(0), Term.constant(7L), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 3);
+		PatternPlan right = new PatternPlan(Term.slot(0), Term.constant(8L), Term.slot(2), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 3);
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { left, right },
+				new MaskedFilter[] { new MaskedFilter(countingFilter, 1L << 2) });
+		System.setProperty(LmdbNativeHashJoin.MAX_BUILD_ROWS_PROPERTY, "1");
+		resetCounters();
+
+		BatchCursor admitted = LmdbNativeHashJoin.tryOpen(plan, row, 2);
+		assertThat(admitted).isNotNull();
+		int emitted = 0;
+		NativeBatch batch = new NativeBatch(3, 2);
+		try (BatchCursor cursor = admitted) {
+			int count;
+			while ((count = cursor.fill(batch)) > 0) {
+				emitted += count;
+			}
+		}
+
+		assertThat(emitted).isEqualTo(3);
+		assertThat(evaluations).hasValue(3);
+		assertThat(closes).hasValue(1);
 		assertThat(LmdbNativeHashJoin.BUILDS.get()).isZero();
 		assertThat(LmdbNativeHashJoin.CAP_FALLBACKS.get()).isOne();
 	}
@@ -138,6 +207,19 @@ class LmdbNativeHashJoinBatchTest {
 		assertThat(NativeBatch.ROOT_ITERATIONS.get() - batchRootsBefore).isLessThanOrEqualTo(1L);
 	}
 
+	private void addFilteredJoinData() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			IRI p = vf.createIRI(EX, "p");
+			IRI q = vf.createIRI(EX, "q");
+			for (int i = 0; i < 40; i++) {
+				IRI subject = vf.createIRI(EX, "filtered" + i);
+				connection.add(subject, p, vf.createLiteral(i));
+				connection.add(subject, q, vf.createLiteral(i));
+			}
+		}
+	}
+
 	private List<String> genericRows() {
 		return genericRows(QUERY);
 	}
@@ -177,5 +259,79 @@ class LmdbNativeHashJoinBatchTest {
 		LmdbNativeHashJoin.BUILDS.set(0);
 		LmdbNativeHashJoin.PROBE_BATCHES.set(0);
 		LmdbNativeHashJoin.CAP_FALLBACKS.set(0);
+	}
+
+	private static final class CountingJoinSource implements NativeLmdbQuerySource {
+		private final long[][] rows = {
+				{ 1L, 7L, 11L, 0L },
+				{ 2L, 7L, 12L, 0L },
+				{ 3L, 7L, 13L, 0L },
+				{ 1L, 8L, 101L, 0L },
+				{ 2L, 8L, 102L, 0L },
+				{ 3L, 8L, 103L, 0L }
+		};
+
+		@Override
+		public long idOf(Value value) {
+			return UNKNOWN_ID;
+		}
+
+		@Override
+		public Value lazyValue(long id) {
+			throw new UnsupportedOperationException();
+		}
+
+		@Override
+		public Object idSpace() {
+			return this;
+		}
+
+		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context) {
+			return new RecordIterator() {
+				private int index;
+
+				@Override
+				public long[] next() {
+					while (index < rows.length) {
+						long[] candidate = rows[index++];
+						if (matches(subj, candidate[0]) && matches(pred, candidate[1])
+								&& matches(obj, candidate[2]) && matches(context, candidate[3])) {
+							return candidate;
+						}
+					}
+					return null;
+				}
+
+				@Override
+				public void close() {
+					index = rows.length;
+				}
+			};
+		}
+
+		@Override
+		public long count(long subj, long pred, long obj, long context) {
+			return rows.length;
+		}
+
+		@Override
+		public boolean has(long subj, long pred, long obj, long context) {
+			return true;
+		}
+
+		@Override
+		public double estimate(long subj, long pred, long obj, long context) {
+			return rows.length;
+		}
+
+		@Override
+		public boolean hasStatementsInSource() {
+			return true;
+		}
+
+		private static boolean matches(long requested, long actual) {
+			return requested == UNKNOWN_ID || requested == actual;
+		}
 	}
 }

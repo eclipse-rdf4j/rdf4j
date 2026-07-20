@@ -30,11 +30,17 @@ final class MultiValuePatternPlan implements SlotPlan {
 
 	MultiValuePatternPlan(NativeLmdbQuerySource source, int constrainedSlot, long[] constants,
 			PatternPlan[] alternatives, PatternPlan fallback) {
+		this(constrainedSlot, constants, alternatives, fallback,
+				fallback == null ? null : new ValueSetFilter(source, constrainedSlot, constants));
+	}
+
+	private MultiValuePatternPlan(int constrainedSlot, long[] constants, PatternPlan[] alternatives,
+			PatternPlan fallback, ValueSetFilter fallbackFilter) {
 		this.constrainedSlot = constrainedSlot;
 		this.constants = constants;
 		this.alternatives = alternatives;
 		this.fallback = fallback;
-		this.fallbackFilter = fallback == null ? null : new ValueSetFilter(source, constrainedSlot, constants);
+		this.fallbackFilter = fallbackFilter;
 		long mask = 0L;
 		double estimate = 0D;
 		for (PatternPlan alternative : alternatives) {
@@ -47,6 +53,12 @@ final class MultiValuePatternPlan implements SlotPlan {
 		}
 		this.producedMask = mask;
 		this.staticEstimate = estimate;
+	}
+
+	/** Creates worker-confined fallback memo/value caches while sharing only immutable pattern metadata. */
+	MultiValuePatternPlan forkForParallelWorker() {
+		return new MultiValuePatternPlan(constrainedSlot, constants, alternatives, fallback,
+				fallbackFilter == null ? null : fallbackFilter.forkForParallelWorker());
 	}
 
 	@Override

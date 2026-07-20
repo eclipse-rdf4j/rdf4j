@@ -14,11 +14,14 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.OptionalDouble;
+import java.util.OptionalLong;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
@@ -75,7 +78,17 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		if (active != null) {
 			return active.statements(subj, pred, obj, context);
 		}
-		return new ConcatenatingRecordIterator(activeSources, subj, pred, obj, context);
+		return new ConcatenatingRecordIterator(activeSources, subj, pred, obj, context, null);
+	}
+
+	@Override
+	public RecordIterator statements(long subj, long pred, long obj, long context, LmdbKeyRange range)
+			throws IOException {
+		NativeLmdbQuerySource active = onlyActiveSource();
+		if (active != null) {
+			return active.statements(subj, pred, obj, context, range);
+		}
+		return new ConcatenatingRecordIterator(activeSources, subj, pred, obj, context, range);
 	}
 
 	@Override
@@ -104,7 +117,7 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 				return null;
 			}
 			for (LmdbRootScanPartition partition : memberPartitions) {
-				combined.add(new LmdbRootScanPartition(i, partition.range()));
+				combined.add(partition.withMember(i));
 			}
 		}
 		return combined.toArray(new LmdbRootScanPartition[0]);
@@ -125,8 +138,7 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		// member ordinals are stable across same-snapshot siblings because parallel families are built in
 		// activeSources order; the member source planned its ranges under ordinal 0
 		return activeSources.get(member)
-				.statements(subj, pred, obj, context,
-						new LmdbRootScanPartition(0, partition.range()));
+				.statements(subj, pred, obj, context, partition.withMember(0));
 	}
 
 	@Override
@@ -222,6 +234,68 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 			estimate += source.estimate(subj, pred, obj, context);
 		}
 		return estimate;
+	}
+
+	@Override
+	public OptionalDouble meanFanOut(long predicate, boolean bySubject) {
+		NativeLmdbQuerySource active = onlyActiveSource();
+		if (active != null) {
+			return active.meanFanOut(predicate, bySubject);
+		}
+		if (activeSources.isEmpty()) {
+			return OptionalDouble.empty();
+		}
+		double fanOut = 0D;
+		for (NativeLmdbQuerySource source : activeSources) {
+			OptionalDouble sourceFanOut = source.meanFanOut(predicate, bySubject);
+			if (sourceFanOut.isEmpty()) {
+				return OptionalDouble.empty();
+			}
+			fanOut += sourceFanOut.getAsDouble();
+		}
+		return OptionalDouble.of(fanOut);
+	}
+
+	@Override
+	public OptionalLong exactDegree(long predicate, long key, boolean bySubject) {
+		NativeLmdbQuerySource active = onlyActiveSource();
+		if (active != null) {
+			return active.exactDegree(predicate, key, bySubject);
+		}
+		if (activeSources.isEmpty()) {
+			return OptionalLong.empty();
+		}
+		long degree = 0L;
+		for (NativeLmdbQuerySource source : activeSources) {
+			OptionalLong sourceDegree = source.exactDegree(predicate, key, bySubject);
+			if (sourceDegree.isEmpty()) {
+				return OptionalLong.empty();
+			}
+			long value = sourceDegree.getAsLong();
+			degree = Long.MAX_VALUE - degree < value ? Long.MAX_VALUE : degree + value;
+		}
+		return OptionalLong.of(degree);
+	}
+
+	@Override
+	public OrderedIntegerDomain orderedIntegerDomain(long subj, long pred, long obj, long context,
+			int varyingField) {
+		if (activeSources.isEmpty()) {
+			return null;
+		}
+		String commonIndex = null;
+		long min = Long.MAX_VALUE;
+		long max = Long.MIN_VALUE;
+		for (NativeLmdbQuerySource source : activeSources) {
+			OrderedIntegerDomain domain = source.orderedIntegerDomain(subj, pred, obj, context, varyingField);
+			if (domain == null || commonIndex != null && !commonIndex.equals(domain.indexFieldSeq())) {
+				return null;
+			}
+			commonIndex = domain.indexFieldSeq();
+			min = Math.min(min, domain.minValue());
+			max = Math.max(max, domain.maxValue());
+		}
+		return new OrderedIntegerDomain(commonIndex, min, max);
 	}
 
 	@Override
@@ -396,6 +470,12 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		}
 
 		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context, LmdbKeyRange range)
+				throws IOException {
+			return delegate.statements(subj, pred, obj, context, range);
+		}
+
+		@Override
 		public RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context)
 				throws IOException {
 			return delegate.statements(order, subj, pred, obj, context);
@@ -441,6 +521,22 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		@Override
 		public double estimate(long subj, long pred, long obj, long context) {
 			return delegate.estimate(subj, pred, obj, context);
+		}
+
+		@Override
+		public OptionalDouble meanFanOut(long predicate, boolean bySubject) {
+			return delegate.meanFanOut(predicate, bySubject);
+		}
+
+		@Override
+		public OptionalLong exactDegree(long predicate, long key, boolean bySubject) {
+			return delegate.exactDegree(predicate, key, bySubject);
+		}
+
+		@Override
+		public OrderedIntegerDomain orderedIntegerDomain(long subj, long pred, long obj, long context,
+				int varyingField) {
+			return delegate.orderedIntegerDomain(subj, pred, obj, context, varyingField);
 		}
 
 		@Override
@@ -704,17 +800,19 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		private final long pred;
 		private final long obj;
 		private final long context;
+		private final LmdbKeyRange range;
 		private int index;
 		private RecordIterator current;
 		private boolean closed;
 
 		private ConcatenatingRecordIterator(List<NativeLmdbQuerySource> sources, long subj, long pred, long obj,
-				long context) {
+				long context, LmdbKeyRange range) {
 			this.sources = sources;
 			this.subj = subj;
 			this.pred = pred;
 			this.obj = obj;
 			this.context = context;
+			this.range = range;
 		}
 
 		@Override
@@ -725,7 +823,8 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 			while (index < sources.size()) {
 				if (current == null) {
 					try {
-						current = sources.get(index).statements(subj, pred, obj, context);
+						current = range == null ? sources.get(index).statements(subj, pred, obj, context)
+								: sources.get(index).statements(subj, pred, obj, context, range);
 					} catch (IOException e) {
 						throw new QueryEvaluationException(e);
 					}

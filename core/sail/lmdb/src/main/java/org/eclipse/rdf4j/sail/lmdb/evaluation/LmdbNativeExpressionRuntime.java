@@ -86,6 +86,25 @@ final class LmdbNativeCompiledBoolean implements NativeBooleanFilter {
 		return accept(slot -> row.slots[slot]);
 	}
 
+	@Override
+	public int selectBatch(NativeBatch batch, int[] sel, int n, RowState scratch) {
+		BatchSlotReader reader = new BatchSlotReader(batch);
+		int accepted = 0;
+		for (int i = 0; i < n; i++) {
+			int physicalRow = sel[i];
+			reader.physicalRow = physicalRow;
+			if (accept(reader)) {
+				sel[accepted++] = physicalRow;
+			}
+		}
+		return accepted;
+	}
+
+	@Override
+	public long batchReadMask() {
+		return requiredMask;
+	}
+
 	boolean accept(LmdbNativeSlotReader row) {
 		return evaluator.eval(row) == LmdbNativeTruth.TRUE;
 	}
@@ -98,6 +117,20 @@ final class LmdbNativeCompiledBoolean implements NativeBooleanFilter {
 	@Override
 	public NativeBooleanFilter forkForParallelWorker() {
 		return this;
+	}
+
+	private static final class BatchSlotReader implements LmdbNativeSlotReader {
+		private final NativeBatch batch;
+		private int physicalRow;
+
+		private BatchSlotReader(NativeBatch batch) {
+			this.batch = batch;
+		}
+
+		@Override
+		public long id(int slot) {
+			return batch.slots[slot * batch.capacity + physicalRow];
+		}
 	}
 }
 
@@ -188,18 +221,21 @@ final class LmdbNativeCompiledId {
 
 @Experimental
 final class LmdbNativeNumericValue {
-	static final LmdbNativeNumericValue ERROR = new LmdbNativeNumericValue(true, null, 0D, false);
+	static final LmdbNativeNumericValue ERROR = new LmdbNativeNumericValue(true, null, 0D, false, null);
 
 	final boolean error;
 	final BigDecimal decimal;
 	final double doubleValue;
 	final boolean floating;
+	final CoreDatatype coreDatatype;
 
-	private LmdbNativeNumericValue(boolean error, BigDecimal decimal, double doubleValue, boolean floating) {
+	private LmdbNativeNumericValue(boolean error, BigDecimal decimal, double doubleValue, boolean floating,
+			CoreDatatype coreDatatype) {
 		this.error = error;
 		this.decimal = decimal;
 		this.doubleValue = doubleValue;
 		this.floating = floating;
+		this.coreDatatype = coreDatatype;
 	}
 
 	static LmdbNativeNumericValue from(LmdbNativeValueCodec.DecodedValue value) {
@@ -207,17 +243,25 @@ final class LmdbNativeNumericValue {
 			return ERROR;
 		}
 		if (value.floatingValue() != null) {
-			return floating(value.floatingValue());
+			return floating(value.floatingValue(), value.coreDatatype());
 		}
-		return decimal(value.decimalValue());
+		return decimal(value.decimalValue(), value.coreDatatype());
 	}
 
 	static LmdbNativeNumericValue decimal(BigDecimal value) {
-		return new LmdbNativeNumericValue(false, value, 0D, false);
+		return decimal(value, CoreDatatype.XSD.DECIMAL);
+	}
+
+	static LmdbNativeNumericValue decimal(BigDecimal value, CoreDatatype coreDatatype) {
+		return new LmdbNativeNumericValue(false, value, 0D, false, coreDatatype);
 	}
 
 	static LmdbNativeNumericValue floating(double value) {
-		return new LmdbNativeNumericValue(false, null, value, true);
+		return floating(value, CoreDatatype.XSD.DOUBLE);
+	}
+
+	static LmdbNativeNumericValue floating(double value, CoreDatatype coreDatatype) {
+		return new LmdbNativeNumericValue(false, null, value, true, coreDatatype);
 	}
 
 	LmdbNativeValueCodec.DecodedValue asValue() {
@@ -226,10 +270,9 @@ final class LmdbNativeNumericValue {
 		}
 		if (floating) {
 			return LmdbNativeValueCodec.DecodedValue.floating(Double.toString(doubleValue), doubleValue,
-					CoreDatatype.XSD.DOUBLE);
+					coreDatatype);
 		}
-		return LmdbNativeValueCodec.DecodedValue.decimal(decimal.toPlainString(), decimal,
-				CoreDatatype.XSD.DECIMAL);
+		return LmdbNativeValueCodec.DecodedValue.decimal(decimal.toPlainString(), decimal, coreDatatype);
 	}
 }
 
@@ -259,6 +302,13 @@ final class LmdbNativeExpressionOps {
 			LmdbNativeValueCodec.DecodedValue right, Compare.CompareOp op, boolean strict) {
 		if (left.error() || right.error()) {
 			return LmdbNativeTruth.ERROR;
+		}
+		if (left.numeric() && right.numeric() && (left.floatingValue() != null || right.floatingValue() != null)
+				&& (op == Compare.CompareOp.EQ || op == Compare.CompareOp.NE)) {
+			double l = left.floatingValue() != null ? left.floatingValue() : left.decimalValue().doubleValue();
+			double r = right.floatingValue() != null ? right.floatingValue() : right.decimalValue().doubleValue();
+			boolean equal = l == r;
+			return (op == Compare.CompareOp.EQ ? equal : !equal) ? LmdbNativeTruth.TRUE : LmdbNativeTruth.FALSE;
 		}
 		Integer cmp = nativeCompare(left, right);
 		if (cmp == null) {

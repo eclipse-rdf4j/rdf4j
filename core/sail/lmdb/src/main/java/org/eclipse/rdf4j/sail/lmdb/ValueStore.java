@@ -379,6 +379,7 @@ public class ValueStore extends AbstractValueFactory {
 	private static final int MIN_TRANSACTION_VALUE_CACHE_SIZE = 4 * 1024;
 	private static final int MAX_TRANSACTION_VALUE_CACHE_SIZE = 1024 * 1024;
 	private static final long TRANSACTION_VALUE_CACHE_BYTES_PER_ENTRY = 4 * 1024L;
+	private static final int MAX_SHARED_VALUE_CACHE_LEXICAL_CHARS = 1024 * 1024;
 
 	private static final VarHandle PREVIOUS_NAMESPACE_HANDLE;
 
@@ -1134,6 +1135,10 @@ public class ValueStore extends AbstractValueFactory {
 
 	private void cacheValueIn(LmdbValue[] cache, long[] cacheId, int setMask, long id, LmdbValue value) {
 		if (value == null) {
+			return;
+		}
+		long retainedLexicalLength = value.retainedLexicalLength();
+		if (retainedLexicalLength < 0 || retainedLexicalLength > MAX_SHARED_VALUE_CACHE_LEXICAL_CHARS) {
 			return;
 		}
 
@@ -2072,7 +2077,7 @@ public class ValueStore extends AbstractValueFactory {
 			if (inlineLiterals && value instanceof Literal) {
 				// inline value into id if possible
 				try {
-					long packedId = Values.packLiteral((Literal) value);
+					long packedId = Values.packLiteral((Literal) value, orderedNumericIds);
 					if (packedId != 0L) {
 						Literal unpacked = Values.unpackLiteral(packedId, this);
 						if (unpacked.equals(value)) {

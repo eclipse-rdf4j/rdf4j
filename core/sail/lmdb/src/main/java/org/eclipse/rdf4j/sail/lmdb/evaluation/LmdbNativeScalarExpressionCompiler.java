@@ -12,11 +12,11 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
 import java.util.Locale;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
-import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.query.algebra.Datatype;
@@ -36,29 +36,39 @@ final class LmdbNativeScalarExpressionCompiler {
 	private final NativeLmdbQuerySource source;
 	private final LmdbNativeValueCodec codec;
 	private final LmdbNativeSlotResolver slots;
+	private final long assuredMask;
 
 	LmdbNativeScalarExpressionCompiler(NativeLmdbQuerySource source, LmdbNativeValueCodec codec,
 			LmdbNativeSlotResolver slots) {
+		this(source, codec, slots, 0L);
+	}
+
+	LmdbNativeScalarExpressionCompiler(NativeLmdbQuerySource source, LmdbNativeValueCodec codec,
+			LmdbNativeSlotResolver slots, long assuredMask) {
 		this.source = source;
 		this.codec = codec;
 		this.slots = slots;
+		this.assuredMask = assuredMask;
 	}
 
 	LmdbNativeCompiledValue compileValue(ValueExpr expr) {
 		if (expr instanceof Var) {
 			Var var = (Var) expr;
 			if (var.hasValue()) {
-				return value(0L, row -> LmdbNativeValueCodec.fromValue(var.getValue()));
+				LmdbNativeValueCodec.DecodedValue constant = LmdbNativeValueCodec.fromValue(var.getValue());
+				return value(0L, row -> constant);
 			}
 			int slot = slots.slot(var.getName());
 			if (slot == NO_SLOT) {
 				return null;
 			}
-			return value(1L << slot, row -> codec.decode(row.id(slot)));
+			return assured(slot) ? value(1L << slot, row -> codec.decodeAssured(row.id(slot)))
+					: value(1L << slot, row -> codec.decode(row.id(slot)));
 		}
 		if (expr instanceof ValueConstant) {
-			Value value = ((ValueConstant) expr).getValue();
-			return value(0L, row -> LmdbNativeValueCodec.fromValue(value));
+			LmdbNativeValueCodec.DecodedValue constant = LmdbNativeValueCodec
+					.fromValue(((ValueConstant) expr).getValue());
+			return value(0L, row -> constant);
 		}
 		if (expr instanceof Str) {
 			LmdbNativeCompiledString string = compileString(expr);
@@ -91,7 +101,7 @@ final class LmdbNativeScalarExpressionCompiler {
 		if (expr instanceof FunctionCall) {
 			FunctionCall call = (FunctionCall) expr;
 			String uri = call.getURI();
-			if (FN.STRING_LENGTH.stringValue().equals(uri)) {
+			if (FN.STRING_LENGTH.stringValue().equals(uri) || numericBuiltin(uri)) {
 				LmdbNativeCompiledNumeric numeric = compileNumeric(expr);
 				return numeric == null ? null
 						: value(numeric.requiredMask, row -> numeric.evaluator.eval(row).asValue());
@@ -214,14 +224,61 @@ final class LmdbNativeScalarExpressionCompiler {
 			return arg == null ? null : numeric(arg.requiredMask, row -> {
 				String value = arg.evaluator.eval(row);
 				return value == null ? LmdbNativeNumericValue.ERROR
-						: LmdbNativeNumericValue.decimal(BigDecimal.valueOf(value.length()));
+						: LmdbNativeNumericValue.decimal(BigDecimal.valueOf(value.length()),
+								CoreDatatype.XSD.INTEGER);
 			});
+		}
+		if (expr instanceof FunctionCall && numericBuiltin(((FunctionCall) expr).getURI())) {
+			FunctionCall call = (FunctionCall) expr;
+			List<ValueExpr> args = call.getArgs();
+			if (args.size() != 1) {
+				return null;
+			}
+			LmdbNativeCompiledNumeric arg = compileNumeric(args.get(0));
+			return arg == null ? null
+					: numeric(arg.requiredMask, row -> applyNumericBuiltin(call.getURI(), arg.evaluator.eval(row)));
 		}
 		LmdbNativeCompiledValue value = compileValue(expr);
 		if (value == null) {
 			return null;
 		}
 		return numeric(value.requiredMask, row -> LmdbNativeNumericValue.from(value.evaluator.eval(row)));
+	}
+
+	private static LmdbNativeNumericValue applyNumericBuiltin(String uri, LmdbNativeNumericValue value) {
+		if (value.error) {
+			return LmdbNativeNumericValue.ERROR;
+		}
+		if (FN.NUMERIC_ABS.stringValue().equals(uri)) {
+			return value.floating
+					? LmdbNativeNumericValue.floating(Math.abs(value.doubleValue), value.coreDatatype)
+					: LmdbNativeNumericValue.decimal(value.decimal.abs(), value.coreDatatype);
+		}
+		if (FN.NUMERIC_CEIL.stringValue().equals(uri)) {
+			return value.floating
+					? LmdbNativeNumericValue.floating(Math.ceil(value.doubleValue), value.coreDatatype)
+					: LmdbNativeNumericValue.decimal(value.decimal.setScale(0, RoundingMode.CEILING),
+							value.coreDatatype);
+		}
+		if (FN.NUMERIC_FLOOR.stringValue().equals(uri)) {
+			return value.floating
+					? LmdbNativeNumericValue.floating(Math.floor(value.doubleValue), value.coreDatatype)
+					: LmdbNativeNumericValue.decimal(value.decimal.setScale(0, RoundingMode.FLOOR),
+							value.coreDatatype);
+		}
+		return value.floating
+				? LmdbNativeNumericValue.floating((double) Math.round(value.doubleValue), value.coreDatatype)
+				: LmdbNativeNumericValue.decimal(value.decimal.setScale(0, RoundingMode.HALF_UP),
+						value.coreDatatype);
+	}
+
+	private static boolean numericBuiltin(String uri) {
+		return FN.NUMERIC_ABS.stringValue().equals(uri) || FN.NUMERIC_CEIL.stringValue().equals(uri)
+				|| FN.NUMERIC_FLOOR.stringValue().equals(uri) || FN.NUMERIC_ROUND.stringValue().equals(uri);
+	}
+
+	private boolean assured(int slot) {
+		return (assuredMask & 1L << slot) != 0L;
 	}
 
 	private LmdbNativeValueCodec.DecodedValue stringLiteral(String result) {

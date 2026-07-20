@@ -18,6 +18,7 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Locale;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -60,6 +61,7 @@ final class LmdbNativeAdaptiveFilterPlacement {
 			RowCursor adaptive = tryOpenWrapped(step, extension.arg, row);
 			return adaptive == null ? null : new ExtensionCursor(adaptive, extension.copies, row);
 		}
+		decline(step.originalExpr, "NOT_MULTI_JOIN", false);
 		return null;
 	}
 
@@ -74,6 +76,17 @@ final class LmdbNativeAdaptiveFilterPlacement {
 
 	private static RowCursor tryOpen(TupleExpr telemetryExpr, boolean orderedExecution, long offset, long limit,
 			MultiJoinPlan plan, RowState row) throws IOException {
+		return tryOpen(telemetryExpr, orderedExecution, offset, limit, plan, row, null);
+	}
+
+	/** Opens an adaptive worker chain over an already-owned depth-zero exchange cursor. */
+	static RowCursor tryOpenFrom(TupleExpr telemetryExpr, MultiJoinPlan plan, RowState row, RowCursor depth0)
+			throws IOException {
+		return tryOpen(telemetryExpr, false, 0L, Long.MAX_VALUE, plan, row, depth0);
+	}
+
+	private static RowCursor tryOpen(TupleExpr telemetryExpr, boolean orderedExecution, long offset, long limit,
+			MultiJoinPlan plan, RowState row, RowCursor depth0) throws IOException {
 		if (!Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "true"))) {
 			return null;
 		}
@@ -97,7 +110,9 @@ final class LmdbNativeAdaptiveFilterPlacement {
 			decline(telemetryExpr, "CORRELATED_ENTRY", true);
 			return null;
 		}
-		MultiJoinPlan.OrderedPlan ordered = plan.derivedPlan(row);
+		MultiJoinPlan.OrderedPlan ordered = depth0 == null
+				? plan.derivedPlan(row)
+				: plan.derivedFactorizedPlan(row);
 		int targetIndex = -1;
 		long bestScore = Long.MIN_VALUE;
 		int bestFilterId = Integer.MAX_VALUE;
@@ -124,11 +139,13 @@ final class LmdbNativeAdaptiveFilterPlacement {
 		AdaptiveFilterSession session = null;
 		try {
 			MultiJoinPlan borrowed = lease.borrow(plan);
-			MultiJoinPlan.OrderedPlan borrowedOrder = borrowed.derive(row.boundMask());
+			MultiJoinPlan.OrderedPlan borrowedOrder = depth0 == null
+					? borrowed.derive(row.boundMask())
+					: borrowed.derivedFactorizedPlan(row);
 			MaskedFilter target = borrowed.filters[targetIndex];
 			session = new AdaptiveFilterSession(target.filter, target.adaptive,
-					borrowedOrder.placement[targetIndex], telemetryExpr);
-			RowCursor chain = openChain(borrowed, borrowedOrder, targetIndex, row, session);
+					borrowedOrder.placement[targetIndex], telemetryExpr, borrowed, borrowedOrder, targetIndex);
+			RowCursor chain = depth0 == null ? session.open(row) : session.openFrom(depth0, row);
 			return new AdaptiveOwningCursor(chain, session, lease);
 		} catch (IOException | RuntimeException | Error failure) {
 			if (session != null) {
@@ -139,7 +156,53 @@ final class LmdbNativeAdaptiveFilterPlacement {
 		}
 	}
 
-	private static boolean isShortFiniteSlice(long offset, long limit) {
+	/** Creates one non-owning adaptive controller reused by every ordinary suffix opened by a factorized cursor. */
+	static AdaptiveFilterSession tryCreateSuffixSession(TupleExpr telemetryExpr, MultiJoinPlan plan,
+			MultiJoinPlan.OrderedPlan ordered, int fromInclusive) {
+		if (!Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "true"))
+				|| ordered.order.length - fromInclusive < 2 || containsOrderedScan(plan)) {
+			return null;
+		}
+		int targetIndex = -1;
+		FilterPlacementEnvelope targetEnvelope = null;
+		long bestScore = Long.MIN_VALUE;
+		int bestFilterId = Integer.MAX_VALUE;
+		for (int i = 0; i < plan.filters.length; i++) {
+			FilterPlacementEnvelope envelope = ordered.placement[i];
+			AdaptiveFilterMetadata metadata = plan.filters[i].adaptive;
+			if (envelope == null || ordered.filterDepth[i] < fromInclusive) {
+				continue;
+			}
+			int first = 0;
+			while (first < envelope.candidateDepths.length
+					&& envelope.candidateDepths[first] < fromInclusive) {
+				first++;
+			}
+			int count = envelope.candidateDepths.length - first;
+			if (count < 2) {
+				continue;
+			}
+			int[] candidates = Arrays.copyOfRange(envelope.candidateDepths, first,
+					envelope.candidateDepths.length);
+			FilterPlacementEnvelope restricted = new FilterPlacementEnvelope(metadata.filterId,
+					ordered.filterDepth[i], count, candidates);
+			long score = saturatingMultiply(metadata.estimatedCostUnits, count - 1L);
+			if (score > bestScore || score == bestScore && metadata.filterId < bestFilterId) {
+				targetIndex = i;
+				targetEnvelope = restricted;
+				bestScore = score;
+				bestFilterId = metadata.filterId;
+			}
+		}
+		if (targetIndex < 0) {
+			return null;
+		}
+		MaskedFilter target = plan.filters[targetIndex];
+		return new AdaptiveFilterSession(new NonOwningAdaptiveFilter(target.filter), target.adaptive,
+				targetEnvelope, telemetryExpr, plan, ordered, targetIndex);
+	}
+
+	static boolean isShortFiniteSlice(long offset, long limit) {
 		return offset >= 0L && limit >= 0L && limit < Long.MAX_VALUE && offset < 256L && limit < 256L - offset;
 	}
 
@@ -161,6 +224,9 @@ final class LmdbNativeAdaptiveFilterPlacement {
 	}
 
 	private static void decline(TupleExpr telemetryExpr, String reason, boolean eligible) {
+		LmdbNativeAttemptMetrics.recordDecline(telemetryExpr,
+				LmdbNativeAttemptMetrics.STRATEGY_ADAPTIVE_FILTER_PLACEMENT,
+				reason.toLowerCase(Locale.ROOT).replace('_', '-'));
 		if (telemetryExpr == null || !telemetryExpr.isRuntimeTelemetryEnabled()) {
 			return;
 		}
@@ -178,12 +244,11 @@ final class LmdbNativeAdaptiveFilterPlacement {
 		return false;
 	}
 
-	private static RowCursor openChain(MultiJoinPlan plan, MultiJoinPlan.OrderedPlan ordered, int targetIndex,
-			RowState row, AdaptiveFilterSession session) throws IOException {
-		RowCursor cursor = null;
+	static RowCursor openChainFrom(MultiJoinPlan plan, MultiJoinPlan.OrderedPlan ordered, int targetIndex,
+			RowCursor depth0, RowState row, AdaptiveFilterSession session) throws IOException {
+		RowCursor cursor = depth0;
 		try {
 			SlotPlan[] children = ordered.order;
-			cursor = children[0].open(row);
 			cursor = applyDepth(cursor, plan, ordered, targetIndex, 0, row, session);
 			long leftProduced = children[0].producedMask();
 			for (int depth = 1; depth < children.length; depth++) {
@@ -193,6 +258,32 @@ final class LmdbNativeAdaptiveFilterPlacement {
 					cursor = new JoinCursor(cursor, children[depth], row, leftProduced);
 				}
 				cursor = applyDepth(cursor, plan, ordered, targetIndex, depth, row, session);
+				leftProduced |= children[depth].producedMask();
+			}
+			return cursor;
+		} catch (RuntimeException | Error failure) {
+			if (cursor != null) {
+				cursor.close();
+			}
+			throw failure;
+		}
+	}
+
+	static RowCursor openSuffix(MultiJoinPlan plan, MultiJoinPlan.OrderedPlan ordered, int targetIndex,
+			int fromInclusive, RowState row, AdaptiveFilterSession session) throws IOException {
+		RowCursor cursor = null;
+		try {
+			SlotPlan[] children = ordered.order;
+			cursor = children[fromInclusive].open(row);
+			cursor = applySuffixDepth(cursor, plan, ordered, targetIndex, fromInclusive, row, session);
+			long leftProduced = children[fromInclusive].producedMask();
+			for (int depth = fromInclusive + 1; depth < children.length; depth++) {
+				if (depth > session.envelope.earliestLegalDepth && depth <= session.envelope.deepestLegalDepth) {
+					cursor = new AdaptiveJoinCursor(cursor, children[depth], row, leftProduced, session, depth);
+				} else {
+					cursor = new JoinCursor(cursor, children[depth], row, leftProduced);
+				}
+				cursor = applySuffixDepth(cursor, plan, ordered, targetIndex, depth, row, session);
 				leftProduced |= children[depth].producedMask();
 			}
 			return cursor;
@@ -216,6 +307,24 @@ final class LmdbNativeAdaptiveFilterPlacement {
 				}
 			} else if (ordered.filterDepth[filterIndex] == depth) {
 				cursor = new FilterCursor(cursor, plan.filters[filterIndex].filter, row);
+			}
+		}
+		return cursor;
+	}
+
+	private static RowCursor applySuffixDepth(RowCursor cursor, MultiJoinPlan plan,
+			MultiJoinPlan.OrderedPlan ordered, int targetIndex, int depth, RowState row,
+			AdaptiveFilterSession session) {
+		for (int filterIndex = 0; filterIndex < plan.filters.length; filterIndex++) {
+			if (filterIndex == targetIndex) {
+				if (depth == session.envelope.earliestLegalDepth) {
+					cursor = new AdaptivePrefixBoundaryCursor(cursor, session);
+				}
+				if (session.candidateIndex(depth) >= 0) {
+					cursor = new AdaptiveFilterGateCursor(cursor, row, session, depth);
+				}
+			} else if (ordered.filterDepth[filterIndex] == depth) {
+				cursor = new SuffixFilterCursor(cursor, plan.filters[filterIndex].filter, row);
 			}
 		}
 		return cursor;
@@ -406,6 +515,36 @@ final class FilterPlacementEnvelope {
 record PlacementState(long generation, int activeDepth) {
 }
 
+/** Delegates evaluation while leaving filter lifetime with the surrounding factorized cursor. */
+@Experimental
+final class NonOwningAdaptiveFilter implements NativeBooleanFilter {
+	private final NativeBooleanFilter delegate;
+
+	NonOwningAdaptiveFilter(NativeBooleanFilter delegate) {
+		this.delegate = delegate;
+	}
+
+	@Override
+	public boolean accept(RowState row) {
+		return delegate.accept(row);
+	}
+
+	@Override
+	public int selectBatch(NativeBatch batch, int[] sel, int n, RowState scratch) {
+		return delegate.selectBatch(batch, sel, n, scratch);
+	}
+
+	@Override
+	public long batchReadMask() {
+		return delegate.batchReadMask();
+	}
+
+	@Override
+	public void close() {
+		// The factorized prefix/branch owner closes the compiled filter exactly once.
+	}
+}
+
 @Experimental
 final class AdaptiveFilterSession {
 	static final int NO_PENDING_DEPTH = -1;
@@ -420,6 +559,9 @@ final class AdaptiveFilterSession {
 	final AdaptiveFilterMetadata metadata;
 	final FilterPlacementEnvelope envelope;
 	final TupleExpr telemetryExpr;
+	final MultiJoinPlan plan;
+	final MultiJoinPlan.OrderedPlan ordered;
+	final int targetIndex;
 	final long[] arrivalsByCandidate;
 	final long[] evaluationsByCandidate;
 	final long[] passedByCandidate;
@@ -462,10 +604,19 @@ final class AdaptiveFilterSession {
 
 	AdaptiveFilterSession(NativeBooleanFilter target, AdaptiveFilterMetadata metadata,
 			FilterPlacementEnvelope envelope, TupleExpr telemetryExpr) {
+		this(target, metadata, envelope, telemetryExpr, null, null, -1);
+	}
+
+	AdaptiveFilterSession(NativeBooleanFilter target, AdaptiveFilterMetadata metadata,
+			FilterPlacementEnvelope envelope, TupleExpr telemetryExpr, MultiJoinPlan plan,
+			MultiJoinPlan.OrderedPlan ordered, int targetIndex) {
 		this.target = target;
 		this.metadata = metadata;
 		this.envelope = envelope;
 		this.telemetryExpr = telemetryExpr;
+		this.plan = plan;
+		this.ordered = ordered;
+		this.targetIndex = targetIndex;
 		this.arrivalsByCandidate = new long[envelope.candidateDepths.length];
 		this.evaluationsByCandidate = new long[envelope.candidateDepths.length];
 		this.passedByCandidate = new long[envelope.candidateDepths.length];
@@ -477,6 +628,27 @@ final class AdaptiveFilterSession {
 		this.windowFiltered = new long[envelope.candidateDepths.length];
 		this.placement = new PlacementState(0L, envelope.plannedDepth);
 		this.provenDepth = envelope.plannedDepth;
+	}
+
+	RowCursor open(RowState row) throws IOException {
+		if (ordered == null) {
+			throw new IllegalStateException("adaptive policy-only session has no cursor plan");
+		}
+		return openFrom(ordered.order[0].open(row), row);
+	}
+
+	RowCursor openFrom(RowCursor depth0, RowState row) throws IOException {
+		if (plan == null || ordered == null || targetIndex < 0) {
+			throw new IllegalStateException("adaptive policy-only session has no cursor plan");
+		}
+		return LmdbNativeAdaptiveFilterPlacement.openChainFrom(plan, ordered, targetIndex, depth0, row, this);
+	}
+
+	RowCursor openSuffix(int fromInclusive, RowState row) throws IOException {
+		if (plan == null || ordered == null || targetIndex < 0) {
+			throw new IllegalStateException("adaptive policy-only session has no cursor plan");
+		}
+		return LmdbNativeAdaptiveFilterPlacement.openSuffix(plan, ordered, targetIndex, fromInclusive, row, this);
 	}
 
 	void requestMove(int depth) {

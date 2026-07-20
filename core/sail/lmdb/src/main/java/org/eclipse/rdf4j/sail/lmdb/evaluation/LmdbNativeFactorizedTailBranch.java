@@ -43,7 +43,7 @@ final class BranchResult {
 
 @Experimental
 final class Branch {
-	/** Distinct probe keys before the scan-once switch is even considered. */
+	/** Completed paid probes before the scan-once switch is even considered. */
 	static final int SCAN_ONCE_MIN_MISSES = 1024;
 	/** Approximate cost of one repositioning probe, expressed in scanned-key equivalents. */
 	static final int SEEK_COST_KEYS = RuntimeBuildAdmission.SEEK_WORK_UNITS;
@@ -98,7 +98,7 @@ final class Branch {
 		this.freshSlots = freshSlots;
 		this.freshQuadPos = freshQuadPos;
 		this.scanOnceAdmission = memoEnabled && varyingSlot >= 0
-				? new RuntimeBuildAdmission(SCAN_ONCE_MIN_MISSES)
+				? new RuntimeBuildAdmission(0L, SCAN_ONCE_MIN_MISSES)
 				: null;
 	}
 
@@ -193,7 +193,7 @@ final class Branch {
 		boolean cacheBacked = probe != null && probe.adjacencyCacheBacked();
 		if (recordScanOnceProbe(row, result) && scanOnceAdmission.tryStartBuild()) {
 			scanOnceProbeKeys = null;
-			// After the complete 1,024-distinct-probe floor, observed work owns admission. Static estimates may
+			// After the complete 1,024-paid-probe floor, observed work owns admission. Static estimates may
 			// size storage in operators that need it, but they cannot veto this one bounded transactional sweep.
 			if (tryBuildCountTable(row)) {
 				memo.clear();

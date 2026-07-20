@@ -96,7 +96,8 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 		if (hasOptionalOnlyBinding(bindings)) {
-			LmdbNativeExplain.recordExecutionPath(originalExpr, "genericFallback(optionalOnlyBinding)");
+			LmdbNativeExplain.recordExecutionPath(originalExpr,
+					LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK + "(optionalOnlyBinding)");
 			return genericStep().evaluate(bindings);
 		}
 		return new NativeGroupIteration(source, arg, layout, groupSlots, aggregates, strictCompare, bindings,
@@ -234,7 +235,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 	List<BindingSet> evaluateAll() {
 		RowState row = new RowState(source, layout, base, explainTarget);
 		if (!initialize(row)) {
-			LmdbNativeExplain.recordExecutionPath(explainTarget, "emptySeed");
+			LmdbNativeExplain.recordExecutionPath(explainTarget, LmdbNativeAttemptMetrics.PATH_EMPTY_SEED);
 			return noInputResult();
 		}
 		LmdbNativeExplain.recordRuntimeEntryPlan(explainTarget, arg, layout, row.boundMask());
@@ -292,7 +293,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		}
 		List<BindingSet> prefixResults = evaluatePrefixRuns(row);
 		if (prefixResults != null) {
-			metrics.deferStrategy(explainTarget, "prefixRunGroups");
+			metrics.deferStrategy(explainTarget, LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS);
 			return prefixResults;
 		}
 		NativeAggregateDistinctPlan orderedDistinct = LmdbNativeOrderPlanner.aggregate(arg, groupSlots, aggregates,
@@ -311,34 +312,14 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 			FactorizedTail factorized = FactorizedTail.probe(derived, directMultiJoin.filters, row.boundMask(),
 					groupSlots, aggregates, metrics.child());
 			if (factorized != null) {
-				List<BindingSet> parallel;
-				try {
-					parallel = LmdbNativeParallelAggregation.tryEvaluate(this, directMultiJoin, row, metrics);
-				} catch (RuntimeException | Error e) {
-					try {
-						factorized.close();
-					} catch (RuntimeException | Error closeFailure) {
-						if (e != closeFailure) {
-							e.addSuppressed(closeFailure);
-						}
-					}
-					throw e;
-				}
-				if (parallel != null) {
-					factorized.close();
-					if (LmdbNativeExplain.recordsExecutionPaths(explainTarget)) {
-						metrics.deferStrategy(explainTarget,
-								LmdbNativeParallelAggregation.consumeLastStrategyLabel());
-					}
-					return parallel;
-				}
-				return evaluateFactorized(row, directMultiJoin, derived, factorized);
+				return evaluateParallelOrFactorized(row, directMultiJoin, directMultiJoin, derived, factorized,
+						metrics);
 			}
 		}
 		if (orderedDistinct.specialized()) {
 			List<BindingSet> ordered = evaluateOrderedDistinct(row, orderedDistinct,
 					new AggContext(source, strictCompare, true), metrics);
-			metrics.deferStrategy(explainTarget, "orderedDistinctGroups");
+			metrics.deferStrategy(explainTarget, LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS);
 			return ordered;
 		}
 		MultiJoinPlan parallelPlan = arg instanceof MultiJoinPlan && ((MultiJoinPlan) arg).children.length >= 1
@@ -347,30 +328,81 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 				: arg instanceof PatternPlan
 						? new MultiJoinPlan(new SlotPlan[] { arg }, new MaskedFilter[0])
 						: null;
-		if (parallelPlan != null) {
-			List<BindingSet> parallel = LmdbNativeParallelAggregation.tryEvaluate(this, parallelPlan, row, metrics);
-			if (parallel != null) {
-				if (LmdbNativeExplain.recordsExecutionPaths(explainTarget)) {
-					metrics.deferStrategy(explainTarget, LmdbNativeParallelAggregation.consumeLastStrategyLabel());
-				}
-				return parallel;
-			}
-		}
+		MultiJoinPlan.OrderedPlan factorizedDerived = null;
+		FactorizedTail factorized = null;
 		if (directMultiJoin != null) {
-			MultiJoinPlan multiJoin = directMultiJoin;
-			MultiJoinPlan.OrderedPlan derived = multiJoin.derivedFactorizedPlan(row);
-			FactorizedTail tail = FactorizedTail.probe(derived, multiJoin.filters, row.boundMask(), groupSlots,
+			factorizedDerived = directMultiJoin.derivedFactorizedPlan(row);
+			factorized = FactorizedTail.probe(factorizedDerived, directMultiJoin.filters, row.boundMask(), groupSlots,
 					aggregates, metrics.child());
-			if (tail != null) {
-				return evaluateFactorized(row, multiJoin, derived, tail);
-			}
+		}
+		List<BindingSet> proposed = evaluateParallelOrFactorized(row, parallelPlan, directMultiJoin,
+				factorizedDerived, factorized, metrics);
+		if (proposed != null) {
+			return proposed;
 		}
 		List<BindingSet> orderedGroups = evaluateOrderedSinglePatternGroups(row, metrics);
 		if (orderedGroups != null) {
-			metrics.deferStrategy(explainTarget, "orderedSinglePatternGroups");
+			metrics.deferStrategy(explainTarget, LmdbNativeAttemptMetrics.PATH_ORDERED_SINGLE_PATTERN_GROUPS);
 			return orderedGroups;
 		}
 		return evaluateSequential(row, aggContext, metrics);
+	}
+
+	private List<BindingSet> evaluateParallelOrFactorized(RowState row, MultiJoinPlan parallelPlan,
+			MultiJoinPlan factorizedPlan, MultiJoinPlan.OrderedPlan factorizedDerived, FactorizedTail tail,
+			LmdbNativeAttemptMetrics metrics) {
+		LmdbNativeStrategyProposal<List<BindingSet>> parallelProposal = null;
+		LmdbNativeStrategyProposal<List<BindingSet>> factorizedProposal = null;
+		try {
+			if (tail != null) {
+				double factorizedCost = LmdbNativeStrategyProposal.factorizedCost(factorizedDerived, row);
+				factorizedProposal = new LmdbNativeStrategyProposal<>(
+						() -> evaluateFactorized(row, factorizedPlan, factorizedDerived, tail), factorizedCost,
+						LmdbNativeAttemptMetrics.PATH_FACTORIZED_TAIL, tail::close);
+			}
+			if (parallelPlan != null) {
+				parallelProposal = LmdbNativeParallelAggregation.propose(this, parallelPlan, row, metrics);
+			}
+			if (parallelProposal != null && factorizedProposal != null) {
+				LmdbNativeExplain.recordStrategyProposalCosts(explainTarget, factorizedProposal.tag,
+						factorizedProposal.estCost, parallelProposal.tag, parallelProposal.estCost);
+				if (parallelProposal.estCost < factorizedProposal.estCost) {
+					List<BindingSet> parallel = parallelProposal.open();
+					if (parallel != null) {
+						LmdbNativeAttemptMetrics.recordDecline(explainTarget, factorizedProposal.tag, "higher-cost");
+						recordParallelStrategy(metrics);
+						return parallel;
+					}
+					return factorizedProposal.open();
+				}
+				List<BindingSet> factorized = factorizedProposal.open();
+				LmdbNativeAttemptMetrics.recordDecline(explainTarget, parallelProposal.tag, "higher-cost");
+				return factorized;
+			}
+			if (parallelProposal != null) {
+				List<BindingSet> parallel = parallelProposal.open();
+				if (parallel != null) {
+					recordParallelStrategy(metrics);
+				}
+				return parallel;
+			}
+			return factorizedProposal != null ? factorizedProposal.open() : null;
+		} catch (IOException e) {
+			throw new QueryEvaluationException(e);
+		} finally {
+			if (parallelProposal != null) {
+				parallelProposal.close();
+			}
+			if (factorizedProposal != null) {
+				factorizedProposal.close();
+			}
+		}
+	}
+
+	private void recordParallelStrategy(LmdbNativeAttemptMetrics metrics) {
+		if (LmdbNativeExplain.recordsExecutionPaths(explainTarget)) {
+			metrics.deferStrategy(explainTarget, LmdbNativeParallelAggregation.consumeLastStrategyLabel());
+		}
 	}
 
 	List<BindingSet> evaluateSequentialFallback() {
@@ -828,6 +860,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 				break;
 			}
 			case SUM:
+				state.finishDistinctValueAggregate(i);
 				// a type error poisons the aggregate: the binding is omitted, like the generic evaluator
 				if (state.typeErrors == null || !state.typeErrors[i]) {
 					Literal sum = state.sums == null || state.sums[i] == null ? AggContext.INTEGER_ZERO
@@ -836,6 +869,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 				}
 				break;
 			case AVG:
+				state.finishDistinctValueAggregate(i);
 				if (state.typeErrors == null || !state.typeErrors[i]) {
 					if (state.avgCounts == null || state.avgCounts[i] == 0) {
 						result.addBinding(aggregates[i].name, AggContext.INTEGER_ZERO);

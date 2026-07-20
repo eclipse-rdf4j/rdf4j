@@ -147,7 +147,9 @@ class LmdbNativeParallelAggregationPreflightFailureTest {
 		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { root, firstBranch, secondBranch },
 				new MaskedFilter[0]);
 		NativeGroupIteration iteration = new NativeGroupIteration(source, plan, layout, new int[0],
-				new AggregateSpec[] { AggregateSpec.slot("sum", 0, false, AggKind.SUM) }, false,
+				new AggregateSpec[] { AggregateSpec.slot("sum", 0, false, AggKind.SUM),
+						AggregateSpec.slot("distinctMin", 0, true, AggKind.MIN) },
+				false,
 				EmptyBindingSet.getInstance(), null, null, false, null);
 		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
 		assertThat(iteration.initialize(row)).isTrue();
@@ -159,7 +161,7 @@ class LmdbNativeParallelAggregationPreflightFailureTest {
 		assertThat(source.siblings).hasSize(3).allSatisfy(sibling -> assertThat(sibling.closeCalls).isOne());
 		assertThat(source.originalCloseCalls).as("the caller-owned source must remain open").isZero();
 		try (LmdbNativeParallelPipelines.TaskReservation reservation = LmdbNativeParallelPipelines
-				.tryReserveTasks(2)) {
+				.tryReserveTasks(false, 2)) {
 			assertThat(reservation).as("preflight failure must release the complete task admission").isNotNull();
 		}
 	}

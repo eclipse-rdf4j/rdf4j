@@ -66,6 +66,18 @@ final class LmdbNativeValueCodec {
 		if (id == 0L || id == NativeLmdbQuerySource.UNKNOWN_ID) {
 			return DecodedValue.ERROR;
 		}
+		return decodeKnown(id);
+	}
+
+	/** Decode a slot whose plan guarantees it is bound, retaining the null-context sentinel check. */
+	DecodedValue decodeAssured(long id) {
+		if (id == 0L) {
+			return DecodedValue.ERROR;
+		}
+		return decodeKnown(id);
+	}
+
+	private DecodedValue decodeKnown(long id) {
 		int cacheIndex = cacheIndex(id);
 		long cachedId = cacheIds.get(cacheIndex);
 		DecodedValue cached = cacheValues.get(cacheIndex);

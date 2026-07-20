@@ -286,6 +286,69 @@ public class LmdbSailStoreTest {
 	}
 
 	@Test
+	public void orderedNativeScanUsesDirectionMatchedCsrEntry() throws Exception {
+		String minProbesProperty = "rdf4j.lmdb.csrCache.minProbes";
+		String previousMinProbes = System.getProperty(minProbesProperty);
+		System.setProperty(minProbesProperty, "1");
+		try {
+			LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+			LmdbSailStore backingStore = sail.getBackingStore();
+			try (SailDataset dataset = backingStore.getExplicitSailSource().dataset(IsolationLevels.NONE)) {
+				NativeLmdbQuerySource nativeSource = (NativeLmdbQuerySource) dataset;
+				long predicateId = nativeSource.idOf(RDFS.LABEL);
+				long subjectId = nativeSource.idOf(S0.getSubject());
+				long buildsBefore = LmdbCsrAdjacencyCache.BUILDS.get();
+
+				try (NativeLmdbQuerySource.NativeProbe probe = nativeSource.newProbe()) {
+					for (Statement statement : List.of(S0, S1, S2)) {
+						RecordIterator iterator = probe.open(nativeSource.idOf(statement.getSubject()), predicateId,
+								-1L,
+								-1L);
+						while (iterator.next() != null) {
+							// exhaust the retained probe before re-aiming it
+						}
+					}
+				}
+				assertTrue("Expected probe traffic to build the BY_SUBJECT entry",
+						LmdbCsrAdjacencyCache.BUILDS.get() > buildsBefore);
+
+				long hitsBefore = LmdbCsrAdjacencyCache.HITS.get();
+				String expectedIndex = nativeSource.indexName(StatementOrder.O, subjectId, predicateId, -1L, -1L);
+				try (RecordIterator iterator = nativeSource.statements(StatementOrder.O, subjectId, predicateId, -1L,
+						-1L)) {
+					assertTrue("The matching ordered scan must consult and hit the CSR entry",
+							LmdbCsrAdjacencyCache.HITS.get() > hitsBefore);
+					assertEquals(expectedIndex, iterator.getIndexName());
+					assertArrayEquals(new long[] { subjectId, predicateId, nativeSource.idOf(S0.getObject()), 0L },
+							iterator.next());
+					assertNull(iterator.next());
+				}
+			}
+		} finally {
+			if (previousMinProbes == null) {
+				System.clearProperty(minProbesProperty);
+			} else {
+				System.setProperty(minProbesProperty, previousMinProbes);
+			}
+		}
+	}
+
+	@Test
+	public void orderedNativeLmdbWrapperDelegatesIndexName() throws Exception {
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		LmdbSailStore backingStore = sail.getBackingStore();
+		try (SailDataset dataset = backingStore.getExplicitSailSource().dataset(IsolationLevels.NONE)) {
+			NativeLmdbQuerySource nativeSource = (NativeLmdbQuerySource) dataset;
+			long predicateId = nativeSource.idOf(RDFS.LABEL);
+			String expectedIndex = nativeSource.indexName(StatementOrder.O, -1L, predicateId, -1L, -1L);
+			try (RecordIterator iterator = nativeSource.statements(StatementOrder.O, -1L, predicateId, -1L, -1L)) {
+				assertEquals(expectedIndex, iterator.getIndexName());
+				assertTrue(iterator.next() != null);
+			}
+		}
+	}
+
+	@Test
 	public void parallelNativeSourcesHoldTransactionReadLockUntilLastSiblingCloses() throws Exception {
 		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
 		LmdbSailStore backingStore = sail.getBackingStore();

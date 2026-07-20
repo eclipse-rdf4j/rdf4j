@@ -21,7 +21,9 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 @Experimental
 final class LmdbNativeExplain {
 	private static final int MAX_REPORTED_PATHS = 8;
+	private static final int MAX_REPORTED_DECLINES = 32;
 	private static final Object EXECUTION_PATH_SUMMARY_KEY = new Object();
+	private static final Object STRATEGY_DECLINE_SUMMARY_KEY = new Object();
 
 	static final String ENGINE = "lmdb-native";
 	static final String KIND_AGGREGATE = "aggregate";
@@ -29,6 +31,8 @@ final class LmdbNativeExplain {
 	static final String KIND_BGP = "bgp";
 	static final String PHYSICAL_PLAN = "nativePhysicalPlan";
 	static final String EXECUTION_PATH = TelemetryMetricNames.NATIVE_EXECUTION_PATH;
+	static final String STRATEGY_DECLINES = "nativeStrategyDeclines";
+	static final String STRATEGY_PROPOSAL_COSTS = "nativeStrategyProposalCosts";
 	static final String RUNTIME_ENTRY_PLAN = "nativeRuntimeEntryPlan";
 	static final String INITIAL_BOUND_MASK = "nativeInitialBoundMask";
 
@@ -62,6 +66,45 @@ final class LmdbNativeExplain {
 				}
 			}
 		}
+	}
+
+	/** Records one attempted strategy's reason for declining this query, as a deterministic distinct summary. */
+	static void recordStrategyDecline(TupleExpr expr, String strategy, String reason) {
+		if (expr == null || strategy == null || reason == null || !recordsExecutionPaths(expr)) {
+			return;
+		}
+		String decline = strategy + ":" + reason;
+		synchronized (expr) {
+			StrategyDeclineSummary summary = expr.getStringMetricActual(STRATEGY_DECLINES) == null
+					? null
+					: (StrategyDeclineSummary) expr.getQueryModelMetadata(STRATEGY_DECLINE_SUMMARY_KEY);
+			StrategyDeclineSummary updated = summary == null
+					? StrategyDeclineSummary.first(decline)
+					: summary.add(decline);
+			if (updated == null) {
+				return;
+			}
+			expr.setQueryModelMetadata(STRATEGY_DECLINE_SUMMARY_KEY, updated);
+			expr.setStringMetricActual(STRATEGY_DECLINES, updated.rendered);
+			if (expr instanceof QueryRoot) {
+				TupleExpr arg = ((QueryRoot) expr).getArg();
+				synchronized (arg) {
+					arg.setStringMetricActual(STRATEGY_DECLINES, updated.rendered);
+				}
+			}
+		}
+	}
+
+	/** Records the two jointly admissible C/D costs that drove runtime arbitration. */
+	static void recordStrategyProposalCosts(TupleExpr expr, double batchCost, double parallelCost) {
+		recordStrategyProposalCosts(expr, LmdbNativeAttemptMetrics.PATH_BATCH, batchCost,
+				LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, parallelCost);
+	}
+
+	static void recordStrategyProposalCosts(TupleExpr expr, String firstTag, double firstCost, String secondTag,
+			double secondCost) {
+		setRuntimeMetric(expr, STRATEGY_PROPOSAL_COSTS,
+				firstTag + "=" + firstCost + "," + secondTag + "=" + secondCost);
 	}
 
 	/**
@@ -264,9 +307,13 @@ final class LmdbNativeExplain {
 
 	private static String describePattern(PatternPlan pattern, String[] slotNames) {
 		String index = pattern.indexName.isEmpty() ? "" : ", indexName=" + pattern.indexName;
+		String range = pattern.range == null ? ""
+				: ", range=" + pattern.range.indexFieldSeq() + "[low=" + Arrays.toString(pattern.range.lowKey())
+						+ ", high=" + Arrays.toString(pattern.range.highKeyExclusive()) + "]"
+						+ ", estimate=" + pattern.staticEstimate;
 		return "Pattern(s=" + term(pattern.s, slotNames) + ", p=" + term(pattern.p, slotNames) + ", o="
 				+ term(pattern.o, slotNames) + ", c=" + term(pattern.c, slotNames) + ", contexts="
-				+ contexts(pattern.contexts) + index + ")";
+				+ contexts(pattern.contexts) + index + range + ")";
 	}
 
 	private static String term(Term term, String[] slotNames) {
@@ -353,6 +400,39 @@ final class LmdbNativeExplain {
 			expanded[insertionPoint] = path;
 			System.arraycopy(paths, insertionPoint, expanded, insertionPoint + 1, paths.length - insertionPoint);
 			return new ExecutionPathSummary(expanded, false);
+		}
+	}
+
+	private static final class StrategyDeclineSummary {
+		private final String[] declines;
+		private final boolean truncated;
+		private final String rendered;
+
+		private StrategyDeclineSummary(String[] declines, boolean truncated) {
+			this.declines = declines;
+			this.truncated = truncated;
+			this.rendered = String.join(" | ", declines) + (truncated ? " | ..." : "");
+		}
+
+		private static StrategyDeclineSummary first(String decline) {
+			return new StrategyDeclineSummary(new String[] { decline }, false);
+		}
+
+		private StrategyDeclineSummary add(String decline) {
+			int index = Arrays.binarySearch(declines, decline);
+			if (index >= 0 || truncated) {
+				return null;
+			}
+			if (declines.length == MAX_REPORTED_DECLINES) {
+				return new StrategyDeclineSummary(declines, true);
+			}
+			int insertionPoint = -index - 1;
+			String[] expanded = new String[declines.length + 1];
+			System.arraycopy(declines, 0, expanded, 0, insertionPoint);
+			expanded[insertionPoint] = decline;
+			System.arraycopy(declines, insertionPoint, expanded, insertionPoint + 1,
+					declines.length - insertionPoint);
+			return new StrategyDeclineSummary(expanded, false);
 		}
 	}
 }

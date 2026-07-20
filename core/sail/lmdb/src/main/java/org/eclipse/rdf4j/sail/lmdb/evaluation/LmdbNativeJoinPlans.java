@@ -89,6 +89,12 @@ final class MultiJoinPlan implements SlotPlan {
 		return LmdbNativeHashJoin.tryOpen(this, row, capacity);
 	}
 
+	/** Preserves merge-before-hash dominance while deferring construction of the selected batch cursor. */
+	LmdbNativeStrategyProposal<BatchCursor> proposeBatch(RowState row, int capacity) {
+		LmdbNativeStrategyProposal<BatchCursor> mergeJoin = LmdbNativeMergeJoin.propose(this, row, capacity);
+		return mergeJoin != null ? mergeJoin : LmdbNativeHashJoin.propose(this, row, capacity);
+	}
+
 	/** The ordered physical children and filter placement for the given entry row, memoized per bound-slot mask. */
 	OrderedPlan derivedPlan(RowState row) {
 		long mask = row.boundMask();
@@ -105,9 +111,9 @@ final class MultiJoinPlan implements SlotPlan {
 
 	/**
 	 * The ordered physical plan the factorized strategies plan against: unconsumed patterns are sunk to a trailing
-	 * suffix so the factorized tail split can claim them as per-key branches. Sinking only moves patterns later and
-	 * never moves filter-read producers (their re-placed filter would disqualify the aggregation tail's gate), so the
-	 * sunk order claims at least the branches the plain order would.
+	 * suffix so the factorized tail split can claim them as per-key branches. Sinking only moves patterns later;
+	 * single-branch filters move with their producer, while filters tying multiple prospective branches keep those
+	 * producers in the prefix.
 	 */
 	OrderedPlan derivedFactorizedPlan(RowState row) {
 		if (!SINK_ENABLED) {
@@ -233,7 +239,7 @@ final class MultiJoinPlan implements SlotPlan {
 				}
 				int planned = filters[f].plannedDepth;
 				earliestLegalDepth[f] = earliest;
-				filterDepth[f] = sinkUnconsumed || planned < 0
+				filterDepth[f] = planned < 0
 						? earliest
 						: Math.max(earliest, Math.min(planned, last));
 			}
@@ -337,14 +343,13 @@ final class MultiJoinPlan implements SlotPlan {
 	}
 
 	/**
-	 * Stable-partitions patterns whose exclusively produced slots nothing else consumes — no other child, no filter,
-	 * not the seed — to a trailing suffix, so the factorized tail split can claim them as per-key branches instead of
-	 * enumerating them mid-plan. Reordering an inner-join bag is result-neutral, and filters are re-placed afterwards
-	 * by the earliest-cover rule; patterns whose exclusive output a filter reads stay put, because the re-placed filter
-	 * would land at the sunk depth and disqualify the aggregation tail's filter gate. Cost guard against losing early
-	 * pruning: selective patterns are the pipeline's pruning workhorses, so a candidate must be at least as bulky as
-	 * the most selective stationary child; when no stationary child has a usable estimate, the most selective candidate
-	 * stays put to drive the prefix.
+	 * Stable-partitions patterns whose exclusively produced slots no other child or seed consumes to a trailing suffix,
+	 * so the factorized tail split can claim them as per-key branches instead of enumerating them mid-plan. Reordering
+	 * an inner-join bag is result-neutral, and filters are re-placed afterwards by the earliest-cover rule. A filter
+	 * reading one prospective branch moves with it; a filter reading multiple prospective branches vetoes those moves.
+	 * Cost guard against losing early pruning: selective patterns are the pipeline's pruning workhorses, so a candidate
+	 * must be at least as bulky as the most selective stationary child; when no stationary child has a usable estimate,
+	 * the most selective candidate stays put to drive the prefix.
 	 */
 	static void sinkUnconsumedPatterns(SlotPlan[] ordered, long seedMask, MaskedFilter[] filters) {
 		int n = ordered.length;
@@ -359,24 +364,43 @@ final class MultiJoinPlan implements SlotPlan {
 			seenTwice |= seenOnce & produced[i];
 			seenOnce |= produced[i];
 		}
-		long filterReadMask = 0L;
-		for (MaskedFilter filter : filters) {
-			filterReadMask |= filter.mask < 0L ? ~0L : filter.mask;
-		}
 		long sharedOrSeed = seenTwice | seedMask;
+		long[] exclusive = new long[n];
 		boolean[] candidate = new boolean[n];
 		boolean any = false;
 		for (int i = 0; i < n; i++) {
-			if (!(ordered[i] instanceof PatternPlan) || ((PatternPlan) ordered[i]).hasRepeatedSlot()
-					|| !Double.isFinite(((PatternPlan) ordered[i]).staticEstimate)) {
+			if (!(ordered[i] instanceof PatternPlan) || ((PatternPlan) ordered[i]).hasRepeatedSlot()) {
 				continue;
 			}
-			long exclusive = produced[i] & ~sharedOrSeed;
+			exclusive[i] = produced[i] & ~sharedOrSeed;
 			boolean joinsRest = (produced[i] & sharedOrSeed) != 0L;
-			if (exclusive != 0L && joinsRest && (exclusive & filterReadMask) == 0L) {
+			if (exclusive[i] != 0L && joinsRest) {
 				candidate[i] = true;
 				any = true;
 			}
+		}
+		if (!any) {
+			return;
+		}
+		for (MaskedFilter filter : filters) {
+			long filterMask = filter.mask < 0L ? ~0L : filter.mask;
+			int touched = 0;
+			for (int i = 0; i < n; i++) {
+				if (candidate[i] && (exclusive[i] & filterMask) != 0L) {
+					touched++;
+				}
+			}
+			if (touched > 1 || filter.mask < 0L) {
+				for (int i = 0; i < n; i++) {
+					if (candidate[i] && (exclusive[i] & filterMask) != 0L) {
+						candidate[i] = false;
+					}
+				}
+			}
+		}
+		any = false;
+		for (boolean value : candidate) {
+			any |= value;
 		}
 		if (!any) {
 			return;
@@ -450,11 +474,19 @@ final class MultiJoinPlan implements SlotPlan {
 	@Override
 	public double estimate(RowState row) {
 		double estimate = 1D;
-		for (SlotPlan child : children) {
-			estimate *= Math.max(1D, child.estimate(row));
+		long boundMask = row.boundMask();
+		for (SlotPlan child : derivedPlan(row).order) {
+			double childEstimate = child instanceof PatternPlan
+					? ((PatternPlan) child).estimateForBoundMask(boundMask, row.source)
+					: child.estimate(row);
+			if (!Double.isFinite(childEstimate) || childEstimate < 0D) {
+				return Double.POSITIVE_INFINITY;
+			}
+			estimate *= childEstimate;
 			if (!Double.isFinite(estimate)) {
 				return Double.POSITIVE_INFINITY;
 			}
+			boundMask |= child.producedMask();
 		}
 		return estimate;
 	}
@@ -554,9 +586,41 @@ final class JoinPlan implements SlotPlan {
 
 	@Override
 	public RowCursor open(RowState row) throws IOException {
+		PathTargetSet targets = PathTargetSet.tryCreate(left, right, row);
+		try {
+			return open(row, targets, targets != null);
+		} catch (IOException | RuntimeException | Error problem) {
+			if (targets != null) {
+				targets.close();
+			}
+			throw problem;
+		}
+	}
+
+	RowCursor open(RowState row, PathTargetSet targets, boolean ownsTargets) throws IOException {
 		// only left-produced slots vary across left rows; slots bound at open time are constant for
 		// the lifetime of this cursor and do not disqualify replay
-		return new JoinCursor(left.open(row), right, row, left.producedMask());
+		RowCursor leftCursor = openWithTargets(left, row, targets);
+		try {
+			return new JoinCursor(leftCursor, right, row, left.producedMask(), targets, ownsTargets);
+		} catch (RuntimeException | Error problem) {
+			leftCursor.close();
+			throw problem;
+		}
+	}
+
+	static RowCursor openWithTargets(SlotPlan plan, RowState row, PathTargetSet targets) throws IOException {
+		if (targets == null || !targets.appliesTo(plan)) {
+			return plan.open(row);
+		}
+		if (plan == targets.path) {
+			return targets.path.open(row, null, null, targets);
+		}
+		if (plan instanceof JoinPlan) {
+			return ((JoinPlan) plan).open(row, targets, false);
+		}
+		FilterPlan filter = (FilterPlan) plan;
+		return new FilterCursor(openWithTargets(filter.arg, row, targets), filter.filter, row);
 	}
 
 	@Override
@@ -573,6 +637,8 @@ final class JoinCursor implements RowCursor {
 	final RowCursor leftCursor;
 	final SlotPlan right;
 	final RowState row;
+	final PathTargetSet pathTargets;
+	final boolean ownsPathTargets;
 	RowCursor rightCursor;
 	/**
 	 * When the right side reads no slot produced by the left side (and its reads are fully known, see
@@ -582,15 +648,24 @@ final class JoinCursor implements RowCursor {
 	 */
 	final int[] replaySlots;
 	NativeLmdbQuerySource.NativeProbe rightProbe;
+	PathResultMemo pathMemo;
+	boolean pathMemoInitialized;
 	ArrayList<long[]> materialized;
 	boolean rightMaterialized;
 	int replayIndex = -1;
 	int replayMark = -1;
 
 	JoinCursor(RowCursor leftCursor, SlotPlan right, RowState row, long leftProducedMask) {
+		this(leftCursor, right, row, leftProducedMask, null, false);
+	}
+
+	JoinCursor(RowCursor leftCursor, SlotPlan right, RowState row, long leftProducedMask,
+			PathTargetSet pathTargets, boolean ownsPathTargets) {
 		this.leftCursor = leftCursor;
 		this.right = right;
 		this.row = row;
+		this.pathTargets = pathTargets;
+		this.ownsPathTargets = ownsPathTargets;
 		long readMask = memoReadMask(right);
 		this.replaySlots = readMask >= 0L && (readMask & leftProducedMask) == 0L
 				? slotsOf(right.producedMask())
@@ -629,11 +704,27 @@ final class JoinCursor implements RowCursor {
 	}
 
 	RowCursor openRight() throws IOException {
-		if (right instanceof PatternPlan) {
+		if (pathTargets != null && pathTargets.appliesTo(right)) {
+			if (right == pathTargets.path) {
+				if (rightProbe == null) {
+					rightProbe = row.source.newProbe();
+				}
+				return pathTargets.path.open(row, rightProbe, null, pathTargets);
+			}
+			return JoinPlan.openWithTargets(right, row, pathTargets);
+		}
+		if (right instanceof PatternPlan || right instanceof PathPlan) {
 			if (rightProbe == null) {
 				rightProbe = row.source.newProbe();
 			}
-			return ((PatternPlan) right).open(row, rightProbe);
+			if (right instanceof PatternPlan) {
+				return ((PatternPlan) right).open(row, rightProbe);
+			}
+			if (!pathMemoInitialized) {
+				pathMemo = replaySlots == null ? PathResultMemo.tryCreate((PathPlan) right, row) : null;
+				pathMemoInitialized = true;
+			}
+			return ((PathPlan) right).open(row, rightProbe, pathMemo);
 		}
 		return right.open(row);
 	}
@@ -693,11 +784,21 @@ final class JoinCursor implements RowCursor {
 	public void close() {
 		releaseReplay();
 		closeRight();
+		if (pathMemo != null) {
+			pathMemo.close();
+			pathMemo = null;
+		}
 		if (rightProbe != null) {
 			rightProbe.close();
 			rightProbe = null;
 		}
-		leftCursor.close();
+		try {
+			leftCursor.close();
+		} finally {
+			if (ownsPathTargets) {
+				pathTargets.close();
+			}
+		}
 	}
 
 	void closeRight() {

@@ -26,27 +26,35 @@ final class RowState {
 	final NativeLmdbQuerySource source;
 	final NativeSlotLayout layout;
 	final BindingSet base;
+	final TupleExpr telemetryTarget;
 	final long[] slots;
 	final RowBindingSetView view;
 	final ExactValuesRuntimeMetrics exactValuesMetrics;
 	final int[] trailSlots;
 	final long[] trailOldValues;
+	PathResultMemo pathEstimateMemos;
 	int trailSize;
 	long boundMask;
 
 	RowState(NativeLmdbQuerySource source, NativeSlotLayout layout, BindingSet base) {
-		this(source, layout, base, (ExactValuesRuntimeMetrics) null);
+		this(source, layout, base, null, null);
 	}
 
 	RowState(NativeLmdbQuerySource source, NativeSlotLayout layout, BindingSet base, TupleExpr telemetryTarget) {
-		this(source, layout, base, ExactValuesRuntimeMetrics.create(telemetryTarget));
+		this(source, layout, base, telemetryTarget, ExactValuesRuntimeMetrics.create(telemetryTarget));
 	}
 
 	RowState(NativeLmdbQuerySource source, NativeSlotLayout layout, BindingSet base,
 			ExactValuesRuntimeMetrics exactValuesMetrics) {
+		this(source, layout, base, null, exactValuesMetrics);
+	}
+
+	private RowState(NativeLmdbQuerySource source, NativeSlotLayout layout, BindingSet base,
+			TupleExpr telemetryTarget, ExactValuesRuntimeMetrics exactValuesMetrics) {
 		this.source = source;
 		this.layout = layout;
 		this.base = base;
+		this.telemetryTarget = telemetryTarget;
 		this.slots = new long[layout.slotNames().length];
 		this.view = new RowBindingSetView(source, layout, base, slots, false);
 		this.exactValuesMetrics = exactValuesMetrics;
@@ -91,6 +99,39 @@ final class RowState {
 
 	long boundMask() {
 		return boundMask;
+	}
+
+	void registerPathEstimateMemo(PathResultMemo memo) {
+		memo.nextEstimateMemo = pathEstimateMemos;
+		pathEstimateMemos = memo;
+	}
+
+	void unregisterPathEstimateMemo(PathResultMemo memo) {
+		PathResultMemo previous = null;
+		PathResultMemo current = pathEstimateMemos;
+		while (current != null) {
+			if (current == memo) {
+				if (previous == null) {
+					pathEstimateMemos = current.nextEstimateMemo;
+				} else {
+					previous.nextEstimateMemo = current.nextEstimateMemo;
+				}
+				current.nextEstimateMemo = null;
+				return;
+			}
+			previous = current;
+			current = current.nextEstimateMemo;
+		}
+	}
+
+	int observedPathEstimate(PathPlan plan, int direction, long start) {
+		for (PathResultMemo memo = pathEstimateMemos; memo != null; memo = memo.nextEstimateMemo) {
+			int observed = memo.observedReachableSize(plan, direction, start);
+			if (observed >= 0) {
+				return observed;
+			}
+		}
+		return -1;
 	}
 
 	/**

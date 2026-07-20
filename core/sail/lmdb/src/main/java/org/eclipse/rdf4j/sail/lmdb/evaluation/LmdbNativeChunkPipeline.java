@@ -43,9 +43,9 @@ final class LmdbNativeChunkPipeline {
 	static final boolean ENABLED = !"false".equals(System.getProperty("rdf4j.lmdb.chunkPipeline.enabled"));
 	static final String EXTERNAL_ROOT_CANDIDATE_PROPERTY = "rdf4j.lmdb.chunkPipeline.externalRoot.experimental";
 
-	/** Internal benchmark/test gate; the worker row chain remains the production default until this candidate wins. */
+	/** Default-on external-root worker batching; literal {@code false} retains the rollout kill switch. */
 	static boolean externalRootCandidateEnabled() {
-		return "true".equals(System.getProperty(EXTERNAL_ROOT_CANDIDATE_PROPERTY));
+		return !"false".equals(System.getProperty(EXTERNAL_ROOT_CANDIDATE_PROPERTY));
 	}
 
 	/** Test observability: incremented when a factorized evaluation runs its prefix on the chunk pipeline. */
@@ -369,7 +369,7 @@ final class LmdbNativeChunkPipeline {
 		try {
 			for (int f = 0; f < derived.filterDepth.length; f++) {
 				if (derived.filterDepth[f] == depth) {
-					stage = new FilterStage(stage, plan.filters[f].filter, row);
+					stage = new FilterStage(stage, plan.filters[f].filter, row, plan.filters[f].mask);
 				}
 			}
 			return stage;
@@ -475,6 +475,11 @@ final class LmdbNativeChunkPipeline {
 			this.budget = budget;
 		}
 
+		/** Borrows an already unsigned-ascending immutable key vector without charging query-local memo capacity. */
+		static SipMask borrowSortedKeys(long[] sortedKeys, SipTarget target) {
+			return new SipMask(sortedKeys, target, null);
+		}
+
 		/**
 		 * Reserves the complete retained footprint before allocating the key array. A refused optional mask leaves the
 		 * completed hash build untouched; allocation or population failures return the reservation before propagating.
@@ -501,14 +506,16 @@ final class LmdbNativeChunkPipeline {
 			}
 		}
 
-		/** Drops the retained primitive storage and returns its exact reservation once. */
+		/** Drops this mask's reference and returns its exact reservation once when the key vector is mask-owned. */
 		void close() {
 			long[] retainedKeys = sortedKeys;
 			if (retainedKeys == null) {
 				return;
 			}
 			sortedKeys = null;
-			budget.release(1, retainedKeys.length);
+			if (budget != null) {
+				budget.release(1, retainedKeys.length);
+			}
 		}
 	}
 
@@ -810,6 +817,8 @@ final class LmdbNativeChunkPipeline {
 		boolean hashBuildRefused;
 		/** Set once the probe reports adjacency-cache-backed opens: memos and hash builds are skipped from then on. */
 		boolean probeCacheBacked;
+		/** True after this stage published its CSR entry's borrowed key vector as a root SIP mask. */
+		boolean csrMaskPublished;
 		/** Build requested at a completed classic probe, deferred until the consumer asks for another batch. */
 		boolean pendingHashBuild;
 		int storeProbes;
@@ -1016,6 +1025,7 @@ final class LmdbNativeChunkPipeline {
 					probeCacheBacked = true;
 					hashBuildRefused = true;
 					metrics.recordChunkCsrBackedProbe();
+					publishCsrMask(probe.adjacencyCacheKeys());
 				}
 				quadCount = 0;
 				quadIndex = 0;
@@ -1029,6 +1039,14 @@ final class LmdbNativeChunkPipeline {
 				replayMemoKey = null;
 				throw problem;
 			}
+		}
+
+		private void publishCsrMask(long[] sortedKeys) {
+			if (csrMaskPublished || sortedKeys == null || sip == null || !sipEnabled()) {
+				return;
+			}
+			csrMaskPublished = true;
+			rootStage.publishMask(SipMask.borrowSortedKeys(sortedKeys, sip));
 		}
 
 		/**
@@ -1594,12 +1612,19 @@ final class LmdbNativeChunkPipeline {
 		final BatchStage upstream;
 		final NativeBooleanFilter filter;
 		final RowState row;
+		final long readMask;
+		long observedRows;
 		boolean closed;
 
 		FilterStage(BatchStage upstream, NativeBooleanFilter filter, RowState row) {
+			this(upstream, filter, row, LmdbNativeSpecialization.allSlotsMask(row.slots.length));
+		}
+
+		FilterStage(BatchStage upstream, NativeBooleanFilter filter, RowState row, long readMask) {
 			this.upstream = upstream;
 			this.filter = filter;
 			this.row = row;
+			this.readMask = readMask;
 		}
 
 		@Override
@@ -1612,16 +1637,8 @@ final class LmdbNativeChunkPipeline {
 				if (rows == 0) {
 					return 0;
 				}
-				int kept = 0;
-				for (int i = 0; i < out.selectedCount; i++) {
-					int candidate = out.selection[i];
-					out.copyToRow(candidate, row.slots);
-					row.recomputeBoundMask();
-					if (filter.accept(row)) {
-						out.selection[kept++] = candidate;
-					}
-				}
-				out.selectedCount = kept;
+				observedRows += out.selectedCount;
+				int kept = LmdbNativeSpecialization.applyFilter(out, row, filter, observedRows, readMask);
 				if (kept > 0) {
 					return kept;
 				}

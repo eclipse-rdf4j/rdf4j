@@ -28,6 +28,7 @@ import java.lang.invoke.MethodHandles;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.WeakHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -46,7 +47,7 @@ interface NativeBatchFilterKernel {
 /**
  * Bounded runtime specialization for hot batch fragments. Every fragment starts in the ordinary Java interpreter. Once
  * it crosses the observed-row threshold, a single daemon compiler builds a hidden class with the Java 25 Class-File
- * API. The generated filter kernel unrolls the batch-to-row slot copy for its exact layout width and compacts the
+ * API. The generated filter kernel unrolls the batch-to-row slot copy for its proven read set and compacts the
  * selection vector in place. Queries switch only at a later batch boundary after publication.
  */
 @Experimental
@@ -58,7 +59,7 @@ final class LmdbNativeSpecialization {
 	static final String MAX_BYTES_PROPERTY = "rdf4j.lmdb.nativeSpecialization.maxGeneratedBytes";
 
 	static final long DEFAULT_THRESHOLD_ROWS = 32_768L;
-	static final int DEFAULT_MAX_ENTRIES = 32;
+	static final int DEFAULT_MAX_ENTRIES = 128;
 	static final long DEFAULT_MAX_BYTES = 512L * 1024L;
 
 	static final AtomicLong INTERPRETER_ROWS = new AtomicLong();
@@ -70,6 +71,7 @@ final class LmdbNativeSpecialization {
 	static final AtomicLong EVICTIONS = new AtomicLong();
 	static final AtomicLong GENERATED_BYTES = new AtomicLong();
 	static final AtomicLong BYTE_REJECTIONS = new AtomicLong();
+	static final AtomicLong KERNEL_EXECUTIONS = new AtomicLong();
 
 	private static final ClassDesc CD_KERNEL = ClassDesc.of(NativeBatchFilterKernel.class.getName());
 	private static final ClassDesc CD_BATCH = ClassDesc.of(NativeBatch.class.getName());
@@ -80,10 +82,11 @@ final class LmdbNativeSpecialization {
 	private static final MethodTypeDesc MTD_APPLY = MethodTypeDesc.of(CD_int, CD_BATCH, CD_ROW, CD_FILTER);
 	private static final MethodTypeDesc MTD_ACCEPT = MethodTypeDesc.of(ClassDesc.ofDescriptor("Z"), CD_ROW);
 
-	private static final Object CACHE_LOCK = new Object();
-	private static final LinkedHashMap<KernelKey, Entry> CACHE = new LinkedHashMap<>(16, 0.75f, true);
+	private static final Object CACHE_REGISTRY_LOCK = new Object();
+	private static final Object DEFAULT_CACHE_OWNER = new Object();
+	/** Weak keys and owner-free values ensure generated kernels never retain a closed store or its id space. */
+	private static final WeakHashMap<Object, StoreCache> STORE_CACHES = new WeakHashMap<>();
 	private static final AtomicInteger CLASS_IDS = new AtomicInteger();
-	private static volatile long cachedBytes;
 	private static volatile ExecutorService compiler;
 
 	private LmdbNativeSpecialization() {
@@ -94,11 +97,19 @@ final class LmdbNativeSpecialization {
 	}
 
 	static int applyFilter(NativeBatch batch, RowState row, NativeBooleanFilter filter, long observedRows) {
+		return applyFilter(batch, row, filter, observedRows, filter.batchReadMask());
+	}
+
+	static int applyFilter(NativeBatch batch, RowState row, NativeBooleanFilter filter, long observedRows,
+			long readMask) {
 		int candidates = batch.selectedCount;
-		NativeBatchFilterKernel kernel = filterKernel(batch.slotCount, observedRows);
+		long normalizedMask = normalizeReadMask(batch.slotCount, readMask);
+		NativeBatchFilterKernel kernel = normalizedMask < 0L ? null
+				: filterKernel(cacheOwner(row), batch.slotCount, normalizedMask, observedRows);
 		if (kernel != null) {
 			int accepted = kernel.apply(batch, row, filter);
 			SPECIALIZED_ROWS.addAndGet(candidates);
+			KERNEL_EXECUTIONS.incrementAndGet();
 			return accepted;
 		}
 		INTERPRETER_ROWS.addAndGet(candidates);
@@ -106,34 +117,35 @@ final class LmdbNativeSpecialization {
 	}
 
 	static int interpretFilter(NativeBatch batch, RowState row, NativeBooleanFilter filter) {
-		int accepted = 0;
-		for (int i = 0; i < batch.selectedCount; i++) {
-			int physicalRow = batch.selection[i];
-			batch.copyToRow(physicalRow, row.slots);
-			row.recomputeBoundMask();
-			if (filter.accept(row)) {
-				batch.selection[accepted++] = physicalRow;
-			}
-		}
+		int accepted = filter.selectBatch(batch, batch.selection, batch.selectedCount, row);
 		batch.selectedCount = accepted;
 		return accepted;
 	}
 
 	static NativeBatchFilterKernel filterKernel(int slotCount, long observedRows) {
+		return filterKernel(DEFAULT_CACHE_OWNER, slotCount, allSlotsMask(slotCount), observedRows);
+	}
+
+	static NativeBatchFilterKernel filterKernel(Object cacheOwner, int slotCount, long readMask, long observedRows) {
 		if (!enabled() || slotCount < 0 || slotCount > 60
 				|| observedRows < Long.getLong(THRESHOLD_ROWS_PROPERTY, DEFAULT_THRESHOLD_ROWS)) {
 			return null;
 		}
-		KernelKey key = new KernelKey(slotCount);
+		long normalizedMask = normalizeReadMask(slotCount, readMask);
+		if (normalizedMask < 0L) {
+			return null;
+		}
+		StoreCache cache = storeCache(cacheOwner);
+		KernelKey key = new KernelKey(slotCount, normalizedMask);
 		Entry entry;
-		synchronized (CACHE_LOCK) {
-			entry = CACHE.get(key);
+		synchronized (cache) {
+			entry = cache.entries.get(key);
 			if (entry == null) {
 				CACHE_MISSES.incrementAndGet();
-				evictForEntryLimit();
+				evictForEntryLimit(cache);
 				entry = new Entry();
-				CACHE.put(key, entry);
-				schedule(key, entry);
+				cache.entries.put(key, entry);
+				schedule(cache, key, entry);
 			} else if (entry.kernel != null) {
 				CACHE_HITS.incrementAndGet();
 				return entry.kernel;
@@ -144,9 +156,18 @@ final class LmdbNativeSpecialization {
 
 	static NativeBatchFilterKernel awaitFilterKernel(int slotCount, long timeout, TimeUnit unit)
 			throws InterruptedException {
+		return awaitFilterKernel(DEFAULT_CACHE_OWNER, slotCount, allSlotsMask(slotCount), timeout, unit);
+	}
+
+	static NativeBatchFilterKernel awaitFilterKernel(Object cacheOwner, int slotCount, long readMask, long timeout,
+			TimeUnit unit) throws InterruptedException {
+		StoreCache cache = existingStoreCache(cacheOwner);
+		if (cache == null) {
+			return null;
+		}
 		Entry entry;
-		synchronized (CACHE_LOCK) {
-			entry = CACHE.get(new KernelKey(slotCount));
+		synchronized (cache) {
+			entry = cache.entries.get(new KernelKey(slotCount, normalizeReadMask(slotCount, readMask)));
 		}
 		if (entry == null) {
 			return null;
@@ -155,37 +176,37 @@ final class LmdbNativeSpecialization {
 		return entry.kernel;
 	}
 
-	private static void schedule(KernelKey key, Entry entry) {
+	private static void schedule(StoreCache cache, KernelKey key, Entry entry) {
 		compiler().execute(() -> {
 			try {
-				CompiledKernel compiled = compile(key.slotCount);
-				synchronized (CACHE_LOCK) {
-					if (CACHE.get(key) != entry) {
+				CompiledKernel compiled = compile(key);
+				synchronized (cache) {
+					if (cache.entries.get(key) != entry) {
 						return;
 					}
 					long maxBytes = Math.max(0L, Long.getLong(MAX_BYTES_PROPERTY, DEFAULT_MAX_BYTES));
 					if (compiled.bytes.length > maxBytes) {
-						CACHE.remove(key);
+						cache.entries.remove(key);
 						BYTE_REJECTIONS.incrementAndGet();
 						return;
 					}
-					evictForBytes(compiled.bytes.length, key, maxBytes);
-					if (cachedBytes + compiled.bytes.length > maxBytes) {
-						CACHE.remove(key);
+					evictForBytes(cache, compiled.bytes.length, key, maxBytes);
+					if (cache.cachedBytes + compiled.bytes.length > maxBytes) {
+						cache.entries.remove(key);
 						BYTE_REJECTIONS.incrementAndGet();
 						return;
 					}
 					entry.kernel = compiled.kernel;
 					entry.bytes = compiled.bytes.length;
-					cachedBytes += compiled.bytes.length;
+					cache.cachedBytes += compiled.bytes.length;
 					GENERATED_BYTES.addAndGet(compiled.bytes.length);
 					COMPILATIONS.incrementAndGet();
 				}
 			} catch (Throwable problem) {
 				entry.failure = problem;
 				COMPILE_FAILURES.incrementAndGet();
-				synchronized (CACHE_LOCK) {
-					CACHE.remove(key, entry);
+				synchronized (cache) {
+					cache.entries.remove(key, entry);
 				}
 			} finally {
 				entry.ready.countDown();
@@ -210,27 +231,27 @@ final class LmdbNativeSpecialization {
 		return current;
 	}
 
-	private static void evictForEntryLimit() {
+	private static void evictForEntryLimit(StoreCache cache) {
 		int maxEntries = Math.max(1, Integer.getInteger(MAX_ENTRIES_PROPERTY, DEFAULT_MAX_ENTRIES));
-		while (CACHE.size() >= maxEntries) {
-			evictEldest(null);
+		while (cache.entries.size() >= maxEntries) {
+			evictEldest(cache, null);
 		}
 	}
 
-	private static void evictForBytes(int incoming, KernelKey retained, long maxBytes) {
-		while (cachedBytes + incoming > maxBytes && CACHE.size() > 1) {
-			if (!evictEldest(retained)) {
+	private static void evictForBytes(StoreCache cache, int incoming, KernelKey retained, long maxBytes) {
+		while (cache.cachedBytes + incoming > maxBytes && cache.entries.size() > 1) {
+			if (!evictEldest(cache, retained)) {
 				break;
 			}
 		}
 	}
 
-	private static boolean evictEldest(KernelKey retained) {
-		Iterator<Map.Entry<KernelKey, Entry>> iterator = CACHE.entrySet().iterator();
+	private static boolean evictEldest(StoreCache cache, KernelKey retained) {
+		Iterator<Map.Entry<KernelKey, Entry>> iterator = cache.entries.entrySet().iterator();
 		while (iterator.hasNext()) {
 			Map.Entry<KernelKey, Entry> candidate = iterator.next();
 			if (!candidate.getKey().equals(retained)) {
-				cachedBytes -= candidate.getValue().bytes;
+				cache.cachedBytes -= candidate.getValue().bytes;
 				iterator.remove();
 				EVICTIONS.incrementAndGet();
 				return true;
@@ -239,8 +260,8 @@ final class LmdbNativeSpecialization {
 		return false;
 	}
 
-	private static CompiledKernel compile(int slotCount) throws ReflectiveOperationException {
-		String simpleName = "NativeFilterKernel$" + slotCount + "$" + CLASS_IDS.incrementAndGet();
+	private static CompiledKernel compile(KernelKey key) throws ReflectiveOperationException {
+		String simpleName = "NativeFilterKernel$" + key.slotCount + "$" + CLASS_IDS.incrementAndGet();
 		ClassDesc generatedClass = ClassDesc.of(LmdbNativeSpecialization.class.getPackageName(), simpleName);
 		byte[] bytes = ClassFile.of()
 				.build(generatedClass, builder -> builder
@@ -248,7 +269,8 @@ final class LmdbNativeSpecialization {
 						.withInterfaceSymbols(CD_KERNEL)
 						.withMethodBody(INIT_NAME, MTD_void, ACC_PUBLIC,
 								code -> code.aload(0).invokespecial(CD_Object, INIT_NAME, MTD_void).return_())
-						.withMethodBody("apply", MTD_APPLY, ACC_PUBLIC, code -> filterBody(code, slotCount)));
+						.withMethodBody("apply", MTD_APPLY, ACC_PUBLIC,
+								code -> filterBody(code, key.slotCount, key.readMask)));
 		Class<?> hidden = MethodHandles.lookup()
 				.defineHiddenClass(bytes, true, MethodHandles.Lookup.ClassOption.NESTMATE)
 				.lookupClass();
@@ -256,7 +278,7 @@ final class LmdbNativeSpecialization {
 		return new CompiledKernel(kernel, bytes);
 	}
 
-	private static void filterBody(CodeBuilder code, int slotCount) {
+	private static void filterBody(CodeBuilder code, int slotCount, long readMask) {
 		int accepted = code.allocateLocal(java.lang.classfile.TypeKind.INT);
 		int index = code.allocateLocal(java.lang.classfile.TypeKind.INT);
 		int physical = code.allocateLocal(java.lang.classfile.TypeKind.INT);
@@ -268,6 +290,9 @@ final class LmdbNativeSpecialization {
 		code.iload(index).aload(1).getfield(CD_BATCH, "selectedCount", CD_int).if_icmpge(done);
 		code.aload(1).getfield(CD_BATCH, "selection", CD_INT_ARRAY).iload(index).iaload().istore(physical);
 		for (int slot = 0; slot < slotCount; slot++) {
+			if ((readMask & (1L << slot)) == 0L) {
+				continue;
+			}
 			code.aload(2).getfield(CD_ROW, "slots", CD_LONG_ARRAY).loadConstant(slot);
 			code.aload(1).getfield(CD_BATCH, "slots", CD_LONG_ARRAY);
 			if (slot == 0) {
@@ -295,14 +320,12 @@ final class LmdbNativeSpecialization {
 	}
 
 	static void resetForTests() {
-		synchronized (CACHE_LOCK) {
-			CACHE.clear();
-			cachedBytes = 0L;
+		synchronized (CACHE_REGISTRY_LOCK) {
+			STORE_CACHES.clear();
 		}
+		resetMetrics();
 		INTERPRETER_ROWS.set(0L);
 		SPECIALIZED_ROWS.set(0L);
-		CACHE_HITS.set(0L);
-		CACHE_MISSES.set(0L);
 		COMPILATIONS.set(0L);
 		COMPILE_FAILURES.set(0L);
 		EVICTIONS.set(0L);
@@ -310,7 +333,64 @@ final class LmdbNativeSpecialization {
 		BYTE_REJECTIONS.set(0L);
 	}
 
-	private record KernelKey(int slotCount) {
+	static SpecializationMetrics metricsSnapshot() {
+		return new SpecializationMetrics(CACHE_HITS.get(), CACHE_MISSES.get(), KERNEL_EXECUTIONS.get());
+	}
+
+	static void resetMetrics() {
+		CACHE_HITS.set(0L);
+		CACHE_MISSES.set(0L);
+		KERNEL_EXECUTIONS.set(0L);
+	}
+
+	static int storeCacheCountForTests() {
+		synchronized (CACHE_REGISTRY_LOCK) {
+			return STORE_CACHES.size();
+		}
+	}
+
+	static long allSlotsMask(int slotCount) {
+		return slotCount <= 0 ? 0L : (1L << slotCount) - 1L;
+	}
+
+	private static long normalizeReadMask(int slotCount, long readMask) {
+		if (slotCount < 0 || slotCount > 60 || readMask < 0L || (readMask & ~allSlotsMask(slotCount)) != 0L) {
+			return -1L;
+		}
+		return readMask;
+	}
+
+	private static Object cacheOwner(RowState row) {
+		if (row.source == null) {
+			return DEFAULT_CACHE_OWNER;
+		}
+		Object idSpace = row.source.idSpace();
+		return idSpace == null ? row.source : idSpace;
+	}
+
+	private static StoreCache storeCache(Object owner) {
+		Object key = owner == null ? DEFAULT_CACHE_OWNER : owner;
+		synchronized (CACHE_REGISTRY_LOCK) {
+			return STORE_CACHES.computeIfAbsent(key, ignored -> new StoreCache());
+		}
+	}
+
+	private static StoreCache existingStoreCache(Object owner) {
+		Object key = owner == null ? DEFAULT_CACHE_OWNER : owner;
+		synchronized (CACHE_REGISTRY_LOCK) {
+			return STORE_CACHES.get(key);
+		}
+	}
+
+	record SpecializationMetrics(long cacheHits, long cacheMisses, long kernelExecutions) {
+	}
+
+	private record KernelKey(int slotCount, long readMask) {
+	}
+
+	private static final class StoreCache {
+		private final LinkedHashMap<KernelKey, Entry> entries = new LinkedHashMap<>(16, 0.75f, true);
+		private long cachedBytes;
 	}
 
 	private static final class Entry {

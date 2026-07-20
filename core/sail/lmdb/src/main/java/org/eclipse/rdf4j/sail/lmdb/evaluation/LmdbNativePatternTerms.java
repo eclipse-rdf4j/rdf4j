@@ -17,6 +17,7 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import java.io.IOException;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 
 @Experimental
@@ -113,6 +114,7 @@ final class PatternCursor implements AutoCloseable {
 	final long pred;
 	final long obj;
 	final long[] contexts;
+	final LmdbKeyRange range;
 	int contextIndex;
 	RecordIterator current;
 	long[] syntheticRow;
@@ -120,12 +122,18 @@ final class PatternCursor implements AutoCloseable {
 
 	PatternCursor(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe, long subj,
 			long pred, long obj, long[] contexts) {
+		this(source, probe, subj, pred, obj, contexts, null);
+	}
+
+	PatternCursor(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe, long subj,
+			long pred, long obj, long[] contexts, LmdbKeyRange range) {
 		this.source = source;
 		this.probe = probe;
 		this.subj = subj;
 		this.pred = pred;
 		this.obj = obj;
 		this.contexts = contexts;
+		this.range = range;
 	}
 
 	static PatternCursor empty() {
@@ -143,7 +151,15 @@ final class PatternCursor implements AutoCloseable {
 		return new PatternCursor(source, probe, subj, pred, obj, contexts);
 	}
 
+	static PatternCursor contexts(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe,
+			long subj, long pred, long obj, long[] contexts, LmdbKeyRange range) {
+		return new PatternCursor(source, probe, subj, pred, obj, contexts, range);
+	}
+
 	RecordIterator openIterator(long context) throws IOException {
+		if (range != null) {
+			return source.statements(subj, pred, obj, context, range);
+		}
 		return probe != null ? probe.open(subj, pred, obj, context) : source.statements(subj, pred, obj, context);
 	}
 

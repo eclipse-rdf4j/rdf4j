@@ -188,6 +188,17 @@ final class NativeFilterLease {
 		}
 
 		@Override
+		public int selectBatch(NativeBatch batch, int[] sel, int n, RowState scratch) {
+			entry.used = true;
+			return entry.attempt.selectBatch(batch, sel, n, scratch);
+		}
+
+		@Override
+		public long batchReadMask() {
+			return entry.attempt.batchReadMask();
+		}
+
+		@Override
 		public boolean parallelWorkerForkable() {
 			return entry.attempt.parallelWorkerForkable();
 		}

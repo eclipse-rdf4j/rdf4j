@@ -17,11 +17,14 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.OptionalDouble;
+import java.util.OptionalLong;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
@@ -93,6 +96,15 @@ final class SyntheticValueSource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public RecordIterator statements(long subj, long pred, long obj, long context, LmdbKeyRange range)
+			throws IOException {
+		if (anySynthetic(subj, pred, obj, context)) {
+			return EMPTY;
+		}
+		return delegate.statements(subj, pred, obj, context, range);
+	}
+
+	@Override
 	public RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context)
 			throws IOException {
 		if (anySynthetic(subj, pred, obj, context)) {
@@ -141,6 +153,21 @@ final class SyntheticValueSource implements NativeLmdbQuerySource {
 			}
 
 			@Override
+			public boolean adjacencyCacheBacked() {
+				return inner.adjacencyCacheBacked();
+			}
+
+			@Override
+			public long[] adjacencyCacheKeys() {
+				return inner.adjacencyCacheKeys();
+			}
+
+			@Override
+			public NativeAdjacency adjacency(long predicate, boolean bySubject) throws IOException {
+				return synthetic(predicate) ? null : inner.adjacency(predicate, bySubject);
+			}
+
+			@Override
 			public void close() {
 				inner.close();
 			}
@@ -169,6 +196,24 @@ final class SyntheticValueSource implements NativeLmdbQuerySource {
 			return 0.0;
 		}
 		return delegate.estimate(subj, pred, obj, context);
+	}
+
+	@Override
+	public OptionalDouble meanFanOut(long predicate, boolean bySubject) {
+		return synthetic(predicate) ? OptionalDouble.empty() : delegate.meanFanOut(predicate, bySubject);
+	}
+
+	@Override
+	public OptionalLong exactDegree(long predicate, long key, boolean bySubject) {
+		return synthetic(predicate) || synthetic(key) ? OptionalLong.empty()
+				: delegate.exactDegree(predicate, key, bySubject);
+	}
+
+	@Override
+	public OrderedIntegerDomain orderedIntegerDomain(long subj, long pred, long obj, long context,
+			int varyingField) {
+		return anySynthetic(subj, pred, obj, context) ? null
+				: delegate.orderedIntegerDomain(subj, pred, obj, context, varyingField);
 	}
 
 	@Override

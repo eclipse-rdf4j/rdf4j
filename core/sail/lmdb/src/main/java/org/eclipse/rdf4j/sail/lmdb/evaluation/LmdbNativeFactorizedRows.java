@@ -376,11 +376,13 @@ final class LmdbNativeFactorizedRows {
 			}
 		}
 		String branchCounts = "enumBranches=" + enums + ", countBranches=" + counts + ", existsBranches=" + exists;
-		if ("chunkPipeline".equals(prefixStrategy)) {
+		if (LmdbNativeAttemptMetrics.PATH_CHUNK_PIPELINE.equals(prefixStrategy)) {
 			String mergeInfo = mergeStages > 0 ? ", mergeStages=" + mergeStages : "";
-			return "chunkPipeline(flat=" + flatCount + mergeInfo + ", " + branchCounts + ")";
+			return LmdbNativeAttemptMetrics.PATH_CHUNK_PIPELINE + "(flat=" + flatCount + mergeInfo + ", "
+					+ branchCounts + ")";
 		}
-		return "factorizedRows(flatPrefix=" + flatCount + ", prefix=" + prefixStrategy + ", " + branchCounts + ")";
+		return LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS + "(flatPrefix=" + flatCount + ", prefix="
+				+ prefixStrategy + ", " + branchCounts + ")";
 	}
 
 	void recordEngagement() {
@@ -481,10 +483,14 @@ final class LmdbNativeFactorizedRows {
 		final RowState row;
 		final RowCursor prefix;
 		RowCursor ordinarySuffix;
+		AdaptiveFilterSession adaptiveSuffixSession;
 		long multiplicity = 1L;
 		int enumCount;
 		boolean enumActive;
-		boolean ordinarySuffixOnly;
+		boolean sawRefusal;
+		boolean sawOptimizedPrefix;
+		boolean adaptiveSuffixAttempted;
+		boolean adaptiveSuffixFailed;
 		boolean closed;
 
 		Cursor(LmdbNativeFactorizedRows owner, RowState row, RowCursor prefix) {
@@ -497,9 +503,14 @@ final class LmdbNativeFactorizedRows {
 		public boolean next() throws IOException {
 			nextLoop: while (!closed) {
 				if (ordinarySuffix != null) {
-					if (ordinarySuffix.next()) {
-						multiplicity = 1L;
-						return true;
+					try {
+						if (ordinarySuffix.next()) {
+							multiplicity = 1L;
+							return true;
+						}
+					} catch (IOException | RuntimeException | Error failure) {
+						adaptiveSuffixFailed = true;
+						throw failure;
 					}
 					closeOrdinarySuffix();
 					continue;
@@ -514,19 +525,15 @@ final class LmdbNativeFactorizedRows {
 					enumActive = false;
 				}
 				if (!prefix.next()) {
-					boolean completedOptimizedAttempt = !ordinarySuffixOnly;
 					close();
-					if (completedOptimizedAttempt) {
+					if (!sawRefusal || sawOptimizedPrefix) {
 						owner.recordEngagement();
 					}
 					return false;
 				}
-				if (ordinarySuffixOnly) {
-					ordinarySuffix = owner.plan.openSuffix(owner.derived, owner.flatCount, row);
-					continue;
-				}
 				for (NativeBooleanFilter filter : owner.prefixOnlyTailFilters) {
 					if (!filter.accept(row)) {
+						sawOptimizedPrefix = true;
 						continue nextLoop;
 					}
 				}
@@ -537,12 +544,18 @@ final class LmdbNativeFactorizedRows {
 					if (result == TailResult.REFUSED) {
 						clearEnumSlots();
 						enumActive = false;
-						ordinarySuffixOnly = true;
-						ordinarySuffix = owner.plan.openSuffix(owner.derived, owner.flatCount, row);
+						sawRefusal = true;
+						try {
+							ordinarySuffix = openOrdinarySuffix();
+						} catch (IOException | RuntimeException | Error failure) {
+							adaptiveSuffixFailed = true;
+							throw failure;
+						}
 						continue nextLoop;
 					}
 					if (result.count == 0L) {
 						clearEnumSlots();
+						sawOptimizedPrefix = true;
 						continue nextLoop;
 					}
 					if (branch.role == ROLE_COUNT) {
@@ -563,16 +576,29 @@ final class LmdbNativeFactorizedRows {
 					}
 				}
 				if (enumCount == 0) {
+					sawOptimizedPrefix = true;
 					owner.recordEngagement();
 					return true;
 				}
 				Arrays.fill(owner.odometer, 0, enumCount, 0);
 				writeEnumSlots();
 				enumActive = true;
+				sawOptimizedPrefix = true;
 				owner.recordEngagement();
 				return true;
 			}
 			return false;
+		}
+
+		private RowCursor openOrdinarySuffix() throws IOException {
+			if (!adaptiveSuffixAttempted) {
+				adaptiveSuffixAttempted = true;
+				adaptiveSuffixSession = LmdbNativeAdaptiveFilterPlacement.tryCreateSuffixSession(
+						owner.metrics.explainTarget(), owner.plan, owner.derived, owner.flatCount);
+			}
+			return adaptiveSuffixSession == null
+					? owner.plan.openSuffix(owner.derived, owner.flatCount, row)
+					: adaptiveSuffixSession.openSuffix(owner.flatCount, row);
 		}
 
 		private void closeOrdinarySuffix() {
@@ -636,6 +662,15 @@ final class LmdbNativeFactorizedRows {
 			} catch (RuntimeException | Error problem) {
 				failure = addCloseFailure(failure, problem);
 			}
+			AdaptiveFilterSession suffixSession = adaptiveSuffixSession;
+			adaptiveSuffixSession = null;
+			if (suffixSession != null) {
+				try {
+					suffixSession.close();
+				} catch (RuntimeException | Error problem) {
+					failure = addCloseFailure(failure, problem);
+				}
+			}
 			try {
 				prefix.close();
 			} catch (RuntimeException | Error problem) {
@@ -649,6 +684,13 @@ final class LmdbNativeFactorizedRows {
 				}
 			}
 			failure = owner.closePrefixOnlyTailFilters(failure);
+			if (failure == null && suffixSession != null && !adaptiveSuffixFailed) {
+				try {
+					suffixSession.publishTelemetry();
+				} catch (RuntimeException | Error problem) {
+					failure = addCloseFailure(failure, problem);
+				}
+			}
 			rethrowCloseFailure(failure);
 		}
 	}
@@ -826,6 +868,7 @@ final class LmdbNativeFactorizedRows {
 	}
 
 	static final class TailBranch {
+		static final int MAX_ENUM_REFUSED_KEYS = 4096;
 		final PatternPlan pattern;
 		final int role;
 		final int[] keySlots;
@@ -841,6 +884,10 @@ final class LmdbNativeFactorizedRows {
 		NativeLmdbQuerySource.NativeProbe probe;
 		long[] enumScratch;
 		long enumScratchReservedValues;
+		LongHashSet enumRefusedKeyHashes;
+		long[] enumRefusedClock;
+		int enumRefusedSize;
+		int enumRefusedClockHand;
 		int reservedEntries;
 		long reservedValues;
 		boolean closed;
@@ -861,12 +908,20 @@ final class LmdbNativeFactorizedRows {
 
 		TailResult result(RowState row, LmdbNativeFactorizedRows owner) throws IOException {
 			probeKey.refill(row.slots, keySlots);
+			long enumKeyHash = role == ROLE_ENUM ? enumKeyHash() : 0L;
+			if (role == ROLE_ENUM && enumRefusedKeyHashes != null && enumRefusedKeyHashes.contains(enumKeyHash)) {
+				return TailResult.REFUSED;
+			}
 			TailResult memoized = memo.get(probeKey);
 			if (memoized != null && memoized != TailResult.SEEN_ONCE) {
 				return memoized;
 			}
 			if (role == ROLE_ENUM) {
-				return collectEnum(row, owner.quadBuffer, memoized == TailResult.SEEN_ONCE);
+				TailResult result = collectEnum(row, owner.quadBuffer, memoized == TailResult.SEEN_ONCE);
+				if (result == TailResult.REFUSED) {
+					rememberEnumRefusal(enumKeyHash);
+				}
+				return result;
 			}
 			TailResult result = scanCountOrExists(row, owner.quadBuffer);
 			if (memoBudget.tryReserve(1, 0)) {
@@ -882,6 +937,40 @@ final class LmdbNativeFactorizedRows {
 				}
 			}
 			return result;
+		}
+
+		private long enumKeyHash() {
+			long hash = 0x9e3779b97f4a7c15L ^ probeKey.ids.length;
+			for (long id : probeKey.ids) {
+				long mixed = id;
+				mixed ^= mixed >>> 30;
+				mixed *= 0xbf58476d1ce4e5b9L;
+				mixed ^= mixed >>> 27;
+				mixed *= 0x94d049bb133111ebL;
+				mixed ^= mixed >>> 31;
+				hash = Long.rotateLeft(hash ^ mixed, 27) * 5L + 0x52dce729L;
+			}
+			return hash;
+		}
+
+		private void rememberEnumRefusal(long keyHash) {
+			if (enumRefusedKeyHashes == null) {
+				enumRefusedKeyHashes = new LongHashSet(MAX_ENUM_REFUSED_KEYS);
+				enumRefusedClock = new long[MAX_ENUM_REFUSED_KEYS];
+			}
+			if (enumRefusedKeyHashes.contains(keyHash)) {
+				return;
+			}
+			if (enumRefusedSize == MAX_ENUM_REFUSED_KEYS) {
+				if (!enumRefusedKeyHashes.remove(enumRefusedClock[enumRefusedClockHand])) {
+					throw new IllegalStateException("enum-refusal clock and set diverged");
+				}
+			} else {
+				enumRefusedSize++;
+			}
+			enumRefusedClock[enumRefusedClockHand] = keyHash;
+			enumRefusedKeyHashes.add(keyHash);
+			enumRefusedClockHand = (enumRefusedClockHand + 1) & (MAX_ENUM_REFUSED_KEYS - 1);
 		}
 
 		private TailResult collectEnum(RowState row, long[] buffer, boolean repeatedKey) throws IOException {
@@ -1085,6 +1174,10 @@ final class LmdbNativeFactorizedRows {
 				return;
 			}
 			closed = true;
+			enumRefusedKeyHashes = null;
+			enumRefusedClock = null;
+			enumRefusedSize = 0;
+			enumRefusedClockHand = 0;
 			Throwable failure = null;
 			NativeLmdbQuerySource.NativeProbe ownedProbe = probe;
 			probe = null;

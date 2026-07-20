@@ -20,6 +20,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalDouble;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -50,6 +51,7 @@ public class LmdbNativeParallelPipelinesTest {
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String PARALLEL_FLAG = "rdf4j.lmdb.parallel.enabled";
 	private static final String THRESHOLD_FLAG = "rdf4j.lmdb.parallel.minRootEstimate";
+	private static final String WORK_THRESHOLD_FLAG = "rdf4j.lmdb.parallel.minWorkEstimate";
 	private static final String THREADS_FLAG = "rdf4j.lmdb.parallel.threads";
 	private static final String MAX_TASKS_FLAG = "rdf4j.lmdb.parallel.maxTasks";
 	private static final String EXTERNAL_ROOT_CANDIDATE_FLAG = "rdf4j.lmdb.chunkPipeline.externalRoot.experimental";
@@ -62,12 +64,13 @@ public class LmdbNativeParallelPipelinesTest {
 
 	@BeforeEach
 	public void setUp() {
-		previousProperties = snapshotProperties(NATIVE_FLAG, PARALLEL_FLAG, THRESHOLD_FLAG, THREADS_FLAG,
+		previousProperties = snapshotProperties(NATIVE_FLAG, PARALLEL_FLAG, THRESHOLD_FLAG, WORK_THRESHOLD_FLAG,
+				THREADS_FLAG,
 				MAX_TASKS_FLAG, EXTERNAL_ROOT_CANDIDATE_FLAG);
 		System.setProperty(THRESHOLD_FLAG, "0");
+		System.setProperty(WORK_THRESHOLD_FLAG, "0");
 		System.setProperty(THREADS_FLAG, "4");
 		System.setProperty(MAX_TASKS_FLAG, "5");
-		System.setProperty(EXTERNAL_ROOT_CANDIDATE_FLAG, "true");
 		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
@@ -123,6 +126,45 @@ public class LmdbNativeParallelPipelinesTest {
 	}
 
 	@Test
+	public void orderedChainUsesParallelProducerBeforeFullSort() {
+		String query = chain("") + " ORDER BY DESC(?value) ?subject";
+		List<String> generic = orderedRowsWithProperty(NATIVE_FLAG, "false", query);
+		long parallelBefore = LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get();
+
+		List<String> parallel = orderedRows(query);
+
+		assertThat(parallel).hasSize(720).containsExactlyElementsOf(generic);
+		assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get())
+				.as("ordered full sort must consume the same parallel proposal ladder: %s",
+						LmdbNativeParallelPipelines.LAST_REJECTION.get())
+				.isEqualTo(parallelBefore + 1L);
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			assertThat(connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toString())
+					.contains("parallelPipelines")
+					.contains("orderedFullSort");
+		}
+	}
+
+	@Test
+	public void orderedChainKeepsBoundedTopKAboveSharedProducerLadder() {
+		String query = chain("") + " ORDER BY DESC(?value) ?subject LIMIT 17";
+		List<String> generic = orderedRowsWithProperty(NATIVE_FLAG, "false", query);
+		long parallelBefore = LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get();
+
+		List<String> parallel = orderedRows(query);
+
+		assertThat(parallel).hasSize(17).containsExactlyElementsOf(generic);
+		assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get()).isEqualTo(parallelBefore);
+		assertThat(LmdbNativeParallelPipelines.LAST_REJECTION.get()).isEqualTo("short-slice");
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			assertThat(connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toString())
+					.contains("orderedTopK")
+					.contains("batch")
+					.contains("short-slice");
+		}
+	}
+
+	@Test
 	public void immutableCompiledFilterRunsInsideWorkers() {
 		String query = chain(" FILTER(BOUND(?value))");
 		List<String> parallel = rows(query);
@@ -167,7 +209,7 @@ public class LmdbNativeParallelPipelinesTest {
 	}
 
 	@Test
-	public void parallelSelectKeepsUnprovenExternalRootCandidateDisabledByDefault() {
+	public void parallelSelectUsesExternalRootChunkByDefault() {
 		String prior = System.clearProperty(EXTERNAL_ROOT_CANDIDATE_FLAG);
 		try {
 			String query = countingChain();
@@ -178,14 +220,29 @@ public class LmdbNativeParallelPipelinesTest {
 
 			assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get()).isEqualTo(parallelBefore + 1L);
 			assertThat(LmdbNativeChunkPipeline.ENGAGED.get())
-					.as("the measured worker row chain must remain the default until the candidate proves a win")
+					.as("parallel workers must use the external-root chunk chain by default")
+					.isGreaterThan(chunkBefore);
+		} finally {
+			restoreProperty(EXTERNAL_ROOT_CANDIDATE_FLAG, prior);
+		}
+	}
+
+	@Test
+	public void externalRootChunkKillSwitchKeepsScalarWorkerFallback() {
+		String prior = System.setProperty(EXTERNAL_ROOT_CANDIDATE_FLAG, "false");
+		try {
+			String query = countingChain();
+			long parallelBefore = LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get();
+			long chunkBefore = LmdbNativeChunkPipeline.ENGAGED.get();
+
+			assertThat(rowCount(query)).isEqualTo(720);
+
+			assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get()).isEqualTo(parallelBefore + 1L);
+			assertThat(LmdbNativeChunkPipeline.ENGAGED.get())
+					.as("the explicit kill switch must retain the scalar worker fallback")
 					.isEqualTo(chunkBefore);
 		} finally {
-			if (prior == null) {
-				System.clearProperty(EXTERNAL_ROOT_CANDIDATE_FLAG);
-			} else {
-				System.setProperty(EXTERNAL_ROOT_CANDIDATE_FLAG, prior);
-			}
+			restoreProperty(EXTERNAL_ROOT_CANDIDATE_FLAG, prior);
 		}
 	}
 
@@ -312,6 +369,8 @@ public class LmdbNativeParallelPipelinesTest {
 		long parallelBefore = LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get();
 		long chunkBefore = LmdbNativeChunkPipeline.ENGAGED.get();
 		long hashBefore = LmdbNativeChunkPipeline.HASH_BUILDS.get();
+		long mergeBefore = LmdbNativeChunkPipeline.MERGE_WALKS.get();
+		long sipBefore = LmdbNativeChunkPipeline.SIP_MASKS.get();
 
 		List<String> parallel = rows(query);
 
@@ -322,6 +381,12 @@ public class LmdbNativeParallelPipelinesTest {
 		assertThat(LmdbNativeChunkPipeline.HASH_BUILDS.get())
 				.as("independently scheduled external-root workers must not duplicate complete hash tables")
 				.isEqualTo(hashBefore);
+		assertThat(LmdbNativeChunkPipeline.MERGE_WALKS.get())
+				.as("independent worker morsels do not provide one globally ordered merge stream")
+				.isEqualTo(mergeBefore);
+		assertThat(LmdbNativeChunkPipeline.SIP_MASKS.get())
+				.as("independent worker morsels must not publish root SIP masks")
+				.isEqualTo(sipBefore);
 		assertThat(parallel)
 				.as("a refill must start from seed plus root slots, without the previous chunk's ?value binding")
 				.hasSize(roots)
@@ -477,6 +542,107 @@ public class LmdbNativeParallelPipelinesTest {
 	}
 
 	@Test
+	public void planLevelWorkAdmitsFanoutAndRejectsDeadTail() throws Exception {
+		String previousWorkThreshold = System.clearProperty(WORK_THRESHOLD_FLAG);
+		String previousRootThreshold = System.clearProperty(THRESHOLD_FLAG);
+		try {
+			NativeSlotLayout layout = twoSlotLayout();
+			PatternPlan highFanoutRoot = pattern(Term.slot(0), 7L, Term.constant(8L), 8_000D);
+			PatternPlan highFanoutTail = pattern(Term.slot(0), 9L, Term.slot(1), 100D);
+			RepeatedSlotSource highFanoutSource = new RepeatedSlotSource(new long[0][], Map.of(9L, 100D));
+			MultiJoinPlan highFanoutPlan = new MultiJoinPlan(
+					new SlotPlan[] { highFanoutRoot, highFanoutTail }, new MaskedFilter[0]);
+			RowState highFanoutRow = emptyNativeRow(highFanoutSource, layout);
+
+			assertThat(highFanoutRoot.estimate(highFanoutRow)).isEqualTo(8_000D);
+			assertThat(highFanoutPlan.estimate(highFanoutRow)).isEqualTo(800_000D);
+			LmdbNativeStrategyProposal<RowCursor> highFanout = LmdbNativeParallelPipelines
+					.propose(nativeStep(highFanoutSource, highFanoutPlan, layout), highFanoutRow);
+			assertThat(highFanout)
+					.as("8k root with 100x measured downstream fan-out must clear work-based admission")
+					.isNotNull();
+			highFanout.close();
+
+			PatternPlan deadRoot = pattern(Term.slot(0), 7L, Term.constant(8L), 60_000D);
+			PatternPlan deadTail = pattern(Term.slot(0), 10L, Term.slot(1), 1D);
+			RepeatedSlotSource deadSource = new RepeatedSlotSource(new long[0][], Map.of(10L, 0D));
+			MultiJoinPlan deadPlan = new MultiJoinPlan(new SlotPlan[] { deadRoot, deadTail }, new MaskedFilter[0]);
+			RowState deadRow = emptyNativeRow(deadSource, layout);
+
+			assertThat(deadRoot.estimate(deadRow)).isEqualTo(60_000D);
+			assertThat(deadPlan.estimate(deadRow)).isZero();
+			LmdbNativeStrategyProposal<RowCursor> dead = LmdbNativeParallelPipelines
+					.propose(nativeStep(deadSource, deadPlan, layout), deadRow);
+			try {
+				assertThat(dead)
+						.as("a large root whose measured suffix has no work must stay sequential")
+						.isNull();
+				assertThat(LmdbNativeParallelPipelines.LAST_REJECTION.get()).isEqualTo("below-threshold");
+			} finally {
+				if (dead != null) {
+					dead.close();
+				}
+			}
+		} finally {
+			restoreProperty(WORK_THRESHOLD_FLAG, previousWorkThreshold);
+			restoreProperty(THRESHOLD_FLAG, previousRootThreshold);
+		}
+	}
+
+	@Test
+	public void valuesAndMultiValueChildrenAreAdmitted() throws Exception {
+		NativeSlotLayout layout = twoSlotLayout();
+		RepeatedSlotSource source = new RepeatedSlotSource(new long[0][]);
+		PatternPlan root = pattern(Term.slot(0), 7L, Term.constant(8L), 1D);
+		ValuesPlan values = new ValuesPlan(new ValuesRow[] {
+				new ValuesRow(new int[] { 0, 1 }, new long[] { 101L, 201L }),
+				new ValuesRow(new int[] { 0, 1 }, new long[] { 102L, 202L })
+		});
+		assertThat(values.bindsAllSlotsEveryRow).isTrue();
+		assertProposal(source, new MultiJoinPlan(new SlotPlan[] { root, values }, new MaskedFilter[0]), layout);
+
+		PatternPlan fallback = pattern(Term.slot(0), 9L, Term.slot(1), 1D);
+		MultiValuePatternPlan multiValue = new MultiValuePatternPlan(source, 0, new long[] { 101L },
+				new PatternPlan[] { fallback }, fallback);
+		assertProposal(source, new MultiJoinPlan(new SlotPlan[] { root, multiValue }, new MaskedFilter[0]), layout);
+	}
+
+	@Test
+	public void workerForkClonesMultiValueMemoAndResolvesWorkerSource() {
+		NativeSlotLayout layout = twoSlotLayout();
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		RepeatedSlotSource querySource = new RepeatedSlotSource(new long[0][], Map.of(),
+				Map.of(101L, vf.createLiteral("query-candidate"), 202L, vf.createLiteral("query-accepted")));
+		RepeatedSlotSource workerSource = new RepeatedSlotSource(new long[0][], Map.of(),
+				Map.of(101L, vf.createLiteral("worker-equal"), 202L, vf.createLiteral("worker-equal")));
+		PatternPlan root = pattern(Term.slot(0), 7L, Term.constant(8L), 1D);
+		PatternPlan fallback = pattern(Term.slot(0), 9L, Term.slot(1), 1D);
+		MultiValuePatternPlan original = new MultiValuePatternPlan(querySource, 0, new long[] { 202L },
+				new PatternPlan[] { fallback }, fallback);
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { root, original }, new MaskedFilter[0]);
+
+		MultiJoinPlan[] workers = LmdbNativeParallelPipelines.forkWorkerPlans(plan, 2);
+		MultiValuePatternPlan first = (MultiValuePatternPlan) workers[0].children[1];
+		MultiValuePatternPlan second = (MultiValuePatternPlan) workers[1].children[1];
+		assertThat(first).isNotSameAs(original);
+		assertThat(second).isNotSameAs(original).isNotSameAs(first);
+		assertThat(first.fallbackFilter).isNotSameAs(original.fallbackFilter);
+		assertThat(second.fallbackFilter).isNotSameAs(original.fallbackFilter)
+				.isNotSameAs(first.fallbackFilter);
+
+		RowState row = emptyNativeRow(workerSource, layout);
+		row.slots[0] = 101L;
+		row.recomputeBoundMask();
+		assertThat(first.fallbackFilter.accept(row)).isTrue();
+		assertThat(workerSource.lazyValueCalls).isEqualTo(2L);
+		assertThat(first.fallbackFilter.accept(row)).isTrue();
+		assertThat(workerSource.lazyValueCalls).as("the first worker owns its memo").isEqualTo(2L);
+		assertThat(second.fallbackFilter.accept(row)).isTrue();
+		assertThat(workerSource.lazyValueCalls).as("the second worker starts with an empty memo").isEqualTo(4L);
+		assertThat(querySource.lazyValueCalls).as("worker filters must resolve through RowState.source").isZero();
+	}
+
+	@Test
 	public void earlyCloseCancelsWorkersAndLeavesStoreUsable() {
 		long cancelled = LmdbNativeParallelPipelines.CANCELLED_RUNS.get();
 		try (SailRepositoryConnection connection = repository.getConnection();
@@ -514,7 +680,17 @@ public class LmdbNativeParallelPipelinesTest {
 	}
 
 	@Test
-	public void reservedWorkerGroupForcesSequentialFallback() {
+	public void longFiniteSliceUsesParallelPipeline() {
+		List<String> result = rows(chain("") + " LIMIT 512");
+
+		assertThat(result).hasSize(512);
+		assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get())
+				.as("parallel rejection: %s", LmdbNativeParallelPipelines.LAST_REJECTION.get())
+				.isEqualTo(1L);
+	}
+
+	@Test
+	public void reservedWorkerGroupAllowsDegradedParallelPipeline() {
 		long before = LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get();
 		try (SailRepositoryConnection connection = repository.getConnection();
 				TupleQueryResult held = connection.prepareTupleQuery(highFanoutChain()).evaluate()) {
@@ -523,16 +699,16 @@ public class LmdbNativeParallelPipelinesTest {
 
 			assertThat(rows(chain(""))).hasSize(720);
 			assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get())
-					.as("the second complete worker group must fall back while the first owns the budget")
-					.isEqualTo(before + 1L);
+					.as("the second query must retain a degraded-but-nonzero range worker grant")
+					.isEqualTo(before + 2L);
 		}
 
 		assertThat(rows(chain(""))).hasSize(720);
-		assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get()).isEqualTo(before + 2L);
+		assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get()).isEqualTo(before + 3L);
 	}
 
 	@Test
-	public void reservedWorkerGroupForcesAggregationFallback() {
+	public void reservedWorkerGroupAllowsDegradedParallelAggregation() {
 		long before = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
 		try (SailRepositoryConnection connection = repository.getConnection();
 				TupleQueryResult held = connection.prepareTupleQuery(highFanoutChain()).evaluate()) {
@@ -540,12 +716,12 @@ public class LmdbNativeParallelPipelinesTest {
 
 			rows(aggregateChain());
 			assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
-					.as("aggregation must share the process task budget with row pipelines")
-					.isEqualTo(before);
+					.as("aggregation must retain a degraded-but-nonzero range worker grant")
+					.isEqualTo(before + 1L);
 		}
 
 		rows(aggregateChain());
-		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get()).isEqualTo(before + 1L);
+		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get()).isEqualTo(before + 2L);
 	}
 
 	private String chain(String filter) {
@@ -565,7 +741,8 @@ public class LmdbNativeParallelPipelinesTest {
 	}
 
 	private String aggregateChain() {
-		return "SELECT (COUNT(?subject) AS ?count) WHERE { ?subject <" + EX
+		// Keep this elastic-admission fixture out of the now-higher-priority factorized aggregate path.
+		return "SELECT (COUNT(?subject) AS ?count) (MIN(DISTINCT ?value) AS ?min) WHERE { ?subject <" + EX
 				+ "p1> ?middle . ?middle <" + EX + "p2> ?tail . ?tail <" + EX + "p3> ?value . }";
 	}
 
@@ -597,6 +774,25 @@ public class LmdbNativeParallelPipelinesTest {
 							.collect(Collectors.joining(";", "[", "]")))
 					.sorted()
 					.collect(Collectors.toList());
+		}
+	}
+
+	private List<String> orderedRows(String query) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return QueryResults.asList(connection.prepareTupleQuery(query).evaluate())
+					.stream()
+					.map(row -> row.getValue("subject") + "|" + row.getValue("value"))
+					.toList();
+		}
+	}
+
+	private List<String> orderedRowsWithProperty(String property, String value, String query) {
+		String previous = System.getProperty(property);
+		try {
+			System.setProperty(property, value);
+			return orderedRows(query);
+		} finally {
+			restoreProperty(property, previous);
 		}
 	}
 
@@ -659,6 +855,34 @@ public class LmdbNativeParallelPipelinesTest {
 		return row;
 	}
 
+	private static NativeSlotLayout twoSlotLayout() {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("left", 0, "right", 1), null);
+		layout.freeze(List.of("left", "right"));
+		return layout;
+	}
+
+	private static PatternPlan pattern(Term subject, long predicate, Term object, double estimate) {
+		return new PatternPlan(subject, Term.constant(predicate), object, Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, estimate);
+	}
+
+	private static NativeRowsStep nativeStep(NativeLmdbQuerySource source, MultiJoinPlan plan,
+			NativeSlotLayout layout) {
+		return new NativeRowsStep(source, plan, layout, new int[] { 0, 1 }, new String[] { "left", "right" },
+				false, new int[0], new boolean[0], 0L, -1L, false, null, null, null, Set.of(), null, null);
+	}
+
+	private static void assertProposal(NativeLmdbQuerySource source, MultiJoinPlan plan, NativeSlotLayout layout)
+			throws IOException {
+		RowState row = emptyNativeRow(source, layout);
+		LmdbNativeStrategyProposal<RowCursor> proposal = LmdbNativeParallelPipelines
+				.propose(nativeStep(source, plan, layout), row);
+		assertThat(proposal)
+				.as("parallel rejection: %s", LmdbNativeParallelPipelines.LAST_REJECTION.get())
+				.isNotNull();
+		proposal.close();
+	}
+
 	private static List<String> readNativeRows(RowCursor cursor, RowState row) throws IOException {
 		ArrayList<String> result = new ArrayList<>();
 		try (cursor) {
@@ -673,14 +897,28 @@ public class LmdbNativeParallelPipelinesTest {
 	private static final class RepeatedSlotSource implements NativeLmdbQuerySource.ParallelSource {
 		private final long[][] quads;
 		private final Object idSpace;
+		private final Map<Long, Double> meanFanOut;
+		private final Map<Long, Value> values;
+		private long lazyValueCalls;
 
 		private RepeatedSlotSource(long[][] quads) {
-			this(quads, new Object());
+			this(quads, Map.of());
 		}
 
-		private RepeatedSlotSource(long[][] quads, Object idSpace) {
+		private RepeatedSlotSource(long[][] quads, Map<Long, Double> meanFanOut) {
+			this(quads, new Object(), meanFanOut, Map.of());
+		}
+
+		private RepeatedSlotSource(long[][] quads, Map<Long, Double> meanFanOut, Map<Long, Value> values) {
+			this(quads, new Object(), meanFanOut, values);
+		}
+
+		private RepeatedSlotSource(long[][] quads, Object idSpace, Map<Long, Double> meanFanOut,
+				Map<Long, Value> values) {
 			this.quads = quads;
 			this.idSpace = idSpace;
+			this.meanFanOut = meanFanOut;
+			this.values = values;
 		}
 
 		@Override
@@ -694,7 +932,8 @@ public class LmdbNativeParallelPipelinesTest {
 
 		@Override
 		public Value lazyValue(long id) {
-			return SimpleValueFactory.getInstance().createLiteral(id);
+			lazyValueCalls++;
+			return values.getOrDefault(id, SimpleValueFactory.getInstance().createLiteral(id));
 		}
 
 		@Override
@@ -749,6 +988,12 @@ public class LmdbNativeParallelPipelinesTest {
 		}
 
 		@Override
+		public OptionalDouble meanFanOut(long predicate, boolean bySubject) {
+			Double estimate = meanFanOut.get(predicate);
+			return estimate == null ? OptionalDouble.empty() : OptionalDouble.of(estimate);
+		}
+
+		@Override
 		public boolean hasStatementsInSource() {
 			return quads.length > 0;
 		}
@@ -757,7 +1002,7 @@ public class LmdbNativeParallelPipelinesTest {
 		public NativeLmdbQuerySource.ParallelSource[] openParallelSources(int count) {
 			NativeLmdbQuerySource.ParallelSource[] sources = new NativeLmdbQuerySource.ParallelSource[count];
 			for (int i = 0; i < count; i++) {
-				sources[i] = new RepeatedSlotSource(quads, idSpace);
+				sources[i] = new RepeatedSlotSource(quads, idSpace, meanFanOut, values);
 			}
 			return sources;
 		}
@@ -792,6 +1037,14 @@ public class LmdbNativeParallelPipelinesTest {
 			} else {
 				System.setProperty(entry.getKey(), entry.getValue());
 			}
+		}
+	}
+
+	private static void restoreProperty(String property, String value) {
+		if (value == null) {
+			System.clearProperty(property);
+		} else {
+			System.setProperty(property, value);
 		}
 	}
 }

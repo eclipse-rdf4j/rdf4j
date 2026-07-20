@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -27,6 +28,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
@@ -71,6 +73,9 @@ public class LmdbCsrAdjacencyCacheTest {
 				System.setProperty(entry.getKey(), entry.getValue());
 			}
 		}
+		if (cache != null) {
+			cache.close();
+		}
 		if (tripleStore != null) {
 			tripleStore.close();
 		}
@@ -83,6 +88,8 @@ public class LmdbCsrAdjacencyCacheTest {
 		LmdbCsrAdjacencyCache.STALE_DROPS.set(0);
 		LmdbCsrAdjacencyCache.EVICTIONS.set(0);
 		LmdbCsrAdjacencyCache.REFUSALS.set(0);
+		LmdbCsrAdjacencyCache.CSR_ROOT_SCANS.set(0);
+		LmdbCsrAdjacencyCache.CSR_ORDERED_SCANS.set(0);
 	}
 
 	private void loadDefaultData() throws Exception {
@@ -103,11 +110,33 @@ public class LmdbCsrAdjacencyCacheTest {
 		}
 	}
 
+	private void reopenStore(String indexes) throws Exception {
+		cache.close();
+		tripleStore.close();
+		tripleStore = new CountingTripleStore(new File(dataDir, indexes), new LmdbStoreConfig(indexes));
+		storeTxnStarted = new AtomicBoolean(false);
+		cache = new LmdbCsrAdjacencyCache(tripleStore, storeTxnStarted);
+		resetCounters();
+	}
+
 	/** Reference: what the LMDB probe path would return for one probe, in order. */
 	private List<long[]> referenceProbe(long subj, long pred, long obj, long context) throws Exception {
 		List<long[]> quads = new ArrayList<>();
 		try (Txn txn = tripleStore.getTxnManager().createReadTxn();
 				RecordIterator iterator = tripleStore.getTriples(txn, subj, pred, obj, context, true)) {
+			long[] quad;
+			while ((quad = iterator.next()) != null) {
+				quads.add(quad.clone());
+			}
+		}
+		return quads;
+	}
+
+	private List<long[]> referenceOrdered(StatementOrder order, long subj, long pred, long obj, long context)
+			throws Exception {
+		List<long[]> quads = new ArrayList<>();
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn();
+				RecordIterator iterator = tripleStore.getTriples(txn, order, subj, pred, obj, context, true)) {
 			long[] quad;
 			while ((quad = iterator.next()) != null) {
 				quads.add(quad.clone());
@@ -133,6 +162,58 @@ public class LmdbCsrAdjacencyCacheTest {
 		for (int i = 0; i < expected.size(); i++) {
 			assertThat(actual.get(i)).containsExactly(expected.get(i));
 		}
+	}
+
+	private static void assertNondecreasing(List<long[]> quads, StatementOrder order) {
+		int field = switch (order) {
+		case S -> TripleIndex.SUBJ_IDX;
+		case P -> TripleIndex.PRED_IDX;
+		case O -> TripleIndex.OBJ_IDX;
+		case C -> TripleIndex.CONTEXT_IDX;
+		};
+		for (int i = 1; i < quads.size(); i++) {
+			assertThat(quads.get(i)[field]).isGreaterThanOrEqualTo(quads.get(i - 1)[field]);
+		}
+	}
+
+	private static List<long[]> drain(RecordIterator iterator) {
+		List<long[]> quads = new ArrayList<>();
+		try (iterator) {
+			long[] quad;
+			while ((quad = iterator.next()) != null) {
+				quads.add(quad.clone());
+			}
+		}
+		return quads;
+	}
+
+	private static long linearCount(LmdbCsrAdjacencyCache.CsrEntry entry, long key, long neighbor, long context) {
+		int dense = entry.denseIdOf(key);
+		if (dense < 0) {
+			return 0;
+		}
+		long count = 0;
+		for (int i = entry.runStart[dense]; i < entry.runStart[dense + 1]; i++) {
+			if (neighbor >= 0 && entry.neighbors[i] != neighbor) {
+				continue;
+			}
+			if (context >= 0 && (entry.contexts == null ? 0L : entry.contexts[i]) != context) {
+				continue;
+			}
+			count++;
+		}
+		return count;
+	}
+
+	private static LmdbCsrAdjacencyCache.CsrEntry handcraftedEntry(long key, long neighbor, long context) {
+		long[] tableKeys = new long[2];
+		int[] tableSlotPlus1 = new int[2];
+		int slot = LmdbCsrAdjacencyCache.CsrEntry.mix(key) & 1;
+		tableKeys[slot] = key;
+		tableSlotPlus1[slot] = 1;
+		return new LmdbCsrAdjacencyCache.CsrEntry(tableKeys, tableSlotPlus1, new long[] { key },
+				new int[] { 0, 1 }, new long[] { neighbor }, context == 0 ? null : new long[] { context }, 0,
+				neighbor, neighbor, ValueIds.isOrderedInteger(neighbor), true);
 	}
 
 	@Test
@@ -184,6 +265,21 @@ public class LmdbCsrAdjacencyCacheTest {
 		}
 		// missing key yields an empty run
 		assertThat(cacheProbe(entry, 999, 10, -1, LmdbCsrAdjacencyCache.BY_SUBJECT)).isEmpty();
+	}
+
+	@Test
+	public void prefixSumsExposeMeanFanOutAndExactDegree() throws Exception {
+		loadDefaultData();
+		buildEntry(10, LmdbCsrAdjacencyCache.BY_SUBJECT, true);
+		buildEntry(10, LmdbCsrAdjacencyCache.BY_OBJECT, true);
+
+		assertThat(cache.meanFanOut(10, true)).hasValue(3D);
+		assertThat(cache.exactDegree(10, 105, true)).hasValue(3L);
+		assertThat(cache.exactDegree(10, 999, true)).hasValue(0L);
+		assertThat(cache.meanFanOut(10, false)).hasValue(1D);
+		assertThat(cache.exactDegree(10, 2_052, false)).hasValue(1L);
+		assertThat(cache.meanFanOut(99, true)).isEmpty();
+		assertThat(cache.exactDegree(99, 105, true)).isEmpty();
 	}
 
 	@Test
@@ -282,6 +378,43 @@ public class LmdbCsrAdjacencyCacheTest {
 	}
 
 	@Test
+	public void defaultEntryCapScalesWithGlobalBudget() {
+		System.clearProperty("rdf4j.lmdb.csrCache.maxEntryBytes");
+		System.setProperty("rdf4j.lmdb.csrCache.maxBytes", Long.toString(2L * 1024 * 1024 * 1024));
+
+		assertThat(LmdbCsrAdjacencyCache.maxEntryBytes()).isEqualTo(128L * 1024 * 1024);
+	}
+
+	@Test
+	public void clockEvictionAndCloseCreditExactBytes() throws Exception {
+		long baseline = LmdbCsrAdjacencyCache.GLOBAL_USED_BYTES.get();
+		loadDefaultData();
+		tripleStore.startTransaction();
+		for (long subj = 100; subj < 120; subj++) {
+			for (long branch = 0; branch < 3; branch++) {
+				long context = branch == 2 ? 7 : 0;
+				tripleStore.storeTriple(subj, 11, 1000 + subj * 10 + branch, context, true);
+			}
+		}
+		tripleStore.commit();
+
+		buildEntry(10, LmdbCsrAdjacencyCache.BY_SUBJECT, true);
+		long oneEntryBytes = LmdbCsrAdjacencyCache.GLOBAL_USED_BYTES.get() - baseline;
+		assertThat(oneEntryBytes).isPositive();
+		System.setProperty("rdf4j.lmdb.csrCache.maxBytes", Long.toString(baseline + oneEntryBytes));
+
+		buildEntry(11, LmdbCsrAdjacencyCache.BY_SUBJECT, true);
+		assertThat(cache.entryCount()).isEqualTo(1);
+		assertThat(cache.lookup(10, LmdbCsrAdjacencyCache.BY_SUBJECT, true)).isNull();
+		assertThat(cache.lookup(11, LmdbCsrAdjacencyCache.BY_SUBJECT, true)).isNotNull();
+		assertThat(LmdbCsrAdjacencyCache.EVICTIONS.get()).isEqualTo(1L);
+		assertThat(LmdbCsrAdjacencyCache.GLOBAL_USED_BYTES.get()).isEqualTo(baseline + oneEntryBytes);
+
+		cache.close();
+		assertThat(LmdbCsrAdjacencyCache.GLOBAL_USED_BYTES.get()).isEqualTo(baseline);
+	}
+
+	@Test
 	public void fullScanMatchesLmdbContentAndOrder() throws Exception {
 		loadDefaultData();
 		buildEntry(10, LmdbCsrAdjacencyCache.BY_OBJECT, true);
@@ -306,6 +439,49 @@ public class LmdbCsrAdjacencyCacheTest {
 	}
 
 	@Test
+	public void directionMatchedOrderedScansPreserveOrderAcrossMixedContexts() throws Exception {
+		tripleStore.startTransaction();
+		tripleStore.storeTriple(100, 15, 900, 7, true);
+		tripleStore.storeTriple(100, 15, 900, 0, true);
+		tripleStore.storeTriple(200, 15, 900, 7, true);
+		tripleStore.storeTriple(300, 15, 800, 7, true);
+		tripleStore.storeTriple(300, 15, 800, 0, true);
+		tripleStore.storeTriple(300, 15, 900, 7, true);
+		tripleStore.commit();
+		buildEntry(15, LmdbCsrAdjacencyCache.BY_SUBJECT, true);
+		buildEntry(15, LmdbCsrAdjacencyCache.BY_OBJECT, true);
+
+		RecordIterator bySubjectIterator = cache.tryOrderedScan(StatementOrder.O, 300, 15, -1, -1, true);
+		assertThat(bySubjectIterator).isNotNull();
+		assertThat(bySubjectIterator.getIndexName())
+				.isEqualTo(tripleStore.getIndexName(StatementOrder.O, 300, 15, -1, -1));
+		List<long[]> bySubject = drain(bySubjectIterator);
+		assertSameQuads(bySubject, referenceOrdered(StatementOrder.O, 300, 15, -1, -1));
+		assertNondecreasing(bySubject, StatementOrder.O);
+		assertThat(bySubject).extracting(quad -> quad[TripleIndex.CONTEXT_IDX]).contains(0L, 7L);
+
+		RecordIterator byObjectIterator = cache.tryOrderedScan(StatementOrder.S, -1, 15, 900, -1, true);
+		assertThat(byObjectIterator).isNotNull();
+		assertThat(byObjectIterator.getIndexName())
+				.isEqualTo(tripleStore.getIndexName(StatementOrder.S, -1, 15, 900, -1));
+		List<long[]> byObject = drain(byObjectIterator);
+		assertSameQuads(byObject, referenceOrdered(StatementOrder.S, -1, 15, 900, -1));
+		assertNondecreasing(byObject, StatementOrder.S);
+		assertThat(byObject).extracting(quad -> quad[TripleIndex.CONTEXT_IDX]).contains(0L, 7L);
+
+		RecordIterator fullIterator = cache.tryOrderedScan(StatementOrder.O, -1, 15, -1, -1, true);
+		assertThat(fullIterator).isNotNull();
+		List<long[]> full = drain(fullIterator);
+		assertSameQuads(full, referenceOrdered(StatementOrder.O, -1, 15, -1, -1));
+		assertNondecreasing(full, StatementOrder.O);
+		assertThat(LmdbCsrAdjacencyCache.CSR_ORDERED_SCANS.get()).isEqualTo(3L);
+
+		assertThat(cache.tryOrderedScan(StatementOrder.S, 300, 15, -1, -1, true)).isNull();
+		assertThat(cache.tryOrderedScan(StatementOrder.O, -1, 15, 900, -1, true)).isNull();
+		assertThat(cache.tryOrderedScan(StatementOrder.C, -1, 15, -1, -1, true)).isNull();
+	}
+
+	@Test
 	public void countAndHasServeFromExistingEntries() throws Exception {
 		loadDefaultData();
 		buildEntry(10, LmdbCsrAdjacencyCache.BY_SUBJECT, true);
@@ -319,6 +495,163 @@ public class LmdbCsrAdjacencyCacheTest {
 		// no BY_OBJECT entry built and unknown predicate: fall through to LMDB
 		assertThat(cache.tryCount(-1, 10, 2051, -1, true)).isEqualTo(-1);
 		assertThat(cache.tryHas(105, 99, -1, -1, true)).isEqualTo(-1);
+	}
+
+	@Test
+	public void entryZoneMapRejectsBoundNeighborsOutsideGlobalBounds() throws Exception {
+		loadDefaultData();
+		buildEntry(10, LmdbCsrAdjacencyCache.BY_SUBJECT, true);
+		LmdbCsrAdjacencyCache.CsrEntry entry = cache.lookup(10, LmdbCsrAdjacencyCache.BY_SUBJECT, true);
+
+		assertThat(entry.neighborMinId).isEqualTo(2_000L);
+		assertThat(entry.neighborMaxId).isEqualTo(2_192L);
+		assertThat(entry.countRun(105, entry.neighborMinId - 1, -1)).isZero();
+		assertThat(entry.countRun(105, entry.neighborMaxId + 1, -1)).isZero();
+		assertThat(entry.hasInRun(105, entry.neighborMinId - 1, -1)).isFalse();
+		assertThat(entry.hasInRun(105, entry.neighborMaxId + 1, -1)).isFalse();
+	}
+
+	@Test
+	public void unboundDegreeUsesPrefixSumAndHandlesMissingAndSingleRuns() throws Exception {
+		tripleStore.startTransaction();
+		tripleStore.storeTriple(41, 12, 901, 0, true);
+		tripleStore.storeTriple(42, 12, 902, 0, true);
+		tripleStore.storeTriple(42, 12, 903, 7, true);
+		tripleStore.commit();
+		buildEntry(12, LmdbCsrAdjacencyCache.BY_SUBJECT, true);
+		LmdbCsrAdjacencyCache.CsrEntry entry = cache.lookup(12, LmdbCsrAdjacencyCache.BY_SUBJECT, true);
+
+		assertThat(entry.countRun(41, -1, -1)).isEqualTo(1);
+		assertThat(entry.countRun(42, -1, -1)).isEqualTo(2);
+		assertThat(entry.countRun(99, -1, -1)).isZero();
+	}
+
+	@Test
+	public void handcraftedEmptyAndSingleEntriesKeepBoundarySemantics() {
+		LmdbCsrAdjacencyCache.CsrEntry empty = new LmdbCsrAdjacencyCache.CsrEntry(new long[2], new int[2],
+				new long[0], new int[] { 0 }, new long[0], null, 0, Long.MAX_VALUE, Long.MIN_VALUE, false, true);
+		assertThat(empty.countRun(41, -1, -1)).isZero();
+		assertThat(empty.countRun(41, 99, -1)).isZero();
+		assertThat(empty.hasInRun(41, -1, -1)).isFalse();
+		assertThat(empty.hasInRun(41, 99, -1)).isFalse();
+
+		LmdbCsrAdjacencyCache.CsrEntry single = handcraftedEntry(41, 99, 7);
+		assertThat(single.countRun(41, -1, -1)).isEqualTo(1);
+		assertThat(single.countRun(41, 99, 7)).isEqualTo(1);
+		assertThat(single.countRun(41, 99, 0)).isZero();
+		assertThat(single.hasInRun(41, 99, 7)).isTrue();
+		LmdbCsrRunIterator iterator = new LmdbCsrRunIterator();
+		iterator.init(single, 41, 12, -1, LmdbCsrAdjacencyCache.BY_SUBJECT);
+		assertThat(iterator.seekForward(41, 12, 99, 7)).isTrue();
+		assertThat(iterator.next()).containsExactly(41, 12, 99, 7);
+	}
+
+	@Test
+	public void sortedRunSeekForwardFindsNeighborAndContextLowerBound() throws Exception {
+		loadDefaultData();
+		tripleStore.startTransaction();
+		tripleStore.storeTriple(105, 10, 2_051, 7, true);
+		tripleStore.commit();
+		buildEntry(10, LmdbCsrAdjacencyCache.BY_SUBJECT, true);
+		LmdbCsrAdjacencyCache.CsrEntry entry = cache.lookup(10, LmdbCsrAdjacencyCache.BY_SUBJECT, true);
+		LmdbCsrRunIterator iterator = new LmdbCsrRunIterator();
+		iterator.init(entry, 105, 10, -1, LmdbCsrAdjacencyCache.BY_SUBJECT);
+
+		assertThat(iterator.next()).containsExactly(105, 10, 2_050, 0);
+		assertThat(iterator.seekForward(105, 10, 2_051, 7)).isTrue();
+		assertThat(iterator.next()).containsExactly(105, 10, 2_051, 7);
+
+		iterator.init(entry, 105, 10, -1, LmdbCsrAdjacencyCache.BY_SUBJECT);
+		assertThat(iterator.seekForward(105, 10, 99_999, 0)).isTrue();
+		assertThat(iterator.next()).isNull();
+		assertThat(iterator.seekForward(105, 10, 99_999, 0)).isFalse();
+	}
+
+	@Test
+	public void mixedNeighborTypesKeepExactLookupAndRawSeekSafe() throws Exception {
+		long orderedMinusOne = ValueIds.createId(ValueIds.T_ORD_INTEGER, ValueIds.ORDERED_BIAS - 1);
+		long orderedOne = ValueIds.createId(ValueIds.T_ORD_INTEGER, ValueIds.ORDERED_BIAS + 1);
+		long uri = ValueIds.createId(ValueIds.T_URI, 123);
+		tripleStore.startTransaction();
+		tripleStore.storeTriple(51, 13, orderedMinusOne, 0, true);
+		tripleStore.storeTriple(51, 13, uri, 0, true);
+		tripleStore.storeTriple(51, 13, orderedOne, 0, true);
+		tripleStore.commit();
+		buildEntry(13, LmdbCsrAdjacencyCache.BY_SUBJECT, true);
+		LmdbCsrAdjacencyCache.CsrEntry entry = cache.lookup(13, LmdbCsrAdjacencyCache.BY_SUBJECT, true);
+
+		assertThat(entry.allNeighborsOrderedIntegers).isFalse();
+		for (long neighbor : new long[] { orderedMinusOne, uri, orderedOne }) {
+			assertThat(entry.countRun(51, neighbor, -1)).isEqualTo(1);
+			assertThat(entry.hasInRun(51, neighbor, -1)).isTrue();
+		}
+		LmdbCsrRunIterator iterator = new LmdbCsrRunIterator();
+		iterator.init(entry, 51, 13, -1, LmdbCsrAdjacencyCache.BY_SUBJECT);
+		long target = entry.neighbors[1];
+		assertThat(iterator.seekForward(51, 13, target, 0)).isTrue();
+		assertThat(iterator.next()[TripleIndex.OBJ_IDX]).isEqualTo(target);
+
+		long[] neighborProbes = { -1, orderedMinusOne, uri, orderedOne, 1_234_567 };
+		long[] contextProbes = { -1, 0, 7 };
+		Random random = new Random(0xC5_08L);
+		for (int i = 0; i < 500; i++) {
+			long key = random.nextBoolean() ? 51 : 52;
+			long neighbor = neighborProbes[random.nextInt(neighborProbes.length)];
+			long context = contextProbes[random.nextInt(contextProbes.length)];
+			long expected = linearCount(entry, key, neighbor, context);
+			assertThat(entry.countRun(key, neighbor, context)).isEqualTo(expected);
+			assertThat(entry.hasInRun(key, neighbor, context)).isEqualTo(expected > 0);
+		}
+	}
+
+	@Test
+	public void nonNeighborOrderedBuildKeepsLinearFallbackParity() throws Exception {
+		reopenStore("pocs");
+		tripleStore.startTransaction();
+		tripleStore.storeTriple(30, 14, 900, 1, true);
+		tripleStore.storeTriple(10, 14, 900, 2, true);
+		tripleStore.storeTriple(20, 14, 900, 1, true);
+		tripleStore.commit();
+		buildEntry(14, LmdbCsrAdjacencyCache.BY_OBJECT, true);
+		LmdbCsrAdjacencyCache.CsrEntry entry = cache.lookup(14, LmdbCsrAdjacencyCache.BY_OBJECT, true);
+
+		assertThat(tripleStore.getIndexName(-1, 14, -1, -1)).isEqualTo("pocs");
+		assertThat(entry.neighbors).containsExactly(20, 30, 10);
+		assertThat(cache.tryOrderedScan(StatementOrder.S, -1, 14, 900, -1, true))
+				.as("a context-first run must fall back instead of claiming subject order")
+				.isNull();
+		try (RecordIterator orderedFull = cache.tryOrderedScan(StatementOrder.O, -1, 14, -1, -1, true)) {
+			assertThat(orderedFull).isNotNull();
+			assertThat(orderedFull.getIndexName()).isEqualTo("pocs");
+			assertThat(orderedFull.next()).containsExactly(20, 14, 900, 1);
+			assertThat(orderedFull.seekForward(10, 14, 900, 2)).isTrue();
+			assertThat(orderedFull.next()).containsExactly(10, 14, 900, 2);
+		}
+		LmdbCsrRunIterator iterator = new LmdbCsrRunIterator();
+		iterator.init(entry, 900, 14, -1, LmdbCsrAdjacencyCache.BY_OBJECT);
+		assertThat(iterator.seekForward(25, 14, 900, 0)).isFalse();
+		assertThat(iterator.next()).containsExactly(20, 14, 900, 1);
+
+		Random random = new Random(0xC5_07L);
+		for (int i = 0; i < 500; i++) {
+			long key = random.nextBoolean() ? 900 : 901;
+			long neighbor = switch (random.nextInt(5)) {
+			case 0 -> -1;
+			case 1 -> 10;
+			case 2 -> 20;
+			case 3 -> 30;
+			default -> 25;
+			};
+			long context = switch (random.nextInt(4)) {
+			case 0 -> -1;
+			case 1 -> 0;
+			case 2 -> 1;
+			default -> 2;
+			};
+			long expected = linearCount(entry, key, neighbor, context);
+			assertThat(entry.countRun(key, neighbor, context)).isEqualTo(expected);
+			assertThat(entry.hasInRun(key, neighbor, context)).isEqualTo(expected > 0);
+		}
 	}
 
 	@Test

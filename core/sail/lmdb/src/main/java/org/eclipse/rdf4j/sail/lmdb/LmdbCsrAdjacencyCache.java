@@ -14,12 +14,16 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
 import java.util.Arrays;
-import java.util.Map;
+import java.util.OptionalDouble;
+import java.util.OptionalLong;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAttemptMetrics;
 
 /**
  * In-memory per-predicate CSR (compressed sparse row) adjacency cache. For a hot (predicate, direction, explicit-flag)
@@ -36,9 +40,9 @@ import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
  * emission order, so cache hits are indistinguishable from LMDB scans.
  *
  * <p>
- * Memory is bounded by a process-wide byte budget ({@link #maxBytes()}) with per-entry caps and LRU eviction; refusal
- * degrades to re-scanning, never to wrong results. One instance per {@link LmdbSailStore}; the budget is shared across
- * stores via {@link #GLOBAL_USED_BYTES}.
+ * Memory is bounded by a process-wide byte budget ({@link #maxBytes()}) with proportional per-entry caps and a
+ * per-store intrusive second-chance clock; refusal degrades to re-scanning, never to wrong results. One instance per
+ * {@link LmdbSailStore}; the budget is shared across stores via {@link #GLOBAL_USED_BYTES}.
  */
 final class LmdbCsrAdjacencyCache {
 
@@ -55,6 +59,9 @@ final class LmdbCsrAdjacencyCache {
 	static final AtomicLong EVICTIONS = new AtomicLong();
 	static final AtomicLong REFUSALS = new AtomicLong();
 	static final AtomicLong CSR_ROOT_SCANS = new AtomicLong();
+	static final AtomicLong CSR_ORDERED_SCANS = new AtomicLong();
+	private static final AtomicIntegerFieldUpdater<CsrEntry> CLOCK_REFERENCED = AtomicIntegerFieldUpdater
+			.newUpdater(CsrEntry.class, "clockReferenced");
 
 	/** How many probe opens a decorated probe accumulates locally before flushing into the shared slot. */
 	static final int PROBE_FLUSH_INTERVAL = 256;
@@ -88,12 +95,16 @@ final class LmdbCsrAdjacencyCache {
 
 	static long maxEntryBytes() {
 		Long configured = Long.getLong("rdf4j.lmdb.csrCache.maxEntryBytes");
-		return configured != null ? Math.max(0L, configured) : 64L * 1024 * 1024;
+		return configured != null ? Math.max(0L, configured)
+				: Math.max(64L * 1024 * 1024, maxBytes() / 16);
 	}
 
 	private final TripleStore tripleStore;
 	private final AtomicBoolean storeTxnStarted;
 	private final ConcurrentHashMap<Long, CsrSlot> slots = new ConcurrentHashMap<>();
+	private final Object clockLock = new Object();
+	private final AtomicBoolean closed = new AtomicBoolean();
+	private CsrEntry clockHand;
 
 	LmdbCsrAdjacencyCache(TripleStore tripleStore, AtomicBoolean storeTxnStarted) {
 		this.tripleStore = tripleStore;
@@ -109,6 +120,10 @@ final class LmdbCsrAdjacencyCache {
 	 * uncommitted writes; drops (and un-budgets) entries whose revision no longer matches the store.
 	 */
 	CsrEntry lookup(long pred, int direction, boolean explicit) {
+		return lookup(pred, direction, explicit, true);
+	}
+
+	private CsrEntry lookup(long pred, int direction, boolean explicit, boolean recordHit) {
 		CsrSlot slot = slots.get(slotKey(pred, direction, explicit));
 		if (slot == null) {
 			return null;
@@ -124,14 +139,19 @@ final class LmdbCsrAdjacencyCache {
 			dropStale(slot, entry);
 			return null;
 		}
-		entry.lastAccessNanos = System.nanoTime();
-		HITS.incrementAndGet();
+		if (recordHit) {
+			recordHit(entry);
+		}
 		return entry;
 	}
 
+	private static void recordHit(CsrEntry entry) {
+		CLOCK_REFERENCED.lazySet(entry, 1);
+		HITS.incrementAndGet();
+	}
+
 	private void dropStale(CsrSlot slot, CsrEntry entry) {
-		if (slot.casEntry(entry, null)) {
-			GLOBAL_USED_BYTES.addAndGet(-entry.bytes);
+		if (dropEntry(slot, entry)) {
 			STALE_DROPS.incrementAndGet();
 		}
 	}
@@ -141,6 +161,9 @@ final class LmdbCsrAdjacencyCache {
 	 * fires, builds the entry inline on the calling (query) thread. The CAS loser never waits — it keeps LMDB-probing.
 	 */
 	void recordProbes(long pred, int direction, boolean explicit, int opens, Txn txn) {
+		if (closed.get()) {
+			return;
+		}
 		CsrSlot slot = slots.computeIfAbsent(slotKey(pred, direction, explicit), key -> new CsrSlot());
 		long total = slot.probeOpens.addAndGet(opens);
 		if (slot.entry != null || total < minProbes() || storeTxnStarted.get()) {
@@ -160,7 +183,7 @@ final class LmdbCsrAdjacencyCache {
 			return;
 		}
 		if (estimateBytes((long) predCard) > maxEntryBytes()) {
-			REFUSALS.incrementAndGet();
+			recordRefusal();
 			return;
 		}
 		if (!slot.building.compareAndSet(false, true)) {
@@ -227,6 +250,10 @@ final class LmdbCsrAdjacencyCache {
 		long[] buffer = new long[4 * SWEEP_BATCH_ROWS];
 		int keyIdx = direction == BY_SUBJECT ? TripleIndex.SUBJ_IDX : TripleIndex.OBJ_IDX;
 		int neighborIdx = direction == BY_SUBJECT ? TripleIndex.OBJ_IDX : TripleIndex.SUBJ_IDX;
+		String sweepIndexName = tripleStore.getIndexName(-1, pred, -1, -1);
+		StatementOrder runEmissionOrder = runEmissionOrder(sweepIndexName, keyIdx);
+		StatementOrder scanEmissionOrder = scanEmissionOrder(sweepIndexName, keyIdx);
+		boolean runsNeighborContextOrdered = runEmissionOrder == statementOrder(neighborIdx);
 		long nPairs = 0;
 		try (RecordIterator sweep = tripleStore.getTriples(txn, -1, pred, -1, -1, explicit)) {
 			int rows;
@@ -236,7 +263,7 @@ final class LmdbCsrAdjacencyCache {
 				}
 				nPairs += rows;
 				if (nPairs * 16 > maxEntryBytes()) {
-					REFUSALS.incrementAndGet();
+					recordRefusal();
 					recordBuildFailure(slot);
 					return;
 				}
@@ -304,28 +331,82 @@ final class LmdbCsrAdjacencyCache {
 
 		CsrEntry entry = new CsrEntry(counts.tableKeys, counts.tableValues,
 				Arrays.copyOf(counts.keysInOrder, nKeys), runStart, neighbors, contexts,
-				revisionBefore, neighborMin, neighborMax, allOrderedIntegers && nPairs > 0);
+				revisionBefore, neighborMin, neighborMax, allOrderedIntegers && nPairs > 0,
+				runsNeighborContextOrdered, sweepIndexName, runEmissionOrder, scanEmissionOrder);
 		if (!reserveBytes(entry.bytes)) {
-			REFUSALS.incrementAndGet();
+			recordRefusal();
 			recordBuildFailure(slot);
 			return;
 		}
-		CsrEntry previous = slot.entry;
-		slot.entry = entry;
-		if (previous != null) {
-			GLOBAL_USED_BYTES.addAndGet(-previous.bytes);
+		if (!publishEntry(slot, entry)) {
+			GLOBAL_USED_BYTES.addAndGet(-entry.bytes);
+			recordBuildFailure(slot);
+			return;
 		}
 		BUILDS.incrementAndGet();
+		LmdbNativeAttemptMetrics.recordCsrCacheAdmission();
 	}
 
-	/** Reserves bytes against the budget, evicting stale then LRU entries of THIS store first. */
+	private static void recordRefusal() {
+		REFUSALS.incrementAndGet();
+		LmdbNativeAttemptMetrics.recordCsrCacheRefusal();
+	}
+
+	/** Records the first varying component of a fixed predicate/key run exactly as emitted by the build sweep. */
+	private static StatementOrder runEmissionOrder(String indexName, int keyIdx) {
+		for (int i = 0; i < indexName.length(); i++) {
+			int field = fieldIndex(indexName.charAt(i));
+			if (field != TripleIndex.PRED_IDX && field != keyIdx) {
+				return statementOrder(field);
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * A full-entry scan preserves the sweep only when grouping by this entry's key does not reorder it: after the fixed
+	 * predicate, that key must be the sweep's first varying component. The enum is persisted on the entry so ordered
+	 * consults never infer this property from a direction alone.
+	 */
+	private static StatementOrder scanEmissionOrder(String indexName, int keyIdx) {
+		for (int i = 0; i < indexName.length(); i++) {
+			int field = fieldIndex(indexName.charAt(i));
+			if (field != TripleIndex.PRED_IDX) {
+				return field == keyIdx ? statementOrder(field) : null;
+			}
+		}
+		return null;
+	}
+
+	private static StatementOrder statementOrder(int field) {
+		return switch (field) {
+		case TripleIndex.SUBJ_IDX -> StatementOrder.S;
+		case TripleIndex.PRED_IDX -> StatementOrder.P;
+		case TripleIndex.OBJ_IDX -> StatementOrder.O;
+		case TripleIndex.CONTEXT_IDX -> StatementOrder.C;
+		default -> throw new IllegalArgumentException("Unknown triple field: " + field);
+		};
+	}
+
+	private static int fieldIndex(char field) {
+		return switch (field) {
+		case 's' -> TripleIndex.SUBJ_IDX;
+		case 'p' -> TripleIndex.PRED_IDX;
+		case 'o' -> TripleIndex.OBJ_IDX;
+		case 'c' -> TripleIndex.CONTEXT_IDX;
+		default -> throw new IllegalArgumentException("Unknown index field: " + field);
+		};
+	}
+
+	/** Reserves bytes against the budget, advancing THIS store's second-chance clock when space is needed. */
 	private boolean reserveBytes(long bytes) {
-		if (bytes > maxEntryBytes()) {
+		if (closed.get() || bytes > maxEntryBytes()) {
 			return false;
 		}
 		while (true) {
 			long used = GLOBAL_USED_BYTES.get();
-			if (used + bytes <= maxBytes()) {
+			long maximum = maxBytes();
+			if (used <= maximum && bytes <= maximum - used) {
 				if (GLOBAL_USED_BYTES.compareAndSet(used, used + bytes)) {
 					return true;
 				}
@@ -338,30 +419,218 @@ final class LmdbCsrAdjacencyCache {
 	}
 
 	private boolean evictOne() {
-		long currentRevision = tripleStore.getDataRevision();
-		CsrSlot lruSlot = null;
-		CsrEntry lruEntry = null;
-		for (Map.Entry<Long, CsrSlot> mapEntry : slots.entrySet()) {
-			CsrSlot slot = mapEntry.getValue();
-			CsrEntry entry = slot.entry;
-			if (entry == null) {
-				continue;
-			}
-			if (entry.revision != currentRevision) {
-				dropStale(slot, entry);
+		CsrEntry removed;
+		boolean stale;
+		synchronized (clockLock) {
+			long currentRevision = tripleStore.getDataRevision();
+			while (clockHand != null) {
+				CsrEntry candidate = clockHand;
+				CsrSlot owner = candidate.clockOwner;
+				if (owner == null || owner.entry != candidate) {
+					unlink(candidate);
+					continue;
+				}
+				stale = candidate.revision != currentRevision;
+				if (!stale && CLOCK_REFERENCED.getAndSet(candidate, 0) != 0) {
+					clockHand = candidate.clockNext;
+					continue;
+				}
+				owner.entry = null;
+				unlink(candidate);
+				removed = candidate;
+				GLOBAL_USED_BYTES.addAndGet(-removed.bytes);
+				if (stale) {
+					STALE_DROPS.incrementAndGet();
+				} else {
+					EVICTIONS.incrementAndGet();
+				}
 				return true;
 			}
-			if (lruEntry == null || entry.lastAccessNanos < lruEntry.lastAccessNanos) {
-				lruSlot = slot;
-				lruEntry = entry;
-			}
-		}
-		if (lruEntry != null && lruSlot.casEntry(lruEntry, null)) {
-			GLOBAL_USED_BYTES.addAndGet(-lruEntry.bytes);
-			EVICTIONS.incrementAndGet();
-			return true;
 		}
 		return false;
+	}
+
+	private boolean publishEntry(CsrSlot slot, CsrEntry entry) {
+		synchronized (clockLock) {
+			if (closed.get() || storeTxnStarted.get() || slot.entry != null) {
+				return false;
+			}
+			slot.entry = entry;
+			entry.clockOwner = slot;
+			CLOCK_REFERENCED.lazySet(entry, 1);
+			if (clockHand == null) {
+				entry.clockPrevious = entry;
+				entry.clockNext = entry;
+				clockHand = entry;
+			} else {
+				CsrEntry tail = clockHand.clockPrevious;
+				entry.clockPrevious = tail;
+				entry.clockNext = clockHand;
+				tail.clockNext = entry;
+				clockHand.clockPrevious = entry;
+			}
+			return true;
+		}
+	}
+
+	private boolean dropEntry(CsrSlot slot, CsrEntry expected) {
+		synchronized (clockLock) {
+			if (slot.entry != expected) {
+				return false;
+			}
+			slot.entry = null;
+			unlink(expected);
+			GLOBAL_USED_BYTES.addAndGet(-expected.bytes);
+			return true;
+		}
+	}
+
+	private void unlink(CsrEntry entry) {
+		CsrEntry next = entry.clockNext;
+		if (next == null) {
+			entry.clockOwner = null;
+			return;
+		}
+		if (next == entry) {
+			clockHand = null;
+		} else {
+			entry.clockPrevious.clockNext = next;
+			next.clockPrevious = entry.clockPrevious;
+			if (clockHand == entry) {
+				clockHand = next;
+			}
+		}
+		entry.clockPrevious = null;
+		entry.clockNext = null;
+		entry.clockOwner = null;
+	}
+
+	/** Drops every entry after a successful write commit, before cache lookups are re-enabled. */
+	void committedWrite() {
+		dropAllEntries(true, false);
+	}
+
+	/** Idempotently returns every byte owned by this store to the process-wide budget. */
+	void close() {
+		if (closed.compareAndSet(false, true)) {
+			dropAllEntries(false, true);
+		}
+	}
+
+	private void dropAllEntries(boolean countAsStale, boolean clearSlots) {
+		long releasedBytes = 0L;
+		long droppedEntries = 0L;
+		synchronized (clockLock) {
+			CsrEntry current = clockHand;
+			if (current != null) {
+				do {
+					CsrEntry next = current.clockNext;
+					CsrSlot owner = current.clockOwner;
+					if (owner != null && owner.entry == current) {
+						owner.entry = null;
+						releasedBytes += current.bytes;
+						droppedEntries++;
+					}
+					current.clockPrevious = null;
+					current.clockNext = null;
+					current.clockOwner = null;
+					current = next;
+				} while (current != clockHand);
+				clockHand = null;
+			}
+			if (clearSlots) {
+				slots.clear();
+			}
+			if (releasedBytes != 0L) {
+				GLOBAL_USED_BYTES.addAndGet(-releasedBytes);
+			}
+			if (countAsStale && droppedEntries != 0L) {
+				STALE_DROPS.addAndGet(droppedEntries);
+			}
+		}
+	}
+
+	/**
+	 * Plans disjoint dense-key slices for a cached full-predicate root scan. Prefix sums make each boundary target an
+	 * equal share of remaining pair rows rather than an interpolated share of the raw key space. A single oversized run
+	 * remains indivisible; every other boundary is chosen at the closest legal run edge. The returned partitions borrow
+	 * the immutable entry and allocate no key or pair arrays.
+	 */
+	LmdbRootScanPartition[] tryPlanRootScanPartitions(long subj, long pred, long obj, long context, boolean explicit,
+			int targetPartitions) {
+		if (!rootScansEnabled() || pred <= 0 || subj > 0 || obj > 0 || targetPartitions <= 0) {
+			return null;
+		}
+		int direction = BY_OBJECT;
+		CsrEntry entry = lookup(pred, direction, explicit, false);
+		if (entry == null) {
+			direction = BY_SUBJECT;
+			entry = lookup(pred, direction, explicit, false);
+		}
+		if (entry == null) {
+			return null;
+		}
+		recordHit(entry);
+
+		int keyCount = entry.keysByDense.length;
+		if (keyCount == 0) {
+			return new LmdbRootScanPartition[0];
+		}
+		int partitionCount = Math.min(targetPartitions, keyCount);
+		LmdbRootScanPartition[] partitions = new LmdbRootScanPartition[partitionCount];
+		int denseStart = 0;
+		for (int partition = 0; partition < partitionCount; partition++) {
+			int remainingPartitions = partitionCount - partition;
+			int denseEnd;
+			if (remainingPartitions == 1) {
+				denseEnd = keyCount;
+			} else {
+				long remainingRows = (long) entry.runStart[keyCount] - entry.runStart[denseStart];
+				long targetRows = entry.runStart[denseStart]
+						+ (remainingRows + remainingPartitions / 2) / remainingPartitions;
+				int minimumEnd = denseStart + 1;
+				int maximumEnd = keyCount - (remainingPartitions - 1);
+				denseEnd = nearestPrefixBoundary(entry.runStart, minimumEnd, maximumEnd, targetRows);
+			}
+			partitions[partition] = LmdbRootScanPartition.csrSlice(0, entry, pred, context, explicit, direction,
+					denseStart, denseEnd);
+			denseStart = denseEnd;
+		}
+		return partitions;
+	}
+
+	private static int nearestPrefixBoundary(int[] prefix, int minimum, int maximum, long target) {
+		int low = minimum;
+		int high = maximum + 1;
+		while (low < high) {
+			int middle = low + high >>> 1;
+			if (prefix[middle] < target) {
+				low = middle + 1;
+			} else {
+				high = middle;
+			}
+		}
+		int upper = Math.min(low, maximum);
+		int lower = Math.max(minimum, upper - 1);
+		long lowerDistance = Math.abs((long) prefix[lower] - target);
+		long upperDistance = Math.abs((long) prefix[upper] - target);
+		return lowerDistance <= upperDistance ? lower : upper;
+	}
+
+	/** Opens one previously planned in-memory dense-key slice, or returns {@code null} for a raw range partition. */
+	RecordIterator tryPartitionedScan(long subj, long pred, long obj, long context, boolean explicit,
+			LmdbRootScanPartition partition) {
+		if (!partition.isCsrSlice()) {
+			return null;
+		}
+		if (partition.member() != 0 || subj > 0 || obj > 0 || pred != partition.csrPredicate()
+				|| context != partition.csrContext() || explicit != partition.csrExplicit()) {
+			throw new IllegalStateException("CSR root partition does not match the requested source pattern");
+		}
+		CsrEntry entry = partition.csrEntry();
+		CSR_ROOT_SCANS.incrementAndGet();
+		return new LmdbCsrScanIterator(entry, pred, context, partition.csrDirection(), "", partition.denseStart(),
+				partition.denseEnd());
 	}
 
 	/**
@@ -382,6 +651,93 @@ final class LmdbCsrAdjacencyCache {
 	}
 
 	/**
+	 * Serves an ordered adjacency run or full predicate scan only when the immutable entry records the same primary
+	 * emission order and its build sweep has the same unbound-field sequence as the planner-selected index. Comparing
+	 * the complete varying sequence protects full-key composite merges, not merely the requested first component.
+	 */
+	RecordIterator tryOrderedScan(StatementOrder order, long subj, long pred, long obj, long context,
+			boolean explicit) {
+		if (order == null || pred <= 0 || (subj > 0 && obj > 0)) {
+			return null;
+		}
+
+		boolean fullScan = subj <= 0 && obj <= 0;
+		int direction;
+		long key;
+		if (subj > 0) {
+			direction = BY_SUBJECT;
+			key = subj;
+		} else if (obj > 0) {
+			direction = BY_OBJECT;
+			key = obj;
+		} else if (rootScansEnabled() && order == StatementOrder.S) {
+			direction = BY_SUBJECT;
+			key = -1L;
+		} else if (rootScansEnabled() && order == StatementOrder.O) {
+			direction = BY_OBJECT;
+			key = -1L;
+		} else {
+			return null;
+		}
+
+		CsrEntry entry = lookup(pred, direction, explicit, false);
+		if (entry == null) {
+			return null;
+		}
+		StatementOrder emissionOrder = fullScan ? entry.scanEmissionOrder : entry.runEmissionOrder;
+		String requestedIndexName = tripleStore.getIndexName(order, subj, pred, obj, context);
+		if (emissionOrder != order || requestedIndexName.isEmpty()
+				|| !sameVaryingFieldOrder(entry.buildIndexName, requestedIndexName, subj, pred, obj, context)) {
+			return null;
+		}
+
+		recordHit(entry);
+		CSR_ORDERED_SCANS.incrementAndGet();
+		if (fullScan) {
+			CSR_ROOT_SCANS.incrementAndGet();
+			return new LmdbCsrScanIterator(entry, pred, context, direction, requestedIndexName);
+		}
+		LmdbCsrRunIterator iterator = new LmdbCsrRunIterator();
+		iterator.init(entry, key, pred, context, direction, requestedIndexName);
+		return iterator;
+	}
+
+	private static boolean sameVaryingFieldOrder(String buildIndexName, String requestedIndexName, long subj,
+			long pred, long obj, long context) {
+		int buildAt = 0;
+		int requestedAt = 0;
+		while (true) {
+			buildAt = nextVaryingField(buildIndexName, buildAt, subj, pred, obj, context);
+			requestedAt = nextVaryingField(requestedIndexName, requestedAt, subj, pred, obj, context);
+			if (buildAt == buildIndexName.length() || requestedAt == requestedIndexName.length()) {
+				return buildAt == buildIndexName.length() && requestedAt == requestedIndexName.length();
+			}
+			if (buildIndexName.charAt(buildAt) != requestedIndexName.charAt(requestedAt)) {
+				return false;
+			}
+			buildAt++;
+			requestedAt++;
+		}
+	}
+
+	private static int nextVaryingField(String indexName, int from, long subj, long pred, long obj, long context) {
+		while (from < indexName.length() && fieldBound(indexName.charAt(from), subj, pred, obj, context)) {
+			from++;
+		}
+		return from;
+	}
+
+	private static boolean fieldBound(char field, long subj, long pred, long obj, long context) {
+		return switch (field) {
+		case 's' -> subj > 0;
+		case 'p' -> pred > 0;
+		case 'o' -> obj > 0;
+		case 'c' -> context >= 0;
+		default -> throw new IllegalArgumentException("Unknown index field: " + field);
+		};
+	}
+
+	/**
 	 * Serves a {@code count} from an existing entry, or returns {@code -1} for the LMDB path. Existence/count calls
 	 * never trigger builds — only probe traffic does.
 	 */
@@ -395,6 +751,35 @@ final class LmdbCsrAdjacencyCache {
 			return -1;
 		}
 		return direction == BY_SUBJECT ? entry.countRun(subj, obj, context) : entry.countRun(obj, subj, context);
+	}
+
+	OptionalDouble meanFanOut(long pred, boolean bySubject) {
+		OptionalDouble explicit = meanFanOut(pred, bySubject, true);
+		return explicit.isPresent() ? explicit : meanFanOut(pred, bySubject, false);
+	}
+
+	OptionalDouble meanFanOut(long pred, boolean bySubject, boolean explicit) {
+		CsrEntry entry = lookup(pred, bySubject ? BY_SUBJECT : BY_OBJECT, explicit);
+		if (entry == null) {
+			return OptionalDouble.empty();
+		}
+		int keyCount = entry.runStart.length - 1;
+		return keyCount == 0 ? OptionalDouble.empty()
+				: OptionalDouble.of((double) entry.neighbors.length / keyCount);
+	}
+
+	OptionalLong exactDegree(long pred, long key, boolean bySubject) {
+		OptionalLong explicit = exactDegree(pred, key, bySubject, true);
+		return explicit.isPresent() ? explicit : exactDegree(pred, key, bySubject, false);
+	}
+
+	OptionalLong exactDegree(long pred, long key, boolean bySubject, boolean explicit) {
+		CsrEntry entry = lookup(pred, bySubject ? BY_SUBJECT : BY_OBJECT, explicit);
+		if (entry == null) {
+			return OptionalLong.empty();
+		}
+		int dense = entry.denseIdOf(key);
+		return OptionalLong.of(dense < 0 ? 0L : entry.runStart[dense + 1] - entry.runStart[dense]);
 	}
 
 	/** Serves a {@code has} from an existing entry: 1 = present, 0 = absent, -1 = fall through to LMDB. */
@@ -433,22 +818,14 @@ final class LmdbCsrAdjacencyCache {
 		int failedBuilds;
 		long failRevision = Long.MIN_VALUE;
 
-		boolean casEntry(CsrEntry expected, CsrEntry replacement) {
-			synchronized (this) {
-				if (entry == expected) {
-					entry = replacement;
-					return true;
-				}
-				return false;
-			}
-		}
 	}
 
 	/**
 	 * One immutable adjacency snapshot: open-addressed key table ({@code tableKeys} + {@code tableSlotPlus1}, dense id
 	 * + 1, zero = empty), prefix-sum {@code runStart} (length nKeys+1), neighbor arena, and a context arena that is
-	 * {@code null} when every context id is zero (the dominant triple-only case). Runs are stored in index emission
-	 * order: BY_SUBJECT runs ascend in (object, context), BY_OBJECT runs ascend in (subject, context).
+	 * {@code null} when every context id is zero (the dominant triple-only case). Runs retain source-index emission
+	 * order; {@link #runsNeighborContextOrdered} records whether that order is also {@code (neighbor, context)} so
+	 * binary operations stay disabled for incompatible user-defined index configurations.
 	 */
 	static final class CsrEntry {
 		final long[] tableKeys;
@@ -468,11 +845,30 @@ final class LmdbCsrAdjacencyCache {
 		 * this predicate (a pushed scan window would silently drop matching values of any other type).
 		 */
 		final boolean allNeighborsOrderedIntegers;
-		volatile long lastAccessNanos = System.nanoTime();
+		/** True when every run is ordered lexicographically by raw {@code (neighbor, context)} ids. */
+		final boolean runsNeighborContextOrdered;
+		/** Actual index used by the two-pass build sweep. */
+		final String buildIndexName;
+		/** First varying component within a fixed predicate/key run, recorded at build time. */
+		final StatementOrder runEmissionOrder;
+		/** Proven primary order of a full grouped entry scan, or {@code null} when grouping changes sweep order. */
+		final StatementOrder scanEmissionOrder;
+		volatile int clockReferenced = 1;
+		CsrEntry clockPrevious;
+		CsrEntry clockNext;
+		CsrSlot clockOwner;
 
 		CsrEntry(long[] tableKeys, int[] tableSlotPlus1, long[] keysByDense, int[] runStart, long[] neighbors,
 				long[] contexts, long revision, long neighborMinId, long neighborMaxId,
-				boolean allNeighborsOrderedIntegers) {
+				boolean allNeighborsOrderedIntegers, boolean runsNeighborContextOrdered) {
+			this(tableKeys, tableSlotPlus1, keysByDense, runStart, neighbors, contexts, revision, neighborMinId,
+					neighborMaxId, allNeighborsOrderedIntegers, runsNeighborContextOrdered, "", null, null);
+		}
+
+		CsrEntry(long[] tableKeys, int[] tableSlotPlus1, long[] keysByDense, int[] runStart, long[] neighbors,
+				long[] contexts, long revision, long neighborMinId, long neighborMaxId,
+				boolean allNeighborsOrderedIntegers, boolean runsNeighborContextOrdered, String buildIndexName,
+				StatementOrder runEmissionOrder, StatementOrder scanEmissionOrder) {
 			this.tableKeys = tableKeys;
 			this.tableSlotPlus1 = tableSlotPlus1;
 			this.keysByDense = keysByDense;
@@ -483,6 +879,10 @@ final class LmdbCsrAdjacencyCache {
 			this.neighborMinId = neighborMinId;
 			this.neighborMaxId = neighborMaxId;
 			this.allNeighborsOrderedIntegers = allNeighborsOrderedIntegers;
+			this.runsNeighborContextOrdered = runsNeighborContextOrdered;
+			this.buildIndexName = buildIndexName;
+			this.runEmissionOrder = runEmissionOrder;
+			this.scanEmissionOrder = scanEmissionOrder;
 			this.bytes = 8L * tableKeys.length + 4L * tableSlotPlus1.length + 8L * keysByDense.length
 					+ 4L * runStart.length + 8L * neighbors.length
 					+ (contexts == null ? 0L : 8L * contexts.length) + 64;
@@ -494,15 +894,42 @@ final class LmdbCsrAdjacencyCache {
 
 		/**
 		 * Counts the quads in {@code key}'s run matching an optionally bound neighbor and context ({@code -1} =
-		 * unbound). Runs are small and contiguous, so a linear scan beats maintaining extra search structures.
+		 * unbound). An unfiltered degree is the prefix-sum delta; ordered runs binary-search a bound neighbor; other
+		 * configurations retain the linear reference path.
 		 */
 		long countRun(long key, long neighbor, long context) {
+			if (neighbor >= 0 && outsideNeighborBounds(neighbor)) {
+				return 0;
+			}
 			int dense = denseIdOf(key);
 			if (dense < 0) {
 				return 0;
 			}
+			int start = runStart[dense];
+			int end = runStart[dense + 1];
+			if (neighbor < 0 && context < 0) {
+				return end - start;
+			}
+			if (neighbor >= 0 && runsNeighborContextOrdered) {
+				if (neighbor < neighbors[start] || neighbor > neighbors[end - 1]) {
+					return 0;
+				}
+				int first = lowerBoundNeighbor(start, end, neighbor);
+				if (first >= end || neighbors[first] != neighbor) {
+					return 0;
+				}
+				int after = upperBoundNeighbor(first, end, neighbor);
+				if (context < 0) {
+					return after - first;
+				}
+				int contextFirst = lowerBoundContext(first, after, context);
+				if (contextFirst >= after || contextAt(contextFirst) != context) {
+					return 0;
+				}
+				return upperBoundContext(contextFirst, after, context) - contextFirst;
+			}
 			long count = 0;
-			for (int i = runStart[dense]; i < runStart[dense + 1]; i++) {
+			for (int i = start; i < end; i++) {
 				if (neighbor >= 0 && neighbors[i] != neighbor) {
 					continue;
 				}
@@ -516,11 +943,34 @@ final class LmdbCsrAdjacencyCache {
 
 		/** Existence check over {@code key}'s run with early exit; {@code -1} = unbound. */
 		boolean hasInRun(long key, long neighbor, long context) {
+			if (neighbor >= 0 && outsideNeighborBounds(neighbor)) {
+				return false;
+			}
 			int dense = denseIdOf(key);
 			if (dense < 0) {
 				return false;
 			}
-			for (int i = runStart[dense]; i < runStart[dense + 1]; i++) {
+			int start = runStart[dense];
+			int end = runStart[dense + 1];
+			if (neighbor < 0 && context < 0) {
+				return start < end;
+			}
+			if (neighbor >= 0 && runsNeighborContextOrdered) {
+				if (neighbor < neighbors[start] || neighbor > neighbors[end - 1]) {
+					return false;
+				}
+				int first = lowerBoundNeighbor(start, end, neighbor);
+				if (first >= end || neighbors[first] != neighbor) {
+					return false;
+				}
+				if (context < 0) {
+					return true;
+				}
+				int after = upperBoundNeighbor(first, end, neighbor);
+				int contextFirst = lowerBoundContext(first, after, context);
+				return contextFirst < after && contextAt(contextFirst) == context;
+			}
+			for (int i = start; i < end; i++) {
 				if (neighbor >= 0 && neighbors[i] != neighbor) {
 					continue;
 				}
@@ -530,6 +980,75 @@ final class LmdbCsrAdjacencyCache {
 				return true;
 			}
 			return false;
+		}
+
+		private boolean outsideNeighborBounds(long neighbor) {
+			return neighbors.length == 0 || neighbor < neighborMinId || neighbor > neighborMaxId;
+		}
+
+		private int lowerBoundNeighbor(int from, int to, long target) {
+			while (from < to) {
+				int mid = from + (to - from) / 2;
+				if (neighbors[mid] < target) {
+					from = mid + 1;
+				} else {
+					to = mid;
+				}
+			}
+			return from;
+		}
+
+		private int upperBoundNeighbor(int from, int to, long target) {
+			while (from < to) {
+				int mid = from + (to - from) / 2;
+				if (neighbors[mid] <= target) {
+					from = mid + 1;
+				} else {
+					to = mid;
+				}
+			}
+			return from;
+		}
+
+		private int lowerBoundContext(int from, int to, long target) {
+			while (from < to) {
+				int mid = from + (to - from) / 2;
+				if (contextAt(mid) < target) {
+					from = mid + 1;
+				} else {
+					to = mid;
+				}
+			}
+			return from;
+		}
+
+		private int upperBoundContext(int from, int to, long target) {
+			while (from < to) {
+				int mid = from + (to - from) / 2;
+				if (contextAt(mid) <= target) {
+					from = mid + 1;
+				} else {
+					to = mid;
+				}
+			}
+			return from;
+		}
+
+		int lowerBoundPair(int from, int to, long targetNeighbor, long targetContext) {
+			while (from < to) {
+				int mid = from + (to - from) / 2;
+				long neighbor = neighbors[mid];
+				if (neighbor < targetNeighbor || (neighbor == targetNeighbor && contextAt(mid) < targetContext)) {
+					from = mid + 1;
+				} else {
+					to = mid;
+				}
+			}
+			return from;
+		}
+
+		private long contextAt(int index) {
+			return contexts == null ? 0L : contexts[index];
 		}
 
 		/** Dense key ordinal, or -1 when the key has no adjacency. */

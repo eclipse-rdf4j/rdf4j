@@ -177,14 +177,21 @@ final class AggContext {
 	final ValueComparator comparator = new ValueComparator();
 	final HashMap<Long, Value> valueCache = new HashMap<>();
 	final boolean encounterOrderChanging;
+	final boolean deferDistinctValueAggregates;
 
 	AggContext(NativeLmdbQuerySource source, boolean strictCompare) {
-		this(source, strictCompare, false);
+		this(source, strictCompare, false, false);
 	}
 
 	AggContext(NativeLmdbQuerySource source, boolean strictCompare, boolean encounterOrderChanging) {
+		this(source, strictCompare, encounterOrderChanging, false);
+	}
+
+	AggContext(NativeLmdbQuerySource source, boolean strictCompare, boolean encounterOrderChanging,
+			boolean deferDistinctValueAggregates) {
 		this.source = source;
 		this.encounterOrderChanging = encounterOrderChanging;
+		this.deferDistinctValueAggregates = deferDistinctValueAggregates;
 		this.comparator.setStrict(strictCompare);
 	}
 
@@ -312,10 +319,14 @@ final class AggState {
 				counts[i]++;
 				break;
 			case SUM:
-				addSum(i, value);
+				if (!deferredDistinctValueAggregate(i)) {
+					addSum(i, value);
+				}
 				break;
 			case AVG:
-				addAvg(i, value);
+				if (!deferredDistinctValueAggregate(i)) {
+					addAvg(i, value);
+				}
 				break;
 			case MIN:
 				addExtreme(i, value, true);
@@ -469,12 +480,42 @@ final class AggState {
 				: counts[index];
 	}
 
+	/** Folds one merged parallel DISTINCT channel exactly once per result materialization. */
+	void finishDistinctValueAggregate(int index) {
+		if (!deferredDistinctValueAggregate(index)) {
+			return;
+		}
+		sums[index] = null;
+		avgCounts[index] = 0L;
+		typeErrors[index] = false;
+		LongHashSet values = channelSets[distinctChannels.specChannels[index]];
+		if (values.containsEmptySentinel) {
+			addDeferredDistinctValue(index, LongHashSet.EMPTY);
+		}
+		for (long value : values.table) {
+			if (value != LongHashSet.EMPTY) {
+				addDeferredDistinctValue(index, value);
+			}
+		}
+	}
+
+	private boolean deferredDistinctValueAggregate(int index) {
+		return ctx != null && ctx.deferDistinctValueAggregates && specs[index].distinct
+				&& distinctChannels.specChannels[index] >= 0;
+	}
+
+	private void addDeferredDistinctValue(int index, long value) {
+		if (specs[index].kind == AggKind.SUM) {
+			addSum(index, value);
+		} else {
+			addAvg(index, value);
+		}
+	}
+
 	/**
-	 * Merges a parallel worker's partial state into this one. Sound for every spec except value-typed DISTINCT
-	 * aggregates (per-worker distinct-then-accumulate cannot merge without double counting — the parallel gate refuses
-	 * those): plain counts add (overflow-checked), distinct id sets union (COUNT(DISTINCT) reads its channel set),
-	 * running sums add with SPARQL numeric promotion, AVG value counts add, MIN/MAX keep the comparator winner, and a
-	 * poisoned partial poisons the merge.
+	 * Merges a parallel worker's partial state into this one. Plain counts add (overflow-checked), distinct ID sets
+	 * union, ordinary running sums and AVG counts add, and MIN/MAX keep the comparator winner. DISTINCT SUM/AVG defer
+	 * arithmetic until result emission, after their merged ID set is complete.
 	 */
 	void mergeFrom(AggState other) {
 		for (int channel = 0; channel < channelSets.length; channel++) {
@@ -490,12 +531,16 @@ final class AggState {
 				}
 				break;
 			case SUM:
-				mergeSum(i, other);
+				if (!deferredDistinctValueAggregate(i)) {
+					mergeSum(i, other);
+				}
 				break;
 			case AVG:
-				mergeSum(i, other);
-				if (avgCounts != null && other.avgCounts != null) {
-					avgCounts[i] = FactorizedTail.addCounts(avgCounts[i], other.avgCounts[i]);
+				if (!deferredDistinctValueAggregate(i)) {
+					mergeSum(i, other);
+					if (avgCounts != null && other.avgCounts != null) {
+						avgCounts[i] = FactorizedTail.addCounts(avgCounts[i], other.avgCounts[i]);
+					}
 				}
 				break;
 			case MIN:
@@ -650,6 +695,39 @@ final class LongHashSet {
 			}
 			index = (index + 1) & mask;
 		}
+	}
+
+	boolean remove(long value) {
+		if (value == EMPTY) {
+			if (!containsEmptySentinel) {
+				return false;
+			}
+			containsEmptySentinel = false;
+			size--;
+			return true;
+		}
+		long[] t = table;
+		int mask = t.length - 1;
+		int index = mix(value) & mask;
+		while (true) {
+			long current = t[index];
+			if (current == EMPTY) {
+				return false;
+			}
+			if (current == value) {
+				break;
+			}
+			index = (index + 1) & mask;
+		}
+		t[index] = EMPTY;
+		size--;
+		for (int scan = (index + 1) & mask; t[scan] != EMPTY; scan = (scan + 1) & mask) {
+			long displaced = t[scan];
+			t[scan] = EMPTY;
+			size--;
+			add(displaced);
+		}
+		return true;
 	}
 
 	long size() {

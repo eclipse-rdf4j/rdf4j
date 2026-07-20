@@ -19,13 +19,16 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.allValueProbeSafeIds;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.valueProbeSafeId;
 
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -39,10 +42,14 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
+import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
+import org.eclipse.rdf4j.sail.lmdb.Varint;
 
 @Experimental
 abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePlannerBase {
+	private static final String RANGE_PUSHDOWN_ENABLED = "rdf4j.lmdb.native.rangePushdown";
 
 	LmdbNativeAggregatePatternCompiler(QueryEvaluationContext context, LmdbNativeEvaluationStrategy strategy,
 			NativeLmdbQuerySource source) {
@@ -67,6 +74,244 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 			FILTER_INTO_PATTERN_PUSHDOWNS.incrementAndGet();
 		}
 		return plan;
+	}
+
+	PatternPlan compileRangeFilterIntoStatementPattern(StatementPattern pattern, ValueExpr condition) {
+		if (!Boolean.parseBoolean(System.getProperty(RANGE_PUSHDOWN_ENABLED, "true"))) {
+			return null;
+		}
+		OrderedRangeFilter filter = extractOrderedRangeFilter(condition);
+		if (filter == null || pattern.getStatementOrder() != null) {
+			return null;
+		}
+		int varyingField = uniqueVariableField(pattern, filter.variable);
+		if (varyingField < 0) {
+			return null;
+		}
+		PatternPlan base = compileStatementPattern(pattern);
+		if (base == null || !base.p.isConstant()) {
+			return null;
+		}
+		long subj = constant(base.s);
+		long pred = constant(base.p);
+		long obj = constant(base.o);
+		long contextId = constant(base.c);
+		NativeLmdbQuerySource.OrderedIntegerDomain domain;
+		try {
+			domain = source.orderedIntegerDomain(subj, pred, obj, contextId, varyingField);
+		} catch (RuntimeException ignored) {
+			return null;
+		}
+		if (domain == null || firstVaryingField(domain.indexFieldSeq(), base) != varyingField) {
+			return null;
+		}
+		LmdbKeyRange range = orderedIntegerRange(domain.indexFieldSeq(), base, varyingField, filter.operator,
+				filter.constant);
+		if (range == null) {
+			return null;
+		}
+		double estimate = rangedEstimate(base.staticEstimate, domain.minValue(), domain.maxValue(),
+				filter.operator, filter.constant);
+		return new PatternPlan(base.s, base.p, base.o, base.c, base.contexts, base.namedContextScope,
+				base.statementOrder, base.indexName, range, estimate);
+	}
+
+	private OrderedRangeFilter extractOrderedRangeFilter(ValueExpr condition) {
+		if (!(condition instanceof Compare)) {
+			return null;
+		}
+		Compare compare = (Compare) condition;
+		Compare.CompareOp operator = compare.getOperator();
+		if (!orderedRangeOperator(operator)) {
+			return null;
+		}
+		String variable = rangeVariable(compare.getLeftArg());
+		Value constant = constantValue(compare.getRightArg());
+		if (variable == null || constant == null) {
+			variable = rangeVariable(compare.getRightArg());
+			constant = constantValue(compare.getLeftArg());
+			operator = reverseRangeOperator(operator);
+		}
+		if (variable == null || constant == null) {
+			return null;
+		}
+		Long integer = orderedIntegerConstant(constant);
+		return integer == null ? null : new OrderedRangeFilter(variable, operator, integer);
+	}
+
+	private Long orderedIntegerConstant(Value value) {
+		if (!(value instanceof Literal)) {
+			return null;
+		}
+		Literal literal = (Literal) value;
+		CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
+		if (datatype == null || !datatype.isIntegerDatatype()) {
+			return null;
+		}
+		try {
+			long integer = literal.integerValue().longValueExact();
+			return integer >= -ValueIds.ORDERED_BIAS && integer < ValueIds.ORDERED_BIAS ? integer : null;
+		} catch (ArithmeticException | IllegalArgumentException ignored) {
+			return null;
+		}
+	}
+
+	private boolean orderedRangeOperator(Compare.CompareOp operator) {
+		return operator == Compare.CompareOp.LT || operator == Compare.CompareOp.LE
+				|| operator == Compare.CompareOp.GT || operator == Compare.CompareOp.GE;
+	}
+
+	private Compare.CompareOp reverseRangeOperator(Compare.CompareOp operator) {
+		return switch (operator) {
+		case LT -> Compare.CompareOp.GT;
+		case LE -> Compare.CompareOp.GE;
+		case GT -> Compare.CompareOp.LT;
+		case GE -> Compare.CompareOp.LE;
+		default -> operator;
+		};
+	}
+
+	private String rangeVariable(ValueExpr expression) {
+		if (!(expression instanceof Var)) {
+			return null;
+		}
+		Var variable = (Var) expression;
+		return variable.hasValue() || variable.isConstant() ? null : variable.getName();
+	}
+
+	private int uniqueVariableField(StatementPattern pattern, String variable) {
+		int found = -1;
+		Var[] vars = { pattern.getSubjectVar(), pattern.getPredicateVar(), pattern.getObjectVar(),
+				pattern.getContextVar() };
+		for (int field = 0; field < vars.length; field++) {
+			if (varNameEquals(vars[field], variable)) {
+				if (found >= 0) {
+					return -1;
+				}
+				found = field;
+			}
+		}
+		return found;
+	}
+
+	private int firstVaryingField(String indexName, PatternPlan pattern) {
+		for (int i = 0; i < indexName.length(); i++) {
+			int field = indexField(indexName.charAt(i));
+			if (field < 0) {
+				return -1;
+			}
+			if (!term(pattern, field).isConstant()) {
+				return field;
+			}
+		}
+		return -1;
+	}
+
+	private LmdbKeyRange orderedIntegerRange(String indexName, PatternPlan pattern, int varyingField,
+			Compare.CompareOp operator, long constant) {
+		byte[] prefix = rangePrefix(indexName, pattern, varyingField);
+		if (prefix == null) {
+			return null;
+		}
+		long orderedMax = ValueIds.ORDERED_BIAS - 1L;
+		byte[] low = null;
+		byte[] high = null;
+		switch (operator) {
+		case GE:
+			low = orderedIntegerBoundary(prefix, constant);
+			break;
+		case GT:
+			low = constant == orderedMax ? prefixSuccessor(prefix) : orderedIntegerBoundary(prefix, constant + 1L);
+			if (low == null) {
+				return null;
+			}
+			break;
+		case LT:
+			high = orderedIntegerBoundary(prefix, constant);
+			break;
+		case LE:
+			high = constant == orderedMax ? prefixSuccessor(prefix) : orderedIntegerBoundary(prefix, constant + 1L);
+			break;
+		default:
+			return null;
+		}
+		return new LmdbKeyRange(low, high, indexName, varyingField);
+	}
+
+	private byte[] rangePrefix(String indexName, PatternPlan pattern, int varyingField) {
+		ByteBuffer buffer = ByteBuffer.allocate(4 * (Long.BYTES + 1));
+		for (int i = 0; i < indexName.length(); i++) {
+			int field = indexField(indexName.charAt(i));
+			if (field == varyingField) {
+				return Arrays.copyOf(buffer.array(), buffer.position());
+			}
+			Term term = term(pattern, field);
+			if (field < 0 || !term.isConstant()) {
+				return null;
+			}
+			Varint.writeUnsigned(buffer, term.constant);
+		}
+		return null;
+	}
+
+	private byte[] orderedIntegerBoundary(byte[] prefix, long value) {
+		long rawValue = (value + ValueIds.ORDERED_BIAS) << 7;
+		ByteBuffer buffer = ByteBuffer.allocate(prefix.length + Long.BYTES + 1);
+		buffer.put(prefix);
+		Varint.writeUnsigned(buffer, rawValue);
+		return Arrays.copyOf(buffer.array(), buffer.position());
+	}
+
+	private byte[] prefixSuccessor(byte[] prefix) {
+		byte[] successor = Arrays.copyOf(prefix, prefix.length);
+		for (int i = successor.length - 1; i >= 0; i--) {
+			int value = successor[i] & 0xFF;
+			if (value != 0xFF) {
+				successor[i] = (byte) (value + 1);
+				return Arrays.copyOf(successor, i + 1);
+			}
+		}
+		return null;
+	}
+
+	private double rangedEstimate(double base, long min, long max, Compare.CompareOp operator, long constant) {
+		if (!Double.isFinite(base)) {
+			return base;
+		}
+		double included = switch (operator) {
+		case GT -> constant >= max ? 0D : (double) max - Math.max((double) min, (double) constant + 1D) + 1D;
+		case GE -> constant > max ? 0D : (double) max - Math.max((double) min, (double) constant) + 1D;
+		case LT -> constant <= min ? 0D : Math.min((double) max, (double) constant - 1D) - min + 1D;
+		case LE -> constant < min ? 0D : Math.min((double) max, (double) constant) - min + 1D;
+		default -> max - min + 1D;
+		};
+		double domain = (double) max - min + 1D;
+		double fraction = Math.max(0D, Math.min(1D, included / domain));
+		return Math.max(0D, base * fraction);
+	}
+
+	private int indexField(char field) {
+		return switch (field) {
+		case 's' -> TripleIndex.SUBJ_IDX;
+		case 'p' -> TripleIndex.PRED_IDX;
+		case 'o' -> TripleIndex.OBJ_IDX;
+		case 'c' -> TripleIndex.CONTEXT_IDX;
+		default -> -1;
+		};
+	}
+
+	private Term term(PatternPlan pattern, int field) {
+		return switch (field) {
+		case TripleIndex.SUBJ_IDX -> pattern.s;
+		case TripleIndex.PRED_IDX -> pattern.p;
+		case TripleIndex.OBJ_IDX -> pattern.o;
+		case TripleIndex.CONTEXT_IDX -> pattern.c;
+		default -> Term.unbound();
+		};
+	}
+
+	private long constant(Term term) {
+		return term.isConstant() ? term.constant : UNKNOWN;
 	}
 
 	boolean patternContainsVariable(StatementPattern pattern, String variable) {
@@ -362,6 +607,9 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 		}
 		return SlotPlan.values(rows,
 				values.getLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES) == 1L);
+	}
+
+	private record OrderedRangeFilter(String variable, Compare.CompareOp operator, long constant) {
 	}
 
 }

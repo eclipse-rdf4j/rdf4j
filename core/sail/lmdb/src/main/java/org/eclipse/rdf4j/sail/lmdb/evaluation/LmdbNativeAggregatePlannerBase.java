@@ -102,6 +102,8 @@ abstract class LmdbNativeAggregatePlannerBase {
 
 	abstract NativeBooleanFilter compileBoolean(ValueExpr expr);
 
+	abstract NativeBooleanFilter compileBoolean(ValueExpr expr, long assuredMask);
+
 	abstract long placeableFilterMask(ValueExpr condition);
 
 	NativeBooleanFilter recordFilterOutcomes(Filter filter, NativeBooleanFilter delegate) {

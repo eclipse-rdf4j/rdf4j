@@ -65,6 +65,35 @@ class LmdbNativeExplainTest {
 	}
 
 	@Test
+	void dispatchTraceReturnsWinnerAndDeterministicDistinctDeclines() {
+		SingletonSet target = new SingletonSet();
+		target.setRuntimeTelemetryEnabled(true);
+
+		LmdbNativeExplain.recordExecutionPath(target, LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+		LmdbNativeAttemptMetrics.recordDecline(target, LmdbNativeAttemptMetrics.STRATEGY_PARALLEL_PIPELINES,
+				"disabled");
+		LmdbNativeAttemptMetrics.recordDecline(target, LmdbNativeAttemptMetrics.STRATEGY_HASH_JOIN,
+				"below-min-rows");
+		LmdbNativeAttemptMetrics.recordDecline(target, LmdbNativeAttemptMetrics.STRATEGY_PARALLEL_PIPELINES,
+				"disabled");
+
+		LmdbNativeAttemptMetrics.DispatchTrace trace = LmdbNativeAttemptMetrics.dispatchTrace(target);
+		assertThat(trace.executionPath()).isEqualTo(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+		assertThat(trace.declineReasons())
+				.isEqualTo("hashJoin:below-min-rows | parallelPipelines:disabled");
+	}
+
+	@Test
+	void executionPathVocabularyContainsStaticAndParameterizedPathBases() {
+		assertThat(LmdbNativeAttemptMetrics.EXECUTION_PATH_VOCABULARY)
+				.contains(LmdbNativeAttemptMetrics.PATH_BATCH, LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES,
+						LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS,
+						LmdbNativeAttemptMetrics.PATH_FACTORIZED_TAIL,
+						LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION,
+						LmdbNativeAttemptMetrics.PATH_HASH_GROUPS);
+	}
+
+	@Test
 	void stickyFilterMaskDoesNotInventSixtyFourNamedSlots() {
 		FilterPlan filter = new FilterPlan(SingletonPlan.INSTANCE, ignored -> true, -1L);
 

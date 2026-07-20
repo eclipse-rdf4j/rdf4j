@@ -45,6 +45,14 @@ public class LmdbNativeStrategyPriorityTest {
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String PARALLEL_FLAG = "rdf4j.lmdb.parallel.enabled";
 	private static final String ADAPTIVE_FILTER_FLAG = "rdf4j.lmdb.adaptiveFilterPlacement.enabled";
+	private static final String MERGE_MIN_ROWS_FLAG = "rdf4j.lmdb.mergeJoin.minRows";
+	private static final String HASH_MIN_ROWS_FLAG = "rdf4j.lmdb.nativeHashJoin.minRows";
+	private static final String PARALLEL_THRESHOLD_FLAG = "rdf4j.lmdb.parallel.minRootEstimate";
+	private static final String PARALLEL_THREADS_FLAG = "rdf4j.lmdb.parallel.threads";
+	private static final String PARALLEL_TASKS_FLAG = "rdf4j.lmdb.parallel.maxTasks";
+	private static final String STRATEGY_DECLINES_METRIC = "nativeStrategyDeclines";
+	private static final String STRATEGY_PROPOSAL_COSTS_METRIC = "nativeStrategyProposalCosts";
+	private static final String CHUNK_ENGAGED_METRIC = "nativeChunkEngagedActual";
 
 	@TempDir
 	File dataDir;
@@ -83,11 +91,13 @@ public class LmdbNativeStrategyPriorityTest {
 
 	@Test
 	public void countingFactorizationOutranksBatchHashJoin() {
-		// ?a and ?b are unprojected: both legs become COUNT branches, which replace enumeration with
-		// per-distinct-key counting — asymptotically less work than the hash join's full enumeration
+		// ?a and ?b are unprojected: one leg seeds the flat prefix and the other becomes a COUNT branch,
+		// replacing cross-product enumeration with per-key counting
 		String query = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT ?s WHERE { ?s ex:p1 ?a . ?s ex:p2 ?b }";
-		assertThat(strategy(query)).startsWith("chunkPipeline");
+		assertThat(strategy(query))
+				.startsWith("factorizedRows(")
+				.contains("countBranches=1");
 	}
 
 	@Test
@@ -120,7 +130,7 @@ public class LmdbNativeStrategyPriorityTest {
 		String query = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT ?s WHERE { ?s a ex:T . ?s ex:pLeg ?l . ?s ex:pB ?x . ?x ex:pC ?y }";
 		assertThat(strategy(query))
-				.startsWith("chunkPipeline")
+				.startsWith("factorizedRows(")
 				.contains("countBranches=2");
 	}
 
@@ -152,15 +162,16 @@ public class LmdbNativeStrategyPriorityTest {
 	}
 
 	@Test
-	public void chunkPipelineEngagementIsVisibleInTelemetry() {
-		// the chunk pipeline drives the all-pattern flat prefix; the explain metric must say so, or
-		// silent fallbacks to the row chain would stay invisible
+	public void factorizedRowsRetainChunkSubstrateTelemetry() {
+		// factorized rows is the winning producer, while its all-pattern flat prefix still uses the chunk
+		// substrate; strategy and substrate telemetry must remain distinct and visible
 		String query = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT ?s WHERE { ?s ex:p1 ?a . ?s ex:p2 ?b }";
-		assertThat(strategy(query))
-				.startsWith("chunkPipeline(")
-				.contains("flat=")
-				.contains("countBranches=");
+		GenericPlanNode plan = explain(query);
+		assertThat(findMetric(plan, "nativeExecutionPath"))
+				.startsWith("factorizedRows(")
+				.contains("countBranches=1");
+		assertThat(findLongMetric(plan, CHUNK_ENGAGED_METRIC)).isEqualTo(1L);
 	}
 
 	@Test
@@ -198,14 +209,67 @@ public class LmdbNativeStrategyPriorityTest {
 		assertThat(strategy(query)).isEqualTo("batch");
 	}
 
+	@Test
+	public void dispatchTraceReportsEveryAttemptedBatchAndParallelDecline() {
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s ?a ?b WHERE { ?s ex:p1 ?a . ?s ex:p2 ?b }";
+		String previousMergeRows = System.getProperty(MERGE_MIN_ROWS_FLAG);
+		String previousHashRows = System.getProperty(HASH_MIN_ROWS_FLAG);
+		try {
+			System.setProperty(MERGE_MIN_ROWS_FLAG, "1000000");
+			System.setProperty(HASH_MIN_ROWS_FLAG, "1000000");
+
+			assertThat(dispatchTrace(query))
+					.contains("mergeJoin:below-min-rows")
+					.contains("hashJoin:below-min-rows")
+					.contains("parallelPipelines:disabled");
+		} finally {
+			restoreProperty(MERGE_MIN_ROWS_FLAG, previousMergeRows);
+			restoreProperty(HASH_MIN_ROWS_FLAG, previousHashRows);
+		}
+	}
+
+	@Test
+	public void batchAndParallelOverlapRecordsBothProposalCosts() {
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s ?a ?b WHERE { ?s ex:p1 ?a . ?s ex:p2 ?b }";
+		String previousThreshold = System.getProperty(PARALLEL_THRESHOLD_FLAG);
+		String previousThreads = System.getProperty(PARALLEL_THREADS_FLAG);
+		String previousTasks = System.getProperty(PARALLEL_TASKS_FLAG);
+		try {
+			System.setProperty(PARALLEL_FLAG, "true");
+			System.setProperty(PARALLEL_THRESHOLD_FLAG, "0");
+			System.setProperty(PARALLEL_THREADS_FLAG, "8");
+			System.setProperty(PARALLEL_TASKS_FLAG, "8");
+
+			GenericPlanNode plan = explain(query);
+			assertThat(findMetric(plan, "nativeExecutionPath")).isEqualTo("batch");
+			assertThat(findMetric(plan, STRATEGY_PROPOSAL_COSTS_METRIC))
+					.contains("batch=")
+					.contains("parallelPipelines=");
+		} finally {
+			restoreProperty(PARALLEL_FLAG, "false");
+			restoreProperty(PARALLEL_THRESHOLD_FLAG, previousThreshold);
+			restoreProperty(PARALLEL_THREADS_FLAG, previousThreads);
+			restoreProperty(PARALLEL_TASKS_FLAG, previousTasks);
+		}
+	}
+
 	private String strategy(String query) {
+		String strategy = findMetric(explain(query), "nativeExecutionPath");
+		assertThat(strategy).as("expected a nativeExecutionPath metric in the explanation").isNotNull();
+		return strategy;
+	}
+
+	private String dispatchTrace(String query) {
+		return findMetric(explain(query), STRATEGY_DECLINES_METRIC);
+	}
+
+	private GenericPlanNode explain(String query) {
 		try (SailRepositoryConnection conn = repository.getConnection()) {
-			GenericPlanNode plan = conn.prepareTupleQuery(query)
+			return conn.prepareTupleQuery(query)
 					.explain(Explanation.Level.Telemetry)
 					.toGenericPlanNode();
-			String strategy = findStrategy(plan);
-			assertThat(strategy).as("expected a nativeExecutionPath metric in the explanation").isNotNull();
-			return strategy;
 		}
 	}
 
@@ -233,22 +297,49 @@ public class LmdbNativeStrategyPriorityTest {
 		}
 	}
 
-	private static String findStrategy(GenericPlanNode node) {
+	private static String findMetric(GenericPlanNode node, String metricName) {
 		if (node == null) {
 			return null;
 		}
-		String value = node.getStringMetricActual("nativeExecutionPath");
+		String value = node.getStringMetricActual(metricName);
 		if (value != null) {
 			return value;
 		}
 		if (node.getPlans() != null) {
 			for (GenericPlanNode child : node.getPlans()) {
-				String found = findStrategy(child);
+				String found = findMetric(child, metricName);
 				if (found != null) {
 					return found;
 				}
 			}
 		}
 		return null;
+	}
+
+	private static Long findLongMetric(GenericPlanNode node, String metricName) {
+		if (node == null) {
+			return null;
+		}
+		Long value = node.getLongMetricActual(metricName);
+		if (value != null) {
+			return value;
+		}
+		if (node.getPlans() != null) {
+			for (GenericPlanNode child : node.getPlans()) {
+				Long found = findLongMetric(child, metricName);
+				if (found != null) {
+					return found;
+				}
+			}
+		}
+		return null;
+	}
+
+	private static void restoreProperty(String name, String value) {
+		if (value == null) {
+			System.clearProperty(name);
+		} else {
+			System.setProperty(name, value);
+		}
 	}
 }

@@ -45,6 +45,51 @@ class LmdbNativeChunkHashBuildTest {
 			+ (SCAN_ONCE_COUNT_TABLE_INITIAL_CAPACITY + Long.SIZE - 1L) / Long.SIZE;
 
 	@Test
+	void serialTailLessChunkPrefixFeedsValuesSuffix() throws Exception {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0, "payload", 1), null);
+		layout.freeze(List.of("key", "payload"));
+		CountingSource source = new CountingSource(4, false, true);
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, UNKNOWN);
+		row.recomputeBoundMask();
+
+		PatternPlan root = new PatternPlan(Term.slot(0), Term.constant(7), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 1D);
+		ValuesPlan suffix = new ValuesPlan(new ValuesRow[] {
+				new ValuesRow(new int[] { 0 }, new long[] { 100L }),
+				new ValuesRow(new int[] { 0 }, new long[] { 102L })
+		});
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { root, suffix }, new MaskedFilter[0]);
+		SingletonSet telemetry = new SingletonSet();
+		NativeRowsStep step = new NativeRowsStep(source, plan, layout, new int[] { 0 }, new String[] { "key" }, false,
+				new int[0], new boolean[0], 0L, -1L, false, null, telemetry, null, Set.of(), null, null);
+
+		String previousBatch = System.getProperty(NativeBatch.ENABLED_PROPERTY);
+		String previousParallel = System.getProperty("rdf4j.lmdb.parallel.enabled");
+		String previousAdaptive = System.getProperty(LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY);
+		long chunkEngagedBefore = LmdbNativeChunkPipeline.ENGAGED.get();
+		try {
+			System.setProperty(NativeBatch.ENABLED_PROPERTY, "false");
+			System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
+			System.setProperty(LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY, "false");
+			try (NativeUnorderedInput input = step.openUnorderedInput(row)) {
+				int rows = 0;
+				while (input.cursor.next()) {
+					rows++;
+				}
+				assertThat(rows).isEqualTo(2);
+			}
+			assertThat(LmdbNativeChunkPipeline.ENGAGED.get() - chunkEngagedBefore)
+					.as("the serial producer must retain the chunked pattern prefix before opening VALUES per row")
+					.isOne();
+		} finally {
+			restoreProperty(NativeBatch.ENABLED_PROPERTY, previousBatch);
+			restoreProperty("rdf4j.lmdb.parallel.enabled", previousParallel);
+			restoreProperty(LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY, previousAdaptive);
+		}
+	}
+
+	@Test
 	void externalRootBatchRefillCopiesOnlySeedAndCurrentRootSlots() throws Exception {
 		NativeSlotLayout layout = new NativeSlotLayout(Map.of("root", 0, "downstream", 1, "seed", 2), null);
 		layout.freeze(List.of("root", "downstream", "seed"));
@@ -205,6 +250,49 @@ class LmdbNativeChunkHashBuildTest {
 	}
 
 	@Test
+	void factorizedOrdinarySuffixHostsOneAdaptiveSession() throws Exception {
+		EnumMaterializationSource source = new EnumMaterializationSource(2, Map.of(100L, 2));
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0, "left", 1, "right", 2), null);
+		layout.freeze(List.of("key", "left", "right"));
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, UNKNOWN);
+		row.recomputeBoundMask();
+		ValuesPlan prefix = new ValuesPlan(new ValuesRow[] { new ValuesRow(new int[] { 0 }, new long[] { 100L }) });
+		PatternPlan left = new PatternPlan(Term.slot(0), Term.constant(ENUM_PREDICATE), Term.slot(1),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, 2D);
+		PatternPlan right = new PatternPlan(Term.slot(0), Term.constant(ENUM_PREDICATE + 1L), Term.slot(2),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, 2D);
+		MaskedFilter target = new MaskedFilter(candidate -> (candidate.slots[1] & 1L) == 0L, 1L << 1,
+				AdaptiveFilterMetadata.eligible(88, 4), 1);
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { prefix, left, right },
+				new MaskedFilter[] { target });
+		SingletonSet telemetry = new SingletonSet();
+		telemetry.setRuntimeTelemetryEnabled(true);
+		LmdbNativeFactorizedRows factorized = LmdbNativeFactorizedRows.tryCreate(plan,
+				plan.derivedFactorizedPlan(row), row, row.boundMask(), new int[] { 0, 1, 2 }, false, 0L,
+				LmdbNativeAttemptMetrics.root(telemetry));
+		assertThat(factorized).isNotNull();
+		assertThat(factorized.flatCount).isOne();
+		assertThat(factorized.branches).hasSize(2);
+		assertThat(factorized.memoBudget.tryReserve(0, FactorizedTail.MEMO_MAX_STORED_VALUES)).isTrue();
+		long rows = 0L;
+		try (FactorizedRowCursor cursor = factorized.open(row)) {
+			while (cursor.next()) {
+				rows++;
+			}
+		} finally {
+			factorized.memoBudget.release(0, FactorizedTail.MEMO_MAX_STORED_VALUES);
+		}
+
+		assertThat(rows).isEqualTo(2L);
+		assertThat(source.ordinaryOpenSubjects).containsExactly(100L);
+		assertThat(source.probeOpenSubjects).containsExactly(100L);
+		assertThat(telemetry.getLongMetricActual("adaptiveFilterPlacementAdmitted"))
+				.as("one adaptive session must decorate every ordinary suffix opened by this factorized cursor")
+				.isEqualTo(1L);
+	}
+
+	@Test
 	void enumGrowthRefusalStopsAfterFirstBatchAndRollsBack() throws Exception {
 		int fanout = 2 * LmdbNativeFactorizedRows.BATCH_ROWS;
 		EnumMaterializationSource source = new EnumMaterializationSource(0, Map.of(100L, fanout));
@@ -270,6 +358,58 @@ class LmdbNativeChunkHashBuildTest {
 		}
 
 		assertThat(actual).containsExactlyElementsOf(expected);
+	}
+
+	@Test
+	void enumGrowthRefusalDoesNotDisableMaterializationForLaterKeys() throws Exception {
+		EnumMaterializationSource source = new EnumMaterializationSource(0,
+				Map.of(100L, 1, 200L, ENUM_INITIAL_CAPACITY + 1, 300L, 1));
+		EnumMaterializationFixture fixture = new EnumMaterializationFixture(source, 100L, 200L, 300L);
+		fixture.leaveValueHeadroom(ENUM_INITIAL_CAPACITY);
+
+		List<String> actual = readFactorizedRows(fixture);
+
+		assertThat(actual).containsExactlyElementsOf(expectedEnumRows(source, 100L, 200L, 300L));
+		assertThat(source.probeOpenSubjects)
+				.as("a growth refusal for one key must not disable enum materialization after its budget is released")
+				.containsExactly(100L, 200L, 300L);
+		assertThat(source.ordinaryOpenSubjects)
+				.as("only the key whose enum materialization was refused must use the ordinary suffix")
+				.containsExactly(200L);
+	}
+
+	@Test
+	void enumRefusalMemoUsesBoundedClockEviction() throws Exception {
+		long firstKey = 10_000L;
+		int refusalCount = LmdbNativeFactorizedRows.TailBranch.MAX_ENUM_REFUSED_KEYS + 1;
+		EnumMaterializationSource source = new EnumMaterializationSource(1, Map.of());
+		EnumMaterializationFixture fixture = new EnumMaterializationFixture(source, firstKey);
+		fixture.leaveValueHeadroom(0L);
+
+		for (int i = 0; i < refusalCount; i++) {
+			fixture.row.slots[0] = firstKey + i;
+			fixture.row.recomputeBoundMask();
+			assertThat(fixture.branch.result(fixture.row, fixture.factorized))
+					.as("enum refusal %s", i)
+					.isSameAs(LmdbNativeFactorizedRows.TailResult.REFUSED);
+		}
+		assertThat(fixture.branch.enumRefusedSize)
+				.as("the negative memo must stay at its fixed capacity")
+				.isEqualTo(LmdbNativeFactorizedRows.TailBranch.MAX_ENUM_REFUSED_KEYS);
+
+		fixture.budget.release(0, FactorizedTail.MEMO_MAX_STORED_VALUES);
+		fixture.row.slots[0] = firstKey;
+		fixture.row.recomputeBoundMask();
+		assertThat(fixture.branch.result(fixture.row, fixture.factorized).count)
+				.as("the clock must evict the oldest refused key so recovered budget can retry it")
+				.isOne();
+		fixture.row.slots[0] = firstKey + refusalCount - 1L;
+		fixture.row.recomputeBoundMask();
+		assertThat(fixture.branch.result(fixture.row, fixture.factorized))
+				.as("a recently refused key must retain its direct ordinary-suffix marker")
+				.isSameAs(LmdbNativeFactorizedRows.TailResult.REFUSED);
+		assertThat(source.probeOpenSubjects).containsExactly(firstKey);
+		fixture.branch.close();
 	}
 
 	@Test
@@ -366,11 +506,12 @@ class LmdbNativeChunkHashBuildTest {
 
 			assertThat(actual).containsExactlyElementsOf(expected);
 			assertThat(OrderedAttemptTelemetry.capture())
-					.as("a discarded physical-buffer attempt must publish no ordered, factorized, memo, or chunk telemetry")
-					.isEqualTo(telemetryBefore);
+					.as("only the successful factorized producer under the restarted classic sort may publish telemetry")
+					.isEqualTo(telemetryBefore.afterClassicFactorizedProducer());
 			assertThat(telemetry.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH))
-					.as("the final strategy must describe the restarted classic sort")
-					.isEqualTo("orderedFullSort");
+					.as("the final strategy must describe both the restarted sort and its selected producer")
+					.contains("orderedFullSort")
+					.contains("factorizedRows");
 			assertThat(source.newProbeCalls)
 					.as("one retained probe set belongs to the refused attempt and one to the classic restart")
 					.isEqualTo(2 * ORDERED_ENUM_BRANCHES);
@@ -1878,6 +2019,14 @@ class LmdbNativeChunkHashBuildTest {
 					LmdbNativeChunkPipeline.SIP_MASKS.get(),
 					LmdbNativeChunkPipeline.SIP_MASKED_ROWS.get(),
 					LmdbNativeChunkPipeline.SIP_SEEKS.get());
+		}
+
+		private OrderedAttemptTelemetry afterClassicFactorizedProducer() {
+			return new OrderedAttemptTelemetry(orderedSorts, orderedTopK, factorizedRowsEngaged + 1L,
+					factorizedRowsMemoBypasses + 1L, factorizedTailEngaged, factorizedTailScanOnceBuilds,
+					factorizedTailMemoBypasses, chunkEngaged, chunkRunReplays, chunkMemoReplays, chunkHashBuilds,
+					chunkMergeWalks, chunkMergeSeeks, chunkMergeFallbacks, chunkSipMasks, chunkSipMaskedRows,
+					chunkSipSeeks);
 		}
 	}
 

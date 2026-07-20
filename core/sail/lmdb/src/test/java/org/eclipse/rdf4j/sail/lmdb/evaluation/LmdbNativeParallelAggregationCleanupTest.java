@@ -214,7 +214,7 @@ class LmdbNativeParallelAggregationCleanupTest {
 					.isInstanceOf(NullPointerException.class);
 
 			try (LmdbNativeParallelPipelines.TaskReservation reservation = LmdbNativeParallelPipelines
-					.tryReserveTasks(2)) {
+					.tryReserveTasks(false, 2)) {
 				assertThat(reservation)
 						.as("failed metrics setup must leave the complete task budget available")
 						.isNotNull();
@@ -687,6 +687,25 @@ class LmdbNativeParallelAggregationCleanupTest {
 	}
 
 	@Test
+	void parallelRowCursorRunsMorselProducerOnCallerThread() {
+		CountDownLatch producerEntered = new CountDownLatch(1);
+		ParallelPipelineSource worker = new ParallelPipelineSource(null, null);
+		ParallelPipelineSource producer = new ParallelPipelineSource(new long[] { 1L, 7L, 8L, 0L }, null, null,
+				producerEntered, null, null);
+		Thread caller = Thread.currentThread();
+
+		LmdbNativeParallelPipelines.ParallelRowCursor cursor = parallelRowCursor(worker, producer);
+		try {
+			await(producerEntered);
+			assertThat(producer.statementsThread)
+					.as("the query thread must own morsel production")
+					.isSameAs(caller);
+		} finally {
+			cursor.close();
+		}
+	}
+
+	@Test
 	void parallelRowCursorKeepsScanFailurePrimaryAndSuppressesCloseFailure() {
 		IOException scanFailure = new IOException("synthetic parallel producer scan failure");
 		IllegalStateException closeFailure = new IllegalStateException("synthetic parallel producer close failure");
@@ -756,6 +775,10 @@ class LmdbNativeParallelAggregationCleanupTest {
 		CompletableFuture<Void> closing = null;
 
 		try {
+			// Default-on chunk workers fill the external-root batch before probing the tail. The constructor pumps
+			// the one-row morsel; this query-thread pump publishes end-of-input so the worker reaches the blocked
+			// probe.
+			cursor.pumpProducer();
 			await(workerProbeEntered);
 			closing = CompletableFuture.runAsync(cursor::close);
 			awaitCancellation(cursor);
@@ -1578,6 +1601,7 @@ class LmdbNativeParallelAggregationCleanupTest {
 		private final CountDownLatch statementsEntered;
 		private final CountDownLatch releaseStatements;
 		private final CountDownLatch closeBarrier;
+		private volatile Thread statementsThread;
 		private int closeCalls;
 		private boolean closed;
 
@@ -1624,6 +1648,7 @@ class LmdbNativeParallelAggregationCleanupTest {
 
 		@Override
 		public RecordIterator statements(long subj, long pred, long obj, long context) throws IOException {
+			statementsThread = Thread.currentThread();
 			if (statementsEntered != null) {
 				statementsEntered.countDown();
 			}
