@@ -131,7 +131,8 @@ public class ThemeQueryBenchmark {
 			"TRAIN",
 			"ELECTRICAL_GRID",
 			"PHARMA",
-			"ADAPTIVE_FILTER_PLACEMENT"
+			"ADAPTIVE_FILTER_PLACEMENT",
+			"ANALYTICS"
 	})
 	public String themeName;
 

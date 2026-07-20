@@ -23,18 +23,20 @@ class ThemeQueryCatalogExpectedCountTest {
 
 	@Test
 	void expectedCountsMatchCatalogValues() {
-		Map<Theme, long[]> expectedCounts = Map.of(
-				Theme.MEDICAL_RECORDS, new long[] { 1, 1, 135, 1, 1, 1, 8335, 1, 8335, 1, 1, 199461, 347473 },
-				Theme.SOCIAL_MEDIA, new long[] { 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1 },
-				Theme.LIBRARY, new long[] { 1, 1, 3, 1, 1, 1, 5081, 1, 10, 1, 1, 1, 1 },
-				Theme.ENGINEERING, new long[] { 1, 1, 3, 1, 1, 1, 520, 1, 520, 1, 1, 1, 134229 },
-				Theme.HIGHLY_CONNECTED, new long[] { 1, 1, 36767, 1, 1, 1, 40251, 1, 1, 40251, 1, 1, 1 },
-				Theme.TRAIN, new long[] { 1, 1, 3, 1, 1, 1, 7836, 1, 1, 67388, 1, 1, 943354 },
-				Theme.ELECTRICAL_GRID, new long[] { 1, 1, 10, 1, 1, 1, 9364, 1, 0, 1, 1, 1, 621654 },
-				Theme.PHARMA, new long[] { 1, 80, 0, 2216, 1, 1, 1, 1, 1635, 1, 51, 1, 25710 },
-				Theme.ADAPTIVE_FILTER_PLACEMENT,
-				new long[] { 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256 },
-				Theme.REAL_ESTATE, new long[] { 35, 1, 25, 75, 1, 75, 1, 1, 1, 75, 520, 99720, 108771 }
+		Map<Theme, long[]> expectedCounts = Map.ofEntries(
+				Map.entry(Theme.MEDICAL_RECORDS,
+						new long[] { 1, 1, 135, 1, 1, 1, 8335, 1, 8335, 1, 1, 199461, 347473 }),
+				Map.entry(Theme.SOCIAL_MEDIA, new long[] { 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1 }),
+				Map.entry(Theme.LIBRARY, new long[] { 1, 1, 3, 1, 1, 1, 5081, 1, 10, 1, 1, 1, 1 }),
+				Map.entry(Theme.ENGINEERING, new long[] { 1, 1, 3, 1, 1, 1, 520, 1, 520, 1, 1, 1, 134229 }),
+				Map.entry(Theme.HIGHLY_CONNECTED, new long[] { 1, 1, 36767, 1, 1, 1, 40251, 1, 1, 40251, 1, 1, 1 }),
+				Map.entry(Theme.TRAIN, new long[] { 1, 1, 3, 1, 1, 1, 7836, 1, 1, 67388, 1, 1, 943354 }),
+				Map.entry(Theme.ELECTRICAL_GRID, new long[] { 1, 1, 10, 1, 1, 1, 9364, 1, 0, 1, 1, 1, 621654 }),
+				Map.entry(Theme.PHARMA, new long[] { 1, 80, 0, 2216, 1, 1, 1, 1, 1635, 1, 51, 1, 25710 }),
+				Map.entry(Theme.ADAPTIVE_FILTER_PLACEMENT,
+						new long[] { 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256 }),
+				Map.entry(Theme.REAL_ESTATE, new long[] { 35, 1, 25, 75, 1, 75, 1, 1, 1, 75, 520, 99720, 108771 }),
+				Map.entry(Theme.ANALYTICS, new long[] { 1, 1, 100, 53, 100, 7, 24, 125, 56, 113, 1, 100, 11 })
 		);
 
 		for (Map.Entry<Theme, long[]> entry : expectedCounts.entrySet()) {
@@ -49,20 +51,22 @@ class ThemeQueryCatalogExpectedCountTest {
 
 	@Test
 	void expectedCountBindingValuesMatchCatalogValues() {
-		Map<Theme, long[]> expectedCountBindingValues = Map.of(
-				Theme.MEDICAL_RECORDS, new long[] { 7571, 49835, -1, 8309, 24971, 0, -1, 0, -1, 16352, 8335,
-						-1, -1 },
-				Theme.SOCIAL_MEDIA, new long[] { 6, 2, 3, -1, 5, 480, -1, 5, 3, 11, 2, -1, -1 },
-				Theme.LIBRARY, new long[] { 128853, 3, -1, 7958, 0, 217, -1, 77295, -1, 2, 4, -1, -1 },
-				Theme.ENGINEERING, new long[] { 132672, 3, -1, 348, 2, 0, -1, 0, -1, 0, 2, -1, -1 },
-				Theme.HIGHLY_CONNECTED, new long[] { 40251, 36767, -1, 39720, 770, 3279, -1, 32513, 119, -1,
-						59, -1, -1 },
-				Theme.TRAIN, new long[] { 8268, 3, -1, 67380, 2, 24, -1, 1, 9, -1, 18788, -1, -1 },
-				Theme.ELECTRICAL_GRID, new long[] { 7396, 6, -1, 59629, 5, 47, -1, 6, -1, 0, 0, -1, -1 },
-				Theme.PHARMA, new long[] { 18, -1, -1, -1, 4972, 32, -1, 2885, -1, 13, -1, -1, -1 },
-				Theme.ADAPTIVE_FILTER_PLACEMENT,
-				new long[] { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 },
-				Theme.REAL_ESTATE, new long[] { -1, -1, -1, -1, 39314, -1, 333, 18524, 519, -1, -1, -1, -1 }
+		Map<Theme, long[]> expectedCountBindingValues = Map.ofEntries(
+				Map.entry(Theme.MEDICAL_RECORDS,
+						new long[] { 7571, 49835, -1, 8309, 24971, 0, -1, 0, -1, 16352, 8335, -1, -1 }),
+				Map.entry(Theme.SOCIAL_MEDIA, new long[] { 6, 2, 3, -1, 5, 480, -1, 5, 3, 11, 2, -1, -1 }),
+				Map.entry(Theme.LIBRARY, new long[] { 128853, 3, -1, 7958, 0, 217, -1, 77295, -1, 2, 4, -1, -1 }),
+				Map.entry(Theme.ENGINEERING, new long[] { 132672, 3, -1, 348, 2, 0, -1, 0, -1, 0, 2, -1, -1 }),
+				Map.entry(Theme.HIGHLY_CONNECTED,
+						new long[] { 40251, 36767, -1, 39720, 770, 3279, -1, 32513, 119, -1, 59, -1, -1 }),
+				Map.entry(Theme.TRAIN, new long[] { 8268, 3, -1, 67380, 2, 24, -1, 1, 9, -1, 18788, -1, -1 }),
+				Map.entry(Theme.ELECTRICAL_GRID, new long[] { 7396, 6, -1, 59629, 5, 47, -1, 6, -1, 0, 0, -1, -1 }),
+				Map.entry(Theme.PHARMA, new long[] { 18, -1, -1, -1, 4972, 32, -1, 2885, -1, 13, -1, -1, -1 }),
+				Map.entry(Theme.ADAPTIVE_FILTER_PLACEMENT,
+						new long[] { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 }),
+				Map.entry(Theme.REAL_ESTATE, new long[] { -1, -1, -1, -1, 39314, -1, 333, 18524, 519, -1, -1, -1, -1 }),
+				Map.entry(Theme.ANALYTICS,
+						new long[] { 53, 100, -1, -1, -1, -1, -1, -1, -1, -1, 2364850, -1, -1 })
 		);
 
 		for (Map.Entry<Theme, long[]> entry : expectedCountBindingValues.entrySet()) {

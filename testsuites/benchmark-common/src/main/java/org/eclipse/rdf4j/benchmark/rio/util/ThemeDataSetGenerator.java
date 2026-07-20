@@ -45,7 +45,8 @@ public final class ThemeDataSetGenerator {
 		ELECTRICAL_GRID,
 		PHARMA,
 		ADAPTIVE_FILTER_PLACEMENT,
-		REAL_ESTATE
+		REAL_ESTATE,
+		ANALYTICS
 	}
 
 	private static final String BASE = "http://example.com/theme/";
@@ -149,6 +150,10 @@ public final class ThemeDataSetGenerator {
 			break;
 		case REAL_ESTATE:
 			generateRealEstate(realEstateConfig(), handler);
+			break;
+		case ANALYTICS:
+			// The ANALYTICS theme runs cross-theme analytical queries against the union of all other theme
+			// datasets and contributes no statements of its own, so fixed benchmark stores stay byte-identical.
 			break;
 		default:
 			throw new IllegalArgumentException("Unsupported theme " + theme);
