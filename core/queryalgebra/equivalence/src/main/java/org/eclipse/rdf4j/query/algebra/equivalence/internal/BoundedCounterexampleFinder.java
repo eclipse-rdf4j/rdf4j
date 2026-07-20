@@ -27,13 +27,18 @@ import org.eclipse.rdf4j.query.algebra.equivalence.SemanticsTarget;
 /** Bounded finite-model search. Absence of a witness is never treated as a proof. */
 public final class BoundedCounterexampleFinder {
 	private final CheckOptions options;
-	private final Rdf4jEvaluator evaluator = new Rdf4jEvaluator();
+	private final EvaluationOracle evaluator;
 	private final ExpressionSafetyAnalyzer safety;
 	private final SemanticsValidator validator = new SemanticsValidator();
 	private final IncomingBindingAnalyzer incomingBindings = new IncomingBindingAnalyzer();
 
 	public BoundedCounterexampleFinder(CheckOptions options) {
+		this(options, new Rdf4jEvaluator()::evaluate);
+	}
+
+	BoundedCounterexampleFinder(CheckOptions options, EvaluationOracle evaluator) {
 		this.options = Objects.requireNonNull(options, "options");
+		this.evaluator = Objects.requireNonNull(evaluator, "evaluator");
 		this.safety = new ExpressionSafetyAnalyzer(options);
 	}
 
@@ -63,54 +68,30 @@ public final class BoundedCounterexampleFinder {
 							+ "SERVICE, REDUCED, SAMPLE, blank-node-generating, or slice-sensitive algebra");
 		}
 
-		List<EvaluationCase> cases = new ArrayList<>();
+		CaseSelection selection = new CaseSelection();
 		int caseLimit = options.getMaxEvaluationCases();
-		int prefilteredCases = 0;
-		String firstRejectedCaseReason = null;
 		for (EvaluationCase evaluationCase : options.getEvaluationCases()) {
-			if (cases.size() >= caseLimit) {
+			if (selection.cases.size() >= caseLimit) {
 				break;
 			}
 			if (isSpecificationTarget() && !evaluationCase.getInitialBindings().isEmpty()) {
 				// Non-empty input bindings are accepted as concrete correlation
 				// contexts only for the RDF4J runtime contract.
-				prefilteredCases++;
+				selection.reject(null);
 				continue;
 			}
-			SemanticsValidator.Validation validation = validator.validate(
-					evaluationCase,
-					options.getSemanticsTarget());
-			if (!validation.isSupported()) {
-				prefilteredCases++;
-				if (firstRejectedCaseReason == null) {
-					firstRejectedCaseReason = validation.getReason();
-				}
-				continue;
-			}
-			cases.add(evaluationCase);
+			selection.consider(evaluationCase);
 		}
-		if (options.isBoundedCounterexampleSearch() && cases.size() < caseLimit) {
+		if (options.isBoundedCounterexampleSearch()) {
 			for (EvaluationCase generated : new BoundedCaseGenerator(options).generate(original, candidate)) {
-				if (cases.size() >= caseLimit) {
+				if (selection.cases.size() >= caseLimit) {
 					break;
 				}
-				if (isSpecificationTarget() && !generated.getInitialBindings().isEmpty()) {
-					prefilteredCases++;
-					continue;
-				}
-				SemanticsValidator.Validation validation = validator.validate(
-						generated,
-						options.getSemanticsTarget());
-				if (!validation.isSupported()) {
-					prefilteredCases++;
-					if (firstRejectedCaseReason == null) {
-						firstRejectedCaseReason = validation.getReason();
-					}
-					continue;
-				}
-				cases.add(generated);
+				selection.consider(generated);
 			}
 		}
+		List<EvaluationCase> cases = selection.cases;
+		int prefilteredCases = selection.rejected;
 		if (cases.isEmpty()) {
 			return SearchResult.noWitness(
 					0,
@@ -118,7 +99,16 @@ public final class BoundedCounterexampleFinder {
 					prefilteredCases == 0
 							? "no evaluation cases were configured or generated"
 							: "all configured evaluation cases were incompatible with the selected semantic target"
-									+ (firstRejectedCaseReason == null ? "" : ": " + firstRejectedCaseReason));
+									+ (selection.firstRejectedReason == null
+											? ""
+											: ": " + selection.firstRejectedReason));
+		}
+		if (isSpecificationTarget()) {
+			return SearchResult.noWitness(
+					0,
+					prefilteredCases,
+					"the formal specification oracle is not yet available; RDF4J runtime evaluation cannot establish "
+							+ options.getSemanticsTarget() + " counterexamples");
 		}
 
 		int evaluated = 0;
@@ -140,14 +130,6 @@ public final class BoundedCounterexampleFinder {
 			EvaluationOutcome originalOutcome = originalAttempt.getOutcome().orElseThrow(AssertionError::new);
 			EvaluationOutcome candidateOutcome = candidateAttempt.getOutcome().orElseThrow(AssertionError::new);
 			evaluated++;
-
-			if (isSpecificationTarget()
-					&& (originalOutcome.hasError() || candidateOutcome.hasError())) {
-				// RDF4J exception details are not a W3C algebra result. They are
-				// useful for runtime diagnostics but not a specification witness.
-				skipped++;
-				continue;
-			}
 
 			if (originalOutcome.sameAs(candidateOutcome, options.getObservationMode())) {
 				continue;
@@ -179,7 +161,9 @@ public final class BoundedCounterexampleFinder {
 								evaluationCase,
 								originalAgain,
 								candidateAgain,
-								options.getObservationMode()),
+								options.getObservationMode(),
+								options.getSemanticsTarget(),
+								runtimeOracleVersion()),
 						evaluated,
 						skipped);
 			}
@@ -192,8 +176,47 @@ public final class BoundedCounterexampleFinder {
 				"no distinguishing finite model was found within the configured bounds");
 	}
 
+	@FunctionalInterface
+	interface EvaluationOracle {
+		EvaluationAttempt evaluate(TupleExpr expression, EvaluationCase evaluationCase, int maxRows);
+	}
+
+	private final class CaseSelection {
+		private final List<EvaluationCase> cases = new ArrayList<>();
+		private int rejected;
+		private String firstRejectedReason;
+
+		private void consider(EvaluationCase evaluationCase) {
+			SemanticsValidator.Validation validation = validator.validate(
+					evaluationCase,
+					options.getSemanticsTarget());
+			if (validation.isSupported()) {
+				cases.add(evaluationCase);
+			} else {
+				reject(validation.getReason());
+			}
+		}
+
+		private void reject(String reason) {
+			rejected++;
+			if (firstRejectedReason == null && reason != null) {
+				firstRejectedReason = reason;
+			}
+		}
+	}
+
 	private boolean isSpecificationTarget() {
 		return options.getSemanticsTarget() != SemanticsTarget.RDF4J_RUNTIME;
+	}
+
+	private static String runtimeOracleVersion() {
+		String declaredVersion = System.getProperty("rdf4j.equivalence.runtimeOracleVersion");
+		if (declaredVersion != null && !declaredVersion.isBlank()) {
+			return declaredVersion;
+		}
+		String implementationVersion = Rdf4jEvaluator.class.getPackage().getImplementationVersion();
+		return "RDF4J " + (implementationVersion == null ? "development build" : implementationVersion)
+				+ "; source commit unpinned";
 	}
 
 	public static final class SearchResult {

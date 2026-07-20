@@ -15,15 +15,25 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import org.eclipse.rdf4j.query.algebra.equivalence.CertificateStep;
 import org.eclipse.rdf4j.query.algebra.equivalence.RuleApplication;
 
 public final class Normalization {
 	private final CanonicalNode canonicalNode;
 	private final List<RuleApplication> steps;
+	private final List<CertificateStep> certificateSteps;
 
 	Normalization(CanonicalNode canonicalNode, List<RuleApplication> steps) {
+		this(canonicalNode, steps, List.of());
+	}
+
+	Normalization(
+			CanonicalNode canonicalNode,
+			List<RuleApplication> steps,
+			List<CertificateStep> certificateSteps) {
 		this.canonicalNode = canonicalNode;
 		this.steps = Collections.unmodifiableList(new ArrayList<>(steps));
+		this.certificateSteps = Collections.unmodifiableList(new ArrayList<>(certificateSteps));
 	}
 
 	public boolean sameCanonicalForm(Normalization other) {
@@ -44,5 +54,9 @@ public final class Normalization {
 
 	public List<RuleApplication> getSteps() {
 		return steps;
+	}
+
+	public List<CertificateStep> getCertificateSteps() {
+		return certificateSteps;
 	}
 }

@@ -1,0 +1,64 @@
+{
+  "format": "rdf4j-tuple-expr",
+  "version": 1,
+  "expression": {
+    "type": "Join",
+    "leftArg": {
+      "type": "LeftJoin",
+      "leftArg": {
+        "type": "StatementPattern",
+        "subjectVar": {
+          "type": "Var",
+          "name": "s"
+        },
+        "predicateVar": {
+          "type": "Var",
+          "name": "leftPredicate",
+          "value": {
+            "type": "IRI",
+            "value": "urn:counterexample:link"
+          },
+          "constant": true
+        },
+        "objectVar": {
+          "type": "Var",
+          "name": "x"
+        }
+      },
+      "rightArg": {
+        "type": "BindingSetAssignment",
+        "declaredBindingNames": [
+          "y"
+        ],
+        "bindingSets": [
+          {
+            "y": {
+              "type": "Literal",
+              "label": "blocked"
+            }
+          }
+        ]
+      }
+    },
+    "rightArg": {
+      "type": "StatementPattern",
+      "subjectVar": {
+        "type": "Var",
+        "name": "x"
+      },
+      "predicateVar": {
+        "type": "Var",
+        "name": "rightPredicate",
+        "value": {
+          "type": "IRI",
+          "value": "urn:counterexample:link"
+        },
+        "constant": true
+      },
+      "objectVar": {
+        "type": "Var",
+        "name": "y"
+      }
+    }
+  }
+}

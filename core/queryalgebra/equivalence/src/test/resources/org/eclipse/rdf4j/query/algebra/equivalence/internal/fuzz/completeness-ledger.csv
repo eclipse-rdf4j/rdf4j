@@ -1,12 +1,12 @@
 random-0,clone-identity,EQUIVALENT
 random-1,clone-identity,EQUIVALENT
-random-2,union-commute,EQUIVALENT
+random-2,union-commute,UNKNOWN
 random-3,values-column-reorder,EQUIVALENT
 random-4,clone-identity,EQUIVALENT
 random-5,clone-identity,EQUIVALENT
 random-6,leftjoin-condition-toggle,UNKNOWN
 random-7,json-round-trip,EQUIVALENT
-random-8,values-row-permute,EQUIVALENT
+random-8,values-row-permute,UNKNOWN
 random-9,distinct-wrap,UNKNOWN
 random-10,distinct-wrap,UNKNOWN
 random-11,clone-identity,EQUIVALENT
@@ -24,8 +24,8 @@ random-22,json-round-trip,EQUIVALENT
 random-23,values-unset-rows,UNKNOWN
 random-24,distinct-wrap+slice-jitter,UNKNOWN
 random-25,join-commute,UNKNOWN
-random-26,distinct-wrap,EQUIVALENT
-random-27,union-commute+values-row-permute,EQUIVALENT
+random-26,distinct-wrap,UNKNOWN
+random-27,union-commute+values-row-permute,UNKNOWN
 random-28,extension-overwrite-inject+filter-push-into-join-left,UNKNOWN
 random-29,clone-identity+clone-identity,EQUIVALENT
 random-30,values-column-reorder,EQUIVALENT
@@ -37,4 +37,4 @@ random-35,extension-overwrite-inject,UNKNOWN
 random-36,join-commute,UNKNOWN
 random-37,values-row-permute+unit-join-wrap,UNKNOWN
 random-38,scope-flag-toggle,UNKNOWN
-random-39,union-commute,EQUIVALENT
+random-39,union-commute,UNKNOWN

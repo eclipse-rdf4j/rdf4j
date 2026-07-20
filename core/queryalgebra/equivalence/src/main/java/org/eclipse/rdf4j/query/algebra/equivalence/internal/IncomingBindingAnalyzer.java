@@ -170,6 +170,15 @@ final class IncomingBindingAnalyzer {
 		if (expression instanceof LeftJoin leftJoin) {
 			IncomingBindingInfo result = correlatedCombination(leftJoin.getLeftArg(), leftJoin.getRightArg(),
 					analysisRoot);
+			// The optional side is evaluated with the left mapping as input. Every name it
+			// may bind therefore performs a compatibility read unless the left side always
+			// supplies that name; a sibling binding can otherwise decide between an optional
+			// match and the LeftJoin fallback row.
+			if (!guaranteesIncomingMapping(leftJoin.getRightArg())) {
+				Set<String> compatibilityReads = mutable(bindings.analyze(leftJoin.getRightArg()).mayBind());
+				compatibilityReads.removeAll(bindings.analyze(leftJoin.getLeftArg()).mustBind());
+				result = withExplicitReads(result, compatibilityReads);
+			}
 			if (leftJoin.hasCondition()) {
 				// The OPTIONAL condition is evaluated in the scope of the merged solution, which
 				// can include bindings riding in from a sibling operand (well-designed exposure),
@@ -219,6 +228,38 @@ final class IncomingBindingAnalyzer {
 				leftReads.readsAnyIncomingBinding() || rightReads.readsAnyIncomingBinding(),
 				leftReads.mayDiscardIncomingBindings() || rightReads.mayDiscardIncomingBindings(),
 				rebinds);
+	}
+
+	/** Returns whether evaluation always includes the unchanged incoming mapping. */
+	private boolean guaranteesIncomingMapping(TupleExpr expression) {
+		if (expression instanceof VariableScopeChange scope && scope.isVariableScopeChange()) {
+			return false;
+		}
+		if (expression instanceof SingletonSet) {
+			return true;
+		}
+		if (expression instanceof QueryRoot root) {
+			return guaranteesIncomingMapping(root.getArg());
+		}
+		if (expression instanceof Distinct distinct) {
+			return guaranteesIncomingMapping(distinct.getArg());
+		}
+		if (expression instanceof Reduced reduced) {
+			return guaranteesIncomingMapping(reduced.getArg());
+		}
+		if (expression instanceof Union union) {
+			return guaranteesIncomingMapping(union.getLeftArg())
+					|| guaranteesIncomingMapping(union.getRightArg());
+		}
+		if (expression instanceof Join join) {
+			return guaranteesIncomingMapping(join.getLeftArg())
+					&& guaranteesIncomingMapping(join.getRightArg());
+		}
+		if (expression instanceof LeftJoin leftJoin) {
+			return guaranteesIncomingMapping(leftJoin.getLeftArg())
+					&& guaranteesIncomingMapping(leftJoin.getRightArg());
+		}
+		return false;
 	}
 
 	private Set<String> unsatisfied(Set<String> reads, TupleExpr input) {

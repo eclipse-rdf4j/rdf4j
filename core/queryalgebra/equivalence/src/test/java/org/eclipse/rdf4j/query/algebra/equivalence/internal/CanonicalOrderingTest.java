@@ -18,11 +18,29 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.junit.jupiter.api.Test;
 
 class CanonicalOrderingTest {
+	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
+	@Test
+	void opaqueHashCodeFollowsExplicitSemanticEquality() {
+		CanonicalNode left = CanonicalNode.opaque(
+				new HashDivergingValueConstant(VF.createLiteral("same"), 1));
+		CanonicalNode right = CanonicalNode.opaque(
+				new HashDivergingValueConstant(VF.createLiteral("same"), 2));
+
+		assertEquals(left, right);
+		assertEquals(left.hashCode(), right.hashCode());
+		assertEquals(
+				CanonicalNode.multiset("TEST", "", List.of(left)),
+				CanonicalNode.multiset("TEST", "", List.of(right)));
+	}
 
 	@Test
 	void unequalCandidatesWithTheSameOrderingKeyAreRejected() {
@@ -37,5 +55,20 @@ class CanonicalOrderingTest {
 				new Rdf4jCanonicalizer.NormalizationCandidate(oneName, List.of()),
 				new Rdf4jCanonicalizer.NormalizationCandidate(twoNames, List.of()));
 		assertTrue(Rdf4jCanonicalizer.unambiguousMinimum(candidates).isEmpty());
+
+	}
+
+	private static final class HashDivergingValueConstant extends ValueConstant {
+		private final int hashCode;
+
+		private HashDivergingValueConstant(Value value, int hashCode) {
+			super(value);
+			this.hashCode = hashCode;
+		}
+
+		@Override
+		public int hashCode() {
+			return hashCode;
+		}
 	}
 }

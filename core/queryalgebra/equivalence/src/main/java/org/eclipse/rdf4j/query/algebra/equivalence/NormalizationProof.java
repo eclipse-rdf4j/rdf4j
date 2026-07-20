@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /** Evidence that both expressions normalize to one complete canonical form. */
 public final class NormalizationProof implements EquivalenceEvidence {
@@ -22,7 +23,23 @@ public final class NormalizationProof implements EquivalenceEvidence {
 	private final String canonicalEncoding;
 	private final List<RuleApplication> originalSteps;
 	private final List<RuleApplication> candidateSteps;
+	private final NormalizationCertificate certificate;
 
+	public NormalizationProof(
+			String canonicalFingerprint,
+			String canonicalEncoding,
+			List<RuleApplication> originalSteps,
+			List<RuleApplication> candidateSteps,
+			NormalizationCertificate certificate) {
+		this.canonicalFingerprint = Objects.requireNonNull(canonicalFingerprint, "canonicalFingerprint");
+		this.canonicalEncoding = Objects.requireNonNull(canonicalEncoding, "canonicalEncoding");
+		this.originalSteps = Collections.unmodifiableList(new ArrayList<>(originalSteps));
+		this.candidateSteps = Collections.unmodifiableList(new ArrayList<>(candidateSteps));
+		this.certificate = Objects.requireNonNull(certificate, "certificate");
+	}
+
+	/** @deprecated Evidence without a machine-readable certificate is rejected by {@link ProofKernel}. */
+	@Deprecated(since = "6.0")
 	public NormalizationProof(
 			String canonicalFingerprint,
 			String canonicalEncoding,
@@ -32,9 +49,11 @@ public final class NormalizationProof implements EquivalenceEvidence {
 		this.canonicalEncoding = Objects.requireNonNull(canonicalEncoding, "canonicalEncoding");
 		this.originalSteps = Collections.unmodifiableList(new ArrayList<>(originalSteps));
 		this.candidateSteps = Collections.unmodifiableList(new ArrayList<>(candidateSteps));
+		this.certificate = null;
 	}
 
-	/** Compatibility constructor; new code should provide the full encoding. */
+	/** @deprecated Compatibility evidence without a complete encoding or certificate is never trusted. */
+	@Deprecated(since = "6.0")
 	public NormalizationProof(
 			String canonicalFingerprint,
 			List<RuleApplication> originalSteps,
@@ -56,6 +75,10 @@ public final class NormalizationProof implements EquivalenceEvidence {
 
 	public List<RuleApplication> getCandidateSteps() {
 		return candidateSteps;
+	}
+
+	public Optional<NormalizationCertificate> getCertificate() {
+		return Optional.ofNullable(certificate);
 	}
 
 	@Override

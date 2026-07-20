@@ -85,10 +85,10 @@ public final class CheckOptions {
 	}
 
 	/**
-	 * When true, every EQUIVALENT verdict re-derives its proof from scratch through the ProofKernel before being
-	 * returned (roughly doubling the cost of a successful check). Defaults to false; the proof was just computed by the
-	 * same code, so re-derivation is a self-check intended for test harnesses, not production.
+	 * Certificate verification is unconditional. This legacy flag requests an additional producer-parity diagnostic
+	 * where supported and no longer controls the soundness gate.
 	 */
+	@Deprecated(since = "6.0")
 	public boolean isDeepProofVerification() {
 		return deepProofVerification;
 	}
@@ -190,6 +190,10 @@ public final class CheckOptions {
 			return this;
 		}
 
+		/**
+		 * @deprecated Certificate verification is unconditional; this enables only additional diagnostics.
+		 */
+		@Deprecated(since = "6.0")
 		public Builder deepProofVerification(boolean enabled) {
 			this.deepProofVerification = enabled;
 			return this;

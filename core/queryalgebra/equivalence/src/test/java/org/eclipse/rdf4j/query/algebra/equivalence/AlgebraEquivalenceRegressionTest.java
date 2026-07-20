@@ -16,10 +16,16 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -27,9 +33,12 @@ import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
@@ -40,6 +49,8 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.QueryScopeSeed;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
@@ -48,6 +59,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.equivalence.internal.FormalTreeEncoder;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
@@ -72,7 +84,7 @@ class AlgebraEquivalenceRegressionTest {
 	}
 
 	@Test
-	void specificationJoinRemainsCommutativeForSameContextOperands() {
+	void specificationJoinCommutativityIsUnknownWithoutATotalityTheorem() {
 		TupleExpr values = values("x", X);
 		TupleExpr contextual = new Filter(new SingletonSet(), new Bound(Var.of("x")));
 		CheckOptions options = CheckOptions.builder()
@@ -84,7 +96,7 @@ class AlgebraEquivalenceRegressionTest {
 				new Join(values.clone(), contextual.clone()),
 				new Join(contextual.clone(), values.clone()));
 
-		assertEquals(EquivalenceStatus.EQUIVALENT, result.getStatus(), result::getReason);
+		assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
 	}
 
 	@Test
@@ -343,22 +355,14 @@ class AlgebraEquivalenceRegressionTest {
 
 		EquivalenceResult leftResult = checker.check(original, pushedLeft);
 		EquivalenceResult rightResult = checker.check(original, pushedRight);
-		EquivalenceResult selected = leftResult.isEquivalent() ? leftResult : rightResult;
-		assertTrue(selected.isEquivalent(), selected::getReason);
-		NormalizationProof proof = (NormalizationProof) selected.getEvidence().orElseThrow();
-		long selectedPathSteps = proof.getOriginalSteps()
-				.stream()
-				.map(RuleApplication::getRule)
-				.filter(rule -> rule == RuleId.FILTER_PUSHED_TO_JOIN_LEFT
-						|| rule == RuleId.FILTER_PUSHED_TO_JOIN_RIGHT)
-				.count();
-		assertEquals(1, selectedPathSteps);
+		assertEquals(EquivalenceStatus.UNKNOWN, leftResult.getStatus(), leftResult::getReason);
+		assertEquals(EquivalenceStatus.UNKNOWN, rightResult.getStatus(), rightResult::getReason);
 	}
 
 	@Test
 	void proofKernelRejectsTamperedRuleTrace() {
-		TupleExpr original = new Join(pattern("s", P1, "a"), pattern("s", P2, "b"));
-		TupleExpr candidate = new Join(pattern("s", P2, "b"), pattern("s", P1, "a"));
+		TupleExpr candidate = pattern("s", P1, "a");
+		TupleExpr original = new Join(new SingletonSet(), candidate.clone());
 		CheckOptions options = CheckOptions.builder().boundedCounterexampleSearch(false).build();
 		EquivalenceResult result = new AlgebraEquivalenceChecker(options).check(original, candidate);
 		NormalizationProof valid = (NormalizationProof) result.getEvidence().orElseThrow();
@@ -372,12 +376,628 @@ class AlgebraEquivalenceRegressionTest {
 	}
 
 	@Test
+	void proofKernelRejectsMalformedCertificateEnvelope() {
+		TupleExpr candidate = pattern("s", P1, "a");
+		TupleExpr original = new Join(new SingletonSet(), candidate.clone());
+		CheckOptions options = CheckOptions.builder().boundedCounterexampleSearch(false).build();
+		NormalizationProof valid = (NormalizationProof) new AlgebraEquivalenceChecker(options)
+				.check(original, candidate)
+				.getEvidence()
+				.orElseThrow();
+		NormalizationCertificate certificate = valid.getCertificate().orElseThrow();
+		NormalizationCertificate malformed = new NormalizationCertificate(
+				NormalizationCertificate.CURRENT_FORMAT_VERSION + 1,
+				certificate.getSemanticsTarget(),
+				certificate.getObservationMode(),
+				certificate.getContextMode(),
+				certificate.getOriginalTree().orElseThrow(),
+				certificate.getCandidateTree().orElseThrow(),
+				certificate.getCanonicalFingerprint(),
+				certificate.getCanonicalEncoding(),
+				certificate.getOriginalSteps(),
+				certificate.getCandidateSteps());
+		NormalizationProof tampered = new NormalizationProof(
+				valid.getCanonicalFingerprint(),
+				valid.getCanonicalEncoding(),
+				valid.getOriginalSteps(),
+				valid.getCandidateSteps(),
+				malformed);
+
+		assertFalse(new ProofKernel(options).verify(original, candidate, tampered));
+	}
+
+	@Test
+	void proofKernelRejectsMalformedCertificateStep() {
+		TupleExpr candidate = pattern("s", P1, "a");
+		TupleExpr original = new Join(new SingletonSet(), candidate.clone());
+		CheckOptions options = CheckOptions.builder().boundedCounterexampleSearch(false).build();
+		NormalizationProof valid = (NormalizationProof) new AlgebraEquivalenceChecker(options)
+				.check(original, candidate)
+				.getEvidence()
+				.orElseThrow();
+		NormalizationCertificate certificate = valid.getCertificate().orElseThrow();
+		List<CertificateStep> malformedSteps = new ArrayList<>(certificate.getOriginalSteps());
+		CertificateStep validStep = malformedSteps.get(0);
+		malformedSteps.set(0, new CertificateStep(
+				validStep.getRule(),
+				"$/wrong",
+				validStep.getParameters(),
+				validStep.getResultingSubtree()));
+		NormalizationCertificate malformed = new NormalizationCertificate(
+				certificate.getFormatVersion(),
+				certificate.getSemanticsTarget(),
+				certificate.getObservationMode(),
+				certificate.getContextMode(),
+				certificate.getOriginalTree().orElseThrow(),
+				certificate.getCandidateTree().orElseThrow(),
+				certificate.getCanonicalFingerprint(),
+				certificate.getCanonicalEncoding(),
+				malformedSteps,
+				certificate.getCandidateSteps());
+		NormalizationProof tampered = new NormalizationProof(
+				valid.getCanonicalFingerprint(),
+				valid.getCanonicalEncoding(),
+				valid.getOriginalSteps(),
+				valid.getCandidateSteps(),
+				malformed);
+
+		assertFalse(new ProofKernel(options).verify(original, candidate, tampered));
+	}
+
+	@Test
+	void proofKernelRejectsDifferentCanonicalFormsEvenWithEmptyReplayTraces() {
+		TupleExpr original = pattern("s", P1, "a");
+		TupleExpr candidate = pattern("s", P2, "b");
+		CheckOptions options = CheckOptions.builder().boundedCounterexampleSearch(false).build();
+		NormalizationCertificate certificate = new NormalizationCertificate(
+				NormalizationCertificate.CURRENT_FORMAT_VERSION,
+				options.getSemanticsTarget(),
+				options.getObservationMode(),
+				options.getContextMode(),
+				"sha256:fake",
+				"non-empty",
+				List.of(),
+				List.of());
+		NormalizationProof proof = new NormalizationProof(
+				"sha256:fake",
+				"non-empty",
+				List.of(),
+				List.of(),
+				certificate);
+
+		assertFalse(new ProofKernel(options).verify(original, candidate, proof));
+	}
+
+	@Test
+	void proofKernelRejectsDiagnosticsThatDisagreeWithAValidCertificate() {
+		TupleExpr candidate = pattern("s", P1, "a");
+		TupleExpr original = new Join(new SingletonSet(), candidate.clone());
+		CheckOptions options = CheckOptions.builder().boundedCounterexampleSearch(false).build();
+		NormalizationProof valid = (NormalizationProof) new AlgebraEquivalenceChecker(options)
+				.check(original, candidate)
+				.getEvidence()
+				.orElseThrow();
+		NormalizationProof tampered = new NormalizationProof(
+				valid.getCanonicalFingerprint(),
+				valid.getCanonicalEncoding(),
+				List.of(),
+				List.of(),
+				valid.getCertificate().orElseThrow());
+
+		assertFalse(new ProofKernel(options).verify(original, candidate, tampered));
+	}
+
+	@Test
+	void proofKernelRejectsSameLengthDiagnosticRuleMismatch() {
+		TupleExpr candidate = pattern("s", P1, "a");
+		TupleExpr original = new Join(new SingletonSet(), candidate.clone());
+		CheckOptions options = CheckOptions.builder().boundedCounterexampleSearch(false).build();
+		NormalizationProof valid = (NormalizationProof) new AlgebraEquivalenceChecker(options)
+				.check(original, candidate)
+				.getEvidence()
+				.orElseThrow();
+		NormalizationProof tampered = new NormalizationProof(
+				valid.getCanonicalFingerprint(),
+				valid.getCanonicalEncoding(),
+				List.of(new RuleApplication(RuleId.VALUES_EMPTY, "wrong rule")),
+				valid.getCandidateSteps(),
+				valid.getCertificate().orElseThrow());
+
+		assertFalse(new ProofKernel(options).verify(original, candidate, tampered));
+	}
+
+	@Test
+	void proofKernelRejectsApplicableRuleIdOnTheWrongRootShape() {
+		TupleExpr original = pattern("s", P1, "a");
+		TupleExpr candidate = original.clone();
+		CheckOptions options = CheckOptions.builder().boundedCounterexampleSearch(false).build();
+		CertificateStep invalidStep = new CertificateStep(
+				RuleId.JOIN_UNIT_IDENTITY,
+				"$",
+				Map.of(),
+				"diagnostic");
+		NormalizationCertificate certificate = new NormalizationCertificate(
+				NormalizationCertificate.CURRENT_FORMAT_VERSION,
+				options.getSemanticsTarget(),
+				options.getObservationMode(),
+				options.getContextMode(),
+				FormalTreeEncoder.encode(original),
+				FormalTreeEncoder.encode(candidate),
+				"sha256:diagnostic",
+				"diagnostic",
+				List.of(invalidStep),
+				List.of());
+		NormalizationProof proof = new NormalizationProof(
+				"sha256:diagnostic",
+				"diagnostic",
+				List.of(new RuleApplication(RuleId.JOIN_UNIT_IDENTITY, "wrong shape")),
+				List.of(),
+				certificate);
+
+		assertFalse(new ProofKernel(options).verify(original, candidate, proof));
+	}
+
+	@Test
+	void proofKernelReplaysDuplicateMinusBlockerCertificate() {
+		TupleExpr base = pattern("s", P1, "a");
+		TupleExpr blocker = pattern("s", P2, "b");
+		TupleExpr original = new Difference(
+				new Difference(base.clone(), blocker.clone()),
+				blocker.clone());
+		TupleExpr candidate = new Difference(base.clone(), blocker.clone());
+		CheckOptions options = CheckOptions.builder().boundedCounterexampleSearch(false).build();
+
+		EquivalenceResult result = new AlgebraEquivalenceChecker(options).check(original, candidate);
+
+		assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
+	}
+
+	@Test
+	void queryRootNestedRewriteIsOutsideTheCertifiedContextBoundary() {
+		TupleExpr leaf = pattern("s", P1, "a");
+		TupleExpr original = new QueryRoot(new Join(new SingletonSet(), leaf.clone()));
+		TupleExpr candidate = new QueryRoot(leaf.clone());
+		CheckOptions options = CheckOptions.builder().boundedCounterexampleSearch(false).build();
+
+		EquivalenceResult result = new AlgebraEquivalenceChecker(options).check(original, candidate);
+
+		assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
+	}
+
+	@Test
+	void normalizationCertificateRecordsEveryIntermediateResultAtTheSamePath() {
+		TupleExpr a = pattern("s", P1, "a");
+		TupleExpr b = pattern("s", P2, "b");
+		TupleExpr c = pattern("s", VF.createIRI("urn:test:p3"), "c");
+		TupleExpr original = new Join(new Join(a.clone(), b.clone()), c.clone());
+		TupleExpr candidate = new Join(c.clone(), new Join(b.clone(), a.clone()));
+		CheckOptions options = CheckOptions.builder().boundedCounterexampleSearch(false).build();
+
+		EquivalenceResult result = new AlgebraEquivalenceChecker(options).check(original, candidate);
+
+		assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
+	}
+
+	@Test
+	void normalizationCertificateUsesStructuredRuleParametersInsteadOfDiagnostics() {
+		TupleExpr a = pattern("s", P1, "a");
+		TupleExpr b = pattern("s", P2, "b");
+		CheckOptions options = CheckOptions.builder().boundedCounterexampleSearch(false).build();
+
+		EquivalenceResult result = new AlgebraEquivalenceChecker(options).check(
+				new Join(a.clone(), b.clone()),
+				new Join(b.clone(), a.clone()));
+
+		assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
+	}
+
+	@Test
+	void unionCertificateRecordsAssociationDeduplicationAndCommutationSeparately() {
+		TupleExpr a = pattern("s", P1, "a");
+		TupleExpr b = pattern("s", P2, "b");
+		TupleExpr original = new Union(new Union(a.clone(), b.clone()), a.clone());
+		TupleExpr candidate = new Union(b.clone(), a.clone());
+		CheckOptions options = CheckOptions.builder()
+				.observationMode(ObservationMode.SET)
+				.boundedCounterexampleSearch(false)
+				.build();
+
+		EquivalenceResult result = new AlgebraEquivalenceChecker(options).check(original, candidate);
+
+		assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
+	}
+
+	@Test
+	void minusCertificateRecordsRightUnionConversionBeforeBlockerReordering() {
+		TupleExpr a = pattern("s", P1, "a");
+		TupleExpr b = pattern("s", P2, "b");
+		TupleExpr c = pattern("s", VF.createIRI("urn:test:p3"), "c");
+		TupleExpr original = new Difference(
+				a.clone(),
+				new Union(b.clone(), c.clone()));
+		TupleExpr candidate = new Difference(
+				new Difference(a.clone(), b.clone()),
+				c.clone());
+		CheckOptions options = CheckOptions.builder()
+				.contextMode(ContextMode.TOP_LEVEL_EMPTY)
+				.boundedCounterexampleSearch(false)
+				.build();
+
+		EquivalenceResult result = new AlgebraEquivalenceChecker(options).check(original, candidate);
+
+		assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
+	}
+
+	@Test
+	void distinctCertificateRecordsOuterRemovalBeforeSetObservationRemoval() {
+		TupleExpr leaf = pattern("s", P1, "a");
+		TupleExpr original = new Distinct(new Distinct(leaf.clone()));
+		CheckOptions options = CheckOptions.builder()
+				.observationMode(ObservationMode.SET)
+				.boundedCounterexampleSearch(false)
+				.build();
+
+		EquivalenceResult result = new AlgebraEquivalenceChecker(options).check(original, leaf.clone());
+
+		assertEquals(EquivalenceStatus.EQUIVALENT, result.getStatus(), result::getReason);
+		List<CertificateStep> steps = ((NormalizationProof) result.getEvidence().orElseThrow())
+				.getCertificate()
+				.orElseThrow()
+				.getOriginalSteps();
+		assertEquals(
+				List.of(RuleId.DISTINCT_IDEMPOTENT, RuleId.DISTINCT_OR_SET_OBSERVATION),
+				steps.stream().map(CertificateStep::getRule).toList());
+		assertNotEquals(steps.get(0).getResultingSubtree(), steps.get(1).getResultingSubtree());
+	}
+
+	@Test
+	void filterDistributionCertificatePrecedesUnionCanonicalization() {
+		TupleExpr a = pattern("s", P1, "a");
+		TupleExpr b = pattern("s", P2, "b");
+		Bound condition = new Bound(Var.of("incoming"));
+		TupleExpr original = new Filter(new Union(a.clone(), b.clone()), condition.clone());
+		TupleExpr candidate = new Union(
+				new Filter(a.clone(), condition.clone()),
+				new Filter(b.clone(), condition.clone()));
+		CheckOptions options = CheckOptions.builder().boundedCounterexampleSearch(false).build();
+
+		EquivalenceResult result = new AlgebraEquivalenceChecker(options).check(original, candidate);
+
+		assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
+	}
+
+	@Test
+	void leftJoinDistributionCertificatePrecedesUnionCanonicalization() {
+		TupleExpr a = pattern("s", P1, "a");
+		TupleExpr b = pattern("s", P2, "b");
+		TupleExpr right = pattern("s", VF.createIRI("urn:test:optional"), "c");
+		TupleExpr original = new LeftJoin(new Union(a.clone(), b.clone()), right.clone());
+		TupleExpr candidate = new Union(
+				new LeftJoin(a.clone(), right.clone()),
+				new LeftJoin(b.clone(), right.clone()));
+		CheckOptions options = CheckOptions.builder().boundedCounterexampleSearch(false).build();
+
+		EquivalenceResult result = new AlgebraEquivalenceChecker(options).check(original, candidate);
+
+		assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
+	}
+
+	@Test
+	void minusDistributionCertificatePrecedesUnionCanonicalization() {
+		TupleExpr a = pattern("s", P1, "a");
+		TupleExpr b = pattern("s", P2, "b");
+		TupleExpr blocker = pattern("s", VF.createIRI("urn:test:blocker"), "c");
+		TupleExpr original = new Difference(new Union(a.clone(), b.clone()), blocker.clone());
+		TupleExpr candidate = new Union(
+				new Difference(a.clone(), blocker.clone()),
+				new Difference(b.clone(), blocker.clone()));
+		CheckOptions options = CheckOptions.builder().boundedCounterexampleSearch(false).build();
+
+		EquivalenceResult result = new AlgebraEquivalenceChecker(options).check(original, candidate);
+
+		assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
+	}
+
+	@Test
+	void leftJoinFilterPushCertificateClaimsTheImmediateRebuiltTree() {
+		TupleExpr left = pattern("s", P1, "x");
+		TupleExpr right = pattern("s", P2, "y");
+		Bound condition = new Bound(Var.of("x"));
+		TupleExpr original = new Filter(new LeftJoin(left.clone(), right.clone()), condition.clone());
+		TupleExpr candidate = new LeftJoin(
+				new Filter(left.clone(), condition.clone()),
+				right.clone());
+		CheckOptions options = CheckOptions.builder().boundedCounterexampleSearch(false).build();
+
+		EquivalenceResult result = new AlgebraEquivalenceChecker(options).check(original, candidate);
+
+		assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
+	}
+
+	@Test
+	void projectionOrderCertificateLocatesTheProjectionListChild() {
+		TupleExpr input = pattern("s", P1, "x");
+		TupleExpr original = new Projection(
+				input.clone(),
+				new ProjectionElemList(new ProjectionElem("x"), new ProjectionElem("s")));
+		TupleExpr candidate = new Projection(
+				input.clone(),
+				new ProjectionElemList(new ProjectionElem("s"), new ProjectionElem("x")));
+		CheckOptions options = CheckOptions.builder().boundedCounterexampleSearch(false).build();
+
+		EquivalenceResult result = new AlgebraEquivalenceChecker(options).check(original, candidate);
+
+		assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
+	}
+
+	@Test
+	void rootIdentityOverANestedRewriteIsOutsideTheCertifiedContextBoundary() {
+		record IdentityCase(TupleExpr expression, CheckOptions options) {
+		}
+		TupleExpr survivor = new Join(pattern("s", P1, "x"), new SingletonSet());
+		TupleExpr expected = pattern("s", P1, "x");
+		CheckOptions defaults = CheckOptions.builder().boundedCounterexampleSearch(false).build();
+		List<IdentityCase> cases = List.of(
+				new IdentityCase(
+						new Filter(survivor.clone(), new ValueConstant(VF.createLiteral(true))),
+						defaults),
+				new IdentityCase(
+						new LeftJoin(survivor.clone(), new EmptySet()),
+						defaults),
+				new IdentityCase(
+						new LeftJoin(survivor.clone(), new SingletonSet()),
+						defaults),
+				new IdentityCase(
+						new Difference(survivor.clone(), new EmptySet()),
+						defaults));
+
+		for (IdentityCase identityCase : cases) {
+			EquivalenceResult result = new AlgebraEquivalenceChecker(identityCase.options())
+					.check(identityCase.expression(), expected.clone());
+			assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
+		}
+	}
+
+	@Test
+	void proofKernelRejectsCertificateForDifferentCanonicalTrees() {
+		TupleExpr commuted = pattern("s", P1, "a");
+		TupleExpr original = new Join(new SingletonSet(), commuted.clone());
+		CheckOptions options = CheckOptions.builder().boundedCounterexampleSearch(false).build();
+		NormalizationProof valid = (NormalizationProof) new AlgebraEquivalenceChecker(options)
+				.check(original, commuted)
+				.getEvidence()
+				.orElseThrow();
+
+		assertFalse(new ProofKernel(options).verify(original, new EmptySet(), valid));
+	}
+
+	@Test
+	void untheoremBackedJoinCommutativityReturnsUnknown() {
+		TupleExpr original = new Join(pattern("s", P1, "a"), pattern("s", P2, "b"));
+		TupleExpr commuted = new Join(pattern("s", P2, "b"), pattern("s", P1, "a"));
+
+		EquivalenceResult result = new AlgebraEquivalenceChecker().check(original, commuted);
+
+		assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
+	}
+
+	@Test
+	void proofKernelRejectsCertificateWithTamperedFormalSourceTree() {
+		TupleExpr candidate = pattern("s", P1, "a");
+		TupleExpr original = new Join(new SingletonSet(), candidate.clone());
+		CheckOptions options = CheckOptions.builder().boundedCounterexampleSearch(false).build();
+		NormalizationProof valid = (NormalizationProof) new AlgebraEquivalenceChecker(options)
+				.check(original, candidate)
+				.getEvidence()
+				.orElseThrow();
+		NormalizationCertificate certificate = valid.getCertificate().orElseThrow();
+		NormalizationCertificate tamperedCertificate = new NormalizationCertificate(
+				certificate.getFormatVersion(),
+				certificate.getSemanticsTarget(),
+				certificate.getObservationMode(),
+				certificate.getContextMode(),
+				certificate.getOriginalTree().orElseThrow() + " ",
+				certificate.getCandidateTree().orElseThrow(),
+				certificate.getCanonicalFingerprint(),
+				certificate.getCanonicalEncoding(),
+				certificate.getOriginalSteps(),
+				certificate.getCandidateSteps());
+		NormalizationProof tamperedProof = new NormalizationProof(
+				valid.getCanonicalFingerprint(),
+				valid.getCanonicalEncoding(),
+				valid.getOriginalSteps(),
+				valid.getCandidateSteps(),
+				tamperedCertificate);
+
+		assertFalse(new ProofKernel(options).verify(original, candidate, tamperedProof));
+	}
+
+	@Test
+	void proofKernelRejectsUnknownEvidenceType() {
+		EquivalenceEvidence unknown = () -> "not a kernel proof";
+
+		assertFalse(new ProofKernel(CheckOptions.defaults()).verify(
+				new SingletonSet(),
+				new SingletonSet(),
+				unknown));
+	}
+
+	@Test
+	void proofKernelRejectsStructuralProofForDifferentTrees() {
+		assertFalse(new ProofKernel(CheckOptions.defaults()).verify(
+				new SingletonSet(),
+				new EmptySet(),
+				new StructuralEqualityProof()));
+	}
+
+	@Test
+	void proofKernelAcceptsStructuralProofForEqualTrees() {
+		assertTrue(new ProofKernel(CheckOptions.defaults()).verify(
+				new SingletonSet(),
+				new SingletonSet(),
+				new StructuralEqualityProof()));
+	}
+
+	@Test
+	void certificateEvidenceDefensivelyCopiesCollections() {
+		Map<String, String> parameters = new LinkedHashMap<>();
+		parameters.put("orientation", "left-to-right");
+		parameters.put("permutation", "1,0");
+		CertificateStep step = new CertificateStep(RuleId.JOIN_COMMUTATIVE, "$", parameters, "JOIN_AC");
+		List<CertificateStep> steps = new ArrayList<>(List.of(step));
+		NormalizationCertificate certificate = new NormalizationCertificate(
+				NormalizationCertificate.CURRENT_FORMAT_VERSION,
+				SemanticsTarget.RDF4J_RUNTIME,
+				ObservationMode.BAG,
+				ContextMode.ALL_BINDINGS,
+				"fingerprint",
+				"JOIN_AC",
+				steps,
+				steps);
+
+		parameters.clear();
+		steps.clear();
+
+		assertEquals(RuleId.JOIN_COMMUTATIVE, step.getRule());
+		assertEquals("$", step.getNodePath());
+		assertEquals(Map.of("orientation", "left-to-right", "permutation", "1,0"), step.getParameters());
+		assertEquals("JOIN_AC", step.getResultingSubtree());
+		assertEquals(1, certificate.getOriginalSteps().size());
+		assertThrows(UnsupportedOperationException.class, () -> step.getParameters().clear());
+		assertThrows(UnsupportedOperationException.class, () -> certificate.getOriginalSteps().clear());
+		assertEquals(step, new CertificateStep(
+				RuleId.JOIN_COMMUTATIVE,
+				"$",
+				Map.of("orientation", "left-to-right", "permutation", "1,0"),
+				"JOIN_AC"));
+		CertificateStep different = new CertificateStep(
+				RuleId.JOIN_ASSOCIATIVE,
+				"$",
+				Map.of("orientation", "left-to-right", "permutation", "1,0"),
+				"JOIN_AC");
+		assertNotEquals(step, different);
+		assertNotEquals(step.hashCode(), different.hashCode());
+		assertEquals(step.hashCode(), new CertificateStep(
+				RuleId.JOIN_COMMUTATIVE,
+				"$",
+				Map.of("orientation", "left-to-right", "permutation", "1,0"),
+				"JOIN_AC").hashCode());
+		assertEquals(
+				"{\"formatVersion\":2,\"semanticsTarget\":\"RDF4J_RUNTIME\",\"observationMode\":\"BAG\","
+						+ "\"contextMode\":\"ALL_BINDINGS\",\"originalTree\":null,\"candidateTree\":null,"
+						+ "\"canonicalFingerprint\":\"fingerprint\","
+						+ "\"canonicalEncoding\":\"JOIN_AC\",\"originalSteps\":[{\"rule\":\"JOIN_COMMUTATIVE\","
+						+ "\"nodePath\":\"$\",\"parameters\":{\"orientation\":\"left-to-right\","
+						+ "\"permutation\":\"1,0\"},"
+						+ "\"resultingSubtree\":\"JOIN_AC\"}],\"candidateSteps\":[{\"rule\":\"JOIN_COMMUTATIVE\","
+						+ "\"nodePath\":\"$\",\"parameters\":{\"orientation\":\"left-to-right\","
+						+ "\"permutation\":\"1,0\"},"
+						+ "\"resultingSubtree\":\"JOIN_AC\"}]}",
+				certificate.toJson());
+	}
+
+	@Test
+	void normalizationCertificateJsonCarriesBothFormalSourceTrees() {
+		TupleExpr candidate = pattern("s", P1, "a");
+		TupleExpr original = new Join(new SingletonSet(), candidate.clone());
+		NormalizationProof proof = (NormalizationProof) new AlgebraEquivalenceChecker()
+				.check(original, candidate)
+				.getEvidence()
+				.orElseThrow();
+
+		String json = proof.getCertificate().orElseThrow().toJson();
+
+		assertTrue(json.contains("\"formatVersion\":2"), json);
+		assertTrue(json.contains("\"originalTree\":{"), json);
+		assertTrue(json.contains("\"candidateTree\":{"), json);
+	}
+
+	@Test
+	void nestedTheoremBackedRewriteReturnsUnknownUntilContextCongruenceIsProved() {
+		TupleExpr leaf = pattern("s", P1, "a");
+		TupleExpr original = new QueryRoot(new Join(new SingletonSet(), leaf.clone()));
+		TupleExpr candidate = new QueryRoot(leaf.clone());
+
+		EquivalenceResult result = new AlgebraEquivalenceChecker().check(original, candidate);
+
+		assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
+	}
+
+	@Test
+	void differentQueryScopeSeedsCannotConvergeWithoutASeedSemanticsProof() {
+		QueryRoot withoutSeed = new QueryRoot(pattern("s", P1, "a"));
+		QueryRoot withSeed = new QueryRoot(pattern("s", P1, "a"));
+		withSeed.setQueryScopeSeed(QueryScopeSeed.empty());
+
+		EquivalenceResult result = new AlgebraEquivalenceChecker().check(withoutSeed, withSeed);
+
+		assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
+	}
+
+	@Test
+	void physicalBinaryOperatorStateCannotDisappearThroughAnIdentityRule() {
+		TupleExpr leaf = pattern("s", P1, "a");
+		Union hashUnion = new Union(new EmptySet(), leaf.clone());
+		hashUnion.setAlgorithm("HashUnion");
+		Union mergeUnion = hashUnion.clone();
+		mergeUnion.setAlgorithm("MergeUnion");
+
+		Join ordinaryJoin = new Join(new SingletonSet(), leaf.clone());
+		Join mergeJoin = ordinaryJoin.clone();
+		mergeJoin.setMergeJoin(true);
+
+		Join uncachedJoin = new Join(new SingletonSet(), leaf.clone());
+		Join cachedJoin = uncachedJoin.clone();
+		cachedJoin.setCacheable(true);
+
+		for (TupleExpr[] pair : List.of(
+				new TupleExpr[] { hashUnion, mergeUnion },
+				new TupleExpr[] { ordinaryJoin, mergeJoin },
+				new TupleExpr[] { uncachedJoin, cachedJoin })) {
+			EquivalenceResult result = new AlgebraEquivalenceChecker().check(pair[0], pair[1]);
+			assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
+		}
+	}
+
+	@Test
 	void defaultsAreProofOnlyBagChecksForArbitraryBindings() {
 		CheckOptions defaults = CheckOptions.defaults();
 
 		assertEquals(ObservationMode.BAG, defaults.getObservationMode());
 		assertEquals(ContextMode.ALL_BINDINGS, defaults.getContextMode());
 		assertFalse(defaults.isBoundedCounterexampleSearch());
+	}
+
+	@Test
+	void specificationValuesUnitRequiresTopLevelEmptyContext() {
+		CheckOptions options = CheckOptions.builder()
+				.semanticsTarget(SemanticsTarget.SPARQL_1_1)
+				.contextMode(ContextMode.ALL_BINDINGS)
+				.boundedCounterexampleSearch(false)
+				.build();
+
+		EquivalenceResult result = new AlgebraEquivalenceChecker(options).check(
+				values(Set.of(), new MapBindingSet()),
+				new SingletonSet());
+
+		assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
+	}
+
+	@Test
+	void nonMaterializedValuesRowsReturnUnknownWithoutBeingConsumed() {
+		AtomicInteger iteratorCalls = new AtomicInteger();
+		Iterable<BindingSet> rows = () -> {
+			iteratorCalls.incrementAndGet();
+			return List.<BindingSet>of(new MapBindingSet()).iterator();
+		};
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setDeclaredBindingNames(Set.of());
+		assignment.setBindingSets(rows);
+
+		EquivalenceResult result = new AlgebraEquivalenceChecker().check(assignment, assignment);
+
+		assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
+		assertEquals(0, iteratorCalls.get());
 	}
 
 	@Test
@@ -421,7 +1041,7 @@ class AlgebraEquivalenceRegressionTest {
 		EquivalenceResult result = assertDoesNotThrow(
 				() -> runtimeCheckerWithEmptyCase().check(original, candidate));
 
-		assertEquals(EquivalenceStatus.EQUIVALENT, result.getStatus(), result::getReason);
+		assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
 	}
 
 	@Test
@@ -446,9 +1066,9 @@ class AlgebraEquivalenceRegressionTest {
 	}
 
 	@Test
-	void languageTagCaseDoesNotBlockSetDeduplication() {
-		// RDF4J literal equality compares language tags case-insensitively, so under SET observation
-		// the two rows are the same solution and must deduplicate to the single-row VALUES.
+	void languageTagCaseDeduplicationNeedsAnExplicitCertifiedRule() {
+		// RDF4J literal equality compares language tags case-insensitively. The producer can normalize
+		// these rows, but the root-only kernel must stay incomplete until that VALUES law has a theorem.
 		BindingSetAssignment mixedCase = new BindingSetAssignment();
 		mixedCase.setBindingNames(Set.of("x"));
 		mixedCase.setBindingSets(List.of(
@@ -466,7 +1086,7 @@ class AlgebraEquivalenceRegressionTest {
 
 		EquivalenceResult result = new AlgebraEquivalenceChecker(options).check(mixedCase, lowerCase);
 
-		assertEquals(EquivalenceStatus.EQUIVALENT, result.getStatus(), result::getReason);
+		assertEquals(EquivalenceStatus.UNKNOWN, result.getStatus(), result::getReason);
 	}
 
 	@Test

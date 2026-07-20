@@ -155,7 +155,9 @@ final class CanonicalNode implements Comparable<CanonicalNode> {
 		int result = 31 * operator.hashCode() + attributes.hashCode();
 		result = 31 * result + childSemantics.hashCode();
 		if (opaqueModel != null) {
-			return 31 * result + opaqueModel.hashCode();
+			// ExactTreeEquality deliberately does not trust native QueryModelNode equality.
+			// Its corresponding hash must therefore be independent of native hashCode too.
+			return 31 * result;
 		}
 		if (childSemantics == ChildSemantics.ORDERED) {
 			return 31 * result + children.hashCode();
