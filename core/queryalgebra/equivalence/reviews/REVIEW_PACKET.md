@@ -21,6 +21,10 @@ The first command must print
 `a693a564067c036baaa91b7eb1ea4d9f645879678bad8f74d9cd6e34c7142d7c`; the second must report every file `OK`.
 Any mismatch means the review does not apply to this candidate.
 
+The candidate is published as transport commit `3c0818fa99f9f1ad3921f8ef6644648c08a1e1f6` on
+`https://github.com/eclipse-rdf4j/rdf4j/pull/5948`. The PR commit makes the files reviewable; the base-plus-digest
+identifier above remains the authoritative semantic identity.
+
 A 238,643-byte transport archive containing those 155 files plus the dossier, mutation review, review records,
 ExecPlan, evidence ledger, and final reactor log is retained at
 `/tmp/GH-5905-algebra-equivalence-candidate-a693a564.tar.gz`. Its SHA-256 is
@@ -122,7 +126,9 @@ candidate identifier or request changes with concrete findings. Approval of a di
 gate.
 
 Copy-ready requests and the acceptance criteria for returned reviews are in `REVIEW_REQUEST.md`. A read-only audit of
-GH-5905 at 2026-07-20 09:19Z found an open issue with no comments, assignees, or pull request. Its implementation-commit
-references, including the base commit above, are provenance only and do not constitute either required decision.
+PR #5948 at 2026-07-20 09:30Z found the exact transport commit at its head, zero reviews, and no requested reviewers.
+The earlier issue-number lookup established only that issue GH-5905 is not itself a PR; commit-based resolution is the
+authoritative PR association. Implementation-commit references are provenance only and do not constitute either
+required decision.
 
 Until both records contain verifiable approvals, `../CERTIFICATION.md` must remain `NOT CERTIFIED`.

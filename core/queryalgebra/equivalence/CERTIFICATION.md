@@ -27,6 +27,8 @@ SEQUENCE, and ASK; incoming contexts are top-level empty and arbitrary permitted
 
 - Branch: `GH-5905-algebra-equivalence`.
 - Base Git commit and runtime-oracle revision: `bf9edabb0006bca3b422b45f10c38723ed8863af`.
+- Candidate transport commit: `3c0818fa99f9f1ad3921f8ef6644648c08a1e1f6`, published on
+  `https://github.com/eclipse-rdf4j/rdf4j/pull/5948`.
 - Candidate state: the tested semantic bundle is identified by the base commit plus the deterministic source digest
   below. A transport commit may also contain dossier and review files outside that digest; the base commit alone does
   not contain the implementation changes.
@@ -241,8 +243,10 @@ Both approvals must identify candidate source-bundle identifier
 - Formal-methods review: `reviews/FORMAL_METHODS_SIGNOFF.md` — **PENDING**.
 
 An automated agent, campaign, or mutation tool is not a substitute for either independent reviewer.
-The read-only GH-5905 audit at 2026-07-20 09:19Z found no comments, assignees, pull request, or review decision; commit
-references on that issue are not sign-offs.
+The initial issue-number lookup established only that GH-5905 is not itself a pull request. After the candidate was
+pushed, commit-based resolution identified open PR #5948 at exact head
+`3c0818fa99f9f1ad3921f8ef6644648c08a1e1f6`. At 2026-07-20 09:30Z it had zero reviews and no requested reviewers, so
+neither independent gate was satisfied.
 
 ## Trusted computing base
 
