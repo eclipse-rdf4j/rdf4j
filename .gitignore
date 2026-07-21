@@ -71,15 +71,13 @@ e2e/test-results
 /persistent-lmdb-theme-store/
 papers/
 
-# Local agent-session artifacts — never commit (see GH-5905 history cleanup)
-/.claude/
+worktrees/
 *.hprof
 *.bundle
 /GH-*.zip
 /GH-*.zip.sha256
 /GH-*.md
 /GH-*.txt
-/kuzu-*
 /initial-evidence-*.txt
 /baseline-failing-tests.txt
 /final-evidence.txt
