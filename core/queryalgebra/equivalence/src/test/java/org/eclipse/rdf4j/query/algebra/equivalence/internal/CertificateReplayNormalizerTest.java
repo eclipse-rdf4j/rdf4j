@@ -66,13 +66,14 @@ class CertificateReplayNormalizerTest {
 				RuleId.UNION_EMPTY_IDENTITY, leaf);
 		assertRewrite(runtime(ObservationMode.BAG), new Union(leaf.clone(), new EmptySet()),
 				RuleId.UNION_EMPTY_IDENTITY, leaf);
-		assertRewrite(runtime(ObservationMode.BAG), new LeftJoin(new EmptySet(), leaf.clone()),
+		LocalCertificateReplayer specificationBag = specification(ObservationMode.BAG, ContextMode.ALL_BINDINGS);
+		assertRewrite(specificationBag, new LeftJoin(new EmptySet(), leaf.clone()),
 				RuleId.LEFT_JOIN_EMPTY_LEFT, new EmptySet());
-		assertRewrite(runtime(ObservationMode.BAG), new LeftJoin(leaf.clone(), new EmptySet()),
+		assertRewrite(specificationBag, new LeftJoin(leaf.clone(), new EmptySet()),
 				RuleId.LEFT_JOIN_EMPTY_RIGHT, leaf);
-		assertRewrite(runtime(ObservationMode.BAG), new LeftJoin(leaf.clone(), new SingletonSet()),
+		assertRewrite(specificationBag, new LeftJoin(leaf.clone(), new SingletonSet()),
 				RuleId.LEFT_JOIN_UNIT_RIGHT, leaf);
-		assertRewrite(runtime(ObservationMode.BAG), new Difference(new EmptySet(), leaf.clone()),
+		assertRewrite(specificationBag, new Difference(new EmptySet(), leaf.clone()),
 				RuleId.MINUS_EMPTY_LEFT, new EmptySet());
 		assertRewrite(runtime(ObservationMode.BAG), new Difference(leaf.clone(), new EmptySet()),
 				RuleId.MINUS_EMPTY_RIGHT, leaf);
@@ -97,6 +98,17 @@ class CertificateReplayNormalizerTest {
 				values(List.of(new MapBindingSet())), RuleId.VALUES_UNIT, new SingletonSet());
 		assertRewrite(runtime(ObservationMode.SET), values(List.of(new MapBindingSet(), new MapBindingSet())),
 				RuleId.VALUES_UNIT, new SingletonSet());
+	}
+
+	@Test
+	void rejectsRuntimeRulesThatElideEagerlyPrecompiledSubtrees() {
+		TupleExpr leaf = pattern("x");
+		LocalCertificateReplayer runtimeBag = runtime(ObservationMode.BAG);
+
+		assertRejected(runtimeBag, new LeftJoin(new EmptySet(), leaf.clone()), RuleId.LEFT_JOIN_EMPTY_LEFT);
+		assertRejected(runtimeBag, new LeftJoin(leaf.clone(), new EmptySet()), RuleId.LEFT_JOIN_EMPTY_RIGHT);
+		assertRejected(runtimeBag, new LeftJoin(leaf.clone(), new SingletonSet()), RuleId.LEFT_JOIN_UNIT_RIGHT);
+		assertRejected(runtimeBag, new Difference(new EmptySet(), leaf.clone()), RuleId.MINUS_EMPTY_LEFT);
 	}
 
 	@Test

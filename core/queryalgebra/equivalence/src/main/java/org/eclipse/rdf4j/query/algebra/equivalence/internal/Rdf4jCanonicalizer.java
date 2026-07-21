@@ -577,7 +577,10 @@ public final class Rdf4jCanonicalizer {
 					conditionNode);
 		}
 
-		if (rightExpression instanceof EmptySet) {
+		// RDF4J eagerly precompiles both inputs and the condition. Removing any of them can
+		// hide a deterministic preparation failure, so these elision rules are specification-only
+		// until the runtime proof carries an explicit compile-totality premise.
+		if (!semanticsTarget.isRuntimeTarget() && rightExpression instanceof EmptySet) {
 			CertificateTrace.record(
 					trace,
 					new RuleApplication(
@@ -586,7 +589,9 @@ public final class Rdf4jCanonicalizer {
 					CanonicalNode.opaque(leftExpression));
 			return tuple(leftExpression, mode, incomingContext, trace);
 		}
-		if (rightExpression instanceof SingletonSet && conditionSafe) {
+		if (!semanticsTarget.isRuntimeTarget()
+				&& rightExpression instanceof SingletonSet
+				&& conditionSafe) {
 			CertificateTrace.record(
 					trace,
 					new RuleApplication(
@@ -595,7 +600,8 @@ public final class Rdf4jCanonicalizer {
 					CanonicalNode.opaque(leftExpression));
 			return tuple(leftExpression, mode, incomingContext, trace);
 		}
-		if (leftExpression instanceof EmptySet
+		if (!semanticsTarget.isRuntimeTarget()
+				&& leftExpression instanceof EmptySet
 				&& conditionSafe
 				&& safety.isReorderSafe(rightExpression)) {
 			trace.add(new RuleApplication(
@@ -676,6 +682,15 @@ public final class Rdf4jCanonicalizer {
 					new RuleApplication(RuleId.MINUS_EMPTY_RIGHT, "MINUS empty preserves the left bag"),
 					CanonicalNode.opaque(leftExpression));
 			return tuple(leftExpression, mode, incomingContext, trace);
+		}
+		// RDF4J precompiles both MINUS operands before the empty left side can suppress
+		// evaluation of the right side. Keep that preparation schedule visible at runtime.
+		if (semanticsTarget.isRuntimeTarget() && leftExpression instanceof EmptySet) {
+			return ordered(
+					"MINUS",
+					scopeAttribute(difference),
+					tuple(leftExpression, mode, incomingContext, trace),
+					tuple(rightExpression, Mode.SET, incomingContext, trace));
 		}
 		if (leftExpression instanceof EmptySet && safety.isReorderSafe(rightExpression)) {
 			trace.add(new RuleApplication(

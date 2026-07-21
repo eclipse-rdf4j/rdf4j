@@ -332,10 +332,6 @@ class RuntimeEquivalenceDifferentialTest {
 				new Filter(a.clone(), new ValueConstant(VF.createLiteral(true))),
 				a.clone()));
 		result.add(new EquivalentPair(
-				"left join empty identity",
-				new LeftJoin(a.clone(), new EmptySet()),
-				a.clone()));
-		result.add(new EquivalentPair(
 				"minus empty identity",
 				new Difference(a.clone(), new EmptySet()),
 				a.clone()));

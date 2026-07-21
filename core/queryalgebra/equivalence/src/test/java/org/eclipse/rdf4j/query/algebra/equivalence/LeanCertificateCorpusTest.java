@@ -46,6 +46,10 @@ class LeanCertificateCorpusTest {
 			SemanticsTarget.RDF4J_RUNTIME,
 			ObservationMode.BAG,
 			ContextMode.ALL_BINDINGS);
+	private static final CheckOptions SPECIFICATION_BAG = options(
+			SemanticsTarget.SPARQL_1_1,
+			ObservationMode.BAG,
+			ContextMode.ALL_BINDINGS);
 
 	@Test
 	void writesTheoremBackedV2Corpus() throws IOException {
@@ -79,12 +83,15 @@ class LeanCertificateCorpusTest {
 		add(result, "join-unit-right", RUNTIME_BAG, new Join(leaf.clone(), new SingletonSet()), leaf.clone());
 		add(result, "union-empty-left", RUNTIME_BAG, new Union(new EmptySet(), leaf.clone()), leaf.clone());
 		add(result, "union-empty-right", RUNTIME_BAG, new Union(leaf.clone(), new EmptySet()), leaf.clone());
-		add(result, "leftjoin-empty-left", RUNTIME_BAG, new LeftJoin(new EmptySet(), leaf.clone()), new EmptySet());
-		add(result, "leftjoin-empty-right", RUNTIME_BAG, new LeftJoin(leaf.clone(), new EmptySet()), leaf.clone());
-		add(result, "leftjoin-unit-right", RUNTIME_BAG,
+		add(result, "leftjoin-empty-left", SPECIFICATION_BAG,
+				new LeftJoin(new EmptySet(), leaf.clone()), new EmptySet());
+		add(result, "leftjoin-empty-right", SPECIFICATION_BAG,
+				new LeftJoin(leaf.clone(), new EmptySet()), leaf.clone());
+		add(result, "leftjoin-unit-right", SPECIFICATION_BAG,
 				new LeftJoin(leaf.clone(), new SingletonSet(), new ValueConstant(VF.createLiteral(false))),
 				leaf.clone());
-		add(result, "minus-empty-left", RUNTIME_BAG, new Difference(new EmptySet(), leaf.clone()), new EmptySet());
+		add(result, "minus-empty-left", SPECIFICATION_BAG,
+				new Difference(new EmptySet(), leaf.clone()), new EmptySet());
 		add(result, "minus-empty-right", RUNTIME_BAG, new Difference(leaf.clone(), new EmptySet()), leaf.clone());
 		add(result, "filter-true-bag", RUNTIME_BAG,
 				new Filter(leaf.clone(), new ValueConstant(VF.createLiteral(true))), leaf.clone());
