@@ -69,6 +69,12 @@ final class NativeGroupTable {
 	PrimitiveTupleTable tuples;
 	long[] tupleCounts;
 	AggState[] tupleStates;
+	/**
+	 * Reusable candidate state for factorized aggregation: {@link FactorizedTail#aggregate} leaves the state untouched
+	 * when it reports no match, so the same clean instance serves every zero-match prefix row instead of allocating one
+	 * per row (dominant cost when a selective tail rejects almost every prefix row).
+	 */
+	AggState spareGroupState;
 
 	private NativeGroupTable(int[] groupSlots, AggregateSpec[] aggregates, AggContext ctx,
 			AggregateDistinctChannels channels, Mode mode, boolean rowMetrics) {
@@ -207,22 +213,35 @@ final class NativeGroupTable {
 			AggState state = longGroups.get(key);
 			boolean fresh = state == null;
 			if (fresh) {
-				state = newGroupState();
+				if (spareGroupState == null) {
+					spareGroupState = newGroupState();
+				}
+				state = spareGroupState;
 			}
 			if (tail.aggregate(row, state) && fresh) {
 				longGroups.put(key, state);
+				spareGroupState = null;
 			}
 			break;
 		}
 		case TUPLE_STATES: {
 			int group = tuples.find(row.slots, groupSlots, false);
-			AggState state = group < 0 ? newGroupState() : tupleStates[group];
+			AggState state;
+			if (group < 0) {
+				if (spareGroupState == null) {
+					spareGroupState = newGroupState();
+				}
+				state = spareGroupState;
+			} else {
+				state = tupleStates[group];
+			}
 			if (tail.aggregate(row, state) && group < 0) {
 				group = tuples.findOrInsert(row.slots, groupSlots, false);
 				if (group >= tupleStates.length) {
 					tupleStates = Arrays.copyOf(tupleStates, tupleStates.length << 1);
 				}
 				tupleStates[group] = state;
+				spareGroupState = null;
 			}
 			if (rowMetrics) {
 				primitiveTupleRows++;

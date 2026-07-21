@@ -783,25 +783,35 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		}
 		long needCover = keepReads & leftBag.producedMask();
 		ArrayList<SlotPlan> keep = new ArrayList<>();
-		ArrayList<SlotPlan> hoist = new ArrayList<>();
+		boolean[] kept = new boolean[leftBag.children.length];
+		int firstKeepIndex = -1;
 		long keepProduced = 0L;
-		for (SlotPlan child : leftBag.children) {
+		for (int i = 0; i < leftBag.children.length; i++) {
+			SlotPlan child = leftBag.children[i];
 			if ((needCover & ~keepProduced) != 0L && (child.producedMask() & needCover & ~keepProduced) != 0L) {
 				keep.add(child);
+				kept[i] = true;
+				if (firstKeepIndex < 0) {
+					firstKeepIndex = i;
+				}
 				keepProduced |= child.producedMask();
-			} else {
-				hoist.add(child);
 			}
 		}
-		if ((needCover & ~keepProduced) != 0L || hoist.isEmpty() || keep.isEmpty()) {
+		if ((needCover & ~keepProduced) != 0L || keep.isEmpty() || keep.size() == leftBag.children.length) {
 			return null;
 		}
 		SlotPlan keepPlan = keep.size() == 1 && leftBag.filters.length == 0 ? keep.get(0)
 				: new MultiJoinPlan(keep.toArray(SlotPlan[]::new), leftBag.filters);
-		SlotPlan[] children = new SlotPlan[hoist.size() + 1];
-		children[0] = new LeftJoinPlan(keepPlan, leftJoinPlan.right);
-		for (int i = 0; i < hoist.size(); i++) {
-			children[i + 1] = hoist.get(i);
+		// the composite takes the first kept child's position and hoisted members keep their relative
+		// order, so the compiler's selective prefix keeps driving the bag instead of the OPTIONAL scan
+		SlotPlan[] children = new SlotPlan[leftBag.children.length - keep.size() + 1];
+		int at = 0;
+		for (int i = 0; i < leftBag.children.length; i++) {
+			if (i == firstKeepIndex) {
+				children[at++] = new LeftJoinPlan(keepPlan, leftJoinPlan.right);
+			} else if (!kept[i]) {
+				children[at++] = leftBag.children[i];
+			}
 		}
 		return new MultiJoinPlan(children, new MaskedFilter[0]);
 	}
