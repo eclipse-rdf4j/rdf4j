@@ -1,0 +1,5 @@
+SELECT * WHERE {
+  VALUES ?x { "1" "2" "3" "4" "5" }
+  OPTIONAL { VALUES (?x ?y) { ("1" "one") ("3" "three") } }
+  BIND(COALESCE(?y, "fallback") AS ?z)
+}

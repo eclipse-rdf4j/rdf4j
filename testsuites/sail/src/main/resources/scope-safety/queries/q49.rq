@@ -1,0 +1,5 @@
+SELECT ?x WHERE {
+  { SELECT ?x WHERE {
+      VALUES (?x ?rank) { ("c" "3") ("a" "1") ("b" "2") }
+    } ORDER BY ?rank LIMIT 2 }
+} ORDER BY ?x

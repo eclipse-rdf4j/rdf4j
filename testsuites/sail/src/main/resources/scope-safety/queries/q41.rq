@@ -1,0 +1,4 @@
+SELECT * WHERE {
+  VALUES ?x { <urn:a> <urn:b> }
+  FILTER NOT EXISTS { ?x <urn:missing> ?z }
+}

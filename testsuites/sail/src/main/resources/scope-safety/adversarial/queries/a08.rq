@@ -1,0 +1,5 @@
+# The aggregate's ?v belongs to the subquery frame, not the outer VALUES frame.
+SELECT ?v ?count WHERE {
+  VALUES ?v { "outer" }
+  { SELECT (STR(COUNT(?v)) AS ?count) WHERE { VALUES ?v { "i1" "i2" "i3" } } }
+}

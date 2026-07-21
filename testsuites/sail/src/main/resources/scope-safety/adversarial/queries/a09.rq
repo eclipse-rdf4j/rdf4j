@@ -1,0 +1,10 @@
+# The GRAPH variable is local to the subquery and is exported only through ?inside.
+SELECT ?g ?inside ?mark WHERE {
+  VALUES ?g { <urn:g1> }
+  {
+    SELECT (?g AS ?inside) ?mark WHERE {
+      GRAPH ?g { ?s <urn:mark> ?mark }
+      FILTER(?g = <urn:g2>)
+    }
+  }
+}

@@ -1,0 +1,10 @@
+# Three lexical frames deliberately reuse ?x.
+SELECT ?x ?middle ?inner WHERE {
+  VALUES ?x { "outer" }
+  {
+    SELECT (?x AS ?middle) ?inner WHERE {
+      VALUES ?x { "middle" }
+      { SELECT (?x AS ?inner) WHERE { VALUES ?x { "inner" } } }
+    }
+  }
+}

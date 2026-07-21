@@ -1,0 +1,4 @@
+SELECT * WHERE {
+  VALUES ?x { "1" "2" }
+  OPTIONAL { VALUES (?x ?y) { ("1" "a") ("3" "c") } }
+}

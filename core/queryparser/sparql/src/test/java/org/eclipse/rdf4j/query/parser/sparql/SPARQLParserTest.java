@@ -30,12 +30,14 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.io.StringReader;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Namespace;
@@ -47,6 +49,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.DeleteData;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -60,6 +63,7 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.QueryScopeSeed;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Sum;
@@ -67,6 +71,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
@@ -89,6 +94,7 @@ import org.junit.jupiter.api.Test;
  * @author jeen
  */
 public class SPARQLParserTest {
+	private static final String SCOPE_SAFETY_MODE_PROPERTY = "org.eclipse.rdf4j.query.scopeSafety.mode";
 
 	private SPARQLParser parser;
 
@@ -113,6 +119,208 @@ public class SPARQLParserTest {
 		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null);
 
 		assertThat(q.getSourceString()).isEqualTo(simpleSparqlQuery);
+	}
+
+	@Test
+	public void parsedProjectionsExplicitlyIdentifyOuterAndSubqueryScopes() {
+		ParsedQuery parsed = parser.parseQuery("""
+				SELECT ?outer ?inner WHERE {
+				  ?outer <urn:outer> ?outerValue .
+				  { SELECT ?inner WHERE { ?inner <urn:inner> ?innerValue } }
+				}
+				""", null);
+		List<Projection> projections = new ArrayList<>();
+		parsed.getTupleExpr().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Projection projection) {
+				projections.add(projection);
+				super.meet(projection);
+			}
+		});
+
+		assertThat(projections).hasSize(2);
+		assertThat(projections.get(0).isSubquery()).isFalse();
+		assertThat(projections.get(1).isSubquery()).isTrue();
+	}
+
+	@Test
+	public void parsedQueryCarriesDenseOriginsAndNestedFrameSeed() {
+		QueryRoot root = parseQueryWithScopeSeed("""
+				SELECT ?outer ?inner WHERE {
+				  ?outer <urn:outer> ?outerValue .
+				  { SELECT ?inner WHERE { ?inner <urn:inner> ?innerValue } }
+				}
+				""");
+		QueryScopeSeed seed = root.getQueryScopeSeed();
+		List<QueryModelNode> nodes = new ArrayList<>();
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				nodes.add(node);
+				super.meetNode(node);
+			}
+		});
+
+		assertThat(seed).isNotNull();
+		assertThat(seed.getOriginCount()).isEqualTo(nodes.size());
+		assertThat(nodes).allSatisfy(node -> {
+			int originId = QueryScopeSeed.originId(node.getOptimizationTag());
+			assertThat(originId).isBetween(0, seed.getOriginCount() - 1);
+		});
+		assertThat(seed.getFrameCount()).isEqualTo(2);
+		List<Integer> innerSymbolFrames = new ArrayList<>();
+		for (int symbolId = 0; symbolId < seed.getSymbolCount(); symbolId++) {
+			if ("inner".equals(seed.getSymbolName(symbolId))) {
+				innerSymbolFrames.add(seed.getSymbolFrame(symbolId));
+			}
+		}
+		assertThat(innerSymbolFrames).hasSize(2);
+		assertThat(innerSymbolFrames.get(0)).isNotEqualTo(innerSymbolFrames.get(1));
+
+		List<StatementPattern> patterns = nodes.stream()
+				.filter(StatementPattern.class::isInstance)
+				.map(StatementPattern.class::cast)
+				.toList();
+		StatementPattern outer = patterns.stream()
+				.filter(pattern -> "urn:outer".equals(pattern.getPredicateVar().getValue().stringValue()))
+				.findFirst()
+				.orElseThrow();
+		StatementPattern inner = patterns.stream()
+				.filter(pattern -> "urn:inner".equals(pattern.getPredicateVar().getValue().stringValue()))
+				.findFirst()
+				.orElseThrow();
+		assertThat(seed.getOriginFrame(QueryScopeSeed.originId(outer.getOptimizationTag())))
+				.isEqualTo(QueryScopeSeed.ROOT_FRAME_ID);
+		assertThat(seed.getOriginFrame(QueryScopeSeed.originId(inner.getOptimizationTag())))
+				.isNotEqualTo(QueryScopeSeed.ROOT_FRAME_ID);
+
+		assertThat(new QueryRoot(new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"))).getQueryScopeSeed())
+				.isNull();
+	}
+
+	@Test
+	public void parsedSeedRecordsCorrelationRegionsAndEnvironments() {
+		QueryRoot root = parseQueryWithScopeSeed("""
+				SELECT * WHERE {
+				  ?s <urn:base> ?base .
+				  FILTER EXISTS { ?s <urn:exists> ?existsValue }
+				  MINUS { ?s <urn:minus> ?minusValue }
+				  LATERAL { SELECT ?lateralValue WHERE { ?s <urn:lateral> ?lateralValue } }
+				  GRAPH <urn:graph> { ?s <urn:graph-pattern> ?graphValue }
+				  SERVICE <urn:service> { ?s <urn:service-pattern> ?serviceValue }
+				}
+				""");
+		QueryScopeSeed seed = root.getQueryScopeSeed();
+		Set<QueryScopeSeed.RegionKind> regionKinds = new HashSet<>();
+		for (int i = 0; i < seed.getRegionCount(); i++) {
+			regionKinds.add(seed.getRegionKind(i));
+		}
+		Set<QueryScopeSeed.EnvironmentKind> environmentKinds = new HashSet<>();
+		for (int i = 0; i < seed.getEnvironmentCount(); i++) {
+			environmentKinds.add(seed.getEnvironmentKind(i));
+		}
+
+		assertThat(regionKinds).contains(QueryScopeSeed.RegionKind.CORRELATED,
+				QueryScopeSeed.RegionKind.MINUS_RIGHT, QueryScopeSeed.RegionKind.LATERAL);
+		assertThat(environmentKinds).contains(QueryScopeSeed.EnvironmentKind.GRAPH,
+				QueryScopeSeed.EnvironmentKind.SERVICE);
+
+		List<StatementPattern> patterns = new ArrayList<>();
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern pattern) {
+				patterns.add(pattern);
+				super.meet(pattern);
+			}
+		});
+		assertThat(region(seed, patternWithPredicate(patterns, "urn:base")))
+				.isEqualTo(QueryScopeSeed.RegionKind.ORDINARY);
+		assertThat(region(seed, patternWithPredicate(patterns, "urn:exists")))
+				.isEqualTo(QueryScopeSeed.RegionKind.CORRELATED);
+		assertThat(region(seed, patternWithPredicate(patterns, "urn:minus")))
+				.isEqualTo(QueryScopeSeed.RegionKind.MINUS_RIGHT);
+		assertThat(region(seed, patternWithPredicate(patterns, "urn:lateral")))
+				.isEqualTo(QueryScopeSeed.RegionKind.LATERAL);
+		assertThat(environment(seed, patternWithPredicate(patterns, "urn:graph-pattern")))
+				.isEqualTo(QueryScopeSeed.EnvironmentKind.GRAPH);
+		assertThat(environment(seed, patternWithPredicate(patterns, "urn:service-pattern")))
+				.isEqualTo(QueryScopeSeed.EnvironmentKind.SERVICE);
+	}
+
+	@Test
+	public void wildcardSeedRecordsValuesDeclarationsIncludingAllUndefColumns() {
+		QueryRoot root = parseQueryWithScopeSeed("""
+				SELECT * WHERE {
+				  ?s (<urn:path-a>/<urn:path-b>*) ?o .
+				  BIND(?o AS ?alias)
+				  VALUES (?declared ?allUndef) { (1 UNDEF) }
+				  FILTER EXISTS { ?s <urn:hidden> ?existsLocal }
+				}
+				""");
+		Projection projection = (Projection) root.getArg();
+		QueryScopeSeed seed = root.getQueryScopeSeed();
+
+		List<BindingSetAssignment> assignments = new ArrayList<>();
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(BindingSetAssignment node) {
+				assignments.add(node);
+			}
+		});
+		assertThat(assignments).hasSize(1);
+		int valuesOrigin = QueryScopeSeed.originId(assignments.get(0).getOptimizationTag());
+		Set<String> valuesDeclarations = new HashSet<>();
+		for (int occurrenceId = seed.getOriginOccurrenceStart(valuesOrigin); occurrenceId < seed
+				.getOriginOccurrenceEnd(valuesOrigin); occurrenceId++) {
+			valuesDeclarations.add(seed.getSymbolName(seed.getOccurrenceSymbol(occurrenceId)));
+		}
+
+		assertThat(projection.getBindingNames())
+				.containsExactlyInAnyOrder("s", "o", "alias", "declared", "allUndef");
+		assertThat(valuesDeclarations).containsExactlyInAnyOrder("declared", "allUndef");
+	}
+
+	@Test
+	public void scopeSeedIsNotBuiltWhenScopeSafetyIsOff() {
+		QueryRoot root = withScopeSafetyMode("OFF",
+				() -> (QueryRoot) parser.parseQuery("SELECT * WHERE { ?s ?p ?o }", null).getTupleExpr());
+
+		assertThat(root.getQueryScopeSeed()).isNull();
+	}
+
+	private QueryRoot parseQueryWithScopeSeed(String query) {
+		return withScopeSafetyMode("ENFORCE",
+				() -> (QueryRoot) parser.parseQuery(query, null).getTupleExpr());
+	}
+
+	private static <T> T withScopeSafetyMode(String mode, Supplier<T> action) {
+		String previous = System.setProperty(SCOPE_SAFETY_MODE_PROPERTY, mode);
+		try {
+			return action.get();
+		} finally {
+			if (previous == null) {
+				System.clearProperty(SCOPE_SAFETY_MODE_PROPERTY);
+			} else {
+				System.setProperty(SCOPE_SAFETY_MODE_PROPERTY, previous);
+			}
+		}
+	}
+
+	private static StatementPattern patternWithPredicate(List<StatementPattern> patterns, String predicate) {
+		return patterns.stream()
+				.filter(pattern -> predicate.equals(pattern.getPredicateVar().getValue().stringValue()))
+				.findFirst()
+				.orElseThrow();
+	}
+
+	private static QueryScopeSeed.RegionKind region(QueryScopeSeed seed, QueryModelNode node) {
+		int originId = QueryScopeSeed.originId(node.getOptimizationTag());
+		return seed.getRegionKind(seed.getOriginRegion(originId));
+	}
+
+	private static QueryScopeSeed.EnvironmentKind environment(QueryScopeSeed seed, QueryModelNode node) {
+		int originId = QueryScopeSeed.originId(node.getOptimizationTag());
+		return seed.getEnvironmentKind(seed.getOriginEnvironment(originId));
 	}
 
 	@Test
