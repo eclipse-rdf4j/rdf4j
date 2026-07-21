@@ -199,7 +199,7 @@ public class LmdbNativeJoinOrderCrossProductTest {
 	}
 
 	@Test
-	public void orderedDistinctRejectsAsymmetricDirectPromotionCosts() {
+	public void orderedDistinctRejectsUnmeasurableCandidatePromotion() {
 		PatternPlan selective = pattern(Term.slot(S), Term.constant(KNOWS), Term.constant(17L), 1D);
 		PatternPlan ordered = pattern(Term.slot(S), Term.constant(EDGE), Term.slot(O), 4D);
 		RecordingNativeSource source = new RecordingNativeSource(1D);
@@ -208,11 +208,67 @@ public class LmdbNativeJoinOrderCrossProductTest {
 				new MaskedFilter[0], O, source);
 
 		assertThat(source.fanOutQueries)
-				.as("the ordered-promotion gate must detect the one-sided measured fan-out")
+				.as("a promotion whose candidate prefix cannot be fully measured must not displace a measurable incumbent")
 				.isPositive();
 		assertThat(plan.specialized()).isFalse();
 		assertThat(((MultiJoinPlan) plan.arg).children).startsWith(selective);
 		assertThat(plan.channels.modes).containsExactly(NativeDistinctChannelMode.HASH);
+	}
+
+	@Test
+	public void orderedDistinctKeepsCompilerOrderWhenTieBreakLacksMeasuredCosts() {
+		// The theme q1-family 07-20 flip: the compiler hands over the GOOD selective-first order, both
+		// orders yield the same ordered prefix, and no measured fan-out exists (reopened store). The
+		// pseudo cost model charges an unbound-object probe 4096x256 but a constant-object probe only the
+		// context factor, so an order-sensitive estimate tie-break would promote the broad 132.7K scan to
+		// the front. A candidate whose cost is not measured must not displace an equally-ordered incumbent.
+		PatternPlan selective = pattern(Term.slot(S), Term.constant(EDGE), Term.constant(17L), 520D);
+		PatternPlan broad = pattern(Term.slot(S), Term.constant(KNOWS), Term.slot(O), 132_700D);
+		ValuesPlan values = new ValuesPlan(new ValuesRow[] {
+				new ValuesRow(new int[] { O }, new long[] { 100L }),
+				new ValuesRow(new int[] { O }, new long[] { 101L }) });
+		RecordingNativeSource source = new RecordingNativeSource();
+
+		NativeAggregateDistinctPlan plan = orderedDistinctPlan(new SlotPlan[] { selective, broad, values },
+				new MaskedFilter[0], S, source);
+
+		MultiJoinPlan kept = (MultiJoinPlan) plan.arg;
+		assertThat(((PatternPlan) kept.children[0]).o.isConstant())
+				.as("without measured costs the pseudo tie-break must not displace the compiler's selective head")
+				.isTrue();
+		assertThat(((PatternPlan) kept.children[0]).staticEstimate).isEqualTo(520D);
+		assertThat(plan.specialized()).isTrue();
+		assertThat(plan.channels.modes).containsExactly(NativeDistinctChannelMode.MONOTONIC);
+	}
+
+	@Test
+	public void orderedDistinctPromotesMeasurableSelectiveConstantObjectHeadPastBroadScan() {
+		// The theme q1 family regression shape: the compiler hands over a broad unbound scan first
+		// (name-pattern analogue, 132.7K rows) followed by a selective const-object pattern (type-pattern
+		// analogue, 520 rows) and a two-row VALUES domain. The candidate that promotes the selective
+		// pattern to the front is fully measurable (static head + subject fan-out probe), while the
+		// incumbent's tail probe (bound subject + constant object) has no measured fan-out. The gate must
+		// compare the measurable candidate against the incumbent's measured floor and admit the promotion
+		// instead of freezing the broad scan at position 0.
+		PatternPlan broad = pattern(Term.slot(S), Term.constant(KNOWS), Term.slot(O), 132_700D);
+		PatternPlan selective = pattern(Term.slot(S), Term.constant(EDGE), Term.constant(17L), 520D);
+		ValuesPlan values = new ValuesPlan(new ValuesRow[] {
+				new ValuesRow(new int[] { O }, new long[] { 100L }),
+				new ValuesRow(new int[] { O }, new long[] { 101L }) });
+		RecordingNativeSource source = new RecordingNativeSource(1D);
+
+		NativeAggregateDistinctPlan plan = orderedDistinctPlan(new SlotPlan[] { broad, selective, values },
+				new MaskedFilter[0], S, source);
+
+		MultiJoinPlan promoted = (MultiJoinPlan) plan.arg;
+		assertThat(((PatternPlan) promoted.children[0]).o.isConstant())
+				.as("the measurable selective const-object pattern must be promoted past the broad scan")
+				.isTrue();
+		assertThat(((PatternPlan) promoted.children[0]).staticEstimate).isEqualTo(520D);
+		assertThat(((PatternPlan) promoted.children[1]).staticEstimate).isEqualTo(132_700D);
+		assertThat(promoted.children[2]).isInstanceOf(ValuesPlan.class);
+		assertThat(plan.specialized()).isTrue();
+		assertThat(plan.channels.modes).containsExactly(NativeDistinctChannelMode.MONOTONIC);
 	}
 
 	@Test

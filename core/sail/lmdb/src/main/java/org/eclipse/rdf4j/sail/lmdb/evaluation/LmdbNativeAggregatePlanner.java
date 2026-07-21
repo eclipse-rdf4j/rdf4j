@@ -600,6 +600,16 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		}
 		if (expr instanceof Filter) {
 			Filter filter = (Filter) expr;
+			if (filter.getArg() instanceof StatementPattern) {
+				// Exact-value membership conditions (OR-of-equals / IN over one variable) absorb the filter
+				// into per-value index probes; the compiled plan enforces the condition itself, via
+				// value-probe-safe ids or the ValueSetFilter fallback.
+				SlotPlan pushedIntoPattern = compileFilterIntoStatementPattern((StatementPattern) filter.getArg(),
+						filter.getCondition());
+				if (pushedIntoPattern != null) {
+					return pushedIntoPattern;
+				}
+			}
 			SlotPlan innerJoined = compileLeftJoinFilterAsInnerJoin(filter, duplicateInsensitive);
 			if (innerJoined != null) {
 				return innerJoined;

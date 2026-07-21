@@ -796,18 +796,25 @@ final class OrderedSlotCompareFilter implements NativeBooleanFilter {
 		if ((checkLeftBound && left == UNKNOWN) || (checkRightBound && right == UNKNOWN)) {
 			return false;
 		}
-		if (!ValueIds.isOrderedInteger(left) || !ValueIds.isOrderedInteger(right)) {
-			return null;
+		if (ValueIds.isOrderedInteger(left) && ValueIds.isOrderedInteger(right)) {
+			int comparison = ValueIds.compareOrderedIntegers(left, right);
+			return switch (op) {
+			case LT -> comparison < 0;
+			case LE -> comparison <= 0;
+			case GT -> comparison > 0;
+			case GE -> comparison >= 0;
+			case EQ -> comparison == 0;
+			case NE -> comparison != 0;
+			};
 		}
-		int comparison = ValueIds.compareOrderedIntegers(left, right);
-		return switch (op) {
-		case LT -> comparison < 0;
-		case LE -> comparison <= 0;
-		case GT -> comparison > 0;
-		case GE -> comparison >= 0;
-		case EQ -> comparison == 0;
-		case NE -> comparison != 0;
-		};
+		// Resources have canonical ids and term identity is value identity, so two safe resource ids decide
+		// = and != directly. Everything else (value-collapsible literals, mixed kinds) must consult the
+		// generic evaluator for full value-equality and type-error semantics.
+		if ((op == Compare.CompareOp.EQ || op == Compare.CompareOp.NE)
+				&& safeResourceId(left) && safeResourceId(right)) {
+			return op == Compare.CompareOp.EQ ? left == right : left != right;
+		}
+		return null;
 	}
 }
 
