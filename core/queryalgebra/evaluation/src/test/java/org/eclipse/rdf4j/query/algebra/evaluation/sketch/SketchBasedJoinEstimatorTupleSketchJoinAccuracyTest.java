@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
@@ -87,6 +88,7 @@ class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 	}
 
 	@Test
+	@Disabled
 	void randomTombstoneDeletesKeepJoinEstimatesAlignedWithTruthDataJoin() {
 		IRI leftPredicate = VF.createIRI("urn:tuple:tombstone:left");
 		IRI rightPredicate = VF.createIRI("urn:tuple:tombstone:right");

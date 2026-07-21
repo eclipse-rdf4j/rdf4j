@@ -17,6 +17,7 @@ import static org.assertj.core.api.Assertions.fail;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
@@ -201,6 +202,23 @@ class HttpCompressionFilterTest {
 				System.setProperty(DISABLED_ENCODINGS_PROPERTY, previousValue);
 			}
 		}
+	}
+
+	@Test
+	void roundTripsBrotliAndZstdResponseBodies() throws Exception {
+		byte[] body = "compressed rdf response".getBytes(StandardCharsets.UTF_8);
+
+		assertThat(roundTrip(HttpCompressionEncoding.BROTLI, body)).isEqualTo(body);
+		assertThat(roundTrip(HttpCompressionEncoding.ZSTD, body)).isEqualTo(body);
+	}
+
+	private static byte[] roundTrip(HttpCompressionEncoding encoding, byte[] body) throws IOException {
+		ByteArrayOutputStream compressed = new ByteArrayOutputStream();
+		OutputStream outputStream = encoding.compressedOutputStream(compressed);
+		outputStream.write(body);
+		encoding.finish(outputStream);
+
+		return encoding.decompressedInputStream(new ByteArrayInputStream(compressed.toByteArray())).readAllBytes();
 	}
 
 	private static byte[] gzip(String body) throws IOException {
