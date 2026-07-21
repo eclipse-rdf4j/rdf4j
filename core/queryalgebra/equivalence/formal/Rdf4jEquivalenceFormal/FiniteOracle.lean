@@ -57,6 +57,9 @@ private def oracleEnvironment (variant : Nat) : ReferenceEnvironment where
     | 2 => .success [incoming, incoming]
     | _ => .failure
   evalCondition := fun _ condition _ _ => condition.length % 2 == variant % 2
+  -- Preparation must be able to fail somewhere in the finite sweep, otherwise the oracle could
+  -- never witness an elided condition that RDF4J would have refused to precompile.
+  conditionPrepares := fun _ condition _ => condition.length % 2 == variant % 2
 
 private def constituentTargets : SemanticsTarget → List SemanticsTarget
   | .both11And12 => [.sparql11, .sparql12Draft20260605]

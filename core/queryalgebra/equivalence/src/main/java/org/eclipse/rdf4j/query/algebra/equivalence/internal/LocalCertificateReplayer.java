@@ -142,17 +142,33 @@ public final class LocalCertificateReplayer {
 
 	private TupleExpr leftJoinEmptyLeft(TupleExpr expression) {
 		LeftJoin leftJoin = safeLeftJoin(expression);
-		return leftJoin != null && isEmpty(leftJoin.getLeftArg()) ? new EmptySet() : null;
+		if (leftJoin == null || !isEmpty(leftJoin.getLeftArg()) || !conditionElisionAllowed(leftJoin)) {
+			return null;
+		}
+		// This rule also discards the right input, which RDF4J still prepares and evaluates.
+		return CertifiedRuleRegistry.permitsOperandElision(options.getSemanticsTarget(), leftJoin.getRightArg())
+				? new EmptySet()
+				: null;
 	}
 
 	private TupleExpr leftJoinEmptyRight(TupleExpr expression) {
 		LeftJoin leftJoin = safeLeftJoin(expression);
-		return leftJoin != null && isEmpty(leftJoin.getRightArg()) ? leftJoin.getLeftArg().clone() : null;
+		return leftJoin != null && isEmpty(leftJoin.getRightArg()) && conditionElisionAllowed(leftJoin)
+				? leftJoin.getLeftArg().clone()
+				: null;
 	}
 
 	private TupleExpr leftJoinUnitRight(TupleExpr expression) {
 		LeftJoin leftJoin = safeLeftJoin(expression);
-		return leftJoin != null && isUnit(leftJoin.getRightArg()) ? leftJoin.getLeftArg().clone() : null;
+		return leftJoin != null && isUnit(leftJoin.getRightArg()) && conditionElisionAllowed(leftJoin)
+				? leftJoin.getLeftArg().clone()
+				: null;
+	}
+
+	private boolean conditionElisionAllowed(LeftJoin leftJoin) {
+		return CertifiedRuleRegistry.permitsConditionElision(
+				options.getSemanticsTarget(),
+				leftJoin.hasCondition() ? leftJoin.getCondition() : null);
 	}
 
 	private LeftJoin safeLeftJoin(TupleExpr expression) {
@@ -169,9 +185,11 @@ public final class LocalCertificateReplayer {
 			return null;
 		}
 		Difference difference = (Difference) expression;
-		return isEmpty(difference.getLeftArg()) && safety.isReorderSafe(difference.getRightArg())
-				? new EmptySet()
-				: null;
+		return isEmpty(difference.getLeftArg())
+				&& safety.isReorderSafe(difference.getRightArg())
+				&& CertifiedRuleRegistry.permitsOperandElision(options.getSemanticsTarget(), difference.getRightArg())
+						? new EmptySet()
+						: null;
 	}
 
 	private static TupleExpr minusEmptyRight(TupleExpr expression) {

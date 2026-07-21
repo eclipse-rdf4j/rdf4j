@@ -5,6 +5,10 @@ namespace Rdf4jEquivalenceFormal
 structure ReferenceEnvironment where
   evalOpaque : SemanticsTarget → Expr → Dataset → Mapping → FunctionEnvironment → EvalOutcome
   evalCondition : SemanticsTarget → String → Mapping → FunctionEnvironment → Bool
+  /-- Whether a condition survives preparation. RDF4J compiles a condition once, before any input is
+      evaluated, so preparation depends only on the condition text and the available functions. A
+      constant `REGEX` with an invalid pattern fails here even when no row is ever tested. -/
+  conditionPrepares : SemanticsTarget → String → FunctionEnvironment → Bool
 
 def emptyMapping : Mapping := ∅
 
@@ -36,6 +40,45 @@ def referenceCondition
   else if condition = "false" then false
   else environment.evalCondition target condition mapping functions
 
+/-- Preparation of an optional condition under a target.
+
+`RDF4J_RUNTIME` precompiles a condition eagerly, before either input of the owning operator is
+evaluated, so an unpreparable condition fails the whole expression even when no row reaches it. The
+specification targets evaluate a condition per solution instead, so an absent solution set never
+triggers the condition at all and preparation cannot fail. An absent condition (`none`) has nothing
+to compile and therefore always prepares. -/
+def conditionPrepared
+    (environment : ReferenceEnvironment)
+    (target : SemanticsTarget)
+    (condition : Option String)
+    (functions : FunctionEnvironment) : Bool :=
+  match target with
+  | .rdf4jRuntime =>
+      match condition with
+      | none => true
+      | some text => environment.conditionPrepares .rdf4jRuntime text functions
+  | _ => true
+
+@[simp] theorem conditionPrepared_none
+    (environment : ReferenceEnvironment)
+    (target : SemanticsTarget)
+    (functions : FunctionEnvironment) :
+    conditionPrepared environment target none functions = true := by
+  cases target <;> rfl
+
+@[simp] theorem conditionPrepared_of_not_runtime
+    (environment : ReferenceEnvironment)
+    (target : SemanticsTarget)
+    (condition : Option String)
+    (functions : FunctionEnvironment)
+    (notRuntime : target ≠ .rdf4jRuntime) :
+    conditionPrepared environment target condition functions = true := by
+  cases target with
+  | rdf4jRuntime => exact absurd rfl notRuntime
+  | sparql11 => rfl
+  | sparql12Draft20260605 => rfl
+  | both11And12 => rfl
+
 def referenceEval
     (environment : ReferenceEnvironment)
     (target : SemanticsTarget) :
@@ -59,14 +102,35 @@ def referenceEval
       referenceEval environment target left dataset incoming functions
   | .join left right, dataset, incoming, functions =>
       environment.evalOpaque target (.join left right) dataset incoming functions
-  | .leftJoin .empty _ _, _, _, _ => .success []
-  | .leftJoin left .empty _, dataset, incoming, functions =>
-      referenceEval environment target left dataset incoming functions
-  | .leftJoin left .unit _, dataset, incoming, functions =>
-      referenceEval environment target left dataset incoming functions
+  -- The elided right operand and condition are still prepared and evaluated by RDF4J, so their
+  -- failures survive the elision. Compare `.join left .empty` below, which already propagates the
+  -- discarded operand's failure.
+  | .leftJoin .empty right condition, dataset, incoming, functions =>
+      if conditionPrepared environment target condition functions then
+        match target with
+        | .rdf4jRuntime =>
+            match referenceEval environment .rdf4jRuntime right dataset incoming functions with
+            | .failure => .failure
+            | .success _ => .success []
+        | _ => .success []
+      else .failure
+  | .leftJoin left .empty condition, dataset, incoming, functions =>
+      if conditionPrepared environment target condition functions then
+        referenceEval environment target left dataset incoming functions
+      else .failure
+  | .leftJoin left .unit condition, dataset, incoming, functions =>
+      if conditionPrepared environment target condition functions then
+        referenceEval environment target left dataset incoming functions
+      else .failure
   | .leftJoin left right condition, dataset, incoming, functions =>
       environment.evalOpaque target (.leftJoin left right condition) dataset incoming functions
-  | .minus .empty _, _, _, _ => .success []
+  | .minus .empty right, dataset, incoming, functions =>
+      match target with
+      | .rdf4jRuntime =>
+          match referenceEval environment .rdf4jRuntime right dataset incoming functions with
+          | .failure => .failure
+          | .success _ => .success []
+      | _ => .success []
   | .minus left .empty, dataset, incoming, functions =>
       referenceEval environment target left dataset incoming functions
   | .minus left right, dataset, incoming, functions =>
@@ -113,6 +177,85 @@ def ReferenceSucceeds
         ∃ rows,
           referenceEval environment .sparql12Draft20260605 expression dataset incoming functions = .success rows)
 
+/-- A condition that prepares under every function environment.
+
+This is the condition-level analogue of `ReferenceSucceeds`. It is the premise an elision rule needs
+when it discards a condition that `RDF4J_RUNTIME` would otherwise have precompiled. -/
+def ConditionPrepares
+    (environment : ReferenceEnvironment)
+    (target : SemanticsTarget)
+    (condition : Option String) : Prop :=
+  ∀ functions, conditionPrepared environment target condition functions = true
+
+/-- Totality of an operand that only `RDF4J_RUNTIME` still prepares and evaluates after the elision.
+
+The specification targets read `∅ ⟕ Ω = ∅` and `∅ − Ω = ∅` algebraically and never touch `Ω`, so they
+carry no obligation. `RDF4J_RUNTIME` prepares and evaluates the elided operand regardless, so its
+failure survives the rewrite. -/
+def RuntimeOperandTotal
+    (environment : ReferenceEnvironment)
+    (target : SemanticsTarget)
+    (expression : Expr) : Prop :=
+  match target with
+  | .rdf4jRuntime => ReferenceSucceeds environment .rdf4jRuntime expression
+  | _ => True
+
+theorem runtimeOperandTotal_of_not_runtime
+    (environment : ReferenceEnvironment)
+    (target : SemanticsTarget)
+    (expression : Expr)
+    (notRuntime : target ≠ .rdf4jRuntime) :
+    RuntimeOperandTotal environment target expression := by
+  cases target with
+  | rdf4jRuntime => exact absurd rfl notRuntime
+  | sparql11 => trivial
+  | sparql12Draft20260605 => trivial
+  | both11And12 => trivial
+
+/-- Operands whose totality is decidable from the syntax alone.
+
+`.empty` and `.unit` evaluate to a success in every environment, so an elision rule may discard them
+even under `RDF4J_RUNTIME`. Anything else — including `.opaque` leaves standing for unmodelled RDF4J
+subtrees — carries no such guarantee. -/
+def triviallyTotal : Expr → Bool
+  | .empty => true
+  | .unit => true
+  | _ => false
+
+theorem runtimeOperandTotal_of_triviallyTotal
+    (environment : ReferenceEnvironment)
+    (target : SemanticsTarget)
+    (expression : Expr)
+    (total : triviallyTotal expression = true) :
+    RuntimeOperandTotal environment target expression := by
+  cases target with
+  | rdf4jRuntime =>
+      show ReferenceSucceeds environment .rdf4jRuntime expression
+      intro dataset incoming functions
+      cases expression with
+      | empty => exact ⟨[], rfl⟩
+      | unit => exact ⟨[incoming], rfl⟩
+      | _ => simp [triviallyTotal] at total
+  | sparql11 => trivial
+  | sparql12Draft20260605 => trivial
+  | both11And12 => trivial
+
+theorem conditionPrepares_none
+    (environment : ReferenceEnvironment)
+    (target : SemanticsTarget) :
+    ConditionPrepares environment target none := by
+  intro functions
+  exact conditionPrepared_none environment target functions
+
+theorem conditionPrepares_of_not_runtime
+    (environment : ReferenceEnvironment)
+    (target : SemanticsTarget)
+    (condition : Option String)
+    (notRuntime : target ≠ .rdf4jRuntime) :
+    ConditionPrepares environment target condition := by
+  intro functions
+  exact conditionPrepared_of_not_runtime environment target condition functions notRuntime
+
 theorem referenceEval_join_empty_right
     (environment : ReferenceEnvironment)
     (target : SemanticsTarget)
@@ -125,6 +268,41 @@ theorem referenceEval_join_empty_right
       | .failure => .failure
       | .success _ => .success [] := by
   cases expression <;> rfl
+
+theorem referenceEval_leftJoin_empty_left
+    (environment : ReferenceEnvironment)
+    (target : SemanticsTarget)
+    (right : Expr)
+    (condition : Option String)
+    (dataset : Dataset)
+    (incoming : Mapping)
+    (functions : FunctionEnvironment) :
+    referenceEval environment target (.leftJoin .empty right condition) dataset incoming functions =
+      if conditionPrepared environment target condition functions then
+        match target with
+        | .rdf4jRuntime =>
+            match referenceEval environment .rdf4jRuntime right dataset incoming functions with
+            | .failure => .failure
+            | .success _ => .success []
+        | _ => .success []
+      else .failure := by
+  cases right <;> rfl
+
+theorem referenceEval_minus_empty_left
+    (environment : ReferenceEnvironment)
+    (target : SemanticsTarget)
+    (right : Expr)
+    (dataset : Dataset)
+    (incoming : Mapping)
+    (functions : FunctionEnvironment) :
+    referenceEval environment target (.minus .empty right) dataset incoming functions =
+      match target with
+      | .rdf4jRuntime =>
+          match referenceEval environment .rdf4jRuntime right dataset incoming functions with
+          | .failure => .failure
+          | .success _ => .success []
+      | _ => .success [] := by
+  cases right <;> rfl
 
 theorem reference_union_associative
     (environment : ReferenceEnvironment)
@@ -249,7 +427,9 @@ theorem reference_leftJoin_empty_left
     (target : SemanticsTarget)
     (observation : Observation)
     (right : Expr)
-    (condition : Option String) :
+    (condition : Option String)
+    (prepares : ConditionPrepares environment target condition)
+    (total : RuntimeOperandTotal environment target right) :
     Equivalent
       (referenceModel environment)
       target
@@ -257,14 +437,29 @@ theorem reference_leftJoin_empty_left
       (.leftJoin .empty right condition)
       .empty := by
   intro dataset incoming functions
-  cases target <;> simp [referenceModel, referenceEval]
+  cases target with
+  | rdf4jRuntime =>
+      obtain ⟨rows, evaluated⟩ := total dataset incoming functions
+      change observe observation
+          (referenceEval environment .rdf4jRuntime (.leftJoin .empty right condition)
+            dataset incoming functions) =
+        observe observation (.success [])
+      simp [referenceEval_leftJoin_empty_left, prepares functions, evaluated]
+  | sparql11 =>
+      simp [referenceModel, referenceEval_leftJoin_empty_left, referenceEval, prepares functions]
+  | sparql12Draft20260605 =>
+      simp [referenceModel, referenceEval_leftJoin_empty_left, referenceEval, prepares functions]
+  | both11And12 =>
+      constructor <;>
+        simp [referenceModel, referenceEval_leftJoin_empty_left, referenceEval, prepares functions]
 
 theorem reference_leftJoin_empty_right
     (environment : ReferenceEnvironment)
     (target : SemanticsTarget)
     (observation : Observation)
     (left : Expr)
-    (condition : Option String) :
+    (condition : Option String)
+    (prepares : ConditionPrepares environment target condition) :
     Equivalent
       (referenceModel environment)
       target
@@ -272,14 +467,16 @@ theorem reference_leftJoin_empty_right
       (.leftJoin left .empty condition)
       left := by
   intro dataset incoming functions
-  cases left <;> cases target <;> simp [referenceModel, referenceEval]
+  cases left <;> cases target <;>
+    simp [referenceModel, referenceEval, prepares functions]
 
 theorem reference_leftJoin_unit_right
     (environment : ReferenceEnvironment)
     (target : SemanticsTarget)
     (observation : Observation)
     (left : Expr)
-    (condition : Option String) :
+    (condition : Option String)
+    (prepares : ConditionPrepares environment target condition) :
     Equivalent
       (referenceModel environment)
       target
@@ -287,13 +484,15 @@ theorem reference_leftJoin_unit_right
       (.leftJoin left .unit condition)
       left := by
   intro dataset incoming functions
-  cases left <;> cases target <;> simp [referenceModel, referenceEval]
+  cases left <;> cases target <;>
+    simp [referenceModel, referenceEval, prepares functions]
 
 theorem reference_minus_empty_left
     (environment : ReferenceEnvironment)
     (target : SemanticsTarget)
     (observation : Observation)
-    (right : Expr) :
+    (right : Expr)
+    (total : RuntimeOperandTotal environment target right) :
     Equivalent
       (referenceModel environment)
       target
@@ -301,7 +500,19 @@ theorem reference_minus_empty_left
       (.minus .empty right)
       .empty := by
   intro dataset incoming functions
-  cases target <;> simp [referenceModel, referenceEval]
+  cases target with
+  | rdf4jRuntime =>
+      obtain ⟨rows, evaluated⟩ := total dataset incoming functions
+      change observe observation
+          (referenceEval environment .rdf4jRuntime (.minus .empty right) dataset incoming functions) =
+        observe observation (.success [])
+      rw [referenceEval_minus_empty_left, evaluated]
+  | sparql11 =>
+      simp [referenceModel, referenceEval_minus_empty_left, referenceEval]
+  | sparql12Draft20260605 =>
+      simp [referenceModel, referenceEval_minus_empty_left, referenceEval]
+  | both11And12 =>
+      constructor <;> simp [referenceModel, referenceEval_minus_empty_left, referenceEval]
 
 theorem reference_minus_empty_right
     (environment : ReferenceEnvironment)
