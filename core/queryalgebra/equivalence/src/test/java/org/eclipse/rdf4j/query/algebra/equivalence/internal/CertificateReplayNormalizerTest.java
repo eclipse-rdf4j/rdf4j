@@ -100,15 +100,43 @@ class CertificateReplayNormalizerTest {
 				RuleId.VALUES_UNIT, new SingletonSet());
 	}
 
+	/**
+	 * RDF4J precompiles a LeftJoin condition before either input is evaluated, so a rule that discards a present
+	 * condition can hide a preparation failure. The same applies to an operand that the rewrite drops without
+	 * evaluating it.
+	 */
 	@Test
 	void rejectsRuntimeRulesThatElideEagerlyPrecompiledSubtrees() {
 		TupleExpr leaf = pattern("x");
 		LocalCertificateReplayer runtimeBag = runtime(ObservationMode.BAG);
+		ValueConstant condition = new ValueConstant(VF.createLiteral(true));
 
+		assertRejected(runtimeBag, new LeftJoin(leaf.clone(), new EmptySet(), condition.clone()),
+				RuleId.LEFT_JOIN_EMPTY_RIGHT);
+		assertRejected(runtimeBag, new LeftJoin(leaf.clone(), new SingletonSet(), condition.clone()),
+				RuleId.LEFT_JOIN_UNIT_RIGHT);
+		assertRejected(runtimeBag, new LeftJoin(new EmptySet(), leaf.clone(), condition.clone()),
+				RuleId.LEFT_JOIN_EMPTY_LEFT);
+		// The elided operand is an arbitrary subtree, so its evaluation failure survives the rewrite.
 		assertRejected(runtimeBag, new LeftJoin(new EmptySet(), leaf.clone()), RuleId.LEFT_JOIN_EMPTY_LEFT);
-		assertRejected(runtimeBag, new LeftJoin(leaf.clone(), new EmptySet()), RuleId.LEFT_JOIN_EMPTY_RIGHT);
-		assertRejected(runtimeBag, new LeftJoin(leaf.clone(), new SingletonSet()), RuleId.LEFT_JOIN_UNIT_RIGHT);
 		assertRejected(runtimeBag, new Difference(new EmptySet(), leaf.clone()), RuleId.MINUS_EMPTY_LEFT);
+	}
+
+	/**
+	 * Nothing eagerly prepared is discarded here: there is no condition to precompile, and an elided
+	 * {@code EmptySet}/{@code SingletonSet} operand cannot fail. These stay available under RDF4J_RUNTIME.
+	 */
+	@Test
+	void keepsRuntimeElisionsThatDiscardNothingFailable() {
+		TupleExpr leaf = pattern("x");
+		LocalCertificateReplayer runtimeBag = runtime(ObservationMode.BAG);
+
+		assertRewrite(runtimeBag, new LeftJoin(leaf.clone(), new EmptySet()), RuleId.LEFT_JOIN_EMPTY_RIGHT, leaf);
+		assertRewrite(runtimeBag, new LeftJoin(leaf.clone(), new SingletonSet()), RuleId.LEFT_JOIN_UNIT_RIGHT, leaf);
+		assertRewrite(runtimeBag, new LeftJoin(new EmptySet(), new EmptySet()), RuleId.LEFT_JOIN_EMPTY_LEFT,
+				new EmptySet());
+		assertRewrite(runtimeBag, new Difference(new EmptySet(), new SingletonSet()), RuleId.MINUS_EMPTY_LEFT,
+				new EmptySet());
 	}
 
 	@Test

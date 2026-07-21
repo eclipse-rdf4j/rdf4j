@@ -17,17 +17,26 @@ inductive CheckedRewrite (profile : RuleProfile) : Expr → Expr → Type where
       CheckedRewrite profile (.union .empty arg) arg
   | unionEmptyRight (notSequence : profile.observation ≠ .sequence) (arg : Expr) :
       CheckedRewrite profile (.union arg .empty) arg
+  -- `RDF4J_RUNTIME` prepares an elided condition and evaluates an elided operand regardless of the
+  -- rewrite, so these rules carry a discharge obligation for whatever they discard. An absent
+  -- condition has nothing to precompile and a `.empty`/`.unit` operand cannot fail, which keeps the
+  -- rules available at runtime exactly when the elision is observationally free.
   | leftJoinEmptyLeft (notSequence : profile.observation ≠ .sequence)
-      (notRuntime : profile.target ≠ .rdf4jRuntime) (right : Expr) (condition : Option String) :
+      (right : Expr) (condition : Option String)
+      (elisionFree : profile.target ≠ .rdf4jRuntime ∨
+        (condition = none ∧ triviallyTotal right = true)) :
       CheckedRewrite profile (.leftJoin .empty right condition) .empty
   | leftJoinEmptyRight (notSequence : profile.observation ≠ .sequence)
-      (notRuntime : profile.target ≠ .rdf4jRuntime) (left : Expr) (condition : Option String) :
+      (left : Expr) (condition : Option String)
+      (elisionFree : profile.target ≠ .rdf4jRuntime ∨ condition = none) :
       CheckedRewrite profile (.leftJoin left .empty condition) left
   | leftJoinUnitRight (notSequence : profile.observation ≠ .sequence)
-      (notRuntime : profile.target ≠ .rdf4jRuntime) (left : Expr) (condition : Option String) :
+      (left : Expr) (condition : Option String)
+      (elisionFree : profile.target ≠ .rdf4jRuntime ∨ condition = none) :
       CheckedRewrite profile (.leftJoin left .unit condition) left
   | minusEmptyLeft (notSequence : profile.observation ≠ .sequence)
-      (notRuntime : profile.target ≠ .rdf4jRuntime) (right : Expr) :
+      (right : Expr)
+      (elisionFree : profile.target ≠ .rdf4jRuntime ∨ triviallyTotal right = true) :
       CheckedRewrite profile (.minus .empty right) .empty
   | minusEmptyRight (notSequence : profile.observation ≠ .sequence) (left : Expr) :
       CheckedRewrite profile (.minus left .empty) left
@@ -86,21 +95,44 @@ theorem checked_rewrite_sound
       exact equivalent_in_every_context
         (reference_union_empty_right environment profile.target profile.observation _)
         profile.context
-  | leftJoinEmptyLeft _ _ right condition =>
+  | leftJoinEmptyLeft _ right condition elisionFree =>
+      have prepares : ConditionPrepares environment profile.target condition := by
+        rcases elisionFree with notRuntime | ⟨isNone, _⟩
+        · exact conditionPrepares_of_not_runtime environment profile.target condition notRuntime
+        · exact isNone ▸ conditionPrepares_none environment profile.target
+      have total : RuntimeOperandTotal environment profile.target right := by
+        rcases elisionFree with notRuntime | ⟨_, isTotal⟩
+        · exact runtimeOperandTotal_of_not_runtime environment profile.target right notRuntime
+        · exact runtimeOperandTotal_of_triviallyTotal environment profile.target right isTotal
       exact equivalent_in_every_context
-        (reference_leftJoin_empty_left environment profile.target profile.observation right condition)
+        (reference_leftJoin_empty_left environment profile.target profile.observation right condition
+          prepares total)
         profile.context
-  | leftJoinEmptyRight _ _ =>
+  | leftJoinEmptyRight _ _ condition elisionFree =>
+      have prepares : ConditionPrepares environment profile.target condition := by
+        rcases elisionFree with notRuntime | isNone
+        · exact conditionPrepares_of_not_runtime environment profile.target condition notRuntime
+        · exact isNone ▸ conditionPrepares_none environment profile.target
       exact equivalent_in_every_context
-        (reference_leftJoin_empty_right environment profile.target profile.observation _ _)
+        (reference_leftJoin_empty_right environment profile.target profile.observation _ condition
+          prepares)
         profile.context
-  | leftJoinUnitRight _ _ =>
+  | leftJoinUnitRight _ _ condition elisionFree =>
+      have prepares : ConditionPrepares environment profile.target condition := by
+        rcases elisionFree with notRuntime | isNone
+        · exact conditionPrepares_of_not_runtime environment profile.target condition notRuntime
+        · exact isNone ▸ conditionPrepares_none environment profile.target
       exact equivalent_in_every_context
-        (reference_leftJoin_unit_right environment profile.target profile.observation _ _)
+        (reference_leftJoin_unit_right environment profile.target profile.observation _ condition
+          prepares)
         profile.context
-  | minusEmptyLeft _ _ right =>
+  | minusEmptyLeft _ right elisionFree =>
+      have total : RuntimeOperandTotal environment profile.target right := by
+        rcases elisionFree with notRuntime | isTotal
+        · exact runtimeOperandTotal_of_not_runtime environment profile.target right notRuntime
+        · exact runtimeOperandTotal_of_triviallyTotal environment profile.target right isTotal
       exact equivalent_in_every_context
-        (reference_minus_empty_left environment profile.target profile.observation right)
+        (reference_minus_empty_left environment profile.target profile.observation right total)
         profile.context
   | minusEmptyRight _ =>
       exact equivalent_in_every_context
@@ -557,27 +589,28 @@ private def checkStep
         some { after := arg, proof := .unionEmptyRight h arg }
       else none
   | .leftJoinEmptyLeft, .leftJoin .empty right condition =>
-      if notRuntime : profile.target ≠ .rdf4jRuntime then
-        if h : profile.observation ≠ .sequence then
-          some { after := .empty, proof := .leftJoinEmptyLeft h notRuntime right condition }
+      if h : profile.observation ≠ .sequence then
+        if free : profile.target ≠ .rdf4jRuntime ∨
+            (condition = none ∧ triviallyTotal right = true) then
+          some { after := .empty, proof := .leftJoinEmptyLeft h right condition free }
         else none
       else none
   | .leftJoinEmptyRight, .leftJoin left .empty condition =>
-      if notRuntime : profile.target ≠ .rdf4jRuntime then
-        if h : profile.observation ≠ .sequence then
-          some { after := left, proof := .leftJoinEmptyRight h notRuntime left condition }
+      if h : profile.observation ≠ .sequence then
+        if free : profile.target ≠ .rdf4jRuntime ∨ condition = none then
+          some { after := left, proof := .leftJoinEmptyRight h left condition free }
         else none
       else none
   | .leftJoinUnitRight, .leftJoin left .unit condition =>
-      if notRuntime : profile.target ≠ .rdf4jRuntime then
-        if h : profile.observation ≠ .sequence then
-          some { after := left, proof := .leftJoinUnitRight h notRuntime left condition }
+      if h : profile.observation ≠ .sequence then
+        if free : profile.target ≠ .rdf4jRuntime ∨ condition = none then
+          some { after := left, proof := .leftJoinUnitRight h left condition free }
         else none
       else none
   | .minusEmptyLeft, .minus .empty right =>
-      if notRuntime : profile.target ≠ .rdf4jRuntime then
-        if h : profile.observation ≠ .sequence then
-          some { after := .empty, proof := .minusEmptyLeft h notRuntime right }
+      if h : profile.observation ≠ .sequence then
+        if free : profile.target ≠ .rdf4jRuntime ∨ triviallyTotal right = true then
+          some { after := .empty, proof := .minusEmptyLeft h right free }
         else none
       else none
   | .minusEmptyRight, .minus left .empty =>

@@ -85,7 +85,9 @@ class LeanCertificateCorpusTest {
 		add(result, "union-empty-right", RUNTIME_BAG, new Union(leaf.clone(), new EmptySet()), leaf.clone());
 		add(result, "leftjoin-empty-left", SPECIFICATION_BAG,
 				new LeftJoin(new EmptySet(), leaf.clone()), new EmptySet());
-		add(result, "leftjoin-empty-right", SPECIFICATION_BAG,
+		// No condition to precompile and an EmptySet right operand cannot fail, so this elision is
+		// certified under RDF4J_RUNTIME as well.
+		add(result, "leftjoin-empty-right", RUNTIME_BAG,
 				new LeftJoin(leaf.clone(), new EmptySet()), leaf.clone());
 		add(result, "leftjoin-unit-right", SPECIFICATION_BAG,
 				new LeftJoin(leaf.clone(), new SingletonSet(), new ValueConstant(VF.createLiteral(false))),

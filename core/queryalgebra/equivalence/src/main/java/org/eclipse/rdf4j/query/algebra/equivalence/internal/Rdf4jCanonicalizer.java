@@ -396,7 +396,9 @@ public final class Rdf4jCanonicalizer {
 			Mode mode,
 			ContextMode incomingContext,
 			List<RuleApplication> trace) {
-		if (argument instanceof EmptySet) {
+		// Folding away an empty-argument FILTER also discards the condition, which RDF4J precompiles
+		// before the argument is evaluated. Keep the node when that condition could still fail.
+		if (argument instanceof EmptySet && conditionElisionAllowed(condition)) {
 			return CanonicalNode.EMPTY;
 		}
 
@@ -555,6 +557,19 @@ public final class Rdf4jCanonicalizer {
 				right);
 	}
 
+	/**
+	 * Whether the condition may be discarded. RDF4J precompiles a condition before either input is evaluated, so
+	 * dropping a present one can hide a preparation failure that the rewritten tree would not raise.
+	 */
+	private boolean conditionElisionAllowed(ValueExpr condition) {
+		return CertifiedRuleRegistry.permitsConditionElision(semanticsTarget, condition);
+	}
+
+	/** Whether an operand may be discarded without evaluating it. */
+	private boolean operandElisionAllowed(TupleExpr operand) {
+		return CertifiedRuleRegistry.permitsOperandElision(semanticsTarget, operand);
+	}
+
 	private CanonicalNode leftJoin(
 			TupleExpr leftExpression,
 			TupleExpr rightExpression,
@@ -577,10 +592,10 @@ public final class Rdf4jCanonicalizer {
 					conditionNode);
 		}
 
-		// RDF4J eagerly precompiles both inputs and the condition. Removing any of them can
-		// hide a deterministic preparation failure, so these elision rules are specification-only
-		// until the runtime proof carries an explicit compile-totality premise.
-		if (!semanticsTarget.isRuntimeTarget() && rightExpression instanceof EmptySet) {
+		// RDF4J eagerly precompiles both inputs and the condition, so an elision may only drop
+		// material that cannot fail to prepare: an absent condition, or a trivially total operand.
+		// CertifiedRuleRegistry mirrors the elisionFree premise carried by the Lean constructors.
+		if (rightExpression instanceof EmptySet && conditionElisionAllowed(condition)) {
 			CertificateTrace.record(
 					trace,
 					new RuleApplication(
@@ -589,9 +604,9 @@ public final class Rdf4jCanonicalizer {
 					CanonicalNode.opaque(leftExpression));
 			return tuple(leftExpression, mode, incomingContext, trace);
 		}
-		if (!semanticsTarget.isRuntimeTarget()
-				&& rightExpression instanceof SingletonSet
-				&& conditionSafe) {
+		if (rightExpression instanceof SingletonSet
+				&& conditionSafe
+				&& conditionElisionAllowed(condition)) {
 			CertificateTrace.record(
 					trace,
 					new RuleApplication(
@@ -600,9 +615,10 @@ public final class Rdf4jCanonicalizer {
 					CanonicalNode.opaque(leftExpression));
 			return tuple(leftExpression, mode, incomingContext, trace);
 		}
-		if (!semanticsTarget.isRuntimeTarget()
-				&& leftExpression instanceof EmptySet
+		if (leftExpression instanceof EmptySet
 				&& conditionSafe
+				&& conditionElisionAllowed(condition)
+				&& operandElisionAllowed(rightExpression)
 				&& safety.isReorderSafe(rightExpression)) {
 			trace.add(new RuleApplication(
 					RuleId.LEFT_JOIN_EMPTY_LEFT,
@@ -683,9 +699,9 @@ public final class Rdf4jCanonicalizer {
 					CanonicalNode.opaque(leftExpression));
 			return tuple(leftExpression, mode, incomingContext, trace);
 		}
-		// RDF4J precompiles both MINUS operands before the empty left side can suppress
-		// evaluation of the right side. Keep that preparation schedule visible at runtime.
-		if (semanticsTarget.isRuntimeTarget() && leftExpression instanceof EmptySet) {
+		// RDF4J precompiles and evaluates both MINUS operands, so an empty left side may only
+		// suppress the right side when that side cannot fail. Otherwise keep the operator shape.
+		if (leftExpression instanceof EmptySet && !operandElisionAllowed(rightExpression)) {
 			return ordered(
 					"MINUS",
 					scopeAttribute(difference),
