@@ -208,7 +208,10 @@ final class LmdbNativeParallelPipelines {
 		if (desiredWorkers < 1) {
 			return reject(step, "single-thread");
 		}
-		MultiJoinPlan.OrderedPlan derived = plan.derivedFactorizedPlan(consumerRow);
+		// commit to the same order the workers will select: sunk only when the factorized split engages, so a
+		// declined factorization never runs the sunk order without its payoff
+		MultiJoinPlan.OrderedPlan derived = LmdbNativeFactorizedRows.selectFactorizedOrder(plan,
+				consumerRow.boundMask(), 0L, 1);
 		if (!(derived.order[0] instanceof PatternPlan)) {
 			// The exchange substitutes raw quads for depth zero and therefore still requires a statement-pattern root.
 			return reject(step, "non-pattern-root");
@@ -809,7 +812,8 @@ final class LmdbNativeParallelPipelines {
 			MultiJoinPlan plan = workerPlans[worker];
 			LmdbNativeAttemptMetrics metrics = workerMetrics[worker];
 			// must match the consumer's tryOpen order: the shared morsel root is derived.order[0]
-			MultiJoinPlan.OrderedPlan derived = plan.derivedFactorizedPlan(row);
+			MultiJoinPlan.OrderedPlan derived = LmdbNativeFactorizedRows.selectFactorizedOrder(plan,
+					row.boundMask(), 0L, 1);
 			LmdbNativeFactorizedRows factorized = LmdbNativeFactorizedRows.tryCreateFromExternalRoot(plan, derived, row,
 					row.boundMask(), step.sourceSlots, step.distinct, metrics);
 			RowCursor leftmost = partitions != null

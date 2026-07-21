@@ -142,6 +142,43 @@ final class LmdbNativeFactorizedRows {
 	}
 
 	/**
+	 * Selects the physical order the factorized-rows split should plan against: the sunk order when the split claims
+	 * the whole sunk suffix as branches, otherwise a restricted re-derivation that returns unclaimed patterns to their
+	 * compiler positions. Shares {@link #plannedFlatCount} with {@link #tryCreate} so the two can never disagree.
+	 */
+	static MultiJoinPlan.OrderedPlan selectFactorizedOrder(MultiJoinPlan plan, long seedMask, long requiredPrefixMask,
+			int minimumFlatCount) {
+		MultiJoinPlan.OrderedPlan derived = plan.derivedFactorizedPlan(seedMask);
+		while (true) {
+			int n = derived.order.length;
+			Split split = analyzeSplit(plan, derived, seedMask);
+			int flatCount = split == null ? n : plannedFlatCount(split, requiredPrefixMask, minimumFlatCount);
+			if (flatCount == n) {
+				// the split declines entirely: the sink reorder has no payoff, so run the compiler order
+				return plan.derivedPlan(seedMask);
+			}
+			if (flatCount <= n - derived.sunkCount) {
+				return derived;
+			}
+			// part of the sunk suffix landed in the flat prefix: those patterns return to their compiler
+			// positions, where their pruning still helps; the loop terminates because the sunk suffix
+			// strictly shrinks each pass
+			derived = plan.deriveFactorizedRestricted(seedMask, derived.order, flatCount);
+		}
+	}
+
+	private static int plannedFlatCount(Split split, long requiredPrefixMask, int minimumFlatCount) {
+		int n = split.fresh.length;
+		int flatCount = Math.max(split.flatCount, minimumFlatCount);
+		for (int d = flatCount; d < n; d++) {
+			if ((split.fresh[d] & requiredPrefixMask) != 0L) {
+				flatCount = d + 1;
+			}
+		}
+		return flatCount;
+	}
+
+	/**
 	 * Ordered-flat variant: every slot in {@code requiredPrefixMask} must be produced by the flat prefix so ORDER BY
 	 * keys never change while a retained row expands its factorized branches.
 	 */
@@ -185,12 +222,7 @@ final class LmdbNativeFactorizedRows {
 		int n = order.length;
 		long[] fresh = split.fresh;
 		long[] reads = split.reads;
-		int flatCount = Math.max(split.flatCount, minimumFlatCount);
-		for (int d = flatCount; d < n; d++) {
-			if ((fresh[d] & requiredPrefixMask) != 0L) {
-				flatCount = d + 1;
-			}
-		}
+		int flatCount = plannedFlatCount(split, requiredPrefixMask, minimumFlatCount);
 		if (flatCount == n) {
 			return null;
 		}

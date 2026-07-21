@@ -110,9 +110,11 @@ final class LmdbNativeAdaptiveFilterPlacement {
 			decline(telemetryExpr, "CORRELATED_ENTRY", true);
 			return null;
 		}
+		// the external-root caller's morsel root is order[0] of the selected factorized order, so this chain
+		// must derive through the same selection
 		MultiJoinPlan.OrderedPlan ordered = depth0 == null
 				? plan.derivedPlan(row)
-				: plan.derivedFactorizedPlan(row);
+				: LmdbNativeFactorizedRows.selectFactorizedOrder(plan, row.boundMask(), 0L, 1);
 		int targetIndex = -1;
 		long bestScore = Long.MIN_VALUE;
 		int bestFilterId = Integer.MAX_VALUE;
@@ -141,7 +143,7 @@ final class LmdbNativeAdaptiveFilterPlacement {
 			MultiJoinPlan borrowed = lease.borrow(plan);
 			MultiJoinPlan.OrderedPlan borrowedOrder = depth0 == null
 					? borrowed.derive(row.boundMask())
-					: borrowed.derivedFactorizedPlan(row);
+					: LmdbNativeFactorizedRows.selectFactorizedOrder(borrowed, row.boundMask(), 0L, 1);
 			MaskedFilter target = borrowed.filters[targetIndex];
 			session = new AdaptiveFilterSession(target.filter, target.adaptive,
 					borrowedOrder.placement[targetIndex], telemetryExpr, borrowed, borrowedOrder, targetIndex);

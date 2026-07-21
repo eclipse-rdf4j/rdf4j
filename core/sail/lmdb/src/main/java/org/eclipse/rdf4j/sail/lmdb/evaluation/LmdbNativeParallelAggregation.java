@@ -103,7 +103,14 @@ final class LmdbNativeParallelAggregation {
 		if (!(totalWork >= LmdbNativeParallelPipelines.minimumWorkEstimate())) {
 			return reject(it, "below-threshold");
 		}
-		MultiJoinPlan.OrderedPlan derived = plan.derivedFactorizedPlan(row);
+		// commit to the same order the workers will select: sunk only when the tail engages, so a declined or
+		// partially claimed factorization never runs the sunk order without its payoff
+		FactorizedTail.Selection orderSelection = FactorizedTail.select(plan, row, it.groupSlots, it.aggregates,
+				LmdbNativeAttemptMetrics.direct());
+		if (orderSelection.tail != null) {
+			orderSelection.tail.discardUnopenedProbe();
+		}
+		MultiJoinPlan.OrderedPlan derived = orderSelection.derived;
 		PatternPlan root = (PatternPlan) derived.order[0];
 		long preflightAggregateSlots = preflightAggregateSlots(it, plan, derived, root, row);
 		LmdbRootScanPartition[] partitions = null;
@@ -739,16 +746,24 @@ final class LmdbNativeParallelAggregation {
 			throw new IllegalStateException("worker seeding diverged from the query thread");
 		}
 		row.recomputeBoundMask();
+		AggContext ctx = new AggContext(source, it.strictCompare, true, true);
+		FactorizedTail tail;
 		if (derived == null) {
-			derived = plan.derivedFactorizedPlan(row);
+			// the same deterministic selection the consumer ran at propose time: worker forks share the
+			// consumer's pattern children, so the selected root must be the shared morsel root
+			FactorizedTail.Selection selection = FactorizedTail.select(plan, row, it.groupSlots, it.aggregates,
+					metrics);
+			derived = selection.derived;
+			tail = selection.tail;
 			if (derived.order[0] != root) {
 				throw new IllegalStateException("worker physical root diverged from the shared morsel root");
 			}
+		} else {
+			tail = derived.order.length >= 2
+					? FactorizedTail.probe(derived, plan.filters, row.boundMask(), it.groupSlots, it.aggregates,
+							metrics)
+					: null;
 		}
-		AggContext ctx = new AggContext(source, it.strictCompare, true, true);
-		FactorizedTail tail = derived.order.length >= 2
-				? FactorizedTail.probe(derived, plan.filters, row.boundMask(), it.groupSlots, it.aggregates, metrics)
-				: null;
 		NativeGroupTable result = null;
 		Throwable failureOutcome = null;
 		try {

@@ -97,7 +97,10 @@ final class MultiJoinPlan implements SlotPlan {
 
 	/** The ordered physical children and filter placement for the given entry row, memoized per bound-slot mask. */
 	OrderedPlan derivedPlan(RowState row) {
-		long mask = row.boundMask();
+		return derivedPlan(row.boundMask());
+	}
+
+	OrderedPlan derivedPlan(long mask) {
 		OrderedPlan plan = orderCache.get(mask);
 		if (plan == null) {
 			plan = derive(mask, false);
@@ -116,10 +119,13 @@ final class MultiJoinPlan implements SlotPlan {
 	 * producers in the prefix.
 	 */
 	OrderedPlan derivedFactorizedPlan(RowState row) {
+		return derivedFactorizedPlan(row.boundMask());
+	}
+
+	OrderedPlan derivedFactorizedPlan(long mask) {
 		if (!SINK_ENABLED) {
-			return derivedPlan(row);
+			return derivedPlan(mask);
 		}
-		long mask = row.boundMask();
 		OrderedPlan plan = factorizedOrderCache.get(mask);
 		if (plan == null) {
 			plan = derive(mask, true);
@@ -214,9 +220,26 @@ final class MultiJoinPlan implements SlotPlan {
 	 * filters whose mask is never fully covered run at the top, which matches their original placement.
 	 */
 	OrderedPlan derive(long initialBoundMask, boolean sinkUnconsumed) {
+		return derive(initialBoundMask, sinkUnconsumed, null);
+	}
+
+	/**
+	 * Re-derives the factorized order with the sink restricted to the given trailing suffix of a previous derivation:
+	 * only those patterns may leave their compiler position. Used when the factorized tail claimed just part of the
+	 * sunk suffix — the unclaimed patterns then return to their compiler positions, where their pruning still helps the
+	 * nested-loop prefix. Not memoized: the restriction depends on the tail probe, not just the bound mask.
+	 */
+	OrderedPlan deriveFactorizedRestricted(long initialBoundMask, SlotPlan[] previousOrder, int claimedFrom) {
+		SlotPlan[] allowed = new SlotPlan[previousOrder.length - claimedFrom];
+		System.arraycopy(previousOrder, claimedFrom, allowed, 0, allowed.length);
+		return derive(initialBoundMask, true, allowed);
+	}
+
+	private OrderedPlan derive(long initialBoundMask, boolean sinkUnconsumed, SlotPlan[] allowedSinks) {
 		SlotPlan[] ordered = children.clone();
+		int sunkCount = 0;
 		if (sinkUnconsumed) {
-			sinkUnconsumedPatterns(ordered, initialBoundMask, filters);
+			sunkCount = sinkUnconsumedPatterns(ordered, initialBoundMask, filters, allowedSinks);
 		}
 		int[] filterDepth = new int[filters.length];
 		int[] earliestLegalDepth = new int[filters.length];
@@ -244,7 +267,7 @@ final class MultiJoinPlan implements SlotPlan {
 						: Math.max(earliest, Math.min(planned, last));
 			}
 		}
-		return new OrderedPlan(ordered, filterDepth, derivePlacement(filterDepth, earliestLegalDepth));
+		return new OrderedPlan(ordered, filterDepth, derivePlacement(filterDepth, earliestLegalDepth), sunkCount);
 	}
 
 	private FilterPlacementEnvelope[] derivePlacement(int[] filterDepth, int[] earliestLegalDepth) {
@@ -351,10 +374,15 @@ final class MultiJoinPlan implements SlotPlan {
 	 * must be at least as bulky as the most selective stationary child; when no stationary child has a usable estimate,
 	 * the most selective candidate stays put to drive the prefix.
 	 */
-	static void sinkUnconsumedPatterns(SlotPlan[] ordered, long seedMask, MaskedFilter[] filters) {
+	static int sinkUnconsumedPatterns(SlotPlan[] ordered, long seedMask, MaskedFilter[] filters) {
+		return sinkUnconsumedPatterns(ordered, seedMask, filters, null);
+	}
+
+	static int sinkUnconsumedPatterns(SlotPlan[] ordered, long seedMask, MaskedFilter[] filters,
+			SlotPlan[] allowedSinks) {
 		int n = ordered.length;
 		if (n < 2) {
-			return;
+			return 0;
 		}
 		long[] produced = new long[n];
 		long seenOnce = 0L;
@@ -374,13 +402,13 @@ final class MultiJoinPlan implements SlotPlan {
 			}
 			exclusive[i] = produced[i] & ~sharedOrSeed;
 			boolean joinsRest = (produced[i] & sharedOrSeed) != 0L;
-			if (exclusive[i] != 0L && joinsRest) {
+			if (exclusive[i] != 0L && joinsRest && allowsSink(allowedSinks, ordered[i])) {
 				candidate[i] = true;
 				any = true;
 			}
 		}
 		if (!any) {
-			return;
+			return 0;
 		}
 		for (MaskedFilter filter : filters) {
 			long filterMask = filter.mask < 0L ? ~0L : filter.mask;
@@ -403,39 +431,45 @@ final class MultiJoinPlan implements SlotPlan {
 			any |= value;
 		}
 		if (!any) {
-			return;
+			return 0;
 		}
-		double pruningFloor = Double.POSITIVE_INFINITY;
-		for (int i = 0; i < n; i++) {
-			if (!candidate[i]) {
-				double estimate = staticEstimateOf(ordered[i]);
-				if (!Double.isNaN(estimate)) {
-					pruningFloor = Math.min(pruningFloor, estimate);
-				}
-			}
-		}
-		if (Double.isFinite(pruningFloor)) {
+		// the pruning floor only protects the nested-loop prefix; a restricted re-derivation sinks patterns the
+		// tail already claimed as branches, which never run in the prefix, so the floor does not apply there
+		if (allowedSinks == null) {
+			double pruningFloor = Double.POSITIVE_INFINITY;
 			for (int i = 0; i < n; i++) {
-				if (candidate[i] && ((PatternPlan) ordered[i]).staticEstimate < pruningFloor) {
-					candidate[i] = false;
+				if (!candidate[i]) {
+					double estimate = staticEstimateOf(ordered[i]);
+					if (!Double.isNaN(estimate)) {
+						pruningFloor = Math.min(pruningFloor, estimate);
+					}
 				}
 			}
-		} else {
-			int keep = -1;
-			for (int i = 0; i < n; i++) {
-				if (candidate[i] && (keep < 0
-						|| ((PatternPlan) ordered[i]).staticEstimate < ((PatternPlan) ordered[keep]).staticEstimate)) {
-					keep = i;
+			if (Double.isFinite(pruningFloor)) {
+				for (int i = 0; i < n; i++) {
+					if (candidate[i] && ((PatternPlan) ordered[i]).staticEstimate < pruningFloor) {
+						candidate[i] = false;
+					}
 				}
+			} else {
+				int keep = -1;
+				for (int i = 0; i < n; i++) {
+					if (candidate[i] && (keep < 0
+							|| ((PatternPlan) ordered[i]).staticEstimate < ((PatternPlan) ordered[keep]).staticEstimate)) {
+						keep = i;
+					}
+				}
+				candidate[keep] = false;
 			}
-			candidate[keep] = false;
 		}
-		any = false;
+		int sunk = 0;
 		for (int i = 0; i < n; i++) {
-			any |= candidate[i];
+			if (candidate[i]) {
+				sunk++;
+			}
 		}
-		if (!any) {
-			return;
+		if (sunk == 0) {
+			return 0;
 		}
 		SlotPlan[] result = new SlotPlan[n];
 		int at = 0;
@@ -450,6 +484,19 @@ final class MultiJoinPlan implements SlotPlan {
 			}
 		}
 		System.arraycopy(result, 0, ordered, 0, n);
+		return sunk;
+	}
+
+	private static boolean allowsSink(SlotPlan[] allowedSinks, SlotPlan child) {
+		if (allowedSinks == null) {
+			return true;
+		}
+		for (SlotPlan allowed : allowedSinks) {
+			if (allowed == child) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** Best-effort static row estimate for the pruning guard; NaN when the plan type has none. */
@@ -495,15 +542,22 @@ final class MultiJoinPlan implements SlotPlan {
 		final SlotPlan[] order;
 		final int[] filterDepth;
 		final FilterPlacementEnvelope[] placement;
+		/** Number of trailing children the sink displaced from their compiler position; 0 for the plain order. */
+		final int sunkCount;
 
 		OrderedPlan(SlotPlan[] order, int[] filterDepth) {
-			this(order, filterDepth, new FilterPlacementEnvelope[filterDepth.length]);
+			this(order, filterDepth, new FilterPlacementEnvelope[filterDepth.length], 0);
 		}
 
 		OrderedPlan(SlotPlan[] order, int[] filterDepth, FilterPlacementEnvelope[] placement) {
+			this(order, filterDepth, placement, 0);
+		}
+
+		OrderedPlan(SlotPlan[] order, int[] filterDepth, FilterPlacementEnvelope[] placement, int sunkCount) {
 			this.order = order;
 			this.filterDepth = filterDepth;
 			this.placement = placement;
+			this.sunkCount = sunkCount;
 		}
 	}
 

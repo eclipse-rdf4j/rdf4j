@@ -145,6 +145,15 @@ final class FactorizedTail {
 		return tailGroupPos >= 0;
 	}
 
+	/**
+	 * Releases a probe result that was never opened. Construction acquires no resources, and the branch and prefix
+	 * filters are the plan-owned instances a subsequent re-probe still needs, so unlike {@link #close()} this must not
+	 * close them.
+	 */
+	void discardUnopenedProbe() {
+		closed = true;
+	}
+
 	void close() {
 		if (closed) {
 			return;
@@ -226,6 +235,47 @@ final class FactorizedTail {
 	static FactorizedTail probe(MultiJoinPlan.OrderedPlan derived, MaskedFilter[] filters, long seedMask,
 			int[] groupSlots, AggregateSpec[] aggregates, LmdbNativeAttemptMetrics metrics) {
 		return create(derived, filters, seedMask, groupSlots, aggregates, metrics);
+	}
+
+	/** The order/tail pair {@link #select} committed to: {@code tail} is null when factorization declined. */
+	static final class Selection {
+		final MultiJoinPlan.OrderedPlan derived;
+		final FactorizedTail tail;
+
+		Selection(MultiJoinPlan.OrderedPlan derived, FactorizedTail tail) {
+			this.derived = derived;
+			this.tail = tail;
+		}
+	}
+
+	static Selection select(MultiJoinPlan plan, RowState row, int[] groupSlots, AggregateSpec[] aggregates,
+			LmdbNativeAttemptMetrics metrics) {
+		return select(plan, row.boundMask(), groupSlots, aggregates, metrics);
+	}
+
+	/**
+	 * Selects the physical order and tail for one aggregation attempt. The sink reorder only pays off through the
+	 * branches the tail claims: a declined probe falls back to the compiler order (running the sunk order without a
+	 * tail only delays the compiler order's pruning), and a partially claimed sunk suffix is re-derived with the sink
+	 * restricted to the claimed branches so unclaimed patterns return to their compiler positions. The restriction loop
+	 * terminates because each pass strictly shrinks the sunk suffix.
+	 */
+	static Selection select(MultiJoinPlan plan, long seedMask, int[] groupSlots, AggregateSpec[] aggregates,
+			LmdbNativeAttemptMetrics metrics) {
+		MultiJoinPlan.OrderedPlan derived = plan.derivedFactorizedPlan(seedMask);
+		while (true) {
+			FactorizedTail tail = probe(derived, plan.filters, seedMask, groupSlots, aggregates, metrics);
+			if (tail == null) {
+				return new Selection(plan.derivedPlan(seedMask), null);
+			}
+			int n = derived.order.length;
+			int branchStart = n - tail.branchCount();
+			if (branchStart <= n - derived.sunkCount) {
+				return new Selection(derived, tail);
+			}
+			tail.discardUnopenedProbe();
+			derived = plan.deriveFactorizedRestricted(seedMask, derived.order, branchStart);
+		}
 	}
 
 	private static FactorizedTail create(MultiJoinPlan.OrderedPlan derived, MaskedFilter[] filters, long seedMask,

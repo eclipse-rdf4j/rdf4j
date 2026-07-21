@@ -308,12 +308,11 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 			directMultiJoin = peelTrailingPatterns(arg);
 		}
 		if (orderedDistinct.specialized() && directMultiJoin != null) {
-			MultiJoinPlan.OrderedPlan derived = directMultiJoin.derivedFactorizedPlan(row);
-			FactorizedTail factorized = FactorizedTail.probe(derived, directMultiJoin.filters, row.boundMask(),
-					groupSlots, aggregates, metrics.child());
-			if (factorized != null) {
-				return evaluateParallelOrFactorized(row, directMultiJoin, directMultiJoin, derived, factorized,
-						metrics);
+			FactorizedTail.Selection selection = FactorizedTail.select(directMultiJoin, row, groupSlots, aggregates,
+					metrics.child());
+			if (selection.tail != null) {
+				return evaluateParallelOrFactorized(row, directMultiJoin, directMultiJoin, selection.derived,
+						selection.tail, metrics);
 			}
 		}
 		if (orderedDistinct.specialized()) {
@@ -331,9 +330,10 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		MultiJoinPlan.OrderedPlan factorizedDerived = null;
 		FactorizedTail factorized = null;
 		if (directMultiJoin != null) {
-			factorizedDerived = directMultiJoin.derivedFactorizedPlan(row);
-			factorized = FactorizedTail.probe(factorizedDerived, directMultiJoin.filters, row.boundMask(), groupSlots,
-					aggregates, metrics.child());
+			FactorizedTail.Selection selection = FactorizedTail.select(directMultiJoin, row, groupSlots, aggregates,
+					metrics.child());
+			factorizedDerived = selection.derived;
+			factorized = selection.tail;
 		}
 		List<BindingSet> proposed = evaluateParallelOrFactorized(row, parallelPlan, directMultiJoin,
 				factorizedDerived, factorized, metrics);

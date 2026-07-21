@@ -565,8 +565,8 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			requiredPrefixMask |= 1L << orderSlot;
 		}
 		LmdbNativeFactorizedRows factorized = LmdbNativeFactorizedRows.tryCreate(multiJoin,
-				multiJoin.derivedFactorizedPlan(row), row, row.boundMask(), sourceSlots, false, requiredPrefixMask,
-				attemptMetrics);
+				LmdbNativeFactorizedRows.selectFactorizedOrder(multiJoin, row.boundMask(), requiredPrefixMask, 0), row,
+				row.boundMask(), sourceSlots, false, requiredPrefixMask, attemptMetrics);
 		if (factorized == null) {
 			return null;
 		}
@@ -818,7 +818,8 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 				: null;
 		boolean correlatedEntry = (arg.producedMask() & row.boundMask()) != 0L;
 		boolean countingBranch = multiJoin != null && LmdbNativeFactorizedRows.plansCountingBranch(multiJoin,
-				multiJoin.derivedFactorizedPlan(row), row.boundMask(), sourceSlots);
+				LmdbNativeFactorizedRows.selectFactorizedOrder(multiJoin, row.boundMask(), 0L, 0), row.boundMask(),
+				sourceSlots);
 		NativeUnorderedInput selected = openBatchOrParallel(row, multiJoin, correlatedEntry, countingBranch);
 		if (selected != null) {
 			return selected;
@@ -832,8 +833,8 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		} else {
 			LmdbNativeAttemptMetrics attemptMetrics = LmdbNativeAttemptMetrics.root(originalExpr);
 			LmdbNativeFactorizedRows factorized = LmdbNativeFactorizedRows.tryCreate(multiJoin,
-					multiJoin.derivedFactorizedPlan(row), row, row.boundMask(), sourceSlots, distinct, 0L,
-					attemptMetrics);
+					LmdbNativeFactorizedRows.selectFactorizedOrder(multiJoin, row.boundMask(), 0L, 0), row,
+					row.boundMask(), sourceSlots, distinct, 0L, attemptMetrics);
 			if (factorized != null) {
 				if (LmdbNativeExplain.recordsExecutionPaths(originalExpr)) {
 					attemptMetrics.deferStrategy(originalExpr, factorized.describeEngagement());
