@@ -479,14 +479,14 @@ FILTER_FALSE_EMPTY,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Certif
 FILTER_FALSE_EMPTY,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
 FILTER_FALSE_EMPTY,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
 FILTER_FALSE_EMPTY,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
-LEFT_JOIN_EMPTY_LEFT,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context
-LEFT_JOIN_EMPTY_LEFT,RDF4J_RUNTIME,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context
-LEFT_JOIN_EMPTY_LEFT,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context
-LEFT_JOIN_EMPTY_LEFT,RDF4J_RUNTIME,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context
-LEFT_JOIN_EMPTY_LEFT,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
-LEFT_JOIN_EMPTY_LEFT,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
-LEFT_JOIN_EMPTY_LEFT,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context
-LEFT_JOIN_EMPTY_LEFT,RDF4J_RUNTIME,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context
+LEFT_JOIN_EMPTY_LEFT,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
+LEFT_JOIN_EMPTY_LEFT,RDF4J_RUNTIME,BAG,ALL_BINDINGS,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
+LEFT_JOIN_EMPTY_LEFT,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
+LEFT_JOIN_EMPTY_LEFT,RDF4J_RUNTIME,SET,ALL_BINDINGS,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
+LEFT_JOIN_EMPTY_LEFT,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
+LEFT_JOIN_EMPTY_LEFT,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
+LEFT_JOIN_EMPTY_LEFT,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
+LEFT_JOIN_EMPTY_LEFT,RDF4J_RUNTIME,ASK,ALL_BINDINGS,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
 LEFT_JOIN_EMPTY_LEFT,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context
 LEFT_JOIN_EMPTY_LEFT,SPARQL_1_1,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context
 LEFT_JOIN_EMPTY_LEFT,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context
@@ -511,14 +511,14 @@ LEFT_JOIN_EMPTY_LEFT,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequ
 LEFT_JOIN_EMPTY_LEFT,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
 LEFT_JOIN_EMPTY_LEFT,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context
 LEFT_JOIN_EMPTY_LEFT,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context
-LEFT_JOIN_EMPTY_RIGHT,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context
-LEFT_JOIN_EMPTY_RIGHT,RDF4J_RUNTIME,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context
-LEFT_JOIN_EMPTY_RIGHT,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context
-LEFT_JOIN_EMPTY_RIGHT,RDF4J_RUNTIME,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context
-LEFT_JOIN_EMPTY_RIGHT,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
-LEFT_JOIN_EMPTY_RIGHT,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
-LEFT_JOIN_EMPTY_RIGHT,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context
-LEFT_JOIN_EMPTY_RIGHT,RDF4J_RUNTIME,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context
+LEFT_JOIN_EMPTY_RIGHT,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
+LEFT_JOIN_EMPTY_RIGHT,RDF4J_RUNTIME,BAG,ALL_BINDINGS,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
+LEFT_JOIN_EMPTY_RIGHT,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
+LEFT_JOIN_EMPTY_RIGHT,RDF4J_RUNTIME,SET,ALL_BINDINGS,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
+LEFT_JOIN_EMPTY_RIGHT,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
+LEFT_JOIN_EMPTY_RIGHT,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
+LEFT_JOIN_EMPTY_RIGHT,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
+LEFT_JOIN_EMPTY_RIGHT,RDF4J_RUNTIME,ASK,ALL_BINDINGS,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
 LEFT_JOIN_EMPTY_RIGHT,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context
 LEFT_JOIN_EMPTY_RIGHT,SPARQL_1_1,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context
 LEFT_JOIN_EMPTY_RIGHT,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context
@@ -543,14 +543,14 @@ LEFT_JOIN_EMPTY_RIGHT,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Seq
 LEFT_JOIN_EMPTY_RIGHT,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
 LEFT_JOIN_EMPTY_RIGHT,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context
 LEFT_JOIN_EMPTY_RIGHT,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context
-LEFT_JOIN_UNIT_RIGHT,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context
-LEFT_JOIN_UNIT_RIGHT,RDF4J_RUNTIME,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context
-LEFT_JOIN_UNIT_RIGHT,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context
-LEFT_JOIN_UNIT_RIGHT,RDF4J_RUNTIME,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context
-LEFT_JOIN_UNIT_RIGHT,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
-LEFT_JOIN_UNIT_RIGHT,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
-LEFT_JOIN_UNIT_RIGHT,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context
-LEFT_JOIN_UNIT_RIGHT,RDF4J_RUNTIME,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context
+LEFT_JOIN_UNIT_RIGHT,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
+LEFT_JOIN_UNIT_RIGHT,RDF4J_RUNTIME,BAG,ALL_BINDINGS,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
+LEFT_JOIN_UNIT_RIGHT,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
+LEFT_JOIN_UNIT_RIGHT,RDF4J_RUNTIME,SET,ALL_BINDINGS,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
+LEFT_JOIN_UNIT_RIGHT,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
+LEFT_JOIN_UNIT_RIGHT,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
+LEFT_JOIN_UNIT_RIGHT,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
+LEFT_JOIN_UNIT_RIGHT,RDF4J_RUNTIME,ASK,ALL_BINDINGS,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
 LEFT_JOIN_UNIT_RIGHT,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context
 LEFT_JOIN_UNIT_RIGHT,SPARQL_1_1,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context
 LEFT_JOIN_UNIT_RIGHT,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context
@@ -607,14 +607,14 @@ LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,
 LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
 LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
 LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
-MINUS_EMPTY_LEFT,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context
-MINUS_EMPTY_LEFT,RDF4J_RUNTIME,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context
-MINUS_EMPTY_LEFT,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context
-MINUS_EMPTY_LEFT,RDF4J_RUNTIME,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context
-MINUS_EMPTY_LEFT,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
-MINUS_EMPTY_LEFT,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
-MINUS_EMPTY_LEFT,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context
-MINUS_EMPTY_LEFT,RDF4J_RUNTIME,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context
+MINUS_EMPTY_LEFT,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
+MINUS_EMPTY_LEFT,RDF4J_RUNTIME,BAG,ALL_BINDINGS,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
+MINUS_EMPTY_LEFT,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
+MINUS_EMPTY_LEFT,RDF4J_RUNTIME,SET,ALL_BINDINGS,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
+MINUS_EMPTY_LEFT,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
+MINUS_EMPTY_LEFT,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
+MINUS_EMPTY_LEFT,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
+MINUS_EMPTY_LEFT,RDF4J_RUNTIME,ASK,ALL_BINDINGS,INAPPLICABLE,RDF4J_RUNTIME eagerly precompiles elided operands or conditions; the implementation does not apply this rule without a compile-totality premise
 MINUS_EMPTY_LEFT,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context
 MINUS_EMPTY_LEFT,SPARQL_1_1,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context
 MINUS_EMPTY_LEFT,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context

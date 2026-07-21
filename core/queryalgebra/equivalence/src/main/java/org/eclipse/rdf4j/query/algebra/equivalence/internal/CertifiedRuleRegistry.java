@@ -24,9 +24,12 @@ public final class CertifiedRuleRegistry {
 	public static boolean permits(RuleId rule, CheckOptions options) {
 		ObservationMode observation = options.getObservationMode();
 		boolean nonSequence = observation != ObservationMode.SEQUENCE;
+		boolean nonRuntime = !options.getSemanticsTarget().isRuntimeTarget();
 		boolean setLike = observation == ObservationMode.SET || observation == ObservationMode.ASK;
 		return switch (rule) {
-		case JOIN_UNIT_IDENTITY, UNION_EMPTY_IDENTITY, LEFT_JOIN_EMPTY_LEFT, LEFT_JOIN_EMPTY_RIGHT, LEFT_JOIN_UNIT_RIGHT, MINUS_EMPTY_LEFT, MINUS_EMPTY_RIGHT, VALUES_EMPTY -> nonSequence;
+		case JOIN_UNIT_IDENTITY, UNION_EMPTY_IDENTITY, MINUS_EMPTY_RIGHT, VALUES_EMPTY -> nonSequence;
+		case LEFT_JOIN_EMPTY_LEFT, LEFT_JOIN_EMPTY_RIGHT, LEFT_JOIN_UNIT_RIGHT, MINUS_EMPTY_LEFT -> nonSequence
+				&& nonRuntime;
 		case FILTER_TRUE_IDENTITY, DISTINCT_IDEMPOTENT -> true;
 		case UNION_IDEMPOTENT_UNDER_SET_OBSERVATION, DISTINCT_OR_SET_OBSERVATION -> setLike;
 		case REDUCED_HIDDEN_BY_SET_OBSERVATION -> setLike && !options.getSemanticsTarget().isRuntimeTarget();

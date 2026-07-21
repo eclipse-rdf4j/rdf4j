@@ -34,7 +34,10 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.Regex;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.equivalence.AlgebraEquivalenceChecker;
 import org.eclipse.rdf4j.query.algebra.equivalence.CheckOptions;
 import org.eclipse.rdf4j.query.algebra.equivalence.Counterexample;
@@ -59,6 +62,33 @@ import org.junit.jupiter.api.Test;
 class JsonTupleExprSoundnessRegressionTest {
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 	private static final String RESOURCE_ROOT = "/org/eclipse/rdf4j/query/algebra/equivalence/internal/";
+
+	/**
+	 * RDF4J eagerly precompiles a LeftJoin condition before evaluating either input. An invalid constant regex
+	 * therefore fails even when the right input is empty, so folding the LeftJoin to its left input would hide a
+	 * runtime failure.
+	 */
+	@Test
+	void eagerConditionCompilationBlocksLeftJoinEmptyRightFold() {
+		Regex invalidRegex = new Regex(
+				new ValueConstant(VF.createLiteral("a")),
+				new ValueConstant(VF.createLiteral("[")),
+				null);
+		TupleExpr original = new LeftJoin(new SingletonSet(), new EmptySet(), invalidRegex);
+		TupleExpr candidate = new SingletonSet();
+		EvaluationCase empty = EvaluationCase.builder("invalid regex is eagerly compiled").build();
+
+		EvaluationOutcome originalOutcome = evaluateAllowingError(original, empty);
+		EvaluationOutcome candidateOutcome = evaluate(candidate, empty);
+
+		assertTrue(originalOutcome.hasError(), originalOutcome::toString);
+		assertEquals(1, candidateOutcome.getSequence().size(), candidateOutcome::toString);
+		assertFalse(originalOutcome.sameAs(candidateOutcome, ObservationMode.BAG));
+
+		CheckOptions options = checkOptions(empty);
+		assertDatasetIsVerifiedWitness(options, original, candidate);
+		assertNotEquivalentWithVerifiedCounterexample(options, original, candidate);
+	}
 
 	/**
 	 * RDF4J's runtime REDUCED iteration can make a nested operand's evaluation schedule observable even when callers
