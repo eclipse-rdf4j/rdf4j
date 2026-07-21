@@ -35,7 +35,6 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -46,16 +45,8 @@ class LmdbScalarSubqueryCorrelationExecutionTest {
 	private static final IRI TAG = VF.createIRI("urn:test:tag");
 	private static final IRI FLAG = VF.createIRI("urn:test:flag");
 
-	@AfterEach
-	void clearPlannerFlags() {
-		System.clearProperty(LmdbHypergraphJoinPlanner.DPHYP_PROPERTY);
-		System.clearProperty(LmdbJoinIslandConnectivity.OPAQUE_FACTORS_PROPERTY);
-	}
-
 	@Test
 	void sameNameScalarReferenceUsesOnlyBindingsVisibleAtItsOccurrence(@TempDir File dataDir) {
-		System.setProperty(LmdbHypergraphJoinPlanner.DPHYP_PROPERTY, "true");
-		System.setProperty(LmdbJoinIslandConnectivity.OPAQUE_FACTORS_PROPERTY, "true");
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc"));
 		store.init();
 		try {

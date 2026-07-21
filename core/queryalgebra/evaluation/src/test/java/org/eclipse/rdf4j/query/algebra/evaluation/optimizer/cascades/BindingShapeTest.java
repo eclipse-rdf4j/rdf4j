@@ -40,8 +40,6 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.PlanIr;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.TupleExprToIr;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
@@ -66,13 +64,8 @@ class BindingShapeTest {
 		BindingUniverse universe = BindingUniverse.from(pattern, PhysicalProperties.ANY);
 
 		BindingShape tupleShape = BindingShape.from(pattern, universe);
-		PlanIr ir = TupleExprToIr.convert(pattern);
-		var irShape = ir.rootNode().bindings();
-
 		assertEquals(Set.of("subject", "predicate"), universe.names(tupleShape.possible()));
 		assertEquals(Set.of("subject", "predicate"), universe.names(tupleShape.assured()));
-		assertEquals(Set.of("subject", "predicate"), ir.universe().names(irShape.possible()));
-		assertEquals(Set.of("subject", "predicate"), ir.universe().names(irShape.assured()));
 	}
 
 	@Test
@@ -127,7 +120,7 @@ class BindingShapeTest {
 		row.addBinding("rowOnly", VF.createIRI("urn:row-only"));
 		assignment.setBindingSets(List.of(row));
 
-		assertShapeMatchesIr(assignment);
+		assertShapeMatches(assignment);
 	}
 
 	@Test
@@ -136,7 +129,7 @@ class BindingShapeTest {
 				new ExtensionElem(new Var("o"), "derived"));
 		TupleExpr wrapped = new Slice(new Join(extension, pattern("derived", "p2", "label")), 0, 10);
 
-		assertShapeMatchesIr(wrapped);
+		assertShapeMatches(wrapped);
 	}
 
 	@Test
@@ -147,21 +140,25 @@ class BindingShapeTest {
 				new ProjectionElemList(new ProjectionElem("derived", "renamed"),
 						new ProjectionElem("absent", "phantom")));
 
-		assertShapeMatchesIr(projection);
+		BindingUniverse universe = BindingUniverse.from(projection, PhysicalProperties.ANY);
+		BindingShape shape = BindingShape.from(projection, universe);
+		assertEquals(Set.of("renamed", "phantom"), universe.names(shape.possible()));
+		assertEquals(Set.of("renamed"), universe.names(shape.assured()));
+		assertEquals(Set.of("phantom"), universe.names(shape.nullable()));
 	}
 
 	@Test
 	void maskNativePathAndTripleRefShapesExcludeConstantTerms() {
 		Var constantSubject = Var.of("constantSubject", VF.createIRI("urn:subject"), true, true);
 		Var constantContext = Var.of("constantContext", VF.createIRI("urn:graph"), false, true);
-		assertShapeMatchesIr(new ZeroLengthPath(Scope.NAMED_CONTEXTS, constantSubject, new Var("object"),
+		assertShapeMatches(new ZeroLengthPath(Scope.NAMED_CONTEXTS, constantSubject, new Var("object"),
 				constantContext));
 
 		StatementPattern step = pattern("stepStart", "predicate", "stepEnd");
-		assertShapeMatchesIr(new ArbitraryLengthPath(Scope.NAMED_CONTEXTS, constantSubject.clone(), step,
+		assertShapeMatches(new ArbitraryLengthPath(Scope.NAMED_CONTEXTS, constantSubject.clone(), step,
 				new Var("pathObject"), constantContext.clone(), 1L));
 
-		assertShapeMatchesIr(new TripleRef(constantSubject.clone(), new Var("triplePredicate"),
+		assertShapeMatches(new TripleRef(constantSubject.clone(), new Var("triplePredicate"),
 				new Var("tripleObject"), new Var("triple")));
 	}
 
@@ -195,17 +192,6 @@ class BindingShapeTest {
 		for (String assured : tupleExpr.getAssuredBindingNames()) {
 			assertFalse(nullable.contains(assured));
 		}
-	}
-
-	private static void assertShapeMatchesIr(TupleExpr tupleExpr) {
-		BindingUniverse universe = BindingUniverse.from(tupleExpr, PhysicalProperties.ANY);
-		BindingShape shape = BindingShape.from(tupleExpr, universe);
-		PlanIr ir = TupleExprToIr.convert(tupleExpr);
-		var irShape = ir.rootNode().bindings();
-		assertEquals(ir.universe().names(irShape.possible()), universe.names(shape.possible()));
-		assertEquals(ir.universe().names(irShape.assured()), universe.names(shape.assured()));
-		assertEquals(ir.universe().names(irShape.nullable()), universe.names(shape.nullable()));
-		assertEquals(ir.universe().names(irShape.localBindOutputs()), universe.names(shape.localBindOutputs()));
 	}
 
 	private static StatementPattern pattern(String subject, String predicate, String object) {

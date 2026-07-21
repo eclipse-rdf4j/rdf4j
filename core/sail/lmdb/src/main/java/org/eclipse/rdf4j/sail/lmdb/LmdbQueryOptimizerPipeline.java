@@ -48,7 +48,6 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	private static final SameTermFilterOptimizer SAME_TERM_FILTER_OPTIMIZER = new SameTermFilterOptimizer();
 	private static final UnionScopeChangeOptimizer UNION_SCOPE_CHANGE_OPTIMIZER = new UnionScopeChangeOptimizer();
 	private static final QueryModelNormalizerOptimizer QUERY_MODEL_NORMALIZER = new QueryModelNormalizerOptimizer();
-	private static final LmdbEligibilitySemiJoinOptimizer ELIGIBILITY_SEMI_JOIN_OPTIMIZER = new LmdbEligibilitySemiJoinOptimizer();
 
 	private final EvaluationStrategy strategy;
 	private final TripleSource tripleSource;
@@ -85,21 +84,14 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		optimizers.add(UNION_SCOPE_CHANGE_OPTIMIZER);
 		optimizers.add(QUERY_MODEL_NORMALIZER);
 		optimizers.add(new LmdbOptionalNormalFormOptimizer(evaluationStatistics));
-		optimizers.add(ELIGIBILITY_SEMI_JOIN_OPTIMIZER);
 		optimizers.add(new FilterOptimizer(null, false, false));
 		optimizers.add(new LmdbBoundSimplifierOptimizer());
 		if (!preserveSerializableObservationOrder) {
 			optimizers.add(new LmdbSetSemanticsOptimizer());
 		}
 		optimizers.add(new LmdbFilterSimplifierOptimizer(evaluationStatistics));
-		optimizers.add(ELIGIBILITY_SEMI_JOIN_OPTIMIZER);
-		if (!preserveSerializableObservationOrder && LmdbCascadesOptimizer.standardPlanBaselineCaptureEnabled()) {
-			optimizers.add(new LmdbStandardPlanBaselineOptimizer());
-		}
 		optimizers.add(new LmdbCascadesOptimizer(evaluationStatistics, strategy.isTrackResultSize(),
 				preserveSerializableObservationOrder, strategy, tripleSource));
-		optimizers.add(new LmdbCascadesExplainFinalizer(evaluationStatistics,
-				Boolean.getBoolean(LmdbCascadesExplainFinalizer.FALLBACK_ANNOTATIONS_PROPERTY)));
 
 		if (assertsEnabled) {
 			List<QueryOptimizer> checked = new ArrayList<>();

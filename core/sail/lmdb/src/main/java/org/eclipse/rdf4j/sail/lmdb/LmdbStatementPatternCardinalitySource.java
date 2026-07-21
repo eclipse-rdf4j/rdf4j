@@ -29,10 +29,8 @@ final class LmdbStatementPatternCardinalitySource {
 
 	private static final int SHARED_CACHE_MAX_ENTRIES = 262_144;
 	private static final Map<SharedCardinalityKey, Double> SHARED_CARDINALITY_CACHE = new ConcurrentHashMap<>();
-	private static final Map<SharedExactCardinalityKey, Double> SHARED_EXACT_CARDINALITY_CACHE =
-			new ConcurrentHashMap<>();
-	private static final Map<SharedDistinctCardinalityKey, DistinctCardinalityProbe> SHARED_DISTINCT_CARDINALITY_CACHE =
-			new ConcurrentHashMap<>();
+	private static final Map<SharedExactCardinalityKey, Double> SHARED_EXACT_CARDINALITY_CACHE = new ConcurrentHashMap<>();
+	private static final Map<SharedDistinctCardinalityKey, DistinctCardinalityProbe> SHARED_DISTINCT_CARDINALITY_CACHE = new ConcurrentHashMap<>();
 
 	private final ValueStore valueStore;
 	private final TripleStore tripleStore;
@@ -189,6 +187,24 @@ final class LmdbStatementPatternCardinalitySource {
 
 	double estimate(Resource subj, IRI pred, Value obj, Resource ctx) {
 		return estimate(subj, pred, obj, ctx, false);
+	}
+
+	double estimateForPlanning(Resource subj, IRI pred, Value obj, Resource ctx, int repeatedComponentPairMask) {
+		try {
+			long subjId = resolveId(subj);
+			long predId = resolveId(pred);
+			long objId = resolveId(obj);
+			long ctxId = resolveId(ctx);
+			if (subjId == Long.MIN_VALUE || predId == Long.MIN_VALUE || objId == Long.MIN_VALUE
+					|| ctxId == Long.MIN_VALUE) {
+				return 0.0d;
+			}
+			return repeatedComponentPairMask == 0
+					? estimateIds(subjId, predId, objId, ctxId, true)
+					: estimateRepeatedIds(subjId, predId, objId, ctxId, repeatedComponentPairMask);
+		} catch (IOException | RuntimeException e) {
+			return -1.0d;
+		}
 	}
 
 	private double estimate(Resource subj, IRI pred, Value obj, Resource ctx, boolean planning) {

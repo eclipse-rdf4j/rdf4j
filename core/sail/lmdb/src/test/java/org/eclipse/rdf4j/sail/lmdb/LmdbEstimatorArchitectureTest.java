@@ -108,12 +108,11 @@ class LmdbEstimatorArchitectureTest {
 	}
 
 	@Test
-	void statisticsFacadeDelegatesJoinOrderingOnlyToDphyp() throws IOException {
+	void statisticsFacadeOwnsNoJoinOrderingAlgorithm() throws IOException {
 		String facade = Files.readString(source("LmdbEvaluationStatistics.java"));
-		assertTrue(facade.contains("LmdbHypergraphJoinPlanner.tryPlan("),
-				"statistics facade must delegate join ordering to DPhyp");
-		assertFalse(facade.contains("new JoinOrderPlanner") || facade.contains("SketchJoinOrderService"),
-				"statistics facade must not own an alternative join-order implementation");
+		assertFalse(facade.contains("planJoinOrder(") || facade.contains("planJoinOrderAttempt(")
+				|| facade.contains("new JoinOrderPlanner") || facade.contains("SketchJoinOrderService"),
+				"join enumeration belongs exclusively to the packed Cascades planner");
 	}
 
 	private static boolean isEstimatorSource(Path path) {

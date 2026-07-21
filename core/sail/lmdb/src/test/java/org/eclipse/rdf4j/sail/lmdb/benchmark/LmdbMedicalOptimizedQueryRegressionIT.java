@@ -403,7 +403,8 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 				() -> assertEquals("BUDGET_EXHAUSTED", snapshot.completeness(),
 						queryName + " must expose bounded AUTO incompleteness\n" + snapshot.diagnostics()),
 				() -> assertTrue(limitCauses != null && !limitCauses.isBlank(),
-						queryName + " must name every AUTO approximation cause\n" + optimizerCounters(snapshot.optimized())),
+						queryName + " must name every AUTO approximation cause\n"
+								+ optimizerCounters(snapshot.optimized())),
 				() -> assertFalse(limitCauses != null && limitCauses.contains("DEADLINE"),
 						"AUTO must not use a wall-clock deadline: " + limitCauses),
 				() -> assertTrue(snapshot.optimized().getDoubleMetricPlanned("optimizer.cascadesRuleWork") <= 4_096.0d,

@@ -656,12 +656,6 @@ class LmdbFilterSimplifierOptimizerTest {
 		assertFalse(containsLeftJoin(retainedFilter.getArg()));
 		assertTrue(containsBindingSetAssignmentFor(retainedFilter.getArg(), "optDisease"));
 		assertInstanceOf(Exists.class, retainedFilter.getCondition());
-		String rewriteMetric = retainedFilter.getStringMetricPlanned(LmdbNullRejectingOptionalSupport.REWRITE_METRIC);
-		assertTrue(rewriteMetric != null && rewriteMetric.contains("source=filter-simplifier"),
-				String.valueOf(rewriteMetric));
-		assertTrue(rewriteMetric.contains("optDisease"), rewriteMetric);
-		assertTrue(rewriteMetric.contains("rule=24"), rewriteMetric);
-		assertTrue(rewriteMetric.contains("preservedMultiplicity=true"), rewriteMetric);
 	}
 
 	@Test
@@ -679,9 +673,6 @@ class LmdbFilterSimplifierOptimizerTest {
 		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
 		assertInstanceOf(Join.class, retainedFilter.getArg());
 		assertFalse(containsLeftJoin(retainedFilter.getArg()));
-		String rewriteMetric = retainedFilter.getStringMetricPlanned(LmdbNullRejectingOptionalSupport.REWRITE_METRIC);
-		assertTrue(rewriteMetric.contains("source=filter-simplifier"), rewriteMetric);
-		assertTrue(rewriteMetric.contains("optEffect"), rewriteMetric);
 	}
 
 	@Test

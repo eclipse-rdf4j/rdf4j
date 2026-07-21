@@ -122,14 +122,14 @@ public class ThemeQueryPlanRunBenchmark {
 		public int z_queryIndex;
 
 		@Param({
-//				"MEDICAL_RECORDS",
+				"MEDICAL_RECORDS",
 //				"SOCIAL_MEDIA",
 //				"LIBRARY",
 //				"ENGINEERING",
 //				"HIGHLY_CONNECTED",
 //				"TRAIN",
 //				"ELECTRICAL_GRID",
-				"PHARMA",
+//				"PHARMA",
 //				"SPARSE"
 		})
 		public String themeName;

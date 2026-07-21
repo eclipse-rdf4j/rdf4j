@@ -15,9 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertTimeout;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -209,7 +207,7 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
-	void lmdbPipelineRunsPushdownAndBaselineCaptureBeforeCascadesByDefault() {
+	void lmdbPipelineRunsNormalizationBeforePackedCascadesByDefault() {
 		TripleSource tripleSource = new EmptyTripleSource();
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
 		List<QueryOptimizer> optimizers = optimizers(
@@ -217,16 +215,13 @@ class LmdbOptimizerPipelineTest {
 
 		int filterIndex = indexOf(optimizers, FilterOptimizer.class);
 		int filterSimplifierIndex = indexOf(optimizers, LmdbFilterSimplifierOptimizer.class);
-		int handoffBaselineIndex = lastIndexOf(optimizers, LmdbStandardPlanBaselineOptimizer.class);
 		int cascadesIndex = indexOf(optimizers, LmdbCascadesOptimizer.class);
 
 		assertTrue(filterIndex >= 0);
 		assertTrue(filterSimplifierIndex >= 0);
-		assertTrue(handoffBaselineIndex >= 0);
 		assertTrue(cascadesIndex >= 0);
 		assertTrue(filterIndex < cascadesIndex);
-		assertTrue(filterSimplifierIndex < handoffBaselineIndex);
-		assertTrue(handoffBaselineIndex < cascadesIndex);
+		assertTrue(filterSimplifierIndex < cascadesIndex);
 		assertTrue(indexOf(optimizers, CompareOptimizer.class) < cascadesIndex);
 		assertTrue(indexOf(optimizers, SameTermFilterOptimizer.class) < cascadesIndex);
 		assertTrue(optimizers.stream().anyMatch(LmdbFilterSimplifierOptimizer.class::isInstance));
@@ -244,10 +239,6 @@ class LmdbOptimizerPipelineTest {
 				"Finite membership semi-filters are Cascades alternatives; a second eager set-semantics pass would "
 						+ "suppress the reorderable finite-anchor join before costing");
 		assertTrue(indexOf(optimizers, LmdbFilterSimplifierOptimizer.class) < cascadesIndex);
-		assertTrue(optimizers.subList(handoffBaselineIndex + 1, cascadesIndex)
-				.stream()
-				.allMatch(ParentReferenceChecker.class::isInstance),
-				"Default fallback policy needs a clean LMDB no-Cascades baseline at the Cascades handoff");
 		assertFalse(optimizers.stream().anyMatch(BindingSetAssignmentInlinerOptimizer.class::isInstance));
 		assertFalse(optimizers.subList(cascadesIndex + 1, optimizers.size())
 				.stream()
@@ -255,8 +246,8 @@ class LmdbOptimizerPipelineTest {
 		assertFalse(optimizers.subList(cascadesIndex + 1, optimizers.size())
 				.stream()
 				.anyMatch(IterativeEvaluationOptimizer.class::isInstance));
-		assertEquals(List.of(LmdbCascadesExplainFinalizer.class),
-				nonCheckerOptimizerTypesAfter(optimizers, cascadesIndex));
+		assertTrue(nonCheckerOptimizerTypesAfter(optimizers, cascadesIndex).isEmpty(),
+				"The materialized packed winner is the final plan and must not enter a compatibility finalizer");
 		assertFalse(optimizers.stream().anyMatch(QueryJoinOptimizer.class::isInstance));
 	}
 
@@ -287,19 +278,11 @@ class LmdbOptimizerPipelineTest {
 				.stream()
 				.anyMatch(OrderLimitOptimizer.class::isInstance),
 				"ORDER/LIMIT alternatives are saturated, costed, and extracted by the unified memo");
-		Set<String> ruleIds = LmdbCascadesRuleProvider.rules(new EvaluationStatistics())
-				.rules()
-				.stream()
-				.map(rule -> rule.id())
-				.collect(Collectors.toSet());
-		assertTrue(ruleIds.containsAll(Set.of("order-projection-transpose", "distinct-ordered-projection-reduce")),
-				ruleIds.toString());
 	}
 
 	@Test
 	void narrowingProjectionSurvivesPrepassesAndIsCostedBeforeBlockingOrder() {
 		String previousMode = System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "exact");
-		String previousPolicy = System.setProperty(LmdbCascadesOptimizer.STANDARD_PLAN_POLICY_PROPERTY, "off");
 		try {
 			BindingSetAssignment rows = wideOrderValues(128);
 			ProjectionElemList projectedNames = new ProjectionElemList();
@@ -329,7 +312,6 @@ class LmdbOptimizerPipelineTest {
 			assertEquals("COMPLETE", root.getStringMetricPlanned("optimizer.cascadesCompleteness"));
 		} finally {
 			restoreProperty(LmdbCascadesOptimizer.MODE_PROPERTY, previousMode);
-			restoreProperty(LmdbCascadesOptimizer.STANDARD_PLAN_POLICY_PROPERTY, previousPolicy);
 		}
 	}
 
@@ -342,26 +324,6 @@ class LmdbOptimizerPipelineTest {
 
 		assertFalse(optimizers.stream().anyMatch(IterativeEvaluationOptimizer.class::isInstance),
 				"an eager factoring pass must not erase the original UNION alternative before memo import");
-		assertTrue(LmdbCascadesRuleProvider.rules(new EvaluationStatistics())
-				.rules()
-				.stream()
-				.anyMatch(rule -> "union-common-prefix-factoring".equals(rule.id())),
-				"the self-reactivating memo owns common-prefix factoring");
-	}
-
-	@Test
-	void legacyParityPropertyCannotDisableUnifiedLogicalRules() {
-		String legacyProperty = "rdf4j.optimizer.lmdb.cascades.standardLogicalRuleParity";
-		String previous = System.setProperty(legacyProperty, "false");
-		try {
-			assertTrue(LmdbCascadesRuleProvider.rules(new EvaluationStatistics())
-					.rules()
-					.stream()
-					.anyMatch(rule -> "union-common-prefix-factoring".equals(rule.id())),
-					"legacy routing flags must not suppress registered logical rewrites");
-		} finally {
-			restoreProperty(legacyProperty, previous);
-		}
 	}
 
 	@Test
@@ -373,18 +335,6 @@ class LmdbOptimizerPipelineTest {
 
 		assertFalse(optimizers.stream().anyMatch(LmdbProjectionPushdownOptimizer.class::isInstance),
 				"an eager projection pass must not erase unpruned alternatives before memo import");
-		Set<String> ruleIds = LmdbCascadesRuleProvider.rules(new EvaluationStatistics())
-				.rules()
-				.stream()
-				.map(rule -> rule.id())
-				.collect(Collectors.toSet());
-		assertTrue(ruleIds.containsAll(Set.of(
-				"projection-merge",
-				"projection-filter-pushdown",
-				"projection-pushdown",
-				"projection-union-distribution",
-				"projection-difference-pushdown",
-				"projection-leftjoin-pushdown")), ruleIds.toString());
 	}
 
 	@Test
@@ -578,7 +528,7 @@ class LmdbOptimizerPipelineTest {
 				""");
 		repairParentReferences(tupleExpr);
 
-		optimizeWithLmdbPipelineUntil(tupleExpr, "LmdbCascadesOptimizer");
+		optimizeWithLmdbPipelineThrough(tupleExpr, "LmdbCascadesOptimizer");
 
 		String diagnosticPlan = diagnosticPlan(tupleExpr);
 		assertFalse(containsVariableName(tupleExpr, "optMed"), diagnosticPlan);
@@ -586,14 +536,14 @@ class LmdbOptimizerPipelineTest {
 		assertFalse(containsAnonymousHavingBinding(tupleExpr), diagnosticPlan);
 		assertFalse(groupInputContainsUnion(tupleExpr), diagnosticPlan);
 		assertTrue(groupIsWrappedByExistsFilter(tupleExpr), diagnosticPlan);
-		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.rewriteProof",
-				"proofKind=TRIVIAL_BIND_ALIAS"), diagnosticPlan);
-		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.rewriteProof",
-				"proofKind=TAUTOLOGICAL_POSITIVE_HAVING"), diagnosticPlan);
-		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.rewriteProof",
-				"proofKind=ELIGIBILITY_UNION_SEMI_FILTER"), diagnosticPlan);
-		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.rewriteProof",
-				"proofKind=GROUP_KEY_EXISTS_LIFT"), diagnosticPlan);
+		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
+				"packed-trivial-bind-alias"), diagnosticPlan);
+		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
+				"packed-tautological-positive-having"), diagnosticPlan);
+		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
+				"packed-eligibility-union-exists"), diagnosticPlan);
+		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
+				"packed-group-key-exists-lift"), diagnosticPlan);
 	}
 
 	@Test
@@ -621,12 +571,12 @@ class LmdbOptimizerPipelineTest {
 				""");
 		repairParentReferences(tupleExpr);
 
-		optimizeWithLmdbPipelineUntil(tupleExpr, "LmdbCascadesOptimizer");
+		optimizeWithLmdbPipelineThrough(tupleExpr, "LmdbCascadesOptimizer");
 
 		String diagnosticPlan = diagnosticPlan(tupleExpr);
 		assertTrue(groupInputContainsUnion(tupleExpr), diagnosticPlan);
-		assertFalse(containsPlannedStringMetric(tupleExpr, "optimizer.rewriteProof",
-				"proofKind=ELIGIBILITY_UNION_SEMI_FILTER"), diagnosticPlan);
+		assertFalse(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
+				"packed-eligibility-union-exists"), diagnosticPlan);
 	}
 
 	@Test
@@ -654,13 +604,13 @@ class LmdbOptimizerPipelineTest {
 				""");
 		repairParentReferences(tupleExpr);
 
-		optimizeWithLmdbPipelineUntil(tupleExpr, "LmdbCascadesOptimizer");
+		optimizeWithLmdbPipelineThrough(tupleExpr, "LmdbCascadesOptimizer");
 
 		String diagnosticPlan = diagnosticPlan(tupleExpr);
 		assertTrue(groupInputContainsUnion(tupleExpr), diagnosticPlan);
 		assertTrue(containsVariableName(tupleExpr, "enc"), diagnosticPlan);
-		assertFalse(containsPlannedStringMetric(tupleExpr, "optimizer.rewriteProof",
-				"proofKind=ELIGIBILITY_UNION_SEMI_FILTER"), diagnosticPlan);
+		assertFalse(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
+				"packed-eligibility-union-exists"), diagnosticPlan);
 	}
 
 	@Test
@@ -680,12 +630,12 @@ class LmdbOptimizerPipelineTest {
 				GROUP BY ?patient
 				""");
 
-		optimizeWithLmdbPipelineUntil(tupleExpr, "LmdbCascadesOptimizer");
+		optimizeWithLmdbPipelineThrough(tupleExpr, "LmdbCascadesOptimizer");
 
 		String diagnosticPlan = diagnosticPlan(tupleExpr);
 		assertTrue(containsVariableName(tupleExpr, "optMed"), diagnosticPlan);
-		assertFalse(containsPlannedStringMetric(tupleExpr, "optimizer.rewriteProof",
-				"proofKind=TRIVIAL_BIND_ALIAS"), diagnosticPlan);
+		assertFalse(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
+				"packed-trivial-bind-alias"), diagnosticPlan);
 	}
 
 	@Test
@@ -704,11 +654,11 @@ class LmdbOptimizerPipelineTest {
 				""");
 		repairParentReferences(tupleExpr);
 
-		optimizeWithLmdbPipelineUntil(tupleExpr, "LmdbCascadesOptimizer");
+		optimizeWithLmdbPipelineThrough(tupleExpr, "LmdbCascadesOptimizer");
 
 		String diagnosticPlan = diagnosticPlan(tupleExpr);
-		assertFalse(containsPlannedStringMetric(tupleExpr, "optimizer.rewriteProof",
-				"proofKind=TRIVIAL_BIND_ALIAS"), diagnosticPlan);
+		assertFalse(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
+				"packed-trivial-bind-alias"), diagnosticPlan);
 	}
 
 	@Test
@@ -728,12 +678,12 @@ class LmdbOptimizerPipelineTest {
 				""");
 		repairParentReferences(tupleExpr);
 
-		optimizeWithLmdbPipelineUntil(tupleExpr, "LmdbCascadesOptimizer");
+		optimizeWithLmdbPipelineThrough(tupleExpr, "LmdbCascadesOptimizer");
 
 		String diagnosticPlan = diagnosticPlan(tupleExpr);
 		assertTrue(containsAnonymousHavingBinding(tupleExpr), diagnosticPlan);
-		assertFalse(containsPlannedStringMetric(tupleExpr, "optimizer.rewriteProof",
-				"proofKind=TAUTOLOGICAL_POSITIVE_HAVING"), diagnosticPlan);
+		assertFalse(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
+				"packed-tautological-positive-having"), diagnosticPlan);
 	}
 
 	@Test
@@ -759,12 +709,12 @@ class LmdbOptimizerPipelineTest {
 		});
 		repairParentReferences(tupleExpr);
 
-		optimizeWithLmdbPipelineUntil(tupleExpr, "LmdbCascadesOptimizer");
+		optimizeWithLmdbPipelineThrough(tupleExpr, "LmdbCascadesOptimizer");
 
 		String diagnosticPlan = diagnosticPlan(tupleExpr);
 		assertTrue(containsAnonymousHavingBinding(tupleExpr), diagnosticPlan);
-		assertFalse(containsPlannedStringMetric(tupleExpr, "optimizer.rewriteProof",
-				"proofKind=TAUTOLOGICAL_POSITIVE_HAVING"), diagnosticPlan);
+		assertFalse(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
+				"packed-tautological-positive-having"), diagnosticPlan);
 	}
 
 	@Test
@@ -912,96 +862,6 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
-	void finiteCodeTypeValuesRewritePreservesBranchesWithExtraConstraints() {
-		ValueFactory vf = SimpleValueFactory.getInstance();
-		IRI typePredicate = RDF.TYPE;
-		IRI codePredicate = vf.createIRI("http://example.com/theme/medical/code");
-		IRI activePredicate = vf.createIRI("http://example.com/theme/medical/active");
-		IRI conditionType = vf.createIRI("http://example.com/theme/medical/Condition");
-		IRI medicationType = vf.createIRI("http://example.com/theme/medical/Medication");
-		Value target = vf.createLiteral("DX-200");
-		Value fallback = vf.createLiteral("DX-202");
-		BindingSetAssignment targets = singleValueAssignment("target", target);
-		ValueExpr condition = new Or(new Compare(new Var("code"), new Var("target"), Compare.CompareOp.EQ),
-				new Compare(new Var("code"), new ValueConstant(fallback), Compare.CompareOp.EQ));
-		TupleExpr constrainedConditionBranch = new Filter(
-				new Join(targets.clone(),
-						new Join(new StatementPattern(new Var("entity"), new Var("activePredicate", activePredicate),
-								new Var("active", vf.createLiteral(true))),
-								new Join(new StatementPattern(new Var("entity"),
-										new Var("typePredicate", typePredicate), new Var("conditionType",
-												conditionType)),
-										new StatementPattern(new Var("entity"),
-												new Var("codePredicate", codePredicate), new Var("code"))))),
-				condition.clone());
-		TupleExpr medicationBranch = new Filter(
-				new Join(targets.clone(),
-						new Join(new StatementPattern(new Var("entity"), new Var("typePredicate", typePredicate),
-								new Var("medicationType", medicationType)),
-								new StatementPattern(new Var("entity"), new Var("codePredicate", codePredicate),
-										new Var("code")))),
-				condition.clone());
-		Group group = new Group(new Union(constrainedConditionBranch, medicationBranch));
-		group.addGroupElement(new GroupElem("count", new Count(new Var("entity"), true)));
-
-		Group rewritten = LmdbCascadesRuleProvider.finiteCodeTypeValuesRewrite(group);
-
-		assertNotNull(rewritten, "The finite code/type rewrite should keep optimizing constrained branches: " + group);
-		assertTrue(containsBindingSetAssignmentFor(rewritten, "code"), rewritten::toString);
-		assertTrue(containsUnion(rewritten), rewritten::toString);
-		assertTrue(containsStatementPredicate(rewritten, activePredicate.stringValue()),
-				"The finite code/type rewrite must preserve branch-local constraints: " + rewritten);
-	}
-
-	@Test
-	void finiteCodeTypeValuesRewriteLeavesOriginalTreeNodesUntouched() {
-		ValueFactory vf = SimpleValueFactory.getInstance();
-		IRI typePredicate = RDF.TYPE;
-		IRI codePredicate = vf.createIRI("http://example.com/theme/medical/code");
-		IRI activePredicate = vf.createIRI("http://example.com/theme/medical/active");
-		IRI conditionType = vf.createIRI("http://example.com/theme/medical/Condition");
-		IRI medicationType = vf.createIRI("http://example.com/theme/medical/Medication");
-		Value target = vf.createLiteral("DX-200");
-		Value fallback = vf.createLiteral("DX-202");
-		BindingSetAssignment targets = singleValueAssignment("target", target);
-		ValueExpr condition = new Or(new Compare(new Var("code"), new Var("target"), Compare.CompareOp.EQ),
-				new Compare(new Var("code"), new ValueConstant(fallback), Compare.CompareOp.EQ));
-		StatementPattern activePattern = new StatementPattern(new Var("entity"),
-				new Var("activePredicate", activePredicate), new Var("active", vf.createLiteral(true)));
-		StatementPattern conditionTypePattern = new StatementPattern(new Var("entity"),
-				new Var("typePredicate", typePredicate), new Var("conditionType", conditionType));
-		StatementPattern conditionCodePattern = new StatementPattern(new Var("entity"),
-				new Var("codePredicate", codePredicate), new Var("code"));
-		TupleExpr constrainedConditionBranch = new Filter(
-				new Join(targets.clone(),
-						new Join(activePattern, new Join(conditionTypePattern, conditionCodePattern))),
-				condition.clone());
-		StatementPattern medicationTypePattern = new StatementPattern(new Var("entity"),
-				new Var("typePredicate", typePredicate), new Var("medicationType", medicationType));
-		StatementPattern medicationCodePattern = new StatementPattern(new Var("entity"),
-				new Var("codePredicate", codePredicate), new Var("code"));
-		TupleExpr medicationBranch = new Filter(
-				new Join(targets.clone(), new Join(medicationTypePattern, medicationCodePattern)),
-				condition.clone());
-		Group group = new Group(new Union(constrainedConditionBranch, medicationBranch));
-		group.addGroupElement(new GroupElem("count", new Count(new Var("entity"), true)));
-		List<StatementPattern> originalPatterns = List.of(activePattern, conditionTypePattern, conditionCodePattern,
-				medicationTypePattern, medicationCodePattern);
-		List<QueryModelNode> originalParents = originalPatterns.stream()
-				.map(StatementPattern::getParentNode)
-				.collect(Collectors.toList());
-
-		Group rewritten = LmdbCascadesRuleProvider.finiteCodeTypeValuesRewrite(group);
-
-		assertNotNull(rewritten);
-		for (int i = 0; i < originalPatterns.size(); i++) {
-			assertSame(originalParents.get(i), originalPatterns.get(i).getParentNode(),
-					"Building a rewrite alternative must not re-parent nodes of the original tree; pattern "
-							+ originalPatterns.get(i) + " was moved to " + originalPatterns.get(i).getParentNode());
-		}
-	}
-
-	@Test
 	void lmdbCascadesRemovesUnusedOptionalAndPreservesExistsWhenSemiDoesNotWin() {
 		TripleSource tripleSource = new EmptyTripleSource();
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
@@ -1032,18 +892,6 @@ class LmdbOptimizerPipelineTest {
 		assertTrue(containsPlannedStringMetric(tupleExpr, "optimizer.cascadesProofs",
 				"rule=lmdb-remove-unused-optional"), diagnosticPlan);
 		assertTrue(tupleExpr.getDoubleMetricPlanned("plannedCostWorkRows") > 0, diagnosticPlan);
-	}
-
-	@Test
-	void finiteFilterValuesRewriteDoesNotRescanPlainJoinTreesExponentially() {
-		TupleExpr tree = new StatementPattern(new Var("s0"), new Var("p0"), new Var("o0"));
-		for (int i = 1; i <= 24; i++) {
-			tree = new Join(tree, new StatementPattern(new Var("s" + i), new Var("p" + i), new Var("o" + i)));
-		}
-		TupleExpr deepJoin = tree;
-
-		assertTimeout(Duration.ofMillis(500),
-				() -> assertNull(LmdbCascadesRuleProvider.finiteFilterValuesAlternative(deepJoin)));
 	}
 
 	@Test
@@ -1401,16 +1249,17 @@ class LmdbOptimizerPipelineTest {
 		return parsedQuery.getTupleExpr();
 	}
 
-	private static void optimizeWithLmdbPipelineUntil(TupleExpr tupleExpr, String stopBeforeOptimizerName) {
+	private static void optimizeWithLmdbPipelineThrough(TupleExpr tupleExpr, String finalOptimizerName) {
 		TripleSource tripleSource = new EmptyTripleSource();
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
 		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 				new EvaluationStatistics()).getOptimizers()) {
-			if (optimizer.getClass().getSimpleName().equals(stopBeforeOptimizerName)) {
+			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+			if (optimizer.getClass().getSimpleName().equals(finalOptimizerName)) {
 				return;
 			}
-			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
+		fail("LMDB pipeline should include " + finalOptimizerName);
 	}
 
 	private static boolean containsBindingSetAssignmentFor(TupleExpr tupleExpr, String bindingName) {

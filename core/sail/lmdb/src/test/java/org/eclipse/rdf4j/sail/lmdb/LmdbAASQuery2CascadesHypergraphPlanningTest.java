@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.benchmark.AASGenerator;
@@ -92,8 +93,9 @@ class LmdbAASQuery2CascadesHypergraphPlanningTest {
 				assertTrue(ratedPower >= 0, () -> "Missing ratedPower idShort anchor in plan factors: " + factors);
 				assertTrue(p1Value >= 0, () -> "Missing threshold value filter in plan factors: " + factors);
 				assertTrue(path >= 0, () -> "Missing property path in plan factors: " + factors);
-				assertTrue(plan.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID),
-						() -> "The connected island must use the DPhyp implementation:\n" + plan);
+				assertTrue(LmdbCascadesOptimizer.PLANNER_ID
+						.equals(optimized.getStringMetricPlanned(TelemetryMetricNames.PLANNER_ID)),
+						() -> "The connected island must use the packed planner:\n" + plan);
 				assertTrue(plan.contains("plannedPropertyPathEndpointMode=toEnd"),
 						() -> "The property path must be parameterized from the selective ?p1 endpoint:\n" + plan);
 				assertTrue(optimized.getDoubleMetricPlanned("plannedCostCartesianWorkRows") == 0.0d,
@@ -143,8 +145,9 @@ class LmdbAASQuery2CascadesHypergraphPlanningTest {
 						() -> "Property value factor must retain direct-lookup costing: " + propertyValue);
 				assertTrue(propertyValue.getDoubleMetricPlanned("plannedAccessRows") <= 1.0d,
 						() -> "Bound property value access must stay constant-work: " + propertyValue);
-				assertTrue(plan.contains(LmdbCascadesConnectedJoinPlanner.RULE_ID),
-						() -> "The connected island must use the DPhyp implementation:\n" + plan);
+				assertTrue(LmdbCascadesOptimizer.PLANNER_ID
+						.equals(optimized.getStringMetricPlanned(TelemetryMetricNames.PLANNER_ID)),
+						() -> "The connected island must use the packed planner:\n" + plan);
 				assertTrue(optimized.getDoubleMetricPlanned("plannedCostCartesianWorkRows") == 0.0d,
 						() -> "The connected query must not introduce Cartesian work:\n" + plan);
 				double plannedWork = optimized.getDoubleMetricPlanned("plannedCostWorkRows");

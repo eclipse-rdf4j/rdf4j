@@ -23,6 +23,7 @@ import java.util.OptionalDouble;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -43,6 +44,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.FactorCostEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider.QueryOptimizationScope;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.FeedbackCorrection;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EstimateMath;
@@ -69,17 +72,19 @@ final class LmdbEstimatorRuntime {
 	private final LmdbEstimationEngine engine;
 	private final LmdbFiniteJoinSurfaceEstimator finiteJoinSurfaceEstimator;
 	private final LmdbAccessCostModel accessCostModel = new LmdbAccessCostModel();
+	private final PackedPlanCache cascadesPlanCache;
 	private final ThreadLocal<OptimizationScope> optimizationScope = new ThreadLocal<>();
 
 	LmdbEstimatorRuntime(ValueStore valueStore, TripleStore tripleStore, LmdbQuadSynopsisService synopsis,
 			LmdbFilterSelectivityStats filters, LmdbOperatorFeedbackStats feedback,
-			LmdbStatementPatternCardinalitySource cardinalities) {
+			LmdbStatementPatternCardinalitySource cardinalities, PackedPlanCache cascadesPlanCache) {
 		this.valueStore = valueStore;
 		this.tripleStore = tripleStore;
 		this.cardinalities = cardinalities;
 		this.synopsis = synopsis;
 		this.filters = filters;
 		this.feedback = feedback;
+		this.cascadesPlanCache = cascadesPlanCache;
 		this.finiteJoinSurfaceEstimator = new LmdbFiniteJoinSurfaceEstimator(valueStore, tripleStore);
 		LmdbStorageEstimatorEvidence evidence = new LmdbStorageEstimatorEvidence(cardinalities, synopsis, filters,
 				feedback, finiteJoinSurfaceEstimator);
@@ -425,8 +430,31 @@ final class LmdbEstimatorRuntime {
 	}
 
 	long snapshotVersion() {
-		return synopsis == null ? Math.max(0L, tripleStore == null ? 0L : tripleStore.getDataRevision())
-				: synopsis.snapshotVersion();
+		long dataRevision = Math.max(0L, tripleStore == null ? 0L : tripleStore.getDataRevision());
+		long synopsisRevision = Math.max(0L, synopsis == null ? 0L : synopsis.snapshotVersion());
+		return Math.max(dataRevision, synopsisRevision);
+	}
+
+	PackedPlanCache cascadesPlanCache() {
+		return cascadesPlanCache;
+	}
+
+	double packedStatementPatternRows(Resource subject, IRI predicate, Value object, Resource context,
+			int repeatedComponentPairMask) {
+		return cardinalities == null
+				? Double.NaN
+				: cardinalities.estimateForPlanning(subject, predicate, object, context, repeatedComponentPairMask);
+	}
+
+	void describePackedAccessPath(int lookupMask, double accessRows, double invocations,
+			PackedCostEstimate output) {
+		if (tripleStore == null) {
+			output.setAccess(0, lookupMask, 0, accessRows, invocations, null, "lmdb-packed-cardinality",
+					"fullScan");
+			return;
+		}
+		tripleStore.describePackedAccessPath(lookupMask, accessRows, invocations, "lmdb-packed-cardinality",
+				output);
 	}
 
 	RdfTermDomain rdfTermDomain(IRI predicate) {

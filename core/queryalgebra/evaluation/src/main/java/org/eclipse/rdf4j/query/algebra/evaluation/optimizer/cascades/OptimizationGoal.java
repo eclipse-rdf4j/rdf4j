@@ -193,10 +193,6 @@ public record OptimizationGoal(PhysicalProperties requiredProperties, String sem
 				SearchMode.BUDGETED, deadline, budget, rowGoal, estimationTier, inputBindingContext);
 	}
 
-	public WinnerKey key(int groupId) {
-		return new WinnerKey(groupId, requiredProperties, semanticScope, costPolicy, rowGoal, inputBindingContext);
-	}
-
 	public boolean excludes(PhysicalProperties properties) {
 		return excludes(properties, null);
 	}
@@ -264,7 +260,7 @@ public record OptimizationGoal(PhysicalProperties requiredProperties, String sem
 				current = reduced.getArg();
 				changed = true;
 			} else if (current instanceof Projection projection && transparentOutputProjection(projection)) {
-				outputProjectionNames.add(CascadesRewriteSupport.identityProjectionNames(projection));
+				outputProjectionNames.add(identityProjectionNames(projection));
 				current = projection.getArg();
 				changed = true;
 			} else if (current instanceof Order order) {
@@ -286,7 +282,20 @@ public record OptimizationGoal(PhysicalProperties requiredProperties, String sem
 				&& !projection.isSubquery()
 				&& !projection.isVariableScopeChange()
 				&& projection.getProjectionContext() == null
-				&& CascadesRewriteSupport.identityProjectionNames(projection) != null;
+				&& identityProjectionNames(projection) != null;
+	}
+
+	private static Set<String> identityProjectionNames(Projection projection) {
+		Set<String> names = new LinkedHashSet<>();
+		for (var element : projection.getProjectionElemList().getElements()) {
+			String source = element.getName();
+			String target = element.getProjectionAlias().orElse(source);
+			if (source == null || !source.equals(target)) {
+				return null;
+			}
+			names.add(source);
+		}
+		return Set.copyOf(names);
 	}
 
 	private static boolean orderKeysSurvive(List<String> ordering, List<Set<String>> outputProjectionNames) {
@@ -417,8 +426,6 @@ public record OptimizationGoal(PhysicalProperties requiredProperties, String sem
 	public enum SearchMode {
 		AUTO,
 		EXACT,
-		BUDGETED,
-		SHADOW,
-		SHADOW_BUDGETED
+		BUDGETED
 	}
 }

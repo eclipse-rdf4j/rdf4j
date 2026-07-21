@@ -683,51 +683,6 @@ class LmdbSketchAwareFilterPlacementIT {
 				});
 	}
 
-	@RetriedWithinTimeout
-	void deferredFilterPlacementPreservesAcceptedFactorOrder() throws Exception {
-		runPlannerTest("deferredFilterPlacementPreservesAcceptedFactorOrder", () -> {
-			StatementPattern forward = new StatementPattern(Var.of("anchor"),
-					Var.of("edge", VF.createIRI("urn:edge")), Var.of("right"));
-			StatementPattern reverse = new StatementPattern(Var.of("left"),
-					Var.of("edge", VF.createIRI("urn:edge")), Var.of("anchor"));
-			LmdbDeferredFilterPlacer placer = new LmdbDeferredFilterPlacer((tupleExpr, bound) -> tupleExpr,
-					Join::new, (root, filters, scope) -> root);
-
-			assertCriteriaEventually("accepted factor order", () -> {
-				TupleExpr root = placer.buildSegmentRoot(new ArrayDeque<>(List.of(forward, reverse)), List.of(),
-						Set.of("anchor"));
-
-				assertEquals(List.of(forward, reverse), collectJoinArgs(root));
-			});
-		});
-	}
-
-	@RetriedWithinTimeout
-	void deferredFiniteBindingWindowKeepsModeSensitiveDurationFilter() throws Exception {
-		runPlannerTest("deferredFiniteBindingWindowKeepsModeSensitiveDurationFilter", () -> {
-			BindingSetAssignment left = bindingAssignment("left", VF.createLiteral("P1D", XSD.DAYTIMEDURATION));
-			BindingSetAssignment right = bindingAssignment("right", VF.createLiteral("P1D", XSD.DURATION));
-			Compare condition = new Compare(Var.of("left"), Var.of("right"), Compare.CompareOp.EQ);
-			DeferredFilter filter = new DeferredFilter(condition, Set.of("left", "right"),
-					JoinOrderPlanner.FILTER_COST_CHEAP, 0, null, Set.of(),
-					new EvaluationStatistics.FilterPassEstimate(-1.0d,
-							EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN));
-			LmdbDeferredFilterPlacer placer = new LmdbDeferredFilterPlacer((tupleExpr, bound) -> tupleExpr,
-					Join::new,
-					(root, filters, scope) -> new Filter(root, LmdbJoinPlanSupport.combinedCondition(filters.stream()
-							.map(deferredFilter -> deferredFilter.condition)
-							.toList())));
-
-			assertCriteriaEventually("mode-sensitive duration filter", () -> {
-				TupleExpr root = placer.buildSegmentRoot(new ArrayDeque<>(List.of(left, right)), List.of(filter),
-						Set.of());
-
-				assertTrue(containsFilter(root),
-						"Duration subtype equality depends on STANDARD query mode and must stay as a runtime filter");
-			});
-		});
-	}
-
 	private static void runPlannerTest(File dataDir, String testName, TestAttempt testAttempt)
 			throws Exception {
 		testAttempt.run(dataDir);

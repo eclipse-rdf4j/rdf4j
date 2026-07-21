@@ -233,7 +233,7 @@ class LmdbEstimationEngineTest {
 		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(Set.of("value"), 1_000.0d,
 				40.0d, true);
 
-		var estimate = new LmdbEstimatorRuntime(null, null, null, null, null, null)
+		var estimate = new LmdbEstimatorRuntime(null, null, null, null, null, null, null)
 				.factorCost(values, context)
 				.orElseThrow();
 

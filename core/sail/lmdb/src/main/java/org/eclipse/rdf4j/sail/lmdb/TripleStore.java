@@ -86,6 +86,7 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex.StatementFieldValueAccessor;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
@@ -1740,6 +1741,38 @@ class TripleStore implements Closeable {
 			}
 			return cardinality;
 		});
+	}
+
+	void describePackedAccessPath(int lookupMask, double accessRows, double invocations, String estimateSource,
+			PackedCostEstimate output) {
+		long subj = boundMask(lookupMask, Component.S);
+		long pred = boundMask(lookupMask, Component.P);
+		long obj = boundMask(lookupMask, Component.O);
+		long context = boundMask(lookupMask, Component.C);
+		TripleIndex best = null;
+		int bestPrefixLength = -1;
+		for (TripleIndex index : indexes) {
+			int prefixLength = index.getPatternScore(subj, pred, obj, context);
+			if (prefixLength > bestPrefixLength) {
+				best = index;
+				bestPrefixLength = prefixLength;
+			}
+		}
+		if (best == null) {
+			output.setAccess(0, lookupMask, 0, accessRows, invocations, null, estimateSource, "fullScan");
+			return;
+		}
+		int prefixMask = 0;
+		char[] fieldSequence = best.getFieldSeq();
+		for (int ordinal = 0; ordinal < bestPrefixLength; ordinal++) {
+			prefixMask |= 1 << toEstimatorComponent(fieldSequence[ordinal]).ordinal();
+		}
+		int covered = lookupMask & prefixMask;
+		int missing = lookupMask & ~prefixMask;
+		boolean direct = missing == 0 && accessRows <= 1.0d;
+		String accessMode = bestPrefixLength == 0 ? "fullScan" : direct ? "directLookup" : "prefixScan";
+		output.setAccess(covered, missing, bestPrefixLength, accessRows, invocations, new String(fieldSequence),
+				estimateSource, accessMode);
 	}
 
 	List<IndexAccessPath> indexAccessPaths(int boundComponentMask) {

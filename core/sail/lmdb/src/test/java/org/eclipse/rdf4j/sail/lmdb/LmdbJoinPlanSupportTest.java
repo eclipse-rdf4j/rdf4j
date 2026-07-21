@@ -15,19 +15,15 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.And;
-import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
-import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -35,13 +31,6 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MemoExpr;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
 import org.junit.jupiter.api.Test;
 
 class LmdbJoinPlanSupportTest {
@@ -54,39 +43,6 @@ class LmdbJoinPlanSupportTest {
 		assertFalse(LmdbJoinPlanSupport.rightLocallyProducesSharedBinding(join));
 		assertEquals(0, schemaReads.get(),
 				"An extension-free RHS cannot locally produce a shared binding and needs no stream schema");
-	}
-
-	@Test
-	void boundLookupRuleSkipsRightSchemaWhenLeftHasNoPath() {
-		AtomicInteger schemaReads = new AtomicInteger();
-		Join join = new Join(new CountingBindingLeaf(schemaReads), new CountingBindingLeaf(schemaReads));
-		MemoExpr expression = new MemoExpr(1, 1, "Join", List.of(2, 3), "no-path-schema-test", join,
-				PhysicalProperties.ANY, RuleKind.TRANSFORMATION, CostVector.ZERO, List.of(), "no-path-schema-test");
-
-		assertTrue(new LmdbInnerJoinBoundLookupRule(new FactorStatistics())
-				.matches(expression, OptimizationGoal.root(), null));
-		assertEquals(0, schemaReads.get(),
-				"A left input with no path endpoint cannot be anchored by the right stream schema");
-	}
-
-	@Test
-	void marksListMemberFiltersLookupCompatibleWhenAllArgumentsAreLookupOperands() {
-		ListMemberOperator condition = new ListMemberOperator();
-		condition.addArgument(Var.of("name"));
-		condition.addArgument(new ValueConstant(SimpleValueFactory.getInstance().createLiteral("Alice")));
-		condition.addArgument(new ValueConstant(SimpleValueFactory.getInstance().createLiteral("Bob")));
-
-		assertTrue(plannerConstraint(condition).isLookupCompatible());
-	}
-
-	@Test
-	void rejectsListMemberFiltersWithNonLookupArguments() {
-		ListMemberOperator condition = new ListMemberOperator();
-		condition.addArgument(Var.of("name"));
-		condition.addArgument(new Compare(Var.of("other"), new ValueConstant(
-				SimpleValueFactory.getInstance().createLiteral("Alice")), Compare.CompareOp.EQ));
-
-		assertFalse(plannerConstraint(condition).isLookupCompatible());
 	}
 
 	@Test
@@ -149,27 +105,6 @@ class LmdbJoinPlanSupportTest {
 	}
 
 	@Test
-	void sampledZeroConstraintSurfacesRawAndPlanningSelectivity() {
-		ListMemberOperator condition = new ListMemberOperator();
-		condition.addArgument(Var.of("name"));
-		condition.addArgument(new ValueConstant(SimpleValueFactory.getInstance().createLiteral("Alice")));
-		DeferredFilter deferredFilter = new DeferredFilter(condition, Set.of("name"),
-				JoinOrderPlanner.FILTER_COST_CHEAP, 0, null, Set.of(),
-				new EvaluationStatistics.FilterPassEstimate(0.0d,
-						EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, 256L));
-
-		JoinOrderPlanner.FilterConstraint constraint = LmdbJoinPlanSupport
-				.toPlannerFilterConstraints(List.of(deferredFilter))
-				.getFirst();
-
-		assertEquals(0.0d, constraint.getRawEstimatedPassRatio(), 1.0e-12d);
-		assertTrue(constraint.isSampledZero());
-		assertTrue(constraint.getEstimatedPassRatio() > 0.0d);
-		assertEquals(constraint.getEstimatedPassRatioUpperBound(), constraint.getEstimatedPassRatio(), 1.0e-12d);
-		assertTrue(constraint.getConfidenceScore() > 0.5d);
-	}
-
-	@Test
 	void runtimeBindingsExcludeScalarSubqueryLocalsIndependentOfConditionShape() {
 		StatementPattern stream = pattern("entity", "outerPredicate", "value");
 		StatementPattern scalarLocal = pattern("probeLocal", "probePredicate", "probeValue");
@@ -182,15 +117,6 @@ class LmdbJoinPlanSupportTest {
 		assertEquals(LmdbJoinPlanSupport.runtimeBindingNames(direct),
 				LmdbJoinPlanSupport.runtimeBindingNames(wrapped),
 				"Equivalent scalar condition shapes must expose one canonical tuple-stream schema");
-	}
-
-	private static JoinOrderPlanner.FilterConstraint plannerConstraint(ListMemberOperator condition) {
-		DeferredFilter deferredFilter = new DeferredFilter(condition, Set.of("name"),
-				JoinOrderPlanner.FILTER_COST_CHEAP, 0, null, Set.of(),
-				new EvaluationStatistics.FilterPassEstimate(0.5d,
-						EvaluationStatistics.FilterPassEstimate.Source.HEURISTIC, 1L));
-		return LmdbJoinPlanSupport.toPlannerFilterConstraints(List.of(deferredFilter))
-				.getFirst();
 	}
 
 	private static StatementPattern pattern(String subject, String predicate, String object) {
@@ -237,11 +163,4 @@ class LmdbJoinPlanSupportTest {
 		}
 	}
 
-	private static final class FactorStatistics extends EvaluationStatistics implements JoinFactorCostModel {
-
-		@Override
-		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
-			return Optional.of(new FactorCostEstimate(1.0d, 1.0d));
-		}
-	}
 }

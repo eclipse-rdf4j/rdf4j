@@ -43,7 +43,6 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.ScalarExpr;
 import org.junit.jupiter.api.Test;
 
 class ScalarEvaluationEffectsTest {
@@ -96,8 +95,6 @@ class ScalarEvaluationEffectsTest {
 		assertEquals(VOLATILE, ScalarEvaluationEffects.effectOf(new FunctionCall("UUID")));
 		assertEquals(VOLATILE, ScalarEvaluationEffects.effectOf(new FunctionCall("STRUUID")));
 		assertEquals(VOLATILE, ScalarEvaluationEffects.effectOf(new BNodeGenerator()));
-		assertEquals(VOLATILE, ScalarEvaluationEffects.effectOf(
-				ScalarExpr.FunctionCall.opaque("urn:rdf4j:native:bnode", new BNodeGenerator())));
 	}
 
 	@Test

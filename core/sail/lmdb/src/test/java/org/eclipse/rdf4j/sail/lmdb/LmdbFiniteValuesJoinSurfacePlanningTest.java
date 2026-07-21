@@ -58,9 +58,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalPro
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
-import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -192,9 +192,8 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 
 			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
 			JoinFactorCostModel costModel = (JoinFactorCostModel) statistics;
-			LmdbCascadesConnectedJoinPlanner.Plan plan = LmdbCascadesConnectedJoinPlanner
-					.plan(join, Set.of(), costModel, statistics, JoinFactorCostModel.EstimationTier.DECISION_EXACT)
-					.orElseThrow();
+			CascadesPlan plan = new LmdbCascadesOptimizer(statistics, false)
+					.planPreparedInput(join, OptimizationGoal.root(join, PhysicalProperties.ANY));
 			StatementPattern plannedName = findStatementPattern(plan.tupleExpr(), LIB_NAME, "branchName");
 			assertTrue(plannedName != null, "Expected planned library name lookup. plan=" + plan.tupleExpr());
 
@@ -328,8 +327,8 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			CascadesPlan plan = new LmdbCascadesOptimizer(statistics, false)
 					.planPreparedInput(join, OptimizationGoal.root(join, PhysicalProperties.ANY));
 
-			assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness(), plan.diagnostics().toString());
-			StatementPattern plannedLocatedAt = findStatementPattern(plan.tupleExpr().orElseThrow(), LIB_LOCATED_AT,
+			assertEquals(OptimizationCompleteness.COMPLETE, plan.searchStatus().completeness());
+			StatementPattern plannedLocatedAt = findStatementPattern(plan.tupleExpr(), LIB_LOCATED_AT,
 					"branch");
 			assertTrue(plannedLocatedAt != null, "Expected planned locatedAt lookup. plan=" + plan.tupleExpr());
 			assertEquals("[P, O]",
@@ -369,8 +368,8 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			CascadesPlan plan = new LmdbCascadesOptimizer(statistics, false)
 					.planPreparedInput(join, OptimizationGoal.root(join, PhysicalProperties.ANY));
 
-			assertEquals(OptimizationCompleteness.COMPLETE, plan.completeness(), plan.diagnostics().toString());
-			StatementPattern plannedLocatedAt = findStatementPattern(plan.tupleExpr().orElseThrow(), LIB_LOCATED_AT,
+			assertEquals(OptimizationCompleteness.COMPLETE, plan.searchStatus().completeness());
+			StatementPattern plannedLocatedAt = findStatementPattern(plan.tupleExpr(), LIB_LOCATED_AT,
 					"branch");
 			assertTrue(plannedLocatedAt != null, "Expected planned locatedAt lookup. plan=" + plan.tupleExpr());
 			assertEquals("[P, O]",
@@ -414,7 +413,7 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			CascadesPlan plan = new LmdbCascadesOptimizer(store.getBackingStore().getEvaluationStatistics(), false)
 					.planPreparedInput(input, autoGoal);
 
-			TupleExpr optimized = plan.tupleExpr().orElseThrow();
+			TupleExpr optimized = plan.tupleExpr();
 			StatementPattern plannedLocatedAt = findStatementPattern(optimized, LIB_LOCATED_AT, "branch");
 			assertTrue(plannedLocatedAt != null, "Expected planned locatedAt lookup. plan=" + optimized);
 			assertEquals("[P, O]",
@@ -447,8 +446,7 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
 			JoinFactorCostModel costModel = (JoinFactorCostModel) statistics;
 			double prefixRows = statistics.getCardinality(name);
-			double expectedSurfaceRows =
-					HIGH_FANOUT_LIBRARY_BRANCH_COUNT * COPIES_PER_HIGH_FANOUT_LIBRARY_BRANCH;
+			double expectedSurfaceRows = HIGH_FANOUT_LIBRARY_BRANCH_COUNT * COPIES_PER_HIGH_FANOUT_LIBRARY_BRANCH;
 
 			JoinFactorCostModel.FactorCostEstimate estimate = costModel
 					.estimateFactorCost(locatedAt, JoinFactorCostModel.CostContext.forOptimization(
@@ -743,9 +741,8 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 
 	private static void assertFiniteDerivedLibraryFanout(JoinFactorCostModel costModel,
 			EvaluationStatistics statistics, TupleExpr join, JoinFactorCostModel.EstimationTier tier) {
-		LmdbCascadesConnectedJoinPlanner.Plan plan = LmdbCascadesConnectedJoinPlanner
-				.plan(join, Set.of(), costModel, statistics, tier)
-				.orElseThrow();
+		CascadesPlan plan = new LmdbCascadesOptimizer(statistics, false)
+				.planPreparedInput(join, OptimizationGoal.root(join, PhysicalProperties.ANY));
 		StatementPattern plannedLocatedAt = findStatementPattern(plan.tupleExpr(), LIB_LOCATED_AT, "branch");
 		assertTrue(plannedLocatedAt != null, "Expected planned locatedAt lookup. plan=" + plan.tupleExpr());
 
@@ -755,7 +752,7 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 				"The connected Cascades planner should keep the finite-derived fanout when finite names derive "
 						+ "high-fanout branches. tier=" + tier + ", plannedRows=" + plannedRows + ", expectedRows="
 						+ expectedRows + ", metrics=" + plannedLocatedAt + ", plan=" + plan.tupleExpr()
-						+ ", cost=" + plan.cost() + ", estimate=" + plan.estimate());
+						+ ", cost=" + plan.cost() + ", estimate=" + plan.provenance().estimate());
 	}
 
 	private static BindingSetAssignment observationValueBindings() {

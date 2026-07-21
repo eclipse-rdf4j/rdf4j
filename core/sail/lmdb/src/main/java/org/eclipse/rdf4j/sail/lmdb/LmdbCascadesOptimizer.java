@@ -12,108 +12,52 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.IdentityHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
-import org.eclipse.rdf4j.query.algebra.AggregateOperator;
-import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
-import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
-import org.eclipse.rdf4j.query.algebra.Count;
-import org.eclipse.rdf4j.query.algebra.Difference;
-import org.eclipse.rdf4j.query.algebra.Distinct;
-import org.eclipse.rdf4j.query.algebra.Exists;
-import org.eclipse.rdf4j.query.algebra.Extension;
-import org.eclipse.rdf4j.query.algebra.Filter;
-import org.eclipse.rdf4j.query.algebra.Group;
-import org.eclipse.rdf4j.query.algebra.GroupElem;
-import org.eclipse.rdf4j.query.algebra.Join;
-import org.eclipse.rdf4j.query.algebra.LeftJoin;
-import org.eclipse.rdf4j.query.algebra.Order;
-import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
-import org.eclipse.rdf4j.query.algebra.Reduced;
-import org.eclipse.rdf4j.query.algebra.Service;
-import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
-import org.eclipse.rdf4j.query.algebra.Union;
-import org.eclipse.rdf4j.query.algebra.ValueExpr;
-import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceCleaner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPlan;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPlanProvenanceAnnotator;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPlanner;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesTelemetry;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPlanningException;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.InputBindingContext;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationCompleteness;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleKind;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PlanningMetrics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
-import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
-import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
-import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
-/**
- * LMDB Cascades facade for physical query planning.
- */
+/** The single LMDB boundary for query-local packed Cascades planning. */
 final class LmdbCascadesOptimizer implements QueryOptimizer {
+
 	static final String MODE_PROPERTY = "rdf4j.optimizer.lmdb.cascades.mode";
-	static final String TRACE_PROPERTY = "rdf4j.optimizer.lmdb.cascades.trace";
-	static final String TRACE_LIMIT_PROPERTY = "rdf4j.optimizer.lmdb.cascades.traceLimit";
 	static final String BUDGET_PROPERTY = "rdf4j.optimizer.lmdb.cascades.budget";
 	static final String TIMEOUT_MILLIS_PROPERTY = "rdf4j.optimizer.lmdb.cascades.timeoutMillis";
 	static final String APPLIED_METRIC = "optimizer.cascadesApplied";
 	static final String SKIP_SKETCH_JOIN_ORDER_METRIC = "optimizer.cascadesSkipSketchJoinOrder";
-	static final String STANDARD_PLAN_POLICY_PROPERTY = "rdf4j.optimizer.lmdb.cascades.standardPlanPolicy";
-	static final String STANDARD_PLAN_FULL_ANNOTATIONS_PROPERTY = "rdf4j.optimizer.lmdb.cascades.standardPlanFullAnnotations";
-	private static final String CASCADES_RULE = "optimizer.cascadesRule";
-	private static final String CASCADES_WINNER = "optimizer.cascadesWinner";
-	private static final String CASCADES_CANDIDATE_PLAN = "optimizer.cascadesCandidatePlan";
-	private static final String CASCADES_TRACE_JSON = "optimizer.cascadesTraceJson";
-	private static final String EMERGENCY_FALLBACK_RULE = "existing-algebra-emergency-fallback";
-	private static final String FALLBACK_NO_WINNER = "fallback_no_winner";
-	private static final String CASCADES_FALLBACK_SOURCE = "cascades-fallback";
-	private static final String LMDB_CASCADES_FALLBACK_SOURCE = "lmdb-cascades-fallback";
-	private static final String OPTIMIZER_OBJECT_GUARANTEE = "optimizer.objectGuarantee";
-	private static final String OPTIMIZER_OBJECT_GUARANTEE_PREDICATE = "optimizer.objectGuaranteePredicate";
-	private static final String STANDARD_PLAN_WINNER = "standard";
-	private static final String CASCADES_PLAN_WINNER = "cascades";
-	private static final String STANDARD_PLAN_SOURCE = "standard-pipeline-baseline";
-	private static final String STANDARD_PLAN_USAGE = "standard_pipeline_baseline";
+	static final String PLANNER_ID = "lmdb-packed-cascades";
 
-	private static final int DEFAULT_BUDGET = 4096;
-	private static final int DEFAULT_TRACE_LIMIT = 512;
-	private static final int CANDIDATE_PLAN_TEXT_LIMIT = 16_384;
+	private static final int DEFAULT_AUTO_BUDGET = 4_096;
+	private static final int DEFAULT_BUDGETED_BUDGET = 4_096;
 	private static final long DEFAULT_TIMEOUT_MILLIS = 500L;
 
 	private final EvaluationStatistics statistics;
 	private final boolean trackResultSize;
 	private final boolean preserveSerializableObservationOrder;
+	private final PackedPlanCache packedPlanCache;
+	private final PackedCostModel packedCostModel;
 
 	LmdbCascadesOptimizer(EvaluationStatistics statistics, boolean trackResultSize) {
 		this(statistics, trackResultSize, false, null, null);
@@ -129,1400 +73,115 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		this.statistics = statistics;
 		this.trackResultSize = trackResultSize;
 		this.preserveSerializableObservationOrder = preserveSerializableObservationOrder;
+		LmdbEstimatorRuntime runtime = statistics instanceof LmdbEstimatorRuntimeProvider provider
+				? provider.estimatorRuntime()
+				: null;
+		this.packedPlanCache = runtime == null ? null : runtime.cascadesPlanCache();
+		this.packedCostModel = runtime == null ? null : new LmdbPackedCostModel(runtime);
 	}
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		boolean runtimeTelemetryTree = tupleExpr != null && tupleExpr.isRuntimeTelemetryEnabled();
-		try {
-			optimizeWithBaseline(tupleExpr, dataset, bindings);
-		} finally {
-			LmdbStandardPlanBaselineOptimizer.clearBaseline(tupleExpr);
-			if (runtimeTelemetryTree) {
-				enableRuntimeTelemetry(tupleExpr);
-			}
-		}
-	}
-
-	/**
-	 * Rule rewrites rebuild algebra nodes through the IR, which drops the per-node runtime-telemetry flag the
-	 * connection enabled on the incoming tree; nodes executing with the flag off never aggregate their source metrics
-	 * (sourceRowsScannedActual and friends). Re-establish the flag on whatever tree optimization produced.
-	 */
-	private static void enableRuntimeTelemetry(TupleExpr tupleExpr) {
-		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-			@Override
-			protected void meetNode(QueryModelNode node) {
-				node.setRuntimeTelemetryEnabled(true);
-				super.meetNode(node);
-			}
-		});
-	}
-
-	private void optimizeWithBaseline(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		Mode mode = mode(tupleExpr);
-		if (mode == Mode.OFF || tupleExpr == null) {
+		if (tupleExpr == null) {
 			return;
 		}
-		mode = serializableSafeMode(mode);
-		try (QueryOptimizationScopeProvider.QueryOptimizationScope scope = beginQueryOptimizationScope()) {
-			Set<String> initiallyBoundVars = bindings == null ? Set.of() : bindings.getBindingNames();
-			PhysicalProperties required = PhysicalProperties.builder()
-					.boundVars(initiallyBoundVars)
-					.observationOrder(preserveSerializableObservationOrder
-							? PhysicalProperties.ObservationOrder.EXACT_SEQUENCE
-							: PhysicalProperties.ObservationOrder.ANY)
-					.build();
-			OptimizationGoal goal = OptimizationGoal.root(tupleExpr, required)
-					.withInputBindingContext(InputBindingContext.fromBindingSet(bindings));
-			goal = configuredSearchGoal(mode, goal);
-
-			annotateDistinctPhysicalRequirements(tupleExpr);
-			StandardPlanPolicy standardPlanPolicy = standardPlanPolicy();
-			StandardPlanCandidate standardPlan = emptyStandardPlanCandidate();
-			OptimizationGoal searchGoal = goal;
-			boolean traceEnabled = Boolean.getBoolean(TRACE_PROPERTY);
-			CascadesTelemetry.Recording telemetry = traceEnabled
-					? new CascadesTelemetry.Recording(intProperty(TRACE_LIMIT_PROPERTY, DEFAULT_TRACE_LIMIT))
-					: null;
-			CascadesTelemetry plannerTelemetry = traceEnabled ? telemetry : CascadesTelemetry.NO_OP;
-			CascadesPlanner planner = newPlanner(plannerTelemetry);
-			CascadesPlan plan = planner.optimize(tupleExpr, searchGoal);
-			boolean applicationPermitted = permitsPlanApplication(mode, plan);
-			if (!standardPlan.isPresent() && needsFallbackStandardPlan(mode, standardPlanPolicy, plan)) {
-				standardPlan = standardPlanCandidate(tupleExpr, dataset, bindings, standardPlanPolicy);
-			}
-			boolean standardWinner = standardPlanWins(mode, standardPlanPolicy, standardPlan, plan);
-			boolean appliesPlan = applicationPermitted
-					&& (standardWinner || (!standardWinner && plan.tupleExpr().isPresent()));
-			annotate(tupleExpr, mode, plan, telemetry, appliesPlan, standardPlanPolicy, standardPlan,
-					standardWinner);
-			if (appliesPlan) {
-				if (standardWinner) {
-					applyStandardPlanWinner(tupleExpr, standardPlan);
-				} else {
-					replaceRootIfSafe(tupleExpr, plan.tupleExpr().get());
-				}
-			}
-			if (appliesPlan && !standardWinner) {
-				plan.provenance()
-						.ifPresent(provenance -> CascadesPlanProvenanceAnnotator.annotate(tupleExpr, provenance,
-								LmdbCascadesExplainFinalizer.PLANNER_ID));
-			}
-			if (mode.replacesAlgebra() && standardWinner
-					&& shouldRepairStandardFallbackSubtrees(standardPlanPolicy, plan)) {
-				optimizeSubtrees(tupleExpr, planner, searchGoal);
-			}
-			annotateObjectGuarantees(tupleExpr);
+		boolean runtimeTelemetry = trackResultSize || tupleExpr.isRuntimeTelemetryEnabled();
+		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = beginQueryOptimizationScope()) {
+			Mode mode = configuredMode();
+			OptimizationGoal goal = configuredGoal(tupleExpr, bindings, mode);
+			CascadesPlan plan = plan(tupleExpr, dataset, bindings, goal);
+			replaceRoot(tupleExpr, plan.tupleExpr());
+			CascadesPlanProvenanceAnnotator.annotate(tupleExpr, plan.provenance(), PLANNER_ID);
+			annotatePlanningMetrics(tupleExpr, mode, plan);
 		}
-	}
-
-	private OptimizationGoal configuredSearchGoal(Mode mode, OptimizationGoal baseGoal) {
-		if (mode == Mode.BUDGETED || mode == Mode.SHADOW_BUDGETED) {
-			OptimizationGoal budgeted = baseGoal.asBudgeted(Duration.ofMillis(configuredTimeoutMillis()),
-					intProperty(BUDGET_PROPERTY, DEFAULT_BUDGET));
-			if (mode == Mode.BUDGETED) {
-				return budgeted;
-			}
-			return new OptimizationGoal(budgeted.requiredProperties(), budgeted.semanticScope(), budgeted.costPolicy(),
-					budgeted.costBound(), budgeted.excludedProperties(), OptimizationGoal.SearchMode.SHADOW_BUDGETED,
-					budgeted.deadlineNanos(), budgeted.taskBudget(), budgeted.rowGoal(), budgeted.estimationTier(),
-					budgeted.inputBindingContext());
+		if (runtimeTelemetry) {
+			enableRuntimeTelemetry(tupleExpr);
 		}
-		if (mode == Mode.AUTO) {
-			return new OptimizationGoal(baseGoal.requiredProperties(), baseGoal.semanticScope(), baseGoal.costPolicy(),
-					baseGoal.costBound(), baseGoal.excludedProperties(), OptimizationGoal.SearchMode.AUTO,
-					Long.MAX_VALUE,
-					DEFAULT_BUDGET, baseGoal.rowGoal(), baseGoal.estimationTier(), baseGoal.inputBindingContext());
-		}
-		if (mode == Mode.SHADOW) {
-			return new OptimizationGoal(baseGoal.requiredProperties(), baseGoal.semanticScope(), baseGoal.costPolicy(),
-					baseGoal.costBound(), baseGoal.excludedProperties(), OptimizationGoal.SearchMode.SHADOW,
-					Long.MAX_VALUE, Integer.MAX_VALUE, baseGoal.rowGoal(), baseGoal.estimationTier(),
-					baseGoal.inputBindingContext());
-		}
-		return baseGoal;
 	}
 
 	CascadesPlan planPreparedInput(TupleExpr tupleExpr, OptimizationGoal goal) {
-		try (QueryOptimizationScopeProvider.QueryOptimizationScope scope = beginQueryOptimizationScope()) {
-			annotateDistinctPhysicalRequirements(tupleExpr);
-			return newPlanner(CascadesTelemetry.NO_OP).optimize(tupleExpr, goal);
+		if (tupleExpr == null) {
+			throw new CascadesPlanningException("Packed Cascades requires a non-null TupleExpr");
+		}
+		OptimizationGoal request = goal == null ? OptimizationGoal.root(tupleExpr, PhysicalProperties.ANY) : goal;
+		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = beginQueryOptimizationScope()) {
+			return plan(tupleExpr, null, null, request);
 		}
 	}
 
-	private CascadesPlanner newPlanner(CascadesTelemetry telemetry) {
-		CascadesCostModel costModel = CascadesCostModel.from(statistics);
-		RuleRegistry ruleRegistry = LmdbCascadesRuleProvider.rules(statistics);
-		if (statistics instanceof JoinFactorCostModel joinFactorCostModel) {
-			return new CascadesPlanner(costModel, ruleRegistry, telemetry,
-					LmdbJoinSearchProvider.create(joinFactorCostModel, statistics));
+	private CascadesPlan plan(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, OptimizationGoal goal) {
+		CascadesPlanner planner = new CascadesPlanner();
+		if (packedPlanCache == null) {
+			return planner.optimize(tupleExpr, goal, packedCostModel);
 		}
-		return new CascadesPlanner(costModel, ruleRegistry, telemetry);
+		return planner.optimize(tupleExpr, goal, packedPlanCache, cacheContext(dataset, bindings, goal),
+				packedCostModel);
+	}
+
+	private OptimizationGoal configuredGoal(TupleExpr tupleExpr, BindingSet bindings, Mode mode) {
+		Set<String> initiallyBound = bindings == null ? Set.of() : bindings.getBindingNames();
+		PhysicalProperties required = PhysicalProperties.builder()
+				.boundVars(initiallyBound)
+				.observationOrder(preserveSerializableObservationOrder
+						? PhysicalProperties.ObservationOrder.EXACT_SEQUENCE
+						: PhysicalProperties.ObservationOrder.ANY)
+				.build();
+		OptimizationGoal root = OptimizationGoal.root(tupleExpr, required)
+				.withInputBindingContext(InputBindingContext.fromBindingSet(bindings));
+		return switch (mode) {
+		case EXACT -> root;
+		case AUTO -> new OptimizationGoal(root.requiredProperties(), root.semanticScope(), root.costPolicy(),
+				root.costBound(), root.excludedProperties(), OptimizationGoal.SearchMode.AUTO, Long.MAX_VALUE,
+				DEFAULT_AUTO_BUDGET, root.rowGoal(), root.estimationTier(), root.inputBindingContext());
+		case BUDGETED -> root.asBudgeted(Duration.ofMillis(configuredTimeoutMillis()),
+				positiveIntProperty(BUDGET_PROPERTY, DEFAULT_BUDGETED_BUDGET));
+		};
+	}
+
+	private PackedPlanCache.Context cacheContext(Dataset dataset, BindingSet bindings, OptimizationGoal goal) {
+		long dataRevision = statistics instanceof LmdbEstimatorRuntimeProvider provider
+				? provider.estimatorRuntime().snapshotVersion()
+				: 0L;
+		long datasetFingerprint = unsignedHash(dataset);
+		long bindingShapeFingerprint = bindings == null ? 0L : unsignedHash(bindings.getBindingNames());
+		long parameterVariant = unsignedHash(bindings);
+		long goalFingerprint = goalFingerprint(goal);
+		long providerVersion = packedCostModel == null ? 0L : LmdbPackedCostModel.VERSION;
+		return new PackedPlanCache.Context(datasetFingerprint, bindingShapeFingerprint, parameterVariant,
+				goalFingerprint, 1L, providerVersion, dataRevision);
+	}
+
+	private static long goalFingerprint(OptimizationGoal goal) {
+		long hash = unsignedHash(goal.requiredProperties());
+		hash = mixCacheHash(hash, unsignedHash(goal.semanticScope()));
+		hash = mixCacheHash(hash, unsignedHash(goal.costPolicy()));
+		hash = mixCacheHash(hash, unsignedHash(goal.costBound()));
+		hash = mixCacheHash(hash, unsignedHash(goal.excludedProperties()));
+		hash = mixCacheHash(hash, unsignedHash(goal.searchMode()));
+		hash = mixCacheHash(hash, goal.taskBudget());
+		hash = mixCacheHash(hash, unsignedHash(goal.rowGoal()));
+		hash = mixCacheHash(hash, unsignedHash(goal.estimationTier()));
+		return mixCacheHash(hash, unsignedHash(goal.inputBindingContext()));
+	}
+
+	private static long unsignedHash(Object value) {
+		return value == null ? 0L : Integer.toUnsignedLong(value.hashCode());
+	}
+
+	private static long mixCacheHash(long left, long right) {
+		long mixed = left ^ Long.rotateLeft(right + 0x9e3779b97f4a7c15L, 27);
+		mixed = (mixed ^ mixed >>> 30) * 0xbf58476d1ce4e5b9L;
+		mixed = (mixed ^ mixed >>> 27) * 0x94d049bb133111ebL;
+		return mixed ^ mixed >>> 31;
 	}
 
 	private QueryOptimizationScopeProvider.QueryOptimizationScope beginQueryOptimizationScope() {
-		if (statistics instanceof QueryOptimizationScopeProvider scopeProvider) {
-			return scopeProvider.beginQueryOptimizationScope();
-		}
-		return QueryOptimizationScopeProvider.NO_OP_SCOPE;
+		return statistics instanceof QueryOptimizationScopeProvider provider
+				? provider.beginQueryOptimizationScope()
+				: QueryOptimizationScopeProvider.NO_OP_SCOPE;
 	}
 
-	private Mode serializableSafeMode(Mode mode) {
-		if (!preserveSerializableObservationOrder || !mode.replacesAlgebra()) {
-			return mode;
-		}
-		if (mode == Mode.AUTO || mode == Mode.BUDGETED) {
-			return Mode.SHADOW_BUDGETED;
-		}
-		return Mode.SHADOW;
-	}
-
-	private StandardPlanCandidate emptyStandardPlanCandidate() {
-		return new StandardPlanCandidate(null, "none");
-	}
-
-	private StandardPlanCandidate standardPlanCandidate(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings,
-			StandardPlanPolicy policy) {
-		if (!policy.enabled() || tupleExpr == null || preserveSerializableObservationOrder) {
-			return emptyStandardPlanCandidate();
-		}
-		TupleExpr capturedPlan = LmdbStandardPlanBaselineOptimizer.consumeBaseline(tupleExpr);
-		if (capturedPlan != null) {
-			return new StandardPlanCandidate(capturedPlan, "lmdb-no-cascades");
-		}
-		try {
-			TupleExpr standardPlan = tupleExpr.clone();
-			new ParentReferenceCleaner().optimize(standardPlan, dataset, bindings);
-			return new StandardPlanCandidate(standardPlan, "current-lmdb-no-cascades");
-		} catch (RuntimeException e) {
-			return emptyStandardPlanCandidate();
-		}
-	}
-
-	private boolean needsFallbackStandardPlan(Mode mode, StandardPlanPolicy policy, CascadesPlan cascadesPlan) {
-		if (!permitsPlanApplication(mode, cascadesPlan) || policy == null || !policy.fallbacks()) {
-			return false;
-		}
-		return cascadesPlan == null || cascadesPlan.tupleExpr().isEmpty();
-	}
-
-	private boolean standardPlanWins(Mode mode, StandardPlanPolicy policy, StandardPlanCandidate candidate,
-			CascadesPlan cascadesPlan) {
-		if (!permitsPlanApplication(mode, cascadesPlan) || !candidate.isPresent()) {
-			return false;
-		}
-		return policy.fallbacks() && (cascadesPlan == null || cascadesPlan.tupleExpr().isEmpty());
-	}
-
-	private boolean permitsPlanApplication(Mode mode, CascadesPlan cascadesPlan) {
-		if (mode == null || !mode.replacesAlgebra()) {
-			return false;
-		}
-		return mode != Mode.EXACT || cascadesPlan != null
-				&& cascadesPlan.completeness() == OptimizationCompleteness.COMPLETE;
-	}
-
-	private boolean shouldRepairStandardFallbackSubtrees(StandardPlanPolicy policy, CascadesPlan cascadesPlan) {
-		if (policy == null || !policy.fallbacks()) {
-			return false;
-		}
-		return cascadesPlan == null || cascadesPlan.tupleExpr().isEmpty();
-	}
-
-	private boolean isPositiveFinite(double value) {
-		return Double.isFinite(value) && value > 0.0d;
-	}
-
-	private void optimizeSubtrees(TupleExpr root, CascadesPlanner planner, OptimizationGoal goal) {
-		List<SubtreeCandidate> candidates = new ArrayList<>();
-		Set<String> rootBoundVars = goal == null ? Set.of() : goal.requiredProperties().boundVars();
-		root.visit(new ContextualSubtreeCandidateCollector(root, rootBoundVars, candidates));
-		optimizeSubtreeCandidates(candidates, planner, goal);
-
-		List<SubtreeCandidate> conditionCandidates = new ArrayList<>();
-		root.visit(new ConditionSubqueryCandidateCollector(root, rootBoundVars, conditionCandidates));
-		optimizeSubtreeCandidates(conditionCandidates, planner, goal);
-	}
-
-	private void optimizeSubtreeCandidates(List<SubtreeCandidate> candidates, CascadesPlanner planner,
-			OptimizationGoal goal) {
-		for (SubtreeCandidate candidate : candidates) {
-			if (candidate.tupleExpr().getParentNode() == null) {
-				continue;
-			}
-			CascadesPlan childPlan = planner.optimize(candidate.tupleExpr(), freshSubtreeGoal(goal,
-					candidate.boundVars(), candidate.tupleExpr().getBindingNames()));
-			TupleExpr replacement = childPlan.tupleExpr().orElse(null);
-			if (replacement == null) {
-				continue;
-			}
-			annotateObjectGuarantees(replacement);
-			childPlan.provenance()
-					.ifPresent(provenance -> CascadesPlanProvenanceAnnotator.annotate(replacement, provenance,
-							LmdbCascadesExplainFinalizer.PLANNER_ID));
-			replaceRootIfSafe(candidate.tupleExpr(), replacement);
-		}
-	}
-
-	private void clearCopiedPlannerMetrics(TupleExpr tupleExpr) {
-		if (tupleExpr == null) {
-			return;
-		}
-		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-			@Override
-			protected void meetNode(QueryModelNode node) {
-				clearCopiedPlannerMetrics(node);
-				node.visitChildren(this);
-			}
-		});
-	}
-
-	private void clearCopiedPlannerMetrics(QueryModelNode node) {
-		removePlannerStringMetrics(node.getStringMetricsPlanned());
-		removePlannerDoubleMetrics(node.getDoubleMetricsPlanned());
-		removePlannerLongMetrics(node.getLongMetricsPlanned());
-	}
-
-	private void removePlannerStringMetrics(Map<String, String> metrics) {
-		if (metrics.isEmpty()) {
-			return;
-		}
-		try {
-			metrics.keySet().removeIf(LmdbCascadesOptimizer::copiedPlannerMetric);
-		} catch (UnsupportedOperationException ignored) {
-			// Immutable no-op nodes keep their copied metrics.
-		}
-	}
-
-	private void removePlannerDoubleMetrics(Map<String, Double> metrics) {
-		if (metrics.isEmpty()) {
-			return;
-		}
-		try {
-			metrics.keySet().removeIf(LmdbCascadesOptimizer::copiedPlannerMetric);
-		} catch (UnsupportedOperationException ignored) {
-			// Immutable no-op nodes keep their copied metrics.
-		}
-	}
-
-	private void removePlannerLongMetrics(Map<String, Long> metrics) {
-		if (metrics.isEmpty()) {
-			return;
-		}
-		try {
-			metrics.keySet().removeIf(LmdbCascadesOptimizer::copiedPlannerMetric);
-		} catch (UnsupportedOperationException ignored) {
-			// Immutable no-op nodes keep their copied metrics.
-		}
-	}
-
-	private static boolean copiedPlannerMetric(String metricName) {
-		return metricName != null
-				&& (metricName.startsWith("optimizer.cascades")
-						|| metricName.startsWith("optimizer.connected")
-						|| metricName.startsWith("optimizer.guarantee")
-						|| metricName.startsWith("optimizer.join")
-						|| metricName.startsWith("planned")
-						|| TelemetryMetricNames.PLANNER_ID.equals(metricName)
-						|| TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE.equals(metricName)
-						|| TelemetryMetricNames.OPTIMIZER_PHYSICAL_REFINEMENT.equals(metricName));
-	}
-
-	OptimizationGoal freshSubtreeGoal(OptimizationGoal goal, Set<String> contextualBoundVars,
-			Set<String> subtreeBindings) {
-		Set<String> boundVars = contextualBoundVars(contextualBoundVars, subtreeBindings);
-		if (goal == null || goal.searchMode() != OptimizationGoal.SearchMode.BUDGETED) {
-			OptimizationGoal subtreeGoal = goal == null ? OptimizationGoal.root() : goal;
-			return subtreeGoal.withRequiredProperties(requiredBoundProperties(boundVars)).withoutRowGoal();
-		}
-		long timeoutMillis = configuredTimeoutMillis();
-		long deadline;
-		if (timeoutMillis <= 0L) {
-			deadline = Long.MAX_VALUE;
-		} else {
-			long timeoutNanos = Duration.ofMillis(timeoutMillis).toNanos();
-			long now = System.nanoTime();
-			deadline = Long.MAX_VALUE - now < timeoutNanos ? Long.MAX_VALUE : now + timeoutNanos;
-		}
-		return new OptimizationGoal(requiredBoundProperties(boundVars), goal.semanticScope(), goal.costPolicy(),
-				goal.costBound(), goal.excludedProperties(), goal.searchMode(), deadline, goal.taskBudget(),
-				OptimizationGoal.RowGoal.ALL, goal.estimationTier(), goal.inputBindingContext());
-	}
-
-	private static PhysicalProperties requiredBoundProperties(Set<String> boundVars) {
-		if (boundVars == null || boundVars.isEmpty()) {
-			return PhysicalProperties.ANY;
-		}
-		return PhysicalProperties.builder().boundVars(boundVars).build();
-	}
-
-	private static Set<String> contextualBoundVars(Set<String> contextualBoundVars, Set<String> subtreeBindings) {
-		if (contextualBoundVars == null || contextualBoundVars.isEmpty()
-				|| subtreeBindings == null || subtreeBindings.isEmpty()) {
-			return Set.of();
-		}
-		Set<String> boundVars = new LinkedHashSet<>();
-		for (String boundVar : contextualBoundVars) {
-			if (subtreeBindings.contains(boundVar)) {
-				boundVars.add(boundVar);
-			}
-		}
-		return boundVars.isEmpty() ? Set.of() : Set.copyOf(boundVars);
-	}
-
-	private static boolean subplanCandidate(TupleExpr tupleExpr) {
-		if (tupleExpr instanceof ArbitraryLengthPath || tupleExpr instanceof ZeroLengthPath) {
-			return true;
-		}
-		if (tupleExpr instanceof Group group) {
-			return duplicateInsensitiveAggregateGroup(group);
-		}
-		if (tupleExpr instanceof Filter filter) {
-			if (filter.getCondition() instanceof Exists) {
-				return !containsJoinPlanningBarrier(filter);
-			}
-			return hasFilterJoinSegment(filter.getArg()) && !containsJoinPlanningBarrier(filter);
-		}
-		if (tupleExpr instanceof Difference) {
-			return LmdbJoinIslandConnectivity.minusJoinPrefixPushdownAvailable(tupleExpr);
-		}
-		if (tupleExpr instanceof Union union) {
-			return replannableScopedUnion(union);
-		}
-		if (tupleExpr instanceof Join join) {
-			return !containsJoinPlanningBarrier(tupleExpr)
-					|| scopedUnionDistributionOpportunity(join)
-					|| containsReplannableScopedUnion(join);
-		}
-		return false;
-	}
-
-	private static boolean containsReplannableScopedUnion(TupleExpr tupleExpr) {
-		if (tupleExpr instanceof Union union) {
-			return replannableScopedUnion(union);
-		}
-		if (tupleExpr instanceof Join join) {
-			return containsReplannableScopedUnion(join.getLeftArg())
-					|| containsReplannableScopedUnion(join.getRightArg());
-		}
-		return false;
-	}
-
-	private static boolean replannableScopedUnion(Union union) {
-		return union != null
-				&& (union.isVariableScopeChange()
-						|| TupleExprs.isVariableScopeChange(union.getLeftArg())
-						|| TupleExprs.isVariableScopeChange(union.getRightArg()))
-				&& branchLocalBindOrValuesNames(union.getLeftArg()).isEmpty()
-				&& branchLocalBindOrValuesNames(union.getRightArg()).isEmpty();
-	}
-
-	private static boolean duplicateInsensitiveAggregateGroup(Group group) {
-		return !duplicateInsensitiveAggregateVars(group).isEmpty();
-	}
-
-	private static Set<String> duplicateInsensitiveAggregateVars(Group group) {
-		if (group == null || !group.getGroupBindingNames().isEmpty() || group.getGroupElements().isEmpty()) {
-			return Set.of();
-		}
-		Set<String> vars = new LinkedHashSet<>();
-		for (GroupElem groupElement : group.getGroupElements()) {
-			AggregateOperator operator = groupElement.getOperator();
-			if (!(operator instanceof Count count) || !count.isDistinct()
-					|| !(count.getArg()instanceof Var var) || var.hasValue() || var.getName() == null) {
-				return Set.of();
-			}
-			vars.add(var.getName());
-		}
-		return vars.isEmpty() ? Set.of() : Set.copyOf(vars);
-	}
-
-	private static boolean scopedUnionDistributionOpportunity(Join join) {
-		return hasUnassuredScopedUnionSharedBindings(join.getLeftArg(), join.getRightArg())
-				|| hasUnassuredScopedUnionSharedBindings(join.getRightArg(), join.getLeftArg());
-	}
-
-	private static boolean hasUnassuredScopedUnionSharedBindings(TupleExpr pushed, TupleExpr maybeUnion) {
-		if (pushed == null || !(maybeUnion instanceof Union union) || !union.isVariableScopeChange()) {
-			return false;
-		}
-		Set<String> pushedNames = LmdbJoinPlanSupport.plannerBindingNames(pushed.getBindingNames());
-		if (pushedNames.isEmpty() || overlapsBranchLocalOutputs(pushedNames, union)) {
-			return false;
-		}
-		Set<String> shared = new HashSet<>(pushedNames);
-		shared.retainAll(LmdbJoinPlanSupport.plannerBindingNames(union.getBindingNames()));
-		if (shared.isEmpty()) {
-			return false;
-		}
-		shared.removeAll(LmdbJoinPlanSupport.plannerBindingNames(union.getAssuredBindingNames()));
-		return !shared.isEmpty();
-	}
-
-	private static boolean overlapsBranchLocalOutputs(Set<String> pushedNames, Union union) {
-		Set<String> branchLocalNames = new HashSet<>(branchLocalBindOrValuesNames(union.getLeftArg()));
-		branchLocalNames.addAll(branchLocalBindOrValuesNames(union.getRightArg()));
-		for (String name : pushedNames) {
-			if (branchLocalNames.contains(name)) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	private static Set<String> branchLocalBindOrValuesNames(TupleExpr tupleExpr) {
-		Set<String> names = new HashSet<>();
-		if (tupleExpr == null) {
-			return names;
-		}
-		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-			@Override
-			public void meet(Extension node) {
-				for (var element : node.getElements()) {
-					if (element.getName() != null) {
-						names.add(element.getName());
-					}
-				}
-				super.meet(node);
-			}
-
-			@Override
-			public void meet(BindingSetAssignment node) {
-				names.addAll(node.getBindingNames());
-			}
-		});
-		return LmdbJoinPlanSupport.plannerBindingNames(names);
-	}
-
-	private record SubtreeCandidate(TupleExpr tupleExpr, Set<String> boundVars) {
-		private SubtreeCandidate {
-			boundVars = boundVars == null || boundVars.isEmpty() ? Set.of() : Set.copyOf(boundVars);
-		}
-	}
-
-	private static final class ContextualSubtreeCandidateCollector
-			extends AbstractQueryModelVisitor<RuntimeException> {
-		private final TupleExpr root;
-		private final List<SubtreeCandidate> candidates;
-		private Set<String> boundVars;
-
-		private ContextualSubtreeCandidateCollector(TupleExpr root, Set<String> rootBoundVars,
-				List<SubtreeCandidate> candidates) {
-			this.root = root;
-			this.boundVars = rootBoundVars == null || rootBoundVars.isEmpty() ? Set.of() : Set.copyOf(rootBoundVars);
-			this.candidates = candidates;
-		}
-
-		@Override
-		protected void meetNode(QueryModelNode node) {
-			if (!(node instanceof TupleExpr tupleExpr)) {
-				node.visitChildren(this);
-				return;
-			}
-			if (tupleExpr != root && cascadesPlannedSubtree(tupleExpr)) {
-				if (hasEmergencyFallbackDescendant(tupleExpr)) {
-					visitTupleChildren(tupleExpr, node);
-				}
-				return;
-			}
-			if (tupleExpr != root && subplanCandidate(tupleExpr)) {
-				candidates.add(new SubtreeCandidate(tupleExpr, contextualBoundVars(boundVars,
-						tupleExpr.getBindingNames())));
-				return;
-			}
-			visitTupleChildren(tupleExpr, node);
-		}
-
-		private void visitTupleChildren(TupleExpr tupleExpr, QueryModelNode node) {
-			if (tupleExpr instanceof LeftJoin leftJoin) {
-				visitWithBoundVars(leftJoin.getLeftArg(), boundVars);
-				Set<String> rightBoundVars = union(boundVars, leftJoin.getLeftArg().getAssuredBindingNames());
-				visitWithBoundVars(leftJoin.getRightArg(), rightBoundVars);
-				return;
-			}
-			if (tupleExpr instanceof Join join) {
-				visitWithBoundVars(join.getLeftArg(), boundVars);
-				visitWithBoundVars(join.getRightArg(), union(boundVars, join.getLeftArg().getAssuredBindingNames()));
-				return;
-			}
-			if (tupleExpr instanceof Union union) {
-				visitWithBoundVars(union.getLeftArg(), boundVars);
-				visitWithBoundVars(union.getRightArg(), boundVars);
-				return;
-			}
-			if (tupleExpr instanceof Difference difference) {
-				visitWithBoundVars(difference.getLeftArg(), boundVars);
-				visitWithBoundVars(difference.getRightArg(),
-						union(boundVars, difference.getLeftArg().getAssuredBindingNames()));
-				return;
-			}
-			if (tupleExpr instanceof Filter filter) {
-				visitWithBoundVars(filter.getArg(), boundVars);
-				return;
-			}
-			if (tupleExpr instanceof UnaryTupleOperator unary) {
-				visitWithBoundVars(unary.getArg(), boundVars);
-				return;
-			}
-			node.visitChildren(this);
-		}
-
-		private void visitWithBoundVars(TupleExpr tupleExpr, Set<String> nextBoundVars) {
-			if (tupleExpr == null) {
-				return;
-			}
-			Set<String> previous = boundVars;
-			try {
-				boundVars = nextBoundVars == null || nextBoundVars.isEmpty() ? Set.of() : Set.copyOf(nextBoundVars);
-				tupleExpr.visit(this);
-			} finally {
-				boundVars = previous;
-			}
-		}
-
-		private static Set<String> union(Set<String> left, Set<String> right) {
-			if ((left == null || left.isEmpty()) && (right == null || right.isEmpty())) {
-				return Set.of();
-			}
-			Set<String> union = new LinkedHashSet<>();
-			if (left != null) {
-				union.addAll(left);
-			}
-			if (right != null) {
-				union.addAll(right);
-			}
-			return union.isEmpty() ? Set.of() : Set.copyOf(union);
-		}
-	}
-
-	private static final class ConditionSubqueryCandidateCollector
-			extends AbstractQueryModelVisitor<RuntimeException> {
-		private final TupleExpr root;
-		private final List<SubtreeCandidate> candidates;
-		private Set<String> boundVars;
-
-		private ConditionSubqueryCandidateCollector(TupleExpr root, Set<String> rootBoundVars,
-				List<SubtreeCandidate> candidates) {
-			this.root = root;
-			this.boundVars = rootBoundVars == null || rootBoundVars.isEmpty() ? Set.of() : Set.copyOf(rootBoundVars);
-			this.candidates = candidates;
-		}
-
-		@Override
-		protected void meetNode(QueryModelNode node) {
-			if (!(node instanceof TupleExpr tupleExpr)) {
-				node.visitChildren(this);
-				return;
-			}
-			visitTupleChildren(tupleExpr, node);
-		}
-
-		private void visitTupleChildren(TupleExpr tupleExpr, QueryModelNode node) {
-			if (tupleExpr instanceof LeftJoin leftJoin) {
-				visitWithBoundVars(leftJoin.getLeftArg(), boundVars);
-				visitWithBoundVars(leftJoin.getRightArg(), union(boundVars,
-						leftJoin.getLeftArg().getAssuredBindingNames()));
-				return;
-			}
-			if (tupleExpr instanceof Join join) {
-				visitWithBoundVars(join.getLeftArg(), boundVars);
-				visitWithBoundVars(join.getRightArg(), union(boundVars, join.getLeftArg().getAssuredBindingNames()));
-				return;
-			}
-			if (tupleExpr instanceof Union union) {
-				visitWithBoundVars(union.getLeftArg(), boundVars);
-				visitWithBoundVars(union.getRightArg(), boundVars);
-				return;
-			}
-			if (tupleExpr instanceof Difference difference) {
-				visitWithBoundVars(difference.getLeftArg(), boundVars);
-				visitWithBoundVars(difference.getRightArg(),
-						union(boundVars, difference.getLeftArg().getAssuredBindingNames()));
-				return;
-			}
-			if (tupleExpr instanceof Filter filter) {
-				visitWithBoundVars(filter.getArg(), boundVars);
-				visitConditionSubqueries(filter.getCondition(), filterConditionBoundVars(filter));
-				return;
-			}
-			if (tupleExpr instanceof UnaryTupleOperator unary) {
-				visitWithBoundVars(unary.getArg(), boundVars);
-				return;
-			}
-			node.visitChildren(this);
-		}
-
-		private Set<String> filterConditionBoundVars(Filter filter) {
-			Set<String> inputBindings = filter.getArg().getAssuredBindingNames();
-			if (filter.isVariableScopeChange()) {
-				return inputBindings == null || inputBindings.isEmpty() ? Set.of() : Set.copyOf(inputBindings);
-			}
-			return union(boundVars, inputBindings);
-		}
-
-		private void visitConditionSubqueries(ValueExpr condition, Set<String> conditionBoundVars) {
-			if (condition == null) {
-				return;
-			}
-			condition.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-				@Override
-				protected void meetSubQueryValueOperator(SubQueryValueOperator subQuery) {
-					TupleExpr subQueryTuple = subQuery.getSubQuery();
-					if (subQueryTuple == null) {
-						return;
-					}
-					Set<String> subQueryBoundVars = subQuery.isVariableScopeChange() ? Set.of() : conditionBoundVars;
-					if (cascadesPlannedConditionSubquery(subQueryTuple)) {
-						if (hasEmergencyFallbackDescendant(subQueryTuple)) {
-							visitWithBoundVars(subQueryTuple, subQueryBoundVars);
-						}
-						return;
-					}
-					if (subplanCandidate(subQueryTuple)) {
-						candidates.add(new SubtreeCandidate(subQueryTuple,
-								contextualBoundVars(subQueryBoundVars, subQueryTuple.getBindingNames())));
-						return;
-					}
-					visitWithBoundVars(subQueryTuple, subQueryBoundVars);
-				}
-			});
-		}
-
-		private void visitWithBoundVars(TupleExpr tupleExpr, Set<String> nextBoundVars) {
-			if (tupleExpr == null || tupleExpr == root) {
-				return;
-			}
-			Set<String> previous = boundVars;
-			try {
-				boundVars = nextBoundVars == null || nextBoundVars.isEmpty() ? Set.of() : Set.copyOf(nextBoundVars);
-				tupleExpr.visit(this);
-			} finally {
-				boundVars = previous;
-			}
-		}
-
-		private static Set<String> union(Set<String> left, Set<String> right) {
-			if ((left == null || left.isEmpty()) && (right == null || right.isEmpty())) {
-				return Set.of();
-			}
-			Set<String> union = new LinkedHashSet<>();
-			if (left != null) {
-				union.addAll(left);
-			}
-			if (right != null) {
-				union.addAll(right);
-			}
-			return union.isEmpty() ? Set.of() : Set.copyOf(union);
-		}
-	}
-
-	private static boolean cascadesPlannedSubtree(TupleExpr tupleExpr) {
-		if (hasEmergencyFallbackMetric(tupleExpr)) {
-			return false;
-		}
-		return hasNonFallbackMetric(tupleExpr, CASCADES_RULE)
-				|| hasNonStandardNonFallbackMetric(tupleExpr, CASCADES_WINNER);
-	}
-
-	private static boolean cascadesPlannedConditionSubquery(TupleExpr tupleExpr) {
-		if (hasEmergencyFallbackMetric(tupleExpr)) {
-			return false;
-		}
-		return hasNonFallbackMetric(tupleExpr, CASCADES_RULE)
-				|| STANDARD_PLAN_WINNER.equals(tupleExpr.getStringMetricPlanned(CASCADES_WINNER));
-	}
-
-	private static boolean hasNonFallbackMetric(TupleExpr tupleExpr, String metric) {
-		String value = tupleExpr.getStringMetricPlanned(metric);
-		return value != null && !value.isBlank() && !value.startsWith(EMERGENCY_FALLBACK_RULE);
-	}
-
-	private static boolean hasNonStandardNonFallbackMetric(TupleExpr tupleExpr, String metric) {
-		String value = tupleExpr.getStringMetricPlanned(metric);
-		return value != null && !value.isBlank()
-				&& !STANDARD_PLAN_WINNER.equals(value)
-				&& !value.startsWith(EMERGENCY_FALLBACK_RULE);
-	}
-
-	private static boolean hasEmergencyFallbackDescendant(TupleExpr tupleExpr) {
-		if (tupleExpr == null) {
-			return false;
-		}
-		EmergencyFallbackFinder finder = new EmergencyFallbackFinder();
-		tupleExpr.visitChildren(finder);
-		return finder.found;
-	}
-
-	private static boolean hasEmergencyFallbackMetric(TupleExpr tupleExpr) {
-		return hasEmergencyFallbackMetric(tupleExpr, CASCADES_RULE)
-				|| hasEmergencyFallbackMetric(tupleExpr, CASCADES_WINNER)
-				|| FALLBACK_NO_WINNER.equals(
-						tupleExpr.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE))
-				|| fallbackEstimateSource(tupleExpr
-						.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
-	}
-
-	private static boolean hasEmergencyFallbackMetric(TupleExpr tupleExpr, String metric) {
-		String value = tupleExpr.getStringMetricPlanned(metric);
-		return value != null && value.startsWith(EMERGENCY_FALLBACK_RULE);
-	}
-
-	private static boolean fallbackEstimateSource(String source) {
-		return CASCADES_FALLBACK_SOURCE.equals(source) || LMDB_CASCADES_FALLBACK_SOURCE.equals(source);
-	}
-
-	private static final class EmergencyFallbackFinder extends AbstractQueryModelVisitor<RuntimeException> {
-		private boolean found;
-
-		@Override
-		protected void meetNode(QueryModelNode node) {
-			if (found) {
-				return;
-			}
-			if (node instanceof TupleExpr tupleExpr && hasEmergencyFallbackMetric(tupleExpr)) {
-				found = true;
-				return;
-			}
-			node.visitChildren(this);
-		}
-	}
-
-	private static boolean hasFilterJoinSegment(TupleExpr tupleExpr) {
-		if (tupleExpr instanceof Filter filter) {
-			return hasFilterJoinSegment(filter.getArg());
-		}
-		return tupleExpr instanceof Join;
-	}
-
-	private static boolean containsJoinPlanningBarrier(TupleExpr tupleExpr) {
-		JoinPlanningBarrierFinder finder = new JoinPlanningBarrierFinder(tupleExpr);
-		tupleExpr.visit(finder);
-		return finder.found;
-	}
-
-	private void annotateObjectGuarantees(TupleExpr tupleExpr) {
-		if (tupleExpr == null || !(statistics instanceof LmdbPredicateObjectDomainSource guaranteeSource)) {
-			return;
-		}
-		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-			@Override
-			public void meet(StatementPattern node) {
-				annotateObjectGuarantee(node, guaranteeSource);
-				super.meet(node);
-			}
-		});
-	}
-
-	private void annotateObjectGuarantee(StatementPattern node, LmdbPredicateObjectDomainSource guaranteeSource) {
-		IRI predicate = constantPredicate(node);
-		if (predicate == null) {
-			return;
-		}
-		RdfTermDomain guarantee = guaranteeSource.getKnownRdfTermDomain(predicate)
-				.orElse(RdfTermDomain.UNKNOWN);
-		String guaranteeDescription = String.valueOf(guarantee);
-		node.setStringMetricPlanned(OPTIMIZER_OBJECT_GUARANTEE, guaranteeDescription);
-		node.setStringMetricPlanned(OPTIMIZER_OBJECT_GUARANTEE_PREDICATE, predicate.stringValue());
-		Var objectVar = node.getObjectVar();
-		if (objectVar != null) {
-			objectVar.setStringMetricPlanned(OPTIMIZER_OBJECT_GUARANTEE, guaranteeDescription);
-			objectVar.setStringMetricPlanned(OPTIMIZER_OBJECT_GUARANTEE_PREDICATE, predicate.stringValue());
-		}
-	}
-
-	private void annotateDistinctPhysicalRequirements(TupleExpr tupleExpr) {
-		if (tupleExpr == null) {
-			return;
-		}
-		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-			@Override
-			public void meet(Distinct node) {
-				annotateDistinct(node);
-				super.meet(node);
-			}
-
-			@Override
-			public void meet(Reduced node) {
-				annotateReduced(node);
-				super.meet(node);
-			}
-		});
-	}
-
-	private void annotateDistinct(Distinct distinct) {
-		if (!(distinct.getArg()instanceof Projection projection) || !isIdentityProjection(projection)) {
-			return;
-		}
-		Set<String> distinctVars = identityProjectionNames(projection);
-		if (!distinctVars.isEmpty()) {
-			annotateDistinctPhysicalRequirements(projection.getArg(), distinctVars, Set.of(),
-					"distinct-projection");
-		}
-	}
-
-	private void annotateReduced(Reduced reduced) {
-		if (!(reduced.getArg()instanceof Order order)
-				|| !(order.getArg()instanceof Projection projection)
-				|| !isIdentityProjection(projection)) {
-			return;
-		}
-		Set<String> distinctVars = identityProjectionNames(projection);
-		if (!distinctVars.isEmpty() && distinctVars.containsAll(VarNameCollector.process(order.getElements()))) {
-			annotateDistinctPhysicalRequirements(projection.getArg(), distinctVars, Set.of(),
-					"distinct-reduced-order-projection");
-		}
-	}
-
-	private void annotateDistinctPhysicalRequirements(TupleExpr tupleExpr, Set<String> distinctVars,
-			Set<String> blockedVars, String source) {
-		if (distinctVars.isEmpty() || tupleExpr == null || !tupleExpr.getBindingNames().containsAll(distinctVars)) {
-			return;
-		}
-		if (containsDistinctRequirementBarrier(tupleExpr)) {
-			return;
-		}
-		if (tupleExpr instanceof StatementPattern statementPattern) {
-			annotateDistinctStatementPattern(statementPattern, distinctVars, blockedVars, source);
-		} else if (tupleExpr instanceof Projection projection) {
-			if (!isIdentityProjection(projection) || !identityProjectionNames(projection).containsAll(distinctVars)) {
-				return;
-			}
-			annotateDistinctPhysicalRequirements(projection.getArg(), distinctVars, blockedVars,
-					source + "|projection");
-		} else if (tupleExpr instanceof Order order) {
-			if (!distinctVars.containsAll(VarNameCollector.process(order.getElements()))) {
-				return;
-			}
-			annotateDistinctPhysicalRequirements(order.getArg(), distinctVars, blockedVars, source + "|order");
-		} else if (tupleExpr instanceof Union union) {
-			annotateDistinctPhysicalRequirements(union.getLeftArg(), distinctVars, blockedVars,
-					source + "|unionLeft");
-			annotateDistinctPhysicalRequirements(union.getRightArg(), distinctVars, blockedVars,
-					source + "|unionRight");
-		} else if (tupleExpr instanceof Join join) {
-			Set<String> sharedNames = intersect(join.getLeftArg().getBindingNames(), join.getRightArg()
-					.getBindingNames());
-			Set<String> childBlockedVars = union(blockedVars, sharedNames);
-			annotateDistinctPhysicalRequirements(join.getLeftArg(), distinctVars, childBlockedVars,
-					source + "|joinLeft");
-			annotateDistinctPhysicalRequirements(join.getRightArg(), distinctVars, childBlockedVars,
-					source + "|joinRight");
-		} else if (tupleExpr instanceof Difference difference) {
-			Set<String> sharedNames = intersect(difference.getLeftArg().getBindingNames(),
-					difference.getRightArg().getBindingNames());
-			annotateDistinctPhysicalRequirements(difference.getLeftArg(), distinctVars,
-					union(blockedVars, sharedNames), source + "|minusLeft");
-		} else if (tupleExpr instanceof Filter filter) {
-			annotateDistinctPhysicalRequirements(filter.getArg(), distinctVars,
-					union(blockedVars, VarNameCollector.process(filter.getCondition())), source + "|filter");
-		}
-	}
-
-	private void annotateDistinctStatementPattern(StatementPattern statementPattern, Set<String> distinctVars,
-			Set<String> blockedVars, String source) {
-		Set<String> patternVars = statementPattern.getBindingNames();
-		if (!patternVars.containsAll(distinctVars)) {
-			return;
-		}
-		Set<String> skippedVars = new HashSet<>(patternVars);
-		skippedVars.removeAll(distinctVars);
-		if (skippedVars.isEmpty() || !Collections.disjoint(skippedVars, blockedVars)) {
-			return;
-		}
-		Set<String> requiredVarsAbove = union(distinctVars, intersect(patternVars, blockedVars));
-		new LmdbDistinctRequirement(distinctVars, requiredVarsAbove, blockedVars, source).annotate(statementPattern);
-		LmdbRewriteProof proof = new LmdbRewriteProof(LmdbRewriteProof.RewriteKind.DISTINCT_PHYSICAL_CURSOR_SKIP,
-				LmdbRewriteProof.EquivalenceScope.PHYSICAL_EQUIVALENT,
-				Set.of("finalDistinctRetained", "skippedVarsUnobserved", "statementPatternLeaf"),
-				"DISTINCT suffix variables are not observed above the statement-pattern scan");
-		statementPattern.setStringMetricPlanned(TelemetryMetricNames.OPTIMIZER_PHYSICAL_REFINEMENT,
-				proof.metricFragment());
-	}
-
-	private boolean containsDistinctRequirementBarrier(TupleExpr tupleExpr) {
-		if (tupleExpr instanceof Service) {
-			return true;
-		}
-		boolean[] containsService = new boolean[1];
-		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-			@Override
-			public void meet(Service node) {
-				containsService[0] = true;
-			}
-		});
-		return containsService[0];
-	}
-
-	private boolean isIdentityProjection(Projection projection) {
-		Set<String> names = new HashSet<>();
-		for (var elem : projection.getProjectionElemList().getElements()) {
-			if (elem.getName() == null || elem.getProjectionAlias().isPresent()
-					|| elem.hasAggregateOperatorInExpression() || elem.getSourceExpression() != null
-					|| !names.add(elem.getName())) {
-				return false;
-			}
-		}
-		return true;
-	}
-
-	private Set<String> identityProjectionNames(Projection projection) {
-		Set<String> names = new LinkedHashSet<>();
-		for (var elem : projection.getProjectionElemList().getElements()) {
-			if (elem.getName() == null || !names.add(elem.getName())) {
-				return Set.of();
-			}
-		}
-		return names;
-	}
-
-	private Set<String> union(Set<String> left, Set<String> right) {
-		if (left.isEmpty()) {
-			return right;
-		}
-		if (right.isEmpty()) {
-			return left;
-		}
-		Set<String> result = new LinkedHashSet<>(left);
-		result.addAll(right);
-		return result;
-	}
-
-	private Set<String> intersect(Set<String> left, Set<String> right) {
-		if (left.isEmpty() || right.isEmpty()) {
-			return Set.of();
-		}
-		Set<String> result = new LinkedHashSet<>(left);
-		result.retainAll(right);
-		return result;
-	}
-
-	private IRI constantPredicate(StatementPattern node) {
-		Var predicate = node.getPredicateVar();
-		if (predicate == null || !predicate.hasValue() || !(predicate.getValue() instanceof IRI)) {
-			return null;
-		}
-		return (IRI) predicate.getValue();
-	}
-
-	private void annotate(TupleExpr tupleExpr, Mode mode, CascadesPlan plan, CascadesTelemetry.Recording telemetry,
-			boolean appliesPlan, StandardPlanPolicy standardPlanPolicy, StandardPlanCandidate standardPlan,
-			boolean standardWinner) {
-		tupleExpr.setStringMetricPlanned("optimizer.cascadesMode", mode.name().toLowerCase(Locale.ROOT));
-		tupleExpr.setStringMetricPlanned(APPLIED_METRIC, Boolean.toString(appliesPlan));
-		tupleExpr.setStringMetricPlanned(SKIP_SKETCH_JOIN_ORDER_METRIC, "false");
-		tupleExpr.setStringMetricPlanned("optimizer.cascadesDiagnostics", String.join("; ", plan.diagnostics()));
-		tupleExpr.setStringMetricPlanned("optimizer.cascadesCompleteness", plan.completeness().name());
-		tupleExpr.setStringMetricPlanned("optimizer.cascadesLimitCauses", plan.searchStatus()
-				.limitCauses()
-				.stream()
-				.sorted()
-				.map(Enum::name)
-				.collect(Collectors.joining(",")));
-		var counters = plan.searchStatus().counters();
-		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesRuleWork", counters.ruleWork());
-		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesDphypPairProbes", counters.dphypPairProbes());
-		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesPartitionProbes", counters.partitionProbes());
-		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesCandidateEvaluations", counters.candidateEvaluations());
-		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesPredicateProbes", counters.predicateProbes());
-		var retention = plan.searchStatus().retention();
-		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesRetainedCandidates",
-				retention.currentRetainedCandidates());
-		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesRetainedCandidateHighWaterMark",
-				retention.retainedCandidateHighWaterMark());
-		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesFrontierHighWaterMark",
-				retention.frontierHighWaterMark());
-		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesRootCostWorkRows", plan.cost().workRows());
-		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesRootRows", plan.cost().rows());
-		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesRootQError", plan.cost().qError());
-		tupleExpr.setStringMetricPlanned("optimizer.cascadesApproximate", Boolean.toString(plan.approximate()));
-		annotateStandardPlanChoice(tupleExpr, mode, standardPlanPolicy, standardPlan, standardWinner, false);
-		if (trackResultSize) {
-			tupleExpr.setRuntimeTelemetryEnabled(true);
-		}
-		if (telemetry != null && !telemetry.trace().isEmpty()) {
-			tupleExpr.setStringMetricPlanned("optimizer.cascadesTrace", String.join(" || ", telemetry.trace()));
-			tupleExpr.setStringMetricPlanned(CASCADES_TRACE_JSON, telemetry.toJson());
-		}
-		if (telemetry != null) {
-			plan.tupleExpr()
-					.ifPresent(candidatePlan -> tupleExpr.setStringMetricPlanned(CASCADES_CANDIDATE_PLAN,
-							boundedPlanText(candidatePlan)));
-		}
-	}
-
-	private String boundedPlanText(TupleExpr tupleExpr) {
-		if (tupleExpr == null) {
-			return "";
-		}
-		String text = tupleExpr.toString()
-				.replace("\r\n", "\n")
-				.replace('\r', '\n')
-				.trim();
-		if (text.length() <= CANDIDATE_PLAN_TEXT_LIMIT) {
-			return text;
-		}
-		String suffix = "\n... truncated";
-		return text.substring(0, CANDIDATE_PLAN_TEXT_LIMIT - suffix.length()) + suffix;
-	}
-
-	private void annotateStandardPlanChoice(TupleExpr tupleExpr, Mode mode, StandardPlanPolicy standardPlanPolicy,
-			StandardPlanCandidate standardPlan, boolean standardWinner, boolean shortCircuited) {
-		tupleExpr.setStringMetricPlanned("optimizer.cascadesStandardPlanPolicy",
-				standardPlanPolicy.name().toLowerCase(Locale.ROOT));
-		tupleExpr.setStringMetricPlanned("optimizer.cascadesWinner",
-				standardWinner ? STANDARD_PLAN_WINNER : CASCADES_PLAN_WINNER);
-		tupleExpr.setStringMetricPlanned("optimizer.cascadesStandardPlanPresent",
-				Boolean.toString(standardPlan.isPresent()));
-		tupleExpr.setStringMetricPlanned("optimizer.cascadesStandardPlanShortCircuit",
-				Boolean.toString(shortCircuited));
-		tupleExpr.setStringMetricPlanned("optimizer.cascadesStandardPlanOrigin", standardPlan.origin());
-		if (shortCircuited) {
-			tupleExpr.setStringMetricPlanned("optimizer.cascadesMode", mode.name().toLowerCase(Locale.ROOT));
-			tupleExpr.setStringMetricPlanned(APPLIED_METRIC, Boolean.toString(mode.replacesAlgebra()));
-		}
-		if (!standardPlan.isPresent()
-				|| !standardPlan.hasComputedCost() && !standardPlanFullAnnotationsEnabled()) {
-			return;
-		}
-		CostVector standardCost = standardPlan.cost();
-		if (standardCost == null || CostVector.INFINITE.equals(standardCost)) {
-			return;
-		}
-		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesStandardPlanRows", standardCost.rows());
-		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesStandardPlanWorkRows", standardCost.workRows());
-		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesStandardPlanObjective",
-				standardCost.objectiveScore());
-		tupleExpr.setDoubleMetricPlanned("optimizer.cascadesStandardPlanNodeCount", standardPlan.nodeCount());
-	}
-
-	private void applyStandardPlanWinner(TupleExpr tupleExpr, StandardPlanCandidate standardPlan) {
-		if (standardPlan == null || !standardPlan.isPresent()) {
-			return;
-		}
-		TupleExpr replacement = standardPlan.tupleExpr();
-		CostVector rootCost = standardPlan.cost();
-		if (standardPlanFullAnnotationsEnabled()) {
-			annotateStandardPlanWinnerTree(replacement, standardPlan);
-		} else {
-			annotateStandardPlanWinnerOwnershipTree(replacement, standardPlan.origin());
-			if (rootCost != null && !CostVector.INFINITE.equals(rootCost)) {
-				annotateStandardPlanNode(replacement, rootCost, standardPlan.origin());
-			}
-		}
-		replaceRootIfSafe(tupleExpr, replacement);
-		if (tupleExpr != replacement && rootCost != null && !CostVector.INFINITE.equals(rootCost)) {
-			annotateStandardPlanNode(tupleExpr, rootCost, standardPlan.origin());
-		}
-		repairStandardPlanRows(replacement);
-		repairStandardPlanRows(tupleExpr);
-	}
-
-	private void annotateStandardPlanWinnerTree(TupleExpr tupleExpr, StandardPlanCandidate standardPlan) {
-		if (tupleExpr == null || standardPlan == null || !standardPlan.isPresent()) {
-			return;
-		}
-		StandardPlanCostEstimator estimator = standardPlan.costEstimator();
-		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-			@Override
-			protected void meetNode(QueryModelNode node) {
-				if (node instanceof TupleExpr tuple) {
-					CostVector cost = estimator.cost(tuple);
-					annotateStandardPlanNode(tuple, cost, standardPlan.origin());
-				}
-				node.visitChildren(this);
-			}
-		});
-	}
-
-	private void annotateStandardPlanWinnerOwnershipTree(TupleExpr tupleExpr, String origin) {
-		if (tupleExpr == null) {
-			return;
-		}
-		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-			@Override
-			protected void meetNode(QueryModelNode node) {
-				if (node instanceof TupleExpr tuple) {
-					annotateStandardPlanOwnershipNode(tuple, origin);
-				}
-				node.visitChildren(this);
-			}
-		});
-	}
-
-	private void annotateStandardPlanOwnershipNode(TupleExpr tupleExpr, String origin) {
-		tupleExpr.setStringMetricPlanned(TelemetryMetricNames.PLANNER_ID, LmdbCascadesExplainFinalizer.PLANNER_ID);
-		tupleExpr.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, STANDARD_PLAN_SOURCE);
-		tupleExpr.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE, STANDARD_PLAN_USAGE);
-		tupleExpr.setStringMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_SHAPE, "vector");
-		tupleExpr.setStringMetricPlanned(TelemetryMetricNames.PLANNED_COST_SHAPE, "vector");
-		tupleExpr.setStringMetricPlanned("optimizer.cascadesWinner", STANDARD_PLAN_WINNER);
-		tupleExpr.setStringMetricPlanned("optimizer.cascadesStandardPlanOrigin",
-				origin == null ? "unknown" : origin);
-	}
-
-	private boolean standardPlanFullAnnotationsEnabled() {
-		return trackResultSize || Boolean.getBoolean(TRACE_PROPERTY)
-				|| Boolean.getBoolean(STANDARD_PLAN_FULL_ANNOTATIONS_PROPERTY);
-	}
-
-	private void annotateStandardPlanNode(TupleExpr tupleExpr, CostVector cost, String origin) {
-		tupleExpr.setStringMetricPlanned(TelemetryMetricNames.PLANNER_ID, LmdbCascadesExplainFinalizer.PLANNER_ID);
-		tupleExpr.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, STANDARD_PLAN_SOURCE);
-		tupleExpr.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE, STANDARD_PLAN_USAGE);
-		tupleExpr.setStringMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_SHAPE, "vector");
-		tupleExpr.setStringMetricPlanned(TelemetryMetricNames.PLANNED_COST_SHAPE, "vector");
-		tupleExpr.setStringMetricPlanned("optimizer.cascadesWinner", STANDARD_PLAN_WINNER);
-		tupleExpr.setStringMetricPlanned("optimizer.cascadesStandardPlanOrigin",
-				origin == null ? "unknown" : origin);
-		tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, cost.rows());
-		tupleExpr.setResultSizeEstimate(cost.rows());
-		tupleExpr.setCostEstimate(cost.workRows());
-		tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS, cost.workRows());
-		tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, cost.workRows());
-		tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE, cost.objectiveScore());
-		tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_UNCERTAINTY_ROWS, cost.uncertaintyRows());
-		tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_UNCERTAINTY_ROWS, cost.uncertaintyRows());
-		tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE, cost.confidence());
-		tupleExpr.setDoubleMetricPlanned("plannedCardinalityQError", cost.rowQErrorMax());
-		tupleExpr.setDoubleMetricPlanned("plannedCostRowQErrorMax", cost.rowQErrorMax());
-		tupleExpr.setDoubleMetricPlanned("plannedCostWorkQErrorMax", cost.workQErrorMax());
-		tupleExpr.setDoubleMetricPlanned("plannedCascadesEvidenceCount", cost.evidenceCount());
-	}
-
-	private void repairStandardPlanRows(TupleExpr tupleExpr) {
-		if (tupleExpr == null) {
-			return;
-		}
-		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-			@Override
-			public void meet(QueryRoot node) {
-				super.meet(node);
-				repairStandardQueryRootRows(node);
-			}
-
-			@Override
-			public void meet(Projection node) {
-				super.meet(node);
-				repairStandardProjectionRows(node);
-			}
-
-			@Override
-			public void meet(Extension node) {
-				super.meet(node);
-				repairStandardExtensionRows(node);
-			}
-
-			@Override
-			public void meet(Filter node) {
-				super.meet(node);
-				repairStandardFilterRows(node);
-			}
-
-			@Override
-			public void meet(Group node) {
-				super.meet(node);
-				repairStandardGroupRows(node);
-			}
-
-			@Override
-			public void meet(Join node) {
-				super.meet(node);
-				repairStandardJoinRows(node);
-			}
-		});
-	}
-
-	private void repairStandardQueryRootRows(QueryRoot queryRoot) {
-		if (!standardPlanNode(queryRoot)) {
-			return;
-		}
-		double childRows = plannedRowsOrResult(queryRoot.getArg());
-		if (isPositiveFinite(childRows)) {
-			raisePlannedRows(queryRoot, childRows, "root_child_plan");
-		}
-	}
-
-	private void repairStandardProjectionRows(Projection projection) {
-		if (!standardPlanNode(projection)) {
-			return;
-		}
-		double childRows = plannedRowsOrResult(projection.getArg());
-		repairRowPreservingRows(projection, childRows, "row_preserving_projection");
-	}
-
-	private void repairStandardExtensionRows(Extension extension) {
-		if (!standardPlanNode(extension)) {
-			return;
-		}
-		double childRows = plannedRowsOrResult(extension.getArg());
-		repairRowPreservingRows(extension, childRows, "row_preserving_extension");
-	}
-
-	private void repairStandardFilterRows(Filter filter) {
-		if (!standardPlanNode(filter)) {
-			return;
-		}
-		double childRows = plannedRowsOrResult(filter.getArg());
-		double currentRows = plannedRowsOrResult(filter);
-		double metricRows = filter.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
-		double finalRows = filter.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS);
-		if (isPositiveFinite(childRows) && (!isPositiveFinite(currentRows) || currentRows > childRows
-				|| !isPositiveFinite(metricRows) || !isPositiveFinite(finalRows))) {
-			double repairedRows = isPositiveFinite(currentRows) && currentRows <= childRows ? currentRows : childRows;
-			filter.setResultSizeEstimate(repairedRows);
-			filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, repairedRows);
-			filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, repairedRows);
-			filter.setStringMetricPlanned("optimizer.standardPlanRowRepair",
-					repairedRows == childRows ? "filter_child_upper_bound" : "filter_scalar_metric_repair");
-		}
-	}
-
-	private void repairStandardGroupRows(Group group) {
-		if (!standardPlanNode(group)) {
-			return;
-		}
-		double childRows = plannedRowsOrResult(group.getArg());
-		double inputRows = standardGroupInputRows(group.getArg());
-		if (isPositiveFinite(inputRows) && (!isPositiveFinite(childRows) || inputRows < childRows)) {
-			childRows = inputRows;
-		}
-		double duplicateInputRows = duplicateGroupInputRows(group);
-		if (isPositiveFinite(duplicateInputRows) && (!isPositiveFinite(childRows) || duplicateInputRows < childRows)) {
-			childRows = duplicateInputRows;
-		}
-		double currentRows = plannedRowsOrResult(group);
-		double metricRows = group.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
-		double finalRows = group.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS);
-		if (isPositiveFinite(childRows) && (!isPositiveFinite(currentRows) || currentRows > childRows
-				|| !isPositiveFinite(metricRows) || !isPositiveFinite(finalRows))) {
-			double repairedRows = isPositiveFinite(currentRows) && currentRows <= childRows ? currentRows : childRows;
-			group.setResultSizeEstimate(repairedRows);
-			group.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, repairedRows);
-			group.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, repairedRows);
-			group.setStringMetricPlanned("optimizer.standardPlanRowRepair",
-					repairedRows == childRows ? "group_child_upper_bound" : "group_scalar_metric_repair");
-		}
-	}
-
-	private double standardGroupInputRows(TupleExpr tupleExpr) {
-		if (tupleExpr instanceof Join join && standardPlanNode(join)
-				&& sharesBindings(join.getLeftArg(), join.getRightArg())) {
-			return minPositive(plannedRowsOrResult(join.getLeftArg()), plannedRowsOrResult(join.getRightArg()));
-		}
-		return Double.NaN;
-	}
-
-	private double minPositive(double left, double right) {
-		boolean leftValid = isPositiveFinite(left);
-		boolean rightValid = isPositiveFinite(right);
-		if (leftValid && rightValid) {
-			return Math.min(left, right);
-		}
-		return leftValid ? left : right;
-	}
-
-	private double duplicateGroupInputRows(Group group) {
-		if (group == null || !group.getGroupElements().isEmpty()) {
-			return Double.NaN;
-		}
-		double[] minRows = { Double.NaN };
-		group.getArg().visit(new AbstractQueryModelVisitor<RuntimeException>() {
-			@Override
-			protected void meetNode(QueryModelNode node) {
-				if (node instanceof TupleExpr tuple) {
-					double rows = plannedScalarRows(tuple);
-					if (isPositiveFinite(rows) && (!isPositiveFinite(minRows[0]) || rows < minRows[0])) {
-						minRows[0] = rows;
-					}
-				}
-				node.visitChildren(this);
-			}
-		});
-		return minRows[0];
-	}
-
-	private double plannedScalarRows(TupleExpr tupleExpr) {
-		if (tupleExpr == null) {
-			return Double.NaN;
-		}
-		double rows = tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
-		if (isPositiveFinite(rows)) {
-			return rows;
-		}
-		rows = tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS);
-		return isPositiveFinite(rows) ? rows : Double.NaN;
-	}
-
-	private void repairRowPreservingRows(TupleExpr tupleExpr, double childRows, String reason) {
-		if (!isPositiveFinite(childRows)) {
-			return;
-		}
-		double currentRows = plannedRowsOrResult(tupleExpr);
-		double metricRows = tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
-		double finalRows = tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS);
-		if (!isPositiveFinite(currentRows) || currentRows > childRows || !isPositiveFinite(metricRows)
-				|| !isPositiveFinite(finalRows)) {
-			tupleExpr.setResultSizeEstimate(childRows);
-			tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, childRows);
-			tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, childRows);
-			tupleExpr.setStringMetricPlanned("optimizer.standardPlanRowRepair", reason);
-		}
-	}
-
-	private void repairStandardJoinRows(Join join) {
-		if (!standardPlanNode(join) || !sharesBindings(join.getLeftArg(), join.getRightArg())) {
-			return;
-		}
-		double leftRows = plannedRowsOrResult(join.getLeftArg());
-		if (isPositiveFinite(leftRows)) {
-			raisePlannedRows(join, leftRows, "shared_binding_prefix_lower_bound");
-		}
-	}
-
-	private boolean standardPlanNode(TupleExpr tupleExpr) {
-		return tupleExpr != null
-				&& STANDARD_PLAN_SOURCE.equals(
-						tupleExpr.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
-	}
-
-	private boolean sharesBindings(TupleExpr left, TupleExpr right) {
-		if (left == null || right == null) {
-			return false;
-		}
-		Set<String> shared = new HashSet<>(left.getBindingNames());
-		shared.retainAll(right.getBindingNames());
-		return !shared.isEmpty();
-	}
-
-	private double plannedRowsOrResult(TupleExpr tupleExpr) {
-		if (tupleExpr == null) {
-			return Double.NaN;
-		}
-		double rows = tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
-		if (isPositiveFinite(rows)) {
-			return rows;
-		}
-		rows = tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS);
-		if (isPositiveFinite(rows)) {
-			return rows;
-		}
-		rows = tupleExpr.getResultSizeEstimate();
-		return isPositiveFinite(rows) ? rows : Double.NaN;
-	}
-
-	private void raisePlannedRows(TupleExpr tupleExpr, double rows, String reason) {
-		double currentRows = tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
-		if (isPositiveFinite(currentRows) && currentRows >= rows) {
-			return;
-		}
-		tupleExpr.setResultSizeEstimate(rows);
-		tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, rows);
-		tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, rows);
-		tupleExpr.setStringMetricPlanned("optimizer.standardPlanRowRepair", reason);
-	}
-
-	private void replaceRootIfSafe(TupleExpr original, TupleExpr replacement) {
+	private static void replaceRoot(TupleExpr original, TupleExpr replacement) {
 		if (replacement == null || replacement == original) {
 			return;
 		}
@@ -1532,322 +191,108 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			return;
 		}
 		if (original instanceof QueryRoot originalRoot) {
-			if (replacement instanceof QueryRoot replacementRoot) {
-				originalRoot.setArg(replacementRoot.getArg().clone());
-			} else {
-				originalRoot.setArg(replacement.clone());
-			}
+			originalRoot.setArg(replacement instanceof QueryRoot replacementRoot
+					? replacementRoot.getArg().clone()
+					: replacement.clone());
 			return;
 		}
-		if (original instanceof UnaryTupleOperator originalUnary
+		if (original.getClass() == replacement.getClass() && original instanceof UnaryTupleOperator originalUnary
 				&& replacement instanceof UnaryTupleOperator replacementUnary) {
 			originalUnary.setArg(replacementUnary.getArg().clone());
 			return;
 		}
-		if (original instanceof BinaryTupleOperator originalBinary
+		if (original.getClass() == replacement.getClass() && original instanceof BinaryTupleOperator originalBinary
 				&& replacement instanceof BinaryTupleOperator replacementBinary) {
 			originalBinary.setLeftArg(replacementBinary.getLeftArg().clone());
 			originalBinary.setRightArg(replacementBinary.getRightArg().clone());
+			return;
 		}
+		throw new CascadesPlanningException("Cannot install packed winner " + replacement.getClass().getName()
+				+ " into detached root " + original.getClass().getName());
 	}
 
-	private Mode mode(TupleExpr tupleExpr) {
-		return modeFromProperty();
+	private void annotatePlanningMetrics(TupleExpr root, Mode mode, CascadesPlan plan) {
+		PlanningMetrics metrics = plan.metrics();
+		root.setStringMetricPlanned("optimizer.cascadesMode", mode.name().toLowerCase(Locale.ROOT));
+		root.setStringMetricPlanned(APPLIED_METRIC, "true");
+		root.setStringMetricPlanned(SKIP_SKETCH_JOIN_ORDER_METRIC, "false");
+		root.setStringMetricPlanned("optimizer.cascadesCompleteness", plan.searchStatus().completeness().name());
+		root.setStringMetricPlanned("optimizer.cascadesApproximate",
+				Boolean.toString(plan.searchStatus().approximate()));
+		root.setDoubleMetricPlanned("optimizer.cascadesRootCostWorkRows", plan.cost().workRows());
+		root.setDoubleMetricPlanned("optimizer.cascadesRootRows", plan.cost().rows());
+		root.setDoubleMetricPlanned("optimizer.cascadesEncodeNanos", metrics.encodeNanos());
+		root.setDoubleMetricPlanned("optimizer.cascadesSearchNanos", metrics.searchNanos());
+		root.setDoubleMetricPlanned("optimizer.cascadesExtractionNanos", metrics.extractionNanos());
+		root.setDoubleMetricPlanned("optimizer.cascadesMaterializationNanos", metrics.materializationNanos());
+		root.setDoubleMetricPlanned("optimizer.cascadesCacheNanos", metrics.cacheNanos());
+		root.setDoubleMetricPlanned("optimizer.cascadesWorkUnits", metrics.workUnits());
+		root.setDoubleMetricPlanned("optimizer.cascadesGroups", metrics.groups());
+		root.setDoubleMetricPlanned("optimizer.cascadesLogicalExpressions", metrics.logicalExpressions());
+		root.setDoubleMetricPlanned("optimizer.cascadesPhysicalExpressions", metrics.physicalExpressions());
+		root.setDoubleMetricPlanned("optimizer.cascadesWinners", metrics.winners());
+		root.setStringMetricPlanned("optimizer.cascadesPlanCacheHit", Boolean.toString(metrics.planCacheHit()));
+		root.setStringMetricPlanned("optimizer.cascadesQueryTemplateCacheHit",
+				Boolean.toString(metrics.queryTemplateCacheHit()));
 	}
 
-	static boolean standardPlanBaselineCaptureEnabled() {
-		Mode mode = modeFromProperty();
-		StandardPlanPolicy policy = standardPlanPolicyFromProperty();
-		return mode.replacesAlgebra() && policy.enabled() && policy.fallbacks();
+	private static void enableRuntimeTelemetry(TupleExpr tupleExpr) {
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				node.setRuntimeTelemetryEnabled(true);
+				node.visitChildren(this);
+			}
+		});
 	}
 
-	private static Mode modeFromProperty() {
-		String value = System.getProperty(MODE_PROPERTY, "auto").trim().toLowerCase(Locale.ROOT);
-		if (value.isEmpty() || "false".equals(value) || "off".equals(value)) {
-			return Mode.OFF;
-		}
-		if ("shadow".equals(value)) {
-			return Mode.SHADOW;
-		}
-		if ("shadow-budgeted".equals(value)) {
-			return Mode.SHADOW_BUDGETED;
-		}
-		if ("budgeted".equals(value)) {
-			return Mode.BUDGETED;
-		}
-		if ("exact".equals(value) || "true".equals(value)) {
-			return Mode.EXACT;
-		}
-		if ("auto".equals(value)) {
-			return Mode.AUTO;
-		}
-		return Mode.OFF;
+	private static Mode configuredMode() {
+		String configured = System.getProperty(MODE_PROPERTY, "auto").trim().toLowerCase(Locale.ROOT);
+		return switch (configured) {
+		case "auto" -> Mode.AUTO;
+		case "exact" -> Mode.EXACT;
+		case "budgeted" -> Mode.BUDGETED;
+		default -> throw new CascadesPlanningException("Unsupported packed Cascades mode: " + configured);
+		};
 	}
 
-	private int countNodes(TupleExpr tupleExpr) {
-		NodeCounter counter = new NodeCounter();
-		tupleExpr.visit(counter);
-		return counter.count;
-	}
-
-	private int intProperty(String property, int fallback) {
-		String value = System.getProperty(property);
-		if (value == null || value.isBlank()) {
-			return fallback;
-		}
-		try {
-			return Math.max(1, Integer.parseInt(value.trim()));
-		} catch (NumberFormatException e) {
-			return fallback;
-		}
-	}
-
-	/**
-	 * Wall-clock budget for budgeted searches. {@code <= 0} disables the wall-clock deadline entirely (deterministic
-	 * planning: the task-count budget is the only bound); absent or unparsable values fall back to the default.
-	 */
 	static long configuredTimeoutMillis() {
-		String value = System.getProperty(TIMEOUT_MILLIS_PROPERTY);
-		if (value == null || value.isBlank()) {
+		String configured = System.getProperty(TIMEOUT_MILLIS_PROPERTY);
+		if (configured == null || configured.isBlank()) {
 			return DEFAULT_TIMEOUT_MILLIS;
 		}
 		try {
-			return Math.max(0L, Long.parseLong(value.trim()));
-		} catch (NumberFormatException e) {
-			return DEFAULT_TIMEOUT_MILLIS;
+			long value = Long.parseLong(configured);
+			if (value <= 0L) {
+				throw new NumberFormatException("non-positive");
+			}
+			return value;
+		} catch (NumberFormatException error) {
+			throw new CascadesPlanningException("Invalid positive timeout in " + TIMEOUT_MILLIS_PROPERTY + ": "
+					+ configured, error);
 		}
 	}
 
-	private long longProperty(String property, long fallback) {
-		String value = System.getProperty(property);
-		if (value == null || value.isBlank()) {
-			return fallback;
+	private static int positiveIntProperty(String name, int defaultValue) {
+		String configured = System.getProperty(name);
+		if (configured == null || configured.isBlank()) {
+			return defaultValue;
 		}
 		try {
-			return Math.max(1L, Long.parseLong(value.trim()));
-		} catch (NumberFormatException e) {
-			return fallback;
-		}
-	}
-
-	private StandardPlanPolicy standardPlanPolicy() {
-		return standardPlanPolicyFromProperty();
-	}
-
-	private static StandardPlanPolicy standardPlanPolicyFromProperty() {
-		String value = System.getProperty(STANDARD_PLAN_POLICY_PROPERTY, "fallback");
-		return StandardPlanPolicy.from(value);
-	}
-
-	private enum StandardPlanPolicy {
-		OFF(false, false),
-		FALLBACK(true, true),
-		SHADOW(true, false);
-
-		private final boolean enabled;
-		private final boolean fallbacks;
-
-		StandardPlanPolicy(boolean enabled, boolean fallbacks) {
-			this.enabled = enabled;
-			this.fallbacks = fallbacks;
-		}
-
-		private static StandardPlanPolicy from(String value) {
-			if (value == null || value.isBlank()) {
-				return FALLBACK;
+			int value = Integer.parseInt(configured);
+			if (value <= 0) {
+				throw new NumberFormatException("non-positive");
 			}
-			return switch (value.trim().toLowerCase(Locale.ROOT)) {
-			case "off", "false", "none" -> OFF;
-			case "shadow" -> SHADOW;
-			case "fallback", "auto", "compare", "true", "bound", "bounded", "shortcut", "short-circuit", "standard" -> FALLBACK;
-			default -> FALLBACK;
-			};
-		}
-
-		private boolean enabled() {
-			return enabled;
-		}
-
-		private boolean fallbacks() {
-			return fallbacks;
-		}
-	}
-
-	private final class StandardPlanCandidate {
-		private final TupleExpr tupleExpr;
-		private final String origin;
-		private StandardPlanCostEstimator costEstimator;
-		private CostVector cost;
-		private int nodeCount = -1;
-
-		private StandardPlanCandidate(TupleExpr tupleExpr, String origin) {
-			this.tupleExpr = tupleExpr;
-			this.origin = origin == null || origin.isBlank() ? "unknown" : origin;
-		}
-
-		private TupleExpr tupleExpr() {
-			return tupleExpr;
-		}
-
-		private String origin() {
-			return origin;
-		}
-
-		private boolean isPresent() {
-			return tupleExpr != null;
-		}
-
-		private boolean hasComputedCost() {
-			return cost != null;
-		}
-
-		private CostVector cost() {
-			if (cost == null) {
-				try {
-					cost = costEstimator().cost(tupleExpr);
-				} catch (RuntimeException e) {
-					cost = CostVector.INFINITE;
-				}
-			}
-			return cost;
-		}
-
-		private StandardPlanCostEstimator costEstimator() {
-			if (costEstimator == null) {
-				costEstimator = new StandardPlanCostEstimator();
-			}
-			return costEstimator;
-		}
-
-		private int nodeCount() {
-			if (nodeCount < 0) {
-				nodeCount = tupleExpr == null ? 0 : countNodes(tupleExpr);
-			}
-			return nodeCount;
-		}
-	}
-
-	/**
-	 * Diagnostic standard-plan annotation estimator. Its recursive shape formula is not calibrated against Cascades
-	 * {@link CostVector} instances and must not be used for standard-vs-Cascades arbitration.
-	 */
-	private final class StandardPlanCostEstimator {
-		private final IdentityHashMap<TupleExpr, CostVector> cache = new IdentityHashMap<>();
-
-		private CostVector cost(TupleExpr tupleExpr) {
-			if (tupleExpr == null) {
-				return CostVector.INFINITE;
-			}
-			CostVector cached = cache.get(tupleExpr);
-			if (cached != null) {
-				return cached;
-			}
-			CostVector cost = compute(tupleExpr);
-			cache.put(tupleExpr, cost);
-			return cost;
-		}
-
-		private CostVector compute(TupleExpr tupleExpr) {
-			double rows = safeCardinality(tupleExpr);
-			double workRows = Math.max(1.0d, rows);
-			double memoryRows = 0.0d;
-			if (tupleExpr instanceof BinaryTupleOperator binary) {
-				CostVector left = cost(binary.getLeftArg());
-				CostVector right = cost(binary.getRightArg());
-				workRows = left.workRows() + right.workRows() + Math.max(rows, left.rows() + right.rows());
-				memoryRows = left.memoryRows() + right.memoryRows();
-				if (tupleExpr instanceof Join || tupleExpr instanceof LeftJoin) {
-					memoryRows += Math.min(left.rows(), right.rows());
-				}
-			} else if (tupleExpr instanceof UnaryTupleOperator unary) {
-				CostVector child = cost(unary.getArg());
-				if (tupleExpr instanceof Projection) {
-					rows = child.rows();
-				}
-				workRows = child.workRows() + Math.max(rows, child.rows());
-				memoryRows = child.memoryRows();
-			}
-			return new CostVector(rows, workRows, memoryRows, 0.0d, 0.0d, 4.0d, 4.0d, 4.0d, 4.0d,
-					rows * 3.0d, 0.25d, 0.0d);
-		}
-
-		private double safeCardinality(TupleExpr tupleExpr) {
-			double plannedRows = tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
-			if (isPositiveFinite(plannedRows)) {
-				return plannedRows;
-			}
-			try {
-				double cardinality = statistics == null ? 1.0d : statistics.getCardinality(tupleExpr);
-				return Double.isFinite(cardinality) && cardinality >= 0.0d ? Math.max(1.0d, cardinality) : 1.0d;
-			} catch (RuntimeException e) {
-				return 1.0d;
-			}
+			return value;
+		} catch (NumberFormatException error) {
+			throw new CascadesPlanningException("Invalid positive work budget in " + name + ": " + configured,
+					error);
 		}
 	}
 
 	private enum Mode {
-		OFF(false),
-		SHADOW(false),
-		SHADOW_BUDGETED(false),
-		EXACT(true),
-		BUDGETED(true),
-		AUTO(true);
-
-		private final boolean replacesAlgebra;
-
-		Mode(boolean replacesAlgebra) {
-			this.replacesAlgebra = replacesAlgebra;
-		}
-
-		boolean replacesAlgebra() {
-			return replacesAlgebra;
-		}
+		AUTO,
+		EXACT,
+		BUDGETED
 	}
-
-	private static final class NodeCounter extends AbstractQueryModelVisitor<RuntimeException> {
-		private int count;
-
-		private NodeCounter() {
-		}
-
-		@Override
-		protected void meetNode(QueryModelNode node) {
-			count++;
-			super.meetNode(node);
-		}
-	}
-
-	private static final class JoinPlanningBarrierFinder extends AbstractQueryModelVisitor<RuntimeException> {
-		private final TupleExpr root;
-		private boolean found;
-
-		private JoinPlanningBarrierFinder(TupleExpr root) {
-			this.root = root;
-		}
-
-		@Override
-		protected void meetNode(QueryModelNode node) {
-			if (found) {
-				return;
-			}
-			if (node != root && isBarrier(node)) {
-				found = true;
-				return;
-			}
-			super.meetNode(node);
-		}
-
-		private boolean isBarrier(QueryModelNode node) {
-			if (!(node instanceof TupleExpr tupleExpr)) {
-				return false;
-			}
-			return !(tupleExpr instanceof Join
-					|| tupleExpr instanceof Filter
-					|| tupleExpr instanceof StatementPattern
-					|| tupleExpr instanceof BindingSetAssignment
-					|| tupleExpr instanceof ArbitraryLengthPath
-					|| tupleExpr instanceof ZeroLengthPath);
-		}
-	}
-
 }

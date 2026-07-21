@@ -90,7 +90,8 @@ final class LmdbFiniteJoinSurfaceEstimator {
 		if (rows.isEmpty()) {
 			return Optional.of(new SurfaceEstimate(0.0d, 0.0d, 0L, 0,
 					FiniteRelationEstimate.fromRows(slots.names(), List.of(),
-							"lmdb-finite-derived-surface"), true, 0));
+							"lmdb-finite-derived-surface"),
+					true, 0));
 		}
 
 		long scannedRows = 0L;

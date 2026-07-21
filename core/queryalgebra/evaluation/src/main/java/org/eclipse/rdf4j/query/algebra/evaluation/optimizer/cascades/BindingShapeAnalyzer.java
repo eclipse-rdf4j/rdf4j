@@ -33,10 +33,10 @@ import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.ScalarFacts;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.TupleExprToIr;
 
 /** Invocation-local, mask-native stream binding analysis for mutable tuple algebra. */
 final class BindingShapeAnalyzer {
@@ -79,7 +79,7 @@ final class BindingShapeAnalyzer {
 		}
 		if (tupleExpr instanceof TripleRef tripleRef && tupleExpr.getClass() == TripleRef.class) {
 			BindingMask bindings = pathBindings(tripleRef.getSubjectVar(), tripleRef.getPredicateVar(),
-					tripleRef.getObjectVar()).union(unboundBinding(tripleRef.getExprVar()));
+					tripleRef.getObjectVar()).union(namedBinding(tripleRef.getExprVar()));
 			return shape(bindings, bindings);
 		}
 		if (tupleExpr instanceof BindingSetAssignment assignment) {
@@ -174,12 +174,21 @@ final class BindingShapeAnalyzer {
 			BindingMask target = universe.maskOfName(element.getName());
 			possible = possible.union(target);
 			localOutputs = localOutputs.union(target);
-			ScalarFacts facts = ScalarFacts.of(universe, TupleExprToIr.scalar(universe, element.getExpr()));
-			if (facts.totalWhenAssured() && assured.containsAll(facts.freeVars())) {
+			if (extensionResultIsAssured(element.getExpr(), assured)) {
 				assured = assured.union(target);
 			}
 		}
 		return new BindingShape(possible, assured, null, localOutputs);
+	}
+
+	private boolean extensionResultIsAssured(ValueExpr expression, BindingMask assuredInputs) {
+		if (expression instanceof ValueConstant) {
+			return true;
+		}
+		if (expression instanceof Var variable) {
+			return variable.hasValue() || assuredInputs.containsAll(universe.maskOfName(variable.getName()));
+		}
+		return false;
 	}
 
 	private BindingShape projectedShape(ProjectionElemList projection, BindingShape argument) {
@@ -192,9 +201,7 @@ final class BindingShapeAnalyzer {
 			BindingMask source = universe.maskOfName(sourceName);
 			BindingMask target = universe.maskOfName(targetName);
 			boolean sourcePossible = argument.possible().containsAll(source);
-			if (sourcePossible) {
-				possible = possible.union(target);
-			}
+			possible = possible.union(target);
 			if (argument.assured().containsAll(source)) {
 				assured = assured.union(target);
 			}
@@ -237,11 +244,11 @@ final class BindingShapeAnalyzer {
 	}
 
 	private BindingMask pathBindings(Var first, Var second, Var third) {
-		return unboundBinding(first).union(unboundBinding(second)).union(unboundBinding(third));
+		return namedBinding(first).union(namedBinding(second)).union(namedBinding(third));
 	}
 
-	private BindingMask unboundBinding(Var var) {
-		return var == null || var.hasValue() ? BindingMask.EMPTY : universe.maskOfName(var.getName());
+	private BindingMask namedBinding(Var var) {
+		return var == null ? BindingMask.EMPTY : universe.maskOfName(var.getName());
 	}
 
 	private static BindingShape shape(BindingMask possible, BindingMask assured) {

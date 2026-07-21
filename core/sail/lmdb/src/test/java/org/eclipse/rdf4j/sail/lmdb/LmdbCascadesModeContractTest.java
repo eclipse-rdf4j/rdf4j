@@ -30,7 +30,7 @@ import org.junit.jupiter.api.Test;
 class LmdbCascadesModeContractTest {
 
 	@Test
-	void defaultAndLegacyCompleteModesDrainAllOptimizerWork() {
+	void defaultAutoAndExactModesDrainAllOptimizerWork() {
 		PropertySnapshot properties = PropertySnapshot.capture();
 		try {
 			configureDeterministicSingleTaskBudget();
@@ -39,10 +39,10 @@ class LmdbCascadesModeContractTest {
 			assertEquals("COMPLETE", optimizeConnectedRegion(), "the production default must be complete");
 
 			System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "auto");
-			assertEquals("COMPLETE", optimizeConnectedRegion(), "legacy auto must map to complete search");
+			assertEquals("COMPLETE", optimizeConnectedRegion(), "auto must complete within the configured work budget");
 
 			System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "exact");
-			assertEquals("COMPLETE", optimizeConnectedRegion(), "legacy exact must remain complete search");
+			assertEquals("COMPLETE", optimizeConnectedRegion(), "exact must remain complete search");
 		} finally {
 			properties.restore();
 		}
@@ -62,30 +62,9 @@ class LmdbCascadesModeContractTest {
 		}
 	}
 
-	@Test
-	void legacyShortcutPolicyCannotBypassUnifiedOptimizer() {
-		PropertySnapshot properties = PropertySnapshot.capture();
-		try {
-			configureDeterministicSingleTaskBudget();
-			System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "budgeted");
-			System.setProperty(LmdbCascadesOptimizer.STANDARD_PLAN_POLICY_PROPERTY, "shortcut");
-
-			QueryRoot root = optimizeConnectedRegionRoot();
-
-			assertEquals("BUDGET_EXHAUSTED", root.getStringMetricPlanned("optimizer.cascadesCompleteness"),
-					"legacy standard-plan routing must not skip the unified scheduler");
-			assertEquals("false", root.getStringMetricPlanned("optimizer.cascadesStandardPlanShortCircuit"),
-					"legacy shortcut configuration is only a temporary no-winner fallback alias");
-		} finally {
-			properties.restore();
-		}
-	}
-
 	private static void configureDeterministicSingleTaskBudget() {
-		System.setProperty(LmdbCascadesOptimizer.STANDARD_PLAN_POLICY_PROPERTY, "off");
 		System.setProperty(LmdbCascadesOptimizer.BUDGET_PROPERTY, "1");
 		System.setProperty(LmdbCascadesOptimizer.TIMEOUT_MILLIS_PROPERTY, "60000");
-		System.setProperty(LmdbHypergraphJoinPlanner.DPHYP_PROPERTY, "true");
 	}
 
 	private static String optimizeConnectedRegion() {
@@ -114,23 +93,19 @@ class LmdbCascadesModeContractTest {
 				new Var(object));
 	}
 
-	private record PropertySnapshot(String mode, String policy, String budget, String timeout, String dphyp) {
+	private record PropertySnapshot(String mode, String budget, String timeout) {
 
 		private static PropertySnapshot capture() {
 			return new PropertySnapshot(
 					System.getProperty(LmdbCascadesOptimizer.MODE_PROPERTY),
-					System.getProperty(LmdbCascadesOptimizer.STANDARD_PLAN_POLICY_PROPERTY),
 					System.getProperty(LmdbCascadesOptimizer.BUDGET_PROPERTY),
-					System.getProperty(LmdbCascadesOptimizer.TIMEOUT_MILLIS_PROPERTY),
-					System.getProperty(LmdbHypergraphJoinPlanner.DPHYP_PROPERTY));
+					System.getProperty(LmdbCascadesOptimizer.TIMEOUT_MILLIS_PROPERTY));
 		}
 
 		private void restore() {
 			restore(LmdbCascadesOptimizer.MODE_PROPERTY, mode);
-			restore(LmdbCascadesOptimizer.STANDARD_PLAN_POLICY_PROPERTY, policy);
 			restore(LmdbCascadesOptimizer.BUDGET_PROPERTY, budget);
 			restore(LmdbCascadesOptimizer.TIMEOUT_MILLIS_PROPERTY, timeout);
-			restore(LmdbHypergraphJoinPlanner.DPHYP_PROPERTY, dphyp);
 		}
 
 		private static void restore(String property, String value) {

@@ -159,13 +159,6 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 				filter.setCondition(mergeConditions(childFilter.getCondition(), filter.getCondition()));
 				filter.setArg(childFilter.getArg());
 			}
-			TupleExpr nullRejectingOptionalRewrite = LmdbNullRejectingOptionalSupport.rewrite(filter,
-					incomingBindingNames);
-			if (nullRejectingOptionalRewrite != null) {
-				filter.replaceWith(nullRejectingOptionalRewrite);
-				nullRejectingOptionalRewrite.visit(this);
-				return;
-			}
 			if (!rewriteSmallLiteralFilterAnchors(filter)) {
 				annotateFilter(filter);
 			}
@@ -178,7 +171,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 			return null;
 		}
 
-		Set<String> conditionVars = DeferredFilter.conditionBindingNames(rightFilter.getCondition());
+		Set<String> conditionVars = LmdbJoinPlanSupport.conditionBindingNames(rightFilter.getCondition());
 		if (!rightPattern.getBindingNames().containsAll(conditionVars)
 				|| !difference.getLeftArg().getAssuredBindingNames().containsAll(conditionVars)
 				|| !isSafeTotalMinusLocalCondition(rightFilter.getCondition(), conditionVars)
@@ -566,7 +559,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		if (relation == null) {
 			return null;
 		}
-		Set<String> conditionVars = DeferredFilter.conditionBindingNames(condition);
+		Set<String> conditionVars = LmdbJoinPlanSupport.conditionBindingNames(condition);
 		if (!relation.getBindingNames().containsAll(conditionVars)) {
 			return null;
 		}
@@ -656,7 +649,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		if (!containsOnlySameTermEqualities(condition)) {
 			return false;
 		}
-		Set<String> conditionVars = DeferredFilter.conditionBindingNames(condition);
+		Set<String> conditionVars = LmdbJoinPlanSupport.conditionBindingNames(condition);
 		if (conditionVars.size() < 2) {
 			return false;
 		}
@@ -703,7 +696,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 
 	private static BindingSetAssignment finiteFilterRelation(ValueExpr condition,
 			Map<String, LinkedHashSet<Value>> assignmentValues) {
-		Set<String> conditionVars = DeferredFilter.conditionBindingNames(condition);
+		Set<String> conditionVars = LmdbJoinPlanSupport.conditionBindingNames(condition);
 		if (conditionVars.size() < 2) {
 			return null;
 		}
@@ -935,9 +928,6 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		if (pattern == null || !"object".equals(localPatternComponent(pattern, bindingName))) {
 			return false;
 		}
-		if (LmdbNullRejectingOptionalSupport.isRewrittenOptionalBinding(filter, bindingName)) {
-			return false;
-		}
 		if (containsLeftJoinRightBinding(filter.getArg(), bindingName)) {
 			return false;
 		}
@@ -987,10 +977,6 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		if (pattern != null) {
 			if (!objectAnchor) {
 				return false;
-			}
-			if (LmdbNullRejectingOptionalSupport.isRewrittenOptionalBinding(filter, bindingName)
-					&& allAnchorValuesAreSafeValues(anchor, bindingName)) {
-				return true;
 			}
 			Optional<RdfTermDomain> guarantee = knownRdfTermDomain(pattern);
 			return guarantee.isPresent() && canMaterializeObjectFilterAnchor(anchor, bindingName, guarantee.get());

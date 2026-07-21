@@ -40,7 +40,6 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Now;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.ScalarExpr;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
@@ -63,48 +62,6 @@ public final class ScalarEvaluationEffects {
 		public boolean reorderingIsSafe() {
 			return this == REPEATABLE || this == QUERY_STABLE;
 		}
-	}
-
-	public static Effect effectOf(ScalarExpr expression) {
-		if (expression == null
-				|| expression instanceof ScalarExpr.VarRef
-				|| expression instanceof ScalarExpr.Constant
-				|| expression instanceof ScalarExpr.Bound) {
-			return Effect.REPEATABLE;
-		}
-		if (expression instanceof ScalarExpr.And and) {
-			return combine(effectOf(and.left()), effectOf(and.right()));
-		}
-		if (expression instanceof ScalarExpr.Or or) {
-			return combine(effectOf(or.left()), effectOf(or.right()));
-		}
-		if (expression instanceof ScalarExpr.Not not) {
-			return effectOf(not.arg());
-		}
-		if (expression instanceof ScalarExpr.Eq eq) {
-			return combine(effectOf(eq.left()), effectOf(eq.right()));
-		}
-		if (expression instanceof ScalarExpr.SameTerm sameTerm) {
-			return combine(effectOf(sameTerm.left()), effectOf(sameTerm.right()));
-		}
-		if (expression instanceof ScalarExpr.In in) {
-			Effect effect = effectOf(in.value());
-			for (ScalarExpr candidate : in.candidates()) {
-				effect = combine(effect, effectOf(candidate));
-			}
-			return effect;
-		}
-		if (expression instanceof ScalarExpr.FunctionCall function) {
-			if (function.opaqueOriginal() != null) {
-				return effectOf(function.opaqueOriginal());
-			}
-			Effect arguments = combine(function.args());
-			if (FN_STRING_IRI.equals(function.iri())) {
-				return arguments;
-			}
-			return functionEffect(function.iri(), arguments, scalarArgsAreConstant(function.args()));
-		}
-		return Effect.UNKNOWN;
 	}
 
 	public static Effect effectOf(ValueExpr expression) {
@@ -160,10 +117,6 @@ public final class ScalarEvaluationEffects {
 		return Effect.UNKNOWN;
 	}
 
-	public static boolean reorderingIsSafe(ScalarExpr expression) {
-		return effectOf(expression).reorderingIsSafe();
-	}
-
 	public static boolean reorderingIsSafe(ValueExpr expression) {
 		return effectOf(expression).reorderingIsSafe();
 	}
@@ -205,14 +158,6 @@ public final class ScalarEvaluationEffects {
 		CodeSource contractSource = contract.getProtectionDomain().getCodeSource();
 		CodeSource implementationSource = implementation.getProtectionDomain().getCodeSource();
 		return contractSource != null && contractSource.equals(implementationSource);
-	}
-
-	private static Effect combine(List<ScalarExpr> expressions) {
-		Effect effect = Effect.REPEATABLE;
-		for (ScalarExpr expression : expressions) {
-			effect = combine(effect, effectOf(expression));
-		}
-		return effect;
 	}
 
 	private static Effect combineValueExpressions(List<ValueExpr> expressions) {
@@ -265,15 +210,6 @@ public final class ScalarEvaluationEffects {
 			return Effect.QUERY_STABLE;
 		}
 		return Effect.REPEATABLE;
-	}
-
-	private static boolean scalarArgsAreConstant(List<ScalarExpr> arguments) {
-		for (ScalarExpr argument : arguments) {
-			if (!(argument instanceof ScalarExpr.Constant)) {
-				return false;
-			}
-		}
-		return true;
 	}
 
 	private static boolean valueArgsAreConstant(List<ValueExpr> arguments) {

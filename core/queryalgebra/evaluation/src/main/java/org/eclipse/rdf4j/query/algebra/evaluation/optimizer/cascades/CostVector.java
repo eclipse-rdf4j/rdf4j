@@ -82,18 +82,8 @@ public record CostVector(double rows, double workRows, double memoryRows, double
 		return estimateVector == null ? INFINITE : estimateVector.toCostVector();
 	}
 
-	/** Raw executable resources. Policy adjustment belongs exclusively to {@link CostOrdering}. */
-	public ExecutionCost executionCost() {
-		return new ExecutionCost(0.0d, workRows, 0.0d, memoryRows, seeks, pageWalkRows);
-	}
-
 	public CardinalityEstimate cardinalityEstimate(String source) {
 		return CardinalityEstimate.estimated(rows, source);
-	}
-
-	public EstimateRisk estimateRisk(String provenance) {
-		return new EstimateRisk(rowQErrorMean, rowQErrorMax, workQErrorMean, workQErrorMax, uncertaintyRows, confidence,
-				evidenceCount, provenance);
 	}
 
 	public CostVector plus(CostVector other) {

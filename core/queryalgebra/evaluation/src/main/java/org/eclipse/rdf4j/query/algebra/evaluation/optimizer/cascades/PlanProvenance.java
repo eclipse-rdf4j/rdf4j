@@ -35,7 +35,7 @@ public record PlanProvenance(int memoGroupId, int expressionId, String operator,
 		deliveredProperties = deliveredProperties == null ? PhysicalProperties.ANY : deliveredProperties;
 		rejectedAlternatives = rejectedAlternatives == null || rejectedAlternatives.isEmpty() ? List.of()
 				: List.copyOf(rejectedAlternatives);
-		proofs = RuleProofLineage.immutable(proofs);
+		proofs = proofs == null || proofs.isEmpty() ? List.of() : List.copyOf(proofs);
 		reason = reason == null ? "" : reason;
 	}
 

@@ -16,36 +16,12 @@ import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.BindingShape;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.ScalarExpr;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ir.ScalarFacts;
 
 /** Shared proof that an OPTIONAL filtered by a negated RHS-only assured binding has only left-side outputs. */
 @Experimental
 public final class OptionalNegatedBoundSemantics {
 
 	private OptionalNegatedBoundSemantics() {
-	}
-
-	/** Immutable-IR proof for negated-bound OPTIONAL analysis. */
-	public static boolean retainsOnlyLeft(BindingUniverse universe, ScalarExpr condition, BindingShape left,
-			BindingShape right) {
-		return retainsOnlyLeft(universe, condition, left, right, BindingMask.EMPTY);
-	}
-
-	/** IR proof with the bindings supplied by the parent evaluation context. */
-	public static boolean retainsOnlyLeft(BindingUniverse universe, ScalarExpr condition, BindingShape left,
-			BindingShape right, BindingMask incoming) {
-		if (universe == null || condition == null || left == null || right == null) {
-			return false;
-		}
-		BindingSymbol tested = ScalarFacts.negatedBoundVariable(condition);
-		if (tested == null) {
-			return false;
-		}
-		BindingMask testedMask = BindingShape.maskOfSymbol(universe, tested);
-		return retainsOnlyLeft(testedMask, left.possible(), right.possible(), left.assured(), right.assured(),
-				incoming);
 	}
 
 	static boolean retainsOnlyLeft(BindingUniverse universe, ValueExpr condition, BindingMask leftPossible,

@@ -61,6 +61,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.SailException;
@@ -105,8 +106,10 @@ class LmdbSailStore implements SailStore {
 	private static final String COUNT_RUNTIME_METRIC = "optimizer.countRuntime";
 	private static final int EXACT_STATEMENT_COUNT_CACHE_MAX_ENTRIES = 65_536;
 	private static final int EXACT_STATEMENT_LOOKUP_CACHE_MAX_ENTRIES = 65_536;
+	private static final int CASCADES_PLAN_CACHE_CAPACITY = 1_024;
 
 	private final TripleStore tripleStore;
+	private final PackedPlanCache cascadesPlanCache = new PackedPlanCache(CASCADES_PLAN_CACHE_CAPACITY);
 
 	private final ValueStore valueStore;
 	private final int bulkOperationSize;
@@ -899,7 +902,7 @@ class LmdbSailStore implements SailStore {
 	@Override
 	public EvaluationStatistics getEvaluationStatistics() {
 		return new LmdbEvaluationStatistics(valueStore, tripleStore, sketchBasedJoinEstimator, filterSelectivityStats,
-				operatorFeedbackStats, statementPatternCardinalitySource);
+				operatorFeedbackStats, statementPatternCardinalitySource, cascadesPlanCache);
 	}
 
 	@Override
