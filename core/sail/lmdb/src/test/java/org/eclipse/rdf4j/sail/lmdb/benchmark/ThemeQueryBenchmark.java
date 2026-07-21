@@ -117,8 +117,8 @@ public class ThemeQueryBenchmark {
 			"8",
 			"9",
 			"10",
-//			"11",
-//			"12"
+			"11",
+			"12"
 	})
 	public int z_queryIndex;
 
@@ -129,7 +129,7 @@ public class ThemeQueryBenchmark {
 //			"ENGINEERING",
 //			"HIGHLY_CONNECTED",
 //			"TRAIN",
-			"ELECTRICAL_GRID",
+//			"ELECTRICAL_GRID",
 //			"PHARMA",
 //			"ADAPTIVE_FILTER_PLACEMENT",
 			"ANALYTICS"

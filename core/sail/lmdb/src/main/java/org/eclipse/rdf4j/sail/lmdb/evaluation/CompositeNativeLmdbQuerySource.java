@@ -68,6 +68,11 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public long literalDatatypeId(long id) {
+		return sources.get(0).literalDatatypeId(id);
+	}
+
+	@Override
 	public Object idSpace() {
 		return idSpace;
 	}
@@ -202,6 +207,14 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		return active == null ? LmdbPrefixRunCursor.EMPTY
 				: active.prefixRuns(plan, subj, pred, obj, context,
 						countRunRows);
+	}
+
+	@Override
+	public long[][] prefixRunSplitValues(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
+			int targetPartitions, int tupleLength) throws IOException {
+		NativeLmdbQuerySource active = onlyActiveSource();
+		return active == null ? null
+				: active.prefixRunSplitValues(plan, subj, pred, obj, context, targetPartitions, tupleLength);
 	}
 
 	@Override

@@ -88,6 +88,11 @@ final class SyntheticValueSource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public long literalDatatypeId(long id) {
+		return synthetic(id) ? -1L : delegate.literalDatatypeId(id);
+	}
+
+	@Override
 	public RecordIterator statements(long subj, long pred, long obj, long context) throws IOException {
 		if (anySynthetic(subj, pred, obj, context)) {
 			return EMPTY;
@@ -138,6 +143,15 @@ final class SyntheticValueSource implements NativeLmdbQuerySource {
 			return LmdbPrefixRunCursor.EMPTY;
 		}
 		return delegate.prefixRuns(plan, subj, pred, obj, context, countRunRows);
+	}
+
+	@Override
+	public long[][] prefixRunSplitValues(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
+			int targetPartitions, int tupleLength) throws IOException {
+		if (anySynthetic(subj, pred, obj, context)) {
+			return new long[0][];
+		}
+		return delegate.prefixRunSplitValues(plan, subj, pred, obj, context, targetPartitions, tupleLength);
 	}
 
 	@Override

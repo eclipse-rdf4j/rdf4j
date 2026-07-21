@@ -43,6 +43,14 @@ public interface NativeLmdbQuerySource {
 
 	Value lazyValue(long id) throws QueryEvaluationException;
 
+	/**
+	 * Datatype value id of a referenced (non-inlined) literal, read from the record header without materializing the
+	 * label (0 = plain xsd:string, -1 = unsupported or not a literal record).
+	 */
+	default long literalDatatypeId(long id) {
+		return -1L;
+	}
+
 	default LmdbNativeValueCodec nativeValueCodec() {
 		Object idSpace = idSpace();
 		return idSpace instanceof ValueStore ? new LmdbNativeValueCodec((ValueStore) idSpace) : null;
@@ -84,6 +92,17 @@ public interface NativeLmdbQuerySource {
 
 	default LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
 			boolean countRunRows) throws IOException {
+		return null;
+	}
+
+	/**
+	 * Plans ascending split tuples ({@code tupleLength} leading key fields of the plan's index) that tile the
+	 * prefix-run scan into disjoint ranges for parallel execution, or {@code null}/empty when unsupported. With
+	 * {@code tupleLength} equal to the plan's prefix length, boundaries sit between whole runs; with 4 they are raw key
+	 * positions and a partition boundary may fall inside a run.
+	 */
+	default long[][] prefixRunSplitValues(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
+			int targetPartitions, int tupleLength) throws IOException {
 		return null;
 	}
 

@@ -2172,6 +2172,153 @@ class TripleStore implements Closeable {
 	List<byte[]> planRootSplitKeys(Txn txnRef, long subj, long pred, long obj, long context, boolean explicit,
 			int targetPartitions) throws IOException {
 		TripleIndex index = bestIndexByBoundMask[boundMask(subj, pred, obj, context)];
+		return planSplitKeys(txnRef, index, subj, pred, obj, context, explicit, targetPartitions);
+	}
+
+	/**
+	 * Plans ascending, deduplicated split tuples (values in the index's key order, {@code tupleLength} fields each) by
+	 * recursively bisecting the plan's own index between its first and last matching key. Recursive bisection — unlike
+	 * the one-shot interpolation of {@link #planRootSplitKeys} — subdivides inside a heavy leading value (the
+	 * interpolated midpoint of two keys sharing their leading field interpolates the next field), so skewed leading
+	 * fields still yield balanced partitions. With {@code tupleLength == plan.prefixLength()} the boundaries sit
+	 * between whole runs; with {@code tupleLength == 4} they are raw key positions (partition boundaries may fall
+	 * inside a run — callers must merge partial counts per group). Returns an empty array when the range holds too few
+	 * keys to split.
+	 */
+	long[][] planPrefixRunSplitValues(Txn txnRef, LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
+			boolean explicit, int targetPartitions, int tupleLength) throws IOException {
+		List<byte[]> splitKeys = planBalancedSplitKeys(txnRef, plan.index(), subj, pred, obj, context, explicit,
+				targetPartitions);
+		if (splitKeys.isEmpty()) {
+			return new long[0][];
+		}
+		long[] decoded = new long[4];
+		long[][] tuples = new long[splitKeys.size()][];
+		int n = 0;
+		for (byte[] splitKey : splitKeys) {
+			Varint.readListUnsigned(ByteBuffer.wrap(splitKey), decoded);
+			long[] tuple = Arrays.copyOf(decoded, tupleLength);
+			if (n == 0 || Arrays.compareUnsigned(tuples[n - 1], tuple) < 0) {
+				tuples[n++] = tuple;
+			}
+		}
+		return n == tuples.length ? tuples : Arrays.copyOf(tuples, n);
+	}
+
+	/**
+	 * Recursive-bisection split planner: starting from the first and last existing key of the pattern's range, each
+	 * round snaps the interpolated midpoint of every adjacent boundary pair to an existing key, doubling the boundary
+	 * count until {@code targetSplits} interior splits exist or a round makes no progress. Snapped keys are existing
+	 * keys, strictly ascending, strictly inside (firstKey, lastKey].
+	 */
+	private List<byte[]> planBalancedSplitKeys(Txn txnRef, TripleIndex index, long subj, long pred, long obj,
+			long context, boolean explicit, int targetSplits) throws IOException {
+		List<byte[]> result = new ArrayList<>();
+		if (targetSplits < 1) {
+			return result;
+		}
+		StampedLongAdderLockManager lockManager = txnRef.lockManager();
+		long readStamp;
+		try {
+			readStamp = lockManager.readLock();
+		} catch (InterruptedException e) {
+			throw new SailException(e);
+		}
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			long txn = txnRef.get();
+			int dbi = index.getDB(explicit);
+
+			MDBVal maxKey = MDBVal.malloc(stack);
+			ByteBuffer maxKeyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
+			maxKeyBuf.flip();
+			maxKey.mv_data(maxKeyBuf);
+
+			MDBVal keyData = MDBVal.malloc(stack);
+			MDBVal valueData = MDBVal.malloc(stack);
+			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+
+			PointerBuffer pp = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, dbi, pp));
+			long cursor = pp.get(0);
+			try {
+				keyBuf.clear();
+				index.getMinKey(keyBuf, subj, pred, obj, context);
+				keyBuf.flip();
+				keyData.mv_data(keyBuf);
+				int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+				if (rc != MDB_SUCCESS || mdb_cmp(txn, dbi, keyData, maxKey) > 0) {
+					return result;
+				}
+				byte[] firstKey = copyKey(keyData);
+
+				keyData.mv_data(maxKeyBuf);
+				rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+				if (rc != MDB_SUCCESS) {
+					rc = mdb_cursor_get(cursor, keyData, valueData, MDB_LAST);
+				} else if (mdb_cmp(txn, dbi, keyData, maxKey) > 0) {
+					rc = mdb_cursor_get(cursor, keyData, valueData, MDB_PREV);
+				}
+				if (rc != MDB_SUCCESS) {
+					return result;
+				}
+				byte[] lastKey = copyKey(keyData);
+				if (Arrays.compareUnsigned(firstKey, lastKey) >= 0) {
+					return result;
+				}
+
+				ArrayList<byte[]> boundaries = new ArrayList<>();
+				boundaries.add(firstKey);
+				boundaries.add(lastKey);
+				long[] lowerValues = new long[4];
+				long[] upperValues = new long[4];
+				long[] midValues = new long[4];
+				while (boundaries.size() - 2 < targetSplits) {
+					ArrayList<byte[]> next = new ArrayList<>(boundaries.size() * 2);
+					boolean progressed = false;
+					for (int i = 0; i + 1 < boundaries.size(); i++) {
+						byte[] lower = boundaries.get(i);
+						byte[] upper = boundaries.get(i + 1);
+						next.add(lower);
+						Varint.readListUnsigned(ByteBuffer.wrap(lower), lowerValues);
+						Varint.readListUnsigned(ByteBuffer.wrap(upper), upperValues);
+						bucketStart(0.5, lowerValues, upperValues, midValues);
+						keyBuf.clear();
+						Varint.writeListUnsigned(keyBuf, midValues);
+						keyBuf.flip();
+						keyData.mv_data(keyBuf);
+						if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE) != MDB_SUCCESS) {
+							continue;
+						}
+						byte[] snapped = copyKey(keyData);
+						if (Arrays.compareUnsigned(snapped, lower) > 0
+								&& Arrays.compareUnsigned(snapped, upper) < 0) {
+							next.add(snapped);
+							progressed = true;
+						}
+					}
+					next.add(boundaries.get(boundaries.size() - 1));
+					boundaries = next;
+					if (!progressed) {
+						break;
+					}
+				}
+				// interior boundaries plus lastKey are valid split points (a split == lastKey yields a
+				// non-empty final partition holding exactly that key); firstKey is the scan start, not a split
+				for (int i = 1; i < boundaries.size() - 1 && result.size() < targetSplits; i++) {
+					result.add(boundaries.get(i));
+				}
+				return result;
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+		} finally {
+			lockManager.unlockRead(readStamp);
+		}
+	}
+
+	private List<byte[]> planSplitKeys(Txn txnRef, TripleIndex index, long subj, long pred, long obj, long context,
+			boolean explicit, int targetPartitions) throws IOException {
 		List<byte[]> splits = new ArrayList<>();
 		if (targetPartitions < 2) {
 			return splits;

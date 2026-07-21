@@ -52,6 +52,121 @@ public class LmdbPrefixRunQueryTest {
 	}
 
 	@Test
+	public void countDistinctObjectPerPredicateUsesPrefixRun() {
+		openRepository("spoc,posc,ospc");
+
+		long before = LmdbPrefixRunPlan.OPENED.get();
+		assertThat(countByPredicate("SELECT ?p (COUNT(DISTINCT ?o) AS ?c) WHERE { ?s ?p ?o } GROUP BY ?p"))
+				.isEqualTo(Map.of(EX + "knows", 2L, EX + "likes", 1L, EX + "tag", 1L));
+
+		assertThat(LmdbPrefixRunPlan.OPENED.get()).isGreaterThan(before);
+		assertThat(LmdbPrefixRunPlan.ROWS_SCANNED.get()).isLessThanOrEqualTo(statementCount());
+	}
+
+	@Test
+	public void countBoundVariablePerPredicateCountsRunRows() {
+		openRepository("spoc,posc,ospc");
+
+		long before = LmdbPrefixRunPlan.OPENED.get();
+		assertThat(countByPredicate("SELECT ?p (COUNT(?s) AS ?c) WHERE { ?s ?p ?o } GROUP BY ?p"))
+				.isEqualTo(Map.of(EX + "knows", 3L, EX + "likes", 2L, EX + "tag", 1L));
+
+		assertThat(LmdbPrefixRunPlan.OPENED.get()).isGreaterThan(before);
+	}
+
+	@Test
+	public void groupSlotFilterEvaluatesOncePerRun() {
+		LmdbPrefixRunPlan.resetMetrics();
+		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			ValueFactory vf = conn.getValueFactory();
+			IRI ref = vf.createIRI(EX, "ref");
+			conn.add(vf.createIRI(EX, "s1"), ref, vf.createIRI(EX, "alice"));
+			conn.add(vf.createIRI(EX, "s2"), ref, vf.createIRI(EX, "alice"));
+			conn.add(vf.createIRI(EX, "s3"), ref, vf.createIRI(EX, "bob"));
+			conn.add(vf.createIRI(EX, "s4"), ref, vf.createLiteral("skipped"));
+			conn.add(vf.createIRI(EX, "s5"), ref, vf.createLiteral("skipped too"));
+		}
+
+		long before = LmdbPrefixRunPlan.OPENED.get();
+		Map<String, Long> counts = new HashMap<>();
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			for (BindingSet bs : QueryResults.asList(conn.prepareTupleQuery(
+					"SELECT ?o (COUNT(?s) AS ?c) WHERE { ?s ?p ?o . FILTER(isIRI(?o)) } GROUP BY ?o")
+					.evaluate())) {
+				counts.put(bs.getValue("o").stringValue(), ((Literal) bs.getValue("c")).longValue());
+			}
+		}
+		assertThat(counts).isEqualTo(Map.of(EX + "alice", 2L, EX + "bob", 1L));
+		assertThat(LmdbPrefixRunPlan.OPENED.get()).isGreaterThan(before);
+	}
+
+	@Test
+	public void countDistinctSubjectPerTypeWithBoundPredicateUsesPrefixRun() {
+		LmdbPrefixRunPlan.resetMetrics();
+		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			ValueFactory vf = conn.getValueFactory();
+			IRI type = vf.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+			IRI person = vf.createIRI(EX, "Person");
+			IRI place = vf.createIRI(EX, "Place");
+			conn.add(vf.createIRI(EX, "a"), type, person);
+			conn.add(vf.createIRI(EX, "b"), type, person);
+			conn.add(vf.createIRI(EX, "b"), type, place);
+			conn.add(vf.createIRI(EX, "c"), type, place);
+			conn.add(vf.createIRI(EX, "a"), vf.createIRI(EX, "knows"), vf.createIRI(EX, "b"));
+		}
+
+		long before = LmdbPrefixRunPlan.OPENED.get();
+		Map<String, Long> counts = new HashMap<>();
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			for (BindingSet bs : QueryResults.asList(conn.prepareTupleQuery(
+					"SELECT ?type (COUNT(DISTINCT ?i) AS ?c) WHERE { ?i a ?type } GROUP BY ?type")
+					.evaluate())) {
+				counts.put(bs.getValue("type").stringValue(), ((Literal) bs.getValue("c")).longValue());
+			}
+		}
+		assertThat(counts).isEqualTo(Map.of(EX + "Person", 2L, EX + "Place", 2L));
+		assertThat(LmdbPrefixRunPlan.OPENED.get()).isGreaterThan(before);
+	}
+
+	@Test
+	public void multipleCountAggregatesPerGroupCountRunRows() {
+		openRepository("spoc,posc,ospc");
+
+		long before = LmdbPrefixRunPlan.OPENED.get();
+		Map<String, String> counts = new HashMap<>();
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			for (BindingSet bs : QueryResults.asList(conn.prepareTupleQuery(
+					"SELECT ?p (COUNT(?s) AS ?a) (COUNT(?o) AS ?b) WHERE { ?s ?p ?o } GROUP BY ?p")
+					.evaluate())) {
+				counts.put(bs.getValue("p").stringValue(),
+						((Literal) bs.getValue("a")).longValue() + "/" + ((Literal) bs.getValue("b")).longValue());
+			}
+		}
+		assertThat(counts)
+				.isEqualTo(Map.of(EX + "knows", "3/3", EX + "likes", "2/2", EX + "tag", "1/1"));
+		assertThat(LmdbPrefixRunPlan.OPENED.get()).isGreaterThan(before);
+	}
+
+	@Test
+	public void havingMinimumCountPrunesGroupsBeforeMaterialization() {
+		openRepository("spoc,posc,ospc");
+
+		long before = LmdbPrefixRunPlan.OPENED.get();
+		Map<String, Long> counts = new HashMap<>();
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			for (BindingSet bs : QueryResults.asList(conn.prepareTupleQuery(
+					"SELECT ?p (COUNT(?s) AS ?c) WHERE { ?s ?p ?o } GROUP BY ?p HAVING(COUNT(?s) >= 2)")
+					.evaluate())) {
+				counts.put(bs.getValue("p").stringValue(), ((Literal) bs.getValue("c")).longValue());
+			}
+		}
+		assertThat(counts).isEqualTo(Map.of(EX + "knows", 3L, EX + "likes", 2L));
+		assertThat(LmdbPrefixRunPlan.OPENED.get()).isGreaterThan(before);
+	}
+
+	@Test
 	public void distinctPredicateUsesPrefixRun() {
 		openRepository("spoc,posc,ospc");
 
@@ -60,7 +175,7 @@ public class LmdbPrefixRunQueryTest {
 				EX + "likes", EX + "tag");
 
 		assertThat(LmdbPrefixRunPlan.OPENED.get()).isGreaterThan(before);
-		assertThat(LmdbPrefixRunPlan.ROWS_SCANNED.get()).isLessThan(statementCount());
+		assertThat(LmdbPrefixRunPlan.ROWS_SCANNED.get()).isLessThanOrEqualTo(statementCount());
 	}
 
 	@Test

@@ -1082,6 +1082,25 @@ public class ValueStore extends AbstractValueFactory {
 		});
 	}
 
+	/**
+	 * Reads only the datatype value id of a referenced (non-inlined) literal, without materializing its label or
+	 * touching the value cache: the record's leading bytes hold the type marker and the datatype id varint. Returns the
+	 * datatype value id (0 when the record stores no datatype, i.e. a plain xsd:string literal), or -1 when the id does
+	 * not resolve to a literal record.
+	 */
+	long literalDatatypeId(long id) throws IOException {
+		if (ValueIds.getIdType(id) != ValueIds.T_LITERAL) {
+			return -1L;
+		}
+		Long datatypeId = withData(id, (address, length) -> {
+			if (length < 2 || org.lwjgl.system.MemoryUtil.memGetByte(address) != LITERAL_VALUE) {
+				return -1L;
+			}
+			return Varint.readUnsigned(address + 1);
+		});
+		return datatypeId == null ? -1L : datatypeId;
+	}
+
 	@InternalUseOnly
 	public <T> T withData(long id, ValueDataReader<T> reader) throws IOException {
 		return readTransaction(env, (stack, txn) -> {

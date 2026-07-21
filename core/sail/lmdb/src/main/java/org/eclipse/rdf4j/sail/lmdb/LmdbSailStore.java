@@ -3092,6 +3092,15 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public long literalDatatypeId(long id) {
+			try {
+				return valueStore.literalDatatypeId(id);
+			} catch (IOException e) {
+				throw new QueryEvaluationException(e);
+			}
+		}
+
+		@Override
 		public Value lazyValue(long id) throws QueryEvaluationException {
 			try {
 				// no open-check — see idOf
@@ -3217,6 +3226,17 @@ class LmdbSailStore implements SailStore {
 				return LmdbPrefixRunCursor.EMPTY;
 			}
 			return tripleStore.getPrefixRuns(txn, plan, subj, pred, obj, context, explicit, countRunRows);
+		}
+
+		@Override
+		public long[][] prefixRunSplitValues(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
+				int targetPartitions, int tupleLength) throws IOException {
+			checkOpen();
+			if (!hasStatementsInSource()) {
+				return new long[0][];
+			}
+			return tripleStore.planPrefixRunSplitValues(txn, plan, subj, pred, obj, context, explicit,
+					targetPartitions, tupleLength);
 		}
 
 		@Override
@@ -3393,6 +3413,15 @@ class LmdbSailStore implements SailStore {
 					return LmdbValue.UNKNOWN_ID;
 				}
 				return valueStore.getId(value);
+			} catch (IOException e) {
+				throw new QueryEvaluationException(e);
+			}
+		}
+
+		@Override
+		public long literalDatatypeId(long id) {
+			try {
+				return valueStore.literalDatatypeId(id);
 			} catch (IOException e) {
 				throw new QueryEvaluationException(e);
 			}
@@ -3598,6 +3627,22 @@ class LmdbSailStore implements SailStore {
 				if (releaseReadLock) {
 					nativeSourceLock.unlockRead(readStamp);
 				}
+			}
+		}
+
+		@Override
+		public long[][] prefixRunSplitValues(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
+				int targetPartitions, int tupleLength) throws IOException {
+			long readStamp = acquireNativeSourceReadLock();
+			try {
+				assertNativeSourceOpen();
+				if (!hasStatementsInSource()) {
+					return new long[0][];
+				}
+				return tripleStore.planPrefixRunSplitValues(txn, plan, subj, pred, obj, context, explicit,
+						targetPartitions, tupleLength);
+			} finally {
+				nativeSourceLock.unlockRead(readStamp);
 			}
 		}
 
@@ -3944,6 +3989,39 @@ class LmdbSailStore implements SailStore {
 					close();
 					throw e;
 				}
+			}
+
+			@Override
+			public boolean seekTo(long value) throws IOException {
+				if (closed) {
+					return false;
+				}
+				try {
+					assertNativeSourceOpen();
+					return delegate.seekTo(value);
+				} catch (RuntimeException | Error | IOException e) {
+					close();
+					throw e;
+				}
+			}
+
+			@Override
+			public boolean seekTo(long[] prefixValues) throws IOException {
+				if (closed) {
+					return false;
+				}
+				try {
+					assertNativeSourceOpen();
+					return delegate.seekTo(prefixValues);
+				} catch (RuntimeException | Error | IOException e) {
+					close();
+					throw e;
+				}
+			}
+
+			@Override
+			public void stopBefore(long[] prefixValues) {
+				delegate.stopBefore(prefixValues);
 			}
 
 			@Override

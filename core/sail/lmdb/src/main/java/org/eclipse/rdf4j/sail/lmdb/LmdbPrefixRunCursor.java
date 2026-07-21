@@ -31,6 +31,20 @@ public interface LmdbPrefixRunCursor extends AutoCloseable {
 		}
 
 		@Override
+		public boolean seekTo(long value) {
+			return false;
+		}
+
+		@Override
+		public boolean seekTo(long[] prefixValues) {
+			return false;
+		}
+
+		@Override
+		public void stopBefore(long[] prefixValues) {
+		}
+
+		@Override
 		public long[] quad() {
 			return null;
 		}
@@ -66,6 +80,27 @@ public interface LmdbPrefixRunCursor extends AutoCloseable {
 	};
 
 	boolean next() throws IOException;
+
+	/**
+	 * Positions the cursor so the next call to {@link #next()} emits the first run whose last prefix field carries a
+	 * value {@code >= value}. Only meaningful when every index field before that last prefix field is bound to a
+	 * constant (otherwise runs are not globally ordered on that field). Returns {@code false} when the cursor is
+	 * already exhausted.
+	 */
+	boolean seekTo(long value) throws IOException;
+
+	/**
+	 * Multi-field variant of {@link #seekTo(long)}: positions the cursor so the next {@link #next()} emits the first
+	 * run whose prefix tuple (values in the index's key order, one per prefix position) is {@code >=} the given tuple
+	 * lexicographically. Returns {@code false} when the cursor is already exhausted.
+	 */
+	boolean seekTo(long[] prefixValues) throws IOException;
+
+	/**
+	 * Sets an exclusive upper bound on the prefix tuple (values in the index's key order): {@link #next()} stops —
+	 * without walking or counting the out-of-range run — as soon as the next run's prefix is {@code >=} the bound.
+	 */
+	void stopBefore(long[] prefixValues);
 
 	long[] quad();
 
@@ -103,12 +138,28 @@ final class LmdbPrefixRunIterator implements LmdbPrefixRunCursor {
 	private final long matchObj;
 	private final long matchContext;
 
-	/** Lookahead: the first row of the next run, already pulled while counting the current run. */
-	private long[] pending;
+	/** Rows per bulk read; {@link RecordIterator#fill} amortizes locking and JNI across the batch. */
+	private static final int BATCH_ROWS = 128;
+	/** In-run rows scanned before a skip-seek in distinct mode; short runs never pay a re-positioning seek. */
+	private static final int SKIP_MIN_RUN = 16;
+
+	/** Bulk row buffer ({@link #BATCH_ROWS} quads); rows are consumed in place via {@link #nextRowOffset()}. */
+	private long[] batch;
+	private int batchCount;
+	private int batchIndex;
+	private boolean delegateExhausted;
 	private boolean exhausted;
 	private long runRowCount;
-	/** Scanned-row count already forwarded to the global {@link LmdbPrefixRunPlan#ROWS_SCANNED} metric. */
-	private long reportedScanned;
+	/**
+	 * Locally accumulated metric values, flushed to the global {@link LmdbPrefixRunPlan} atomics once on close. Per-run
+	 * atomic increments would make concurrent prefix-run scans (the parallel exists-intersection merge) serialize on
+	 * the metric cache lines.
+	 */
+	private long emittedPrefixes;
+	private long countedRunRows;
+	private boolean metricsFlushed;
+	/** Exclusive prefix-tuple upper bound (key order), or null for an unbounded scan. */
+	private long[] stopPrefix;
 
 	LmdbPrefixRunIterator(LmdbPrefixRunPlan plan, Txn txnRef, long subj, long pred, long obj, long context,
 			boolean explicit, boolean countRunRows) throws IOException {
@@ -129,49 +180,145 @@ final class LmdbPrefixRunIterator implements LmdbPrefixRunCursor {
 		if (exhausted) {
 			return false;
 		}
-		long[] first = pending;
-		pending = null;
-		if (first == null) {
-			first = delegate.next();
-		}
-		if (first == null) {
+		int offset = nextRowOffset();
+		if (offset < 0) {
 			closeInternal();
 			return false;
 		}
-		System.arraycopy(first, 0, quad, 0, 4);
+		System.arraycopy(batch, offset, quad, 0, 4);
+		if (stopPrefix != null && reachedStopPrefix()) {
+			exhausted = true;
+			return false;
+		}
 		runRowCount = 1;
 		if (countRunRows) {
 			countCurrentRun();
 		} else {
-			seekPastCurrentRun();
+			advancePastCurrentRun();
 		}
-		reportScanned();
-		LmdbPrefixRunPlan.PREFIXES_EMITTED.incrementAndGet();
+		emittedPrefixes++;
 		if (countRunRows) {
-			LmdbPrefixRunPlan.RUN_ROWS_COUNTED.addAndGet(runRowCount);
+			countedRunRows += runRowCount;
 		}
 		return true;
 	}
 
-	private void reportScanned() {
-		long scanned = delegate.getSourceRowsScannedActual();
-		if (scanned > reportedScanned) {
-			LmdbPrefixRunPlan.ROWS_SCANNED.addAndGet(scanned - reportedScanned);
-			reportedScanned = scanned;
+	/** Offset of the next unconsumed row in {@link #batch}, refilling from the delegate, or -1 when exhausted. */
+	private int nextRowOffset() {
+		if (batchIndex >= batchCount) {
+			if (delegateExhausted) {
+				return -1;
+			}
+			if (batch == null) {
+				batch = new long[BATCH_ROWS * 4];
+			}
+			batchCount = delegate.fill(batch, BATCH_ROWS);
+			batchIndex = 0;
+			if (batchCount < BATCH_ROWS) {
+				delegateExhausted = true;
+			}
+			if (batchCount <= 0) {
+				return -1;
+			}
 		}
+		return 4 * batchIndex++;
 	}
 
-	/** Walks the current run row by row, counting matches, and leaves the next run's first row in the lookahead. */
+	private void flushMetrics() {
+		if (metricsFlushed) {
+			return;
+		}
+		metricsFlushed = true;
+		LmdbPrefixRunPlan.ROWS_SCANNED.addAndGet(delegate.getSourceRowsScannedActual());
+		LmdbPrefixRunPlan.PREFIXES_EMITTED.addAndGet(emittedPrefixes);
+		LmdbPrefixRunPlan.RUN_ROWS_COUNTED.addAndGet(countedRunRows);
+	}
+
+	/** Walks the current run inside the batch, counting matches, and leaves the next run's first row unconsumed. */
 	private void countCurrentRun() {
-		long[] row;
-		while ((row = delegate.next()) != null) {
-			if (!samePrefix(row, quad)) {
-				pending = Arrays.copyOf(row, 4);
+		boolean rowLevelStop = stopPrefix != null && stopPrefix.length > plan.prefixLength();
+		while (true) {
+			int offset = nextRowOffset();
+			if (offset < 0) {
+				exhausted = true;
+				return;
+			}
+			if (rowLevelStop && rowReachedStopAt(offset)) {
+				// a raw-key partition boundary inside this run: report the partial count; the next partition's
+				// worker counts the rest of the run and callers merge the partials per group
+				exhausted = true;
+				return;
+			}
+			if (!samePrefixAt(offset)) {
+				batchIndex--;
 				return;
 			}
 			runRowCount++;
 		}
-		exhausted = true;
+	}
+
+	/**
+	 * Advances to the next run: short runs are stepped over inside the batch (no repositioning), and only after
+	 * {@link #SKIP_MIN_RUN} same-prefix rows does the historical sub-linear {@link RecordIterator#seekForward} skip
+	 * engage — a run of length one (fully distinct data) then costs exactly one batched row step.
+	 */
+	private void advancePastCurrentRun() {
+		int scanned = 0;
+		while (true) {
+			int offset = nextRowOffset();
+			if (offset < 0) {
+				exhausted = true;
+				return;
+			}
+			if (!samePrefixAt(offset)) {
+				batchIndex--;
+				return;
+			}
+			if (++scanned >= SKIP_MIN_RUN) {
+				seekPastCurrentRun();
+				return;
+			}
+		}
+	}
+
+	/** Lexicographic comparison of a row against the stop tuple over the tuple's full length (key order). */
+	private boolean rowReachedStop(long[] row) {
+		char[] fieldSeq = index.getFieldSeq();
+		for (int i = 0; i < stopPrefix.length && i < fieldSeq.length; i++) {
+			int compared = Long.compareUnsigned(row[fieldIndex(fieldSeq[i])], stopPrefix[i]);
+			if (compared < 0) {
+				return false;
+			}
+			if (compared > 0) {
+				return true;
+			}
+		}
+		return true;
+	}
+
+	private boolean rowReachedStopAt(int offset) {
+		char[] fieldSeq = index.getFieldSeq();
+		for (int i = 0; i < stopPrefix.length && i < fieldSeq.length; i++) {
+			int compared = Long.compareUnsigned(batch[offset + fieldIndex(fieldSeq[i])], stopPrefix[i]);
+			if (compared < 0) {
+				return false;
+			}
+			if (compared > 0) {
+				return true;
+			}
+		}
+		return true;
+	}
+
+	private boolean samePrefixAt(int offset) {
+		char[] fieldSeq = index.getFieldSeq();
+		for (int i = 0; i < plan.prefixLength(); i++) {
+			int field = fieldIndex(fieldSeq[i]);
+			if (batch[offset + field] != quad[field]) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/** Computes the successor prefix and seeks the delegate to it (the historical sub-linear skip). */
@@ -180,11 +327,108 @@ final class LmdbPrefixRunIterator implements LmdbPrefixRunCursor {
 			closeInternal();
 			return;
 		}
+		discardBatch();
 		if (!delegate.seekForward(targetQuad[TripleIndex.SUBJ_IDX], targetQuad[TripleIndex.PRED_IDX],
 				targetQuad[TripleIndex.OBJ_IDX], targetQuad[TripleIndex.CONTEXT_IDX])) {
 			// the delegate exhausted itself (nothing at or after the target): terminal, not an error
 			exhausted = true;
 		}
+	}
+
+	/** Invalidates buffered rows after a reposition; the delegate produces rows from the new position again. */
+	private void discardBatch() {
+		batchIndex = 0;
+		batchCount = 0;
+		delegateExhausted = false;
+	}
+
+	@Override
+	public boolean seekTo(long value) {
+		if (exhausted) {
+			return false;
+		}
+		char[] fieldSeq = index.getFieldSeq();
+		int targetPosition = plan.prefixLength() - 1;
+		for (int i = 0; i < fieldSeq.length; i++) {
+			int field = fieldIndex(fieldSeq[i]);
+			if (i == targetPosition) {
+				targetQuad[field] = value;
+			} else {
+				long bound = boundValue(field);
+				targetQuad[field] = bound == -1 ? 0 : bound;
+			}
+		}
+		return seekToTargetQuad();
+	}
+
+	@Override
+	public boolean seekTo(long[] prefixValues) {
+		if (exhausted) {
+			return false;
+		}
+		char[] fieldSeq = index.getFieldSeq();
+		for (int i = 0; i < fieldSeq.length; i++) {
+			int field = fieldIndex(fieldSeq[i]);
+			if (i < prefixValues.length) {
+				targetQuad[field] = prefixValues[i];
+			} else {
+				long bound = boundValue(field);
+				targetQuad[field] = bound == -1 ? 0 : bound;
+			}
+		}
+		return seekToTargetQuad();
+	}
+
+	/**
+	 * Positions at the first row whose full key is {@code >= targetQuad}: buffered rows are scanned first (they are in
+	 * key order, and a near target resolves without touching LMDB); only a target beyond the batch repositions the
+	 * delegate. Buffered rows must be consulted before the delegate — a batch prefetch may already have drained (and
+	 * closed) the delegate while the target row still sits in the buffer.
+	 */
+	private boolean seekToTargetQuad() {
+		char[] fieldSeq = index.getFieldSeq();
+		for (int i = batchIndex; i < batchCount; i++) {
+			if (keyCompareAt(4 * i, fieldSeq) >= 0) {
+				batchIndex = i;
+				return true;
+			}
+		}
+		if (delegateExhausted) {
+			exhausted = true;
+			return false;
+		}
+		discardBatch();
+		if (!delegate.seekForward(targetQuad[TripleIndex.SUBJ_IDX], targetQuad[TripleIndex.PRED_IDX],
+				targetQuad[TripleIndex.OBJ_IDX], targetQuad[TripleIndex.CONTEXT_IDX])) {
+			exhausted = true;
+			return false;
+		}
+		return true;
+	}
+
+	/**
+	 * Compares the buffered row at {@code offset} against {@link #targetQuad} in full index key order. Ids compare
+	 * unsigned: keys are order-preserving unsigned varints, and inlined double ids can be negative as signed longs.
+	 */
+	private int keyCompareAt(int offset, char[] fieldSeq) {
+		for (char fieldChar : fieldSeq) {
+			int field = fieldIndex(fieldChar);
+			int compared = Long.compareUnsigned(batch[offset + field], targetQuad[field]);
+			if (compared != 0) {
+				return compared;
+			}
+		}
+		return 0;
+	}
+
+	@Override
+	public void stopBefore(long[] prefixValues) {
+		this.stopPrefix = prefixValues == null ? null : Arrays.copyOf(prefixValues, prefixValues.length);
+	}
+
+	/** Lexicographic comparison of the current run head against the exclusive stop bound (key order). */
+	private boolean reachedStopPrefix() {
+		return rowReachedStop(quad);
 	}
 
 	@Override
@@ -250,16 +494,6 @@ final class LmdbPrefixRunIterator implements LmdbPrefixRunCursor {
 		return true;
 	}
 
-	private boolean samePrefix(long[] left, long[] right) {
-		char[] fieldSeq = index.getFieldSeq();
-		for (int i = 0; i < plan.prefixLength(); i++) {
-			if (left[fieldIndex(fieldSeq[i])] != right[fieldIndex(fieldSeq[i])]) {
-				return false;
-			}
-		}
-		return true;
-	}
-
 	private long boundValue(int field) {
 		return switch (field) {
 		case TripleIndex.SUBJ_IDX -> matchSubj;
@@ -282,7 +516,7 @@ final class LmdbPrefixRunIterator implements LmdbPrefixRunCursor {
 
 	private void closeInternal() {
 		exhausted = true;
-		reportScanned();
+		flushMetrics();
 		delegate.close();
 	}
 

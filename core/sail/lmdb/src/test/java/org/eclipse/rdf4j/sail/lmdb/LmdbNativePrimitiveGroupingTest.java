@@ -95,6 +95,9 @@ public class LmdbNativePrimitiveGroupingTest {
 
 	@BeforeEach
 	public void setUp() {
+		// this class exercises the primitive/ordered grouping machinery; the prefix-run group specialization
+		// would otherwise claim its single-pattern COUNT queries (covered by LmdbPrefixRunQueryTest)
+		System.setProperty("rdf4j.lmdb.prefixRun.enabled", "false");
 		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
@@ -110,6 +113,7 @@ public class LmdbNativePrimitiveGroupingTest {
 
 	@AfterEach
 	public void tearDown() {
+		System.clearProperty("rdf4j.lmdb.prefixRun.enabled");
 		repository.shutDown();
 	}
 

@@ -28,11 +28,17 @@ import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Count;
+import org.eclipse.rdf4j.query.algebra.Datatype;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
+import org.eclipse.rdf4j.query.algebra.IsLiteral;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Order;
@@ -47,6 +53,7 @@ import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
@@ -97,7 +104,17 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		boolean duplicateInsensitive = !duplicatesMatter(aggregates, havingCondition);
 		SlotPlan arg = compileTuple(group.getArg(), duplicateInsensitive);
 		if (arg == null) {
-			return null;
+			// the slot machinery cannot express the argument (e.g. a nested GROUP BY or a DATATYPE bind); the
+			// histogram shapes can still collapse into one counting scan before falling back to the generic
+			// evaluator
+			if (havingCondition != null) {
+				return null;
+			}
+			QueryEvaluationStep runCountHistogram = tryRunCountHistogram(group, originalExpr);
+			if (runCountHistogram != null) {
+				return runCountHistogram;
+			}
+			return tryDatatypeHistogram(group, originalExpr);
 		}
 		boolean strictCompare = strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT;
 		NativeLmdbQuerySource stepSource = syntheticValuesById.isEmpty() ? source
@@ -105,11 +122,23 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		if (slotNames.size() > MAX_NATIVE_SLOTS) {
 			return null;
 		}
-		PrefixRunGroupCandidate prefixRun = tryPrefixRunGroupPlan(stepSource, arg, groupSlots, aggregates);
+		PrefixRunGroupCandidate prefixRun = tryPrefixRunGroupPlan(stepSource, arg, groupSlots, aggregates,
+				havingCondition);
+		LmdbNativeExistsIntersection existsIntersection = prefixRun == null
+				? tryExistsIntersectionPlan(stepSource, arg, groupSlots, aggregates)
+				: null;
+		if (prefixRun == null && existsIntersection == null && havingCondition == null) {
+			QueryEvaluationStep typeMatrix = tryTypeMatrixStep(stepSource, arg, groupSlots, aggregates, originalExpr);
+			if (typeMatrix != null) {
+				return typeMatrix;
+			}
+		}
 		layout.freeze(slotNames);
 		return new NativeGroupStep(stepSource, arg, layout, groupSlots, aggregates, strictCompare, strategy,
 				originalExpr, context, optionalOnlyNames, prefixRun == null ? null : prefixRun.pattern,
-				prefixRun == null ? null : prefixRun.plan, prefixRun != null && prefixRun.countRunRows);
+				prefixRun == null ? null : prefixRun.plan, prefixRun != null && prefixRun.countRunRows,
+				prefixRun != null && prefixRun.distinctRuns, prefixRun == null ? null : prefixRun.runFilter,
+				prefixRun == null ? 0L : prefixRun.minRunCount, existsIntersection);
 	}
 
 	/**
@@ -315,31 +344,560 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	}
 
 	private PrefixRunGroupCandidate tryPrefixRunGroupPlan(NativeLmdbQuerySource stepSource, SlotPlan arg,
-			int[] groupSlots, AggregateSpec[] aggregates) {
-		if (!(arg instanceof PatternPlan)) {
+			int[] groupSlots, AggregateSpec[] aggregates, ValueExpr havingCondition) {
+		SlotPlan inner = arg;
+		NativeBooleanFilter runFilter = null;
+		long filterMask = 0L;
+		if (arg instanceof FilterPlan) {
+			FilterPlan filterPlan = (FilterPlan) arg;
+			// a filter whose read mask only covers prefix slots is constant within a run and can be
+			// evaluated once per run representative; sticky filters (mask < 0) never qualify
+			if (filterPlan.filterMask < 0L || !(filterPlan.arg instanceof PatternPlan)) {
+				return null;
+			}
+			inner = filterPlan.arg;
+			runFilter = filterPlan.filter;
+			filterMask = filterPlan.filterMask;
+		}
+		if (!(inner instanceof PatternPlan)) {
 			return null;
 		}
-		PatternPlan pattern = (PatternPlan) arg;
+		PatternPlan pattern = (PatternPlan) inner;
 		int[] prefixSlots;
-		boolean countRunRows;
+		boolean countRunRows = false;
+		boolean distinctRuns = false;
 		if (groupSlots.length > 0) {
 			if (aggregates.length == 0) {
 				prefixSlots = groupSlots;
-				countRunRows = false;
-			} else if (aggregates.length == 1 && isCountStar(aggregates[0])) {
+			} else if (aggregates.length >= 1 && allCountEveryPatternRow(aggregates, pattern)) {
 				prefixSlots = groupSlots;
 				countRunRows = true;
+			} else if (aggregates.length == 1 && isCountDistinctSlot(aggregates[0])
+					&& !slotContained(groupSlots, aggregates[0].slot)) {
+				prefixSlots = Arrays.copyOf(groupSlots, groupSlots.length + 1);
+				prefixSlots[groupSlots.length] = aggregates[0].slot;
+				distinctRuns = true;
 			} else {
 				return null;
 			}
 		} else if (aggregates.length == 1 && isCountDistinctSlot(aggregates[0])) {
 			prefixSlots = new int[] { aggregates[0].slot };
-			countRunRows = false;
 		} else {
 			return null;
 		}
+		if (runFilter != null && (filterMask & ~slotBits(prefixSlots)) != 0L) {
+			return null;
+		}
 		LmdbPrefixRunPlan plan = tryPrefixRunPlan(stepSource, pattern, prefixSlots);
-		return plan == null ? null : new PrefixRunGroupCandidate(pattern, plan, countRunRows);
+		if (plan == null) {
+			return null;
+		}
+		long minRunCount = countRunRows ? minimumHavingCount(havingCondition, aggregates) : 0L;
+		return new PrefixRunGroupCandidate(pattern, plan, countRunRows, distinctRuns, runFilter, minRunCount);
+	}
+
+	/**
+	 * Recognizes the "histogram of group counts" shape (outer GROUP BY over the COUNT of an inner single-pattern GROUP
+	 * BY, e.g. out-degree histograms) and collapses it into one prefix-run counting scan — the inner per-group counts
+	 * are exactly the run row counts. Returns null for anything else so the generic evaluator applies.
+	 */
+	private QueryEvaluationStep tryRunCountHistogram(Group outer, TupleExpr originalExpr) {
+		if (outer.getGroupBindingNames().size() != 1 || outer.getGroupElements().size() != 1) {
+			return null;
+		}
+		String keyName = outer.getGroupBindingNames().iterator().next();
+		GroupElem outerElem = outer.getGroupElements().get(0);
+		if (!(outerElem.getOperator() instanceof Count)) {
+			return null;
+		}
+		Count outerCount = (Count) outerElem.getOperator();
+		TupleExpr node = outer.getArg();
+		if (!(node instanceof Projection)) {
+			return null;
+		}
+		node = ((Projection) node).getArg();
+		if (node instanceof Extension) {
+			for (ExtensionElem elem : ((Extension) node).getElements()) {
+				if (!elem.getName().equals(keyName)) {
+					return null;
+				}
+			}
+			node = ((Extension) node).getArg();
+		}
+		if (!(node instanceof Group)) {
+			return null;
+		}
+		Group inner = (Group) node;
+		if (inner.getGroupBindingNames().size() != 1 || inner.getGroupElements().size() != 1) {
+			return null;
+		}
+		String innerVarName = inner.getGroupBindingNames().iterator().next();
+		GroupElem innerElem = inner.getGroupElements().get(0);
+		if (!innerElem.getName().equals(keyName) || !(innerElem.getOperator() instanceof Count)) {
+			return null;
+		}
+		Count innerCount = (Count) innerElem.getOperator();
+		if (innerCount.isDistinct()) {
+			return null;
+		}
+		// the outer COUNT counts inner rows: COUNT(*) or COUNT([DISTINCT] ?innerVar) — inner group keys are
+		// unique per row, so DISTINCT changes nothing
+		if (outerCount.getArg() != null && !(outerCount.getArg() instanceof Var
+				&& ((Var) outerCount.getArg()).getName().equals(innerVarName))) {
+			return null;
+		}
+		if (!(inner.getArg() instanceof StatementPattern)) {
+			return null;
+		}
+		StatementPattern pattern = (StatementPattern) inner.getArg();
+		if (pattern.getScope() != StatementPattern.Scope.DEFAULT_CONTEXTS || pattern.getContextVar() != null) {
+			return null;
+		}
+		if (compileContextConstraint(pattern, context.getDataset()) != ContextConstraint.UNRESTRICTED) {
+			return null;
+		}
+		Var[] positions = { pattern.getSubjectVar(), pattern.getPredicateVar(), pattern.getObjectVar() };
+		int[] fields = { TripleIndex.SUBJ_IDX, TripleIndex.PRED_IDX, TripleIndex.OBJ_IDX };
+		long[] constants = { UNKNOWN, UNKNOWN, UNKNOWN };
+		int innerField = -1;
+		java.util.HashSet<String> seenVarNames = new java.util.HashSet<>();
+		for (int i = 0; i < positions.length; i++) {
+			Var var = positions[i];
+			if (var.hasValue()) {
+				long id = idOf(var.getValue());
+				if (id == UNKNOWN) {
+					return null;
+				}
+				constants[i] = id;
+			} else {
+				if (!seenVarNames.add(var.getName())) {
+					// a repeated variable adds a per-row equality constraint runs cannot express
+					return null;
+				}
+				if (var.getName().equals(innerVarName)) {
+					innerField = fields[i];
+				}
+			}
+		}
+		if (innerField < 0) {
+			return null;
+		}
+		// the inner COUNT(?x) of a pattern-bound non-context variable counts every row, like COUNT(*)
+		if (innerCount.getArg() != null) {
+			if (!(innerCount.getArg() instanceof Var)) {
+				return null;
+			}
+			String countedName = ((Var) innerCount.getArg()).getName();
+			boolean boundByPattern = false;
+			for (Var var : positions) {
+				if (!var.hasValue() && var.getName().equals(countedName)) {
+					boundByPattern = true;
+				}
+			}
+			if (!boundByPattern) {
+				return null;
+			}
+		}
+		NativeLmdbQuerySource stepSource = syntheticValuesById.isEmpty() ? source
+				: new SyntheticValueSource(source, syntheticValuesById, syntheticIdsByValue);
+		LmdbPrefixRunPlan plan = stepSource.prefixRunPlan(new int[] { innerField }, constants[0], constants[1],
+				constants[2], UNKNOWN);
+		if (plan == null) {
+			return null;
+		}
+		return new LmdbNativeRunCountHistogram(stepSource, plan, constants[0], constants[1], constants[2], keyName,
+				outerElem.getName(), strategy, originalExpr, context);
+	}
+
+	/**
+	 * Recognizes the literal datatype histogram shape — {@code GROUP BY DATATYPE(?o)} with a whole-row COUNT under
+	 * {@code FILTER(isLiteral(?o))} over one statement pattern — and collapses it into one prefix-run counting scan
+	 * with per-distinct-value datatype resolution (see {@link LmdbNativeDatatypeHistogram}).
+	 */
+	private QueryEvaluationStep tryDatatypeHistogram(Group outer, TupleExpr originalExpr) {
+		if (outer.getGroupBindingNames().size() != 1 || outer.getGroupElements().size() != 1) {
+			return null;
+		}
+		String keyName = outer.getGroupBindingNames().iterator().next();
+		GroupElem countElem = outer.getGroupElements().get(0);
+		if (!(countElem.getOperator() instanceof Count)) {
+			return null;
+		}
+		Count count = (Count) countElem.getOperator();
+		if (count.isDistinct()) {
+			return null;
+		}
+		String literalVarName = null;
+		boolean sawIsLiteralGuard = false;
+		TupleExpr node = outer.getArg();
+		while (node instanceof Extension || node instanceof Filter) {
+			if (node instanceof Extension) {
+				for (ExtensionElem elem : ((Extension) node).getElements()) {
+					if (!elem.getName().equals(keyName) || !(elem.getExpr() instanceof Datatype)
+							|| !(((Datatype) elem.getExpr()).getArg() instanceof Var)) {
+						return null;
+					}
+					String argName = ((Var) ((Datatype) elem.getExpr()).getArg()).getName();
+					if (literalVarName != null && !literalVarName.equals(argName)) {
+						return null;
+					}
+					literalVarName = argName;
+				}
+				node = ((Extension) node).getArg();
+			} else {
+				Filter filter = (Filter) node;
+				if (!(filter.getCondition() instanceof IsLiteral)
+						|| !(((IsLiteral) filter.getCondition()).getArg() instanceof Var)) {
+					return null;
+				}
+				String argName = ((Var) ((IsLiteral) filter.getCondition()).getArg()).getName();
+				if (literalVarName != null && !literalVarName.equals(argName)) {
+					return null;
+				}
+				literalVarName = argName;
+				sawIsLiteralGuard = true;
+				node = filter.getArg();
+			}
+		}
+		if (literalVarName == null || !sawIsLiteralGuard || !(node instanceof StatementPattern)) {
+			return null;
+		}
+		StatementPattern pattern = (StatementPattern) node;
+		if (pattern.getScope() != StatementPattern.Scope.DEFAULT_CONTEXTS || pattern.getContextVar() != null) {
+			return null;
+		}
+		if (compileContextConstraint(pattern, context.getDataset()) != ContextConstraint.UNRESTRICTED) {
+			return null;
+		}
+		Var[] positions = { pattern.getSubjectVar(), pattern.getPredicateVar(), pattern.getObjectVar() };
+		int[] fields = { TripleIndex.SUBJ_IDX, TripleIndex.PRED_IDX, TripleIndex.OBJ_IDX };
+		long[] constants = { UNKNOWN, UNKNOWN, UNKNOWN };
+		int literalField = -1;
+		java.util.HashSet<String> seenVarNames = new java.util.HashSet<>();
+		for (int i = 0; i < positions.length; i++) {
+			Var var = positions[i];
+			if (var.hasValue()) {
+				long id = idOf(var.getValue());
+				if (id == UNKNOWN) {
+					return null;
+				}
+				constants[i] = id;
+			} else {
+				if (!seenVarNames.add(var.getName())) {
+					return null;
+				}
+				if (var.getName().equals(literalVarName)) {
+					literalField = fields[i];
+				}
+			}
+		}
+		if (literalField < 0) {
+			return null;
+		}
+		// the COUNT must cover every surviving row: COUNT(*) or COUNT of a pattern-bound variable
+		if (count.getArg() != null) {
+			if (!(count.getArg() instanceof Var) || !seenVarNames.contains(((Var) count.getArg()).getName())) {
+				return null;
+			}
+		}
+		NativeLmdbQuerySource stepSource = syntheticValuesById.isEmpty() ? source
+				: new SyntheticValueSource(source, syntheticValuesById, syntheticIdsByValue);
+		LmdbPrefixRunPlan plan = stepSource.prefixRunPlan(new int[] { literalField }, constants[0], constants[1],
+				constants[2], UNKNOWN);
+		if (plan == null) {
+			return null;
+		}
+		return new LmdbNativeDatatypeHistogram(stepSource, plan, constants[0], constants[1], constants[2],
+				literalField, keyName, countElem.getName(), strategy, originalExpr, context);
+	}
+
+	/**
+	 * Recognizes the type-matrix shapes over a compiled 2- or 3-pattern inner join: an edge pattern joined on its
+	 * subject with a constant-predicate "type" pattern whose object is a group key (usage matrix, group keys = subject
+	 * type + edge predicate), optionally also joined on its object with a second type pattern (linkage matrix, group
+	 * keys = subject type + object type). Join filters must read only the edge predicate slot; every aggregate must be
+	 * a whole-row COUNT. See {@link LmdbNativeTypeMatrix}.
+	 */
+	private QueryEvaluationStep tryTypeMatrixStep(NativeLmdbQuerySource stepSource, SlotPlan arg, int[] groupSlots,
+			AggregateSpec[] aggregates, TupleExpr originalExpr) {
+		if (groupSlots.length != 2 || aggregates.length == 0 || !(arg instanceof MultiJoinPlan)) {
+			return null;
+		}
+		MultiJoinPlan join = (MultiJoinPlan) arg;
+		if (join.children.length < 2 || join.children.length > 3) {
+			return null;
+		}
+		PatternPlan[] patterns = new PatternPlan[join.children.length];
+		java.util.HashSet<Integer> seenSlots = new java.util.HashSet<>();
+		for (int i = 0; i < join.children.length; i++) {
+			if (!(join.children[i] instanceof PatternPlan)) {
+				return null;
+			}
+			PatternPlan pattern = (PatternPlan) join.children[i];
+			if (!prefixSafePattern(pattern) || pattern.range != null || pattern.c.hasSlot()
+					|| pattern.c.isConstant()) {
+				return null;
+			}
+			patterns[i] = pattern;
+		}
+		// classify: type patterns have a constant predicate and slotted subject+object; the edge pattern has
+		// slots in all three positions
+		PatternPlan edge = null;
+		java.util.ArrayList<PatternPlan> typePatterns = new java.util.ArrayList<>();
+		for (PatternPlan pattern : patterns) {
+			if (pattern.p.isConstant() && pattern.s.hasSlot() && pattern.o.hasSlot()) {
+				typePatterns.add(pattern);
+			} else if (pattern.s.hasSlot() && pattern.p.hasSlot() && pattern.o.hasSlot()) {
+				if (edge != null) {
+					return null;
+				}
+				edge = pattern;
+			} else {
+				return null;
+			}
+		}
+		if (edge == null || typePatterns.size() != join.children.length - 1) {
+			return null;
+		}
+		PatternPlan subjectType = null;
+		PatternPlan objectType = null;
+		for (PatternPlan typePattern : typePatterns) {
+			if (typePattern.s.slot == edge.s.slot) {
+				if (subjectType != null) {
+					return null;
+				}
+				subjectType = typePattern;
+			} else if (typePattern.s.slot == edge.o.slot) {
+				if (objectType != null) {
+					return null;
+				}
+				objectType = typePattern;
+			} else {
+				return null;
+			}
+		}
+		if (subjectType == null || (join.children.length == 3 && objectType == null)) {
+			return null;
+		}
+		int subjectTypeKeySlot = subjectType.o.slot;
+		int secondKeySlot = objectType != null ? objectType.o.slot : edge.p.slot;
+		if (!slotContained(groupSlots, subjectTypeKeySlot) || !slotContained(groupSlots, secondKeySlot)
+				|| subjectTypeKeySlot == secondKeySlot) {
+			return null;
+		}
+		// all participating slots must be distinct variables — shared slots beyond the join keys would add
+		// equality constraints the co-scan does not model
+		int[] roleSlots = objectType != null
+				? new int[] { edge.s.slot, edge.p.slot, edge.o.slot, subjectTypeKeySlot, objectType.o.slot }
+				: new int[] { edge.s.slot, edge.p.slot, edge.o.slot, subjectTypeKeySlot };
+		for (int slot : roleSlots) {
+			if (!seenSlots.add(slot)) {
+				return null;
+			}
+		}
+		for (MaskedFilter filter : join.filters) {
+			if (filter.mask < 0L || (filter.mask & ~(1L << edge.p.slot)) != 0L) {
+				return null;
+			}
+		}
+		for (AggregateSpec spec : aggregates) {
+			if (spec.kind != AggKind.COUNT || spec.distinct) {
+				return null;
+			}
+			if (spec.slot >= 0 && !seenSlots.contains(spec.slot)) {
+				return null;
+			}
+		}
+		String[] groupNames = new String[groupSlots.length];
+		int subjectTypeKeyPosition = -1;
+		for (int i = 0; i < groupSlots.length; i++) {
+			groupNames[i] = slotNames.get(groupSlots[i]);
+			if (groupSlots[i] == subjectTypeKeySlot) {
+				subjectTypeKeyPosition = i;
+			}
+		}
+		String[] aggregateNames = new String[aggregates.length];
+		for (int i = 0; i < aggregates.length; i++) {
+			aggregateNames[i] = aggregates[i].name;
+		}
+		layout.freeze(slotNames);
+		return new LmdbNativeTypeMatrix(stepSource, subjectType.p.constant,
+				objectType != null ? objectType.p.constant : UNKNOWN, subjectTypeKeyPosition, groupNames,
+				aggregateNames, join.filters, edge.p.slot, layout, strategy, originalExpr, context);
+	}
+
+	private boolean allCountEveryPatternRow(AggregateSpec[] aggregates, PatternPlan pattern) {
+		for (AggregateSpec spec : aggregates) {
+			if (!countsEveryPatternRow(spec, pattern)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * A HAVING of the form {@code COUNT(...) >= n} (or {@code >}) over one of this group's whole-row COUNT aggregates
+	 * lets run counting prune groups below the threshold before any binding set is materialized. The generic HAVING
+	 * filter above the group step still re-checks the surviving rows, so a shape this parser passes on (returning 0) is
+	 * merely un-pruned, never wrong.
+	 */
+	private long minimumHavingCount(ValueExpr havingCondition, AggregateSpec[] aggregates) {
+		if (!(havingCondition instanceof Compare)) {
+			return 0L;
+		}
+		Compare compare = (Compare) havingCondition;
+		ValueExpr varSide = compare.getLeftArg();
+		ValueExpr constantSide = compare.getRightArg();
+		Compare.CompareOp op = compare.getOperator();
+		if (!(varSide instanceof Var) && !(constantSide instanceof Var)) {
+			return 0L;
+		}
+		if (!(varSide instanceof Var)) {
+			// constant OP var: mirror to var OP' constant
+			ValueExpr swap = varSide;
+			varSide = constantSide;
+			constantSide = swap;
+			op = op == Compare.CompareOp.LT ? Compare.CompareOp.GT
+					: op == Compare.CompareOp.LE ? Compare.CompareOp.GE
+							: op == Compare.CompareOp.GT ? Compare.CompareOp.LT
+									: op == Compare.CompareOp.GE ? Compare.CompareOp.LE : op;
+		}
+		if (op != Compare.CompareOp.GE && op != Compare.CompareOp.GT) {
+			return 0L;
+		}
+		if (!(constantSide instanceof ValueConstant)
+				|| !(((ValueConstant) constantSide).getValue() instanceof org.eclipse.rdf4j.model.Literal)) {
+			return 0L;
+		}
+		String name = ((Var) varSide).getName();
+		boolean matchesCountAggregate = false;
+		for (AggregateSpec spec : aggregates) {
+			if (spec.name.equals(name)) {
+				matchesCountAggregate = spec.kind == AggKind.COUNT && !spec.distinct;
+			}
+		}
+		if (!matchesCountAggregate) {
+			return 0L;
+		}
+		org.eclipse.rdf4j.model.Literal literal = (org.eclipse.rdf4j.model.Literal) ((ValueConstant) constantSide)
+				.getValue();
+		try {
+			long threshold = literal.longValue();
+			if (java.math.BigDecimal.valueOf(threshold).compareTo(literal.decimalValue()) != 0) {
+				return 0L;
+			}
+			return op == Compare.CompareOp.GE ? threshold : Math.addExact(threshold, 1);
+		} catch (RuntimeException e) {
+			// non-numeric or non-integral literal: no pruning, generic HAVING still applies
+			return 0L;
+		}
+	}
+
+	/**
+	 * COUNT over a variable the pattern itself binds on every row (any non-context quad position) counts exactly like
+	 * COUNT(*): the pattern never produces a row leaving that variable unbound.
+	 */
+	private boolean countsEveryPatternRow(AggregateSpec spec, PatternPlan pattern) {
+		if (isCountStar(spec)) {
+			return true;
+		}
+		if (spec.kind != AggKind.COUNT || spec.distinct || spec.slot < 0) {
+			return false;
+		}
+		int position = pattern.quadPositionOfSlot(spec.slot);
+		return position >= 0 && position != TripleIndex.CONTEXT_IDX;
+	}
+
+	private boolean slotContained(int[] slots, int slot) {
+		for (int candidate : slots) {
+			if (candidate == slot) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private long slotBits(int[] slots) {
+		long bits = 0L;
+		for (int slot : slots) {
+			bits |= 1L << slot;
+		}
+		return bits;
+	}
+
+	/**
+	 * Recognizes {@code COUNT(DISTINCT ?x)} over {@code Filter(Exists{single pattern correlated only on ?x},
+	 * Pattern{... ?x ...})} and plans it as the leapfrog intersection of two prefix-run distinct-value streams (see
+	 * {@link LmdbNativeExistsIntersection}). Both streams must plan onto an index where every field before the streamed
+	 * one is a bound constant, which {@code prefixRunPlan} guarantees by construction; anything else returns null and
+	 * the ordinary strategies apply.
+	 */
+	private LmdbNativeExistsIntersection tryExistsIntersectionPlan(NativeLmdbQuerySource stepSource, SlotPlan arg,
+			int[] groupSlots, AggregateSpec[] aggregates) {
+		if (groupSlots.length != 0 || aggregates.length != 1 || !isCountDistinctSlot(aggregates[0])) {
+			return null;
+		}
+		if (!(arg instanceof FilterPlan)) {
+			return null;
+		}
+		FilterPlan filterPlan = (FilterPlan) arg;
+		if (!(filterPlan.arg instanceof PatternPlan)) {
+			return null;
+		}
+		NativeBooleanFilter condition = filterPlan.filter;
+		if (condition instanceof RecordingNativeBooleanFilter) {
+			condition = ((RecordingNativeBooleanFilter) condition).delegate;
+		}
+		if (!(condition instanceof StatementPatternExistsFilter)) {
+			return null;
+		}
+		PatternPlan outer = (PatternPlan) filterPlan.arg;
+		StatementPatternExistsFilter exists = (StatementPatternExistsFilter) condition;
+		int distinctSlot = aggregates[0].slot;
+		if (exists.varyingSlots.length != 1 || exists.varyingSlots[0] != distinctSlot) {
+			return null;
+		}
+		if (exists.contexts.isFixed() || exists.namedContextScope || exists.c.hasSlot() || exists.c.isConstant()) {
+			return null;
+		}
+		if (outer.range != null) {
+			return null;
+		}
+		Term[] existsTerms = { exists.s, exists.p, exists.o };
+		int[] existsFields = { TripleIndex.SUBJ_IDX, TripleIndex.PRED_IDX, TripleIndex.OBJ_IDX };
+		int existsField = -1;
+		for (int i = 0; i < existsTerms.length; i++) {
+			if (!existsTerms[i].isConstant() && existsTerms[i].slot == distinctSlot) {
+				existsField = existsFields[i];
+			}
+		}
+		if (existsField < 0) {
+			return null;
+		}
+		LmdbPrefixRunPlan outerPlan = tryPrefixRunPlan(stepSource, outer, new int[] { distinctSlot });
+		if (outerPlan == null) {
+			return null;
+		}
+		long existsSubj = existsConstant(exists.s, existsField == TripleIndex.SUBJ_IDX);
+		long existsPred = existsConstant(exists.p, existsField == TripleIndex.PRED_IDX);
+		long existsObj = existsConstant(exists.o, existsField == TripleIndex.OBJ_IDX);
+		LmdbPrefixRunPlan existsPlan = stepSource.prefixRunPlan(new int[] { existsField }, existsSubj, existsPred,
+				existsObj, UNKNOWN);
+		if (existsPlan == null) {
+			return null;
+		}
+		int outerField = outer.quadPositionOfSlot(distinctSlot);
+		// the context position is excluded: context id 0 means "unbound" there, which the id-level merge
+		// does not model
+		if (outerField < 0 || outerField == TripleIndex.CONTEXT_IDX) {
+			return null;
+		}
+		return new LmdbNativeExistsIntersection(outer, outerPlan, outerField, existsPlan, existsField, existsSubj,
+				existsPred, existsObj, UNKNOWN, aggregates[0].name);
+	}
+
+	private long existsConstant(Term term, boolean isCorrelatedField) {
+		return !isCorrelatedField && term.isConstant() ? term.constant : UNKNOWN;
 	}
 
 	private LmdbPrefixRunPlan tryPrefixRunPlan(NativeLmdbQuerySource stepSource, PatternPlan pattern, int[] slots) {
@@ -395,11 +953,18 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		final PatternPlan pattern;
 		final LmdbPrefixRunPlan plan;
 		final boolean countRunRows;
+		final boolean distinctRuns;
+		final NativeBooleanFilter runFilter;
+		final long minRunCount;
 
-		PrefixRunGroupCandidate(PatternPlan pattern, LmdbPrefixRunPlan plan, boolean countRunRows) {
+		PrefixRunGroupCandidate(PatternPlan pattern, LmdbPrefixRunPlan plan, boolean countRunRows,
+				boolean distinctRuns, NativeBooleanFilter runFilter, long minRunCount) {
 			this.pattern = pattern;
 			this.plan = plan;
 			this.countRunRows = countRunRows;
+			this.distinctRuns = distinctRuns;
+			this.runFilter = runFilter;
+			this.minRunCount = minRunCount;
 		}
 	}
 

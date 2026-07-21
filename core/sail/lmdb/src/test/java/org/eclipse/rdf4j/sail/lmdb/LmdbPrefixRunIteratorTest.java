@@ -50,7 +50,28 @@ public class LmdbPrefixRunIteratorTest {
 
 			assertThat(result.values(TripleIndex.PRED_IDX)).containsExactly(10L, 20L, 30L);
 			assertThat(result.rows).hasSize(3);
-			assertThat(result.rowsScanned).isLessThan(6);
+			// bulk prefetch may read the whole (tiny) index into one batch; sub-linearity on long runs is
+			// covered by longRunsStillSkipSubLinearly
+			assertThat(result.rowsScanned).isLessThanOrEqualTo(6);
+		}
+	}
+
+	@Test
+	public void longRunsStillSkipSubLinearly() throws Exception {
+		tripleStore.startTransaction();
+		for (int i = 0; i < 3000; i++) {
+			tripleStore.storeTriple(100 + i, 10, 1000 + i, 1, true);
+		}
+		tripleStore.storeTriple(100, 20, 1000, 1, true);
+		tripleStore.commit();
+
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			LmdbPrefixRunPlan plan = tripleStore.prefixRunPlan(new int[] { TripleIndex.PRED_IDX }, -1, -1, -1, -1);
+
+			ScanResult result = collect(tripleStore.getPrefixRuns(txn, plan, -1, -1, -1, -1, true, false));
+
+			assertThat(result.values(TripleIndex.PRED_IDX)).containsExactly(10L, 20L);
+			assertThat(result.rowsScanned).isLessThan(500);
 		}
 	}
 
@@ -67,7 +88,7 @@ public class LmdbPrefixRunIteratorTest {
 			assertThat(result.pairs(TripleIndex.PRED_IDX, TripleIndex.OBJ_IDX))
 					.containsExactly("10/1000", "10/1001", "20/2000", "30/3000");
 			assertThat(result.rows).hasSize(4);
-			assertThat(result.rowsScanned).isLessThan(6);
+			assertThat(result.rowsScanned).isLessThanOrEqualTo(6);
 		}
 	}
 
@@ -104,6 +125,49 @@ public class LmdbPrefixRunIteratorTest {
 
 			assertThat(result.pairs(TripleIndex.PRED_IDX, TripleIndex.OBJ_IDX))
 					.containsExactly("10/" + Long.MAX_VALUE, "11/1");
+		}
+	}
+
+	@Test
+	public void seekToSkipsAheadToRequestedValue() throws Exception {
+		storeDefaultRows();
+
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			LmdbPrefixRunPlan plan = tripleStore.prefixRunPlan(new int[] { TripleIndex.PRED_IDX }, -1, -1, -1, -1);
+
+			try (LmdbPrefixRunIterator cursor = tripleStore.getPrefixRuns(txn, plan, -1, -1, -1, -1, true, false)) {
+				assertThat(cursor.seekTo(15L)).isTrue();
+				assertThat(cursor.next()).isTrue();
+				assertThat(cursor.quad()[TripleIndex.PRED_IDX]).isEqualTo(20L);
+				// seeking to an existing value positions on exactly that value
+				assertThat(cursor.seekTo(30L)).isTrue();
+				assertThat(cursor.next()).isTrue();
+				assertThat(cursor.quad()[TripleIndex.PRED_IDX]).isEqualTo(30L);
+				// seeking past the last value: the cursor either reports exhaustion immediately (the bulk
+				// prefetch already saw the end) or on the next advance
+				if (cursor.seekTo(31L)) {
+					assertThat(cursor.next()).isFalse();
+				}
+				assertThat(cursor.seekTo(10L)).isFalse();
+			}
+		}
+	}
+
+	@Test
+	public void seekToWithBoundPredicateSkipsWithinObjectRuns() throws Exception {
+		storeDefaultRows();
+
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			LmdbPrefixRunPlan plan = tripleStore.prefixRunPlan(new int[] { TripleIndex.OBJ_IDX }, -1, 10, -1, -1);
+
+			try (LmdbPrefixRunIterator cursor = tripleStore.getPrefixRuns(txn, plan, -1, 10, -1, -1, true, false)) {
+				assertThat(cursor.next()).isTrue();
+				assertThat(cursor.quad()[TripleIndex.OBJ_IDX]).isEqualTo(1000L);
+				assertThat(cursor.seekTo(1001L)).isTrue();
+				assertThat(cursor.next()).isTrue();
+				assertThat(cursor.quad()[TripleIndex.OBJ_IDX]).isEqualTo(1001L);
+				assertThat(cursor.next()).isFalse();
+			}
 		}
 	}
 
