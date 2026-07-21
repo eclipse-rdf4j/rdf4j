@@ -10,7 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.text.csv;
 
-import static org.eclipse.rdf4j.rio.helpers.NTriplesUtil.*;
+import static org.eclipse.rdf4j.rio.helpers.NTriplesUtil.BNODE_PATTERN;
+import static org.eclipse.rdf4j.rio.helpers.NTriplesUtil.TripleMatch;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -19,7 +20,10 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.eclipse.rdf4j.model.*;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.resultio.text.SPARQLResultsXSVMappingStrategy;
