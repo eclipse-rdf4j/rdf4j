@@ -23,7 +23,9 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.util.RDFVersionsConversionContext;
 import org.eclipse.rdf4j.model.util.Statements;
+import org.eclipse.rdf4j.model.util.VersionLabel;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
@@ -59,6 +61,8 @@ public abstract class AbstractRDFWriter implements RDFWriter, Sink {
 	private boolean versionAnnouncementWritten;
 
 	protected Consumer<Statement> statementConsumer;
+
+	protected RDFVersionsConversionContext rdfVersionsConversionContext;
 
 	@Override
 	public void handleNamespace(String prefix, String uri) throws RDFHandlerException {
@@ -107,6 +111,14 @@ public abstract class AbstractRDFWriter implements RDFWriter, Sink {
 		if (getWriterConfig().get(BasicWriterSettings.CONVERT_RDF_12_REIFICATION)) {
 			// All writers can convert RDF 1.2 to reification on request
 			statementConsumer = this::handleStatementConvertTripleTerms;
+		} else if (getWriterConfig().get(BasicWriterSettings.RDF_OUTPUT_VERSION) == VersionLabel.RDF_1_2_BASIC) {
+			// We need conversion context for assigning the same blank noodes for the same triple terms and not flooding
+			// with PrpositionForm statements
+			rdfVersionsConversionContext = new RDFVersionsConversionContext();
+			statementConsumer = this::handleStatementsRDF12BasicConversion;
+		} else if (getWriterConfig().get(BasicWriterSettings.RDF_OUTPUT_VERSION) == VersionLabel.RDF_1_1) {
+			rdfVersionsConversionContext = new RDFVersionsConversionContext();
+			statementConsumer = this::handleStatementsRDF11Conversion;
 		} else if (!getRDFFormat().supportsTripleTerms()
 				&& getWriterConfig().get(BasicWriterSettings.ENCODE_TRIPLE_TERMS)) {
 			// By default, non-RDF-12 writers encode tripleTerm terms to special RDF IRIs
@@ -261,5 +273,21 @@ public abstract class AbstractRDFWriter implements RDFWriter, Sink {
 		} else {
 			consumeStatement(st);
 		}
+	}
+
+	private void handleStatementsRDF12BasicConversion(Statement st) {
+		Statements.convertRDFTo12Basic(st, this::consumeStatement, rdfVersionsConversionContext);
+	}
+
+	private void handleStatementsRDF11Conversion(Statement st) {
+		Statements.convertRDFTo11(st, this::consumeStatement, rdfVersionsConversionContext);
+	}
+
+	public RDFVersionsConversionContext getRdfVersionsConversionContext() {
+		return rdfVersionsConversionContext;
+	}
+
+	public void setRdfVersionsConversionContext(RDFVersionsConversionContext rdfVersionsConversionContext) {
+		this.rdfVersionsConversionContext = rdfVersionsConversionContext;
 	}
 }

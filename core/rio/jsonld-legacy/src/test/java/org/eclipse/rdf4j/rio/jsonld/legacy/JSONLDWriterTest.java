@@ -142,6 +142,15 @@ public class JSONLDWriterTest extends RDFWriterTest {
 		assertTrue(!w.toString().contains("@type"), "Does contain @type");
 	}
 
+	/**
+	 * Ignored because the legacy JSON-LD writer relies on jsonld-java's RDFDataset, which does not support RDF 1.2
+	 * direction-aware language-tagged literals, so base direction cannot be preserved.
+	 */
+	@Override
+	@Test
+	public void testRDF12FullTo12BasicConversion() {
+	}
+
 	@Override
 	protected RioSetting<?>[] getExpectedSupportedSettings() {
 		return new RioSetting[] {

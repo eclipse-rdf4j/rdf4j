@@ -55,6 +55,13 @@ public interface DatatypeHandler {
 	String GEOSPARQL = "org.eclipse.rdf4j.rio.datatypes.geosparql";
 
 	/**
+	 * Identifier for datatype used for conversion of directional language-tagged strings from RDF 1.2 to RDF 1.1
+	 *
+	 * @see <a href="https://w3c.github.io/rdf-concepts/spec/#server-considerations">Server Considerations</a>
+	 */
+	String I18N = "org.eclipse.rdf4j.rio.datatypes.i18n";
+
+	/**
 	 * Checks if the given datatype URI is recognized by this datatype handler.
 	 *
 	 * @param datatypeUri The datatype URI to check.

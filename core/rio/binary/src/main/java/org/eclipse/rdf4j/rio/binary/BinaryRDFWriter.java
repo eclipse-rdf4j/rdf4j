@@ -316,7 +316,13 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements ByteSink {
 		if (language.isPresent()) {
 			out.writeByte(LANG_LITERAL_VALUE);
 			writeString(label);
-			writeString(language.get());
+
+			Literal.BaseDirection baseDirection = literal.getBaseDirection();
+			if (baseDirection != Literal.BaseDirection.NONE) {
+				writeString(language.get() + baseDirection);
+			} else {
+				writeString(language.get());
+			}
 		} else if (datatype.equals(XSD.STRING)) {
 			out.writeByte(PLAIN_LITERAL_VALUE);
 			writeString(label);
