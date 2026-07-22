@@ -123,7 +123,7 @@ public class ThemeQueryBenchmark {
 	public int z_queryIndex;
 
 	@Param({
-//			"MEDICAL_RECORDS",
+			"MEDICAL_RECORDS",
 //			"SOCIAL_MEDIA",
 //			"LIBRARY",
 //			"ENGINEERING",
@@ -132,7 +132,7 @@ public class ThemeQueryBenchmark {
 //			"ELECTRICAL_GRID",
 //			"PHARMA",
 //			"ADAPTIVE_FILTER_PLACEMENT",
-			"ANALYTICS"
+//			"ANALYTICS"
 	})
 	public String themeName;
 

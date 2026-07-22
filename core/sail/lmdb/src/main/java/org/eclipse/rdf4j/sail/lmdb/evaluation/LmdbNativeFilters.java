@@ -729,6 +729,65 @@ final class CachedCompareFilter implements NativeBooleanFilter {
 	}
 }
 
+/**
+ * AND/OR of two compiled boolean filters. A named class rather than a lambda so fork-, close- and read-mask behavior
+ * compose from the children: a conjunction of forkable comparisons stays forkable for parallel workers.
+ */
+@Experimental
+final class BooleanCombinationFilter implements NativeBooleanFilter {
+	final NativeBooleanFilter left;
+	final NativeBooleanFilter right;
+	final boolean conjunction;
+
+	BooleanCombinationFilter(NativeBooleanFilter left, NativeBooleanFilter right, boolean conjunction) {
+		this.left = left;
+		this.right = right;
+		this.conjunction = conjunction;
+	}
+
+	@Override
+	public boolean accept(RowState row) {
+		return conjunction
+				? left.accept(row) && right.accept(row)
+				: left.accept(row) || right.accept(row);
+	}
+
+	@Override
+	public long batchReadMask() {
+		long leftMask = left.batchReadMask();
+		long rightMask = right.batchReadMask();
+		return leftMask < 0L || rightMask < 0L ? -1L : leftMask | rightMask;
+	}
+
+	@Override
+	public boolean parallelWorkerForkable() {
+		return left.parallelWorkerForkable() && right.parallelWorkerForkable();
+	}
+
+	@Override
+	public NativeBooleanFilter forkForParallelWorker() {
+		NativeBooleanFilter leftFork = left.forkForParallelWorker();
+		if (leftFork == null) {
+			return null;
+		}
+		NativeBooleanFilter rightFork = right.forkForParallelWorker();
+		if (rightFork == null) {
+			leftFork.close();
+			return null;
+		}
+		return new BooleanCombinationFilter(leftFork, rightFork, conjunction);
+	}
+
+	@Override
+	public void close() {
+		try {
+			left.close();
+		} finally {
+			right.close();
+		}
+	}
+}
+
 @Experimental
 final class OrderedSlotCompareFilter implements NativeBooleanFilter {
 	final int leftSlot;

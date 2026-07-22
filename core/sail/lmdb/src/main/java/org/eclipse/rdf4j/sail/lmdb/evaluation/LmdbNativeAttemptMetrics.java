@@ -44,6 +44,7 @@ public final class LmdbNativeAttemptMetrics {
 	static final String PATH_FACTORIZED_ROWS = "factorizedRows";
 	static final String PATH_ADAPTIVE_FILTER_PLACEMENT = "adaptiveFilterPlacement";
 	static final String PATH_NESTED_LOOP = "nestedLoop";
+	static final String PATH_WCOJ = "wcoj";
 	static final String PATH_ORDERED_FACTORIZED_TOP_K = "orderedFactorizedTopK";
 	static final String PATH_ORDERED_FACTORIZED_SORT = "orderedFactorizedSort";
 	static final String PATH_PREFIX_RUN_GROUPS = "prefixRunGroups";

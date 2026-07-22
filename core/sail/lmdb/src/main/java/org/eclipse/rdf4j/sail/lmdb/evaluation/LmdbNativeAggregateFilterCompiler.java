@@ -374,12 +374,12 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 		if (expr instanceof And) {
 			NativeBooleanFilter left = compileBoolean(((And) expr).getLeftArg(), assuredMask);
 			NativeBooleanFilter right = compileBoolean(((And) expr).getRightArg(), assuredMask);
-			return left == null || right == null ? null : row -> left.accept(row) && right.accept(row);
+			return left == null || right == null ? null : new BooleanCombinationFilter(left, right, true);
 		}
 		if (expr instanceof Or) {
 			NativeBooleanFilter left = compileBoolean(((Or) expr).getLeftArg(), assuredMask);
 			NativeBooleanFilter right = compileBoolean(((Or) expr).getRightArg(), assuredMask);
-			return left == null || right == null ? null : row -> left.accept(row) || right.accept(row);
+			return left == null || right == null ? null : new BooleanCombinationFilter(left, right, false);
 		}
 		if (expr instanceof Not && cannotProduceError(((Not) expr).getArg())) {
 			// Native leaves collapse type errors to false at the row gate. Negation is safe only when the

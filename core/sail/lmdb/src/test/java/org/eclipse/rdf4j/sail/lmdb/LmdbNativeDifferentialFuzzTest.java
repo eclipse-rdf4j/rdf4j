@@ -314,6 +314,56 @@ public class LmdbNativeDifferentialFuzzTest {
 	}
 
 	/**
+	 * Cyclic-BGP differential round: triangles, longer cycles, diamonds with chords, cycles with tails, filters,
+	 * OPTIONAL decoration and pre-bound VALUES inputs. These shapes engage the worst-case-optimal leapfrog operator
+	 * (LmdbNativeLeapfrogJoin) on the native engine, so this round pins its results — including solution multiplicity
+	 * from triples stored in several graphs — against the generic evaluator.
+	 */
+	@Test
+	public void cyclicBasicGraphPatterns() {
+		String edge = "<" + EX + "edge>";
+		// fixed shapes over the edge graph (cycle 8->9->10->8, diamond 11->{12,13}->14, self-loop 15->15)
+		assertSameResults("SELECT * WHERE { ?a " + edge + " ?b . ?b " + edge + " ?c . ?c " + edge + " ?a . }");
+		assertSameResults(
+				"SELECT * WHERE { ?a " + edge + " ?b . ?b " + edge + " ?c . ?c " + edge + " ?d . ?d " + edge
+						+ " ?a . }");
+		// diamond with chord: two length-2 paths plus the closing edges
+		assertSameResults("SELECT * WHERE { ?a " + edge + " ?b . ?a " + edge + " ?c . ?b " + edge + " ?d . ?c " + edge
+				+ " ?d . }");
+		// cycle plus acyclic tail hanging off a core variable
+		assertSameResults("SELECT * WHERE { ?a " + edge + " ?b . ?b " + edge + " ?c . ?c " + edge + " ?a . ?a "
+				+ edge + " ?t . }");
+		// cycle with an inequality filter and with a projection subset
+		assertSameResults("SELECT ?a WHERE { ?a " + edge + " ?b . ?b " + edge + " ?c . ?c " + edge
+				+ " ?a . FILTER(?a != ?b) }");
+		// cycle under OPTIONAL decoration
+		assertSameResults("SELECT * WHERE { ?a " + edge + " ?b . ?b " + edge + " ?c . ?c " + edge
+				+ " ?a . OPTIONAL { ?a <" + EX + "p1> ?x . } }");
+		// pre-bound VALUES input into the cycle
+		assertSameResults("SELECT * WHERE { VALUES ?a { <" + EX + "s8> <" + EX + "s15> } ?a " + edge + " ?b . ?b "
+				+ edge + " ?c . ?c " + edge + " ?a . }");
+		// randomized cyclic shapes over the general predicates (multi-graph duplicates exercise multiplicity)
+		Random random = new Random(SEED + 77);
+		String[] preds = { "p1", "p2", "p3", "p4", "p5", "edge" };
+		for (int i = 0; i < 60; i++) {
+			int len = 3 + random.nextInt(3);
+			StringBuilder where = new StringBuilder();
+			for (int j = 0; j < len; j++) {
+				where.append("?v")
+						.append(j)
+						.append(" <")
+						.append(EX)
+						.append(preds[random.nextInt(preds.length)])
+						.append("> ?v")
+						.append((j + 1) % len)
+						.append(" . ");
+			}
+			String distinct = random.nextBoolean() ? "DISTINCT " : "";
+			assertSameResults("SELECT " + distinct + "* WHERE { " + where + "}");
+		}
+	}
+
+	/**
 	 * ORDER BY differential round (Phase 5). The order keys cover every projected variable, including the
 	 * literal-binding objects ?c and ?d: mixed date/dateTime order keys used to be excluded while the core
 	 * ValueComparator was non-transitive for indeterminate XML calendar comparisons (making the sorted order

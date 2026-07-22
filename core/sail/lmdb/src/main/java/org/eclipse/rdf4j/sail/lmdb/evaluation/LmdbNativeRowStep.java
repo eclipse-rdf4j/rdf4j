@@ -816,6 +816,13 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		MultiJoinPlan multiJoin = arg instanceof MultiJoinPlan && ((MultiJoinPlan) arg).children.length > 0
 				? (MultiJoinPlan) arg
 				: null;
+		if (multiJoin != null) {
+			RowCursor leapfrog = LmdbNativeLeapfrogJoin.tryOpen(multiJoin, row);
+			if (leapfrog != null) {
+				LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_WCOJ);
+				return NativeUnorderedInput.rows(row, leapfrog);
+			}
+		}
 		boolean correlatedEntry = (arg.producedMask() & row.boundMask()) != 0L;
 		boolean countingBranch = multiJoin != null && LmdbNativeFactorizedRows.plansCountingBranch(multiJoin,
 				LmdbNativeFactorizedRows.selectFactorizedOrder(multiJoin, row.boundMask(), 0L, 0), row.boundMask(),

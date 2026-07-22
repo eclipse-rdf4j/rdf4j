@@ -14,10 +14,13 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class LmdbNativeTupleMetricsTest {
 
+	// counters are JVM-global: earlier suite members publishing distinct-tracker rows must not leak in
+	@BeforeEach
 	@AfterEach
 	void resetCounters() {
 		PrimitiveTupleTable.PROBES.set(0L);
