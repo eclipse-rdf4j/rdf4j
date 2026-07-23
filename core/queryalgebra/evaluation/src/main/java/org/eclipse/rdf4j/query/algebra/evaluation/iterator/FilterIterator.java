@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -138,6 +139,10 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 
 		Set<String> sharedBindingNames = new LinkedHashSet<>(filter.getArg().getBindingNames());
 		sharedBindingNames.retainAll(subQuery.getBindingNames());
+		// getBindingNames() includes the names of anonymous constant vars, which never occur in any
+		// produced binding set. Leaving them in the shared set makes every row miss the
+		// exact-key hash and fall into a linear scan of the materialized relation.
+		sharedBindingNames.removeAll(constantVarNames(subQuery));
 		String[] sharedBindingArray = sharedBindingNames.toArray(String[]::new);
 		QueryEvaluationStep arg;
 		QueryEvaluationStep existsArg;
@@ -150,7 +155,21 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 		}
 		boolean recordFilterOutcomes = shouldRecordFilterOutcomes(filter, evaluationStatistics);
 		return bindings -> new MaterializedExistsFilterIteration(filter, arg.evaluate(bindings),
-				existsArg.evaluate(bindings), sharedBindingArray, evaluationStatistics, recordFilterOutcomes);
+				() -> existsArg.evaluate(bindings), existsArg::evaluate, sharedBindingArray, evaluationStatistics,
+				recordFilterOutcomes);
+	}
+
+	private static Set<String> constantVarNames(TupleExpr subQuery) {
+		Set<String> names = new HashSet<>();
+		subQuery.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+			@Override
+			public void meet(Var var) {
+				if (var.hasValue() && var.getName() != null) {
+					names.add(var.getName());
+				}
+			}
+		});
+		return names;
 	}
 
 	private static boolean subqueryVarReferencesAreOutputs(TupleExpr subQuery) {

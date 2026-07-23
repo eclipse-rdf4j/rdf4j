@@ -1728,11 +1728,17 @@ final class PackedLogicalRuleProgram {
 	}
 
 	private double knownFilterRatio(int filterExpressionId, int inputGroupId) {
-		double explicitRatio = metricDouble(metadata.relationMetricSetId(filterExpressionId),
-				TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO_RAW);
+		int metricSetId = metadata.relationMetricSetId(filterExpressionId);
+		// A heuristic/unknown-source ratio is the uniform fallback guess, not knowledge; treating
+		// it as known (and the estimate ratio derived from it) starves the finite-filter anchor
+		// rule of exactly the filters it exists for.
+		String selectivitySource = metricString(metricSetId, TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE);
+		if ("heuristic".equals(selectivitySource) || "unknown".equals(selectivitySource)) {
+			return Double.NaN;
+		}
+		double explicitRatio = metricDouble(metricSetId, TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO_RAW);
 		if (!Double.isFinite(explicitRatio)) {
-			explicitRatio = metricDouble(metadata.relationMetricSetId(filterExpressionId),
-					TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO);
+			explicitRatio = metricDouble(metricSetId, TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO);
 		}
 		if (Double.isFinite(explicitRatio)) {
 			return explicitRatio;
@@ -1811,6 +1817,21 @@ final class PackedLogicalRuleProgram {
 			return rewrittenId;
 		}
 		return rebuildUnaryIfChanged(expressionId, childId);
+	}
+
+	private String metricString(int metricSetId, String metricName) {
+		if (metricSetId == 0 || payloads.operatorTag(metricSetId) != PackedPayloadOp.PLANNED_METRICS) {
+			return null;
+		}
+		for (int ordinal = 0; ordinal < payloads.childCount(metricSetId); ordinal++) {
+			int entryId = payloads.childGroupId(metricSetId, ordinal);
+			if (payloads.operatorTag(entryId) == PackedPayloadOp.STRING_METRIC
+					&& metricName.equals(objects.value(payloads.payloadId(entryId)))) {
+				Object value = objects.value(payloads.semanticScopeId(entryId));
+				return value instanceof String ? (String) value : null;
+			}
+		}
+		return null;
 	}
 
 	private double metricDouble(int metricSetId, String metricName) {

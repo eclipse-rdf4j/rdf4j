@@ -15,6 +15,8 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
@@ -26,14 +28,22 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 
 final class MaterializedExistsFilterIteration extends LookAheadIteration<BindingSet> implements IndexReportingIterator {
+
+	// Materializing the EXISTS relation costs a full evaluation of the subquery regardless of how
+	// few outer rows arrive. Probe correlated per-row while the outer side is still small, and only
+	// materialize once enough rows show up to amortize the scan.
+	private static final int PROBE_LIMIT = 32;
+
 	private final Filter filterNode;
 	private final CloseableIteration<BindingSet> leftIter;
-	private final CloseableIteration<BindingSet> existsIter;
+	private final Supplier<CloseableIteration<BindingSet>> existsIterSupplier;
+	private final Function<BindingSet, CloseableIteration<BindingSet>> existsProbeFunction;
 	private final String[] sharedBindingNames;
 	private final EvaluationStatistics evaluationStatistics;
 	private final boolean recordFilterOutcomes;
 	private boolean initialized;
 	private boolean existsNonEmpty;
+	private int probedRows;
 	private Set<BindingSetHashKey> exactKeys = Set.of();
 	private List<BindingSet> allRows = List.of();
 	private List<BindingSet> wildcardRows = List.of();
@@ -44,11 +54,13 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 	private long recordedFilteredCount;
 
 	MaterializedExistsFilterIteration(Filter filterNode, CloseableIteration<BindingSet> leftIter,
-			CloseableIteration<BindingSet> existsIter, String[] sharedBindingNames,
+			Supplier<CloseableIteration<BindingSet>> existsIterSupplier,
+			Function<BindingSet, CloseableIteration<BindingSet>> existsProbeFunction, String[] sharedBindingNames,
 			EvaluationStatistics evaluationStatistics, boolean recordFilterOutcomes) {
 		this.filterNode = filterNode;
 		this.leftIter = leftIter;
-		this.existsIter = existsIter;
+		this.existsIterSupplier = existsIterSupplier;
+		this.existsProbeFunction = existsProbeFunction;
 		this.sharedBindingNames = sharedBindingNames;
 		this.evaluationStatistics = evaluationStatistics;
 		this.recordFilterOutcomes = recordFilterOutcomes;
@@ -56,11 +68,18 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 
 	@Override
 	protected BindingSet getNextElement() throws QueryEvaluationException {
-		ensureInitialized();
 		while (leftIter.hasNext()) {
 			BindingSet left = leftIter.next();
 			sourceRowsScannedActual++;
-			boolean accepted = matches(left);
+			boolean accepted;
+			if (!initialized && probedRows < PROBE_LIMIT && sharedBindingNames.length > 0
+					&& hasAllSharedBindings(left)) {
+				probedRows++;
+				accepted = probe(left);
+			} else {
+				ensureInitialized();
+				accepted = matches(left);
+			}
 			if (accepted) {
 				sourceRowsMatchedActual++;
 			} else {
@@ -74,12 +93,18 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 		return null;
 	}
 
+	private boolean probe(BindingSet left) {
+		try (CloseableIteration<BindingSet> probeIter = existsProbeFunction.apply(left)) {
+			return probeIter.hasNext();
+		}
+	}
+
 	private void ensureInitialized() {
 		if (initialized) {
 			return;
 		}
 		initialized = true;
-		try {
+		try (CloseableIteration<BindingSet> existsIter = existsIterSupplier.get()) {
 			if (sharedBindingNames.length == 0) {
 				existsNonEmpty = existsIter.hasNext();
 				return;
@@ -100,8 +125,6 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 			exactKeys = nextExactKeys.isEmpty() ? Set.of() : nextExactKeys;
 			allRows = nextAllRows.isEmpty() ? List.of() : nextAllRows;
 			wildcardRows = nextWildcardRows.isEmpty() ? List.of() : nextWildcardRows;
-		} finally {
-			existsIter.close();
 		}
 	}
 
@@ -166,16 +189,12 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 		try {
 			leftIter.close();
 		} finally {
-			try {
-				existsIter.close();
-			} finally {
-				if (recordFilterOutcomes && (recordedPassedCount > 0L || recordedFilteredCount > 0L)) {
-					try {
-						evaluationStatistics.recordFilterOutcome(filterNode, recordedPassedCount,
-								recordedFilteredCount);
-					} catch (RuntimeException e) {
-						// Estimation feedback must never break query evaluation.
-					}
+			if (recordFilterOutcomes && (recordedPassedCount > 0L || recordedFilteredCount > 0L)) {
+				try {
+					evaluationStatistics.recordFilterOutcome(filterNode, recordedPassedCount,
+							recordedFilteredCount);
+				} catch (RuntimeException e) {
+					// Estimation feedback must never break query evaluation.
 				}
 			}
 		}

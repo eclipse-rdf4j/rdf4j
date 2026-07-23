@@ -190,11 +190,19 @@ final class PackedIncumbentSearch {
 			return selectedRowsByGroup[childGroupIds[0]];
 		}
 		if (operator == PackedRelOp.LEFT_JOIN && childCount == 2) {
-			return Math.max(selectedRowsByGroup[childGroupIds[0]],
-					PackedJoinEnumerator.joinRows(selectedRowsByGroup[childGroupIds[0]],
-							selectedRowsByGroup[childGroupIds[1]],
-							query.masksIntersect(query.relOutputMaskId(childGroupIds[0]),
-									query.relOutputMaskId(childGroupIds[1]))));
+			double leftRows = selectedRowsByGroup[childGroupIds[0]];
+			double rightRows = selectedRowsByGroup[childGroupIds[1]];
+			double join = PackedJoinEnumerator.joinRows(leftRows, rightRows,
+					query.masksIntersect(query.relOutputMaskId(childGroupIds[0]),
+							query.relOutputMaskId(childGroupIds[1])));
+			// An OPTIONAL is left-driven: every left row survives and only multiplies through its
+			// matching right rows. The raw product estimate compounds across nested OPTIONAL/JOIN
+			// chains until costs saturate, so bound the per-left-row fanout.
+			double fanoutCap = Math.max(1.0d, leftRows) * Math.max(1.0d, Math.sqrt(Math.max(1.0d, rightRows)));
+			if (!Double.isFinite(fanoutCap)) {
+				fanoutCap = Double.MAX_VALUE;
+			}
+			return Math.max(leftRows, Math.min(join, fanoutCap));
 		}
 		if (childCount == 0) {
 			return 1.0d;

@@ -106,7 +106,7 @@ final class PackedSelectedPlanContextualizer {
 			childWinnerScratch[childOffset] = contextualLeft;
 			childWinnerScratch[childOffset + 1] = winnerByDepth[depth + 1];
 			rows = wrapperRows(winnerId, leftRows);
-			cost = saturatedAdd(leftCost, costsByDepth[depth + 1], wrapperLocalWork(winnerId, rows));
+			cost = saturatedAdd(leftCost, costsByDepth[depth + 1], wrapperLocalWork(winnerId, rows, leftRows));
 		} else if (childCount == 0) {
 			rows = leafRows(winnerId, physicalExpressionId, prefixCount, prefixRows);
 			cost = leafWork(winnerId, rows);
@@ -124,7 +124,7 @@ final class PackedSelectedPlanContextualizer {
 			rows = operator == PackedRelOp.GROUP
 					? groupRows(physicalExpressionId, firstChildRows, wrapperRows(winnerId, firstChildRows))
 					: wrapperRows(winnerId, firstChildRows);
-			cost = saturatedAdd(childCost, wrapperLocalWork(winnerId, rows), 0.0d);
+			cost = saturatedAdd(childCost, wrapperLocalWork(winnerId, rows, firstChildRows), 0.0d);
 		}
 
 		if (childCount != 0) {
@@ -298,7 +298,7 @@ final class PackedSelectedPlanContextualizer {
 		return Math.max(0.0d, childRows * Math.min(1.0d, originalRows / originalChildRows));
 	}
 
-	private double wrapperLocalWork(int winnerId, double rows) {
+	private double wrapperLocalWork(int winnerId, double rows, double contextualChildRows) {
 		double totalWork = memo.winnerWorkRows(winnerId);
 		if (!finiteNonNegative(totalWork)) {
 			return Math.max(1.0d, rows);
@@ -310,7 +310,21 @@ final class PackedSelectedPlanContextualizer {
 				childWork += work;
 			}
 		}
-		return Math.max(1.0d, totalWork - childWork);
+		double incumbentLocalWork = Math.max(1.0d, totalWork - childWork);
+		// The incumbent's local work was computed under written-order child rows. A wrapper's own
+		// work scales with the rows it actually processes in this context; inheriting the absolute
+		// incumbent number verbatim lets one blown-up written-order estimate saturate every plan
+		// that contains the wrapper.
+		int firstChildWinnerId = memo.winnerChildCount(winnerId) > 0 ? memo.winnerChildWinnerId(winnerId, 0) : 0;
+		double incumbentChildRows = firstChildWinnerId != 0 ? memo.winnerOutputRows(firstChildWinnerId) : Double.NaN;
+		if (finiteNonNegative(contextualChildRows) && finiteNonNegative(incumbentChildRows)
+				&& incumbentChildRows > 0.0d) {
+			double scaled = incumbentLocalWork * (contextualChildRows / incumbentChildRows);
+			if (finiteNonNegative(scaled)) {
+				return Math.max(1.0d, Math.max(scaled, rows));
+			}
+		}
+		return incumbentLocalWork;
 	}
 
 	private int appendFactors(int winnerId, int start) {

@@ -251,7 +251,7 @@ class FilterIteratorTelemetryTest {
 	}
 
 	@Test
-	void safeExistsFilterMaterializesSubqueryOnceForSharedBindingSemiJoin() throws Exception {
+	void safeExistsFilterProbesSubqueryPerRowForSmallSharedBindingSemiJoin() throws Exception {
 		Value matched = SimpleValueFactory.getInstance().createIRI("urn:matched");
 		Value filtered = SimpleValueFactory.getInstance().createIRI("urn:filtered");
 		BindingSetAssignment left = new BindingSetAssignment();
@@ -269,9 +269,9 @@ class FilterIteratorTelemetryTest {
 			leftEvaluations.incrementAndGet();
 			return new CloseableIteratorIteration<>(left.getBindingSets().iterator());
 		};
-		QueryEvaluationStep rightStep = ignored -> {
+		QueryEvaluationStep rightStep = bindings -> {
 			rightEvaluations.incrementAndGet();
-			return new CloseableIteratorIteration<>(right.getBindingSets().iterator());
+			return new CloseableIteratorIteration<>(compatibleAssignments(right, bindings).iterator());
 		};
 		QueryValueEvaluationStep conditionStep = ignored -> BooleanLiteral.FALSE;
 		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
@@ -293,8 +293,66 @@ class FilterIteratorTelemetryTest {
 		assertThat(results).hasSize(2);
 		assertThat(results).allSatisfy(row -> assertThat(row.getValue("x")).isEqualTo(matched));
 		assertThat(leftEvaluations).hasValue(1);
-		assertThat(rightEvaluations).hasValue(1);
+		// small inputs are probed correlated per row; the subquery is never fully materialized
+		assertThat(rightEvaluations).hasValue(3);
 		assertThat(conditionEvaluations).hasValue(0);
+	}
+
+	@Test
+	void safeExistsFilterMaterializesSubqueryOnceBeyondProbeLimit() throws Exception {
+		Value matched = SimpleValueFactory.getInstance().createIRI("urn:matched");
+		Value filtered = SimpleValueFactory.getInstance().createIRI("urn:filtered");
+		List<BindingSet> leftRows = new ArrayList<>();
+		for (int i = 0; i < 100; i++) {
+			leftRows.add(singleBindingSet("x", i % 2 == 0 ? matched : filtered));
+		}
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingNames(Set.of("x"));
+		left.setBindingSets(leftRows);
+		BindingSetAssignment right = assignment("x", matched);
+		Exists exists = new Exists(right);
+		Filter filter = new Filter(left, exists);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		AtomicInteger rightEvaluations = new AtomicInteger();
+		QueryEvaluationStep leftStep = ignored -> new CloseableIteratorIteration<>(left.getBindingSets().iterator());
+		QueryEvaluationStep rightStep = bindings -> {
+			rightEvaluations.incrementAndGet();
+			return new CloseableIteratorIteration<>(compatibleAssignments(right, bindings).iterator());
+		};
+		QueryValueEvaluationStep conditionStep = ignored -> BooleanLiteral.FALSE;
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		doReturn(leftStep).when(strategy).precompile(eq((TupleExpr) left), eq(context));
+		doReturn(rightStep).when(strategy).precompile(eq((TupleExpr) right), eq(context));
+		doReturn(conditionStep).when(strategy).precompile(eq((ValueExpr) exists), eq(context));
+
+		QueryEvaluationStep step = FilterIterator.supply(filter, strategy, context);
+
+		List<BindingSet> results;
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			results = drain(iteration);
+		}
+		assertThat(results).hasSize(50);
+		assertThat(results).allSatisfy(row -> assertThat(row.getValue("x")).isEqualTo(matched));
+		// 32 correlated probes, then a single unbound materialization covers the remaining rows
+		assertThat(rightEvaluations).hasValue(33);
+	}
+
+	private static List<BindingSet> compatibleAssignments(BindingSetAssignment assignment, BindingSet bindings) {
+		List<BindingSet> compatible = new ArrayList<>();
+		for (BindingSet candidate : assignment.getBindingSets()) {
+			boolean ok = true;
+			for (String name : candidate.getBindingNames()) {
+				Value bound = bindings.getValue(name);
+				if (bound != null && !bound.equals(candidate.getValue(name))) {
+					ok = false;
+					break;
+				}
+			}
+			if (ok) {
+				compatible.add(candidate);
+			}
+		}
+		return compatible;
 	}
 
 	@Test

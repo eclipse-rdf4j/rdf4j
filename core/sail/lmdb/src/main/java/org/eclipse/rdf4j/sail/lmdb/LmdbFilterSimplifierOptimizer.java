@@ -290,6 +290,10 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 					anchors.add(materializedAnchor);
 				}
 			} else {
+				BindingSetAssignment aliasAnchor = aliasSourceFilterAnchor(filter, anchor, assuredBindings);
+				if (aliasAnchor != null && !equivalentSmallLiteralAssignmentExists(aliasAnchor, assignmentValues)) {
+					anchors.add(aliasAnchor);
+				}
 				remainingConditions.add(condition);
 			}
 		}
@@ -930,6 +934,32 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		return null;
 	}
 
+	/**
+	 * A small-literal filter on a BIND identity alias (?opt := ?src) cannot anchor ?opt directly, but a renamed anchor
+	 * on ?src is a sound narrowing as long as the original filter is retained: any row the anchor removes either
+	 * carries ?opt = ?src outside the anchor values (the filter rejects it) or never binds ?opt at all (the
+	 * null-rejecting filter rejects it too).
+	 */
+	private BindingSetAssignment aliasSourceFilterAnchor(Filter filter, BindingSetAssignment anchor,
+			Set<String> assuredBindings) {
+		if (anchor == null || anchor.getBindingNames().size() != 1) {
+			return null;
+		}
+		String bindingName = anchor.getBindingNames().iterator().next();
+		if (!extensionElementNames(filter.getArg()).contains(bindingName)) {
+			return null;
+		}
+		BindingSetAssignment renamed = directExtensionSourceAnchor(bindingName, anchor, filter.getArg());
+		if (renamed == null) {
+			return null;
+		}
+		String sourceName = renamed.getBindingNames().iterator().next();
+		if (!assuredBindings.contains(sourceName)) {
+			return null;
+		}
+		return renamed;
+	}
+
 	private boolean shouldKeepObjectFilterForCascadesCosting(Filter filter, ValueExpr condition, String bindingName) {
 		StatementPattern pattern = localStatementPattern(filter, condition, bindingName);
 		if (pattern == null || !"object".equals(localPatternComponent(pattern, bindingName))) {
@@ -941,7 +971,22 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		if (containsLeftJoinRightBinding(filter.getArg(), bindingName)) {
 			return false;
 		}
-		return containsMultipleStatementPatterns(filter);
+		if (!containsMultipleStatementPatterns(filter)) {
+			return false;
+		}
+		// Defer to cascades costing only when real (learned/sampled) evidence says the filter is
+		// unselective; a heuristic/unknown estimate must not veto a provably safe anchor. The 0.25
+		// threshold mirrors the packed finite-filter rule's own gate.
+		EvaluationStatistics.FilterPassEstimate estimate = LmdbJoinPlanSupport.estimateFilterPass(statistics, filter,
+				condition);
+		if (estimate == null || !isValidPassRatio(estimate.getPassRatio())) {
+			return false;
+		}
+		if (estimate.getSource() == EvaluationStatistics.FilterPassEstimate.Source.HEURISTIC
+				|| estimate.getSource() == EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN) {
+			return false;
+		}
+		return estimate.getPassRatio() > 0.25d;
 	}
 
 	private static void collectJoinFactors(TupleExpr tupleExpr, List<TupleExpr> factors) {

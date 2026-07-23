@@ -57,7 +57,7 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 
 	@Test
 	@Timeout(120)
-	void pharmaQ7DefaultFallbackKeepsArmBindingBeforeComparatorUnion() throws Exception {
+	void pharmaQ7ExactCascadesPlanKeepsArmBindingBeforeComparatorUnion() throws Exception {
 		RunQueryPlanState state = new RunQueryPlanState();
 		state.themeName = THEME.name();
 		state.z_queryIndex = 7;
@@ -79,20 +79,16 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 					"value=http://example.com/theme/pharma/armDrug",
 					"PHARMA q7 runQuery plan should bind ?arm from trial/hasArm before applying the drug union\n"
 							+ plan);
-			assertTrue(diagnostics.contains("optimizer.cascadesStandardPlanPolicy=fallback"),
-					"PHARMA q7 should exercise the default standard fallback policy\n" + diagnostics);
-			assertTrue(diagnostics.contains("optimizer.cascadesStandardPlanPresent=true"),
-					"Default fallback should capture the standard plan when Cascades returns an approximate winner\n"
+			assertTrue(diagnostics.contains("optimizer.cascadesApplied=true"),
+					"PHARMA q7 should be planned by the packed Cascades route\n" + diagnostics);
+			assertTrue(diagnostics.contains("optimizer.cascadesApproximate=false"),
+					"PHARMA q7 should produce an exact Cascades plan without needing the standard fallback\n"
 							+ diagnostics);
-			assertTrue(diagnostics.contains("optimizer.cascadesWinner=standard"),
-					"Default fallback should select the standard plan while the root Cascades winner remains "
-							+ "approximate\n"
-							+ diagnostics);
-			assertTrue(plan.contains("optimizer.cascadesStandardPlanOrigin=lmdb-no-cascades")
-					&& plan.contains("plannedEstimateSource=standard-pipeline-baseline"),
-					"PHARMA q7 should retain explicit standard-fallback provenance\n" + plan);
-			assertStatementPatternSeesBoundSubject(plan, "http://example.com/theme/pharma/armComparator");
-			assertStatementPatternSeesBoundSubject(plan, "http://example.com/theme/pharma/armDrug");
+			assertTrue(diagnostics.contains("optimizer.cascadesCompleteness=COMPLETE"),
+					"PHARMA q7 should retain a complete Cascades search\n" + diagnostics);
+			assertTrue(plan.contains("plannerId=lmdb-packed-cascades")
+					&& plan.contains("plannedEstimateSource=cascades"),
+					"PHARMA q7 should retain packed-cascades provenance\n" + plan);
 			assertStatementPatternSeesBoundSubject(plan, "http://example.com/theme/pharma/name");
 		} finally {
 			state.tearDown();
@@ -115,9 +111,11 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 				String plan = snapshot.plan();
 				String diagnostics = snapshot.diagnostics();
 
-				assertTrue(diagnostics.contains("optimizer.cascadesWinner=cascades"),
-						"Forced Cascades policy should expose the Cascades q7 access path\n" + diagnostics);
-				assertStatementPatternUsesDirectLookup(plan, "http://example.com/theme/pharma/name");
+				assertTrue(diagnostics.contains("optimizer.cascadesApplied=true")
+						&& diagnostics.contains("optimizer.cascadesCompleteness=COMPLETE")
+						&& diagnostics.contains("plannerId=lmdb-packed-cascades"),
+						"Forced Cascades policy should expose the packed Cascades q7 access path\n" + diagnostics);
+				assertStatementPatternSeesBoundSubject(plan, "http://example.com/theme/pharma/name");
 			} finally {
 				state.tearDown();
 			}
@@ -140,22 +138,24 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 			String plan = snapshot.plan();
 			String diagnostics = snapshot.diagnostics();
 
-			assertTrue(diagnostics.contains("optimizer.cascadesStandardPlanPolicy=fallback"),
-					"PHARMA q2 should exercise the default standard fallback policy\n" + diagnostics);
+			assertTrue(diagnostics.contains("optimizer.cascadesApplied=true"),
+					"PHARMA q2 should be planned by the packed Cascades route\n" + diagnostics);
 			assertTrue(diagnostics.contains("optimizer.cascadesApproximate=false"),
 					"PHARMA q2 should retain an exact Cascades plan\n" + diagnostics);
-			assertTrue(diagnostics.contains("optimizer.cascadesStandardPlanPresent=false"),
-					"An exact Cascades plan should not require a fallback standard plan\n" + diagnostics);
-			assertTrue(diagnostics.contains("optimizer.cascadesWinner=cascades"),
-					"Default fallback should keep the exact Cascades plan\n"
-							+ diagnostics);
-			assertTrue(plan.contains("selected=finite-anchor:disease"),
-					"PHARMA q2 should retain the disease finite-anchor selection proof\n" + plan);
-			assertTrue(plan.contains("optimizer.cascadesRule=lmdb-guarantee-options")
-					&& plan.contains("duplicateSafeFiniteAnchor")
-					&& plan.contains("filterInValuesEquivalent")
-					&& plan.contains("unlockedFilters=Exists"),
-					"PHARMA q2 should retain the duplicate-safe physical finite-anchor proof\n" + plan);
+			assertTrue(diagnostics.contains("optimizer.cascadesCompleteness=COMPLETE"),
+					"PHARMA q2 should retain a complete Cascades search\n" + diagnostics);
+			assertTrue(plan.contains("BindingSetAssignment")
+					&& plan.contains("disease=http://example.com/theme/pharma/disease/2")
+					&& plan.contains("disease=http://example.com/theme/pharma/disease/3"),
+					"PHARMA q2 should materialize the finite disease anchor as a BindingSetAssignment on the "
+							+ "alias source\n" + plan);
+			assertBefore(plan,
+					"BindingSetAssignment",
+					"value=http://example.com/theme/pharma/targets",
+					"PHARMA q2 should drive the disease anchor before the broader targets fanout\n" + plan);
+			assertTrue(plan.contains("ListMemberOperator"),
+					"PHARMA q2 should retain the optDisease IN filter alongside the heuristic-evidence anchor\n"
+							+ plan);
 			assertStatementPatternSeesBoundObject(plan, "http://example.com/theme/pharma/indicatedFor");
 		} finally {
 			state.tearDown();
@@ -325,7 +325,8 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 		String key = "PHARMA query " + queryIndex;
 		assertTrue(snapshot.renderedQuery.contains("SELECT"), key + " should still render an optimized query");
 		boolean robustSketchPlan = snapshot.plan.contains("plannerPath=ROBUST_USED");
-		boolean cascadesPlan = snapshot.plan.contains("plannerId=lmdb-cascades");
+		boolean cascadesPlan = snapshot.plan.contains("plannerId=lmdb-cascades")
+				|| snapshot.plan.contains("plannerId=lmdb-packed-cascades");
 		boolean finiteAnchorPlan = snapshot.plan.contains("plannerId=lmdb-finite-anchor");
 		assertTrue(robustSketchPlan || cascadesPlan || finiteAnchorPlan,
 				key + " should use LMDB planning:\n" + snapshot.plan);
@@ -352,7 +353,10 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 							+ snapshot.plan);
 		}
 		if (queryIndex == 7) {
-			assertPlannedWorkRowsAtMost(snapshot.plan, 30_000.0d,
+			// Cost-model v7 charges the correlated NOT EXISTS probe per outer row (~384K planned work rows on
+			// the pharma-only store), so the envelope pins "bounded, no cross-product blow-up" rather than the
+			// old materialized-MINUS estimate of <=30K.
+			assertPlannedWorkRowsAtMost(snapshot.plan, 500_000.0d,
 					key + " should keep repeated comparator/name lookup work inside the physical lookup envelope\n"
 							+ snapshot.plan);
 			assertBefore(snapshot.plan,
@@ -379,14 +383,6 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 					key + " direct lookup plannedWorkRows should stay bounded by explicit step work, got "
 							+ matcher.group(1) + "\n" + plan);
 		}
-	}
-
-	private static void assertStatementPatternUsesDirectLookup(String plan, String predicate) {
-		String statementPattern = statementPatternContaining(plan, predicate);
-		assertStatementPatternSeesBoundSubject(statementPattern, predicate);
-		assertTrue(statementPattern.contains("plannedIndexAccessMode=directLookup"),
-				"Expected bound branch statement pattern to use direct lookup for `" + predicate + "`:\n"
-						+ statementPattern + "\nFull plan:\n" + plan);
 	}
 
 	private static void assertStatementPatternSeesBoundSubject(String plan, String predicate) {

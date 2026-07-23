@@ -15,6 +15,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
@@ -28,13 +30,13 @@ class LmdbSocialQ7OptimizedPlanIT {
 	private static final String OPT_NAME_VALUES = "VALUES ?optName";
 	private static final String OPT_NAME_FILTER = "FILTER (?optName IN";
 	private static final String MUTUAL_FOLLOW = "?u <http://example.com/theme/social/follows> ?v";
-	private static final String MATERIALIZED_MINUS = "MINUS {";
-	private static final String CORRELATED_ANTI_PROBE = "FILTER NOT EXISTS";
-	private static final String CORRELATED_ANTI_ESTIMATE = "plannedEstimateSource=lmdb-correlated-anti-exists-filter";
+	private static final String MUTUAL_FOLLOW_PROBE = "EXISTS {";
+	private static final Pattern PLANNED_WORK_ROWS = Pattern.compile("plannedWorkRows=([^,\\n)]+)");
+	private static final double MAX_ROOT_PLANNED_WORK_ROWS = 5_000.0d;
 
 	@Test
 	@Timeout(120)
-	void finiteAnchorsStayLocalAndMinusBecomesAntiExists() throws Exception {
+	void finiteAnchorsStayLocalAndSelfLoopProbesStayBound() throws Exception {
 		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
 		benchmark.themeName = Theme.SOCIAL_MEDIA.name();
 		benchmark.z_queryIndex = 7;
@@ -50,23 +52,21 @@ class LmdbSocialQ7OptimizedPlanIT {
 			String plan = benchmark.explainOptimizedPlan(query);
 			String renderedQuery = benchmark.renderOptimizedQuery(query);
 
-			assertBefore(renderedQuery, PAIR_VALUES, CORRELATED_ANTI_PROBE,
-					"q7 should use the finite pair anchor at the mutual-follow anti-probe\n" + plan);
 			assertBefore(renderedQuery, PAIR_VALUES, MUTUAL_FOLLOW,
-					"q7 should use the finite pair anchor before expanding mutual follow pairs\n" + plan);
+					"q7 should place the finite pair anchor before expanding mutual follow pairs\n" + plan);
+			assertBefore(renderedQuery, PAIR_VALUES, MUTUAL_FOLLOW_PROBE,
+					"q7 should place the finite pair anchor before the mutual-follow EXISTS probe\n" + plan);
 			assertTrue(renderedQuery.contains(OPT_NAME_VALUES),
-					"q7 should retain the finite optName anchor after removing the redundant IN filter\n"
+					"q7 should materialize the finite optName anchor as VALUES\n"
 							+ renderedQuery + "\n" + plan);
-			assertTrue(!renderedQuery.contains(OPT_NAME_FILTER),
-					"q7 should not keep the redundant optName IN filter after materializing VALUES\n"
+			assertTrue(renderedQuery.contains(OPT_NAME_FILTER),
+					"q7 should retain the optName IN filter while the anchor evidence is heuristic\n"
 							+ renderedQuery + "\n" + plan);
-			assertTrue(!renderedQuery.contains(MATERIALIZED_MINUS),
-					"q7 should use a correlated anti-exists probe instead of retaining materialized MINUS\n"
-							+ renderedQuery + "\n" + plan);
-			assertTrue(plan.contains(CORRELATED_ANTI_ESTIMATE),
-					"q7 should cost the self-loop exclusion with correlated anti-exists evidence\n" + plan);
+			assertMutualFollowProbeIsBound(plan);
 			assertNoUnboundSelfLoopFollows(plan);
 			assertTrue(plan.contains("plannedIndexAccessMode=directLookup"), plan);
+			assertRootPlannedWorkRowsAtMost(plan, MAX_ROOT_PLANNED_WORK_ROWS,
+					"q7 anchors should keep the total planned work bounded (no broad follows scan)");
 		} finally {
 			try {
 				benchmark.tearDown();
@@ -89,24 +89,37 @@ class LmdbSocialQ7OptimizedPlanIT {
 		}
 	}
 
-	private static void assertBefore(String value, String first, List<String> seconds, String message) {
-		int firstIndex = value.indexOf(first);
-		int secondIndex = seconds.stream()
-				.mapToInt(value::indexOf)
-				.filter(index -> index >= 0)
-				.min()
-				.orElse(-1);
-		if (firstIndex < 0 || secondIndex < 0 || firstIndex >= secondIndex) {
-			throw new AssertionError(message + "\nExpected `" + first + "` before one of `" + seconds + "` in:\n"
-					+ value);
-		}
+	private static void assertRootPlannedWorkRowsAtMost(String plan, double maxRows, String message) {
+		Matcher matcher = PLANNED_WORK_ROWS.matcher(plan);
+		assertTrue(matcher.find(), "Expected root plannedWorkRows metric in:\n" + plan);
+		double workRows = parsePlanRows(matcher.group(1));
+		assertTrue(workRows <= maxRows,
+				message + "\nExpected plannedWorkRows <= " + maxRows + " but got " + workRows + "\n" + plan);
 	}
 
-	private static void assertBefore(String value, String first, String second, String message) {
-		int firstIndex = value.indexOf(first);
-		int secondIndex = value.indexOf(second);
-		if (firstIndex < 0 || secondIndex < 0 || firstIndex >= secondIndex) {
-			throw new AssertionError(message + "\nExpected `" + first + "` before `" + second + "` in:\n" + value);
+	private static double parsePlanRows(String value) {
+		String trimmed = value.trim();
+		double multiplier = 1.0d;
+		if (trimmed.endsWith("K")) {
+			multiplier = 1_000.0d;
+			trimmed = trimmed.substring(0, trimmed.length() - 1);
+		} else if (trimmed.endsWith("M")) {
+			multiplier = 1_000_000.0d;
+			trimmed = trimmed.substring(0, trimmed.length() - 1);
+		} else if (trimmed.endsWith("B")) {
+			multiplier = 1_000_000_000.0d;
+			trimmed = trimmed.substring(0, trimmed.length() - 1);
+		}
+		return Double.parseDouble(trimmed) * multiplier;
+	}
+
+	private static void assertMutualFollowProbeIsBound(String plan) {
+		for (String pattern : statementPatternsForPredicate(plan, "http://example.com/theme/social/follows")) {
+			boolean mutualFollow = pattern.contains("s: Var (name=u)") && pattern.contains("o: Var (name=v)");
+			boolean anyUnbound = pattern.contains("bindingState=unbound");
+			assertTrue(!mutualFollow || !anyUnbound,
+					"q7 mutual-follow probe should run with both pair-anchor endpoints bound, not scan follows:\n"
+							+ pattern + "\nFull plan:\n" + plan);
 		}
 	}
 

@@ -692,7 +692,7 @@ class LmdbFilterSimplifierOptimizerTest {
 	}
 
 	@Test
-	void keepsBindAliasOptionalFilterWithoutLiteralAnchor() {
+	void bindAliasOptionalFilterGainsRenamedSourceAnchorAndRetainsFilter() {
 		StatementPattern required = statementPattern("s", "type", "type");
 		Extension optional = new Extension(
 				statementPatternWithPredicate("s", "http://example.com/theme/pharma/severity", "severity"),
@@ -702,11 +702,13 @@ class LmdbFilterSimplifierOptimizerTest {
 
 		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
 
+		// The alias var itself cannot be anchored, but a renamed anchor on the identity-alias
+		// source is a sound narrowing while the original filter is retained.
 		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
 		assertInstanceOf(Join.class, retainedFilter.getArg());
 		assertFalse(containsLeftJoin(retainedFilter.getArg()));
 		assertFalse(containsBindingSetAssignmentFor(root.getArg(), "optSeverity"));
-		assertFalse(containsBindingSetAssignmentFor(root.getArg(), "severity"));
+		assertTrue(containsBindingSetAssignmentFor(root.getArg(), "severity"));
 	}
 
 	@Test

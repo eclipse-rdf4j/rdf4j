@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 /** LMDB storage-cardinality adapter for the packed ID-based cost boundary. */
 final class LmdbPackedCostModel implements PackedCostModel {
 
-	static final long VERSION = 6L;
+	static final long VERSION = 7L;
 
 	private static final String[] DISTINCT_REQUIREMENT_METRICS = {
 			TelemetryMetricNames.PLANNED_DISTINCT_REQUIREMENT_VARS,
