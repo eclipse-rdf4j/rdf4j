@@ -12,16 +12,29 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.time.Duration;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Reduced;
+import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
@@ -38,6 +51,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PlanningMet
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 /** The single LMDB boundary for query-local packed Cascades planning. */
 final class LmdbCascadesOptimizer implements QueryOptimizer {
@@ -53,11 +68,18 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	private static final int DEFAULT_BUDGETED_BUDGET = 4_096;
 	private static final long DEFAULT_TIMEOUT_MILLIS = 500L;
 
+	static final String OPTIMIZER_OBJECT_GUARANTEE = "optimizer.objectGuarantee";
+	static final String OPTIMIZER_OBJECT_GUARANTEE_PREDICATE = "optimizer.objectGuaranteePredicate";
+	static final String OPTIMIZER_GUARANTEE_OPTIONS = "optimizer.guaranteeOptions";
+	static final String OPTIMIZER_GUARANTEE_OPTION_REASON = "optimizer.guaranteeOptionReason";
+	static final String OPTIMIZER_GUARANTEE_ANCHOR_PREDICATE = "optimizer.guaranteeAnchorPredicate";
+
 	private final EvaluationStatistics statistics;
 	private final boolean trackResultSize;
 	private final boolean preserveSerializableObservationOrder;
 	private final PackedPlanCache packedPlanCache;
 	private final PackedCostModel packedCostModel;
+	private final LmdbPackedPredicateRangeProvider rangeProvider;
 
 	LmdbCascadesOptimizer(EvaluationStatistics statistics, boolean trackResultSize) {
 		this(statistics, trackResultSize, false, null, null);
@@ -78,6 +100,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 				: null;
 		this.packedPlanCache = runtime == null ? null : runtime.cascadesPlanCache();
 		this.packedCostModel = runtime == null ? null : new LmdbPackedCostModel(runtime);
+		this.rangeProvider = runtime == null ? null : new LmdbPackedPredicateRangeProvider(runtime);
 	}
 
 	@Override
@@ -89,10 +112,14 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = beginQueryOptimizationScope()) {
 			Mode mode = configuredMode();
 			OptimizationGoal goal = configuredGoal(tupleExpr, bindings, mode);
+			annotateDistinctPhysicalRequirements(tupleExpr);
 			CascadesPlan plan = plan(tupleExpr, dataset, bindings, goal);
 			replaceRoot(tupleExpr, plan.tupleExpr());
 			CascadesPlanProvenanceAnnotator.annotate(tupleExpr, plan.provenance(), PLANNER_ID);
 			annotatePlanningMetrics(tupleExpr, mode, plan);
+			annotateObjectGuarantees(tupleExpr);
+			annotateCartesianFallback(tupleExpr);
+			annotateSemanticExactZero(tupleExpr);
 		}
 		if (runtimeTelemetry) {
 			enableRuntimeTelemetry(tupleExpr);
@@ -105,6 +132,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		}
 		OptimizationGoal request = goal == null ? OptimizationGoal.root(tupleExpr, PhysicalProperties.ANY) : goal;
 		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = beginQueryOptimizationScope()) {
+			annotateDistinctPhysicalRequirements(tupleExpr);
 			return plan(tupleExpr, null, null, request);
 		}
 	}
@@ -112,10 +140,10 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	private CascadesPlan plan(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, OptimizationGoal goal) {
 		CascadesPlanner planner = new CascadesPlanner();
 		if (packedPlanCache == null) {
-			return planner.optimize(tupleExpr, goal, packedCostModel);
+			return planner.optimize(tupleExpr, goal, packedCostModel, rangeProvider);
 		}
 		return planner.optimize(tupleExpr, goal, packedPlanCache, cacheContext(dataset, bindings, goal),
-				packedCostModel);
+				packedCostModel, rangeProvider);
 	}
 
 	private OptimizationGoal configuredGoal(TupleExpr tupleExpr, BindingSet bindings, Mode mode) {
@@ -147,8 +175,9 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		long parameterVariant = unsignedHash(bindings);
 		long goalFingerprint = goalFingerprint(goal);
 		long providerVersion = packedCostModel == null ? 0L : LmdbPackedCostModel.VERSION;
+		long predicateRangeVersion = rangeProvider == null ? 0L : rangeProvider.predicateRangeVersion();
 		return new PackedPlanCache.Context(datasetFingerprint, bindingShapeFingerprint, parameterVariant,
-				goalFingerprint, 1L, providerVersion, dataRevision);
+				goalFingerprint, 1L, providerVersion, dataRevision, predicateRangeVersion);
 	}
 
 	private static long goalFingerprint(OptimizationGoal goal) {
@@ -234,6 +263,301 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		root.setStringMetricPlanned("optimizer.cascadesPlanCacheHit", Boolean.toString(metrics.planCacheHit()));
 		root.setStringMetricPlanned("optimizer.cascadesQueryTemplateCacheHit",
 				Boolean.toString(metrics.queryTemplateCacheHit()));
+	}
+
+	/**
+	 * Makes the join-enumeration shape of the selected plan explicit: a plan whose joins all share variables is
+	 * annotated as connected-only enumeration, while a plan containing a join without shared variables names both the
+	 * Cartesian fallback phase and its reason — silent Cartesian products are not acceptable.
+	 */
+	private static void annotateCartesianFallback(TupleExpr root) {
+		boolean[] anyJoin = new boolean[1];
+		boolean[] disconnected = new boolean[1];
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Join node) {
+				anyJoin[0] = true;
+				if (!disconnected[0]) {
+					Set<String> shared = new HashSet<>(node.getLeftArg().getBindingNames());
+					shared.retainAll(node.getRightArg().getBindingNames());
+					disconnected[0] = shared.isEmpty();
+				}
+				if (!disconnected[0]) {
+					super.meet(node);
+				}
+			}
+		});
+		if (!anyJoin[0]) {
+			return;
+		}
+		TupleExpr target = root instanceof QueryRoot queryRoot && queryRoot.getArg() != null
+				? queryRoot.getArg()
+				: root;
+		if (disconnected[0]) {
+			target.setStringMetricPlanned("optimizer.connectedEnumeration", "phase2_disconnected_components");
+			target.setStringMetricPlanned("optimizer.cartesianFallbackReason", "disconnected-components");
+		} else {
+			target.setStringMetricPlanned("optimizer.connectedEnumeration", "connected-prefix-only");
+		}
+	}
+
+	/**
+	 * The packed planner's per-relation cost boundary cannot see cross-relation evidence such as empty join
+	 * intersections or impossible known-domain filters; the unified estimation engine can. When the engine proves the
+	 * planned tree exactly empty, that exact zero dominates the stamped root cardinality instead of the packed row
+	 * heuristics.
+	 */
+	private void annotateSemanticExactZero(TupleExpr root) {
+		if (!(statistics instanceof LmdbEstimatorRuntimeProvider provider)) {
+			return;
+		}
+		if (provider.estimatorRuntime().estimate(root).rows() != 0.0d) {
+			return;
+		}
+		stampExactZero(root);
+		if (root instanceof QueryRoot queryRoot && queryRoot.getArg() != null) {
+			stampExactZero(queryRoot.getArg());
+		}
+	}
+
+	private static void stampExactZero(TupleExpr node) {
+		node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, 0.0d);
+		node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, 0.0d);
+		node.setResultSizeEstimate(0.0d);
+	}
+
+	/**
+	 * Stamps {@code optimizer.objectGuarantee} proof metrics on every constant-predicate statement pattern of the
+	 * selected plan, and — because a visible guarantee must never be silently unused — adds a stable inapplicability
+	 * reason to any pattern whose known applicable range produced no consumed guarantee alternative.
+	 */
+	private void annotateObjectGuarantees(TupleExpr root) {
+		if (!(statistics instanceof LmdbPredicateObjectDomainSource guaranteeSource)) {
+			return;
+		}
+		Set<String> consumedPredicates = new java.util.HashSet<>();
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				String anchorPredicate = node.getStringMetricsPlanned().get(OPTIMIZER_GUARANTEE_ANCHOR_PREDICATE);
+				if (anchorPredicate != null) {
+					consumedPredicates.add(anchorPredicate);
+				}
+				node.visitChildren(this);
+			}
+		});
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(org.eclipse.rdf4j.query.algebra.StatementPattern node) {
+				annotateStatementPatternGuarantee(node, guaranteeSource, consumedPredicates);
+			}
+		});
+	}
+
+	private static void annotateStatementPatternGuarantee(org.eclipse.rdf4j.query.algebra.StatementPattern node,
+			LmdbPredicateObjectDomainSource guaranteeSource, Set<String> consumedPredicates) {
+		org.eclipse.rdf4j.query.algebra.Var predicateVar = node.getPredicateVar();
+		if (predicateVar == null || !(predicateVar.getValue()instanceof org.eclipse.rdf4j.model.IRI predicate)) {
+			return;
+		}
+		RdfTermDomain guarantee = guaranteeSource.getKnownRdfTermDomain(predicate).orElse(RdfTermDomain.UNKNOWN);
+		String description = String.valueOf(guarantee);
+		node.setStringMetricPlanned(OPTIMIZER_OBJECT_GUARANTEE, description);
+		node.setStringMetricPlanned(OPTIMIZER_OBJECT_GUARANTEE_PREDICATE, predicate.stringValue());
+		org.eclipse.rdf4j.query.algebra.Var objectVar = node.getObjectVar();
+		if (objectVar != null) {
+			objectVar.setStringMetricPlanned(OPTIMIZER_OBJECT_GUARANTEE, description);
+			objectVar.setStringMetricPlanned(OPTIMIZER_OBJECT_GUARANTEE_PREDICATE, predicate.stringValue());
+		}
+		if (guarantee.isUnknown() || guarantee.mask() == 0L
+				|| consumedPredicates.contains(predicate.stringValue())
+				|| node.getStringMetricsPlanned().containsKey(OPTIMIZER_GUARANTEE_OPTIONS)) {
+			return;
+		}
+		node.setStringMetricPlanned(OPTIMIZER_GUARANTEE_OPTIONS, "generated=0, selected=original");
+		node.setStringMetricPlanned(OPTIMIZER_GUARANTEE_OPTION_REASON, guaranteeRejectionReason(node, guarantee));
+	}
+
+	private static String guaranteeRejectionReason(org.eclipse.rdf4j.query.algebra.StatementPattern node,
+			RdfTermDomain guarantee) {
+		org.eclipse.rdf4j.query.algebra.Var objectVar = node.getObjectVar();
+		if (objectVar == null || objectVar.hasValue()) {
+			return "unsupported-filter";
+		}
+		if (guarantee.isFinite() && guarantee.finiteValues().size() > 64) {
+			return "too-many-values";
+		}
+		if (!guarantee.isFinite()) {
+			return "unsupported-filter";
+		}
+		return "candidate-dominated";
+	}
+
+	/**
+	 * Stamps the DISTINCT physical-requirement proof on statement patterns whose non-projected suffix variables are
+	 * provably unobserved above the scan, so the packed cost model may offer the cursor-skip access path.
+	 */
+	private void annotateDistinctPhysicalRequirements(TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return;
+		}
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Distinct node) {
+				annotateDistinct(node);
+				super.meet(node);
+			}
+
+			@Override
+			public void meet(Reduced node) {
+				annotateReduced(node);
+				super.meet(node);
+			}
+		});
+	}
+
+	private void annotateDistinct(Distinct distinct) {
+		if (!(distinct.getArg()instanceof Projection projection) || !isIdentityProjection(projection)) {
+			return;
+		}
+		Set<String> distinctVars = identityProjectionNames(projection);
+		if (!distinctVars.isEmpty()) {
+			annotateDistinctPhysicalRequirements(projection.getArg(), distinctVars, Set.of(),
+					"distinct-projection");
+		}
+	}
+
+	private void annotateReduced(Reduced reduced) {
+		if (!(reduced.getArg()instanceof Order order)
+				|| !(order.getArg()instanceof Projection projection)
+				|| !isIdentityProjection(projection)) {
+			return;
+		}
+		Set<String> distinctVars = identityProjectionNames(projection);
+		if (!distinctVars.isEmpty() && distinctVars.containsAll(VarNameCollector.process(order.getElements()))) {
+			annotateDistinctPhysicalRequirements(projection.getArg(), distinctVars, Set.of(),
+					"distinct-reduced-order-projection");
+		}
+	}
+
+	private void annotateDistinctPhysicalRequirements(TupleExpr tupleExpr, Set<String> distinctVars,
+			Set<String> blockedVars, String source) {
+		if (distinctVars.isEmpty() || tupleExpr == null || !tupleExpr.getBindingNames().containsAll(distinctVars)) {
+			return;
+		}
+		if (containsDistinctRequirementBarrier(tupleExpr)) {
+			return;
+		}
+		if (tupleExpr instanceof StatementPattern statementPattern) {
+			annotateDistinctStatementPattern(statementPattern, distinctVars, blockedVars, source);
+		} else if (tupleExpr instanceof Projection projection) {
+			if (!isIdentityProjection(projection) || !identityProjectionNames(projection).containsAll(distinctVars)) {
+				return;
+			}
+			annotateDistinctPhysicalRequirements(projection.getArg(), distinctVars, blockedVars,
+					source + "|projection");
+		} else if (tupleExpr instanceof Order order) {
+			if (!distinctVars.containsAll(VarNameCollector.process(order.getElements()))) {
+				return;
+			}
+			annotateDistinctPhysicalRequirements(order.getArg(), distinctVars, blockedVars, source + "|order");
+		} else if (tupleExpr instanceof Union union) {
+			annotateDistinctPhysicalRequirements(union.getLeftArg(), distinctVars, blockedVars,
+					source + "|unionLeft");
+			annotateDistinctPhysicalRequirements(union.getRightArg(), distinctVars, blockedVars,
+					source + "|unionRight");
+		} else if (tupleExpr instanceof Join join) {
+			Set<String> sharedNames = intersect(join.getLeftArg().getBindingNames(), join.getRightArg()
+					.getBindingNames());
+			Set<String> childBlockedVars = union(blockedVars, sharedNames);
+			annotateDistinctPhysicalRequirements(join.getLeftArg(), distinctVars, childBlockedVars,
+					source + "|joinLeft");
+			annotateDistinctPhysicalRequirements(join.getRightArg(), distinctVars, childBlockedVars,
+					source + "|joinRight");
+		} else if (tupleExpr instanceof Difference difference) {
+			Set<String> sharedNames = intersect(difference.getLeftArg().getBindingNames(),
+					difference.getRightArg().getBindingNames());
+			annotateDistinctPhysicalRequirements(difference.getLeftArg(), distinctVars,
+					union(blockedVars, sharedNames), source + "|minusLeft");
+		} else if (tupleExpr instanceof Filter filter) {
+			annotateDistinctPhysicalRequirements(filter.getArg(), distinctVars,
+					union(blockedVars, VarNameCollector.process(filter.getCondition())), source + "|filter");
+		}
+	}
+
+	private void annotateDistinctStatementPattern(StatementPattern statementPattern, Set<String> distinctVars,
+			Set<String> blockedVars, String source) {
+		Set<String> patternVars = statementPattern.getBindingNames();
+		if (!patternVars.containsAll(distinctVars)) {
+			return;
+		}
+		Set<String> skippedVars = new HashSet<>(patternVars);
+		skippedVars.removeAll(distinctVars);
+		if (skippedVars.isEmpty() || !Collections.disjoint(skippedVars, blockedVars)) {
+			return;
+		}
+		Set<String> requiredVarsAbove = union(distinctVars, intersect(patternVars, blockedVars));
+		new LmdbDistinctRequirement(distinctVars, requiredVarsAbove, blockedVars, source).annotate(statementPattern);
+		LmdbRewriteProof proof = new LmdbRewriteProof(LmdbRewriteProof.RewriteKind.DISTINCT_PHYSICAL_CURSOR_SKIP,
+				LmdbRewriteProof.EquivalenceScope.PHYSICAL_EQUIVALENT,
+				Set.of("finalDistinctRetained", "skippedVarsUnobserved", "statementPatternLeaf"),
+				"DISTINCT suffix variables are not observed above the statement-pattern scan");
+		statementPattern.setStringMetricPlanned(TelemetryMetricNames.OPTIMIZER_PHYSICAL_REFINEMENT,
+				proof.metricFragment());
+	}
+
+	private boolean containsDistinctRequirementBarrier(TupleExpr tupleExpr) {
+		boolean[] containsService = new boolean[1];
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Service node) {
+				containsService[0] = true;
+			}
+		});
+		return containsService[0];
+	}
+
+	private boolean isIdentityProjection(Projection projection) {
+		Set<String> names = new HashSet<>();
+		for (var elem : projection.getProjectionElemList().getElements()) {
+			if (elem.getName() == null || elem.getProjectionAlias().isPresent()
+					|| elem.hasAggregateOperatorInExpression() || elem.getSourceExpression() != null
+					|| !names.add(elem.getName())) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private Set<String> identityProjectionNames(Projection projection) {
+		Set<String> names = new LinkedHashSet<>();
+		for (var elem : projection.getProjectionElemList().getElements()) {
+			if (elem.getName() == null || !names.add(elem.getName())) {
+				return Set.of();
+			}
+		}
+		return names;
+	}
+
+	private Set<String> union(Set<String> left, Set<String> right) {
+		if (left.isEmpty()) {
+			return right;
+		}
+		if (right.isEmpty()) {
+			return left;
+		}
+		Set<String> result = new LinkedHashSet<>(left);
+		result.addAll(right);
+		return result;
+	}
+
+	private Set<String> intersect(Set<String> left, Set<String> right) {
+		if (left.isEmpty() || right.isEmpty()) {
+			return Set.of();
+		}
+		Set<String> result = new LinkedHashSet<>(left);
+		result.retainAll(right);
+		return result;
 	}
 
 	private static void enableRuntimeTelemetry(TupleExpr tupleExpr) {

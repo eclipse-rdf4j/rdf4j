@@ -19,7 +19,11 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 
 import org.apache.commons.io.IOUtils;
@@ -31,7 +35,9 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -283,14 +289,13 @@ public class QueryBenchmarkTest {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			Explanation explanation = connection.prepareTupleQuery(sub_select).explain(Explanation.Level.Optimized);
 			String plan = explanation.toString();
-			String groupLabel = "Group (type1, type2, language2, mbox, count, identifier2)";
-			String topGroup = plan.contains(groupLabel)
-					? firstLineContaining(plan, groupLabel)
-					: firstLineContaining(plan, "Distinct (");
-			if (!plan.contains(groupLabel)) {
+			String topGroup = firstGroupLineWithKeys(plan,
+					Set.of("type1", "type2", "language2", "mbox", "count", "identifier2"));
+			if (topGroup == null) {
 				assertTrue(plan.contains("originalNode=aggregate-free-group-by")
 						&& plan.contains("replacementNode=distinct-projection"),
 						"Replacing the aggregate-free top group must carry the semantic proof.\n" + plan);
+				topGroup = firstLineContaining(plan, "Distinct (");
 			}
 			double rows = plannedMetricRows(topGroup, "plannedCardinalityRows");
 			double rootRows = ((TupleExpr) explanation.tupleExpr())
@@ -318,10 +323,23 @@ public class QueryBenchmarkTest {
 			Explanation explanation = connection.prepareTupleQuery(multiple_sub_select)
 					.explain(Explanation.Level.Optimized);
 			String plan = explanation.toString();
-			assertTrue(plan.contains("plannedEstimateSource=lmdb-cascades-dphyp")
-					|| plan.contains("plannedEstimateSource=lmdb-cascades-connected-hypergraph")
-					|| plan.contains("plannedEstimateSource=lmdb-inner-bound-lookup"),
-					"Multiple-subselect fallback must be repaired with Cascades-planned subquery joins.\n" + plan);
+			assertTrue(plan.contains("plannerId=lmdb-packed-cascades"),
+					"Multiple-subselect subquery joins must be repaired by the packed Cascades planner instead of "
+							+ "the standard fallback.\n" + plan);
+
+			List<StatementPattern> unplannedAccess = new ArrayList<>();
+			((TupleExpr) explanation.tupleExpr()).visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(StatementPattern node) {
+					if (node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE) == null) {
+						unplannedAccess.add(node);
+					}
+					super.meet(node);
+				}
+			});
+			assertTrue(unplannedAccess.isEmpty(),
+					"Every subquery statement pattern must carry a Cascades-planned access path instead of a "
+							+ "standard-fallback join. unplanned=" + unplannedAccess + "\n" + plan);
 		}
 	}
 
@@ -401,6 +419,23 @@ public class QueryBenchmarkTest {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			return connection.hasStatement(RDF.TYPE, RDF.TYPE, RDF.TYPE, true);
 		}
+	}
+
+	private static String firstGroupLineWithKeys(String text, Set<String> groupKeys) {
+		return text.lines()
+				.map(QueryBenchmarkTest::planOperatorText)
+				.filter(line -> line.startsWith("Group ("))
+				.filter(line -> {
+					int start = line.indexOf('(');
+					int end = line.indexOf(')', start);
+					if (start < 0 || end < 0) {
+						return false;
+					}
+					Set<String> lineKeys = new HashSet<>(Arrays.asList(line.substring(start + 1, end).split(",\\s*")));
+					return lineKeys.equals(groupKeys);
+				})
+				.findFirst()
+				.orElse(null);
 	}
 
 	private static String firstLineContaining(String text, String needle) {

@@ -87,6 +87,9 @@ final class PackedJoinEnumerator {
 	}
 
 	static double joinRows(double leftRows, double rightRows, boolean connected) {
+		if (leftRows == 0.0d || rightRows == 0.0d) {
+			return 0.0d;
+		}
 		double product = Math.max(1.0d, leftRows) * Math.max(1.0d, rightRows);
 		if (!Double.isFinite(product)) {
 			return Double.MAX_VALUE;
@@ -409,6 +412,9 @@ final class PackedJoinEnumerator {
 			double factorRows, boolean connected) {
 		if (!connected || !finiteLookupAcrossBoundary(factors, subset, factorOrdinal)) {
 			return joinRows(subsetRows, factorRows, connected);
+		}
+		if (subsetRows == 0.0d || factorRows == 0.0d) {
+			return 0.0d;
 		}
 		double product = Math.max(1.0d, subsetRows) * Math.max(1.0d, factorRows);
 		if (!Double.isFinite(product)) {

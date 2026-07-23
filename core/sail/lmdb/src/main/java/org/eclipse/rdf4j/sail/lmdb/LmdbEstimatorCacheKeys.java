@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity;
 record ScopedFactorCostCacheKey(Object factor, Set<String> boundVars, long outerPrefixRowsBits,
 		long distinctLookupBindingsBits, boolean nestedIteratorInvocation, boolean collectMetrics,
 		Map<String, Set<Value>> finiteBindingValues, JoinFactorCostModel.EstimationTier estimationTier,
-		FiniteBranchRowsCacheKey prefixFactors, RequestedAccessPath requestedAccessPath,
+		FiniteBranchRowsCacheKey prefixFactors,
 		QuadSnapshotIdentity snapshotIdentity, long snapshotVersion) {
 
 	static ScopedFactorCostCacheKey of(TupleExpr factor, JoinFactorCostModel.CostContext context,
@@ -41,7 +41,7 @@ record ScopedFactorCostCacheKey(Object factor, Set<String> boundVars, long outer
 				context.isNestedIteratorInvocation(),
 				context.shouldCollectMetrics(),
 				immutableFiniteBindingValues(context.getFiniteBindingValues()), tier, prefixFactors,
-				RequestedAccessPath.of(context), estimateContext.snapshotIdentity(), estimateContext.snapshotVersion());
+				estimateContext.snapshotIdentity(), estimateContext.snapshotVersion());
 	}
 
 	static Map<String, Set<Value>> immutableFiniteBindingValues(
@@ -63,7 +63,7 @@ record ScopedFactorCostCacheKey(Object factor, Set<String> boundVars, long outer
 		return new ScopedFactorCostCacheKey(factor, FactorCostCacheKey.immutableBoundVars(boundVars),
 				outerPrefixRowsBits, distinctLookupBindingsBits, nestedIteratorInvocation, collectMetrics,
 				immutableFiniteBindingValues(finiteBindingValues), estimationTier, prefixFactors,
-				requestedAccessPath, snapshotIdentity, snapshotVersion);
+				snapshotIdentity, snapshotVersion);
 	}
 }
 
@@ -120,17 +120,5 @@ record FiniteBranchRowsCacheKey(List<Object> factors, boolean decisionDriven) {
 		}
 		// The fingerprint list is freshly built and never escapes this key; no defensive copy needed.
 		return new FiniteBranchRowsCacheKey(fingerprints, decisionDriven);
-	}
-}
-
-record RequestedAccessPath(String accessMode, int lookupComponentMask, int missingLookupComponentMask,
-		boolean directLookup) {
-
-	static RequestedAccessPath of(JoinFactorCostModel.CostContext context) {
-		if (context == null || !context.hasRequestedAccessPath()) {
-			return null;
-		}
-		return new RequestedAccessPath(context.getRequestedAccessMode(), context.getRequestedLookupComponentMask(),
-				context.getRequestedMissingLookupComponentMask(), context.isRequestedDirectLookup());
 	}
 }

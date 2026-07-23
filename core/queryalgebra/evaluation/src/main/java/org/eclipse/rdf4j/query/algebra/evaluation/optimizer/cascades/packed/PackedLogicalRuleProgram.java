@@ -74,6 +74,7 @@ final class PackedLogicalRuleProgram {
 	private int eligibilityLeftId;
 	private int eligibilityRightId;
 	private boolean aliasRewritten;
+	private PackedDomainFacts domainFacts;
 
 	PackedLogicalRuleProgram(PackedExpressionInterner relations, PackedExpressionInterner scalars,
 			PackedExpressionInterner payloads, PackedBindingSetArena bindingSets, PackedNodeMetadataArena metadata,
@@ -92,7 +93,12 @@ final class PackedLogicalRuleProgram {
 			return;
 		}
 		switch (relations.operatorTag(expressionId)) {
-		case PackedRelOp.FILTER -> addFiniteFilterAlternative(expressionId);
+		case PackedRelOp.FILTER -> {
+			addFiniteFilterAlternative(expressionId);
+			addPredicateRangeFilterAlternatives(expressionId);
+		}
+		case PackedRelOp.STATEMENT_PATTERN -> addPredicateRangePatternAlternatives(expressionId);
+		case PackedRelOp.JOIN, PackedRelOp.LATERAL -> addEmptyDomainJoinAlternative(expressionId);
 		case PackedRelOp.PROJECTION -> addProjectionAlternatives(expressionId);
 		case PackedRelOp.GROUP -> addGroupAlternatives(expressionId);
 		case PackedRelOp.DISTINCT, PackedRelOp.REDUCED -> addUnusedOptionalAlternative(expressionId);
@@ -100,6 +106,21 @@ final class PackedLogicalRuleProgram {
 		default -> {
 		}
 		}
+	}
+
+	/** Attaches the predicate-range fact base derived during the explicit fact phase; null disables range rules. */
+	void attachDomainFacts(PackedDomainFacts domainFacts) {
+		this.domainFacts = domainFacts;
+	}
+
+	/** Whether every result row of the expression binds the symbol (fact-derivation soundness guard). */
+	boolean assuresSymbol(int expressionId, int symbolId) {
+		return relationAssuresSymbol(expressionId, symbolId);
+	}
+
+	/** Whether the expression can bind the symbol at all. */
+	boolean outputsSymbol(int expressionId, int symbolId) {
+		return relationOutputContains(expressionId, symbolId);
 	}
 
 	private void markFilterMinusLeftPushdown(int differenceExpressionId) {
@@ -1222,6 +1243,488 @@ final class PackedLogicalRuleProgram {
 		binary[1] = inputGroupId;
 		int alternativeId = addAlternative(filterExpressionId, PackedRelOp.JOIN, 0, binary, 2);
 		metadata.addRelationRuleMask(alternativeId, PackedRuleProofs.FINITE_FILTER_VALUES);
+	}
+
+	private static final int VERDICT_UNKNOWN = 0;
+	private static final int VERDICT_ALWAYS_TRUE = 1;
+	private static final int VERDICT_ALWAYS_FALSE = 2;
+	private static final int VERDICT_ALWAYS_DROPPED = 3;
+
+	/**
+	 * Contradiction, tautology, and range-intersected finite-anchor alternatives derived from stored predicate-object
+	 * range facts. The original filter expression always survives; every rewrite is an added, costed alternative.
+	 */
+	private void addPredicateRangeFilterAlternatives(int filterExpressionId) {
+		if (domainFacts == null) {
+			return;
+		}
+		int conditionId = relations.payloadId(filterExpressionId);
+		int inputGroupId = relations.childGroupId(filterExpressionId, 0);
+		int verdict = rangeVerdict(conditionId, inputGroupId);
+		if (verdict == VERDICT_ALWAYS_FALSE || verdict == VERDICT_ALWAYS_DROPPED) {
+			addEmptySetAlternative(filterExpressionId, PackedRuleProofs.PREDICATE_RANGE_EMPTY);
+			return;
+		}
+		if (verdict == VERDICT_ALWAYS_TRUE) {
+			addFilterDropAlternative(filterExpressionId, inputGroupId);
+			return;
+		}
+		addRangeAnchorAlternative(filterExpressionId, conditionId, inputGroupId);
+	}
+
+	/** An empty stored range proves a constant-predicate statement pattern produces no rows at all. */
+	private void addPredicateRangePatternAlternatives(int patternExpressionId) {
+		if (domainFacts == null) {
+			return;
+		}
+		if (domainFacts.isProvenEmpty(relations.groupId(patternExpressionId))) {
+			addEmptySetAlternative(patternExpressionId, PackedRuleProofs.PREDICATE_RANGE_EMPTY);
+			return;
+		}
+		int objectNameId = statementTermName(patternExpressionId, 2);
+		int symbolId = objectNameId == 0 ? 0 : symbols.symbolId(objectNameId);
+		if (symbolId == 0) {
+			return;
+		}
+		int rangeId = domainFacts.rangeId(relations.groupId(patternExpressionId), symbolId);
+		if (rangeId != 0 && domainFacts.arena().state(rangeId) == PackedPredicateRange.STATE_EMPTY) {
+			addEmptySetAlternative(patternExpressionId, PackedRuleProofs.PREDICATE_RANGE_EMPTY);
+		}
+	}
+
+	/**
+	 * A join whose fact base proves an assured shared symbol has an empty value domain (the branch domains intersected
+	 * to nothing) can never produce a row.
+	 */
+	private void addEmptyDomainJoinAlternative(int joinExpressionId) {
+		if (domainFacts == null) {
+			return;
+		}
+		int groupId = relations.groupId(joinExpressionId);
+		int factCount = domainFacts.factCount(groupId);
+		for (int ordinal = 0; ordinal < factCount; ordinal++) {
+			int rangeId = domainFacts.factRangeId(groupId, ordinal);
+			if (domainFacts.arena().state(rangeId) == PackedPredicateRange.STATE_EMPTY
+					&& relationAssuresSymbol(joinExpressionId, domainFacts.factSymbolId(groupId, ordinal))) {
+				addEmptySetAlternative(joinExpressionId, PackedRuleProofs.PREDICATE_RANGE_EMPTY);
+				return;
+			}
+		}
+	}
+
+	private void addEmptySetAlternative(int sourceExpressionId, long proofBit) {
+		int existing = relations.findLogical(PackedRelOp.EMPTY_SET, 0,
+				relations.semanticScopeId(sourceExpressionId), relations.executionDomainId(sourceExpressionId),
+				NO_CHILDREN, 0, 0);
+		if (existing != 0 && relations.groupId(existing) != relations.groupId(sourceExpressionId)) {
+			return;
+		}
+		int before = relations.size();
+		int alternativeId = relations.internLogical(relations.groupId(sourceExpressionId), PackedRelOp.EMPTY_SET, 0,
+				relations.semanticScopeId(sourceExpressionId), relations.executionDomainId(sourceExpressionId),
+				NO_CHILDREN, 0, 0);
+		if (alternativeId > before) {
+			// A proven-empty expression must carry zero-row estimates of its own, not the source's estimates.
+			metadata.attachRelation(alternativeId, 0, 0, 0.0d, 0.0d, 0);
+		}
+		metadata.addRelationRuleMask(alternativeId, proofBit);
+	}
+
+	/**
+	 * Drops a tautological filter by re-wrapping the input in a constant-true filter alternative. A structural copy of
+	 * the input cannot join the filter's group (one expression lives in exactly one group), so the alternative keeps
+	 * the FILTER operator with a constant {@code true} condition, which every cost model prices as a transparent pass.
+	 */
+	private void addFilterDropAlternative(int filterExpressionId, int inputGroupId) {
+		int scalarCountBefore = scalars.size();
+		int trueConstantId = scalars.internCanonical(PackedScalarOp.VALUE_CONSTANT,
+				objects.intern(org.eclipse.rdf4j.model.util.Values.literal(true)), 0, 0, NO_CHILDREN, 0, 0);
+		if (trueConstantId > scalarCountBefore) {
+			metadata.attachScalar(trueConstantId, 0, 0, -1.0d, -1.0d);
+		}
+		if (trueConstantId == relations.payloadId(filterExpressionId)) {
+			return;
+		}
+		unary[0] = inputGroupId;
+		int existing = relations.findLogical(PackedRelOp.FILTER, trueConstantId,
+				relations.semanticScopeId(filterExpressionId), relations.executionDomainId(filterExpressionId),
+				unary, 0, 1);
+		if (existing != 0 && relations.groupId(existing) != relations.groupId(filterExpressionId)) {
+			return;
+		}
+		unary[0] = inputGroupId;
+		int alternativeId = addAlternative(filterExpressionId, PackedRelOp.FILTER, trueConstantId, unary, 1);
+		metadata.addRelationRuleMask(alternativeId, PackedRuleProofs.PREDICATE_RANGE_TAUTOLOGY);
+	}
+
+	/**
+	 * Four-valued verdict of a filter condition against the input group's range facts. ALWAYS_DROPPED means every row
+	 * is removed by the filter (condition false or in error); ALWAYS_TRUE additionally proves no row can error, so the
+	 * filter may be dropped.
+	 */
+	private int rangeVerdict(int scalarId, int inputGroupId) {
+		switch (scalars.operatorTag(scalarId)) {
+		case PackedScalarOp.AND -> {
+			int left = rangeVerdict(scalars.childGroupId(scalarId, 0), inputGroupId);
+			int right = rangeVerdict(scalars.childGroupId(scalarId, 1), inputGroupId);
+			if (left == VERDICT_ALWAYS_FALSE || right == VERDICT_ALWAYS_FALSE
+					|| left == VERDICT_ALWAYS_DROPPED || right == VERDICT_ALWAYS_DROPPED) {
+				return VERDICT_ALWAYS_DROPPED;
+			}
+			return left == VERDICT_ALWAYS_TRUE && right == VERDICT_ALWAYS_TRUE
+					? VERDICT_ALWAYS_TRUE
+					: VERDICT_UNKNOWN;
+		}
+		case PackedScalarOp.OR -> {
+			int left = rangeVerdict(scalars.childGroupId(scalarId, 0), inputGroupId);
+			int right = rangeVerdict(scalars.childGroupId(scalarId, 1), inputGroupId);
+			if (left == VERDICT_ALWAYS_TRUE || right == VERDICT_ALWAYS_TRUE) {
+				return VERDICT_ALWAYS_TRUE;
+			}
+			boolean leftDropped = left == VERDICT_ALWAYS_FALSE || left == VERDICT_ALWAYS_DROPPED;
+			boolean rightDropped = right == VERDICT_ALWAYS_FALSE || right == VERDICT_ALWAYS_DROPPED;
+			if (leftDropped && rightDropped) {
+				return left == VERDICT_ALWAYS_FALSE && right == VERDICT_ALWAYS_FALSE
+						? VERDICT_ALWAYS_FALSE
+						: VERDICT_ALWAYS_DROPPED;
+			}
+			return VERDICT_UNKNOWN;
+		}
+		case PackedScalarOp.NOT -> {
+			int inner = rangeVerdict(scalars.childGroupId(scalarId, 0), inputGroupId);
+			if (inner == VERDICT_ALWAYS_TRUE) {
+				return VERDICT_ALWAYS_FALSE;
+			}
+			return inner == VERDICT_ALWAYS_FALSE ? VERDICT_ALWAYS_TRUE : VERDICT_UNKNOWN;
+		}
+		case PackedScalarOp.IS_LITERAL -> {
+			return kindVerdict(scalarId, inputGroupId, PackedPredicateRange.KIND_LITERAL);
+		}
+		case PackedScalarOp.IS_URI -> {
+			return kindVerdict(scalarId, inputGroupId, PackedPredicateRange.KIND_IRI);
+		}
+		case PackedScalarOp.IS_BNODE -> {
+			return kindVerdict(scalarId, inputGroupId, PackedPredicateRange.KIND_BNODE);
+		}
+		case PackedScalarOp.IS_RESOURCE -> {
+			return kindVerdict(scalarId, inputGroupId,
+					PackedPredicateRange.KIND_IRI | PackedPredicateRange.KIND_BNODE);
+		}
+		case PackedScalarOp.IS_NUMERIC -> {
+			int rangeId = assuredArgumentRange(scalarId, inputGroupId);
+			if (rangeId == 0) {
+				return VERDICT_UNKNOWN;
+			}
+			PackedPredicateRangeArena arena = domainFacts.arena();
+			if ((arena.universalBits(rangeId) & PackedPredicateRange.UNIVERSAL_NUMBER) != 0) {
+				return VERDICT_ALWAYS_TRUE;
+			}
+			if ((arena.kindBits(rangeId) & PackedPredicateRange.KIND_LITERAL) == 0) {
+				return VERDICT_ALWAYS_FALSE;
+			}
+			return VERDICT_UNKNOWN;
+		}
+		case PackedScalarOp.COMPARE -> {
+			return compareVerdict(scalarId, inputGroupId, scalars.payloadId(scalarId) == EQUALITY_COMPARISON);
+		}
+		case PackedScalarOp.SAME_TERM -> {
+			return compareVerdict(scalarId, inputGroupId, true);
+		}
+		default -> {
+			return VERDICT_UNKNOWN;
+		}
+		}
+	}
+
+	private int kindVerdict(int scalarId, int inputGroupId, int requiredKinds) {
+		int rangeId = assuredArgumentRange(scalarId, inputGroupId);
+		if (rangeId == 0) {
+			return VERDICT_UNKNOWN;
+		}
+		int kinds = domainFacts.arena().kindBits(rangeId);
+		if (kinds == 0) {
+			return VERDICT_UNKNOWN;
+		}
+		if ((kinds & ~requiredKinds) == 0) {
+			return VERDICT_ALWAYS_TRUE;
+		}
+		return (kinds & requiredKinds) == 0 ? VERDICT_ALWAYS_FALSE : VERDICT_UNKNOWN;
+	}
+
+	/** Range of a unary predicate's variable argument, but only when the input assures the binding. */
+	private int assuredArgumentRange(int scalarId, int inputGroupId) {
+		if (scalars.childCount(scalarId) != 1) {
+			return 0;
+		}
+		int nameId = variableNameId(scalars.childGroupId(scalarId, 0));
+		int symbolId = nameId == 0 ? 0 : symbols.symbolId(nameId);
+		if (symbolId == 0 || !relationAssuresSymbol(inputGroupId, symbolId)) {
+			return 0;
+		}
+		return domainFacts.rangeId(inputGroupId, symbolId);
+	}
+
+	private int compareVerdict(int scalarId, int inputGroupId, boolean equality) {
+		if (!equality) {
+			return VERDICT_UNKNOWN;
+		}
+		int leftId = scalars.childGroupId(scalarId, 0);
+		int rightId = scalars.childGroupId(scalarId, 1);
+		int variableId = variableNameId(leftId) != 0 ? leftId : variableNameId(rightId) != 0 ? rightId : 0;
+		int constantId = variableId == leftId ? rightId : leftId;
+		if (variableId == 0) {
+			return VERDICT_UNKNOWN;
+		}
+		int constantValueId = scalarConstantValueId(constantId);
+		int nameId = variableNameId(variableId);
+		int symbolId = symbols.symbolId(nameId);
+		if (constantValueId == 0 || symbolId == 0 || !relationAssuresSymbol(inputGroupId, symbolId)) {
+			return VERDICT_UNKNOWN;
+		}
+		int rangeId = domainFacts.rangeId(inputGroupId, symbolId);
+		if (rangeId == 0 || !(objects.value(constantValueId)instanceof Value constant)) {
+			return VERDICT_UNKNOWN;
+		}
+		return valuePossiblyEqualsRange(constant, rangeId) ? VERDICT_UNKNOWN : VERDICT_ALWAYS_DROPPED;
+	}
+
+	/** Object-pool ID of a scalar's constant value: a ValueConstant or a constant (valued) variable. */
+	private int scalarConstantValueId(int scalarId) {
+		if (scalars.operatorTag(scalarId) == PackedScalarOp.VALUE_CONSTANT) {
+			return scalars.payloadId(scalarId);
+		}
+		if (scalars.operatorTag(scalarId) == PackedScalarOp.VARIABLE) {
+			return termValueId(scalars.payloadId(scalarId));
+		}
+		return 0;
+	}
+
+	/** Whether any value admitted by the range can SPARQL-value-equal {@code constant}. */
+	private boolean valuePossiblyEqualsRange(Value constant, int rangeId) {
+		PackedPredicateRangeArena arena = domainFacts.arena();
+		if (arena.state(rangeId) == PackedPredicateRange.STATE_EMPTY) {
+			return false;
+		}
+		int kinds = arena.kindBits(rangeId);
+		if (constant.isIRI() || constant.isBNode()) {
+			int requiredKind = constant.isIRI() ? PackedPredicateRange.KIND_IRI : PackedPredicateRange.KIND_BNODE;
+			if (kinds != 0 && (kinds & requiredKind) == 0) {
+				return false;
+			}
+			if (arena.isFinite(rangeId)) {
+				return finiteRangeContainsTerm(rangeId, constant);
+			}
+			return true;
+		}
+		if (!(constant instanceof Literal literal)) {
+			return true;
+		}
+		if (kinds != 0 && (kinds & PackedPredicateRange.KIND_LITERAL) == 0) {
+			return false;
+		}
+		if ((arena.universalBits(rangeId) & PackedPredicateRange.UNIVERSAL_CANONICAL_INTEGER) != 0) {
+			long integral = integralValueOf(literal);
+			if (integral == Long.MIN_VALUE) {
+				return !isNumericLiteral(literal);
+			}
+			if (arena.hasIntegerBounds(rangeId)
+					&& (integral < arena.integerMinInclusive(rangeId)
+							|| integral > arena.integerMaxInclusive(rangeId))) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private boolean finiteRangeContainsTerm(int rangeId, Value candidate) {
+		PackedPredicateRangeArena arena = domainFacts.arena();
+		for (int ordinal = 0; ordinal < arena.finiteValueCount(rangeId); ordinal++) {
+			if (candidate.equals(objects.value(arena.finiteValueObjectId(rangeId, ordinal)))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** The exact integral value of a numeric literal, or Long.MIN_VALUE when it has none. */
+	private static long integralValueOf(Literal literal) {
+		if (!isNumericLiteral(literal)) {
+			return Long.MIN_VALUE;
+		}
+		try {
+			java.math.BigDecimal decimal = literal.decimalValue().stripTrailingZeros();
+			if (decimal.scale() > 0) {
+				return Long.MIN_VALUE;
+			}
+			long value = decimal.longValueExact();
+			return value == Long.MIN_VALUE ? Long.MIN_VALUE : value;
+		} catch (ArithmeticException | NumberFormatException error) {
+			return Long.MIN_VALUE;
+		}
+	}
+
+	private static boolean isNumericLiteral(Literal literal) {
+		org.eclipse.rdf4j.model.base.CoreDatatype datatype = literal.getCoreDatatype();
+		return datatype.isXSDDatatype()
+				&& ((org.eclipse.rdf4j.model.base.CoreDatatype.XSD) datatype).isNumericDatatype();
+	}
+
+	/**
+	 * Finite-anchor alternative whose values are intersected with the stored range, with lexical-equivalence expansion
+	 * only where the stored canonical facts prove it safe. The generated join replaces the filter only because the
+	 * surviving values exactly encode the filter's truth set under term equality.
+	 */
+	private void addRangeAnchorAlternative(int filterExpressionId, int conditionId, int inputGroupId) {
+		resetFiniteDomain();
+		if (!collectFiniteDomain(conditionId) || finiteValueCount == 0) {
+			return;
+		}
+		int symbolId = finiteSymbolId;
+		int rangeId = domainFacts.rangeId(inputGroupId, symbolId);
+		if (rangeId == 0 || !relationAssuresSymbol(inputGroupId, symbolId)
+				|| containsBindingAssignmentFor(inputGroupId, symbolId)) {
+			return;
+		}
+		int collectedCount = finiteValueCount;
+		int expandedCount = 0;
+		int[] expanded = new int[MAX_FINITE_VALUES];
+		for (int ordinal = 0; ordinal < collectedCount; ordinal++) {
+			int objectId = finiteValueObjectIds[ordinal];
+			if (!(objects.value(objectId)instanceof Value value)) {
+				return;
+			}
+			if (!valuePossiblyEqualsRange(value, rangeId)) {
+				continue;
+			}
+			int before = expandedCount;
+			expandedCount = expandAnchorValue(value, objectId, rangeId, expanded, expandedCount);
+			if (expandedCount < 0) {
+				return;
+			}
+			if (expandedCount == before) {
+				continue;
+			}
+		}
+		if (expandedCount == 0) {
+			addEmptySetAlternative(filterExpressionId, PackedRuleProofs.PREDICATE_RANGE_EMPTY);
+			return;
+		}
+		finiteValueCount = 0;
+		for (int ordinal = 0; ordinal < expandedCount; ordinal++) {
+			appendFiniteValueObject(expanded[ordinal]);
+		}
+		int anchorExpressionId = finiteBindingAssignment();
+		binary[0] = relations.groupId(anchorExpressionId);
+		binary[1] = inputGroupId;
+		int alternativeId = addAlternative(filterExpressionId, PackedRelOp.JOIN, 0, binary, 2);
+		metadata.addRelationRuleMask(alternativeId,
+				PackedRuleProofs.PREDICATE_RANGE_ANCHOR | PackedRuleProofs.FINITE_FILTER_VALUES);
+	}
+
+	/**
+	 * Expands one filter value into the term-equality-complete set of stored representations, returning the new count
+	 * or -1 when no safe expansion exists ({@code unsafe-lexical-equivalence}) or the 64-value guard would overflow.
+	 */
+	private int expandAnchorValue(Value value, int objectId, int rangeId, int[] expanded, int expandedCount) {
+		PackedPredicateRangeArena arena = domainFacts.arena();
+		if (value.isIRI() || value.isBNode()) {
+			return appendExpanded(expanded, expandedCount, objectId);
+		}
+		if (!(value instanceof Literal literal)) {
+			return -1;
+		}
+		long datatypes = arena.datatypeBits(rangeId);
+		int kinds = arena.kindBits(rangeId);
+		boolean literalOnly = kinds == PackedPredicateRange.KIND_LITERAL;
+		if (literalOnly && datatypes == 1L << org.eclipse.rdf4j.model.base.CoreDatatype.XSD.BOOLEAN.ordinal()
+				&& literal.getCoreDatatype() == org.eclipse.rdf4j.model.base.CoreDatatype.XSD.BOOLEAN) {
+			boolean truth = Boolean.parseBoolean(literal.getLabel()) || "1".equals(literal.getLabel());
+			int first = objects.intern(org.eclipse.rdf4j.model.util.Values.literal(truth ? "true" : "false",
+					org.eclipse.rdf4j.model.vocabulary.XSD.BOOLEAN));
+			int second = objects.intern(org.eclipse.rdf4j.model.util.Values.literal(truth ? "1" : "0",
+					org.eclipse.rdf4j.model.vocabulary.XSD.BOOLEAN));
+			int count = appendExpanded(expanded, expandedCount, first);
+			return count < 0 ? count : appendExpanded(expanded, count, second);
+		}
+		if (literalOnly
+				&& (arena.universalBits(rangeId) & PackedPredicateRange.UNIVERSAL_CANONICAL_INTEGER) != 0
+				&& datatypes != 0L && allIntegerFamily(datatypes)) {
+			long integral = integralValueOf(literal);
+			if (integral == Long.MIN_VALUE) {
+				return -1;
+			}
+			int count = expandedCount;
+			for (int ordinal = 0; ordinal < 64; ordinal++) {
+				if ((datatypes & 1L << ordinal) == 0L) {
+					continue;
+				}
+				org.eclipse.rdf4j.model.base.CoreDatatype.XSD datatype = org.eclipse.rdf4j.model.base.CoreDatatype.XSD
+						.values()[ordinal];
+				count = appendExpanded(expanded, count, objects.intern(
+						org.eclipse.rdf4j.model.util.Values.literal(Long.toString(integral), datatype.getIri())));
+				if (count < 0) {
+					return count;
+				}
+			}
+			return count;
+		}
+		if (literalOnly
+				&& datatypes == 1L << org.eclipse.rdf4j.model.base.CoreDatatype.XSD.STRING.ordinal()
+				&& arena.languageBits(rangeId) == PackedPredicateRange.LANGUAGE_WITHOUT
+				&& literal.getCoreDatatype() == org.eclipse.rdf4j.model.base.CoreDatatype.XSD.STRING) {
+			return appendExpanded(expanded, expandedCount, objectId);
+		}
+		if (arena.isFinite(rangeId)) {
+			// Anchor directly on the stored representations that value-equal the constant, when provable.
+			int count = expandedCount;
+			for (int ordinal = 0; ordinal < arena.finiteValueCount(rangeId); ordinal++) {
+				int storedObjectId = arena.finiteValueObjectId(rangeId, ordinal);
+				if (objects.value(storedObjectId)instanceof Value stored && stored.equals(value)) {
+					count = appendExpanded(expanded, count, storedObjectId);
+					if (count < 0) {
+						return count;
+					}
+				}
+			}
+			return count == expandedCount ? -1 : count;
+		}
+		return -1;
+	}
+
+	private static int appendExpanded(int[] expanded, int expandedCount, int objectId) {
+		for (int ordinal = 0; ordinal < expandedCount; ordinal++) {
+			if (expanded[ordinal] == objectId) {
+				return expandedCount;
+			}
+		}
+		if (expandedCount >= MAX_FINITE_VALUES) {
+			return -1;
+		}
+		expanded[expandedCount] = objectId;
+		return expandedCount + 1;
+	}
+
+	private static boolean allIntegerFamily(long datatypeBits) {
+		for (int ordinal = 0; ordinal < 64 && datatypeBits != 0L; ordinal++) {
+			long bit = 1L << ordinal;
+			if ((datatypeBits & bit) == 0L) {
+				continue;
+			}
+			datatypeBits &= ~bit;
+			if (!org.eclipse.rdf4j.model.base.CoreDatatype.XSD.values()[ordinal].isIntegerDatatype()) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private void appendFiniteValueObject(int objectId) {
+		for (int ordinal = 0; ordinal < finiteValueCount; ordinal++) {
+			if (finiteValueObjectIds[ordinal] == objectId) {
+				return;
+			}
+		}
+		finiteValueObjectIds[finiteValueCount++] = objectId;
 	}
 
 	private double knownFilterRatio(int filterExpressionId, int inputGroupId) {

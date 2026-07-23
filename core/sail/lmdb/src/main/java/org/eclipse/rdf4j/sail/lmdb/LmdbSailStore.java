@@ -375,6 +375,7 @@ class LmdbSailStore implements SailStore {
 						config.getOptimizerSamplingMaxRows(), config.getBackgroundRawSamplingEnabled(),
 						sketchBasedJoinEstimator::snapshotIdentity,
 						config.getSketchEstimatorColdSynopsisCapacity());
+				sketchBasedJoinEstimator.setRebuildObserver(filterSelectivityStats.coldSynopsisRebuildObserver());
 				operatorFeedbackStats = new LmdbOperatorFeedbackStats(estimatorPath,
 						sketchBasedJoinEstimator::snapshotIdentity,
 						sketchBasedJoinEstimator::adaptiveEvidenceAllowed);

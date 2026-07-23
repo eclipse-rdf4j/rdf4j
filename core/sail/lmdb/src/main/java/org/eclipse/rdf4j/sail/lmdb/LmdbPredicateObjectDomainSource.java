@@ -20,6 +20,9 @@ interface LmdbPredicateObjectDomainSource {
 	RdfTermDomain getRdfTermDomain(IRI predicate);
 
 	default Optional<RdfTermDomain> getKnownRdfTermDomain(IRI predicate) {
-		return Optional.ofNullable(getRdfTermDomain(predicate));
+		// A disabled, excluded, unreadable, or unknown guarantee is not a proof: UNKNOWN and UNRESTRICTED
+		// (empty mask) must surface as absent rather than as a hollow known domain.
+		return Optional.ofNullable(getRdfTermDomain(predicate))
+				.filter(domain -> !domain.isUnknown() && domain.mask() != 0L);
 	}
 }

@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.sail.lmdb.benchmark;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayOutputStream;
@@ -146,7 +145,7 @@ class AASQueriesBenchmarkTest {
 	}
 
 	@Test
-	void cascadesQuery3UsesConnectedBoundedDphypPlan() throws Exception {
+	void cascadesQuery3UsesPackedDirectLookupPlan() throws Exception {
 		AASQueriesBenchmark benchmark = new AASQueriesBenchmark();
 		configureBenchmark(benchmark);
 		setField(benchmark, "productionLineCount", 3);
@@ -168,13 +167,11 @@ class AASQueriesBenchmarkTest {
 			String output = out.toString(StandardCharsets.UTF_8);
 			assertTrue(output.contains("value=\"ratedPower\""), output);
 			assertTrue(output.contains("value=https://admin-shell.io/aas/3/value"), output);
-			assertTrue(output.contains("rule=core-unified-join-search"), output);
-			assertTrue(output.contains("contributor=lmdb-dphyp"), output);
-			assertTrue(output.contains("optimizer.cascadesDphypPairProbes="), output);
-			assertTrue(output.contains("optimizer.cascadesCandidateEvaluations="), output);
-			assertFalse(output.contains("optimizer.cartesianFallbackReason="), output);
-			assertTrue(output.contains("plannedEstimateSource=physical-join-bound-lookup"), output);
+			assertTrue(output.contains("plannerId=lmdb-packed-cascades"), output);
+			assertTrue(output.contains("optimizer.cascadesRule=packed-selected-plan"), output);
+			assertTrue(output.contains("plannedEstimateSource=lmdb-packed-cardinality"), output);
 			assertTrue(output.contains("plannedIndexAccessMode=directLookup"), output);
+			assertTrue(output.contains("plannedLookupComponents=[S, P, O]"), output);
 		} finally {
 			System.setOut(previousOut);
 			state.tearDown();

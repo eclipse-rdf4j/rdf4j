@@ -50,7 +50,6 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPlan;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationCompleteness;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
@@ -108,31 +107,32 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			StatementPattern partOf = new StatementPattern(Var.of("component"), Var.of("partOfPredicate", ENG_PART_OF),
 					Var.of("assembly"));
 			assertDirectFiniteDerivedPartOfSurface(store, assemblyNames, name, type, partOf);
-			JoinOrderPlanner planner = (JoinOrderPlanner) store.getBackingStore().getEvaluationStatistics();
-			JoinOrderPlanner.JoinOrderPlan plan = planner
-					.estimateJoinOrder(List.of(assemblyNames, name, type, partOf), Set.of(),
-							JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, List.of())
-					.orElseThrow();
 
-			assertEstimatedWorkMatchesStepSum(plan);
-			assertEquals(partOf, plan.getOrderedArgs().get(3),
-					"The fixed-order estimate should preserve the requested partOf step position");
+			TupleExpr join = new Join(new Join(new Join(assemblyNames, name), type), partOf);
+			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+			CascadesPlan plan = new LmdbCascadesOptimizer(statistics, false)
+					.planPreparedInput(join, OptimizationGoal.root(join, PhysicalProperties.ANY));
 
-			JoinOrderPlanner.PlanStep partOfStep = plan.getSteps().get(3);
+			StatementPattern plannedPartOf = findStatementPattern(plan.tupleExpr(), ENG_PART_OF, "assembly");
+			assertTrue(plannedPartOf != null, "Expected planned partOf lookup. plan=" + plan.tupleExpr());
+
 			double expectedSurfaceRows = ASSEMBLY_COUNT * COMPONENTS_PER_ASSEMBLY;
-			double plannedAccessRows = partOfStep.getDoubleMetrics()
-					.getOrDefault(TelemetryMetricNames.PLANNED_ACCESS_ROWS, partOfStep.getStepWorkRows());
+			double plannedAccessRows = plannedPartOf.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_ACCESS_ROWS);
+			double plannedInvocations = plannedPartOf.getDoubleMetricPlanned("plannedRepeatedInvocations");
+			double plannedWorkRows = plannedPartOf.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS);
 			assertEquals(COMPONENTS_PER_ASSEMBLY, plannedAccessRows, COMPONENTS_PER_ASSEMBLY * 0.25d,
 					"The VALUES-derived ?assembly surface should keep the partOf lookup on a single-assembly "
 							+ "access path while repeated invocations account for the finite branches. "
 							+ "expectedAccessRows=" + COMPONENTS_PER_ASSEMBLY
-							+ ", metrics=" + partOfStep.getStringMetrics() + partOfStep.getDoubleMetrics()
-							+ ", stepWork=" + partOfStep.getStepWorkRows());
-			assertTrue(partOfStep.getStepWorkRows() <= expectedSurfaceRows * 2.25d,
-					"The step work should stay near access plus emitted rows for the finite partOf surface. "
-							+ "expectedSurfaceRows="
-							+ expectedSurfaceRows + ", metrics=" + partOfStep.getStringMetrics()
-							+ partOfStep.getDoubleMetrics() + ", stepWork=" + partOfStep.getStepWorkRows());
+							+ ", metrics=" + plannedPartOf + ", plan=" + plan.tupleExpr());
+			assertTrue(plannedInvocations >= 1.0d && plannedInvocations <= ASSEMBLY_COUNT * 2.0d,
+					"The partOf lookup should be repeated once per finite assembly rather than once per broad "
+							+ "name row. expectedInvocations=" + ASSEMBLY_COUNT + ", metrics=" + plannedPartOf
+							+ ", plan=" + plan.tupleExpr());
+			assertTrue(plannedWorkRows <= expectedSurfaceRows * 2.25d,
+					"The planned work should stay near access plus emitted rows for the finite partOf surface. "
+							+ "expectedSurfaceRows=" + expectedSurfaceRows + ", metrics=" + plannedPartOf
+							+ ", plan=" + plan.tupleExpr());
 		} finally {
 			repository.shutDown();
 		}
@@ -829,18 +829,5 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			}
 		});
 		return matches.isEmpty() ? null : matches.getFirst();
-	}
-
-	private static void assertEstimatedWorkMatchesStepSum(JoinOrderPlanner.JoinOrderPlan plan) {
-		double stepWorkSum = plan.getSteps()
-				.stream()
-				.mapToDouble(JoinOrderPlanner.PlanStep::getStepWorkRows)
-				.sum();
-		assertEquals(stepWorkSum, plan.getEstimatedTotalWork(), 1.0e-9,
-				"Planner total work should equal sum(stepWorkRows)");
-		for (TupleExpr orderedArg : plan.getOrderedArgs()) {
-			assertTrue(plan.getSteps().size() == plan.getOrderedArgs().size(),
-					"Expected one planner step per factor: " + orderedArg);
-		}
 	}
 }

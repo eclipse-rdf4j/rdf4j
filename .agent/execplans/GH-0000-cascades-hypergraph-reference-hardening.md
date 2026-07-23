@@ -1,5 +1,17 @@
 # Harden Cascades and hypergraph search to reference-grade behavior
 
+> **SUPERSEDED (2026-07-22)** by `.agent/execplans/GH-0000-packed-idempotent-cascades.md`.
+> The 2026-07-20 packed hard cutover deleted the legacy memo/IR this plan was hardening; every class this
+> plan introduced (`MemoLogicalExpressionKey`, `JoinRegionMemo`, `JoinCardinalityModel`, `CostOrdering`,
+> `JoinEdge`, `ConflictRule`, `CostingReceiver`, `PlanHypergraph`, `JoinStateEnumerator`) no longer exists in
+> Java source. Item-by-item disposition of the open M4–M8 work is recorded in
+> `.agent/execplans/GH-0000-unified-next-steps.md` (Workstream D): typed identity, scoped/bounded enumeration,
+> deterministic AUTO, and opaque-factor handling are satisfied by the packed implementation; log-domain
+> cardinality and typed non-inner join edges were dropped as mechanisms (goals met differently or deferred);
+> the durable residue (EXACT completeness reporting, dead `RESOURCE_LIMIT_EXCEEDED`, non-inner rewrite-legality
+> parity tests, medical baseline re-baseline, JMH/JFR measurement) is folded into that plan's Workstreams C/D/E.
+> This document remains historical evidence only.
+
 This ExecPlan is a living document. The sections `Progress`, `Surprises & Discoveries`, `Decision Log`, and
 `Outcomes & Retrospective` must be kept current as implementation proceeds. Maintain this document in accordance with
 `.agent/PLANS.md` from the repository root.

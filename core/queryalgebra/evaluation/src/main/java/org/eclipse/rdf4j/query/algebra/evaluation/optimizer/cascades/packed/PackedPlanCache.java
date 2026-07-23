@@ -111,7 +111,14 @@ public final class PackedPlanCache {
 
 	/** Planning dependencies which are not already represented by the normalized query structure. */
 	public record Context(long datasetFingerprint, long bindingShapeFingerprint, long parameterVariant,
-			long goalFingerprint, long catalogVersion, long providerVersion, long dataRevision) {
+			long goalFingerprint, long catalogVersion, long providerVersion, long dataRevision,
+			long predicateRangeVersion) {
+
+		public Context(long datasetFingerprint, long bindingShapeFingerprint, long parameterVariant,
+				long goalFingerprint, long catalogVersion, long providerVersion, long dataRevision) {
+			this(datasetFingerprint, bindingShapeFingerprint, parameterVariant, goalFingerprint, catalogVersion,
+					providerVersion, dataRevision, 0L);
+		}
 
 		long planHash() {
 			long hash = mix64(datasetFingerprint);
@@ -120,7 +127,8 @@ public final class PackedPlanCache {
 			hash = mix64(hash ^ goalFingerprint);
 			hash = mix64(hash ^ catalogVersion);
 			hash = mix64(hash ^ providerVersion);
-			return mix64(hash ^ dataRevision);
+			hash = mix64(hash ^ dataRevision);
+			return mix64(hash ^ predicateRangeVersion);
 		}
 
 		long queryHash() {
@@ -128,7 +136,8 @@ public final class PackedPlanCache {
 			hash = mix64(hash ^ bindingShapeFingerprint);
 			hash = mix64(hash ^ parameterVariant);
 			hash = mix64(hash ^ catalogVersion);
-			return mix64(hash ^ dataRevision);
+			hash = mix64(hash ^ dataRevision);
+			return mix64(hash ^ predicateRangeVersion);
 		}
 	}
 

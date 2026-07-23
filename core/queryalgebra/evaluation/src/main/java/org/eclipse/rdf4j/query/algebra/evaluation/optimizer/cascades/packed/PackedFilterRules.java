@@ -72,7 +72,8 @@ final class PackedFilterRules {
 		int helperGroupId = memo.logicalGroupId(helperLogicalId);
 		int helperPhysicalId = memo.addPhysicalAlternative(helperGroupId, PackedRelOp.FILTER, conditionId,
 				anyPropertyId, FILTER_IMPLEMENTATION, helperLogicalId, unaryGroup, 0, 1);
-		double filteredRows = Math.max(1.0d, selectedRowsByGroup[filteredGroupId] * 0.25d);
+		double filteredInputRows = selectedRowsByGroup[filteredGroupId];
+		double filteredRows = filteredInputRows == 0.0d ? 0.0d : Math.max(1.0d, filteredInputRows * 0.25d);
 		double helperCost = memo.winnerTotalCost(filteredInputWinnerId) + filteredRows;
 		unaryWinner[0] = filteredInputWinnerId;
 		int helperWinnerId = memo.offerWinner(helperGroupId, anyPropertyId, 0, 0, 0, helperPhysicalId,

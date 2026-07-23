@@ -23,6 +23,10 @@ final class PackedSelectedPlanContextualizer {
 	private final PackedQueryView queryView;
 	private final double[] selectedRowsByGroup;
 	private final int[] prefixRelations;
+	private final double[] prefixLeafRows;
+	private final int[] prefixLeafRelationIds;
+	private final int[] componentParents;
+	private final boolean[] componentConsumed;
 	private final int[] childWinnerScratch;
 	private final int childStride;
 	private final int[] winnerByDepth;
@@ -40,6 +44,10 @@ final class PackedSelectedPlanContextualizer {
 		this.selectedRowsByGroup = selectedRowsByGroup;
 		queryView = new PackedQueryView(query);
 		prefixRelations = new int[Math.max(1, query.relationCount())];
+		prefixLeafRows = new double[prefixRelations.length + 1];
+		prefixLeafRelationIds = new int[prefixRelations.length + 1];
+		componentParents = new int[prefixRelations.length + 1];
+		componentConsumed = new boolean[prefixRelations.length + 1];
 		childStride = maximumChildCount(query);
 		int depthCapacity = query.relationCount() + 2;
 		childWinnerScratch = new int[depthCapacity * childStride];
@@ -97,7 +105,9 @@ final class PackedSelectedPlanContextualizer {
 					firstChildRows = rowsByDepth[depth + 1];
 				}
 			}
-			rows = wrapperRows(winnerId, firstChildRows);
+			rows = operator == PackedRelOp.GROUP
+					? groupRows(physicalExpressionId, firstChildRows, wrapperRows(winnerId, firstChildRows))
+					: wrapperRows(winnerId, firstChildRows);
 			cost = saturatedAdd(childCost, wrapperLocalWork(winnerId, rows), 0.0d);
 		}
 
@@ -119,21 +129,115 @@ final class PackedSelectedPlanContextualizer {
 	private double leafRows(int winnerId, int physicalExpressionId, int prefixCount, double prefixRows) {
 		costEstimate.clear();
 		int relationId = memo.physicalSourceLogicalExpressionId(physicalExpressionId);
+		double contribution = Double.NaN;
 		if (relationId > 0 && relationId <= query.relationCount()) {
 			costContext.reset(prefixRelations, 0, prefixCount, prefixRows);
 			costModel.estimate(queryView, relationId, costContext, costEstimate);
 			if (finiteNonNegative(costEstimate.outputRows())) {
-				return costEstimate.outputRows();
+				contribution = costEstimate.outputRows();
 			}
 		}
-		double baseRows = memo.winnerOutputRows(winnerId);
-		if (!finiteNonNegative(baseRows)) {
-			baseRows = selectedRowsByGroup[memo.winnerGroupId(winnerId)];
+		if (!finiteNonNegative(contribution)) {
+			contribution = memo.winnerOutputRows(winnerId);
 		}
+		if (!finiteNonNegative(contribution)) {
+			contribution = selectedRowsByGroup[memo.winnerGroupId(winnerId)];
+		}
+		recordPrefixLeaf(prefixCount, relationId, contribution);
 		if (prefixCount == 0) {
-			return baseRows;
+			return contribution;
 		}
-		return PackedJoinEnumerator.joinRows(prefixRows, baseRows, connectsToPrefix(relationId, prefixCount));
+		return composedPrefixRows(relationId, prefixCount, contribution);
+	}
+
+	private void recordPrefixLeaf(int prefixOrdinal, int relationId, double rows) {
+		if (prefixOrdinal < prefixLeafRows.length) {
+			prefixLeafRows[prefixOrdinal] = rows;
+			prefixLeafRelationIds[prefixOrdinal] = relationId;
+		}
+	}
+
+	/**
+	 * Composes the join estimate as a product over the connected components of the prefix plus this leaf. Within a
+	 * component the newest member's contribution stands for the whole chain (the shared-variable join selects which of
+	 * its rows survive); across components the masses multiply as a Cartesian product, and an exactly-empty component
+	 * makes the whole join exactly empty.
+	 */
+	private double composedPrefixRows(int leafRelationId, int prefixCount, double leafContribution) {
+		for (int ordinal = 0; ordinal <= prefixCount; ordinal++) {
+			componentParents[ordinal] = ordinal;
+			componentConsumed[ordinal] = false;
+		}
+		for (int left = 0; left <= prefixCount; left++) {
+			int leftRelationId = prefixOrdinalRelationId(left, prefixCount, leafRelationId);
+			if (leftRelationId <= 0 || leftRelationId > query.relationCount()) {
+				continue;
+			}
+			for (int right = left + 1; right <= prefixCount; right++) {
+				int rightRelationId = prefixOrdinalRelationId(right, prefixCount, leafRelationId);
+				if (rightRelationId <= 0 || rightRelationId > query.relationCount()) {
+					continue;
+				}
+				if (query.masksIntersect(query.relOutputMaskId(leftRelationId),
+						query.relOutputMaskId(rightRelationId))) {
+					union(left, right);
+				}
+			}
+		}
+		double total = 1.0d;
+		for (int ordinal = prefixCount; ordinal >= 0; ordinal--) {
+			int root = findComponent(ordinal);
+			if (componentConsumed[root]) {
+				continue;
+			}
+			componentConsumed[root] = true;
+			double componentRows = ordinal == prefixCount ? leafContribution : prefixOrdinalRows(ordinal);
+			total = saturatedMultiply(total, componentRows);
+		}
+		return total;
+	}
+
+	private int prefixOrdinalRelationId(int ordinal, int prefixCount, int leafRelationId) {
+		return ordinal == prefixCount ? leafRelationId : prefixRelations[ordinal];
+	}
+
+	private double prefixOrdinalRows(int ordinal) {
+		int relationId = prefixRelations[ordinal];
+		if (prefixLeafRelationIds[ordinal] == relationId && finiteNonNegative(prefixLeafRows[ordinal])) {
+			return prefixLeafRows[ordinal];
+		}
+		if (relationId > 0 && relationId <= query.relationCount()) {
+			double rows = selectedRowsByGroup[memo.logicalGroupId(relationId)];
+			return finiteNonNegative(rows) ? rows : 1.0d;
+		}
+		return 1.0d;
+	}
+
+	private int findComponent(int ordinal) {
+		int root = ordinal;
+		while (componentParents[root] != root) {
+			root = componentParents[root];
+		}
+		while (componentParents[ordinal] != root) {
+			int next = componentParents[ordinal];
+			componentParents[ordinal] = root;
+			ordinal = next;
+		}
+		return root;
+	}
+
+	private void union(int left, int right) {
+		int leftRoot = findComponent(left);
+		int rightRoot = findComponent(right);
+		if (leftRoot != rightRoot) {
+			// The larger ordinal wins the root so the newest member's contribution stands for the component.
+			componentParents[Math.min(leftRoot, rightRoot)] = Math.max(leftRoot, rightRoot);
+		}
+	}
+
+	private static double saturatedMultiply(double left, double right) {
+		double product = left * right;
+		return Double.isFinite(product) ? product : Double.MAX_VALUE;
 	}
 
 	private double leafWork(int winnerId, double rows) {
@@ -142,6 +246,23 @@ final class PackedSelectedPlanContextualizer {
 		}
 		double work = memo.winnerWorkRows(winnerId);
 		return finiteNonNegative(work) ? work : Math.max(1.0d, rows);
+	}
+
+	/**
+	 * A GROUP's contextual output is derived from its contextual input, not ratio-scaled from the incumbent: keyless
+	 * aggregation always yields exactly one row (zero on an exactly-empty input), and keyed grouping collapses to
+	 * roughly the square root of the input per key, never exceeding the input.
+	 */
+	private double groupRows(int physicalExpressionId, double childRows, double fallback) {
+		int relationId = memo.physicalSourceLogicalExpressionId(physicalExpressionId);
+		if (relationId <= 0 || relationId > query.relationCount() || !finiteNonNegative(childRows)) {
+			return fallback;
+		}
+		int keyCount = query.payloadChildCount(query.payloadPrimary(query.relPayload(relationId)));
+		if (keyCount == 0) {
+			return childRows > 0.0d ? 1.0d : 0.0d;
+		}
+		return Math.max(1.0d, Math.min(childRows, Math.sqrt(childRows) * keyCount));
 	}
 
 	private double wrapperRows(int winnerId, double childRows) {
@@ -189,19 +310,6 @@ final class PackedSelectedPlanContextualizer {
 			start = appendFactors(memo.winnerChildWinnerId(winnerId, ordinal), start);
 		}
 		return start;
-	}
-
-	private boolean connectsToPrefix(int relationId, int prefixCount) {
-		if (relationId <= 0 || relationId > query.relationCount()) {
-			return false;
-		}
-		for (int ordinal = 0; ordinal < prefixCount; ordinal++) {
-			if (query.masksIntersect(query.relOutputMaskId(prefixRelations[ordinal]),
-					query.relOutputMaskId(relationId))) {
-				return true;
-			}
-		}
-		return false;
 	}
 
 	private static int maximumChildCount(PackedQuery query) {

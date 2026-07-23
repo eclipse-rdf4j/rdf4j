@@ -24,8 +24,10 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKeys;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingShape;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingUniverse;
@@ -43,6 +45,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanRanking;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanRankingAdvice;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoSurfaceKey;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.sail.lmdb.sketch.PatternFilterSampleEstimate;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 
 /** Thin RDF4J interface adapter over the unified LMDB estimation runtime. */
@@ -55,8 +58,11 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 	static final String OPERATOR_FEEDBACK_DETAILED_RUNTIME_PROPERTY = "rdf4j.optimizer.lmdb.operatorFeedbackDetailedRuntime";
 	static final String OPERATOR_FEEDBACK_APPLY_PROPERTY = "rdf4j.optimizer.lmdb.operatorFeedbackApply";
 
+	private static final double LIVE_SAMPLE_CONFIDENCE_THRESHOLD = 0.60d;
+
 	private final LmdbEstimatorRuntime runtime;
 	private final LmdbFilterSelectivityStats filterStatistics;
+	private final SketchBasedJoinEstimator estimator;
 
 	LmdbEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
 			SketchBasedJoinEstimator estimator) {
@@ -87,6 +93,7 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 			LmdbOperatorFeedbackStats feedback, LmdbStatementPatternCardinalitySource cardinalities,
 			PackedPlanCache cascadesPlanCache) {
 		filterStatistics = filters;
+		this.estimator = estimator;
 		runtime = new LmdbEstimatorRuntime(valueStore, tripleStore,
 				estimator == null ? null : estimator.synopsisService(), filters, feedback, cardinalities,
 				cascadesPlanCache);
@@ -117,21 +124,104 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 
 	@Override
 	public double estimateFilterPassRatio(Filter filter) {
-		if (filter == null) {
-			return -1.0d;
-		}
-		double inputRows = runtime.estimate(filter.getArg()).rows();
-		double outputRows = runtime.estimate(filter).rows();
-		return inputRows <= 0.0d ? (outputRows == 0.0d ? 1.0d : -1.0d)
-				: Math.max(0.0d, Math.min(1.0d, outputRows / inputRows));
+		double ratio = estimateFilterPass(filter).getPassRatio();
+		return isValidPassRatio(ratio) ? ratio : -1.0d;
 	}
 
 	@Override
 	public FilterPassEstimate estimateFilterPass(Filter filter) {
-		double ratio = estimateFilterPassRatio(filter);
-		return new FilterPassEstimate(ratio,
-				Double.isFinite(ratio) && ratio >= 0.0d ? FilterPassEstimate.Source.SAMPLED
-						: FilterPassEstimate.Source.UNKNOWN);
+		if (filter == null || filter.getCondition() == null) {
+			return unknownFilterPass();
+		}
+		StatementPattern pattern = basePattern(filter.getArg());
+		FilterPassEstimate heuristic = heuristicFilterPass(filter);
+		if (filterStatistics == null || pattern == null) {
+			return heuristic;
+		}
+		FilterPassEstimate best = prefer(validOrNull(filterStatistics.estimateSnapshotFilterPass(filter, pattern)),
+				validOrNull(heuristic));
+		if (estimator != null && !estimator.adaptiveEvidenceAllowed()) {
+			return best == null ? unknownFilterPass() : best;
+		}
+		best = prefer(best, learnedFilterPass(filter, pattern));
+		best = prefer(best, sampledFilterPass(filterStatistics.estimateCachedFilterPass(filter, pattern)));
+		if (best == null || best.getConfidenceScore() < LIVE_SAMPLE_CONFIDENCE_THRESHOLD) {
+			best = prefer(best, sampledFilterPass(filterStatistics.estimateLiveFilterPass(filter, pattern)));
+		}
+		return best == null ? unknownFilterPass() : best;
+	}
+
+	private FilterPassEstimate heuristicFilterPass(Filter filter) {
+		double inputRows = runtime.estimate(filter.getArg()).rows();
+		double outputRows = runtime.estimate(filter).rows();
+		double ratio = inputRows <= 0.0d ? (outputRows == 0.0d ? 1.0d : -1.0d)
+				: Math.max(0.0d, Math.min(1.0d, outputRows / inputRows));
+		return isValidPassRatio(ratio) ? new FilterPassEstimate(ratio, FilterPassEstimate.Source.HEURISTIC)
+				: unknownFilterPass();
+	}
+
+	private FilterPassEstimate learnedFilterPass(Filter filter, StatementPattern pattern) {
+		PatternKey patternKey = FilterSelectivityKeys.patternKeyFor(pattern);
+		if (patternKey == null) {
+			return null;
+		}
+		FilterPassEstimate best = null;
+		String filterKey = FilterSelectivityKeys.filterKeyFor(filter.getCondition());
+		double ratio = filterStatistics.getFilterPassRatio(patternKey, filterKey);
+		if (isValidPassRatio(ratio)) {
+			best = new FilterPassEstimate(ratio, FilterPassEstimate.Source.LEARNED_FILTER,
+					filterStatistics.getFilterObservationCount(patternKey, filterKey));
+		}
+		String templateKey = FilterSelectivityKeys.filterTemplateKeyFor(filter.getCondition(), pattern);
+		if (templateKey != null) {
+			ratio = filterStatistics.getFilterTemplatePassRatio(patternKey, templateKey);
+			if (isValidPassRatio(ratio)) {
+				best = prefer(best, new FilterPassEstimate(ratio, FilterPassEstimate.Source.LEARNED_TEMPLATE,
+						filterStatistics.getFilterTemplateObservationCount(patternKey, templateKey)));
+			}
+		}
+		ratio = filterStatistics.getPatternPassRatio(patternKey);
+		if (isValidPassRatio(ratio)) {
+			best = prefer(best, new FilterPassEstimate(ratio, FilterPassEstimate.Source.LEARNED_PATTERN,
+					filterStatistics.getPatternObservationCount(patternKey)));
+		}
+		return best;
+	}
+
+	private static FilterPassEstimate sampledFilterPass(PatternFilterSampleEstimate sampled) {
+		if (sampled == null || !isValidPassRatio(sampled.passRatio())) {
+			return null;
+		}
+		return new FilterPassEstimate(sampled.passRatio(), FilterPassEstimate.Source.SAMPLED, sampled.sampleSize());
+	}
+
+	private static FilterPassEstimate prefer(FilterPassEstimate first, FilterPassEstimate second) {
+		FilterPassEstimate left = validOrNull(first);
+		FilterPassEstimate right = validOrNull(second);
+		if (left == null) {
+			return right;
+		}
+		if (right == null) {
+			return left;
+		}
+		int confidence = Double.compare(right.getConfidenceScore(), left.getConfidenceScore());
+		if (confidence != 0) {
+			return confidence > 0 ? right : left;
+		}
+		return right.getEvidenceCount() > left.getEvidenceCount() ? right : left;
+	}
+
+	private static FilterPassEstimate validOrNull(FilterPassEstimate estimate) {
+		return estimate != null && estimate.getSource() != FilterPassEstimate.Source.UNKNOWN
+				&& isValidPassRatio(estimate.getPassRatio()) ? estimate : null;
+	}
+
+	private static boolean isValidPassRatio(double ratio) {
+		return Double.isFinite(ratio) && ratio >= 0.0d && ratio <= 1.0d;
+	}
+
+	private static FilterPassEstimate unknownFilterPass() {
+		return new FilterPassEstimate(-1.0d, FilterPassEstimate.Source.UNKNOWN);
 	}
 
 	@Override

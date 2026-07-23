@@ -18,21 +18,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
-import java.util.Set;
+import java.util.StringJoiner;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -58,49 +55,80 @@ class LmdbIndependentFiniteAnchorJoinPlanningTest {
 			loadSyntheticMutualFollowData(repository);
 			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
 
-			BindingSetAssignment users = userBindings("u", 12, 17);
-			BindingSetAssignment targets = userBindings("v", 12, 17);
-			StatementPattern follows = followsPattern("u", "v");
-			JoinOrderPlanner planner = (JoinOrderPlanner) store.getBackingStore().getEvaluationStatistics();
-			JoinOrderPlanner.PlanningAttempt attempt = planner.planJoinOrderAttempt(
-					List.of(users, targets, follows),
-					Set.of(),
-					JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING,
-					List.of(
-							new JoinOrderPlanner.FilterConstraint(Set.of("u", "v"), 1.0d,
-									JoinOrderPlanner.FILTER_COST_CHEAP, "?u != ?v"),
-							new JoinOrderPlanner.FilterConstraint(Set.of("u", "v"), 1.0d,
-									JoinOrderPlanner.FILTER_COST_EXPENSIVE, "EXISTS reverse follows")));
-			Optional<JoinOrderPlanner.JoinOrderPlan> plan = attempt.getPlan();
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(mutualFollowsQuery())
+						.explain(Explanation.Level.Optimized);
+				TupleExpr optimized = (TupleExpr) explanation.tupleExpr();
 
-			assertTrue(plan.isPresent(),
-					"Expected LMDB planner to produce a q7-style finite-anchor bridge plan: "
-							+ attempt.getDiagnostics());
-			assertEstimatedWorkMatchesStepSum(plan.get());
-			List<TupleExpr> orderedArgs = plan.get().getOrderedArgs();
-			int userAnchorIndex = orderedArgs.indexOf(users);
-			int targetAnchorIndex = orderedArgs.indexOf(targets);
-			int followsIndex = orderedArgs.indexOf(follows);
-			assertTrue(userAnchorIndex >= 0 && targetAnchorIndex >= 0 && followsIndex >= 0,
-					"Expected both finite anchors and follows bridge in the selected order: " + orderedArgs);
-			assertTrue(userAnchorIndex < followsIndex && targetAnchorIndex < followsIndex,
-					"Independent finite user anchors should be combined before the follows bridge so the bridge "
-							+ "uses direct lookup instead of a one-sided prefix scan. order=" + orderedArgs
-							+ ", steps=" + plan.get().getSteps()
-							+ ", trace=" + plan.get().getSummaryStringMetrics());
+				List<String> executionOrder = new ArrayList<>();
+				List<StatementPattern> bridgeMatches = new ArrayList<>(1);
+				optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+					@Override
+					public void meet(BindingSetAssignment node) {
+						if (node.getBindingNames().contains("u")) {
+							executionOrder.add("anchor-u");
+						}
+						if (node.getBindingNames().contains("v")) {
+							executionOrder.add("anchor-v");
+						}
+					}
 
-			JoinOrderPlanner.PlanStep followsStep = plan.get().getSteps().get(followsIndex);
-			assertEquals("directLookup",
-					followsStep.getStringMetrics().get(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE),
-					"Follows bridge should use both finite domains as a direct lookup: "
-							+ followsStep.getStringMetrics() + followsStep.getDoubleMetrics());
-			assertEquals("[S, P, O]",
-					followsStep.getStringMetrics().get(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS),
-					"Follows bridge should bind subject, predicate, and object: "
-							+ followsStep.getStringMetrics() + followsStep.getDoubleMetrics());
+					@Override
+					public void meet(StatementPattern node) {
+						if (bridgeMatches.isEmpty() && isFollowsBridge(node)) {
+							bridgeMatches.add(node);
+							executionOrder.add("follows-bridge");
+						}
+						super.meet(node);
+					}
+				});
+
+				assertTrue(!bridgeMatches.isEmpty(),
+						"Expected the optimized q7-style plan to retain the follows bridge. plan=" + optimized);
+				StatementPattern bridge = bridgeMatches.getFirst();
+				int bridgeIndex = executionOrder.indexOf("follows-bridge");
+				assertTrue(executionOrder.contains("anchor-u") && executionOrder.contains("anchor-v"),
+						"Expected both finite user anchors in the optimized plan. order=" + executionOrder
+								+ ", plan=" + optimized);
+				assertTrue(executionOrder.indexOf("anchor-u") < bridgeIndex
+						&& executionOrder.indexOf("anchor-v") < bridgeIndex,
+						"Independent finite user anchors should be combined before the follows bridge so the bridge "
+								+ "uses direct lookup instead of a one-sided prefix scan. order=" + executionOrder
+								+ ", plan=" + optimized);
+
+				assertEquals("directLookup",
+						bridge.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE),
+						"Follows bridge should use both finite domains as a direct lookup: " + bridge);
+				assertEquals("[S, P, O]",
+						bridge.getStringMetricPlanned(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS),
+						"Follows bridge should bind subject, predicate, and object: " + bridge);
+			}
 		} finally {
 			repository.shutDown();
 		}
+	}
+
+	private static boolean isFollowsBridge(StatementPattern node) {
+		return node.getPredicateVar() != null
+				&& SOCIAL_FOLLOWS.equals(node.getPredicateVar().getValue())
+				&& node.getSubjectVar() != null && "u".equals(node.getSubjectVar().getName())
+				&& node.getObjectVar() != null && "v".equals(node.getObjectVar().getName());
+	}
+
+	private static String mutualFollowsQuery() {
+		StringJoiner userValues = new StringJoiner(" ");
+		StringJoiner targetValues = new StringJoiner(" ");
+		for (int i = 12; i <= 17; i++) {
+			userValues.add("<" + socialUser(i).stringValue() + ">");
+			targetValues.add("<" + socialUser(i).stringValue() + ">");
+		}
+		return "SELECT ?u ?v WHERE {\n"
+				+ "  VALUES ?u { " + userValues + " }\n"
+				+ "  VALUES ?v { " + targetValues + " }\n"
+				+ "  ?u <" + SOCIAL_FOLLOWS.stringValue() + "> ?v .\n"
+				+ "  FILTER (?u != ?v)\n"
+				+ "  FILTER EXISTS { ?v <" + SOCIAL_FOLLOWS.stringValue() + "> ?u }\n"
+				+ "}";
 	}
 
 	private static void loadSyntheticMutualFollowData(SailRepository repository) {
@@ -131,35 +159,7 @@ class LmdbIndependentFiniteAnchorJoinPlanningTest {
 		}
 	}
 
-	private static Resource socialUser(int index) {
+	private static IRI socialUser(int index) {
 		return VF.createIRI("http://example.com/theme/social/user/" + index);
-	}
-
-	private static StatementPattern followsPattern(String subjectName, String objectName) {
-		return new StatementPattern(Var.of(subjectName), Var.of("followsPredicate", SOCIAL_FOLLOWS),
-				Var.of(objectName));
-	}
-
-	private static BindingSetAssignment userBindings(String bindingName, int firstUser, int lastUser) {
-		BindingSetAssignment assignment = new BindingSetAssignment();
-		List<BindingSet> bindingSets = new ArrayList<>();
-		for (int i = firstUser; i <= lastUser; i++) {
-			QueryBindingSet bindingSet = new QueryBindingSet();
-			bindingSet.addBinding(bindingName, socialUser(i));
-			bindingSets.add(bindingSet);
-		}
-		assignment.setBindingSets(bindingSets);
-		return assignment;
-	}
-
-	private static void assertEstimatedWorkMatchesStepSum(JoinOrderPlanner.JoinOrderPlan plan) {
-		assertEquals(plan.getOrderedArgs().size(), plan.getSteps().size(),
-				"Expected one planner step per ordered factor");
-		double stepWorkSum = plan.getSteps()
-				.stream()
-				.mapToDouble(JoinOrderPlanner.PlanStep::getStepWorkRows)
-				.sum();
-		assertEquals(stepWorkSum, plan.getEstimatedTotalWork(), 1.0e-9,
-				"Planner total work should equal sum(stepWorkRows)");
 	}
 }

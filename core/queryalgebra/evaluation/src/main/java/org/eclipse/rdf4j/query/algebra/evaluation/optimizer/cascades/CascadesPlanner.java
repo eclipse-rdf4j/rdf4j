@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.Pack
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanningResult;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPredicateRangeProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedRuleProofs;
 
 /** Public TupleExpr boundary for the single packed Cascades implementation. */
@@ -35,9 +36,14 @@ public final class CascadesPlanner {
 	}
 
 	public CascadesPlan optimize(TupleExpr root, OptimizationGoal goal, PackedCostModel costModel) {
+		return optimize(root, goal, costModel, (PackedPredicateRangeProvider) null);
+	}
+
+	public CascadesPlan optimize(TupleExpr root, OptimizationGoal goal, PackedCostModel costModel,
+			PackedPredicateRangeProvider rangeProvider) {
 		TupleExpr source = Objects.requireNonNull(root, "Cascades root");
 		OptimizationGoal request = goal == null ? OptimizationGoal.root(source, PhysicalProperties.ANY) : goal;
-		return plan(request, PackedCascadesPlanner.optimize(source, request, costModel));
+		return plan(request, PackedCascadesPlanner.optimize(source, request, costModel, rangeProvider));
 	}
 
 	public CascadesPlan optimize(TupleExpr root, OptimizationGoal goal, PackedPlanCache cache,
@@ -47,11 +53,17 @@ public final class CascadesPlanner {
 
 	public CascadesPlan optimize(TupleExpr root, OptimizationGoal goal, PackedPlanCache cache,
 			PackedPlanCache.Context cacheContext, PackedCostModel costModel) {
+		return optimize(root, goal, cache, cacheContext, costModel, null);
+	}
+
+	public CascadesPlan optimize(TupleExpr root, OptimizationGoal goal, PackedPlanCache cache,
+			PackedPlanCache.Context cacheContext, PackedCostModel costModel,
+			PackedPredicateRangeProvider rangeProvider) {
 		TupleExpr source = Objects.requireNonNull(root, "Cascades root");
 		OptimizationGoal request = goal == null ? OptimizationGoal.root(source, PhysicalProperties.ANY) : goal;
 		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, request,
 				Objects.requireNonNull(cache, "packed plan cache"),
-				Objects.requireNonNull(cacheContext, "packed plan cache context"), costModel);
+				Objects.requireNonNull(cacheContext, "packed plan cache context"), costModel, rangeProvider);
 		return plan(request, result);
 	}
 

@@ -145,10 +145,6 @@ public interface JoinFactorCostModel {
 		private final LongFunction<List<TupleExpr>> prefixFactorProvider;
 		private final long prefixFactorMask;
 		private final EstimationTier estimationTier;
-		private String requestedAccessMode;
-		private int requestedLookupComponentMask;
-		private int requestedMissingLookupComponentMask;
-		private boolean requestedDirectLookup;
 
 		public CostContext(Set<String> currentlyBoundVars, double outerPrefixRows, double distinctLookupBindings,
 				boolean nestedIteratorInvocation) {
@@ -384,35 +380,6 @@ public interface JoinFactorCostModel {
 			return estimationTier;
 		}
 
-		public CostContext withRequestedAccessPath(String accessMode, int lookupComponentMask,
-				int missingLookupComponentMask, boolean directLookup) {
-			requestedAccessMode = accessMode == null || accessMode.isBlank() ? null : accessMode;
-			requestedLookupComponentMask = Math.max(0, lookupComponentMask);
-			requestedMissingLookupComponentMask = Math.max(0, missingLookupComponentMask);
-			requestedDirectLookup = directLookup;
-			return this;
-		}
-
-		public boolean hasRequestedAccessPath() {
-			return requestedAccessMode != null;
-		}
-
-		public String getRequestedAccessMode() {
-			return requestedAccessMode;
-		}
-
-		public int getRequestedLookupComponentMask() {
-			return requestedLookupComponentMask;
-		}
-
-		public int getRequestedMissingLookupComponentMask() {
-			return requestedMissingLookupComponentMask;
-		}
-
-		public boolean isRequestedDirectLookup() {
-			return requestedDirectLookup;
-		}
-
 		public CostContext withEstimationTier(EstimationTier estimationTier) {
 			if (this.estimationTier == estimationTier || estimationTier == null) {
 				return this;
@@ -432,14 +399,6 @@ public interface JoinFactorCostModel {
 				context = new CostContext(getCurrentlyBoundVars(), outerPrefixRows, distinctLookupBindings,
 						nestedIteratorInvocation, collectMetrics, finiteBindingValues, getPrefixFactors(),
 						estimationTier);
-			}
-			return copyRequestedAccessPath(context);
-		}
-
-		private CostContext copyRequestedAccessPath(CostContext context) {
-			if (hasRequestedAccessPath()) {
-				context.withRequestedAccessPath(requestedAccessMode, requestedLookupComponentMask,
-						requestedMissingLookupComponentMask, requestedDirectLookup);
 			}
 			return context;
 		}

@@ -357,6 +357,19 @@ class TripleStore implements Closeable {
 		predicateGuaranteeIndexReadable = true;
 	}
 
+	/**
+	 * Semantic version of the predicate-object domain guarantees this store currently serves, covering the encoding
+	 * version, exclusion configuration, disabled state, and readability. Plan caches key on this value so that any
+	 * change in which guarantees exist invalidates cached plans.
+	 */
+	String effectiveRdfTermDomainsVersion() {
+		if (!predicateGuaranteeIndexEnabled) {
+			return PREDICATE_OBJECT_DOMAINS_VERSION + "-disabled";
+		}
+		String version = currentRdfTermDomainsVersion();
+		return predicateGuaranteeIndexReadable ? version : version + "-unreadable";
+	}
+
 	private String currentRdfTermDomainsVersion() {
 		if (predicateGuaranteeExcludedPredicates.isEmpty()) {
 			return PREDICATE_OBJECT_DOMAINS_VERSION;

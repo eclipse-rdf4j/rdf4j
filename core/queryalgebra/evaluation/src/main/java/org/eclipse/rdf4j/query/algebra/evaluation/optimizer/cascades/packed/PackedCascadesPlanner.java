@@ -32,11 +32,17 @@ public final class PackedCascadesPlanner {
 
 	public static PackedPlanningResult optimize(TupleExpr tupleExpr, OptimizationGoal goal,
 			PackedCostModel costModel) {
+		return optimize(tupleExpr, goal, costModel, null);
+	}
+
+	public static PackedPlanningResult optimize(TupleExpr tupleExpr, OptimizationGoal goal,
+			PackedCostModel costModel, PackedPredicateRangeProvider rangeProvider) {
 		OptimizationGoal request = goal == null ? OptimizationGoal.root(tupleExpr, null) : goal;
 		long workLimit = request.searchMode() == OptimizationGoal.SearchMode.EXACT
 				? Long.MAX_VALUE
 				: request.taskBudget();
-		return optimize(tupleExpr, workLimit, request.deadlineNanos(), exploreReorderings(request), costModel);
+		return optimize(tupleExpr, workLimit, request.deadlineNanos(), exploreReorderings(request), costModel,
+				rangeProvider);
 	}
 
 	public static PackedPlanningResult optimize(TupleExpr tupleExpr, OptimizationGoal goal, PackedPlanCache cache,
@@ -46,12 +52,18 @@ public final class PackedCascadesPlanner {
 
 	public static PackedPlanningResult optimize(TupleExpr tupleExpr, OptimizationGoal goal, PackedPlanCache cache,
 			PackedPlanCache.Context context, PackedCostModel costModel) {
+		return optimize(tupleExpr, goal, cache, context, costModel, null);
+	}
+
+	public static PackedPlanningResult optimize(TupleExpr tupleExpr, OptimizationGoal goal, PackedPlanCache cache,
+			PackedPlanCache.Context context, PackedCostModel costModel, PackedPredicateRangeProvider rangeProvider) {
 		OptimizationGoal request = goal == null ? OptimizationGoal.root(tupleExpr, null) : goal;
 		long workLimit = request.searchMode() == OptimizationGoal.SearchMode.EXACT
 				? Long.MAX_VALUE
 				: request.taskBudget();
 		if (cache == null || context == null) {
-			return optimize(tupleExpr, workLimit, request.deadlineNanos(), exploreReorderings(request), costModel);
+			return optimize(tupleExpr, workLimit, request.deadlineNanos(), exploreReorderings(request), costModel,
+					rangeProvider);
 		}
 		long cacheStart = System.nanoTime();
 		PackedPlanCache.Fingerprint fingerprint = cache.fingerprint(tupleExpr);
@@ -70,7 +82,9 @@ public final class PackedCascadesPlanner {
 			PackedPlanCache.QueryEntry queryEntry = cache.findQuery(fingerprint, context, tupleExpr);
 			long cacheNanos = System.nanoTime() - cacheStart;
 			long encodeStart = System.nanoTime();
-			PackedQuery query = queryEntry == null ? PackedQueryCodec.encodeForPlanning(tupleExpr) : queryEntry.query();
+			PackedQuery query = queryEntry == null
+					? PackedQueryCodec.encodeForPlanning(tupleExpr, rangeProvider)
+					: queryEntry.query();
 			long encodeNanos = queryEntry == null ? System.nanoTime() - encodeStart : 0L;
 			Computation computation = optimize(query, workLimit, request.deadlineNanos(), exploreReorderings(request),
 					costModel, encodeNanos, cacheNanos, queryEntry != null);
@@ -90,13 +104,13 @@ public final class PackedCascadesPlanner {
 	}
 
 	public static PackedPlanningResult optimize(TupleExpr tupleExpr, long workLimit, long deadlineNanos) {
-		return optimize(tupleExpr, workLimit, deadlineNanos, true, null);
+		return optimize(tupleExpr, workLimit, deadlineNanos, true, null, null);
 	}
 
 	private static PackedPlanningResult optimize(TupleExpr tupleExpr, long workLimit, long deadlineNanos,
-			boolean exploreReorderings, PackedCostModel costModel) {
+			boolean exploreReorderings, PackedCostModel costModel, PackedPredicateRangeProvider rangeProvider) {
 		long encodeStart = System.nanoTime();
-		PackedQuery query = PackedQueryCodec.encodeForPlanning(tupleExpr);
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(tupleExpr, rangeProvider);
 		long encodeNanos = System.nanoTime() - encodeStart;
 		return optimize(query, workLimit, deadlineNanos, exploreReorderings, costModel, encodeNanos, 0L, false)
 				.result();

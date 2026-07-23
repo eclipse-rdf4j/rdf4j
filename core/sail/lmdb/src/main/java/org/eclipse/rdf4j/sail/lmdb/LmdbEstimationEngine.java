@@ -40,9 +40,11 @@ import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.Reduced;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
@@ -58,6 +60,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableSetKey;
 
 /** Uniform semantic estimator. Physical work is deliberately owned by {@link LmdbAccessCostModel}. */
 final class LmdbEstimationEngine {
+
+	private static final double SERVICE_MIN_CARDINALITY = 1_000.0d;
 
 	private final LmdbEstimatorEvidenceSource evidenceSource;
 	private final EstimateEvidenceResolver evidenceResolver;
@@ -187,6 +191,12 @@ final class LmdbEstimationEngine {
 			if (expression instanceof Order order) {
 				return EstimateMath.order(estimate(order.getArg(), context));
 			}
+			if (expression instanceof TripleRef tripleRef) {
+				return tripleRef(tripleRef, context);
+			}
+			if (expression instanceof Service service) {
+				return service(service, context);
+			}
 			if (expression instanceof UnaryTupleOperator unary) {
 				return estimate(unary.getArg(), context);
 			}
@@ -260,11 +270,42 @@ final class LmdbEstimationEngine {
 		}
 
 		private BagEstimate group(Group group, EstimateContext context) {
-			BagEstimate grouped = EstimateMath.group(estimate(group.getArg(), context), group.getGroupBindingNames());
+			BagEstimate input = estimate(group.getArg(), context);
+			BagEstimate grouped = EstimateMath.group(input, group.getGroupBindingNames());
+			Set<String> keys = group.getGroupBindingNames();
+			if (!keys.isEmpty() && Double.isFinite(input.rows()) && input.rows() > 1.0d
+					&& grouped.rows() >= input.rows()) {
+				// No distinct-key evidence collapsed the grouping; assume roughly sqrt(input) groups per key,
+				// never exceeding the input.
+				double collapsed = Math.max(1.0d, Math.min(input.rows(), Math.sqrt(input.rows()) * keys.size()));
+				grouped = grouped.withRowsPreservingEvidence(collapsed, grouped.workRows(),
+						Math.min(grouped.confidence(), 0.5d), "group-key-collapse", grouped.metrics(), false);
+			}
 			for (String aggregate : group.getAggregateBindingNames()) {
 				grouped = grouped.withVariable(aggregate, VariableEstimate.bound(grouped.rows(), grouped.rows()));
 			}
 			return grouped;
+		}
+
+		private BagEstimate tripleRef(TripleRef tripleRef, EstimateContext context) {
+			// No dedicated triple-term index exists; the matching statement count is the best store-backed proxy
+			// for how many quoted triples can match.
+			StatementPattern proxy = new StatementPattern(tripleRef.getSubjectVar().clone(),
+					tripleRef.getPredicateVar().clone(), tripleRef.getObjectVar().clone());
+			return withMissingVariables(estimate(proxy, context), tripleRef);
+		}
+
+		private BagEstimate service(Service service, EstimateContext context) {
+			BagEstimate inner = estimate(service.getArg(), context);
+			if (service.getServiceRef() == null || !service.getServiceRef().hasValue()
+					|| inner.rows() >= SERVICE_MIN_CARDINALITY) {
+				return inner;
+			}
+			// Remote cardinality is unknown and the call pays network latency; floor it well above any selective
+			// local access path so a SERVICE call is never scheduled as if it were selective.
+			return inner.withRowsPreservingEvidence(SERVICE_MIN_CARDINALITY,
+					Math.max(inner.workRows(), SERVICE_MIN_CARDINALITY), Math.min(inner.confidence(), 0.5d),
+					"service-remote-floor", inner.metrics(), false);
 		}
 
 		private BagEstimate multiProject(MultiProjection projection, EstimateContext context) {

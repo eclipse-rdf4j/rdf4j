@@ -160,7 +160,7 @@ final class PackedIncumbentSearch {
 			return statementPatternRows(logicalExpressionId);
 		}
 		if (operator == PackedRelOp.BINDING_SET_ASSIGNMENT) {
-			return Math.max(1.0d, query.payloadChildCount(query.relPayload(logicalExpressionId)));
+			return query.payloadChildCount(query.relPayload(logicalExpressionId));
 		}
 		if (operator == PackedRelOp.JOIN && childCount == 2) {
 			int leftGroup = childGroupIds[0];
@@ -169,7 +169,19 @@ final class PackedIncumbentSearch {
 					query.masksIntersect(query.relOutputMaskId(leftGroup), query.relOutputMaskId(rightGroup)));
 		}
 		if (operator == PackedRelOp.FILTER && childCount == 1) {
-			return Math.max(1.0d, selectedRowsByGroup[childGroupIds[0]] * 0.25d);
+			double inputRows = selectedRowsByGroup[childGroupIds[0]];
+			return inputRows == 0.0d ? 0.0d : Math.max(1.0d, inputRows * 0.25d);
+		}
+		if (operator == PackedRelOp.GROUP && childCount == 1) {
+			double inputRows = selectedRowsByGroup[childGroupIds[0]];
+			int keyCount = query.payloadChildCount(query.payloadPrimary(query.relPayload(logicalExpressionId)));
+			if (keyCount == 0) {
+				// Aggregation without GROUP BY always yields exactly one row.
+				return inputRows > 0.0d ? 1.0d : 0.0d;
+			}
+			// Without per-key distinct counts, assume grouping collapses to roughly the square root of the
+			// input per key, never exceeding the input.
+			return Math.max(1.0d, Math.min(inputRows, Math.sqrt(inputRows) * keyCount));
 		}
 		if (operator == PackedRelOp.UNION && childCount == 2) {
 			return selectedRowsByGroup[childGroupIds[0]] + selectedRowsByGroup[childGroupIds[1]];

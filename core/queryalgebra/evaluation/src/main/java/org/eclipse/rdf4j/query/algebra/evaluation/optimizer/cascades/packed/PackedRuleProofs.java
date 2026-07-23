@@ -32,6 +32,9 @@ public final class PackedRuleProofs {
 	static final long TAUTOLOGICAL_POSITIVE_HAVING = 1L << 7;
 	static final long ELIGIBILITY_UNION_EXISTS = 1L << 8;
 	static final long GROUP_KEY_EXISTS_LIFT = 1L << 9;
+	static final long PREDICATE_RANGE_EMPTY = 1L << 10;
+	static final long PREDICATE_RANGE_TAUTOLOGY = 1L << 11;
+	static final long PREDICATE_RANGE_ANCHOR = 1L << 12;
 
 	private PackedRuleProofs() {
 	}
@@ -61,6 +64,12 @@ public final class PackedRuleProofs {
 				"deadEligibilityLocals", "row-insensitive eligibility UNION represented as an EXISTS predicate");
 		add(proofs, ruleMask, GROUP_KEY_EXISTS_LIFT, "packed-group-key-exists-lift", "groupKeyCorrelation",
 				"EXISTS correlation is constant for each group key");
+		add(proofs, ruleMask, PREDICATE_RANGE_EMPTY, "packed-predicate-range-empty", "emptyObjectDomain",
+				"stored predicate-object range proves the expression produces no rows");
+		add(proofs, ruleMask, PREDICATE_RANGE_TAUTOLOGY, "packed-predicate-range-tautology", "tautologicalFilter",
+				"stored predicate-object range proves the filter true for every assured-bound row");
+		add(proofs, ruleMask, PREDICATE_RANGE_ANCHOR, "packed-predicate-range-anchor", "finiteObjectDomain",
+				"stored predicate-object range anchors the object binding to proven values");
 		return List.copyOf(proofs);
 	}
 

@@ -104,6 +104,10 @@ public final class SketchBasedJoinEstimator implements AutoCloseable {
 		service.setRebuildAllowedSupplier(supplier);
 	}
 
+	public void setRebuildObserver(SketchRebuildObserver observer) {
+		service.setRebuildObserver(observer);
+	}
+
 	public void configurePersistence(Path directory, boolean snapshotExpected) {
 		service.configurePersistence(directory, snapshotExpected);
 	}

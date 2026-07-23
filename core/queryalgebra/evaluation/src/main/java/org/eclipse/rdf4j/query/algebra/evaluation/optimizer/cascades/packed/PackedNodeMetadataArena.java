@@ -57,7 +57,13 @@ final class PackedNodeMetadataArena {
 	}
 
 	void attachTerm(int termId, int metricSetId, int flags, double resultSizeEstimate, double costEstimate) {
-		attach(terms, termId, metricSetId, flags, resultSizeEstimate, costEstimate, 0);
+		// Distinct algebra Var occurrences intern to one canonical term, but each occurrence carries its own
+		// node-level planned metrics and estimates. That per-occurrence data is not term identity, so the first
+		// occurrence's metadata wins deterministically instead of raising a canonical-conflict invariant failure.
+		if (frozen) {
+			throw new IllegalStateException("packed node metadata is frozen");
+		}
+		terms.attachFirstWins(termId, metricSetId, flags, resultSizeEstimate, costEstimate, 0);
 	}
 
 	void copyTerm(int sourceTermId, int targetTermId) {
@@ -178,6 +184,18 @@ final class PackedNodeMetadataArena {
 			resultSizeEstimateBits[id] = resultBits;
 			costEstimateBits[id] = costBits;
 			algorithmNameIds[id] = algorithmNameId;
+		}
+
+		private void attachFirstWins(int id, int metricSetId, int nodeFlags, double resultSizeEstimate,
+				double costEstimate, int algorithmNameId) {
+			if (id <= 0) {
+				throw new IllegalArgumentException("metadata row id must be positive");
+			}
+			ensureCapacity(id);
+			if (present[id] != 0) {
+				return;
+			}
+			attach(id, metricSetId, nodeFlags, resultSizeEstimate, costEstimate, algorithmNameId);
 		}
 
 		private void copy(int sourceId, int targetId) {

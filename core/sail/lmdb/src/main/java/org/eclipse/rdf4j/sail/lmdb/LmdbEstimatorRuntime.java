@@ -47,13 +47,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.FeedbackCor
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EstimateMath;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.lmdb.estimation.LmdbQuadSynopsisService;
-import org.eclipse.rdf4j.sail.lmdb.estimation.QuadEvidence;
-import org.eclipse.rdf4j.sail.lmdb.estimation.QuadProbe;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.eclipse.rdf4j.sail.lmdb.sketch.CharacteristicSetEstimate;
 import org.eclipse.rdf4j.sail.lmdb.sketch.PropertyPathEstimate;
@@ -144,8 +140,7 @@ final class LmdbEstimatorRuntime {
 		}
 		BagEstimate semantic = engine.estimate(expression, context);
 		int lookupMask = lookupMask(accessPattern(expression), context.boundNames());
-		FactorCostEstimate result = requestedDistinctCursorSkip(expression, cost, context, semantic, lookupMask)
-				.orElseGet(() -> regularFactorCost(expression, context, semantic, lookupMask));
+		FactorCostEstimate result = regularFactorCost(expression, context, semantic, lookupMask);
 		result = finiteDerivedFactorCost(expression, cost, semantic, result).orElse(result);
 		Optional<FactorCostEstimate> estimate = Optional.of(result);
 		if (cacheKey != null) {
@@ -157,7 +152,6 @@ final class LmdbEstimatorRuntime {
 	private Optional<FactorCostEstimate> finiteDerivedFactorCost(TupleExpr expression, CostContext cost,
 			BagEstimate semantic, FactorCostEstimate base) {
 		if (cost == null || base == null || !cost.isNestedIteratorInvocation()
-				|| cost.hasRequestedAccessPath()
 				|| (cost.getPrefixFactors().isEmpty() && cost.getFiniteBindingValues().size() != 1)) {
 			return Optional.empty();
 		}
@@ -200,76 +194,6 @@ final class LmdbEstimatorRuntime {
 		return Optional.of(new FactorCostEstimate(workRows, outputRows, Map.copyOf(strings), Map.copyOf(metrics),
 				base.hasPhysicalAccessPath(), base.isDirectLookup(), base.getLookupComponentMask(),
 				base.getMissingLookupComponentMask(), accessRows, true, surfaceEstimate.exact()).withBag(surfaceBag));
-	}
-
-	private Optional<FactorCostEstimate> requestedDistinctCursorSkip(TupleExpr expression, CostContext cost,
-			EstimateContext context, BagEstimate semantic, int lookupMask) {
-		if (!(expression instanceof StatementPattern pattern)
-				|| cost == null
-				|| !cost.hasRequestedAccessPath()
-				|| !LmdbDistinctCursorSkipSupport.ACCESS_MODE.equals(cost.getRequestedAccessMode())
-				|| tripleStore == null) {
-			return Optional.empty();
-		}
-		Optional<LmdbDistinctRequirement> requirement = LmdbDistinctRequirement.from(pattern);
-		Optional<LmdbDistinctCursorSkipSupport.Plan> plan = LmdbDistinctCursorSkipSupport.choosePlan(pattern,
-				tripleStore.indexAccessPaths(0));
-		if (requirement.isEmpty() || plan.isEmpty()) {
-			return Optional.empty();
-		}
-		BagEstimate distinctInput = withDistinctCursorSkipEvidence(pattern, context, plan.get(), requirement.get(),
-				semantic);
-		BagEstimate distinct = EstimateMath.distinct(distinctInput, requirement.get().distinctVars());
-		double outputRows = finiteNonNegative(distinct.rows(), semantic.rows());
-		double invocations = finitePositive(context.invocationCount(), 1.0d);
-		double seeks = Math.max(invocations, outputRows);
-		double workRows = saturatingAdd(outputRows, seeks);
-		double fanout = outputRows <= 0.0d ? 1.0d : Math.max(1.0d, semantic.rows() / outputRows);
-		Map<String, String> strings = new LinkedHashMap<>();
-		strings.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "lmdb-distinct-cursor-skip");
-		strings.put(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE,
-				LmdbDistinctCursorSkipSupport.ACCESS_MODE);
-		strings.put(TelemetryMetricNames.PLANNED_INDEX_NAME, plan.get().indexFieldSequence());
-		strings.put(TelemetryMetricNames.PLANNED_DISTINCT_CURSOR_SKIP_INDEX, plan.get().indexFieldSequence());
-		Map<String, Double> metrics = new LinkedHashMap<>(semantic.metrics());
-		metrics.put("plannedRowsPerInvocation", outputRows / invocations);
-		metrics.put("plannedRepeatedInvocations", invocations);
-		metrics.put("plannedSeeks", seeks);
-		metrics.put("plannedMemoryRows", 0.0d);
-		metrics.put(TelemetryMetricNames.PLANNED_DISTINCT_CURSOR_SKIP_PREFIX,
-				(double) plan.get().prefixLength());
-		metrics.put(TelemetryMetricNames.PLANNED_DISTINCT_CURSOR_SKIP_ROWS, outputRows);
-		metrics.put(TelemetryMetricNames.PLANNED_DISTINCT_CURSOR_SKIP_NORMAL_ROWS, semantic.rows());
-		metrics.put(TelemetryMetricNames.PLANNED_DISTINCT_CURSOR_SKIP_FANOUT, fanout);
-		metrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, outputRows);
-		metrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
-		metrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, outputRows);
-		metrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, workRows);
-		return Optional.of(new FactorCostEstimate(workRows, outputRows, Map.copyOf(strings), Map.copyOf(metrics), true,
-				false, plan.get().prefixComponentMask(), 0, semantic.rows(),
-				invocations > 1.0d, exact(distinct)).withBag(distinct));
-	}
-
-	private BagEstimate withDistinctCursorSkipEvidence(StatementPattern pattern, EstimateContext context,
-			LmdbDistinctCursorSkipSupport.Plan plan, LmdbDistinctRequirement requirement, BagEstimate semantic) {
-		OptionalDouble probed = cardinalities == null
-				? OptionalDouble.empty()
-				: cardinalities.estimateDistinctCursorSkip(pattern, MAX_DISTINCT_CURSOR_SKIP_PROBE_PREFIXES);
-		if (probed.isPresent()) {
-			return semantic.withSketchRelation(requirement.distinctVars(),
-					new ExactDistinctCountSketch(probed.getAsDouble(), semantic.rows()));
-		}
-		if (synopsis != null) {
-			QuadProbe base = LmdbStorageEstimatorEvidence.probe(pattern, context);
-			QuadProbe projected = new QuadProbe(base.boundMask(), plan.distinctComponentMask(), base.subjectId(),
-					base.predicateId(), base.objectId(), base.contextId(), base.snapshotIdentity());
-			QuadEvidence evidence = synopsis.probe(projected);
-			Optional<DistributionSketch> distribution = evidence.usable() ? evidence.distribution() : Optional.empty();
-			if (distribution.isPresent()) {
-				return semantic.withSketchRelation(requirement.distinctVars(), distribution.orElseThrow());
-			}
-		}
-		return semantic;
 	}
 
 	private FactorCostEstimate regularFactorCost(TupleExpr expression, EstimateContext context,
@@ -446,6 +370,42 @@ final class LmdbEstimatorRuntime {
 				: cardinalities.estimateForPlanning(subject, predicate, object, context, repeatedComponentPairMask);
 	}
 
+	/**
+	 * Offers the DISTINCT cursor-skip physical access path for a requirement-annotated statement pattern. Fills
+	 * {@code output} and returns {@code true} only when a skip-capable index exists, the distinct prefix count could be
+	 * probed, and the skip is costed cheaper than the normal scan of {@code normalRows} rows.
+	 */
+	boolean describePackedDistinctCursorSkip(StatementPattern pattern, double normalRows, PackedCostEstimate output) {
+		if (pattern == null || tripleStore == null || cardinalities == null
+				|| !Double.isFinite(normalRows) || normalRows <= 0.0d) {
+			return false;
+		}
+		Optional<LmdbDistinctCursorSkipSupport.Plan> plan = LmdbDistinctCursorSkipSupport.choosePlan(pattern,
+				tripleStore.indexAccessPaths(0));
+		if (plan.isEmpty()) {
+			return false;
+		}
+		OptionalDouble probed = cardinalities.estimateDistinctCursorSkip(pattern,
+				MAX_DISTINCT_CURSOR_SKIP_PROBE_PREFIXES);
+		if (probed.isEmpty()) {
+			return false;
+		}
+		double distinctRows = probed.getAsDouble();
+		if (!Double.isFinite(distinctRows) || distinctRows < 0.0d) {
+			return false;
+		}
+		double seeks = Math.max(1.0d, distinctRows);
+		double workRows = saturatingAdd(distinctRows, seeks);
+		if (workRows >= normalRows) {
+			return false;
+		}
+		output.setRows(distinctRows, workRows);
+		output.setAccess(plan.get().prefixComponentMask(), 0, plan.get().prefixLength(),
+				Math.max(1.0d, distinctRows), 1.0d, plan.get().indexFieldSequence(), "lmdb-distinct-cursor-skip",
+				LmdbDistinctCursorSkipSupport.ACCESS_MODE);
+		return true;
+	}
+
 	void describePackedAccessPath(int lookupMask, double accessRows, double invocations,
 			PackedCostEstimate output) {
 		if (tripleStore == null) {
@@ -455,6 +415,19 @@ final class LmdbEstimatorRuntime {
 		}
 		tripleStore.describePackedAccessPath(lookupMask, accessRows, invocations, "lmdb-packed-cardinality",
 				output);
+	}
+
+	/** Cache-key version of the predicate-range guarantees; changes whenever guarantee semantics or config change. */
+	long predicateRangeVersion() {
+		if (tripleStore == null) {
+			return 0L;
+		}
+		String version = tripleStore.effectiveRdfTermDomainsVersion();
+		long hash = 1125899906842597L;
+		for (int ordinal = 0; ordinal < version.length(); ordinal++) {
+			hash = 31L * hash + version.charAt(ordinal);
+		}
+		return hash;
 	}
 
 	RdfTermDomain rdfTermDomain(IRI predicate) {
@@ -683,14 +656,6 @@ final class LmdbEstimatorRuntime {
 		return Double.isFinite(value) && value > 0.0d ? value : fallback;
 	}
 
-	private static double finiteNonNegative(double value, double fallback) {
-		return Double.isFinite(value) && value >= 0.0d ? value : fallback;
-	}
-
-	private static double finitePositive(double value, double fallback) {
-		return Double.isFinite(value) && value > 0.0d ? value : fallback;
-	}
-
 	private static double saturatingAdd(double left, double right) {
 		double sum = left + right;
 		return Double.isFinite(sum) && sum >= 0.0d ? sum : Double.MAX_VALUE;
@@ -709,13 +674,6 @@ final class LmdbEstimatorRuntime {
 		private final PlanTemplateCache<Object> planTemplates = new PlanTemplateCache<>(256);
 		private final Map<ScopedFactorCostCacheKey, Optional<FactorCostEstimate>> factorCosts = new HashMap<>();
 		private int depth;
-	}
-
-	private record ExactDistinctCountSketch(double distinctRows, double rowMass) implements DistributionSketch {
-		@Override
-		public OptionalDouble totalRows() {
-			return OptionalDouble.of(rowMass);
-		}
 	}
 
 	private record EstimatorFingerprint(String nodeType, String rendering, Set<String> bindingNames) {

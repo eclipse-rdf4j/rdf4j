@@ -113,17 +113,23 @@ final class PackedQueryCodec {
 	}
 
 	static PackedQuery encode(TupleExpr root) {
-		return encode(root, false);
+		return encode(root, false, null);
 	}
 
 	static PackedQuery encodeForPlanning(TupleExpr root) {
-		return encode(root, true);
+		return encode(root, true, null);
 	}
 
-	private static PackedQuery encode(TupleExpr root, boolean normalizeFiniteFilters) {
+	static PackedQuery encodeForPlanning(TupleExpr root, PackedPredicateRangeProvider rangeProvider) {
+		return encode(root, true, rangeProvider);
+	}
+
+	private static PackedQuery encode(TupleExpr root, boolean normalizeFiniteFilters,
+			PackedPredicateRangeProvider rangeProvider) {
 		Objects.requireNonNull(root, "root");
-		Builder builder = new Builder(normalizeFiniteFilters);
+		Builder builder = new Builder(normalizeFiniteFilters, rangeProvider);
 		int rootRelId = builder.relation(root, "root");
+		builder.deriveFactsAndSaturateRules();
 		return new PackedQuery(rootRelId, builder.relations, builder.scalars, builder.payloads, builder.bindingSets,
 				builder.metadata, builder.objects, builder.symbols);
 	}
@@ -142,15 +148,24 @@ final class PackedQueryCodec {
 		private final PackedSymbolTable symbols = new PackedSymbolTable();
 		private final boolean normalizeFiniteFilters;
 		private final PackedLogicalRuleProgram logicalRules;
+		private final PackedPredicateRangeProvider rangeProvider;
+		private final PackedPredicateRange rangeSlot;
+		private final PackedPredicateRangeArena rangeArena;
+		private final PackedDomainFacts domainFacts;
 		private final int[] unary = new int[1];
 		private final int[] binary = new int[2];
 		private final int[] ternary = new int[3];
 		private final int[] statementTerms = new int[4];
 		private int[] scratch = new int[32];
 		private int scratchSize;
+		private long[] factDerivedGroupWords = new long[1];
 
-		private Builder(boolean normalizeFiniteFilters) {
+		private Builder(boolean normalizeFiniteFilters, PackedPredicateRangeProvider rangeProvider) {
 			this.normalizeFiniteFilters = normalizeFiniteFilters;
+			this.rangeProvider = normalizeFiniteFilters ? rangeProvider : null;
+			rangeSlot = this.rangeProvider == null ? null : new PackedPredicateRange();
+			rangeArena = this.rangeProvider == null ? null : new PackedPredicateRangeArena();
+			domainFacts = this.rangeProvider == null ? null : new PackedDomainFacts(rangeArena, objects);
 			logicalRules = normalizeFiniteFilters
 					? new PackedLogicalRuleProgram(relations, scalars, payloads, bindingSets, metadata, objects,
 							symbols)
@@ -171,10 +186,207 @@ final class PackedQueryCodec {
 					: 0;
 			metadata.attachRelation(relationId, plannedMetricsPayload(expression), flags,
 					expression.getResultSizeEstimate(), expression.getCostEstimate(), algorithmNameId);
-			if (logicalRules != null) {
+			return relationId;
+		}
+
+		/**
+		 * Explicit fact-derive and rule-saturate phases over the frozen encoded structure: predicate-range facts
+		 * propagate bottom-up first, then the logical rule program runs once over every encoded relation. Rules are
+		 * idempotent, so re-discovered alternatives are no-ops and the single deterministic pass reaches quiescence.
+		 */
+		private void deriveFactsAndSaturateRules() {
+			if (logicalRules == null) {
+				return;
+			}
+			int encodedRelationCount = relations.size();
+			if (domainFacts != null) {
+				for (int relationId = 1; relationId <= encodedRelationCount; relationId++) {
+					deriveGroupFacts(relationId);
+				}
+				logicalRules.attachDomainFacts(domainFacts);
+			}
+			for (int relationId = 1; relationId <= encodedRelationCount; relationId++) {
 				logicalRules.apply(relationId);
 			}
-			return relationId;
+		}
+
+		private void deriveGroupFacts(int relationId) {
+			int groupId = relations.groupId(relationId);
+			int wordIndex = groupId >>> 6;
+			if (wordIndex >= factDerivedGroupWords.length) {
+				factDerivedGroupWords = Arrays.copyOf(factDerivedGroupWords, wordIndex + 1);
+			}
+			long bit = 1L << groupId;
+			if ((factDerivedGroupWords[wordIndex] & bit) != 0L) {
+				return;
+			}
+			factDerivedGroupWords[wordIndex] |= bit;
+			switch (relations.operatorTag(relationId)) {
+			case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.BINDING_SET_ASSIGNMENT -> {
+				// Statement patterns are seeded at encode time; binding-set assignments seed below.
+				if (relations.operatorTag(relationId) == PackedRelOp.BINDING_SET_ASSIGNMENT) {
+					seedBindingSetAssignmentFact(relationId, groupId);
+				}
+			}
+			case PackedRelOp.JOIN, PackedRelOp.LATERAL -> deriveJoinFacts(relationId, groupId);
+			case PackedRelOp.UNION -> domainFacts.widenBranches(relations.childGroupId(relationId, 0),
+					relations.childGroupId(relationId, 1), groupId);
+			case PackedRelOp.DIFFERENCE -> domainFacts.copyAll(relations.childGroupId(relationId, 0), groupId);
+			case PackedRelOp.LEFT_JOIN -> deriveLeftJoinFacts(relationId, groupId);
+			case PackedRelOp.FILTER, PackedRelOp.QUERY_ROOT, PackedRelOp.DESCRIBE, PackedRelOp.SLICE, PackedRelOp.REDUCED, PackedRelOp.DISTINCT, PackedRelOp.MATERIALIZE, PackedRelOp.ORDER -> domainFacts
+					.copyAll(relations.childGroupId(relationId, 0), groupId);
+			case PackedRelOp.PROJECTION -> deriveProjectionFacts(relationId, groupId);
+			case PackedRelOp.EXTENSION -> deriveExtensionFacts(relationId, groupId);
+			case PackedRelOp.GROUP -> deriveGroupKeyFacts(relationId, groupId);
+			default -> {
+			}
+			}
+		}
+
+		/**
+		 * Sound join fact merge per shared symbol: intersect only when both sides assure the binding; keep one side's
+		 * fact when that side assures it or the other side cannot bind it; widen when either side alone may bind it.
+		 */
+		private void deriveJoinFacts(int relationId, int groupId) {
+			int leftGroupId = relations.childGroupId(relationId, 0);
+			int rightGroupId = relations.childGroupId(relationId, 1);
+			int leftCount = domainFacts.factCount(leftGroupId);
+			for (int ordinal = 0; ordinal < leftCount; ordinal++) {
+				int symbolId = domainFacts.factSymbolId(leftGroupId, ordinal);
+				int leftRangeId = domainFacts.factRangeId(leftGroupId, ordinal);
+				int rightRangeId = domainFacts.rangeId(rightGroupId, symbolId);
+				boolean leftAssured = logicalRules.assuresSymbol(leftGroupId, symbolId);
+				boolean rightAssured = logicalRules.assuresSymbol(rightGroupId, symbolId);
+				if (leftAssured && rightRangeId != 0 && rightAssured) {
+					domainFacts.put(groupId, symbolId, domainFacts.intersect(leftRangeId, rightRangeId));
+				} else if (leftAssured || !logicalRules.outputsSymbol(rightGroupId, symbolId)) {
+					domainFacts.put(groupId, symbolId, leftRangeId);
+				} else if (rightRangeId != 0 && rightAssured) {
+					domainFacts.put(groupId, symbolId, rightRangeId);
+				} else if (rightRangeId != 0) {
+					int widened = domainFacts.widen(leftRangeId, rightRangeId);
+					if (widened != 0) {
+						domainFacts.put(groupId, symbolId, widened);
+					}
+				}
+			}
+			int rightCount = domainFacts.factCount(rightGroupId);
+			for (int ordinal = 0; ordinal < rightCount; ordinal++) {
+				int symbolId = domainFacts.factSymbolId(rightGroupId, ordinal);
+				if (domainFacts.rangeId(leftGroupId, symbolId) != 0) {
+					continue;
+				}
+				if (logicalRules.assuresSymbol(rightGroupId, symbolId)
+						|| !logicalRules.outputsSymbol(leftGroupId, symbolId)) {
+					domainFacts.put(groupId, symbolId, domainFacts.factRangeId(rightGroupId, ordinal));
+				}
+			}
+		}
+
+		/** Left facts survive an OPTIONAL only when the optional side cannot rebind the symbol. */
+		private void deriveLeftJoinFacts(int relationId, int groupId) {
+			int leftGroupId = relations.childGroupId(relationId, 0);
+			int rightGroupId = relations.childGroupId(relationId, 1);
+			int leftCount = domainFacts.factCount(leftGroupId);
+			for (int ordinal = 0; ordinal < leftCount; ordinal++) {
+				int symbolId = domainFacts.factSymbolId(leftGroupId, ordinal);
+				if (logicalRules.assuresSymbol(leftGroupId, symbolId)
+						|| !logicalRules.outputsSymbol(rightGroupId, symbolId)) {
+					domainFacts.put(groupId, symbolId, domainFacts.factRangeId(leftGroupId, ordinal));
+				}
+			}
+		}
+
+		private void deriveProjectionFacts(int relationId, int groupId) {
+			int childGroupId = relations.childGroupId(relationId, 0);
+			int listId = payloads.payloadId(relations.payloadId(relationId));
+			for (int ordinal = 0; ordinal < payloads.childCount(listId); ordinal++) {
+				int elementId = payloads.childGroupId(listId, ordinal);
+				if (payloads.childCount(elementId) != 0) {
+					continue;
+				}
+				int sourceNameId = payloads.payloadId(elementId);
+				int targetNameId = payloads.semanticScopeId(elementId) == 0
+						? sourceNameId
+						: payloads.semanticScopeId(elementId);
+				int sourceSymbolId = symbols.symbolId(sourceNameId);
+				int targetSymbolId = symbols.symbolId(targetNameId);
+				if (sourceSymbolId != 0 && targetSymbolId != 0) {
+					int rangeId = domainFacts.rangeId(childGroupId, sourceSymbolId);
+					if (rangeId != 0) {
+						domainFacts.put(groupId, targetSymbolId, rangeId);
+					}
+				}
+			}
+		}
+
+		private void deriveExtensionFacts(int relationId, int groupId) {
+			int childGroupId = relations.childGroupId(relationId, 0);
+			int extensionPayloadId = relations.payloadId(relationId);
+			int factCount = domainFacts.factCount(childGroupId);
+			for (int ordinal = 0; ordinal < factCount; ordinal++) {
+				int symbolId = domainFacts.factSymbolId(childGroupId, ordinal);
+				if (!extensionBindsSymbol(extensionPayloadId, symbolId)) {
+					domainFacts.put(groupId, symbolId, domainFacts.factRangeId(childGroupId, ordinal));
+				}
+			}
+		}
+
+		private boolean extensionBindsSymbol(int extensionPayloadId, int symbolId) {
+			for (int ordinal = 0; ordinal < payloads.childCount(extensionPayloadId); ordinal++) {
+				int targetNameId = payloads.payloadId(payloads.childGroupId(extensionPayloadId, ordinal));
+				if (symbols.symbolId(targetNameId) == symbolId) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private void deriveGroupKeyFacts(int relationId, int groupId) {
+			int childGroupId = relations.childGroupId(relationId, 0);
+			int nameSetId = payloads.payloadId(relations.payloadId(relationId));
+			for (int ordinal = 0; ordinal < payloads.childCount(nameSetId); ordinal++) {
+				int symbolId = symbols.symbolId(payloads.childGroupId(nameSetId, ordinal));
+				if (symbolId != 0) {
+					int rangeId = domainFacts.rangeId(childGroupId, symbolId);
+					if (rangeId != 0) {
+						domainFacts.put(groupId, symbolId, rangeId);
+					}
+				}
+			}
+		}
+
+		private void seedBindingSetAssignmentFact(int relationId, int groupId) {
+			int assignmentPayloadId = relations.payloadId(relationId);
+			int nameSetId = payloads.payloadId(assignmentPayloadId);
+			if (payloads.childCount(nameSetId) != 1 || payloads.executionDomainId(assignmentPayloadId) != 1) {
+				return;
+			}
+			int nameId = payloads.childGroupId(nameSetId, 0);
+			int symbolId = symbols.symbolId(nameId);
+			int rowCount = payloads.childCount(assignmentPayloadId);
+			if (symbolId == 0 || rowCount == 0 || rowCount > MAX_FINITE_FILTER_VALUES) {
+				return;
+			}
+			rangeSlot.reset();
+			rangeSlot.setState(PackedPredicateRange.STATE_KNOWN);
+			rangeSlot.setFinite(true);
+			int kinds = 0;
+			for (int ordinal = 0; ordinal < rowCount; ordinal++) {
+				int rowId = payloads.childGroupId(assignmentPayloadId, ordinal);
+				if (bindingSets.bindingCount(rowId) != 1 || bindingSets.nameId(rowId, 0) != nameId) {
+					return;
+				}
+				Object value = objects.value(bindingSets.valueId(rowId, 0));
+				if (!(value instanceof Value rdfValue)) {
+					return;
+				}
+				rangeSlot.addFiniteValue(rdfValue);
+				kinds |= rdfValue.isIRI() ? PackedPredicateRange.KIND_IRI
+						: rdfValue.isBNode() ? PackedPredicateRange.KIND_BNODE : PackedPredicateRange.KIND_LITERAL;
+			}
+			rangeSlot.setKindBits(kinds);
+			domainFacts.put(groupId, symbolId, rangeArena.intern(rangeSlot, objects));
 		}
 
 		private int relationStructure(TupleExpr expression, String path) {
@@ -314,7 +526,81 @@ final class PackedQueryCodec {
 			int indexNameId = objects.intern(pattern.getIndexName());
 			int payload = payloads.internCanonical(PackedPayloadOp.STATEMENT_PATTERN,
 					pattern.getScope().ordinal() + 1, statementOrderId, indexNameId, statementTerms, 0, 4);
-			return relations.internCanonical(PackedRelOp.STATEMENT_PATTERN, payload, 0, 0, NO_CHILDREN, 0, 0);
+			int relationId = relations.internCanonical(PackedRelOp.STATEMENT_PATTERN, payload, 0, 0, NO_CHILDREN, 0,
+					0);
+			seedStatementPatternFact(pattern, relationId);
+			return relationId;
+		}
+
+		private void seedStatementPatternFact(StatementPattern pattern, int relationId) {
+			if (rangeProvider == null) {
+				return;
+			}
+			Var predicateVar = pattern.getPredicateVar();
+			Var objectVar = pattern.getObjectVar();
+			if (predicateVar == null || objectVar == null
+					|| !(predicateVar.getValue()instanceof org.eclipse.rdf4j.model.IRI predicate)) {
+				return;
+			}
+			if (objectVar.hasValue()) {
+				rangeSlot.reset();
+				if (rangeProvider.describeObjectRange(predicate, rangeSlot) && rangeSlot.isProof()
+						&& !rangeAdmitsTerm(rangeSlot, objectVar.getValue())) {
+					domainFacts.markProvenEmpty(relations.groupId(relationId));
+				}
+				return;
+			}
+			int symbolId = symbols.symbolId(objects.intern(objectVar.getName()));
+			if (symbolId == 0) {
+				return;
+			}
+			rangeSlot.reset();
+			if (rangeProvider.describeObjectRange(predicate, rangeSlot) && rangeSlot.isProof()) {
+				domainFacts.put(relations.groupId(relationId), symbolId, rangeArena.intern(rangeSlot, objects));
+			}
+		}
+
+		/** Whether a constant object term can possibly exist inside the proven range, under term equality. */
+		private static boolean rangeAdmitsTerm(PackedPredicateRange range, Value value) {
+			if (range.state() == PackedPredicateRange.STATE_EMPTY) {
+				return false;
+			}
+			int kinds = range.kindBits();
+			int kind = value.isIRI() ? PackedPredicateRange.KIND_IRI
+					: value.isBNode() ? PackedPredicateRange.KIND_BNODE
+							: value.isLiteral() ? PackedPredicateRange.KIND_LITERAL : 0;
+			if (kinds != 0 && kind != 0 && (kinds & kind) == 0) {
+				return false;
+			}
+			if (range.isFinite()) {
+				for (int ordinal = 0; ordinal < range.finiteValueCount(); ordinal++) {
+					if (value.equals(range.finiteValue(ordinal))) {
+						return true;
+					}
+				}
+				return false;
+			}
+			if (value instanceof org.eclipse.rdf4j.model.Literal literal) {
+				org.eclipse.rdf4j.model.base.CoreDatatype datatype = literal.getCoreDatatype();
+				if (range.datatypeBits() != 0L && datatype.isXSDDatatype()
+						&& !range.hasDatatype((org.eclipse.rdf4j.model.base.CoreDatatype.XSD) datatype)) {
+					return false;
+				}
+				if ((range.universalBits() & PackedPredicateRange.UNIVERSAL_CANONICAL_INTEGER) != 0
+						&& range.hasIntegerBounds()) {
+					long integral;
+					try {
+						integral = Long.parseLong(literal.getLabel());
+					} catch (NumberFormatException error) {
+						return false;
+					}
+					if (!Long.toString(integral).equals(literal.getLabel())
+							|| integral < range.integerMinInclusive() || integral > range.integerMaxInclusive()) {
+						return false;
+					}
+				}
+			}
+			return true;
 		}
 
 		private int bindingSetAssignment(BindingSetAssignment assignment) {

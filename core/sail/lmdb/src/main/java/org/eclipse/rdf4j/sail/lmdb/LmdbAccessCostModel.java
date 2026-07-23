@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
-import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Order;
@@ -43,9 +42,7 @@ final class LmdbAccessCostModel {
 		double work = physicalRows;
 		double memory = 0.0d;
 
-		if (expression instanceof BindingSetAssignment) {
-			work = saturatingAdd(work, 1.0d);
-		} else if (expression instanceof Order) {
+		if (expression instanceof Order) {
 			work = saturatingAdd(work, sortWork(rows));
 			memory = rows;
 		} else if (expression instanceof Group || expression instanceof Distinct) {

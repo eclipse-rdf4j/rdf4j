@@ -135,6 +135,25 @@ public final class PackedQueryView {
 		return query.symbolCount();
 	}
 
+	/** Returns the relation's planned string metric with the supplied name, or {@code null} when absent. */
+	public String relationPlannedStringMetric(int relationId, String metricName) {
+		if (metricName == null) {
+			return null;
+		}
+		int metricSetId = query.relMetricSetId(relationId);
+		if (metricSetId == 0 || query.payloadOperator(metricSetId) != PackedPayloadOp.PLANNED_METRICS) {
+			return null;
+		}
+		for (int ordinal = 0; ordinal < query.payloadChildCount(metricSetId); ordinal++) {
+			int entryId = query.payloadChild(metricSetId, ordinal);
+			if (query.payloadOperator(entryId) == PackedPayloadOp.STRING_METRIC
+					&& metricName.equals(query.objectValue(query.payloadPrimary(entryId)))) {
+				return (String) query.objectValue(query.payloadSecondary(entryId));
+			}
+		}
+		return null;
+	}
+
 	private int bindingAssignmentPayload(int relationId) {
 		if (!isBindingSetAssignment(relationId)) {
 			throw new IllegalArgumentException("relation " + relationId + " is not a binding-set assignment");

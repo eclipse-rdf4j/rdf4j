@@ -24,6 +24,7 @@ import java.util.function.BooleanSupplier;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchRebuildObserver;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchStatementSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,6 +49,7 @@ public final class LmdbQuadSynopsisService implements AutoCloseable {
 	private final AtomicLong mutationSequence = new AtomicLong();
 
 	private volatile BooleanSupplier rebuildAllowed = () -> true;
+	private volatile SketchRebuildObserver rebuildObserver;
 	private volatile QuadSnapshotIdentity identity;
 	private volatile QuadSynopsisSnapshot publishedSnapshot;
 	private volatile BoundedQuadSynopsis synopsis;
@@ -121,6 +123,10 @@ public final class LmdbQuadSynopsisService implements AutoCloseable {
 
 	public void setRebuildAllowedSupplier(BooleanSupplier supplier) {
 		rebuildAllowed = supplier == null ? () -> true : supplier;
+	}
+
+	public void setRebuildObserver(SketchRebuildObserver observer) {
+		rebuildObserver = observer;
 	}
 
 	public void addStatement(Statement statement) {
@@ -293,29 +299,80 @@ public final class LmdbQuadSynopsisService implements AutoCloseable {
 					identity.mutationVersion() + 1L);
 			QuadSynopsisBuilder builder = new QuadSynopsisBuilder(budget, nextIdentity,
 					publishedSnapshot.snapshotVersion() + 1L);
+			SketchRebuildObserver.RebuildObservation observation = startRebuildObservation(identity.mutationVersion());
+			boolean observationFinished = false;
 			long scanned = 0L;
-			try (CloseableIteration<? extends Statement> statements = statementSource.getStatements(null, null, null)) {
-				while (statements.hasNext()) {
-					Statement statement = statements.next();
-					builder.add(QuadValueHash.hash(statement.getSubject()),
-							QuadValueHash.hash(statement.getPredicate()),
-							QuadValueHash.hash(statement.getObject()), QuadValueHash.hash(statement.getContext()));
-					scanned++;
-					throttle(scanned);
+			try {
+				try (CloseableIteration<? extends Statement> statements = statementSource.getStatements(null, null,
+						null)) {
+					while (statements.hasNext()) {
+						Statement statement = statements.next();
+						if (observation != null) {
+							try {
+								observation.statementScanned(statement);
+							} catch (RuntimeException e) {
+								logger.warn("Disabling quad synopsis rebuild observer after a statement callback failed",
+										e);
+								abortRebuildObservation(observation);
+								observation = null;
+								observationFinished = true;
+							}
+						}
+						builder.add(QuadValueHash.hash(statement.getSubject()),
+								QuadValueHash.hash(statement.getPredicate()),
+								QuadValueHash.hash(statement.getObject()), QuadValueHash.hash(statement.getContext()));
+						scanned++;
+						throttle(scanned);
+					}
+				}
+				if (startMutation != mutationSequence.get()) {
+					rebuildRequested.set(true);
+					return;
+				}
+				QuadSynopsisSnapshot replacement = builder.build();
+				synopsis.publish(replacement);
+				publishedSnapshot = replacement;
+				identity = nextIdentity;
+				publishedMutationSequence = startMutation;
+				rebuildRequested.set(false);
+				dirty = true;
+				if (observation != null) {
+					try {
+						observation.complete(nextIdentity.mutationVersion());
+					} catch (RuntimeException e) {
+						logger.warn("Discarding quad synopsis rebuild observer result after publication callback failed",
+								e);
+						abortRebuildObservation(observation);
+					}
+					observationFinished = true;
+				}
+				signalLifecycle();
+			} finally {
+				if (!observationFinished && observation != null) {
+					abortRebuildObservation(observation);
 				}
 			}
-			if (startMutation != mutationSequence.get()) {
-				rebuildRequested.set(true);
-				return;
-			}
-			QuadSynopsisSnapshot replacement = builder.build();
-			synopsis.publish(replacement);
-			publishedSnapshot = replacement;
-			identity = nextIdentity;
-			publishedMutationSequence = startMutation;
-			rebuildRequested.set(false);
-			dirty = true;
-			signalLifecycle();
+		}
+	}
+
+	private SketchRebuildObserver.RebuildObservation startRebuildObservation(long startingMutationVersion) {
+		SketchRebuildObserver observer = rebuildObserver;
+		if (observer == null) {
+			return null;
+		}
+		try {
+			return observer.start(startingMutationVersion);
+		} catch (RuntimeException e) {
+			logger.warn("Ignoring quad synopsis rebuild observer that failed to start", e);
+			return null;
+		}
+	}
+
+	private void abortRebuildObservation(SketchRebuildObserver.RebuildObservation observation) {
+		try {
+			observation.abort();
+		} catch (RuntimeException e) {
+			logger.debug("Quad synopsis rebuild observer failed while aborting", e);
 		}
 	}
 

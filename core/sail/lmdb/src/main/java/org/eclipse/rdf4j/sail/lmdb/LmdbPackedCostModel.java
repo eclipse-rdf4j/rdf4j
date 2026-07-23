@@ -14,15 +14,26 @@ package org.eclipse.rdf4j.sail.lmdb;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedQueryView;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 /** LMDB storage-cardinality adapter for the packed ID-based cost boundary. */
 final class LmdbPackedCostModel implements PackedCostModel {
 
-	static final long VERSION = 1L;
+	static final long VERSION = 5L;
+
+	private static final String[] DISTINCT_REQUIREMENT_METRICS = {
+			TelemetryMetricNames.PLANNED_DISTINCT_REQUIREMENT_VARS,
+			TelemetryMetricNames.PLANNED_DISTINCT_REQUIRED_VARS_ABOVE,
+			TelemetryMetricNames.PLANNED_DISTINCT_BLOCKED_VARS,
+			TelemetryMetricNames.PLANNED_DISTINCT_REQUIREMENT_SOURCE };
+
+	private static final int MAX_FINITE_LOOKUP_COMBINATIONS = 1_024;
 
 	private final LmdbEstimatorRuntime runtime;
 
@@ -69,6 +80,10 @@ final class LmdbPackedCostModel implements PackedCostModel {
 			output.setRows(Double.NaN, Double.NaN);
 			return;
 		}
+		if (!contextualRows && context.prefixRelationCount() == 0
+				&& distinctCursorSkip(query, relationId, rows, output)) {
+			return;
+		}
 		double invocations = invocationCount(query, context);
 		double accessRows = rows == 0.0d ? 0.0d : Math.max(1.0d, rows / Math.max(1.0d, invocations));
 		double workRows = Math.max(rows, invocations);
@@ -80,24 +95,77 @@ final class LmdbPackedCostModel implements PackedCostModel {
 		runtime.describePackedAccessPath(lookupMask(query, relationId, context), accessRows, invocations, output);
 	}
 
+	/**
+	 * Offers the DISTINCT cursor-skip access path for a pattern whose planner annotation proves the skipped suffix
+	 * variables are unobserved; selected only when the probed distinct prefix count is costed cheaper than the scan.
+	 */
+	private boolean distinctCursorSkip(PackedQueryView query, int relationId, double normalRows,
+			PackedCostEstimate output) {
+		String distinctVars = query.relationPlannedStringMetric(relationId,
+				TelemetryMetricNames.PLANNED_DISTINCT_REQUIREMENT_VARS);
+		if (distinctVars == null || distinctVars.isBlank()) {
+			return false;
+		}
+		return runtime.describePackedDistinctCursorSkip(annotatedStatementPattern(query, relationId), normalRows,
+				output);
+	}
+
+	private static StatementPattern annotatedStatementPattern(PackedQueryView query, int relationId) {
+		StatementPattern pattern = new StatementPattern(component(query, relationId, 0),
+				component(query, relationId, 1), component(query, relationId, 2), component(query, relationId, 3));
+		for (String metricName : DISTINCT_REQUIREMENT_METRICS) {
+			String metricValue = query.relationPlannedStringMetric(relationId, metricName);
+			if (metricValue != null) {
+				pattern.setStringMetricPlanned(metricName, metricValue);
+			}
+		}
+		return pattern;
+	}
+
+	private static Var component(PackedQueryView query, int relationId, int component) {
+		String name = query.statementPatternName(relationId, component);
+		if (name == null) {
+			return null;
+		}
+		Value value = query.statementPatternValue(relationId, component);
+		return value == null ? new Var(name) : new Var(name, value);
+	}
+
 	private double finiteLookupRows(PackedQueryView query, int relationId, PackedCostContext context) {
+		int[] assignmentIds = new int[4];
+		int assignmentCount = 0;
+		int boundComponents = 0;
+		long combinations = 1L;
 		for (int prefixOrdinal = 0; prefixOrdinal < context.prefixRelationCount(); prefixOrdinal++) {
 			int assignmentId = context.prefixRelationId(prefixOrdinal);
-			if (!query.isBindingSetAssignment(assignmentId)
-					|| !bindsStatementComponent(query, assignmentId, relationId)) {
+			if (assignmentCount == assignmentIds.length || !query.isBindingSetAssignment(assignmentId)) {
 				continue;
 			}
-			double rows = 0.0d;
-			for (int rowOrdinal = 0; rowOrdinal < query.bindingAssignmentRowCount(assignmentId); rowOrdinal++) {
-				Value subject = contextualValue(query, assignmentId, rowOrdinal, relationId, 0);
-				Value predicate = contextualValue(query, assignmentId, rowOrdinal, relationId, 1);
-				Value object = contextualValue(query, assignmentId, rowOrdinal, relationId, 2);
-				Value graph = contextualValue(query, assignmentId, rowOrdinal, relationId, 3);
-				if (subject != null && !(subject instanceof Resource)
-						|| predicate != null && !(predicate instanceof IRI)
-						|| graph != null && !(graph instanceof Resource)) {
-					continue;
-				}
+			int components = boundStatementComponents(query, assignmentId, relationId);
+			if (components == 0 || (components & boundComponents) != 0) {
+				continue;
+			}
+			long expanded = combinations * query.bindingAssignmentRowCount(assignmentId);
+			if (expanded > MAX_FINITE_LOOKUP_COMBINATIONS && assignmentCount > 0) {
+				break;
+			}
+			assignmentIds[assignmentCount++] = assignmentId;
+			boundComponents |= components;
+			combinations = expanded;
+		}
+		if (assignmentCount == 0) {
+			return Double.NaN;
+		}
+		double rows = 0.0d;
+		int[] rowOrdinals = new int[assignmentCount];
+		while (true) {
+			Value subject = combinedValue(query, assignmentIds, rowOrdinals, assignmentCount, relationId, 0);
+			Value predicate = combinedValue(query, assignmentIds, rowOrdinals, assignmentCount, relationId, 1);
+			Value object = combinedValue(query, assignmentIds, rowOrdinals, assignmentCount, relationId, 2);
+			Value graph = combinedValue(query, assignmentIds, rowOrdinals, assignmentCount, relationId, 3);
+			if (!(subject != null && !(subject instanceof Resource)
+					|| predicate != null && !(predicate instanceof IRI)
+					|| graph != null && !(graph instanceof Resource))) {
 				double estimate = runtime.packedStatementPatternRows((Resource) subject, (IRI) predicate, object,
 						(Resource) graph, repeatedComponentPairMask(query, relationId));
 				if (!Double.isFinite(estimate) || estimate < 0.0d) {
@@ -105,32 +173,48 @@ final class LmdbPackedCostModel implements PackedCostModel {
 				}
 				rows = saturatedAdd(rows, estimate);
 			}
-			return rows;
+			int position = 0;
+			while (position < assignmentCount
+					&& ++rowOrdinals[position] >= query.bindingAssignmentRowCount(assignmentIds[position])) {
+				rowOrdinals[position] = 0;
+				position++;
+			}
+			if (position == assignmentCount) {
+				break;
+			}
 		}
-		return Double.NaN;
+		return rows;
 	}
 
-	private static boolean bindsStatementComponent(PackedQueryView query, int assignmentId, int relationId) {
+	private static int boundStatementComponents(PackedQueryView query, int assignmentId, int relationId) {
 		if (query.bindingAssignmentRowCount(assignmentId) == 0) {
-			return false;
+			return 0;
 		}
+		int components = 0;
 		for (int component = 0; component < 4; component++) {
 			if (query.statementPatternValue(relationId, component) == null
 					&& query.bindingAssignmentValue(assignmentId, 0,
 							query.statementPatternName(relationId, component)) != null) {
-				return true;
+				components |= 1 << component;
 			}
 		}
-		return false;
+		return components;
 	}
 
-	private static Value contextualValue(PackedQueryView query, int assignmentId, int rowOrdinal, int relationId,
-			int component) {
+	private static Value combinedValue(PackedQueryView query, int[] assignmentIds, int[] rowOrdinals,
+			int assignmentCount, int relationId, int component) {
 		Value constant = query.statementPatternValue(relationId, component);
-		return constant != null
-				? constant
-				: query.bindingAssignmentValue(assignmentId, rowOrdinal,
-						query.statementPatternName(relationId, component));
+		if (constant != null) {
+			return constant;
+		}
+		String name = query.statementPatternName(relationId, component);
+		for (int ordinal = 0; ordinal < assignmentCount; ordinal++) {
+			Value value = query.bindingAssignmentValue(assignmentIds[ordinal], rowOrdinals[ordinal], name);
+			if (value != null) {
+				return value;
+			}
+		}
+		return null;
 	}
 
 	private static int lookupMask(PackedQueryView query, int relationId, PackedCostContext context) {
