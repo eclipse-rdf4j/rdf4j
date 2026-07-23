@@ -45,6 +45,8 @@ public final class LmdbNativeAttemptMetrics {
 	static final String PATH_ADAPTIVE_FILTER_PLACEMENT = "adaptiveFilterPlacement";
 	static final String PATH_NESTED_LOOP = "nestedLoop";
 	static final String PATH_WCOJ = "wcoj";
+	static final String PATH_JANINO_KERNEL = "janinoKernel";
+	static final String PATH_JANINO_AGGREGATE = "janinoAggregate";
 	static final String PATH_ORDERED_FACTORIZED_TOP_K = "orderedFactorizedTopK";
 	static final String PATH_ORDERED_FACTORIZED_SORT = "orderedFactorizedSort";
 	static final String PATH_PREFIX_RUN_GROUPS = "prefixRunGroups";
@@ -78,11 +80,14 @@ public final class LmdbNativeAttemptMetrics {
 			PATH_ORDERED_DISTINCT_GROUPS, PATH_PARALLEL_AGGREGATION, PATH_FACTORIZED_TAIL,
 			PATH_ORDERED_SINGLE_PATTERN_GROUPS, PATH_AGG_STATE, PATH_SINGLE_SLOT_GROUPS,
 			PATH_PRIMITIVE_TUPLE_GROUPS, PATH_HASH_GROUPS, PATH_EXISTS_INTERSECTION, PATH_RUN_COUNT_HISTOGRAM,
-			PATH_DATATYPE_HISTOGRAM, PATH_TYPE_MATRIX);
+			PATH_DATATYPE_HISTOGRAM, PATH_TYPE_MATRIX, PATH_JANINO_KERNEL, PATH_JANINO_AGGREGATE);
 
 	private static final LmdbNativeAttemptMetrics DIRECT = new LmdbNativeAttemptMetrics(null, true, null);
 	private static final AtomicLong CSR_CACHE_ADMISSIONS = new AtomicLong();
 	private static final AtomicLong CSR_CACHE_REFUSALS = new AtomicLong();
+	private static final AtomicLong CSR_CACHE_AUTO_WARM_BUILDS = new AtomicLong();
+	private static final AtomicLong CSR_CACHE_PREDICTIVE_EVICTIONS = new AtomicLong();
+	private static final AtomicLong CSR_CACHE_ADMISSION_SKIPS = new AtomicLong();
 
 	private final LmdbNativeAttemptMetrics parent;
 	private final boolean direct;
@@ -176,9 +181,26 @@ public final class LmdbNativeAttemptMetrics {
 		CSR_CACHE_REFUSALS.incrementAndGet();
 	}
 
+	/** Records a popularity-driven background build published by the store's warmer. */
+	public static void recordCsrCacheAutoWarmBuild() {
+		CSR_CACHE_AUTO_WARM_BUILDS.incrementAndGet();
+	}
+
+	/** Records an eviction whose victim was chosen by the predictive (score × rebuild-cost / bytes) policy. */
+	public static void recordCsrCachePredictiveEviction() {
+		CSR_CACHE_PREDICTIVE_EVICTIONS.incrementAndGet();
+	}
+
+	/** Records a build skipped by admission control because every sampled resident out-scored the candidate. */
+	public static void recordCsrCacheAdmissionSkip() {
+		CSR_CACHE_ADMISSION_SKIPS.incrementAndGet();
+	}
+
 	/** Process-local cache-policy counters for benchmark before/after snapshots. */
 	static CsrCacheMetrics csrCacheMetrics() {
-		return new CsrCacheMetrics(CSR_CACHE_ADMISSIONS.get(), CSR_CACHE_REFUSALS.get());
+		return new CsrCacheMetrics(CSR_CACHE_ADMISSIONS.get(), CSR_CACHE_REFUSALS.get(),
+				CSR_CACHE_AUTO_WARM_BUILDS.get(), CSR_CACHE_PREDICTIVE_EVICTIONS.get(),
+				CSR_CACHE_ADMISSION_SKIPS.get());
 	}
 
 	record DispatchTrace(String executionPath, String declineReasons) {
@@ -187,7 +209,8 @@ public final class LmdbNativeAttemptMetrics {
 	record SpecializationMetrics(long cacheHits, long cacheMisses, long kernelExecutions) {
 	}
 
-	record CsrCacheMetrics(long admissions, long refusals) {
+	record CsrCacheMetrics(long admissions, long refusals, long autoWarmBuilds, long predictiveEvictions,
+			long admissionSkips) {
 	}
 
 	LmdbNativeAttemptMetrics child() {

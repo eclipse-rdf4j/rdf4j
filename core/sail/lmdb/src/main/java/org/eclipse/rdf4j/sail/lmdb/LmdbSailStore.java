@@ -39,6 +39,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.Semaphore;
@@ -82,6 +83,7 @@ import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.base.SailStoreStatementSource;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAttemptMetrics;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeExpressionCompiler;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -753,6 +755,18 @@ class LmdbSailStore implements SailStore {
 	/** In-memory per-predicate adjacency cache, or {@code null} when disabled. See {@link LmdbCsrAdjacencyCache}. */
 	private final LmdbCsrAdjacencyCache csrCache;
 
+	/** Predicate IRIs from {@code rdf4j.lmdb.csrCache.eagerPredicates}; empty when the warmer is not configured. */
+	private final List<String> csrEagerPredicates;
+
+	/**
+	 * Single background thread that warms {@link #csrEagerPredicates} and popularity-ranked auto-warm candidates, or
+	 * {@code null} when neither is configured.
+	 */
+	private final ExecutorService csrEagerBuildExecutor;
+
+	/** Collapses trigger bursts: only one eager warm-up run is queued at a time. */
+	private final AtomicBoolean csrEagerBuildPending = new AtomicBoolean(false);
+
 	/**
 	 * Creates a new {@link LmdbSailStore}.
 	 */
@@ -789,6 +803,18 @@ class LmdbSailStore implements SailStore {
 			tripleStore = new TripleStore(new File(dataDir, "triples"), properties, config, valueStore);
 			csrCache = LmdbCsrAdjacencyCache.enabled() ? new LmdbCsrAdjacencyCache(tripleStore, storeTxnStarted)
 					: null;
+			csrEagerPredicates = csrCache != null ? LmdbCsrAdjacencyCache.eagerPredicates() : List.of();
+			csrEagerBuildExecutor = csrCache != null
+					&& (!csrEagerPredicates.isEmpty() || LmdbCsrAdjacencyCache.autoWarmEnabled())
+							? Executors.newSingleThreadExecutor(runnable -> {
+								Thread thread = new Thread(runnable, "lmdb-csr-eager-build");
+								thread.setDaemon(true);
+								return thread;
+							})
+							: null;
+			if (csrCache != null && csrEagerBuildExecutor != null) {
+				csrCache.onWarmNeeded(this::scheduleEagerCsrBuild);
+			}
 			preparedImportBudget = new AlignedWriteBudget(calculatePreparedImportStatementLimit(
 					Runtime.getRuntime().maxMemory(), tripleStore.secondaryIndexCount()));
 			statementPatternCardinalitySource = new LmdbStatementPatternCardinalitySource(valueStore, tripleStore);
@@ -811,6 +837,7 @@ class LmdbSailStore implements SailStore {
 				sketchBasedJoinEstimator.startBackgroundRefresh(3);
 				startBackgroundFilterSampling();
 			}
+			scheduleEagerCsrBuild();
 		} finally {
 			if (!initialized) {
 				close();
@@ -945,6 +972,62 @@ class LmdbSailStore implements SailStore {
 		return estimatorConfig;
 	}
 
+	/**
+	 * Queues one background warm-up run over {@link #csrEagerPredicates} and the popularity-ranked auto-warm
+	 * candidates. Called at startup, after every committed write (a commit drops all adjacency entries as stale), and
+	 * whenever probe traffic pushes a shape past the auto-warm threshold. Bursts collapse into a single queued run; a
+	 * run that observes an in-flight write bails out and relies on that write's commit to reschedule.
+	 */
+	private void scheduleEagerCsrBuild() {
+		if (csrEagerBuildExecutor == null || !csrEagerBuildPending.compareAndSet(false, true)) {
+			return;
+		}
+		try {
+			csrEagerBuildExecutor.execute(this::runEagerCsrBuild);
+		} catch (RejectedExecutionException e) {
+			csrEagerBuildPending.set(false);
+		}
+	}
+
+	private void runEagerCsrBuild() {
+		csrEagerBuildPending.set(false);
+		try {
+			for (String iri : csrEagerPredicates) {
+				if (storeTxnStarted.get()) {
+					return;
+				}
+				long pred = valueStore.getId(valueStore.createIRI(iri));
+				if (pred == LmdbValue.UNKNOWN_ID) {
+					continue;
+				}
+				try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+					csrCache.buildEagerly(pred, LmdbCsrAdjacencyCache.BY_SUBJECT, true, txn);
+					csrCache.buildEagerly(pred, LmdbCsrAdjacencyCache.BY_OBJECT, true, txn);
+				}
+			}
+			if (LmdbCsrAdjacencyCache.autoWarmEnabled()) {
+				// popularity-ranked shapes, hottest first: rebuilds hot entries after every commit and picks up
+				// shapes whose probe traffic crossed the auto-warm threshold before the inline trigger would fire
+				for (long key : csrCache.warmCandidates(LmdbCsrAdjacencyCache.autoWarmMaxSlots())) {
+					if (storeTxnStarted.get()) {
+						return;
+					}
+					long pred = key >>> 2;
+					int direction = (int) (key >>> 1) & 1;
+					boolean explicit = (key & 1) != 0;
+					try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+						if (csrCache.buildEagerly(pred, direction, explicit, txn)) {
+							LmdbCsrAdjacencyCache.AUTO_WARM_BUILDS.incrementAndGet();
+							LmdbNativeAttemptMetrics.recordCsrCacheAutoWarmBuild();
+						}
+					}
+				}
+			}
+		} catch (IOException | RuntimeException e) {
+			logger.debug("Eager CSR adjacency warm-up failed", e);
+		}
+	}
+
 	void rollback() throws SailException {
 		sinkStoreAccessLock.lock();
 		try {
@@ -1010,6 +1093,18 @@ class LmdbSailStore implements SailStore {
 	public void close() throws SailException {
 		if (csrCache != null) {
 			csrCache.close();
+		}
+		if (csrEagerBuildExecutor != null) {
+			// closing the cache above makes any in-flight eager build abort at its next sweep batch, so this
+			// wait is bounded; the read txn must be closed before the LMDB environments go down below
+			csrEagerBuildExecutor.shutdownNow();
+			try {
+				while (!csrEagerBuildExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
+					logger.warn("Waiting for CSR eager build executor to terminate");
+				}
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
 		}
 		try {
 			try {
@@ -1731,6 +1826,7 @@ class LmdbSailStore implements SailStore {
 							csrCache.committedWrite();
 						}
 						storeTxnStarted.set(false);
+						scheduleEagerCsrBuild();
 						estimatorTouchedInTransaction = false;
 						estimatorTouchedSinceStoreTxnStart.set(false);
 						if (filterSelectivityStats != null) {
@@ -2942,6 +3038,21 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public long contextAt(int index) {
 			return entry.contexts == null ? 0L : entry.contexts[index];
+		}
+
+		@Override
+		public int keyCount() {
+			return entry.keysByDense.length;
+		}
+
+		@Override
+		public long keyAt(int dense) {
+			return entry.keysByDense[dense];
+		}
+
+		@Override
+		public boolean runsNeighborOrdered() {
+			return entry.runsNeighborContextOrdered;
 		}
 	}
 

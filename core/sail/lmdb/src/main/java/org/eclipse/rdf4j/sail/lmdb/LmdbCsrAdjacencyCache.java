@@ -13,13 +13,18 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
+import java.util.function.LongSupplier;
 
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
@@ -60,8 +65,14 @@ final class LmdbCsrAdjacencyCache {
 	static final AtomicLong REFUSALS = new AtomicLong();
 	static final AtomicLong CSR_ROOT_SCANS = new AtomicLong();
 	static final AtomicLong CSR_ORDERED_SCANS = new AtomicLong();
+	static final AtomicLong AUTO_WARM_BUILDS = new AtomicLong();
+	static final AtomicLong PREDICTIVE_EVICTIONS = new AtomicLong();
+	static final AtomicLong ADMISSION_SKIPS = new AtomicLong();
 	private static final AtomicIntegerFieldUpdater<CsrEntry> CLOCK_REFERENCED = AtomicIntegerFieldUpdater
 			.newUpdater(CsrEntry.class, "clockReferenced");
+
+	/** Source of monotonic time for popularity decay; replaceable by tests for deterministic half-life math. */
+	static volatile LongSupplier NANO_CLOCK = System::nanoTime;
 
 	/** How many probe opens a decorated probe accumulates locally before flushing into the shared slot. */
 	static final int PROBE_FLUSH_INTERVAL = 256;
@@ -72,9 +83,34 @@ final class LmdbCsrAdjacencyCache {
 	private static final int SEEK_COST_KEYS = 8;
 	/** Both directions pay a two-pass sweep (count, then place). */
 	private static final int SWEEP_PASSES = 2;
+	/**
+	 * Fixed per-build overhead (txn setup, allocation) added to the pair-proportional rebuild cost — kept small so the
+	 * two-pass sweep cost dominates and cheap-to-rebuild entries stay the preferred eviction victims.
+	 */
+	private static final long REBUILD_COST_BASE = 128;
 
 	static boolean enabled() {
 		return Boolean.parseBoolean(System.getProperty("rdf4j.lmdb.csrCache.enabled", "true"));
+	}
+
+	/**
+	 * Predicate IRIs (comma-separated in {@code rdf4j.lmdb.csrCache.eagerPredicates}) whose adjacency entries are built
+	 * eagerly in the background — after store startup and after every committed write — instead of waiting for the
+	 * adaptive probe-count trigger. Empty when the property is unset.
+	 */
+	static List<String> eagerPredicates() {
+		String configured = System.getProperty("rdf4j.lmdb.csrCache.eagerPredicates");
+		if (configured == null || configured.isBlank()) {
+			return List.of();
+		}
+		List<String> iris = new ArrayList<>();
+		for (String iri : configured.split(",")) {
+			String trimmed = iri.trim();
+			if (!trimmed.isEmpty()) {
+				iris.add(trimmed);
+			}
+		}
+		return iris;
 	}
 
 	/** Whether full root scans over cached predicates are served from entries (phase 11 M1). */
@@ -99,12 +135,64 @@ final class LmdbCsrAdjacencyCache {
 				: Math.max(64L * 1024 * 1024, maxBytes() / 16);
 	}
 
+	/** Whether popularity-driven background builds are enabled (in addition to the pinned eager predicates). */
+	static boolean autoWarmEnabled() {
+		return Boolean.parseBoolean(System.getProperty("rdf4j.lmdb.csrCache.autoWarm.enabled", "true"));
+	}
+
+	/** Decayed popularity a shape must reach before a background build is scheduled for it. */
+	static double autoWarmMinScore() {
+		return Math.max(0.0, doubleProperty("rdf4j.lmdb.csrCache.autoWarm.minScore", 256.0));
+	}
+
+	/** Seed popularity granted to every newly tracked shape, so fresh predicates can warm up immediately. */
+	static double autoWarmInitialScore() {
+		return Math.max(0.0, doubleProperty("rdf4j.lmdb.csrCache.autoWarm.initialScore", 0.0));
+	}
+
+	/** Cap on popularity-ranked shapes rebuilt per background warm run. */
+	static int autoWarmMaxSlots() {
+		Integer configured = Integer.getInteger("rdf4j.lmdb.csrCache.autoWarm.maxSlots");
+		return Math.max(1, configured != null ? configured : 32);
+	}
+
+	/** Kill switch: {@code false} restores the exact second-chance clock and disables admission control. */
+	static boolean predictiveEvictionEnabled() {
+		return Boolean.parseBoolean(System.getProperty("rdf4j.lmdb.csrCache.predictiveEviction.enabled", "true"));
+	}
+
+	/** Ring entries examined per predictive eviction or admission decision. */
+	static int evictionSampleSize() {
+		Integer configured = Integer.getInteger("rdf4j.lmdb.csrCache.evictionSampleSize");
+		return Math.max(1, configured != null ? configured : 8);
+	}
+
+	/** Half-life of the exponentially decayed popularity score, in nanoseconds. */
+	static long scoreHalfLifeNanos() {
+		Long configured = Long.getLong("rdf4j.lmdb.csrCache.scoreHalfLifeSeconds");
+		return Math.max(1L, configured != null ? configured : 300L) * 1_000_000_000L;
+	}
+
+	private static double doubleProperty(String name, double defaultValue) {
+		String configured = System.getProperty(name);
+		if (configured == null || configured.isBlank()) {
+			return defaultValue;
+		}
+		try {
+			return Double.parseDouble(configured);
+		} catch (NumberFormatException e) {
+			return defaultValue;
+		}
+	}
+
 	private final TripleStore tripleStore;
 	private final AtomicBoolean storeTxnStarted;
 	private final ConcurrentHashMap<Long, CsrSlot> slots = new ConcurrentHashMap<>();
 	private final Object clockLock = new Object();
 	private final AtomicBoolean closed = new AtomicBoolean();
 	private CsrEntry clockHand;
+	/** Invoked (at most once per slot and revision) when a shape's popularity warrants a background build. */
+	private volatile Runnable warmSignal;
 
 	LmdbCsrAdjacencyCache(TripleStore tripleStore, AtomicBoolean storeTxnStarted) {
 		this.tripleStore = tripleStore;
@@ -148,6 +236,43 @@ final class LmdbCsrAdjacencyCache {
 	private static void recordHit(CsrEntry entry) {
 		CLOCK_REFERENCED.lazySet(entry, 1);
 		HITS.incrementAndGet();
+		CsrSlot owner = entry.clockOwner;
+		if (owner != null) {
+			owner.pendingAccesses.increment();
+		}
+	}
+
+	/**
+	 * Folds pending accesses into the slot's exponentially decayed popularity score and returns the result. Cheap
+	 * enough for eviction/admission decisions but never called per probe. Callers may hold {@code clockLock}; the lock
+	 * order is always clockLock → slot monitor, never the reverse.
+	 */
+	private static double foldScore(CsrSlot slot) {
+		synchronized (slot) {
+			long now = NANO_CLOCK.getAsLong();
+			long elapsed = now - slot.lastDecayNanos;
+			if (elapsed > 0) {
+				slot.decayedScore *= Math.pow(0.5, (double) elapsed / scoreHalfLifeNanos());
+				slot.lastDecayNanos = now;
+			}
+			long pending = slot.pendingAccesses.sumThenReset();
+			if (pending != 0) {
+				slot.decayedScore += pending;
+			}
+			return slot.decayedScore;
+		}
+	}
+
+	/** Test/observability hook: the folded decayed popularity of one shape, {@code 0} when never tracked. */
+	double popularityScore(long pred, int direction, boolean explicit) {
+		CsrSlot slot = slots.get(slotKey(pred, direction, explicit));
+		return slot == null ? 0.0 : foldScore(slot);
+	}
+
+	/** GDSF keep-value of a resident entry: decayed use rate × rebuild cost per byte held. */
+	private static double entryPriority(CsrSlot owner, CsrEntry entry) {
+		return foldScore(owner) * (SWEEP_PASSES * (double) entry.neighbors.length + REBUILD_COST_BASE)
+				/ Math.max(entry.bytes, 1L);
 	}
 
 	private void dropStale(CsrSlot slot, CsrEntry entry) {
@@ -165,8 +290,13 @@ final class LmdbCsrAdjacencyCache {
 			return;
 		}
 		CsrSlot slot = slots.computeIfAbsent(slotKey(pred, direction, explicit), key -> new CsrSlot());
+		slot.pendingAccesses.add(opens);
 		long total = slot.probeOpens.addAndGet(opens);
-		if (slot.entry != null || total < minProbes() || storeTxnStarted.get()) {
+		if (slot.entry != null) {
+			return;
+		}
+		maybeSignalAutoWarm(slot);
+		if (total < minProbes() || storeTxnStarted.get()) {
 			return;
 		}
 		long revision = tripleStore.getDataRevision();
@@ -182,8 +312,12 @@ final class LmdbCsrAdjacencyCache {
 		if (total * SEEK_COST_KEYS < SWEEP_PASSES * predCard) {
 			return;
 		}
-		if (estimateBytes((long) predCard) > maxEntryBytes()) {
+		long estimatedBytes = estimateBytes((long) predCard);
+		if (estimatedBytes > maxEntryBytes()) {
 			recordRefusal();
+			return;
+		}
+		if (!admitBuild(slot, predCard, estimatedBytes)) {
 			return;
 		}
 		if (!slot.building.compareAndSet(false, true)) {
@@ -193,6 +327,51 @@ final class LmdbCsrAdjacencyCache {
 			build(slot, pred, direction, explicit, txn);
 		} catch (IOException | RuntimeException e) {
 			recordBuildFailure(slot);
+		} finally {
+			slot.building.set(false);
+		}
+	}
+
+	/**
+	 * Builds the entry for one (predicate, direction, explicit) shape immediately when none exists, bypassing the
+	 * adaptive probe-count and amortization triggers. Used by the {@link #eagerPredicates()} and popularity-driven
+	 * background warmers; the byte-budget caps, admission control, per-revision failure backoff, revision validation
+	 * and the read-your-writes bypass all still apply, so refusal degrades to ordinary LMDB probing, never to wrong
+	 * results. Returns {@code true} only when this call published a fresh entry.
+	 */
+	boolean buildEagerly(long pred, int direction, boolean explicit, Txn txn) {
+		if (closed.get() || storeTxnStarted.get()) {
+			return false;
+		}
+		CsrSlot slot = slots.computeIfAbsent(slotKey(pred, direction, explicit), key -> new CsrSlot());
+		if (slot.entry != null) {
+			return false;
+		}
+		long revision = tripleStore.getDataRevision();
+		if (slot.failedBuilds >= MAX_BUILD_FAILURES_PER_REVISION && slot.failRevision == revision) {
+			return false;
+		}
+		double predCard = predicateCardinality(slot, pred, revision);
+		if (!Double.isFinite(predCard) || predCard < 0) {
+			return false;
+		}
+		long estimatedBytes = estimateBytes((long) predCard);
+		if (estimatedBytes > maxEntryBytes()) {
+			recordRefusal();
+			return false;
+		}
+		if (!admitBuild(slot, predCard, estimatedBytes)) {
+			return false;
+		}
+		if (!slot.building.compareAndSet(false, true)) {
+			return false;
+		}
+		try {
+			build(slot, pred, direction, explicit, txn);
+			return slot.entry != null;
+		} catch (IOException | RuntimeException e) {
+			recordBuildFailure(slot);
+			return false;
 		} finally {
 			slot.building.set(false);
 		}
@@ -228,6 +407,119 @@ final class LmdbCsrAdjacencyCache {
 		return pairs * 8L * 2 + pairs * 12L + 64;
 	}
 
+	/** Registers the background-warm trigger; called once by the owning store after construction. */
+	void onWarmNeeded(Runnable signal) {
+		this.warmSignal = signal;
+	}
+
+	/**
+	 * Fires the background-warm signal when an entry-less shape's folded popularity crosses
+	 * {@link #autoWarmMinScore()}, at most once per slot and data revision. The signal itself is burst-collapsed by the
+	 * store, so repeated crossings are cheap.
+	 */
+	private void maybeSignalAutoWarm(CsrSlot slot) {
+		if (!autoWarmEnabled()) {
+			return;
+		}
+		Runnable signal = warmSignal;
+		if (signal == null || slot.building.get()) {
+			return;
+		}
+		long revision = tripleStore.getDataRevision();
+		synchronized (slot) {
+			if (slot.warmSignaledRevision == revision) {
+				return;
+			}
+			if (foldScore(slot) < autoWarmMinScore()) {
+				return;
+			}
+			slot.warmSignaledRevision = revision;
+		}
+		signal.run();
+	}
+
+	/**
+	 * Popularity-ranked slot keys worth a background build: no entry yet, folded score at or above
+	 * {@link #autoWarmMinScore()}, and failure backoff not active for the current revision. At most {@code k} keys,
+	 * hottest first. Decode with {@code pred = key >>> 2}, {@code direction = (int) (key >>> 1) & 1},
+	 * {@code explicit = (key & 1) != 0}.
+	 */
+	long[] warmCandidates(int k) {
+		if (k <= 0 || closed.get()) {
+			return new long[0];
+		}
+		long revision = tripleStore.getDataRevision();
+		double minScore = autoWarmMinScore();
+		List<long[]> candidates = new ArrayList<>();
+		for (Map.Entry<Long, CsrSlot> slotEntry : slots.entrySet()) {
+			CsrSlot slot = slotEntry.getValue();
+			if (slot.entry != null) {
+				continue;
+			}
+			if (slot.failedBuilds >= MAX_BUILD_FAILURES_PER_REVISION && slot.failRevision == revision) {
+				continue;
+			}
+			double score = foldScore(slot);
+			if (score < minScore) {
+				continue;
+			}
+			candidates.add(new long[] { Double.doubleToRawLongBits(score), slotEntry.getKey() });
+		}
+		candidates.sort((a, b) -> Double.compare(Double.longBitsToDouble(b[0]), Double.longBitsToDouble(a[0])));
+		int size = Math.min(k, candidates.size());
+		long[] keys = new long[size];
+		for (int i = 0; i < size; i++) {
+			keys[i] = candidates.get(i)[1];
+		}
+		return keys;
+	}
+
+	/**
+	 * Admission control for the predictive-eviction mode: while the byte budget is full, a build proceeds only when the
+	 * candidate's predicted GDSF value strictly beats the coldest sampled resident (stale residents count as free). A
+	 * refused admission is not a build failure — the shape retries as soon as it out-scores a resident.
+	 */
+	private boolean admitBuild(CsrSlot slot, double predCard, long estimatedBytes) {
+		if (!predictiveEvictionEnabled()) {
+			return true;
+		}
+		if (GLOBAL_USED_BYTES.get() + estimatedBytes <= maxBytes()) {
+			return true;
+		}
+		double candidatePriority = foldScore(slot) * (SWEEP_PASSES * predCard + REBUILD_COST_BASE)
+				/ Math.max(estimatedBytes, 1L);
+		double sampledMinimum = Double.POSITIVE_INFINITY;
+		int sampled = 0;
+		synchronized (clockLock) {
+			long currentRevision = tripleStore.getDataRevision();
+			int sampleLimit = evictionSampleSize();
+			CsrEntry cursor = clockHand;
+			CsrEntry first = null;
+			while (cursor != null && sampled < sampleLimit) {
+				if (cursor == first) {
+					break;
+				}
+				if (first == null) {
+					first = cursor;
+				}
+				CsrSlot owner = cursor.clockOwner;
+				if (owner != null && owner.entry == cursor) {
+					double priority = cursor.revision != currentRevision ? 0.0 : entryPriority(owner, cursor);
+					sampledMinimum = Math.min(sampledMinimum, priority);
+					sampled++;
+				}
+				cursor = cursor.clockNext;
+			}
+		}
+		if (sampled == 0 || candidatePriority > sampledMinimum) {
+			return true;
+		}
+		ADMISSION_SKIPS.incrementAndGet();
+		LmdbNativeAttemptMetrics.recordCsrCacheAdmissionSkip();
+		recordRefusal();
+		return false;
+	}
+
 	private void recordBuildFailure(CsrSlot slot) {
 		long revision = tripleStore.getDataRevision();
 		if (slot.failRevision != revision) {
@@ -258,6 +550,10 @@ final class LmdbCsrAdjacencyCache {
 		try (RecordIterator sweep = tripleStore.getTriples(txn, -1, pred, -1, -1, explicit)) {
 			int rows;
 			while ((rows = sweep.fill(buffer, SWEEP_BATCH_ROWS)) > 0) {
+				if (closed.get()) {
+					recordBuildFailure(slot);
+					return;
+				}
 				for (int i = 0; i < rows; i++) {
 					counts.increment(buffer[i * 4 + keyIdx]);
 				}
@@ -294,6 +590,10 @@ final class LmdbCsrAdjacencyCache {
 			int placed = 0;
 			int rows;
 			while ((rows = sweep.fill(buffer, SWEEP_BATCH_ROWS)) > 0) {
+				if (closed.get()) {
+					recordBuildFailure(slot);
+					return;
+				}
 				for (int i = 0; i < rows; i++) {
 					int dense = counts.denseIdOf(buffer[i * 4 + keyIdx]);
 					if (dense < 0 || placed >= nPairs) {
@@ -419,6 +719,61 @@ final class LmdbCsrAdjacencyCache {
 	}
 
 	private boolean evictOne() {
+		if (!predictiveEvictionEnabled()) {
+			return evictOneSecondChance();
+		}
+		synchronized (clockLock) {
+			long currentRevision = tripleStore.getDataRevision();
+			int sampleLimit = evictionSampleSize();
+			CsrEntry best = null;
+			double bestPriority = Double.POSITIVE_INFINITY;
+			CsrEntry first = null;
+			int sampled = 0;
+			while (clockHand != null && sampled < sampleLimit) {
+				CsrEntry candidate = clockHand;
+				if (candidate == first) {
+					break;
+				}
+				CsrSlot owner = candidate.clockOwner;
+				if (owner == null || owner.entry != candidate) {
+					unlink(candidate);
+					continue;
+				}
+				if (candidate.revision != currentRevision) {
+					// stale entries are dead weight regardless of popularity: always the first victims
+					owner.entry = null;
+					unlink(candidate);
+					GLOBAL_USED_BYTES.addAndGet(-candidate.bytes);
+					STALE_DROPS.incrementAndGet();
+					return true;
+				}
+				if (first == null) {
+					first = candidate;
+				}
+				double priority = entryPriority(owner, candidate);
+				if (priority < bestPriority) {
+					bestPriority = priority;
+					best = candidate;
+				}
+				sampled++;
+				clockHand = candidate.clockNext;
+			}
+			if (best == null) {
+				return false;
+			}
+			CsrSlot owner = best.clockOwner;
+			owner.entry = null;
+			unlink(best);
+			GLOBAL_USED_BYTES.addAndGet(-best.bytes);
+			EVICTIONS.incrementAndGet();
+			PREDICTIVE_EVICTIONS.incrementAndGet();
+			LmdbNativeAttemptMetrics.recordCsrCachePredictiveEviction();
+			return true;
+		}
+	}
+
+	/** The pre-predictive second-chance clock, kept byte-identical for the kill-switch path. */
+	private boolean evictOneSecondChance() {
 		CsrEntry removed;
 		boolean stale;
 		synchronized (clockLock) {
@@ -817,7 +1172,14 @@ final class LmdbCsrAdjacencyCache {
 		volatile long predicateCardinalityRevision = Long.MIN_VALUE;
 		int failedBuilds;
 		long failRevision = Long.MIN_VALUE;
-
+		/** Accesses (probe opens + hits) not yet folded into {@link #decayedScore}; hot-path writes are lock-free. */
+		final LongAdder pendingAccesses = new LongAdder();
+		/** Exponentially decayed popularity; guarded by the slot monitor. */
+		double decayedScore = autoWarmInitialScore();
+		/** Timestamp of the last decay fold; guarded by the slot monitor. */
+		long lastDecayNanos = NANO_CLOCK.getAsLong();
+		/** Revision for which a background warm was already signaled; guarded by the slot monitor. */
+		long warmSignaledRevision = Long.MIN_VALUE;
 	}
 
 	/**

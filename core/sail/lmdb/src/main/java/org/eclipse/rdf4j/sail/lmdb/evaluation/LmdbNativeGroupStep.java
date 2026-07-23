@@ -283,6 +283,15 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 				return intersection;
 			}
 		}
+		if (arg instanceof MultiJoinPlan) {
+			List<BindingSet> fused = LmdbNativeJaninoAggregate.tryEvaluate((MultiJoinPlan) arg, row, groupSlots,
+					aggregates, this);
+			if (fused != null) {
+				LmdbNativeExplain.recordExecutionPath(explainTarget,
+						LmdbNativeAttemptMetrics.PATH_JANINO_AGGREGATE);
+				return fused;
+			}
+		}
 		if (!SlotPlan.encounterOrderReplaySafe(arg)) {
 			LmdbNativeAttemptMetrics metrics = LmdbNativeAttemptMetrics.root(explainTarget);
 			try {
@@ -955,6 +964,24 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 
 	BindingSet toBindingSet(GroupKey key, AggState state, boolean sawRow) {
 		return toBindingSet(source, key, state, sawRow);
+	}
+
+	/**
+	 * Emission helper for the fused Janino aggregate kernel: one group-key id plus one COUNT value bound under every
+	 * aggregate name (the kernel only engages when all specs are the same COUNT(DISTINCT), e.g. the projected copy plus
+	 * HAVING's anonymous copy).
+	 */
+	BindingSet kernelGroupRow(long groupId, long count) {
+		QueryBindingSet result = new QueryBindingSet(groupSlots.length + aggregates.length);
+		if (groupSlots.length == 1 && groupId != UNKNOWN && groupId != NULL_CONTEXT_ID) {
+			result.addBinding(slotNames[groupSlots[0]], source.lazyValue(groupId));
+		}
+		org.eclipse.rdf4j.model.Literal countLiteral = SimpleValueFactory.getInstance()
+				.createLiteral(BigInteger.valueOf(count));
+		for (AggregateSpec aggregate : aggregates) {
+			result.addBinding(aggregate.name, countLiteral);
+		}
+		return result;
 	}
 
 	/** Variant with an explicit value source so parallel workers resolve group values through their own sibling. */

@@ -49,10 +49,10 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * store-config booleans.
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
+@Warmup(iterations = 3, time = 2, timeUnit = TimeUnit.SECONDS)
 @BenchmarkMode(Mode.AverageTime)
-@Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
-@Measurement(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
+@Fork(value = 1, jvmArgs = { "-Xms16G", "-Xmx16G", "-XX:+UseG1GC" })
+@Measurement(iterations = 3, time = 2, timeUnit = TimeUnit.SECONDS)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class FoafCliqueQueryBenchmark {
 
@@ -82,7 +82,7 @@ public class FoafCliqueQueryBenchmark {
 	@Param({ "12345" })
 	public long seed;
 
-	@Param({ MODE_NATIVE, MODE_GENERIC })
+	@Param({ MODE_NATIVE })
 	public String engineMode;
 
 	private File dataDir;

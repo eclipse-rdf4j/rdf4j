@@ -185,6 +185,24 @@ public interface NativeLmdbQuerySource {
 		long neighborAt(int index);
 
 		long contextAt(int index);
+
+		/** Number of distinct keys in this view, or {@code -1} when key enumeration is unsupported. */
+		default int keyCount() {
+			return -1;
+		}
+
+		/** The key at the given dense ordinal; only valid when {@link #keyCount()} is non-negative. */
+		default long keyAt(int dense) {
+			throw new UnsupportedOperationException("key enumeration is not supported by this adjacency view");
+		}
+
+		/**
+		 * True when every run lists its entries sorted by (neighbor, context), so equal neighbors are adjacent and
+		 * consumers may deduplicate a run with a previous-value check.
+		 */
+		default boolean runsNeighborOrdered() {
+			return false;
+		}
 	}
 
 	long count(long subj, long pred, long obj, long context) throws IOException;

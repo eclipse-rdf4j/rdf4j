@@ -35,6 +35,7 @@ class LmdbNativeCsrCacheMetricsTest {
 	private static final String CSR_ENABLED = "rdf4j.lmdb.csrCache.enabled";
 	private static final String CSR_MIN_PROBES = "rdf4j.lmdb.csrCache.minProbes";
 	private static final String CSR_MAX_ENTRY_BYTES = "rdf4j.lmdb.csrCache.maxEntryBytes";
+	private static final String CSR_AUTO_WARM_MIN_SCORE = "rdf4j.lmdb.csrCache.autoWarm.minScore";
 	private static final String PARALLEL_ENABLED = "rdf4j.lmdb.parallel.enabled";
 
 	@TempDir
@@ -48,7 +49,8 @@ class LmdbNativeCsrCacheMetricsTest {
 
 	@BeforeEach
 	void setUp() {
-		for (String property : new String[] { CSR_ENABLED, CSR_MIN_PROBES, CSR_MAX_ENTRY_BYTES, PARALLEL_ENABLED }) {
+		for (String property : new String[] { CSR_ENABLED, CSR_MIN_PROBES, CSR_MAX_ENTRY_BYTES,
+				CSR_AUTO_WARM_MIN_SCORE, PARALLEL_ENABLED }) {
 			previousProperties.put(property, System.getProperty(property));
 		}
 		System.setProperty(CSR_ENABLED, "true");
@@ -102,5 +104,24 @@ class LmdbNativeCsrCacheMetricsTest {
 				.isGreaterThan(before.admissions());
 		assertThat(after.refusals()).as("entry-cap rejection must be reported as a refusal")
 				.isGreaterThan(before.refusals());
+	}
+
+	@Test
+	void autoWarmBuildsAreExportedThroughAttemptMetrics() throws Exception {
+		// inline builds unreachable: any admission observed here comes from the popularity-driven background warmer
+		System.setProperty(CSR_MIN_PROBES, String.valueOf(Integer.MAX_VALUE));
+		System.setProperty(CSR_AUTO_WARM_MIN_SCORE, "1");
+		LmdbNativeAttemptMetrics.CsrCacheMetrics before = LmdbNativeAttemptMetrics.csrCacheMetrics();
+		LmdbStore sail = (LmdbStore) repository.getSail();
+		CsrProbeWarmupAccess.warmBySubject(sail, rootPredicate, admittedPredicate);
+
+		long deadline = System.nanoTime() + 15_000_000_000L;
+		while (LmdbNativeAttemptMetrics.csrCacheMetrics().autoWarmBuilds() <= before.autoWarmBuilds()
+				&& System.nanoTime() < deadline) {
+			Thread.sleep(25);
+		}
+		assertThat(LmdbNativeAttemptMetrics.csrCacheMetrics().autoWarmBuilds())
+				.as("popularity-driven background builds must be reported through the metrics surface")
+				.isGreaterThan(before.autoWarmBuilds());
 	}
 }

@@ -822,6 +822,12 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 				LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_WCOJ);
 				return NativeUnorderedInput.rows(row, leapfrog);
 			}
+			RowCursor kernel = LmdbNativeJaninoPipeline.tryOpen(multiJoin, row);
+			if (kernel != null) {
+				System.out.println("JaninoPipeline");
+				LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_JANINO_KERNEL);
+				return NativeUnorderedInput.rows(row, kernel);
+			}
 		}
 		boolean correlatedEntry = (arg.producedMask() & row.boundMask()) != 0L;
 		boolean countingBranch = multiJoin != null && LmdbNativeFactorizedRows.plansCountingBranch(multiJoin,

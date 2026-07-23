@@ -364,6 +364,83 @@ public class LmdbNativeDifferentialFuzzTest {
 	}
 
 	/**
+	 * Janino whole-stage kernel differential round (plans/lmdb-native-engine/17-janino-whole-stage-codegen.md, M3):
+	 * cyclic and random BGP shapes with the generated-kernel rung forced on (threshold 0) and WCOJ disabled so the
+	 * kernel rung — not the leapfrog — takes every eligible shape. Each query is warmed a few times natively first so
+	 * the CSR adjacency cache builds and the async kernel compile completes; the multi-graph duplicates in the store
+	 * exercise the kernel's arena-entry multiplicity handling. The round asserts real engagement at the end, so a
+	 * silent recognizer regression cannot turn this into a vacuous pass.
+	 */
+	@Test
+	public void janinoKernelBasicGraphPatterns() {
+		String edge = "<" + EX + "edge>";
+		String prevEnabled = System.getProperty("rdf4j.lmdb.janinoCodegen.enabled");
+		String prevThreshold = System.getProperty("rdf4j.lmdb.janinoCodegen.thresholdRows");
+		String prevWcoj = System.getProperty("rdf4j.lmdb.wcoj.enabled");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
+		System.setProperty("rdf4j.lmdb.wcoj.enabled", "false");
+		org.eclipse.rdf4j.sail.lmdb.evaluation.JaninoPipelineTestAccess.resetMetrics();
+		try {
+			List<String> queries = new ArrayList<>();
+			queries.add("SELECT * WHERE { ?a " + edge + " ?b . ?b " + edge + " ?c . ?c " + edge + " ?a . }");
+			queries.add("SELECT * WHERE { ?a " + edge + " ?b . ?b " + edge + " ?c . ?c " + edge + " ?d . ?d " + edge
+					+ " ?a . }");
+			queries.add("SELECT * WHERE { ?a " + edge + " ?b . ?a " + edge + " ?c . ?b " + edge + " ?d . ?c " + edge
+					+ " ?d . }");
+			queries.add("SELECT ?a WHERE { ?a " + edge + " ?b . ?b " + edge + " ?c . ?c " + edge
+					+ " ?a . FILTER(?a != ?b) }");
+			queries.add("SELECT * WHERE { VALUES ?a { <" + EX + "s8> <" + EX + "s15> } ?a " + edge + " ?b . ?b "
+					+ edge + " ?c . ?c " + edge + " ?a . }");
+			Random random = new Random(SEED + 91);
+			String[] preds = { "p1", "p2", "p3", "p4", "p5", "edge" };
+			for (int i = 0; i < 40; i++) {
+				int len = 2 + random.nextInt(4);
+				StringBuilder where = new StringBuilder();
+				for (int j = 0; j < len; j++) {
+					where.append("?v")
+							.append(j)
+							.append(" <")
+							.append(EX)
+							.append(preds[random.nextInt(preds.length)])
+							.append("> ?v")
+							.append((j + 1) % len)
+							.append(" . ");
+				}
+				String distinct = random.nextBoolean() ? "DISTINCT " : "";
+				queries.add("SELECT " + distinct + "* WHERE { " + where + "}");
+			}
+			// fused-aggregation shapes (M4): VALUES-seeded grouped COUNT(DISTINCT) with an existence core; parity
+			// matters even where the kernel declines (e.g. runs not neighbor-ordered on this store)
+			queries.add("SELECT ?g (COUNT(DISTINCT ?a) AS ?n) WHERE { VALUES ?g { <" + EX + "s8> <" + EX + "s9> <"
+					+ EX + "s10> } ?a " + edge + " ?g . ?a " + edge + " ?b . ?b " + edge + " ?a . } GROUP BY ?g");
+			queries.add("SELECT ?g (COUNT(DISTINCT ?a) AS ?n) WHERE { VALUES ?g { <" + EX + "s8> <" + EX + "s15> } "
+					+ "?a <" + EX + "p1> ?g . ?a " + edge + " ?b . } GROUP BY ?g HAVING (COUNT(DISTINCT ?a) >= 1)");
+			for (String query : queries) {
+				for (int warm = 0; warm < 3; warm++) {
+					evaluate(query);
+				}
+				assertSameResults(query);
+			}
+			assertThat(org.eclipse.rdf4j.sail.lmdb.evaluation.JaninoPipelineTestAccess.opened())
+					.as("the Janino kernel rung never engaged during the forced-on round")
+					.isGreaterThan(0L);
+		} finally {
+			restoreProperty("rdf4j.lmdb.janinoCodegen.enabled", prevEnabled);
+			restoreProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", prevThreshold);
+			restoreProperty("rdf4j.lmdb.wcoj.enabled", prevWcoj);
+		}
+	}
+
+	private static void restoreProperty(String key, String previous) {
+		if (previous == null) {
+			System.clearProperty(key);
+		} else {
+			System.setProperty(key, previous);
+		}
+	}
+
+	/**
 	 * ORDER BY differential round (Phase 5). The order keys cover every projected variable, including the
 	 * literal-binding objects ?c and ?d: mixed date/dateTime order keys used to be excluded while the core
 	 * ValueComparator was non-transitive for indeterminate XML calendar comparisons (making the sorted order

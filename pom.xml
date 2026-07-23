@@ -69,6 +69,7 @@
 		<last.japicmp.compare.version>6.0.0</last.japicmp.compare.version>
 		<jaxb.version>2.3.8</jaxb.version>
 		<lwjgl.version>3.3.6</lwjgl.version>
+		<janino.version>3.1.12</janino.version>
 		<lucene.version>10.5.0</lucene.version>
 		<elasticsearch.version>9.4.2</elasticsearch.version>
 		<spring.version>7.0.8</spring.version>
@@ -597,6 +598,17 @@
 				<groupId>tools.jackson.core</groupId>
 				<artifactId>jackson-databind</artifactId>
 				<version>${jackson3.version}</version>
+			</dependency>
+			<!-- Runtime source-level code generation for the LMDB native query engine -->
+			<dependency>
+				<groupId>org.codehaus.janino</groupId>
+				<artifactId>janino</artifactId>
+				<version>${janino.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.codehaus.janino</groupId>
+				<artifactId>commons-compiler</artifactId>
+				<version>${janino.version}</version>
 			</dependency>
 			<!-- fix dependencies for elasticsearch client libraries -->
 			<dependency>
