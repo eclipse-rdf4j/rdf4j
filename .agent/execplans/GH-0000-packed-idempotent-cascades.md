@@ -31,8 +31,64 @@ This is a hard cutover. The completed repository contains one Cascades implement
 - [x] (2026-07-22 10:10Z) Milestone 6 LMDB slice: `LmdbPackedPredicateRangeProvider` over `LmdbEstimatorRuntime.rdfTermDomain`, `TripleStore.effectiveRdfTermDomainsVersion()` (covers disabled/excluded/unreadable), `LmdbPackedCostModel.VERSION` 1→2, provider wired through `LmdbCascadesOptimizer`, post-plan `optimizer.objectGuarantee`/`optimizer.objectGuaranteePredicate` stamping plus `optimizer.guaranteeOptions=generated=0, selected=original` + `optimizer.guaranteeOptionReason` for silent-but-known ranges. `LmdbPredicateObjectDomainIndexTest` 16/16 green (was 6 red); new `LmdbPackedPredicateRangePlanningTest` 8/8 green; new core `PackedPredicateRangePlanningTest` 6/6 green.
 - [ ] Milestone 6 remainder: stored-finite-domain anchors without a query filter (needs join-enumerator integration — a group cannot contain a JOIN over itself), calendar/datetime lexical expansion, datatype()/lang()/langMatches tautologies, per-candidate `optimizer.guaranteeOptionCandidates` diagnostics for packed-generated candidates.
 - [ ] Run focused, module, corpus, allocation, JFR, and plan-quality acceptance gates. Note: with the predicate-range selectors green, the LMDB module verify now reaches the japicmp gate, which fails on classes removed by the packed cutover (e.g. `LmdbEvaluationStatistics$LmdbCardinalityCalculator` vs 6.0.0) — a Milestone 7 compat-gate decision, not a test regression.
+- [x] (2026-07-23 14:34Z) Started post-cutover regression remediation with a clean 122-module quick install (`BUILD SUCCESS`, 35.727 seconds). Historical comparison is keyed by benchmark method, theme, query index, and parameters rather than table order.
+- [x] (2026-07-23 14:35Z) Milestone 7a: made theme-result capture header-driven; current/reordered JMH parameter layouts, idempotence, and `capture temp.txt` are green with one 93-row table.
+- [x] (2026-07-23 14:39Z) Milestone 7b first root slice: the primitive two-factor fast path now costs both legal contextual orientations and emits only the winner; the focused red is green and the independent finite-anchor bridge test remains green.
+- [x] (2026-07-23 14:52Z) Milestone 7c first scoped slice: selected LEFT JOIN passes its left prefix only when every exposed factor output is assured; nested UNION branches inherit that input, while possible-only OPTIONAL outputs fail closed. `PackedSearchTest` passes 14/14.
+- [x] (2026-07-23 15:20Z) Milestone 7d: repeated-predicate packed joins now combine the complete selected-prefix row
+  count with LMDB bounded distinct-prefix evidence for every shared transition variable, and retain finite exact
+  lookup precedence. A generated three-hop same-predicate invariant is red-to-green and the cost-model cache version
+  is 6. JFR rejected the first object-engine bridge; the primitive-prefix revision reduced PHARMA q6 planning from
+  1.112 to 0.648 ms/op.
+- [ ] Milestone 7e: run full module and historical acceptance plus Docker Java 26 JFR. The Docker helper's
+  checkout-wide source scan was replaced with ignore-aware `rg`; its dry run is immediate, but the real run is
+  externally blocked because `/Users/havardottestad/.orbstack/run/docker.sock` does not exist. Local JDK 25 JFR and
+  the focused/module-surface tests below are accepted only as partial evidence.
+- [x] (2026-07-23 15:23Z) Milestone 7e partial gates: `PackedSearchTest` 14/14,
+  `LmdbIndependentFiniteAnchorJoinPlanningTest` 2/2, `LmdbOptimizerPipelineTest` 40/40, capture shell regression,
+  `git diff --check`, and the PHARMA q6 local JFR cell are green. The focused LMDB verifies explicitly skip japicmp;
+  without that skip Surefire is green and the lifecycle reaches the known packed-cutover binary-compatibility gate.
 
 ## Surprises & Discoveries
+
+- Observation (2026-07-23, Milestone 7): the result-capture script recognizes the presence of only
+  `sketchEstimatorEnabled` and then reads fixed field positions. The current JMH header also contains
+  `queryExplanationLevel`, so `capture temp.txt` shifts theme/query/mode columns and leaves the original table in the
+  body because removal only accepts a header beginning immediately with `(themeName)`.
+  Evidence: the current script's `extract_summary_table` and `remove_summary_table` implementations and the
+  four-parameter summary in `temp.txt`.
+
+- Observation (2026-07-23, Milestone 7): SOCIAL_MEDIA q5 is an execution-plan regression, not preparation overhead.
+  The selected UNION branches are optimized without the outer finite `?u` context and materialize 143.7K and 1.4M
+  rows; the timed query spends about 241 ms/op. It belongs to the scoped assured-input group.
+  Evidence: the q5 timed plan in `results-2026-07-23.md`.
+
+- Observation (2026-07-23, Milestone 7): the two-factor source-order shortcut, the
+  `FINITE_FILTER_VALUES` no-flatten barrier, and the JOIN-only selected contextualizer were introduced together in
+  commit `602c293d22d`. The predecessor optimizer already represented possible/assured bindings, required inputs,
+  unsafe sibling outputs, correlation, and total eligibility sets. Remediation should port those contracts into the
+  packed representation rather than remove barriers wholesale.
+  Evidence: `git blame` on `PackedJoinEnumerator` and `PackedSelectedPlanContextualizer`, plus
+  `GH-0000-cascades-hypergraph-reference-hardening.md`.
+
+- Observation (2026-07-23, Milestone 7): calling the object-based LMDB estimation engine from
+  `LmdbPackedCostModel.transitionRows` made the generated transition test green but put `HashMap`, `LinkedHashMap`,
+  streams, algebra cloning, and `EvidenceProfile` construction back under packed join enumeration. Replacing the
+  synthesized JOIN surface with target rows divided by bounded LMDB distinct-prefix counts, scaled by the complete
+  packed prefix rows, preserved the transition contract and reduced the profiled PHARMA q6 planner cell by 41.7%.
+  Evidence: the first JFR measured 1.112 ± 0.154 ms/op and contained
+  `LmdbEstimatorRuntime.packedTransitionRows -> LmdbEstimationEngine`; the final recording at
+  `core/sail/lmdb/target/ThemeQueryPlanRunBenchmark.planQuery.jfr` measured 0.648 ± 0.054 ms/op and has no such
+  object-engine bridge.
+
+- Observation (2026-07-23, Milestone 7): a selected finite-filter winner can be an overlay logical expression whose
+  target group still has a base packed-query expression. Treating every non-flattened winner source as a base relation
+  throws; flattening the overlay loses the purposeful anchor-first recipe. Factor collection now uses the base
+  expression as the group representative while retaining the overlay winner as the atomic physical factor, and finite
+  recipes themselves are not re-enumerated.
+  Evidence: `LmdbOptimizerPipelineTest#lmdbCascadesComposesOrFilterValuesAndExistsJoinForDistinctAggregateWithFallbackPolicy`
+  changed from `join factor winner 19 has no packed-query logical source`, through an anchor-order failure during the
+  overly broad flattening spike, to green with both finite-prefix and materialized-EXISTS assertions intact.
 
 - Observation (2026-07-22, Milestone 6): distinct algebra `Var` occurrences intern to one canonical packed term, but each occurrence carries its own planned metrics, so strict canonical-metadata equality threw `PackedMemoInvariantException("canonical node ... has conflicting metadata")` for any query whose filter references a statement-pattern variable that also carries annotator metrics (`LmdbValueIdFilterOptimizationTest` errors, and every isIRI/isLiteral filter after estimate annotation). Per-occurrence metadata is not term identity; `attachTerm` now keeps the first occurrence's metadata deterministically.
   Evidence: `PackedNodeMetadataArena.attachFirstWins` and the previously-erroring `LmdbValueIdFilterOptimizationTest`/`LmdbPackedPredicateRangePlanningTest` selectors.
@@ -104,6 +160,34 @@ This is a hard cutover. The completed repository contains one Cascades implement
   Evidence: repository searches on 2026-07-21 found `getKnownRdfTermDomain` only in the tuple annotator and eager filter simplifier, while the packed planner boundary accepts only `PackedCostModel`. The current `LmdbPredicateObjectDomainIndexTest` assertions for `selected=finite-anchor:o` and generated guarantee options identify the missing observable behavior.
 
 ## Decision Log
+
+- Decision: repair the benchmark capture before using newly captured results as acceptance evidence.
+  Rationale: field-position parsing can silently compare the wrong theme/query cells and duplicate the summary table.
+  Date/Author: 2026-07-23 / Codex.
+
+- Decision: retain specialized primitive two-factor costing, but evaluate every legal orientation using the same
+  contextual cost and legality contracts as larger regions.
+  Rationale: source order is not a semantic requirement; avoiding DP-array allocation does not require suppressing the
+  reverse candidate.
+  Date/Author: 2026-07-23 / Codex.
+
+- Decision: semantic finite-filter recipes remain atomic for reconstruction while occurrence-level anchor and
+  dependency facts are visible to search.
+  Rationale: simply deleting the no-flatten check can duplicate filters or create a join over its own memo group, while
+  keeping the whole recipe opaque prevents legal anchor-first plans.
+  Date/Author: 2026-07-23 / Codex.
+
+- Decision: port possible/assured/required/unsafe/correlation masks into packed search and propagate them by typed
+  operator contract; never infer assurance from possible output.
+  Rationale: OPTIONAL, UNION, MINUS, EXISTS, Projection, and Group have different binding guarantees. A generic
+  all-children context rule is either slow or unsound.
+  Date/Author: 2026-07-23 / Codex.
+
+- Decision: keep generic connected-join selectivity backend-neutral and contribute repeated-predicate transition
+  evidence through `LmdbPackedCostModel`.
+  Rationale: LMDB owns its indexes and sketches; coupling those statistics into query-evaluation core would violate
+  the packed extension boundary.
+  Date/Author: 2026-07-23 / Codex.
 
 - Decision: use structure-of-arrays primitive arenas instead of reproducing the prototype's hybrid node layout.
   Rationale: parallel arrays give selective column access, dense scans, and no per-node object or header cost; the prototype's own scan result does not justify copying its exact layout.
@@ -311,3 +395,7 @@ The public experimental boundary remains `CascadesPlanner.optimize(TupleExpr, Op
 Revision note (2026-07-19 / Codex): initial self-contained ExecPlan created from the approved packed, idempotent Cascades design and the repository-specific performance investigation. Updated after Milestone 1 to record the reproducible JDK 25 tests, benchmark artifacts, JFR allocation sites, and formatter side effect; updated through the primitive memo, winner-recipe extraction, relational/scalar codec slices, deterministic incumbent, recipe materialization, and query-derived mask width.
 
 Revision note (2026-07-21 18:05Z / Codex): added Milestone 6 after inspection showed that stored LMDB predicate-object ranges survive only as annotations in the packed route. The revision defines the typed fact-provider boundary, domain propagation and soundness rules, optimizer consumers, cost semantics, activation diagnostics, cache invalidation, and red/green acceptance cases so a visible guarantee cannot silently remain unused.
+
+Revision note (2026-07-23 14:34Z / Codex): added Milestone 7 after the first packed benchmark-history audit. The
+revision records the capture-parser defect, three planner root-cause groups, the design constraints inherited from the
+predecessor optimizer, and the test/profile gates required before accepting the remediation.
