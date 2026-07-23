@@ -162,7 +162,22 @@ extract_summary_table() {
 	}
 	/^Benchmark[[:space:]]+/ && /\(themeName\)/ && /\(z_queryIndex\)/ && /[[:space:]]Score/ {
 		in_table = 1
-		has_sketch_estimator = $0 ~ /\(sketchEstimatorEnabled\)/
+		theme_column = 0
+		query_column = 0
+		mode_column = 0
+		for (column = 1; column <= NF; column++) {
+			if ($column == "(themeName)") {
+				theme_column = column
+			} else if ($column == "(z_queryIndex)") {
+				query_column = column
+			} else if ($column == "Mode") {
+				mode_column = column
+			}
+		}
+		if (theme_column == 0 || query_column == 0 || mode_column == 0) {
+			in_table = 0
+			next
+		}
 		print header
 		next
 	}
@@ -173,22 +188,27 @@ extract_summary_table() {
 		if ($1 != "ThemeQueryBenchmark.executeQuery") {
 			next
 		}
-		if (has_sketch_estimator) {
-			theme = $3
-			query = $4
-			mode = $5
-			cnt = $6
-			score = $7
-			error = $9
-			units = $10
+		theme = $theme_column
+		query = $query_column
+		mode = $mode_column
+		tail_fields = NF - mode_column
+		cnt = ""
+		error = ""
+		units = $NF
+		if (tail_fields >= 5) {
+			cnt = $(mode_column + 1)
+			score = $(mode_column + 2)
+			error = $(mode_column + 4)
+		} else if (tail_fields == 4) {
+			score = $(mode_column + 1)
+			error = $(mode_column + 3)
+		} else if (tail_fields == 3) {
+			cnt = $(mode_column + 1)
+			score = $(mode_column + 2)
+		} else if (tail_fields == 2) {
+			score = $(mode_column + 1)
 		} else {
-			theme = $2
-			query = $3
-			mode = $4
-			cnt = $5
-			score = $6
-			error = $8
-			units = $9
+			next
 		}
 		printf("%-37s %15s %15s %5s %4s %10s %7s %s\n",
 			"ThemeQueryBenchmark.executeQuery", theme, query, mode, cnt, score, error, units)
@@ -241,11 +261,7 @@ synthesize_summary_table() {
 
 remove_summary_table() {
 	awk '
-	BEGIN {
-		header_seen = 0
-	}
-	!header_seen && /^Benchmark[[:space:]]+\(themeName\)[[:space:]]+\(z_queryIndex\)[[:space:]]+Mode[[:space:]]+Cnt[[:space:]]+Score/ {
-		header_seen = 1
+	/^Benchmark[[:space:]]+/ && /\(themeName\)/ && /\(z_queryIndex\)/ && /[[:space:]]Mode[[:space:]]/ && /[[:space:]]Score/ {
 		skipping = 1
 		next
 	}

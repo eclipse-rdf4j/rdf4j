@@ -208,6 +208,116 @@ class PackedSearchTest {
 	}
 
 	@Test
+	void twoFactorSearchConsidersTheCheaperReverseOrientation() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern large = pattern(values, "shared", "urn:large", "largeValue", Double.NaN);
+		StatementPattern selective = pattern(values, "shared", "urn:selective", "selectiveValue", Double.NaN);
+		TupleExpr source = new Join(large, selective);
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (!query.isStatementPattern(relationId)) {
+					return Double.NaN;
+				}
+				return "urn:large".equals(query.statementPatternValue(relationId, 1).stringValue())
+						? 10_000.0d
+						: 1.0d;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				double rows = estimateRows(query, relationId);
+				if (query.isStatementPattern(relationId)
+						&& "urn:large".equals(query.statementPatternValue(relationId, 1).stringValue())
+						&& context.prefixRelationCount() != 0) {
+					output.setContextualRows(1.0d, 1.0d);
+				} else {
+					output.setRows(rows, rows);
+				}
+			}
+		};
+
+		Join selected = (Join) PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), costs).selectedPlan();
+
+		StatementPattern first = (StatementPattern) selected.getLeftArg();
+		assertEquals("urn:selective", first.getPredicateVar().getValue().stringValue(), selected::toString);
+	}
+
+	@Test
+	void optionalRightReceivesAssuredLeftInputContext() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern left = pattern(values, "shared", "urn:left", "leftValue", Double.NaN);
+		StatementPattern right = pattern(values, "shared", "urn:right", "rightValue", Double.NaN);
+		LeftJoin source = new LeftJoin(left, right);
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (!query.isStatementPattern(relationId)) {
+					return Double.NaN;
+				}
+				return "urn:right".equals(query.statementPatternValue(relationId, 1).stringValue())
+						? 10_000.0d
+						: 1.0d;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				double rows = estimateRows(query, relationId);
+				if (query.isStatementPattern(relationId)
+						&& "urn:right".equals(query.statementPatternValue(relationId, 1).stringValue())
+						&& query.prefixBindsStatementComponent(context, relationId, 0)) {
+					output.setContextualRows(1.0d, 1.0d);
+				} else {
+					output.setRows(rows, rows);
+				}
+			}
+		};
+
+		LeftJoin selected = (LeftJoin) PackedCascadesPlanner
+				.optimize(source, OptimizationGoal.root(), costs)
+				.selectedPlan();
+
+		assertEquals(1.0d, selected.getRightArg().getResultSizeEstimate(), selected::toString);
+	}
+
+	@Test
+	void optionalRightDoesNotReceivePossibleOnlyLeftBindings() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern required = pattern(values, "shared", "urn:required", "requiredValue", Double.NaN);
+		StatementPattern possible = pattern(values, "shared", "urn:possible", "optionalKey", Double.NaN);
+		LeftJoin left = new LeftJoin(required, possible);
+		StatementPattern probe = pattern(values, "optionalKey", "urn:probe", "probeValue", Double.NaN);
+		LeftJoin source = new LeftJoin(left, probe);
+		PackedCostModel costs = contextualProbeCostModel("urn:probe");
+
+		LeftJoin selected = (LeftJoin) PackedCascadesPlanner
+				.optimize(source, OptimizationGoal.root(), costs)
+				.selectedPlan();
+
+		assertEquals(10_000.0d, selected.getRightArg().getResultSizeEstimate(), selected::toString);
+	}
+
+	@Test
+	void unionBranchesInOptionalRightInheritAssuredOuterContext() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern left = pattern(values, "shared", "urn:left", "leftValue", Double.NaN);
+		StatementPattern first = pattern(values, "shared", "urn:first", "firstValue", Double.NaN);
+		StatementPattern second = pattern(values, "shared", "urn:second", "secondValue", Double.NaN);
+		LeftJoin source = new LeftJoin(left, new Union(first, second));
+		PackedCostModel costs = contextualProbeCostModel("urn:first", "urn:second");
+
+		LeftJoin selected = (LeftJoin) PackedCascadesPlanner
+				.optimize(source, OptimizationGoal.root(), costs)
+				.selectedPlan();
+		Union selectedUnion = (Union) selected.getRightArg();
+
+		assertEquals(1.0d, selectedUnion.getLeftArg().getResultSizeEstimate(), selected::toString);
+		assertEquals(1.0d, selectedUnion.getRightArg().getResultSizeEstimate(), selected::toString);
+	}
+
+	@Test
 	void genericPhysicalMetadataDoesNotInventProviderAccessFacts() {
 		StatementPattern source = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
 
@@ -272,5 +382,32 @@ class PackedSearchTest {
 			pattern.setResultSizeEstimate(rows);
 		}
 		return pattern;
+	}
+
+	private static PackedCostModel contextualProbeCostModel(String... contextualPredicates) {
+		return new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (!query.isStatementPattern(relationId)) {
+					return Double.NaN;
+				}
+				String predicate = query.statementPatternValue(relationId, 1).stringValue();
+				return List.of(contextualPredicates).contains(predicate) ? 10_000.0d : 1.0d;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				double rows = estimateRows(query, relationId);
+				if (query.isStatementPattern(relationId)
+						&& List.of(contextualPredicates)
+								.contains(query.statementPatternValue(relationId, 1).stringValue())
+						&& query.prefixBindsStatementComponent(context, relationId, 0)) {
+					output.setContextualRows(1.0d, 1.0d);
+				} else {
+					output.setRows(rows, rows);
+				}
+			}
+		};
 	}
 }

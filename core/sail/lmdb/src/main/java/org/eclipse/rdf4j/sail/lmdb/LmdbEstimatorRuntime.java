@@ -370,6 +370,21 @@ final class LmdbEstimatorRuntime {
 				: cardinalities.estimateForPlanning(subject, predicate, object, context, repeatedComponentPairMask);
 	}
 
+	double packedTransitionRows(StatementPattern pattern, String joinVariable, double patternRows,
+			double prefixRows) {
+		if (cardinalities == null || pattern == null || joinVariable == null
+				|| !Double.isFinite(patternRows) || patternRows < 0.0d
+				|| !Double.isFinite(prefixRows) || prefixRows < 0.0d) {
+			return Double.NaN;
+		}
+		OptionalDouble distinct = cardinalities.estimateDistinct(pattern, joinVariable, 65_536);
+		if (distinct.isEmpty() || !Double.isFinite(distinct.getAsDouble()) || distinct.getAsDouble() <= 0.0d) {
+			return Double.NaN;
+		}
+		double rows = prefixRows * patternRows / distinct.getAsDouble();
+		return Double.isFinite(rows) ? Math.max(0.0d, rows) : Double.NaN;
+	}
+
 	/**
 	 * Offers the DISTINCT cursor-skip physical access path for a requirement-annotated statement pattern. Fills
 	 * {@code output} and returns {@code true} only when a skip-capable index exists, the distinct prefix count could be
@@ -408,13 +423,16 @@ final class LmdbEstimatorRuntime {
 
 	void describePackedAccessPath(int lookupMask, double accessRows, double invocations,
 			PackedCostEstimate output) {
+		describePackedAccessPath(lookupMask, accessRows, invocations, "lmdb-packed-cardinality", output);
+	}
+
+	void describePackedAccessPath(int lookupMask, double accessRows, double invocations, String estimateSource,
+			PackedCostEstimate output) {
 		if (tripleStore == null) {
-			output.setAccess(0, lookupMask, 0, accessRows, invocations, null, "lmdb-packed-cardinality",
-					"fullScan");
+			output.setAccess(0, lookupMask, 0, accessRows, invocations, null, estimateSource, "fullScan");
 			return;
 		}
-		tripleStore.describePackedAccessPath(lookupMask, accessRows, invocations, "lmdb-packed-cardinality",
-				output);
+		tripleStore.describePackedAccessPath(lookupMask, accessRows, invocations, estimateSource, output);
 	}
 
 	/** Cache-key version of the predicate-range guarantees; changes whenever guarantee semantics or config change. */

@@ -108,6 +108,41 @@ class LmdbIndependentFiniteAnchorJoinPlanningTest {
 		}
 	}
 
+	@Test
+	void repeatedPredicateChainUsesMultiRelationTransitionEvidence(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticMutualFollowData(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				TupleExpr optimized = (TupleExpr) connection.prepareTupleQuery(repeatedFollowsChainQuery())
+						.explain(Explanation.Level.Optimized)
+						.tupleExpr();
+				List<StatementPattern> transitionPatterns = new ArrayList<>();
+				optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+					@Override
+					public void meet(StatementPattern node) {
+						if ("lmdb-packed-transition".equals(node
+								.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE))) {
+							transitionPatterns.add(node);
+						}
+						super.meet(node);
+					}
+				});
+
+				assertTrue(!transitionPatterns.isEmpty(),
+						"Expected a later repeated-predicate hop to use LMDB transition evidence. plan=" + optimized);
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
 	private static boolean isFollowsBridge(StatementPattern node) {
 		return node.getPredicateVar() != null
 				&& SOCIAL_FOLLOWS.equals(node.getPredicateVar().getValue())
@@ -128,6 +163,19 @@ class LmdbIndependentFiniteAnchorJoinPlanningTest {
 				+ "  ?u <" + SOCIAL_FOLLOWS.stringValue() + "> ?v .\n"
 				+ "  FILTER (?u != ?v)\n"
 				+ "  FILTER EXISTS { ?v <" + SOCIAL_FOLLOWS.stringValue() + "> ?u }\n"
+				+ "}";
+	}
+
+	private static String repeatedFollowsChainQuery() {
+		StringJoiner userValues = new StringJoiner(" ");
+		for (int i = 12; i <= 17; i++) {
+			userValues.add("<" + socialUser(i).stringValue() + ">");
+		}
+		return "SELECT ?u ?v ?w ?x WHERE {\n"
+				+ "  VALUES ?u { " + userValues + " }\n"
+				+ "  ?u <" + SOCIAL_FOLLOWS.stringValue() + "> ?v .\n"
+				+ "  ?v <" + SOCIAL_FOLLOWS.stringValue() + "> ?w .\n"
+				+ "  ?w <" + SOCIAL_FOLLOWS.stringValue() + "> ?x .\n"
 				+ "}";
 	}
 

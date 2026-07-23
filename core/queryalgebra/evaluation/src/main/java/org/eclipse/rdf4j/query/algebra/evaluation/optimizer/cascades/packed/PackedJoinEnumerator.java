@@ -50,6 +50,9 @@ final class PackedJoinEnumerator {
 	}
 
 	int optimize(int rootRelationId) {
+		if (isFiniteFilterRecipe(rootRelationId)) {
+			return 0;
+		}
 		int factorCount = factorCount(rootRelationId);
 		if (factorCount < 2) {
 			return 0;
@@ -57,7 +60,20 @@ final class PackedJoinEnumerator {
 		int[] factors = new int[factorCount];
 		collectFactors(rootRelationId, factors);
 		if (factorCount == 2) {
-			return costModel == null ? 0 : emitSelectedOrder(rootRelationId, factors);
+			if (costModel == null) {
+				return 0;
+			}
+			double forwardCost = twoFactorOrderCost(factors);
+			int first = factors[0];
+			factors[0] = factors[1];
+			factors[1] = first;
+			double reverseCost = twoFactorOrderCost(factors);
+			if (forwardCost <= reverseCost) {
+				first = factors[0];
+				factors[0] = factors[1];
+				factors[1] = first;
+			}
+			return emitSelectedOrder(rootRelationId, factors);
 		}
 		return switch (subsetKernelForFactorCount(factorCount)) {
 		case DENSE_SUBSETS -> optimizeDense(rootRelationId, factors);
@@ -68,12 +84,20 @@ final class PackedJoinEnumerator {
 	}
 
 	int optimizeSequence(int rootRelationId) {
-		if (costModel == null) {
+		if (costModel == null || isFiniteFilterRecipe(rootRelationId)) {
 			return 0;
 		}
-		int[] factors = new int[factorCount(rootRelationId)];
+		int factorCount = factorCount(rootRelationId);
+		if (factorCount < 2) {
+			return 0;
+		}
+		int[] factors = new int[factorCount];
 		collectFactors(rootRelationId, factors);
 		return emitSelectedOrder(rootRelationId, factors);
+	}
+
+	private boolean isFiniteFilterRecipe(int rootRelationId) {
+		return (memo.logicalRuleMask(rootRelationId) & PackedRuleProofs.FINITE_FILTER_VALUES) != 0L;
 	}
 
 	static int subsetKernelForFactorCount(int factorCount) {
@@ -95,6 +119,29 @@ final class PackedJoinEnumerator {
 			return Double.MAX_VALUE;
 		}
 		return connected ? Math.max(1.0d, product * 0.10d) : product;
+	}
+
+	private double twoFactorOrderCost(int[] factors) {
+		int anyPropertyId = memo.anyPropertyId();
+		int firstGroupId = memo.logicalGroupId(factors[0]);
+		int secondGroupId = memo.logicalGroupId(factors[1]);
+		int firstWinnerId = memo.findWinner(firstGroupId, anyPropertyId, 0, 0, 0);
+		int secondWinnerId = memo.findWinner(secondGroupId, anyPropertyId, 0, 0, 0);
+		double firstRows = selectedRowsByGroup[firstGroupId];
+		double secondRows = selectedRowsByGroup[secondGroupId];
+		double outputRows = joinRowsForSubset(factors, 1L, 1, firstRows, secondRows,
+				connectedToPrefix(factors, 1, factors[1]));
+		double secondWork = memo.winnerTotalCost(secondWinnerId);
+		costEstimate.clear();
+		costContext.reset(factors, 0, 1, firstRows);
+		costModel.estimate(queryView, factors[1], costContext, costEstimate);
+		if (costEstimate.hasContextualOutputRows() && finiteNonNegative(costEstimate.outputRows())) {
+			outputRows = costEstimate.outputRows();
+		}
+		if (finiteNonNegative(costEstimate.workRows())) {
+			secondWork = costEstimate.workRows();
+		}
+		return saturatedAdd(memo.winnerTotalCost(firstWinnerId), secondWork, outputRows);
 	}
 
 	private int optimizeDense(int rootRelationId, int[] factors) {
@@ -626,7 +673,10 @@ final class PackedJoinEnumerator {
 					winnerStack[size++] = memo.winnerChildWinnerId(winnerId, ordinal);
 				}
 			} else {
-				if (sourceLogicalExpressionId <= 0 || sourceLogicalExpressionId > query.relationCount()) {
+				if (sourceLogicalExpressionId > query.relationCount()) {
+					sourceLogicalExpressionId = baseLogicalExpression(memo.logicalGroupId(sourceLogicalExpressionId));
+				}
+				if (sourceLogicalExpressionId <= 0) {
 					throw new PackedMemoInvariantException("join factor winner " + winnerId
 							+ " has no packed-query logical source");
 				}
@@ -637,6 +687,17 @@ final class PackedJoinEnumerator {
 			}
 		}
 		return factorCount;
+	}
+
+	private int baseLogicalExpression(int groupId) {
+		for (int logicalExpressionId = memo
+				.firstLogicalExpression(groupId); logicalExpressionId != 0; logicalExpressionId = memo
+						.nextLogicalExpression(logicalExpressionId)) {
+			if (logicalExpressionId <= query.relationCount()) {
+				return logicalExpressionId;
+			}
+		}
+		return 0;
 	}
 
 	private boolean canFlattenWinner(int winnerId, int physicalExpressionId, int sourceLogicalExpressionId) {

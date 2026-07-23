@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 /** LMDB storage-cardinality adapter for the packed ID-based cost boundary. */
 final class LmdbPackedCostModel implements PackedCostModel {
 
-	static final long VERSION = 5L;
+	static final long VERSION = 6L;
 
 	private static final String[] DISTINCT_REQUIREMENT_METRICS = {
 			TelemetryMetricNames.PLANNED_DISTINCT_REQUIREMENT_VARS,
@@ -34,6 +34,8 @@ final class LmdbPackedCostModel implements PackedCostModel {
 			TelemetryMetricNames.PLANNED_DISTINCT_REQUIREMENT_SOURCE };
 
 	private static final int MAX_FINITE_LOOKUP_COMBINATIONS = 1_024;
+	private static final String CARDINALITY_SOURCE = "lmdb-packed-cardinality";
+	private static final String TRANSITION_SOURCE = "lmdb-packed-transition";
 
 	private final LmdbEstimatorRuntime runtime;
 
@@ -73,8 +75,15 @@ final class LmdbPackedCostModel implements PackedCostModel {
 		}
 		double rows = finiteLookupRows(query, relationId, context);
 		boolean contextualRows = Double.isFinite(rows);
+		boolean transitionRows = false;
 		if (!contextualRows) {
-			rows = estimateRows(query, relationId);
+			double patternRows = estimateRows(query, relationId);
+			rows = transitionRows(query, relationId, context, patternRows);
+			contextualRows = Double.isFinite(rows);
+			transitionRows = contextualRows;
+			if (!contextualRows) {
+				rows = patternRows;
+			}
 		}
 		if (!Double.isFinite(rows) || rows < 0.0d) {
 			output.setRows(Double.NaN, Double.NaN);
@@ -92,7 +101,56 @@ final class LmdbPackedCostModel implements PackedCostModel {
 		} else {
 			output.setRows(rows, workRows);
 		}
-		runtime.describePackedAccessPath(lookupMask(query, relationId, context), accessRows, invocations, output);
+		runtime.describePackedAccessPath(lookupMask(query, relationId, context), accessRows, invocations,
+				transitionRows ? TRANSITION_SOURCE : CARDINALITY_SOURCE, output);
+	}
+
+	private double transitionRows(PackedQueryView query, int relationId, PackedCostContext context,
+			double patternRows) {
+		Value predicateValue = query.statementPatternValue(relationId, 1);
+		if (!(predicateValue instanceof IRI predicate) || context.prefixRelationCount() == 0) {
+			return Double.NaN;
+		}
+		StatementPattern pattern = null;
+		double transitionRows = Double.NaN;
+		for (int ordinal = 0; ordinal < context.prefixRelationCount(); ordinal++) {
+			int prefixRelationId = context.prefixRelationId(ordinal);
+			if (!query.isStatementPattern(prefixRelationId)
+					|| !predicate.equals(query.statementPatternValue(prefixRelationId, 1))) {
+				continue;
+			}
+			for (int prefixComponent = 0; prefixComponent < 4; prefixComponent++) {
+				String prefixName = variableName(query, prefixRelationId, prefixComponent);
+				if (prefixName == null || !containsVariable(query, relationId, prefixName)) {
+					continue;
+				}
+				if (pattern == null) {
+					pattern = annotatedStatementPattern(query, relationId);
+				}
+				double candidateRows = runtime.packedTransitionRows(pattern, prefixName, patternRows,
+						context.prefixRows());
+				if (Double.isFinite(candidateRows)
+						&& (!Double.isFinite(transitionRows) || candidateRows < transitionRows)) {
+					transitionRows = candidateRows;
+				}
+			}
+		}
+		return transitionRows;
+	}
+
+	private static boolean containsVariable(PackedQueryView query, int relationId, String variableName) {
+		for (int component = 0; component < 4; component++) {
+			if (variableName.equals(variableName(query, relationId, component))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static String variableName(PackedQueryView query, int relationId, int component) {
+		return query.statementPatternValue(relationId, component) == null
+				? query.statementPatternName(relationId, component)
+				: null;
 	}
 
 	/**

@@ -91,6 +91,22 @@ final class PackedSelectedPlanContextualizer {
 			childWinnerScratch[childOffset + 1] = winnerByDepth[depth + 1];
 			rows = rowsByDepth[depth + 1];
 			cost = saturatedAdd(leftCost, costsByDepth[depth + 1], rows);
+		} else if (operator == PackedRelOp.LEFT_JOIN && childCount == 2) {
+			int leftWinnerId = memo.winnerChildWinnerId(winnerId, 0);
+			visit(leftWinnerId, prefixCount, prefixRows, depth + 1);
+			int contextualLeft = winnerByDepth[depth + 1];
+			double leftRows = rowsByDepth[depth + 1];
+			double leftCost = costsByDepth[depth + 1];
+			int rightPrefixCount = prefixCount;
+			if (assuresAllFactorOutputs(contextualLeft)) {
+				rightPrefixCount = appendFactors(contextualLeft, prefixCount);
+			}
+			int rightWinnerId = memo.winnerChildWinnerId(winnerId, 1);
+			visit(rightWinnerId, rightPrefixCount, leftRows, depth + 1);
+			childWinnerScratch[childOffset] = contextualLeft;
+			childWinnerScratch[childOffset + 1] = winnerByDepth[depth + 1];
+			rows = wrapperRows(winnerId, leftRows);
+			cost = saturatedAdd(leftCost, costsByDepth[depth + 1], wrapperLocalWork(winnerId, rows));
 		} else if (childCount == 0) {
 			rows = leafRows(winnerId, physicalExpressionId, prefixCount, prefixRows);
 			cost = leafWork(winnerId, rows);
@@ -310,6 +326,52 @@ final class PackedSelectedPlanContextualizer {
 			start = appendFactors(memo.winnerChildWinnerId(winnerId, ordinal), start);
 		}
 		return start;
+	}
+
+	private boolean assuresAllFactorOutputs(int winnerId) {
+		int physicalExpressionId = memo.winnerPhysicalExpressionId(winnerId);
+		int operator = memo.physicalOperatorTag(physicalExpressionId);
+		int childCount = memo.winnerChildCount(winnerId);
+		if (childCount == 0) {
+			int relationId = memo.physicalSourceLogicalExpressionId(physicalExpressionId);
+			if (relationId <= 0 || relationId > query.relationCount()) {
+				return false;
+			}
+			return switch (query.relOperator(relationId)) {
+			case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.TRIPLE_REF, PackedRelOp.REIFIED_TRIPLE_REF, PackedRelOp.ANNOTATION_TRIPLE_REF -> true;
+			case PackedRelOp.BINDING_SET_ASSIGNMENT -> bindingAssignmentAssuresAllOutputs(relationId);
+			default -> false;
+			};
+		}
+		if (operator == PackedRelOp.JOIN || operator == PackedRelOp.LATERAL) {
+			for (int ordinal = 0; ordinal < childCount; ordinal++) {
+				if (!assuresAllFactorOutputs(memo.winnerChildWinnerId(winnerId, ordinal))) {
+					return false;
+				}
+			}
+			return true;
+		}
+		if (operator == PackedRelOp.FILTER || operator == PackedRelOp.QUERY_ROOT
+				|| operator == PackedRelOp.DESCRIBE || operator == PackedRelOp.SLICE
+				|| operator == PackedRelOp.REDUCED || operator == PackedRelOp.DISTINCT
+				|| operator == PackedRelOp.MATERIALIZE || operator == PackedRelOp.ORDER) {
+			return assuresAllFactorOutputs(memo.winnerChildWinnerId(winnerId, 0));
+		}
+		return false;
+	}
+
+	private boolean bindingAssignmentAssuresAllOutputs(int relationId) {
+		int rowCount = queryView.bindingAssignmentRowCount(relationId);
+		int outputCount = queryView.outputBindingCount(relationId);
+		if (rowCount == 0) {
+			return false;
+		}
+		for (int rowOrdinal = 0; rowOrdinal < rowCount; rowOrdinal++) {
+			if (queryView.bindingRowSize(queryView.bindingAssignmentRowId(relationId, rowOrdinal)) != outputCount) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private static int maximumChildCount(PackedQuery query) {
