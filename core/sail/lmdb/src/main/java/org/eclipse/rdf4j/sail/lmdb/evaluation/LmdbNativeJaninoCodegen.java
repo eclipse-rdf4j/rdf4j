@@ -152,7 +152,6 @@ final class LmdbNativeJaninoCodegen {
 	}
 
 	private static void schedule(Entry entry, String shapeKey, String className, Supplier<String> sourceSupplier) {
-		Thread.dumpStack();
 		compiler().execute(() -> {
 			long start = System.nanoTime();
 			String source = null;
@@ -169,11 +168,11 @@ final class LmdbNativeJaninoCodegen {
 				dump(className, source, null);
 				entry.constructor = constructor;
 				COMPILATIONS.incrementAndGet();
-				System.out.println("Janino kernel cache: " + CACHE_HITS.get() + " hits, " + CACHE_MISSES.get()
-						+ " misses, "
-						+ EVICTIONS.get() + " evictions, " + COMPILATIONS.get() + " compilations, "
-						+ COMPILE_FAILURES.get() + " failures, " + KERNEL_INSTANTIATIONS.get() + " instantiations, "
-						+ FALLBACKS.get() + " fallbacks");
+//				System.out.println("Janino kernel cache: " + CACHE_HITS.get() + " hits, " + CACHE_MISSES.get()
+//						+ " misses, "
+//						+ EVICTIONS.get() + " evictions, " + COMPILATIONS.get() + " compilations, "
+//						+ COMPILE_FAILURES.get() + " failures, " + KERNEL_INSTANTIATIONS.get() + " instantiations, "
+//						+ FALLBACKS.get() + " fallbacks");
 			} catch (Throwable problem) {
 				COMPILE_FAILURES.incrementAndGet();
 				dump(className, source, problem);

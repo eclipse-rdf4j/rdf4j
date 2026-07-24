@@ -733,6 +733,42 @@ final class CachedCompareFilter implements NativeBooleanFilter {
  * AND/OR of two compiled boolean filters. A named class rather than a lambda so fork-, close- and read-mask behavior
  * compose from the children: a conjunction of forkable comparisons stays forkable for parallel workers.
  */
+/**
+ * Named negation wrapper (NOT over an error-free operand, e.g. NOT EXISTS). Semantically identical to the anonymous
+ * {@code row -> !delegate.accept(row)} it replaces, but introspectable: the kernel lowering recognizes negated
+ * existence witnesses through the {@code delegate} field (plan:
+ * plans/lmdb-native-engine/21-kernel-lowering-aggregate.md).
+ */
+@Experimental
+final class NegatedNativeBooleanFilter implements NativeBooleanFilter {
+	final NativeBooleanFilter delegate;
+
+	NegatedNativeBooleanFilter(NativeBooleanFilter delegate) {
+		this.delegate = delegate;
+	}
+
+	@Override
+	public boolean accept(RowState row) {
+		return !delegate.accept(row);
+	}
+
+	@Override
+	public boolean parallelWorkerForkable() {
+		return delegate.parallelWorkerForkable();
+	}
+
+	@Override
+	public NativeBooleanFilter forkForParallelWorker() {
+		NativeBooleanFilter forked = delegate.forkForParallelWorker();
+		return forked == delegate ? this : new NegatedNativeBooleanFilter(forked);
+	}
+
+	@Override
+	public void close() {
+		delegate.close();
+	}
+}
+
 @Experimental
 final class BooleanCombinationFilter implements NativeBooleanFilter {
 	final NativeBooleanFilter left;

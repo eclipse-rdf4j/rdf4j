@@ -39,6 +39,23 @@ import org.junit.jupiter.api.io.TempDir;
  * dispatch order is what gets exercised.
  */
 public class LmdbNativeStrategyPriorityTest {
+	// This class asserts interpreted-strategy internals; the IR kernel rung must stay off so it cannot absorb the
+	// shapes first (plan: plans/lmdb-native-engine/20-kernel-lowering-row.md).
+	private static String previousJaninoCodegenEnabled;
+
+	@org.junit.jupiter.api.BeforeAll
+	static void disableKernelCodegen() {
+		previousJaninoCodegenEnabled = System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
+	}
+
+	@org.junit.jupiter.api.AfterAll
+	static void restoreKernelCodegen() {
+		if (previousJaninoCodegenEnabled == null) {
+			System.clearProperty("rdf4j.lmdb.janinoCodegen.enabled");
+		} else {
+			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", previousJaninoCodegenEnabled);
+		}
+	}
 
 	private static final String EX = "http://example.com/";
 	private static final int SUBJECTS = 4200;

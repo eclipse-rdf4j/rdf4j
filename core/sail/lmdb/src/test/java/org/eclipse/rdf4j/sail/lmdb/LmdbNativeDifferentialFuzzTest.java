@@ -432,6 +432,190 @@ public class LmdbNativeDifferentialFuzzTest {
 		}
 	}
 
+	@Test
+	public void irKernelBasicGraphPatterns() {
+		// Forced-on differential round for the general IR-lowered kernel rung (plan 20, M1). The fixed queries use
+		// shapes the shape-specific pipeline recognizer declines (VALUES seeds, folded IN sets, value-tier filters),
+		// so the engagement assertion proves the lowering path itself.
+		String edge = "<" + EX + "edge>";
+		String prevEnabled = System.getProperty("rdf4j.lmdb.janinoCodegen.enabled");
+		String prevThreshold = System.getProperty("rdf4j.lmdb.janinoCodegen.thresholdRows");
+		String prevWcoj = System.getProperty("rdf4j.lmdb.wcoj.enabled");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
+		System.setProperty("rdf4j.lmdb.wcoj.enabled", "false");
+		org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess.resetMetrics();
+		try {
+			List<String> queries = new ArrayList<>();
+			queries.add("SELECT * WHERE { VALUES ?a { <" + EX + "s1> <" + EX + "s8> <" + EX + "s15> } ?a " + edge
+					+ " ?b . ?b " + edge + " ?c . }");
+			queries.add("SELECT * WHERE { VALUES ?a { <" + EX + "s2> <" + EX + "s9> } ?a " + edge + " ?b . ?b "
+					+ edge + " ?c . FILTER(?a != ?c) }");
+			queries.add("SELECT * WHERE { VALUES ?a { <" + EX + "s1> <" + EX + "s2> <" + EX + "s3> <" + EX
+					+ "s4> } ?a " + edge + " ?b . ?b " + edge + " ?c . FILTER(STRSTARTS(STR(?c), \"" + EX
+					+ "\")) }");
+			queries.add("SELECT * WHERE { ?a <" + EX + "p1> ?b . ?b " + edge + " ?c . FILTER(?b IN (<" + EX
+					+ "s8>, <" + EX + "s9>, <" + EX + "s10>)) }");
+			Random random = new Random(SEED + 92);
+			String[] preds = { "p1", "p2", "p3", "p4", "p5", "edge" };
+			String[] seeds = { "s1", "s2", "s3", "s8", "s9", "s15" };
+			for (int i = 0; i < 30; i++) {
+				int len = 2 + random.nextInt(3);
+				StringBuilder where = new StringBuilder();
+				where.append("VALUES ?v0 { ");
+				int seedCount = 1 + random.nextInt(3);
+				for (int s = 0; s < seedCount; s++) {
+					where.append('<').append(EX).append(seeds[random.nextInt(seeds.length)]).append("> ");
+				}
+				where.append("} ");
+				for (int j = 0; j < len; j++) {
+					where.append("?v")
+							.append(j)
+							.append(" <")
+							.append(EX)
+							.append(preds[random.nextInt(preds.length)])
+							.append("> ?v")
+							.append(j + 1)
+							.append(" . ");
+				}
+				if (random.nextBoolean()) {
+					where.append("FILTER(?v0 != ?v").append(len).append(") ");
+				}
+				String distinct = random.nextBoolean() ? "DISTINCT " : "";
+				queries.add("SELECT " + distinct + "* WHERE { " + where + "}");
+			}
+			for (String query : queries) {
+				for (int warm = 0; warm < 3; warm++) {
+					evaluate(query);
+				}
+				assertSameResults(query);
+			}
+			assertThat(org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess.opened())
+					.as("the IR kernel rung never engaged during the forced-on round")
+					.isGreaterThan(0L);
+		} finally {
+			restoreProperty("rdf4j.lmdb.janinoCodegen.enabled", prevEnabled);
+			restoreProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", prevThreshold);
+			restoreProperty("rdf4j.lmdb.wcoj.enabled", prevWcoj);
+		}
+	}
+
+	@Test
+	public void irAggregateWitnessShapes() {
+		// Forced-on differential round for the IR aggregate rung (plan 21, M2): EXISTS / NOT EXISTS / MINUS
+		// witnesses, grouped and global counts, SUM/MIN/MAX (incl. non-integer inputs proving the exactness guard's
+		// discard-and-rerun path stays correct).
+		String edge = "<" + EX + "edge>";
+		String p1 = "<" + EX + "p1>";
+		String p2 = "<" + EX + "p2>";
+		String prevEnabled = System.getProperty("rdf4j.lmdb.janinoCodegen.enabled");
+		String prevThreshold = System.getProperty("rdf4j.lmdb.janinoCodegen.thresholdRows");
+		String prevWcoj = System.getProperty("rdf4j.lmdb.wcoj.enabled");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
+		System.setProperty("rdf4j.lmdb.wcoj.enabled", "false");
+		org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess.resetMetrics();
+		try {
+			List<String> queries = new ArrayList<>();
+			queries.add("SELECT (COUNT(DISTINCT ?a) AS ?n) WHERE { ?a " + edge + " ?b . "
+					+ "FILTER NOT EXISTS { ?a " + p1 + " ?x } }");
+			queries.add("SELECT (COUNT(DISTINCT ?a) AS ?n) WHERE { ?a " + edge + " ?b . "
+					+ "FILTER EXISTS { ?b " + edge + " ?c } }");
+			queries.add("SELECT ?a (COUNT(?b) AS ?n) WHERE { ?a " + edge + " ?b . "
+					+ "FILTER EXISTS { ?b " + edge + " ?c . ?c " + edge + " ?a } } GROUP BY ?a");
+			queries.add("SELECT (COUNT(DISTINCT ?a) AS ?n) WHERE { ?a " + edge + " ?b . "
+					+ "MINUS { ?a " + p2 + " ?x } }");
+			queries.add("SELECT ?a (COUNT(DISTINCT ?b) AS ?n) WHERE { ?a " + edge + " ?b . "
+					+ "MINUS { ?a " + p1 + " ?x . ?x " + p2 + " ?y } } GROUP BY ?a");
+			// SUM/MIN/MAX over mixed store values: non-integer inputs must round-trip through the guard's
+			// interpreted rerun with identical results.
+			queries.add("SELECT (SUM(?o) AS ?total) (MIN(?o) AS ?lo) (MAX(?o) AS ?hi) WHERE { ?s " + p1 + " ?o }");
+			queries.add("SELECT ?a (COUNT(?b) AS ?n) WHERE { ?a " + edge + " ?b . "
+					+ "FILTER NOT EXISTS { ?b " + edge + " ?a } } GROUP BY ?a");
+			for (String query : queries) {
+				for (int warm = 0; warm < 3; warm++) {
+					evaluate(query);
+				}
+				assertSameResults(query);
+			}
+			assertThat(org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess.aggPlanned())
+					.as("the IR aggregate lowering never recognized a shape during the forced-on round")
+					.isGreaterThan(0L);
+		} finally {
+			restoreProperty("rdf4j.lmdb.janinoCodegen.enabled", prevEnabled);
+			restoreProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", prevThreshold);
+			restoreProperty("rdf4j.lmdb.wcoj.enabled", prevWcoj);
+		}
+	}
+
+	@Test
+	public void irKernelOptionalShapes() {
+		// Forced-on differential round for OPTIONAL lowering (plan 22, M3): LeftProbe null arms, chained and
+		// sibling OPTIONALs, and BOUND/optional-var filters above the left join (hook tier: the -1-arg-leaves-
+		// slot-unbound scratch convention is load-bearing here).
+		String edge = "<" + EX + "edge>";
+		String p1 = "<" + EX + "p1>";
+		String p2 = "<" + EX + "p2>";
+		String prevEnabled = System.getProperty("rdf4j.lmdb.janinoCodegen.enabled");
+		String prevThreshold = System.getProperty("rdf4j.lmdb.janinoCodegen.thresholdRows");
+		String prevWcoj = System.getProperty("rdf4j.lmdb.wcoj.enabled");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
+		System.setProperty("rdf4j.lmdb.wcoj.enabled", "false");
+		org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess.resetMetrics();
+		try {
+			List<String> queries = new ArrayList<>();
+			queries.add("SELECT * WHERE { VALUES ?a { <" + EX + "s1> <" + EX + "s8> } ?a " + edge + " ?b . "
+					+ "OPTIONAL { ?b " + p1 + " ?x } }");
+			queries.add("SELECT * WHERE { VALUES ?a { <" + EX + "s2> <" + EX + "s9> <" + EX + "s15> } ?a " + edge
+					+ " ?b . OPTIONAL { ?b " + p1 + " ?x } OPTIONAL { ?b " + p2 + " ?y } }");
+			queries.add("SELECT * WHERE { VALUES ?a { <" + EX + "s1> <" + EX + "s2> } ?a " + edge + " ?b . "
+					+ "OPTIONAL { ?b " + p2 + " ?x } FILTER(!BOUND(?x) || ?x != ?a) }");
+			queries.add("SELECT ?a (COUNT(?x) AS ?n) WHERE { VALUES ?a { <" + EX + "s8> <" + EX + "s9> } ?a "
+					+ edge + " ?b . OPTIONAL { ?b " + p1 + " ?x } } GROUP BY ?a");
+			Random random = new Random(SEED + 93);
+			String[] preds = { "p1", "p2", "p3", "p4", "p5", "edge" };
+			String[] seeds = { "s1", "s2", "s3", "s8", "s9", "s15" };
+			for (int i = 0; i < 25; i++) {
+				StringBuilder where = new StringBuilder();
+				where.append("VALUES ?v0 { <")
+						.append(EX)
+						.append(seeds[random.nextInt(seeds.length)])
+						.append("> <")
+						.append(EX)
+						.append(seeds[random.nextInt(seeds.length)])
+						.append("> } ");
+				where.append("?v0 <").append(EX).append(preds[random.nextInt(preds.length)]).append("> ?v1 . ");
+				int optionals = 1 + random.nextInt(2);
+				for (int j = 0; j < optionals; j++) {
+					where.append("OPTIONAL { ?v1 <")
+							.append(EX)
+							.append(preds[random.nextInt(preds.length)])
+							.append("> ?o")
+							.append(j)
+							.append(" } ");
+				}
+				if (random.nextBoolean()) {
+					where.append("FILTER(!BOUND(?o0) || ?o0 != ?v0) ");
+				}
+				queries.add("SELECT * WHERE { " + where + "}");
+			}
+			for (String query : queries) {
+				for (int warm = 0; warm < 3; warm++) {
+					evaluate(query);
+				}
+				assertSameResults(query);
+			}
+			assertThat(org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess.opened())
+					.as("the IR kernel rung never engaged during the OPTIONAL round")
+					.isGreaterThan(0L);
+		} finally {
+			restoreProperty("rdf4j.lmdb.janinoCodegen.enabled", prevEnabled);
+			restoreProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", prevThreshold);
+			restoreProperty("rdf4j.lmdb.wcoj.enabled", prevWcoj);
+		}
+	}
+
 	private static void restoreProperty(String key, String previous) {
 		if (previous == null) {
 			System.clearProperty(key);

@@ -358,7 +358,14 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 	}
 
 	NativeBooleanFilter compileBoolean(ValueExpr expr, long assuredMask) {
-		if (!syntheticVarNames.isEmpty()
+		// EXISTS wrappers are exempt from the synthetic-var short-circuit (plan 22, Step 0): the guard's purpose —
+		// never raw-id-compare a plan-local synthetic id against store ids — is enforced at every leaf compiler,
+		// and expression leaves referencing synthetic vars inside the EXISTS body still fall back to per-row
+		// generic evaluation within the compiled sub-plan. Poisoning the whole EXISTS to an unintrospectable
+		// generic lambda was coarser than that justification and blocked whole-stage kernel lowering.
+		boolean existsRoot = expr instanceof Exists
+				|| (expr instanceof Not && ((Not) expr).getArg() instanceof Exists);
+		if (!existsRoot && !syntheticVarNames.isEmpty()
 				&& !Collections.disjoint(VarNameCollector.process(expr), syntheticVarNames)) {
 			// raw-id shortcuts (IN, sameTerm, = against constants) must never compare a plan-local
 			// synthetic id against a real store id; the generic path materializes values instead
@@ -385,7 +392,7 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			// Native leaves collapse type errors to false at the row gate. Negation is safe only when the
 			// operand cannot produce an error; otherwise the generic evaluator must preserve ERROR under Not.
 			NativeBooleanFilter arg = compileBoolean(((Not) expr).getArg(), assuredMask);
-			return arg == null ? null : row -> !arg.accept(row);
+			return arg == null ? null : new NegatedNativeBooleanFilter(arg);
 		}
 		LmdbNativeCompiledBoolean nativeExpression = LmdbNativeExpressionCompiler
 				.compileBoolean(expr, source, this::existingSlot, strictCompare(), assuredMask);
@@ -395,6 +402,9 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 		if (expr instanceof Exists) {
 			Exists exists = (Exists) expr;
 			if (containsVariableScopeChange(exists.getSubQuery())) {
+				if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
+					System.err.println("[exists-compile] decline: variable-scope-change");
+				}
 				return null;
 			}
 			NativeBooleanFilter direct = compileDirectExists(exists);
@@ -402,6 +412,9 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 				return direct;
 			}
 			SlotPlan subPlan = compileTuple(exists.getSubQuery(), false);
+			if (subPlan == null && Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
+				System.err.println("[exists-compile] decline: sub-plan " + exists.getSubQuery().getSignature());
+			}
 			return subPlan == null ? null : new ExistsFilter(subPlan);
 		}
 		if (expr instanceof ListMemberOperator) {

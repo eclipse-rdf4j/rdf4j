@@ -30,12 +30,19 @@ public final class KernelContext {
 	public final long[] constants;
 	public final long[] entrySlots;
 	public final long[][] keyDomains;
+	public final KernelHooks hooks;
 
 	public KernelContext(NativeLmdbQuerySource.NativeAdjacency[] adjacencies, long[] constants, long[] entrySlots,
 			long[][] keyDomains) {
+		this(adjacencies, constants, entrySlots, keyDomains, null);
+	}
+
+	public KernelContext(NativeLmdbQuerySource.NativeAdjacency[] adjacencies, long[] constants, long[] entrySlots,
+			long[][] keyDomains, KernelHooks hooks) {
 		this.adjacencies = adjacencies;
 		this.constants = constants;
 		this.entrySlots = entrySlots;
 		this.keyDomains = keyDomains;
+		this.hooks = hooks;
 	}
 }

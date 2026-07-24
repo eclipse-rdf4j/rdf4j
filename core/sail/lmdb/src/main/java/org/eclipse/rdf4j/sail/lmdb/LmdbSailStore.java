@@ -3087,7 +3087,14 @@ class LmdbSailStore implements SailStore {
 			int direction = bySubject ? LmdbCsrAdjacencyCache.BY_SUBJECT : LmdbCsrAdjacencyCache.BY_OBJECT;
 			LmdbCsrAdjacencyCache.CsrEntry entry = csrCache.lookup(pred, direction, explicit);
 			if (entry == null) {
-				return null;
+				// Kernel-tier demand recording (plan 21): the build amortizes over the kernel's full-adjacency
+				// consumption, so it may proceed immediately (budget/admission still govern); the entry serves
+				// the NEXT open — this one declines and the ladder continues.
+				csrCache.recordKernelDemand(pred, direction, explicit, txn);
+				entry = csrCache.lookup(pred, direction, explicit);
+				if (entry == null) {
+					return null;
+				}
 			}
 			servedFromCache = true;
 			servedKeys = orderedKeys(entry, direction);

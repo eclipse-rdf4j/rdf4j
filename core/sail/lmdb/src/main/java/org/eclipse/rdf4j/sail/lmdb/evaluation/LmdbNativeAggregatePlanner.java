@@ -1201,6 +1201,11 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			}
 			NativeBooleanFilter condition = arg == null ? null
 					: compileBoolean(filter.getCondition(), SlotPlan.assuredMask(arg));
+			if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug") && condition != null) {
+				System.err.println("[filter-compile] condition=" + filter.getCondition().getClass().getSimpleName()
+						+ " compiled=" + condition.getClass().getSimpleName()
+						+ " mask=" + placeableFilterMask(filter.getCondition()));
+			}
 			return arg == null || condition == null ? null
 					: SlotPlan.filter(arg, recordFilterOutcomes(filter, condition),
 							placeableFilterMask(filter.getCondition()));

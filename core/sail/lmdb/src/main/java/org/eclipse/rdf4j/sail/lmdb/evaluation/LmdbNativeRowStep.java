@@ -829,6 +829,12 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 				return NativeUnorderedInput.rows(row, kernel);
 			}
 		}
+		// The IR rung handles more root shapes than MultiJoinPlan (LeftJoin chains since plan 22).
+		RowCursor irKernel = LmdbNativeKernelExecution.tryOpenRows(arg, row, originalExpr);
+		if (irKernel != null) {
+			LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL);
+			return NativeUnorderedInput.rows(row, irKernel);
+		}
 		boolean correlatedEntry = (arg.producedMask() & row.boundMask()) != 0L;
 		int[] retainedSlots = orderSlots.length == 0 ? sourceSlots : sortLayout.liveToPlan;
 		boolean countingBranch = multiJoin != null && LmdbNativeFactorizedRows.plansCountingBranch(multiJoin,

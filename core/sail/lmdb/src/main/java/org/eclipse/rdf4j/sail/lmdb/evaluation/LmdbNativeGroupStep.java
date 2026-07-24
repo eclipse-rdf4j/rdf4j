@@ -292,6 +292,12 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 				return fused;
 			}
 		}
+		List<BindingSet> irFused = LmdbNativeKernelExecution.tryEvaluateAggregate(arg, row, groupSlots,
+				aggregates, this, explainTarget);
+		if (irFused != null) {
+			LmdbNativeExplain.recordExecutionPath(explainTarget, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE);
+			return irFused;
+		}
 		if (AggregateSpec.allCounts(aggregates)) {
 			List<BindingSet> wcoj = evaluateWcoj(row);
 			if (wcoj != null) {
@@ -1012,6 +1018,45 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 				.createLiteral(BigInteger.valueOf(count));
 		for (AggregateSpec aggregate : aggregates) {
 			result.addBinding(aggregate.name, countLiteral);
+		}
+		return result;
+	}
+
+	/**
+	 * Generalized emission for IR-lowered aggregate kernels (plan:
+	 * plans/lmdb-native-engine/21-kernel-lowering-aggregate.md): the packed row holds the group ids first, then one
+	 * encoded value per aggregate output. Counts bind as xsd:integer; guarded-exact SUMs decode from double bits to an
+	 * integer literal (the execution rung discards the whole result when the exactness guard fails); MIN/MAX carry the
+	 * winning value id, resolved lazily, with the binding omitted when no input row contributed (matching the generic
+	 * evaluator's empty-aggregate behavior).
+	 */
+	BindingSet kernelGroupRow(long[] rowBuf, int base, LmdbNativeKernelBindings.KernelGroupLayout layout) {
+		QueryBindingSet result = new QueryBindingSet(layout.groupEngineSlots.length + layout.outs.length);
+		for (int i = 0; i < layout.groupEngineSlots.length; i++) {
+			long id = rowBuf[base + i];
+			if (id != UNKNOWN && id != NULL_CONTEXT_ID) {
+				result.addBinding(slotNames[layout.groupEngineSlots[i]], source.lazyValue(id));
+			}
+		}
+		int offset = base + layout.groupEngineSlots.length;
+		for (int i = 0; i < layout.outs.length; i++) {
+			LmdbNativeKernelBindings.AggOut out = layout.outs[i];
+			long raw = rowBuf[offset + i];
+			switch (out.encoding) {
+			case LmdbNativeKernelBindings.ENC_LONG_COUNT:
+				result.addBinding(out.spec.name,
+						SimpleValueFactory.getInstance().createLiteral(BigInteger.valueOf(raw)));
+				break;
+			case LmdbNativeKernelBindings.ENC_SUM_DOUBLE_BITS:
+				result.addBinding(out.spec.name, SimpleValueFactory.getInstance()
+						.createLiteral(BigInteger.valueOf((long) Double.longBitsToDouble(raw))));
+				break;
+			default: // ENC_VALUE_ID
+				if (raw != UNKNOWN) {
+					result.addBinding(out.spec.name, source.lazyValue(raw));
+				}
+				break;
+			}
 		}
 		return result;
 	}

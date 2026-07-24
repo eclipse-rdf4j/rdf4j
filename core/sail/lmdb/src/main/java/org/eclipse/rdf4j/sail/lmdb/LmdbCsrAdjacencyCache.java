@@ -285,6 +285,62 @@ final class LmdbCsrAdjacencyCache {
 	 * Flush path for decorated probes: accumulates observed probe opens for the shape and, when the adaptive trigger
 	 * fires, builds the entry inline on the calling (query) thread. The CAS loser never waits — it keeps LMDB-probing.
 	 */
+	/**
+	 * Kernel-tier demand (plan 21): a whole-stage kernel requested this view. Unlike incidental probe traffic, one
+	 * kernel execution consumes the entire adjacency, so the two-pass build sweep is amortized by construction — the
+	 * probe-count amortization gate is skipped and only failure backoff, entry byte budget, and cache admission govern
+	 * the build. Predicates reached solely through EXISTS filters or scans never issue keyed probes, so without this
+	 * entry point such views would never build and kernels would decline forever.
+	 */
+	void recordKernelDemand(long pred, int direction, boolean explicit, Txn txn) {
+		if (closed.get() || storeTxnStarted.get()) {
+			return;
+		}
+		CsrSlot slot = slots.computeIfAbsent(slotKey(pred, direction, explicit), key -> new CsrSlot());
+		slot.pendingAccesses.add(PROBE_FLUSH_INTERVAL);
+		slot.probeOpens.addAndGet(PROBE_FLUSH_INTERVAL);
+		if (slot.entry != null) {
+			return;
+		}
+		maybeSignalAutoWarm(slot);
+		long revision = tripleStore.getDataRevision();
+		if (slot.failedBuilds >= MAX_BUILD_FAILURES_PER_REVISION && slot.failRevision == revision) {
+			return;
+		}
+		double predCard = predicateCardinality(slot, pred, revision);
+		if (!Double.isFinite(predCard) || predCard <= 0) {
+			kernelDemandTrace(pred, direction, "no-cardinality " + predCard);
+			return;
+		}
+		long estimatedBytes = estimateBytes((long) predCard);
+		if (estimatedBytes > maxEntryBytes()) {
+			kernelDemandTrace(pred, direction, "over-entry-budget " + estimatedBytes);
+			recordRefusal();
+			return;
+		}
+		if (!admitBuild(slot, predCard, estimatedBytes)) {
+			kernelDemandTrace(pred, direction, "admission-refused");
+			return;
+		}
+		if (!slot.building.compareAndSet(false, true)) {
+			return;
+		}
+		try {
+			build(slot, pred, direction, explicit, txn);
+		} catch (IOException | RuntimeException e) {
+			kernelDemandTrace(pred, direction, "build-failed " + e);
+			recordBuildFailure(slot);
+		} finally {
+			slot.building.set(false);
+		}
+	}
+
+	private static void kernelDemandTrace(long pred, int direction, String reason) {
+		if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
+			System.err.println("[csr-kernel-demand] pred=" + pred + " dir=" + direction + " " + reason);
+		}
+	}
+
 	void recordProbes(long pred, int direction, boolean explicit, int opens, Txn txn) {
 		if (closed.get()) {
 			return;
