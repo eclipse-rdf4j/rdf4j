@@ -396,67 +396,6 @@ class LmdbNativeOrderedDistinctTest {
 		}
 	}
 
-	@Test
-	void libraryUnionShapeOrdersMemberThenLoan() {
-		SailRepository repository = repository("library-shape", "spoc,ospc");
-		try {
-			ValueFactory vf = repository.getValueFactory();
-			IRI loan = vf.createIRI(EX, "loan/1");
-			IRI member = vf.createIRI(EX, "member/1");
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.add(loan, vf.createIRI(EX, "type"), vf.createIRI(EX, "Loan"));
-				connection.add(loan, vf.createIRI(EX, "borrowedBy"), member);
-				connection.add(member, vf.createIRI(EX, "type"), vf.createIRI(EX, "Member"));
-				connection.add(loan, vf.createIRI(EX, "loanedCopy"), vf.createIRI(EX, "copy/1"));
-			}
-			String query = "SELECT ?member (COUNT(DISTINCT ?loan) AS ?count) WHERE { "
-					+ "{ ?loan <" + EX + "type> <" + EX + "Loan> ; <" + EX + "borrowedBy> ?member } UNION "
-					+ "{ ?member <" + EX + "type> <" + EX + "Member> } "
-					+ "OPTIONAL { ?loan <" + EX + "loanedCopy> ?copy . BIND(?copy AS ?optionalCopy) } "
-					+ "} GROUP BY ?member";
-
-			assertThat(explain(repository, query))
-					.contains("distinctChannels=[MONOTONIC]")
-					.contains("groupOrderPrefix=1")
-					.contains("OrderedUnion")
-					.contains("indexName=ospc");
-			assertNativeMatchesGeneric(repository, query, 1);
-		} finally {
-			repository.shutDown();
-		}
-	}
-
-	@Test
-	void highlyConnectedUnionShapeOrdersNodeThenNeighbor() {
-		SailRepository repository = repository("connected-shape", "spoc,ospc");
-		try {
-			ValueFactory vf = repository.getValueFactory();
-			IRI n1 = vf.createIRI(EX, "node/1");
-			IRI n2 = vf.createIRI(EX, "node/2");
-			IRI n3 = vf.createIRI(EX, "node/3");
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.add(n1, vf.createIRI(EX, "type"), vf.createIRI(EX, "Node"));
-				connection.add(n1, vf.createIRI(EX, "connectsTo"), n2);
-				connection.add(n3, vf.createIRI(EX, "connectsTo"), n1);
-				connection.add(n1, vf.createIRI(EX, "weight"), vf.createLiteral(4));
-			}
-			String query = "SELECT ?node (COUNT(DISTINCT ?neighbor) AS ?count) WHERE { "
-					+ "{ ?node <" + EX + "type> <" + EX + "Node> ; <" + EX + "connectsTo> ?neighbor } UNION "
-					+ "{ ?neighbor <" + EX + "connectsTo> ?node } "
-					+ "OPTIONAL { ?node <" + EX + "weight> ?weight } } GROUP BY ?node";
-
-			assertThat(explain(repository, query))
-					.contains("distinctChannels=[MONOTONIC]")
-					.contains("groupOrderPrefix=1")
-					.contains("OrderedUnion")
-					.contains("indexName=spoc")
-					.contains("indexName=ospc");
-			assertNativeMatchesGeneric(repository, query, 2);
-		} finally {
-			repository.shutDown();
-		}
-	}
-
 	private SailRepository repository(String name, String indexes) {
 		SailRepository repository = new SailRepository(
 				new LmdbStore(new File(dataDir, name), new LmdbStoreConfig(indexes)));

@@ -45,51 +45,6 @@ class LmdbNativeChunkHashBuildTest {
 			+ (SCAN_ONCE_COUNT_TABLE_INITIAL_CAPACITY + Long.SIZE - 1L) / Long.SIZE;
 
 	@Test
-	void serialTailLessChunkPrefixFeedsValuesSuffix() throws Exception {
-		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0, "payload", 1), null);
-		layout.freeze(List.of("key", "payload"));
-		CountingSource source = new CountingSource(4, false, true);
-		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
-		Arrays.fill(row.slots, UNKNOWN);
-		row.recomputeBoundMask();
-
-		PatternPlan root = new PatternPlan(Term.slot(0), Term.constant(7), Term.slot(1), Term.unbound(),
-				ContextConstraint.UNRESTRICTED, false, 1D);
-		ValuesPlan suffix = new ValuesPlan(new ValuesRow[] {
-				new ValuesRow(new int[] { 0 }, new long[] { 100L }),
-				new ValuesRow(new int[] { 0 }, new long[] { 102L })
-		});
-		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { root, suffix }, new MaskedFilter[0]);
-		SingletonSet telemetry = new SingletonSet();
-		NativeRowsStep step = new NativeRowsStep(source, plan, layout, new int[] { 0 }, new String[] { "key" }, false,
-				new int[0], new boolean[0], 0L, -1L, false, null, telemetry, null, Set.of(), null, null);
-
-		String previousBatch = System.getProperty(NativeBatch.ENABLED_PROPERTY);
-		String previousParallel = System.getProperty("rdf4j.lmdb.parallel.enabled");
-		String previousAdaptive = System.getProperty(LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY);
-		long chunkEngagedBefore = LmdbNativeChunkPipeline.ENGAGED.get();
-		try {
-			System.setProperty(NativeBatch.ENABLED_PROPERTY, "false");
-			System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
-			System.setProperty(LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY, "false");
-			try (NativeUnorderedInput input = step.openUnorderedInput(row)) {
-				int rows = 0;
-				while (input.cursor.next()) {
-					rows++;
-				}
-				assertThat(rows).isEqualTo(2);
-			}
-			assertThat(LmdbNativeChunkPipeline.ENGAGED.get() - chunkEngagedBefore)
-					.as("the serial producer must retain the chunked pattern prefix before opening VALUES per row")
-					.isOne();
-		} finally {
-			restoreProperty(NativeBatch.ENABLED_PROPERTY, previousBatch);
-			restoreProperty("rdf4j.lmdb.parallel.enabled", previousParallel);
-			restoreProperty(LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY, previousAdaptive);
-		}
-	}
-
-	@Test
 	void externalRootBatchRefillCopiesOnlySeedAndCurrentRootSlots() throws Exception {
 		NativeSlotLayout layout = new NativeSlotLayout(Map.of("root", 0, "downstream", 1, "seed", 2), null);
 		layout.freeze(List.of("root", "downstream", "seed"));

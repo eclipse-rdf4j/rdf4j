@@ -150,8 +150,8 @@ public interface NativeLmdbQuerySource {
 
 		/**
 		 * The immutable, unsigned-ascending probe-key vector owned by the adjacency entry serving this probe, or
-		 * {@code null} when no single entry owns every result. The returned array is borrowed: callers may retain the
-		 * reference for the probe stage's lifetime but must never mutate it.
+		 * {@code null} when no single entry owns every result or the entry cannot prove that key order. The returned
+		 * array is borrowed: callers may retain the reference for the probe stage's lifetime but must never mutate it.
 		 */
 		default long[] adjacencyCacheKeys() {
 			return null;

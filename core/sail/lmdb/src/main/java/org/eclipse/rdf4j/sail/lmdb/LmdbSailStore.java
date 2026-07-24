@@ -3082,13 +3082,15 @@ class LmdbSailStore implements SailStore {
 		}
 
 		NativeLmdbQuerySource.NativeAdjacency adjacency(long pred, boolean bySubject) {
+			servedFromCache = false;
+			servedKeys = null;
 			int direction = bySubject ? LmdbCsrAdjacencyCache.BY_SUBJECT : LmdbCsrAdjacencyCache.BY_OBJECT;
 			LmdbCsrAdjacencyCache.CsrEntry entry = csrCache.lookup(pred, direction, explicit);
 			if (entry == null) {
 				return null;
 			}
 			servedFromCache = true;
-			servedKeys = entry.keysByDense;
+			servedKeys = orderedKeys(entry, direction);
 			if (entry != adjacencyEntry) {
 				adjacencyEntry = entry;
 				adjacency = new CsrNativeAdjacency(entry);
@@ -3098,6 +3100,8 @@ class LmdbSailStore implements SailStore {
 
 		/** Serves the probe from the cache, or returns {@code null} for the ordinary LMDB path. */
 		RecordIterator tryServe(long subj, long pred, long obj, long context) {
+			servedFromCache = false;
+			servedKeys = null;
 			if (pred <= 0 || (subj > 0) == (obj > 0)) {
 				return null;
 			}
@@ -3110,7 +3114,7 @@ class LmdbSailStore implements SailStore {
 				iterator.init(entry, direction == LmdbCsrAdjacencyCache.BY_SUBJECT ? subj : obj, pred, context,
 						direction);
 				servedFromCache = true;
-				servedKeys = entry.keysByDense;
+				servedKeys = orderedKeys(entry, direction);
 				return iterator;
 			}
 			if (pred != pendingPred || direction != pendingDirection) {
@@ -3124,6 +3128,13 @@ class LmdbSailStore implements SailStore {
 				pendingDirection = direction;
 			}
 			return null;
+		}
+
+		private long[] orderedKeys(LmdbCsrAdjacencyCache.CsrEntry entry, int direction) {
+			StatementOrder keyOrder = direction == LmdbCsrAdjacencyCache.BY_SUBJECT
+					? StatementOrder.S
+					: StatementOrder.O;
+			return entry.scanEmissionOrder == keyOrder ? entry.keysByDense : null;
 		}
 
 		void flushPending() {

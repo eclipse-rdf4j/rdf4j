@@ -292,6 +292,12 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 				return fused;
 			}
 		}
+		if (AggregateSpec.allCounts(aggregates)) {
+			List<BindingSet> wcoj = evaluateWcoj(row);
+			if (wcoj != null) {
+				return wcoj;
+			}
+		}
 		if (!SlotPlan.encounterOrderReplaySafe(arg)) {
 			LmdbNativeAttemptMetrics metrics = LmdbNativeAttemptMetrics.root(explainTarget);
 			try {
@@ -319,6 +325,32 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 			filterLease.abort(failure);
 			throw failure;
 		}
+	}
+
+	private List<BindingSet> evaluateWcoj(RowState row) {
+		RowCursor cursor;
+		try {
+			cursor = LmdbNativeLeapfrogJoin.tryOpen(arg, row);
+		} catch (IOException e) {
+			throw new QueryEvaluationException(e);
+		}
+		if (cursor == null) {
+			return null;
+		}
+		LmdbNativeAttemptMetrics metrics = LmdbNativeAttemptMetrics.root(explainTarget);
+		NativeGroupTable table = NativeGroupTable.create(groupSlots, aggregates, aggContext,
+				sequentialDistinctChannels, true, true);
+		try (cursor) {
+			while (cursor.next()) {
+				table.add(row);
+			}
+		} catch (IOException e) {
+			throw new QueryEvaluationException(e);
+		}
+		List<BindingSet> results = table.results(this, metrics);
+		metrics.deferStrategy(explainTarget, LmdbNativeAttemptMetrics.PATH_WCOJ);
+		metrics.commitToParent();
+		return results;
 	}
 
 	private NativeGroupIteration withArg(SlotPlan attemptArg) {

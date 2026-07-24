@@ -18,7 +18,9 @@ import java.io.File;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
@@ -632,6 +634,68 @@ public class LmdbNativeOrderedFactorizedTest {
 	}
 
 	@Test
+	public void classicSortPreservesHiddenTailOrderKeyAndMultiplicity() {
+		Map<String, String> previous = setProperties(Map.of(
+				"rdf4j.lmdb.orderedFactorizedRows.enabled", "false",
+				NativeBatch.ENABLED_PROPERTY, "false",
+				"rdf4j.lmdb.parallel.enabled", "false"));
+		try {
+			String query = "PREFIX ex: <" + EX + ">\n"
+					+ "SELECT ?s ?y WHERE { ?s ex:p1 ?x . ?x ex:p2 ?y . ?y ex:p3 ?z } "
+					+ "ORDER BY DESC(?z) ?y ?s";
+			List<String> expected = genericRows(query);
+			long factorizedBefore = LmdbNativeFactorizedRows.ENGAGED.get();
+			long orderedSortsBefore = NativeRowsStep.ORDERED_FACTORIZED_SORTS.get();
+			long orderedTopKBefore = NativeRowsStep.ORDERED_FACTORIZED_TOPK.get();
+
+			List<String> actual = rows(repository, query);
+
+			assertThat(actual)
+					.as("ordinary factorization must retain an unprojected tail key for descending full sort")
+					.containsExactlyElementsOf(expected)
+					.hasSize(720);
+			assertThat(LmdbNativeFactorizedRows.ENGAGED.get())
+					.as("the measured query must use ordinary factorized materialization")
+					.isGreaterThan(factorizedBefore);
+			assertThat(NativeRowsStep.ORDERED_FACTORIZED_SORTS.get()).isEqualTo(orderedSortsBefore);
+			assertThat(NativeRowsStep.ORDERED_FACTORIZED_TOPK.get()).isEqualTo(orderedTopKBefore);
+		} finally {
+			restoreProperties(previous);
+		}
+	}
+
+	@Test
+	public void topKPreservesHiddenTailOrderKey() {
+		Map<String, String> previous = setProperties(Map.of(
+				"rdf4j.lmdb.orderedFactorizedRows.enabled", "false",
+				NativeBatch.ENABLED_PROPERTY, "false",
+				"rdf4j.lmdb.parallel.enabled", "false"));
+		try {
+			String query = "PREFIX ex: <" + EX + ">\n"
+					+ "SELECT ?s ?y WHERE { ?s ex:p1 ?x . ?x ex:p2 ?y . ?y ex:p3 ?z } "
+					+ "ORDER BY DESC(?z) ?y ?s LIMIT 17";
+			List<String> expected = genericRows(query);
+			long factorizedBefore = LmdbNativeFactorizedRows.ENGAGED.get();
+			long orderedSortsBefore = NativeRowsStep.ORDERED_FACTORIZED_SORTS.get();
+			long orderedTopKBefore = NativeRowsStep.ORDERED_FACTORIZED_TOPK.get();
+
+			List<String> actual = rows(repository, query);
+
+			assertThat(actual)
+					.as("ordinary factorization must retain an unprojected tail key before applying LIMIT")
+					.containsExactlyElementsOf(expected)
+					.hasSize(17);
+			assertThat(LmdbNativeFactorizedRows.ENGAGED.get())
+					.as("the measured LIMIT query must use ordinary factorized materialization")
+					.isGreaterThan(factorizedBefore);
+			assertThat(NativeRowsStep.ORDERED_FACTORIZED_SORTS.get()).isEqualTo(orderedSortsBefore);
+			assertThat(NativeRowsStep.ORDERED_FACTORIZED_TOPK.get()).isEqualTo(orderedTopKBefore);
+		} finally {
+			restoreProperties(previous);
+		}
+	}
+
+	@Test
 	public void branchOrderKeyFallsBackToClassicSort() {
 		// ?z is bound by the enum branch: sorting flat rows cannot honor it, the gate must refuse.
 		// (?z ?y ?s) totally orders the rows, so exact list equality holds on the classic path.
@@ -749,6 +813,25 @@ public class LmdbNativeOrderedFactorizedTest {
 
 	private static List<String> rows(SailRepository repo, String query) {
 		return canonicalize(bindingSets(repo, query));
+	}
+
+	private static Map<String, String> setProperties(Map<String, String> values) {
+		Map<String, String> previous = new HashMap<>();
+		values.forEach((property, value) -> {
+			previous.put(property, System.getProperty(property));
+			System.setProperty(property, value);
+		});
+		return previous;
+	}
+
+	private static void restoreProperties(Map<String, String> previous) {
+		previous.forEach((property, value) -> {
+			if (value == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, value);
+			}
+		});
 	}
 
 	private static FactorizedTail.MemoBudget budgetWithHeadroom(int entries, long values) {

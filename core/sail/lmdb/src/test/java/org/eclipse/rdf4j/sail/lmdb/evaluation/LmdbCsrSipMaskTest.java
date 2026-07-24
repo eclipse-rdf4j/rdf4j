@@ -55,7 +55,7 @@ class LmdbCsrSipMaskTest {
 				PARALLEL_ENABLED, "false",
 				MERGE_ENABLED, "false",
 				SIP_ENABLED, "true"));
-		LmdbStore sail = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc"));
+		LmdbStore sail = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,psoc"));
 		SailRepository repository = new SailRepository(sail);
 		try {
 			populateStar(repository);
@@ -102,6 +102,58 @@ class LmdbCsrSipMaskTest {
 	}
 
 	@Test
+	void objectFirstCsrProbeDeclinesUnsafeSipMask() throws Exception {
+		Map<String, String> previous = setProperties(Map.of(
+				CSR_ENABLED, "true",
+				CSR_MIN_PROBES, "1",
+				NATIVE_ENABLED, "true",
+				PARALLEL_ENABLED, "false",
+				MERGE_ENABLED, "false",
+				SIP_ENABLED, "true"));
+		LmdbStore sail = new LmdbStore(dataDir, new LmdbStoreConfig("posc,spoc"));
+		SailRepository repository = new SailRepository(sail);
+		try {
+			populateObjectFirstStar(repository);
+			String query = "PREFIX ex: <" + EX + ">\n"
+					+ "SELECT ?s ?w WHERE { ?s ex:p1 ?x . ?s ex:p5 ?w . ?w ex:p6 ?v }";
+			ValueFactory vf = repository.getValueFactory();
+			CsrProbeWarmupAccess.warmBySubject(sail, vf.createIRI(EX, "p1"), vf.createIRI(EX, "p5"));
+
+			long engagedBefore = LmdbNativeChunkPipeline.ENGAGED.get();
+			long csrBefore = LmdbNativeChunkPipeline.CSR_BACKED_PROBES.get();
+			long hashBuildsBefore = LmdbNativeChunkPipeline.HASH_BUILDS.get();
+			long masksBefore = LmdbNativeChunkPipeline.SIP_MASKS.get();
+
+			List<String> nativeRows = rows(repository, query);
+			long engagedAfter = LmdbNativeChunkPipeline.ENGAGED.get();
+			long csrAfter = LmdbNativeChunkPipeline.CSR_BACKED_PROBES.get();
+			long hashBuildsAfter = LmdbNativeChunkPipeline.HASH_BUILDS.get();
+			long masksAfter = LmdbNativeChunkPipeline.SIP_MASKS.get();
+
+			System.setProperty(NATIVE_ENABLED, "false");
+			List<String> genericRows = rows(repository, query);
+			assertThat(nativeRows)
+					.as("an object-first CSR key vector must not remove subjects from the native result")
+					.isEqualTo(genericRows);
+			assertThat(engagedAfter)
+					.as("declining the unsafe mask must retain chunk-prefix execution")
+					.isGreaterThan(engagedBefore);
+			assertThat(csrAfter)
+					.as("declining the unsafe mask must retain CSR-backed probing")
+					.isGreaterThan(csrBefore);
+			assertThat(hashBuildsAfter)
+					.as("a CSR-served stage must still decline its redundant query-local hash build")
+					.isEqualTo(hashBuildsBefore);
+			assertThat(masksAfter)
+					.as("an object-before-subject CSR vector is not proven sorted by subject")
+					.isEqualTo(masksBefore);
+		} finally {
+			repository.shutDown();
+			restoreProperties(previous);
+		}
+	}
+
+	@Test
 	void borrowedCsrMaskOwnsNeitherKeysNorMemoCapacity() {
 		FactorizedTail.MemoBudget budget = new FactorizedTail.MemoBudget(new AtomicLong());
 		assertThat(budget.tryReserve(FactorizedTail.MEMO_MAX_ENTRIES, FactorizedTail.MEMO_MAX_STORED_VALUES))
@@ -140,6 +192,34 @@ class LmdbCsrSipMaskTest {
 						IRI middle = vf.createIRI(EX, "middle" + i + "-" + branch);
 						connection.add(subject, p5, middle);
 						connection.add(middle, p6, vf.createIRI(EX, "value" + i + "-" + branch));
+					}
+				}
+			}
+			connection.commit();
+		}
+	}
+
+	private static void populateObjectFirstStar(SailRepository repository) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			IRI p1 = vf.createIRI(EX, "p1");
+			IRI p5 = vf.createIRI(EX, "p5");
+			IRI p6 = vf.createIRI(EX, "p6");
+			connection.begin();
+			for (int i = 0; i < 4500; i++) {
+				IRI subject = vf.createIRI(EX, String.format("unsafe%04d", i));
+				connection.add(subject, p1, vf.createIRI(EX, "unsafe-root" + i));
+			}
+			// The predicate-only p5 sweep uses posc: objects are encountered before subjects. Adding p5 values in
+			// reverse subject order makes the dense subject-key vector observably descending rather than accidentally
+			// matching unsigned subject-id order.
+			for (int i = 4499; i >= 0; i--) {
+				if (i % 3 == 0) {
+					IRI subject = vf.createIRI(EX, String.format("unsafe%04d", i));
+					for (int branch = 0; branch < 12; branch++) {
+						IRI middle = vf.createIRI(EX, "unsafe-middle" + i + "-" + branch);
+						connection.add(subject, p5, middle);
+						connection.add(middle, p6, vf.createIRI(EX, "unsafe-value" + i + "-" + branch));
 					}
 				}
 			}

@@ -816,12 +816,12 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		MultiJoinPlan multiJoin = arg instanceof MultiJoinPlan && ((MultiJoinPlan) arg).children.length > 0
 				? (MultiJoinPlan) arg
 				: null;
+		RowCursor leapfrog = LmdbNativeLeapfrogJoin.tryOpen(arg, row);
+		if (leapfrog != null) {
+			LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_WCOJ);
+			return NativeUnorderedInput.rows(row, leapfrog);
+		}
 		if (multiJoin != null) {
-			RowCursor leapfrog = LmdbNativeLeapfrogJoin.tryOpen(multiJoin, row);
-			if (leapfrog != null) {
-				LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_WCOJ);
-				return NativeUnorderedInput.rows(row, leapfrog);
-			}
 			RowCursor kernel = LmdbNativeJaninoPipeline.tryOpen(multiJoin, row);
 			if (kernel != null) {
 				System.out.println("JaninoPipeline");
@@ -830,9 +830,10 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			}
 		}
 		boolean correlatedEntry = (arg.producedMask() & row.boundMask()) != 0L;
+		int[] retainedSlots = orderSlots.length == 0 ? sourceSlots : sortLayout.liveToPlan;
 		boolean countingBranch = multiJoin != null && LmdbNativeFactorizedRows.plansCountingBranch(multiJoin,
 				LmdbNativeFactorizedRows.selectFactorizedOrder(multiJoin, row.boundMask(), 0L, 0), row.boundMask(),
-				sourceSlots);
+				retainedSlots);
 		NativeUnorderedInput selected = openBatchOrParallel(row, multiJoin, correlatedEntry, countingBranch);
 		if (selected != null) {
 			return selected;
@@ -847,7 +848,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			LmdbNativeAttemptMetrics attemptMetrics = LmdbNativeAttemptMetrics.root(originalExpr);
 			LmdbNativeFactorizedRows factorized = LmdbNativeFactorizedRows.tryCreate(multiJoin,
 					LmdbNativeFactorizedRows.selectFactorizedOrder(multiJoin, row.boundMask(), 0L, 0), row,
-					row.boundMask(), sourceSlots, distinct, 0L, attemptMetrics);
+					row.boundMask(), retainedSlots, distinct, 0L, attemptMetrics);
 			if (factorized != null) {
 				if (LmdbNativeExplain.recordsExecutionPaths(originalExpr)) {
 					attemptMetrics.deferStrategy(originalExpr, factorized.describeEngagement());
