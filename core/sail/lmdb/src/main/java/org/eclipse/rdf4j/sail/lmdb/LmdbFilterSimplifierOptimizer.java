@@ -293,6 +293,14 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 				BindingSetAssignment aliasAnchor = aliasSourceFilterAnchor(filter, anchor, assuredBindings);
 				if (aliasAnchor != null && !equivalentSmallLiteralAssignmentExists(aliasAnchor, assignmentValues)) {
 					anchors.add(aliasAnchor);
+					// The renamed source anchor already restricts the rows this retained filter sees, so its
+					// residual pass ratio is ~1. Record that as anchored evidence: without it the packed
+					// finite-filter rule would stack a second, independent anchor for the alias variable on top
+					// of this one, and two disconnected VALUES drivers re-execute the whole region once per
+					// value pair.
+					filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO, 1.0d);
+					filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO_RAW, 1.0d);
+					filter.setStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE, "anchored");
 				}
 				remainingConditions.add(condition);
 			}

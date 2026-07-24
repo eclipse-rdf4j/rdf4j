@@ -1228,7 +1228,7 @@ final class PackedLogicalRuleProgram {
 	private void addFiniteFilterAlternative(int filterExpressionId) {
 		int conditionId = relations.payloadId(filterExpressionId);
 		resetFiniteDomain();
-		if (!collectFiniteDomain(conditionId) || finiteValueCount == 0) {
+		if (!collectFiniteDomain(conditionId) || finiteValueCount == 0 || !finiteDomainTermIdentitySafe()) {
 			return;
 		}
 		int inputGroupId = relations.childGroupId(filterExpressionId, 0);
@@ -1796,6 +1796,7 @@ final class PackedLogicalRuleProgram {
 		int childId = rewriteFiniteFilters(relations.childGroupId(expressionId, 0));
 		resetFiniteDomain();
 		if (collectFiniteDomain(relations.payloadId(expressionId)) && finiteValueCount != 0
+				&& finiteDomainTermIdentitySafe()
 				&& relationAssuresSymbol(childId, finiteSymbolId)
 				&& !containsBindingAssignmentFor(childId, finiteSymbolId)) {
 			int anchorId = finiteBindingAssignment();
@@ -2027,6 +2028,26 @@ final class PackedLogicalRuleProgram {
 		finiteNameObjectId = 0;
 		finiteSymbolId = 0;
 		finiteValueCount = 0;
+	}
+
+	/**
+	 * A finite-values anchor joins by term identity while the filter it replaces compares by value equality. The two
+	 * only agree when every constant's value-equality class has a single term representative: IRIs, blank nodes, and
+	 * string-valued literals. Numeric, boolean, and temporal constants can value-equal differently-represented stored
+	 * terms (e.g. {@code 1} parses as {@code "1"^^xsd:integer} but the store may hold {@code "1"^^xsd:int}), so those
+	 * are left to the predicate-range anchor rule, which expands constants to the proven stored representations.
+	 */
+	private boolean finiteDomainTermIdentitySafe() {
+		for (int ordinal = 0; ordinal < finiteValueCount; ordinal++) {
+			if (objects.value(finiteValueObjectIds[ordinal])instanceof Literal literal) {
+				org.eclipse.rdf4j.model.base.CoreDatatype datatype = literal.getCoreDatatype();
+				if (datatype != org.eclipse.rdf4j.model.base.CoreDatatype.XSD.STRING
+						&& datatype != org.eclipse.rdf4j.model.base.CoreDatatype.RDF.LANGSTRING) {
+					return false;
+				}
+			}
+		}
+		return true;
 	}
 
 	private boolean collectFiniteDomain(int scalarId) {
@@ -2268,12 +2289,23 @@ final class PackedLogicalRuleProgram {
 		for (int ordinal = 0; ordinal < scalars.childCount(scalarId); ordinal++) {
 			addScalarDependencies(scalars.childGroupId(scalarId, ordinal), output);
 		}
-		if (scalars.operatorTag(scalarId) == PackedScalarOp.VARIABLE) {
+		int operator = scalars.operatorTag(scalarId);
+		if (operator == PackedScalarOp.VARIABLE) {
 			addTerm(scalars.payloadId(scalarId), output);
-		} else if (scalars.operatorTag(scalarId) == PackedScalarOp.VALUE_TRIPLE_REF) {
+		} else if (operator == PackedScalarOp.VALUE_TRIPLE_REF) {
 			addPayloadTerms(scalars.payloadId(scalarId), output);
-		} else if (scalars.operatorTag(scalarId) == PackedScalarOp.TRIPLE_COMPONENT) {
+		} else if (operator == PackedScalarOp.TRIPLE_COMPONENT) {
 			addTerm(payloads.payloadId(scalars.payloadId(scalarId)), output);
+		} else if (operator == PackedScalarOp.EXISTS || operator == PackedScalarOp.IN
+				|| operator == PackedScalarOp.COMPARE_ANY || operator == PackedScalarOp.COMPARE_ALL) {
+			// (NOT) EXISTS and IN/ANY/ALL subqueries correlate on every in-scope variable they reference: a
+			// group filter is evaluated after a later OPTIONAL, so an optional-bound variable that also occurs
+			// in the subquery is observed by this condition. Liveness-based rewrites (unused-OPTIONAL pruning)
+			// must treat the subquery's variables as dependencies or they change the filter's meaning.
+			int subqueryPayloadId = scalars.payloadId(scalarId);
+			if (payloads.operatorTag(subqueryPayloadId) == PackedPayloadOp.SUBQUERY_VALUE) {
+				addRelationOutputs(payloads.childGroupId(subqueryPayloadId, 0), output);
+			}
 		}
 	}
 

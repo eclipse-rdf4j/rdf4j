@@ -53,9 +53,13 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.Pack
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** The single LMDB boundary for query-local packed Cascades planning. */
 final class LmdbCascadesOptimizer implements QueryOptimizer {
+
+	private static final Logger logger = LoggerFactory.getLogger(LmdbCascadesOptimizer.class);
 
 	static final String MODE_PROPERTY = "rdf4j.optimizer.lmdb.cascades.mode";
 	static final String BUDGET_PROPERTY = "rdf4j.optimizer.lmdb.cascades.budget";
@@ -113,13 +117,26 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			Mode mode = configuredMode();
 			OptimizationGoal goal = configuredGoal(tupleExpr, bindings, mode);
 			annotateDistinctPhysicalRequirements(tupleExpr);
-			CascadesPlan plan = plan(tupleExpr, dataset, bindings, goal);
-			replaceRoot(tupleExpr, plan.tupleExpr());
-			CascadesPlanProvenanceAnnotator.annotate(tupleExpr, plan.provenance(), PLANNER_ID);
-			annotatePlanningMetrics(tupleExpr, mode, plan);
-			annotateObjectGuarantees(tupleExpr);
-			annotateCartesianFallback(tupleExpr);
-			annotateSemanticExactZero(tupleExpr);
+			CascadesPlan plan;
+			try {
+				plan = plan(tupleExpr, dataset, bindings, goal);
+			} catch (IllegalStateException internalInvariantFailure) {
+				// A packed-planner invariant breach (e.g. PackedMemoInvariantException) means the memo state is
+				// unusable, not that the query is invalid. Planning has not mutated the input tree yet, so the
+				// pipeline-normalized tree is still a correct executable plan — degrade to it instead of failing
+				// the query.
+				logger.warn("Packed cascades planning failed; falling back to the pipeline-normalized plan: {}",
+						internalInvariantFailure.getMessage());
+				plan = null;
+			}
+			if (plan != null) {
+				replaceRoot(tupleExpr, plan.tupleExpr());
+				CascadesPlanProvenanceAnnotator.annotate(tupleExpr, plan.provenance(), PLANNER_ID);
+				annotatePlanningMetrics(tupleExpr, mode, plan);
+				annotateObjectGuarantees(tupleExpr);
+				annotateCartesianFallback(tupleExpr);
+				annotateSemanticExactZero(tupleExpr);
+			}
 		}
 		if (runtimeTelemetry) {
 			enableRuntimeTelemetry(tupleExpr);

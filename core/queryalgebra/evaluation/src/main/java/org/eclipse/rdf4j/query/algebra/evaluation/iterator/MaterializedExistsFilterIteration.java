@@ -31,8 +31,12 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 
 	// Materializing the EXISTS relation costs a full evaluation of the subquery regardless of how
 	// few outer rows arrive. Probe correlated per-row while the outer side is still small, and only
-	// materialize once enough rows show up to amortize the scan.
-	private static final int PROBE_LIMIT = 32;
+	// materialize once enough rows show up to amortize the scan. The budget is shared across every
+	// iteration created from the same evaluation step: when this filter sits on the inner side of a
+	// join it is re-instantiated once per outer row, and a per-instance budget would keep every
+	// instance in the probe phase forever — millions of single-row index lookups instead of one
+	// cheap correlated scan per instance.
+	static final int PROBE_LIMIT = 32;
 
 	private final Filter filterNode;
 	private final CloseableIteration<BindingSet> leftIter;
@@ -41,9 +45,9 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 	private final String[] sharedBindingNames;
 	private final EvaluationStatistics evaluationStatistics;
 	private final boolean recordFilterOutcomes;
+	private final java.util.concurrent.atomic.AtomicInteger sharedProbeBudget;
 	private boolean initialized;
 	private boolean existsNonEmpty;
-	private int probedRows;
 	private Set<BindingSetHashKey> exactKeys = Set.of();
 	private List<BindingSet> allRows = List.of();
 	private List<BindingSet> wildcardRows = List.of();
@@ -56,7 +60,8 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 	MaterializedExistsFilterIteration(Filter filterNode, CloseableIteration<BindingSet> leftIter,
 			Supplier<CloseableIteration<BindingSet>> existsIterSupplier,
 			Function<BindingSet, CloseableIteration<BindingSet>> existsProbeFunction, String[] sharedBindingNames,
-			EvaluationStatistics evaluationStatistics, boolean recordFilterOutcomes) {
+			EvaluationStatistics evaluationStatistics, boolean recordFilterOutcomes,
+			java.util.concurrent.atomic.AtomicInteger sharedProbeBudget) {
 		this.filterNode = filterNode;
 		this.leftIter = leftIter;
 		this.existsIterSupplier = existsIterSupplier;
@@ -64,6 +69,7 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 		this.sharedBindingNames = sharedBindingNames;
 		this.evaluationStatistics = evaluationStatistics;
 		this.recordFilterOutcomes = recordFilterOutcomes;
+		this.sharedProbeBudget = sharedProbeBudget;
 	}
 
 	@Override
@@ -72,9 +78,8 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 			BindingSet left = leftIter.next();
 			sourceRowsScannedActual++;
 			boolean accepted;
-			if (!initialized && probedRows < PROBE_LIMIT && sharedBindingNames.length > 0
-					&& hasAllSharedBindings(left)) {
-				probedRows++;
+			if (!initialized && sharedBindingNames.length > 0 && hasAllSharedBindings(left)
+					&& sharedProbeBudget.get() > 0 && sharedProbeBudget.getAndDecrement() > 0) {
 				accepted = probe(left);
 			} else {
 				ensureInitialized();

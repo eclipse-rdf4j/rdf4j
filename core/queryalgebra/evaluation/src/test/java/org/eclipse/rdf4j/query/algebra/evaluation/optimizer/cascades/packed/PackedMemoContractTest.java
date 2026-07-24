@@ -41,8 +41,11 @@ class PackedMemoContractTest {
 		assertEquals(initialExpressionCount, memo.logicalExpressionCount());
 		assertEquals(initialGroupCount, memo.groupCount());
 
-		assertThrows(PackedMemoInvariantException.class,
-				() -> memo.addLogicalAlternative(children[0], PackedRelOp.JOIN, 0, 0, 0, children, 0, 2));
+		// Rediscovering an expression that is already canonicalized in another group is a group-merge the
+		// append-only memo cannot represent: the alternative is dropped (0) without mutating the memo.
+		assertEquals(0, memo.addLogicalAlternative(children[0], PackedRelOp.JOIN, 0, 0, 0, children, 0, 2));
+		assertEquals(initialExpressionCount, memo.logicalExpressionCount());
+		assertEquals(initialGroupCount, memo.groupCount());
 
 		int helper = memo.addCanonicalLogical(99, 17, 2, 3, new int[] { rootGroupId }, 0, 1);
 		int helperGroup = memo.logicalGroupId(helper);

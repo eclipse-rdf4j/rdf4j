@@ -173,7 +173,23 @@ final class PackedQueryCodec {
 		}
 
 		private int relation(TupleExpr expression, String path) {
-			int relationId = relationStructure(expression, path);
+			int flags = nodeFlags(expression);
+			int relationId = relationStructure(expression, path, flags);
+			int algorithmNameId = expression instanceof BinaryTupleOperator binary
+					? objects.intern(binary.getAlgorithmName())
+					: 0;
+			metadata.attachRelation(relationId, plannedMetricsPayload(expression), flags,
+					expression.getResultSizeEstimate(), expression.getCostEstimate(), algorithmNameId);
+			return relationId;
+		}
+
+		/**
+		 * Node flags are part of canonical relation identity (carried in the interner's semantic-scope slot):
+		 * structurally identical expressions that differ in variable-scope-change or join hints are not interchangeable
+		 * and must not share a memo node — e.g. {@code { ?x a T } UNION { ?x a T ; p ?y }} puts the scope-change mark
+		 * on the single-pattern branch's StatementPattern while its twin in the other branch is unmarked.
+		 */
+		private static int nodeFlags(TupleExpr expression) {
 			int flags = expression instanceof VariableScopeChange scopeChange && scopeChange.isVariableScopeChange()
 					? PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE
 					: 0;
@@ -181,12 +197,7 @@ final class PackedQueryCodec {
 				flags |= join.isMergeJoin() ? PackedNodeMetadataArena.MERGE_JOIN : 0;
 				flags |= join.isCacheable() ? PackedNodeMetadataArena.CACHEABLE_JOIN : 0;
 			}
-			int algorithmNameId = expression instanceof BinaryTupleOperator binary
-					? objects.intern(binary.getAlgorithmName())
-					: 0;
-			metadata.attachRelation(relationId, plannedMetricsPayload(expression), flags,
-					expression.getResultSizeEstimate(), expression.getCostEstimate(), algorithmNameId);
-			return relationId;
+			return flags;
 		}
 
 		/**
@@ -389,135 +400,137 @@ final class PackedQueryCodec {
 			domainFacts.put(groupId, symbolId, rangeArena.intern(rangeSlot, objects));
 		}
 
-		private int relationStructure(TupleExpr expression, String path) {
+		private int relationStructure(TupleExpr expression, String path, int nodeFlags) {
 			if (expression instanceof StatementPattern pattern) {
-				return statementPattern(pattern, path);
+				return statementPattern(pattern, nodeFlags);
 			}
 			if (expression instanceof BindingSetAssignment assignment) {
-				return bindingSetAssignment(assignment);
+				return bindingSetAssignment(assignment, nodeFlags);
 			}
 			if (expression instanceof TupleFunctionCall call) {
-				return tupleFunction(call, path);
+				return tupleFunction(call, path, nodeFlags);
 			}
 			if (expression instanceof ZeroLengthPath zeroLengthPath) {
-				return zeroLengthPath(zeroLengthPath);
+				return zeroLengthPath(zeroLengthPath, nodeFlags);
 			}
 			if (expression instanceof ArbitraryLengthPath arbitraryLengthPath) {
-				return arbitraryLengthPath(arbitraryLengthPath, path);
+				return arbitraryLengthPath(arbitraryLengthPath, path, nodeFlags);
 			}
 			if (expression instanceof AnnotationTripleRef annotationTripleRef) {
-				return tripleRef(PackedRelOp.ANNOTATION_TRIPLE_REF, annotationTripleRef);
+				return tripleRef(PackedRelOp.ANNOTATION_TRIPLE_REF, annotationTripleRef, nodeFlags);
 			}
 			if (expression instanceof ReifiedTripleRef reifiedTripleRef) {
-				return tripleRef(PackedRelOp.REIFIED_TRIPLE_REF, reifiedTripleRef);
+				return tripleRef(PackedRelOp.REIFIED_TRIPLE_REF, reifiedTripleRef, nodeFlags);
 			}
 			if (expression instanceof TripleRef tripleRef) {
-				return tripleRef(PackedRelOp.TRIPLE_REF, tripleRef);
+				return tripleRef(PackedRelOp.TRIPLE_REF, tripleRef, nodeFlags);
 			}
 			if (expression instanceof QueryRoot root) {
-				return unaryRelation(PackedRelOp.QUERY_ROOT, root.getArg(), path);
+				return unaryRelation(PackedRelOp.QUERY_ROOT, root.getArg(), path, nodeFlags);
 			}
 			if (expression instanceof DescribeOperator describe) {
-				return unaryRelation(PackedRelOp.DESCRIBE, describe.getArg(), path);
+				return unaryRelation(PackedRelOp.DESCRIBE, describe.getArg(), path, nodeFlags);
 			}
 			if (expression instanceof Slice slice) {
 				int input = relation(slice.getArg(), path + ".arg");
 				int payload = slicePayload(slice);
-				return unaryRelation(PackedRelOp.SLICE, payload, input);
+				return unaryRelation(PackedRelOp.SLICE, payload, input, nodeFlags);
 			}
 			if (expression instanceof Reduced reduced) {
-				return unaryRelation(PackedRelOp.REDUCED, reduced.getArg(), path);
+				return unaryRelation(PackedRelOp.REDUCED, reduced.getArg(), path, nodeFlags);
 			}
 			if (expression instanceof Distinct distinct) {
-				return unaryRelation(PackedRelOp.DISTINCT, distinct.getArg(), path);
+				return unaryRelation(PackedRelOp.DISTINCT, distinct.getArg(), path, nodeFlags);
 			}
 			if (expression instanceof MaterializeTupleExpr materialize) {
-				return unaryRelation(PackedRelOp.MATERIALIZE, materialize.getArg(), path);
+				return unaryRelation(PackedRelOp.MATERIALIZE, materialize.getArg(), path, nodeFlags);
 			}
 			if (expression instanceof MultiProjection multiProjection) {
 				int input = relation(multiProjection.getArg(), path + ".arg");
 				int payload = multiProjectionPayload(multiProjection, path + ".projections");
-				return unaryRelation(PackedRelOp.MULTI_PROJECTION, payload, input);
+				return unaryRelation(PackedRelOp.MULTI_PROJECTION, payload, input, nodeFlags);
 			}
 			if (expression instanceof Projection projection) {
 				int input = relation(projection.getArg(), path + ".arg");
 				int payload = projectionPayload(projection, path + ".projection");
-				return unaryRelation(PackedRelOp.PROJECTION, payload, input);
+				return unaryRelation(PackedRelOp.PROJECTION, payload, input, nodeFlags);
 			}
 			if (expression instanceof Order order) {
 				int input = relation(order.getArg(), path + ".arg");
 				int payload = orderPayload(order, path + ".order");
-				return unaryRelation(PackedRelOp.ORDER, payload, input);
+				return unaryRelation(PackedRelOp.ORDER, payload, input, nodeFlags);
 			}
 			if (expression instanceof Extension extension) {
 				int input = relation(extension.getArg(), path + ".arg");
 				int payload = extensionPayload(extension, path + ".extension");
-				return unaryRelation(PackedRelOp.EXTENSION, payload, input);
+				return unaryRelation(PackedRelOp.EXTENSION, payload, input, nodeFlags);
 			}
 			if (expression instanceof Group group) {
 				int input = relation(group.getArg(), path + ".arg");
 				int payload = groupPayload(group, path + ".group");
-				return unaryRelation(PackedRelOp.GROUP, payload, input);
+				return unaryRelation(PackedRelOp.GROUP, payload, input, nodeFlags);
 			}
 			if (expression instanceof Service service) {
 				int input = relation(service.getServiceExpr(), path + ".arg");
-				return unaryRelation(PackedRelOp.SERVICE, servicePayload(service), input);
+				return unaryRelation(PackedRelOp.SERVICE, servicePayload(service), input, nodeFlags);
 			}
 			if (expression instanceof Lateral lateral) {
 				int payload = nameSetPayload(lateral.getRightInputBindingNames());
-				return binaryRelation(PackedRelOp.LATERAL, payload, lateral.getLeftArg(), lateral.getRightArg(), path);
+				return binaryRelation(PackedRelOp.LATERAL, payload, lateral.getLeftArg(), lateral.getRightArg(), path,
+						nodeFlags);
 			}
 			if (expression instanceof Intersection intersection) {
 				return binaryRelation(PackedRelOp.INTERSECTION, 0, intersection.getLeftArg(),
-						intersection.getRightArg(), path);
+						intersection.getRightArg(), path, nodeFlags);
 			}
 			if (expression instanceof Union union) {
-				return binaryRelation(PackedRelOp.UNION, 0, union.getLeftArg(), union.getRightArg(), path);
+				return binaryRelation(PackedRelOp.UNION, 0, union.getLeftArg(), union.getRightArg(), path, nodeFlags);
 			}
 			if (expression instanceof Difference difference) {
 				return binaryRelation(PackedRelOp.DIFFERENCE, 0, difference.getLeftArg(), difference.getRightArg(),
-						path);
+						path, nodeFlags);
 			}
 			if (expression instanceof LeftJoin leftJoin) {
 				int condition = scalarNullable(leftJoin.getCondition(), path + ".condition");
 				return binaryRelation(PackedRelOp.LEFT_JOIN, condition, leftJoin.getLeftArg(), leftJoin.getRightArg(),
-						path);
+						path, nodeFlags);
 			}
 			if (expression instanceof Join join) {
-				return binaryRelation(PackedRelOp.JOIN, 0, join.getLeftArg(), join.getRightArg(), path);
+				return binaryRelation(PackedRelOp.JOIN, 0, join.getLeftArg(), join.getRightArg(), path, nodeFlags);
 			}
 			if (expression instanceof Filter filter) {
 				int input = relation(filter.getArg(), path + ".arg");
 				int condition = scalar(filter.getCondition(), path + ".condition");
-				return unaryRelation(PackedRelOp.FILTER, condition, input);
+				return unaryRelation(PackedRelOp.FILTER, condition, input, nodeFlags);
 			}
 			if (expression instanceof EmptySet) {
-				return relations.internCanonical(PackedRelOp.EMPTY_SET, 0, 0, 0, NO_CHILDREN, 0, 0);
+				return relations.internCanonical(PackedRelOp.EMPTY_SET, 0, nodeFlags, 0, NO_CHILDREN, 0, 0);
 			}
 			if (expression instanceof SingletonSet) {
-				return relations.internCanonical(PackedRelOp.SINGLETON_SET, 0, 0, 0, NO_CHILDREN, 0, 0);
+				return relations.internCanonical(PackedRelOp.SINGLETON_SET, 0, nodeFlags, 0, NO_CHILDREN, 0, 0);
 			}
 			throw new UnsupportedCascadesOperatorException(expression.getClass(), path);
 		}
 
-		private int unaryRelation(int operator, TupleExpr input, String path) {
-			return unaryRelation(operator, 0, relation(input, path + ".arg"));
+		private int unaryRelation(int operator, TupleExpr input, String path, int nodeFlags) {
+			return unaryRelation(operator, 0, relation(input, path + ".arg"), nodeFlags);
 		}
 
-		private int unaryRelation(int operator, int payload, int input) {
+		private int unaryRelation(int operator, int payload, int input, int nodeFlags) {
 			unary[0] = relations.groupId(input);
-			return relations.internCanonical(operator, payload, 0, 0, unary, 0, 1);
+			return relations.internCanonical(operator, payload, nodeFlags, 0, unary, 0, 1);
 		}
 
-		private int binaryRelation(int operator, int payload, TupleExpr left, TupleExpr right, String path) {
+		private int binaryRelation(int operator, int payload, TupleExpr left, TupleExpr right, String path,
+				int nodeFlags) {
 			int leftId = relation(left, path + ".left");
 			int rightId = relation(right, path + ".right");
 			binary[0] = relations.groupId(leftId);
 			binary[1] = relations.groupId(rightId);
-			return relations.internCanonical(operator, payload, 0, 0, binary, 0, 2);
+			return relations.internCanonical(operator, payload, nodeFlags, 0, binary, 0, 2);
 		}
 
-		private int statementPattern(StatementPattern pattern, String path) {
+		private int statementPattern(StatementPattern pattern, int nodeFlags) {
 			statementTerms[0] = term(pattern.getSubjectVar());
 			statementTerms[1] = term(pattern.getPredicateVar());
 			statementTerms[2] = term(pattern.getObjectVar());
@@ -526,7 +539,8 @@ final class PackedQueryCodec {
 			int indexNameId = objects.intern(pattern.getIndexName());
 			int payload = payloads.internCanonical(PackedPayloadOp.STATEMENT_PATTERN,
 					pattern.getScope().ordinal() + 1, statementOrderId, indexNameId, statementTerms, 0, 4);
-			int relationId = relations.internCanonical(PackedRelOp.STATEMENT_PATTERN, payload, 0, 0, NO_CHILDREN, 0,
+			int relationId = relations.internCanonical(PackedRelOp.STATEMENT_PATTERN, payload, nodeFlags, 0,
+					NO_CHILDREN, 0,
 					0);
 			seedStatementPatternFact(pattern, relationId);
 			return relationId;
@@ -603,14 +617,14 @@ final class PackedQueryCodec {
 			return true;
 		}
 
-		private int bindingSetAssignment(BindingSetAssignment assignment) {
+		private int bindingSetAssignment(BindingSetAssignment assignment, int nodeFlags) {
 			int names = nameSetPayload(assignment.getAssuredBindingNames());
 			Iterable<BindingSet> rows = assignment.getBindingSets();
 			if (rows == null) {
 				int payload = payloads.internCanonical(PackedPayloadOp.BINDING_SET_ASSIGNMENT, names, 0, 0,
 						NO_CHILDREN, 0, 0);
-				return relations.internCanonical(PackedRelOp.BINDING_SET_ASSIGNMENT, payload, 0, 0, NO_CHILDREN, 0,
-						0);
+				return relations.internCanonical(PackedRelOp.BINDING_SET_ASSIGNMENT, payload, nodeFlags, 0, NO_CHILDREN,
+						0, 0);
 			}
 
 			int start = scratchSize;
@@ -623,7 +637,8 @@ final class PackedQueryCodec {
 			int payload = payloads.internCanonical(PackedPayloadOp.BINDING_SET_ASSIGNMENT, names, 0, 1, scratch,
 					start, count);
 			releaseScratch(start);
-			return relations.internCanonical(PackedRelOp.BINDING_SET_ASSIGNMENT, payload, 0, 0, NO_CHILDREN, 0, 0);
+			return relations.internCanonical(PackedRelOp.BINDING_SET_ASSIGNMENT, payload, nodeFlags, 0, NO_CHILDREN, 0,
+					0);
 		}
 
 		private int finiteBindingAssignment(FiniteDomain domain) {
@@ -765,7 +780,7 @@ final class PackedQueryCodec {
 					objects.intern(service.getServiceExpressionString()), options, NO_CHILDREN, 0, 0);
 		}
 
-		private int tupleFunction(TupleFunctionCall call, String path) {
+		private int tupleFunction(TupleFunctionCall call, String path, int nodeFlags) {
 			int argumentCount = call.getArgs().size();
 			int resultCount = call.getResultVars().size();
 			int start = reserveScratch(argumentCount + resultCount);
@@ -778,19 +793,19 @@ final class PackedQueryCodec {
 			int payload = payloads.internCanonical(PackedPayloadOp.TUPLE_FUNCTION, objects.intern(call.getURI()),
 					argumentCount, resultCount, scratch, start, argumentCount + resultCount);
 			releaseScratch(start);
-			return relations.internCanonical(PackedRelOp.TUPLE_FUNCTION, payload, 0, 0, NO_CHILDREN, 0, 0);
+			return relations.internCanonical(PackedRelOp.TUPLE_FUNCTION, payload, nodeFlags, 0, NO_CHILDREN, 0, 0);
 		}
 
-		private int zeroLengthPath(ZeroLengthPath path) {
+		private int zeroLengthPath(ZeroLengthPath path, int nodeFlags) {
 			statementTerms[0] = term(path.getSubjectVar());
 			statementTerms[1] = term(path.getObjectVar());
 			statementTerms[2] = term(path.getContextVar());
 			int payload = payloads.internCanonical(PackedPayloadOp.ZERO_LENGTH_PATH,
 					path.getScope().ordinal() + 1, 0, 0, statementTerms, 0, 3);
-			return relations.internCanonical(PackedRelOp.ZERO_LENGTH_PATH, payload, 0, 0, NO_CHILDREN, 0, 0);
+			return relations.internCanonical(PackedRelOp.ZERO_LENGTH_PATH, payload, nodeFlags, 0, NO_CHILDREN, 0, 0);
 		}
 
-		private int arbitraryLengthPath(ArbitraryLengthPath path, String operatorPath) {
+		private int arbitraryLengthPath(ArbitraryLengthPath path, String operatorPath, int nodeFlags) {
 			int pathExpression = relation(path.getPathExpression(), operatorPath + ".pathExpression");
 			statementTerms[0] = term(path.getSubjectVar());
 			statementTerms[1] = term(path.getObjectVar());
@@ -798,10 +813,10 @@ final class PackedQueryCodec {
 			int payload = payloads.internCanonical(PackedPayloadOp.ARBITRARY_LENGTH_PATH,
 					path.getScope().ordinal() + 1, (int) path.getMinLength(), (int) (path.getMinLength() >>> 32),
 					statementTerms, 0, 3);
-			return unaryRelation(PackedRelOp.ARBITRARY_LENGTH_PATH, payload, pathExpression);
+			return unaryRelation(PackedRelOp.ARBITRARY_LENGTH_PATH, payload, pathExpression, nodeFlags);
 		}
 
-		private int tripleRef(int operator, TripleRef tripleRef) {
+		private int tripleRef(int operator, TripleRef tripleRef, int nodeFlags) {
 			int count = tripleRef instanceof ReifiedTripleRef ? 5 : 4;
 			int start = reserveScratch(count);
 			scratch[start] = term(tripleRef.getSubjectVar());
@@ -813,7 +828,7 @@ final class PackedQueryCodec {
 			}
 			int payload = payloads.internCanonical(PackedPayloadOp.TRIPLE_REF, 0, 0, 0, scratch, start, count);
 			releaseScratch(start);
-			return relations.internCanonical(operator, payload, 0, 0, NO_CHILDREN, 0, 0);
+			return relations.internCanonical(operator, payload, nodeFlags, 0, NO_CHILDREN, 0, 0);
 		}
 
 		private int slicePayload(Slice slice) {

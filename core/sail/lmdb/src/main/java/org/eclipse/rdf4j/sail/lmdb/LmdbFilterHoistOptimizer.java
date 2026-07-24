@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
+import java.util.Set;
+
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.And;
@@ -21,11 +23,9 @@ import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
-import java.util.Set;
-
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 
 /**
  * Hoists (NOT) EXISTS and variable-to-variable comparison filters out of inner-join chains so the packed cascades
@@ -42,6 +42,7 @@ final class LmdbFilterHoistOptimizer implements QueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		Set<String> anchorNames = bindingSetAssignmentNames(tupleExpr);
 		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
 
 			@Override
@@ -59,16 +60,21 @@ final class LmdbFilterHoistOptimizer implements QueryOptimizer {
 				if (referencesExtensionAlias(filter.getArg(), conditionVars)) {
 					return;
 				}
-				while (filter.getParentNode() instanceof Join parentJoin && !parentJoin.isVariableScopeChange()) {
+				while (filter.getParentNode()instanceof Join parentJoin && !parentJoin.isVariableScopeChange()) {
 					TupleExpr otherArg = parentJoin.getLeftArg() == filter
 							? parentJoin.getRightArg()
 							: parentJoin.getLeftArg();
 					if (bindsNewConditionVar(otherArg, conditionVars, filter.getArg())
 							|| containsBindingSetAssignment(otherArg)
-							|| containsBindingSetAssignment(filter.getArg())) {
+							|| containsBindingSetAssignment(filter.getArg())
+							|| bindsAnyName(otherArg, anchorNames)) {
 						// Merging a VALUES anchor into a larger region can strand disconnected
 						// anchors in a connected-prefix-only enumeration where they can no longer
 						// pair up before a bridging pattern; leave anchor-bearing chains untouched.
+						// Likewise, swallowing a pattern that shares a variable with an anchor
+						// elsewhere in the query would wall that pattern off from its anchor behind
+						// the filter's region boundary, turning the anchor into a cross-join driver
+						// that re-executes the region once per anchor row.
 						break;
 					}
 					parentJoin.replaceWith(filter);
@@ -78,6 +84,29 @@ final class LmdbFilterHoistOptimizer implements QueryOptimizer {
 				}
 			}
 		});
+	}
+
+	private static Set<String> bindingSetAssignmentNames(TupleExpr tupleExpr) {
+		Set<String> names = new java.util.HashSet<>();
+		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(org.eclipse.rdf4j.query.algebra.BindingSetAssignment assignment) {
+				names.addAll(assignment.getAssuredBindingNames());
+			}
+		});
+		return names;
+	}
+
+	private static boolean bindsAnyName(TupleExpr tupleExpr, Set<String> names) {
+		if (names.isEmpty()) {
+			return false;
+		}
+		for (String name : tupleExpr.getBindingNames()) {
+			if (names.contains(name)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static boolean containsBindingSetAssignment(TupleExpr tupleExpr) {
@@ -133,8 +162,8 @@ final class LmdbFilterHoistOptimizer implements QueryOptimizer {
 			return isHoistableCondition(and.getLeftArg()) && isHoistableCondition(and.getRightArg());
 		}
 		if (condition instanceof Compare compare) {
-			return compare.getLeftArg() instanceof Var left && !left.hasValue()
-					&& compare.getRightArg() instanceof Var right && !right.hasValue();
+			return compare.getLeftArg()instanceof Var left && !left.hasValue()
+					&& compare.getRightArg()instanceof Var right && !right.hasValue();
 		}
 		return false;
 	}

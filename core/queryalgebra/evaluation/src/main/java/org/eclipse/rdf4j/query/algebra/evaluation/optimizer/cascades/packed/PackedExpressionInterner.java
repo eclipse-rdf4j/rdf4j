@@ -143,7 +143,12 @@ final class PackedExpressionInterner {
 			resizeTable(tableSlots.length << 1);
 			slot = findEmptySlot(hash);
 		}
+		return insertRow(hash, slot, groupId, operatorTag, payloadId, semanticScopeId, executionDomainId,
+				childGroupIds, childOffset, childCount);
+	}
 
+	private int insertRow(long hash, int slot, int groupId, int operatorTag, int payloadId, int semanticScopeId,
+			int executionDomainId, int[] childGroupIds, int childOffset, int childCount) {
 		int expressionId = ++size;
 		ensureRowCapacity(expressionId);
 		operatorTags[expressionId] = (short) operatorTag;
@@ -168,6 +173,67 @@ final class PackedExpressionInterner {
 		}
 		tableSlots[slot] = expressionId;
 		return expressionId;
+	}
+
+	/**
+	 * Group-scoped identity: physical implementations belong to exactly one group, and structurally identical tuples
+	 * produced for different groups (e.g. scope-distinguished twins of the same statement pattern) must intern to
+	 * distinct rows rather than trip the cross-group invariant. The group participates in both the hash and the match,
+	 * keeping lookups collision-safe.
+	 */
+	int findGroupScoped(int groupId, int operatorTag, int payloadId, int semanticScopeId, int executionDomainId,
+			int[] childGroupIds, int childOffset, int childCount) {
+		checkArguments(1, operatorTag, childGroupIds, childOffset, childCount);
+		long hash = groupScopedHash(groupId, operatorTag, payloadId, semanticScopeId, executionDomainId, childGroupIds,
+				childOffset, childCount);
+		int slot = tableSlot(hash, tableSlots.length);
+		while (true) {
+			int expressionId = tableSlots[slot];
+			if (expressionId == 0) {
+				return 0;
+			}
+			if (hashes[expressionId] == hash && groupIds[expressionId] == groupId
+					&& structurallyEquals(expressionId, operatorTag, payloadId, semanticScopeId, executionDomainId,
+							childGroupIds, childOffset, childCount)) {
+				return expressionId;
+			}
+			slot = slot + 1 & tableSlots.length - 1;
+		}
+	}
+
+	int internGroupScoped(int groupId, int operatorTag, int payloadId, int semanticScopeId, int executionDomainId,
+			int[] childGroupIds, int childOffset, int childCount) {
+		if (frozen) {
+			throw new IllegalStateException("packed expression interner is frozen");
+		}
+		checkArguments(groupId, operatorTag, childGroupIds, childOffset, childCount);
+		long hash = groupScopedHash(groupId, operatorTag, payloadId, semanticScopeId, executionDomainId, childGroupIds,
+				childOffset, childCount);
+		int slot = tableSlot(hash, tableSlots.length);
+		while (true) {
+			int expressionId = tableSlots[slot];
+			if (expressionId == 0) {
+				break;
+			}
+			if (hashes[expressionId] == hash && groupIds[expressionId] == groupId
+					&& structurallyEquals(expressionId, operatorTag, payloadId, semanticScopeId, executionDomainId,
+							childGroupIds, childOffset, childCount)) {
+				return expressionId;
+			}
+			slot = slot + 1 & tableSlots.length - 1;
+		}
+		if (size + 1 > resizeThreshold) {
+			resizeTable(tableSlots.length << 1);
+			slot = findEmptySlot(hash);
+		}
+		return insertRow(hash, slot, groupId, operatorTag, payloadId, semanticScopeId, executionDomainId,
+				childGroupIds, childOffset, childCount);
+	}
+
+	private static long groupScopedHash(int groupId, int operatorTag, int payloadId, int semanticScopeId,
+			int executionDomainId, int[] childGroupIds, int childOffset, int childCount) {
+		return avalanche(hashStep(logicalHash(operatorTag, payloadId, semanticScopeId, executionDomainId,
+				childGroupIds, childOffset, childCount), groupId));
 	}
 
 	int size() {

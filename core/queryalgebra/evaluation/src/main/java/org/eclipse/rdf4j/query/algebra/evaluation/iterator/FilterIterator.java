@@ -15,8 +15,8 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -154,9 +154,14 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 			return null;
 		}
 		boolean recordFilterOutcomes = shouldRecordFilterOutcomes(filter, evaluationStatistics);
+		// One probe budget for the whole step: joins re-instantiate this filter once per outer row, and a
+		// per-instance budget would keep every instance probing forever instead of amortizing into
+		// materialization (see MaterializedExistsFilterIteration.PROBE_LIMIT).
+		java.util.concurrent.atomic.AtomicInteger sharedProbeBudget = new java.util.concurrent.atomic.AtomicInteger(
+				MaterializedExistsFilterIteration.PROBE_LIMIT);
 		return bindings -> new MaterializedExistsFilterIteration(filter, arg.evaluate(bindings),
 				() -> existsArg.evaluate(bindings), existsArg::evaluate, sharedBindingArray, evaluationStatistics,
-				recordFilterOutcomes);
+				recordFilterOutcomes, sharedProbeBudget);
 	}
 
 	private static Set<String> constantVarNames(TupleExpr subQuery) {

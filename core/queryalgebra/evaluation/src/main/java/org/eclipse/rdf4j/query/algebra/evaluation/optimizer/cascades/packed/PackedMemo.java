@@ -97,7 +97,12 @@ final class PackedMemo {
 		int existing = findLogical(operatorTag, payloadId, semanticScopeId, executionDomainId, childGroupIds,
 				childOffset, childCount);
 		if (existing != 0) {
-			ensureTargetGroup(existing, targetGroupId);
+			if (logicalGroupId(existing) != targetGroupId) {
+				// The caller proved this group equivalent to an expression already canonicalized in another group.
+				// This append-only memo cannot merge groups, so the equivalence is dropped rather than recorded:
+				// callers treat 0 as "alternative not recorded" and continue with their physical alternative only.
+				return 0;
+			}
 			return existing;
 		}
 		int overlayId = logicalOverlay.internLogical(targetGroupId, operatorTag, payloadId, semanticScopeId,
@@ -184,18 +189,17 @@ final class PackedMemo {
 					+ " does not produce physical target group " + targetGroupId);
 		}
 		properties.satisfies(deliveredPropertyId, deliveredPropertyId);
-		int existing = physicalExpressions.findLogical(operatorTag, payloadId, deliveredPropertyId,
+		// Physical identity is group-scoped: scope-distinguished logical twins live in different groups but can
+		// produce structurally identical physical tuples, which must stay distinct rows per group.
+		int existing = physicalExpressions.findGroupScoped(targetGroupId, operatorTag, payloadId, deliveredPropertyId,
 				implementationForm, childGroupIds, childOffset, childCount);
 		if (existing != 0) {
-			if (physicalExpressions.groupId(existing) != targetGroupId) {
-				throw crossGroupInvariant("physical", existing, physicalExpressions.groupId(existing), targetGroupId);
-			}
 			if (physicalSourceLogicalExpressionIds[existing] == 0) {
 				physicalSourceLogicalExpressionIds[existing] = sourceLogicalExpressionId;
 			}
 			return existing;
 		}
-		int physicalExpressionId = physicalExpressions.internLogical(targetGroupId, operatorTag, payloadId,
+		int physicalExpressionId = physicalExpressions.internGroupScoped(targetGroupId, operatorTag, payloadId,
 				deliveredPropertyId, implementationForm, childGroupIds, childOffset, childCount);
 		linkPhysical(targetGroupId, physicalExpressionId);
 		physicalSourceLogicalExpressionIds[physicalExpressionId] = sourceLogicalExpressionId;

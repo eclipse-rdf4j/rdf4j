@@ -168,21 +168,21 @@ final class PackedNodeMetadataArena {
 				throw new IllegalArgumentException("metadata row id must be positive");
 			}
 			ensureCapacity(id);
-			long resultBits = Double.doubleToRawLongBits(resultSizeEstimate);
-			long costBits = Double.doubleToRawLongBits(costEstimate);
 			if (present[id] != 0) {
-				if (metricSetIds[id] != metricSetId || flags[id] != nodeFlags
-						|| resultSizeEstimateBits[id] != resultBits || costEstimateBits[id] != costBits
-						|| algorithmNameIds[id] != algorithmNameId) {
-					throw new PackedMemoInvariantException("canonical node " + id + " has conflicting metadata");
+				// Flags are part of canonical identity (the codec's semantic-scope slot), so a mismatch here is a
+				// real invariant breach. Metrics, estimates, and algorithm names are advisory annotations that can
+				// legitimately differ between structurally identical occurrences (e.g. only one twin was annotated
+				// by an earlier optimizer); the first occurrence wins deterministically, matching attachTerm.
+				if (flags[id] != nodeFlags) {
+					throw new PackedMemoInvariantException("canonical node " + id + " has conflicting flags");
 				}
 				return;
 			}
 			present[id] = 1;
 			metricSetIds[id] = metricSetId;
 			flags[id] = nodeFlags;
-			resultSizeEstimateBits[id] = resultBits;
-			costEstimateBits[id] = costBits;
+			resultSizeEstimateBits[id] = Double.doubleToRawLongBits(resultSizeEstimate);
+			costEstimateBits[id] = Double.doubleToRawLongBits(costEstimate);
 			algorithmNameIds[id] = algorithmNameId;
 		}
 
