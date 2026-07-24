@@ -66,6 +66,7 @@ public final class TelemetryMetricNames {
 	public static final String INDEX_HIT_RATE_ACTUAL = "indexHitRateActual";
 	public static final String INDEX_NAME = "indexName";
 	public static final String INDEX_NAMES = "indexNames";
+	public static final String NATIVE_EXECUTION_PATH = "nativeExecutionPath";
 
 	public static final String REMOTE_REQUEST_COUNT_ACTUAL = "remoteRequestCountActual";
 	public static final String REMOTE_ASK_REQUEST_COUNT_ACTUAL = "remoteAskRequestCountActual";
@@ -110,6 +111,8 @@ public final class TelemetryMetricNames {
 	public static final String PLANNER_ID = "plannerId";
 	public static final String PLANNER_ALGORITHM = "plannerAlgorithm";
 	public static final String PLANNER_PATH = "plannerPath";
+	public static final String PLANNED_EXECUTION_ENGINE = "plannedExecutionEngine";
+	public static final String PLANNED_EXECUTION_KIND = "plannedExecutionKind";
 	public static final String PLANNED_INDEX_NAME = "plannedIndexName";
 	public static final String PLANNED_INDEX_PREFIX_LENGTH = "plannedIndexPrefixLength";
 	public static final String PLANNED_LOOKUP_COMPONENTS = "plannedLookupComponents";
@@ -162,11 +165,16 @@ public final class TelemetryMetricNames {
 	public static final String OPTIMIZER_STRUCTURAL_SUMMARY = OPTIMIZER_PREFIX + "structuralSummary";
 	public static final String OPTIMIZER_LOGICAL_EXPLORATION = OPTIMIZER_PREFIX + "logicalExploration";
 	public static final String OPTIMIZER_PHYSICAL_REFINEMENT = OPTIMIZER_PREFIX + "physicalRefinement";
+	public static final String OPTIMIZER_EXACT_VALUES = OPTIMIZER_PREFIX + "exactValues";
 	public static final String OPTIMIZER_RUNTIME_HINTS = OPTIMIZER_PREFIX + "runtimeHints";
 	public static final String OPTIMIZER_RUNTIME_FEEDBACK = OPTIMIZER_PREFIX + "runtimeFeedback";
 	public static final String OPTIMIZER_RUNTIME_FEEDBACK_CONFIDENCE = OPTIMIZER_PREFIX + "runtimeFeedbackConfidence";
 
 	public static boolean isOptimizerMetric(String metricName) {
 		return metricName != null && metricName.startsWith(OPTIMIZER_PREFIX);
+	}
+
+	public static boolean isExecutionSummaryMetric(String metricName) {
+		return NATIVE_EXECUTION_PATH.equals(metricName);
 	}
 }

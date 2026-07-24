@@ -40,7 +40,7 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	/**
 	 * The default value cache size.
 	 */
-	public static final int VALUE_CACHE_SIZE = 512;
+	public static final int VALUE_CACHE_SIZE = 256 * 1024;
 
 	/**
 	 * The default value id cache size.
@@ -53,7 +53,7 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	public static final int NAMESPACE_CACHE_SIZE = 64;
 
 	/**
-	 * The default size of aligned bulk write batches.
+	 * The default marker that enables adaptive aligned bulk write batches.
 	 */
 	public static final int BULK_OPERATION_SIZE = 256;
 
@@ -103,6 +103,8 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	private boolean valueHashCacheEnabled = false;
 
 	private boolean inlineLiterals = true;
+
+	private boolean orderedNumericIds = true;
 
 	private Boolean sketchEstimatorEnabled;
 
@@ -231,6 +233,10 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return bulkOperationSize >= 0 ? bulkOperationSize : BULK_OPERATION_SIZE;
 	}
 
+	/**
+	 * Enables adaptive aligned bulk writes when positive, or disables them when zero. Positive values are retained for
+	 * configuration compatibility; operation capacities are selected dynamically from the JVM maximum heap.
+	 */
 	public LmdbStoreConfig setBulkOperationSize(int bulkOperationSize) {
 		this.bulkOperationSize = bulkOperationSize;
 		return this;
@@ -299,10 +305,31 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	/**
+	 * Whether NEWLY CREATED stores inline numeric literals with the value-ordered (biased) id encoding, making
+	 * same-family numeric id comparison a raw long compare. Applies at store creation only — existing stores keep
+	 * whatever encoding their {@code store.properties} records (absent = legacy ZigZag) and are never rewritten.
+	 */
+	public boolean getOrderedNumericIds() {
+		return orderedNumericIds;
+	}
+
+	public LmdbStoreConfig setOrderedNumericIds(boolean orderedNumericIds) {
+		this.orderedNumericIds = orderedNumericIds;
+		return this;
+	}
+
 	public Boolean getSketchEstimatorEnabled() {
 		return sketchEstimatorEnabled;
 	}
 
+	/**
+	 * Setting this to false also disables the lmdb optimizer pipeline. This is done on purpose and is not meant to just
+	 * be a side effect.
+	 *
+	 * @param sketchEstimatorEnabled
+	 * @return
+	 */
 	public LmdbStoreConfig setSketchEstimatorEnabled(Boolean sketchEstimatorEnabled) {
 		this.sketchEstimatorEnabled = sketchEstimatorEnabled;
 		return this;

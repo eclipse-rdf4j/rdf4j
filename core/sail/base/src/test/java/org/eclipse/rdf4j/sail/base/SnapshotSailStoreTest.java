@@ -158,6 +158,7 @@ public class SnapshotSailStoreTest {
 					EmptyBindingSet.getInstance(), true, 0);
 			assertTrue(explanation.toJson().contains("\"hasNextCallCountActual\""));
 			assertFalse(tupleExpr.isRuntimeTelemetryEnabled());
+			assertFalse(tupleExpr.isExecutionSummaryEnabled());
 		} finally {
 			sail.shutDown();
 		}

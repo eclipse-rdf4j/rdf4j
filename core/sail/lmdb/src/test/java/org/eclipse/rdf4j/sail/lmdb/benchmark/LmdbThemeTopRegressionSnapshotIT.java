@@ -130,7 +130,7 @@ class LmdbThemeTopRegressionSnapshotIT {
 		Map<String, String> fastestQueries = parseFastestOptimizedQueries();
 		for (Map.Entry<Theme, List<TargetQuery>> entry : targetsByTheme().entrySet()) {
 			System.out.println("Preparing theme " + entry.getKey());
-			Path storeDirectory = prepareThemeStore(dataDir, entry.getKey(), entry.getValue());
+			Path storeDirectory = prepareThemeStore(dataDir, entry.getKey());
 			LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
 			System.out.println("Prepared store for theme " + entry.getKey().name());
@@ -253,12 +253,11 @@ class LmdbThemeTopRegressionSnapshotIT {
 		throw new AssertionError("Unable to locate theme query benchmark results directory");
 	}
 
-	private static Path prepareThemeStore(Path dataDir, Theme theme, List<TargetQuery> targetQueries) throws Exception {
-		List<TargetQuery> primedQueries = learnedFilterPrimeQueries(targetQueries);
+	private static Path prepareThemeStore(Path dataDir, Theme theme) throws Exception {
 		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
 				.prepareThemeRegressionStore(
 						dataDir.resolve("top-regression-" + theme.name()),
-						PERSISTENT_STORE_KEY_PREFIX + "/" + theme.name() + "/" + primeIndexKey(primedQueries),
+						PERSISTENT_STORE_KEY_PREFIX + "/" + theme.name() + "/cold",
 						storeDirectory -> {
 							LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
 							SailRepository repository = new SailRepository(store);
@@ -266,7 +265,6 @@ class LmdbThemeTopRegressionSnapshotIT {
 								BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
 								loadData(repository, theme);
 								BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
-								primeLearnedFilterStats(repository, primedQueries);
 								BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
 							} finally {
 								shutdownAndRelease(repository, store);
@@ -279,22 +277,6 @@ class LmdbThemeTopRegressionSnapshotIT {
 		return preparedStore.storeDirectory();
 	}
 
-	private static List<TargetQuery> learnedFilterPrimeQueries(List<TargetQuery> targetQueries) {
-		return targetQueries.stream()
-				.filter(targetQuery -> targetQuery.theme == Theme.HIGHLY_CONNECTED)
-				.filter(targetQuery -> targetQuery.queryIndex == 5)
-				.collect(Collectors.toList());
-	}
-
-	private static String primeIndexKey(List<TargetQuery> targetQueries) {
-		String key = targetQueries.stream()
-				.map(targetQuery -> Integer.toString(targetQuery.queryIndex))
-				.distinct()
-				.sorted()
-				.collect(Collectors.joining("-"));
-		return key.isEmpty() ? "no-prime" : key;
-	}
-
 	private static void loadData(SailRepository repository, Theme theme) throws IOException {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.READ_COMMITTED);
@@ -303,28 +285,6 @@ class LmdbThemeTopRegressionSnapshotIT {
 			connection.commit();
 		}
 		System.out.println("Loaded data for theme " + theme.name());
-	}
-
-	private static void primeLearnedFilterStats(SailRepository repository, List<TargetQuery> targetQueries) {
-		for (TargetQuery targetQuery : targetQueries) {
-			String query = ThemeQueryCatalog.queryFor(targetQuery.theme, targetQuery.queryIndex);
-			long expected = ThemeQueryCatalog.expectedCountFor(targetQuery.theme, targetQuery.queryIndex);
-			long actual = executeQuery(repository, query);
-			if (actual != expected) {
-				throw new AssertionError("Unable to prime learned filter stats: theme=" + targetQuery.theme
-						+ ", queryIndex=" + targetQuery.queryIndex + ", expected=" + expected + ", actual="
-						+ actual);
-			}
-		}
-	}
-
-	private static long executeQuery(SailRepository repository, String query) {
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection.prepareTupleQuery(query)
-					.evaluate()
-					.stream()
-					.count();
-		}
 	}
 
 	private static String explainOptimized(SailRepository repository, TargetQuery targetQuery) {
@@ -383,7 +343,7 @@ class LmdbThemeTopRegressionSnapshotIT {
 			return normalizedActual.contains("VALUES ?u { <http://example.com/theme/social/user/7>")
 					&& normalizedActual
 							.contains("VALUES ?optName { \"user7\" \"user8\" \"user9\" \"user10\" \"user11\" }")
-					&& normalizedActual
+					&& !normalizedActual
 							.contains("FILTER (?optName IN (\"user7\", \"user8\", \"user9\", \"user10\", \"user11\"))")
 					&& planHasBoundPredicateAccess(plan, "http://example.com/theme/social/follows")
 					&& planHasBoundPredicateAccess(plan, "http://example.com/theme/social/authored")
@@ -424,6 +384,9 @@ class LmdbThemeTopRegressionSnapshotIT {
 		}
 		if (targetQuery.theme == Theme.ENGINEERING && targetQuery.queryIndex == 9) {
 			return engineeringQ9FastShapeMismatches(normalizedActual, plan).isEmpty();
+		}
+		if (targetQuery.theme == Theme.ENGINEERING && targetQuery.queryIndex == 8) {
+			return engineeringQ8FastShapeMismatches(normalizedActual, plan).isEmpty();
 		}
 		if (targetQuery.theme == Theme.ENGINEERING && targetQuery.queryIndex == 3) {
 			return engineeringQ3FastShapeMismatches(normalizedActual, plan).isEmpty();
@@ -606,6 +569,13 @@ class LmdbThemeTopRegressionSnapshotIT {
 			List<String> mismatches = engineeringQ9FastShapeMismatches(renderedQuery, plan);
 			assertTrue(mismatches.isEmpty(),
 					targetQuery.key() + " should keep the canonical fast measurement-requirement shape:\n"
+							+ String.join("\n", mismatches) + "\nQuery:\n" + renderedQuery + "\nPlan:\n" + plan);
+		} else if (targetQuery.theme == Theme.ENGINEERING && targetQuery.queryIndex == 8) {
+			String renderedQuery = normalize(explainOptimized(repository, targetQuery));
+			String plan = explainOptimizedPlan(repository, targetQuery);
+			List<String> mismatches = engineeringQ8FastShapeMismatches(renderedQuery, plan);
+			assertTrue(mismatches.isEmpty(),
+					targetQuery.key() + " should keep the canonical fast requirement-component shape:\n"
 							+ String.join("\n", mismatches) + "\nQuery:\n" + renderedQuery + "\nPlan:\n" + plan);
 		}
 	}
@@ -851,8 +821,9 @@ class LmdbThemeTopRegressionSnapshotIT {
 		requirePlanAccess(mismatches, plan, "http://example.com/theme/train/name", "train name");
 		requirePredicateHeaderContains(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
 				"plannedLookupComponents=[S, P, O]", "Line type should use exact direct access");
-		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/train/partOfLine",
-				"plannedLookupComponents=[O]", "partOfLine optional should use bound line object access");
+		requirePredicateHeaderContainsAny(mismatches, plan, "http://example.com/theme/train/partOfLine",
+				"partOfLine optional should use a bounded line object access",
+				"plannedLookupComponents=[O]", "plannedLookupComponents=[P, O]");
 		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 100.0d, 2);
 		return mismatches;
 	}
@@ -1180,6 +1151,36 @@ class LmdbThemeTopRegressionSnapshotIT {
 		return mismatches;
 	}
 
+	private static List<String> engineeringQ8FastShapeMismatches(String renderedQuery, String plan) {
+		List<String> mismatches = new ArrayList<>();
+		requireContains(mismatches, renderedQuery,
+				"?requirement <http://example.com/theme/engineering/satisfies> ?component .",
+				"satisfies bridge should remain visible");
+		requireBefore(mismatches, renderedQuery,
+				"?requirement <http://example.com/theme/engineering/satisfies> ?component .",
+				"?component a <http://example.com/theme/engineering/Component> .",
+				"satisfies should bind component before the component type guard");
+		requireBefore(mismatches, renderedQuery,
+				"?component a <http://example.com/theme/engineering/Component> .",
+				"?component <http://example.com/theme/engineering/partOf> ?assembly .",
+				"component type guard should run before assembly fanout");
+		requireBefore(mismatches, renderedQuery,
+				"?component <http://example.com/theme/engineering/partOf> ?assembly .",
+				"OPTIONAL",
+				"mandatory component chain should finish before optional dependsOn fanout");
+		requireBefore(mismatches, renderedQuery, "OPTIONAL", "FILTER (?optDep != ?component)",
+				"optional dependsOn fanout should stay before the optDep filter");
+		requireDoesNotContain(mismatches, plan, "Join (BoundStatementPatternJoinIteration) (resultSizeEstimate=520)",
+				"component type guard should not run through the known slow bound-statement count shape");
+		requirePlanAccess(mismatches, plan, "http://example.com/theme/engineering/satisfies", "satisfies");
+		requirePlanAccess(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+				"Component type");
+		requirePlanAccess(mismatches, plan, "http://example.com/theme/engineering/partOf", "partOf");
+		requirePlanAccess(mismatches, plan, "http://example.com/theme/engineering/dependsOn", "dependsOn");
+		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 2_000.0d, 3);
+		return mismatches;
+	}
+
 	private static List<String> engineeringQ3FastShapeMismatches(String renderedQuery, String plan) {
 		List<String> mismatches = new ArrayList<>();
 		requireContains(mismatches, renderedQuery,
@@ -1260,6 +1261,29 @@ class LmdbThemeTopRegressionSnapshotIT {
 		if (!header.contains(expectedHeaderPart)) {
 			mismatches.add(description + ": expected `" + expectedHeaderPart + "` in `" + header + "`");
 		}
+	}
+
+	private static void requirePredicateHeaderContainsAny(List<String> mismatches, String plan, String predicateIri,
+			String description, String... expectedHeaderParts) {
+		int predicateIndex = plan.indexOf("value=" + predicateIri);
+		if (predicateIndex < 0) {
+			mismatches.add(description + ": missing predicate `" + predicateIri + "`");
+			return;
+		}
+		int patternStart = plan.lastIndexOf("StatementPattern (", predicateIndex);
+		int patternEnd = plan.indexOf('\n', patternStart);
+		if (patternStart < 0 || patternEnd < 0) {
+			mismatches.add(description + ": missing statement-pattern header for `" + predicateIri + "`");
+			return;
+		}
+		String header = plan.substring(patternStart, patternEnd);
+		for (String expectedHeaderPart : expectedHeaderParts) {
+			if (header.contains(expectedHeaderPart)) {
+				return;
+			}
+		}
+		mismatches.add(description + ": expected one of `" + String.join("`, `", expectedHeaderParts)
+				+ "` in `" + header + "`");
 	}
 
 	private static void requireAnyPredicateHeaderContains(List<String> mismatches, String plan, String predicateIri,

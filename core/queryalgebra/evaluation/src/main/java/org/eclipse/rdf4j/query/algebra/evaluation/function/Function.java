@@ -57,6 +57,10 @@ public interface Function {
 
 	/**
 	 * UUID() and STRUUID() must return a different result for each invocation.
+	 * <p>
+	 * This is a freshness guarantee, orthogonal to {@link #getDeterminism()}: a volatile function (a die roll) may
+	 * legally repeat values, while a must-differ function never may. When this returns {@code true} the function is
+	 * never folded or merged by the optimizer, regardless of its declared determinism.
 	 *
 	 * @return if each invocation must return a different result.
 	 * @see https://www.w3.org/TR/sparql11-query/#func-uuid
@@ -65,5 +69,40 @@ public interface Function {
 	 */
 	default boolean mustReturnDifferentResult() {
 		return false;
+	}
+
+	/**
+	 * The determinism contract a function implementation declares, consumed by the query optimizer and the evaluation
+	 * engine to decide which rewrites and physical strategies preserve observable query behavior. The contract is about
+	 * observable values, errors, and effects — never about how often the implementation is physically invoked.
+	 */
+	enum Determinism {
+
+		/**
+		 * Immutable: for equal RDF-term arguments the function returns an equal RDF term or an equivalent evaluation
+		 * error, at any time — independent of query, transaction, clock, registry, and {@code TripleSource} state.
+		 * Declaring this additionally promises that eliding, repeating, or merging invocations does not alter any
+		 * query-visible or contractually observable state. Deterministic functions may be moved, merged, re-evaluated,
+		 * and constant-folded into reusable prepared queries.
+		 */
+		DETERMINISTIC,
+
+		/**
+		 * No repeatability promise (the default). Volatile functions are conservative barriers: the optimizer never
+		 * folds, merges, duplicates, or moves them across cardinality-changing operators, and the evaluation engine
+		 * never re-evaluates an operand containing them where the algebra evaluates it once.
+		 */
+		VOLATILE
+	}
+
+	/**
+	 * Declares this function's determinism. The default is {@link Determinism#VOLATILE}, the only sound classification
+	 * for an unknown implementation. Declaring {@link Determinism#DETERMINISTIC} is an affirmative promise by the
+	 * implementor — see the enum constant documentation for the exact contract; a wrong declaration produces wrong
+	 * query results. When {@link #mustReturnDifferentResult()} is {@code true}, that freshness guarantee dominates and
+	 * the function is treated as volatile regardless of this declaration.
+	 */
+	default Determinism getDeterminism() {
+		return Determinism.VOLATILE;
 	}
 }

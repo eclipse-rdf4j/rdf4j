@@ -91,6 +91,31 @@ public class QueryModelTreeToGenericPlanNodeTest {
 	}
 
 	@Test
+	public void copiesExecutionSummaryWithoutVerboseTelemetryAtExecutedLevel() {
+		TupleExpr tupleExpr = new Join(
+				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
+				new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")));
+		tupleExpr.setExecutionSummaryEnabled(true);
+		tupleExpr.setStringMetricActual(TelemetryMetricNames.NATIVE_EXECUTION_PATH, "chunkPipeline");
+		tupleExpr.setExecutionSummaryEnabled(false);
+		tupleExpr.setRuntimeTelemetryEnabled(true);
+		tupleExpr.setLongMetricActual("nativeChunkEngagedActual", 1L);
+		tupleExpr.setRuntimeTelemetryEnabled(false);
+
+		GenericPlanNode optimized = convert(tupleExpr, Explanation.Level.Optimized);
+		GenericPlanNode executed = convert(tupleExpr, Explanation.Level.Executed);
+		GenericPlanNode telemetry = convert(tupleExpr, Explanation.Level.Telemetry);
+
+		assertThat(optimized.getStringMetricActual(TelemetryMetricNames.NATIVE_EXECUTION_PATH)).isNull();
+		assertThat(executed.getStringMetricActual(TelemetryMetricNames.NATIVE_EXECUTION_PATH))
+				.isEqualTo("chunkPipeline");
+		assertThat(executed.getLongMetricActual("nativeChunkEngagedActual")).isNull();
+		assertThat(telemetry.getStringMetricActual(TelemetryMetricNames.NATIVE_EXECUTION_PATH))
+				.isEqualTo("chunkPipeline");
+		assertThat(telemetry.getLongMetricActual("nativeChunkEngagedActual")).isEqualTo(1L);
+	}
+
+	@Test
 	public void derivesVariableShapeMetricsFromTupleExprBindingNames() {
 		StatementPattern statementPattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
 		Extension extension = new Extension(statementPattern, new ExtensionElem(Var.of("o"), "derivedVar"));
@@ -348,6 +373,12 @@ public class QueryModelTreeToGenericPlanNodeTest {
 
 	private static GenericPlanNode statementPattern(GenericPlanNode join, int index) {
 		return join.getPlans().get(index);
+	}
+
+	private static GenericPlanNode convert(TupleExpr tupleExpr, Explanation.Level level) {
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(tupleExpr, null, level);
+		tupleExpr.visit(converter);
+		return converter.getGenericPlanNode();
 	}
 
 	private static GenericPlanNode rightSubjectVar(GenericPlanNode join) {

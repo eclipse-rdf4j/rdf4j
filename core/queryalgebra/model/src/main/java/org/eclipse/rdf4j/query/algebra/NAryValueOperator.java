@@ -81,6 +81,7 @@ public abstract class NAryValueOperator extends AbstractQueryModelNode implement
 			ValueExpr arg = args.get(i);
 			if (arg == current) {
 				args.set(i, (ValueExpr) replacement);
+				replacement.setParentNode(this);
 			}
 		}
 	}

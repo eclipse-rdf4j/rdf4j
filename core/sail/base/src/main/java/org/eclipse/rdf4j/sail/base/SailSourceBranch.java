@@ -16,10 +16,12 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -68,6 +70,7 @@ class SailSourceBranch implements SailSource {
 	 * The underly {@link SailSource} this {@link SailSource} is derived from.
 	 */
 	private final SailSource backingSource;
+	private final BackingSailSource statementBufferSource;
 
 	/**
 	 * The {@link Model} instances that should be used to store {@link SailSink#approve(Resource, IRI, Value, Resource)}
@@ -123,7 +126,14 @@ class SailSourceBranch implements SailSource {
 	 * @param autoFlush
 	 */
 	public SailSourceBranch(SailSource backingSource, ModelFactory modelFactory, boolean autoFlush) {
+		this(backingSource, modelFactory, autoFlush,
+				backingSource instanceof BackingSailSource source ? source : null);
+	}
+
+	private SailSourceBranch(SailSource backingSource, ModelFactory modelFactory, boolean autoFlush,
+			BackingSailSource statementBufferSource) {
 		this.backingSource = backingSource;
+		this.statementBufferSource = statementBufferSource;
 		this.modelFactory = modelFactory;
 		this.autoFlush = autoFlush;
 	}
@@ -164,6 +174,15 @@ class SailSourceBranch implements SailSource {
 		Changeset changeset = new Changeset() {
 
 			private boolean prepared;
+
+			@Override
+			protected List<Statement> bufferStatements(Iterable<? extends Statement> statements,
+					int expectedSize, Consumer<Resource> contextConsumer) {
+				if (statementBufferSource != null) {
+					return statementBufferSource.bufferStatementsForBranch(statements, expectedSize, contextConsumer);
+				}
+				return super.bufferStatements(statements, expectedSize, contextConsumer);
+			}
 
 			@Override
 			public void prepare() throws SailException {
@@ -307,7 +326,7 @@ class SailSourceBranch implements SailSource {
 
 	@Override
 	public SailSource fork() {
-		return new SailSourceBranch(this, modelFactory);
+		return new SailSourceBranch(this, modelFactory, false, statementBufferSource);
 	}
 
 	@Override

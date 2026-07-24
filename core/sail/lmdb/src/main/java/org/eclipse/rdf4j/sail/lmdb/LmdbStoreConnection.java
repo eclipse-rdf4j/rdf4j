@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailReadOnlyException;
 import org.eclipse.rdf4j.sail.base.SailSourceConnection;
 import org.eclipse.rdf4j.sail.helpers.DefaultSailChangedEvent;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeProjectedBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /**
@@ -121,6 +122,12 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	}
 
 	@Override
+	protected void bulkStatementAdded(Statement statement, Resource... contexts) {
+		// Bulk additions only need one transaction event; the sink consumes the statement fields.
+		sailChangedEvent.setStatementsAdded(true);
+	}
+
+	@Override
 	public boolean addInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		boolean ret = super.addInferredStatement(subj, pred, obj, contexts);
 		// assume the triple is not yet present in the triple store
@@ -138,7 +145,11 @@ public class LmdbStoreConnection extends SailSourceConnection {
 			@Override
 			public BindingSet next() throws QueryEvaluationException {
 				BindingSet bs = super.next();
-				bs.forEach(b -> initValue(b.getValue()));
+				if (bs instanceof NativeProjectedBindingSet) {
+					((NativeProjectedBindingSet) bs).materializeAndDetach();
+				} else {
+					bs.forEach(b -> initValue(b.getValue()));
+				}
 				return bs;
 			}
 		};

@@ -86,7 +86,6 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 								BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
 								loadBenchmarkData(repository);
 								BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
-								primeLearnedFilterStats(repository, themes);
 								BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
 							} finally {
 								shutdownAndRelease(repository, store);
@@ -117,7 +116,7 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
 				.prepareThemeRegressionStore(
 						dataDir.resolve(Theme.HIGHLY_CONNECTED.name()),
-						PERSISTENT_STORE_KEY_PREFIX + "/highly-connected/" + selectedQueryIndexesKey(),
+						PERSISTENT_STORE_KEY_PREFIX + "/highly-connected/cold/" + selectedQueryIndexesKey(),
 						storeDirectory -> {
 							LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
 							SailRepository repository = new SailRepository(store);
@@ -125,7 +124,6 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 								BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
 								loadHighlyConnectedQuery5Fixture(repository);
 								BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
-								primeLearnedFilterStats(repository, Theme.HIGHLY_CONNECTED);
 								BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
 							} finally {
 								shutdownAndRelease(repository, store);
@@ -208,7 +206,7 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 				.map(Enum::name)
 				.sorted()
 				.collect(Collectors.joining("-"));
-		return PERSISTENT_STORE_KEY_PREFIX + "/benchmark/" + themeKey + "/" + selectedQueryIndexesKey();
+		return PERSISTENT_STORE_KEY_PREFIX + "/benchmark/cold/" + themeKey + "/" + selectedQueryIndexesKey();
 	}
 
 	private static String selectedQueryIndexesKey() {
@@ -249,45 +247,6 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 				connection.add(resource, weight, vf.createLiteral(4 + (i % 3)));
 			}
 			connection.commit();
-		}
-	}
-
-	private static void primeLearnedFilterStats(SailRepository repository, List<Theme> themes) {
-		for (Theme theme : themes) {
-			if (theme == Theme.PHARMA) {
-				for (int queryIndex = 0; queryIndex <= 10; queryIndex++) {
-					primeLearnedFilterStats(repository, theme, queryIndex);
-				}
-			} else {
-				for (Expectation expectation : expectationsForTheme(theme)) {
-					primeLearnedFilterStats(repository, theme, expectation.queryIndex);
-				}
-			}
-		}
-	}
-
-	private static void primeLearnedFilterStats(SailRepository repository, Theme theme) {
-		for (Expectation expectation : expectationsForTheme(theme)) {
-			primeLearnedFilterStats(repository, expectation.theme, expectation.queryIndex);
-		}
-	}
-
-	private static void primeLearnedFilterStats(SailRepository repository, Theme theme, int queryIndex) {
-		String query = ThemeQueryCatalog.queryFor(theme, queryIndex);
-		long expected = ThemeQueryCatalog.expectedCountFor(theme, queryIndex);
-		long actual = executeQuery(repository, query);
-		if (actual != expected) {
-			throw new AssertionError("Unable to prime learned filter stats: theme=" + theme
-					+ ", queryIndex=" + queryIndex + ", expected=" + expected + ", actual=" + actual);
-		}
-	}
-
-	private static long executeQuery(SailRepository repository, String query) {
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection.prepareTupleQuery(query)
-					.evaluate()
-					.stream()
-					.count();
 		}
 	}
 

@@ -40,6 +40,15 @@ class StoreProperties {
 	 */
 	static final String TRIPLE_TERM_INDEXES_KEY = "triple-term-indexes";
 
+	/**
+	 * The key recording which inlined-numeric id encoding NEW writes use. Absent = the legacy ZigZag scheme (all
+	 * pre-existing stores); {@link #NUMERIC_ID_ENCODING_ORDERED_V1} = value-ordered biased encoding. Ids are
+	 * self-describing by type bits, so both encodings coexist in one store — this property only gates writers.
+	 */
+	static final String NUMERIC_ID_ENCODING_KEY = "numeric-id-encoding";
+
+	static final String NUMERIC_ID_ENCODING_ORDERED_V1 = "ordered-v1";
+
 	protected final File propertiesFile;
 
 	protected String version;
@@ -47,6 +56,8 @@ class StoreProperties {
 	protected String tripleIndexes;
 
 	protected String tripleTermIndexes;
+
+	protected String numericIdEncoding;
 
 	protected boolean loaded;
 
@@ -76,6 +87,7 @@ class StoreProperties {
 			version = properties.getProperty(VERSION_KEY);
 			tripleIndexes = properties.getProperty(INDEXES_KEY);
 			tripleTermIndexes = properties.getProperty(TRIPLE_TERM_INDEXES_KEY);
+			numericIdEncoding = properties.getProperty(NUMERIC_ID_ENCODING_KEY);
 			loaded = true;
 		});
 		return loaded;
@@ -99,6 +111,9 @@ class StoreProperties {
 			if (tripleTermIndexes != null) {
 				properties.setProperty(TRIPLE_TERM_INDEXES_KEY, tripleTermIndexes);
 			}
+			if (numericIdEncoding != null) {
+				properties.setProperty(NUMERIC_ID_ENCODING_KEY, numericIdEncoding);
+			}
 			File parent = file.getParentFile();
 			if (parent != null) {
 				parent.mkdirs();
@@ -121,9 +136,25 @@ class StoreProperties {
 	}
 
 	StoreProperties setVersion(String version) {
-		this.dirty = !Objects.equals(this.version, version);
+		// dirtiness accumulates until save(): a later same-value setter call must not wipe pending changes
+		this.dirty = dirty || !Objects.equals(this.version, version);
 		this.version = version;
 		return this;
+	}
+
+	String getNumericIdEncoding() {
+		return numericIdEncoding;
+	}
+
+	StoreProperties setNumericIdEncoding(String numericIdEncoding) {
+		this.dirty = dirty || !Objects.equals(this.numericIdEncoding, numericIdEncoding);
+		this.numericIdEncoding = numericIdEncoding;
+		return this;
+	}
+
+	/** Whether NEW writes use the value-ordered inlined-numeric encoding. */
+	boolean usesOrderedNumericIds() {
+		return NUMERIC_ID_ENCODING_ORDERED_V1.equals(numericIdEncoding);
 	}
 
 	String getTripleIndexes() {
@@ -131,7 +162,7 @@ class StoreProperties {
 	}
 
 	StoreProperties setTripleIndexes(String tripleIndexes) {
-		this.dirty = !Objects.equals(this.tripleIndexes, tripleIndexes);
+		this.dirty = dirty || !Objects.equals(this.tripleIndexes, tripleIndexes);
 		this.tripleIndexes = tripleIndexes;
 		return this;
 	}
@@ -141,7 +172,7 @@ class StoreProperties {
 	}
 
 	StoreProperties setTripleTermIndexes(String tripleTermIndexes) {
-		this.dirty = !Objects.equals(this.tripleTermIndexes, tripleTermIndexes);
+		this.dirty = dirty || !Objects.equals(this.tripleTermIndexes, tripleTermIndexes);
 		this.tripleTermIndexes = tripleTermIndexes;
 		return this;
 	}

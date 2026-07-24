@@ -203,6 +203,12 @@ class LmdbDevelopPlanParityIT {
 		if (targetQuery.theme == Theme.PHARMA && targetQuery.queryIndex == 5) {
 			return isPharmaQ5FastHistoricalShape(signature.lines());
 		}
+		if (targetQuery.theme == Theme.MEDICAL_RECORDS && targetQuery.queryIndex == 4) {
+			return isMedicalQ4CodeFirstHistoricalShape(signature.lines());
+		}
+		if (targetQuery.theme == Theme.MEDICAL_RECORDS && targetQuery.queryIndex == 7) {
+			return isMedicalQ7DosageFirstHistoricalShape(signature.lines());
+		}
 		return false;
 	}
 
@@ -219,6 +225,30 @@ class LmdbDevelopPlanParityIT {
 				&& pValue < hasResult
 				&& hasResult < hasArm
 				&& hasArm < clinicalTrial;
+	}
+
+	private static boolean isMedicalQ4CodeFirstHistoricalShape(List<String> signature) {
+		int hasObservation = predicateIndex(signature, "http://example.com/theme/medical/hasObservation");
+		int code = predicateIndex(signature, "http://example.com/theme/medical/code");
+		int hasCondition = predicateIndex(signature, "http://example.com/theme/medical/hasCondition");
+		int encounter = firstIndex(signature, "o:  Var (value=http://example.com/theme/medical/Encounter)");
+		int handledBy = predicateIndex(signature, "http://example.com/theme/medical/handledBy");
+		return hasObservation >= 0
+				&& hasObservation < code
+				&& code < hasCondition
+				&& hasCondition < encounter
+				&& encounter < handledBy;
+	}
+
+	private static boolean isMedicalQ7DosageFirstHistoricalShape(List<String> signature) {
+		int hasMedication = predicateIndex(signature, "http://example.com/theme/medical/hasMedication");
+		int dosage = predicateIndex(signature, "http://example.com/theme/medical/dosage");
+		int medicationType = firstIndex(signature, "o:  Var (value=http://example.com/theme/medical/Medication)");
+		int code = predicateIndex(signature, "http://example.com/theme/medical/code");
+		return hasMedication >= 0
+				&& hasMedication < dosage
+				&& dosage < medicationType
+				&& medicationType < code;
 	}
 
 	private static int firstIndex(List<String> signature, String prefix) {

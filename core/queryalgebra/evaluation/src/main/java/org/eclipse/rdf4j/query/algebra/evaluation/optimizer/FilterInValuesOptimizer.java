@@ -34,7 +34,9 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
 /**
@@ -58,13 +60,22 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Filter filter) {
 			super.meet(filter);
-			if (filter.getParentNode() == null || isScopeBoundary(filter)) {
+			if (filter.getParentNode() == null || isScopeBoundary(filter)
+					|| !QueryEvaluationUtility.isRepeatable(filter.getArg())) {
 				return;
 			}
 
 			BindingSetAssignment assignment = safeValuesAnchor(filter.getCondition());
 			if (assignment == null
 					|| !filter.getArg().getAssuredBindingNames().containsAll(assignment.getBindingNames())) {
+				return;
+			}
+
+			// The rewritten Join(VALUES, arg) may be executed as a bind join that pushes each VALUES row into
+			// the cloned argument, so the argument must additionally satisfy the binding-injection contract
+			// for the VALUES variables (an Extend target collision or an expression observing the injected
+			// name would change results).
+			if (!QueryEvaluationUtility.permitsBindingInjection(filter.getArg(), assignment.getBindingNames())) {
 				return;
 			}
 
@@ -141,11 +152,16 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 		}
 
 		if (mergedBindingSets.isEmpty()) {
+			if (!QueryEvaluationUtility.canDiscardWithoutEvaluation(filter.getArg())) {
+				// skip the merge: the empty result may not suppress a query-fatal error in the argument
+				return false;
+			}
 			filter.replaceWith(new EmptySet());
 			return true;
 		}
 
 		existingAssignment.setBindingSets(mergedBindingSets);
+		existingAssignment.setLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES, 1L);
 		filter.replaceWith(filter.getArg().clone());
 		return true;
 	}
@@ -207,6 +223,7 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setBindingNames(Set.of(bindingName));
+		assignment.setLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES, 1L);
 		List<BindingSet> bindingSets = new ArrayList<>(values.size());
 		for (Value value : values) {
 			MapBindingSet bindingSet = new MapBindingSet(1);

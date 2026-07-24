@@ -42,6 +42,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -256,7 +257,8 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Filter filter) {
-			if (filter.getCondition()instanceof And and) {
+			if (QueryEvaluationUtility.isRepeatable(filter.getCondition())
+					&& filter.getCondition()instanceof And and) {
 				filter.setCondition(and.getLeftArg().clone());
 				Filter newFilter = new Filter(filter.getArg().clone(), and.getRightArg().clone());
 				transferScopeChange(filter, newFilter); // preserve scope flag
@@ -278,7 +280,9 @@ public class FilterOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Filter filter) {
 			super.meet(filter);
-			if (filter.getArg()instanceof Filter childFilter && filter.getParentNode() != null) {
+			if (filter.getArg()instanceof Filter childFilter && filter.getParentNode() != null
+					&& QueryEvaluationUtility.isRepeatable(filter.getCondition())
+					&& QueryEvaluationUtility.isRepeatable(childFilter.getCondition())) {
 
 				QueryModelNode parent = filter.getParentNode();
 				And merge = mergeConditionsInFilterOrder(childFilter.getArg(), childFilter.getCondition(),
@@ -306,7 +310,9 @@ public class FilterOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Filter filter) {
 			super.meet(filter);
-			FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost);
+			if (QueryEvaluationUtility.isRepeatable(filter.getCondition())) {
+				FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost);
+			}
 			FilterSelectivityTelemetry.annotate(filter, statistics);
 		}
 	}
@@ -326,7 +332,9 @@ public class FilterOptimizer implements QueryOptimizer {
 		}
 
 		public static void optimize(Filter filter, EvaluationStatistics statistics, boolean considerJoinPlacementCost) {
-			filter.visit(new FilterRelocator(filter, statistics, considerJoinPlacementCost));
+			if (QueryEvaluationUtility.isRepeatable(filter.getCondition())) {
+				filter.visit(new FilterRelocator(filter, statistics, considerJoinPlacementCost));
+			}
 		}
 
 		@Override
@@ -338,15 +346,17 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Join join) {
-			if (join.getLeftArg().getBindingNames().containsAll(filterVars)) {
-				if (shouldKeepFilterAtJoin(join, join.getLeftArg())) {
+			if (canRelocateInto(join.getLeftArg(), join.getRightArg())) {
+				if (!QueryEvaluationUtility.isRepeatable(join.getRightArg())
+						|| shouldKeepFilterAtJoin(join, join.getLeftArg())) {
 					relocate(filter, join);
 				} else {
 					// All required vars are bound by the left expr
 					join.getLeftArg().visit(this);
 				}
-			} else if (join.getRightArg().getBindingNames().containsAll(filterVars)) {
-				if (shouldKeepFilterAtJoin(join, join.getRightArg())) {
+			} else if (canRelocateInto(join.getRightArg(), join.getLeftArg())) {
+				if (!QueryEvaluationUtility.isRepeatable(join.getLeftArg())
+						|| shouldKeepFilterAtJoin(join, join.getRightArg())) {
 					relocate(filter, join);
 				} else {
 					// All required vars are bound by the right expr
@@ -367,7 +377,10 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(LeftJoin leftJoin) {
-			if (leftJoin.getLeftArg().getBindingNames().containsAll(filterVars)) {
+			if (canRelocateInto(leftJoin.getLeftArg(), leftJoin.getRightArg())
+					&& QueryEvaluationUtility.isRepeatable(leftJoin.getRightArg())
+					&& (!leftJoin.hasCondition()
+							|| QueryEvaluationUtility.isRepeatable(leftJoin.getCondition()))) {
 				leftJoin.getLeftArg().visit(this);
 			} else {
 				relocate(filter, leftJoin);
@@ -376,6 +389,11 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Union union) {
+			if (!QueryEvaluationUtility.isRepeatable(union)) {
+				relocate(filter, union);
+				return;
+			}
+
 			Filter clone = new Filter();
 			clone.setCondition(filter.getCondition().clone());
 			transferScopeChange(filter, clone);
@@ -389,6 +407,11 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Difference node) {
+			if (!QueryEvaluationUtility.isRepeatable(node)) {
+				relocate(filter, node);
+				return;
+			}
+
 			Filter clone = new Filter();
 			clone.setCondition(filter.getCondition().clone());
 			transferScopeChange(filter, clone);
@@ -402,6 +425,11 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Intersection node) {
+			if (!QueryEvaluationUtility.isRepeatable(node)) {
+				relocate(filter, node);
+				return;
+			}
+
 			Filter clone = new Filter();
 			clone.setCondition(filter.getCondition().clone());
 			transferScopeChange(filter, clone);
@@ -415,7 +443,8 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Extension node) {
-			if (node.getArg().getBindingNames().containsAll(filterVars)) {
+			if (hasRepeatableExtensionExpressions(node)
+					&& node.getArg().getBindingNames().containsAll(filterVars)) {
 				node.getArg().visit(this);
 			} else {
 				relocate(filter, node);
@@ -431,9 +460,13 @@ public class FilterOptimizer implements QueryOptimizer {
 		}
 
 		@Override
-		public void meet(Filter filter) {
-			// Filters are commutative
-			filter.getArg().visit(this);
+		public void meet(Filter node) {
+			if (node == filter || QueryEvaluationUtility.isRepeatable(node.getCondition())) {
+				// Repeatable filters are commutative.
+				node.getArg().visit(this);
+			} else {
+				relocate(filter, node);
+			}
 		}
 
 		@Override
@@ -443,7 +476,11 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Order node) {
-			node.getArg().visit(this);
+			if (hasRepeatableOrderExpressions(node)) {
+				node.getArg().visit(this);
+			} else {
+				relocate(filter, node);
+			}
 		}
 
 		@Override
@@ -454,6 +491,24 @@ public class FilterOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Reduced node) {
 			node.getArg().visit(this);
+		}
+
+		private boolean hasRepeatableExtensionExpressions(Extension node) {
+			for (var element : node.getElements()) {
+				if (!QueryEvaluationUtility.isRepeatable(element.getExpr())) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		private boolean hasRepeatableOrderExpressions(Order node) {
+			for (var element : node.getElements()) {
+				if (!QueryEvaluationUtility.isRepeatable(element.getExpr())) {
+					return false;
+				}
+			}
+			return true;
 		}
 
 		private void relocate(Filter filter, TupleExpr newFilterArg) {
@@ -467,6 +522,57 @@ public class FilterOptimizer implements QueryOptimizer {
 				newFilterArg.replaceWith(filter);
 				filter.setArg(newFilterArg);
 			}
+		}
+
+		/**
+		 * Whether the filter may relocate into {@code arg}. Relocating a filter into one side of a join is only unsound
+		 * for a variable the argument does not bind on EVERY solution while the other side can still bind it: the
+		 * relocated filter then errors on the unbound variable and drops solutions the full join result would produce.
+		 * The known such case is a VALUES clause with UNDEF rows joined against a pattern that binds the same variable
+		 * — {@code getAssuredBindingNames()} on a {@link BindingSetAssignment} is the union over rows, so jagged names
+		 * must be excluded explicitly. Variables nothing else can bind (a filter on an optional-only variable, for
+		 * example) keep the historical union-based placement: dropping early equals dropping late.
+		 */
+		private boolean canRelocateInto(TupleExpr arg, TupleExpr otherSide) {
+			if (!arg.getBindingNames().containsAll(filterVars)) {
+				return false;
+			}
+			Set<String> assured = arg.getAssuredBindingNames();
+			Set<String> jagged = jaggedAssignmentNames(arg);
+			for (String var : filterVars) {
+				if ((!assured.contains(var) || jagged.contains(var))
+						&& otherSide.getBindingNames().contains(var)) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		/**
+		 * Names that some row of a contained {@link BindingSetAssignment} leaves unbound (UNDEF rows). Row membership
+		 * is decided by the bound VALUE, not by {@code getBindingNames()} — parser-produced rows list the declared
+		 * names even for UNDEF entries.
+		 */
+		private static Set<String> jaggedAssignmentNames(TupleExpr expr) {
+			Set<String> jagged = new HashSet<>();
+			expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(BindingSetAssignment assignment) {
+					if (assignment.getBindingSets() == null) {
+						jagged.addAll(assignment.getAssuredBindingNames());
+						return;
+					}
+					for (String name : assignment.getAssuredBindingNames()) {
+						for (BindingSet bindingSet : assignment.getBindingSets()) {
+							if (bindingSet.getValue(name) == null) {
+								jagged.add(name);
+								break;
+							}
+						}
+					}
+				}
+			});
+			return jagged;
 		}
 
 		private boolean shouldKeepFilterAtJoin(Join join, TupleExpr candidateArg) {
