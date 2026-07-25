@@ -115,10 +115,15 @@ final class LmdbNativeKernelIr {
 		int constants;
 		int entries;
 		int domains;
+		int scans;
 		boolean hooks;
 
 		void adjacency(int index) {
 			adjacencies = Math.max(adjacencies, index + 1);
+		}
+
+		void scan(int index) {
+			scans = Math.max(scans, index + 1);
 		}
 
 		void operand(Operand operand) {
@@ -166,6 +171,76 @@ final class LmdbNativeKernelIr {
 		@Override
 		void requirements(Requirements requirements) {
 			requirements.adjacency(adjacency);
+		}
+	}
+
+	/**
+	 * Scan LMDB directly for quads matching a pattern, writing the unbound positions into columns. This is the
+	 * adjacency-free producer: it serves the patterns a CSR view cannot express (variable predicate, named graph,
+	 * repeated variable, dataset restriction) and the stores whose adjacency cache cannot answer at all (an inferencing
+	 * store's composite source, or any query running inside a write transaction).
+	 *
+	 * {@code terms} holds the subject, predicate, object and context operands in that order; a null entry means unbound
+	 * and is passed to the scanner as {@code -1}. {@code outCols} holds the destination column for each of the four
+	 * positions, or {@code -1} where the position is not projected. A repeated variable is expressed by writing both
+	 * positions to columns and guarding with {@link FilterCompareId}, rather than by a dedicated node.
+	 */
+	static final class ScanQuad extends Node {
+		static final int SUBJ = 0;
+		static final int PRED = 1;
+		static final int OBJ = 2;
+		static final int CTX = 3;
+
+		final int scan;
+		final Operand[] terms;
+		final int[] outCols;
+
+		ScanQuad(int scan, Operand[] terms, int[] outCols) {
+			if (terms.length != 4 || outCols.length != 4) {
+				throw new IllegalArgumentException("a quad scan needs exactly four terms and four output columns");
+			}
+			boolean writes = false;
+			for (int col : outCols) {
+				writes |= col >= 0;
+			}
+			if (!writes) {
+				throw new IllegalArgumentException("a quad scan must write at least one column");
+			}
+			this.scan = scan;
+			this.terms = terms.clone();
+			this.outCols = outCols.clone();
+		}
+
+		@Override
+		void key(StringBuilder key) {
+			key.append("SQ(s").append(scan).append(',');
+			for (int i = 0; i < 4; i++) {
+				key.append(i == 0 ? "" : ",").append(terms[i] == null ? "_" : terms[i].token());
+			}
+			key.append("->");
+			for (int i = 0; i < 4; i++) {
+				key.append(i == 0 ? "" : ",").append(outCols[i]);
+			}
+			key.append(");");
+		}
+
+		@Override
+		void produced(BitSet columns) {
+			for (int col : outCols) {
+				if (col >= 0) {
+					columns.set(col);
+				}
+			}
+		}
+
+		@Override
+		void requirements(Requirements requirements) {
+			for (Operand term : terms) {
+				if (term != null) {
+					requirements.operand(term);
+				}
+			}
+			requirements.scan(scan);
 		}
 	}
 
@@ -958,11 +1033,79 @@ final class LmdbNativeKernelIr {
 	// Kernel root
 	// ------------------------------------------------------------------
 
+	/**
+	 * Enables the vector-tail execution mode (plan 23, M1). Read per {@code Kernel} construction rather than once
+	 * statically so tests can flip it; the resulting choice is part of {@link Kernel#shapeKey()}, so the two modes
+	 * never collide in the compiled-kernel cache.
+	 */
+	static final String VECTOR_TAIL_PROPERTY = "rdf4j.lmdb.janinoCodegen.vectorTail";
+
+	static boolean vectorTailEnabled() {
+		return !"false".equals(System.getProperty(VECTOR_TAIL_PROPERTY));
+	}
+
+	/**
+	 * Enables resumable (streaming) emission. Read per {@code Kernel} construction and folded into the shape key, for
+	 * the same reasons as {@link #VECTOR_TAIL_PROPERTY}.
+	 */
+	static final String RESUMABLE_PROPERTY = "rdf4j.lmdb.janinoCodegen.resumable";
+
+	static boolean resumableEnabled() {
+		return !"false".equals(System.getProperty(RESUMABLE_PROPERTY));
+	}
+
+	/**
+	 * A pipeline can stream when its terminal writes plain rows with no post-pass over the whole result — ordering and
+	 * limits need every row in hand before the first can be served — and when every node either carries no state across
+	 * a pause (the filters) or carries state the emitter knows how to save and restore (the looping producers).
+	 * {@code EnumerateEntry} is excluded deliberately: it emits its continuation exactly once with nothing to resume
+	 * from, so re-entering it after a pause would emit a second time.
+	 */
+	private static boolean isResumable(List<Node> pipeline, Terminal terminal) {
+		if (!(terminal instanceof Emit)) {
+			return false;
+		}
+		OutputMods mods = terminal.mods;
+		if (mods.orderKeys != null || mods.limit >= 0 || mods.offset != 0) {
+			return false;
+		}
+		if (pipeline.isEmpty()) {
+			return false;
+		}
+		for (Node node : pipeline) {
+			boolean streamable = isFilter(node) || node instanceof EnumerateDomain || node instanceof Probe
+					|| node instanceof ScanQuad
+					|| node instanceof EnumerateAdjKeys && ((EnumerateAdjKeys) node).valueCol >= 0;
+			if (!streamable) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** True for the row-level guard nodes, which neither produce a column nor branch the pipeline. */
+	static boolean isFilter(Node node) {
+		return node instanceof FilterCompareId || node instanceof FilterInConstants
+				|| node instanceof FilterRangeUnsigned || node instanceof FilterValue;
+	}
+
 	static final class Kernel {
 		final List<Node> pipeline;
 		final int columnCount;
 		final Terminal terminal;
 		final Requirements requirements;
+		/**
+		 * Index into {@link #pipeline} of the innermost run-expanding node when this kernel qualifies for the vector
+		 * tail, otherwise {@code -1}. The emitter turns that one node's inner loop into a bulk run read plus vectorized
+		 * selection; everything downstream keeps its scalar semantics untouched.
+		 */
+		final int vectorTailIndex;
+		/**
+		 * True when the emitted pipeline can pause when the caller's buffer fills and resume on the next {@code fill},
+		 * which lets it write rows straight into that buffer instead of materializing every row into a growing
+		 * intermediate one first.
+		 */
+		final boolean resumable;
 		private final String shapeKey;
 
 		Kernel(int columnCount, List<Node> pipeline, Terminal terminal) {
@@ -978,12 +1121,48 @@ final class LmdbNativeKernelIr {
 			}
 			terminal.requirements(requirements);
 			validateColumns();
-			StringBuilder key = new StringBuilder("ir1:cols=").append(columnCount).append(';');
+			this.vectorTailIndex = vectorTailEnabled() ? findVectorTail(this.pipeline) : -1;
+			this.resumable = resumableEnabled() && isResumable(this.pipeline, terminal);
+			StringBuilder key = new StringBuilder("ir1:");
+			if (vectorTailIndex >= 0) {
+				key.append("vt").append(vectorTailIndex).append(';');
+			}
+			if (resumable) {
+				key.append("rs;");
+			}
+			key.append("cols=").append(columnCount).append(';');
 			for (Node node : this.pipeline) {
 				node.key(key);
 			}
 			terminal.key(key);
 			this.shapeKey = key.toString();
+		}
+
+		/**
+		 * Returns the index of the last node that expands one input row into a run of values, provided every node after
+		 * it is a filter. That is the only loop worth vectorizing: it carries the row multiplication, while the nodes
+		 * above it iterate at a far lower cardinality. Returns {@code -1} when no such node exists, when something
+		 * other than a filter follows it (a container or a further producer needs the scalar continuation), or when the
+		 * run would be too short for the bulk read to pay for itself.
+		 */
+		private static int findVectorTail(List<Node> pipeline) {
+			int candidate = -1;
+			for (int i = 0; i < pipeline.size(); i++) {
+				Node node = pipeline.get(i);
+				if (node instanceof Probe || node instanceof LeftProbe
+						|| node instanceof EnumerateAdjKeys && ((EnumerateAdjKeys) node).valueCol >= 0) {
+					candidate = i;
+				}
+			}
+			if (candidate < 0) {
+				return -1;
+			}
+			for (int i = candidate + 1; i < pipeline.size(); i++) {
+				if (!isFilter(pipeline.get(i))) {
+					return -1;
+				}
+			}
+			return candidate;
 		}
 
 		private void validateColumns() {

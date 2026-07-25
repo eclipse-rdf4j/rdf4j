@@ -485,4 +485,251 @@ public final class KernelRuntime {
 			slot = biggest;
 		}
 	}
+
+	// ------------------------------------------------------------------
+	// Vectorized execution substrate
+	// ------------------------------------------------------------------
+
+	/**
+	 * Number of value positions in one kernel vector. Vectorized kernels hold each result column in a
+	 * {@code long[VECTOR_SIZE]} and process a whole vector per operation instead of one scalar per row. Tunable through
+	 * {@code rdf4j.lmdb.janinoCodegen.vectorSize}; clamped to [64, 65536] and rounded down to a multiple of 64 so that
+	 * the selection loops stay friendly to the JIT's superword pass.
+	 */
+	public static final int VECTOR_SIZE = resolveVectorSize();
+
+	/**
+	 * Quads a generated kernel asks a {@link KernelQuadCursor} for at a time. Kept modest because the staging buffer is
+	 * allocated per kernel instance and a kernel instance is created per cursor open: a large batch would put kilobytes
+	 * on the correlated path for no benefit, since {@code fill} already amortizes the per-record store costs.
+	 */
+	public static final int SCAN_BATCH_ROWS = 256;
+
+	/**
+	 * Shared ascending position array {@code [0, 1, 2, … VECTOR_SIZE-1]} used as the selection of a chunk whose
+	 * positions are all live and in order. Treat as immutable: it is shared by every chunk in every kernel. Having an
+	 * identity selection rather than a null one keeps generated code branch-free at the cost of one indirection, and
+	 * the dense overloads below exist for the hot case where even that indirection is avoidable.
+	 */
+	public static final int[] IDENTITY = buildIdentity();
+
+	private static int resolveVectorSize() {
+		int configured = Integer.getInteger("rdf4j.lmdb.janinoCodegen.vectorSize", 2048);
+		if (configured < 64) {
+			configured = 64;
+		} else if (configured > 65536) {
+			configured = 65536;
+		}
+		return configured & ~63;
+	}
+
+	private static int[] buildIdentity() {
+		int[] identity = new int[VECTOR_SIZE];
+		for (int i = 0; i < identity.length; i++) {
+			identity[i] = i;
+		}
+		return identity;
+	}
+
+	/**
+	 * Selection state shared by every vector of one chunk — the unit a vectorized kernel filters and flattens. A chunk
+	 * is <em>unflat</em> ({@code flatIndex < 0}) when all {@code size} selected positions are live at once, and
+	 * <em>flat</em> ({@code flatIndex >= 0}) when it currently stands for the single position
+	 * {@code selection[flatIndex]} while the rest wait their turn. Flat and unflat chunks together express a factorized
+	 * intermediate result whose logical row count is the product of the unflat chunk sizes; nothing in this class
+	 * enumerates that product, which is exactly the point.
+	 */
+	public static final class ChunkState {
+
+		/** Number of live positions in {@link #selection}. */
+		public int size;
+
+		/** Positions into the chunk's vectors. Defaults to {@link #IDENTITY}; filters install a chunk-owned array. */
+		public int[] selection = IDENTITY;
+
+		/** {@code -1} while unflat, otherwise the index into {@link #selection} this chunk currently stands at. */
+		public int flatIndex = -1;
+
+		/** Scratch selection owned by this chunk, allocated lazily so identity-selected chunks stay allocation-free. */
+		private int[] owned;
+
+		/** Resets to an unflat, identity-selected chunk of {@code size} positions. */
+		public void reset(int size) {
+			this.size = size;
+			this.selection = IDENTITY;
+			this.flatIndex = -1;
+		}
+
+		/** True when the selection is the shared ascending one, so callers may use the dense (faster) overloads. */
+		public boolean isDense() {
+			return selection == IDENTITY;
+		}
+
+		/**
+		 * Returns this chunk's private selection array, allocating it once. Filters write their surviving positions
+		 * here and then call {@link #select(int)}.
+		 */
+		public int[] scratchSelection() {
+			if (owned == null) {
+				owned = new int[VECTOR_SIZE];
+			}
+			return owned;
+		}
+
+		/** Installs the chunk-owned scratch selection with {@code count} surviving positions. */
+		public void select(int count) {
+			this.selection = scratchSelection();
+			this.size = count;
+		}
+	}
+
+	/** Fills {@code selection[0..count)} with {@code 0, 1, … count-1}. */
+	public static void fillIdentity(int[] selection, int count) {
+		for (int i = 0; i < count; i++) {
+			selection[i] = i;
+		}
+	}
+
+	/** Writes {@code value} into {@code column[0..count)}. */
+	public static void broadcast(long[] column, int count, long value) {
+		for (int i = 0; i < count; i++) {
+			column[i] = value;
+		}
+	}
+
+	/** Copies the selected positions of {@code source} into {@code target[0..count)}. */
+	public static void gather(long[] source, int[] selection, int count, long[] target) {
+		for (int i = 0; i < count; i++) {
+			target[i] = source[selection[i]];
+		}
+	}
+
+	/**
+	 * Selects the positions of a dense (identity-selected) column equal to {@code value}, writing them to
+	 * {@code target} and returning how many survived. The accumulation is branch-free so the loop stays countable.
+	 */
+	public static int selectEq(long[] column, int count, long value, int[] target) {
+		int kept = 0;
+		for (int i = 0; i < count; i++) {
+			target[kept] = i;
+			kept += column[i] == value ? 1 : 0;
+		}
+		return kept;
+	}
+
+	/**
+	 * Selection-aware {@link #selectEq(long[], int, long, int[])}. {@code source} and {@code target} may be the same.
+	 */
+	public static int selectEq(long[] column, int[] source, int count, long value, int[] target) {
+		int kept = 0;
+		for (int i = 0; i < count; i++) {
+			int position = source[i];
+			target[kept] = position;
+			kept += column[position] == value ? 1 : 0;
+		}
+		return kept;
+	}
+
+	/** Selects the positions of a dense column not equal to {@code value}. */
+	public static int selectNe(long[] column, int count, long value, int[] target) {
+		int kept = 0;
+		for (int i = 0; i < count; i++) {
+			target[kept] = i;
+			kept += column[i] != value ? 1 : 0;
+		}
+		return kept;
+	}
+
+	/** Selection-aware {@link #selectNe(long[], int, long, int[])}. */
+	public static int selectNe(long[] column, int[] source, int count, long value, int[] target) {
+		int kept = 0;
+		for (int i = 0; i < count; i++) {
+			int position = source[i];
+			target[kept] = position;
+			kept += column[position] != value ? 1 : 0;
+		}
+		return kept;
+	}
+
+	/** Selects the positions of a dense column whose ids lie in the inclusive unsigned range {@code [low, high]}. */
+	public static int selectRangeUnsigned(long[] column, int count, long low, long high, int[] target) {
+		long flippedLow = low ^ Long.MIN_VALUE;
+		long flippedHigh = high ^ Long.MIN_VALUE;
+		int kept = 0;
+		for (int i = 0; i < count; i++) {
+			long flipped = column[i] ^ Long.MIN_VALUE;
+			target[kept] = i;
+			kept += flipped >= flippedLow && flipped <= flippedHigh ? 1 : 0;
+		}
+		return kept;
+	}
+
+	/** Selection-aware {@link #selectRangeUnsigned(long[], int, long, long, int[])}. */
+	public static int selectRangeUnsigned(long[] column, int[] source, int count, long low, long high, int[] target) {
+		long flippedLow = low ^ Long.MIN_VALUE;
+		long flippedHigh = high ^ Long.MIN_VALUE;
+		int kept = 0;
+		for (int i = 0; i < count; i++) {
+			int position = source[i];
+			long flipped = column[position] ^ Long.MIN_VALUE;
+			target[kept] = position;
+			kept += flipped >= flippedLow && flipped <= flippedHigh ? 1 : 0;
+		}
+		return kept;
+	}
+
+	/** Selects the positions where two dense columns hold the same id. */
+	public static int selectEqColumns(long[] left, long[] right, int count, int[] target) {
+		int kept = 0;
+		for (int i = 0; i < count; i++) {
+			target[kept] = i;
+			kept += left[i] == right[i] ? 1 : 0;
+		}
+		return kept;
+	}
+
+	/** Selection-aware {@link #selectEqColumns(long[], long[], int, int[])}. */
+	public static int selectEqColumns(long[] left, long[] right, int[] source, int count, int[] target) {
+		int kept = 0;
+		for (int i = 0; i < count; i++) {
+			int position = source[i];
+			target[kept] = position;
+			kept += left[position] == right[position] ? 1 : 0;
+		}
+		return kept;
+	}
+
+	/** Selects the positions where two dense columns hold different ids. */
+	public static int selectNeColumns(long[] left, long[] right, int count, int[] target) {
+		int kept = 0;
+		for (int i = 0; i < count; i++) {
+			target[kept] = i;
+			kept += left[i] != right[i] ? 1 : 0;
+		}
+		return kept;
+	}
+
+	/** Selection-aware {@link #selectNeColumns(long[], long[], int, int[])}. */
+	public static int selectNeColumns(long[] left, long[] right, int[] source, int count, int[] target) {
+		int kept = 0;
+		for (int i = 0; i < count; i++) {
+			int position = source[i];
+			target[kept] = position;
+			kept += left[position] != right[position] ? 1 : 0;
+		}
+		return kept;
+	}
+
+	/**
+	 * Selects the positions of a dense column that are bound, i.e. not the {@code -1} unbound sentinel. This is the
+	 * vector form of the {@code BOUND(?x)} test and of the null-skipping that {@code COUNT(?x)} performs.
+	 */
+	public static int selectBound(long[] column, int count, int[] target) {
+		return selectNe(column, count, -1L, target);
+	}
+
+	/** Selection-aware {@link #selectBound(long[], int, int[])}. */
+	public static int selectBound(long[] column, int[] source, int count, int[] target) {
+		return selectNe(column, source, count, -1L, target);
+	}
 }

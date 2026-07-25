@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.OutputMods;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.PathExpand;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Probe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ProbeClose;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ScanQuad;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Union;
 
 /**
@@ -82,6 +83,8 @@ final class LmdbNativeKernelEmitter {
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;\n")
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;\n")
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;\n")
+					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQuadCursor;\n")
+					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelScanner;\n")
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;\n\n")
 					.append("public final class ")
 					.append(simpleName)
@@ -128,18 +131,47 @@ final class LmdbNativeKernelEmitter {
 				source.append("    private long[] dom").append(i).append(";\n");
 			}
 			source.append("    private KernelHooks hooks;\n");
+			if (kernel.requirements.scans > 0) {
+				source.append("    private KernelScanner scanner;\n");
+				for (int i = 0; i < kernel.requirements.scans; i++) {
+					// Staging buffer and (when streaming) the live cursor, both per scan site and both lazily created.
+					source.append("    private long[] qb").append(i).append(";\n");
+					source.append("    private KernelQuadCursor sc").append(i).append(";\n");
+				}
+			}
+			if (kernel.vectorTailIndex >= 0) {
+				// Vector-tail scratch: one run slice and its selection, allocated once in bind and reused per run.
+				source.append("    private long[] tvec;\n");
+				source.append("    private int[] tsel;\n");
+			}
 			for (int i = 0; i < kernel.columnCount; i++) {
 				source.append("    private long v").append(i).append(" = -1L;\n");
 			}
 			source.append("    private long[] rowScratch = new long[")
 					.append(stride)
 					.append("];\n")
+					// A streaming kernel writes into the caller's buffer, so the intermediate one is never allocated.
 					.append("    private long[] out = new long[")
-					.append(Math.max(stride * 64, 64))
+					.append(kernel.resumable ? 0 : Math.max(stride * 64, 64))
 					.append("];\n")
 					.append("    private int outCount;\n")
 					.append("    private int outPos;\n")
 					.append("    private boolean ran;\n");
+			if (kernel.resumable) {
+				source.append("    private long[] sink;\n")
+						.append("    private int sinkRows;\n")
+						.append("    private int cap;\n")
+						.append("    private boolean full;\n")
+						.append("    private boolean done;\n");
+				// Three saved counters per pipeline position cover the deepest streaming node (key index, run
+				// position, offset within the current vector slice). -1 means "not started", which is also what a
+				// node restores when its own loop finishes, so the next outer value starts it afresh.
+				for (int i = 0; i < kernel.pipeline.size(); i++) {
+					source.append("    private int stA").append(i).append(" = -1;\n");
+					source.append("    private int stB").append(i).append(" = -1;\n");
+					source.append("    private int stC").append(i).append(" = -1;\n");
+				}
+			}
 			if (isDistinct()) {
 				source.append("    private KernelRuntime.RowSet dedup;\n");
 			}
@@ -213,6 +245,9 @@ final class LmdbNativeKernelEmitter {
 				source.append("        dom").append(i).append(" = context.keyDomains[").append(i).append("];\n");
 			}
 			source.append("        hooks = context.hooks;\n");
+			if (kernel.requirements.scans > 0) {
+				source.append("        scanner = context.scanner;\n");
+			}
 			if (isDistinct()) {
 				source.append("        dedup = new KernelRuntime.RowSet(").append(stride).append(");\n");
 			}
@@ -271,6 +306,25 @@ final class LmdbNativeKernelEmitter {
 		}
 
 		private void emitFill(StringBuilder source) {
+			if (kernel.resumable) {
+				// Streaming: run the pipeline directly into the caller's buffer, pausing when it fills. The pipeline
+				// resumes from its saved counters on the next call, so no row is ever produced twice or skipped.
+				source.append("    public int fill(long[] rowBuffer, int maxRows) {\n")
+						.append("        if (done || maxRows <= 0) {\n")
+						.append("            return 0;\n")
+						.append("        }\n")
+						.append("        sink = rowBuffer;\n")
+						.append("        cap = maxRows;\n")
+						.append("        sinkRows = 0;\n")
+						.append("        full = false;\n")
+						.append("        run();\n")
+						.append("        if (!full) {\n")
+						.append("            done = true;\n")
+						.append("        }\n")
+						.append("        return sinkRows;\n")
+						.append("    }\n\n");
+				return;
+			}
 			source.append("    public int fill(long[] rowBuffer, int maxRows) {\n")
 					.append("        if (!ran) {\n")
 					.append("            ran = true;\n")
@@ -383,6 +437,32 @@ final class LmdbNativeKernelEmitter {
 		}
 
 		private void emitRowSink(StringBuilder source) {
+			if (kernel.resumable) {
+				Emit emit = (Emit) kernel.terminal;
+				source.append("    private void emitRow() {\n");
+				if (emit.distinct) {
+					for (int i = 0; i < emit.cols.length; i++) {
+						source.append("        rowScratch[")
+								.append(i)
+								.append("] = v")
+								.append(emit.cols[i])
+								.append(";\n");
+					}
+					source.append("        if (dedup.addIfAbsent(rowScratch, 0) < 0) {\n")
+							.append("            return;\n")
+							.append("        }\n");
+				}
+				source.append("        int base = sinkRows * ").append(stride).append(";\n");
+				for (int i = 0; i < emit.cols.length; i++) {
+					source.append("        sink[base + ").append(i).append("] = v").append(emit.cols[i]).append(";\n");
+				}
+				source.append("        sinkRows++;\n")
+						.append("        if (sinkRows >= cap) {\n")
+						.append("            full = true;\n")
+						.append("        }\n")
+						.append("    }\n\n");
+				return;
+			}
 			if (kernel.terminal instanceof Emit) {
 				Emit emit = (Emit) kernel.terminal;
 				source.append("    private void emitRow() {\n");
@@ -592,6 +672,10 @@ final class LmdbNativeKernelEmitter {
 			}
 			source.append("    }\n\n");
 
+			if (bulkCountTail()) {
+				emitBulkCountUpdate(source, aggregate);
+			}
+
 			source.append("    private void ensure(int g) {\n")
 					.append("        if (g >= accCap) {\n")
 					.append("            int cap = accCap;\n")
@@ -790,19 +874,750 @@ final class LmdbNativeKernelEmitter {
 				methods.add(wrapMethod(prefix + 0, body.toString(), booleanMode));
 				return prefix + 0;
 			}
-			for (int i = 0; i < nodes.size(); i++) {
+			// The vector tail only ever applies to the kernel's top-level pipeline: sub-pipelines are either
+			// short-circuiting witnesses (where vectorizing a loop we want to abandon early is pointless) or union
+			// branches, which reach their continuation through a shared method rather than a terminal statement.
+			int tail = nodes == kernel.pipeline && !booleanMode ? kernel.vectorTailIndex : -1;
+			int emitted = tail >= 0 ? tail + 1 : nodes.size();
+			for (int i = 0; i < emitted; i++) {
 				String next;
-				if (i + 1 < nodes.size()) {
+				if (i + 1 < emitted) {
 					next = booleanMode ? "if (" + prefix + (i + 1) + "()) {\n%I%    return true;\n%I%}"
 							: prefix + (i + 1) + "();";
 				} else {
 					next = terminalStatement;
 				}
 				StringBuilder body = new StringBuilder();
-				emitNode(body, nodes.get(i), next, booleanMode);
+				// Saved-counter fields exist only for the top-level pipeline of a streaming kernel; -1 disables them.
+				int stateIndex = kernel.resumable && !booleanMode && nodes == kernel.pipeline ? i : -1;
+				if (i == tail) {
+					emitVectorTail(body, nodes.get(i), nodes.subList(i + 1, nodes.size()), next, stateIndex);
+				} else {
+					emitNode(body, nodes.get(i), next, booleanMode, stateIndex);
+				}
 				methods.add(wrapMethod(prefix + i, body.toString(), booleanMode));
 			}
 			return prefix + 0;
+		}
+
+		/**
+		 * Emits the innermost run expansion as a bulk read plus vectorized selection, absorbing the trailing filters.
+		 * Everything downstream is untouched: the surviving positions are written into the same scalar column the
+		 * scalar emitter would have used, and the same continuation runs, so terminal semantics (DISTINCT, ordering,
+		 * aggregate accumulation) are shared verbatim between the two modes.
+		 */
+		private void emitVectorTail(StringBuilder body, Node producer, List<Node> filters, String nextTemplate,
+				int stateIndex) {
+			if (stateIndex >= 0) {
+				emitResumableVectorTail(body, producer, filters, nextTemplate, stateIndex);
+				return;
+			}
+			emitVectorTail(body, producer, filters, nextTemplate);
+		}
+
+		/**
+		 * Streaming form of the vector tail. It carries one more counter than the scalar producers because it pauses at
+		 * two depths: which slice of the run it is on, and how far into that slice it got. On resume it re-copies the
+		 * current slice and re-runs the vectorized filters from the saved run position — deterministic, and the cost is
+		 * one slice of repeated filtering per {@code fill} boundary, not per row.
+		 */
+		private void emitResumableVectorTail(StringBuilder body, Node producer, List<Node> filters,
+				String nextTemplate, int stateIndex) {
+			int adjacency;
+			int valueCol;
+			int keyCol = -1;
+			String keyToken = null;
+			if (producer instanceof Probe) {
+				Probe probe = (Probe) producer;
+				adjacency = probe.adjacency;
+				valueCol = probe.valueCol;
+				keyToken = probe.key.token();
+			} else {
+				EnumerateAdjKeys enumerate = (EnumerateAdjKeys) producer;
+				adjacency = enumerate.adjacency;
+				valueCol = enumerate.valueCol;
+				keyCol = enumerate.keyCol;
+			}
+			String a = "a" + adjacency;
+			// Probe pauses at (run position, slice offset); key enumeration adds the key index in front of those.
+			String keyState = "stA" + stateIndex;
+			String runState = keyToken != null ? "stA" + stateIndex : "stB" + stateIndex;
+			String sliceState = keyToken != null ? "stB" + stateIndex : "stC" + stateIndex;
+
+			List<Node> vectorized = new ArrayList<>();
+			List<Node> residual = new ArrayList<>();
+			for (Node filter : filters) {
+				if (vectorFilterCall(filter, valueCol, false) != null) {
+					vectorized.add(filter);
+				} else {
+					residual.add(filter);
+				}
+			}
+
+			String indent = "        ";
+			String open;
+			if (keyToken != null) {
+				body.append(indent).append("long key = ").append(keyToken).append(";\n");
+				body.append(indent).append("if (key != -1L) {\n");
+				body.append(indent).append("    int d = ").append(a).append(".denseIdOf(key);\n");
+				body.append(indent).append("    if (d >= 0) {\n");
+				open = indent + "        ";
+			} else {
+				body.append(indent).append("int kc = ").append(a).append(".keyCount();\n");
+				body.append(indent).append("if (").append(keyState).append(" < 0) {\n");
+				body.append(indent).append("    ").append(keyState).append(" = 0;\n");
+				body.append(indent).append("}\n");
+				body.append(indent)
+						.append("for (; ")
+						.append(keyState)
+						.append(" < kc; ")
+						.append(keyState)
+						.append("++) {\n");
+				body.append(indent)
+						.append("    v")
+						.append(keyCol)
+						.append(" = ")
+						.append(a)
+						.append(".keyAt(")
+						.append(keyState)
+						.append(");\n");
+				body.append(indent).append("    int d = ").append(keyState).append(";\n");
+				open = indent + "    ";
+			}
+
+			body.append(open).append("int rend = ").append(a).append(".runEnd(d);\n");
+			body.append(open).append("if (").append(runState).append(" < 0) {\n");
+			body.append(open).append("    ").append(runState).append(" = ").append(a).append(".runStart(d);\n");
+			body.append(open).append("}\n");
+			body.append(open).append("while (").append(runState).append(" < rend) {\n");
+			String loop = open + "    ";
+			body.append(loop).append("int rn = rend - ").append(runState).append(";\n");
+			body.append(loop).append("if (rn > KernelRuntime.VECTOR_SIZE) {\n");
+			body.append(loop).append("    rn = KernelRuntime.VECTOR_SIZE;\n");
+			body.append(loop).append("}\n");
+			body.append(loop).append("if (tvec == null || tvec.length < rn) {\n");
+			body.append(loop).append("    tvec = new long[rn];\n");
+			if (!vectorized.isEmpty()) {
+				body.append(loop).append("    tsel = new int[rn];\n");
+			}
+			body.append(loop).append("}\n");
+			body.append(loop)
+					.append(a)
+					.append(".copyRun(")
+					.append(runState)
+					.append(", ")
+					.append(runState)
+					.append(" + rn, tvec, 0);\n");
+			body.append(loop).append("int cnt = rn;\n");
+			boolean selected = false;
+			for (Node filter : vectorized) {
+				body.append(loop).append("cnt = ").append(vectorFilterCall(filter, valueCol, selected)).append(";\n");
+				selected = true;
+			}
+			body.append(loop).append("if (").append(sliceState).append(" < 0) {\n");
+			body.append(loop).append("    ").append(sliceState).append(" = 0;\n");
+			body.append(loop).append("}\n");
+			body.append(loop)
+					.append("for (; ")
+					.append(sliceState)
+					.append(" < cnt; ")
+					.append(sliceState)
+					.append("++) {\n");
+			String inner = loop + "    ";
+			body.append(inner)
+					.append("v")
+					.append(valueCol)
+					.append(" = tvec[")
+					.append(selected ? "tsel[" + sliceState + "]" : sliceState)
+					.append("];\n");
+			if (residual.isEmpty()) {
+				body.append(next(nextTemplate, inner));
+			} else {
+				body.append(inner).append("if (");
+				for (int i = 0; i < residual.size(); i++) {
+					body.append(i == 0 ? "" : " && ").append(scalarFilterCondition(residual.get(i)));
+				}
+				body.append(") {\n");
+				body.append(next(nextTemplate, inner + "    "));
+				body.append(inner).append("}\n");
+			}
+			// The slice loop always feeds the sink (a vector tail only ever has filters below it), so it must step past
+			// the row it just emitted before pausing, or that row would be produced again on resume.
+			emitPause(body, inner, sliceState, true);
+			body.append(loop).append("}\n");
+			body.append(loop).append(sliceState).append(" = -1;\n");
+			body.append(loop).append(runState).append(" = ").append(runState).append(" + rn;\n");
+			body.append(open).append("}\n");
+			body.append(open).append(runState).append(" = -1;\n");
+			if (keyToken != null) {
+				body.append(indent).append("    }\n");
+				body.append(indent).append("}\n");
+			} else {
+				body.append(indent).append("}\n");
+				body.append(indent).append(keyState).append(" = -1;\n");
+			}
+		}
+
+		private void emitVectorTail(StringBuilder body, Node producer, List<Node> filters, String nextTemplate) {
+			int adjacency;
+			int valueCol;
+			int keyCol = -1;
+			String keyToken = null;
+			boolean leftProbe = producer instanceof LeftProbe;
+			if (producer instanceof Probe) {
+				Probe probe = (Probe) producer;
+				adjacency = probe.adjacency;
+				valueCol = probe.valueCol;
+				keyToken = probe.key.token();
+			} else if (leftProbe) {
+				LeftProbe probe = (LeftProbe) producer;
+				adjacency = probe.adjacency;
+				valueCol = probe.valueCol;
+				keyToken = probe.key.token();
+			} else {
+				EnumerateAdjKeys enumerate = (EnumerateAdjKeys) producer;
+				adjacency = enumerate.adjacency;
+				valueCol = enumerate.valueCol;
+				keyCol = enumerate.keyCol;
+			}
+			String a = "a" + adjacency;
+
+			List<Node> vectorized = new ArrayList<>();
+			List<Node> residual = new ArrayList<>();
+			for (Node filter : filters) {
+				if (vectorFilterCall(filter, valueCol, false) != null) {
+					vectorized.add(filter);
+				} else {
+					residual.add(filter);
+				}
+			}
+
+			String indent = "        ";
+			String open;
+			if (leftProbe) {
+				body.append(indent).append("boolean matched = false;\n");
+			}
+			if (keyToken != null) {
+				body.append(indent).append("long key = ").append(keyToken).append(";\n");
+				body.append(indent).append("if (key != -1L) {\n");
+				body.append(indent).append("    int d = ").append(a).append(".denseIdOf(key);\n");
+				body.append(indent).append("    if (d >= 0) {\n");
+				open = indent + "        ";
+			} else {
+				body.append(indent).append("int kc = ").append(a).append(".keyCount();\n");
+				body.append(indent).append("for (int d = 0; d < kc; d++) {\n");
+				body.append(indent).append("    v").append(keyCol).append(" = ").append(a).append(".keyAt(d);\n");
+				open = indent + "    ";
+			}
+
+			body.append(open).append("int rend = ").append(a).append(".runEnd(d);\n");
+			body.append(open).append("int rpos = ").append(a).append(".runStart(d);\n");
+			if (leftProbe) {
+				// A non-empty run suppresses the null arm regardless of what the trailing filters later reject,
+				// matching the scalar emitter, where `matched` is set before the continuation runs.
+				body.append(open).append("if (rpos < rend) {\n");
+				body.append(open).append("    matched = true;\n");
+				body.append(open).append("}\n");
+			}
+			if (bulkCountTail() && vectorized.isEmpty()) {
+				// Fully factorized count: nothing downstream reads a neighbor and nothing filters them, so the run's
+				// contribution is its length. No copy, no slice loop, no neighbor ever touched — counting a key's
+				// edges becomes a subtraction instead of work proportional to the number of edges.
+				body.append(open).append("if (rend > rpos) {\n");
+				body.append(open).append("    updateBy(rend - rpos);\n");
+				body.append(open).append("}\n");
+				closeVectorTail(body, indent, keyToken != null, leftProbe, valueCol, filters, nextTemplate);
+				return;
+			}
+			body.append(open).append("while (rpos < rend) {\n");
+			String loop = open + "    ";
+			body.append(loop).append("int rn = rend - rpos;\n");
+			body.append(loop).append("if (rn > KernelRuntime.VECTOR_SIZE) {\n");
+			body.append(loop).append("    rn = KernelRuntime.VECTOR_SIZE;\n");
+			body.append(loop).append("}\n");
+			// Size the scratch to the run actually seen, growing monotonically. A kernel instance is created per
+			// cursor open, and a correlated open happens per outer row, so allocating a full vector up front would
+			// cost 24KB per outer row on exactly the path that must stay allocation-free. Short runs now cost bytes.
+			body.append(loop).append("if (tvec == null || tvec.length < rn) {\n");
+			body.append(loop).append("    tvec = new long[rn];\n");
+			if (!vectorized.isEmpty()) {
+				body.append(loop).append("    tsel = new int[rn];\n");
+			}
+			body.append(loop).append("}\n");
+			body.append(loop).append(a).append(".copyRun(rpos, rpos + rn, tvec, 0);\n");
+			body.append(loop).append("int cnt = rn;\n");
+			boolean selected = false;
+			for (Node filter : vectorized) {
+				body.append(loop).append("cnt = ").append(vectorFilterCall(filter, valueCol, selected)).append(";\n");
+				selected = true;
+			}
+			if (bulkCountTail()) {
+				// Factorized counting: the group and every counted column are constant across this slice, so the
+				// surviving row count folds into the accumulator in one step instead of one iteration per row. The
+				// guard matters — a zero-length slice must not intern a group the scalar loop would never have created.
+				body.append(loop).append("if (cnt > 0) {\n");
+				body.append(loop).append("    updateBy(cnt);\n");
+				body.append(loop).append("}\n");
+				body.append(loop).append("rpos = rpos + rn;\n");
+				body.append(open).append("}\n");
+				closeVectorTail(body, indent, keyToken != null, leftProbe, valueCol, filters, nextTemplate);
+				return;
+			}
+			body.append(loop).append("for (int ti = 0; ti < cnt; ti++) {\n");
+			String inner = loop + "    ";
+			body.append(inner)
+					.append("v")
+					.append(valueCol)
+					.append(" = tvec[")
+					.append(selected ? "tsel[ti]" : "ti")
+					.append("];\n");
+			if (residual.isEmpty()) {
+				body.append(next(nextTemplate, inner));
+			} else {
+				body.append(inner).append("if (");
+				for (int i = 0; i < residual.size(); i++) {
+					body.append(i == 0 ? "" : " && ").append(scalarFilterCondition(residual.get(i)));
+				}
+				body.append(") {\n");
+				body.append(next(nextTemplate, inner + "    "));
+				body.append(inner).append("}\n");
+			}
+			body.append(loop).append("}\n");
+			body.append(loop).append("rpos = rpos + rn;\n");
+			body.append(open).append("}\n");
+			closeVectorTail(body, indent, keyToken != null, leftProbe, valueCol, filters, nextTemplate);
+		}
+
+		/**
+		 * Closes the vector tail's scaffolding and, for a left probe, emits the null arm: when the key had no run at
+		 * all, the continuation runs exactly once with the value column unbound. The trailing filters still apply
+		 * there, exactly as they do in the scalar emitter where they are ordinary nodes below the probe — including
+		 * hook filters, which see the {@code -1} that means "unbound".
+		 */
+		private void closeVectorTail(StringBuilder body, String indent, boolean keyed, boolean leftProbe, int valueCol,
+				List<Node> filters, String nextTemplate) {
+			if (keyed) {
+				body.append(indent).append("    }\n");
+				body.append(indent).append("}\n");
+			} else {
+				body.append(indent).append("}\n");
+			}
+			if (!leftProbe) {
+				return;
+			}
+			body.append(indent).append("if (!matched) {\n");
+			String arm = indent + "    ";
+			body.append(arm).append("v").append(valueCol).append(" = -1L;\n");
+			if (filters.isEmpty()) {
+				body.append(next(nextTemplate, arm));
+			} else {
+				body.append(arm).append("if (");
+				for (int i = 0; i < filters.size(); i++) {
+					body.append(i == 0 ? "" : " && ").append(scalarFilterCondition(filters.get(i)));
+				}
+				body.append(") {\n");
+				body.append(next(nextTemplate, arm + "    "));
+				body.append(arm).append("}\n");
+			}
+			body.append(indent).append("}\n");
+		}
+
+		/**
+		 * Returns the {@code KernelRuntime} selection call for a filter that compares the tail column against a value
+		 * that is constant for the whole run, or {@code null} when the filter has to stay a per-row guard. Passing
+		 * {@code selected} chooses between the dense overload (a countable loop the JIT can vectorize) and the
+		 * selection-aware one.
+		 */
+		private String vectorFilterCall(Node node, int valueCol, boolean selected) {
+			String source = selected ? "tvec, tsel, cnt, " : "tvec, rn, ";
+			if (node instanceof FilterCompareId) {
+				FilterCompareId filter = (FilterCompareId) node;
+				String scalar = null;
+				if (isColumn(filter.left, valueCol) && !isColumn(filter.right, valueCol)) {
+					scalar = filter.right.token();
+				} else if (isColumn(filter.right, valueCol) && !isColumn(filter.left, valueCol)) {
+					scalar = filter.left.token();
+				}
+				if (scalar == null) {
+					return null;
+				}
+				return "KernelRuntime." + (filter.negated ? "selectNe(" : "selectEq(") + source + scalar + ", tsel)";
+			}
+			if (node instanceof FilterRangeUnsigned) {
+				FilterRangeUnsigned filter = (FilterRangeUnsigned) node;
+				if (!isColumn(filter.value, valueCol)) {
+					return null;
+				}
+				return "KernelRuntime.selectRangeUnsigned(" + source + "c" + filter.lowConstant + ", c"
+						+ filter.highConstant + ", tsel)";
+			}
+			return null;
+		}
+
+		/** Renders a filter as a boolean expression over the already-materialized scalar columns. */
+		private String scalarFilterCondition(Node node) {
+			if (node instanceof FilterCompareId) {
+				FilterCompareId filter = (FilterCompareId) node;
+				return filter.left.token() + (filter.negated ? " != " : " == ") + filter.right.token();
+			}
+			if (node instanceof FilterInConstants) {
+				FilterInConstants filter = (FilterInConstants) node;
+				StringBuilder condition = new StringBuilder("(");
+				for (int i = 0; i < filter.constantIndices.length; i++) {
+					condition.append(i == 0 ? "" : " || ")
+							.append(filter.value.token())
+							.append(" == c")
+							.append(filter.constantIndices[i]);
+				}
+				return condition.append(')').toString();
+			}
+			if (node instanceof FilterRangeUnsigned) {
+				FilterRangeUnsigned filter = (FilterRangeUnsigned) node;
+				String value = filter.value.token();
+				return "(Long.compareUnsigned(" + value + ", c" + filter.lowConstant
+						+ ") >= 0 && Long.compareUnsigned(" + value + ", c" + filter.highConstant + ") <= 0)";
+			}
+			FilterValue filter = (FilterValue) node;
+			String[] args = { "-1L", "-1L", "-1L" };
+			for (int i = 0; i < filter.args.length; i++) {
+				args[i] = filter.args[i].token();
+			}
+			return "hooks.testFilter(" + filter.filterId + ", " + args[0] + ", " + args[1] + ", " + args[2] + ")";
+		}
+
+		/**
+		 * Emits {@code updateBy(int n)}, the factorized counterpart of {@code update()}: it resolves the group exactly
+		 * as {@code update()} does and then folds {@code n} rows into the counting accumulators at once. Only reachable
+		 * when {@link #bulkCountTail()} holds, which is what makes the shortcut sound.
+		 */
+		private void emitBulkCountUpdate(StringBuilder source, Aggregate aggregate) {
+			source.append("    private void updateBy(int n) {\n");
+			if (aggregate.groupCols.length == 0) {
+				source.append("        int g = 0;\n");
+			} else if (aggregate.groupCols.length == 1) {
+				source.append("        int g = groups.getOrInsert(v").append(aggregate.groupCols[0]).append(");\n");
+			} else {
+				for (int i = 0; i < aggregate.groupCols.length; i++) {
+					source.append("        groupScratch[")
+							.append(i)
+							.append("] = v")
+							.append(aggregate.groupCols[i])
+							.append(";\n");
+				}
+				source.append("        int g = groupKeys.internOrGet(groupScratch, 0);\n");
+			}
+			source.append("        ensure(g);\n");
+			for (int i = 0; i < aggregate.outputs.length; i++) {
+				AggregateOutput output = aggregate.outputs[i];
+				String value = "v" + output.col;
+				switch (output.kind) {
+				case LmdbNativeKernelIr.AGG_COUNT_STAR:
+					source.append("        agC").append(i).append("[g] += n;\n");
+					break;
+				case LmdbNativeKernelIr.AGG_COUNT:
+					source.append("        if (")
+							.append(value)
+							.append(" != -1L) {\n")
+							.append("            agC")
+							.append(i)
+							.append("[g] += n;\n")
+							.append("        }\n");
+					break;
+				default: // AGG_COUNT_DISTINCT over a column constant across the slice
+					source.append("        if (")
+							.append(value)
+							.append(" != -1L) {\n")
+							.append("            agD")
+							.append(i)
+							.append("[g].add(")
+							.append(value)
+							.append(");\n")
+							.append("        }\n");
+					break;
+				}
+			}
+			source.append("    }\n\n");
+		}
+
+		/**
+		 * Emits the streaming form of a looping producer, or returns false when this node needs no saved state (the
+		 * filters, which are pure guards and simply re-evaluate on resume).
+		 *
+		 * The contract every streaming loop follows: start from the saved counter when it is not {@code -1}, otherwise
+		 * initialize; check {@code full} immediately after the continuation and return while leaving the counter where
+		 * it stands; and restore the counter to {@code -1} only when the loop runs out, so the next outer value starts
+		 * a fresh iteration. That single rule is what distinguishes "paused" from "finished" without tracking it
+		 * explicitly. Correctness of a resumed row rests on the outer loops rewriting their columns before re-entering,
+		 * which they do because the columns are fields assigned at the top of each iteration.
+		 */
+		/**
+		 * True when nothing between this pipeline position and the terminal carries resumable state — only filters,
+		 * which re-evaluate freely. Such a loop hands rows straight to the sink, so when it pauses it must first step
+		 * past the row it just emitted; a loop with a stateful callee must do the opposite and leave its counter alone,
+		 * because the callee will resume inside that same outer value.
+		 */
+		private boolean tailmostAt(int stateIndex) {
+			for (int i = stateIndex + 1; i < kernel.pipeline.size(); i++) {
+				if (!LmdbNativeKernelIr.isFilter(kernel.pipeline.get(i))) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		/** Emits the pause check for a streaming loop, advancing the counter first when the loop feeds the sink. */
+		private static void emitPause(StringBuilder body, String indent, String counter, boolean advance) {
+			body.append(indent).append("if (full) {\n");
+			if (advance) {
+				body.append(indent).append("    ").append(counter).append("++;\n");
+			}
+			body.append(indent).append("    return;\n");
+			body.append(indent).append("}\n");
+		}
+
+		private boolean emitResumableProducer(StringBuilder body, Node node, String nextTemplate, int stateIndex) {
+			String indent = "        ";
+			String a = "stA" + stateIndex;
+			String b = "stB" + stateIndex;
+			boolean tailmost = tailmostAt(stateIndex);
+			if (node instanceof EnumerateDomain) {
+				EnumerateDomain enumerate = (EnumerateDomain) node;
+				body.append(indent).append("long[] dom = dom").append(enumerate.domain).append(";\n");
+				body.append(indent).append("if (").append(a).append(" < 0) {\n");
+				body.append(indent).append("    ").append(a).append(" = 0;\n");
+				body.append(indent).append("}\n");
+				body.append(indent).append("for (; ").append(a).append(" < dom.length; ").append(a).append("++) {\n");
+				body.append(indent).append("    v").append(enumerate.col).append(" = dom[").append(a).append("];\n");
+				body.append(next(nextTemplate, indent + "    "));
+				emitPause(body, indent + "    ", a, tailmost);
+				body.append(indent).append("}\n");
+				body.append(indent).append(a).append(" = -1;\n");
+				return true;
+			}
+			if (node instanceof Probe) {
+				Probe probe = (Probe) node;
+				String view = "a" + probe.adjacency;
+				body.append(indent).append("long key = ").append(probe.key.token()).append(";\n");
+				body.append(indent).append("if (key != -1L) {\n");
+				body.append(indent).append("    int d = ").append(view).append(".denseIdOf(key);\n");
+				body.append(indent).append("    if (d >= 0) {\n");
+				body.append(indent).append("        int end = ").append(view).append(".runEnd(d);\n");
+				body.append(indent).append("        if (").append(a).append(" < 0) {\n");
+				body.append(indent)
+						.append("            ")
+						.append(a)
+						.append(" = ")
+						.append(view)
+						.append(".runStart(d);\n");
+				body.append(indent).append("        }\n");
+				body.append(indent).append("        for (; ").append(a).append(" < end; ").append(a).append("++) {\n");
+				body.append(indent)
+						.append("            v")
+						.append(probe.valueCol)
+						.append(" = ")
+						.append(view)
+						.append(".neighborAt(")
+						.append(a)
+						.append(");\n");
+				body.append(next(nextTemplate, indent + "            "));
+				emitPause(body, indent + "            ", a, tailmost);
+				body.append(indent).append("        }\n");
+				body.append(indent).append("    }\n");
+				body.append(indent).append("}\n");
+				body.append(indent).append(a).append(" = -1;\n");
+				return true;
+			}
+			if (node instanceof ScanQuad) {
+				ScanQuad scan = (ScanQuad) node;
+				String cursor = "sc" + scan.scan;
+				String buffer = "qb" + scan.scan;
+				body.append(indent).append("if (").append(cursor).append(" == null) {\n");
+				body.append(indent)
+						.append("    ")
+						.append(cursor)
+						.append(" = scanner.open(")
+						.append(scan.scan)
+						.append(", ")
+						.append(scanTerms(scan))
+						.append(");\n");
+				body.append(indent).append("    ").append(a).append(" = 0;\n");
+				body.append(indent).append("    ").append(b).append(" = 0;\n");
+				body.append(indent).append("}\n");
+				emitScanBuffer(body, indent, buffer);
+				body.append(indent).append("while (true) {\n");
+				body.append(indent).append("    if (").append(a).append(" >= ").append(b).append(") {\n");
+				body.append(indent)
+						.append("        ")
+						.append(b)
+						.append(" = ")
+						.append(cursor)
+						.append(".fill(")
+						.append(buffer)
+						.append(", KernelRuntime.SCAN_BATCH_ROWS);\n");
+				body.append(indent).append("        ").append(a).append(" = 0;\n");
+				body.append(indent).append("        if (").append(b).append(" <= 0) {\n");
+				body.append(indent).append("            break;\n");
+				body.append(indent).append("        }\n");
+				body.append(indent).append("    }\n");
+				body.append(indent)
+						.append("    for (; ")
+						.append(a)
+						.append(" < ")
+						.append(b)
+						.append("; ")
+						.append(a)
+						.append("++) {\n");
+				emitScanColumns(body, indent + "        ", scan, buffer, a);
+				body.append(next(nextTemplate, indent + "        "));
+				emitPause(body, indent + "        ", a, tailmost);
+				body.append(indent).append("    }\n");
+				body.append(indent).append("}\n");
+				body.append(indent).append(cursor).append(".close();\n");
+				body.append(indent).append(cursor).append(" = null;\n");
+				body.append(indent).append(a).append(" = -1;\n");
+				body.append(indent).append(b).append(" = -1;\n");
+				return true;
+			}
+			if (node instanceof EnumerateAdjKeys) {
+				EnumerateAdjKeys enumerate = (EnumerateAdjKeys) node;
+				String view = "a" + enumerate.adjacency;
+				body.append(indent).append("int kc = ").append(view).append(".keyCount();\n");
+				body.append(indent).append("if (").append(a).append(" < 0) {\n");
+				body.append(indent).append("    ").append(a).append(" = 0;\n");
+				body.append(indent).append("}\n");
+				body.append(indent).append("for (; ").append(a).append(" < kc; ").append(a).append("++) {\n");
+				body.append(indent)
+						.append("    v")
+						.append(enumerate.keyCol)
+						.append(" = ")
+						.append(view)
+						.append(".keyAt(")
+						.append(a)
+						.append(");\n");
+				body.append(indent).append("    int end = ").append(view).append(".runEnd(").append(a).append(");\n");
+				body.append(indent).append("    if (").append(b).append(" < 0) {\n");
+				body.append(indent)
+						.append("        ")
+						.append(b)
+						.append(" = ")
+						.append(view)
+						.append(".runStart(")
+						.append(a)
+						.append(");\n");
+				body.append(indent).append("    }\n");
+				body.append(indent).append("    for (; ").append(b).append(" < end; ").append(b).append("++) {\n");
+				body.append(indent)
+						.append("        v")
+						.append(enumerate.valueCol)
+						.append(" = ")
+						.append(view)
+						.append(".neighborAt(")
+						.append(b)
+						.append(");\n");
+				body.append(next(nextTemplate, indent + "        "));
+				emitPause(body, indent + "        ", b, tailmost);
+				body.append(indent).append("    }\n");
+				body.append(indent).append("    ").append(b).append(" = -1;\n");
+				body.append(indent).append("}\n");
+				body.append(indent).append(a).append(" = -1;\n");
+				return true;
+			}
+			return false;
+		}
+
+		/** Renders a quad scan's four operands, with an unbound position passed as the -1 sentinel. */
+		private static String scanTerms(ScanQuad scan) {
+			StringBuilder terms = new StringBuilder();
+			for (int i = 0; i < 4; i++) {
+				terms.append(i == 0 ? "" : ", ").append(scan.terms[i] == null ? "-1L" : scan.terms[i].token());
+			}
+			return terms.toString();
+		}
+
+		/** Allocates a scan's staging buffer on first use, so a kernel that never reaches the scan never pays. */
+		private static void emitScanBuffer(StringBuilder body, String indent, String buffer) {
+			body.append(indent).append("if (").append(buffer).append(" == null) {\n");
+			body.append(indent)
+					.append("    ")
+					.append(buffer)
+					.append(" = new long[KernelRuntime.SCAN_BATCH_ROWS * 4];\n");
+			body.append(indent).append("}\n");
+		}
+
+		/** Copies the projected positions of the quad at {@code row} into their columns. */
+		private static void emitScanColumns(StringBuilder body, String indent, ScanQuad scan, String buffer,
+				String row) {
+			for (int position = 0; position < 4; position++) {
+				int col = scan.outCols[position];
+				if (col < 0) {
+					continue;
+				}
+				body.append(indent)
+						.append("v")
+						.append(col)
+						.append(" = ")
+						.append(buffer)
+						.append('[')
+						.append(row)
+						.append(" * 4");
+				if (position > 0) {
+					body.append(" + ").append(position);
+				}
+				body.append("];\n");
+			}
+		}
+
+		/** The column a run-expanding node writes, for the three node kinds the vector tail can claim. */
+		private static int tailValueCol(Node producer) {
+			if (producer instanceof Probe) {
+				return ((Probe) producer).valueCol;
+			}
+			if (producer instanceof LeftProbe) {
+				return ((LeftProbe) producer).valueCol;
+			}
+			return ((EnumerateAdjKeys) producer).valueCol;
+		}
+
+		private static boolean isColumn(Operand operand, int column) {
+			return operand.kind == Operand.COL && operand.index == column;
+		}
+
+		/**
+		 * True when the vector tail may fold a whole run slice into the aggregate accumulators in one step — the
+		 * factorized-counting case. It holds when the terminal counts, when every trailing filter vectorized (anything
+		 * left as a per-row guard forces the loop back), and when neither the group key nor any counted column is the
+		 * tail column, so both are constant for the entire slice. {@code COUNT(DISTINCT outer)} qualifies too: adding
+		 * the same value once is indistinguishable from adding it {@code cnt} times.
+		 */
+		private boolean bulkCountTail() {
+			if (kernel.vectorTailIndex < 0 || !(kernel.terminal instanceof Aggregate)) {
+				return false;
+			}
+			Node producer = kernel.pipeline.get(kernel.vectorTailIndex);
+			int valueCol = tailValueCol(producer);
+			for (int i = kernel.vectorTailIndex + 1; i < kernel.pipeline.size(); i++) {
+				if (vectorFilterCall(kernel.pipeline.get(i), valueCol, false) == null) {
+					return false;
+				}
+			}
+			Aggregate aggregate = (Aggregate) kernel.terminal;
+			for (int groupCol : aggregate.groupCols) {
+				if (groupCol == valueCol) {
+					return false;
+				}
+			}
+			for (AggregateOutput output : aggregate.outputs) {
+				boolean counting = output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR
+						|| output.kind == LmdbNativeKernelIr.AGG_COUNT
+						|| output.kind == LmdbNativeKernelIr.AGG_COUNT_DISTINCT;
+				if (!counting) {
+					return false;
+				}
+				if (output.kind != LmdbNativeKernelIr.AGG_COUNT_STAR && output.col == valueCol) {
+					return false;
+				}
+			}
+			return true;
 		}
 
 		private static String wrapMethod(String name, String body, boolean booleanMode) {
@@ -824,8 +1639,38 @@ final class LmdbNativeKernelEmitter {
 			return indent + template.replace("%I%", indent) + "\n";
 		}
 
-		private void emitNode(StringBuilder body, Node node, String nextTemplate, boolean booleanMode) {
+		private void emitNode(StringBuilder body, Node node, String nextTemplate, boolean booleanMode, int stateIndex) {
 			String indent = "        ";
+			if (stateIndex >= 0 && emitResumableProducer(body, node, nextTemplate, stateIndex)) {
+				return;
+			}
+			if (node instanceof ScanQuad) {
+				ScanQuad scan = (ScanQuad) node;
+				String buffer = "qb" + scan.scan;
+				body.append(indent)
+						.append("KernelQuadCursor cur = scanner.open(")
+						.append(scan.scan)
+						.append(", ")
+						.append(scanTerms(scan))
+						.append(");\n");
+				emitScanBuffer(body, indent, buffer);
+				body.append(indent)
+						.append("int n = cur.fill(")
+						.append(buffer)
+						.append(", KernelRuntime.SCAN_BATCH_ROWS);\n");
+				body.append(indent).append("while (n > 0) {\n");
+				body.append(indent).append("    for (int i = 0; i < n; i++) {\n");
+				emitScanColumns(body, indent + "        ", scan, buffer, "i");
+				body.append(next(nextTemplate, indent + "        "));
+				body.append(indent).append("    }\n");
+				body.append(indent)
+						.append("    n = cur.fill(")
+						.append(buffer)
+						.append(", KernelRuntime.SCAN_BATCH_ROWS);\n");
+				body.append(indent).append("}\n");
+				body.append(indent).append("cur.close();\n");
+				return;
+			}
 			if (node instanceof EnumerateAdjKeys) {
 				EnumerateAdjKeys enumerate = (EnumerateAdjKeys) node;
 				String a = "a" + enumerate.adjacency;

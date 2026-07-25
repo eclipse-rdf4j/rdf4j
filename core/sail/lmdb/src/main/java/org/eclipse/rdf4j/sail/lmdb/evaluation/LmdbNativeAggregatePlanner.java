@@ -1168,7 +1168,11 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			if (filter.getArg() instanceof StatementPattern) {
 				// Exact-value membership conditions (OR-of-equals / IN over one variable) absorb the filter
 				// into per-value index probes; the compiled plan enforces the condition itself, via
-				// value-probe-safe ids or the ValueSetFilter fallback.
+				// value-probe-safe ids or the ValueSetFilter fallback. This deliberately supersedes the earlier
+				// "leave it to the shared optimizer" policy: the shared pipeline only rewrites the IN spelling,
+				// so without this the OR-of-equals spelling degraded to a full predicate scan with a sticky
+				// filter. Pinned by LmdbNativeQueryExplanationTest#rowOrOfEqualsFilterCompilesToMultiValueProbes
+				// and #aggregateOrOfEqualsFilterCompilesToMultiValueProbes.
 				SlotPlan pushedIntoPattern = compileFilterIntoStatementPattern((StatementPattern) filter.getArg(),
 						filter.getCondition());
 				if (pushedIntoPattern != null) {

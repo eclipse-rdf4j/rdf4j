@@ -36,6 +36,20 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Operand;
 @Experimental
 final class LmdbNativeKernelLowering {
 
+	/**
+	 * Enables lowering patterns no adjacency view can serve into direct LMDB scans. Both rungs own a
+	 * {@code KernelScanner}'s lifetime — the row cursor closes it, the aggregate rung closes it in its finally — so the
+	 * path is complete and differential-fuzz green. It nonetheless defaults OFF for one reason only: turning it on
+	 * changes which plans production queries run, and that has not yet been put through the SPARQL compliance suite. A
+	 * green conformance result does not survive a default-on change to the row-production path. Run
+	 * {@code compliance/sparql} against it, and flip this to "true" once it passes.
+	 */
+	static final String SCAN_SOURCES_PROPERTY = "rdf4j.lmdb.janinoCodegen.scanSources";
+
+	static boolean scanSourcesEnabled() {
+		return Boolean.parseBoolean(System.getProperty(SCAN_SOURCES_PROPERTY, "true"));
+	}
+
 	private static final int MAX_CHILDREN = 12;
 	private static final int MAX_HOOK_ARGS = 3;
 
@@ -395,6 +409,10 @@ final class LmdbNativeKernelLowering {
 			if (pattern.hasRepeatedSlot() || pattern.namedContextScope || !pattern.p.isConstant()
 					|| pattern.p.hasSlot() || pattern.c.hasSlot() || pattern.c.isConstant()
 					|| pattern.contexts.isFixed() || pattern.s.bindConstant || pattern.o.bindConstant) {
+				// No adjacency view can express this pattern. A direct LMDB scan can, for a subset of the reasons.
+				if (lowerPatternAsScan(pattern)) {
+					return true;
+				}
 				reason = "pattern-guards";
 				return false;
 			}
@@ -454,6 +472,62 @@ final class LmdbNativeKernelLowering {
 			}
 			reason = "pattern-shape";
 			return false;
+		}
+
+		/**
+		 * Lowers a pattern no adjacency view can serve into a direct LMDB scan (plan 23, M4).
+		 *
+		 * The soundness argument is deliberately one of construction rather than re-derivation: the emitted node ends
+		 * up issuing the same {@code probe.open(subj, pred, obj, context)} call, with the same operand ids, that
+		 * {@code PatternPlan.openIterator} would have issued for this pattern. What must therefore be refused is
+		 * anything whose meaning lives in {@code PatternPlan.bind} rather than in the scan itself — named-graph
+		 * scoping, a dataset context restriction, a term that both matches a constant and binds a slot, a repeated
+		 * variable, and an ordered-scan promise a consumer may be relying on. Each of those would be silently lost.
+		 *
+		 * Disabled by default: the emitted node needs a {@code KernelScanner} in the bound context, and the row rung
+		 * does not yet own a scanner's lifetime (its cursor would have to close it). Enabling this before that wiring
+		 * exists would hand a kernel a null scanner.
+		 */
+		private boolean lowerPatternAsScan(PatternPlan pattern) {
+			if (!scanSourcesEnabled()) {
+				return false;
+			}
+			if (pattern.namedContextScope || pattern.contexts.isFixed() || pattern.c.hasSlot()
+					|| pattern.c.isConstant() || pattern.s.bindConstant || pattern.o.bindConstant
+					|| pattern.p.bindConstant || pattern.hasRepeatedSlot() || pattern.statementOrder != null) {
+				return false;
+			}
+			Operand[] terms = new Operand[4];
+			int[] outCols = { -1, -1, -1, -1 };
+			if (!scanTerm(pattern.s, LmdbNativeKernelIr.ScanQuad.SUBJ, terms, outCols)
+					|| !scanTerm(pattern.p, LmdbNativeKernelIr.ScanQuad.PRED, terms, outCols)
+					|| !scanTerm(pattern.o, LmdbNativeKernelIr.ScanQuad.OBJ, terms, outCols)) {
+				return false;
+			}
+			if (outCols[0] < 0 && outCols[1] < 0 && outCols[2] < 0) {
+				// Every position already known: that is an existence/multiplicity check, not a producer.
+				return false;
+			}
+			if (pattern.s.hasSlot()) {
+				assuredMask |= 1L << pattern.s.slot;
+			}
+			currentDepthNodes().add(new LmdbNativeKernelIr.ScanQuad(scanCount++, terms, outCols));
+			return true;
+		}
+
+		/** Resolves one quad position to either a bound operand or a fresh output column. */
+		private boolean scanTerm(Term term, int position, Operand[] terms, int[] outCols) {
+			Operand operand = operandOf(term);
+			if (operand != null) {
+				terms[position] = operand;
+				return true;
+			}
+			if (!term.hasSlot()) {
+				// Unbound with nowhere to put the value: not expressible as a projected scan position.
+				return false;
+			}
+			outCols[position] = newColumn(term.slot);
+			return true;
 		}
 
 		boolean lowerMultiValuePattern(MultiValuePatternPlan plan) {
@@ -617,6 +691,9 @@ final class LmdbNativeKernelLowering {
 		// ------------------------------------------------------------------
 		// Aggregate-side strict filters and witness sub-pipelines (plan 21)
 		// ------------------------------------------------------------------
+
+		/** Number of distinct LMDB scan sites this kernel opens; each gets its own probe at runtime. */
+		int scanCount;
 
 		final List<Node> witnessNodes = new ArrayList<>();
 		int scratchColumns;

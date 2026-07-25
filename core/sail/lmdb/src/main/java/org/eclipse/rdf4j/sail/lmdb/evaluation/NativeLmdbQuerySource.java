@@ -186,6 +186,28 @@ public interface NativeLmdbQuerySource {
 
 		long contextAt(int index);
 
+		/**
+		 * Bulk-copies the neighbor ids of the half-open index range {@code [start, end)} into {@code target} starting
+		 * at {@code targetOffset}. The default loops {@link #neighborAt(int)}; an implementation backed by a contiguous
+		 * array should override this with a block copy. Vectorized kernels read whole runs through this method, so the
+		 * override is what turns one virtual call per neighbor into one call per run.
+		 */
+		default void copyRun(int start, int end, long[] target, int targetOffset) {
+			for (int i = start; i < end; i++) {
+				target[targetOffset + i - start] = neighborAt(i);
+			}
+		}
+
+		/**
+		 * Bulk-copies the context ids of the half-open index range {@code [start, end)}, mirroring
+		 * {@link #copyRun(int, int, long[], int)} for the named-graph column.
+		 */
+		default void copyContexts(int start, int end, long[] target, int targetOffset) {
+			for (int i = start; i < end; i++) {
+				target[targetOffset + i - start] = contextAt(i);
+			}
+		}
+
 		/** Number of distinct keys in this view, or {@code -1} when key enumeration is unsupported. */
 		default int keyCount() {
 			return -1;

@@ -77,6 +77,7 @@ final class LmdbNativeKernelExecution {
 			return null;
 		}
 		NativeLmdbQuerySource.NativeProbe probe = null;
+		LmdbNativeKernelScanner scanner = null;
 		JaninoKernel kernel = null;
 		try {
 			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerAggregate(arg, row, groupSlots,
@@ -115,7 +116,11 @@ final class LmdbNativeKernelExecution {
 			if (hooks != null && lowered.bindings.sumGuard) {
 				hooks.armSumGuard();
 			}
-			kernel.bind(lowered.bindings.context(views, lowered.bindings.materializeDomains(probe), row, hooks));
+			scanner = lowered.kernel.requirements.scans > 0
+					? new LmdbNativeKernelScanner(row.source, lowered.kernel.requirements.scans)
+					: null;
+			kernel.bind(
+					lowered.bindings.context(views, lowered.bindings.materializeDomains(probe), row, hooks, scanner));
 			int stride = lowered.kernel.stride();
 			long[] buffer = new long[stride * FILL_ROWS];
 			java.util.List<org.eclipse.rdf4j.query.BindingSet> results = new java.util.ArrayList<>();
@@ -141,6 +146,9 @@ final class LmdbNativeKernelExecution {
 			AGG_DECLINED.incrementAndGet();
 			return null;
 		} finally {
+			if (scanner != null) {
+				scanner.close();
+			}
 			if (probe != null) {
 				probe.close();
 			}
@@ -188,9 +196,14 @@ final class LmdbNativeKernelExecution {
 			LmdbNativeKernelHooks hooks = lowered.bindings.needsHooks()
 					? new LmdbNativeKernelHooks(row, lowered.bindings)
 					: null;
-			kernel.bind(lowered.bindings.context(views, lowered.bindings.materializeDomains(probe), row, hooks));
+			// A scan-bearing kernel opens LMDB cursors of its own; the row cursor owns that scanner and closes it.
+			LmdbNativeKernelScanner scanner = lowered.kernel.requirements.scans > 0
+					? new LmdbNativeKernelScanner(row.source, lowered.kernel.requirements.scans)
+					: null;
+			kernel.bind(
+					lowered.bindings.context(views, lowered.bindings.materializeDomains(probe), row, hooks, scanner));
 			OPENED.incrementAndGet();
-			return new KernelRowCursor(kernel, probe, row, lowered.bindings.columnEngineSlots,
+			return new KernelRowCursor(kernel, probe, scanner, row, lowered.bindings.columnEngineSlots,
 					lowered.bindings.residualFilters);
 		} catch (RuntimeException problem) {
 			if (probe != null) {
@@ -205,6 +218,7 @@ final class LmdbNativeKernelExecution {
 	private static final class KernelRowCursor implements RowCursor {
 		private final JaninoKernel kernel;
 		private final NativeLmdbQuerySource.NativeProbe probe;
+		private final LmdbNativeKernelScanner scanner;
 		private final RowState row;
 		private final int[] columnSlots;
 		private final List<MaskedFilter> residualFilters;
@@ -213,10 +227,12 @@ final class LmdbNativeKernelExecution {
 		private int bufferPos;
 		private int activeMark = -1;
 
-		KernelRowCursor(JaninoKernel kernel, NativeLmdbQuerySource.NativeProbe probe, RowState row,
-				int[] columnSlots, List<MaskedFilter> residualFilters) {
+		KernelRowCursor(JaninoKernel kernel, NativeLmdbQuerySource.NativeProbe probe,
+				LmdbNativeKernelScanner scanner, RowState row, int[] columnSlots,
+				List<MaskedFilter> residualFilters) {
 			this.kernel = kernel;
 			this.probe = probe;
+			this.scanner = scanner;
 			this.row = row;
 			this.columnSlots = columnSlots;
 			this.residualFilters = residualFilters;
@@ -274,6 +290,9 @@ final class LmdbNativeKernelExecution {
 				activeMark = -1;
 			}
 			kernel.close();
+			if (scanner != null) {
+				scanner.close();
+			}
 			probe.close();
 		}
 	}

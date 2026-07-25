@@ -31,18 +31,26 @@ public final class KernelContext {
 	public final long[] entrySlots;
 	public final long[][] keyDomains;
 	public final KernelHooks hooks;
+	/** Opens direct LMDB scans for patterns no adjacency view can serve; null when the kernel needs none. */
+	public final KernelScanner scanner;
 
 	public KernelContext(NativeLmdbQuerySource.NativeAdjacency[] adjacencies, long[] constants, long[] entrySlots,
 			long[][] keyDomains) {
-		this(adjacencies, constants, entrySlots, keyDomains, null);
+		this(adjacencies, constants, entrySlots, keyDomains, null, null);
 	}
 
 	public KernelContext(NativeLmdbQuerySource.NativeAdjacency[] adjacencies, long[] constants, long[] entrySlots,
 			long[][] keyDomains, KernelHooks hooks) {
+		this(adjacencies, constants, entrySlots, keyDomains, hooks, null);
+	}
+
+	public KernelContext(NativeLmdbQuerySource.NativeAdjacency[] adjacencies, long[] constants, long[] entrySlots,
+			long[][] keyDomains, KernelHooks hooks, KernelScanner scanner) {
 		this.adjacencies = adjacencies;
 		this.constants = constants;
 		this.entrySlots = entrySlots;
 		this.keyDomains = keyDomains;
 		this.hooks = hooks;
+		this.scanner = scanner;
 	}
 }

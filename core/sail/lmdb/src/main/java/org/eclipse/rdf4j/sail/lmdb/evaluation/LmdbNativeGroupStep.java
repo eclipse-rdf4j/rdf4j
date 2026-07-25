@@ -292,11 +292,17 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 				return fused;
 			}
 		}
-		List<BindingSet> irFused = LmdbNativeKernelExecution.tryEvaluateAggregate(arg, row, groupSlots,
-				aggregates, this, explainTarget);
-		if (irFused != null) {
-			LmdbNativeExplain.recordExecutionPath(explainTarget, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE);
-			return irFused;
+		// A prefix-run distinct/group plan (index seek-skip, ~one position per distinct value) is the designed
+		// fast path for these single-pattern shapes. The IR/Janino aggregate kernel would instead enumerate the
+		// whole predicate CSR and hash-dedup every row, so it must not intercept a row the prefix-run path will
+		// handle (otherwise e.g. ANALYTICS q0 regresses ~0.16ms -> ~10ms once the kernel is admitted).
+		if (!prefixRunHandlesRow(row)) {
+			List<BindingSet> irFused = LmdbNativeKernelExecution.tryEvaluateAggregate(arg, row, groupSlots,
+					aggregates, this, explainTarget);
+			if (irFused != null) {
+				LmdbNativeExplain.recordExecutionPath(explainTarget, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE);
+				return irFused;
+			}
 		}
 		if (AggregateSpec.allCounts(aggregates)) {
 			List<BindingSet> wcoj = evaluateWcoj(row);
@@ -699,8 +705,17 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		return results;
 	}
 
+	/**
+	 * Whether {@link #evaluatePrefixRuns} will claim this row. Kept in exact lock-step with that method's own
+	 * applicability guard so the aggregate ladder can skip the IR/Janino kernel for shapes the prefix-run engine owns
+	 * without the two decisions ever drifting apart.
+	 */
+	boolean prefixRunHandlesRow(RowState row) {
+		return prefixRunPlan != null && prefixPattern != null && !prefixPattern.hasRuntimeBoundSlot(row);
+	}
+
 	List<BindingSet> evaluatePrefixRuns(RowState row) {
-		if (prefixRunPlan == null || prefixPattern == null || prefixPattern.hasRuntimeBoundSlot(row)) {
+		if (!prefixRunHandlesRow(row)) {
 			return null;
 		}
 		List<BindingSet> parallel = LmdbNativeParallelPrefixRuns.tryEvaluate(this, row);

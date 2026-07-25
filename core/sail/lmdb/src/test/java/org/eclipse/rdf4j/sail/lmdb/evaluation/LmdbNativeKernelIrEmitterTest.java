@@ -12,7 +12,10 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -22,6 +25,7 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.function.LongPredicate;
 import java.util.function.LongUnaryOperator;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Aggregate;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.AggregateOutput;
@@ -49,6 +53,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Union;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -463,6 +468,352 @@ class LmdbNativeKernelIrEmitterTest {
 	// Test kit
 	// ------------------------------------------------------------------
 
+	// ------------------------------------------------------------------
+	// Vector tail (plan 23, M1)
+	// ------------------------------------------------------------------
+
+	@Test
+	void vectorTailBulkReadsTheRunAndVectorizesIdFilters() throws Exception {
+		// follows: 1->{2,3}, 2->{3}, 3->{1}, 4->{5}; drop neighbor 3 so a filter has something to do.
+		Supplier<Kernel> shape = () -> new Kernel(2,
+				List.of(new EnumerateDomain(0, 0), new Probe(0, Operand.col(0), 1),
+						new FilterCompareId(true, Operand.col(1), Operand.constant(0))),
+				emit(0, 1));
+		long[][] expected = { { 1, 2 }, { 3, 1 } };
+
+		Kernel vectorized = withVectorTail(true, shape);
+		assertEquals(1, vectorized.vectorTailIndex, "the probe is the innermost expanding node");
+		String source = LmdbNativeKernelEmitter.emit(vectorized);
+		assertTrue(source.contains(".copyRun("), "vector tail must bulk-read the run; source:\n" + source);
+		assertTrue(source.contains("KernelRuntime.selectNe(tvec, rn,"),
+				"the id filter must lower to the dense selection primitive; source:\n" + source);
+
+		// A kernel instance is created per cursor open, and correlated opens happen per outer row, so bind() must not
+		// allocate a full vector: the scratch grows to the run length actually seen.
+		String bindBody = source.substring(source.indexOf("public void bind("), source.indexOf("public int fill("));
+		assertFalse(bindBody.contains("new long["), "bind must not preallocate the vector scratch:\n" + bindBody);
+		assertFalse(bindBody.contains("new int["), "bind must not preallocate the selection scratch:\n" + bindBody);
+		assertTrue(source.contains("if (tvec == null || tvec.length < rn) {"),
+				"the scratch must grow to the observed run length; source:\n" + source);
+
+		Kernel scalar = withVectorTail(false, shape);
+		assertEquals(-1, scalar.vectorTailIndex);
+		String scalarSource = LmdbNativeKernelEmitter.emit(scalar);
+		assertFalse(scalarSource.contains(".copyRun("), "scalar mode must keep the per-index loop");
+		assertNotEquals(vectorized.shapeKey(), scalar.shapeKey(), "the two modes must not share a cache entry");
+
+		assertRows(run(vectorized, context().adjacencies(follows()).domains(new long[] { 1, 2, 3 }).constants(3)),
+				expected);
+		assertRows(run(scalar, context().adjacencies(follows()).domains(new long[] { 1, 2, 3 }).constants(3)),
+				expected);
+	}
+
+	@Test
+	void vectorTailChainsSelectionsAndKeepsHookFiltersPerRow() throws Exception {
+		// An unsigned range narrows the run vectorized; the hook filter cannot vectorize and stays a per-row guard.
+		Supplier<Kernel> shape = () -> new Kernel(2,
+				List.of(new EnumerateDomain(0, 0), new Probe(0, Operand.col(0), 1),
+						new FilterRangeUnsigned(Operand.col(1), 0, 1),
+						new FilterValue(7, new Operand[] { Operand.col(1) })),
+				emit(0, 1));
+
+		Kernel vectorized = withVectorTail(true, shape);
+		String source = LmdbNativeKernelEmitter.emit(vectorized);
+		assertTrue(source.contains("KernelRuntime.selectRangeUnsigned(tvec, rn,"),
+				"the range must vectorize; source:\n" + source);
+		assertTrue(source.contains("hooks.testFilter(7,"), "the hook filter must survive as a guard");
+		assertTrue(source.indexOf("hooks.testFilter(7,") > source.indexOf(".copyRun("),
+				"the hook guard must sit inside the vectorized loop");
+
+		// Accept only neighbor 2 through the hook so both tiers demonstrably run.
+		TestHooks onlyTwo = new TestHooks();
+		onlyTwo.filterAccept = id -> id == 2L;
+		Kernel scalar = withVectorTail(false, shape);
+		long[][] expected = { { 1, 2 } };
+		assertRows(run(vectorized,
+				context().adjacencies(follows()).domains(new long[] { 1, 2, 3 }).constants(1, 3).hooks(onlyTwo)),
+				expected);
+		assertRows(run(scalar,
+				context().adjacencies(follows()).domains(new long[] { 1, 2, 3 }).constants(1, 3).hooks(onlyTwo)),
+				expected);
+	}
+
+	@Test
+	void vectorTailChunksRunsLongerThanOneVector() throws Exception {
+		// One run strictly longer than a vector, so the emitted while-loop must take more than one slice.
+		int length = KernelRuntime.VECTOR_SIZE * 2 + 7;
+		long[] row = new long[length + 1];
+		row[0] = 1L;
+		for (int i = 0; i < length; i++) {
+			row[i + 1] = i + 100L;
+		}
+		NativeLmdbQuerySource.NativeAdjacency wide = new FixtureAdjacency(new long[][] { row });
+
+		Supplier<Kernel> shape = () -> new Kernel(2,
+				List.of(new EnumerateDomain(0, 0), new Probe(0, Operand.col(0), 1)), emit(0, 1));
+		Kernel vectorized = withVectorTail(true, shape);
+		Kernel scalar = withVectorTail(false, shape);
+
+		List<long[]> vectorRows = run(vectorized, context().adjacencies(wide).domains(new long[] { 1 }));
+		List<long[]> scalarRows = run(scalar, context().adjacencies(wide).domains(new long[] { 1 }));
+		assertEquals(length, vectorRows.size(), "every neighbor of the oversized run must be produced");
+		assertEquals(scalarRows.size(), vectorRows.size());
+		for (int i = 0; i < length; i++) {
+			assertEquals(i + 100L, vectorRows.get(i)[1], "neighbor at position " + i);
+			assertEquals(scalarRows.get(i)[1], vectorRows.get(i)[1], "modes disagree at position " + i);
+		}
+	}
+
+	@Test
+	void vectorTailClaimsTheInnermostProbeAndDeclinesWhenAContainerFollows() {
+		// Two probes: the innermost one carries the row multiplication, so it is the one worth vectorizing.
+		Kernel chained = withVectorTail(true,
+				() -> new Kernel(3, List.of(new EnumerateDomain(0, 0), new Probe(0, Operand.col(0), 1),
+						new Probe(0, Operand.col(1), 2)), emit(0, 1, 2)));
+		assertEquals(2, chained.vectorTailIndex, "the last expanding node is the tail");
+
+		// A container after the probe needs the scalar continuation, so the tail must not be claimed.
+		Kernel guarded = withVectorTail(true,
+				() -> new Kernel(2,
+						List.of(new EnumerateDomain(0, 0), new Probe(0, Operand.col(0), 1),
+								new Exists(false, List.of(new ProbeClose(0, Operand.col(1), Operand.col(0), false)))),
+						emit(0, 1)));
+		assertEquals(-1, guarded.vectorTailIndex, "an Exists after the probe must fall back to scalar emission");
+
+		// Key enumeration expands too, so it qualifies on its own.
+		Kernel enumerated = withVectorTail(true,
+				() -> new Kernel(2, List.of(new EnumerateAdjKeys(0, 0, 1)), emit(0, 1)));
+		assertEquals(0, enumerated.vectorTailIndex);
+		assertTrue(LmdbNativeKernelEmitter.emit(enumerated).contains(".copyRun("));
+	}
+
+	// ------------------------------------------------------------------
+	// Factorized counting (plan 23, M2 first slice)
+	// ------------------------------------------------------------------
+
+	@Test
+	void factorizedCountFoldsAWholeRunWithoutIteratingIt() throws Exception {
+		// GROUP BY key, COUNT(*) over the neighbors: the group is constant across the run, so the count is an addition.
+		Supplier<Kernel> shape = () -> new Kernel(2, List.of(new EnumerateAdjKeys(0, 0, 1)),
+				new Aggregate(new int[] { 0 }, new AggregateOutput[] { AggregateOutput.countStar() }, null,
+						OutputMods.none()));
+
+		Kernel vectorized = withVectorTail(true, shape);
+		String source = LmdbNativeKernelEmitter.emit(vectorized);
+		assertTrue(source.contains("updateBy(rend - rpos);"),
+				"with nothing reading or filtering the neighbors, the count is the run length; source:\n" + source);
+		assertTrue(source.contains("agC0[g] += n;"), "COUNT(*) must accumulate by the run length");
+		assertFalse(source.contains("v1 = tvec["), "the tail column must not be materialized per row");
+		assertFalse(source.contains(".copyRun("), "an unfiltered count must not read a single neighbor");
+		assertFalse(source.contains("while (rpos < rend)"), "an unfiltered count needs no slice loop at all");
+
+		Kernel scalar = withVectorTail(false, shape);
+		assertFalse(LmdbNativeKernelEmitter.emit(scalar).contains("updateBy("));
+
+		// follows: 1->{2,3}, 2->{3}, 3->{1}, 4->{5}
+		long[][] expected = { { 1, 2 }, { 2, 1 }, { 3, 1 }, { 4, 1 } };
+		assertRows(run(vectorized, context().adjacencies(follows())), expected);
+		assertRows(run(scalar, context().adjacencies(follows())), expected);
+	}
+
+	@Test
+	void factorizedCountNeverInventsAnEmptyGroup() throws Exception {
+		// A filter that rejects every neighbor of key 4 must leave key 4 out entirely, exactly as the scalar loop does.
+		Supplier<Kernel> shape = () -> new Kernel(2,
+				List.of(new EnumerateAdjKeys(0, 0, 1),
+						new FilterCompareId(true, Operand.col(1), Operand.constant(0))),
+				new Aggregate(new int[] { 0 }, new AggregateOutput[] { AggregateOutput.countStar() }, null,
+						OutputMods.none()));
+
+		Kernel vectorized = withVectorTail(true, shape);
+		assertTrue(LmdbNativeKernelEmitter.emit(vectorized).contains("if (cnt > 0) {"),
+				"a fully filtered slice must not intern a group");
+
+		// Reject neighbor 5, which is the only neighbor of key 4, so key 4 must disappear from the output.
+		long[][] expected = { { 1, 2 }, { 2, 1 }, { 3, 1 } };
+		assertRows(run(vectorized, context().adjacencies(follows()).constants(5)), expected);
+		assertRows(run(withVectorTail(false, shape), context().adjacencies(follows()).constants(5)), expected);
+	}
+
+	@Test
+	void factorizedCountDeclinesWhenTheAggregateReadsTheTailColumn() {
+		// COUNT(DISTINCT neighbor) genuinely differs per row, so the loop must stay.
+		Kernel distinctOverTail = withVectorTail(true,
+				() -> new Kernel(2, List.of(new EnumerateAdjKeys(0, 0, 1)),
+						new Aggregate(new int[] { 0 }, new AggregateOutput[] { AggregateOutput.countDistinct(1) }, null,
+								OutputMods.none())));
+		assertFalse(LmdbNativeKernelEmitter.emit(distinctOverTail).contains("updateBy("),
+				"counting distinct tail values cannot fold");
+
+		// SUM needs each value, so it must not fold either.
+		Kernel sumOverTail = withVectorTail(true,
+				() -> new Kernel(2, List.of(new EnumerateAdjKeys(0, 0, 1)),
+						new Aggregate(new int[] { 0 }, new AggregateOutput[] { AggregateOutput.sum(1) }, null,
+								OutputMods.none())));
+		assertFalse(LmdbNativeKernelEmitter.emit(sumOverTail).contains("updateBy("), "SUM cannot fold");
+
+		// Grouping by the tail column changes the group per row.
+		Kernel groupByTail = withVectorTail(true,
+				() -> new Kernel(2, List.of(new EnumerateAdjKeys(0, 0, 1)),
+						new Aggregate(new int[] { 1 }, new AggregateOutput[] { AggregateOutput.countStar() }, null,
+								OutputMods.none())));
+		assertFalse(LmdbNativeKernelEmitter.emit(groupByTail).contains("updateBy("),
+				"grouping by the tail column cannot fold");
+	}
+
+	@Test
+	void vectorTailKeepsLeftProbeNullExtensionAndItsFilters() throws Exception {
+		// follows: 1->{2,3}, 2->{3}, 3->{1}, 4->{5}. Key 9 has no run at all, so it must be null-extended.
+		Supplier<Kernel> shape = () -> new Kernel(2,
+				List.of(new EnumerateDomain(0, 0), new LeftProbe(0, Operand.col(0), 1)), emit(0, 1));
+
+		Kernel vectorized = withVectorTail(true, shape);
+		assertEquals(1, vectorized.vectorTailIndex, "a left probe expands, so it can be the tail");
+		String source = LmdbNativeKernelEmitter.emit(vectorized);
+		assertTrue(source.contains(".copyRun("), "the matched arm must bulk-read; source:\n" + source);
+		assertTrue(source.contains("if (!matched) {"), "the null arm must survive vectorization");
+
+		long[][] expected = { { 1, 2 }, { 1, 3 }, { 4, 5 }, { 9, -1 } };
+		assertRows(run(vectorized, context().adjacencies(follows()).domains(new long[] { 1, 4, 9 })), expected);
+		assertRows(run(withVectorTail(false, shape), context().adjacencies(follows()).domains(new long[] { 1, 4, 9 })),
+				expected);
+	}
+
+	@Test
+	void vectorTailAppliesTrailingFiltersToTheNullArmToo() throws Exception {
+		// A filter below an OPTIONAL is a post-filter in this IR: it must see the null row and be able to reject it.
+		Supplier<Kernel> shape = () -> new Kernel(2,
+				List.of(new EnumerateDomain(0, 0), new LeftProbe(0, Operand.col(0), 1),
+						new FilterCompareId(true, Operand.col(1), Operand.constant(0))),
+				emit(0, 1));
+
+		Kernel vectorized = withVectorTail(true, shape);
+		String source = LmdbNativeKernelEmitter.emit(vectorized);
+		assertTrue(source.contains("KernelRuntime.selectNe(tvec, rn,"), "the matched arm filters vectorized");
+		assertTrue(source.indexOf("v1 != c0") > source.indexOf("if (!matched) {"),
+				"the null arm must re-apply the same filter as a scalar guard; source:\n" + source);
+
+		// Reject -1 itself: the null-extended row for key 9 must disappear, matched rows must survive.
+		long[][] rejectNull = { { 1, 2 }, { 1, 3 }, { 4, 5 } };
+		assertRows(run(vectorized, context().adjacencies(follows()).domains(new long[] { 1, 4, 9 }).constants(-1L)),
+				rejectNull);
+		assertRows(run(withVectorTail(false, shape),
+				context().adjacencies(follows()).domains(new long[] { 1, 4, 9 }).constants(-1L)), rejectNull);
+
+		// Reject neighbor 3: key 1 keeps only 2, and the null row for key 9 still passes.
+		long[][] rejectThree = { { 1, 2 }, { 4, 5 }, { 9, -1 } };
+		assertRows(run(vectorized, context().adjacencies(follows()).domains(new long[] { 1, 4, 9 }).constants(3L)),
+				rejectThree);
+		assertRows(run(withVectorTail(false, shape),
+				context().adjacencies(follows()).domains(new long[] { 1, 4, 9 }).constants(3L)), rejectThree);
+	}
+
+	// ------------------------------------------------------------------
+	// Resumable / streaming emission (plan 23, M3)
+	// ------------------------------------------------------------------
+
+	@Test
+	void streamingKernelWritesIntoTheCallersBufferInsteadOfMaterializing() throws Exception {
+		Kernel streaming = new Kernel(2, List.of(new EnumerateDomain(0, 0), new Probe(0, Operand.col(0), 1)),
+				emit(0, 1));
+		assertTrue(streaming.resumable, "a plain row pipeline with no ordering or limit must stream");
+		String source = LmdbNativeKernelEmitter.emit(streaming);
+		assertTrue(source.contains("private long[] out = new long[0];"),
+				"a streaming kernel must not allocate the intermediate buffer; source:\n" + source);
+		assertTrue(source.contains("sink[base + 0]"), "rows must be written straight into the caller's buffer");
+		assertFalse(source.contains("appendRow()"), "the growing-buffer path must not be emitted at all");
+	}
+
+	@Test
+	void streamingProducesIdenticalRowsAtEveryBufferSize() throws Exception {
+		// Draining one row at a time forces a pause at every single row, at every loop depth.
+		Kernel streaming = new Kernel(2, List.of(new EnumerateDomain(0, 0), new Probe(0, Operand.col(0), 1)),
+				emit(0, 1));
+		long[][] expected = { { 1, 2 }, { 1, 3 }, { 2, 3 }, { 3, 1 } };
+		for (int maxRows : new int[] { 1, 2, 3, 5, 64 }) {
+			List<long[]> rows = drain(streaming, context().adjacencies(follows()).domains(new long[] { 1, 2, 3 }),
+					maxRows);
+			assertRows(rows, expected, "drained " + maxRows + " row(s) at a time");
+		}
+	}
+
+	@Test
+	void streamingResumesCorrectlyThroughNestedLoopsAndFilters() throws Exception {
+		// Key enumeration nests two loops; the filter below it is stateless and must simply re-evaluate on resume.
+		Kernel streaming = new Kernel(2,
+				List.of(new EnumerateAdjKeys(0, 0, 1), new FilterCompareId(true, Operand.col(1), Operand.constant(0))),
+				emit(0, 1));
+		assertTrue(streaming.resumable);
+		// Rejecting neighbor 3 empties key 2 entirely (its only neighbor is 3), which is the interesting case: a key
+		// whose whole run is filtered away must still advance to the next key across a pause.
+		long[][] expected = { { 1, 2 }, { 3, 1 }, { 4, 5 } };
+		for (int maxRows : new int[] { 1, 2, 3, 7, 64 }) {
+			List<long[]> rows = drain(streaming, context().adjacencies(follows()).constants(3), maxRows);
+			assertRows(rows, expected, "drained " + maxRows + " row(s) at a time");
+		}
+	}
+
+	@Test
+	void streamingDeclinesWhereTheWholeResultIsNeededFirst() {
+		// ORDER BY and LIMIT need every row in hand before the first can be served.
+		OutputMods ordered = new OutputMods(new int[] { 0 }, null, false, -1L, 0L);
+		assertFalse(new Kernel(2, List.of(new EnumerateAdjKeys(0, 0, 1)),
+				new Emit(new int[] { 0, 1 }, false, ordered)).resumable, "ordering must not stream");
+		OutputMods limited = new OutputMods(null, null, false, 5L, 0L);
+		assertFalse(new Kernel(2, List.of(new EnumerateAdjKeys(0, 0, 1)),
+				new Emit(new int[] { 0, 1 }, false, limited)).resumable, "a limit must not stream");
+		// An aggregate terminal is bounded by group count and keeps the eager path.
+		assertFalse(new Kernel(2, List.of(new EnumerateAdjKeys(0, 0, 1)),
+				new Aggregate(new int[] { 0 }, new AggregateOutput[] { AggregateOutput.countStar() }, null,
+						OutputMods.none())).resumable,
+				"an aggregate terminal must not stream");
+	}
+
+	/** Drains a kernel handing back at most {@code maxRows} rows per call, exercising pause and resume. */
+	private static List<long[]> drain(Kernel ir, ContextBuilder context, int maxRows) throws Exception {
+		Object owner = new Object();
+		JaninoKernel kernel = LmdbNativeJaninoCodegen.kernel(owner, ir.shapeKey(), ir.className(),
+				() -> LmdbNativeKernelEmitter.emit(ir), Long.MAX_VALUE);
+		if (kernel == null) {
+			kernel = LmdbNativeJaninoCodegen.awaitKernel(owner, ir.shapeKey(), 30, TimeUnit.SECONDS);
+		}
+		assertNotNull(kernel, "kernel did not compile; source:\n" + LmdbNativeKernelEmitter.emit(ir));
+		try {
+			kernel.bind(context.build());
+			int stride = ir.stride();
+			long[] buffer = new long[stride * maxRows];
+			List<long[]> rows = new ArrayList<>();
+			while (true) {
+				int filled = kernel.fill(buffer, maxRows);
+				if (filled == 0) {
+					break;
+				}
+				assertTrue(filled <= maxRows, "fill returned more rows than requested");
+				for (int r = 0; r < filled; r++) {
+					rows.add(Arrays.copyOfRange(buffer, r * stride, (r + 1) * stride));
+				}
+			}
+			return rows;
+		} finally {
+			kernel.close();
+		}
+	}
+
+	/** Builds a kernel with the vector-tail mode forced on or off, restoring the previous setting afterwards. */
+	private static Kernel withVectorTail(boolean enabled, Supplier<Kernel> factory) {
+		String previous = System.getProperty(LmdbNativeKernelIr.VECTOR_TAIL_PROPERTY);
+		System.setProperty(LmdbNativeKernelIr.VECTOR_TAIL_PROPERTY, Boolean.toString(enabled));
+		try {
+			return factory.get();
+		} finally {
+			if (previous == null) {
+				System.clearProperty(LmdbNativeKernelIr.VECTOR_TAIL_PROPERTY);
+			} else {
+				System.setProperty(LmdbNativeKernelIr.VECTOR_TAIL_PROPERTY, previous);
+			}
+		}
+	}
+
 	private static Emit emit(int... cols) {
 		return new Emit(cols, false, OutputMods.none());
 	}
@@ -640,6 +991,20 @@ class LmdbNativeKernelIrEmitterTest {
 		public double doubleValue(long id) {
 			return id;
 		}
+	}
+
+	private static void assertRows(List<long[]> actual, long[][] expected, String message) {
+		List<String> actualRows = new ArrayList<>();
+		for (long[] row : actual) {
+			actualRows.add(Arrays.toString(row));
+		}
+		List<String> expectedRows = new ArrayList<>();
+		for (long[] row : expected) {
+			expectedRows.add(Arrays.toString(row));
+		}
+		actualRows.sort(String::compareTo);
+		expectedRows.sort(String::compareTo);
+		assertEquals(expectedRows, actualRows, message);
 	}
 
 	private static void assertRows(List<long[]> actual, long[][] expected) {

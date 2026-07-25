@@ -3041,6 +3041,20 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public void copyRun(int start, int end, long[] target, int targetOffset) {
+			System.arraycopy(entry.neighbors, start, target, targetOffset, end - start);
+		}
+
+		@Override
+		public void copyContexts(int start, int end, long[] target, int targetOffset) {
+			if (entry.contexts == null) {
+				Arrays.fill(target, targetOffset, targetOffset + (end - start), 0L);
+			} else {
+				System.arraycopy(entry.contexts, start, target, targetOffset, end - start);
+			}
+		}
+
+		@Override
 		public int keyCount() {
 			return entry.keysByDense.length;
 		}

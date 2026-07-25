@@ -54,6 +54,85 @@ class LmdbNativeKernelLoweringTest {
 		return row;
 	}
 
+	// ------------------------------------------------------------------
+	// Direct LMDB scan sources (plan 23, M4)
+	// ------------------------------------------------------------------
+
+	private static PatternPlan quadPattern(Term s, Term p, Term o, Term c, ContextConstraint contexts) {
+		return new PatternPlan(s, p, o, c, contexts, false, 10D);
+	}
+
+	private static LmdbNativeKernelLowering.Lowered lowerWithScans(SlotPlan plan) {
+		String previous = System.getProperty(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY, "true");
+		try {
+			return LmdbNativeKernelLowering.lowerRows(plan, freshRow(), null);
+		} finally {
+			if (previous == null) {
+				System.clearProperty(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY);
+			} else {
+				System.setProperty(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY, previous);
+			}
+		}
+	}
+
+	/** A variable predicate has no adjacency view; with scan sources on it lowers to a direct quad scan instead. */
+	@Test
+	void variablePredicatePatternLowersToAQuadScan() {
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] {
+				quadPattern(Term.slot(0), Term.slot(1), Term.slot(2), Term.unbound(),
+						ContextConstraint.UNRESTRICTED) },
+				new MaskedFilter[0]);
+		LmdbNativeKernelLowering.Lowered lowered = lowerWithScans(plan);
+		assertNotNull(lowered, "a variable predicate must lower once scan sources are enabled");
+		String key = lowered.kernel.shapeKey();
+		assertTrue(key.contains("SQ(s0,"), key);
+		assertEquals(1, lowered.kernel.requirements.scans, "one scan site");
+		assertEquals(0, lowered.bindings.adjacencies.length, "a scan needs no adjacency view");
+	}
+
+	/** With the flag off the same pattern still declines, so the default path is unchanged. */
+	@Test
+	void variablePredicatePatternDeclinesWhileScanSourcesAreOff() {
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] {
+				quadPattern(Term.slot(0), Term.slot(1), Term.slot(2), Term.unbound(),
+						ContextConstraint.UNRESTRICTED) },
+				new MaskedFilter[0]);
+		// Set the flag explicitly rather than leaning on its default: a test that encodes the ambient default starts
+		// failing the day the default moves, which says nothing about the behaviour it was written to protect.
+		String previous = System.getProperty(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY, "false");
+		try {
+			assertNull(LmdbNativeKernelLowering.lowerRows(plan, freshRow(), null));
+		} finally {
+			if (previous == null) {
+				System.clearProperty(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY);
+			} else {
+				System.setProperty(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY, previous);
+			}
+		}
+	}
+
+	/**
+	 * The guards that must survive: named-graph scoping and an ordered-scan promise carry meaning that lives in
+	 * PatternPlan.bind and in the consumer respectively, not in the scan, so neither may be lowered even with scans on.
+	 */
+	@Test
+	void scanLoweringRefusesGuardsWhoseMeaningIsNotInTheScan() {
+		MultiJoinPlan named = new MultiJoinPlan(new SlotPlan[] {
+				new PatternPlan(Term.slot(0), Term.slot(1), Term.slot(2), Term.unbound(),
+						ContextConstraint.UNRESTRICTED, true, 10D) },
+				new MaskedFilter[0]);
+		assertNull(lowerWithScans(named), "named-graph scoping must not be lowered to a plain scan");
+
+		MultiJoinPlan ordered = new MultiJoinPlan(new SlotPlan[] {
+				new PatternPlan(Term.slot(0), Term.slot(1), Term.slot(2), Term.unbound(),
+						ContextConstraint.UNRESTRICTED, false,
+						org.eclipse.rdf4j.common.order.StatementOrder.S, "", 10D) },
+				new MaskedFilter[0]);
+		assertNull(lowerWithScans(ordered), "an ordered-scan promise must not be lowered to an unordered scan");
+	}
+
 	@Test
 	void chainLowersToEnumerateAndProbe() {
 		MultiJoinPlan plan = new MultiJoinPlan(

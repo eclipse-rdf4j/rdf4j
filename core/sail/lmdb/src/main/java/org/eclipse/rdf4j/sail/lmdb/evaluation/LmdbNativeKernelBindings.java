@@ -16,6 +16,7 @@ import java.util.List;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelScanner;
 
 /**
  * Binding descriptor produced by {@code LmdbNativeKernelLowering} alongside a kernel IR tree (plan:
@@ -195,10 +196,15 @@ final class LmdbNativeKernelBindings {
 	/** Assembles the runtime context for {@code JaninoKernel.bind}, snapshotting correlated entry slot values. */
 	KernelContext context(NativeLmdbQuerySource.NativeAdjacency[] views, long[][] domains, RowState row,
 			KernelHooks hooks) {
+		return context(views, domains, row, hooks, null);
+	}
+
+	KernelContext context(NativeLmdbQuerySource.NativeAdjacency[] views, long[][] domains, RowState row,
+			KernelHooks hooks, KernelScanner scanner) {
 		long[] entrySlots = new long[entrySlotIds.length];
 		for (int i = 0; i < entrySlots.length; i++) {
 			entrySlots[i] = row.slots[entrySlotIds[i]];
 		}
-		return new KernelContext(views, constants, entrySlots, domains, hooks);
+		return new KernelContext(views, constants, entrySlots, domains, hooks, scanner);
 	}
 }

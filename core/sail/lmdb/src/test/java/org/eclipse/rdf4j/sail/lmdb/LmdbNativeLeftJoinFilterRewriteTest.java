@@ -236,9 +236,22 @@ public class LmdbNativeLeftJoinFilterRewriteTest {
 				+ "}");
 	}
 
-	/** OR-of-equalities remains a filter unless the shared optimizer grows that rewrite shape. */
+	/**
+	 * A top-level OR-of-equalities over string literals folds into per-value index probes, and still returns exactly
+	 * what the generic evaluator returns.
+	 *
+	 * This assertion was inverted deliberately. It previously required the opposite — that the native compiler leave
+	 * the rewrite to the shared optimizer pipeline — but that policy was superseded when the pushdown was introduced
+	 * along with {@code LmdbNativeQueryExplanationTest#rowOrOfEqualsFilterCompilesToMultiValueProbes} and its aggregate
+	 * twin, which require the fold. The two suites contradicted each other and no implementation could satisfy both.
+	 * The fold wins because the shared pipeline only rewrites the {@code IN} spelling, so leaving OR-of-equals alone
+	 * degraded it to a full predicate scan with a sticky filter for no semantic gain. Soundness comes from
+	 * {@code allValueProbeSafeIds}: only ids whose value-equality coincides with term-identity (the string family) are
+	 * eligible, which is why numerics stay excluded — {@code "1"} and {@code "01"^^xsd:integer} are equal as values but
+	 * distinct as terms.
+	 */
 	@Test
-	public void topLevelLiteralEqualityDisjunctionDoesNotBypassOptimizerPipeline() {
+	public void topLevelLiteralEqualityDisjunctionFoldsIntoExactProbes() {
 		long before = LmdbNativeAggregateCompiler.FILTER_INTO_PATTERN_PUSHDOWNS.get();
 		assertSameAsGeneric("PREFIX ex: <" + EX + ">\n"
 				+ "SELECT (COUNT(?a) AS ?count) WHERE {\n"
@@ -246,7 +259,25 @@ public class LmdbNativeLeftJoinFilterRewriteTest {
 				+ "  FILTER(?n = \"user0\" || ?n = \"user4b\" || ?n = \"user5\")\n"
 				+ "}");
 		assertThat(LmdbNativeAggregateCompiler.FILTER_INTO_PATTERN_PUSHDOWNS.get())
-				.as("top-level native compilation must not invent an OR-of-equalities rewrite")
+				.as("a string-literal OR-of-equalities must fold into per-value index probes")
+				.isGreaterThan(before);
+	}
+
+	/**
+	 * The counterpart that keeps the fold honest: numeric literals must NOT fold, because value-equality and
+	 * term-identity diverge there. Folding {@code ?n = 1} into an exact probe for the term {@code "1"^^xsd:integer}
+	 * would silently miss {@code "01"^^xsd:integer}, which is a different term with the same value.
+	 */
+	@Test
+	public void numericEqualityDisjunctionDoesNotFoldIntoExactProbes() {
+		long before = LmdbNativeAggregateCompiler.FILTER_INTO_PATTERN_PUSHDOWNS.get();
+		assertSameAsGeneric("PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (COUNT(?a) AS ?count) WHERE {\n"
+				+ "  ?a ex:number ?n .\n"
+				+ "  FILTER(?n = 1 || ?n = 2)\n"
+				+ "}");
+		assertThat(LmdbNativeAggregateCompiler.FILTER_INTO_PATTERN_PUSHDOWNS.get())
+				.as("numeric equality must stay a filter: value-equality is wider than term-identity")
 				.isEqualTo(before);
 	}
 
