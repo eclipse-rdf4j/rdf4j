@@ -49,6 +49,15 @@ class StoreProperties {
 
 	static final String NUMERIC_ID_ENCODING_ORDERED_V1 = "ordered-v1";
 
+	/**
+	 * The key recording whether inlined literal ids were in use when the store was created. Unlike
+	 * {@link #NUMERIC_ID_ENCODING_KEY} this is not merely a writer gate: inlining changes how a value is IDENTIFIED, so
+	 * the two settings are not interchangeable within one store and reopening under the opposite one is refused. Absent
+	 * means a store written before this property existed; such a store is assumed to have used the historical default
+	 * (enabled), which cannot be distinguished from a store that deliberately disabled it.
+	 */
+	static final String INLINE_LITERALS_KEY = "inline-literals";
+
 	protected final File propertiesFile;
 
 	protected String version;
@@ -58,6 +67,8 @@ class StoreProperties {
 	protected String tripleTermIndexes;
 
 	protected String numericIdEncoding;
+
+	protected String inlineLiterals;
 
 	protected boolean loaded;
 
@@ -88,6 +99,7 @@ class StoreProperties {
 			tripleIndexes = properties.getProperty(INDEXES_KEY);
 			tripleTermIndexes = properties.getProperty(TRIPLE_TERM_INDEXES_KEY);
 			numericIdEncoding = properties.getProperty(NUMERIC_ID_ENCODING_KEY);
+			inlineLiterals = properties.getProperty(INLINE_LITERALS_KEY);
 			loaded = true;
 		});
 		return loaded;
@@ -113,6 +125,9 @@ class StoreProperties {
 			}
 			if (numericIdEncoding != null) {
 				properties.setProperty(NUMERIC_ID_ENCODING_KEY, numericIdEncoding);
+			}
+			if (inlineLiterals != null) {
+				properties.setProperty(INLINE_LITERALS_KEY, inlineLiterals);
 			}
 			File parent = file.getParentFile();
 			if (parent != null) {
@@ -155,6 +170,18 @@ class StoreProperties {
 	/** Whether NEW writes use the value-ordered inlined-numeric encoding. */
 	boolean usesOrderedNumericIds() {
 		return NUMERIC_ID_ENCODING_ORDERED_V1.equals(numericIdEncoding);
+	}
+
+	/** The recorded inlining setting, or {@code null} for a store written before the property existed. */
+	Boolean getInlineLiterals() {
+		return inlineLiterals == null ? null : Boolean.valueOf(inlineLiterals);
+	}
+
+	StoreProperties setInlineLiterals(boolean enabled) {
+		String value = Boolean.toString(enabled);
+		this.dirty = dirty || !Objects.equals(this.inlineLiterals, value);
+		this.inlineLiterals = value;
+		return this;
 	}
 
 	String getTripleIndexes() {

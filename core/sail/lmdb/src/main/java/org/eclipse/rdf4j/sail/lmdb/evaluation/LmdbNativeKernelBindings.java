@@ -57,6 +57,13 @@ final class LmdbNativeKernelBindings {
 	static final int ENC_LONG_COUNT = 0;
 	static final int ENC_SUM_DOUBLE_BITS = 1;
 	static final int ENC_VALUE_ID = 2;
+	/** AVG as two longs — sum bits then count — divided exactly at materialization. */
+	static final int ENC_AVG_PARTS = 3;
+
+	/** Longs this encoding occupies in the packed group row. */
+	static int encodingWidth(int encoding) {
+		return encoding == ENC_AVG_PARTS ? 2 : 1;
+	}
 
 	/** One aggregate output as the group-row emitter must decode it. */
 	static final class AggOut {

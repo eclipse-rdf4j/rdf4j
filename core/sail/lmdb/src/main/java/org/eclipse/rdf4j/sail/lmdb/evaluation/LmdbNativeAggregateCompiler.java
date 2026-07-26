@@ -185,10 +185,16 @@ final class LmdbNativeAggregateCompiler {
 
 	/**
 	 * Whether probing an index with this exact id finds precisely the statements whose term is value-equal to the given
-	 * query value. True for resources (term identity is value identity) and for string-family literals (xsd:string,
-	 * rdf:langString), whose distinct lexical forms are always distinct values. False for value-collapsible datatypes:
-	 * "1"^^xsd:integer and "01"^^xsd:integer are different terms with equal values, so a term-exact probe would miss
-	 * value-equal matches that a filter must accept.
+	 * query value. True for resources (term identity is value identity) and for {@code xsd:string} literals, whose
+	 * distinct lexical forms are always distinct values.
+	 * <p>
+	 * False for anything whose value equality is wider than term identity, and there are two separate ways that
+	 * happens. Value-collapsible datatypes: {@code "1"^^xsd:integer} and {@code "01"^^xsd:integer} are different terms
+	 * with equal values, so a term-exact probe would miss matches a filter must accept. And {@code rdf:langString}
+	 * (likewise {@code rdf:dirLangString}): RDF compares language tags case-insensitively, so {@code "x"@en} and
+	 * {@code "x"@EN} are value-equal while the value store writes the tag verbatim and mints a different id for each —
+	 * one value, two ids. langString was admitted here until 2026-07-25 on the mistaken premise, stated in this
+	 * javadoc, that distinct lexical forms suffice; the language tag is not part of the lexical form.
 	 */
 	static boolean valueProbeSafeId(long id, Value value) {
 		if (safeResourceId(id)) {
@@ -198,7 +204,12 @@ final class LmdbNativeAggregateCompiler {
 			return false;
 		}
 		CoreDatatype datatype = ((Literal) value).getCoreDatatype();
-		return datatype == CoreDatatype.XSD.STRING || datatype == CoreDatatype.RDF.LANGSTRING;
+		// xsd:string ONLY. rdf:langString must not be admitted: RDF compares language tags case-insensitively
+		// (SimpleLiteral.equals uses equalsIgnoreCase), so "x"@en and "x"@EN are the same term and are value-equal,
+		// while the value store writes the tag verbatim and therefore mints a different id for each. One value with
+		// several ids breaks exactly the equivalence this predicate certifies — an id probe would miss rows whose tag
+		// differs only in case. The same reasoning excludes rdf:dirLangString.
+		return datatype == CoreDatatype.XSD.STRING;
 	}
 
 	static boolean allValueProbeSafeIds(long[] ids, Value[] values) {

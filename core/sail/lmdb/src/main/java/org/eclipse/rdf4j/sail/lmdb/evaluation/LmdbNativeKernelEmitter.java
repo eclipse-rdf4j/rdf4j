@@ -65,6 +65,8 @@ final class LmdbNativeKernelEmitter {
 		private final int stride;
 		private final List<String> methods = new ArrayList<>();
 		private int nextPipelineId;
+		/** Number of {@code LeftGroup} nodes emitted, each of which owns one {@code lgN} match flag field. */
+		private int nextLeftGroupId;
 
 		Emission(Kernel kernel) {
 			this.kernel = kernel;
@@ -129,6 +131,10 @@ final class LmdbNativeKernelEmitter {
 			}
 			for (int i = 0; i < kernel.requirements.domains; i++) {
 				source.append("    private long[] dom").append(i).append(";\n");
+			}
+			// Emitted after the pipeline has been rendered, so the count is final by the time this runs.
+			for (int i = 0; i < nextLeftGroupId; i++) {
+				source.append("    private boolean lg").append(i).append(";\n");
 			}
 			source.append("    private KernelHooks hooks;\n");
 			if (kernel.requirements.scans > 0) {
@@ -753,10 +759,11 @@ final class LmdbNativeKernelEmitter {
 							.append(");\n");
 				}
 			}
-			int base = aggregate.groupCols.length;
 			for (int i = 0; i < aggregate.outputs.length; i++) {
 				AggregateOutput output = aggregate.outputs[i];
-				String target = "rowScratch[" + (base + i) + "]";
+				// Not `base + i`: an AVG occupies two slots, so every later aggregate's position depends on the widths
+				// of the ones before it.
+				String target = "rowScratch[" + aggregate.outputOffset(i) + "]";
 				switch (output.kind) {
 				case LmdbNativeKernelIr.AGG_COUNT_STAR:
 				case LmdbNativeKernelIr.AGG_COUNT:
@@ -779,15 +786,20 @@ final class LmdbNativeKernelEmitter {
 							.append("[g]);\n");
 					break;
 				case LmdbNativeKernelIr.AGG_AVG:
+					// Two slots: the accumulated sum and the number of contributing rows. The division happens in
+					// `kernelGroupRow`, through the same `MathUtil.compute(..., DIVIDE)` the interpreted aggregate
+					// uses,
+					// so the result carries SPARQL's datatype rather than whatever a double quotient would suggest.
 					source.append("        ")
 							.append(target)
-							.append(" = agN")
+							.append(" = Double.doubleToLongBits(agS")
 							.append(i)
-							.append("[g] > 0L ? Double.doubleToLongBits(agS")
+							.append("[g]);\n")
+							.append("        rowScratch[")
+							.append(aggregate.outputOffset(i) + 1)
+							.append("] = agN")
 							.append(i)
-							.append("[g] / agN")
-							.append(i)
-							.append("[g]) : -1L;\n");
+							.append("[g];\n");
 					break;
 				case LmdbNativeKernelIr.AGG_MIN_ID:
 				case LmdbNativeKernelIr.AGG_MAX_ID:
@@ -1427,6 +1439,53 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append(a).append(" = -1;\n");
 				return true;
 			}
+			if (node instanceof ProbeClose) {
+				ProbeClose close = (ProbeClose) node;
+				String view = "a" + close.adjacency;
+				// Both endpoints are known, so this node produces no column — it only decides how many times the
+				// continuation runs. That count is a pure function of the key, the target and the (immutable) view, so
+				// it is recomputed on every entry rather than saved: nothing about it can go stale across a pause.
+				// Multiplicity and semi mode differ only in the count, which lets one loop serve both.
+				body.append(indent).append("long key = ").append(close.key.token()).append(";\n");
+				body.append(indent).append("long target = ").append(close.target.token()).append(";\n");
+				body.append(indent).append("int reps = 0;\n");
+				// A -1 operand means "no such term", which matches nothing — never a wildcard, as it would be in a
+				// quad scan term.
+				body.append(indent).append("if (key != -1L && target != -1L) {\n");
+				body.append(indent).append("    int d = ").append(view).append(".denseIdOf(key);\n");
+				body.append(indent).append("    if (d >= 0) {\n");
+				body.append(indent).append("        int m = 0;\n");
+				body.append(indent).append("        int end = ").append(view).append(".runEnd(d);\n");
+				body.append(indent)
+						.append("        for (int i = ")
+						.append(view)
+						.append(".runStart(d); i < end; i++) {\n");
+				body.append(indent).append("            if (").append(view).append(".neighborAt(i) == target) {\n");
+				body.append(indent).append("                m++;\n");
+				body.append(indent).append("            }\n");
+				body.append(indent).append("        }\n");
+				if (close.multiplicity) {
+					body.append(indent).append("        reps = m;\n");
+				} else {
+					body.append(indent).append("        reps = m > 0 ? 1 : 0;\n");
+				}
+				body.append(indent).append("    }\n");
+				body.append(indent).append("}\n");
+				body.append(indent).append("if (").append(a).append(" < 0) {\n");
+				body.append(indent).append("    ").append(a).append(" = 0;\n");
+				body.append(indent).append("}\n");
+				body.append(indent)
+						.append("for (; ")
+						.append(a)
+						.append(" < reps; ")
+						.append(a)
+						.append("++) {\n");
+				body.append(next(nextTemplate, indent + "    "));
+				emitPause(body, indent + "    ", a, tailmost);
+				body.append(indent).append("}\n");
+				body.append(indent).append(a).append(" = -1;\n");
+				return true;
+			}
 			if (node instanceof ScanQuad) {
 				ScanQuad scan = (ScanQuad) node;
 				String cursor = "sc" + scan.scan;
@@ -1925,6 +1984,83 @@ final class LmdbNativeKernelEmitter {
 						.append(probe.valueCol)
 						.append(" = -1L;\n")
 						.append(next(nextTemplate, indent + "    "))
+						.append(indent)
+						.append("}\n");
+			} else if (node instanceof LmdbNativeKernelIr.EnumerateTerms) {
+				LmdbNativeKernelIr.EnumerateTerms terms = (LmdbNativeKernelIr.EnumerateTerms) node;
+				String buffer = "qb" + terms.scan;
+				body.append(indent)
+						.append("KernelQuadCursor cur = scanner.open(")
+						.append(terms.scan)
+						.append(", -1L, -1L, -1L, -1L);\n");
+				emitScanBuffer(body, indent, buffer);
+				// The dedup set is local to this node's activation: the enumeration is a producer at one pipeline
+				// position, so a fresh set per entry is both correct and what keeps a correlated re-open honest.
+				body.append(indent).append("KernelRuntime.LongHashSet seen = new KernelRuntime.LongHashSet();\n");
+				body.append(indent)
+						.append("int n = cur.fill(")
+						.append(buffer)
+						.append(", KernelRuntime.SCAN_BATCH_ROWS);\n");
+				body.append(indent).append("while (n > 0) {\n");
+				body.append(indent).append("    for (int i = 0; i < n; i++) {\n");
+				for (int position : new int[] { LmdbNativeKernelIr.ScanQuad.SUBJ, LmdbNativeKernelIr.ScanQuad.OBJ }) {
+					body.append(indent)
+							.append("        long t")
+							.append(position)
+							.append(" = ")
+							.append(buffer)
+							.append("[i * 4 + ")
+							.append(position)
+							.append("];\n");
+					body.append(indent)
+							.append("        if (t")
+							.append(position)
+							.append(" != -1L && seen.add(t")
+							.append(position)
+							.append(")) {\n");
+					body.append(indent)
+							.append("            v")
+							.append(terms.col)
+							.append(" = t")
+							.append(position)
+							.append(";\n");
+					body.append(next(nextTemplate, indent + "            "));
+					body.append(indent).append("        }\n");
+				}
+				body.append(indent).append("    }\n");
+				body.append(indent)
+						.append("    n = cur.fill(")
+						.append(buffer)
+						.append(", KernelRuntime.SCAN_BATCH_ROWS);\n");
+				body.append(indent).append("}\n");
+				body.append(indent).append("cur.close();\n");
+			} else if (node instanceof LmdbNativeKernelIr.LeftGroup) {
+				LmdbNativeKernelIr.LeftGroup group = (LmdbNativeKernelIr.LeftGroup) node;
+				if (booleanMode) {
+					// Only the row and aggregate pipelines lower OPTIONAL, never a witness body, so a left group in a
+					// short-circuiting sub-pipeline would be a lowering bug rather than a missing emitter case.
+					throw new IllegalStateException("left group is not emittable in boolean mode");
+				}
+				// "Did the arm produce anything for this row" cannot be a local: the arm is emitted as its own methods,
+				// which set the flag from inside their own frames. One field per left group, reset on entry, so nesting
+				// and repetition inside a loop each get their own answer.
+				int groupId = nextLeftGroupId++;
+				String flag = "lg" + groupId;
+				String armFirst = emitPipeline(group.arm, flag + " = true;\n%I%" + nextTemplate, false);
+				body.append(indent)
+						.append(flag)
+						.append(" = false;\n")
+						.append(indent)
+						.append(armFirst)
+						.append("();\n")
+						.append(indent)
+						.append("if (!")
+						.append(flag)
+						.append(") {\n");
+				for (int col : group.resetColumns()) {
+					body.append(indent).append("    v").append(col).append(" = -1L;\n");
+				}
+				body.append(next(nextTemplate, indent + "    "))
 						.append(indent)
 						.append("}\n");
 			} else if (node instanceof Exists) {

@@ -303,7 +303,12 @@ class LmdbNativeKernelIrEmitterTest {
 		assertEquals(28.0, Double.longBitsToDouble(row[3]));
 		assertEquals(5.0, Double.longBitsToDouble(row[4]));
 		assertEquals(9.0, Double.longBitsToDouble(row[5]));
-		assertEquals(7.0, Double.longBitsToDouble(row[6]));
+		// AVG occupies two slots — its sum and its count — instead of one pre-divided number. The kernel cannot do the
+		// division itself and stay correct: SPARQL divides as xsd:decimal, so a double quotient would come back with
+		// the wrong datatype and, for any non-dyadic quotient, the wrong value. `kernelGroupRow` divides these two
+		// exactly. The average this encodes is still 28/4 = 7.
+		assertEquals(28.0, Double.longBitsToDouble(row[6]));
+		assertEquals(4L, row[7]);
 	}
 
 	@Test
@@ -320,7 +325,10 @@ class LmdbNativeKernelIrEmitterTest {
 		assertEquals(0L, row[1]);
 		assertEquals(0.0, Double.longBitsToDouble(row[2]));
 		assertEquals(-1L, row[3]);
-		assertEquals(-1L, row[4]);
+		// AVG's two slots: an empty group sums to zero over zero rows. The zero count is what tells `kernelGroupRow`
+		// not to divide — it binds the empty-aggregate value instead, as the interpreted aggregate does.
+		assertEquals(0.0, Double.longBitsToDouble(row[4]));
+		assertEquals(0L, row[5]);
 	}
 
 	@Test
@@ -749,6 +757,49 @@ class LmdbNativeKernelIrEmitterTest {
 		long[][] expected = { { 1, 2 }, { 3, 1 }, { 4, 5 } };
 		for (int maxRows : new int[] { 1, 2, 3, 7, 64 }) {
 			List<long[]> rows = drain(streaming, context().adjacencies(follows()).constants(3), maxRows);
+			assertRows(rows, expected, "drained " + maxRows + " row(s) at a time");
+		}
+	}
+
+	@Test
+	void probeCloseStreamsItsMultiplicityAcrossPauses() throws Exception {
+		// A closed edge (both endpoints known) re-emits the continuation once per matching neighbour. Those repetitions
+		// are indistinguishable rows, so a pause that loses or repeats one is invisible to a single-fill test and only
+		// shows up when the caller's buffer is smaller than the multiplicity.
+		NativeLmdbQuerySource.NativeAdjacency duplicates = new FixtureAdjacency(new long[][] { { 7, 8, 8, 9 } });
+		Kernel streaming = new Kernel(1,
+				List.of(new EnumerateDomain(0, 0), new ProbeClose(0, Operand.col(0), Operand.constant(0), true)),
+				emit(0));
+		assertTrue(streaming.resumable, "a closed-edge pipeline carries only a repetition counter, so it must stream");
+		String source = LmdbNativeKernelEmitter.emit(streaming);
+		assertFalse(source.contains("appendRow()"), "the growing-buffer path must not be emitted at all; source:\n"
+				+ source);
+		// Key 7 carries neighbour 8 twice, so the single domain row must come back exactly twice.
+		long[][] expected = { { 7 }, { 7 } };
+		for (int maxRows : new int[] { 1, 2, 3, 64 }) {
+			List<long[]> rows = drain(streaming, context().adjacencies(duplicates)
+					.domains(new long[] { 7 })
+					.constants(8L), maxRows);
+			assertRows(rows, expected, "drained " + maxRows + " row(s) at a time");
+		}
+	}
+
+	@Test
+	void probeCloseSemiStreamsExactlyOneRowPerKey() throws Exception {
+		// Semi mode is the EnumerateEntry trap in disguise: it emits its continuation at most once per key, so a pause
+		// landing exactly on that row must not re-emit it when the next fill resumes.
+		NativeLmdbQuerySource.NativeAdjacency duplicates = new FixtureAdjacency(
+				new long[][] { { 7, 8, 8, 9 }, { 5, 8 }, { 6, 9 } });
+		Kernel streaming = new Kernel(1,
+				List.of(new EnumerateDomain(0, 0), new ProbeClose(0, Operand.col(0), Operand.constant(0), false)),
+				emit(0));
+		assertTrue(streaming.resumable, "semi mode carries one bit of state, so it must stream");
+		// 7 and 5 both reach 8 (7 twice, collapsed to one row by semi mode); 6 does not, and must contribute nothing.
+		long[][] expected = { { 7 }, { 5 } };
+		for (int maxRows : new int[] { 1, 2, 64 }) {
+			List<long[]> rows = drain(streaming, context().adjacencies(duplicates)
+					.domains(new long[] { 7, 5, 6 })
+					.constants(8L), maxRows);
 			assertRows(rows, expected, "drained " + maxRows + " row(s) at a time");
 		}
 	}

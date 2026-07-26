@@ -244,6 +244,43 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	}
 
 	/**
+	 * Refuses to open a store whose recorded inlining setting differs from the configured one.
+	 *
+	 * Inlining is not a writer-only choice like the numeric-id encoding: it changes how a value is IDENTIFIED. With it
+	 * enabled, a short {@code xsd:string} resolves to a deterministic {@code T_SHORTSTRING} id without consulting the
+	 * dictionary at all; with it disabled the same string gets a dictionary {@code T_LITERAL} id. Every index record
+	 * already written is keyed under one of those, so opening under the opposite setting leaves those records keyed
+	 * under ids no new lookup will ever produce — plain pattern matching then returns nothing, and the filter-to-probe
+	 * pushdowns silently miss rows. Failing the open is the only safe outcome; there is no in-place migration.
+	 *
+	 * A store written before this property existed records nothing. Such a store is assumed to have used the historical
+	 * default (enabled) — which is what {@code LmdbStoreConfig} has always defaulted to — and the assumption is
+	 * recorded so the ambiguity is resolved once. A pre-existing store that deliberately disabled inlining cannot be
+	 * told apart from one that used the default, and must be recreated rather than reopened.
+	 */
+	private static void enforceInlineLiterals(StoreProperties properties, LmdbStoreConfig config) {
+		Boolean recorded = properties.getInlineLiterals();
+		boolean configured = config.getInlineLiterals();
+		if (recorded == null) {
+			properties.setInlineLiterals(configured);
+			if (!configured) {
+				throw new SailException("This store predates the inline-literals property, so it is assumed to have "
+						+ "been created with literal inlining ENABLED (the long-standing default). Opening it with "
+						+ "inlining disabled would key new lookups differently from the existing records. Either open "
+						+ "it with inlining enabled, or recreate the store.");
+			}
+			return;
+		}
+		if (recorded.booleanValue() != configured) {
+			throw new SailException("This store was created with literal inlining "
+					+ (recorded.booleanValue() ? "ENABLED" : "DISABLED") + " and cannot be opened with it "
+					+ (configured ? "ENABLED" : "DISABLED")
+					+ ". Inlining decides how a value is identified, so the existing records are keyed under ids that "
+					+ "the other setting never produces. Open the store with its original setting, or recreate it.");
+		}
+	}
+
+	/**
 	 * Initializes this LmdbStore.
 	 *
 	 * @throws SailException If this LmdbStore could not be initialized using the parameters that have been set.
@@ -291,12 +328,15 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 					updateVersion = upgradeStore(dataDir, properties.getVersion());
 				}
 				// existing stores keep their recorded numeric-id encoding (absent = legacy ZigZag) — never rewritten
+				enforceInlineLiterals(properties, config);
 			} else {
 				properties.setVersion(String.valueOf(VERSION));
 				if (config.getOrderedNumericIds()) {
 					// newly created store: record that writers use the value-ordered inlined-numeric encoding
 					properties.setNumericIdEncoding(StoreProperties.NUMERIC_ID_ENCODING_ORDERED_V1);
 				}
+				// record the inlining setting so later opens can refuse to change it (see enforceInlineLiterals)
+				properties.setInlineLiterals(config.getInlineLiterals());
 			}
 
 			boolean useSketchBasedJoinEstimator = shouldUseSketchBasedJoinEstimator();

@@ -896,6 +896,105 @@ public class LmdbNativeDifferentialFuzzTest {
 		}
 	}
 
+	/**
+	 * Aggregates whose producer contains a UNION, and aggregates guarded by a FILTER that combines EXISTS with another
+	 * condition. Both shapes reach the IR aggregate rung's newly widened lowering (plan 23; census 2026-07-25): a
+	 * UnionPlan operand now becomes a Union node, and a sticky BooleanCombinationFilter now decomposes into sequential
+	 * filters. {@link #randomAggregates} deliberately does not cover either — it emits plain patterns only, and the
+	 * existing UNION generation sits in the row-shape round — so without this round both changes would be unexercised
+	 * by the differential oracle.
+	 *
+	 * UNION under an aggregate is the multiset-sensitive case: COUNT over {A} UNION {B} must count a row that both
+	 * branches produce twice, so a lowering that deduplicated branches, or dropped one, shows up here immediately.
+	 */
+	@Test
+	public void aggregatesOverUnionsAndExistsConjunctions() {
+		String p1 = "<" + EX + "p1>";
+		String p2 = "<" + EX + "p2>";
+		String edge = "<" + EX + "edge>";
+		// Forced-on, with a zero row threshold: without this the admission floor keeps the kernel out on a small fuzz
+		// store and the whole round would compare the interpreted path against itself. The engagement assertion at the
+		// end is what makes that failure mode visible rather than silent.
+		String prevEnabled = System.getProperty("rdf4j.lmdb.janinoCodegen.enabled");
+		String prevThreshold = System.getProperty("rdf4j.lmdb.janinoCodegen.thresholdRows");
+		String prevWcoj = System.getProperty("rdf4j.lmdb.wcoj.enabled");
+		String prevUnions = System.getProperty("rdf4j.lmdb.janinoCodegen.unionSources");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
+		System.setProperty("rdf4j.lmdb.wcoj.enabled", "false");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.unionSources", "true");
+		org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess.resetMetrics();
+		String[] queries = {
+				// both branches bind the same variables: the shared-column case, and multiset-sensitive
+				"SELECT (COUNT(*) AS ?c) WHERE { { ?s " + p1 + " ?o } UNION { ?s " + p2 + " ?o } }",
+				"SELECT (COUNT(?o) AS ?c) WHERE { { ?s " + p1 + " ?o } UNION { ?s " + p2 + " ?o } }",
+				"SELECT (COUNT(DISTINCT ?o) AS ?c) WHERE { { ?s " + p1 + " ?o } UNION { ?s " + p2 + " ?o } }",
+				// identical branches: every row must be counted twice
+				"SELECT (COUNT(*) AS ?c) WHERE { { ?s " + p1 + " ?o } UNION { ?s " + p1 + " ?o } }",
+				// grouped, so a wrong column mapping surfaces as wrong groups rather than a wrong total
+				"SELECT ?s (COUNT(*) AS ?c) WHERE { { ?s " + p1 + " ?o } UNION { ?s " + p2 + " ?o } } GROUP BY ?s",
+				// a variable only one branch binds must be unbound in the other branch's solutions
+				"SELECT (COUNT(?z) AS ?c) WHERE { { ?s " + p1 + " ?z } UNION { ?s " + p2 + " ?o } }",
+				"SELECT ?s (COUNT(?z) AS ?c) WHERE { { ?s " + p1 + " ?z } UNION { ?s " + p2 + " ?o } } GROUP BY ?s",
+				// union joined to an anchor pattern, which is how it reaches the rung as a binary JoinPlan operand
+				"SELECT (COUNT(*) AS ?c) WHERE { ?s a <" + EX + "T1> . { ?s " + p1 + " ?o } UNION { ?s " + p2
+						+ " ?o } }",
+				"SELECT ?t (COUNT(*) AS ?c) WHERE { ?s a ?t . { ?s " + p1 + " ?o } UNION { ?s " + p2
+						+ " ?o } } GROUP BY ?t",
+				// three-way union nests as Union(Union(a,b),c)
+				"SELECT (COUNT(*) AS ?c) WHERE { { ?s " + p1 + " ?o } UNION { ?s " + p2 + " ?o } UNION { ?s " + edge
+						+ " ?o } }",
+				// EXISTS conjoined with a comparison: the decomposable conjunction
+				"SELECT (COUNT(*) AS ?c) WHERE { ?s " + p1 + " ?o . FILTER(EXISTS { ?s " + p2
+						+ " ?z } && isLiteral(?o)) }",
+				"SELECT ?s (COUNT(*) AS ?c) WHERE { ?s " + p1 + " ?o . FILTER(EXISTS { ?s " + p2
+						+ " ?z } && isLiteral(?o)) } GROUP BY ?s",
+				// two EXISTS conjoined
+				"SELECT (COUNT(*) AS ?c) WHERE { ?s " + p1 + " ?o . FILTER(EXISTS { ?s " + p2
+						+ " ?z } && EXISTS { ?s a <" + EX + "T1> }) }",
+				// De Morgan: NOT(A OR B) must equal NOT A AND NOT B
+				"SELECT (COUNT(*) AS ?c) WHERE { ?s " + p1 + " ?o . FILTER(!(EXISTS { ?s " + p2
+						+ " ?z } || EXISTS { ?s a <" + EX + "T1> })) }",
+				// the cells that must still decline: a bare disjunction and a negated conjunction. They must return
+				// correct results through whichever path takes them, which is what this asserts.
+				"SELECT (COUNT(*) AS ?c) WHERE { ?s " + p1 + " ?o . FILTER(EXISTS { ?s " + p2
+						+ " ?z } || EXISTS { ?s a <" + EX + "T1> }) }",
+				"SELECT (COUNT(*) AS ?c) WHERE { ?s " + p1 + " ?o . FILTER(!(EXISTS { ?s " + p2
+						+ " ?z } && EXISTS { ?s a <" + EX + "T1> })) }",
+				// union combined with a sticky filter over it
+				"SELECT (COUNT(*) AS ?c) WHERE { { ?s " + p1 + " ?o } UNION { ?s " + p2
+						+ " ?o } FILTER(EXISTS { ?s a <" + EX + "T1> }) }",
+				// branch-LOCAL filters: each must constrain only its own branch. If one leaked out of its branch it
+				// would also filter the other branch's rows, which shows up here as a wrong count.
+				"SELECT (COUNT(*) AS ?c) WHERE { { ?s " + p1 + " ?o . FILTER(isLiteral(?o)) } UNION { ?s " + p2
+						+ " ?o } }",
+				"SELECT (COUNT(*) AS ?c) WHERE { { ?s " + p1 + " ?o } UNION { ?s " + p2
+						+ " ?o . FILTER(isLiteral(?o)) } }",
+				// both branches filtered, on different predicates, so a leak in either direction changes the total
+				"SELECT (COUNT(*) AS ?c) WHERE { { ?s " + p1 + " ?o . FILTER(isLiteral(?o)) } UNION { ?s " + p2
+						+ " ?o . FILTER(isIRI(?o)) } }",
+				"SELECT ?s (COUNT(*) AS ?c) WHERE { { ?s " + p1 + " ?o . FILTER(isLiteral(?o)) } UNION { ?s " + p2
+						+ " ?o . FILTER(isIRI(?o)) } } GROUP BY ?s",
+				// a branch filter alongside an anchor pattern, i.e. the union arrives as a binary JoinPlan operand
+				"SELECT (COUNT(*) AS ?c) WHERE { ?s a <" + EX + "T1> . { ?s " + p1
+						+ " ?o . FILTER(isLiteral(?o)) } UNION { ?s " + p2 + " ?o } }",
+		};
+		try {
+			for (String query : queries) {
+				assertSameResults(query);
+			}
+			assertThat(org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess.aggPlanned())
+					.as("the IR aggregate rung must actually have planned these shapes; a green round with a zero "
+							+ "counter means the oracle compared the interpreted path against itself")
+					.isGreaterThan(0L);
+		} finally {
+			restoreProperty("rdf4j.lmdb.janinoCodegen.enabled", prevEnabled);
+			restoreProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", prevThreshold);
+			restoreProperty("rdf4j.lmdb.wcoj.enabled", prevWcoj);
+			restoreProperty("rdf4j.lmdb.janinoCodegen.unionSources", prevUnions);
+		}
+	}
+
 	@Test
 	public void propertyPaths() {
 		String edge = "<" + EX + "edge>";

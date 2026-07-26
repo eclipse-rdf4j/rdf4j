@@ -19,6 +19,7 @@ import java.util.List;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Kernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Node;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Operand;
@@ -38,11 +39,13 @@ final class LmdbNativeKernelLowering {
 
 	/**
 	 * Enables lowering patterns no adjacency view can serve into direct LMDB scans. Both rungs own a
-	 * {@code KernelScanner}'s lifetime — the row cursor closes it, the aggregate rung closes it in its finally — so the
-	 * path is complete and differential-fuzz green. It nonetheless defaults OFF for one reason only: turning it on
-	 * changes which plans production queries run, and that has not yet been put through the SPARQL compliance suite. A
-	 * green conformance result does not survive a default-on change to the row-production path. Run
-	 * {@code compliance/sparql} against it, and flip this to "true" once it passes.
+	 * {@code KernelScanner}'s lifetime — the row cursor closes it, the aggregate rung closes it in its finally.
+	 * <p>
+	 * Defaults ON since 2026-07-25, when the required gate was met: because enabling it changes which plans production
+	 * queries run, it was held off until {@code compliance/sparql} had been run against it. That run passed with zero
+	 * new failures — 2648 tests, 17 failures, all inside the 24 frozen LMDB identities in
+	 * {@code compliance/sparql/lmdb-compliance-baseline.json} (7 of them resolved), plus differential-fuzz green. Set
+	 * the property to "false" to fall back to adjacency-only sources.
 	 */
 	static final String SCAN_SOURCES_PROPERTY = "rdf4j.lmdb.janinoCodegen.scanSources";
 
@@ -50,8 +53,37 @@ final class LmdbNativeKernelLowering {
 		return Boolean.parseBoolean(System.getProperty(SCAN_SOURCES_PROPERTY, "true"));
 	}
 
+	/**
+	 * Enables lowering a {@code UnionPlan} operand into a {@link LmdbNativeKernelIr.Union} node.
+	 * <p>
+	 * Defaults <b>ON</b>, deliberately and while this branch is under development, so that the risk below surfaces in
+	 * benchmark runs now instead of hiding behind a flag nobody flips. Correctness is unit-tested and differentially
+	 * fuzzed; what is <em>unmeasured</em> is cost, and the exposure is large. Every benchmarked theme query containing
+	 * UNION is an aggregate-rung query that today runs on a specialized path — sixteen on the index-ordered
+	 * {@code orderedDistinctGroups}, four on {@code aggState}. The IR aggregate kernel is attempted before all of them
+	 * ({@code LmdbNativeGroupStep} line ~300, ahead of {@code FactorizedTail.select} at ~408), and the only anti-steal
+	 * guard there is {@code prefixRunHandlesRow}, which was added for ANALYTICS q0 and covers the prefix-run path only.
+	 * So this can divert up to twenty pairs worth roughly 5257 ms of a 15257 ms corpus — LIBRARY q6 at 2776 ms is 18%
+	 * on its own — onto a path whose cost for those shapes has never been measured. That is the ANALYTICS q0 failure
+	 * mode (0.16 ms to 10 ms once a kernel was admitted) at an order of magnitude more scale.
+	 * <p>
+	 * What to watch, and the likely fix if a regression appears. The UNION-bearing pairs are MEDICAL_RECORDS q1,
+	 * LIBRARY q1, ENGINEERING q1, TRAIN q1 and ELECTRICAL_GRID q1 (these five declined
+	 * {@code agg:unsupported:UnionPlan}) plus fifteen more that declined {@code agg:unsupported:JoinPlan} before the
+	 * join descent landed, headed by LIBRARY q6. Expect to need a preemption guard for {@code orderedDistinctGroups}
+	 * and {@code FactorizedTail} of the kind {@code prefixRunHandlesRow} already provides for prefix runs. Set this
+	 * property to "false" to isolate the union lowering while diagnosing.
+	 */
+	static final String UNION_SOURCES_PROPERTY = "rdf4j.lmdb.janinoCodegen.unionSources";
+
+	static boolean unionSourcesEnabled() {
+		return Boolean.parseBoolean(System.getProperty(UNION_SOURCES_PROPERTY, "true"));
+	}
+
 	private static final int MAX_CHILDREN = 12;
 	private static final int MAX_HOOK_ARGS = 3;
+	/** Rows of a multi-variable VALUES table the lowering will unroll into generated source. */
+	private static final int MAX_VALUES_TABLE_ROWS = 64;
 
 	private LmdbNativeKernelLowering() {
 	}
@@ -68,6 +100,18 @@ final class LmdbNativeKernelLowering {
 
 	/** Lowers a row-producing plan; null means declined (reason recorded against the decline target). */
 	static Lowered lowerRows(SlotPlan arg, RowState row, TupleExpr declineTarget) {
+		return lowerRows(arg, row, declineTarget, false);
+	}
+
+	/**
+	 * As above, but {@code preferScans} makes every pattern try a direct LMDB scan before asking for an adjacency view.
+	 *
+	 * The execution rungs use it as a second attempt after {@code requestAdjacencies} returns null. That failure is a
+	 * bind-time fact — a view is missing, or cannot enumerate its keys — that lowering cannot predict, and it is
+	 * exactly the situation a scan is there to cover, so retrying without views turns a whole class of bind-time
+	 * declines into working kernels rather than a fallback to the interpreted engine.
+	 */
+	static Lowered lowerRows(SlotPlan arg, RowState row, TupleExpr declineTarget, boolean preferScans) {
 		// OPTIONAL chains nest left-deep: LeftJoin(LeftJoin(core, r1), r2) applies r1 then r2 — peel arms in
 		// application order, along with any FilterPlan wrappers (group-level filters over the optional vars),
 		// which degrade through the ordinary three tiers (plan 22, M3).
@@ -87,11 +131,7 @@ final class LmdbNativeKernelLowering {
 				break;
 			}
 		}
-		if (!(core instanceof MultiJoinPlan)) {
-			decline(declineTarget, "unsupported:" + core.getClass().getSimpleName());
-			return null;
-		}
-		return lowerMultiJoin((MultiJoinPlan) core, optionalArms, outerFilters, row, declineTarget);
+		return lowerRowCore(core, optionalArms, outerFilters, row, declineTarget, preferScans);
 	}
 
 	/**
@@ -102,6 +142,12 @@ final class LmdbNativeKernelLowering {
 	 */
 	static Lowered lowerAggregate(SlotPlan arg, RowState row, int[] groupSlots, AggregateSpec[] aggregates,
 			TupleExpr declineTarget) {
+		return lowerAggregate(arg, row, groupSlots, aggregates, declineTarget, false);
+	}
+
+	/** As above, retried with {@code preferScans} when bind time reports no usable adjacency view. */
+	static Lowered lowerAggregate(SlotPlan arg, RowState row, int[] groupSlots, AggregateSpec[] aggregates,
+			TupleExpr declineTarget, boolean preferScans) {
 		// Sticky (EXISTS-bearing) filters never flatten into a MultiJoinPlan — they arrive as FilterPlan wrappers
 		// around the producer. Peel the wrapper chain, collecting the conditions, then lower the core.
 		List<MaskedFilter> filters = new ArrayList<>();
@@ -122,39 +168,15 @@ final class LmdbNativeKernelLowering {
 				break;
 			}
 		}
-		SlotPlan[] children;
-		if (core instanceof MultiJoinPlan) {
-			MultiJoinPlan multiJoin = (MultiJoinPlan) core;
-			children = multiJoin.derivedPlan(row).order;
-			filters.addAll(java.util.Arrays.asList(multiJoin.filters));
-		} else if (core instanceof PatternPlan || core instanceof MultiValuePatternPlan
-				|| core instanceof ValuesPlan) {
-			children = new SlotPlan[] { core };
-		} else {
-			decline(declineTarget, "agg:unsupported:" + core.getClass().getSimpleName());
+		Builder builder = new Builder(row, "agg:");
+		builder.preferScans = preferScans;
+		if (!builder.lowerJoinOperand(core, filters, row)) {
+			decline(declineTarget, builder.reason);
 			return null;
 		}
-		if (children.length == 0 || children.length > MAX_CHILDREN) {
-			decline(declineTarget, children.length == 0 ? "agg:no-children" : "agg:too-many-children");
+		if (builder.joinOperands == 0) {
+			decline(declineTarget, "agg:no-children");
 			return null;
-		}
-		Builder builder = new Builder(row);
-		for (SlotPlan child : children) {
-			boolean lowered;
-			if (child instanceof PatternPlan) {
-				lowered = builder.lowerPattern((PatternPlan) child);
-			} else if (child instanceof MultiValuePatternPlan) {
-				lowered = builder.lowerMultiValuePattern((MultiValuePatternPlan) child);
-			} else if (child instanceof ValuesPlan) {
-				lowered = builder.lowerValues((ValuesPlan) child);
-			} else {
-				builder.reason = "agg:child:" + child.getClass().getSimpleName();
-				lowered = false;
-			}
-			if (!lowered) {
-				decline(declineTarget, builder.reason);
-				return null;
-			}
 		}
 		for (MaskedFilter masked : filters) {
 			if (!builder.lowerFilterStrict(masked)) {
@@ -179,31 +201,34 @@ final class LmdbNativeKernelLowering {
 	// MultiJoinPlan lowering
 	// ------------------------------------------------------------------
 
-	private static Lowered lowerMultiJoin(MultiJoinPlan multiJoin, List<SlotPlan> optionalArms,
-			List<MaskedFilter> outerFilters, RowState row, TupleExpr declineTarget) {
-		MultiJoinPlan.OrderedPlan ordered = multiJoin.derivedPlan(row);
-		SlotPlan[] order = ordered.order;
-		if (order.length == 0 || order.length > MAX_CHILDREN) {
-			decline(declineTarget, order.length == 0 ? "no-children" : "too-many-children");
+	/**
+	 * Lowers the producer core of a row plan, its OPTIONAL arms and its filters.
+	 *
+	 * The core goes through the same {@link Builder#lowerJoinOperand} descent the aggregate rung uses, rather than the
+	 * {@code MultiJoinPlan}-only recognition this rung started with. That is not a widening for its own sake: a bare
+	 * {@code PatternPlan}, a binary {@code JoinPlan} (which exists precisely because an operand could not flatten), an
+	 * {@code ExtensionPlan} (BIND) and a {@code UnionPlan} were each already lowerable — the aggregate rung has lowered
+	 * all four for some time — and the row rung declined them only because its entry point never descended.
+	 *
+	 * The one row-specific hazard the aggregate rung does not have is that this rung lowers OPTIONAL arms, so a column
+	 * an {@code ExtensionPlan} aliases may be maybe-null; {@link Builder#lowerExtensionCopies} propagates
+	 * {@code optionalColMask} across the alias so that {@code operandMaybeNull} keeps seeing it.
+	 *
+	 * Filters keep this rung's three-tier treatment (id, hook, then residual re-applied by the row cursor) rather than
+	 * the aggregate rung's strict one, so a filter still never causes a decline here.
+	 */
+	private static Lowered lowerRowCore(SlotPlan core, List<SlotPlan> optionalArms,
+			List<MaskedFilter> outerFilters, RowState row, TupleExpr declineTarget, boolean preferScans) {
+		Builder builder = new Builder(row, "");
+		builder.preferScans = preferScans;
+		List<MaskedFilter> coreFilters = new ArrayList<>(0);
+		if (!builder.lowerJoinOperand(core, coreFilters, row)) {
+			decline(declineTarget, builder.reason);
 			return null;
 		}
-		Builder builder = new Builder(row);
-		for (SlotPlan child : order) {
-			boolean lowered;
-			if (child instanceof PatternPlan) {
-				lowered = builder.lowerPattern((PatternPlan) child);
-			} else if (child instanceof MultiValuePatternPlan) {
-				lowered = builder.lowerMultiValuePattern((MultiValuePatternPlan) child);
-			} else if (child instanceof ValuesPlan) {
-				lowered = builder.lowerValues((ValuesPlan) child);
-			} else {
-				builder.reason = "child:" + child.getClass().getSimpleName();
-				lowered = false;
-			}
-			if (!lowered) {
-				decline(declineTarget, builder.reason);
-				return null;
-			}
+		if (builder.joinOperands == 0) {
+			decline(declineTarget, "no-children");
+			return null;
 		}
 		for (SlotPlan arm : optionalArms) {
 			if (!builder.lowerOptionalArm(arm)) {
@@ -211,7 +236,7 @@ final class LmdbNativeKernelLowering {
 				return null;
 			}
 		}
-		for (MaskedFilter masked : multiJoin.filters) {
+		for (MaskedFilter masked : coreFilters) {
 			builder.lowerFilter(masked);
 		}
 		for (MaskedFilter masked : outerFilters) {
@@ -238,6 +263,15 @@ final class LmdbNativeKernelLowering {
 	private static final class Builder {
 		final RowState row;
 		final long entryMask;
+		/**
+		 * Prefix for decline reasons raised in code both rungs share ({@code "agg:"} for the aggregate rung, empty for
+		 * the row rung), so the census attributes a decline to the rung that actually raised it. Reasons raised only on
+		 * the aggregate side — witnesses, MINUS arms, {@code buildAggregate} — spell {@code agg:} out, because the row
+		 * rung provably cannot reach them.
+		 */
+		final String reasonPrefix;
+		/** Try a direct LMDB scan before any adjacency view; set on the rungs' retry after a bind-time view failure. */
+		boolean preferScans;
 		long assuredMask;
 		String reason = "unknown";
 
@@ -268,8 +302,7 @@ final class LmdbNativeKernelLowering {
 		 */
 		boolean lowerOptionalArm(SlotPlan arm) {
 			if (!(arm instanceof PatternPlan)) {
-				reason = "optional-arm:" + arm.getClass().getSimpleName();
-				return false;
+				return lowerOptionalGroup(arm);
 			}
 			PatternPlan pattern = (PatternPlan) arm;
 			if (pattern.hasRepeatedSlot() || pattern.namedContextScope || !pattern.p.isConstant()
@@ -303,8 +336,52 @@ final class LmdbNativeKernelLowering {
 				currentDepthNodes().add(new LmdbNativeKernelIr.LeftProbe(adj, object, column));
 				return true;
 			}
-			reason = "optional-arm-shape";
-			return false;
+			return lowerOptionalGroup(arm);
+		}
+
+		/**
+		 * The general OPTIONAL arm: lower the arm through the ordinary producer machinery, harvest it into its own
+		 * sub-pipeline, and wrap that in a {@link LmdbNativeKernelIr.LeftGroup} — which runs the continuation once with
+		 * every arm column unbound when the arm yields nothing for a row.
+		 *
+		 * This is the same harvest technique {@link #lowerUnionOperand} uses, and it inherits the same two obligations.
+		 * The arm's own conditions must be lowered <em>inside</em> the arm: in SPARQL a FILTER within an OPTIONAL is
+		 * part of the join condition, so a row failing it must leave the optional variables unbound rather than
+		 * disappear, which is what {@link #lowerBranchFilters} both arranges and verifies (it refuses a condition that
+		 * would land below the harvest mark, where it would filter the whole left side). And every column the arm
+		 * produces becomes maybe-null and loses its assured status, so no later id-tier filter or correlated probe
+		 * treats it as always-bound.
+		 */
+		private boolean lowerOptionalGroup(SlotPlan arm) {
+			openDepth();
+			int homeDepth = nodesPerDepth.size() - 1;
+			int depthMark = nodesPerDepth.size();
+			int[] columnsBefore = slotColumn.clone();
+			long assuredBefore = assuredMask;
+			List<MaskedFilter> armFilters = new ArrayList<>(0);
+			if (!lowerJoinOperand(arm, armFilters, row, false)) {
+				return false;
+			}
+			if (!lowerBranchFilters(armFilters, depthMark)) {
+				return false;
+			}
+			List<Node> armNodes = harvestDepths(depthMark);
+			if (armNodes.isEmpty()) {
+				// Nothing opened a depth of its own — a bare BIND arm, say. There is no arm to make optional, and the
+				// nodes it did contribute have already gone into the group's home depth where they would run
+				// unconditionally, so this lowering cannot be completed.
+				reason = reasonPrefix + "optional-arm-empty";
+				return false;
+			}
+			for (int slot = 0; slot < slotColumn.length; slot++) {
+				if (columnsBefore[slot] < 0 && slotColumn[slot] >= 0) {
+					optionalColMask |= 1L << slotColumn[slot];
+					slotColumnDepth[slot] = homeDepth;
+				}
+			}
+			assuredMask = assuredBefore;
+			nodesPerDepth.get(homeDepth).add(new LmdbNativeKernelIr.LeftGroup(armNodes));
+			return true;
 		}
 
 		final List<LmdbNativeKernelBindings.AdjacencyRequest> adjacencies = new ArrayList<>();
@@ -315,8 +392,9 @@ final class LmdbNativeKernelLowering {
 		final int[] slotColumn;
 		final int[] slotColumnDepth;
 
-		Builder(RowState row) {
+		Builder(RowState row, String reasonPrefix) {
 			this.row = row;
+			this.reasonPrefix = reasonPrefix;
 			this.entryMask = row.boundMask();
 			this.slotColumn = new int[row.slots.length];
 			this.slotColumnDepth = new int[row.slots.length];
@@ -337,6 +415,13 @@ final class LmdbNativeKernelLowering {
 		}
 
 		private int newColumn(int engineSlot) {
+			// While lowering union branches a shared variable must reuse the column the first branch allocated.
+			Integer pinned = pinnedColumns.get(engineSlot);
+			if (pinned != null) {
+				slotColumn[engineSlot] = pinned;
+				slotColumnDepth[engineSlot] = depth();
+				return pinned;
+			}
 			columnEngineSlots.add(engineSlot);
 			int column = columnEngineSlots.size() - 1;
 			slotColumn[engineSlot] = column;
@@ -399,13 +484,401 @@ final class LmdbNativeKernelLowering {
 		// Children
 		// ------------------------------------------------------------------
 
+		/** Producers lowered out of the join tree so far, bounded by {@link #MAX_CHILDREN}. */
+		int joinOperands;
+
+		/**
+		 * Lowers one operand of an inner-join tree, collecting filters to be applied once every producer is in place.
+		 *
+		 * A binary {@code JoinPlan} only exists because one of its operands is a kind {@code SlotPlan.join} could not
+		 * flatten (see {@code canFlatten}), so descending it is not an optimisation — it is the only way the kernel
+		 * tier sees such a plan at all. Left before right preserves the tree's own binding flow, and that is exactly
+		 * what the emitted pipeline is: a nested-loop chain. Filters are gathered rather than placed here because
+		 * {@code lowerFilterStrict} applies all of them after the last producer, which is always sound; their
+		 * {@code plannedDepth} is an interpreted-engine placement hint the kernel never reads, so splicing a nested
+		 * {@code MultiJoinPlan}'s filters in unadjusted is safe.
+		 */
+		boolean lowerJoinOperand(SlotPlan plan, List<MaskedFilter> filters, RowState row) {
+			return lowerJoinOperand(plan, filters, row, true);
+		}
+
+		private boolean lowerJoinOperand(SlotPlan plan, List<MaskedFilter> filters, RowState row, boolean top) {
+			if (plan instanceof JoinPlan) {
+				JoinPlan join = (JoinPlan) plan;
+				return lowerJoinOperand(join.left, filters, row, false)
+						&& lowerJoinOperand(join.right, filters, row, false);
+			}
+			if (plan instanceof MultiJoinPlan) {
+				MultiJoinPlan multiJoin = (MultiJoinPlan) plan;
+				filters.addAll(java.util.Arrays.asList(multiJoin.filters));
+				for (SlotPlan child : multiJoin.derivedPlan(row).order) {
+					if (!lowerJoinOperand(child, filters, row, false)) {
+						return false;
+					}
+				}
+				return true;
+			}
+			if (plan instanceof FilterPlan) {
+				FilterPlan filterPlan = (FilterPlan) plan;
+				filters.add(new MaskedFilter(filterPlan.filter, filterPlan.filterMask));
+				return lowerJoinOperand(filterPlan.arg, filters, row, false);
+			}
+			if (plan instanceof ExtensionPlan) {
+				ExtensionPlan extension = (ExtensionPlan) plan;
+				// The copies apply to each row the argument produces, so they must follow it in the pipeline.
+				return lowerJoinOperand(extension.arg, filters, row, false) && lowerExtensionCopies(extension);
+			}
+			if (plan instanceof UnionPlan) {
+				return lowerUnionOperand((UnionPlan) plan, row);
+			}
+			if (plan instanceof PathPlan) {
+				if (++joinOperands > MAX_CHILDREN) {
+					reason = reasonPrefix + "too-many-children";
+					return false;
+				}
+				return lowerPath((PathPlan) plan);
+			}
+			if (plan instanceof MinusPlan) {
+				// MINUS below the root of the join tree. Unlike the root case in `lowerAggregate`, the anti-join
+				// witness is placed at the depth its correlating producers occupy rather than deferred to
+				// `witnessNodes`, for two reasons: the deferred list is flushed only by `buildAggregate`, so on the row
+				// rung a deferred witness would be dropped silently and MINUS would stop removing anything; and placing
+				// it immediately is the stronger plan anyway, since the anti-join prunes before the remaining
+				// producers run instead of after.
+				MinusPlan minus = (MinusPlan) plan;
+				return lowerJoinOperand(minus.left, filters, row, false)
+						&& lowerMinusArm(minus.right, currentDepthNodes());
+			}
+			if (plan instanceof LeftJoinPlan) {
+				// OPTIONAL inside a join tree: the left side is an ordinary producer, the right becomes a left group.
+				// Reached from both rungs — the row rung sees it for an OPTIONAL nested below another operand (its own
+				// entry point only peels a left-deep chain at the root), the aggregate rung for any OPTIONAL at all.
+				LeftJoinPlan leftJoin = (LeftJoinPlan) plan;
+				return lowerJoinOperand(leftJoin.left, filters, row, false) && lowerOptionalArm(leftJoin.right);
+			}
+			if (++joinOperands > MAX_CHILDREN) {
+				reason = reasonPrefix + "too-many-children";
+				return false;
+			}
+			if (plan instanceof PatternPlan) {
+				return lowerPattern((PatternPlan) plan);
+			}
+			if (plan instanceof MultiValuePatternPlan) {
+				return lowerMultiValuePattern((MultiValuePatternPlan) plan);
+			}
+			if (plan instanceof ValuesPlan) {
+				return lowerValues((ValuesPlan) plan);
+			}
+			reason = reasonPrefix + (top ? "unsupported:" : "child:") + plan.getClass().getSimpleName();
+			return false;
+		}
+
+		/**
+		 * Lowers an {@code ExtensionPlan}'s copies to {@link LmdbNativeKernelIr.BindAlias} nodes — the pure-alias form
+		 * of BIND, which is 53 of the 57 {@code BIND(} occurrences in the theme corpus.
+		 *
+		 * Two refusals mark the boundary. A computed copy needs {@code LmdbNativeKernelHooks.computeBind}, which
+		 * throws, so lowering it would substitute a wrong value silently. And a copy whose target slot is already bound
+		 * is an equality test rather than a binding — {@code ExtensionCursor} gets that from {@code RowState.bind}
+		 * returning false, which a fresh column cannot express.
+		 *
+		 * The unbound case needs no special handling: a copy whose source is UNKNOWN is skipped by
+		 * {@code ExtensionCursor}, leaving the target unbound, and a kernel column holding {@code -1} is skipped by the
+		 * row materialization for the same reason. The two representations already agree.
+		 */
+		/**
+		 * Columns pinned while lowering union branches, so a variable both branches bind lands in ONE column. Without
+		 * this the second branch would allocate a second column and every downstream node would read a column only the
+		 * first branch ever wrote.
+		 */
+		private final java.util.Map<Integer, Integer> pinnedColumns = new java.util.HashMap<>();
+
+		/**
+		 * Lowers a {@code UnionPlan} operand into a {@link LmdbNativeKernelIr.Union} node.
+		 *
+		 * Each branch is lowered through the ordinary producer machinery and then *harvested* out of the depth lists
+		 * into its own sub-pipeline, which is what lets a union reuse pattern lowering instead of duplicating it the
+		 * way the witness path does. Every branch starts from the pre-union binding state, so each sees the same
+		 * variables as fresh and the same endpoints as bound; {@link #pinnedColumns} keeps a shared variable on a
+		 * single column.
+		 *
+		 * The emitter supplies the rest of the semantics and is already correct for it: it emits each branch in turn
+		 * into the same continuation — multiset union, so both branches contribute their rows — preceded by
+		 * {@code v<col> = -1L} resets over the union of all branch-produced columns, so a variable only one branch
+		 * binds reads as unbound in solutions from the other. Such a column is therefore recorded as maybe-null and is
+		 * not assured.
+		 */
+		private boolean lowerUnionOperand(UnionPlan union, RowState row) {
+			if (!unionSourcesEnabled()) {
+				reason = reasonPrefix + "child:UnionPlan";
+				return false;
+			}
+			if (++joinOperands > MAX_CHILDREN) {
+				reason = reasonPrefix + "too-many-children";
+				return false;
+			}
+			// The Union node needs a depth of its OWN, always — not merely when none exists. A nested union
+			// (A UNION B UNION C arrives as UnionPlan(UnionPlan(a,b),c)) would otherwise compute a home depth below the
+			// enclosing call's harvest mark, so the outer harvest would miss the inner Union node and the outer branch
+			// would look empty.
+			openDepth();
+			int homeDepth = nodesPerDepth.size() - 1;
+			// Pins belong to THIS union frame. A nested union must not clear an enclosing frame's pins on the way out —
+			// if the inner union is the outer's second branch, the outer still has to read its first branch's pins
+			// afterwards. Save and restore rather than clear.
+			java.util.Map<Integer, Integer> enclosingPins = new java.util.HashMap<>(pinnedColumns);
+			int[] columnsBefore = slotColumn.clone();
+			int[] depthsBefore = slotColumnDepth.clone();
+			long assuredBefore = assuredMask;
+			long assuredInEveryBranch = -1L;
+			long producedByAny = 0L;
+			long producedByEvery = -1L;
+			List<List<Node>> branches = new ArrayList<>(2);
+			for (SlotPlan arm : new SlotPlan[] { union.left, union.right }) {
+				System.arraycopy(columnsBefore, 0, slotColumn, 0, slotColumn.length);
+				System.arraycopy(depthsBefore, 0, slotColumnDepth, 0, slotColumnDepth.length);
+				assuredMask = assuredBefore;
+				int depthMark = nodesPerDepth.size();
+				// A branch's own filters must be lowered INSIDE the branch — applying them after the union would
+				// filter the other branch's rows too — so they are collected separately and lowered here, while this
+				// branch's depths are still open and `harvestDepths` will therefore collect them with it.
+				List<MaskedFilter> branchFilters = new ArrayList<>(0);
+				if (!lowerJoinOperand(arm, branchFilters, row, false)) {
+					harvestDepths(depthMark);
+					return false;
+				}
+				if (!lowerBranchFilters(branchFilters, depthMark)) {
+					harvestDepths(depthMark);
+					return false;
+				}
+				List<Node> branch = harvestDepths(depthMark);
+				if (branch.isEmpty()) {
+					reason = reasonPrefix + "union-empty-branch";
+					return false;
+				}
+				branches.add(branch);
+				long branchProduced = 0L;
+				for (int slot = 0; slot < slotColumn.length; slot++) {
+					if (columnsBefore[slot] < 0 && slotColumn[slot] >= 0) {
+						branchProduced |= 1L << slot;
+						pinnedColumns.put(slot, slotColumn[slot]);
+					}
+				}
+				producedByAny |= branchProduced;
+				producedByEvery &= branchProduced;
+				assuredInEveryBranch &= assuredMask;
+			}
+			// Publish the union's columns downstream: bound, at the union's own depth, assured only where every branch
+			// binds them, and maybe-null wherever a branch does not.
+			System.arraycopy(columnsBefore, 0, slotColumn, 0, slotColumn.length);
+			System.arraycopy(depthsBefore, 0, slotColumnDepth, 0, slotColumnDepth.length);
+			for (int slot = 0; slot < slotColumn.length; slot++) {
+				if ((producedByAny >>> slot & 1L) == 0L) {
+					continue;
+				}
+				int column = pinnedColumns.get(slot);
+				slotColumn[slot] = column;
+				slotColumnDepth[slot] = homeDepth;
+				if ((producedByEvery >>> slot & 1L) == 0L) {
+					optionalColMask |= 1L << column;
+				}
+			}
+			assuredMask = assuredInEveryBranch;
+			pinnedColumns.clear();
+			pinnedColumns.putAll(enclosingPins);
+			nodesPerDepth.get(homeDepth).add(new LmdbNativeKernelIr.Union(branches));
+			return true;
+		}
+
+		/**
+		 * Lowers one union branch's own filters into that branch, verifying afterwards that none escaped below
+		 * {@code depthMark}.
+		 *
+		 * Two things can go wrong and both are refused rather than approximated. A **sticky** filter (mask {@code < 0},
+		 * i.e. EXISTS-bearing) cannot be scoped to a branch at all: `lowerWitness` appends to `witnessNodes`, which
+		 * `buildAggregate` flushes into the pipeline *after* everything else, so the witness would guard every branch's
+		 * rows. And `placeFilter` derives a filter's depth from its operands, so a condition mixing pre-union columns
+		 * with branch columns can land below the mark — outside the harvest — where it would again apply to the whole
+		 * union. That is detected by comparing the filter lists below the mark before and after, including
+		 * {@code entryDepthFilters}, rather than by trying to predict it.
+		 */
+		private boolean lowerBranchFilters(List<MaskedFilter> branchFilters, int depthMark) {
+			if (branchFilters.isEmpty()) {
+				return true;
+			}
+			int entryFiltersBefore = entryDepthFilters.size();
+			int[] belowBefore = new int[depthMark];
+			for (int d = 0; d < depthMark; d++) {
+				belowBefore[d] = filtersPerDepth.get(d).size();
+			}
+			for (MaskedFilter branchFilter : branchFilters) {
+				if (branchFilter.mask < 0L) {
+					reason = reasonPrefix + "union-branch-sticky";
+					return false;
+				}
+				if (!lowerFilterStrict(branchFilter)) {
+					return false;
+				}
+			}
+			if (entryDepthFilters.size() != entryFiltersBefore) {
+				reason = reasonPrefix + "union-branch-filter-escaped";
+				return false;
+			}
+			for (int d = 0; d < depthMark; d++) {
+				if (filtersPerDepth.get(d).size() != belowBefore[d]) {
+					reason = reasonPrefix + "union-branch-filter-escaped";
+					return false;
+				}
+			}
+			return true;
+		}
+
+		/** Removes every depth from {@code mark} upward and returns their nodes in pipeline order. */
+		private List<Node> harvestDepths(int mark) {
+			List<Node> harvested = new ArrayList<>();
+			for (int d = mark; d < nodesPerDepth.size(); d++) {
+				harvested.addAll(nodesPerDepth.get(d));
+				harvested.addAll(filtersPerDepth.get(d));
+			}
+			while (nodesPerDepth.size() > mark) {
+				nodesPerDepth.remove(nodesPerDepth.size() - 1);
+				filtersPerDepth.remove(filtersPerDepth.size() - 1);
+			}
+			return harvested;
+		}
+
+		private boolean lowerExtensionCopies(ExtensionPlan extension) {
+			if (joinOperands == 0) {
+				// No producer opened a depth, so there is no pipeline position to attach an alias to. Only reachable
+				// from a childless argument (a zero-child MultiJoinPlan); the old flat path rejected that up front.
+				reason = reasonPrefix + "no-children";
+				return false;
+			}
+			for (CopyBinding copy : extension.copies) {
+				if (copy.computed != null) {
+					reason = reasonPrefix + "bind-computed";
+					return false;
+				}
+				if (!slotFresh(copy.targetSlot)) {
+					reason = reasonPrefix + "bind-target-bound";
+					return false;
+				}
+				Operand source;
+				if (copy.sourceSlot >= 0) {
+					source = slotOperand(copy.sourceSlot);
+					if (source == null) {
+						reason = reasonPrefix + "bind-source-unavailable";
+						return false;
+					}
+				} else {
+					source = Operand.constant(constantIndex(copy.constant));
+				}
+				int target = newColumn(copy.targetSlot);
+				// Row-rung only: an alias of a maybe-null column is itself maybe-null. Without this the alias column
+				// looks assured, and a later OPTIONAL arm keyed on it would pass `operandMaybeNull` and probe with -1.
+				if (operandMaybeNull(source)) {
+					optionalColMask |= 1L << target;
+				}
+				currentDepthNodes().add(new LmdbNativeKernelIr.BindAlias(source, target));
+			}
+			return true;
+		}
+
 		boolean lowerPattern(PatternPlan pattern) {
 			openDepth();
 			return lowerPatternInline(pattern);
 		}
 
+		/**
+		 * An arbitrary-length property path ({@code p+} / {@code p*}) into the {@link LmdbNativeKernelIr.PathExpand}
+		 * node, which has existed and been unit-tested since the IR landed but was never constructed by any lowering.
+		 *
+		 * The node expands breadth-first from one endpoint over a single adjacency view, dedupes with a visited set,
+		 * and emits each distinct reachable id once — which is exactly SPARQL's arbitrary-length-path semantics, where
+		 * the result is a set of endpoints rather than one row per walk. {@code minHops} carries the difference between
+		 * the two operators: {@code *} emits the start itself, {@code +} does not.
+		 *
+		 * The lowerable subset is deliberately narrow, and each restriction marks a place where the node cannot express
+		 * the plan rather than a place worth widening blindly. One step only, because the node holds one adjacency and
+		 * an alternation would need a union of views inside the traversal. Plain subject-to-object orientation only, so
+		 * the view's direction is unambiguous. And one endpoint must already be known: with both ends free the answer
+		 * includes every node the path can start from — for {@code *} that is every term in the graph, including ones
+		 * appearing only as objects — which is a different enumeration than this node performs.
+		 */
+		private boolean lowerPath(PathPlan path) {
+			if (path.steps.length != 1 || path.namedContextScope || path.contexts.isFixed() || path.ctx.hasSlot()
+					|| path.ctx.isConstant()) {
+				reason = reasonPrefix + "path-guards";
+				return false;
+			}
+			PathStep step = path.steps[0];
+			if (step.subjPos != TripleIndex.SUBJ_IDX || step.objPos != TripleIndex.OBJ_IDX) {
+				reason = reasonPrefix + "path-orientation";
+				return false;
+			}
+			int minHops = path.zeroLength ? 0 : 1;
+			Operand subject = pathEndpoint(path.subjSlot, path.subjConst);
+			Operand object = pathEndpoint(path.objSlot, path.objConst);
+			if (subject != null && object == null && path.objSlot >= 0 && slotFresh(path.objSlot)) {
+				openDepth();
+				int adj = adjacency(step.predicate, true, false);
+				currentDepthNodes().add(new LmdbNativeKernelIr.PathExpand(adj, subject,
+						newColumn(path.objSlot), minHops));
+				return true;
+			}
+			if (object != null && subject == null && path.subjSlot >= 0 && slotFresh(path.subjSlot)) {
+				openDepth();
+				int adj = adjacency(step.predicate, false, false);
+				currentDepthNodes().add(new LmdbNativeKernelIr.PathExpand(adj, object,
+						newColumn(path.subjSlot), minHops));
+				return true;
+			}
+			// Both ends free: enumerate the possible starts, then expand from each. The two operators differ only in
+			// where the starts come from, and in both cases the enumeration is complete rather than a heuristic.
+			//
+			// For `p+` every solution's start has at least one outgoing p-edge, so the starts are exactly the
+			// by-subject view's key set. For `p*` the zero-length half pairs each term of the graph with itself
+			// whether or not this predicate mentions it, so the starts are the graph's whole term set — which is what
+			// EnumerateTerms produces. PathExpand's own visited set makes each start's endpoints distinct, and distinct
+			// starts cannot collide, so no cross-start dedup is needed on top.
+			if (subject == null && object == null && path.subjSlot >= 0 && path.objSlot >= 0
+					&& path.subjSlot != path.objSlot && slotFresh(path.subjSlot) && slotFresh(path.objSlot)) {
+				if (minHops == 0 && !scanSourcesEnabled()) {
+					// The term enumeration is a direct LMDB scan; without scan sources the kernel has no scanner.
+					reason = reasonPrefix + "path-shape";
+					return false;
+				}
+				openDepth();
+				int adj = adjacency(step.predicate, true, minHops == 1);
+				int startColumn = newColumn(path.subjSlot);
+				if (minHops == 0) {
+					currentDepthNodes().add(new LmdbNativeKernelIr.EnumerateTerms(scanCount++, startColumn));
+				} else {
+					currentDepthNodes().add(new LmdbNativeKernelIr.EnumerateAdjKeys(adj, startColumn, -1));
+				}
+				currentDepthNodes().add(new LmdbNativeKernelIr.PathExpand(adj, Operand.col(startColumn),
+						newColumn(path.objSlot), minHops));
+				return true;
+			}
+			reason = reasonPrefix + "path-shape";
+			return false;
+		}
+
+		/**
+		 * A path endpoint as an operand: its constant if it has one, otherwise its slot if that is already readable.
+		 */
+		private Operand pathEndpoint(int slot, long constant) {
+			if (constant != LmdbNativeAggregateCompiler.UNKNOWN) {
+				return Operand.constant(constantIndex(constant));
+			}
+			return slot >= 0 ? slotOperand(slot) : null;
+		}
+
 		/** Lowers a pattern into the current depth (used directly and by the multi-value seed). */
 		private boolean lowerPatternInline(PatternPlan pattern) {
+			if (preferScans && lowerPatternAsScan(pattern)) {
+				return true;
+			}
 			if (pattern.hasRepeatedSlot() || pattern.namedContextScope || !pattern.p.isConstant()
 					|| pattern.p.hasSlot() || pattern.c.hasSlot() || pattern.c.isConstant()
 					|| pattern.contexts.isFixed() || pattern.s.bindConstant || pattern.o.bindConstant) {
@@ -481,30 +954,49 @@ final class LmdbNativeKernelLowering {
 		 * up issuing the same {@code probe.open(subj, pred, obj, context)} call, with the same operand ids, that
 		 * {@code PatternPlan.openIterator} would have issued for this pattern. What must therefore be refused is
 		 * anything whose meaning lives in {@code PatternPlan.bind} rather than in the scan itself — named-graph
-		 * scoping, a dataset context restriction, a term that both matches a constant and binds a slot, a repeated
-		 * variable, and an ordered-scan promise a consumer may be relying on. Each of those would be silently lost.
+		 * scoping, a dataset context restriction, a term that both matches a constant and binds a slot, and an
+		 * ordered-scan promise a consumer may be relying on. Each of those would be silently lost.
 		 *
-		 * Disabled by default: the emitted node needs a {@code KernelScanner} in the bound context, and the row rung
-		 * does not yet own a scanner's lifetime (its cursor would have to close it). Enabling this before that wiring
-		 * exists would hand a kernel a null scanner.
+		 * A repeated variable is the one item that used to be on that list and no longer is. It is expressible here,
+		 * exactly as {@link LmdbNativeKernelIr.ScanQuad}'s own contract describes: scan with both positions free,
+		 * writing each to its own column, then guard with an equality between those columns. What is <em>not</em> sound
+		 * is to let the second occurrence resolve through {@link #operandOf}, which would find the column the first
+		 * occurrence just allocated and pass its value as a scan bound — a value that has not been read yet when the
+		 * cursor opens. {@code scanTerm} therefore tracks the slots this scan has already claimed.
 		 */
 		private boolean lowerPatternAsScan(PatternPlan pattern) {
 			if (!scanSourcesEnabled()) {
 				return false;
 			}
-			if (pattern.namedContextScope || pattern.contexts.isFixed() || pattern.c.hasSlot()
-					|| pattern.c.isConstant() || pattern.s.bindConstant || pattern.o.bindConstant
-					|| pattern.p.bindConstant || pattern.hasRepeatedSlot() || pattern.statementOrder != null) {
+			if (pattern.contexts.isFixed() || pattern.c.isConstant() || pattern.s.bindConstant
+					|| pattern.o.bindConstant || pattern.p.bindConstant || pattern.statementOrder != null) {
+				return false;
+			}
+			// A named-graph scope is only expressible when the context is projected: the guard below is what excludes
+			// default-graph quads, and it needs a column to test. `GRAPH <g>` (a constant context) is left refused —
+			// it is a scan bound rather than a guard, and nothing in the corpus needed it.
+			if (pattern.namedContextScope && !pattern.c.hasSlot()) {
 				return false;
 			}
 			Operand[] terms = new Operand[4];
 			int[] outCols = { -1, -1, -1, -1 };
-			if (!scanTerm(pattern.s, LmdbNativeKernelIr.ScanQuad.SUBJ, terms, outCols)
-					|| !scanTerm(pattern.p, LmdbNativeKernelIr.ScanQuad.PRED, terms, outCols)
-					|| !scanTerm(pattern.o, LmdbNativeKernelIr.ScanQuad.OBJ, terms, outCols)) {
+			int[] claimedSlots = { -1, -1, -1 };
+			List<Node> repeats = new ArrayList<>(0);
+			if (!scanTerm(pattern.s, LmdbNativeKernelIr.ScanQuad.SUBJ, terms, outCols, claimedSlots, repeats)
+					|| !scanTerm(pattern.p, LmdbNativeKernelIr.ScanQuad.PRED, terms, outCols, claimedSlots, repeats)
+					|| !scanTerm(pattern.o, LmdbNativeKernelIr.ScanQuad.OBJ, terms, outCols, claimedSlots, repeats)) {
 				return false;
 			}
-			if (outCols[0] < 0 && outCols[1] < 0 && outCols[2] < 0) {
+			if (pattern.c.hasSlot()) {
+				if (!slotFresh(pattern.c.slot)) {
+					// The graph variable is already bound: that is a scan bound on the context position, and
+					// `ScanQuad` would need it as a term rather than an output. Not modelled here.
+					return false;
+				}
+				outCols[LmdbNativeKernelIr.ScanQuad.CTX] = newColumn(pattern.c.slot);
+			}
+			if (outCols[0] < 0 && outCols[1] < 0 && outCols[2] < 0
+					&& outCols[LmdbNativeKernelIr.ScanQuad.CTX] < 0) {
 				// Every position already known: that is an existence/multiplicity check, not a producer.
 				return false;
 			}
@@ -512,11 +1004,39 @@ final class LmdbNativeKernelLowering {
 				assuredMask |= 1L << pattern.s.slot;
 			}
 			currentDepthNodes().add(new LmdbNativeKernelIr.ScanQuad(scanCount++, terms, outCols));
+			// The equality guards belong with the scan, at the same depth, so they run per scanned quad.
+			currentDepthNodes().addAll(repeats);
+			if (pattern.namedContextScope) {
+				// `PatternPlan.rejectsNullContextAtBind()`: with an unfixed dataset, a named-graph-scoped pattern drops
+				// default-graph quads at bind time. The scan itself has no such notion — it is opened with the context
+				// unbound and therefore returns them — so the rejection is re-expressed as a guard on the context
+				// column against the default-graph sentinel.
+				currentDepthNodes().add(new LmdbNativeKernelIr.FilterCompareId(true,
+						Operand.col(outCols[LmdbNativeKernelIr.ScanQuad.CTX]),
+						Operand.constant(constantIndex(LmdbNativeAggregateCompiler.NULL_CONTEXT_ID))));
+			}
 			return true;
 		}
 
-		/** Resolves one quad position to either a bound operand or a fresh output column. */
-		private boolean scanTerm(Term term, int position, Operand[] terms, int[] outCols) {
+		/**
+		 * Resolves one quad position to a bound operand, a fresh output column, or — when the same variable already has
+		 * a column from an earlier position of this same scan — a second output column plus an equality guard tying the
+		 * two together.
+		 */
+		private boolean scanTerm(Term term, int position, Operand[] terms, int[] outCols, int[] claimedSlots,
+				List<Node> repeats) {
+			if (term.hasSlot()) {
+				for (int earlier = 0; earlier < position; earlier++) {
+					if (claimedSlots[earlier] == term.slot) {
+						int repeatColumn = newColumn(term.slot);
+						outCols[position] = repeatColumn;
+						claimedSlots[position] = term.slot;
+						repeats.add(new LmdbNativeKernelIr.FilterCompareId(false, Operand.col(outCols[earlier]),
+								Operand.col(repeatColumn)));
+						return true;
+					}
+				}
+			}
 			Operand operand = operandOf(term);
 			if (operand != null) {
 				terms[position] = operand;
@@ -527,6 +1047,7 @@ final class LmdbNativeKernelLowering {
 				return false;
 			}
 			outCols[position] = newColumn(term.slot);
+			claimedSlots[position] = term.slot;
 			return true;
 		}
 
@@ -548,15 +1069,15 @@ final class LmdbNativeKernelLowering {
 		}
 
 		boolean lowerValues(ValuesPlan plan) {
-			if (!plan.bindsAllSlotsEveryRow || Long.bitCount(plan.producedMask()) != 1) {
+			if (Long.bitCount(plan.producedMask()) != 1) {
+				return lowerValuesTable(plan);
+			}
+			if (!plan.bindsAllSlotsEveryRow) {
 				reason = "values-shape";
 				return false;
 			}
 			int slot = Long.numberOfTrailingZeros(plan.producedMask());
-			if ((entryMask >>> slot & 1L) == 1L || slotColumn[slot] >= 0) {
-				reason = "values-slot-bound";
-				return false;
-			}
+			Operand alreadyBound = (entryMask >>> slot & 1L) == 1L || slotColumn[slot] >= 0 ? slotOperand(slot) : null;
 			long[] domain = new long[plan.rows.length];
 			for (int i = 0; i < plan.rows.length; i++) {
 				ValuesRow valuesRow = plan.rows[i];
@@ -573,10 +1094,104 @@ final class LmdbNativeKernelLowering {
 				}
 				domain[i] = id;
 			}
+			if (alreadyBound != null) {
+				// The variable already has a value here, so joining against the table is a membership test on that
+				// value, not an enumeration of it. Enumerating would overwrite the binding and produce rows the join
+				// never had. A maybe-null operand is refused instead: unbound is not a member of any VALUES table, but
+				// an id-tier membership node would compare the -1 sentinel as if it were a term.
+				if (operandMaybeNull(alreadyBound)) {
+					reason = "values-slot-optional";
+					return false;
+				}
+				// A membership test yields one row where the join would yield one per matching table row, so a table
+				// with a repeated value would lose multiplicity. Rare enough to refuse rather than model.
+				for (int i = 0; i < domain.length; i++) {
+					for (int j = i + 1; j < domain.length; j++) {
+						if (domain[i] == domain[j]) {
+							reason = "values-slot-bound-duplicates";
+							return false;
+						}
+					}
+				}
+				int[] indices = new int[domain.length];
+				for (int i = 0; i < domain.length; i++) {
+					indices[i] = constantIndex(domain[i]);
+				}
+				placeFilter(new LmdbNativeKernelIr.FilterInConstants(alreadyBound, indices),
+						operandDepth(alreadyBound));
+				return true;
+			}
 			openDepth();
 			keyDomains.add(new LmdbNativeKernelBindings.DomainRequest(domain));
 			currentDepthNodes()
 					.add(new LmdbNativeKernelIr.EnumerateDomain(keyDomains.size() - 1, newColumn(slot)));
+			return true;
+		}
+
+		/**
+		 * A multi-variable inline VALUES table, as a {@link LmdbNativeKernelIr.Union} of one branch per row, each
+		 * branch a run of {@link LmdbNativeKernelIr.BindAlias} nodes writing that row's constants.
+		 *
+		 * The table is a multiset of solutions, and that is exactly what the union node already means — so this needs
+		 * no new IR, only the discipline of allocating each variable's column once, up front, so every branch writes
+		 * the same columns. UNDEF falls out for free: the emitter resets every column the union produces to unbound
+		 * before each branch, so a row that omits a variable simply leaves it unbound, which is what UNDEF is.
+		 *
+		 * Bounded on both axes because the union is unrolled into generated source: a wide or long table would emit a
+		 * large method rather than loop over data. Tables that big are better served by the interpreted plan, which
+		 * iterates the same rows without compiling anything.
+		 */
+		private boolean lowerValuesTable(ValuesPlan plan) {
+			long produced = plan.producedMask();
+			int variables = Long.bitCount(produced);
+			if (plan.rows.length < 2 || plan.rows.length > MAX_VALUES_TABLE_ROWS || variables > MAX_HOOK_ARGS * 2) {
+				reason = "values-shape";
+				return false;
+			}
+			for (int slot = 0; slot < slotColumn.length; slot++) {
+				if ((produced >>> slot & 1L) == 1L && !slotFresh(slot)) {
+					// One of the table's variables already has a value, so this is a join against the table rather
+					// than a seed. Sound handling is a per-variable membership test on matching rows, which the
+					// single-variable path does but this one does not model.
+					reason = "values-table-slot-bound";
+					return false;
+				}
+			}
+			openDepth();
+			int[] columns = new int[slotColumn.length];
+			java.util.Arrays.fill(columns, -1);
+			for (int slot = 0; slot < slotColumn.length; slot++) {
+				if ((produced >>> slot & 1L) == 1L) {
+					columns[slot] = newColumn(slot);
+				}
+			}
+			List<List<Node>> branches = new ArrayList<>(plan.rows.length);
+			for (ValuesRow valuesRow : plan.rows) {
+				List<Node> branch = new ArrayList<>(variables);
+				for (int i = 0; i < valuesRow.slots.length; i++) {
+					int slot = valuesRow.slots[i];
+					long id = valuesRow.values[i];
+					if (columns[slot] < 0 || id == LmdbNativeAggregateCompiler.UNKNOWN) {
+						continue;
+					}
+					branch.add(new LmdbNativeKernelIr.BindAlias(Operand.constant(constantIndex(id)), columns[slot]));
+				}
+				if (branch.isEmpty()) {
+					// An all-UNDEF row is one empty solution, which the union node cannot carry as an empty branch.
+					reason = "values-table-empty-row";
+					return false;
+				}
+				branches.add(branch);
+			}
+			// A variable some row leaves UNDEF is not always bound downstream, and the reset makes it read as -1.
+			if (!plan.bindsAllSlotsEveryRow) {
+				for (int slot = 0; slot < slotColumn.length; slot++) {
+					if (columns[slot] >= 0) {
+						optionalColMask |= 1L << columns[slot];
+					}
+				}
+			}
+			currentDepthNodes().add(new LmdbNativeKernelIr.Union(branches));
 			return true;
 		}
 
@@ -713,7 +1328,7 @@ final class LmdbNativeKernelLowering {
 				if (lowerIdFilter(filter) || lowerHookFilter(masked)) {
 					return true;
 				}
-				reason = "agg:filter:" + filter.getClass().getSimpleName();
+				reason = reasonPrefix + "filter:" + filter.getClass().getSimpleName();
 				return false;
 			}
 			return lowerWitness(filter, false);
@@ -748,13 +1363,26 @@ final class LmdbNativeKernelLowering {
 				// The sub-plan may carry its own FilterPlan wrappers (e.g. a sticky generic condition over a
 				// synthetic VALUES var): peel them and lower each as a witness filter after the producers.
 				List<MaskedFilter> peeled = new ArrayList<>(0);
-				while (sub instanceof FilterPlan) {
-					FilterPlan filterPlan = (FilterPlan) sub;
-					peeled.add(new MaskedFilter(filterPlan.filter, filterPlan.filterMask));
-					sub = filterPlan.arg;
+				while (true) {
+					if (sub instanceof FilterPlan) {
+						FilterPlan filterPlan = (FilterPlan) sub;
+						peeled.add(new MaskedFilter(filterPlan.filter, filterPlan.filterMask));
+						sub = filterPlan.arg;
+					} else if (sub instanceof ExtensionPlan) {
+						if (!witnessExtensionIsInert((ExtensionPlan) sub)) {
+							return false;
+						}
+						sub = ((ExtensionPlan) sub).arg;
+					} else {
+						break;
+					}
 				}
 				if (sub instanceof PatternPlan) {
 					if (!lowerWitnessPatternPlan((PatternPlan) sub, witnessCols, pipeline)) {
+						return false;
+					}
+				} else if (sub instanceof MultiValuePatternPlan) {
+					if (!lowerWitnessMultiValue((MultiValuePatternPlan) sub, witnessCols, pipeline)) {
 						return false;
 					}
 				} else if (sub instanceof MultiJoinPlan) {
@@ -774,7 +1402,69 @@ final class LmdbNativeKernelLowering {
 				witnessNodes.add(new LmdbNativeKernelIr.Exists(negated, pipeline));
 				return true;
 			}
+			if (filter instanceof BooleanCombinationFilter) {
+				BooleanCombinationFilter combination = (BooleanCombinationFilter) filter;
+				// Sequential kernel filters AND together, so a conjunction splits into two of them. By De Morgan a
+				// NEGATED disjunction splits the same way — NOT(A OR B) is NOT A AND NOT B — which is exactly the two
+				// cells where `conjunction != negated`. The other two, a bare disjunction and a negated conjunction,
+				// both need a real OR of witnesses; the IR has no such node, so they must decline.
+				if (combination.conjunction == negated) {
+					reason = "agg:sticky-disjunction";
+					return false;
+				}
+				return lowerWitnessOperand(combination.left, negated)
+						&& lowerWitnessOperand(combination.right, negated);
+			}
+			// Not an EXISTS-family filter at all. A condition can be marked sticky for reasons other than carrying a
+			// witness — an operand the batch mask cannot describe, for instance — and such a filter is still an
+			// ordinary row predicate, so it gets the same id-then-hook treatment a conjunct of one would get in
+			// `lowerWitnessOperand`, read through its own mask rather than the sticky sentinel. The un-negated
+			// restriction is the same one and is load-bearing for the same reason: a `NativeBooleanFilter` has already
+			// collapsed a SPARQL type error to false, so negating it would resurrect a row the generic evaluator drops.
+			if (!negated && (lowerIdFilter(filter)
+					|| lowerHookFilter(new MaskedFilter(filter, filter.batchReadMask())))) {
+				return true;
+			}
 			reason = "agg:sticky:" + filter.getClass().getSimpleName();
+			return false;
+		}
+
+		/**
+		 * Lowers one operand of a decomposed conjunction. An EXISTS-family operand is a witness and recurses; anything
+		 * else is an ordinary row condition and goes through the id then hook tiers.
+		 *
+		 * A non-witness operand may only be taken un-negated, and that restriction is load-bearing rather than
+		 * conservative. {@code NegatedNativeBooleanFilter} is a plain {@code !accept}, while a
+		 * {@code NativeBooleanFilter} has already collapsed a SPARQL type error to {@code false} — so negating a
+		 * comparison that errored would yield {@code true} and keep a row the generic evaluator drops. Witnesses are
+		 * exempt because an EXISTS is always two-valued: it either finds a row or it does not, and cannot raise an
+		 * error.
+		 */
+		private boolean lowerWitnessOperand(NativeBooleanFilter operand, boolean negated) {
+			NativeBooleanFilter inner = operand;
+			boolean innerNegated = negated;
+			while (true) {
+				if (inner instanceof RecordingNativeBooleanFilter) {
+					inner = ((RecordingNativeBooleanFilter) inner).delegate;
+				} else if (inner instanceof NegatedNativeBooleanFilter) {
+					inner = ((NegatedNativeBooleanFilter) inner).delegate;
+					innerNegated = !innerNegated;
+				} else {
+					break;
+				}
+			}
+			if (inner instanceof StatementPatternExistsFilter || inner instanceof ExistsFilter
+					|| inner instanceof BooleanCombinationFilter) {
+				return lowerWitness(inner, innerNegated);
+			}
+			if (innerNegated) {
+				reason = "agg:sticky-negated-condition";
+				return false;
+			}
+			if (lowerIdFilter(inner) || lowerHookFilter(new MaskedFilter(inner, inner.batchReadMask()))) {
+				return true;
+			}
+			reason = "agg:sticky-conjunct:" + inner.getClass().getSimpleName();
 			return false;
 		}
 
@@ -941,14 +1631,37 @@ final class LmdbNativeKernelLowering {
 		 * slots become witness-local scratch columns.
 		 */
 		boolean lowerMinusArm(SlotPlan arm) {
+			return lowerMinusArm(arm, witnessNodes);
+		}
+
+		private boolean lowerMinusArm(SlotPlan arm, List<Node> sink) {
 			List<Node> pipeline = new ArrayList<>();
 			java.util.Map<Integer, Integer> witnessCols = new java.util.HashMap<>();
-			// BIND extensions only add bindings — existence under the anti-join is unaffected, so peel them.
-			while (arm instanceof ExtensionPlan) {
-				arm = ((ExtensionPlan) arm).arg;
+			// BIND extensions only add bindings — existence under the anti-join is unaffected, so peel them. A
+			// FilterPlan wrapper is different in kind but lowers the same way an EXISTS sub-plan's does: the condition
+			// decides which right rows exist at all, so it belongs INSIDE the witness, after its producers. Applying it
+			// outside would test the left row instead and drop rows MINUS must keep.
+			List<MaskedFilter> armFilters = new ArrayList<>(0);
+			while (true) {
+				if (arm instanceof ExtensionPlan) {
+					if (!witnessExtensionIsInert((ExtensionPlan) arm)) {
+						return false;
+					}
+					arm = ((ExtensionPlan) arm).arg;
+				} else if (arm instanceof FilterPlan) {
+					FilterPlan filterPlan = (FilterPlan) arm;
+					armFilters.add(new MaskedFilter(filterPlan.filter, filterPlan.filterMask));
+					arm = filterPlan.arg;
+				} else {
+					break;
+				}
 			}
 			if (arm instanceof PatternPlan) {
 				if (!lowerWitnessPatternPlan((PatternPlan) arm, witnessCols, pipeline)) {
+					return false;
+				}
+			} else if (arm instanceof MultiValuePatternPlan) {
+				if (!lowerWitnessMultiValue((MultiValuePatternPlan) arm, witnessCols, pipeline)) {
 					return false;
 				}
 			} else if (arm instanceof MultiJoinPlan) {
@@ -959,8 +1672,74 @@ final class LmdbNativeKernelLowering {
 				reason = "agg:minus-arm:" + arm.getClass().getSimpleName();
 				return false;
 			}
-			witnessNodes.add(new LmdbNativeKernelIr.Exists(true, pipeline));
+			for (MaskedFilter armFilter : armFilters) {
+				if (!lowerWitnessFilter(armFilter, witnessCols, pipeline)) {
+					return false;
+				}
+			}
+			sink.add(new LmdbNativeKernelIr.Exists(true, pipeline));
 			return true;
+		}
+
+		/**
+		 * Whether a BIND wrapper inside a witness body can be dropped instead of lowered.
+		 *
+		 * It can, only when every copy binds a slot nothing outside the witness can read. Then the alias names a value
+		 * no one observes: EXISTS asks whether a row exists, MINUS asks whether a compatible row exists, and neither
+		 * question changes when a purely local name is added.
+		 *
+		 * When the target slot <em>is</em> readable outside, dropping the copy is unsound in both containers, and in
+		 * the same direction — it makes the witness succeed more often, so EXISTS keeps rows it should drop and MINUS
+		 * drops rows it should keep. Interpreted, the copy is an equality test there ({@code RowState.bind} returns
+		 * false for an already-bound slot, and {@code ExtensionCursor} rejects the row), and for MINUS the shared
+		 * variable is exactly what compatibility is computed on. This tier has no witness-local equality node to
+		 * express that, so it declines.
+		 */
+		private boolean witnessExtensionIsInert(ExtensionPlan extension) {
+			for (CopyBinding copy : extension.copies) {
+				if (slotOperand(copy.targetSlot) != null) {
+					reason = "agg:witness-bind-correlated";
+					return false;
+				}
+			}
+			return true;
+		}
+
+		/**
+		 * A folded {@code IN}-set pattern inside a witness body.
+		 *
+		 * Two shapes, decided by whether the constrained slot is already readable here. When it is fresh the set is a
+		 * producer: enumerate it into a witness-local column and let the fallback pattern probe with it, which the
+		 * enclosing {@code Exists} short-circuits on the first hit. When it is already bound — by the outer row, or by
+		 * an earlier witness pattern — enumerating would discard that binding and test the wrong values, so the set is
+		 * instead applied as a membership guard on the operand that already holds it.
+		 */
+		private boolean lowerWitnessMultiValue(MultiValuePatternPlan plan,
+				java.util.Map<Integer, Integer> witnessCols, List<Node> pipeline) {
+			if (plan.fallback == null) {
+				reason = "agg:witness-multi-value-no-fallback";
+				return false;
+			}
+			int slot = plan.constrainedSlot;
+			if (slot < 0) {
+				reason = "agg:witness-multi-value-slot";
+				return false;
+			}
+			Integer witnessLocal = witnessCols.get(slot);
+			Operand bound = witnessLocal != null ? Operand.col(witnessLocal) : slotOperand(slot);
+			if (bound != null) {
+				int[] indices = new int[plan.constants.length];
+				for (int i = 0; i < indices.length; i++) {
+					indices[i] = constantIndex(plan.constants[i]);
+				}
+				pipeline.add(new LmdbNativeKernelIr.FilterInConstants(bound, indices));
+			} else {
+				int column = scratchColumn();
+				keyDomains.add(new LmdbNativeKernelBindings.DomainRequest(plan.constants.clone()));
+				pipeline.add(new LmdbNativeKernelIr.EnumerateDomain(keyDomains.size() - 1, column));
+				witnessCols.put(slot, column);
+			}
+			return lowerWitnessPatternPlan(plan.fallback, witnessCols, pipeline);
 		}
 
 		private Operand witnessOperand(Term term, java.util.Map<Integer, Integer> witnessCols) {
@@ -995,8 +1774,13 @@ final class LmdbNativeKernelLowering {
 			boolean sumGuard = false;
 			for (int i = 0; i < aggregates.length; i++) {
 				AggregateSpec spec = aggregates[i];
+				// COUNT over something that is never unbound — COUNT(*) or COUNT(<constant>) — contributes exactly one
+				// per solution, which is what `countStar` accumulates. The test is on the constant not being UNKNOWN
+				// rather than on it being UNKNOWN: `AggregateSpec.star` deliberately carries NULL_CONTEXT_ID for this
+				// purpose ("only needs a constant that is never UNKNOWN"), so the previous equality matched no spec
+				// production ever builds and every real COUNT(*) fell through to `agg:input-unavailable`.
 				if (spec.kind == AggKind.COUNT && spec.slot < 0 && !spec.distinct
-						&& spec.constant == LmdbNativeAggregateCompiler.UNKNOWN) {
+						&& spec.constant != LmdbNativeAggregateCompiler.UNKNOWN) {
 					outputs[i] = LmdbNativeKernelIr.AggregateOutput.countStar();
 					outs[i] = new LmdbNativeKernelBindings.AggOut(spec, LmdbNativeKernelBindings.ENC_LONG_COUNT);
 					continue;
@@ -1033,7 +1817,23 @@ final class LmdbNativeKernelLowering {
 					outs[i] = new LmdbNativeKernelBindings.AggOut(spec, LmdbNativeKernelBindings.ENC_VALUE_ID);
 					hooksRequired = true;
 					break;
-				default: // AVG (decimal-division semantics) — declined in this tier
+				case AVG:
+					if (spec.distinct) {
+						// DISTINCT would have to dedupe the inputs before summing and counting; the accumulator pair
+						// has no set behind it, and reusing the COUNT DISTINCT set would still leave the sum wrong.
+						reason = "agg:avg-distinct";
+						return null;
+					}
+					outputs[i] = LmdbNativeKernelIr.AggregateOutput.avg(col);
+					outs[i] = new LmdbNativeKernelBindings.AggOut(spec, LmdbNativeKernelBindings.ENC_AVG_PARTS);
+					hooksRequired = true;
+					// Same guard as SUM, and needed for the same reason plus one more: the emitted accumulator is a
+					// double, so an inexact input makes the sum wrong, and `kernelGroupRow` additionally reconstructs
+					// that sum as an integer literal to divide exactly. Both steps are only valid while every input was
+					// an exact integer, which is precisely what `hooks.sumsExact()` certifies.
+					sumGuard = true;
+					break;
+				default:
 					reason = "agg:" + spec.kind;
 					return null;
 				}

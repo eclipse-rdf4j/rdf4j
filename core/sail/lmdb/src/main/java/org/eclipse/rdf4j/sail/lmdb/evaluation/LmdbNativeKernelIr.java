@@ -244,6 +244,44 @@ final class LmdbNativeKernelIr {
 		}
 	}
 
+	/**
+	 * Enumerate every distinct term that occurs in the graph as a subject or an object, once each.
+	 *
+	 * This exists for one construct: the zero-length half of a {@code p*} path whose <em>both</em> endpoints are free.
+	 * SPARQL's zero-length path pairs each such term with itself regardless of whether the path's predicate mentions it
+	 * at all, so the start set is the graph's term set rather than any one predicate's key set — which is exactly why
+	 * {@link EnumerateAdjKeys} cannot serve it, and why {@code p+}, whose starts do come from one predicate, needs no
+	 * such node.
+	 *
+	 * It scans the store and dedupes as it goes, which is the same work the interpreted {@code ZeroLengthPathIteration}
+	 * does for this shape. Predicate and context positions are deliberately not enumerated: a term appearing only there
+	 * is not the subject or object of any statement, and the interpreted path does not produce it either.
+	 */
+	static final class EnumerateTerms extends Node {
+		final int scan;
+		final int col;
+
+		EnumerateTerms(int scan, int col) {
+			this.scan = scan;
+			this.col = col;
+		}
+
+		@Override
+		void key(StringBuilder key) {
+			key.append("ET(s").append(scan).append("->").append(col).append(");");
+		}
+
+		@Override
+		void produced(BitSet columns) {
+			columns.set(col);
+		}
+
+		@Override
+		void requirements(Requirements requirements) {
+			requirements.scan(scan);
+		}
+	}
+
 	/** Enumerate a pre-collected key array from {@code context.keyDomains} (VALUES lists, subquery results). */
 	static final class EnumerateDomain extends Node {
 		final int domain;
@@ -653,6 +691,64 @@ final class LmdbNativeKernelIr {
 		}
 	}
 
+	/**
+	 * OPTIONAL over a whole sub-pipeline: run {@code arm} for the current row, and if it produced nothing, run the
+	 * continuation once more with every column the arm produces set to unbound.
+	 *
+	 * {@link LeftProbe} is the one-pattern special case of this and stays, because it fuses the probe and the null-arm
+	 * test into a single loop; {@code LeftGroup} is what a multi-pattern arm — or an arm carrying its own filters —
+	 * needs, since "did anything survive" can only be answered after the arm's last node.
+	 *
+	 * The arm must not be empty: an empty arm always matches, which is a plain continuation and not an OPTIONAL.
+	 */
+	static final class LeftGroup extends Node {
+		final List<Node> arm;
+
+		LeftGroup(List<Node> arm) {
+			if (arm.isEmpty()) {
+				throw new IllegalArgumentException("left group arm must not be empty");
+			}
+			this.arm = List.copyOf(arm);
+		}
+
+		/** Columns the arm binds, which the null arm must reset to unbound before the continuation runs. */
+		int[] resetColumns() {
+			BitSet columns = new BitSet();
+			for (Node node : arm) {
+				node.produced(columns);
+			}
+			int[] result = new int[columns.cardinality()];
+			int out = 0;
+			for (int col = columns.nextSetBit(0); col >= 0; col = columns.nextSetBit(col + 1)) {
+				result[out++] = col;
+			}
+			return result;
+		}
+
+		@Override
+		void key(StringBuilder key) {
+			key.append("lg[");
+			for (Node node : arm) {
+				node.key(key);
+			}
+			key.append("];");
+		}
+
+		@Override
+		void produced(BitSet columns) {
+			for (Node node : arm) {
+				node.produced(columns);
+			}
+		}
+
+		@Override
+		void requirements(Requirements requirements) {
+			for (Node node : arm) {
+				node.requirements(requirements);
+			}
+		}
+	}
+
 	/** BIND alias: copy an operand into a column. */
 	static final class BindAlias extends Node {
 		final Operand source;
@@ -931,6 +1027,18 @@ final class LmdbNativeKernelIr {
 			return kind == AGG_COUNT_STAR || kind == AGG_COUNT || kind == AGG_COUNT_DISTINCT;
 		}
 
+		/**
+		 * How many longs of the output row this aggregate occupies.
+		 *
+		 * Every kind takes one except AVG, which takes two: its sum and its count, emitted separately so the engine can
+		 * divide them with SPARQL's own semantics. Dividing inside the kernel would have to do it in {@code double} and
+		 * emit one number, and SPARQL divides as {@code xsd:decimal} — so an integer-input average would come back
+		 * typed {@code xsd:double} and, whenever the quotient is not a dyadic rational, valued differently too.
+		 */
+		int width() {
+			return kind == AGG_AVG ? 2 : 1;
+		}
+
 		boolean needsNumericHooks() {
 			return kind == AGG_SUM || kind == AGG_MIN || kind == AGG_MAX || kind == AGG_AVG;
 		}
@@ -991,7 +1099,20 @@ final class LmdbNativeKernelIr {
 
 		@Override
 		int stride() {
-			return groupCols.length + outputs.length;
+			int width = groupCols.length;
+			for (AggregateOutput output : outputs) {
+				width += output.width();
+			}
+			return width;
+		}
+
+		/** Index within the output row where aggregate {@code i} starts, accounting for multi-slot kinds. */
+		int outputOffset(int i) {
+			int offset = groupCols.length;
+			for (int j = 0; j < i; j++) {
+				offset += outputs[j].width();
+			}
+			return offset;
 		}
 
 		@Override
@@ -1060,6 +1181,13 @@ final class LmdbNativeKernelIr {
 	 * a pause (the filters) or carries state the emitter knows how to save and restore (the looping producers).
 	 * {@code EnumerateEntry} is excluded deliberately: it emits its continuation exactly once with nothing to resume
 	 * from, so re-entering it after a pause would emit a second time.
+	 * <p>
+	 * {@code ProbeClose} is admitted even though it produces no column, because its state is a single repetition
+	 * counter and its repetition count is recomputable from the adjacency view: it re-emits the continuation once per
+	 * matching neighbour (multiplicity) or at most once (semi), and both collapse to "emit {@code reps} times" with
+	 * {@code reps} derived from the key on every entry. Note that semi mode is the {@code EnumerateEntry} hazard in
+	 * disguise — at most one emission per key — and is only safe here because the counter distinguishes "not started"
+	 * from "already emitted".
 	 */
 	private static boolean isResumable(List<Node> pipeline, Terminal terminal) {
 		if (!(terminal instanceof Emit)) {
@@ -1074,7 +1202,7 @@ final class LmdbNativeKernelIr {
 		}
 		for (Node node : pipeline) {
 			boolean streamable = isFilter(node) || node instanceof EnumerateDomain || node instanceof Probe
-					|| node instanceof ScanQuad
+					|| node instanceof ScanQuad || node instanceof ProbeClose
 					|| node instanceof EnumerateAdjKeys && ((EnumerateAdjKeys) node).valueCol >= 0;
 			if (!streamable) {
 				return false;

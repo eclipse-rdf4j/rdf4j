@@ -73,6 +73,12 @@ final class LmdbNativeKernelExecution {
 	 */
 	static java.util.List<org.eclipse.rdf4j.query.BindingSet> tryEvaluateAggregate(SlotPlan arg, RowState row,
 			int[] groupSlots, AggregateSpec[] aggregates, NativeGroupIteration emitter, TupleExpr explainTarget) {
+		return tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget, false);
+	}
+
+	private static java.util.List<org.eclipse.rdf4j.query.BindingSet> tryEvaluateAggregate(SlotPlan arg, RowState row,
+			int[] groupSlots, AggregateSpec[] aggregates, NativeGroupIteration emitter, TupleExpr explainTarget,
+			boolean preferScans) {
 		if (!LmdbNativeJaninoCodegen.enabled()) {
 			return null;
 		}
@@ -81,7 +87,7 @@ final class LmdbNativeKernelExecution {
 		JaninoKernel kernel = null;
 		try {
 			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerAggregate(arg, row, groupSlots,
-					aggregates, explainTarget);
+					aggregates, explainTarget, preferScans);
 			if (lowered == null) {
 				AGG_DECLINED.incrementAndGet();
 				return null;
@@ -102,6 +108,16 @@ final class LmdbNativeKernelExecution {
 			probe = row.source.newProbe();
 			NativeLmdbQuerySource.NativeAdjacency[] views = lowered.bindings.requestAdjacencies(probe);
 			if (views == null) {
+				// A view is missing or cannot enumerate its keys — a bind-time fact the lowering could not have known.
+				// Retry once with scan sources preferred, which expresses the same patterns without any view. Once
+				// only: the retry itself requests no adjacencies, so it cannot land here again.
+				if (!preferScans && LmdbNativeKernelLowering.scanSourcesEnabled()) {
+					probe.close();
+					probe = null;
+					kernel.close();
+					kernel = null;
+					return tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget, true);
+				}
 				if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
 					System.err.println("[ir-aggregate] decline: adjacency-unavailable");
 				}
@@ -160,12 +176,18 @@ final class LmdbNativeKernelExecution {
 
 	/** Row-side rung: returns a cursor over kernel-produced rows, or null to fall through the ladder. */
 	static RowCursor tryOpenRows(SlotPlan arg, RowState row, TupleExpr originalExpr) throws IOException {
+		return tryOpenRows(arg, row, originalExpr, false);
+	}
+
+	private static RowCursor tryOpenRows(SlotPlan arg, RowState row, TupleExpr originalExpr, boolean preferScans)
+			throws IOException {
 		if (!LmdbNativeJaninoCodegen.enabled()) {
 			return null;
 		}
 		NativeLmdbQuerySource.NativeProbe probe = null;
 		try {
-			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(arg, row, originalExpr);
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(arg, row, originalExpr,
+					preferScans);
 			if (lowered == null) {
 				DECLINED.incrementAndGet();
 				return null;
@@ -186,11 +208,16 @@ final class LmdbNativeKernelExecution {
 			probe = row.source.newProbe();
 			NativeLmdbQuerySource.NativeAdjacency[] views = lowered.bindings.requestAdjacencies(probe);
 			if (views == null) {
+				// See the aggregate rung: retry once without views before giving the plan back to the ladder.
+				probe.close();
+				probe = null;
+				kernel.close();
+				if (!preferScans && LmdbNativeKernelLowering.scanSourcesEnabled()) {
+					return tryOpenRows(arg, row, originalExpr, true);
+				}
 				LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
 						"adjacency-unavailable");
 				DECLINED.incrementAndGet();
-				probe.close();
-				kernel.close();
 				return null;
 			}
 			LmdbNativeKernelHooks hooks = lowered.bindings.needsHooks()

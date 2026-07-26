@@ -58,6 +58,16 @@ final class LmdbNativeValueCodec {
 	private final AtomicLongArray cacheIds = new AtomicLongArray(CACHE_SIZE);
 	private final AtomicReferenceArray<DecodedValue> cacheValues = new AtomicReferenceArray<>(CACHE_SIZE);
 
+	/**
+	 * Datatype-IRI and namespace memos. A store uses only a handful of each — xsd:string dominates — so 64 slots is
+	 * ample; id 0 is never a valid entry and therefore doubles as "empty".
+	 */
+	private static final int META_CACHE_SIZE = 64;
+	private final AtomicLongArray datatypeIriIds = new AtomicLongArray(META_CACHE_SIZE);
+	private final AtomicReferenceArray<String> datatypeIris = new AtomicReferenceArray<>(META_CACHE_SIZE);
+	private final AtomicLongArray namespaceIds = new AtomicLongArray(META_CACHE_SIZE);
+	private final AtomicReferenceArray<String> namespaces = new AtomicReferenceArray<>(META_CACHE_SIZE);
+
 	LmdbNativeValueCodec(ValueStore valueStore) {
 		this.valueStore = valueStore;
 	}
@@ -305,20 +315,57 @@ final class LmdbNativeValueCodec {
 		return DecodedValue.literal(label, null, datatype, coreDatatype(datatype));
 	}
 
+	/**
+	 * Resolves a datatype id to its IRI string, memoized.
+	 *
+	 * Every stored literal carries a datatype id, so without this each decode cost THREE LMDB reads — the literal, its
+	 * datatype IRI, and that IRI's namespace — of which the latter two re-read the very same two records for every
+	 * literal in the store. A store holds a handful of distinct datatypes and namespaces, so a tiny direct-mapped cache
+	 * removes essentially all of that: profiling ENGINEERING q1 attributed 36.5% of CPU to {@code nmdb_get}, 100% of it
+	 * reached through this decode path. The outer {@link #decodeKnown} cache does not help here because it is keyed on
+	 * the literal's own id, which is exactly what differs between calls.
+	 */
 	private String datatypeIri(long datatypeId) throws IOException {
+		int slot = metaIndex(datatypeId);
+		if (datatypeIriIds.get(slot) == datatypeId) {
+			String cached = datatypeIris.get(slot);
+			if (cached != null) {
+				return cached;
+			}
+		}
 		StoredPayload data = readStoredPayload(datatypeId);
 		if (data == null || data.type != URI_VALUE) {
 			return null;
 		}
-		return namespace(data.referenceId) + data.text;
+		String iri = namespace(data.referenceId) + data.text;
+		// publish the value before the id, so a reader that sees the id never sees a stale or absent string
+		datatypeIriIds.set(slot, 0L);
+		datatypeIris.set(slot, iri);
+		datatypeIriIds.set(slot, datatypeId);
+		return iri;
 	}
 
 	private String namespace(long namespaceId) throws IOException {
+		int slot = metaIndex(namespaceId);
+		if (namespaceIds.get(slot) == namespaceId) {
+			String cached = namespaces.get(slot);
+			if (cached != null) {
+				return cached;
+			}
+		}
 		StoredPayload data = readStoredPayload(namespaceId);
 		if (data == null || data.type != NAMESPACE_VALUE) {
 			return "";
 		}
+		namespaceIds.set(slot, 0L);
+		namespaces.set(slot, data.text);
+		namespaceIds.set(slot, namespaceId);
 		return data.text;
+	}
+
+	/** Direct-mapped slot for a datatype or namespace id; both spaces are tiny, so collisions are rare and harmless. */
+	private static int metaIndex(long id) {
+		return (int) ((id * 0x9E3779B97F4A7C15L) >>> 58) & (META_CACHE_SIZE - 1);
 	}
 
 	private StoredPayload readStoredPayload(long id) throws IOException {

@@ -63,6 +63,30 @@ public class LmdbNativePropertyPathTest {
 	private static final String PARALLEL_ENABLED = "rdf4j.lmdb.parallel.enabled";
 	private static final String PARALLEL_THREADS = "rdf4j.lmdb.parallel.threads";
 	private static final String PARALLEL_MAX_TASKS = "rdf4j.lmdb.parallel.maxTasks";
+	private static final String JANINO_CODEGEN_ENABLED = "rdf4j.lmdb.janinoCodegen.enabled";
+
+	private static String previousJaninoCodegenEnabled;
+
+	/**
+	 * These tests characterise the interpreted {@code PathCursor} — its BFS, its per-start memo, its target set and its
+	 * frontier parallelism — by asserting the counters that machinery reports. Since the kernel tier learned to lower
+	 * {@code p+}/{@code p*} to {@code PathExpand}, it claims some of these plans, and a claimed plan moves none of
+	 * those counters (the kernel has its own visited set and no memo at all). Row parity still holds either way; what
+	 * would be lost is the coverage, so codegen is pinned off for the class rather than the assertions relaxed.
+	 */
+	@org.junit.jupiter.api.BeforeAll
+	static void disableKernelCodegen() {
+		previousJaninoCodegenEnabled = System.setProperty(JANINO_CODEGEN_ENABLED, "false");
+	}
+
+	@org.junit.jupiter.api.AfterAll
+	static void restoreKernelCodegen() {
+		if (previousJaninoCodegenEnabled == null) {
+			System.clearProperty(JANINO_CODEGEN_ENABLED);
+		} else {
+			System.setProperty(JANINO_CODEGEN_ENABLED, previousJaninoCodegenEnabled);
+		}
+	}
 
 	@TempDir
 	File dataDir;

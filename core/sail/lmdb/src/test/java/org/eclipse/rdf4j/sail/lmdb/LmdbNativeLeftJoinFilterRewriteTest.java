@@ -281,6 +281,67 @@ public class LmdbNativeLeftJoinFilterRewriteTest {
 				.isEqualTo(before);
 	}
 
+	/**
+	 * The soundness predicate itself: a language-tagged literal is NOT probe-safe.
+	 *
+	 * {@code valueProbeSafeId} exists to admit only ids whose value-equality coincides with term-identity, because
+	 * callers turn such an equality into an id probe. That coincidence fails for {@code rdf:langString}: RDF compares
+	 * language tags case-insensitively ({@code SimpleLiteral.equals} uses {@code equalsIgnoreCase}, core/model
+	 * SimpleLiteral.java:258), so {@code "x"@en} and {@code "x"@EN} are the same term and are value-equal, while the
+	 * value store writes the tag verbatim and therefore mints two different ids. One value, two ids — so an id probe
+	 * can miss rows. {@code xsd:string} has no such collapsing rule and stays admitted.
+	 */
+	@Test
+	public void languageTaggedLiteralsAreNotProbeSafe() {
+		ValueFactory vf = repository.getValueFactory();
+		// A stored-literal id, so the resource short-circuit does not decide the answer. Note getIdType puts the type
+		// code in bits 1-6, so a raw 2L would classify as T_URI and pass safeResourceId regardless of the value.
+		long literalId = org.eclipse.rdf4j.sail.lmdb.ValueIds.createId(org.eclipse.rdf4j.sail.lmdb.ValueIds.T_LITERAL,
+				1L);
+		assertThat(org.eclipse.rdf4j.sail.lmdb.ValueIds.getIdType(literalId))
+				.as("the fixture id must be a stored literal, not a resource")
+				.isEqualTo(org.eclipse.rdf4j.sail.lmdb.ValueIds.T_LITERAL);
+		assertThat(LmdbNativeAggregateCompiler.valueProbeSafeId(literalId, vf.createLiteral("x", "en")))
+				.as("a language-tagged literal may hold several ids for one value, so it is not probe-safe")
+				.isFalse();
+		assertThat(LmdbNativeAggregateCompiler.valueProbeSafeId(literalId, vf.createLiteral("x", "EN")))
+				.as("case of the language tag must not change the verdict")
+				.isFalse();
+		assertThat(LmdbNativeAggregateCompiler.valueProbeSafeId(literalId, vf.createLiteral("x")))
+				.as("plain xsd:string stays probe-safe: lexical equality IS value equality there")
+				.isTrue();
+	}
+
+	/**
+	 * Language-tagged literals must NOT fold into term-exact probes. RDF compares language tags case-insensitively —
+	 * {@code SimpleLiteral.equals} uses {@code equalsIgnoreCase} (core/model SimpleLiteral.java:258) — so
+	 * {@code "x"@en} and {@code "x"@EN} are the same RDF term and are value-equal. The value store, however, writes the
+	 * tag verbatim, so they occupy different records and receive DIFFERENT ids. Folding such an equality into an id
+	 * probe therefore silently drops the rows whose tag differs only in case: exactly the failure mode the numeric
+	 * exclusion above exists to prevent, and one {@code valueProbeSafeId} used to permit.
+	 */
+	@Test
+	public void languageTaggedEqualityDoesNotFoldIntoExactProbes() {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			ValueFactory vf = conn.getValueFactory();
+			IRI label = vf.createIRI(EX, "label");
+			conn.add(vf.createIRI(EX, "lang0"), label, vf.createLiteral("x", "en"));
+			conn.add(vf.createIRI(EX, "lang1"), label, vf.createLiteral("x", "EN"));
+		}
+		long before = LmdbNativeAggregateCompiler.FILTER_INTO_PATTERN_PUSHDOWNS.get();
+		// An IN set is the shape that folds into exact probes (see triangleSeedsFromExactNameProbes). Both stored rows
+		// are value-equal to "x"@EN, so both must survive; a fold to the single id of "x"@EN returns only one.
+		assertSameAsGeneric("PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (COUNT(?a) AS ?count) WHERE {\n"
+				+ "  ?a ex:label ?l .\n"
+				+ "  FILTER(?l IN (\"x\"@EN, \"zz\"@EN))\n"
+				+ "}");
+		assertThat(LmdbNativeAggregateCompiler.FILTER_INTO_PATTERN_PUSHDOWNS.get())
+				.as("a language-tagged equality must stay a filter: tags compare case-insensitively, so one value "
+						+ "can hold several ids")
+				.isEqualTo(before);
+	}
+
 	/** The q8 shape end-to-end: the OPTIONAL's IN filter becomes exact name probes that seed the triangle join. */
 	@Test
 	public void triangleSeedsFromExactNameProbes() {

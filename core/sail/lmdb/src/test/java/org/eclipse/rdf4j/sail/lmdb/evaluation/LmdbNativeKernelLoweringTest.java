@@ -38,8 +38,8 @@ class LmdbNativeKernelLoweringTest {
 	private static final NativeSlotLayout LAYOUT = layout();
 
 	private static NativeSlotLayout layout() {
-		NativeSlotLayout layout = new NativeSlotLayout(Map.of("a", 0, "b", 1, "c", 2), null);
-		layout.freeze(java.util.List.of("a", "b", "c"));
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("a", 0, "b", 1, "c", 2, "d", 3), null);
+		layout.freeze(java.util.List.of("a", "b", "c", "d"));
 		return layout;
 	}
 
@@ -216,6 +216,351 @@ class LmdbNativeKernelLoweringTest {
 	@Test
 	void unsupportedRootDeclines() {
 		assertNull(LmdbNativeKernelLowering.lowerRows(EmptyPlan.INSTANCE, freshRow(), null));
+	}
+
+	// ------------------------------------------------------------------
+	// Binary JoinPlan cores and pure BIND aliases (plan 23; census 2026-07-25)
+	// ------------------------------------------------------------------
+
+	/**
+	 * Counts a named slot rather than using {@code AggregateSpec.star}: {@code buildAggregate} recognises COUNT(*) only
+	 * when the spec's constant is UNKNOWN, while {@code star()} carries NULL_CONTEXT_ID, so a star spec declines with
+	 * {@code agg:input-unavailable} for reasons unrelated to the join descent under test here.
+	 */
+	private static LmdbNativeKernelLowering.Lowered lowerCounting(SlotPlan core, int countedSlot) {
+		return LmdbNativeKernelLowering.lowerAggregate(core, freshRow(), new int[0],
+				new AggregateSpec[] { AggregateSpec.slot("count", countedSlot, false, AggKind.COUNT) }, null);
+	}
+
+	/**
+	 * The corpus's dominant declining shape, {@code Join(pattern, Extension(copies, MultiJoin(pattern)))}. A binary
+	 * {@code JoinPlan} exists precisely because an operand is not flattenable, so this asserts the construction too —
+	 * if {@code SlotPlan.join} ever flattened an extension, the test would silently stop covering the JoinPlan path.
+	 */
+	@Test
+	void aggregateRungLowersABinaryJoinCoreWithAPureBindAlias() {
+		SlotPlan left = pattern(Term.slot(0), Term.slot(1));
+		SlotPlan inner = new MultiJoinPlan(new SlotPlan[] { pattern(Term.slot(1), Term.slot(2)) },
+				new MaskedFilter[0]);
+		SlotPlan right = new ExtensionPlan(inner, new CopyBinding[] { CopyBinding.slot(3, 2) });
+		SlotPlan core = SlotPlan.join(left, right);
+		assertTrue(core instanceof JoinPlan, "an ExtensionPlan operand must keep the join binary: " + core.getClass());
+
+		// Counting the alias target proves the BindAlias column is a first-class column downstream.
+		LmdbNativeKernelLowering.Lowered lowered = lowerCounting(core, 3);
+		assertNotNull(lowered, "a binary join whose extension is a pure alias must lower");
+		String key = lowered.kernel.shapeKey();
+		assertTrue(key.contains("ba(v"), "the alias must lower to a BindAlias over the source column; key=" + key);
+		// Both patterns must still be producers: the join descent must not drop an operand.
+		assertEquals(2, lowered.bindings.adjacencies.length, "both patterns lower to adjacency requests; key=" + key);
+	}
+
+	/** A constant alias, {@code BIND(<c> AS ?d)}, resolves to a constant operand rather than a column. */
+	@Test
+	void aggregateRungLowersAConstantBindAlias() {
+		SlotPlan inner = new MultiJoinPlan(new SlotPlan[] { pattern(Term.slot(0), Term.slot(1)) },
+				new MaskedFilter[0]);
+		SlotPlan core = SlotPlan.join(pattern(Term.slot(1), Term.slot(2)),
+				new ExtensionPlan(inner, new CopyBinding[] { CopyBinding.constant(3, PRED) }));
+		LmdbNativeKernelLowering.Lowered lowered = lowerCounting(core, 3);
+		assertNotNull(lowered, "a constant alias must lower");
+		assertTrue(lowered.kernel.shapeKey().contains("ba(c"), lowered.kernel.shapeKey());
+	}
+
+	/**
+	 * A computed BIND must decline: it needs {@code LmdbNativeKernelHooks.computeBind}, which throws. Lowering it to a
+	 * BindAlias would silently substitute the wrong value, so the decline is the correctness boundary.
+	 */
+	@Test
+	void aggregateRungDeclinesAComputedBind() {
+		SlotPlan inner = new MultiJoinPlan(new SlotPlan[] { pattern(Term.slot(0), Term.slot(1)) },
+				new MaskedFilter[0]);
+		LmdbNativeCompiledInlineId computed = new LmdbNativeCompiledInlineId(0L, true, row -> PRED);
+		SlotPlan core = SlotPlan.join(pattern(Term.slot(1), Term.slot(2)),
+				new ExtensionPlan(inner, new CopyBinding[] { CopyBinding.computed(3, computed) }));
+		assertNull(lowerCounting(core, 2), "a computed BIND has no kernel representation yet");
+	}
+
+	// ------------------------------------------------------------------
+	// UnionPlan operands (census 2026-07-25)
+	// ------------------------------------------------------------------
+
+	/**
+	 * {@code ?a PRED ?b . { ?b PRED ?c } UNION { ?b PRED2 ?c }} — both branches bind the same fresh variable, which is
+	 * the shape that must share one column. A UnionPlan is never flattenable, so it arrives as a binary JoinPlan
+	 * operand.
+	 */
+	/**
+	 * Union lowering is behind a flag that defaults OFF, so every test here sets it explicitly. A test that leaned on
+	 * the ambient default would start failing the day the default moves while saying nothing about the behaviour it
+	 * protects.
+	 */
+	private static LmdbNativeKernelLowering.Lowered lowerCountingWithUnions(SlotPlan core, int countedSlot) {
+		String previous = System.getProperty(LmdbNativeKernelLowering.UNION_SOURCES_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.UNION_SOURCES_PROPERTY, "true");
+		try {
+			return lowerCounting(core, countedSlot);
+		} finally {
+			if (previous == null) {
+				System.clearProperty(LmdbNativeKernelLowering.UNION_SOURCES_PROPERTY);
+			} else {
+				System.setProperty(LmdbNativeKernelLowering.UNION_SOURCES_PROPERTY, previous);
+			}
+		}
+	}
+
+	/** With the flag off a union operand still declines, so the default production path is unchanged. */
+	@Test
+	void unionOperandDeclinesWhileUnionSourcesAreOff() {
+		SlotPlan union = new UnionPlan(pattern(Term.slot(1), Term.slot(2)), pattern(Term.slot(1), Term.slot(2)));
+		SlotPlan core = SlotPlan.join(pattern(Term.slot(0), Term.slot(1)), union);
+		String previous = System.getProperty(LmdbNativeKernelLowering.UNION_SOURCES_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.UNION_SOURCES_PROPERTY, "false");
+		try {
+			assertNull(lowerCounting(core, 2), "union lowering must stay off by default");
+		} finally {
+			if (previous == null) {
+				System.clearProperty(LmdbNativeKernelLowering.UNION_SOURCES_PROPERTY);
+			} else {
+				System.setProperty(LmdbNativeKernelLowering.UNION_SOURCES_PROPERTY, previous);
+			}
+		}
+	}
+
+	/**
+	 * {@code A UNION B UNION C} arrives as {@code UnionPlan(UnionPlan(a,b), c)}. The inner Union must land on a depth
+	 * the outer harvest collects, or the outer branch reads as empty and the whole union declines.
+	 */
+	@Test
+	void nestedUnionsLowerToNestedUnionNodes() {
+		SlotPlan inner = new UnionPlan(pattern(Term.slot(1), Term.slot(2)), pattern(Term.slot(1), Term.slot(2)));
+		SlotPlan outer = new UnionPlan(inner, pattern(Term.slot(1), Term.slot(2)));
+		SlotPlan core = SlotPlan.join(pattern(Term.slot(0), Term.slot(1)), outer);
+		LmdbNativeKernelLowering.Lowered lowered = lowerCountingWithUnions(core, 2);
+		assertNotNull(lowered, "a nested union must lower, not read as an empty branch");
+		String key = lowered.kernel.shapeKey();
+		assertEquals(2, key.split("u\\{", -1).length - 1, "two Union nodes must appear; key=" + key);
+	}
+
+	/**
+	 * The other nesting order, {@code Union(a, Union(b, c))} from {@code {A} UNION {{B} UNION {C}}}. This is the order
+	 * that catches a per-union pin frame being cleared rather than restored: the outer still has to read its first
+	 * branch's pinned columns after the inner union has finished.
+	 */
+	@Test
+	void aUnionNestedInTheSecondBranchAlsoLowers() {
+		SlotPlan inner = new UnionPlan(pattern(Term.slot(1), Term.slot(2)), pattern(Term.slot(1), Term.slot(2)));
+		SlotPlan outer = new UnionPlan(pattern(Term.slot(1), Term.slot(2)), inner);
+		SlotPlan core = SlotPlan.join(pattern(Term.slot(0), Term.slot(1)), outer);
+		LmdbNativeKernelLowering.Lowered lowered = lowerCountingWithUnions(core, 2);
+		assertNotNull(lowered, "a union nested in the second branch must lower");
+		int slot2Columns = 0;
+		for (int engineSlot : lowered.bindings.columnEngineSlots) {
+			if (engineSlot == 2) {
+				slot2Columns++;
+			}
+		}
+		assertEquals(1, slot2Columns, "all three branches share one column for slot 2; columns="
+				+ java.util.Arrays.toString(lowered.bindings.columnEngineSlots));
+	}
+
+	@Test
+	void aggregateRungLowersAUnionOperandToAUnionNode() {
+		SlotPlan anchor = pattern(Term.slot(0), Term.slot(1));
+		SlotPlan union = new UnionPlan(pattern(Term.slot(1), Term.slot(2)), pattern(Term.slot(1), Term.slot(2)));
+		SlotPlan core = SlotPlan.join(anchor, union);
+		assertTrue(core instanceof JoinPlan, "a UnionPlan operand must keep the join binary: " + core.getClass());
+
+		LmdbNativeKernelLowering.Lowered lowered = lowerCountingWithUnions(core, 2);
+		assertNotNull(lowered, "a union of two lowerable branches must lower");
+		String key = lowered.kernel.shapeKey();
+		assertTrue(key.contains("u{"), "the union must lower to a Union node; key=" + key);
+	}
+
+	/**
+	 * The correctness crux of union lowering: a variable both branches bind must land in ONE column, because a
+	 * downstream node reads a single column. Allocating a second column for the second branch would leave the consumer
+	 * reading a column only one branch ever wrote.
+	 */
+	@Test
+	void bothUnionBranchesShareOneColumnForASharedVariable() {
+		SlotPlan anchor = pattern(Term.slot(0), Term.slot(1));
+		SlotPlan union = new UnionPlan(pattern(Term.slot(1), Term.slot(2)), pattern(Term.slot(1), Term.slot(2)));
+		LmdbNativeKernelLowering.Lowered lowered = lowerCountingWithUnions(SlotPlan.join(anchor, union), 2);
+		assertNotNull(lowered);
+		// Slot 2 is bound by both branches, so exactly one column may be allocated for it.
+		int slot2Columns = 0;
+		for (int engineSlot : lowered.bindings.columnEngineSlots) {
+			if (engineSlot == 2) {
+				slot2Columns++;
+			}
+		}
+		assertEquals(1, slot2Columns,
+				"a variable bound by both branches needs exactly one column, got " + slot2Columns + "; columns="
+						+ java.util.Arrays.toString(lowered.bindings.columnEngineSlots));
+	}
+
+	/**
+	 * A branch-local filter must be lowered <em>inside</em> that branch: applying it after the union would filter the
+	 * other branch's rows too. The shape key renders a union as {@code u{[branch][branch]}}, so an id filter belonging
+	 * to one branch has to appear between those brackets rather than after the closing brace.
+	 */
+	@Test
+	void aBranchLocalFilterIsLoweredInsideItsBranch() {
+		SlotPlan anchor = pattern(Term.slot(0), Term.slot(1));
+		// Left branch carries FILTER(?c != ?a); the right branch does not.
+		MaskedFilter branchFilter = new MaskedFilter(
+				new OrderedSlotCompareFilter(0, 2, Compare.CompareOp.NE, bindings -> true, true, true),
+				1L | 1L << 2);
+		SlotPlan left = new FilterPlan(pattern(Term.slot(1), Term.slot(2)), branchFilter.filter, branchFilter.mask);
+		SlotPlan union = new UnionPlan(left, pattern(Term.slot(1), Term.slot(2)));
+		LmdbNativeKernelLowering.Lowered lowered = lowerCountingWithUnions(SlotPlan.join(anchor, union), 2);
+		assertNotNull(lowered, "a branch-local filter must lower inside the branch, not decline the union");
+		String key = lowered.kernel.shapeKey();
+		int unionStart = key.indexOf("u{");
+		int unionEnd = key.indexOf("};", unionStart);
+		assertTrue(unionStart >= 0 && unionEnd > unionStart, "expected a Union node in the key; key=" + key);
+		String inside = key.substring(unionStart, unionEnd);
+		assertTrue(inside.contains("ne(v0,v2);"),
+				"the branch filter must sit inside the union braces; key=" + key);
+	}
+
+	/**
+	 * A sticky (EXISTS-bearing) branch filter must still decline. Witness nodes are appended to the pipeline globally
+	 * by {@code pipeline.addAll(witnessNodes)}, i.e. after the union, so lowering one from inside a branch would apply
+	 * it to every branch's rows.
+	 */
+	@Test
+	void aStickyBranchFilterStillDeclines() {
+		StubSource source = new StubSource();
+		SlotPlan anchor = pattern(Term.slot(0), Term.slot(1));
+		SlotPlan left = new FilterPlan(pattern(Term.slot(1), Term.slot(2)), existsWitness(source, 1), -1L);
+		SlotPlan union = new UnionPlan(left, pattern(Term.slot(1), Term.slot(2)));
+		assertNull(lowerCountingWithUnions(SlotPlan.join(anchor, union), 2),
+				"a witness cannot be scoped to one branch, so the union must decline");
+	}
+
+	/**
+	 * A branch the kernel cannot express must decline the whole union rather than silently dropping that branch.
+	 *
+	 * The branch used here is an {@code EmptyPlan}, which no rung has a lowering case for. It was originally a
+	 * {@code LeftJoinPlan}, on the stated grounds that "the aggregate rung has no OPTIONAL support" — that is no longer
+	 * true (OPTIONAL lowers to a {@code LeftGroup} on both rungs), so keeping it would have left the test asserting a
+	 * capability boundary instead of the invariant it is named for. The invariant is what matters and is unchanged: a
+	 * branch that cannot be lowered must fail the whole union, because a union that quietly loses a branch loses that
+	 * branch's solutions.
+	 */
+	@Test
+	void aggregateRungDeclinesAUnionWithAnUnlowerableBranch() {
+		SlotPlan anchor = pattern(Term.slot(0), Term.slot(1));
+		SlotPlan union = new UnionPlan(pattern(Term.slot(1), Term.slot(2)), EmptyPlan.INSTANCE);
+		assertNull(lowerCountingWithUnions(SlotPlan.join(anchor, union), 2),
+				"an unlowerable branch must decline the union, not be dropped");
+	}
+
+	// ------------------------------------------------------------------
+	// Sticky BooleanCombinationFilter decomposition (census 2026-07-25)
+	// ------------------------------------------------------------------
+
+	/** An EXISTS over {@code ?b PRED ?x}: a witness, which can never raise an error. */
+	private static NativeBooleanFilter existsWitness(StubSource source, int subjectSlot) {
+		return new StatementPatternExistsFilter(source, Term.slot(subjectSlot), Term.constant(PRED), Term.unbound(),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false);
+	}
+
+	/** A plain comparison, which CAN raise a type error and therefore must not be negated by the kernel. */
+	private static NativeBooleanFilter comparison() {
+		return new OrderedSlotCompareFilter(0, 2, Compare.CompareOp.NE, bindings -> true, true, true);
+	}
+
+	private static LmdbNativeKernelLowering.Lowered lowerCountingWithSticky(StubSource source,
+			NativeBooleanFilter sticky) {
+		// A sticky filter (mask < 0) arrives as a FilterPlan wrapper around the producer, never flattened into the bag.
+		SlotPlan core = new MultiJoinPlan(
+				new SlotPlan[] { pattern(Term.slot(0), Term.slot(1)), pattern(Term.slot(1), Term.slot(2)) },
+				new MaskedFilter[0]);
+		SlotPlan wrapped = new FilterPlan(core, sticky, -1L);
+		return LmdbNativeKernelLowering.lowerAggregate(wrapped,
+				new RowState(source, LAYOUT, EmptyBindingSet.getInstance()), new int[0],
+				new AggregateSpec[] { AggregateSpec.slot("count", 2, false, AggKind.COUNT) }, null);
+	}
+
+	/**
+	 * {@code FILTER(EXISTS{...} && ?a != ?c)} splits into two sequential kernel filters, because sequential filters AND
+	 * together. The non-witness conjunct needs no negation, so it can go through the ordinary id tier untouched.
+	 */
+	@Test
+	void aggregateRungSplitsAConjunctionOfAWitnessAndAComparison() {
+		StubSource source = new StubSource();
+		NativeBooleanFilter conjunction = new BooleanCombinationFilter(existsWitness(source, 1), comparison(), true);
+		LmdbNativeKernelLowering.Lowered lowered = lowerCountingWithSticky(source, conjunction);
+		assertNotNull(lowered, "a conjunction of a witness and a comparison must split into two filters");
+		String key = lowered.kernel.shapeKey();
+		assertTrue(key.contains("ex{"), "the EXISTS conjunct must lower to a witness; key=" + key);
+		assertTrue(key.contains("ne(v0,v2);"), "the comparison conjunct must lower to an id filter; key=" + key);
+	}
+
+	/**
+	 * {@code FILTER(!(EXISTS{..} || EXISTS{..}))} splits by De Morgan into two negated witnesses. Negation is exact
+	 * here only because an EXISTS cannot raise an error.
+	 */
+	@Test
+	void aggregateRungSplitsANegatedDisjunctionOfTwoWitnesses() {
+		StubSource source = new StubSource();
+		NativeBooleanFilter disjunction = new BooleanCombinationFilter(existsWitness(source, 1),
+				existsWitness(source, 2), false);
+		LmdbNativeKernelLowering.Lowered lowered = lowerCountingWithSticky(source,
+				new NegatedNativeBooleanFilter(disjunction));
+		assertNotNull(lowered, "NOT(A OR B) is NOT A AND NOT B, which splits into two negated witnesses");
+		String key = lowered.kernel.shapeKey();
+		assertEquals(2, key.split("nx\\{", -1).length - 1, "both witnesses must be negated; key=" + key);
+	}
+
+	/** A bare disjunction needs a real OR of witnesses, which the IR cannot express — it must decline. */
+	@Test
+	void aggregateRungDeclinesADisjunctionOfWitnesses() {
+		StubSource source = new StubSource();
+		assertNull(lowerCountingWithSticky(source,
+				new BooleanCombinationFilter(existsWitness(source, 1), existsWitness(source, 2), false)),
+				"A OR B cannot become two sequential filters, which would AND them");
+	}
+
+	/** {@code NOT(A AND B)} is {@code NOT A OR NOT B} — also a disjunction, so it must decline too. */
+	@Test
+	void aggregateRungDeclinesANegatedConjunction() {
+		StubSource source = new StubSource();
+		NativeBooleanFilter conjunction = new BooleanCombinationFilter(existsWitness(source, 1),
+				existsWitness(source, 2), true);
+		assertNull(lowerCountingWithSticky(source, new NegatedNativeBooleanFilter(conjunction)),
+				"NOT(A AND B) is a disjunction of negations, not a conjunction");
+	}
+
+	/**
+	 * The subtle one. {@code NOT(?a != ?c OR EXISTS{..})} would need the comparison negated, but
+	 * {@code NegatedNativeBooleanFilter} is a plain {@code !accept} while a native filter already collapses a type
+	 * error to false — so negating an erroring comparison yields <em>true</em> and keeps a row SPARQL drops. Only
+	 * witnesses, which cannot error, may be negated, so this must decline.
+	 */
+	@Test
+	void aggregateRungDeclinesNegatingAComparisonThatCanError() {
+		StubSource source = new StubSource();
+		NativeBooleanFilter disjunction = new BooleanCombinationFilter(comparison(), existsWitness(source, 1), false);
+		assertNull(lowerCountingWithSticky(source, new NegatedNativeBooleanFilter(disjunction)),
+				"negating a filter that can raise an error is not SPARQL negation");
+	}
+
+	/**
+	 * {@code ExtensionCursor} turns a copy onto an already-bound slot into an equality test via {@code RowState.bind}.
+	 * A fresh kernel column cannot express that, so such an extension must decline rather than overwrite the binding.
+	 */
+	@Test
+	void aggregateRungDeclinesABindOntoAnAlreadyProducedSlot() {
+		SlotPlan inner = new MultiJoinPlan(new SlotPlan[] { pattern(Term.slot(0), Term.slot(1)) },
+				new MaskedFilter[0]);
+		// Target slot 1 is already produced by the left pattern below, so the copy is an equality test, not a bind.
+		SlotPlan core = SlotPlan.join(pattern(Term.slot(1), Term.slot(2)),
+				new ExtensionPlan(inner, new CopyBinding[] { CopyBinding.slot(1, 2) }));
+		assertNull(lowerCounting(core, 2), "a copy onto an already-bound slot is an equality test, not an alias");
 	}
 
 	/** Minimal synthetic source: ids never resolve, no statements — the lowering must not need any of it. */
