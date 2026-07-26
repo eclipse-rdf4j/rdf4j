@@ -306,6 +306,18 @@ final class PatternPlan implements SlotPlan {
 		return structural;
 	}
 
+	@Override
+	public LmdbNativeWork estimateWork(RowState row, long boundMask) {
+		// One index positioning plus one touch per matching quad. Like estimate(RowState) this must never perform
+		// LMDB I/O: it reads only statistics captured at compile time or already cached.
+		double rows = estimateForBoundMask(boundMask, row == null ? null : row.source);
+		if (!Double.isFinite(rows) || rows < 0D) {
+			// The seek is paid whatever the scan turns out to be, so the floor is still measured.
+			return LmdbNativeWork.atLeast(LmdbNativeWork.SEEK);
+		}
+		return LmdbNativeWork.exact(LmdbNativeWork.SEEK + rows);
+	}
+
 	/**
 	 * Planning-only estimate for a hypothetical join prefix. Unlike {@link #estimate(RowState)}, this does not need a
 	 * materialized row and therefore lets the ordered planner compare child sequences without mutating shared state or

@@ -161,6 +161,13 @@ class LmdbSailStore implements SailStore {
 
 	private final SketchBasedJoinEstimator sketchBasedJoinEstimator;
 	private LmdbFilterSelectivityStats filterSelectivityStats;
+	/**
+	 * Sketch-free learned filter selectivity. Deliberately constructed here and unconditionally, rather than inside the
+	 * {@code sketchBasedJoinEstimator != null} branch that gates {@link #filterSelectivityStats}: the engine already
+	 * measures filter pass/reject counts on every query through {@code RecordingNativeBooleanFilter}, and without a
+	 * store to receive them that measurement was discarded. Store-scoped so it accumulates across queries.
+	 */
+	private final LmdbLearnedFilterSelectivity learnedFilterSelectivity = new LmdbLearnedFilterSelectivity();
 	private final LmdbStatementPatternCardinalitySource statementPatternCardinalitySource;
 	private final ScheduledExecutorService estimatorPersistExec = Executors.newSingleThreadScheduledExecutor(r -> {
 		Thread t = new Thread(r, "LmdbJoinEstimator-Persist");
@@ -1319,7 +1326,12 @@ class LmdbSailStore implements SailStore {
 	@Override
 	public EvaluationStatistics getEvaluationStatistics() {
 		return new LmdbEvaluationStatistics(valueStore, tripleStore, sketchBasedJoinEstimator, filterSelectivityStats,
-				statementPatternCardinalitySource);
+				statementPatternCardinalitySource, learnedFilterSelectivity);
+	}
+
+	/** Store-scoped learned filter selectivity. Test hook. */
+	LmdbLearnedFilterSelectivity learnedFilterSelectivity() {
+		return learnedFilterSelectivity;
 	}
 
 	@Override

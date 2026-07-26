@@ -824,7 +824,6 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		if (multiJoin != null) {
 			RowCursor kernel = LmdbNativeJaninoPipeline.tryOpen(multiJoin, row);
 			if (kernel != null) {
-				System.out.println("JaninoPipeline");
 				LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_JANINO_KERNEL);
 				return NativeUnorderedInput.rows(row, kernel);
 			}
@@ -874,6 +873,22 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		return NativeUnorderedInput.rows(row, arg.open(row));
 	}
 
+	/**
+	 * Rows a consumer of this producer can possibly take, or a negative value when unbounded.
+	 * <p>
+	 * Only meaningful without ORDER BY. Under a sort the slice is applied <em>after</em> ordering ({@code evaluateAll}
+	 * caps at {@code offset + limit} once the rows are sorted), so the producer must still emit everything and
+	 * crediting it with the slice would pick a strategy that cannot deliver the right answer. That is why this consults
+	 * {@code orderSlots} rather than {@code limit} alone.
+	 */
+	private double consumableRows() {
+		if (orderSlots.length != 0 || limit < 0L) {
+			return -1D;
+		}
+		long consumable = offset + limit;
+		return consumable < 0L ? -1D : (double) consumable;
+	}
+
 	private NativeUnorderedInput openBatchOrParallel(RowState row, MultiJoinPlan multiJoin,
 			boolean correlatedEntry, boolean countingBranch) throws IOException {
 		int capacity = NativeBatch.configuredRows();
@@ -901,44 +916,23 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 					"cursor-unavailable");
 		}
 
-		LmdbNativeStrategyProposal<RowCursor> parallelProposal = null;
-		try {
-			parallelProposal = LmdbNativeParallelPipelines.propose(this, row);
-			if (batchProposal != null && parallelProposal != null) {
-				LmdbNativeExplain.recordStrategyProposalCosts(originalExpr, batchProposal.estCost,
-						parallelProposal.estCost);
-				String selected = LmdbNativeStrategyProposal.chooseTag(batchProposal.estCost,
-						parallelProposal.estCost);
-				if (LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES.equals(selected)) {
-					NativeUnorderedInput parallel = acceptParallel(row, parallelProposal.open());
-					if (parallel != null) {
-						LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_BATCH,
-								"higher-cost");
-						return parallel;
-					}
-					return acceptBatch(row, batchProposal.open(), capacity);
-				}
-				NativeUnorderedInput batch = acceptBatch(row, batchProposal.open(), capacity);
-				if (batch != null) {
-					LmdbNativeAttemptMetrics.recordDecline(originalExpr,
-							LmdbNativeAttemptMetrics.STRATEGY_PARALLEL_PIPELINES, "higher-cost");
-				}
-				return batch;
+		// Both rungs are wrapped so the arbiter sees one uniform candidate type: the inner proposal owns the
+		// strategy's reserved admission and is released through the wrapper's releaseIfUnused when it loses.
+		final LmdbNativeStrategyProposal<BatchCursor> batch = batchProposal;
+		try (LmdbNativeStrategyArbiter<NativeUnorderedInput> arbiter = LmdbNativeStrategyArbiter
+				.forSlice(originalExpr, consumableRows())) {
+			if (batch != null) {
+				arbiter.offer(() -> new LmdbNativeStrategyProposal<>(
+						() -> acceptBatch(row, batch.open(), capacity), batch.work, batch.startupWork, batch.estRows,
+						batch.tag, batch::close));
 			}
-			if (batchProposal != null) {
-				return acceptBatch(row, batchProposal.open(), capacity);
-			}
-			if (parallelProposal != null) {
-				return acceptParallel(row, parallelProposal.open());
-			}
-			return null;
-		} finally {
-			if (batchProposal != null) {
-				batchProposal.close();
-			}
-			if (parallelProposal != null) {
-				parallelProposal.close();
-			}
+			arbiter.offer(() -> {
+				LmdbNativeStrategyProposal<RowCursor> parallel = LmdbNativeParallelPipelines.propose(this, row);
+				return parallel == null ? null
+						: new LmdbNativeStrategyProposal<>(() -> acceptParallel(row, parallel.open()),
+								parallel.work, parallel.startupWork, parallel.estRows, parallel.tag, parallel::close);
+			});
+			return arbiter.select();
 		}
 	}
 

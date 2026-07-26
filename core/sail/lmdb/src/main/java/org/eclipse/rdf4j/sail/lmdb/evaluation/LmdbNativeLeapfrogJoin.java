@@ -74,6 +74,34 @@ final class LmdbNativeLeapfrogJoin {
 	}
 
 	/**
+	 * True when {@link #tryOpen} would produce a leapfrog cursor for this plan and entry mask.
+	 * <p>
+	 * Pure recognition: it consults only the plan shape and the entry bindings, opens no cursor, acquires no probe and
+	 * touches no counter, so it is safe to ask while merely ranking strategies against one another. That matters
+	 * because the alternative — discovering that WCOJ applies by opening it — would make every rung pay for every other
+	 * rung's recognition on every query.
+	 */
+	static boolean canOpen(SlotPlan root, long boundMask) {
+		if (!enabled()) {
+			return false;
+		}
+		WcojInput input = WcojInput.tryCreate(root, boundMask);
+		if (input == null) {
+			return false;
+		}
+		boolean[] core = findCyclicCore(input.join.children, boundMask);
+		if (core == null) {
+			return false;
+		}
+		for (int i = 0; i < core.length; i++) {
+			if (input.existential[i] && !core[i]) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
 	 * Attempts to open the whole multi-join as [bounded input children] → leapfrog(core) → [remaining children], with
 	 * the bag's filters attached at the earliest depth whose slots are covered. Returns null when no eligible cyclic
 	 * core exists — the caller then falls through to the ordinary strategy ladder.
@@ -566,7 +594,56 @@ final class LmdbNativeLeapfrogJoin {
 				}
 				estimate *= Math.max(1D, child);
 			}
-			return estimate;
+			// The independence product is a gross over-estimate for a cyclic join -- it is the very quantity a
+			// worst-case-optimal join is built to beat. Capping it by the AGM bound turns it into something a cost
+			// comparison can use without concluding that leapfrog is the most expensive strategy available.
+			double agm = agmBound(row, row == null ? 0L : row.boundMask());
+			return Double.isNaN(agm) ? estimate : Math.min(estimate, agm);
+		}
+
+		/**
+		 * Work interval for the leapfrog search.
+		 * <p>
+		 * The floor is the frontier scan every level performs regardless of how the search prunes — work already
+		 * committed to. The ceiling comes from the AGM bound, because leapfrog's running time is proportional to it.
+		 * Deliberately an interval and not a point: AGM is an <em>upper</em> bound while every competing strategy is
+		 * priced with an independence point estimate, so collapsing it to a single number would systematically
+		 * disfavour the one strategy that carries a real guarantee.
+		 */
+		@Override
+		public LmdbNativeWork estimateWork(RowState row, long boundMask) {
+			double floor = 0D;
+			for (PatternPlan pattern : patterns) {
+				double size = pattern.estimateForBoundMask(boundMask, row == null ? null : row.source);
+				if (!Double.isFinite(size) || size < 0D) {
+					return LmdbNativeWork.UNKNOWN;
+				}
+				floor += LmdbNativeWork.SEEK + size;
+			}
+			double agm = agmBound(row, boundMask);
+			if (Double.isNaN(agm)) {
+				return LmdbNativeWork.atLeast(floor);
+			}
+			return LmdbNativeWork.between(floor, floor + agm);
+		}
+
+		/** AGM bound over the still-free core variables, or NaN when it cannot be computed. */
+		private double agmBound(RowState row, long boundMask) {
+			long freeMask = producedMask & ~boundMask;
+			if (freeMask == 0L) {
+				return 1D;
+			}
+			LmdbNativeAgmBound.Edge[] edges = new LmdbNativeAgmBound.Edge[patterns.length];
+			for (int i = 0; i < patterns.length; i++) {
+				double size = patterns[i].estimateForBoundMask(boundMask, row == null ? null : row.source);
+				if (!Double.isFinite(size) || size < 0D) {
+					return Double.NaN;
+				}
+				// Existential patterns are included: the visible result is a projection of the full join, and a
+				// projection cannot grow, so covering with them keeps the bound sound and can only tighten it.
+				edges[i] = new LmdbNativeAgmBound.Edge(patterns[i].producedMask() & ~boundMask, size);
+			}
+			return LmdbNativeAgmBound.bound(edges, freeMask);
 		}
 	}
 

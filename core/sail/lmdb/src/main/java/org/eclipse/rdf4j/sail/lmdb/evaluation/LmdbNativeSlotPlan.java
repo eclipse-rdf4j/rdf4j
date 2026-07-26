@@ -33,6 +33,37 @@ interface SlotPlan {
 		return Double.POSITIVE_INFINITY;
 	}
 
+	/**
+	 * Work this plan consumes for one open, given the slots already bound on entry, expressed as an interval in
+	 * {@link LmdbNativeWork} units.
+	 * <p>
+	 * This is a different quantity from {@link #estimate}, which reports the rows a plan <em>emits</em>. Strategies are
+	 * chosen by the work they consume, and the two diverge exactly where it matters: a worst-case-optimal join emits
+	 * far fewer rows than the product of its inputs, and a compiled kernel emits the same rows as the interpreter while
+	 * consuming less work per row.
+	 * <p>
+	 * The default is {@link LmdbNativeWork#UNKNOWN} rather than an expensive value, so that a plan kind nobody has
+	 * costed yet keeps whatever dispatch position it already had instead of losing every comparison it enters.
+	 */
+	default LmdbNativeWork estimateWork(RowState row, long boundMask) {
+		return LmdbNativeWork.UNKNOWN;
+	}
+
+	/**
+	 * Rows this plan emits per open given the slots already bound on entry, or {@link Double#NaN} when it cannot say.
+	 * <p>
+	 * Deliberately a second channel rather than a change to {@link #estimate}: that method has twenty-odd call sites
+	 * feeding admission decisions that predate the cost model, and its "infinity means no idea" sentinel is baked into
+	 * them. This one uses NaN for unknown, so a caller cannot mistake "no idea" for "astronomically many rows", and
+	 * {@link LmdbNativeWork#rowsOut} consults it before falling back to {@code estimate}.
+	 * <p>
+	 * Implementing it matters because a chain is only priceable end to end if every link reports its row count: before
+	 * this, a single OPTIONAL, UNION, MINUS or FILTER anywhere in a join made everything downstream of it unpriceable.
+	 */
+	default double estimateRows(RowState row, long boundMask) {
+		return Double.NaN;
+	}
+
 	static SlotPlan empty() {
 		return EmptyPlan.INSTANCE;
 	}
@@ -262,6 +293,11 @@ final class EmptyPlan implements SlotPlan {
 	public long producedMask() {
 		return 0L;
 	}
+
+	@Override
+	public LmdbNativeWork estimateWork(RowState row, long boundMask) {
+		return LmdbNativeWork.ZERO;
+	}
 }
 
 @Experimental
@@ -276,6 +312,12 @@ final class SingletonPlan implements SlotPlan {
 	@Override
 	public long producedMask() {
 		return 0L;
+	}
+
+	@Override
+	public LmdbNativeWork estimateWork(RowState row, long boundMask) {
+		// Emits the entry row unchanged: no seek, no scan.
+		return LmdbNativeWork.ZERO;
 	}
 }
 

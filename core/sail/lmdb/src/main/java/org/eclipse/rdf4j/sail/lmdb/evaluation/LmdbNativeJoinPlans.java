@@ -519,6 +519,13 @@ final class MultiJoinPlan implements SlotPlan {
 	}
 
 	@Override
+	public LmdbNativeWork estimateWork(RowState row, long boundMask) {
+		// Cost the order this plan will actually execute, not the compiler order.
+		MultiJoinPlan.OrderedPlan derived = derivedPlan(boundMask);
+		return LmdbNativeWork.chain(derived.order, derived.order.length, row, boundMask).work();
+	}
+
+	@Override
 	public double estimate(RowState row) {
 		double estimate = 1D;
 		long boundMask = row.boundMask();
@@ -636,6 +643,26 @@ final class JoinPlan implements SlotPlan {
 		this.left = left;
 		this.right = right;
 		this.producedMask = left.producedMask() | right.producedMask();
+	}
+
+	@Override
+	public LmdbNativeWork estimateWork(RowState row, long boundMask) {
+		return LmdbNativeWork.probeChain(left, right, row, boundMask);
+	}
+
+	@Override
+	public double estimateRows(RowState row, long boundMask) {
+		double leftRows = LmdbNativeWork.rowsOut(left, row, boundMask);
+		if (Double.isNaN(leftRows)) {
+			return Double.NaN;
+		}
+		// The right side is evaluated with the left's slots bound, so its estimate is already per probe.
+		double rightPerProbe = LmdbNativeWork.rowsOut(right, row, boundMask | left.producedMask());
+		if (Double.isNaN(rightPerProbe)) {
+			return Double.NaN;
+		}
+		double rows = leftRows * rightPerProbe;
+		return Double.isFinite(rows) ? rows : Double.NaN;
 	}
 
 	@Override

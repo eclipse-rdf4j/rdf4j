@@ -176,7 +176,90 @@ final class LmdbNativeKernelExecution {
 
 	/** Row-side rung: returns a cursor over kernel-produced rows, or null to fall through the ladder. */
 	static RowCursor tryOpenRows(SlotPlan arg, RowState row, TupleExpr originalExpr) throws IOException {
+		if (!hasFusionOpportunity(arg)) {
+			LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
+					"no-fusion-opportunity");
+			return null;
+		}
 		return tryOpenRows(arg, row, originalExpr, false);
+	}
+
+	/**
+	 * True when the plan scans more than one pattern, so that whole-stage code generation has something to fuse.
+	 * <p>
+	 * The kernel's advantage is eliminating the per-operator interpretation overhead <em>between</em> scans: it turns a
+	 * chain of cursor calls into one compiled loop. Over a single scan there is no such overhead to eliminate, and the
+	 * kernel's only effect is to replace the bulk columnar batch cursor with a compiled row-at-a-time loop -- strictly
+	 * worse. That is how ELECTRICAL_GRID q7 regressed from 5.885ms to 12.617ms: the kernel learned to compile a bare
+	 * {@code PatternPlan}, and the MINUS-side scan of 112.1K rows moved from {@code bareBulk | batch} to
+	 * {@code bareBulk | irKernel} purely because the kernel's rung sits higher in the ladder.
+	 * <p>
+	 * Measured rather than assumed. Two figures bracket this rule, and the sign of the kernel's advantage flips between
+	 * them exactly at "is there more than one operator to fuse":
+	 * <ul>
+	 * <li>one scan, nothing to fuse: the kernel ran 2.14x <em>slower</em> than batch (ELECTRICAL_GRID q7, 12.617ms
+	 * against 5.885ms);
+	 * <li>a multi-pattern cycle, plenty to fuse: a hand-written perfectly fused kernel is 1.48x <em>faster</em> than
+	 * the full engine over the same rows (JaninoCeilingBenchmark, {@code fusedCycle4} 13.934ms against
+	 * {@code engineCycle4} 20.648ms, confidence intervals disjoint).
+	 * </ul>
+	 * Reproduce the second with:
+	 *
+	 * <pre>
+	 * java -jar core/sail/lmdb/target/jmh-benchmarks.jar -wi 3 -i 3 -f 1 -w 2 -r 2 JaninoCeilingBenchmark
+	 * </pre>
+	 *
+	 * Note that 1.48x is a <em>ceiling</em> on operator fusion alone, while whole-query kernel wins reach 5.71x. The
+	 * gap means that on some shapes the kernel is not merely cheaper per row but is doing less work, through access
+	 * paths the interpreted chain does not take. That is why no uniform per-row constant is applied here: one would
+	 * have to be large enough to explain the 5.71x cases, and would then make the kernel win the single-scan case it
+	 * demonstrably loses.
+	 * <p>
+	 * Counting is capped at two because only "is there more than one" matters, and it stops at plan kinds the kernel
+	 * cannot lower anyway, so it stays a cheap structural test with no store access.
+	 */
+	private static boolean hasFusionOpportunity(SlotPlan plan) {
+		return scanCount(plan, 0) > 1;
+	}
+
+	private static int scanCount(SlotPlan plan, int found) {
+		if (found > 1) {
+			return found;
+		}
+		if (plan instanceof PatternPlan || plan instanceof MultiValuePatternPlan || plan instanceof PathPlan) {
+			return found + 1;
+		}
+		if (plan instanceof FilterPlan) {
+			return scanCount(((FilterPlan) plan).arg, found);
+		}
+		if (plan instanceof ExtensionPlan) {
+			return scanCount(((ExtensionPlan) plan).arg, found);
+		}
+		if (plan instanceof MultiJoinPlan) {
+			int total = found;
+			for (SlotPlan child : ((MultiJoinPlan) plan).children) {
+				total = scanCount(child, total);
+				if (total > 1) {
+					return total;
+				}
+			}
+			return total;
+		}
+		if (plan instanceof JoinPlan) {
+			return scanCount(((JoinPlan) plan).right, scanCount(((JoinPlan) plan).left, found));
+		}
+		if (plan instanceof LeftJoinPlan) {
+			return scanCount(((LeftJoinPlan) plan).right, scanCount(((LeftJoinPlan) plan).left, found));
+		}
+		if (plan instanceof UnionPlan) {
+			return scanCount(((UnionPlan) plan).right, scanCount(((UnionPlan) plan).left, found));
+		}
+		if (plan instanceof MinusPlan) {
+			return scanCount(((MinusPlan) plan).right, scanCount(((MinusPlan) plan).left, found));
+		}
+		// Unknown plan kind: assume it is worth fusing rather than silently disabling the kernel for a shape nobody
+		// listed here. A wrong "yes" costs at most today's behaviour; a wrong "no" deletes a strategy.
+		return found + 2;
 	}
 
 	private static RowCursor tryOpenRows(SlotPlan arg, RowState row, TupleExpr originalExpr, boolean preferScans)

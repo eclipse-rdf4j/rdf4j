@@ -103,8 +103,15 @@ final class LmdbNativeExplain {
 
 	static void recordStrategyProposalCosts(TupleExpr expr, String firstTag, double firstCost, String secondTag,
 			double secondCost) {
-		setRuntimeMetric(expr, STRATEGY_PROPOSAL_COSTS,
-				firstTag + "=" + firstCost + "," + secondTag + "=" + secondCost);
+		recordStrategyProposalCosts(expr, firstTag + "=" + firstCost + "," + secondTag + "=" + secondCost);
+	}
+
+	/**
+	 * Records the jointly admissible strategy costs that drove runtime arbitration, for any number of candidates.
+	 * Rendered as {@code tag=cost} pairs separated by commas, the same shape the two-way form has always emitted.
+	 */
+	static void recordStrategyProposalCosts(TupleExpr expr, String rendered) {
+		setRuntimeMetric(expr, STRATEGY_PROPOSAL_COSTS, rendered);
 	}
 
 	/**

@@ -56,7 +56,16 @@ public class LmdbNativeKernelAdversarialDeclineTest {
 
 	private static final Pattern KERNEL_DECLINE = Pattern.compile("(irKernel|irAggregate):([^ ,)|]+)");
 
-	private static final Set<String> WARMUP_REASONS = Set.of("below-threshold-or-pending");
+	/**
+	 * Decline reasons that are not capability gaps, and so do not fail this test.
+	 * <p>
+	 * {@code below-threshold-or-pending} means the shape is compilable but its kernel has not been built yet.
+	 * {@code no-fusion-opportunity} means the shape is compilable but has a single scan, so there is nothing for
+	 * whole-stage code generation to fuse and the bulk batch cursor serves it better; the kernel is being subordinated
+	 * on purpose, not found wanting. Neither is a hole in what the kernel can express, which is what this test guards.
+	 */
+	private static final Set<String> NON_CAPABILITY_REASONS = Set.of("below-threshold-or-pending",
+			"no-fusion-opportunity");
 
 	private static final int WARMUP_RUNS = 6;
 
@@ -377,7 +386,7 @@ public class LmdbNativeKernelAdversarialDeclineTest {
 					reasons.isEmpty() ? "engaged" : String.join(", ", reasons)));
 			for (String reason : reasons) {
 				String bare = reason.substring(reason.indexOf(':') + 1);
-				if (WARMUP_REASONS.contains(bare)) {
+				if (NON_CAPABILITY_REASONS.contains(bare)) {
 					continue;
 				}
 				byReason.computeIfAbsent(reason, key -> new LinkedHashSet<>()).add(name);
@@ -408,7 +417,7 @@ public class LmdbNativeKernelAdversarialDeclineTest {
 				}
 			}
 			boolean onlyWarmup = !reasons.isEmpty() && reasons.stream()
-					.allMatch(reason -> WARMUP_REASONS.contains(reason.substring(reason.indexOf(':') + 1)));
+					.allMatch(reason -> NON_CAPABILITY_REASONS.contains(reason.substring(reason.indexOf(':') + 1)));
 			if (!onlyWarmup) {
 				return reasons;
 			}

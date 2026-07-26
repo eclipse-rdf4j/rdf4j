@@ -923,6 +923,20 @@ final class OrderedUnionPlan implements SlotPlan {
 	}
 
 	@Override
+	public LmdbNativeWork estimateWork(RowState row, long boundMask) {
+		// Both arms are drained; the merge itself is one comparison per emitted row, already counted by the arms.
+		return left.estimateWork(row, boundMask).plus(right.estimateWork(row, boundMask));
+	}
+
+	@Override
+	public double estimateRows(RowState row, long boundMask) {
+		double leftRows = LmdbNativeWork.rowsOut(left, row, boundMask);
+		double rightRows = LmdbNativeWork.rowsOut(right, row, boundMask);
+		// Merging preserves order; it does not drop rows.
+		return Double.isNaN(leftRows) || Double.isNaN(rightRows) ? Double.NaN : leftRows + rightRows;
+	}
+
+	@Override
 	public long producedMask() {
 		return producedMask;
 	}

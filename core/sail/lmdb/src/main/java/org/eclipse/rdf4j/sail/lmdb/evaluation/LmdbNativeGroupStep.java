@@ -283,6 +283,11 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 				return intersection;
 			}
 		}
+		// The Janino aggregate rung is deliberately NOT subordinated to the specialization order here. It ranks above
+		// the IR kernels but, unlike them, no measured regression implicates it, and its own admission is far
+		// narrower. Guarding it speculatively made LmdbNativeJaninoAggregateTest's grouped COUNT DISTINCT unreachable
+		// -- a real capability lost for no evidence. If it ever does steal a row from a more specialized strategy,
+		// that needs its own reproduction first.
 		if (arg instanceof MultiJoinPlan) {
 			List<BindingSet> fused = LmdbNativeJaninoAggregate.tryEvaluate((MultiJoinPlan) arg, row, groupSlots,
 					aggregates, this);
@@ -292,11 +297,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 				return fused;
 			}
 		}
-		// A prefix-run distinct/group plan (index seek-skip, ~one position per distinct value) is the designed
-		// fast path for these single-pattern shapes. The IR/Janino aggregate kernel would instead enumerate the
-		// whole predicate CSR and hash-dedup every row, so it must not intercept a row the prefix-run path will
-		// handle (otherwise e.g. ANALYTICS q0 regresses ~0.16ms -> ~10ms once the kernel is admitted).
-		if (!prefixRunHandlesRow(row)) {
+		if (!moreSpecializedStrategyHandlesRow(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, row)) {
 			List<BindingSet> irFused = LmdbNativeKernelExecution.tryEvaluateAggregate(arg, row, groupSlots,
 					aggregates, this, explainTarget);
 			if (irFused != null) {
@@ -448,51 +449,32 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 	private List<BindingSet> evaluateParallelOrFactorized(RowState row, MultiJoinPlan parallelPlan,
 			MultiJoinPlan factorizedPlan, MultiJoinPlan.OrderedPlan factorizedDerived, FactorizedTail tail,
 			LmdbNativeAttemptMetrics metrics) {
-		LmdbNativeStrategyProposal<List<BindingSet>> parallelProposal = null;
-		LmdbNativeStrategyProposal<List<BindingSet>> factorizedProposal = null;
-		try {
+		try (LmdbNativeStrategyArbiter<List<BindingSet>> arbiter = LmdbNativeStrategyArbiter.forExpr(explainTarget)) {
 			if (tail != null) {
-				double factorizedCost = LmdbNativeStrategyProposal.factorizedCost(factorizedDerived, row);
-				factorizedProposal = new LmdbNativeStrategyProposal<>(
+				double factorizedCost = LmdbNativeStrategyProposal.factorizedCost(factorizedDerived,
+						factorizedDerived.order.length - tail.branchCount(), row);
+				arbiter.offer(() -> new LmdbNativeStrategyProposal<>(
 						() -> evaluateFactorized(row, factorizedPlan, factorizedDerived, tail), factorizedCost,
-						LmdbNativeAttemptMetrics.PATH_FACTORIZED_TAIL, tail::close);
+						LmdbNativeAttemptMetrics.PATH_FACTORIZED_TAIL, tail::close));
 			}
 			if (parallelPlan != null) {
-				parallelProposal = LmdbNativeParallelAggregation.propose(this, parallelPlan, row, metrics);
+				arbiter.offer(() -> LmdbNativeParallelAggregation.propose(this, parallelPlan, row, metrics));
 			}
-			if (parallelProposal != null && factorizedProposal != null) {
-				LmdbNativeExplain.recordStrategyProposalCosts(explainTarget, factorizedProposal.tag,
-						factorizedProposal.estCost, parallelProposal.tag, parallelProposal.estCost);
-				if (parallelProposal.estCost < factorizedProposal.estCost) {
-					List<BindingSet> parallel = parallelProposal.open();
-					if (parallel != null) {
-						LmdbNativeAttemptMetrics.recordDecline(explainTarget, factorizedProposal.tag, "higher-cost");
-						recordParallelStrategy(metrics);
-						return parallel;
-					}
-					return factorizedProposal.open();
-				}
-				List<BindingSet> factorized = factorizedProposal.open();
-				LmdbNativeAttemptMetrics.recordDecline(explainTarget, parallelProposal.tag, "higher-cost");
-				return factorized;
-			}
-			if (parallelProposal != null) {
-				List<BindingSet> parallel = parallelProposal.open();
-				if (parallel != null) {
+			// The aggregate side is the natural place to learn from: select() runs the whole aggregation and
+			// returns, so the elapsed time belongs entirely to the winning strategy. A streaming row cursor would
+			// need its close hooked instead, since its work happens long after dispatch returns.
+			long startedNanos = System.nanoTime();
+			List<BindingSet> selected = arbiter.select();
+			if (selected != null) {
+				LmdbNativeCostCalibration.record(arbiter.winningTag(), arbiter.winningPredictedWork(),
+						System.nanoTime() - startedNanos);
+				if (LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION.equals(arbiter.winningTag())) {
 					recordParallelStrategy(metrics);
 				}
-				return parallel;
 			}
-			return factorizedProposal != null ? factorizedProposal.open() : null;
+			return selected;
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
-		} finally {
-			if (parallelProposal != null) {
-				parallelProposal.close();
-			}
-			if (factorizedProposal != null) {
-				factorizedProposal.close();
-			}
 		}
 	}
 
@@ -712,6 +694,36 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 	 */
 	boolean prefixRunHandlesRow(RowState row) {
 		return prefixRunPlan != null && prefixPattern != null && !prefixPattern.hasRuntimeBoundSlot(row);
+	}
+
+	/** True when a worst-case-optimal join could serve this row. Recognition only: it opens nothing. */
+	boolean wcojHandlesRow(RowState row) {
+		return AggregateSpec.allCounts(aggregates) && LmdbNativeLeapfrogJoin.canOpen(arg, row.boundMask());
+	}
+
+	/**
+	 * True when some strategy ranked above {@code candidate} in {@link LmdbNativeStrategyPreference} can serve this
+	 * row, and so {@code candidate} must not intercept it.
+	 * <p>
+	 * The distinction being enforced is between strategies that reduce the <em>number of rows</em> enumerated and those
+	 * that reduce the <em>cost per row</em>. A prefix run walks roughly one index position per distinct value; a
+	 * worst-case-optimal join stays bounded well below the product of its inputs. The Janino and IR aggregate kernels
+	 * do neither — they enumerate the same rows the interpreter would and hash-dedup them, just more cheaply per row.
+	 * Letting a constant-factor win intercept a row that an algorithmic win would have served is how ANALYTICS q0
+	 * regressed from ~0.16ms to ~10ms, and how HIGHLY_CONNECTED q8 regressed from ~110ms to ~241ms once the kernel
+	 * learned to compile a JoinPlan.
+	 * <p>
+	 * This replaces a hand-written guard that encoded exactly one edge of this relation (prefix-run versus the IR
+	 * kernel). Consulting the declared order instead means the next rung to widen its capability surface is covered
+	 * without anyone remembering to add another guard.
+	 */
+	private boolean moreSpecializedStrategyHandlesRow(String candidate, RowState row) {
+		if (prefixRunHandlesRow(row) && LmdbNativeStrategyPreference
+				.prefers(LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS, candidate)) {
+			return true;
+		}
+		return wcojHandlesRow(row)
+				&& LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_WCOJ, candidate);
 	}
 
 	List<BindingSet> evaluatePrefixRuns(RowState row) {

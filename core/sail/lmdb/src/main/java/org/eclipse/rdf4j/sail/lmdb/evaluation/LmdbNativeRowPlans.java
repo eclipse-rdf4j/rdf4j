@@ -39,6 +39,20 @@ final class UnionPlan implements SlotPlan {
 	}
 
 	@Override
+	public LmdbNativeWork estimateWork(RowState row, long boundMask) {
+		// Both arms run once against the same entry bindings; neither probes the other.
+		return left.estimateWork(row, boundMask).plus(right.estimateWork(row, boundMask));
+	}
+
+	@Override
+	public double estimateRows(RowState row, long boundMask) {
+		double leftRows = LmdbNativeWork.rowsOut(left, row, boundMask);
+		double rightRows = LmdbNativeWork.rowsOut(right, row, boundMask);
+		// A UNION emits every row of both arms; SPARQL UNION does not deduplicate.
+		return Double.isNaN(leftRows) || Double.isNaN(rightRows) ? Double.NaN : leftRows + rightRows;
+	}
+
+	@Override
 	public long producedMask() {
 		return producedMask;
 	}
@@ -95,6 +109,29 @@ final class FilterPlan implements SlotPlan {
 	@Override
 	public RowCursor open(RowState row) throws IOException {
 		return new FilterCursor(arg.open(row), filter, row);
+	}
+
+	@Override
+	public LmdbNativeWork estimateWork(RowState row, long boundMask) {
+		// The condition is evaluated once per row the argument produces. Pricing a filter is what lets a plan that
+		// contains one be compared at all: before this, every such plan was unpriceable end to end.
+		LmdbNativeWork argWork = arg.estimateWork(row, boundMask);
+		double argRows = LmdbNativeWork.rowsOut(arg, row, boundMask);
+		if (!argWork.known() || Double.isNaN(argRows)) {
+			return argWork;
+		}
+		return argWork.plus(LmdbNativeWork.exact(argRows));
+	}
+
+	@Override
+	public double estimateRows(RowState row, long boundMask) {
+		// An upper bound: a filter can only remove rows. The learned selectivity that would tighten this
+		// (LmdbLearnedFilterSelectivity) is keyed by algebra Filter nodes, and this plan is built from a
+		// NativeBooleanFilter with no algebra node in hand, so threading the real ratio here needs compiler
+		// plumbing. Until then an upper bound is both sound and the same assumption the planner already makes
+		// when it has learned nothing -- and it is strictly better than reporting unknown, which blocks costing
+		// for everything downstream.
+		return LmdbNativeWork.rowsOut(arg, row, boundMask);
 	}
 
 	@Override
@@ -219,6 +256,23 @@ final class ExtensionPlan implements SlotPlan {
 	}
 
 	@Override
+	public LmdbNativeWork estimateWork(RowState row, long boundMask) {
+		// One slot write per copied binding, per row the argument produces.
+		LmdbNativeWork argWork = arg.estimateWork(row, boundMask);
+		double argRows = LmdbNativeWork.rowsOut(arg, row, boundMask);
+		if (!argWork.known() || Double.isNaN(argRows)) {
+			return argWork;
+		}
+		return argWork.plus(LmdbNativeWork.exact(argRows * copies.length));
+	}
+
+	@Override
+	public double estimateRows(RowState row, long boundMask) {
+		// An extension binds additional slots on each row; it never changes how many rows there are.
+		return LmdbNativeWork.rowsOut(arg, row, boundMask);
+	}
+
+	@Override
 	public long producedMask() {
 		return producedMask;
 	}
@@ -288,6 +342,18 @@ final class MinusPlan implements SlotPlan {
 	@Override
 	public RowCursor open(RowState row) throws IOException {
 		return new MinusCursor(left.open(row), right, sharedMask, row);
+	}
+
+	@Override
+	public LmdbNativeWork estimateWork(RowState row, long boundMask) {
+		// The right arm is re-probed for every left row to decide whether that row survives.
+		return LmdbNativeWork.probeChain(left, right, row, boundMask);
+	}
+
+	@Override
+	public double estimateRows(RowState row, long boundMask) {
+		// An upper bound: MINUS only ever removes left rows, never adds or duplicates them.
+		return LmdbNativeWork.rowsOut(left, row, boundMask);
 	}
 
 	@Override
@@ -435,6 +501,12 @@ final class ValuesPlan implements SlotPlan {
 	@Override
 	public double estimate(RowState row) {
 		return rows.length;
+	}
+
+	@Override
+	public LmdbNativeWork estimateWork(RowState row, long boundMask) {
+		// Materialized in memory at compile time: one row touch each, no index positioning.
+		return LmdbNativeWork.exact(rows.length);
 	}
 }
 

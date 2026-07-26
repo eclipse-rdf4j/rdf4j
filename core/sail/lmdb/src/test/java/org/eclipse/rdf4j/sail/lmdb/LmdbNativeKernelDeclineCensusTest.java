@@ -65,8 +65,18 @@ public class LmdbNativeKernelDeclineCensusTest {
 	/** Matches the decline reasons the two kernel rungs record on the explain tree. */
 	private static final Pattern KERNEL_DECLINE = Pattern.compile("(irKernel|irAggregate):([^ ,)|]+)");
 
-	/** Declines that mean "not warmed up yet" rather than "cannot do this". */
-	private static final Set<String> WARMUP_REASONS = Set.of("below-threshold-or-pending");
+	/** Matches the winning-strategy metric, whose value is a pipe-separated list of tags per plan node. */
+	private static final Pattern EXECUTION_PATH = Pattern.compile("nativeExecutionPath=([^,)]+)");
+
+	/**
+	 * Declines that mean something other than "cannot do this", and so are not capability gaps.
+	 * <p>
+	 * {@code below-threshold-or-pending} means "not warmed up yet". {@code no-fusion-opportunity} means the shape has a
+	 * single scan, so whole-stage code generation has nothing to fuse and the bulk batch cursor serves it better — the
+	 * kernel is subordinated deliberately, not found wanting.
+	 */
+	private static final Set<String> NON_CAPABILITY_REASONS = Set.of("below-threshold-or-pending",
+			"no-fusion-opportunity");
 
 	/** Repeats per query, so an asynchronous compile has landed before the reading run. */
 	private static final int WARMUP_RUNS = 6;
@@ -183,7 +193,7 @@ public class LmdbNativeKernelDeclineCensusTest {
 						reasons.isEmpty() ? "engaged" : String.join(", ", reasons)));
 				for (String reason : reasons) {
 					String bare = reason.substring(reason.indexOf(':') + 1);
-					Map<String, Set<String>> target = WARMUP_REASONS.contains(bare) ? warmupDeclines
+					Map<String, Set<String>> target = NON_CAPABILITY_REASONS.contains(bare) ? warmupDeclines
 							: capabilityDeclines;
 					target.computeIfAbsent(reason, key -> new LinkedHashSet<>()).add(pair);
 					if (target == capabilityDeclines) {
@@ -201,6 +211,73 @@ public class LmdbNativeKernelDeclineCensusTest {
 		assertThat(declinesByPair)
 				.as("theme query/kernel pairs still declining (census written to %s):%n%s", censusFile(), census)
 				.isEmpty();
+	}
+
+	/**
+	 * Dispatch reachability census: every strategy the engine still ships must win at least one theme query.
+	 * <p>
+	 * This is the anti-tautology gate for cost-based dispatch. The characteristic failure mode of ranking strategies —
+	 * whether by a specialization order or by a cost model — is not that the wrong one wins, but that one of them stops
+	 * winning anything at all and quietly becomes dead code that nobody notices until the day it was needed. Both
+	 * guards added for the 2026-07-26 regressions (subordinating the IR kernels to prefix runs and worst-case-optimal
+	 * joins, and refusing single-scan shapes with {@code no-fusion-opportunity}) carry exactly that risk: a guard that
+	 * fires too broadly turns a subordinate strategy into an unreachable one.
+	 * <p>
+	 * The census is written beside the decline census for humans; the assertion is only that each listed strategy is
+	 * reachable, which does not depend on which particular query it wins and so does not drift with the corpus.
+	 */
+	@Test
+	void everyShippedStrategyWinsSomeThemeQuery() throws IOException {
+		Map<String, Set<String>> winners = new TreeMap<>();
+		for (Theme theme : Theme.values()) {
+			List<String> queries = ThemeQueryCatalog.queriesFor(theme);
+			for (int index = 0; index < queries.size(); index++) {
+				String pair = theme + " q" + index;
+				for (String path : executionPaths(queries.get(index))) {
+					// Parameterized labels such as `factorizedRows(flatPrefix=1, ...)` collapse to their base tag.
+					int paren = path.indexOf('(');
+					winners.computeIfAbsent(paren > 0 ? path.substring(0, paren) : path,
+							key -> new LinkedHashSet<>()).add(pair);
+				}
+			}
+		}
+
+		StringBuilder out = new StringBuilder("=== Dispatch reachability census ===\n");
+		winners.forEach((tag, pairs) -> out
+				.append(String.format("%4d  %-32s %s%n", pairs.size(), tag, String.join(", ", pairs))));
+		System.out.println(out);
+		Files.writeString(Paths.get("target", "dispatch-reachability-census.txt"), out.toString());
+
+		// Deliberately a small, hand-picked set: the strategies whose reachability this session's dispatch changes
+		// could plausibly have destroyed. Asserting over the whole vocabulary would fail on tags the scaled-down
+		// census corpus simply never exercises, which would be a fixture complaint rather than a dispatch defect.
+		assertThat(winners.keySet())
+				.as("a strategy that never wins is dead code; census written to target/dispatch-reachability-census.txt:%n%s",
+						out)
+				.contains("batch", "irKernel");
+	}
+
+	/** Distinct {@code nativeExecutionPath} tags a query records, across the whole explain tree. */
+	private static Set<String> executionPaths(String query) {
+		Set<String> paths = new LinkedHashSet<>();
+		for (int run = 0; run < WARMUP_RUNS; run++) {
+			paths.clear();
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				org.eclipse.rdf4j.query.TupleQuery prepared = connection.prepareTupleQuery(query);
+				prepared.setMaxExecutionTime(QUERY_TIMEOUT_SECONDS);
+				Matcher matcher = EXECUTION_PATH
+						.matcher(prepared.explain(Explanation.Level.Telemetry).toString());
+				while (matcher.find()) {
+					for (String tag : matcher.group(1).split("\\|")) {
+						String trimmed = tag.trim();
+						if (!trimmed.isEmpty()) {
+							paths.add(trimmed);
+						}
+					}
+				}
+			}
+		}
+		return paths;
 	}
 
 	/**
@@ -225,7 +302,7 @@ public class LmdbNativeKernelDeclineCensusTest {
 				}
 			}
 			boolean onlyWarmup = !reasons.isEmpty() && reasons.stream()
-					.allMatch(reason -> WARMUP_REASONS.contains(reason.substring(reason.indexOf(':') + 1)));
+					.allMatch(reason -> NON_CAPABILITY_REASONS.contains(reason.substring(reason.indexOf(':') + 1)));
 			if (!onlyWarmup) {
 				return reasons;
 			}

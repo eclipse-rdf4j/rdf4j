@@ -32,7 +32,25 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	}
 
 	final Opener<T> opener;
+	/**
+	 * Work paid before the first row can be emitted — a parallel group's worker startup, a hash join's build sweep.
+	 * Zero for strategies that stream from the first probe.
+	 * <p>
+	 * Total work alone cannot choose correctly under a small LIMIT: a strategy that is cheapest overall may be the
+	 * worst possible choice when the consumer wants three rows, because all of its cost is front-loaded. Separating the
+	 * front-loaded part is what lets {@link #effectiveWork} answer "what will this actually cost me for the rows I am
+	 * going to ask for".
+	 */
+	final LmdbNativeWork startupWork;
+	/** Rows this strategy expects to emit, or NaN when unknown. Needed to prorate work against a finite slice. */
+	final double estRows;
 	final double estCost;
+	/**
+	 * The same cost as an interval. Scalar-costed proposals report a degenerate interval, so a scalar comparison and a
+	 * {@linkplain LmdbNativeWork#beats domination} test agree on them; proposals that know how uncertain they are can
+	 * widen it instead of pretending to a precision they do not have.
+	 */
+	final LmdbNativeWork work;
 	final String tag;
 	private final Runnable releaseIfUnused;
 	private boolean opened;
@@ -44,10 +62,53 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	}
 
 	LmdbNativeStrategyProposal(Opener<T> opener, double estCost, String tag, Runnable releaseIfUnused) {
+		this(opener, LmdbNativeWork.exact(estCost), estCost, tag, releaseIfUnused);
+	}
+
+	LmdbNativeStrategyProposal(Opener<T> opener, LmdbNativeWork work, String tag, Runnable releaseIfUnused) {
+		this(opener, work, work.known() ? work.high() : Double.POSITIVE_INFINITY, tag, releaseIfUnused);
+	}
+
+	private LmdbNativeStrategyProposal(Opener<T> opener, LmdbNativeWork work, double estCost, String tag,
+			Runnable releaseIfUnused) {
+		this(opener, work, LmdbNativeWork.ZERO, Double.NaN, estCost, tag, releaseIfUnused);
+	}
+
+	/** Full form, for strategies that know what they pay up front and how many rows they expect to emit. */
+	LmdbNativeStrategyProposal(Opener<T> opener, LmdbNativeWork work, LmdbNativeWork startupWork, double estRows,
+			String tag, Runnable releaseIfUnused) {
+		this(opener, work, startupWork, estRows, work.known() ? work.high() : Double.POSITIVE_INFINITY, tag,
+				releaseIfUnused);
+	}
+
+	private LmdbNativeStrategyProposal(Opener<T> opener, LmdbNativeWork work, LmdbNativeWork startupWork,
+			double estRows, double estCost, String tag, Runnable releaseIfUnused) {
 		this.opener = opener;
+		this.work = work;
+		this.startupWork = startupWork == null ? LmdbNativeWork.ZERO : startupWork;
+		this.estRows = estRows;
 		this.estCost = estCost;
 		this.tag = tag;
 		this.releaseIfUnused = releaseIfUnused;
+	}
+
+	/**
+	 * Work this strategy will actually consume when the consumer stops after {@code sliceRows} rows.
+	 * <p>
+	 * The front-loaded part is paid whatever happens; the streaming remainder is prorated by how much of the result the
+	 * consumer is going to ask for. With no finite slice, or with an unknown row count, this is simply the total work —
+	 * the model declines to guess rather than inventing a discount.
+	 *
+	 * @param sliceRows rows the consumer can possibly consume, or a negative value when unbounded
+	 */
+	LmdbNativeWork effectiveWork(double sliceRows) {
+		if (!(sliceRows >= 0D) || Double.isNaN(estRows) || estRows <= 0D || sliceRows >= estRows || !work.known()) {
+			return work;
+		}
+		double fraction = sliceRows / estRows;
+		double low = startupWork.low() + fraction * Math.max(0D, work.low() - startupWork.low());
+		double high = startupWork.high() + fraction * Math.max(0D, work.high() - startupWork.high());
+		return LmdbNativeWork.between(Math.min(low, high), Math.max(low, high));
 	}
 
 	synchronized T open() throws IOException {
@@ -90,23 +151,66 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	}
 
 	/** Serial factorization scans each physical leg once across its prefix keys instead of enumerating the product. */
-	static double factorizedCost(MultiJoinPlan.OrderedPlan derived, RowState row) {
-		double cost = 0D;
-		long entryMask = row.boundMask();
-		for (SlotPlan child : derived.order) {
-			double childCost = child instanceof PatternPlan
-					? ((PatternPlan) child).estimateForBoundMask(entryMask, row.source)
-					: child.estimate(row);
-			if (!(childCost >= 0D) || !Double.isFinite(childCost)) {
-				return Double.POSITIVE_INFINITY;
-			}
-			cost += childCost;
-			if (!Double.isFinite(cost)) {
-				return Double.POSITIVE_INFINITY;
-			}
-			entryMask |= child.producedMask();
+	static double factorizedCost(MultiJoinPlan.OrderedPlan derived, int prefixLength, RowState row) {
+		return factorizedCost(derived.order, prefixLength, row.boundMask(), row.source, row);
+	}
+
+	/**
+	 * Cost core, usable without a {@link RowState} when every child is a {@link PatternPlan}. A null {@code row} makes
+	 * any non-pattern child unpriceable rather than guessing at its cardinality.
+	 */
+	static double factorizedCost(SlotPlan[] order, int prefixLength, long boundMask,
+			NativeLmdbQuerySource source) {
+		return factorizedCost(order, prefixLength, boundMask, source, null);
+	}
+
+	private static double factorizedCost(SlotPlan[] order, int prefixLength, long boundMask,
+			NativeLmdbQuerySource source, RowState row) {
+		if (prefixLength < 0 || prefixLength > order.length) {
+			return Double.POSITIVE_INFINITY;
 		}
-		return cost;
+		// The prefix is a nested-loop chain, so it carries the same recurrence as
+		// LmdbNativeOrderPlanner.cumulativePatternWork. It is repeated here rather than delegated because that method
+		// discards the row count the branches need as their probe multiplier, and refuses any non-pattern child
+		// outright where this cost can still price one through the row state.
+		double prefixRows = 1D;
+		double work = 0D;
+		long entryMask = boundMask;
+		for (int i = 0; i < prefixLength; i++) {
+			double rowsPerProbe = childEstimate(order[i], entryMask, source, row);
+			if (!(rowsPerProbe >= 0D) || !Double.isFinite(rowsPerProbe)) {
+				return Double.POSITIVE_INFINITY;
+			}
+			work += prefixRows * (1D + rowsPerProbe);
+			prefixRows *= rowsPerProbe;
+			if (!Double.isFinite(work) || !Double.isFinite(prefixRows)) {
+				return Double.POSITIVE_INFINITY;
+			}
+			entryMask |= order[i].producedMask();
+		}
+		// Every tail branch probes the same prefix binding, so the branches are summed with one another and the whole
+		// sum is paid once per prefix row. Summing rather than multiplying is precisely what factorization buys: the
+		// equivalent nested-loop plan would enumerate the product of the branches instead.
+		double branchWork = 0D;
+		for (int i = prefixLength; i < order.length; i++) {
+			double rowsPerProbe = childEstimate(order[i], entryMask, source, row);
+			if (!(rowsPerProbe >= 0D) || !Double.isFinite(rowsPerProbe)) {
+				return Double.POSITIVE_INFINITY;
+			}
+			branchWork += 1D + rowsPerProbe;
+			if (!Double.isFinite(branchWork)) {
+				return Double.POSITIVE_INFINITY;
+			}
+		}
+		double cost = work + prefixRows * branchWork;
+		return Double.isFinite(cost) ? cost : Double.POSITIVE_INFINITY;
+	}
+
+	private static double childEstimate(SlotPlan child, long entryMask, NativeLmdbQuerySource source, RowState row) {
+		if (child instanceof PatternPlan) {
+			return ((PatternPlan) child).estimateForBoundMask(entryMask, source);
+		}
+		return row != null ? child.estimate(row) : Double.POSITIVE_INFINITY;
 	}
 
 	static String chooseTag(double batchCost, double parallelCost) {

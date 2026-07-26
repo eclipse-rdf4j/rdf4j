@@ -96,6 +96,19 @@ final class MultiValuePatternPlan implements SlotPlan {
 	}
 
 	@Override
+	public LmdbNativeWork estimateWork(RowState row, long boundMask) {
+		if (fallback != null && row != null && shouldUseFallback(row)) {
+			return fallback.estimateWork(row, boundMask);
+		}
+		// Each alternative is positioned independently, so the seeks add up even though the rows do not overlap.
+		double rows = LmdbNativeWork.rowsOut(this, row, boundMask);
+		if (Double.isNaN(rows)) {
+			return LmdbNativeWork.atLeast(LmdbNativeWork.SEEK * alternatives.length);
+		}
+		return LmdbNativeWork.exact(LmdbNativeWork.SEEK * alternatives.length + rows);
+	}
+
+	@Override
 	public double estimate(RowState row) {
 		if (fallback != null && shouldUseFallback(row)) {
 			return fallback.estimate(row);

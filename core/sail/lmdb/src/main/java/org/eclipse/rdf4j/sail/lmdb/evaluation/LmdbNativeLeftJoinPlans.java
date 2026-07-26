@@ -36,6 +36,27 @@ final class LeftJoinPlan implements SlotPlan {
 	}
 
 	@Override
+	public LmdbNativeWork estimateWork(RowState row, long boundMask) {
+		// Same work shape as an inner join: the optional arm is probed once per left row whether or not it matches.
+		return LmdbNativeWork.probeChain(left, right, row, boundMask);
+	}
+
+	@Override
+	public double estimateRows(RowState row, long boundMask) {
+		double leftRows = LmdbNativeWork.rowsOut(left, row, boundMask);
+		if (Double.isNaN(leftRows)) {
+			return Double.NaN;
+		}
+		double rightPerProbe = LmdbNativeWork.rowsOut(right, row, boundMask | left.producedMask());
+		if (Double.isNaN(rightPerProbe)) {
+			return Double.NaN;
+		}
+		// Unlike an inner join, a left row with no match still emits once, so the multiplier is never below one.
+		double rows = leftRows * Math.max(1D, rightPerProbe);
+		return Double.isFinite(rows) ? rows : Double.NaN;
+	}
+
+	@Override
 	public RowCursor open(RowState row) throws IOException {
 		return new LeftJoinCursor(left.open(row), right, row, left.producedMask());
 	}
