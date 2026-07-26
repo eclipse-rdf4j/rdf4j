@@ -21,6 +21,7 @@ import java.util.Set;
 public final class BagEstimate {
 
 	private final EvidenceProfile evidenceProfile;
+	private final EvidenceStateRef evidenceState;
 
 	public BagEstimate(double rows, double workRows, double memoryRows, double confidence, String source,
 			Map<String, VariableEstimate> variables, Map<VariableSetKey, FiniteRelationEstimate> finiteRelations,
@@ -37,7 +38,12 @@ public final class BagEstimate {
 	}
 
 	private BagEstimate(EvidenceProfile evidenceProfile) {
+		this(evidenceProfile, null);
+	}
+
+	private BagEstimate(EvidenceProfile evidenceProfile, EvidenceStateRef evidenceState) {
 		this.evidenceProfile = evidenceProfile == null ? EvidenceProfile.empty() : evidenceProfile;
+		this.evidenceState = evidenceState;
 	}
 
 	static BagEstimate fromEvidenceProfile(EvidenceProfile evidenceProfile) {
@@ -104,6 +110,18 @@ public final class BagEstimate {
 		return evidenceProfile;
 	}
 
+	public Optional<EvidenceStateRef> evidenceState() {
+		return Optional.ofNullable(evidenceState);
+	}
+
+	public BagEstimate withEvidenceState(EvidenceStateRef state) {
+		return new BagEstimate(evidenceProfile, Objects.requireNonNull(state, "state"));
+	}
+
+	public BagEstimate withoutEvidenceState() {
+		return evidenceState == null ? this : new BagEstimate(evidenceProfile, null);
+	}
+
 	public BagEstimate withVariable(String name, VariableEstimate estimate) {
 		Map<String, VariableEstimate> copy = new LinkedHashMap<>(variables());
 		copy.put(name, estimate);
@@ -114,7 +132,7 @@ public final class BagEstimate {
 					EvidenceQuality.VARIABLE_SKETCH, source()));
 		}
 		return withProfile(rows(), workRows(), memoryRows(), confidence(), source(), copy, finiteRelations(),
-				sketches, evidenceProfile.supportingSketches(), metrics());
+				sketches, evidenceProfile.supportingSketches(), metrics(), false);
 	}
 
 	public BagEstimate withFiniteRelation(FiniteRelationEstimate relation) {
@@ -130,7 +148,7 @@ public final class BagEstimate {
 		Map<VariableSetKey, FiniteRelationEstimate> relationCopy = new LinkedHashMap<>(finiteRelations());
 		relationCopy.put(relation.variableSetKey(), relation);
 		return withProfile(rows(), workRows(), memoryRows(), confidence(), source(), variableCopy, relationCopy,
-				evidenceProfile.sketches(), evidenceProfile.supportingSketches(), metrics());
+				evidenceProfile.sketches(), evidenceProfile.supportingSketches(), metrics(), false);
 	}
 
 	public BagEstimate withSketchRelation(Set<String> names, DistributionSketch sketch) {
@@ -144,7 +162,7 @@ public final class BagEstimate {
 		copy.put(key, new SketchEvidence(key, sketch, rows(), sketch.distinctRows(),
 				names.size() > 1 ? EvidenceQuality.TUPLE_SKETCH : EvidenceQuality.VARIABLE_SKETCH, source()));
 		return withProfile(rows(), workRows(), memoryRows(), confidence(), source(), variableCopy, finiteRelations(),
-				copy, evidenceProfile.supportingSketches(), metrics());
+				copy, evidenceProfile.supportingSketches(), metrics(), false);
 	}
 
 	public BagEstimate withSketchRelations(Map<VariableSetKey, DistributionSketch> sketches) {
@@ -164,7 +182,7 @@ public final class BagEstimate {
 			}
 		}
 		return withProfile(rows(), workRows(), memoryRows(), confidence(), source(), variableCopy, finiteRelations(),
-				copy, evidenceProfile.supportingSketches(), metrics());
+				copy, evidenceProfile.supportingSketches(), metrics(), false);
 	}
 
 	private void mergeVariableSketch(Map<String, VariableEstimate> variableCopy, VariableSetKey key,
@@ -184,7 +202,7 @@ public final class BagEstimate {
 
 	public BagEstimate withRows(double rows, String source) {
 		return withProfile(rows, workRows(), memoryRows(), confidence(), source, variables(), finiteRelations(),
-				evidenceProfile.sketches(), evidenceProfile.supportingSketches(), metrics());
+				evidenceProfile.sketches(), evidenceProfile.supportingSketches(), metrics(), false);
 	}
 
 	public BagEstimate withRowsPreservingEvidence(double rows, double workRows, double confidence, String source,
@@ -197,17 +215,17 @@ public final class BagEstimate {
 
 	public BagEstimate withWorkRows(double workRows, String source) {
 		return withProfile(rows(), workRows, memoryRows(), confidence(), source, variables(), finiteRelations(),
-				evidenceProfile.sketches(), evidenceProfile.supportingSketches(), metrics());
+				evidenceProfile.sketches(), evidenceProfile.supportingSketches(), metrics(), true);
 	}
 
 	public BagEstimate withMemoryRows(double memoryRows, String source) {
 		return withProfile(rows(), workRows(), memoryRows, confidence(), source, variables(), finiteRelations(),
-				evidenceProfile.sketches(), evidenceProfile.supportingSketches(), metrics());
+				evidenceProfile.sketches(), evidenceProfile.supportingSketches(), metrics(), true);
 	}
 
 	public BagEstimate withMetrics(Map<String, Double> metrics) {
 		return withProfile(rows(), workRows(), memoryRows(), confidence(), source(), variables(), finiteRelations(),
-				evidenceProfile.sketches(), evidenceProfile.supportingSketches(), metrics);
+				evidenceProfile.sketches(), evidenceProfile.supportingSketches(), metrics, true);
 	}
 
 	public Optional<FiniteRelationEstimate> relationContaining(Set<String> names) {
@@ -275,12 +293,14 @@ public final class BagEstimate {
 				+ "]";
 	}
 
-	private static BagEstimate withProfile(double rows, double workRows, double memoryRows, double confidence,
+	private BagEstimate withProfile(double rows, double workRows, double memoryRows, double confidence,
 			String source, Map<String, VariableEstimate> variables,
 			Map<VariableSetKey, FiniteRelationEstimate> finiteRelations,
 			Map<VariableSetKey, SketchEvidence> sketches,
-			Map<VariableSetKey, SketchEvidence> supportingSketches, Map<String, Double> metrics) {
-		return fromEvidenceProfile(new EvidenceProfile(rows, workRows, memoryRows, confidence, source, variables,
-				finiteRelations, sketches, supportingSketches, metrics));
+			Map<VariableSetKey, SketchEvidence> supportingSketches, Map<String, Double> metrics,
+			boolean retainEvidenceState) {
+		EvidenceProfile profile = new EvidenceProfile(rows, workRows, memoryRows, confidence, source, variables,
+				finiteRelations, sketches, supportingSketches, metrics);
+		return new BagEstimate(profile, retainEvidenceState ? evidenceState : null);
 	}
 }

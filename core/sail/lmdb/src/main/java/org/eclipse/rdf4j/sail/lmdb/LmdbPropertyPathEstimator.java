@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalDouble;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
@@ -21,6 +22,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 import org.eclipse.rdf4j.sail.lmdb.estimation.LmdbQuadSynopsisService;
@@ -54,12 +56,17 @@ final class LmdbPropertyPathEstimator {
 		List<EstimateCandidate> result = new ArrayList<>(directCandidates.size());
 		for (EstimateCandidate direct : directCandidates) {
 			RowEvidence directRows = direct.evidence();
+			OptionalDouble conditionedFirstStep = conditionedFirstStep(direct.estimate(), path, context, subjectBound,
+					objectBound);
 			double rows = rows(directRows.estimate(), path.getMinLength(), distinctSubjects, distinctObjects,
-					subjectBound, objectBound, context.invocationCount(), identityGuaranteed);
+					subjectBound, objectBound, context.invocationCount(), identityGuaranteed,
+					scaledFirstStep(conditionedFirstStep, directRows.estimate(), directRows.estimate()));
 			double lower = Math.min(rows, rows(directRows.lowerBound(), path.getMinLength(), distinctSubjects,
-					distinctObjects, subjectBound, objectBound, context.invocationCount(), identityGuaranteed));
+					distinctObjects, subjectBound, objectBound, context.invocationCount(), identityGuaranteed,
+					scaledFirstStep(conditionedFirstStep, directRows.estimate(), directRows.lowerBound())));
 			double upper = Math.max(rows, rows(directRows.upperBound(), path.getMinLength(), distinctSubjects,
-					distinctObjects, subjectBound, objectBound, context.invocationCount(), identityGuaranteed));
+					distinctObjects, subjectBound, objectBound, context.invocationCount(), identityGuaranteed,
+					scaledFirstStep(conditionedFirstStep, directRows.estimate(), directRows.upperBound())));
 			boolean complete = path.getMinLength() > 0L && exactZero(directRows);
 			RowEvidence evidence = new RowEvidence(rows, lower, upper,
 					complete ? 1.0d : directRows.confidence() * 0.75d, complete, context.snapshotIdentity(),
@@ -161,10 +168,36 @@ final class LmdbPropertyPathEstimator {
 	}
 
 	private static double rows(double directRows, long minLength, double distinctSubjects, double distinctObjects,
-			boolean subjectBound, boolean objectBound, double invocationCount, boolean identityGuaranteed) {
+			boolean subjectBound, boolean objectBound, double invocationCount, boolean identityGuaranteed,
+			double conditionedFirstStep) {
 		double direct = finiteNonNegative(directRows);
 		double subjectDomain = positive(distinctSubjects);
 		double objectDomain = positive(distinctObjects);
+		double invocations = finiteNonNegative(invocationCount);
+		if (invocations == 0.0d) {
+			return 0.0d;
+		}
+		if (subjectBound ^ objectBound) {
+			double sourceDomain = subjectBound ? subjectDomain : objectDomain;
+			double targetDomain = subjectBound ? objectDomain : subjectDomain;
+			double firstStep = Double.isFinite(conditionedFirstStep) && conditionedFirstStep >= 0.0d
+					? conditionedFirstStep
+					: saturatingMultiply(direct / sourceDomain, invocations);
+			double positiveRows = 0.0d;
+			double depthRows = firstStep;
+			double fanout = Math.min(8.0d, direct / sourceDomain);
+			long finalDepth = Math.min(MAX_MODELLED_DEPTH, Math.max(4L, minLength + 3L));
+			for (long depth = 1L; depth <= finalDepth; depth++) {
+				if (depth >= minLength) {
+					positiveRows = saturatingAdd(positiveRows, depthRows);
+				}
+				depthRows = saturatingMultiply(depthRows, fanout);
+			}
+			positiveRows = Math.min(positiveRows, saturatingMultiply(invocations, targetDomain));
+			double identityRows = minLength == 0L ? invocations : 0.0d;
+			return saturatingAdd(identityRows, positiveRows);
+		}
+
 		double domain = Math.max(subjectDomain, objectDomain);
 		double fanout = Math.min(8.0d, direct / subjectDomain);
 		double result = minLength == 0L ? domain : 0.0d;
@@ -178,7 +211,6 @@ final class LmdbPropertyPathEstimator {
 		}
 		double pairCap = saturatingMultiply(subjectDomain, objectDomain);
 		result = Math.min(result, Math.min(pairCap, saturatingMultiply(Math.max(direct, domain), 4.0d)));
-		double invocations = positive(invocationCount);
 		if (subjectBound && objectBound) {
 			double perInvocation = Math.min(1.0d, result / Math.max(1.0d, pairCap));
 			if (minLength == 0L && identityGuaranteed) {
@@ -186,20 +218,54 @@ final class LmdbPropertyPathEstimator {
 			}
 			return saturatingMultiply(perInvocation, Math.min(invocations, pairCap));
 		}
-		if (subjectBound) {
-			double perInvocation = result / subjectDomain;
-			if (minLength == 0L) {
-				perInvocation = Math.max(1.0d, perInvocation);
-			}
-			return saturatingMultiply(perInvocation, Math.min(invocations, subjectDomain));
-		} else if (objectBound) {
-			double perInvocation = result / objectDomain;
-			if (minLength == 0L) {
-				perInvocation = Math.max(1.0d, perInvocation);
-			}
-			return saturatingMultiply(perInvocation, Math.min(invocations, objectDomain));
-		}
 		return finiteNonNegative(result);
+	}
+
+	private static OptionalDouble conditionedFirstStep(BagEstimate direct, ArbitraryLengthPath path,
+			EstimateContext context, boolean subjectBound, boolean objectBound) {
+		if (!(subjectBound ^ objectBound)) {
+			return OptionalDouble.empty();
+		}
+		Var endpoint = subjectBound ? path.getSubjectVar() : path.getObjectVar();
+		if (endpoint == null || endpoint.hasValue() || endpoint.getName() == null) {
+			return OptionalDouble.empty();
+		}
+		VariableEstimate prefixVariable = context.prefixEstimate().variable(endpoint.getName());
+		VariableEstimate directVariable = direct.variable(endpoint.getName());
+		DistributionSketch prefixSketch = prefixVariable.sketch();
+		DistributionSketch directSketch = directVariable.sketch();
+		if (prefixSketch == null || directSketch == null) {
+			return OptionalDouble.empty();
+		}
+		OptionalDouble innerProduct = prefixSketch.highQualityInnerProduct(directSketch);
+		if (innerProduct.isEmpty()) {
+			return OptionalDouble.empty();
+		}
+		double prefixScale = sketchScale(prefixVariable, prefixSketch);
+		double directScale = sketchScale(directVariable, directSketch);
+		return OptionalDouble.of(saturatingMultiply(innerProduct.getAsDouble(),
+				saturatingMultiply(prefixScale, directScale)));
+	}
+
+	private static double sketchScale(VariableEstimate variable, DistributionSketch sketch) {
+		OptionalDouble totalRows = sketch.totalRows();
+		if (totalRows.isEmpty() || totalRows.getAsDouble() <= 0.0d || variable.boundRows() <= 0.0d) {
+			return 1.0d;
+		}
+		return variable.boundRows() / totalRows.getAsDouble();
+	}
+
+	private static double scaledFirstStep(OptionalDouble conditionedFirstStep, double directRows,
+			double alternativeDirectRows) {
+		if (conditionedFirstStep.isEmpty()) {
+			return Double.NaN;
+		}
+		double direct = finiteNonNegative(directRows);
+		if (direct == 0.0d) {
+			return conditionedFirstStep.getAsDouble();
+		}
+		return saturatingMultiply(conditionedFirstStep.getAsDouble(),
+				finiteNonNegative(alternativeDirectRows) / direct);
 	}
 
 	private static Double finiteEqualityRows(Var subject, Var object, EstimateContext context) {

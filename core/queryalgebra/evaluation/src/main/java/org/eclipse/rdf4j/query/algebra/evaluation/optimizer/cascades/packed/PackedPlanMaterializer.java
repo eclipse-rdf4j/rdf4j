@@ -131,12 +131,13 @@ final class PackedPlanMaterializer {
 
 	private static TupleExpr relation(PackedQuery query, PackedPlanRecipe recipe, int nodeId) {
 		int payloadId = relPayload(query, recipe, nodeId);
+		int sourceRelId = recipe == null ? nodeId : recipe.sourceLogicalExpressionId(nodeId);
 		TupleExpr result = switch (relOperator(query, recipe, nodeId)) {
 		case PackedRelOp.STATEMENT_PATTERN -> statementPattern(query, payloadId);
 		case PackedRelOp.JOIN -> new Join(relation(query, recipe, relChild(query, recipe, nodeId, 0)),
 				relation(query, recipe, relChild(query, recipe, nodeId, 1)));
 		case PackedRelOp.FILTER -> new Filter(relation(query, recipe, relChild(query, recipe, nodeId, 0)),
-				scalar(query, payloadId));
+				scalar(query, recipe, nodeId, payloadId));
 		case PackedRelOp.QUERY_ROOT -> new QueryRoot(
 				relation(query, recipe, relChild(query, recipe, nodeId, 0)));
 		case PackedRelOp.DESCRIBE -> new DescribeOperator(
@@ -170,13 +171,12 @@ final class PackedPlanMaterializer {
 		case PackedRelOp.REIFIED_TRIPLE_REF -> reifiedTripleRef(query, payloadId, false);
 		case PackedRelOp.ANNOTATION_TRIPLE_REF -> reifiedTripleRef(query, payloadId, true);
 		case PackedRelOp.GROUP -> group(query, recipe, nodeId);
-		case PackedRelOp.BINDING_SET_ASSIGNMENT -> bindingSetAssignment(query, payloadId);
+		case PackedRelOp.BINDING_SET_ASSIGNMENT -> bindingSetAssignment(query, payloadId, sourceRelId);
 		case PackedRelOp.SERVICE -> service(query, recipe, nodeId);
 		case PackedRelOp.TUPLE_FUNCTION -> tupleFunction(query, payloadId);
 		default -> throw new PackedMemoInvariantException(
 				"unknown packed relational opcode " + relOperator(query, recipe, nodeId));
 		};
-		int sourceRelId = recipe == null ? nodeId : recipe.sourceLogicalExpressionId(nodeId);
 		if (sourceRelId > 0 && sourceRelId <= query.relationCount()) {
 			applyRelationMetadata(query, sourceRelId, result);
 		}
@@ -328,10 +328,18 @@ final class PackedPlanMaterializer {
 		return group;
 	}
 
-	private static BindingSetAssignment bindingSetAssignment(PackedQuery query, int payloadId) {
+	private static BindingSetAssignment bindingSetAssignment(PackedQuery query, int payloadId, int sourceRelId) {
 		requirePayload(query, payloadId, PackedPayloadOp.BINDING_SET_ASSIGNMENT);
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setBindingNames(nameSet(query, query.payloadPrimary(payloadId)));
+		if (sourceRelId > 0 && sourceRelId <= query.relationCount()
+				&& query.isOriginalBindingSetRelation(sourceRelId) && query.originalBindingSetsAttached()) {
+			Iterable<BindingSet> originalRows = query.originalBindingSets(sourceRelId);
+			if (originalRows != null) {
+				assignment.setBindingSets(originalRows);
+			}
+			return assignment;
+		}
 		if ((query.payloadFlags(payloadId) & 1) != 0) {
 			List<BindingSet> rows = new ArrayList<>(query.payloadChildCount(payloadId));
 			for (int ordinal = 0; ordinal < query.payloadChildCount(payloadId); ordinal++) {
@@ -411,77 +419,87 @@ final class PackedPlanMaterializer {
 	}
 
 	private static ValueExpr scalar(PackedQuery query, int scalarId) {
+		return scalar(query, null, 0, scalarId);
+	}
+
+	private static ValueExpr scalar(PackedQuery query, PackedPlanRecipe recipe, int ownerRecipeId, int scalarId) {
 		ValueExpr result = switch (query.scalarOperator(scalarId)) {
 		case PackedScalarOp.VARIABLE -> term(query, query.scalarPayload(scalarId));
 		case PackedScalarOp.VALUE_CONSTANT -> new ValueConstant(
 				(Value) query.objectValue(query.scalarPayload(scalarId)));
-		case PackedScalarOp.COMPARE -> new Compare(scalar(query, query.scalarChild(scalarId, 0)),
-				scalar(query, query.scalarChild(scalarId, 1)),
+		case PackedScalarOp.COMPARE -> new Compare(scalarChild(query, recipe, ownerRecipeId, scalarId, 0),
+				scalarChild(query, recipe, ownerRecipeId, scalarId, 1),
 				Compare.CompareOp.values()[query.scalarPayload(scalarId) - 1]);
-		case PackedScalarOp.AND -> new And(scalar(query, query.scalarChild(scalarId, 0)),
-				scalar(query, query.scalarChild(scalarId, 1)));
-		case PackedScalarOp.OR -> new Or(scalar(query, query.scalarChild(scalarId, 0)),
-				scalar(query, query.scalarChild(scalarId, 1)));
-		case PackedScalarOp.NOT -> new Not(scalar(query, query.scalarChild(scalarId, 0)));
-		case PackedScalarOp.SAME_TERM -> new SameTerm(scalar(query, query.scalarChild(scalarId, 0)),
-				scalar(query, query.scalarChild(scalarId, 1)));
-		case PackedScalarOp.STR -> new Str(scalar(query, query.scalarChild(scalarId, 0)));
-		case PackedScalarOp.MATH -> new MathExpr(scalar(query, query.scalarChild(scalarId, 0)),
-				scalar(query, query.scalarChild(scalarId, 1)),
+		case PackedScalarOp.AND -> new And(scalarChild(query, recipe, ownerRecipeId, scalarId, 0),
+				scalarChild(query, recipe, ownerRecipeId, scalarId, 1));
+		case PackedScalarOp.OR -> new Or(scalarChild(query, recipe, ownerRecipeId, scalarId, 0),
+				scalarChild(query, recipe, ownerRecipeId, scalarId, 1));
+		case PackedScalarOp.NOT -> new Not(scalarChild(query, recipe, ownerRecipeId, scalarId, 0));
+		case PackedScalarOp.SAME_TERM -> new SameTerm(scalarChild(query, recipe, ownerRecipeId, scalarId, 0),
+				scalarChild(query, recipe, ownerRecipeId, scalarId, 1));
+		case PackedScalarOp.STR -> new Str(scalarChild(query, recipe, ownerRecipeId, scalarId, 0));
+		case PackedScalarOp.MATH -> new MathExpr(scalarChild(query, recipe, ownerRecipeId, scalarId, 0),
+				scalarChild(query, recipe, ownerRecipeId, scalarId, 1),
 				MathExpr.MathOp.values()[query.scalarPayload(scalarId) - 1]);
-		case PackedScalarOp.REGEX -> new Regex(scalar(query, query.scalarChild(scalarId, 0)),
-				scalar(query, query.scalarChild(scalarId, 1)), scalarNullable(query, query.scalarChild(scalarId, 2)));
-		case PackedScalarOp.BOUND -> new Bound((Var) scalar(query, query.scalarChild(scalarId, 0)));
-		case PackedScalarOp.DATATYPE -> new Datatype(scalar(query, query.scalarChild(scalarId, 0)));
-		case PackedScalarOp.NAMESPACE -> new Namespace(scalar(query, query.scalarChild(scalarId, 0)));
-		case PackedScalarOp.LOCAL_NAME -> new LocalName(scalar(query, query.scalarChild(scalarId, 0)));
-		case PackedScalarOp.IS_RESOURCE -> new IsResource(scalar(query, query.scalarChild(scalarId, 0)));
-		case PackedScalarOp.IS_URI -> new IsURI(scalar(query, query.scalarChild(scalarId, 0)));
-		case PackedScalarOp.IS_BNODE -> new IsBNode(scalar(query, query.scalarChild(scalarId, 0)));
-		case PackedScalarOp.IS_LITERAL -> new IsLiteral(scalar(query, query.scalarChild(scalarId, 0)));
-		case PackedScalarOp.IS_NUMERIC -> new IsNumeric(scalar(query, query.scalarChild(scalarId, 0)));
-		case PackedScalarOp.IS_TRIPLE -> new IsTriple(scalar(query, query.scalarChild(scalarId, 0)));
-		case PackedScalarOp.LABEL -> new Label(scalar(query, query.scalarChild(scalarId, 0)));
-		case PackedScalarOp.LANG -> new Lang(scalar(query, query.scalarChild(scalarId, 0)));
-		case PackedScalarOp.LANG_DIR -> new LangDir(scalar(query, query.scalarChild(scalarId, 0)));
-		case PackedScalarOp.HAS_LANG -> new HasLang(scalar(query, query.scalarChild(scalarId, 0)));
-		case PackedScalarOp.HAS_LANG_DIR -> new HasLangDir(scalar(query, query.scalarChild(scalarId, 0)));
-		case PackedScalarOp.IRI_FUNCTION -> iriFunction(query, scalarId);
-		case PackedScalarOp.LANG_MATCHES -> new LangMatches(scalar(query, query.scalarChild(scalarId, 0)),
-				scalar(query, query.scalarChild(scalarId, 1)));
-		case PackedScalarOp.COALESCE -> naryScalar(query, scalarId, new Coalesce());
-		case PackedScalarOp.LIST_MEMBER -> naryScalar(query, scalarId, new ListMemberOperator());
-		case PackedScalarOp.STR_LANG_DIR -> naryScalar(query, scalarId, new StrLangDir());
+		case PackedScalarOp.REGEX -> new Regex(scalarChild(query, recipe, ownerRecipeId, scalarId, 0),
+				scalarChild(query, recipe, ownerRecipeId, scalarId, 1),
+				scalarNullable(query, recipe, ownerRecipeId, query.scalarChild(scalarId, 2)));
+		case PackedScalarOp.BOUND -> new Bound((Var) scalarChild(query, recipe, ownerRecipeId, scalarId, 0));
+		case PackedScalarOp.DATATYPE -> new Datatype(scalarChild(query, recipe, ownerRecipeId, scalarId, 0));
+		case PackedScalarOp.NAMESPACE -> new Namespace(scalarChild(query, recipe, ownerRecipeId, scalarId, 0));
+		case PackedScalarOp.LOCAL_NAME -> new LocalName(scalarChild(query, recipe, ownerRecipeId, scalarId, 0));
+		case PackedScalarOp.IS_RESOURCE -> new IsResource(scalarChild(query, recipe, ownerRecipeId, scalarId, 0));
+		case PackedScalarOp.IS_URI -> new IsURI(scalarChild(query, recipe, ownerRecipeId, scalarId, 0));
+		case PackedScalarOp.IS_BNODE -> new IsBNode(scalarChild(query, recipe, ownerRecipeId, scalarId, 0));
+		case PackedScalarOp.IS_LITERAL -> new IsLiteral(scalarChild(query, recipe, ownerRecipeId, scalarId, 0));
+		case PackedScalarOp.IS_NUMERIC -> new IsNumeric(scalarChild(query, recipe, ownerRecipeId, scalarId, 0));
+		case PackedScalarOp.IS_TRIPLE -> new IsTriple(scalarChild(query, recipe, ownerRecipeId, scalarId, 0));
+		case PackedScalarOp.LABEL -> new Label(scalarChild(query, recipe, ownerRecipeId, scalarId, 0));
+		case PackedScalarOp.LANG -> new Lang(scalarChild(query, recipe, ownerRecipeId, scalarId, 0));
+		case PackedScalarOp.LANG_DIR -> new LangDir(scalarChild(query, recipe, ownerRecipeId, scalarId, 0));
+		case PackedScalarOp.HAS_LANG -> new HasLang(scalarChild(query, recipe, ownerRecipeId, scalarId, 0));
+		case PackedScalarOp.HAS_LANG_DIR -> new HasLangDir(scalarChild(query, recipe, ownerRecipeId, scalarId, 0));
+		case PackedScalarOp.IRI_FUNCTION -> iriFunction(query, recipe, ownerRecipeId, scalarId);
+		case PackedScalarOp.LANG_MATCHES -> new LangMatches(
+				scalarChild(query, recipe, ownerRecipeId, scalarId, 0),
+				scalarChild(query, recipe, ownerRecipeId, scalarId, 1));
+		case PackedScalarOp.COALESCE -> naryScalar(query, recipe, ownerRecipeId, scalarId, new Coalesce());
+		case PackedScalarOp.LIST_MEMBER -> naryScalar(query, recipe, ownerRecipeId, scalarId,
+				new ListMemberOperator());
+		case PackedScalarOp.STR_LANG_DIR -> naryScalar(query, recipe, ownerRecipeId, scalarId, new StrLangDir());
 		case PackedScalarOp.BNODE_GENERATOR -> query.scalarChildCount(scalarId) == 0
 				? new BNodeGenerator()
-				: new BNodeGenerator(scalar(query, query.scalarChild(scalarId, 0)));
-		case PackedScalarOp.EXISTS -> new Exists(subquery(query, query.scalarPayload(scalarId)));
-		case PackedScalarOp.IN -> new In(scalar(query, query.scalarChild(scalarId, 0)),
-				subquery(query, query.scalarPayload(scalarId)));
-		case PackedScalarOp.COMPARE_ANY -> new CompareAny(scalar(query, query.scalarChild(scalarId, 0)),
-				subquery(query, query.scalarPayload(scalarId)),
+				: new BNodeGenerator(scalarChild(query, recipe, ownerRecipeId, scalarId, 0));
+		case PackedScalarOp.EXISTS -> new Exists(
+				subquery(query, recipe, ownerRecipeId, query.scalarPayload(scalarId)));
+		case PackedScalarOp.IN -> new In(scalarChild(query, recipe, ownerRecipeId, scalarId, 0),
+				subquery(query, recipe, ownerRecipeId, query.scalarPayload(scalarId)));
+		case PackedScalarOp.COMPARE_ANY -> new CompareAny(
+				scalarChild(query, recipe, ownerRecipeId, scalarId, 0),
+				subquery(query, recipe, ownerRecipeId, query.scalarPayload(scalarId)),
 				Compare.CompareOp.values()[subqueryCompareOperator(query, query.scalarPayload(scalarId)) - 1]);
-		case PackedScalarOp.COMPARE_ALL -> new CompareAll(scalar(query, query.scalarChild(scalarId, 0)),
-				subquery(query, query.scalarPayload(scalarId)),
+		case PackedScalarOp.COMPARE_ALL -> new CompareAll(
+				scalarChild(query, recipe, ownerRecipeId, scalarId, 0),
+				subquery(query, recipe, ownerRecipeId, query.scalarPayload(scalarId)),
 				Compare.CompareOp.values()[subqueryCompareOperator(query, query.scalarPayload(scalarId)) - 1]);
-		case PackedScalarOp.COUNT -> new Count(unaryAggregateArgument(query, scalarId),
+		case PackedScalarOp.COUNT -> new Count(unaryAggregateArgument(query, recipe, ownerRecipeId, scalarId),
 				query.scalarPayload(scalarId) != 0);
-		case PackedScalarOp.AVG -> new Avg(unaryAggregateArgument(query, scalarId),
+		case PackedScalarOp.AVG -> new Avg(unaryAggregateArgument(query, recipe, ownerRecipeId, scalarId),
 				query.scalarPayload(scalarId) != 0);
-		case PackedScalarOp.SUM -> new Sum(unaryAggregateArgument(query, scalarId),
+		case PackedScalarOp.SUM -> new Sum(unaryAggregateArgument(query, recipe, ownerRecipeId, scalarId),
 				query.scalarPayload(scalarId) != 0);
-		case PackedScalarOp.MIN -> new Min(unaryAggregateArgument(query, scalarId),
+		case PackedScalarOp.MIN -> new Min(unaryAggregateArgument(query, recipe, ownerRecipeId, scalarId),
 				query.scalarPayload(scalarId) != 0);
-		case PackedScalarOp.MAX -> new Max(unaryAggregateArgument(query, scalarId),
+		case PackedScalarOp.MAX -> new Max(unaryAggregateArgument(query, recipe, ownerRecipeId, scalarId),
 				query.scalarPayload(scalarId) != 0);
-		case PackedScalarOp.SAMPLE -> new Sample(unaryAggregateArgument(query, scalarId),
+		case PackedScalarOp.SAMPLE -> new Sample(unaryAggregateArgument(query, recipe, ownerRecipeId, scalarId),
 				query.scalarPayload(scalarId) != 0);
-		case PackedScalarOp.GROUP_CONCAT -> groupConcat(query, scalarId);
-		case PackedScalarOp.AGGREGATE_FUNCTION_CALL -> aggregateFunction(query, scalarId);
-		case PackedScalarOp.IF -> new If(scalar(query, query.scalarChild(scalarId, 0)),
-				scalarNullable(query, query.scalarChild(scalarId, 1)),
-				scalarNullable(query, query.scalarChild(scalarId, 2)));
-		case PackedScalarOp.FUNCTION_CALL -> functionCall(query, scalarId);
+		case PackedScalarOp.GROUP_CONCAT -> groupConcat(query, recipe, ownerRecipeId, scalarId);
+		case PackedScalarOp.AGGREGATE_FUNCTION_CALL -> aggregateFunction(query, recipe, ownerRecipeId, scalarId);
+		case PackedScalarOp.IF -> new If(scalarChild(query, recipe, ownerRecipeId, scalarId, 0),
+				scalarNullable(query, recipe, ownerRecipeId, query.scalarChild(scalarId, 1)),
+				scalarNullable(query, recipe, ownerRecipeId, query.scalarChild(scalarId, 2)));
+		case PackedScalarOp.FUNCTION_CALL -> functionCall(query, recipe, ownerRecipeId, scalarId);
 		case PackedScalarOp.VALUE_TRIPLE_REF -> valueTripleRef(query, query.scalarPayload(scalarId));
 		case PackedScalarOp.TRIPLE_COMPONENT -> tripleComponent(query, query.scalarPayload(scalarId));
 		default -> throw new PackedMemoInvariantException("unknown packed scalar opcode "
@@ -508,30 +526,49 @@ final class PackedPlanMaterializer {
 		return scalarId == 0 ? null : scalar(query, scalarId);
 	}
 
-	private static FunctionCall functionCall(PackedQuery query, int scalarId) {
+	private static ValueExpr scalarNullable(PackedQuery query, PackedPlanRecipe recipe, int ownerRecipeId,
+			int scalarId) {
+		return scalarId == 0 ? null : scalar(query, recipe, ownerRecipeId, scalarId);
+	}
+
+	private static ValueExpr scalarChild(PackedQuery query, PackedPlanRecipe recipe, int ownerRecipeId, int scalarId,
+			int childOrdinal) {
+		return scalar(query, recipe, ownerRecipeId, query.scalarChild(scalarId, childOrdinal));
+	}
+
+	private static FunctionCall functionCall(PackedQuery query, PackedPlanRecipe recipe, int ownerRecipeId,
+			int scalarId) {
 		FunctionCall call = new FunctionCall();
 		call.setURI((String) query.objectValue(query.scalarPayload(scalarId)));
 		for (int ordinal = 0; ordinal < query.scalarChildCount(scalarId); ordinal++) {
-			call.addArg(scalar(query, query.scalarChild(scalarId, ordinal)));
+			call.addArg(scalarChild(query, recipe, ownerRecipeId, scalarId, ordinal));
 		}
 		return call;
 	}
 
-	private static IRIFunction iriFunction(PackedQuery query, int scalarId) {
-		IRIFunction function = new IRIFunction(scalar(query, query.scalarChild(scalarId, 0)));
+	private static IRIFunction iriFunction(PackedQuery query, PackedPlanRecipe recipe, int ownerRecipeId,
+			int scalarId) {
+		IRIFunction function = new IRIFunction(scalarChild(query, recipe, ownerRecipeId, scalarId, 0));
 		function.setBaseURI((String) query.objectValue(query.scalarPayload(scalarId)));
 		return function;
 	}
 
-	private static ValueExpr naryScalar(PackedQuery query, int scalarId, NAryValueOperator operator) {
+	private static ValueExpr naryScalar(PackedQuery query, PackedPlanRecipe recipe, int ownerRecipeId, int scalarId,
+			NAryValueOperator operator) {
 		for (int ordinal = 0; ordinal < query.scalarChildCount(scalarId); ordinal++) {
-			operator.addArgument(scalar(query, query.scalarChild(scalarId, ordinal)));
+			operator.addArgument(scalarChild(query, recipe, ownerRecipeId, scalarId, ordinal));
 		}
 		return operator;
 	}
 
-	private static TupleExpr subquery(PackedQuery query, int payloadId) {
+	private static TupleExpr subquery(PackedQuery query, PackedPlanRecipe recipe, int ownerRecipeId, int payloadId) {
 		requirePayload(query, payloadId, PackedPayloadOp.SUBQUERY_VALUE);
+		if (recipe != null) {
+			int dependentRecipeId = recipe.dependentRecipeId(ownerRecipeId, payloadId);
+			if (dependentRecipeId != 0) {
+				return relation(query, recipe, dependentRecipeId);
+			}
+		}
 		return relation(query, null, query.payloadChild(payloadId, 0));
 	}
 
@@ -540,23 +577,29 @@ final class PackedPlanMaterializer {
 		return query.payloadPrimary(payloadId);
 	}
 
-	private static ValueExpr unaryAggregateArgument(PackedQuery query, int scalarId) {
-		return query.scalarChildCount(scalarId) == 0 ? null : scalar(query, query.scalarChild(scalarId, 0));
+	private static ValueExpr unaryAggregateArgument(PackedQuery query, PackedPlanRecipe recipe, int ownerRecipeId,
+			int scalarId) {
+		return query.scalarChildCount(scalarId) == 0
+				? null
+				: scalarChild(query, recipe, ownerRecipeId, scalarId, 0);
 	}
 
-	private static GroupConcat groupConcat(PackedQuery query, int scalarId) {
-		GroupConcat concat = new GroupConcat(scalarNullable(query, query.scalarChild(scalarId, 0)),
+	private static GroupConcat groupConcat(PackedQuery query, PackedPlanRecipe recipe, int ownerRecipeId,
+			int scalarId) {
+		GroupConcat concat = new GroupConcat(
+				scalarNullable(query, recipe, ownerRecipeId, query.scalarChild(scalarId, 0)),
 				query.scalarPayload(scalarId) != 0);
-		concat.setSeparator(scalarNullable(query, query.scalarChild(scalarId, 1)));
+		concat.setSeparator(scalarNullable(query, recipe, ownerRecipeId, query.scalarChild(scalarId, 1)));
 		return concat;
 	}
 
-	private static AggregateFunctionCall aggregateFunction(PackedQuery query, int scalarId) {
+	private static AggregateFunctionCall aggregateFunction(PackedQuery query, PackedPlanRecipe recipe,
+			int ownerRecipeId, int scalarId) {
 		int payloadId = requirePayload(query, query.scalarPayload(scalarId), PackedPayloadOp.AGGREGATE_FUNCTION);
 		AggregateFunctionCall function = new AggregateFunctionCall(
 				(String) query.objectValue(query.payloadPrimary(payloadId)), query.payloadSecondary(payloadId) != 0);
 		for (int ordinal = 0; ordinal < query.scalarChildCount(scalarId); ordinal++) {
-			function.addArgument(scalar(query, query.scalarChild(scalarId, ordinal)));
+			function.addArgument(scalarChild(query, recipe, ownerRecipeId, scalarId, ordinal));
 		}
 		return function;
 	}
@@ -632,6 +675,10 @@ final class PackedPlanMaterializer {
 		if (source != null) {
 			node.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, source);
 		}
+		String fusion = recipe.estimateFusion(recipeId);
+		if (fusion != null) {
+			node.setStringMetricPlanned("plannedEstimateFusion", fusion);
+		}
 		String accessMode = recipe.accessMode(recipeId);
 		if (accessMode != null) {
 			node.setStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE, accessMode);
@@ -642,6 +689,18 @@ final class PackedPlanMaterializer {
 			if (Double.isFinite(invocations) && invocations >= 0.0d) {
 				node.setDoubleMetricPlanned("plannedRepeatedInvocations", invocations);
 			}
+		}
+		for (int ordinal = 0; ordinal < recipe.plannedStringMetricCount(recipeId); ordinal++) {
+			node.setStringMetricPlanned(recipe.plannedStringMetricName(recipeId, ordinal),
+					recipe.plannedStringMetricValue(recipeId, ordinal));
+		}
+		for (int ordinal = 0; ordinal < recipe.plannedDoubleMetricCount(recipeId); ordinal++) {
+			node.setDoubleMetricPlanned(recipe.plannedDoubleMetricName(recipeId, ordinal),
+					recipe.plannedDoubleMetricValue(recipeId, ordinal));
+		}
+		if (node instanceof Join
+				&& recipe.implementationForm(recipeId) == PackedJoinEnumerator.HASH_JOIN_IMPLEMENTATION) {
+			node.setStringMetricPlanned("optimizer.joinAlgorithmHint", "hash");
 		}
 	}
 

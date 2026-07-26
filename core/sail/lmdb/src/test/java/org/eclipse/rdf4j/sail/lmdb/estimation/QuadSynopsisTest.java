@@ -43,6 +43,17 @@ class QuadSynopsisTest {
 	}
 
 	@Test
+	void singletonProjectionHashesAreRoleNeutralJoinKeys() {
+		long termId = 42L;
+
+		long subjectKey = QuadHash.projectionKey(QuadProbe.SUBJECT, termId, 0L, 0L, 0L);
+		long objectKey = QuadHash.projectionKey(QuadProbe.OBJECT, 0L, 0L, termId, 0L);
+
+		assertEquals(subjectKey, objectKey,
+				"The same RDF term must coordinate when a join moves it from subject to object position");
+	}
+
+	@Test
 	void primitiveCountMinIsMonotoneAndNeverUnderCounts() {
 		PrimitiveCountMin table = new PrimitiveCountMin(4, 1024, 31L);
 		table.add(11L, 3L);

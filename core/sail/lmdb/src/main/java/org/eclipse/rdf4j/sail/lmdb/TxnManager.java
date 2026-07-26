@@ -389,13 +389,13 @@ class TxnManager {
 			if (closed) {
 				return;
 			}
+			version++;
 			if (txnActive) {
 				mdb_txn_reset(txn);
 				txnActive = false;
 				notifyReaderInactive(this);
 				activate();
 			}
-			version++;
 		}
 
 		/**
@@ -407,8 +407,8 @@ class TxnManager {
 			}
 			if (active) {
 				activate();
+			} else if (txnActive) {
 				version++;
-			} else {
 				deactivate();
 			}
 		}

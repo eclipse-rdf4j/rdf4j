@@ -22,6 +22,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Difference;
@@ -51,6 +52,7 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EstimateMath;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
@@ -95,6 +97,7 @@ final class LmdbEstimationEngine {
 		metrics.put("optimizer.filterLowerRatio", evidence.lowerBound());
 		metrics.put("optimizer.filterUpperRatio", evidence.upperBound());
 		metrics.put("optimizer.filterConfidence", evidence.confidence());
+		metrics.put("optimizer.filterComplete", evidence.complete() ? 1.0d : 0.0d);
 		result = result.withMetrics(Map.copyOf(metrics));
 		FiniteRelationEstimate exactRelation = evidenceSource.finiteFilterRelation(input, condition, context)
 				.orElse(null);
@@ -440,6 +443,10 @@ final class LmdbEstimationEngine {
 				return estimate;
 			}
 			Set<String> shared = contextBindingNames(expression, context);
+			if (!shared.isEmpty()
+					&& (expression instanceof ArbitraryLengthPath || expression instanceof ZeroLengthPath)) {
+				return estimate;
+			}
 			if (!shared.isEmpty()) {
 				return conditionOnPrefix(estimate, context, shared);
 			}

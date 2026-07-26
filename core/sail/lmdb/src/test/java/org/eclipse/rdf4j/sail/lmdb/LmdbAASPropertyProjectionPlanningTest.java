@@ -67,7 +67,7 @@ class LmdbAASPropertyProjectionPlanningTest {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				new AASGenerator().generateAndAdd(connection, 100, 100, 100);
 			}
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				Explanation explanation = connection.prepareTupleQuery(QUERY)
@@ -82,11 +82,11 @@ class LmdbAASPropertyProjectionPlanningTest {
 						() -> "AAS query1 must retain the shell-to-submodel edge:\n" + plan);
 				assertTrue(findFirst(requiredIsland, ArbitraryLengthPath.class) != null,
 						() -> "AAS query1 must retain its property path:\n" + plan);
-				assertTrue(plan.contains("plannerAlgorithm=DPHYP_BUSHY"), plan);
+				assertTrue(plan.contains("plannerId=lmdb-packed-cascades"), plan);
 				assertFalse(plan.contains("path-waits-for-selective-endpoint-binder"),
 						() -> "AAS query1 should compare path endpoint alternatives by cost instead of hard-waiting "
 								+ "for ?prop:\n" + plan);
-				assertTrue(plan.contains("optimizer.connectedEnumeration=runtime-connected-plus-zero-var-filters"),
+				assertTrue(plan.contains("optimizer.connectedEnumeration=connected-prefix-only"),
 						() -> "The constant type guard must remain a bounded zero-variable filter:\n" + plan);
 				double cartesianRows = requiredIsland.getDoubleMetricPlanned("plannedCostCartesianWorkRows");
 				assertTrue(cartesianRows >= 0.0d && cartesianRows <= 1.0d,

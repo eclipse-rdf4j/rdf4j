@@ -311,7 +311,8 @@ public final class LmdbQuadSynopsisService implements AutoCloseable {
 							try {
 								observation.statementScanned(statement);
 							} catch (RuntimeException e) {
-								logger.warn("Disabling quad synopsis rebuild observer after a statement callback failed",
+								logger.warn(
+										"Disabling quad synopsis rebuild observer after a statement callback failed",
 										e);
 								abortRebuildObservation(observation);
 								observation = null;
@@ -340,7 +341,8 @@ public final class LmdbQuadSynopsisService implements AutoCloseable {
 					try {
 						observation.complete(nextIdentity.mutationVersion());
 					} catch (RuntimeException e) {
-						logger.warn("Discarding quad synopsis rebuild observer result after publication callback failed",
+						logger.warn(
+								"Discarding quad synopsis rebuild observer result after publication callback failed",
 								e);
 						abortRebuildObservation(observation);
 					}

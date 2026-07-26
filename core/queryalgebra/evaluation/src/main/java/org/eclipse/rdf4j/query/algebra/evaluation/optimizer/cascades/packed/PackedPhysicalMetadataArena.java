@@ -22,12 +22,24 @@ final class PackedPhysicalMetadataArena {
 	private double[] workRows;
 	private double[] accessRows;
 	private double[] invocations;
+	private int[] evidenceStateIds;
 	private int[] lookupMasks;
 	private int[] missingLookupMasks;
 	private int[] indexPrefixLengths;
 	private int[] indexNameIds;
 	private int[] estimateSourceIds;
+	private int[] estimateFusionIds;
 	private int[] accessModeIds;
+	private int[] plannedStringMetricStarts;
+	private int[] plannedStringMetricCounts;
+	private int[] plannedDoubleMetricStarts;
+	private int[] plannedDoubleMetricCounts;
+	private int[] plannedStringMetricNameIds = new int[4];
+	private int[] plannedStringMetricValueIds = new int[4];
+	private int[] plannedDoubleMetricNameIds = new int[4];
+	private double[] plannedDoubleMetricValues = new double[4];
+	private int plannedStringMetricSize;
+	private int plannedDoubleMetricSize;
 	private int size;
 
 	PackedPhysicalMetadataArena(int expectedRows) {
@@ -37,12 +49,18 @@ final class PackedPhysicalMetadataArena {
 		workRows = new double[capacity];
 		accessRows = new double[capacity];
 		invocations = new double[capacity];
+		evidenceStateIds = new int[capacity];
 		lookupMasks = new int[capacity];
 		missingLookupMasks = new int[capacity];
 		indexPrefixLengths = new int[capacity];
 		indexNameIds = new int[capacity];
 		estimateSourceIds = new int[capacity];
+		estimateFusionIds = new int[capacity];
 		accessModeIds = new int[capacity];
+		plannedStringMetricStarts = new int[capacity];
+		plannedStringMetricCounts = new int[capacity];
+		plannedDoubleMetricStarts = new int[capacity];
+		plannedDoubleMetricCounts = new int[capacity];
 	}
 
 	int append(PackedCostEstimate estimate, double fallbackRows, double fallbackWork) {
@@ -52,12 +70,15 @@ final class PackedPhysicalMetadataArena {
 		workRows[metadataId] = finiteNonNegative(estimate.workRows(), fallbackWork);
 		accessRows[metadataId] = finiteNonNegative(estimate.accessRows(), Double.NaN);
 		invocations[metadataId] = finiteNonNegative(estimate.invocations(), 1.0d);
+		evidenceStateIds[metadataId] = estimate.evidenceStateId();
 		lookupMasks[metadataId] = estimate.lookupComponentMask();
 		missingLookupMasks[metadataId] = estimate.missingLookupComponentMask();
 		indexPrefixLengths[metadataId] = estimate.indexPrefixLength();
 		indexNameIds[metadataId] = objects.intern(estimate.indexName());
 		estimateSourceIds[metadataId] = objects.intern(estimate.estimateSource());
+		estimateFusionIds[metadataId] = objects.intern(estimate.estimateFusion());
 		accessModeIds[metadataId] = objects.intern(estimate.accessMode());
+		appendPlannedMetrics(metadataId, estimate);
 		return metadataId;
 	}
 
@@ -79,6 +100,11 @@ final class PackedPhysicalMetadataArena {
 	double invocations(int metadataId) {
 		checkId(metadataId);
 		return invocations[metadataId];
+	}
+
+	int evidenceStateId(int metadataId) {
+		checkId(metadataId);
+		return evidenceStateIds[metadataId];
 	}
 
 	int lookupMask(int metadataId) {
@@ -106,9 +132,81 @@ final class PackedPhysicalMetadataArena {
 		return objects.value(estimateSourceIds[metadataId]);
 	}
 
+	Object estimateFusion(int metadataId) {
+		checkId(metadataId);
+		return objects.value(estimateFusionIds[metadataId]);
+	}
+
 	Object accessMode(int metadataId) {
 		checkId(metadataId);
 		return objects.value(accessModeIds[metadataId]);
+	}
+
+	int plannedStringMetricCount(int metadataId) {
+		checkId(metadataId);
+		return plannedStringMetricCounts[metadataId];
+	}
+
+	Object plannedStringMetricName(int metadataId, int ordinal) {
+		return objects.value(plannedStringMetricNameIds[plannedStringMetricIndex(metadataId, ordinal)]);
+	}
+
+	Object plannedStringMetricValue(int metadataId, int ordinal) {
+		return objects.value(plannedStringMetricValueIds[plannedStringMetricIndex(metadataId, ordinal)]);
+	}
+
+	int plannedDoubleMetricCount(int metadataId) {
+		checkId(metadataId);
+		return plannedDoubleMetricCounts[metadataId];
+	}
+
+	Object plannedDoubleMetricName(int metadataId, int ordinal) {
+		return objects.value(plannedDoubleMetricNameIds[plannedDoubleMetricIndex(metadataId, ordinal)]);
+	}
+
+	double plannedDoubleMetricValue(int metadataId, int ordinal) {
+		return plannedDoubleMetricValues[plannedDoubleMetricIndex(metadataId, ordinal)];
+	}
+
+	private void appendPlannedMetrics(int metadataId, PackedCostEstimate estimate) {
+		int stringCount = estimate.plannedStringMetricCount();
+		plannedStringMetricStarts[metadataId] = plannedStringMetricSize;
+		plannedStringMetricCounts[metadataId] = stringCount;
+		ensurePlannedStringMetricCapacity(plannedStringMetricSize + stringCount);
+		for (int ordinal = 0; ordinal < stringCount; ordinal++) {
+			plannedStringMetricNameIds[plannedStringMetricSize] = objects
+					.intern(estimate.plannedStringMetricName(ordinal));
+			plannedStringMetricValueIds[plannedStringMetricSize] = objects
+					.intern(estimate.plannedStringMetricValue(ordinal));
+			plannedStringMetricSize++;
+		}
+
+		int doubleCount = estimate.plannedDoubleMetricCount();
+		plannedDoubleMetricStarts[metadataId] = plannedDoubleMetricSize;
+		plannedDoubleMetricCounts[metadataId] = doubleCount;
+		ensurePlannedDoubleMetricCapacity(plannedDoubleMetricSize + doubleCount);
+		for (int ordinal = 0; ordinal < doubleCount; ordinal++) {
+			plannedDoubleMetricNameIds[plannedDoubleMetricSize] = objects
+					.intern(estimate.plannedDoubleMetricName(ordinal));
+			plannedDoubleMetricValues[plannedDoubleMetricSize] = estimate.plannedDoubleMetricValue(ordinal);
+			plannedDoubleMetricSize++;
+		}
+	}
+
+	private int plannedStringMetricIndex(int metadataId, int ordinal) {
+		checkId(metadataId);
+		if (ordinal < 0 || ordinal >= plannedStringMetricCounts[metadataId]) {
+			throw new IndexOutOfBoundsException("planned string metric ordinal outside physical metadata");
+		}
+		return plannedStringMetricStarts[metadataId] + ordinal;
+	}
+
+	private int plannedDoubleMetricIndex(int metadataId, int ordinal) {
+		checkId(metadataId);
+		if (ordinal < 0 || ordinal >= plannedDoubleMetricCounts[metadataId]) {
+			throw new IndexOutOfBoundsException("planned double metric ordinal outside physical metadata");
+		}
+		return plannedDoubleMetricStarts[metadataId] + ordinal;
 	}
 
 	private void checkId(int metadataId) {
@@ -126,12 +224,42 @@ final class PackedPhysicalMetadataArena {
 		workRows = Arrays.copyOf(workRows, capacity);
 		accessRows = Arrays.copyOf(accessRows, capacity);
 		invocations = Arrays.copyOf(invocations, capacity);
+		evidenceStateIds = Arrays.copyOf(evidenceStateIds, capacity);
 		lookupMasks = Arrays.copyOf(lookupMasks, capacity);
 		missingLookupMasks = Arrays.copyOf(missingLookupMasks, capacity);
 		indexPrefixLengths = Arrays.copyOf(indexPrefixLengths, capacity);
 		indexNameIds = Arrays.copyOf(indexNameIds, capacity);
 		estimateSourceIds = Arrays.copyOf(estimateSourceIds, capacity);
+		estimateFusionIds = Arrays.copyOf(estimateFusionIds, capacity);
 		accessModeIds = Arrays.copyOf(accessModeIds, capacity);
+		plannedStringMetricStarts = Arrays.copyOf(plannedStringMetricStarts, capacity);
+		plannedStringMetricCounts = Arrays.copyOf(plannedStringMetricCounts, capacity);
+		plannedDoubleMetricStarts = Arrays.copyOf(plannedDoubleMetricStarts, capacity);
+		plannedDoubleMetricCounts = Arrays.copyOf(plannedDoubleMetricCounts, capacity);
+	}
+
+	private void ensurePlannedStringMetricCapacity(int requiredSize) {
+		if (requiredSize <= plannedStringMetricNameIds.length) {
+			return;
+		}
+		int capacity = plannedStringMetricNameIds.length;
+		while (capacity < requiredSize) {
+			capacity <<= 1;
+		}
+		plannedStringMetricNameIds = Arrays.copyOf(plannedStringMetricNameIds, capacity);
+		plannedStringMetricValueIds = Arrays.copyOf(plannedStringMetricValueIds, capacity);
+	}
+
+	private void ensurePlannedDoubleMetricCapacity(int requiredSize) {
+		if (requiredSize <= plannedDoubleMetricNameIds.length) {
+			return;
+		}
+		int capacity = plannedDoubleMetricNameIds.length;
+		while (capacity < requiredSize) {
+			capacity <<= 1;
+		}
+		plannedDoubleMetricNameIds = Arrays.copyOf(plannedDoubleMetricNameIds, capacity);
+		plannedDoubleMetricValues = Arrays.copyOf(plannedDoubleMetricValues, capacity);
 	}
 
 	private static double finiteNonNegative(double value, double fallback) {

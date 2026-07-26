@@ -48,6 +48,10 @@ This is a hard cutover. The completed repository contains one Cascades implement
   `LmdbIndependentFiniteAnchorJoinPlanningTest` 2/2, `LmdbOptimizerPipelineTest` 40/40, capture shell regression,
   `git diff --check`, and the PHARMA q6 local JFR cell are green. The focused LMDB verifies explicitly skip japicmp;
   without that skip Surefire is green and the lifecycle reaches the known packed-cutover binary-compatibility gate.
+- [x] (2026-07-25 05:23Z) Close the functional prerequisite for Frontier work: the complete query-evaluation
+  module passes 936 tests with no failures or errors, and the complete LMDB lifecycle passes 1,544 tests with no
+  failures or errors (114 intentional skips), including Failsafe, japicmp, and the flagged theme regressions.
+  `initial-evidence.packed-prereq-green.txt` preserves the LMDB report and lifecycle summary.
 
 ## Surprises & Discoveries
 
@@ -227,7 +231,17 @@ This is a hard cutover. The completed repository contains one Cascades implement
 
 ## Outcomes & Retrospective
 
-The packed planner is now the only production Cascades route. The old memo, object IR, rule DSL, join-search object model, shadow/fallback modes, and eager eligibility mutator have been removed. The query codec, packed memo, three join-subset kernels, LMDB ID-based costing, selected-recipe materialization, and store-owned cache are integrated. The complete 40-case LMDB optimizer-pipeline regression was green at the recorded checkpoint. Remaining work is to restore consumption of stored predicate-object ranges inside packed planning, then run the full module, corpus, allocation, JFR, and plan-quality closeout.
+The packed planner is now the only production Cascades route. The old memo, object IR, rule DSL, join-search object
+model, shadow/fallback modes, and eager eligibility mutator have been removed. The query codec, packed memo, three
+join-subset kernels, LMDB ID-based costing, selected-recipe materialization, and store-owned cache are integrated.
+Stored predicate-object ranges participate through typed packed facts, and the post-cutover theme regressions have
+been repaired without restoring an object-engine bridge in the packed hot path.
+
+The functional closeout is green as of 2026-07-25: the complete query-evaluation module passes 936 tests, and the
+complete LMDB lifecycle passes 1,544 tests with zero failures or errors, including the compatibility gate. This is
+the prerequisite used by the separate Frontier OmniSketch ExecPlan. The externally blocked Docker Java 26 JFR run
+and the explicitly listed predicate-range extensions remain follow-up performance and feature work; neither is
+silently treated as completed.
 
 ## Context and Orientation
 
@@ -399,3 +413,7 @@ Revision note (2026-07-21 18:05Z / Codex): added Milestone 6 after inspection sh
 Revision note (2026-07-23 14:34Z / Codex): added Milestone 7 after the first packed benchmark-history audit. The
 revision records the capture-parser defect, three planner root-cause groups, the design constraints inherited from the
 predecessor optimizer, and the test/profile gates required before accepting the remediation.
+
+Revision note (2026-07-25 05:23Z / Codex): recorded the final functional prerequisite gate after the complete
+query-evaluation and LMDB module lifecycles passed, and separated that evidence from the still-blocked Docker Java 26
+profile and deferred predicate-range extensions.

@@ -83,9 +83,21 @@ public final class LmdbPlannerAwait {
 	}
 
 	public static void awaitSketchesReady(LmdbStore store, Duration atMost) {
+		if (store.getBackingStore().getSketchBasedJoinEstimator() == null) {
+			return;
+		}
 		awaitPlannerAssertion("LMDB sketches ready", atMost,
 				() -> assertTrue(store.awaitSketchesReady(SKETCH_READY_POLL_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS),
 						"Expected LMDB sketches to become ready"));
+	}
+
+	public static boolean rebuildSketchesIfEnabled(LmdbStore store) {
+		SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
+		if (estimator == null) {
+			return false;
+		}
+		estimator.rebuild();
+		return true;
 	}
 
 	public static void awaitEstimatorReady(SketchBasedJoinEstimator estimator) {

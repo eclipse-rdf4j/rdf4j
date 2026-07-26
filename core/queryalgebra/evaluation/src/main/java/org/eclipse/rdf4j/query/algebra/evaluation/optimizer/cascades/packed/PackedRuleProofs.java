@@ -35,6 +35,8 @@ public final class PackedRuleProofs {
 	static final long PREDICATE_RANGE_EMPTY = 1L << 10;
 	static final long PREDICATE_RANGE_TAUTOLOGY = 1L << 11;
 	static final long PREDICATE_RANGE_ANCHOR = 1L << 12;
+	static final long MINUS_CORRELATED_NOT_EXISTS = 1L << 13;
+	static final long FILTER_COMMUTATION = 1L << 14;
 
 	private PackedRuleProofs() {
 	}
@@ -70,6 +72,11 @@ public final class PackedRuleProofs {
 				"stored predicate-object range proves the filter true for every assured-bound row");
 		add(proofs, ruleMask, PREDICATE_RANGE_ANCHOR, "packed-predicate-range-anchor", "finiteObjectDomain",
 				"stored predicate-object range anchors the object binding to proven values");
+		add(proofs, ruleMask, MINUS_CORRELATED_NOT_EXISTS, "packed-minus-correlated-not-exists",
+				"leftAssuredSharedDomain",
+				"MINUS with assured shared bindings is implemented as a safe correlated NOT EXISTS probe");
+		add(proofs, ruleMask, FILTER_COMMUTATION, "packed-filter-commutation", "assuredFilterDependencies",
+				"deterministic filters with assured dependencies commute over their common input");
 		return List.copyOf(proofs);
 	}
 

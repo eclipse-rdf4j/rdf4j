@@ -13,6 +13,8 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
@@ -25,6 +27,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FN;
@@ -39,14 +42,20 @@ import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
@@ -55,6 +64,14 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Optimizatio
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCascadesPlanner;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostTestSupport;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanningResult;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedQueryView;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedRuleProofs;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -97,7 +114,7 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 
 		try {
 			loadSyntheticEngineeringAssemblies(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 
 			BindingSetAssignment assemblyNames = assemblyNameBindings();
 			StatementPattern name = new StatementPattern(Var.of("assembly"), Var.of("namePredicate", ENG_NAME),
@@ -120,17 +137,31 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			double plannedAccessRows = plannedPartOf.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_ACCESS_ROWS);
 			double plannedInvocations = plannedPartOf.getDoubleMetricPlanned("plannedRepeatedInvocations");
 			double plannedWorkRows = plannedPartOf.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS);
-			assertEquals(COMPONENTS_PER_ASSEMBLY, plannedAccessRows, COMPONENTS_PER_ASSEMBLY * 0.25d,
-					"The VALUES-derived ?assembly surface should keep the partOf lookup on a single-assembly "
-							+ "access path while repeated invocations account for the finite branches. "
-							+ "expectedAccessRows=" + COMPONENTS_PER_ASSEMBLY
-							+ ", metrics=" + plannedPartOf + ", plan=" + plan.tupleExpr());
-			assertTrue(plannedInvocations >= 1.0d && plannedInvocations <= ASSEMBLY_COUNT * 2.0d,
-					"The partOf lookup should be repeated once per finite assembly rather than once per broad "
-							+ "name row. expectedInvocations=" + ASSEMBLY_COUNT + ", metrics=" + plannedPartOf
-							+ ", plan=" + plan.tupleExpr());
-			assertTrue(plannedWorkRows <= expectedSurfaceRows * 2.25d,
-					"The planned work should stay near access plus emitted rows for the finite partOf surface. "
+			boolean hashJoin = "hash".equals(
+					plan.tupleExpr().getStringMetricPlanned("optimizer.joinAlgorithmHint"));
+			if (hashJoin) {
+				assertEquals(expectedSurfaceRows, plannedAccessRows, expectedSurfaceRows * 0.25d,
+						"A hash join should scan the bounded partOf surface exactly once. expectedAccessRows="
+								+ expectedSurfaceRows + ", metrics=" + plannedPartOf + ", plan=" + plan.tupleExpr());
+				assertEquals(1.0d, plannedInvocations, 0.01d,
+						"A hash join should build its independent right input once. metrics=" + plannedPartOf
+								+ ", plan=" + plan.tupleExpr());
+			} else {
+				assertEquals(COMPONENTS_PER_ASSEMBLY, plannedAccessRows, COMPONENTS_PER_ASSEMBLY * 0.25d,
+						"The VALUES-derived ?assembly surface should keep the partOf lookup on a single-assembly "
+								+ "access path while repeated invocations account for the finite branches. "
+								+ "expectedAccessRows=" + COMPONENTS_PER_ASSEMBLY
+								+ ", metrics=" + plannedPartOf + ", plan=" + plan.tupleExpr());
+				assertTrue(plannedInvocations >= 1.0d && plannedInvocations <= ASSEMBLY_COUNT * 2.0d,
+						"The partOf lookup should be repeated once per finite assembly rather than once per broad "
+								+ "name row. expectedInvocations=" + ASSEMBLY_COUNT + ", metrics=" + plannedPartOf
+								+ ", plan=" + plan.tupleExpr());
+			}
+			assertEquals(expectedSurfaceRows, plan.tupleExpr().getResultSizeEstimate(), expectedSurfaceRows * 0.25d,
+					"Both join implementations must retain the complete VALUES-derived partOf cardinality. plan="
+							+ plan.tupleExpr());
+			assertEquals(expectedSurfaceRows, plannedWorkRows, expectedSurfaceRows * 0.25d,
+					"Both join implementations should retain the same bounded partOf factor work. "
 							+ "expectedSurfaceRows=" + expectedSurfaceRows + ", metrics=" + plannedPartOf
 							+ ", plan=" + plan.tupleExpr());
 		} finally {
@@ -147,7 +178,7 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 
 		try {
 			loadSyntheticEngineeringAssemblies(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 
 			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
 			StatementPattern predicateScan = new StatementPattern(Var.of("assembly"),
@@ -183,7 +214,7 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 
 		try {
 			loadSyntheticLibraryBranches(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 
 			BindingSetAssignment branchNames = branchNameBindings();
 			StatementPattern name = new StatementPattern(Var.of("branch"), Var.of("namePredicate", LIB_NAME),
@@ -202,6 +233,109 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 					"The connected Cascades planner should pass finite prefix values into object lookups instead of "
 							+ "costing the selected names by global predicate fanout. plannedRows=" + plannedRows
 							+ ", metrics=" + plannedName);
+			assertEquals("lmdb-finite-binding-lookup",
+					plannedName.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE),
+					"A statement evaluated over concrete VALUES rows must retain finite-probe provenance");
+			assertEquals(2.0d, plannedName.getDoubleMetricPlanned("plannedRepeatedInvocations"), 0.0d,
+					"Bag multiplicity requires one lookup invocation for each VALUES row");
+			assertEquals(2.0d, plannedName.getDoubleMetricPlanned("plannedDistinctLookupBindings"), 0.0d,
+					"The two distinct VALUES terms require two distinct concrete probes");
+			assertEquals("[P, O]",
+					plannedName.getStringMetricPlanned(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS),
+					"The finite object values must produce a predicate/object lookup");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void finiteLookupSeparatesDuplicateBagInvocationsFromDistinctProbes(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticLibraryBranches(repository);
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
+
+			BindingSetAssignment branchNames = bindingAssignment("branchName",
+					VF.createLiteral("Branch 0"), VF.createLiteral("Branch 0"), VF.createLiteral("Branch 1"));
+			StatementPattern name = new StatementPattern(Var.of("branch"), Var.of("namePredicate", LIB_NAME),
+					Var.of("branchName"));
+			StatementPattern plannedName = planStatementPattern(store, new Join(branchNames, name), LIB_NAME,
+					"branchName");
+
+			assertEquals("lmdb-finite-binding-lookup",
+					plannedName.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
+			assertEquals(3.0d, plannedName.getDoubleMetricPlanned("plannedRepeatedInvocations"), 0.0d,
+					"Duplicate VALUES rows remain distinct bag invocations");
+			assertEquals(2.0d, plannedName.getDoubleMetricPlanned("plannedDistinctLookupBindings"), 0.0d,
+					"Duplicate concrete probes should be counted once in the distinct lookup domain");
+			assertEquals(3.0d,
+					plannedName.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS), 0.0d,
+					"Duplicate VALUES rows must preserve duplicate output multiplicity");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void mixedUndefValuesNeverClaimAStableFiniteLookupMask(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticLibraryBranches(repository);
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
+
+			for (boolean boundRowFirst : List.of(true, false)) {
+				BindingSetAssignment branchNames = mixedBindingAssignment("branchName",
+						VF.createLiteral("Branch 0"), boundRowFirst);
+				StatementPattern name = new StatementPattern(Var.of("branch"), Var.of("namePredicate", LIB_NAME),
+						Var.of("branchName"));
+				StatementPattern plannedName = planStatementPattern(store, new Join(branchNames, name), LIB_NAME,
+						"branchName");
+
+				assertNotEquals("lmdb-finite-binding-lookup",
+						plannedName.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE),
+						"A variable that is UNDEF in any VALUES row is not assured bound; rowOrder="
+								+ (boundRowFirst ? "bound-first" : "undef-first"));
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void oversizedFirstValuesRelationFallsBackWithoutPartialFiniteEvidence(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticLibraryBranches(repository);
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
+
+			List<BindingSet> rows = new ArrayList<>();
+			for (int index = 0; index < 1_025; index++) {
+				QueryBindingSet row = new QueryBindingSet();
+				row.addBinding("branchName", VF.createLiteral("Missing Branch " + index));
+				rows.add(row);
+			}
+			BindingSetAssignment branchNames = new BindingSetAssignment();
+			branchNames.setBindingSets(rows);
+			StatementPattern name = new StatementPattern(Var.of("branch"), Var.of("namePredicate", LIB_NAME),
+					Var.of("branchName"));
+			StatementPattern plannedName = planStatementPattern(store, new Join(branchNames, name), LIB_NAME,
+					"branchName");
+
+			assertNotEquals("lmdb-finite-binding-lookup",
+					plannedName.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE),
+					"An over-budget first assignment must fall back rather than enumerate or retain a partial domain");
 		} finally {
 			repository.shutDown();
 		}
@@ -217,7 +351,7 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 
 		try {
 			loadSyntheticLibraryBranches(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 
 			StatementPattern name = new StatementPattern(Var.of("branch"), Var.of("namePredicate", LIB_NAME),
 					Var.of("branchName"));
@@ -255,7 +389,7 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 
 		try {
 			loadSyntheticLibraryBranches(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 
 			BindingSetAssignment branchNames = branchNameBindings();
 			StatementPattern name = new StatementPattern(Var.of("branch"), Var.of("namePredicate", LIB_NAME),
@@ -283,7 +417,7 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 
 		try {
 			loadSyntheticLibraryBranches(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 
 			BindingSetAssignment branchNames = branchNameBindings();
 			StatementPattern name = new StatementPattern(Var.of("branch"), Var.of("namePredicate", LIB_NAME),
@@ -313,7 +447,7 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 
 		try {
 			loadSyntheticLibraryBranches(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 
 			BindingSetAssignment branchNames = branchNameBindings();
 			StatementPattern name = new StatementPattern(Var.of("branch"), Var.of("namePredicate", LIB_NAME),
@@ -352,7 +486,7 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 
 		try {
 			loadSyntheticLibraryBranches(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 
 			BindingSetAssignment branchNames = branchNameBindings();
 			StatementPattern name = new StatementPattern(Var.of("branch"), Var.of("namePredicate", LIB_NAME),
@@ -393,7 +527,7 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 
 		try {
 			loadSyntheticLibraryBranches(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 
 			String query = String.join("\n",
 					"PREFIX lib: <http://example.com/theme/library/>",
@@ -404,17 +538,10 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 					"  FILTER EXISTS { ?copy a lib:Copy . }",
 					"  MINUS { ?copy lib:locatedAt ?branch . FILTER(CONTAINS(STR(?branch), \"branch/0\")) }",
 					"}");
-			TupleExpr input = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
-			OptimizationGoal baseGoal = OptimizationGoal.root(input, PhysicalProperties.ANY);
-			OptimizationGoal autoGoal = new OptimizationGoal(baseGoal.requiredProperties(), baseGoal.semanticScope(),
-					baseGoal.costPolicy(), baseGoal.costBound(), baseGoal.excludedProperties(),
-					OptimizationGoal.SearchMode.AUTO, Long.MAX_VALUE, 4_096, baseGoal.rowGoal(),
-					baseGoal.estimationTier(), baseGoal.inputBindingContext());
-			CascadesPlan plan = new LmdbCascadesOptimizer(store.getBackingStore().getEvaluationStatistics(), false)
-					.planPreparedInput(input, autoGoal);
+			CascadesPlan plan = planAuto(store, query);
 
 			TupleExpr optimized = plan.tupleExpr();
-			StatementPattern plannedLocatedAt = findStatementPattern(optimized, LIB_LOCATED_AT, "branch");
+			StatementPattern plannedLocatedAt = findOuterStatementPattern(optimized, LIB_LOCATED_AT, "branch");
 			assertTrue(plannedLocatedAt != null, "Expected planned locatedAt lookup. plan=" + optimized);
 			assertEquals("[P, O]",
 					plannedLocatedAt.getStringMetricPlanned(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS),
@@ -423,6 +550,195 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			assertTrue(plannedLocatedAt.getDoubleMetricPlanned("plannedRepeatedInvocations") <= 4.0d,
 					"AUTO must not invoke locatedAt once per broad branch-name row. status=" + plan.searchStatus()
 							+ ", metrics=" + plannedLocatedAt + ", plan=" + optimized);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void unifiedAutoKeepsFiniteBranchPrefixAcrossExistsPredicate(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticLibraryBranches(repository);
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
+
+			String query = String.join("\n",
+					"PREFIX lib: <http://example.com/theme/library/>",
+					"SELECT (COUNT(DISTINCT ?copy) AS ?count) WHERE {",
+					"  ?copy a lib:Copy ; lib:locatedAt ?branch .",
+					"  ?branch lib:name ?branchName .",
+					"  FILTER(?branchName = \"Branch 0\" || ?branchName = \"Branch 1\")",
+					"  FILTER EXISTS { ?copy a lib:Copy . }",
+					"}");
+			CascadesPlan plan = planAuto(store, query);
+
+			TupleExpr optimized = plan.tupleExpr();
+			StatementPattern plannedLocatedAt = findStatementPattern(optimized, LIB_LOCATED_AT, "branch");
+			assertTrue(plannedLocatedAt != null, "Expected planned locatedAt lookup. plan=" + optimized);
+			assertEquals("[P, O]",
+					plannedLocatedAt.getStringMetricPlanned(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS),
+					"The finite branch prefix must cross the EXISTS scope without becoming a broad scan. status="
+							+ plan.searchStatus() + ", metrics=" + plannedLocatedAt + ", plan=" + optimized);
+			assertTrue(plannedLocatedAt.getDoubleMetricPlanned("plannedRepeatedInvocations") <= 4.0d,
+					"EXISTS must not make locatedAt run once per broad branch-name row. status="
+							+ plan.searchStatus() + ", metrics=" + plannedLocatedAt + ", plan=" + optimized);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void finiteFilterAlternativeSurvivesSelectionBeforeContextualization(@TempDir File dataDir)
+			throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticLibraryBranches(repository);
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
+
+			String query = String.join("\n",
+					"PREFIX lib: <http://example.com/theme/library/>",
+					"SELECT (COUNT(DISTINCT ?copy) AS ?count) WHERE {",
+					"  ?copy a lib:Copy ; lib:locatedAt ?branch .",
+					"  ?branch lib:name ?branchName .",
+					"  FILTER(?branchName = \"Branch 0\" || ?branchName = \"Branch 1\")",
+					"  FILTER EXISTS { ?copy a lib:Copy . }",
+					"}");
+			TupleExpr input = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+			OptimizationGoal baseGoal = OptimizationGoal.root(input, PhysicalProperties.ANY);
+			OptimizationGoal autoGoal = new OptimizationGoal(baseGoal.requiredProperties(), baseGoal.semanticScope(),
+					baseGoal.costPolicy(), baseGoal.costBound(), baseGoal.excludedProperties(),
+					OptimizationGoal.SearchMode.AUTO, Long.MAX_VALUE, 4_096, baseGoal.rowGoal(),
+					baseGoal.estimationTier(), baseGoal.inputBindingContext());
+			LmdbEstimatorRuntime runtime = ((LmdbEstimatorRuntimeProvider) store.getBackingStore()
+					.getEvaluationStatistics()).estimatorRuntime();
+			PackedCostModel delegate = new LmdbPackedCostModel(runtime);
+			List<String> finiteAlternativeCosts = new ArrayList<>();
+			PackedCostModel probe = new PackedCostModel() {
+				@Override
+				public double estimateRows(PackedQueryView packedQuery, int relationId) {
+					return delegate.estimateRows(packedQuery, relationId);
+				}
+
+				@Override
+				public void estimate(PackedQueryView packedQuery, int relationId, PackedCostContext context,
+						PackedCostEstimate output) {
+					delegate.estimate(packedQuery, relationId, context, output);
+				}
+
+				@Override
+				public void refineOperator(PackedQueryView packedQuery, int relationId, PackedCostContext context,
+						PackedCostEstimate output) {
+					delegate.refineOperator(packedQuery, relationId, context, output);
+					if (isFiniteAnchorJoin(packedQuery, relationId)) {
+						finiteAlternativeCosts.add("relation=" + relationId
+								+ ", prefixCount=" + context.prefixRelationCount()
+								+ ", leftRows=" + context.leftInputRows()
+								+ ", rightRows=" + context.rightInputRows()
+								+ ", outputRows=" + output.outputRows()
+								+ ", workRows=" + output.workRows()
+								+ ", source=" + output.estimateSource());
+					}
+				}
+			};
+
+			PackedPlanningResult result = PackedCascadesPlanner.optimize(input, autoGoal, probe,
+					new LmdbPackedPredicateRangeProvider(runtime));
+			List<String> selectedProofs = PackedRuleProofs.materialize(result.ruleProofMask())
+					.stream()
+					.map(proof -> proof.ruleId())
+					.toList();
+
+			assertTrue(!finiteAlternativeCosts.isEmpty(),
+					() -> "The finite-filter JOIN must be generated and provider-costed before selection. plan="
+							+ result.selectedPlan());
+			assertTrue(selectedProofs.contains("packed-finite-filter-values"),
+					() -> "The generated finite-filter JOIN loses before selected-plan contextualization. "
+							+ "finiteAlternativeCosts=" + finiteAlternativeCosts
+							+ ", selectedProofs=" + selectedProofs
+							+ ", selectedCost=" + result.totalCost()
+							+ ", plan=" + result.selectedPlan());
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void disconnectedDecoratedFactorsPreserveProviderRowScope(@TempDir File dataDir)
+			throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc,posc"));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			IRI p0 = VF.createIRI("urn:test:scope:p0");
+			IRI p1 = VF.createIRI("urn:test:scope:p1");
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				for (int index = 0; index < 3; index++) {
+					connection.add(VF.createIRI("urn:test:scope:v0:" + index), p0,
+							VF.createIRI("urn:test:scope:tail:" + index));
+					connection.add(VF.createIRI("urn:test:scope:carrier:" + index), p1,
+							VF.createIRI("urn:test:scope:v1:" + index));
+				}
+				for (int index = 0; index < 20; index++) {
+					connection.add(VF.createIRI("urn:test:scope:noise-carrier:" + index), p1,
+							VF.createIRI("urn:test:scope:noise-value:" + index));
+				}
+				connection.commit();
+			}
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
+
+			StatementPattern prefix = new StatementPattern(Var.of("v0"), Var.of("p0", p0), Var.of("tail"));
+			StatementPattern input = new StatementPattern(Var.of("carrier"), Var.of("p1", p1), Var.of("v1"));
+			ListMemberOperator condition = new ListMemberOperator();
+			condition.addArgument(Var.of("v1"));
+			for (int index = 0; index < 3; index++) {
+				condition.addArgument(new ValueConstant(VF.createIRI("urn:test:scope:v1:" + index)));
+			}
+			Filter filter = new Filter(input, condition);
+			LmdbEstimatorRuntime runtime = ((LmdbEstimatorRuntimeProvider) store.getBackingStore()
+					.getEvaluationStatistics()).estimatorRuntime();
+			PackedCostTestSupport.CostCall call = PackedCostTestSupport.disconnectedFilter(prefix, filter, 3.0d);
+			PackedCostEstimate estimate = new PackedCostEstimate();
+
+			new LmdbPackedCostModel(runtime).estimate(call.query(), call.factorRelationId(), call.context(),
+					estimate);
+
+			assertEquals("lmdb-finite-filter-surface", estimate.estimateSource());
+			assertTrue(estimate.hasContextualOutputRows());
+			assertTrue(estimate.hasComponentOutputRows(),
+					"The exact finite relation contains only the local FILTER component");
+			assertEquals(3.0d, estimate.outputRows(), 0.0d,
+					"Three local matches remain three component rows before packed prefix composition");
+			assertEquals(138.0d, estimate.workRows(), 0.0d,
+					"Twenty-three p1 rows are read and filtered for each of three outer invocations");
+
+			ProjectionElemList elements = new ProjectionElemList();
+			elements.addElement(new ProjectionElem("v1"));
+			Projection projection = new Projection(input.clone(), elements);
+			PackedCostTestSupport.CostCall contextualCall = PackedCostTestSupport.disconnectedFactor(prefix,
+					projection, 3.0d);
+			estimate.clear();
+
+			new LmdbPackedCostModel(runtime).estimate(contextualCall.query(), contextualCall.factorRelationId(),
+					contextualCall.context(), estimate);
+
+			assertEquals("projection", estimate.estimateSource());
+			assertTrue(estimate.hasContextualOutputRows());
+			assertFalse(estimate.hasComponentOutputRows(),
+					"A projection over repeated input already contains the unrelated three-row prefix");
+			assertEquals(69.0d, estimate.outputRows(), 0.0d,
+					"Twenty-three local rows repeated for three outer rows form one full contextual surface");
+			assertEquals(69.0d, estimate.workRows(), 0.0d,
+					"The identity projection retains the complete repeated input work");
 		} finally {
 			repository.shutDown();
 		}
@@ -537,7 +853,7 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 
 		try {
 			loadSyntheticEngineeringAssemblies(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				String filterQuery = engineeringAssemblyNameFilterQuery();
@@ -585,7 +901,7 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 
 		try {
 			loadSyntheticMedicalObservations(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				Explanation explanation = connection.prepareTupleQuery(medicalObservationValuesQuery())
@@ -614,6 +930,81 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 						"The unified optimizer must use the exact three-row relation before scanning the medical value "
 								+ "predicate surface. order=" + executionOrder + ", plan=" + explanation);
 			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void packedCostModelRetainsBoundFiniteAssignmentPrefixMass(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticMedicalObservations(repository);
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
+
+			TupleExpr input = QueryParserUtil
+					.parseTupleQuery(QueryLanguage.SPARQL, medicalObservationValuesQuery(), null)
+					.getTupleExpr();
+			OptimizationGoal baseGoal = OptimizationGoal.root(input, PhysicalProperties.ANY);
+			OptimizationGoal autoGoal = new OptimizationGoal(baseGoal.requiredProperties(),
+					baseGoal.semanticScope(), baseGoal.costPolicy(), baseGoal.costBound(),
+					baseGoal.excludedProperties(), OptimizationGoal.SearchMode.AUTO, Long.MAX_VALUE, 4_096,
+					baseGoal.rowGoal(), baseGoal.estimationTier(), baseGoal.inputBindingContext());
+			LmdbEstimatorRuntime runtime = ((LmdbEstimatorRuntimeProvider) store.getBackingStore()
+					.getEvaluationStatistics()).estimatorRuntime();
+			PackedCostModel delegate = new LmdbPackedCostModel(runtime);
+			record Observation(double prefixRows, double outputRows, double workRows, boolean contextual,
+					String source) {
+			}
+			List<Observation> observations = new ArrayList<>();
+			PackedCostModel probe = new PackedCostModel() {
+				@Override
+				public double estimateRows(PackedQueryView packedQuery, int relationId) {
+					return delegate.estimateRows(packedQuery, relationId);
+				}
+
+				@Override
+				public void estimate(PackedQueryView packedQuery, int relationId, PackedCostContext context,
+						PackedCostEstimate output) {
+					delegate.estimate(packedQuery, relationId, context, output);
+					if (context.prefixRelationCount() > 0
+							&& packedQuery.isBindingSetAssignment(relationId)
+							&& packedQuery.materializeRelation(relationId)
+									.getBindingNames()
+									.contains("value")) {
+						observations.add(new Observation(context.prefixRows(), output.outputRows(),
+								output.workRows(), output.hasContextualOutputRows(), output.estimateSource()));
+					}
+				}
+
+				@Override
+				public void refineOperator(PackedQueryView packedQuery, int relationId, PackedCostContext context,
+						PackedCostEstimate output) {
+					delegate.refineOperator(packedQuery, relationId, context, output);
+				}
+			};
+
+			PackedCascadesPlanner.optimize(input, autoGoal, probe, new LmdbPackedPredicateRangeProvider(runtime));
+
+			Observation boundValues = observations.stream()
+					.filter(observation -> observation.prefixRows() == 900.0d)
+					.findFirst()
+					.orElseThrow(() -> new AssertionError(
+							"Expected the three-row VALUES factor to be costed after the 900-row medical prefix. "
+									+ "observations=" + observations));
+			assertTrue(boundValues.contextual(),
+					"The packed provider must identify a bound VALUES estimate as prefix-contextual. observation="
+							+ boundValues);
+			assertEquals(900.0d, boundValues.outputRows(), 0.0d,
+					"One compatible VALUES row must preserve each row of the shared prefix");
+			assertEquals(2_700.0d, boundValues.workRows(), 0.0d,
+					"Nested VALUES membership work must scan all three rows for each prefix row");
+			assertEquals("lmdb-binding-set-assignment-filter", boundValues.source(),
+					"The packed adapter must retain the delegated engine provenance");
 		} finally {
 			repository.shutDown();
 		}
@@ -779,6 +1170,38 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 		return assignment;
 	}
 
+	private static BindingSetAssignment bindingAssignment(String bindingName, Value... values) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		List<BindingSet> bindingSets = new ArrayList<>(values.length);
+		for (Value value : values) {
+			QueryBindingSet bindingSet = new QueryBindingSet();
+			bindingSet.addBinding(bindingName, value);
+			bindingSets.add(bindingSet);
+		}
+		assignment.setBindingSets(bindingSets);
+		return assignment;
+	}
+
+	private static BindingSetAssignment mixedBindingAssignment(String bindingName, Value value, boolean boundRowFirst) {
+		QueryBindingSet bound = new QueryBindingSet();
+		bound.addBinding(bindingName, value);
+		QueryBindingSet undef = new QueryBindingSet();
+
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(boundRowFirst ? List.of(bound, undef) : List.of(undef, bound));
+		return assignment;
+	}
+
+	private static StatementPattern planStatementPattern(LmdbStore store, TupleExpr input, IRI predicate,
+			String objectBindingName) {
+		EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+		CascadesPlan plan = new LmdbCascadesOptimizer(statistics, false)
+				.planPreparedInput(input, OptimizationGoal.root(input, PhysicalProperties.ANY));
+		StatementPattern planned = findStatementPattern(plan.tupleExpr(), predicate, objectBindingName);
+		assertTrue(planned != null, "Expected planned statement pattern. plan=" + plan.tupleExpr());
+		return planned;
+	}
+
 	private static String engineeringAssemblyNameFilterQuery() {
 		return "SELECT ?assembly WHERE {\n"
 				+ "  ?assembly <" + ENG_NAME.stringValue() + "> ?assemblyName .\n"
@@ -813,6 +1236,23 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 		}
 	}
 
+	private static CascadesPlan planAuto(LmdbStore store, String query) {
+		TupleExpr input = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		OptimizationGoal baseGoal = OptimizationGoal.root(input, PhysicalProperties.ANY);
+		OptimizationGoal autoGoal = new OptimizationGoal(baseGoal.requiredProperties(), baseGoal.semanticScope(),
+				baseGoal.costPolicy(), baseGoal.costBound(), baseGoal.excludedProperties(),
+				OptimizationGoal.SearchMode.AUTO, Long.MAX_VALUE, 4_096, baseGoal.rowGoal(),
+				baseGoal.estimationTier(), baseGoal.inputBindingContext());
+		return new LmdbCascadesOptimizer(store.getBackingStore().getEvaluationStatistics(), false)
+				.planPreparedInput(input, autoGoal);
+	}
+
+	private static boolean isFiniteAnchorJoin(PackedQueryView query, int relationId) {
+		return query.materializeRelation(relationId) instanceof Join
+				&& query.childCount(relationId) == 2
+				&& query.isBindingSetAssignment(query.childRelationId(relationId, 0));
+	}
+
 	private static StatementPattern findStatementPattern(TupleExpr optimized, IRI predicate, String objectBindingName) {
 		List<StatementPattern> matches = new ArrayList<>(1);
 		optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
@@ -829,5 +1269,34 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			}
 		});
 		return matches.isEmpty() ? null : matches.getFirst();
+	}
+
+	private static StatementPattern findOuterStatementPattern(TupleExpr optimized, IRI predicate,
+			String objectBindingName) {
+		List<StatementPattern> matches = new ArrayList<>(1);
+		optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern node) {
+				if (matches.isEmpty()
+						&& node.getPredicateVar() != null
+						&& predicate.equals(node.getPredicateVar().getValue())
+						&& node.getObjectVar() != null
+						&& objectBindingName.equals(node.getObjectVar().getName())
+						&& !hasVariableScopeChangeAncestor(node)) {
+					matches.add(node);
+				}
+				super.meet(node);
+			}
+		});
+		return matches.isEmpty() ? null : matches.getFirst();
+	}
+
+	private static boolean hasVariableScopeChangeAncestor(QueryModelNode node) {
+		for (QueryModelNode ancestor = node.getParentNode(); ancestor != null; ancestor = ancestor.getParentNode()) {
+			if (ancestor instanceof VariableScopeChange scopeChange && scopeChange.isVariableScopeChange()) {
+				return true;
+			}
+		}
+		return false;
 	}
 }

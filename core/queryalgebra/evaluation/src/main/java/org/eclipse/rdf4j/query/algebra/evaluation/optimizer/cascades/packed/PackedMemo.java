@@ -149,6 +149,14 @@ final class PackedMemo {
 		return overlayId < overlayLogicalRuleMasks.length ? overlayLogicalRuleMasks[overlayId] : 0L;
 	}
 
+	int logicalNodeFlags(int logicalExpressionId) {
+		checkLogicalExpressionId(logicalExpressionId);
+		if (logicalExpressionId <= baseLogicalExpressionCount) {
+			return query.relSemanticScope(logicalExpressionId);
+		}
+		return logicalOverlay.semanticScopeId(logicalExpressionId - baseLogicalExpressionCount);
+	}
+
 	int anyPropertyId() {
 		return properties.anyId();
 	}
@@ -256,6 +264,24 @@ final class PackedMemo {
 				childWinnerIds, childOffset, childCount);
 	}
 
+	int offerExecutableFallbackWinnerWithMetadata(int groupId, int requiredPropertyId, int semanticRowGoalId,
+			int inputContextId, int costPolicyId, int physicalExpressionId, int physicalMetadataId, int tieBreakRank,
+			double startupCost, double totalCost, double comparisonCost, int[] childWinnerIds, int childOffset,
+			int childCount) {
+		checkGroupId(groupId);
+		if (physicalExpressionId <= 0 || physicalExpressionId > physicalExpressions.size()) {
+			throw new IndexOutOfBoundsException("unknown physical expression " + physicalExpressionId);
+		}
+		if (physicalExpressions.groupId(physicalExpressionId) != groupId) {
+			throw new PackedMemoInvariantException("physical expression " + physicalExpressionId
+					+ " does not produce winner group " + groupId);
+		}
+		properties.satisfies(requiredPropertyId, requiredPropertyId);
+		return winners.offerExecutableFallbackWithMetadata(groupId, requiredPropertyId, semanticRowGoalId,
+				inputContextId, costPolicyId, physicalExpressionId, physicalMetadataId, tieBreakRank, startupCost,
+				totalCost, comparisonCost, childWinnerIds, childOffset, childCount);
+	}
+
 	double winnerTotalCost(int winnerId) {
 		return winners.totalCost(winnerId);
 	}
@@ -302,6 +328,10 @@ final class PackedMemo {
 		return physicalMetadata.invocations(metadataId);
 	}
 
+	int physicalMetadataEvidenceStateId(int metadataId) {
+		return physicalMetadata.evidenceStateId(metadataId);
+	}
+
 	int physicalMetadataLookupMask(int metadataId) {
 		return physicalMetadata.lookupMask(metadataId);
 	}
@@ -322,12 +352,44 @@ final class PackedMemo {
 		return physicalMetadata.estimateSource(metadataId);
 	}
 
+	Object physicalMetadataEstimateFusion(int metadataId) {
+		return physicalMetadata.estimateFusion(metadataId);
+	}
+
 	Object physicalMetadataAccessMode(int metadataId) {
 		return physicalMetadata.accessMode(metadataId);
 	}
 
+	int physicalMetadataPlannedStringMetricCount(int metadataId) {
+		return physicalMetadata.plannedStringMetricCount(metadataId);
+	}
+
+	Object physicalMetadataPlannedStringMetricName(int metadataId, int ordinal) {
+		return physicalMetadata.plannedStringMetricName(metadataId, ordinal);
+	}
+
+	Object physicalMetadataPlannedStringMetricValue(int metadataId, int ordinal) {
+		return physicalMetadata.plannedStringMetricValue(metadataId, ordinal);
+	}
+
+	int physicalMetadataPlannedDoubleMetricCount(int metadataId) {
+		return physicalMetadata.plannedDoubleMetricCount(metadataId);
+	}
+
+	Object physicalMetadataPlannedDoubleMetricName(int metadataId, int ordinal) {
+		return physicalMetadata.plannedDoubleMetricName(metadataId, ordinal);
+	}
+
+	double physicalMetadataPlannedDoubleMetricValue(int metadataId, int ordinal) {
+		return physicalMetadata.plannedDoubleMetricValue(metadataId, ordinal);
+	}
+
 	PackedPlanRecipe extractPlanRecipe(int rootWinnerId) {
 		return PackedPlanRecipe.extract(this, rootWinnerId);
+	}
+
+	PackedPlanRecipe extractPlanRecipe(int rootWinnerId, PackedDependentPlans dependentPlans) {
+		return PackedPlanRecipe.extract(this, rootWinnerId, dependentPlans);
 	}
 
 	int physicalOperatorTag(int physicalExpressionId) {

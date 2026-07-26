@@ -114,14 +114,15 @@ class LmdbOperatorFeedbackPlanningTest {
 
 	@Test
 	void secondPlanUsesLeftJoinOperatorFeedbackForBoundOptionalFanout(@TempDir File dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setSketchEstimatorEnabled(true);
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 
 		try {
 			loadSparseOptionalFanout(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 			LmdbPlannerAwait.awaitSketchesReady(store);
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -143,14 +144,15 @@ class LmdbOperatorFeedbackPlanningTest {
 
 	@Test
 	void persistedOperatorFeedbackIgnoresMetadataTimestampChanges(@TempDir File dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setSketchEstimatorEnabled(true);
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 
 		try {
 			loadSparseOptionalFanout(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 			LmdbPlannerAwait.awaitSketchesReady(store);
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				assertEquals(EXPECTED_LEFT_JOIN_ROWS, count(connection, leftJoinFanoutQuery()));
@@ -166,9 +168,9 @@ class LmdbOperatorFeedbackPlanningTest {
 			repository.shutDown();
 		}
 
-		Path metadata = dataDir.toPath().resolve("join-estimator.rjes").resolve("metadata.bin");
-		FileTime originalTimestamp = Files.getLastModifiedTime(metadata);
-		Files.setLastModifiedTime(metadata, FileTime.fromMillis(originalTimestamp.toMillis() + 5_000L));
+		Path snapshot = dataDir.toPath().resolve("join-estimator.rjes").resolve("synopsis-v8.bin");
+		FileTime originalTimestamp = Files.getLastModifiedTime(snapshot);
+		Files.setLastModifiedTime(snapshot, FileTime.fromMillis(originalTimestamp.toMillis() + 5_000L));
 
 		LmdbStore reopened = new LmdbStore(dataDir, config);
 		SailRepository reopenedRepository = new SailRepository(reopened);
@@ -191,6 +193,7 @@ class LmdbOperatorFeedbackPlanningTest {
 	@Test
 	void snapshotOnlyPlanningNeverConsultsOperatorFeedback(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setSketchEstimatorEnabled(true)
 				.setSketchEstimatorEvidenceMode("snapshot-only");
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
@@ -198,7 +201,7 @@ class LmdbOperatorFeedbackPlanningTest {
 
 		try {
 			loadSparseOptionalFanout(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 			LmdbPlannerAwait.awaitSketchesReady(store);
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				assertEquals(EXPECTED_LEFT_JOIN_ROWS, count(connection, leftJoinFanoutQuery()));
@@ -221,14 +224,15 @@ class LmdbOperatorFeedbackPlanningTest {
 	@Test
 	@Disabled("Disabled until we can verify if this test is correct or not")
 	void secondPlanUsesUnionOperatorFeedbackForOptionalUnionFanout(@TempDir File dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setSketchEstimatorEnabled(true);
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 
 		try {
 			loadSparseOptionalFanout(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 			LmdbPlannerAwait.awaitSketchesReady(store);
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -252,14 +256,15 @@ class LmdbOperatorFeedbackPlanningTest {
 
 	@Test
 	void operatorFeedbackPlanExposesLearnedQError(@TempDir File dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setSketchEstimatorEnabled(true);
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 
 		try {
 			loadSparseOptionalFanout(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 			LmdbPlannerAwait.awaitSketchesReady(store);
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -292,14 +297,15 @@ class LmdbOperatorFeedbackPlanningTest {
 	@Test
 	@Disabled("Disabled until we can verify if this test is correct or not")
 	void operatorFeedbackFusionKeepsLearnedFilterSourcesInCostPath(@TempDir File dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setSketchEstimatorEnabled(true);
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 
 		try {
 			loadSparseOptionalFanout(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 			LmdbPlannerAwait.awaitSketchesReady(store);
 
 			String query = filteredLeftJoinFanoutQuery();
@@ -337,6 +343,7 @@ class LmdbOperatorFeedbackPlanningTest {
 	void operatorFeedbackFusionPathReceivesBackgroundSampledAndLearnedFilterSources(@TempDir File dataDir)
 			throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingEnabled(false)
 				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
 		LmdbStore store = new LmdbStore(dataDir, config);
@@ -345,7 +352,7 @@ class LmdbOperatorFeedbackPlanningTest {
 
 		try {
 			loadSparseOptionalFanout(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 			LmdbPlannerAwait.awaitSketchesReady(store);
 
 			String query = filteredLeftJoinFanoutQuery();

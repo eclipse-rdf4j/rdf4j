@@ -22,7 +22,13 @@ public final class PackedCostContext {
 	private int[] prefixRelationIds;
 	private int prefixOffset;
 	private int prefixCount;
+	private int assuredBindingRelationId;
+	private int evidenceStateId;
 	private double prefixRows;
+	private double leftInputRows;
+	private double rightInputRows;
+	private int leftInputEvidenceStateId;
+	private int rightInputEvidenceStateId;
 
 	PackedCostContext() {
 		prefixRelationIds = NO_RELATIONS;
@@ -30,13 +36,49 @@ public final class PackedCostContext {
 	}
 
 	void reset(int[] relationIds, int offset, int count, double rows) {
+		reset(relationIds, offset, count, rows, 0);
+	}
+
+	void reset(int[] relationIds, int offset, int count, double rows, int evidenceStateId) {
 		if (relationIds == null || offset < 0 || count < 0 || offset > relationIds.length - count) {
 			throw new IndexOutOfBoundsException("invalid packed cost-context prefix");
 		}
+		requireEvidenceStateId(evidenceStateId);
 		prefixRelationIds = relationIds;
 		prefixOffset = offset;
 		prefixCount = count;
+		assuredBindingRelationId = 0;
+		this.evidenceStateId = evidenceStateId;
 		prefixRows = Double.isFinite(rows) && rows >= 0.0d ? rows : 1.0d;
+		leftInputRows = Double.NaN;
+		rightInputRows = Double.NaN;
+		leftInputEvidenceStateId = 0;
+		rightInputEvidenceStateId = 0;
+	}
+
+	void setEvidenceStateId(int evidenceStateId) {
+		requireEvidenceStateId(evidenceStateId);
+		this.evidenceStateId = evidenceStateId;
+	}
+
+	void setAssuredBindingRelationId(int relationId) {
+		if (relationId < 0) {
+			throw new IllegalArgumentException("packed assured-binding relation ID must be non-negative");
+		}
+		assuredBindingRelationId = relationId;
+	}
+
+	void setOperatorInputs(double leftRows, double rightRows) {
+		setOperatorInputs(leftRows, rightRows, 0, 0);
+	}
+
+	void setOperatorInputs(double leftRows, double rightRows, int leftEvidenceStateId, int rightEvidenceStateId) {
+		requireEvidenceStateId(leftEvidenceStateId);
+		requireEvidenceStateId(rightEvidenceStateId);
+		leftInputRows = finiteNonNegativeOrNaN(leftRows);
+		rightInputRows = finiteNonNegativeOrNaN(rightRows);
+		leftInputEvidenceStateId = leftEvidenceStateId;
+		rightInputEvidenceStateId = rightEvidenceStateId;
 	}
 
 	public int prefixRelationCount() {
@@ -52,5 +94,51 @@ public final class PackedCostContext {
 
 	public double prefixRows() {
 		return prefixRows;
+	}
+
+	/**
+	 * Returns the query-local relation whose assured outputs are available as inherited bindings, or zero when no
+	 * separate inherited relation is available. This relation is physical context only: it is not a logical factor in
+	 * the ordered prefix and does not participate in evidence-state identity.
+	 */
+	public int assuredBindingRelationId() {
+		return assuredBindingRelationId;
+	}
+
+	/**
+	 * Returns the query-local evidence state for the current prefix, or zero when only scalar evidence is available.
+	 */
+	public int evidenceStateId() {
+		return evidenceStateId;
+	}
+
+	/** Returns the first child's output rows for a non-leaf refinement, or {@link Double#NaN} when unavailable. */
+	public double leftInputRows() {
+		return leftInputRows;
+	}
+
+	/** Returns the second child's output rows for a non-leaf refinement, or {@link Double#NaN} when unavailable. */
+	public double rightInputRows() {
+		return rightInputRows;
+	}
+
+	/** Returns the first child's query-local evidence state, or zero when it has no composable state. */
+	public int leftInputEvidenceStateId() {
+		return leftInputEvidenceStateId;
+	}
+
+	/** Returns the second child's query-local evidence state, or zero when it has no composable state. */
+	public int rightInputEvidenceStateId() {
+		return rightInputEvidenceStateId;
+	}
+
+	private static double finiteNonNegativeOrNaN(double value) {
+		return Double.isFinite(value) && value >= 0.0d ? value : Double.NaN;
+	}
+
+	private static void requireEvidenceStateId(int evidenceStateId) {
+		if (evidenceStateId < 0) {
+			throw new IllegalArgumentException("packed evidence state ID must be non-negative");
+		}
 	}
 }

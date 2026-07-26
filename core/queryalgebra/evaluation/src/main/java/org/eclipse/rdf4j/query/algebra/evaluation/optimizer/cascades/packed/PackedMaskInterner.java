@@ -125,6 +125,23 @@ final class PackedMaskInterner {
 		};
 	}
 
+	boolean containsAllIntersection(int containerMaskId, int leftMaskId, int rightMaskId) {
+		checkMaskId(containerMaskId);
+		checkMaskId(leftMaskId);
+		checkMaskId(rightMaskId);
+		if (leftMaskId == 0 || rightMaskId == 0) {
+			return true;
+		}
+		return switch (layout.kind()) {
+		case ONE_WORD -> containsWord(wordZero[containerMaskId],
+				wordZero[leftMaskId] & wordZero[rightMaskId]);
+		case TWO_WORD -> containsWord(wordZero[containerMaskId],
+				wordZero[leftMaskId] & wordZero[rightMaskId])
+				&& containsWord(wordOne[containerMaskId], wordOne[leftMaskId] & wordOne[rightMaskId]);
+		case MULTI_WORD -> containsAllIntersectionMulti(containerMaskId, leftMaskId, rightMaskId);
+		};
+	}
+
 	boolean containsSymbol(int maskId, int symbolId) {
 		checkMaskId(maskId);
 		if (symbolId <= 0 || symbolId > symbolCount || maskId == 0) {
@@ -232,6 +249,19 @@ final class PackedMaskInterner {
 			}
 		}
 		return false;
+	}
+
+	private boolean containsAllIntersectionMulti(int containerMaskId, int leftMaskId, int rightMaskId) {
+		int containerOffset = containerMaskId * layout.wordCount();
+		int leftOffset = leftMaskId * layout.wordCount();
+		int rightOffset = rightMaskId * layout.wordCount();
+		for (int word = 0; word < layout.wordCount(); word++) {
+			if (!containsWord(multiWords[containerOffset + word],
+					multiWords[leftOffset + word] & multiWords[rightOffset + word])) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private int cardinalityMulti(int maskId) {

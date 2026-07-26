@@ -149,6 +149,33 @@ public class TxnManagerTest {
 		}
 	}
 
+	@Test
+	public void untrackedDeactivationAdvancesVersionBeforeReactivation(@TempDir Path dataDir) throws Exception {
+		long env = openEnv(dataDir, 2);
+		TxnManager.Txn untrackedTxn = null;
+
+		try {
+			TxnManager txnManager = new TxnManager(env, TxnManager.Mode.RESET);
+			untrackedTxn = txnManager.createReadTxnUntracked();
+			long version = untrackedTxn.version();
+
+			txnManager.deactivate();
+			try {
+				assertEquals(version + 1, untrackedTxn.version(),
+						"Deactivation must invalidate a pinned reader even if reactivation later fails");
+			} finally {
+				txnManager.activate();
+			}
+			assertEquals(version + 1, untrackedTxn.version(),
+					"Reactivation must not advance the same invalidation generation twice");
+		} finally {
+			if (untrackedTxn != null) {
+				untrackedTxn.close();
+			}
+			mdb_env_close(env);
+		}
+	}
+
 	private static long openEnv(Path dataDir, int maxReaders) throws IOException {
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);

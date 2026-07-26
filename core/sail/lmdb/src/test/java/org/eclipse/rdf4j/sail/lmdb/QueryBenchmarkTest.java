@@ -20,8 +20,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Stream;
@@ -35,6 +33,8 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -289,17 +289,17 @@ public class QueryBenchmarkTest {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			Explanation explanation = connection.prepareTupleQuery(sub_select).explain(Explanation.Level.Optimized);
 			String plan = explanation.toString();
-			String topGroup = firstGroupLineWithKeys(plan,
+			TupleExpr optimized = (TupleExpr) explanation.tupleExpr();
+			TupleExpr topGrouping = firstGroupingNodeWithKeys(optimized,
 					Set.of("type1", "type2", "language2", "mbox", "count", "identifier2"));
-			if (topGroup == null) {
+			assertTrue(topGrouping != null, "Missing top GROUP BY/DISTINCT node.\n" + plan);
+			if (topGrouping instanceof Distinct) {
 				assertTrue(plan.contains("originalNode=aggregate-free-group-by")
 						&& plan.contains("replacementNode=distinct-projection"),
 						"Replacing the aggregate-free top group must carry the semantic proof.\n" + plan);
-				topGroup = firstLineContaining(plan, "Distinct (");
 			}
-			double rows = plannedMetricRows(topGroup, "plannedCardinalityRows");
-			double rootRows = ((TupleExpr) explanation.tupleExpr())
-					.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
+			double rows = topGrouping.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
+			double rootRows = optimized.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
 			assertTrue(Double.isFinite(rootRows) && rows <= rootRows,
 					"Top GROUP BY/DISTINCT cardinality must be bounded by the enclosing winner rows. rows=" + rows
 							+ ", rootRows=" + rootRows + "\n" + plan);
@@ -421,68 +421,26 @@ public class QueryBenchmarkTest {
 		}
 	}
 
-	private static String firstGroupLineWithKeys(String text, Set<String> groupKeys) {
-		return text.lines()
-				.map(QueryBenchmarkTest::planOperatorText)
-				.filter(line -> line.startsWith("Group ("))
-				.filter(line -> {
-					int start = line.indexOf('(');
-					int end = line.indexOf(')', start);
-					if (start < 0 || end < 0) {
-						return false;
-					}
-					Set<String> lineKeys = new HashSet<>(Arrays.asList(line.substring(start + 1, end).split(",\\s*")));
-					return lineKeys.equals(groupKeys);
-				})
-				.findFirst()
-				.orElse(null);
-	}
-
-	private static String firstLineContaining(String text, String needle) {
-		return text.lines()
-				.filter(line -> planOperatorText(line).startsWith(needle))
-				.findFirst()
-				.orElseThrow(() -> new AssertionError("Missing line containing " + needle + "\n" + text));
-	}
-
-	private static String planOperatorText(String line) {
-		String stripped = line.stripLeading();
-		int index = 0;
-		while (index < stripped.length()) {
-			char c = stripped.charAt(index);
-			if (c != ' ' && c != '│' && c != '├' && c != '└' && c != '╠' && c != '╚' && c != '═'
-					&& c != '─') {
-				break;
+	private static TupleExpr firstGroupingNodeWithKeys(TupleExpr root, Set<String> groupKeys) {
+		TupleExpr[] match = new TupleExpr[1];
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Group node) {
+				if (match[0] == null && node.getGroupBindingNames().equals(groupKeys)) {
+					match[0] = node;
+				}
+				super.meet(node);
 			}
-			index++;
-		}
-		return stripped.substring(index);
-	}
 
-	private static double plannedMetricRows(String line, String metricName) {
-		String prefix = metricName + "=";
-		int start = line.indexOf(prefix);
-		if (start < 0) {
-			throw new AssertionError("Missing metric " + metricName + " in line: " + line);
-		}
-		start += prefix.length();
-		int end = line.indexOf(',', start);
-		if (end < 0) {
-			end = line.indexOf(')', start);
-		}
-		String value = line.substring(start, end).trim();
-		double multiplier = 1.0d;
-		if (value.endsWith("K")) {
-			multiplier = 1_000.0d;
-			value = value.substring(0, value.length() - 1);
-		} else if (value.endsWith("M")) {
-			multiplier = 1_000_000.0d;
-			value = value.substring(0, value.length() - 1);
-		} else if (value.endsWith("B")) {
-			multiplier = 1_000_000_000.0d;
-			value = value.substring(0, value.length() - 1);
-		}
-		return Double.parseDouble(value) * multiplier;
+			@Override
+			public void meet(Distinct node) {
+				if (match[0] == null && node.getBindingNames().equals(groupKeys)) {
+					match[0] = node;
+				}
+				super.meet(node);
+			}
+		});
+		return match[0];
 	}
 
 	private static long count(TupleQueryResult evaluate) {

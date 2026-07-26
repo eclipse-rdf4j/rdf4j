@@ -25,8 +25,10 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
@@ -44,6 +46,8 @@ final class LmdbFiniteJoinSurfaceEstimator {
 	private static final int MAX_FACTORS = 8;
 	private static final int MAX_ROWS = 16_384;
 	private static final int MAX_SCANNED_ROWS = 4_096;
+	private static final int MAX_ALTERNATIVE_BRANCHES = 8;
+	private static final int MAX_ALTERNATIVE_FACTOR_OCCURRENCES = 32;
 	private static final long UNBOUND_ID = Long.MIN_VALUE;
 
 	private final ValueStore valueStore;
@@ -54,8 +58,51 @@ final class LmdbFiniteJoinSurfaceEstimator {
 		this.tripleStore = tripleStore;
 	}
 
+	/**
+	 * Evaluates a bounded union of connected basic graph patterns exactly. The complete expression is declined when any
+	 * branch is unsupported, disconnected, or exceeds a hard resource cap; partial branch evidence is never returned.
+	 */
+	Optional<SurfaceEstimate> estimateAlternative(TupleExpr expression) {
+		return estimateAlternative(expression, newScanBudget());
+	}
+
+	Optional<SurfaceEstimate> estimateAlternative(TupleExpr expression, ScanBudget scanBudget) {
+		if (valueStore == null || tripleStore == null || expression == null) {
+			return Optional.empty();
+		}
+		AlternativeBranches alternatives = alternativeBranches(expression);
+		if (alternatives == null || !alternatives.containsUnion()) {
+			return Optional.empty();
+		}
+		VarSlots slots = buildVarSlots(alternatives.branches());
+		long scannedRows = 0L;
+		long outputRows = 0L;
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			for (List<StatementPattern> branch : alternatives.branches()) {
+				Expansion expansion = expandConnectedBranch(txn, branch, slots, scannedRows, scanBudget);
+				if (expansion == null) {
+					return Optional.empty();
+				}
+				scannedRows = expansion.scannedRows();
+				outputRows += expansion.rows().size();
+				if (outputRows > MAX_ROWS) {
+					return Optional.empty();
+				}
+			}
+			return Optional.of(new SurfaceEstimate(outputRows, 1.0d, scannedRows,
+					alternatives.branches().size(), null, true, 0));
+		} catch (IOException | RuntimeException e) {
+			return Optional.empty();
+		}
+	}
+
 	Optional<SurfaceEstimate> estimate(List<TupleExpr> prefixFactors, TupleExpr factor,
 			Map<String, Set<Value>> finiteBindingValues) {
+		return estimate(prefixFactors, factor, finiteBindingValues, newScanBudget());
+	}
+
+	Optional<SurfaceEstimate> estimate(List<TupleExpr> prefixFactors, TupleExpr factor,
+			Map<String, Set<Value>> finiteBindingValues, ScanBudget scanBudget) {
 		List<TupleExpr> effectivePrefix = prefixFactors == null ? List.of() : prefixFactors;
 		if (valueStore == null || tripleStore == null || factor == null
 				|| effectivePrefix.size() + 1 > MAX_FACTORS) {
@@ -73,34 +120,48 @@ final class LmdbFiniteJoinSurfaceEstimator {
 			}
 		}
 		if (!(factor instanceof StatementPattern surfacePattern)
-				|| (assignments.isEmpty() && !hasSingleFiniteDomain(finiteBindingValues))) {
+				|| assignments.isEmpty() && !hasSingleFiniteDomain(finiteBindingValues) && prefixPatterns.isEmpty()) {
 			return Optional.empty();
 		}
 
 		VarSlots slots = buildVarSlots(assignments, prefixPatterns, surfacePattern, finiteBindingValues);
 		List<long[]> rows;
-		try {
-			rows = initialRows(assignments, finiteBindingValues, slots);
-		} catch (IOException | RuntimeException e) {
-			return Optional.empty();
-		}
-		if (rows == null) {
-			return Optional.empty();
-		}
-		if (rows.isEmpty()) {
-			return Optional.of(new SurfaceEstimate(0.0d, 0.0d, 0L, 0,
-					FiniteRelationEstimate.fromRows(slots.names(), List.of(),
-							"lmdb-finite-derived-surface"),
-					true, 0));
-		}
-
 		long scannedRows = 0L;
 		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
-			for (StatementPattern pattern : prefixPatterns) {
-				if (!connectsToBoundRow(pattern, rows, slots)) {
+			List<StatementPattern> remainingPatterns = new ArrayList<>(prefixPatterns);
+			if (!assignments.isEmpty() || hasSingleFiniteDomain(finiteBindingValues)) {
+				rows = initialRows(assignments, finiteBindingValues, slots);
+			} else {
+				rows = List.of(emptyRow(slots.size()));
+				int seedIndex = exactSeedIndex(remainingPatterns, rows, slots);
+				if (seedIndex < 0) {
 					return Optional.empty();
 				}
-				Expansion expansion = expand(txn, rows, slots, pattern, scannedRows);
+				Expansion seed = expand(txn, rows, slots, remainingPatterns.remove(seedIndex), scannedRows,
+						scanBudget);
+				if (seed == null) {
+					return Optional.empty();
+				}
+				rows = seed.rows();
+				scannedRows = seed.scannedRows();
+			}
+			if (rows == null) {
+				return Optional.empty();
+			}
+			if (rows.isEmpty()) {
+				return Optional.of(new SurfaceEstimate(0.0d, 0.0d, scannedRows, 0,
+						FiniteRelationEstimate.fromRows(slots.names(), List.of(),
+								"lmdb-finite-derived-surface"),
+						true, 0));
+			}
+
+			while (!remainingPatterns.isEmpty()) {
+				int connectedIndex = connectedPatternIndex(remainingPatterns, rows, slots);
+				if (connectedIndex < 0) {
+					return Optional.empty();
+				}
+				Expansion expansion = expand(txn, rows, slots, remainingPatterns.remove(connectedIndex), scannedRows,
+						scanBudget);
 				if (expansion == null) {
 					return Optional.empty();
 				}
@@ -121,7 +182,7 @@ final class LmdbFiniteJoinSurfaceEstimator {
 				return Optional.of(new SurfaceEstimate(cardinality.rows(), prefixRows, scannedRows,
 						rows.size(), null, false, cardinality.probes()));
 			}
-			Expansion surface = expand(txn, rows, slots, surfacePattern, scannedRows);
+			Expansion surface = expand(txn, rows, slots, surfacePattern, scannedRows, scanBudget);
 			if (surface == null) {
 				return cardinality.available() && cardinality.rows() > 0.0d
 						? Optional.of(new SurfaceEstimate(cardinality.rows(), prefixRows, scannedRows,
@@ -134,6 +195,114 @@ final class LmdbFiniteJoinSurfaceEstimator {
 		} catch (IOException | RuntimeException e) {
 			return Optional.empty();
 		}
+	}
+
+	private Expansion expandConnectedBranch(Txn txn, List<StatementPattern> branch, VarSlots slots,
+			long alreadyScanned, ScanBudget scanBudget) throws IOException {
+		List<StatementPattern> remaining = new ArrayList<>(branch);
+		List<long[]> rows = List.of(emptyRow(slots.size()));
+		int seedIndex = exactSeedIndex(remaining, rows, slots);
+		if (seedIndex < 0) {
+			return null;
+		}
+		Expansion expansion = expand(txn, rows, slots, remaining.remove(seedIndex), alreadyScanned, scanBudget);
+		if (expansion == null) {
+			return null;
+		}
+		rows = expansion.rows();
+		long scannedRows = expansion.scannedRows();
+		while (!remaining.isEmpty() && !rows.isEmpty()) {
+			int connectedIndex = connectedPatternIndex(remaining, rows, slots);
+			if (connectedIndex < 0) {
+				return null;
+			}
+			expansion = expand(txn, rows, slots, remaining.remove(connectedIndex), scannedRows, scanBudget);
+			if (expansion == null) {
+				return null;
+			}
+			rows = expansion.rows();
+			scannedRows = expansion.scannedRows();
+		}
+		return remaining.isEmpty() || rows.isEmpty() ? new Expansion(rows, scannedRows) : null;
+	}
+
+	private static AlternativeBranches alternativeBranches(TupleExpr expression) {
+		if (expression instanceof StatementPattern pattern) {
+			return new AlternativeBranches(List.of(List.of(pattern)), false, 1);
+		}
+		if (expression instanceof Union union) {
+			AlternativeBranches left = alternativeBranches(union.getLeftArg());
+			AlternativeBranches right = alternativeBranches(union.getRightArg());
+			if (left == null || right == null) {
+				return null;
+			}
+			List<List<StatementPattern>> branches = new ArrayList<>(left.branches().size() + right.branches().size());
+			branches.addAll(left.branches());
+			branches.addAll(right.branches());
+			int occurrences = left.factorOccurrences() + right.factorOccurrences();
+			return withinAlternativeCaps(branches, occurrences)
+					? new AlternativeBranches(List.copyOf(branches), true, occurrences)
+					: null;
+		}
+		if (expression instanceof Join join) {
+			AlternativeBranches left = alternativeBranches(join.getLeftArg());
+			AlternativeBranches right = alternativeBranches(join.getRightArg());
+			if (left == null || right == null
+					|| left.branches().size() > MAX_ALTERNATIVE_BRANCHES / right.branches().size()) {
+				return null;
+			}
+			List<List<StatementPattern>> branches = new ArrayList<>(
+					left.branches().size() * right.branches().size());
+			int occurrences = 0;
+			for (List<StatementPattern> leftBranch : left.branches()) {
+				for (List<StatementPattern> rightBranch : right.branches()) {
+					if (leftBranch.size() > MAX_FACTORS - rightBranch.size()) {
+						return null;
+					}
+					List<StatementPattern> branch = new ArrayList<>(leftBranch.size() + rightBranch.size());
+					branch.addAll(leftBranch);
+					branch.addAll(rightBranch);
+					branches.add(List.copyOf(branch));
+					occurrences += branch.size();
+					if (!withinAlternativeCaps(branches, occurrences)) {
+						return null;
+					}
+				}
+			}
+			return new AlternativeBranches(List.copyOf(branches),
+					left.containsUnion() || right.containsUnion(), occurrences);
+		}
+		return null;
+	}
+
+	private static boolean withinAlternativeCaps(List<List<StatementPattern>> branches, int factorOccurrences) {
+		return !branches.isEmpty() && branches.size() <= MAX_ALTERNATIVE_BRANCHES
+				&& factorOccurrences <= MAX_ALTERNATIVE_FACTOR_OCCURRENCES;
+	}
+
+	private int exactSeedIndex(List<StatementPattern> patterns, List<long[]> rows, VarSlots slots)
+			throws IOException {
+		int selectedIndex = -1;
+		double selectedRows = Double.POSITIVE_INFINITY;
+		for (int index = 0; index < patterns.size(); index++) {
+			SurfaceCardinality cardinality = surfaceCardinality(rows, slots, patterns.get(index));
+			if (!cardinality.available() || cardinality.rows() > MAX_ROWS
+					|| cardinality.rows() > MAX_SCANNED_ROWS || cardinality.rows() >= selectedRows) {
+				continue;
+			}
+			selectedIndex = index;
+			selectedRows = cardinality.rows();
+		}
+		return selectedIndex;
+	}
+
+	private static int connectedPatternIndex(List<StatementPattern> patterns, List<long[]> rows, VarSlots slots) {
+		for (int index = 0; index < patterns.size(); index++) {
+			if (connectsToBoundRow(patterns.get(index), rows, slots)) {
+				return index;
+			}
+		}
+		return -1;
 	}
 
 	private SurfaceCardinality surfaceCardinality(List<long[]> input, VarSlots slots,
@@ -229,7 +398,7 @@ final class LmdbFiniteJoinSurfaceEstimator {
 	}
 
 	private Expansion expand(Txn txn, List<long[]> input, VarSlots slots, StatementPattern pattern,
-			long alreadyScanned) throws IOException {
+			long alreadyScanned, ScanBudget scanBudget) throws IOException {
 		List<long[]> output = new ArrayList<>();
 		long scanned = alreadyScanned;
 		for (long[] row : input) {
@@ -244,9 +413,10 @@ final class LmdbFiniteJoinSurfaceEstimator {
 					ids.objectId(), ids.contextId(), true)) {
 				long[] quad;
 				while ((quad = records.next()) != null) {
-					if (++scanned > MAX_SCANNED_ROWS) {
+					if (!scanBudget.tryConsume()) {
 						return null;
 					}
+					scanned++;
 					long[] merged = merge(row, slots, pattern, quad);
 					if (merged != null) {
 						output.add(merged);
@@ -258,6 +428,10 @@ final class LmdbFiniteJoinSurfaceEstimator {
 			}
 		}
 		return new Expansion(output, scanned);
+	}
+
+	static ScanBudget newScanBudget() {
+		return new ScanBudget(MAX_SCANNED_ROWS);
 	}
 
 	private PatternIds patternIds(StatementPattern pattern, long[] row, VarSlots slots) throws IOException {
@@ -405,6 +579,16 @@ final class LmdbFiniteJoinSurfaceEstimator {
 		return slots;
 	}
 
+	private static VarSlots buildVarSlots(List<List<StatementPattern>> branches) {
+		VarSlots slots = new VarSlots();
+		for (List<StatementPattern> branch : branches) {
+			for (StatementPattern pattern : branch) {
+				addPatternVariables(slots, pattern);
+			}
+		}
+		return slots;
+	}
+
 	private static void addPatternVariables(VarSlots slots, StatementPattern pattern) {
 		for (Var variable : pattern.getVarList()) {
 			if (variable != null && !variable.hasValue()) {
@@ -438,11 +622,31 @@ final class LmdbFiniteJoinSurfaceEstimator {
 		}
 	}
 
+	private record AlternativeBranches(List<List<StatementPattern>> branches, boolean containsUnion,
+			int factorOccurrences) {
+	}
+
 	private enum Component {
 		SUBJECT,
 		PREDICATE,
 		OBJECT,
 		CONTEXT
+	}
+
+	static final class ScanBudget {
+		private long remainingRows;
+
+		private ScanBudget(long remainingRows) {
+			this.remainingRows = Math.max(0L, remainingRows);
+		}
+
+		private boolean tryConsume() {
+			if (remainingRows == 0L) {
+				return false;
+			}
+			remainingRows--;
+			return true;
+		}
 	}
 
 	private static final class VarSlots {

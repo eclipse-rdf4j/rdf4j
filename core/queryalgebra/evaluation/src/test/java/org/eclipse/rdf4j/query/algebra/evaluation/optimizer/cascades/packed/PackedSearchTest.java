@@ -17,26 +17,40 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.RecordComponent;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Count;
+import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
@@ -161,6 +175,151 @@ class PackedSearchTest {
 		for (RecordComponent component : PackedPlanningResult.class.getRecordComponents()) {
 			assertTrue(component.getType() != PackedMemo.class, component::getName);
 		}
+	}
+
+	@Test
+	void budgetedDenseSearchSeedsCompleteConnectedIncumbentBeforeSubsetExploration() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		List<TupleExpr> writtenOrder = new ArrayList<>();
+		for (int ordinal = 0; ordinal < 6; ordinal++) {
+			writtenOrder.add(pattern(values, "x", "urn:x" + ordinal, "xValue" + ordinal, 1.0d));
+			writtenOrder.add(pattern(values, "y", "urn:y" + ordinal, "yValue" + ordinal, 10.0d));
+		}
+		writtenOrder.add(pattern(values, "x", "urn:bridge", "y", 2.0d));
+		TupleExpr source = leftDeepJoin(writtenOrder);
+
+		assertFalse(allJoinsConnected(source), source::toString);
+
+		OptimizationGoal goal = OptimizationGoal.root().asBudgeted(Duration.ofSeconds(30), 256);
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, goal);
+
+		assertTrue(result.workLimitReached());
+		assertTrue(allJoinsConnected(result.selectedPlan()), result.selectedPlan()::toString);
+	}
+
+	@Test
+	void budgetedSeedSearchConsidersEveryPotentialEndpointStart() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		TupleExpr source = leftDeepJoin(List.of(
+				pattern(values, "left", "urn:left-first", "leftFirstValue", Double.NaN),
+				pattern(values, "left", "urn:left-second", "leftSecondValue", Double.NaN),
+				pattern(values, "right", "urn:right-anchor", "rightAnchorValue", Double.NaN),
+				pattern(values, "left", "urn:path", "right", Double.NaN),
+				pattern(values, "right", "urn:right-tail", "rightTailValue", Double.NaN)));
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (!query.isStatementPattern(relationId)) {
+					return Double.NaN;
+				}
+				return switch (query.statementPatternValue(relationId, 1).stringValue()) {
+				case "urn:left-first" -> 1.0d;
+				case "urn:left-second" -> 2.0d;
+				case "urn:right-anchor" -> 3.0d;
+				case "urn:right-tail" -> 4.0d;
+				case "urn:path" -> 1_000.0d;
+				default -> Double.NaN;
+				};
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (!query.isStatementPattern(relationId)) {
+					return;
+				}
+				double rows = estimateRows(query, relationId);
+				if ("urn:path".equals(query.statementPatternValue(relationId, 1).stringValue())) {
+					boolean startBound = query.prefixBindsStatementComponent(context, relationId, 0);
+					boolean endBound = query.prefixBindsStatementComponent(context, relationId, 2);
+					if (endBound && !startBound) {
+						output.setContextualRows(1.0d, 1.0d);
+						return;
+					}
+					if (startBound && !endBound) {
+						output.setContextualRows(100_000.0d, 100_000.0d);
+						return;
+					}
+				}
+				output.setRows(rows, rows);
+			}
+		};
+
+		OptimizationGoal goal = OptimizationGoal.root().asBudgeted(Duration.ofSeconds(30), 20);
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, goal, costs);
+		List<TupleExpr> selectedFactors = joinFactors(result.selectedPlan());
+
+		assertTrue(result.workLimitReached());
+		assertEquals("urn:right-anchor",
+				((StatementPattern) selectedFactors.get(0)).getPredicateVar().getValue().stringValue(),
+				result.selectedPlan()::toString);
+		assertTrue(result.totalCost() < 100.0d,
+				() -> "The bounded search must retain the cheap reverse-endpoint seed. cost=" + result.totalCost()
+						+ ", plan=" + result.selectedPlan());
+	}
+
+	@Test
+	void rejectedGreedySeedDoesNotPublishCandidateRowsOverRetainedWinner() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		TupleExpr source = leftDeepJoin(List.of(
+				pattern(values, "shared", "urn:first", "firstValue", Double.NaN),
+				pattern(values, "shared", "urn:second", "secondValue", Double.NaN),
+				pattern(values, "shared", "urn:third", "thirdValue", Double.NaN)));
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (!query.isStatementPattern(relationId)) {
+					return Double.NaN;
+				}
+				return switch (query.statementPatternValue(relationId, 1).stringValue()) {
+				case "urn:first" -> 1.0d;
+				case "urn:second" -> 2.0d;
+				case "urn:third" -> 3.0d;
+				default -> Double.NaN;
+				};
+			}
+
+			@Override
+			public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (query.operatorTag(relationId) != PackedRelOp.JOIN || context.prefixRelationCount() == 0) {
+					return;
+				}
+				String firstPredicate = query
+						.statementPatternValue(context.prefixRelationId(0), 1)
+						.stringValue();
+				if ("urn:first".equals(firstPredicate)) {
+					output.setRows(7.0d, 0.0d);
+				} else {
+					output.setRows(999.0d, 1_000.0d);
+				}
+			}
+		};
+
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(source);
+		int relationCount = query.relationCount();
+		PackedMemo memo = new PackedMemo(query, query.symbolCount(), relationCount, relationCount, 4, relationCount,
+				relationCount * 2);
+		PackedIncumbentSearch search = new PackedIncumbentSearch(query, memo,
+				new PackedSearchBudget(6L, Long.MAX_VALUE), true, costs);
+
+		int rootWinnerId = search.build();
+
+		assertEquals(7.0d, memo.winnerOutputRows(rootWinnerId));
+		assertEquals(memo.winnerOutputRows(rootWinnerId), search.rootRows());
+	}
+
+	@Test
+	void sampledDeadlineExhaustionRemainsLatched() {
+		PackedSearchBudget budget = new PackedSearchBudget(Long.MAX_VALUE, System.nanoTime() - 1L);
+		for (int workUnit = 1; workUnit < 64; workUnit++) {
+			assertTrue(budget.tryConsume());
+		}
+
+		assertFalse(budget.tryConsume());
+		assertTrue(budget.deadlineReached());
+		assertFalse(budget.tryConsume());
+		assertFalse(budget.canConsume(1L));
 	}
 
 	@Test
@@ -318,6 +477,254 @@ class PackedSearchTest {
 	}
 
 	@Test
+	void contextualizedNestedUnionSumsEveryBranch() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern first = pattern(values, "shared", "urn:first", "firstValue", Double.NaN);
+		StatementPattern second = pattern(values, "shared", "urn:second", "secondValue", Double.NaN);
+		StatementPattern third = pattern(values, "shared", "urn:third", "thirdValue", Double.NaN);
+		Union source = new Union(first, new Union(second, third));
+		PackedCostModel costs = (query, relationId) -> {
+			if (!query.isStatementPattern(relationId)) {
+				return Double.NaN;
+			}
+			return switch (query.statementPatternValue(relationId, 1).stringValue()) {
+			case "urn:first" -> 18.0d;
+			case "urn:second" -> 24.0d;
+			case "urn:third" -> 48.0d;
+			default -> Double.NaN;
+			};
+		};
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), costs);
+		Union selected = (Union) result.selectedPlan();
+		Union selectedRight = (Union) selected.getRightArg();
+
+		assertEquals(90.0d, result.outputRows(), selected::toString);
+		assertEquals(90.0d, selected.getResultSizeEstimate(), selected::toString);
+		assertEquals(72.0d, selectedRight.getResultSizeEstimate(), selected::toString);
+	}
+
+	@Test
+	void nonLeafCostRefinementParticipatesInWinnerRanking() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern left = pattern(values, "shared", "urn:left", "leftValue", Double.NaN);
+		StatementPattern right = pattern(values, "shared", "urn:right", "rightValue", Double.NaN);
+		LeftJoin source = new LeftJoin(left, right);
+		boolean[] refined = { false };
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return query.isStatementPattern(relationId) ? 10.0d : Double.NaN;
+			}
+
+			@Override
+			public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (query.operatorTag(relationId) == PackedRelOp.LEFT_JOIN) {
+					refined[0] = true;
+					assertEquals(10.0d, context.leftInputRows());
+					assertEquals(10.0d, context.rightInputRows());
+					output.setRows(123.0d, 456.0d);
+					output.setEstimateProvenance("learned-test", "operator_feedback");
+					output.putPlannedStringMetric("plannedProviderDetail", "retained-test");
+					output.putPlannedDoubleMetric("plannedProviderConfidence", 0.75d);
+				}
+			}
+		};
+
+		LeftJoin selected = (LeftJoin) PackedCascadesPlanner
+				.optimize(source, OptimizationGoal.root(), costs)
+				.selectedPlan();
+
+		assertTrue(refined[0]);
+		assertEquals(123.0d, selected.getResultSizeEstimate(), selected::toString);
+		assertEquals(456.0d, selected.getCostEstimate(), selected::toString);
+		assertEquals("learned-test",
+				selected.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
+		assertEquals("operator_feedback", selected.getStringMetricPlanned("plannedEstimateFusion"));
+		assertEquals("retained-test", selected.getStringMetricPlanned("plannedProviderDetail"));
+		assertEquals(0.75d, selected.getDoubleMetricPlanned("plannedProviderConfidence"));
+	}
+
+	@Test
+	void transformedWinnerRefinesCanonicalUnaryFromCanonicalChildRows() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern left = pattern(values, "shared", "urn:left", "leftValue", Double.NaN);
+		StatementPattern right = pattern(values, "shared", "urn:right", "target", Double.NaN);
+		Filter source = new Filter(new Join(left, right),
+				new Compare(Var.of("target"), new ValueConstant(values.createLiteral("absent")),
+						Compare.CompareOp.NE));
+		List<Double> filterInputRows = new ArrayList<>();
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (!query.isStatementPattern(relationId)) {
+					return Double.NaN;
+				}
+				return "urn:left".equals(query.statementPatternValue(relationId, 1).stringValue())
+						? 18.0d
+						: 5.0d;
+			}
+
+			@Override
+			public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (query.operatorTag(relationId) == PackedRelOp.JOIN) {
+					output.setRows(90.0d, Math.max(90.0d, output.workRows()));
+				} else if (query.operatorTag(relationId) == PackedRelOp.FILTER) {
+					filterInputRows.add(context.leftInputRows());
+					output.setRows(context.leftInputRows(),
+							Math.max(context.leftInputRows(), output.workRows()));
+				}
+			}
+		};
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), costs);
+
+		assertTrue(result.selectedPlan() instanceof Join, result.selectedPlan()::toString);
+		assertEquals(90.0d, result.outputRows(), result.selectedPlan()::toString);
+		assertFalse(filterInputRows.isEmpty());
+		assertTrue(filterInputRows.stream().allMatch(rows -> rows == 90.0d), filterInputRows::toString);
+	}
+
+	@Test
+	void joinRefinementWithoutFusionRetainsMetadataAndRankedWork() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		TupleExpr source = new Join(
+				pattern(values, "shared", "urn:left", "leftValue", Double.NaN),
+				pattern(values, "shared", "urn:right", "rightValue", Double.NaN));
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return query.isStatementPattern(relationId) ? 10.0d : Double.NaN;
+			}
+
+			@Override
+			public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (query.operatorTag(relationId) == PackedRelOp.JOIN) {
+					output.setRows(1.0d, 1.0d);
+					output.setAccess(3, 0, 2, 1.0d, 2.0d, "spoc", "join-provider", "directLookup");
+					output.putPlannedStringMetric("plannedProviderDetail", "retained-without-fusion");
+					output.putPlannedDoubleMetric("plannedProviderConfidence", 0.8d);
+				}
+			}
+		};
+
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(source);
+		int relationCount = query.relationCount();
+		PackedMemo memo = new PackedMemo(query, query.symbolCount(), relationCount, relationCount, 4, relationCount,
+				relationCount * 2);
+		PackedIncumbentSearch search = new PackedIncumbentSearch(query, memo,
+				new PackedSearchBudget(Long.MAX_VALUE, Long.MAX_VALUE), true, costs);
+		int rootWinnerId = search.build();
+		Join selected = (Join) PackedPlanMaterializer.materialize(query, memo.extractPlanRecipe(rootWinnerId));
+
+		assertEquals("join-provider",
+				selected.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
+		assertEquals("directLookup",
+				selected.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE));
+		assertEquals("retained-without-fusion", selected.getStringMetricPlanned("plannedProviderDetail"));
+		assertEquals(0.8d, selected.getDoubleMetricPlanned("plannedProviderConfidence"));
+		assertEquals(memo.winnerTotalCost(rootWinnerId), selected.getCostEstimate());
+
+		PackedPlanningResult contextualized = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), costs);
+		assertEquals(contextualized.totalCost(), contextualized.selectedPlan().getCostEstimate());
+	}
+
+	@Test
+	void costedLargeConnectedJoinMaterializesHashAlgorithmHint() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		Join source = new Join(
+				pattern(values, "shared", "urn:left", "leftValue", Double.NaN),
+				pattern(values, "shared", "urn:right", "rightValue", Double.NaN));
+
+		Join selected = (Join) PackedCascadesPlanner
+				.optimize(source, OptimizationGoal.root(), repeatedJoinCosts(1_000.0d, 1_000.0d))
+				.selectedPlan();
+
+		assertEquals("hash", selected.getStringMetricPlanned("optimizer.joinAlgorithmHint"));
+	}
+
+	@Test
+	void hashJoinRetainsIndependentRightWinnerDuringContextualization() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		Join source = new Join(
+				pattern(values, "shared", "urn:left", "leftValue", Double.NaN),
+				pattern(values, "shared", "urn:right", "rightValue", Double.NaN));
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (!query.isStatementPattern(relationId)) {
+					return Double.NaN;
+				}
+				return "urn:left".equals(query.statementPatternValue(relationId, 1).stringValue())
+						? 3.0d
+						: 420.0d;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (context.prefixRelationCount() == 0) {
+					double rows = estimateRows(query, relationId);
+					output.setRows(rows, rows);
+					return;
+				}
+				output.setContextualRows(420.0d, 420.0d);
+				output.setAccess(1, 0, 1, 420.0d, context.prefixRows(), "test-index",
+						"test-provider", "directLookup");
+			}
+		};
+
+		Join selected = (Join) PackedCascadesPlanner
+				.optimize(source, OptimizationGoal.root(), costs)
+				.selectedPlan();
+
+		assertEquals("hash", selected.getStringMetricPlanned("optimizer.joinAlgorithmHint"));
+		assertEquals(420.0d, selected.getRightArg().getResultSizeEstimate());
+		assertEquals(420.0d, selected.getResultSizeEstimate());
+	}
+
+	@Test
+	void smallConnectedJoinKeepsIteratorDespiteRepeatedProbeCost() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		Join source = new Join(
+				pattern(values, "shared", "urn:left", "leftValue", Double.NaN),
+				pattern(values, "shared", "urn:right", "rightValue", Double.NaN));
+
+		Join selected = (Join) PackedCascadesPlanner
+				.optimize(source, OptimizationGoal.root(), repeatedJoinCosts(32.0d, 100_000.0d))
+				.selectedPlan();
+
+		assertFalse(selected.getStringMetricsPlanned().containsKey("optimizer.joinAlgorithmHint"));
+	}
+
+	@Test
+	void hashAlgorithmChoiceRejectsDisconnectedAndVariableScopeInputs() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern scopedLeft = pattern(values, "shared", "urn:scoped-left", "leftValue", Double.NaN);
+		StatementPattern scopedRight = pattern(values, "shared", "urn:scoped-right", "rightValue", Double.NaN);
+		scopedLeft.setVariableScopeChange(true);
+		scopedRight.setVariableScopeChange(true);
+		Join scoped = new Join(scopedLeft, scopedRight);
+		Join disconnected = new Join(
+				pattern(values, "left", "urn:left", "leftValue", Double.NaN),
+				pattern(values, "right", "urn:right", "rightValue", Double.NaN));
+		PackedCostModel costs = repeatedJoinCosts(1_000.0d, 20_000.0d);
+
+		Join selectedScoped = (Join) PackedCascadesPlanner
+				.optimize(scoped, OptimizationGoal.root(), costs)
+				.selectedPlan();
+		Join selectedDisconnected = (Join) PackedCascadesPlanner
+				.optimize(disconnected, OptimizationGoal.root(), costs)
+				.selectedPlan();
+
+		assertFalse(selectedScoped.getStringMetricsPlanned().containsKey("optimizer.joinAlgorithmHint"));
+		assertFalse(selectedDisconnected.getStringMetricsPlanned().containsKey("optimizer.joinAlgorithmHint"));
+	}
+
+	@Test
 	void genericPhysicalMetadataDoesNotInventProviderAccessFacts() {
 		StatementPattern source = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
 
@@ -354,6 +761,954 @@ class PackedSearchTest {
 				result.selectedPlan()::toString);
 	}
 
+	@Test
+	void lateFiniteFilterWinnerRecostsUnaryAncestor() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern names = pattern(values, "entity", "urn:name", "name", 1_000.0d);
+		Filter selectedNames = new Filter(names,
+				new Or(
+						new Compare(Var.of("name"), new ValueConstant(values.createLiteral("first")),
+								Compare.CompareOp.EQ),
+						new Compare(Var.of("name"), new ValueConstant(values.createLiteral("second")),
+								Compare.CompareOp.EQ)));
+		Distinct source = new Distinct(selectedNames);
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, OptimizationGoal.root());
+
+		assertTrue(result.selectedPlan().toString().contains("BindingSetAssignment ([[name="),
+				result.selectedPlan()::toString);
+		assertTrue(result.totalCost() < 1_500.0d,
+				() -> "The DISTINCT incumbent must be recosted after its FILTER group selects the late finite "
+						+ "alternative. cost=" + result.totalCost() + ", plan=" + result.selectedPlan());
+	}
+
+	@Test
+	void finiteAlternativeReceivesTheBoundedJoinSearchBudgetBeforeItsParentIsEnumerated() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern details = pattern(values, "entity", "urn:details", "detail", Double.NaN);
+		StatementPattern names = pattern(values, "entity", "urn:name", "name", Double.NaN);
+		Filter selectedNames = new Filter(names,
+				new Or(
+						new Compare(Var.of("name"), new ValueConstant(values.createLiteral("first")),
+								Compare.CompareOp.EQ),
+						new Compare(Var.of("name"), new ValueConstant(values.createLiteral("second")),
+								Compare.CompareOp.EQ)));
+		Join source = new Join(details, selectedNames);
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (!query.isStatementPattern(relationId)) {
+					return Double.NaN;
+				}
+				return "urn:details".equals(query.statementPatternValue(relationId, 1).stringValue())
+						? 100.0d
+						: 1_000.0d;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				double rows = estimateRows(query, relationId);
+				if (query.isStatementPattern(relationId)
+						&& "urn:details".equals(query.statementPatternValue(relationId, 1).stringValue())
+						&& context.prefixRelationCount() != 0
+						&& isFiniteAnchorJoin(query, context.prefixRelationId(0))) {
+					output.setContextualRows(1.0d, 1.0d);
+				} else {
+					output.setRows(rows, rows);
+				}
+			}
+
+			@Override
+			public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (isFiniteAnchorJoin(query, relationId)) {
+					output.setRows(2.0d, 1_004.0d);
+				}
+			}
+		};
+
+		OptimizationGoal goal = OptimizationGoal.root().asBudgeted(Duration.ofSeconds(30), 1);
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, goal, costs);
+
+		Join selected = (Join) result.selectedPlan();
+		assertTrue(selected.getLeftArg() instanceof Join, selected::toString);
+		Join finitePrefix = (Join) selected.getLeftArg();
+		assertTrue(finitePrefix.getLeftArg() instanceof BindingSetAssignment, selected::toString);
+		assertTrue(selected.getRightArg() instanceof StatementPattern, selected::toString);
+		assertEquals("urn:details",
+				((StatementPattern) selected.getRightArg()).getPredicateVar().getValue().stringValue());
+	}
+
+	@Test
+	void finiteFilterRecipeRetainsAnchorAndRecostsWrittenJoinSequence() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern names = pattern(values, "entity", "urn:name", "name", Double.NaN);
+		StatementPattern details = pattern(values, "entity", "urn:details", "detail", Double.NaN);
+		Filter source = new Filter(new Join(names, details),
+				new Or(
+						new Compare(Var.of("name"), new ValueConstant(values.createLiteral("first")),
+								Compare.CompareOp.EQ),
+						new Compare(Var.of("name"), new ValueConstant(values.createLiteral("second")),
+								Compare.CompareOp.EQ)));
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return query.isStatementPattern(relationId) ? 10_000.0d : Double.NaN;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (!query.isStatementPattern(relationId)) {
+					return;
+				}
+				String predicate = query.statementPatternValue(relationId, 1).stringValue();
+				boolean finiteNameLookup = "urn:name".equals(predicate)
+						&& query.prefixBindsStatementComponent(context, relationId, 2);
+				boolean boundDetailLookup = "urn:details".equals(predicate)
+						&& query.prefixBindsStatementComponent(context, relationId, 0);
+				output.setRows(finiteNameLookup || boundDetailLookup ? 2.0d : 10_000.0d,
+						finiteNameLookup || boundDetailLookup ? 2.0d : 10_000.0d);
+			}
+		};
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), costs);
+
+		assertTrue((result.ruleProofMask() & PackedRuleProofs.FINITE_FILTER_VALUES) != 0L,
+				() -> "The selected plan must retain the finite-filter proof: " + result.selectedPlan());
+		assertTrue(result.totalCost() < 100.0d,
+				() -> "The finite anchor must contextually recost both downstream lookups. cost="
+						+ result.totalCost() + ", plan=" + result.selectedPlan());
+		assertTrue(result.selectedPlan() instanceof Join, result.selectedPlan()::toString);
+		Join selected = (Join) result.selectedPlan();
+		assertTrue(selected.getLeftArg() instanceof Join, selected::toString);
+		Join finiteNameLookup = (Join) selected.getLeftArg();
+		assertTrue(finiteNameLookup.getLeftArg() instanceof BindingSetAssignment, selected::toString);
+		assertEquals("urn:name",
+				((StatementPattern) finiteNameLookup.getRightArg()).getPredicateVar().getValue().stringValue());
+		assertEquals("urn:details",
+				((StatementPattern) selected.getRightArg()).getPredicateVar().getValue().stringValue());
+	}
+
+	@Test
+	void finiteFilterRecipeFixesAnchorFirstAndEnumeratesConnectedSuffix() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern copyType = pattern(values, "copy", "urn:type", "copyType", Double.NaN);
+		StatementPattern locatedAt = pattern(values, "copy", "urn:locatedAt", "branch", Double.NaN);
+		StatementPattern name = pattern(values, "branch", "urn:name", "branchName", Double.NaN);
+		Filter source = new Filter(new Join(new Join(copyType, locatedAt), name),
+				new Or(
+						new Compare(Var.of("branchName"), new ValueConstant(values.createLiteral("first")),
+								Compare.CompareOp.EQ),
+						new Compare(Var.of("branchName"), new ValueConstant(values.createLiteral("second")),
+								Compare.CompareOp.EQ)));
+
+		PackedPlanningResult result = PackedCascadesPlanner
+				.optimize(source, OptimizationGoal.root(), finiteConnectedLookupCosts());
+
+		assertTrue((result.ruleProofMask() & PackedRuleProofs.FINITE_FILTER_VALUES) != 0L,
+				() -> "The selected plan must retain the finite-filter proof: " + result.selectedPlan());
+		assertTrue(result.totalCost() < 1_000.0d,
+				() -> "The fixed finite anchor must drive the connected suffix. cost="
+						+ result.totalCost() + ", plan=" + result.selectedPlan());
+		List<TupleExpr> recipeFactors = joinFactors(result.selectedPlan());
+		assertEquals(4, recipeFactors.size(), result.selectedPlan()::toString);
+		assertTrue(recipeFactors.get(0) instanceof BindingSetAssignment, result.selectedPlan()::toString);
+		assertEquals(List.of("urn:name", "urn:locatedAt", "urn:type"),
+				recipeFactors.subList(1, recipeFactors.size())
+						.stream()
+						.map(StatementPattern.class::cast)
+						.map(pattern -> pattern.getPredicateVar().getValue().stringValue())
+						.toList(),
+				result.selectedPlan()::toString);
+	}
+
+	@Test
+	void parentJoinTreatsFiniteFilterRecipeAsOneOpaqueFactor() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern copyType = pattern(values, "copy", "urn:type", "copyType", Double.NaN);
+		StatementPattern locatedAt = pattern(values, "copy", "urn:locatedAt", "branch", Double.NaN);
+		StatementPattern name = pattern(values, "branch", "urn:name", "branchName", Double.NaN);
+		Filter selectedBranches = new Filter(new Join(new Join(copyType, locatedAt), name),
+				new Or(
+						new Compare(Var.of("branchName"), new ValueConstant(values.createLiteral("first")),
+								Compare.CompareOp.EQ),
+						new Compare(Var.of("branchName"), new ValueConstant(values.createLiteral("second")),
+								Compare.CompareOp.EQ)));
+		StatementPattern availability = pattern(values, "copy", "urn:availability", "availability", Double.NaN);
+		Join source = new Join(selectedBranches, availability);
+
+		PackedPlanningResult result = PackedCascadesPlanner
+				.optimize(source, OptimizationGoal.root(), finiteConnectedLookupCosts());
+
+		assertTrue((result.ruleProofMask() & PackedRuleProofs.FINITE_FILTER_VALUES) != 0L,
+				() -> "The selected subtree must retain the finite-filter proof: " + result.selectedPlan());
+		assertTrue(result.selectedPlan() instanceof Join, result.selectedPlan()::toString);
+		Join selected = (Join) result.selectedPlan();
+		TupleExpr finiteRecipe;
+		if (selected.getLeftArg()instanceof StatementPattern pattern
+				&& "urn:availability".equals(pattern.getPredicateVar().getValue().stringValue())) {
+			finiteRecipe = selected.getRightArg();
+		} else {
+			assertTrue(selected.getRightArg() instanceof StatementPattern, selected::toString);
+			StatementPattern parentFactor = (StatementPattern) selected.getRightArg();
+			assertEquals("urn:availability", parentFactor.getPredicateVar().getValue().stringValue(),
+					selected::toString);
+			finiteRecipe = selected.getLeftArg();
+		}
+		List<TupleExpr> recipeFactors = joinFactors(finiteRecipe);
+		assertEquals(4, recipeFactors.size(), selected::toString);
+		assertTrue(recipeFactors.stream().anyMatch(BindingSetAssignment.class::isInstance), selected::toString);
+		assertFalse(recipeFactors.stream()
+				.filter(StatementPattern.class::isInstance)
+				.map(StatementPattern.class::cast)
+				.anyMatch(pattern -> "urn:availability"
+						.equals(pattern.getPredicateVar().getValue().stringValue())),
+				selected::toString);
+	}
+
+	@Test
+	void safeFilterKeepsPositionWhileInheritedFinitePrefixReordersInnerJoin() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		MapBindingSet first = new MapBindingSet(1);
+		first.setBinding("branchName", values.createLiteral("first"));
+		MapBindingSet second = new MapBindingSet(1);
+		second.setBinding("branchName", values.createLiteral("second"));
+		BindingSetAssignment selectedNames = new BindingSetAssignment();
+		selectedNames.setBindingNames(new LinkedHashSet<>(List.of("branchName")));
+		selectedNames.setBindingSets(List.of(first, second));
+
+		StatementPattern name = pattern(values, "branch", "urn:name", "branchName", Double.NaN);
+		StatementPattern locatedAt = pattern(values, "copy", "urn:locatedAt", "branch", Double.NaN);
+		Filter residual = new Filter(new Join(locatedAt, name),
+				new Compare(Var.of("branch"), new ValueConstant(values.createIRI("urn:excluded")),
+						Compare.CompareOp.NE));
+		Join source = new Join(selectedNames, residual);
+
+		PackedPlanningResult result = PackedCascadesPlanner
+				.optimize(source, OptimizationGoal.root(), mobileFilterCosts());
+
+		assertTrue(result.selectedPlan() instanceof Join, result.selectedPlan()::toString);
+		Join selected = (Join) result.selectedPlan();
+		assertTrue(selected.getLeftArg() instanceof BindingSetAssignment, selected::toString);
+		assertTrue(selected.getRightArg() instanceof Filter, selected::toString);
+		Filter selectedFilter = (Filter) selected.getRightArg();
+		assertTrue(selectedFilter.getArg() instanceof Join, selected::toString);
+		assertEquals(List.of("urn:name", "urn:locatedAt"),
+				joinFactors(selectedFilter.getArg())
+						.stream()
+						.map(StatementPattern.class::cast)
+						.map(pattern -> pattern.getPredicateVar().getValue().stringValue())
+						.toList(),
+				selected::toString);
+	}
+
+	@Test
+	void guardedCorrelatedFilterRemainsInsideInheritedFiniteBoundary() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		MapBindingSet first = new MapBindingSet(1);
+		first.setBinding("branchName", values.createLiteral("first"));
+		MapBindingSet second = new MapBindingSet(1);
+		second.setBinding("branchName", values.createLiteral("second"));
+		BindingSetAssignment selectedNames = new BindingSetAssignment();
+		selectedNames.setBindingNames(new LinkedHashSet<>(List.of("branchName")));
+		selectedNames.setBindingSets(List.of(first, second));
+
+		StatementPattern name = pattern(values, "branch", "urn:name", "branchName", Double.NaN);
+		StatementPattern locatedAt = pattern(values, "copy", "urn:locatedAt", "branch", Double.NaN);
+		StatementPattern probe = pattern(values, "branch", "urn:probe", "probeValue", Double.NaN);
+		Filter residual = new Filter(new Join(locatedAt, name), new Exists(probe));
+		Join source = new Join(selectedNames, residual);
+
+		PackedPlanningResult result = PackedCascadesPlanner
+				.optimize(source, OptimizationGoal.root(), mobileFilterCosts());
+
+		assertTrue(result.selectedPlan() instanceof Join, result.selectedPlan()::toString);
+		Join selected = (Join) result.selectedPlan();
+		assertTrue(selected.getLeftArg() instanceof BindingSetAssignment, selected::toString);
+		List<TupleExpr> residualFactors = joinFactors(selected.getRightArg());
+		List<Filter> residualFilters = residualFactors.stream()
+				.filter(Filter.class::isInstance)
+				.map(Filter.class::cast)
+				.toList();
+		assertEquals(1, residualFilters.size(), selected::toString);
+		Filter selectedFilter = residualFilters.get(0);
+		assertTrue(selectedFilter.getCondition() instanceof Exists, selected::toString);
+		assertTrue(containsStatementPattern(selectedFilter, "urn:locatedAt", "branch"), selected::toString);
+		assertFalse(containsStatementPattern(selectedFilter, "urn:name", "branchName"), selected::toString);
+		assertTrue(residualFactors.stream()
+				.anyMatch(factor -> isStatementPattern(factor, "urn:name", "branchName")), selected::toString);
+		assertFalse(residualFactors.stream().anyMatch(BindingSetAssignment.class::isInstance), selected::toString);
+	}
+
+	@Test
+	void correlatedExistsSelectsInnerWinnerUnderAssuredOuterContext() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern outerDrug = pattern(values, "drug", "urn:drugType", "kind", Double.NaN);
+		StatementPattern hasArm = pattern(values, "trial", "urn:hasArm", "arm", Double.NaN);
+		StatementPattern armDrug = pattern(values, "arm", "urn:armDrug", "drug", Double.NaN);
+		Filter source = new Filter(outerDrug, new Exists(new Join(hasArm, armDrug)));
+
+		PackedPlanningResult result = PackedCascadesPlanner
+				.optimize(source, OptimizationGoal.root(), dependentExistsCosts());
+
+		assertTrue(result.selectedPlan() instanceof Filter, result.selectedPlan()::toString);
+		Filter selected = (Filter) result.selectedPlan();
+		assertTrue(selected.getCondition() instanceof Exists, result.selectedPlan()::toString);
+		List<String> innerPredicates = joinFactors(((Exists) selected.getCondition()).getSubQuery())
+				.stream()
+				.map(StatementPattern.class::cast)
+				.map(pattern -> pattern.getPredicateVar().getValue().stringValue())
+				.toList();
+		assertEquals(List.of("urn:armDrug", "urn:hasArm"), innerPredicates, result.selectedPlan()::toString);
+	}
+
+	@Test
+	void correlatedExistsRecostsSingleProbeUnderAssuredOuterContext() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern pair = pattern(values, "u", "urn:pair", "v", Double.NaN);
+		StatementPattern follows = pattern(values, "u", "urn:follows", "v", Double.NaN);
+		Filter source = new Filter(pair, new Exists(follows));
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (!query.isStatementPattern(relationId)) {
+					return Double.NaN;
+				}
+				return "urn:follows".equals(query.statementPatternValue(relationId, 1).stringValue())
+						? 10_000.0d
+						: 2.0d;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				double rows = estimateRows(query, relationId);
+				if (query.isStatementPattern(relationId)
+						&& "urn:follows".equals(query.statementPatternValue(relationId, 1).stringValue())
+						&& query.prefixBindsStatementComponent(context, relationId, 0)
+						&& query.prefixBindsStatementComponent(context, relationId, 2)) {
+					output.setContextualRows(1.0d, 1.0d);
+				} else {
+					output.setRows(rows, rows);
+				}
+			}
+		};
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), costs);
+
+		Filter selected = (Filter) result.selectedPlan();
+		StatementPattern selectedProbe = (StatementPattern) ((Exists) selected.getCondition()).getSubQuery();
+		assertEquals(1.0d, selectedProbe.getResultSizeEstimate(), result.selectedPlan()::toString);
+		assertEquals(1.0d, selectedProbe.getCostEstimate(), result.selectedPlan()::toString);
+	}
+
+	@Test
+	void correlatedExistsRetainsDisconnectedOuterComponentRows() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern first = pattern(values, "a", "urn:first", "firstValue", Double.NaN);
+		StatementPattern unrelated = pattern(values, "b", "urn:unrelated", "unrelatedValue", Double.NaN);
+		StatementPattern probe = pattern(values, "a", "urn:probe", "probeValue", Double.NaN);
+		Filter source = new Filter(new Join(first, unrelated), new Exists(probe));
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (!query.isStatementPattern(relationId)) {
+					return Double.NaN;
+				}
+				return switch (query.statementPatternValue(relationId, 1).stringValue()) {
+				case "urn:first" -> 3.0d;
+				case "urn:unrelated" -> 4.0d;
+				case "urn:probe" -> 1_000.0d;
+				default -> Double.NaN;
+				};
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				double rows = estimateRows(query, relationId);
+				if (query.isStatementPattern(relationId)
+						&& "urn:probe".equals(query.statementPatternValue(relationId, 1).stringValue())
+						&& query.prefixBindsStatementComponent(context, relationId, 0)) {
+					output.setComponentRows(2.0d, 2.0d);
+				} else if (query.isStatementPattern(relationId)
+						&& "urn:first".equals(query.statementPatternValue(relationId, 1).stringValue())
+						&& context.prefixRelationCount() > 0) {
+					output.setComponentRows(3.0d, 1.0d);
+				} else if (Double.isFinite(rows)) {
+					String predicate = query.statementPatternValue(relationId, 1).stringValue();
+					output.setRows(rows, "urn:first".equals(predicate) ? 100.0d : rows);
+				}
+			}
+		};
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), costs);
+
+		Filter selected = joinFactors(result.selectedPlan())
+				.stream()
+				.filter(Filter.class::isInstance)
+				.map(Filter.class::cast)
+				.filter(filter -> filter.getCondition() instanceof Exists)
+				.findFirst()
+				.orElseThrow(() -> new AssertionError(result.selectedPlan().toString()));
+		StatementPattern selectedProbe = (StatementPattern) ((Exists) selected.getCondition()).getSubQuery();
+		assertEquals(8.0d, selectedProbe.getResultSizeEstimate(), result.selectedPlan()::toString);
+	}
+
+	@Test
+	void correlatedExistsDoesNotUseNullableOuterContextForInnerWinner() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		MapBindingSet boundDrug = new MapBindingSet(1);
+		boundDrug.setBinding("drug", values.createIRI("urn:drug"));
+		BindingSetAssignment nullableDrug = new BindingSetAssignment();
+		nullableDrug.setBindingNames(new LinkedHashSet<>(List.of("drug")));
+		nullableDrug.setBindingSets(List.of(boundDrug, new MapBindingSet()));
+		StatementPattern hasArm = pattern(values, "trial", "urn:hasArm", "arm", Double.NaN);
+		StatementPattern armDrug = pattern(values, "arm", "urn:armDrug", "drug", Double.NaN);
+		Filter source = new Filter(nullableDrug, new Exists(new Join(hasArm, armDrug)));
+
+		PackedPlanningResult result = PackedCascadesPlanner
+				.optimize(source, OptimizationGoal.root(), dependentExistsCosts());
+
+		Filter selected = (Filter) result.selectedPlan();
+		assertEquals(List.of("urn:hasArm", "urn:armDrug"),
+				joinFactors(((Exists) selected.getCondition()).getSubQuery())
+						.stream()
+						.map(StatementPattern.class::cast)
+						.map(pattern -> pattern.getPredicateVar().getValue().stringValue())
+						.toList(),
+				result.selectedPlan()::toString);
+	}
+
+	@Test
+	void cachedCorrelatedExistsRetainsContextualInnerWinner() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern outerDrug = pattern(values, "drug", "urn:drugType", "kind", Double.NaN);
+		StatementPattern hasArm = pattern(values, "trial", "urn:hasArm", "arm", Double.NaN);
+		StatementPattern armDrug = pattern(values, "arm", "urn:armDrug", "drug", Double.NaN);
+		Filter source = new Filter(outerDrug, new Exists(new Join(hasArm, armDrug)));
+		PackedPlanCache cache = new PackedPlanCache(8, 1);
+		PackedPlanCache.Context context = new PackedPlanCache.Context(1L, 2L, 3L, 4L, 5L, 6L, 7L);
+
+		PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), cache, context, dependentExistsCosts());
+		PackedPlanningResult hot = PackedCascadesPlanner
+				.optimize(source, OptimizationGoal.root(), cache, context, dependentExistsCosts());
+
+		assertTrue(hot.metrics().planCacheHit());
+		Filter selected = (Filter) hot.selectedPlan();
+		assertEquals(List.of("urn:armDrug", "urn:hasArm"),
+				joinFactors(((Exists) selected.getCondition()).getSubQuery())
+						.stream()
+						.map(StatementPattern.class::cast)
+						.map(pattern -> pattern.getPredicateVar().getValue().stringValue())
+						.toList(),
+				hot.selectedPlan()::toString);
+	}
+
+	@Test
+	void correlatedNotExistsRunsWhenItsOuterBindingsAreAssured() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		MapBindingSet thresholdRow = new MapBindingSet(1);
+		thresholdRow.setBinding("threshold", values.createLiteral(3));
+		BindingSetAssignment threshold = new BindingSetAssignment();
+		threshold.setBindingNames(new LinkedHashSet<>(List.of("threshold")));
+		threshold.setBindingSets(List.of(thresholdRow));
+
+		StatementPattern type = pattern(values, "node", "urn:type", "nodeType", Double.NaN);
+		StatementPattern weight = pattern(values, "node", "urn:weight", "weight", Double.NaN);
+		StatementPattern connects = pattern(values, "node", "urn:connects", "neighbor", Double.NaN);
+		StatementPattern neighborWeight = pattern(values, "neighbor", "urn:weight", "neighborWeight", Double.NaN);
+		Filter lowNeighbor = new Filter(new Join(connects, neighborWeight),
+				new Compare(Var.of("neighborWeight"), Var.of("threshold"), Compare.CompareOp.LT));
+		Filter source = new Filter(new Join(new Join(threshold, type), weight),
+				new Not(new Exists(lowNeighbor)));
+
+		PackedCostModel costs = (query, relationId) -> {
+			if (!query.isStatementPattern(relationId)) {
+				return Double.NaN;
+			}
+			return switch (query.statementPatternValue(relationId, 1).stringValue()) {
+			case "urn:type" -> 10.0d;
+			case "urn:weight" -> 100_000.0d;
+			case "urn:connects" -> 2.0d;
+			default -> Double.NaN;
+			};
+		};
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), costs);
+
+		assertTrue(result.selectedPlan() instanceof Join, result.selectedPlan()::toString);
+		Join selected = (Join) result.selectedPlan();
+		TupleExpr filteredPrefix;
+		if (isStatementPattern(selected.getRightArg(), "urn:weight", "weight")) {
+			filteredPrefix = selected.getLeftArg();
+		} else {
+			assertTrue(isStatementPattern(selected.getLeftArg(), "urn:weight", "weight"),
+					result.selectedPlan()::toString);
+			filteredPrefix = selected.getRightArg();
+		}
+		assertTrue(filteredPrefix instanceof Filter, result.selectedPlan()::toString);
+		assertTrue(((Filter) filteredPrefix).getCondition() instanceof Not, result.selectedPlan()::toString);
+		assertTrue(((Not) ((Filter) filteredPrefix).getCondition()).getArg() instanceof Exists,
+				result.selectedPlan()::toString);
+	}
+
+	@Test
+	void correlatedNotExistsSchedulingIsIndependentOfSyntacticJoinOrder() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		MapBindingSet firstWeight = new MapBindingSet(1);
+		firstWeight.setBinding("weight", values.createLiteral(1));
+		MapBindingSet secondWeight = new MapBindingSet(1);
+		secondWeight.setBinding("weight", values.createLiteral(2));
+		BindingSetAssignment selectedWeights = new BindingSetAssignment();
+		selectedWeights.setBindingNames(new LinkedHashSet<>(List.of("weight")));
+		selectedWeights.setBindingSets(List.of(firstWeight, secondWeight));
+
+		MapBindingSet thresholdRow = new MapBindingSet(1);
+		thresholdRow.setBinding("threshold", values.createLiteral(3));
+		BindingSetAssignment threshold = new BindingSetAssignment();
+		threshold.setBindingNames(new LinkedHashSet<>(List.of("threshold")));
+		threshold.setBindingSets(List.of(thresholdRow));
+
+		StatementPattern weight = pattern(values, "node", "urn:weight", "weight", Double.NaN);
+		StatementPattern type = pattern(values, "node", "urn:type", "nodeType", Double.NaN);
+		StatementPattern connects = pattern(values, "node", "urn:connects", "neighbor", Double.NaN);
+		StatementPattern neighborWeight = pattern(values, "neighbor", "urn:weight", "neighborWeight", Double.NaN);
+		Filter lowNeighbor = new Filter(new Join(connects, neighborWeight),
+				new Compare(Var.of("neighborWeight"), Var.of("threshold"), Compare.CompareOp.LT));
+		TupleExpr anchorFirstInput = new Join(new Join(new Join(selectedWeights, weight), type), threshold);
+		Filter source = new Filter(anchorFirstInput, new Not(new Exists(lowNeighbor)));
+
+		PackedPlanningResult result = PackedCascadesPlanner
+				.optimize(source, OptimizationGoal.root(), correlatedPredicateCosts());
+
+		List<TupleExpr> selectedFactors = joinFactors(result.selectedPlan());
+		assertEquals(3, selectedFactors.size(), result.selectedPlan()::toString);
+		assertTrue(selectedFactors.get(0) instanceof Filter, result.selectedPlan()::toString);
+		TupleExpr filteredPrefix = selectedFactors.get(0);
+		assertTrue(((Filter) filteredPrefix).getCondition() instanceof Not, result.selectedPlan()::toString);
+		assertFalse(containsStatementPattern(filteredPrefix, "urn:weight", "weight"),
+				result.selectedPlan()::toString);
+		assertFalse(filteredPrefix.getBindingNames().contains("weight"), result.selectedPlan()::toString);
+		assertTrue(selectedFactors.get(1) instanceof BindingSetAssignment, result.selectedPlan()::toString);
+		assertTrue(selectedFactors.get(1).getBindingNames().contains("weight"), result.selectedPlan()::toString);
+		assertTrue(isStatementPattern(selectedFactors.get(2), "urn:weight", "weight"),
+				result.selectedPlan()::toString);
+	}
+
+	@Test
+	void deferredFilterUnlockAddsWorkAndShrinksRows() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		List<List<String>> writtenOrders = List.of(
+				List.of("urn:detail", "urn:threshold", "urn:type"),
+				List.of("urn:threshold", "urn:type", "urn:detail"));
+		double firstBoundaryRows = Double.NaN;
+
+		for (List<String> writtenOrder : writtenOrders) {
+			List<Double> continuationPrefixRows = new ArrayList<>();
+			PackedCostModel costs = splitDependencyFilterCosts(continuationPrefixRows);
+			Filter source = splitDependencyFilter(values, writtenOrder);
+			PackedPlanningResult withFilter = PackedCascadesPlanner
+					.optimize(source, OptimizationGoal.root(), costs);
+
+			List<TupleExpr> selectedFactors = joinFactors(withFilter.selectedPlan());
+			List<Filter> selectedFilters = selectedFactors.stream()
+					.filter(Filter.class::isInstance)
+					.map(Filter.class::cast)
+					.toList();
+			assertEquals(1, selectedFilters.size(), withFilter.selectedPlan()::toString);
+			Filter selectedFilter = selectedFilters.get(0);
+			List<String> boundaryPredicates = joinFactors(selectedFilter.getArg())
+					.stream()
+					.map(StatementPattern.class::cast)
+					.map(pattern -> pattern.getPredicateVar().getValue().stringValue())
+					.sorted()
+					.toList();
+			assertEquals(List.of("urn:threshold", "urn:type"), boundaryPredicates,
+					withFilter.selectedPlan()::toString);
+
+			double inputRows = selectedFilter.getArg().getResultSizeEstimate();
+			double filteredRows = inputRows * 0.25d;
+			assertEquals(filteredRows, withFilter.outputRows(), 0.0d, withFilter.selectedPlan()::toString);
+			assertTrue(selectedFilter.getCostEstimate() > selectedFilter.getArg().getCostEstimate(),
+					() -> "Filter evaluation must add work after its assured prefix: " + withFilter.selectedPlan());
+
+			assertTrue(continuationPrefixRows.contains(filteredRows),
+					() -> "The continuation must be costed from the filtered rows. expected=" + filteredRows
+							+ ", observed=" + continuationPrefixRows + ", plan=" + withFilter.selectedPlan());
+			if (Double.isNaN(firstBoundaryRows)) {
+				firstBoundaryRows = filteredRows;
+			} else {
+				assertEquals(firstBoundaryRows, filteredRows, 0.0d,
+						"Physical input order must not change the first assured filter boundary");
+			}
+		}
+	}
+
+	@Test
+	void correlatedNotExistsDoesNotCrossOptionalOuterBinding() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern type = pattern(values, "node", "urn:type", "nodeType", Double.NaN);
+		StatementPattern optionalThreshold = pattern(values, "node", "urn:threshold", "threshold", Double.NaN);
+		LeftJoin nullableThreshold = new LeftJoin(type, optionalThreshold);
+		StatementPattern weight = pattern(values, "node", "urn:weight", "weight", Double.NaN);
+		StatementPattern connects = pattern(values, "node", "urn:connects", "neighbor", Double.NaN);
+		StatementPattern neighborWeight = pattern(values, "neighbor", "urn:weight", "neighborWeight", Double.NaN);
+		Filter lowNeighbor = new Filter(new Join(connects, neighborWeight),
+				new Compare(Var.of("neighborWeight"), Var.of("threshold"), Compare.CompareOp.LT));
+		Filter source = new Filter(new Join(nullableThreshold, weight),
+				new Not(new Exists(lowNeighbor)));
+
+		PackedPlanningResult result = PackedCascadesPlanner
+				.optimize(source, OptimizationGoal.root(), correlatedPredicateCosts());
+
+		assertTrue(result.selectedPlan() instanceof Filter, result.selectedPlan()::toString);
+		assertTrue(((Filter) result.selectedPlan()).getCondition() instanceof Not, result.selectedPlan()::toString);
+	}
+
+	@Test
+	void correlatedExistsDoesNotCrossUndefValuesBinding() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		List<BindingSet> nodeOnlyRows = new ArrayList<>();
+		for (int ordinal = 0; ordinal < 8; ordinal++) {
+			MapBindingSet nodeOnly = new MapBindingSet(1);
+			nodeOnly.setBinding("node", values.createIRI("urn:node:" + ordinal));
+			nodeOnlyRows.add(nodeOnly);
+		}
+		BindingSetAssignment nullableThreshold = new BindingSetAssignment();
+		nullableThreshold.setBindingNames(new LinkedHashSet<>(List.of("node", "threshold")));
+		nullableThreshold.setBindingSets(nodeOnlyRows);
+
+		StatementPattern threshold = pattern(values, "threshold", "urn:thresholdMetadata", "metadata", Double.NaN);
+		StatementPattern correlatedProbe = pattern(values, "node", "urn:probeAtThreshold", "threshold",
+				Double.NaN);
+		Filter source = new Filter(new Join(nullableThreshold, threshold), new Exists(correlatedProbe));
+
+		PackedQuery query = PackedQueryCodec.encode(source);
+		int joinId = query.relChild(query.rootRelId(), 0);
+		int nullableThresholdId = query.relChild(joinId, 0);
+		assertEquals(2, query.maskCardinality(query.relOutputMaskId(nullableThresholdId)),
+				"The declared VALUES schema remains visible");
+		assertEquals(1, query.maskCardinality(query.relAssuredMaskId(nullableThresholdId)),
+				"Only node is bound in every VALUES row");
+
+		PackedPlanningResult result = PackedCascadesPlanner
+				.optimize(source, OptimizationGoal.root(), correlatedPredicateCosts());
+
+		assertTrue(result.selectedPlan() instanceof Filter, result.selectedPlan()::toString);
+		assertTrue(((Filter) result.selectedPlan()).getCondition() instanceof Exists,
+				result.selectedPlan()::toString);
+	}
+
+	@Test
+	void bindingAssignmentAssuredMaskIsIndependentOfRowOrder() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		MapBindingSet complete = new MapBindingSet(2);
+		complete.setBinding("node", values.createIRI("urn:node"));
+		complete.setBinding("threshold", values.createLiteral(3));
+		MapBindingSet nodeOnly = new MapBindingSet(1);
+		nodeOnly.setBinding("node", values.createIRI("urn:node"));
+
+		BindingSetAssignment completeFirst = new BindingSetAssignment();
+		completeFirst.setBindingNames(new LinkedHashSet<>(List.of("node", "threshold")));
+		completeFirst.setBindingSets(List.of(complete, nodeOnly));
+		BindingSetAssignment nodeOnlyFirst = new BindingSetAssignment();
+		nodeOnlyFirst.setBindingNames(new LinkedHashSet<>(List.of("node", "threshold")));
+		nodeOnlyFirst.setBindingSets(List.of(nodeOnly, complete));
+
+		PackedQuery first = PackedQueryCodec.encode(completeFirst);
+		PackedQuery second = PackedQueryCodec.encode(nodeOnlyFirst);
+
+		assertEquals(1, first.maskCardinality(first.relAssuredMaskId(first.rootRelId())));
+		assertEquals(1, second.maskCardinality(second.relAssuredMaskId(second.rootRelId())));
+	}
+
+	@Test
+	void bindingAssignmentAssuredMaskExcludesNamesOutsideDeclaredSchema() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		MapBindingSet mismatchedRow = new MapBindingSet(1);
+		mismatchedRow.setBinding("actual", values.createIRI("urn:value"));
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(new LinkedHashSet<>(List.of("declared")));
+		assignment.setBindingSets(List.of(mismatchedRow));
+
+		PackedQuery query = PackedQueryCodec.encode(assignment);
+
+		assertEquals(1, query.maskCardinality(query.relOutputMaskId(query.rootRelId())));
+		assertEquals(0, query.maskCardinality(query.relAssuredMaskId(query.rootRelId())));
+	}
+
+	@Test
+	void correlatedExistsWaitsForEveryReferencedOuterBinding() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		MapBindingSet thresholdRow = new MapBindingSet(1);
+		thresholdRow.setBinding("threshold", values.createLiteral(3));
+		BindingSetAssignment threshold = new BindingSetAssignment();
+		threshold.setBindingNames(new LinkedHashSet<>(List.of("threshold")));
+		threshold.setBindingSets(List.of(thresholdRow));
+
+		StatementPattern type = pattern(values, "node", "urn:type", "nodeType", Double.NaN);
+		StatementPattern weight = pattern(values, "node", "urn:weight", "weight", Double.NaN);
+		StatementPattern correlatedProbe = pattern(values, "node", "urn:probeAtWeight", "weight", Double.NaN);
+		Filter thresholdProbe = new Filter(correlatedProbe,
+				new Compare(Var.of("weight"), Var.of("threshold"), Compare.CompareOp.LT));
+		Filter source = new Filter(new Join(new Join(threshold, type), weight), new Exists(thresholdProbe));
+
+		PackedPlanningResult result = PackedCascadesPlanner
+				.optimize(source, OptimizationGoal.root(), correlatedPredicateCosts());
+
+		assertTrue(result.selectedPlan() instanceof Filter, result.selectedPlan()::toString);
+		assertTrue(((Filter) result.selectedPlan()).getCondition() instanceof Exists,
+				result.selectedPlan()::toString);
+	}
+
+	@Test
+	void independentExistsRemainsOpaqueToJoinEnumeration() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern type = pattern(values, "node", "urn:type", "nodeType", Double.NaN);
+		StatementPattern weight = pattern(values, "node", "urn:weight", "weight", Double.NaN);
+		StatementPattern independentProbe = pattern(values, "other", "urn:probe", "probeValue", Double.NaN);
+		Filter source = new Filter(new Join(type, weight), new Exists(independentProbe));
+
+		PackedPlanningResult result = PackedCascadesPlanner
+				.optimize(source, OptimizationGoal.root(), correlatedPredicateCosts());
+
+		assertTrue(result.selectedPlan() instanceof Filter, result.selectedPlan()::toString);
+		assertTrue(((Filter) result.selectedPlan()).getCondition() instanceof Exists,
+				result.selectedPlan()::toString);
+	}
+
+	@Test
+	void correlatedExistsDoesNotCrossScopedFilter() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern type = pattern(values, "node", "urn:type", "nodeType", Double.NaN);
+		StatementPattern weight = pattern(values, "node", "urn:weight", "weight", Double.NaN);
+		StatementPattern probe = pattern(values, "nodeType", "urn:probe", "probeValue", Double.NaN);
+		Filter source = new Filter(new Join(type, weight), new Exists(probe));
+		source.setVariableScopeChange(true);
+
+		PackedPlanningResult result = PackedCascadesPlanner
+				.optimize(source, OptimizationGoal.root(), correlatedPredicateCosts());
+
+		assertTrue(result.selectedPlan() instanceof Filter, result.selectedPlan()::toString);
+		assertTrue(((Filter) result.selectedPlan()).isVariableScopeChange(), result.selectedPlan()::toString);
+	}
+
+	@Test
+	void correlatedExistsDoesNotCrossScopedJoin() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern type = pattern(values, "node", "urn:type", "nodeType", Double.NaN);
+		StatementPattern weight = pattern(values, "node", "urn:weight", "weight", Double.NaN);
+		StatementPattern probe = pattern(values, "nodeType", "urn:probe", "probeValue", Double.NaN);
+		Join scopedInput = new Join(type, weight);
+		scopedInput.setVariableScopeChange(true);
+		Filter source = new Filter(scopedInput, new Exists(probe));
+
+		PackedPlanningResult result = PackedCascadesPlanner
+				.optimize(source, OptimizationGoal.root(), correlatedPredicateCosts());
+
+		assertTrue(result.selectedPlan() instanceof Filter, result.selectedPlan()::toString);
+		assertTrue(((Join) ((Filter) result.selectedPlan()).getArg()).isVariableScopeChange(),
+				result.selectedPlan()::toString);
+	}
+
+	@Test
+	void inheritedPrefixDoesNotEnterUnmarkedJoinContainingScopedDescendant() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern outer = pattern(values, "node", "urn:outer", "outerKey", Double.NaN);
+		StatementPattern probe = pattern(values, "outerKey", "urn:probe", "probeValue", Double.NaN);
+		StatementPattern scopedDetail = pattern(values, "probeValue", "urn:scoped-detail", "detail", Double.NaN);
+		scopedDetail.setVariableScopeChange(true);
+		Filter source = new Filter(outer, new Exists(new Join(probe, scopedDetail)));
+		boolean[] inheritedProbeObserved = { false };
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return query.isStatementPattern(relationId) ? 10.0d : Double.NaN;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (!query.isStatementPattern(relationId)) {
+					return;
+				}
+				for (int ordinal = 0; ordinal < context.prefixRelationCount(); ordinal++) {
+					int prefixRelationId = context.prefixRelationId(ordinal);
+					if (query.isStatementPattern(prefixRelationId)
+							&& "urn:outer"
+									.equals(query.statementPatternValue(prefixRelationId, 1).stringValue())) {
+						inheritedProbeObserved[0] = true;
+					}
+				}
+				output.setRows(10.0d, 10.0d);
+			}
+		};
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), costs);
+
+		assertFalse(inheritedProbeObserved[0],
+				"An unmarked wrapper must not hide a scoped descendant from inherited-prefix safety");
+		assertTrue(result.selectedPlan() instanceof Filter, result.selectedPlan()::toString);
+	}
+
+	@Test
+	void correlatedExistsWithScopedConditionRemainsOpaque() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern type = pattern(values, "node", "urn:type", "nodeType", Double.NaN);
+		StatementPattern weight = pattern(values, "node", "urn:weight", "weight", Double.NaN);
+		StatementPattern probe = pattern(values, "nodeType", "urn:probe", "probeValue", Double.NaN);
+		Exists exists = new Exists(probe);
+		exists.setVariableScopeChange(true);
+		Filter source = new Filter(new Join(type, weight), exists);
+
+		PackedPlanningResult result = PackedCascadesPlanner
+				.optimize(source, OptimizationGoal.root(), correlatedPredicateCosts());
+
+		assertTrue(result.selectedPlan() instanceof Filter, result.selectedPlan()::toString);
+		assertTrue(((Exists) ((Filter) result.selectedPlan()).getCondition()).isVariableScopeChange(),
+				result.selectedPlan()::toString);
+	}
+
+	@Test
+	void correlatedExistsDoesNotMoveAheadOfNonSilentService() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern type = pattern(values, "node", "urn:type", "nodeType", Double.NaN);
+		Service remote = new Service(Var.of("endpoint", values.createIRI("urn:service")),
+				pattern(values, "remoteSubject", "urn:remote", "remoteObject", Double.NaN),
+				"?remoteSubject <urn:remote> ?remoteObject .", Map.of(), null, false);
+		StatementPattern probe = pattern(values, "nodeType", "urn:probe", "probeValue", Double.NaN);
+		Filter source = new Filter(new Join(type, remote), new Exists(probe));
+		PackedCostModel costs = (query, relationId) -> {
+			if (query.operatorTag(relationId) == PackedRelOp.SERVICE) {
+				return 100_000.0d;
+			}
+			return query.isStatementPattern(relationId) ? 10.0d : Double.NaN;
+		};
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), costs);
+
+		assertTrue(result.selectedPlan() instanceof Filter, result.selectedPlan()::toString);
+		assertTrue(((Filter) result.selectedPlan()).getArg() instanceof Join, result.selectedPlan()::toString);
+	}
+
+	@Test
+	void correlatedExistsDoesNotMoveAheadOfTupleFunction() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern type = pattern(values, "node", "urn:type", "nodeType", Double.NaN);
+		TupleFunctionCall external = new TupleFunctionCall();
+		external.setURI("urn:tuple-function");
+		external.addResultVar(Var.of("externalResult"));
+		StatementPattern probe = pattern(values, "nodeType", "urn:probe", "probeValue", Double.NaN);
+		Filter source = new Filter(new Join(type, external), new Exists(probe));
+		PackedCostModel costs = (query, relationId) -> {
+			if (query.operatorTag(relationId) == PackedRelOp.TUPLE_FUNCTION) {
+				return 100_000.0d;
+			}
+			return query.isStatementPattern(relationId) ? 10.0d : Double.NaN;
+		};
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), costs);
+
+		assertTrue(result.selectedPlan() instanceof Filter, result.selectedPlan()::toString);
+		assertTrue(((Filter) result.selectedPlan()).getArg() instanceof Join, result.selectedPlan()::toString);
+	}
+
+	@Test
+	void correlatedExistsDoesNotMoveAheadOfExtensionWithUnknownFunction() {
+		assertCorrelatedExistsWaitsForExtension(
+				new FunctionCall("urn:test:unknown-potentially-effectful-function"));
+	}
+
+	@Test
+	void correlatedExistsDoesNotMoveAheadOfExtensionWithVolatileFunction() {
+		assertCorrelatedExistsWaitsForExtension(new FunctionCall("UUID"));
+	}
+
+	@Test
+	void correlatedExistsDoesNotMoveAheadOfExtensionWithBNodeGenerator() {
+		assertCorrelatedExistsWaitsForExtension(new BNodeGenerator());
+	}
+
+	@Test
+	void correlatedExistsDoesNotMoveAheadOfLeftJoinWithVolatileCondition() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern type = pattern(values, "node", "urn:type", "nodeType", Double.NaN);
+		StatementPattern optionalLeft = pattern(values, "node", "urn:optionalLeft", "optionalValue", Double.NaN);
+		StatementPattern optionalRight = pattern(values, "node", "urn:optionalRight", "optionalDetail", Double.NaN);
+		LeftJoin optional = new LeftJoin(optionalLeft, optionalRight, new FunctionCall("RAND"));
+		StatementPattern probe = pattern(values, "nodeType", "urn:probe", "probeValue", Double.NaN);
+		Filter source = new Filter(new Join(type, optional), new Exists(probe));
+
+		PackedPlanningResult result = PackedCascadesPlanner
+				.optimize(source, OptimizationGoal.root(), observableBarrierCosts());
+
+		assertTrue(result.selectedPlan() instanceof Filter, result.selectedPlan()::toString);
+		assertTrue(((Filter) result.selectedPlan()).getArg() instanceof Join, result.selectedPlan()::toString);
+	}
+
+	@Test
+	void explicitValuesPrecedesPatternWhenJoinCostIsDirectionallyAsymmetric() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		MapBindingSet fifty = new MapBindingSet(1);
+		fifty.setBinding("value", values.createLiteral(50));
+		MapBindingSet sixty = new MapBindingSet(1);
+		sixty.setBinding("value", values.createLiteral(60));
+		MapBindingSet seventy = new MapBindingSet(1);
+		seventy.setBinding("value", values.createLiteral(70));
+		BindingSetAssignment selectedValues = new BindingSetAssignment();
+		selectedValues.setBindingNames(new LinkedHashSet<>(List.of("value")));
+		selectedValues.setBindingSets(List.of(fifty, sixty, seventy));
+
+		StatementPattern valuePattern = pattern(values, "obs", "urn:medical-value", "value", Double.NaN);
+		Join source = new Join(valuePattern, selectedValues);
+		boolean[] directionCosted = new boolean[2];
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (query.isStatementPattern(relationId)) {
+					return 900.0d;
+				}
+				if (query.isBindingSetAssignment(relationId)) {
+					return query.bindingAssignmentRowCount(relationId);
+				}
+				return Double.NaN;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (query.isStatementPattern(relationId)
+						&& query.prefixBindsStatementComponent(context, relationId, 2)) {
+					directionCosted[0] = true;
+					output.setContextualRows(3.0d, 3.0d);
+				} else if (query.isBindingSetAssignment(relationId) && context.prefixRelationCount() != 0
+						&& query.isStatementPattern(
+								context.prefixRelationId(context.prefixRelationCount() - 1))) {
+					directionCosted[1] = true;
+					output.setContextualRows(900.0d, 900.0d);
+				} else {
+					double rows = estimateRows(query, relationId);
+					output.setRows(rows, rows);
+				}
+			}
+		};
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), costs);
+
+		assertTrue(directionCosted[0], "VALUES→pattern contextual lookup was not costed");
+		assertTrue(directionCosted[1], "pattern→VALUES contextual append was not costed");
+		assertTrue(result.selectedPlan() instanceof Join, result.selectedPlan()::toString);
+		Join selected = (Join) result.selectedPlan();
+		assertTrue(selected.getLeftArg() instanceof BindingSetAssignment, selected::toString);
+		assertTrue(selected.getRightArg() instanceof StatementPattern, selected::toString);
+		assertTrue(result.totalCost() < 20.0d,
+				() -> "VALUES must drive the cheap object-bound pattern lookup. cost=" + result.totalCost()
+						+ ", plan=" + result.selectedPlan());
+	}
+
 	private static TupleExpr codeTypeBranch(SimpleValueFactory values, Value type) {
 		MapBindingSet first = new MapBindingSet(1);
 		first.setBinding("target", values.createLiteral("DX-200"));
@@ -384,6 +1739,261 @@ class PackedSearchTest {
 		return pattern;
 	}
 
+	private static Filter splitDependencyFilter(SimpleValueFactory values, List<String> writtenOrder) {
+		List<TupleExpr> factors = new ArrayList<>(writtenOrder.size());
+		for (String predicate : writtenOrder) {
+			factors.add(switch (predicate) {
+			case "urn:type" -> pattern(values, "node", predicate, "nodeType", Double.NaN);
+			case "urn:threshold" -> pattern(values, "node", predicate, "threshold", Double.NaN);
+			case "urn:detail" -> pattern(values, "node", predicate, "detail", Double.NaN);
+			default -> throw new IllegalArgumentException("Unknown split-dependency factor: " + predicate);
+			});
+		}
+		StatementPattern probe = pattern(values, "nodeType", "urn:probeAtThreshold", "threshold", Double.NaN);
+		return new Filter(leftDeepJoin(factors), new Exists(probe));
+	}
+
+	private static PackedCostModel splitDependencyFilterCosts(List<Double> continuationPrefixRows) {
+		return new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (!query.isStatementPattern(relationId)) {
+					return Double.NaN;
+				}
+				return switch (query.statementPatternValue(relationId, 1).stringValue()) {
+				case "urn:type" -> 8.0d;
+				case "urn:threshold" -> 10.0d;
+				case "urn:detail" -> 100.0d;
+				case "urn:probeAtThreshold" -> 1.0d;
+				default -> Double.NaN;
+				};
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (query.isFilter(relationId)) {
+					double inputRows = context.prefixRows();
+					output.setContextualRows(inputRows * 0.25d, inputRows * 2.0d);
+					return;
+				}
+				if (!query.isStatementPattern(relationId)) {
+					return;
+				}
+				String predicate = query.statementPatternValue(relationId, 1).stringValue();
+				if ("urn:detail".equals(predicate) && context.prefixRelationCount() != 0) {
+					double invocations = context.prefixRows();
+					continuationPrefixRows.add(invocations);
+					output.setContextualRows(invocations, invocations);
+					output.setAccess(1, 0, 1, 1.0d, invocations, "test-detail-index",
+							"split-dependency-test", "repeatedLookup");
+					return;
+				}
+				double rows = estimateRows(query, relationId);
+				output.setRows(rows, rows);
+			}
+
+			@Override
+			public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (query.isFilter(relationId)) {
+					output.setRows(context.leftInputRows() * 0.25d, output.workRows());
+				}
+			}
+		};
+	}
+
+	private static TupleExpr leftDeepJoin(List<? extends TupleExpr> factors) {
+		TupleExpr joined = factors.get(0);
+		for (int ordinal = 1; ordinal < factors.size(); ordinal++) {
+			joined = new Join(joined, factors.get(ordinal));
+		}
+		return joined;
+	}
+
+	private static List<TupleExpr> joinFactors(TupleExpr expression) {
+		List<TupleExpr> factors = new ArrayList<>();
+		collectJoinFactors(expression, factors);
+		return factors;
+	}
+
+	private static void collectJoinFactors(TupleExpr expression, List<TupleExpr> factors) {
+		if (expression instanceof Join join) {
+			collectJoinFactors(join.getLeftArg(), factors);
+			collectJoinFactors(join.getRightArg(), factors);
+		} else {
+			factors.add(expression);
+		}
+	}
+
+	private static boolean allJoinsConnected(TupleExpr tupleExpr) {
+		if (!(tupleExpr instanceof Join join)) {
+			return true;
+		}
+		if (Collections.disjoint(join.getLeftArg().getBindingNames(), join.getRightArg().getBindingNames())) {
+			return false;
+		}
+		return allJoinsConnected(join.getLeftArg()) && allJoinsConnected(join.getRightArg());
+	}
+
+	private static boolean isFiniteAnchorJoin(PackedQueryView query, int relationId) {
+		return query.operatorTag(relationId) == PackedRelOp.JOIN
+				&& query.childCount(relationId) == 2
+				&& query.isBindingSetAssignment(query.childRelationId(relationId, 0));
+	}
+
+	private static PackedCostModel finiteConnectedLookupCosts() {
+		return new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return query.isStatementPattern(relationId) ? 10_000.0d : Double.NaN;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (!query.isStatementPattern(relationId)) {
+					return;
+				}
+				String predicate = query.statementPatternValue(relationId, 1).stringValue();
+				boolean boundLookup = switch (predicate) {
+				case "urn:name", "urn:locatedAt" -> query.prefixBindsStatementComponent(context, relationId, 2);
+				case "urn:type", "urn:availability" -> query.prefixBindsStatementComponent(context, relationId, 0);
+				default -> false;
+				};
+				double rows = boundLookup
+						? "urn:locatedAt".equals(predicate) ? 200.0d : 2.0d
+						: 10_000.0d;
+				output.setRows(rows, rows);
+			}
+		};
+	}
+
+	private static PackedCostModel mobileFilterCosts() {
+		return new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (!query.isStatementPattern(relationId)) {
+					return Double.NaN;
+				}
+				return "urn:locatedAt".equals(query.statementPatternValue(relationId, 1).stringValue())
+						? 200.0d
+						: 10_000.0d;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (!query.isStatementPattern(relationId)) {
+					return;
+				}
+				String predicate = query.statementPatternValue(relationId, 1).stringValue();
+				if ("urn:name".equals(predicate)
+						&& query.prefixBindsStatementComponent(context, relationId, 2)) {
+					output.setContextualRows(2.0d, 2.0d);
+				} else {
+					double rows = estimateRows(query, relationId);
+					output.setRows(rows, rows);
+				}
+			}
+		};
+	}
+
+	private static PackedCostModel correlatedPredicateCosts() {
+		return (query, relationId) -> {
+			if (!query.isStatementPattern(relationId)) {
+				return Double.NaN;
+			}
+			return switch (query.statementPatternValue(relationId, 1).stringValue()) {
+			case "urn:type", "urn:threshold" -> 10.0d;
+			case "urn:weight", "urn:thresholdMetadata" -> 100_000.0d;
+			default -> 2.0d;
+			};
+		};
+	}
+
+	private static PackedCostModel repeatedJoinCosts(double isolatedRows, double repeatedWorkRows) {
+		return new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return query.isStatementPattern(relationId) ? isolatedRows : Double.NaN;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (!query.isStatementPattern(relationId)) {
+					return;
+				}
+				if (context.prefixRelationCount() == 0) {
+					output.setRows(isolatedRows, isolatedRows);
+					return;
+				}
+				output.setContextualRows(isolatedRows, repeatedWorkRows);
+				output.setAccess(1, 0, 1, isolatedRows, context.prefixRows(), "test-index",
+						"test-provider", "repeatedLookup");
+			}
+		};
+	}
+
+	private static void assertCorrelatedExistsWaitsForExtension(ValueExpr generatedValue) {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern type = pattern(values, "node", "urn:type", "nodeType", Double.NaN);
+		StatementPattern expensive = pattern(values, "node", "urn:volatileSource", "sourceValue", Double.NaN);
+		Extension extension = new Extension(expensive, new ExtensionElem(generatedValue, "generated"));
+		StatementPattern probe = pattern(values, "nodeType", "urn:probe", "probeValue", Double.NaN);
+		Filter source = new Filter(new Join(type, extension), new Exists(probe));
+
+		PackedPlanningResult result = PackedCascadesPlanner
+				.optimize(source, OptimizationGoal.root(), observableBarrierCosts());
+
+		assertTrue(result.selectedPlan() instanceof Filter, result.selectedPlan()::toString);
+		assertTrue(((Filter) result.selectedPlan()).getArg() instanceof Join, result.selectedPlan()::toString);
+	}
+
+	private static PackedCostModel observableBarrierCosts() {
+		return (query, relationId) -> {
+			if (!query.isStatementPattern(relationId)) {
+				return Double.NaN;
+			}
+			return switch (query.statementPatternValue(relationId, 1).stringValue()) {
+			case "urn:type" -> 10.0d;
+			case "urn:probe" -> 2.0d;
+			default -> 100_000.0d;
+			};
+		};
+	}
+
+	private static PackedCostModel dependentExistsCosts() {
+		return new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (!query.isStatementPattern(relationId)) {
+					return Double.NaN;
+				}
+				return switch (query.statementPatternValue(relationId, 1).stringValue()) {
+				case "urn:drugType" -> 20.0d;
+				case "urn:hasArm" -> 100.0d;
+				case "urn:armDrug" -> 1_000.0d;
+				default -> Double.NaN;
+				};
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				double rows = estimateRows(query, relationId);
+				if (query.isStatementPattern(relationId)
+						&& "urn:armDrug".equals(query.statementPatternValue(relationId, 1).stringValue())
+						&& query.prefixBindsStatementComponent(context, relationId, 2)) {
+					output.setContextualRows(1.0d, 1.0d);
+				} else if (Double.isFinite(rows)) {
+					output.setRows(rows, rows);
+				}
+			}
+		};
+	}
+
 	private static PackedCostModel contextualProbeCostModel(String... contextualPredicates) {
 		return new PackedCostModel() {
 			@Override
@@ -409,5 +2019,31 @@ class PackedSearchTest {
 				}
 			}
 		};
+	}
+
+	private static boolean isStatementPattern(TupleExpr expression, String predicate, String objectName) {
+		if (!(expression instanceof StatementPattern pattern)) {
+			return false;
+		}
+		return predicate.equals(pattern.getPredicateVar().getValue().stringValue())
+				&& objectName.equals(pattern.getObjectVar().getName());
+	}
+
+	private static boolean containsStatementPattern(TupleExpr expression, String predicate, String objectName) {
+		if (isStatementPattern(expression, predicate, objectName)) {
+			return true;
+		}
+		if (expression instanceof Join join) {
+			return containsStatementPattern(join.getLeftArg(), predicate, objectName)
+					|| containsStatementPattern(join.getRightArg(), predicate, objectName);
+		}
+		if (expression instanceof LeftJoin leftJoin) {
+			return containsStatementPattern(leftJoin.getLeftArg(), predicate, objectName)
+					|| containsStatementPattern(leftJoin.getRightArg(), predicate, objectName);
+		}
+		if (expression instanceof Filter filter) {
+			return containsStatementPattern(filter.getArg(), predicate, objectName);
+		}
+		return false;
 	}
 }

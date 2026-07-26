@@ -27,6 +27,7 @@ final class PackedFilterRules {
 	private final int[] unaryWinner = new int[1];
 	private final int[] binaryGroups = new int[2];
 	private final int[] binaryWinners = new int[2];
+	private final PackedCostEstimate rootEstimate = new PackedCostEstimate();
 
 	PackedFilterRules(PackedQuery query, PackedMemo memo, PackedRuleState ruleState,
 			double[] selectedRowsByGroup) {
@@ -44,20 +45,50 @@ final class PackedFilterRules {
 		if (query.relOperator(joinExpressionId) != PackedRelOp.JOIN) {
 			return 1;
 		}
+		if (((query.relMetadataFlags(filterExpressionId) | query.relMetadataFlags(joinExpressionId))
+				& PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE) != 0) {
+			return 1;
+		}
 		int conditionId = query.relPayload(filterExpressionId);
 		int dependencyMaskId = query.scalarDependencyMaskId(conditionId);
-		if (dependencyMaskId == 0 || !query.scalarSafeToRelocate(conditionId)) {
+		boolean freelyRelocatable = query.scalarSafeToRelocate(conditionId);
+		int embeddedReferenceMaskId = query.scalarEmbeddedReferenceMaskId(conditionId);
+		int scalarFlags = query.scalarMetadataFlags(conditionId);
+		boolean guardedCorrelatedPredicate = !freelyRelocatable
+				&& embeddedReferenceMaskId != 0
+				&& query.scalarSafeWhenAssured(conditionId)
+				&& (scalarFlags & PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE) == 0
+				&& (scalarFlags & PackedNodeMetadataArena.SCALAR_REORDERING_SAFE) != 0;
+		if (!freelyRelocatable && !guardedCorrelatedPredicate) {
 			return 1;
 		}
 		int leftRelationId = query.relChild(joinExpressionId, 0);
 		int rightRelationId = query.relChild(joinExpressionId, 1);
-		boolean leftContains = query.maskContainsAll(query.relOutputMaskId(leftRelationId), dependencyMaskId);
-		boolean rightContains = query.maskContainsAll(query.relOutputMaskId(rightRelationId), dependencyMaskId);
+		int outerOutputMaskId = query.relOutputMaskId(joinExpressionId);
+		if (dependencyMaskId == 0
+				&& (!guardedCorrelatedPredicate
+						|| !query.masksIntersect(embeddedReferenceMaskId, outerOutputMaskId))) {
+			return 1;
+		}
+		boolean leftContains;
+		boolean rightContains;
+		if (guardedCorrelatedPredicate) {
+			leftContains = query.maskContainsAllScheduledDependencies(query.relAssuredMaskId(leftRelationId),
+					dependencyMaskId, embeddedReferenceMaskId, outerOutputMaskId);
+			rightContains = query.maskContainsAllScheduledDependencies(query.relAssuredMaskId(rightRelationId),
+					dependencyMaskId, embeddedReferenceMaskId, outerOutputMaskId);
+		} else {
+			leftContains = query.maskContainsAll(query.relOutputMaskId(leftRelationId), dependencyMaskId);
+			rightContains = query.maskContainsAll(query.relOutputMaskId(rightRelationId), dependencyMaskId);
+		}
 		if (leftContains == rightContains) {
 			return 1;
 		}
 		int filteredRelationId = leftContains ? leftRelationId : rightRelationId;
 		int otherRelationId = leftContains ? rightRelationId : leftRelationId;
+		if (query.relationHasObservableEvaluationEffects(otherRelationId)) {
+			return 1;
+		}
 		int filteredGroupId = memo.logicalGroupId(filteredRelationId);
 		int otherGroupId = memo.logicalGroupId(otherRelationId);
 		int anyPropertyId = memo.anyPropertyId();
@@ -98,13 +129,25 @@ final class PackedFilterRules {
 		double otherRows = selectedRowsByGroup[otherGroupId];
 		boolean connected = query.masksIntersect(query.relOutputMaskId(leftRelationId),
 				query.relOutputMaskId(rightRelationId));
-		double outputRows = PackedJoinEnumerator.joinRows(
+		double physicalOutputRows = PackedJoinEnumerator.joinRows(
 				leftContains ? filteredRows : otherRows,
 				leftContains ? otherRows : filteredRows, connected);
-		double totalCost = helperCost + memo.winnerTotalCost(otherWinnerId) + outputRows;
-		memo.offerWinner(rootGroupId, anyPropertyId, 0, 0, 0, rootPhysicalId, outputRows, totalCost, totalCost,
-				binaryWinners, 0, 2);
-		selectedRowsByGroup[rootGroupId] = outputRows;
+		/*
+		 * Every implementation in one logical group must expose the same cardinality estimate. Letting a physical
+		 * FILTER placement recompute the root rows from its application point makes equivalent join orders appear to
+		 * have different result sizes and poisons all ancestor costs.
+		 */
+		double outputRows = selectedRowsByGroup[rootGroupId];
+		if (!Double.isFinite(outputRows) || outputRows < 0.0d) {
+			outputRows = physicalOutputRows;
+		}
+		double totalCost = helperCost + memo.winnerTotalCost(otherWinnerId) + physicalOutputRows;
+		rootEstimate.clear();
+		rootEstimate.setRows(outputRows, totalCost);
+		int rootMetadataId = memo.addPhysicalMetadata(rootEstimate, outputRows, totalCost);
+		int rootWinnerId = memo.offerWinnerWithMetadata(rootGroupId, anyPropertyId, 0, 0, 0, rootPhysicalId,
+				rootMetadataId, physicalOutputRows, totalCost, totalCost, binaryWinners, 0, 2);
+		selectedRowsByGroup[rootGroupId] = memo.winnerOutputRows(rootWinnerId);
 		return 2;
 	}
 }

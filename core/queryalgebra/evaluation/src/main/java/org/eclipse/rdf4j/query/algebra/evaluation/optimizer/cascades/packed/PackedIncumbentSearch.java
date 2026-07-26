@@ -26,8 +26,7 @@ final class PackedIncumbentSearch {
 	private final PackedFilterRules filterRules;
 	private final PackedSearchBudget budget;
 	private final boolean exploreReorderings;
-	private final PackedCostModel costModel;
-	private final PackedQueryView queryView;
+	private final PackedCostSession costSession;
 	private final PackedCostContext costContext = new PackedCostContext();
 	private final PackedCostEstimate costEstimate = new PackedCostEstimate();
 	private final int[] emptyPrefix = new int[0];
@@ -35,12 +34,17 @@ final class PackedIncumbentSearch {
 
 	PackedIncumbentSearch(PackedQuery query, PackedMemo memo, PackedSearchBudget budget,
 			boolean exploreReorderings, PackedCostModel costModel) {
+		this(query, memo, budget, exploreReorderings,
+				costModel == null ? null : PackedCostSession.scalar(costModel, new PackedQueryView(query)));
+	}
+
+	private PackedIncumbentSearch(PackedQuery query, PackedMemo memo, PackedSearchBudget budget,
+			boolean exploreReorderings, PackedCostSession costSession) {
 		this.query = query;
 		this.memo = memo;
 		this.budget = budget;
 		this.exploreReorderings = exploreReorderings;
-		this.costModel = costModel;
-		queryView = costModel == null ? null : new PackedQueryView(query);
+		this.costSession = costSession;
 		int maximumChildCount = maximumChildCount(query);
 		childGroupIds = new int[maximumChildCount];
 		childWinnerIds = new int[maximumChildCount];
@@ -50,62 +54,66 @@ final class PackedIncumbentSearch {
 				selectedRowsByGroup);
 	}
 
+	static PackedIncumbentSearch forSession(PackedQuery query, PackedMemo memo, PackedSearchBudget budget,
+			boolean exploreReorderings, PackedCostSession costSession) {
+		return new PackedIncumbentSearch(query, memo, budget, exploreReorderings, costSession);
+	}
+
 	int build() {
 		int anyPropertyId = memo.anyPropertyId();
 		int rootWinnerId = 0;
+		boolean hasLogicalAlternatives = hasLogicalAlternatives();
 		for (int logicalExpressionId = 1; logicalExpressionId <= query.relationCount(); logicalExpressionId++) {
-			int childCount = query.relChildCount(logicalExpressionId);
-			double childCost = 0.0d;
-			for (int ordinal = 0; ordinal < childCount; ordinal++) {
-				int childGroupId = query.relChild(logicalExpressionId, ordinal);
-				int childWinnerId = memo.findWinner(childGroupId, anyPropertyId, 0, 0, 0);
-				if (childWinnerId == 0) {
-					throw new PackedMemoInvariantException("logical expression " + logicalExpressionId
-							+ " was visited before child group " + childGroupId);
-				}
-				childGroupIds[ordinal] = childGroupId;
-				childWinnerIds[ordinal] = childWinnerId;
-				childCost += memo.winnerTotalCost(childWinnerId);
-			}
-			int groupId = memo.logicalGroupId(logicalExpressionId);
-			estimate(logicalExpressionId);
-			double outputRows = outputRows(logicalExpressionId, childCount);
-			double totalCost = childCost + localWork(logicalExpressionId, outputRows);
-			int physicalExpressionId = memo.addPhysicalAlternative(groupId,
-					query.relOperator(logicalExpressionId), query.relPayload(logicalExpressionId), anyPropertyId,
-					LOGICAL_IMPLEMENTATION, logicalExpressionId, childGroupIds, 0, childCount);
-			int metadataId = memo.addPhysicalMetadata(costEstimate, outputRows,
-					Math.max(1.0d, totalCost - childCost));
-			int tieBreakRank = Long.bitCount(query.relRuleMask(logicalExpressionId)) << 1;
-			rootWinnerId = memo.offerWinnerWithMetadata(groupId, anyPropertyId, 0, 0, 0, physicalExpressionId,
-					metadataId, tieBreakRank, 1.0d, totalCost, totalCost, childWinnerIds, 0, childCount);
-			if (memo.winnerPhysicalExpressionId(rootWinnerId) == physicalExpressionId) {
-				selectedRowsByGroup[groupId] = outputRows;
-			}
-			workUnits++;
-			if (query.relOperator(logicalExpressionId) == PackedRelOp.JOIN
-					&& isJoinRegionRoot(logicalExpressionId)) {
-				PackedJoinEnumerator enumerator = new PackedJoinEnumerator(query, memo, selectedRowsByGroup, budget,
-						costModel);
-				workUnits += exploreReorderings
-						? enumerator.optimize(logicalExpressionId)
-						: enumerator.optimizeSequence(logicalExpressionId);
+			rootWinnerId = offerLogicalImplementation(logicalExpressionId, anyPropertyId);
+			if (!hasLogicalAlternatives) {
+				enumerateJoinRegion(logicalExpressionId);
 			}
 			if (exploreReorderings && query.relOperator(logicalExpressionId) == PackedRelOp.FILTER) {
+				if (!hasLogicalAlternatives) {
+					enumerateCorrelatedFilterRegion(logicalExpressionId);
+				}
 				workUnits += filterRules.apply(logicalExpressionId);
 			}
 		}
-		for (int logicalExpressionId = 1; logicalExpressionId <= query.relationCount(); logicalExpressionId++) {
-			if (query.relOperator(logicalExpressionId) != PackedRelOp.JOIN
-					|| query.relRuleMask(logicalExpressionId) == 0L
-					|| !isJoinRegionRoot(logicalExpressionId)) {
-				continue;
+
+		if (hasLogicalAlternatives) {
+			/*
+			 * Rule-generated access paths are appended after the canonical tree. Give each one complete, atomically
+			 * budgeted evidence before an earlier base join or correlated predicate can spend the budget on subset
+			 * exploration. These are ordinary candidates, not privileged winners; the normal pass below may still
+			 * improve them with any remaining budget.
+			 */
+			seedAccessEnablingAlternatives();
+			/*
+			 * Logical rules append alternatives after the canonical child-before-parent tree. A late alternative can
+			 * therefore improve a child group only after an already-costed JOIN, FILTER, DIFFERENCE, GROUP, or other
+			 * ancestor captured the old child cost. Winner ids are stable, but ancestor costs and join layouts are not.
+			 * Once every alternative has an incumbent, one child-before-parent refresh propagates those winners through
+			 * arbitrary operator nesting; join-region enumeration then sees the selected alternative as a current
+			 * factor.
+			 */
+			for (int logicalExpressionId = 1; logicalExpressionId <= query.relationCount(); logicalExpressionId++) {
+				if (query.relChildCount(logicalExpressionId) == 0) {
+					continue;
+				}
+				rootWinnerId = offerLogicalImplementation(logicalExpressionId, anyPropertyId);
+				enumerateJoinRegion(logicalExpressionId);
+				if (exploreReorderings && query.relOperator(logicalExpressionId) == PackedRelOp.FILTER) {
+					enumerateCorrelatedFilterRegion(logicalExpressionId);
+				}
 			}
-			PackedJoinEnumerator enumerator = new PackedJoinEnumerator(query, memo, selectedRowsByGroup, budget,
-					costModel);
-			workUnits += exploreReorderings
-					? enumerator.optimize(logicalExpressionId)
-					: enumerator.optimizeSequence(logicalExpressionId);
+			/*
+			 * Memo winners are immutable records, not pointers to their child groups. Exhaustive exploration can
+			 * improve an appended child after its canonical ancestors were refreshed, so rebuild the canonical
+			 * child-to-parent spine once more without charging or entering another search phase.
+			 */
+			for (int logicalExpressionId = 1; logicalExpressionId <= query.relationCount(); logicalExpressionId++) {
+				if (query.relChildCount(logicalExpressionId) == 0
+						|| query.relGroup(logicalExpressionId) != logicalExpressionId) {
+					continue;
+				}
+				rootWinnerId = offerLogicalImplementation(logicalExpressionId, anyPropertyId);
+			}
 		}
 		return rootWinnerIdFor(rootWinnerId, anyPropertyId);
 	}
@@ -120,6 +128,128 @@ final class PackedIncumbentSearch {
 
 	double[] selectedRowsByGroup() {
 		return selectedRowsByGroup;
+	}
+
+	private int offerLogicalImplementation(int logicalExpressionId, int anyPropertyId) {
+		int childCount = query.relChildCount(logicalExpressionId);
+		double childCost = 0.0d;
+		for (int ordinal = 0; ordinal < childCount; ordinal++) {
+			int childGroupId = query.relChild(logicalExpressionId, ordinal);
+			int childWinnerId = memo.findWinner(childGroupId, anyPropertyId, 0, 0, 0);
+			if (childWinnerId == 0) {
+				throw new PackedMemoInvariantException("logical expression " + logicalExpressionId
+						+ " was visited before child group " + childGroupId);
+			}
+			childGroupIds[ordinal] = childGroupId;
+			childWinnerIds[ordinal] = childWinnerId;
+			childCost += memo.winnerTotalCost(childWinnerId);
+		}
+		int groupId = memo.logicalGroupId(logicalExpressionId);
+		estimate(logicalExpressionId);
+		double outputRows = outputRows(logicalExpressionId, childCount);
+		double totalCost = childCost + localWork(logicalExpressionId, outputRows);
+		if (childCount != 0 && costSession != null) {
+			refineOperator(logicalExpressionId, childCount, outputRows, totalCost);
+			boolean componentRefinement = costEstimate.hasComponentOutputRows();
+			if (!componentRefinement && finiteNonNegative(costEstimate.outputRows())) {
+				outputRows = costEstimate.outputRows();
+			}
+			if (!componentRefinement && finiteNonNegative(costEstimate.workRows())) {
+				totalCost = costEstimate.replacesChildWork()
+						? costEstimate.workRows()
+						: Math.max(childCost, costEstimate.workRows());
+			} else if (componentRefinement) {
+				/*
+				 * A canonical operator incumbent is a complete scalar. refineOperator does not identify which child
+				 * contribution a component estimate replaces, so accepting it would discard every unrelated child
+				 * component.
+				 */
+				costEstimate.setReplacesChildWork(false);
+			}
+			costEstimate.setRows(outputRows, totalCost);
+		}
+		int physicalExpressionId = memo.addPhysicalAlternative(groupId,
+				query.relOperator(logicalExpressionId), query.relPayload(logicalExpressionId), anyPropertyId,
+				LOGICAL_IMPLEMENTATION, logicalExpressionId, childGroupIds, 0, childCount);
+		int metadataId = memo.addPhysicalMetadata(costEstimate, outputRows,
+				Math.max(1.0d, childCount == 0 ? totalCost - childCost : totalCost));
+		int tieBreakRank = Long.bitCount(query.relRuleMask(logicalExpressionId)) << 1;
+		boolean executableFallback = costSession != null
+				&& query.relOperator(logicalExpressionId) == PackedRelOp.JOIN;
+		int winnerId = executableFallback
+				? memo.offerExecutableFallbackWinnerWithMetadata(groupId, anyPropertyId, 0, 0, 0,
+						physicalExpressionId, metadataId, tieBreakRank, outputRows, totalCost, totalCost,
+						childWinnerIds, 0, childCount)
+				: memo.offerWinnerWithMetadata(groupId, anyPropertyId, 0, 0, 0, physicalExpressionId, metadataId,
+						tieBreakRank, outputRows, totalCost, totalCost, childWinnerIds, 0, childCount);
+		if (memo.winnerPhysicalExpressionId(winnerId) == physicalExpressionId) {
+			selectedRowsByGroup[groupId] = memo.winnerOutputRows(winnerId);
+		}
+		workUnits++;
+		return winnerId;
+	}
+
+	private void enumerateJoinRegion(int logicalExpressionId) {
+		if (query.relOperator(logicalExpressionId) != PackedRelOp.JOIN || !isJoinRegionRoot(logicalExpressionId)) {
+			return;
+		}
+		PackedJoinEnumerator enumerator = PackedJoinEnumerator.forSession(query, memo, selectedRowsByGroup, budget,
+				costSession);
+		workUnits += exploreReorderings
+				? enumerator.optimize(logicalExpressionId)
+				: enumerator.optimizeSequence(logicalExpressionId);
+	}
+
+	private void enumerateCorrelatedFilterRegion(int logicalExpressionId) {
+		PackedJoinEnumerator enumerator = PackedJoinEnumerator.forSession(query, memo, selectedRowsByGroup, budget,
+				costSession);
+		workUnits += enumerator.optimizeCorrelatedFilter(logicalExpressionId);
+	}
+
+	private void seedAccessEnablingAlternatives() {
+		/*
+		 * Binary finite recipes have no search choice, but their mandatory BSA-prefix provider estimate must be
+		 * installed even when a later combinatorial seed cannot fit. Initialize every such base incumbent before any
+		 * operation can latch the shared work budget.
+		 */
+		for (int logicalExpressionId = 1; logicalExpressionId <= query.relationCount(); logicalExpressionId++) {
+			if (query.relOperator(logicalExpressionId) != PackedRelOp.JOIN
+					|| (query.relRuleMask(logicalExpressionId)
+							& PackedRuleProofs.FINITE_FILTER_VALUES) == 0L) {
+				continue;
+			}
+			PackedJoinEnumerator enumerator = PackedJoinEnumerator.forSession(query, memo, selectedRowsByGroup,
+					budget, costSession);
+			workUnits += enumerator.seedMandatoryBinaryAnchor(logicalExpressionId);
+		}
+
+		for (int logicalExpressionId = 1; logicalExpressionId <= query.relationCount(); logicalExpressionId++) {
+			int operator = query.relOperator(logicalExpressionId);
+			PackedJoinEnumerator enumerator = null;
+			if (operator == PackedRelOp.JOIN
+					&& (query.relRuleMask(logicalExpressionId)
+							& PackedRuleProofs.FINITE_FILTER_VALUES) != 0L) {
+				enumerator = PackedJoinEnumerator.forSession(query, memo, selectedRowsByGroup, budget, costSession);
+				workUnits += enumerator.seedAnchored(logicalExpressionId);
+			}
+			if (exploreReorderings && operator == PackedRelOp.FILTER) {
+				if (enumerator == null) {
+					enumerator = PackedJoinEnumerator.forSession(query, memo, selectedRowsByGroup, budget,
+							costSession);
+				}
+				workUnits += enumerator.seedCorrelatedFilter(logicalExpressionId);
+			}
+		}
+	}
+
+	private boolean hasLogicalAlternatives() {
+		for (int logicalExpressionId = 1; logicalExpressionId <= query.relationCount(); logicalExpressionId++) {
+			// Canonical rows own their same-numbered group; alternatives retain an earlier source group.
+			if (query.relGroup(logicalExpressionId) != logicalExpressionId) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private int rootWinnerIdFor(int lastWinnerId, int anyPropertyId) {
@@ -146,7 +276,7 @@ final class PackedIncumbentSearch {
 			return provided;
 		}
 		double annotated = query.relResultSizeEstimate(logicalExpressionId);
-		if (Double.isFinite(annotated) && annotated > 0.0d) {
+		if (Double.isFinite(annotated) && annotated >= 0.0d) {
 			return annotated;
 		}
 		int operator = query.relOperator(logicalExpressionId);
@@ -178,6 +308,9 @@ final class PackedIncumbentSearch {
 			if (keyCount == 0) {
 				// Aggregation without GROUP BY always yields exactly one row.
 				return inputRows > 0.0d ? 1.0d : 0.0d;
+			}
+			if (inputRows == 0.0d) {
+				return 0.0d;
 			}
 			// Without per-key distinct counts, assume grouping collapses to roughly the square root of the
 			// input per key, never exceeding the input.
@@ -249,11 +382,23 @@ final class PackedIncumbentSearch {
 
 	private void estimate(int logicalExpressionId) {
 		costEstimate.clear();
-		if (costModel == null) {
+		if (costSession == null) {
 			return;
 		}
 		costContext.reset(emptyPrefix, 0, 0, 1.0d);
-		costModel.estimate(queryView, logicalExpressionId, costContext, costEstimate);
+		costSession.estimate(logicalExpressionId, costContext, costEstimate);
+	}
+
+	private void refineOperator(int logicalExpressionId, int childCount, double outputRows, double totalWorkRows) {
+		costEstimate.setRows(outputRows, totalWorkRows);
+		costContext.reset(emptyPrefix, 0, 0, 1.0d);
+		costContext.setOperatorInputs(selectedRowsByGroup[childGroupIds[0]],
+				childCount > 1 ? selectedRowsByGroup[childGroupIds[1]] : Double.NaN);
+		costSession.refineOperator(logicalExpressionId, costContext, costEstimate);
+	}
+
+	private static boolean finiteNonNegative(double value) {
+		return Double.isFinite(value) && value >= 0.0d;
 	}
 
 	private boolean isJoinChild(int relationId) {

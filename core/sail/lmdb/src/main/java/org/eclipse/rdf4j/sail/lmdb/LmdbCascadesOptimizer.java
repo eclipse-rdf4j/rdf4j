@@ -16,8 +16,12 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Locale;
+import java.util.OptionalLong;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.TripleTerm;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
@@ -53,6 +57,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.Pack
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -82,7 +87,10 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	private final boolean trackResultSize;
 	private final boolean preserveSerializableObservationOrder;
 	private final PackedPlanCache packedPlanCache;
-	private final PackedCostModel packedCostModel;
+	private final LmdbEstimatorRuntime runtime;
+	private final EvaluationStrategy evaluationStrategy;
+	private final OptionalLong executionSnapshotEpoch;
+	private final SailDatasetTripleTermSource frontierStatementSource;
 	private final LmdbPackedPredicateRangeProvider rangeProvider;
 
 	LmdbCascadesOptimizer(EvaluationStatistics statistics, boolean trackResultSize) {
@@ -99,11 +107,15 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		this.statistics = statistics;
 		this.trackResultSize = trackResultSize;
 		this.preserveSerializableObservationOrder = preserveSerializableObservationOrder;
-		LmdbEstimatorRuntime runtime = statistics instanceof LmdbEstimatorRuntimeProvider provider
+		this.evaluationStrategy = strategy;
+		this.runtime = statistics instanceof LmdbEstimatorRuntimeProvider provider
 				? provider.estimatorRuntime()
 				: null;
 		this.packedPlanCache = runtime == null ? null : runtime.cascadesPlanCache();
-		this.packedCostModel = runtime == null ? null : new LmdbPackedCostModel(runtime);
+		this.frontierStatementSource = tripleSource instanceof SailDatasetTripleTermSource source ? source : null;
+		this.executionSnapshotEpoch = frontierStatementSource == null
+				? OptionalLong.empty()
+				: frontierStatementSource.getSnapshotEpoch();
 		this.rangeProvider = runtime == null ? null : new LmdbPackedPredicateRangeProvider(runtime);
 	}
 
@@ -156,10 +168,15 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 
 	private CascadesPlan plan(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, OptimizationGoal goal) {
 		CascadesPlanner planner = new CascadesPlanner();
+		LmdbPackedCostModel packedCostModel = runtime == null
+				? null
+				: new LmdbPackedCostModel(runtime, executionSnapshotEpoch, datasetUsesStoreDefaults(dataset),
+						frontierStatementSource, evaluationStrategy, !preserveSerializableObservationOrder);
 		if (packedPlanCache == null) {
 			return planner.optimize(tupleExpr, goal, packedCostModel, rangeProvider);
 		}
-		return planner.optimize(tupleExpr, goal, packedPlanCache, cacheContext(dataset, bindings, goal),
+		return planner.optimize(tupleExpr, goal, packedPlanCache,
+				cacheContext(dataset, bindings, goal, packedCostModel),
 				packedCostModel, rangeProvider);
 	}
 
@@ -183,18 +200,29 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		};
 	}
 
-	private PackedPlanCache.Context cacheContext(Dataset dataset, BindingSet bindings, OptimizationGoal goal) {
+	private PackedPlanCache.Context cacheContext(Dataset dataset, BindingSet bindings, OptimizationGoal goal,
+			LmdbPackedCostModel packedCostModel) {
 		long dataRevision = statistics instanceof LmdbEstimatorRuntimeProvider provider
 				? provider.estimatorRuntime().snapshotVersion()
 				: 0L;
 		long datasetFingerprint = unsignedHash(dataset);
 		long bindingShapeFingerprint = bindings == null ? 0L : unsignedHash(bindings.getBindingNames());
-		long parameterVariant = unsignedHash(bindings);
+		long parameterVariant = bindingFingerprint(bindings);
 		long goalFingerprint = goalFingerprint(goal);
-		long providerVersion = packedCostModel == null ? 0L : LmdbPackedCostModel.VERSION;
+		long providerVersion = packedCostModel == null
+				? 0L
+				: mixCacheHash(packedCostModel.providerVersion(),
+						statistics instanceof LmdbEstimatorRuntimeProvider provider
+								? provider.estimatorRuntime().operatorFeedbackRevision()
+								: 0L);
 		long predicateRangeVersion = rangeProvider == null ? 0L : rangeProvider.predicateRangeVersion();
 		return new PackedPlanCache.Context(datasetFingerprint, bindingShapeFingerprint, parameterVariant,
 				goalFingerprint, 1L, providerVersion, dataRevision, predicateRangeVersion);
+	}
+
+	private static boolean datasetUsesStoreDefaults(Dataset dataset) {
+		return dataset == null
+				|| dataset.getDefaultGraphs().isEmpty() && dataset.getNamedGraphs().isEmpty();
 	}
 
 	private static long goalFingerprint(OptimizationGoal goal) {
@@ -212,6 +240,37 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 
 	private static long unsignedHash(Object value) {
 		return value == null ? 0L : Integer.toUnsignedLong(value.hashCode());
+	}
+
+	private static long bindingFingerprint(BindingSet bindings) {
+		if (bindings == null || bindings.size() == 0) {
+			return 0L;
+		}
+		long hash = 0x243f6a8885a308d3L;
+		for (String name : bindings.getBindingNames().stream().sorted().toList()) {
+			hash = mixCacheHash(hash, Integer.toUnsignedLong(name.hashCode()));
+			hash = mixCacheHash(hash, valueFingerprint(bindings.getValue(name)));
+		}
+		return hash;
+	}
+
+	private static long valueFingerprint(Value value) {
+		if (value == null) {
+			return 0L;
+		}
+		long hash = Integer.toUnsignedLong(value.getType().ordinal() + 1);
+		if (value instanceof TripleTerm triple) {
+			hash = mixCacheHash(hash, valueFingerprint(triple.getSubject()));
+			hash = mixCacheHash(hash, valueFingerprint(triple.getPredicate()));
+			return mixCacheHash(hash, valueFingerprint(triple.getObject()));
+		}
+		hash = mixCacheHash(hash, Integer.toUnsignedLong(value.stringValue().hashCode()));
+		if (value instanceof Literal literal) {
+			hash = mixCacheHash(hash, Integer.toUnsignedLong(literal.getDatatype().stringValue().hashCode()));
+			hash = mixCacheHash(hash,
+					Integer.toUnsignedLong(literal.getLanguage().map(String::hashCode).orElse(0)));
+		}
+		return hash;
 	}
 
 	private static long mixCacheHash(long left, long right) {
@@ -290,10 +349,14 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	private static void annotateCartesianFallback(TupleExpr root) {
 		boolean[] anyJoin = new boolean[1];
 		boolean[] disconnected = new boolean[1];
+		Join[] rootJoin = new Join[1];
 		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			public void meet(Join node) {
 				anyJoin[0] = true;
+				if (rootJoin[0] == null) {
+					rootJoin[0] = node;
+				}
 				if (!disconnected[0]) {
 					Set<String> shared = new HashSet<>(node.getLeftArg().getBindingNames());
 					shared.retainAll(node.getRightArg().getBindingNames());
@@ -313,8 +376,11 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		if (disconnected[0]) {
 			target.setStringMetricPlanned("optimizer.connectedEnumeration", "phase2_disconnected_components");
 			target.setStringMetricPlanned("optimizer.cartesianFallbackReason", "disconnected-components");
+			rootJoin[0].setStringMetricPlanned("optimizer.connectedEnumeration", "phase2_disconnected_components");
+			rootJoin[0].setStringMetricPlanned("optimizer.cartesianFallbackReason", "disconnected-components");
 		} else {
 			target.setStringMetricPlanned("optimizer.connectedEnumeration", "connected-prefix-only");
+			rootJoin[0].setStringMetricPlanned("optimizer.connectedEnumeration", "connected-prefix-only");
 		}
 	}
 

@@ -22,6 +22,28 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity;
 
+record ExactAlternativeSurfaceCacheKey(Object factor, QuadSnapshotIdentity snapshotIdentity, long snapshotVersion) {
+
+	static ExactAlternativeSurfaceCacheKey of(TupleExpr factor, EstimateContext estimateContext) {
+		return new ExactAlternativeSurfaceCacheKey(FactorCostCacheKey.factorFingerprint(factor),
+				estimateContext.snapshotIdentity(), estimateContext.snapshotVersion());
+	}
+}
+
+record PrefixEstimateCacheKey(FiniteBranchRowsCacheKey factors, long rowsBits,
+		JoinFactorCostModel.EstimationTier estimationTier, QuadSnapshotIdentity snapshotIdentity,
+		long snapshotVersion) {
+
+	static PrefixEstimateCacheKey of(List<TupleExpr> factors, double rows,
+			JoinFactorCostModel.EstimationTier estimationTier, EstimateContext estimateContext) {
+		JoinFactorCostModel.EstimationTier tier = estimationTier == null
+				? JoinFactorCostModel.EstimationTier.STANDARD
+				: estimationTier;
+		return new PrefixEstimateCacheKey(FiniteBranchRowsCacheKey.of(factors), Double.doubleToLongBits(rows), tier,
+				estimateContext.snapshotIdentity(), estimateContext.snapshotVersion());
+	}
+}
+
 record ScopedFactorCostCacheKey(Object factor, Set<String> boundVars, long outerPrefixRowsBits,
 		long distinctLookupBindingsBits, boolean nestedIteratorInvocation, boolean collectMetrics,
 		Map<String, Set<Value>> finiteBindingValues, JoinFactorCostModel.EstimationTier estimationTier,

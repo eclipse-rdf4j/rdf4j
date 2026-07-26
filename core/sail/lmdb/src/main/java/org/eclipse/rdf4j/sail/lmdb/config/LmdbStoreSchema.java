@@ -132,6 +132,22 @@ public class LmdbStoreSchema {
 
 	public final static IRI SKETCH_ESTIMATOR_ENABLED;
 
+	public final static IRI FRONTIER_ESTIMATOR_MODE;
+
+	public final static IRI FRONTIER_SYNOPSIS_BUDGET_BYTES;
+
+	public final static IRI FRONTIER_QUERY_MEMORY_BUDGET_BYTES;
+
+	public final static IRI FRONTIER_DESIGN_LANES;
+
+	public final static IRI FRONTIER_AUDIT_LANES;
+
+	public final static IRI FRONTIER_REFINEMENT_WORK_UNITS;
+
+	public final static IRI FRONTIER_TARGET_RELATIVE_STANDARD_ERROR;
+
+	public final static IRI FRONTIER_DEFENSIVE_PROPOSAL_EPSILON;
+
 	public final static IRI OPTIMIZER_SAMPLING_ENABLED;
 
 	public final static IRI OPTIMIZER_SAMPLING_MAX_MILLIS;
@@ -191,6 +207,16 @@ public class LmdbStoreSchema {
 		SKETCH_ESTIMATOR_MEMORY_BUDGET_BYTES = factory.createIRI(NAMESPACE,
 				"sketchEstimatorMemoryBudgetBytes");
 		SKETCH_ESTIMATOR_ENABLED = factory.createIRI(NAMESPACE, "sketchEstimatorEnabled");
+		FRONTIER_ESTIMATOR_MODE = factory.createIRI(NAMESPACE, "frontierEstimatorMode");
+		FRONTIER_SYNOPSIS_BUDGET_BYTES = factory.createIRI(NAMESPACE, "frontierSynopsisBudgetBytes");
+		FRONTIER_QUERY_MEMORY_BUDGET_BYTES = factory.createIRI(NAMESPACE, "frontierQueryMemoryBudgetBytes");
+		FRONTIER_DESIGN_LANES = factory.createIRI(NAMESPACE, "frontierDesignLanes");
+		FRONTIER_AUDIT_LANES = factory.createIRI(NAMESPACE, "frontierAuditLanes");
+		FRONTIER_REFINEMENT_WORK_UNITS = factory.createIRI(NAMESPACE, "frontierRefinementWorkUnits");
+		FRONTIER_TARGET_RELATIVE_STANDARD_ERROR = factory.createIRI(NAMESPACE,
+				"frontierTargetRelativeStandardError");
+		FRONTIER_DEFENSIVE_PROPOSAL_EPSILON = factory.createIRI(NAMESPACE,
+				"frontierDefensiveProposalEpsilon");
 		OPTIMIZER_SAMPLING_ENABLED = factory.createIRI(NAMESPACE, "optimizerSamplingEnabled");
 		OPTIMIZER_SAMPLING_MAX_MILLIS = factory.createIRI(NAMESPACE, "optimizerSamplingMaxMillis");
 		OPTIMIZER_SAMPLING_MAX_ROWS = factory.createIRI(NAMESPACE, "optimizerSamplingMaxRows");

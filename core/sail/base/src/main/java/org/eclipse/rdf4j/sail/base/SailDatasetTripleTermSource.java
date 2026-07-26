@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.base;
 
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.OptionalLong;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -50,6 +51,13 @@ public class SailDatasetTripleTermSource implements NativeTripleTermSource {
 	@Override
 	public String toString() {
 		return dataset.toString();
+	}
+
+	/**
+	 * Returns the durable snapshot epoch of the exact dataset used by this triple source, when available.
+	 */
+	public OptionalLong getSnapshotEpoch() {
+		return dataset.getSnapshotEpoch();
 	}
 
 	@Override

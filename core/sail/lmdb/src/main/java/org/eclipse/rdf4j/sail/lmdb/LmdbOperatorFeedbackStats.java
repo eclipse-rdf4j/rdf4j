@@ -634,6 +634,13 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		return learnedByOperator.size();
 	}
 
+	/**
+	 * Monotonic version for planning artifacts that consume learned operator evidence.
+	 */
+	synchronized long planningRevision() {
+		return feedbackEpoch;
+	}
+
 	@Override
 	public synchronized LeoMemoFeedback memoFeedback(TupleExpr tupleExpr, BindingUniverse universe,
 			BindingShape bindingShape) {

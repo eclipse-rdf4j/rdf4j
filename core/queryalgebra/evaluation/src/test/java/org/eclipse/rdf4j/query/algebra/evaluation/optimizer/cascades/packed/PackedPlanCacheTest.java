@@ -17,17 +17,23 @@ import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.junit.jupiter.api.Test;
 
@@ -114,6 +120,38 @@ class PackedPlanCacheTest {
 		}
 	}
 
+	@Test
+	void cachedBindingAssignmentUsesTheCurrentQueryRows() {
+		PackedPlanCache cache = new PackedPlanCache(32, 4);
+		PackedPlanCache.Context context = context(11L);
+		QueryBindingSet firstRow = row(new HashUnsafeValue("same"));
+		QueryBindingSet secondRow = row(new HashUnsafeValue("same"));
+
+		PackedPlanningResult cold = PackedCascadesPlanner.optimize(assignment(firstRow), OptimizationGoal.root(),
+				cache, context);
+		PackedPlanningResult hot = PackedCascadesPlanner.optimize(assignment(secondRow), OptimizationGoal.root(),
+				cache, context);
+
+		assertFalse(cold.metrics().planCacheHit());
+		assertTrue(hot.metrics().planCacheHit());
+		assertSame(secondRow, onlyRow((BindingSetAssignment) hot.selectedPlan()));
+	}
+
+	@Test
+	void hashUnsafeRdfValuesCanBeFingerprintedEncodedAndCached() {
+		PackedPlanCache cache = new PackedPlanCache(32, 4);
+		PackedPlanCache.Context context = context(11L);
+		QueryBindingSet row = row(new HashUnsafeValue("value"));
+		BindingSetAssignment source = assignment(row);
+
+		PackedPlanningResult cold = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), cache, context);
+		PackedPlanningResult hot = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), cache, context);
+
+		assertFalse(cold.metrics().planCacheHit());
+		assertTrue(hot.metrics().planCacheHit());
+		assertSame(row, onlyRow((BindingSetAssignment) hot.selectedPlan()));
+	}
+
 	private static PackedPlanCache.Context context(long dataRevision) {
 		return new PackedPlanCache.Context(1L, 2L, 3L, 4L, 5L, 6L, dataRevision);
 	}
@@ -125,5 +163,48 @@ class PackedPlanCacheTest {
 						Var.of(leftObject)),
 				new StatementPattern(Var.of("subject"), Var.of("rightPredicate", values.createIRI("urn:right")),
 						Var.of(rightObject)));
+	}
+
+	private static BindingSetAssignment assignment(BindingSet row) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(new LinkedHashSet<>(List.of("value")));
+		assignment.setBindingSets(List.of(row));
+		return assignment;
+	}
+
+	private static QueryBindingSet row(Value value) {
+		QueryBindingSet row = new QueryBindingSet();
+		row.addBinding("value", value);
+		return row;
+	}
+
+	private static BindingSet onlyRow(BindingSetAssignment assignment) {
+		return assignment.getBindingSets().iterator().next();
+	}
+
+	private static final class HashUnsafeValue implements Value {
+
+		private static final long serialVersionUID = 1L;
+
+		private final String lexicalValue;
+
+		private HashUnsafeValue(String lexicalValue) {
+			this.lexicalValue = lexicalValue;
+		}
+
+		@Override
+		public String stringValue() {
+			return lexicalValue;
+		}
+
+		@Override
+		public boolean equals(Object object) {
+			return object instanceof HashUnsafeValue that && lexicalValue.equals(that.lexicalValue);
+		}
+
+		@Override
+		public int hashCode() {
+			throw new AssertionError("RDF value hashCode must not be used by the packed cache or codec");
+		}
 	}
 }

@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.OptionalDouble;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -26,6 +27,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity;
 import org.eclipse.rdf4j.sail.lmdb.estimation.RowEvidence;
@@ -100,5 +102,56 @@ class LmdbPropertyPathEstimatorTest {
 				.getFirst();
 
 		assertEquals(40.0d, candidate.estimate().rows());
+	}
+
+	@Test
+	void zeroOrMoreUsesPrefixOverlapOnlyForPositiveLengthReachability() {
+		IRI predicate = VF.createIRI("urn:p");
+		StatementPattern step = new StatementPattern(Var.of("s"), Var.of("p", predicate), Var.of("o"));
+		ArbitraryLengthPath path = new ArbitraryLengthPath(Var.of("s"), step, Var.of("o"), 0L);
+		BagEstimate prefix = BagEstimate.heuristic(10.0d, "prefix")
+				.withSketchRelation(Set.of("o"), new TokenSketch("prefix-only", 10.0d));
+		EstimateContext context = EstimateContext.root(path, IDENTITY, 7L)
+				.withBoundNames(Set.of("o"))
+				.withPrefixEstimate(prefix)
+				.withInvocationCount(10.0d);
+		RowEvidence rows = new RowEvidence(100.0d, 100.0d, 100.0d, 1.0d, true, IDENTITY, 7L,
+				"complete-rows");
+		BagEstimate stepEstimate = BagEstimate.heuristic(100.0d, "complete-rows")
+				.withSketchRelation(Set.of("o"), new TokenSketch("edge-only", 100.0d));
+		EstimateCandidate direct = new EstimateCandidate(stepEstimate, rows, EstimateCandidate.Kind.SYNOPSIS, 7L);
+
+		EstimateCandidate candidate = new LmdbPropertyPathEstimator(null)
+				.candidates(path, step, List.of(direct), context)
+				.getFirst();
+
+		assertEquals(10.0d, candidate.estimate().rows(),
+				"Every outer mapping contributes its identity pair, while disjoint edge support contributes no "
+						+ "positive-length path");
+	}
+
+	private record TokenSketch(String token, double rows) implements DistributionSketch {
+
+		@Override
+		public double distinctRows() {
+			return 1.0d;
+		}
+
+		@Override
+		public OptionalDouble totalRows() {
+			return OptionalDouble.of(rows);
+		}
+
+		@Override
+		public OptionalDouble innerProduct(DistributionSketch other) {
+			return other instanceof TokenSketch tokenSketch && token.equals(tokenSketch.token)
+					? OptionalDouble.of(rows * tokenSketch.rows)
+					: OptionalDouble.of(0.0d);
+		}
+
+		@Override
+		public OptionalDouble highQualityInnerProduct(DistributionSketch other) {
+			return innerProduct(other);
+		}
 	}
 }

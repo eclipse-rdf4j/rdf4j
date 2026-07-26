@@ -65,7 +65,7 @@ class LmdbDistinctCursorSkipContextTest {
 					}
 				}
 				connection.commit();
-				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+				LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 				LmdbPlannerAwait.awaitSketchesReady(store);
 
 				String query = "SELECT DISTINCT ?p WHERE { GRAPH ?g { ?s ?p ?o } }";

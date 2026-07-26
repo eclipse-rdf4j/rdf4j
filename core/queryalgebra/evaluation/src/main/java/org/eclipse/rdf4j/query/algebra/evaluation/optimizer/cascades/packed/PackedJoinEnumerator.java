@@ -23,35 +23,64 @@ final class PackedJoinEnumerator {
 
 	private static final int DENSE_FACTOR_LIMIT = 16;
 	private static final int LONG_FACTOR_LIMIT = Long.SIZE;
-	private static final int JOIN_IMPLEMENTATION = 2;
+	static final int JOIN_IMPLEMENTATION = 2;
+	private static final int CONTEXTUAL_FILTER_IMPLEMENTATION = 5;
+	static final int HASH_JOIN_IMPLEMENTATION = 6;
+	private static final double HASH_JOIN_MINIMUM_INPUT_ROWS = 256.0d;
+	private static final double UNKNOWN_ITERATOR_PROBE_WORK = 0.0d;
+	private static final double ITERATOR_SETUP_AND_SEEK_WORK_PER_INVOCATION = 2.0d;
+	private static final int PREDICATE_PENDING = 0;
+	private static final int PREDICATE_APPLIED = 1;
 
 	private final PackedQuery query;
 	private final PackedMemo memo;
 	private final double[] selectedRowsByGroup;
 	private final PackedSearchBudget budget;
-	private final PackedCostModel costModel;
-	private final PackedQueryView queryView;
+	private final PackedCostSession costSession;
 	private final PackedCostContext costContext = new PackedCostContext();
 	private final PackedCostEstimate costEstimate = new PackedCostEstimate();
+	private final PackedCostEstimate bestGreedyEstimate = new PackedCostEstimate();
 	private final PackedCostEstimate joinEstimate = new PackedCostEstimate();
+	private final PackedCostEstimate contextualWinnerEstimate = new PackedCostEstimate();
+	private final PackedCostEstimate contextualDefaultEstimate = new PackedCostEstimate();
+	private final PackedCostEstimate composedMetadataEstimate = new PackedCostEstimate();
+	private final PackedPrefixRowComposition rowComposition;
 	private final int[] childGroups = new int[2];
 	private final int[] childWinners = new int[2];
 	private final int[] winnerStack;
+	private double bestGreedyRows;
+	private double bestGreedyWork;
+	private double bestGreedyContributionRows;
+	private int greedyCandidateWorkUnits;
+	private int contextualFactorWorkUnits;
+	private long contextualGreedyWorkRemaining;
+	private boolean emittedCompleteOrder;
 
 	PackedJoinEnumerator(PackedQuery query, PackedMemo memo, double[] selectedRowsByGroup,
 			PackedSearchBudget budget, PackedCostModel costModel) {
+		this(query, memo, selectedRowsByGroup, budget,
+				costModel == null ? null : PackedCostSession.scalar(costModel, new PackedQueryView(query)));
+	}
+
+	private PackedJoinEnumerator(PackedQuery query, PackedMemo memo, double[] selectedRowsByGroup,
+			PackedSearchBudget budget, PackedCostSession costSession) {
 		this.query = query;
 		this.memo = memo;
 		this.selectedRowsByGroup = selectedRowsByGroup;
 		this.budget = budget;
-		this.costModel = costModel;
-		queryView = costModel == null ? null : new PackedQueryView(query);
+		this.costSession = costSession;
+		rowComposition = new PackedPrefixRowComposition(query);
 		winnerStack = new int[Math.max(2, query.relationCount() + 1)];
+	}
+
+	static PackedJoinEnumerator forSession(PackedQuery query, PackedMemo memo, double[] selectedRowsByGroup,
+			PackedSearchBudget budget, PackedCostSession costSession) {
+		return new PackedJoinEnumerator(query, memo, selectedRowsByGroup, budget, costSession);
 	}
 
 	int optimize(int rootRelationId) {
 		if (isFiniteFilterRecipe(rootRelationId)) {
-			return 0;
+			return optimizeAnchored(rootRelationId);
 		}
 		int factorCount = factorCount(rootRelationId);
 		if (factorCount < 2) {
@@ -59,23 +88,41 @@ final class PackedJoinEnumerator {
 		}
 		int[] factors = new int[factorCount];
 		collectFactors(rootRelationId, factors);
+		if (requiresWrittenSequence(factors)) {
+			return costSession == null ? 0 : emitSelectedOrder(rootRelationId, factors);
+		}
 		if (factorCount == 2) {
-			if (costModel == null) {
+			if (costSession == null) {
 				return 0;
 			}
-			double forwardCost = twoFactorOrderCost(factors);
+			/*
+			 * A binary order comparison and its emitted extension form one atomic search unit. Own that unit before
+			 * asking the provider to cost either direction; otherwise a rejected emission can still perform unbudgeted
+			 * estimator work. Binary finite anchors use emitMandatoryBaseOrder instead because their sole theorem-safe
+			 * access order is mandatory logical implementation rather than a search choice.
+			 */
+			if (!budget.tryReserve(1L)) {
+				return 0;
+			}
+			double forwardCost = twoFactorOrderCost(rootRelationId, factors);
 			int first = factors[0];
 			factors[0] = factors[1];
 			factors[1] = first;
-			double reverseCost = twoFactorOrderCost(factors);
+			double reverseCost = twoFactorOrderCost(rootRelationId, factors);
 			if (forwardCost <= reverseCost) {
 				first = factors[0];
 				factors[0] = factors[1];
 				factors[1] = first;
 			}
-			return emitSelectedOrder(rootRelationId, factors);
+			return saturatedInt(1L + emitSelectedOrder(rootRelationId, factors, false, 0L));
 		}
-		return switch (subsetKernelForFactorCount(factorCount)) {
+		/*
+		 * A bounded subset search can exhaust its budget before it reaches the full set. Seed a complete,
+		 * connectivity-preserving incumbent first so partial DP state can never leave the imported written order as the
+		 * only executable plan for an otherwise connected join graph.
+		 */
+		int workUnits = budget.isBounded() ? optimizeGreedySeeds(rootRelationId, factors) : 0;
+		return workUnits + switch (subsetKernelForFactorCount(factorCount)) {
 		case DENSE_SUBSETS -> optimizeDense(rootRelationId, factors);
 		case SPARSE_LONG_SUBSETS -> optimizeSparseLong(rootRelationId, factors);
 		case INTERNED_MULTIWORD_SUBSETS -> optimizeInternedMultiword(rootRelationId, factors);
@@ -83,8 +130,454 @@ final class PackedJoinEnumerator {
 		};
 	}
 
+	int optimizeWithInheritedPrefix(int rootRelationId, int[] prefixRelations, int prefixCount, double prefixRows) {
+		return optimizeWithInheritedPrefix(rootRelationId, prefixRelations, null, prefixCount, prefixRows);
+	}
+
+	int optimizeWithInheritedPrefix(int rootRelationId, int[] prefixRelations, double[] prefixContributionRows,
+			int prefixCount, double prefixRows) {
+		contextualFactorWorkUnits = 0;
+		int rootGroupId = memo.logicalGroupId(rootRelationId);
+		int defaultWinnerId = memo.findWinner(rootGroupId, memo.anyPropertyId(), 0, 0, 0);
+		if (defaultWinnerId == 0) {
+			throw new PackedMemoInvariantException("dependent relation " + rootRelationId + " has no incumbent");
+		}
+		if (prefixContributionRows != null && prefixContributionRows.length < prefixCount) {
+			throw new IllegalArgumentException("inherited prefix contributions do not cover the prefix");
+		}
+		if (costSession == null || prefixCount <= 0
+				|| !inheritedPrefixSafe(rootRelationId)) {
+			return defaultWinnerId;
+		}
+		if (query.relOperator(rootRelationId) == PackedRelOp.FILTER) {
+			return contextualizeEquivalentAccessPaths(rootRelationId, defaultWinnerId, prefixRelations,
+					prefixContributionRows,
+					prefixCount, prefixRows);
+		}
+		if (query.relChildCount(rootRelationId) == 0) {
+			return contextualizeLeaf(rootRelationId, defaultWinnerId, prefixRelations, prefixContributionRows,
+					prefixCount, prefixRows);
+		}
+		if (query.relOperator(rootRelationId) != PackedRelOp.JOIN) {
+			return defaultWinnerId;
+		}
+		int inputContextId = memo.internSequence(prefixRelations, 0, prefixCount);
+		int contextualWinnerId = memo.findWinner(rootGroupId, memo.anyPropertyId(), 0, inputContextId, 0);
+		if (contextualWinnerId != 0) {
+			return contextualWinnerId;
+		}
+		int factorCount = factorCount(rootRelationId);
+		if (factorCount < 2) {
+			return defaultWinnerId;
+		}
+		int[] factors = new int[factorCount];
+		collectFactors(rootRelationId, factors);
+		if (requiresWrittenSequence(factors)) {
+			return defaultWinnerId;
+		}
+		long requiredWork = (long) factorCount * (factorCount + 1L) / 2L + factorCount;
+		if (!budget.tryReserve(requiredWork)) {
+			return defaultWinnerId;
+		}
+		contextualFactorWorkUnits = saturatedInt(requiredWork);
+		orderForInheritedPrefix(factors, prefixRelations, prefixContributionRows, prefixCount, prefixRows);
+		return emitJoinForInheritedPrefix(rootRelationId, factors, prefixRelations, prefixContributionRows,
+				prefixCount, prefixRows, inputContextId);
+	}
+
+	private boolean inheritedPrefixSafe(int relationId) {
+		if ((query.relMetadataFlags(relationId) & PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE) == 0) {
+			return recursivelySafeContextualProbe(relationId);
+		}
+		if (query.relOperator(relationId) != PackedRelOp.FILTER || query.relChildCount(relationId) != 1) {
+			return false;
+		}
+		int conditionId = query.relPayload(relationId);
+		int inputRelationId = query.relChild(relationId, 0);
+		return (query.scalarMetadataFlags(conditionId) & PackedNodeMetadataArena.SCALAR_REORDERING_SAFE) != 0
+				&& query.scalarSafeToRelocate(conditionId)
+				&& query.maskContainsAll(query.relAssuredMaskId(inputRelationId),
+						query.scalarDependencyMaskId(conditionId))
+				&& recursivelySafeContextualProbe(inputRelationId);
+	}
+
+	private boolean recursivelySafeContextualProbe(int relationId) {
+		if ((query.relMetadataFlags(relationId) & PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE) != 0) {
+			return false;
+		}
+		return switch (query.relOperator(relationId)) {
+		case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.BINDING_SET_ASSIGNMENT, PackedRelOp.SINGLETON_SET, PackedRelOp.EMPTY_SET -> true;
+		case PackedRelOp.JOIN -> recursivelySafeContextualProbe(query.relChild(relationId, 0))
+				&& recursivelySafeContextualProbe(query.relChild(relationId, 1));
+		case PackedRelOp.FILTER -> {
+			int conditionId = query.relPayload(relationId);
+			int inputRelationId = query.relChild(relationId, 0);
+			yield (query.scalarMetadataFlags(conditionId)
+					& PackedNodeMetadataArena.SCALAR_REORDERING_SAFE) != 0
+					&& query.scalarSafeToRelocate(conditionId)
+					&& query.maskContainsAll(query.relAssuredMaskId(inputRelationId),
+							query.scalarDependencyMaskId(conditionId))
+					&& recursivelySafeContextualProbe(inputRelationId);
+		}
+		case PackedRelOp.QUERY_ROOT -> recursivelySafeContextualProbe(query.relChild(relationId, 0));
+		default -> false;
+		};
+	}
+
+	private int contextualizeLeaf(int relationId, int defaultWinnerId, int[] prefixRelations,
+			double[] prefixContributionRows, int prefixCount, double prefixRows) {
+		int inputContextId = memo.internSequence(prefixRelations, 0, prefixCount);
+		int groupId = memo.logicalGroupId(relationId);
+		int contextualWinnerId = memo.findWinner(groupId, memo.anyPropertyId(), 0, inputContextId, 0);
+		if (contextualWinnerId != 0) {
+			return contextualWinnerId;
+		}
+		if (!budget.tryReserve(1L)) {
+			return defaultWinnerId;
+		}
+		contextualFactorWorkUnits = 1;
+		costEstimate.clear();
+		costContext.reset(prefixRelations, 0, prefixCount, prefixRows);
+		costSession.estimate(relationId, costContext, costEstimate);
+		if (!finiteNonNegative(costEstimate.outputRows()) && !finiteNonNegative(costEstimate.workRows())) {
+			return defaultWinnerId;
+		}
+		double fallbackRows = joinRowsForPrefix(prefixRelations, prefixCount, prefixRows, relationId,
+				memo.winnerOutputRows(defaultWinnerId), connectedToPrefix(prefixRelations, prefixCount, relationId));
+		double outputRows = rowComposition.effectiveRows(costEstimate, prefixRelations, prefixContributionRows,
+				prefixCount, relationId, fallbackRows);
+		double workRows = finiteNonNegative(costEstimate.workRows())
+				? costEstimate.workRows()
+				: memo.winnerTotalCost(defaultWinnerId);
+		int metadataId = addComposedPhysicalMetadata(costEstimate, outputRows, workRows);
+		return memo.offerWinnerWithMetadata(groupId, memo.anyPropertyId(), 0, inputContextId, 0,
+				memo.winnerPhysicalExpressionId(defaultWinnerId), metadataId, outputRows, workRows, workRows,
+				childWinners, 0, 0);
+	}
+
+	int contextualWorkUnits() {
+		return contextualFactorWorkUnits;
+	}
+
+	int optimizeCorrelatedFilter(int filterRelationId) {
+		if (query.relOperator(filterRelationId) != PackedRelOp.FILTER
+				|| query.relChildCount(filterRelationId) != 1) {
+			return 0;
+		}
+		int inputRelationId = query.relChild(filterRelationId, 0);
+		if (((query.relMetadataFlags(filterRelationId) | query.relMetadataFlags(inputRelationId))
+				& PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE) != 0
+				|| query.relExecutionDomain(filterRelationId) != query.relExecutionDomain(inputRelationId)) {
+			return 0;
+		}
+		int conditionId = query.relPayload(filterRelationId);
+		int embeddedReferenceMaskId = query.scalarEmbeddedReferenceMaskId(conditionId);
+		int scalarFlags = query.scalarMetadataFlags(conditionId);
+		if (query.scalarSafeToRelocate(conditionId)
+				|| embeddedReferenceMaskId == 0
+				|| !query.scalarSafeWhenAssured(conditionId)
+				|| (scalarFlags & PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE) != 0
+				|| (scalarFlags & PackedNodeMetadataArena.SCALAR_REORDERING_SAFE) == 0) {
+			return 0;
+		}
+		int outerOutputMaskId = query.relOutputMaskId(inputRelationId);
+		if (!query.masksIntersect(embeddedReferenceMaskId, outerOutputMaskId)) {
+			return 0;
+		}
+		if (query.relOperator(inputRelationId) != PackedRelOp.JOIN) {
+			return optimizeSingleInputCorrelatedFilter(filterRelationId, inputRelationId, conditionId,
+					embeddedReferenceMaskId, outerOutputMaskId);
+		}
+		int factorCount = factorCount(inputRelationId);
+		if (factorCount < 2 || subsetKernelForFactorCount(factorCount) != DENSE_SUBSETS) {
+			return 0;
+		}
+		int[] factors = new int[factorCount];
+		collectFactors(inputRelationId, factors);
+		if (requiresWrittenSequence(factors)) {
+			return 0;
+		}
+		int[] requiredProviderMasks = new int[query.symbolCount()];
+		int requiredProviderCount = collectRequiredProviderMasks(factors,
+				query.scalarDependencyMaskId(conditionId), embeddedReferenceMaskId, outerOutputMaskId,
+				requiredProviderMasks);
+		if (requiredProviderCount <= 0) {
+			return 0;
+		}
+		int evaluationBarrierMask = 0;
+		int bindingAnchorMask = 0;
+		for (int ordinal = 0; ordinal < factorCount; ordinal++) {
+			if (query.relationHasObservableEvaluationEffects(factors[ordinal])) {
+				evaluationBarrierMask |= 1 << ordinal;
+			}
+			if (query.relOperator(factors[ordinal]) == PackedRelOp.BINDING_SET_ASSIGNMENT) {
+				bindingAnchorMask |= 1 << ordinal;
+			}
+		}
+		int rootWinnerId = memo.findWinner(memo.logicalGroupId(filterRelationId), memo.anyPropertyId(), 0, 0, 0);
+		if (rootWinnerId == 0) {
+			throw new PackedMemoInvariantException("correlated FILTER " + filterRelationId
+					+ " has no logical root incumbent");
+		}
+		return optimizeDenseCorrelatedFilter(filterRelationId, inputRelationId, factors,
+				requiredProviderMasks, requiredProviderCount, evaluationBarrierMask, bindingAnchorMask,
+				memo.winnerOutputRows(rootWinnerId));
+	}
+
+	/**
+	 * Emits one complete theorem-safe correlated-FILTER schedule before any subset search can consume the shared
+	 * budget. The seed chooses the smallest stable provider for every required binding, includes every observable
+	 * evaluation barrier, applies the predicate at that first assured prefix, and retains the remaining written order.
+	 */
+	int seedCorrelatedFilter(int filterRelationId) {
+		if (query.relOperator(filterRelationId) != PackedRelOp.FILTER
+				|| query.relChildCount(filterRelationId) != 1) {
+			return 0;
+		}
+		int inputRelationId = query.relChild(filterRelationId, 0);
+		if (((query.relMetadataFlags(filterRelationId) | query.relMetadataFlags(inputRelationId))
+				& PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE) != 0
+				|| query.relExecutionDomain(filterRelationId) != query.relExecutionDomain(inputRelationId)
+				|| query.relOperator(inputRelationId) != PackedRelOp.JOIN) {
+			return 0;
+		}
+		int conditionId = query.relPayload(filterRelationId);
+		int embeddedReferenceMaskId = query.scalarEmbeddedReferenceMaskId(conditionId);
+		int scalarFlags = query.scalarMetadataFlags(conditionId);
+		if (query.scalarSafeToRelocate(conditionId)
+				|| embeddedReferenceMaskId == 0
+				|| !query.scalarSafeWhenAssured(conditionId)
+				|| (scalarFlags & PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE) != 0
+				|| (scalarFlags & PackedNodeMetadataArena.SCALAR_REORDERING_SAFE) == 0) {
+			return 0;
+		}
+		int outerOutputMaskId = query.relOutputMaskId(inputRelationId);
+		if (!query.masksIntersect(embeddedReferenceMaskId, outerOutputMaskId)) {
+			return 0;
+		}
+		int factorCount = factorCount(inputRelationId);
+		if (factorCount < 2 || subsetKernelForFactorCount(factorCount) != DENSE_SUBSETS) {
+			return 0;
+		}
+		int[] factors = new int[factorCount];
+		collectFactors(inputRelationId, factors);
+		if (requiresWrittenSequence(factors)) {
+			return 0;
+		}
+		int[] requiredProviderMasks = new int[query.symbolCount()];
+		int requiredProviderCount = collectRequiredProviderMasks(factors,
+				query.scalarDependencyMaskId(conditionId), embeddedReferenceMaskId, outerOutputMaskId,
+				requiredProviderMasks);
+		if (requiredProviderCount <= 0) {
+			return 0;
+		}
+
+		int requiredPrefixMask = 0;
+		for (int ordinal = 0; ordinal < factorCount; ordinal++) {
+			if (query.relationHasObservableEvaluationEffects(factors[ordinal])) {
+				requiredPrefixMask |= 1 << ordinal;
+			}
+		}
+		for (int ordinal = 0; ordinal < requiredProviderCount; ordinal++) {
+			int providerMask = requiredProviderMasks[ordinal];
+			if ((requiredPrefixMask & providerMask) == 0) {
+				requiredPrefixMask |= preferredSeedProvider(factors, providerMask);
+			}
+		}
+		int applyAfterFactorCount = Integer.bitCount(requiredPrefixMask);
+		if (applyAfterFactorCount <= 0 || applyAfterFactorCount >= factorCount) {
+			return 0;
+		}
+		int[] orderedFactors = new int[factorCount];
+		int prefixIndex = 0;
+		int suffixIndex = applyAfterFactorCount;
+		for (int ordinal = 0; ordinal < factorCount; ordinal++) {
+			if ((requiredPrefixMask & 1 << ordinal) != 0) {
+				orderedFactors[prefixIndex++] = factors[ordinal];
+			} else {
+				orderedFactors[suffixIndex++] = factors[ordinal];
+			}
+		}
+		int rootWinnerId = memo.findWinner(memo.logicalGroupId(filterRelationId), memo.anyPropertyId(), 0, 0, 0);
+		if (rootWinnerId == 0) {
+			throw new PackedMemoInvariantException("correlated FILTER " + filterRelationId
+					+ " has no logical root incumbent");
+		}
+		return emitScheduledFilterOrder(filterRelationId, inputRelationId, orderedFactors,
+				applyAfterFactorCount, memo.winnerOutputRows(rootWinnerId));
+	}
+
+	private int preferredSeedProvider(int[] factors, int providerMask) {
+		int selectedBit = 0;
+		int selectedRelationId = Integer.MAX_VALUE;
+		double selectedRows = Double.POSITIVE_INFINITY;
+		int remaining = providerMask;
+		while (remaining != 0) {
+			int factorBit = remaining & -remaining;
+			remaining ^= factorBit;
+			int factorOrdinal = Integer.numberOfTrailingZeros(factorBit);
+			int relationId = factors[factorOrdinal];
+			double rows = selectedRowsByGroup[memo.logicalGroupId(relationId)];
+			int rowsComparison = Double.compare(rows, selectedRows);
+			if (rowsComparison < 0 || rowsComparison == 0 && relationId < selectedRelationId) {
+				selectedBit = factorBit;
+				selectedRelationId = relationId;
+				selectedRows = rows;
+			}
+		}
+		if (selectedBit == 0) {
+			throw new PackedMemoInvariantException("correlated FILTER lost a required provider");
+		}
+		return selectedBit;
+	}
+
+	private int optimizeSingleInputCorrelatedFilter(int filterRelationId, int inputRelationId, int conditionId,
+			int embeddedReferenceMaskId, int outerOutputMaskId) {
+		int assuredMaskId = query.relAssuredMaskId(inputRelationId);
+		if (!query.maskContainsAllScheduledDependencies(assuredMaskId,
+				query.scalarDependencyMaskId(conditionId), embeddedReferenceMaskId, outerOutputMaskId)) {
+			return 0;
+		}
+		int inputWinnerId = memo.findWinner(memo.logicalGroupId(inputRelationId), memo.anyPropertyId(), 0, 0, 0);
+		if (inputWinnerId == 0) {
+			throw new PackedMemoInvariantException("correlated FILTER input " + inputRelationId
+					+ " has no incumbent");
+		}
+		childGroups[0] = inputRelationId;
+		int workUnits = contextualizeEmbeddedSubqueries(conditionId, childGroups, 1,
+				memo.winnerOutputRows(inputWinnerId));
+		if (!budget.tryConsume()) {
+			return workUnits;
+		}
+		offerScheduledFilter(filterRelationId, inputWinnerId, childGroups, 1);
+		return workUnits + 1;
+	}
+
+	private int contextualizeEmbeddedSubqueries(int scalarId, int[] prefixRelations, int prefixCount,
+			double prefixRows) {
+		int workUnits = 0;
+		if (query.scalarOperator(scalarId) == PackedScalarOp.EXISTS) {
+			int payloadId = query.scalarPayload(scalarId);
+			if (query.payloadOperator(payloadId) == PackedPayloadOp.SUBQUERY_VALUE
+					&& query.payloadChildCount(payloadId) == 1) {
+				int subqueryRelationId = query.payloadChild(payloadId, 0);
+				PackedJoinEnumerator nested = PackedJoinEnumerator.forSession(query, memo, selectedRowsByGroup,
+						budget, costSession);
+				nested.optimizeWithInheritedPrefix(subqueryRelationId, prefixRelations, prefixCount, prefixRows);
+				workUnits += nested.contextualWorkUnits();
+			}
+		}
+		for (int ordinal = 0; ordinal < query.scalarChildCount(scalarId); ordinal++) {
+			workUnits += contextualizeEmbeddedSubqueries(query.scalarChild(scalarId, ordinal), prefixRelations,
+					prefixCount, prefixRows);
+		}
+		return workUnits;
+	}
+
+	private int collectRequiredProviderMasks(int[] factors, int directDependencyMaskId,
+			int embeddedReferenceMaskId, int outerOutputMaskId, int[] destination) {
+		int count = 0;
+		for (int symbolId = 1; symbolId <= query.symbolCount(); symbolId++) {
+			boolean directDependency = query.maskContainsSymbol(directDependencyMaskId, symbolId);
+			boolean correlatedReference = query.maskContainsSymbol(embeddedReferenceMaskId, symbolId)
+					&& query.maskContainsSymbol(outerOutputMaskId, symbolId);
+			if (!directDependency && !correlatedReference) {
+				continue;
+			}
+			int providerMask = 0;
+			for (int ordinal = 0; ordinal < factors.length; ordinal++) {
+				if (query.maskContainsSymbol(query.relAssuredMaskId(factors[ordinal]), symbolId)) {
+					providerMask |= 1 << ordinal;
+				}
+			}
+			if (providerMask == 0) {
+				return -1;
+			}
+			destination[count++] = providerMask;
+		}
+		return count;
+	}
+
+	private int optimizeAnchored(int rootRelationId) {
+		int factorCount = factorCount(rootRelationId);
+		if (factorCount < 2) {
+			return 0;
+		}
+		int[] factors = new int[factorCount];
+		collectFactors(rootRelationId, factors);
+		int anchorOrdinal = finiteAnchorOrdinal(rootRelationId, factors);
+		swap(factors, 0, anchorOrdinal);
+		if (factorCount == 2) {
+			return emitSelectedOrder(rootRelationId, factors);
+		}
+		return switch (subsetKernelForFactorCount(factorCount)) {
+		case DENSE_SUBSETS -> optimizeDense(rootRelationId, factors, 0);
+		case SPARSE_LONG_SUBSETS -> optimizeSparseLong(rootRelationId, factors, 0);
+		case INTERNED_MULTIWORD_SUBSETS -> optimizeInternedMultiword(rootRelationId, factors, 0);
+		default -> throw new AssertionError("unknown packed join subset kernel");
+		};
+	}
+
+	/**
+	 * Publishes one complete anchor-first recipe without entering a combinatorial subset kernel. The selected-order
+	 * emitter reserves the full extension cost before it evaluates a provider, so an undersized budget cannot leak a
+	 * partial anchor path into the memo.
+	 */
+	int seedAnchored(int rootRelationId) {
+		if (!isFiniteFilterRecipe(rootRelationId)) {
+			return 0;
+		}
+		int factorCount = factorCount(rootRelationId);
+		if (factorCount <= 2) {
+			return 0;
+		}
+		int[] factors = new int[factorCount];
+		collectFactors(rootRelationId, factors);
+		swap(factors, 0, finiteAnchorOrdinal(rootRelationId, factors));
+		return emitSelectedOrder(rootRelationId, factors);
+	}
+
+	int seedMandatoryBinaryAnchor(int rootRelationId) {
+		if (!isFiniteFilterRecipe(rootRelationId) || factorCount(rootRelationId) != 2) {
+			return 0;
+		}
+		int[] factors = new int[2];
+		collectFactors(rootRelationId, factors);
+		swap(factors, 0, finiteAnchorOrdinal(rootRelationId, factors));
+		return emitMandatoryBaseOrder(rootRelationId, factors);
+	}
+
+	private int emitMandatoryBaseOrder(int rootRelationId, int[] factors) {
+		/*
+		 * A binary finite recipe has exactly one theorem-safe access order: anchor, then consumer. Installing and
+		 * contextually costing that base incumbent is part of ordinary logical implementation, not a search choice.
+		 * Larger flattened recipes still reserve one search unit for every extension before any provider call.
+		 */
+		return emitSelectedOrder(rootRelationId, factors, false, 0L);
+	}
+
+	private int finiteAnchorOrdinal(int rootRelationId, int[] factors) {
+		if (query.relChildCount(rootRelationId) != 2) {
+			throw new PackedMemoInvariantException("finite-filter recipe " + rootRelationId
+					+ " must be a binary join");
+		}
+		int anchorGroupId = query.relChild(rootRelationId, 0);
+		for (int ordinal = 0; ordinal < factors.length; ordinal++) {
+			int factorRelationId = factors[ordinal];
+			if (memo.logicalGroupId(factorRelationId) == anchorGroupId) {
+				if (query.relOperator(factorRelationId) != PackedRelOp.BINDING_SET_ASSIGNMENT) {
+					throw new PackedMemoInvariantException("finite-filter recipe " + rootRelationId
+							+ " has a non-finite anchor");
+				}
+				return ordinal;
+			}
+		}
+		throw new PackedMemoInvariantException("finite-filter recipe " + rootRelationId
+				+ " lost its binding-set anchor");
+	}
+
 	int optimizeSequence(int rootRelationId) {
-		if (costModel == null || isFiniteFilterRecipe(rootRelationId)) {
+		if (costSession == null) {
 			return 0;
 		}
 		int factorCount = factorCount(rootRelationId);
@@ -98,6 +591,28 @@ final class PackedJoinEnumerator {
 
 	private boolean isFiniteFilterRecipe(int rootRelationId) {
 		return (memo.logicalRuleMask(rootRelationId) & PackedRuleProofs.FINITE_FILTER_VALUES) != 0L;
+	}
+
+	private boolean requiresWrittenSequence(int[] factors) {
+		for (int factor : factors) {
+			if (containsNonRelocatableFilter(factor)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean containsNonRelocatableFilter(int relationId) {
+		if (query.relOperator(relationId) == PackedRelOp.FILTER
+				&& !query.scalarSafeToRelocate(query.relPayload(relationId))) {
+			return true;
+		}
+		for (int ordinal = 0; ordinal < query.relChildCount(relationId); ordinal++) {
+			if (containsNonRelocatableFilter(query.relChild(relationId, ordinal))) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	static int subsetKernelForFactorCount(int factorCount) {
@@ -121,7 +636,7 @@ final class PackedJoinEnumerator {
 		return connected ? Math.max(1.0d, product * 0.10d) : product;
 	}
 
-	private double twoFactorOrderCost(int[] factors) {
+	private double twoFactorOrderCost(int rootRelationId, int[] factors) {
 		int anyPropertyId = memo.anyPropertyId();
 		int firstGroupId = memo.logicalGroupId(factors[0]);
 		int secondGroupId = memo.logicalGroupId(factors[1]);
@@ -132,29 +647,328 @@ final class PackedJoinEnumerator {
 		double outputRows = joinRowsForSubset(factors, 1L, 1, firstRows, secondRows,
 				connectedToPrefix(factors, 1, factors[1]));
 		double secondWork = memo.winnerTotalCost(secondWinnerId);
+		double[] prefixContributionRows = { firstRows };
 		costEstimate.clear();
 		costContext.reset(factors, 0, 1, firstRows);
-		costModel.estimate(queryView, factors[1], costContext, costEstimate);
-		if (costEstimate.hasContextualOutputRows() && finiteNonNegative(costEstimate.outputRows())) {
-			outputRows = costEstimate.outputRows();
-		}
+		costSession.estimate(factors[1], costContext, costEstimate);
+		outputRows = rowComposition.effectiveRows(costEstimate, factors, prefixContributionRows, 1, factors[1],
+				outputRows);
 		if (finiteNonNegative(costEstimate.workRows())) {
 			secondWork = costEstimate.workRows();
 		}
-		return saturatedAdd(memo.winnerTotalCost(firstWinnerId), secondWork, outputRows);
+		double candidateCost = saturatedAdd(memo.winnerTotalCost(firstWinnerId), secondWork, outputRows);
+		double iteratorProbeWork = iteratorProbeWork(costEstimate);
+		candidateCost = saturatedAdd(candidateCost, iteratorProbeWork, 0.0d);
+		refineRootJoin(rootRelationId, factors, 1, firstRows, secondRows, outputRows, candidateCost);
+		if (finiteNonNegative(joinEstimate.outputRows())) {
+			outputRows = joinEstimate.outputRows();
+		}
+		double iteratorCost = finiteNonNegative(joinEstimate.workRows())
+				? Math.max(memo.winnerTotalCost(firstWinnerId) + secondWork + iteratorProbeWork,
+						joinEstimate.workRows())
+				: candidateCost;
+		double hashCost = hashJoinCost(factors, 1, factors[1], firstRows,
+				memo.winnerTotalCost(firstWinnerId), secondRows, memo.winnerTotalCost(secondWinnerId), outputRows);
+		return Math.min(iteratorCost, hashCost);
 	}
 
-	private int optimizeDense(int rootRelationId, int[] factors) {
+	private int optimizeDenseCorrelatedFilter(int filterRelationId, int inputJoinRelationId, int[] factors,
+			int[] requiredProviderMasks, int requiredProviderCount, int evaluationBarrierMask,
+			int bindingAnchorMask, double logicalOutputRows) {
 		int factorCount = factors.length;
 		int stateCount = 1 << factorCount;
 		int fullSet = stateCount - 1;
+		// The low lane retains plans where the predicate is pending; the high lane retains plans where it has been
+		// evaluated. Neither lane dominates the other because predicate work and reduced continuation rows trade off.
+		double[] rows = new double[stateCount << 1];
+		double[] costs = new double[stateCount << 1];
+		/*
+		 * A state retains the connected-component contribution introduced by its last factor. A FILTER transition has
+		 * no appended factor, so its reset pair either rebases one provably connected prefix component or records zero
+		 * relation id to invalidate every earlier contribution.
+		 */
+		double[] appendedContributionRows = new double[stateCount << 1];
+		int[] parentStates = new int[stateCount << 1];
+		int[] appendedFactorBits = new int[stateCount << 1];
+		int[] resetContributionRelationIds = new int[stateCount << 1];
+		double[] resetContributionRows = new double[stateCount << 1];
+		int[] preferenceRanks = new int[stateCount << 1];
+		int[] neighborMasks = new int[stateCount];
+		int[] prefixRelations = costSession == null ? null : new int[factorCount];
+		double[] prefixContributionRows = costSession == null ? null : new double[factorCount];
+		Arrays.fill(costs, Double.POSITIVE_INFINITY);
+		Arrays.fill(resetContributionRows, Double.NaN);
+		int[] adjacency = adjacency(factors);
+		int anyPropertyId = memo.anyPropertyId();
+		for (int ordinal = 0; ordinal < factorCount; ordinal++) {
+			int factorBit = 1 << ordinal;
+			int groupId = memo.logicalGroupId(factors[ordinal]);
+			int winnerId = memo.findWinner(groupId, anyPropertyId, 0, 0, 0);
+			rows[factorBit] = selectedRowsByGroup[groupId];
+			costs[factorBit] = memo.winnerTotalCost(winnerId);
+			appendedContributionRows[factorBit] = rows[factorBit];
+			appendedFactorBits[factorBit] = factorBit;
+		}
+		for (int subset = 1; subset < stateCount; subset++) {
+			int factorBit = subset & -subset;
+			neighborMasks[subset] = neighborMasks[subset ^ factorBit]
+					| adjacency[Integer.numberOfTrailingZeros(factorBit)];
+		}
+
+		int workUnits = 0;
+		for (int subset = 1; subset <= fullSet; subset++) {
+			int pendingState = densePredicateState(stateCount, subset, PREDICATE_PENDING);
+			int uncoveredProviders = uncoveredProviderMask(subset, requiredProviderMasks, requiredProviderCount);
+			if (subset != fullSet
+					&& Double.isFinite(costs[pendingState])
+					&& uncoveredProviders == 0
+					&& (subset & evaluationBarrierMask) == evaluationBarrierMask) {
+				if (!budget.tryConsume()) {
+					return workUnits;
+				}
+				int prefixCount = populateDenseScheduledPrefix(factors, pendingState, stateCount, parentStates,
+						appendedFactorBits, appendedContributionRows, resetContributionRelationIds,
+						resetContributionRows, prefixRelations, prefixContributionRows);
+				costScheduledFilter(filterRelationId, prefixRelations, prefixCount,
+						rows[pendingState], costs[pendingState]);
+				int appliedState = densePredicateState(stateCount, subset, PREDICATE_APPLIED);
+				double candidateCost = costEstimate.workRows();
+				int costComparison = Double.compare(candidateCost, costs[appliedState]);
+				if (costComparison < 0
+						|| costComparison == 0
+								&& preferenceRanks[pendingState] > preferenceRanks[appliedState]) {
+					rows[appliedState] = costEstimate.outputRows();
+					costs[appliedState] = candidateCost;
+					preferenceRanks[appliedState] = preferenceRanks[pendingState];
+					parentStates[appliedState] = pendingState;
+					appendedFactorBits[appliedState] = 0;
+					resetContributionRelationIds[appliedState] = 0;
+					resetContributionRows[appliedState] = Double.NaN;
+					if (prefixRelations != null) {
+						// A single connected prefix has one recoverable post-filter component; disconnected prefixes do
+						// not.
+						rowComposition.initializeInherited(prefixRelations, prefixCount, costEstimate.outputRows(),
+								prefixContributionRows);
+						for (int prefixOrdinal = prefixCount - 1; prefixOrdinal >= 0; prefixOrdinal--) {
+							if (finiteNonNegative(prefixContributionRows[prefixOrdinal])) {
+								resetContributionRelationIds[appliedState] = prefixRelations[prefixOrdinal];
+								resetContributionRows[appliedState] = prefixContributionRows[prefixOrdinal];
+								break;
+							}
+						}
+					}
+				}
+				workUnits++;
+			}
+			if (subset == fullSet) {
+				continue;
+			}
+			for (int phase = PREDICATE_PENDING; phase <= PREDICATE_APPLIED; phase++) {
+				int state = densePredicateState(stateCount, subset, phase);
+				if (!Double.isFinite(costs[state])) {
+					continue;
+				}
+				int remaining = fullSet ^ subset;
+				int connectedMissing = neighborMasks[subset] & remaining;
+				int missing = connectedMissing;
+				if (phase == PREDICATE_PENDING) {
+					// A disconnected provider can make the predicate evaluable, while a finite binding assignment can
+					// turn a later high-cardinality pattern into a bound lookup. Keep those theorem-safe alternatives
+					// without opening the dense search to every Cartesian extension.
+					missing |= uncoveredProviders
+							| ((evaluationBarrierMask | bindingAnchorMask) & remaining);
+				} else {
+					/*
+					 * A finite anchor not referenced by the predicate may safely remain in the continuation. Exploring
+					 * it here lets the predicate run once per assured outer mapping before a later bound lookup,
+					 * instead of multiplying the predicate work by the anchor's rows.
+					 */
+					missing |= bindingAnchorMask & remaining;
+				}
+				if (missing == 0) {
+					missing = remaining;
+				}
+				while (missing != 0) {
+					if (!budget.tryConsume()) {
+						return workUnits;
+					}
+					int factorBit = missing & -missing;
+					missing ^= factorBit;
+					int factorOrdinal = Integer.numberOfTrailingZeros(factorBit);
+					int combined = subset | factorBit;
+					boolean connected = (connectedMissing & factorBit) != 0;
+					double candidateRows = joinRowsForSubset(factors, Integer.toUnsignedLong(subset),
+							factorOrdinal, rows[state], rows[factorBit], connected);
+					double factorContributionRows = rows[factorBit];
+					double factorWork = costs[factorBit];
+					double iteratorProbeWork = 0.0d;
+					if (costSession != null) {
+						int prefixCount = populateDenseScheduledPrefix(factors, state, stateCount, parentStates,
+								appendedFactorBits, appendedContributionRows, resetContributionRelationIds,
+								resetContributionRows, prefixRelations, prefixContributionRows);
+						costEstimate.clear();
+						costContext.reset(prefixRelations, 0, prefixCount, rows[state]);
+						costSession.estimate(factors[factorOrdinal], costContext, costEstimate);
+						candidateRows = rowComposition.effectiveRows(costEstimate, prefixRelations,
+								prefixContributionRows, prefixCount, factors[factorOrdinal], candidateRows);
+						factorContributionRows = rowComposition.factorContributionRows();
+						if (!connected && !finiteNonNegative(factorContributionRows)) {
+							factorContributionRows = rows[factorBit];
+						}
+						if (finiteNonNegative(costEstimate.workRows())) {
+							factorWork = costEstimate.workRows();
+						}
+						iteratorProbeWork = iteratorProbeWork(costEstimate);
+					}
+					if (phase == PREDICATE_APPLIED && combined == fullSet
+							&& finiteNonNegative(logicalOutputRows)) {
+						candidateRows = logicalOutputRows;
+						factorContributionRows = Double.NaN;
+					}
+					double candidateCost = saturatedAdd(costs[state], factorWork, candidateRows);
+					candidateCost = saturatedAdd(candidateCost, iteratorProbeWork, 0.0d);
+					int targetState = densePredicateState(stateCount, combined, phase);
+					int candidatePreference = preferenceRanks[state]
+							+ bindingOrderDelta(factors, Integer.toUnsignedLong(subset), factorOrdinal);
+					int costComparison = Double.compare(candidateCost, costs[targetState]);
+					if (costComparison < 0
+							|| costComparison == 0
+									&& candidatePreference > preferenceRanks[targetState]) {
+						rows[targetState] = candidateRows;
+						costs[targetState] = candidateCost;
+						preferenceRanks[targetState] = candidatePreference;
+						parentStates[targetState] = state;
+						appendedFactorBits[targetState] = factorBit;
+						appendedContributionRows[targetState] = factorContributionRows;
+					}
+					workUnits++;
+				}
+			}
+		}
+
+		int fullAppliedState = densePredicateState(stateCount, fullSet, PREDICATE_APPLIED);
+		if (parentStates[fullAppliedState] == 0) {
+			return workUnits;
+		}
+		return workUnits + emitDenseCorrelatedWinner(filterRelationId, inputJoinRelationId, factors,
+				stateCount, parentStates, appendedFactorBits, logicalOutputRows);
+	}
+
+	private void costScheduledFilter(int filterRelationId, int[] prefixRelations, int prefixCount,
+			double inputRows, double inputWork) {
+		double outputRows = inputRows == 0.0d ? 0.0d : Math.max(1.0d, inputRows * 0.25d);
+		double totalWork = saturatedAdd(inputWork, 0.0d, outputRows);
+		costEstimate.clear();
+		if (costSession != null) {
+			costContext.reset(prefixRelations, 0, prefixCount, inputRows);
+			costSession.estimate(filterRelationId, costContext, costEstimate);
+			boolean componentEstimate = costEstimate.hasComponentOutputRows();
+			/*
+			 * The FILTER refinement API identifies the operator, not a connected factor component. Accepting component
+			 * rows here would silently replace the complete physical prefix.
+			 */
+			if (!componentEstimate && costEstimate.hasContextualOutputRows()
+					&& finiteNonNegative(costEstimate.outputRows())) {
+				outputRows = costEstimate.outputRows();
+			}
+			if (!componentEstimate && finiteNonNegative(costEstimate.workRows())) {
+				totalWork = costEstimate.replacesChildWork()
+						? costEstimate.workRows()
+						: saturatedAdd(inputWork, costEstimate.workRows(), 0.0d);
+			}
+			costEstimate.setRows(outputRows, totalWork);
+			costEstimate.setReplacesChildWork(false);
+			costContext.setOperatorInputs(inputRows, Double.NaN);
+			costSession.refineOperator(filterRelationId, costContext, costEstimate);
+			boolean componentRefinement = costEstimate.hasComponentOutputRows();
+			if (componentRefinement) {
+				costEstimate.setReplacesChildWork(false);
+			}
+			if (!componentRefinement && finiteNonNegative(costEstimate.outputRows())) {
+				outputRows = costEstimate.outputRows();
+			}
+			if (!componentRefinement && finiteNonNegative(costEstimate.workRows())) {
+				totalWork = costEstimate.replacesChildWork()
+						? costEstimate.workRows()
+						: Math.max(inputWork, costEstimate.workRows());
+			}
+		}
+		costEstimate.setRows(outputRows, totalWork);
+	}
+
+	private static int densePredicateState(int stateCount, int subset, int phase) {
+		return subset + phase * stateCount;
+	}
+
+	private static int densePredicateSubset(int state, int stateCount) {
+		return state >= stateCount ? state - stateCount : state;
+	}
+
+	private static int uncoveredProviderMask(int subset, int[] providerMasks, int providerCount) {
+		int uncovered = 0;
+		for (int ordinal = 0; ordinal < providerCount; ordinal++) {
+			int providerMask = providerMasks[ordinal];
+			if ((subset & providerMask) == 0) {
+				uncovered |= providerMask;
+			}
+		}
+		return uncovered;
+	}
+
+	private static int populateDenseScheduledPrefix(int[] factors, int state, int stateCount,
+			int[] parentStates, int[] appendedFactorBits, double[] appendedContributionRows,
+			int[] resetContributionRelationIds, double[] resetContributionRows, int[] destination,
+			double[] contributionDestination) {
+		if (destination == null) {
+			return 0;
+		}
+		int count = Integer.bitCount(densePredicateSubset(state, stateCount));
+		int destinationIndex = count;
+		boolean invalidateEarlierContributions = false;
+		int resetContributionRelationId = 0;
+		double resetContribution = Double.NaN;
+		for (int current = state; current != 0; current = parentStates[current]) {
+			int factorBit = appendedFactorBits[current];
+			if (factorBit != 0) {
+				int relationId = factors[Integer.numberOfTrailingZeros(factorBit)];
+				destination[--destinationIndex] = relationId;
+				if (contributionDestination != null) {
+					contributionDestination[destinationIndex] = invalidateEarlierContributions
+							? relationId == resetContributionRelationId ? resetContribution : Double.NaN
+							: appendedContributionRows[current];
+				}
+			} else {
+				// Crossing the predicate boundary invalidates every earlier component except an explicitly rebased one.
+				invalidateEarlierContributions = true;
+				resetContributionRelationId = resetContributionRelationIds[current];
+				resetContribution = resetContributionRows[current];
+			}
+		}
+		if (destinationIndex != 0) {
+			throw new PackedMemoInvariantException("scheduled FILTER prefix lost join factors");
+		}
+		return count;
+	}
+
+	private int optimizeDense(int rootRelationId, int[] factors) {
+		return optimizeDense(rootRelationId, factors, -1);
+	}
+
+	private int optimizeDense(int rootRelationId, int[] factors, int fixedFirstOrdinal) {
+		int factorCount = factors.length;
+		int stateCount = 1 << factorCount;
+		int fullSet = stateCount - 1;
+		int requiredFirstBit = fixedFirstOrdinal < 0 ? 0 : 1 << fixedFirstOrdinal;
 		double[] rows = new double[stateCount];
 		double[] costs = new double[stateCount];
+		double[] appendedContributionRows = new double[stateCount];
+		int[] evidenceStateIds = new int[stateCount];
 		int[] parentSubsets = new int[stateCount];
 		int[] appendedFactorBits = new int[stateCount];
 		int[] preferenceRanks = new int[stateCount];
 		int[] neighborMasks = new int[stateCount];
-		int[] prefixRelations = costModel == null ? null : new int[factorCount];
+		int[] prefixRelations = costSession == null ? null : new int[factorCount];
+		double[] prefixContributionRows = costSession == null ? null : new double[factorCount];
 		Arrays.fill(costs, Double.POSITIVE_INFINITY);
 		int[] adjacency = adjacency(factors);
 		int anyPropertyId = memo.anyPropertyId();
@@ -164,6 +978,8 @@ final class PackedJoinEnumerator {
 			int winnerId = memo.findWinner(groupId, anyPropertyId, 0, 0, 0);
 			costs[subset] = memo.winnerTotalCost(winnerId);
 			rows[subset] = selectedRowsByGroup[groupId];
+			appendedContributionRows[subset] = rows[subset];
+			evidenceStateIds[subset] = winnerEvidenceStateId(winnerId);
 		}
 		for (int subset = 1; subset < stateCount; subset++) {
 			int factorBit = subset & -subset;
@@ -173,10 +989,15 @@ final class PackedJoinEnumerator {
 
 		int workUnits = 0;
 		for (int subset = 1; subset < fullSet; subset++) {
-			if (!Double.isFinite(costs[subset])) {
+			if (!Double.isFinite(costs[subset])
+					|| requiredFirstBit != 0 && (subset & requiredFirstBit) == 0) {
 				continue;
 			}
 			int missing = neighborMasks[subset] & (fullSet ^ subset);
+			boolean connected = missing != 0;
+			if (!connected && requiredFirstBit != 0) {
+				missing = fullSet ^ subset;
+			}
 			while (missing != 0) {
 				if (!budget.tryConsume()) {
 					return workUnits;
@@ -185,23 +1006,43 @@ final class PackedJoinEnumerator {
 				missing ^= factorBit;
 				int combined = subset | factorBit;
 				double candidateRows = joinRowsForSubset(factors, Integer.toUnsignedLong(subset),
-						Integer.numberOfTrailingZeros(factorBit), rows[subset], rows[factorBit], true);
+						Integer.numberOfTrailingZeros(factorBit), rows[subset], rows[factorBit], connected);
 				double factorWork = costs[factorBit];
-				if (costModel != null) {
-					int prefixCount = populatePrefix(factors, Integer.toUnsignedLong(subset), prefixRelations);
+				double iteratorProbeWork = 0.0d;
+				int prefixCount = 0;
+				if (costSession != null) {
+					prefixCount = populateDensePrefix(factors, subset, parentSubsets, appendedFactorBits,
+							appendedContributionRows, prefixRelations, prefixContributionRows);
 					costEstimate.clear();
-					costContext.reset(prefixRelations, 0, prefixCount, rows[subset]);
-					costModel.estimate(queryView, factors[Integer.numberOfTrailingZeros(factorBit)], costContext,
-							costEstimate);
-					if (costEstimate.hasContextualOutputRows()
-							&& finiteNonNegative(costEstimate.outputRows())) {
-						candidateRows = costEstimate.outputRows();
-					}
+					costContext.reset(prefixRelations, 0, prefixCount, rows[subset], evidenceStateIds[subset]);
+					costSession.estimate(factors[Integer.numberOfTrailingZeros(factorBit)], costContext, costEstimate);
+					candidateRows = rowComposition.effectiveRows(costEstimate, prefixRelations,
+							prefixContributionRows, prefixCount,
+							factors[Integer.numberOfTrailingZeros(factorBit)], candidateRows);
 					if (finiteNonNegative(costEstimate.workRows())) {
 						factorWork = costEstimate.workRows();
 					}
+					iteratorProbeWork = iteratorProbeWork(costEstimate);
 				}
 				double candidateCost = saturatedAdd(costs[subset], factorWork, candidateRows);
+				candidateCost = saturatedAdd(candidateCost, iteratorProbeWork, 0.0d);
+				if (combined == fullSet && costSession != null) {
+					refineRootJoin(rootRelationId, prefixRelations, prefixCount, rows[subset], rows[factorBit],
+							candidateRows, candidateCost);
+					if (finiteNonNegative(joinEstimate.outputRows())) {
+						candidateRows = joinEstimate.outputRows();
+					}
+					if (finiteNonNegative(joinEstimate.workRows())) {
+						candidateCost = Math.max(costs[subset] + factorWork + iteratorProbeWork,
+								joinEstimate.workRows());
+					}
+				}
+				if (costSession != null) {
+					double hashCost = hashJoinCost(prefixRelations, prefixCount,
+							factors[Integer.numberOfTrailingZeros(factorBit)], rows[subset], costs[subset],
+							rows[factorBit], costs[factorBit], candidateRows);
+					candidateCost = Math.min(candidateCost, hashCost);
+				}
 				int candidatePreference = preferenceRanks[subset]
 						+ bindingOrderDelta(factors, Integer.toUnsignedLong(subset),
 								Integer.numberOfTrailingZeros(factorBit));
@@ -212,6 +1053,8 @@ final class PackedJoinEnumerator {
 					continue;
 				}
 				rows[combined] = candidateRows;
+				appendedContributionRows[combined] = rowComposition.factorContributionRows();
+				evidenceStateIds[combined] = costEstimate.evidenceStateId();
 				costs[combined] = candidateCost;
 				preferenceRanks[combined] = candidatePreference;
 				parentSubsets[combined] = subset;
@@ -221,9 +1064,9 @@ final class PackedJoinEnumerator {
 		int rootGroupId = memo.logicalGroupId(rootRelationId);
 		int rootWinnerId = memo.findWinner(rootGroupId, anyPropertyId, 0, 0, 0);
 		if (parentSubsets[fullSet] == 0) {
-			return workUnits + optimizeGreedy(rootRelationId, factors);
+			return workUnits + optimizeGreedy(rootRelationId, factors, fixedFirstOrdinal);
 		}
-		if (costModel != null || costs[fullSet] < memo.winnerTotalCost(rootWinnerId)) {
+		if (costSession != null || costs[fullSet] < memo.winnerTotalCost(rootWinnerId)) {
 			emitDenseWinner(rootRelationId, factors, parentSubsets, appendedFactorBits);
 		}
 		return workUnits;
@@ -250,19 +1093,212 @@ final class PackedJoinEnumerator {
 		emitSelectedOrder(rootRelationId, orderedFactors);
 	}
 
+	private int emitDenseCorrelatedWinner(int filterRelationId, int inputJoinRelationId, int[] factors,
+			int stateCount, int[] parentStates, int[] appendedFactorBits, double logicalOutputRows) {
+		int state = densePredicateState(stateCount, stateCount - 1, PREDICATE_APPLIED);
+		int[] orderedFactors = new int[factors.length];
+		int destination = factors.length;
+		int applyAfterFactorCount = -1;
+		while (state != 0) {
+			int factorBit = appendedFactorBits[state];
+			if (factorBit == 0) {
+				applyAfterFactorCount = Integer.bitCount(densePredicateSubset(state, stateCount));
+			} else {
+				orderedFactors[--destination] = factors[Integer.numberOfTrailingZeros(factorBit)];
+			}
+			state = parentStates[state];
+		}
+		if (destination != 0 || applyAfterFactorCount <= 0) {
+			throw new PackedMemoInvariantException("scheduled FILTER winner has an incomplete transition path");
+		}
+		if (applyAfterFactorCount >= factors.length) {
+			return 0;
+		}
+		return emitScheduledFilterOrder(filterRelationId, inputJoinRelationId, orderedFactors,
+				applyAfterFactorCount, logicalOutputRows);
+	}
+
+	private int emitScheduledFilterOrder(int filterRelationId, int inputJoinRelationId, int[] factors,
+			int applyAfterFactorCount, double logicalOutputRows) {
+		long workBeforeReservation = budget.workUnits();
+		if (!budget.tryReserve(factors.length)) {
+			return saturatedInt(budget.workUnits() - workBeforeReservation);
+		}
+		int anyPropertyId = memo.anyPropertyId();
+		int currentGroupId = memo.logicalGroupId(factors[0]);
+		int currentWinnerId = memo.findWinner(currentGroupId, anyPropertyId, 0, 0, 0);
+		double currentRows = selectedRowsByGroup[currentGroupId];
+		double currentCost = memo.winnerTotalCost(currentWinnerId);
+		int currentEvidenceStateId = winnerEvidenceStateId(currentWinnerId);
+		int[] prefixRelations = new int[factors.length];
+		double[] prefixContributionRows = new double[factors.length];
+		prefixRelations[0] = factors[0];
+		prefixContributionRows[0] = currentRows;
+		int prefixCount = 1;
+		if (applyAfterFactorCount == prefixCount) {
+			currentWinnerId = offerScheduledFilter(filterRelationId, currentWinnerId, prefixRelations, prefixCount);
+			currentGroupId = memo.winnerGroupId(currentWinnerId);
+			currentRows = memo.winnerOutputRows(currentWinnerId);
+			currentCost = memo.winnerTotalCost(currentWinnerId);
+			rowComposition.initializeInherited(prefixRelations, prefixCount, currentRows, prefixContributionRows);
+		}
+
+		int rootGroupId = memo.logicalGroupId(filterRelationId);
+		long rootRuleMask = memo.logicalRuleMask(filterRelationId) | memo.logicalRuleMask(inputJoinRelationId);
+		for (int ordinal = 1; ordinal < factors.length; ordinal++) {
+			int factorRelationId = factors[ordinal];
+			int factorGroupId = memo.logicalGroupId(factorRelationId);
+			int factorWinnerId = memo.findWinner(factorGroupId, anyPropertyId, 0, 0, 0);
+			int independentFactorWinnerId = factorWinnerId;
+			double independentFactorWork = memo.winnerTotalCost(independentFactorWinnerId);
+			double factorRows = selectedRowsByGroup[factorGroupId];
+			boolean connected = connectedToPrefix(prefixRelations, prefixCount, factorRelationId);
+			double outputRows = joinRowsForPrefix(prefixRelations, prefixCount, currentRows, factorRelationId,
+					factorRows, connected);
+			double factorContributionRows = factorRows;
+			double factorWork = memo.winnerTotalCost(factorWinnerId);
+			costEstimate.clear();
+			if (costSession != null) {
+				costContext.reset(prefixRelations, 0, prefixCount, currentRows);
+				costSession.estimate(factorRelationId, costContext, costEstimate);
+				outputRows = rowComposition.effectiveRows(costEstimate, prefixRelations, prefixContributionRows,
+						prefixCount, factorRelationId, outputRows);
+				factorContributionRows = rowComposition.factorContributionRows();
+				if (!connected && !finiteNonNegative(factorContributionRows)) {
+					factorContributionRows = factorRows;
+				}
+				if (finiteNonNegative(costEstimate.workRows())) {
+					factorWork = costEstimate.workRows();
+				}
+				if (memo.winnerChildCount(factorWinnerId) == 0
+						&& (finiteNonNegative(costEstimate.outputRows())
+								|| finiteNonNegative(costEstimate.workRows()))) {
+					int inputContextId = memo.internSequence(prefixRelations, 0, prefixCount);
+					int metadataId = addComposedPhysicalMetadata(costEstimate, outputRows, factorWork);
+					factorWinnerId = memo.offerWinnerWithMetadata(factorGroupId, anyPropertyId, 0, inputContextId, 0,
+							memo.winnerPhysicalExpressionId(factorWinnerId), metadataId, outputRows, factorWork,
+							factorWork, childWinners, 0, 0);
+				}
+			}
+			double iteratorProbeWork = costSession == null ? 0.0d : iteratorProbeWork(costEstimate);
+			double totalCost = saturatedAdd(currentCost, factorWork, outputRows);
+			totalCost = saturatedAdd(totalCost, iteratorProbeWork, 0.0d);
+			boolean rootJoin = ordinal + 1 == factors.length;
+			if (rootJoin && finiteNonNegative(logicalOutputRows)) {
+				outputRows = logicalOutputRows;
+				factorContributionRows = Double.NaN;
+				totalCost = saturatedAdd(currentCost, factorWork, outputRows);
+				totalCost = saturatedAdd(totalCost, iteratorProbeWork, 0.0d);
+			}
+			double hashCost = prefixCount >= applyAfterFactorCount && !hashJoinSafeFactor(filterRelationId)
+					? Double.POSITIVE_INFINITY
+					: hashJoinCost(prefixRelations, prefixCount, factorRelationId, currentRows, currentCost,
+							factorRows, independentFactorWork, outputRows);
+			childGroups[0] = currentGroupId;
+			childGroups[1] = factorGroupId;
+			int logicalExpressionId;
+			int targetGroupId;
+			if (rootJoin) {
+				targetGroupId = rootGroupId;
+				logicalExpressionId = memo.addLogicalAlternative(targetGroupId, PackedRelOp.JOIN, 0,
+						query.relSemanticScope(filterRelationId), query.relExecutionDomain(filterRelationId),
+						childGroups, 0, 2);
+			} else {
+				logicalExpressionId = memo.addCanonicalLogical(PackedRelOp.JOIN, 0, 0, 0, childGroups, 0, 2);
+				targetGroupId = memo.logicalGroupId(logicalExpressionId);
+			}
+			if (rootJoin && logicalExpressionId != 0 && logicalExpressionId > query.relationCount()) {
+				memo.addLogicalRuleMask(logicalExpressionId, rootRuleMask);
+			}
+			int physicalExpressionId = memo.addPhysicalAlternative(targetGroupId, PackedRelOp.JOIN, 0,
+					anyPropertyId, JOIN_IMPLEMENTATION, logicalExpressionId, childGroups, 0, 2);
+			childWinners[0] = currentWinnerId;
+			childWinners[1] = factorWinnerId;
+			joinEstimate.clear();
+			joinEstimate.setRows(outputRows, totalCost);
+			int metadataId = memo.addPhysicalMetadata(joinEstimate, outputRows, totalCost);
+			int tieBreakRank = rootJoin ? (Long.bitCount(rootRuleMask) << 1) | 1 : 0;
+			currentWinnerId = memo.offerWinnerWithMetadata(targetGroupId, anyPropertyId, 0, 0, 0,
+					physicalExpressionId, metadataId, tieBreakRank, outputRows, totalCost, totalCost,
+					childWinners, 0, 2);
+			boolean retainedEmittedCandidate = memo.winnerPhysicalExpressionId(currentWinnerId) == physicalExpressionId;
+			if (hashCost < totalCost) {
+				int hashPhysicalExpressionId = memo.addPhysicalAlternative(targetGroupId, PackedRelOp.JOIN, 0,
+						anyPropertyId, HASH_JOIN_IMPLEMENTATION, logicalExpressionId, childGroups, 0, 2);
+				childWinners[1] = independentFactorWinnerId;
+				joinEstimate.setRows(outputRows, hashCost);
+				int hashMetadataId = memo.addPhysicalMetadata(joinEstimate, outputRows, hashCost);
+				currentWinnerId = memo.offerWinnerWithMetadata(targetGroupId, anyPropertyId, 0, 0, 0,
+						hashPhysicalExpressionId, hashMetadataId, tieBreakRank, outputRows, hashCost, hashCost,
+						childWinners, 0, 2);
+				int retainedPhysicalExpressionId = memo.winnerPhysicalExpressionId(currentWinnerId);
+				retainedEmittedCandidate = retainedPhysicalExpressionId == physicalExpressionId
+						|| retainedPhysicalExpressionId == hashPhysicalExpressionId;
+			}
+			currentGroupId = targetGroupId;
+			currentRows = memo.winnerOutputRows(currentWinnerId);
+			currentCost = memo.winnerTotalCost(currentWinnerId);
+			prefixRelations[prefixCount] = factorRelationId;
+			prefixContributionRows[prefixCount] = retainedEmittedCandidate
+					? factorContributionRows
+					: Double.NaN;
+			prefixCount++;
+			if (applyAfterFactorCount == prefixCount) {
+				currentWinnerId = offerScheduledFilter(filterRelationId, currentWinnerId, prefixRelations,
+						prefixCount);
+				currentGroupId = memo.winnerGroupId(currentWinnerId);
+				currentRows = memo.winnerOutputRows(currentWinnerId);
+				currentCost = memo.winnerTotalCost(currentWinnerId);
+				rowComposition.initializeInherited(prefixRelations, prefixCount, currentRows, prefixContributionRows);
+			}
+		}
+		selectedRowsByGroup[rootGroupId] = memo.winnerOutputRows(
+				memo.findWinner(rootGroupId, anyPropertyId, 0, 0, 0));
+		return factors.length;
+	}
+
+	private int offerScheduledFilter(int filterRelationId, int inputWinnerId, int[] prefixRelations,
+			int prefixCount) {
+		int inputGroupId = memo.winnerGroupId(inputWinnerId);
+		double inputRows = memo.winnerOutputRows(inputWinnerId);
+		costScheduledFilter(filterRelationId, prefixRelations, prefixCount, inputRows,
+				memo.winnerTotalCost(inputWinnerId));
+		childGroups[0] = inputGroupId;
+		int helperLogicalId = memo.addCanonicalLogical(PackedRelOp.FILTER, query.relPayload(filterRelationId),
+				query.relSemanticScope(filterRelationId), query.relExecutionDomain(filterRelationId),
+				childGroups, 0, 1);
+		int helperGroupId = memo.logicalGroupId(helperLogicalId);
+		int anyPropertyId = memo.anyPropertyId();
+		int physicalExpressionId = memo.addPhysicalAlternative(helperGroupId, PackedRelOp.FILTER,
+				query.relPayload(filterRelationId), anyPropertyId, CONTEXTUAL_FILTER_IMPLEMENTATION, helperLogicalId,
+				childGroups, 0, 1);
+		childWinners[0] = inputWinnerId;
+		int metadataId = memo.addPhysicalMetadata(costEstimate, costEstimate.outputRows(), costEstimate.workRows());
+		return memo.offerWinnerWithMetadata(helperGroupId, anyPropertyId, 0, 0, 0, physicalExpressionId,
+				metadataId, 0, costEstimate.outputRows(), costEstimate.workRows(), costEstimate.workRows(),
+				childWinners, 0, 1);
+	}
+
 	private int optimizeSparseLong(int rootRelationId, int[] factors) {
+		return optimizeSparseLong(rootRelationId, factors, -1);
+	}
+
+	private int optimizeSparseLong(int rootRelationId, int[] factors, int fixedFirstOrdinal) {
 		int factorCount = factors.length;
 		long fullSet = factorCount == Long.SIZE ? -1L : (1L << factorCount) - 1L;
+		long requiredFirstBit = fixedFirstOrdinal < 0 ? 0L : 1L << fixedFirstOrdinal;
 		long[] adjacency = longAdjacency(factors);
 		PackedLongSubsetTable states = new PackedLongSubsetTable(factorCount << 2);
-		int[] prefixRelations = costModel == null ? null : new int[factorCount];
+		int[] prefixRelations = costSession == null ? null : new int[factorCount];
+		double[] prefixContributionRows = costSession == null ? null : new double[factorCount];
 		int anyPropertyId = memo.anyPropertyId();
 		for (int ordinal = 0; ordinal < factorCount; ordinal++) {
 			long factorBit = 1L << ordinal;
 			int groupId = memo.logicalGroupId(factors[ordinal]);
 			int winnerId = memo.findWinner(groupId, anyPropertyId, 0, 0, 0);
-			states.offer(factorBit, selectedRowsByGroup[groupId], memo.winnerTotalCost(winnerId), 0, 0, ordinal,
-					adjacency[ordinal]);
+			double factorRows = selectedRowsByGroup[groupId];
+			states.offer(factorBit, factorRows, memo.winnerTotalCost(winnerId), factorRows,
+					winnerEvidenceStateId(winnerId), 0, 0, ordinal, adjacency[ordinal]);
 		}
 
 		int workUnits = 0;
@@ -270,7 +1306,8 @@ final class PackedJoinEnumerator {
 			int stateLimit = states.size();
 			for (int stateId = 1; stateId <= stateLimit; stateId++) {
 				long subset = states.mask(stateId);
-				if (Long.bitCount(subset) != cardinality) {
+				if (Long.bitCount(subset) != cardinality
+						|| requiredFirstBit != 0L && (subset & requiredFirstBit) == 0L) {
 					continue;
 				}
 				long remaining = fullSet & ~subset;
@@ -290,24 +1327,47 @@ final class PackedJoinEnumerator {
 					double candidateRows = joinRowsForSubset(factors, subset, factorOrdinal,
 							states.rows(stateId), states.rows(factorStateId), connected);
 					double factorWork = states.cost(factorStateId);
-					if (costModel != null) {
-						int prefixCount = populatePrefix(factors, subset, prefixRelations);
+					double factorContributionRows = Double.NaN;
+					double iteratorProbeWork = 0.0d;
+					int prefixCount = 0;
+					if (costSession != null) {
+						prefixCount = populateSparsePrefix(factors, states, stateId, prefixRelations,
+								prefixContributionRows);
 						costEstimate.clear();
-						costContext.reset(prefixRelations, 0, prefixCount, states.rows(stateId));
-						costModel.estimate(queryView, factors[factorOrdinal], costContext, costEstimate);
-						if (costEstimate.hasContextualOutputRows()
-								&& finiteNonNegative(costEstimate.outputRows())) {
-							candidateRows = costEstimate.outputRows();
-						}
+						costContext.reset(prefixRelations, 0, prefixCount, states.rows(stateId),
+								states.evidenceStateId(stateId));
+						costSession.estimate(factors[factorOrdinal], costContext, costEstimate);
+						candidateRows = rowComposition.effectiveRows(costEstimate, prefixRelations,
+								prefixContributionRows, prefixCount, factors[factorOrdinal], candidateRows);
+						factorContributionRows = rowComposition.factorContributionRows();
 						if (finiteNonNegative(costEstimate.workRows())) {
 							factorWork = costEstimate.workRows();
 						}
+						iteratorProbeWork = iteratorProbeWork(costEstimate);
 					}
 					double candidateCost = saturatedAdd(states.cost(stateId), factorWork, candidateRows);
+					candidateCost = saturatedAdd(candidateCost, iteratorProbeWork, 0.0d);
+					if ((subset | factorBit) == fullSet && costSession != null) {
+						refineRootJoin(rootRelationId, prefixRelations, prefixCount, states.rows(stateId),
+								states.rows(factorStateId), candidateRows, candidateCost);
+						if (finiteNonNegative(joinEstimate.outputRows())) {
+							candidateRows = joinEstimate.outputRows();
+						}
+						if (finiteNonNegative(joinEstimate.workRows())) {
+							candidateCost = Math.max(states.cost(stateId) + factorWork + iteratorProbeWork,
+									joinEstimate.workRows());
+						}
+					}
+					if (costSession != null) {
+						double hashCost = hashJoinCost(prefixRelations, prefixCount, factors[factorOrdinal],
+								states.rows(stateId), states.cost(stateId), states.rows(factorStateId),
+								states.cost(factorStateId), candidateRows);
+						candidateCost = Math.min(candidateCost, hashCost);
+					}
 					int candidatePreference = states.preferenceRank(stateId)
 							+ bindingOrderDelta(factors, subset, factorOrdinal);
-					states.offer(subset | factorBit, candidateRows, candidateCost, candidatePreference, stateId,
-							factorOrdinal,
+					states.offer(subset | factorBit, candidateRows, candidateCost, factorContributionRows,
+							costEstimate.evidenceStateId(), candidatePreference, stateId, factorOrdinal,
 							states.neighborMask(stateId) | adjacency[factorOrdinal]);
 					workUnits++;
 				}
@@ -316,11 +1376,11 @@ final class PackedJoinEnumerator {
 
 		int fullStateId = states.find(fullSet);
 		if (fullStateId == 0) {
-			return workUnits + optimizeGreedy(rootRelationId, factors);
+			return workUnits + optimizeGreedy(rootRelationId, factors, fixedFirstOrdinal);
 		}
 		int rootGroupId = memo.logicalGroupId(rootRelationId);
 		int rootWinnerId = memo.findWinner(rootGroupId, anyPropertyId, 0, 0, 0);
-		if (costModel != null || states.cost(fullStateId) < memo.winnerTotalCost(rootWinnerId)) {
+		if (costSession != null || states.cost(fullStateId) < memo.winnerTotalCost(rootWinnerId)) {
 			int[] orderedFactors = new int[factorCount];
 			int destination = factorCount;
 			for (int stateId = fullStateId; stateId != 0; stateId = states.parentStateId(stateId)) {
@@ -332,11 +1392,15 @@ final class PackedJoinEnumerator {
 	}
 
 	private int optimizeInternedMultiword(int rootRelationId, int[] factors) {
+		return optimizeInternedMultiword(rootRelationId, factors, -1);
+	}
+
+	private int optimizeInternedMultiword(int rootRelationId, int[] factors, int fixedFirstOrdinal) {
 		int wordCount = (factors.length + Long.SIZE - 1) >>> 6;
 		long[] selected = new long[wordCount];
 		int[] orderedFactors = new int[factors.length];
 		PackedMaskInterner subsets = new PackedMaskInterner(factors.length, factors.length + 1);
-		int first = cheapestFactor(factors, selected, false);
+		int first = fixedFirstOrdinal < 0 ? cheapestFactor(factors, selected, false) : fixedFirstOrdinal;
 		select(selected, first);
 		orderedFactors[0] = factors[first];
 		subsets.intern(selected, 0);
@@ -355,55 +1419,165 @@ final class PackedJoinEnumerator {
 	}
 
 	private int emitSelectedOrder(int rootRelationId, int[] factors) {
-		if (factors.length < 2) {
+		return emitSelectedOrder(rootRelationId, factors, false, factors.length - 1L);
+	}
+
+	private int emitContextualGreedyOrder(int rootRelationId, int[] factors, int startOrdinal) {
+		long candidateAllowance = Math.min(maximumContextualGreedyWork(factors.length),
+				budget.remainingWorkUnits());
+		if (candidateAllowance < factors.length - 1L) {
+			emittedCompleteOrder = false;
 			return 0;
 		}
+		return emitContextualGreedyOrder(rootRelationId, factors, startOrdinal, candidateAllowance);
+	}
+
+	private int emitContextualGreedyOrder(int rootRelationId, int[] factors, int startOrdinal,
+			long candidateAllowance) {
+		int[] orderedFactors = Arrays.copyOf(factors, factors.length);
+		int first = orderedFactors[0];
+		orderedFactors[0] = orderedFactors[startOrdinal];
+		orderedFactors[startOrdinal] = first;
+		return emitSelectedOrder(rootRelationId, orderedFactors, true, candidateAllowance);
+	}
+
+	private int emitSelectedOrder(int rootRelationId, int[] factors, boolean contextualGreedy,
+			long reservedWorkUnits) {
+		emittedCompleteOrder = false;
+		if (factors.length < 2) {
+			emittedCompleteOrder = true;
+			return 0;
+		}
+		long workBeforeReservation = budget.workUnits();
+		if (!budget.tryReserve(reservedWorkUnits)) {
+			return saturatedInt(budget.workUnits() - workBeforeReservation);
+		}
+		contextualGreedyWorkRemaining = contextualGreedy ? reservedWorkUnits : 0L;
 		int anyPropertyId = memo.anyPropertyId();
 		int currentGroupId = memo.logicalGroupId(factors[0]);
 		int currentWinnerId = memo.findWinner(currentGroupId, anyPropertyId, 0, 0, 0);
 		double currentRows = selectedRowsByGroup[currentGroupId];
 		double currentCost = memo.winnerTotalCost(currentWinnerId);
+		int currentEvidenceStateId = winnerEvidenceStateId(currentWinnerId);
+		int[] retainedPrefixRelations = costSession == null ? null : new int[factors.length];
+		double[] retainedPrefixContributions = costSession == null ? null : new double[factors.length];
+		int retainedPrefixCount = costSession == null
+				? 0
+				: collectWinnerFactors(currentWinnerId, retainedPrefixRelations);
+		if (costSession != null && retainedPrefixCount != 1) {
+			throw new PackedMemoInvariantException("initial join factor winner expands to " + retainedPrefixCount
+					+ " factors instead of one");
+		}
+		if (costSession != null) {
+			retainedPrefixContributions[0] = currentRows;
+		}
 		int[] existingGroups = factors.length <= DENSE_FACTOR_LIMIT ? new int[1 << factors.length] : null;
 		if (existingGroups != null) {
 			seedExistingGroups(rootRelationId, factors, existingGroups);
 		}
+		int[] factorBits = contextualGreedy && existingGroups != null ? identityFactorBits(factors.length) : null;
 		int combinedSubset = 1;
 		long rootRuleMask = memo.logicalRuleMask(rootRelationId);
 		int workUnits = 0;
+		int nestedContextWorkUnits = 0;
 		for (int ordinal = 1; ordinal < factors.length; ordinal++) {
-			if (!budget.tryConsume()) {
-				return workUnits;
+			int factorRelationId;
+			double outputRows;
+			double factorWork;
+			if (contextualGreedy && costSession != null) {
+				int selectedOrdinal = selectContextualGreedyExtension(factors, factorBits, ordinal,
+						retainedPrefixRelations, retainedPrefixContributions, retainedPrefixCount, currentRows,
+						currentCost, currentEvidenceStateId);
+				workUnits += greedyCandidateWorkUnits;
+				if (selectedOrdinal < 0) {
+					return workUnits;
+				}
+				swap(factors, ordinal, selectedOrdinal);
+				if (factorBits != null) {
+					swap(factorBits, ordinal, selectedOrdinal);
+				}
+				factorRelationId = factors[ordinal];
+				outputRows = bestGreedyRows;
+				factorWork = bestGreedyWork;
+				copyEstimate(bestGreedyEstimate, costEstimate);
+			} else {
+				workUnits++;
+				factorRelationId = factors[ordinal];
+				boolean connected = connectedToPrefix(
+						costSession == null ? factors : retainedPrefixRelations,
+						costSession == null ? ordinal : retainedPrefixCount, factorRelationId);
+				outputRows = joinRowsForSubset(factors, prefixMask(ordinal), ordinal, currentRows,
+						selectedRowsByGroup[memo.logicalGroupId(factorRelationId)], connected);
+				factorWork = memo.winnerTotalCost(
+						memo.findWinner(memo.logicalGroupId(factorRelationId), anyPropertyId, 0, 0, 0));
 			}
-			int factorRelationId = factors[ordinal];
 			int factorGroupId = memo.logicalGroupId(factorRelationId);
 			int factorWinnerId = memo.findWinner(factorGroupId, anyPropertyId, 0, 0, 0);
-			boolean connected = connectedToPrefix(factors, ordinal, factorRelationId);
-			double outputRows = joinRowsForSubset(factors, prefixMask(ordinal), ordinal, currentRows,
-					selectedRowsByGroup[factorGroupId], connected);
-			double factorWork = memo.winnerTotalCost(factorWinnerId);
-			if (costModel != null) {
+			int[] costPrefix = costSession == null ? factors : retainedPrefixRelations;
+			int costPrefixCount = costSession == null ? ordinal : retainedPrefixCount;
+			if (costPrefixCount != ordinal) {
+				throw new PackedMemoInvariantException("retained join prefix has " + costPrefixCount
+						+ " factors at ordinal " + ordinal);
+			}
+			if (costSession != null && !contextualGreedy) {
 				costEstimate.clear();
-				costContext.reset(factors, 0, ordinal, currentRows);
-				costModel.estimate(queryView, factorRelationId, costContext, costEstimate);
-				if (costEstimate.hasContextualOutputRows() && Double.isFinite(costEstimate.outputRows())
-						&& costEstimate.outputRows() >= 0.0d) {
-					outputRows = costEstimate.outputRows();
-				}
+				costContext.reset(costPrefix, 0, costPrefixCount, currentRows, currentEvidenceStateId);
+				costSession.estimate(factorRelationId, costContext, costEstimate);
+				outputRows = rowComposition.effectiveRows(costEstimate, costPrefix, retainedPrefixContributions,
+						costPrefixCount, factorRelationId, outputRows);
 				if (Double.isFinite(costEstimate.workRows()) && costEstimate.workRows() >= 0.0d) {
 					factorWork = costEstimate.workRows();
 				}
-				if (memo.winnerChildCount(factorWinnerId) == 0 && (Double.isFinite(costEstimate.outputRows())
-						|| Double.isFinite(costEstimate.workRows()))) {
-					int inputContextId = memo.internSequence(factors, 0, ordinal);
-					int metadataId = memo.addPhysicalMetadata(costEstimate, outputRows, factorWork);
-					factorWinnerId = memo.offerWinnerWithMetadata(factorGroupId, anyPropertyId, 0, inputContextId, 0,
-							memo.winnerPhysicalExpressionId(factorWinnerId), metadataId, outputRows, factorWork,
-							factorWork, childWinners, 0, 0);
+			}
+			double factorContributionRows = costSession == null
+					? outputRows
+					: contextualGreedy ? bestGreedyContributionRows : rowComposition.factorContributionRows();
+			int defaultFactorWinnerId = factorWinnerId;
+			double independentFactorWork = memo.winnerTotalCost(defaultFactorWinnerId);
+			factorWinnerId = contextualizeEquivalentAccessPaths(factorRelationId, defaultFactorWinnerId, costPrefix,
+					retainedPrefixContributions, costPrefixCount, currentRows);
+			nestedContextWorkUnits += contextualFactorWorkUnits;
+			if (factorWinnerId != defaultFactorWinnerId) {
+				double contextualRows = memo.winnerOutputRows(factorWinnerId);
+				if (finiteNonNegative(contextualRows)) {
+					contextualWinnerEstimate.clear();
+					contextualWinnerEstimate.setContextualRows(contextualRows, memo.winnerTotalCost(factorWinnerId));
+					outputRows = rowComposition.effectiveRows(contextualWinnerEstimate, costPrefix,
+							retainedPrefixContributions, costPrefixCount, factorRelationId, outputRows);
+					factorContributionRows = rowComposition.factorContributionRows();
+				}
+				factorWork = memo.winnerTotalCost(factorWinnerId);
+			}
+			if (costSession != null
+					&& memo.winnerChildCount(factorWinnerId) == 0
+					&& (Double.isFinite(costEstimate.outputRows()) || Double.isFinite(costEstimate.workRows()))) {
+				int inputContextId = memo.internSequence(costPrefix, 0, costPrefixCount);
+				int metadataId = addComposedPhysicalMetadata(costEstimate, outputRows, factorWork);
+				factorWinnerId = memo.offerWinnerWithMetadata(factorGroupId, anyPropertyId, 0, inputContextId, 0,
+						memo.winnerPhysicalExpressionId(factorWinnerId), metadataId, outputRows, factorWork,
+						factorWork, childWinners, 0, 0);
+			}
+			double iteratorProbeWork = costSession == null ? 0.0d : iteratorProbeWork(costEstimate);
+			double totalCost = saturatedAdd(currentCost, factorWork, outputRows);
+			totalCost = saturatedAdd(totalCost, iteratorProbeWork, 0.0d);
+			boolean rootJoin = ordinal + 1 == factors.length;
+			boolean rootRefined = false;
+			if (rootJoin && costSession != null) {
+				refineRootJoin(rootRelationId, costPrefix, costPrefixCount, currentRows,
+						selectedRowsByGroup[factorGroupId], outputRows, totalCost);
+				rootRefined = true;
+				if (finiteNonNegative(joinEstimate.outputRows())) {
+					outputRows = joinEstimate.outputRows();
+				}
+				if (finiteNonNegative(joinEstimate.workRows())) {
+					totalCost = Math.max(currentCost + factorWork + iteratorProbeWork,
+							joinEstimate.workRows());
 				}
 			}
-			double totalCost = saturatedAdd(currentCost, factorWork, outputRows);
+			double hashCost = hashJoinCost(costPrefix, costPrefixCount, factorRelationId, currentRows, currentCost,
+					selectedRowsByGroup[factorGroupId], independentFactorWork, outputRows);
 			if (existingGroups != null) {
-				combinedSubset |= 1 << ordinal;
+				combinedSubset |= factorBits == null ? 1 << ordinal : factorBits[ordinal];
 			}
 			int targetGroupId = ordinal + 1 == factors.length
 					? memo.logicalGroupId(rootRelationId)
@@ -421,28 +1595,656 @@ final class PackedJoinEnumerator {
 				logicalExpressionId = memo.addLogicalAlternative(targetGroupId, PackedRelOp.JOIN, 0, 0, 0,
 						childGroups, 0, 2);
 			}
-			boolean rootJoin = ordinal + 1 == factors.length;
 			if (rootJoin && logicalExpressionId > query.relationCount()) {
 				memo.addLogicalRuleMask(logicalExpressionId, rootRuleMask);
 			}
 			int physicalExpressionId = memo.addPhysicalAlternative(targetGroupId, PackedRelOp.JOIN, 0,
-					anyPropertyId, JOIN_IMPLEMENTATION, logicalExpressionId, childGroups, 0, 2);
+					anyPropertyId, JOIN_IMPLEMENTATION, rootJoin ? rootRelationId : logicalExpressionId, childGroups,
+					0, 2);
+			int emittedPrefixWinnerId = currentWinnerId;
+			int emittedFactorWinnerId = factorWinnerId;
 			childWinners[0] = currentWinnerId;
 			childWinners[1] = factorWinnerId;
-			joinEstimate.clear();
-			joinEstimate.setRows(outputRows, Math.max(1.0d, totalCost - currentCost));
+			if (!rootRefined) {
+				joinEstimate.clear();
+			}
+			retainContextualJoinProvenance(costEstimate, joinEstimate, outputRows);
+			if (joinEstimate.evidenceStateId() == 0) {
+				joinEstimate.setEvidenceStateId(costEstimate.evidenceStateId());
+			}
+			joinEstimate.setRows(outputRows, totalCost);
 			int joinMetadataId = memo.addPhysicalMetadata(joinEstimate, outputRows, totalCost);
 			int tieBreakRank = rootJoin ? (Long.bitCount(rootRuleMask) << 1) | 1 : 0;
 			currentWinnerId = memo.offerWinnerWithMetadata(targetGroupId, anyPropertyId, 0, 0, 0,
 					physicalExpressionId, joinMetadataId, tieBreakRank, outputRows, totalCost, totalCost, childWinners,
 					0, 2);
+			if (hashCost < totalCost) {
+				int hashPhysicalExpressionId = memo.addPhysicalAlternative(targetGroupId, PackedRelOp.JOIN, 0,
+						anyPropertyId, HASH_JOIN_IMPLEMENTATION,
+						rootJoin ? rootRelationId : logicalExpressionId, childGroups, 0, 2);
+				childWinners[1] = defaultFactorWinnerId;
+				joinEstimate.setRows(outputRows, hashCost);
+				int hashMetadataId = memo.addPhysicalMetadata(joinEstimate, outputRows, hashCost);
+				currentWinnerId = memo.offerWinnerWithMetadata(targetGroupId, anyPropertyId, 0, 0, 0,
+						hashPhysicalExpressionId, hashMetadataId, tieBreakRank, outputRows, hashCost, hashCost,
+						childWinners, 0, 2);
+			}
 			currentGroupId = targetGroupId;
-			currentRows = outputRows;
-			currentCost = totalCost;
-			workUnits++;
+			currentRows = memo.winnerOutputRows(currentWinnerId);
+			currentCost = memo.winnerTotalCost(currentWinnerId);
+			currentEvidenceStateId = winnerEvidenceStateId(currentWinnerId);
+			if (costSession != null && !rootJoin) {
+				retainedPrefixCount = collectEmittedPrefixFactors(currentWinnerId, retainedPrefixRelations);
+				if (retainedPrefixCount != ordinal + 1) {
+					throw new PackedMemoInvariantException("retained join winner expands to " + retainedPrefixCount
+							+ " factors at ordinal " + ordinal);
+				}
+				if (retainsEmittedLineage(currentWinnerId, emittedPrefixWinnerId, emittedFactorWinnerId,
+						outputRows)) {
+					retainedPrefixContributions[retainedPrefixCount - 1] = factorContributionRows;
+				} else {
+					/*
+					 * The memo kept a winner produced by another physical order. Its factor sequence can be
+					 * reconstructed, but the emitted order's component contributions cannot be permuted onto that
+					 * sequence: a slot may represent an entire connected component rather than one relation. Recover
+					 * the exact scalar for a connected retained prefix; for a disconnected prefix, initializeInherited
+					 * deliberately leaves the unavailable component masses as NaN so later component-only estimates
+					 * fall back instead of being multiplied by unrelated stale evidence.
+					 */
+					rowComposition.initializeInherited(retainedPrefixRelations, retainedPrefixCount, currentRows,
+							retainedPrefixContributions);
+				}
+			}
 		}
+		emittedCompleteOrder = true;
 		selectedRowsByGroup[memo.logicalGroupId(rootRelationId)] = currentRows;
-		return workUnits;
+		return saturatedInt(reservedWorkUnits + nestedContextWorkUnits);
+	}
+
+	private static void retainContextualJoinProvenance(PackedCostEstimate factorEstimate,
+			PackedCostEstimate joinEstimate, double outputRows) {
+		if (joinEstimate.estimateSource() == null
+				&& factorEstimate.hasContextualOutputRows()
+				&& !factorEstimate.hasComponentOutputRows()
+				&& Double.compare(factorEstimate.outputRows(), outputRows) == 0) {
+			/*
+			 * A hash join scans its right child independently, so that child's physical metadata must retain its
+			 * standalone estimate. The join cardinality can nevertheless come from a prefix-contextual provider
+			 * estimate. Keep that provenance on the operator whose rows it actually describes.
+			 */
+			joinEstimate.setEstimateProvenance(factorEstimate.estimateSource(), factorEstimate.estimateFusion());
+		}
+	}
+
+	private boolean retainsEmittedLineage(int winnerId, int prefixWinnerId, int factorWinnerId, double outputRows) {
+		return memo.winnerChildCount(winnerId) == 2
+				&& memo.winnerChildWinnerId(winnerId, 0) == prefixWinnerId
+				&& memo.winnerChildWinnerId(winnerId, 1) == factorWinnerId
+				&& Double.compare(memo.winnerOutputRows(winnerId), outputRows) == 0;
+	}
+
+	private int contextualizeEquivalentAccessPaths(int relationId, int defaultWinnerId, int[] prefixRelations,
+			double[] prefixContributionRows, int prefixCount, double prefixRows) {
+		contextualFactorWorkUnits = 0;
+		if (costSession == null || prefixCount == 0) {
+			return defaultWinnerId;
+		}
+		int inputContextId = memo.internSequence(prefixRelations, 0, prefixCount);
+		int groupId = memo.logicalGroupId(relationId);
+		int contextualWinnerId = memo.findWinner(groupId, memo.anyPropertyId(), 0, inputContextId, 0);
+		if (contextualWinnerId != 0) {
+			restoreWinnerEstimate(contextualWinnerId);
+			return contextualWinnerId;
+		}
+		copyEstimate(costEstimate, contextualDefaultEstimate);
+		int totalWorkUnits = 0;
+		for (int logicalExpressionId = memo
+				.firstLogicalExpression(groupId); logicalExpressionId != 0; logicalExpressionId = memo
+						.nextLogicalExpression(logicalExpressionId)) {
+			if (logicalExpressionId > query.relationCount()
+					|| query.relOperator(logicalExpressionId) != PackedRelOp.JOIN
+					|| !isFiniteFilterRecipe(logicalExpressionId)) {
+				continue;
+			}
+			int finiteWinnerId = offerContextualFiniteAlternative(logicalExpressionId, prefixRelations,
+					prefixContributionRows, prefixCount, prefixRows,
+					inputContextId);
+			totalWorkUnits += contextualFactorWorkUnits;
+		}
+		for (int logicalExpressionId = memo
+				.firstLogicalExpression(groupId); logicalExpressionId != 0; logicalExpressionId = memo
+						.nextLogicalExpression(logicalExpressionId)) {
+			if (logicalExpressionId > query.relationCount()
+					|| query.relOperator(logicalExpressionId) != PackedRelOp.FILTER) {
+				continue;
+			}
+			int filterWinnerId = offerContextualSafeFilter(logicalExpressionId, defaultWinnerId, prefixRelations,
+					prefixContributionRows, prefixCount, prefixRows,
+					inputContextId);
+			totalWorkUnits += contextualFactorWorkUnits;
+		}
+		contextualFactorWorkUnits = totalWorkUnits;
+		contextualWinnerId = memo.findWinner(groupId, memo.anyPropertyId(), 0, inputContextId, 0);
+		if (contextualWinnerId == 0) {
+			copyEstimate(contextualDefaultEstimate, costEstimate);
+			return defaultWinnerId;
+		}
+		restoreWinnerEstimate(contextualWinnerId);
+		return contextualWinnerId;
+	}
+
+	private int offerContextualFiniteAlternative(int rootRelationId, int[] prefixRelations,
+			double[] prefixContributionRows, int prefixCount, double prefixRows, int inputContextId) {
+		contextualFactorWorkUnits = 0;
+		if (!inheritedPrefixSafe(rootRelationId)) {
+			return 0;
+		}
+		int factorCount = factorCount(rootRelationId);
+		if (factorCount < 2 || !budget.tryReserve(factorCount)) {
+			return 0;
+		}
+		contextualFactorWorkUnits = factorCount;
+		int[] factors = new int[factorCount];
+		collectFactors(rootRelationId, factors);
+		swap(factors, 0, finiteAnchorOrdinal(rootRelationId, factors));
+		return emitJoinForInheritedPrefix(rootRelationId, factors, prefixRelations, prefixContributionRows,
+				prefixCount, prefixRows, inputContextId);
+	}
+
+	private int offerContextualSafeFilter(int filterRelationId, int defaultWinnerId, int[] prefixRelations,
+			double[] prefixContributionRows, int prefixCount, double prefixRows, int inputContextId) {
+		contextualFactorWorkUnits = 0;
+		if (query.relChildCount(filterRelationId) != 1
+				|| !query.scalarSafeToRelocate(query.relPayload(filterRelationId))) {
+			return defaultWinnerId;
+		}
+		int inputRelationId = query.relChild(filterRelationId, 0);
+		if ((query.relMetadataFlags(inputRelationId)
+				& PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE) != 0) {
+			return defaultWinnerId;
+		}
+		if (query.relOperator(inputRelationId) != PackedRelOp.JOIN) {
+			if (query.relChildCount(inputRelationId) != 0) {
+				return defaultWinnerId;
+			}
+			int inputGroupId = memo.logicalGroupId(inputRelationId);
+			int inputDefaultWinnerId = memo.findWinner(inputGroupId, memo.anyPropertyId(), 0, 0, 0);
+			if (inputDefaultWinnerId == 0) {
+				throw new PackedMemoInvariantException("safe FILTER input " + inputRelationId
+						+ " has no incumbent");
+			}
+			int inputWinnerId = contextualizeLeaf(inputRelationId, inputDefaultWinnerId, prefixRelations,
+					prefixContributionRows, prefixCount, prefixRows);
+			if (memo.findWinner(inputGroupId, memo.anyPropertyId(), 0, inputContextId, 0) == 0) {
+				return defaultWinnerId;
+			}
+			return offerContextualFilter(filterRelationId, inputWinnerId, prefixRelations, prefixContributionRows,
+					prefixCount, prefixRows, inputContextId);
+		}
+		int factorCount = factorCount(inputRelationId);
+		if (factorCount < 2) {
+			return defaultWinnerId;
+		}
+		long requiredWork = (long) factorCount * (factorCount + 1L) / 2L + factorCount;
+		if (!budget.tryReserve(requiredWork)) {
+			return defaultWinnerId;
+		}
+		contextualFactorWorkUnits = saturatedInt(requiredWork);
+		int[] factors = new int[factorCount];
+		collectFactors(inputRelationId, factors);
+		orderForInheritedPrefix(factors, prefixRelations, prefixContributionRows, prefixCount, prefixRows);
+		int inputWinnerId = emitJoinForInheritedPrefix(inputRelationId, factors, prefixRelations,
+				prefixContributionRows, prefixCount, prefixRows, inputContextId);
+		return offerContextualFilter(filterRelationId, inputWinnerId, prefixRelations, prefixContributionRows,
+				prefixCount, prefixRows, inputContextId);
+	}
+
+	private void orderForInheritedPrefix(int[] factors, int[] prefixRelations, double[] prefixContributionRows,
+			int prefixCount, double prefixRows) {
+		int[] retainedRelations = new int[prefixCount + factors.length];
+		System.arraycopy(prefixRelations, 0, retainedRelations, 0, prefixCount);
+		double[] retainedContributions = new double[retainedRelations.length];
+		if (prefixContributionRows == null) {
+			rowComposition.initializeInherited(prefixRelations, prefixCount, prefixRows, retainedContributions);
+		} else {
+			System.arraycopy(prefixContributionRows, 0, retainedContributions, 0, prefixCount);
+		}
+		int retainedCount = prefixCount;
+		double currentRows = prefixRows;
+		double currentCost = 0.0d;
+		int anyPropertyId = memo.anyPropertyId();
+		for (int ordinal = 0; ordinal < factors.length; ordinal++) {
+			sortRemainingByBaseRows(factors, null, ordinal);
+			boolean connectedOnly = false;
+			for (int candidateOrdinal = ordinal; candidateOrdinal < factors.length; candidateOrdinal++) {
+				if (connectedToPrefix(retainedRelations, retainedCount, factors[candidateOrdinal])) {
+					connectedOnly = true;
+					break;
+				}
+			}
+			int bestOrdinal = -1;
+			int bestRelationId = Integer.MAX_VALUE;
+			double bestTotalCost = Double.POSITIVE_INFINITY;
+			double bestOutputRows = Double.POSITIVE_INFINITY;
+			double bestBaseRows = Double.POSITIVE_INFINITY;
+			double selectedRows = Double.NaN;
+			double selectedCost = Double.NaN;
+			for (int candidateOrdinal = ordinal; candidateOrdinal < factors.length; candidateOrdinal++) {
+				int candidateRelationId = factors[candidateOrdinal];
+				boolean connected = connectedToPrefix(retainedRelations, retainedCount, candidateRelationId);
+				if (connectedOnly && !connected) {
+					continue;
+				}
+				int candidateGroupId = memo.logicalGroupId(candidateRelationId);
+				int candidateWinnerId = memo.findWinner(candidateGroupId, anyPropertyId, 0, 0, 0);
+				double baseRows = selectedRowsByGroup[candidateGroupId];
+				double outputRows = joinRowsForPrefix(retainedRelations, retainedCount, currentRows,
+						candidateRelationId, baseRows, connected);
+				double factorWork = memo.winnerTotalCost(candidateWinnerId);
+				costEstimate.clear();
+				costContext.reset(retainedRelations, 0, retainedCount, currentRows);
+				costSession.estimate(candidateRelationId, costContext, costEstimate);
+				outputRows = rowComposition.effectiveRows(costEstimate, retainedRelations, retainedContributions,
+						retainedCount, candidateRelationId, outputRows);
+				double contributionRows = rowComposition.factorContributionRows();
+				if (finiteNonNegative(costEstimate.workRows())) {
+					factorWork = costEstimate.workRows();
+				}
+				double totalCost = saturatedAdd(currentCost, factorWork, outputRows);
+				totalCost = saturatedAdd(totalCost, iteratorProbeWork(costEstimate), 0.0d);
+				if (betterGreedyCandidate(totalCost, outputRows, baseRows, candidateRelationId,
+						bestTotalCost, bestOutputRows, bestBaseRows, bestRelationId)) {
+					bestOrdinal = candidateOrdinal;
+					bestRelationId = candidateRelationId;
+					bestTotalCost = totalCost;
+					bestOutputRows = outputRows;
+					bestBaseRows = baseRows;
+					selectedRows = outputRows;
+					selectedCost = totalCost;
+					retainedContributions[retainedCount] = contributionRows;
+				}
+			}
+			if (bestOrdinal < 0) {
+				throw new PackedMemoInvariantException("safe FILTER input has no contextually costable join factor");
+			}
+			swap(factors, ordinal, bestOrdinal);
+			retainedRelations[retainedCount++] = factors[ordinal];
+			currentRows = selectedRows;
+			currentCost = selectedCost;
+		}
+	}
+
+	private int emitJoinForInheritedPrefix(int rootRelationId, int[] factors, int[] prefixRelations,
+			double[] prefixContributionRows, int prefixCount, double prefixRows, int inputContextId) {
+		int anyPropertyId = memo.anyPropertyId();
+		int[] retainedRelations = new int[prefixCount + factors.length];
+		System.arraycopy(prefixRelations, 0, retainedRelations, 0, prefixCount);
+		double[] retainedContributions = new double[retainedRelations.length];
+		if (prefixContributionRows == null) {
+			rowComposition.initializeInherited(prefixRelations, prefixCount, prefixRows, retainedContributions);
+		} else {
+			System.arraycopy(prefixContributionRows, 0, retainedContributions, 0, prefixCount);
+		}
+		int retainedCount = prefixCount;
+		double currentRows = prefixRows;
+		double currentCost = 0.0d;
+		int currentGroupId = 0;
+		int currentWinnerId = 0;
+		long rootRuleMask = memo.logicalRuleMask(rootRelationId);
+		for (int ordinal = 0; ordinal < factors.length; ordinal++) {
+			int factorRelationId = factors[ordinal];
+			int factorGroupId = memo.logicalGroupId(factorRelationId);
+			int factorWinnerId = memo.findWinner(factorGroupId, anyPropertyId, 0, 0, 0);
+			boolean connected = connectedToPrefix(retainedRelations, retainedCount, factorRelationId);
+			double outputRows = joinRowsForPrefix(retainedRelations, retainedCount, currentRows, factorRelationId,
+					selectedRowsByGroup[factorGroupId], connected);
+			double factorWork = memo.winnerTotalCost(factorWinnerId);
+			costEstimate.clear();
+			costContext.reset(retainedRelations, 0, retainedCount, currentRows);
+			costSession.estimate(factorRelationId, costContext, costEstimate);
+			outputRows = rowComposition.effectiveRows(costEstimate, retainedRelations, retainedContributions,
+					retainedCount, factorRelationId, outputRows);
+			double factorContributionRows = rowComposition.factorContributionRows();
+			if (finiteNonNegative(costEstimate.workRows())) {
+				factorWork = costEstimate.workRows();
+			}
+			double iteratorProbeWork = iteratorProbeWork(costEstimate);
+			if (memo.winnerChildCount(factorWinnerId) == 0
+					&& (finiteNonNegative(costEstimate.outputRows()) || finiteNonNegative(costEstimate.workRows()))) {
+				int factorContextId = memo.internSequence(retainedRelations, 0, retainedCount);
+				int metadataId = addComposedPhysicalMetadata(costEstimate, outputRows, factorWork);
+				factorWinnerId = memo.offerWinnerWithMetadata(factorGroupId, anyPropertyId, 0, factorContextId, 0,
+						memo.winnerPhysicalExpressionId(factorWinnerId), metadataId, outputRows, factorWork,
+						factorWork, childWinners, 0, 0);
+			}
+			if (ordinal == 0) {
+				currentGroupId = factorGroupId;
+				currentWinnerId = factorWinnerId;
+				currentRows = outputRows;
+				currentCost = saturatedAdd(0.0d, factorWork, outputRows);
+				currentCost = saturatedAdd(currentCost, iteratorProbeWork, 0.0d);
+				retainedRelations[retainedCount++] = factorRelationId;
+				retainedContributions[retainedCount - 1] = factorContributionRows;
+				continue;
+			}
+			double totalCost = saturatedAdd(currentCost, factorWork, outputRows);
+			totalCost = saturatedAdd(totalCost, iteratorProbeWork, 0.0d);
+			boolean rootJoin = ordinal + 1 == factors.length;
+			if (rootJoin) {
+				refineRootJoin(rootRelationId, retainedRelations, retainedCount, currentRows,
+						selectedRowsByGroup[factorGroupId], outputRows, totalCost);
+				if (finiteNonNegative(joinEstimate.outputRows())) {
+					outputRows = joinEstimate.outputRows();
+				}
+				if (finiteNonNegative(joinEstimate.workRows())) {
+					totalCost = Math.max(currentCost + factorWork + iteratorProbeWork,
+							joinEstimate.workRows());
+				}
+			} else {
+				joinEstimate.clear();
+			}
+			childGroups[0] = currentGroupId;
+			childGroups[1] = factorGroupId;
+			int logicalExpressionId;
+			int targetGroupId;
+			if (rootJoin) {
+				targetGroupId = memo.logicalGroupId(rootRelationId);
+				logicalExpressionId = memo.addLogicalAlternative(targetGroupId, PackedRelOp.JOIN, 0, 0, 0,
+						childGroups, 0, 2);
+			} else {
+				logicalExpressionId = memo.addCanonicalLogical(PackedRelOp.JOIN, 0, 0, 0, childGroups, 0, 2);
+				targetGroupId = memo.logicalGroupId(logicalExpressionId);
+			}
+			if (rootJoin && logicalExpressionId > query.relationCount()) {
+				memo.addLogicalRuleMask(logicalExpressionId, rootRuleMask);
+			}
+			int physicalExpressionId = memo.addPhysicalAlternative(targetGroupId, PackedRelOp.JOIN, 0, anyPropertyId,
+					JOIN_IMPLEMENTATION, rootJoin ? rootRelationId : logicalExpressionId, childGroups, 0, 2);
+			childWinners[0] = currentWinnerId;
+			childWinners[1] = factorWinnerId;
+			joinEstimate.setRows(outputRows, totalCost);
+			int metadataId = memo.addPhysicalMetadata(joinEstimate, outputRows, totalCost);
+			int tieBreakRank = rootJoin ? (Long.bitCount(rootRuleMask) << 1) | 1 : 0;
+			currentWinnerId = memo.offerWinnerWithMetadata(targetGroupId, anyPropertyId, 0, inputContextId, 0,
+					physicalExpressionId, metadataId, tieBreakRank, outputRows, totalCost, totalCost, childWinners, 0,
+					2);
+			currentGroupId = targetGroupId;
+			currentRows = memo.winnerOutputRows(currentWinnerId);
+			currentCost = memo.winnerTotalCost(currentWinnerId);
+			retainedRelations[retainedCount++] = factorRelationId;
+			retainedContributions[retainedCount - 1] = factorContributionRows;
+		}
+		return currentWinnerId;
+	}
+
+	private int offerContextualFilter(int filterRelationId, int inputWinnerId, int[] prefixRelations,
+			double[] prefixContributionRows, int prefixCount, double prefixRows, int inputContextId) {
+		int anyPropertyId = memo.anyPropertyId();
+		int inputGroupId = memo.winnerGroupId(inputWinnerId);
+		double inputRows = memo.winnerOutputRows(inputWinnerId);
+		double inputWork = memo.winnerTotalCost(inputWinnerId);
+		double outputRows = inputRows == 0.0d ? 0.0d : Math.max(1.0d, inputRows * 0.25d);
+		double totalWork = saturatedAdd(inputWork, 0.0d, outputRows);
+		costEstimate.clear();
+		costContext.reset(prefixRelations, 0, prefixCount, prefixRows);
+		costSession.estimate(filterRelationId, costContext, costEstimate);
+		boolean replacesContextualChildWork = costEstimate.replacesChildWork()
+				&& costEstimate.hasContextualOutputRows()
+				&& !costEstimate.hasComponentOutputRows();
+		outputRows = rowComposition.effectiveRows(costEstimate, prefixRelations, prefixContributionRows, prefixCount,
+				filterRelationId, outputRows);
+		if (finiteNonNegative(costEstimate.workRows())) {
+			totalWork = replacesContextualChildWork
+					? costEstimate.workRows()
+					: saturatedAdd(inputWork, costEstimate.workRows(), 0.0d);
+		}
+		costEstimate.setRows(outputRows, totalWork);
+		costContext.setOperatorInputs(inputRows, Double.NaN);
+		costSession.refineOperator(filterRelationId, costContext, costEstimate);
+		boolean componentRefinement = costEstimate.hasComponentOutputRows();
+		if (componentRefinement) {
+			/*
+			 * This path retains the exact contribution of every inherited prefix component, so it can safely compose
+			 * the refined FILTER component. Its work is still component-local and cannot replace the already-costed
+			 * contextual child.
+			 */
+			outputRows = rowComposition.effectiveRows(costEstimate, prefixRelations, prefixContributionRows,
+					prefixCount, filterRelationId, outputRows);
+			costEstimate.setReplacesChildWork(false);
+		} else {
+			if (finiteNonNegative(costEstimate.outputRows())) {
+				outputRows = costEstimate.outputRows();
+			}
+			if (finiteNonNegative(costEstimate.workRows())) {
+				totalWork = costEstimate.replacesChildWork()
+						? costEstimate.workRows()
+						: Math.max(inputWork, costEstimate.workRows());
+			}
+		}
+		costEstimate.setRows(outputRows, totalWork);
+		childGroups[0] = inputGroupId;
+		int filterGroupId = memo.logicalGroupId(filterRelationId);
+		int physicalExpressionId = memo.addPhysicalAlternative(filterGroupId, PackedRelOp.FILTER,
+				query.relPayload(filterRelationId), anyPropertyId, CONTEXTUAL_FILTER_IMPLEMENTATION, filterRelationId,
+				childGroups, 0, 1);
+		childWinners[0] = inputWinnerId;
+		int metadataId = memo.addPhysicalMetadata(costEstimate, outputRows, totalWork);
+		int tieBreakRank = Long.bitCount(memo.logicalRuleMask(filterRelationId)) << 1;
+		return memo.offerWinnerWithMetadata(filterGroupId, anyPropertyId, 0, inputContextId, 0, physicalExpressionId,
+				metadataId, tieBreakRank, outputRows, totalWork, totalWork, childWinners, 0, 1);
+	}
+
+	private int selectContextualGreedyExtension(int[] factors, int[] factorBits, int ordinal,
+			int[] retainedPrefixRelations, double[] retainedPrefixContributions, int retainedPrefixCount,
+			double currentRows, double currentCost, int currentEvidenceStateId) {
+		greedyCandidateWorkUnits = 0;
+		bestGreedyEstimate.clear();
+		sortRemainingByBaseRows(factors, factorBits, ordinal);
+		boolean connectedOnly = false;
+		for (int candidateOrdinal = ordinal; candidateOrdinal < factors.length; candidateOrdinal++) {
+			if (connectedToPrefix(retainedPrefixRelations, retainedPrefixCount, factors[candidateOrdinal])) {
+				connectedOnly = true;
+				break;
+			}
+		}
+
+		int anyPropertyId = memo.anyPropertyId();
+		int bestOrdinal = -1;
+		int bestRelationId = Integer.MAX_VALUE;
+		double bestTotalCost = Double.POSITIVE_INFINITY;
+		double bestOutputRows = Double.POSITIVE_INFINITY;
+		double bestBaseRows = Double.POSITIVE_INFINITY;
+		long futureExtensionReserve = factors.length - ordinal - 1L;
+		for (int candidateOrdinal = ordinal; candidateOrdinal < factors.length; candidateOrdinal++) {
+			int candidateRelationId = factors[candidateOrdinal];
+			boolean connected = connectedToPrefix(retainedPrefixRelations, retainedPrefixCount,
+					candidateRelationId);
+			if (connectedOnly && !connected) {
+				continue;
+			}
+			/*
+			 * One locally reserved unit owns one provider estimate. Keep one unit for each later extension so the
+			 * atomically charged seed always reaches a complete order.
+			 */
+			if (contextualGreedyWorkRemaining <= futureExtensionReserve) {
+				return bestOrdinal < 0 ? -1 : bestOrdinal;
+			}
+			contextualGreedyWorkRemaining--;
+			greedyCandidateWorkUnits++;
+			int candidateGroupId = memo.logicalGroupId(candidateRelationId);
+			int candidateWinnerId = memo.findWinner(candidateGroupId, anyPropertyId, 0, 0, 0);
+			double baseRows = selectedRowsByGroup[candidateGroupId];
+			double outputRows = joinRowsForPrefix(retainedPrefixRelations, retainedPrefixCount, currentRows,
+					candidateRelationId, baseRows, connected);
+			double factorWork = memo.winnerTotalCost(candidateWinnerId);
+			costEstimate.clear();
+			costContext.reset(retainedPrefixRelations, 0, retainedPrefixCount, currentRows, currentEvidenceStateId);
+			costSession.estimate(candidateRelationId, costContext, costEstimate);
+			outputRows = rowComposition.effectiveRows(costEstimate, retainedPrefixRelations,
+					retainedPrefixContributions, retainedPrefixCount, candidateRelationId, outputRows);
+			double contributionRows = rowComposition.factorContributionRows();
+			if (finiteNonNegative(costEstimate.workRows())) {
+				factorWork = costEstimate.workRows();
+			}
+			double totalCost = saturatedAdd(currentCost, factorWork, outputRows);
+			totalCost = saturatedAdd(totalCost, iteratorProbeWork(costEstimate), 0.0d);
+			double hashCost = hashJoinCost(retainedPrefixRelations, retainedPrefixCount, candidateRelationId,
+					currentRows, currentCost, baseRows, memo.winnerTotalCost(candidateWinnerId), outputRows);
+			totalCost = Math.min(totalCost, hashCost);
+			if (betterGreedyCandidate(totalCost, outputRows, baseRows, candidateRelationId,
+					bestTotalCost, bestOutputRows, bestBaseRows, bestRelationId)) {
+				bestOrdinal = candidateOrdinal;
+				bestRelationId = candidateRelationId;
+				bestTotalCost = totalCost;
+				bestOutputRows = outputRows;
+				bestBaseRows = baseRows;
+				bestGreedyRows = outputRows;
+				bestGreedyWork = factorWork;
+				bestGreedyContributionRows = contributionRows;
+				copyEstimate(costEstimate, bestGreedyEstimate);
+			}
+		}
+		return bestOrdinal;
+	}
+
+	private static boolean betterGreedyCandidate(double totalCost, double outputRows, double baseRows,
+			int relationId, double bestTotalCost, double bestOutputRows, double bestBaseRows, int bestRelationId) {
+		int comparison = Double.compare(totalCost, bestTotalCost);
+		if (comparison != 0) {
+			return comparison < 0;
+		}
+		comparison = Double.compare(outputRows, bestOutputRows);
+		if (comparison != 0) {
+			return comparison < 0;
+		}
+		comparison = Double.compare(baseRows, bestBaseRows);
+		return comparison != 0 ? comparison < 0 : relationId < bestRelationId;
+	}
+
+	private void sortRemainingByBaseRows(int[] factors, int[] factorBits, int offset) {
+		for (int ordinal = offset + 1; ordinal < factors.length; ordinal++) {
+			int destination = ordinal;
+			while (destination > offset
+					&& compareRelationsByBaseRows(factors[destination], factors[destination - 1]) < 0) {
+				swap(factors, destination, destination - 1);
+				if (factorBits != null) {
+					swap(factorBits, destination, destination - 1);
+				}
+				destination--;
+			}
+		}
+	}
+
+	private int compareRelationsByBaseRows(int leftRelationId, int rightRelationId) {
+		double leftRows = selectedRowsByGroup[memo.logicalGroupId(leftRelationId)];
+		double rightRows = selectedRowsByGroup[memo.logicalGroupId(rightRelationId)];
+		int comparison = Double.compare(leftRows, rightRows);
+		return comparison != 0 ? comparison : Integer.compare(leftRelationId, rightRelationId);
+	}
+
+	private static int[] identityFactorBits(int factorCount) {
+		int[] factorBits = new int[factorCount];
+		for (int ordinal = 0; ordinal < factorCount; ordinal++) {
+			factorBits[ordinal] = 1 << ordinal;
+		}
+		return factorBits;
+	}
+
+	private static void swap(int[] values, int left, int right) {
+		int value = values[left];
+		values[left] = values[right];
+		values[right] = value;
+	}
+
+	private int addComposedPhysicalMetadata(PackedCostEstimate estimate, double outputRows, double workRows) {
+		/*
+		 * PackedPhysicalMetadataArena intentionally treats finite provider rows as authoritative over its fallback. A
+		 * factor estimate can describe the factor alone, its connected component, or the complete prefix. This call
+		 * stores a prefix-contextual winner, so persist the already-composed full-prefix rows while retaining the
+		 * provider's access and provenance evidence.
+		 */
+		copyEstimate(estimate, composedMetadataEstimate);
+		composedMetadataEstimate.setContextualRows(outputRows, workRows);
+		return memo.addPhysicalMetadata(composedMetadataEstimate, outputRows, workRows);
+	}
+
+	private static void copyEstimate(PackedCostEstimate source, PackedCostEstimate destination) {
+		destination.clear();
+		if (source.hasComponentOutputRows()) {
+			destination.setComponentRows(source.outputRows(), source.workRows());
+		} else if (source.hasContextualOutputRows()) {
+			destination.setContextualRows(source.outputRows(), source.workRows());
+		} else {
+			destination.setRows(source.outputRows(), source.workRows());
+		}
+		destination.setEvidenceStateId(source.evidenceStateId());
+		destination.setAccess(source.lookupComponentMask(), source.missingLookupComponentMask(),
+				source.indexPrefixLength(), source.accessRows(), source.invocations(), source.indexName(),
+				source.estimateSource(), source.accessMode());
+		destination.setEstimateProvenance(source.estimateSource(), source.estimateFusion());
+		destination.setReplacesChildWork(source.replacesChildWork());
+		for (int index = 0; index < source.plannedStringMetricCount(); index++) {
+			destination.putPlannedStringMetric(source.plannedStringMetricName(index),
+					source.plannedStringMetricValue(index));
+		}
+		for (int index = 0; index < source.plannedDoubleMetricCount(); index++) {
+			destination.putPlannedDoubleMetric(source.plannedDoubleMetricName(index),
+					source.plannedDoubleMetricValue(index));
+		}
+	}
+
+	private void restoreWinnerEstimate(int winnerId) {
+		int metadataId = memo.winnerPhysicalMetadataId(winnerId);
+		costEstimate.clear();
+		if (metadataId == 0) {
+			costEstimate.setContextualRows(memo.winnerOutputRows(winnerId), memo.winnerTotalCost(winnerId));
+			return;
+		}
+		costEstimate.setContextualRows(memo.physicalMetadataOutputRows(metadataId),
+				memo.physicalMetadataWorkRows(metadataId));
+		costEstimate.setEvidenceStateId(memo.physicalMetadataEvidenceStateId(metadataId));
+		costEstimate.setAccess(memo.physicalMetadataLookupMask(metadataId),
+				memo.physicalMetadataMissingLookupMask(metadataId),
+				memo.physicalMetadataIndexPrefixLength(metadataId),
+				memo.physicalMetadataAccessRows(metadataId),
+				memo.physicalMetadataInvocations(metadataId),
+				(String) memo.physicalMetadataIndexName(metadataId),
+				(String) memo.physicalMetadataEstimateSource(metadataId),
+				(String) memo.physicalMetadataAccessMode(metadataId));
+		costEstimate.setEstimateProvenance((String) memo.physicalMetadataEstimateSource(metadataId),
+				(String) memo.physicalMetadataEstimateFusion(metadataId));
+		for (int ordinal = 0; ordinal < memo.physicalMetadataPlannedStringMetricCount(metadataId); ordinal++) {
+			costEstimate.putPlannedStringMetric(
+					(String) memo.physicalMetadataPlannedStringMetricName(metadataId, ordinal),
+					(String) memo.physicalMetadataPlannedStringMetricValue(metadataId, ordinal));
+		}
+		for (int ordinal = 0; ordinal < memo.physicalMetadataPlannedDoubleMetricCount(metadataId); ordinal++) {
+			costEstimate.putPlannedDoubleMetric(
+					(String) memo.physicalMetadataPlannedDoubleMetricName(metadataId, ordinal),
+					memo.physicalMetadataPlannedDoubleMetricValue(metadataId, ordinal));
+		}
+	}
+
+	private int winnerEvidenceStateId(int winnerId) {
+		int metadataId = memo.winnerPhysicalMetadataId(winnerId);
+		return metadataId == 0 ? 0 : memo.physicalMetadataEvidenceStateId(metadataId);
+	}
+
+	private void refineRootJoin(int rootRelationId, int[] prefixRelations, int prefixCount, double leftRows,
+			double rightRows, double baseRows, double baseWorkRows) {
+		joinEstimate.clear();
+		joinEstimate.setRows(baseRows, baseWorkRows);
+		costContext.reset(prefixRelations, 0, prefixCount, leftRows);
+		costContext.setOperatorInputs(leftRows, rightRows);
+		costSession.refineOperator(rootRelationId, costContext, joinEstimate);
+		if (joinEstimate.hasComponentOutputRows()) {
+			/*
+			 * Root-join callers retain only the complete prefix scalar here, not an aligned contribution vector.
+			 * Preserve provider provenance, but decline rows/work that cannot be composed without guessing.
+			 */
+			joinEstimate.setReplacesChildWork(false);
+			joinEstimate.setRows(baseRows, baseWorkRows);
+		}
 	}
 
 	private boolean connectedToPrefix(int[] factors, int prefixCount, int factorRelationId) {
@@ -455,15 +2257,79 @@ final class PackedJoinEnumerator {
 		return false;
 	}
 
+	private double hashJoinCost(int[] prefixRelations, int prefixCount, int factorRelationId, double leftRows,
+			double leftWork, double rightRows, double rightWork, double outputRows) {
+		if (prefixRelations == null || prefixCount <= 0
+				|| !finiteNonNegative(leftRows) || !finiteNonNegative(leftWork)
+				|| !finiteNonNegative(rightRows) || !finiteNonNegative(rightWork)
+				|| !finiteNonNegative(outputRows)
+				|| leftRows + rightRows < HASH_JOIN_MINIMUM_INPUT_ROWS
+				|| !connectedToPrefix(prefixRelations, prefixCount, factorRelationId)
+				|| !hashJoinSafeFactor(factorRelationId)) {
+			return Double.POSITIVE_INFINITY;
+		}
+		for (int ordinal = 0; ordinal < prefixCount; ordinal++) {
+			if (!hashJoinSafeFactor(prefixRelations[ordinal])) {
+				return Double.POSITIVE_INFINITY;
+			}
+		}
+		return saturatedAdd(leftWork, rightWork, outputRows);
+	}
+
+	private static double iteratorProbeWork(PackedCostEstimate estimate) {
+		boolean hasAccessEvidence = finiteNonNegative(estimate.accessRows())
+				|| estimate.lookupComponentMask() != 0
+				|| estimate.missingLookupComponentMask() != 0
+				|| estimate.indexPrefixLength() > 0
+				|| estimate.indexName() != null
+				|| estimate.accessMode() != null;
+		double invocations = hasAccessEvidence ? estimate.invocations() : UNKNOWN_ITERATOR_PROBE_WORK;
+		if (!finiteNonNegative(invocations)) {
+			return 0.0d;
+		}
+		double work = invocations * ITERATOR_SETUP_AND_SEEK_WORK_PER_INVOCATION;
+		return Double.isFinite(work) ? work : Double.MAX_VALUE;
+	}
+
+	private boolean hashJoinSafeFactor(int relationId) {
+		return !containsVariableScopeChange(relationId)
+				&& !query.relationHasObservableEvaluationEffects(relationId)
+				&& !containsNonRelocatableFilter(relationId);
+	}
+
+	private boolean containsVariableScopeChange(int relationId) {
+		if ((query.relMetadataFlags(relationId) & PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE) != 0) {
+			return true;
+		}
+		for (int ordinal = 0; ordinal < query.relChildCount(relationId); ordinal++) {
+			if (containsVariableScopeChange(query.relChild(relationId, ordinal))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private double joinRowsForSubset(int[] factors, long subset, int factorOrdinal, double subsetRows,
 			double factorRows, boolean connected) {
 		if (!connected || !finiteLookupAcrossBoundary(factors, subset, factorOrdinal)) {
 			return joinRows(subsetRows, factorRows, connected);
 		}
-		if (subsetRows == 0.0d || factorRows == 0.0d) {
+		return finiteLookupJoinRows(subsetRows, factorRows);
+	}
+
+	private double joinRowsForPrefix(int[] prefixRelations, int prefixCount, double prefixRows, int factorRelationId,
+			double factorRows, boolean connected) {
+		if (!connected || !finiteLookupAcrossBoundary(prefixRelations, prefixCount, factorRelationId)) {
+			return joinRows(prefixRows, factorRows, connected);
+		}
+		return finiteLookupJoinRows(prefixRows, factorRows);
+	}
+
+	private static double finiteLookupJoinRows(double prefixRows, double factorRows) {
+		if (prefixRows == 0.0d || factorRows == 0.0d) {
 			return 0.0d;
 		}
-		double product = Math.max(1.0d, subsetRows) * Math.max(1.0d, factorRows);
+		double product = Math.max(1.0d, prefixRows) * Math.max(1.0d, factorRows);
 		if (!Double.isFinite(product)) {
 			return Double.MAX_VALUE;
 		}
@@ -484,6 +2350,26 @@ final class PackedJoinEnumerator {
 			if ((subset & 1L << ordinal) != 0L && query.relOperator(factors[ordinal]) == oppositeOperator
 					&& query.masksIntersect(query.relOutputMaskId(factorId),
 							query.relOutputMaskId(factors[ordinal]))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean finiteLookupAcrossBoundary(int[] prefixRelations, int prefixCount, int factorRelationId) {
+		int factorOperator = query.relOperator(factorRelationId);
+		if (factorOperator != PackedRelOp.BINDING_SET_ASSIGNMENT
+				&& factorOperator != PackedRelOp.STATEMENT_PATTERN) {
+			return false;
+		}
+		int oppositeOperator = factorOperator == PackedRelOp.BINDING_SET_ASSIGNMENT
+				? PackedRelOp.STATEMENT_PATTERN
+				: PackedRelOp.BINDING_SET_ASSIGNMENT;
+		for (int ordinal = 0; ordinal < prefixCount; ordinal++) {
+			int prefixRelationId = prefixRelations[ordinal];
+			if (query.relOperator(prefixRelationId) == oppositeOperator
+					&& query.masksIntersect(query.relOutputMaskId(factorRelationId),
+							query.relOutputMaskId(prefixRelationId))) {
 				return true;
 			}
 		}
@@ -518,12 +2404,48 @@ final class PackedJoinEnumerator {
 		return prefixCount >= Long.SIZE ? -1L : (1L << prefixCount) - 1L;
 	}
 
-	private static int populatePrefix(int[] factors, long subset, int[] destination) {
-		int count = 0;
-		while (subset != 0L) {
-			int ordinal = Long.numberOfTrailingZeros(subset);
-			destination[count++] = factors[ordinal];
-			subset &= subset - 1L;
+	private static int populateDensePrefix(int[] factors, int subset, int[] parentSubsets,
+			int[] appendedFactorBits, int[] destination) {
+		return populateDensePrefix(factors, subset, parentSubsets, appendedFactorBits, null, destination, null);
+	}
+
+	private static int populateDensePrefix(int[] factors, int subset, int[] parentSubsets,
+			int[] appendedFactorBits, double[] appendedContributionRows, int[] destination,
+			double[] contributionDestination) {
+		int count = Integer.bitCount(subset);
+		int destinationIndex = count;
+		int current = subset;
+		while (Integer.bitCount(current) > 1) {
+			int factorBit = appendedFactorBits[current];
+			int index = --destinationIndex;
+			destination[index] = factors[Integer.numberOfTrailingZeros(factorBit)];
+			if (contributionDestination != null) {
+				contributionDestination[index] = appendedContributionRows[current];
+			}
+			current = parentSubsets[current];
+		}
+		destination[0] = factors[Integer.numberOfTrailingZeros(current)];
+		if (contributionDestination != null) {
+			contributionDestination[0] = appendedContributionRows[current];
+		}
+		return count;
+	}
+
+	private static int populateSparsePrefix(int[] factors, PackedLongSubsetTable states, int stateId,
+			int[] destination) {
+		return populateSparsePrefix(factors, states, stateId, destination, null);
+	}
+
+	private static int populateSparsePrefix(int[] factors, PackedLongSubsetTable states, int stateId,
+			int[] destination, double[] contributionDestination) {
+		int count = Long.bitCount(states.mask(stateId));
+		int destinationIndex = count;
+		for (int current = stateId; current != 0; current = states.parentStateId(current)) {
+			int index = --destinationIndex;
+			destination[index] = factors[states.appendedFactorOrdinal(current)];
+			if (contributionDestination != null) {
+				contributionDestination[index] = states.appendedContributionRows(current);
+			}
 		}
 		return count;
 	}
@@ -532,10 +2454,29 @@ final class PackedJoinEnumerator {
 		return Double.isFinite(value) && value >= 0.0d;
 	}
 
+	private static long maximumContextualGreedyWork(int factorCount) {
+		return (long) factorCount * (factorCount - 1L) / 2L;
+	}
+
+	private static long maximumGreedySeedWork(int factorCount) {
+		return (long) factorCount * (factorCount - 1L);
+	}
+
+	private static int saturatedInt(long value) {
+		return value >= Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) value;
+	}
+
 	private int optimizeGreedy(int rootRelationId, int[] factors) {
+		return optimizeGreedy(rootRelationId, factors, -1);
+	}
+
+	private int optimizeGreedy(int rootRelationId, int[] factors, int fixedFirstOrdinal) {
 		long[] selected = new long[(factors.length + Long.SIZE - 1) >>> 6];
 		int[] orderedFactors = new int[factors.length];
-		int first = cheapestFactor(factors, selected, false);
+		int first = fixedFirstOrdinal < 0 ? cheapestFactor(factors, selected, false) : fixedFirstOrdinal;
+		if (costSession != null) {
+			return emitContextualGreedyOrder(rootRelationId, factors, first);
+		}
 		select(selected, first);
 		orderedFactors[0] = factors[first];
 		int workUnits = 0;
@@ -549,6 +2490,76 @@ final class PackedJoinEnumerator {
 			workUnits++;
 		}
 		return workUnits + emitSelectedOrder(rootRelationId, orderedFactors);
+	}
+
+	private int optimizeGreedySeeds(int rootRelationId, int[] factors) {
+		if (!budget.sampleDeadline()) {
+			return 0;
+		}
+		int[] startOrdinals = new int[factors.length];
+		for (int ordinal = 0; ordinal < factors.length; ordinal++) {
+			startOrdinals[ordinal] = ordinal;
+		}
+		for (int ordinal = 1; ordinal < startOrdinals.length; ordinal++) {
+			int candidate = startOrdinals[ordinal];
+			int destination = ordinal;
+			while (destination > 0 && compareSeedStarts(factors, candidate, startOrdinals[destination - 1]) < 0) {
+				startOrdinals[destination] = startOrdinals[destination - 1];
+				destination--;
+			}
+			startOrdinals[destination] = candidate;
+		}
+
+		long seedWorkLimit = maximumGreedySeedWork(factors.length);
+		long contextualSeedWork = maximumContextualGreedyWork(factors.length);
+		if (budget.remainingWorkUnits() < seedWorkLimit
+				&& budget.remainingWorkUnits() >= contextualSeedWork) {
+			return emitContextualGreedyOrder(rootRelationId, factors, startOrdinals[0], contextualSeedWork);
+		}
+
+		long requiredWork = factors.length - 1L;
+		long workUnits = 0L;
+		for (int startOrdinal : startOrdinals) {
+			long remainingSeedWork = seedWorkLimit - workUnits;
+			if (remainingSeedWork < requiredWork) {
+				break;
+			}
+			long reservedWork = Math.min(requiredWork, budget.remainingWorkUnits());
+			if (reservedWork < requiredWork) {
+				break;
+			}
+			/*
+			 * Give every potential starting factor one complete, provider-costed incumbent before spending work on
+			 * extension alternatives. Letting an early contextual seed consume O(n^2) work could exclude later endpoint
+			 * starts even though all starts fit in this phase's O(n^2) envelope.
+			 */
+			int emitted = emitSelectedOrder(rootRelationId, greedyOrder(factors, startOrdinal));
+			workUnits += emitted;
+			if (!emittedCompleteOrder) {
+				break;
+			}
+		}
+		return saturatedInt(workUnits);
+	}
+
+	private int compareSeedStarts(int[] factors, int leftOrdinal, int rightOrdinal) {
+		double leftRows = selectedRowsByGroup[memo.logicalGroupId(factors[leftOrdinal])];
+		double rightRows = selectedRowsByGroup[memo.logicalGroupId(factors[rightOrdinal])];
+		int rowsComparison = Double.compare(leftRows, rightRows);
+		return rowsComparison != 0 ? rowsComparison : Integer.compare(factors[leftOrdinal], factors[rightOrdinal]);
+	}
+
+	private int[] greedyOrder(int[] factors, int startOrdinal) {
+		long[] selected = new long[(factors.length + Long.SIZE - 1) >>> 6];
+		int[] orderedFactors = new int[factors.length];
+		select(selected, startOrdinal);
+		orderedFactors[0] = factors[startOrdinal];
+		for (int count = 1; count < factors.length; count++) {
+			int next = cheapestFactor(factors, selected, true);
+			select(selected, next);
+			orderedFactors[count] = factors[next];
+		}
+		return orderedFactors;
 	}
 
 	private int cheapestFactor(int[] factors, long[] selected, boolean preferConnected) {
@@ -663,12 +2674,32 @@ final class PackedJoinEnumerator {
 			}
 			winnerStack[size++] = childWinnerId;
 		}
+		return collectStackedFactors(size, factors);
+	}
+
+	private int collectWinnerFactors(int winnerId, int[] factors) {
+		winnerStack[0] = winnerId;
+		return collectStackedFactors(1, factors);
+	}
+
+	private int collectEmittedPrefixFactors(int winnerId, int[] factors) {
+		winnerStack[0] = winnerId;
+		return collectStackedFactors(1, factors, winnerId);
+	}
+
+	private int collectStackedFactors(int size, int[] factors) {
+		return collectStackedFactors(size, factors, 0);
+	}
+
+	private int collectStackedFactors(int size, int[] factors, int forcedJoinWinnerId) {
 		int factorCount = 0;
 		while (size != 0) {
 			int winnerId = winnerStack[--size];
 			int physicalExpressionId = memo.winnerPhysicalExpressionId(winnerId);
 			int sourceLogicalExpressionId = memo.physicalSourceLogicalExpressionId(physicalExpressionId);
-			if (canFlattenWinner(winnerId, physicalExpressionId, sourceLogicalExpressionId)) {
+			if (winnerId == forcedJoinWinnerId
+					? isBinaryJoinWinner(winnerId, physicalExpressionId)
+					: canFlattenWinner(winnerId, physicalExpressionId, sourceLogicalExpressionId)) {
 				for (int ordinal = memo.winnerChildCount(winnerId) - 1; ordinal >= 0; ordinal--) {
 					winnerStack[size++] = memo.winnerChildWinnerId(winnerId, ordinal);
 				}
@@ -690,6 +2721,9 @@ final class PackedJoinEnumerator {
 	}
 
 	private int baseLogicalExpression(int groupId) {
+		if (groupId <= query.relationCount() && query.relGroup(groupId) == groupId) {
+			return groupId;
+		}
 		for (int logicalExpressionId = memo
 				.firstLogicalExpression(groupId); logicalExpressionId != 0; logicalExpressionId = memo
 						.nextLogicalExpression(logicalExpressionId)) {
@@ -700,20 +2734,32 @@ final class PackedJoinEnumerator {
 		return 0;
 	}
 
+	private boolean isBinaryJoinWinner(int winnerId, int physicalExpressionId) {
+		return memo.physicalOperatorTag(physicalExpressionId) == PackedRelOp.JOIN
+				&& memo.winnerChildCount(winnerId) == 2;
+	}
+
 	private boolean canFlattenWinner(int winnerId, int physicalExpressionId, int sourceLogicalExpressionId) {
-		if (memo.physicalOperatorTag(physicalExpressionId) != PackedRelOp.JOIN
-				|| memo.winnerChildCount(winnerId) != 2) {
+		if (!isBinaryJoinWinner(winnerId, physicalExpressionId)) {
 			return false;
 		}
-		if (sourceLogicalExpressionId > 0
-				&& (memo.logicalRuleMask(sourceLogicalExpressionId)
-						& PackedRuleProofs.FINITE_FILTER_VALUES) != 0L) {
+		if (sourceLogicalExpressionId <= 0) {
 			return false;
 		}
-		return sourceLogicalExpressionId > query.relationCount()
-				|| sourceLogicalExpressionId > 0
-						&& (query.relMetadataFlags(sourceLogicalExpressionId)
-								& PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE) == 0;
+		if ((memo.logicalRuleMask(sourceLogicalExpressionId) & PackedRuleProofs.FINITE_FILTER_VALUES) != 0L) {
+			return false;
+		}
+		int semanticSourceLogicalExpressionId = sourceLogicalExpressionId;
+		if (semanticSourceLogicalExpressionId > query.relationCount()) {
+			semanticSourceLogicalExpressionId = baseLogicalExpression(
+					memo.logicalGroupId(semanticSourceLogicalExpressionId));
+			if (semanticSourceLogicalExpressionId == 0) {
+				return true;
+			}
+		}
+		return query.relOperator(semanticSourceLogicalExpressionId) == PackedRelOp.JOIN
+				&& (query.relMetadataFlags(semanticSourceLogicalExpressionId)
+						& PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE) == 0;
 	}
 
 	private static double saturatedAdd(double left, double right, double local) {

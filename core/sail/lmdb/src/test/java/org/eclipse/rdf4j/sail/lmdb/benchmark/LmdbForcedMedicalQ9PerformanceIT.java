@@ -55,7 +55,7 @@ class LmdbForcedMedicalQ9PerformanceIT {
 	@Test
 	@Timeout(value = 5, unit = TimeUnit.MINUTES)
 	void compareStandardBenchmarkHarnessCatalogQ9WithForcedMinusOrder() throws Exception {
-		try (var ignored = BenchmarkJoinEstimatorSupport.forceStandardOptimizerMode()) {
+		try (var ignored = BenchmarkJoinEstimatorSupport.forceDefaultPackedOptimizerMode()) {
 			ThemeQueryBenchmark benchmark = newBenchmark();
 			benchmark.setup();
 			try {
@@ -137,7 +137,7 @@ class LmdbForcedMedicalQ9PerformanceIT {
 			OptimizerSnapshot postWarmupForcedSnapshot) {
 		return """
 				MEDICAL_RECORDS q9 forced order comparison
-				optimizerMode=standard
+				optimizerMode=auto
 				maxExecutionTimeSeconds=%s
 				warmupsPerQuery=%s
 				catalog status=%s count=%s elapsedMs=%s

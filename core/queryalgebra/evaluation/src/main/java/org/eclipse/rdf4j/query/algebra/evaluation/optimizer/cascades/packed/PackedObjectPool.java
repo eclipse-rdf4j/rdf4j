@@ -13,6 +13,11 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import java.util.Arrays;
 
+import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.TripleTerm;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 
 /** Canonical object side pool for immutable boundary values that cannot be represented as primitives. */
@@ -53,7 +58,7 @@ final class PackedObjectPool {
 		if (value instanceof QueryModelNode) {
 			throw new IllegalArgumentException("query model nodes cannot enter the packed object pool");
 		}
-		long hash = mix64(value.hashCode());
+		long hash = objectHash(value);
 		int slot = tableSlot(hash, slots.length);
 		while (true) {
 			int objectId = slots[slot];
@@ -134,6 +139,30 @@ final class PackedObjectPool {
 		mixed = (mixed ^ mixed >>> 30) * 0xbf58476d1ce4e5b9L;
 		mixed = (mixed ^ mixed >>> 27) * 0x94d049bb133111ebL;
 		return mixed ^ mixed >>> 31;
+	}
+
+	/**
+	 * RDF values deliberately share a small set of type hashes. Their implementations may be lazy store-backed objects
+	 * whose {@link Value#hashCode()} requires unavailable storage state. Equality still disambiguates the collision
+	 * chain, preserving canonical object IDs without forcing value materialization.
+	 */
+	private static long objectHash(Object value) {
+		if (value instanceof IRI) {
+			return mix64(1);
+		}
+		if (value instanceof Literal) {
+			return mix64(2);
+		}
+		if (value instanceof BNode) {
+			return mix64(3);
+		}
+		if (value instanceof TripleTerm) {
+			return mix64(4);
+		}
+		if (value instanceof Value) {
+			return mix64(5);
+		}
+		return mix64(value.hashCode());
 	}
 
 	private static int tableSlot(long hash, int capacity) {

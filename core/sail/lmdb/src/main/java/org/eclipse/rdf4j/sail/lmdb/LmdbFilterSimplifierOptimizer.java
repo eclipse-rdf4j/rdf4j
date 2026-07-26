@@ -277,6 +277,15 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 				remainingConditions.add(condition);
 				continue;
 			}
+			BindingSetAssignment exactStoredTermAnchor = exactStoredTermFilterAnchor(filter, condition, anchor,
+					assuredBindings);
+			if (exactStoredTermAnchor != null) {
+				if (!equivalentSmallLiteralAssignmentExists(exactStoredTermAnchor, assignmentValues)) {
+					anchors.add(exactStoredTermAnchor);
+				}
+				remainingConditions.add(condition);
+				continue;
+			}
 			if (equivalentSmallLiteralAssignmentExists(anchor, assignmentValues)
 					&& !shouldRetainSmallLiteralAnchorFilter(filter, condition)) {
 				continue;
@@ -318,6 +327,45 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		TupleExpr anchoredArg = prependAnchors(arg, anchors);
 		filter.setArg(anchoredArg);
 		filter.setCondition(LmdbJoinPlanSupport.combinedCondition(remainingConditions));
+		return false;
+	}
+
+	private BindingSetAssignment exactStoredTermFilterAnchor(Filter filter, ValueExpr condition,
+			BindingSetAssignment queryTermAnchor, Set<String> assuredBindings) {
+		if (queryTermAnchor == null || queryTermAnchor.getBindingNames().size() != 1
+				|| !(filter.getArg() instanceof StatementPattern)) {
+			return null;
+		}
+		String bindingName = queryTermAnchor.getBindingNames().iterator().next();
+		if (!assuredBindings.contains(bindingName)
+				|| !containsTermIdentityUnsafeValue(queryTermAnchor, bindingName)) {
+			return null;
+		}
+		if (shouldKeepObjectFilterForCascadesCosting(filter, condition, bindingName)) {
+			return null;
+		}
+		BindingSetAssignment actualTermAnchor = LmdbPlannerServices.from(statistics)
+				.flatMap(services -> services.exactStoredTermFilterAnchor(filter, condition, bindingName))
+				.orElse(null);
+		if (actualTermAnchor == null) {
+			return null;
+		}
+		actualTermAnchor = annotateFiniteAnchor(filter, condition, actualTermAnchor, bindingName);
+		actualTermAnchor.setStringMetricPlanned("optimizer.rewriteProof",
+				new LmdbRewriteProof(LmdbRewriteProof.RewriteKind.FILTER_IN_TO_VALUES,
+						LmdbRewriteProof.EquivalenceScope.LOGICAL_BAG_EQUIVALENT,
+						Set.of("exactStoredTermSupport", "originalFilterRetained", "termIdsDeduplicated"),
+						"complete-stored-term-support-prefilters-the-retained-value-equality-filter")
+								.metricFragment());
+		return actualTermAnchor;
+	}
+
+	private static boolean containsTermIdentityUnsafeValue(BindingSetAssignment anchor, String bindingName) {
+		for (BindingSet bindingSet : anchor.getBindingSets()) {
+			if (!LmdbJoinPlanSupport.isSafeValuesAnchorValue(bindingSet.getValue(bindingName))) {
+				return true;
+			}
+		}
 		return false;
 	}
 
@@ -982,19 +1030,12 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		if (!containsMultipleStatementPatterns(filter)) {
 			return false;
 		}
-		// Defer to cascades costing only when real (learned/sampled) evidence says the filter is
-		// unselective; a heuristic/unknown estimate must not veto a provably safe anchor. The 0.25
-		// threshold mirrors the packed finite-filter rule's own gate.
-		EvaluationStatistics.FilterPassEstimate estimate = LmdbJoinPlanSupport.estimateFilterPass(statistics, filter,
-				condition);
-		if (estimate == null || !isValidPassRatio(estimate.getPassRatio())) {
-			return false;
-		}
-		if (estimate.getSource() == EvaluationStatistics.FilterPassEstimate.Source.HEURISTIC
-				|| estimate.getSource() == EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN) {
-			return false;
-		}
-		return estimate.getPassRatio() > 0.25d;
+		// A multi-pattern mandatory region belongs to packed Cascades. Keep the original predicate so
+		// the packed rule program can compare it with its finite-anchor alternative using the same
+		// prefix, correlated-operator work, and cartesian costs. Preprocessing must not select one
+		// alternative merely because filter evidence is not yet available: doing so also prevents
+		// runtime feedback from ever observing the discarded predicate.
+		return true;
 	}
 
 	private static void collectJoinFactors(TupleExpr tupleExpr, List<TupleExpr> factors) {

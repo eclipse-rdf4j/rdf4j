@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
@@ -35,5 +36,40 @@ class PackedLongSubsetTableTest {
 		assertEquals(3, table.parentStateId(left));
 		assertEquals(3, table.appendedFactorOrdinal(left));
 		assertEquals(0b1110L, table.neighborMask(left));
+	}
+
+	@Test
+	void retainsTheAppendedFactorsComponentContributionWithTheWinningSparseState() {
+		PackedLongSubsetTable table = new PackedLongSubsetTable(2);
+
+		int state = table.offer(0b0011L, 12.0d, 20.0d, 3.0d, 1, 1, 1, 0b1100L);
+		table.offer(0b0011L, 24.0d, 30.0d, 6.0d, 2, 2, 2, 0b1110L);
+
+		assertEquals(3.0d, table.appendedContributionRows(state), 0.0d,
+				"A losing sparse path must not overwrite the selected path's component contribution");
+
+		table.offer(0b0011L, 8.0d, 10.0d, 2.0d, 0, 3, 3, 0b1111L);
+		assertEquals(2.0d, table.appendedContributionRows(state), 0.0d,
+				"A lower-cost replacement must publish its aligned component contribution");
+
+		table.offer(0b0011L, 6.0d, 10.0d, 1.5d, 4, 4, 4, 0b1111L);
+		assertEquals(1.5d, table.appendedContributionRows(state), 0.0d,
+				"A higher-preference equal-cost replacement must publish its aligned contribution");
+	}
+
+	@Test
+	void contributionColumnSurvivesGrowthAndLegacyOffersRemainUnknown() {
+		PackedLongSubsetTable table = new PackedLongSubsetTable(1);
+		int legacy = table.offer(1L, 1.0d, 1.0d, 0, 0, 1L);
+		assertTrue(Double.isNaN(table.appendedContributionRows(legacy)));
+
+		for (int ordinal = 1; ordinal < 40; ordinal++) {
+			long mask = ordinal + 1L;
+			table.offer(mask, ordinal, ordinal, ordinal + 0.5d, 0, 0, ordinal, mask << 1);
+		}
+		for (int ordinal = 1; ordinal < 40; ordinal++) {
+			int state = table.find(ordinal + 1L);
+			assertEquals(ordinal + 0.5d, table.appendedContributionRows(state), 0.0d);
+		}
 	}
 }

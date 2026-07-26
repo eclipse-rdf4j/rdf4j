@@ -20,6 +20,8 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -60,7 +62,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKeys;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ScalarEvaluationEffects;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -393,6 +397,174 @@ class LmdbFilterSelectivityStats
 			synopsis = coldSynopsis;
 		}
 		return evaluateColdSynopsis(candidate, synopsis);
+	}
+
+	/**
+	 * Proves that a filter rejects every row from a small statement-pattern surface.
+	 *
+	 * <p>
+	 * Unlike sampling, this method reports success only after both explicit and inferred LMDB surfaces have been
+	 * exhausted within the supplied row bound. Finding one passing row, exceeding the bound, or encountering an
+	 * evaluation/storage failure all conservatively decline the proof.
+	 */
+	boolean isExactBoundedFilterZero(Filter filter, StatementPattern pattern, int maxScannedRows) {
+		if (maxScannedRows <= 0 || !supportsColdSynopsis(filter, pattern)) {
+			return false;
+		}
+		ColdSamplingCandidate candidate = coldSamplingCandidate(filter, pattern);
+		if (candidate == null) {
+			return false;
+		}
+		DefaultEvaluationStrategy strategy = samplingStrategy();
+		QueryValueEvaluationStep condition = prepareCondition(strategy, candidate.condition);
+		if (condition == null) {
+			return false;
+		}
+
+		int scannedRows = 0;
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			for (boolean explicit : new boolean[] { true, false }) {
+				try (RecordIterator triples = tripleStore.getTriples(txn, candidate.subjId, candidate.predId,
+						candidate.objId, candidate.contextId, explicit)) {
+					long[] row;
+					while ((row = triples.next()) != null) {
+						if (++scannedRows > maxScannedRows) {
+							return false;
+						}
+						if (!matchesColdPattern(candidate, row[TripleIndex.SUBJ_IDX], row[TripleIndex.PRED_IDX],
+								row[TripleIndex.OBJ_IDX], row[TripleIndex.CONTEXT_IDX])) {
+							continue;
+						}
+						try {
+							if (strategy.isTrue(condition, toBindingSet(candidate.pattern, row))) {
+								return false;
+							}
+						} catch (ValueExprEvaluationException e) {
+							// RDF4J query execution treats expression errors as filtered rows.
+						}
+					}
+				}
+			}
+			return true;
+		} catch (IOException | RuntimeException e) {
+			return false;
+		}
+	}
+
+	/**
+	 * Enumerates a complete, bounded set of actual stored terms that satisfy a single-variable filter.
+	 *
+	 * <p>
+	 * DISTINCT cursor skipping bounds work by the number of different terms instead of the number of statement
+	 * occurrences. The returned values are only term support: callers must still probe statement multiplicities when
+	 * estimating rows.
+	 */
+	DistinctFilterValues exactMatchingDistinctValues(StatementPattern pattern, ValueExpr condition,
+			String bindingName, int maximumDistinctValues) {
+		if (pattern == null || condition == null || bindingName == null || bindingName.isBlank()
+				|| maximumDistinctValues < 1
+				|| !VarNameCollector.process(condition).equals(Set.of(bindingName))
+				|| hasRepeatedUnboundVariable(pattern)) {
+			return DistinctFilterValues.unavailable();
+		}
+		int valueComponent = uniqueVariableComponent(pattern, bindingName);
+		if (valueComponent < 0 || valueComponent == TripleStore.CONTEXT_IDX
+				|| pattern.getScope() == StatementPattern.Scope.NAMED_CONTEXTS
+						&& (pattern.getContextVar() == null || !pattern.getContextVar().hasValue())) {
+			return DistinctFilterValues.unavailable();
+		}
+
+		Filter synthetic = new Filter(pattern.clone(), condition.clone());
+		if (!supportsColdSynopsis(synthetic, pattern)) {
+			return DistinctFilterValues.unavailable();
+		}
+		ColdSamplingCandidate candidate = coldSamplingCandidate(synthetic, pattern);
+		if (candidate == null) {
+			return DistinctFilterValues.unavailable();
+		}
+		StatementPattern projected = pattern.clone();
+		new LmdbDistinctRequirement(Set.of(bindingName), Set.of(), Set.of(), "finite-filter-evidence")
+				.annotate(projected);
+		if (tripleStore.distinctCursorSkipPlan(projected).isEmpty()) {
+			return DistinctFilterValues.unavailable();
+		}
+
+		DefaultEvaluationStrategy strategy = samplingStrategy();
+		QueryValueEvaluationStep preparedCondition = prepareCondition(strategy, condition);
+		if (preparedCondition == null) {
+			return DistinctFilterValues.unavailable();
+		}
+		LinkedHashSet<Long> support = new LinkedHashSet<>();
+		List<Value> matchingValues = new ArrayList<>();
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			for (boolean explicit : new boolean[] { true, false }) {
+				Optional<RecordIterator> records = tripleStore.getTriplesWithDistinctCursorSkip(txn, projected,
+						candidate.subjId, candidate.predId, candidate.objId, candidate.contextId, explicit,
+						LmdbValueIdFilter.none());
+				if (records.isEmpty()) {
+					return DistinctFilterValues.unavailable();
+				}
+				try (RecordIterator iterator = records.orElseThrow()) {
+					long[] row;
+					while ((row = iterator.next()) != null) {
+						long valueId = row[valueComponent];
+						if (!support.add(valueId)) {
+							continue;
+						}
+						if (support.size() > maximumDistinctValues) {
+							return DistinctFilterValues.supportLimit();
+						}
+						if (!matchesColdPattern(candidate, row[TripleStore.SUBJ_IDX],
+								row[TripleStore.PRED_IDX], row[TripleStore.OBJ_IDX],
+								row[TripleStore.CONTEXT_IDX])) {
+							continue;
+						}
+						try {
+							if (strategy.isTrue(preparedCondition, toBindingSet(candidate.pattern, row))) {
+								matchingValues.add(valueStore.getValue(valueId));
+							}
+						} catch (ValueExprEvaluationException e) {
+							// RDF4J query execution treats expression errors as filtered rows.
+						}
+					}
+				}
+			}
+			return DistinctFilterValues.complete(matchingValues);
+		} catch (IOException | RuntimeException e) {
+			return DistinctFilterValues.unavailable();
+		}
+	}
+
+	private static int uniqueVariableComponent(StatementPattern pattern, String bindingName) {
+		Var[] variables = {
+				pattern.getSubjectVar(),
+				pattern.getPredicateVar(),
+				pattern.getObjectVar(),
+				pattern.getContextVar()
+		};
+		int component = -1;
+		for (int index = 0; index < variables.length; index++) {
+			Var variable = variables[index];
+			if (variable == null || variable.hasValue() || !bindingName.equals(variable.getName())) {
+				continue;
+			}
+			if (component >= 0) {
+				return -1;
+			}
+			component = index;
+		}
+		return component;
+	}
+
+	private static boolean hasRepeatedUnboundVariable(StatementPattern pattern) {
+		Set<String> names = new HashSet<>();
+		for (Var variable : pattern.getVarList()) {
+			if (variable != null && !variable.hasValue() && variable.getName() != null
+					&& !names.add(variable.getName())) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	synchronized List<BackgroundSamplingRequest> drainBackgroundSamplingRequests(int maxCount) {
@@ -1074,7 +1246,9 @@ class LmdbFilterSelectivityStats
 
 	private boolean supportsColdSynopsis(Filter filter, StatementPattern pattern) {
 		if (filter == null || filter.getCondition() == null || pattern == null
-				|| pattern.getBindingNames().isEmpty()) {
+				|| pattern.getBindingNames().isEmpty()
+				|| ScalarEvaluationEffects
+						.effectOf(filter.getCondition()) != ScalarEvaluationEffects.Effect.REPEATABLE) {
 			return false;
 		}
 		Set<String> patternBindings = pattern.getBindingNames();
@@ -1413,6 +1587,32 @@ class LmdbFilterSelectivityStats
 		boolean foregroundNeeded() {
 			return foregroundNeeded;
 		}
+	}
+
+	record DistinctFilterValues(List<Value> matchingValues, DistinctFilterStatus status) {
+
+		DistinctFilterValues {
+			matchingValues = matchingValues == null ? List.of() : List.copyOf(matchingValues);
+			status = status == null ? DistinctFilterStatus.UNAVAILABLE : status;
+		}
+
+		private static DistinctFilterValues complete(List<Value> matchingValues) {
+			return new DistinctFilterValues(matchingValues, DistinctFilterStatus.COMPLETE);
+		}
+
+		private static DistinctFilterValues supportLimit() {
+			return new DistinctFilterValues(List.of(), DistinctFilterStatus.SUPPORT_LIMIT);
+		}
+
+		private static DistinctFilterValues unavailable() {
+			return new DistinctFilterValues(List.of(), DistinctFilterStatus.UNAVAILABLE);
+		}
+	}
+
+	enum DistinctFilterStatus {
+		COMPLETE,
+		SUPPORT_LIMIT,
+		UNAVAILABLE
 	}
 
 	private record RuntimeRowsKey(long subjId, long predId, long objId, long contextId) {

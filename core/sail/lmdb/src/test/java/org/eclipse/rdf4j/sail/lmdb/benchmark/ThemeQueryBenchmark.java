@@ -125,7 +125,7 @@ public class ThemeQueryBenchmark {
 	})
 	public String themeName;
 
-	@Param({ "true" })
+	@Param({ "false" })
 	public boolean sketchEstimatorEnabled;
 
 	@Param({ "Timed" })

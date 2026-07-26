@@ -102,7 +102,8 @@ class LmdbAASQuery2CascadesHypergraphPlanningTest {
 						() -> "The connected query must not introduce Cartesian work:\n" + plan);
 				double plannedWork = optimized.getDoubleMetricPlanned("plannedCostWorkRows");
 				assertTrue(plannedWork > 0.0d && plannedWork < 2_000_000.0d,
-						() -> "The generated AAS query must retain bounded planned work, found " + plannedWork);
+						() -> "The generated AAS query must retain bounded planned work, found " + plannedWork
+								+ ":\n" + plan);
 				assertTrue(singleLong(connection, QUERY, "c") > 0L,
 						"The endpoint-bound DPhyp plan must preserve the aggregate result");
 			}

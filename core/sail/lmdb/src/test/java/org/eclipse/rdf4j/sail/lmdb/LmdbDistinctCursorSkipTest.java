@@ -66,7 +66,7 @@ class LmdbDistinctCursorSkipTest {
 					}
 				}
 				connection.commit();
-				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+				LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 				LmdbPlannerAwait.awaitSketchesReady(store);
 
 				String query = "SELECT DISTINCT ?p WHERE { ?s ?p ?o }";
@@ -118,7 +118,7 @@ class LmdbDistinctCursorSkipTest {
 					}
 				}
 				connection.commit();
-				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+				LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 				LmdbPlannerAwait.awaitSketchesReady(store);
 
 				String query = "SELECT DISTINCT ?p WHERE { ?s ?p ?o } ORDER BY ?o";
@@ -152,7 +152,7 @@ class LmdbDistinctCursorSkipTest {
 					}
 				}
 				connection.commit();
-				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+				LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 				LmdbPlannerAwait.awaitSketchesReady(store);
 
 				String query = "SELECT DISTINCT ?p WHERE { ?s ?p ?o }";
@@ -198,7 +198,7 @@ class LmdbDistinctCursorSkipTest {
 					}
 				}
 				connection.commit();
-				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+				LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 				LmdbPlannerAwait.awaitSketchesReady(store);
 
 				String query = "SELECT DISTINCT ?o WHERE { ?s <urn:distinct:tag> ?o }";
@@ -239,7 +239,7 @@ class LmdbDistinctCursorSkipTest {
 							VF.createIRI("urn:distinct:full:o:" + row));
 				}
 				connection.commit();
-				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+				LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 				LmdbPlannerAwait.awaitSketchesReady(store);
 
 				String query = "SELECT DISTINCT ?s ?p ?o WHERE { ?s ?p ?o }";
@@ -288,7 +288,7 @@ class LmdbDistinctCursorSkipTest {
 					}
 				}
 				connection.commit();
-				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+				LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 				LmdbPlannerAwait.awaitSketchesReady(store);
 
 				String query = "SELECT DISTINCT ?s ?p WHERE { ?s ?p ?o }";
@@ -339,7 +339,7 @@ class LmdbDistinctCursorSkipTest {
 					}
 				}
 				connection.commit();
-				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+				LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 				LmdbPlannerAwait.awaitSketchesReady(store);
 
 				String query = """
@@ -396,7 +396,7 @@ class LmdbDistinctCursorSkipTest {
 				connection.add(VF.createIRI("urn:distinct:minus:s:2"), disabled,
 						VF.createIRI("urn:distinct:minus:reason"));
 				connection.commit();
-				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+				LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 				LmdbPlannerAwait.awaitSketchesReady(store);
 
 				String query = """
@@ -446,7 +446,7 @@ class LmdbDistinctCursorSkipTest {
 					}
 				}
 				connection.commit();
-				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+				LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 				LmdbPlannerAwait.awaitSketchesReady(store);
 
 				String query = "SELECT DISTINCT ?p WHERE { ?s ?p ?o . ?o <urn:distinct:join:usedBy> ?x }";

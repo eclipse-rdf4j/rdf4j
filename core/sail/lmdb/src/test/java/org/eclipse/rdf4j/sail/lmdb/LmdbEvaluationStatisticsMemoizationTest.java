@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.File;
 import java.util.List;
 import java.util.Set;
 
@@ -27,6 +28,8 @@ import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.CostContext;
@@ -35,7 +38,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsE
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /** Contract tests for the thin statistics facade; engine behavior is tested separately. */
 class LmdbEvaluationStatisticsMemoizationTest {
@@ -111,8 +118,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		var cost = statistics.estimateFactorCost(codes, repeated).orElseThrow();
 
 		assertEquals(199_500.0d, cost.getOutputRows(), 0.0d);
-		assertEquals(199_501.0d, cost.getWorkRows(), 0.0d,
-				"Three VALUES rows plus iterator setup must be charged for every outer entity");
+		assertEquals(199_500.0d, cost.getWorkRows(), 0.0d,
+				"Three VALUES rows must be charged exactly once for every outer entity");
 		assertEquals(66_500.0d, cost.getDoubleMetrics().get("plannedRepeatedInvocations"), 0.0d);
 		assertTrue(cost.isRepeatedInvocationsCosted());
 	}
@@ -162,6 +169,60 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 			assertSame(first, equivalentClone,
 					"One optimization must estimate each structural factor and complete cost context only once");
+		}
+	}
+
+	@Test
+	void optimizationScopeMemoizesAndBoundsExactAlternativeScans(@TempDir File dataDir) {
+		IRI firstLeft = VF.createIRI("urn:alternative:first:left");
+		IRI firstRight = VF.createIRI("urn:alternative:first:right");
+		IRI secondLeft = VF.createIRI("urn:alternative:second:left");
+		IRI secondRight = VF.createIRI("urn:alternative:second:right");
+		int rowsPerPredicate = 1_050;
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc,posc"));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin();
+				List<IRI> predicates = List.of(firstLeft, firstRight, secondLeft, secondRight);
+				for (int predicateOrdinal = 0; predicateOrdinal < predicates.size(); predicateOrdinal++) {
+					for (int row = 0; row < rowsPerPredicate; row++) {
+						connection.add(VF.createIRI("urn:alternative:subject:" + predicateOrdinal + ':' + row),
+								predicates.get(predicateOrdinal), VF.createLiteral(row));
+					}
+				}
+				connection.commit();
+			}
+
+			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics();
+			LmdbEstimatorRuntime runtime = statistics.estimatorRuntime();
+			TupleExpr firstAlternative = new Union(
+					pattern("subject", firstLeft, "object"),
+					pattern("subject", firstRight, "object"));
+			TupleExpr secondAlternative = new Union(
+					pattern("subject", secondLeft, "object"),
+					pattern("subject", secondRight, "object"));
+
+			try (QueryOptimizationScope ignored = statistics.beginQueryOptimizationScope()) {
+				var first = runtime.exactAlternativeSurface(firstAlternative);
+				assertTrue(first.isPresent());
+				assertSame(first, runtime.exactAlternativeSurface(firstAlternative.clone()),
+						"Equivalent relations must reuse one exact scan result inside an optimization");
+				assertEquals(rowsPerPredicate * 2.0d, first.orElseThrow().surfaceRows(), 0.0d);
+				assertTrue(runtime.exactAlternativeSurface(secondAlternative).isEmpty(),
+						"Distinct exact scans must share one bounded query-local scan budget");
+			}
+
+			try (QueryOptimizationScope ignored = statistics.beginQueryOptimizationScope()) {
+				assertEquals(rowsPerPredicate * 2.0d,
+						runtime.exactAlternativeSurface(secondAlternative).orElseThrow().surfaceRows(), 0.0d,
+						"A new optimization scope must receive a fresh exact-scan budget");
+			}
+		} finally {
+			repository.shutDown();
 		}
 	}
 

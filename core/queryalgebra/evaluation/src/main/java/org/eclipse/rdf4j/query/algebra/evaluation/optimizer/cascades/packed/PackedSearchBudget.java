@@ -29,21 +29,64 @@ final class PackedSearchBudget {
 	}
 
 	boolean tryConsume() {
-		if (workUnits >= workLimit) {
-			workLimitReached = true;
+		return tryReserve(1L);
+	}
+
+	/**
+	 * Samples the hard deadline at an outer phase boundary without charging deterministic work. Use this before a
+	 * multi-step phase that may publish memo state incrementally.
+	 */
+	boolean sampleDeadline() {
+		if (workLimitReached || deadlineReached) {
 			return false;
 		}
-		long next = ++workUnits;
-		if ((next & DEADLINE_SAMPLE_MASK) == 0L && deadlineNanos != Long.MAX_VALUE
-				&& System.nanoTime() >= deadlineNanos) {
+		if (deadlineNanos != Long.MAX_VALUE && System.nanoTime() >= deadlineNanos) {
 			deadlineReached = true;
 			return false;
 		}
 		return true;
 	}
 
+	/**
+	 * Atomically charges a deterministic block of work. If the block reaches a sampled deadline, only the work up to
+	 * that sample is charged and the reservation fails; callers can therefore avoid publishing partial memo state.
+	 */
+	boolean tryReserve(long units) {
+		if (workLimitReached || deadlineReached) {
+			return false;
+		}
+		if (units < 0L) {
+			return false;
+		}
+		if (units > workLimit - workUnits) {
+			workLimitReached = true;
+			return false;
+		}
+		long unitsUntilDeadlineSample = DEADLINE_SAMPLE_MASK + 1L - (workUnits & DEADLINE_SAMPLE_MASK);
+		if (units >= unitsUntilDeadlineSample && deadlineNanos != Long.MAX_VALUE
+				&& System.nanoTime() >= deadlineNanos) {
+			workUnits += unitsUntilDeadlineSample;
+			deadlineReached = true;
+			return false;
+		}
+		workUnits += units;
+		return true;
+	}
+
 	long workUnits() {
 		return workUnits;
+	}
+
+	boolean isBounded() {
+		return workLimit != Long.MAX_VALUE || deadlineNanos != Long.MAX_VALUE;
+	}
+
+	boolean canConsume(long units) {
+		return !workLimitReached && !deadlineReached && units >= 0L && workUnits <= workLimit - units;
+	}
+
+	long remainingWorkUnits() {
+		return workLimitReached || deadlineReached ? 0L : workLimit - workUnits;
 	}
 
 	boolean workLimitReached() {

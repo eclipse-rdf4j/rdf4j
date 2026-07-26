@@ -1793,27 +1793,85 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 
 	private boolean stampFusedCostEstimate(TupleExpr node, Set<String> boundVars, double outerPrefixRows,
 			boolean nestedInvocation) {
-		if (!hasSelectedPlannerOperatorFeedback(node)) {
+		if (!hasSelectedPlannerOperatorFeedback(node) || lmdbPlannerServices.isEmpty()) {
 			return false;
 		}
-		if (!(statistics instanceof JoinFactorCostModel costModel)) {
+		double selectedRows = nodeRows(node);
+		double selectedWorkRows = nodeWorkRows(node);
+		String retainedFeedbackSource = node.getStringMetricPlanned("plannedOperatorFeedbackSource");
+		if (retainedFeedbackSource != null) {
+			stampRetainedOperatorFeedback(node, retainedFeedbackSource, selectedRows, selectedWorkRows);
+			return true;
+		}
+		Optional<JoinFactorCostModel.FactorCostEstimate> baseEstimate = statistics instanceof JoinFactorCostModel costModel
+				? costModel.estimateFactorCost(node,
+						JoinFactorCostModel.CostContext.of(boundVars, outerPrefixRows, Double.NaN, nestedInvocation))
+				: Optional.empty();
+		double baseRows = baseEstimate.map(JoinFactorCostModel.FactorCostEstimate::getOutputRows)
+				.filter(LmdbTupleExprEstimateAnnotator::isFiniteNonNegativeValue)
+				.orElse(selectedRows);
+		double baseWorkRows = baseEstimate.map(JoinFactorCostModel.FactorCostEstimate::getWorkRows)
+				.filter(LmdbTupleExprEstimateAnnotator::isFiniteNonNegativeValue)
+				.orElse(selectedWorkRows);
+		String baseSource = baseEstimate
+				.map(JoinFactorCostModel.FactorCostEstimate::getStringMetrics)
+				.map(metrics -> metrics.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE))
+				.orElse(null);
+		if (canApplyOperatorFeedback(node, baseSource)) {
+			baseEstimate.ifPresent(estimate -> copyEstimateMetrics(node, estimate));
+		}
+		double leftRows = Double.NaN;
+		double rightRows = Double.NaN;
+		if (node instanceof BinaryTupleOperator binary) {
+			leftRows = nodeRows(binary.getLeftArg());
+			rightRows = nodeRows(binary.getRightArg());
+		}
+		String executionMode = node instanceof ArbitraryLengthPath || node instanceof ZeroLengthPath
+				? node.getStringMetricPlanned(PLANNED_PROPERTY_PATH_ENDPOINT_MODE)
+				: null;
+		LmdbOperatorFeedbackStats.OperatorEstimate feedback = lmdbPlannerServices.get()
+				.estimateOperatorFeedback(node, leftRows, rightRows, baseRows, baseWorkRows, executionMode);
+		if (feedback == null) {
 			return false;
 		}
-		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = costModel.estimateFactorCost(node,
-				JoinFactorCostModel.CostContext.of(boundVars, outerPrefixRows, Double.NaN, nestedInvocation));
-		if (estimate.isEmpty()) {
-			return false;
-		}
-		JoinFactorCostModel.FactorCostEstimate factorEstimate = estimate.get();
-		String fusion = factorEstimate.getStringMetrics().get("plannedEstimateFusion");
-		if (!"operator_feedback".equals(fusion)) {
-			return false;
-		}
-		copyEstimateMetrics(node, factorEstimate);
-		String source = factorEstimate.getStringMetrics()
-				.getOrDefault(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, LMDB_SYNTHETIC);
-		stampEstimate(node, factorEstimate.getOutputRows(), factorEstimate.getWorkRows(), source, true);
+		double selectedRobustWorkRows = isFiniteNonNegative(selectedWorkRows)
+				? selectedWorkRows
+				: robustFeedbackWorkRows(feedback);
+		stampOperatorFeedback(node, feedback, baseRows, baseWorkRows, selectedRobustWorkRows);
+		stampEstimate(node, finiteOr(selectedRows, feedback.rows()), selectedRobustWorkRows, feedback.source(), true);
 		return true;
+	}
+
+	private void stampRetainedOperatorFeedback(TupleExpr node, String source, double selectedRows,
+			double selectedWorkRows) {
+		double confidence = node.getDoubleMetricPlanned("plannedOperatorFeedbackConfidence");
+		double uncertaintyRows = node.getDoubleMetricPlanned("plannedOperatorFeedbackUncertaintyRows");
+		double rowQError = node.getDoubleMetricPlanned("plannedOperatorFeedbackRowQErrorMax");
+		double feedbackRows = node.getDoubleMetricPlanned("plannedOperatorFeedbackRows");
+		double evidence = node.getDoubleMetricPlanned("plannedOperatorFeedbackEvidence");
+		if (isFiniteNonNegative(confidence)) {
+			node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE, confidence);
+			node.setDoubleMetricPlanned(TelemetryMetricNames.OPTIMIZER_RUNTIME_FEEDBACK_CONFIDENCE, confidence);
+		}
+		if (isFiniteNonNegative(uncertaintyRows)) {
+			node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_UNCERTAINTY_ROWS, uncertaintyRows);
+			node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_UNCERTAINTY_ROWS, uncertaintyRows);
+		}
+		if (isFiniteNonNegative(rowQError) && rowQError > 1.0d && isFiniteNonNegative(feedbackRows)) {
+			node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_LOWER, feedbackRows / rowQError);
+			node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_UPPER, feedbackRows * rowQError);
+		}
+		if (isFiniteNonNegative(selectedWorkRows)) {
+			node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE, selectedWorkRows);
+		}
+		node.setStringMetricPlanned(TelemetryMetricNames.OPTIMIZER_RUNTIME_FEEDBACK,
+				"operatorFeedback=" + source
+						+ (isFiniteNonNegative(evidence) ? ", evidence=" + Math.round(evidence) : ""));
+		stampEstimate(node, selectedRows, selectedWorkRows, source, true);
+	}
+
+	private static boolean isFiniteNonNegativeValue(double value) {
+		return Double.isFinite(value) && value >= 0.0d;
 	}
 
 	private boolean hasSelectedPlannerOperatorFeedback(TupleExpr node) {
@@ -2043,10 +2101,65 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 	}
 
 	private void stampOperatorFeedback(TupleExpr node, LmdbOperatorFeedbackStats.OperatorEstimate feedback) {
+		stampOperatorFeedback(node, feedback, nodeRows(node), nodeWorkRows(node), feedback.workRows());
+	}
+
+	private void stampOperatorFeedback(TupleExpr node, LmdbOperatorFeedbackStats.OperatorEstimate feedback,
+			double baseRows, double baseWorkRows, double robustWorkRows) {
+		node.setStringMetricPlanned("plannedEstimateFusion", "operator_feedback");
+		node.setStringMetricPlanned("plannedOperatorFeedbackSource", feedback.source());
+		if (feedback.feedbackKey() != null) {
+			node.setStringMetricPlanned("plannedOperatorFeedbackKey", feedback.feedbackKey());
+		}
+		if (isFiniteNonNegative(baseRows)) {
+			node.setDoubleMetricPlanned("plannedBaseRows", baseRows);
+		}
+		if (isFiniteNonNegative(baseWorkRows)) {
+			node.setDoubleMetricPlanned("plannedBaseWorkRows", baseWorkRows);
+		}
+		node.setDoubleMetricPlanned("plannedOperatorFeedbackRows", feedback.rows());
+		node.setDoubleMetricPlanned("plannedOperatorFeedbackWorkRows", feedback.workRows());
+		node.setDoubleMetricPlanned("plannedOperatorFeedbackRobustWorkRows", robustWorkRows);
+		node.setDoubleMetricPlanned("plannedOperatorFeedbackEvidence", feedback.evidenceCount());
+		node.setDoubleMetricPlanned("plannedOperatorFeedbackConfidence", feedback.confidence());
+		node.setDoubleMetricPlanned("plannedOperatorFeedbackCorrectionConfidence",
+				feedback.correctionConfidence());
+		node.setDoubleMetricPlanned("plannedOperatorFeedbackRowQErrorMean", feedback.rowQErrorMean());
+		node.setDoubleMetricPlanned("plannedOperatorFeedbackRowQErrorMax", feedback.rowQErrorMax());
+		node.setDoubleMetricPlanned("plannedOperatorFeedbackWorkQErrorMean", feedback.workQErrorMean());
+		node.setDoubleMetricPlanned("plannedOperatorFeedbackWorkQErrorMax", feedback.workQErrorMax());
+		node.setDoubleMetricPlanned("plannedOperatorFeedbackUncertaintyRows", feedback.uncertaintyRows());
+		node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_UNCERTAINTY_ROWS, feedback.uncertaintyRows());
+		node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_UNCERTAINTY_ROWS,
+				feedback.uncertaintyRows());
+		node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE, feedback.confidence());
+		double rowQError = feedback.rowQErrorMax();
+		if (isFiniteNonNegative(rowQError) && rowQError > 1.0d && isFiniteNonNegative(feedback.rows())) {
+			node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_LOWER,
+					feedback.rows() / rowQError);
+			node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_UPPER,
+					feedback.rows() * rowQError);
+		}
+		node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE, robustWorkRows);
 		node.setStringMetricPlanned(TelemetryMetricNames.OPTIMIZER_RUNTIME_FEEDBACK,
 				"operatorFeedback=" + feedback.source() + ", evidence=" + feedback.evidenceCount());
 		node.setDoubleMetricPlanned(TelemetryMetricNames.OPTIMIZER_RUNTIME_FEEDBACK_CONFIDENCE,
 				feedback.confidence());
+	}
+
+	private double robustFeedbackWorkRows(LmdbOperatorFeedbackStats.OperatorEstimate feedback) {
+		double workRows = feedback.workRows();
+		if (!isFiniteNonNegative(workRows) || workRows == 0.0d) {
+			return workRows;
+		}
+		double qError = Math.max(feedback.rowQErrorMax(), feedback.workQErrorMax());
+		if (!isFiniteNonNegative(qError) || qError <= 1.0d) {
+			return workRows;
+		}
+		double confidenceGap = 1.0d - Math.max(0.0d, Math.min(1.0d, feedback.confidence()));
+		double penalty = Math.min(0.50d, Math.max(0.0d, qError - 1.0d) * confidenceGap * 0.05d);
+		double robustWorkRows = workRows * (1.0d + penalty);
+		return isFiniteNonNegative(robustWorkRows) ? robustWorkRows : workRows;
 	}
 
 	private void stampFilterTelemetry(Filter filter, EvaluationStatistics.FilterPassEstimate estimate) {

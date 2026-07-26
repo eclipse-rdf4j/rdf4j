@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 
 final class FactorCostCacheKey {
@@ -58,6 +59,10 @@ final class FactorCostCacheKey {
 		if (factor instanceof Join join) {
 			return BinaryFactorFingerprint.of("Join", factorFingerprint(join.getLeftArg()),
 					factorFingerprint(join.getRightArg()), null);
+		}
+		if (factor instanceof Union union) {
+			return BinaryFactorFingerprint.of("Union", factorFingerprint(union.getLeftArg()),
+					factorFingerprint(union.getRightArg()), null);
 		}
 		return FallbackFactorFingerprint.of(factor == null ? "null" : factor.getClass().getName(),
 				factor == null ? "" : factor.toString());

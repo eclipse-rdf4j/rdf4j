@@ -62,7 +62,7 @@ class LmdbValueIdFilterOptimizationTest {
 				connection.add(VF.createIRI("http://example.com/s/literal"), MIXED_OBJECT, literalObject);
 				connection.add(VF.createIRI("http://example.com/s/bnode"), MIXED_OBJECT, bnodeObject);
 				connection.commit();
-				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+				LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 				LmdbPlannerAwait.awaitSketchesReady(store);
 				ValueStore valueStore = (ValueStore) store.getBackingStore().getValueFactory();
 				String idTypes = "idTypes: iri=" + ValueIds.getIdType(valueStore.getId(iriObject))
@@ -114,7 +114,7 @@ class LmdbValueIdFilterOptimizationTest {
 				connection.add(VF.createIRI("http://example.com/s/bnode"), MIXED_OBJECT, bnodeObject);
 				connection.add(VF.createIRI("http://example.com/s/driver"), IRI_OBJECT, iriObject);
 				connection.commit();
-				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+				LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 				LmdbPlannerAwait.awaitSketchesReady(store);
 
 				String query = String.join("\n",
@@ -168,7 +168,7 @@ class LmdbValueIdFilterOptimizationTest {
 				connection.add(VF.createIRI("http://example.com/s/string"), MIXED_OBJECT, stringObject);
 				connection.add(VF.createIRI("http://example.com/s/iri"), MIXED_OBJECT, iriObject);
 				connection.commit();
-				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+				LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 				LmdbPlannerAwait.awaitSketchesReady(store);
 
 				String query = String.join("\n",

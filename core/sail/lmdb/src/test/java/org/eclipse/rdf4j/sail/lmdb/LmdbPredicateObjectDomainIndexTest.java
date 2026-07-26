@@ -659,9 +659,11 @@ class LmdbPredicateObjectDomainIndexTest {
 		LmdbStore sail = (LmdbStore) repository.getSail();
 		SketchBasedJoinEstimator estimator = sail.getBackingStore()
 				.getSketchBasedJoinEstimator();
-		estimator.stop();
-		estimator.rebuild();
-		LmdbPlannerAwait.awaitEstimatorReady(estimator);
+		if (estimator != null) {
+			estimator.stop();
+			estimator.rebuild();
+			LmdbPlannerAwait.awaitEstimatorReady(estimator);
+		}
 		LmdbPlannerAwait.awaitSketchesReady(sail);
 	}
 

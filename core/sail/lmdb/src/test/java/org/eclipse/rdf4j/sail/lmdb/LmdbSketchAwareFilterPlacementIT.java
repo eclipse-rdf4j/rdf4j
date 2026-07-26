@@ -56,7 +56,6 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -280,9 +279,55 @@ class LmdbSketchAwareFilterPlacementIT {
 
 	@Test
 	@Timeout(45)
+	void finiteFilterAnchorKeepsItsAccessPathAfterDisconnectedPrefix(@TempDir File dataDir) throws Exception {
+		runPlannerTest(dataDir, "finiteFilterAnchorKeepsItsAccessPathAfterDisconnectedPrefix", attemptDir -> {
+			LmdbStore store = new LmdbStore(attemptDir, sketchEnabledConfig());
+			SailRepository repository = new SailRepository(store);
+			repository.init();
+
+			try {
+				loadValuesLocalityData(repository);
+				var estimator = store.getBackingStore().getSketchBasedJoinEstimator();
+				estimator.rebuild();
+				LmdbPlannerAwait.awaitEstimatorReady(estimator);
+
+				String query = String.join("\n",
+						"PREFIX ex: <urn:test:>",
+						"SELECT (COUNT(*) AS ?count) WHERE {",
+						"  VALUES ?v0 { " + iriList(0) + " }",
+						"  ?v0 ex:p0 ?tail0 .",
+						"  ?carrier1 ex:p1 ?v1 .",
+						"  FILTER (?v1 IN (" + commaIriList(1) + "))",
+						"}");
+				assertEquals(144L, evaluateCount(repository, query),
+						"Nonmatching p1 noise must preserve the twelve-by-twelve query result");
+				TupleExpr optimized;
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					optimized = (TupleExpr) connection.prepareTupleQuery(query)
+							.explain(Explanation.Level.Optimized)
+							.tupleExpr();
+				}
+
+				List<String> leaves = collectValuesLocalityLeaves(optimized);
+				int finiteAnchorIndex = leaves.indexOf(valuesLeaf("v1"));
+				int consumingPatternIndex = leaves.indexOf(patternLeaf("v1"));
+				assertTrue(finiteAnchorIndex >= 0,
+						"The finite ?v1 alternative must survive costing after the disconnected ?v0 prefix: "
+								+ leaves + "\n" + optimized);
+				assertEquals(finiteAnchorIndex + 1, consumingPatternIndex,
+						"The finite ?v1 anchor must remain adjacent to its consuming statement pattern: "
+								+ leaves + "\n" + optimized);
+			} finally {
+				repository.shutDown();
+			}
+		});
+	}
+
+	@Test
+	@Timeout(45)
 	void manyFiniteValuesAnchorsStayNearConsumingPattern(@TempDir File dataDir) throws Exception {
 		runPlannerTest(dataDir, "manyFiniteValuesAnchorsStayNearConsumingPattern", attemptDir -> {
-			LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
+			LmdbStore store = new LmdbStore(attemptDir, sketchEnabledConfig());
 			SailRepository repository = new SailRepository(store);
 			repository.init();
 
@@ -428,61 +473,6 @@ class LmdbSketchAwareFilterPlacementIT {
 						repository.shutDown();
 					}
 				});
-	}
-
-	@RetriedWithinTimeout
-	void deferredFilterUnlockAddsWorkAndShrinksRows(@TempDir File dataDir) throws Exception {
-		assertTestPassesWithinAttempts(dataDir, "deferredFilterUnlockAddsWorkAndShrinksRows", attemptDir -> {
-			LmdbStore store = new LmdbStore(attemptDir, sketchEnabledConfig());
-			SailRepository repository = new SailRepository(store);
-			repository.init();
-
-			try {
-				loadLibraryData(repository);
-				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
-
-				JoinOrderPlanner planner = (JoinOrderPlanner) store.getBackingStore().getEvaluationStatistics();
-				List<TupleExpr> factors = List.of(
-						new StatementPattern(Var.of("copy"), Var.of("typePredicate", RDF_TYPE),
-								Var.of("copyType", COPY)),
-						new StatementPattern(Var.of("copy"), Var.of("locatedAt", LOCATED_AT), Var.of("branch")));
-
-				assertCriteriaEventually("deferred filter unlock planning metrics", () -> {
-					JoinOrderPlanner.JoinOrderPlan withoutFilter = planner.planJoinOrderAttempt(factors, Set.of(),
-							JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, List.of())
-							.getPlan()
-							.orElseThrow();
-					JoinOrderPlanner.JoinOrderPlan withFilter = planner.planJoinOrderAttempt(factors, Set.of(),
-							JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING,
-							List.of(new JoinOrderPlanner.FilterConstraint(Set.of("copy", "branch"), 0.25d,
-									JoinOrderPlanner.FILTER_COST_EXPENSIVE, "copy-branch-expensive")))
-							.getPlan()
-							.orElseThrow();
-
-					assertTrue(withFilter.getEstimatedFinalRows() < withoutFilter.getEstimatedFinalRows(),
-							"Expected unlocked deferred filter pass ratio to shrink final rows. without="
-									+ withoutFilter.getEstimatedFinalRows() + ", with="
-									+ withFilter.getEstimatedFinalRows() + ", plan=" + describePlan(withFilter));
-					assertTrue(withFilter.getSteps()
-							.stream()
-							.anyMatch(step -> step.getStringMetrics()
-									.containsKey(TelemetryMetricNames.UNLOCKED_FILTERS)),
-							"Expected planner step diagnostics to show the deferred filter unlock");
-					assertTrue(withFilter.getSteps()
-							.stream()
-							.anyMatch(step -> step.getAppliedFilterIndexes().contains(0)),
-							"Expected LMDB access-metric enrichment to preserve deferred filter action indexes");
-					assertTrue(withFilter.getSteps()
-							.stream()
-							.filter(step -> step.getAppliedFilterIndexes().contains(0))
-							.anyMatch(step -> step.getStepWorkRows() > step.getDoubleMetrics()
-									.getOrDefault(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, 0.0d)),
-							"Expected expensive deferred filter evaluation to add step work");
-				});
-			} finally {
-				repository.shutDown();
-			}
-		});
 	}
 
 	@RetriedWithinTimeout
@@ -737,38 +727,6 @@ class LmdbSketchAwareFilterPlacementIT {
 		LmdbPlannerAwait.awaitPlannerAssertion(criteria, assertion::assertPasses);
 	}
 
-	private static String describePlan(JoinOrderPlanner.JoinOrderPlan plan) {
-		StringBuilder builder = new StringBuilder();
-		builder.append("rows=")
-				.append(plan.getEstimatedFinalRows())
-				.append(", work=")
-				.append(plan.getEstimatedTotalWork())
-				.append(", summary=")
-				.append(plan.getSummaryStringMetrics())
-				.append(", steps=[");
-		for (JoinOrderPlanner.PlanStep step : plan.getSteps()) {
-			if (builder.charAt(builder.length() - 1) != '[') {
-				builder.append(", ");
-			}
-			builder.append("{before=")
-					.append(step.getBoundVarsBefore())
-					.append(", factorRows=")
-					.append(step.getFactorOutputRows())
-					.append(", prefixRows=")
-					.append(step.getPrefixOutputRows())
-					.append(", work=")
-					.append(step.getStepWorkRows())
-					.append(", filters=")
-					.append(step.getAppliedFilterIndexes())
-					.append(", strings=")
-					.append(step.getStringMetrics())
-					.append(", doubles=")
-					.append(step.getDoubleMetrics())
-					.append('}');
-		}
-		return builder.append(']').toString();
-	}
-
 	private static <T> T failAfterRetries(String message, Throwable failure) throws Exception {
 		if (failure instanceof AssertionError assertionError) {
 			AssertionError error = new AssertionError(message);
@@ -969,6 +927,13 @@ class LmdbSketchAwareFilterPlacementIT {
 						connection.add(VF.createIRI("urn:test:carrier:" + valueIndex + ":" + entityIndex),
 								valuesLocalityPredicate(valueIndex), valuesLocalityValue(valueIndex, entityIndex));
 					}
+				}
+			}
+			for (int valueIndex = 1; valueIndex < 10; valueIndex += 2) {
+				for (int noiseIndex = 0; noiseIndex < 256; noiseIndex++) {
+					connection.add(VF.createIRI("urn:test:noise-carrier:" + valueIndex + ":" + noiseIndex),
+							valuesLocalityPredicate(valueIndex),
+							VF.createIRI("urn:test:noise-value:" + valueIndex + ":" + noiseIndex));
 				}
 			}
 			connection.commit();

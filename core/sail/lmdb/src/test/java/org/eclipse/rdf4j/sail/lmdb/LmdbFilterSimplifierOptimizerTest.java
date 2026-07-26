@@ -57,8 +57,11 @@ import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -773,6 +776,37 @@ class LmdbFilterSimplifierOptimizerTest {
 	}
 
 	@Test
+	void keepsUnknownObjectMembershipForPackedCostingInMultiPatternAntiScope() {
+		BindingSetAssignment threshold = values("threshold", "3");
+		StatementPattern type = statementPatternWithPredicate("node", "urn:type", "nodeType");
+		StatementPattern weight = statementPatternWithPredicate("node", "urn:weight", "w");
+		TupleExpr outer = new Join(new Join(threshold, type), weight);
+
+		TupleExpr lowNeighbor = new Filter(
+				new Join(statementPatternWithPredicate("node", "urn:connectsTo", "n2"),
+						statementPatternWithPredicate("n2", "urn:weight", "w2")),
+				new Compare(new Var("w2"), new Var("threshold"), CompareOp.LT));
+		TupleExpr selectedWeights = new Filter(outer,
+				listMemberValues("w", VF.createLiteral(1), VF.createLiteral(2), VF.createLiteral(3),
+						VF.createLiteral(4)));
+		TupleExpr withoutLowNeighbor = new Filter(selectedWeights, new Not(new Exists(lowNeighbor)));
+		TupleExpr withoutSelfLoop = new Difference(withoutLowNeighbor,
+				statementPatternWithPredicate("node", "urn:connectsTo", "node"));
+		QueryRoot root = new QueryRoot(withoutSelfLoop);
+
+		new LmdbFilterSimplifierOptimizer(
+				new FixedObjectDomainStatistics(RdfTermDomain.classify(VF.createLiteral(1))))
+						.optimize(root, null, null);
+
+		assertTrue(containsFilterOnBinding(root.getArg(), "w"),
+				"Packed Cascades must receive the original object-membership filter as a costed alternative");
+		assertFalse(containsBindingSetAssignmentFor(root.getArg(), "w"),
+				"LMDB preprocessing must not commit to the finite-anchor alternative before packed costing");
+		assertTrue(containsNotExists(root.getArg()), "The correlated NOT EXISTS scope must survive preprocessing");
+		assertTrue(containsDifference(root.getArg()), "MINUS must survive with its distinct domain-overlap semantics");
+	}
+
+	@Test
 	void hoistsMandatoryOptionalLiteralAnchorAheadOfLeftUnionFanout() {
 		BindingSetAssignment users = values("u", "user7", "user8");
 		TupleExpr activityUnion = new Union(statementPattern("u", "follows", "v"),
@@ -894,6 +928,21 @@ class LmdbFilterSimplifierOptimizerTest {
 		}
 	}
 
+	private static final class FixedObjectDomainStatistics extends EvaluationStatistics
+			implements LmdbPredicateObjectDomainSource {
+
+		private final RdfTermDomain guarantee;
+
+		private FixedObjectDomainStatistics(RdfTermDomain guarantee) {
+			this.guarantee = guarantee;
+		}
+
+		@Override
+		public RdfTermDomain getRdfTermDomain(IRI predicate) {
+			return guarantee;
+		}
+	}
+
 	private static boolean containsFilter(TupleExpr tupleExpr) {
 		if (tupleExpr instanceof Filter) {
 			return true;
@@ -932,6 +981,47 @@ class LmdbFilterSimplifierOptimizerTest {
 		}
 		if (tupleExpr instanceof Join join) {
 			return containsExists(join.getLeftArg()) || containsExists(join.getRightArg());
+		}
+		return false;
+	}
+
+	private static boolean containsFilterOnBinding(TupleExpr tupleExpr, String bindingName) {
+		boolean[] found = { false };
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter filter) {
+				if (VarNameCollector.process(filter.getCondition()).contains(bindingName)) {
+					found[0] = true;
+				}
+				super.meet(filter);
+			}
+		});
+		return found[0];
+	}
+
+	private static boolean containsNotExists(TupleExpr tupleExpr) {
+		boolean[] found = { false };
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter filter) {
+				if (containsNotExists(filter.getCondition())) {
+					found[0] = true;
+				}
+				super.meet(filter);
+			}
+		});
+		return found[0];
+	}
+
+	private static boolean containsNotExists(ValueExpr expression) {
+		if (expression instanceof Not not) {
+			return not.getArg() instanceof Exists || containsNotExists(not.getArg());
+		}
+		if (expression instanceof And and) {
+			return containsNotExists(and.getLeftArg()) || containsNotExists(and.getRightArg());
+		}
+		if (expression instanceof Or or) {
+			return containsNotExists(or.getLeftArg()) || containsNotExists(or.getRightArg());
 		}
 		return false;
 	}

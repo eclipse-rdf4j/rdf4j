@@ -14,13 +14,8 @@ package org.eclipse.rdf4j.sail.lmdb.benchmark;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
-import java.lang.reflect.Method;
 import java.nio.file.Path;
-import java.util.List;
-import java.util.Set;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
@@ -29,11 +24,6 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
@@ -47,12 +37,8 @@ class LmdbPharmaQ2BoundJoinProductEstimateIT {
 
 	private static final ValueFactory VALUE_FACTORY = SimpleValueFactory.getInstance();
 	private static final Theme THEME = Theme.PHARMA;
-	private static final IRI PHARMA_DRUG = VALUE_FACTORY.createIRI("http://example.com/theme/pharma/Drug");
 	private static final IRI PHARMA_ARM_DRUG = VALUE_FACTORY.createIRI("http://example.com/theme/pharma/armDrug");
 	private static final IRI PHARMA_HAS_ARM = VALUE_FACTORY.createIRI("http://example.com/theme/pharma/hasArm");
-	private static final IRI PHARMA_IN_PATHWAY = VALUE_FACTORY
-			.createIRI("http://example.com/theme/pharma/inPathway");
-	private static final IRI PHARMA_TARGET = VALUE_FACTORY.createIRI("http://example.com/theme/pharma/Target");
 	private static final IRI PHARMA_TARGETS = VALUE_FACTORY.createIRI("http://example.com/theme/pharma/targets");
 
 	@Test
@@ -66,26 +52,12 @@ class LmdbPharmaQ2BoundJoinProductEstimateIT {
 				repository.init();
 				BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "pharma-q2 bound product", 60,
 						TimeUnit.SECONDS);
-				JoinOrderPlanner planner = joinOrderPlanner(store);
-				StatementPattern targetType = pharmaTargetTypePattern();
-				StatementPattern inPathway = pharmaInPathwayPattern();
-				StatementPattern targets = pharmaTargetsPattern();
-				StatementPattern drugType = pharmaDrugTypePattern();
-
-				JoinOrderPlanner.JoinOrderPlan targetDomainFirst = estimate(planner,
-						List.of(targetType, inPathway, targets, drugType));
-				JoinOrderPlanner.JoinOrderPlan broadTargetsFirst = estimate(planner,
-						List.of(targets, targetType, inPathway, drugType));
 				OptimizerSnapshot snapshot = explainOptimized(store, repository);
 
 				String diagnostics = "PHARMA q2 should cost the object-bound pharma:targets lookup below "
-						+ "the broad predicate scan once target type and pathway have prepared the target domain.\n"
-						+ "target-domain-first:\n" + describePlan(targetDomainFirst)
-						+ "\nbroad-targets-first:\n" + describePlan(broadTargetsFirst)
+						+ "the broad predicate scan once target type and pathway have prepared the target domain."
 						+ "\nquery:\n" + snapshot.renderedQuery()
 						+ "\noptimized plan:\n" + snapshot.plan();
-				assertTrue(targetDomainFirst.getEstimatedTotalWork() < broadTargetsFirst.getEstimatedTotalWork(),
-						diagnostics);
 				assertConnectedPlanDoesNotStartFromTargetsScan(snapshot.plan(), diagnostics);
 				assertExistsStartsFromBoundArmDrugLookup(snapshot.plan(), diagnostics);
 			} finally {
@@ -97,13 +69,13 @@ class LmdbPharmaQ2BoundJoinProductEstimateIT {
 	}
 
 	private static void assertConnectedPlanDoesNotStartFromTargetsScan(String plan, String diagnostics) {
-		String firstConnectedFactor = firstConnectedAccessPathLine(plan);
-		assertTrue(firstConnectedFactor != null,
-				"PHARMA q2 physical connected-join plan should expose an access-path factor.\n" + diagnostics);
-		assertTrue(!firstConnectedFactor.contains(PHARMA_TARGETS.stringValue()),
-				"PHARMA q2 physical connected-join plan should not start from the broad pharma:targets scan.\n"
-						+ "first connected factor:\n" + firstConnectedFactor + "\n"
-						+ diagnostics);
+		String targetsAccess = firstStatementPattern(plan, PHARMA_TARGETS.stringValue());
+		assertTrue(targetsAccess != null,
+				"PHARMA q2 physical plan should expose the pharma:targets access path.\n" + diagnostics);
+		assertTrue(targetsAccess.contains("plannedLookupComponents=[S, P]")
+				|| targetsAccess.contains("plannedLookupComponents=[P, O]"),
+				"PHARMA q2 must use a bound pharma:targets prefix lookup rather than a predicate-only scan.\n"
+						+ "targets access:\n" + targetsAccess + "\n" + diagnostics);
 	}
 
 	private static void assertExistsStartsFromBoundArmDrugLookup(String plan, String diagnostics) {
@@ -119,61 +91,11 @@ class LmdbPharmaQ2BoundJoinProductEstimateIT {
 						+ diagnostics);
 	}
 
-	private static String firstConnectedAccessPathLine(String plan) {
-		String connectedFactorLine = plan.lines()
-				.filter(line -> line.contains("StatementPattern ("))
-				.filter(line -> line.contains("plannedIndexAccessMode"))
-				.filter(line -> line.contains("optimizer.connectedFactor="))
+	private static String firstStatementPattern(String plan, String predicate) {
+		return plan.lines()
+				.filter(line -> line.contains("StatementPattern") && line.contains(predicate))
 				.findFirst()
 				.orElse(null);
-		if (connectedFactorLine != null) {
-			return connectedFactorLine;
-		}
-		String finiteAnchorFactor = firstSelectedFiniteAnchorFactor(plan);
-		if (finiteAnchorFactor != null) {
-			return "selected finite-anchor first access path=" + finiteAnchorFactor;
-		}
-		String[] lines = plan.split("\\R");
-		int mainJoinLine = firstMainJoinLine(lines);
-		if (mainJoinLine < 0) {
-			return null;
-		}
-		for (int i = mainJoinLine + 1; i < lines.length; i++) {
-			String line = lines[i];
-			if (line.contains("ExtensionElem (optDisease)")) {
-				break;
-			}
-			if (line.contains("StatementPattern (") && line.contains("plannedIndexAccessMode")) {
-				return line;
-			}
-		}
-		return null;
-	}
-
-	private static String firstSelectedFiniteAnchorFactor(String plan) {
-		int selected = plan.indexOf("selected=finite-anchor:");
-		int order = selected < 0 ? -1 : plan.indexOf("order=[VALUES[", selected);
-		int firstComma = order < 0 ? -1 : plan.indexOf(',', order);
-		if (firstComma < 0) {
-			return null;
-		}
-		int nextComma = plan.indexOf(',', firstComma + 1);
-		int orderEnd = plan.indexOf(']', firstComma + 1);
-		int factorEnd = nextComma < 0 || orderEnd >= 0 && orderEnd < nextComma ? orderEnd : nextComma;
-		if (factorEnd < 0) {
-			return null;
-		}
-		return plan.substring(firstComma + 1, factorEnd).trim();
-	}
-
-	private static int firstMainJoinLine(String[] lines) {
-		for (int i = 0; i < lines.length; i++) {
-			String line = lines[i];
-			if (line.contains("LeftJoin") && line.contains("plannedBoundJoinProductJoinVar=drug")) {
-				return i;
-			}
-		}
-		return -1;
 	}
 
 	private static int firstStatementPatternLine(String plan, String predicate) {
@@ -210,79 +132,6 @@ class LmdbPharmaQ2BoundJoinProductEstimateIT {
 			ThemeDataSetGenerator.generate(THEME, inserter);
 			connection.commit();
 		}
-	}
-
-	private static JoinOrderPlanner.JoinOrderPlan estimate(JoinOrderPlanner planner, List<TupleExpr> orderedArgs) {
-		return planner
-				.estimateJoinOrder(orderedArgs, Set.of(), JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, List.of())
-				.orElseThrow(() -> new AssertionError("Planner rejected fixed order:\n" + describeArgs(orderedArgs)));
-	}
-
-	private static JoinOrderPlanner joinOrderPlanner(LmdbStore store) {
-		try {
-			Method getBackingStore = LmdbStore.class.getDeclaredMethod("getBackingStore");
-			getBackingStore.setAccessible(true);
-			Object backingStore = getBackingStore.invoke(store);
-			Method getEvaluationStatistics = backingStore.getClass().getDeclaredMethod("getEvaluationStatistics");
-			getEvaluationStatistics.setAccessible(true);
-			return (JoinOrderPlanner) getEvaluationStatistics.invoke(backingStore);
-		} catch (ReflectiveOperationException e) {
-			throw new AssertionError("Unable to access LMDB join order planner", e);
-		}
-	}
-
-	private static StatementPattern pharmaDrugTypePattern() {
-		return new StatementPattern(Var.of("drug"), Var.of("_const_type", RDF.TYPE),
-				Var.of("_const_drug", PHARMA_DRUG));
-	}
-
-	private static StatementPattern pharmaTargetTypePattern() {
-		return new StatementPattern(Var.of("target"), Var.of("_const_target_type", RDF.TYPE),
-				Var.of("_const_target", PHARMA_TARGET));
-	}
-
-	private static StatementPattern pharmaTargetsPattern() {
-		return new StatementPattern(Var.of("drug"), Var.of("_const_targets", PHARMA_TARGETS), Var.of("target"));
-	}
-
-	private static StatementPattern pharmaInPathwayPattern() {
-		return new StatementPattern(Var.of("target"), Var.of("_const_inPathway", PHARMA_IN_PATHWAY),
-				Var.of("pathway"));
-	}
-
-	private static String describePlan(JoinOrderPlanner.JoinOrderPlan plan) {
-		StringBuilder builder = new StringBuilder();
-		builder.append("estimatedTotalWork=")
-				.append(plan.getEstimatedTotalWork())
-				.append(", estimatedFinalRows=")
-				.append(plan.getEstimatedFinalRows())
-				.append('\n');
-		List<JoinOrderPlanner.PlanStep> steps = plan.getSteps();
-		for (int i = 0; i < plan.getOrderedArgs().size(); i++) {
-			JoinOrderPlanner.PlanStep step = i < steps.size() ? steps.get(i) : null;
-			builder.append(i)
-					.append(": ")
-					.append(plan.getOrderedArgs().get(i))
-					.append('\n');
-			if (step != null) {
-				builder.append("  work=")
-						.append(step.getStepWorkRows())
-						.append(", factorRows=")
-						.append(step.getFactorOutputRows())
-						.append(", prefixRows=")
-						.append(step.getPrefixOutputRows())
-						.append(", metrics=")
-						.append(step.getStringMetrics())
-						.append('\n');
-			}
-		}
-		return builder.toString();
-	}
-
-	private static String describeArgs(List<TupleExpr> orderedArgs) {
-		return IntStream.range(0, orderedArgs.size())
-				.mapToObj(index -> index + ": " + orderedArgs.get(index))
-				.collect(Collectors.joining("\n"));
 	}
 
 	private static OptimizerSnapshot explainOptimized(LmdbStore store, SailRepository repository) {

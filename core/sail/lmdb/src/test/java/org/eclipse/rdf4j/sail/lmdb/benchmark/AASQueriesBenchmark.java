@@ -366,6 +366,9 @@ public class AASQueriesBenchmark {
 		if (!Boolean.parseBoolean(System.getProperty(PREPARE_SKETCHES_PROPERTY, "true"))) {
 			return;
 		}
+		if (!lmdbStore.forceFlushSketchEstimator()) {
+			return;
+		}
 		BenchmarkJoinEstimatorSupport.prepareStableEstimatorForBenchmark(lmdbStore);
 	}
 

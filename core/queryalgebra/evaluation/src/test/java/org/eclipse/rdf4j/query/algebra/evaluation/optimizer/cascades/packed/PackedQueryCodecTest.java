@@ -13,17 +13,21 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.FN;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.AnnotationTripleRef;
@@ -206,6 +210,45 @@ class PackedQueryCodecTest {
 	}
 
 	@Test
+	void zeroLengthPathPackedAssuredBindingsMatchTupleExprSemantics() {
+		ZeroLengthPath source = new ZeroLengthPath(StatementPattern.Scope.NAMED_CONTEXTS, Var.of("start"),
+				Var.of("end"), Var.of("graph"));
+
+		assertPackedAssuredBindingsMatch(source);
+	}
+
+	@Test
+	void arbitraryLengthPathPackedAssuredBindingsIncludePathExpressionBindings() {
+		StatementPattern step = new StatementPattern(Var.of("stepStart"),
+				Var.of("pathPredicate"), Var.of("stepEnd"));
+		ArbitraryLengthPath source = new ArbitraryLengthPath(StatementPattern.Scope.NAMED_CONTEXTS,
+				Var.of("start"), step, Var.of("end"), Var.of("graph"), 1L);
+
+		assertPackedAssuredBindingsMatch(source);
+	}
+
+	@Test
+	void multiProjectionPackedAssuredBindingsIntersectAssuredProjectedNamesAcrossBranches() {
+		TupleExpr input = inputWithOptionalBinding();
+		MultiProjection source = new MultiProjection(input,
+				List.of(
+						new ProjectionElemList(new ProjectionElem("stable", "common"),
+								new ProjectionElem("maybe", "branchMaybe")),
+						new ProjectionElemList(new ProjectionElem("stable", "common"),
+								new ProjectionElem("stable", "branchMaybe"))));
+
+		assertPackedAssuredBindingsMatch(source);
+	}
+
+	@Test
+	void groupPackedAssuredBindingsRetainOnlyAssuredGroupKeys() {
+		Group source = new Group(inputWithOptionalBinding(), List.of("stable", "maybe"),
+				List.of(new GroupElem("aggregate", new Count(Var.of("maybe"), false))));
+
+		assertPackedAssuredBindingsMatch(source);
+	}
+
+	@Test
 	void roundTripsRemainingScalarOperatorFamilies() {
 		Extension source = new Extension(new SingletonSet());
 		source.addElement(new ExtensionElem(new Datatype(Var.of("value")), "datatype"));
@@ -307,12 +350,50 @@ class PackedQueryCodecTest {
 		TupleExpr materialized = PackedPlanMaterializer.materialize(packed, packed.rootRelId());
 
 		assertEquals(source, materialized);
+		BindingSetAssignment materializedValues = (BindingSetAssignment) ((Union) materialized).getLeftArg();
+		Iterator<BindingSet> materializedRows = materializedValues.getBindingSets().iterator();
+		assertSame(first, materializedRows.next());
+		assertSame(second, materializedRows.next());
 		Service materializedService = (Service) ((Union) ((Union) materialized).getRightArg()).getLeftArg();
 		assertEquals(service.getPrefixDeclarations(), materializedService.getPrefixDeclarations());
 		assertEquals(service.getServiceExpressionString(), materializedService.getServiceExpressionString());
 		assertEquals(service.getBaseURI(), materializedService.getBaseURI());
 		assertEquals(service.getAskQueryString(), materializedService.getAskQueryString());
 		assertEquals(service.isSilent(), materializedService.isSilent());
+	}
+
+	@Test
+	void queryViewMaterializesAnExactLogicalRelationOnTheColdBoundary() {
+		TupleExpr source = new Join(
+				new StatementPattern(Var.of("subject"), Var.of("predicate"), Var.of("object")),
+				new SingletonSet());
+		PackedQuery packed = PackedQueryCodec.encode(source);
+
+		assertEquals(source, new PackedQueryView(packed).materializeRelation(packed.rootRelId()));
+	}
+
+	@Test
+	void auditedFunctionSafetySurvivesPackedEncodingWithoutTrustingVolatileOrUnknownCalls() {
+		FunctionCall contains = new FunctionCall(FN.CONTAINS.stringValue(), new Str(Var.of("value")),
+				new ValueConstant(VF.createLiteral("needle")));
+		PackedQuery safeQuery = PackedQueryCodec.encode(new Filter(new SingletonSet(), contains));
+		int safeScalarId = safeQuery.relPayload(safeQuery.rootRelId());
+
+		assertEquals(PackedScalarOp.FUNCTION_CALL, safeQuery.scalarOperator(safeScalarId));
+		assertTrue((safeQuery.scalarMetadataFlags(safeScalarId)
+				& PackedNodeMetadataArena.SCALAR_REORDERING_SAFE) != 0);
+		assertTrue(safeQuery.scalarSafeToRelocate(safeScalarId));
+
+		for (String unsafeFunction : List.of("RAND", "UUID", "urn:test:unknown-function")) {
+			PackedQuery unsafeQuery = PackedQueryCodec
+					.encode(new Filter(new SingletonSet(), new FunctionCall(unsafeFunction)));
+			int unsafeScalarId = unsafeQuery.relPayload(unsafeQuery.rootRelId());
+
+			assertEquals(PackedScalarOp.FUNCTION_CALL, unsafeQuery.scalarOperator(unsafeScalarId));
+			assertEquals(0, unsafeQuery.scalarMetadataFlags(unsafeScalarId)
+					& PackedNodeMetadataArena.SCALAR_REORDERING_SAFE);
+			assertFalse(unsafeQuery.scalarSafeToRelocate(unsafeScalarId));
+		}
 	}
 
 	@Test
@@ -388,6 +469,26 @@ class PackedQueryCodecTest {
 
 		assertTrue(failure.getMessage().contains(UnknownTuple.class.getName()));
 		assertTrue(failure.getMessage().contains("root"));
+	}
+
+	private static TupleExpr inputWithOptionalBinding() {
+		StatementPattern required = new StatementPattern(Var.of("stable"),
+				Var.of("requiredPredicate", VF.createIRI("urn:required")), Var.of("requiredValue"));
+		StatementPattern optional = new StatementPattern(Var.of("stable"),
+				Var.of("optionalPredicate", VF.createIRI("urn:optional")), Var.of("maybe"));
+		return new LeftJoin(required, optional);
+	}
+
+	private static void assertPackedAssuredBindingsMatch(TupleExpr source) {
+		PackedQuery packed = PackedQueryCodec.encode(source);
+		int maskId = packed.relAssuredMaskId(packed.rootRelId());
+		Set<String> actual = new LinkedHashSet<>();
+		for (int symbolId = 1; symbolId <= packed.symbolCount(); symbolId++) {
+			if (packed.maskContainsSymbol(maskId, symbolId)) {
+				actual.add((String) packed.objectValue(packed.symbolObjectId(symbolId)));
+			}
+		}
+		assertEquals(source.getAssuredBindingNames(), actual);
 	}
 
 	private static final class UnknownTuple extends UnaryTupleOperator {

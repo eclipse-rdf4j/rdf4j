@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -53,7 +54,7 @@ class LmdbIndependentFiniteAnchorJoinPlanningTest {
 
 		try {
 			loadSyntheticMutualFollowData(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				Explanation explanation = connection.prepareTupleQuery(mutualFollowsQuery())
@@ -117,26 +118,40 @@ class LmdbIndependentFiniteAnchorJoinPlanningTest {
 
 		try {
 			loadSyntheticMutualFollowData(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				TupleExpr optimized = (TupleExpr) connection.prepareTupleQuery(repeatedFollowsChainQuery())
 						.explain(Explanation.Level.Optimized)
 						.tupleExpr();
-				List<StatementPattern> transitionPatterns = new ArrayList<>();
+				List<Join> transitionHashJoins = new ArrayList<>();
 				optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 					@Override
-					public void meet(StatementPattern node) {
-						if ("lmdb-packed-transition".equals(node
-								.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE))) {
-							transitionPatterns.add(node);
+					public void meet(Join node) {
+						if ("HashJoinIteration".equals(node.getAlgorithmName())
+								&& "lmdb-packed-transition".equals(node
+										.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE))) {
+							transitionHashJoins.add(node);
 						}
 						super.meet(node);
 					}
 				});
 
-				assertTrue(!transitionPatterns.isEmpty(),
-						"Expected a later repeated-predicate hop to use LMDB transition evidence. plan=" + optimized);
+				assertTrue(!transitionHashJoins.isEmpty(),
+						"Expected the join cardinality for a later repeated-predicate hop to retain LMDB transition "
+								+ "evidence without relabeling an independently scanned hash input. plan=" + optimized);
+				assertTrue(transitionHashJoins.stream()
+						.map(Join::getRightArg)
+						.allMatch(StatementPattern.class::isInstance),
+						"Expected each transition-costed hash join to retain its independently scanned statement "
+								+ "input. plan=" + optimized);
+				assertTrue(transitionHashJoins.stream()
+						.map(Join::getRightArg)
+						.map(StatementPattern.class::cast)
+						.allMatch(pattern -> "lmdb-frontier".equals(pattern
+								.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE))),
+						"An independently scanned hash input must retain Frontier's standalone provenance. plan="
+								+ optimized);
 			}
 		} finally {
 			repository.shutDown();

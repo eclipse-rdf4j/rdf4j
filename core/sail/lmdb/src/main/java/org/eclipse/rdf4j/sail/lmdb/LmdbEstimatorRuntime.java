@@ -21,21 +21,19 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.Set;
+import java.util.function.BooleanSupplier;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
-import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
-import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
@@ -49,7 +47,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.Pack
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.estimation.LmdbQuadSynopsisService;
+import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbFrontierSynopsisService;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.eclipse.rdf4j.sail.lmdb.sketch.CharacteristicSetEstimate;
 import org.eclipse.rdf4j.sail.lmdb.sketch.PropertyPathEstimate;
@@ -57,8 +57,10 @@ import org.eclipse.rdf4j.sail.lmdb.sketch.PropertyPathEstimate;
 /** Shared engine runtime consumed by facades and planner collaborators. */
 final class LmdbEstimatorRuntime {
 
-	private static final int MAX_FINITE_CONTEXT_ROWS = 4096;
+	static final String OPERATOR_FEEDBACK_APPLY_PROPERTY = "rdf4j.optimizer.lmdb.operatorFeedbackApply";
+
 	private static final int MAX_DISTINCT_CURSOR_SKIP_PROBE_PREFIXES = 256;
+	private static final int MAX_EXACT_FILTER_DISTINCT_TERMS = 4_096;
 	private final ValueStore valueStore;
 	private final TripleStore tripleStore;
 	private final LmdbStatementPatternCardinalitySource cardinalities;
@@ -66,14 +68,33 @@ final class LmdbEstimatorRuntime {
 	private final LmdbFilterSelectivityStats filters;
 	private final LmdbOperatorFeedbackStats feedback;
 	private final LmdbEstimationEngine engine;
+	private final LmdbPrefixEvidenceResolver prefixEvidence;
 	private final LmdbFiniteJoinSurfaceEstimator finiteJoinSurfaceEstimator;
-	private final LmdbAccessCostModel accessCostModel = new LmdbAccessCostModel();
+	private final LmdbFactorCostAssembler factorCostAssembler;
 	private final PackedPlanCache cascadesPlanCache;
+	private final LmdbFrontierSynopsisService frontierSynopsis;
+	private final FrontierEstimatorMode frontierMode;
+	private final long frontierQueryMemoryBudgetBytes;
+	private final int frontierRefinementWorkUnits;
+	private final double frontierTargetRelativeStandardError;
+	private final double frontierDefensiveProposalEpsilon;
+	private final BooleanSupplier mayHaveInferred;
 	private final ThreadLocal<OptimizationScope> optimizationScope = new ThreadLocal<>();
 
 	LmdbEstimatorRuntime(ValueStore valueStore, TripleStore tripleStore, LmdbQuadSynopsisService synopsis,
 			LmdbFilterSelectivityStats filters, LmdbOperatorFeedbackStats feedback,
 			LmdbStatementPatternCardinalitySource cardinalities, PackedPlanCache cascadesPlanCache) {
+		this(valueStore, tripleStore, synopsis, filters, feedback, cardinalities, cascadesPlanCache, null,
+				FrontierEstimatorMode.OFF, 0L, 0, 1.0d, 1.0d, () -> false);
+	}
+
+	LmdbEstimatorRuntime(ValueStore valueStore, TripleStore tripleStore, LmdbQuadSynopsisService synopsis,
+			LmdbFilterSelectivityStats filters, LmdbOperatorFeedbackStats feedback,
+			LmdbStatementPatternCardinalitySource cardinalities, PackedPlanCache cascadesPlanCache,
+			LmdbFrontierSynopsisService frontierSynopsis, FrontierEstimatorMode frontierMode,
+			long frontierQueryMemoryBudgetBytes, int frontierRefinementWorkUnits,
+			double frontierTargetRelativeStandardError, double frontierDefensiveProposalEpsilon,
+			BooleanSupplier mayHaveInferred) {
 		this.valueStore = valueStore;
 		this.tripleStore = tripleStore;
 		this.cardinalities = cardinalities;
@@ -81,10 +102,19 @@ final class LmdbEstimatorRuntime {
 		this.filters = filters;
 		this.feedback = feedback;
 		this.cascadesPlanCache = cascadesPlanCache;
+		this.frontierSynopsis = frontierSynopsis;
+		this.frontierMode = frontierMode == null ? FrontierEstimatorMode.OFF : frontierMode;
+		this.frontierQueryMemoryBudgetBytes = frontierQueryMemoryBudgetBytes;
+		this.frontierRefinementWorkUnits = frontierRefinementWorkUnits;
+		this.frontierTargetRelativeStandardError = frontierTargetRelativeStandardError;
+		this.frontierDefensiveProposalEpsilon = frontierDefensiveProposalEpsilon;
+		this.mayHaveInferred = mayHaveInferred == null ? () -> false : mayHaveInferred;
 		this.finiteJoinSurfaceEstimator = new LmdbFiniteJoinSurfaceEstimator(valueStore, tripleStore);
-		LmdbStorageEstimatorEvidence evidence = new LmdbStorageEstimatorEvidence(cardinalities, synopsis, filters,
-				feedback, finiteJoinSurfaceEstimator);
+		LmdbStorageEstimatorEvidence evidence = new LmdbStorageEstimatorEvidence(valueStore, cardinalities, synopsis,
+				filters, feedback, finiteJoinSurfaceEstimator);
 		this.engine = new LmdbEstimationEngine(evidence, new EstimateEvidenceResolver());
+		this.factorCostAssembler = new LmdbFactorCostAssembler(engine, tripleStore);
+		this.prefixEvidence = new LmdbPrefixEvidenceResolver(engine, this::rootContext);
 	}
 
 	ValueStore valueStore() {
@@ -117,9 +147,45 @@ final class LmdbEstimatorRuntime {
 		return engine.estimateFilter(input, condition, inputEstimate, context);
 	}
 
+	Optional<BindingSetAssignment> exactStoredTermFilterAnchor(StatementPattern pattern, ValueExpr condition,
+			String bindingName) {
+		if (filters == null || pattern == null || condition == null || bindingName == null
+				|| !pattern.getAssuredBindingNames().contains(bindingName)) {
+			return Optional.empty();
+		}
+		LmdbFilterSelectivityStats.DistinctFilterValues values = filters.exactMatchingDistinctValues(pattern,
+				condition, bindingName, MAX_EXACT_FILTER_DISTINCT_TERMS);
+		if (values.status() != LmdbFilterSelectivityStats.DistinctFilterStatus.COMPLETE
+				|| values.matchingValues().isEmpty()) {
+			return Optional.empty();
+		}
+		LinkedHashSet<Value> actualTerms = new LinkedHashSet<>(values.matchingValues());
+		return Optional.ofNullable(LmdbJoinPlanSupport.smallLiteralFilterAnchor(bindingName, actualTerms));
+	}
+
 	BagEstimate estimate(TupleExpr expression, CostContext costContext) {
 		CostContext cost = costContext == null ? CostContext.of(Set.of(), 1.0d, 1.0d, false) : costContext;
 		return engine.estimate(expression, context(expression, cost));
+	}
+
+	Optional<LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate> exactAlternativeSurface(TupleExpr expression) {
+		if (expression == null) {
+			return Optional.empty();
+		}
+		OptimizationScope scope = optimizationScope.get();
+		if (scope == null) {
+			return finiteJoinSurfaceEstimator.estimateAlternative(expression);
+		}
+		EstimateContext context = rootContext(expression);
+		ExactAlternativeSurfaceCacheKey cacheKey = ExactAlternativeSurfaceCacheKey.of(expression, context);
+		Optional<LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate> cached = scope.alternativeSurfaces.get(cacheKey);
+		if (cached != null) {
+			return cached;
+		}
+		Optional<LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate> estimate = finiteJoinSurfaceEstimator
+				.estimateAlternative(expression, scope.finiteSurfaceScanBudget);
+		scope.alternativeSurfaces.put(cacheKey, estimate);
+		return estimate;
 	}
 
 	Optional<FactorCostEstimate> factorCost(TupleExpr expression, CostContext costContext) {
@@ -139,9 +205,8 @@ final class LmdbEstimatorRuntime {
 			}
 		}
 		BagEstimate semantic = engine.estimate(expression, context);
-		int lookupMask = lookupMask(accessPattern(expression), context.boundNames());
-		FactorCostEstimate result = regularFactorCost(expression, context, semantic, lookupMask);
-		result = finiteDerivedFactorCost(expression, cost, semantic, result).orElse(result);
+		FactorCostEstimate result = factorCostAssembler.assemble(expression, context, semantic, exact(semantic));
+		result = finiteDerivedFactorCost(expression, cost, semantic, result, scope).orElse(result);
 		Optional<FactorCostEstimate> estimate = Optional.of(result);
 		if (cacheKey != null) {
 			scope.factorCosts.put(cacheKey.toStorable(), estimate);
@@ -150,13 +215,16 @@ final class LmdbEstimatorRuntime {
 	}
 
 	private Optional<FactorCostEstimate> finiteDerivedFactorCost(TupleExpr expression, CostContext cost,
-			BagEstimate semantic, FactorCostEstimate base) {
+			BagEstimate semantic, FactorCostEstimate base, OptimizationScope scope) {
 		if (cost == null || base == null || !cost.isNestedIteratorInvocation()
 				|| (cost.getPrefixFactors().isEmpty() && cost.getFiniteBindingValues().size() != 1)) {
 			return Optional.empty();
 		}
-		Optional<LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate> surface = finiteJoinSurfaceEstimator
-				.estimate(cost.getPrefixFactors(), expression, cost.getFiniteBindingValues());
+		Optional<LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate> surface = scope == null
+				? finiteJoinSurfaceEstimator.estimate(cost.getPrefixFactors(), expression,
+						cost.getFiniteBindingValues())
+				: finiteJoinSurfaceEstimator.estimate(cost.getPrefixFactors(), expression,
+						cost.getFiniteBindingValues(), scope.finiteSurfaceScanBudget);
 		if (surface.isEmpty()) {
 			return Optional.empty();
 		}
@@ -196,123 +264,6 @@ final class LmdbEstimatorRuntime {
 				base.getMissingLookupComponentMask(), accessRows, true, surfaceEstimate.exact()).withBag(surfaceBag));
 	}
 
-	private FactorCostEstimate regularFactorCost(TupleExpr expression, EstimateContext context,
-			BagEstimate semantic, int ignoredLookupMask) {
-		StatementPattern accessPattern = accessPattern(expression);
-		BagEstimate accessSemantic = accessPattern == null || accessPattern == expression
-				? semantic
-				: engine.estimate(accessPattern, context);
-		TupleExpr accessExpression = accessPattern == null ? expression : accessPattern;
-		double physicalWorkRows = expression instanceof BindingSetAssignment
-				? semantic.workRows()
-				: accessSemantic.rows();
-		LmdbAccessEstimate access = accessCostModel.estimate(accessExpression, context, semantic,
-				physicalWorkRows);
-		int lookupMask = lookupMask(accessPattern, context.boundNames());
-		AccessPathSelection accessPath = selectAccessPath(lookupMask, access.accessRowsPerInvocation());
-		Map<String, String> strings = new LinkedHashMap<>();
-		strings.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE,
-				estimateSource(expression, context, semantic));
-		strings.put(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS,
-				componentMaskString(accessPath.lookupComponentMask()));
-		strings.put(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE, accessPath.accessMode());
-		if (!accessPath.indexFieldSequence().isEmpty()) {
-			strings.put(TelemetryMetricNames.PLANNED_INDEX_NAME, accessPath.indexFieldSequence());
-		}
-		if (accessPath.missingLookupComponentMask() != 0) {
-			strings.put(TelemetryMetricNames.PLANNED_MISSING_LOOKUP_COMPONENTS,
-					componentMaskString(accessPath.missingLookupComponentMask()));
-		}
-		Map<String, Double> metrics = new LinkedHashMap<>(semantic.metrics());
-		metrics.put("plannedRowsPerInvocation", access.rowsPerInvocation());
-		metrics.put("plannedRepeatedInvocations", access.invocations());
-		metrics.put("plannedSeeks", access.seeks());
-		metrics.put("plannedMemoryRows", access.memoryRows());
-		metrics.put(TelemetryMetricNames.PLANNED_INDEX_PREFIX_LENGTH, (double) accessPath.prefixLength());
-		metrics.put(TelemetryMetricNames.PLANNED_ACCESS_ROWS, access.accessRowsPerInvocation());
-		metrics.put(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS,
-				access.totalWorkRows() / Math.max(1.0d, access.invocations()));
-		metrics.put(TelemetryMetricNames.PLANNED_ACCESS_PATH_CANDIDATES, (double) accessPath.candidateCount());
-		metrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, semantic.rows());
-		metrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, access.totalWorkRows());
-		metrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, semantic.rows());
-		metrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, access.totalWorkRows());
-		return new FactorCostEstimate(access.totalWorkRows(), semantic.rows(), Map.copyOf(strings), Map.copyOf(metrics),
-				accessPattern != null, accessPath.directLookup(), accessPath.lookupComponentMask(),
-				accessPath.missingLookupComponentMask(), access.accessRowsPerInvocation(),
-				access.invocations() > 1.0d, exact(semantic)).withBag(semantic);
-	}
-
-	private static String estimateSource(TupleExpr expression, EstimateContext context, BagEstimate semantic) {
-		if (expression instanceof BindingSetAssignment assignment
-				&& context.invocationCount() > 1.0d
-				&& assignment.getBindingNames().stream().anyMatch(context.boundNames()::contains)) {
-			return "lmdb-binding-set-assignment-filter";
-		}
-		return semantic.source();
-	}
-
-	private AccessPathSelection selectAccessPath(int lookupMask, double rowsPerInvocation) {
-		if (tripleStore == null) {
-			return AccessPathSelection.none(lookupMask);
-		}
-		List<TripleStore.IndexAccessPath> candidates = tripleStore.indexAccessPaths(lookupMask);
-		TripleStore.IndexAccessPath best = null;
-		for (TripleStore.IndexAccessPath candidate : candidates) {
-			if (best == null || candidate.prefixLength() > best.prefixLength()) {
-				best = candidate;
-			}
-		}
-		if (best == null) {
-			return AccessPathSelection.none(lookupMask);
-		}
-		int covered = lookupMask & best.prefixComponentMask();
-		int missing = lookupMask & ~best.prefixComponentMask();
-		boolean direct = missing == 0 && rowsPerInvocation <= 1.0d;
-		String accessMode = best.prefixLength() == 0 ? "fullScan" : direct ? "directLookup" : "prefixScan";
-		return new AccessPathSelection(best.indexFieldSequence(), best.prefixLength(), covered, missing, direct,
-				candidates.size(), accessMode);
-	}
-
-	private static StatementPattern accessPattern(TupleExpr expression) {
-		TupleExpr current = expression;
-		while (current instanceof Filter || current instanceof Extension || current instanceof Projection) {
-			current = switch (current) {
-			case Filter filter -> filter.getArg();
-			case Extension extension -> extension.getArg();
-			case Projection projection -> projection.getArg();
-			default -> throw new IllegalStateException("Unexpected row-preserving access wrapper");
-			};
-		}
-		return current instanceof StatementPattern pattern ? pattern : null;
-	}
-
-	private static String componentMaskString(int componentMask) {
-		if (componentMask == 0) {
-			return "[]";
-		}
-		StringBuilder builder = new StringBuilder("[");
-		String[] names = { "S", "P", "O", "C" };
-		for (int component = 0; component < names.length; component++) {
-			if ((componentMask & 1 << component) == 0) {
-				continue;
-			}
-			if (builder.length() > 1) {
-				builder.append(", ");
-			}
-			builder.append(names[component]);
-		}
-		return builder.append(']').toString();
-	}
-
-	private record AccessPathSelection(String indexFieldSequence, int prefixLength, int lookupComponentMask,
-			int missingLookupComponentMask, boolean directLookup, int candidateCount, String accessMode) {
-
-		private static AccessPathSelection none(int lookupMask) {
-			return new AccessPathSelection("", 0, 0, lookupMask, false, 0, "fullScan");
-		}
-	}
-
 	Optional<FeedbackCorrection> feedbackCorrection(TupleExpr expression, BagEstimate base) {
 		if (feedback == null || expression == null || base == null) {
 			return Optional.empty();
@@ -323,6 +274,20 @@ final class LmdbEstimatorRuntime {
 				: Optional.of(new FeedbackCorrection(estimate.rows(), estimate.workRows(),
 						estimate.correctionConfidence(), estimate.rowQErrorMax(), estimate.workQErrorMax(),
 						estimate.source()));
+	}
+
+	LmdbOperatorFeedbackStats.OperatorEstimate operatorFeedback(TupleExpr expression, double leftRows,
+			double rightRows, double baseRows, double baseWorkRows, String executionMode) {
+		if (feedback == null || expression == null
+				|| !(Boolean.getBoolean(OPERATOR_FEEDBACK_APPLY_PROPERTY)
+						|| feedback.shouldExposePlanningEvidence(expression))) {
+			return null;
+		}
+		return feedback.estimate(expression, leftRows, rightRows, baseRows, baseWorkRows, executionMode);
+	}
+
+	long operatorFeedbackRevision() {
+		return feedback == null ? 0L : feedback.planningRevision();
 	}
 
 	QueryOptimizationScope beginScope() {
@@ -361,6 +326,34 @@ final class LmdbEstimatorRuntime {
 
 	PackedPlanCache cascadesPlanCache() {
 		return cascadesPlanCache;
+	}
+
+	LmdbFrontierSynopsisService frontierSynopsis() {
+		return frontierSynopsis;
+	}
+
+	FrontierEstimatorMode frontierMode() {
+		return frontierMode;
+	}
+
+	long frontierQueryMemoryBudgetBytes() {
+		return frontierQueryMemoryBudgetBytes;
+	}
+
+	int frontierRefinementWorkUnits() {
+		return frontierRefinementWorkUnits;
+	}
+
+	double frontierTargetRelativeStandardError() {
+		return frontierTargetRelativeStandardError;
+	}
+
+	double frontierDefensiveProposalEpsilon() {
+		return frontierDefensiveProposalEpsilon;
+	}
+
+	boolean mayHaveInferred() {
+		return mayHaveInferred.getAsBoolean();
 	}
 
 	double packedStatementPatternRows(Resource subject, IRI predicate, Value object, Resource context,
@@ -515,7 +508,8 @@ final class LmdbEstimatorRuntime {
 		if (predicates.isEmpty()) {
 			return Optional.empty();
 		}
-		BagEstimate estimate = estimate(join(patterns), boundNames, EstimationTier.STANDARD, false);
+		BagEstimate estimate = estimate(LmdbEstimatorExpressionSupport.join(patterns), boundNames,
+				EstimationTier.STANDARD, false);
 		return Optional.of(new CharacteristicSetEstimate(predicates, Math.round(estimate.rows()), estimate.rows(),
 				Math.round(estimate.workRows()), estimate.source()));
 	}
@@ -542,7 +536,7 @@ final class LmdbEstimatorRuntime {
 	}
 
 	double boundJoinSurfaceRows(List<TupleExpr> factors, String ignored) {
-		TupleExpr expression = join(factors);
+		TupleExpr expression = LmdbEstimatorExpressionSupport.join(factors);
 		return expression == null ? Double.NaN : estimate(expression).rows();
 	}
 
@@ -552,17 +546,6 @@ final class LmdbEstimatorRuntime {
 			factors.add(factor);
 		}
 		return boundJoinSurfaceRows(factors, ignored);
-	}
-
-	private static TupleExpr join(List<? extends TupleExpr> factors) {
-		if (factors == null || factors.isEmpty()) {
-			return null;
-		}
-		TupleExpr result = factors.get(0).clone();
-		for (int index = 1; index < factors.size(); index++) {
-			result = new Join(result, factors.get(index).clone());
-		}
-		return result;
 	}
 
 	private static Set<String> sharedNames(TupleExpr left, TupleExpr right) {
@@ -575,14 +558,16 @@ final class LmdbEstimatorRuntime {
 		EstimationTier tier = cost.getEstimationTier();
 		EstimateContext context = rootContext(expression)
 				.withBoundNames(cost.getCurrentlyBoundVars())
-				.withPrefixEstimate(BagEstimate.heuristic(prefixRows(cost), "outer-prefix"))
 				.withInvocationCount(invocations(cost))
 				.withEstimationTier(tier)
 				.withMetricsPreference(cost.shouldCollectMetrics()
 						? EstimateContext.MetricsPreference.DETAILED
 						: EstimateContext.MetricsPreference.NONE)
 				.withExactProbePermission(tier != null && tier.allowsExactEstimates());
-		FiniteRelationEstimate finite = finiteBindings(cost.getFiniteBindingValues());
+		OptimizationScope scope = optimizationScope.get();
+		context = context.withPrefixEstimate(prefixEvidence.estimate(cost, context,
+				scope == null ? null : scope.prefixEstimates));
+		FiniteRelationEstimate finite = prefixEvidence.finiteBindings(cost.getFiniteBindingValues());
 		return finite == null ? context : context.withFiniteBindings(finite);
 	}
 
@@ -606,62 +591,6 @@ final class LmdbEstimatorRuntime {
 			return outerRows;
 		}
 		return positive(context.getDistinctLookupBindings(), 1.0d);
-	}
-
-	private static double prefixRows(CostContext context) {
-		if (!context.isNestedIteratorInvocation()) {
-			return 1.0d;
-		}
-		double outerRows = context.getOuterPrefixRows();
-		return Double.isFinite(outerRows) && outerRows >= 0.0d ? outerRows : 1.0d;
-	}
-
-	private static FiniteRelationEstimate finiteBindings(Map<String, Set<Value>> values) {
-		if (values == null || values.isEmpty()) {
-			return null;
-		}
-		List<String> names = values.keySet().stream().sorted().toList();
-		long rowCount = 1L;
-		for (String name : names) {
-			Set<Value> domain = values.get(name);
-			if (domain == null || domain.isEmpty()) {
-				return null;
-			}
-			if (rowCount > MAX_FINITE_CONTEXT_ROWS / domain.size()) {
-				return null;
-			}
-			rowCount *= domain.size();
-		}
-		List<List<Value>> rows = new ArrayList<>((int) rowCount);
-		rows.add(new ArrayList<>());
-		for (String name : names) {
-			List<List<Value>> expanded = new ArrayList<>(rows.size() * values.get(name).size());
-			for (List<Value> row : rows) {
-				for (Value value : values.get(name)) {
-					List<Value> next = new ArrayList<>(row);
-					next.add(value);
-					expanded.add(next);
-				}
-			}
-			rows = expanded;
-		}
-		return FiniteRelationEstimate.fromRows(names, rows, "finite-context");
-	}
-
-	private static int lookupMask(StatementPattern pattern, Set<String> boundNames) {
-		if (pattern == null) {
-			return 0;
-		}
-		int mask = 0;
-		mask |= bound(pattern.getSubjectVar(), boundNames) ? 1 : 0;
-		mask |= bound(pattern.getPredicateVar(), boundNames) ? 2 : 0;
-		mask |= bound(pattern.getObjectVar(), boundNames) ? 4 : 0;
-		mask |= bound(pattern.getContextVar(), boundNames) ? 8 : 0;
-		return mask;
-	}
-
-	private static boolean bound(Var variable, Set<String> boundNames) {
-		return variable != null && (variable.hasValue() || boundNames.contains(variable.getName()));
 	}
 
 	private static boolean exact(BagEstimate estimate) {
@@ -691,6 +620,10 @@ final class LmdbEstimatorRuntime {
 	private static final class OptimizationScope {
 		private final PlanTemplateCache<Object> planTemplates = new PlanTemplateCache<>(256);
 		private final Map<ScopedFactorCostCacheKey, Optional<FactorCostEstimate>> factorCosts = new HashMap<>();
+		private final Map<PrefixEstimateCacheKey, BagEstimate> prefixEstimates = new HashMap<>();
+		private final Map<ExactAlternativeSurfaceCacheKey, Optional<LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate>> alternativeSurfaces = new HashMap<>();
+		private final LmdbFiniteJoinSurfaceEstimator.ScanBudget finiteSurfaceScanBudget = LmdbFiniteJoinSurfaceEstimator
+				.newScanBudget();
 		private int depth;
 	}
 

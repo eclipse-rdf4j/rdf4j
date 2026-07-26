@@ -48,7 +48,7 @@
          lmdb:predicateGuaranteeIndexAutoRebuild {%Predicate guarantee rebuild on startup|true|false%} ;
          lmdb:predicateGuaranteeExcludedPredicates "{%Predicate guarantee excluded predicates|%}" ;
          # @workbench.field len=80
-         lmdb:sketchEstimatorEnabled {%Sketch estimator enabled|true|false%} ;
+         lmdb:sketchEstimatorEnabled {%Sketch estimator enabled|false|true%} ;
          # @workbench.field unset=true
          lmdb:sketchEstimatorSubjectBucketCount {%Sketch estimator subject bucket count|4096%} ;
          # @workbench.field len=16
@@ -66,6 +66,21 @@
          lmdb:sketchEstimatorThrottleEveryN {%Sketch estimator throttle every N|1048576%} ;
          # @workbench.field len=16
          lmdb:sketchEstimatorThrottleMillis {%Sketch estimator throttle millis|2%} ;
+         lmdb:frontierEstimatorMode "{%Frontier estimator mode|AUTHORITATIVE|SHADOW|OFF%}" ;
+         # @workbench.field len=16
+         lmdb:frontierSynopsisBudgetBytes {%Frontier synopsis budget bytes|536870912%} ;
+         # @workbench.field len=16
+         lmdb:frontierQueryMemoryBudgetBytes {%Frontier query memory budget bytes|67108864%} ;
+         # @workbench.field len=16
+         lmdb:frontierDesignLanes {%Frontier design lanes|2%} ;
+         # @workbench.field len=16
+         lmdb:frontierAuditLanes {%Frontier audit lanes|2%} ;
+         # @workbench.field len=16
+         lmdb:frontierRefinementWorkUnits {%Frontier refinement work units|4096%} ;
+         # @workbench.field len=16
+         lmdb:frontierTargetRelativeStandardError {%Frontier target relative standard error|0.25%} ;
+         # @workbench.field len=16
+         lmdb:frontierDefensiveProposalEpsilon {%Frontier defensive proposal epsilon|0.1%} ;
          lmdb:optimizerSamplingEnabled {%Optimizer sampling enabled|true|false%} ;
          # @workbench.field len=16
          lmdb:optimizerSamplingMaxMillis {%Optimizer sampling max millis|2%} ;

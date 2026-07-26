@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.base;
 
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.OptionalLong;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -56,6 +57,18 @@ class UnionSailDataset implements SailDataset {
 				"dataset1=" + dataset1 +
 				", dataset2=" + dataset2 +
 				'}';
+	}
+
+	@Override
+	public OptionalLong getSnapshotEpoch() {
+		OptionalLong first = dataset1.getSnapshotEpoch();
+		if (first.isEmpty()) {
+			return OptionalLong.empty();
+		}
+		OptionalLong second = dataset2.getSnapshotEpoch();
+		return second.isPresent() && second.getAsLong() == first.getAsLong()
+				? first
+				: OptionalLong.empty();
 	}
 
 	@Override

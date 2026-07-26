@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingMask
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingUniverse;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceZeroStatus;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity;
 
@@ -124,7 +125,15 @@ record EstimateContext(BindingUniverse universe, BindingMask boundMask,
 	}
 
 	boolean hasNoExecutions() {
-		return invocationCount == 0.0d || prefixEstimate.rows() == 0.0d;
+		if (invocationCount == 0.0d) {
+			return true;
+		}
+		if (prefixEstimate.rows() != 0.0d) {
+			return false;
+		}
+		return prefixEstimate.evidenceState()
+				.map(reference -> reference.summary().zeroStatus() == EvidenceZeroStatus.EXACT_ZERO)
+				.orElse(false);
 	}
 
 	private EstimateContext copy(BindingMask mask, Optional<FiniteRelationEstimate> bindings, BagEstimate prefix,

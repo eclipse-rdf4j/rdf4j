@@ -244,6 +244,33 @@ class LmdbEstimationEngineTest {
 	}
 
 	@Test
+	void compositeFactorCostRetainsAccumulatedOperatorWork() {
+		BindingSetAssignment left = new BindingSetAssignment();
+		BindingSetAssignment right = new BindingSetAssignment();
+		List<BindingSet> leftRows = new ArrayList<>();
+		List<BindingSet> rightRows = new ArrayList<>();
+		for (int value = 0; value < 3; value++) {
+			MapBindingSet leftRow = new MapBindingSet();
+			leftRow.addBinding("x", VF.createLiteral(value));
+			leftRows.add(leftRow);
+
+			MapBindingSet rightRow = new MapBindingSet();
+			rightRow.addBinding("x", VF.createLiteral(value));
+			rightRows.add(rightRow);
+		}
+		left.setBindingSets(leftRows);
+		right.setBindingSets(rightRows);
+
+		var estimate = new LmdbEstimatorRuntime(null, null, null, null, null, null, null)
+				.factorCost(new Join(left, right), JoinFactorCostModel.CostContext.of(Set.of(), 1.0d, 1.0d, false))
+				.orElseThrow();
+
+		assertEquals(3.0d, estimate.getOutputRows());
+		assertEquals(estimate.getBagEstimate().orElseThrow().workRows(), estimate.getWorkRows(),
+				"Composite factor work must include both inputs and the join, not collapse to final output rows");
+	}
+
+	@Test
 	void finiteValuesTreatUndefAsUnboundDuringExactJoin() {
 		LmdbEstimationEngine engine = new LmdbEstimationEngine(new RecordingEvidenceSource(),
 				new EstimateEvidenceResolver());

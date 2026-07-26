@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.base;
 
 import java.util.Comparator;
+import java.util.OptionalLong;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -51,6 +52,11 @@ abstract class DelegatingSailDataset implements SailDataset {
 	@Override
 	public void close() throws SailException {
 		delegate.close();
+	}
+
+	@Override
+	public OptionalLong getSnapshotEpoch() {
+		return delegate.getSnapshotEpoch();
 	}
 
 	@Override

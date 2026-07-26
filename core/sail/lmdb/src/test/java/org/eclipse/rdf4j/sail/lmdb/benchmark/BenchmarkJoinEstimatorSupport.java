@@ -167,15 +167,15 @@ public final class BenchmarkJoinEstimatorSupport {
 				Duration.ofNanos(QUERY_REGRESSION_PASS_TIMEOUT_NANOS), assertion::assertPasses);
 	}
 
-	public static ScopedSystemProperties forceStandardOptimizerMode() {
+	public static ScopedSystemProperties forceDefaultPackedOptimizerMode() {
 		ScopedSystemProperties scope = new ScopedSystemProperties(
 				CASCADES_MODE_PROPERTY);
-		System.setProperty(CASCADES_MODE_PROPERTY, "off");
+		System.setProperty(CASCADES_MODE_PROPERTY, "auto");
 		return scope;
 	}
 
-	public static void withStandardOptimizerMode(QueryRegressionAssertion assertion) throws Exception {
-		try (ScopedSystemProperties ignored = forceStandardOptimizerMode()) {
+	public static void withDefaultPackedOptimizerMode(QueryRegressionAssertion assertion) throws Exception {
+		try (ScopedSystemProperties ignored = forceDefaultPackedOptimizerMode()) {
 			assertion.assertPasses();
 		}
 	}

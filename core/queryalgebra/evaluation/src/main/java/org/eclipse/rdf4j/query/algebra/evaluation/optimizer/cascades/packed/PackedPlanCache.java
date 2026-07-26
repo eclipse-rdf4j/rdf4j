@@ -15,7 +15,16 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.TripleTerm;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
  * Store-owned bounded cache for immutable packed query templates and selected physical recipes.
@@ -95,11 +104,9 @@ public final class PackedPlanCache {
 	}
 
 	private static Fingerprint defaultFingerprint(TupleExpr source) {
-		long structural = Integer.toUnsignedLong(source.hashCode());
-		long type = Integer.toUnsignedLong(source.getClass().getName().hashCode());
-		long bindings = Integer.toUnsignedLong(source.getBindingNames().hashCode());
-		return new Fingerprint(mix64(structural ^ type << 32),
-				mix64(Long.rotateLeft(structural, 29) ^ bindings << 32 ^ type));
+		ShapeFingerprint fingerprint = new ShapeFingerprint();
+		source.visit(fingerprint);
+		return fingerprint.finish();
 	}
 
 	private static long mix64(long value) {
@@ -147,6 +154,61 @@ public final class PackedPlanCache {
 	@FunctionalInterface
 	interface FingerprintStrategy {
 		Fingerprint fingerprint(TupleExpr source);
+	}
+
+	/**
+	 * Hash-safe routing fingerprint. RDF values contribute only their semantic kind: implementations are allowed to
+	 * defer lexical materialization and make {@code hashCode()} storage-dependent. Candidate cache hits are still
+	 * proven by detached structural equality, so omitted value content can only cause a collision, never a false hit.
+	 */
+	private static final class ShapeFingerprint extends AbstractQueryModelVisitor<RuntimeException> {
+
+		private long high = 0x243f6a8885a308d3L;
+		private long low = 0x13198a2e03707344L;
+
+		@Override
+		protected void meetNode(QueryModelNode node) {
+			accept(node.getClass().getName().hashCode());
+			if (node instanceof Var variable) {
+				accept(variable.getName() == null ? 0 : variable.getName().hashCode());
+				accept(variable.isAnonymous() ? 1 : 0);
+				accept(valueKind(variable.getValue()));
+			} else if (node instanceof BindingSetAssignment assignment) {
+				accept(assignment.getAssuredBindingNames().size());
+				accept(assignment.getAssuredBindingNames().hashCode());
+			}
+			node.visitChildren(this);
+			accept(0x9e3779b9);
+		}
+
+		private void accept(int value) {
+			long unsigned = Integer.toUnsignedLong(value);
+			high = mix64(high ^ unsigned);
+			low = mix64(low ^ Long.rotateLeft(unsigned, 23) ^ high);
+		}
+
+		private Fingerprint finish() {
+			return new Fingerprint(high, low);
+		}
+
+		private static int valueKind(Value value) {
+			if (value == null) {
+				return 0;
+			}
+			if (value instanceof IRI) {
+				return 1;
+			}
+			if (value instanceof Literal) {
+				return 2;
+			}
+			if (value instanceof BNode) {
+				return 3;
+			}
+			if (value instanceof TripleTerm) {
+				return 4;
+			}
+			return 5;
+		}
 	}
 
 	static final class PlanEntry {

@@ -22,6 +22,8 @@ final class PackedLongSubsetTable {
 	private long[] hashes;
 	private double[] rows;
 	private double[] costs;
+	private double[] appendedContributionRows;
+	private int[] evidenceStateIds;
 	private int[] preferenceRanks;
 	private int[] parentStateIds;
 	private int[] appendedFactorOrdinals;
@@ -39,6 +41,9 @@ final class PackedLongSubsetTable {
 		hashes = new long[rowCapacity];
 		rows = new double[rowCapacity];
 		costs = new double[rowCapacity];
+		appendedContributionRows = new double[rowCapacity];
+		Arrays.fill(appendedContributionRows, Double.NaN);
+		evidenceStateIds = new int[rowCapacity];
 		preferenceRanks = new int[rowCapacity];
 		parentStateIds = new int[rowCapacity];
 		appendedFactorOrdinals = new int[rowCapacity];
@@ -49,33 +54,63 @@ final class PackedLongSubsetTable {
 
 	int offer(long mask, double outputRows, double totalCost, int parentStateId, int appendedFactorOrdinal,
 			long neighborMask) {
-		return offer(mask, outputRows, totalCost, 0, parentStateId, appendedFactorOrdinal, neighborMask);
+		return offer(mask, outputRows, totalCost, Double.NaN, 0, 0, parentStateId, appendedFactorOrdinal,
+				neighborMask);
 	}
 
 	int offer(long mask, double outputRows, double totalCost, int preferenceRank, int parentStateId,
 			int appendedFactorOrdinal, long neighborMask) {
+		return offer(mask, outputRows, totalCost, Double.NaN, 0, preferenceRank, parentStateId,
+				appendedFactorOrdinal, neighborMask);
+	}
+
+	int offer(long mask, double outputRows, double totalCost, double contributionRows, int preferenceRank,
+			int parentStateId, int appendedFactorOrdinal, long neighborMask) {
+		return offer(mask, outputRows, totalCost, contributionRows, 0, preferenceRank, parentStateId,
+				appendedFactorOrdinal, neighborMask);
+	}
+
+	int offer(long mask, double outputRows, double totalCost, double contributionRows, int evidenceStateId,
+			int preferenceRank, int parentStateId, int appendedFactorOrdinal, long neighborMask) {
 		long hash = PackedPrimitiveHash.finish(PackedPrimitiveHash.step(PackedPrimitiveHash.SEED, mask));
-		return offerHashed(hash, mask, outputRows, totalCost, preferenceRank, parentStateId, appendedFactorOrdinal,
-				neighborMask);
+		return offerHashed(hash, mask, outputRows, totalCost, contributionRows, evidenceStateId, preferenceRank,
+				parentStateId, appendedFactorOrdinal, neighborMask);
 	}
 
 	int offerHashed(long hash, long mask, double outputRows, double totalCost, int parentStateId,
 			int appendedFactorOrdinal, long neighborMask) {
-		return offerHashed(hash, mask, outputRows, totalCost, 0, parentStateId, appendedFactorOrdinal, neighborMask);
+		return offerHashed(hash, mask, outputRows, totalCost, Double.NaN, 0, 0, parentStateId,
+				appendedFactorOrdinal, neighborMask);
 	}
 
 	int offerHashed(long hash, long mask, double outputRows, double totalCost, int preferenceRank, int parentStateId,
 			int appendedFactorOrdinal, long neighborMask) {
+		return offerHashed(hash, mask, outputRows, totalCost, Double.NaN, 0, preferenceRank, parentStateId,
+				appendedFactorOrdinal, neighborMask);
+	}
+
+	int offerHashed(long hash, long mask, double outputRows, double totalCost, double contributionRows,
+			int preferenceRank, int parentStateId, int appendedFactorOrdinal, long neighborMask) {
+		return offerHashed(hash, mask, outputRows, totalCost, contributionRows, 0, preferenceRank, parentStateId,
+				appendedFactorOrdinal, neighborMask);
+	}
+
+	int offerHashed(long hash, long mask, double outputRows, double totalCost, double contributionRows,
+			int evidenceStateId, int preferenceRank, int parentStateId, int appendedFactorOrdinal,
+			long neighborMask) {
 		if (mask == 0L) {
 			throw new IllegalArgumentException("a sparse join subset must not be empty");
+		}
+		if (evidenceStateId < 0) {
+			throw new IllegalArgumentException("packed evidence state ID must be non-negative");
 		}
 		int slot = findSlot(hash, mask);
 		int stateId = tableSlots[slot];
 		if (stateId != 0) {
 			int costComparison = Double.compare(totalCost, costs[stateId]);
 			if (costComparison < 0 || costComparison == 0 && preferenceRank > preferenceRanks[stateId]) {
-				writeDerivedState(stateId, outputRows, totalCost, preferenceRank, parentStateId,
-						appendedFactorOrdinal, neighborMask);
+				writeDerivedState(stateId, outputRows, totalCost, contributionRows, evidenceStateId, preferenceRank,
+						parentStateId, appendedFactorOrdinal, neighborMask);
 			}
 			return stateId;
 		}
@@ -87,8 +122,8 @@ final class PackedLongSubsetTable {
 		ensureRowCapacity(stateId);
 		masks[stateId] = mask;
 		hashes[stateId] = hash;
-		writeDerivedState(stateId, outputRows, totalCost, preferenceRank, parentStateId, appendedFactorOrdinal,
-				neighborMask);
+		writeDerivedState(stateId, outputRows, totalCost, contributionRows, evidenceStateId, preferenceRank,
+				parentStateId, appendedFactorOrdinal, neighborMask);
 		tableSlots[slot] = stateId;
 		return stateId;
 	}
@@ -125,6 +160,16 @@ final class PackedLongSubsetTable {
 		return costs[stateId];
 	}
 
+	double appendedContributionRows(int stateId) {
+		checkStateId(stateId);
+		return appendedContributionRows[stateId];
+	}
+
+	int evidenceStateId(int stateId) {
+		checkStateId(stateId);
+		return evidenceStateIds[stateId];
+	}
+
 	int preferenceRank(int stateId) {
 		checkStateId(stateId);
 		return preferenceRanks[stateId];
@@ -151,10 +196,12 @@ final class PackedLongSubsetTable {
 		}
 	}
 
-	private void writeDerivedState(int stateId, double outputRows, double totalCost, int preferenceRank,
-			int parentStateId, int appendedFactorOrdinal, long neighborMask) {
+	private void writeDerivedState(int stateId, double outputRows, double totalCost, double contributionRows,
+			int evidenceStateId, int preferenceRank, int parentStateId, int appendedFactorOrdinal, long neighborMask) {
 		rows[stateId] = outputRows;
 		costs[stateId] = totalCost;
+		appendedContributionRows[stateId] = contributionRows;
+		evidenceStateIds[stateId] = evidenceStateId;
 		preferenceRanks[stateId] = preferenceRank;
 		parentStateIds[stateId] = parentStateId;
 		appendedFactorOrdinals[stateId] = appendedFactorOrdinal;
@@ -184,6 +231,10 @@ final class PackedLongSubsetTable {
 		hashes = Arrays.copyOf(hashes, newCapacity);
 		rows = Arrays.copyOf(rows, newCapacity);
 		costs = Arrays.copyOf(costs, newCapacity);
+		int oldCapacity = appendedContributionRows.length;
+		appendedContributionRows = Arrays.copyOf(appendedContributionRows, newCapacity);
+		Arrays.fill(appendedContributionRows, oldCapacity, newCapacity, Double.NaN);
+		evidenceStateIds = Arrays.copyOf(evidenceStateIds, newCapacity);
 		preferenceRanks = Arrays.copyOf(preferenceRanks, newCapacity);
 		parentStateIds = Arrays.copyOf(parentStateIds, newCapacity);
 		appendedFactorOrdinals = Arrays.copyOf(appendedFactorOrdinals, newCapacity);

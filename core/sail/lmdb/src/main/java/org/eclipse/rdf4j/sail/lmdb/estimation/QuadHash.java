@@ -38,6 +38,16 @@ final class QuadHash {
 	}
 
 	static long projectionKey(int mask, long subject, long predicate, long object, long context) {
+		if (Integer.bitCount(mask) == 1) {
+			long term = switch (mask) {
+			case QuadProbe.SUBJECT -> subject;
+			case QuadProbe.PREDICATE -> predicate;
+			case QuadProbe.OBJECT -> object;
+			case QuadProbe.CONTEXT -> context;
+			default -> throw new IllegalArgumentException("unsupported singleton projection mask: " + mask);
+			};
+			return nonZero(mix64(SEED ^ mix64(term + STEP)));
+		}
 		return conditioningKey(mask, subject, predicate, object, context);
 	}
 

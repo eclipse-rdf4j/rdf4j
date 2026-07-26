@@ -46,8 +46,8 @@ import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 /**
  * Proves that a FILTER rejects every unmatched row produced by an unconditioned OPTIONAL, so the OPTIONAL may be
  * rewritten as an inner join without changing SPARQL bag or expression-error semantics. Every unmatched OPTIONAL row
- * leaves all right-only bindings unbound, so a condition that evaluates to false or to an expression error whenever
- * one such witness binding is unbound removes exactly the rows the inner join no longer produces.
+ * leaves all right-only bindings unbound, so a condition that evaluates to false or to an expression error whenever one
+ * such witness binding is unbound removes exactly the rows the inner join no longer produces.
  */
 final class LmdbNullRejectingOptionalSupport {
 

@@ -16,6 +16,8 @@ import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -63,6 +65,14 @@ final class LmdbPlannerServices {
 		return runtime.patternFilterPass(condition, pattern);
 	}
 
+	Optional<BindingSetAssignment> exactStoredTermFilterAnchor(Filter filter, ValueExpr condition,
+			String bindingName) {
+		if (filter == null || !(filter.getArg()instanceof StatementPattern pattern)) {
+			return Optional.empty();
+		}
+		return runtime.exactStoredTermFilterAnchor(pattern, condition, bindingName);
+	}
+
 	Optional<PropertyPathEstimate> estimatePropertyPath(ArbitraryLengthPath path, Set<String> boundVars) {
 		return runtime.propertyPath(path, boundVars);
 	}
@@ -98,8 +108,7 @@ final class LmdbPlannerServices {
 
 	LmdbOperatorFeedbackStats.OperatorEstimate estimateOperatorFeedback(TupleExpr expression, double leftRows,
 			double rightRows, double baseRows, double baseWorkRows, String executionMode) {
-		return runtime.feedback() == null ? null
-				: runtime.feedback().estimate(expression, leftRows, rightRows, baseRows, baseWorkRows, executionMode);
+		return runtime.operatorFeedback(expression, leftRows, rightRows, baseRows, baseWorkRows, executionMode);
 	}
 
 	String debugEvidence(TupleExpr expression) {

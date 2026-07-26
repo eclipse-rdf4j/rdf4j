@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 /** Read-only primitive-ID view supplied to packed cost and implementation providers. */
 @Experimental
@@ -27,6 +28,17 @@ public final class PackedQueryView {
 
 	public int relationCount() {
 		return query.relationCount();
+	}
+
+	/**
+	 * Materializes one canonical logical relation for cold-path provider logic that requires the exact RDF4J algebra
+	 * shape. The returned tree is detached from the packed query.
+	 *
+	 * @param relationId canonical packed relation ID
+	 * @return detached RDF4J query-algebra tree
+	 */
+	public TupleExpr materializeRelation(int relationId) {
+		return PackedPlanMaterializer.materialize(query, relationId);
 	}
 
 	public int operatorTag(int relationId) {
@@ -51,6 +63,18 @@ public final class PackedQueryView {
 
 	public boolean isStatementPattern(int relationId) {
 		return query.relOperator(relationId) == PackedRelOp.STATEMENT_PATTERN;
+	}
+
+	public boolean isArbitraryLengthPath(int relationId) {
+		return query.relOperator(relationId) == PackedRelOp.ARBITRARY_LENGTH_PATH;
+	}
+
+	public boolean isZeroLengthPath(int relationId) {
+		return query.relOperator(relationId) == PackedRelOp.ZERO_LENGTH_PATH;
+	}
+
+	public boolean isFilter(int relationId) {
+		return query.relOperator(relationId) == PackedRelOp.FILTER;
 	}
 
 	public String statementPatternName(int relationId, int component) {
@@ -85,12 +109,29 @@ public final class PackedQueryView {
 		if (symbolId == 0) {
 			return false;
 		}
+		int assuredBindingRelationId = context.assuredBindingRelationId();
+		if (assuredBindingRelationId != 0
+				&& query.relationAssuresSymbol(assuredBindingRelationId, symbolId)) {
+			return true;
+		}
 		for (int ordinal = 0; ordinal < context.prefixRelationCount(); ordinal++) {
-			if (query.relationBindsSymbol(context.prefixRelationId(ordinal), symbolId)) {
+			if (query.relationAssuresSymbol(context.prefixRelationId(ordinal), symbolId)) {
 				return true;
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * Returns whether one relation binds the symbol used by a statement-pattern component.
+	 */
+	public boolean relationBindsStatementComponent(int bindingRelationId, int statementRelationId, int component) {
+		int termId = statementPatternTerm(statementRelationId, component);
+		if (termId == 0) {
+			return false;
+		}
+		int symbolId = query.symbolIdForObject(query.payloadPrimary(termId));
+		return symbolId != 0 && query.relationBindsSymbol(bindingRelationId, symbolId);
 	}
 
 	public boolean isBindingSetAssignment(int relationId) {

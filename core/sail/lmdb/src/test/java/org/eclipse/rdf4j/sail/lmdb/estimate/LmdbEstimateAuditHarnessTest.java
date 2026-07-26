@@ -12,12 +12,16 @@
 package org.eclipse.rdf4j.sail.lmdb.estimate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -28,6 +32,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -35,6 +40,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -43,7 +49,9 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 import org.eclipse.rdf4j.sail.lmdb.benchmark.AASGenerator;
 import org.eclipse.rdf4j.sail.lmdb.benchmark.BenchmarkJoinEstimatorSupport;
+import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSynopsisStatus;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -71,7 +79,7 @@ class LmdbEstimateAuditHarnessTest {
 
 	@Test
 	void capturesFullQueryAndStatementPiecesWithQError(@TempDir File dataDir) {
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
 		repository.init();
 		try {
 			IRI p = VF.createIRI("urn:test:audit:p");
@@ -120,7 +128,7 @@ class LmdbEstimateAuditHarnessTest {
 	void rowCapFailureCarriesQueryPieceKindAndPhase(@TempDir File dataDir) {
 		String previousMaxRows = System.getProperty("rdf4j.lmdb.estimate.audit.maxActualRows");
 		System.setProperty("rdf4j.lmdb.estimate.audit.maxActualRows", "1");
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
 		repository.init();
 		try {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -158,7 +166,7 @@ class LmdbEstimateAuditHarnessTest {
 
 	@Test
 	void capturesNestedOperatorPiecesWithQError(@TempDir File dataDir) {
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
 		repository.init();
 		try {
 			IRI p = VF.createIRI("urn:test:audit:p");
@@ -208,7 +216,7 @@ class LmdbEstimateAuditHarnessTest {
 
 	@Test
 	void auditsGeneratedCorpusTemplatesAcrossNestedPieces(@TempDir File dataDir) {
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
 		repository.init();
 		try {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -248,8 +256,212 @@ class LmdbEstimateAuditHarnessTest {
 	}
 
 	@Test
+	void reportsBoundedFrontierCalibrationWithLazyConsolidation(@TempDir File dataDir) throws Exception {
+		long synopsisBudgetBytes = 128L * 1024L;
+		long queryMemoryBudgetBytes = 64L * 1024L * 1024L;
+		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setTripleIndexes("spoc,posc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
+				.setFrontierSynopsisBudgetBytes(synopsisBudgetBytes)
+				.setFrontierQueryMemoryBudgetBytes(queryMemoryBudgetBytes);
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			List<LmdbEstimateAuditQueryCorpus.AuditQuery> queries = LmdbEstimateAuditQueryCorpus.generatedQueries()
+					.stream()
+					.limit(30)
+					.toList();
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				loadMixedAuditData(connection);
+			}
+			long buildStarted = System.nanoTime();
+			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+			double buildMillis = (System.nanoTime() - buildStarted) / 1_000_000.0d;
+
+			List<LmdbEstimateAuditHarness.AuditRow> rows;
+			double queryMemoryPeakBytes;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				rows = queries.stream()
+						.flatMap(query -> LmdbEstimateAuditHarness
+								.auditQuery(connection, query.id(), query.sparql())
+								.stream())
+						.toList();
+				double[] maximumMemory = { 0.0d };
+				for (LmdbEstimateAuditQueryCorpus.AuditQuery query : queries) {
+					Explanation explanation = connection.prepareTupleQuery(query.sparql())
+							.explain(Explanation.Level.Optimized);
+					((QueryModelNode) explanation.tupleExpr())
+							.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+								@Override
+								protected void meetNode(QueryModelNode node) {
+									double memory = node.getDoubleMetricPlanned(
+											"plannedFrontierQueryMemoryPeakBytes");
+									if (Double.isFinite(memory)) {
+										maximumMemory[0] = Math.max(maximumMemory[0], memory);
+									}
+									super.meetNode(node);
+								}
+							});
+				}
+				queryMemoryPeakBytes = maximumMemory[0];
+			}
+
+			List<LmdbEstimateAuditHarness.AuditRow> frontierRows = rows.stream()
+					.filter(row -> "lmdb-frontier".equals(row.plannedSource()))
+					.toList();
+			double[] qErrors = frontierRows.stream()
+					.mapToDouble(LmdbEstimateAuditHarness.AuditRow::qError)
+					.sorted()
+					.toArray();
+			double p95QError = percentile(qErrors, 0.95d);
+			double worstQError = qErrors.length == 0 ? 1.0d : qErrors[qErrors.length - 1];
+			long falseZeros = frontierRows.stream()
+					.filter(row -> row.plannedRows() == 0.0d && row.actualRows() > 0L)
+					.count();
+
+			double[] insertionMillis = new double[16];
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				for (int index = 0; index < insertionMillis.length; index++) {
+					long started = System.nanoTime();
+					connection.begin();
+					connection.add(VF.createIRI("urn:frontier:calibration:subject:" + index),
+							VF.createIRI("urn:frontier:calibration:predicate"),
+							VF.createIRI("urn:frontier:calibration:object:" + index));
+					connection.commit();
+					insertionMillis[index] = (System.nanoTime() - started) / 1_000_000.0d;
+				}
+			}
+			java.util.Arrays.sort(insertionMillis);
+			double insertionP95Millis = percentile(insertionMillis, 0.95d);
+			Path insertionMarker = dataDir.toPath()
+					.resolve("frontier-synopsis")
+					.resolve("dirty-insertion.bin");
+			assertTrue(Files.exists(insertionMarker),
+					"the bounded exact insertion chain must leave a durable dirty marker for lazy consolidation");
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.prepareTupleQuery("""
+						SELECT ?subject
+						WHERE { ?subject <urn:frontier:calibration:predicate> ?object }
+						""")
+						.explain(Explanation.Level.Optimized);
+			}
+			long durableBytes;
+			try (var paths = Files.walk(dataDir.toPath().resolve("frontier-synopsis"))) {
+				durableBytes = paths.filter(Files::isRegularFile)
+						.mapToLong(path -> {
+							try {
+								return Files.size(path);
+							} catch (java.io.IOException e) {
+								throw new java.io.UncheckedIOException(e);
+							}
+						})
+						.sum();
+			}
+
+			System.out.printf(
+					"[frontier-calibration] queries=%d auditedPieces=%d frontierPieces=%d "
+							+ "p95QError=%.6f worstQError=%.6f falseZeros=%d intervalCoverage=not-certified "
+							+ "optimizerRegret=not-measured buildMillis=%.3f durableBytes=%d "
+							+ "insertP95Millis=%.3f queryMemoryPeakBytes=%.0f%n",
+					queries.size(), rows.size(), frontierRows.size(), p95QError, worstQError, falseZeros,
+					buildMillis, durableBytes, insertionP95Millis, queryMemoryPeakBytes);
+			assertTrue(frontierRows.size() > 0, "the bounded calibration must exercise Frontier-authoritative pieces");
+			assertEquals(0L, falseZeros, "Frontier must not publish a sampled zero as authoritative");
+			assertTrue(Double.isFinite(p95QError) && p95QError >= 1.0d);
+			assertTrue(queryMemoryPeakBytes <= queryMemoryBudgetBytes);
+			assertTrue(!Files.exists(insertionMarker),
+					"the first supported authoritative query must consolidate the bounded insertion chain");
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void alternativePathMissingIriInequalityUsesExactPassThrough(@TempDir File dataDir) {
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
+		repository.init();
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				loadMixedAuditData(connection);
+				LmdbEstimateAuditQueryCorpus.AuditQuery query = generatedQuery("audit-q23");
+				List<LmdbEstimateAuditHarness.AuditRow> rows = LmdbEstimateAuditHarness
+						.auditQuery(connection, query.id(), query.sparql());
+				LmdbEstimateAuditHarness.AuditRow fullRow = rows.stream()
+						.filter(row -> row.kind() == LmdbEstimateAuditHarness.PieceKind.FULL_QUERY)
+						.findFirst()
+						.orElseThrow();
+
+				assertEquals(90L, fullRow.actualRows(), fullRow::toString);
+				assertEquals(90.0d, fullRow.plannedRows(), 0.0d,
+						() -> "Bounded alternative branches must retain exact UNION bag multiplicity: " + rows);
+				assertTrue(fullRow.qError() <= 2.0d,
+						() -> "A missing IRI cannot reject an assured store-derived path endpoint: " + rows);
+			}
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void missingStoreIriDoesNotOverrideValuesBindingComparison(@TempDir File dataDir) {
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
+		repository.init();
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				String query = """
+						SELECT ?target WHERE {
+						  VALUES ?target { <urn:audit:outside-binding> }
+						  FILTER(?target = <urn:audit:outside-binding>)
+						}
+						""";
+				LmdbEstimateAuditHarness.AuditRow fullRow = LmdbEstimateAuditHarness
+						.auditQuery(connection, "values-missing-store-iri", query)
+						.stream()
+						.filter(row -> row.kind() == LmdbEstimateAuditHarness.PieceKind.FULL_QUERY)
+						.findFirst()
+						.orElseThrow();
+
+				assertEquals(1L, fullRow.actualRows(), fullRow::toString);
+				assertTrue(fullRow.plannedRows() > 0.0d,
+						() -> "A VALUES-bound IRI must not be treated as absent merely because LMDB has no ID: "
+								+ fullRow);
+			}
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void mixedDomainValuesPathPrefixStaysWithinTargetQError(@TempDir File dataDir) {
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
+		repository.init();
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				loadMixedAuditData(connection);
+				LmdbEstimateAuditQueryCorpus.AuditQuery query = generatedQuery("audit-q14");
+				List<LmdbEstimateAuditHarness.AuditRow> rows = LmdbEstimateAuditHarness
+						.auditQuery(connection, query.id(), query.sparql());
+				LmdbEstimateAuditHarness.AuditRow worstJoin = rows.stream()
+						.filter(row -> row.kind() == LmdbEstimateAuditHarness.PieceKind.JOIN)
+						.max(Comparator.comparingDouble(LmdbEstimateAuditHarness.AuditRow::qError))
+						.orElseThrow();
+
+				assertTrue(worstJoin.qError() <= 10.0d,
+						() -> "VALUES-conditioned path prefix exceeds the corpus q-error limit: " + rows);
+			}
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
 	void zeroOrMorePathEstimateStaysWithinTargetQError(@TempDir File dataDir) {
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
 		repository.init();
 		try {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -277,7 +489,7 @@ class LmdbEstimateAuditHarnessTest {
 
 	@Test
 	void conditionedOneOrMorePathStaysWithinTargetQError(@TempDir File dataDir) {
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
 		repository.init();
 		try {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -303,7 +515,7 @@ class LmdbEstimateAuditHarnessTest {
 
 	@Test
 	void missingDistinctPathTargetPreservesExactZero(@TempDir File dataDir) {
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
 		repository.init();
 		try {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -332,7 +544,7 @@ class LmdbEstimateAuditHarnessTest {
 
 	@Test
 	void missingSpecificAssetPathPreservesExactZero(@TempDir File dataDir) {
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
 		repository.init();
 		try {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -421,7 +633,7 @@ class LmdbEstimateAuditHarnessTest {
 
 	@Test
 	void auditsEntireGeneratedCorpusAcrossNestedPieces(@TempDir File dataDir) throws Exception {
-		LmdbStore store = new LmdbStore(dataDir);
+		LmdbStore store = new LmdbStore(dataDir, scalarAuditConfig());
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 		try {
@@ -502,6 +714,7 @@ class LmdbEstimateAuditHarnessTest {
 	void fullRebuildSnapshotOnlyQ7PreservesExactZeroBeforeRestart(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig loaderConfig = new LmdbStoreConfig()
 				.setTripleIndexes("spoc,posc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF)
 				.setSketchEstimatorEnabled(false);
 		SailRepository loader = new SailRepository(new LmdbStore(dataDir, loaderConfig));
 		loader.init();
@@ -531,7 +744,7 @@ class LmdbEstimateAuditHarnessTest {
 
 	@Test
 	void disconnectedProjectedIslandsUseJoinFinalRowsForCardinality(@TempDir File dataDir) {
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
 		repository.init();
 		try {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -568,7 +781,7 @@ class LmdbEstimateAuditHarnessTest {
 
 	@Test
 	void disconnectedProjectedIslandsRetainNestedJoinFanout(@TempDir File dataDir) {
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
 		repository.init();
 		try {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -593,7 +806,7 @@ class LmdbEstimateAuditHarnessTest {
 
 	@Test
 	void disconnectedProjectedIslandsPreserveImpossibleFilterZero(@TempDir File dataDir) {
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
 		repository.init();
 		try {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -628,7 +841,7 @@ class LmdbEstimateAuditHarnessTest {
 
 	@Test
 	void disconnectedSelectiveFilterRetainsCartesianRows(@TempDir File dataDir) {
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
 		repository.init();
 		try {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -657,7 +870,7 @@ class LmdbEstimateAuditHarnessTest {
 
 	@Test
 	void independentOptionalsDoNotMultiplyBaseRows(@TempDir File dataDir) {
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
 		repository.init();
 		try {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -683,7 +896,7 @@ class LmdbEstimateAuditHarnessTest {
 
 	@Test
 	void disconnectedLowThresholdFilterRetainsCartesianRows(@TempDir File dataDir) {
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
 		repository.init();
 		try {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -714,7 +927,7 @@ class LmdbEstimateAuditHarnessTest {
 
 	@Test
 	void disconnectedFilteredCartesianUsesProductRows(@TempDir File dataDir) {
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
 		repository.init();
 		try {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -739,7 +952,7 @@ class LmdbEstimateAuditHarnessTest {
 
 	@Test
 	void nonExactZeroLookupDoesNotCollapseValidJoin(@TempDir File dataDir) {
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
 		repository.init();
 		try {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -764,7 +977,7 @@ class LmdbEstimateAuditHarnessTest {
 
 	@Test
 	void inverseRelationshipPathRetainsEndpointRows(@TempDir File dataDir) {
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
 		repository.init();
 		try {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -789,7 +1002,7 @@ class LmdbEstimateAuditHarnessTest {
 
 	@Test
 	void mixedAasMedicalImpossibleNumericFilterDoesNotFallbackToPositiveRows(@TempDir File dataDir) {
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
 		repository.init();
 		try {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -820,7 +1033,7 @@ class LmdbEstimateAuditHarnessTest {
 
 	@Test
 	void orderedSliceImpossibleNumericFilterDoesNotEstimateLimitRows(@TempDir File dataDir) {
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
 		repository.init();
 		try {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -850,8 +1063,40 @@ class LmdbEstimateAuditHarnessTest {
 	}
 
 	@Test
+	void satisfiableNumericFilterOverJoinKeepsPositiveRows(@TempDir File dataDir) {
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
+		repository.init();
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				loadMixedAuditData(connection);
+
+				List<LmdbEstimateAuditHarness.AuditRow> rows = LmdbEstimateAuditHarness.auditQuery(connection,
+						"audit-filter-positive-control", """
+								PREFIX med: <http://example.com/theme/medical/>
+								SELECT ?enc ?value WHERE {
+								  ?enc med:hasObservation ?obs .
+								  ?obs med:value ?value .
+								  FILTER(?value >= 60)
+								}
+								""");
+				LmdbEstimateAuditHarness.AuditRow fullRow = rows.stream()
+						.filter(row -> row.kind() == LmdbEstimateAuditHarness.PieceKind.FULL_QUERY)
+						.findFirst()
+						.orElseThrow();
+
+				assertEquals(8L, fullRow.actualRows(), fullRow::toString);
+				assertTrue(fullRow.plannedRows() > 0.0d,
+						() -> "A satisfiable leaf filter must not collapse its enclosing join: " + rows);
+			}
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
 	void groupedAasRelationshipDoesNotUsePreGroupJoinRows(@TempDir File dataDir) {
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
 		repository.init();
 		try {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -886,7 +1131,7 @@ class LmdbEstimateAuditHarnessTest {
 
 	@Test
 	void noKeyAggregateUsesAggregateOutputRows(@TempDir File dataDir) {
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
 		repository.init();
 		try {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -917,7 +1162,7 @@ class LmdbEstimateAuditHarnessTest {
 
 	@Test
 	void valuesInsideMinusKeepsRetainedLeftRowsEstimate(@TempDir File dataDir) {
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
 		repository.init();
 		try {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -954,7 +1199,7 @@ class LmdbEstimateAuditHarnessTest {
 
 	@Test
 	void relationshipPowerPathUsesPropertyPathEstimate(@TempDir File dataDir) {
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
 		repository.init();
 		try {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -988,7 +1233,7 @@ class LmdbEstimateAuditHarnessTest {
 
 	@Test
 	void relationshipPowerPathDoesNotUseGenericJoinImplementation(@TempDir File dataDir) {
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
 		repository.init();
 		try {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -1031,7 +1276,7 @@ class LmdbEstimateAuditHarnessTest {
 
 	@Test
 	void specificAssetThresholdPathDoesNotUseCartesianBypass(@TempDir File dataDir) {
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
 		repository.init();
 		try {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -1142,9 +1387,37 @@ class LmdbEstimateAuditHarnessTest {
 	}
 
 	@Test
+	void defaultPipelineFiltersThresholdAtItsValueProducer(@TempDir File dataDir) {
+		SailRepository repository = aasBenchmarkRepository(dataDir, false);
+		repository.init();
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				new AASGenerator().generateAndAdd(connection, 1, 2, 1);
+				TupleExpr optimized = (TupleExpr) connection.prepareTupleQuery(specificAssetThresholdQuery())
+						.explain(Explanation.Level.Optimized)
+						.tupleExpr();
+
+				Filter threshold = thresholdFilter(optimized);
+				StatementPattern valueProducer = assertInstanceOf(StatementPattern.class, threshold.getArg(),
+						() -> "The numeric threshold must be evaluated at its local value producer, before any "
+								+ "property-path expansion:\n" + optimized);
+				assertEquals("p1", valueProducer.getSubjectVar().getName());
+				assertEquals(AAS_VALUE, valueProducer.getPredicateVar().getValue());
+				assertEquals("v1", valueProducer.getObjectVar().getName());
+				assertConnectedJoinPrefixOrder(optimized);
+			}
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
 	void specificAssetThresholdBenchmarkTimedExplainStartsFromRatedPowerAnchor(@TempDir File dataDir)
 			throws Exception {
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc"));
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF)
+				.setSketchEstimatorEnabled(true));
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 		try {
@@ -1166,7 +1439,7 @@ class LmdbEstimateAuditHarnessTest {
 
 	@Test
 	void disconnectedQueryReportsExplicitCartesianFallback(@TempDir File dataDir) {
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
 		repository.init();
 		try {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -1242,10 +1515,17 @@ class LmdbEstimateAuditHarnessTest {
 		return sortedValues[Math.max(0, Math.min(sortedValues.length - 1, index))];
 	}
 
+	private static LmdbStoreConfig scalarAuditConfig() {
+		return new LmdbStoreConfig()
+				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF)
+				.setSketchEstimatorEnabled(true);
+	}
+
 	private static EvidenceAuditRepository openEvidenceAuditRepository(File dataDir, String evidenceMode)
 			throws Exception {
 		LmdbStoreConfig loaderConfig = new LmdbStoreConfig()
 				.setTripleIndexes("spoc,posc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF)
 				.setSketchEstimatorEnabled(false);
 		SailRepository loader = new SailRepository(new LmdbStore(dataDir, loaderConfig));
 		loader.init();
@@ -1275,6 +1555,7 @@ class LmdbEstimateAuditHarnessTest {
 	private static LmdbStoreConfig evidenceAuditConfig(String evidenceMode) {
 		return new LmdbStoreConfig()
 				.setTripleIndexes("spoc,posc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF)
 				.setSketchEstimatorEnabled(true)
 				.setSketchEstimatorEvidenceMode(evidenceMode)
 				.setSketchEstimatorColdSynopsisCapacity(6_144)
@@ -1411,7 +1692,8 @@ class LmdbEstimateAuditHarnessTest {
 	}
 
 	private static SailRepository aasBenchmarkRepository(File dataDir, boolean useCascades) {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF);
 		if (!useCascades) {
 			config.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
 		}
@@ -1466,6 +1748,60 @@ class LmdbEstimateAuditHarnessTest {
 				  FILTER (?v1 > 15.0)
 				}
 				""";
+	}
+
+	private static Filter thresholdFilter(TupleExpr root) {
+		List<Filter> matches = new ArrayList<>(1);
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter node) {
+				if (VarNameCollector.process(node.getCondition()).equals(Set.of("v1"))) {
+					matches.add(node);
+				}
+				super.meet(node);
+			}
+		});
+		assertEquals(1, matches.size(), () -> "Expected exactly one ?v1 threshold filter:\n" + root);
+		return matches.getFirst();
+	}
+
+	private static void assertConnectedJoinPrefixOrder(TupleExpr root) {
+		List<Join> joins = new ArrayList<>(1);
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Join node) {
+				if (joins.isEmpty()) {
+					joins.add(node);
+				}
+				super.meet(node);
+			}
+		});
+		assertTrue(!joins.isEmpty(), () -> "Expected a mandatory join island:\n" + root);
+
+		List<TupleExpr> factors = new ArrayList<>();
+		collectJoinFactors(joins.getFirst(), factors);
+		Set<String> prefixBindings = new HashSet<>();
+		for (TupleExpr factor : factors) {
+			if (!prefixBindings.isEmpty()) {
+				Set<String> sharedBindings = new HashSet<>(factor.getBindingNames());
+				sharedBindings.retainAll(prefixBindings);
+				assertTrue(!sharedBindings.isEmpty(),
+						() -> "A connected query must not append a disconnected factor before its bridge. "
+								+ "Disconnected factor=" + factor.getSignature() + ", prefixBindings="
+								+ prefixBindings + ", executionOrder="
+								+ factors.stream().map(QueryModelNode::getSignature).toList() + "\n" + root);
+			}
+			prefixBindings.addAll(factor.getBindingNames());
+		}
+	}
+
+	private static void collectJoinFactors(TupleExpr expression, List<TupleExpr> factors) {
+		if (expression instanceof Join join) {
+			collectJoinFactors(join.getLeftArg(), factors);
+			collectJoinFactors(join.getRightArg(), factors);
+		} else {
+			factors.add(expression);
+		}
 	}
 
 	private static void assertThresholdPathDoesNotUseUnboundPropertyPathSeed(String plan) {

@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
@@ -38,6 +39,7 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.lmdb.benchmark.AASGenerator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -69,7 +71,7 @@ class LmdbPropertyPathEstimateTest {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				connection.add(a, p, b);
 				connection.add(b, p, c);
-				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+				LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 				LmdbPlannerAwait.awaitSketchesReady(store);
 
 				Explanation explanation = connection.prepareTupleQuery("SELECT ?o WHERE { <urn:a> <urn:p>+ ?o }")
@@ -101,7 +103,7 @@ class LmdbPropertyPathEstimateTest {
 					IRI object = VF.createIRI("urn:o" + i);
 					connection.add(subject, p, object);
 				}
-				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+				LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 				LmdbPlannerAwait.awaitSketchesReady(store);
 
 				JoinFactorCostModel costModel = (JoinFactorCostModel) store.getBackingStore()
@@ -133,6 +135,40 @@ class LmdbPropertyPathEstimateTest {
 	}
 
 	@Test
+	void retainedRatedPowerPrefixConditionsPathFromBoundEnd(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc"));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				new AASGenerator().generateAndAdd(connection, 100, 100, 100);
+			}
+			StatementPattern idShort = new StatementPattern(Var.of("p1"), Var.of("idShort", AAS_ID_SHORT),
+					Var.of("ratedPower", VF.createLiteral("ratedPower")));
+			StatementPattern value = new StatementPattern(Var.of("p1"), Var.of("value", AAS_VALUE), Var.of("v1"));
+			Join prefix = new Join(idShort, value);
+			ArbitraryLengthPath path = new ArbitraryLengthPath(Var.of("start"),
+					new StatementPattern(Var.of("start"), Var.of("pathValue", AAS_VALUE), Var.of("p1")),
+					Var.of("p1"), 0L);
+			JoinFactorCostModel costModel = (JoinFactorCostModel) store.getBackingStore().getEvaluationStatistics();
+			double prefixRows = store.getBackingStore().getEvaluationStatistics().getCardinality(prefix);
+
+			JoinFactorCostModel.FactorCostEstimate estimate = costModel
+					.estimateFactorCost(path, JoinFactorCostModel.CostContext.forOptimization(
+							Set.of("p1", "v1"), prefixRows, Double.NaN, true, true, Map.of(),
+							List.of(idShort, value)))
+					.orElseThrow();
+
+			assertTrue(estimate.getOutputRows() < 250_000.0d,
+					() -> "The retained ratedPower endpoint distribution must make reverse path expansion cheaper "
+							+ "than the broad forward expansion. prefixRows=" + prefixRows + ", estimate="
+							+ estimate.getDoubleMetrics());
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
 	void annotatesNestedZeroOrMorePathInAasDriveAggregation(@TempDir File dataDir) {
 		LmdbStore store = new LmdbStore(dataDir);
 		SailRepository repository = new SailRepository(store);
@@ -140,7 +176,7 @@ class LmdbPropertyPathEstimateTest {
 		try {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				loadAasDriveAggregationData(connection);
-				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+				LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 				LmdbPlannerAwait.awaitSketchesReady(store);
 
 				Explanation explanation = connection.prepareTupleQuery("""
@@ -183,7 +219,7 @@ class LmdbPropertyPathEstimateTest {
 		try {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				loadAasDriveAggregationData(connection, 400, 3, 4);
-				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+				LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 				LmdbPlannerAwait.awaitSketchesReady(store);
 
 				Explanation explanation = connection.prepareTupleQuery("""
@@ -262,7 +298,7 @@ class LmdbPropertyPathEstimateTest {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				loadAasDriveAggregationData(connection);
 				loadAasAssetInfoData(connection);
-				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+				LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 				LmdbPlannerAwait.awaitSketchesReady(store);
 
 				Explanation explanation = connection.prepareTupleQuery("""

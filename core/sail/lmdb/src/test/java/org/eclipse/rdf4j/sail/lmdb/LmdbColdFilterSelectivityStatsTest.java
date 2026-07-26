@@ -20,6 +20,7 @@ import java.io.File;
 import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -134,6 +135,31 @@ class LmdbColdFilterSelectivityStatsTest {
 			assertTrue(estimate.isSampledZero());
 			assertTrue(estimate.getUpper95PassRatio() > 0.0d);
 			assertTrue(estimate.getPlanningPassRatio() > 0.0d);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void nondeterministicFunctionsCannotProduceExactFilterEvidence(@TempDir File dataDir) throws Exception {
+		LmdbStore store = initializedStore(dataDir, coldSnapshotOnlyConfig(64));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			loadRows(repository, 64);
+			rebuildAndPersist(store);
+
+			for (String condition : List.of(
+					"RAND() < 0.0",
+					"NOW() < \"0001-01-01T00:00:00Z\"^^<http://www.w3.org/2001/XMLSchema#dateTime>",
+					"UUID() = <urn:test:impossible-uuid>",
+					"STRUUID() = \"impossible-uuid\"",
+					"BNODE() = <urn:test:impossible-bnode>")) {
+				String query = QUERY.replace("?value = \"keep\"", condition);
+				EvaluationStatistics.FilterPassEstimate estimate = estimate(store, query);
+				assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.EXACT, estimate.getSource(),
+						() -> "Nondeterministic condition cannot justify exact filter evidence: " + condition);
+			}
 		} finally {
 			repository.shutDown();
 		}

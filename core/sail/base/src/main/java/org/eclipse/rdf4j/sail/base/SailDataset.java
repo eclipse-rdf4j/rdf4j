@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.base;
 
 import java.util.Comparator;
+import java.util.OptionalLong;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -34,6 +35,18 @@ import org.eclipse.rdf4j.sail.SailException;
  * @author James Leigh
  */
 public interface SailDataset extends SailClosable {
+
+	/**
+	 * Returns a durable native snapshot epoch when the backing store can identify this exact read view.
+	 *
+	 * <p>
+	 * The default is empty. Derived datasets containing uncommitted overlays must keep that default unless they can
+	 * prove that the epoch also identifies the overlay.
+	 * </p>
+	 */
+	default OptionalLong getSnapshotEpoch() {
+		return OptionalLong.empty();
+	}
 
 	/**
 	 * Called when this {@link SailDataset} is no longer is used, such as when a read operation is complete. An

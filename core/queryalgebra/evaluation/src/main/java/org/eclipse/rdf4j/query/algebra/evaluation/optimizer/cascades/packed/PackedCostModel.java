@@ -21,6 +21,17 @@ public interface PackedCostModel {
 	/** Returns a non-negative row estimate, or {@link Double#NaN} when the provider has no estimate. */
 	double estimateRows(PackedQueryView query, int relationId);
 
+	/**
+	 * Opens one query-local estimator session.
+	 *
+	 * <p>
+	 * The default adapter preserves this interface as a lambda-compatible scalar extension point. The packed planner
+	 * owns the returned session and must not retain it in detached recipes or store-wide caches.
+	 */
+	default PackedCostSession openSession(PackedQueryView query) {
+		return PackedCostSession.scalar(this, query);
+	}
+
 	/** Returns local work in the same additive unit as rows, or {@link Double#NaN} when unknown. */
 	default double estimateLocalWork(PackedQueryView query, int relationId, double outputRows) {
 		return estimateRows(query, relationId);
@@ -31,5 +42,16 @@ public interface PackedCostModel {
 			PackedCostEstimate output) {
 		double rows = estimateRows(query, relationId);
 		output.setRows(rows, estimateLocalWork(query, relationId, rows));
+	}
+
+	/**
+	 * Refines a completed non-leaf estimate after the packed planner has costed its children.
+	 * <p>
+	 * The supplied output initially contains the planner's base output rows and total work rows. Implementations may
+	 * replace those values and attach provider provenance. This remains a default method so {@code PackedCostModel}
+	 * stays a functional interface.
+	 */
+	default void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
+			PackedCostEstimate output) {
 	}
 }

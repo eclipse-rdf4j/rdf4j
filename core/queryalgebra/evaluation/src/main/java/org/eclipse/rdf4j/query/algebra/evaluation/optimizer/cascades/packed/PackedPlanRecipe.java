@@ -37,7 +37,19 @@ final class PackedPlanRecipe {
 	private final int[] indexPrefixLengths;
 	private final int[] indexNameIds;
 	private final int[] estimateSourceIds;
+	private final int[] estimateFusionIds;
 	private final int[] accessModeIds;
+	private final int[] plannedStringMetricStarts;
+	private final int[] plannedStringMetricCounts;
+	private final int[] plannedStringMetricNameIds;
+	private final int[] plannedStringMetricValueIds;
+	private final int[] plannedDoubleMetricStarts;
+	private final int[] plannedDoubleMetricCounts;
+	private final int[] plannedDoubleMetricNameIds;
+	private final double[] plannedDoubleMetricValues;
+	private final int[] dependentOwnerRecipeIds;
+	private final int[] dependentSubqueryPayloadIds;
+	private final int[] dependentRootRecipeIds;
 	private final Object[] providerObjects;
 	private final long ruleProofMask;
 
@@ -46,7 +58,12 @@ final class PackedPlanRecipe {
 			int[] childStarts, int[] childCounts, int[] childRecipeIds, byte[] physicalMetadataPresent,
 			double[] outputRows, double[] workRows, double[] accessRows, double[] invocations, int[] lookupMasks,
 			int[] missingLookupMasks, int[] indexPrefixLengths, int[] indexNameIds, int[] estimateSourceIds,
-			int[] accessModeIds, Object[] providerObjects, long ruleProofMask) {
+			int[] estimateFusionIds, int[] accessModeIds, int[] plannedStringMetricStarts,
+			int[] plannedStringMetricCounts, int[] plannedStringMetricNameIds, int[] plannedStringMetricValueIds,
+			int[] plannedDoubleMetricStarts, int[] plannedDoubleMetricCounts, int[] plannedDoubleMetricNameIds,
+			double[] plannedDoubleMetricValues, int[] dependentOwnerRecipeIds,
+			int[] dependentSubqueryPayloadIds, int[] dependentRootRecipeIds, Object[] providerObjects,
+			long ruleProofMask) {
 		this.rootRecipeId = rootRecipeId;
 		this.operatorTags = operatorTags;
 		this.payloadIds = payloadIds;
@@ -67,13 +84,29 @@ final class PackedPlanRecipe {
 		this.indexPrefixLengths = indexPrefixLengths;
 		this.indexNameIds = indexNameIds;
 		this.estimateSourceIds = estimateSourceIds;
+		this.estimateFusionIds = estimateFusionIds;
 		this.accessModeIds = accessModeIds;
+		this.plannedStringMetricStarts = plannedStringMetricStarts;
+		this.plannedStringMetricCounts = plannedStringMetricCounts;
+		this.plannedStringMetricNameIds = plannedStringMetricNameIds;
+		this.plannedStringMetricValueIds = plannedStringMetricValueIds;
+		this.plannedDoubleMetricStarts = plannedDoubleMetricStarts;
+		this.plannedDoubleMetricCounts = plannedDoubleMetricCounts;
+		this.plannedDoubleMetricNameIds = plannedDoubleMetricNameIds;
+		this.plannedDoubleMetricValues = plannedDoubleMetricValues;
+		this.dependentOwnerRecipeIds = dependentOwnerRecipeIds;
+		this.dependentSubqueryPayloadIds = dependentSubqueryPayloadIds;
+		this.dependentRootRecipeIds = dependentRootRecipeIds;
 		this.providerObjects = providerObjects;
 		this.ruleProofMask = ruleProofMask;
 	}
 
 	static PackedPlanRecipe extract(PackedMemo memo, int rootWinnerId) {
-		return new Extractor(memo).extract(rootWinnerId);
+		return new Extractor(memo, null).extract(rootWinnerId);
+	}
+
+	static PackedPlanRecipe extract(PackedMemo memo, int rootWinnerId, PackedDependentPlans dependentPlans) {
+		return new Extractor(memo, dependentPlans).extract(rootWinnerId);
 	}
 
 	int size() {
@@ -179,12 +212,69 @@ final class PackedPlanRecipe {
 		return providerString(estimateSourceIds[recipeId]);
 	}
 
+	String estimateFusion(int recipeId) {
+		return providerString(estimateFusionIds[recipeId]);
+	}
+
 	String accessMode(int recipeId) {
 		return providerString(accessModeIds[recipeId]);
 	}
 
+	int plannedStringMetricCount(int recipeId) {
+		checkRecipeId(recipeId);
+		return plannedStringMetricCounts[recipeId];
+	}
+
+	String plannedStringMetricName(int recipeId, int ordinal) {
+		return providerString(plannedStringMetricNameIds[plannedStringMetricIndex(recipeId, ordinal)]);
+	}
+
+	String plannedStringMetricValue(int recipeId, int ordinal) {
+		return providerString(plannedStringMetricValueIds[plannedStringMetricIndex(recipeId, ordinal)]);
+	}
+
+	int plannedDoubleMetricCount(int recipeId) {
+		checkRecipeId(recipeId);
+		return plannedDoubleMetricCounts[recipeId];
+	}
+
+	String plannedDoubleMetricName(int recipeId, int ordinal) {
+		return providerString(plannedDoubleMetricNameIds[plannedDoubleMetricIndex(recipeId, ordinal)]);
+	}
+
+	double plannedDoubleMetricValue(int recipeId, int ordinal) {
+		return plannedDoubleMetricValues[plannedDoubleMetricIndex(recipeId, ordinal)];
+	}
+
+	int dependentRecipeId(int ownerRecipeId, int subqueryPayloadId) {
+		checkRecipeId(ownerRecipeId);
+		for (int ordinal = 0; ordinal < dependentOwnerRecipeIds.length; ordinal++) {
+			if (dependentOwnerRecipeIds[ordinal] == ownerRecipeId
+					&& dependentSubqueryPayloadIds[ordinal] == subqueryPayloadId) {
+				return dependentRootRecipeIds[ordinal];
+			}
+		}
+		return 0;
+	}
+
 	private String providerString(int objectId) {
 		return objectId == 0 ? null : (String) providerObjects[objectId];
+	}
+
+	private int plannedStringMetricIndex(int recipeId, int ordinal) {
+		checkRecipeId(recipeId);
+		if (ordinal < 0 || ordinal >= plannedStringMetricCounts[recipeId]) {
+			throw new IndexOutOfBoundsException("planned string metric ordinal outside plan recipe");
+		}
+		return plannedStringMetricStarts[recipeId] + ordinal;
+	}
+
+	private int plannedDoubleMetricIndex(int recipeId, int ordinal) {
+		checkRecipeId(recipeId);
+		if (ordinal < 0 || ordinal >= plannedDoubleMetricCounts[recipeId]) {
+			throw new IndexOutOfBoundsException("planned double metric ordinal outside plan recipe");
+		}
+		return plannedDoubleMetricStarts[recipeId] + ordinal;
 	}
 
 	private void checkRecipeId(int recipeId) {
@@ -198,6 +288,7 @@ final class PackedPlanRecipe {
 		private static final int INITIAL_ROW_CAPACITY = 8;
 
 		private final PackedMemo memo;
+		private final PackedDependentPlans dependentPlans;
 		private int[] mappedWinnerSlots = new int[16];
 		private int[] mappedRecipeIds = new int[16];
 		private byte[] mappedStates = new byte[16];
@@ -226,20 +317,76 @@ final class PackedPlanRecipe {
 		private int[] indexPrefixLengths = new int[INITIAL_ROW_CAPACITY];
 		private int[] indexNameIds = new int[INITIAL_ROW_CAPACITY];
 		private int[] estimateSourceIds = new int[INITIAL_ROW_CAPACITY];
+		private int[] estimateFusionIds = new int[INITIAL_ROW_CAPACITY];
 		private int[] accessModeIds = new int[INITIAL_ROW_CAPACITY];
+		private int[] plannedStringMetricStarts = new int[INITIAL_ROW_CAPACITY];
+		private int[] plannedStringMetricCounts = new int[INITIAL_ROW_CAPACITY];
+		private int[] plannedStringMetricNameIds = new int[INITIAL_ROW_CAPACITY];
+		private int[] plannedStringMetricValueIds = new int[INITIAL_ROW_CAPACITY];
+		private int[] plannedDoubleMetricStarts = new int[INITIAL_ROW_CAPACITY];
+		private int[] plannedDoubleMetricCounts = new int[INITIAL_ROW_CAPACITY];
+		private int[] plannedDoubleMetricNameIds = new int[INITIAL_ROW_CAPACITY];
+		private double[] plannedDoubleMetricValues = new double[INITIAL_ROW_CAPACITY];
+		private int[] dependentOwnerRecipeIds = new int[4];
+		private int[] dependentSubqueryPayloadIds = new int[4];
+		private int[] dependentRootRecipeIds = new int[4];
+		private boolean[] dependentProcessed;
 		private final PackedObjectPool providerObjects = new PackedObjectPool(INITIAL_ROW_CAPACITY);
 		private int childSize;
+		private int plannedStringMetricSize;
+		private int plannedDoubleMetricSize;
+		private int dependentSize;
 		private int size;
 		private long ruleProofMask;
 
-		private Extractor(PackedMemo memo) {
+		private Extractor(PackedMemo memo, PackedDependentPlans dependentPlans) {
 			this.memo = memo;
+			this.dependentPlans = dependentPlans;
+			dependentProcessed = dependentPlans == null ? new boolean[0] : new boolean[dependentPlans.size()];
 		}
 
 		private PackedPlanRecipe extract(int rootWinnerId) {
 			memo.winnerPhysicalExpressionId(rootWinnerId);
+			extractGraph(rootWinnerId);
+			appendReachableDependentPlans();
+			int rootRecipeId = mappedRecipeIds[mappedSlot(rootWinnerId)];
+			return new PackedPlanRecipe(rootRecipeId, Arrays.copyOf(operatorTags, size + 1),
+					Arrays.copyOf(payloadIds, size + 1), Arrays.copyOf(deliveredPropertyIds, size + 1),
+					Arrays.copyOf(implementationForms, size + 1),
+					Arrays.copyOf(sourcePhysicalExpressionIds, size + 1),
+					Arrays.copyOf(sourceLogicalExpressionIds, size + 1), Arrays.copyOf(childStarts, size + 1),
+					Arrays.copyOf(childCounts, size + 1), Arrays.copyOf(childRecipeIds, childSize),
+					Arrays.copyOf(physicalMetadataPresent, size + 1), Arrays.copyOf(outputRows, size + 1),
+					Arrays.copyOf(workRows, size + 1), Arrays.copyOf(accessRows, size + 1),
+					Arrays.copyOf(invocations, size + 1), Arrays.copyOf(lookupMasks, size + 1),
+					Arrays.copyOf(missingLookupMasks, size + 1), Arrays.copyOf(indexPrefixLengths, size + 1),
+					Arrays.copyOf(indexNameIds, size + 1), Arrays.copyOf(estimateSourceIds, size + 1),
+					Arrays.copyOf(estimateFusionIds, size + 1), Arrays.copyOf(accessModeIds, size + 1),
+					Arrays.copyOf(plannedStringMetricStarts, size + 1),
+					Arrays.copyOf(plannedStringMetricCounts, size + 1),
+					Arrays.copyOf(plannedStringMetricNameIds, plannedStringMetricSize),
+					Arrays.copyOf(plannedStringMetricValueIds, plannedStringMetricSize),
+					Arrays.copyOf(plannedDoubleMetricStarts, size + 1),
+					Arrays.copyOf(plannedDoubleMetricCounts, size + 1),
+					Arrays.copyOf(plannedDoubleMetricNameIds, plannedDoubleMetricSize),
+					Arrays.copyOf(plannedDoubleMetricValues, plannedDoubleMetricSize),
+					Arrays.copyOf(dependentOwnerRecipeIds, dependentSize),
+					Arrays.copyOf(dependentSubqueryPayloadIds, dependentSize),
+					Arrays.copyOf(dependentRootRecipeIds, dependentSize), providerObjects.snapshotValues(),
+					ruleProofMask);
+		}
+
+		private void extractGraph(int rootWinnerId) {
+			int rootSlot = mappedSlot(rootWinnerId);
+			if (mappedWinnerSlots[rootSlot] == rootWinnerId) {
+				if (mappedStates[rootSlot] == 1) {
+					throw new PackedMemoInvariantException("winner dependency cycle at winner " + rootWinnerId);
+				}
+				return;
+			}
 			int depth = 0;
 			winnerStack[0] = rootWinnerId;
+			nextChildStack[0] = 0;
 			markActive(rootWinnerId);
 			while (depth >= 0) {
 				int winnerId = winnerStack[depth];
@@ -271,19 +418,36 @@ final class PackedPlanRecipe {
 				mappedStates[winnerSlot] = 2;
 				depth--;
 			}
-			int rootRecipeId = mappedRecipeIds[mappedSlot(rootWinnerId)];
-			return new PackedPlanRecipe(rootRecipeId, Arrays.copyOf(operatorTags, size + 1),
-					Arrays.copyOf(payloadIds, size + 1), Arrays.copyOf(deliveredPropertyIds, size + 1),
-					Arrays.copyOf(implementationForms, size + 1),
-					Arrays.copyOf(sourcePhysicalExpressionIds, size + 1),
-					Arrays.copyOf(sourceLogicalExpressionIds, size + 1), Arrays.copyOf(childStarts, size + 1),
-					Arrays.copyOf(childCounts, size + 1), Arrays.copyOf(childRecipeIds, childSize),
-					Arrays.copyOf(physicalMetadataPresent, size + 1), Arrays.copyOf(outputRows, size + 1),
-					Arrays.copyOf(workRows, size + 1), Arrays.copyOf(accessRows, size + 1),
-					Arrays.copyOf(invocations, size + 1), Arrays.copyOf(lookupMasks, size + 1),
-					Arrays.copyOf(missingLookupMasks, size + 1), Arrays.copyOf(indexPrefixLengths, size + 1),
-					Arrays.copyOf(indexNameIds, size + 1), Arrays.copyOf(estimateSourceIds, size + 1),
-					Arrays.copyOf(accessModeIds, size + 1), providerObjects.snapshotValues(), ruleProofMask);
+		}
+
+		private void appendReachableDependentPlans() {
+			if (dependentPlans == null) {
+				return;
+			}
+			boolean progressed;
+			do {
+				progressed = false;
+				for (int ordinal = 0; ordinal < dependentPlans.size(); ordinal++) {
+					if (dependentProcessed[ordinal]) {
+						continue;
+					}
+					int ownerWinnerId = dependentPlans.ownerWinnerId(ordinal);
+					int ownerSlot = mappedSlot(ownerWinnerId);
+					if (mappedWinnerSlots[ownerSlot] != ownerWinnerId || mappedStates[ownerSlot] != 2) {
+						continue;
+					}
+					int dependentWinnerId = dependentPlans.dependentWinnerId(ordinal);
+					extractGraph(dependentWinnerId);
+					ownerSlot = mappedSlot(ownerWinnerId);
+					ensureDependentCapacity(dependentSize + 1);
+					dependentOwnerRecipeIds[dependentSize] = mappedRecipeIds[ownerSlot];
+					dependentSubqueryPayloadIds[dependentSize] = dependentPlans.subqueryPayloadId(ordinal);
+					dependentRootRecipeIds[dependentSize] = mappedRecipeIds[mappedSlot(dependentWinnerId)];
+					dependentProcessed[ordinal] = true;
+					dependentSize++;
+					progressed = true;
+				}
+			} while (progressed);
 		}
 
 		private void append(int winnerId) {
@@ -312,7 +476,10 @@ final class PackedPlanRecipe {
 				indexNameIds[recipeId] = providerObjects.intern(memo.physicalMetadataIndexName(metadataId));
 				estimateSourceIds[recipeId] = providerObjects.intern(
 						memo.physicalMetadataEstimateSource(metadataId));
+				estimateFusionIds[recipeId] = providerObjects.intern(
+						memo.physicalMetadataEstimateFusion(metadataId));
 				accessModeIds[recipeId] = providerObjects.intern(memo.physicalMetadataAccessMode(metadataId));
+				appendPlannedMetrics(recipeId, metadataId);
 			}
 			int count = memo.winnerChildCount(winnerId);
 			childStarts[recipeId] = childSize;
@@ -329,11 +496,38 @@ final class PackedPlanRecipe {
 			}
 		}
 
+		private void appendPlannedMetrics(int recipeId, int metadataId) {
+			int stringCount = memo.physicalMetadataPlannedStringMetricCount(metadataId);
+			plannedStringMetricStarts[recipeId] = plannedStringMetricSize;
+			plannedStringMetricCounts[recipeId] = stringCount;
+			ensurePlannedStringMetricCapacity(plannedStringMetricSize + stringCount);
+			for (int ordinal = 0; ordinal < stringCount; ordinal++) {
+				plannedStringMetricNameIds[plannedStringMetricSize] = providerObjects
+						.intern(memo.physicalMetadataPlannedStringMetricName(metadataId, ordinal));
+				plannedStringMetricValueIds[plannedStringMetricSize] = providerObjects
+						.intern(memo.physicalMetadataPlannedStringMetricValue(metadataId, ordinal));
+				plannedStringMetricSize++;
+			}
+
+			int doubleCount = memo.physicalMetadataPlannedDoubleMetricCount(metadataId);
+			plannedDoubleMetricStarts[recipeId] = plannedDoubleMetricSize;
+			plannedDoubleMetricCounts[recipeId] = doubleCount;
+			ensurePlannedDoubleMetricCapacity(plannedDoubleMetricSize + doubleCount);
+			for (int ordinal = 0; ordinal < doubleCount; ordinal++) {
+				plannedDoubleMetricNameIds[plannedDoubleMetricSize] = providerObjects
+						.intern(memo.physicalMetadataPlannedDoubleMetricName(metadataId, ordinal));
+				plannedDoubleMetricValues[plannedDoubleMetricSize] = memo
+						.physicalMetadataPlannedDoubleMetricValue(metadataId, ordinal);
+				plannedDoubleMetricSize++;
+			}
+		}
+
 		private void markActive(int winnerId) {
+			ensureMappedCapacity();
 			int slot = mappedSlot(winnerId);
 			mappedWinnerSlots[slot] = winnerId;
 			mappedStates[slot] = 1;
-			mappedSize = 1;
+			mappedSize++;
 		}
 
 		private int mappedSlot(int winnerId) {
@@ -399,7 +593,12 @@ final class PackedPlanRecipe {
 			indexPrefixLengths = Arrays.copyOf(indexPrefixLengths, newCapacity);
 			indexNameIds = Arrays.copyOf(indexNameIds, newCapacity);
 			estimateSourceIds = Arrays.copyOf(estimateSourceIds, newCapacity);
+			estimateFusionIds = Arrays.copyOf(estimateFusionIds, newCapacity);
 			accessModeIds = Arrays.copyOf(accessModeIds, newCapacity);
+			plannedStringMetricStarts = Arrays.copyOf(plannedStringMetricStarts, newCapacity);
+			plannedStringMetricCounts = Arrays.copyOf(plannedStringMetricCounts, newCapacity);
+			plannedDoubleMetricStarts = Arrays.copyOf(plannedDoubleMetricStarts, newCapacity);
+			plannedDoubleMetricCounts = Arrays.copyOf(plannedDoubleMetricCounts, newCapacity);
 		}
 
 		private void ensureChildCapacity(int requiredSize) {
@@ -411,6 +610,43 @@ final class PackedPlanRecipe {
 				newCapacity <<= 1;
 			}
 			childRecipeIds = Arrays.copyOf(childRecipeIds, newCapacity);
+		}
+
+		private void ensurePlannedStringMetricCapacity(int requiredSize) {
+			if (requiredSize <= plannedStringMetricNameIds.length) {
+				return;
+			}
+			int newCapacity = plannedStringMetricNameIds.length;
+			while (newCapacity < requiredSize) {
+				newCapacity <<= 1;
+			}
+			plannedStringMetricNameIds = Arrays.copyOf(plannedStringMetricNameIds, newCapacity);
+			plannedStringMetricValueIds = Arrays.copyOf(plannedStringMetricValueIds, newCapacity);
+		}
+
+		private void ensurePlannedDoubleMetricCapacity(int requiredSize) {
+			if (requiredSize <= plannedDoubleMetricNameIds.length) {
+				return;
+			}
+			int newCapacity = plannedDoubleMetricNameIds.length;
+			while (newCapacity < requiredSize) {
+				newCapacity <<= 1;
+			}
+			plannedDoubleMetricNameIds = Arrays.copyOf(plannedDoubleMetricNameIds, newCapacity);
+			plannedDoubleMetricValues = Arrays.copyOf(plannedDoubleMetricValues, newCapacity);
+		}
+
+		private void ensureDependentCapacity(int requiredSize) {
+			if (requiredSize <= dependentOwnerRecipeIds.length) {
+				return;
+			}
+			int newCapacity = dependentOwnerRecipeIds.length;
+			while (newCapacity < requiredSize) {
+				newCapacity <<= 1;
+			}
+			dependentOwnerRecipeIds = Arrays.copyOf(dependentOwnerRecipeIds, newCapacity);
+			dependentSubqueryPayloadIds = Arrays.copyOf(dependentSubqueryPayloadIds, newCapacity);
+			dependentRootRecipeIds = Arrays.copyOf(dependentRootRecipeIds, newCapacity);
 		}
 	}
 }

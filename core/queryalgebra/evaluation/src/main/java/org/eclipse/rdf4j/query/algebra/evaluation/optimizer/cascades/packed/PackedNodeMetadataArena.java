@@ -20,6 +20,7 @@ final class PackedNodeMetadataArena {
 	static final int VARIABLE_SCOPE_CHANGE = 1;
 	static final int MERGE_JOIN = 1 << 1;
 	static final int CACHEABLE_JOIN = 1 << 2;
+	static final int SCALAR_REORDERING_SAFE = 1 << 3;
 
 	private final Columns relations = new Columns(32);
 	private final Columns scalars = new Columns(48);

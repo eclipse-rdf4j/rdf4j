@@ -69,7 +69,7 @@ class LmdbDistinctCursorSkipSafeScopeTest {
 				connection.add(VF.createIRI("urn:distinct:not-exists:s:2"), revoked,
 						VF.createIRI("urn:distinct:not-exists:revocation"));
 				connection.commit();
-				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+				LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 				LmdbPlannerAwait.awaitSketchesReady(store);
 
 				String query = """
@@ -116,7 +116,7 @@ class LmdbDistinctCursorSkipSafeScopeTest {
 					}
 				}
 				connection.commit();
-				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+				LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 				LmdbPlannerAwait.awaitSketchesReady(store);
 
 				String query = "SELECT DISTINCT ?p WHERE { ?s ?p ?o } ORDER BY ?p LIMIT 3";

@@ -17,6 +17,9 @@ import java.util.Arrays;
 @PackedHotPath
 final class PackedWinnerTable {
 
+	static final int COSTED = 0;
+	static final int EXECUTABLE_FALLBACK = 1;
+
 	private final int defaultPropertyId;
 	private int[] defaultWinnerByGroup;
 	private int[] groupIds;
@@ -31,6 +34,7 @@ final class PackedWinnerTable {
 	private double[] startupCosts;
 	private double[] totalCosts;
 	private double[] comparisonCosts;
+	private byte[] comparisonTiers;
 	private int[] tieBreakRanks;
 	private int[] childStarts;
 	private int[] childCounts;
@@ -60,6 +64,7 @@ final class PackedWinnerTable {
 		startupCosts = new double[rowCapacity];
 		totalCosts = new double[rowCapacity];
 		comparisonCosts = new double[rowCapacity];
+		comparisonTiers = new byte[rowCapacity];
 		tieBreakRanks = new int[rowCapacity];
 		childStarts = new int[rowCapacity];
 		childCounts = new int[rowCapacity];
@@ -90,9 +95,27 @@ final class PackedWinnerTable {
 			double totalCost, double comparisonCost, int[] childWinnerIds, int childOffset, int childCount) {
 		long hash = hash(groupId, requiredPropertyId, semanticRowGoalId, inputContextId, costPolicyId);
 		return offerHashedWithMetadata(hash, groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
-				costPolicyId, physicalExpressionId, physicalMetadataId, tieBreakRank, startupCost, totalCost,
+				costPolicyId, COSTED, physicalExpressionId, physicalMetadataId, tieBreakRank, startupCost, totalCost,
 				comparisonCost,
 				childWinnerIds, childOffset, childCount);
+	}
+
+	int offerExecutableFallbackWithMetadata(int groupId, int requiredPropertyId, int semanticRowGoalId,
+			int inputContextId, int costPolicyId, int physicalExpressionId, int physicalMetadataId, double startupCost,
+			double totalCost, double comparisonCost, int[] childWinnerIds, int childOffset, int childCount) {
+		return offerExecutableFallbackWithMetadata(groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
+				costPolicyId, physicalExpressionId, physicalMetadataId, 0, startupCost, totalCost, comparisonCost,
+				childWinnerIds, childOffset, childCount);
+	}
+
+	int offerExecutableFallbackWithMetadata(int groupId, int requiredPropertyId, int semanticRowGoalId,
+			int inputContextId, int costPolicyId, int physicalExpressionId, int physicalMetadataId, int tieBreakRank,
+			double startupCost, double totalCost, double comparisonCost, int[] childWinnerIds, int childOffset,
+			int childCount) {
+		long hash = hash(groupId, requiredPropertyId, semanticRowGoalId, inputContextId, costPolicyId);
+		return offerHashedWithMetadata(hash, groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
+				costPolicyId, EXECUTABLE_FALLBACK, physicalExpressionId, physicalMetadataId, tieBreakRank, startupCost,
+				totalCost, comparisonCost, childWinnerIds, childOffset, childCount);
 	}
 
 	int offerHashed(long hash, int groupId, int requiredPropertyId, int semanticRowGoalId, int inputContextId,
@@ -107,32 +130,30 @@ final class PackedWinnerTable {
 			int inputContextId, int costPolicyId, int physicalExpressionId, int physicalMetadataId, double startupCost,
 			double totalCost, double comparisonCost, int[] childWinnerIds, int childOffset, int childCount) {
 		return offerHashedWithMetadata(hash, groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
-				costPolicyId, physicalExpressionId, physicalMetadataId, 0, startupCost, totalCost, comparisonCost,
+				costPolicyId, COSTED, physicalExpressionId, physicalMetadataId, 0, startupCost, totalCost,
+				comparisonCost,
 				childWinnerIds, childOffset, childCount);
 	}
 
 	private int offerHashedWithMetadata(long hash, int groupId, int requiredPropertyId, int semanticRowGoalId,
-			int inputContextId, int costPolicyId, int physicalExpressionId, int physicalMetadataId, int tieBreakRank,
-			double startupCost, double totalCost, double comparisonCost, int[] childWinnerIds, int childOffset,
-			int childCount) {
+			int inputContextId, int costPolicyId, int comparisonTier, int physicalExpressionId, int physicalMetadataId,
+			int tieBreakRank, double startupCost, double totalCost, double comparisonCost, int[] childWinnerIds,
+			int childOffset, int childCount) {
 		checkCandidate(groupId, requiredPropertyId, semanticRowGoalId, inputContextId, costPolicyId,
-				physicalExpressionId, tieBreakRank, startupCost, totalCost, comparisonCost, childWinnerIds, childOffset,
-				childCount);
+				comparisonTier, physicalExpressionId, tieBreakRank, startupCost, totalCost, comparisonCost,
+				childWinnerIds, childOffset, childCount);
 		if (isDefaultGoal(requiredPropertyId, semanticRowGoalId, inputContextId, costPolicyId)) {
 			ensureDefaultGroupCapacity(groupId);
 			int winnerId = defaultWinnerByGroup[groupId];
 			if (winnerId == 0) {
 				winnerId = appendWinner(hash, groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
-						costPolicyId, physicalExpressionId, physicalMetadataId, tieBreakRank, startupCost, totalCost,
-						comparisonCost,
-						childWinnerIds,
-						childOffset, childCount);
+						costPolicyId, comparisonTier, physicalExpressionId, physicalMetadataId, tieBreakRank,
+						startupCost,
+						totalCost, comparisonCost, childWinnerIds, childOffset, childCount);
 				defaultWinnerByGroup[groupId] = winnerId;
 			} else {
-				replaceIfBetter(winnerId, physicalExpressionId, physicalMetadataId, tieBreakRank, startupCost,
-						totalCost,
-						comparisonCost,
-						childWinnerIds, childOffset, childCount);
+				replaceIfBetter(winnerId, comparisonTier, physicalExpressionId, physicalMetadataId, tieBreakRank,
+						startupCost, totalCost, comparisonCost, childWinnerIds, childOffset, childCount);
 			}
 			return winnerId;
 		}
@@ -141,10 +162,8 @@ final class PackedWinnerTable {
 				costPolicyId);
 		int winnerId = additionalTableSlots[slot];
 		if (winnerId != 0) {
-			replaceIfBetter(winnerId, physicalExpressionId, physicalMetadataId, tieBreakRank, startupCost, totalCost,
-					comparisonCost,
-					childWinnerIds,
-					childOffset, childCount);
+			replaceIfBetter(winnerId, comparisonTier, physicalExpressionId, physicalMetadataId, tieBreakRank,
+					startupCost, totalCost, comparisonCost, childWinnerIds, childOffset, childCount);
 			return winnerId;
 		}
 		if (additionalSize + 1 > additionalResizeThreshold) {
@@ -153,7 +172,8 @@ final class PackedWinnerTable {
 					costPolicyId);
 		}
 		winnerId = appendWinner(hash, groupId, requiredPropertyId, semanticRowGoalId, inputContextId, costPolicyId,
-				physicalExpressionId, physicalMetadataId, tieBreakRank, startupCost, totalCost, comparisonCost,
+				comparisonTier, physicalExpressionId, physicalMetadataId, tieBreakRank, startupCost, totalCost,
+				comparisonCost,
 				childWinnerIds,
 				childOffset, childCount);
 		additionalTableSlots[slot] = winnerId;
@@ -205,18 +225,18 @@ final class PackedWinnerTable {
 	}
 
 	private int appendWinner(long hash, int groupId, int requiredPropertyId, int semanticRowGoalId,
-			int inputContextId, int costPolicyId, int physicalExpressionId, int physicalMetadataId, double startupCost,
-			double totalCost,
-			double comparisonCost, int[] candidateChildren, int childOffset, int childCount) {
+			int inputContextId, int costPolicyId, int comparisonTier, int physicalExpressionId, int physicalMetadataId,
+			double startupCost, double totalCost, double comparisonCost, int[] candidateChildren, int childOffset,
+			int childCount) {
 		return appendWinner(hash, groupId, requiredPropertyId, semanticRowGoalId, inputContextId, costPolicyId,
-				physicalExpressionId, physicalMetadataId, 0, startupCost, totalCost, comparisonCost, candidateChildren,
-				childOffset, childCount);
+				comparisonTier, physicalExpressionId, physicalMetadataId, 0, startupCost, totalCost, comparisonCost,
+				candidateChildren, childOffset, childCount);
 	}
 
 	private int appendWinner(long hash, int groupId, int requiredPropertyId, int semanticRowGoalId,
-			int inputContextId, int costPolicyId, int physicalExpressionId, int physicalMetadataId, int tieBreakRank,
-			double startupCost, double totalCost, double comparisonCost, int[] candidateChildren, int childOffset,
-			int childCount) {
+			int inputContextId, int costPolicyId, int comparisonTier, int physicalExpressionId, int physicalMetadataId,
+			int tieBreakRank, double startupCost, double totalCost, double comparisonCost, int[] candidateChildren,
+			int childOffset, int childCount) {
 		int winnerId = ++size;
 		ensureRowCapacity(winnerId);
 		groupIds[winnerId] = groupId;
@@ -225,27 +245,60 @@ final class PackedWinnerTable {
 		inputContextIds[winnerId] = inputContextId;
 		costPolicyIds[winnerId] = costPolicyId;
 		hashes[winnerId] = hash;
-		writeCandidate(winnerId, physicalExpressionId, physicalMetadataId, tieBreakRank, startupCost, totalCost,
-				comparisonCost,
-				candidateChildren,
-				childOffset, childCount);
+		writeCandidate(winnerId, comparisonTier, physicalExpressionId, physicalMetadataId, tieBreakRank, startupCost,
+				totalCost, comparisonCost, candidateChildren, childOffset, childCount);
 		return winnerId;
 	}
 
-	private void replaceIfBetter(int winnerId, int physicalExpressionId, int physicalMetadataId, int tieBreakRank,
-			double startupCost, double totalCost,
-			double comparisonCost, int[] candidateChildren, int childOffset, int childCount) {
-		if (candidateIsBetter(winnerId, physicalExpressionId, tieBreakRank, startupCost, totalCost, comparisonCost)) {
-			writeCandidate(winnerId, physicalExpressionId, physicalMetadataId, tieBreakRank, startupCost, totalCost,
-					comparisonCost,
-					candidateChildren,
-					childOffset, childCount);
+	private void replaceIfBetter(int winnerId, int comparisonTier, int physicalExpressionId, int physicalMetadataId,
+			int tieBreakRank, double startupCost, double totalCost, double comparisonCost, int[] candidateChildren,
+			int childOffset, int childCount) {
+		if (candidateIsBetter(winnerId, comparisonTier, physicalExpressionId, tieBreakRank, startupCost, totalCost,
+				comparisonCost)
+				|| refreshesSameExecutableFallback(winnerId, comparisonTier, physicalExpressionId, physicalMetadataId,
+						tieBreakRank, startupCost, totalCost, comparisonCost, candidateChildren, childOffset,
+						childCount)) {
+			writeCandidate(winnerId, comparisonTier, physicalExpressionId, physicalMetadataId, tieBreakRank,
+					startupCost,
+					totalCost, comparisonCost, candidateChildren, childOffset, childCount);
 		}
 	}
 
-	private boolean candidateIsBetter(int winnerId, int physicalExpressionId, int tieBreakRank, double startupCost,
-			double totalCost, double comparisonCost) {
-		int comparison = Double.compare(comparisonCost, comparisonCosts[winnerId]);
+	/**
+	 * A canonical-spine pass can retain the same executable fallback at the same saturated cost while its child winners
+	 * and physical metadata have advanced. That is a refresh of one physical identity, not a competing plan.
+	 */
+	private boolean refreshesSameExecutableFallback(int winnerId, int comparisonTier, int physicalExpressionId,
+			int physicalMetadataId, int tieBreakRank, double startupCost, double totalCost, double comparisonCost,
+			int[] candidateChildren, int childOffset, int childCount) {
+		if (comparisonTier != EXECUTABLE_FALLBACK
+				|| comparisonTiers[winnerId] != EXECUTABLE_FALLBACK
+				|| physicalExpressionId != physicalExpressionIds[winnerId]
+				|| tieBreakRank != tieBreakRanks[winnerId]
+				|| Double.compare(startupCost, startupCosts[winnerId]) != 0
+				|| Double.compare(totalCost, totalCosts[winnerId]) != 0
+				|| Double.compare(comparisonCost, comparisonCosts[winnerId]) != 0) {
+			return false;
+		}
+		if (physicalMetadataId != physicalMetadataIds[winnerId] || childCount != childCounts[winnerId]) {
+			return true;
+		}
+		int currentChildStart = childStarts[winnerId];
+		for (int ordinal = 0; ordinal < childCount; ordinal++) {
+			if (candidateChildren[childOffset + ordinal] != childWinnerIds[currentChildStart + ordinal]) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean candidateIsBetter(int winnerId, int comparisonTier, int physicalExpressionId, int tieBreakRank,
+			double startupCost, double totalCost, double comparisonCost) {
+		int comparison = Integer.compare(comparisonTier, comparisonTiers[winnerId]);
+		if (comparison != 0) {
+			return comparison < 0;
+		}
+		comparison = Double.compare(comparisonCost, comparisonCosts[winnerId]);
 		if (comparison != 0) {
 			return comparison < 0;
 		}
@@ -264,14 +317,15 @@ final class PackedWinnerTable {
 		return comparison < 0 || comparison == 0 && startupCost < startupCosts[winnerId];
 	}
 
-	private void writeCandidate(int winnerId, int physicalExpressionId, int physicalMetadataId, int tieBreakRank,
-			double startupCost, double totalCost,
-			double comparisonCost, int[] candidateChildren, int childOffset, int childCount) {
+	private void writeCandidate(int winnerId, int comparisonTier, int physicalExpressionId, int physicalMetadataId,
+			int tieBreakRank, double startupCost, double totalCost, double comparisonCost, int[] candidateChildren,
+			int childOffset, int childCount) {
 		physicalExpressionIds[winnerId] = physicalExpressionId;
 		physicalMetadataIds[winnerId] = physicalMetadataId;
 		startupCosts[winnerId] = startupCost;
 		totalCosts[winnerId] = totalCost;
 		comparisonCosts[winnerId] = comparisonCost;
+		comparisonTiers[winnerId] = (byte) comparisonTier;
 		tieBreakRanks[winnerId] = tieBreakRank;
 		childStarts[winnerId] = childSize;
 		childCounts[winnerId] = childCount;
@@ -348,6 +402,7 @@ final class PackedWinnerTable {
 		startupCosts = Arrays.copyOf(startupCosts, newCapacity);
 		totalCosts = Arrays.copyOf(totalCosts, newCapacity);
 		comparisonCosts = Arrays.copyOf(comparisonCosts, newCapacity);
+		comparisonTiers = Arrays.copyOf(comparisonTiers, newCapacity);
 		tieBreakRanks = Arrays.copyOf(tieBreakRanks, newCapacity);
 		childStarts = Arrays.copyOf(childStarts, newCapacity);
 		childCounts = Arrays.copyOf(childCounts, newCapacity);
@@ -382,9 +437,13 @@ final class PackedWinnerTable {
 	}
 
 	private static void checkCandidate(int groupId, int requiredPropertyId, int semanticRowGoalId,
-			int inputContextId, int costPolicyId, int physicalExpressionId, int tieBreakRank, double startupCost,
-			double totalCost, double comparisonCost, int[] children, int childOffset, int childCount) {
+			int inputContextId, int costPolicyId, int comparisonTier, int physicalExpressionId, int tieBreakRank,
+			double startupCost, double totalCost, double comparisonCost, int[] children, int childOffset,
+			int childCount) {
 		checkGoal(groupId, requiredPropertyId, semanticRowGoalId, inputContextId, costPolicyId);
+		if (comparisonTier != COSTED && comparisonTier != EXECUTABLE_FALLBACK) {
+			throw new IllegalArgumentException("unknown winner comparison tier");
+		}
 		if (physicalExpressionId <= 0) {
 			throw new IllegalArgumentException("physical expression id must be positive");
 		}
