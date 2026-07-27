@@ -461,8 +461,9 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 				arbiter.offer(() -> LmdbNativeParallelAggregation.propose(this, parallelPlan, row, metrics));
 			}
 			// The aggregate side is the natural place to learn from: select() runs the whole aggregation and
-			// returns, so the elapsed time belongs entirely to the winning strategy. A streaming row cursor would
-			// need its close hooked instead, since its work happens long after dispatch returns.
+			// returns, so the elapsed time belongs entirely to the winning strategy. The streaming row side hooks
+			// the cursor's close instead (NativeUnorderedInput.calibrateOnClose), since its work happens long
+			// after dispatch returns.
 			long startedNanos = System.nanoTime();
 			List<BindingSet> selected = arbiter.select();
 			if (selected != null) {

@@ -932,7 +932,15 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 						: new LmdbNativeStrategyProposal<>(() -> acceptParallel(row, parallel.open()),
 								parallel.work, parallel.startupWork, parallel.estRows, parallel.tag, parallel::close);
 			});
-			return arbiter.select();
+			// Streaming dispatch: the winner's work happens as the consumer pulls rows, long after select()
+			// returns, so the elapsed time for calibration is taken when the winning input closes — contrast the
+			// aggregate site, where select() runs the whole aggregation and is timed directly.
+			long startedNanos = System.nanoTime();
+			NativeUnorderedInput selected = arbiter.select();
+			if (selected != null) {
+				selected.calibrateOnClose(arbiter.winningTag(), arbiter.winningPredictedWork(), startedNanos);
+			}
+			return selected;
 		}
 	}
 
@@ -1397,6 +1405,9 @@ final class NativeUnorderedInput implements AutoCloseable {
 	LmdbNativeAttemptMetrics factorizedAttemptMetrics;
 	boolean materializedRowsClaimed;
 	boolean closed;
+	String calibrationTag;
+	double calibrationWork = Double.NaN;
+	long calibrationStartedNanos;
 
 	private NativeUnorderedInput(RowState row) {
 		this.row = row;
@@ -1432,6 +1443,16 @@ final class NativeUnorderedInput implements AutoCloseable {
 		return new MaterializedUnorderedRowCursor(this);
 	}
 
+	/**
+	 * Arms close-time calibration: a streaming winner's elapsed time is only known once this input closes, so the
+	 * dispatch site hands over what the model predicted and close() supplies the measurement.
+	 */
+	void calibrateOnClose(String tag, double predictedWork, long startedNanos) {
+		this.calibrationTag = tag;
+		this.calibrationWork = predictedWork;
+		this.calibrationStartedNanos = startedNanos;
+	}
+
 	void commitFactorizedAttemptIfEngaged() {
 		LmdbNativeFactorizedRows factorized = factorizedAttempt;
 		if (factorized == null || !factorized.engagementRecorded) {
@@ -1461,6 +1482,11 @@ final class NativeUnorderedInput implements AutoCloseable {
 			batchCursor = null;
 			cursor = null;
 			batch = null;
+			if (calibrationTag != null) {
+				LmdbNativeCostCalibration.record(calibrationTag, calibrationWork,
+						System.nanoTime() - calibrationStartedNanos);
+				calibrationTag = null;
+			}
 		}
 	}
 }
