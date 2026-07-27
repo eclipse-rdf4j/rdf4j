@@ -810,6 +810,9 @@ class LmdbSailStore implements SailStore {
 			tripleStore = new TripleStore(new File(dataDir, "triples"), properties, config, valueStore);
 			csrCache = LmdbCsrAdjacencyCache.enabled() ? new LmdbCsrAdjacencyCache(tripleStore, storeTxnStarted)
 					: null;
+			if (csrCache != null) {
+				tripleStore.setCsrCommitListener(csrCache.commitListener());
+			}
 			csrEagerPredicates = csrCache != null ? LmdbCsrAdjacencyCache.eagerPredicates() : List.of();
 			csrEagerBuildExecutor = csrCache != null
 					&& (!csrEagerPredicates.isEmpty() || LmdbCsrAdjacencyCache.autoWarmEnabled())
@@ -1666,7 +1669,14 @@ class LmdbSailStore implements SailStore {
 			// Refresh reader transactions can remain open across write commits and must not
 			// participate in the active txn reset/renew cycle.
 			boolean trackActive = !isEstimatorRefresh;
-			return new LmdbSailDataset(explicit, trackActive);
+			// Native SNAPSHOT: pin the dataset's read transaction to one store snapshot (revision + B+tree state)
+			// for its whole lifetime. SERIALIZABLE bypasses the CSR entirely; SNAPSHOT_READ and below keep the
+			// reset-on-commit behavior unchanged.
+			boolean pinSnapshot = trackActive && level != null && LmdbCsrAdjacencyCache.snapshotServingEnabled()
+					&& level.isCompatibleWith(IsolationLevels.SNAPSHOT)
+					&& !level.isCompatibleWith(IsolationLevels.SERIALIZABLE);
+			boolean csrBypass = level != null && level.isCompatibleWith(IsolationLevels.SERIALIZABLE);
+			return new LmdbSailDataset(explicit, trackActive, pinSnapshot, csrBypass);
 		}
 
 	}
@@ -1837,9 +1847,10 @@ class LmdbSailStore implements SailStore {
 							valueStore.discardFreshValueSession(freshValueSession);
 							freshValueSession = null;
 						}
-						// The triple/value stores are authoritative once both commits succeed.
+						// The triple/value stores are authoritative once both commits succeed: merge the
+						// collected delta into the touched CSR entries (untouched shapes keep their entries).
 						if (csrCache != null) {
-							csrCache.committedWrite();
+							csrCache.applyCommittedDelta(tripleStore.drainCsrCommitDelta());
 						}
 						storeTxnStarted.set(false);
 						scheduleEagerCsrBuild();
@@ -2951,9 +2962,10 @@ class LmdbSailStore implements SailStore {
 	 * locally, flushing accumulated counts into the shared cache every {@code PROBE_FLUSH_INTERVAL} opens and on close
 	 * so the adaptive build trigger sees cross-query traffic.
 	 */
-	private OptionalDouble fanOutMean(long predicate, boolean bySubject, boolean explicit, boolean csrEligible) {
+	private OptionalDouble fanOutMean(long predicate, boolean bySubject, boolean explicit, boolean csrEligible,
+			long snapshotRevision) {
 		if (csrCache != null && csrEligible) {
-			OptionalDouble cached = csrCache.meanFanOut(predicate, bySubject, explicit);
+			OptionalDouble cached = csrCache.meanFanOut(predicate, bySubject, explicit, snapshotRevision);
 			if (cached.isPresent()) {
 				return cached;
 			}
@@ -2962,13 +2974,13 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private OptionalLong fanOutDegree(long predicate, long key, boolean bySubject, boolean explicit,
-			boolean csrEligible) {
+			boolean csrEligible, long snapshotRevision) {
 		return csrCache == null || !csrEligible ? OptionalLong.empty()
-				: csrCache.exactDegree(predicate, key, bySubject, explicit);
+				: csrCache.exactDegree(predicate, key, bySubject, explicit, snapshotRevision);
 	}
 
 	private NativeLmdbQuerySource.OrderedIntegerDomain orderedIntegerDomain(long subj, long pred, long obj,
-			long context, int varyingField, boolean explicit, boolean csrEligible) {
+			long context, int varyingField, boolean explicit, boolean csrEligible, long snapshotRevision) {
 		if (csrCache == null || !csrEligible || pred <= 0) {
 			return null;
 		}
@@ -2980,7 +2992,7 @@ class LmdbSailStore implements SailStore {
 		if (direction < 0) {
 			return null;
 		}
-		LmdbCsrAdjacencyCache.CsrEntry entry = csrCache.lookup(pred, direction, explicit);
+		LmdbCsrAdjacencyCache.CsrEntry entry = csrCache.lookup(pred, direction, explicit, snapshotRevision);
 		if (entry == null || entry.neighbors.length == 0 || !entry.allNeighborsOrderedIntegers) {
 			return null;
 		}
@@ -3115,13 +3127,14 @@ class LmdbSailStore implements SailStore {
 			servedFromCache = false;
 			servedKeys = null;
 			int direction = bySubject ? LmdbCsrAdjacencyCache.BY_SUBJECT : LmdbCsrAdjacencyCache.BY_OBJECT;
-			LmdbCsrAdjacencyCache.CsrEntry entry = csrCache.lookup(pred, direction, explicit);
+			LmdbCsrAdjacencyCache.CsrEntry entry = csrCache.lookup(pred, direction, explicit,
+					txn.snapshotRevision());
 			if (entry == null) {
 				// Kernel-tier demand recording (plan 21): the build amortizes over the kernel's full-adjacency
 				// consumption, so it may proceed immediately (budget/admission still govern); the entry serves
 				// the NEXT open — this one declines and the ladder continues.
 				csrCache.recordKernelDemand(pred, direction, explicit, txn);
-				entry = csrCache.lookup(pred, direction, explicit);
+				entry = csrCache.lookup(pred, direction, explicit, txn.snapshotRevision());
 				if (entry == null) {
 					return null;
 				}
@@ -3143,7 +3156,8 @@ class LmdbSailStore implements SailStore {
 				return null;
 			}
 			int direction = subj > 0 ? LmdbCsrAdjacencyCache.BY_SUBJECT : LmdbCsrAdjacencyCache.BY_OBJECT;
-			LmdbCsrAdjacencyCache.CsrEntry entry = csrCache.lookup(pred, direction, explicit);
+			LmdbCsrAdjacencyCache.CsrEntry entry = csrCache.lookup(pred, direction, explicit,
+					txn.snapshotRevision());
 			if (entry != null) {
 				if (iterator == null) {
 					iterator = new LmdbCsrRunIterator();
@@ -3285,7 +3299,7 @@ class LmdbSailStore implements SailStore {
 				return EmptyRecordIterator.INSTANCE;
 			}
 			if (csrCache != null) {
-				RecordIterator scan = csrCache.tryScan(subj, pred, obj, context, explicit);
+				RecordIterator scan = csrCache.tryScan(subj, pred, obj, context, explicit, txn.snapshotRevision());
 				if (scan != null) {
 					return scan;
 				}
@@ -3314,7 +3328,7 @@ class LmdbSailStore implements SailStore {
 			}
 			if (csrCache != null) {
 				LmdbRootScanPartition[] cached = csrCache.tryPlanRootScanPartitions(subj, pred, obj, context,
-						explicit, targetPartitions);
+						explicit, targetPartitions, txn.snapshotRevision());
 				if (cached != null) {
 					return cached;
 				}
@@ -3348,7 +3362,8 @@ class LmdbSailStore implements SailStore {
 				return EmptyRecordIterator.INSTANCE;
 			}
 			if (csrCache != null) {
-				RecordIterator scan = csrCache.tryOrderedScan(order, subj, pred, obj, context, explicit);
+				RecordIterator scan = csrCache.tryOrderedScan(order, subj, pred, obj, context, explicit,
+						txn.snapshotRevision());
 				if (scan != null) {
 					return scan;
 				}
@@ -3460,7 +3475,7 @@ class LmdbSailStore implements SailStore {
 				return 0;
 			}
 			if (csrCache != null) {
-				long cached = csrCache.tryCount(subj, pred, obj, context, explicit);
+				long cached = csrCache.tryCount(subj, pred, obj, context, explicit, txn.snapshotRevision());
 				if (cached >= 0) {
 					return cached;
 				}
@@ -3475,7 +3490,7 @@ class LmdbSailStore implements SailStore {
 				return false;
 			}
 			if (csrCache != null) {
-				int cached = csrCache.tryHas(subj, pred, obj, context, explicit);
+				int cached = csrCache.tryHas(subj, pred, obj, context, explicit, txn.snapshotRevision());
 				if (cached >= 0) {
 					return cached == 1;
 				}
@@ -3499,14 +3514,16 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public OptionalDouble meanFanOut(long predicate, boolean bySubject) {
 			checkOpen();
-			return hasStatementsInSource() ? fanOutMean(predicate, bySubject, explicit, true)
+			return hasStatementsInSource()
+					? fanOutMean(predicate, bySubject, explicit, true, txn.snapshotRevision())
 					: OptionalDouble.empty();
 		}
 
 		@Override
 		public OptionalLong exactDegree(long predicate, long key, boolean bySubject) {
 			checkOpen();
-			return hasStatementsInSource() ? fanOutDegree(predicate, key, bySubject, explicit, true)
+			return hasStatementsInSource()
+					? fanOutDegree(predicate, key, bySubject, explicit, true, txn.snapshotRevision())
 					: OptionalLong.empty();
 		}
 
@@ -3515,7 +3532,8 @@ class LmdbSailStore implements SailStore {
 				int varyingField) {
 			checkOpen();
 			return hasStatementsInSource()
-					? LmdbSailStore.this.orderedIntegerDomain(subj, pred, obj, context, varyingField, explicit, true)
+					? LmdbSailStore.this.orderedIntegerDomain(subj, pred, obj, context, varyingField, explicit, true,
+							txn.snapshotRevision())
 					: null;
 		}
 
@@ -3530,22 +3548,51 @@ class LmdbSailStore implements SailStore {
 		private final boolean explicit;
 		private final Txn txn;
 		/**
-		 * Untracked datasets (the estimator refresh reader) stay pinned to their snapshot across commits, so the
-		 * revision-validated CSR cache — which tracks the LATEST committed state — must not serve them.
+		 * Whether this dataset may consult the CSR cache: untracked estimator-refresh readers (arbitrarily old
+		 * snapshots) and SERIALIZABLE transactions (user policy: above SNAPSHOT bypasses the CSR) must not. Pinned
+		 * SNAPSHOT datasets are eligible — the cache serves them through generation lookups keyed by
+		 * {@link #snapshotRevision}.
 		 */
 		private final boolean csrEligible;
+		/** Data revision this dataset is pinned to for native SNAPSHOT isolation, or −1 (latest committed). */
+		private final long snapshotRevision;
+		/** The pinned txn's version at creation; a change means a map resize invalidated the snapshot. */
+		private final long pinnedTxnVersion;
 		private final StampedLongAdderLockManager nativeSourceLock = new StampedLongAdderLockManager();
 		private volatile boolean closed;
 
 		public LmdbSailDataset(boolean explicit, boolean trackActiveTxn) throws SailException {
+			this(explicit, trackActiveTxn, false, false);
+		}
+
+		public LmdbSailDataset(boolean explicit, boolean trackActiveTxn, boolean pinSnapshot, boolean csrBypass)
+				throws SailException {
 			this.explicit = explicit;
-			this.csrEligible = trackActiveTxn;
+			this.csrEligible = (trackActiveTxn || pinSnapshot) && !csrBypass;
 			try {
 				TxnManager txnManager = tripleStore.getTxnManager();
-				this.txn = trackActiveTxn ? txnManager.createReadTxn()
-						: txnManager.createReadTxnUntracked();
+				if (pinSnapshot) {
+					this.txn = txnManager.createReadTxnPinned(tripleStore::getDataRevision);
+				} else {
+					this.txn = trackActiveTxn ? txnManager.createReadTxn()
+							: txnManager.createReadTxnUntracked();
+				}
 			} catch (IOException e) {
 				throw new SailException(e);
+			}
+			this.snapshotRevision = txn.snapshotRevision();
+			this.pinnedTxnVersion = txn.version();
+		}
+
+		/**
+		 * Fails loudly instead of serving a torn snapshot: a store map resize renews even pinned read transactions onto
+		 * a newer snapshot (detectable as a version change). SNAPSHOT permits aborting a transaction; it never permits
+		 * inconsistent reads.
+		 */
+		private void ensureSnapshot() {
+			if (snapshotRevision >= 0 && txn.version() != pinnedTxnVersion) {
+				throw new SailException("SNAPSHOT transaction invalidated: the store's memory map was resized "
+						+ "during the transaction; retry the transaction");
 			}
 		}
 
@@ -3615,7 +3662,7 @@ class LmdbSailStore implements SailStore {
 					return EmptyRecordIterator.INSTANCE;
 				}
 				if (csrCache != null && csrEligible) {
-					RecordIterator scan = csrCache.tryScan(subj, pred, obj, context, explicit);
+					RecordIterator scan = csrCache.tryScan(subj, pred, obj, context, explicit, snapshotRevision);
 					if (scan != null) {
 						// pure in-memory iterator: no LMDB cursor to guard, the read stamp can be released now
 						return scan;
@@ -3665,7 +3712,8 @@ class LmdbSailStore implements SailStore {
 					return EmptyRecordIterator.INSTANCE;
 				}
 				if (csrCache != null && csrEligible) {
-					RecordIterator scan = csrCache.tryOrderedScan(order, subj, pred, obj, context, explicit);
+					RecordIterator scan = csrCache.tryOrderedScan(order, subj, pred, obj, context, explicit,
+							snapshotRevision);
 					if (scan != null) {
 						// pure in-memory iterator: no LMDB cursor to guard, the read stamp can be released now
 						return scan;
@@ -3692,7 +3740,7 @@ class LmdbSailStore implements SailStore {
 				}
 				if (csrCache != null && csrEligible) {
 					LmdbRootScanPartition[] cached = csrCache.tryPlanRootScanPartitions(subj, pred, obj, context,
-							explicit, targetPartitions);
+							explicit, targetPartitions, snapshotRevision);
 					if (cached != null) {
 						return cached;
 					}
@@ -3916,7 +3964,7 @@ class LmdbSailStore implements SailStore {
 					return 0;
 				}
 				if (csrCache != null && csrEligible) {
-					long cached = csrCache.tryCount(subj, pred, obj, context, explicit);
+					long cached = csrCache.tryCount(subj, pred, obj, context, explicit, snapshotRevision);
 					if (cached >= 0) {
 						return cached;
 					}
@@ -3936,7 +3984,7 @@ class LmdbSailStore implements SailStore {
 					return false;
 				}
 				if (csrCache != null && csrEligible) {
-					int cached = csrCache.tryHas(subj, pred, obj, context, explicit);
+					int cached = csrCache.tryHas(subj, pred, obj, context, explicit, snapshotRevision);
 					if (cached >= 0) {
 						return cached == 1;
 					}
@@ -3963,14 +4011,16 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public OptionalDouble meanFanOut(long predicate, boolean bySubject) {
 			assertNativeSourceOpen();
-			return hasStatementsInSource() ? fanOutMean(predicate, bySubject, explicit, csrEligible)
+			return hasStatementsInSource()
+					? fanOutMean(predicate, bySubject, explicit, csrEligible, snapshotRevision)
 					: OptionalDouble.empty();
 		}
 
 		@Override
 		public OptionalLong exactDegree(long predicate, long key, boolean bySubject) {
 			assertNativeSourceOpen();
-			return hasStatementsInSource() ? fanOutDegree(predicate, key, bySubject, explicit, csrEligible)
+			return hasStatementsInSource()
+					? fanOutDegree(predicate, key, bySubject, explicit, csrEligible, snapshotRevision)
 					: OptionalLong.empty();
 		}
 
@@ -3980,7 +4030,7 @@ class LmdbSailStore implements SailStore {
 			assertNativeSourceOpen();
 			return hasStatementsInSource()
 					? LmdbSailStore.this.orderedIntegerDomain(subj, pred, obj, context, varyingField, explicit,
-							csrEligible)
+							csrEligible, snapshotRevision)
 					: null;
 		}
 
@@ -4025,6 +4075,9 @@ class LmdbSailStore implements SailStore {
 							if (siblingSnapshotId != expectedSnapshotId) {
 								return null;
 							}
+							// same LMDB snapshot id as the source ⇒ same data revision: siblings of a pinned
+							// SNAPSHOT dataset inherit its revision for generation-aware CSR lookups
+							siblingTxn.snapshotRevision = txn.snapshotRevision();
 							pending[i] = new ParallelSnapshotSource(siblingTxn, explicit, siblingSnapshotId, lease);
 							transferred = true;
 						} finally {
@@ -4120,6 +4173,7 @@ class LmdbSailStore implements SailStore {
 			if (closed) {
 				throw new QueryInterruptedException("Query evaluation was interrupted");
 			}
+			ensureSnapshot();
 		}
 
 		private final class NativeSourceReadLockedPrefixRunCursor implements LmdbPrefixRunCursor {
@@ -4388,6 +4442,7 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 				Resource... contexts) throws SailException {
+			ensureSnapshot();
 			try {
 				return createStatementIterator(txn, subj, pred, obj, explicit, contexts);
 			} catch (IOException e) {
@@ -4404,6 +4459,7 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public long getStatementCount(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+			ensureSnapshot();
 			try {
 				return countStatementIterator(txn, subj, pred, obj, explicit, contexts);
 			} catch (IOException e) {
@@ -4420,6 +4476,7 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public boolean hasStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+			ensureSnapshot();
 			try {
 				return hasStatementIterator(txn, subj, pred, obj, explicit, contexts);
 			} catch (IOException e) {

@@ -100,7 +100,7 @@ public class LmdbCsrAutoWarmTest {
 	}
 
 	@Test
-	public void popularPredicateBuildsInBackgroundAndRebuildsAfterCommit() throws Exception {
+	public void popularPredicateBuildsInBackgroundAndSurvivesCommitByMerging() throws Exception {
 		openStoreWithData();
 		assertThat(LmdbCsrAdjacencyCache.AUTO_WARM_BUILDS.get()).isZero();
 
@@ -109,8 +109,8 @@ public class LmdbCsrAutoWarmTest {
 		awaitAtLeast(1, LmdbCsrAdjacencyCache.AUTO_WARM_BUILDS::get);
 		assertThat(LmdbCsrAdjacencyCache.BUILDS.get()).isGreaterThanOrEqualTo(1);
 
-		// a committed write drops all entries; the surviving popularity must drive a rebuild with no further queries
-		LmdbCsrAdjacencyCache.AUTO_WARM_BUILDS.set(0);
+		// a committed write now merges the warmed entry in place — it survives the commit with no rebuild
+		long mergesBefore = LmdbCsrAdjacencyCache.MERGES.get();
 		ValueFactory vf = SimpleValueFactory.getInstance();
 		try (NotifyingSailConnection connection = store.getConnection()) {
 			connection.begin();
@@ -118,7 +118,9 @@ public class LmdbCsrAutoWarmTest {
 					vf.createIRI("http://example.com/oExtra"));
 			connection.commit();
 		}
-		awaitAtLeast(1, LmdbCsrAdjacencyCache.AUTO_WARM_BUILDS::get);
+		assertThat(LmdbCsrAdjacencyCache.MERGES.get())
+				.as("the auto-warmed entry merges in place on commit")
+				.isGreaterThanOrEqualTo(mergesBefore + 1);
 	}
 
 	@Test

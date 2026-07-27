@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalDouble;
@@ -24,6 +25,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.function.LongPredicate;
 import java.util.function.LongSupplier;
 
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -68,6 +70,24 @@ final class LmdbCsrAdjacencyCache {
 	static final AtomicLong AUTO_WARM_BUILDS = new AtomicLong();
 	static final AtomicLong PREDICTIVE_EVICTIONS = new AtomicLong();
 	static final AtomicLong ADMISSION_SKIPS = new AtomicLong();
+	static final AtomicLong MERGES = new AtomicLong();
+	static final AtomicLong MERGE_FAILURES = new AtomicLong();
+	static final AtomicLong DELTA_OVERFLOWS = new AtomicLong();
+	static final AtomicLong GENERATIONS_RETAINED = new AtomicLong();
+	static final AtomicLong GENERATIONS_PRUNED = new AtomicLong();
+	static final AtomicLong SNAPSHOT_HITS = new AtomicLong();
+
+	/** Kill switch for native-SNAPSHOT serving (generation retention + snapshot-aware lookups). */
+	static boolean snapshotServingEnabled() {
+		return Boolean.parseBoolean(System.getProperty("rdf4j.lmdb.csrCache.snapshotServing", "true"));
+	}
+
+	/** Maximum retained generations per shape (chain length beyond the head). */
+	static int maxGenerations() {
+		Integer configured = Integer.getInteger("rdf4j.lmdb.csrCache.maxGenerations");
+		return Math.max(0, configured != null ? configured : 3);
+	}
+
 	private static final AtomicIntegerFieldUpdater<CsrEntry> CLOCK_REFERENCED = AtomicIntegerFieldUpdater
 			.newUpdater(CsrEntry.class, "clockReferenced");
 
@@ -191,6 +211,8 @@ final class LmdbCsrAdjacencyCache {
 	private final Object clockLock = new Object();
 	private final AtomicBoolean closed = new AtomicBoolean();
 	private CsrEntry clockHand;
+	/** Fast-path skip for generation pruning; set on retention, cleared when a full prune finds no chains. */
+	private volatile boolean generationsRetained;
 	/** Invoked (at most once per slot and revision) when a shape's popularity warrants a background build. */
 	private volatile Runnable warmSignal;
 
@@ -211,6 +233,45 @@ final class LmdbCsrAdjacencyCache {
 		return lookup(pred, direction, explicit, true);
 	}
 
+	/**
+	 * Snapshot-aware lookup for native-SNAPSHOT readers: returns the generation covering {@code snapshotRevision}, or
+	 * {@code null} (the caller's pinned LMDB transaction makes the B+tree fallback correct by construction).
+	 * {@code snapshotRevision < 0} means unpinned — latest-committed semantics, the existing fast path.
+	 */
+	CsrEntry lookup(long pred, int direction, boolean explicit, long snapshotRevision) {
+		if (snapshotRevision < 0) {
+			return lookup(pred, direction, explicit, true);
+		}
+		if (!snapshotServingEnabled()) {
+			return null;
+		}
+		CsrSlot slot = slots.get(slotKey(pred, direction, explicit));
+		if (slot == null || storeTxnStarted.get()) {
+			return null;
+		}
+		CsrEntry head = slot.entry;
+		for (CsrEntry entry = head; entry != null; entry = entry.previousGeneration) {
+			if (entry.revision <= snapshotRevision) {
+				if (snapshotRevision < entry.validUntilRevision) {
+					recordHit(entry);
+					SNAPSHOT_HITS.incrementAndGet();
+					return entry;
+				}
+				// the newest generation at or below the snapshot was invalidated at or before it: no retained
+				// generation covers this snapshot
+				return null;
+			}
+		}
+		// every retained generation is newer than the snapshot; the head can still serve it when the shape was
+		// untouched between the snapshot and the head's build (fresh builds cover slightly-older pinned readers)
+		if (head != null && slot.lastTouchedRevision <= snapshotRevision) {
+			recordHit(head);
+			SNAPSHOT_HITS.incrementAndGet();
+			return head;
+		}
+		return null;
+	}
+
 	private CsrEntry lookup(long pred, int direction, boolean explicit, boolean recordHit) {
 		CsrSlot slot = slots.get(slotKey(pred, direction, explicit));
 		if (slot == null) {
@@ -223,7 +284,7 @@ final class LmdbCsrAdjacencyCache {
 		if (storeTxnStarted.get()) {
 			return null;
 		}
-		if (entry.revision != tripleStore.getDataRevision()) {
+		if (entry.revision < slot.lastTouchedRevision) {
 			dropStale(slot, entry);
 			return null;
 		}
@@ -547,7 +608,6 @@ final class LmdbCsrAdjacencyCache {
 		double sampledMinimum = Double.POSITIVE_INFINITY;
 		int sampled = 0;
 		synchronized (clockLock) {
-			long currentRevision = tripleStore.getDataRevision();
 			int sampleLimit = evictionSampleSize();
 			CsrEntry cursor = clockHand;
 			CsrEntry first = null;
@@ -560,7 +620,8 @@ final class LmdbCsrAdjacencyCache {
 				}
 				CsrSlot owner = cursor.clockOwner;
 				if (owner != null && owner.entry == cursor) {
-					double priority = cursor.revision != currentRevision ? 0.0 : entryPriority(owner, cursor);
+					double priority = cursor.revision < owner.lastTouchedRevision ? 0.0
+							: entryPriority(owner, cursor);
 					sampledMinimum = Math.min(sampledMinimum, priority);
 					sampled++;
 				}
@@ -779,7 +840,6 @@ final class LmdbCsrAdjacencyCache {
 			return evictOneSecondChance();
 		}
 		synchronized (clockLock) {
-			long currentRevision = tripleStore.getDataRevision();
 			int sampleLimit = evictionSampleSize();
 			CsrEntry best = null;
 			double bestPriority = Double.POSITIVE_INFINITY;
@@ -795,11 +855,11 @@ final class LmdbCsrAdjacencyCache {
 					unlink(candidate);
 					continue;
 				}
-				if (candidate.revision != currentRevision) {
+				if (candidate.revision < owner.lastTouchedRevision) {
 					// stale entries are dead weight regardless of popularity: always the first victims
 					owner.entry = null;
 					unlink(candidate);
-					GLOBAL_USED_BYTES.addAndGet(-candidate.bytes);
+					GLOBAL_USED_BYTES.addAndGet(-chainBytes(candidate));
 					STALE_DROPS.incrementAndGet();
 					return true;
 				}
@@ -820,7 +880,7 @@ final class LmdbCsrAdjacencyCache {
 			CsrSlot owner = best.clockOwner;
 			owner.entry = null;
 			unlink(best);
-			GLOBAL_USED_BYTES.addAndGet(-best.bytes);
+			GLOBAL_USED_BYTES.addAndGet(-chainBytes(best));
 			EVICTIONS.incrementAndGet();
 			PREDICTIVE_EVICTIONS.incrementAndGet();
 			LmdbNativeAttemptMetrics.recordCsrCachePredictiveEviction();
@@ -833,7 +893,6 @@ final class LmdbCsrAdjacencyCache {
 		CsrEntry removed;
 		boolean stale;
 		synchronized (clockLock) {
-			long currentRevision = tripleStore.getDataRevision();
 			while (clockHand != null) {
 				CsrEntry candidate = clockHand;
 				CsrSlot owner = candidate.clockOwner;
@@ -841,7 +900,7 @@ final class LmdbCsrAdjacencyCache {
 					unlink(candidate);
 					continue;
 				}
-				stale = candidate.revision != currentRevision;
+				stale = candidate.revision < owner.lastTouchedRevision;
 				if (!stale && CLOCK_REFERENCED.getAndSet(candidate, 0) != 0) {
 					clockHand = candidate.clockNext;
 					continue;
@@ -849,7 +908,7 @@ final class LmdbCsrAdjacencyCache {
 				owner.entry = null;
 				unlink(candidate);
 				removed = candidate;
-				GLOBAL_USED_BYTES.addAndGet(-removed.bytes);
+				GLOBAL_USED_BYTES.addAndGet(-chainBytes(removed));
 				if (stale) {
 					STALE_DROPS.incrementAndGet();
 				} else {
@@ -891,9 +950,18 @@ final class LmdbCsrAdjacencyCache {
 			}
 			slot.entry = null;
 			unlink(expected);
-			GLOBAL_USED_BYTES.addAndGet(-expected.bytes);
+			GLOBAL_USED_BYTES.addAndGet(-chainBytes(expected));
 			return true;
 		}
+	}
+
+	/** Total charged bytes of an entry and its retained generation chain; callers hold {@code clockLock}. */
+	private static long chainBytes(CsrEntry entry) {
+		long total = 0;
+		for (CsrEntry e = entry; e != null; e = e.previousGeneration) {
+			total += e.bytes;
+		}
+		return total;
 	}
 
 	private void unlink(CsrEntry entry) {
@@ -921,6 +989,364 @@ final class LmdbCsrAdjacencyCache {
 		dropAllEntries(true, false);
 	}
 
+	/** Kill switch for commit-time delta merging; {@code false} restores unconditional drop-all-on-commit. */
+	static boolean commitMergeEnabled() {
+		return Boolean.parseBoolean(System.getProperty("rdf4j.lmdb.csrCache.commitMerge", "true"));
+	}
+
+	/**
+	 * The {@link TripleStore} commit hook pair: the live-entry predicate snapshot taken at transaction start (which
+	 * predicates get full event collection), and the touched-shape marking that runs under the commit write lock before
+	 * the data revision becomes visible — the safety net that makes touched entries refuse service on every failure
+	 * path between the LMDB commit and {@link #applyCommittedDelta}.
+	 */
+	TripleStore.CsrCommitListener commitListener() {
+		return new TripleStore.CsrCommitListener() {
+
+			@Override
+			public LongPredicate cachedPredicateFilter() {
+				return snapshotCachedPredicateFilter();
+			}
+
+			@Override
+			public void beforeRevisionBump(LmdbCsrCommitDelta delta, long nextRevision) {
+				markTouchedShapes(delta, nextRevision);
+			}
+		};
+	}
+
+	private LongPredicate snapshotCachedPredicateFilter() {
+		if (!commitMergeEnabled() || closed.get()) {
+			return none -> false;
+		}
+		long[] preds = new long[8];
+		int n = 0;
+		for (Map.Entry<Long, CsrSlot> slotEntry : slots.entrySet()) {
+			if (slotEntry.getValue().entry != null) {
+				if (n == preds.length) {
+					preds = Arrays.copyOf(preds, n * 2);
+				}
+				preds[n++] = slotEntry.getKey() >>> 2;
+			}
+		}
+		if (n == 0) {
+			return none -> false;
+		}
+		long[] sorted = Arrays.copyOf(preds, n);
+		Arrays.sort(sorted);
+		int m = 0;
+		for (int i = 0; i < n; i++) {
+			if (m == 0 || sorted[m - 1] != sorted[i]) {
+				sorted[m++] = sorted[i];
+			}
+		}
+		long[] cachedPreds = m == n ? sorted : Arrays.copyOf(sorted, m);
+		return pred -> Arrays.binarySearch(cachedPreds, pred) >= 0;
+	}
+
+	/** Marks every touched shape stale as of {@code nextRevision}; always runs, independent of the kill switch. */
+	void markTouchedShapes(LmdbCsrCommitDelta delta, long nextRevision) {
+		if (delta == null) {
+			return;
+		}
+		if (delta.isOverflowed()) {
+			for (CsrSlot slot : slots.values()) {
+				markSlotTouched(slot, nextRevision);
+			}
+			return;
+		}
+		long[] shapes = delta.touchedShapes();
+		int n = delta.touchedShapeCount();
+		for (int i = 0; i < n; i++) {
+			long pred = shapes[i] >>> 1;
+			boolean explicit = (shapes[i] & 1L) != 0;
+			for (int direction = BY_SUBJECT; direction <= BY_OBJECT; direction++) {
+				CsrSlot slot = slots.get(slotKey(pred, direction, explicit));
+				if (slot != null) {
+					markSlotTouched(slot, nextRevision);
+				}
+			}
+		}
+	}
+
+	private static void markSlotTouched(CsrSlot slot, long nextRevision) {
+		slot.lastTouchedRevision = nextRevision;
+		CsrEntry head = slot.entry;
+		if (head != null && head.validUntilRevision > nextRevision) {
+			// closes the head's snapshot-validity window; if this commit later merges, the head becomes the
+			// retained generation covering [head.revision, nextRevision)
+			head.validUntilRevision = nextRevision;
+		}
+	}
+
+	/**
+	 * Applies a committed transaction's collected delta: every touched shape with a live entry gets a new entry merged
+	 * in memory (byte-identical to a fresh build sweep at the new revision) — or is dropped when merging is impossible
+	 * (overflow, uncollected mid-transaction publish, refusal, or any anomaly). Untouched shapes are not visited at
+	 * all. Runs on the committing thread while {@code storeTxnStarted} still bypasses lookups.
+	 */
+	void applyCommittedDelta(LmdbCsrCommitDelta delta) {
+		if (delta == null) {
+			committedWrite();
+			return;
+		}
+		try {
+			if (!commitMergeEnabled() || closed.get()) {
+				committedWrite();
+				return;
+			}
+			if (delta.isOverflowed()) {
+				DELTA_OVERFLOWS.incrementAndGet();
+				committedWrite();
+				return;
+			}
+			pruneGenerations();
+			long newRevision = tripleStore.getDataRevision();
+			int eventCount = delta.eventCount();
+			int[] order = new int[eventCount];
+			for (int i = 0; i < eventCount; i++) {
+				order[i] = i;
+			}
+			CommitMerger.sort(order, 0, eventCount, (a, b) -> {
+				long shapeA = delta.eventPred(a) << 1 | (delta.eventExplicit(a) ? 1L : 0L);
+				long shapeB = delta.eventPred(b) << 1 | (delta.eventExplicit(b) ? 1L : 0L);
+				int c = Long.compare(shapeA, shapeB);
+				return c != 0 ? c : Integer.compare(a, b);
+			});
+			// one pass over the shape-sorted events resolves every shape's [from, to) range — the touched-shape
+			// loop below must never rescan the event array (a commit touching N cached shapes would go quadratic)
+			Map<Long, int[]> eventRanges = new HashMap<>();
+			int rangeStart = 0;
+			for (int i = 1; i <= eventCount; i++) {
+				long currentShape = delta.eventPred(order[rangeStart]) << 1
+						| (delta.eventExplicit(order[rangeStart]) ? 1L : 0L);
+				if (i == eventCount || (delta.eventPred(order[i]) << 1
+						| (delta.eventExplicit(order[i]) ? 1L : 0L)) != currentShape) {
+					eventRanges.put(currentShape, new int[] { rangeStart, i });
+					rangeStart = i;
+				}
+			}
+			long[] shapes = delta.touchedShapes();
+			int shapeCount = delta.touchedShapeCount();
+			for (int i = 0; i < shapeCount; i++) {
+				long shape = shapes[i];
+				long pred = shape >>> 1;
+				boolean explicit = (shape & 1L) != 0;
+				boolean collected = delta.wasCollected(pred);
+				int eventFrom = 0;
+				int eventTo = 0;
+				if (collected) {
+					int[] range = eventRanges.get(shape);
+					if (range != null) {
+						eventFrom = range[0];
+						eventTo = range[1];
+					}
+				}
+				for (int direction = BY_SUBJECT; direction <= BY_OBJECT; direction++) {
+					CsrSlot slot = slots.get(slotKey(pred, direction, explicit));
+					if (slot == null) {
+						continue;
+					}
+					CsrEntry entry = slot.entry;
+					if (entry == null || entry.revision >= newRevision) {
+						continue;
+					}
+					CsrEntry merged = null;
+					if (collected) {
+						try {
+							merged = mergeShape(entry, delta, order, eventFrom, eventTo, direction, newRevision);
+						} catch (RuntimeException e) {
+							merged = null;
+						}
+					}
+					if (merged == null) {
+						if (collected) {
+							MERGE_FAILURES.incrementAndGet();
+						}
+						dropStale(slot, entry);
+						continue;
+					}
+					if (replaceEntry(slot, entry, merged)) {
+						MERGES.incrementAndGet();
+					}
+				}
+			}
+		} finally {
+			delta.reset();
+		}
+	}
+
+	private CsrEntry mergeShape(CsrEntry entry, LmdbCsrCommitDelta delta, int[] order, int from, int to,
+			int direction, long newRevision) {
+		int n = to - from;
+		if (n == 0) {
+			// touched via the other direction's projection ordering or a no-op net: re-stamp, sharing all arrays
+			return new CsrEntry(entry.tableKeys, entry.tableSlotPlus1, entry.keysByDense, entry.runStart,
+					entry.neighbors, entry.contexts, newRevision, entry.neighborMinId, entry.neighborMaxId,
+					entry.allNeighborsOrderedIntegers, entry.runsNeighborContextOrdered, entry.buildIndexName,
+					entry.runEmissionOrder, entry.scanEmissionOrder);
+		}
+		long[] key = new long[n];
+		long[] nb = new long[n];
+		long[] cx = new long[n];
+		boolean[] add = new boolean[n];
+		for (int i = 0; i < n; i++) {
+			int e = order[from + i];
+			long subj = delta.eventSubj(e);
+			long obj = delta.eventObj(e);
+			key[i] = direction == BY_SUBJECT ? subj : obj;
+			nb[i] = direction == BY_SUBJECT ? obj : subj;
+			cx[i] = delta.eventContext(e);
+			add[i] = delta.eventAdd(e);
+		}
+		return CommitMerger.merge(entry, direction, key, nb, cx, add, newRevision, maxEntryBytes());
+	}
+
+	/**
+	 * Swaps a merged entry in for the entry it replaces (or into the slot left empty by a concurrent eviction),
+	 * bypassing {@link #publishEntry}'s empty-slot and write-transaction guards — this runs on the committing thread
+	 * after the stores are authoritative.
+	 */
+	private boolean replaceEntry(CsrSlot slot, CsrEntry expected, CsrEntry replacement) {
+		// Native-SNAPSHOT retention: keep the superseded head as an older generation only when an active pinned
+		// reader could need it, the bytes fit without evicting anything, and the chain is below its cap. With no
+		// open SNAPSHOT transaction this is byte-for-byte the plain replacement path.
+		boolean retain = snapshotServingEnabled()
+				&& tripleStore.getTxnManager().minPinnedSnapshotRevision() < replacement.revision
+				&& chainDepth(expected) < maxGenerations()
+				&& reserveBytesNoEvict(replacement.bytes);
+		if (retain) {
+			synchronized (clockLock) {
+				if (closed.get() || slot.entry != expected) {
+					GLOBAL_USED_BYTES.addAndGet(-replacement.bytes);
+					return false;
+				}
+				slot.entry = null;
+				unlink(expected);
+				replacement.previousGeneration = expected;
+				GENERATIONS_RETAINED.incrementAndGet();
+				generationsRetained = true;
+				slot.entry = replacement;
+				linkIntoClock(replacement, slot);
+				return true;
+			}
+		}
+		// the old entry's charge rolls into the replacement: only a positive size delta is reserved, so a
+		// size-neutral or shrinking merge can never trigger evictions of other (already-marked) touched entries
+		long extraBytes = replacement.bytes - chainBytes(expected);
+		if (extraBytes > 0 && !reserveBytes(extraBytes)) {
+			recordRefusal();
+			dropStale(slot, expected);
+			return false;
+		}
+		synchronized (clockLock) {
+			if (closed.get() || slot.entry != expected) {
+				// concurrent close, or the delta reservation itself evicted the old entry (its bytes are then
+				// already credited): drop the merged result and let the adaptive path rebuild on demand
+				if (extraBytes > 0) {
+					GLOBAL_USED_BYTES.addAndGet(-extraBytes);
+				}
+				return false;
+			}
+			slot.entry = null;
+			unlink(expected);
+			if (extraBytes < 0) {
+				GLOBAL_USED_BYTES.addAndGet(extraBytes);
+			}
+			slot.entry = replacement;
+			linkIntoClock(replacement, slot);
+			return true;
+		}
+	}
+
+	/** Links a new slot head into the second-chance clock ring; caller holds {@code clockLock}. */
+	private void linkIntoClock(CsrEntry entry, CsrSlot owner) {
+		entry.clockOwner = owner;
+		CLOCK_REFERENCED.lazySet(entry, 1);
+		if (clockHand == null) {
+			entry.clockPrevious = entry;
+			entry.clockNext = entry;
+			clockHand = entry;
+		} else {
+			CsrEntry tail = clockHand.clockPrevious;
+			entry.clockPrevious = tail;
+			entry.clockNext = clockHand;
+			tail.clockNext = entry;
+			clockHand.clockPrevious = entry;
+		}
+	}
+
+	private static int chainDepth(CsrEntry entry) {
+		int depth = 0;
+		for (CsrEntry e = entry.previousGeneration; e != null; e = e.previousGeneration) {
+			depth++;
+		}
+		return depth;
+	}
+
+	/** Budget reservation that never evicts: history retention must not push live entries out. */
+	private boolean reserveBytesNoEvict(long bytes) {
+		if (closed.get() || bytes > maxEntryBytes()) {
+			return false;
+		}
+		while (true) {
+			long used = GLOBAL_USED_BYTES.get();
+			long maximum = maxBytes();
+			if (used > maximum || bytes > maximum - used) {
+				return false;
+			}
+			if (GLOBAL_USED_BYTES.compareAndSet(used, used + bytes)) {
+				return true;
+			}
+		}
+	}
+
+	/**
+	 * Unlinks retained generations no active pinned snapshot can ever select ({@code validUntilRevision <=} watermark;
+	 * validity bounds strictly decrease down the chain, so one cut releases the whole tail). Runs once per applied
+	 * commit and is a no-op while nothing is retained.
+	 */
+	private void pruneGenerations() {
+		if (!generationsRetained) {
+			return;
+		}
+		long watermark = tripleStore.getTxnManager().minPinnedSnapshotRevision();
+		long released = 0;
+		long pruned = 0;
+		boolean anyLeft = false;
+		synchronized (clockLock) {
+			for (CsrSlot slot : slots.values()) {
+				CsrEntry keep = slot.entry;
+				if (keep == null) {
+					continue;
+				}
+				CsrEntry candidate = keep.previousGeneration;
+				while (candidate != null) {
+					if (candidate.validUntilRevision <= watermark) {
+						keep.previousGeneration = null;
+						for (CsrEntry e = candidate; e != null; e = e.previousGeneration) {
+							released += e.bytes;
+							pruned++;
+						}
+						break;
+					}
+					anyLeft = true;
+					keep = candidate;
+					candidate = candidate.previousGeneration;
+				}
+			}
+			if (!anyLeft) {
+				generationsRetained = false;
+			}
+		}
+		if (released != 0) {
+			GLOBAL_USED_BYTES.addAndGet(-released);
+		}
+		if (pruned != 0) {
+			GENERATIONS_PRUNED.addAndGet(pruned);
+		}
+	}
+
 	/** Idempotently returns every byte owned by this store to the process-wide budget. */
 	void close() {
 		if (closed.compareAndSet(false, true)) {
@@ -939,7 +1365,7 @@ final class LmdbCsrAdjacencyCache {
 					CsrSlot owner = current.clockOwner;
 					if (owner != null && owner.entry == current) {
 						owner.entry = null;
-						releasedBytes += current.bytes;
+						releasedBytes += chainBytes(current);
 						droppedEntries++;
 					}
 					current.clockPrevious = null;
@@ -969,19 +1395,28 @@ final class LmdbCsrAdjacencyCache {
 	 */
 	LmdbRootScanPartition[] tryPlanRootScanPartitions(long subj, long pred, long obj, long context, boolean explicit,
 			int targetPartitions) {
+		return tryPlanRootScanPartitions(subj, pred, obj, context, explicit, targetPartitions, -1L);
+	}
+
+	LmdbRootScanPartition[] tryPlanRootScanPartitions(long subj, long pred, long obj, long context, boolean explicit,
+			int targetPartitions, long snapshotRevision) {
 		if (!rootScansEnabled() || pred <= 0 || subj > 0 || obj > 0 || targetPartitions <= 0) {
 			return null;
 		}
 		int direction = BY_OBJECT;
-		CsrEntry entry = lookup(pred, direction, explicit, false);
+		CsrEntry entry = snapshotRevision < 0 ? lookup(pred, direction, explicit, false)
+				: lookup(pred, direction, explicit, snapshotRevision);
 		if (entry == null) {
 			direction = BY_SUBJECT;
-			entry = lookup(pred, direction, explicit, false);
+			entry = snapshotRevision < 0 ? lookup(pred, direction, explicit, false)
+					: lookup(pred, direction, explicit, snapshotRevision);
 		}
 		if (entry == null) {
 			return null;
 		}
-		recordHit(entry);
+		if (snapshotRevision < 0) {
+			recordHit(entry);
+		}
 
 		int keyCount = entry.keysByDense.length;
 		if (keyCount == 0) {
@@ -1050,10 +1485,14 @@ final class LmdbCsrAdjacencyCache {
 	 * the posc emission order such a scan gets from LMDB — byte-identical results, zero JNI.
 	 */
 	RecordIterator tryScan(long subj, long pred, long obj, long context, boolean explicit) {
+		return tryScan(subj, pred, obj, context, explicit, -1L);
+	}
+
+	RecordIterator tryScan(long subj, long pred, long obj, long context, boolean explicit, long snapshotRevision) {
 		if (!rootScansEnabled() || pred <= 0 || subj > 0 || obj > 0) {
 			return null;
 		}
-		CsrEntry entry = lookup(pred, BY_OBJECT, explicit);
+		CsrEntry entry = lookup(pred, BY_OBJECT, explicit, snapshotRevision);
 		if (entry == null) {
 			return null;
 		}
@@ -1068,6 +1507,11 @@ final class LmdbCsrAdjacencyCache {
 	 */
 	RecordIterator tryOrderedScan(StatementOrder order, long subj, long pred, long obj, long context,
 			boolean explicit) {
+		return tryOrderedScan(order, subj, pred, obj, context, explicit, -1L);
+	}
+
+	RecordIterator tryOrderedScan(StatementOrder order, long subj, long pred, long obj, long context,
+			boolean explicit, long snapshotRevision) {
 		if (order == null || pred <= 0 || (subj > 0 && obj > 0)) {
 			return null;
 		}
@@ -1091,7 +1535,8 @@ final class LmdbCsrAdjacencyCache {
 			return null;
 		}
 
-		CsrEntry entry = lookup(pred, direction, explicit, false);
+		CsrEntry entry = snapshotRevision < 0 ? lookup(pred, direction, explicit, false)
+				: lookup(pred, direction, explicit, snapshotRevision);
 		if (entry == null) {
 			return null;
 		}
@@ -1102,7 +1547,9 @@ final class LmdbCsrAdjacencyCache {
 			return null;
 		}
 
-		recordHit(entry);
+		if (snapshotRevision < 0) {
+			recordHit(entry);
+		}
 		CSR_ORDERED_SCANS.incrementAndGet();
 		if (fullScan) {
 			CSR_ROOT_SCANS.incrementAndGet();
@@ -1153,11 +1600,15 @@ final class LmdbCsrAdjacencyCache {
 	 * never trigger builds — only probe traffic does.
 	 */
 	long tryCount(long subj, long pred, long obj, long context, boolean explicit) {
+		return tryCount(subj, pred, obj, context, explicit, -1L);
+	}
+
+	long tryCount(long subj, long pred, long obj, long context, boolean explicit, long snapshotRevision) {
 		if (pred <= 0 || (subj <= 0 && obj <= 0)) {
 			return -1;
 		}
 		int direction = subj > 0 ? BY_SUBJECT : BY_OBJECT;
-		CsrEntry entry = lookup(pred, direction, explicit);
+		CsrEntry entry = lookup(pred, direction, explicit, snapshotRevision);
 		if (entry == null) {
 			return -1;
 		}
@@ -1170,7 +1621,11 @@ final class LmdbCsrAdjacencyCache {
 	}
 
 	OptionalDouble meanFanOut(long pred, boolean bySubject, boolean explicit) {
-		CsrEntry entry = lookup(pred, bySubject ? BY_SUBJECT : BY_OBJECT, explicit);
+		return meanFanOut(pred, bySubject, explicit, -1L);
+	}
+
+	OptionalDouble meanFanOut(long pred, boolean bySubject, boolean explicit, long snapshotRevision) {
+		CsrEntry entry = lookup(pred, bySubject ? BY_SUBJECT : BY_OBJECT, explicit, snapshotRevision);
 		if (entry == null) {
 			return OptionalDouble.empty();
 		}
@@ -1185,7 +1640,11 @@ final class LmdbCsrAdjacencyCache {
 	}
 
 	OptionalLong exactDegree(long pred, long key, boolean bySubject, boolean explicit) {
-		CsrEntry entry = lookup(pred, bySubject ? BY_SUBJECT : BY_OBJECT, explicit);
+		return exactDegree(pred, key, bySubject, explicit, -1L);
+	}
+
+	OptionalLong exactDegree(long pred, long key, boolean bySubject, boolean explicit, long snapshotRevision) {
+		CsrEntry entry = lookup(pred, bySubject ? BY_SUBJECT : BY_OBJECT, explicit, snapshotRevision);
 		if (entry == null) {
 			return OptionalLong.empty();
 		}
@@ -1195,11 +1654,15 @@ final class LmdbCsrAdjacencyCache {
 
 	/** Serves a {@code has} from an existing entry: 1 = present, 0 = absent, -1 = fall through to LMDB. */
 	int tryHas(long subj, long pred, long obj, long context, boolean explicit) {
+		return tryHas(subj, pred, obj, context, explicit, -1L);
+	}
+
+	int tryHas(long subj, long pred, long obj, long context, boolean explicit, long snapshotRevision) {
 		if (pred <= 0 || (subj <= 0 && obj <= 0)) {
 			return -1;
 		}
 		int direction = subj > 0 ? BY_SUBJECT : BY_OBJECT;
-		CsrEntry entry = lookup(pred, direction, explicit);
+		CsrEntry entry = lookup(pred, direction, explicit, snapshotRevision);
 		if (entry == null) {
 			return -1;
 		}
@@ -1224,6 +1687,13 @@ final class LmdbCsrAdjacencyCache {
 		final AtomicBoolean building = new AtomicBoolean();
 		final AtomicBoolean cardinalityEstimating = new AtomicBoolean();
 		volatile CsrEntry entry;
+		/**
+		 * Data revision of the last committed write that touched this shape (or a fallback invalidation). An entry is
+		 * current iff {@code entry.revision >= lastTouchedRevision}: every touch either republishes a merged entry
+		 * stamped with the commit's revision or leaves the stale entry to be dropped by this comparison. Written under
+		 * the commit write lock before the data revision advances; volatile for reader visibility.
+		 */
+		volatile long lastTouchedRevision = Long.MIN_VALUE;
 		double predicateCardinality = Double.NaN;
 		volatile long predicateCardinalityRevision = Long.MIN_VALUE;
 		int failedBuilds;
@@ -1275,6 +1745,18 @@ final class LmdbCsrAdjacencyCache {
 		CsrEntry clockPrevious;
 		CsrEntry clockNext;
 		CsrSlot clockOwner;
+		/**
+		 * First revision at which this entry's data is no longer current (exclusive validity bound); stamped under the
+		 * commit write lock when the shape is touched, {@link Long#MAX_VALUE} while current. An entry serves snapshot
+		 * {@code S} iff {@code revision <= S < validUntilRevision}.
+		 */
+		volatile long validUntilRevision = Long.MAX_VALUE;
+		/**
+		 * Older retained generation for native-SNAPSHOT readers (newest→oldest, strictly decreasing revisions), or
+		 * {@code null}. Only the slot head lives in the eviction clock; the chain hangs off it and is pruned against
+		 * the oldest active pinned snapshot. Guarded by {@code clockLock} for writes.
+		 */
+		volatile CsrEntry previousGeneration;
 
 		CsrEntry(long[] tableKeys, int[] tableSlotPlus1, long[] keysByDense, int[] runStart, long[] neighbors,
 				long[] contexts, long revision, long neighborMinId, long neighborMaxId,
@@ -1496,6 +1978,403 @@ final class LmdbCsrAdjacencyCache {
 	 * {@link #convertCountsToDenseIds()} rewrites them to dense ordinals + 1 so the table doubles as the published
 	 * {@link CsrEntry} key table.
 	 */
+	/**
+	 * Commit-time in-memory merge of a transaction's net changeset into an immutable {@link CsrEntry}. The output is
+	 * field-for-field byte-identical to the entry a fresh two-pass LMDB sweep would build at the new revision: runs
+	 * merge in the build index's component order (the SQLite4-style varint key encoding is order-preserving, so
+	 * unsigned component comparison reproduces the sweep's byte order), keys re-rank by their first remaining pair
+	 * (first-encounter order), and the open-addressed table is rebuilt with the exact {@link KeyCounts} insertion
+	 * algorithm. Any anomaly returns {@code null}, which the caller turns into a plain entry drop.
+	 */
+	static final class CommitMerger {
+
+		interface IndexComparator {
+			int compare(int a, int b);
+		}
+
+		private CommitMerger() {
+		}
+
+		static CsrEntry merge(CsrEntry entry, int direction, long[] key, long[] nb, long[] cx, boolean[] add,
+				long newRevision, long maxEntryBytes) {
+			String indexName = entry.buildIndexName;
+			if (indexName == null || indexName.length() != 4) {
+				return null;
+			}
+			int keyIdx = direction == BY_SUBJECT ? TripleIndex.SUBJ_IDX : TripleIndex.OBJ_IDX;
+			int neighborIdx = direction == BY_SUBJECT ? TripleIndex.OBJ_IDX : TripleIndex.SUBJ_IDX;
+			int keyRank = -1;
+			int nbRank = -1;
+			int cxRank = -1;
+			int rank = 0;
+			for (int i = 0; i < 4; i++) {
+				int field = fieldIndex(indexName.charAt(i));
+				if (field == TripleIndex.PRED_IDX) {
+					continue;
+				}
+				if (field == keyIdx) {
+					keyRank = rank;
+				} else if (field == neighborIdx) {
+					nbRank = rank;
+				} else if (field == TripleIndex.CONTEXT_IDX) {
+					cxRank = rank;
+				}
+				rank++;
+			}
+			if (keyRank < 0 || nbRank < 0 || cxRank < 0) {
+				return null;
+			}
+			final int keyRankF = keyRank;
+			final int nbRankF = nbRank;
+			final int cxRankF = cxRank;
+			boolean nbBeforeCx = nbRank < cxRank;
+			boolean keyPrimary = keyRank == 0;
+
+			// sort events by (key, run order, original index) so netting keeps the last op per quad
+			int n = key.length;
+			int[] ev = new int[n];
+			for (int i = 0; i < n; i++) {
+				ev[i] = i;
+			}
+			sort(ev, 0, n, (a, b) -> {
+				int c = Long.compareUnsigned(key[a], key[b]);
+				if (c != 0) {
+					return c;
+				}
+				c = runCompare(nb[a], cx[a], nb[b], cx[b], nbBeforeCx);
+				return c != 0 ? c : Integer.compare(a, b);
+			});
+			long[] netKey = new long[n];
+			long[] netNb = new long[n];
+			long[] netCx = new long[n];
+			boolean[] netAdd = new boolean[n];
+			int m = 0;
+			for (int i = 0; i < n; i++) {
+				int e = ev[i];
+				if (m > 0 && netKey[m - 1] == key[e] && netNb[m - 1] == nb[e] && netCx[m - 1] == cx[e]) {
+					netAdd[m - 1] = add[e];
+				} else {
+					netKey[m] = key[e];
+					netNb[m] = nb[e];
+					netCx[m] = cx[e];
+					netAdd[m] = add[e];
+					m++;
+				}
+			}
+
+			// pass A: per dirty key, the merged run length and its new first pair (first-encounter rank input)
+			long[] dirtyKey = new long[m];
+			int[] dirtyDense = new int[m];
+			int[] dirtyCount = new int[m];
+			long[] dirtyFirstNb = new long[m];
+			long[] dirtyFirstCx = new long[m];
+			int[] dirtyEvFrom = new int[m];
+			int[] dirtyEvTo = new int[m];
+			int dirtyN = 0;
+			long totalPairs = entry.runStart[entry.keysByDense.length];
+			int g = 0;
+			while (g < m) {
+				int gFrom = g;
+				long k = netKey[g];
+				while (g < m && netKey[g] == k) {
+					g++;
+				}
+				int dense = entry.denseIdOf(k);
+				int oldPos = dense >= 0 ? entry.runStart[dense] : 0;
+				int oldEnd = dense >= 0 ? entry.runStart[dense + 1] : 0;
+				long oldCount = oldEnd - oldPos;
+				int count = 0;
+				long firstNb = 0;
+				long firstCx = 0;
+				boolean haveFirst = false;
+				int j = gFrom;
+				while (oldPos < oldEnd || j < g) {
+					int c;
+					if (oldPos >= oldEnd) {
+						c = 1;
+					} else if (j >= g) {
+						c = -1;
+					} else {
+						c = runCompare(entry.neighbors[oldPos], entry.contextAt(oldPos), netNb[j], netCx[j],
+								nbBeforeCx);
+					}
+					if (c < 0) {
+						if (!haveFirst) {
+							firstNb = entry.neighbors[oldPos];
+							firstCx = entry.contextAt(oldPos);
+							haveFirst = true;
+						}
+						count++;
+						oldPos++;
+					} else if (c == 0) {
+						if (netAdd[j]) {
+							if (!haveFirst) {
+								firstNb = entry.neighbors[oldPos];
+								firstCx = entry.contextAt(oldPos);
+								haveFirst = true;
+							}
+							count++;
+						}
+						oldPos++;
+						j++;
+					} else {
+						if (netAdd[j]) {
+							if (!haveFirst) {
+								firstNb = netNb[j];
+								firstCx = netCx[j];
+								haveFirst = true;
+							}
+							count++;
+						}
+						j++;
+					}
+				}
+				dirtyKey[dirtyN] = k;
+				dirtyDense[dirtyN] = dense;
+				dirtyCount[dirtyN] = count;
+				dirtyFirstNb[dirtyN] = firstNb;
+				dirtyFirstCx[dirtyN] = firstCx;
+				dirtyEvFrom[dirtyN] = gFrom;
+				dirtyEvTo[dirtyN] = g;
+				dirtyN++;
+				totalPairs += count - oldCount;
+			}
+			if (totalPairs < 0 || totalPairs > Integer.MAX_VALUE || totalPairs * 16 > maxEntryBytes) {
+				return null;
+			}
+
+			// new key order: clean keys keep their relative order (their first pairs are unchanged and already
+			// rank-sorted); surviving dirty keys sort by their new first pair and merge in
+			long[] dirtySorted = Arrays.copyOf(dirtyKey, dirtyN);
+			Arrays.sort(dirtySorted);
+			int[] survivors = new int[dirtyN];
+			int sN = 0;
+			for (int d = 0; d < dirtyN; d++) {
+				if (dirtyCount[d] > 0) {
+					survivors[sN++] = d;
+				}
+			}
+			sort(survivors, 0, sN, (a, b) -> keyPrimary ? Long.compareUnsigned(dirtyKey[a], dirtyKey[b])
+					: rankCompare(dirtyKey[a], dirtyFirstNb[a], dirtyFirstCx[a], dirtyKey[b], dirtyFirstNb[b],
+							dirtyFirstCx[b], keyRankF, nbRankF, cxRankF));
+			long[] oldKeys = entry.keysByDense;
+			int oldKeyCount = oldKeys.length;
+			long[] newKeys = new long[oldKeyCount + sN];
+			int[] newSource = new int[oldKeyCount + sN];
+			int nk = 0;
+			int ci = 0;
+			int si = 0;
+			while (true) {
+				while (ci < oldKeyCount && Arrays.binarySearch(dirtySorted, 0, dirtyN, oldKeys[ci]) >= 0) {
+					ci++;
+				}
+				boolean hasClean = ci < oldKeyCount;
+				boolean hasDirty = si < sN;
+				if (!hasClean && !hasDirty) {
+					break;
+				}
+				boolean takeClean;
+				if (!hasDirty) {
+					takeClean = true;
+				} else if (!hasClean) {
+					takeClean = false;
+				} else {
+					int d = survivors[si];
+					int firstAt = entry.runStart[ci];
+					int cmp = keyPrimary ? Long.compareUnsigned(oldKeys[ci], dirtyKey[d])
+							: rankCompare(oldKeys[ci], entry.neighbors[firstAt], entry.contextAt(firstAt),
+									dirtyKey[d], dirtyFirstNb[d], dirtyFirstCx[d], keyRank, nbRank, cxRank);
+					takeClean = cmp < 0;
+				}
+				if (takeClean) {
+					newKeys[nk] = oldKeys[ci];
+					newSource[nk] = ci;
+					nk++;
+					ci++;
+				} else {
+					int d = survivors[si];
+					newKeys[nk] = dirtyKey[d];
+					newSource[nk] = -(d + 1);
+					nk++;
+					si++;
+				}
+			}
+
+			// fill pass: arenas in the new emission order, recomputing bounds/flags exactly as the build sweep does
+			int nPairs = (int) totalPairs;
+			int[] newRunStart = new int[nk + 1];
+			long[] newNeighbors = new long[nPairs];
+			long[] newContexts = null;
+			long neighborMin = Long.MAX_VALUE;
+			long neighborMax = Long.MIN_VALUE;
+			boolean allOrderedIntegers = true;
+			int w = 0;
+			for (int x = 0; x < nk; x++) {
+				newRunStart[x] = w;
+				int src = newSource[x];
+				if (src >= 0) {
+					int pos = entry.runStart[src];
+					int end = entry.runStart[src + 1];
+					for (; pos < end; pos++) {
+						long neighbor = entry.neighbors[pos];
+						long context = entry.contextAt(pos);
+						newNeighbors[w] = neighbor;
+						if (context != 0) {
+							if (newContexts == null) {
+								newContexts = new long[nPairs];
+							}
+							newContexts[w] = context;
+						}
+						neighborMin = Math.min(neighborMin, neighbor);
+						neighborMax = Math.max(neighborMax, neighbor);
+						allOrderedIntegers = allOrderedIntegers && ValueIds.isOrderedInteger(neighbor);
+						w++;
+					}
+				} else {
+					int d = -src - 1;
+					int dense = dirtyDense[d];
+					int pos = dense >= 0 ? entry.runStart[dense] : 0;
+					int end = dense >= 0 ? entry.runStart[dense + 1] : 0;
+					int j = dirtyEvFrom[d];
+					int jEnd = dirtyEvTo[d];
+					while (pos < end || j < jEnd) {
+						int c;
+						if (pos >= end) {
+							c = 1;
+						} else if (j >= jEnd) {
+							c = -1;
+						} else {
+							c = runCompare(entry.neighbors[pos], entry.contextAt(pos), netNb[j], netCx[j],
+									nbBeforeCx);
+						}
+						long neighbor;
+						long context;
+						boolean emit;
+						if (c < 0) {
+							neighbor = entry.neighbors[pos];
+							context = entry.contextAt(pos);
+							emit = true;
+							pos++;
+						} else if (c == 0) {
+							neighbor = entry.neighbors[pos];
+							context = entry.contextAt(pos);
+							emit = netAdd[j];
+							pos++;
+							j++;
+						} else {
+							neighbor = netNb[j];
+							context = netCx[j];
+							emit = netAdd[j];
+							j++;
+						}
+						if (!emit) {
+							continue;
+						}
+						newNeighbors[w] = neighbor;
+						if (context != 0) {
+							if (newContexts == null) {
+								newContexts = new long[nPairs];
+							}
+							newContexts[w] = context;
+						}
+						neighborMin = Math.min(neighborMin, neighbor);
+						neighborMax = Math.max(neighborMax, neighbor);
+						allOrderedIntegers = allOrderedIntegers && ValueIds.isOrderedInteger(neighbor);
+						w++;
+					}
+				}
+			}
+			newRunStart[nk] = w;
+			if (w != nPairs) {
+				return null;
+			}
+
+			long[] trimmedKeys = nk == newKeys.length ? newKeys : Arrays.copyOf(newKeys, nk);
+			KeyCounts counts = new KeyCounts();
+			for (int x = 0; x < nk; x++) {
+				counts.increment(trimmedKeys[x]);
+			}
+			return new CsrEntry(counts.tableKeys, counts.tableValues, trimmedKeys, newRunStart, newNeighbors,
+					newContexts, newRevision, neighborMin, neighborMax, allOrderedIntegers && nPairs > 0,
+					entry.runsNeighborContextOrdered, indexName, entry.runEmissionOrder, entry.scanEmissionOrder);
+		}
+
+		private static int runCompare(long nbA, long cxA, long nbB, long cxB, boolean nbBeforeCx) {
+			int c = nbBeforeCx ? Long.compareUnsigned(nbA, nbB) : Long.compareUnsigned(cxA, cxB);
+			if (c != 0) {
+				return c;
+			}
+			return nbBeforeCx ? Long.compareUnsigned(cxA, cxB) : Long.compareUnsigned(nbA, nbB);
+		}
+
+		/** Full-tuple comparison in the index's component order (predicate excluded): first-encounter rank. */
+		private static int rankCompare(long keyA, long nbA, long cxA, long keyB, long nbB, long cxB, int keyRank,
+				int nbRank, int cxRank) {
+			for (int r = 0; r < 3; r++) {
+				long a;
+				long b;
+				if (r == keyRank) {
+					a = keyA;
+					b = keyB;
+				} else if (r == nbRank) {
+					a = nbA;
+					b = nbB;
+				} else {
+					a = cxA;
+					b = cxB;
+				}
+				int c = Long.compareUnsigned(a, b);
+				if (c != 0) {
+					return c;
+				}
+			}
+			return 0;
+		}
+
+		/** Indirect quicksort with insertion-sort cutoff; commit-side only, never on a query path. */
+		static void sort(int[] a, int lo, int hi, IndexComparator cmp) {
+			if (hi - lo < 2) {
+				return;
+			}
+			if (hi - lo < 16) {
+				for (int i = lo + 1; i < hi; i++) {
+					int v = a[i];
+					int j = i - 1;
+					while (j >= lo && cmp.compare(a[j], v) > 0) {
+						a[j + 1] = a[j];
+						j--;
+					}
+					a[j + 1] = v;
+				}
+				return;
+			}
+			int mid = lo + (hi - lo) / 2;
+			int pivot = a[mid];
+			int lt = lo;
+			int gt = hi - 1;
+			int i = lo;
+			while (i <= gt) {
+				int c = cmp.compare(a[i], pivot);
+				if (c < 0) {
+					int tmp = a[lt];
+					a[lt] = a[i];
+					a[i] = tmp;
+					lt++;
+					i++;
+				} else if (c > 0) {
+					int tmp = a[gt];
+					a[gt] = a[i];
+					a[i] = tmp;
+					gt--;
+				} else {
+					i++;
+				}
+			}
+			sort(a, lo, lt, cmp);
+			sort(a, gt + 1, hi, cmp);
+		}
+	}
+
 	private static final class KeyCounts {
 		long[] tableKeys = new long[1 << 10];
 		int[] tableValues = new int[1 << 10];

@@ -90,15 +90,17 @@ public class LmdbCsrEagerPredicateTest {
 		// both directions (BY_SUBJECT and BY_OBJECT) must be built eagerly, with no query ever run
 		awaitAtLeast(2, LmdbCsrAdjacencyCache.BUILDS::get);
 
-		// a committed write drops all entries as stale; the eager builder must restore them
-		LmdbCsrAdjacencyCache.BUILDS.set(0);
+		// a committed write now merges both direction entries in place — no eager rebuild sweep is needed
+		long mergesBefore = LmdbCsrAdjacencyCache.MERGES.get();
 		try (NotifyingSailConnection connection = store.getConnection()) {
 			connection.begin();
 			connection.addStatement(vf.createIRI("http://example.com/s0"), knows,
 					vf.createIRI("http://example.com/oExtra"));
 			connection.commit();
 		}
-		awaitAtLeast(2, LmdbCsrAdjacencyCache.BUILDS::get);
+		assertThat(LmdbCsrAdjacencyCache.MERGES.get())
+				.as("both direction entries merge in place on commit")
+				.isGreaterThanOrEqualTo(mergesBefore + 2);
 	}
 
 	private static void awaitAtLeast(long expected, LongSupplier actual) throws InterruptedException {

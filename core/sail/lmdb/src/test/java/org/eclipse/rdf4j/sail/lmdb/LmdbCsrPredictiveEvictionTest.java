@@ -59,6 +59,7 @@ public class LmdbCsrPredictiveEvictionTest {
 		tripleStore = new TestTripleStore(dataDir, new LmdbStoreConfig("spoc,posc"));
 		storeTxnStarted = new AtomicBoolean(false);
 		cache = new LmdbCsrAdjacencyCache(tripleStore, storeTxnStarted);
+		tripleStore.setCsrCommitListener(cache.commitListener());
 		resetCounters();
 	}
 
@@ -222,9 +223,10 @@ public class LmdbCsrPredictiveEvictionTest {
 		long entryBytes = LmdbCsrAdjacencyCache.GLOBAL_USED_BYTES.get() - baseline;
 		hit(10, 100);
 
-		// a committed write makes the hot entry stale; no lookups on pred 10 after this
+		// a committed write touching the entry's own predicate makes the hot entry stale (commit-merge
+		// invalidation is per touched shape now); no lookups on pred 10 after this
 		tripleStore.startTransaction();
-		tripleStore.storeTriple(500, 99, 9_999, 0, true);
+		tripleStore.storeTriple(500, 10, 9_999, 0, true);
 		tripleStore.commit();
 
 		buildEagerly(11);

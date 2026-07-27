@@ -195,10 +195,13 @@ public class LmdbCsrCacheQueryTest {
 	}
 
 	@Test
-	public void committedWriteImmediatelyCreditsAllCachedBytes() {
+	public void committedWriteMergesEntriesInPlaceWithoutRebuilds() {
 		long baseline = LmdbCsrAdjacencyCache.GLOBAL_USED_BYTES.get();
 		rows(chain());
-		assertThat(LmdbCsrAdjacencyCache.GLOBAL_USED_BYTES.get()).isGreaterThan(baseline);
+		long charged = LmdbCsrAdjacencyCache.GLOBAL_USED_BYTES.get();
+		assertThat(charged).isGreaterThan(baseline);
+		long buildsBefore = LmdbCsrAdjacencyCache.BUILDS.get();
+		long mergesBefore = LmdbCsrAdjacencyCache.MERGES.get();
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
@@ -207,10 +210,18 @@ public class LmdbCsrCacheQueryTest {
 			connection.commit();
 		}
 
+		// commit-merge keeps touched entries alive (updated in place) and untouched entries by reference:
+		// the budget stays charged and no sweep rebuild is needed to serve fresh results
 		assertThat(LmdbCsrAdjacencyCache.GLOBAL_USED_BYTES.get())
-				.as("commit must invalidate and uncharge every entry before cache lookups are re-enabled")
-				.isEqualTo(baseline);
-		assertThat(rows(chain())).hasSize(601);
+				.as("merged entries remain charged after the commit")
+				.isGreaterThan(baseline);
+		assertThat(LmdbCsrAdjacencyCache.MERGES.get()).isGreaterThan(mergesBefore);
+		List<String> after = rows(chain());
+		assertThat(after).hasSize(601);
+		assertThat(after).anySatisfy(row -> assertThat(row).contains("freshValue"));
+		assertThat(LmdbCsrAdjacencyCache.BUILDS.get())
+				.as("fresh results are served from merged entries, not rebuilds")
+				.isEqualTo(buildsBefore);
 	}
 
 	@Test

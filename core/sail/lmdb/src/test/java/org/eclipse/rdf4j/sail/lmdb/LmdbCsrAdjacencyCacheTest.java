@@ -61,6 +61,9 @@ public class LmdbCsrAdjacencyCacheTest {
 		tripleStore = new CountingTripleStore(dataDir, new LmdbStoreConfig("spoc,posc"));
 		storeTxnStarted = new AtomicBoolean(false);
 		cache = new LmdbCsrAdjacencyCache(tripleStore, storeTxnStarted);
+		// production wiring (LmdbSailStore) always registers the commit listener; without it commits
+		// would never invalidate entries under the touched-shape validity rule
+		tripleStore.setCsrCommitListener(cache.commitListener());
 		resetCounters();
 	}
 
@@ -116,6 +119,7 @@ public class LmdbCsrAdjacencyCacheTest {
 		tripleStore = new CountingTripleStore(new File(dataDir, indexes), new LmdbStoreConfig(indexes));
 		storeTxnStarted = new AtomicBoolean(false);
 		cache = new LmdbCsrAdjacencyCache(tripleStore, storeTxnStarted);
+		tripleStore.setCsrCommitListener(cache.commitListener());
 		resetCounters();
 	}
 

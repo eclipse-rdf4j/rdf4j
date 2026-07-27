@@ -31,6 +31,7 @@ import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.function.LongSupplier;
 
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
@@ -221,6 +222,51 @@ class TxnManager {
 		return txnRef;
 	}
 
+	/**
+	 * Creates a pinned read transaction for native SNAPSHOT isolation: untracked (skipped by {@link #reset()}, so it
+	 * survives commits on its original snapshot) and stamped with the data revision matching that snapshot. The
+	 * revision is read under the manager's read lock, which excludes the commit critical section
+	 * ({@code mdb_txn_commit … dataRevision++} runs under the write lock), so the (B+tree snapshot, revision) pair is
+	 * exact. The caller must watch {@link Txn#version()} — a map resize silently renews the underlying LMDB transaction
+	 * onto a newer snapshot, and serving reads after that would tear the snapshot.
+	 */
+	Txn createReadTxnPinned(LongSupplier dataRevision) throws IOException {
+		long readStamp;
+		try {
+			readStamp = lockManager.readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException(e);
+		}
+		try {
+			Txn txnRef = new Txn(createReadTxnInternal());
+			txnRef.snapshotRevision = dataRevision.getAsLong();
+			synchronized (active) {
+				active.put(txnRef, Boolean.FALSE);
+			}
+			return txnRef;
+		} finally {
+			lockManager.unlockRead(readStamp);
+		}
+	}
+
+	/**
+	 * The oldest data revision any active pinned read transaction is snapshotted at, or {@link Long#MAX_VALUE} when no
+	 * pinned transaction is open — the CSR generation-retention watermark.
+	 */
+	long minPinnedSnapshotRevision() {
+		long min = Long.MAX_VALUE;
+		synchronized (active) {
+			for (Txn txn : active.keySet()) {
+				long revision = txn.snapshotRevision;
+				if (revision >= 0 && revision < min) {
+					min = revision;
+				}
+			}
+		}
+		return min;
+	}
+
 	long createReadTxnInternal() throws IOException {
 		long txn = 0;
 		if (mode == Mode.RESET) {
@@ -332,9 +378,12 @@ class TxnManager {
 	class Txn implements Closeable, AutoCloseable {
 
 		private long txn;
-		private long version;
+		/** Bumped on every reset/renew transition; volatile so pinned-snapshot holders can detect invalidation. */
+		private volatile long version;
 		private boolean txnActive = true;
 		private boolean closed;
+		/** Data revision this transaction's LMDB snapshot corresponds to; −1 for unpinned transactions. */
+		volatile long snapshotRevision = -1;
 
 		Txn(long txn) {
 			this.txn = txn;
@@ -342,6 +391,11 @@ class TxnManager {
 
 		long get() {
 			return txn;
+		}
+
+		/** See {@link #snapshotRevision}; −1 means "unpinned — serve latest committed". */
+		long snapshotRevision() {
+			return snapshotRevision;
 		}
 
 		/**

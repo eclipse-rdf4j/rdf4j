@@ -92,6 +92,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
+import java.util.function.LongPredicate;
 
 import org.eclipse.collections.api.iterator.LongIterator;
 import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
@@ -205,6 +206,9 @@ class TripleStore implements Closeable {
 	private final LmdbFanOutStats inferredFanOutStats = new LmdbFanOutStats();
 
 	private TxnRecordCache recordCache = null;
+	/** Optional CSR cache hook; when set, every net mutation is teed into {@link #csrCommitDelta}. */
+	private CsrCommitListener csrCommitListener;
+	private LmdbCsrCommitDelta csrCommitDelta;
 	private boolean fanOutStatsDirty;
 	private boolean trackResizeChecks;
 	private int trackedResizeChecks;
@@ -3318,9 +3322,9 @@ class TripleStore implements Closeable {
 				// put record in cache and return immediately
 				recordCache.storeRecord(quad, explicit, explicit ? !mainExplicitExists : !mainInferredExists);
 				if (removedInferred) {
-					recordFanOutRemoved(subj, pred, obj, false);
+					recordFanOutRemoved(subj, pred, obj, context, false);
 				}
-				recordFanOutAdded(subj, pred, obj, explicit);
+				recordFanOutAdded(subj, pred, obj, context, explicit);
 				return true;
 			}
 
@@ -3354,9 +3358,9 @@ class TripleStore implements Closeable {
 
 				incrementContext(stack, context);
 				if (foundImplicit) {
-					recordFanOutRemoved(subj, pred, obj, false);
+					recordFanOutRemoved(subj, pred, obj, context, false);
 				}
-				recordFanOutAdded(subj, pred, obj, explicit);
+				recordFanOutAdded(subj, pred, obj, context, explicit);
 			}
 		}
 
@@ -3374,14 +3378,47 @@ class TripleStore implements Closeable {
 		return explicit ? explicitFanOutStats : inferredFanOutStats;
 	}
 
-	private void recordFanOutAdded(long subject, long predicate, long object, boolean explicit) {
+	private void recordFanOutAdded(long subject, long predicate, long object, long context, boolean explicit) {
 		fanOutStats(explicit).recordAdded(subject, predicate, object);
 		fanOutStatsDirty = true;
+		if (csrCommitDelta != null) {
+			csrCommitDelta.recordAdd(subject, predicate, object, context, explicit);
+		}
 	}
 
-	private void recordFanOutRemoved(long subject, long predicate, long object, boolean explicit) {
+	private void recordFanOutRemoved(long subject, long predicate, long object, long context, boolean explicit) {
 		fanOutStats(explicit).recordRemoved(subject, predicate, object);
 		fanOutStatsDirty = true;
+		if (csrCommitDelta != null) {
+			csrCommitDelta.recordRemove(subject, predicate, object, context, explicit);
+		}
+	}
+
+	/**
+	 * Registered by the CSR adjacency cache: supplies the live-entry predicate snapshot at transaction start and
+	 * receives the touched-shape marking callback inside the commit critical section, immediately before the data
+	 * revision becomes visible to readers.
+	 */
+	interface CsrCommitListener {
+
+		/** Immutable snapshot of predicates that currently have a live CSR entry. */
+		LongPredicate cachedPredicateFilter();
+
+		/** Invoked under the commit write lock, before {@code dataRevision} advances to {@code nextRevision}. */
+		void beforeRevisionBump(LmdbCsrCommitDelta delta, long nextRevision);
+	}
+
+	void setCsrCommitListener(CsrCommitListener listener) {
+		this.csrCommitListener = listener;
+		this.csrCommitDelta = listener != null ? new LmdbCsrCommitDelta() : null;
+	}
+
+	/**
+	 * Hands the just-committed transaction's collected delta to the caller (the CSR cache applies and then resets it).
+	 * Returns {@code null} when no listener is registered.
+	 */
+	LmdbCsrCommitDelta drainCsrCommitDelta() {
+		return csrCommitDelta;
 	}
 
 	private void clearFanOutStatsIfDirty() {
@@ -3472,7 +3509,7 @@ class TripleStore implements Closeable {
 								long context = contextId < 0 ? 0 : valueIds[contextId];
 								contextIncrements.addToValue(context, 1);
 								recordFanOutAdded(valueIds[quads[quadOffset]], valueIds[quads[quadOffset + 1]],
-										valueIds[quads[quadOffset + 2]], true);
+										valueIds[quads[quadOffset + 2]], context, true);
 								addedCount++;
 							}
 						}
@@ -3604,9 +3641,11 @@ class TripleStore implements Closeable {
 								keyVal, dataVal) == MDB_SUCCESS;
 					}
 					if (promotedFromImplicit != null && promotedFromImplicit[statementIndex]) {
-						recordFanOutRemoved(subj[statementIndex], pred[statementIndex], obj[statementIndex], false);
+						recordFanOutRemoved(subj[statementIndex], pred[statementIndex], obj[statementIndex],
+								context[statementIndex], false);
 					}
-					recordFanOutAdded(subj[statementIndex], pred[statementIndex], obj[statementIndex], explicit);
+					recordFanOutAdded(subj[statementIndex], pred[statementIndex], obj[statementIndex],
+							context[statementIndex], explicit);
 					contextIncrements.addToValue(context[statementIndex], 1);
 				}
 			}
@@ -4016,7 +4055,7 @@ class TripleStore implements Closeable {
 				if (recordCache != null) {
 					recordCache.removeRecord(quad, explicit, true);
 					recordFanOutRemoved(quad[TripleIndex.SUBJ_IDX], quad[TripleIndex.PRED_IDX],
-							quad[TripleIndex.OBJ_IDX], explicit);
+							quad[TripleIndex.OBJ_IDX], quad[TripleIndex.CONTEXT_IDX], explicit);
 					handler.accept(quad);
 					continue;
 				}
@@ -4034,7 +4073,7 @@ class TripleStore implements Closeable {
 
 				decrementContext(stack, quad[TripleIndex.CONTEXT_IDX]);
 				recordFanOutRemoved(quad[TripleIndex.SUBJ_IDX], quad[TripleIndex.PRED_IDX],
-						quad[TripleIndex.OBJ_IDX], explicit);
+						quad[TripleIndex.OBJ_IDX], quad[TripleIndex.CONTEXT_IDX], explicit);
 				handler.accept(quad);
 			}
 		}
@@ -4092,6 +4131,9 @@ class TripleStore implements Closeable {
 
 	public void startTransaction() throws IOException {
 		closeAlignedWriteCursors();
+		if (csrCommitDelta != null) {
+			csrCommitDelta.begin(csrCommitListener.cachedPredicateFilter());
+		}
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);
 			E(mdb_txn_begin(env, NULL, 0, pp));
@@ -4218,12 +4260,20 @@ class TripleStore implements Closeable {
 							// otherwise iterators won't see the updated data
 							txnManager.reset();
 						}
+						if (csrCommitListener != null && csrCommitDelta != null) {
+							// marks touched shapes stale before readers can observe the new revision; the
+							// collected delta is applied (or dropped) by the sail store after the full commit
+							csrCommitListener.beforeRevisionBump(csrCommitDelta, dataRevision.get() + 1);
+						}
 						dataRevision.incrementAndGet();
 						fanOutStatsDirty = false;
 					} catch (IOException e) {
 						// abort transaction if exception occurred while committing
 						mdb_txn_abort(writeTxn);
 						clearFanOutStatsIfDirty();
+						if (csrCommitDelta != null) {
+							csrCommitDelta.reset();
+						}
 						throw e;
 					} finally {
 						lockManager.unlockWrite(stamp);
@@ -4231,6 +4281,9 @@ class TripleStore implements Closeable {
 				} else {
 					mdb_txn_abort(writeTxn);
 					clearFanOutStatsIfDirty();
+					if (csrCommitDelta != null) {
+						csrCommitDelta.reset();
+					}
 				}
 			} finally {
 				writeTxn = 0;
