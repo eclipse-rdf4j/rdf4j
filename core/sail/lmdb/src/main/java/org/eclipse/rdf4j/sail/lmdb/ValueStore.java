@@ -17,11 +17,13 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabase;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
+import static org.lwjgl.util.lmdb.LMDB.MDB_APPEND;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_LAST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOMETASYNC;
+import static org.lwjgl.util.lmdb.LMDB.MDB_NOOVERWRITE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NORDAHEAD;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
@@ -64,12 +66,12 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.StampedLock;
-import java.util.zip.CRC32;
 
 import org.eclipse.collections.impl.map.mutable.primitive.LongLongHashMap;
 import org.eclipse.collections.impl.map.mutable.primitive.ObjectLongHashMap;
@@ -115,6 +117,33 @@ public class ValueStore extends AbstractValueFactory {
 	@InternalUseOnly
 	public interface ValueDataReader<T> {
 		T read(long address, int length) throws IOException;
+	}
+
+	@FunctionalInterface
+	@InternalUseOnly
+	public interface BulkRecordSource {
+		BulkRecord next() throws IOException;
+	}
+
+	@FunctionalInterface
+	@InternalUseOnly
+	public interface BulkLongQuadSource {
+		boolean next(long[] quad) throws IOException;
+	}
+
+	@FunctionalInterface
+	@InternalUseOnly
+	public interface BulkHashSource {
+		boolean next(long[] idAndHash) throws IOException;
+	}
+
+	@InternalUseOnly
+	public record BulkRecord(byte[] key, byte[] value) {
+
+		public BulkRecord {
+			key = key.clone();
+			value = value.clone();
+		}
 	}
 
 	private final static Logger logger = LoggerFactory.getLogger(ValueStore.class);
@@ -354,28 +383,28 @@ public class ValueStore extends AbstractValueFactory {
 	 */
 	private static final String DEFAULT_TRIPLE_TERM_INDEXES = "spoc,cspo";
 
-	private static final byte URI_VALUE = 0;
+	private static final byte URI_VALUE = ValueStoreRecordCodec.URI_VALUE;
 	// Keep the window bounded so later URI IDs do not cross an additional varint-width boundary.
 	private static final long RESERVED_PREDICATE_ID_COUNT = 64;
 
-	private static final byte LITERAL_VALUE = 1;
+	private static final byte LITERAL_VALUE = ValueStoreRecordCodec.LITERAL_VALUE;
 
-	private static final byte BNODE_VALUE = 2;
+	private static final byte BNODE_VALUE = ValueStoreRecordCodec.BNODE_VALUE;
 
-	private static final byte TRIPLE_VALUE = 3;
+	private static final byte TRIPLE_VALUE = ValueStoreRecordCodec.TRIPLE_VALUE;
 
-	private static final byte NAMESPACE_VALUE = 4;
+	private static final byte NAMESPACE_VALUE = ValueStoreRecordCodec.NAMESPACE_VALUE;
 
-	private static final byte ID_KEY = 5;
+	private static final byte ID_KEY = ValueStoreRecordCodec.ID_KEY;
 
-	private static final byte HASH_KEY = 6;
+	private static final byte HASH_KEY = ValueStoreRecordCodec.HASH_KEY;
 
-	private static final byte HASHID_KEY = 7;
+	private static final byte HASHID_KEY = ValueStoreRecordCodec.HASHID_KEY;
 
 	/***
 	 * Maximum size of keys before hashing is used (size of two long values)
 	 */
-	private static final int MAX_KEY_SIZE = 16;
+	private static final int MAX_KEY_SIZE = ValueStoreRecordCodec.MAX_INLINE_KEY_BYTES;
 	private static final int MIN_TRANSACTION_VALUE_CACHE_SIZE = 4 * 1024;
 	private static final int MAX_TRANSACTION_VALUE_CACHE_SIZE = 1024 * 1024;
 	private static final long TRANSACTION_VALUE_CACHE_BYTES_PER_ENTRY = 4 * 1024L;
@@ -455,6 +484,7 @@ public class ValueStore extends AbstractValueFactory {
 	private long env;
 	private int pageSize;
 	private long mapSize;
+	private long bulkMapGrowthCount;
 	// main database
 	private int dbi;
 	// database with unused IDs
@@ -463,6 +493,7 @@ public class ValueStore extends AbstractValueFactory {
 	private int freeDbi;
 	// database with internal reference counts for IRIs and namespaces
 	private int refCountsDbi;
+	private boolean auxiliaryDatabasesInitialized;
 	private long writeTxn;
 	private Thread writeTxnOwner;
 	private final boolean forceSync;
@@ -511,6 +542,7 @@ public class ValueStore extends AbstractValueFactory {
 	final boolean valueHashCacheEnabled;
 	private final boolean inlineLiterals;
 	private final boolean orderedNumericIds;
+	private final boolean canonicalLanguageTags;
 
 	private final ThreadLocal<Boolean> hasReadLock = new ThreadLocal<>();
 
@@ -520,6 +552,11 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	ValueStore(File dir, StoreProperties properties, LmdbStoreConfig config) throws IOException {
+		this(dir, properties, config, false);
+	}
+
+	ValueStore(File dir, StoreProperties properties, LmdbStoreConfig config, boolean deferAuxiliaryDatabases)
+			throws IOException {
 		this.dir = dir;
 		this.properties = properties;
 		this.forceSync = config.getForceSync();
@@ -532,6 +569,7 @@ public class ValueStore extends AbstractValueFactory {
 		// the persisted store property is the single writer gate: absent (all pre-ordered-encoding stores) means
 		// legacy ZigZag ids; LmdbStore records ordered-v1 at store creation when the config enables it
 		this.orderedNumericIds = properties.usesOrderedNumericIds();
+		this.canonicalLanguageTags = properties.usesCanonicalLanguageTags();
 
 		int cacheSets = nextPowerOfTwo(Math.max(1, (config.getValueCacheSize() + VALUE_CACHE_WAYS - 1)
 				/ VALUE_CACHE_WAYS));
@@ -548,9 +586,23 @@ public class ValueStore extends AbstractValueFactory {
 		namespaceCache = new ConcurrentCache<>(config.getNamespaceCacheSize());
 		namespaceIDCache = new ConcurrentCache<>(config.getNamespaceIDCacheSize());
 
-		open();
+		open(deferAuxiliaryDatabases);
 		setNewRevision();
 
+		if (!deferAuxiliaryDatabases) {
+			initializeIdsAndTermIndexes(config);
+		}
+	}
+
+	void completeBulkInitialization(LmdbStoreConfig config) throws IOException {
+		if (auxiliaryDatabasesInitialized) {
+			throw new IllegalStateException("ValueStore auxiliary databases are already initialized");
+		}
+		openAuxiliaryDatabases();
+		initializeIdsAndTermIndexes(config);
+	}
+
+	private void initializeIdsAndTermIndexes(LmdbStoreConfig config) throws IOException {
 		// read maximum id from store
 		readTransaction(env, (stack, txn) -> {
 			long cursor = 0;
@@ -647,6 +699,10 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	private void open() throws IOException {
+		open(false);
+	}
+
+	private void open(boolean deferAuxiliaryDatabases) throws IOException {
 		// create directory if it not exists
 		dir.mkdirs();
 		openHashFileQuietly();
@@ -706,12 +762,26 @@ public class ValueStore extends AbstractValueFactory {
 
 		txnManager.closeReadTxn();
 
+		if (!deferAuxiliaryDatabases) {
+			openAuxiliaryDatabases();
+		}
+	}
+
+	private void openAuxiliaryDatabases() throws IOException {
+		if (auxiliaryDatabasesInitialized) {
+			throw new IllegalStateException("ValueStore auxiliary databases are already initialized");
+		}
 		// open unused IDs database
 		unusedDbi = openDatabase(env, "unused_ids", MDB_CREATE);
 		// open free IDs database
 		freeDbi = openDatabase(env, "free_ids", MDB_CREATE);
 		// open ref_counts database
 		refCountsDbi = openDatabase(env, "ref_counts", MDB_CREATE);
+
+		// A read transaction opened before the named databases were created cannot use their database handles.
+		// This matters for deferred bulk initialization because capacity checks may have opened a pooled reader while
+		// the main database was being append-loaded.
+		txnManager.closeReadTxn();
 
 		// check if free IDs are available
 		readTransaction(env, (stack, txn) -> {
@@ -731,6 +801,7 @@ public class ValueStore extends AbstractValueFactory {
 			}
 			return null;
 		});
+		auxiliaryDatabasesInitialized = true;
 	}
 
 	private Set<String> getTripleTermIndexSpecs() throws SailException {
@@ -954,8 +1025,7 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	protected ByteBuffer id2data(ByteBuffer bb, long id) {
-		bb.put(ID_KEY);
-		Varint.writeUnsigned(bb, id);
+		bb.put(ValueStoreRecordCodec.idKey(id));
 		return bb;
 	}
 
@@ -1375,6 +1445,7 @@ public class ValueStore extends AbstractValueFactory {
 
 					long oldMapSize = mapSize;
 					mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, requiredSize);
+					bulkMapGrowthCount++;
 
 					logger.info("Resizing map from {} to {}", oldMapSize, mapSize);
 
@@ -1406,6 +1477,11 @@ public class ValueStore extends AbstractValueFactory {
 			resizeMap(txn, requiredSize);
 			return null;
 		});
+	}
+
+	@InternalUseOnly
+	public long getBulkMapGrowthCount() {
+		return bulkMapGrowthCount;
 	}
 
 	private void incrementRefCount(MemoryStack stack, long writeTxn, byte[] data) {
@@ -2301,10 +2377,7 @@ public class ValueStore extends AbstractValueFactory {
 
 	private void prepareAssignedFreshNamespace(FreshValueSession session, PreparedValueBatch prepared,
 			String namespace) {
-		byte[] namespaceBytes = namespace.getBytes(StandardCharsets.UTF_8);
-		byte[] data = new byte[namespaceBytes.length + 1];
-		data[0] = NAMESPACE_VALUE;
-		System.arraycopy(namespaceBytes, 0, data, 1, namespaceBytes.length);
+		byte[] data = ValueStoreRecordCodec.namespaceData(namespace);
 		long id = session.namespaceIds.getIfAbsent(namespace, LmdbValue.UNKNOWN_ID);
 		addPreparedValueRecord(session, prepared, null, namespace, id, data);
 	}
@@ -2425,10 +2498,7 @@ public class ValueStore extends AbstractValueFactory {
 		if (existingId != LmdbValue.UNKNOWN_ID) {
 			return existingId;
 		}
-		byte[] namespaceBytes = namespace.getBytes(StandardCharsets.UTF_8);
-		byte[] data = new byte[namespaceBytes.length + 1];
-		data[0] = NAMESPACE_VALUE;
-		System.arraycopy(namespaceBytes, 0, data, 1, namespaceBytes.length);
+		byte[] data = ValueStoreRecordCodec.namespaceData(namespace);
 		long id = nextFreshId(session, NAMESPACE_VALUE);
 		session.namespaceIds.put(namespace, id);
 		session.provisionalNamespaces.add(namespace);
@@ -2457,37 +2527,11 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	private byte[] uri2data(IRI iri, long namespaceId) {
-		byte[] localNameData = iri.getLocalName().getBytes(StandardCharsets.UTF_8);
-		int namespaceIdLength = Varint.calcLengthUnsigned(namespaceId);
-		byte[] data = new byte[1 + namespaceIdLength + localNameData.length];
-		data[0] = URI_VALUE;
-		Varint.writeUnsigned(ByteBuffer.wrap(data, 1, namespaceIdLength), namespaceId);
-		ByteArrayUtil.put(localNameData, data, 1 + namespaceIdLength);
-		return data;
+		return ValueStoreRecordCodec.iriData(iri, namespaceId);
 	}
 
 	private byte[] literal2data(Literal literal, long datatypeId) {
-		Optional<String> language = literal.getLanguage();
-		byte[] languageData = language.isPresent() ? language.get().getBytes(StandardCharsets.UTF_8) : null;
-		int languageLength = languageData == null ? 0 : languageData.length;
-		Literal.BaseDirection baseDirection = literal.getBaseDirection();
-		int directionValue = baseDirection == null ? 0 : switch (baseDirection) {
-		case LTR -> 1;
-		case RTL -> 2;
-		default -> 0;
-		};
-		byte[] labelData = literal.getLabel().getBytes(StandardCharsets.UTF_8);
-		int datatypeIdLength = Varint.calcLengthUnsigned(datatypeId);
-		byte[] data = new byte[2 + datatypeIdLength + languageLength + labelData.length];
-		ByteBuffer buffer = ByteBuffer.wrap(data);
-		buffer.put(LITERAL_VALUE);
-		Varint.writeUnsigned(buffer, datatypeId);
-		buffer.put((byte) (directionValue << 6 | languageLength));
-		if (languageData != null) {
-			buffer.put(languageData);
-		}
-		buffer.put(labelData);
-		return data;
+		return ValueStoreRecordCodec.literalData(literal, datatypeId, canonicalLanguageTags);
 	}
 
 	void persistPreparedValues(PreparedValueBatch prepared) throws IOException {
@@ -3135,6 +3179,461 @@ public class ValueStore extends AbstractValueFactory {
 		}
 	}
 
+	/**
+	 * Append exact, strictly increasing records to a newly created main value database.
+	 */
+	@InternalUseOnly
+	public void appendBulkRecords(BulkRecordSource source, int maxTransactionRecords, long maxTransactionBytes)
+			throws IOException {
+		appendBulkRecords(source, dbi, maxTransactionRecords, maxTransactionBytes);
+	}
+
+	/**
+	 * Append exact, strictly increasing reference-count records to a newly created value store.
+	 */
+	@InternalUseOnly
+	public void appendBulkReferenceCounts(BulkRecordSource source, int maxTransactionRecords,
+			long maxTransactionBytes) throws IOException {
+		appendBulkRecords(source, refCountsDbi, maxTransactionRecords, maxTransactionBytes);
+	}
+
+	/**
+	 * Verifies the exact generated main-database records against LMDB in key order.
+	 */
+	@InternalUseOnly
+	public void validateBulkRecords(BulkRecordSource source) throws IOException {
+		validateBulkRecords(source, dbi, "main", true);
+	}
+
+	/**
+	 * Verifies the exact generated reference-count records against LMDB in key order.
+	 */
+	@InternalUseOnly
+	public void validateBulkReferenceCounts(BulkRecordSource source) throws IOException {
+		validateBulkRecords(source, refCountsDbi, "reference-count", false);
+	}
+
+	private void validateBulkRecords(BulkRecordSource source, int targetDbi, String database, boolean mainDatabase)
+			throws IOException {
+		readTransaction(env, (stack, txn) -> {
+			PointerBuffer cursorHandle = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, targetDbi, cursorHandle));
+			long cursor = cursorHandle.get(0);
+			try {
+				MDBVal key = MDBVal.malloc(stack);
+				MDBVal value = MDBVal.malloc(stack);
+				int result = nextBulkRecord(cursor, key, value, MDB_FIRST, mainDatabase);
+				BulkRecord expected;
+				while ((expected = source.next()) != null) {
+					if (result == MDB_NOTFOUND) {
+						throw new IOException(
+								"ValueStore " + database + " database is missing an expected bulk record");
+					}
+					E(result);
+					if (!matches(expected.key(), key.mv_data()) || !matches(expected.value(), value.mv_data())) {
+						throw new IOException(
+								"ValueStore " + database + " database differs from its generated bulk records");
+					}
+					result = nextBulkRecord(cursor, key, value, MDB_NEXT, mainDatabase);
+				}
+				if (result == MDB_SUCCESS) {
+					throw new IOException(
+							"ValueStore " + database + " database contains an unexpected bulk record");
+				}
+				if (result != MDB_NOTFOUND) {
+					E(result);
+				}
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+			return null;
+		});
+	}
+
+	private static int nextBulkRecord(long cursor, MDBVal key, MDBVal value, int operation, boolean mainDatabase) {
+		int result = mdb_cursor_get(cursor, key, value, operation);
+		while (mainDatabase && result == MDB_SUCCESS
+				&& Byte.toUnsignedInt(key.mv_data().get(key.mv_data().position())) > HASHID_KEY) {
+			result = mdb_cursor_get(cursor, key, value, MDB_NEXT);
+		}
+		return result;
+	}
+
+	private static boolean matches(byte[] expected, ByteBuffer actual) {
+		if (actual.remaining() != expected.length) {
+			return false;
+		}
+		for (int index = 0; index < expected.length; index++) {
+			if (actual.get(actual.position() + index) != expected[index]) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private void appendBulkRecords(BulkRecordSource source, int targetDbi, int maxTransactionRecords,
+			long maxTransactionBytes) throws IOException {
+		if (maxTransactionRecords <= 0 || maxTransactionBytes <= 0L) {
+			throw new IllegalArgumentException("Bulk transaction bounds must be positive");
+		}
+		byte[] previousKey = null;
+		BulkRecord pending = source.next();
+		while (pending != null) {
+			ArrayList<BulkRecord> batch = new ArrayList<>(Math.min(maxTransactionRecords, 4096));
+			long batchBytes = 0L;
+			while (pending != null && batch.size() < maxTransactionRecords) {
+				long recordBytes = Math.addExact((long) pending.key().length, pending.value().length);
+				if (!batch.isEmpty() && batchBytes + recordBytes > maxTransactionBytes) {
+					break;
+				}
+				if (previousKey != null && Arrays.compareUnsigned(previousKey, pending.key()) >= 0) {
+					throw new IOException("ValueStore bulk records are not strictly increasing");
+				}
+				previousKey = pending.key().clone();
+				batch.add(pending);
+				batchBytes = Math.addExact(batchBytes, recordBytes);
+				pending = source.next();
+			}
+			appendBulkBatch(targetDbi, batch, batchBytes);
+		}
+	}
+
+	private void appendBulkBatch(int targetDbi, List<BulkRecord> batch, long batchBytes) throws IOException {
+		long reservation = Math.max(64 * 1024L, Math.multiplyExact(batchBytes, 2L));
+		for (int attempt = 0; attempt < 8; attempt++) {
+			reserveWriteCapacity(reservation);
+			startTransaction(false);
+			boolean mapFull = false;
+			try (MemoryStack stack = stackPush()) {
+				PointerBuffer cursorHandle = stack.mallocPointer(1);
+				E(mdb_cursor_open(writeTxn, targetDbi, cursorHandle));
+				long cursor = cursorHandle.get(0);
+				try {
+					MDBVal key = MDBVal.malloc(stack);
+					MDBVal value = MDBVal.malloc(stack);
+					for (BulkRecord record : batch) {
+						stack.push();
+						try {
+							key.mv_data(stack.bytes(record.key()));
+							value.mv_data(stack.bytes(record.value()));
+							int result = mdb_cursor_put(cursor, key, value, MDB_APPEND);
+							if (result == org.lwjgl.util.lmdb.LMDB.MDB_MAP_FULL) {
+								mapFull = true;
+								break;
+							}
+							E(result);
+						} finally {
+							stack.pop();
+						}
+					}
+				} finally {
+					mdb_cursor_close(cursor);
+				}
+				if (!mapFull) {
+					commit();
+					return;
+				}
+			} catch (Throwable failure) {
+				rollback();
+				throw failure;
+			}
+			rollback();
+			reservation = Math.multiplyExact(reservation, 2L);
+		}
+		throw new IOException("ValueStore map remained full after repeated bulk transaction growth");
+	}
+
+	/**
+	 * Populate every configured RDF-star term index from exact assigned IDs.
+	 */
+	@InternalUseOnly
+	public long appendBulkTripleTermIndex(String specification, BulkLongQuadSource source, int maxTransactionRecords)
+			throws IOException {
+		return appendBulkTripleTermIndex(specification, source, maxTransactionRecords, Long.MAX_VALUE);
+	}
+
+	@InternalUseOnly
+	public long appendBulkTripleTermIndex(String specification, BulkLongQuadSource source, int maxTransactionRecords,
+			long maxTransactionBytes) throws IOException {
+		int batchRecords = bulkIndexBatchRecords(maxTransactionRecords, maxTransactionBytes);
+		TripleIndex index = tripleTermIndexes.stream()
+				.filter(candidate -> candidate.toString().equals(specification))
+				.findFirst()
+				.orElseThrow(() -> new IOException("RDF-star term index is not configured: " + specification));
+		if (!TripleIndex.usesUnsignedTupleOrder(specification)) {
+			throw new IOException("RDF-star term index requires encoded-key sorting: " + specification);
+		}
+		long existingEntries = readTransaction(env, (stack, txn) -> {
+			MDBStat stat = MDBStat.malloc(stack);
+			E(mdb_stat(txn, index.getDB(true), stat));
+			return stat.ms_entries();
+		});
+		if (existingEntries != 0L) {
+			throw new IOException("Bulk append requires an empty RDF-star term index: " + specification);
+		}
+
+		long[] batch = new long[Math.multiplyExact(batchRecords, 4)];
+		long[] tuple = new long[4];
+		long[] previousTuple = new long[4];
+		boolean hasPreviousTuple = false;
+		boolean exhausted = false;
+		long uniqueTerms = 0L;
+		byte[] lastCommittedKey = null;
+		while (!exhausted) {
+			int count = 0;
+			while (count < batchRecords) {
+				if (!source.next(tuple)) {
+					exhausted = true;
+					break;
+				}
+				if (hasPreviousTuple) {
+					int comparison = compareUnsignedBulkTuple(previousTuple, tuple);
+					if (comparison > 0) {
+						throw new IOException("RDF-star term index input is not sorted for " + specification);
+					}
+					if (comparison == 0) {
+						continue;
+					}
+				}
+				System.arraycopy(tuple, 0, previousTuple, 0, 4);
+				hasPreviousTuple = true;
+				System.arraycopy(tuple, 0, batch, count * 4, 4);
+				count++;
+			}
+			if (count == 0) {
+				continue;
+			}
+			lastCommittedKey = appendBulkTripleTermIndexBatch(index, specification, batch, count, lastCommittedKey);
+			uniqueTerms += count;
+		}
+		return uniqueTerms;
+	}
+
+	@InternalUseOnly
+	public void validateBulkTripleTermIndex(String specification, BulkLongQuadSource source) throws IOException {
+		TripleIndex index = tripleTermIndexes.stream()
+				.filter(candidate -> candidate.toString().equals(specification))
+				.findFirst()
+				.orElseThrow(() -> new IOException("RDF-star term index is not configured: " + specification));
+		readTransaction(env, (stack, txn) -> {
+			PointerBuffer cursorHandle = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, index.getDB(true), cursorHandle));
+			long cursor = cursorHandle.get(0);
+			try {
+				MDBVal key = MDBVal.malloc(stack);
+				MDBVal value = MDBVal.malloc(stack);
+				int result = mdb_cursor_get(cursor, key, value, MDB_FIRST);
+				long[] tuple = new long[4];
+				long[] previousTuple = new long[4];
+				boolean hasPrevious = false;
+				while (source.next(tuple)) {
+					if (hasPrevious) {
+						int comparison = compareUnsignedBulkTuple(previousTuple, tuple);
+						if (comparison > 0) {
+							throw new IOException(
+									"RDF-star term index validation input is not sorted for " + specification);
+						}
+						if (comparison == 0) {
+							continue;
+						}
+					}
+					System.arraycopy(tuple, 0, previousTuple, 0, tuple.length);
+					hasPrevious = true;
+					long[] quad = new long[4];
+					for (int field = 0; field < 4; field++) {
+						quad[bulkIndexComponent(specification.charAt(field))] = tuple[field];
+					}
+					byte[] expected = TripleIndex.encodeKey(specification, quad[0], quad[1], quad[2], quad[3]);
+					if (result == MDB_NOTFOUND) {
+						throw new IOException(
+								"RDF-star term index " + specification + " is missing an expected bulk key");
+					}
+					E(result);
+					if (!matches(expected, key.mv_data())) {
+						throw new IOException(
+								"RDF-star term index " + specification + " differs from its sorted bulk source");
+					}
+					result = mdb_cursor_get(cursor, key, value, MDB_NEXT);
+				}
+				if (result != MDB_NOTFOUND) {
+					E(result);
+					throw new IOException(
+							"RDF-star term index " + specification + " contains an unexpected bulk key");
+				}
+				return null;
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+		});
+	}
+
+	private static int bulkIndexComponent(char field) {
+		return switch (field) {
+		case 's' -> 0;
+		case 'p' -> 1;
+		case 'o' -> 2;
+		case 'c' -> 3;
+		default -> throw new IllegalArgumentException("Unknown RDF-star term index field: " + field);
+		};
+	}
+
+	private static int bulkIndexBatchRecords(int maxTransactionRecords, long maxTransactionBytes) {
+		if (maxTransactionRecords <= 0 || maxTransactionBytes <= 0L) {
+			throw new IllegalArgumentException("Bulk transaction record and byte limits must be positive");
+		}
+		long recordsByBytes = Math.max(1L, maxTransactionBytes / 128L);
+		return Math.toIntExact(Math.min(maxTransactionRecords, recordsByBytes));
+	}
+
+	private byte[] appendBulkTripleTermIndexBatch(TripleIndex index, String specification, long[] batch, int count,
+			byte[] lastCommittedKey) throws IOException {
+		long reservation = Math.multiplyExact((long) count, 128L);
+		for (int attempt = 0; attempt < 8; attempt++) {
+			reserveWriteCapacity(reservation);
+			startTransaction(false);
+			boolean mapFull = false;
+			byte[] finalKey = null;
+			try (MemoryStack stack = stackPush()) {
+				PointerBuffer cursorHandle = stack.mallocPointer(1);
+				E(mdb_cursor_open(writeTxn, index.getDB(true), cursorHandle));
+				long cursor = cursorHandle.get(0);
+				try {
+					MDBVal key = MDBVal.malloc(stack);
+					MDBVal empty = MDBVal.calloc(stack);
+					ByteBuffer keyBuffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+					byte[] previousKey = lastCommittedKey == null ? new byte[TripleIndex.MAX_KEY_LENGTH]
+							: Arrays.copyOf(lastCommittedKey, TripleIndex.MAX_KEY_LENGTH);
+					int previousKeyLength = lastCommittedKey == null ? 0 : lastCommittedKey.length;
+					int subjectPosition = specification.indexOf('s');
+					int predicatePosition = specification.indexOf('p');
+					int objectPosition = specification.indexOf('o');
+					int contextPosition = specification.indexOf('c');
+					for (int row = 0; row < count; row++) {
+						int offset = row * 4;
+						keyBuffer.clear();
+						index.toKey(keyBuffer, batch[offset + subjectPosition], batch[offset + predicatePosition],
+								batch[offset + objectPosition], batch[offset + contextPosition]);
+						keyBuffer.flip();
+						if (previousKeyLength > 0
+								&& compareUnsignedBulkKey(previousKey, previousKeyLength, keyBuffer) >= 0) {
+							throw new IOException("Unsigned tuple order does not match encoded RDF-star term key order "
+									+ "for " + specification);
+						}
+						key.mv_data(keyBuffer);
+						int result = mdb_cursor_put(cursor, key, empty, MDB_APPEND);
+						if (result == org.lwjgl.util.lmdb.LMDB.MDB_MAP_FULL) {
+							mapFull = true;
+							break;
+						}
+						E(result);
+						previousKeyLength = keyBuffer.remaining();
+						for (int i = 0; i < previousKeyLength; i++) {
+							previousKey[i] = keyBuffer.get(keyBuffer.position() + i);
+						}
+					}
+					if (!mapFull) {
+						finalKey = Arrays.copyOf(previousKey, previousKeyLength);
+					}
+				} finally {
+					mdb_cursor_close(cursor);
+				}
+				if (!mapFull) {
+					commit();
+					return finalKey;
+				}
+			} catch (Throwable failure) {
+				rollback();
+				throw failure;
+			}
+			rollback();
+			reservation = Math.multiplyExact(reservation, 2L);
+		}
+		throw new IOException("RDF-star term index map remained full after repeated bulk transaction growth");
+	}
+
+	private static int compareUnsignedBulkTuple(long[] left, long[] right) {
+		for (int component = 0; component < 4; component++) {
+			int comparison = Long.compareUnsigned(left[component], right[component]);
+			if (comparison != 0) {
+				return comparison;
+			}
+		}
+		return 0;
+	}
+
+	private static int compareUnsignedBulkKey(byte[] left, int leftLength, ByteBuffer right) {
+		int length = Math.min(leftLength, right.remaining());
+		for (int i = 0; i < length; i++) {
+			int comparison = Integer.compare(Byte.toUnsignedInt(left[i]),
+					Byte.toUnsignedInt(right.get(right.position() + i)));
+			if (comparison != 0) {
+				return comparison;
+			}
+		}
+		return Integer.compare(leftLength, right.remaining());
+	}
+
+	/**
+	 * Populate every configured RDF-star term index from exact assigned IDs.
+	 */
+	@InternalUseOnly
+	public void appendBulkTripleTerms(BulkLongQuadSource source, int maxTransactionRecords) throws IOException {
+		if (maxTransactionRecords <= 0) {
+			throw new IllegalArgumentException("Bulk transaction record limit must be positive");
+		}
+		long[][] batch = new long[maxTransactionRecords][4];
+		boolean exhausted = false;
+		while (!exhausted) {
+			int count = 0;
+			while (count < batch.length) {
+				if (!source.next(batch[count])) {
+					exhausted = true;
+					break;
+				}
+				count++;
+			}
+			if (count == 0) {
+				break;
+			}
+			reserveWriteCapacity(Math.multiplyExact((long) count, Math.max(1, tripleTermIndexes.size()) * 64L));
+			startTransaction(false);
+			try (MemoryStack stack = stackPush()) {
+				MDBVal key = MDBVal.malloc(stack);
+				MDBVal empty = MDBVal.calloc(stack);
+				ByteBuffer keyBuffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+				for (int row = 0; row < count; row++) {
+					long[] triple = batch[row];
+					for (TripleIndex index : tripleTermIndexes) {
+						keyBuffer.clear();
+						index.toKey(keyBuffer, triple[0], triple[1], triple[2], triple[3]);
+						key.mv_data(keyBuffer.flip());
+						E(mdb_put(writeTxn, index.getDB(true), key, empty, 0));
+					}
+				}
+				commit();
+			} catch (Throwable failure) {
+				rollback();
+				throw failure;
+			}
+		}
+	}
+
+	/**
+	 * Populate the optional byte-native RDF value hash cache in increasing ID order.
+	 */
+	@InternalUseOnly
+	public void appendBulkHashes(BulkHashSource source) throws IOException {
+		long[] idAndHash = new long[2];
+		long previousId = 0L;
+		while (source.next(idAndHash)) {
+			if (idAndHash[0] <= previousId) {
+				throw new IOException("Value hash records are not in increasing ID order");
+			}
+			writeHashNow(idAndHash[0], (int) idAndHash[1]);
+			previousId = idAndHash[0];
+		}
+	}
+
 	public void rollback() throws IOException {
 		endTransaction(false, false);
 	}
@@ -3158,9 +3657,7 @@ public class ValueStore extends AbstractValueFactory {
 	 * @return A hash code for the supplied data.
 	 */
 	private long hash(byte[] data) {
-		CRC32 crc32 = new CRC32();
-		crc32.update(data);
-		return crc32.getValue();
+		return ValueStoreRecordCodec.hash(data);
 	}
 
 	/**
@@ -3206,6 +3703,7 @@ public class ValueStore extends AbstractValueFactory {
 			endTransaction(false, false);
 			mdb_env_close(env);
 			env = 0;
+			auxiliaryDatabasesInitialized = false;
 		}
 		if (hashFile != null) {
 			try {
@@ -3321,27 +3819,11 @@ public class ValueStore extends AbstractValueFactory {
 			return null;
 		}
 
-		// Get local name in UTF-8
-		byte[] localNameData = uri.getLocalName().getBytes(StandardCharsets.UTF_8);
-
-		// Combine parts in a single byte array
-		int nsIDLength = Varint.calcLengthUnsigned(nsID);
-		byte[] uriData = new byte[1 + nsIDLength + localNameData.length];
-		uriData[0] = URI_VALUE;
-		Varint.writeUnsigned(ByteBuffer.wrap(uriData, 1, nsIDLength), nsID);
-		ByteArrayUtil.put(localNameData, uriData, 1 + nsIDLength);
-
-		return uriData;
+		return ValueStoreRecordCodec.iriData(uri, nsID);
 	}
 
 	private byte[] bnode2data(BNode bNode, boolean create) {
-		byte[] idData = bNode.getID().getBytes(StandardCharsets.UTF_8);
-
-		byte[] bNodeData = new byte[1 + idData.length];
-		bNodeData[0] = BNODE_VALUE;
-		ByteArrayUtil.put(idData, bNodeData, 1);
-
-		return bNodeData;
+		return ValueStoreRecordCodec.bnodeData(bNode);
 	}
 
 	private byte[] literal2data(Literal literal, boolean create) throws IOException {
@@ -3363,42 +3845,14 @@ public class ValueStore extends AbstractValueFactory {
 			}
 		}
 
-		// Get language tag in UTF-8
-		byte[] langData = null;
-		int langDataLength = 0;
-		if (lang.isPresent()) {
-			langData = lang.get().getBytes(StandardCharsets.UTF_8);
-			langDataLength = langData.length;
+		return ValueStoreRecordCodec.literalData(label, lang, baseDirection, datatypeID, canonicalLanguageTags);
+	}
+
+	private Optional<String> canonicalLanguage(Optional<String> language) {
+		if (!canonicalLanguageTags || language.isEmpty()) {
+			return language;
 		}
-
-		// Get base direction byte
-		int directionValue = 0;
-		if (baseDirection != null) {
-			directionValue = switch (baseDirection) {
-			case LTR -> 1;
-			case RTL -> 2;
-			default -> 0;
-			};
-		}
-
-		// Get label in UTF-8
-		byte[] labelData = label.getBytes(StandardCharsets.UTF_8);
-
-		// Combine parts in a single byte array
-		int datatypeIDLength = Varint.calcLengthUnsigned(datatypeID);
-		byte[] literalData = new byte[2 + datatypeIDLength + langDataLength + labelData.length];
-		ByteBuffer bb = ByteBuffer.wrap(literalData);
-		bb.put(LITERAL_VALUE);
-		Varint.writeUnsigned(bb, datatypeID);
-
-		int directionAndLangLength = directionValue << 6 | langDataLength;
-		bb.put((byte) directionAndLangLength);
-		if (langData != null) {
-			bb.put(langData);
-		}
-		bb.put(labelData);
-
-		return literalData;
+		return Optional.of(language.get().toLowerCase(Locale.ROOT));
 	}
 
 	private LmdbValue data2value(long id, byte[] data, LmdbValue value) throws IOException {

@@ -935,6 +935,10 @@ class LmdbSailStore implements SailStore {
 		return valueStore;
 	}
 
+	long getMapGrowthCount() {
+		return valueStore.getBulkMapGrowthCount() + tripleStore.getBulkMapGrowthCount();
+	}
+
 	private int compareValuesByStoreOrder(Value left, Value right) {
 		if (left == right) {
 			return 0;

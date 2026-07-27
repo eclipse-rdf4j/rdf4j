@@ -28,6 +28,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.StringTokenizer;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -41,6 +43,7 @@ public class TripleIndex {
 	static final int KEY_MATCH = 0;
 	static final int KEY_FILTERED = 1;
 	static final int KEY_OUT_OF_RANGE = 2;
+	private static final ConcurrentMap<String, IndexKeyWriters.KeyWriter> STATIC_KEY_WRITERS = new ConcurrentHashMap<>();
 
 	// triples are represented by 4 varints for subject, predicate, object and context
 	@InternalUseOnly
@@ -89,6 +92,22 @@ public class TripleIndex {
 
 	public char[] getFieldSeq() {
 		return fieldSeq;
+	}
+
+	@InternalUseOnly
+	public static boolean usesUnsignedTupleOrder(String fieldSequence) {
+		return staticKeyWriter(fieldSequence).usesUnsignedTupleOrder();
+	}
+
+	@InternalUseOnly
+	public static byte[] encodeKey(String fieldSequence, long subject, long predicate, long object, long context) {
+		ByteBuffer buffer = ByteBuffer.allocate(Varint.calcListLengthUnsigned(subject, predicate, object, context));
+		staticKeyWriter(fieldSequence).write(buffer, subject, predicate, object, context, false);
+		return buffer.array();
+	}
+
+	private static IndexKeyWriters.KeyWriter staticKeyWriter(String fieldSequence) {
+		return STATIC_KEY_WRITERS.computeIfAbsent(fieldSequence, IndexKeyWriters::forFieldSeq);
 	}
 
 	@InternalUseOnly

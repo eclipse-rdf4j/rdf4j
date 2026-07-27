@@ -58,6 +58,14 @@ class StoreProperties {
 	 */
 	static final String INLINE_LITERALS_KEY = "inline-literals";
 
+	/**
+	 * The key recording how language tags are encoded for newly written literals. Absent means the historical
+	 * byte-preserving encoding used by existing stores.
+	 */
+	static final String CANONICAL_LANGUAGE_TAGS_KEY = "canonical-language-tags";
+
+	static final String CANONICAL_LANGUAGE_TAGS_LOWERCASE_V1 = "lowercase-v1";
+
 	protected final File propertiesFile;
 
 	protected String version;
@@ -69,6 +77,8 @@ class StoreProperties {
 	protected String numericIdEncoding;
 
 	protected String inlineLiterals;
+
+	protected String canonicalLanguageTags;
 
 	protected boolean loaded;
 
@@ -100,6 +110,7 @@ class StoreProperties {
 			tripleTermIndexes = properties.getProperty(TRIPLE_TERM_INDEXES_KEY);
 			numericIdEncoding = properties.getProperty(NUMERIC_ID_ENCODING_KEY);
 			inlineLiterals = properties.getProperty(INLINE_LITERALS_KEY);
+			canonicalLanguageTags = properties.getProperty(CANONICAL_LANGUAGE_TAGS_KEY);
 			loaded = true;
 		});
 		return loaded;
@@ -128,6 +139,9 @@ class StoreProperties {
 			}
 			if (inlineLiterals != null) {
 				properties.setProperty(INLINE_LITERALS_KEY, inlineLiterals);
+			}
+			if (canonicalLanguageTags != null) {
+				properties.setProperty(CANONICAL_LANGUAGE_TAGS_KEY, canonicalLanguageTags);
 			}
 			File parent = file.getParentFile();
 			if (parent != null) {
@@ -181,6 +195,16 @@ class StoreProperties {
 		String value = Boolean.toString(enabled);
 		this.dirty = dirty || !Objects.equals(this.inlineLiterals, value);
 		this.inlineLiterals = value;
+		return this;
+	}
+
+	boolean usesCanonicalLanguageTags() {
+		return CANONICAL_LANGUAGE_TAGS_LOWERCASE_V1.equals(canonicalLanguageTags);
+	}
+
+	StoreProperties setCanonicalLanguageTags(String canonicalLanguageTags) {
+		this.dirty = dirty || !Objects.equals(this.canonicalLanguageTags, canonicalLanguageTags);
+		this.canonicalLanguageTags = canonicalLanguageTags;
 		return this;
 	}
 

@@ -25,6 +25,7 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.mapdb.MapDb3CollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.LockManager;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -114,6 +115,8 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	 * dependent life cycle
 	 */
 	private SPARQLServiceResolver dependentServiceResolver;
+	private final boolean allowIncompleteBulkLoad;
+	private final boolean validationOnlyOpen;
 
 	/**
 	 * Lock manager used to prevent concurrent {@link #getTransactionLock(IsolationLevel)} calls.
@@ -147,6 +150,8 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	public LmdbStore(LmdbStoreConfig config) {
 		super();
 		this.config = config;
+		allowIncompleteBulkLoad = false;
+		validationOnlyOpen = false;
 		setSupportedIsolationLevels(IsolationLevels.NONE, IsolationLevels.READ_COMMITTED, IsolationLevels.SNAPSHOT_READ,
 				IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE);
 		setDefaultIsolationLevel(IsolationLevels.SNAPSHOT_READ);
@@ -172,6 +177,28 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 	public LmdbStore(File dataDir, LmdbStoreConfig config) {
 		this(config);
+		setDataDir(dataDir);
+	}
+
+	LmdbStore(File dataDir, LmdbStoreConfig config, boolean allowIncompleteBulkLoad) {
+		super();
+		this.config = config;
+		this.allowIncompleteBulkLoad = allowIncompleteBulkLoad;
+		validationOnlyOpen = true;
+		setSupportedIsolationLevels(IsolationLevels.NONE, IsolationLevels.READ_COMMITTED, IsolationLevels.SNAPSHOT_READ,
+				IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE);
+		setDefaultIsolationLevel(IsolationLevels.SNAPSHOT_READ);
+		config.getDefaultQueryEvaluationMode().ifPresent(this::setDefaultQueryEvaluationMode);
+		setSlowQueryLogThresholdSeconds(config.getSlowQueryLogThresholdSeconds());
+		setSlowQueryLogFirstResultThresholdSeconds(config.getSlowQueryLogFirstResultThresholdSeconds());
+		setSlowQueryLogFile(config.getSlowQueryLogFile());
+		if (config.getIterationCacheSyncThreshold() > 0) {
+			setIterationCacheSyncThreshold(config.getIterationCacheSyncThreshold());
+		}
+		EvaluationStrategyFactory evalStrategyFactory = config.getEvaluationStrategyFactory();
+		if (evalStrategyFactory != null) {
+			setEvaluationStrategyFactory(evalStrategyFactory);
+		}
 		setDataDir(dataDir);
 	}
 
@@ -310,6 +337,9 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		} else if (!dataDir.canRead()) {
 			throw new SailException("Not allowed to read from the specified directory: " + dataDir);
 		}
+		if (!allowIncompleteBulkLoad && new File(dataDir, ".lmdb-bulk-load.incomplete").exists()) {
+			throw new SailException("LMDB bulk-load publication is incomplete for directory: " + dataDir);
+		}
 
 		// try to lock the directory or fail
 		dirLock = new DirectoryLockManager(dataDir).lockOrFail();
@@ -337,6 +367,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 				}
 				// record the inlining setting so later opens can refuse to change it (see enforceInlineLiterals)
 				properties.setInlineLiterals(config.getInlineLiterals());
+				properties.setCanonicalLanguageTags(StoreProperties.CANONICAL_LANGUAGE_TAGS_LOWERCASE_V1);
 			}
 
 			boolean useSketchBasedJoinEstimator = shouldUseSketchBasedJoinEstimator();
@@ -497,6 +528,18 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		return backingStore;
 	}
 
+	/**
+	 * Returns the number of LMDB environment map-size increases since this store was initialized.
+	 */
+	@InternalUseOnly
+	public long getMapGrowthCount() {
+		LmdbSailStore current = backingStore;
+		if (current == null) {
+			throw new IllegalStateException("LMDB store is not initialized");
+		}
+		return current.getMapGrowthCount();
+	}
+
 	EvaluationStrategyFactory getConnectionEvaluationStrategyFactory() {
 		EvaluationStrategyFactory factory = connectionEvalStratFactory;
 		if (factory == null) {
@@ -517,6 +560,9 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	}
 
 	private boolean shouldUseSketchBasedJoinEstimator() {
+		if (validationOnlyOpen) {
+			return false;
+		}
 		return shouldUseSketchBasedJoinEstimator(Runtime.getRuntime().maxMemory());
 	}
 
