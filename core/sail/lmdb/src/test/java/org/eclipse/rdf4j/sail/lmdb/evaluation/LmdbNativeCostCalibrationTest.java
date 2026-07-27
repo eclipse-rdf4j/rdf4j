@@ -215,16 +215,21 @@ public class LmdbNativeCostCalibrationTest {
 	}
 
 	@Test
-	public void explorationIsOffByDefaultAndBoundedWhenOn() {
+	public void explorationIsOnByDefaultAndBounded() {
 		assertThat(LmdbNativeCostCalibration.explorationEnabled())
-				.as("running a plan believed to be worse costs the query that pays for it; that is opt-in")
-				.isFalse();
-		assertThat(LmdbNativeCostCalibration.shouldExplore(FAST)).isFalse();
+				.as("a strategy that never wins never gets measured and so can never win -- a wrong early ranking "
+						+ "locks in for the JVM's lifetime unless exploration can break the deadlock, so it is on "
+						+ "unless deliberately disabled")
+				.isTrue();
 
-		System.setProperty(LmdbNativeCostCalibration.EXPLORATION_PROPERTY, "true");
 		observe(FAST, 5d, 500);
 		assertThat(LmdbNativeCostCalibration.shouldExplore(FAST))
 				.as("a well-measured strategy is never explored -- there is nothing left to learn")
+				.isFalse();
+
+		System.setProperty(LmdbNativeCostCalibration.EXPLORATION_PROPERTY, "false");
+		assertThat(LmdbNativeCostCalibration.explorationEnabled())
+				.as("disabling exploration restores fully reproducible dispatch")
 				.isFalse();
 	}
 }

@@ -65,8 +65,14 @@ final class LmdbNativeCostCalibration {
 	 */
 	static final String ENABLED_PROPERTY = "rdf4j.lmdb.costCalibration.enabled";
 	/**
-	 * Opt-in. Deliberately running a strategy believed to be worse, to refresh its measurement, costs the query that
-	 * pays for it — that is a policy choice, not a default. Learning from executions that happen anyway is always on.
+	 * On by default: a strategy that never wins never gets measured, and a strategy that never gets measured can never
+	 * win — so a wrong early ranking locks in for the JVM's lifetime (observed as the ELECTRICAL_GRID q7 bistability:
+	 * ~6ms or ~14ms per JVM, decided in the first executions and self-reinforcing). Bounded exploration breaks that
+	 * deadlock: the arbiter occasionally runs a thinly-measured rival whose cost interval overlaps the incumbent's,
+	 * purely to measure it, with probability decaying in the rival's observation count.
+	 * <p>
+	 * Set to {@code false} to restore purely evidence-driven selection; like {@link #ENABLED_PROPERTY}, any test that
+	 * pins which strategy wins a contested arbitration must disable this and reset calibration state.
 	 */
 	static final String EXPLORATION_PROPERTY = "rdf4j.lmdb.costCalibration.explore";
 
@@ -197,12 +203,13 @@ final class LmdbNativeCostCalibration {
 	 * corpus. Natural diversity supplies most of the exploration for free, so staleness is a slow leak rather than a
 	 * lock-in.
 	 * <p>
-	 * <b>Bounded on purpose, and off by default.</b> Learning from whatever happens to run is free and safe; running a
-	 * plan believed to be worse, to find out whether that belief is still true, is a policy decision with a real cost
-	 * to the query that pays for it. So this is opt-in, fires only for strategies with thin evidence, and the caller
-	 * additionally requires that the explored candidate's interval OVERLAPS the incumbent's — a candidate already known
-	 * to be far worse is never tried, which caps the downside of any single exploration at roughly the width of the
-	 * overlap.
+	 * <b>Bounded on purpose.</b> Running a plan believed to be worse, to find out whether that belief is still true,
+	 * has a real cost to the query that pays for it — so this fires only for strategies with thin evidence, and the
+	 * caller additionally requires that the explored candidate's interval OVERLAPS the incumbent's — a candidate
+	 * already known to be far worse is never tried, which caps the downside of any single exploration at roughly the
+	 * width of the overlap. On by default (see {@link #EXPLORATION_PROPERTY}): the ELECTRICAL_GRID q7 bistability
+	 * showed a JVM locked into a ~2.3x-slower dispatch mode for its whole lifetime precisely because nothing ever
+	 * re-measured the alternative.
 	 */
 	static boolean shouldExplore(String tag) {
 		if (!explorationEnabled() || tag == null) {
@@ -219,7 +226,8 @@ final class LmdbNativeCostCalibration {
 	}
 
 	static boolean explorationEnabled() {
-		return enabled() && Boolean.getBoolean(EXPLORATION_PROPERTY);
+		return enabled() && !"false".equalsIgnoreCase(System.getProperty(EXPLORATION_PROPERTY));
+//		return false;
 	}
 
 	/** Learned factor for a strategy, or NaN when nothing has been observed. Test and telemetry hook. */

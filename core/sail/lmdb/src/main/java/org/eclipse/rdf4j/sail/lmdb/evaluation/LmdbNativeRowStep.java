@@ -208,6 +208,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	final PatternPlan prefixPattern;
 	final LmdbPrefixRunPlan prefixRunPlan;
 	final NativeTupleDistinctPlan distinctPlan;
+	final NativeConstantFalseWhenUnboundFilter[] constantFalseGuards;
 	/**
 	 * Bare-fragment mode: rows are full-slot snapshots carrying base bindings through ({@link RowBindingSetView})
 	 * instead of projections — the contract for BGP fragments the generic evaluator drives with its own bindings.
@@ -253,6 +254,47 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		this.prefixPattern = prefixPattern;
 		this.prefixRunPlan = prefixRunPlan;
 		this.distinctPlan = previewDistinctPlan();
+		this.constantFalseGuards = collectConstantFalseGuards(arg);
+	}
+
+	/**
+	 * Constant-false guards on the plan's conjunctive spine: FilterPlan wrappers and MultiJoin filters, where an
+	 * always-empty filter empties the whole fragment. Union branches and optional arms are deliberately not walked — a
+	 * constant-false filter there empties only its own branch.
+	 */
+	private static NativeConstantFalseWhenUnboundFilter[] collectConstantFalseGuards(SlotPlan plan) {
+		ArrayList<NativeConstantFalseWhenUnboundFilter> guards = new ArrayList<>(0);
+		SlotPlan current = plan;
+		while (current instanceof FilterPlan) {
+			addConstantFalseGuard(guards, ((FilterPlan) current).filter);
+			current = ((FilterPlan) current).arg;
+		}
+		if (current instanceof MultiJoinPlan) {
+			for (MaskedFilter filter : ((MultiJoinPlan) current).filters) {
+				addConstantFalseGuard(guards, filter.filter);
+			}
+		}
+		return guards.toArray(new NativeConstantFalseWhenUnboundFilter[0]);
+	}
+
+	private static void addConstantFalseGuard(ArrayList<NativeConstantFalseWhenUnboundFilter> guards,
+			NativeBooleanFilter filter) {
+		while (filter instanceof RecordingNativeBooleanFilter) {
+			filter = ((RecordingNativeBooleanFilter) filter).delegate;
+		}
+		if (filter instanceof NativeConstantFalseWhenUnboundFilter) {
+			guards.add((NativeConstantFalseWhenUnboundFilter) filter);
+		}
+	}
+
+	/** Whether some spine filter can accept nothing under these entry bindings, making the whole fragment empty. */
+	boolean constantFalseFor(BindingSet base) {
+		for (NativeConstantFalseWhenUnboundFilter guard : constantFalseGuards) {
+			if (guard.constantFalse(base)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private NativeTupleDistinctPlan previewDistinctPlan() {
@@ -360,6 +402,10 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		LmdbNativeExplain.addRuntimeMetric(originalExpr, "nativeInvocationsActual", 1L);
 		if (limit == 0L) {
 			LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_LIMIT_ZERO);
+			return List.of();
+		}
+		if (constantFalseFor(base)) {
+			LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_CONSTANT_FALSE_FILTER);
 			return List.of();
 		}
 		AggContext values = new AggContext(source, strictCompare);
@@ -1345,6 +1391,11 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet> {
 		}
 		LmdbNativeExplain.recordRuntimeEntryPlan(step.originalExpr, step.arg, step.layout, row.boundMask());
 		LmdbNativeExplain.addRuntimeMetric(step.originalExpr, "nativeInvocationsActual", 1L);
+		if (step.bulk.constantFalseFor(base)) {
+			LmdbNativeExplain.recordExecutionPath(step.originalExpr,
+					LmdbNativeAttemptMetrics.PATH_CONSTANT_FALSE_FILTER);
+			return false;
+		}
 		cursor = step.arg.open(row);
 		LmdbNativeExplain.recordExecutionPath(step.originalExpr, LmdbNativeAttemptMetrics.PATH_BARE_DIRECT);
 		return true;
@@ -1701,6 +1752,11 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 		LmdbNativeExplain.addRuntimeMetric(step.originalExpr, "nativeInvocationsActual", 1L);
 		if (step.entryPath != null) {
 			LmdbNativeExplain.recordExecutionPath(step.originalExpr, step.entryPath);
+		}
+		if (step.constantFalseFor(base)) {
+			LmdbNativeExplain.recordExecutionPath(step.originalExpr,
+					LmdbNativeAttemptMetrics.PATH_CONSTANT_FALSE_FILTER);
+			return false;
 		}
 		distinctRows = step.distinct ? new NativeOrderedDistinctTracker(distinctPlan) : null;
 		cursor = step.openPrefixRunCursor(row);

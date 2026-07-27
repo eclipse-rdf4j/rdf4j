@@ -42,6 +42,18 @@ public class LmdbNativeStrategyArbiterTest {
 		LmdbNativeCostCalibration.reset();
 	}
 
+	@org.junit.jupiter.api.AfterEach
+	public void clearCalibrationState() {
+		LmdbNativeCostCalibration.reset();
+		System.clearProperty(LmdbNativeCostCalibration.EXPLORATION_PROPERTY);
+	}
+
+	private static void measure(String tag, double nanosPerUnit, int times) {
+		for (int i = 0; i < times; i++) {
+			LmdbNativeCostCalibration.record(tag, 10_000d, (long) (nanosPerUnit * 10_000d));
+		}
+	}
+
 	private static LmdbNativeStrategyProposal<String> proposal(String tag, LmdbNativeWork work) {
 		return new LmdbNativeStrategyProposal<>(() -> tag, work, tag, () -> {
 		});
@@ -146,6 +158,68 @@ public class LmdbNativeStrategyArbiterTest {
 				proposal(LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, 10D),
 				proposal(LmdbNativeAttemptMetrics.PATH_BATCH, 100D))))
 						.isEqualTo(LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES);
+	}
+
+	// ---------------------------------------------------------------- exploration
+
+	@Test
+	public void aNeverMeasuredRivalIsExploredOnceTheIncumbentHasEvidence() throws IOException {
+		// The incumbent is measured at ~1ns/unit, so its time interval overlaps the rival's raw work interval and
+		// cost decides nothing; the ladder would keep batch forever, so the rival could never earn a measurement.
+		// At zero observations the exploration probability is exactly 1, which makes this test deterministic.
+		measure(LmdbNativeAttemptMetrics.PATH_BATCH, 1d, 200);
+
+		try (LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter.forExpr(null)) {
+			arbiter.offer(() -> proposal(LmdbNativeAttemptMetrics.PATH_BATCH, 1_000d));
+			arbiter.offer(() -> proposal(LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, 1_000d));
+
+			assertThat(arbiter.select())
+					.as("a strategy that never wins never gets measured and so can never win; exploration must "
+							+ "break that deadlock by running the unmeasured rival")
+					.isEqualTo(LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES);
+		}
+	}
+
+	@Test
+	public void coldStartNeverExplores() throws IOException {
+		try (LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter.forExpr(null)) {
+			arbiter.offer(() -> proposal(LmdbNativeAttemptMetrics.PATH_BATCH, 1_000d));
+			arbiter.offer(() -> proposal(LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, 1_000d));
+
+			assertThat(arbiter.select())
+					.as("before anything is measured the first execution is the measurement; dispatch must be "
+							+ "exactly the ladder")
+					.isEqualTo(LmdbNativeAttemptMetrics.PATH_BATCH);
+		}
+	}
+
+	@Test
+	public void aRivalAlreadyKnownToBeFarWorseIsNeverExplored() throws IOException {
+		measure(LmdbNativeAttemptMetrics.PATH_BATCH, 1d, 200);
+
+		try (LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter.forExpr(null)) {
+			arbiter.offer(() -> proposal(LmdbNativeAttemptMetrics.PATH_BATCH, 1_000d));
+			// Unmeasured, but its own work estimate already sits far above the incumbent's measured time.
+			arbiter.offer(() -> proposal(LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, 1_000_000d));
+
+			assertThat(arbiter.select())
+					.as("exploring a candidate already known to be far worse buys nothing worth its cost; the "
+							+ "overlap requirement is what keeps exploration bounded")
+					.isEqualTo(LmdbNativeAttemptMetrics.PATH_BATCH);
+		}
+	}
+
+	@Test
+	public void disablingExplorationRestoresTheLadder() throws IOException {
+		System.setProperty(LmdbNativeCostCalibration.EXPLORATION_PROPERTY, "false");
+		measure(LmdbNativeAttemptMetrics.PATH_BATCH, 1d, 200);
+
+		try (LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter.forExpr(null)) {
+			arbiter.offer(() -> proposal(LmdbNativeAttemptMetrics.PATH_BATCH, 1_000d));
+			arbiter.offer(() -> proposal(LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, 1_000d));
+
+			assertThat(arbiter.select()).isEqualTo(LmdbNativeAttemptMetrics.PATH_BATCH);
+		}
 	}
 
 	// ---------------------------------------------------------------- lifecycle

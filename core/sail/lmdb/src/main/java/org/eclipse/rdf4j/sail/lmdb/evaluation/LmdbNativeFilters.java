@@ -177,6 +177,50 @@ final class RecordingNativeBooleanFilter implements NativeBooleanFilter {
 	}
 }
 
+/**
+ * Guards a sticky fallback condition proven unable to accept any row while some referenced variable stays unbound.
+ * <p>
+ * The names here are variables the condition reads that own no slot in this fragment, so they can only arrive through
+ * the entry bindings — and the compile-time proof ({@code guardConstantFalse}) established that with any of them
+ * unbound the condition evaluates to error or false for <em>every</em> row, never true. FILTER drops both, so the whole
+ * subtree is empty and the evaluation entry can skip its scan outright. The decision is per-evaluation, not per-plan:
+ * when the entry bindings do supply every name, the fallback runs unchanged.
+ * <p>
+ * Even where no entry short-circuit consults it, {@link #accept} refuses rows without evaluating the fallback — which
+ * is what turned ELECTRICAL_GRID q7's slow mode into an exception storm: one thrown-and-unwound
+ * {@code ValueExprEvaluationException} per scanned row, at HotSpot cross-frame dispatch prices.
+ */
+@Experimental
+final class NativeConstantFalseWhenUnboundFilter implements NativeBooleanFilter {
+	final String[] requiredNames;
+	final NativeBooleanFilter fallback;
+
+	NativeConstantFalseWhenUnboundFilter(String[] requiredNames, NativeBooleanFilter fallback) {
+		this.requiredNames = requiredNames;
+		this.fallback = fallback;
+	}
+
+	/** True when the entry bindings leave any required name unbound: the condition can accept nothing this run. */
+	boolean constantFalse(BindingSet base) {
+		for (String name : requiredNames) {
+			if (base == null || !base.hasBinding(name)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	@Override
+	public boolean accept(RowState row) {
+		return !constantFalse(row.base) && fallback.accept(row);
+	}
+
+	@Override
+	public void close() {
+		fallback.close();
+	}
+}
+
 /** Worker-confined ownership guard. The closed bit is published before delegation so a throwing close stays final. */
 @Experimental
 final class CloseOnceNativeBooleanFilter implements NativeBooleanFilter {

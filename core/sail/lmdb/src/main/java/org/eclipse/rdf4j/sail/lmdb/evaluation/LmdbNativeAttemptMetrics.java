@@ -64,6 +64,7 @@ public final class LmdbNativeAttemptMetrics {
 	static final String PATH_RUN_COUNT_HISTOGRAM = "runCountHistogram";
 	static final String PATH_DATATYPE_HISTOGRAM = "datatypeHistogram";
 	static final String PATH_TYPE_MATRIX = "typeMatrix";
+	static final String PATH_CONSTANT_FALSE_FILTER = "constantFalseFilter";
 
 	static final String STRATEGY_MERGE_JOIN = "mergeJoin";
 	static final String STRATEGY_HASH_JOIN = "hashJoin";
@@ -83,7 +84,7 @@ public final class LmdbNativeAttemptMetrics {
 			PATH_ORDERED_SINGLE_PATTERN_GROUPS, PATH_AGG_STATE, PATH_SINGLE_SLOT_GROUPS,
 			PATH_PRIMITIVE_TUPLE_GROUPS, PATH_HASH_GROUPS, PATH_EXISTS_INTERSECTION, PATH_RUN_COUNT_HISTOGRAM,
 			PATH_DATATYPE_HISTOGRAM, PATH_TYPE_MATRIX, PATH_JANINO_KERNEL, PATH_JANINO_AGGREGATE, PATH_IR_KERNEL,
-			PATH_IR_AGGREGATE);
+			PATH_IR_AGGREGATE, PATH_CONSTANT_FALSE_FILTER);
 
 	private static final LmdbNativeAttemptMetrics DIRECT = new LmdbNativeAttemptMetrics(null, true, null);
 	private static final AtomicLong CSR_CACHE_ADMISSIONS = new AtomicLong();

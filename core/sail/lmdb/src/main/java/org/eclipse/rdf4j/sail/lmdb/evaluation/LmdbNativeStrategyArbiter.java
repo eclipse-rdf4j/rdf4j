@@ -171,6 +171,10 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		recordProposalCosts();
 		while (!candidates.isEmpty()) {
 			int index = rank(candidates, sliceRows);
+			int explored = explorationIndex(index);
+			if (explored >= 0) {
+				index = explored;
+			}
 			LmdbNativeStrategyProposal<T> chosen = candidates.get(index);
 			T opened = chosen.open();
 			if (opened != null) {
@@ -187,6 +191,38 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 			chosen.close();
 		}
 		return null;
+	}
+
+	/**
+	 * Index of a rival worth running purely to measure it, or -1 to keep the ranked winner.
+	 * <p>
+	 * A strategy that never wins never gets measured, so a wrong early ranking can lock in for the JVM's lifetime —
+	 * estimate and decision reinforcing each other. Exploration breaks the deadlock, bounded three ways: the incumbent
+	 * must already have evidence (a cold start stays exactly the ladder, and the first execution is itself the
+	 * incumbent's measurement), the rival must be thinly measured (probability decays in its observation count, via
+	 * {@link LmdbNativeCostCalibration#shouldExplore}), and a rival whose interval is already strictly worse than the
+	 * incumbent's is never tried — which also means exploration stops entirely once the incumbent's measured cost
+	 * strictly dominates, so a settled decision stays settled.
+	 */
+	private int explorationIndex(int incumbentIndex) {
+		if (candidates.size() < 2 || !LmdbNativeCostCalibration.explorationEnabled()) {
+			return -1;
+		}
+		LmdbNativeStrategyProposal<T> incumbent = candidates.get(incumbentIndex);
+		if (LmdbNativeCostCalibration.observations(incumbent.tag) == 0L) {
+			return -1;
+		}
+		LmdbNativeWork incumbentCost = comparableCost(incumbent, sliceRows);
+		for (int i = 0; i < candidates.size(); i++) {
+			if (i == incumbentIndex || !LmdbNativeCostCalibration.shouldExplore(candidates.get(i).tag)) {
+				continue;
+			}
+			if (incumbentCost.known() && incumbentCost.beats(comparableCost(candidates.get(i), sliceRows))) {
+				continue;
+			}
+			return i;
+		}
+		return -1;
 	}
 
 	private void releaseLosers(LmdbNativeStrategyProposal<T> winner) {

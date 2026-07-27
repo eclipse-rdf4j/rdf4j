@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.BinaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Datatype;
@@ -45,6 +46,7 @@ import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.Str;
@@ -424,7 +426,67 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			}
 		}
 
-		return compileGenericBoolean(expr);
+		return guardConstantFalse(expr, compileGenericBoolean(expr));
+	}
+
+	/**
+	 * Wraps a sticky fallback whose condition provably cannot accept any row while an out-of-fragment variable stays
+	 * unbound — the ELECTRICAL_GRID q7 MINUS-arm shape, where the generic fallback would otherwise raise one type error
+	 * per scanned row.
+	 * <p>
+	 * FILTER keeps only rows whose condition is TRUE; error and false both drop the row. So the wrap is sound exactly
+	 * when the condition can never be TRUE with the variable unbound: an unbound operand of a strict operator raises a
+	 * type error, AND is never true when either conjunct never is, OR only when both branches never are. Everything
+	 * else — BOUND, COALESCE, IF, NOT (error stays error but false flips to true), EXISTS — is conservatively unproven
+	 * and left alone. The guard's verdict is per-evaluation: entry bindings may supply the variable, in which case the
+	 * fallback runs unchanged.
+	 */
+	private NativeBooleanFilter guardConstantFalse(ValueExpr expr, NativeBooleanFilter fallback) {
+		List<String> decisive = null;
+		for (String name : VarNameCollector.process(expr)) {
+			if (slots.get(name) == null && !syntheticVarNames.contains(name) && neverTrueWhenUnbound(expr, name)) {
+				if (decisive == null) {
+					decisive = new ArrayList<>(2);
+				}
+				decisive.add(name);
+			}
+		}
+		return decisive == null ? fallback
+				: new NativeConstantFalseWhenUnboundFilter(decisive.toArray(String[]::new), fallback);
+	}
+
+	/**
+	 * Whether the condition is guaranteed to evaluate to error or false — never true — while {@code name} is unbound.
+	 */
+	static boolean neverTrueWhenUnbound(ValueExpr expr, String name) {
+		if (expr instanceof And) {
+			And and = (And) expr;
+			return neverTrueWhenUnbound(and.getLeftArg(), name) || neverTrueWhenUnbound(and.getRightArg(), name);
+		}
+		if (expr instanceof Or) {
+			Or or = (Or) expr;
+			return neverTrueWhenUnbound(or.getLeftArg(), name) && neverTrueWhenUnbound(or.getRightArg(), name);
+		}
+		if (expr instanceof Compare || expr instanceof SameTerm) {
+			BinaryValueOperator strict = (BinaryValueOperator) expr;
+			return alwaysErrorsWhenUnbound(strict.getLeftArg(), name)
+					|| alwaysErrorsWhenUnbound(strict.getRightArg(), name);
+		}
+		return false;
+	}
+
+	/** Whether evaluating the operand is guaranteed to raise a type error while {@code name} is unbound. */
+	static boolean alwaysErrorsWhenUnbound(ValueExpr expr, String name) {
+		if (expr instanceof Var) {
+			Var var = (Var) expr;
+			return !var.hasValue() && name.equals(var.getName());
+		}
+		if (expr instanceof MathExpr) {
+			MathExpr math = (MathExpr) expr;
+			return alwaysErrorsWhenUnbound(math.getLeftArg(), name)
+					|| alwaysErrorsWhenUnbound(math.getRightArg(), name);
+		}
+		return false;
 	}
 
 	NativeBooleanFilter compileGenericBoolean(ValueExpr expr) {
