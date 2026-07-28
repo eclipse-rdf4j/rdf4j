@@ -559,6 +559,13 @@ class SailSourceBranch implements SailSource {
 	private SailDataset derivedFromSnapshot(IsolationLevel level) throws SailException {
 		try {
 			semaphore.lock();
+			if (autoFlush && this.snapshot != null && !this.snapshot.isSnapshotCurrent()) {
+				// a writer bypassed this branch (e.g. isolation NONE writes straight into the backing store) and
+				// advanced the store past the cached pinned snapshot; new borrowers of this long-lived branch must
+				// see the latest committed state, so retire the stale dataset (open borrowers keep it alive).
+				// Transaction-scoped branches (autoFlush=false) keep their snapshot stable for their lifetime.
+				retireSnapshot();
+			}
 			SailDataset derivedFrom;
 			if (this.snapshot != null) {
 				// this object is already has at least snapshot isolation

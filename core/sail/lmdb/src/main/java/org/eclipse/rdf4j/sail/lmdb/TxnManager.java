@@ -384,6 +384,12 @@ class TxnManager {
 		private boolean closed;
 		/** Data revision this transaction's LMDB snapshot corresponds to; −1 for unpinned transactions. */
 		volatile long snapshotRevision = -1;
+		/**
+		 * Set once a pinned transaction's underlying LMDB snapshot has been released or renewed (map resize parks and
+		 * renews every read transaction). Written under the manager's write lock; readers observe it under the read
+		 * lock that every LMDB operation already holds, so the check is race-free by lock exclusion.
+		 */
+		private volatile boolean snapshotInvalidated;
 
 		Txn(long txn) {
 			this.txn = txn;
@@ -480,11 +486,26 @@ class TxnManager {
 			if (closed) {
 				return;
 			}
+			if (snapshotRevision >= 0) {
+				// parking (mdb_txn_reset) already abandons the pinned snapshot; the later renew binds a newer one
+				snapshotInvalidated = true;
+			}
 			if (active) {
 				activate();
 				version++;
 			} else {
 				deactivate();
+			}
+		}
+
+		/**
+		 * Fails loudly instead of serving a torn snapshot: a store map resize renews even pinned read transactions onto
+		 * a newer snapshot. SNAPSHOT permits aborting a transaction; it never permits inconsistent reads.
+		 */
+		void ensureSnapshotValid() {
+			if (snapshotInvalidated) {
+				throw new SailException("SNAPSHOT transaction invalidated: the store's memory map was resized "
+						+ "during the transaction; retry the transaction");
 			}
 		}
 

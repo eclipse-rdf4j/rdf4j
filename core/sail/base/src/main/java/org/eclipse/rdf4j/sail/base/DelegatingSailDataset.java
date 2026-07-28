@@ -65,6 +65,11 @@ public abstract class DelegatingSailDataset implements SailDataset {
 	}
 
 	@Override
+	public boolean isSnapshotCurrent() {
+		return delegate.isSnapshotCurrent();
+	}
+
+	@Override
 	public CloseableIteration<? extends Namespace> getNamespaces() throws SailException {
 		return delegate.getNamespaces();
 	}

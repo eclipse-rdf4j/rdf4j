@@ -57,7 +57,7 @@ public class LmdbCsrSnapshotTest {
 	public void setUp() throws Exception {
 		previousProperties = new HashMap<>();
 		for (String property : new String[] { "rdf4j.lmdb.csrCache.minProbes", "rdf4j.lmdb.csrCache.maxGenerations",
-				"rdf4j.lmdb.csrCache.snapshotServing" }) {
+				"rdf4j.lmdb.csrCache.snapshotServing", "rdf4j.lmdb.csrCache.commitMerge" }) {
 			previousProperties.put(property, System.getProperty(property));
 		}
 		System.setProperty("rdf4j.lmdb.csrCache.minProbes", "1");
@@ -250,6 +250,36 @@ public class LmdbCsrSnapshotTest {
 	}
 
 	@Test
+	public void pinnedReaderBuildDoesNotPoisonLatestReaders() throws Exception {
+		// drop-on-commit instead of merge, so the commit below leaves the touched shape without a head entry
+		System.setProperty("rdf4j.lmdb.csrCache.commitMerge", "false");
+		loadPredA();
+		buildEntry(PRED_A, LmdbCsrAdjacencyCache.BY_SUBJECT, true);
+
+		try (Txn pinned = tripleStore.getTxnManager().createReadTxnPinned(tripleStore::getDataRevision)) {
+			tripleStore.startTransaction();
+			tripleStore.storeTriple(150, PRED_A, 5000, 0, true);
+			commitWithDelta();
+
+			// the pinned reader's probes must not publish an entry built from its historical snapshot as the
+			// current head: the sweep sees the pre-commit state while the stamp would claim the latest revision
+			cache.recordProbes(PRED_A, LmdbCsrAdjacencyCache.BY_SUBJECT, true, 1_000_000, pinned);
+			CsrEntry latest = cache.lookup(PRED_A, LmdbCsrAdjacencyCache.BY_SUBJECT, true);
+			if (latest != null) {
+				assertThat(latest.hasInRun(150, 5000, -1))
+						.as("latest CSR entry must include data committed after the pinned snapshot")
+						.isTrue();
+			}
+		}
+
+		// a fresh unpinned build serves latest readers with current data
+		buildEntry(PRED_A, LmdbCsrAdjacencyCache.BY_SUBJECT, true);
+		CsrEntry rebuilt = cache.lookup(PRED_A, LmdbCsrAdjacencyCache.BY_SUBJECT, true);
+		assertThat(rebuilt).isNotNull();
+		assertThat(rebuilt.hasInRun(150, 5000, -1)).isTrue();
+	}
+
+	@Test
 	public void killSwitchDisablesSnapshotServing() throws Exception {
 		System.setProperty("rdf4j.lmdb.csrCache.snapshotServing", "false");
 		loadPredA();
@@ -261,6 +291,54 @@ public class LmdbCsrSnapshotTest {
 			tripleStore.storeTriple(150, PRED_A, 5000, 0, true);
 			commitWithDelta();
 			assertThat(LmdbCsrAdjacencyCache.GENERATIONS_RETAINED.get()).isZero();
+		}
+	}
+
+	@Test
+	public void snapshotIsolationHeldWhenSnapshotServingDisabled() throws Exception {
+		// the CSR cache switch must only disable cache serving, never the store's SNAPSHOT pinning; a writer at
+		// isolation NONE bypasses the sail-base changeset parking and commits straight into LMDB while the
+		// SNAPSHOT reader is open, so only transaction pinning keeps the reader's view stable
+		System.setProperty("rdf4j.lmdb.csrCache.snapshotServing", "false");
+		closeStore();
+		LmdbStore store = new LmdbStore(new File(dataDir, "repo-noserving"), new LmdbStoreConfig("spoc,posc"));
+		store.init();
+		try {
+			ValueFactory vf = SimpleValueFactory.getInstance();
+			IRI knows = vf.createIRI("http://example.com/knows");
+			try (NotifyingSailConnection connection = store.getConnection()) {
+				connection.begin();
+				for (int i = 0; i < 20; i++) {
+					connection.addStatement(vf.createIRI("http://example.com/s" + i), knows,
+							vf.createIRI("http://example.com/o" + i));
+				}
+				connection.commit();
+			}
+
+			try (NotifyingSailConnection reader = store.getConnection()) {
+				reader.begin(IsolationLevels.SNAPSHOT);
+				List<String> before = readObjects(reader, knows);
+				assertThat(before).hasSize(20);
+
+				try (NotifyingSailConnection writer = store.getConnection()) {
+					writer.begin(IsolationLevels.NONE);
+					writer.addStatement(vf.createIRI("http://example.com/s0"), knows,
+							vf.createIRI("http://example.com/oNew"));
+					writer.commit();
+				}
+
+				List<String> after = readObjects(reader, knows);
+				assertThat(after).isEqualTo(before);
+				reader.commit();
+			}
+
+			try (NotifyingSailConnection fresh = store.getConnection()) {
+				fresh.begin(IsolationLevels.SNAPSHOT);
+				assertThat(readObjects(fresh, knows)).hasSize(21);
+				fresh.commit();
+			}
+		} finally {
+			store.shutDown();
 		}
 	}
 

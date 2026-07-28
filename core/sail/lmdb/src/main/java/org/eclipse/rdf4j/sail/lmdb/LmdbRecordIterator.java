@@ -203,6 +203,7 @@ class LmdbRecordIterator implements RecordIterator {
 			throw new SailException(e);
 		}
 		try {
+			txnRef.ensureSnapshotValid();
 			this.txnRefVersion = txnRef.version();
 			this.txn = txnRef.get();
 
@@ -266,7 +267,8 @@ class LmdbRecordIterator implements RecordIterator {
 
 			int lastResult;
 			if (txnRefVersion != txnRef.version()) {
-				// TODO: None of the tests in the LMDB Store cover this case!
+				// a pinned SNAPSHOT transaction must fail here instead of silently rebinding to a newer snapshot
+				txnRef.ensureSnapshotValid();
 				// cursor must be renewed
 				mdb_cursor_renew(txn, cursor);
 				if (fetchNext) {
@@ -368,6 +370,8 @@ class LmdbRecordIterator implements RecordIterator {
 
 			int lastResult;
 			if (txnRefVersion != txnRef.version()) {
+				// a pinned SNAPSHOT transaction must fail here instead of silently rebinding to a newer snapshot
+				txnRef.ensureSnapshotValid();
 				// cursor must be renewed; quad holds the last key handed out, which is also the last
 				// buffered key because the driver drains the batch before refilling
 				mdb_cursor_renew(txn, cursor);

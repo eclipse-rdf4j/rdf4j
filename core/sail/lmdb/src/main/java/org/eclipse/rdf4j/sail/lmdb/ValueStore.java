@@ -493,6 +493,8 @@ public class ValueStore extends AbstractValueFactory {
 	private int freeDbi;
 	// database with internal reference counts for IRIs and namespaces
 	private int refCountsDbi;
+	// durable retirement queue for IDs kept resolvable for pinned TripleStore snapshots
+	private final RetiredValueIdStore retiredIdStore = new RetiredValueIdStore();
 	private boolean auxiliaryDatabasesInitialized;
 	private long writeTxn;
 	private Thread writeTxnOwner;
@@ -713,8 +715,9 @@ public class ValueStore extends AbstractValueFactory {
 			env = pp.get(0);
 		}
 
-		// 6 basic dbs and max. 12 triple term indexes
-		E(mdb_env_set_maxdbs(env, 6 + 12));
+		// 9 basic dbs (main, unused/free/ref-count aux, retired-ID retirement queue and meta) and max. 12 triple term
+		// indexes
+		E(mdb_env_set_maxdbs(env, 9 + 12));
 		E(mdb_env_set_maxreaders(env, 256));
 
 		// Open environment
@@ -777,6 +780,8 @@ public class ValueStore extends AbstractValueFactory {
 		freeDbi = openDatabase(env, "free_ids", MDB_CREATE);
 		// open ref_counts database
 		refCountsDbi = openDatabase(env, "ref_counts", MDB_CREATE);
+		// open the retirement queue databases and advance the persisted boot epoch
+		retiredIdStore.open(env);
 
 		// A read transaction opened before the named databases were created cannot use their database handles.
 		// This matters for deferred bulk initialization because capacity checks may have opened a pooled reader while
@@ -2842,6 +2847,64 @@ public class ValueStore extends AbstractValueFactory {
 				return null;
 			});
 		}
+	}
+
+	/**
+	 * Records durable retirement intents for IDs whose statements were removed at the given TripleStore data revision
+	 * while pinned SNAPSHOT readers predating the removal were open. The dictionary entries stay fully intact; the IDs
+	 * are handed to {@link #gcIds} only after the reader horizon has passed the revision. Requires the active write
+	 * transaction; the records commit atomically with the dictionary changes.
+	 */
+	void recordRetiredIds(Collection<Long> ids, long tripleDataRevision) throws IOException {
+		if (!enableGC() || ids.isEmpty()) {
+			return;
+		}
+		// wrap into read txn as resizeMap expects an active surrounding read txn
+		readTransaction(env, (stack1, txn1) -> {
+			resizeMap(writeTxn, 80L * ids.size());
+			writeTransaction((stack, writeTxn) -> {
+				retiredIdStore.recordRetirements(stack, writeTxn, ids, tripleDataRevision);
+				return null;
+			});
+			return null;
+		});
+	}
+
+	/**
+	 * Collects retirement records whose revision is no newer than the given watermark (records from older boot epochs
+	 * always qualify). Returns null when nothing is pending. Candidates must be re-checked for TripleStore liveness
+	 * before being reclaimed.
+	 */
+	RetiredValueIdStore.DrainBatch pollRetiredIds(long maxRevisionInclusive, int maxIds) throws IOException {
+		if (!retiredIdStore.hasPending()) {
+			return null;
+		}
+		return readTransaction(env,
+				(stack, txn) -> retiredIdStore.pollDrainable(stack, txn, maxRevisionInclusive, maxIds));
+	}
+
+	/**
+	 * Deletes the records of a polled batch (matched and stale ordered-index entries plus by-ID records). Requires the
+	 * active write transaction.
+	 */
+	void removeRetiredIds(RetiredValueIdStore.DrainBatch batch) throws IOException {
+		if (batch == null || batch.isEmpty()) {
+			return;
+		}
+		readTransaction(env, (stack1, txn1) -> {
+			resizeMap(writeTxn,
+					32L * (batch.matchedSeqKeys.size() + batch.staleSeqKeys.size() + batch.ids.size()));
+			writeTransaction((stack, writeTxn) -> {
+				retiredIdStore.removeDrained(stack, writeTxn, batch);
+				return null;
+			});
+			return null;
+		});
+	}
+
+	/** True when durable retirement records exist (possibly only superseded ones). */
+	boolean hasRetiredIds() {
+		return retiredIdStore.hasPending();
 	}
 
 	protected void deleteValueToIdMappings(MemoryStack stack, long writeTxn, Collection<Long> ids,

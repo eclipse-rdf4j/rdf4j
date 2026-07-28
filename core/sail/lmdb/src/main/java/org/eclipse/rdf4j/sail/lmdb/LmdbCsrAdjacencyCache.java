@@ -649,6 +649,12 @@ final class LmdbCsrAdjacencyCache {
 
 	private void build(CsrSlot slot, long pred, int direction, boolean explicit, Txn txn) throws IOException {
 		long revisionBefore = tripleStore.getDataRevision();
+		if (txn.snapshotRevision() >= 0 && txn.snapshotRevision() != revisionBefore) {
+			// a pinned transaction sweeping its historical snapshot must not publish the result stamped with the
+			// current revision — latest readers would accept the stale adjacency as current. Not a build failure:
+			// the per-revision backoff stays clear so an unpinned (latest) builder can still build this shape.
+			return;
+		}
 		if (storeTxnStarted.get()) {
 			recordBuildFailure(slot);
 			return;

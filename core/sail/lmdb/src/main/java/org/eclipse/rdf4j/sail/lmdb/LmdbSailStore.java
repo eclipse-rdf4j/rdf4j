@@ -26,6 +26,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -106,6 +107,33 @@ class LmdbSailStore implements SailStore {
 	private static final long PREPARED_INDEX_ENTRY_OVERHEAD = 16L;
 	private static final int VALUE_RESOLUTION_CHUNK_CAPACITY = 1024;
 	private static final long HEAP_BYTES_PER_ALIGNED_WRITE_STATEMENT = 16L * 1024L;
+
+	/**
+	 * Kill switch for native SNAPSHOT transaction pinning. This is an isolation-level guarantee and is deliberately
+	 * independent of the CSR cache switches ({@code rdf4j.lmdb.csrCache.*}): disabling cache serving must never
+	 * downgrade the advertised transaction isolation.
+	 */
+	static boolean snapshotPinningEnabled() {
+		return Boolean.parseBoolean(System.getProperty("rdf4j.lmdb.snapshotPinning", "true"));
+	}
+
+	/**
+	 * Kill switch for deferring value-dictionary garbage collection while pinned SNAPSHOT readers older than the
+	 * removing commit are open. Disabling restores eager reclamation (and the pre-pinning behavior of long-running
+	 * readers possibly failing to resolve removed values); durable retirement records written while enabled are still
+	 * drained.
+	 */
+	static boolean deferValueGcForPinnedReaders() {
+		return Boolean.parseBoolean(System.getProperty("rdf4j.lmdb.valueGc.deferForPinnedReaders", "true"));
+	}
+
+	/**
+	 * Upper bound on retirement records processed per drain pass (one pass per commit and per store open). Bounds the
+	 * per-commit cost of the TripleStore liveness re-check; leftovers are drained by later passes.
+	 */
+	static int valueGcDrainBatchSize() {
+		return Integer.getInteger("rdf4j.lmdb.valueGc.drainBatchSize", 100_000);
+	}
 
 	private final TripleStore tripleStore;
 
@@ -829,6 +857,7 @@ class LmdbSailStore implements SailStore {
 					Runtime.getRuntime().maxMemory(), tripleStore.secondaryIndexCount()));
 			statementPatternCardinalitySource = new LmdbStatementPatternCardinalitySource(valueStore, tripleStore);
 			mayHaveInferred = tripleStore.hasTriples(false);
+			recoverRetiredValueIds();
 			initialized = true;
 			if (sketchBasedJoinEstimator != null) {
 				Path estimatorPath = new File(dataDir, JOIN_ESTIMATOR_FILE_NAME).toPath();
@@ -855,8 +884,56 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	/**
+	 * Drains retirement records left over by a previous process at store open. No reader exists yet, so every record is
+	 * past the pinned-reader horizon regardless of its boot epoch; candidates are still re-checked for liveness against
+	 * the current TripleStore because the removal that motivated a record may never have committed (crash between the
+	 * two environments' commits) or the value may have been re-added.
+	 */
+	private void recoverRetiredValueIds() throws IOException {
+		if (!valueStore.hasRetiredIds()) {
+			return;
+		}
+		valueStore.startTransaction(true);
+		boolean committed = false;
+		try {
+			RetiredValueIdStore.DrainBatch batch;
+			do {
+				batch = valueStore.pollRetiredIds(Long.MAX_VALUE, valueGcDrainBatchSize());
+				if (batch == null || batch.isEmpty()) {
+					break;
+				}
+				Set<Long> candidates = new HashSet<>(batch.ids);
+				if (!candidates.isEmpty()) {
+					tripleStore.filterUsedIds(candidates);
+				}
+				valueStore.removeRetiredIds(batch);
+				Set<Long> ids = candidates;
+				while (!ids.isEmpty()) {
+					Set<Long> cascades = new HashSet<>();
+					valueStore.gcIds(ids, cascades);
+					ids = cascades;
+					if (!ids.isEmpty()) {
+						tripleStore.filterUsedIds(ids);
+					}
+				}
+			} while (batch.moreRemaining);
+			valueStore.commit();
+			committed = true;
+		} finally {
+			if (!committed) {
+				valueStore.rollback();
+			}
+		}
+	}
+
 	private final class GuardedEstimatorStatementSource implements SketchStatementSource {
 
+		// Untracked estimator-refresh readers are exempt from the value-GC pinned-reader watermark: this source
+		// acquires sinkStoreAccessLock before the dataset is created and holds it until the iteration closes, and
+		// all reclamation (flush-time gcIds/retirement drain and the lazy-value eviction in
+		// ValueStore.startTransaction) runs under that same lock, so no reclamation can interleave with a refresh
+		// iteration and each iteration reads the latest committed snapshot.
 		private final SketchStatementSource delegate = new SailStoreStatementSource(LmdbSailStore.this);
 
 		@Override
@@ -1351,6 +1428,10 @@ class LmdbSailStore implements SailStore {
 		return new LmdbSailSource(false);
 	}
 
+	TripleStore getTripleStore() {
+		return tripleStore;
+	}
+
 	/**
 	 * Creates a statement iterator based on the supplied pattern.
 	 *
@@ -1671,8 +1752,9 @@ class LmdbSailStore implements SailStore {
 			boolean trackActive = !isEstimatorRefresh;
 			// Native SNAPSHOT: pin the dataset's read transaction to one store snapshot (revision + B+tree state)
 			// for its whole lifetime. SERIALIZABLE bypasses the CSR entirely; SNAPSHOT_READ and below keep the
-			// reset-on-commit behavior unchanged.
-			boolean pinSnapshot = trackActive && level != null && LmdbCsrAdjacencyCache.snapshotServingEnabled()
+			// reset-on-commit behavior unchanged. Pinning is an isolation guarantee and must stay independent of
+			// the CSR cache's snapshot-serving switch.
+			boolean pinSnapshot = trackActive && level != null && snapshotPinningEnabled()
 					&& level.isCompatibleWith(IsolationLevels.SNAPSHOT)
 					&& !level.isCompatibleWith(IsolationLevels.SERIALIZABLE);
 			boolean csrBypass = level != null && level.isCompatibleWith(IsolationLevels.SERIALIZABLE);
@@ -1781,18 +1863,74 @@ class LmdbSailStore implements SailStore {
 		}
 
 		protected void handleRemovedIdsInValueStore() throws IOException {
+			// A pinned SNAPSHOT reader older than this commit can still resolve the removed values through its
+			// historical triple snapshot, so reclaiming their dictionary entries now would tear its reads. Such IDs
+			// are recorded as durable retirement intents (per ID, tagged with this commit's revision) and reclaimed
+			// once the pinned-reader horizon has passed their retirement revision, after a liveness re-check against
+			// the then-current triple store (values may have been re-added meanwhile).
+			//
+			// Crash window (accepted): the TripleStore committed above; the ValueStore — and with it these intents —
+			// commits below. A crash in between loses the intents while the triple deletions survive, which leaks
+			// dictionary entries but never produces wrong data. Both environments run MDB_NOSYNC, so neither commit
+			// is a hard durability point anyway; committing the ValueStore first is a possible future hardening.
+			long revision = tripleStore.getDataRevision();
+			long watermark = tripleStore.getTxnManager().minPinnedSnapshotRevision();
+			boolean pinnedReadersBehind = deferValueGcForPinnedReaders() && watermark < revision;
 			if (!unusedIds.isEmpty()) {
-				do {
-					valueStore.gcIds(unusedIds, nextUnusedIds);
+				if (pinnedReadersBehind) {
+					valueStore.recordRetiredIds(unusedIds, revision);
 					unusedIds.clear();
-					if (!nextUnusedIds.isEmpty()) {
-						// swap sets
-						PersistentSet<Long> ids = unusedIds;
-						unusedIds = nextUnusedIds;
-						nextUnusedIds = ids;
-						filterUsedIdsInTripleStore();
+				} else {
+					runValueGcCascades(revision, false);
+				}
+			}
+			drainRetiredIds(watermark, revision, pinnedReadersBehind);
+		}
+
+		/**
+		 * Reclaims retired IDs whose retirement revision is no newer than the pinned-reader watermark. Untracked
+		 * readers (estimator refresh) are deliberately absent from the watermark: they hold {@code sinkStoreAccessLock}
+		 * for their whole iteration and always read the latest committed snapshot, so no reclamation can interleave
+		 * with them (see {@link GuardedEstimatorStatementSource}).
+		 */
+		private void drainRetiredIds(long watermark, long revision, boolean pinnedReadersBehind) throws IOException {
+			if (!valueStore.hasRetiredIds()) {
+				return;
+			}
+			RetiredValueIdStore.DrainBatch batch = valueStore.pollRetiredIds(watermark, valueGcDrainBatchSize());
+			if (batch == null || batch.isEmpty()) {
+				return;
+			}
+			if (!batch.ids.isEmpty()) {
+				unusedIds.addAll(batch.ids);
+				// values may have been re-added since retirement: drop live IDs here; their records are removed
+				// below and a future removal simply re-records them
+				filterUsedIdsInTripleStore();
+			}
+			valueStore.removeRetiredIds(batch);
+			runValueGcCascades(revision, pinnedReadersBehind);
+		}
+
+		/**
+		 * The regular gcIds loop over {@code unusedIds}, re-filtering reference-count cascades (datatypes, namespaces,
+		 * triple-term components). While pinned readers are behind, cascade IDs are recorded as retirement intents at
+		 * this commit's revision instead of being reclaimed — historical snapshots may still resolve them.
+		 */
+		private void runValueGcCascades(long revision, boolean pinnedReadersBehind) throws IOException {
+			while (!unusedIds.isEmpty()) {
+				valueStore.gcIds(unusedIds, nextUnusedIds);
+				unusedIds.clear();
+				if (!nextUnusedIds.isEmpty()) {
+					// swap sets
+					PersistentSet<Long> ids = unusedIds;
+					unusedIds = nextUnusedIds;
+					nextUnusedIds = ids;
+					filterUsedIdsInTripleStore();
+					if (pinnedReadersBehind && !unusedIds.isEmpty()) {
+						valueStore.recordRetiredIds(unusedIds, revision);
+						unusedIds.clear();
 					}
-				} while (!unusedIds.isEmpty());
+				}
 			}
 		}
 
@@ -3585,14 +3723,30 @@ class LmdbSailStore implements SailStore {
 		}
 
 		/**
+		 * A pinned dataset stops being current once the store commits past its snapshot revision, or once a map resize
+		 * renewed its transaction (version change). Long-lived branches use this to refuse handing a cached stale
+		 * snapshot to new borrowers; writers that bypass the branch (isolation NONE) advance the revision without a
+		 * branch flush, so this is the only staleness signal for that path.
+		 */
+		@Override
+		public boolean isSnapshotCurrent() {
+			return snapshotRevision < 0
+					|| (!closed && txn.version() == pinnedTxnVersion
+							&& snapshotRevision == tripleStore.getDataRevision());
+		}
+
+		/**
 		 * Fails loudly instead of serving a torn snapshot: a store map resize renews even pinned read transactions onto
 		 * a newer snapshot (detectable as a version change). SNAPSHOT permits aborting a transaction; it never permits
 		 * inconsistent reads.
 		 */
 		private void ensureSnapshot() {
-			if (snapshotRevision >= 0 && txn.version() != pinnedTxnVersion) {
-				throw new SailException("SNAPSHOT transaction invalidated: the store's memory map was resized "
-						+ "during the transaction; retry the transaction");
+			if (snapshotRevision >= 0) {
+				txn.ensureSnapshotValid();
+				if (txn.version() != pinnedTxnVersion) {
+					throw new SailException("SNAPSHOT transaction invalidated: the store's memory map was resized "
+							+ "during the transaction; retry the transaction");
+				}
 			}
 		}
 
@@ -4432,6 +4586,7 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public CloseableIteration<? extends Resource> getContextIDs() throws SailException {
+			ensureSnapshot();
 			try {
 				return new LmdbContextIterator(tripleStore.getContexts(txn), valueStore);
 			} catch (IOException e) {
@@ -4494,6 +4649,7 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public CloseableIteration<? extends Statement> getStatements(StatementOrder statementOrder, Resource subj,
 				IRI pred, Value obj, Resource... contexts) throws SailException {
+			ensureSnapshot();
 			try {
 				return createOrderedStatementIterator(txn, statementOrder, subj, pred, obj, explicit, contexts);
 			} catch (IOException e) {
@@ -4520,6 +4676,7 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public CloseableIteration<? extends TripleTerm> getTriples(Resource subj, IRI pred, Value obj)
 				throws SailException {
+			ensureSnapshot();
 			try {
 				return createTripleTermIterator(subj, pred, obj);
 			} catch (IOException e) {
