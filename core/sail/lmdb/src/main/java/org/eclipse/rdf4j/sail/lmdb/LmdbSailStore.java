@@ -3358,7 +3358,7 @@ class LmdbSailStore implements SailStore {
 		/** Direct-adjacency view acquired after the transaction is registered, or {@code null} (plan 27). */
 		private final LmdbAdjacencyReadView adjacencyView;
 		private final StampedLongAdderLockManager nativeSourceLock = new StampedLongAdderLockManager();
-		private volatile boolean closed;
+		private final AtomicBoolean closed = new AtomicBoolean();
 
 		public LmdbSailDataset(boolean explicit, boolean trackActiveTxn) throws SailException {
 			this(explicit, trackActiveTxn, false, false);
@@ -3400,6 +3400,11 @@ class LmdbSailStore implements SailStore {
 		 */
 		private RecordIterator tryDirect(StatementOrder order, long subj, long pred, long obj, long context)
 				throws IOException {
+			return tryDirect(order, subj, pred, obj, context, null);
+		}
+
+		private RecordIterator tryDirect(StatementOrder order, long subj, long pred, long obj, long context,
+				LmdbReferenceNodeLocator.SearchContext searchContext) throws IOException {
 			if (adjacencyView == null || !adjacencyView.isExact()) {
 				return null;
 			}
@@ -3408,8 +3413,9 @@ class LmdbSailStore implements SailStore {
 				return null;
 			}
 			return order == null
-					? directAdjacency.tryOpen(adjacencyView, txn, subj, pred, obj, context, explicit)
-					: directAdjacency.tryOpenOrdered(adjacencyView, txn, order, subj, pred, obj, context, explicit);
+					? directAdjacency.tryOpen(adjacencyView, txn, subj, pred, obj, context, explicit, searchContext)
+					: directAdjacency.tryOpenOrdered(adjacencyView, txn, order, subj, pred, obj, context, explicit,
+							searchContext);
 		}
 
 		private boolean directEligible() {
@@ -3425,7 +3431,7 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public boolean isSnapshotCurrent() {
 			return snapshotRevision < 0
-					|| (!closed && txn.version() == pinnedTxnVersion
+					|| (!closed.get() && txn.version() == pinnedTxnVersion
 							&& snapshotRevision == tripleStore.getDataRevision());
 		}
 
@@ -3446,19 +3452,39 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public void close() {
-			if (closed) {
+			if (!closed.compareAndSet(false, true)) {
 				return;
 			}
-			closed = true;
-			long writeStamp = acquireNativeSourceWriteLock();
+			boolean interrupted = false;
+			long writeStamp = 0;
+			boolean stampHeld = false;
 			try {
-				// release the adjacency view before the LMDB transaction (plan 27 read-view lifecycle)
-				if (adjacencyView != null) {
-					adjacencyView.close();
+				while (!stampHeld) {
+					try {
+						writeStamp = nativeSourceLock.writeLock();
+						stampHeld = true;
+					} catch (InterruptedException e) {
+						interrupted = true;
+					}
 				}
-				txn.close();
+				try {
+					// release the adjacency view before the LMDB transaction (plan 27 read-view lifecycle)
+					if (adjacencyView != null) {
+						adjacencyView.close();
+					}
+				} finally {
+					txn.close();
+				}
 			} finally {
-				nativeSourceLock.unlockWrite(writeStamp);
+				try {
+					if (stampHeld) {
+						nativeSourceLock.unlockWrite(writeStamp);
+					}
+				} finally {
+					if (interrupted) {
+						Thread.currentThread().interrupt();
+					}
+				}
 			}
 		}
 
@@ -3694,13 +3720,16 @@ class LmdbSailStore implements SailStore {
 
 		/**
 		 * Operator-owned probe: one dataset read stamp for the probe's lifetime (instead of one per scan) and one
-		 * retained LmdbRecordIterator that is re-aimed per probe key instead of re-created. The source-open check runs
-		 * once per open(), the same granularity the batched wrapper already reduced it to.
+		 * retained LmdbRecordIterator that is re-aimed per probe key instead of re-created. A direct iterator is
+		 * retained only until the next open or probe close, matching {@link NativeProbe}'s ownership contract. The
+		 * source-open check runs once per open(), the same granularity the batched wrapper already reduced it to.
 		 */
 		private final class RetainedNativeProbe implements NativeProbe {
+			private final LmdbReferenceNodeLocator.SearchContext searchContext = new LmdbReferenceNodeLocator.SearchContext();
 			private long readStamp;
 			private boolean stampHeld;
 			private LmdbRecordIterator retained;
+			private RecordIterator currentDirect;
 			private boolean closed;
 			private boolean servedDirect;
 
@@ -3709,22 +3738,23 @@ class LmdbSailStore implements SailStore {
 				if (closed) {
 					throw new SailException("Probe has been closed");
 				}
-				if (!stampHeld) {
-					readStamp = acquireNativeSourceReadLock();
-					stampHeld = true;
-				}
 				try {
+					closeCurrentDirect();
+					servedDirect = false;
+					if (!stampHeld) {
+						readStamp = acquireNativeSourceReadLock();
+						stampHeld = true;
+					}
 					assertNativeSourceOpen();
 					if (!hasStatementsInSource()) {
-						servedDirect = false;
 						return EmptyRecordIterator.INSTANCE;
 					}
-					RecordIterator direct = tryDirect(null, subj, pred, obj, context);
+					RecordIterator direct = tryDirect(null, subj, pred, obj, context, searchContext);
 					if (direct != null) {
+						currentDirect = direct;
 						servedDirect = true;
 						return direct;
 					}
-					servedDirect = false;
 					if (retained == null) {
 						retained = tripleStore.getTriplesRetained(txn, subj, pred, obj, context, explicit);
 					} else {
@@ -3734,6 +3764,14 @@ class LmdbSailStore implements SailStore {
 				} catch (RuntimeException | Error | IOException e) {
 					close();
 					throw e;
+				}
+			}
+
+			private void closeCurrentDirect() {
+				RecordIterator direct = currentDirect;
+				currentDirect = null;
+				if (direct != null) {
+					direct.close();
 				}
 			}
 
@@ -3773,15 +3811,20 @@ class LmdbSailStore implements SailStore {
 					return;
 				}
 				closed = true;
+				servedDirect = false;
 				try {
-					if (retained != null) {
-						retained.dispose();
-					}
+					closeCurrentDirect();
 				} finally {
-					retained = null;
-					if (stampHeld) {
-						stampHeld = false;
-						nativeSourceLock.unlockRead(readStamp);
+					try {
+						if (retained != null) {
+							retained.dispose();
+						}
+					} finally {
+						retained = null;
+						if (stampHeld) {
+							stampHeld = false;
+							nativeSourceLock.unlockRead(readStamp);
+						}
 					}
 				}
 			}
@@ -3996,17 +4039,8 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
-		private long acquireNativeSourceWriteLock() {
-			try {
-				return nativeSourceLock.writeLock();
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new SailException(e);
-			}
-		}
-
 		private void assertNativeSourceOpen() {
-			if (closed) {
+			if (closed.get()) {
 				throw new QueryInterruptedException("Query evaluation was interrupted");
 			}
 			ensureSnapshot();

@@ -101,6 +101,28 @@ final class RowState {
 		return boundMask;
 	}
 
+	/**
+	 * Replaces one slot without rescanning the row and returns its prior value. This is the reversible update used by
+	 * generated-kernel hooks, whose argument set is known and bounded.
+	 */
+	long replaceSlot(int slot, long id) {
+		long previous = slots[slot];
+		if (previous == id) {
+			return previous;
+		}
+		slots[slot] = id;
+		long bit = 1L << slot;
+		boolean wasBound = previous != UNKNOWN;
+		boolean isBound = id != UNKNOWN;
+		if (isBound) {
+			boundMask |= bit;
+		} else {
+			boundMask &= ~bit;
+		}
+		view.slotReplaced(wasBound, isBound);
+		return previous;
+	}
+
 	void registerPathEstimateMemo(PathResultMemo memo) {
 		memo.nextEstimateMemo = pathEstimateMemos;
 		pathEstimateMemos = memo;

@@ -473,59 +473,80 @@ final class LmdbAdjacencyRunCodec {
 	// ---------------------------------------------------------------------
 
 	/**
-	 * Resolved, validated view of one run; bounded metadata only, reusable across calls at higher layers.
+	 * Caller-owned, reusable resolution of one run. The cursor is confined to one query operator and stays valid only
+	 * while that operator owns the catalog/read-view lease.
 	 */
-	private static final class RunView {
-		final LmdbAdjacencyArenaCatalog catalog;
-		final int arenaSlot;
-		final MemorySegment slice;
-		final int tag;
-		final int codec;
-		final boolean contextsPresent;
+	static final class RunCursor {
 
-		RunView(LmdbAdjacencyArenaCatalog catalog, int arenaSlot, MemorySegment slice, int tag) {
-			this.catalog = catalog;
-			this.arenaSlot = arenaSlot;
-			this.slice = slice;
-			this.tag = tag;
-			this.codec = tag & 0x3;
-			this.contextsPresent = (tag & TAG_CONTEXT_PRESENT) != 0;
+		private final LmdbAdjacencyArena.ReadCursor memory = new LmdbAdjacencyArena.ReadCursor();
+
+		private LmdbAdjacencyArenaCatalog catalog;
+		private long runHandle = Long.MIN_VALUE;
+		private int arenaSlot;
+		private MemorySegment segment;
+		private long baseOffset;
+		private int tag;
+		private int codec;
+		private boolean contextsPresent;
+		private long edgeCount;
+		private RunCursor child;
+
+		long edgeCount() {
+			return edgeCount;
+		}
+
+		private boolean resolves(LmdbAdjacencyArenaCatalog catalog, long runHandle) {
+			return this.catalog == catalog && this.runHandle == runHandle;
+		}
+
+		private RunCursor child() {
+			if (child == null) {
+				child = new RunCursor();
+			}
+			return child;
 		}
 	}
 
-	private static RunView resolve(LmdbAdjacencyArenaCatalog catalog, long runHandle) {
+	static void resolve(LmdbAdjacencyArenaCatalog catalog, long runHandle, RunCursor target) {
+		if (target.resolves(catalog, runHandle)) {
+			return;
+		}
 		int slot = catalog.unpackSlot(runHandle);
-		long localRef = catalog.unpackLocalRef(runHandle);
+		long localRef = runHandle & LmdbAdjacencyArena.MAX_U40_VALUE;
 		LmdbAdjacencyArena arena = catalog.arena(slot);
-		MemorySegment header = arena.slice(localRef, 8);
-		int tag = Byte.toUnsignedInt(header.get(LmdbAdjacencyArena.U8, 0));
+		arena.resolve(localRef, 8, target.memory);
+		MemorySegment header = target.memory.segment();
+		long headerAt = target.memory.baseOffset();
+		int tag = Byte.toUnsignedInt(header.get(LmdbAdjacencyArena.U8, headerAt));
 		int codec = tag & 0x3;
 		if (codec == CODEC_RESERVED || (tag & ~0xF) != 0) {
 			throw new IllegalStateException("malformed run tag: " + tag);
 		}
 		long totalLength;
+		long edgeCount;
 		switch (codec) {
 		case CODEC_SMALL_VARINT: {
-			int edgeCount = Byte.toUnsignedInt(header.get(LmdbAdjacencyArena.U8, 1));
+			edgeCount = Byte.toUnsignedInt(header.get(LmdbAdjacencyArena.U8, headerAt + 1));
 			if (edgeCount < 1 || edgeCount > SMALL_MAX_EDGES) {
 				throw new IllegalStateException("malformed SMALL_VARINT edge count: " + edgeCount);
 			}
-			int neighborByteLength = Short.toUnsignedInt(header.get(LmdbAdjacencyArena.U16_LE, 2));
-			int contextByteLength = Short.toUnsignedInt(header.get(LmdbAdjacencyArena.U16_LE, 4));
-			if (Short.toUnsignedInt(header.get(LmdbAdjacencyArena.U16_LE, 6)) != 0) {
+			int neighborByteLength = Short.toUnsignedInt(header.get(LmdbAdjacencyArena.U16_LE, headerAt + 2));
+			int contextByteLength = Short.toUnsignedInt(header.get(LmdbAdjacencyArena.U16_LE, headerAt + 4));
+			if (Short.toUnsignedInt(header.get(LmdbAdjacencyArena.U16_LE, headerAt + 6)) != 0) {
 				throw new IllegalStateException("malformed SMALL_VARINT reserved field");
 			}
 			totalLength = alignUp(8L + neighborByteLength + contextByteLength, 8);
 			break;
 		}
 		case CODEC_BLOCK_FOR: {
-			MemorySegment blockHeader = arena.slice(localRef, BLOCK_HEADER_BYTES);
-			if (Byte.toUnsignedInt(blockHeader.get(LmdbAdjacencyArena.U8, 1)) != BLOCK_SHIFT) {
+			arena.expand(localRef, BLOCK_HEADER_BYTES, target.memory);
+			MemorySegment blockHeader = target.memory.segment();
+			if (Byte.toUnsignedInt(blockHeader.get(LmdbAdjacencyArena.U8, headerAt + 1)) != BLOCK_SHIFT) {
 				throw new IllegalStateException("malformed BLOCK_FOR block shift");
 			}
-			long edgeCount = blockHeader.get(LmdbAdjacencyArena.U64_LE, 8);
-			long blockCount = Integer.toUnsignedLong(blockHeader.get(LmdbAdjacencyArena.U32_LE, 16));
-			long payloadBytes = Integer.toUnsignedLong(blockHeader.get(LmdbAdjacencyArena.U32_LE, 20));
+			edgeCount = blockHeader.get(LmdbAdjacencyArena.U64_LE, headerAt + 8);
+			long blockCount = Integer.toUnsignedLong(blockHeader.get(LmdbAdjacencyArena.U32_LE, headerAt + 16));
+			long payloadBytes = Integer.toUnsignedLong(blockHeader.get(LmdbAdjacencyArena.U32_LE, headerAt + 20));
 			if (edgeCount < 1 || blockCount != (edgeCount + BLOCK_LANES - 1) >>> BLOCK_SHIFT) {
 				throw new IllegalStateException("malformed BLOCK_FOR counts: " + edgeCount + "/" + blockCount);
 			}
@@ -533,56 +554,68 @@ final class LmdbAdjacencyRunCodec {
 			break;
 		}
 		default: {
-			MemorySegment directoryHeader = arena.slice(localRef, DIRECTORY_HEADER_BYTES);
-			long chunkCount = Integer.toUnsignedLong(directoryHeader.get(LmdbAdjacencyArena.U32_LE, 4));
-			long directoryByteLength = directoryHeader.get(LmdbAdjacencyArena.U64_LE, 8);
+			arena.expand(localRef, DIRECTORY_HEADER_BYTES, target.memory);
+			MemorySegment directoryHeader = target.memory.segment();
+			long chunkCount = Integer
+					.toUnsignedLong(directoryHeader.get(LmdbAdjacencyArena.U32_LE, headerAt + 4));
+			long directoryByteLength = directoryHeader.get(LmdbAdjacencyArena.U64_LE, headerAt + 8);
 			if (chunkCount < 1
 					|| directoryByteLength != DIRECTORY_HEADER_BYTES + DIRECTORY_ENTRY_BYTES * chunkCount) {
 				throw new IllegalStateException("malformed chunk directory length: " + directoryByteLength);
+			}
+			edgeCount = directoryHeader.get(LmdbAdjacencyArena.U64_LE, headerAt + 16);
+			if (edgeCount < 1) {
+				throw new IllegalStateException("malformed chunk directory edge count: " + edgeCount);
 			}
 			totalLength = directoryByteLength;
 			break;
 		}
 		}
-		return new RunView(catalog, slot, arena.slice(localRef, totalLength), tag);
+		arena.expand(localRef, totalLength, target.memory);
+		target.catalog = catalog;
+		target.runHandle = runHandle;
+		target.arenaSlot = slot;
+		target.segment = target.memory.segment();
+		target.baseOffset = target.memory.baseOffset();
+		target.tag = tag;
+		target.codec = codec;
+		target.contextsPresent = (tag & TAG_CONTEXT_PRESENT) != 0;
+		target.edgeCount = edgeCount;
 	}
 
 	static long edgeCount(LmdbAdjacencyArenaCatalog catalog, long runHandle) {
-		RunView view = resolve(catalog, runHandle);
-		return edgeCount(view);
-	}
-
-	private static long edgeCount(RunView view) {
-		switch (view.codec) {
-		case CODEC_SMALL_VARINT:
-			return Byte.toUnsignedInt(view.slice.get(LmdbAdjacencyArena.U8, 1));
-		case CODEC_BLOCK_FOR:
-			return view.slice.get(LmdbAdjacencyArena.U64_LE, 8);
-		default:
-			return view.slice.get(LmdbAdjacencyArena.U64_LE, 16);
-		}
+		RunCursor cursor = new RunCursor();
+		resolve(catalog, runHandle, cursor);
+		return cursor.edgeCount;
 	}
 
 	/**
 	 * True when every neighbor in the run satisfies {@link ValueIds#isOrderedInteger}.
 	 */
 	static boolean orderedIntegerDomain(LmdbAdjacencyArenaCatalog catalog, long runHandle) {
-		return (resolve(catalog, runHandle).tag & TAG_ORDERED_INTEGER) != 0;
+		RunCursor cursor = new RunCursor();
+		resolve(catalog, runHandle, cursor);
+		return (cursor.tag & TAG_ORDERED_INTEGER) != 0;
 	}
 
 	static long neighborAt(LmdbAdjacencyArenaCatalog catalog, long runHandle, long ordinal) {
-		RunView view = resolve(catalog, runHandle);
-		checkOrdinal(view, ordinal);
-		return neighborAt(view, ordinal);
+		RunCursor cursor = new RunCursor();
+		resolve(catalog, runHandle, cursor);
+		return neighborAt(cursor, ordinal);
 	}
 
 	/**
 	 * The raw context ID at the given ordinal (zero for the null graph).
 	 */
 	static long contextAt(LmdbAdjacencyArenaCatalog catalog, ContextCatalog contexts, long runHandle, long ordinal) {
-		RunView view = resolve(catalog, runHandle);
-		checkOrdinal(view, ordinal);
-		long contextOrdinal = contextOrdinalAt(view, ordinal);
+		RunCursor cursor = new RunCursor();
+		resolve(catalog, runHandle, cursor);
+		return contextAt(contexts, cursor, ordinal);
+	}
+
+	static long contextAt(ContextCatalog contexts, RunCursor cursor, long ordinal) {
+		checkOrdinal(cursor, ordinal);
+		long contextOrdinal = contextOrdinalAt(cursor, ordinal);
 		return contextOrdinal == 0 ? 0 : contexts.rawForOrdinal(contextOrdinal);
 	}
 
@@ -592,24 +625,34 @@ final class LmdbAdjacencyRunCodec {
 	 */
 	static int copy(LmdbAdjacencyArenaCatalog catalog, ContextCatalog contexts, long runHandle, long fromOrdinal,
 			int length, long[] neighborTarget, int neighborOffset, long[] contextTarget, int contextOffset) {
+		RunCursor cursor = new RunCursor();
+		resolve(catalog, runHandle, cursor);
+		return copy(contexts, cursor, fromOrdinal, length, neighborTarget, neighborOffset, contextTarget,
+				contextOffset);
+	}
+
+	static int copy(ContextCatalog contexts, RunCursor cursor, long fromOrdinal, int length, long[] neighborTarget,
+			int neighborOffset, long[] contextTarget, int contextOffset) {
 		if (length < 0) {
 			throw new IllegalArgumentException("length must not be negative: " + length);
 		}
-		RunView view = resolve(catalog, runHandle);
-		long edgeCount = edgeCount(view);
-		if (fromOrdinal < 0 || fromOrdinal > edgeCount) {
+		if (fromOrdinal < 0 || fromOrdinal > cursor.edgeCount) {
 			throw new IllegalArgumentException("fromOrdinal out of range: " + fromOrdinal);
 		}
-		int copied = (int) Math.min(length, edgeCount - fromOrdinal);
-		for (int i = 0; i < copied; i++) {
-			long ordinal = fromOrdinal + i;
-			if (neighborTarget != null) {
-				neighborTarget[neighborOffset + i] = neighborAt(view, ordinal);
-			}
-			if (contextTarget != null) {
-				long contextOrdinal = contextOrdinalAt(view, ordinal);
-				contextTarget[contextOffset + i] = contextOrdinal == 0 ? 0 : contexts.rawForOrdinal(contextOrdinal);
-			}
+		int copied = (int) Math.min(length, cursor.edgeCount - fromOrdinal);
+		switch (cursor.codec) {
+		case CODEC_SMALL_VARINT:
+			copySmall(contexts, cursor, fromOrdinal, copied, neighborTarget, neighborOffset, contextTarget,
+					contextOffset);
+			break;
+		case CODEC_BLOCK_FOR:
+			copyBlocks(contexts, cursor, fromOrdinal, copied, neighborTarget, neighborOffset, contextTarget,
+					contextOffset);
+			break;
+		default:
+			copyChunks(contexts, cursor, fromOrdinal, copied, neighborTarget, neighborOffset, contextTarget,
+					contextOffset);
+			break;
 		}
 		return copied;
 	}
@@ -620,19 +663,24 @@ final class LmdbAdjacencyRunCodec {
 	 */
 	static long lowerBound(LmdbAdjacencyArenaCatalog catalog, ContextCatalog contexts, long runHandle,
 			long fromOrdinal, long neighbor, long rawContext) {
-		RunView view = resolve(catalog, runHandle);
-		long edgeCount = edgeCount(view);
-		if (fromOrdinal < 0 || fromOrdinal > edgeCount) {
+		RunCursor cursor = new RunCursor();
+		resolve(catalog, runHandle, cursor);
+		return lowerBound(contexts, cursor, fromOrdinal, neighbor, rawContext);
+	}
+
+	static long lowerBound(ContextCatalog contexts, RunCursor cursor, long fromOrdinal, long neighbor,
+			long rawContext) {
+		if (fromOrdinal < 0 || fromOrdinal > cursor.edgeCount) {
 			throw new IllegalArgumentException("fromOrdinal out of range: " + fromOrdinal);
 		}
 		long low = fromOrdinal;
-		long high = edgeCount;
+		long high = cursor.edgeCount;
 		while (low < high) {
 			long mid = (low + high) >>> 1;
-			long midNeighbor = neighborAt(view, mid);
+			long midNeighbor = neighborAt(cursor, mid);
 			int cmp = Long.compareUnsigned(midNeighbor, neighbor);
 			if (cmp == 0) {
-				long midOrdinal = contextOrdinalAt(view, mid);
+				long midOrdinal = contextOrdinalAt(cursor, mid);
 				long midRaw = midOrdinal == 0 ? 0 : contexts.rawForOrdinal(midOrdinal);
 				cmp = Long.compareUnsigned(midRaw, rawContext);
 			}
@@ -645,69 +693,198 @@ final class LmdbAdjacencyRunCodec {
 		return low;
 	}
 
-	private static void checkOrdinal(RunView view, long ordinal) {
-		long edgeCount = edgeCount(view);
-		if (ordinal < 0 || ordinal >= edgeCount) {
-			throw new IllegalArgumentException("run ordinal out of range: " + ordinal + " of " + edgeCount);
+	private static void checkOrdinal(RunCursor cursor, long ordinal) {
+		if (ordinal < 0 || ordinal >= cursor.edgeCount) {
+			throw new IllegalArgumentException("run ordinal out of range: " + ordinal + " of " + cursor.edgeCount);
 		}
 	}
 
-	private static long neighborAt(RunView view, long ordinal) {
-		switch (view.codec) {
+	static long neighborAt(RunCursor cursor, long ordinal) {
+		checkOrdinal(cursor, ordinal);
+		switch (cursor.codec) {
 		case CODEC_SMALL_VARINT: {
-			ByteBuffer buffer = smallNeighborBuffer(view);
-			long value = Varint.readUnsigned(buffer);
-			for (long i = 0; i < ordinal; i++) {
-				value += Varint.readUnsigned(buffer);
-			}
-			return value;
-		}
-		case CODEC_BLOCK_FOR: {
-			long blockAt = blockPayloadAt(view, ordinal >>> BLOCK_SHIFT);
-			int lane = (int) (ordinal & (BLOCK_LANES - 1));
-			checkLane(view, blockAt, lane);
-			int width = Byte.toUnsignedInt(view.slice.get(LmdbAdjacencyArena.U8, blockAt + 1));
-			long base = view.slice.get(LmdbAdjacencyArena.U64_LE, blockAt + 4);
-			long lanesAt = blockAt + (view.contextsPresent ? 20 : 12);
-			return base + readLane(view.slice, lanesAt, lane, width);
-		}
-		default: {
-			return inChunk(view, ordinal, false, null);
-		}
-		}
-	}
-
-	private static long contextOrdinalAt(RunView view, long ordinal) {
-		if (!view.contextsPresent) {
-			return 0;
-		}
-		switch (view.codec) {
-		case CODEC_SMALL_VARINT: {
-			int neighborByteLength = Short.toUnsignedInt(view.slice.get(LmdbAdjacencyArena.U16_LE, 2));
-			int contextByteLength = Short.toUnsignedInt(view.slice.get(LmdbAdjacencyArena.U16_LE, 4));
-			ByteBuffer buffer = view.slice.asSlice(8 + neighborByteLength, contextByteLength).asByteBuffer();
+			int neighborByteLength = Short
+					.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U16_LE, cursor.baseOffset + 2));
+			long at = cursor.baseOffset + 8;
+			long end = at + neighborByteLength;
 			long value = 0;
 			for (long i = 0; i <= ordinal; i++) {
-				value = Varint.readUnsigned(buffer);
+				int first = unsignedByte(cursor.segment, at);
+				int bytes = checkedVarintBytes(first, at, end);
+				long encoded = readUnsigned(cursor.segment, at, first);
+				value = i == 0 ? encoded : value + encoded;
+				at += bytes;
 			}
 			return value;
 		}
 		case CODEC_BLOCK_FOR: {
-			long blockAt = blockPayloadAt(view, ordinal >>> BLOCK_SHIFT);
+			long blockAt = blockPayloadAt(cursor, ordinal >>> BLOCK_SHIFT);
 			int lane = (int) (ordinal & (BLOCK_LANES - 1));
-			checkLane(view, blockAt, lane);
-			int lanes = Byte.toUnsignedInt(view.slice.get(LmdbAdjacencyArena.U8, blockAt)) + 1;
-			int neighborWidth = Byte.toUnsignedInt(view.slice.get(LmdbAdjacencyArena.U8, blockAt + 1));
-			int contextWidth = Byte.toUnsignedInt(view.slice.get(LmdbAdjacencyArena.U8, blockAt + 2));
-			long contextBase = view.slice.get(LmdbAdjacencyArena.U64_LE, blockAt + 12);
-			long contextLanesAt = blockAt + 20 + packedBytes(lanes, neighborWidth);
-			return contextBase + readLane(view.slice, contextLanesAt, lane, contextWidth);
+			checkLane(cursor, blockAt, lane);
+			int width = Byte.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U8, blockAt + 1));
+			long base = cursor.segment.get(LmdbAdjacencyArena.U64_LE, blockAt + 4);
+			long lanesAt = blockAt + (cursor.contextsPresent ? 20 : 12);
+			return base + readLane(cursor.segment, lanesAt, lane, width);
 		}
 		default: {
-			long[] out = new long[1];
-			inChunk(view, ordinal, true, out);
-			return out[0];
+			return inChunk(cursor, ordinal, false);
 		}
+		}
+	}
+
+	private static long contextOrdinalAt(RunCursor cursor, long ordinal) {
+		if (!cursor.contextsPresent) {
+			return 0;
+		}
+		switch (cursor.codec) {
+		case CODEC_SMALL_VARINT: {
+			int neighborByteLength = Short
+					.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U16_LE, cursor.baseOffset + 2));
+			int contextByteLength = Short
+					.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U16_LE, cursor.baseOffset + 4));
+			long at = cursor.baseOffset + 8 + neighborByteLength;
+			long end = at + contextByteLength;
+			long value = 0;
+			for (long i = 0; i <= ordinal; i++) {
+				int first = unsignedByte(cursor.segment, at);
+				int bytes = checkedVarintBytes(first, at, end);
+				value = readUnsigned(cursor.segment, at, first);
+				at += bytes;
+			}
+			return value;
+		}
+		case CODEC_BLOCK_FOR: {
+			long blockAt = blockPayloadAt(cursor, ordinal >>> BLOCK_SHIFT);
+			int lane = (int) (ordinal & (BLOCK_LANES - 1));
+			checkLane(cursor, blockAt, lane);
+			int lanes = Byte.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U8, blockAt)) + 1;
+			int neighborWidth = Byte.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U8, blockAt + 1));
+			int contextWidth = Byte.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U8, blockAt + 2));
+			long contextBase = cursor.segment.get(LmdbAdjacencyArena.U64_LE, blockAt + 12);
+			long contextLanesAt = blockAt + 20 + packedBytes(lanes, neighborWidth);
+			return contextBase + readLane(cursor.segment, contextLanesAt, lane, contextWidth);
+		}
+		default: {
+			return inChunk(cursor, ordinal, true);
+		}
+		}
+	}
+
+	private static void copySmall(ContextCatalog contexts, RunCursor cursor, long fromOrdinal, int copied,
+			long[] neighborTarget, int neighborOffset, long[] contextTarget, int contextOffset) {
+		long endOrdinal = fromOrdinal + copied;
+		if (neighborTarget != null) {
+			int neighborByteLength = Short
+					.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U16_LE, cursor.baseOffset + 2));
+			long at = cursor.baseOffset + 8;
+			long end = at + neighborByteLength;
+			long value = 0;
+			for (long ordinal = 0; ordinal < endOrdinal; ordinal++) {
+				int first = unsignedByte(cursor.segment, at);
+				int bytes = checkedVarintBytes(first, at, end);
+				long encoded = readUnsigned(cursor.segment, at, first);
+				value = ordinal == 0 ? encoded : value + encoded;
+				at += bytes;
+				if (ordinal >= fromOrdinal) {
+					neighborTarget[neighborOffset + (int) (ordinal - fromOrdinal)] = value;
+				}
+			}
+		}
+		if (contextTarget == null) {
+			return;
+		}
+		if (!cursor.contextsPresent) {
+			Arrays.fill(contextTarget, contextOffset, contextOffset + copied, 0L);
+			return;
+		}
+		int neighborByteLength = Short
+				.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U16_LE, cursor.baseOffset + 2));
+		int contextByteLength = Short
+				.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U16_LE, cursor.baseOffset + 4));
+		long at = cursor.baseOffset + 8 + neighborByteLength;
+		long end = at + contextByteLength;
+		for (long ordinal = 0; ordinal < endOrdinal; ordinal++) {
+			int first = unsignedByte(cursor.segment, at);
+			int bytes = checkedVarintBytes(first, at, end);
+			long contextOrdinal = readUnsigned(cursor.segment, at, first);
+			at += bytes;
+			if (ordinal >= fromOrdinal) {
+				contextTarget[contextOffset + (int) (ordinal - fromOrdinal)] = contextOrdinal == 0 ? 0
+						: contexts.rawForOrdinal(contextOrdinal);
+			}
+		}
+	}
+
+	private static void copyBlocks(ContextCatalog contexts, RunCursor cursor, long fromOrdinal, int copied,
+			long[] neighborTarget, int neighborOffset, long[] contextTarget, int contextOffset) {
+		long ordinal = fromOrdinal;
+		long endOrdinal = fromOrdinal + copied;
+		int output = 0;
+		while (ordinal < endOrdinal) {
+			long blockIndex = ordinal >>> BLOCK_SHIFT;
+			long blockAt = blockPayloadAt(cursor, blockIndex);
+			int lanes = Byte.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U8, blockAt)) + 1;
+			int lane = (int) (ordinal & (BLOCK_LANES - 1));
+			if (lane >= lanes) {
+				throw new IllegalStateException("lane out of range: " + lane + " of " + lanes);
+			}
+			int take = (int) Math.min(endOrdinal - ordinal, lanes - lane);
+			int neighborWidth = Byte.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U8, blockAt + 1));
+			int contextWidth = Byte.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U8, blockAt + 2));
+			long neighborBase = cursor.segment.get(LmdbAdjacencyArena.U64_LE, blockAt + 4);
+			long neighborLanesAt = blockAt + (cursor.contextsPresent ? 20 : 12);
+			long contextBase = cursor.contextsPresent
+					? cursor.segment.get(LmdbAdjacencyArena.U64_LE, blockAt + 12)
+					: 0;
+			long contextLanesAt = neighborLanesAt + packedBytes(lanes, neighborWidth);
+			for (int i = 0; i < take; i++) {
+				int currentLane = lane + i;
+				if (neighborTarget != null) {
+					neighborTarget[neighborOffset + output + i] = neighborBase
+							+ readLane(cursor.segment, neighborLanesAt, currentLane, neighborWidth);
+				}
+				if (contextTarget != null) {
+					long contextOrdinal = cursor.contextsPresent
+							? contextBase + readLane(cursor.segment, contextLanesAt, currentLane, contextWidth)
+							: 0;
+					contextTarget[contextOffset + output + i] = contextOrdinal == 0 ? 0
+							: contexts.rawForOrdinal(contextOrdinal);
+				}
+			}
+			ordinal += take;
+			output += take;
+		}
+	}
+
+	private static void copyChunks(ContextCatalog contexts, RunCursor cursor, long fromOrdinal, int copied,
+			long[] neighborTarget, int neighborOffset, long[] contextTarget, int contextOffset) {
+		long ordinal = fromOrdinal;
+		long endOrdinal = fromOrdinal + copied;
+		int output = 0;
+		while (ordinal < endOrdinal) {
+			long chunk = findChunk(cursor, ordinal);
+			long at = cursor.baseOffset + DIRECTORY_HEADER_BYTES + DIRECTORY_ENTRY_BYTES * chunk;
+			long edgeStart = cursor.segment.get(LmdbAdjacencyArena.U64_LE, at + 16);
+			long edgeCount = cursor.segment.get(LmdbAdjacencyArena.U64_LE, at + 24);
+			int chunkSlot = Byte.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U8, at + 32));
+			long chunkRef = LmdbAdjacencyArena.readU40(cursor.segment, at + 33);
+			long childHandle = cursor.catalog
+					.packHandle(chunkSlot == CHUNK_SLOT_SELF ? cursor.arenaSlot : chunkSlot, chunkRef);
+			RunCursor child = cursor.child();
+			resolve(cursor.catalog, childHandle, child);
+			if (child.codec == CODEC_CHUNK_DIRECTORY) {
+				throw new IllegalStateException("nested chunk directories are not valid at level 0");
+			}
+			long childOrdinal = ordinal - edgeStart;
+			int take = (int) Math.min(endOrdinal - ordinal, edgeCount - childOrdinal);
+			int childCopied = copy(contexts, child, childOrdinal, take, neighborTarget,
+					neighborTarget == null ? 0 : neighborOffset + output, contextTarget,
+					contextTarget == null ? 0 : contextOffset + output);
+			if (childCopied != take) {
+				throw new IllegalStateException("chunk copy returned " + childCopied + " of " + take);
+			}
+			ordinal += take;
+			output += take;
 		}
 	}
 
@@ -715,16 +892,35 @@ final class LmdbAdjacencyRunCodec {
 	 * Resolves the chunk containing the global ordinal through the directory and reads from the child run, which may
 	 * live in a different arena identified by its explicit slot.
 	 */
-	private static long inChunk(RunView view, long ordinal, boolean wantContextOrdinal, long[] contextOrdinalOut) {
-		long chunkCount = Integer.toUnsignedLong(view.slice.get(LmdbAdjacencyArena.U32_LE, 4));
+	private static long inChunk(RunCursor cursor, long ordinal, boolean wantContextOrdinal) {
+		long found = findChunk(cursor, ordinal);
+		long at = cursor.baseOffset + DIRECTORY_HEADER_BYTES + DIRECTORY_ENTRY_BYTES * found;
+		long edgeStart = cursor.segment.get(LmdbAdjacencyArena.U64_LE, at + 16);
+		int chunkSlot = Byte.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U8, at + 32));
+		long chunkRef = LmdbAdjacencyArena.readU40(cursor.segment, at + 33);
+		long childHandle = cursor.catalog
+				.packHandle(chunkSlot == CHUNK_SLOT_SELF ? cursor.arenaSlot : chunkSlot, chunkRef);
+		RunCursor child = cursor.child();
+		resolve(cursor.catalog, childHandle, child);
+		if (child.codec == CODEC_CHUNK_DIRECTORY) {
+			throw new IllegalStateException("nested chunk directories are not valid at level 0");
+		}
+		long childOrdinal = ordinal - edgeStart;
+		checkOrdinal(child, childOrdinal);
+		return wantContextOrdinal ? contextOrdinalAt(child, childOrdinal) : neighborAt(child, childOrdinal);
+	}
+
+	private static long findChunk(RunCursor cursor, long ordinal) {
+		long chunkCount = Integer
+				.toUnsignedLong(cursor.segment.get(LmdbAdjacencyArena.U32_LE, cursor.baseOffset + 4));
 		long low = 0;
 		long high = chunkCount - 1;
 		long found = -1;
 		while (low <= high) {
 			long mid = (low + high) >>> 1;
-			long at = DIRECTORY_HEADER_BYTES + DIRECTORY_ENTRY_BYTES * mid;
-			long edgeStart = view.slice.get(LmdbAdjacencyArena.U64_LE, at + 16);
-			long edgeCount = view.slice.get(LmdbAdjacencyArena.U64_LE, at + 24);
+			long at = cursor.baseOffset + DIRECTORY_HEADER_BYTES + DIRECTORY_ENTRY_BYTES * mid;
+			long edgeStart = cursor.segment.get(LmdbAdjacencyArena.U64_LE, at + 16);
+			long edgeCount = cursor.segment.get(LmdbAdjacencyArena.U64_LE, at + 24);
 			if (ordinal < edgeStart) {
 				high = mid - 1;
 			} else if (ordinal >= edgeStart + edgeCount) {
@@ -737,43 +933,54 @@ final class LmdbAdjacencyRunCodec {
 		if (found < 0) {
 			throw new IllegalStateException("chunk directory does not contain ordinal " + ordinal);
 		}
-		long at = DIRECTORY_HEADER_BYTES + DIRECTORY_ENTRY_BYTES * found;
-		long edgeStart = view.slice.get(LmdbAdjacencyArena.U64_LE, at + 16);
-		int chunkSlot = Byte.toUnsignedInt(view.slice.get(LmdbAdjacencyArena.U8, at + 32));
-		long chunkRef = LmdbAdjacencyArena.readU40(view.slice, at + 33);
-		long childHandle = view.catalog.packHandle(chunkSlot == CHUNK_SLOT_SELF ? view.arenaSlot : chunkSlot,
-				chunkRef);
-		RunView child = resolve(view.catalog, childHandle);
-		if (child.codec == CODEC_CHUNK_DIRECTORY) {
-			throw new IllegalStateException("nested chunk directories are not valid at level 0");
-		}
-		long childOrdinal = ordinal - edgeStart;
-		checkOrdinal(child, childOrdinal);
-		if (wantContextOrdinal) {
-			contextOrdinalOut[0] = contextOrdinalAt(child, childOrdinal);
-			return 0;
-		}
-		return neighborAt(child, childOrdinal);
+		return found;
 	}
 
-	private static ByteBuffer smallNeighborBuffer(RunView view) {
-		int neighborByteLength = Short.toUnsignedInt(view.slice.get(LmdbAdjacencyArena.U16_LE, 2));
-		return view.slice.asSlice(8, neighborByteLength).asByteBuffer();
+	private static int unsignedByte(MemorySegment segment, long at) {
+		return Byte.toUnsignedInt(segment.get(LmdbAdjacencyArena.U8, at));
 	}
 
-	private static long blockPayloadAt(RunView view, long blockIndex) {
-		long blockCount = Integer.toUnsignedLong(view.slice.get(LmdbAdjacencyArena.U32_LE, 16));
+	private static int checkedVarintBytes(int first, long at, long end) {
+		int bytes = Varint.firstToLength(first);
+		if (at > end || bytes > end - at) {
+			throw new IllegalStateException("truncated varint at offset " + at);
+		}
+		return bytes;
+	}
+
+	private static long readUnsigned(MemorySegment segment, long at, int first) {
+		if (first <= 240) {
+			return first;
+		}
+		if (first <= 248) {
+			return 240L + ((long) (first - 241) << 8) + unsignedByte(segment, at + 1);
+		}
+		if (first == 249) {
+			return 2288L + ((long) unsignedByte(segment, at + 1) << 8) + unsignedByte(segment, at + 2);
+		}
+		int bytes = first - 247;
+		long value = 0;
+		for (int i = 0; i < bytes; i++) {
+			value = value << 8 | unsignedByte(segment, at + 1 + i);
+		}
+		return value;
+	}
+
+	private static long blockPayloadAt(RunCursor cursor, long blockIndex) {
+		long blockCount = Integer
+				.toUnsignedLong(cursor.segment.get(LmdbAdjacencyArena.U32_LE, cursor.baseOffset + 16));
 		if (blockIndex < 0 || blockIndex >= blockCount) {
 			throw new IllegalStateException("block index out of range: " + blockIndex);
 		}
 		long payloadStart = alignUp(BLOCK_HEADER_BYTES + 4L * (blockCount + 1), 8);
 		long offset = Integer.toUnsignedLong(
-				view.slice.get(LmdbAdjacencyArena.U32_LE, BLOCK_HEADER_BYTES + 4L * blockIndex));
-		return payloadStart + offset;
+				cursor.segment.get(LmdbAdjacencyArena.U32_LE,
+						cursor.baseOffset + BLOCK_HEADER_BYTES + 4L * blockIndex));
+		return cursor.baseOffset + payloadStart + offset;
 	}
 
-	private static void checkLane(RunView view, long blockAt, int lane) {
-		int lanes = Byte.toUnsignedInt(view.slice.get(LmdbAdjacencyArena.U8, blockAt)) + 1;
+	private static void checkLane(RunCursor cursor, long blockAt, int lane) {
+		int lanes = Byte.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U8, blockAt)) + 1;
 		if (lane >= lanes) {
 			throw new IllegalStateException("lane out of range: " + lane + " of " + lanes);
 		}

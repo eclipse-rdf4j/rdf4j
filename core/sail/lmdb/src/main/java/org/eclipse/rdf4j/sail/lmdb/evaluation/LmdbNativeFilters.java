@@ -85,9 +85,12 @@ final class RecordingNativeBooleanFilter implements NativeBooleanFilter {
 	final Filter filter;
 	final EvaluationStatistics statistics;
 	final AdaptiveFilterMetadata adaptive;
+	/** Cross-worker outcome handoff only; scalar accepts remain worker-confined primitives. */
 	final AtomicLong passed = new AtomicLong();
 	final AtomicLong filtered = new AtomicLong();
 	private final RecordingNativeBooleanFilter outcomeTarget;
+	private long localPassed;
+	private long localFiltered;
 
 	RecordingNativeBooleanFilter(NativeBooleanFilter delegate, Filter filter, EvaluationStatistics statistics) {
 		this(delegate, filter, statistics, AdaptiveFilterMetadata.missing(), null);
@@ -112,9 +115,9 @@ final class RecordingNativeBooleanFilter implements NativeBooleanFilter {
 	public boolean accept(RowState row) {
 		boolean accepted = delegate.accept(row);
 		if (accepted) {
-			passed.incrementAndGet();
+			localPassed++;
 		} else {
-			filtered.incrementAndGet();
+			localFiltered++;
 		}
 		return accepted;
 	}
@@ -122,8 +125,8 @@ final class RecordingNativeBooleanFilter implements NativeBooleanFilter {
 	@Override
 	public int selectBatch(NativeBatch batch, int[] sel, int n, RowState scratch) {
 		int accepted = delegate.selectBatch(batch, sel, n, scratch);
-		passed.addAndGet(accepted);
-		filtered.addAndGet(n - accepted);
+		localPassed += accepted;
+		localFiltered += n - accepted;
 		return accepted;
 	}
 
@@ -150,8 +153,10 @@ final class RecordingNativeBooleanFilter implements NativeBooleanFilter {
 
 	@Override
 	public void close() {
-		long passedCount = passed.getAndSet(0L);
-		long filteredCount = filtered.getAndSet(0L);
+		long passedCount = localPassed + passed.getAndSet(0L);
+		long filteredCount = localFiltered + filtered.getAndSet(0L);
+		localPassed = 0L;
+		localFiltered = 0L;
 		if (passedCount > 0L || filteredCount > 0L) {
 			if (outcomeTarget != null) {
 				outcomeTarget.mergeOutcomes(passedCount, filteredCount);
@@ -172,6 +177,8 @@ final class RecordingNativeBooleanFilter implements NativeBooleanFilter {
 	}
 
 	void discardOutcomes() {
+		localPassed = 0L;
+		localFiltered = 0L;
 		passed.set(0L);
 		filtered.set(0L);
 	}
