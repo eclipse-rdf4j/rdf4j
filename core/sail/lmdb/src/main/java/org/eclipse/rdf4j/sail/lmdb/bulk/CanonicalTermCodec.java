@@ -15,6 +15,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Locale;
 import java.util.Objects;
 
@@ -138,6 +139,18 @@ final class CanonicalTermCodec {
 
 	static boolean isNamespace(byte[] canonicalBytes) {
 		return canonicalBytes != null && canonicalBytes.length > 0 && canonicalBytes[0] == NAMESPACE_TAG;
+	}
+
+	static void forEachNestedPredicate(byte[] canonicalBytes, PredicateIdPlan.PredicateConsumer consumer)
+			throws IOException {
+		try {
+			int end = scanValue(canonicalBytes, 0, 0, consumer);
+			if (end != canonicalBytes.length) {
+				throw new IllegalArgumentException("Trailing bytes after canonical RDF value");
+			}
+		} catch (IndexOutOfBoundsException | ArithmeticException e) {
+			throw new IOException("Malformed canonical RDF value while counting predicates", e);
+		}
 	}
 
 	static String decodeNamespace(byte[] canonicalBytes) {
@@ -294,6 +307,55 @@ final class CanonicalTermCodec {
 				| (source[offset + 1] & 0xff) << 16
 				| (source[offset + 2] & 0xff) << 8
 				| source[offset + 3] & 0xff;
+	}
+
+	private static int scanValue(byte[] source, int offset, int depth, PredicateIdPlan.PredicateConsumer consumer)
+			throws IOException {
+		if (depth > MAX_TRIPLE_TERM_DEPTH || offset >= source.length) {
+			throw new IllegalArgumentException("Malformed canonical RDF value");
+		}
+		int tag = source[offset++] & 0xff;
+		return switch (tag) {
+		case IRI_TAG, BNODE_TAG, NAMESPACE_TAG -> skipBytes(source, offset);
+		case LITERAL_TAG -> {
+			int cursor = skipBytes(source, offset);
+			cursor = skipBytes(source, cursor);
+			int languageLength = readInt(source, cursor);
+			cursor = Math.addExact(cursor, Integer.BYTES);
+			if (languageLength >= 0) {
+				cursor = Math.addExact(cursor, languageLength);
+			} else if (languageLength != -1) {
+				throw new IllegalArgumentException("Invalid canonical literal language length");
+			}
+			if (cursor >= source.length) {
+				throw new IllegalArgumentException("Truncated canonical literal direction");
+			}
+			yield cursor + 1;
+		}
+		case TRIPLE_TERM_TAG -> {
+			int cursor = scanValue(source, offset, depth + 1, consumer);
+			int predicateStart = cursor;
+			cursor = scanValue(source, cursor, depth + 1, consumer);
+			if ((source[predicateStart] & 0xff) != IRI_TAG) {
+				throw new IllegalArgumentException("Canonical RDF-star predicate is not an IRI");
+			}
+			consumer.accept(Arrays.copyOfRange(source, predicateStart, cursor));
+			yield scanValue(source, cursor, depth + 1, consumer);
+		}
+		default -> throw new IllegalArgumentException("Unknown canonical RDF value tag");
+		};
+	}
+
+	private static int skipBytes(byte[] source, int offset) {
+		int length = readInt(source, offset);
+		if (length < 0) {
+			throw new IllegalArgumentException("Negative canonical byte length");
+		}
+		int end = Math.addExact(Math.addExact(offset, Integer.BYTES), length);
+		if (end > source.length) {
+			throw new IllegalArgumentException("Truncated canonical byte value");
+		}
+		return end;
 	}
 
 	private static final class Cursor {

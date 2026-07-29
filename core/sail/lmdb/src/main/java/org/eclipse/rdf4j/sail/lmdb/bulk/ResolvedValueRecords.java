@@ -48,6 +48,19 @@ final class ResolvedValueRecords {
 		this.records = records;
 	}
 
+	static ResolvedValueRecords restore(Path workspace, long records, long dependencyRecords) throws IOException {
+		if (records < 0L || dependencyRecords < 0L) {
+			throw new IOException("Invalid resolved value metadata in " + workspace);
+		}
+		Path descriptors = workspace.resolve("assigned-values.bin");
+		if (!Files.isRegularFile(descriptors)) {
+			throw new IOException("Missing resolved value descriptors: " + descriptors);
+		}
+		ExternalLongTupleSorter.SortedTupleFile dependencies = ExternalLongTupleSorter.SortedTupleFile.restore(
+				workspace.resolve("resolved-value-components.bin"), 3, dependencyRecords);
+		return new ResolvedValueRecords(descriptors, dependencies, records);
+	}
+
 	static ResolvedValueRecords build(PartitionValueDictionary dictionary, Path workspace, int maxOpenFiles,
 			long memoryBudgetBytes, LmdbStoreConfig config, BooleanSupplier cancellationSignal) throws IOException {
 		Path bucketDirectory = workspace.resolve("value-component-buckets");
@@ -117,6 +130,10 @@ final class ResolvedValueRecords {
 
 	long records() {
 		return records;
+	}
+
+	long dependencyRecords() {
+		return dependencies.rows();
 	}
 
 	void forEach(ResolvedValueConsumer consumer, BooleanSupplier cancellationSignal) throws IOException {

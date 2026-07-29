@@ -15,17 +15,23 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.TreeMap;
 import java.util.concurrent.CancellationException;
 
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParserRegistry;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.lmdb.bulk.LmdbBulkLoader;
+import org.eclipse.rdf4j.sail.lmdb.bulk.ProgressListener;
+import org.eclipse.rdf4j.sail.lmdb.bulk.ProgressSnapshot;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 
 /**
@@ -64,7 +70,6 @@ public final class LmdbBulkLoad {
 		}
 
 		try {
-			RDFFormat format = resolveFormat(options);
 			LmdbStoreConfig config = new LmdbStoreConfig();
 			if (options.statementIndexes() != null) {
 				config.setTripleIndexes(options.statementIndexes());
@@ -90,6 +95,13 @@ public final class LmdbBulkLoad {
 			if (options.maxOpenFiles() != null) {
 				builder.maxOpenFiles(options.maxOpenFiles());
 			}
+			if (options.workers() != null) {
+				builder.workers(options.workers());
+			}
+			if (options.queueBatches() != null) {
+				builder.queueBatches(options.queueBatches());
+			}
+			builder.progressListener(options.progressMode().listener(error));
 			if (options.temporaryDirectory() != null) {
 				builder.temporaryDirectory(options.temporaryDirectory());
 			}
@@ -102,15 +114,15 @@ public final class LmdbBulkLoad {
 
 			LmdbBulkLoader loader = builder.build();
 			LmdbBulkLoader.Result result;
-			if ("-".equals(options.input())) {
+			if (options.inputs().size() == 1 && "-".equals(options.inputs().getFirst())) {
+				RDFFormat format = resolveFormat(options, "-");
 				result = loader.load(standardInput, options.baseUri() == null ? STDIN_BASE_URI : options.baseUri(),
 						format);
 			} else {
-				Path input = Path.of(options.input()).toAbsolutePath().normalize();
-				try (InputStream stream = Files.newInputStream(input)) {
-					result = loader.load(stream,
-							options.baseUri() == null ? input.toUri().toString() : options.baseUri(), format);
+				if (options.inputs().contains("-")) {
+					throw new UsageException("--input - cannot be combined with path inputs");
 				}
+				result = loader.load(resolvePathInputs(options));
 			}
 			output.printf(Locale.ROOT,
 					"LMDB bulk load complete: parsed=%d stored=%d persisted-values=%d inline-values=%d "
@@ -136,7 +148,40 @@ public final class LmdbBulkLoad {
 		}
 	}
 
-	private static RDFFormat resolveFormat(Options options) throws UsageException {
+	private static List<LmdbBulkLoader.PathInput> resolvePathInputs(Options options)
+			throws IOException, UsageException {
+		Map<String, Path> normalizedPaths = new TreeMap<>();
+		for (String inputValue : options.inputs()) {
+			Path input = Path.of(inputValue).toAbsolutePath().normalize();
+			if (Files.isSymbolicLink(input)) {
+				throw new UsageException("Input must not be a symbolic link: " + input);
+			}
+			if (Files.isDirectory(input, LinkOption.NOFOLLOW_LINKS)) {
+				try (var descendants = Files.walk(input)) {
+					descendants.filter(path -> Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS))
+							.filter(path -> !Files.isSymbolicLink(path))
+							.map(path -> path.toAbsolutePath().normalize())
+							.forEach(path -> normalizedPaths.putIfAbsent(path.toString(), path));
+				}
+			} else if (Files.isRegularFile(input, LinkOption.NOFOLLOW_LINKS)) {
+				normalizedPaths.putIfAbsent(input.toString(), input);
+			} else {
+				throw new UsageException("Input does not exist or is not a regular file or directory: " + input);
+			}
+		}
+		if (normalizedPaths.isEmpty()) {
+			throw new UsageException("No RDF input files were found");
+		}
+		List<LmdbBulkLoader.PathInput> result = new ArrayList<>(normalizedPaths.size());
+		for (Path path : normalizedPaths.values()) {
+			RDFFormat format = resolveFormat(options, path.toString());
+			String baseUri = options.baseUri() == null ? path.toUri().toString() : options.baseUri();
+			result.add(new LmdbBulkLoader.PathInput(path, format, baseUri));
+		}
+		return List.copyOf(result);
+	}
+
+	private static RDFFormat resolveFormat(Options options, String input) throws UsageException {
 		if (options.format() != null) {
 			String requested = options.format();
 			String normalized = normalizeFormat(requested);
@@ -155,12 +200,18 @@ public final class LmdbBulkLoad {
 			}
 			return resolved.get();
 		}
-		if ("-".equals(options.input())) {
+		if ("-".equals(input)) {
 			throw new UsageException("--format is required when --input is -");
 		}
-		return Rio.getParserFormatForFileName(options.input())
+		String inferenceName = stripCompressionExtension(input);
+		return Rio.getParserFormatForFileName(inferenceName)
 				.orElseThrow(() -> new UsageException(
-						"Cannot infer RDF format from --input; specify --format explicitly"));
+						"Cannot infer RDF format from input " + input + "; specify --format explicitly"));
+	}
+
+	private static String stripCompressionExtension(String input) {
+		String lower = input.toLowerCase(Locale.ROOT);
+		return lower.endsWith(".gz") ? input.substring(0, input.length() - 3) : input;
 	}
 
 	private static String normalizeFormat(String value) {
@@ -169,7 +220,8 @@ public final class LmdbBulkLoad {
 
 	private static void printUsage(PrintStream output) {
 		output.println("""
-				Usage: rdf4j-lmdb-bulk-load --store PATH --input PATH|- [options]
+				Usage: rdf4j-lmdb-bulk-load --store PATH --input PATH|- [--input PATH ...] [options]
+				  --input PATH|-                   RDF file, directory, or stdin; paths may repeat
 				  --format FORMAT                  RDF format name, extension, or MIME type
 				  --parser auto|fast|rio           Parser selection (default: auto)
 				  --base-uri URI                   Base URI; defaults to the input URI
@@ -178,6 +230,9 @@ public final class LmdbBulkLoad {
 				  --memory BYTES                   Memory budget; accepts KiB, MiB, GiB
 				  --partitions COUNT               Power-of-two value partition count
 				  --max-open-files COUNT           Maximum staging and merge files
+				  --workers COUNT                  Parallel action workers (smart default: CPU-based)
+				  --queue-batches COUNT            Bounded batches queued between actions
+				  --progress plain|json|none        Progress on stderr (default: plain)
 				  --temporary-directory PATH       Parent for loader spill files
 				  --inline-literals true|false     Enable LMDB inline literal IDs
 				  --value-hash-cache true|false    Populate hashes.dat
@@ -187,13 +242,15 @@ public final class LmdbBulkLoad {
 				""");
 	}
 
-	private record Options(Path store, String input, String format, LmdbBulkLoader.ParserMode parserMode,
+	private record Options(Path store, List<String> inputs, String format, LmdbBulkLoader.ParserMode parserMode,
 			String baseUri, String statementIndexes, String tripleTermIndexes, Long memoryBudgetBytes,
-			Integer partitionCount, Integer maxOpenFiles, Path temporaryDirectory, Boolean inlineLiterals,
-			Boolean valueHashCache, Integer writeTransactionRecords, Long writeTransactionBytes, boolean help) {
+			Integer partitionCount, Integer maxOpenFiles, Integer workers, Integer queueBatches,
+			ProgressMode progressMode, Path temporaryDirectory, Boolean inlineLiterals, Boolean valueHashCache,
+			Integer writeTransactionRecords, Long writeTransactionBytes, boolean help) {
 
 		private static Options parse(String[] arguments) throws UsageException {
 			Map<String, String> values = new HashMap<>();
+			List<String> inputs = new ArrayList<>();
 			boolean help = false;
 			for (int index = 0; index < arguments.length; index++) {
 				String argument = arguments[index];
@@ -208,30 +265,39 @@ public final class LmdbBulkLoad {
 				if (!KNOWN_OPTIONS.containsKey(name)) {
 					throw new UsageException("Unknown option: " + argument);
 				}
-				if (values.containsKey(name)) {
+				if (!"input".equals(name) && values.containsKey(name)) {
 					throw new UsageException("Option specified more than once: " + argument);
 				}
 				if (++index >= arguments.length) {
 					throw new UsageException("Missing value for " + argument);
 				}
-				values.put(name, arguments[index]);
+				if ("input".equals(name)) {
+					inputs.add(arguments[index]);
+				} else {
+					values.put(name, arguments[index]);
+				}
 			}
 			if (help) {
-				return new Options(null, null, null, LmdbBulkLoader.ParserMode.AUTO, null, null, null, null, null,
-						null, null, null, null, null, null, true);
+				return new Options(null, List.of(), null, LmdbBulkLoader.ParserMode.AUTO, null, null, null, null,
+						null, null, null, null, ProgressMode.PLAIN, null, null, null, null, null, true);
 			}
 			Path store = requiredPath(values, "store");
-			String input = required(values, "input");
+			if (inputs.isEmpty()) {
+				throw new UsageException("--input is required");
+			}
 			LmdbBulkLoader.ParserMode parser = parseParser(values.getOrDefault("parser", "auto"));
 			Integer partitionCount = parseInteger(values.get("partitions"), "--partitions");
 			if (partitionCount != null && (partitionCount & (partitionCount - 1)) != 0) {
 				throw new UsageException("--partitions must be a positive power of two");
 			}
-			return new Options(store, input, values.get("format"), parser, values.get("base-uri"),
+			return new Options(store, List.copyOf(inputs), values.get("format"), parser, values.get("base-uri"),
 					values.get("statement-indexes"), values.get("triple-term-indexes"),
 					parseBytes(values.get("memory"), "--memory"),
 					partitionCount,
 					parseInteger(values.get("max-open-files"), "--max-open-files"),
+					parseInteger(values.get("workers"), "--workers"),
+					parseInteger(values.get("queue-batches"), "--queue-batches"),
+					ProgressMode.parse(values.getOrDefault("progress", "plain")),
 					optionalPath(values.get("temporary-directory")),
 					parseBoolean(values.get("inline-literals"), "--inline-literals"),
 					parseBoolean(values.get("value-hash-cache"), "--value-hash-cache"),
@@ -251,6 +317,9 @@ public final class LmdbBulkLoad {
 			Map.entry("memory", true),
 			Map.entry("partitions", true),
 			Map.entry("max-open-files", true),
+			Map.entry("workers", true),
+			Map.entry("queue-batches", true),
+			Map.entry("progress", true),
 			Map.entry("temporary-directory", true),
 			Map.entry("inline-literals", true),
 			Map.entry("value-hash-cache", true),
@@ -349,6 +418,59 @@ public final class LmdbBulkLoad {
 			this.text = text;
 			this.multiplier = multiplier;
 		}
+	}
+
+	private enum ProgressMode {
+		PLAIN {
+			@Override
+			ProgressListener listener(PrintStream output) {
+				return snapshot -> printPlainProgress(output, snapshot);
+			}
+		},
+		JSON {
+			@Override
+			ProgressListener listener(PrintStream output) {
+				return snapshot -> printJsonProgress(output, snapshot);
+			}
+		},
+		NONE {
+			@Override
+			ProgressListener listener(PrintStream output) {
+				return ProgressListener.NONE;
+			}
+		};
+
+		abstract ProgressListener listener(PrintStream output);
+
+		static ProgressMode parse(String value) throws UsageException {
+			try {
+				return valueOf(value.toUpperCase(Locale.ROOT));
+			} catch (IllegalArgumentException e) {
+				throw new UsageException("--progress must be plain, json, or none");
+			}
+		}
+	}
+
+	private static void printPlainProgress(PrintStream output, ProgressSnapshot snapshot) {
+		output.printf(Locale.ROOT,
+				"phase=%s phase-ops=%d total-ops=%d ops/s=%.1f avg-ops/s=%.1f MiB/s=%.2f "
+						+ "workers=%d queue-batches=%d resumed=%s complete=%s%n",
+				snapshot.phase(), snapshot.phaseOperations(), snapshot.totalOperations(),
+				snapshot.currentOperationsPerSecond(), snapshot.averageOperationsPerSecond(),
+				snapshot.currentBytesPerSecond() / (1024.0 * 1024.0), snapshot.workers(),
+				snapshot.queueBatches(), snapshot.resumed(), snapshot.phaseComplete());
+	}
+
+	private static void printJsonProgress(PrintStream output, ProgressSnapshot snapshot) {
+		output.printf(Locale.ROOT,
+				"{\"phase\":\"%s\",\"phaseOperations\":%d,\"totalOperations\":%d,"
+						+ "\"currentOperationsPerSecond\":%.3f,\"averageOperationsPerSecond\":%.3f,"
+						+ "\"currentBytesPerSecond\":%.3f,\"elapsedMillis\":%d,\"workers\":%d,"
+						+ "\"queueBatches\":%d,\"resumed\":%s,\"phaseComplete\":%s}%n",
+				snapshot.phase(), snapshot.phaseOperations(), snapshot.totalOperations(),
+				snapshot.currentOperationsPerSecond(), snapshot.averageOperationsPerSecond(),
+				snapshot.currentBytesPerSecond(), snapshot.elapsedMillis(), snapshot.workers(),
+				snapshot.queueBatches(), snapshot.resumed(), snapshot.phaseComplete());
 	}
 
 	private static class UsageException extends Exception {

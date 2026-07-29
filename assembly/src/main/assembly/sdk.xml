@@ -48,6 +48,19 @@
 			<filtered>true</filtered>
 		</file>
 		<file>
+			<source>src/main/dist/lmdb-bulk-load.bat</source>
+			<outputDirectory>bin</outputDirectory>
+			<lineEnding>dos</lineEnding>
+			<filtered>true</filtered>
+		</file>
+		<file>
+			<source>src/main/dist/lmdb-bulk-load.sh</source>
+			<outputDirectory>bin</outputDirectory>
+			<fileMode>755</fileMode>
+			<lineEnding>unix</lineEnding>
+			<filtered>true</filtered>
+		</file>
+		<file>
 			<source>../edl-v1.0.txt</source>
 			<outputDirectory />
 		</file>

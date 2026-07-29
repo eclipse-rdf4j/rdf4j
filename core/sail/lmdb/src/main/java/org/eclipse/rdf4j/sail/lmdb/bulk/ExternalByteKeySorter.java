@@ -524,6 +524,13 @@ final class ExternalByteKeySorter implements AutoCloseable {
 			this.records = records;
 		}
 
+		static SortedRecordFile restore(Path path, long records, long bytes) throws IOException {
+			if (records < 0L || bytes < 0L || !Files.isRegularFile(path) || Files.size(path) != bytes) {
+				throw new IOException("Sorted byte-record metadata mismatch for " + path);
+			}
+			return new SortedRecordFile(path, records);
+		}
+
 		Path path() {
 			return path;
 		}

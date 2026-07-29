@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Objects;
 import java.util.function.BooleanSupplier;
 
@@ -38,6 +39,9 @@ public final class LmdbBulkLoader {
 	private final long memoryBudgetBytes;
 	private final int partitionCount;
 	private final int maxOpenFiles;
+	private final int workers;
+	private final int queueBatches;
+	private final ProgressListener progressListener;
 	private final Path temporaryDirectory;
 	private final BooleanSupplier cancellationSignal;
 	private final int writeTransactionRecords;
@@ -51,6 +55,9 @@ public final class LmdbBulkLoader {
 		memoryBudgetBytes = builder.memoryBudgetBytes;
 		partitionCount = builder.partitionCount;
 		maxOpenFiles = builder.maxOpenFiles;
+		workers = builder.workers;
+		queueBatches = builder.queueBatches == 0 ? Math.multiplyExact(workers, 2) : builder.queueBatches;
+		progressListener = builder.progressListener;
 		temporaryDirectory = builder.temporaryDirectory;
 		cancellationSignal = builder.cancellationSignal;
 		writeTransactionRecords = builder.writeTransactionRecords;
@@ -89,6 +96,18 @@ public final class LmdbBulkLoader {
 		return LmdbBulkLoaderEngine.load(this, input, baseUri, format);
 	}
 
+	/**
+	 * Loads multiple RDF files as one atomic store publication. Files are staged in list order and are opened and
+	 * closed by the loader.
+	 */
+	public Result load(List<PathInput> inputs) throws IOException {
+		List<PathInput> copied = List.copyOf(Objects.requireNonNull(inputs, "inputs"));
+		if (copied.isEmpty()) {
+			throw new IllegalArgumentException("inputs must not be empty");
+		}
+		return LmdbBulkLoaderEngine.load(this, copied);
+	}
+
 	Path target() {
 		return target;
 	}
@@ -111,6 +130,18 @@ public final class LmdbBulkLoader {
 
 	int maxOpenFiles() {
 		return maxOpenFiles;
+	}
+
+	int workers() {
+		return workers;
+	}
+
+	int queueBatches() {
+		return queueBatches;
+	}
+
+	ProgressListener progressListener() {
+		return progressListener;
 	}
 
 	Path temporaryDirectory() {
@@ -150,6 +181,18 @@ public final class LmdbBulkLoader {
 	}
 
 	/**
+	 * One path-owned RDF input in a multi-file load.
+	 */
+	public record PathInput(Path path, RDFFormat format, String baseUri) {
+
+		public PathInput {
+			path = Objects.requireNonNull(path, "path").toAbsolutePath().normalize();
+			format = Objects.requireNonNull(format, "format");
+			baseUri = Objects.requireNonNull(baseUri, "baseUri");
+		}
+	}
+
+	/**
 	 * Validates and captures loader resource limits.
 	 */
 	public static final class Builder {
@@ -160,6 +203,9 @@ public final class LmdbBulkLoader {
 		private long memoryBudgetBytes = defaultMemoryBudgetBytes();
 		private int partitionCount = DEFAULT_PARTITION_COUNT;
 		private int maxOpenFiles = DEFAULT_MAX_OPEN_FILES;
+		private int workers = defaultWorkerCount();
+		private int queueBatches;
+		private ProgressListener progressListener = ProgressListener.NONE;
 		private Path temporaryDirectory;
 		private BooleanSupplier cancellationSignal = () -> false;
 		private int writeTransactionRecords = DEFAULT_WRITE_TRANSACTION_RECORDS;
@@ -197,6 +243,27 @@ public final class LmdbBulkLoader {
 				throw new IllegalArgumentException("maxOpenFiles must be positive");
 			}
 			this.maxOpenFiles = maxOpenFiles;
+			return this;
+		}
+
+		public Builder workers(int workers) {
+			if (workers <= 0) {
+				throw new IllegalArgumentException("workers must be positive");
+			}
+			this.workers = workers;
+			return this;
+		}
+
+		public Builder queueBatches(int queueBatches) {
+			if (queueBatches <= 0) {
+				throw new IllegalArgumentException("queueBatches must be positive");
+			}
+			this.queueBatches = queueBatches;
+			return this;
+		}
+
+		public Builder progressListener(ProgressListener progressListener) {
+			this.progressListener = Objects.requireNonNull(progressListener, "progressListener");
 			return this;
 		}
 
@@ -244,5 +311,11 @@ public final class LmdbBulkLoader {
 		long maxHeap = Runtime.getRuntime().maxMemory();
 		long quarterHeap = maxHeap > 0 ? maxHeap / 4L : 256L * MIB;
 		return Math.max(32L * MIB, Math.min(1024L * MIB, quarterHeap));
+	}
+
+	static int defaultWorkerCount() {
+		int processors = Runtime.getRuntime().availableProcessors();
+		int workers = processors >= 4 ? processors - 1 : processors;
+		return Math.max(1, Math.min(32, workers));
 	}
 }

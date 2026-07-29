@@ -17,12 +17,12 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
-import java.io.RandomAccessFile;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -45,7 +45,6 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
  */
 final class PartitionValueDictionaryBuilder {
 
-	private static final long RESERVED_PREDICATE_IDS = 64L;
 	private static final int MAX_KEY_BYTES = 1024 * 1024 * 1024;
 	private static final long ENTRY_OVERHEAD_BYTES = 64L;
 
@@ -58,6 +57,7 @@ final class PartitionValueDictionaryBuilder {
 	private final int maxOpenFiles;
 	private final LmdbStoreConfig config;
 	private final BooleanSupplier cancellationSignal;
+	private final PredicateIdPlan predicateIdPlan;
 	private final IdAllocator idAllocator = new IdAllocator();
 
 	private long persistedValues;
@@ -65,7 +65,7 @@ final class PartitionValueDictionaryBuilder {
 
 	private PartitionValueDictionaryBuilder(CanonicalStagedInput staged, ValueDependencyBuckets dependencies,
 			Path workspace, int partitionCount, long memoryBudgetBytes, int maxOpenFiles, LmdbStoreConfig config,
-			BooleanSupplier cancellationSignal) throws IOException {
+			BooleanSupplier cancellationSignal, PredicateIdPlan predicateIdPlan) throws IOException {
 		this.staged = staged;
 		this.dependencies = dependencies;
 		this.dictionaryDirectory = workspace.resolve("partition-dictionary");
@@ -75,6 +75,7 @@ final class PartitionValueDictionaryBuilder {
 		this.maxOpenFiles = maxOpenFiles;
 		this.config = config;
 		this.cancellationSignal = cancellationSignal;
+		this.predicateIdPlan = predicateIdPlan;
 		Files.createDirectories(dictionaryDirectory);
 		Files.createDirectories(runDirectory);
 	}
@@ -82,8 +83,17 @@ final class PartitionValueDictionaryBuilder {
 	static PartitionValueDictionary build(CanonicalStagedInput staged, ValueDependencyBuckets dependencies,
 			Path workspace, int partitionCount, long memoryBudgetBytes, int maxOpenFiles, LmdbStoreConfig config,
 			BooleanSupplier cancellationSignal) throws IOException {
+		PredicateIdPlan predicateIdPlan = PredicateIdPlan.build(staged, workspace, memoryBudgetBytes, maxOpenFiles,
+				cancellationSignal);
+		return build(staged, dependencies, workspace, partitionCount, memoryBudgetBytes, maxOpenFiles, config,
+				cancellationSignal, predicateIdPlan);
+	}
+
+	static PartitionValueDictionary build(CanonicalStagedInput staged, ValueDependencyBuckets dependencies,
+			Path workspace, int partitionCount, long memoryBudgetBytes, int maxOpenFiles, LmdbStoreConfig config,
+			BooleanSupplier cancellationSignal, PredicateIdPlan predicateIdPlan) throws IOException {
 		PartitionValueDictionaryBuilder builder = new PartitionValueDictionaryBuilder(staged, dependencies, workspace,
-				partitionCount, memoryBudgetBytes, maxOpenFiles, config, cancellationSignal);
+				partitionCount, memoryBudgetBytes, maxOpenFiles, config, cancellationSignal, predicateIdPlan);
 		return builder.build();
 	}
 
@@ -148,46 +158,47 @@ final class PartitionValueDictionaryBuilder {
 		Path indexPath = PartitionValueDictionary.indexPath(dictionaryDirectory, partition);
 		long indexBytes = Math.addExact(PartitionValueDictionary.INDEX_HEADER_BYTES,
 				Math.multiplyExact(capacity, PartitionValueDictionary.INDEX_SLOT_BYTES));
-		try (RandomAccessFile indexFile = new RandomAccessFile(indexPath.toFile(), "rw");
-				FileChannel index = indexFile.getChannel();
-				RandomAccessFile data = new RandomAccessFile(artifact.toFile(), "r")) {
-			indexFile.setLength(indexBytes);
-			ByteBuffer header = ByteBuffer.allocate(PartitionValueDictionary.INDEX_HEADER_BYTES)
-					.order(ByteOrder.BIG_ENDIAN);
-			header.putInt(PartitionValueDictionary.INDEX_MAGIC);
-			header.putInt(PartitionValueDictionary.INDEX_VERSION);
-			header.putLong(capacity);
-			header.flip();
-			writeFully(index, header, 0L);
+		Files.deleteIfExists(indexPath);
+		try (Arena arena = Arena.ofConfined();
+				FileChannel indexChannel = FileChannel.open(indexPath, StandardOpenOption.CREATE_NEW,
+						StandardOpenOption.READ, StandardOpenOption.WRITE);
+				FileChannel dataChannel = FileChannel.open(artifact, StandardOpenOption.READ)) {
+			MemorySegment index = indexChannel.map(FileChannel.MapMode.READ_WRITE, 0L, indexBytes, arena);
+			long dataBytes = dataChannel.size();
+			MemorySegment data = dataBytes == 0L
+					? MemorySegment.NULL
+					: dataChannel.map(FileChannel.MapMode.READ_ONLY, 0L, dataBytes, arena);
+			index.set(PartitionValueDictionary.INT_BIG_ENDIAN, 0L, PartitionValueDictionary.INDEX_MAGIC);
+			index.set(PartitionValueDictionary.INT_BIG_ENDIAN, Integer.BYTES,
+					PartitionValueDictionary.INDEX_VERSION);
+			index.set(PartitionValueDictionary.LONG_BIG_ENDIAN, Integer.BYTES * 2L, capacity);
 
-			ByteBuffer slot = ByteBuffer.allocate(PartitionValueDictionary.INDEX_SLOT_BYTES)
-					.order(ByteOrder.BIG_ENDIAN);
 			long scanned = 0L;
-			while (data.getFilePointer() < data.length()) {
+			long dataOffset = 0L;
+			while (dataOffset < data.byteSize()) {
 				checkCancelled();
-				long dataOffset = data.getFilePointer();
-				long routeHash = data.readLong();
-				data.readLong();
-				data.readInt();
-				int keyLength = data.readInt();
+				if (dataOffset > data.byteSize() - Long.BYTES * 2L - Integer.BYTES * 2L) {
+					throw new IOException("Truncated partition dictionary entry");
+				}
+				long routeHash = data.get(PartitionValueDictionary.LONG_BIG_ENDIAN, dataOffset);
+				int keyLength = data.get(PartitionValueDictionary.INT_BIG_ENDIAN,
+						dataOffset + Long.BYTES * 2L + Integer.BYTES);
 				if (keyLength < 0 || keyLength > MAX_KEY_BYTES) {
 					throw new IOException("Invalid partition dictionary key length: " + keyLength);
 				}
-				data.seek(Math.addExact(data.getFilePointer(), keyLength));
+				long nextDataOffset = Math.addExact(dataOffset,
+						Math.addExact(Long.BYTES * 2L + Integer.BYTES * 2L, keyLength));
+				if (nextDataOffset > data.byteSize()) {
+					throw new IOException("Truncated partition dictionary key");
+				}
 				long slotIndex = PartitionValueDictionary.slotIndex(routeHash, capacity);
 				for (long probes = 0; probes < capacity; probes++) {
 					long slotOffset = PartitionValueDictionary.INDEX_HEADER_BYTES
 							+ slotIndex * PartitionValueDictionary.INDEX_SLOT_BYTES;
-					slot.clear();
-					PartitionValueDictionary.readFully(index, slot, slotOffset);
-					slot.flip();
-					slot.getLong();
-					if (slot.getLong() == 0L) {
-						slot.clear();
-						slot.putLong(routeHash);
-						slot.putLong(dataOffset + 1L);
-						slot.flip();
-						writeFully(index, slot, slotOffset);
+					if (index.get(PartitionValueDictionary.LONG_BIG_ENDIAN, slotOffset + Long.BYTES) == 0L) {
+						index.set(PartitionValueDictionary.LONG_BIG_ENDIAN, slotOffset, routeHash);
+						index.set(PartitionValueDictionary.LONG_BIG_ENDIAN, slotOffset + Long.BYTES,
+								dataOffset + 1L);
 						break;
 					}
 					slotIndex = slotIndex + 1L & capacity - 1L;
@@ -195,12 +206,13 @@ final class PartitionValueDictionaryBuilder {
 						throw new IOException("Partition dictionary lookup index is full");
 					}
 				}
+				dataOffset = nextDataOffset;
 				scanned++;
 			}
 			if (scanned != entries) {
 				throw new IOException("Partition dictionary entry count changed while indexing");
 			}
-			index.force(true);
+			index.force();
 		}
 	}
 
@@ -350,7 +362,7 @@ final class PartitionValueDictionaryBuilder {
 				inlineValues++;
 				persisted = false;
 			} else {
-				id = assignedId(value, entry.roles);
+				id = assignedId(value, entry.key);
 				persisted = true;
 			}
 		}
@@ -364,11 +376,12 @@ final class PartitionValueDictionaryBuilder {
 		output.write(entry.key);
 	}
 
-	private long assignedId(Value value, int roles) {
+	private long assignedId(Value value, byte[] canonicalKey) {
 		return switch (value) {
-		case IRI ignored -> (roles & CanonicalStatementStager.ROLE_PREDICATE) != 0
-				? idAllocator.nextPredicate()
-				: idAllocator.next(ValueIds.T_URI);
+		case IRI ignored -> {
+			long plannedId = predicateIdPlan.idFor(canonicalKey);
+			yield plannedId == 0L ? idAllocator.next(ValueIds.T_URI) : plannedId;
+		}
 		case Literal ignored -> idAllocator.next(ValueIds.T_LITERAL);
 		case BNode ignored -> idAllocator.next(ValueIds.T_BNODE);
 		case TripleTerm ignored -> idAllocator.next(ValueIds.T_TRIPLE);
@@ -381,12 +394,6 @@ final class PartitionValueDictionaryBuilder {
 		output.write(entry.key);
 		output.writeLong(entry.routeHash);
 		output.writeInt(entry.roles);
-	}
-
-	private static void writeFully(FileChannel channel, ByteBuffer buffer, long position) throws IOException {
-		while (buffer.hasRemaining()) {
-			position += channel.write(buffer, position);
-		}
 	}
 
 	private static void deleteRuns(List<Path> runs) throws IOException {
@@ -474,23 +481,16 @@ final class PartitionValueDictionaryBuilder {
 	private static final class IdAllocator {
 
 		private final long[] nextByType = new long[ValueIds.T_TRIPLE + 1];
-		private long nextPredicate = 1L;
 
 		private IdAllocator() {
 			Arrays.fill(nextByType, 1L);
-			nextByType[ValueIds.T_URI] = RESERVED_PREDICATE_IDS + 1L;
+			nextByType[ValueIds.T_URI] = PredicateIdPlan.RESERVED_IDS + 1L;
 		}
 
 		private long next(int type) {
 			return ValueIds.createId(type, nextByType[type]++);
 		}
 
-		private long nextPredicate() {
-			if (nextPredicate <= RESERVED_PREDICATE_IDS) {
-				return ValueIds.createId(ValueIds.T_URI, nextPredicate++);
-			}
-			return next(ValueIds.T_URI);
-		}
 	}
 
 	@FunctionalInterface

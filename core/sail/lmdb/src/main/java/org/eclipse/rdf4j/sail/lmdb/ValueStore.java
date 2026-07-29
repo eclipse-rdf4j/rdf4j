@@ -409,6 +409,7 @@ public class ValueStore extends AbstractValueFactory {
 	private static final int MAX_TRANSACTION_VALUE_CACHE_SIZE = 1024 * 1024;
 	private static final long TRANSACTION_VALUE_CACHE_BYTES_PER_ENTRY = 4 * 1024L;
 	private static final int MAX_SHARED_VALUE_CACHE_LEXICAL_CHARS = 1024 * 1024;
+	private static final long BULK_AUXILIARY_DATABASE_RESERVATION_PAGES = 16L;
 
 	private static final VarHandle PREVIOUS_NAMESPACE_HANDLE;
 
@@ -600,6 +601,9 @@ public class ValueStore extends AbstractValueFactory {
 		if (auxiliaryDatabasesInitialized) {
 			throw new IllegalStateException("ValueStore auxiliary databases are already initialized");
 		}
+		// Bulk appends can legitimately consume the last free pages. Reserve enough page-aligned headroom for the six
+		// deferred named databases, their catalog entries, and the retirement-epoch metadata transaction.
+		reserveWriteCapacity(Math.multiplyExact((long) pageSize, BULK_AUXILIARY_DATABASE_RESERVATION_PAGES));
 		openAuxiliaryDatabases();
 		initializeIdsAndTermIndexes(config);
 	}

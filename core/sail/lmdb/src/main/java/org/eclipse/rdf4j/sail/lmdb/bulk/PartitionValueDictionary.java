@@ -15,12 +15,14 @@ import java.io.BufferedInputStream;
 import java.io.DataInputStream;
 import java.io.EOFException;
 import java.io.IOException;
-import java.nio.ByteBuffer;
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.Arrays;
 
 final class PartitionValueDictionary {
 
@@ -28,6 +30,8 @@ final class PartitionValueDictionary {
 	static final int INDEX_VERSION = 1;
 	static final int INDEX_HEADER_BYTES = 16;
 	static final int INDEX_SLOT_BYTES = 16;
+	static final ValueLayout.OfInt INT_BIG_ENDIAN = ValueLayout.JAVA_INT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
+	static final ValueLayout.OfLong LONG_BIG_ENDIAN = ValueLayout.JAVA_LONG_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
 
 	private final Path directory;
 	private final int partitionCount;
@@ -103,24 +107,43 @@ final class PartitionValueDictionary {
 		private static final int DATA_HEADER_BYTES = Long.BYTES * 2 + Integer.BYTES * 2;
 		private static final int MAX_KEY_BYTES = 1024 * 1024 * 1024;
 
-		private final FileChannel data;
-		private final FileChannel index;
+		private final Arena arena;
+		private final MemorySegment data;
+		private final MemorySegment index;
 		private final long capacity;
-		private final ByteBuffer slot = ByteBuffer.allocate(INDEX_SLOT_BYTES).order(ByteOrder.BIG_ENDIAN);
-		private final ByteBuffer dataHeader = ByteBuffer.allocate(DATA_HEADER_BYTES).order(ByteOrder.BIG_ENDIAN);
 
 		private PartitionReader(Path dataPath, Path indexPath) throws IOException {
-			data = FileChannel.open(dataPath, StandardOpenOption.READ);
-			index = FileChannel.open(indexPath, StandardOpenOption.READ);
-			ByteBuffer header = ByteBuffer.allocate(INDEX_HEADER_BYTES).order(ByteOrder.BIG_ENDIAN);
-			readFully(index, header, 0L);
-			header.flip();
-			if (header.getInt() != INDEX_MAGIC || header.getInt() != INDEX_VERSION) {
-				throw new IOException("Unsupported partition dictionary index: " + indexPath);
-			}
-			capacity = header.getLong();
-			if (capacity <= 0L || (capacity & (capacity - 1L)) != 0L) {
-				throw new IOException("Invalid partition dictionary capacity: " + capacity);
+			Arena mappedArena = Arena.ofConfined();
+			try {
+				try (FileChannel dataChannel = FileChannel.open(dataPath, StandardOpenOption.READ);
+						FileChannel indexChannel = FileChannel.open(indexPath, StandardOpenOption.READ)) {
+					long dataBytes = dataChannel.size();
+					data = dataBytes == 0L
+							? MemorySegment.NULL
+							: dataChannel.map(FileChannel.MapMode.READ_ONLY, 0L, dataBytes, mappedArena);
+					long indexBytes = indexChannel.size();
+					if (indexBytes < INDEX_HEADER_BYTES) {
+						throw new IOException("Truncated partition dictionary index: " + indexPath);
+					}
+					index = indexChannel.map(FileChannel.MapMode.READ_ONLY, 0L, indexBytes, mappedArena);
+				}
+				if (index.get(INT_BIG_ENDIAN, 0L) != INDEX_MAGIC
+						|| index.get(INT_BIG_ENDIAN, Integer.BYTES) != INDEX_VERSION) {
+					throw new IOException("Unsupported partition dictionary index: " + indexPath);
+				}
+				capacity = index.get(LONG_BIG_ENDIAN, Integer.BYTES * 2L);
+				if (capacity <= 0L || (capacity & (capacity - 1L)) != 0L) {
+					throw new IOException("Invalid partition dictionary capacity: " + capacity);
+				}
+				long expectedIndexBytes = Math.addExact(INDEX_HEADER_BYTES,
+						Math.multiplyExact(capacity, INDEX_SLOT_BYTES));
+				if (index.byteSize() != expectedIndexBytes) {
+					throw new IOException("Partition dictionary index size mismatch: " + indexPath);
+				}
+				arena = mappedArena;
+			} catch (IOException | RuntimeException | Error failure) {
+				mappedArena.close();
+				throw failure;
 			}
 		}
 
@@ -128,11 +151,9 @@ final class PartitionValueDictionary {
 			long routeHash = CanonicalTermCodec.routeHash64(canonicalKey);
 			long slotIndex = slotIndex(routeHash, capacity);
 			for (long probes = 0; probes < capacity; probes++) {
-				slot.clear();
-				readFully(index, slot, INDEX_HEADER_BYTES + slotIndex * INDEX_SLOT_BYTES);
-				slot.flip();
-				long storedHash = slot.getLong();
-				long offsetPlusOne = slot.getLong();
+				long slotOffset = INDEX_HEADER_BYTES + slotIndex * INDEX_SLOT_BYTES;
+				long storedHash = index.get(LONG_BIG_ENDIAN, slotOffset);
+				long offsetPlusOne = index.get(LONG_BIG_ENDIAN, slotOffset + Long.BYTES);
 				if (offsetPlusOne == 0L) {
 					return 0L;
 				}
@@ -148,46 +169,31 @@ final class PartitionValueDictionary {
 		}
 
 		private long matchingId(long offset, long routeHash, byte[] canonicalKey) throws IOException {
-			dataHeader.clear();
-			readFully(data, dataHeader, offset);
-			dataHeader.flip();
-			if (dataHeader.getLong() != routeHash) {
+			if (offset < 0L || offset > data.byteSize() - DATA_HEADER_BYTES) {
+				throw new IOException("Partition dictionary index points outside the data file");
+			}
+			if (data.get(LONG_BIG_ENDIAN, offset) != routeHash) {
 				throw new IOException("Partition dictionary index points to a different route hash");
 			}
-			long id = dataHeader.getLong();
-			dataHeader.getInt();
-			int keyLength = dataHeader.getInt();
+			long id = data.get(LONG_BIG_ENDIAN, offset + Long.BYTES);
+			int keyLength = data.get(INT_BIG_ENDIAN, offset + Long.BYTES * 2L + Integer.BYTES);
 			if (keyLength < 0 || keyLength > MAX_KEY_BYTES) {
 				throw new IOException("Invalid partition dictionary key length: " + keyLength);
 			}
 			if (keyLength != canonicalKey.length) {
 				return 0L;
 			}
-			ByteBuffer key = ByteBuffer.allocate(keyLength);
-			readFully(data, key, offset + DATA_HEADER_BYTES);
-			return Arrays.equals(key.array(), canonicalKey) ? id : 0L;
+			long keyOffset = offset + DATA_HEADER_BYTES;
+			if (keyOffset > data.byteSize() - keyLength) {
+				throw new IOException("Partition dictionary key extends outside the data file");
+			}
+			MemorySegment storedKey = data.asSlice(keyOffset, keyLength);
+			return storedKey.mismatch(MemorySegment.ofArray(canonicalKey)) == -1L ? id : 0L;
 		}
 
 		@Override
-		public void close() throws IOException {
-			IOException failure = null;
-			try {
-				data.close();
-			} catch (IOException e) {
-				failure = e;
-			}
-			try {
-				index.close();
-			} catch (IOException e) {
-				if (failure == null) {
-					failure = e;
-				} else {
-					failure.addSuppressed(e);
-				}
-			}
-			if (failure != null) {
-				throw failure;
-			}
+		public void close() {
+			arena.close();
 		}
 	}
 
@@ -206,13 +212,4 @@ final class PartitionValueDictionary {
 		return mixed & capacity - 1L;
 	}
 
-	static void readFully(FileChannel channel, ByteBuffer buffer, long position) throws IOException {
-		while (buffer.hasRemaining()) {
-			int read = channel.read(buffer, position);
-			if (read < 0) {
-				throw new IOException("Unexpected end of partition dictionary");
-			}
-			position += read;
-		}
-	}
 }

@@ -42,6 +42,24 @@ final class ResolvedIdQuadSpool {
 		this.statements = statements;
 	}
 
+	static ResolvedIdQuadSpool restore(Path workspace, long statements) throws IOException {
+		if (statements < 0L) {
+			throw new IOException("Invalid resolved statement count: " + statements);
+		}
+		Path path = workspace.resolve("id-quads.bin");
+		long expectedBytes;
+		try {
+			expectedBytes = Math.multiplyExact(statements, BYTES_PER_ROW);
+		} catch (ArithmeticException e) {
+			throw new IOException("Resolved statement metadata overflows for " + path, e);
+		}
+		if (!Files.isRegularFile(path) || Files.size(path) != expectedBytes) {
+			throw new IOException("Resolved statement file size mismatch for " + path + ": expected "
+					+ expectedBytes + " bytes");
+		}
+		return new ResolvedIdQuadSpool(path, statements);
+	}
+
 	static ResolvedIdQuadSpool build(CanonicalStagedInput staged, PartitionValueDictionary dictionary, Path workspace,
 			int maxOpenFiles, long memoryBudgetBytes, BooleanSupplier cancellationSignal) throws IOException {
 		return build(staged, dictionary, workspace, maxOpenFiles, memoryBudgetBytes, cancellationSignal, true);

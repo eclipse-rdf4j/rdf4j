@@ -27,6 +27,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
@@ -49,6 +50,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbNativeBulkStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
@@ -69,17 +71,26 @@ class LmdbBulkLoaderContractTest {
 		Class<?> builder = Class.forName("org.eclipse.rdf4j.sail.lmdb.bulk.LmdbBulkLoader$Builder");
 		Class<?> parserMode = Class.forName("org.eclipse.rdf4j.sail.lmdb.bulk.LmdbBulkLoader$ParserMode");
 		Class<?> result = Class.forName("org.eclipse.rdf4j.sail.lmdb.bulk.LmdbBulkLoader$Result");
+		Class<?> pathInput = Class.forName("org.eclipse.rdf4j.sail.lmdb.bulk.LmdbBulkLoader$PathInput");
+		Class<?> progressListener = Class.forName("org.eclipse.rdf4j.sail.lmdb.bulk.ProgressListener");
+		Class<?> progressSnapshot = Class.forName("org.eclipse.rdf4j.sail.lmdb.bulk.ProgressSnapshot");
 
 		assertThat(Modifier.isPublic(loader.getModifiers())).isTrue();
 		assertThat(Modifier.isPublic(builder.getModifiers())).isTrue();
 		assertThat(Modifier.isPublic(parserMode.getModifiers())).isTrue();
 		assertThat(Modifier.isPublic(result.getModifiers())).isTrue();
+		assertThat(Modifier.isPublic(pathInput.getModifiers())).isTrue();
+		assertThat(Modifier.isPublic(progressListener.getModifiers())).isTrue();
+		assertThat(Modifier.isPublic(progressSnapshot.getModifiers())).isTrue();
 
 		assertThat(loader.getMethod("builder", Path.class, LmdbStoreConfig.class).getReturnType()).isEqualTo(builder);
 		assertThat(builder.getMethod("parserMode", parserMode).getReturnType()).isEqualTo(builder);
 		assertThat(builder.getMethod("memoryBudgetBytes", long.class).getReturnType()).isEqualTo(builder);
 		assertThat(builder.getMethod("partitionCount", int.class).getReturnType()).isEqualTo(builder);
 		assertThat(builder.getMethod("maxOpenFiles", int.class).getReturnType()).isEqualTo(builder);
+		assertThat(builder.getMethod("workers", int.class).getReturnType()).isEqualTo(builder);
+		assertThat(builder.getMethod("queueBatches", int.class).getReturnType()).isEqualTo(builder);
+		assertThat(builder.getMethod("progressListener", progressListener).getReturnType()).isEqualTo(builder);
 		assertThat(builder.getMethod("temporaryDirectory", Path.class).getReturnType()).isEqualTo(builder);
 		assertThat(builder.getMethod("cancellationSignal", BooleanSupplier.class).getReturnType()).isEqualTo(builder);
 		assertThat(builder.getDeclaredMethod("publicationHook", LmdbBulkLoadGeneration.PromotionHook.class)
@@ -89,6 +100,7 @@ class LmdbBulkLoaderContractTest {
 		assertThat(loader.getMethod("load", Path.class, RDFFormat.class).getReturnType()).isEqualTo(result);
 		assertThat(loader.getMethod("load", InputStream.class, String.class, RDFFormat.class).getReturnType())
 				.isEqualTo(result);
+		assertThat(loader.getMethod("load", List.class).getReturnType()).isEqualTo(result);
 		assertThat(result.getMethod("mapGrowthCount").getReturnType()).isEqualTo(long.class);
 		assertThat(LmdbStore.class.getMethod("getMapGrowthCount").getReturnType()).isEqualTo(long.class);
 	}
@@ -494,7 +506,7 @@ class LmdbBulkLoaderContractTest {
 	}
 
 	@Test
-	void cancellationCleansOwnedTargetAndWorkspaceWithoutClosingCallerInput() throws Exception {
+	void cancellationLeavesResumablePhaseStateWithoutClosingCallerInput() throws Exception {
 		StringBuilder input = new StringBuilder();
 		for (int i = 0; i < 2_000; i++) {
 			input.append("<urn:s:").append(i).append("> <urn:p> <urn:o:").append(i).append("> .\n");
@@ -516,9 +528,175 @@ class LmdbBulkLoaderContractTest {
 
 		assertThat(callerOwned.closed).isFalse();
 		assertThat(target).doesNotExist();
+		Path stateFile = temporaryDirectory.resolve(".cancelled-store.lmdb-bulk-load").resolve("state.properties");
+		assertThat(stateFile).isRegularFile();
+		Properties state = new Properties();
+		try (InputStream inputStream = Files.newInputStream(stateFile)) {
+			state.load(inputStream);
+		}
+		assertThat(state).containsEntry("lifecycle", "RESUMABLE")
+				.containsEntry("phase.PREFLIGHT", "COMPLETE")
+				.containsEntry("phase.STAGE_INPUTS", "IN_PROGRESS");
 		try (var children = Files.list(workspaceParent)) {
 			assertThat(children).isEmpty();
 		}
+	}
+
+	@Test
+	void resumesFromLastCommittedStageWithoutReadingInputAgain() throws Exception {
+		StringBuilder input = new StringBuilder();
+		for (int i = 0; i < 200; i++) {
+			input.append("<urn:resume:s:")
+					.append(i)
+					.append("> <urn:resume:p> <urn:resume:o:")
+					.append(i)
+					.append("> .\n");
+		}
+		Path target = temporaryDirectory.resolve("resumed-store");
+		Path stateFile = temporaryDirectory.resolve(".resumed-store.lmdb-bulk-load").resolve("state.properties");
+
+		assertThatThrownBy(() -> LmdbBulkLoader.builder(target, new LmdbStoreConfig("spoc,psoc"))
+				.partitionCount(8)
+				.maxOpenFiles(3)
+				.cancellationSignal(() -> stateHasPhase(stateFile, "DISTINCT_AND_ANALYZE_VALUES", "IN_PROGRESS"))
+				.build()
+				.load(new ByteArrayInputStream(input.toString().getBytes(StandardCharsets.UTF_8)), "urn:resume:",
+						RDFFormat.NQUADS))
+								.isInstanceOf(CancellationException.class);
+
+		assertThat(stateHasPhase(stateFile, "STAGE_INPUTS", "COMPLETE")).isTrue();
+		LmdbBulkLoader.Result result = LmdbBulkLoader.builder(target, new LmdbStoreConfig("spoc,psoc"))
+				.partitionCount(8)
+				.maxOpenFiles(3)
+				.build()
+				.load(new ReadFailingInputStream(), "urn:resume:", RDFFormat.NQUADS);
+
+		assertThat(result.parsedStatements()).isEqualTo(200);
+		assertThat(result.storedStatements()).isEqualTo(200);
+		assertThat(target).isDirectory();
+		assertThat(BulkLoadWorkspace.controlDirectory(target)).doesNotExist();
+	}
+
+	@Test
+	void resumesFromDictionaryAndReclaimsSupersededBuckets() throws Exception {
+		StringBuilder input = new StringBuilder();
+		for (int i = 0; i < 200; i++) {
+			input.append("<urn:dictionary:s:")
+					.append(i)
+					.append("> <urn:dictionary:p> <urn:dictionary:o:")
+					.append(i)
+					.append("> .\n");
+		}
+		Path target = temporaryDirectory.resolve("dictionary-resume-store");
+		Path workspace = BulkLoadWorkspace.controlDirectory(target);
+		Path stateFile = workspace.resolve("state.properties");
+
+		assertThatThrownBy(() -> LmdbBulkLoader.builder(target, new LmdbStoreConfig("spoc,psoc"))
+				.partitionCount(8)
+				.maxOpenFiles(3)
+				.cancellationSignal(() -> stateHasPhase(stateFile, "RESOLVE_IDS", "IN_PROGRESS"))
+				.build()
+				.load(new ByteArrayInputStream(input.toString().getBytes(StandardCharsets.UTF_8)), "urn:dictionary:",
+						RDFFormat.NQUADS))
+								.isInstanceOf(CancellationException.class);
+
+		assertThat(stateHasPhase(stateFile, "BUILD_MAPPED_DICTIONARY", "COMPLETE")).isTrue();
+		assertThat(workspace.resolve("partition-dictionary")).isDirectory();
+		assertThat(workspace.resolve("value-buckets")).doesNotExist();
+		assertThat(workspace.resolve("dependency-buckets")).doesNotExist();
+
+		LmdbBulkLoader.Result result = LmdbBulkLoader.builder(target, new LmdbStoreConfig("spoc,psoc"))
+				.partitionCount(8)
+				.maxOpenFiles(3)
+				.build()
+				.load(new ReadFailingInputStream(), "urn:dictionary:", RDFFormat.NQUADS);
+
+		assertThat(result.parsedStatements()).isEqualTo(200);
+		assertThat(result.storedStatements()).isEqualTo(200);
+		assertThat(workspace).doesNotExist();
+	}
+
+	@Test
+	void resumesFromResolvedIdsAndReclaimsStatementsAndDictionary() throws Exception {
+		StringBuilder input = new StringBuilder();
+		for (int i = 0; i < 200; i++) {
+			input.append("<urn:resolved:s:")
+					.append(i)
+					.append("> <urn:resolved:p> <urn:resolved:o:")
+					.append(i)
+					.append("> .\n");
+		}
+		Path target = temporaryDirectory.resolve("resolved-resume-store");
+		Path workspace = BulkLoadWorkspace.controlDirectory(target);
+		Path stateFile = workspace.resolve("state.properties");
+
+		assertThatThrownBy(() -> LmdbBulkLoader.builder(target, new LmdbStoreConfig("spoc,psoc"))
+				.partitionCount(8)
+				.maxOpenFiles(3)
+				.cancellationSignal(() -> stateHasPhase(stateFile, "BUILD_NATIVE_RUNS", "IN_PROGRESS"))
+				.build()
+				.load(new ByteArrayInputStream(input.toString().getBytes(StandardCharsets.UTF_8)), "urn:resolved:",
+						RDFFormat.NQUADS))
+								.isInstanceOf(CancellationException.class);
+
+		assertThat(stateHasPhase(stateFile, "RESOLVE_IDS", "COMPLETE")).isTrue();
+		assertThat(workspace.resolve("id-quads.bin")).isRegularFile();
+		assertThat(workspace.resolve("assigned-values.bin")).isRegularFile();
+		assertThat(workspace.resolve("statements.lz4")).doesNotExist();
+		assertThat(workspace.resolve("partition-dictionary")).doesNotExist();
+
+		LmdbBulkLoader.Result result = LmdbBulkLoader.builder(target, new LmdbStoreConfig("spoc,psoc"))
+				.partitionCount(8)
+				.maxOpenFiles(3)
+				.build()
+				.load(new ReadFailingInputStream(), "urn:resolved:", RDFFormat.NQUADS);
+
+		assertThat(result.parsedStatements()).isEqualTo(200);
+		assertThat(result.storedStatements()).isEqualTo(200);
+		assertThat(workspace).doesNotExist();
+	}
+
+	@Test
+	void resumesFromNativeRunsAndReclaimsResolvedValues() throws Exception {
+		StringBuilder input = new StringBuilder();
+		for (int i = 0; i < 200; i++) {
+			input.append("<urn:native:s:")
+					.append(i)
+					.append("> <urn:native:p> <urn:native:o:")
+					.append(i)
+					.append("> .\n");
+		}
+		Path target = temporaryDirectory.resolve("native-resume-store");
+		Path workspace = BulkLoadWorkspace.controlDirectory(target);
+		Path stateFile = workspace.resolve("state.properties");
+
+		assertThatThrownBy(() -> LmdbBulkLoader.builder(target, new LmdbStoreConfig("spoc,psoc"))
+				.partitionCount(8)
+				.maxOpenFiles(3)
+				.cancellationSignal(() -> stateHasPhase(stateFile, "WRITE_GENERATION", "IN_PROGRESS"))
+				.build()
+				.load(new ByteArrayInputStream(input.toString().getBytes(StandardCharsets.UTF_8)), "urn:native:",
+						RDFFormat.NQUADS))
+								.isInstanceOf(CancellationException.class);
+
+		assertThat(stateHasPhase(stateFile, "BUILD_NATIVE_RUNS", "COMPLETE")).isTrue();
+		assertThat(workspace.resolve("value-main-records.bin")).isRegularFile();
+		assertThat(workspace.resolve("value-ref-count-records.bin")).isRegularFile();
+		assertThat(workspace.resolve("value-triple-terms.bin")).isRegularFile();
+		assertThat(workspace.resolve("value-hashes.bin")).isRegularFile();
+		assertThat(workspace.resolve("id-quads.bin")).isRegularFile();
+		assertThat(workspace.resolve("assigned-values.bin")).doesNotExist();
+		assertThat(workspace.resolve("resolved-value-components.bin")).doesNotExist();
+
+		LmdbBulkLoader.Result result = LmdbBulkLoader.builder(target, new LmdbStoreConfig("spoc,psoc"))
+				.partitionCount(8)
+				.maxOpenFiles(3)
+				.build()
+				.load(new ReadFailingInputStream(), "urn:native:", RDFFormat.NQUADS);
+
+		assertThat(result.parsedStatements()).isEqualTo(200);
+		assertThat(result.storedStatements()).isEqualTo(200);
+		assertThat(workspace).doesNotExist();
 	}
 
 	@Test
@@ -650,6 +828,77 @@ class LmdbBulkLoaderContractTest {
 	}
 
 	@Test
+	void assignsTheLowestIriIdToTheMostFrequentPredicate() throws Exception {
+		var valueFactory = SimpleValueFactory.getInstance();
+		String popularPredicate = null;
+		List<String> rarePredicates = new ArrayList<>();
+		for (int index = 0; popularPredicate == null || rarePredicates.size() < 70; index++) {
+			String candidate = "urn:ranked:predicate:" + index;
+			int partition = (int) CanonicalTermCodec
+					.routeHash64(CanonicalTermCodec.encode(valueFactory.createIRI(candidate))) & 3;
+			if (partition == 3 && popularPredicate == null) {
+				popularPredicate = candidate;
+			} else {
+				rarePredicates.add(candidate);
+			}
+		}
+
+		StringBuilder input = new StringBuilder();
+		for (int occurrence = 0; occurrence < 100; occurrence++) {
+			input.append("<urn:ranked:popular-subject> <")
+					.append(popularPredicate)
+					.append("> <urn:ranked:popular-object> .\n");
+		}
+		for (int index = 0; index < rarePredicates.size(); index++) {
+			input.append("<urn:ranked:subject:")
+					.append(index)
+					.append("> <")
+					.append(rarePredicates.get(index))
+					.append("> <urn:ranked:object:")
+					.append(index)
+					.append("> .\n");
+		}
+
+		Path target = temporaryDirectory.resolve("predicate-ranking-store");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,psoc");
+		load(target, config, input.toString());
+
+		long id = readValueIds(target, config).get(popularPredicate);
+		assertThat(ValueIds.getIdType(id)).isEqualTo(ValueIds.T_URI);
+		assertThat(ValueIds.getValue(id)).isEqualTo(1L);
+	}
+
+	@Test
+	void reportsPhaseProgressAndCurrentThroughput() throws Exception {
+		String input = "<urn:progress:s> <urn:progress:p> <urn:progress:o> .\n".repeat(2_050);
+		Path target = temporaryDirectory.resolve("progress-store");
+		List<ProgressSnapshot> snapshots = Collections.synchronizedList(new ArrayList<>());
+
+		LmdbBulkLoader.Result result = LmdbBulkLoader
+				.builder(target, new LmdbStoreConfig("spoc,psoc"))
+				.partitionCount(4)
+				.workers(2)
+				.queueBatches(2)
+				.progressListener(snapshots::add)
+				.build()
+				.load(new ByteArrayInputStream(input.getBytes(StandardCharsets.UTF_8)), "urn:progress:",
+						RDFFormat.NQUADS);
+
+		assertThat(result.parsedStatements()).isEqualTo(2_050);
+		assertThat(snapshots)
+				.extracting(ProgressSnapshot::phase)
+				.contains(BulkLoadPhase.STAGE_INPUTS, BulkLoadPhase.PUBLISH_AND_CLEAN);
+		assertThat(snapshots)
+				.anyMatch(snapshot -> snapshot.phase() == BulkLoadPhase.STAGE_INPUTS
+						&& snapshot.currentOperationsPerSecond() > 0.0);
+		assertThat(snapshots)
+				.allMatch(snapshot -> snapshot.workers() == 2 && snapshot.queueBatches() == 2);
+		assertThat(snapshots)
+				.anyMatch(snapshot -> snapshot.phase() == BulkLoadPhase.PUBLISH_AND_CLEAN
+						&& snapshot.phaseComplete());
+	}
+
+	@Test
 	void keepsIdsAndStatementsStableAcrossForcedSpillsAndMergeFanIn() throws Exception {
 		List<String> statements = new ArrayList<>();
 		for (int index = 0; index < 2_000; index++) {
@@ -692,6 +941,35 @@ class LmdbBulkLoaderContractTest {
 		try (var children = Files.list(spillParent)) {
 			assertThat(children).isEmpty();
 		}
+	}
+
+	@Test
+	void growsSmallValueMapBeforeOpeningDeferredAuxiliaryDatabases() throws Exception {
+		StringBuilder input = new StringBuilder();
+		for (int index = 0; index < 10_000; index++) {
+			input.append("<urn:map-growth:s:")
+					.append(index)
+					.append("> <urn:map-growth:p:")
+					.append(index % 17)
+					.append("> <urn:map-growth:o:")
+					.append(index)
+					.append("> .\n");
+		}
+		Path target = temporaryDirectory.resolve("small-map-store");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,psoc")
+				.setValueDBSize(1024 * 1024)
+				.setTripleDBSize(1024 * 1024);
+
+		LmdbBulkLoader.Result result = LmdbBulkLoader.builder(target, config)
+				.partitionCount(256)
+				.memoryBudgetBytes(64L * 1024 * 1024)
+				.maxOpenFiles(64)
+				.build()
+				.load(new ByteArrayInputStream(input.toString().getBytes(StandardCharsets.UTF_8)), "urn:map-growth:",
+						RDFFormat.NQUADS);
+
+		assertThat(result.storedStatements()).isEqualTo(10_000);
+		assertThat(result.mapGrowthCount()).isPositive();
 	}
 
 	private static void load(Path target, LmdbStoreConfig config, String input) throws IOException {
@@ -783,6 +1061,19 @@ class LmdbBulkLoaderContractTest {
 		return () -> records.getAndIncrement() == 0
 				? new ValueStore.BulkRecord(new byte[] { 5, 1 }, new byte[] { 1 })
 				: null;
+	}
+
+	private static boolean stateHasPhase(Path stateFile, String phase, String status) {
+		if (!Files.isRegularFile(stateFile)) {
+			return false;
+		}
+		Properties properties = new Properties();
+		try (InputStream input = Files.newInputStream(stateFile)) {
+			properties.load(input);
+			return status.equals(properties.getProperty("phase." + phase));
+		} catch (IOException e) {
+			return false;
+		}
 	}
 
 	private static final class CloseDetectingInputStream extends ByteArrayInputStream {

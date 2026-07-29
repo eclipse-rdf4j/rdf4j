@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.sail.lmdb.bulk;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.zip.GZIPInputStream;
 
@@ -32,59 +34,181 @@ final class LmdbBulkLoaderEngine {
 
 	static LmdbBulkLoader.Result load(LmdbBulkLoader loader, InputStream input, String baseUri, RDFFormat format)
 			throws IOException {
+		return load(loader, workspace -> stage(loader, workspace, input, baseUri, format));
+	}
+
+	static LmdbBulkLoader.Result load(LmdbBulkLoader loader, List<LmdbBulkLoader.PathInput> inputs)
+			throws IOException {
+		return load(loader, workspace -> stage(loader, workspace, inputs));
+	}
+
+	private static LmdbBulkLoader.Result load(LmdbBulkLoader loader, StagingAction stagingAction)
+			throws IOException {
 		long started = System.nanoTime();
-		checkCancelled(loader);
-		try (LmdbBulkLoadGeneration generation = LmdbBulkLoadGeneration.create(loader.target(),
-				loader.publicationHook())) {
-			if (generation.recoveredPublication()) {
-				LmdbBulkLoadGeneration.PublicationStatistics statistics = generation.recoveredStatistics();
+		try (BulkLoadWorkspace workspace = BulkLoadWorkspace.open(loader.target(), loader.temporaryDirectory(),
+				loader.progressListener(), loader.workers(), loader.queueBatches())) {
+			try {
+				workspace.startPhase(BulkLoadPhase.PREFLIGHT);
 				checkCancelled(loader);
-				try {
-					long actualStatements = LmdbNativeBulkStore.validateIncompletePublication(loader.target(),
-							loader.config());
-					if (actualStatements != statistics.storedStatements()) {
-						throw new IOException("Recovered LMDB bulk-load publication expected "
-								+ statistics.storedStatements() + " statements but contains " + actualStatements);
+				try (LmdbBulkLoadGeneration generation = LmdbBulkLoadGeneration.create(loader.target(),
+						loader.publicationHook())) {
+					workspace.completePhase(BulkLoadPhase.PREFLIGHT);
+					if (generation.recoveredPublication()) {
+						LmdbBulkLoadGeneration.PublicationStatistics statistics = generation.recoveredStatistics();
+						checkCancelled(loader);
+						try {
+							workspace.startPhase(BulkLoadPhase.VALIDATE_GENERATION);
+							long actualStatements = LmdbNativeBulkStore.validateIncompletePublication(loader.target(),
+									loader.config());
+							if (actualStatements != statistics.storedStatements()) {
+								throw new IOException("Recovered LMDB bulk-load publication expected "
+										+ statistics.storedStatements() + " statements but contains "
+										+ actualStatements);
+							}
+							workspace.completePhase(BulkLoadPhase.VALIDATE_GENERATION);
+							checkCancelled(loader);
+							workspace.startPhase(BulkLoadPhase.PUBLISH_AND_CLEAN);
+							generation.finishRecoveredPublication();
+							workspace.completePhase(BulkLoadPhase.PUBLISH_AND_CLEAN);
+							LmdbBulkLoader.Result result = new LmdbBulkLoader.Result(statistics.parsedStatements(),
+									statistics.storedStatements(), statistics.persistedValues(),
+									statistics.inlineValues(), statistics.temporaryBytes(), statistics.elapsedMillis(),
+									statistics.mapGrowthCount());
+							workspace.complete(result);
+							return result;
+						} catch (CancellationException e) {
+							throw e;
+						} catch (IOException | RuntimeException validationFailure) {
+							generation.rebuildAfterFailedRecoveryValidation();
+						}
 					}
-					checkCancelled(loader);
-					generation.finishRecoveredPublication();
-					return new LmdbBulkLoader.Result(statistics.parsedStatements(), statistics.storedStatements(),
-							statistics.persistedValues(), statistics.inlineValues(), statistics.temporaryBytes(),
-							statistics.elapsedMillis(), statistics.mapGrowthCount());
-				} catch (CancellationException e) {
-					throw e;
-				} catch (IOException | RuntimeException validationFailure) {
-					generation.rebuildAfterFailedRecoveryValidation();
+
+					CanonicalStagedInput staged;
+					if (workspace.phaseComplete(BulkLoadPhase.STAGE_INPUTS)) {
+						staged = workspace.stagedInput(loader.partitionCount());
+					} else {
+						workspace.startPhase(BulkLoadPhase.STAGE_INPUTS);
+						staged = stagingAction.stage(workspace);
+						workspace.recordStagedInput(staged);
+						workspace.completePhase(BulkLoadPhase.STAGE_INPUTS);
+					}
+
+					ResolvedIdQuadSpool statements;
+					ResolvedValueRecords resolvedValues = null;
+					if (workspace.phaseComplete(BulkLoadPhase.RESOLVE_IDS)) {
+						statements = workspace.resolvedStatements();
+						if (!workspace.phaseComplete(BulkLoadPhase.BUILD_NATIVE_RUNS)) {
+							resolvedValues = workspace.resolvedValues();
+						}
+					} else {
+						ValueDependencyBuckets dependencies = null;
+						if (!workspace.phaseComplete(BulkLoadPhase.BUILD_MAPPED_DICTIONARY)) {
+							if (workspace.phaseComplete(BulkLoadPhase.DISTINCT_AND_ANALYZE_VALUES)) {
+								dependencies = workspace.dependencyBuckets(loader.partitionCount());
+							} else {
+								workspace.startPhase(BulkLoadPhase.DISTINCT_AND_ANALYZE_VALUES);
+								dependencies = ValueDependencyCollector.collect(staged, workspace.directory(),
+										loader.partitionCount(), loader.maxOpenFiles(), loader.config(),
+										loader.cancellationSignal());
+								workspace.progress(staged.statements(), 0L);
+								workspace.completePhase(BulkLoadPhase.DISTINCT_AND_ANALYZE_VALUES);
+							}
+						}
+
+						PartitionValueDictionary dictionary;
+						if (workspace.phaseComplete(BulkLoadPhase.BUILD_MAPPED_DICTIONARY)) {
+							dictionary = workspace.dictionary(loader.partitionCount());
+						} else {
+							PredicateIdPlan predicateIdPlan;
+							if (workspace.phaseComplete(BulkLoadPhase.PLAN_VALUE_IDS)) {
+								predicateIdPlan = workspace.predicateIdPlan();
+							} else {
+								workspace.startPhase(BulkLoadPhase.PLAN_VALUE_IDS);
+								predicateIdPlan = PredicateIdPlan.build(staged, workspace.directory(),
+										loader.memoryBudgetBytes(), loader.maxOpenFiles(),
+										loader.workers(), loader.queueBatches(),
+										loader.cancellationSignal());
+								workspace.recordPredicateIdPlan(predicateIdPlan);
+								workspace.progress(staged.statements(), 0L);
+								workspace.completePhase(BulkLoadPhase.PLAN_VALUE_IDS);
+							}
+							workspace.startPhase(BulkLoadPhase.BUILD_MAPPED_DICTIONARY);
+							dictionary = PartitionValueDictionaryBuilder.build(staged, dependencies,
+									workspace.directory(), loader.partitionCount(), loader.memoryBudgetBytes(),
+									loader.maxOpenFiles(), loader.config(), loader.cancellationSignal(),
+									predicateIdPlan);
+							workspace.recordDictionary(dictionary);
+							workspace.progress(
+									Math.addExact(dictionary.persistedValues(), dictionary.inlineValues()), 0L);
+							workspace.completePhase(BulkLoadPhase.BUILD_MAPPED_DICTIONARY);
+						}
+						workspace.reclaimAfterDictionary();
+
+						workspace.startPhase(BulkLoadPhase.RESOLVE_IDS);
+						statements = ResolvedIdQuadSpool.build(staged, dictionary, workspace.directory(),
+								loader.maxOpenFiles(), loader.memoryBudgetBytes(), loader.cancellationSignal());
+						resolvedValues = ResolvedValueRecords.build(dictionary, workspace.directory(),
+								loader.maxOpenFiles(), loader.memoryBudgetBytes(), loader.config(),
+								loader.cancellationSignal());
+						workspace.recordResolved(statements, resolvedValues);
+						workspace.progress(Math.addExact(statements.statements(), resolvedValues.records()), 0L);
+						workspace.completePhase(BulkLoadPhase.RESOLVE_IDS);
+					}
+					workspace.reclaimAfterResolution();
+					long persistedValues = workspace.dictionaryPersistedValues();
+					long inlineValues = workspace.dictionaryInlineValues();
+
+					ValueStoreBulkRecords.Output nativeValueRecords;
+					if (workspace.phaseComplete(BulkLoadPhase.BUILD_NATIVE_RUNS)) {
+						nativeValueRecords = workspace.nativeRecords();
+					} else {
+						workspace.startPhase(BulkLoadPhase.BUILD_NATIVE_RUNS);
+						if (resolvedValues == null) {
+							throw new IOException("Resolved value records are unavailable for native-run construction");
+						}
+						nativeValueRecords = ValueStoreBulkRecords.build(resolvedValues, workspace.directory(),
+								loader.memoryBudgetBytes(), loader.maxOpenFiles(), loader.cancellationSignal());
+						workspace.recordNativeRecords(nativeValueRecords);
+						workspace.progress(nativeRecordCount(nativeValueRecords), 0L);
+						workspace.completePhase(BulkLoadPhase.BUILD_NATIVE_RUNS);
+					}
+					workspace.reclaimAfterNativeRecords();
+
+					workspace.startPhase(BulkLoadPhase.WRITE_GENERATION);
+					NativeStoreWriter.WriteResult writeResult = NativeStoreWriter.write(generation.directory(),
+							loader.config(),
+							nativeValueRecords, statements, staged, loader.memoryBudgetBytes(), loader.maxOpenFiles(),
+							loader.writeTransactionRecords(), loader.writeTransactionBytes(),
+							loader.cancellationSignal());
+					workspace.progress(writeResult.storedStatements(), 0L);
+					workspace.completePhase(BulkLoadPhase.WRITE_GENERATION);
+
+					long storedStatements = writeResult.storedStatements();
+					long temporaryBytes = workspace.bytesWritten();
+					workspace.startPhase(BulkLoadPhase.VALIDATE_GENERATION);
+					validate(loader, generation.directory(), storedStatements);
+					workspace.progress(storedStatements, 0L);
+					workspace.completePhase(BulkLoadPhase.VALIDATE_GENERATION);
+					long elapsedMillis = (System.nanoTime() - started) / 1_000_000L;
+					workspace.startPhase(BulkLoadPhase.PUBLISH_AND_CLEAN);
+					generation.publish(new LmdbBulkLoadGeneration.PublicationStatistics(staged.statements(),
+							storedStatements, persistedValues, inlineValues, temporaryBytes,
+							elapsedMillis, writeResult.mapGrowthCount()));
+					workspace.progress(1L, 0L);
+					workspace.completePhase(BulkLoadPhase.PUBLISH_AND_CLEAN);
+					LmdbBulkLoader.Result result = new LmdbBulkLoader.Result(staged.statements(), storedStatements,
+							persistedValues, inlineValues, temporaryBytes, elapsedMillis,
+							writeResult.mapGrowthCount());
+					workspace.complete(result);
+					return result;
 				}
-			}
-			try (BulkLoadWorkspace workspace = BulkLoadWorkspace.create(loader.temporaryDirectory())) {
-				CanonicalStagedInput staged = stage(loader, workspace, input, baseUri, format);
-				ValueDependencyBuckets dependencies = ValueDependencyCollector.collect(staged, workspace.directory(),
-						loader.partitionCount(), loader.maxOpenFiles(), loader.config(), loader.cancellationSignal());
-				PartitionValueDictionary dictionary = PartitionValueDictionaryBuilder.build(staged, dependencies,
-						workspace.directory(), loader.partitionCount(), loader.memoryBudgetBytes(),
-						loader.maxOpenFiles(), loader.config(), loader.cancellationSignal());
-				ResolvedIdQuadSpool statements = ResolvedIdQuadSpool.build(staged, dictionary, workspace.directory(),
-						loader.maxOpenFiles(), loader.memoryBudgetBytes(), loader.cancellationSignal());
-				ResolvedValueRecords resolvedValues = ResolvedValueRecords.build(dictionary, workspace.directory(),
-						loader.maxOpenFiles(), loader.memoryBudgetBytes(), loader.config(),
-						loader.cancellationSignal());
-				ValueStoreBulkRecords.Output nativeValueRecords = ValueStoreBulkRecords.build(resolvedValues,
-						workspace.directory(), loader.memoryBudgetBytes(), loader.maxOpenFiles(),
-						loader.cancellationSignal());
-				NativeStoreWriter.WriteResult writeResult = NativeStoreWriter.write(generation.directory(),
-						loader.config(),
-						nativeValueRecords, statements, staged, loader.memoryBudgetBytes(), loader.maxOpenFiles(),
-						loader.writeTransactionRecords(), loader.writeTransactionBytes(), loader.cancellationSignal());
-				long storedStatements = writeResult.storedStatements();
-				long temporaryBytes = workspace.bytesWritten();
-				validate(loader, generation.directory(), storedStatements);
-				long elapsedMillis = (System.nanoTime() - started) / 1_000_000L;
-				generation.publish(new LmdbBulkLoadGeneration.PublicationStatistics(staged.statements(),
-						storedStatements, dictionary.persistedValues(), dictionary.inlineValues(), temporaryBytes,
-						elapsedMillis, writeResult.mapGrowthCount()));
-				return new LmdbBulkLoader.Result(staged.statements(), storedStatements, dictionary.persistedValues(),
-						dictionary.inlineValues(), temporaryBytes, elapsedMillis, writeResult.mapGrowthCount());
+			} catch (IOException | RuntimeException | Error failure) {
+				try {
+					workspace.markResumable(failure);
+				} catch (IOException stateFailure) {
+					failure.addSuppressed(stateFailure);
+				}
+				throw failure;
 			}
 		}
 	}
@@ -93,38 +217,72 @@ final class LmdbBulkLoaderEngine {
 			String baseUri, RDFFormat format) throws IOException {
 		try (CanonicalStatementStager stager = new CanonicalStatementStager(workspace.directory(), loader.config(),
 				loader.partitionCount(), loader.maxOpenFiles(), loader.memoryBudgetBytes())) {
-			if (useFastParser(loader, format)) {
-				new FastNTriplesParser(format, loader.cancellationSignal())
-						.parse(input, stager::writeCanonicalStatement);
-				checkCancelled(loader);
-				return stager.stagedInput();
-			}
-			RDFParser parser = parser(loader, format);
-			parser.setRDFHandler(new AbstractRDFHandler() {
-				@Override
-				public void handleNamespace(String prefix, String uri) throws RDFHandlerException {
-					checkCancelled(loader);
-					try {
-						stager.writeNamespace(prefix, uri);
-					} catch (IOException e) {
-						throw new RDFHandlerException(e);
-					}
-				}
-
-				@Override
-				public void handleStatement(Statement statement) throws RDFHandlerException {
-					checkCancelled(loader);
-					try {
-						stager.writeStatement(statement);
-					} catch (IOException e) {
-						throw new RDFHandlerException(e);
-					}
-				}
-			});
-			parser.parse(decompressIfRequired(input), baseUri);
-			checkCancelled(loader);
+			parse(loader, workspace, stager, input, baseUri, format);
 			return stager.stagedInput();
 		}
+	}
+
+	private static CanonicalStagedInput stage(LmdbBulkLoader loader, BulkLoadWorkspace workspace,
+			List<LmdbBulkLoader.PathInput> inputs) throws IOException {
+		try (CanonicalStatementStager stager = new CanonicalStatementStager(workspace.directory(), loader.config(),
+				loader.partitionCount(), loader.maxOpenFiles(), loader.memoryBudgetBytes())) {
+			for (LmdbBulkLoader.PathInput input : inputs) {
+				checkCancelled(loader);
+				try (InputStream stream = Files.newInputStream(input.path())) {
+					parse(loader, workspace, stager, stream, input.baseUri(), input.format());
+				}
+			}
+			return stager.stagedInput();
+		}
+	}
+
+	private static void parse(LmdbBulkLoader loader, BulkLoadWorkspace workspace, CanonicalStatementStager stager,
+			InputStream input, String baseUri, RDFFormat format) throws IOException {
+		if (useFastParser(loader, format)) {
+			new FastNTriplesParser(format, loader.cancellationSignal())
+					.parse(input, (subject, predicate, object, context) -> {
+						stager.writeCanonicalStatement(subject, predicate, object, context);
+						workspace.progress(1L, statementBytes(subject, predicate, object, context));
+					});
+			checkCancelled(loader);
+			return;
+		}
+		RDFParser parser = parser(loader, format);
+		parser.setRDFHandler(new AbstractRDFHandler() {
+			@Override
+			public void handleNamespace(String prefix, String uri) throws RDFHandlerException {
+				checkCancelled(loader);
+				try {
+					stager.writeNamespace(prefix, uri);
+				} catch (IOException e) {
+					throw new RDFHandlerException(e);
+				}
+			}
+
+			@Override
+			public void handleStatement(Statement statement) throws RDFHandlerException {
+				checkCancelled(loader);
+				try {
+					stager.writeStatement(statement);
+					workspace.progress(1L, 0L);
+				} catch (IOException e) {
+					throw new RDFHandlerException(e);
+				}
+			}
+		});
+		parser.parse(decompressIfRequired(input), baseUri);
+		checkCancelled(loader);
+	}
+
+	private static long statementBytes(byte[] subject, byte[] predicate, byte[] object, byte[] context) {
+		long bytes = Math.addExact(Math.addExact(subject.length, predicate.length), object.length);
+		return Math.addExact(bytes, context == null ? 0L : context.length);
+	}
+
+	private static long nativeRecordCount(ValueStoreBulkRecords.Output records) {
+		long count = Math.addExact(records.mainRecords().records(), records.referenceCounts().records());
+		count = Math.addExact(count, records.tripleTerms().rows());
+		return Math.addExact(count, records.valueHashes().rows());
 	}
 
 	private static InputStream decompressIfRequired(InputStream input) throws IOException {
@@ -169,5 +327,11 @@ final class LmdbBulkLoaderEngine {
 		if (Thread.currentThread().isInterrupted() || loader.cancellationSignal().getAsBoolean()) {
 			throw new CancellationException("LMDB bulk load was cancelled");
 		}
+	}
+
+	@FunctionalInterface
+	private interface StagingAction {
+
+		CanonicalStagedInput stage(BulkLoadWorkspace workspace) throws IOException;
 	}
 }

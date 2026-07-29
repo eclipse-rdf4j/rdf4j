@@ -52,6 +52,10 @@ final class CanonicalStagedInput {
 		return inlineValueOccurrences;
 	}
 
+	int partitionCount() {
+		return partitionCount;
+	}
+
 	void forEachStatement(StatementVisitor visitor) throws IOException {
 		forEachRawStatement((ordinal, subjectBytes, predicateBytes, objectBytes, contextBytes) -> {
 			try {

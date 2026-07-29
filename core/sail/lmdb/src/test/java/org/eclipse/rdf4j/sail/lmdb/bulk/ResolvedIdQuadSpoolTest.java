@@ -15,9 +15,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.BufferedInputStream;
 import java.io.DataInputStream;
+import java.lang.foreign.MemorySegment;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.function.BooleanSupplier;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -96,6 +100,9 @@ class ResolvedIdQuadSpoolTest {
 	private static long lookup(PartitionValueDictionary dictionary, byte[] key) throws Exception {
 		int partition = (int) CanonicalTermCodec.routeHash64(key) & 3;
 		try (PartitionValueDictionary.PartitionReader reader = dictionary.openPartition(partition)) {
+			assertThat(Arrays.stream(reader.getClass().getDeclaredFields()).map(Field::getType))
+					.contains(MemorySegment.class)
+					.doesNotContain(FileChannel.class);
 			return reader.lookup(key);
 		}
 	}

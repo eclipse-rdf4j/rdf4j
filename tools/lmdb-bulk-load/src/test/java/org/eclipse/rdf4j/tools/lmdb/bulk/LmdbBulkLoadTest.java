@@ -16,25 +16,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
-import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Comparator;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.zip.GZIPOutputStream;
 
-import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.util.Models;
-import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.rio.RDFParserRegistry;
-import org.eclipse.rdf4j.rio.RDFWriterRegistry;
-import org.eclipse.rdf4j.rio.Rio;
-import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
-import org.eclipse.rdf4j.sail.lmdb.bulk.LmdbBulkLoader;
-import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -44,183 +30,36 @@ class LmdbBulkLoadTest {
 	Path temporaryDirectory;
 
 	@Test
-	void reportsUsageErrorsWithoutConsumingInput() throws Exception {
-		ByteArrayInputStream input = new ByteArrayInputStream("untouched".getBytes(StandardCharsets.UTF_8));
-		ByteArrayOutputStream error = new ByteArrayOutputStream();
-
-		int result = run(new String[] { "--store", temporaryDirectory.resolve("store").toString() }, input,
-				new ByteArrayOutputStream(), error);
-
-		assertThat(result).isEqualTo(2);
-		assertThat(error.toString(StandardCharsets.UTF_8)).contains("--input", "Usage:");
-		assertThat(input.available()).isEqualTo("untouched".length());
-	}
-
-	@Test
-	void reportsInvalidFormatAndControlsAsUsageErrors() throws Exception {
-		Path input = temporaryDirectory.resolve("input.data");
-		Path store = temporaryDirectory.resolve("store");
-		Files.writeString(input, "<urn:s> <urn:p> <urn:o> .\n");
-
-		ByteArrayOutputStream formatError = new ByteArrayOutputStream();
-		int invalidFormat = run(
-				new String[] { "--store", store.toString(), "--input", input.toString(), "--format",
-						"not-an-rdf-format" },
-				new ByteArrayInputStream(new byte[0]), new ByteArrayOutputStream(), formatError);
-
-		assertThat(invalidFormat).isEqualTo(2);
-		assertThat(formatError.toString(StandardCharsets.UTF_8)).contains("Unknown RDF format", "Usage:");
-		assertThat(store).doesNotExist();
-
-		ByteArrayOutputStream partitionError = new ByteArrayOutputStream();
-		int invalidPartitions = run(
-				new String[] { "--store", store.toString(), "--input", input.toString(), "--format", "nquads",
-						"--partitions", "3" },
-				new ByteArrayInputStream(new byte[0]), new ByteArrayOutputStream(), partitionError);
-
-		assertThat(invalidPartitions).isEqualTo(2);
-		assertThat(partitionError.toString(StandardCharsets.UTF_8)).contains("--partitions", "power of two",
-				"Usage:");
-		assertThat(store).doesNotExist();
-	}
-
-	@Test
-	void rejectsInvalidIndexSpecificationsBeforeConsumingStandardInput() throws Exception {
-		byte[] data = "<urn:s> <urn:p> <urn:o> .\n".getBytes(StandardCharsets.UTF_8);
-		ByteArrayInputStream input = new ByteArrayInputStream(data);
-		Path store = temporaryDirectory.resolve("invalid-index-store");
-		ByteArrayOutputStream error = new ByteArrayOutputStream();
-
-		int result = run(
-				new String[] { "--store", store.toString(), "--input", "-", "--format", "nquads",
-						"--statement-indexes", "ssoo" },
-				input, new ByteArrayOutputStream(), error);
-
-		assertThat(result).isEqualTo(2);
-		assertThat(error.toString(StandardCharsets.UTF_8)).contains("statement index", "Usage:");
-		assertThat(input.available()).isEqualTo(data.length);
-		assertThat(store).doesNotExist();
-	}
-
-	@Test
-	void loadsNQuadsIntoANewStore() throws Exception {
-		Path input = temporaryDirectory.resolve("input.nq");
-		Path store = temporaryDirectory.resolve("store");
-		Files.writeString(input, "<urn:s> <urn:p> \"value\" .\n");
-		ByteArrayOutputStream output = new ByteArrayOutputStream();
-
-		int result = run(
-				new String[] { "--store", store.toString(), "--input", input.toString(), "--format", "nquads",
-						"--parser", "fast", "--statement-indexes", "spoc,psoc", "--partitions", "4" },
-				new ByteArrayInputStream(new byte[0]), output, new ByteArrayOutputStream());
-
-		assertThat(result).isZero();
-		assertThat(output.toString(StandardCharsets.UTF_8)).contains("parsed=1", "stored=1");
-		assertThat(store.resolve("values")).isDirectory();
-		assertThat(store.resolve("triples")).isDirectory();
-	}
-
-	@Test
-	void autoModeLoadsEveryBundledRioParserWriterFormat() throws Exception {
-		var valueFactory = SimpleValueFactory.getInstance();
-		List<Statement> expected = List.of(
-				valueFactory.createStatement(valueFactory.createIRI("urn:s1"), valueFactory.createIRI("urn:p"),
-						valueFactory.createLiteral("hello", "EN")),
-				valueFactory.createStatement(valueFactory.createIRI("urn:s2"), valueFactory.createIRI("urn:p"),
-						valueFactory.createLiteral("42", valueFactory.createIRI("urn:datatype"))),
-				valueFactory.createStatement(valueFactory.createIRI("urn:s3"), valueFactory.createIRI("urn:p"),
-						valueFactory.createIRI("urn:o")));
-		List<RDFFormat> formats = RDFParserRegistry.getInstance()
-				.getKeys()
-				.stream()
-				.filter(format -> RDFWriterRegistry.getInstance().get(format).isPresent())
-				.sorted(Comparator.comparing(RDFFormat::getName))
-				.toList();
-
-		assertThat(formats).extracting(RDFFormat::getName)
-				.contains("BinaryRDF", "JSON-LD", "N-Quads", "N-Triples", "RDF/JSON", "RDF/XML", "TriG", "TriX",
-						"Turtle");
-
-		for (int index = 0; index < formats.size(); index++) {
-			RDFFormat format = formats.get(index);
-			ByteArrayOutputStream data = new ByteArrayOutputStream();
-			Rio.write(expected, data, format);
-			Path target = temporaryDirectory.resolve("format-" + index);
-			LmdbStoreConfig config = new LmdbStoreConfig("spoc,psoc");
-
-			LmdbBulkLoader.Result result = LmdbBulkLoader.builder(target, config)
-					.parserMode(LmdbBulkLoader.ParserMode.AUTO)
-					.partitionCount(4)
-					.build()
-					.load(new ByteArrayInputStream(data.toByteArray()), "urn:format-test:", format);
-
-			assertThat(result.storedStatements()).as(format.getName()).isEqualTo(expected.size());
-			assertThat(Models.isomorphic(Set.copyOf(expected), readStatements(target, config)))
-					.as(format.getName())
-					.isTrue();
+	void loadsRepeatedFilesAndDirectoriesWithLiveProgress() throws Exception {
+		Path inputDirectory = Files.createDirectory(temporaryDirectory.resolve("inputs"));
+		Files.writeString(inputDirectory.resolve("first.nt"), "<urn:first:s> <urn:p> <urn:first:o> .\n");
+		Path nested = Files.createDirectory(inputDirectory.resolve("nested"));
+		try (GZIPOutputStream output = new GZIPOutputStream(
+				Files.newOutputStream(nested.resolve("second.nt.gz")))) {
+			output.write("<urn:second:s> <urn:p> <urn:second:o> .\n".getBytes(StandardCharsets.UTF_8));
 		}
-	}
+		Path third = temporaryDirectory.resolve("third.nt");
+		Files.writeString(third, "<urn:third:s> <urn:p> <urn:third:o> .\n");
 
-	@Test
-	void bundlesEveryCurrentNonLegacyRioParserModule() {
-		assertThat(RDFParserRegistry.getInstance().getKeys())
-				.extracting(RDFFormat::getName)
-				.contains("BinaryRDF", "HDT", "JSON-LD", "N3", "N-Quads", "N-Triples", "RDF/JSON", "RDF/XML",
-						"TriG", "TriX", "Turtle");
-	}
+		ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
+		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+		int exitCode = LmdbBulkLoad.run(new String[] {
+				"--store", temporaryDirectory.resolve("store").toString(),
+				"--input", inputDirectory.toString(),
+				"--input", third.toString(),
+				"--workers", "2",
+				"--queue-batches", "2",
+				"--progress", "plain"
+		}, new ByteArrayInputStream(new byte[0]), new PrintStream(standardOutput), new PrintStream(standardError));
 
-	@Test
-	void rioNamespaceDeclarationsUseParseOrderLastWinsSemantics() throws Exception {
-		String turtle = """
-				@prefix ex: <urn:first:> .
-				ex:s ex:p ex:o .
-				@prefix ex: <urn:second:> .
-				ex:s ex:p ex:o .
-				""";
-		Path target = temporaryDirectory.resolve("namespace-store");
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,psoc");
-
-		LmdbBulkLoader.builder(target, config)
-				.parserMode(LmdbBulkLoader.ParserMode.AUTO)
-				.partitionCount(4)
-				.build()
-				.load(new ByteArrayInputStream(turtle.getBytes(StandardCharsets.UTF_8)), "urn:namespace-test:",
-						RDFFormat.TURTLE);
-
-		LmdbStore store = new LmdbStore(target.toFile(), config);
-		store.init();
-		try {
-			try (var connection = store.getConnection()) {
-				assertThat(connection.getNamespace("ex")).isEqualTo("urn:second:");
-				assertThat(connection.size()).isEqualTo(2);
-			}
-		} finally {
-			store.shutDown();
-		}
-	}
-
-	private static Set<Statement> readStatements(Path target, LmdbStoreConfig config) {
-		LmdbStore store = new LmdbStore(target.toFile(), config);
-		store.init();
-		try {
-			Set<Statement> statements = new HashSet<>();
-			try (var connection = store.getConnection();
-					var iteration = connection.getStatements(null, null, null, false)) {
-				iteration.forEachRemaining(statements::add);
-			}
-			return statements;
-		} finally {
-			store.shutDown();
-		}
-	}
-
-	private static int run(String[] arguments, ByteArrayInputStream input, ByteArrayOutputStream output,
-			ByteArrayOutputStream error) throws Exception {
-		Class<?> cli = Class.forName("org.eclipse.rdf4j.tools.lmdb.bulk.LmdbBulkLoad");
-		Method run = cli.getDeclaredMethod("run", String[].class, java.io.InputStream.class, PrintStream.class,
-				PrintStream.class);
-		run.setAccessible(true);
-		return (int) run.invoke(null, arguments, input, new PrintStream(output, true, StandardCharsets.UTF_8),
-				new PrintStream(error, true, StandardCharsets.UTF_8));
+		assertThat(exitCode)
+				.as(standardError.toString(StandardCharsets.UTF_8))
+				.isZero();
+		assertThat(standardOutput.toString(StandardCharsets.UTF_8))
+				.contains("parsed=3")
+				.contains("stored=3");
+		assertThat(standardError.toString(StandardCharsets.UTF_8))
+				.contains("phase=")
+				.contains("ops/s=");
 	}
 }

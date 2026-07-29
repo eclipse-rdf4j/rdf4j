@@ -567,6 +567,23 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 			this.rows = rows;
 		}
 
+		static SortedTupleFile restore(Path path, int width, long rows) throws IOException {
+			if (width <= 0 || rows < 0L) {
+				throw new IOException("Invalid sorted tuple metadata for " + path);
+			}
+			long expectedBytes;
+			try {
+				expectedBytes = Math.multiplyExact(Math.multiplyExact(rows, width), Long.BYTES);
+			} catch (ArithmeticException e) {
+				throw new IOException("Sorted tuple metadata overflows for " + path, e);
+			}
+			if (!Files.isRegularFile(path) || Files.size(path) != expectedBytes) {
+				throw new IOException("Sorted tuple file size mismatch for " + path + ": expected "
+						+ expectedBytes + " bytes");
+			}
+			return new SortedTupleFile(path, width, rows);
+		}
+
 		Path path() {
 			return path;
 		}

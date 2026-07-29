@@ -28,6 +28,8 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 @InternalUseOnly
 public final class LmdbNativeBulkStore implements AutoCloseable {
 
+	private static final String DEFAULT_TRIPLE_INDEXES = "spoc,posc";
+
 	@FunctionalInterface
 	public interface QuadSource {
 		boolean next(long[] quad) throws IOException;
@@ -42,6 +44,9 @@ public final class LmdbNativeBulkStore implements AutoCloseable {
 
 	public LmdbNativeBulkStore(Path directory, LmdbStoreConfig config) throws IOException {
 		this.config = config;
+		if (config.getTripleIndexes() == null || config.getTripleIndexes().isBlank()) {
+			config.setTripleIndexes(DEFAULT_TRIPLE_INDEXES);
+		}
 		Path normalized = directory.toAbsolutePath().normalize();
 		Files.createDirectories(normalized);
 		File root = normalized.toFile();
@@ -66,6 +71,9 @@ public final class LmdbNativeBulkStore implements AutoCloseable {
 		namespaceStore = openedNamespaces;
 		valueStore = openedValues;
 		tripleStore = openedTriples;
+		if (properties.getTripleIndexes() == null || properties.getTripleIndexes().isBlank()) {
+			properties.setTripleIndexes(DEFAULT_TRIPLE_INDEXES);
+		}
 		properties.save();
 	}
 
