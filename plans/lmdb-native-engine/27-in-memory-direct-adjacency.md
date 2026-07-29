@@ -80,27 +80,34 @@ If the deployment means decimal 256 GB, the hard budget is 12.8 bytes per statem
 operator can select either value explicitly.
 
 When `directAdjacencyMaxBytes` is unset/zero, resolve the cap once at store construction to exactly 50% of the
-effective JVM maximum heap:
+container-aware total-memory limit:
 
-    effectiveMaxBytes = (Runtime.getRuntime().maxMemory() >>> 1) & ~7L
+    memoryLimitBytes  = ((com.sun.management.OperatingSystemMXBean)
+                            ManagementFactory.getOperatingSystemMXBean()).getTotalMemorySize()
+    effectiveMaxBytes = (memoryLimitBytes >>> 1) & ~7L
 
-This rounds down to an eight-byte boundary; never recalculate it while the store is open. `Runtime.maxMemory()` is
-authoritative and can be slightly below the command-line `-Xmx` value, so `-Xmx512g` produces an AUTO cap slightly
-below or, on some runtimes, equal to 256 GiB; it is not an exact 256-GiB promise. Likewise, `-Xmx64g` resolves at or
-slightly below 32 GiB. A positive configured byte count overrides the automatic value and is the way to request an
-exact 256-GiB cap. The native adjacency allocation is outside the Java heap, so deployment sizing must allow process
-RSS for `Xmx + adjacency cap + LMDB mappings + JVM/native overhead`; basing the default on Xmx is a policy, not a claim
-that the bytes live inside Xmx.
+The JDK management bean reports the cgroup memory limit in a limited container and host physical memory otherwise.
+This rounds down to an eight-byte boundary and is never recalculated while the store is open. The shared Foreign
+Function & Memory arenas used by the adjacency implementation allocate native memory and are not bounded by the Java
+heap or the direct-buffer limit; there is no separate standard JVM quota that says how much arena memory is safe.
+Reserving one half of the operating-environment limit for direct adjacency is therefore the admission policy, while
+the other half remains available to the Java heap, LMDB mappings/page cache, thread stacks, metaspace, code cache, and
+native libraries. `-Xmx` does not enter the AUTO calculation.
 
-Every sizing report and acceptance check uses the resolved `effectiveMaxBytes`, never the nominal `-Xmx` text:
+If the extended operating-system MXBean is unavailable, AUTO resolves to zero and a non-disabled index enters
+`MEMORY_REFUSED`; an explicit configured byte count remains usable. A positive configured byte count overrides AUTO
+without clamping. An environment reporting exactly 512 GiB therefore gets an exact 256-GiB AUTO cap; an environment
+reporting decimal 512 GB gets a decimal 256-GB cap.
+
+Every sizing report and acceptance check uses the resolved `effectiveMaxBytes`, never heap sizing:
 
     hundreds        = effectiveMaxBytes / 100
     remainder       = effectiveMaxBytes % 100
     steadyLimitBytes = hundreds * 86 + (remainder * 86) / 100
     peakLimitBytes   = effectiveMaxBytes
 
-The worked `220.16 GiB` limit below therefore applies only when `effectiveMaxBytes == 256 GiB`. AUTO on a JVM that
-reports less uses the correspondingly smaller computed limit.
+The worked `220.16 GiB` limit below therefore applies only when `effectiveMaxBytes == 256 GiB`. AUTO in an environment
+that reports less than 512 GiB uses the correspondingly smaller computed limit.
 
 This is a data-dependent target, not a universal guarantee. A graph with one unique subject, object, predicate, and
 named graph per statement carries more information than the budget can encode twice in a general-purpose format. The
@@ -1043,37 +1050,43 @@ merge structure.
 Snapshot-family creation is exact:
 
 1. create the primary pinned build transaction and revision `B`;
-2. acquire the transaction manager read lock, which excludes commits and map-resize renewal;
-3. re-read `dataRevision`, require `B`, and capture the `ValueStore` payload high-water value while this lock is held;
-4. open one untracked read transaction per additional active worker, verify every `mdb_txn_id` equals the primary
-   transaction ID, and stamp each sibling with `B`;
-5. release the manager read lock immediately after the complete family exists;
+2. open one pinned read transaction per remaining logical plane through `TxnManager.createReadTxnPinned`; each call
+   creates the LMDB snapshot and stamps its data revision while the transaction-manager read lock excludes commits and
+   map-resize renewal;
+3. require every sibling revision and initial map/version token to equal the primary values before any source scan;
+4. bind exactly one ordered scanner to each transaction and plane;
+5. release each factory call's transaction-manager read lock immediately after its pinned transaction exists;
 6. confine each transaction/cursor pool to its worker thread and record its initial map/version token;
-7. at existing cancellation/group boundaries, abort the whole unpublished build if any transaction ID, snapshot
-   revision, or version token changes.
+7. at pass, cancellation, and periodic group boundaries, abort the whole unpublished build if any snapshot revision or
+   version token changes.
 
 Do not share one LMDB transaction or cursor between workers, and do not hold the transaction-manager read lock for the
 hours-long build. Commits may proceed after family creation; pinned readers retain `B`, capture supplies later
 revisions, and map-resize renewal invalidates/aborts the family.
 
-Pass 1 uses one shared build-node workspace. The package-private `ValueStore` payload high-water value captured in step
-3 is `nextId` exclusive. It is an upper bound for every reference type at `B`, not a steady-index size. Allocate four
-segmented build-only arrays of aligned u64 count-page references, each with `ceil(highWater / 4096)` slots; charge these
-arrays explicitly. The final locator still uses the smaller per-type maximum active payload measured by Pass 1 and
-compact u40 page references.
+Pass 1 uses one shared build-node workspace. It must not assume that the globally increasing `ValueStore.nextId` is
+dense within any one reference type, and it must not impose a smaller payload ceiling than the 56-bit reference
+encoding. Use a lazy three-level primitive radix directory per type over the 44-bit counter-page number
+(`56 payload bits - 12 slot bits`), split `13/14/17`. A primitive u64 leaf has 131,072 slots and covers 536,870,912
+consecutive payloads. Allocate root, middle, and leaf arrays only when a statement touches their range. The final
+locator still uses the smaller per-type maximum active payload measured by Pass 1 and compact u40 page references.
 
     buildPageDirectoryBytes =
-        4 * ceilDiv(highWater, 4096) * 8
-        + segment-directory bytes
-        + region/alignment slack
+        outer-array charge
+        + fixed 256-stripe lock charge
+        + sum(allocated root/middle/leaf primitive-array charges)
 
-All terms use checked arithmetic. For illustration, `highWater = 20,000,000,000` makes the leading array term
-156,250,016 bytes (about 149.0 MiB), not an edge-scale object graph. If the exact charged term does not fit build
-reserve, refuse before starting worker scans.
+Use a conservative array model (32-byte header and eight bytes per slot, with uncompressed references) and reserve
+every Java allocation under `JAVA_METADATA` before constructing it. Dense payloads through 20,000,000,000 require
+38 leaves, one middle, and one root per populated type: about 38.2 MiB per type, not an edge-scale object graph.
+Sparse globally high IDs allocate only the leaves actually touched. Counter arenas reserve full physical growth-region
+capacity under `BUILD_COUNTERS`, not merely logical page bytes. Any Java or native reservation refusal aborts the
+unpublished build and releases all charges.
 
-Install a count page under one of 256 fixed striped locks keyed by `(type, pageNo)`: recheck the u64 page-reference slot
-inside the lock, allocate/zero exactly one page when absent, and publish its reference before unlocking. These locks are
-constant Java metadata, not one object per node/page. Once installed:
+Publish directory levels with acquire/release array-element access. Install and update a count page under one of 256
+fixed striped locks keyed by `(type, pageNo)`: recheck the u64 page-reference slot inside the lock, allocate/zero exactly
+one page when absent, and publish its reference before unlocking. Arena growth itself is serialized only when a new
+counter page is allocated. These locks are constant charged Java metadata, not one object per node/page. Once installed:
 
 - each logical stream is the sole writer of its plane-count cell, so count increments are ordinary width-correct
   u8/u16/u32 accesses;
@@ -1818,7 +1831,7 @@ Add to `LmdbStoreConfig`, export/parse through `LmdbStoreSchema`, and test:
     DirectAdjacencyMode directAdjacencyMode = DISABLED
     DirectAdjacencyCoverage directAdjacencyCoverage = FULL
     Set<IRI> directAdjacencyPredicates = Set.of()
-    long directAdjacencyMaxBytes = 0       // AUTO: 50% of effective -Xmx
+    long directAdjacencyMaxBytes = 0       // AUTO: 50% of container-aware total memory
     boolean directAdjacencyBuildOnStart = false
 
 Schema IRIs:
@@ -1849,8 +1862,9 @@ Use:
 Reject null collections/elements and non-IRI RDF configuration values. RDF config parsing accepts repeated
 `directAdjacencyPredicate` statements and deduplicates equal IRIs.
 
-At store construction, `LmdbDirectAdjacencyOptions` resolves AUTO with
-`(Runtime.getRuntime().maxMemory() >>> 1) & ~7L` and records both requested and effective values.
+At store construction, `LmdbDirectAdjacencyOptions` obtains the container-aware total-memory limit from
+`com.sun.management.OperatingSystemMXBean.getTotalMemorySize()`, resolves AUTO with
+`(memoryLimitBytes >>> 1) & ~7L`, and records both requested and effective values.
 If a non-disabled mode resolves below 256 MiB, keep the store usable through LMDB, set direct adjacency to
 `MEMORY_REFUSED`, and issue one clear startup warning. Do not silently clamp the result upward. All 86% steady-state
 and 100% peak gates use the immutable effective value. Implement percentage calculations with quotient/remainder
@@ -1902,10 +1916,10 @@ For the requested deployment:
         .setDirectAdjacencyMaxBytes(256L << 30)
         .setDirectAdjacencyBuildOnStart(true);
 
-Alternatively, omit `setDirectAdjacencyMaxBytes` and run with `-Xmx512g`; AUTO then resolves from the JVM-reported
-`Runtime.maxMemory()` and will normally be slightly below the explicit 256-GiB cap. Confirm the exact effective value
-through startup diagnostics/metrics before applying the sizing gate. An explicit 256-GiB override is permitted with a
-smaller Xmx, but the operator must still provide enough non-heap address space and RSS headroom.
+Alternatively, omit `setDirectAdjacencyMaxBytes` in an environment whose container/host memory limit is exactly
+512 GiB; AUTO then resolves to exactly 256 GiB independently of `-Xmx`. Confirm the detected limit and exact effective
+value through startup diagnostics/metrics before applying the sizing gate. Keep the Java heap and all other native
+consumers within the remaining half of the process/container envelope.
 
 At the target scale disable the old on-heap CSR so the direct index, its snapshots, and its workspaces are the only
 adjacency structures charged against the 256-GiB allowance. If an operator deliberately reserves `X` GiB for a small
@@ -1944,7 +1958,7 @@ Expose immutable metrics through the existing native-attempt metrics path and on
     highWaterBytes
     configuredMaxBytes          // zero means AUTO
     effectiveMaxBytes
-    automaticMemoryLimit
+    detectedMemoryLimitBytes
     bytesPerStatement
     commitMaxBytes
     sealsCompleted
@@ -2104,7 +2118,7 @@ Existing production edits:
 | `TripleStore.java` | own/direct collector; tee two fan-out methods; listener registration; pending mark before revision bump; drain sealed delta |
 | `LmdbSailStore.java` | construct/close provider; apply after full commit; dataset read views; probe/count/has/kernel arbitration; parallel lease sharing |
 | `TxnManager.java` | same-snapshot build-family helper under the existing read lock; no revision-format change |
-| `ValueStore.java` | package-private payload-high-water accessor read while writer exclusion is held; no persisted format change |
+| `ValueStore.java` | no change; the build workspace covers the full reference payload domain without allocator coupling |
 | `NativeLmdbQuerySource.java` | replace int-dense adjacency SPI with long run handles |
 | `LmdbCsrAdjacencyCache.java` | no representation rewrite; only adapter/access changes required by the new SPI |
 | `LmdbCsrRunIterator.java` | no semantic change |
@@ -2227,8 +2241,9 @@ Neither a test-compilation failure nor a production stub with untested behavior 
 Further tests first:
 
 - `LmdbStoreConfigTest#directAdjacencyDefaultsDisabled`;
-- `LmdbStoreConfigTest#directAdjacencyUnsetLimitResolvesToHalfEffectiveXmx`;
-- resolver vectors for odd heap sizes, eight-byte rounding, explicit override, and AUTO below 256 MiB;
+- `LmdbDirectAdjacencyOptionsTest#autoResolutionUsesContainerAwareTotalMemoryInsteadOfXmx`;
+- resolver vectors for odd memory-limit sizes, eight-byte rounding, explicit override, unavailable MXBean, and AUTO
+  below 256 MiB;
 - commit-limit vectors for the 8-MiB floor, computed default, 64-MiB default ceiling, 2-GiB absolute ceiling, explicit
   lower/raise, and over-ceiling rejection;
 - parse/export round trips for every mode/coverage and deterministic repeated selected-predicate IRIs;
@@ -2244,8 +2259,8 @@ Further tests first:
 
 Implement the two enums, schema/config fields, `LmdbDirectAdjacencyOptions`, `LmdbAdjacencyMemoryAccount`,
 `LmdbAdjacencyArena`, `LmdbAdjacencyArenaSizingPlan`, and `LmdbAdjacencyArenaCatalog`. Make the max-byte resolver a
-package-private pure function that accepts `(configuredBytes, effectiveJvmMaxBytes)` so tests do not mutate or assume
-the test JVM's real Xmx.
+package-private pure function that accepts `(configuredBytes, memoryLimitBytes)` so arithmetic tests do not depend on
+the test process's actual container/host memory.
 
 Arena test sizes must stay small: inject a 4-KiB test region size through a constructor while the production constant
 remains 1 GiB. This is a real allocator parameter, not a test-specific branch.
@@ -2377,7 +2392,8 @@ Tests first in `LmdbAdjacencyParallelBaseBuilderTest`:
 2. explicit-only uses two workers; mixed explicit/inferred uses four without plane aliasing;
 3. a node discovered by all four streams receives one locator page/header with four exact counts;
 4. concurrent first access to one count page installs exactly one page and leaks no losing allocation;
-5. captured payload high-water bounds the build workspace while final top arrays shrink to active maxima;
+5. sparse former-boundary, 400-million, and 20-billion payloads allocate only touched radix leaves while final top
+   arrays shrink to active maxima;
 6. sibling transaction-ID or revision mismatch aborts before a scan;
 7. one sibling map/version invalidation cancels every worker and publishes nothing;
 8. one worker codec/source failure closes all transactions, tasks, and unpublished arenas;
@@ -2387,9 +2403,9 @@ Tests first in `LmdbAdjacencyParallelBaseBuilderTest`:
 12. checked pilot-ETA arithmetic covers zero rate, overflow, 80-billion visits, ten-hour pilot margin, and twelve-hour
     full gate.
 
-Implement the transaction-family creation, payload-high-water accessor, striped build workspace, disjoint Pass-3
-writers, bounded executor, metrics, and cancellation protocol exactly as specified above. Use package-private latches
-for interleavings; never share an LMDB cursor/transaction across worker threads.
+Implement the transaction-family creation, full-domain striped radix workspace, disjoint Pass-3 writers, bounded
+executor, metrics, and cancellation protocol exactly as specified above. Use package-private latches for interleavings;
+never share an LMDB cursor/transaction across worker threads.
 
 Run a build benchmark over at least 200 million representative source-statement visits per required source order on
 deployment-like hardware. Record one-, two-, and four-thread Pass-1/Pass-3 rates, even when empty inferred streams
@@ -2636,8 +2652,9 @@ The feature is complete only when all of these are true:
 
 ### Memory
 
-- an unset cap resolves once to exactly half the effective JVM max heap, rounded down to eight bytes;
-- a positive configured cap overrides AUTO without being clamped to Xmx;
+- an unset cap resolves once to exactly half the container-aware total-memory limit, rounded down to eight bytes;
+- AUTO is independent of Xmx and fails closed if the extended operating-system MXBean is unavailable;
+- a positive configured cap overrides AUTO without being clamped;
 - the real codec sizer equals emitted bytes;
 - memory reservations precede allocation;
 - no global per-edge/per-node/group Java objects;
@@ -2726,7 +2743,8 @@ Do not write raw adjacency dumps as diagnostics. Stable counts, hashes, histogra
   value-ID encoding, iterator behavior, and configuration patterns.
 - [x] (2026-07-28) User clarified that adjacency data must be strictly in-memory; discarded the persistent-sidecar
   design before implementation.
-- [x] (2026-07-28) User set the default adjacency cap to 50% of effective Xmx, with an explicit byte override.
+- [x] (2026-07-29) Replaced the Xmx-derived default with 50% of the container-aware total-memory limit; explicit byte
+  overrides remain authoritative.
 - [x] (2026-07-28) Fixed the node-centric base layout, exact sizing/peak gates, immutable delta model, snapshot protocol,
   context ordinals, atomic publication unit, and no-overlap rebuild policy.
 - [x] (2026-07-28) Authored this implementation workup.
@@ -2865,15 +2883,28 @@ Do not write raw adjacency dumps as diagnostics. Stable counts, hashes, histogra
   kernel find/size/at/copy-across-chunk-boundary/lowerBound, first/middle/last-chunk removals + append across two
   snapshots; kernel declines during pending window and serves generation+base rows after apply), RunCodecTest 27 and
   the full direct suite sweep (`post-evidence-direct-adjacency-m8.txt`).
-- [x] (2026-07-28) Parallel builder (M4B) SKIPPED by explicit user decision ("skip m4b"). The single-thread M4A
-  builder is the only production build path. The design note below is retained verbatim so M4B stays a drop-in
-  follow-up if the 20B build-time gate ever demands it: implement `LmdbAdjacencyBuildTxnFamily` (TxnManager
-  read-lock family creation, steps 1–7 of the plan's snapshot-family protocol), the ValueStore payload-high-water
-  accessor, the striped `LmdbAdjacencyBuildWorkspace` install path, per-stream Pass-1/Pass-3 workers over the
-  existing `AdjacencySourceScanner` seams, and `LmdbAdjacencyParallelBaseBuilderTest` vectors 1–12. With this skip
-  recorded, every in-repo milestone of this plan is resolved; only the hardware/operator rollout gates (pilot ETA,
-  12-hour 20B build, seal/pending latency matrices, sizing worksheet, `ROOT_ENUMERATION_ACCEPTED` sign-off) remain
-  open by their nature, as documented under Milestone 9.
+- [x] (2026-07-28) Historical: Parallel builder M4B was skipped by explicit user decision ("skip m4b"). This decision
+  was superseded on 2026-07-29 when the fixed 268,435,456-payload workspace cutoff made the production-scale path
+  necessary.
+- [x] (2026-07-29) M4B in-repo implementation and verification complete; target-host qualification remains open.
+  `LmdbAdjacencyBuildWorkspace` now covers the full 56-bit reference payload domain with a lazy `13/14/17` radix,
+  charges conservative root/middle/leaf plus striped-lock Java metadata, charges counter arena physical capacity, and
+  releases all temporary charges. `LmdbAdjacencyBuildTxnFamily` atomically pins four cross-checked, thread-confined
+  scanners during one transaction-manager read-lock epoch and cross-checks both the process-local data revision and
+  actual LMDB `mdb_txn_id`, so no commit can split the sibling revisions. Passes 1 and 3 use a bounded one-to-four-worker
+  executor sized to the explicit/inferred streams that contain statements; each plane replays its sealed sizing plan
+  into a disjoint 64-MiB-aligned subregion packed inside charged arena owner regions, preserving deterministic global
+  handles and rejecting partition overruns. Cancellation interrupts siblings, joins them before closing their LMDB
+  transactions, polls every 65,536 source visits even when SELECTED coverage excludes the current group, and leaves no
+  unpublished charge, including when a worker throws an `Error`. Metrics expose worker count, all Pass-1/Pass-3 source
+  visits (including uncovered SELECTED statements) and nanoseconds, total elapsed time, checked 20B projection, and
+  live `BUILD_COUNTERS`/`BUILD_OUTPUT`/`JAVA_METADATA` bytes. The final focused selection is 65/65 green across
+  former-boundary, 400-million mixed-type, sparse-20B, same-page four-writer, one/two/four-output, overlap, mismatch,
+  cancellation ordering/uncovered-loop polling/Error cleanup, partition, exact snapshot-family, reclamation, and
+  projection coverage. The implementation worktree's broad module run has 13 failures and one error; a 12:45
+  detached clean-current-HEAD `cf3a31c819` control reproduces all 13 failures and the error among its 14 failures and
+  one error. The clean tree's additional asynchronous `JaninoCeilingParityTest` failure is fixed by making that fixture
+  request the completed build deterministically. The target-host 200M pilot and complete 20B publish gates remain open.
 - [x] (2026-07-28) Milestone 9 in-repo scope complete; hardware/operator gates remain open (see below). Full module
   verify `core/sail/lmdb`: 2597 tests, 5 failures, 0 errors — all five reproduce at clean HEAD `00f199cccf` in a
   detached worktree (kernel-decline census gate, deferred cost-arbitration StrategyPriorityTest, and three
@@ -2907,16 +2938,30 @@ Do not write raw adjacency dumps as diagnostics. Stable counts, hashes, histogra
 - Snapshot correctness does not require copying a complete base per revision. Complete immutable **row** versions plus
   a pinned LMDB fallback retain the same safety property as current complete CSR generations at much smaller update
   cost.
+- Opening sibling build transactions in separate read-lock epochs permits a commit between otherwise valid pins; each
+  sibling can be internally consistent yet belong to a different revision. The whole family must be opened and
+  registered under one transaction-manager read lock.
+- Charging one 256-MiB owner region for every small exact arena makes retained snapshots exhaust a modest test budget
+  even when their logical payloads are tiny. Packing disjoint 64-MiB-aligned exact subregions inside each owner retains
+  simple global handles while making physical charge proportional enough for concurrent generations.
+- `Txn.version()` is a process-local reset/renew counter, not the LMDB snapshot identity. Parallel sibling validation
+  must compare `mdb_txn_id` captured at scanner construction and retain `Txn.version()` only as the independent
+  map-resize invalidation fence.
+- Closing a pinned LMDB transaction from the coordinator while its sibling worker is still using that transaction
+  violates the thread-confined scanner contract. Normal failure cancellation must interrupt and join first; cancellation
+  polling must count all source visits rather than covered-run pairs, or a large uncovered SELECTED group can evade it.
 
 ## Decision Log
 
 - Decision: adjacency is strictly in-memory and rebuilt after every process start.
   Rationale: explicit user requirement; LMDB is the only persistent source.
   Date/Author: 2026-07-28 / user and Codex.
-- Decision: an unset memory limit resolves once to 50% of `Runtime.maxMemory()`.
-  Rationale: explicit user requirement; resolving once makes reservations deterministic while an explicit byte limit
-  still supports a 256-GiB off-heap index without forcing a 512-GiB Java heap.
-  Date/Author: 2026-07-28 / user and Codex.
+- Decision: an unset memory limit resolves once to 50% of the container-aware total-memory limit reported by
+  `com.sun.management.OperatingSystemMXBean.getTotalMemorySize()`, never from Xmx.
+  Rationale: FFM arenas allocate native memory and are not governed by the Java heap. The JDK bean observes a cgroup
+  hard limit when present; reserving the other half provides a deterministic envelope for the heap, LMDB, and JVM
+  native consumers. If the bean is unavailable, AUTO fails closed while an explicit cap remains available.
+  Date/Author: 2026-07-29 / user and Codex.
 - Decision: implementation red evidence must be an executed Surefire/Failsafe failure, never a compile error against a
   nonexistent API.
   Rationale: the repository evidence contract requires a report snippet; the first configuration red uses raw RDF
@@ -3032,8 +3077,42 @@ Do not write raw adjacency dumps as diagnostics. Stable counts, hashes, histogra
   Rationale: explicit user instruction ("skip m4b") while closing out this plan; the M4A single-thread builder is the
   production build path, and the M4B design note is retained in Progress for a future drop-in follow-up.
   Date/Author: 2026-07-28 / user and Claude.
+- Decision: supersede the M4B skip and remove the workspace's fixed payload ceiling with a lazy full-domain radix,
+  rather than raising the 65,536-page constant or coupling the workspace to `ValueStore.nextId`.
+  Rationale: ordinary globally allocated value IDs make per-type payloads exceed 268,435,455 well before memory is
+  exhausted. A `13/14/17` page-number radix preserves ascending traversal, allocates metadata only for touched ranges,
+  supports every encodable 56-bit reference payload, and lets the hard memory account—not an arbitrary ID—be the
+  scalability boundary. The four-stream build and exact arena partitions are required to make the 80-billion-visit
+  20B path operationally testable.
+  Date/Author: 2026-07-29 / user and Codex.
+- Decision: pin and register every parallel build transaction as one atomic family under the existing transaction
+  manager read lock.
+  Rationale: validating siblings after independent acquisition only detects a crossed commit after resources have
+  opened and makes ordinary online commits abort otherwise healthy builds; one read-lock epoch assigns one revision
+  and one LMDB snapshot to the complete family. The scanners compare actual `mdb_txn_id` values; their separate local
+  transaction versions continue to detect reset/renew invalidation.
+  Date/Author: 2026-07-29 / Codex.
+- Decision: reserve deterministic exact-output blocks on 64-MiB boundaries and pack those blocks into the arena's
+  256-MiB owner regions.
+  Rationale: plane partitions remain disjoint and handle-stable, while tiny bases and retained generations no longer
+  pay a full owner-region charge apiece.
+  Date/Author: 2026-07-29 / Codex.
 
 ## Outcomes & Retrospective
+
+2026-07-29 (Codex): The prior M4B skip is superseded. The fixed 268,435,456-payload workspace ceiling has been removed,
+the temporary Java and native structures are hard-accounted, and production Passes 1 and 3 now use exact-snapshot
+one-to-four-plane parallelism with deterministic packed output. The four LMDB scanners are pinned atomically and
+cross-check the actual LMDB transaction ID; the arena accounts physical owner capacity while allowing exact 64-MiB
+subregions. Runtime snapshots expose the complete source-visit and timing data needed to project a 20B build. In-repo
+focused verification is 65/65 green. A full detached clean-current-HEAD module control reproduces every failure/error
+seen in the implementation worktree's broad run; the implementation also removes one baseline-only asynchronous test
+failure. The target-host 200M pilot and full 20B publication remain rollout evidence and are not inferred from
+synthetic tests.
+
+2026-07-29 (Codex): AUTO memory admission now follows the native allocation domain. It uses half of the
+container-aware total-memory limit and no longer reads Xmx; the focused regression first observed the old 2-GiB result
+under a 4-GiB test heap versus the required 64-GiB cap on the 128-GiB host, then passed after the resolver change.
 
 2026-07-28 (Claude): Milestones 0–3, 4A, 5, 6, 7, and 8 (reference scope) are implemented and green; M4B is
 skipped by explicit user decision (design note retained for a future drop-in follow-up), and M9's hardware/operator
@@ -3069,13 +3148,20 @@ datasets now acquire exact read views at the current data revision under the res
 `plans/lmdb-native-engine/28-remove-legacy-csr.md`. Mentions of a `direct → CSR → LMDB` ladder in this document are
 historical; the ladder is now `direct → LMDB`.
 
+2026-07-29: Replaced the Xmx-based AUTO revision below with a container-aware native-memory policy. AUTO now assigns
+half of `OperatingSystemMXBean.getTotalMemorySize()` to direct adjacency, leaving half for all other process memory.
+
 2026-07-28: Replaced the discarded persistent-sidecar draft with a strictly in-memory design after the user clarified
 that adjacency data must never be persisted. This version contains no durable revision, manifest, mmap, journal,
 checkpoint, recovery, or adjacency file format. It adds explicit no-file invariants/tests, native arenas, bounded
-in-memory commit capture, ephemeral MVCC generations, rebuild-on-restart behavior, and a default cap of 50% of
-effective Xmx.
+in-memory commit capture, ephemeral MVCC generations, rebuild-on-restart behavior, and originally used an Xmx-derived
+AUTO cap (superseded by the 2026-07-29 revision above).
 
 2026-07-28: Applied the full independent review. Clarified executable test evidence, removed vestigial shard
 decomposition, made codec tags physical, defined post-base locator misses, added sparse inline-plane allocation and
 pending fences, reduced the normal commit cap, added pending/seal benchmarks, specified same-snapshot parallel build
 mechanics with a 12-hour 20B gate, and made predicate-root acceptance an explicit rollout decision.
+
+2026-07-29: Reopened Milestone 4B after validating the fixed build-workspace payload ceiling. Replaced it with a
+full-domain, dynamically allocated and hard-accounted radix; added exact-snapshot parallel Pass-1/Pass-3 construction,
+deterministic arena partitions, cancellation, and 20B projection metrics. Hardware rollout gates remain unchanged.

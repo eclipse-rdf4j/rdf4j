@@ -251,6 +251,48 @@ class TxnManager {
 	}
 
 	/**
+	 * Creates a family of pinned, untracked read transactions under one manager read lock. The lock excludes both the
+	 * commit critical section and map-resize renewal while every LMDB snapshot is opened, and the data revision is
+	 * sampled once for the entire family. Either the complete family is returned or every transaction opened by this
+	 * call is closed.
+	 */
+	Txn[] createReadTxnPinnedFamily(int count, LongSupplier dataRevision) throws IOException {
+		if (count <= 0) {
+			throw new IllegalArgumentException("pinned transaction family size must be positive: " + count);
+		}
+		Txn[] transactions = new Txn[count];
+		long readStamp;
+		try {
+			readStamp = lockManager.readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException(e);
+		}
+		int opened = 0;
+		try {
+			long revision = dataRevision.getAsLong();
+			for (; opened < count; opened++) {
+				Txn transaction = new Txn(createReadTxnInternal());
+				transaction.snapshotRevision = revision;
+				transactions[opened] = transaction;
+			}
+			synchronized (active) {
+				for (Txn transaction : transactions) {
+					active.put(transaction, Boolean.FALSE);
+				}
+			}
+			return transactions;
+		} catch (IOException | RuntimeException | Error e) {
+			for (int i = opened - 1; i >= 0; i--) {
+				transactions[i].close();
+			}
+			throw e;
+		} finally {
+			lockManager.unlockRead(readStamp);
+		}
+	}
+
+	/**
 	 * The oldest data revision any active pinned read transaction is snapshotted at, or {@link Long#MAX_VALUE} when no
 	 * pinned transaction is open — the CSR generation-retention watermark.
 	 */

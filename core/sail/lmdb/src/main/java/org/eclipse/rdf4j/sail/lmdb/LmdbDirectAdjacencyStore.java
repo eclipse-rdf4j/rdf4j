@@ -875,13 +875,15 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 		metrics.recordBuildStarted();
 		maintenanceState = MaintenanceState.BUILDING;
-		try (Txn txn = tripleStore.getTxnManager().createReadTxnPinned(tripleStore::getDataRevision)) {
-			long baseRevision = txn.snapshotRevision();
-			LmdbAdjacencyTripleStoreScanner scanner = new LmdbAdjacencyTripleStoreScanner(tripleStore, txn,
-					baseRevision, true);
+		try {
 			LmdbAdjacencyCoverage coverage = resolveCoverage();
-			LmdbInMemoryAdjacencyIndex index = LmdbAdjacencyBaseBuilder.build(scanner, coverage, account,
-					baseArenaRegionBytes, workspaceRegionBytes);
+			LmdbInMemoryAdjacencyIndex index;
+			long baseRevision;
+			try (LmdbAdjacencyBuildTxnFamily sourceFamily = new LmdbAdjacencyBuildTxnFamily(tripleStore)) {
+				baseRevision = sourceFamily.snapshotRevision();
+				index = LmdbAdjacencyBaseBuilder.build(sourceFamily, coverage, account, baseArenaRegionBytes,
+						workspaceRegionBytes, options.buildThreads(), metrics);
+			}
 			Runnable interleave = afterBuildScanForTest;
 			if (interleave != null) {
 				interleave.run();
@@ -1675,7 +1677,10 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		return metrics.snapshot(maintenanceState.name(), state.baseRevision(), state.appliedRevision(),
 				tripleStore.getDataRevision(), state.gapFromRevision(), emergencyGapFromRevision.get(),
 				activeViews.get(), base == null ? 0 : account.chargedBytes(LmdbAdjacencyMemoryAccount.MemoryKind.BASE),
-				account.totalChargedBytes(), account.highWaterBytes(), options.requestedMaxBytes(),
+				account.chargedBytes(LmdbAdjacencyMemoryAccount.MemoryKind.BUILD_COUNTERS),
+				account.chargedBytes(LmdbAdjacencyMemoryAccount.MemoryKind.BUILD_OUTPUT),
+				account.chargedBytes(LmdbAdjacencyMemoryAccount.MemoryKind.JAVA_METADATA), account.totalChargedBytes(),
+				account.highWaterBytes(), options.requestedMaxBytes(), options.memoryLimitBytes(),
 				options.effectiveMaxBytes());
 	}
 }

@@ -26,6 +26,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxreaders;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
+import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -33,6 +34,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -169,6 +171,32 @@ public class TxnManagerTest {
 		} finally {
 			if (untrackedTxn != null) {
 				untrackedTxn.close();
+			}
+			mdb_env_close(env);
+		}
+	}
+
+	@Test
+	public void pinnedReadTxnFamilyReadsOneRevisionForEverySibling(@TempDir Path dataDir) throws Exception {
+		long env = openEnv(dataDir, 8);
+		TxnManager.Txn[] transactions = null;
+
+		try {
+			TxnManager txnManager = new TxnManager(env, TxnManager.Mode.RESET);
+			AtomicLong suppliedRevision = new AtomicLong(41);
+			transactions = txnManager.createReadTxnPinnedFamily(4, suppliedRevision::getAndIncrement);
+
+			assertEquals(42, suppliedRevision.get(), "the family must sample the data revision exactly once");
+			long snapshotId = mdb_txn_id(transactions[0].get());
+			for (TxnManager.Txn transaction : transactions) {
+				assertEquals(41, transaction.snapshotRevision());
+				assertEquals(snapshotId, mdb_txn_id(transaction.get()));
+			}
+		} finally {
+			if (transactions != null) {
+				for (int i = transactions.length - 1; i >= 0; i--) {
+					transactions[i].close();
+				}
 			}
 			mdb_env_close(env);
 		}

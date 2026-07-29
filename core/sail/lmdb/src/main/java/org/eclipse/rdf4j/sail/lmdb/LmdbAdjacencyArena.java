@@ -17,6 +17,7 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
 import java.util.Arrays;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -59,6 +60,8 @@ final class LmdbAdjacencyArena implements AutoCloseable {
 	private volatile MemorySegment[] regions = new MemorySegment[0];
 
 	private final AtomicLong owners = new AtomicLong(1);
+
+	private long partitionAllocatedBytes;
 
 	private volatile boolean closed;
 
@@ -155,6 +158,100 @@ final class LmdbAdjacencyArena implements AutoCloseable {
 	}
 
 	/**
+	 * Reserves deterministic, aligned writer partitions in plane order. Each partition replays one sealed sizing plan
+	 * independently, so concurrent writers touch disjoint byte ranges while producing references independent of task
+	 * scheduling. A plan may use a smaller power-of-two region than its owner; this packs small plane outputs into one
+	 * physical arena region without permitting an allocation to cross an owner-region boundary. Partitions are
+	 * available only on a growth-mode arena and must be created before their writers start.
+	 */
+	synchronized Partition[] allocatePartitions(LmdbAdjacencyArenaSizingPlan[] plans) {
+		checkOpen();
+		if (sizingPlan != null) {
+			throw new IllegalStateException("partitions require a growth-mode arena");
+		}
+		Objects.requireNonNull(plans, "plans");
+		Partition[] partitions = new Partition[plans.length];
+		int requiredRegions = regions.length;
+		for (int i = 0; i < plans.length; i++) {
+			LmdbAdjacencyArenaSizingPlan plan = Objects.requireNonNull(plans[i], "plans[" + i + "]");
+			if (!plan.isSealed()) {
+				throw new IllegalArgumentException("partition sizing plan " + i + " must be sealed");
+			}
+			if (plan.regionBytes() > regionBytes || regionBytes % plan.regionBytes() != 0) {
+				throw new IllegalArgumentException("partition sizing plan " + i + " uses incompatible region size "
+						+ plan.regionBytes() + " for owner region size " + regionBytes);
+			}
+			long start = cursor.reserveAlignedBlocks(plan.regionBytes(), plan.regionCount());
+			requiredRegions = Math.max(requiredRegions, cursor.regionCount());
+			partitions[i] = new Partition(this, start, plan);
+			partitionAllocatedBytes = Math.addExact(partitionAllocatedBytes, plan.allocatedBytes());
+		}
+		ensureGrowthRegionCount(requiredRegions);
+		return partitions;
+	}
+
+	private void ensureGrowthRegionCount(int requiredRegions) {
+		MemorySegment[] current = regions;
+		if (current.length >= requiredRegions) {
+			return;
+		}
+		MemorySegment[] expanded = Arrays.copyOf(current, requiredRegions);
+		for (int i = current.length; i < requiredRegions; i++) {
+			expanded[i] = nativeArena.allocate(regionBytes, 8);
+		}
+		regions = expanded;
+	}
+
+	/**
+	 * One thread-confined writer view over a region-disjoint arena range.
+	 */
+	static final class Partition {
+
+		private final LmdbAdjacencyArena owner;
+		private final long baseVirtualAddress;
+		private final LmdbAdjacencyArenaSizingPlan expected;
+		private final LmdbAdjacencyArenaSizingPlan cursor;
+
+		private Partition(LmdbAdjacencyArena owner, long baseVirtualAddress,
+				LmdbAdjacencyArenaSizingPlan expected) {
+			this.owner = owner;
+			this.baseVirtualAddress = baseVirtualAddress;
+			this.expected = expected;
+			this.cursor = new LmdbAdjacencyArenaSizingPlan(expected.regionBytes());
+		}
+
+		long allocateRef(long bytes, long alignment) {
+			owner.checkOpen();
+			long localRef = cursor.allocate(bytes, alignment);
+			if (cursor.regionCount() > expected.regionCount()
+					|| cursor.capacityBytes() > expected.capacityBytes()
+					|| cursor.allocatedBytes() > expected.allocatedBytes()) {
+				throw new IllegalStateException("partition allocation exceeded its sealed "
+						+ expected.regionCount() + "-region plan");
+			}
+			long globalAddress = Math.addExact(baseVirtualAddress, localRef << 3);
+			long globalRef = globalAddress >>> 3;
+			if (globalRef <= 0 || globalRef > MAX_U40_VALUE) {
+				throw new IllegalStateException("partition reference exceeds u40: " + globalRef);
+			}
+			return globalRef;
+		}
+
+		MemorySegment slice(long encodedRef, long bytes) {
+			return owner.slice(encodedRef, bytes);
+		}
+
+		void verifyComplete() {
+			if (cursor.allocatedBytes() != expected.allocatedBytes()
+					|| cursor.slackBytes() != expected.slackBytes()
+					|| cursor.regionCount() != expected.regionCount()
+					|| cursor.capacityBytes() != expected.capacityBytes()) {
+				throw new IllegalStateException("partition allocation sequence diverged from its sealed sizing plan");
+			}
+		}
+	}
+
+	/**
 	 * Resolves an encoded reference to a bounds-checked slice of {@code bytes} bytes.
 	 */
 	MemorySegment slice(long encodedRef, long bytes) {
@@ -248,7 +345,7 @@ final class LmdbAdjacencyArena implements AutoCloseable {
 	 * Logical bytes handed to callers.
 	 */
 	long allocatedBytes() {
-		return cursor.allocatedBytes();
+		return Math.addExact(cursor.allocatedBytes(), partitionAllocatedBytes);
 	}
 
 	/**

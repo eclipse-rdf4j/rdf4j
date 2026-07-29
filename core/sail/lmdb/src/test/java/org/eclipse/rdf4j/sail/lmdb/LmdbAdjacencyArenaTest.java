@@ -131,6 +131,43 @@ class LmdbAdjacencyArenaTest {
 	}
 
 	@Test
+	void writerPartitionsAreDeterministicDisjointAndBounded() throws Exception {
+		long ownerRegionBytes = TEST_REGION_BYTES * 4;
+		LmdbAdjacencyArenaSizingPlan firstPlan = new LmdbAdjacencyArenaSizingPlan(TEST_REGION_BYTES);
+		firstPlan.allocate(64, 8);
+		firstPlan.seal();
+		LmdbAdjacencyArenaSizingPlan secondPlan = new LmdbAdjacencyArenaSizingPlan(TEST_REGION_BYTES);
+		secondPlan.allocate(128, 8);
+		secondPlan.seal();
+
+		try (LmdbAdjacencyArena arena = new LmdbAdjacencyArena(ownerRegionBytes)) {
+			arena.allocateRef(32, 8); // metadata in region zero
+			LmdbAdjacencyArena.Partition[] partitions = arena
+					.allocatePartitions(new LmdbAdjacencyArenaSizingPlan[] { firstPlan, secondPlan });
+
+			long firstRef = partitions[0].allocateRef(64, 8);
+			long secondRef = partitions[1].allocateRef(128, 8);
+			assertThat(firstRef << 3).isEqualTo(TEST_REGION_BYTES + 8);
+			assertThat(secondRef << 3).isEqualTo(2 * TEST_REGION_BYTES + 8);
+
+			CompletableFuture<Void> firstWrite = CompletableFuture.runAsync(
+					() -> partitions[0].slice(firstRef, 64).set(LmdbAdjacencyArena.U64_LE, 0, 11));
+			CompletableFuture<Void> secondWrite = CompletableFuture.runAsync(
+					() -> partitions[1].slice(secondRef, 128).set(LmdbAdjacencyArena.U64_LE, 0, 22));
+			CompletableFuture.allOf(firstWrite, secondWrite).get();
+
+			assertThat(arena.slice(firstRef, 8).get(LmdbAdjacencyArena.U64_LE, 0)).isEqualTo(11);
+			assertThat(arena.slice(secondRef, 8).get(LmdbAdjacencyArena.U64_LE, 0)).isEqualTo(22);
+			partitions[0].verifyComplete();
+			partitions[1].verifyComplete();
+			assertThat(arena.capacityBytes()).isEqualTo(ownerRegionBytes);
+			assertThat(arena.allocatedBytes()).isEqualTo(32 + 64 + 128);
+			assertThatThrownBy(() -> partitions[0].allocateRef(8, 8))
+					.isInstanceOf(IllegalStateException.class);
+		}
+	}
+
+	@Test
 	void u40ReadWriteRoundTripsAndRejectsOutOfRangeValues() {
 		try (LmdbAdjacencyArena arena = new LmdbAdjacencyArena(TEST_REGION_BYTES)) {
 			long ref = arena.allocateRef(16, 8);
