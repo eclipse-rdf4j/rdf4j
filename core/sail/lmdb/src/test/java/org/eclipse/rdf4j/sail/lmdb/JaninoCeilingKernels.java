@@ -32,14 +32,14 @@ public final class JaninoCeilingKernels {
 	private JaninoCeilingKernels() {
 	}
 
-	/** Opens a CSR-eligible read dataset; the caller owns the returned dataset and must close it. */
+	/** Opens an adjacency-eligible read dataset; the caller owns the returned dataset and must close it. */
 	public static SailDataset openDataset(LmdbStore store) {
 		return store.getBackingStore().getExplicitSailSource().dataset(IsolationLevels.NONE);
 	}
 
 	/**
-	 * Drives probe traffic until the CSR adjacency cache has built the requested entry (callers should set
-	 * {@code rdf4j.lmdb.csrCache.minProbes} low first). Returns null if the entry never built.
+	 * Polls the probe until the direct adjacency index serves the requested plane (the store builds it asynchronously
+	 * on start). Returns null if adjacency never became available.
 	 */
 	public static NativeLmdbQuerySource.NativeAdjacency warmAdjacency(NativeLmdbQuerySource.NativeProbe probe,
 			long pred, boolean bySubject, long[] seedKeys) throws IOException {
@@ -86,14 +86,14 @@ public final class JaninoCeilingKernels {
 			NativeLmdbQuerySource.NativeAdjacency interestByObject, long[] interestIds) {
 		long[] counts = new long[interestIds.length];
 		for (int index = 0; index < interestIds.length; index++) {
-			int dense = interestByObject.denseIdOf(interestIds[index]);
-			if (dense < 0) {
+			long run = interestByObject.find(interestIds[index]);
+			if (run <= 0L) {
 				continue;
 			}
 			long members = 0L;
-			int end = interestByObject.runEnd(dense);
-			for (int i = interestByObject.runStart(dense); i < end; i++) {
-				long person = interestByObject.neighborAt(i);
+			long end = interestByObject.size(run);
+			for (long i = 0L; i < end; i++) {
+				long person = interestByObject.neighborAt(run, i);
 				if (inTriangle(knows, person)) {
 					members++;
 				}
@@ -104,33 +104,33 @@ public final class JaninoCeilingKernels {
 	}
 
 	private static boolean inTriangle(NativeLmdbQuerySource.NativeAdjacency knows, long a) {
-		int denseA = knows.denseIdOf(a);
-		if (denseA < 0) {
+		long runA = knows.find(a);
+		if (runA <= 0L) {
 			return false;
 		}
-		int endA = knows.runEnd(denseA);
-		for (int i = knows.runStart(denseA); i < endA; i++) {
-			long b = knows.neighborAt(i);
+		long endA = knows.size(runA);
+		for (long i = 0L; i < endA; i++) {
+			long b = knows.neighborAt(runA, i);
 			if (b == a) {
 				continue;
 			}
-			int denseB = knows.denseIdOf(b);
-			if (denseB < 0) {
+			long runB = knows.find(b);
+			if (runB <= 0L) {
 				continue;
 			}
-			int endB = knows.runEnd(denseB);
-			for (int j = knows.runStart(denseB); j < endB; j++) {
-				long c = knows.neighborAt(j);
+			long endB = knows.size(runB);
+			for (long j = 0L; j < endB; j++) {
+				long c = knows.neighborAt(runB, j);
 				if (c == a || c == b) {
 					continue;
 				}
-				int denseC = knows.denseIdOf(c);
-				if (denseC < 0) {
+				long runC = knows.find(c);
+				if (runC <= 0L) {
 					continue;
 				}
-				int endC = knows.runEnd(denseC);
-				for (int k = knows.runStart(denseC); k < endC; k++) {
-					if (knows.neighborAt(k) == a) {
+				long endC = knows.size(runC);
+				for (long k = 0L; k < endC; k++) {
+					if (knows.neighborAt(runC, k) == a) {
 						return true;
 					}
 				}
@@ -147,43 +147,43 @@ public final class JaninoCeilingKernels {
 	public static long cycle4Count(NativeLmdbQuerySource.NativeAdjacency knows, long[] subjects) {
 		long count = 0L;
 		for (long a : subjects) {
-			int denseA = knows.denseIdOf(a);
-			if (denseA < 0) {
+			long runA = knows.find(a);
+			if (runA <= 0L) {
 				continue;
 			}
-			int endA = knows.runEnd(denseA);
-			for (int i = knows.runStart(denseA); i < endA; i++) {
-				long b = knows.neighborAt(i);
+			long endA = knows.size(runA);
+			for (long i = 0L; i < endA; i++) {
+				long b = knows.neighborAt(runA, i);
 				if (b == a) {
 					continue;
 				}
-				int denseB = knows.denseIdOf(b);
-				if (denseB < 0) {
+				long runB = knows.find(b);
+				if (runB <= 0L) {
 					continue;
 				}
-				int endB = knows.runEnd(denseB);
-				for (int j = knows.runStart(denseB); j < endB; j++) {
-					long c = knows.neighborAt(j);
+				long endB = knows.size(runB);
+				for (long j = 0L; j < endB; j++) {
+					long c = knows.neighborAt(runB, j);
 					if (c == a || c == b) {
 						continue;
 					}
-					int denseC = knows.denseIdOf(c);
-					if (denseC < 0) {
+					long runC = knows.find(c);
+					if (runC <= 0L) {
 						continue;
 					}
-					int endC = knows.runEnd(denseC);
-					for (int k = knows.runStart(denseC); k < endC; k++) {
-						long d = knows.neighborAt(k);
+					long endC = knows.size(runC);
+					for (long k = 0L; k < endC; k++) {
+						long d = knows.neighborAt(runC, k);
 						if (d == a || d == b || d == c) {
 							continue;
 						}
-						int denseD = knows.denseIdOf(d);
-						if (denseD < 0) {
+						long runD = knows.find(d);
+						if (runD <= 0L) {
 							continue;
 						}
-						int endD = knows.runEnd(denseD);
-						for (int m = knows.runStart(denseD); m < endD; m++) {
-							if (knows.neighborAt(m) == a) {
+						long endD = knows.size(runD);
+						for (long m = 0L; m < endD; m++) {
+							if (knows.neighborAt(runD, m) == a) {
 								count++;
 								break;
 							}

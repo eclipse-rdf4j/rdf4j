@@ -92,7 +92,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
-import java.util.function.LongPredicate;
 
 import org.eclipse.collections.api.iterator.LongIterator;
 import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
@@ -206,9 +205,9 @@ class TripleStore implements Closeable {
 	private final LmdbFanOutStats inferredFanOutStats = new LmdbFanOutStats();
 
 	private TxnRecordCache recordCache = null;
-	/** Optional CSR cache hook; when set, every net mutation is teed into {@link #csrCommitDelta}. */
-	private CsrCommitListener csrCommitListener;
-	private LmdbCsrCommitDelta csrCommitDelta;
+	private DirectAdjacencyCommitListener directAdjacencyCommitListener;
+	private LmdbDirectAdjacencyCommitDelta directAdjacencyCommitDelta;
+	private LmdbDirectAdjacencyCommitDelta.SealedDirectDelta sealedDirectAdjacencyDelta;
 	private boolean fanOutStatsDirty;
 	private boolean trackResizeChecks;
 	private int trackedResizeChecks;
@@ -3381,44 +3380,44 @@ class TripleStore implements Closeable {
 	private void recordFanOutAdded(long subject, long predicate, long object, long context, boolean explicit) {
 		fanOutStats(explicit).recordAdded(subject, predicate, object);
 		fanOutStatsDirty = true;
-		if (csrCommitDelta != null) {
-			csrCommitDelta.recordAdd(subject, predicate, object, context, explicit);
+		if (directAdjacencyCommitDelta != null) {
+			// fails fast if an event arrives after seal: the touched-row table would be incomplete (invariant I16)
+			directAdjacencyCommitDelta.recordAdd(subject, predicate, object, context, explicit);
 		}
 	}
 
 	private void recordFanOutRemoved(long subject, long predicate, long object, long context, boolean explicit) {
 		fanOutStats(explicit).recordRemoved(subject, predicate, object);
 		fanOutStatsDirty = true;
-		if (csrCommitDelta != null) {
-			csrCommitDelta.recordRemove(subject, predicate, object, context, explicit);
+		if (directAdjacencyCommitDelta != null) {
+			directAdjacencyCommitDelta.recordRemove(subject, predicate, object, context, explicit);
 		}
 	}
 
 	/**
-	 * Registered by the CSR adjacency cache: supplies the live-entry predicate snapshot at transaction start and
-	 * receives the touched-shape marking callback inside the commit critical section, immediately before the data
-	 * revision becomes visible to readers.
+	 * Registered by the direct adjacency store (plan 27): the listener receives the sealed delta inside the commit
+	 * critical section, after the authoritative LMDB commit and before {@code dataRevision} becomes visible. Kept
+	 * separate from the predicate-filtered CSR delta by design.
 	 */
-	interface CsrCommitListener {
+	interface DirectAdjacencyCommitListener {
 
-		/** Immutable snapshot of predicates that currently have a live CSR entry. */
-		LongPredicate cachedPredicateFilter();
-
-		/** Invoked under the commit write lock, before {@code dataRevision} advances to {@code nextRevision}. */
-		void beforeRevisionBump(LmdbCsrCommitDelta delta, long nextRevision);
+		void beforeRevisionBump(LmdbDirectAdjacencyCommitDelta.SealedDirectDelta delta, long nextRevision);
 	}
 
-	void setCsrCommitListener(CsrCommitListener listener) {
-		this.csrCommitListener = listener;
-		this.csrCommitDelta = listener != null ? new LmdbCsrCommitDelta() : null;
+	void setDirectAdjacencyCommitHooks(DirectAdjacencyCommitListener listener,
+			LmdbDirectAdjacencyCommitDelta collector) {
+		this.directAdjacencyCommitListener = listener;
+		this.directAdjacencyCommitDelta = listener != null ? collector : null;
 	}
 
 	/**
-	 * Hands the just-committed transaction's collected delta to the caller (the CSR cache applies and then resets it).
-	 * Returns {@code null} when no listener is registered.
+	 * Hands the just-committed transaction's sealed direct delta to the caller exactly once; the sail store enqueues it
+	 * for apply only after the complete authoritative commit succeeds.
 	 */
-	LmdbCsrCommitDelta drainCsrCommitDelta() {
-		return csrCommitDelta;
+	LmdbDirectAdjacencyCommitDelta.SealedDirectDelta drainDirectAdjacencyCommitDelta() {
+		LmdbDirectAdjacencyCommitDelta.SealedDirectDelta sealed = sealedDirectAdjacencyDelta;
+		sealedDirectAdjacencyDelta = null;
+		return sealed;
 	}
 
 	private void clearFanOutStatsIfDirty() {
@@ -4131,8 +4130,8 @@ class TripleStore implements Closeable {
 
 	public void startTransaction() throws IOException {
 		closeAlignedWriteCursors();
-		if (csrCommitDelta != null) {
-			csrCommitDelta.begin(csrCommitListener.cachedPredicateFilter());
+		if (directAdjacencyCommitDelta != null && !directAdjacencyCommitDelta.begun()) {
+			directAdjacencyCommitDelta.begin(dataRevision.get());
 		}
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);
@@ -4234,7 +4233,21 @@ class TripleStore implements Closeable {
 					} catch (InterruptedException e) {
 						throw new SailException(e);
 					}
+					LmdbDirectAdjacencyCommitDelta.SealedDirectDelta sealedDirect = null;
 					try {
+						// seal event pages and the touched-row table before the authoritative LMDB commit; later
+						// record calls (none exist: updateFromCache never records) would fail fast (plan 27)
+						if (directAdjacencyCommitDelta != null && directAdjacencyCommitDelta.begun()) {
+							try {
+								sealedDirect = directAdjacencyCommitDelta.seal(dataRevision.get() + 1);
+							} catch (RuntimeException sealFailure) {
+								// derived-state best effort: the authoritative commit proceeds; the listener
+								// publishes the revision gap through the overflow marker (plan 27, invariant I16)
+								directAdjacencyCommitDelta.reset();
+								sealedDirect = LmdbDirectAdjacencyCommitDelta.SealedDirectDelta
+										.overflowed(dataRevision.get() + 1);
+							}
+						}
 						E(mdb_txn_commit(writeTxn));
 						if (recordCache != null) {
 							try {
@@ -4260,10 +4273,16 @@ class TripleStore implements Closeable {
 							// otherwise iterators won't see the updated data
 							txnManager.reset();
 						}
-						if (csrCommitListener != null && csrCommitDelta != null) {
-							// marks touched shapes stale before readers can observe the new revision; the
-							// collected delta is applied (or dropped) by the sail store after the full commit
-							csrCommitListener.beforeRevisionBump(csrCommitDelta, dataRevision.get() + 1);
+						if (directAdjacencyCommitListener != null && sealedDirect != null) {
+							// publishes the pending marker (or the gap) before readers can observe the revision
+							directAdjacencyCommitListener.beforeRevisionBump(sealedDirect, dataRevision.get() + 1);
+							if (sealedDirectAdjacencyDelta != null) {
+								// an earlier sealed delta was never drained (a failed sail-store commit step);
+								// its revision gap is detected by the applier — release only the charge here
+								sealedDirectAdjacencyDelta.close();
+							}
+							sealedDirectAdjacencyDelta = sealedDirect;
+							sealedDirect = null;
 						}
 						dataRevision.incrementAndGet();
 						fanOutStatsDirty = false;
@@ -4271,18 +4290,22 @@ class TripleStore implements Closeable {
 						// abort transaction if exception occurred while committing
 						mdb_txn_abort(writeTxn);
 						clearFanOutStatsIfDirty();
-						if (csrCommitDelta != null) {
-							csrCommitDelta.reset();
+						if (sealedDirect != null) {
+							sealedDirect.close();
+							sealedDirect = null;
 						}
 						throw e;
 					} finally {
+						if (sealedDirect != null) {
+							sealedDirect.close();
+						}
 						lockManager.unlockWrite(stamp);
 					}
 				} else {
 					mdb_txn_abort(writeTxn);
 					clearFanOutStatsIfDirty();
-					if (csrCommitDelta != null) {
-						csrCommitDelta.reset();
+					if (directAdjacencyCommitDelta != null) {
+						directAdjacencyCommitDelta.reset();
 					}
 				}
 			} finally {

@@ -492,7 +492,7 @@ class LmdbNativeKernelIrEmitterTest {
 		Kernel vectorized = withVectorTail(true, shape);
 		assertEquals(1, vectorized.vectorTailIndex, "the probe is the innermost expanding node");
 		String source = LmdbNativeKernelEmitter.emit(vectorized);
-		assertTrue(source.contains(".copyRun("), "vector tail must bulk-read the run; source:\n" + source);
+		assertTrue(source.contains(".copyNeighbors("), "vector tail must bulk-read the run; source:\n" + source);
 		assertTrue(source.contains("KernelRuntime.selectNe(tvec, rn,"),
 				"the id filter must lower to the dense selection primitive; source:\n" + source);
 
@@ -507,7 +507,7 @@ class LmdbNativeKernelIrEmitterTest {
 		Kernel scalar = withVectorTail(false, shape);
 		assertEquals(-1, scalar.vectorTailIndex);
 		String scalarSource = LmdbNativeKernelEmitter.emit(scalar);
-		assertFalse(scalarSource.contains(".copyRun("), "scalar mode must keep the per-index loop");
+		assertFalse(scalarSource.contains(".copyNeighbors("), "scalar mode must keep the per-index loop");
 		assertNotEquals(vectorized.shapeKey(), scalar.shapeKey(), "the two modes must not share a cache entry");
 
 		assertRows(run(vectorized, context().adjacencies(follows()).domains(new long[] { 1, 2, 3 }).constants(3)),
@@ -530,7 +530,7 @@ class LmdbNativeKernelIrEmitterTest {
 		assertTrue(source.contains("KernelRuntime.selectRangeUnsigned(tvec, rn,"),
 				"the range must vectorize; source:\n" + source);
 		assertTrue(source.contains("hooks.testFilter(7,"), "the hook filter must survive as a guard");
-		assertTrue(source.indexOf("hooks.testFilter(7,") > source.indexOf(".copyRun("),
+		assertTrue(source.indexOf("hooks.testFilter(7,") > source.indexOf(".copyNeighbors("),
 				"the hook guard must sit inside the vectorized loop");
 
 		// Accept only neighbor 2 through the hook so both tiers demonstrably run.
@@ -592,7 +592,7 @@ class LmdbNativeKernelIrEmitterTest {
 		Kernel enumerated = withVectorTail(true,
 				() -> new Kernel(2, List.of(new EnumerateAdjKeys(0, 0, 1)), emit(0, 1)));
 		assertEquals(0, enumerated.vectorTailIndex);
-		assertTrue(LmdbNativeKernelEmitter.emit(enumerated).contains(".copyRun("));
+		assertTrue(LmdbNativeKernelEmitter.emit(enumerated).contains(".copyNeighbors("));
 	}
 
 	// ------------------------------------------------------------------
@@ -612,7 +612,7 @@ class LmdbNativeKernelIrEmitterTest {
 				"with nothing reading or filtering the neighbors, the count is the run length; source:\n" + source);
 		assertTrue(source.contains("agC0[g] += n;"), "COUNT(*) must accumulate by the run length");
 		assertFalse(source.contains("v1 = tvec["), "the tail column must not be materialized per row");
-		assertFalse(source.contains(".copyRun("), "an unfiltered count must not read a single neighbor");
+		assertFalse(source.contains(".copyNeighbors("), "an unfiltered count must not read a single neighbor");
 		assertFalse(source.contains("while (rpos < rend)"), "an unfiltered count needs no slice loop at all");
 
 		Kernel scalar = withVectorTail(false, shape);
@@ -678,7 +678,7 @@ class LmdbNativeKernelIrEmitterTest {
 		Kernel vectorized = withVectorTail(true, shape);
 		assertEquals(1, vectorized.vectorTailIndex, "a left probe expands, so it can be the tail");
 		String source = LmdbNativeKernelEmitter.emit(vectorized);
-		assertTrue(source.contains(".copyRun("), "the matched arm must bulk-read; source:\n" + source);
+		assertTrue(source.contains(".copyNeighbors("), "the matched arm must bulk-read; source:\n" + source);
 		assertTrue(source.contains("if (!matched) {"), "the null arm must survive vectorization");
 
 		long[][] expected = { { 1, 2 }, { 1, 3 }, { 4, 5 }, { 9, -1 } };
@@ -966,39 +966,41 @@ class LmdbNativeKernelIrEmitterTest {
 		}
 
 		@Override
-		public int denseIdOf(long key) {
+		public long find(long key) {
 			Integer dense = denseByKey.get(key);
-			return dense == null ? -1 : dense;
+			return dense == null ? NOT_FOUND : dense + 1L;
 		}
 
 		@Override
-		public int runStart(int dense) {
-			return starts[dense];
+		public long size(long runHandle) {
+			int dense = (int) runHandle - 1;
+			return starts[dense + 1] - starts[dense];
 		}
 
 		@Override
-		public int runEnd(int dense) {
-			return starts[dense + 1];
+		public long neighborAt(long runHandle, long runOffset) {
+			int dense = (int) runHandle - 1;
+			return neighbors[starts[dense] + (int) runOffset];
 		}
 
 		@Override
-		public long neighborAt(int index) {
-			return neighbors[index];
-		}
-
-		@Override
-		public long contextAt(int index) {
+		public long contextAt(long runHandle, long runOffset) {
 			return 0;
 		}
 
 		@Override
-		public int keyCount() {
+		public boolean supportsKeyEnumeration() {
+			return true;
+		}
+
+		@Override
+		public long keyCount() {
 			return keys.length;
 		}
 
 		@Override
-		public long keyAt(int dense) {
-			return keys[dense];
+		public long keyAt(long keyOrdinal) {
+			return keys[(int) keyOrdinal];
 		}
 
 		@Override

@@ -70,7 +70,6 @@ public class JaninoCeilingBenchmark {
 	@Setup(org.openjdk.jmh.annotations.Level.Trial)
 	public void setup() throws Exception {
 		FoafCliqueQueryBenchmark.applyEngineMode(engineMode);
-		System.setProperty("rdf4j.lmdb.csrCache.minProbes", "1");
 
 		dataDir = Files.createTempDirectory("rdf4j-lmdb-janino-ceiling").toFile();
 		repository = FoafCliqueQueryBenchmark.createRepository(dataDir);

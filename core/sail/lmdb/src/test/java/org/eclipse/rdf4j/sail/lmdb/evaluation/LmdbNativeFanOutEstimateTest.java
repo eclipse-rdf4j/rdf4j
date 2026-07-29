@@ -41,7 +41,7 @@ class LmdbNativeFanOutEstimateTest {
 	}
 
 	@Test
-	void materializedRowPrefersExactCsrDegree() {
+	void materializedRowPrefersExactAdjacencyDegree() {
 		NativeSlotLayout layout = new NativeSlotLayout(Map.of("subject", 0, "object", 1), null);
 		layout.freeze(List.of("subject", "object"));
 		FanOutSource source = new FanOutSource(7L, 3D, 5D, OptionalLong.of(11L));

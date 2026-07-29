@@ -571,16 +571,16 @@ final class LmdbNativeJaninoAggregate {
 		source.append("    private void run() {\n")
 				.append("        for (int gi = 0; gi < domain.length; gi++) {\n")
 				.append("            long g = domain[gi];\n")
-				.append("            int dp = p.denseIdOf(g);\n")
-				.append("            if (dp < 0) {\n")
+				.append("            long hp = p.find(g);\n")
+				.append("            if (hp <= 0L) {\n")
 				.append("                continue;\n")
 				.append("            }\n")
 				.append("            long n = 0L;\n")
 				.append("            long prev = 0L;\n")
 				.append("            boolean first = true;\n")
-				.append("            int qp = p.runEnd(dp);\n")
-				.append("            for (int ip = p.runStart(dp); ip < qp; ip++) {\n")
-				.append("                long x = p.neighborAt(ip);\n")
+				.append("            long np = p.size(hp);\n")
+				.append("            for (long ip = 0L; ip < np; ip++) {\n")
+				.append("                long x = p.neighborAt(hp, ip);\n")
 				.append("                if (!first && x == prev) {\n")
 				.append("                    continue;\n")
 				.append("                }\n")
@@ -628,41 +628,37 @@ final class LmdbNativeJaninoAggregate {
 			return;
 		}
 		WitnessStep step = shape.witness.get(stepIndex);
-		String d = "d" + stepIndex;
-		String i = "i" + stepIndex;
-		String q = "q" + stepIndex;
+		String h = "h" + stepIndex;
+		String p = "p" + stepIndex;
+		String n = "n" + stepIndex;
 		if (step.kind == WitnessStep.FORWARD) {
 			source.append(indent)
-					.append("int ")
-					.append(d)
+					.append("long ")
+					.append(h)
 					.append(" = a")
 					.append(stepIndex)
-					.append(".denseIdOf(")
+					.append(".find(")
 					.append(step.key.expr())
 					.append(");\n");
-			source.append(indent).append("if (").append(d).append(" >= 0) {\n");
+			source.append(indent).append("if (").append(h).append(" > 0L) {\n");
 			String inner = indent + "    ";
 			source.append(inner)
-					.append("int ")
-					.append(q)
+					.append("long ")
+					.append(n)
 					.append(" = a")
 					.append(stepIndex)
-					.append(".runEnd(")
-					.append(d)
+					.append(".size(")
+					.append(h)
 					.append(");\n");
 			source.append(inner)
-					.append("for (int ")
-					.append(i)
-					.append(" = a")
-					.append(stepIndex)
-					.append(".runStart(")
-					.append(d)
-					.append("); ")
-					.append(i)
+					.append("for (long ")
+					.append(p)
+					.append(" = 0L; ")
+					.append(p)
 					.append(" < ")
-					.append(q)
+					.append(n)
 					.append("; ")
-					.append(i)
+					.append(p)
 					.append("++) {\n");
 			String body = inner + "    ";
 			source.append(body)
@@ -671,7 +667,9 @@ final class LmdbNativeJaninoAggregate {
 					.append(" = a")
 					.append(stepIndex)
 					.append(".neighborAt(")
-					.append(i)
+					.append(h)
+					.append(", ")
+					.append(p)
 					.append(");\n");
 			for (Guard guard : shape.guards) {
 				if (guard.depth == stepIndex) {
@@ -693,43 +691,41 @@ final class LmdbNativeJaninoAggregate {
 		} else {
 			String hit = "hit" + stepIndex;
 			source.append(indent)
-					.append("int ")
-					.append(d)
+					.append("long ")
+					.append(h)
 					.append(" = a")
 					.append(stepIndex)
-					.append(".denseIdOf(")
+					.append(".find(")
 					.append(step.key.expr())
 					.append(");\n");
-			source.append(indent).append("if (").append(d).append(" >= 0) {\n");
+			source.append(indent).append("if (").append(h).append(" > 0L) {\n");
 			String inner = indent + "    ";
 			source.append(inner).append("boolean ").append(hit).append(" = false;\n");
 			source.append(inner)
-					.append("int ")
-					.append(q)
+					.append("long ")
+					.append(n)
 					.append(" = a")
 					.append(stepIndex)
-					.append(".runEnd(")
-					.append(d)
+					.append(".size(")
+					.append(h)
 					.append(");\n");
 			source.append(inner)
-					.append("for (int ")
-					.append(i)
-					.append(" = a")
-					.append(stepIndex)
-					.append(".runStart(")
-					.append(d)
-					.append("); ")
-					.append(i)
+					.append("for (long ")
+					.append(p)
+					.append(" = 0L; ")
+					.append(p)
 					.append(" < ")
-					.append(q)
+					.append(n)
 					.append("; ")
-					.append(i)
+					.append(p)
 					.append("++) {\n");
 			source.append(inner)
 					.append("    if (a")
 					.append(stepIndex)
 					.append(".neighborAt(")
-					.append(i)
+					.append(h)
+					.append(", ")
+					.append(p)
 					.append(") == ")
 					.append(step.target.expr())
 					.append(") {\n");

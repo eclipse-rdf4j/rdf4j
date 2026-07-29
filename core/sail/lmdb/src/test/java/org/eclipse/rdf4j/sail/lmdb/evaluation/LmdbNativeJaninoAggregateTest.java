@@ -68,7 +68,6 @@ public class LmdbNativeJaninoAggregateTest {
 		save(NATIVE_FLAG, "true");
 		save(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "true");
 		save(LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY, "0");
-		save("rdf4j.lmdb.csrCache.minProbes", "1");
 
 		dataDir = Files.createTempDirectory("rdf4j-janino-aggregate").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");

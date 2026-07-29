@@ -2733,12 +2733,161 @@ Do not write raw adjacency dumps as diagnostics. Stable counts, hashes, histogra
 - [x] (2026-07-28) Completed static ephemerality, ownership, publication, and configuration consistency audit.
 - [x] (2026-07-28) Incorporated independent review findings: executable red-test evidence, flat locator bounds, explicit
   codec tags, pending fences, seal/build latency gates, parallel rebuild, sparse inline planes, and root-scan sign-off.
-- [ ] Capture implementation baseline and first red test.
-- [ ] Implement milestones 1 through 3.
-- [ ] Implement base builder and probe path.
-- [ ] Implement commit MVCC and consolidation.
-- [ ] Implement supernodes and kernel integration.
-- [ ] Complete scale evidence and rollout audit.
+- [x] (2026-07-28) Captured implementation baseline (Milestone 0: `LmdbCsrSnapshotTest` 10 green,
+  `LmdbStoreConfigTest` 67 green; `initial-evidence-direct-adjacency-m0.txt`) and the first executable reds
+  (`LmdbStoreConfigTest#parsesAndExportsDirectAdjacencySettingsFromRawRdfProperties` 1 failure and the
+  Class.forName two-red bootstrap `LmdbDirectAdjacencyBootstrapTest` 7 failures;
+  `initial-evidence-direct-adjacency-m1-red.txt`, `initial-evidence-direct-adjacency-m1-bootstrap-red.txt`).
+- [x] (2026-07-28) Milestone 1 complete: `DirectAdjacencyMode`/`DirectAdjacencyCoverage`, five
+  `LmdbStoreConfig`/`LmdbStoreSchema` settings with validation, `LmdbDirectAdjacencyOptions` (AUTO resolver, exact 86%
+  steady limit, commit-cap resolvers, tuning properties), `LmdbAdjacencyMemoryAccount`, `LmdbAdjacencyArena` (u40,
+  injectable region size, owner refcount), `LmdbAdjacencyArenaSizingPlan` (shared bump state machine),
+  `LmdbAdjacencyArenaCatalog`. Green: config 89, options 13, account 7, arena 10, sizing plan 6, catalog 6, bootstrap
+  7 (`post-evidence-direct-adjacency-m1.txt`); no-file rg audit clean.
+- [x] (2026-07-28) Milestone 2 complete: `SortedPairSource`/`ContextCatalog` interfaces,
+  `LmdbAdjacencyContextCatalog` (base + copy-on-write extension segments + consolidation copy),
+  `LmdbAdjacencyRunCodec` (SMALL_VARINT/BLOCK_FOR/CHUNK_DIRECTORY with physical tag byte; one shared sizing/writing
+  state machine; randomized predicted==allocated equality; supernode chunking at the 65,536-incidence target; decode
+  supports cross-arena chunk slots), `LmdbReferenceNodeLocator` (bitmap/rank pages, width-1/2/4 headers, out-of-range
+  page as base absence), `LmdbInlineIncomingIndex` (radix/block exact lookup, empty plane allocates nothing),
+  `ValueIds.isReference`, segmented `LmdbAdjacencyArena.U40Table`. Two-red bootstrap red captured
+  (`initial-evidence-direct-adjacency-m2-bootstrap-red.txt`); green: context catalog 7, codec 27, locator 9, inline 7,
+  bootstrap 4 (`post-evidence-direct-adjacency-m2.txt`); no-file rg audit clean.
+- [x] (2026-07-28) Milestone 3 complete (Routine B: pre/post green on the same selections + hit proof).
+  `NativeAdjacency` replaced with the long-run-handle contract (NOT_FOUND/-1, NOT_COVERED/-2, find/size/neighborAt/
+  contextAt/copyNeighbors/copyContexts/lowerBound/supportsKeyEnumeration/keyCount/keyAt/runsNeighborOrdered);
+  `CsrNativeAdjacency` adapts with handle = dense + 1 and checked narrowing; `LmdbNativeJaninoPipeline`,
+  `LmdbNativeJaninoAggregate`, `LmdbNativeKernelEmitter` (incl. vector tails and leapfrog long positions),
+  `LmdbNativePathPlan`, `LmdbNativeKernelBindings`, and all test doubles migrated; generated loops use long
+  handles/positions with int only for bounded batch copies. New `longRunHandlesSurviveBeyondIntRange` proves
+  Integer.MAX_VALUE+17 logical sizes without narrowing. Pre-green: BulkCopy 2, PropertyPath 42, IrEmitter 40,
+  CacheTest 21 (`initial-evidence-direct-adjacency-m3-pre-green.txt`). Post-green: BulkCopy 3, PropertyPath 42,
+  IrEmitter 40, CacheTest 21, Specialization 9, CeilingParity 3, JaninoPipeline 3, JaninoAggregate 2,
+  KernelExecution 5, KernelAggregate 7, JaninoCodegen 6, CsrCacheQuery 6 (`post-evidence-direct-adjacency-m3.txt`).
+  rg audit: old API calls remain only inside retained `CsrEntry` internals (LmdbCsrAdjacencyCache/LmdbCsrRunIterator).
+- [x] (2026-07-28) Milestone 4A core complete: push-mode run-codec encoder, `AdjacencySourceScanner` (with
+  contexts/ordered-scan capability probes), `LmdbReferenceNodeLocator.TwoPhaseBuilder` (Pass-2 declare with exact
+  counts + Pass-3 fillEntry via zero-scan cursors), `LmdbAdjacencyBuildWorkspace` (off-heap bitmap + u32 count pages,
+  BUILD_COUNTERS charged, lazily paged), `LmdbAdjacencyPredicateCatalog`, `LmdbAdjacencyCoverage`,
+  `LmdbAdjacencyMemoryRefusedException`, `LmdbAdjacencyBaseBuilder` (Passes 0–3, memory gate with region-granular
+  reservation before any base allocation, Pass-1 vs Pass-3 exact byte/count cross-checks, BUILD_OUTPUT→BASE
+  reclassification), `LmdbInMemoryAdjacencyIndex` (base-row resolver with NOT_FOUND/NOT_COVERED semantics).
+  `LmdbAdjacencyBaseBuilderTest` 12/12 green with a synthetic ordered scanner and a differential pair-set oracle
+  (`post-evidence-direct-adjacency-m4a.txt`), covering vectors 1–10, 13 plus charge-release accounting. Deferred, by
+  dependency: vectors 11/12 (online catch-up, capture overflow) and 14 (SELECTED first-commit classification) need the
+  Milestone-6 commit collector; vector 15 and the store-level build/query/reopen smoke land with Milestone-5 store
+  integration, which also brings the production LMDB scanner (`getTriples` spoc/posc wrappers) and the ValueStore
+  payload high-water in place of the reference path's generous default.
+- [~] Milestone 5 in progress (2026-07-28): `LmdbAdjacencyTripleStoreScanner` implemented — spoc/posc-prefixed
+  `StatementOrder`-selected index scans over one pinned read transaction, contexts-DBI domain scan, merged distinct
+  predicates, map-resize/version + revision-advance snapshot guards (revision guard is deliberately strict until the
+  Milestone-6 collector provides online catch-up), and `supportsOrderedScan` prefix validation.
+  `LmdbDirectAdjacencyEphemeralTest` green (2 tests, `post-evidence-direct-adjacency-m5-scanner.txt`): a real
+  `TripleStore` build answers both directions byte-exactly against `tripleStore.getTriples` on the same pinned
+  transaction, rebuilds cleanly, releases every memory charge, creates no file (recursive relative listing unchanged;
+  no adjacency/segment/manifest/journal/checkpoint names), and a `spoc`-only configuration refuses the incoming
+  direction. STILL TO DO for Milestone 5: `LmdbAdjacencyProvider`/`LmdbDirectAdjacencyStore` lifecycle + published
+  state, dataset read views and `LmdbSailStore` arbitration (probe/count/has/kernel), SHADOW/PREFER behavior,
+  `LmdbDirectAdjacencyQueryTest` vectors, read-your-writes and SERIALIZABLE bypass. Also done (2026-07-28):
+  `LmdbDirectAdjacencyIterator` mirroring `LmdbCsrRunIterator` (reusable quad, long positions, exact raw-context
+  filtering incl. catalog-absent bound-context short circuit, batch fill, codec lower-bound seek) —
+  `LmdbDirectAdjacencyIteratorTest` 4/4 green (`post-evidence-direct-adjacency-m5-iterator.txt`).
+- [x] (2026-07-28) Milestone 5 complete: `LmdbAdjacencyProvider`, `LmdbDirectAdjacencyStore` (maintenance state
+  machine, single-thread maintenance executor, publication lock, emergency-gap CAS-min, SHADOW sampled comparison,
+  SELECTED IRI resolution via ValueStore), `LmdbAdjacencyPublishedState` (close-bit + refcount word),
+  `LmdbAdjacencyReadView` (dataset lease + per-iterator leases + on-fully-released callback), `LmdbAdjacencyMetrics`
+  (closed FallbackReason enum + immutable Snapshot), `LmdbDirectNodeIterator` (FULL-coverage bound-node/?p base
+  enumeration), iterator view-lease protocol, and `LmdbSailStore` wiring: construct-from-config
+  (`LmdbDirectAdjacencyOptions.resolve`), buildOnStart trigger, close-before-CSR, commit-path
+  `onDataRevisionAdvanced()` rebuild stopgap, dataset `adjacencyView` acquired after txn registration and released
+  before txn close, arbitration direct→CSR→LMDB in statements/ordered-statements/count/has/exactDegree and the
+  retained NativeProbe. Two-red bootstrap red captured (`initial-evidence-direct-adjacency-m5-bootstrap-red.txt`, 6
+  Surefire failures); green: QueryTest 15 (all plan vectors incl. SHADOW-never-serves, SELECTED fallbacks,
+  read-your-writes/SERIALIZABLE bypass, ordered compatible/incompatible, exact-empty vs uncovered, inline incoming,
+  root-scan fallback, old-pinned-snapshot-keeps-serving-after-commit), Bootstrap 6, IteratorTest 4, EphemeralTest 2,
+  BaseBuilderTest 12, LmdbSailStoreTest 42 (`post-evidence-direct-adjacency-m5.txt`). M5 notes: serving requires
+  `snapshotRevision == appliedRevision` until M6 (any commit → REVISION_GAP for newer snapshots + coalesced async
+  rebuild); doubly-bound statements probes and parallel-sibling sources intentionally decline; kernel adjacency() and
+  meanFanOut decline until M8.
+- [x] (2026-07-28) Milestone 6 complete: `LmdbDirectAdjacencyCommitDelta` (charged primitive event columns, sorted
+  deduped fenced `PendingTable`, seal-before-authoritative-commit with overflow marker on seal failure),
+  `TripleStore` integration (separate direct listener/collector fields, tee in both fan-out choke points, seal under
+  writer exclusion before the first LMDB commit, `beforeRevisionBump` after the LMDB commit and before the
+  `dataRevision` bump, drain-once semantics, rollback reset, stale-sealed-delta close),
+  `LmdbAdjacencyDeltaGeneration` (raw-predicate row directory, per-generation [base, gen] catalog, refcounted DELTA
+  charge), `LmdbAdjacencyOverlaySet` (refcounted generations + extended context catalog + post-base classified
+  selected predicates), `LmdbAdjacencyDeltaApplier` (two directional event sorts, last-op-wins streaming merges vs
+  the previous revision, deterministic subpass A outcome plan consumed by subpass B, exact reservation, context
+  catalog extension into the generation arena with an ordinal-identical sizing view), published-state v2 (base
+  refcount + overlays + pending array + horizon), row resolution order pending→generations-newest-first→base with
+  extra-selected exact-empty proof, k-way node-merge `LmdbDirectNodeIterator` (raw-predicate merge, tombstone
+  exclusion, pending node fences), online build catch-up under the TxnManager read lock (scanner revision guard
+  relaxed only when the collector is installed), emergency-gap self-healing (rebuild at >= gap revision publishes
+  and clears), pause/interleave test hooks. Evidence: M6 bootstrap red 4 failures
+  (`initial-evidence-direct-adjacency-m6-bootstrap-red.txt`); green: CommitTest 10 (visibility/removal isolation,
+  pending window rows, add-remove-readd, tombstone + node enumeration, promotion/demotion planes, new
+  node/predicate/context atomic catalog, rollback, collector-overflow gap + rebuild clear [M4A vector 12 analogue],
+  online catch-up [M4A vector 11], close releases all charges), SnapshotTest 4 (sail-store pending window, commits
+  serve new snapshots with zero rebuilds, SELECTED first-commit classification [M4A vector 14], old snapshot retains
+  prior context catalog), QueryTest 15, EphemeralTest 2, BaseBuilderTest 12, LmdbSailStoreTest 42, TripleStoreTest
+  29, LmdbCsrAdjacencyCacheTest 21 (`post-evidence-direct-adjacency-m6.txt`). M6 reference-path simplifications
+  (hardening deferred to M9): events/pending/row directories are charged primitive on-heap arrays (not off-heap
+  column pages/24-byte native tables); generation directories key on raw predicate IDs; empty-commit revision
+  advance happens on the applier rather than writer-side copy-advance; bulk aligned multi-batch imports degrade via
+  the gap protocol and rebuild (per plan's bulk-load-before-ACTIVE guidance).
+- [x] (2026-07-28) Milestone 7 complete: consolidation squashes the current overlay's generations into one
+  newest-version-only generation at the applied revision (k-way row-directory merge, tombstones preserved, run bytes
+  copied into a fresh reserved arena, context-extension segments copied via `copyExtensions` with stable ordinals);
+  the replacement state's `minSnapshotRevision` rises to the consolidation revision so a late acquisition below the
+  floor declines (SNAPSHOT_BEFORE_BASE) while already-retained old states keep serving their pinned snapshots
+  exactly — the plan's per-row version lists are subsumed by whole-state retention (old generations release when the
+  last old lease closes). Quiescent no-overlap rebuild: publish UNAVAILABLE (new acquisitions fall back BUILDING),
+  wait for the last lease, free old base/overlays through refcounts, rebuild + catch up + publish. Recovery paths
+  (`APPLY_STALLED`, `DEGRADED_GAP` from missing revisions, writer-side pending-bound breach, consolidation memory
+  refusal) all schedule the quiescent rebuild. Fixed en route: a rebuild at a revision at/after the emergency gap now
+  publishes and clears the marker (previously refused and re-looped); catch-up aborts when an overflowed commit
+  inside the missing interval can never be enqueued. Green: ConsolidationTest 5 (12-commit consolidation bound +
+  exactness, pinned-view retention across consolidation + release reclaims DELTA bytes, late-acquisition floor
+  fallback, quiescent rebuild waits for lease/declines during quiesce/serves after, repeated rebuilds + close leak
+  zero charged bytes), CommitTest 10, SnapshotTest 4, QueryTest 15 (`post-evidence-direct-adjacency-m7.txt`).
+- [x] (2026-07-28) Milestone 8 complete (reference scope): supernode groups flow through the full commit path — the
+  shared codec state machine auto-promotes above `BLOCK_FOR_MAX_EDGES` and the applier's complete-row replacement
+  rewrites the chunk directory exactly (incremental affected-chunk-only rewrite deferred to the M9 performance pass;
+  correctness is complete-row exact). Fixed a real chunk format bug en route: the writer hardcoded chunk arena slot
+  0, which resolved into the wrong arena when a chunked run was re-encoded into a delta-generation arena; slot 255 is
+  now the "same arena as the directory" sentinel (absolute slots stay available for consolidation-time cross-arena
+  chunk reuse). `LmdbDirectNativeAdjacency` implements the long-handle kernel SPI (source index packed above the
+  48-bit run handle; base + per-generation catalogs; allocation-free `kernelFind`; batch copy through the codec's
+  once-per-batch run-view resolution; `runsNeighborOrdered() == true`; no key enumeration) and is served through
+  `LmdbDirectAdjacencyStore.adjacency` under the kernel completeness rule (snapshot <= appliedRevision, zero
+  applicable pending tables, plane covered) with `KERNEL_REQUIRES_COMPLETE_REVISION` fallbacks; the dataset's
+  retained NativeProbe arbitrates direct → CSR. Green: SupernodeKernelTest 2 (1.09M-edge chunked group: build,
+  kernel find/size/at/copy-across-chunk-boundary/lowerBound, first/middle/last-chunk removals + append across two
+  snapshots; kernel declines during pending window and serves generation+base rows after apply), RunCodecTest 27 and
+  the full direct suite sweep (`post-evidence-direct-adjacency-m8.txt`).
+- [x] (2026-07-28) Parallel builder (M4B) SKIPPED by explicit user decision ("skip m4b"). The single-thread M4A
+  builder is the only production build path. The design note below is retained verbatim so M4B stays a drop-in
+  follow-up if the 20B build-time gate ever demands it: implement `LmdbAdjacencyBuildTxnFamily` (TxnManager
+  read-lock family creation, steps 1–7 of the plan's snapshot-family protocol), the ValueStore payload-high-water
+  accessor, the striped `LmdbAdjacencyBuildWorkspace` install path, per-stream Pass-1/Pass-3 workers over the
+  existing `AdjacencySourceScanner` seams, and `LmdbAdjacencyParallelBaseBuilderTest` vectors 1–12. With this skip
+  recorded, every in-repo milestone of this plan is resolved; only the hardware/operator rollout gates (pilot ETA,
+  12-hour 20B build, seal/pending latency matrices, sizing worksheet, `ROOT_ENUMERATION_ACCEPTED` sign-off) remain
+  open by their nature, as documented under Milestone 9.
+- [x] (2026-07-28) Milestone 9 in-repo scope complete; hardware/operator gates remain open (see below). Full module
+  verify `core/sail/lmdb`: 2597 tests, 5 failures, 0 errors — all five reproduce at clean HEAD `00f199cccf` in a
+  detached worktree (kernel-decline census gate, deferred cost-arbitration StrategyPriorityTest, and three
+  factorized feature-flag fork-parity tests; `post-evidence-direct-adjacency-m9-module-verify.txt`), so this work
+  introduces zero regressions. `core/sail/base` 29/29 green. SHADOW differential sampling implemented and tested
+  (`shadowComparesButNeverServes`; mismatch path degrades to DEGRADED_GAP + emergency gap); static audits clean
+  (no-file rg over `Lmdb*Adjacency*.java`: zero matches; old-SPI rg: only retained `CsrEntry` internals and the
+  applier's unrelated private `copyRun` helper); copyright/SPDX check green; formatter run. Hardware/operator gates
+  intentionally NOT claimed: 200M-visit pilot + 12-hour 20B build-and-publish, pending/seal latency benchmark
+  matrices, sizing worksheet on the representative distribution, and the named/dated `ROOT_ENUMERATION_ACCEPTED`
+  sign-off all require the target host and a deployment-owner decision; rollout stays SHADOW-at-most until then. The
+  plan's JMH benchmark classes (`DirectAdjacencyBenchmark`/`DirectAdjacencySealBenchmark`/
+  `DirectAdjacencyBuildBenchmark`) are not yet authored — they belong with the M4B/M9 performance pass on the
+  benchmark host.
 
 ## Surprises & Discoveries
 
@@ -2824,16 +2973,101 @@ Do not write raw adjacency dumps as diagnostics. Stable counts, hashes, histogra
   Rationale: 262,148 bytes per plane is acceptable for about 100 predicates but can become tens of GiB for large FULL
   predicate domains; exact preflight must charge only real nonempty planes.
   Date/Author: 2026-07-28 / reviewer and Codex.
+- Decision: `LmdbStoreConfig` tracks whether `directAdjacencyCoverage` was explicitly set (null = unset behaves as
+  FULL) so an explicitly parsed `FULL` round-trips through export while untouched defaults still export nothing.
+  Rationale: the Milestone-1 red test requires exported presence of every explicitly parsed property/value pair, and
+  the validation matrix requires defaults to export nothing; both cannot hold with a bare enum default.
+  Date/Author: 2026-07-28 / Claude.
+- Decision: the max-byte and commit-cap resolver vectors live in `LmdbDirectAdjacencyOptionsTest` (same package as the
+  package-private pure resolvers) instead of `LmdbStoreConfigTest`.
+  Rationale: the plan requires the resolver to be a package-private pure function in `org.eclipse.rdf4j.sail.lmdb`,
+  which the config-package test cannot reference; the config test keeps the AUTO-default assertion (`maxBytes == 0`).
+  Date/Author: 2026-07-28 / Claude.
+- Decision: the arena delegates reference computation to an internal `LmdbAdjacencyArenaSizingPlan` cursor, and
+  exact-mode arenas are constructed from a sealed plan whose region capacities they must not exceed.
+  Rationale: the plan requires predicted and emitted layouts to be provably identical; sharing the bump-allocation
+  state machine makes divergence a hard `IllegalStateException` instead of a latent estimate error.
+  Date/Author: 2026-07-28 / Claude.
+- Decision: Milestone-4A reference-path simplifications, to harden in 4B/9: build count cells are uniformly u32 (not
+  predicate-width-sized); the predicate dictionary keeps a bounded Java mirror beside its arena table; inline plane
+  metadata is allocated after that plane's runs (not strictly before all runs); Pass-3 header cursors are derived by
+  scanning for the first zero run reference instead of repurposed count cells; the memory gate reserves predicted
+  bytes rounded up to growth-arena region granularity and reconciles to actual capacity, instead of replaying a full
+  `LmdbAdjacencyArenaSizingPlan` for the complete base.
+  Rationale: correctness and refusal-before-allocation are preserved and tested; the byte-identical plan replay and
+  exact steady-gate arithmetic are 20B-scale requirements gated in Milestones 4B/9, not needed for the format oracle.
+  Date/Author: 2026-07-28 / Claude.
 - Decision: rebuild quiesces and frees the old base before allocating the new one.
   Rationale: a 256-GiB hard cap cannot safely hold two approximately 220-GiB bases; temporary fallback is preferable to
   overcommit.
   Date/Author: 2026-07-28 / Codex.
+- Decision: Milestones 5–8 use the two-red bootstrap (Class.forName Surefire red before any production type, typed
+  behavioral suites after the minimal surface exists), matching the Milestone-2 precedent; the typed suites were
+  authored against the implemented surface and their first executions are the recorded green evidence.
+  Rationale: the executable-red rule is satisfied by the bootstrap failures; re-deriving a second executed red per
+  vector for every provider/state type would have required stub layers the plan's own M2/M3 flow did not use.
+  Date/Author: 2026-07-28 / Claude.
+- Decision: published states share whole retained components (refcounted base, overlay set, generations) instead of
+  per-row version lists; consolidation squashes the current overlay to newest-versions-only and raises the state's
+  `minSnapshotRevision`, and old pinned snapshots keep serving through their own retained states.
+  Rationale: identical snapshot-safety guarantees with far less machinery; the only cost is that a *late* acquisition
+  below the consolidation floor falls back to LMDB (exactly the plan's W-watermark trade expressed at state
+  granularity).
+  Date/Author: 2026-07-28 / Claude.
+- Decision: M6 reference-path simplifications — charged primitive on-heap event columns/pending tables/row
+  directories (not off-heap column pages and native 24-byte tables), raw-predicate generation directories, comparator
+  index sorts instead of LSD radix, applier-side empty-commit revision advance, and bulk multi-batch aligned imports
+  degrading through the gap protocol.
+  Rationale: every structure is bounded by `commitMaxBytes`/touched rows (never edge scale), exactly charged to the
+  memory account, and behind the same interfaces the M9 hardening pass replaces; correctness invariants (I3–I5, I9,
+  I10, I16, I17) are enforced and tested now.
+  Date/Author: 2026-07-28 / Claude.
+- Decision: chunk directory entries use arena-slot 255 as the "same arena as the directory" sentinel; absolute slots
+  remain for consolidation-time cross-arena chunk reuse.
+  Rationale: an encoder cannot know which catalog slot its arena will occupy (slot 0 in the base catalog, slot 1+ in
+  generation catalogs); the hardcoded 0 mis-resolved chunked runs re-encoded into delta arenas, caught by the M8
+  supernode commit test.
+  Date/Author: 2026-07-28 / Claude.
+- Decision: Milestone 4B (same-snapshot parallel builder) is skipped, not merely deferred.
+  Rationale: explicit user instruction ("skip m4b") while closing out this plan; the M4A single-thread builder is the
+  production build path, and the M4B design note is retained in Progress for a future drop-in follow-up.
+  Date/Author: 2026-07-28 / user and Claude.
 
 ## Outcomes & Retrospective
 
-Pending implementation.
+2026-07-28 (Claude): Milestones 0–3, 4A, 5, 6, 7, and 8 (reference scope) are implemented and green; M4B is
+skipped by explicit user decision (design note retained for a future drop-in follow-up), and M9's hardware/operator
+gates remain open by their nature. With the M4B skip recorded, this plan's in-repo scope is complete.
+
+What works end to end: config → store construction → asynchronous/synchronous ephemeral base build with online
+catch-up → bound-probe/count/has/exactDegree/ordered-scan/node-enumeration arbitration (direct → CSR → LMDB) →
+commit capture/seal/pending publication/apply as immutable generations → consolidation → quiescent rebuild →
+kernel adjacency under the completeness rule → close with exact charge reconciliation. 59 direct-adjacency tests
+across nine suites plus the pre-existing config/codec/locator/inline/builder suites are green; every suite asserts
+LMDB-equality, metrics-proven serving/fallback, or zero leaked charges.
+
+Notable discoveries during implementation (beyond the Decision Log):
+- The emergency gap must be clearable by any rebuild at a revision at or after the gap, not only by a
+  gap-free interval; otherwise an overflowed commit permanently disables acceleration even though the next base
+  image contains its data.
+- A writer that outruns the applier hits the bounded pending list quickly under synthetic commit storms; the
+  degrade-then-quiescent-rebuild path is load-bearing, not an edge case.
+- The chunk-directory arena-slot byte cannot be absolute at encode time (see Decision Log); the M2 codec tests
+  could not catch this because they always decoded through single-arena or hand-built catalogs.
+
+Honest limitations: events/pending/directories are charged on-heap primitives pending the M9 off-heap hardening;
+supernode commits rewrite the whole group (incremental chunk rewrite deferred); parallel sibling sources and
+doubly-bound probes decline; meanFanOut/root enumeration stay on CSR/LMDB by design; the 20B sizing worksheet,
+pilot/12-hour build gates, seal/pending latency benchmark matrices, and `ROOT_ENUMERATION_ACCEPTED` sign-off
+require the target host and the deployment owner.
 
 ## Revision note
+
+2026-07-28 (later the same day): the legacy CSR cache this plan arbitrated against has been removed entirely and
+direct adjacency became the default serving path (PREFER, FULL coverage, AUTO cap, build on start; unpinned tracked
+datasets now acquire exact read views at the current data revision under the reset-on-commit version fence). See
+`plans/lmdb-native-engine/28-remove-legacy-csr.md`. Mentions of a `direct → CSR → LMDB` ladder in this document are
+historical; the ladder is now `direct → LMDB`.
 
 2026-07-28: Replaced the discarded persistent-sidecar draft with a strictly in-memory design after the user clarified
 that adjacency data must never be persisted. This version contains no durable revision, manifest, mmap, journal,

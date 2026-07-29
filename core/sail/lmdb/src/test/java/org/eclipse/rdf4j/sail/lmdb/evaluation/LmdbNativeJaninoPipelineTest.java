@@ -66,7 +66,6 @@ public class LmdbNativeJaninoPipelineTest {
 		save(WCOJ_FLAG, "false");
 		save(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "true");
 		save(LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY, "0");
-		save("rdf4j.lmdb.csrCache.minProbes", "1");
 
 		dataDir = Files.createTempDirectory("rdf4j-janino-pipeline").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");

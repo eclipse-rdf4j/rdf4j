@@ -171,50 +171,77 @@ public interface NativeLmdbQuerySource {
 	}
 
 	/**
-	 * Read-only primitive view over one immutable adjacency entry. A successful dense lookup identifies the half-open
-	 * neighbor slice {@code [runStart(dense), runEnd(dense))}; contexts use id {@code 0} for the null graph.
+	 * Read-only primitive view over one immutable adjacency entry, addressed through opaque long run handles (plan 27,
+	 * invariant I7). A successful {@link #find(long)} returns a positive run handle; positions and sizes within a run
+	 * are {@code long} so a group may exceed {@code Integer.MAX_VALUE} incidences. Contexts use id {@code 0} for the
+	 * null graph. {@code int} appears only for caller-bounded batch lengths, never for edge-scale positions.
 	 */
 	interface NativeAdjacency {
 
-		int denseIdOf(long key);
+		/** The key has provably no run in this view. */
+		long NOT_FOUND = -1L;
 
-		int runStart(int dense);
-
-		int runEnd(int dense);
-
-		long neighborAt(int index);
-
-		long contextAt(int index);
+		/** This view cannot answer for the key; the caller must use the store path. */
+		long NOT_COVERED = -2L;
 
 		/**
-		 * Bulk-copies the neighbor ids of the half-open index range {@code [start, end)} into {@code target} starting
-		 * at {@code targetOffset}. The default loops {@link #neighborAt(int)}; an implementation backed by a contiguous
-		 * array should override this with a block copy. Vectorized kernels read whole runs through this method, so the
-		 * override is what turns one virtual call per neighbor into one call per run.
+		 * The positive opaque run handle for the key, or {@link #NOT_FOUND} / {@link #NOT_COVERED}.
 		 */
-		default void copyRun(int start, int end, long[] target, int targetOffset) {
-			for (int i = start; i < end; i++) {
-				target[targetOffset + i - start] = neighborAt(i);
+		long find(long key);
+
+		/** Number of incidences in the run. */
+		long size(long runHandle);
+
+		long neighborAt(long runHandle, long runOffset);
+
+		long contextAt(long runHandle, long runOffset);
+
+		/**
+		 * Bulk-copies up to {@code length} neighbor ids starting at {@code runOffset} into {@code target} at
+		 * {@code targetOffset}; returns the copied count. The default loops {@link #neighborAt(long, long)}; an
+		 * implementation backed by a contiguous array should override this with a block copy. Vectorized kernels read
+		 * runs in bounded {@code int}-sized batches through this method.
+		 */
+		default int copyNeighbors(long runHandle, long runOffset, int length, long[] target, int targetOffset) {
+			int copied = (int) Math.min(length, size(runHandle) - runOffset);
+			for (int i = 0; i < copied; i++) {
+				target[targetOffset + i] = neighborAt(runHandle, runOffset + i);
 			}
+			return copied;
 		}
 
 		/**
-		 * Bulk-copies the context ids of the half-open index range {@code [start, end)}, mirroring
-		 * {@link #copyRun(int, int, long[], int)} for the named-graph column.
+		 * Bulk-copies context ids, mirroring {@link #copyNeighbors(long, long, int, long[], int)} for the named-graph
+		 * column.
 		 */
-		default void copyContexts(int start, int end, long[] target, int targetOffset) {
-			for (int i = start; i < end; i++) {
-				target[targetOffset + i - start] = contextAt(i);
+		default int copyContexts(long runHandle, long runOffset, int length, long[] target, int targetOffset) {
+			int copied = (int) Math.min(length, size(runHandle) - runOffset);
+			for (int i = 0; i < copied; i++) {
+				target[targetOffset + i] = contextAt(runHandle, runOffset + i);
 			}
+			return copied;
+		}
+
+		/**
+		 * First run offset at or after {@code fromOffset} whose {@code (neighbor, context)} pair is unsigned greater
+		 * than or equal to the given pair, or {@code -1} when this view cannot seek.
+		 */
+		default long lowerBound(long runHandle, long fromOffset, long neighbor, long context) {
+			return -1L;
+		}
+
+		/** True when this view can enumerate its distinct keys through {@link #keyCount()} and {@link #keyAt(long)}. */
+		default boolean supportsKeyEnumeration() {
+			return false;
 		}
 
 		/** Number of distinct keys in this view, or {@code -1} when key enumeration is unsupported. */
-		default int keyCount() {
-			return -1;
+		default long keyCount() {
+			return -1L;
 		}
 
-		/** The key at the given dense ordinal; only valid when {@link #keyCount()} is non-negative. */
-		default long keyAt(int dense) {
+		/** The key at the given ordinal; only valid when {@link #supportsKeyEnumeration()} is true. */
+		default long keyAt(long keyOrdinal) {
 			throw new UnsupportedOperationException("key enumeration is not supported by this adjacency view");
 		}
 

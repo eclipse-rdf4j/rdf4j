@@ -439,27 +439,24 @@ public class LmdbNativePropertyPathTest {
 		int[] runStart = { 0, 2, 3, 4 };
 		NativeLmdbQuerySource.NativeAdjacency adjacency = new NativeLmdbQuerySource.NativeAdjacency() {
 			@Override
-			public int denseIdOf(long key) {
-				return key == 10L ? 0 : key == 20L ? 1 : key == 30L ? 2 : -1;
+			public long find(long key) {
+				return key == 10L ? 1L : key == 20L ? 2L : key == 30L ? 3L : NOT_FOUND;
 			}
 
 			@Override
-			public int runStart(int dense) {
-				return runStart[dense];
+			public long size(long runHandle) {
+				int dense = (int) runHandle - 1;
+				return runStart[dense + 1] - runStart[dense];
 			}
 
 			@Override
-			public int runEnd(int dense) {
-				return runStart[dense + 1];
+			public long neighborAt(long runHandle, long runOffset) {
+				int dense = (int) runHandle - 1;
+				return neighbors[runStart[dense] + (int) runOffset];
 			}
 
 			@Override
-			public long neighborAt(int index) {
-				return neighbors[index];
-			}
-
-			@Override
-			public long contextAt(int index) {
+			public long contextAt(long runHandle, long runOffset) {
 				return 0L;
 			}
 		};

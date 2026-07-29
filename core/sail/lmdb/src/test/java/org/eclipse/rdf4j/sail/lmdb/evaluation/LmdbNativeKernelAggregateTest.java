@@ -87,7 +87,6 @@ public class LmdbNativeKernelAggregateTest {
 		save(WCOJ_FLAG, "false");
 		save(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "true");
 		save(LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY, "0");
-		save("rdf4j.lmdb.csrCache.minProbes", "1");
 		save("rdf4j.lmdb.janinoCodegen.debug", "true");
 		save(LmdbNativeJaninoCodegen.DUMP_DIR_PROPERTY, "target/kernel-dump");
 

@@ -87,11 +87,6 @@ public final class LmdbNativeAttemptMetrics {
 			PATH_IR_AGGREGATE, PATH_CONSTANT_FALSE_FILTER);
 
 	private static final LmdbNativeAttemptMetrics DIRECT = new LmdbNativeAttemptMetrics(null, true, null);
-	private static final AtomicLong CSR_CACHE_ADMISSIONS = new AtomicLong();
-	private static final AtomicLong CSR_CACHE_REFUSALS = new AtomicLong();
-	private static final AtomicLong CSR_CACHE_AUTO_WARM_BUILDS = new AtomicLong();
-	private static final AtomicLong CSR_CACHE_PREDICTIVE_EVICTIONS = new AtomicLong();
-	private static final AtomicLong CSR_CACHE_ADMISSION_SKIPS = new AtomicLong();
 
 	private final LmdbNativeAttemptMetrics parent;
 	private final boolean direct;
@@ -175,46 +170,10 @@ public final class LmdbNativeAttemptMetrics {
 		return new SpecializationMetrics(metrics.cacheHits(), metrics.cacheMisses(), metrics.kernelExecutions());
 	}
 
-	/** Records a process-cache publication; called by the store cache after ownership transfer succeeds. */
-	public static void recordCsrCacheAdmission() {
-		CSR_CACHE_ADMISSIONS.incrementAndGet();
-	}
-
-	/** Records a process-cache refusal caused by the entry or global byte policy. */
-	public static void recordCsrCacheRefusal() {
-		CSR_CACHE_REFUSALS.incrementAndGet();
-	}
-
-	/** Records a popularity-driven background build published by the store's warmer. */
-	public static void recordCsrCacheAutoWarmBuild() {
-		CSR_CACHE_AUTO_WARM_BUILDS.incrementAndGet();
-	}
-
-	/** Records an eviction whose victim was chosen by the predictive (score × rebuild-cost / bytes) policy. */
-	public static void recordCsrCachePredictiveEviction() {
-		CSR_CACHE_PREDICTIVE_EVICTIONS.incrementAndGet();
-	}
-
-	/** Records a build skipped by admission control because every sampled resident out-scored the candidate. */
-	public static void recordCsrCacheAdmissionSkip() {
-		CSR_CACHE_ADMISSION_SKIPS.incrementAndGet();
-	}
-
-	/** Process-local cache-policy counters for benchmark before/after snapshots. */
-	static CsrCacheMetrics csrCacheMetrics() {
-		return new CsrCacheMetrics(CSR_CACHE_ADMISSIONS.get(), CSR_CACHE_REFUSALS.get(),
-				CSR_CACHE_AUTO_WARM_BUILDS.get(), CSR_CACHE_PREDICTIVE_EVICTIONS.get(),
-				CSR_CACHE_ADMISSION_SKIPS.get());
-	}
-
 	record DispatchTrace(String executionPath, String declineReasons) {
 	}
 
 	record SpecializationMetrics(long cacheHits, long cacheMisses, long kernelExecutions) {
-	}
-
-	record CsrCacheMetrics(long admissions, long refusals, long autoWarmBuilds, long predictiveEvictions,
-			long admissionSkips) {
 	}
 
 	LmdbNativeAttemptMetrics child() {

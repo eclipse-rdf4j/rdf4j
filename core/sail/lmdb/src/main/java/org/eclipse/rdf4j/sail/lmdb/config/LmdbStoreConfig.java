@@ -13,9 +13,18 @@
 package org.eclipse.rdf4j.sail.lmdb.config;
 
 import java.time.Duration;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.ModelException;
@@ -131,6 +140,24 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	private boolean backgroundRawSamplingEnabled = true;
 
 	private long backgroundRawSamplingMaxMillisPerCycle = BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE;
+
+	/**
+	 * The smallest explicit (non-AUTO) direct adjacency memory limit.
+	 */
+	public static final long DIRECT_ADJACENCY_MIN_EXPLICIT_BYTES = 256L * 1024 * 1024;
+
+	// null means unset: behaves as PREFER but is not exported
+	private DirectAdjacencyMode directAdjacencyMode;
+
+	// null means unset: behaves as FULL but is not exported
+	private DirectAdjacencyCoverage directAdjacencyCoverage;
+
+	private Set<IRI> directAdjacencyPredicates = Set.of();
+
+	private long directAdjacencyMaxBytes = 0;
+
+	// null means unset: resolves to (mode != DISABLED) and is not exported
+	private Boolean directAdjacencyBuildOnStart;
 
 	/*--------------*
 	 * Constructors *
@@ -444,6 +471,96 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	public DirectAdjacencyMode getDirectAdjacencyMode() {
+		return directAdjacencyMode != null ? directAdjacencyMode : DirectAdjacencyMode.PREFER;
+	}
+
+	public LmdbStoreConfig setDirectAdjacencyMode(DirectAdjacencyMode directAdjacencyMode) {
+		this.directAdjacencyMode = Objects.requireNonNull(directAdjacencyMode, "directAdjacencyMode");
+		return this;
+	}
+
+	public DirectAdjacencyCoverage getDirectAdjacencyCoverage() {
+		return directAdjacencyCoverage != null ? directAdjacencyCoverage : DirectAdjacencyCoverage.FULL;
+	}
+
+	public LmdbStoreConfig setDirectAdjacencyCoverage(DirectAdjacencyCoverage directAdjacencyCoverage) {
+		this.directAdjacencyCoverage = Objects.requireNonNull(directAdjacencyCoverage, "directAdjacencyCoverage");
+		return this;
+	}
+
+	/**
+	 * @return an unmodifiable copy of the selected predicate IRIs; empty for {@link DirectAdjacencyCoverage#FULL}
+	 */
+	public Set<IRI> getDirectAdjacencyPredicates() {
+		return Set.copyOf(directAdjacencyPredicates);
+	}
+
+	public LmdbStoreConfig setDirectAdjacencyPredicates(Collection<? extends IRI> predicates) {
+		Objects.requireNonNull(predicates, "predicates");
+		Set<IRI> copy = new LinkedHashSet<>();
+		for (IRI predicate : predicates) {
+			copy.add(Objects.requireNonNull(predicate, "predicate"));
+		}
+		this.directAdjacencyPredicates = Set.copyOf(copy);
+		return this;
+	}
+
+	/**
+	 * @return the direct adjacency memory limit in bytes; zero means AUTO (50% of the effective JVM max heap)
+	 */
+	public long getDirectAdjacencyMaxBytes() {
+		return directAdjacencyMaxBytes;
+	}
+
+	/**
+	 * Sets the direct adjacency memory limit in bytes. Zero means AUTO and resolves once, at store construction, to 50%
+	 * of the effective JVM max heap. A positive value below 256 MiB or a negative value is rejected.
+	 */
+	public LmdbStoreConfig setDirectAdjacencyMaxBytes(long directAdjacencyMaxBytes) {
+		if (directAdjacencyMaxBytes < 0) {
+			throw new IllegalArgumentException(
+					"directAdjacencyMaxBytes must be zero (AUTO) or positive: " + directAdjacencyMaxBytes);
+		}
+		if (directAdjacencyMaxBytes > 0 && directAdjacencyMaxBytes < DIRECT_ADJACENCY_MIN_EXPLICIT_BYTES) {
+			throw new IllegalArgumentException("explicit directAdjacencyMaxBytes must be at least "
+					+ DIRECT_ADJACENCY_MIN_EXPLICIT_BYTES + " bytes (256 MiB): " + directAdjacencyMaxBytes);
+		}
+		this.directAdjacencyMaxBytes = directAdjacencyMaxBytes;
+		return this;
+	}
+
+	/**
+	 * @return the explicit value when set; otherwise defaults to {@code true} exactly when the resolved mode is not
+	 *         {@link DirectAdjacencyMode#DISABLED}
+	 */
+	public boolean getDirectAdjacencyBuildOnStart() {
+		return directAdjacencyBuildOnStart != null ? directAdjacencyBuildOnStart
+				: getDirectAdjacencyMode() != DirectAdjacencyMode.DISABLED;
+	}
+
+	public LmdbStoreConfig setDirectAdjacencyBuildOnStart(boolean directAdjacencyBuildOnStart) {
+		this.directAdjacencyBuildOnStart = directAdjacencyBuildOnStart;
+		return this;
+	}
+
+	@Override
+	public void validate() throws SailConfigException {
+		super.validate();
+		if (getDirectAdjacencyCoverage() == DirectAdjacencyCoverage.FULL && !directAdjacencyPredicates.isEmpty()) {
+			throw new SailConfigException(
+					"directAdjacencyCoverage FULL requires an empty directAdjacencyPredicate selection");
+		}
+		if (getDirectAdjacencyCoverage() == DirectAdjacencyCoverage.SELECTED && directAdjacencyPredicates.isEmpty()) {
+			throw new SailConfigException(
+					"directAdjacencyCoverage SELECTED requires at least one directAdjacencyPredicate");
+		}
+		if (Boolean.TRUE.equals(directAdjacencyBuildOnStart)
+				&& getDirectAdjacencyMode() == DirectAdjacencyMode.DISABLED) {
+			throw new SailConfigException("directAdjacencyBuildOnStart requires a non-DISABLED directAdjacencyMode");
+		}
+	}
+
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
@@ -545,6 +662,26 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (backgroundRawSamplingMaxMillisPerCycle != BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE) {
 			m.add(implNode, LmdbStoreSchema.BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE,
 					vf.createLiteral(backgroundRawSamplingMaxMillisPerCycle));
+		}
+		if (directAdjacencyMode != null) {
+			m.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_MODE, vf.createLiteral(directAdjacencyMode.name()));
+		}
+		if (directAdjacencyCoverage != null) {
+			m.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_COVERAGE,
+					vf.createLiteral(directAdjacencyCoverage.name()));
+		}
+		List<IRI> lexicalPredicates = directAdjacencyPredicates.stream()
+				.sorted(Comparator.comparing(IRI::stringValue))
+				.collect(Collectors.toList());
+		for (IRI predicate : lexicalPredicates) {
+			m.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_PREDICATE, predicate);
+		}
+		if (directAdjacencyMaxBytes > 0) {
+			m.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_MAX_BYTES, vf.createLiteral(directAdjacencyMaxBytes));
+		}
+		if (directAdjacencyBuildOnStart != null) {
+			m.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_BUILD_ON_START,
+					vf.createLiteral(directAdjacencyBuildOnStart.booleanValue()));
 		}
 		return implNode;
 	}
@@ -790,6 +927,69 @@ public class LmdbStoreConfig extends BaseSailConfig {
 					m.getStatements(implNode, LmdbStoreSchema.BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE, null))
 					.ifPresent(lit -> setBackgroundRawSamplingMaxMillisPerCycle(parseLong(lit,
 							LmdbStoreSchema.BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE)));
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_MODE, null))
+					.ifPresent(lit -> {
+						try {
+							setDirectAdjacencyMode(DirectAdjacencyMode.valueOf(lit.getLabel()));
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException(
+									"One of DISABLED, SHADOW or PREFER required for "
+											+ LmdbStoreSchema.DIRECT_ADJACENCY_MODE + " property, found " + lit);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_COVERAGE, null))
+					.ifPresent(lit -> {
+						try {
+							setDirectAdjacencyCoverage(DirectAdjacencyCoverage.valueOf(lit.getLabel()));
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException(
+									"One of FULL or SELECTED required for "
+											+ LmdbStoreSchema.DIRECT_ADJACENCY_COVERAGE + " property, found " + lit);
+						}
+					});
+
+			Set<IRI> parsedPredicates = new LinkedHashSet<>();
+			m.getStatements(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_PREDICATE, null).forEach(st -> {
+				Value object = st.getObject();
+				if (!(object instanceof IRI)) {
+					throw new SailConfigException("IRI value required for "
+							+ LmdbStoreSchema.DIRECT_ADJACENCY_PREDICATE + " property, found " + object);
+				}
+				parsedPredicates.add((IRI) object);
+			});
+			if (!parsedPredicates.isEmpty()) {
+				setDirectAdjacencyPredicates(parsedPredicates);
+			}
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_MAX_BYTES, null))
+					.ifPresent(lit -> {
+						long parsed;
+						try {
+							parsed = lit.longValue();
+						} catch (NumberFormatException e) {
+							throw new SailConfigException(
+									"Long value required for " + LmdbStoreSchema.DIRECT_ADJACENCY_MAX_BYTES
+											+ " property, found " + lit);
+						}
+						try {
+							setDirectAdjacencyMaxBytes(parsed);
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException(e.getMessage(), e);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_BUILD_ON_START, null))
+					.ifPresent(lit -> {
+						try {
+							setDirectAdjacencyBuildOnStart(lit.booleanValue());
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException(
+									"Boolean value required for " + LmdbStoreSchema.DIRECT_ADJACENCY_BUILD_ON_START
+											+ " property, found " + lit);
+						}
+					});
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}

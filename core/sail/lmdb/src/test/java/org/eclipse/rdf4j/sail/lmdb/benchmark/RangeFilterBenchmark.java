@@ -65,8 +65,6 @@ public class RangeFilterBenchmark {
 	private static final String EX = "http://example.com/range/";
 	private static final String NATIVE_ENABLED = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String PARALLEL_ENABLED = "rdf4j.lmdb.parallel.enabled";
-	private static final String CSR_ENABLED = "rdf4j.lmdb.csrCache.enabled";
-	private static final String CSR_MIN_PROBES = "rdf4j.lmdb.csrCache.minProbes";
 	private static final long DIGEST_OFFSET = 0xcbf29ce484222325L;
 	private static final long DIGEST_PRIME = 0x100000001b3L;
 
@@ -112,8 +110,6 @@ public class RangeFilterBenchmark {
 		private EnumMap<Window, QueryDigest> expectedDigests;
 		private String previousNative;
 		private String previousParallel;
-		private String previousCsr;
-		private String previousCsrMinProbes;
 
 		@Setup(Level.Trial)
 		public void setUp() {
@@ -121,8 +117,6 @@ public class RangeFilterBenchmark {
 				throw new IllegalArgumentException("inputRows must be positive and divisible by 1000");
 			}
 			captureProperties();
-			System.setProperty(CSR_ENABLED, "true");
-			System.setProperty(CSR_MIN_PROBES, "1");
 			System.setProperty(PARALLEL_ENABLED, "false");
 			System.setProperty(NATIVE_ENABLED, "true");
 
@@ -144,8 +138,6 @@ public class RangeFilterBenchmark {
 		private void captureProperties() {
 			previousNative = System.getProperty(NATIVE_ENABLED);
 			previousParallel = System.getProperty(PARALLEL_ENABLED);
-			previousCsr = System.getProperty(CSR_ENABLED);
-			previousCsrMinProbes = System.getProperty(CSR_MIN_PROBES);
 		}
 
 		private void loadData() {
@@ -209,8 +201,6 @@ public class RangeFilterBenchmark {
 				} finally {
 					restoreProperty(NATIVE_ENABLED, previousNative);
 					restoreProperty(PARALLEL_ENABLED, previousParallel);
-					restoreProperty(CSR_ENABLED, previousCsr);
-					restoreProperty(CSR_MIN_PROBES, previousCsrMinProbes);
 				}
 			}
 		}

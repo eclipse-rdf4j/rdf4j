@@ -144,6 +144,22 @@ public class ValueIds {
 	}
 
 	/**
+	 * Tests if the given id is a reference id ({@link #T_URI}, {@link #T_LITERAL}, {@link #T_BNODE} or
+	 * {@link #T_TRIPLE}). An inlined numeric/string value may still have an even low bit, so "reference" is never
+	 * inferred from the low bit alone.
+	 *
+	 * @param id The id to test
+	 * @return <code>true</code> if the id references a stored value, else <code>false</code>
+	 */
+	public static boolean isReference(long id) {
+		if (isDouble(id)) {
+			return false;
+		}
+		int type = getIdType(id);
+		return type >= T_URI && type <= T_TRIPLE;
+	}
+
+	/**
 	 * Tests if the given id is an inlined double value, which is identified by the least significant bit being set to
 	 * 1.
 	 *

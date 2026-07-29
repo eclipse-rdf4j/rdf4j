@@ -161,7 +161,8 @@ final class LmdbNativeKernelBindings {
 		for (int i = 0; i < adjacencies.length; i++) {
 			AdjacencyRequest request = adjacencies[i];
 			NativeLmdbQuerySource.NativeAdjacency view = probe.adjacency(request.predicate, request.bySubject);
-			if (view == null || (request.needsKeyEnum && view.keyCount() < 0)) {
+			if (view == null
+					|| (request.needsKeyEnum && (!view.supportsKeyEnumeration() || view.keyCount() < 0))) {
 				return null;
 			}
 			views[i] = view;

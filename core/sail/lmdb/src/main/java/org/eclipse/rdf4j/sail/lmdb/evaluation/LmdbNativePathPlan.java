@@ -1236,19 +1236,19 @@ final class PathParallelExpansion implements AutoCloseable {
 				for (int frontierIndex = from; frontierIndex < to; frontierIndex++) {
 					long near = task.frontier[frontierIndex];
 					if (cached != null) {
-						int dense = cached.denseIdOf(near);
-						if (dense < 0) {
+						long run = cached.find(near);
+						if (run <= 0L) {
 							continue;
 						}
-						int end = cached.runEnd(dense);
-						for (int neighbor = cached.runStart(dense); neighbor < end; neighbor++) {
-							if (!plan.acceptsContext(cached.contextAt(neighbor))) {
+						long runSize = cached.size(run);
+						for (long offset = 0L; offset < runSize; offset++) {
+							if (!plan.acceptsContext(cached.contextAt(run, offset))) {
 								continue;
 							}
 							if (size == delta.length) {
 								delta = Arrays.copyOf(delta, delta.length * 2);
 							}
-							delta[size++] = cached.neighborAt(neighbor);
+							delta[size++] = cached.neighborAt(run, offset);
 						}
 					} else {
 						try (PatternCursor cursor = plan.openStep(source, probe, near, nearPos, step.predicate)) {
@@ -1798,16 +1798,16 @@ final class PathCursor implements RowCursor {
 
 	void expandCachedLevel(long[] currentLevel, NativeLmdbQuerySource.NativeAdjacency cached) {
 		for (long near : currentLevel) {
-			int dense = cached.denseIdOf(near);
-			if (dense < 0) {
+			long run = cached.find(near);
+			if (run <= 0L) {
 				continue;
 			}
-			int end = cached.runEnd(dense);
-			for (int index = cached.runStart(dense); index < end; index++) {
-				if (!plan.acceptsContext(cached.contextAt(index))) {
+			long runSize = cached.size(run);
+			for (long offset = 0L; offset < runSize; offset++) {
+				if (!plan.acceptsContext(cached.contextAt(run, offset))) {
 					continue;
 				}
-				long far = cached.neighborAt(index);
+				long far = cached.neighborAt(run, offset);
 				if (!discovered.contains(far)) {
 					pushNextLevel(far);
 				}

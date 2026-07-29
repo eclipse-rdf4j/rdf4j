@@ -83,6 +83,7 @@ import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.base.SailStoreStatementSource;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
+import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAttemptMetrics;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeExpressionCompiler;
@@ -110,8 +111,8 @@ class LmdbSailStore implements SailStore {
 
 	/**
 	 * Kill switch for native SNAPSHOT transaction pinning. This is an isolation-level guarantee and is deliberately
-	 * independent of the CSR cache switches ({@code rdf4j.lmdb.csrCache.*}): disabling cache serving must never
-	 * downgrade the advertised transaction isolation.
+	 * independent of the derived-adjacency switches: disabling adjacency serving must never downgrade the advertised
+	 * transaction isolation.
 	 */
 	static boolean snapshotPinningEnabled() {
 		return Boolean.parseBoolean(System.getProperty("rdf4j.lmdb.snapshotPinning", "true"));
@@ -787,20 +788,11 @@ class LmdbSailStore implements SailStore {
 	private final AtomicBoolean storeTxnStarted = new AtomicBoolean(false);
 	private final AtomicBoolean estimatorTouchedSinceStoreTxnStart = new AtomicBoolean(false);
 
-	/** In-memory per-predicate adjacency cache, or {@code null} when disabled. See {@link LmdbCsrAdjacencyCache}. */
-	private final LmdbCsrAdjacencyCache csrCache;
-
-	/** Predicate IRIs from {@code rdf4j.lmdb.csrCache.eagerPredicates}; empty when the warmer is not configured. */
-	private final List<String> csrEagerPredicates;
-
 	/**
-	 * Single background thread that warms {@link #csrEagerPredicates} and popularity-ranked auto-warm candidates, or
-	 * {@code null} when neither is configured.
+	 * Strictly in-memory direct adjacency provider (plan 27), or {@code null} when the configured mode is DISABLED.
+	 * Constructed from {@link LmdbStoreConfig} settings.
 	 */
-	private final ExecutorService csrEagerBuildExecutor;
-
-	/** Collapses trigger bursts: only one eager warm-up run is queued at a time. */
-	private final AtomicBoolean csrEagerBuildPending = new AtomicBoolean(false);
+	private final LmdbDirectAdjacencyStore directAdjacency;
 
 	/**
 	 * Creates a new {@link LmdbSailStore}.
@@ -836,22 +828,17 @@ class LmdbSailStore implements SailStore {
 			var valueStore = new ValueStore(new File(dataDir, "values"), properties, config);
 			this.valueStore = valueStore;
 			tripleStore = new TripleStore(new File(dataDir, "triples"), properties, config, valueStore);
-			csrCache = LmdbCsrAdjacencyCache.enabled() ? new LmdbCsrAdjacencyCache(tripleStore, storeTxnStarted)
+			LmdbDirectAdjacencyOptions directAdjacencyOptions = LmdbDirectAdjacencyOptions.resolve(config);
+			directAdjacency = directAdjacencyOptions.mode() != DirectAdjacencyMode.DISABLED
+					? new LmdbDirectAdjacencyStore(tripleStore, valueStore, storeTxnStarted, directAdjacencyOptions)
 					: null;
-			if (csrCache != null) {
-				tripleStore.setCsrCommitListener(csrCache.commitListener());
-			}
-			csrEagerPredicates = csrCache != null ? LmdbCsrAdjacencyCache.eagerPredicates() : List.of();
-			csrEagerBuildExecutor = csrCache != null
-					&& (!csrEagerPredicates.isEmpty() || LmdbCsrAdjacencyCache.autoWarmEnabled())
-							? Executors.newSingleThreadExecutor(runnable -> {
-								Thread thread = new Thread(runnable, "lmdb-csr-eager-build");
-								thread.setDaemon(true);
-								return thread;
-							})
-							: null;
-			if (csrCache != null && csrEagerBuildExecutor != null) {
-				csrCache.onWarmNeeded(this::scheduleEagerCsrBuild);
+			if (directAdjacency != null) {
+				// install the complete commit collector before any build snapshot can be acquired (plan 27)
+				tripleStore.setDirectAdjacencyCommitHooks(directAdjacency.commitListener(),
+						directAdjacency.newCommitDelta());
+				if (directAdjacencyOptions.buildOnStart()) {
+					directAdjacency.triggerBuild();
+				}
 			}
 			preparedImportBudget = new AlignedWriteBudget(calculatePreparedImportStatementLimit(
 					Runtime.getRuntime().maxMemory(), tripleStore.secondaryIndexCount()));
@@ -876,7 +863,6 @@ class LmdbSailStore implements SailStore {
 				sketchBasedJoinEstimator.startBackgroundRefresh(3);
 				startBackgroundFilterSampling();
 			}
-			scheduleEagerCsrBuild();
 		} finally {
 			if (!initialized) {
 				close();
@@ -1063,62 +1049,6 @@ class LmdbSailStore implements SailStore {
 		return estimatorConfig;
 	}
 
-	/**
-	 * Queues one background warm-up run over {@link #csrEagerPredicates} and the popularity-ranked auto-warm
-	 * candidates. Called at startup, after every committed write (a commit drops all adjacency entries as stale), and
-	 * whenever probe traffic pushes a shape past the auto-warm threshold. Bursts collapse into a single queued run; a
-	 * run that observes an in-flight write bails out and relies on that write's commit to reschedule.
-	 */
-	private void scheduleEagerCsrBuild() {
-		if (csrEagerBuildExecutor == null || !csrEagerBuildPending.compareAndSet(false, true)) {
-			return;
-		}
-		try {
-			csrEagerBuildExecutor.execute(this::runEagerCsrBuild);
-		} catch (RejectedExecutionException e) {
-			csrEagerBuildPending.set(false);
-		}
-	}
-
-	private void runEagerCsrBuild() {
-		csrEagerBuildPending.set(false);
-		try {
-			for (String iri : csrEagerPredicates) {
-				if (storeTxnStarted.get()) {
-					return;
-				}
-				long pred = valueStore.getId(valueStore.createIRI(iri));
-				if (pred == LmdbValue.UNKNOWN_ID) {
-					continue;
-				}
-				try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
-					csrCache.buildEagerly(pred, LmdbCsrAdjacencyCache.BY_SUBJECT, true, txn);
-					csrCache.buildEagerly(pred, LmdbCsrAdjacencyCache.BY_OBJECT, true, txn);
-				}
-			}
-			if (LmdbCsrAdjacencyCache.autoWarmEnabled()) {
-				// popularity-ranked shapes, hottest first: rebuilds hot entries after every commit and picks up
-				// shapes whose probe traffic crossed the auto-warm threshold before the inline trigger would fire
-				for (long key : csrCache.warmCandidates(LmdbCsrAdjacencyCache.autoWarmMaxSlots())) {
-					if (storeTxnStarted.get()) {
-						return;
-					}
-					long pred = key >>> 2;
-					int direction = (int) (key >>> 1) & 1;
-					boolean explicit = (key & 1) != 0;
-					try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
-						if (csrCache.buildEagerly(pred, direction, explicit, txn)) {
-							LmdbCsrAdjacencyCache.AUTO_WARM_BUILDS.incrementAndGet();
-							LmdbNativeAttemptMetrics.recordCsrCacheAutoWarmBuild();
-						}
-					}
-				}
-			}
-		} catch (IOException | RuntimeException e) {
-			logger.debug("Eager CSR adjacency warm-up failed", e);
-		}
-	}
-
 	void rollback() throws SailException {
 		sinkStoreAccessLock.lock();
 		try {
@@ -1174,6 +1104,14 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	/**
+	 * The direct adjacency provider (plan 27), or {@code null} when the configured mode is DISABLED. Package-private
+	 * for tests and metrics.
+	 */
+	LmdbDirectAdjacencyStore directAdjacencyStore() {
+		return directAdjacency;
+	}
+
 	private void discardEstimatorStateTouchedByOpenTransaction() {
 		if (estimatorTouchedSinceStoreTxnStart.getAndSet(false) && sketchBasedJoinEstimator != null) {
 			sketchBasedJoinEstimator.discardAndMarkForRebuild();
@@ -1182,20 +1120,8 @@ class LmdbSailStore implements SailStore {
 
 	@Override
 	public void close() throws SailException {
-		if (csrCache != null) {
-			csrCache.close();
-		}
-		if (csrEagerBuildExecutor != null) {
-			// closing the cache above makes any in-flight eager build abort at its next sweep batch, so this
-			// wait is bounded; the read txn must be closed before the LMDB environments go down below
-			csrEagerBuildExecutor.shutdownNow();
-			try {
-				while (!csrEagerBuildExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
-					logger.warn("Waiting for CSR eager build executor to terminate");
-				}
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-			}
+		if (directAdjacency != null) {
+			directAdjacency.close();
 		}
 		try {
 			try {
@@ -1751,14 +1677,14 @@ class LmdbSailStore implements SailStore {
 			// participate in the active txn reset/renew cycle.
 			boolean trackActive = !isEstimatorRefresh;
 			// Native SNAPSHOT: pin the dataset's read transaction to one store snapshot (revision + B+tree state)
-			// for its whole lifetime. SERIALIZABLE bypasses the CSR entirely; SNAPSHOT_READ and below keep the
-			// reset-on-commit behavior unchanged. Pinning is an isolation guarantee and must stay independent of
-			// the CSR cache's snapshot-serving switch.
+			// for its whole lifetime. SERIALIZABLE bypasses derived adjacency entirely; SNAPSHOT_READ and below keep
+			// the reset-on-commit behavior unchanged. Pinning is an isolation guarantee and must stay independent of
+			// adjacency serving.
 			boolean pinSnapshot = trackActive && level != null && snapshotPinningEnabled()
 					&& level.isCompatibleWith(IsolationLevels.SNAPSHOT)
 					&& !level.isCompatibleWith(IsolationLevels.SERIALIZABLE);
-			boolean csrBypass = level != null && level.isCompatibleWith(IsolationLevels.SERIALIZABLE);
-			return new LmdbSailDataset(explicit, trackActive, pinSnapshot, csrBypass);
+			boolean adjacencyBypass = level != null && level.isCompatibleWith(IsolationLevels.SERIALIZABLE);
+			return new LmdbSailDataset(explicit, trackActive, pinSnapshot, adjacencyBypass);
 		}
 
 	}
@@ -1985,13 +1911,11 @@ class LmdbSailStore implements SailStore {
 							valueStore.discardFreshValueSession(freshValueSession);
 							freshValueSession = null;
 						}
-						// The triple/value stores are authoritative once both commits succeed: merge the
-						// collected delta into the touched CSR entries (untouched shapes keep their entries).
-						if (csrCache != null) {
-							csrCache.applyCommittedDelta(tripleStore.drainCsrCommitDelta());
+						if (directAdjacency != null) {
+							// the pending marker is already published; the sealed delta now feeds the applier
+							directAdjacency.applyCommitted(tripleStore.drainDirectAdjacencyCommitDelta());
 						}
 						storeTxnStarted.set(false);
-						scheduleEagerCsrBuild();
 						estimatorTouchedInTransaction = false;
 						estimatorTouchedSinceStoreTxnStart.set(false);
 						if (filterSelectivityStats != null) {
@@ -3094,53 +3018,18 @@ class LmdbSailStore implements SailStore {
 	 * concurrently; per-thread LMDB cursor pooling comes from {@code TripleStore.CursorPool}.
 	 */
 	/**
-	 * Per-probe CSR cache front end shared by both concrete {@code NativeProbe} implementations. On a probe of the
-	 * servable shape ({@code pred} bound, exactly one of subject/object bound) it either serves the adjacency run from
-	 * the cache (reusing one {@link LmdbCsrRunIterator} per probe, matching the probe contract) or counts the miss
-	 * locally, flushing accumulated counts into the shared cache every {@code PROBE_FLUSH_INTERVAL} opens and on close
-	 * so the adaptive build trigger sees cross-query traffic.
+	 * Exact-first fan-out mean for the optimizer: the direct adjacency index (when the supplied read view serves the
+	 * snapshot) wins over the sampled {@link TripleStore#meanFanOut} statistics.
 	 */
-	private OptionalDouble fanOutMean(long predicate, boolean bySubject, boolean explicit, boolean csrEligible,
-			long snapshotRevision) {
-		if (csrCache != null && csrEligible) {
-			OptionalDouble cached = csrCache.meanFanOut(predicate, bySubject, explicit, snapshotRevision);
-			if (cached.isPresent()) {
-				return cached;
+	private OptionalDouble fanOutMean(long predicate, boolean bySubject, boolean explicit,
+			LmdbAdjacencyReadView adjacencyView) {
+		if (directAdjacency != null && adjacencyView != null) {
+			OptionalDouble exact = directAdjacency.meanFanOut(adjacencyView, predicate, bySubject, explicit);
+			if (exact.isPresent()) {
+				return exact;
 			}
 		}
 		return tripleStore.meanFanOut(predicate, bySubject, explicit);
-	}
-
-	private OptionalLong fanOutDegree(long predicate, long key, boolean bySubject, boolean explicit,
-			boolean csrEligible, long snapshotRevision) {
-		return csrCache == null || !csrEligible ? OptionalLong.empty()
-				: csrCache.exactDegree(predicate, key, bySubject, explicit, snapshotRevision);
-	}
-
-	private NativeLmdbQuerySource.OrderedIntegerDomain orderedIntegerDomain(long subj, long pred, long obj,
-			long context, int varyingField, boolean explicit, boolean csrEligible, long snapshotRevision) {
-		if (csrCache == null || !csrEligible || pred <= 0) {
-			return null;
-		}
-		int direction = switch (varyingField) {
-		case TripleIndex.OBJ_IDX -> LmdbCsrAdjacencyCache.BY_SUBJECT;
-		case TripleIndex.SUBJ_IDX -> LmdbCsrAdjacencyCache.BY_OBJECT;
-		default -> -1;
-		};
-		if (direction < 0) {
-			return null;
-		}
-		LmdbCsrAdjacencyCache.CsrEntry entry = csrCache.lookup(pred, direction, explicit, snapshotRevision);
-		if (entry == null || entry.neighbors.length == 0 || !entry.allNeighborsOrderedIntegers) {
-			return null;
-		}
-		String indexName = tripleStore.getIndexName(subj, pred, obj, context);
-		if (firstVaryingField(indexName, subj, pred, obj, context) != varyingField) {
-			return null;
-		}
-		return new NativeLmdbQuerySource.OrderedIntegerDomain(indexName,
-				ValueIds.orderedIntegerValue(entry.neighborMinId),
-				ValueIds.orderedIntegerValue(entry.neighborMaxId));
 	}
 
 	private boolean rangeApplies(LmdbKeyRange range, long subj, long pred, long obj, long context) {
@@ -3171,167 +3060,6 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 		return -1;
-	}
-
-	/** Borrowed primitive adapter; the owning probe's read/snapshot lease defines its valid lifetime. */
-	private static final class CsrNativeAdjacency implements NativeLmdbQuerySource.NativeAdjacency {
-		private final LmdbCsrAdjacencyCache.CsrEntry entry;
-
-		private CsrNativeAdjacency(LmdbCsrAdjacencyCache.CsrEntry entry) {
-			this.entry = entry;
-		}
-
-		@Override
-		public int denseIdOf(long key) {
-			return entry.denseIdOf(key);
-		}
-
-		@Override
-		public int runStart(int dense) {
-			return entry.runStart[dense];
-		}
-
-		@Override
-		public int runEnd(int dense) {
-			return entry.runStart[dense + 1];
-		}
-
-		@Override
-		public long neighborAt(int index) {
-			return entry.neighbors[index];
-		}
-
-		@Override
-		public long contextAt(int index) {
-			return entry.contexts == null ? 0L : entry.contexts[index];
-		}
-
-		@Override
-		public void copyRun(int start, int end, long[] target, int targetOffset) {
-			System.arraycopy(entry.neighbors, start, target, targetOffset, end - start);
-		}
-
-		@Override
-		public void copyContexts(int start, int end, long[] target, int targetOffset) {
-			if (entry.contexts == null) {
-				Arrays.fill(target, targetOffset, targetOffset + (end - start), 0L);
-			} else {
-				System.arraycopy(entry.contexts, start, target, targetOffset, end - start);
-			}
-		}
-
-		@Override
-		public int keyCount() {
-			return entry.keysByDense.length;
-		}
-
-		@Override
-		public long keyAt(int dense) {
-			return entry.keysByDense[dense];
-		}
-
-		@Override
-		public boolean runsNeighborOrdered() {
-			return entry.runsNeighborContextOrdered;
-		}
-	}
-
-	private final class CsrProbeSupport {
-		private final Txn txn;
-		private final boolean explicit;
-		private LmdbCsrRunIterator iterator;
-		private long pendingPred = -1;
-		private int pendingDirection;
-		private int pendingCount;
-		private boolean servedFromCache;
-		private long[] servedKeys;
-		private LmdbCsrAdjacencyCache.CsrEntry adjacencyEntry;
-		private NativeLmdbQuerySource.NativeAdjacency adjacency;
-
-		CsrProbeSupport(Txn txn, boolean explicit) {
-			this.txn = txn;
-			this.explicit = explicit;
-		}
-
-		boolean servedFromCache() {
-			return servedFromCache;
-		}
-
-		long[] servedKeys() {
-			return servedKeys;
-		}
-
-		NativeLmdbQuerySource.NativeAdjacency adjacency(long pred, boolean bySubject) {
-			servedFromCache = false;
-			servedKeys = null;
-			int direction = bySubject ? LmdbCsrAdjacencyCache.BY_SUBJECT : LmdbCsrAdjacencyCache.BY_OBJECT;
-			LmdbCsrAdjacencyCache.CsrEntry entry = csrCache.lookup(pred, direction, explicit,
-					txn.snapshotRevision());
-			if (entry == null) {
-				// Kernel-tier demand recording (plan 21): the build amortizes over the kernel's full-adjacency
-				// consumption, so it may proceed immediately (budget/admission still govern); the entry serves
-				// the NEXT open — this one declines and the ladder continues.
-				csrCache.recordKernelDemand(pred, direction, explicit, txn);
-				entry = csrCache.lookup(pred, direction, explicit, txn.snapshotRevision());
-				if (entry == null) {
-					return null;
-				}
-			}
-			servedFromCache = true;
-			servedKeys = orderedKeys(entry, direction);
-			if (entry != adjacencyEntry) {
-				adjacencyEntry = entry;
-				adjacency = new CsrNativeAdjacency(entry);
-			}
-			return adjacency;
-		}
-
-		/** Serves the probe from the cache, or returns {@code null} for the ordinary LMDB path. */
-		RecordIterator tryServe(long subj, long pred, long obj, long context) {
-			servedFromCache = false;
-			servedKeys = null;
-			if (pred <= 0 || (subj > 0) == (obj > 0)) {
-				return null;
-			}
-			int direction = subj > 0 ? LmdbCsrAdjacencyCache.BY_SUBJECT : LmdbCsrAdjacencyCache.BY_OBJECT;
-			LmdbCsrAdjacencyCache.CsrEntry entry = csrCache.lookup(pred, direction, explicit,
-					txn.snapshotRevision());
-			if (entry != null) {
-				if (iterator == null) {
-					iterator = new LmdbCsrRunIterator();
-				}
-				iterator.init(entry, direction == LmdbCsrAdjacencyCache.BY_SUBJECT ? subj : obj, pred, context,
-						direction);
-				servedFromCache = true;
-				servedKeys = orderedKeys(entry, direction);
-				return iterator;
-			}
-			if (pred != pendingPred || direction != pendingDirection) {
-				flushPending();
-				pendingPred = pred;
-				pendingDirection = direction;
-			}
-			if (++pendingCount >= LmdbCsrAdjacencyCache.PROBE_FLUSH_INTERVAL) {
-				flushPending();
-				pendingPred = pred;
-				pendingDirection = direction;
-			}
-			return null;
-		}
-
-		private long[] orderedKeys(LmdbCsrAdjacencyCache.CsrEntry entry, int direction) {
-			StatementOrder keyOrder = direction == LmdbCsrAdjacencyCache.BY_SUBJECT
-					? StatementOrder.S
-					: StatementOrder.O;
-			return entry.scanEmissionOrder == keyOrder ? entry.keysByDense : null;
-		}
-
-		void flushPending() {
-			if (pendingCount > 0 && pendingPred > 0) {
-				csrCache.recordProbes(pendingPred, pendingDirection, explicit, pendingCount, txn);
-			}
-			pendingCount = 0;
-		}
 	}
 
 	/**
@@ -3436,12 +3164,6 @@ class LmdbSailStore implements SailStore {
 			if (!hasStatementsInSource()) {
 				return EmptyRecordIterator.INSTANCE;
 			}
-			if (csrCache != null) {
-				RecordIterator scan = csrCache.tryScan(subj, pred, obj, context, explicit, txn.snapshotRevision());
-				if (scan != null) {
-					return scan;
-				}
-			}
 			return tripleStore.getTriples(txn, subj, pred, obj, context, explicit);
 		}
 
@@ -3464,13 +3186,6 @@ class LmdbSailStore implements SailStore {
 			if (!hasStatementsInSource()) {
 				return new LmdbRootScanPartition[0];
 			}
-			if (csrCache != null) {
-				LmdbRootScanPartition[] cached = csrCache.tryPlanRootScanPartitions(subj, pred, obj, context,
-						explicit, targetPartitions, txn.snapshotRevision());
-				if (cached != null) {
-					return cached;
-				}
-			}
 			return toRootScanPartitions(
 					tripleStore.planRootSplitKeys(txn, subj, pred, obj, context, explicit, targetPartitions),
 					tripleStore.getIndexName(subj, pred, obj, context));
@@ -3483,12 +3198,6 @@ class LmdbSailStore implements SailStore {
 			if (!hasStatementsInSource()) {
 				return EmptyRecordIterator.INSTANCE;
 			}
-			if (partition.isCsrSlice()) {
-				if (csrCache == null) {
-					throw new IllegalStateException("CSR partition cannot be opened without its owning cache");
-				}
-				return csrCache.tryPartitionedScan(subj, pred, obj, context, explicit, partition);
-			}
 			return tripleStore.getTriplesRange(txn, subj, pred, obj, context, explicit, partition.range());
 		}
 
@@ -3498,13 +3207,6 @@ class LmdbSailStore implements SailStore {
 			checkOpen();
 			if (!hasStatementsInSource()) {
 				return EmptyRecordIterator.INSTANCE;
-			}
-			if (csrCache != null) {
-				RecordIterator scan = csrCache.tryOrderedScan(order, subj, pred, obj, context, explicit,
-						txn.snapshotRevision());
-				if (scan != null) {
-					return scan;
-				}
 			}
 			return tripleStore.getTriples(txn, order, subj, pred, obj, context, explicit);
 		}
@@ -3555,19 +3257,12 @@ class LmdbSailStore implements SailStore {
 		public NativeProbe newProbe() {
 			return new NativeProbe() {
 				private LmdbRecordIterator retained;
-				private final CsrProbeSupport csr = csrCache != null ? new CsrProbeSupport(txn, explicit) : null;
 
 				@Override
 				public RecordIterator open(long subj, long pred, long obj, long context) throws IOException {
 					checkOpen();
 					if (!hasStatementsInSource()) {
 						return EmptyRecordIterator.INSTANCE;
-					}
-					if (csr != null) {
-						RecordIterator served = csr.tryServe(subj, pred, obj, context);
-						if (served != null) {
-							return served;
-						}
 					}
 					if (retained == null) {
 						retained = tripleStore.getTriplesRetained(txn, subj, pred, obj, context, explicit);
@@ -3578,26 +3273,7 @@ class LmdbSailStore implements SailStore {
 				}
 
 				@Override
-				public boolean adjacencyCacheBacked() {
-					return csr != null && csr.servedFromCache();
-				}
-
-				@Override
-				public long[] adjacencyCacheKeys() {
-					return csr != null ? csr.servedKeys() : null;
-				}
-
-				@Override
-				public NativeLmdbQuerySource.NativeAdjacency adjacency(long predicate, boolean bySubject) {
-					checkOpen();
-					return csr != null && hasStatementsInSource() ? csr.adjacency(predicate, bySubject) : null;
-				}
-
-				@Override
 				public void close() {
-					if (csr != null) {
-						csr.flushPending();
-					}
 					if (retained != null) {
 						retained.dispose();
 						retained = null;
@@ -3612,12 +3288,6 @@ class LmdbSailStore implements SailStore {
 			if (!hasStatementsInSource()) {
 				return 0;
 			}
-			if (csrCache != null) {
-				long cached = csrCache.tryCount(subj, pred, obj, context, explicit, txn.snapshotRevision());
-				if (cached >= 0) {
-					return cached;
-				}
-			}
 			return tripleStore.countTriples(txn, subj, pred, obj, context, explicit);
 		}
 
@@ -3626,12 +3296,6 @@ class LmdbSailStore implements SailStore {
 			checkOpen();
 			if (!hasStatementsInSource()) {
 				return false;
-			}
-			if (csrCache != null) {
-				int cached = csrCache.tryHas(subj, pred, obj, context, explicit, txn.snapshotRevision());
-				if (cached >= 0) {
-					return cached == 1;
-				}
 			}
 			return tripleStore.hasTriples(txn, subj, pred, obj, context, explicit);
 		}
@@ -3653,26 +3317,21 @@ class LmdbSailStore implements SailStore {
 		public OptionalDouble meanFanOut(long predicate, boolean bySubject) {
 			checkOpen();
 			return hasStatementsInSource()
-					? fanOutMean(predicate, bySubject, explicit, true, txn.snapshotRevision())
+					? fanOutMean(predicate, bySubject, explicit, null)
 					: OptionalDouble.empty();
 		}
 
 		@Override
 		public OptionalLong exactDegree(long predicate, long key, boolean bySubject) {
 			checkOpen();
-			return hasStatementsInSource()
-					? fanOutDegree(predicate, key, bySubject, explicit, true, txn.snapshotRevision())
-					: OptionalLong.empty();
+			return OptionalLong.empty();
 		}
 
 		@Override
 		public OrderedIntegerDomain orderedIntegerDomain(long subj, long pred, long obj, long context,
 				int varyingField) {
 			checkOpen();
-			return hasStatementsInSource()
-					? LmdbSailStore.this.orderedIntegerDomain(subj, pred, obj, context, varyingField, explicit, true,
-							txn.snapshotRevision())
-					: null;
+			return null;
 		}
 
 		@Override
@@ -3686,16 +3345,18 @@ class LmdbSailStore implements SailStore {
 		private final boolean explicit;
 		private final Txn txn;
 		/**
-		 * Whether this dataset may consult the CSR cache: untracked estimator-refresh readers (arbitrarily old
-		 * snapshots) and SERIALIZABLE transactions (user policy: above SNAPSHOT bypasses the CSR) must not. Pinned
-		 * SNAPSHOT datasets are eligible — the cache serves them through generation lookups keyed by
-		 * {@link #snapshotRevision}.
+		 * Whether this dataset may consult derived adjacency: untracked estimator-refresh readers (arbitrarily old
+		 * snapshots) and SERIALIZABLE transactions (user policy: above SNAPSHOT bypasses derived adjacency) must not.
+		 * Pinned SNAPSHOT datasets are eligible — the direct index serves them through snapshot-exact read views keyed
+		 * by {@link #snapshotRevision}.
 		 */
-		private final boolean csrEligible;
+		private final boolean adjacencyEligible;
 		/** Data revision this dataset is pinned to for native SNAPSHOT isolation, or −1 (latest committed). */
 		private final long snapshotRevision;
 		/** The pinned txn's version at creation; a change means a map resize invalidated the snapshot. */
 		private final long pinnedTxnVersion;
+		/** Direct-adjacency view acquired after the transaction is registered, or {@code null} (plan 27). */
+		private final LmdbAdjacencyReadView adjacencyView;
 		private final StampedLongAdderLockManager nativeSourceLock = new StampedLongAdderLockManager();
 		private volatile boolean closed;
 
@@ -3703,10 +3364,10 @@ class LmdbSailStore implements SailStore {
 			this(explicit, trackActiveTxn, false, false);
 		}
 
-		public LmdbSailDataset(boolean explicit, boolean trackActiveTxn, boolean pinSnapshot, boolean csrBypass)
+		public LmdbSailDataset(boolean explicit, boolean trackActiveTxn, boolean pinSnapshot, boolean adjacencyBypass)
 				throws SailException {
 			this.explicit = explicit;
-			this.csrEligible = (trackActiveTxn || pinSnapshot) && !csrBypass;
+			this.adjacencyEligible = (trackActiveTxn || pinSnapshot) && !adjacencyBypass;
 			try {
 				TxnManager txnManager = tripleStore.getTxnManager();
 				if (pinSnapshot) {
@@ -3720,6 +3381,39 @@ class LmdbSailStore implements SailStore {
 			}
 			this.snapshotRevision = txn.snapshotRevision();
 			this.pinnedTxnVersion = txn.version();
+			// acquisition after transaction registration: base replacement checks minPinnedSnapshotRevision(), so it
+			// cannot retire a view this dataset is about to retain (plan 27 read-view acquisition rule).
+			// An unpinned tracked transaction serves "latest committed": acquire the view at the current data
+			// revision. The version read above happens before the revision read, so a commit interleaving anywhere
+			// in between bumps this tracked transaction's version (reset-on-commit) and the tryDirect/directEligible
+			// version fence refuses to serve — the view can never be newer than the LMDB snapshot it accompanies.
+			long adjacencyRevision = snapshotRevision >= 0 || !adjacencyEligible ? snapshotRevision
+					: tripleStore.getDataRevision();
+			this.adjacencyView = directAdjacency != null && adjacencyEligible
+					? directAdjacency.acquire(adjacencyRevision)
+					: null;
+		}
+
+		/**
+		 * A direct-adjacency answer for this probe, or {@code null} to continue with LMDB. Never serves after a map
+		 * resize renewed the pinned transaction (the renewed txn is a newer snapshot than the view proves).
+		 */
+		private RecordIterator tryDirect(StatementOrder order, long subj, long pred, long obj, long context)
+				throws IOException {
+			if (adjacencyView == null || !adjacencyView.isExact()) {
+				return null;
+			}
+			if (txn.version() != pinnedTxnVersion) {
+				directAdjacency.recordFallback(LmdbAdjacencyMetrics.FallbackReason.MAP_RESIZE_INVALIDATED);
+				return null;
+			}
+			return order == null
+					? directAdjacency.tryOpen(adjacencyView, txn, subj, pred, obj, context, explicit)
+					: directAdjacency.tryOpenOrdered(adjacencyView, txn, order, subj, pred, obj, context, explicit);
+		}
+
+		private boolean directEligible() {
+			return adjacencyView != null && adjacencyView.isExact() && txn.version() == pinnedTxnVersion;
 		}
 
 		/**
@@ -3758,6 +3452,10 @@ class LmdbSailStore implements SailStore {
 			closed = true;
 			long writeStamp = acquireNativeSourceWriteLock();
 			try {
+				// release the adjacency view before the LMDB transaction (plan 27 read-view lifecycle)
+				if (adjacencyView != null) {
+					adjacencyView.close();
+				}
 				txn.close();
 			} finally {
 				nativeSourceLock.unlockWrite(writeStamp);
@@ -3815,12 +3513,10 @@ class LmdbSailStore implements SailStore {
 				if (!hasStatementsInSource()) {
 					return EmptyRecordIterator.INSTANCE;
 				}
-				if (csrCache != null && csrEligible) {
-					RecordIterator scan = csrCache.tryScan(subj, pred, obj, context, explicit, snapshotRevision);
-					if (scan != null) {
-						// pure in-memory iterator: no LMDB cursor to guard, the read stamp can be released now
-						return scan;
-					}
+				RecordIterator direct = tryDirect(null, subj, pred, obj, context);
+				if (direct != null) {
+					// pure in-memory iterator holding its own read-view lease: release the read stamp now
+					return direct;
 				}
 				RecordIterator iterator = tripleStore.getTriples(txn, subj, pred, obj, context, explicit);
 				releaseReadLock = false;
@@ -3865,13 +3561,10 @@ class LmdbSailStore implements SailStore {
 				if (!hasStatementsInSource()) {
 					return EmptyRecordIterator.INSTANCE;
 				}
-				if (csrCache != null && csrEligible) {
-					RecordIterator scan = csrCache.tryOrderedScan(order, subj, pred, obj, context, explicit,
-							snapshotRevision);
-					if (scan != null) {
-						// pure in-memory iterator: no LMDB cursor to guard, the read stamp can be released now
-						return scan;
-					}
+				RecordIterator direct = tryDirect(order, subj, pred, obj, context);
+				if (direct != null) {
+					// pure in-memory iterator holding its own read-view lease: release the read stamp now
+					return direct;
 				}
 				RecordIterator iterator = tripleStore.getTriples(txn, order, subj, pred, obj, context, explicit);
 				releaseReadLock = false;
@@ -3892,13 +3585,6 @@ class LmdbSailStore implements SailStore {
 				if (!hasStatementsInSource()) {
 					return new LmdbRootScanPartition[0];
 				}
-				if (csrCache != null && csrEligible) {
-					LmdbRootScanPartition[] cached = csrCache.tryPlanRootScanPartitions(subj, pred, obj, context,
-							explicit, targetPartitions, snapshotRevision);
-					if (cached != null) {
-						return cached;
-					}
-				}
 				return toRootScanPartitions(
 						tripleStore.planRootSplitKeys(txn, subj, pred, obj, context, explicit, targetPartitions),
 						tripleStore.getIndexName(subj, pred, obj, context));
@@ -3916,12 +3602,6 @@ class LmdbSailStore implements SailStore {
 				assertNativeSourceOpen();
 				if (!hasStatementsInSource()) {
 					return EmptyRecordIterator.INSTANCE;
-				}
-				if (partition.isCsrSlice()) {
-					if (csrCache == null || !csrEligible) {
-						throw new IllegalStateException("CSR partition cannot be opened by this source");
-					}
-					return csrCache.tryPartitionedScan(subj, pred, obj, context, explicit, partition);
 				}
 				RecordIterator iterator = tripleStore.getTriplesRange(txn, subj, pred, obj, context, explicit,
 						partition.range());
@@ -4022,8 +3702,7 @@ class LmdbSailStore implements SailStore {
 			private boolean stampHeld;
 			private LmdbRecordIterator retained;
 			private boolean closed;
-			private final CsrProbeSupport csr = csrCache != null && csrEligible ? new CsrProbeSupport(txn, explicit)
-					: null;
+			private boolean servedDirect;
 
 			@Override
 			public RecordIterator open(long subj, long pred, long obj, long context) throws IOException {
@@ -4037,14 +3716,15 @@ class LmdbSailStore implements SailStore {
 				try {
 					assertNativeSourceOpen();
 					if (!hasStatementsInSource()) {
+						servedDirect = false;
 						return EmptyRecordIterator.INSTANCE;
 					}
-					if (csr != null) {
-						RecordIterator served = csr.tryServe(subj, pred, obj, context);
-						if (served != null) {
-							return served;
-						}
+					RecordIterator direct = tryDirect(null, subj, pred, obj, context);
+					if (direct != null) {
+						servedDirect = true;
+						return direct;
 					}
+					servedDirect = false;
 					if (retained == null) {
 						retained = tripleStore.getTriplesRetained(txn, subj, pred, obj, context, explicit);
 					} else {
@@ -4059,12 +3739,7 @@ class LmdbSailStore implements SailStore {
 
 			@Override
 			public boolean adjacencyCacheBacked() {
-				return csr != null && csr.servedFromCache();
-			}
-
-			@Override
-			public long[] adjacencyCacheKeys() {
-				return csr != null ? csr.servedKeys() : null;
+				return servedDirect;
 			}
 
 			@Override
@@ -4079,7 +3754,13 @@ class LmdbSailStore implements SailStore {
 				}
 				try {
 					assertNativeSourceOpen();
-					return csr != null && hasStatementsInSource() ? csr.adjacency(predicate, bySubject) : null;
+					if (!hasStatementsInSource()) {
+						return null;
+					}
+					if (directEligible()) {
+						return directAdjacency.adjacency(adjacencyView, predicate, bySubject, explicit);
+					}
+					return null;
 				} catch (RuntimeException | Error failure) {
 					close();
 					throw failure;
@@ -4093,9 +3774,6 @@ class LmdbSailStore implements SailStore {
 				}
 				closed = true;
 				try {
-					if (csr != null) {
-						csr.flushPending();
-					}
 					if (retained != null) {
 						retained.dispose();
 					}
@@ -4117,10 +3795,10 @@ class LmdbSailStore implements SailStore {
 				if (!hasStatementsInSource()) {
 					return 0;
 				}
-				if (csrCache != null && csrEligible) {
-					long cached = csrCache.tryCount(subj, pred, obj, context, explicit, snapshotRevision);
-					if (cached >= 0) {
-						return cached;
+				if (directEligible()) {
+					long direct = directAdjacency.tryCount(adjacencyView, subj, pred, obj, context, explicit);
+					if (direct >= 0) {
+						return direct;
 					}
 				}
 				return tripleStore.countTriples(txn, subj, pred, obj, context, explicit);
@@ -4137,10 +3815,10 @@ class LmdbSailStore implements SailStore {
 				if (!hasStatementsInSource()) {
 					return false;
 				}
-				if (csrCache != null && csrEligible) {
-					int cached = csrCache.tryHas(subj, pred, obj, context, explicit, snapshotRevision);
-					if (cached >= 0) {
-						return cached == 1;
+				if (directEligible()) {
+					int direct = directAdjacency.tryHas(adjacencyView, subj, pred, obj, context, explicit);
+					if (direct >= 0) {
+						return direct == 1;
 					}
 				}
 				return tripleStore.hasTriples(txn, subj, pred, obj, context, explicit);
@@ -4166,26 +3844,30 @@ class LmdbSailStore implements SailStore {
 		public OptionalDouble meanFanOut(long predicate, boolean bySubject) {
 			assertNativeSourceOpen();
 			return hasStatementsInSource()
-					? fanOutMean(predicate, bySubject, explicit, csrEligible, snapshotRevision)
+					? fanOutMean(predicate, bySubject, explicit, directEligible() ? adjacencyView : null)
 					: OptionalDouble.empty();
 		}
 
 		@Override
 		public OptionalLong exactDegree(long predicate, long key, boolean bySubject) {
 			assertNativeSourceOpen();
-			return hasStatementsInSource()
-					? fanOutDegree(predicate, key, bySubject, explicit, csrEligible, snapshotRevision)
-					: OptionalLong.empty();
+			if (!hasStatementsInSource()) {
+				return OptionalLong.empty();
+			}
+			if (directEligible()) {
+				OptionalLong direct = directAdjacency.exactDegree(adjacencyView, predicate, key, bySubject, explicit);
+				if (direct.isPresent()) {
+					return direct;
+				}
+			}
+			return OptionalLong.empty();
 		}
 
 		@Override
 		public OrderedIntegerDomain orderedIntegerDomain(long subj, long pred, long obj, long context,
 				int varyingField) {
 			assertNativeSourceOpen();
-			return hasStatementsInSource()
-					? LmdbSailStore.this.orderedIntegerDomain(subj, pred, obj, context, varyingField, explicit,
-							csrEligible, snapshotRevision)
-					: null;
+			return null;
 		}
 
 		@Override

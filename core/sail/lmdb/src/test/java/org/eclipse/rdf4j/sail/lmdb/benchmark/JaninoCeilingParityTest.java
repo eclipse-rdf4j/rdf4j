@@ -93,14 +93,11 @@ public class JaninoCeilingParityTest {
 	private long[] knowsSubjects;
 	private long[] interestIds;
 	private String previousNativeFlag;
-	private String previousMinProbes;
 
 	@BeforeAll
 	public void setUp() throws Exception {
 		previousNativeFlag = System.getProperty(NATIVE_FLAG);
-		previousMinProbes = System.getProperty("rdf4j.lmdb.csrCache.minProbes");
 		System.setProperty(NATIVE_FLAG, "false");
-		System.setProperty("rdf4j.lmdb.csrCache.minProbes", "1");
 
 		dataDir = Files.createTempDirectory("rdf4j-janino-ceiling-parity").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
@@ -125,9 +122,9 @@ public class JaninoCeilingParityTest {
 
 		knowsSubjects = JaninoCeilingKernels.distinctSubjects(source, knowsId);
 		knows = JaninoCeilingKernels.warmAdjacency(probe, knowsId, true, knowsSubjects);
-		assertNotNull(knows, "CSR adjacency for foaf:knows BY_SUBJECT did not build");
+		assertNotNull(knows, "direct adjacency for foaf:knows BY_SUBJECT did not serve");
 		interestByObject = JaninoCeilingKernels.warmAdjacency(probe, interestPredId, false, interestIds);
-		assertNotNull(interestByObject, "CSR adjacency for foaf:interest BY_OBJECT did not build");
+		assertNotNull(interestByObject, "direct adjacency for foaf:interest BY_OBJECT did not serve");
 	}
 
 	@AfterAll
@@ -145,7 +142,6 @@ public class JaninoCeilingParityTest {
 			FileUtils.deleteDirectory(dataDir);
 		}
 		restore(NATIVE_FLAG, previousNativeFlag);
-		restore("rdf4j.lmdb.csrCache.minProbes", previousMinProbes);
 	}
 
 	private static void restore(String key, String previous) {

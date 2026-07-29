@@ -83,7 +83,8 @@ final class LmdbNativeJaninoPipeline {
 			for (int i = 0; i < adjacencies.length; i++) {
 				Step step = shape.steps.get(i);
 				NativeLmdbQuerySource.NativeAdjacency adjacency = probe.adjacency(step.predicate, step.bySubject);
-				if (adjacency == null || (step.kind == Step.ROOT_ENUM && adjacency.keyCount() < 0)) {
+				if (adjacency == null || (step.kind == Step.ROOT_ENUM
+						&& (!adjacency.supportsKeyEnumeration() || adjacency.keyCount() < 0))) {
 					DECLINED.incrementAndGet();
 					probe.close();
 					return null;
@@ -505,26 +506,27 @@ final class LmdbNativeJaninoPipeline {
 			return;
 		}
 		Step step = shape.steps.get(stepIndex);
-		String d = "d" + stepIndex;
-		String i = "i" + stepIndex;
-		String q = "q" + stepIndex;
+		String h = "h" + stepIndex;
+		String p = "p" + stepIndex;
+		String n = "n" + stepIndex;
 		if (step.kind == Step.ROOT_ENUM) {
 			String kc = "kc" + stepIndex;
+			String k = "k" + stepIndex;
 			source.append(indent)
-					.append("int ")
+					.append("long ")
 					.append(kc)
 					.append(" = a")
 					.append(stepIndex)
 					.append(".keyCount();\n");
 			source.append(indent)
-					.append("for (int ")
-					.append(d)
-					.append(" = 0; ")
-					.append(d)
+					.append("for (long ")
+					.append(k)
+					.append(" = 0L; ")
+					.append(k)
 					.append(" < ")
 					.append(kc)
 					.append("; ")
-					.append(d)
+					.append(k)
 					.append("++) {\n");
 			String inner = indent + "    ";
 			source.append(inner)
@@ -533,75 +535,80 @@ final class LmdbNativeJaninoPipeline {
 					.append(" = a")
 					.append(stepIndex)
 					.append(".keyAt(")
-					.append(d)
+					.append(k)
 					.append(");\n");
 			source.append(inner)
-					.append("int ")
-					.append(q)
+					.append("long ")
+					.append(h)
 					.append(" = a")
 					.append(stepIndex)
-					.append(".runEnd(")
-					.append(d)
+					.append(".find(v")
+					.append(step.keyColumn)
 					.append(");\n");
-			source.append(inner)
-					.append("for (int ")
-					.append(i)
+			source.append(inner).append("if (").append(h).append(" > 0L) {\n");
+			String runIndent = inner + "    ";
+			source.append(runIndent)
+					.append("long ")
+					.append(n)
 					.append(" = a")
 					.append(stepIndex)
-					.append(".runStart(")
-					.append(d)
-					.append("); ")
-					.append(i)
+					.append(".size(")
+					.append(h)
+					.append(");\n");
+			source.append(runIndent)
+					.append("for (long ")
+					.append(p)
+					.append(" = 0L; ")
+					.append(p)
 					.append(" < ")
-					.append(q)
+					.append(n)
 					.append("; ")
-					.append(i)
+					.append(p)
 					.append("++) {\n");
-			String body = inner + "    ";
+			String body = runIndent + "    ";
 			source.append(body)
 					.append("long v")
 					.append(step.valueColumn)
 					.append(" = a")
 					.append(stepIndex)
 					.append(".neighborAt(")
-					.append(i)
+					.append(h)
+					.append(", ")
+					.append(p)
 					.append(");\n");
 			emitGuards(source, shape, stepIndex, body);
 			emitStep(source, shape, stepIndex + 1, body);
+			source.append(runIndent).append("}\n");
 			source.append(inner).append("}\n");
 			source.append(indent).append("}\n");
 		} else if (step.kind == Step.FORWARD) {
 			source.append(indent)
-					.append("int ")
-					.append(d)
+					.append("long ")
+					.append(h)
 					.append(" = a")
 					.append(stepIndex)
-					.append(".denseIdOf(")
+					.append(".find(")
 					.append(step.key.expr())
 					.append(");\n");
-			source.append(indent).append("if (").append(d).append(" >= 0) {\n");
+			source.append(indent).append("if (").append(h).append(" > 0L) {\n");
 			String inner = indent + "    ";
 			source.append(inner)
-					.append("int ")
-					.append(q)
+					.append("long ")
+					.append(n)
 					.append(" = a")
 					.append(stepIndex)
-					.append(".runEnd(")
-					.append(d)
+					.append(".size(")
+					.append(h)
 					.append(");\n");
 			source.append(inner)
-					.append("for (int ")
-					.append(i)
-					.append(" = a")
-					.append(stepIndex)
-					.append(".runStart(")
-					.append(d)
-					.append("); ")
-					.append(i)
+					.append("for (long ")
+					.append(p)
+					.append(" = 0L; ")
+					.append(p)
 					.append(" < ")
-					.append(q)
+					.append(n)
 					.append("; ")
-					.append(i)
+					.append(p)
 					.append("++) {\n");
 			String body = inner + "    ";
 			source.append(body)
@@ -610,7 +617,9 @@ final class LmdbNativeJaninoPipeline {
 					.append(" = a")
 					.append(stepIndex)
 					.append(".neighborAt(")
-					.append(i)
+					.append(h)
+					.append(", ")
+					.append(p)
 					.append(");\n");
 			emitGuards(source, shape, stepIndex, body);
 			emitStep(source, shape, stepIndex + 1, body);
@@ -618,45 +627,43 @@ final class LmdbNativeJaninoPipeline {
 			source.append(indent).append("}\n");
 		} else {
 			String m = "m" + stepIndex;
-			String r = "r" + stepIndex;
+			String t = "t" + stepIndex;
 			source.append(indent)
-					.append("int ")
-					.append(d)
+					.append("long ")
+					.append(h)
 					.append(" = a")
 					.append(stepIndex)
-					.append(".denseIdOf(")
+					.append(".find(")
 					.append(step.key.expr())
 					.append(");\n");
-			source.append(indent).append("if (").append(d).append(" >= 0) {\n");
+			source.append(indent).append("if (").append(h).append(" > 0L) {\n");
 			String inner = indent + "    ";
-			source.append(inner).append("int ").append(m).append(" = 0;\n");
+			source.append(inner).append("long ").append(m).append(" = 0L;\n");
 			source.append(inner)
-					.append("int ")
-					.append(q)
+					.append("long ")
+					.append(n)
 					.append(" = a")
 					.append(stepIndex)
-					.append(".runEnd(")
-					.append(d)
+					.append(".size(")
+					.append(h)
 					.append(");\n");
 			source.append(inner)
-					.append("for (int ")
-					.append(i)
-					.append(" = a")
-					.append(stepIndex)
-					.append(".runStart(")
-					.append(d)
-					.append("); ")
-					.append(i)
+					.append("for (long ")
+					.append(p)
+					.append(" = 0L; ")
+					.append(p)
 					.append(" < ")
-					.append(q)
+					.append(n)
 					.append("; ")
-					.append(i)
+					.append(p)
 					.append("++) {\n");
 			source.append(inner)
 					.append("    if (a")
 					.append(stepIndex)
 					.append(".neighborAt(")
-					.append(i)
+					.append(h)
+					.append(", ")
+					.append(p)
 					.append(") == ")
 					.append(step.target.expr())
 					.append(") {\n");
@@ -664,14 +671,14 @@ final class LmdbNativeJaninoPipeline {
 			source.append(inner).append("    }\n");
 			source.append(inner).append("}\n");
 			source.append(inner)
-					.append("for (int ")
-					.append(r)
-					.append(" = 0; ")
-					.append(r)
+					.append("for (long ")
+					.append(t)
+					.append(" = 0L; ")
+					.append(t)
 					.append(" < ")
 					.append(m)
 					.append("; ")
-					.append(r)
+					.append(t)
 					.append("++) {\n");
 			String body = inner + "    ";
 			emitGuards(source, shape, stepIndex, body);

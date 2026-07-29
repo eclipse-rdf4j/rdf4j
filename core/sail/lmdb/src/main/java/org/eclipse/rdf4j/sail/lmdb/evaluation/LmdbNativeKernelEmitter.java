@@ -173,9 +173,9 @@ final class LmdbNativeKernelEmitter {
 				// position, offset within the current vector slice). -1 means "not started", which is also what a
 				// node restores when its own loop finishes, so the next outer value starts it afresh.
 				for (int i = 0; i < kernel.pipeline.size(); i++) {
-					source.append("    private int stA").append(i).append(" = -1;\n");
-					source.append("    private int stB").append(i).append(" = -1;\n");
-					source.append("    private int stC").append(i).append(" = -1;\n");
+					source.append("    private long stA").append(i).append(" = -1L;\n");
+					source.append("    private long stB").append(i).append(" = -1L;\n");
+					source.append("    private long stC").append(i).append(" = -1L;\n");
 				}
 			}
 			if (isDistinct()) {
@@ -971,11 +971,11 @@ final class LmdbNativeKernelEmitter {
 			if (keyToken != null) {
 				body.append(indent).append("long key = ").append(keyToken).append(";\n");
 				body.append(indent).append("if (key != -1L) {\n");
-				body.append(indent).append("    int d = ").append(a).append(".denseIdOf(key);\n");
-				body.append(indent).append("    if (d >= 0) {\n");
+				body.append(indent).append("    long rh = ").append(a).append(".find(key);\n");
+				body.append(indent).append("    if (rh > 0L) {\n");
 				open = indent + "        ";
 			} else {
-				body.append(indent).append("int kc = ").append(a).append(".keyCount();\n");
+				body.append(indent).append("long kc = ").append(a).append(".keyCount();\n");
 				body.append(indent).append("if (").append(keyState).append(" < 0) {\n");
 				body.append(indent).append("    ").append(keyState).append(" = 0;\n");
 				body.append(indent).append("}\n");
@@ -993,20 +993,28 @@ final class LmdbNativeKernelEmitter {
 						.append(".keyAt(")
 						.append(keyState)
 						.append(");\n");
-				body.append(indent).append("    int d = ").append(keyState).append(";\n");
+				body.append(indent)
+						.append("    long rh = ")
+						.append(a)
+						.append(".find(v")
+						.append(keyCol)
+						.append(");\n");
+				body.append(indent).append("    if (rh <= 0L) {\n");
+				body.append(indent).append("        continue;\n");
+				body.append(indent).append("    }\n");
 				open = indent + "    ";
 			}
 
-			body.append(open).append("int rend = ").append(a).append(".runEnd(d);\n");
+			body.append(open).append("long rend = ").append(a).append(".size(rh);\n");
 			body.append(open).append("if (").append(runState).append(" < 0) {\n");
-			body.append(open).append("    ").append(runState).append(" = ").append(a).append(".runStart(d);\n");
+			body.append(open).append("    ").append(runState).append(" = 0;\n");
 			body.append(open).append("}\n");
 			body.append(open).append("while (").append(runState).append(" < rend) {\n");
 			String loop = open + "    ";
-			body.append(loop).append("int rn = rend - ").append(runState).append(";\n");
-			body.append(loop).append("if (rn > KernelRuntime.VECTOR_SIZE) {\n");
-			body.append(loop).append("    rn = KernelRuntime.VECTOR_SIZE;\n");
-			body.append(loop).append("}\n");
+			body.append(loop)
+					.append("int rn = (int) Math.min(rend - ")
+					.append(runState)
+					.append(", (long) KernelRuntime.VECTOR_SIZE);\n");
 			body.append(loop).append("if (tvec == null || tvec.length < rn) {\n");
 			body.append(loop).append("    tvec = new long[rn];\n");
 			if (!vectorized.isEmpty()) {
@@ -1015,11 +1023,9 @@ final class LmdbNativeKernelEmitter {
 			body.append(loop).append("}\n");
 			body.append(loop)
 					.append(a)
-					.append(".copyRun(")
+					.append(".copyNeighbors(rh, ")
 					.append(runState)
-					.append(", ")
-					.append(runState)
-					.append(" + rn, tvec, 0);\n");
+					.append(", rn, tvec, 0);\n");
 			body.append(loop).append("int cnt = rn;\n");
 			boolean selected = false;
 			for (Node filter : vectorized) {
@@ -1040,7 +1046,7 @@ final class LmdbNativeKernelEmitter {
 					.append("v")
 					.append(valueCol)
 					.append(" = tvec[")
-					.append(selected ? "tsel[" + sliceState + "]" : sliceState)
+					.append(selected ? "tsel[(int) " + sliceState + "]" : "(int) " + sliceState)
 					.append("];\n");
 			if (residual.isEmpty()) {
 				body.append(next(nextTemplate, inner));
@@ -1112,18 +1118,27 @@ final class LmdbNativeKernelEmitter {
 			if (keyToken != null) {
 				body.append(indent).append("long key = ").append(keyToken).append(";\n");
 				body.append(indent).append("if (key != -1L) {\n");
-				body.append(indent).append("    int d = ").append(a).append(".denseIdOf(key);\n");
-				body.append(indent).append("    if (d >= 0) {\n");
+				body.append(indent).append("    long rh = ").append(a).append(".find(key);\n");
+				body.append(indent).append("    if (rh > 0L) {\n");
 				open = indent + "        ";
 			} else {
-				body.append(indent).append("int kc = ").append(a).append(".keyCount();\n");
-				body.append(indent).append("for (int d = 0; d < kc; d++) {\n");
-				body.append(indent).append("    v").append(keyCol).append(" = ").append(a).append(".keyAt(d);\n");
+				body.append(indent).append("long kc = ").append(a).append(".keyCount();\n");
+				body.append(indent).append("for (long kx = 0L; kx < kc; kx++) {\n");
+				body.append(indent).append("    v").append(keyCol).append(" = ").append(a).append(".keyAt(kx);\n");
+				body.append(indent)
+						.append("    long rh = ")
+						.append(a)
+						.append(".find(v")
+						.append(keyCol)
+						.append(");\n");
+				body.append(indent).append("    if (rh <= 0L) {\n");
+				body.append(indent).append("        continue;\n");
+				body.append(indent).append("    }\n");
 				open = indent + "    ";
 			}
 
-			body.append(open).append("int rend = ").append(a).append(".runEnd(d);\n");
-			body.append(open).append("int rpos = ").append(a).append(".runStart(d);\n");
+			body.append(open).append("long rend = ").append(a).append(".size(rh);\n");
+			body.append(open).append("long rpos = 0L;\n");
 			if (leftProbe) {
 				// A non-empty run suppresses the null arm regardless of what the trailing filters later reject,
 				// matching the scalar emitter, where `matched` is set before the continuation runs.
@@ -1143,10 +1158,7 @@ final class LmdbNativeKernelEmitter {
 			}
 			body.append(open).append("while (rpos < rend) {\n");
 			String loop = open + "    ";
-			body.append(loop).append("int rn = rend - rpos;\n");
-			body.append(loop).append("if (rn > KernelRuntime.VECTOR_SIZE) {\n");
-			body.append(loop).append("    rn = KernelRuntime.VECTOR_SIZE;\n");
-			body.append(loop).append("}\n");
+			body.append(loop).append("int rn = (int) Math.min(rend - rpos, (long) KernelRuntime.VECTOR_SIZE);\n");
 			// Size the scratch to the run actually seen, growing monotonically. A kernel instance is created per
 			// cursor open, and a correlated open happens per outer row, so allocating a full vector up front would
 			// cost 24KB per outer row on exactly the path that must stay allocation-free. Short runs now cost bytes.
@@ -1156,7 +1168,7 @@ final class LmdbNativeKernelEmitter {
 				body.append(loop).append("    tsel = new int[rn];\n");
 			}
 			body.append(loop).append("}\n");
-			body.append(loop).append(a).append(".copyRun(rpos, rpos + rn, tvec, 0);\n");
+			body.append(loop).append(a).append(".copyNeighbors(rh, rpos, rn, tvec, 0);\n");
 			body.append(loop).append("int cnt = rn;\n");
 			boolean selected = false;
 			for (Node filter : vectorized) {
@@ -1298,12 +1310,12 @@ final class LmdbNativeKernelEmitter {
 		}
 
 		/**
-		 * Emits {@code updateBy(int n)}, the factorized counterpart of {@code update()}: it resolves the group exactly
+		 * Emits {@code updateBy(long n)}, the factorized counterpart of {@code update()}: it resolves the group exactly
 		 * as {@code update()} does and then folds {@code n} rows into the counting accumulators at once. Only reachable
 		 * when {@link #bulkCountTail()} holds, which is what makes the shortcut sound.
 		 */
 		private void emitBulkCountUpdate(StringBuilder source, Aggregate aggregate) {
-			source.append("    private void updateBy(int n) {\n");
+			source.append("    private void updateBy(long n) {\n");
 			if (aggregate.groupCols.length == 0) {
 				source.append("        int g = 0;\n");
 			} else if (aggregate.groupCols.length == 1) {
@@ -1399,7 +1411,12 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append("    ").append(a).append(" = 0;\n");
 				body.append(indent).append("}\n");
 				body.append(indent).append("for (; ").append(a).append(" < dom.length; ").append(a).append("++) {\n");
-				body.append(indent).append("    v").append(enumerate.col).append(" = dom[").append(a).append("];\n");
+				body.append(indent)
+						.append("    v")
+						.append(enumerate.col)
+						.append(" = dom[(int) ")
+						.append(a)
+						.append("];\n");
 				body.append(next(nextTemplate, indent + "    "));
 				emitPause(body, indent + "    ", a, tailmost);
 				body.append(indent).append("}\n");
@@ -1411,16 +1428,11 @@ final class LmdbNativeKernelEmitter {
 				String view = "a" + probe.adjacency;
 				body.append(indent).append("long key = ").append(probe.key.token()).append(";\n");
 				body.append(indent).append("if (key != -1L) {\n");
-				body.append(indent).append("    int d = ").append(view).append(".denseIdOf(key);\n");
-				body.append(indent).append("    if (d >= 0) {\n");
-				body.append(indent).append("        int end = ").append(view).append(".runEnd(d);\n");
+				body.append(indent).append("    long rh = ").append(view).append(".find(key);\n");
+				body.append(indent).append("    if (rh > 0L) {\n");
+				body.append(indent).append("        long end = ").append(view).append(".size(rh);\n");
 				body.append(indent).append("        if (").append(a).append(" < 0) {\n");
-				body.append(indent)
-						.append("            ")
-						.append(a)
-						.append(" = ")
-						.append(view)
-						.append(".runStart(d);\n");
+				body.append(indent).append("            ").append(a).append(" = 0;\n");
 				body.append(indent).append("        }\n");
 				body.append(indent).append("        for (; ").append(a).append(" < end; ").append(a).append("++) {\n");
 				body.append(indent)
@@ -1428,7 +1440,7 @@ final class LmdbNativeKernelEmitter {
 						.append(probe.valueCol)
 						.append(" = ")
 						.append(view)
-						.append(".neighborAt(")
+						.append(".neighborAt(rh, ")
 						.append(a)
 						.append(");\n");
 				body.append(next(nextTemplate, indent + "            "));
@@ -1448,26 +1460,23 @@ final class LmdbNativeKernelEmitter {
 				// Multiplicity and semi mode differ only in the count, which lets one loop serve both.
 				body.append(indent).append("long key = ").append(close.key.token()).append(";\n");
 				body.append(indent).append("long target = ").append(close.target.token()).append(";\n");
-				body.append(indent).append("int reps = 0;\n");
+				body.append(indent).append("long reps = 0L;\n");
 				// A -1 operand means "no such term", which matches nothing — never a wildcard, as it would be in a
 				// quad scan term.
 				body.append(indent).append("if (key != -1L && target != -1L) {\n");
-				body.append(indent).append("    int d = ").append(view).append(".denseIdOf(key);\n");
-				body.append(indent).append("    if (d >= 0) {\n");
-				body.append(indent).append("        int m = 0;\n");
-				body.append(indent).append("        int end = ").append(view).append(".runEnd(d);\n");
-				body.append(indent)
-						.append("        for (int i = ")
-						.append(view)
-						.append(".runStart(d); i < end; i++) {\n");
-				body.append(indent).append("            if (").append(view).append(".neighborAt(i) == target) {\n");
+				body.append(indent).append("    long rh = ").append(view).append(".find(key);\n");
+				body.append(indent).append("    if (rh > 0L) {\n");
+				body.append(indent).append("        long m = 0L;\n");
+				body.append(indent).append("        long end = ").append(view).append(".size(rh);\n");
+				body.append(indent).append("        for (long i = 0L; i < end; i++) {\n");
+				body.append(indent).append("            if (").append(view).append(".neighborAt(rh, i) == target) {\n");
 				body.append(indent).append("                m++;\n");
 				body.append(indent).append("            }\n");
 				body.append(indent).append("        }\n");
 				if (close.multiplicity) {
 					body.append(indent).append("        reps = m;\n");
 				} else {
-					body.append(indent).append("        reps = m > 0 ? 1 : 0;\n");
+					body.append(indent).append("        reps = m > 0L ? 1L : 0L;\n");
 				}
 				body.append(indent).append("    }\n");
 				body.append(indent).append("}\n");
@@ -1540,7 +1549,7 @@ final class LmdbNativeKernelEmitter {
 			if (node instanceof EnumerateAdjKeys) {
 				EnumerateAdjKeys enumerate = (EnumerateAdjKeys) node;
 				String view = "a" + enumerate.adjacency;
-				body.append(indent).append("int kc = ").append(view).append(".keyCount();\n");
+				body.append(indent).append("long kc = ").append(view).append(".keyCount();\n");
 				body.append(indent).append("if (").append(a).append(" < 0) {\n");
 				body.append(indent).append("    ").append(a).append(" = 0;\n");
 				body.append(indent).append("}\n");
@@ -1553,16 +1562,18 @@ final class LmdbNativeKernelEmitter {
 						.append(".keyAt(")
 						.append(a)
 						.append(");\n");
-				body.append(indent).append("    int end = ").append(view).append(".runEnd(").append(a).append(");\n");
-				body.append(indent).append("    if (").append(b).append(" < 0) {\n");
 				body.append(indent)
-						.append("        ")
-						.append(b)
-						.append(" = ")
+						.append("    long rh = ")
 						.append(view)
-						.append(".runStart(")
-						.append(a)
+						.append(".find(v")
+						.append(enumerate.keyCol)
 						.append(");\n");
+				body.append(indent).append("    if (rh <= 0L) {\n");
+				body.append(indent).append("        continue;\n");
+				body.append(indent).append("    }\n");
+				body.append(indent).append("    long end = ").append(view).append(".size(rh);\n");
+				body.append(indent).append("    if (").append(b).append(" < 0) {\n");
+				body.append(indent).append("        ").append(b).append(" = 0;\n");
 				body.append(indent).append("    }\n");
 				body.append(indent).append("    for (; ").append(b).append(" < end; ").append(b).append("++) {\n");
 				body.append(indent)
@@ -1570,7 +1581,7 @@ final class LmdbNativeKernelEmitter {
 						.append(enumerate.valueCol)
 						.append(" = ")
 						.append(view)
-						.append(".neighborAt(")
+						.append(".neighborAt(rh, ")
 						.append(b)
 						.append(");\n");
 				body.append(next(nextTemplate, indent + "        "));
@@ -1616,9 +1627,9 @@ final class LmdbNativeKernelEmitter {
 						.append(col)
 						.append(" = ")
 						.append(buffer)
-						.append('[')
+						.append("[(int) (")
 						.append(row)
-						.append(" * 4");
+						.append(") * 4");
 				if (position > 0) {
 					body.append(" + ").append(position);
 				}
@@ -1734,32 +1745,42 @@ final class LmdbNativeKernelEmitter {
 				EnumerateAdjKeys enumerate = (EnumerateAdjKeys) node;
 				String a = "a" + enumerate.adjacency;
 				body.append(indent)
-						.append("int kc = ")
+						.append("long kc = ")
 						.append(a)
 						.append(".keyCount();\n")
 						.append(indent)
-						.append("for (int d = 0; d < kc; d++) {\n")
+						.append("for (long k = 0L; k < kc; k++) {\n")
 						.append(indent)
 						.append("    v")
 						.append(enumerate.keyCol)
 						.append(" = ")
 						.append(a)
-						.append(".keyAt(d);\n");
+						.append(".keyAt(k);\n");
 				if (enumerate.valueCol >= 0) {
 					body.append(indent)
-							.append("    int end = ")
+							.append("    long rh = ")
 							.append(a)
-							.append(".runEnd(d);\n")
+							.append(".find(v")
+							.append(enumerate.keyCol)
+							.append(");\n")
 							.append(indent)
-							.append("    for (int i = ")
+							.append("    if (rh <= 0L) {\n")
+							.append(indent)
+							.append("        continue;\n")
+							.append(indent)
+							.append("    }\n")
+							.append(indent)
+							.append("    long end = ")
 							.append(a)
-							.append(".runStart(d); i < end; i++) {\n")
+							.append(".size(rh);\n")
+							.append(indent)
+							.append("    for (long i = 0L; i < end; i++) {\n")
 							.append(indent)
 							.append("        v")
 							.append(enumerate.valueCol)
 							.append(" = ")
 							.append(a)
-							.append(".neighborAt(i);\n")
+							.append(".neighborAt(rh, i);\n")
 							.append(next(nextTemplate, indent + "        "))
 							.append(indent)
 							.append("    }\n");
@@ -1794,25 +1815,23 @@ final class LmdbNativeKernelEmitter {
 						.append(indent)
 						.append("if (key != -1L) {\n")
 						.append(indent)
-						.append("    int d = ")
+						.append("    long rh = ")
 						.append(a)
-						.append(".denseIdOf(key);\n")
+						.append(".find(key);\n")
 						.append(indent)
-						.append("    if (d >= 0) {\n")
+						.append("    if (rh > 0L) {\n")
 						.append(indent)
-						.append("        int end = ")
+						.append("        long end = ")
 						.append(a)
-						.append(".runEnd(d);\n")
+						.append(".size(rh);\n")
 						.append(indent)
-						.append("        for (int i = ")
-						.append(a)
-						.append(".runStart(d); i < end; i++) {\n")
+						.append("        for (long i = 0L; i < end; i++) {\n")
 						.append(indent)
 						.append("            v")
 						.append(probe.valueCol)
 						.append(" = ")
 						.append(a)
-						.append(".neighborAt(i);\n")
+						.append(".neighborAt(rh, i);\n")
 						.append(next(nextTemplate, indent + "            "))
 						.append(indent)
 						.append("        }\n")
@@ -1834,25 +1853,23 @@ final class LmdbNativeKernelEmitter {
 						.append(indent)
 						.append("if (key != -1L && target != -1L) {\n")
 						.append(indent)
-						.append("    int d = ")
+						.append("    long rh = ")
 						.append(a)
-						.append(".denseIdOf(key);\n")
+						.append(".find(key);\n")
 						.append(indent)
-						.append("    if (d >= 0) {\n")
+						.append("    if (rh > 0L) {\n")
 						.append(indent)
-						.append("        int m = 0;\n")
+						.append("        long m = 0L;\n")
 						.append(indent)
-						.append("        int end = ")
+						.append("        long end = ")
 						.append(a)
-						.append(".runEnd(d);\n")
+						.append(".size(rh);\n")
 						.append(indent)
-						.append("        for (int i = ")
-						.append(a)
-						.append(".runStart(d); i < end; i++) {\n")
+						.append("        for (long i = 0L; i < end; i++) {\n")
 						.append(indent)
 						.append("            if (")
 						.append(a)
-						.append(".neighborAt(i) == target) {\n")
+						.append(".neighborAt(rh, i) == target) {\n")
 						.append(indent)
 						.append("                m++;\n")
 						.append(indent)
@@ -1861,13 +1878,13 @@ final class LmdbNativeKernelEmitter {
 						.append("        }\n");
 				if (close.multiplicity && !booleanMode) {
 					body.append(indent)
-							.append("        for (int r = 0; r < m; r++) {\n")
+							.append("        for (long r = 0L; r < m; r++) {\n")
 							.append(next(nextTemplate, indent + "            "))
 							.append(indent)
 							.append("        }\n");
 				} else {
 					body.append(indent)
-							.append("        if (m > 0) {\n")
+							.append("        if (m > 0L) {\n")
 							.append(next(nextTemplate, indent + "            "))
 							.append(indent)
 							.append("        }\n");
@@ -1949,25 +1966,23 @@ final class LmdbNativeKernelEmitter {
 						.append(indent)
 						.append("if (key != -1L) {\n")
 						.append(indent)
-						.append("    int d = ")
+						.append("    long rh = ")
 						.append(a)
-						.append(".denseIdOf(key);\n")
+						.append(".find(key);\n")
 						.append(indent)
-						.append("    if (d >= 0) {\n")
+						.append("    if (rh > 0L) {\n")
 						.append(indent)
-						.append("        int end = ")
+						.append("        long end = ")
 						.append(a)
-						.append(".runEnd(d);\n")
+						.append(".size(rh);\n")
 						.append(indent)
-						.append("        for (int i = ")
-						.append(a)
-						.append(".runStart(d); i < end; i++) {\n")
+						.append("        for (long i = 0L; i < end; i++) {\n")
 						.append(indent)
 						.append("            v")
 						.append(probe.valueCol)
 						.append(" = ")
 						.append(a)
-						.append(".neighborAt(i);\n")
+						.append(".neighborAt(rh, i);\n")
 						.append(indent)
 						.append("            matched = true;\n")
 						.append(next(nextTemplate, indent + "            "))
@@ -2155,11 +2170,15 @@ final class LmdbNativeKernelEmitter {
 						.append(";\n");
 			}
 			body.append(indent)
-					.append("int[] xp = new int[")
+					.append("long[] xr = new long[")
 					.append(k)
 					.append("];\n")
 					.append(indent)
-					.append("int[] xe = new int[")
+					.append("long[] xp = new long[")
+					.append(k)
+					.append("];\n")
+					.append(indent)
+					.append("long[] xn = new long[")
 					.append(k)
 					.append("];\n")
 					.append(indent)
@@ -2177,9 +2196,9 @@ final class LmdbNativeKernelEmitter {
 					.append(indent)
 					.append("    }\n")
 					.append(indent)
-					.append("    int d = xa[i].denseIdOf(xk[i]);\n")
+					.append("    xr[i] = xa[i].find(xk[i]);\n")
 					.append(indent)
-					.append("    if (d < 0) {\n")
+					.append("    if (xr[i] <= 0L) {\n")
 					.append(indent)
 					.append("        ok = false;\n")
 					.append(indent)
@@ -2187,9 +2206,9 @@ final class LmdbNativeKernelEmitter {
 					.append(indent)
 					.append("    }\n")
 					.append(indent)
-					.append("    xp[i] = xa[i].runStart(d);\n")
+					.append("    xp[i] = 0L;\n")
 					.append(indent)
-					.append("    xe[i] = xa[i].runEnd(d);\n")
+					.append("    xn[i] = xa[i].size(xr[i]);\n")
 					.append(indent)
 					.append("}\n")
 					.append(indent)
@@ -2207,7 +2226,7 @@ final class LmdbNativeKernelEmitter {
 					.append(k)
 					.append("; i++) {\n")
 					.append(indent)
-					.append("        if (xp[i] >= xe[i]) {\n")
+					.append("        if (xp[i] >= xn[i]) {\n")
 					.append(indent)
 					.append("            exhausted = true;\n")
 					.append(indent)
@@ -2215,7 +2234,7 @@ final class LmdbNativeKernelEmitter {
 					.append(indent)
 					.append("        }\n")
 					.append(indent)
-					.append("        long cur = xa[i].neighborAt(xp[i]);\n")
+					.append("        long cur = xa[i].neighborAt(xr[i], xp[i]);\n")
 					.append(indent)
 					.append("        if (first) {\n")
 					.append(indent)
@@ -2254,9 +2273,9 @@ final class LmdbNativeKernelEmitter {
 					.append(k)
 					.append("; i++) {\n")
 					.append(indent)
-					.append("            while (xp[i] < xe[i] && xa[i].neighborAt(xp[i]) == max) {\n")
+					.append("            while (xp[i] < xn[i] && xa[i].neighborAt(xr[i], xp[i]) == max) {\n")
 					.append(indent)
-					.append("                xp[i] = xp[i] + 1;\n")
+					.append("                xp[i] = xp[i] + 1L;\n")
 					.append(indent)
 					.append("            }\n")
 					.append(indent)
@@ -2268,9 +2287,9 @@ final class LmdbNativeKernelEmitter {
 					.append(k)
 					.append("; i++) {\n")
 					.append(indent)
-					.append("            while (xp[i] < xe[i] && Long.compareUnsigned(xa[i].neighborAt(xp[i]), max) < 0) {\n")
+					.append("            while (xp[i] < xn[i] && Long.compareUnsigned(xa[i].neighborAt(xr[i], xp[i]), max) < 0) {\n")
 					.append(indent)
-					.append("                xp[i] = xp[i] + 1;\n")
+					.append("                xp[i] = xp[i] + 1L;\n")
 					.append(indent)
 					.append("            }\n")
 					.append(indent)
@@ -2325,27 +2344,25 @@ final class LmdbNativeKernelEmitter {
 					.append(indent)
 					.append("        }\n")
 					.append(indent)
-					.append("        int d = ")
+					.append("        long rh = ")
 					.append(a)
-					.append(".denseIdOf(node);\n")
+					.append(".find(node);\n")
 					.append(indent)
-					.append("        if (d < 0) {\n")
+					.append("        if (rh <= 0L) {\n")
 					.append(indent)
 					.append("            continue;\n")
 					.append(indent)
 					.append("        }\n")
 					.append(indent)
-					.append("        int end = ")
+					.append("        long end = ")
 					.append(a)
-					.append(".runEnd(d);\n")
+					.append(".size(rh);\n")
 					.append(indent)
-					.append("        for (int i = ")
-					.append(a)
-					.append(".runStart(d); i < end; i++) {\n")
+					.append("        for (long i = 0L; i < end; i++) {\n")
 					.append(indent)
 					.append("            long nb = ")
 					.append(a)
-					.append(".neighborAt(i);\n")
+					.append(".neighborAt(rh, i);\n")
 					.append(indent)
 					.append("            if (emitted.add(nb)) {\n")
 					.append(indent)
