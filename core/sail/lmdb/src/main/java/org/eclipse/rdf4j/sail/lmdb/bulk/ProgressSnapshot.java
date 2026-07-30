@@ -18,9 +18,9 @@ package org.eclipse.rdf4j.sail.lmdb.bulk;
  * @param phaseOperations            operations completed in the active phase
  * @param totalOperations            operations reported across all phases
  * @param bytesProcessed             input or intermediate bytes processed
- * @param currentOperationsPerSecond operations per second since the previous snapshot
+ * @param currentOperationsPerSecond operations per second for the most recent operation-bearing listener interval
  * @param averageOperationsPerSecond operations per second since this invocation started
- * @param currentBytesPerSecond      bytes per second since the previous snapshot
+ * @param currentBytesPerSecond      bytes per second for the most recent byte-bearing listener interval
  * @param elapsedMillis              invocation time, including resumed work performed by this invocation
  * @param workers                    configured action-worker count
  * @param queueBatches               configured number of bounded queued batches

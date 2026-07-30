@@ -16,6 +16,7 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -26,33 +27,44 @@ import java.util.concurrent.TimeUnit;
  */
 final class BulkLoadProgress implements AutoCloseable {
 
-	private static final long LISTENER_BATCH_OPERATIONS = 2_048L;
+	private static final long LISTENER_BATCH_OPERATIONS = 1_000_000L;
 
 	private final Path progressFile;
 	private final ProgressListener listener;
 	private final int workers;
 	private final int queueBatches;
 	private final boolean resumed;
-	private final long startedNanos = System.nanoTime();
-	private final ScheduledExecutorService sampler = Executors.newSingleThreadScheduledExecutor(
-			Thread.ofPlatform().daemon().name("lmdb-bulk-progress").factory());
+	private final long startedNanos;
+	private final ScheduledExecutorService sampler;
 
 	private BulkLoadPhase phase = BulkLoadPhase.PREFLIGHT;
 	private long phaseOperations;
 	private long totalOperations;
 	private long bytesProcessed;
-	private long lastSnapshotOperations;
-	private long lastSnapshotBytes;
-	private long lastSnapshotNanos = startedNanos;
+	private long lastListenerOperations;
+	private long lastListenerBytes;
+	private long lastListenerNanos;
 	private long lastListenerPhaseOperations;
+	private double lastListenerOperationsPerSecond;
+	private double lastListenerBytesPerSecond;
+	private boolean phaseComplete;
 	private boolean closed;
 
 	BulkLoadProgress(Path directory, ProgressListener listener, int workers, int queueBatches, boolean resumed) {
+		this(directory, listener, workers, queueBatches, resumed, Executors.newSingleThreadScheduledExecutor(
+				Thread.ofPlatform().daemon().name("lmdb-bulk-progress").factory()));
+	}
+
+	BulkLoadProgress(Path directory, ProgressListener listener, int workers, int queueBatches, boolean resumed,
+			ScheduledExecutorService sampler) {
 		progressFile = directory.resolve("progress.properties");
 		this.listener = listener;
 		this.workers = workers;
 		this.queueBatches = queueBatches;
 		this.resumed = resumed;
+		this.sampler = Objects.requireNonNull(sampler, "sampler");
+		startedNanos = System.nanoTime();
+		lastListenerNanos = startedNanos;
 		sampler.scheduleAtFixedRate(this::sampleSafely, 1L, 1L, TimeUnit.SECONDS);
 	}
 
@@ -63,7 +75,9 @@ final class BulkLoadProgress implements AutoCloseable {
 		this.phase = phase;
 		phaseOperations = 0L;
 		lastListenerPhaseOperations = 0L;
-		emit(false, true);
+		phaseComplete = false;
+		resetListenerBaseline();
+		report(false, true);
 	}
 
 	synchronized void operations(long operations, long bytes) {
@@ -74,8 +88,7 @@ final class BulkLoadProgress implements AutoCloseable {
 		totalOperations = Math.addExact(totalOperations, operations);
 		bytesProcessed = Math.addExact(bytesProcessed, bytes);
 		if (phaseOperations - lastListenerPhaseOperations >= LISTENER_BATCH_OPERATIONS) {
-			lastListenerPhaseOperations = phaseOperations;
-			emit(false, false);
+			report(false, false);
 		}
 	}
 
@@ -84,29 +97,33 @@ final class BulkLoadProgress implements AutoCloseable {
 			return;
 		}
 		this.phase = phase;
-		emit(true, true);
+		phaseComplete = true;
+		report(true, true);
 	}
 
 	private void sampleSafely() {
 		synchronized (this) {
 			if (!closed) {
-				emit(false, true);
+				persist(snapshot(phaseComplete, System.nanoTime()));
 			}
 		}
 	}
 
-	private void emit(boolean phaseComplete, boolean persist) {
+	private void resetListenerBaseline() {
+		lastListenerNanos = System.nanoTime();
+		lastListenerOperations = totalOperations;
+		lastListenerBytes = bytesProcessed;
+	}
+
+	private void report(boolean phaseComplete, boolean persist) {
 		long now = System.nanoTime();
-		double intervalSeconds = Math.max(1.0e-9, (now - lastSnapshotNanos) / 1_000_000_000.0);
-		double elapsedSeconds = Math.max(1.0e-9, (now - startedNanos) / 1_000_000_000.0);
-		ProgressSnapshot snapshot = new ProgressSnapshot(phase, phaseOperations, totalOperations, bytesProcessed,
-				(totalOperations - lastSnapshotOperations) / intervalSeconds,
-				totalOperations / elapsedSeconds,
-				(bytesProcessed - lastSnapshotBytes) / intervalSeconds,
-				(now - startedNanos) / 1_000_000L, workers, queueBatches, resumed, phaseComplete);
-		lastSnapshotNanos = now;
-		lastSnapshotOperations = totalOperations;
-		lastSnapshotBytes = bytesProcessed;
+		ProgressSnapshot snapshot = snapshot(phaseComplete, now);
+		lastListenerNanos = now;
+		lastListenerOperations = totalOperations;
+		lastListenerBytes = bytesProcessed;
+		lastListenerPhaseOperations = phaseOperations;
+		lastListenerOperationsPerSecond = snapshot.currentOperationsPerSecond();
+		lastListenerBytesPerSecond = snapshot.currentBytesPerSecond();
 		try {
 			listener.onProgress(snapshot);
 		} catch (RuntimeException listenerFailure) {
@@ -116,6 +133,26 @@ final class BulkLoadProgress implements AutoCloseable {
 		if (persist) {
 			persist(snapshot);
 		}
+	}
+
+	private ProgressSnapshot snapshot(boolean phaseComplete, long now) {
+		double intervalSeconds = Math.max(1.0e-9, (now - lastListenerNanos) / 1_000_000_000.0);
+		double elapsedSeconds = Math.max(1.0e-9, (now - startedNanos) / 1_000_000_000.0);
+		long intervalOperations = totalOperations - lastListenerOperations;
+		long intervalBytes = bytesProcessed - lastListenerBytes;
+		double currentOperationsPerSecond = intervalOperations / intervalSeconds;
+		double currentBytesPerSecond = intervalBytes / intervalSeconds;
+		if (phaseComplete && phaseOperations > 0L && intervalOperations == 0L) {
+			currentOperationsPerSecond = lastListenerOperationsPerSecond;
+		}
+		if (phaseComplete && bytesProcessed > 0L && intervalBytes == 0L) {
+			currentBytesPerSecond = lastListenerBytesPerSecond;
+		}
+		return new ProgressSnapshot(phase, phaseOperations, totalOperations, bytesProcessed,
+				currentOperationsPerSecond,
+				totalOperations / elapsedSeconds,
+				currentBytesPerSecond,
+				(now - startedNanos) / 1_000_000L, workers, queueBatches, resumed, phaseComplete);
 	}
 
 	private void persist(ProgressSnapshot snapshot) {
@@ -148,7 +185,11 @@ final class BulkLoadProgress implements AutoCloseable {
 		if (closed) {
 			return;
 		}
-		emit(true, true);
+		if (!phaseComplete && phaseOperations > lastListenerPhaseOperations) {
+			report(false, true);
+		} else {
+			persist(snapshot(phaseComplete, System.nanoTime()));
+		}
 		closed = true;
 		sampler.shutdownNow();
 	}

@@ -187,9 +187,14 @@ class LmdbBulkLoadTest {
 		assertThat(standardOutput.toString(StandardCharsets.UTF_8))
 				.contains("parsed=3")
 				.contains("stored=3");
-		assertThat(standardError.toString(StandardCharsets.UTF_8))
+		String progress = standardError.toString(StandardCharsets.UTF_8);
+		assertThat(progress)
 				.contains("phase=")
 				.contains("ops/s=")
 				.doesNotContain("Interactive LMDB bulk-load setup");
+		assertThat(progress.lines()
+				.filter(line -> line.matches(".*phase-ops=[1-9][0-9]*.*"))
+				.toList())
+						.allMatch(line -> !line.contains(" ops/s=0.0 "));
 	}
 }

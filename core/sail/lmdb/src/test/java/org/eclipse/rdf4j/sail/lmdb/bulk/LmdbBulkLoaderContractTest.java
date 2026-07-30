@@ -892,6 +892,9 @@ class LmdbBulkLoaderContractTest {
 				.anyMatch(snapshot -> snapshot.phase() == BulkLoadPhase.STAGE_INPUTS
 						&& snapshot.currentOperationsPerSecond() > 0.0);
 		assertThat(snapshots)
+				.filteredOn(snapshot -> snapshot.phaseOperations() > 0L)
+				.allMatch(snapshot -> snapshot.currentOperationsPerSecond() > 0.0);
+		assertThat(snapshots)
 				.allMatch(snapshot -> snapshot.workers() == 2 && snapshot.queueBatches() == 2);
 		assertThat(snapshots)
 				.anyMatch(snapshot -> snapshot.phase() == BulkLoadPhase.PUBLISH_AND_CLEAN
