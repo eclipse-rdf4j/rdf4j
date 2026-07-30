@@ -108,8 +108,6 @@ final class LmdbBulkLoaderEngine {
 							} else {
 								workspace.startPhase(BulkLoadPhase.PLAN_VALUE_IDS);
 								predicateIdPlan = PredicateIdPlan.build(staged, workspace.directory(),
-										loader.memoryBudgetBytes(), loader.maxOpenFiles(),
-										loader.workers(), loader.queueBatches(),
 										loader.cancellationSignal());
 								workspace.recordPredicateIdPlan(predicateIdPlan);
 								workspace.progress(staged.statements(), 0L);

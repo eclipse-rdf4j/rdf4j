@@ -559,6 +559,7 @@ class LmdbBulkLoaderContractTest {
 								.isInstanceOf(CancellationException.class);
 
 		assertThat(stateHasPhase(stateFile, "STAGE_INPUTS", "COMPLETE")).isTrue();
+		assertThat(stateFile.resolveSibling(CanonicalStatementStager.PREDICATE_COUNTS_FILE_NAME)).isRegularFile();
 		LmdbBulkLoader.Result result = LmdbBulkLoader.builder(target, new LmdbStoreConfig("spoc,psoc"))
 				.partitionCount(8)
 				.maxOpenFiles(3)
@@ -598,6 +599,7 @@ class LmdbBulkLoaderContractTest {
 		assertThat(workspace.resolve("partition-dictionary")).isDirectory();
 		assertThat(workspace.resolve("value-buckets")).doesNotExist();
 		assertThat(workspace.resolve("dependency-buckets")).doesNotExist();
+		assertThat(workspace.resolve(CanonicalStatementStager.PREDICATE_COUNTS_FILE_NAME)).doesNotExist();
 
 		LmdbBulkLoader.Result result = LmdbBulkLoader.builder(target, new LmdbStoreConfig("spoc,psoc"))
 				.partitionCount(8)
@@ -860,6 +862,31 @@ class LmdbBulkLoaderContractTest {
 		long id = readValueIds(target, config).get(popularPredicate);
 		assertThat(ValueIds.getIdType(id)).isEqualTo(ValueIds.T_URI);
 		assertThat(ValueIds.getValue(id)).isEqualTo(1L);
+	}
+
+	@Test
+	void plansPredicateIdsFromCountsCapturedWhileStaging() throws Exception {
+		var valueFactory = SimpleValueFactory.getInstance();
+		var popularPredicate = valueFactory.createIRI("urn:staged-count:popular");
+		var rarePredicate = valueFactory.createIRI("urn:staged-count:rare");
+		var quotedStatement = valueFactory.createTripleTerm(valueFactory.createIRI("urn:staged-count:quoted-subject"),
+				popularPredicate, valueFactory.createIRI("urn:staged-count:quoted-object"));
+		Path staging = Files.createDirectory(temporaryDirectory.resolve("predicate-count-staging"));
+		CanonicalStagedInput staged;
+		try (CanonicalStatementStager stager = new CanonicalStatementStager(staging,
+				new LmdbStoreConfig("spoc,psoc"), 4, 4, 64 * 1024L)) {
+			stager.writeStatement(valueFactory.createStatement(valueFactory.createIRI("urn:staged-count:subject"),
+					popularPredicate, valueFactory.createIRI("urn:staged-count:object")));
+			stager.writeCanonicalStatement(CanonicalTermCodec.encode(valueFactory.createIRI("urn:staged-count:second")),
+					CanonicalTermCodec.encode(rarePredicate), CanonicalTermCodec.encode(quotedStatement), null);
+			staged = stager.stagedInput();
+		}
+		Files.move(staging.resolve("statements.lz4"), staging.resolve("statements.saved.lz4"));
+
+		PredicateIdPlan plan = PredicateIdPlan.build(staged, staging, () -> false);
+
+		assertThat(ValueIds.getValue(plan.idFor(CanonicalTermCodec.encode(popularPredicate)))).isEqualTo(1L);
+		assertThat(ValueIds.getValue(plan.idFor(CanonicalTermCodec.encode(rarePredicate)))).isEqualTo(2L);
 	}
 
 	@Test

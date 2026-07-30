@@ -173,10 +173,13 @@ final class BulkLoadWorkspace implements AutoCloseable {
 					+ " partitions but the loader is configured for " + partitionCount);
 		}
 		Path statementsPath = directory.resolve("statements.lz4");
+		Path predicateCountsPath = directory.resolve(CanonicalStatementStager.PREDICATE_COUNTS_FILE_NAME);
 		Path valuesPath = directory.resolve("value-buckets");
 		boolean statementsAreStillNeeded = !phaseComplete(BulkLoadPhase.RESOLVE_IDS);
+		boolean predicateCountsAreStillNeeded = !phaseComplete(BulkLoadPhase.PLAN_VALUE_IDS);
 		boolean valuesAreStillNeeded = !phaseComplete(BulkLoadPhase.BUILD_MAPPED_DICTIONARY);
 		if (statementsAreStillNeeded && !Files.isRegularFile(statementsPath)
+				|| predicateCountsAreStillNeeded && !Files.isRegularFile(predicateCountsPath)
 				|| valuesAreStillNeeded && !Files.isDirectory(valuesPath)) {
 			throw new IOException("LMDB bulk-load staged frontier is incomplete in " + directory);
 		}
@@ -227,7 +230,8 @@ final class BulkLoadWorkspace implements AutoCloseable {
 	}
 
 	void reclaimAfterDictionary() throws IOException {
-		reclaim("value-buckets", "dependency-buckets", "dictionary-runs", "predicate-id-plan.bin");
+		reclaim("value-buckets", "dependency-buckets", "dictionary-runs",
+				CanonicalStatementStager.PREDICATE_COUNTS_FILE_NAME, "predicate-id-plan.bin");
 	}
 
 	void recordPredicateIdPlan(PredicateIdPlan plan) {
@@ -475,7 +479,8 @@ final class BulkLoadWorkspace implements AutoCloseable {
 
 	private void deleteIncompletePhaseOutputs(BulkLoadPhase phase) throws IOException {
 		switch (phase) {
-		case STAGE_INPUTS -> deleteRelative("statements.lz4", "namespaces.lz4", "value-buckets");
+		case STAGE_INPUTS -> deleteRelative("statements.lz4", "namespaces.lz4",
+				CanonicalStatementStager.PREDICATE_COUNTS_FILE_NAME, "value-buckets");
 		case DISTINCT_AND_ANALYZE_VALUES -> deleteRelative("dependency-buckets");
 		case PLAN_VALUE_IDS -> deleteRelative("predicate-id-plan.bin", "predicate-occurrences.bin");
 		case BUILD_MAPPED_DICTIONARY -> deleteRelative("partition-dictionary", "dictionary-runs");

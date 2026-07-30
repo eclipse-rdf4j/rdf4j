@@ -83,8 +83,7 @@ final class PartitionValueDictionaryBuilder {
 	static PartitionValueDictionary build(CanonicalStagedInput staged, ValueDependencyBuckets dependencies,
 			Path workspace, int partitionCount, long memoryBudgetBytes, int maxOpenFiles, LmdbStoreConfig config,
 			BooleanSupplier cancellationSignal) throws IOException {
-		PredicateIdPlan predicateIdPlan = PredicateIdPlan.build(staged, workspace, memoryBudgetBytes, maxOpenFiles,
-				cancellationSignal);
+		PredicateIdPlan predicateIdPlan = PredicateIdPlan.build(staged, workspace, cancellationSignal);
 		return build(staged, dependencies, workspace, partitionCount, memoryBudgetBytes, maxOpenFiles, config,
 				cancellationSignal, predicateIdPlan);
 	}

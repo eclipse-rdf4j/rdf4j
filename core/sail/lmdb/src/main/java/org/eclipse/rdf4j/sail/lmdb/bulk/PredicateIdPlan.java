@@ -37,7 +37,6 @@ final class PredicateIdPlan {
 	static final int RESERVED_IDS = 64;
 	private static final int MAX_KEY_BYTES = 1024 * 1024 * 1024;
 	private static final String FILE_NAME = "predicate-id-plan.bin";
-	private static final byte[] EMPTY_BYTES = new byte[0];
 
 	private final List<Candidate> ranked;
 	private final Map<ByteKey, Long> ids;
@@ -50,62 +49,13 @@ final class PredicateIdPlan {
 		}
 	}
 
-	static PredicateIdPlan build(CanonicalStagedInput staged, Path workspace, long memoryBudgetBytes,
-			int maxOpenFiles, BooleanSupplier cancellationSignal) throws IOException {
-		int workers = LmdbBulkLoader.defaultWorkerCount();
-		return build(staged, workspace, memoryBudgetBytes, maxOpenFiles, workers, workers * 2, cancellationSignal);
-	}
-
-	static PredicateIdPlan build(CanonicalStagedInput staged, Path workspace, long memoryBudgetBytes,
-			int maxOpenFiles, int workers, int queueBatches, BooleanSupplier cancellationSignal) throws IOException {
-		Path occurrences = workspace.resolve("predicate-occurrences.bin");
+	static PredicateIdPlan build(CanonicalStagedInput staged, Path workspace, BooleanSupplier cancellationSignal)
+			throws IOException {
 		List<Candidate> best = new ArrayList<>(RESERVED_IDS);
-		try (ExternalByteKeySorter sorter = new ExternalByteKeySorter(workspace, "predicate-occurrences",
-				Math.max(16 * 1024L, memoryBudgetBytes / 8L), maxOpenFiles)) {
-			long maxBatchBytes = Math.max(1L,
-					memoryBudgetBytes / Math.max(1L, Math.addExact(Math.addExact(workers, queueBatches), 1)));
-			BulkPipeline.<RawStatement, List<byte[]>>run(emitter -> staged
-					.forEachRawStatement((ordinal, subject, predicate, object, context) -> emitter.emit(
-							new RawStatement(subject, predicate, object, context),
-							retainedBytes(subject, predicate, object, context))),
-					workers, queueBatches, maxBatchBytes,
-					batch -> {
-						List<byte[]> predicates = new ArrayList<>(batch.size());
-						for (RawStatement statement : batch) {
-							checkCancelled(cancellationSignal);
-							predicates.add(statement.predicate());
-							CanonicalTermCodec.forEachNestedPredicate(statement.subject(), predicates::add);
-							CanonicalTermCodec.forEachNestedPredicate(statement.object(), predicates::add);
-							if (statement.context() != null) {
-								CanonicalTermCodec.forEachNestedPredicate(statement.context(), predicates::add);
-							}
-						}
-						return predicates;
-					},
-					predicates -> {
-						for (byte[] predicate : predicates) {
-							sorter.add(predicate, EMPTY_BYTES);
-						}
-					},
-					cancellationSignal);
-			ExternalByteKeySorter.SortedRecordFile sorted = sorter.finish(occurrences);
-			byte[][] current = { null };
-			long[] count = { 0L };
-			sorted.forEach((key, ignored) -> {
-				checkCancelled(cancellationSignal);
-				if (current[0] != null && !Arrays.equals(current[0], key)) {
-					offer(best, new Candidate(current[0], count[0]));
-					count[0] = 0L;
-				}
-				current[0] = key;
-				count[0]++;
-			});
-			if (current[0] != null) {
-				offer(best, new Candidate(current[0], count[0]));
-			}
-		} finally {
-			Files.deleteIfExists(occurrences);
-		}
+		staged.forEachPredicateCount((predicate, occurrences) -> {
+			checkCancelled(cancellationSignal);
+			offer(best, new Candidate(predicate, occurrences));
+		});
 		best.sort(PredicateIdPlan::compareBestFirst);
 		PredicateIdPlan plan = new PredicateIdPlan(best);
 		plan.write(workspace.resolve(FILE_NAME));
@@ -194,15 +144,7 @@ final class PredicateIdPlan {
 		}
 	}
 
-	private static long retainedBytes(byte[] subject, byte[] predicate, byte[] object, byte[] context) {
-		long bytes = Math.addExact(Math.addExact(subject.length, predicate.length), object.length);
-		return Math.addExact(bytes, context == null ? 0L : context.length);
-	}
-
 	private record Candidate(byte[] key, long occurrences) {
-	}
-
-	private record RawStatement(byte[] subject, byte[] predicate, byte[] object, byte[] context) {
 	}
 
 	private record ByteKey(byte[] bytes) {
