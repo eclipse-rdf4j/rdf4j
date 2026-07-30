@@ -352,6 +352,26 @@ final class PackedQuery {
 		return metadata.relationMetricSetId(relId);
 	}
 
+	double relPlannedDoubleMetric(int relId, String metricName) {
+		if (metricName == null) {
+			return Double.NaN;
+		}
+		int metricSetId = relMetricSetId(relId);
+		if (metricSetId == 0 || payloadOperator(metricSetId) != PackedPayloadOp.PLANNED_METRICS) {
+			return Double.NaN;
+		}
+		for (int ordinal = 0; ordinal < payloadChildCount(metricSetId); ordinal++) {
+			int entryId = payloadChild(metricSetId, ordinal);
+			if (payloadOperator(entryId) == PackedPayloadOp.DOUBLE_METRIC
+					&& metricName.equals(objectValue(payloadPrimary(entryId)))) {
+				long bits = Integer.toUnsignedLong(payloadSecondary(entryId))
+						| (long) payloadFlags(entryId) << Integer.SIZE;
+				return Double.longBitsToDouble(bits);
+			}
+		}
+		return Double.NaN;
+	}
+
 	int relMetadataFlags(int relId) {
 		return metadata.relationFlags(relId);
 	}

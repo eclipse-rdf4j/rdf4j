@@ -1124,7 +1124,14 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 			} else if (isBooleanLiteral(value) && value instanceof Literal literal) {
 				addBooleanAnchorValues(literal, expandedValues);
 			} else if (isCalendarLiteral(value) && value instanceof Literal literal) {
-				expandedValues.add(value);
+				if (literal.getCoreDatatype().asXSDDatatypeOrNull() == CoreDatatype.XSD.DATETIME) {
+					// Stored dateTimes are normalizeDateTime fixed points (CANONICAL_DATETIME gate), so the
+					// normalized constant is the only stored term its value can take.
+					expandedValues.add(VF.createLiteral(XMLDatatypeUtil.normalizeDateTime(literal.getLabel()),
+							XSD.DATETIME));
+				} else {
+					expandedValues.add(value);
+				}
 			} else {
 				expandedValues.add(value);
 			}
@@ -1347,6 +1354,18 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		if (guaranteedDatatype == null || !guaranteedDatatype.isCalendarDatatype()) {
 			return false;
 		}
+		// A term-exact anchor stands in for SPARQL value equality only when every stored object provably has a
+		// single lexical representation per value: canonical timezone-less xsd:date terms, or xsd:dateTime fixed
+		// points of normalizeDateTime. Other calendar datatypes have no canonicity fact, and without one
+		// value-equal lexical variants (trailing fractional-second zeros, zero-padded years, "+00:00" for "Z")
+		// would be silently missed by a term-level join.
+		boolean canonicalDate = guaranteedDatatype == CoreDatatype.XSD.DATE
+				&& guarantee.has(RdfTermDomain.Fact.CANONICAL_DATE);
+		boolean canonicalDateTime = guaranteedDatatype == CoreDatatype.XSD.DATETIME
+				&& guarantee.has(RdfTermDomain.Fact.CANONICAL_DATETIME);
+		if (!canonicalDate && !canonicalDateTime) {
+			return false;
+		}
 		for (BindingSet bindingSet : anchor.getBindingSets()) {
 			Value value = bindingSet.getValue(bindingName);
 			if (!isCalendarLiteral(value)) {
@@ -1355,24 +1374,15 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 			Literal literal = (Literal) value;
 			CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
 			if (datatype != guaranteedDatatype
-					|| datatype == CoreDatatype.XSD.TIME
 					|| !XMLDatatypeUtil.isValidValue(literal.getLabel(), datatype)) {
 				return false;
 			}
-			RdfTermDomain literalGuarantee = RdfTermDomain.classify(literal);
-			if (literalGuarantee.has(RdfTermDomain.Fact.DATE_WITHOUT_TIMEZONE)) {
-				if (!guarantee.has(RdfTermDomain.Fact.DATE_WITHOUT_TIMEZONE)) {
-					return false;
-				}
-				continue;
+			// A timezone-less canonical date only value-equals its own term; a timezoned or alias-year date
+			// constant would need stored terms this anchor cannot enumerate. dateTime constants of any timezone
+			// class are safe because the anchor materializes their normalized form.
+			if (canonicalDate && !RdfTermDomain.classify(literal).has(RdfTermDomain.Fact.CANONICAL_DATE)) {
+				return false;
 			}
-			if (literalGuarantee.has(RdfTermDomain.Fact.DATE_UTC)) {
-				if (!guarantee.has(RdfTermDomain.Fact.DATE_UTC)) {
-					return false;
-				}
-				continue;
-			}
-			return false;
 		}
 		return true;
 	}

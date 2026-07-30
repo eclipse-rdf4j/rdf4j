@@ -396,6 +396,56 @@ class LmdbFilterSimplifierOptimizerTest {
 	}
 
 	@Test
+	void anchorsCanonicalDateInFilterAsExactValues() {
+		Filter filter = new Filter(statementPatternWithPredicate("enc",
+				"http://example.com/theme/medical/recordedOn", "date"),
+				listMemberValues("date", VF.createLiteral("2024-01-01", XSD.DATE),
+						VF.createLiteral("2024-02-01", XSD.DATE)));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new FixedGuaranteeFilterPassStatistics(0.50d,
+				RdfTermDomain.classify(VF.createLiteral("2024-03-01", XSD.DATE)))).optimize(root, null, null);
+
+		assertFalse(containsFilter(root.getArg()));
+		assertEquals(Set.of(VF.createLiteral("2024-01-01", XSD.DATE), VF.createLiteral("2024-02-01", XSD.DATE)),
+				anchoredValues(root.getArg(), "date"),
+				"canonical timezone-less dates map 1:1 onto stored terms and must anchor exactly");
+	}
+
+	@Test
+	void anchorsDateTimeFilterInNormalizedForm() {
+		Filter filter = new Filter(statementPatternWithPredicate("enc",
+				"http://example.com/theme/medical/updatedAt", "stamp"),
+				listMemberValues("stamp", VF.createLiteral("2024-01-01T06:00:00.000+01:00", XSD.DATETIME)));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new FixedGuaranteeFilterPassStatistics(0.50d,
+				RdfTermDomain.classify(VF.createLiteral("2024-05-01T05:00:00Z", XSD.DATETIME))))
+						.optimize(root, null, null);
+
+		assertFalse(containsFilter(root.getArg()));
+		assertEquals(Set.of(VF.createLiteral("2024-01-01T05:00:00Z", XSD.DATETIME)),
+				anchoredValues(root.getArg(), "stamp"),
+				"stored dateTimes are normalizeDateTime fixed points, so the anchor must hold the normalized form");
+	}
+
+	@Test
+	void keepsDateFilterWhenStoredDatesAreNotProvablyCanonical() {
+		Filter filter = new Filter(statementPatternWithPredicate("enc",
+				"http://example.com/theme/medical/recordedOn", "date"),
+				listMemberValues("date", VF.createLiteral("2024-01-01Z", XSD.DATE)));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new FixedGuaranteeFilterPassStatistics(0.50d,
+				RdfTermDomain.classify(VF.createLiteral("2024-03-01Z", XSD.DATE)))).optimize(root, null, null);
+
+		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
+		assertInstanceOf(StatementPattern.class, retainedFilter.getArg());
+		assertFalse(containsBindingSetAssignment(root.getArg()),
+				"without the canonicity proof a term-level anchor could miss value-equal lexical variants");
+	}
+
+	@Test
 	@Disabled("Disabled until we can verify if this test is correct or not")
 	void keepsCanonicalIntegerFilterInAsLocalFilterForPlannerOptions() {
 		Filter filter = new Filter(statementPatternWithPredicate("sensor",
@@ -1042,6 +1092,22 @@ class LmdbFilterSimplifierOptimizerTest {
 					|| containsBindingSetAssignment(join.getRightArg());
 		}
 		return false;
+	}
+
+	private static Set<Value> anchoredValues(TupleExpr tupleExpr, String bindingName) {
+		Set<Value> values = new java.util.LinkedHashSet<>();
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(BindingSetAssignment node) {
+				for (BindingSet bindingSet : node.getBindingSets()) {
+					Value value = bindingSet.getValue(bindingName);
+					if (value != null) {
+						values.add(value);
+					}
+				}
+			}
+		});
+		return values;
 	}
 
 	private static boolean containsBindingSetAssignmentFor(TupleExpr tupleExpr, String bindingName) {

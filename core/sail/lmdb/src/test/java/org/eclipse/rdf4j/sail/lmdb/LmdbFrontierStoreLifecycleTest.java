@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
@@ -25,6 +26,7 @@ import java.nio.file.Path;
 import java.util.OptionalLong;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoRolloutProfile;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
@@ -46,6 +48,27 @@ class LmdbFrontierStoreLifecycleTest {
 
 		assertFalse(Files.notExists(dataDirectory.resolve(FRONTIER_DIRECTORY_NAME).resolve("manifest.bin")),
 				"positive-budget bootstrap must publish an initial Frontier generation");
+	}
+
+	@Test
+	void defaultFrontierInitializesLearnedServicesWithoutLegacySketch(@TempDir Path dataDirectory) throws Exception {
+		String previousProfile = System.getProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY);
+		System.setProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY, "safe-cardinality-correction");
+		LmdbStore store = new LmdbStore(dataDirectory.toFile(),
+				config(FrontierEstimatorMode.AUTHORITATIVE, POSITIVE_SYNOPSIS_BUDGET_BYTES)
+						.setSketchEstimatorEnabled(false));
+		try {
+			store.init();
+			LmdbSailStore backingStore = store.getBackingStore();
+			assertEquals(null, field(backingStore, "sketchBasedJoinEstimator"));
+			assertNotNull(field(backingStore, "filterSelectivityStats"),
+					"Frontier filters must learn even when the legacy sketch is disabled");
+			assertNotNull(field(backingStore, "operatorFeedbackStats"),
+					"Frontier states must be repairable by LEO without the legacy sketch");
+		} finally {
+			store.shutDown();
+			restoreProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY, previousProfile);
+		}
 	}
 
 	@Test
@@ -176,6 +199,20 @@ class LmdbFrontierStoreLifecycleTest {
 			return assertInstanceOf(FrontierSynopsisStatus.class, accessor.invoke(backingStore));
 		} catch (InvocationTargetException e) {
 			return fail("reading Frontier lifecycle status must not fail", e.getCause());
+		}
+	}
+
+	private static Object field(LmdbSailStore store, String name) throws Exception {
+		Field field = LmdbSailStore.class.getDeclaredField(name);
+		field.setAccessible(true);
+		return field.get(store);
+	}
+
+	private static void restoreProperty(String name, String value) {
+		if (value == null) {
+			System.clearProperty(name);
+		} else {
+			System.setProperty(name, value);
 		}
 	}
 

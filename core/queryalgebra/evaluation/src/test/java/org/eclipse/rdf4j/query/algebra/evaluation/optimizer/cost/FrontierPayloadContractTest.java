@@ -12,6 +12,12 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.lang.reflect.RecordComponent;
+import java.util.Arrays;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
@@ -98,6 +104,33 @@ class FrontierPayloadContractTest {
 			seedSchedule.getMethod("derive", long.class, randomDomain, long.class, long.class);
 			laneFamily.getEnumConstants();
 			randomDomain.getEnumConstants();
+		});
+	}
+
+	@Test
+	void learnedCalibrationHasAnExplicitComposableStateContract() {
+		assertDoesNotThrow(() -> {
+			EvidenceGuarantee guarantee = EvidenceGuarantee.valueOf("LEARNED_CALIBRATED");
+			FrontierStateOperation operation = FrontierStateOperation.valueOf("CALIBRATE");
+			Class<?> summary = Class.forName(
+					"org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceCalibrationSummary");
+
+			assertTrue(guarantee.isComposablePointEstimate(),
+					"calibrated sampled mass must remain available to later Frontier transforms");
+			assertEquals("CALIBRATE", operation.name());
+			assertTrue(summary.isRecord(), "calibration provenance must be immutable");
+			List<String> componentNames = Arrays.stream(summary.getRecordComponents())
+					.map(RecordComponent::getName)
+					.toList();
+			assertEquals(List.of(
+					"rawRows",
+					"finalRows",
+					"factor",
+					"source",
+					"evidenceCount",
+					"correctionConfidence",
+					"evidenceKey",
+					"evidenceRevision"), componentNames);
 		});
 	}
 }

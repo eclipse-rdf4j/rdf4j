@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.IsLiteral;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
@@ -153,7 +154,7 @@ class PackedPredicateRangePlanningTest {
 	}
 
 	@Test
-	void equivalentDecimalEqualityIsNotProvenEmpty() {
+	void equivalentDecimalEqualityExpandsToStoredIntegerTerm() {
 		TupleExpr root = projection(new Filter(statementPattern(),
 				new Compare(new Var("o"), new ValueConstant(VF.createLiteral("7.0", CoreDatatype.XSD.DECIMAL)),
 						Compare.CompareOp.EQ)),
@@ -163,9 +164,157 @@ class PackedPredicateRangePlanningTest {
 
 		assertFalse(containsNode(selected, EmptySet.class),
 				"SPARQL numeric equality makes xsd:int 7 equal to xsd:decimal 7.0: " + selected);
-		assertTrue(containsNode(selected, Filter.class),
-				"a non-integer numeric equality must remain authoritative unless value equality is proved: "
+		assertEquals(List.of(Set.of(VF.createLiteral("7", CoreDatatype.XSD.INT))), finiteDomains(selected, "o"),
+				"an exactly-integral decimal constant value-equals only the canonical stored integer term: "
 						+ selected);
+	}
+
+	@Test
+	void fractionalDecimalEqualityAgainstIntegersSelectsEmptySet() {
+		TupleExpr root = projection(new Filter(statementPattern(),
+				new Compare(new Var("o"), new ValueConstant(VF.createLiteral("7.5", CoreDatatype.XSD.DECIMAL)),
+						Compare.CompareOp.EQ)),
+				"s");
+
+		TupleExpr selected = optimize(root, INT_SEVEN_PROVIDER);
+
+		assertTrue(containsNode(selected, EmptySet.class),
+				"a fractional decimal never value-equals a stored canonical integer: " + selected);
+	}
+
+	@Test
+	void integralDoubleEqualityExpandsToStoredIntegerTerm() {
+		TupleExpr root = projection(new Filter(statementPattern(),
+				new Compare(new Var("o"), new ValueConstant(VF.createLiteral("7.0E0", CoreDatatype.XSD.DOUBLE)),
+						Compare.CompareOp.EQ)),
+				"s");
+
+		TupleExpr selected = optimize(root, INT_SEVEN_PROVIDER);
+
+		assertEquals(List.of(Set.of(VF.createLiteral("7", CoreDatatype.XSD.INT))), finiteDomains(selected, "o"),
+				"an exactly-integral double constant value-equals only the canonical stored integer term: "
+						+ selected);
+	}
+
+	@Test
+	void doubleBeyondMantissaExactnessKeepsOriginalFilter() {
+		PackedPredicateRangeProvider longProvider = integerRangeProvider(Long.MIN_VALUE, Long.MAX_VALUE,
+				CoreDatatype.XSD.LONG);
+		TupleExpr root = projection(new Filter(statementPattern(),
+				new Compare(new Var("o"), new ValueConstant(VF.createLiteral("9.007199254740992E15",
+						CoreDatatype.XSD.DOUBLE)),
+						Compare.CompareOp.EQ)),
+				"s");
+
+		TupleExpr selected = optimize(root, longProvider);
+
+		assertTrue(containsNode(selected, Filter.class),
+				"above 2^53 several stored longs promote onto one double, so the filter must stay: " + selected);
+		assertTrue(finiteDomains(selected, "o").isEmpty(),
+				"no partial anchor may be produced for an inexact promotion: " + selected);
+	}
+
+	@Test
+	void invalidBooleanLexicalSelectsEmptySetInsteadOfFalseAnchor() {
+		PackedPredicateRangeProvider booleanProvider = datatypeOnlyProvider(CoreDatatype.XSD.BOOLEAN, 0);
+		TupleExpr root = projection(new Filter(statementPattern(),
+				new Compare(new Var("o"), new ValueConstant(VF.createLiteral("TRUE", CoreDatatype.XSD.BOOLEAN)),
+						Compare.CompareOp.EQ)),
+				"s");
+
+		TupleExpr selected = optimize(root, booleanProvider);
+
+		assertTrue(containsNode(selected, EmptySet.class),
+				"an invalid boolean lexical raises a type error on every row; it must not anchor 'false': "
+						+ selected);
+		assertTrue(finiteDomains(selected, "o").isEmpty(),
+				"no boolean anchor rows may be fabricated from an invalid lexical: " + selected);
+	}
+
+	@Test
+	void canonicalDateInFilterBecomesExactValuesAnchor() {
+		PackedPredicateRangeProvider dateProvider = datatypeOnlyProvider(CoreDatatype.XSD.DATE,
+				PackedPredicateRange.UNIVERSAL_CANONICAL_DATE);
+		Value january = VF.createLiteral("2024-01-01", CoreDatatype.XSD.DATE);
+		Value february = VF.createLiteral("2024-02-01", CoreDatatype.XSD.DATE);
+		ListMemberOperator inFilter = new ListMemberOperator();
+		inFilter.setArguments(List.of(new Var("o"), new ValueConstant(january), new ValueConstant(february)));
+		TupleExpr root = projection(new Filter(statementPattern(), inFilter), "s");
+
+		TupleExpr selected = optimize(root, dateProvider);
+
+		assertEquals(List.of(Set.of(january, february)), finiteDomains(selected, "o"),
+				"canonical timezone-less dates map 1:1 onto stored terms and must anchor exactly: " + selected);
+		assertFalse(containsNode(selected, Filter.class),
+				"the exact date anchor must replace the IN filter: " + selected);
+	}
+
+	@Test
+	void timezonedDateConstantAgainstTimezonelessStoreSelectsEmptySet() {
+		PackedPredicateRangeProvider dateProvider = datatypeOnlyProvider(CoreDatatype.XSD.DATE,
+				PackedPredicateRange.UNIVERSAL_CANONICAL_DATE);
+		TupleExpr root = projection(new Filter(statementPattern(),
+				new Compare(new Var("o"), new ValueConstant(VF.createLiteral("2024-01-01Z", CoreDatatype.XSD.DATE)),
+						Compare.CompareOp.EQ)),
+				"s");
+
+		TupleExpr selected = optimize(root, dateProvider);
+
+		assertTrue(containsNode(selected, EmptySet.class),
+				"a timezoned date never evaluates value-equal to a timezone-less stored date: " + selected);
+	}
+
+	@Test
+	void aliasYearDateConstantKeepsOriginalFilter() {
+		PackedPredicateRangeProvider dateProvider = datatypeOnlyProvider(CoreDatatype.XSD.DATE,
+				PackedPredicateRange.UNIVERSAL_CANONICAL_DATE);
+		TupleExpr root = projection(new Filter(statementPattern(),
+				new Compare(new Var("o"), new ValueConstant(VF.createLiteral("02024-01-01", CoreDatatype.XSD.DATE)),
+						Compare.CompareOp.EQ)),
+				"s");
+
+		TupleExpr selected = optimize(root, dateProvider);
+
+		assertTrue(containsNode(selected, Filter.class),
+				"a zero-padded year alias value-equals a differently-written stored term; the filter must stay: "
+						+ selected);
+		assertTrue(finiteDomains(selected, "o").isEmpty(),
+				"no anchor may be produced for a non-canonical date constant: " + selected);
+	}
+
+	@Test
+	void dateTimeConstantIsAnchoredInNormalizedForm() {
+		PackedPredicateRangeProvider dateTimeProvider = datatypeOnlyProvider(CoreDatatype.XSD.DATETIME,
+				PackedPredicateRange.UNIVERSAL_CANONICAL_DATETIME);
+		TupleExpr root = projection(new Filter(statementPattern(),
+				new Compare(new Var("o"),
+						new ValueConstant(VF.createLiteral("2024-01-01T05:00:00.000+01:00", CoreDatatype.XSD.DATETIME)),
+						Compare.CompareOp.EQ)),
+				"s");
+
+		TupleExpr selected = optimize(root, dateTimeProvider);
+
+		assertEquals(List.of(Set.of(VF.createLiteral("2024-01-01T04:00:00Z", CoreDatatype.XSD.DATETIME))),
+				finiteDomains(selected, "o"),
+				"stored dateTimes are normalizeDateTime fixed points, so the anchor must hold the normalized form: "
+						+ selected);
+	}
+
+	@Test
+	void dateEqualityWithoutCanonicalFactKeepsOriginalFilter() {
+		PackedPredicateRangeProvider dateProvider = datatypeOnlyProvider(CoreDatatype.XSD.DATE, 0);
+		TupleExpr root = projection(new Filter(statementPattern(),
+				new Compare(new Var("o"), new ValueConstant(VF.createLiteral("2024-01-01", CoreDatatype.XSD.DATE)),
+						Compare.CompareOp.EQ)),
+				"s");
+
+		TupleExpr selected = optimize(root, dateProvider);
+
+		assertTrue(containsNode(selected, Filter.class),
+				"without the canonicity proof value-equal lexical variants could be missed; the filter must stay: "
+						+ selected);
+		assertTrue(finiteDomains(selected, "o").isEmpty(),
+				"no anchor may be generated from datatype facts alone: " + selected);
 	}
 
 	@Test
@@ -469,6 +618,31 @@ class PackedPredicateRangePlanningTest {
 			@Override
 			public long predicateRangeVersion() {
 				return 11L;
+			}
+		};
+	}
+
+	/** Literal-only range proving a single datatype plus the given universal canonicity bits. */
+	private static PackedPredicateRangeProvider datatypeOnlyProvider(CoreDatatype.XSD datatype, int universalBits) {
+		return new PackedPredicateRangeProvider() {
+
+			@Override
+			public boolean describeObjectRange(IRI predicate, PackedPredicateRange output) {
+				if (!PREDICATE.equals(predicate)) {
+					return false;
+				}
+				output.setState(PackedPredicateRange.STATE_KNOWN);
+				output.setKindBits(PackedPredicateRange.KIND_LITERAL);
+				output.setLanguageBits(PackedPredicateRange.LANGUAGE_WITHOUT);
+				output.addDatatype(datatype);
+				output.setUniversalBits(universalBits);
+				output.setDescription("synthetic single-datatype domain");
+				return true;
+			}
+
+			@Override
+			public long predicateRangeVersion() {
+				return 13L;
 			}
 		};
 	}

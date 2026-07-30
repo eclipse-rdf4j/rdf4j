@@ -13,9 +13,13 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import java.util.Arrays;
 
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
+
 /** Query-local primitive columns for provider facts selected by winner rows. */
 @PackedHotPath
 final class PackedPhysicalMetadataArena {
+
+	private static final EvidenceGuarantee[] EVIDENCE_GUARANTEES = EvidenceGuarantee.values();
 
 	private final PackedObjectPool objects;
 	private double[] outputRows;
@@ -23,6 +27,7 @@ final class PackedPhysicalMetadataArena {
 	private double[] accessRows;
 	private double[] invocations;
 	private int[] evidenceStateIds;
+	private byte[] evidenceGuarantees;
 	private int[] lookupMasks;
 	private int[] missingLookupMasks;
 	private int[] indexPrefixLengths;
@@ -50,6 +55,7 @@ final class PackedPhysicalMetadataArena {
 		accessRows = new double[capacity];
 		invocations = new double[capacity];
 		evidenceStateIds = new int[capacity];
+		evidenceGuarantees = new byte[capacity];
 		lookupMasks = new int[capacity];
 		missingLookupMasks = new int[capacity];
 		indexPrefixLengths = new int[capacity];
@@ -71,6 +77,10 @@ final class PackedPhysicalMetadataArena {
 		accessRows[metadataId] = finiteNonNegative(estimate.accessRows(), Double.NaN);
 		invocations[metadataId] = finiteNonNegative(estimate.invocations(), 1.0d);
 		evidenceStateIds[metadataId] = estimate.evidenceStateId();
+		EvidenceGuarantee evidenceGuarantee = estimate.evidenceGuarantee();
+		evidenceGuarantees[metadataId] = evidenceGuarantee == null
+				? 0
+				: (byte) (evidenceGuarantee.ordinal() + 1);
 		lookupMasks[metadataId] = estimate.lookupComponentMask();
 		missingLookupMasks[metadataId] = estimate.missingLookupComponentMask();
 		indexPrefixLengths[metadataId] = estimate.indexPrefixLength();
@@ -105,6 +115,12 @@ final class PackedPhysicalMetadataArena {
 	int evidenceStateId(int metadataId) {
 		checkId(metadataId);
 		return evidenceStateIds[metadataId];
+	}
+
+	EvidenceGuarantee evidenceGuarantee(int metadataId) {
+		checkId(metadataId);
+		int encoded = Byte.toUnsignedInt(evidenceGuarantees[metadataId]);
+		return encoded == 0 ? null : EVIDENCE_GUARANTEES[encoded - 1];
 	}
 
 	int lookupMask(int metadataId) {
@@ -225,6 +241,7 @@ final class PackedPhysicalMetadataArena {
 		accessRows = Arrays.copyOf(accessRows, capacity);
 		invocations = Arrays.copyOf(invocations, capacity);
 		evidenceStateIds = Arrays.copyOf(evidenceStateIds, capacity);
+		evidenceGuarantees = Arrays.copyOf(evidenceGuarantees, capacity);
 		lookupMasks = Arrays.copyOf(lookupMasks, capacity);
 		missingLookupMasks = Arrays.copyOf(missingLookupMasks, capacity);
 		indexPrefixLengths = Arrays.copyOf(indexPrefixLengths, capacity);

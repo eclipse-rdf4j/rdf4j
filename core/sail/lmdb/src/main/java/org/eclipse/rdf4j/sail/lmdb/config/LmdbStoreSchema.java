@@ -138,6 +138,10 @@ public class LmdbStoreSchema {
 
 	public final static IRI FRONTIER_QUERY_MEMORY_BUDGET_BYTES;
 
+	public final static IRI FRONTIER_QUERY_INDEX_BUDGET_BYTES;
+
+	public final static IRI FRONTIER_INITIAL_MATERIALIZATION_WORK_UNITS;
+
 	public final static IRI FRONTIER_DESIGN_LANES;
 
 	public final static IRI FRONTIER_AUDIT_LANES;
@@ -210,6 +214,9 @@ public class LmdbStoreSchema {
 		FRONTIER_ESTIMATOR_MODE = factory.createIRI(NAMESPACE, "frontierEstimatorMode");
 		FRONTIER_SYNOPSIS_BUDGET_BYTES = factory.createIRI(NAMESPACE, "frontierSynopsisBudgetBytes");
 		FRONTIER_QUERY_MEMORY_BUDGET_BYTES = factory.createIRI(NAMESPACE, "frontierQueryMemoryBudgetBytes");
+		FRONTIER_QUERY_INDEX_BUDGET_BYTES = factory.createIRI(NAMESPACE, "frontierQueryIndexBudgetBytes");
+		FRONTIER_INITIAL_MATERIALIZATION_WORK_UNITS = factory.createIRI(
+				NAMESPACE, "frontierInitialMaterializationWorkUnits");
 		FRONTIER_DESIGN_LANES = factory.createIRI(NAMESPACE, "frontierDesignLanes");
 		FRONTIER_AUDIT_LANES = factory.createIRI(NAMESPACE, "frontierAuditLanes");
 		FRONTIER_REFINEMENT_WORK_UNITS = factory.createIRI(NAMESPACE, "frontierRefinementWorkUnits");

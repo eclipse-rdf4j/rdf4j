@@ -86,6 +86,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	static final String LEARNED_OPERATOR = "learned_operator";
 	static final String LEARNED_LEFT_JOIN_SURFACE = "learned_left_join_surface";
 	static final String LEARNED_PROPERTY_PATH = "learned_property_path";
+	static final String LEARNED_MULTIPLIER = "learned_multiplier";
 
 	private static final String SIDECAR_SUFFIX = ".operators";
 	private static final String LEO_SURFACE_SUFFIX = ".leo";
@@ -630,6 +631,48 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		return null;
 	}
 
+	synchronized OperatorEstimate multiplierEstimate(TupleExpr node, double baseRows, double baseWorkRows) {
+		if (!adaptiveEvidenceAllowed() || !isFiniteNonNegative(baseRows) || !isFiniteNonNegative(baseWorkRows)) {
+			return null;
+		}
+		OperatorKey key = multiplierKeyFor(node);
+		LearnedMultiplierCounts counts = key == null ? null : learnedMultipliers.get(key);
+		if (counts == null || counts.sampleCount <= 0L) {
+			return null;
+		}
+		double confidence = counts.confidenceModel.decayedConfidence(
+				feedbackEpoch, CONFIDENCE_DECAY_HALF_LIFE_EPOCHS);
+		double learnedRows = baseRows * counts.confidenceModel.rowCorrectionRatio();
+		double learnedWorkRows = baseWorkRows * counts.confidenceModel.workCorrectionRatio();
+		double rows = blend(baseRows, learnedRows, confidence);
+		double workRows = Math.max(rows, blend(baseWorkRows, learnedWorkRows, confidence));
+		if (!isFiniteNonNegative(rows) || !isFiniteNonNegative(workRows)) {
+			return null;
+		}
+		double rowQErrorMax = Math.max(1.0d, counts.confidenceModel.rowQErrorMax());
+		double workQErrorMax = Math.max(1.0d, counts.confidenceModel.workQErrorMax());
+		double maximumQError = Math.min(MAX_UNCERTAINTY_Q_ERROR, Math.max(rowQErrorMax, workQErrorMax));
+		double uncertaintyRows = maximumQError <= 1.0d
+				? 0.0d
+				: Math.max(rows, workRows) * (maximumQError - 1.0d) * Math.max(0.05d, 1.0d - confidence);
+		if (!isFiniteNonNegative(uncertaintyRows)) {
+			uncertaintyRows = 0.0d;
+		}
+		return new OperatorEstimate(
+				rows,
+				workRows,
+				LEARNED_MULTIPLIER,
+				counts.sampleCount,
+				confidence,
+				confidence,
+				key.toString(),
+				counts.confidenceModel.rowQErrorMean(),
+				rowQErrorMax,
+				counts.confidenceModel.workQErrorMean(),
+				workQErrorMax,
+				uncertaintyRows);
+	}
+
 	synchronized int size() {
 		return learnedByOperator.size();
 	}
@@ -1122,7 +1165,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	@Override
 	public boolean shouldTrackRuntimeFeedback(TupleExpr tupleExpr) {
-		return adaptiveEvidenceAllowed() && rollout().observationEnabled()
+		return runtimeFeedbackTrackingEnabled()
+				&& adaptiveEvidenceAllowed() && rollout().observationEnabled()
 				&& operatorLearningPolicy(tupleExpr).runtimeObservable();
 	}
 
@@ -1137,6 +1181,11 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 				&& supportsOperatorFeedback(tupleExpr);
 	}
 
+	boolean shouldExposeMultiplierPlanningEvidence(TupleExpr tupleExpr) {
+		return adaptiveEvidenceAllowed() && rollout().cardinalityCorrectionEnabled()
+				&& operatorLearningPolicy(tupleExpr) == LeoOperatorLearningPolicy.LEARN_AS_CHILD_MULTIPLIER;
+	}
+
 	@Override
 	public String rolloutProfile() {
 		return rollout().externalName();
@@ -1144,6 +1193,16 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	private static LeoRolloutProfile rollout() {
 		return LeoRolloutProfile.fromSystemProperties();
+	}
+
+	private static boolean runtimeFeedbackTrackingEnabled() {
+		return propertyEnabled(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY)
+				&& propertyEnabled(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_DETAILED_RUNTIME_PROPERTY);
+	}
+
+	private static boolean propertyEnabled(String property) {
+		String configured = System.getProperty(property);
+		return configured == null || Boolean.parseBoolean(configured);
 	}
 
 	@Override

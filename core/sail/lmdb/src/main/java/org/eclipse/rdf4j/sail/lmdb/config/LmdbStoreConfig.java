@@ -85,6 +85,10 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	public static final long FRONTIER_QUERY_MEMORY_BUDGET_BYTES = 64L * 1024L * 1024L;
 
+	public static final long FRONTIER_QUERY_INDEX_BUDGET_BYTES = maximumFrontierQueryIndexBudgetBytes();
+
+	public static final long FRONTIER_INITIAL_MATERIALIZATION_WORK_UNITS = 262_144L;
+
 	public static final int FRONTIER_DESIGN_LANES = 2;
 
 	public static final int FRONTIER_AUDIT_LANES = 2;
@@ -177,6 +181,10 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	private long frontierSynopsisBudgetBytes = FRONTIER_SYNOPSIS_BUDGET_BYTES;
 
 	private long frontierQueryMemoryBudgetBytes = FRONTIER_QUERY_MEMORY_BUDGET_BYTES;
+
+	private long frontierQueryIndexBudgetBytes = FRONTIER_QUERY_INDEX_BUDGET_BYTES;
+
+	private long frontierInitialMaterializationWorkUnits = FRONTIER_INITIAL_MATERIALIZATION_WORK_UNITS;
 
 	private int frontierDesignLanes = FRONTIER_DESIGN_LANES;
 
@@ -559,6 +567,39 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	public long getFrontierQueryIndexBudgetBytes() {
+		return frontierQueryIndexBudgetBytes;
+	}
+
+	public long getEffectiveFrontierQueryIndexBudgetBytes() {
+		return Math.min(frontierQueryIndexBudgetBytes, maximumFrontierQueryIndexBudgetBytes());
+	}
+
+	public LmdbStoreConfig setFrontierQueryIndexBudgetBytes(long frontierQueryIndexBudgetBytes) {
+		if (frontierQueryIndexBudgetBytes < 0L) {
+			throw new IllegalArgumentException("Frontier query index budget must be nonnegative");
+		}
+		this.frontierQueryIndexBudgetBytes = frontierQueryIndexBudgetBytes;
+		return this;
+	}
+
+	private static long maximumFrontierQueryIndexBudgetBytes() {
+		return Runtime.getRuntime().maxMemory() / 4L;
+	}
+
+	public long getFrontierInitialMaterializationWorkUnits() {
+		return frontierInitialMaterializationWorkUnits;
+	}
+
+	public LmdbStoreConfig setFrontierInitialMaterializationWorkUnits(
+			long frontierInitialMaterializationWorkUnits) {
+		if (frontierInitialMaterializationWorkUnits < 0L) {
+			throw new IllegalArgumentException("Frontier initial materialization work units must be nonnegative");
+		}
+		this.frontierInitialMaterializationWorkUnits = frontierInitialMaterializationWorkUnits;
+		return this;
+	}
+
 	public int getFrontierDesignLanes() {
 		return frontierDesignLanes;
 	}
@@ -837,6 +878,14 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (frontierQueryMemoryBudgetBytes != FRONTIER_QUERY_MEMORY_BUDGET_BYTES) {
 			m.add(implNode, LmdbStoreSchema.FRONTIER_QUERY_MEMORY_BUDGET_BYTES,
 					vf.createLiteral(frontierQueryMemoryBudgetBytes));
+		}
+		if (frontierQueryIndexBudgetBytes != FRONTIER_QUERY_INDEX_BUDGET_BYTES) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_QUERY_INDEX_BUDGET_BYTES,
+					vf.createLiteral(frontierQueryIndexBudgetBytes));
+		}
+		if (frontierInitialMaterializationWorkUnits != FRONTIER_INITIAL_MATERIALIZATION_WORK_UNITS) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_INITIAL_MATERIALIZATION_WORK_UNITS,
+					vf.createLiteral(frontierInitialMaterializationWorkUnits));
 		}
 		if (frontierDesignLanes != FRONTIER_DESIGN_LANES) {
 			m.add(implNode, LmdbStoreSchema.FRONTIER_DESIGN_LANES, vf.createLiteral(frontierDesignLanes));
@@ -1150,6 +1199,29 @@ public class LmdbStoreConfig extends BaseSailConfig {
 									parseLong(lit, LmdbStoreSchema.FRONTIER_QUERY_MEMORY_BUDGET_BYTES));
 						} catch (IllegalArgumentException e) {
 							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_QUERY_MEMORY_BUDGET_BYTES, lit, e);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.FRONTIER_QUERY_INDEX_BUDGET_BYTES, null))
+					.ifPresent(lit -> {
+						try {
+							setFrontierQueryIndexBudgetBytes(parseLong(
+									lit, LmdbStoreSchema.FRONTIER_QUERY_INDEX_BUDGET_BYTES));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(
+									LmdbStoreSchema.FRONTIER_QUERY_INDEX_BUDGET_BYTES, lit, e);
+						}
+					});
+
+			Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.FRONTIER_INITIAL_MATERIALIZATION_WORK_UNITS, null))
+					.ifPresent(lit -> {
+						try {
+							setFrontierInitialMaterializationWorkUnits(parseLong(
+									lit, LmdbStoreSchema.FRONTIER_INITIAL_MATERIALIZATION_WORK_UNITS));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(
+									LmdbStoreSchema.FRONTIER_INITIAL_MATERIALIZATION_WORK_UNITS, lit, e);
 						}
 					});
 

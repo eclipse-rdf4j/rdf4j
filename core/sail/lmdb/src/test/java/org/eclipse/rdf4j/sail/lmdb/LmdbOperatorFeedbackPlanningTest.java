@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -115,6 +116,7 @@ class LmdbOperatorFeedbackPlanningTest {
 	@Test
 	void secondPlanUsesLeftJoinOperatorFeedbackForBoundOptionalFanout(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF)
 				.setSketchEstimatorEnabled(true);
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
@@ -145,6 +147,7 @@ class LmdbOperatorFeedbackPlanningTest {
 	@Test
 	void persistedOperatorFeedbackIgnoresMetadataTimestampChanges(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF)
 				.setSketchEstimatorEnabled(true);
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
@@ -193,6 +196,7 @@ class LmdbOperatorFeedbackPlanningTest {
 	@Test
 	void snapshotOnlyPlanningNeverConsultsOperatorFeedback(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF)
 				.setSketchEstimatorEnabled(true)
 				.setSketchEstimatorEvidenceMode("snapshot-only");
 		LmdbStore store = new LmdbStore(dataDir, config);
@@ -225,6 +229,7 @@ class LmdbOperatorFeedbackPlanningTest {
 	@Disabled("Disabled until we can verify if this test is correct or not")
 	void secondPlanUsesUnionOperatorFeedbackForOptionalUnionFanout(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF)
 				.setSketchEstimatorEnabled(true);
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
@@ -257,6 +262,7 @@ class LmdbOperatorFeedbackPlanningTest {
 	@Test
 	void operatorFeedbackPlanExposesLearnedQError(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF)
 				.setSketchEstimatorEnabled(true);
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
@@ -298,6 +304,7 @@ class LmdbOperatorFeedbackPlanningTest {
 	@Disabled("Disabled until we can verify if this test is correct or not")
 	void operatorFeedbackFusionKeepsLearnedFilterSourcesInCostPath(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF)
 				.setSketchEstimatorEnabled(true);
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
@@ -343,6 +350,7 @@ class LmdbOperatorFeedbackPlanningTest {
 	void operatorFeedbackFusionPathReceivesBackgroundSampledAndLearnedFilterSources(@TempDir File dataDir)
 			throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF)
 				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingEnabled(false)
 				.setBackgroundRawSamplingMaxMillisPerCycle(0L);

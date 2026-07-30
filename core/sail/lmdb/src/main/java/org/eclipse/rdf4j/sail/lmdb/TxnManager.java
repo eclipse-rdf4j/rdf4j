@@ -281,8 +281,11 @@ class TxnManager {
 	}
 
 	void close() {
-		for (Txn txn : activeTransactions()) {
-			txn.close();
+		synchronized (active) {
+			for (Txn txn : new ArrayList<>(active.keySet())) {
+				txn.close();
+			}
+			closePooledReaders();
 		}
 	}
 
@@ -372,11 +375,9 @@ class TxnManager {
 			closed = true;
 			synchronized (TxnManager.this.active) {
 				TxnManager.this.active.remove(this);
-			}
-			try {
-				free(txnActive);
-			} finally {
-				synchronized (TxnManager.this.active) {
+				try {
+					free(txnActive);
+				} finally {
 					TxnManager.this.active.notifyAll();
 				}
 			}

@@ -19,12 +19,21 @@ public final class FrontierPayloadLease implements AutoCloseable {
 
 	private FrontierStateArena arena;
 	private final EvidenceStateRef state;
+	private final int payloadOwnerStateId;
+	private final double weightScale;
 	private FrontierPayloadBlock block;
 
-	FrontierPayloadLease(FrontierStateArena arena, EvidenceStateRef state, FrontierPayloadBlock block) {
+	FrontierPayloadLease(
+			FrontierStateArena arena,
+			EvidenceStateRef state,
+			int payloadOwnerStateId,
+			FrontierPayloadBlock block,
+			double weightScale) {
 		this.arena = arena;
 		this.state = state;
+		this.payloadOwnerStateId = payloadOwnerStateId;
 		this.block = block;
+		this.weightScale = weightScale;
 	}
 
 	public int stratumCount() {
@@ -49,12 +58,12 @@ public final class FrontierPayloadLease implements AutoCloseable {
 
 	public double exactWeight(int stratum, int index) {
 		ensureOpen();
-		return block.exactWeights[block.exactIndex(stratum, index)];
+		return scaledWeight(block.exactWeights[block.exactIndex(stratum, index)]);
 	}
 
 	public double residualWeight(int stratum, int index) {
 		ensureOpen();
-		return block.residualWeights[block.residualIndex(stratum, index)];
+		return scaledWeight(block.residualWeights[block.residualIndex(stratum, index)]);
 	}
 
 	public long exactTermId(int stratum, int index, int frontierSlot) {
@@ -75,10 +84,18 @@ public final class FrontierPayloadLease implements AutoCloseable {
 	public void close() {
 		FrontierStateArena current = arena;
 		if (current != null) {
-			current.releasePayload(state);
+			current.releasePayload(state, payloadOwnerStateId);
 			arena = null;
 			block = null;
 		}
+	}
+
+	private double scaledWeight(double weight) {
+		double scaled = weight * weightScale;
+		if (!Double.isFinite(scaled)) {
+			throw new IllegalStateException("effective Frontier payload weight overflow");
+		}
+		return scaled == 0.0d ? 0.0d : scaled;
 	}
 
 	private void checkFrontierSlot(int frontierSlot) {

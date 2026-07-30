@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -39,6 +40,7 @@ import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSynopsisStatus;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
@@ -66,6 +68,9 @@ class LmdbFrontierThemeCoverageIT {
 		try {
 			loadBoundedThemeData(scalarRepository, themes);
 			loadBoundedThemeData(frontierRepository, themes);
+			assertEquals(FrontierSynopsisStatus.READY,
+					((LmdbStore) frontierRepository.getSail()).rebuildFrontierSynopsis(),
+					"The Theme coverage run must exercise an authoritative Frontier synopsis");
 			try (SailRepositoryConnection scalarConnection = scalarRepository.getConnection();
 					SailRepositoryConnection frontierConnection = frontierRepository.getConnection()) {
 				for (Theme theme : themes) {
@@ -97,7 +102,7 @@ class LmdbFrontierThemeCoverageIT {
 	private static SailRepository repository(Path dataDirectory, FrontierEstimatorMode mode) {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
 				.setFrontierEstimatorMode(mode)
-				.setFrontierSynopsisBudgetBytes(0L);
+				.setFrontierSynopsisBudgetBytes(mode == FrontierEstimatorMode.OFF ? 0L : 256L * 1024L);
 		SailRepository repository = new SailRepository(new LmdbStore(dataDirectory.toFile(), config));
 		repository.init();
 		return repository;
@@ -259,11 +264,14 @@ class LmdbFrontierThemeCoverageIT {
 
 	private static void auditFrontierCoverage(Theme theme, int queryIndex, TupleExpr expression,
 			List<String> coverageFailures) {
+		int failureCount = coverageFailures.size();
 		FrontierClassification classification = classify(expression, coverageFailures,
 				theme.name() + " q" + queryIndex);
 		if (classification.supported == 0 && classification.degraded == 0) {
 			coverageFailures.add(theme + " q" + queryIndex
 					+ " published neither theorem-safe Frontier evidence nor an explicit fallback\n" + expression);
+		} else if (coverageFailures.size() != failureCount) {
+			coverageFailures.add(theme + " q" + queryIndex + " optimized plan:\n" + expression);
 		}
 	}
 
@@ -288,7 +296,14 @@ class LmdbFrontierThemeCoverageIT {
 		if (status == null) {
 			return;
 		}
-		String nodeKey = queryKey + " " + node.getClass().getSimpleName();
+		QueryModelNode parent = node.getParentNode();
+		String nodeKey = queryKey + " " + node.getClass().getSimpleName()
+				+ "[source=" + node.getStringMetricPlanned("plannedEstimateSource")
+				+ ", parent=" + (parent == null ? "none" : parent.getClass().getSimpleName())
+				+ ", state=" + node.getDoubleMetricPlanned("plannedFrontierStateId")
+				+ ", factors=" + node.getDoubleMetricPlanned("plannedFrontierFactorCount")
+				+ ", guarantee=" + node.getStringMetricPlanned("plannedFrontierGuarantee")
+				+ childStateSummary(node) + "]";
 		switch (status) {
 		case "ready":
 			classification.supported++;
@@ -325,6 +340,17 @@ class LmdbFrontierThemeCoverageIT {
 			coverageFailures.add(nodeKey + " has unrecognized Frontier status " + status);
 			break;
 		}
+	}
+
+	private static String childStateSummary(QueryModelNode node) {
+		if (!(node instanceof BinaryTupleOperator binary)) {
+			return "";
+		}
+		return ", children="
+				+ binary.getLeftArg().getClass().getSimpleName() + ":"
+				+ binary.getLeftArg().getDoubleMetricPlanned("plannedFrontierStateId") + "+"
+				+ binary.getRightArg().getClass().getSimpleName() + ":"
+				+ binary.getRightArg().getDoubleMetricPlanned("plannedFrontierStateId");
 	}
 
 	private static final class FrontierClassification {

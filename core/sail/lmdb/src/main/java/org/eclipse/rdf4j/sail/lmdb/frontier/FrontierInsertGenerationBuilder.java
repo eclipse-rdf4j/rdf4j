@@ -26,6 +26,13 @@ final class FrontierInsertGenerationBuilder {
 	private FrontierInsertGenerationBuilder() {
 	}
 
+	static int maximumSingleBlockInsertions(int designLaneCount, int auditLaneCount) {
+		long laneCopies = Math.multiplyExact(2L, Math.addExact(designLaneCount, auditLaneCount));
+		long recordBytes = Math.multiplyExact(FrontierSynopsisBuilder.RECORD_LONGS, Long.BYTES);
+		long maximumBlockRecords = Math.max(1L, (MAXIMUM_BLOCK_BYTES - BLOCK_OVERHEAD_BYTES) / recordBytes);
+		return (int) Math.max(1L, Math.min(Integer.MAX_VALUE, maximumBlockRecords / laneCopies));
+	}
+
 	static FrontierPayloadDescriptor build(Path directory, long generation, long budgetBytes, int designLaneCount,
 			int auditLaneCount, List<FrontierInsertion> insertions, FrontierSnapshotSource snapshot,
 			FrontierFileOps fileOps) throws IOException {

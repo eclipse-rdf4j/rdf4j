@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSynopsisStatus;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
@@ -110,7 +111,7 @@ class LmdbIndependentFiniteAnchorJoinPlanningTest {
 	}
 
 	@Test
-	void repeatedPredicateChainUsesMultiRelationTransitionEvidence(@TempDir File dataDir) throws Exception {
+	void repeatedPredicateChainUsesMultiRelationFrontierEvidence(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
@@ -119,38 +120,50 @@ class LmdbIndependentFiniteAnchorJoinPlanningTest {
 		try {
 			loadSyntheticMutualFollowData(repository);
 			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
+			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				TupleExpr optimized = (TupleExpr) connection.prepareTupleQuery(repeatedFollowsChainQuery())
 						.explain(Explanation.Level.Optimized)
 						.tupleExpr();
-				List<Join> transitionHashJoins = new ArrayList<>();
+				List<Join> frontierJoins = new ArrayList<>();
 				optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 					@Override
 					public void meet(Join node) {
-						if ("HashJoinIteration".equals(node.getAlgorithmName())
-								&& "lmdb-packed-transition".equals(node
-										.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE))) {
-							transitionHashJoins.add(node);
+						if ("lmdb-frontier".equals(node
+								.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE))
+								&& node.getDoubleMetricPlanned("plannedFrontierStateId") > 0.0d) {
+							frontierJoins.add(node);
 						}
 						super.meet(node);
 					}
 				});
 
-				assertTrue(!transitionHashJoins.isEmpty(),
-						"Expected the join cardinality for a later repeated-predicate hop to retain LMDB transition "
-								+ "evidence without relabeling an independently scanned hash input. plan=" + optimized);
-				assertTrue(transitionHashJoins.stream()
+				assertTrue(frontierJoins.stream()
+						.mapToDouble(join -> join.getDoubleMetricPlanned("plannedFrontierFactorCount"))
+						.max()
+						.orElse(0.0d) >= 4.0d,
+						"Expected the later repeated-predicate hop to retain the VALUES leaf and all three predicate "
+								+ "factors in one Frontier state. plan=" + optimized);
+				assertTrue(frontierJoins.stream()
 						.map(Join::getRightArg)
 						.allMatch(StatementPattern.class::isInstance),
-						"Expected each transition-costed hash join to retain its independently scanned statement "
-								+ "input. plan=" + optimized);
-				assertTrue(transitionHashJoins.stream()
+						"Expected each selected Frontier join to retain its statement-pattern input. plan="
+								+ optimized);
+				assertTrue(frontierJoins.stream()
 						.map(Join::getRightArg)
 						.map(StatementPattern.class::cast)
-						.allMatch(pattern -> "lmdb-frontier".equals(pattern
-								.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE))),
-						"An independently scanned hash input must retain Frontier's standalone provenance. plan="
+						.allMatch(pattern -> pattern.getDoubleMetricPlanned("plannedFrontierStateId") > 0.0d),
+						"Each statement-pattern input must retain its query-local Frontier state. plan="
+								+ optimized);
+				assertTrue(frontierJoins.stream()
+						.map(Join::getRightArg)
+						.map(StatementPattern.class::cast)
+						.map(pattern -> pattern
+								.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE))
+						.allMatch(source -> "lmdb-frontier".equals(source)
+								|| "lmdb-finite-binding-lookup".equals(source)),
+						"Frontier leaves must keep either sampled provenance or stronger exact-access provenance. plan="
 								+ optimized);
 			}
 		} finally {

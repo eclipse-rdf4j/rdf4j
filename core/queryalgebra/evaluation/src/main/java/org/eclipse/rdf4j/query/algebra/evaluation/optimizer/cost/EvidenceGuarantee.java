@@ -18,11 +18,12 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 public enum EvidenceGuarantee {
 	DATABASE_EXACT,
 	MEASURE_UNBIASED,
+	LEARNED_CALIBRATED,
 	CERTIFIED_BOUND_ONLY,
 	SCALAR_FALLBACK,
 	UNRESOLVED;
 
 	public boolean isComposablePointEstimate() {
-		return this == DATABASE_EXACT || this == MEASURE_UNBIASED;
+		return this == DATABASE_EXACT || this == MEASURE_UNBIASED || this == LEARNED_CALIBRATED;
 	}
 }

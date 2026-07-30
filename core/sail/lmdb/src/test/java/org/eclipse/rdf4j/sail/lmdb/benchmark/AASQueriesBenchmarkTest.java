@@ -169,7 +169,8 @@ class AASQueriesBenchmarkTest {
 			assertTrue(output.contains("value=https://admin-shell.io/aas/3/value"), output);
 			assertTrue(output.contains("plannerId=lmdb-packed-cascades"), output);
 			assertTrue(output.contains("optimizer.cascadesRule=packed-selected-plan"), output);
-			assertTrue(output.contains("plannedEstimateSource=lmdb-packed-cardinality"), output);
+			assertTrue(output.contains("plannedEstimateSource=lmdb-frontier")
+					|| output.contains("plannedEstimateSource=lmdb-packed-cardinality"), output);
 			assertTrue(output.contains("plannedIndexAccessMode=directLookup"), output);
 			assertTrue(output.contains("plannedLookupComponents=[S, P, O]"), output);
 		} finally {

@@ -85,7 +85,8 @@ class LmdbFilterSelectivityStats
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final String SIDECAR_SUFFIX = ".filters";
 	private static final String COLD_SYNOPSIS_SUFFIX = ".cold";
-	private static final int PERSIST_VERSION = 4;
+	private static final int LEGACY_PERSIST_VERSION = 4;
+	private static final int PERSIST_VERSION = 5;
 	private static final int SAMPLE_RESERVOIR_SIZE = 256;
 	private static final int ZERO_HIT_SAMPLE_MIN_EVIDENCE = SAMPLE_RESERVOIR_SIZE;
 	private static final int COLD_SYNOPSIS_MIN_MATCHING_ROWS = 32;
@@ -109,6 +110,7 @@ class LmdbFilterSelectivityStats
 	private final Map<PatternFilterKey, LearnedCounts> learnedByFilter = new HashMap<>();
 	private final Map<PatternFilterKey, LearnedCounts> learnedByTemplate = new HashMap<>();
 	private final Map<PatternKey, LearnedCounts> learnedByPattern = new HashMap<>();
+	private final Map<FilterSurfaceKey, LearnedCounts> learnedBySurface = new HashMap<>();
 	private final Map<PatternFilterKey, SampledPassRatio> sampledByFilter = new HashMap<>();
 	private final Map<PatternFilterKey, BackgroundSamplingRequest> backgroundSamplingRequests = new HashMap<>();
 	private final Map<RuntimeRowsKey, Double> expectedRuntimeRowsByPattern = new HashMap<>();
@@ -118,6 +120,7 @@ class LmdbFilterSelectivityStats
 	private long coldSynopsisMutationVersion = -1L;
 	private boolean coldSynopsisDirty;
 	private long backgroundSamplingSequence;
+	private long planningRevision;
 
 	LmdbFilterSelectivityStats(Path estimatorPath, TripleStore tripleStore, ValueStore valueStore) {
 		this(estimatorPath, tripleStore, valueStore, true, LmdbStoreConfig.OPTIMIZER_SAMPLING_MAX_MILLIS,
@@ -168,7 +171,7 @@ class LmdbFilterSelectivityStats
 	@Override
 	public synchronized void reset() {
 		boolean hasPersistedStats = !learnedByFilter.isEmpty() || !learnedByTemplate.isEmpty()
-				|| !learnedByPattern.isEmpty() || !sampledByFilter.isEmpty();
+				|| !learnedByPattern.isEmpty() || !learnedBySurface.isEmpty() || !sampledByFilter.isEmpty();
 		boolean hasVolatileStats = !backgroundSamplingRequests.isEmpty() || !expectedRuntimeRowsByPattern.isEmpty();
 		boolean hasColdSynopsis = coldSynopsis != null;
 		if (!hasPersistedStats && !hasVolatileStats && !hasColdSynopsis) {
@@ -177,6 +180,7 @@ class LmdbFilterSelectivityStats
 		learnedByFilter.clear();
 		learnedByTemplate.clear();
 		learnedByPattern.clear();
+		learnedBySurface.clear();
 		sampledByFilter.clear();
 		backgroundSamplingRequests.clear();
 		expectedRuntimeRowsByPattern.clear();
@@ -188,6 +192,9 @@ class LmdbFilterSelectivityStats
 		}
 		if (hasPersistedStats) {
 			dirty = true;
+		}
+		if (hasPersistedStats || hasColdSynopsis) {
+			planningRevision++;
 		}
 	}
 
@@ -229,23 +236,58 @@ class LmdbFilterSelectivityStats
 		recordFilterOutcome(key, filterKey, filterTemplateKey, passedCount, filteredCount, true);
 	}
 
-	void recordFilterOutcome(Filter filter, StatementPattern pattern, long passedCount, long filteredCount) {
-		if (filter == null || pattern == null || filter.getCondition() == null) {
+	synchronized void recordFilterOutcome(Filter filter, long passedCount, long filteredCount) {
+		StatementPattern legacyPattern = filter == null ? null
+				: LmdbEstimatorExpressionSupport.basePattern(filter.getArg());
+		recordFilterOutcome(filter, legacyPattern, passedCount, filteredCount);
+	}
+
+	synchronized void recordFilterOutcome(Filter filter, StatementPattern legacyPattern, long passedCount,
+			long filteredCount) {
+		if (filter == null || filter.getCondition() == null || (passedCount <= 0L && filteredCount <= 0L)) {
 			return;
 		}
-		PatternKey patternKey = FilterSelectivityKeys.patternKeyFor(pattern);
-		if (patternKey == null) {
+		boolean changed = false;
+		FilterSurfaceKey exact = FilterSurfaceKey.exact(filter);
+		FilterSurfaceKey generalized = FilterSurfaceKey.generalized(filter);
+		if (exact != null) {
+			learnedBySurface.computeIfAbsent(exact, ignored -> new LearnedCounts())
+					.add(passedCount, filteredCount);
+			changed = true;
+		}
+		if (generalized != null && !generalized.equals(exact)) {
+			learnedBySurface.computeIfAbsent(generalized, ignored -> new LearnedCounts())
+					.add(passedCount, filteredCount);
+			changed = true;
+		}
+		PatternKey patternKey = FilterSelectivityKeys.patternKeyFor(legacyPattern);
+		if (patternKey != null) {
+			changed |= addLegacyFilterOutcome(patternKey,
+					FilterSelectivityKeys.filterKeyFor(filter.getCondition()),
+					FilterSelectivityKeys.filterTemplateKeyFor(filter.getCondition(), legacyPattern),
+					passedCount, filteredCount, true);
+		}
+		if (!changed) {
 			return;
 		}
-		recordFilterOutcome(patternKey, FilterSelectivityKeys.filterKeyFor(filter.getCondition()),
-				FilterSelectivityKeys.filterTemplateKeyFor(filter.getCondition(), pattern), passedCount, filteredCount,
-				true);
+		dirty = true;
+		planningRevision++;
 	}
 
 	synchronized void recordFilterOutcome(PatternKey key, String filterKey, String filterTemplateKey,
 			long passedCount, long filteredCount, boolean includePatternAggregate) {
-		if (key == null || filterKey == null || (passedCount <= 0L && filteredCount <= 0L)) {
+		if (!addLegacyFilterOutcome(key, filterKey, filterTemplateKey, passedCount, filteredCount,
+				includePatternAggregate)) {
 			return;
+		}
+		dirty = true;
+		planningRevision++;
+	}
+
+	private boolean addLegacyFilterOutcome(PatternKey key, String filterKey, String filterTemplateKey,
+			long passedCount, long filteredCount, boolean includePatternAggregate) {
+		if (key == null || filterKey == null || (passedCount <= 0L && filteredCount <= 0L)) {
+			return false;
 		}
 
 		PatternFilterKey patternFilterKey = new PatternFilterKey(key, filterKey);
@@ -259,7 +301,26 @@ class LmdbFilterSelectivityStats
 		if (includePatternAggregate) {
 			learnedByPattern.computeIfAbsent(key, ignored -> new LearnedCounts()).add(passedCount, filteredCount);
 		}
-		dirty = true;
+		return true;
+	}
+
+	synchronized LearnedSurfaceEstimate estimateLearnedSurface(Filter filter) {
+		FilterSurfaceKey exact = FilterSurfaceKey.exact(filter);
+		LearnedCounts exactCounts = exact == null ? null : learnedBySurface.get(exact);
+		if (exactCounts != null && exactCounts.total() > 0L) {
+			return new LearnedSurfaceEstimate(exactCounts.passRatio(), exactCounts.total(), false, exact.toString());
+		}
+		FilterSurfaceKey generalized = FilterSurfaceKey.generalized(filter);
+		LearnedCounts generalizedCounts = generalized == null ? null : learnedBySurface.get(generalized);
+		if (generalizedCounts == null || generalizedCounts.total() <= 0L) {
+			return null;
+		}
+		return new LearnedSurfaceEstimate(generalizedCounts.passRatio(), generalizedCounts.total(), true,
+				generalized.toString());
+	}
+
+	synchronized long planningRevision() {
+		return planningRevision;
 	}
 
 	@Override
@@ -372,6 +433,7 @@ class LmdbFilterSelectivityStats
 		synchronized (this) {
 			sampledByFilter.put(key, sampled);
 			dirty = true;
+			planningRevision++;
 		}
 		return new PatternFilterSampleEstimate(sampled.passRatio, sampled.sampleSize);
 	}
@@ -616,6 +678,7 @@ class LmdbFilterSelectivityStats
 			synchronized (this) {
 				sampledByFilter.put(request.key, sampled);
 				dirty = true;
+				planningRevision++;
 			}
 			logger.info(
 					"LMDB background filter sampling sampled request: predicate={}, filterKey={}, passRatio={}, sampleSize={}, votes={}, foregroundNeeded={}, expectedRuntimeRows={}, expectedBenefitRows={}",
@@ -669,6 +732,11 @@ class LmdbFilterSelectivityStats
 			}
 			out.writeInt(sampledByFilter.size());
 			for (var entry : sampledByFilter.entrySet()) {
+				entry.getKey().writeTo(out);
+				entry.getValue().writeTo(out);
+			}
+			out.writeInt(learnedBySurface.size());
+			for (var entry : learnedBySurface.entrySet()) {
 				entry.getKey().writeTo(out);
 				entry.getValue().writeTo(out);
 			}
@@ -748,11 +816,12 @@ class LmdbFilterSelectivityStats
 		Map<PatternFilterKey, LearnedCounts> loadedTemplates = new HashMap<>();
 		Map<PatternKey, LearnedCounts> loadedPatternTotals = new HashMap<>();
 		Map<PatternFilterKey, SampledPassRatio> loadedSampled = new HashMap<>();
+		Map<FilterSurfaceKey, LearnedCounts> loadedSurfaces = new HashMap<>();
 
 		int persistedVersion;
 		try (DataInputStream in = new DataInputStream(Files.newInputStream(sidecarPath))) {
 			persistedVersion = in.readInt();
-			if (persistedVersion != PERSIST_VERSION) {
+			if (persistedVersion != LEGACY_PERSIST_VERSION && persistedVersion != PERSIST_VERSION) {
 				return;
 			}
 			SketchSnapshotIdentity persistedIdentity = SketchSnapshotIdentity.readFrom(in);
@@ -786,10 +855,23 @@ class LmdbFilterSelectivityStats
 			for (int i = 0; i < sampledEntries; i++) {
 				PatternFilterKey key = PatternFilterKey.readFrom(in);
 				SampledPassRatio sampled = SampledPassRatio.readFrom(in);
-				if (persistedVersion != PERSIST_VERSION || !isUsableSampledPassRatio(sampled)) {
+				if (!isUsableSampledPassRatio(sampled)) {
 					continue;
 				}
 				loadedSampled.put(key, sampled);
+			}
+			if (persistedVersion >= PERSIST_VERSION) {
+				int surfaceEntries = in.readInt();
+				if (surfaceEntries < 0 || surfaceEntries > MAX_BACKGROUND_SAMPLING_REQUESTS) {
+					throw new IOException("Invalid learned filter surface count: " + surfaceEntries);
+				}
+				for (int i = 0; i < surfaceEntries; i++) {
+					FilterSurfaceKey key = FilterSurfaceKey.readFrom(in);
+					LearnedCounts counts = LearnedCounts.readFrom(in);
+					if (counts.total() > 0L) {
+						loadedSurfaces.put(key, counts);
+					}
+				}
 			}
 		} catch (IOException | RuntimeException e) {
 			return;
@@ -802,6 +884,8 @@ class LmdbFilterSelectivityStats
 			learnedByTemplate.putAll(loadedTemplates);
 			learnedByPattern.clear();
 			learnedByPattern.putAll(loadedPatternTotals);
+			learnedBySurface.clear();
+			learnedBySurface.putAll(loadedSurfaces);
 			sampledByFilter.clear();
 			sampledByFilter.putAll(loadedSampled);
 			dirty = persistedVersion != PERSIST_VERSION;
@@ -1423,6 +1507,7 @@ class LmdbFilterSelectivityStats
 				coldSynopsis = completed;
 				coldSynopsisMutationVersion = publishedMutationVersion;
 				coldSynopsisDirty = true;
+				planningRevision++;
 			}
 			finished = true;
 		}
@@ -1629,6 +1714,9 @@ class LmdbFilterSelectivityStats
 					&& contextId == that.contextId;
 		}
 
+	}
+
+	record LearnedSurfaceEstimate(double passRatio, long evidenceCount, boolean generalized, String evidenceKey) {
 	}
 
 	private record PatternFilterKey(PatternKey patternKey, String filterKey) {

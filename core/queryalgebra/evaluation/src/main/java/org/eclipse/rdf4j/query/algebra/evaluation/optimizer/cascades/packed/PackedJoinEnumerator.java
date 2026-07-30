@@ -13,6 +13,9 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import java.util.Arrays;
 
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+
 /** Dense connected-subset join enumeration for one maximal inner-join region. */
 @PackedHotPath
 final class PackedJoinEnumerator {
@@ -649,7 +652,9 @@ final class PackedJoinEnumerator {
 		double secondWork = memo.winnerTotalCost(secondWinnerId);
 		double[] prefixContributionRows = { firstRows };
 		costEstimate.clear();
-		costContext.reset(factors, 0, 1, firstRows);
+		int firstEvidenceStateId = winnerEvidenceStateId(firstWinnerId);
+		int secondEvidenceStateId = winnerEvidenceStateId(secondWinnerId);
+		costContext.reset(factors, 0, 1, firstRows, firstEvidenceStateId);
 		costSession.estimate(factors[1], costContext, costEstimate);
 		outputRows = rowComposition.effectiveRows(costEstimate, factors, prefixContributionRows, 1, factors[1],
 				outputRows);
@@ -659,7 +664,8 @@ final class PackedJoinEnumerator {
 		double candidateCost = saturatedAdd(memo.winnerTotalCost(firstWinnerId), secondWork, outputRows);
 		double iteratorProbeWork = iteratorProbeWork(costEstimate);
 		candidateCost = saturatedAdd(candidateCost, iteratorProbeWork, 0.0d);
-		refineRootJoin(rootRelationId, factors, 1, firstRows, secondRows, outputRows, candidateCost);
+		refineRootJoin(rootRelationId, factors, 1, firstRows, secondRows, outputRows, candidateCost,
+				costEstimate.evidenceStateId(), firstEvidenceStateId, secondEvidenceStateId);
 		if (finiteNonNegative(joinEstimate.outputRows())) {
 			outputRows = joinEstimate.outputRows();
 		}
@@ -667,8 +673,11 @@ final class PackedJoinEnumerator {
 				? Math.max(memo.winnerTotalCost(firstWinnerId) + secondWork + iteratorProbeWork,
 						joinEstimate.workRows())
 				: candidateCost;
-		double hashCost = hashJoinCost(factors, 1, factors[1], firstRows,
-				memo.winnerTotalCost(firstWinnerId), secondRows, memo.winnerTotalCost(secondWinnerId), outputRows);
+		double hashCost = finiteFilterSemanticFallbackPending()
+				? Double.POSITIVE_INFINITY
+				: hashJoinCost(factors, 1, factors[1], firstRows,
+						memo.winnerTotalCost(firstWinnerId), secondRows, memo.winnerTotalCost(secondWinnerId),
+						outputRows);
 		return Math.min(iteratorCost, hashCost);
 	}
 
@@ -1026,9 +1035,11 @@ final class PackedJoinEnumerator {
 				}
 				double candidateCost = saturatedAdd(costs[subset], factorWork, candidateRows);
 				candidateCost = saturatedAdd(candidateCost, iteratorProbeWork, 0.0d);
-				if (combined == fullSet && costSession != null) {
+				if (combined == fullSet
+						&& (costSession != null || hasFiniteFilterSemanticFallback(rootRelationId))) {
 					refineRootJoin(rootRelationId, prefixRelations, prefixCount, rows[subset], rows[factorBit],
-							candidateRows, candidateCost);
+							candidateRows, candidateCost, costEstimate.evidenceStateId(),
+							evidenceStateIds[subset], evidenceStateIds[factorBit]);
 					if (finiteNonNegative(joinEstimate.outputRows())) {
 						candidateRows = joinEstimate.outputRows();
 					}
@@ -1038,9 +1049,11 @@ final class PackedJoinEnumerator {
 					}
 				}
 				if (costSession != null) {
-					double hashCost = hashJoinCost(prefixRelations, prefixCount,
-							factors[Integer.numberOfTrailingZeros(factorBit)], rows[subset], costs[subset],
-							rows[factorBit], costs[factorBit], candidateRows);
+					double hashCost = combined == fullSet && finiteFilterSemanticFallbackPending()
+							? Double.POSITIVE_INFINITY
+							: hashJoinCost(prefixRelations, prefixCount,
+									factors[Integer.numberOfTrailingZeros(factorBit)], rows[subset], costs[subset],
+									rows[factorBit], costs[factorBit], candidateRows);
 					candidateCost = Math.min(candidateCost, hashCost);
 				}
 				int candidatePreference = preferenceRanks[subset]
@@ -1140,6 +1153,7 @@ final class PackedJoinEnumerator {
 			currentGroupId = memo.winnerGroupId(currentWinnerId);
 			currentRows = memo.winnerOutputRows(currentWinnerId);
 			currentCost = memo.winnerTotalCost(currentWinnerId);
+			currentEvidenceStateId = winnerEvidenceStateId(currentWinnerId);
 			rowComposition.initializeInherited(prefixRelations, prefixCount, currentRows, prefixContributionRows);
 		}
 
@@ -1159,7 +1173,7 @@ final class PackedJoinEnumerator {
 			double factorWork = memo.winnerTotalCost(factorWinnerId);
 			costEstimate.clear();
 			if (costSession != null) {
-				costContext.reset(prefixRelations, 0, prefixCount, currentRows);
+				costContext.reset(prefixRelations, 0, prefixCount, currentRows, currentEvidenceStateId);
 				costSession.estimate(factorRelationId, costContext, costEstimate);
 				outputRows = rowComposition.effectiveRows(costEstimate, prefixRelations, prefixContributionRows,
 						prefixCount, factorRelationId, outputRows);
@@ -1215,6 +1229,7 @@ final class PackedJoinEnumerator {
 			childWinners[0] = currentWinnerId;
 			childWinners[1] = factorWinnerId;
 			joinEstimate.clear();
+			joinEstimate.setEvidenceStateId(costEstimate.evidenceStateId());
 			joinEstimate.setRows(outputRows, totalCost);
 			int metadataId = memo.addPhysicalMetadata(joinEstimate, outputRows, totalCost);
 			int tieBreakRank = rootJoin ? (Long.bitCount(rootRuleMask) << 1) | 1 : 0;
@@ -1238,6 +1253,7 @@ final class PackedJoinEnumerator {
 			currentGroupId = targetGroupId;
 			currentRows = memo.winnerOutputRows(currentWinnerId);
 			currentCost = memo.winnerTotalCost(currentWinnerId);
+			currentEvidenceStateId = winnerEvidenceStateId(currentWinnerId);
 			prefixRelations[prefixCount] = factorRelationId;
 			prefixContributionRows[prefixCount] = retainedEmittedCandidate
 					? factorContributionRows
@@ -1249,6 +1265,7 @@ final class PackedJoinEnumerator {
 				currentGroupId = memo.winnerGroupId(currentWinnerId);
 				currentRows = memo.winnerOutputRows(currentWinnerId);
 				currentCost = memo.winnerTotalCost(currentWinnerId);
+				currentEvidenceStateId = winnerEvidenceStateId(currentWinnerId);
 				rowComposition.initializeInherited(prefixRelations, prefixCount, currentRows, prefixContributionRows);
 			}
 		}
@@ -1347,9 +1364,12 @@ final class PackedJoinEnumerator {
 					}
 					double candidateCost = saturatedAdd(states.cost(stateId), factorWork, candidateRows);
 					candidateCost = saturatedAdd(candidateCost, iteratorProbeWork, 0.0d);
-					if ((subset | factorBit) == fullSet && costSession != null) {
+					if ((subset | factorBit) == fullSet
+							&& (costSession != null || hasFiniteFilterSemanticFallback(rootRelationId))) {
 						refineRootJoin(rootRelationId, prefixRelations, prefixCount, states.rows(stateId),
-								states.rows(factorStateId), candidateRows, candidateCost);
+								states.rows(factorStateId), candidateRows, candidateCost,
+								costEstimate.evidenceStateId(), states.evidenceStateId(stateId),
+								states.evidenceStateId(factorStateId));
 						if (finiteNonNegative(joinEstimate.outputRows())) {
 							candidateRows = joinEstimate.outputRows();
 						}
@@ -1359,9 +1379,11 @@ final class PackedJoinEnumerator {
 						}
 					}
 					if (costSession != null) {
-						double hashCost = hashJoinCost(prefixRelations, prefixCount, factors[factorOrdinal],
-								states.rows(stateId), states.cost(stateId), states.rows(factorStateId),
-								states.cost(factorStateId), candidateRows);
+						double hashCost = (subset | factorBit) == fullSet && finiteFilterSemanticFallbackPending()
+								? Double.POSITIVE_INFINITY
+								: hashJoinCost(prefixRelations, prefixCount, factors[factorOrdinal],
+										states.rows(stateId), states.cost(stateId), states.rows(factorStateId),
+										states.cost(factorStateId), candidateRows);
 						candidateCost = Math.min(candidateCost, hashCost);
 					}
 					int candidatePreference = states.preferenceRank(stateId)
@@ -1562,9 +1584,11 @@ final class PackedJoinEnumerator {
 			totalCost = saturatedAdd(totalCost, iteratorProbeWork, 0.0d);
 			boolean rootJoin = ordinal + 1 == factors.length;
 			boolean rootRefined = false;
-			if (rootJoin && costSession != null) {
+			if (rootJoin && (costSession != null || hasFiniteFilterSemanticFallback(rootRelationId))) {
+				int factorEvidenceStateId = winnerEvidenceStateId(factorWinnerId);
 				refineRootJoin(rootRelationId, costPrefix, costPrefixCount, currentRows,
-						selectedRowsByGroup[factorGroupId], outputRows, totalCost);
+						selectedRowsByGroup[factorGroupId], outputRows, totalCost, costEstimate.evidenceStateId(),
+						currentEvidenceStateId, factorEvidenceStateId);
 				rootRefined = true;
 				if (finiteNonNegative(joinEstimate.outputRows())) {
 					outputRows = joinEstimate.outputRows();
@@ -1574,8 +1598,10 @@ final class PackedJoinEnumerator {
 							joinEstimate.workRows());
 				}
 			}
-			double hashCost = hashJoinCost(costPrefix, costPrefixCount, factorRelationId, currentRows, currentCost,
-					selectedRowsByGroup[factorGroupId], independentFactorWork, outputRows);
+			double hashCost = rootJoin && finiteFilterSemanticFallbackPending()
+					? Double.POSITIVE_INFINITY
+					: hashJoinCost(costPrefix, costPrefixCount, factorRelationId, currentRows, currentCost,
+							selectedRowsByGroup[factorGroupId], independentFactorWork, outputRows);
 			if (existingGroups != null) {
 				combinedSubset |= factorBits == null ? 1 << ordinal : factorBits[ordinal];
 			}
@@ -1812,6 +1838,7 @@ final class PackedJoinEnumerator {
 		int retainedCount = prefixCount;
 		double currentRows = prefixRows;
 		double currentCost = 0.0d;
+		int currentEvidenceStateId = 0;
 		int anyPropertyId = memo.anyPropertyId();
 		for (int ordinal = 0; ordinal < factors.length; ordinal++) {
 			sortRemainingByBaseRows(factors, null, ordinal);
@@ -1829,6 +1856,7 @@ final class PackedJoinEnumerator {
 			double bestBaseRows = Double.POSITIVE_INFINITY;
 			double selectedRows = Double.NaN;
 			double selectedCost = Double.NaN;
+			int selectedEvidenceStateId = 0;
 			for (int candidateOrdinal = ordinal; candidateOrdinal < factors.length; candidateOrdinal++) {
 				int candidateRelationId = factors[candidateOrdinal];
 				boolean connected = connectedToPrefix(retainedRelations, retainedCount, candidateRelationId);
@@ -1842,7 +1870,7 @@ final class PackedJoinEnumerator {
 						candidateRelationId, baseRows, connected);
 				double factorWork = memo.winnerTotalCost(candidateWinnerId);
 				costEstimate.clear();
-				costContext.reset(retainedRelations, 0, retainedCount, currentRows);
+				costContext.reset(retainedRelations, 0, retainedCount, currentRows, currentEvidenceStateId);
 				costSession.estimate(candidateRelationId, costContext, costEstimate);
 				outputRows = rowComposition.effectiveRows(costEstimate, retainedRelations, retainedContributions,
 						retainedCount, candidateRelationId, outputRows);
@@ -1861,6 +1889,7 @@ final class PackedJoinEnumerator {
 					bestBaseRows = baseRows;
 					selectedRows = outputRows;
 					selectedCost = totalCost;
+					selectedEvidenceStateId = costEstimate.evidenceStateId();
 					retainedContributions[retainedCount] = contributionRows;
 				}
 			}
@@ -1871,6 +1900,7 @@ final class PackedJoinEnumerator {
 			retainedRelations[retainedCount++] = factors[ordinal];
 			currentRows = selectedRows;
 			currentCost = selectedCost;
+			currentEvidenceStateId = selectedEvidenceStateId;
 		}
 	}
 
@@ -1900,7 +1930,8 @@ final class PackedJoinEnumerator {
 					selectedRowsByGroup[factorGroupId], connected);
 			double factorWork = memo.winnerTotalCost(factorWinnerId);
 			costEstimate.clear();
-			costContext.reset(retainedRelations, 0, retainedCount, currentRows);
+			int currentEvidenceStateId = currentWinnerId == 0 ? 0 : winnerEvidenceStateId(currentWinnerId);
+			costContext.reset(retainedRelations, 0, retainedCount, currentRows, currentEvidenceStateId);
 			costSession.estimate(factorRelationId, costContext, costEstimate);
 			outputRows = rowComposition.effectiveRows(costEstimate, retainedRelations, retainedContributions,
 					retainedCount, factorRelationId, outputRows);
@@ -1931,8 +1962,10 @@ final class PackedJoinEnumerator {
 			totalCost = saturatedAdd(totalCost, iteratorProbeWork, 0.0d);
 			boolean rootJoin = ordinal + 1 == factors.length;
 			if (rootJoin) {
+				int factorEvidenceStateId = winnerEvidenceStateId(factorWinnerId);
 				refineRootJoin(rootRelationId, retainedRelations, retainedCount, currentRows,
-						selectedRowsByGroup[factorGroupId], outputRows, totalCost);
+						selectedRowsByGroup[factorGroupId], outputRows, totalCost, costEstimate.evidenceStateId(),
+						currentEvidenceStateId, factorEvidenceStateId);
 				if (finiteNonNegative(joinEstimate.outputRows())) {
 					outputRows = joinEstimate.outputRows();
 				}
@@ -2178,6 +2211,7 @@ final class PackedJoinEnumerator {
 			destination.setRows(source.outputRows(), source.workRows());
 		}
 		destination.setEvidenceStateId(source.evidenceStateId());
+		destination.setEvidenceGuarantee(source.evidenceGuarantee());
 		destination.setAccess(source.lookupComponentMask(), source.missingLookupComponentMask(),
 				source.indexPrefixLength(), source.accessRows(), source.invocations(), source.indexName(),
 				source.estimateSource(), source.accessMode());
@@ -2203,6 +2237,7 @@ final class PackedJoinEnumerator {
 		costEstimate.setContextualRows(memo.physicalMetadataOutputRows(metadataId),
 				memo.physicalMetadataWorkRows(metadataId));
 		costEstimate.setEvidenceStateId(memo.physicalMetadataEvidenceStateId(metadataId));
+		costEstimate.setEvidenceGuarantee(memo.physicalMetadataEvidenceGuarantee(metadataId));
 		costEstimate.setAccess(memo.physicalMetadataLookupMask(metadataId),
 				memo.physicalMetadataMissingLookupMask(metadataId),
 				memo.physicalMetadataIndexPrefixLength(metadataId),
@@ -2231,12 +2266,24 @@ final class PackedJoinEnumerator {
 	}
 
 	private void refineRootJoin(int rootRelationId, int[] prefixRelations, int prefixCount, double leftRows,
-			double rightRows, double baseRows, double baseWorkRows) {
+			double rightRows, double baseRows, double baseWorkRows, int baseEvidenceStateId,
+			int leftEvidenceStateId, int rightEvidenceStateId) {
 		joinEstimate.clear();
-		joinEstimate.setRows(baseRows, baseWorkRows);
-		costContext.reset(prefixRelations, 0, prefixCount, leftRows);
-		costContext.setOperatorInputs(leftRows, rightRows);
-		costSession.refineOperator(rootRelationId, costContext, joinEstimate);
+		boolean exactBinaryFiniteAccess = isFiniteFilterRecipe(rootRelationId)
+				&& factorCount(rootRelationId) == 2
+				&& costEstimate.evidenceGuarantee() == EvidenceGuarantee.DATABASE_EXACT;
+		if (exactBinaryFiniteAccess || !applyFiniteFilterSemanticFallback(rootRelationId)) {
+			joinEstimate.setRows(baseRows, baseWorkRows);
+		}
+		if (exactBinaryFiniteAccess) {
+			joinEstimate.setEvidenceGuarantee(EvidenceGuarantee.DATABASE_EXACT);
+		}
+		joinEstimate.setEvidenceStateId(baseEvidenceStateId);
+		if (costSession != null) {
+			costContext.reset(prefixRelations, 0, prefixCount, leftRows, baseEvidenceStateId);
+			costContext.setOperatorInputs(leftRows, rightRows, leftEvidenceStateId, rightEvidenceStateId);
+			costSession.refineOperator(rootRelationId, costContext, joinEstimate);
+		}
 		if (joinEstimate.hasComponentOutputRows()) {
 			/*
 			 * Root-join callers retain only the complete prefix scalar here, not an aligned contribution vector.
@@ -2245,6 +2292,77 @@ final class PackedJoinEnumerator {
 			joinEstimate.setReplacesChildWork(false);
 			joinEstimate.setRows(baseRows, baseWorkRows);
 		}
+	}
+
+	/**
+	 * A finite-values JOIN is semantically the FILTER it replaces. Until a provider proves a cheaper exact access
+	 * surface, rank it with the source FILTER's learned selectivity and full scan/evaluation work, plus the finite
+	 * anchor's own work. Provider refinement runs afterwards, so database-exact and Frontier evidence remain
+	 * authoritative.
+	 */
+	private boolean applyFiniteFilterSemanticFallback(int rootRelationId) {
+		if (!hasFiniteFilterSemanticFallback(rootRelationId)) {
+			return false;
+		}
+		double passRatio = query.relPlannedDoubleMetric(rootRelationId,
+				TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO_RAW);
+		if (!validPassRatio(passRatio)) {
+			passRatio = query.relPlannedDoubleMetric(rootRelationId,
+					TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO);
+		}
+		if (!validPassRatio(passRatio)) {
+			return false;
+		}
+		int anyPropertyId = memo.anyPropertyId();
+		int anchorWinnerId = memo.findWinner(query.relChild(rootRelationId, 0), anyPropertyId, 0, 0, 0);
+		int inputWinnerId = memo.findWinner(query.relChild(rootRelationId, 1), anyPropertyId, 0, 0, 0);
+		if (anchorWinnerId == 0 || inputWinnerId == 0) {
+			return false;
+		}
+		double inputRows = memo.winnerOutputRows(inputWinnerId);
+		if (!finiteNonNegative(inputRows)
+				|| !finiteNonNegative(memo.winnerTotalCost(inputWinnerId))
+				|| !finiteNonNegative(memo.winnerTotalCost(anchorWinnerId))) {
+			return false;
+		}
+		double semanticRows = query.relResultSizeEstimate(rootRelationId);
+		if (!finiteNonNegative(semanticRows)) {
+			semanticRows = inputRows * passRatio;
+			if (!finiteNonNegative(semanticRows)) {
+				semanticRows = Double.MAX_VALUE;
+			}
+		}
+		/*
+		 * A learned pass ratio describes the FILTER, not the generated access path. Keep the recipe available in the
+		 * memo, but do not let a generic join heuristic manufacture an access win from that learned evidence. The
+		 * provider refinement that runs immediately afterwards may replace this ceiling with database-exact, Frontier,
+		 * or other directly measured alternative-surface evidence.
+		 */
+		joinEstimate.setRows(semanticRows, Double.MAX_VALUE);
+		joinEstimate.setEstimateProvenance(null,
+				TelemetryMetricNames.ESTIMATE_FUSION_FINITE_FILTER_SEMANTIC_FALLBACK);
+		joinEstimate.putPlannedDoubleMetric("plannedFiniteFilterSemanticRows", semanticRows);
+		return true;
+	}
+
+	private boolean hasFiniteFilterSemanticFallback(int rootRelationId) {
+		if (!isFiniteFilterRecipe(rootRelationId) || query.relChildCount(rootRelationId) != 2) {
+			return false;
+		}
+		double passRatio = query.relPlannedDoubleMetric(rootRelationId,
+				TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO_RAW);
+		return validPassRatio(passRatio)
+				|| validPassRatio(query.relPlannedDoubleMetric(rootRelationId,
+						TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO));
+	}
+
+	private boolean finiteFilterSemanticFallbackPending() {
+		return TelemetryMetricNames.ESTIMATE_FUSION_FINITE_FILTER_SEMANTIC_FALLBACK
+				.equals(joinEstimate.estimateFusion());
+	}
+
+	private static boolean validPassRatio(double passRatio) {
+		return Double.isFinite(passRatio) && passRatio >= 0.0d && passRatio <= 1.0d;
 	}
 
 	private boolean connectedToPrefix(int[] factors, int prefixCount, int factorRelationId) {

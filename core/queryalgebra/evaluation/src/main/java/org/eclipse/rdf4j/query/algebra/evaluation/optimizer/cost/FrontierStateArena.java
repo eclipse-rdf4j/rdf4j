@@ -51,6 +51,7 @@ public final class FrontierStateArena implements AutoCloseable {
 	private double[] effectiveSampleSize;
 	private double[] maximumWeightFraction;
 	private double[] certifiedUpperBound;
+	private double[] cumulativeWeightScales;
 	private int[] intervalKinds;
 	private int[] guarantees;
 	private int[] zeroStatuses;
@@ -64,7 +65,9 @@ public final class FrontierStateArena implements AutoCloseable {
 	private int[] firstParentStateIds;
 	private int[] secondParentStateIds;
 	private int[] operationRecipeIds;
+	private int[] payloadOwnerStateIds;
 	private FrontierPayloadBlock[] payloadBlocks;
+	private EvidenceCalibrationSummary[] calibrations;
 	private byte[] payloadStatuses;
 	private int[] payloadPinCounts;
 	private int[] exactAtomCounts;
@@ -168,6 +171,42 @@ public final class FrontierStateArena implements AutoCloseable {
 	}
 
 	/**
+	 * Declares one additional query-local canonical key after the initial universe has been sealed.
+	 *
+	 * <p>
+	 * Operator states whose logical factor set is determined by physical exploration use this path. The key is interned
+	 * without materializing a summary or payload, so preparation and memory are proportional to states that are
+	 * actually explored rather than to the powerset of possible operator inputs.
+	 */
+	public void declareCanonicalState(FrontierStateKey key) {
+		ensureOpen();
+		Objects.requireNonNull(key, "key");
+		if (!canonicalUniverseSealed) {
+			throw new IllegalStateException("additional canonical keys require a sealed initial universe");
+		}
+		if (canonicalStateId(key) != 0) {
+			return;
+		}
+		ensureCanonicalCapacity(canonicalCount + 1);
+		int slot = canonicalSlot(key, canonicalSlots);
+		if (canonicalSlots[slot] != 0) {
+			return;
+		}
+		int stateId = highWaterStateId + 1;
+		ensureCapacity(stateId);
+		long retainedBytes = key.retainedBytes();
+		reservePersistent(retainedBytes);
+		keys[stateId] = key;
+		layouts[stateId] = key.frontier();
+		deterministicSeeds[stateId] = key.deterministicSeed();
+		canonicalSlots[slot] = stateId;
+		canonicalCount++;
+		highWaterStateId = stateId;
+		allocatedBytes += retainedBytes;
+		updatePeak();
+	}
+
+	/**
 	 * Interns one canonical logical state. Repeated physical derivations of the same key return the existing state.
 	 */
 	public EvidenceStateRef intern(FrontierStateKey key, EvidenceStateSummary summary) {
@@ -254,6 +293,121 @@ public final class FrontierStateArena implements AutoCloseable {
 		return deterministicSeeds[stateId];
 	}
 
+	/**
+	 * Applies learned cardinality evidence as an immutable O(1) overlay over a composable raw Frontier state.
+	 *
+	 * <p>
+	 * Particle arrays remain owned by the raw state. Payload leases expose effective weights through the cumulative
+	 * scale, and the next materializing transform folds that scale into its output payload.
+	 */
+	public EvidenceStateRef calibrate(
+			EvidenceStateRef rawState,
+			EvidenceCalibrationSummary requestedCalibration,
+			int operationRecipeId) {
+		int rawStateId = validate(rawState);
+		Objects.requireNonNull(requestedCalibration, "requestedCalibration");
+		if (operationRecipeId < 0) {
+			throw new IllegalArgumentException("operationRecipeId must be nonnegative");
+		}
+		if (rawState.summary().guarantee() == EvidenceGuarantee.DATABASE_EXACT) {
+			return rawState;
+		}
+		if (!rawState.summary().guarantee().isComposablePointEstimate()
+				|| payloadStatus(rawState) == FrontierPayloadStatus.NONE) {
+			throw new IllegalArgumentException("learned calibration requires a composable Frontier payload");
+		}
+		if (!approximatelyEqual(rawState.summary().pointRows(), requestedCalibration.rawRows())) {
+			throw new IllegalArgumentException("calibration rawRows must equal the raw Frontier point estimate");
+		}
+		if (containsEvidenceKey(rawStateId, requestedCalibration.evidenceKey())) {
+			throw new IllegalArgumentException("learned evidence key is already present in this lineage");
+		}
+
+		EvidenceCalibrationSummary calibration = boundedCalibration(rawState.summary(), requestedCalibration);
+		EvidenceStateSummary calibratedSummary;
+		boolean composableOverlay;
+		if (calibration.rawRows() == 0.0d && calibration.finalRows() > 0.0d) {
+			calibratedSummary = summaryOnlyCalibration(
+					rawState.summary(),
+					calibration.finalRows(),
+					"learned-positive-without-supporting-particles");
+			composableOverlay = false;
+		} else if (calibration.finalRows() == 0.0d) {
+			calibratedSummary = summaryOnlyCalibration(
+					rawState.summary(),
+					0.0d,
+					"learned-calibration-zero-mass");
+			composableOverlay = false;
+		} else {
+			calibratedSummary = calibratedSummary(rawState.summary(), calibration);
+			composableOverlay = true;
+		}
+
+		int stateId = highWaterStateId + 1;
+		ensureCapacity(stateId);
+		long retainedBytes = saturatedAdd(
+				summaryRetainedBytes(calibratedSummary),
+				calibrationRetainedBytes(calibration));
+		reservePersistent(retainedBytes);
+		EvidenceStateRef reference = materializeState(
+				stateId,
+				keys[rawStateId],
+				layouts[rawStateId],
+				calibratedSummary,
+				deterministicSeeds[rawStateId]);
+		operations[stateId] = (byte) FrontierStateOperation.CALIBRATE.ordinal();
+		firstParentStateIds[stateId] = rawStateId;
+		operationRecipeIds[stateId] = operationRecipeId;
+		calibrations[stateId] = calibration;
+		if (composableOverlay) {
+			int payloadOwnerStateId = payloadStateId(rawStateId);
+			payloadOwnerStateIds[stateId] = payloadOwnerStateId;
+			cumulativeWeightScales[stateId] = multiplyScale(
+					cumulativeWeightScales[rawStateId],
+					calibration.factor());
+		}
+		allocatedBytes += retainedBytes;
+		updatePeak();
+		highWaterStateId = stateId;
+		return reference;
+	}
+
+	/**
+	 * Returns calibration provenance for a {@link FrontierStateOperation#CALIBRATE} state.
+	 *
+	 * @return the immutable calibration summary, or {@code null} for a raw state
+	 */
+	public EvidenceCalibrationSummary calibration(EvidenceStateRef reference) {
+		return calibrations[validate(reference)];
+	}
+
+	/**
+	 * Returns whether the supplied learned evidence key is already present anywhere in this state's provenance.
+	 */
+	public boolean containsCalibrationEvidence(EvidenceStateRef reference, String evidenceKey) {
+		int stateId = validate(reference);
+		String normalized = Objects.requireNonNull(evidenceKey, "evidenceKey").trim();
+		return !normalized.isEmpty() && containsEvidenceKey(stateId, normalized);
+	}
+
+	/**
+	 * Returns the nearest calibration in the state's lineage, or {@code null} when it is entirely raw.
+	 */
+	public EvidenceCalibrationSummary nearestCalibration(EvidenceStateRef reference) {
+		return nearestCalibration(validate(reference));
+	}
+
+	/**
+	 * Returns the cumulative uniform calibration factor when the lineage has one unambiguous scale.
+	 *
+	 * <p>
+	 * A two-parent transform with differently calibrated inputs has no single scalar counterfactual and returns
+	 * {@link Double#NaN}.
+	 */
+	public double cumulativeCalibrationFactor(EvidenceStateRef reference) {
+		return cumulativeCalibrationFactor(validate(reference));
+	}
+
 	public FrontierPayloadWriter newPayloadWriter(
 			FrontierStateKey key,
 			int[] exactCountsByStratum,
@@ -329,6 +483,7 @@ public final class FrontierStateArena implements AutoCloseable {
 			firstParentStateIds[stateId] = firstParentStateId;
 			secondParentStateIds[stateId] = secondParentStateId;
 			operationRecipeIds[stateId] = operationRecipeId;
+			payloadOwnerStateIds[stateId] = stateId;
 			payloadBlocks[stateId] = block;
 			exactAtomCounts[stateId] = block.exactCount();
 			residualParticleCounts[stateId] = block.residualCount();
@@ -343,24 +498,162 @@ public final class FrontierStateArena implements AutoCloseable {
 		}
 	}
 
+	/**
+	 * Materializes a lineage-specific payload without occupying the canonical slot for {@code key}.
+	 *
+	 * <p>
+	 * This is required after learned calibration: the same logical factor set may be explored both with raw evidence
+	 * and through one or more calibrated lineages, whose effective weights are intentionally different. The declared
+	 * canonical key and its deterministic seed are shared, while the payload, summary, and provenance remain distinct.
+	 */
+	public EvidenceStateRef derivePayload(
+			FrontierStateKey key,
+			EvidenceStateSummary summary,
+			FrontierStateOperation operation,
+			EvidenceStateRef firstParent,
+			EvidenceStateRef secondParent,
+			int operationRecipeId,
+			FrontierPayloadWriter writer) {
+		ensureOpen();
+		Objects.requireNonNull(key, "key");
+		Objects.requireNonNull(summary, "summary");
+		Objects.requireNonNull(operation, "operation");
+		Objects.requireNonNull(writer, "writer");
+		int canonicalStateId = canonicalStateId(key);
+		if (!canonicalUniverseSealed || canonicalStateId == 0) {
+			throw new IllegalStateException("derived payload states require a predeclared canonical key");
+		}
+		FrontierStateKey declaredKey = keys[canonicalStateId];
+		if (writer.arena() != this || !declaredKey.equals(writer.key())) {
+			throw new IllegalArgumentException("payload writer belongs to another arena or canonical key");
+		}
+		if (!summary.guarantee().isComposablePointEstimate()) {
+			throw new IllegalArgumentException("only composable evidence may carry a frontier payload");
+		}
+		if (operation == FrontierStateOperation.SUMMARY_ONLY
+				|| operation == FrontierStateOperation.UNRESOLVED
+				|| operation == FrontierStateOperation.CALIBRATE) {
+			throw new IllegalArgumentException("operation cannot materialize a derived payload");
+		}
+		if (operation == FrontierStateOperation.EXACT_LEAF) {
+			throw new IllegalArgumentException("database-exact leaves must occupy their canonical state");
+		}
+		validateProvenance(declaredKey, operation, firstParent, secondParent, operationRecipeId);
+		try {
+			FrontierPayloadBlock block = writer.finish();
+			validatePayloadSummary(summary, block);
+			validateInheritedRandomMass(firstParent, secondParent, block);
+			int stateId = highWaterStateId + 1;
+			ensureCapacity(stateId);
+			long retainedBytes = summaryRetainedBytes(summary);
+			reservePersistent(retainedBytes);
+			EvidenceStateRef reference = materializeState(
+					stateId,
+					declaredKey,
+					declaredKey.frontier(),
+					summary,
+					declaredKey.deterministicSeed());
+			operations[stateId] = (byte) operation.ordinal();
+			firstParentStateIds[stateId] = stateId(firstParent);
+			secondParentStateIds[stateId] = stateId(secondParent);
+			operationRecipeIds[stateId] = operationRecipeId;
+			payloadOwnerStateIds[stateId] = stateId;
+			payloadBlocks[stateId] = block;
+			exactAtomCounts[stateId] = block.exactCount();
+			residualParticleCounts[stateId] = block.residualCount();
+			payloadBytesByState[stateId] = block.retainedBytes;
+			payloadDigestHigh[stateId] = block.digestHigh();
+			payloadDigestLow[stateId] = block.digestLow();
+			payloadStatuses[stateId] = (byte) FrontierPayloadStatus.RESIDENT.ordinal();
+			writer.transferToResident();
+			allocatedBytes += retainedBytes;
+			updatePeak();
+			highWaterStateId = stateId;
+			return reference;
+		} catch (RuntimeException | Error failure) {
+			writer.close();
+			throw failure;
+		}
+	}
+
+	/**
+	 * Appends a lineage-specific non-composable state without occupying the canonical slot for {@code key}.
+	 *
+	 * <p>
+	 * This is used for typed local boundaries discovered while transforming a calibrated lineage. Keeping the declared
+	 * key and parent provenance makes the degradation auditable, while deliberately omitting a payload prevents later
+	 * operators from composing unsupported mass.
+	 */
+	public EvidenceStateRef deriveSummary(
+			FrontierStateKey key,
+			EvidenceStateSummary summary,
+			FrontierStateOperation operation,
+			EvidenceStateRef firstParent,
+			EvidenceStateRef secondParent,
+			int operationRecipeId) {
+		ensureOpen();
+		Objects.requireNonNull(key, "key");
+		Objects.requireNonNull(summary, "summary");
+		Objects.requireNonNull(operation, "operation");
+		int canonicalStateId = canonicalStateId(key);
+		if (!canonicalUniverseSealed || canonicalStateId == 0) {
+			throw new IllegalStateException("derived summary states require a predeclared canonical key");
+		}
+		if (summary.guarantee().isComposablePointEstimate()) {
+			throw new IllegalArgumentException("a composable derived state requires a frontier payload");
+		}
+		if (operation != FrontierStateOperation.SUMMARY_ONLY
+				&& operation != FrontierStateOperation.UNRESOLVED) {
+			throw new IllegalArgumentException("derived summary operation must be non-replayable");
+		}
+		FrontierStateKey declaredKey = keys[canonicalStateId];
+		validateProvenance(declaredKey, operation, firstParent, secondParent, operationRecipeId);
+
+		int stateId = highWaterStateId + 1;
+		ensureCapacity(stateId);
+		long retainedBytes = summaryRetainedBytes(summary);
+		reservePersistent(retainedBytes);
+		EvidenceStateRef reference = materializeState(
+				stateId,
+				declaredKey,
+				declaredKey.frontier(),
+				summary,
+				declaredKey.deterministicSeed());
+		operations[stateId] = (byte) operation.ordinal();
+		firstParentStateIds[stateId] = stateId(firstParent);
+		secondParentStateIds[stateId] = stateId(secondParent);
+		operationRecipeIds[stateId] = operationRecipeId;
+		allocatedBytes += retainedBytes;
+		updatePeak();
+		highWaterStateId = stateId;
+		return reference;
+	}
+
 	public FrontierPayloadStatus payloadStatus(EvidenceStateRef reference) {
-		return PAYLOAD_STATUSES[payloadStatuses[validate(reference)]];
+		int stateId = validate(reference);
+		return PAYLOAD_STATUSES[payloadStatuses[payloadStateId(stateId)]];
 	}
 
 	public FrontierPayloadLease openPayload(EvidenceStateRef reference) {
 		int stateId = validate(reference);
-		if (PAYLOAD_STATUSES[payloadStatuses[stateId]] != FrontierPayloadStatus.RESIDENT) {
+		int payloadStateId = payloadStateId(stateId);
+		if (PAYLOAD_STATUSES[payloadStatuses[payloadStateId]] != FrontierPayloadStatus.RESIDENT) {
 			throw new IllegalStateException("frontier payload is not resident");
 		}
-		if (payloadPinCounts[stateId] == Integer.MAX_VALUE) {
+		if (payloadPinCounts[payloadStateId] == Integer.MAX_VALUE) {
 			throw new IllegalStateException("frontier payload pin count exhausted");
 		}
 		if (openPayloadLeaseCount == Integer.MAX_VALUE) {
 			throw new IllegalStateException("frontier payload lease count exhausted");
 		}
 		requireAvailableBytes(PAYLOAD_LEASE_BYTES, FrontierMemoryPurpose.PAYLOAD_LEASE);
-		FrontierPayloadLease lease = new FrontierPayloadLease(this, reference, payloadBlocks[stateId]);
-		payloadPinCounts[stateId]++;
+		FrontierPayloadLease lease = new FrontierPayloadLease(
+				this,
+				reference,
+				payloadStateId,
+				payloadBlocks[payloadStateId],
+				cumulativeWeightScales[stateId]);
+		payloadPinCounts[payloadStateId]++;
 		openPayloadLeaseCount++;
 		temporaryReservedBytes += PAYLOAD_LEASE_BYTES;
 		updatePeak();
@@ -375,16 +668,17 @@ public final class FrontierStateArena implements AutoCloseable {
 		if (payloadStatus(reference) != FrontierPayloadStatus.RESIDENT) {
 			return 0L;
 		}
-		if (payloadPinCounts[stateId] != 0) {
+		int payloadStateId = payloadStateId(stateId);
+		if (payloadPinCounts[payloadStateId] != 0) {
 			throw new IllegalStateException("pinned frontier payload cannot be evicted");
 		}
 		FrontierStateOperation operation = operation(reference);
 		if (operation == FrontierStateOperation.SUMMARY_ONLY || operation == FrontierStateOperation.UNRESOLVED) {
 			throw new IllegalStateException("frontier state does not have replayable provenance");
 		}
-		long released = payloadBytesByState[stateId];
-		payloadBlocks[stateId] = null;
-		payloadStatuses[stateId] = (byte) FrontierPayloadStatus.EVICTED.ordinal();
+		long released = payloadBytesByState[payloadStateId];
+		payloadBlocks[payloadStateId] = null;
+		payloadStatuses[payloadStateId] = (byte) FrontierPayloadStatus.EVICTED.ordinal();
 		residentPayloadBytes -= released;
 		return released;
 	}
@@ -394,16 +688,17 @@ public final class FrontierStateArena implements AutoCloseable {
 			int[] exactCountsByStratum,
 			int[] residualCountsByStratum) {
 		int stateId = validate(reference);
+		int payloadStateId = payloadStateId(stateId);
 		if (payloadStatus(reference) != FrontierPayloadStatus.EVICTED) {
 			throw new IllegalStateException("frontier payload is not evicted");
 		}
-		if (sumCounts(exactCountsByStratum) != exactAtomCounts[stateId]
-				|| sumCounts(residualCountsByStratum) != residualParticleCounts[stateId]) {
+		if (sumCounts(exactCountsByStratum) != exactAtomCounts[payloadStateId]
+				|| sumCounts(residualCountsByStratum) != residualParticleCounts[payloadStateId]) {
 			throw new IllegalArgumentException("rematerialized payload counts do not match the immutable descriptor");
 		}
 		return new FrontierPayloadWriter(
 				this,
-				keys[stateId],
+				keys[payloadStateId],
 				exactCountsByStratum,
 				residualCountsByStratum,
 				FrontierMemoryPurpose.REMATERIALIZATION);
@@ -411,27 +706,28 @@ public final class FrontierStateArena implements AutoCloseable {
 
 	public void restorePayload(EvidenceStateRef reference, FrontierPayloadWriter writer) {
 		int stateId = validate(reference);
+		int payloadStateId = payloadStateId(stateId);
 		Objects.requireNonNull(writer, "writer");
 		if (payloadStatus(reference) != FrontierPayloadStatus.EVICTED) {
 			throw new IllegalStateException("frontier payload is not evicted");
 		}
-		if (writer.arena() != this || !keys[stateId].equals(writer.key())) {
+		if (writer.arena() != this || !keys[payloadStateId].equals(writer.key())) {
 			throw new IllegalArgumentException("rematerialization writer belongs to another state");
 		}
 		try {
 			FrontierPayloadBlock block = writer.finish();
-			if (block.exactCount() != exactAtomCounts[stateId]
-					|| block.residualCount() != residualParticleCounts[stateId]
-					|| block.digestHigh() != payloadDigestHigh[stateId]
-					|| block.digestLow() != payloadDigestLow[stateId]) {
+			if (block.exactCount() != exactAtomCounts[payloadStateId]
+					|| block.residualCount() != residualParticleCounts[payloadStateId]
+					|| block.digestHigh() != payloadDigestHigh[payloadStateId]
+					|| block.digestLow() != payloadDigestLow[payloadStateId]) {
 				throw new IllegalStateException("rematerialized payload does not match its deterministic descriptor");
 			}
-			validatePayloadSummary(reference.summary(), block);
+			validatePayloadSummary(references[payloadStateId].summary(), block);
 			long payloadBytes = block.retainedBytes;
 			writer.transferToResident();
-			payloadBlocks[stateId] = block;
-			payloadBytesByState[stateId] = payloadBytes;
-			payloadStatuses[stateId] = (byte) FrontierPayloadStatus.RESIDENT.ordinal();
+			payloadBlocks[payloadStateId] = block;
+			payloadBytesByState[payloadStateId] = payloadBytes;
+			payloadStatuses[payloadStateId] = (byte) FrontierPayloadStatus.RESIDENT.ordinal();
 		} catch (RuntimeException | Error failure) {
 			writer.close();
 			throw failure;
@@ -440,6 +736,16 @@ public final class FrontierStateArena implements AutoCloseable {
 
 	public FrontierStateOperation operation(EvidenceStateRef reference) {
 		return STATE_OPERATIONS[operations[validate(reference)]];
+	}
+
+	/** Returns the number of database-exact atoms retained by this state's payload. */
+	public int exactAtomCount(EvidenceStateRef reference) {
+		return exactAtomCounts[payloadStateId(validate(reference))];
+	}
+
+	/** Returns the number of sampled particles retained by this state's payload. */
+	public int residualParticleCount(EvidenceStateRef reference) {
+		return residualParticleCounts[payloadStateId(validate(reference))];
 	}
 
 	public int parentCount(EvidenceStateRef reference) {
@@ -515,6 +821,7 @@ public final class FrontierStateArena implements AutoCloseable {
 		effectiveSampleSize[stateId] = summary.effectiveSampleSize();
 		maximumWeightFraction[stateId] = summary.maximumWeightFraction();
 		certifiedUpperBound[stateId] = summary.certifiedUpperBound();
+		cumulativeWeightScales[stateId] = 1.0d;
 		intervalKinds[stateId] = summary.intervalKind().ordinal();
 		guarantees[stateId] = summary.guarantee().ordinal();
 		zeroStatuses[stateId] = summary.zeroStatus().ordinal();
@@ -580,6 +887,7 @@ public final class FrontierStateArena implements AutoCloseable {
 		effectiveSampleSize = null;
 		maximumWeightFraction = null;
 		certifiedUpperBound = null;
+		cumulativeWeightScales = null;
 		intervalKinds = null;
 		guarantees = null;
 		zeroStatuses = null;
@@ -593,7 +901,9 @@ public final class FrontierStateArena implements AutoCloseable {
 		firstParentStateIds = null;
 		secondParentStateIds = null;
 		operationRecipeIds = null;
+		payloadOwnerStateIds = null;
 		payloadBlocks = null;
+		calibrations = null;
 		payloadStatuses = null;
 		payloadPinCounts = null;
 		exactAtomCounts = null;
@@ -622,15 +932,18 @@ public final class FrontierStateArena implements AutoCloseable {
 		return reference.stateId();
 	}
 
-	void releasePayload(EvidenceStateRef reference) {
+	void releasePayload(EvidenceStateRef reference, int payloadOwnerStateId) {
 		int stateId = validate(reference);
-		if (payloadPinCounts[stateId] <= 0) {
+		if (payloadStateId(stateId) != payloadOwnerStateId) {
+			throw new IllegalStateException("frontier payload owner changed while leased");
+		}
+		if (payloadPinCounts[payloadOwnerStateId] <= 0) {
 			throw new IllegalStateException("frontier payload is not pinned");
 		}
 		if (openPayloadLeaseCount <= 0 || temporaryReservedBytes < PAYLOAD_LEASE_BYTES) {
 			throw new IllegalStateException("invalid Frontier payload-lease release");
 		}
-		payloadPinCounts[stateId]--;
+		payloadPinCounts[payloadOwnerStateId]--;
 		openPayloadLeaseCount--;
 		temporaryReservedBytes -= PAYLOAD_LEASE_BYTES;
 	}
@@ -731,35 +1044,42 @@ public final class FrontierStateArena implements AutoCloseable {
 		int parentCount = firstParent == null ? 0 : secondParent == null ? 1 : 2;
 		boolean valid = switch (operation) {
 		case EXACT_LEAF, COORDINATED_STAR, SUMMARY_ONLY -> parentCount == 0;
-		case BRIDGE_TRANSFER, PROBE_FACTOR, RESOLVE_OUTER_KERNEL, RESOLVE_OUTER_EXPANSION, PROJECT, RESTRICT -> parentCount == 1;
-		case UNION -> parentCount == 2;
+		case BRIDGE_TRANSFER, BRIDGE_MUTATION, PROBE_FACTOR, RESOLVE_OUTER_KERNEL, RESOLVE_OUTER_EXPANSION, PROJECT, RESTRICT, CALIBRATE -> parentCount == 1;
+		case JOIN, CARTESIAN, AVERAGE_DESIGN_LANES, UNION -> parentCount == 2;
 		case UNRESOLVED -> true;
 		};
 		if (!valid) {
 			throw new IllegalArgumentException("invalid parent arity for " + operation);
 		}
-		validateParentCompatibility(childKey, firstParent);
-		validateParentCompatibility(childKey, secondParent);
+		validateParentCompatibility(childKey, firstParent, false);
+		validateParentCompatibility(childKey, secondParent,
+				operation == FrontierStateOperation.CARTESIAN
+						|| operation == FrontierStateOperation.AVERAGE_DESIGN_LANES);
 	}
 
-	private void validateParentCompatibility(FrontierStateKey childKey, EvidenceStateRef parent) {
+	private void validateParentCompatibility(FrontierStateKey childKey, EvidenceStateRef parent,
+			boolean requireIndependentLane) {
 		if (parent == null) {
 			return;
 		}
 		int parentStateId = validate(parent);
 		FrontierStateKey parentKey = keys[parentStateId];
-		FrontierPayloadStatus parentStatus = PAYLOAD_STATUSES[payloadStatuses[parentStateId]];
+		FrontierPayloadStatus parentStatus = payloadStatus(parent);
 		if (parentKey == null
 				|| !parent.summary().guarantee().isComposablePointEstimate()
 				|| (parentStatus != FrontierPayloadStatus.RESIDENT && parentStatus != FrontierPayloadStatus.EVICTED)) {
 			throw new IllegalArgumentException("frontier transforms require canonical composable payload parents");
 		}
-		if (parentKey.snapshotStoreIdHigh() != childKey.snapshotStoreIdHigh()
-				|| parentKey.snapshotStoreIdLow() != childKey.snapshotStoreIdLow()
-				|| parentKey.snapshotEpoch() != childKey.snapshotEpoch()
-				|| parentKey.seedVersion() != childKey.seedVersion()
-				|| parentKey.laneFamily() != childKey.laneFamily()
-				|| parentKey.laneIndex() != childKey.laneIndex()) {
+		boolean sameSnapshot = parentKey.snapshotStoreIdHigh() == childKey.snapshotStoreIdHigh()
+				&& parentKey.snapshotStoreIdLow() == childKey.snapshotStoreIdLow()
+				&& parentKey.snapshotEpoch() == childKey.snapshotEpoch()
+				&& parentKey.seedVersion() == childKey.seedVersion();
+		boolean compatibleLane = requireIndependentLane
+				? parentKey.laneFamily() == childKey.laneFamily()
+						&& parentKey.laneIndex() != childKey.laneIndex()
+				: parentKey.laneFamily() == childKey.laneFamily()
+						&& parentKey.laneIndex() == childKey.laneIndex();
+		if (!sameSnapshot || !compatibleLane) {
 			throw new IllegalArgumentException("frontier parent and child sampling identities differ");
 		}
 	}
@@ -779,7 +1099,137 @@ public final class FrontierStateArena implements AutoCloseable {
 
 	private boolean hasResidualParticles(EvidenceStateRef reference) {
 		return reference != null
-				&& references[validate(reference)].summary().guarantee() == EvidenceGuarantee.MEASURE_UNBIASED;
+				&& references[validate(reference)].summary().guarantee() != EvidenceGuarantee.DATABASE_EXACT;
+	}
+
+	private int payloadStateId(int stateId) {
+		int ownerStateId = payloadOwnerStateIds[stateId];
+		return ownerStateId == 0 ? stateId : ownerStateId;
+	}
+
+	private boolean containsEvidenceKey(int stateId, String evidenceKey) {
+		EvidenceCalibrationSummary calibration = calibrations[stateId];
+		if (calibration != null && calibration.evidenceKey().equals(evidenceKey)) {
+			return true;
+		}
+		int firstParentStateId = firstParentStateIds[stateId];
+		if (firstParentStateId != 0 && containsEvidenceKey(firstParentStateId, evidenceKey)) {
+			return true;
+		}
+		int secondParentStateId = secondParentStateIds[stateId];
+		return secondParentStateId != 0 && containsEvidenceKey(secondParentStateId, evidenceKey);
+	}
+
+	private EvidenceCalibrationSummary nearestCalibration(int stateId) {
+		EvidenceCalibrationSummary calibration = calibrations[stateId];
+		if (calibration != null) {
+			return calibration;
+		}
+		int firstParentStateId = firstParentStateIds[stateId];
+		if (firstParentStateId != 0) {
+			EvidenceCalibrationSummary inherited = nearestCalibration(firstParentStateId);
+			if (inherited != null) {
+				return inherited;
+			}
+		}
+		int secondParentStateId = secondParentStateIds[stateId];
+		return secondParentStateId == 0 ? null : nearestCalibration(secondParentStateId);
+	}
+
+	private double cumulativeCalibrationFactor(int stateId) {
+		double local = calibrations[stateId] == null ? 1.0d : calibrations[stateId].factor();
+		int firstParentStateId = firstParentStateIds[stateId];
+		int secondParentStateId = secondParentStateIds[stateId];
+		double inherited;
+		if (firstParentStateId == 0) {
+			inherited = secondParentStateId == 0 ? 1.0d : cumulativeCalibrationFactor(secondParentStateId);
+		} else if (secondParentStateId == 0) {
+			inherited = cumulativeCalibrationFactor(firstParentStateId);
+		} else {
+			double first = cumulativeCalibrationFactor(firstParentStateId);
+			double second = cumulativeCalibrationFactor(secondParentStateId);
+			if (!Double.isFinite(first) || !Double.isFinite(second) || !approximatelyEqual(first, second)) {
+				return Double.NaN;
+			}
+			inherited = first;
+		}
+		double result = local * inherited;
+		return Double.isFinite(result) && result > 0.0d ? result : Double.NaN;
+	}
+
+	private static EvidenceCalibrationSummary boundedCalibration(
+			EvidenceStateSummary rawSummary,
+			EvidenceCalibrationSummary requested) {
+		double boundedRows = Math.min(requested.finalRows(), rawSummary.certifiedUpperBound());
+		double boundedFactor = requested.rawRows() == 0.0d
+				? boundedRows == 0.0d ? 0.0d : Double.POSITIVE_INFINITY
+				: boundedRows / requested.rawRows();
+		if (Double.doubleToLongBits(boundedRows) == Double.doubleToLongBits(requested.finalRows())
+				&& Double.doubleToLongBits(boundedFactor) == Double.doubleToLongBits(requested.factor())) {
+			return requested;
+		}
+		return new EvidenceCalibrationSummary(
+				requested.rawRows(),
+				boundedRows,
+				boundedFactor,
+				requested.source(),
+				requested.evidenceCount(),
+				requested.correctionConfidence(),
+				requested.evidenceKey(),
+				requested.evidenceRevision());
+	}
+
+	private static EvidenceStateSummary calibratedSummary(
+			EvidenceStateSummary rawSummary,
+			EvidenceCalibrationSummary calibration) {
+		double factor = calibration.factor();
+		double finalRows = calibration.finalRows();
+		double certifiedBound = rawSummary.certifiedUpperBound();
+		double lower = Math.min(finalRows, scaleBound(rawSummary.lowerRows(), factor));
+		double upper = Math.max(finalRows, Math.min(scaleBound(rawSummary.upperRows(), factor), certifiedBound));
+		double varianceFactor = factor * factor;
+		return new EvidenceStateSummary(
+				finalRows,
+				lower,
+				upper,
+				0.0d,
+				EvidenceIntervalKind.HEURISTIC,
+				scaleBound(rawSummary.inheritedVariance(), varianceFactor),
+				scaleBound(rawSummary.mutationVariance(), varianceFactor),
+				scaleBound(rawSummary.resamplingVariance(), varianceFactor),
+				rawSummary.effectiveSampleSize(),
+				rawSummary.maximumWeightFraction(),
+				certifiedBound,
+				EvidenceGuarantee.LEARNED_CALIBRATED,
+				EvidenceZeroStatus.POSITIVE,
+				"");
+	}
+
+	private static EvidenceStateSummary summaryOnlyCalibration(
+			EvidenceStateSummary rawSummary,
+			double finalRows,
+			String reason) {
+		double certifiedBound = rawSummary.certifiedUpperBound();
+		double intervalUpper = Double.isFinite(certifiedBound)
+				? certifiedBound
+				: Math.max(finalRows, rawSummary.upperRows());
+		return EvidenceStateSummary.unresolved(finalRows, intervalUpper, certifiedBound, reason);
+	}
+
+	private static double multiplyScale(double left, double right) {
+		double result = left * right;
+		if (!Double.isFinite(result) || result <= 0.0d) {
+			throw new IllegalArgumentException("cumulative calibration scale must remain finite and positive");
+		}
+		return result;
+	}
+
+	private static double scaleBound(double value, double factor) {
+		if (value == 0.0d || factor == 0.0d) {
+			return 0.0d;
+		}
+		double scaled = value * factor;
+		return Double.isFinite(scaled) ? scaled : Double.POSITIVE_INFINITY;
 	}
 
 	private static boolean sameDiagnostic(double claimed, double derived) {
@@ -791,6 +1241,14 @@ public final class FrontierStateArena implements AutoCloseable {
 		}
 		double scale = Math.max(1.0d, Math.max(Math.abs(claimed), Math.abs(derived)));
 		return Math.abs(claimed - derived) <= 8.0d * Math.ulp(scale);
+	}
+
+	private static boolean approximatelyEqual(double left, double right) {
+		if (Double.doubleToLongBits(left) == Double.doubleToLongBits(right)) {
+			return true;
+		}
+		double scale = Math.max(1.0d, Math.max(Math.abs(left), Math.abs(right)));
+		return Math.abs(left - right) <= 8.0d * Math.ulp(scale);
 	}
 
 	private int stateId(EvidenceStateRef reference) {
@@ -843,6 +1301,7 @@ public final class FrontierStateArena implements AutoCloseable {
 			double[] replacementEffectiveSampleSize = Arrays.copyOf(effectiveSampleSize, replacement);
 			double[] replacementMaximumWeightFraction = Arrays.copyOf(maximumWeightFraction, replacement);
 			double[] replacementCertifiedUpperBound = Arrays.copyOf(certifiedUpperBound, replacement);
+			double[] replacementCumulativeWeightScales = Arrays.copyOf(cumulativeWeightScales, replacement);
 			int[] replacementIntervalKinds = Arrays.copyOf(intervalKinds, replacement);
 			int[] replacementGuarantees = Arrays.copyOf(guarantees, replacement);
 			int[] replacementZeroStatuses = Arrays.copyOf(zeroStatuses, replacement);
@@ -856,7 +1315,9 @@ public final class FrontierStateArena implements AutoCloseable {
 			int[] replacementFirstParentStateIds = Arrays.copyOf(firstParentStateIds, replacement);
 			int[] replacementSecondParentStateIds = Arrays.copyOf(secondParentStateIds, replacement);
 			int[] replacementOperationRecipeIds = Arrays.copyOf(operationRecipeIds, replacement);
+			int[] replacementPayloadOwnerStateIds = Arrays.copyOf(payloadOwnerStateIds, replacement);
 			FrontierPayloadBlock[] replacementPayloadBlocks = Arrays.copyOf(payloadBlocks, replacement);
+			EvidenceCalibrationSummary[] replacementCalibrations = Arrays.copyOf(calibrations, replacement);
 			byte[] replacementPayloadStatuses = Arrays.copyOf(payloadStatuses, replacement);
 			int[] replacementPayloadPinCounts = Arrays.copyOf(payloadPinCounts, replacement);
 			int[] replacementExactAtomCounts = Arrays.copyOf(exactAtomCounts, replacement);
@@ -876,6 +1337,7 @@ public final class FrontierStateArena implements AutoCloseable {
 			effectiveSampleSize = replacementEffectiveSampleSize;
 			maximumWeightFraction = replacementMaximumWeightFraction;
 			certifiedUpperBound = replacementCertifiedUpperBound;
+			cumulativeWeightScales = replacementCumulativeWeightScales;
 			intervalKinds = replacementIntervalKinds;
 			guarantees = replacementGuarantees;
 			zeroStatuses = replacementZeroStatuses;
@@ -889,7 +1351,9 @@ public final class FrontierStateArena implements AutoCloseable {
 			firstParentStateIds = replacementFirstParentStateIds;
 			secondParentStateIds = replacementSecondParentStateIds;
 			operationRecipeIds = replacementOperationRecipeIds;
+			payloadOwnerStateIds = replacementPayloadOwnerStateIds;
 			payloadBlocks = replacementPayloadBlocks;
+			calibrations = replacementCalibrations;
 			payloadStatuses = replacementPayloadStatuses;
 			payloadPinCounts = replacementPayloadPinCounts;
 			exactAtomCounts = replacementExactAtomCounts;
@@ -913,6 +1377,7 @@ public final class FrontierStateArena implements AutoCloseable {
 		effectiveSampleSize = new double[capacity];
 		maximumWeightFraction = new double[capacity];
 		certifiedUpperBound = new double[capacity];
+		cumulativeWeightScales = new double[capacity];
 		intervalKinds = new int[capacity];
 		guarantees = new int[capacity];
 		zeroStatuses = new int[capacity];
@@ -926,7 +1391,9 @@ public final class FrontierStateArena implements AutoCloseable {
 		firstParentStateIds = new int[capacity];
 		secondParentStateIds = new int[capacity];
 		operationRecipeIds = new int[capacity];
+		payloadOwnerStateIds = new int[capacity];
 		payloadBlocks = new FrontierPayloadBlock[capacity];
+		calibrations = new EvidenceCalibrationSummary[capacity];
 		payloadStatuses = new byte[capacity];
 		payloadPinCounts = new int[capacity];
 		exactAtomCounts = new int[capacity];
@@ -997,9 +1464,9 @@ public final class FrontierStateArena implements AutoCloseable {
 
 	private static long columnsBytes(int capacity) {
 		long bytes = 0L;
-		bytes = saturatedAdd(bytes, 10L * arrayBytes(capacity, Double.BYTES));
-		bytes = saturatedAdd(bytes, 9L * arrayBytes(capacity, Integer.BYTES));
-		bytes = saturatedAdd(bytes, 5L * arrayBytes(capacity, REFERENCE_BYTES));
+		bytes = saturatedAdd(bytes, 11L * arrayBytes(capacity, Double.BYTES));
+		bytes = saturatedAdd(bytes, 10L * arrayBytes(capacity, Integer.BYTES));
+		bytes = saturatedAdd(bytes, 6L * arrayBytes(capacity, REFERENCE_BYTES));
 		bytes = saturatedAdd(bytes, 4L * arrayBytes(capacity, Long.BYTES));
 		bytes = saturatedAdd(bytes, 3L * arrayBytes(capacity, Byte.BYTES));
 		return bytes;
@@ -1011,6 +1478,17 @@ public final class FrontierStateArena implements AutoCloseable {
 		if (!reason.isEmpty()) {
 			bytes = saturatedAdd(bytes, align(40L + (long) reason.length() * Character.BYTES));
 		}
+		return bytes;
+	}
+
+	private static long calibrationRetainedBytes(EvidenceCalibrationSummary calibration) {
+		long bytes = 96L;
+		bytes = saturatedAdd(
+				bytes,
+				align(40L + (long) calibration.source().length() * Character.BYTES));
+		bytes = saturatedAdd(
+				bytes,
+				align(40L + (long) calibration.evidenceKey().length() * Character.BYTES));
 		return bytes;
 	}
 

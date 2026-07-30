@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.estimation.LmdbQuadSynopsisService;
 import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbFrontierSynopsisService;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -75,6 +76,7 @@ final class LmdbEstimatorRuntime {
 	private final LmdbFrontierSynopsisService frontierSynopsis;
 	private final FrontierEstimatorMode frontierMode;
 	private final long frontierQueryMemoryBudgetBytes;
+	private final long frontierInitialMaterializationWorkUnits;
 	private final int frontierRefinementWorkUnits;
 	private final double frontierTargetRelativeStandardError;
 	private final double frontierDefensiveProposalEpsilon;
@@ -85,7 +87,7 @@ final class LmdbEstimatorRuntime {
 			LmdbFilterSelectivityStats filters, LmdbOperatorFeedbackStats feedback,
 			LmdbStatementPatternCardinalitySource cardinalities, PackedPlanCache cascadesPlanCache) {
 		this(valueStore, tripleStore, synopsis, filters, feedback, cardinalities, cascadesPlanCache, null,
-				FrontierEstimatorMode.OFF, 0L, 0, 1.0d, 1.0d, () -> false);
+				FrontierEstimatorMode.OFF, 0L, 0L, 0, 1.0d, 1.0d, () -> false);
 	}
 
 	LmdbEstimatorRuntime(ValueStore valueStore, TripleStore tripleStore, LmdbQuadSynopsisService synopsis,
@@ -95,6 +97,20 @@ final class LmdbEstimatorRuntime {
 			long frontierQueryMemoryBudgetBytes, int frontierRefinementWorkUnits,
 			double frontierTargetRelativeStandardError, double frontierDefensiveProposalEpsilon,
 			BooleanSupplier mayHaveInferred) {
+		this(valueStore, tripleStore, synopsis, filters, feedback, cardinalities, cascadesPlanCache,
+				frontierSynopsis, frontierMode, frontierQueryMemoryBudgetBytes,
+				LmdbStoreConfig.FRONTIER_INITIAL_MATERIALIZATION_WORK_UNITS,
+				frontierRefinementWorkUnits, frontierTargetRelativeStandardError,
+				frontierDefensiveProposalEpsilon, mayHaveInferred);
+	}
+
+	LmdbEstimatorRuntime(ValueStore valueStore, TripleStore tripleStore, LmdbQuadSynopsisService synopsis,
+			LmdbFilterSelectivityStats filters, LmdbOperatorFeedbackStats feedback,
+			LmdbStatementPatternCardinalitySource cardinalities, PackedPlanCache cascadesPlanCache,
+			LmdbFrontierSynopsisService frontierSynopsis, FrontierEstimatorMode frontierMode,
+			long frontierQueryMemoryBudgetBytes, long frontierInitialMaterializationWorkUnits,
+			int frontierRefinementWorkUnits, double frontierTargetRelativeStandardError,
+			double frontierDefensiveProposalEpsilon, BooleanSupplier mayHaveInferred) {
 		this.valueStore = valueStore;
 		this.tripleStore = tripleStore;
 		this.cardinalities = cardinalities;
@@ -105,6 +121,7 @@ final class LmdbEstimatorRuntime {
 		this.frontierSynopsis = frontierSynopsis;
 		this.frontierMode = frontierMode == null ? FrontierEstimatorMode.OFF : frontierMode;
 		this.frontierQueryMemoryBudgetBytes = frontierQueryMemoryBudgetBytes;
+		this.frontierInitialMaterializationWorkUnits = frontierInitialMaterializationWorkUnits;
 		this.frontierRefinementWorkUnits = frontierRefinementWorkUnits;
 		this.frontierTargetRelativeStandardError = frontierTargetRelativeStandardError;
 		this.frontierDefensiveProposalEpsilon = frontierDefensiveProposalEpsilon;
@@ -145,6 +162,10 @@ final class LmdbEstimatorRuntime {
 				.withEstimationTier(tier)
 				.withExactProbePermission(exactProbePermitted);
 		return engine.estimateFilter(input, condition, inputEstimate, context);
+	}
+
+	LmdbLearnedFilterEvidence learnedFilterEvidence(Filter filter) {
+		return LmdbLearnedFilterEvidence.from(filters, filter);
 	}
 
 	Optional<BindingSetAssignment> exactStoredTermFilterAnchor(StatementPattern pattern, ValueExpr condition,
@@ -286,8 +307,26 @@ final class LmdbEstimatorRuntime {
 		return feedback.estimate(expression, leftRows, rightRows, baseRows, baseWorkRows, executionMode);
 	}
 
+	LmdbOperatorFeedbackStats.OperatorEstimate operatorMultiplierFeedback(TupleExpr expression, double baseRows,
+			double baseWorkRows) {
+		if (feedback == null || expression == null
+				|| !(Boolean.getBoolean(OPERATOR_FEEDBACK_APPLY_PROPERTY)
+						|| feedback.shouldExposeMultiplierPlanningEvidence(expression))) {
+			return null;
+		}
+		return feedback.multiplierEstimate(expression, baseRows, baseWorkRows);
+	}
+
 	long operatorFeedbackRevision() {
 		return feedback == null ? 0L : feedback.planningRevision();
+	}
+
+	long learnedEvidenceRevision() {
+		long revision = mixRevision(0x46524f4e54494552L, snapshotVersion());
+		revision = mixRevision(revision, feedback == null ? 0L : feedback.planningRevision());
+		revision = mixRevision(revision, filters == null ? 0L : filters.planningRevision());
+		return mixRevision(revision, frontierSynopsis == null ? 0L : frontierSynopsis.status().ordinal() + 1L)
+				& Long.MAX_VALUE;
 	}
 
 	QueryOptimizationScope beginScope() {
@@ -324,6 +363,15 @@ final class LmdbEstimatorRuntime {
 		return Math.max(dataRevision, synopsisRevision);
 	}
 
+	private static long mixRevision(long current, long value) {
+		long mixed = current ^ (value + 0x9e3779b97f4a7c15L + (current << 6) + (current >>> 2));
+		mixed ^= mixed >>> 30;
+		mixed *= 0xbf58476d1ce4e5b9L;
+		mixed ^= mixed >>> 27;
+		mixed *= 0x94d049bb133111ebL;
+		return mixed ^ mixed >>> 31;
+	}
+
 	PackedPlanCache cascadesPlanCache() {
 		return cascadesPlanCache;
 	}
@@ -338,6 +386,10 @@ final class LmdbEstimatorRuntime {
 
 	long frontierQueryMemoryBudgetBytes() {
 		return frontierQueryMemoryBudgetBytes;
+	}
+
+	long frontierInitialMaterializationWorkUnits() {
+		return frontierInitialMaterializationWorkUnits;
 	}
 
 	int frontierRefinementWorkUnits() {

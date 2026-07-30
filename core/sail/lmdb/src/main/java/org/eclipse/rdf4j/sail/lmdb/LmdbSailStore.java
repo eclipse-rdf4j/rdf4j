@@ -45,6 +45,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.IntConsumer;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -64,6 +65,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoRolloutProfile;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.SailException;
@@ -81,6 +83,7 @@ import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbFrontierSynopsisService;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchFootprint;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchSnapshotIdentity;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchStatementSource;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchStatementSourceException;
 import org.slf4j.Logger;
@@ -122,6 +125,7 @@ class LmdbSailStore implements SailStore {
 	private final int estimatorAddChunkSize;
 	private final FrontierEstimatorMode frontierEstimatorMode;
 	private final long frontierQueryMemoryBudgetBytes;
+	private final long frontierInitialMaterializationWorkUnits;
 	private final int frontierRefinementWorkUnits;
 	private final double frontierTargetRelativeStandardError;
 	private final double frontierDefensiveProposalEpsilon;
@@ -157,9 +161,13 @@ class LmdbSailStore implements SailStore {
 		return t;
 	});
 	private final AtomicBoolean persistScheduled = new AtomicBoolean(false);
+	private final AtomicBoolean frontierRebuildScheduled = new AtomicBoolean(false);
 	private volatile ScheduledFuture<?> persistFuture;
+	private volatile ScheduledFuture<?> frontierRebuildFuture;
 	private volatile ScheduledFuture<?> backgroundSamplingFuture;
 	private final long estimatorPersistDelayMillis = 1000L;
+	private volatile long frontierRebuildRequestedNanos;
+	private volatile boolean closing;
 	private final long backgroundRawSamplingMaxMillisPerCycle;
 
 	/**
@@ -370,6 +378,7 @@ class LmdbSailStore implements SailStore {
 		this.backgroundRawSamplingMaxMillisPerCycle = config.getBackgroundRawSamplingMaxMillisPerCycle();
 		this.frontierEstimatorMode = config.getFrontierEstimatorMode();
 		this.frontierQueryMemoryBudgetBytes = config.getFrontierQueryMemoryBudgetBytes();
+		this.frontierInitialMaterializationWorkUnits = config.getFrontierInitialMaterializationWorkUnits();
 		this.frontierRefinementWorkUnits = config.getFrontierRefinementWorkUnits();
 		this.frontierTargetRelativeStandardError = config.getFrontierTargetRelativeStandardError();
 		this.frontierDefensiveProposalEpsilon = config.getFrontierDefensiveProposalEpsilon();
@@ -392,13 +401,17 @@ class LmdbSailStore implements SailStore {
 			tripleStore = new TripleStore(new File(dataDir, "triples"), properties, config, valueStore);
 			statementPatternCardinalitySource = new LmdbStatementPatternCardinalitySource(valueStore, tripleStore);
 			mayHaveInferred = tripleStore.hasTriples(false);
+			LeoRolloutProfile leoProfile = LeoRolloutProfile.fromSystemProperties();
+			boolean frontierEnabled = config.getFrontierEstimatorMode() != FrontierEstimatorMode.OFF;
+			boolean learnedServicesEnabled = sketchBasedJoinEstimator != null
+					|| frontierEnabled
+					|| leoProfile.observationEnabled();
 			UUID durableStoreId = null;
-			if (config.getFrontierEstimatorMode() != FrontierEstimatorMode.OFF
-					&& config.getFrontierSynopsisBudgetBytes() > 0L) {
+			if (learnedServicesEnabled) {
 				try {
 					durableStoreId = properties.getOrCreateStoreId();
 				} catch (IllegalStateException e) {
-					logger.warn("Frontier OmniSketch cannot use a durable LMDB store identity", e);
+					logger.warn("Frontier and learned evidence cannot use a durable LMDB store identity", e);
 				}
 			}
 			frontierSynopsisService = LmdbFrontierSynopsisService.open(
@@ -408,7 +421,8 @@ class LmdbSailStore implements SailStore {
 					config.getFrontierSynopsisBudgetBytes(),
 					config.getFrontierDesignLanes(),
 					config.getFrontierAuditLanes(),
-					() -> new LmdbFrontierSnapshotSource(tripleStore));
+					() -> new LmdbFrontierSnapshotSource(tripleStore),
+					config.getEffectiveFrontierQueryIndexBudgetBytes());
 			if (frontierSynopsisService.status() == FrontierSynopsisStatus.MISSING) {
 				FrontierSynopsisStatus rebuiltStatus = frontierSynopsisService.rebuild();
 				if (rebuiltStatus != FrontierSynopsisStatus.READY) {
@@ -416,27 +430,40 @@ class LmdbSailStore implements SailStore {
 				}
 			}
 			initialized = true;
+			if (frontierSynopsisNeedsRebuild(frontierSynopsisService.status())) {
+				requestFrontierRebuild();
+			}
+			Path estimatorPath = new File(dataDir, JOIN_ESTIMATOR_FILE_NAME).toPath();
+			boolean snapshotExists = Files.isRegularFile(estimatorPath.resolve("synopsis-v8.bin"))
+					|| Files.isRegularFile(estimatorPath.resolve("metadata.bin"));
+			boolean storeHasTriples = tripleStore.hasTriples(true) || tripleStore.hasTriples(false);
 			if (sketchBasedJoinEstimator != null) {
-				Path estimatorPath = new File(dataDir, JOIN_ESTIMATOR_FILE_NAME).toPath();
-				boolean snapshotExists = Files.isRegularFile(estimatorPath.resolve("synopsis-v8.bin"))
-						|| Files.isRegularFile(estimatorPath.resolve("metadata.bin"));
-				boolean storeHasTriples = tripleStore.hasTriples(true) || tripleStore.hasTriples(false);
 				sketchBasedJoinEstimator.setRebuildAllowedSupplier(() -> !storeTxnStarted.get());
 				sketchBasedJoinEstimator.configurePersistence(estimatorPath, snapshotExists);
+			}
+			if (learnedServicesEnabled) {
+				UUID learnedStoreId = durableStoreId;
+				Supplier<SketchSnapshotIdentity> identitySupplier = sketchBasedJoinEstimator != null
+						? sketchBasedJoinEstimator::snapshotIdentity
+						: () -> learnedSnapshotIdentity(learnedStoreId);
 				filterSelectivityStats = new LmdbFilterSelectivityStats(estimatorPath, tripleStore, valueStore,
 						config.getOptimizerSamplingEnabled(), config.getOptimizerSamplingMaxMillis(),
 						config.getOptimizerSamplingMaxRows(), config.getBackgroundRawSamplingEnabled(),
-						sketchBasedJoinEstimator::snapshotIdentity,
+						identitySupplier,
 						config.getSketchEstimatorColdSynopsisCapacity());
-				sketchBasedJoinEstimator.setRebuildObserver(filterSelectivityStats.coldSynopsisRebuildObserver());
+				if (sketchBasedJoinEstimator != null) {
+					sketchBasedJoinEstimator.setRebuildObserver(filterSelectivityStats.coldSynopsisRebuildObserver());
+				}
 				operatorFeedbackStats = new LmdbOperatorFeedbackStats(estimatorPath,
-						sketchBasedJoinEstimator::snapshotIdentity,
-						sketchBasedJoinEstimator::adaptiveEvidenceAllowed);
+						identitySupplier,
+						() -> !"snapshot-only".equalsIgnoreCase(config.getSketchEstimatorEvidenceMode()));
+				startBackgroundFilterSampling();
+			}
+			if (sketchBasedJoinEstimator != null) {
 				if (!snapshotExists && storeHasTriples) {
 					sketchBasedJoinEstimator.discardAndMarkForRebuild();
 				}
 				sketchBasedJoinEstimator.startBackgroundRefresh(3);
-				startBackgroundFilterSampling();
 			}
 		} finally {
 			if (!initialized) {
@@ -602,6 +629,21 @@ class LmdbSailStore implements SailStore {
 						config.getSketchEstimatorStrategy(), SketchBasedJoinEstimator.SketchStrategy.UNIFIED));
 	}
 
+	private SketchSnapshotIdentity learnedSnapshotIdentity(UUID storeId) {
+		if (storeId == null) {
+			return null;
+		}
+		try {
+			long snapshotEpoch = LmdbFrontierSnapshotSource.snapshotEpoch(tripleStore.getTxnManager().getReadTxn());
+			return new SketchSnapshotIdentity(
+					storeId.getMostSignificantBits(),
+					storeId.getLeastSignificantBits(),
+					snapshotEpoch);
+		} catch (IOException | RuntimeException e) {
+			return null;
+		}
+	}
+
 	private LmdbStorePathEvent beginLmdbStorePathEvent(String phase, boolean preferThreading, int statementCount,
 			int pendingApproveCount) {
 		if (!LMDB_STORE_PATH_EVENTS_ENABLED || !LMDB_STORE_PATH_EVENT_TYPE.isEnabled()) {
@@ -733,10 +775,12 @@ class LmdbSailStore implements SailStore {
 
 	@Override
 	public void close() throws SailException {
+		closing = true;
 		try {
 			try {
 				cancelAndDrainScheduledBackgroundSampling();
 				cancelAndDrainScheduledEstimatorPersist();
+				cancelAndDrainScheduledFrontierRebuild();
 				shutdownAndAwaitEstimatorPersistExecutor();
 				if (sketchBasedJoinEstimator != null) {
 					sketchBasedJoinEstimator.close();
@@ -853,6 +897,27 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	private void cancelAndDrainScheduledFrontierRebuild() {
+		ScheduledFuture<?> future = frontierRebuildFuture;
+		if (future == null) {
+			return;
+		}
+		if (future.cancel(false)) {
+			frontierRebuildScheduled.set(false);
+			return;
+		}
+		try {
+			future.get();
+		} catch (CancellationException e) {
+			// Already cancelled by the scheduler or another close path.
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new InterruptedSailException(e);
+		} catch (ExecutionException e) {
+			logger.warn("Scheduled Frontier rebuild failed during close", e.getCause());
+		}
+	}
+
 	private void startBackgroundFilterSampling() {
 		if (filterSelectivityStats == null || backgroundRawSamplingMaxMillisPerCycle <= 0L) {
 			logger.info(
@@ -939,6 +1004,78 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	private void requestFrontierRebuild() {
+		frontierRebuildRequestedNanos = System.nanoTime();
+		ensureFrontierRebuildScheduled();
+	}
+
+	private void ensureFrontierRebuildScheduled() {
+		if (frontierSynopsisService == null || closing
+				|| !frontierRebuildScheduled.compareAndSet(false, true)) {
+			return;
+		}
+		try {
+			frontierRebuildFuture = estimatorPersistExec.schedule(
+					this::runScheduledFrontierRebuild,
+					estimatorPersistDelayMillis,
+					TimeUnit.MILLISECONDS);
+		} catch (RuntimeException failure) {
+			frontierRebuildScheduled.set(false);
+			throw failure;
+		}
+	}
+
+	private void runScheduledFrontierRebuild() {
+		boolean retry = false;
+		boolean locked = false;
+		try {
+			if (!frontierRebuildQuietPeriodElapsed()) {
+				retry = true;
+				return;
+			}
+			sinkStoreAccessLock.lock();
+			locked = true;
+			if (storeTxnStarted.get() || !frontierRebuildQuietPeriodElapsed()) {
+				retry = true;
+				return;
+			}
+			FrontierSynopsisStatus rebuilt = frontierSynopsisService.rebuild();
+			retry = rebuilt == FrontierSynopsisStatus.DIRTY_INSERTION
+					|| rebuilt == FrontierSynopsisStatus.DIRTY_DELETION;
+			if (rebuilt != FrontierSynopsisStatus.READY && !retry) {
+				logger.warn("Background Frontier synopsis rebuild is unavailable: {}", rebuilt);
+			}
+		} catch (RuntimeException failure) {
+			retry = true;
+			logger.warn("Background Frontier synopsis rebuild failed", failure);
+		} finally {
+			frontierRebuildScheduled.set(false);
+			if (locked) {
+				sinkStoreAccessLock.unlock();
+			}
+			if (retry && !closing && !estimatorPersistExec.isShutdown()) {
+				try {
+					ensureFrontierRebuildScheduled();
+				} catch (RuntimeException failure) {
+					if (!estimatorPersistExec.isShutdown()) {
+						logger.warn("Failed to reschedule Frontier synopsis rebuild", failure);
+					}
+				}
+			}
+		}
+	}
+
+	private boolean frontierRebuildQuietPeriodElapsed() {
+		long elapsedNanos = System.nanoTime() - frontierRebuildRequestedNanos;
+		return elapsedNanos >= TimeUnit.MILLISECONDS.toNanos(estimatorPersistDelayMillis);
+	}
+
+	private static boolean frontierSynopsisNeedsRebuild(FrontierSynopsisStatus status) {
+		return status == FrontierSynopsisStatus.DIRTY_INSERTION
+				|| status == FrontierSynopsisStatus.DIRTY_DELETION
+				|| status == FrontierSynopsisStatus.BUDGET_EXCEEDED;
+	}
+
 	SailException wrapTripleStoreException() {
 		return tripleStoreException instanceof SailException ? (SailException) tripleStoreException
 				: new SailException(tripleStoreException);
@@ -982,7 +1119,8 @@ class LmdbSailStore implements SailStore {
 	public EvaluationStatistics getEvaluationStatistics() {
 		return new LmdbEvaluationStatistics(valueStore, tripleStore, sketchBasedJoinEstimator, filterSelectivityStats,
 				operatorFeedbackStats, statementPatternCardinalitySource, cascadesPlanCache, frontierSynopsisService,
-				frontierEstimatorMode, frontierQueryMemoryBudgetBytes, frontierRefinementWorkUnits,
+				frontierEstimatorMode, frontierQueryMemoryBudgetBytes,
+				frontierInitialMaterializationWorkUnits, frontierRefinementWorkUnits,
 				frontierTargetRelativeStandardError, frontierDefensiveProposalEpsilon, () -> mayHaveInferred);
 	}
 
@@ -1786,6 +1924,14 @@ class LmdbSailStore implements SailStore {
 						}
 						// The triple/value stores are authoritative once both commits succeed.
 						storeTxnStarted.set(false);
+						if (frontierSynopsisService != null
+								&& frontierSynopsisNeedsRebuild(frontierSynopsisService.status())) {
+							try {
+								requestFrontierRebuild();
+							} catch (RuntimeException e) {
+								logger.warn("Failed to schedule Frontier synopsis rebuild after commit", e);
+							}
+						}
 						estimatorTouchedInTransaction = false;
 						estimatorTouchedSinceStoreTxnStart.set(false);
 						if (filterSelectivityStats != null) {

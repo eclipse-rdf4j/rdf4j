@@ -160,7 +160,17 @@ final class PackedSelectedPlanContextualizer {
 			rows = independentHashJoin ? hashJoinRows(winnerId, leftRows) : rowsByDepth[depth + 1];
 			childWorkFloor = saturatedAdd(leftCost, costsByDepth[depth + 1], 0.0d);
 			cost = saturatedAdd(childWorkFloor, rows, 0.0d);
-			evidenceStateId = independentHashJoin ? 0 : evidenceStateByDepth[depth + 1];
+			/*
+			 * A hash join does not pass its left rows as execution-time bindings to its right child, but that physical
+			 * distinction does not invalidate the query-local evidence state selected for the logical join. Retain the
+			 * winner's state as the candidate for operator refinement. In particular, an outer selected-plan hash join
+			 * may have hash-join children whose contextual traversal cannot reconstruct a prefix state from execution
+			 * order alone; dropping the memo state here would make every later bridge degrade with
+			 * join_child_state_unavailable.
+			 */
+			evidenceStateId = independentHashJoin
+					? winnerEvidenceStateId(winnerId)
+					: evidenceStateByDepth[depth + 1];
 		} else if (operator == PackedRelOp.UNION && childCount == 2) {
 			int leftWinnerId = memo.winnerChildWinnerId(winnerId, 0);
 			visit(leftWinnerId, localPrefixOffset, localPrefixCount, localPrefixRows,
@@ -295,6 +305,13 @@ final class PackedSelectedPlanContextualizer {
 					 */
 					costEstimate.setReplacesChildWork(false);
 				}
+			} else if (costSession != null && operator == PackedRelOp.JOIN && childCount == 2) {
+				costContext.reset(prefixRelations, localPrefixOffset, localPrefixCount, localPrefixRows,
+						evidenceStateId);
+				costContext.setAssuredBindingRelationId(localAssuredBindingRelationId);
+				costContext.setOperatorInputs(leftInputRows, rightInputRows,
+						leftInputEvidenceStateId, rightInputEvidenceStateId);
+				costSession.refineIntermediateJoin(costContext, costEstimate);
 			}
 		}
 		if (scopeBarrier) {
@@ -322,6 +339,11 @@ final class PackedSelectedPlanContextualizer {
 		rowsByDepth[depth] = rows;
 		costsByDepth[depth] = cost;
 		workUnits++;
+	}
+
+	private int winnerEvidenceStateId(int winnerId) {
+		int metadataId = memo.winnerPhysicalMetadataId(winnerId);
+		return metadataId == 0 ? 0 : memo.physicalMetadataEvidenceStateId(metadataId);
 	}
 
 	private boolean inheritedContextAssuresJoinBinding(int physicalExpressionId, int prefixOffset, int prefixCount,

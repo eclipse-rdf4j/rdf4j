@@ -129,6 +129,8 @@ public final class TelemetryMetricNames {
 	public static final String PLANNED_ESTIMATE_USAGE_JOIN_ORDER_CANDIDATE = "join_order_candidate";
 	public static final String PLANNED_ESTIMATE_USAGE_ALTERNATIVE_RANKING = "alternative_ranking";
 	public static final String PLANNED_ESTIMATE_USAGE_EXPLAIN_RECOMPUTED = "explain_recomputed";
+	public static final String ESTIMATE_FUSION_FINITE_FILTER_SEMANTIC_FALLBACK =
+			"finite_filter_semantic_fallback";
 	public static final String PLANNED_ESTIMATE_DECISION_ID = "plannedEstimateDecisionId";
 	public static final String PLANNED_CARDINALITY_SHAPE = "plannedCardinalityShape";
 	public static final String PLANNED_CARDINALITY_ROWS = "plannedCardinalityRows";

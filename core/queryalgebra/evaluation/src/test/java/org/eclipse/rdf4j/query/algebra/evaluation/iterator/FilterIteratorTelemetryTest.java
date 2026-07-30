@@ -49,6 +49,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -337,6 +338,64 @@ class FilterIteratorTelemetryTest {
 		assertThat(rightEvaluations).hasValue(33);
 	}
 
+	@Test
+	void partiallyConsumedMaterializedExistsFilterDoesNotRecordOutcome() throws Exception {
+		Value matched = SimpleValueFactory.getInstance().createIRI("urn:matched");
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingNames(Set.of("x"));
+		left.setBindingSets(List.of(singleBindingSet("x", matched), singleBindingSet("x", matched)));
+		BindingSetAssignment right = assignment("x", matched);
+		Exists exists = new Exists(right);
+		Filter filter = new Filter(left, exists);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		QueryEvaluationStep leftStep = ignored -> new CloseableIteratorIteration<>(left.getBindingSets().iterator());
+		QueryEvaluationStep rightStep = bindings -> new CloseableIteratorIteration<>(
+				compatibleAssignments(right, bindings).iterator());
+		QueryValueEvaluationStep conditionStep = ignored -> BooleanLiteral.FALSE;
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		doReturn(leftStep).when(strategy).precompile(eq((TupleExpr) left), eq(context));
+		doReturn(rightStep).when(strategy).precompile(eq((TupleExpr) right), eq(context));
+		doReturn(conditionStep).when(strategy).precompile(eq((ValueExpr) exists), eq(context));
+		RecordingEvaluationStatistics statistics = new RecordingEvaluationStatistics();
+		QueryEvaluationStep step = FilterIterator.supply(filter, strategy, context, statistics);
+
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(iteration).isInstanceOf(MaterializedExistsFilterIteration.class);
+			assertThat(iteration.hasNext()).isTrue();
+			iteration.next();
+		}
+
+		assertThat(statistics.recordCalls).isZero();
+	}
+
+	@Test
+	void partiallyConsumedFusedAssignmentFilterDoesNotRecordOutcome() throws Exception {
+		Value matched = SimpleValueFactory.getInstance().createLiteral("matched");
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingNames(Set.of("left"));
+		left.setBindingSets(List.of(singleBindingSet("left", matched), singleBindingSet("left", matched)));
+		BindingSetAssignment right = assignment("right", matched);
+		Compare condition = new Compare(Var.of("left"), Var.of("right"), CompareOp.EQ);
+		Filter filter = new Filter(new Join(left, right), condition);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		QueryEvaluationStep leftStep = ignored -> new CloseableIteratorIteration<>(left.getBindingSets().iterator());
+		QueryValueEvaluationStep conditionStep = ignored -> BooleanLiteral.TRUE;
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.getQueryEvaluationMode()).thenReturn(QueryEvaluationMode.STRICT);
+		doReturn(leftStep).when(strategy).precompile(eq((TupleExpr) left), eq(context));
+		doReturn(conditionStep).when(strategy).precompile(eq((ValueExpr) condition), eq(context));
+		RecordingEvaluationStatistics statistics = new RecordingEvaluationStatistics();
+		QueryEvaluationStep step = FilterIterator.supply(filter, strategy, context, statistics);
+
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(iteration).isInstanceOf(FilteredBindingSetAssignmentJoinIteration.class);
+			assertThat(iteration.hasNext()).isTrue();
+			iteration.next();
+		}
+
+		assertThat(statistics.recordCalls).isZero();
+	}
+
 	private static List<BindingSet> compatibleAssignments(BindingSetAssignment assignment, BindingSet bindings) {
 		List<BindingSet> compatible = new ArrayList<>();
 		for (BindingSet candidate : assignment.getBindingSets()) {
@@ -463,5 +522,14 @@ class FilterIteratorTelemetryTest {
 			results.add(iteration.next());
 		}
 		return results;
+	}
+
+	private static final class RecordingEvaluationStatistics extends EvaluationStatistics {
+		private long recordCalls;
+
+		@Override
+		public void recordFilterOutcome(Filter filter, long passedCount, long filteredCount) {
+			recordCalls++;
+		}
 	}
 }

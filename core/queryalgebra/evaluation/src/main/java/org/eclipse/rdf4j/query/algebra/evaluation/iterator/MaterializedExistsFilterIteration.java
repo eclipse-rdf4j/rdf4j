@@ -56,6 +56,7 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 	private long sourceRowsFilteredActual;
 	private long recordedPassedCount;
 	private long recordedFilteredCount;
+	private boolean inputExhausted;
 
 	MaterializedExistsFilterIteration(Filter filterNode, CloseableIteration<BindingSet> leftIter,
 			Supplier<CloseableIteration<BindingSet>> existsIterSupplier,
@@ -95,6 +96,7 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 				return left;
 			}
 		}
+		inputExhausted = true;
 		return null;
 	}
 
@@ -194,10 +196,12 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 		try {
 			leftIter.close();
 		} finally {
-			if (recordFilterOutcomes && (recordedPassedCount > 0L || recordedFilteredCount > 0L)) {
+			if (recordFilterOutcomes && inputExhausted
+					&& (recordedPassedCount > 0L || recordedFilteredCount > 0L)) {
 				try {
-					evaluationStatistics.recordFilterOutcome(filterNode, recordedPassedCount,
-							recordedFilteredCount);
+					evaluationStatistics.recordFilterOutcome(filterNode,
+							EvaluationStatistics.FilterOutcomeObservation.completed(recordedPassedCount,
+									recordedFilteredCount));
 				} catch (RuntimeException e) {
 					// Estimation feedback must never break query evaluation.
 				}

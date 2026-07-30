@@ -18,9 +18,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.File;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPlan;
@@ -82,6 +85,29 @@ class LmdbPackedPlanCacheTest {
 		}
 	}
 
+	@Test
+	void learnedFilterRevisionInvalidatesCachedPlan(@TempDir File dataDir) {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
+		store.init();
+		try {
+			Filter source = filteredPattern();
+
+			CascadesPlan cold = plan(store, source.clone());
+			CascadesPlan hot = plan(store, source.clone());
+			assertFalse(cold.metrics().planCacheHit());
+			assertTrue(hot.metrics().planCacheHit());
+
+			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics();
+			statistics.recordFilterOutcome(source, 3L, 1L);
+
+			CascadesPlan revised = plan(store, source.clone());
+			assertFalse(revised.metrics().planCacheHit());
+		} finally {
+			store.shutDown();
+		}
+	}
+
 	private static CascadesPlan plan(LmdbStore store, TupleExpr source) {
 		return new LmdbCascadesOptimizer(store.getBackingStore().getEvaluationStatistics(), false)
 				.planPreparedInput(source, OptimizationGoal.root(source, null));
@@ -94,5 +120,14 @@ class LmdbPackedPlanCacheTest {
 						Var.of("shared")),
 				new StatementPattern(Var.of("shared"), Var.of("rightPredicate", values.createIRI("urn:right")),
 						Var.of("object")));
+	}
+
+	private static Filter filteredPattern() {
+		var values = SimpleValueFactory.getInstance();
+		return new Filter(
+				new StatementPattern(Var.of("subject"), Var.of("predicate", values.createIRI("urn:predicate")),
+						Var.of("object")),
+				new Compare(Var.of("object"), new ValueConstant(values.createLiteral("selected")),
+						Compare.CompareOp.EQ));
 	}
 }

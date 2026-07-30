@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoRolloutProfile;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -39,7 +40,9 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.LmdbBenchmarkQueryPlan;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSynopsisStatus;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -55,7 +58,7 @@ import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Threads;
 import org.openjdk.jmh.annotations.Warmup;
 
-@Warmup(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
+@Warmup(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 4)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G" })
 @Measurement(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
@@ -134,18 +137,24 @@ public class ThemeQueryPlanRunBenchmark {
 		})
 		public String themeName;
 
-		@Param({ "false" })
+//		@Param({ "false" })
 		public boolean sketchEstimatorEnabled;
 
-		@Param({ "unified" })
+//		@Param({ "unified" })
 		public String sketchEstimatorStrategy;
 
-		@Param({ "true" })
+//		@Param({ "true" })
 		public boolean dphypEnabled = true;
+
+//		@Param({ "false" })
 		public boolean loadSelectedThemeOnly;
+
+//		@Param({ "safe-cardinality-correction" })
+		public String leoRolloutProfile;
+
 		public boolean rebuildStoreBeforeSetup;
 
-		@Param({ QUERY_VARIANT_FILTER })
+//		@Param({ QUERY_VARIANT_FILTER })
 		public String queryVariant;
 
 		private SailRepository repository;
@@ -158,12 +167,17 @@ public class ThemeQueryPlanRunBenchmark {
 		private OptionalLong expectedCountBindingValue;
 		protected SailRepositoryConnection connection;
 		private String previousDphypEnabled;
+		private String previousLeoRolloutProfile;
 
 		@Setup(Level.Trial)
 		public void setup() throws IOException {
 			try {
 				previousDphypEnabled = System.setProperty("rdf4j.optimizer.lmdb.cascades.connectedJoin.dphyp",
 						Boolean.toString(dphypEnabled));
+				LeoRolloutProfile configuredLeoProfile = LeoRolloutProfile.parse(
+						leoRolloutProfile, LeoRolloutProfile.SAFE_CARDINALITY_CORRECTION);
+				previousLeoRolloutProfile = System.setProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY,
+						configuredLeoProfile.externalName());
 				theme = Theme.valueOf(themeName);
 				query = queryForVariant(theme, z_queryIndex, queryVariant);
 				expectedRows = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
@@ -220,6 +234,12 @@ public class ThemeQueryPlanRunBenchmark {
 				System.setProperty("rdf4j.optimizer.lmdb.cascades.connectedJoin.dphyp", previousDphypEnabled);
 			}
 			previousDphypEnabled = null;
+			if (previousLeoRolloutProfile == null) {
+				System.clearProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY);
+			} else {
+				System.setProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY, previousLeoRolloutProfile);
+			}
+			previousLeoRolloutProfile = null;
 		}
 
 		private void ensureDataLoadedAndValidated() throws IOException {
@@ -245,13 +265,18 @@ public class ThemeQueryPlanRunBenchmark {
 		}
 
 		private void waitForSketchesIfEnabled() throws IOException {
-			if (!sketchEstimatorEnabled) {
-				return;
-			}
-			if (!Boolean.parseBoolean(System.getProperty(ThemeQueryBenchmark.WAIT_FOR_SKETCHES_PROPERTY, "true"))) {
-				return;
-			}
 			repository.init();
+			if (storeConfig.getFrontierEstimatorMode() != FrontierEstimatorMode.OFF) {
+				FrontierSynopsisStatus frontierStatus = store.rebuildFrontierSynopsis();
+				if (frontierStatus != FrontierSynopsisStatus.READY) {
+					throw new IOException("Frontier is not ready for Theme plan/run benchmark: " + frontierStatus);
+				}
+			}
+			if (!sketchEstimatorEnabled
+					|| !Boolean.parseBoolean(
+							System.getProperty(ThemeQueryBenchmark.WAIT_FOR_SKETCHES_PROPERTY, "true"))) {
+				return;
+			}
 			long timeoutSeconds = Long.getLong(ThemeQueryBenchmark.WAIT_FOR_SKETCHES_TIMEOUT_SECONDS_PROPERTY,
 					300L);
 			BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "theme plan/run benchmark setup", timeoutSeconds,
@@ -288,6 +313,7 @@ public class ThemeQueryPlanRunBenchmark {
 		private LmdbStoreConfig createLoadStoreConfig() {
 			LmdbStoreConfig config = createStoreConfig();
 			config.setSketchEstimatorEnabled(false);
+			config.setFrontierEstimatorMode(FrontierEstimatorMode.OFF);
 			config.setIterationCacheSyncThreshold(0);
 			return config;
 		}
@@ -453,6 +479,10 @@ public class ThemeQueryPlanRunBenchmark {
 			if (connection == null || query == null) {
 				return;
 			}
+			System.out.println();
+			System.out.println("### Original SPARQL Query - Trial teardown ###");
+			System.out.println(queryDescription());
+			System.out.println(query);
 			var tupleQuery = connection.prepareTupleQuery(query);
 			tupleQuery.setIncludeInferred(false);
 			tupleQuery.setMaxExecutionTime(QUERY_TIMEOUT_SECONDS);

@@ -79,9 +79,7 @@ public enum LeoRolloutProfile {
 		if (configured == null || configured.isBlank()) {
 			configured = System.getProperty(LEGACY_PROFILE_PROPERTY);
 		}
-		// Learned corrections must be opted into explicitly; a silent apply-by-default profile lets learned
-		// state overrule store-backed statistics and makes planning nondeterministic across runs.
-		return parse(configured, OFF);
+		return parse(configured, SAFE_CARDINALITY_CORRECTION);
 	}
 
 	public static LeoRolloutProfile parse(String value, LeoRolloutProfile fallback) {

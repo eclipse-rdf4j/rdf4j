@@ -12,6 +12,8 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbFilterPassSelection.isValidPassRatio;
+import static org.eclipse.rdf4j.sail.lmdb.LmdbFilterPassSelection.learnedFilterPass;
+import static org.eclipse.rdf4j.sail.lmdb.LmdbFilterPassSelection.learnedSurfaceFilterPass;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbFilterPassSelection.prefer;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbFilterPassSelection.sampledFilterPass;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbFilterPassSelection.unknownFilterPass;
@@ -32,10 +34,8 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKeys;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingShape;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingUniverse;
@@ -54,6 +54,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanRankingAd
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoSurfaceKey;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbFrontierSynopsisService;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 
@@ -102,7 +103,7 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 			LmdbOperatorFeedbackStats feedback, LmdbStatementPatternCardinalitySource cardinalities,
 			PackedPlanCache cascadesPlanCache) {
 		this(valueStore, tripleStore, estimator, filters, feedback, cardinalities, cascadesPlanCache, null,
-				FrontierEstimatorMode.OFF, 0L, 0, 1.0d, 1.0d, () -> false);
+				FrontierEstimatorMode.OFF, 0L, 0L, 0, 1.0d, 1.0d, () -> false);
 	}
 
 	LmdbEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
@@ -112,12 +113,28 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 			FrontierEstimatorMode frontierMode, long frontierQueryMemoryBudgetBytes,
 			int frontierRefinementWorkUnits, double frontierTargetRelativeStandardError,
 			double frontierDefensiveProposalEpsilon, BooleanSupplier mayHaveInferred) {
+		this(valueStore, tripleStore, estimator, filters, feedback, cardinalities, cascadesPlanCache,
+				frontierSynopsis, frontierMode, frontierQueryMemoryBudgetBytes,
+				LmdbStoreConfig.FRONTIER_INITIAL_MATERIALIZATION_WORK_UNITS,
+				frontierRefinementWorkUnits, frontierTargetRelativeStandardError,
+				frontierDefensiveProposalEpsilon, mayHaveInferred);
+	}
+
+	LmdbEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
+			SketchBasedJoinEstimator estimator, LmdbFilterSelectivityStats filters,
+			LmdbOperatorFeedbackStats feedback, LmdbStatementPatternCardinalitySource cardinalities,
+			PackedPlanCache cascadesPlanCache, LmdbFrontierSynopsisService frontierSynopsis,
+			FrontierEstimatorMode frontierMode, long frontierQueryMemoryBudgetBytes,
+			long frontierInitialMaterializationWorkUnits, int frontierRefinementWorkUnits,
+			double frontierTargetRelativeStandardError, double frontierDefensiveProposalEpsilon,
+			BooleanSupplier mayHaveInferred) {
 		filterStatistics = filters;
 		this.estimator = estimator;
 		runtime = new LmdbEstimatorRuntime(valueStore, tripleStore,
 				estimator == null ? null : estimator.synopsisService(), filters, feedback, cardinalities,
 				cascadesPlanCache, frontierSynopsis, frontierMode, frontierQueryMemoryBudgetBytes,
-				frontierRefinementWorkUnits, frontierTargetRelativeStandardError,
+				frontierInitialMaterializationWorkUnits, frontierRefinementWorkUnits,
+				frontierTargetRelativeStandardError,
 				frontierDefensiveProposalEpsilon, mayHaveInferred);
 	}
 
@@ -162,18 +179,23 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 		}
 		StatementPattern pattern = LmdbEstimatorExpressionSupport.basePattern(filter.getArg());
 		FilterPassEstimate heuristic = heuristicFilterPass(filter);
-		if (filterStatistics == null || pattern == null) {
+		if (filterStatistics == null) {
 			return heuristic;
 		}
-		FilterPassEstimate best = prefer(validOrNull(filterStatistics.estimateSnapshotFilterPass(filter, pattern)),
-				validOrNull(heuristic));
+		FilterPassEstimate best = validOrNull(heuristic);
+		if (pattern != null) {
+			best = prefer(validOrNull(filterStatistics.estimateSnapshotFilterPass(filter, pattern)), best);
+		}
 		if (estimator != null && !estimator.adaptiveEvidenceAllowed()) {
 			return best == null ? unknownFilterPass() : best;
 		}
-		best = prefer(best, learnedFilterPass(filter, pattern));
-		best = prefer(best, sampledFilterPass(filterStatistics.estimateCachedFilterPass(filter, pattern)));
-		if (best == null || best.getConfidenceScore() < LIVE_SAMPLE_CONFIDENCE_THRESHOLD) {
-			best = prefer(best, sampledFilterPass(filterStatistics.estimateLiveFilterPass(filter, pattern)));
+		best = prefer(best, learnedSurfaceFilterPass(filterStatistics, filter));
+		if (pattern != null) {
+			best = prefer(best, learnedFilterPass(filterStatistics, filter, pattern));
+			best = prefer(best, sampledFilterPass(filterStatistics.estimateCachedFilterPass(filter, pattern)));
+			if (best == null || best.getConfidenceScore() < LIVE_SAMPLE_CONFIDENCE_THRESHOLD) {
+				best = prefer(best, sampledFilterPass(filterStatistics.estimateLiveFilterPass(filter, pattern)));
+			}
 		}
 		return best == null ? unknownFilterPass() : best;
 	}
@@ -185,34 +207,6 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 				: Math.max(0.0d, Math.min(1.0d, outputRows / inputRows));
 		return isValidPassRatio(ratio) ? new FilterPassEstimate(ratio, FilterPassEstimate.Source.HEURISTIC)
 				: unknownFilterPass();
-	}
-
-	private FilterPassEstimate learnedFilterPass(Filter filter, StatementPattern pattern) {
-		PatternKey patternKey = FilterSelectivityKeys.patternKeyFor(pattern);
-		if (patternKey == null) {
-			return null;
-		}
-		FilterPassEstimate best = null;
-		String filterKey = FilterSelectivityKeys.filterKeyFor(filter.getCondition());
-		double ratio = filterStatistics.getFilterPassRatio(patternKey, filterKey);
-		if (isValidPassRatio(ratio)) {
-			best = new FilterPassEstimate(ratio, FilterPassEstimate.Source.LEARNED_FILTER,
-					filterStatistics.getFilterObservationCount(patternKey, filterKey));
-		}
-		String templateKey = FilterSelectivityKeys.filterTemplateKeyFor(filter.getCondition(), pattern);
-		if (templateKey != null) {
-			ratio = filterStatistics.getFilterTemplatePassRatio(patternKey, templateKey);
-			if (isValidPassRatio(ratio)) {
-				best = prefer(best, new FilterPassEstimate(ratio, FilterPassEstimate.Source.LEARNED_TEMPLATE,
-						filterStatistics.getFilterTemplateObservationCount(patternKey, templateKey)));
-			}
-		}
-		ratio = filterStatistics.getPatternPassRatio(patternKey);
-		if (isValidPassRatio(ratio)) {
-			best = prefer(best, new FilterPassEstimate(ratio, FilterPassEstimate.Source.LEARNED_PATTERN,
-					filterStatistics.getPatternObservationCount(patternKey)));
-		}
-		return best;
 	}
 
 	/**
@@ -249,9 +243,14 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 
 	@Override
 	public void recordFilterOutcome(Filter filter, long passedCount, long filteredCount) {
-		StatementPattern pattern = LmdbEstimatorExpressionSupport.basePattern(filter == null ? null : filter.getArg());
-		if (filterStatistics != null && pattern != null) {
-			filterStatistics.recordFilterOutcome(filter, pattern, passedCount, filteredCount);
+		recordFilterOutcome(filter, FilterOutcomeObservation.completed(passedCount, filteredCount));
+	}
+
+	@Override
+	public void recordFilterOutcome(Filter filter, FilterOutcomeObservation observation) {
+		if (filterStatistics != null && filter != null && observation != null && observation.completed()
+				&& observation.poisonReason().isEmpty()) {
+			filterStatistics.recordFilterOutcome(filter, observation.passedCount(), observation.filteredCount());
 		}
 	}
 

@@ -28,7 +28,9 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -228,6 +230,93 @@ class DefaultEvaluationStrategyTelemetryRegressionTest {
 		assertThat(statistics.recordCalls).isEqualTo(1);
 		assertThat(statistics.passedCount).isEqualTo(1L);
 		assertThat(statistics.filteredCount).isZero();
+	}
+
+	@Test
+	void partiallyConsumedLocalFilterDoesNotRecordOutcomeFeedback() {
+		StatementPattern pattern = new StatementPattern(Var.of("s"),
+				Var.of("p", SimpleValueFactory.getInstance().createIRI("urn:p")), Var.of("value"));
+		Filter filter = new Filter(pattern,
+				new Compare(Var.of("value"),
+						new ValueConstant(SimpleValueFactory.getInstance().createLiteral("keep")),
+						Compare.CompareOp.EQ));
+
+		QueryBindingSet first = new QueryBindingSet();
+		first.addBinding("s", SimpleValueFactory.getInstance().createIRI("urn:first"));
+		first.addBinding("value", SimpleValueFactory.getInstance().createLiteral("keep"));
+		QueryBindingSet second = new QueryBindingSet();
+		second.addBinding("s", SimpleValueFactory.getInstance().createIRI("urn:second"));
+		second.addBinding("value", SimpleValueFactory.getInstance().createLiteral("keep"));
+
+		RecordingEvaluationStatistics statistics = new RecordingEvaluationStatistics();
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null, null, 0,
+				statistics);
+
+		try (FilterIterator iterator = new FilterIterator(filter,
+				new CloseableIteratorIteration<>(List.of(first, second).iterator()),
+				new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(BooleanLiteral.TRUE), strategy,
+				statistics)) {
+			assertThat(iterator.hasNext()).isTrue();
+			assertThat(iterator.next().getValue("s")).isEqualTo(first.getValue("s"));
+		}
+
+		assertThat(statistics.recordCalls).isZero();
+	}
+
+	@Test
+	void exhaustedNestedLocalFilterRecordsOutcomeFeedback() {
+		StatementPattern pattern = new StatementPattern(Var.of("s"),
+				Var.of("p", SimpleValueFactory.getInstance().createIRI("urn:p")), Var.of("value"));
+		Filter filter = new Filter(pattern,
+				new Compare(Var.of("value"),
+						new ValueConstant(SimpleValueFactory.getInstance().createLiteral("keep")),
+						Compare.CompareOp.EQ));
+		new Exists(filter);
+		QueryBindingSet keep = new QueryBindingSet();
+		keep.addBinding("value", SimpleValueFactory.getInstance().createLiteral("keep"));
+		RecordingEvaluationStatistics statistics = new RecordingEvaluationStatistics();
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null, null, 0,
+				statistics);
+
+		try (FilterIterator iterator = new FilterIterator(filter,
+				new CloseableIteratorIteration<>(List.of(keep).iterator()),
+				new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(BooleanLiteral.TRUE), strategy,
+				statistics)) {
+			assertThat(iterator.hasNext()).isTrue();
+			assertThat(iterator.next()).isSameAs(keep);
+			assertThat(iterator.hasNext()).isFalse();
+		}
+
+		assertThat(statistics.recordCalls).isEqualTo(1L);
+	}
+
+	@Test
+	void slicedOrVolatileFilterDoesNotRecordOutcomeFeedback() {
+		StatementPattern pattern = new StatementPattern(Var.of("s"),
+				Var.of("p", SimpleValueFactory.getInstance().createIRI("urn:p")), Var.of("value"));
+		Filter sliced = new Filter(new Slice(pattern, 0L, 1L),
+				new Compare(Var.of("value"),
+						new ValueConstant(SimpleValueFactory.getInstance().createLiteral("keep")),
+						Compare.CompareOp.EQ));
+		Filter volatileFilter = new Filter(pattern.clone(), new FunctionCall("RAND"));
+		QueryBindingSet keep = new QueryBindingSet();
+		keep.addBinding("value", SimpleValueFactory.getInstance().createLiteral("keep"));
+		RecordingEvaluationStatistics statistics = new RecordingEvaluationStatistics();
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null, null, 0,
+				statistics);
+
+		for (Filter filter : List.of(sliced, volatileFilter)) {
+			try (FilterIterator iterator = new FilterIterator(filter,
+					new CloseableIteratorIteration<>(List.of(keep).iterator()),
+					new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(BooleanLiteral.TRUE), strategy,
+					statistics)) {
+				assertThat(iterator.hasNext()).isTrue();
+				assertThat(iterator.next()).isSameAs(keep);
+				assertThat(iterator.hasNext()).isFalse();
+			}
+		}
+
+		assertThat(statistics.recordCalls).isZero();
 	}
 
 	private static StatementPattern statementPatternWithMetrics(int index) {

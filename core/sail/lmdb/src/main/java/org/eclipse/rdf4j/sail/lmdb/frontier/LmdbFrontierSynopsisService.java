@@ -51,6 +51,8 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 	private boolean pendingInsertionsOverflowed;
 	private boolean insertionMarkerOwnedByCurrentTransaction;
 	private volatile FrontierSynopsisStatus status;
+	private volatile FrontierQueryIndexView queryIndexView;
+	private volatile String queryIndexFailureReason = "query_index_unavailable";
 
 	private LmdbFrontierSynopsisService(FrontierSynopsisStatus status) {
 		this(null, null, null, status);
@@ -91,9 +93,19 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 	public static LmdbFrontierSynopsisService open(Path frontierDirectory, FrontierEstimatorMode mode,
 			UUID durableStoreId, long synopsisBudgetBytes, int designLaneCount, int auditLaneCount,
 			FrontierSnapshotSourceFactory snapshotSourceFactory) {
+		return open(frontierDirectory, mode, durableStoreId, synopsisBudgetBytes, designLaneCount, auditLaneCount,
+				snapshotSourceFactory, synopsisBudgetBytes);
+	}
+
+	public static LmdbFrontierSynopsisService open(Path frontierDirectory, FrontierEstimatorMode mode,
+			UUID durableStoreId, long synopsisBudgetBytes, int designLaneCount, int auditLaneCount,
+			FrontierSnapshotSourceFactory snapshotSourceFactory, long queryIndexBudgetBytes) {
 		Objects.requireNonNull(mode, "mode");
 		if (synopsisBudgetBytes < 0L) {
 			throw new IllegalArgumentException("Frontier synopsis budget must be nonnegative");
+		}
+		if (queryIndexBudgetBytes < 0L) {
+			throw new IllegalArgumentException("Frontier query index budget must be nonnegative");
 		}
 		if (mode == FrontierEstimatorMode.OFF) {
 			return new LmdbFrontierSynopsisService(FrontierSynopsisStatus.DISABLED_MODE);
@@ -112,6 +124,7 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 		BuildContext buildContext = new BuildContext(
 				durableStoreId,
 				synopsisBudgetBytes,
+				queryIndexBudgetBytes,
 				designLaneCount,
 				auditLaneCount,
 				Objects.requireNonNull(snapshotSourceFactory, "snapshotSourceFactory"));
@@ -161,7 +174,10 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 		if (dirtyInsertion) {
 			status = recoverInsertionMarker(normalizedDirectory, fileOps, status);
 		}
-		return new LmdbFrontierSynopsisService(normalizedDirectory, fileOps, buildContext, status);
+		LmdbFrontierSynopsisService service = new LmdbFrontierSynopsisService(
+				normalizedDirectory, fileOps, buildContext, status);
+		service.initializeQueryIndexIfReady(manifest);
+		return service;
 	}
 
 	LmdbFrontierSynopsisService(Path frontierDirectory, long synopsisBudgetBytes,
@@ -213,14 +229,56 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 		this.buildContext = new BuildContext(
 				expectedIdentity.storeId(),
 				synopsisBudgetBytes,
+				synopsisBudgetBytes,
 				expectedIdentity.designLaneCount(),
 				expectedIdentity.auditLaneCount(),
 				snapshotSourceFactory);
 		status = bootstrap(normalizedDirectory, synopsisBudgetBytes, expectedIdentity, snapshotSourceFactory, fileOps);
+		if (status == FrontierSynopsisStatus.READY) {
+			try {
+				initializeQueryIndexIfReady(new FrontierManifestStore(normalizedDirectory, fileOps).load());
+			} catch (IOException ignored) {
+				queryIndexFailureReason = "query_index_build_failed";
+			}
+		}
 	}
 
 	public FrontierSynopsisStatus status() {
 		return status;
+	}
+
+	/**
+	 * Retains the immutable mapped query view matching one LMDB read snapshot.
+	 */
+	public FrontierQueryIndexLease acquireQueryIndex(long requiredSnapshotEpoch) {
+		if (requiredSnapshotEpoch < 0L) {
+			throw new IllegalArgumentException("requiredSnapshotEpoch must be nonnegative");
+		}
+		for (;;) {
+			FrontierSynopsisStatus currentStatus = status;
+			if (currentStatus != FrontierSynopsisStatus.READY) {
+				return FrontierQueryIndexLease.unavailable(
+						currentStatus, "query_index_unavailable", requiredSnapshotEpoch);
+			}
+			FrontierQueryIndexView candidate = queryIndexView;
+			if (candidate == null) {
+				return FrontierQueryIndexLease.unavailable(
+						currentStatus, queryIndexFailureReason, requiredSnapshotEpoch);
+			}
+			if (candidate.snapshotEpoch() != requiredSnapshotEpoch) {
+				return FrontierQueryIndexLease.unavailable(
+						FrontierSynopsisStatus.EPOCH_MISMATCH,
+						"query_index_epoch_mismatch",
+						requiredSnapshotEpoch);
+			}
+			if (!candidate.tryRetain()) {
+				continue;
+			}
+			if (candidate == queryIndexView && status == FrontierSynopsisStatus.READY) {
+				return FrontierQueryIndexLease.ready(candidate);
+			}
+			candidate.release();
+		}
 	}
 
 	/**
@@ -314,12 +372,18 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 				status = FrontierSynopsisStatus.EPOCH_MISMATCH;
 				return status;
 			}
-			new FrontierManifestStore(frontierDirectory, fileOps)
-					.publish(new FrontierManifest(generation, identity, descriptor));
+			FrontierManifest manifest = new FrontierManifest(generation, identity, descriptor);
+			new FrontierManifestStore(frontierDirectory, fileOps).publish(manifest);
+			refreshQueryIndex(manifest);
+			/*
+			 * The in-process status becomes READY before the durable dirty markers disappear: an observer keying on a
+			 * vanished marker must never see a stale dirty status, while a crash between the two merely leaves a marker
+			 * that triggers one redundant coalesced rebuild.
+			 */
+			status = FrontierSynopsisStatus.READY;
 			fileOps.deleteIfExists(frontierDirectory.resolve(DIRTY_MARKER_FILE));
 			fileOps.deleteIfExists(frontierDirectory.resolve(INSERTION_MARKER_FILE));
 			fileOps.forceDirectory(frontierDirectory);
-			status = FrontierSynopsisStatus.READY;
 		} catch (FrontierSnapshotInvalidatedException e) {
 			status = FrontierSynopsisStatus.EPOCH_MISMATCH;
 		} catch (FrontierPayloadException e) {
@@ -440,11 +504,18 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 				ArrayList<FrontierPayloadDescriptor> inserts = new ArrayList<>(previous.insertPayloads());
 				inserts.add(insert);
 				FrontierManifestIdentity identity = expectedIdentity(snapshotEpoch);
-				manifestStore.publish(new FrontierManifest(snapshotEpoch, identity, previous.payload(), inserts));
+				FrontierManifest manifest = new FrontierManifest(
+						snapshotEpoch, identity, previous.payload(), inserts);
+				manifestStore.publish(manifest);
+				refreshQueryIndex(manifest);
 			}
+			/*
+			 * READY becomes visible before the durable insertion marker disappears so a marker-gone observation can
+			 * never coexist with a stale dirty status; a crash between the two just repeats one coalesced rebuild.
+			 */
+			status = FrontierSynopsisStatus.READY;
 			fileOps.deleteIfExists(frontierDirectory.resolve(INSERTION_MARKER_FILE));
 			fileOps.forceDirectory(frontierDirectory);
-			status = FrontierSynopsisStatus.READY;
 		} catch (FrontierManifestException e) {
 			status = e.status() == FrontierSynopsisStatus.BUDGET_EXCEEDED
 					? FrontierSynopsisStatus.BUDGET_EXCEEDED
@@ -506,8 +577,11 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 				Math.addExact(buildContext.designLaneCount(), buildContext.auditLaneCount()));
 		long retainedBytesPerInsertion = Math.multiplyExact(
 				laneCopies, FrontierSynopsisBuilder.RECORD_LONGS * Long.BYTES);
-		return (int) Math.max(1L, Math.min(Integer.MAX_VALUE,
+		long budgetBound = Math.max(1L, Math.min(Integer.MAX_VALUE,
 				buildContext.synopsisBudgetBytes() / retainedBytesPerInsertion));
+		int singleBlockBound = FrontierInsertGenerationBuilder.maximumSingleBlockInsertions(
+				buildContext.designLaneCount(), buildContext.auditLaneCount());
+		return (int) Math.min(budgetBound, singleBlockBound);
 	}
 
 	private static long payloadBytes(FrontierManifest manifest) throws FrontierPayloadException {
@@ -531,7 +605,69 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 
 	@Override
 	public void close() {
-		// Bootstrap owns and closes its pinned snapshot before construction completes.
+		replaceQueryIndex(null, "query_index_unavailable");
+	}
+
+	private void initializeQueryIndexIfReady(FrontierManifest manifest) {
+		if (status == FrontierSynopsisStatus.READY) {
+			refreshQueryIndex(manifest);
+		}
+	}
+
+	private void refreshQueryIndex(FrontierManifest manifest) {
+		if (buildContext == null || buildContext.queryIndexBudgetBytes() == 0L) {
+			replaceQueryIndex(null, "query_index_unavailable");
+			return;
+		}
+		ArrayList<FrontierQueryIndex> indexes = new ArrayList<>(manifest.payloads().size());
+		long remainingIndexBytes = buildContext.queryIndexBudgetBytes();
+		long remainingPayloadBytes = buildContext.synopsisBudgetBytes();
+		try {
+			for (FrontierPayloadDescriptor descriptor : manifest.payloads()) {
+				FrontierQueryIndex index;
+				try {
+					index = FrontierQueryIndex.open(
+							frontierDirectory, manifest.identity(), descriptor, remainingIndexBytes, fileOps);
+				} catch (IOException invalidOrMissing) {
+					FrontierQueryIndex.Builder builder = FrontierQueryIndex.builder(
+							frontierDirectory, manifest.identity(), descriptor, remainingIndexBytes, fileOps);
+					ReadAccumulator accumulator = new ReadAccumulator();
+					streamPayload(
+							descriptor,
+							manifest.identity(),
+							builder,
+							accumulator,
+							remainingPayloadBytes);
+					index = builder.finish(accumulator.inclusionProbability, accumulator.databaseExact);
+				}
+				indexes.add(index);
+				remainingIndexBytes = Math.subtractExact(remainingIndexBytes, index.byteLength());
+				remainingPayloadBytes = Math.subtractExact(remainingPayloadBytes, descriptor.byteLength());
+			}
+			replaceQueryIndex(new FrontierQueryIndexView(manifest.identity(), indexes), "");
+		} catch (IOException | RuntimeException failure) {
+			closeQueryIndexes(indexes);
+			replaceQueryIndex(null, "query_index_build_failed");
+		}
+	}
+
+	private void replaceQueryIndex(FrontierQueryIndexView replacement, String failureReason) {
+		FrontierQueryIndexView previous = queryIndexView;
+		queryIndexView = replacement;
+		queryIndexFailureReason = failureReason;
+		if (previous != null) {
+			previous.release();
+		}
+	}
+
+	private static void closeQueryIndexes(List<FrontierQueryIndex> indexes) {
+		for (FrontierQueryIndex index : indexes) {
+			try {
+				index.close();
+			} catch (IOException ignored) {
+				// A failed close cannot make a rejected derived index authoritative.
+			}
+		}
 	}
 
 	private static FrontierSynopsisStatus bootstrap(Path frontierDirectory, long synopsisBudgetBytes,
@@ -894,12 +1030,16 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 	private record BuildContext(
 			UUID storeId,
 			long synopsisBudgetBytes,
+			long queryIndexBudgetBytes,
 			int designLaneCount,
 			int auditLaneCount,
 			FrontierSnapshotSourceFactory snapshotSourceFactory) {
 
 		private BuildContext {
 			Objects.requireNonNull(snapshotSourceFactory, "snapshotSourceFactory");
+			if (queryIndexBudgetBytes < 0L) {
+				throw new IllegalArgumentException("Frontier query index budget must be nonnegative");
+			}
 		}
 	}
 
@@ -916,8 +1056,15 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 				if (!exact || probability != 1.0d) {
 					throw corruptRecord("insert payload does not contain exact additive mass");
 				}
+				/*
+				 * NaN means no sampling design has been observed yet, which is legitimate here: per-generation
+				 * query-index builds stream one insert payload with a fresh accumulator, and a combined scan can reach
+				 * the insert payloads after an empty base snapshot. Insert mass is exact by the check above, so an
+				 * insert-initialized design is exact until a sampled base record overrides it.
+				 */
 				if (Double.isNaN(inclusionProbability)) {
-					throw corruptRecord("insert payload preceded its base sampling design");
+					inclusionProbability = 1.0d;
+					databaseExact = true;
 				}
 				return;
 			}

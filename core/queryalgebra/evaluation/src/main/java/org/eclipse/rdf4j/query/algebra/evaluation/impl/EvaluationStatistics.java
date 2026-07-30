@@ -108,6 +108,33 @@ public class EvaluationStatistics {
 		// no-op by default
 	}
 
+	public void recordFilterOutcome(Filter filter, FilterOutcomeObservation observation) {
+		if (observation == null || !observation.completed() || !observation.poisonReason().isEmpty()) {
+			return;
+		}
+		recordFilterOutcome(filter, observation.passedCount(), observation.filteredCount());
+	}
+
+	public record FilterOutcomeObservation(long passedCount, long filteredCount, boolean completed,
+			String poisonReason) {
+
+		public FilterOutcomeObservation {
+			if (passedCount < 0L || filteredCount < 0L) {
+				throw new IllegalArgumentException("Filter outcome counts must be nonnegative");
+			}
+			poisonReason = poisonReason == null ? "" : poisonReason;
+		}
+
+		public static FilterOutcomeObservation completed(long passedCount, long filteredCount) {
+			return new FilterOutcomeObservation(passedCount, filteredCount, true, "");
+		}
+
+		public static FilterOutcomeObservation incomplete(long passedCount, long filteredCount, String poisonReason) {
+			return new FilterOutcomeObservation(passedCount, filteredCount, false,
+					poisonReason == null || poisonReason.isBlank() ? "incomplete" : poisonReason);
+		}
+	}
+
 	public void recordOperatorOutcome(QueryModelNode node) {
 		// no-op by default
 	}

@@ -81,6 +81,21 @@ class PackedFrontierSubsetKernelContractTest {
 	}
 
 	@Test
+	void rootJoinRefinementReceivesTheWinningCombinedState() {
+		for (int factorCount : new int[] { 2, 3, 9, 65 }) {
+			TrackingCostModel model = new TrackingCostModel(true);
+
+			PackedPlanningResult result = PackedCascadesPlanner.optimize(
+					chain(factorCount), OptimizationGoal.root(), model);
+
+			assertNotNull(result.selectedPlan());
+			assertTrue(model.onlySession().rootJoinRefinementCalls > 0,
+					() -> factorCount
+							+ "-factor root join must be refined with its combined and both child states");
+		}
+	}
+
+	@Test
 	void detachedRecipesAndStoreWideCacheRemainFreeOfQueryLocalState() {
 		assertNoQueryLocalState(PackedPlanRecipe.class);
 		assertNoQueryLocalState(PackedPlanCache.class);
@@ -120,7 +135,16 @@ class PackedFrontierSubsetKernelContractTest {
 	private static final class TrackingCostModel implements PackedCostModel {
 
 		private final List<TrackingSession> sessions = new ArrayList<>();
+		private final boolean requireRootState;
 		private int closeCount;
+
+		private TrackingCostModel() {
+			this(false);
+		}
+
+		private TrackingCostModel(boolean requireRootState) {
+			this.requireRootState = requireRootState;
+		}
 
 		@Override
 		public double estimateRows(PackedQueryView query, int relationId) {
@@ -129,7 +153,7 @@ class PackedFrontierSubsetKernelContractTest {
 
 		@Override
 		public PackedCostSession openSession(PackedQueryView query) {
-			TrackingSession session = new TrackingSession(query, () -> closeCount++);
+			TrackingSession session = new TrackingSession(query, requireRootState, () -> closeCount++);
 			sessions.add(session);
 			return session;
 		}
@@ -144,6 +168,7 @@ class PackedFrontierSubsetKernelContractTest {
 	private static final class TrackingSession implements PackedCostSession {
 
 		private final PackedQueryView query;
+		private final boolean requireRootState;
 		private final Runnable closeAction;
 		private final Map<List<Integer>, Integer> stateByOrderedPrefix = new HashMap<>();
 		private final Map<List<Integer>, Set<List<Integer>>> ordersByLogicalSubset = new HashMap<>();
@@ -151,9 +176,11 @@ class PackedFrontierSubsetKernelContractTest {
 		private int appendCalls;
 		private int maximumPrefixLength;
 		private int emptyContextResets;
+		private int rootJoinRefinementCalls;
 
-		private TrackingSession(PackedQueryView query, Runnable closeAction) {
+		private TrackingSession(PackedQueryView query, boolean requireRootState, Runnable closeAction) {
 			this.query = query;
+			this.requireRootState = requireRootState;
 			this.closeAction = closeAction;
 		}
 
@@ -196,7 +223,19 @@ class PackedFrontierSubsetKernelContractTest {
 
 		@Override
 		public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
-			// Linear state propagation is exercised by leaf and append operations; operator refinement is neutral here.
+			if (query.operatorTag(relationId) == PackedRelOp.JOIN && context.prefixRelationCount() > 0) {
+				rootJoinRefinementCalls++;
+				if (requireRootState) {
+					assertTrue(context.evidenceStateId() > 0,
+							"root refinement must receive the state produced by the complete raw join");
+					assertEquals(context.evidenceStateId(), output.evidenceStateId(),
+							"neutral root refinement must begin with the winning state already installed");
+					assertTrue(context.leftInputEvidenceStateId() > 0,
+							"root refinement must receive the winning prefix state");
+					assertTrue(context.rightInputEvidenceStateId() > 0,
+							"root refinement must receive the appended child state");
+				}
+			}
 		}
 
 		@Override

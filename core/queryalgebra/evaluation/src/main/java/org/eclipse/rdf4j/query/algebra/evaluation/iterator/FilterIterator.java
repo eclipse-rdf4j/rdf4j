@@ -40,8 +40,11 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -53,7 +56,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ScalarEvaluationEffects;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -70,6 +75,7 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 	private final EvaluationStatistics evaluationStatistics;
 	private final boolean runtimeTelemetryEnabled;
 	private final boolean recordFilterOutcomes;
+	private final CompletionTrackingIteration<BindingSet> observedInput;
 	private long sourceRowsScannedActual;
 	private long sourceRowsMatchedActual;
 	private long sourceRowsFilteredActual;
@@ -340,11 +346,18 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 
 	public FilterIterator(Filter filter, CloseableIteration<BindingSet> iter, QueryValueEvaluationStep condition,
 			EvaluationStrategy strategy, EvaluationStatistics evaluationStatistics) throws QueryEvaluationException {
+		this(filter, new CompletionTrackingIteration<>(iter), condition, strategy, evaluationStatistics);
+	}
+
+	private FilterIterator(Filter filter, CompletionTrackingIteration<BindingSet> iter,
+			QueryValueEvaluationStep condition, EvaluationStrategy strategy,
+			EvaluationStatistics evaluationStatistics) {
 		super(iter);
 		this.filterNode = filter;
 		this.evaluationStatistics = evaluationStatistics;
 		this.runtimeTelemetryEnabled = filter != null && filter.isRuntimeTelemetryEnabled();
 		this.recordFilterOutcomes = shouldRecordFilterOutcomes(filter, evaluationStatistics);
+		this.observedInput = iter;
 		this.condition = condition;
 		this.strategy = strategy;
 		if (!isPartOfSubQuery(filter)) {
@@ -367,11 +380,18 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 			QueryValueEvaluationStep condition, EvaluationStrategy strategy, Function<BindingSet, BindingSet> retain,
 			EvaluationStatistics evaluationStatistics)
 			throws QueryEvaluationException {
+		this(filterNode, new CompletionTrackingIteration<>(iter), condition, strategy, retain, evaluationStatistics);
+	}
+
+	private FilterIterator(Filter filterNode, CompletionTrackingIteration<BindingSet> iter,
+			QueryValueEvaluationStep condition, EvaluationStrategy strategy, Function<BindingSet, BindingSet> retain,
+			EvaluationStatistics evaluationStatistics) {
 		super(iter);
 		this.filterNode = filterNode;
 		this.evaluationStatistics = evaluationStatistics;
 		this.runtimeTelemetryEnabled = filterNode != null && filterNode.isRuntimeTelemetryEnabled();
 		this.recordFilterOutcomes = shouldRecordFilterOutcomes(filterNode, evaluationStatistics);
+		this.observedInput = iter;
 		this.condition = condition;
 		this.strategy = strategy;
 		// FIXME Jeen Boekstra scopeBindingNames should include bindings from superquery
@@ -464,7 +484,28 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 	}
 
 	private static boolean shouldRecordFilterOutcomes(Filter filter, EvaluationStatistics evaluationStatistics) {
-		return filter != null && evaluationStatistics != null && !isPartOfSubQuery(filter);
+		return filter != null
+				&& evaluationStatistics != null
+				&& ScalarEvaluationEffects.effectOf(filter.getCondition()) == ScalarEvaluationEffects.Effect.REPEATABLE
+				&& !containsPoisoningTupleOperator(filter.getArg());
+	}
+
+	private static boolean containsPoisoningTupleOperator(TupleExpr expression) {
+		boolean[] poisoned = { false };
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (poisoned[0]) {
+					return;
+				}
+				if (node instanceof Slice || node instanceof Service || node instanceof TupleFunctionCall) {
+					poisoned[0] = true;
+					return;
+				}
+				node.visitChildren(this);
+			}
+		});
+		return poisoned[0];
 	}
 
 	@Override
@@ -528,10 +569,12 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 
 	@Override
 	protected void handleClose() {
-		if (filterNode != null && recordFilterOutcomes
+		if (filterNode != null && recordFilterOutcomes && observedInput.exhausted()
 				&& (recordedPassedCount > 0L || recordedFilteredCount > 0L)) {
 			try {
-				evaluationStatistics.recordFilterOutcome(filterNode, recordedPassedCount, recordedFilteredCount);
+				evaluationStatistics.recordFilterOutcome(filterNode,
+						EvaluationStatistics.FilterOutcomeObservation.completed(recordedPassedCount,
+								recordedFilteredCount));
 			} catch (RuntimeException e) {
 				// Estimation feedback must never break query evaluation.
 			}
@@ -573,6 +616,44 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 	@Override
 	public long getSourceRowsFilteredActual() {
 		return sourceRowsFilteredActual;
+	}
+
+	private static final class CompletionTrackingIteration<E> implements CloseableIteration<E> {
+
+		private final CloseableIteration<? extends E> delegate;
+		private boolean exhausted;
+
+		private CompletionTrackingIteration(CloseableIteration<? extends E> delegate) {
+			this.delegate = delegate;
+		}
+
+		@Override
+		public boolean hasNext() {
+			boolean hasNext = delegate.hasNext();
+			if (!hasNext) {
+				exhausted = true;
+			}
+			return hasNext;
+		}
+
+		@Override
+		public E next() {
+			return delegate.next();
+		}
+
+		@Override
+		public void remove() {
+			delegate.remove();
+		}
+
+		@Override
+		public void close() {
+			delegate.close();
+		}
+
+		private boolean exhausted() {
+			return exhausted;
+		}
 	}
 
 }

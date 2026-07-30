@@ -156,62 +156,32 @@ clean_stream() {
 
 extract_summary_table() {
 	awk '
-	BEGIN {
-		header = sprintf("%-37s %-15s %15s %5s %4s %10s %7s %s",
-			"Benchmark", "(themeName)", "(z_queryIndex)", "Mode", "Cnt", "Score", "Error", "Units")
+	function is_summary_header(line) {
+		return line ~ /^Benchmark([[:space:]]|$)/ && line ~ /Units[[:space:]]*$/
 	}
-	/^Benchmark[[:space:]]+/ && /\(themeName\)/ && /\(z_queryIndex\)/ && /[[:space:]]Score/ {
-		in_table = 1
-		theme_column = 0
-		query_column = 0
-		mode_column = 0
-		for (column = 1; column <= NF; column++) {
-			if ($column == "(themeName)") {
-				theme_column = column
-			} else if ($column == "(z_queryIndex)") {
-				query_column = column
-			} else if ($column == "Mode") {
-				mode_column = column
-			}
-		}
-		if (theme_column == 0 || query_column == 0 || mode_column == 0) {
-			in_table = 0
-			next
-		}
-		print header
-		next
+	function is_benchmark_result(line) {
+		return line ~ /^[^[:space:]]+[[:space:]]+/ \
+			&& line ~ /[[:space:]][-+]?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][-+]?[0-9]+)?([[:space:]]|$)/
 	}
 	in_table {
 		if ($0 ~ /^[[:space:]]*$/) {
 			exit
 		}
-		if ($1 != "ThemeQueryBenchmark.executeQuery") {
+		print
+		next
+	}
+	pending_header != "" {
+		if (is_benchmark_result($0)) {
+			print pending_header
+			print
+			pending_header = ""
+			in_table = 1
 			next
 		}
-		theme = $theme_column
-		query = $query_column
-		mode = $mode_column
-		tail_fields = NF - mode_column
-		cnt = ""
-		error = ""
-		units = $NF
-		if (tail_fields >= 5) {
-			cnt = $(mode_column + 1)
-			score = $(mode_column + 2)
-			error = $(mode_column + 4)
-		} else if (tail_fields == 4) {
-			score = $(mode_column + 1)
-			error = $(mode_column + 3)
-		} else if (tail_fields == 3) {
-			cnt = $(mode_column + 1)
-			score = $(mode_column + 2)
-		} else if (tail_fields == 2) {
-			score = $(mode_column + 1)
-		} else {
-			next
-		}
-		printf("%-37s %15s %15s %5s %4s %10s %7s %s\n",
-			"ThemeQueryBenchmark.executeQuery", theme, query, mode, cnt, score, error, units)
+		pending_header = ""
+	}
+	is_summary_header($0) {
+		pending_header = $0
 	}
 	' "$1"
 }
@@ -261,19 +231,39 @@ synthesize_summary_table() {
 
 remove_summary_table() {
 	awk '
-	/^Benchmark[[:space:]]+/ && /\(themeName\)/ && /\(z_queryIndex\)/ && /[[:space:]]Mode[[:space:]]/ && /[[:space:]]Score/ {
-		skipping = 1
+	function is_summary_header(line) {
+		return line ~ /^Benchmark([[:space:]]|$)/ && line ~ /Units[[:space:]]*$/
+	}
+	function is_benchmark_result(line) {
+		return line ~ /^[^[:space:]]+[[:space:]]+/ \
+			&& line ~ /[[:space:]][-+]?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][-+]?[0-9]+)?([[:space:]]|$)/
+	}
+	skipping_table {
+		if ($0 ~ /^[[:space:]]*$/) {
+			skipping_table = 0
+		}
 		next
 	}
-	skipping {
-		if ($0 ~ /^[[:space:]]*$/) {
-			skipping = 0
+	pending_header != "" {
+		if (is_benchmark_result($0)) {
+			pending_header = ""
+			skipping_table = 1
 			next
 		}
+		print pending_header
+		pending_header = ""
+	}
+	is_summary_header($0) {
+		pending_header = $0
 		next
 	}
 	{
 		print
+	}
+	END {
+		if (pending_header != "") {
+			print pending_header
+		}
 	}
 	' "$1"
 }

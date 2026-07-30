@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import java.util.Arrays;
 
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
+
 /**
  * Query-local mutable memo overlay over an immutable {@link PackedQuery} base.
  *
@@ -330,6 +332,10 @@ final class PackedMemo {
 
 	int physicalMetadataEvidenceStateId(int metadataId) {
 		return physicalMetadata.evidenceStateId(metadataId);
+	}
+
+	EvidenceGuarantee physicalMetadataEvidenceGuarantee(int metadataId) {
+		return physicalMetadata.evidenceGuarantee(metadataId);
 	}
 
 	int physicalMetadataLookupMask(int metadataId) {

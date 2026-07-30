@@ -1109,6 +1109,7 @@ class TripleStore implements Closeable {
 	public void close() throws IOException {
 		if (env != 0) {
 			endTransaction(false);
+			txnManager.close();
 
 			List<Throwable> caughtExceptions = new ArrayList<>();
 			if (pageEstimator != null) {

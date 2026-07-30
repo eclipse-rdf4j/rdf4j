@@ -1431,8 +1431,7 @@ final class PackedLogicalRuleProgram {
 		}
 		int inputGroupId = relations.childGroupId(filterExpressionId, 0);
 		if (!relationAssuresSymbol(inputGroupId, finiteSymbolId)
-				|| containsBindingAssignmentFor(inputGroupId, finiteSymbolId)
-				|| knownFilterRatio(filterExpressionId, inputGroupId) > 0.25d) {
+				|| containsBindingAssignmentFor(inputGroupId, finiteSymbolId)) {
 			return;
 		}
 
@@ -1855,16 +1854,6 @@ final class PackedLogicalRuleProgram {
 		return false;
 	}
 
-	/** The exact integral value of a numeric literal, or Long.MIN_VALUE when it has none. */
-	private static long integralValueOf(Literal literal) {
-		BigInteger integral = integerValueOf(literal);
-		if (integral == null || integral.compareTo(BigInteger.valueOf(Long.MIN_VALUE)) <= 0
-				|| integral.compareTo(BigInteger.valueOf(Long.MAX_VALUE)) > 0) {
-			return Long.MIN_VALUE;
-		}
-		return integral.longValue();
-	}
-
 	/** Exact value of a valid XSD integer-family literal, including values outside the Java {@code long} range. */
 	private static BigInteger integerValueOf(Literal literal) {
 		CoreDatatype datatype = literal.getCoreDatatype();
@@ -2043,6 +2032,11 @@ final class PackedLogicalRuleProgram {
 		boolean literalOnly = kinds == PackedPredicateRange.KIND_LITERAL;
 		if (literalOnly && datatypes == 1L << org.eclipse.rdf4j.model.base.CoreDatatype.XSD.BOOLEAN.ordinal()
 				&& literal.getCoreDatatype() == org.eclipse.rdf4j.model.base.CoreDatatype.XSD.BOOLEAN) {
+			if (!XMLDatatypeUtil.isValidBoolean(literal.getLabel())) {
+				// An invalid boolean lexical raises a type error against every valid stored boolean and can
+				// never be term-equal to one, so it contributes no anchor row.
+				return expandedCount;
+			}
 			boolean truth = Boolean.parseBoolean(literal.getLabel()) || "1".equals(literal.getLabel());
 			int first = objects.intern(org.eclipse.rdf4j.model.util.Values.literal(truth ? "true" : "false",
 					org.eclipse.rdf4j.model.vocabulary.XSD.BOOLEAN));
@@ -2054,24 +2048,17 @@ final class PackedLogicalRuleProgram {
 		if (literalOnly
 				&& (arena.universalBits(rangeId) & PackedPredicateRange.UNIVERSAL_CANONICAL_INTEGER) != 0
 				&& datatypes != 0L && allIntegerFamily(datatypes)) {
-			long integral = integralValueOf(literal);
-			if (integral == Long.MIN_VALUE) {
-				return -1;
-			}
-			int count = expandedCount;
-			for (int ordinal = 0; ordinal < 64; ordinal++) {
-				if ((datatypes & 1L << ordinal) == 0L) {
-					continue;
-				}
-				org.eclipse.rdf4j.model.base.CoreDatatype.XSD datatype = org.eclipse.rdf4j.model.base.CoreDatatype.XSD
-						.values()[ordinal];
-				count = appendExpanded(expanded, count, objects.intern(
-						org.eclipse.rdf4j.model.util.Values.literal(Long.toString(integral), datatype.getIri())));
-				if (count < 0) {
-					return count;
-				}
-			}
-			return count;
+			return expandIntegerAnchorValue(literal, datatypes, expanded, expandedCount);
+		}
+		if (literalOnly
+				&& (arena.universalBits(rangeId) & PackedPredicateRange.UNIVERSAL_CANONICAL_DATE) != 0
+				&& datatypes == 1L << org.eclipse.rdf4j.model.base.CoreDatatype.XSD.DATE.ordinal()) {
+			return expandDateAnchorValue(literal, objectId, expanded, expandedCount);
+		}
+		if (literalOnly
+				&& (arena.universalBits(rangeId) & PackedPredicateRange.UNIVERSAL_CANONICAL_DATETIME) != 0
+				&& datatypes == 1L << org.eclipse.rdf4j.model.base.CoreDatatype.XSD.DATETIME.ordinal()) {
+			return expandDateTimeAnchorValue(literal, expanded, expandedCount);
 		}
 		if (literalOnly
 				&& datatypes == 1L << org.eclipse.rdf4j.model.base.CoreDatatype.XSD.STRING.ordinal()
@@ -2094,6 +2081,162 @@ final class PackedLogicalRuleProgram {
 			return count == expandedCount ? -1 : count;
 		}
 		return -1;
+	}
+
+	/**
+	 * Integer-family expansion under {@code UNIVERSAL_CANONICAL_INTEGER}: every stored object is an integer-family
+	 * literal in canonical lexical form, so a constant's value-equality class is one canonical lexical per stored
+	 * datatype. SPARQL numeric promotion additionally lets decimal/float/double constants value-equal stored integers,
+	 * but only when the constant's numeric value is exactly integral under the engine's comparison semantics
+	 * (BigDecimal for decimals, IEEE doubles/floats for the floating families — where magnitudes past the mantissa make
+	 * several stored integers round onto one constant, the expansion refuses instead of guessing).
+	 */
+	private int expandIntegerAnchorValue(Literal literal, long datatypes, int[] expanded, int expandedCount) {
+		long integral;
+		if (isIntegerFamilyLiteral(literal)) {
+			BigInteger exact = integerValueOf(literal);
+			if (exact == null) {
+				// Invalid integer lexical: type error or term inequality against every stored value.
+				return expandedCount;
+			}
+			if (exact.compareTo(BigInteger.valueOf(Long.MIN_VALUE)) <= 0
+					|| exact.compareTo(BigInteger.valueOf(Long.MAX_VALUE)) > 0) {
+				return -1;
+			}
+			integral = exact.longValue();
+		} else if (isNumericLiteral(literal)) {
+			CoreDatatype.XSD constantDatatype = (CoreDatatype.XSD) literal.getCoreDatatype();
+			if (!XMLDatatypeUtil.isValidValue(literal.getLabel(), constantDatatype)) {
+				return expandedCount;
+			}
+			if (constantDatatype == CoreDatatype.XSD.DECIMAL) {
+				java.math.BigInteger exact;
+				try {
+					exact = literal.decimalValue().toBigIntegerExact();
+				} catch (ArithmeticException | NumberFormatException error) {
+					// Fractional decimals never value-equal a stored integer.
+					return expandedCount;
+				}
+				if (exact.compareTo(BigInteger.valueOf(Long.MIN_VALUE)) <= 0
+						|| exact.compareTo(BigInteger.valueOf(Long.MAX_VALUE)) > 0) {
+					return -1;
+				}
+				integral = exact.longValue();
+			} else {
+				boolean singlePrecision = constantDatatype == CoreDatatype.XSD.FLOAT;
+				double constantValue;
+				try {
+					constantValue = singlePrecision ? literal.floatValue() : literal.doubleValue();
+				} catch (NumberFormatException error) {
+					return expandedCount;
+				}
+				if (Double.isNaN(constantValue) || Double.isInfinite(constantValue)
+						|| constantValue != Math.rint(constantValue)) {
+					return expandedCount;
+				}
+				if (constantValue == 0.0d && Double.doubleToRawLongBits(constantValue) != 0L
+						&& !singlePrecision) {
+					// The engine compares via Double.compare, which orders -0.0 below stored +0 integers.
+					return expandedCount;
+				}
+				if (singlePrecision && Float.floatToRawIntBits((float) constantValue) == Float
+						.floatToRawIntBits(-0.0f)) {
+					return expandedCount;
+				}
+				long exactLimit = singlePrecision ? 1L << 24 : 1L << 53;
+				if (Math.abs(constantValue) >= (double) exactLimit) {
+					// Beyond the mantissa several stored integers promote onto the same constant.
+					return -1;
+				}
+				integral = (long) constantValue;
+			}
+		} else {
+			// Non-numeric literals raise a type error or fall back to term inequality against stored integers.
+			return expandedCount;
+		}
+		int count = expandedCount;
+		for (int ordinal = 0; ordinal < 64; ordinal++) {
+			if ((datatypes & 1L << ordinal) == 0L) {
+				continue;
+			}
+			CoreDatatype.XSD datatype = CoreDatatype.XSD.values()[ordinal];
+			if (!XMLDatatypeUtil.isValidValue(Long.toString(integral), datatype)) {
+				continue;
+			}
+			count = appendExpanded(expanded, count, objects.intern(
+					org.eclipse.rdf4j.model.util.Values.literal(Long.toString(integral), datatype.getIri())));
+			if (count < 0) {
+				return count;
+			}
+		}
+		return count;
+	}
+
+	/**
+	 * Under {@code UNIVERSAL_CANONICAL_DATE} every stored object is a timezone-less xsd:date whose canonical lexical
+	 * form maps 1:1 onto its value, so a timezone-less canonical constant can only value-equal its own term. Timezoned,
+	 * cross-datatype, and invalid constants never evaluate value-equal to a timezone-less date (mixed comparisons fall
+	 * back to term inequality or a type error) and contribute no anchor row; a valid timezone-less constant written in
+	 * a non-canonical year alias would need a different stored term, so the expansion refuses rather than miss it.
+	 */
+	private int expandDateAnchorValue(Literal literal, int objectId, int[] expanded, int expandedCount) {
+		if (literal.getCoreDatatype() != CoreDatatype.XSD.DATE
+				|| !XMLDatatypeUtil.isValidValue(literal.getLabel(), CoreDatatype.XSD.DATE)) {
+			return expandedCount;
+		}
+		String label = literal.getLabel();
+		if (hasCalendarTimezone(label)) {
+			return expandedCount;
+		}
+		if (!hasCanonicalYearField(label)) {
+			return -1;
+		}
+		return appendExpanded(expanded, expandedCount, objectId);
+	}
+
+	/**
+	 * Under {@code UNIVERSAL_CANONICAL_DATETIME} every stored object is an xsd:dateTime fixed point of
+	 * {@code normalizeDateTime}, so each value has exactly one stored representation per timezone class and cross-class
+	 * equality never evaluates to true. The normalized constant is therefore the only stored term the original filter
+	 * can accept for the constant's value.
+	 */
+	private int expandDateTimeAnchorValue(Literal literal, int[] expanded, int expandedCount) {
+		if (literal.getCoreDatatype() != CoreDatatype.XSD.DATETIME
+				|| !XMLDatatypeUtil.isValidValue(literal.getLabel(), CoreDatatype.XSD.DATETIME)) {
+			return expandedCount;
+		}
+		String normalized = XMLDatatypeUtil.normalizeDateTime(literal.getLabel());
+		return appendExpanded(expanded, expandedCount, objects.intern(
+				org.eclipse.rdf4j.model.util.Values.literal(normalized, CoreDatatype.XSD.DATETIME.getIri())));
+	}
+
+	private static boolean hasCalendarTimezone(String label) {
+		if (label.endsWith("Z")) {
+			return true;
+		}
+		int offsetStart = label.length() - 6;
+		if (offsetStart < 0) {
+			return false;
+		}
+		char sign = label.charAt(offsetStart);
+		return (sign == '+' || sign == '-') && label.charAt(label.length() - 3) == ':';
+	}
+
+	/**
+	 * Mirrors the store-side canonical-year rule: exactly four digits (excluding the negative-zero year), or more than
+	 * four digits without a leading zero.
+	 */
+	private static boolean hasCanonicalYearField(String label) {
+		int yearStart = label.startsWith("-") ? 1 : 0;
+		int yearEnd = label.indexOf('-', yearStart);
+		if (yearEnd < 0) {
+			return false;
+		}
+		int yearDigits = yearEnd - yearStart;
+		if (yearDigits == 4) {
+			return yearStart == 0 || !label.startsWith("-0000");
+		}
+		return yearDigits > 4 && label.charAt(yearStart) != '0';
 	}
 
 	private static int appendExpanded(int[] expanded, int expandedCount, int objectId) {
@@ -2130,29 +2273,6 @@ final class PackedLogicalRuleProgram {
 			}
 		}
 		finiteValueObjectIds[finiteValueCount++] = objectId;
-	}
-
-	private double knownFilterRatio(int filterExpressionId, int inputGroupId) {
-		int metricSetId = metadata.relationMetricSetId(filterExpressionId);
-		// A heuristic/unknown-source ratio is the uniform fallback guess, not knowledge; treating
-		// it as known (and the estimate ratio derived from it) starves the finite-filter anchor
-		// rule of exactly the filters it exists for.
-		String selectivitySource = metricString(metricSetId, TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE);
-		if ("heuristic".equals(selectivitySource) || "unknown".equals(selectivitySource)) {
-			return Double.NaN;
-		}
-		double explicitRatio = metricDouble(metricSetId, TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO_RAW);
-		if (!Double.isFinite(explicitRatio)) {
-			explicitRatio = metricDouble(metricSetId, TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO);
-		}
-		if (Double.isFinite(explicitRatio)) {
-			return explicitRatio;
-		}
-		double outputRows = metadata.relationResultSizeEstimate(filterExpressionId);
-		double inputRows = metadata.relationResultSizeEstimate(inputGroupId);
-		return Double.isFinite(outputRows) && outputRows >= 0.0d && Double.isFinite(inputRows) && inputRows > 0.0d
-				? outputRows / inputRows
-				: Double.NaN;
 	}
 
 	private void addUnusedOptionalAlternative(int observerExpressionId) {

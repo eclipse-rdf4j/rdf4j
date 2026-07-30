@@ -90,7 +90,7 @@ public final class FrontierLinearTransforms {
 				try {
 					writeProjectedResidual(
 							payload, sourceSlotsByOutputSlot, targetBySourceStratum, writer, exactCounts);
-					return internUnaryUnbiased(
+					return internUnaryMeasure(
 							arena, input, outputKey, operationRecipeId, FrontierStateOperation.PROJECT,
 							writer, input.summary().certifiedUpperBound());
 				} catch (RuntimeException | Error failure) {
@@ -142,7 +142,7 @@ public final class FrontierLinearTransforms {
 								arena, input, null, outputKey, operationRecipeId,
 								FrontierStateOperation.RESTRICT, writer);
 					}
-					return internUnaryUnbiased(
+					return internUnaryMeasure(
 							arena, input, outputKey, operationRecipeId, FrontierStateOperation.RESTRICT,
 							writer, input.summary().certifiedUpperBound());
 				} catch (RuntimeException | Error failure) {
@@ -219,23 +219,361 @@ public final class FrontierLinearTransforms {
 					long[] tuple = new long[outputKey.frontier().size()];
 					writeAllAsResidual(leftPayload, writer, exactCounts, tuple);
 					writeAllAsResidual(rightPayload, writer, exactCounts, tuple);
-					double pointRows = writer.pointRows();
 					double certifiedUpperBound = saturatedAdd(
 							left.summary().certifiedUpperBound(),
 							right.summary().certifiedUpperBound());
-					EvidenceStateSummary summary = unbiasedSummary(
-							pointRows,
-							writer.effectiveSampleSize(),
-							writer.maximumWeightFraction(),
-							certifiedUpperBound);
-					return arena.internPayload(
+					return internMeasure(
+							arena, left, right, outputKey, operationRecipeId,
+							FrontierStateOperation.UNION, writer, certifiedUpperBound);
+				} catch (RuntimeException | Error failure) {
+					writer.close();
+					throw failure;
+				}
+			}
+		}
+	}
+
+	/**
+	 * Averages two equivalent measures produced by independent design lanes.
+	 *
+	 * <p>
+	 * Every retained mapping from either lane is copied as a residual particle with half its effective weight. The
+	 * resulting random measure is therefore unbiased for the same database bag and remains composable through later
+	 * linear probes. The output keeps the primary lane as its conservative correlation anchor while its distinct
+	 * correlation scope and two-parent provenance identify the variance-reduced ensemble.
+	 * </p>
+	 */
+	public static EvidenceStateRef averageIndependentMeasures(
+			FrontierStateArena arena,
+			EvidenceStateRef primary,
+			EvidenceStateRef independent,
+			FrontierStateKey outputKey,
+			int operationRecipeId) {
+		requireIndependentAverage(arena, primary, independent, outputKey, operationRecipeId);
+		try (FrontierPayloadLease primaryPayload = arena.openPayload(primary);
+				FrontierPayloadLease independentPayload = arena.openPayload(independent)) {
+			int stratumCount = outputKey.maskStrata().stratumCount();
+			long temporaryBytes = saturatedAdd(
+					arrayBytes(stratumCount, Integer.BYTES),
+					saturatedAdd(
+							arrayBytes(stratumCount, Integer.BYTES),
+							arrayBytes(outputKey.frontier().size(), Long.BYTES)));
+			try (FrontierMemoryReservation ignored = arena.reserveTemporary(
+					temporaryBytes, FrontierMemoryPurpose.TARGET_COALESCING)) {
+				int[] exactCounts = new int[stratumCount];
+				int[] residualCounts = new int[stratumCount];
+				countAllAsResidual(primaryPayload, residualCounts);
+				countAllAsResidual(independentPayload, residualCounts);
+				FrontierPayloadWriter writer = arena.newPayloadWriter(outputKey, exactCounts, residualCounts);
+				try {
+					int[] nextResidual = new int[stratumCount];
+					long[] tuple = new long[outputKey.frontier().size()];
+					writeAllAsResidual(primaryPayload, writer, nextResidual, tuple, 0.5d);
+					writeAllAsResidual(independentPayload, writer, nextResidual, tuple, 0.5d);
+					double certifiedUpperBound = primary.summary().certifiedUpperBound() * 0.5d
+							+ independent.summary().certifiedUpperBound() * 0.5d;
+					return internMeasure(
+							arena,
+							primary,
+							independent,
 							outputKey,
-							summary,
-							FrontierStateOperation.UNION,
+							operationRecipeId,
+							FrontierStateOperation.AVERAGE_DESIGN_LANES,
+							writer,
+							certifiedUpperBound);
+				} catch (RuntimeException | Error failure) {
+					writer.close();
+					throw failure;
+				}
+			}
+		}
+	}
+
+	/**
+	 * Joins two finite Frontier relations when the operation is linear in every random input.
+	 *
+	 * <p>
+	 * Database-exact inputs may be joined freely. A sampled or learned-calibrated input may be joined to one
+	 * database-exact input because that transform is linear in the random measure. Two random measures from the same
+	 * coordinated lane are deliberately not multiplied: their product is correlated and is therefore published as a
+	 * typed non-composable boundary.
+	 * </p>
+	 *
+	 * @param maximumCandidatePairs hard upper bound on input mapping pairs examined
+	 */
+	public static EvidenceStateRef join(
+			FrontierStateArena arena,
+			EvidenceStateRef left,
+			EvidenceStateRef right,
+			FrontierStateKey outputKey,
+			int operationRecipeId,
+			int maximumCandidatePairs) {
+		requireBinaryJoin(arena, left, right, outputKey, operationRecipeId, maximumCandidatePairs);
+		boolean leftExact = left.summary().guarantee() == EvidenceGuarantee.DATABASE_EXACT;
+		boolean rightExact = right.summary().guarantee() == EvidenceGuarantee.DATABASE_EXACT;
+		double certifiedUpperBound = saturatedMultiply(
+				left.summary().certifiedUpperBound(),
+				right.summary().certifiedUpperBound());
+		if (!leftExact && !rightExact) {
+			return arena.deriveSummary(
+					outputKey,
+					EvidenceStateSummary.unresolved(
+							0.0d,
+							certifiedUpperBound,
+							certifiedUpperBound,
+							"correlated-random-product-unresolved"),
+					FrontierStateOperation.UNRESOLVED,
+					left,
+					right,
+					operationRecipeId);
+		}
+
+		try (FrontierPayloadLease leftPayload = arena.openPayload(left);
+				FrontierPayloadLease rightPayload = arena.openPayload(right)) {
+			long candidatePairs = Math.multiplyExact(
+					(long) entryCount(leftPayload),
+					entryCount(rightPayload));
+			if (candidatePairs > maximumCandidatePairs) {
+				return arena.deriveSummary(
+						outputKey,
+						EvidenceStateSummary.unresolved(
+								0.0d,
+								certifiedUpperBound,
+								certifiedUpperBound,
+								"frontier-binary-join-budget-exhausted"),
+						FrontierStateOperation.UNRESOLVED,
+						left,
+						right,
+						operationRecipeId);
+			}
+
+			FrontierMaskStrata outputMasks = outputKey.maskStrata();
+			int outputStrata = outputMasks.stratumCount();
+			int candidateCount = Math.toIntExact(candidatePairs);
+			long temporaryBytes = saturatedAdd(
+					JoinMapping.retainedBytes(leftPayload.masks(), rightPayload.masks(), outputMasks),
+					saturatedAdd(
+							arrayBytes(outputStrata, Integer.BYTES),
+							saturatedAdd(
+									arrayBytes(outputStrata, Integer.BYTES),
+									arrayBytes(outputStrata, Integer.BYTES))));
+			boolean exactOutput = leftExact && rightExact;
+			temporaryBytes = saturatedAdd(
+					temporaryBytes,
+					exactOutput
+							? ExactTupleBuffer.retainedBytes(candidateCount, outputKey.frontier().size())
+							: arrayBytes(outputKey.frontier().size(), Long.BYTES));
+			try (FrontierMemoryReservation ignored = arena.reserveTemporary(
+					temporaryBytes, FrontierMemoryPurpose.TARGET_COALESCING)) {
+				JoinMapping mapping = new JoinMapping(leftPayload.masks(), rightPayload.masks(), outputMasks);
+				int[] exactCounts = new int[outputStrata];
+				int[] residualCounts = new int[outputStrata];
+				if (exactOutput) {
+					ExactTupleBuffer buffer = new ExactTupleBuffer(candidateCount, outputKey.frontier().size());
+					appendCompatiblePairs(leftPayload, rightPayload, mapping, buffer);
+					buffer.coalesce(exactCounts);
+					return writeExactBuffer(
+							arena,
 							left,
 							right,
+							outputKey,
 							operationRecipeId,
-							writer);
+							FrontierStateOperation.JOIN,
+							buffer,
+							exactCounts,
+							residualCounts);
+				}
+
+				countCompatiblePairs(leftPayload, rightPayload, mapping, residualCounts);
+				FrontierPayloadWriter writer = arena.newPayloadWriter(outputKey, exactCounts, residualCounts);
+				try {
+					writeCompatiblePairs(leftPayload, rightPayload, mapping, writer, residualCounts);
+					return internMeasure(
+							arena,
+							left,
+							right,
+							outputKey,
+							operationRecipeId,
+							FrontierStateOperation.JOIN,
+							writer,
+							certifiedUpperBound);
+				} catch (RuntimeException | Error failure) {
+					writer.close();
+					throw failure;
+				}
+			}
+		}
+	}
+
+	/**
+	 * Forms a Cartesian product from two independent sampled design lanes.
+	 *
+	 * <p>
+	 * When the full product fits, every pair is retained with its product weight. Otherwise this operation draws a
+	 * bounded fixed-size sample from the product measure by independently drawing each side proportional to its
+	 * effective particle weights. Every draw receives {@code leftMass * rightMass / drawCount}; the resampling step is
+	 * therefore conditionally unbiased and never multiplies two particles from the same random lane.
+	 * </p>
+	 *
+	 * @param maximumOutputParticles maximum retained product particles; zero publishes a typed boundary
+	 */
+	public static EvidenceStateRef independentCartesian(
+			FrontierStateArena arena,
+			EvidenceStateRef left,
+			EvidenceStateRef right,
+			FrontierStateKey outputKey,
+			int operationRecipeId,
+			int maximumOutputParticles) {
+		requireIndependentCartesian(
+				arena, left, right, outputKey, operationRecipeId, maximumOutputParticles);
+		double certifiedUpperBound = saturatedMultiply(
+				left.summary().certifiedUpperBound(),
+				right.summary().certifiedUpperBound());
+		if (maximumOutputParticles == 0) {
+			return arena.deriveSummary(
+					outputKey,
+					EvidenceStateSummary.unresolved(
+							0.0d,
+							certifiedUpperBound,
+							certifiedUpperBound,
+							"frontier-cartesian-particle-budget-exhausted"),
+					FrontierStateOperation.UNRESOLVED,
+					left,
+					right,
+					operationRecipeId);
+		}
+
+		try (FrontierPayloadLease leftPayload = arena.openPayload(left);
+				FrontierPayloadLease rightPayload = arena.openPayload(right)) {
+			int leftEntries = entryCount(leftPayload);
+			int rightEntries = entryCount(rightPayload);
+			long candidatePairs = Math.multiplyExact((long) leftEntries, rightEntries);
+			FrontierMaskStrata outputMasks = outputKey.maskStrata();
+			int outputStrata = outputMasks.stratumCount();
+			JoinMapping mapping = new JoinMapping(leftPayload.masks(), rightPayload.masks(), outputMasks);
+			int[] exactCounts = new int[outputStrata];
+			int[] residualCounts = new int[outputStrata];
+			if (candidatePairs <= maximumOutputParticles) {
+				long temporaryBytes = saturatedAdd(
+						JoinMapping.retainedBytes(leftPayload.masks(), rightPayload.masks(), outputMasks),
+						saturatedAdd(
+								arrayBytes(outputStrata, Integer.BYTES),
+								saturatedAdd(
+										arrayBytes(outputStrata, Integer.BYTES),
+										arrayBytes(outputKey.frontier().size(), Long.BYTES))));
+				try (FrontierMemoryReservation ignored = arena.reserveTemporary(
+						temporaryBytes, FrontierMemoryPurpose.TARGET_COALESCING)) {
+					countCompatiblePairs(leftPayload, rightPayload, mapping, residualCounts);
+					FrontierPayloadWriter writer = arena.newPayloadWriter(outputKey, exactCounts, residualCounts);
+					try {
+						writeCompatiblePairs(leftPayload, rightPayload, mapping, writer, residualCounts);
+						return internMeasure(
+								arena,
+								left,
+								right,
+								outputKey,
+								operationRecipeId,
+								FrontierStateOperation.CARTESIAN,
+								writer,
+								certifiedUpperBound);
+					} catch (RuntimeException | Error failure) {
+						writer.close();
+						throw failure;
+					}
+				}
+			}
+			if (leftEntries == 0 || rightEntries == 0) {
+				FrontierPayloadWriter writer = arena.newPayloadWriter(outputKey, exactCounts, residualCounts);
+				return internMeasure(
+						arena,
+						left,
+						right,
+						outputKey,
+						operationRecipeId,
+						FrontierStateOperation.CARTESIAN,
+						writer,
+						certifiedUpperBound);
+			}
+
+			int draws = maximumOutputParticles;
+			long temporaryBytes = saturatedAdd(
+					JoinMapping.retainedBytes(leftPayload.masks(), rightPayload.masks(), outputMasks),
+					saturatedAdd(
+							WeightedEntries.retainedBytes(leftEntries),
+							saturatedAdd(
+									WeightedEntries.retainedBytes(rightEntries),
+									saturatedAdd(
+											Math.multiplyExact(2L, arrayBytes(draws, Integer.BYTES)),
+											saturatedAdd(
+													arrayBytes(outputStrata, Integer.BYTES),
+													arrayBytes(outputKey.frontier().size(), Long.BYTES))))));
+			try (FrontierMemoryReservation ignored = arena.reserveTemporary(
+					temporaryBytes, FrontierMemoryPurpose.RESAMPLING)) {
+				WeightedEntries leftWeights = new WeightedEntries(leftPayload);
+				WeightedEntries rightWeights = new WeightedEntries(rightPayload);
+				double productMass = saturatedMultiply(leftWeights.totalWeight(), rightWeights.totalWeight());
+				if (!Double.isFinite(productMass)) {
+					return arena.deriveSummary(
+							outputKey,
+							EvidenceStateSummary.unresolved(
+									0.0d,
+									certifiedUpperBound,
+									certifiedUpperBound,
+									"frontier-cartesian-mass-overflow"),
+							FrontierStateOperation.UNRESOLVED,
+							left,
+							right,
+							operationRecipeId);
+				}
+				int[] leftDraws = new int[draws];
+				int[] rightDraws = new int[draws];
+				long seed = arena.deterministicSeed(left)
+						^ Long.rotateLeft(arena.deterministicSeed(right), 31)
+						^ Integer.toUnsignedLong(operationRecipeId);
+				for (int draw = 0; draw < draws; draw++) {
+					int leftEntry = leftWeights.select(unitInterval(FrontierSeedSchedule.derive(
+							seed, FrontierRandomDomain.RESAMPLE, 0L, draw)));
+					int rightEntry = rightWeights.select(unitInterval(FrontierSeedSchedule.derive(
+							seed, FrontierRandomDomain.RESAMPLE, 1L, draw)));
+					leftDraws[draw] = leftEntry;
+					rightDraws[draw] = rightEntry;
+					int targetStratum = mapping.targetStratum(
+							leftWeights.stratum(leftEntry),
+							rightWeights.stratum(rightEntry));
+					residualCounts[targetStratum] = Math.incrementExact(residualCounts[targetStratum]);
+				}
+				double drawWeight = productMass / draws;
+				FrontierPayloadWriter writer = arena.newPayloadWriter(outputKey, exactCounts, residualCounts);
+				try {
+					int[] next = new int[outputStrata];
+					long[] tuple = new long[outputKey.frontier().size()];
+					for (int draw = 0; draw < draws; draw++) {
+						int leftEntry = leftDraws[draw];
+						int rightEntry = rightDraws[draw];
+						mapping.copyJoinedTuple(
+								leftPayload,
+								leftWeights.exact(leftEntry),
+								leftWeights.stratum(leftEntry),
+								leftWeights.index(leftEntry),
+								rightPayload,
+								rightWeights.exact(rightEntry),
+								rightWeights.stratum(rightEntry),
+								rightWeights.index(rightEntry),
+								tuple);
+						int targetStratum = mapping.targetStratum(
+								leftWeights.stratum(leftEntry),
+								rightWeights.stratum(rightEntry));
+						writer.putResidual(targetStratum, next[targetStratum]++, drawWeight, tuple, 0);
+					}
+					return internMeasure(
+							arena,
+							left,
+							right,
+							outputKey,
+							operationRecipeId,
+							FrontierStateOperation.CARTESIAN,
+							writer,
+							certifiedUpperBound);
 				} catch (RuntimeException | Error failure) {
 					writer.close();
 					throw failure;
@@ -302,13 +640,30 @@ public final class FrontierLinearTransforms {
 			int stratumCount = payload.stratumCount();
 			int entryCount = entryCount(payload);
 			if (entryCount > maximumProbeUnits) {
-				return arena.intern(
+				if (maximumProbeUnits == 0) {
+					return arena.deriveSummary(
+							outputKey,
+							EvidenceStateSummary.unresolved(
+									input.summary().pointRows(),
+									Double.POSITIVE_INFINITY,
+									Double.POSITIVE_INFINITY,
+									"frontier exact probe budget exhausted"),
+							FrontierStateOperation.UNRESOLVED,
+							input,
+							null,
+							operationRecipeId);
+				}
+				return resolveResampledProjectedOuterKernel(
+						arena,
+						input,
 						outputKey,
-						EvidenceStateSummary.unresolved(
-								input.summary().pointRows(),
-								Double.POSITIVE_INFINITY,
-								Double.POSITIVE_INFINITY,
-								"frontier exact probe budget exhausted"));
+						operationRecipeId,
+						kernel,
+						probe,
+						maximumProbeUnits,
+						certifiedMultiplierUpperBound,
+						payload,
+						entryCount);
 			}
 			long temporaryBytes = saturatedAdd(
 					arrayBytes(entryCount, Long.BYTES),
@@ -327,24 +682,15 @@ public final class FrontierLinearTransforms {
 				FrontierPayloadWriter writer = arena.newPayloadWriter(outputKey, exactCounts, residualCounts);
 				try {
 					writeOutput(payload, multipliers, writer, exactInput);
-					double pointRows = writer.pointRows();
-					EvidenceStateSummary summary = exactInput
-							? EvidenceStateSummary.exact(pointRows)
-							: unbiasedSummary(
-									pointRows,
-									writer.effectiveSampleSize(),
-									writer.maximumWeightFraction(),
-									saturatedMultiply(
-											input.summary().certifiedUpperBound(),
-											kernel.isBooleanKernel() ? 1.0d : certifiedMultiplierUpperBound));
-					return arena.internPayload(
-							outputKey,
-							summary,
-							operation(kernel),
-							input,
-							null,
-							operationRecipeId,
-							writer);
+					if (exactInput) {
+						return internExact(
+								arena, input, null, outputKey, operationRecipeId, operation(kernel), writer);
+					}
+					return internUnaryMeasure(
+							arena, input, outputKey, operationRecipeId, operation(kernel), writer,
+							saturatedMultiply(
+									input.summary().certifiedUpperBound(),
+									kernel.isBooleanKernel() ? 1.0d : certifiedMultiplierUpperBound));
 				} catch (RuntimeException | Error failure) {
 					writer.close();
 					throw failure;
@@ -358,9 +704,10 @@ public final class FrontierLinearTransforms {
 	 *
 	 * <p>
 	 * The expansion is linear in the input measure: every emitted tuple inherits the weight of its outer mapping. Exact
-	 * inputs are coalesced by output mapping, while every sampled emission remains a residual particle. The expansion
-	 * is evaluated twice, first to reserve bounded output storage and then to write it, so callers must use one stable
-	 * snapshot and a deterministic probe.
+	 * inputs are coalesced by output mapping, while every sampled emission remains a residual particle. Probe results
+	 * are buffered in one pass. The work limit bounds both the number of probed outer mappings and retained output
+	 * mappings; an over-budget fanout becomes a typed unresolved boundary instead of executing an unbounded RHS during
+	 * planning.
 	 * </p>
 	 */
 	public static EvidenceStateRef expandOuterMappings(
@@ -379,48 +726,54 @@ public final class FrontierLinearTransforms {
 		try (FrontierPayloadLease payload = arena.openPayload(input)) {
 			int entryCount = entryCount(payload);
 			if (entryCount > maximumProbeUnits) {
-				return arena.intern(
+				if (maximumProbeUnits == 0) {
+					return unresolvedOuterExpansion(
+							arena, input, outputKey, operationRecipeId,
+							"frontier exact probe budget exhausted");
+				}
+				return expandResampledOuterMappings(
+						arena,
+						input,
 						outputKey,
-						EvidenceStateSummary.unresolved(
-								input.summary().pointRows(),
-								Double.POSITIVE_INFINITY,
-								Double.POSITIVE_INFINITY,
-								"frontier exact probe budget exhausted"));
+						operationRecipeId,
+						expansion,
+						maximumProbeUnits,
+						payload,
+						entryCount);
 			}
 			int targetStrata = outputKey.maskStrata().stratumCount();
-			long countBytes = saturatedAdd(
-					arrayBytes(targetStrata, Integer.BYTES),
-					arrayBytes(targetStrata, Integer.BYTES));
+			long temporaryBytes = saturatedAdd(
+					ExactTupleBuffer.retainedBytes(maximumProbeUnits, outputKey.frontier().size()),
+					saturatedAdd(
+							arrayBytes(targetStrata, Integer.BYTES),
+							arrayBytes(targetStrata, Integer.BYTES)));
 			try (FrontierMemoryReservation ignored = arena.reserveTemporary(
-					countBytes, FrontierMemoryPurpose.BRIDGE_EMISSION)) {
-				int[] emissionCounts = new int[targetStrata];
-				int emissionCount = countExpandedMappings(payload, outputKey.maskStrata(), expansion,
-						emissionCounts);
+					temporaryBytes, FrontierMemoryPurpose.BRIDGE_EMISSION)) {
+				ExactTupleBuffer buffer = new ExactTupleBuffer(
+						maximumProbeUnits, outputKey.frontier().size());
+				if (!appendExpandedMappings(
+						payload, outputKey.maskStrata(), expansion, buffer, maximumProbeUnits)) {
+					return unresolvedOuterExpansion(
+							arena, input, outputKey, operationRecipeId,
+							"frontier outer expansion output budget exhausted");
+				}
+				int[] exactCounts = new int[targetStrata];
+				int[] residualCounts = new int[targetStrata];
 				boolean exactInput = input.summary().guarantee() == EvidenceGuarantee.DATABASE_EXACT;
 				if (exactInput) {
-					try (FrontierMemoryReservation bufferReservation = arena.reserveTemporary(
-							ExactTupleBuffer.retainedBytes(emissionCount, outputKey.frontier().size()),
-							FrontierMemoryPurpose.TARGET_COALESCING)) {
-						ExactTupleBuffer buffer = new ExactTupleBuffer(emissionCount, outputKey.frontier().size());
-						appendExpandedExact(payload, outputKey.maskStrata(), expansion, buffer);
-						requireExpansionCount(emissionCount, buffer.size);
-						int[] exactCounts = new int[targetStrata];
-						buffer.coalesce(exactCounts);
-						for (int stratum = 0; stratum < emissionCounts.length; stratum++) {
-							emissionCounts[stratum] = 0;
-						}
-						return writeExactBuffer(
-								arena, input, null, outputKey, operationRecipeId,
-								FrontierStateOperation.RESOLVE_OUTER_EXPANSION,
-								buffer, exactCounts, emissionCounts);
-					}
+					buffer.coalesce(exactCounts);
+					return writeExactBuffer(
+							arena, input, null, outputKey, operationRecipeId,
+							FrontierStateOperation.RESOLVE_OUTER_EXPANSION,
+							buffer, exactCounts, residualCounts);
 				}
 
+				buffer.countByStratum(residualCounts);
 				FrontierPayloadWriter writer = arena.newPayloadWriter(
-						outputKey, new int[targetStrata], emissionCounts);
+						outputKey, exactCounts, residualCounts);
 				try {
-					writeExpandedResidual(payload, outputKey.maskStrata(), expansion, writer, targetStrata);
-					return internUnaryUnbiased(
+					buffer.writeResidual(writer, exactCounts);
+					return internUnaryMeasure(
 							arena, input, outputKey, operationRecipeId,
 							FrontierStateOperation.RESOLVE_OUTER_EXPANSION,
 							writer, Double.POSITIVE_INFINITY);
@@ -432,62 +785,255 @@ public final class FrontierLinearTransforms {
 		}
 	}
 
-	private static int countExpandedMappings(FrontierPayloadLease payload, FrontierMaskStrata outputMasks,
-			FrontierExactTupleExpansion expansion, int[] emissionCounts) {
-		int[] total = { 0 };
-		FrontierTupleEmitter counter = (targetStratum, termIds) -> {
+	private static EvidenceStateRef resolveResampledProjectedOuterKernel(
+			FrontierStateArena arena,
+			EvidenceStateRef input,
+			FrontierStateKey outputKey,
+			int operationRecipeId,
+			FrontierOuterKernel kernel,
+			FrontierExactMultiplicityProbe probe,
+			int draws,
+			double certifiedMultiplierUpperBound,
+			FrontierPayloadLease payload,
+			int entryCount) {
+		int stratumCount = payload.stratumCount();
+		long temporaryBytes = saturatedAdd(
+				WeightedEntries.retainedBytes(entryCount),
+				saturatedAdd(
+						arrayBytes(draws, Integer.BYTES),
+						saturatedAdd(
+								arrayBytes(draws, Long.BYTES),
+								saturatedAdd(
+										arrayBytes(stratumCount, Integer.BYTES),
+										arrayBytes(payload.masks().layout().size(), Long.BYTES)))));
+		try (FrontierMemoryReservation ignored = arena.reserveTemporary(
+				temporaryBytes, FrontierMemoryPurpose.RESAMPLING)) {
+			WeightedEntries entries = new WeightedEntries(payload);
+			int[] selectedEntries = selectEntries(
+					arena, input, entries, draws, operationRecipeId, FrontierStateOperation.RESOLVE_OUTER_KERNEL);
+			long[] multipliers = new long[draws];
+			int[] residualCounts = new int[stratumCount];
+			for (int draw = 0; draw < draws; draw++) {
+				int entry = selectedEntries[draw];
+				long multiplier = kernel.outputMultiplicity(probe.multiplicity(
+						payload,
+						entries.exact(entry),
+						entries.stratum(entry),
+						entries.index(entry)));
+				multipliers[draw] = multiplier;
+				if (multiplier != 0L) {
+					int stratum = entries.stratum(entry);
+					residualCounts[stratum] = Math.incrementExact(residualCounts[stratum]);
+				}
+			}
+
+			FrontierPayloadWriter writer = arena.newPayloadWriter(
+					outputKey, new int[stratumCount], residualCounts);
+			try {
+				int[] next = new int[stratumCount];
+				long[] tuple = new long[payload.masks().layout().size()];
+				double drawWeight = entries.totalWeight() / draws;
+				for (int draw = 0; draw < draws; draw++) {
+					long multiplier = multipliers[draw];
+					if (multiplier == 0L) {
+						continue;
+					}
+					int entry = selectedEntries[draw];
+					int stratum = entries.stratum(entry);
+					copyTuple(payload, entries.exact(entry), stratum, entries.index(entry), tuple);
+					writer.putResidual(
+							stratum,
+							next[stratum]++,
+							multiplyWeight(drawWeight, multiplier),
+							tuple,
+							0);
+				}
+				double resamplingVariance = resamplingVariance(entries.totalWeight(), multipliers);
+				return internResampledMeasure(
+						arena,
+						input,
+						outputKey,
+						operationRecipeId,
+						operation(kernel),
+						writer,
+						saturatedMultiply(
+								input.summary().certifiedUpperBound(),
+								kernel.isBooleanKernel() ? 1.0d : certifiedMultiplierUpperBound),
+						resamplingVariance);
+			} catch (RuntimeException | Error failure) {
+				writer.close();
+				throw failure;
+			}
+		}
+	}
+
+	private static EvidenceStateRef expandResampledOuterMappings(
+			FrontierStateArena arena,
+			EvidenceStateRef input,
+			FrontierStateKey outputKey,
+			int operationRecipeId,
+			FrontierExactTupleExpansion expansion,
+			int draws,
+			FrontierPayloadLease payload,
+			int entryCount) {
+		int targetStrata = outputKey.maskStrata().stratumCount();
+		long temporaryBytes = saturatedAdd(
+				WeightedEntries.retainedBytes(entryCount),
+				saturatedAdd(
+						arrayBytes(draws, Integer.BYTES),
+						saturatedAdd(
+								arrayBytes(draws, Long.BYTES),
+								saturatedAdd(
+										arrayBytes(targetStrata, Integer.BYTES),
+										ExactTupleBuffer.retainedBytes(
+												draws, outputKey.frontier().size())))));
+		try (FrontierMemoryReservation ignored = arena.reserveTemporary(
+				temporaryBytes, FrontierMemoryPurpose.RESAMPLING)) {
+			WeightedEntries entries = new WeightedEntries(payload);
+			int[] selectedEntries = selectEntries(
+					arena, input, entries, draws, operationRecipeId,
+					FrontierStateOperation.RESOLVE_OUTER_EXPANSION);
+			long[] outputMultiplicities = new long[draws];
+			double drawWeight = entries.totalWeight() / draws;
+			ExactTupleBuffer buffer = new ExactTupleBuffer(draws, outputKey.frontier().size());
+			try {
+				for (int draw = 0; draw < draws; draw++) {
+					int drawIndex = draw;
+					int entry = selectedEntries[draw];
+					expansion.expand(
+							payload,
+							entries.exact(entry),
+							entries.stratum(entry),
+							entries.index(entry),
+							(targetStratum, termIds) -> {
+								validateExpandedTuple(outputKey.maskStrata(), targetStratum, termIds);
+								if (buffer.size == draws) {
+									throw OuterExpansionBudgetExceeded.INSTANCE;
+								}
+								buffer.appendTuple(targetStratum, drawWeight, termIds);
+								outputMultiplicities[drawIndex] = Math.incrementExact(
+										outputMultiplicities[drawIndex]);
+							});
+				}
+			} catch (OuterExpansionBudgetExceeded ignoredBudget) {
+				return unresolvedOuterExpansion(
+						arena, input, outputKey, operationRecipeId,
+						"frontier outer expansion output budget exhausted");
+			}
+
+			int[] residualCounts = new int[targetStrata];
+			buffer.countByStratum(residualCounts);
+			FrontierPayloadWriter writer = arena.newPayloadWriter(
+					outputKey, new int[targetStrata], residualCounts);
+			try {
+				int[] next = new int[targetStrata];
+				buffer.writeResidual(writer, next);
+				double resamplingVariance = resamplingVariance(entries.totalWeight(), outputMultiplicities);
+				return internResampledMeasure(
+						arena,
+						input,
+						outputKey,
+						operationRecipeId,
+						FrontierStateOperation.RESOLVE_OUTER_EXPANSION,
+						writer,
+						Double.POSITIVE_INFINITY,
+						resamplingVariance);
+			} catch (RuntimeException | Error failure) {
+				writer.close();
+				throw failure;
+			}
+		}
+	}
+
+	private static int[] selectEntries(
+			FrontierStateArena arena,
+			EvidenceStateRef input,
+			WeightedEntries entries,
+			int draws,
+			int operationRecipeId,
+			FrontierStateOperation operation) {
+		int[] selected = new int[draws];
+		long seed = FrontierSeedSchedule.derive(
+				arena.deterministicSeed(input),
+				FrontierRandomDomain.RESAMPLE,
+				Integer.toUnsignedLong(operationRecipeId),
+				operation.ordinal());
+		for (int draw = 0; draw < draws; draw++) {
+			selected[draw] = entries.select(unitInterval(FrontierSeedSchedule.derive(
+					seed, FrontierRandomDomain.RESAMPLE, operation.ordinal(), draw)));
+		}
+		return selected;
+	}
+
+	private static double resamplingVariance(double totalMass, long[] outputMultiplicities) {
+		if (outputMultiplicities.length <= 1) {
+			return 0.0d;
+		}
+		double mean = 0.0d;
+		for (long multiplicity : outputMultiplicities) {
+			mean += multiplicity;
+		}
+		mean /= outputMultiplicities.length;
+		double sumSquaredDeviations = 0.0d;
+		for (long multiplicity : outputMultiplicities) {
+			double deviation = multiplicity - mean;
+			sumSquaredDeviations += deviation * deviation;
+		}
+		double sampleVariance = sumSquaredDeviations / (outputMultiplicities.length - 1);
+		double variance = totalMass * totalMass * sampleVariance / outputMultiplicities.length;
+		return Double.isFinite(variance) && variance >= 0.0d ? variance : Double.POSITIVE_INFINITY;
+	}
+
+	private static boolean appendExpandedMappings(FrontierPayloadLease payload, FrontierMaskStrata outputMasks,
+			FrontierExactTupleExpansion expansion, ExactTupleBuffer buffer, int maximumEmissions) {
+		try {
+			for (int stratum = 0; stratum < payload.stratumCount(); stratum++) {
+				for (int index = 0; index < payload.exactCount(stratum); index++) {
+					appendExpandedMapping(
+							payload, outputMasks, expansion, buffer, maximumEmissions,
+							true, stratum, index, payload.exactWeight(stratum, index));
+				}
+				for (int index = 0; index < payload.residualCount(stratum); index++) {
+					appendExpandedMapping(
+							payload, outputMasks, expansion, buffer, maximumEmissions,
+							false, stratum, index, payload.residualWeight(stratum, index));
+				}
+			}
+			return true;
+		} catch (OuterExpansionBudgetExceeded ignored) {
+			return false;
+		}
+	}
+
+	private static void appendExpandedMapping(FrontierPayloadLease payload, FrontierMaskStrata outputMasks,
+			FrontierExactTupleExpansion expansion, ExactTupleBuffer buffer, int maximumEmissions,
+			boolean exact, int stratum, int index, double weight) {
+		expansion.expand(payload, exact, stratum, index, (targetStratum, termIds) -> {
 			validateExpandedTuple(outputMasks, targetStratum, termIds);
-			emissionCounts[targetStratum] = Math.incrementExact(emissionCounts[targetStratum]);
-			total[0] = Math.incrementExact(total[0]);
-		};
-		visitExpandedInputs(payload, expansion, counter);
-		return total[0];
+			if (buffer.size == maximumEmissions) {
+				throw OuterExpansionBudgetExceeded.INSTANCE;
+			}
+			buffer.appendTuple(targetStratum, weight, termIds);
+		});
 	}
 
-	private static void appendExpandedExact(FrontierPayloadLease payload, FrontierMaskStrata outputMasks,
-			FrontierExactTupleExpansion expansion, ExactTupleBuffer buffer) {
-		for (int stratum = 0; stratum < payload.stratumCount(); stratum++) {
-			for (int index = 0; index < payload.exactCount(stratum); index++) {
-				double weight = payload.exactWeight(stratum, index);
-				expansion.expand(payload, true, stratum, index, (targetStratum, termIds) -> {
-					validateExpandedTuple(outputMasks, targetStratum, termIds);
-					buffer.appendTuple(targetStratum, weight, termIds);
-				});
-			}
-		}
-	}
-
-	private static void writeExpandedResidual(FrontierPayloadLease payload, FrontierMaskStrata outputMasks,
-			FrontierExactTupleExpansion expansion, FrontierPayloadWriter writer, int targetStrata) {
-		int[] next = new int[targetStrata];
-		for (int stratum = 0; stratum < payload.stratumCount(); stratum++) {
-			for (int index = 0; index < payload.exactCount(stratum); index++) {
-				double weight = payload.exactWeight(stratum, index);
-				expansion.expand(payload, true, stratum, index, (targetStratum, termIds) -> {
-					validateExpandedTuple(outputMasks, targetStratum, termIds);
-					writer.putResidual(targetStratum, next[targetStratum]++, weight, termIds, 0);
-				});
-			}
-			for (int index = 0; index < payload.residualCount(stratum); index++) {
-				double weight = payload.residualWeight(stratum, index);
-				expansion.expand(payload, false, stratum, index, (targetStratum, termIds) -> {
-					validateExpandedTuple(outputMasks, targetStratum, termIds);
-					writer.putResidual(targetStratum, next[targetStratum]++, weight, termIds, 0);
-				});
-			}
-		}
-	}
-
-	private static void visitExpandedInputs(FrontierPayloadLease payload, FrontierExactTupleExpansion expansion,
-			FrontierTupleEmitter emitter) {
-		for (int stratum = 0; stratum < payload.stratumCount(); stratum++) {
-			for (int index = 0; index < payload.exactCount(stratum); index++) {
-				expansion.expand(payload, true, stratum, index, emitter);
-			}
-			for (int index = 0; index < payload.residualCount(stratum); index++) {
-				expansion.expand(payload, false, stratum, index, emitter);
-			}
-		}
+	private static EvidenceStateRef unresolvedOuterExpansion(
+			FrontierStateArena arena,
+			EvidenceStateRef input,
+			FrontierStateKey outputKey,
+			int operationRecipeId,
+			String reason) {
+		return arena.deriveSummary(
+				outputKey,
+				EvidenceStateSummary.unresolved(
+						input.summary().pointRows(),
+						Double.POSITIVE_INFINITY,
+						Double.POSITIVE_INFINITY,
+						reason),
+				FrontierStateOperation.UNRESOLVED,
+				input,
+				null,
+				operationRecipeId);
 	}
 
 	private static void validateExpandedTuple(FrontierMaskStrata outputMasks, int targetStratum, long[] termIds) {
@@ -506,12 +1052,6 @@ public final class FrontierLinearTransforms {
 		}
 	}
 
-	private static void requireExpansionCount(int expected, int actual) {
-		if (expected != actual) {
-			throw new IllegalStateException("exact tuple expansion changed between count and write passes");
-		}
-	}
-
 	private static void requireUnaryTransform(FrontierStateArena arena, EvidenceStateRef input,
 			FrontierStateKey outputKey, int operationRecipeId) {
 		Objects.requireNonNull(arena, "arena");
@@ -526,6 +1066,258 @@ public final class FrontierLinearTransforms {
 		if (!input.summary().guarantee().isComposablePointEstimate()) {
 			throw new IllegalArgumentException("linear transforms require composable input evidence");
 		}
+	}
+
+	private static void requireBinaryJoin(FrontierStateArena arena, EvidenceStateRef left, EvidenceStateRef right,
+			FrontierStateKey outputKey, int operationRecipeId, int maximumCandidatePairs) {
+		Objects.requireNonNull(arena, "arena");
+		Objects.requireNonNull(left, "left");
+		Objects.requireNonNull(right, "right");
+		Objects.requireNonNull(outputKey, "outputKey");
+		if (!arena.owns(left) || !arena.owns(right)) {
+			throw new IllegalArgumentException("join evidence belongs to another arena");
+		}
+		if (operationRecipeId < 0) {
+			throw new IllegalArgumentException("operationRecipeId must be nonnegative");
+		}
+		if (maximumCandidatePairs < 0) {
+			throw new IllegalArgumentException("maximumCandidatePairs must be nonnegative");
+		}
+		if (!left.summary().guarantee().isComposablePointEstimate()
+				|| !right.summary().guarantee().isComposablePointEstimate()) {
+			throw new IllegalArgumentException("join requires composable input evidence");
+		}
+		FrontierStateKey leftKey = arena.key(left);
+		FrontierStateKey rightKey = arena.key(right);
+		if (!sameSamplingIdentity(leftKey, rightKey)
+				|| !sameSamplingIdentity(leftKey, outputKey)) {
+			throw new IllegalArgumentException("join inputs and output have different sampling identities");
+		}
+		requireUnionFactors(leftKey, rightKey, outputKey);
+		requireUnionLayout(leftKey.frontier(), rightKey.frontier(), outputKey.frontier());
+	}
+
+	private static void requireIndependentCartesian(FrontierStateArena arena, EvidenceStateRef left,
+			EvidenceStateRef right, FrontierStateKey outputKey, int operationRecipeId,
+			int maximumOutputParticles) {
+		Objects.requireNonNull(arena, "arena");
+		Objects.requireNonNull(left, "left");
+		Objects.requireNonNull(right, "right");
+		Objects.requireNonNull(outputKey, "outputKey");
+		if (!arena.owns(left) || !arena.owns(right)) {
+			throw new IllegalArgumentException("Cartesian evidence belongs to another arena");
+		}
+		if (operationRecipeId < 0 || maximumOutputParticles < 0) {
+			throw new IllegalArgumentException("Cartesian recipe and particle budget must be nonnegative");
+		}
+		if (left.summary().guarantee() != EvidenceGuarantee.MEASURE_UNBIASED
+				|| right.summary().guarantee() != EvidenceGuarantee.MEASURE_UNBIASED) {
+			throw new IllegalArgumentException("independent Cartesian composition requires two sampled measures");
+		}
+		FrontierStateKey leftKey = arena.key(left);
+		FrontierStateKey rightKey = arena.key(right);
+		if (leftKey.snapshotStoreIdHigh() != rightKey.snapshotStoreIdHigh()
+				|| leftKey.snapshotStoreIdLow() != rightKey.snapshotStoreIdLow()
+				|| leftKey.snapshotEpoch() != rightKey.snapshotEpoch()
+				|| leftKey.seedVersion() != rightKey.seedVersion()
+				|| leftKey.laneFamily() != FrontierLaneFamily.DESIGN
+				|| rightKey.laneFamily() != FrontierLaneFamily.DESIGN
+				|| leftKey.laneIndex() == rightKey.laneIndex()
+				|| !sameSamplingIdentity(leftKey, outputKey)) {
+			throw new IllegalArgumentException("Cartesian inputs must use distinct compatible design lanes");
+		}
+		for (int slot = 0; slot < leftKey.frontier().size(); slot++) {
+			if (rightKey.frontier().indexOf(leftKey.frontier().variable(slot)) >= 0) {
+				throw new IllegalArgumentException("independent Cartesian composition requires disjoint layouts");
+			}
+		}
+		requireUnionFactors(leftKey, rightKey, outputKey);
+		requireUnionLayout(leftKey.frontier(), rightKey.frontier(), outputKey.frontier());
+	}
+
+	private static void requireIndependentAverage(FrontierStateArena arena, EvidenceStateRef primary,
+			EvidenceStateRef independent, FrontierStateKey outputKey, int operationRecipeId) {
+		Objects.requireNonNull(arena, "arena");
+		Objects.requireNonNull(primary, "primary");
+		Objects.requireNonNull(independent, "independent");
+		Objects.requireNonNull(outputKey, "outputKey");
+		if (!arena.owns(primary) || !arena.owns(independent)) {
+			throw new IllegalArgumentException("averaged evidence belongs to another arena");
+		}
+		if (operationRecipeId < 0) {
+			throw new IllegalArgumentException("average recipe must be nonnegative");
+		}
+		if (primary.summary().guarantee() != EvidenceGuarantee.MEASURE_UNBIASED
+				|| independent.summary().guarantee() != EvidenceGuarantee.MEASURE_UNBIASED) {
+			throw new IllegalArgumentException("design-lane averaging requires two unbiased sampled measures");
+		}
+		FrontierStateKey primaryKey = arena.key(primary);
+		FrontierStateKey independentKey = arena.key(independent);
+		if (primaryKey.snapshotStoreIdHigh() != independentKey.snapshotStoreIdHigh()
+				|| primaryKey.snapshotStoreIdLow() != independentKey.snapshotStoreIdLow()
+				|| primaryKey.snapshotEpoch() != independentKey.snapshotEpoch()
+				|| primaryKey.seedVersion() != independentKey.seedVersion()
+				|| primaryKey.laneFamily() != FrontierLaneFamily.DESIGN
+				|| independentKey.laneFamily() != FrontierLaneFamily.DESIGN
+				|| primaryKey.laneIndex() == independentKey.laneIndex()
+				|| !sameSamplingIdentity(primaryKey, outputKey)) {
+			throw new IllegalArgumentException("averaged inputs must use distinct compatible design lanes");
+		}
+		if (!primaryKey.maskStrata().equals(independentKey.maskStrata())
+				|| !primaryKey.maskStrata().equals(outputKey.maskStrata())
+				|| primaryKey.semanticScope() != independentKey.semanticScope()
+				|| primaryKey.semanticScope() != outputKey.semanticScope()
+				|| primaryKey.correlationScope() != independentKey.correlationScope()
+				|| primaryKey.correlationScope() == outputKey.correlationScope()
+				|| primaryKey.continuationObjective() != independentKey.continuationObjective()
+				|| primaryKey.continuationObjective() != outputKey.continuationObjective()) {
+			throw new IllegalArgumentException("averaged design lanes must represent the same logical measure");
+		}
+		requireSameFactors(primaryKey, independentKey, outputKey);
+	}
+
+	private static boolean sameSamplingIdentity(FrontierStateKey left, FrontierStateKey right) {
+		return left.snapshotStoreIdHigh() == right.snapshotStoreIdHigh()
+				&& left.snapshotStoreIdLow() == right.snapshotStoreIdLow()
+				&& left.snapshotEpoch() == right.snapshotEpoch()
+				&& left.laneFamily() == right.laneFamily()
+				&& left.laneIndex() == right.laneIndex()
+				&& left.seedVersion() == right.seedVersion();
+	}
+
+	private static void requireSameFactors(FrontierStateKey first, FrontierStateKey second,
+			FrontierStateKey output) {
+		int wordCount = Math.max(
+				Math.max(first.logicalFactorWordCount(), second.logicalFactorWordCount()),
+				output.logicalFactorWordCount());
+		for (int word = 0; word < wordCount; word++) {
+			long expected = factorWord(first, word);
+			if (factorWord(second, word) != expected || factorWord(output, word) != expected) {
+				throw new IllegalArgumentException("averaged design lanes must have identical logical factors");
+			}
+		}
+	}
+
+	private static double unitInterval(long randomWord) {
+		return (randomWord >>> 11) * 0x1.0p-53;
+	}
+
+	private static void requireUnionFactors(FrontierStateKey left, FrontierStateKey right,
+			FrontierStateKey output) {
+		int wordCount = Math.max(
+				Math.max(left.logicalFactorWordCount(), right.logicalFactorWordCount()),
+				output.logicalFactorWordCount());
+		for (int word = 0; word < wordCount; word++) {
+			long expected = factorWord(left, word) | factorWord(right, word);
+			if (factorWord(output, word) != expected) {
+				throw new IllegalArgumentException("join output factors must equal the union of both inputs");
+			}
+		}
+	}
+
+	private static long factorWord(FrontierStateKey key, int word) {
+		return word < key.logicalFactorWordCount() ? key.logicalFactorWord(word) : 0L;
+	}
+
+	private static void requireUnionLayout(FrontierLayout left, FrontierLayout right, FrontierLayout output) {
+		int expectedWidth = left.size();
+		for (int slot = 0; slot < right.size(); slot++) {
+			if (left.indexOf(right.variable(slot)) < 0) {
+				expectedWidth = Math.incrementExact(expectedWidth);
+			}
+		}
+		if (output.size() != expectedWidth) {
+			throw new IllegalArgumentException("join output layout must contain exactly the union of input variables");
+		}
+		for (int slot = 0; slot < left.size(); slot++) {
+			if (output.indexOf(left.variable(slot)) < 0) {
+				throw new IllegalArgumentException("join output layout omits a left input variable");
+			}
+		}
+		for (int slot = 0; slot < right.size(); slot++) {
+			if (output.indexOf(right.variable(slot)) < 0) {
+				throw new IllegalArgumentException("join output layout omits a right input variable");
+			}
+		}
+	}
+
+	private static void appendCompatiblePairs(FrontierPayloadLease left, FrontierPayloadLease right,
+			JoinMapping mapping, ExactTupleBuffer buffer) {
+		visitCompatiblePairs(left, right, mapping,
+				(targetStratum, weight, tuple) -> buffer.appendTuple(targetStratum, weight, tuple));
+	}
+
+	private static void countCompatiblePairs(FrontierPayloadLease left, FrontierPayloadLease right,
+			JoinMapping mapping, int[] residualCounts) {
+		visitCompatiblePairs(left, right, mapping,
+				(targetStratum, weight, tuple) -> residualCounts[targetStratum] = Math
+						.incrementExact(residualCounts[targetStratum]));
+	}
+
+	private static void writeCompatiblePairs(FrontierPayloadLease left, FrontierPayloadLease right,
+			JoinMapping mapping, FrontierPayloadWriter writer, int[] residualCounts) {
+		int[] next = new int[residualCounts.length];
+		visitCompatiblePairs(left, right, mapping,
+				(targetStratum, weight, tuple) -> writer.putResidual(
+						targetStratum, next[targetStratum]++, weight, tuple, 0));
+	}
+
+	private static void visitCompatiblePairs(FrontierPayloadLease left, FrontierPayloadLease right,
+			JoinMapping mapping, JoinPairConsumer consumer) {
+		long[] tuple = new long[mapping.outputWidth()];
+		for (int leftStratum = 0; leftStratum < left.stratumCount(); leftStratum++) {
+			for (int leftIndex = 0; leftIndex < left.exactCount(leftStratum); leftIndex++) {
+				visitCompatibleRight(
+						left, true, leftStratum, leftIndex, right, mapping, tuple, consumer);
+			}
+			for (int leftIndex = 0; leftIndex < left.residualCount(leftStratum); leftIndex++) {
+				visitCompatibleRight(
+						left, false, leftStratum, leftIndex, right, mapping, tuple, consumer);
+			}
+		}
+	}
+
+	private static void visitCompatibleRight(FrontierPayloadLease left, boolean leftExact, int leftStratum,
+			int leftIndex, FrontierPayloadLease right, JoinMapping mapping, long[] tuple,
+			JoinPairConsumer consumer) {
+		for (int rightStratum = 0; rightStratum < right.stratumCount(); rightStratum++) {
+			for (int rightIndex = 0; rightIndex < right.exactCount(rightStratum); rightIndex++) {
+				visitCompatiblePair(
+						left, leftExact, leftStratum, leftIndex,
+						right, true, rightStratum, rightIndex,
+						mapping, tuple, consumer);
+			}
+			for (int rightIndex = 0; rightIndex < right.residualCount(rightStratum); rightIndex++) {
+				visitCompatiblePair(
+						left, leftExact, leftStratum, leftIndex,
+						right, false, rightStratum, rightIndex,
+						mapping, tuple, consumer);
+			}
+		}
+	}
+
+	private static void visitCompatiblePair(FrontierPayloadLease left, boolean leftExact, int leftStratum,
+			int leftIndex, FrontierPayloadLease right, boolean rightExact, int rightStratum, int rightIndex,
+			JoinMapping mapping, long[] tuple, JoinPairConsumer consumer) {
+		if (!mapping.compatible(
+				left, leftExact, leftStratum, leftIndex,
+				right, rightExact, rightStratum, rightIndex)) {
+			return;
+		}
+		mapping.copyJoinedTuple(
+				left, leftExact, leftStratum, leftIndex,
+				right, rightExact, rightStratum, rightIndex,
+				tuple);
+		double weight = entryWeight(left, leftExact, leftStratum, leftIndex)
+				* entryWeight(right, rightExact, rightStratum, rightIndex);
+		if (!Double.isFinite(weight) || weight <= 0.0d) {
+			throw new IllegalStateException("Frontier join produced an invalid weight");
+		}
+		consumer.accept(mapping.targetStratum(leftStratum, rightStratum), weight, tuple);
+	}
+
+	private static double entryWeight(FrontierPayloadLease payload, boolean exact, int stratum, int index) {
+		return exact ? payload.exactWeight(stratum, index) : payload.residualWeight(stratum, index);
 	}
 
 	private static int[] projectedStrata(FrontierMaskStrata sourceMasks, FrontierMaskStrata targetMasks,
@@ -680,16 +1472,23 @@ public final class FrontierLinearTransforms {
 
 	private static void writeAllAsResidual(FrontierPayloadLease payload, FrontierPayloadWriter writer,
 			int[] nextResidual, long[] tuple) {
+		writeAllAsResidual(payload, writer, nextResidual, tuple, 1.0d);
+	}
+
+	private static void writeAllAsResidual(FrontierPayloadLease payload, FrontierPayloadWriter writer,
+			int[] nextResidual, long[] tuple, double weightScale) {
 		for (int stratum = 0; stratum < payload.stratumCount(); stratum++) {
 			for (int index = 0; index < payload.exactCount(stratum); index++) {
 				copyTuple(payload, true, stratum, index, tuple);
 				writer.putResidual(
-						stratum, nextResidual[stratum]++, payload.exactWeight(stratum, index), tuple, 0);
+						stratum, nextResidual[stratum]++,
+						payload.exactWeight(stratum, index) * weightScale, tuple, 0);
 			}
 			for (int index = 0; index < payload.residualCount(stratum); index++) {
 				copyTuple(payload, false, stratum, index, tuple);
 				writer.putResidual(
-						stratum, nextResidual[stratum]++, payload.residualWeight(stratum, index), tuple, 0);
+						stratum, nextResidual[stratum]++,
+						payload.residualWeight(stratum, index) * weightScale, tuple, 0);
 			}
 		}
 	}
@@ -722,17 +1521,95 @@ public final class FrontierLinearTransforms {
 				writer);
 	}
 
-	private static EvidenceStateRef internUnaryUnbiased(FrontierStateArena arena, EvidenceStateRef input,
+	private static EvidenceStateRef internUnaryMeasure(FrontierStateArena arena, EvidenceStateRef input,
 			FrontierStateKey outputKey, int operationRecipeId, FrontierStateOperation operation,
 			FrontierPayloadWriter writer, double certifiedUpperBound) {
+		return internMeasure(
+				arena, input, null, outputKey, operationRecipeId, operation, writer, certifiedUpperBound);
+	}
+
+	private static EvidenceStateRef internMeasure(FrontierStateArena arena, EvidenceStateRef firstParent,
+			EvidenceStateRef secondParent, FrontierStateKey outputKey, int operationRecipeId,
+			FrontierStateOperation operation, FrontierPayloadWriter writer, double certifiedUpperBound) {
 		double pointRows = writer.pointRows();
-		EvidenceStateSummary summary = unbiasedSummary(
+		boolean learned = isLearned(firstParent) || isLearned(secondParent);
+		if (learned && pointRows == 0.0d) {
+			writer.close();
+			return arena.deriveSummary(
+					outputKey,
+					EvidenceStateSummary.unresolved(
+							0.0d,
+							Math.max(0.0d, certifiedUpperBound),
+							certifiedUpperBound,
+							"learned-calibrated-transform-zero-support"),
+					FrontierStateOperation.UNRESOLVED,
+					firstParent,
+					secondParent,
+					operationRecipeId);
+		}
+		EvidenceStateSummary summary = learned
+				? learnedSummary(
+						pointRows,
+						writer.effectiveSampleSize(),
+						writer.maximumWeightFraction(),
+						certifiedUpperBound)
+				: unbiasedSummary(
+						pointRows,
+						writer.effectiveSampleSize(),
+						writer.maximumWeightFraction(),
+						certifiedUpperBound);
+		return learned
+				? arena.derivePayload(
+						outputKey, summary, operation, firstParent, secondParent, operationRecipeId, writer)
+				: arena.internPayload(
+						outputKey, summary, operation, firstParent, secondParent, operationRecipeId, writer);
+	}
+
+	private static EvidenceStateRef internResampledMeasure(
+			FrontierStateArena arena,
+			EvidenceStateRef input,
+			FrontierStateKey outputKey,
+			int operationRecipeId,
+			FrontierStateOperation operation,
+			FrontierPayloadWriter writer,
+			double certifiedUpperBound,
+			double resamplingVariance) {
+		double pointRows = writer.pointRows();
+		boolean learned = isLearned(input);
+		if (learned && pointRows == 0.0d) {
+			writer.close();
+			return arena.deriveSummary(
+					outputKey,
+					EvidenceStateSummary.unresolved(
+							0.0d,
+							Math.max(0.0d, certifiedUpperBound),
+							certifiedUpperBound,
+							"learned-calibrated-transform-zero-support"),
+					FrontierStateOperation.UNRESOLVED,
+					input,
+					null,
+					operationRecipeId);
+		}
+		double intervalUpperRows = Math.max(pointRows, certifiedUpperBound);
+		EvidenceStateSummary inputSummary = input.summary();
+		EvidenceStateSummary summary = new EvidenceStateSummary(
 				pointRows,
+				0.0d,
+				intervalUpperRows,
+				0.0d,
+				learned ? EvidenceIntervalKind.HEURISTIC : EvidenceIntervalKind.NONE,
+				inputSummary.totalVariance(),
+				0.0d,
+				resamplingVariance,
 				writer.effectiveSampleSize(),
 				writer.maximumWeightFraction(),
-				certifiedUpperBound);
-		return arena.internPayload(
-				outputKey, summary, operation, input, null, operationRecipeId, writer);
+				certifiedUpperBound,
+				learned ? EvidenceGuarantee.LEARNED_CALIBRATED : EvidenceGuarantee.MEASURE_UNBIASED,
+				pointRows == 0.0d ? EvidenceZeroStatus.ESTIMATED_ZERO : EvidenceZeroStatus.POSITIVE,
+				"");
+		return learned
+				? arena.derivePayload(outputKey, summary, operation, input, null, operationRecipeId, writer)
+				: arena.internPayload(outputKey, summary, operation, input, null, operationRecipeId, writer);
 	}
 
 	private static void probeAndCount(FrontierPayloadLease payload, FrontierExactMultiplicityProbe probe,
@@ -822,6 +1699,30 @@ public final class FrontierLinearTransforms {
 				"");
 	}
 
+	private static EvidenceStateSummary learnedSummary(double pointRows,
+			double effectiveSampleSize, double maximumWeightFraction, double certifiedUpperBound) {
+		double intervalUpperRows = Math.max(pointRows, certifiedUpperBound);
+		return new EvidenceStateSummary(
+				pointRows,
+				0.0d,
+				intervalUpperRows,
+				0.0d,
+				EvidenceIntervalKind.HEURISTIC,
+				Double.POSITIVE_INFINITY,
+				0.0d,
+				0.0d,
+				effectiveSampleSize,
+				maximumWeightFraction,
+				certifiedUpperBound,
+				EvidenceGuarantee.LEARNED_CALIBRATED,
+				EvidenceZeroStatus.POSITIVE,
+				"");
+	}
+
+	private static boolean isLearned(EvidenceStateRef state) {
+		return state != null && state.summary().guarantee() == EvidenceGuarantee.LEARNED_CALIBRATED;
+	}
+
 	private static FrontierStateOperation operation(FrontierOuterKernel kernel) {
 		return switch (kernel) {
 		case INNER -> FrontierStateOperation.PROBE_FACTOR;
@@ -865,6 +1766,245 @@ public final class FrontierLinearTransforms {
 	private static double saturatedAdd(double left, double right) {
 		double result = left + right;
 		return Double.isFinite(result) && result >= 0.0d ? result : Double.POSITIVE_INFINITY;
+	}
+
+	@FunctionalInterface
+	private interface JoinPairConsumer {
+
+		void accept(int targetStratum, double weight, long[] tuple);
+	}
+
+	private static final class WeightedEntries {
+
+		private final double[] cumulativeWeights;
+		private final int[] strata;
+		private final int[] indexes;
+		private final boolean[] exact;
+
+		private WeightedEntries(FrontierPayloadLease payload) {
+			int entries = entryCount(payload);
+			cumulativeWeights = new double[entries];
+			strata = new int[entries];
+			indexes = new int[entries];
+			exact = new boolean[entries];
+			int ordinal = 0;
+			double cumulative = 0.0d;
+			for (int stratum = 0; stratum < payload.stratumCount(); stratum++) {
+				for (int index = 0; index < payload.exactCount(stratum); index++) {
+					cumulative += payload.exactWeight(stratum, index);
+					requireFiniteCumulativeWeight(cumulative);
+					cumulativeWeights[ordinal] = cumulative;
+					strata[ordinal] = stratum;
+					indexes[ordinal] = index;
+					exact[ordinal] = true;
+					ordinal++;
+				}
+				for (int index = 0; index < payload.residualCount(stratum); index++) {
+					cumulative += payload.residualWeight(stratum, index);
+					requireFiniteCumulativeWeight(cumulative);
+					cumulativeWeights[ordinal] = cumulative;
+					strata[ordinal] = stratum;
+					indexes[ordinal] = index;
+					ordinal++;
+				}
+			}
+		}
+
+		private static long retainedBytes(int entries) {
+			return saturatedAdd(
+					arrayBytes(entries, Double.BYTES),
+					saturatedAdd(
+							Math.multiplyExact(2L, arrayBytes(entries, Integer.BYTES)),
+							arrayBytes(entries, Byte.BYTES)));
+		}
+
+		private double totalWeight() {
+			return cumulativeWeights[cumulativeWeights.length - 1];
+		}
+
+		private int select(double unit) {
+			double target = unit * totalWeight();
+			int low = 0;
+			int high = cumulativeWeights.length;
+			while (low < high) {
+				int middle = low + high >>> 1;
+				if (cumulativeWeights[middle] <= target) {
+					low = middle + 1;
+				} else {
+					high = middle;
+				}
+			}
+			return Math.min(low, cumulativeWeights.length - 1);
+		}
+
+		private int stratum(int entry) {
+			return strata[entry];
+		}
+
+		private int index(int entry) {
+			return indexes[entry];
+		}
+
+		private boolean exact(int entry) {
+			return exact[entry];
+		}
+
+		private static void requireFiniteCumulativeWeight(double cumulativeWeight) {
+			if (!Double.isFinite(cumulativeWeight) || cumulativeWeight <= 0.0d) {
+				throw new IllegalStateException("Frontier Cartesian input mass must be finite and positive");
+			}
+		}
+	}
+
+	private static final class JoinMapping {
+
+		private static final long OBJECT_BYTES = 48L;
+
+		private final int rightStrata;
+		private final int[] targetStrata;
+		private final int[] rightSlotsByLeftSlot;
+		private final int[] leftSlotsByOutputSlot;
+		private final int[] rightSlotsByOutputSlot;
+
+		private JoinMapping(FrontierMaskStrata left, FrontierMaskStrata right, FrontierMaskStrata output) {
+			rightStrata = right.stratumCount();
+			int outputWidth = output.layout().size();
+			targetStrata = new int[Math.multiplyExact(left.stratumCount(), rightStrata)];
+			rightSlotsByLeftSlot = new int[left.layout().size()];
+			leftSlotsByOutputSlot = new int[outputWidth];
+			rightSlotsByOutputSlot = new int[outputWidth];
+			for (int leftSlot = 0; leftSlot < rightSlotsByLeftSlot.length; leftSlot++) {
+				rightSlotsByLeftSlot[leftSlot] = right.layout().indexOf(left.layout().variable(leftSlot));
+			}
+			for (int outputSlot = 0; outputSlot < outputWidth; outputSlot++) {
+				String variable = output.layout().variable(outputSlot);
+				leftSlotsByOutputSlot[outputSlot] = left.layout().indexOf(variable);
+				rightSlotsByOutputSlot[outputSlot] = right.layout().indexOf(variable);
+			}
+
+			boolean[] represented = new boolean[output.stratumCount()];
+			for (int leftStratum = 0; leftStratum < left.stratumCount(); leftStratum++) {
+				for (int rightStratum = 0; rightStratum < right.stratumCount(); rightStratum++) {
+					int target = matchingOutputStratum(left, leftStratum, right, rightStratum, output);
+					targetStrata[Math.multiplyExact(leftStratum, rightStrata) + rightStratum] = target;
+					represented[target] = true;
+				}
+			}
+			for (boolean produced : represented) {
+				if (!produced) {
+					throw new IllegalArgumentException(
+							"join output mask strata contain a mask not produced by the inputs");
+				}
+			}
+		}
+
+		private static long retainedBytes(FrontierMaskStrata left, FrontierMaskStrata right,
+				FrontierMaskStrata output) {
+			return saturatedAdd(
+					OBJECT_BYTES,
+					saturatedAdd(
+							arrayBytes(
+									Math.multiplyExact(left.stratumCount(), right.stratumCount()),
+									Integer.BYTES),
+							saturatedAdd(
+									arrayBytes(left.layout().size(), Integer.BYTES),
+									saturatedAdd(
+											arrayBytes(output.layout().size(), Integer.BYTES),
+											saturatedAdd(
+													arrayBytes(output.layout().size(), Integer.BYTES),
+													arrayBytes(output.stratumCount(), Byte.BYTES))))));
+		}
+
+		private static int matchingOutputStratum(FrontierMaskStrata left, int leftStratum,
+				FrontierMaskStrata right, int rightStratum, FrontierMaskStrata output) {
+			for (int outputStratum = 0; outputStratum < output.stratumCount(); outputStratum++) {
+				boolean matches = true;
+				for (int outputSlot = 0; outputSlot < output.layout().size(); outputSlot++) {
+					String variable = output.layout().variable(outputSlot);
+					int leftSlot = left.layout().indexOf(variable);
+					int rightSlot = right.layout().indexOf(variable);
+					boolean bound = leftSlot >= 0 && left.isBound(leftStratum, leftSlot)
+							|| rightSlot >= 0 && right.isBound(rightStratum, rightSlot);
+					if (output.isBound(outputStratum, outputSlot) != bound) {
+						matches = false;
+						break;
+					}
+				}
+				if (matches) {
+					return outputStratum;
+				}
+			}
+			throw new IllegalArgumentException("join output mask strata omit an input mask combination");
+		}
+
+		private int outputWidth() {
+			return leftSlotsByOutputSlot.length;
+		}
+
+		private int targetStratum(int leftStratum, int rightStratum) {
+			return targetStrata[Math.multiplyExact(leftStratum, rightStrata) + rightStratum];
+		}
+
+		private boolean compatible(
+				FrontierPayloadLease left,
+				boolean leftExact,
+				int leftStratum,
+				int leftIndex,
+				FrontierPayloadLease right,
+				boolean rightExact,
+				int rightStratum,
+				int rightIndex) {
+			for (int leftSlot = 0; leftSlot < rightSlotsByLeftSlot.length; leftSlot++) {
+				int rightSlot = rightSlotsByLeftSlot[leftSlot];
+				if (rightSlot >= 0
+						&& left.masks().isBound(leftStratum, leftSlot)
+						&& right.masks().isBound(rightStratum, rightSlot)
+						&& termId(left, leftExact, leftStratum, leftIndex, leftSlot) != termId(
+								right, rightExact, rightStratum, rightIndex, rightSlot)) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		private void copyJoinedTuple(
+				FrontierPayloadLease left,
+				boolean leftExact,
+				int leftStratum,
+				int leftIndex,
+				FrontierPayloadLease right,
+				boolean rightExact,
+				int rightStratum,
+				int rightIndex,
+				long[] tuple) {
+			for (int outputSlot = 0; outputSlot < tuple.length; outputSlot++) {
+				int leftSlot = leftSlotsByOutputSlot[outputSlot];
+				if (leftSlot >= 0 && left.masks().isBound(leftStratum, leftSlot)) {
+					tuple[outputSlot] = termId(left, leftExact, leftStratum, leftIndex, leftSlot);
+					continue;
+				}
+				int rightSlot = rightSlotsByOutputSlot[outputSlot];
+				tuple[outputSlot] = rightSlot >= 0 && right.masks().isBound(rightStratum, rightSlot)
+						? termId(right, rightExact, rightStratum, rightIndex, rightSlot)
+						: 0L;
+			}
+		}
+
+		private static long termId(FrontierPayloadLease payload, boolean exact, int stratum, int index, int slot) {
+			return exact
+					? payload.exactTermId(stratum, index, slot)
+					: payload.residualTermId(stratum, index, slot);
+		}
+	}
+
+	private static final class OuterExpansionBudgetExceeded extends RuntimeException {
+
+		private static final long serialVersionUID = 1L;
+		private static final OuterExpansionBudgetExceeded INSTANCE = new OuterExpansionBudgetExceeded();
+
+		private OuterExpansionBudgetExceeded() {
+			super(null, null, false, false);
+		}
 	}
 
 	private static final class ExactTupleBuffer {
@@ -947,10 +2087,25 @@ public final class FrontierLinearTransforms {
 			size = output;
 		}
 
+		private void countByStratum(int[] counts) {
+			for (int entry = 0; entry < size; entry++) {
+				int stratum = strata[entry];
+				counts[stratum] = Math.incrementExact(counts[stratum]);
+			}
+		}
+
 		private void write(FrontierPayloadWriter writer, int[] next) {
 			for (int entry = 0; entry < size; entry++) {
 				int stratum = strata[entry];
 				writer.putExact(stratum, next[stratum]++, weights[entry], terms,
+						Math.multiplyExact(entry, width));
+			}
+		}
+
+		private void writeResidual(FrontierPayloadWriter writer, int[] next) {
+			for (int entry = 0; entry < size; entry++) {
+				int stratum = strata[entry];
+				writer.putResidual(stratum, next[stratum]++, weights[entry], terms,
 						Math.multiplyExact(entry, width));
 			}
 		}

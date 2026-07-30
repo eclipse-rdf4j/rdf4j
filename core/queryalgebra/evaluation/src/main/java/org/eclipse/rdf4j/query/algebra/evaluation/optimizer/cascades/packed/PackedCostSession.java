@@ -47,6 +47,13 @@ public interface PackedCostSession extends AutoCloseable {
 	void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output);
 
 	/**
+	 * Retains query-local evidence across a physical join introduced by enumeration rather than backed by a source
+	 * query relation. The default leaves scalar-only providers unchanged.
+	 */
+	default void refineIntermediateJoin(PackedCostContext context, PackedCostEstimate output) {
+	}
+
+	/**
 	 * Closes query-local resources. The default is suitable for stateless adapters.
 	 */
 	@Override

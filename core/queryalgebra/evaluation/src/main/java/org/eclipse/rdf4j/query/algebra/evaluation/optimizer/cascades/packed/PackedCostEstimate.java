@@ -17,6 +17,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
 
 /** Reusable primitive output slot for one context-sensitive physical factor estimate. */
 @Experimental
@@ -30,6 +31,7 @@ public final class PackedCostEstimate {
 	private boolean contextualOutputRows;
 	private boolean componentOutputRows;
 	private int evidenceStateId;
+	private EvidenceGuarantee evidenceGuarantee;
 	private int lookupComponentMask;
 	private int missingLookupComponentMask;
 	private int indexPrefixLength;
@@ -66,6 +68,7 @@ public final class PackedCostEstimate {
 		contextualOutputRows = false;
 		componentOutputRows = false;
 		evidenceStateId = 0;
+		evidenceGuarantee = null;
 		lookupComponentMask = 0;
 		missingLookupComponentMask = 0;
 		indexPrefixLength = 0;
@@ -110,6 +113,11 @@ public final class PackedCostEstimate {
 			throw new IllegalArgumentException("packed evidence state ID must be non-negative");
 		}
 		this.evidenceStateId = evidenceStateId;
+	}
+
+	/** Records the strongest guarantee that directly supports the rows in this slot. */
+	public void setEvidenceGuarantee(EvidenceGuarantee evidenceGuarantee) {
+		this.evidenceGuarantee = evidenceGuarantee;
 	}
 
 	public void setAccess(int lookupComponentMask, int missingLookupComponentMask, int indexPrefixLength,
@@ -223,6 +231,11 @@ public final class PackedCostEstimate {
 	 */
 	public int evidenceStateId() {
 		return evidenceStateId;
+	}
+
+	/** Returns the guarantee for these rows, or {@code null} when the provider did not publish one. */
+	public EvidenceGuarantee evidenceGuarantee() {
+		return evidenceGuarantee;
 	}
 
 	public boolean hasContextualOutputRows() {

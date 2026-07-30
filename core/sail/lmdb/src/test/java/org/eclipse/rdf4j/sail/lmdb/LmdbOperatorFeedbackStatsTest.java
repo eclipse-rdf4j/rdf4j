@@ -497,7 +497,7 @@ class LmdbOperatorFeedbackStatsTest {
 	}
 
 	@Test
-	void lmdbStatisticsDoesNotTrackDetailedRuntimeFeedbackByDefault(@TempDir Path tempDir) throws Exception {
+	void lmdbStatisticsTracksSafeRuntimeFeedbackByDefault(@TempDir Path tempDir) throws Exception {
 		String previous = System.getProperty(LmdbEvaluationStatistics.OPERATOR_FEEDBACK_TRACKING_PROPERTY);
 		String previousDetailed = System.getProperty(
 				LmdbEvaluationStatistics.OPERATOR_FEEDBACK_DETAILED_RUNTIME_PROPERTY);
@@ -510,10 +510,10 @@ class LmdbOperatorFeedbackStatsTest {
 			Join join = join("s", "x", "o");
 			join.setCostFeedbackTrackingEnabled(true);
 
-			assertTrue(!evaluationStatistics.supportsOperatorFeedbackTracking(join),
-					"Detailed runtime feedback should be off unless explicitly enabled for JFR-friendly execution");
-			assertTrue(!evaluationStatistics.shouldTrackCostFeedback(join),
-					"Stamped supported operators should skip runtime wrappers by default");
+			assertTrue(evaluationStatistics.supportsOperatorFeedbackTracking(join),
+					"SAFE_CARDINALITY_CORRECTION should collect completed evidence automatically");
+			assertTrue(evaluationStatistics.shouldTrackCostFeedback(join),
+					"Stamped supported operators should publish observations under the default safe profile");
 		} finally {
 			restoreOperatorFeedbackTrackingProperty(previous);
 			restoreOperatorFeedbackDetailedRuntimeProperty(previousDetailed);

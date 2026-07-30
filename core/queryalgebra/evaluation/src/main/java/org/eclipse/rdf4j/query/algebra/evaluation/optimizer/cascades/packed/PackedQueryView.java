@@ -195,6 +195,11 @@ public final class PackedQueryView {
 		return null;
 	}
 
+	/** Returns the relation's planned double metric with the supplied name, or {@link Double#NaN} when absent. */
+	public double relationPlannedDoubleMetric(int relationId, String metricName) {
+		return query.relPlannedDoubleMetric(relationId, metricName);
+	}
+
 	private int bindingAssignmentPayload(int relationId) {
 		if (!isBindingSetAssignment(relationId)) {
 			throw new IllegalArgumentException("relation " + relationId + " is not a binding-set assignment");

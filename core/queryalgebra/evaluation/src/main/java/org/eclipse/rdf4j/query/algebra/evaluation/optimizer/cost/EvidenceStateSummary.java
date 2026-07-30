@@ -102,7 +102,7 @@ public record EvidenceStateSummary(
 			EvidenceZeroStatus expectedStatus = switch (guarantee) {
 			case DATABASE_EXACT -> EvidenceZeroStatus.EXACT_ZERO;
 			case MEASURE_UNBIASED -> EvidenceZeroStatus.ESTIMATED_ZERO;
-			case CERTIFIED_BOUND_ONLY, SCALAR_FALLBACK, UNRESOLVED -> EvidenceZeroStatus.UNRESOLVED;
+			case LEARNED_CALIBRATED, CERTIFIED_BOUND_ONLY, SCALAR_FALLBACK, UNRESOLVED -> EvidenceZeroStatus.UNRESOLVED;
 			};
 			if (zeroStatus != expectedStatus) {
 				throw new IllegalArgumentException("zero evidence has a status inconsistent with its guarantee");
@@ -128,6 +128,13 @@ public record EvidenceStateSummary(
 			if (zeroStatus != expectedStatus) {
 				throw new IllegalArgumentException("database-exact evidence has an inconsistent zero status");
 			}
+		}
+		if (guarantee == EvidenceGuarantee.LEARNED_CALIBRATED
+				&& (pointRows <= 0.0d
+						|| intervalKind != EvidenceIntervalKind.HEURISTIC
+						|| confidence != 0.0d)) {
+			throw new IllegalArgumentException(
+					"learned-calibrated evidence requires positive mass and a zero-confidence heuristic interval");
 		}
 		if ((guarantee == EvidenceGuarantee.CERTIFIED_BOUND_ONLY
 				|| guarantee == EvidenceGuarantee.SCALAR_FALLBACK

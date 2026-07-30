@@ -17,6 +17,8 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.reflect.InvocationTargetException;
+
 import org.junit.jupiter.api.Test;
 
 class FrontierPayloadStateTest {
@@ -551,6 +553,276 @@ class FrontierPayloadStateTest {
 	}
 
 	@Test
+	void calibrationOverlayScalesEffectiveWeightsWithoutCopyingTheRawPayload() {
+		FrontierMaskStrata masks = FrontierMaskStrata.of(FrontierLayout.of("x"), 1, new long[] { 1L });
+		FrontierStateKey key = key(masks, FrontierLaneFamily.DESIGN, 0);
+		EvidenceCalibrationSummary calibration = new EvidenceCalibrationSummary(
+				5.0d, 10.0d, 2.0d, "leo", 4L, 0.75d, "join:a-b", 9L);
+
+		try (FrontierStateArena arena = new FrontierStateArena(128 * 1024L)) {
+			arena.declareCanonicalStates(key);
+			FrontierPayloadWriter writer = arena.newPayloadWriter(key, new int[] { 0 }, new int[] { 2 });
+			writer.putResidual(0, 0, 2.0d, new long[] { 11L }, 0);
+			writer.putResidual(0, 1, 3.0d, new long[] { 12L }, 0);
+			EvidenceStateRef raw = arena.internPayload(
+					key,
+					unbiased(5.0d, 12.0d, 25.0d / 13.0d, 3.0d / 5.0d),
+					FrontierStateOperation.COORDINATED_STAR,
+					null,
+					null,
+					1,
+					writer);
+			long residentBytes = arena.residentPayloadBytes();
+
+			EvidenceStateRef calibrated = calibrate(arena, raw, calibration, 7);
+
+			assertNotEquals(raw, calibrated);
+			assertEquals(FrontierStateOperation.CALIBRATE, arena.operation(calibrated));
+			assertEquals(1, arena.parentCount(calibrated));
+			assertEquals(raw, arena.parent(calibrated, 0));
+			assertEquals(calibration, calibration(arena, calibrated));
+			assertEquals(EvidenceGuarantee.LEARNED_CALIBRATED, calibrated.summary().guarantee());
+			assertEquals(EvidenceIntervalKind.HEURISTIC, calibrated.summary().intervalKind());
+			assertEquals(0.0d, calibrated.summary().confidence());
+			assertEquals(10.0d, calibrated.summary().pointRows());
+			assertEquals(residentBytes, arena.residentPayloadBytes(), "an overlay must not copy particle arrays");
+			try (FrontierPayloadLease rawPayload = arena.openPayload(raw);
+					FrontierPayloadLease calibratedPayload = arena.openPayload(calibrated)) {
+				assertEquals(2.0d, rawPayload.residualWeight(0, 0));
+				assertEquals(3.0d, rawPayload.residualWeight(0, 1));
+				assertEquals(4.0d, calibratedPayload.residualWeight(0, 0));
+				assertEquals(6.0d, calibratedPayload.residualWeight(0, 1));
+			}
+		}
+	}
+
+	@Test
+	void calibratedTransformCanCoexistWithTheRawCanonicalFactorState() {
+		FrontierMaskStrata masks = FrontierMaskStrata.of(FrontierLayout.of("x"), 1, new long[] { 1L });
+		FrontierStateKey parentKey = key(masks, FrontierLaneFamily.DESIGN, 0);
+		FrontierStateKey childKey = factorKey(masks, 0b11L, FrontierLaneFamily.DESIGN);
+
+		try (FrontierStateArena arena = new FrontierStateArena(128 * 1024L)) {
+			arena.declareCanonicalStates(parentKey, childKey);
+			FrontierPayloadWriter parentWriter = arena.newPayloadWriter(parentKey, new int[] { 0 }, new int[] { 2 });
+			parentWriter.putResidual(0, 0, 2.0d, new long[] { 11L }, 0);
+			parentWriter.putResidual(0, 1, 3.0d, new long[] { 12L }, 0);
+			EvidenceStateRef rawParent = arena.internPayload(
+					parentKey,
+					unbiased(5.0d, 12.0d, 25.0d / 13.0d, 3.0d / 5.0d),
+					FrontierStateOperation.COORDINATED_STAR,
+					null,
+					null,
+					1,
+					parentWriter);
+			EvidenceStateRef calibratedParent = calibrate(
+					arena,
+					rawParent,
+					new EvidenceCalibrationSummary(5.0d, 10.0d, 2.0d, "leo", 4L, 0.75d, "join:a-b", 9L),
+					2);
+
+			FrontierPayloadWriter learnedWriter = arena.newPayloadWriter(childKey, new int[] { 0 }, new int[] { 1 });
+			learnedWriter.putResidual(0, 0, 10.0d, new long[] { 13L }, 0);
+			EvidenceStateRef learnedChild = derivePayload(
+					arena,
+					childKey,
+					learned(10.0d, 20.0d, 1.0d, 1.0d),
+					FrontierStateOperation.BRIDGE_TRANSFER,
+					calibratedParent,
+					null,
+					3,
+					learnedWriter);
+
+			assertEquals(EvidenceGuarantee.LEARNED_CALIBRATED, learnedChild.summary().guarantee());
+			assertEquals(calibratedParent, arena.parent(learnedChild, 0));
+			assertEquals(null, arena.find(childKey),
+					"a lineage-specific payload must not occupy the raw canonical state slot");
+
+			FrontierPayloadWriter rawWriter = arena.newPayloadWriter(childKey, new int[] { 0 }, new int[] { 1 });
+			rawWriter.putResidual(0, 0, 5.0d, new long[] { 13L }, 0);
+			EvidenceStateRef rawChild = arena.internPayload(
+					childKey,
+					unbiased(5.0d, 20.0d, 1.0d, 1.0d),
+					FrontierStateOperation.BRIDGE_TRANSFER,
+					rawParent,
+					null,
+					3,
+					rawWriter);
+
+			assertNotEquals(rawChild, learnedChild);
+			assertEquals(rawChild, arena.find(childKey));
+			try (FrontierPayloadLease learnedPayload = arena.openPayload(learnedChild);
+					FrontierPayloadLease rawPayload = arena.openPayload(rawChild)) {
+				assertEquals(10.0d, learnedPayload.residualWeight(0, 0));
+				assertEquals(5.0d, rawPayload.residualWeight(0, 0));
+			}
+		}
+	}
+
+	@Test
+	void learnedTransformWithoutSurvivorsProducesTypedBoundary() {
+		FrontierMaskStrata masks = FrontierMaskStrata.of(FrontierLayout.of("x"), 1, new long[] { 1L });
+		FrontierStateKey parentKey = key(masks, FrontierLaneFamily.DESIGN, 0);
+		FrontierStateKey outputKey = factorKey(masks, 0b11L, FrontierLaneFamily.DESIGN);
+
+		try (FrontierStateArena arena = new FrontierStateArena(128 * 1024L)) {
+			arena.declareCanonicalStates(parentKey, outputKey);
+			FrontierPayloadWriter writer = arena.newPayloadWriter(parentKey, new int[] { 0 }, new int[] { 1 });
+			writer.putResidual(0, 0, 5.0d, new long[] { 11L }, 0);
+			EvidenceStateRef raw = arena.internPayload(
+					parentKey,
+					unbiased(5.0d, 12.0d, 1.0d, 1.0d),
+					FrontierStateOperation.COORDINATED_STAR,
+					null,
+					null,
+					1,
+					writer);
+			EvidenceStateRef calibrated = calibrate(
+					arena,
+					raw,
+					new EvidenceCalibrationSummary(5.0d, 10.0d, 2.0d, "leo", 4L, 0.75d, "join:a-b", 9L),
+					2);
+
+			EvidenceStateRef boundary = FrontierLinearTransforms.restrict(
+					arena, calibrated, outputKey, 3, (payload, exact, stratum, index) -> false);
+
+			assertEquals(EvidenceGuarantee.UNRESOLVED, boundary.summary().guarantee());
+			assertEquals(EvidenceZeroStatus.UNRESOLVED, boundary.summary().zeroStatus());
+			assertEquals("learned-calibrated-transform-zero-support", boundary.summary().degradationReason());
+			assertEquals(FrontierStateOperation.UNRESOLVED, arena.operation(boundary));
+			assertEquals(calibrated, arena.parent(boundary, 0));
+			assertEquals(FrontierPayloadStatus.NONE, arena.payloadStatus(boundary));
+			assertEquals(null, arena.find(outputKey),
+					"a lineage-specific boundary must not occupy the raw canonical state slot");
+		}
+	}
+
+	@Test
+	void calibrationPreservesDatabaseExactEvidenceAndCertifiedUpperBounds() {
+		FrontierMaskStrata masks = FrontierMaskStrata.of(FrontierLayout.of("x"), 1, new long[] { 1L });
+		FrontierStateKey exactKey = key(masks, FrontierLaneFamily.DESIGN, 0);
+		FrontierStateKey sampledKey = factorKey(masks, 0b11L, FrontierLaneFamily.DESIGN);
+
+		try (FrontierStateArena arena = new FrontierStateArena(128 * 1024L)) {
+			arena.declareCanonicalStates(exactKey, sampledKey);
+			FrontierPayloadWriter exactWriter = arena.newPayloadWriter(exactKey, new int[] { 1 }, new int[] { 0 });
+			exactWriter.putExact(0, 0, 3.0d, new long[] { 11L }, 0);
+			EvidenceStateRef exact = arena.internPayload(
+					exactKey,
+					EvidenceStateSummary.exact(3.0d),
+					FrontierStateOperation.EXACT_LEAF,
+					null,
+					null,
+					1,
+					exactWriter);
+			assertEquals(
+					exact,
+					calibrate(
+							arena,
+							exact,
+							new EvidenceCalibrationSummary(
+									3.0d, 30.0d, 10.0d, "leo", 4L, 0.75d, "exact", 9L),
+							2));
+
+			FrontierPayloadWriter sampledWriter = arena.newPayloadWriter(
+					sampledKey,
+					new int[] { 0 },
+					new int[] { 1 });
+			sampledWriter.putResidual(0, 0, 5.0d, new long[] { 12L }, 0);
+			EvidenceStateRef sampled = arena.internPayload(
+					sampledKey,
+					unbiased(5.0d, 8.0d, 1.0d, 1.0d),
+					FrontierStateOperation.COORDINATED_STAR,
+					null,
+					null,
+					1,
+					sampledWriter);
+			EvidenceStateRef bounded = calibrate(
+					arena,
+					sampled,
+					new EvidenceCalibrationSummary(5.0d, 20.0d, 4.0d, "leo", 4L, 0.75d, "bounded", 9L),
+					2);
+
+			assertEquals(8.0d, bounded.summary().pointRows());
+			assertTrue(bounded.summary().upperRows() <= 8.0d);
+			assertEquals(8.0d, calibration(arena, bounded).finalRows());
+			assertEquals(8.0d / 5.0d, calibration(arena, bounded).factor());
+			try (FrontierPayloadLease payload = arena.openPayload(bounded)) {
+				assertEquals(8.0d, payload.residualWeight(0, 0));
+			}
+		}
+	}
+
+	@Test
+	void calibrationRejectsTheSameEvidenceKeyTwiceInOneLineage() {
+		FrontierMaskStrata masks = FrontierMaskStrata.of(FrontierLayout.of("x"), 1, new long[] { 1L });
+		FrontierStateKey key = key(masks, FrontierLaneFamily.DESIGN, 0);
+
+		try (FrontierStateArena arena = new FrontierStateArena(128 * 1024L)) {
+			arena.declareCanonicalStates(key);
+			FrontierPayloadWriter writer = arena.newPayloadWriter(key, new int[] { 0 }, new int[] { 1 });
+			writer.putResidual(0, 0, 5.0d, new long[] { 11L }, 0);
+			EvidenceStateRef raw = arena.internPayload(
+					key,
+					unbiased(5.0d, 12.0d, 1.0d, 1.0d),
+					FrontierStateOperation.COORDINATED_STAR,
+					null,
+					null,
+					1,
+					writer);
+			EvidenceStateRef first = calibrate(
+					arena,
+					raw,
+					new EvidenceCalibrationSummary(5.0d, 10.0d, 2.0d, "leo", 4L, 0.75d, "same-key", 9L),
+					2);
+
+			assertThrows(
+					IllegalArgumentException.class,
+					() -> calibrate(
+							arena,
+							first,
+							new EvidenceCalibrationSummary(
+									10.0d, 15.0d, 1.5d, "leo", 5L, 0.80d, "same-key", 10L),
+							3));
+		}
+	}
+
+	@Test
+	void learnedPositiveEstimateWithoutSupportingParticlesIsSummaryOnly() {
+		FrontierMaskStrata masks = FrontierMaskStrata.of(FrontierLayout.of("x"), 1, new long[] { 1L });
+		FrontierStateKey key = key(masks, FrontierLaneFamily.DESIGN, 0);
+
+		try (FrontierStateArena arena = new FrontierStateArena(128 * 1024L)) {
+			arena.declareCanonicalStates(key);
+			FrontierPayloadWriter writer = arena.newPayloadWriter(key, new int[] { 0 }, new int[] { 0 });
+			EvidenceStateRef rawZero = arena.internPayload(
+					key,
+					unbiased(0.0d, 12.0d, 0.0d, 0.0d),
+					FrontierStateOperation.COORDINATED_STAR,
+					null,
+					null,
+					1,
+					writer);
+
+			EvidenceStateRef learnedPositive = calibrate(
+					arena,
+					rawZero,
+					new EvidenceCalibrationSummary(
+							0.0d, 4.0d, Double.POSITIVE_INFINITY, "learned-filter", 4L, 0.75d, "filter:x", 9L),
+					2);
+
+			assertEquals(EvidenceGuarantee.UNRESOLVED, learnedPositive.summary().guarantee());
+			assertEquals(4.0d, learnedPositive.summary().pointRows());
+			assertEquals("learned-positive-without-supporting-particles",
+					learnedPositive.summary().degradationReason());
+			assertEquals(FrontierStateOperation.CALIBRATE, arena.operation(learnedPositive));
+			assertEquals(rawZero, arena.parent(learnedPositive, 0));
+			assertEquals(FrontierPayloadStatus.NONE, arena.payloadStatus(learnedPositive));
+			assertThrows(IllegalStateException.class, () -> arena.openPayload(learnedPositive));
+		}
+	}
+
+	@Test
 	void payloadClassificationMassAndProvenanceAreValidated() {
 		FrontierMaskStrata masks = FrontierMaskStrata.of(FrontierLayout.of("x"), 1, new long[] { 1L });
 		FrontierStateKey parentKey = key(masks, FrontierLaneFamily.DESIGN, 0);
@@ -784,6 +1056,98 @@ class FrontierPayloadStateTest {
 				upperRows,
 				EvidenceGuarantee.MEASURE_UNBIASED,
 				pointRows == 0.0d ? EvidenceZeroStatus.ESTIMATED_ZERO : EvidenceZeroStatus.POSITIVE,
+				"");
+	}
+
+	private static EvidenceStateRef calibrate(
+			FrontierStateArena arena,
+			EvidenceStateRef raw,
+			EvidenceCalibrationSummary calibration,
+			int operationRecipeId) {
+		try {
+			return (EvidenceStateRef) FrontierStateArena.class
+					.getMethod(
+							"calibrate",
+							EvidenceStateRef.class,
+							EvidenceCalibrationSummary.class,
+							int.class)
+					.invoke(arena, raw, calibration, operationRecipeId);
+		} catch (InvocationTargetException failure) {
+			if (failure.getCause()instanceof RuntimeException runtimeFailure) {
+				throw runtimeFailure;
+			}
+			if (failure.getCause()instanceof Error error) {
+				throw error;
+			}
+			throw new AssertionError(failure.getCause());
+		} catch (ReflectiveOperationException failure) {
+			throw new AssertionError(failure);
+		}
+	}
+
+	private static EvidenceCalibrationSummary calibration(FrontierStateArena arena, EvidenceStateRef state) {
+		try {
+			return (EvidenceCalibrationSummary) FrontierStateArena.class
+					.getMethod("calibration", EvidenceStateRef.class)
+					.invoke(arena, state);
+		} catch (ReflectiveOperationException failure) {
+			throw new AssertionError(failure);
+		}
+	}
+
+	private static EvidenceStateRef derivePayload(
+			FrontierStateArena arena,
+			FrontierStateKey key,
+			EvidenceStateSummary summary,
+			FrontierStateOperation operation,
+			EvidenceStateRef firstParent,
+			EvidenceStateRef secondParent,
+			int operationRecipeId,
+			FrontierPayloadWriter writer) {
+		try {
+			return (EvidenceStateRef) FrontierStateArena.class
+					.getMethod(
+							"derivePayload",
+							FrontierStateKey.class,
+							EvidenceStateSummary.class,
+							FrontierStateOperation.class,
+							EvidenceStateRef.class,
+							EvidenceStateRef.class,
+							int.class,
+							FrontierPayloadWriter.class)
+					.invoke(arena, key, summary, operation, firstParent, secondParent, operationRecipeId, writer);
+		} catch (InvocationTargetException failure) {
+			if (failure.getCause()instanceof RuntimeException runtimeFailure) {
+				throw runtimeFailure;
+			}
+			if (failure.getCause()instanceof Error error) {
+				throw error;
+			}
+			throw new AssertionError(failure.getCause());
+		} catch (ReflectiveOperationException failure) {
+			throw new AssertionError(failure);
+		}
+	}
+
+	private static EvidenceStateSummary learned(
+			double pointRows,
+			double upperRows,
+			double effectiveSampleSize,
+			double maximumWeightFraction) {
+		return new EvidenceStateSummary(
+				pointRows,
+				0.0d,
+				upperRows,
+				0.0d,
+				EvidenceIntervalKind.HEURISTIC,
+				1.0d,
+				2.0d,
+				3.0d,
+				effectiveSampleSize,
+				maximumWeightFraction,
+				upperRows,
+				EvidenceGuarantee.LEARNED_CALIBRATED,
+				EvidenceZeroStatus.POSITIVE,
 				"");
 	}
 

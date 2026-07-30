@@ -344,7 +344,7 @@ final class FrontierSynopsisBuilder {
 		return selected(laneHash(center, laneRole, laneIndex), probability);
 	}
 
-	private static boolean selected(long hash, double probability) {
+	static boolean selected(long hash, double probability) {
 		if (probability == 1.0d) {
 			return true;
 		}

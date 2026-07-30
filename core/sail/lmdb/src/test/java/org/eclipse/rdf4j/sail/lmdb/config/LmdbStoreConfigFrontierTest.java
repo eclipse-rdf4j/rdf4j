@@ -39,11 +39,26 @@ class LmdbStoreConfigFrontierTest {
 		assertEquals("AUTHORITATIVE", invoke(config, "getFrontierEstimatorMode").toString());
 		assertEquals(512L * 1024L * 1024L, invoke(config, "getFrontierSynopsisBudgetBytes"));
 		assertEquals(64L * 1024L * 1024L, invoke(config, "getFrontierQueryMemoryBudgetBytes"));
+		assertEquals(Runtime.getRuntime().maxMemory() / 4L, invoke(config, "getFrontierQueryIndexBudgetBytes"));
+		assertEquals(262_144L, invoke(config, "getFrontierInitialMaterializationWorkUnits"));
 		assertEquals(2, invoke(config, "getFrontierDesignLanes"));
 		assertEquals(2, invoke(config, "getFrontierAuditLanes"));
 		assertEquals(4096, invoke(config, "getFrontierRefinementWorkUnits"));
 		assertEquals(0.25d, (double) invoke(config, "getFrontierTargetRelativeStandardError"), 0.0d);
 		assertEquals(0.1d, (double) invoke(config, "getFrontierDefensiveProposalEpsilon"), 0.0d);
+	}
+
+	@Test
+	void frontierQueryIndexBudgetNeverExceedsQuarterMaximumHeap() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		long maximumIndexBytes = Runtime.getRuntime().maxMemory() / 4L;
+
+		config.setFrontierQueryIndexBudgetBytes(Long.MAX_VALUE);
+		assertEquals(maximumIndexBytes, invoke(config, "getEffectiveFrontierQueryIndexBudgetBytes"));
+
+		long smallerBudget = Math.max(1L, maximumIndexBytes / 2L);
+		config.setFrontierQueryIndexBudgetBytes(smallerBudget);
+		assertEquals(smallerBudget, invoke(config, "getEffectiveFrontierQueryIndexBudgetBytes"));
 	}
 
 	@Test
@@ -57,6 +72,10 @@ class LmdbStoreConfigFrontierTest {
 		assertSame(source, invokeSetter(source, "setFrontierSynopsisBudgetBytes", long.class, 2_500_000_000L));
 		assertSame(source,
 				invokeSetter(source, "setFrontierQueryMemoryBudgetBytes", long.class, 32L * 1024L * 1024L));
+		assertSame(source,
+				invokeSetter(source, "setFrontierQueryIndexBudgetBytes", long.class, 16L * 1024L * 1024L));
+		assertSame(source,
+				invokeSetter(source, "setFrontierInitialMaterializationWorkUnits", long.class, 123_456L));
 		assertSame(source, invokeSetter(source, "setFrontierDesignLanes", int.class, 3));
 		assertSame(source, invokeSetter(source, "setFrontierAuditLanes", int.class, 4));
 		assertSame(source, invokeSetter(source, "setFrontierRefinementWorkUnits", int.class, 8192));
@@ -68,6 +87,8 @@ class LmdbStoreConfigFrontierTest {
 		assertContains(model, node, "frontierEstimatorMode");
 		assertContains(model, node, "frontierSynopsisBudgetBytes");
 		assertContains(model, node, "frontierQueryMemoryBudgetBytes");
+		assertContains(model, node, "frontierQueryIndexBudgetBytes");
+		assertContains(model, node, "frontierInitialMaterializationWorkUnits");
 		assertContains(model, node, "frontierDesignLanes");
 		assertContains(model, node, "frontierAuditLanes");
 		assertContains(model, node, "frontierRefinementWorkUnits");
@@ -81,6 +102,8 @@ class LmdbStoreConfigFrontierTest {
 		assertEquals("SHADOW", invoke(restored, "getFrontierEstimatorMode").toString());
 		assertEquals(2_500_000_000L, invoke(restored, "getFrontierSynopsisBudgetBytes"));
 		assertEquals(32L * 1024L * 1024L, invoke(restored, "getFrontierQueryMemoryBudgetBytes"));
+		assertEquals(16L * 1024L * 1024L, invoke(restored, "getFrontierQueryIndexBudgetBytes"));
+		assertEquals(123_456L, invoke(restored, "getFrontierInitialMaterializationWorkUnits"));
 		assertEquals(3, invoke(restored, "getFrontierDesignLanes"));
 		assertEquals(4, invoke(restored, "getFrontierAuditLanes"));
 		assertEquals(8192, invoke(restored, "getFrontierRefinementWorkUnits"));
@@ -94,6 +117,8 @@ class LmdbStoreConfigFrontierTest {
 
 		assertIllegalArgument(config, "setFrontierSynopsisBudgetBytes", long.class, -1L);
 		assertIllegalArgument(config, "setFrontierQueryMemoryBudgetBytes", long.class, -1L);
+		assertIllegalArgument(config, "setFrontierQueryIndexBudgetBytes", long.class, -1L);
+		assertIllegalArgument(config, "setFrontierInitialMaterializationWorkUnits", long.class, -1L);
 		assertIllegalArgument(config, "setFrontierDesignLanes", int.class, 0);
 		assertIllegalArgument(config, "setFrontierAuditLanes", int.class, 0);
 		assertIllegalArgument(config, "setFrontierRefinementWorkUnits", int.class, -1);

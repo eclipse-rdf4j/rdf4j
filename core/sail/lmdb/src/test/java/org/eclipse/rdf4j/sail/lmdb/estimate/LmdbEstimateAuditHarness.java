@@ -13,10 +13,14 @@ package org.eclipse.rdf4j.sail.lmdb.estimate;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
@@ -52,8 +56,16 @@ final class LmdbEstimateAuditHarness {
 
 	private static final long DEFAULT_MAX_ACTUAL_ROWS = 100_000L;
 	private static final long DEFAULT_MAX_ACTUAL_NANOS = 5_000_000_000L;
+	private static final long DEFAULT_BASELINE_MEMORY_BYTES = 64L * 1024L;
+	private static final long DEFAULT_BASELINE_SEED = 0x6a09e667f3bcc909L;
 	private static final int TIME_CHECK_INTERVAL_MASK = 1023;
 	private static final String PHASE_ACTUAL_ROWS = "actual-rows";
+	private static final String BASELINE_MEMORY_PROPERTY = "rdf4j.lmdb.estimate.audit.baselineMemoryBytes";
+	private static final String BASELINE_SEED_PROPERTY = "rdf4j.lmdb.estimate.audit.baselineSeed";
+	private static final String FRONTIER_RAW_ROWS = "plannedFrontierRawRows";
+	private static final String FRONTIER_LEARNED_FILTER_ROWS = "plannedFrontierLearnedFilterRows";
+	private static final String FRONTIER_LEO_ROWS = "plannedFrontierLeoRows";
+	private static final String FRONTIER_FINAL_ROWS = "plannedFrontierFinalRows";
 
 	private LmdbEstimateAuditHarness() {
 	}
@@ -103,9 +115,14 @@ final class LmdbEstimateAuditHarness {
 			TupleExpr tupleExpr) {
 		PlanEstimate planned = planEstimate(PieceKind.FULL_QUERY,
 				connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized));
+		BaselineEstimate baseline = baselineEstimate(connection, tupleExpr);
 		long actualRows = actualRows(connection, queryId, "full", PieceKind.FULL_QUERY, tupleExpr);
 		return new AuditRow(queryId, "full", PieceKind.FULL_QUERY, planned.rows(), actualRows,
-				qError(planned.rows(), actualRows), planned.source(), planned.usage());
+				qError(planned.rows(), actualRows), planned.source(), planned.usage(),
+				planned.frontierStages().rawRows(), planned.frontierStages().learnedFilterRows(),
+				planned.frontierStages().leoRows(), planned.frontierStages().finalRows(),
+				baseline.fastAgmsRows(), baseline.joinSketchRows(), baseline.fastAgmsBytes(),
+				baseline.joinSketchBytes(), baseline.memoryBudgetBytes(), baseline.seed());
 	}
 
 	private static List<TupleExpr> tuplePieces(TupleExpr tupleExpr) {
@@ -181,9 +198,102 @@ final class LmdbEstimateAuditHarness {
 	private static AuditRow auditTupleExpr(SailRepositoryConnection connection, String queryId, String pieceId,
 			PieceKind kind, TupleExpr tupleExpr) {
 		PlanEstimate planned = plannedRows(connection, kind, tupleExpr);
+		BaselineEstimate baseline = baselineEstimate(connection, tupleExpr);
 		long actualRows = actualRows(connection, queryId, pieceId, kind, tupleExpr);
 		return new AuditRow(queryId, pieceId, kind, planned.rows(), actualRows, qError(planned.rows(), actualRows),
-				planned.source(), planned.usage());
+				planned.source(), planned.usage(), planned.frontierStages().rawRows(),
+				planned.frontierStages().learnedFilterRows(), planned.frontierStages().leoRows(),
+				planned.frontierStages().finalRows(), baseline.fastAgmsRows(), baseline.joinSketchRows(),
+				baseline.fastAgmsBytes(), baseline.joinSketchBytes(), baseline.memoryBudgetBytes(), baseline.seed());
+	}
+
+	private static BaselineEstimate baselineEstimate(SailRepositoryConnection connection, TupleExpr tupleExpr) {
+		long memoryBudgetBytes = Long.getLong(BASELINE_MEMORY_PROPERTY, DEFAULT_BASELINE_MEMORY_BYTES);
+		long seed = Long.getLong(BASELINE_SEED_PROPERTY, DEFAULT_BASELINE_SEED);
+		Join join = binaryAuditJoin(tupleExpr);
+		if (join == null || !pushdownSketchStream(join.getLeftArg()) || !pushdownSketchStream(join.getRightArg())) {
+			return BaselineEstimate.none(memoryBudgetBytes, seed);
+		}
+		Set<String> sharedBindings = new HashSet<>(join.getLeftArg().getBindingNames());
+		sharedBindings.retainAll(join.getRightArg().getBindingNames());
+		if (sharedBindings.size() != 1) {
+			return BaselineEstimate.none(memoryBudgetBytes, seed);
+		}
+		String joinBinding = sharedBindings.iterator().next();
+		Map<Value, Long> valueIds = new HashMap<>();
+		long[] left = joinKeyStream(connection, join.getLeftArg(), joinBinding, valueIds);
+		long[] right = joinKeyStream(connection, join.getRightArg(), joinBinding, valueIds);
+		if (left == null || right == null) {
+			return BaselineEstimate.none(memoryBudgetBytes, seed);
+		}
+		IndependentJoinSketchBaselines.Comparison comparison = IndependentJoinSketchBaselines.compare(
+				left, right, memoryBudgetBytes, seed);
+		return new BaselineEstimate(
+				comparison.fastAgmsRows(),
+				comparison.joinSketchRows(),
+				comparison.fastAgmsBytes(),
+				comparison.joinSketchBytes(),
+				comparison.memoryBudgetBytes(),
+				comparison.seed());
+	}
+
+	private static Join binaryAuditJoin(TupleExpr expression) {
+		TupleExpr current = expression;
+		while (current instanceof QueryRoot
+				|| current instanceof Projection
+				|| current instanceof Extension
+				|| current instanceof Order) {
+			current = ((UnaryTupleOperator) current).getArg();
+		}
+		return current instanceof Join join ? join : null;
+	}
+
+	private static boolean pushdownSketchStream(TupleExpr expression) {
+		if (expression instanceof StatementPattern || expression instanceof BindingSetAssignment) {
+			return true;
+		}
+		if (expression instanceof Filter
+				|| expression instanceof Projection
+				|| expression instanceof Extension
+				|| expression instanceof Order) {
+			return pushdownSketchStream(((UnaryTupleOperator) expression).getArg());
+		}
+		return false;
+	}
+
+	private static long[] joinKeyStream(SailRepositoryConnection connection, TupleExpr expression, String joinBinding,
+			Map<Value, Long> valueIds) {
+		long maxRows = Long.getLong("rdf4j.lmdb.estimate.audit.maxActualRows", DEFAULT_MAX_ACTUAL_ROWS);
+		long maxNanos = Long.getLong("rdf4j.lmdb.estimate.audit.maxActualNanos", DEFAULT_MAX_ACTUAL_NANOS);
+		long started = System.nanoTime();
+		int initialCapacity = maxRows > 0L
+				? (int) Math.min(1024L, maxRows)
+				: 1024;
+		long[] keys = new long[Math.max(1, initialCapacity)];
+		int size = 0;
+		try (CloseableIteration<? extends BindingSet> iteration = connection.getSailConnection()
+				.evaluate(root(expression.clone()), null, EmptyBindingSet.getInstance(), false)) {
+			while (iteration.hasNext()) {
+				BindingSet bindings = iteration.next();
+				Value value = bindings.getValue(joinBinding);
+				if (value == null || maxRows > 0L && size >= maxRows
+						|| maxNanos > 0L && (size & TIME_CHECK_INTERVAL_MASK) == 0
+								&& System.nanoTime() - started > maxNanos) {
+					return null;
+				}
+				if (size == keys.length) {
+					int capacity = Math.addExact(keys.length, Math.max(1, keys.length >>> 1));
+					keys = java.util.Arrays.copyOf(keys, capacity);
+				}
+				Long id = valueIds.get(value);
+				if (id == null) {
+					id = Math.addExact((long) valueIds.size(), 1L);
+					valueIds.put(value, id);
+				}
+				keys[size++] = id;
+			}
+		}
+		return java.util.Arrays.copyOf(keys, size);
 	}
 
 	private static PlanEstimate plannedRows(SailRepositoryConnection connection, PieceKind kind, TupleExpr tupleExpr) {
@@ -196,29 +306,68 @@ final class LmdbEstimateAuditHarness {
 	private static PlanEstimate planEstimate(PieceKind kind, Explanation explanation) {
 		Object explainedObject = explanation.tupleExpr();
 		if (!(explainedObject instanceof QueryModelNode explained)) {
-			return new PlanEstimate(Double.NaN, null, null);
+			return new PlanEstimate(Double.NaN, null, null, FrontierStageRows.NONE);
 		}
 		QueryModelNode estimationRoot = estimationRoot(explained);
+		FrontierStageRows frontierStages = frontierStageRows(estimationRoot);
 		double rootRows = estimateRows(estimationRoot);
 		if (!Double.isFinite(rootRows) || rootRows < 0.0d) {
 			rootRows = kind == PieceKind.FULL_QUERY ? rootRows(explanation) : Double.NaN;
 		}
 		String source = estimationRoot.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
 		String usage = estimationRoot.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE);
-		if (kind != PieceKind.FULL_QUERY && !isSpecificSource(source)) {
-			ConcreteSourceVisitor sourceVisitor = new ConcreteSourceVisitor();
-			estimationRoot.visit(sourceVisitor);
-			if (sourceVisitor.hasSource()) {
-				source = sourceVisitor.source;
-				usage = sourceVisitor.usage;
+		if (transparentSourceWrapper(kind) && !isSpecificSource(source)) {
+			SourceAttribution inherited = transparentSourceAttribution(estimationRoot);
+			if (inherited != null) {
+				source = inherited.source();
+				usage = inherited.usage();
 			}
 		}
 		if (Double.isFinite(rootRows) && rootRows >= 0.0d) {
-			return new PlanEstimate(rootRows, source, usage);
+			return new PlanEstimate(rootRows, source, usage, frontierStages);
 		}
 		FiniteEstimateVisitor visitor = new FiniteEstimateVisitor();
 		estimationRoot.visit(visitor);
-		return new PlanEstimate(visitor.rows, source, usage);
+		return new PlanEstimate(visitor.rows, source, usage, frontierStages);
+	}
+
+	private static boolean transparentSourceWrapper(PieceKind kind) {
+		return kind == PieceKind.PROJECTION
+				|| kind == PieceKind.EXTENSION
+				|| kind == PieceKind.ORDER;
+	}
+
+	private static SourceAttribution transparentSourceAttribution(QueryModelNode node) {
+		QueryModelNode current = node;
+		while (current instanceof Projection || current instanceof Extension || current instanceof Order) {
+			if (!(current instanceof UnaryTupleOperator unary) || unary.getArg() == null) {
+				return null;
+			}
+			current = unary.getArg();
+			String source = current.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+			if (isSpecificSource(source)) {
+				return new SourceAttribution(source,
+						current.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE));
+			}
+		}
+		String source = current.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+		return source == null || source.isBlank()
+				? null
+				: new SourceAttribution(source,
+						current.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE));
+	}
+
+	private static FrontierStageRows frontierStageRows(QueryModelNode node) {
+		return new FrontierStageRows(
+				plannedStage(node, FRONTIER_RAW_ROWS),
+				plannedStage(node, FRONTIER_LEARNED_FILTER_ROWS),
+				plannedStage(node, FRONTIER_LEO_ROWS),
+				plannedStage(node, FRONTIER_FINAL_ROWS));
+	}
+
+	private static double plannedStage(QueryModelNode node, String metric) {
+		double value = node.getDoubleMetricPlanned(metric);
+		return Double.isFinite(value) && value >= 0.0d ? value : Double.NaN;
 	}
 
 	private static double rootRows(Explanation explanation) {
@@ -385,38 +534,34 @@ final class LmdbEstimateAuditHarness {
 		}
 	}
 
-	private static final class ConcreteSourceVisitor extends AbstractQueryModelVisitor<RuntimeException> {
-		private String source;
-		private String usage;
-
-		@Override
-		protected void meetNode(QueryModelNode node) {
-			if (source == null && node instanceof TupleExpr && !(node instanceof QueryRoot)) {
-				String candidate = node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
-				if (isSpecificSource(candidate)) {
-					source = candidate;
-					usage = node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE);
-					return;
-				}
-			}
-			if (source == null) {
-				super.meetNode(node);
-			}
-		}
-
-		private boolean hasSource() {
-			return source != null;
-		}
-	}
-
 	record AuditRow(String queryId, String pieceId, PieceKind kind, double plannedRows, long actualRows,
-			double qError, String plannedSource, String plannedUsage) {
+			double qError, String plannedSource, String plannedUsage, double rawFrontierRows,
+			double learnedFilterRows, double leoRows, double finalFrontierRows, double fastAgmsRows,
+			double joinSketchRows, long fastAgmsBytes, long joinSketchBytes, long baselineMemoryBudgetBytes,
+			long baselineSeed) {
 	}
 
 	record PairedAuditRow(AuditRow snapshotOnly, AuditRow adaptive) {
 	}
 
-	private record PlanEstimate(double rows, String source, String usage) {
+	private record SourceAttribution(String source, String usage) {
+	}
+
+	private record PlanEstimate(double rows, String source, String usage, FrontierStageRows frontierStages) {
+	}
+
+	private record FrontierStageRows(double rawRows, double learnedFilterRows, double leoRows, double finalRows) {
+
+		private static final FrontierStageRows NONE = new FrontierStageRows(
+				Double.NaN, Double.NaN, Double.NaN, Double.NaN);
+	}
+
+	private record BaselineEstimate(double fastAgmsRows, double joinSketchRows, long fastAgmsBytes,
+			long joinSketchBytes, long memoryBudgetBytes, long seed) {
+
+		private static BaselineEstimate none(long memoryBudgetBytes, long seed) {
+			return new BaselineEstimate(Double.NaN, Double.NaN, 0L, 0L, memoryBudgetBytes, seed);
+		}
 	}
 
 	static final class AuditLimitExceededException extends RuntimeException {

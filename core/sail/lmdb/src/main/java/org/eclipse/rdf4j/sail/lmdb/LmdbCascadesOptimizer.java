@@ -213,7 +213,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 				? 0L
 				: mixCacheHash(packedCostModel.providerVersion(),
 						statistics instanceof LmdbEstimatorRuntimeProvider provider
-								? provider.estimatorRuntime().operatorFeedbackRevision()
+								? provider.estimatorRuntime().learnedEvidenceRevision()
 								: 0L);
 		long predicateRangeVersion = rangeProvider == null ? 0L : rangeProvider.predicateRangeVersion();
 		return new PackedPlanCache.Context(datasetFingerprint, bindingShapeFingerprint, parameterVariant,
@@ -419,6 +419,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			return;
 		}
 		Set<String> consumedPredicates = new java.util.HashSet<>();
+		Set<String> anchoredBindingNames = new java.util.HashSet<>();
 		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			protected void meetNode(QueryModelNode node) {
@@ -426,19 +427,23 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 				if (anchorPredicate != null) {
 					consumedPredicates.add(anchorPredicate);
 				}
+				if (node instanceof org.eclipse.rdf4j.query.algebra.BindingSetAssignment assignment) {
+					anchoredBindingNames.addAll(assignment.getBindingNames());
+				}
 				node.visitChildren(this);
 			}
 		});
 		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			public void meet(org.eclipse.rdf4j.query.algebra.StatementPattern node) {
-				annotateStatementPatternGuarantee(node, guaranteeSource, consumedPredicates);
+				annotateStatementPatternGuarantee(node, guaranteeSource, consumedPredicates, anchoredBindingNames);
 			}
 		});
 	}
 
 	private static void annotateStatementPatternGuarantee(org.eclipse.rdf4j.query.algebra.StatementPattern node,
-			LmdbPredicateObjectDomainSource guaranteeSource, Set<String> consumedPredicates) {
+			LmdbPredicateObjectDomainSource guaranteeSource, Set<String> consumedPredicates,
+			Set<String> anchoredBindingNames) {
 		org.eclipse.rdf4j.query.algebra.Var predicateVar = node.getPredicateVar();
 		if (predicateVar == null || !(predicateVar.getValue()instanceof org.eclipse.rdf4j.model.IRI predicate)) {
 			return;
@@ -455,6 +460,13 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		if (guarantee.isUnknown() || guarantee.mask() == 0L
 				|| consumedPredicates.contains(predicate.stringValue())
 				|| node.getStringMetricsPlanned().containsKey(OPTIMIZER_GUARANTEE_OPTIONS)) {
+			return;
+		}
+		if (objectVar != null && !objectVar.hasValue() && anchoredBindingNames.contains(objectVar.getName())) {
+			// The object binding is driven by a VALUES relation in the selected plan (typically the packed
+			// predicate-range anchor rule), so the guarantee was consumed, not rejected.
+			node.setStringMetricPlanned(OPTIMIZER_GUARANTEE_OPTIONS,
+					"generated=1, selected=values-anchor:" + objectVar.getName());
 			return;
 		}
 		node.setStringMetricPlanned(OPTIMIZER_GUARANTEE_OPTIONS, "generated=0, selected=original");

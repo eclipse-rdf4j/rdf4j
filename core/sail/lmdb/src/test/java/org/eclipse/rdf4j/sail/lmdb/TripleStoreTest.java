@@ -65,6 +65,16 @@ public class TripleStoreTest {
 	}
 
 	@Test
+	public void closeDrainsOutstandingReadTransactionsBeforeEnvironment() throws Exception {
+		Txn txn = tripleStore.getTxnManager().createReadTxn();
+
+		tripleStore.close();
+
+		assertEquals("Store close must invalidate read transactions before closing the LMDB environment",
+				0L, txn.get());
+	}
+
+	@Test
 	public void testInferredStmts() throws Exception {
 		tripleStore.startTransaction();
 		tripleStore.storeTriple(1, 2, 3, 1, false);
