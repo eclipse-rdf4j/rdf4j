@@ -47,6 +47,9 @@ class TxnManager {
 	record TxnRef(Txn txn) {
 	}
 
+	record ReadTxnRegistration(Txn txn, long dataRevision, long initialVersion) {
+	}
+
 	private static final int READERS_FULL_RETRIES = 500;
 	private static final long READERS_FULL_WAIT_MILLIS = 10L;
 
@@ -175,6 +178,36 @@ class TxnManager {
 			active.put(txnRef, Boolean.TRUE);
 		}
 		return txnRef;
+	}
+
+	/**
+	 * Creates and registers a reset-on-commit read transaction and samples the revision corresponding to its LMDB
+	 * snapshot under one manager read lock. A commit cannot enter its physical-commit-to-revision-publication critical
+	 * section between these operations.
+	 */
+	ReadTxnRegistration createReadTxnTrackedAtRevision(LongSupplier dataRevision) throws IOException {
+		long readStamp;
+		try {
+			readStamp = lockManager.readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException(e);
+		}
+		Txn txnRef = null;
+		try {
+			txnRef = new Txn(createReadTxnInternal());
+			synchronized (active) {
+				active.put(txnRef, Boolean.TRUE);
+			}
+			return new ReadTxnRegistration(txnRef, dataRevision.getAsLong(), txnRef.version());
+		} catch (IOException | RuntimeException | Error e) {
+			if (txnRef != null) {
+				txnRef.close();
+			}
+			throw e;
+		} finally {
+			lockManager.unlockRead(readStamp);
+		}
 	}
 
 	/**

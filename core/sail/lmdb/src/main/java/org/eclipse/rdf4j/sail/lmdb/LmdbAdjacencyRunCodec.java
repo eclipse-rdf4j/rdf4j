@@ -13,7 +13,6 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.lang.foreign.MemorySegment;
-import java.nio.ByteBuffer;
 import java.util.Arrays;
 
 /**
@@ -332,17 +331,51 @@ final class LmdbAdjacencyRunCodec {
 			slice.set(LmdbAdjacencyArena.U16_LE, 2, (short) neighborByteLength);
 			slice.set(LmdbAdjacencyArena.U16_LE, 4, (short) contextByteLength);
 			slice.set(LmdbAdjacencyArena.U16_LE, 6, (short) 0);
-			ByteBuffer buffer = slice.asSlice(8, bytes - 8).asByteBuffer();
-			Varint.writeUnsigned(buffer, runNeighbors[from]);
+			long cursor = writeUnsigned(slice, 8, runNeighbors[from]);
 			for (int i = 1; i < runCount; i++) {
-				Varint.writeUnsigned(buffer, runNeighbors[from + i] - runNeighbors[from + i - 1]);
+				cursor = writeUnsigned(slice, cursor, runNeighbors[from + i] - runNeighbors[from + i - 1]);
 			}
 			if (anyContext) {
 				for (int i = 0; i < runCount; i++) {
-					Varint.writeUnsigned(buffer, runOrdinals[from + i]);
+					cursor = writeUnsigned(slice, cursor, runOrdinals[from + i]);
 				}
 			}
+			long emitted = cursor - 8;
+			long predicted = (long) neighborByteLength + contextByteLength;
+			if (emitted != predicted) {
+				throw new IllegalStateException(
+						"predicted SMALL_VARINT payload " + predicted + " differs from written " + emitted);
+			}
 			return ref;
+		}
+
+		private static long writeUnsigned(MemorySegment target, long at, long value) {
+			if (value < 0) {
+				throw new IllegalArgumentException("negative value cannot be encoded as varint: " + value);
+			}
+			if (value <= 240) {
+				target.set(LmdbAdjacencyArena.U8, at, (byte) value);
+				return at + 1;
+			}
+			if (value <= 2_287) {
+				long adjusted = value - 240;
+				target.set(LmdbAdjacencyArena.U8, at, (byte) ((adjusted >>> 8) + 241));
+				target.set(LmdbAdjacencyArena.U8, at + 1, (byte) adjusted);
+				return at + 2;
+			}
+			if (value <= 67_823) {
+				long adjusted = value - 2_288;
+				target.set(LmdbAdjacencyArena.U8, at, (byte) 249);
+				target.set(LmdbAdjacencyArena.U8, at + 1, (byte) (adjusted >>> 8));
+				target.set(LmdbAdjacencyArena.U8, at + 2, (byte) adjusted);
+				return at + 3;
+			}
+			int payloadBytes = Varint.calcLengthUnsigned(value) - 1;
+			target.set(LmdbAdjacencyArena.U8, at, (byte) (247 + payloadBytes));
+			for (int i = payloadBytes - 1; i >= 0; i--) {
+				target.set(LmdbAdjacencyArena.U8, at + payloadBytes - i, (byte) (value >>> (i * Byte.SIZE)));
+			}
+			return at + payloadBytes + 1;
 		}
 
 		private long emitBlockFor(long[] runNeighbors, long[] runOrdinals, int from, int runCount) {
@@ -545,6 +578,10 @@ final class LmdbAdjacencyRunCodec {
 		private int codec;
 		private boolean contextsPresent;
 		private long edgeCount;
+		private long blockCount;
+		private long blockPayloadStart;
+		private long blockPayloadBytes;
+		private long currentBlockEnd;
 		private RunCursor child;
 
 		long edgeCount() {
@@ -580,6 +617,9 @@ final class LmdbAdjacencyRunCodec {
 		}
 		long totalLength;
 		long edgeCount;
+		long blockCount = 0;
+		long blockPayloadStart = 0;
+		long blockPayloadBytes = 0;
 		switch (codec) {
 		case CODEC_SMALL_VARINT: {
 			edgeCount = Byte.toUnsignedInt(header.get(LmdbAdjacencyArena.U8, headerAt + 1));
@@ -601,12 +641,14 @@ final class LmdbAdjacencyRunCodec {
 				throw new IllegalStateException("malformed BLOCK_FOR block shift");
 			}
 			edgeCount = blockHeader.get(LmdbAdjacencyArena.U64_LE, headerAt + 8);
-			long blockCount = Integer.toUnsignedLong(blockHeader.get(LmdbAdjacencyArena.U32_LE, headerAt + 16));
+			blockCount = Integer.toUnsignedLong(blockHeader.get(LmdbAdjacencyArena.U32_LE, headerAt + 16));
 			long payloadBytes = Integer.toUnsignedLong(blockHeader.get(LmdbAdjacencyArena.U32_LE, headerAt + 20));
 			if (edgeCount < 1 || blockCount != (edgeCount + BLOCK_LANES - 1) >>> BLOCK_SHIFT) {
 				throw new IllegalStateException("malformed BLOCK_FOR counts: " + edgeCount + "/" + blockCount);
 			}
-			totalLength = Math.addExact(alignUp(BLOCK_HEADER_BYTES + 4L * (blockCount + 1), 8), payloadBytes);
+			blockPayloadStart = alignUp(BLOCK_HEADER_BYTES + 4L * (blockCount + 1), 8);
+			blockPayloadBytes = payloadBytes;
+			totalLength = Math.addExact(blockPayloadStart, payloadBytes);
 			break;
 		}
 		default: {
@@ -637,6 +679,10 @@ final class LmdbAdjacencyRunCodec {
 		target.codec = codec;
 		target.contextsPresent = (tag & TAG_CONTEXT_PRESENT) != 0;
 		target.edgeCount = edgeCount;
+		target.blockCount = blockCount;
+		target.blockPayloadStart = target.baseOffset + blockPayloadStart;
+		target.blockPayloadBytes = blockPayloadBytes;
+		target.currentBlockEnd = 0;
 	}
 
 	static long edgeCount(LmdbAdjacencyArenaCatalog catalog, long runHandle) {
@@ -775,6 +821,7 @@ final class LmdbAdjacencyRunCodec {
 		}
 		case CODEC_BLOCK_FOR: {
 			long blockAt = blockPayloadAt(cursor, ordinal >>> BLOCK_SHIFT);
+			validateBlockLayout(cursor, blockAt);
 			int lane = (int) (ordinal & (BLOCK_LANES - 1));
 			checkLane(cursor, blockAt, lane);
 			int width = Byte.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U8, blockAt + 1));
@@ -811,6 +858,7 @@ final class LmdbAdjacencyRunCodec {
 		}
 		case CODEC_BLOCK_FOR: {
 			long blockAt = blockPayloadAt(cursor, ordinal >>> BLOCK_SHIFT);
+			validateBlockLayout(cursor, blockAt);
 			int lane = (int) (ordinal & (BLOCK_LANES - 1));
 			checkLane(cursor, blockAt, lane);
 			int lanes = Byte.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U8, blockAt)) + 1;
@@ -879,6 +927,7 @@ final class LmdbAdjacencyRunCodec {
 		while (ordinal < endOrdinal) {
 			long blockIndex = ordinal >>> BLOCK_SHIFT;
 			long blockAt = blockPayloadAt(cursor, blockIndex);
+			validateBlockLayout(cursor, blockAt);
 			int lanes = Byte.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U8, blockAt)) + 1;
 			int lane = (int) (ordinal & (BLOCK_LANES - 1));
 			if (lane >= lanes) {
@@ -1024,16 +1073,46 @@ final class LmdbAdjacencyRunCodec {
 	}
 
 	private static long blockPayloadAt(RunCursor cursor, long blockIndex) {
-		long blockCount = Integer
-				.toUnsignedLong(cursor.segment.get(LmdbAdjacencyArena.U32_LE, cursor.baseOffset + 16));
-		if (blockIndex < 0 || blockIndex >= blockCount) {
+		if (blockIndex < 0 || blockIndex >= cursor.blockCount) {
 			throw new IllegalStateException("block index out of range: " + blockIndex);
 		}
-		long payloadStart = alignUp(BLOCK_HEADER_BYTES + 4L * (blockCount + 1), 8);
-		long offset = Integer.toUnsignedLong(
-				cursor.segment.get(LmdbAdjacencyArena.U32_LE,
-						cursor.baseOffset + BLOCK_HEADER_BYTES + 4L * blockIndex));
-		return cursor.baseOffset + payloadStart + offset;
+		long directoryAt = cursor.baseOffset + BLOCK_HEADER_BYTES + 4L * blockIndex;
+		long offset = Integer.toUnsignedLong(cursor.segment.get(LmdbAdjacencyArena.U32_LE, directoryAt));
+		long nextOffset = Integer.toUnsignedLong(cursor.segment.get(LmdbAdjacencyArena.U32_LE, directoryAt + 4));
+		long previousOffset = blockIndex == 0 ? -1
+				: Integer.toUnsignedLong(cursor.segment.get(LmdbAdjacencyArena.U32_LE, directoryAt - 4));
+		if ((blockIndex == 0 && offset != 0) || (blockIndex > 0 && previousOffset >= offset)
+				|| offset >= nextOffset || nextOffset > cursor.blockPayloadBytes
+				|| (blockIndex + 1 == cursor.blockCount && nextOffset != cursor.blockPayloadBytes)) {
+			throw new IllegalStateException("malformed BLOCK_FOR offsets at block " + blockIndex + ": "
+					+ previousOffset + "/" + offset + "/" + nextOffset + " of " + cursor.blockPayloadBytes);
+		}
+		cursor.currentBlockEnd = cursor.blockPayloadStart + nextOffset;
+		return cursor.blockPayloadStart + offset;
+	}
+
+	private static void validateBlockLayout(RunCursor cursor, long blockAt) {
+		long fixedBytes = cursor.contextsPresent ? 20 : 12;
+		if (blockAt > cursor.currentBlockEnd || fixedBytes > cursor.currentBlockEnd - blockAt) {
+			throw new IllegalStateException("truncated BLOCK_FOR block header");
+		}
+		int lanes = Byte.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U8, blockAt)) + 1;
+		int neighborWidth = Byte.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U8, blockAt + 1));
+		int contextWidth = Byte.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U8, blockAt + 2));
+		int reserved = Byte.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U8, blockAt + 3));
+		if (neighborWidth > Long.SIZE || contextWidth > Long.SIZE || reserved != 0
+				|| (!cursor.contextsPresent && contextWidth != 0)) {
+			throw new IllegalStateException("malformed BLOCK_FOR block metadata");
+		}
+		long bytes = Math.addExact(fixedBytes, packedBytes(lanes, neighborWidth));
+		if (cursor.contextsPresent) {
+			bytes = Math.addExact(bytes, packedBytes(lanes, contextWidth));
+		}
+		long expectedEnd = Math.addExact(blockAt, alignUp(bytes, 8));
+		if (expectedEnd != cursor.currentBlockEnd) {
+			throw new IllegalStateException(
+					"BLOCK_FOR block length ends at " + expectedEnd + ", expected " + cursor.currentBlockEnd);
+		}
 	}
 
 	private static void checkLane(RunCursor cursor, long blockAt, int lane) {

@@ -22,6 +22,11 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -151,6 +156,56 @@ class LmdbDirectAdjacencyQueryTest {
 
 	private void openPreferStore() throws IOException {
 		openStore(DirectAdjacencyMode.PREFER, null, null);
+	}
+
+	@Test
+	void unpinnedDatasetWaitsForRevisionPublicationAfterTrackedReaderReset() throws Exception {
+		openPreferStore();
+		TripleStore tripleStore = backing.getTripleStore();
+		TripleStore.DirectAdjacencyCommitListener delegate = direct.commitListener();
+		CountDownLatch commitReachedPublicationWindow = new CountDownLatch(1);
+		CountDownLatch allowRevisionPublication = new CountDownLatch(1);
+		tripleStore.setDirectAdjacencyCommitHooks((delta, nextRevision) -> {
+			delegate.beforeRevisionBump(delta, nextRevision);
+			commitReachedPublicationWindow.countDown();
+			try {
+				allowRevisionPublication.await();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new IllegalStateException("interrupted in commit publication test hook", e);
+			}
+		}, direct.newCommitDelta());
+
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		Future<?> commit = executor.submit(() -> {
+			try (RepositoryConnection connection = repo.getConnection()) {
+				connection.begin();
+				connection.add(S2, P2, O2);
+				connection.commit();
+			}
+		});
+		Future<org.eclipse.rdf4j.sail.base.SailDataset> dataset = null;
+		try {
+			assertThat(commitReachedPublicationWindow.await(5, TimeUnit.SECONDS)).isTrue();
+			CountDownLatch datasetOpened = new CountDownLatch(1);
+			dataset = executor.submit(() -> {
+				org.eclipse.rdf4j.sail.base.SailDataset opened = backing.getExplicitSailSource()
+						.dataset(IsolationLevels.NONE);
+				datasetOpened.countDown();
+				return opened;
+			});
+
+			assertThat(datasetOpened.await(100, TimeUnit.MILLISECONDS))
+					.as("dataset acquisition must wait until the revision matching its LMDB snapshot is published")
+					.isFalse();
+		} finally {
+			allowRevisionPublication.countDown();
+			if (dataset != null) {
+				dataset.get(5, TimeUnit.SECONDS).close();
+			}
+			commit.get(5, TimeUnit.SECONDS);
+			executor.shutdownNow();
+		}
 	}
 
 	private CloseableDataset dataset() {
@@ -301,6 +356,8 @@ class LmdbDirectAdjacencyQueryTest {
 
 				secondDirect = probe.open(s2, p1, -1, -1);
 				assertThat(probe.adjacencyCacheBacked()).isTrue();
+				assertThat(secondDirect).as("one resettable direct iterator belongs to the retained probe")
+						.isSameAs(firstDirect);
 
 				RecordIterator firstFallback = probe.open(-1, p1, -1, -1);
 				assertThat(probe.adjacencyCacheBacked()).isFalse();
@@ -308,6 +365,8 @@ class LmdbDirectAdjacencyQueryTest {
 
 				callerClosedDirect = probe.open(s1, p1, -1, -1);
 				assertThat(probe.adjacencyCacheBacked()).isTrue();
+				assertThat(callerClosedDirect).as("the direct iterator survives an LMDB fallback transition")
+						.isSameAs(firstDirect);
 				callerClosedDirect.close();
 
 				RecordIterator reusedFallback = probe.open(-1, p1, -1, -1);
@@ -445,7 +504,11 @@ class LmdbDirectAdjacencyQueryTest {
 		long hitsBefore = direct.snapshotMetrics().lookupHits;
 		try (var dataset = dataset()) {
 			assertThat(dataset.source.count(s1, p1, -1, -1)).isEqualTo(2);
+			assertThat(dataset.source.count(s1, p1, o1, 0)).isEqualTo(1);
+			assertThat(dataset.source.count(s1, p1, o1, g1)).isZero();
 			assertThat(dataset.source.has(s1, p1, o1, -1)).isTrue();
+			assertThat(dataset.source.has(s1, p1, o2, g1)).isTrue();
+			assertThat(dataset.source.has(s1, p1, o2, 0)).isFalse();
 			assertThat(dataset.source.has(s2, p1, o2, -1)).isFalse();
 			assertThat(dataset.source.exactDegree(p1, s1, true)).hasValue(2);
 			assertThat(dataset.source.exactDegree(p1, o1, false)).hasValue(2);
@@ -464,9 +527,28 @@ class LmdbDirectAdjacencyQueryTest {
 	}
 
 	@Test
-	void rootScanIntentionallyFallsBack() throws IOException {
+	void nodeEnumerationDecodesAcrossReusableBatchBoundaries() throws IOException {
+		openPreferStore();
+		IRI widePredicate = F.createIRI("http://example.org/wide");
+		try (RepositoryConnection connection = repo.getConnection()) {
+			for (int i = 0; i < 600; i++) {
+				connection.add(S2, widePredicate, F.createIRI("http://example.org/wide/object/" + i));
+			}
+		}
+		assertThat(direct.buildNowForTest()).isTrue();
+		try (var dataset = dataset()) {
+			long widePredicateId = dataset.idOf(widePredicate);
+			assertThat(dataset.rows(s2, -1, -1, -1)).hasSize(601);
+			assertThat(dataset.rows(s2, widePredicateId, -1, -1)).hasSize(600);
+		}
+	}
+
+	@Test
+	void rootScanFallsBackWithItsOwnReason() throws IOException {
 		openPreferStore();
 		long hitsBefore = direct.snapshotMetrics().lookupHits;
+		FallbackReason rootScan = FallbackReason.valueOf("ROOT_SCAN");
+		long fallbacksBefore = direct.snapshotMetrics().fallbacks(rootScan);
 		try (var dataset = dataset()) {
 			assertSameRows(dataset.rows(-1, p1, -1, -1), List.of(
 					new long[] { s1, p1, o1, 0 },
@@ -474,6 +556,18 @@ class LmdbDirectAdjacencyQueryTest {
 					new long[] { s2, p1, o1, 0 }));
 		}
 		assertThat(direct.snapshotMetrics().lookupHits).isEqualTo(hitsBefore);
+		assertThat(direct.snapshotMetrics().fallbacks(rootScan)).isEqualTo(fallbacksBefore + 1);
+	}
+
+	@Test
+	void doublyBoundOpenFallsBackWithItsOwnReason() throws IOException {
+		openPreferStore();
+		FallbackReason doublyBound = FallbackReason.valueOf("DOUBLY_BOUND");
+		long fallbacksBefore = direct.snapshotMetrics().fallbacks(doublyBound);
+		try (var dataset = dataset()) {
+			assertSameRows(dataset.rows(s1, p1, o1, -1), List.of(new long[] { s1, p1, o1, 0 }));
+		}
+		assertThat(direct.snapshotMetrics().fallbacks(doublyBound)).isEqualTo(fallbacksBefore + 1);
 	}
 
 	@Test

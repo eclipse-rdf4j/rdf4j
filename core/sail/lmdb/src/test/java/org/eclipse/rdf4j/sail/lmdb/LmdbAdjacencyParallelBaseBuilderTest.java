@@ -21,6 +21,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.Test;
 
@@ -105,6 +106,39 @@ class LmdbAdjacencyParallelBaseBuilderTest {
 						.isInstanceOf(IllegalStateException.class)
 						.hasMessageContaining("injected plane failure");
 		assertThat(family.sourceVisits).hasValueLessThan(UncoveredFailingFamily.MAX_SOURCE_VISITS);
+		assertThat(account.totalChargedBytes()).isZero();
+	}
+
+	@Test
+	void coordinatorInterruptDoesNotCancelSourceFamilyUntilWorkersExit() throws Exception {
+		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1L << 30);
+		InterruptFamily family = new InterruptFamily();
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		Thread coordinator = Thread.ofPlatform().start(() -> {
+			try {
+				LmdbAdjacencyBaseBuilder.build(family, LmdbAdjacencyCoverage.full(), account, BASE_REGION_BYTES,
+						WORKSPACE_REGION_BYTES, 4);
+			} catch (Throwable t) {
+				failure.set(t);
+			}
+		});
+
+		try {
+			assertThat(family.workerStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			coordinator.interrupt();
+			assertThat(family.cancelCalled.await(100, TimeUnit.MILLISECONDS))
+					.as("pinned source transactions must stay open while a scanner is still active")
+					.isFalse();
+		} finally {
+			family.releaseWorker.countDown();
+			coordinator.join(TimeUnit.SECONDS.toMillis(5));
+		}
+
+		assertThat(coordinator.isAlive()).isFalse();
+		assertThat(family.cancelCalled.await(5, TimeUnit.SECONDS)).isTrue();
+		assertThat(family.cancelObservedActiveScanner).isFalse();
+		assertThat(failure.get()).isInstanceOf(IOException.class)
+				.hasMessageContaining("parallel adjacency build interrupted");
 		assertThat(account.totalChargedBytes()).isZero();
 	}
 
@@ -602,6 +636,75 @@ class LmdbAdjacencyParallelBaseBuilderTest {
 					sourceVisits.incrementAndGet();
 				}
 				consumer.end();
+			}
+		}
+	}
+
+	private static final class InterruptFamily implements AdjacencySourceFamily {
+
+		private final CountDownLatch workerStarted = new CountDownLatch(1);
+		private final CountDownLatch releaseWorker = new CountDownLatch(1);
+		private final CountDownLatch cancelCalled = new CountDownLatch(1);
+		private final AtomicInteger activeScanners = new AtomicInteger();
+		private final AtomicBoolean cancelObservedActiveScanner = new AtomicBoolean();
+		private final AdjacencySourceScanner[] scanners = {
+				new BlockingScanner(),
+				new SingleStatementScanner(),
+				new SingleStatementScanner(),
+				new SingleStatementScanner()
+		};
+
+		@Override
+		public AdjacencySourceScanner primary() {
+			return scanners[0];
+		}
+
+		@Override
+		public AdjacencySourceScanner scanner(int plane) {
+			return scanners[plane];
+		}
+
+		@Override
+		public int activeStreamCount() {
+			return 4;
+		}
+
+		@Override
+		public long snapshotRevision() {
+			return 7;
+		}
+
+		@Override
+		public void cancel() {
+			cancelObservedActiveScanner.set(activeScanners.get() != 0);
+			cancelCalled.countDown();
+		}
+
+		@Override
+		public void close() {
+		}
+
+		private final class BlockingScanner extends SingleStatementScanner {
+
+			@Override
+			public void scanOutgoing(boolean explicit, GroupConsumer consumer) {
+				if (!explicit) {
+					return;
+				}
+				activeScanners.incrementAndGet();
+				workerStarted.countDown();
+				try {
+					boolean released = false;
+					while (!released) {
+						try {
+							released = releaseWorker.await(5, TimeUnit.SECONDS);
+						} catch (InterruptedException ignored) {
+							// Model a native cursor call that cannot finish until LMDB returns.
+						}
+					}
+				} finally {
+					activeScanners.decrementAndGet();
+				}
 			}
 		}
 	}

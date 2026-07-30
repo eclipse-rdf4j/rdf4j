@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.File;
 import java.io.IOException;
@@ -312,6 +313,41 @@ class LmdbDirectAdjacencyCommitTest {
 		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
 			assertThat(view.isExact()).isTrue();
 			assertThat(probe(view, S1, P1, -1, -1, true)).hasSize(2);
+		}
+	}
+
+	@Test
+	void listenerFailureAfterPhysicalCommitAdvancesRevisionAndPublishesGap() throws Exception {
+		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
+		long beforeFailure = tripleStore.getDataRevision();
+		assertThat(store.buildNowForTest()).isTrue();
+
+		TripleStore.DirectAdjacencyCommitListener delegate = store.commitListener();
+		AtomicBoolean failOnce = new AtomicBoolean(true);
+		tripleStore.setDirectAdjacencyCommitHooks((delta, nextRevision) -> {
+			delegate.beforeRevisionBump(delta, nextRevision);
+			if (failOnce.compareAndSet(true, false)) {
+				throw new IllegalStateException("injected listener failure after physical commit");
+			}
+		}, store.newCommitDelta());
+
+		tripleStore.startTransaction();
+		tripleStore.storeTriple(S2, P1, O2, 0, true);
+		assertThatThrownBy(tripleStore::commit)
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessage("injected listener failure after physical commit");
+
+		long failedCommitRevision = beforeFailure + 1;
+		assertThat(tripleStore.getDataRevision()).isEqualTo(failedCommitRevision);
+		try (LmdbAdjacencyReadView view = store.acquire(failedCommitRevision)) {
+			assertThat(view.isExact()).isFalse();
+			assertThat(view.fallbackReason()).isEqualTo(FallbackReason.REVISION_GAP);
+		}
+
+		try (TxnManager.Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			try (RecordIterator statements = tripleStore.getTriples(txn, S2, P1, O2, 0, true)) {
+				assertThat(statements.next()).isNotNull();
+			}
 		}
 	}
 

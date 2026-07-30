@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.File;
 import java.io.IOException;
@@ -92,6 +93,34 @@ class LmdbDirectAdjacencySupernodeKernelTest {
 			});
 		} catch (IOException e) {
 			throw new IllegalStateException(e);
+		}
+	}
+
+	@Test
+	void materializedBulkReadsValidateRunAndDestinationRanges() throws Exception {
+		commit(() -> {
+			addQuiet(S1, P1, O1);
+			addQuiet(S1, P1, uri(12));
+		});
+		assertThat(store.buildNowForTest()).isTrue();
+
+		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
+			NativeLmdbQuerySource.NativeAdjacency adjacency = store.adjacency(view, P1, true, true);
+			long run = adjacency.find(S1);
+			assertThat(adjacency.neighborAt(run, 0)).isEqualTo(O1);
+
+			assertThatThrownBy(() -> adjacency.copyNeighbors(run, -1, 1, new long[1], 0))
+					.isInstanceOf(IllegalArgumentException.class);
+			assertThatThrownBy(() -> adjacency.copyNeighbors(run, 3, 1, new long[1], 0))
+					.isInstanceOf(IllegalArgumentException.class);
+			assertThatThrownBy(() -> adjacency.copyNeighbors(run, 0, -1, new long[1], 0))
+					.isInstanceOf(IllegalArgumentException.class);
+			assertThatThrownBy(() -> adjacency.copyNeighbors(run, 0, 2, new long[1], 0))
+					.isInstanceOf(IllegalArgumentException.class);
+			assertThatThrownBy(() -> adjacency.copyNeighbors(run, 0, 1, new long[1], -1))
+					.isInstanceOf(IllegalArgumentException.class);
+			assertThatThrownBy(() -> adjacency.copyContexts(run, 0, 2, new long[1], 0))
+					.isInstanceOf(IllegalArgumentException.class);
 		}
 	}
 

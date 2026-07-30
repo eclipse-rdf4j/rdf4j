@@ -484,6 +484,41 @@ class LmdbAdjacencyRunCodecTest {
 	}
 
 	@Test
+	void blockForRejectsCorruptFirstMiddleAndTerminalOffsets() {
+		LmdbAdjacencyArena arena = newArena(1 << 20);
+		LmdbAdjacencyArenaCatalog catalog = newCatalog(arena);
+		LmdbAdjacencyContextCatalog contexts = LmdbAdjacencyContextCatalog.base(arena, new long[0]);
+		long[][] pairs = new long[300][2];
+		for (int i = 0; i < pairs.length; i++) {
+			pairs[i][0] = 1000L + i * 17L;
+		}
+		long runBytes = LmdbAdjacencyRunCodec.encodedBytes(source(pairs), contexts);
+
+		long firstRef = LmdbAdjacencyRunCodec.encode(source(pairs), contexts, arena);
+		MemorySegment first = arena.slice(firstRef, runBytes);
+		int secondOffset = first.get(LmdbAdjacencyArena.U32_LE, 28);
+		first.set(LmdbAdjacencyArena.U32_LE, 24, secondOffset);
+		assertThatThrownBy(
+				() -> LmdbAdjacencyRunCodec.neighborAt(catalog, catalog.packHandle(0, firstRef), 0))
+						.isInstanceOf(IllegalStateException.class);
+
+		long middleRef = LmdbAdjacencyRunCodec.encode(source(pairs), contexts, arena);
+		MemorySegment middle = arena.slice(middleRef, runBytes);
+		middle.set(LmdbAdjacencyArena.U32_LE, 28, 0);
+		assertThatThrownBy(
+				() -> LmdbAdjacencyRunCodec.neighborAt(catalog, catalog.packHandle(0, middleRef), 128))
+						.isInstanceOf(IllegalStateException.class);
+
+		long finalRef = LmdbAdjacencyRunCodec.encode(source(pairs), contexts, arena);
+		MemorySegment terminal = arena.slice(finalRef, runBytes);
+		int finalBlockOffset = terminal.get(LmdbAdjacencyArena.U32_LE, 32);
+		terminal.set(LmdbAdjacencyArena.U32_LE, 36, finalBlockOffset);
+		assertThatThrownBy(
+				() -> LmdbAdjacencyRunCodec.neighborAt(catalog, catalog.packHandle(0, finalRef), 299))
+						.isInstanceOf(IllegalStateException.class);
+	}
+
+	@Test
 	void equalOrDescendingPairsAreAnInvariantFailure() {
 		LmdbAdjacencyArena arena = newArena(1 << 20);
 		LmdbAdjacencyContextCatalog contexts = LmdbAdjacencyContextCatalog.base(arena, new long[0]);

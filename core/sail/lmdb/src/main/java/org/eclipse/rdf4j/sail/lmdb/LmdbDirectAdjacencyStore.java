@@ -75,6 +75,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		CLOSED
 	}
 
+	record GapMarker(long fromRevision, long sequence) {
+	}
+
+	private static final GapMarker INITIAL_GAP_MARKER = new GapMarker(Long.MAX_VALUE, 0);
+
 	private final TripleStore tripleStore;
 	private final ValueStore valueStore;
 	private final AtomicBoolean storeTxnStarted;
@@ -85,7 +90,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private final long workspaceRegionBytes;
 
 	private final AtomicReference<LmdbAdjacencyPublishedState> published;
-	private final AtomicLong emergencyGapFromRevision = new AtomicLong(Long.MAX_VALUE);
+	private final AtomicReference<GapMarker> emergencyGap = new AtomicReference<>(INITIAL_GAP_MARKER);
 	private final AtomicLong epochs = new AtomicLong();
 	private final AtomicLong activeViews = new AtomicLong();
 	private final AtomicLong shadowProbes = new AtomicLong();
@@ -95,6 +100,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	private final ExecutorService maintenanceExecutor;
 	private final AtomicBoolean rebuildPending = new AtomicBoolean();
+	private final AtomicBoolean quiescentRebuildPending = new AtomicBoolean();
 
 	/** Sealed commits awaiting apply, strictly revision ascending; drained on the maintenance executor. */
 	private final ArrayDeque<SealedDirectDelta> applyQueue = new ArrayDeque<>();
@@ -102,6 +108,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private volatile boolean applierPausedForTest;
 	/** Test-only interleaving hook: runs after the base scan completes and before online catch-up begins. */
 	volatile Runnable afterBuildScanForTest;
+	/** Test-only observation hook: runs before catch-up waits for a commit delta that has not arrived. */
+	volatile Runnable catchUpWaitForTest;
 	private volatile MaintenanceState maintenanceState = MaintenanceState.EMPTY;
 	private volatile boolean closed;
 
@@ -172,7 +180,17 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	 * {@code dataRevision} becomes visible: publishes the pending marker (or the gap) for the committed revision.
 	 */
 	TripleStore.DirectAdjacencyCommitListener commitListener() {
-		return this::beforeRevisionBump;
+		return new TripleStore.DirectAdjacencyCommitListener() {
+			@Override
+			public void beforeRevisionBump(SealedDirectDelta sealed, long nextRevision) {
+				LmdbDirectAdjacencyStore.this.beforeRevisionBump(sealed, nextRevision);
+			}
+
+			@Override
+			public void physicalCommitFailedBeforeRevisionBump(long nextRevision) {
+				markGap(nextRevision);
+			}
+		};
 	}
 
 	private void beforeRevisionBump(SealedDirectDelta sealed, long nextRevision) {
@@ -522,13 +540,15 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				Math.addExact((long) contexts.segmentCount() * 16, contexts.size() * Long.BYTES));
 		long reservedBytes = Math.multiplyExact((totalBytes + workspaceRegionBytes - 1) / workspaceRegionBytes,
 				workspaceRegionBytes);
-		if (!account.tryReserve(LmdbAdjacencyMemoryAccount.MemoryKind.DELTA, reservedBytes)) {
+		LmdbAdjacencyMemoryAccount.Charge reservation = account
+				.tryCharge(LmdbAdjacencyMemoryAccount.MemoryKind.DELTA, reservedBytes);
+		if (reservation == null) {
 			throw new LmdbAdjacencyMemoryRefusedException(
 					"consolidation reservation of " + reservedBytes + " bytes refused");
 		}
 		LmdbAdjacencyArena arena = null;
 		boolean success = false;
-		try {
+		try (reservation) {
 			arena = new LmdbAdjacencyArena(workspaceRegionBytes);
 			// keep context ordinals stable while moving extension segments off retired generation arenas
 			LmdbAdjacencyContextCatalog copiedContexts = contexts.copyExtensions(arena);
@@ -553,15 +573,10 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			}
 
 			long actualBytes = arena.capacityBytes();
-			if (actualBytes > reservedBytes) {
-				if (!account.tryReserve(LmdbAdjacencyMemoryAccount.MemoryKind.DELTA, actualBytes - reservedBytes)) {
-					throw new LmdbAdjacencyMemoryRefusedException("consolidation exceeded its reservation by "
-							+ (actualBytes - reservedBytes) + " bytes");
-				}
-			} else if (actualBytes < reservedBytes) {
-				account.release(LmdbAdjacencyMemoryAccount.MemoryKind.DELTA, reservedBytes - actualBytes);
+			if (!reservation.adjustTo(actualBytes)) {
+				throw new LmdbAdjacencyMemoryRefusedException(
+						"consolidation exceeded its reservation by " + (actualBytes - reservedBytes) + " bytes");
 			}
-			long chargedBytes = actualBytes;
 			LmdbInMemoryAdjacencyIndex base = state.base();
 			LmdbAdjacencyArenaCatalog slotZero = LmdbAdjacencyArenaCatalog.of(base.arenaCatalog().arena(0));
 			LmdbAdjacencyArenaCatalog catalog;
@@ -570,18 +585,14 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			} finally {
 				slotZero.close();
 			}
+			LmdbAdjacencyMemoryAccount.Charge generationCharge = reservation.transfer();
 			LmdbAdjacencyDeltaGeneration merged = new LmdbAdjacencyDeltaGeneration(state.appliedRevision(), arena,
-					catalog, account, chargedBytes, keys, planes, predicates, runRefs);
+					catalog, generationCharge, keys, planes, predicates, runRefs);
 			// hand the copied-context catalog to the caller through the overlay swap: the merged generation's
 			// arena now backs the extension segments
 			consolidatedContextCatalog = copiedContexts;
 			success = true;
 			return merged;
-		} catch (RuntimeException e) {
-			if (!success) {
-				account.release(LmdbAdjacencyMemoryAccount.MemoryKind.DELTA, reservedBytes);
-			}
-			throw e;
 		} finally {
 			if (!success && arena != null) {
 				arena.close();
@@ -620,16 +631,40 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	 * views finish, free the old base/overlays as their last leases release, then build fresh from LMDB.
 	 */
 	void scheduleQuiescentRebuild() {
+		scheduleQuiescentRebuild(true);
+	}
+
+	private void scheduleQuiescentRebuild(boolean allowRetry) {
 		if (closed) {
 			return;
 		}
+		if (!quiescentRebuildPending.compareAndSet(false, true)) {
+			return;
+		}
 		try {
-			maintenanceExecutor.submit(this::quiescentRebuild);
+			maintenanceExecutor.submit(() -> {
+				try {
+					quiescentRebuild();
+				} finally {
+					quiescentRebuildPending.set(false);
+					if (allowRetry && shouldRetryQuiescentRebuild()) {
+						scheduleQuiescentRebuild(false);
+					}
+				}
+			});
 		} catch (RuntimeException e) {
+			quiescentRebuildPending.set(false);
 			if (!closed) {
 				throw e;
 			}
 		}
+	}
+
+	private boolean shouldRetryQuiescentRebuild() {
+		return !closed && !options.memoryRefused() && !rebuildPending.get()
+				&& maintenanceState != MaintenanceState.ACTIVE && maintenanceState != MaintenanceState.CLOSED
+				&& maintenanceState != MaintenanceState.MEMORY_REFUSED
+				&& maintenanceState != MaintenanceState.FAILED_CORRUPT;
 	}
 
 	boolean rebuildNowForTest() {
@@ -857,16 +892,17 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	}
 
 	/**
-	 * Marks every row at {@code fromRevision} and later as unusable through the allocation-free emergency gap
-	 * (invariant I16); only a published continuous rebuild clears it.
+	 * Marks every row at {@code fromRevision} and later as unusable through the emergency gap (invariant I16). Every
+	 * event advances the marker sequence, including events hidden by an older effective minimum, so a rebuilding
+	 * generation can only retire the exact gap history it captured.
 	 */
 	void markGap(long fromRevision) {
-		long current;
-		while ((current = emergencyGapFromRevision.get()) > fromRevision) {
-			if (emergencyGapFromRevision.compareAndSet(current, fromRevision)) {
-				break;
-			}
-		}
+		GapMarker current;
+		GapMarker updated;
+		do {
+			current = emergencyGap.get();
+			updated = new GapMarker(Math.min(current.fromRevision(), fromRevision), current.sequence() + 1);
+		} while (!emergencyGap.compareAndSet(current, updated));
 	}
 
 	private void buildOnce() {
@@ -879,8 +915,10 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			LmdbAdjacencyCoverage coverage = resolveCoverage();
 			LmdbInMemoryAdjacencyIndex index;
 			long baseRevision;
+			GapMarker capturedGap;
 			try (LmdbAdjacencyBuildTxnFamily sourceFamily = new LmdbAdjacencyBuildTxnFamily(tripleStore)) {
 				baseRevision = sourceFamily.snapshotRevision();
+				capturedGap = emergencyGap.get();
 				index = LmdbAdjacencyBaseBuilder.build(sourceFamily, coverage, account, baseArenaRegionBytes,
 						workspaceRegionBytes, options.buildThreads(), metrics);
 			}
@@ -890,7 +928,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			}
 			boolean published = false;
 			try {
-				published = catchUpAndPublish(index, baseRevision);
+				published = catchUpAndPublish(index, baseRevision, capturedGap);
 			} finally {
 				if (!published) {
 					index.close();
@@ -923,7 +961,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	 * base, then publishes one continuous state under the TxnManager read lock, which excludes concurrent commits
 	 * (plan's catch-up steps 1–6). Returns false when the build must abort (overflow gap or continuity failure).
 	 */
-	private boolean catchUpAndPublish(LmdbInMemoryAdjacencyIndex index, long baseRevision) {
+	private boolean catchUpAndPublish(LmdbInMemoryAdjacencyIndex index, long baseRevision, GapMarker capturedGap) {
 		maintenanceState = MaintenanceState.CATCHING_UP;
 		List<LmdbAdjacencyDeltaGeneration> generations = new ArrayList<>();
 		LmdbAdjacencyContextCatalog contextCatalog = index.contextCatalog();
@@ -933,6 +971,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		try {
 			while (true) {
 				if (closed) {
+					return false;
+				}
+				if (emergencyGap.get().sequence() != capturedGap.sequence()) {
 					return false;
 				}
 				SealedDirectDelta head;
@@ -960,6 +1001,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 								if (closed) {
 									return false;
 								}
+								if ((capturedGap.fromRevision() != Long.MAX_VALUE
+										&& capturedGap.fromRevision() > baseRevision)
+										|| emergencyGap.get() != capturedGap) {
+									return false;
+								}
 								LmdbAdjacencyPublishedState current = published.get();
 								// carry forward pending markers beyond what this build applied
 								List<PendingTable> carried = new ArrayList<>();
@@ -977,26 +1023,32 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 								publish(new LmdbAdjacencyPublishedState(epochs.incrementAndGet(), index, overlays,
 										carried.toArray(new PendingTable[0]), appliedRevision, Long.MAX_VALUE,
 										AdjacencyServingState.ROW_EXACT, index.baseRevision()));
-								maintenanceState = MaintenanceState.ACTIVE;
-								emergencyGapFromRevision.set(Long.MAX_VALUE);
+								GapMarker clearedGap = new GapMarker(Long.MAX_VALUE, capturedGap.sequence());
+								if (emergencyGap.compareAndSet(capturedGap, clearedGap)) {
+									maintenanceState = MaintenanceState.ACTIVE;
+								} else {
+									maintenanceState = MaintenanceState.DEGRADED_GAP;
+									scheduleQuiescentRebuild();
+								}
 								success = true;
 								return true;
 							} finally {
 								publicationLock.unlock();
 							}
 						}
-						long emergencyGap = emergencyGapFromRevision.get();
-						if (queueEmpty && dataRevision != appliedRevision && emergencyGap <= dataRevision
-								&& emergencyGap > appliedRevision) {
-							// an overflowed commit between the base revision and the current revision was never
-							// enqueued: this build cannot reach continuity; a retry at a newer snapshot includes
-							// the overflowed commit in its base image and clears the gap (invariant I16)
+						if (emergencyGap.get().sequence() != capturedGap.sequence()) {
+							// A later gap event, including an overflow hidden by an older effective minimum, means
+							// this generation cannot prove continuity.
 							return false;
 						}
 						// otherwise a commit landed between the queue drain and the lock: it will be enqueued
 						// after the sail-store commit completes; wait for it outside the lock
 					} finally {
 						lockManager.unlockRead(stamp);
+					}
+					Runnable waitHook = catchUpWaitForTest;
+					if (waitHook != null) {
+						waitHook.run();
 					}
 					// bounded spin: the missing sealed delta arrives via applyCommitted after commit completion
 					try {
@@ -1212,7 +1264,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			if (!state.tryRetain()) {
 				continue;
 			}
-			long emergencyGap = emergencyGapFromRevision.get();
+			long emergencyGapFromRevision = emergencyGap.get().fromRevision();
 			if (closed || published.get() != state) {
 				state.release();
 				if (closed) {
@@ -1220,7 +1272,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				}
 				continue;
 			}
-			if (emergencyGap <= snapshotRevision) {
+			if (emergencyGapFromRevision <= snapshotRevision) {
 				state.release();
 				return fallback(snapshotRevision, FallbackReason.REVISION_GAP);
 			}
@@ -1326,30 +1378,37 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	@Override
 	public RecordIterator tryOpen(LmdbAdjacencyReadView view, Txn txn, long subject, long predicate, long object,
 			long context, boolean explicit) throws IOException {
-		return open(view, txn, null, subject, predicate, object, context, explicit, null);
+		return open(view, txn, null, subject, predicate, object, context, explicit, null, null);
 	}
 
 	RecordIterator tryOpen(LmdbAdjacencyReadView view, Txn txn, long subject, long predicate, long object, long context,
 			boolean explicit, LmdbReferenceNodeLocator.SearchContext searchContext) throws IOException {
-		return open(view, txn, null, subject, predicate, object, context, explicit, searchContext);
+		return open(view, txn, null, subject, predicate, object, context, explicit, searchContext, null);
+	}
+
+	RecordIterator tryOpen(LmdbAdjacencyReadView view, Txn txn, long subject, long predicate, long object, long context,
+			boolean explicit, LmdbReferenceNodeLocator.SearchContext searchContext,
+			LmdbDirectAdjacencyIterator reusableIterator) throws IOException {
+		return open(view, txn, null, subject, predicate, object, context, explicit, searchContext, reusableIterator);
 	}
 
 	@Override
 	public RecordIterator tryOpenOrdered(LmdbAdjacencyReadView view, Txn txn, StatementOrder order, long subject,
 			long predicate, long object, long context, boolean explicit) throws IOException {
-		return open(view, txn, order, subject, predicate, object, context, explicit, null);
+		return open(view, txn, order, subject, predicate, object, context, explicit, null, null);
 	}
 
 	RecordIterator tryOpenOrdered(LmdbAdjacencyReadView view, Txn txn, StatementOrder order, long subject,
 			long predicate,
 			long object, long context, boolean explicit, LmdbReferenceNodeLocator.SearchContext searchContext)
 			throws IOException {
-		return open(view, txn, order, subject, predicate, object, context, explicit, searchContext);
+		return open(view, txn, order, subject, predicate, object, context, explicit, searchContext, null);
 	}
 
 	private RecordIterator open(LmdbAdjacencyReadView view, Txn txn, StatementOrder order, long subject,
 			long predicate, long object, long context, boolean explicit,
-			LmdbReferenceNodeLocator.SearchContext searchContext) throws IOException {
+			LmdbReferenceNodeLocator.SearchContext searchContext, LmdbDirectAdjacencyIterator reusableIterator)
+			throws IOException {
 		if (view == null || !view.servesSnapshot() || closed) {
 			return null;
 		}
@@ -1386,8 +1445,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				return EmptyRecordIterator.INSTANCE;
 			}
 			metrics.recordHit();
-			LmdbDirectAdjacencyIterator iterator = new LmdbDirectAdjacencyIterator();
-			view.retainLease();
+			LmdbDirectAdjacencyIterator iterator = reusableIterator == null ? new LmdbDirectAdjacencyIterator()
+					: reusableIterator;
 			iterator.init(view, row.catalog, state.contextCatalog(), row.handle, key, predicate, context, direction,
 					"direct");
 			return iterator;
@@ -1424,12 +1483,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				return null;
 			}
 			metrics.recordHit();
-			view.retainLease();
 			return new LmdbDirectNodeIterator(view, plane, key, context,
 					subjectBound ? LmdbDirectAdjacencyIterator.BY_SUBJECT : LmdbDirectAdjacencyIterator.BY_OBJECT);
 		}
 
-		// root scans, fully-unbound scans, and doubly-bound probes stay on CSR/LMDB in version 1
+		// Root scans and doubly-bound probes stay on CSR/LMDB in version 1, but remain visible in the decline census.
+		metrics.recordFallback(subjectBound && objectBound ? FallbackReason.DOUBLY_BOUND : FallbackReason.ROOT_SCAN);
 		return null;
 	}
 
@@ -1461,7 +1520,6 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		List<long[]> direct = new ArrayList<>();
 		if (row.handle > 0) {
 			LmdbDirectAdjacencyIterator iterator = new LmdbDirectAdjacencyIterator();
-			view.retainLease();
 			iterator.init(view, row.catalog, view.state().contextCatalog(), row.handle, key, predicate, context,
 					direction, "direct-shadow");
 			try {
@@ -1665,7 +1723,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 		LmdbAdjacencyArenaCatalog catalog = row.catalog;
 		ContextCatalog contexts = view.state().contextCatalog();
-		long edges = LmdbAdjacencyRunCodec.edgeCount(catalog, row.handle);
+		LmdbAdjacencyRunCodec.RunCursor cursor = new LmdbAdjacencyRunCodec.RunCursor();
+		LmdbAdjacencyRunCodec.resolve(catalog, row.handle, cursor);
+		long edges = cursor.edgeCount();
 		if (boundNeighbor < 0 && context < 0) {
 			metrics.recordHit();
 			return edges;
@@ -1676,16 +1736,21 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 		long from = 0;
 		if (boundNeighbor > 0) {
-			from = LmdbAdjacencyRunCodec.lowerBound(catalog, contexts, row.handle, 0, boundNeighbor,
-					context >= 0 ? context : 0);
+			from = LmdbAdjacencyRunCodec.lowerBound(contexts, cursor, 0, boundNeighbor, context >= 0 ? context : 0);
+		}
+		if (boundNeighbor > 0 && context >= 0) {
+			boolean matched = from < edges && LmdbAdjacencyRunCodec.neighborAt(cursor, from) == boundNeighbor
+					&& LmdbAdjacencyRunCodec.contextAt(contexts, cursor, from) == context;
+			metrics.recordHit();
+			return matched ? 1 : 0;
 		}
 		long matches = 0;
 		for (long i = from; i < edges; i++) {
-			long neighbor = LmdbAdjacencyRunCodec.neighborAt(catalog, row.handle, i);
+			long neighbor = LmdbAdjacencyRunCodec.neighborAt(cursor, i);
 			if (boundNeighbor > 0 && neighbor != boundNeighbor) {
 				break;
 			}
-			long rawContext = LmdbAdjacencyRunCodec.contextAt(catalog, contexts, row.handle, i);
+			long rawContext = LmdbAdjacencyRunCodec.contextAt(contexts, cursor, i);
 			if (context >= 0 && rawContext != context) {
 				continue;
 			}
@@ -1703,7 +1768,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		LmdbAdjacencyPublishedState state = published.get();
 		LmdbInMemoryAdjacencyIndex base = state.base();
 		return metrics.snapshot(maintenanceState.name(), state.baseRevision(), state.appliedRevision(),
-				tripleStore.getDataRevision(), state.gapFromRevision(), emergencyGapFromRevision.get(),
+				tripleStore.getDataRevision(), state.gapFromRevision(), emergencyGap.get().fromRevision(),
 				activeViews.get(), base == null ? 0 : account.chargedBytes(LmdbAdjacencyMemoryAccount.MemoryKind.BASE),
 				account.chargedBytes(LmdbAdjacencyMemoryAccount.MemoryKind.BUILD_COUNTERS),
 				account.chargedBytes(LmdbAdjacencyMemoryAccount.MemoryKind.BUILD_OUTPUT),

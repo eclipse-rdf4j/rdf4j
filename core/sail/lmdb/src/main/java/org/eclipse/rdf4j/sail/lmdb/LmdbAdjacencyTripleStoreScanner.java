@@ -151,7 +151,9 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 					if (inGroup) {
 						consumer.end();
 					}
-					consumer.begin(subject, predicate, LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT);
+					consumer.begin(subject, predicate,
+							explicit ? LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT
+									: LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED);
 					groupSubject = subject;
 					groupPredicate = predicate;
 					inGroup = true;
@@ -178,7 +180,9 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 					if (inGroup) {
 						consumer.end();
 					}
-					consumer.begin(object, predicate, LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT);
+					consumer.begin(object, predicate,
+							explicit ? LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT
+									: LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED);
 					groupObject = object;
 					groupPredicate = predicate;
 					inGroup = true;

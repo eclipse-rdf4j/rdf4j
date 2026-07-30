@@ -188,16 +188,9 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 
 	@Override
 	public long neighborAt(long runHandle, long runOffset) {
-		if (runHandle == cachedHandle && neighborsMaterialized) {
-			if (runOffset < 0 || runOffset >= cachedCount) {
-				throw new IllegalArgumentException("run offset out of range: " + runOffset + " of " + cachedCount);
-			}
-			return neighborBuf[(int) runOffset];
-		}
+		resolve(runHandle);
+		checkElementOffset(runOffset);
 		if (materializeNeighbors(runHandle)) {
-			if (runOffset < 0 || runOffset >= cachedCount) {
-				throw new IllegalArgumentException("run offset out of range: " + runOffset + " of " + cachedCount);
-			}
 			return neighborBuf[(int) runOffset];
 		}
 		return LmdbAdjacencyRunCodec.neighborAt(runCursor, runOffset);
@@ -205,16 +198,9 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 
 	@Override
 	public long contextAt(long runHandle, long runOffset) {
-		if (runHandle == cachedHandle && contextsMaterialized) {
-			if (runOffset < 0 || runOffset >= cachedCount) {
-				throw new IllegalArgumentException("run offset out of range: " + runOffset + " of " + cachedCount);
-			}
-			return contextBuf[(int) runOffset];
-		}
+		resolve(runHandle);
+		checkElementOffset(runOffset);
 		if (materializeContexts(runHandle)) {
-			if (runOffset < 0 || runOffset >= cachedCount) {
-				throw new IllegalArgumentException("run offset out of range: " + runOffset + " of " + cachedCount);
-			}
 			return contextBuf[(int) runOffset];
 		}
 		return LmdbAdjacencyRunCodec.contextAt(contexts, runCursor, runOffset);
@@ -222,28 +208,53 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 
 	@Override
 	public int copyNeighbors(long runHandle, long runOffset, int length, long[] target, int targetOffset) {
+		resolve(runHandle);
+		int copied = checkedCopyCount(runOffset, length, target, targetOffset);
 		if (materializeNeighbors(runHandle)) {
-			int copied = (int) Math.min(length, cachedCount - runOffset);
-			if (copied <= 0) {
-				return 0;
+			if (copied > 0) {
+				System.arraycopy(neighborBuf, (int) runOffset, target, targetOffset, copied);
 			}
-			System.arraycopy(neighborBuf, (int) runOffset, target, targetOffset, copied);
 			return copied;
 		}
-		return LmdbAdjacencyRunCodec.copy(contexts, runCursor, runOffset, length, target, targetOffset, null, 0);
+		return LmdbAdjacencyRunCodec.copy(contexts, runCursor, runOffset, copied, target, targetOffset, null, 0);
 	}
 
 	@Override
 	public int copyContexts(long runHandle, long runOffset, int length, long[] target, int targetOffset) {
+		resolve(runHandle);
+		int copied = checkedCopyCount(runOffset, length, target, targetOffset);
 		if (materializeContexts(runHandle)) {
-			int copied = (int) Math.min(length, cachedCount - runOffset);
-			if (copied <= 0) {
-				return 0;
+			if (copied > 0) {
+				System.arraycopy(contextBuf, (int) runOffset, target, targetOffset, copied);
 			}
-			System.arraycopy(contextBuf, (int) runOffset, target, targetOffset, copied);
 			return copied;
 		}
-		return LmdbAdjacencyRunCodec.copy(contexts, runCursor, runOffset, length, null, 0, target, targetOffset);
+		return LmdbAdjacencyRunCodec.copy(contexts, runCursor, runOffset, copied, null, 0, target, targetOffset);
+	}
+
+	private void checkElementOffset(long runOffset) {
+		if (runOffset < 0 || runOffset >= cachedSize) {
+			throw new IllegalArgumentException("run offset out of range: " + runOffset + " of " + cachedSize);
+		}
+	}
+
+	private int checkedCopyCount(long runOffset, int length, long[] target, int targetOffset) {
+		if (length < 0) {
+			throw new IllegalArgumentException("length must not be negative: " + length);
+		}
+		if (runOffset < 0 || runOffset > cachedSize) {
+			throw new IllegalArgumentException("run offset out of range: " + runOffset + " of " + cachedSize);
+		}
+		if (target == null) {
+			throw new NullPointerException("target");
+		}
+		int copied = (int) Math.min(length, cachedSize - runOffset);
+		if (targetOffset < 0 || targetOffset > target.length || copied > target.length - targetOffset) {
+			throw new IllegalArgumentException(
+					"target range out of bounds: offset " + targetOffset + ", length " + copied + ", capacity "
+							+ target.length);
+		}
+		return copied;
 	}
 
 	@Override

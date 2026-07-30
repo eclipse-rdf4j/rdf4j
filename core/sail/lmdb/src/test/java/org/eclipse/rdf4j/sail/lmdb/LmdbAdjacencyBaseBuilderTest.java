@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
 
@@ -322,6 +323,70 @@ class LmdbAdjacencyBaseBuilderTest {
 			assertThat(index.findRun(inlined, LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT, uri(100)))
 					.isEqualTo(LmdbInMemoryAdjacencyIndex.NOT_FOUND);
 		}
+	}
+
+	@Test
+	void inlineIncomingBuildBuffersAtMostOneFixedSizeBlockAndChargesMetadata() throws IOException {
+		int keyCount = 700;
+		long predicate = uri(100);
+		List<Quad> quads = new ArrayList<>(keyCount);
+		for (int i = 0; i < keyCount; i++) {
+			quads.add(new Quad(uri(i + 1L), predicate, inlineInt(10L + i * 3L), 0, true));
+		}
+		AtomicInteger maxBufferedKeys = new AtomicInteger();
+		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1 << 30);
+		LmdbAdjacencyBaseBuilder.inlineBufferedKeysForTest = buffered -> maxBufferedKeys.accumulateAndGet(buffered,
+				Math::max);
+		try {
+			try (LmdbInMemoryAdjacencyIndex index = build(quads, LmdbAdjacencyCoverage.full(), account)) {
+				assertThat(maxBufferedKeys).hasValueLessThanOrEqualTo(LmdbInlineIncomingIndex.MAX_BLOCK_KEYS);
+				for (int i : new int[] { 0, 255, 256, keyCount - 1 }) {
+					assertThat(index.findRun(inlineInt(10L + i * 3L),
+							LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT, predicate)).isPositive();
+				}
+				assertThat(account.chargedBytes(LmdbAdjacencyMemoryAccount.MemoryKind.JAVA_METADATA)).isPositive();
+			}
+		} finally {
+			LmdbAdjacencyBaseBuilder.inlineBufferedKeysForTest = null;
+		}
+		assertThat(account.chargedBytes(LmdbAdjacencyMemoryAccount.MemoryKind.JAVA_METADATA)).isZero();
+	}
+
+	@Test
+	void passThreeRejectsInlineBlockPlanDivergence() {
+		long predicate = uri(100);
+		long first = inlineInt(1);
+		long passOneSecond = inlineInt(2);
+		long passThreeSecond = inlineInt(1L << 42);
+		List<Quad> quads = List.of(
+				new Quad(uri(1), predicate, first, 0, true),
+				new Quad(uri(2), predicate, passOneSecond, 0, true));
+		SyntheticScanner scanner = new SyntheticScanner(quads) {
+			private int explicitIncomingScans;
+
+			@Override
+			public void scanIncoming(boolean explicit, GroupConsumer consumer) {
+				if (!explicit) {
+					return;
+				}
+				long second = ++explicitIncomingScans == 1 ? passOneSecond : passThreeSecond;
+				consumer.begin(first, predicate, LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT);
+				consumer.pair(uri(1), 0);
+				consumer.end();
+				consumer.begin(second, predicate, LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT);
+				consumer.pair(uri(2), 0);
+				consumer.end();
+			}
+		};
+		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1 << 30);
+
+		assertThatThrownBy(() -> {
+			try (LmdbInMemoryAdjacencyIndex ignored = LmdbAdjacencyBaseBuilder.build(scanner,
+					LmdbAdjacencyCoverage.full(), account, BASE_REGION, WORKSPACE_REGION)) {
+				throw new AssertionError("builder accepted a Pass-3 inline layout that differed from Pass 1");
+			}
+		}).isInstanceOf(IllegalStateException.class).hasMessageContaining("inline");
+		assertThat(account.totalChargedBytes()).isZero();
 	}
 
 	@Test

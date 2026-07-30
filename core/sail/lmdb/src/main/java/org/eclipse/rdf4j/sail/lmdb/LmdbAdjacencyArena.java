@@ -131,7 +131,7 @@ final class LmdbAdjacencyArena implements AutoCloseable {
 	 * Allocates {@code bytes} and returns the nonzero u40 encoded reference. The allocation never crosses a region
 	 * boundary and is at least eight-byte aligned.
 	 */
-	long allocateRef(long bytes, long alignment) {
+	synchronized long allocateRef(long bytes, long alignment) {
 		checkOpen();
 		long encodedRef = cursor.allocate(bytes, alignment);
 		long virtualAddress = encodedRef << 3;

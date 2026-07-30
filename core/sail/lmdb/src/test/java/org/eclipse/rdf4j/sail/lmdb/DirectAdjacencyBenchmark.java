@@ -18,6 +18,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.common.io.FileUtil;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
@@ -79,6 +85,7 @@ public class DirectAdjacencyBenchmark {
 	private long targetPredicate;
 	private final long[] keys = new long[KEY_COUNT];
 	private final long[] neighborCopy = new long[4096];
+	private final long[] smallRunNeighbors = new long[8];
 	private int keyCursor;
 
 	@Setup(Level.Trial)
@@ -111,6 +118,9 @@ public class DirectAdjacencyBenchmark {
 		targetPredicate = predicate(predicateCount - 1);
 		for (int key = 0; key < KEY_COUNT; key++) {
 			keys[key] = uri(SUBJECT_PAYLOAD + key);
+		}
+		for (int i = 0; i < smallRunNeighbors.length; i++) {
+			smallRunNeighbors[i] = neighbor(0, i);
 		}
 		int baseDegree = delta ? degree - 1 : degree;
 		commit(() -> {
@@ -214,6 +224,54 @@ public class DirectAdjacencyBenchmark {
 		blackhole.consume(adjacency.lowerBound(run, 0, neighbor(key, target) + 1, 0));
 	}
 
+	@Benchmark
+	public void nodeEnumeration(Blackhole blackhole) throws IOException {
+		int key = nextKey();
+		long digest = 0;
+		try (RecordIterator iterator = store.tryOpen(view, null, keys[key], -1, -1, -1, true)) {
+			long[] row;
+			while ((row = iterator.next()) != null) {
+				digest = Long.rotateLeft(digest, 7) ^ row[TripleIndex.PRED_IDX] ^ row[TripleIndex.OBJ_IDX];
+			}
+		}
+		blackhole.consume(digest);
+	}
+
+	@Benchmark
+	public void fullyBoundCount(Blackhole blackhole) {
+		int key = nextKey();
+		int edge = degree >>> 1;
+		blackhole.consume(
+				store.tryCount(view, keys[key], targetPredicate, neighbor(key, edge), context(edge), true));
+	}
+
+	@Benchmark
+	public void fullyBoundProbe(Blackhole blackhole) {
+		int key = nextKey();
+		int edge = degree >>> 1;
+		blackhole.consume(store.tryHas(view, keys[key], targetPredicate, neighbor(key, edge), context(edge), true));
+	}
+
+	/**
+	 * Encodes enough tiny runs per invocation that DirectByteBuffer-wrapper allocations remain visible above native
+	 * arena setup. The same arena lifetime and input are used before and after the direct-segment writer change.
+	 */
+	@Benchmark
+	public void smallRunEncoding(Blackhole blackhole) {
+		long digest = 0;
+		try (LmdbAdjacencyArena arena = new LmdbAdjacencyArena(1L << 20)) {
+			LmdbAdjacencyContextCatalog contexts = LmdbAdjacencyContextCatalog.base(arena, new long[0]);
+			for (int run = 0; run < 1_024; run++) {
+				LmdbAdjacencyRunCodec.Encoder encoder = LmdbAdjacencyRunCodec.writingEncoder(contexts, arena);
+				for (long neighbor : smallRunNeighbors) {
+					encoder.accept(neighbor, 0);
+				}
+				digest ^= encoder.finish().rootRef;
+			}
+		}
+		blackhole.consume(digest);
+	}
+
 	void verifyFixture() {
 		for (int key = 0; key < KEY_COUNT; key++) {
 			long run = adjacency.find(keys[key]);
@@ -277,5 +335,98 @@ public class DirectAdjacencyBenchmark {
 
 	private static long uri(long payload) {
 		return ValueIds.createId(ValueIds.T_URI, payload);
+	}
+
+	/**
+	 * End-to-end retained-probe state. It exercises the private dataset-owned probe rather than a benchmark surrogate,
+	 * and setup verifies that the direct path is active.
+	 */
+	@State(Scope.Thread)
+	public static class RetainedDirectProbeState {
+
+		private File dataDir;
+		private SailRepository repository;
+		private SailDataset dataset;
+		private NativeLmdbQuerySource.NativeProbe probe;
+		private long predicate;
+		private final long[] subjects = new long[KEY_COUNT];
+
+		@Setup(Level.Trial)
+		public void setUp() throws IOException {
+			dataDir = Files.createTempDirectory("rdf4j-retained-direct-probe-jmh-").toFile();
+			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+					.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+					.setDirectAdjacencyMaxBytes(1L << 30);
+			LmdbStore sail = new LmdbStore(dataDir, config);
+			repository = new SailRepository(sail);
+			repository.init();
+			SimpleValueFactory values = SimpleValueFactory.getInstance();
+			IRI predicateValue = values.createIRI("urn:jmh:predicate");
+			try (RepositoryConnection connection = repository.getConnection()) {
+				for (int i = 0; i < KEY_COUNT; i++) {
+					connection.add(values.createIRI("urn:jmh:subject:" + i), predicateValue,
+							values.createIRI("urn:jmh:object:" + i));
+				}
+			}
+			LmdbSailStore backing = sail.getBackingStore();
+			if (!backing.directAdjacencyStore().buildNowForTest()) {
+				throw new IllegalStateException("direct adjacency build was refused");
+			}
+			dataset = backing.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT);
+			NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+			predicate = source.idOf(predicateValue);
+			for (int i = 0; i < KEY_COUNT; i++) {
+				subjects[i] = source.idOf(values.createIRI("urn:jmh:subject:" + i));
+			}
+			probe = source.newProbe();
+			try (RecordIterator iterator = probe.open(subjects[0], predicate, -1, -1)) {
+				if (iterator.next() == null || !probe.adjacencyCacheBacked()) {
+					throw new IllegalStateException("retained-probe benchmark did not engage direct adjacency");
+				}
+			}
+		}
+
+		long probeAll() throws IOException {
+			long digest = 0;
+			for (int i = 0; i < 256; i++) {
+				RecordIterator iterator = probe.open(subjects[i & (KEY_COUNT - 1)], predicate, -1, -1);
+				long[] row = iterator.next();
+				if (row == null) {
+					throw new IllegalStateException("direct probe returned no row");
+				}
+				digest = Long.rotateLeft(digest, 7) ^ row[TripleIndex.OBJ_IDX];
+			}
+			return digest;
+		}
+
+		@TearDown(Level.Trial)
+		public void tearDown() throws IOException {
+			try {
+				if (probe != null) {
+					probe.close();
+				}
+			} finally {
+				try {
+					if (dataset != null) {
+						dataset.close();
+					}
+				} finally {
+					try {
+						if (repository != null) {
+							repository.shutDown();
+						}
+					} finally {
+						if (dataDir != null) {
+							FileUtil.deleteDir(dataDir);
+						}
+					}
+				}
+			}
+		}
+	}
+
+	@Benchmark
+	public void retainedDirectProbes(RetainedDirectProbeState state, Blackhole blackhole) throws IOException {
+		blackhole.consume(state.probeAll());
 	}
 }

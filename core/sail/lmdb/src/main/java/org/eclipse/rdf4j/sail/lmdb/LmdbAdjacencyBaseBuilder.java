@@ -15,9 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
@@ -28,7 +26,9 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.IntConsumer;
 
+import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.Charge;
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.MemoryKind;
 
 /**
@@ -51,6 +51,16 @@ final class LmdbAdjacencyBaseBuilder {
 
 	private static final int SNAPSHOT_CHECK_GROUP_INTERVAL = 65_536;
 	private static final long MAX_RUN_PARTITION_REGION_BYTES = LmdbAdjacencyRunCodec.ORDINARY_RUN_MAX_BYTES;
+	private static final long ARRAY_HEADER_BYTES = 16;
+	private static final long ARRAY_REFERENCE_BYTES = 8;
+	private static final long INLINE_SIZING_METADATA_BYTES = 128;
+	private static final long INLINE_STREAMING_BUILDER_BYTES = 64 + 2 * (ARRAY_HEADER_BYTES
+			+ (long) LmdbInlineIncomingIndex.MAX_BLOCK_KEYS * Long.BYTES);
+	private static final long INLINE_INDEX_METADATA_BYTES = 64;
+	private static final long[] NO_INLINE_PLANE_KEYS = {};
+	private static final LmdbInlineIncomingIndex[] NO_INLINE_PLANES = {};
+	/** Test-only observation of the largest live inline-key staging buffer. */
+	static volatile IntConsumer inlineBufferedKeysForTest;
 
 	private LmdbAdjacencyBaseBuilder() {
 	}
@@ -140,14 +150,34 @@ final class LmdbAdjacencyBaseBuilder {
 
 		// ---------------- Pass 1: exact sizing and node counts ----------------
 		LmdbAdjacencyBuildWorkspace workspace = new LmdbAdjacencyBuildWorkspace(account, workspaceRegionBytes);
-
-		SizingState sizing = new SizingState(coverage, tempContexts, sortedPredicates, workspace,
-				baseArenaRegionBytes);
+		long inlinePlanningArrayBytes = Math.multiplyExact(2L,
+				arrayBytes(sortedPredicates.length, ARRAY_REFERENCE_BYTES));
+		Charge inlineMetadataCharge = account.tryCharge(MemoryKind.JAVA_METADATA, inlinePlanningArrayBytes);
+		if (inlineMetadataCharge == null) {
+			workspace.close();
+			throw new LmdbAdjacencyMemoryRefusedException(
+					"inline planning metadata reservation of " + inlinePlanningArrayBytes + " bytes refused");
+		}
+		SizingState sizing;
+		try {
+			sizing = new SizingState(coverage, tempContexts, sortedPredicates, workspace, baseArenaRegionBytes,
+					inlineMetadataCharge);
+		} catch (RuntimeException | Error e) {
+			inlineMetadataCharge.close();
+			workspace.close();
+			throw e;
+		}
 		boolean success = false;
 		LmdbAdjacencyArena baseArena = null;
 		try {
 			long pass1Started = System.nanoTime();
 			sizing.scanAll(sourceFamily, buildThreads);
+			long pass3MetadataBytes = Math.addExact(inlineMetadataCharge.bytes(),
+					Math.addExact(sizing.inlineBuilderBytes(), sizing.persistentInlineMetadataBytes()));
+			if (!inlineMetadataCharge.adjustTo(pass3MetadataBytes)) {
+				throw new LmdbAdjacencyMemoryRefusedException(
+						"inline Pass-3 metadata reservation of " + pass3MetadataBytes + " bytes refused");
+			}
 			if (metrics != null) {
 				metrics.recordPass1(sizing.sourceVisits, System.nanoTime() - pass1Started);
 			}
@@ -156,12 +186,12 @@ final class LmdbAdjacencyBaseBuilder {
 			// ---------------- memory gate: reserve the predicted base output ----------------
 			long predictedBytes = sizing.predictedPhysicalBytes(sortedPredicates.length, sortedContexts.length,
 					predicateWidth, baseArenaRegionBytes);
-			if (!account.tryReserve(MemoryKind.BUILD_OUTPUT, predictedBytes)) {
+			Charge outputCharge = account.tryCharge(MemoryKind.BUILD_OUTPUT, predictedBytes);
+			if (outputCharge == null) {
 				throw new LmdbAdjacencyMemoryRefusedException(
 						"base output reservation of " + predictedBytes + " bytes refused");
 			}
-			long reservedBytes = predictedBytes;
-			try {
+			try (outputCharge) {
 				baseArena = new LmdbAdjacencyArena(baseArenaRegionBytes);
 
 				// ---------------- Pass 2: dictionaries, locator pages, headers ----------------
@@ -184,7 +214,7 @@ final class LmdbAdjacencyBaseBuilder {
 
 				// ---------------- Pass 3: encode runs and fill entries ----------------
 				FillState fill = new FillState(coverage, contextCatalog, predicateCatalog, baseArena, twoPhase,
-						keyIndexes, runPartitions);
+						keyIndexes, runPartitions, sizing);
 				long pass3Started = System.nanoTime();
 				fill.scanAll(sourceFamily, buildThreads);
 				if (metrics != null) {
@@ -220,22 +250,23 @@ final class LmdbAdjacencyBaseBuilder {
 
 				// reconcile the reservation with the actual native capacity
 				long actualBytes = baseArena.capacityBytes();
-				if (actualBytes > reservedBytes) {
-					if (!account.tryReserve(MemoryKind.BUILD_OUTPUT, actualBytes - reservedBytes)) {
-						throw new LmdbAdjacencyMemoryRefusedException(
-								"base output exceeded its reservation by " + (actualBytes - reservedBytes) + " bytes");
-					}
-				} else if (actualBytes < reservedBytes) {
-					account.release(MemoryKind.BUILD_OUTPUT, reservedBytes - actualBytes);
+				if (!outputCharge.adjustTo(actualBytes)) {
+					throw new LmdbAdjacencyMemoryRefusedException(
+							"base output exceeded its reservation by " + (actualBytes - predictedBytes) + " bytes");
 				}
-				reservedBytes = actualBytes;
-				account.reclassify(MemoryKind.BUILD_OUTPUT, MemoryKind.BASE, reservedBytes);
+				outputCharge.reclassify(MemoryKind.BASE);
+				long persistentInlineMetadataBytes = sizing.persistentInlineMetadataBytes();
+				if (!inlineMetadataCharge.adjustTo(persistentInlineMetadataBytes)) {
+					throw new IllegalStateException("shrinking inline metadata charge was refused");
+				}
 
 				LmdbAdjacencyArenaCatalog arenaCatalog = LmdbAdjacencyArenaCatalog.of(baseArena);
 				long statements = sizing.outgoingExplicitPairs + sizing.outgoingInferredPairs;
+				Charge baseCharge = outputCharge.transfer();
+				Charge metadataCharge = inlineMetadataCharge.transfer();
 				LmdbInMemoryAdjacencyIndex index = new LmdbInMemoryAdjacencyIndex(baseRevision, arenaCatalog,
-						predicateCatalog, contextCatalog, coverage, locator, keyIndexes, fill.inlinePlanes, account,
-						reservedBytes, statements, sizing.pairCount);
+						predicateCatalog, contextCatalog, coverage, locator, keyIndexes, fill.inlinePlaneKeys,
+						fill.inlinePlanes, baseCharge, metadataCharge, statements, sizing.pairCount);
 				// the catalog is now the sole owner: release the builder's creator reference
 				baseArena.close();
 				if (metrics != null) {
@@ -243,14 +274,12 @@ final class LmdbAdjacencyBaseBuilder {
 				}
 				success = true;
 				return index;
-			} catch (RuntimeException | IOException | Error e) {
-				account.release(MemoryKind.BUILD_OUTPUT, reservedBytes);
-				throw e;
 			}
 		} finally {
 			if (!success && baseArena != null) {
 				baseArena.close();
 			}
+			inlineMetadataCharge.close();
 			sizing.workspace.close();
 		}
 	}
@@ -264,6 +293,7 @@ final class LmdbAdjacencyBaseBuilder {
 		final TempContextCatalog tempContexts;
 		final long[] sortedPredicates;
 		final LmdbAdjacencyBuildWorkspace workspace;
+		final Charge inlineMetadataCharge;
 		final SizingPlaneState[] planes = new SizingPlaneState[LmdbReferenceNodeLocator.PLANE_COUNT];
 
 		long runBytes;
@@ -274,14 +304,14 @@ final class LmdbAdjacencyBaseBuilder {
 		long incomingExplicitPairs;
 		long outgoingInferredPairs;
 		long incomingInferredPairs;
-		final Map<Long, InlinePlaneSizing> inlineSizing = new HashMap<>();
 
 		SizingState(LmdbAdjacencyCoverage coverage, TempContextCatalog tempContexts, long[] sortedPredicates,
-				LmdbAdjacencyBuildWorkspace workspace, long baseArenaRegionBytes) {
+				LmdbAdjacencyBuildWorkspace workspace, long baseArenaRegionBytes, Charge inlineMetadataCharge) {
 			this.coverage = coverage;
 			this.tempContexts = tempContexts;
 			this.sortedPredicates = sortedPredicates;
 			this.workspace = workspace;
+			this.inlineMetadataCharge = inlineMetadataCharge;
 			long runPartitionRegionBytes = Math.min(baseArenaRegionBytes, MAX_RUN_PARTITION_REGION_BYTES);
 			for (int plane = 0; plane < planes.length; plane++) {
 				planes[plane] = new SizingPlaneState(plane, runPartitionRegionBytes);
@@ -297,12 +327,6 @@ final class LmdbAdjacencyBaseBuilder {
 				groupCount = Math.addExact(groupCount, plane.groupCount);
 				pairCount = Math.addExact(pairCount, plane.pairCount);
 				sourceVisits = Math.addExact(sourceVisits, plane.sourceVisits);
-				for (Map.Entry<Long, InlinePlaneSizing> entry : plane.inlineSizing.entrySet()) {
-					if (inlineSizing.put(entry.getKey(), entry.getValue()) != null) {
-						throw new IllegalStateException("inline plane was sized by more than one worker: "
-								+ entry.getKey());
-					}
-				}
 			}
 			outgoingExplicitPairs = planes[LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT].pairCount;
 			incomingExplicitPairs = planes[LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT].pairCount;
@@ -348,7 +372,7 @@ final class LmdbAdjacencyBaseBuilder {
 			}
 			// Inline indexes are allocated after the run partitions. One extra region accounts for splitting metadata
 			// allocations around those aligned partitions; unused reservation is released after reconciliation.
-			if (!inlineSizing.isEmpty()) {
+			if (inlinePlaneCount() > 0) {
 				predictedPosition = Math.addExact(predictedPosition, regionBytes);
 			}
 			return predictedPosition == 0 ? 0 : alignUp(predictedPosition, regionBytes);
@@ -358,7 +382,7 @@ final class LmdbAdjacencyBaseBuilder {
 
 			private final int plane;
 			private final LmdbAdjacencyArenaSizingPlan runPlan;
-			private final Map<Long, InlinePlaneSizing> inlineSizing = new HashMap<>();
+			private final LmdbInlineIncomingIndex.Sizing[] inlineSizing;
 			private final long[] keyCounts = new long[sortedPredicates.length];
 
 			private long runBytes;
@@ -369,6 +393,10 @@ final class LmdbAdjacencyBaseBuilder {
 			private SizingPlaneState(int plane, long regionBytes) {
 				this.plane = plane;
 				this.runPlan = new LmdbAdjacencyArenaSizingPlan(regionBytes);
+				this.inlineSizing = plane == LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT
+						|| plane == LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED
+								? new LmdbInlineIncomingIndex.Sizing[sortedPredicates.length]
+								: null;
 			}
 
 			private void scan(AdjacencySourceScanner scanner, AtomicBoolean cancelled) throws IOException {
@@ -383,6 +411,13 @@ final class LmdbAdjacencyBaseBuilder {
 							+ " run bytes but codecs reported " + runBytes);
 				}
 				runPlan.seal();
+				if (inlineSizing != null) {
+					for (LmdbInlineIncomingIndex.Sizing sizing : inlineSizing) {
+						if (sizing != null) {
+							sizing.seal();
+						}
+					}
+				}
 			}
 
 			private AdjacencySourceScanner.GroupConsumer consumer(AdjacencySourceScanner scanner,
@@ -441,8 +476,13 @@ final class LmdbAdjacencyBaseBuilder {
 						if (ValueIds.isReference(key)) {
 							workspace.recordGroup(ValueIds.getIdType(key), ValueIds.getValue(key), plane);
 						} else {
-							inlineSizing.computeIfAbsent(predicateOrdinal * 4 + plane, k -> new InlinePlaneSizing())
-									.addKey(key);
+							LmdbInlineIncomingIndex.Sizing inline = inlineSizing[predicateIndex];
+							if (inline == null) {
+								reserveInlineSizingMetadata();
+								inline = new LmdbInlineIncomingIndex.Sizing();
+								inlineSizing[predicateIndex] = inline;
+							}
+							inline.add(key);
 						}
 						if (++groupsSeen % SNAPSHOT_CHECK_GROUP_INTERVAL == 0) {
 							checkCancelled(cancelled);
@@ -492,58 +532,98 @@ final class LmdbAdjacencyBaseBuilder {
 			total = Math.addExact(total, pageTotal[0]);
 			// one raw key per nonempty (key, predicate, plane) row for predicate-wide kernel enumeration
 			total = Math.addExact(total, Math.multiplyExact(groupCount, (long) Long.BYTES));
-			for (InlinePlaneSizing plane : inlineSizing.values()) {
-				total = Math.addExact(total, plane.totalBytes());
+			for (SizingPlaneState plane : planes) {
+				if (plane.inlineSizing == null) {
+					continue;
+				}
+				for (LmdbInlineIncomingIndex.Sizing inline : plane.inlineSizing) {
+					if (inline != null) {
+						total = Math.addExact(total, inline.seal().totalBytes());
+					}
+				}
 			}
 			// alignment/region slack allowance: eight bytes per node/group/page allocation upper bound
 			total = Math.addExact(total, (workspace.activeNodeCount() + workspace.groupCount()) * 8 + 4096);
 			return total;
 		}
-	}
 
-	/**
-	 * Streaming exact sizing of one inline incoming plane, replicating the block partition and layout of
-	 * {@link LmdbInlineIncomingIndex}.
-	 */
-	private static final class InlinePlaneSizing {
-		private long keyCount;
-		private long blockCount;
-		private long blockBytes;
-		private long blockFirstKey;
-		private int blockKeys;
-		private long lastKey;
-
-		void addKey(long key) {
-			if (keyCount > 0 && Long.compareUnsigned(lastKey, key) >= 0) {
-				throw new IllegalStateException("inline keys must be strictly unsigned ascending within a plane");
+		int inlinePlaneCount() {
+			int count = 0;
+			for (SizingPlaneState plane : planes) {
+				if (plane.inlineSizing == null) {
+					continue;
+				}
+				for (LmdbInlineIncomingIndex.Sizing inline : plane.inlineSizing) {
+					if (inline != null) {
+						count = Math.incrementExact(count);
+					}
+				}
 			}
-			if (keyCount == 0 || blockKeys == LmdbInlineIncomingIndex.MAX_BLOCK_KEYS
-					|| (key >>> 48) != (blockFirstKey >>> 48)) {
-				closeBlock();
-				blockFirstKey = key;
-				blockKeys = 0;
-			}
-			blockKeys++;
-			lastKey = key;
-			keyCount++;
+			return count;
 		}
 
-		private void closeBlock() {
-			if (blockKeys == 0) {
-				return;
+		long[] inlinePlaneKeys() {
+			int planeCount = inlinePlaneCount();
+			if (planeCount == 0) {
+				return NO_INLINE_PLANE_KEYS;
 			}
-			long maxDelta = lastKey - blockFirstKey;
-			int width = 64 - Long.numberOfLeadingZeros(maxDelta);
-			long packed = (((long) blockKeys * width + 63) >>> 6) * 8;
-			long refsAt = alignUp(16 + packed, 8);
-			blockBytes += alignUp(refsAt + 5L * blockKeys, 8);
-			blockCount++;
+			long[] keys = new long[planeCount];
+			int cursor = 0;
+			for (int predicateOrdinal = 0; predicateOrdinal < sortedPredicates.length; predicateOrdinal++) {
+				for (int plane = 0; plane < planes.length; plane++) {
+					LmdbInlineIncomingIndex.Sizing[] inline = planes[plane].inlineSizing;
+					if (inline != null && inline[predicateOrdinal] != null) {
+						keys[cursor++] = (long) predicateOrdinal * LmdbReferenceNodeLocator.PLANE_COUNT + plane;
+					}
+				}
+			}
+			return keys;
 		}
 
-		long totalBytes() {
-			closeBlock();
-			blockKeys = 0;
-			return LmdbInlineIncomingIndex.RADIX_DIRECTORY_BYTES + blockCount * 5 + blockBytes;
+		LmdbInlineIncomingIndex.Plan inlinePlan(long planeKey) {
+			int plane = (int) (planeKey % LmdbReferenceNodeLocator.PLANE_COUNT);
+			int predicateOrdinal = Math.toIntExact(planeKey / LmdbReferenceNodeLocator.PLANE_COUNT);
+			LmdbInlineIncomingIndex.Sizing sizing = planes[plane].inlineSizing[predicateOrdinal];
+			if (sizing == null) {
+				throw new IllegalStateException("Pass 3 encountered an unplanned inline plane: " + planeKey);
+			}
+			return sizing.seal();
+		}
+
+		long inlineBuilderBytes() {
+			int activeIncomingPlanes = 0;
+			for (SizingPlaneState plane : planes) {
+				if (plane.inlineSizing == null) {
+					continue;
+				}
+				for (LmdbInlineIncomingIndex.Sizing inline : plane.inlineSizing) {
+					if (inline != null) {
+						activeIncomingPlanes++;
+						break;
+					}
+				}
+			}
+			return Math.multiplyExact((long) activeIncomingPlanes, INLINE_STREAMING_BUILDER_BYTES);
+		}
+
+		long persistentInlineMetadataBytes() {
+			int count = inlinePlaneCount();
+			if (count == 0) {
+				return 0;
+			}
+			long arrays = Math.addExact(arrayBytes(count, Long.BYTES),
+					arrayBytes(count, ARRAY_REFERENCE_BYTES));
+			return Math.addExact(arrays, Math.multiplyExact((long) count, INLINE_INDEX_METADATA_BYTES));
+		}
+
+		private void reserveInlineSizingMetadata() {
+			synchronized (inlineMetadataCharge) {
+				long target = Math.addExact(inlineMetadataCharge.bytes(), INLINE_SIZING_METADATA_BYTES);
+				if (!inlineMetadataCharge.adjustTo(target)) {
+					throw new LmdbAdjacencyMemoryRefusedException(
+							"inline sizing metadata reservation of " + target + " bytes refused");
+				}
+			}
 		}
 	}
 
@@ -559,23 +639,29 @@ final class LmdbAdjacencyBaseBuilder {
 		final LmdbReferenceNodeLocator.TwoPhaseBuilder twoPhase;
 		final LmdbAdjacencyKeyIndex[] keyIndexes;
 		final FillPlaneState[] planes = new FillPlaneState[LmdbReferenceNodeLocator.PLANE_COUNT];
+		final SizingState sizing;
+		final long[] inlinePlaneKeys;
+		final LmdbInlineIncomingIndex[] inlinePlanes;
 
 		long runBytes;
 		long groupCount;
 		long pairCount;
 		long sourceVisits;
-		final Map<Long, LmdbInlineIncomingIndex> inlinePlanes = new HashMap<>();
 
 		FillState(LmdbAdjacencyCoverage coverage, LmdbAdjacencyContextCatalog contextCatalog,
 				LmdbAdjacencyPredicateCatalog predicateCatalog, LmdbAdjacencyArena baseArena,
 				LmdbReferenceNodeLocator.TwoPhaseBuilder twoPhase, LmdbAdjacencyKeyIndex[] keyIndexes,
-				LmdbAdjacencyArena.Partition[] runPartitions) {
+				LmdbAdjacencyArena.Partition[] runPartitions, SizingState sizing) {
 			this.coverage = coverage;
 			this.contextCatalog = contextCatalog;
 			this.predicateCatalog = predicateCatalog;
 			this.baseArena = baseArena;
 			this.twoPhase = twoPhase;
 			this.keyIndexes = keyIndexes;
+			this.sizing = sizing;
+			this.inlinePlaneKeys = sizing.inlinePlaneKeys();
+			this.inlinePlanes = inlinePlaneKeys.length == 0 ? NO_INLINE_PLANES
+					: new LmdbInlineIncomingIndex[inlinePlaneKeys.length];
 			if (runPartitions.length != planes.length) {
 				throw new IllegalArgumentException("expected one run partition per plane");
 			}
@@ -593,19 +679,11 @@ final class LmdbAdjacencyBaseBuilder {
 				groupCount = Math.addExact(groupCount, plane.groupCount);
 				pairCount = Math.addExact(pairCount, plane.pairCount);
 				sourceVisits = Math.addExact(sourceVisits, plane.sourceVisits);
-				long[] inlineKeys = new long[plane.inlineCollectors.size()];
-				int keyCursor = 0;
-				for (long key : plane.inlineCollectors.keySet()) {
-					inlineKeys[keyCursor++] = key;
-				}
-				Arrays.sort(inlineKeys);
-				for (long inlineKey : inlineKeys) {
-					LongList[] collector = plane.inlineCollectors.get(inlineKey);
-					LmdbInlineIncomingIndex index = LmdbInlineIncomingIndex.build(baseArena, collector[0].toArray(),
-							collector[1].toArray());
-					if (index != null) {
-						inlinePlanes.put(inlineKey, index);
-					}
+			}
+			for (int i = 0; i < inlinePlanes.length; i++) {
+				if (inlinePlanes[i] == null) {
+					throw new IllegalStateException(
+							"inline Pass-3 emission is missing planned predicate/plane " + inlinePlaneKeys[i]);
 				}
 			}
 			for (LmdbAdjacencyKeyIndex keyIndex : keyIndexes) {
@@ -619,7 +697,8 @@ final class LmdbAdjacencyBaseBuilder {
 
 			private final int plane;
 			private final LmdbAdjacencyArena.Partition runPartition;
-			private final Map<Long, LongList[]> inlineCollectors = new HashMap<>(); // [keys, refs] per plane key
+			private LmdbInlineIncomingIndex.StreamingBuilder inlineBuilder;
+			private long inlinePlaneKey = -1;
 
 			private long runBytes;
 			private long groupCount;
@@ -634,7 +713,25 @@ final class LmdbAdjacencyBaseBuilder {
 			private void scan(AdjacencySourceScanner scanner, AtomicBoolean cancelled) throws IOException {
 				scanner.ensureSnapshotValid();
 				scanPlane(scanner, plane, consumer(scanner, cancelled));
+				finishInlinePlane();
 				scanner.ensureSnapshotValid();
+			}
+
+			private void finishInlinePlane() {
+				if (inlineBuilder == null) {
+					return;
+				}
+				int index = Arrays.binarySearch(inlinePlaneKeys, inlinePlaneKey);
+				if (index < 0) {
+					throw new IllegalStateException("Pass 3 emitted an unplanned inline predicate/plane "
+							+ inlinePlaneKey);
+				}
+				if (inlinePlanes[index] != null) {
+					throw new IllegalStateException("Pass 3 emitted inline predicate/plane twice: " + inlinePlaneKey);
+				}
+				inlinePlanes[index] = inlineBuilder.seal();
+				inlineBuilder = null;
+				inlinePlaneKey = -1;
 			}
 
 			private AdjacencySourceScanner.GroupConsumer consumer(AdjacencySourceScanner scanner,
@@ -687,16 +784,26 @@ final class LmdbAdjacencyBaseBuilder {
 							throw new IllegalStateException(
 									"covered predicate missing from the dictionary: " + predicate);
 						}
+						long currentPlaneKey = predicateOrdinal * LmdbReferenceNodeLocator.PLANE_COUNT + plane;
+						if (inlineBuilder != null && inlinePlaneKey != currentPlaneKey) {
+							finishInlinePlane();
+						}
 						keyIndexes[Math.toIntExact(predicateOrdinal * LmdbReferenceNodeLocator.PLANE_COUNT + plane)]
 								.append(key);
 						if (ValueIds.isReference(key)) {
 							twoPhase.fillEntry(ValueIds.getIdType(key), ValueIds.getValue(key), plane, predicateOrdinal,
 									result.rootRef);
 						} else {
-							LongList[] collector = inlineCollectors.computeIfAbsent(predicateOrdinal * 4 + plane,
-									k -> new LongList[] { new LongList(), new LongList() });
-							collector[0].add(key);
-							collector[1].add(result.rootRef);
+							if (inlineBuilder == null) {
+								inlinePlaneKey = currentPlaneKey;
+								inlineBuilder = new LmdbInlineIncomingIndex.StreamingBuilder(baseArena,
+										sizing.inlinePlan(currentPlaneKey));
+							}
+							inlineBuilder.add(key, result.rootRef);
+							IntConsumer bufferObserver = inlineBufferedKeysForTest;
+							if (bufferObserver != null) {
+								bufferObserver.accept(inlineBuilder.bufferedKeyCount());
+							}
 						}
 						if (++groupsSeen % SNAPSHOT_CHECK_GROUP_INTERVAL == 0) {
 							checkCancelled(cancelled);
@@ -746,6 +853,7 @@ final class LmdbAdjacencyBaseBuilder {
 		ExecutorCompletionService<Void> completion = new ExecutorCompletionService<>(executor);
 		List<Future<Void>> futures = new ArrayList<>(LmdbReferenceNodeLocator.PLANE_COUNT);
 		boolean cancelSourceFamily = false;
+		boolean restoreInterrupt = false;
 		try {
 			for (int plane = 0; plane < LmdbReferenceNodeLocator.PLANE_COUNT; plane++) {
 				int taskPlane = plane;
@@ -760,7 +868,7 @@ final class LmdbAdjacencyBaseBuilder {
 		} catch (InterruptedException e) {
 			cancelPlaneTasks(cancelled, futures);
 			cancelSourceFamily = true;
-			Thread.currentThread().interrupt();
+			restoreInterrupt = true;
 			throw new IOException("parallel adjacency build interrupted", e);
 		} catch (ExecutionException | CancellationException e) {
 			cancelPlaneTasks(cancelled, futures);
@@ -769,18 +877,21 @@ final class LmdbAdjacencyBaseBuilder {
 			rethrowPlaneFailure(cause);
 		} finally {
 			executor.shutdownNow();
-			try {
-				if (!executor.awaitTermination(1, TimeUnit.MINUTES)) {
-					sourceFamily.cancel();
-					throw new IOException("parallel adjacency build workers did not terminate");
+			boolean interruptedWhileJoining = false;
+			boolean terminated = false;
+			while (!terminated) {
+				try {
+					terminated = executor.awaitTermination(1, TimeUnit.MINUTES);
+				} catch (InterruptedException e) {
+					interruptedWhileJoining = true;
+					cancelPlaneTasks(cancelled, futures);
 				}
-				if (cancelSourceFamily) {
-					sourceFamily.cancel();
-				}
-			} catch (InterruptedException e) {
+			}
+			if (cancelSourceFamily) {
 				sourceFamily.cancel();
+			}
+			if (interruptedWhileJoining || restoreInterrupt) {
 				Thread.currentThread().interrupt();
-				throw new IOException("interrupted while joining parallel adjacency build workers", e);
 			}
 		}
 	}
@@ -951,6 +1062,10 @@ final class LmdbAdjacencyBaseBuilder {
 
 	private static long alignUp(long value, long alignment) {
 		return Math.addExact(value, alignment - 1) & -alignment;
+	}
+
+	private static long arrayBytes(int length, long elementBytes) {
+		return Math.addExact(ARRAY_HEADER_BYTES, Math.multiplyExact((long) length, elementBytes));
 	}
 
 	/**

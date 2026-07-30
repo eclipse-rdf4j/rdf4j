@@ -3368,19 +3368,26 @@ class LmdbSailStore implements SailStore {
 				throws SailException {
 			this.explicit = explicit;
 			this.adjacencyEligible = (trackActiveTxn || pinSnapshot) && !adjacencyBypass;
+			long registeredRevision = -1;
+			long registeredVersion = -1;
 			try {
 				TxnManager txnManager = tripleStore.getTxnManager();
 				if (pinSnapshot) {
 					this.txn = txnManager.createReadTxnPinned(tripleStore::getDataRevision);
+				} else if (trackActiveTxn) {
+					TxnManager.ReadTxnRegistration registration = txnManager
+							.createReadTxnTrackedAtRevision(tripleStore::getDataRevision);
+					this.txn = registration.txn();
+					registeredRevision = registration.dataRevision();
+					registeredVersion = registration.initialVersion();
 				} else {
-					this.txn = trackActiveTxn ? txnManager.createReadTxn()
-							: txnManager.createReadTxnUntracked();
+					this.txn = txnManager.createReadTxnUntracked();
 				}
 			} catch (IOException e) {
 				throw new SailException(e);
 			}
 			this.snapshotRevision = txn.snapshotRevision();
-			this.pinnedTxnVersion = txn.version();
+			this.pinnedTxnVersion = registeredVersion >= 0 ? registeredVersion : txn.version();
 			// acquisition after transaction registration: base replacement checks minPinnedSnapshotRevision(), so it
 			// cannot retire a view this dataset is about to retain (plan 27 read-view acquisition rule).
 			// An unpinned tracked transaction serves "latest committed": acquire the view at the current data
@@ -3388,7 +3395,7 @@ class LmdbSailStore implements SailStore {
 			// in between bumps this tracked transaction's version (reset-on-commit) and the tryDirect/directEligible
 			// version fence refuses to serve — the view can never be newer than the LMDB snapshot it accompanies.
 			long adjacencyRevision = snapshotRevision >= 0 || !adjacencyEligible ? snapshotRevision
-					: tripleStore.getDataRevision();
+					: registeredRevision;
 			this.adjacencyView = directAdjacency != null && adjacencyEligible
 					? directAdjacency.acquire(adjacencyRevision)
 					: null;
@@ -3405,6 +3412,12 @@ class LmdbSailStore implements SailStore {
 
 		private RecordIterator tryDirect(StatementOrder order, long subj, long pred, long obj, long context,
 				LmdbReferenceNodeLocator.SearchContext searchContext) throws IOException {
+			return tryDirect(order, subj, pred, obj, context, searchContext, null);
+		}
+
+		private RecordIterator tryDirect(StatementOrder order, long subj, long pred, long obj, long context,
+				LmdbReferenceNodeLocator.SearchContext searchContext,
+				LmdbDirectAdjacencyIterator reusableIterator) throws IOException {
 			if (adjacencyView == null || !adjacencyView.isExact()) {
 				return null;
 			}
@@ -3413,7 +3426,8 @@ class LmdbSailStore implements SailStore {
 				return null;
 			}
 			return order == null
-					? directAdjacency.tryOpen(adjacencyView, txn, subj, pred, obj, context, explicit, searchContext)
+					? directAdjacency.tryOpen(adjacencyView, txn, subj, pred, obj, context, explicit, searchContext,
+							reusableIterator)
 					: directAdjacency.tryOpenOrdered(adjacencyView, txn, order, subj, pred, obj, context, explicit,
 							searchContext);
 		}
@@ -3726,6 +3740,7 @@ class LmdbSailStore implements SailStore {
 		 */
 		private final class RetainedNativeProbe implements NativeProbe {
 			private final LmdbReferenceNodeLocator.SearchContext searchContext = new LmdbReferenceNodeLocator.SearchContext();
+			private final LmdbDirectAdjacencyIterator retainedDirect = new LmdbDirectAdjacencyIterator();
 			private long readStamp;
 			private boolean stampHeld;
 			private LmdbRecordIterator retained;
@@ -3749,7 +3764,7 @@ class LmdbSailStore implements SailStore {
 					if (!hasStatementsInSource()) {
 						return EmptyRecordIterator.INSTANCE;
 					}
-					RecordIterator direct = tryDirect(null, subj, pred, obj, context, searchContext);
+					RecordIterator direct = tryDirect(null, subj, pred, obj, context, searchContext, retainedDirect);
 					if (direct != null) {
 						currentDirect = direct;
 						servedDirect = true;

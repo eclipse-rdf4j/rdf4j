@@ -18,6 +18,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.lang.foreign.MemorySegment;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
 
@@ -127,6 +132,38 @@ class LmdbAdjacencyArenaTest {
 					.get();
 
 			assertThat(observed).isEqualTo(0x1122334455667788L);
+		}
+	}
+
+	@Test
+	void growthAllocationsSerializeOnTheArenaMonitor() throws Exception {
+		try (LmdbAdjacencyArena arena = new LmdbAdjacencyArena(TEST_REGION_BYTES)) {
+			ExecutorService executor = Executors.newSingleThreadExecutor();
+			CountDownLatch allocationStarted = new CountDownLatch(1);
+			CountDownLatch allocationFinished = new CountDownLatch(1);
+			Future<Long> allocation;
+			try {
+				synchronized (arena) {
+					allocation = executor.submit(() -> {
+						allocationStarted.countDown();
+						try {
+							return arena.allocateRef(16, 8);
+						} finally {
+							allocationFinished.countDown();
+						}
+					});
+					assertThat(allocationStarted.await(5, TimeUnit.SECONDS)).isTrue();
+					assertThat(allocationFinished.await(100, TimeUnit.MILLISECONDS))
+							.as("growth allocation must not race another owner of the arena allocation monitor")
+							.isFalse();
+				}
+				long ref = allocation.get(5, TimeUnit.SECONDS);
+				arena.slice(ref, 16).set(LmdbAdjacencyArena.U64_LE, 0, 0x1122334455667788L);
+				assertThat(arena.slice(ref, 16).get(LmdbAdjacencyArena.U64_LE, 0))
+						.isEqualTo(0x1122334455667788L);
+			} finally {
+				executor.shutdownNow();
+			}
 		}
 	}
 

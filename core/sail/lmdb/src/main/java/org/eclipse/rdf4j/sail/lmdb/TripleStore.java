@@ -3332,6 +3332,11 @@ class TripleStore implements Closeable {
 	interface DirectAdjacencyCommitListener {
 
 		void beforeRevisionBump(LmdbDirectAdjacencyCommitDelta.SealedDirectDelta delta, long nextRevision);
+
+		default void physicalCommitFailedBeforeRevisionBump(long nextRevision) {
+			beforeRevisionBump(LmdbDirectAdjacencyCommitDelta.SealedDirectDelta.overflowed(nextRevision),
+					nextRevision);
+		}
 	}
 
 	void setDirectAdjacencyCommitHooks(DirectAdjacencyCommitListener listener,
@@ -4008,7 +4013,16 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	protected void updateFromCache() throws IOException {
+	private static final class CommitProgress {
+		private final long nextRevision;
+		private boolean physicalCommitSucceeded;
+
+		private CommitProgress(long nextRevision) {
+			this.nextRevision = nextRevision;
+		}
+	}
+
+	protected void updateFromCache(CommitProgress commitProgress) throws IOException {
 		recordCache.commit();
 		for (boolean explicit : new boolean[] { true, false }) {
 			RecordCacheIterator it = recordCache.getRecords(explicit);
@@ -4023,12 +4037,11 @@ class TripleStore implements Closeable {
 				while ((r = it.next()) != null) {
 					if (requiresResize()) {
 						// resize map if required
-						E(mdb_txn_commit(writeTxn));
+						commitWriteTransaction(commitProgress);
 						mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
 						E(mdb_env_set_mapsize(env, mapSize));
 						logger.debug("resized map to {}", mapSize);
-						E(mdb_txn_begin(env, NULL, 0, pp));
-						writeTxn = pp.get(0);
+						beginWriteTransaction(pp);
 					}
 
 					for (TripleIndex index : indexes) {
@@ -4055,7 +4068,31 @@ class TripleStore implements Closeable {
 				}
 			}
 		}
-		recordCache.close();
+	}
+
+	private void beginWriteTransaction(PointerBuffer pp) throws IOException {
+		E(mdb_txn_begin(env, NULL, 0, pp));
+		writeTxn = pp.get(0);
+	}
+
+	private void commitWriteTransaction(CommitProgress commitProgress) throws IOException {
+		long transaction = writeTxn;
+		if (transaction == 0) {
+			throw new IllegalStateException("no live LMDB write transaction to commit");
+		}
+		// LMDB consumes a write transaction handle whether commit succeeds or fails. Clear ownership first so no
+		// exception path can abort or commit the same native handle twice.
+		writeTxn = 0;
+		E(mdb_txn_commit(transaction));
+		commitProgress.physicalCommitSucceeded = true;
+	}
+
+	private void abortWriteTransactionIfLive() {
+		long transaction = writeTxn;
+		writeTxn = 0;
+		if (transaction != 0) {
+			mdb_txn_abort(transaction);
+		}
 	}
 
 	public void startTransaction() throws IOException {
@@ -4065,11 +4102,9 @@ class TripleStore implements Closeable {
 		}
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);
-			E(mdb_txn_begin(env, NULL, 0, pp));
-			writeTxn = pp.get(0);
+			beginWriteTransaction(pp);
 			if (autoGrow && pageSize > 0 && requiresResize()) {
-				mdb_txn_abort(writeTxn);
-				writeTxn = 0;
+				abortWriteTransactionIfLive();
 				var lockManager = txnManager.lockManager();
 				long stamp;
 				try {
@@ -4090,8 +4125,7 @@ class TripleStore implements Closeable {
 						lockManager.unlockWrite(stamp);
 					}
 				}
-				E(mdb_txn_begin(env, NULL, 0, pp));
-				writeTxn = pp.get(0);
+				beginWriteTransaction(pp);
 			}
 		}
 	}
@@ -4163,23 +4197,25 @@ class TripleStore implements Closeable {
 					} catch (InterruptedException e) {
 						throw new SailException(e);
 					}
+					CommitProgress commitProgress = new CommitProgress(dataRevision.get() + 1);
 					LmdbDirectAdjacencyCommitDelta.SealedDirectDelta sealedDirect = null;
 					try {
 						// seal event pages and the touched-row table before the authoritative LMDB commit; later
 						// record calls (none exist: updateFromCache never records) would fail fast (plan 27)
 						if (directAdjacencyCommitDelta != null && directAdjacencyCommitDelta.begun()) {
 							try {
-								sealedDirect = directAdjacencyCommitDelta.seal(dataRevision.get() + 1);
+								sealedDirect = directAdjacencyCommitDelta.seal(commitProgress.nextRevision);
 							} catch (RuntimeException sealFailure) {
 								// derived-state best effort: the authoritative commit proceeds; the listener
 								// publishes the revision gap through the overflow marker (plan 27, invariant I16)
 								directAdjacencyCommitDelta.reset();
 								sealedDirect = LmdbDirectAdjacencyCommitDelta.SealedDirectDelta
-										.overflowed(dataRevision.get() + 1);
+										.overflowed(commitProgress.nextRevision);
 							}
 						}
-						E(mdb_txn_commit(writeTxn));
+						commitWriteTransaction(commitProgress);
 						if (recordCache != null) {
+							TxnRecordCache transactionRecordCache = recordCache;
 							try {
 								txnManager.deactivate();
 								mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
@@ -4188,15 +4224,18 @@ class TripleStore implements Closeable {
 								// restart write transaction
 								try (MemoryStack stack = stackPush()) {
 									PointerBuffer pp = stack.mallocPointer(1);
-									mdb_txn_begin(env, NULL, 0, pp);
-									writeTxn = pp.get(0);
+									beginWriteTransaction(pp);
 								}
-								updateFromCache();
+								updateFromCache(commitProgress);
 								// finally, commit write transaction
-								E(mdb_txn_commit(writeTxn));
+								commitWriteTransaction(commitProgress);
 							} finally {
 								recordCache = null;
-								txnManager.activate();
+								try {
+									transactionRecordCache.close();
+								} finally {
+									txnManager.activate();
+								}
 							}
 						} else {
 							// invalidate open read transaction so that they are not re-used
@@ -4205,7 +4244,8 @@ class TripleStore implements Closeable {
 						}
 						if (directAdjacencyCommitListener != null && sealedDirect != null) {
 							// publishes the pending marker (or the gap) before readers can observe the revision
-							directAdjacencyCommitListener.beforeRevisionBump(sealedDirect, dataRevision.get() + 1);
+							directAdjacencyCommitListener.beforeRevisionBump(sealedDirect,
+									commitProgress.nextRevision);
 							if (sealedDirectAdjacencyDelta != null) {
 								// an earlier sealed delta was never drained (a failed sail-store commit step);
 								// its revision gap is detected by the applier — release only the charge here
@@ -4214,12 +4254,25 @@ class TripleStore implements Closeable {
 							sealedDirectAdjacencyDelta = sealedDirect;
 							sealedDirect = null;
 						}
-						dataRevision.incrementAndGet();
+						dataRevision.set(commitProgress.nextRevision);
 						fanOutStatsDirty = false;
-					} catch (IOException e) {
-						// abort transaction if exception occurred while committing
-						mdb_txn_abort(writeTxn);
+					} catch (IOException | RuntimeException | Error e) {
+						abortWriteTransactionIfLive();
 						clearFanOutStatsIfDirty();
+						if (commitProgress.physicalCommitSucceeded) {
+							try {
+								if (directAdjacencyCommitListener != null) {
+									directAdjacencyCommitListener
+											.physicalCommitFailedBeforeRevisionBump(commitProgress.nextRevision);
+								}
+							} catch (RuntimeException | Error gapFailure) {
+								e.addSuppressed(gapFailure);
+							} finally {
+								// The physical database has advanced. Publish the logical revision after the gap so
+								// readers can only observe this revision through the authoritative LMDB fallback.
+								dataRevision.set(commitProgress.nextRevision);
+							}
+						}
 						if (sealedDirect != null) {
 							sealedDirect.close();
 							sealedDirect = null;
@@ -4232,14 +4285,14 @@ class TripleStore implements Closeable {
 						lockManager.unlockWrite(stamp);
 					}
 				} else {
-					mdb_txn_abort(writeTxn);
+					abortWriteTransactionIfLive();
 					clearFanOutStatsIfDirty();
 					if (directAdjacencyCommitDelta != null) {
 						directAdjacencyCommitDelta.reset();
 					}
 				}
 			} finally {
-				writeTxn = 0;
+				abortWriteTransactionIfLive();
 				// ensure that record cache is always reset
 				if (recordCache != null) {
 					try {

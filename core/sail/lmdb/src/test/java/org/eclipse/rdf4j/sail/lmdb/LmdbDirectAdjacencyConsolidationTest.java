@@ -16,9 +16,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.MemoryKind;
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMetrics.FallbackReason;
@@ -220,5 +226,73 @@ class LmdbDirectAdjacencyConsolidationTest {
 		store.close();
 		store = null;
 		assertThat(account.totalChargedBytes()).isZero();
+	}
+
+	@Test
+	void staleGapDoesNotHideAnOverflowDuringCatchUp() throws Exception {
+		commitAdd(S1, P1, O_BASE);
+		assertThat(store.buildNowForTest()).isTrue();
+		store.markGap(tripleStore.getDataRevision());
+
+		AtomicBoolean injectOnce = new AtomicBoolean(true);
+		CompletableFuture<Void> unexpectedWait = new CompletableFuture<>();
+		store.catchUpWaitForTest = () -> unexpectedWait.complete(null);
+		store.afterBuildScanForTest = () -> {
+			if (!injectOnce.compareAndSet(true, false)) {
+				return;
+			}
+			tripleStore.setDirectAdjacencyCommitHooks(store.commitListener(),
+					new LmdbDirectAdjacencyCommitDelta(store.memoryAccount(), 1024));
+			try {
+				commitAdd(S1, P1, uri(1001));
+			} catch (IOException e) {
+				throw new UncheckedIOException(e);
+			}
+		};
+
+		try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+			CompletableFuture<Boolean> build = CompletableFuture.supplyAsync(store::buildNowForTest, executor);
+			Object firstOutcome = CompletableFuture.anyOf(build, unexpectedWait).get(10, TimeUnit.SECONDS);
+			if (firstOutcome == null) {
+				// Unblock the former livelock without repairing its lost-capture error. Publishing this empty
+				// placeholder would expose the stale base as revision-exact and make the parity assertion fail.
+				store.applyCommitted(
+						LmdbDirectAdjacencyCommitDelta.SealedDirectDelta.empty(tripleStore.getDataRevision()));
+			}
+			build.get(10, TimeUnit.SECONDS);
+		}
+
+		store.pauseApplierForTest(false);
+		try (LmdbAdjacencyReadView rebuilt = store.acquire(tripleStore.getDataRevision())) {
+			assertThat(rebuilt.isExact()).isTrue();
+			assertThat(probe(rebuilt, S1, P1)).hasSize(2);
+		}
+	}
+
+	@Test
+	void burstOfQuiescentRebuildRequestsIsCoalesced() throws Exception {
+		commitAdd(S1, P1, O_BASE);
+		assertThat(store.buildNowForTest()).isTrue();
+
+		AtomicInteger scans = new AtomicInteger();
+		store.afterBuildScanForTest = scans::incrementAndGet;
+		try (LmdbAdjacencyReadView held = store.acquire(tripleStore.getDataRevision())) {
+			assertThat(held.isExact()).isTrue();
+			store.scheduleQuiescentRebuild();
+			long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+			while (store.publishedStateForTest()
+					.servingState() != LmdbAdjacencyPublishedState.AdjacencyServingState.UNAVAILABLE) {
+				if (System.nanoTime() > deadline) {
+					throw new AssertionError("quiescent rebuild never entered its lease-drain phase");
+				}
+				Thread.onSpinWait();
+			}
+			for (int i = 0; i < 20; i++) {
+				store.scheduleQuiescentRebuild();
+			}
+		}
+
+		store.pauseApplierForTest(false);
+		assertThat(scans).hasValueLessThanOrEqualTo(2);
 	}
 }
