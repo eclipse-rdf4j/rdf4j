@@ -15,8 +15,14 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.NULL_CONTEXT_ID;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 
+import java.util.Arrays;
+
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.MathExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;
@@ -35,39 +41,43 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;
 @Experimental
 final class LmdbNativeKernelHooks implements KernelHooks {
 
-	private static final double MAX_EXACT_DOUBLE = 9.007199254740992E15; // 2^53
-
 	private final NativeLmdbQuerySource source;
 	private final RowState scratch;
 	private final LmdbNativeValueCodec codec;
 	private final LmdbNativeKernelBindings.FilterHook[] filters;
 	private final ValueComparator comparator = new ValueComparator();
-
-	// SUM exactness guard (plan 21): armed when the lowering registered SUM outputs. Double accumulation is only
-	// trustworthy when every input was an exact integer and every partial sum stays below 2^53; any non-numeric input
-	// must also invalidate the run because the generic evaluator poisons the aggregate (binding omitted) where the
-	// kernel would silently skip.
-	private boolean sumGuardArmed;
-	private long sumInputs;
-	private double sumMaxAbs;
-	private boolean sumSawNonInteger;
-	private boolean sumSawNonNumeric;
+	private final AggKind[] numericKinds;
+	private final Literal[][] numericSums;
+	private final long[][] numericCounts;
+	private final boolean[][] numericErrors;
+	private final AggContext numericContext;
 
 	LmdbNativeKernelHooks(RowState liveRow, LmdbNativeKernelBindings bindings) {
 		this.source = liveRow.source;
 		this.scratch = new RowState(liveRow.source, liveRow.layout, liveRow.base);
 		this.codec = liveRow.source.nativeValueCodec();
 		this.filters = bindings.filterHooks;
-	}
-
-	void armSumGuard() {
-		sumGuardArmed = true;
-	}
-
-	/** True when every SUM input was an exact integer and the accumulated magnitude stayed below 2^53. */
-	boolean sumsExact() {
-		return !sumSawNonNumeric && !sumSawNonInteger
-				&& sumInputs * Math.max(sumMaxAbs, 1D) < MAX_EXACT_DOUBLE;
+		int aggregateCount = bindings.groupLayout == null ? 0 : bindings.groupLayout.outs.length;
+		this.numericKinds = new AggKind[aggregateCount];
+		this.numericSums = new Literal[aggregateCount][];
+		this.numericCounts = new long[aggregateCount][];
+		this.numericErrors = new boolean[aggregateCount][];
+		boolean hasNumericAggregate = false;
+		for (int i = 0; i < aggregateCount; i++) {
+			AggKind kind = bindings.groupLayout.outs[i].spec.kind;
+			if (kind == AggKind.SUM || kind == AggKind.AVG) {
+				hasNumericAggregate = true;
+				numericKinds[i] = kind;
+				numericSums[i] = new Literal[16];
+				numericErrors[i] = new boolean[16];
+				if (kind == AggKind.AVG) {
+					numericCounts[i] = new long[16];
+				}
+			}
+		}
+		// A generated traversal may change encounter order. Integer and decimal addition remain exact; floating-point
+		// values use the established control-flow fallback because their sequential rounding is order-sensitive.
+		this.numericContext = hasNumericAggregate ? new AggContext(source, false, true) : null;
 	}
 
 	@Override
@@ -130,53 +140,86 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	@Override
 	public boolean isNumeric(long id) {
 		if (id == UNKNOWN || id == NULL_CONTEXT_ID || codec == null) {
-			if (sumGuardArmed && id != UNKNOWN) {
-				sumSawNonNumeric = true;
-			}
 			return false;
 		}
 		if (ValueIds.isOrderedInteger(id)) {
 			return true;
 		}
 		LmdbNativeValueCodec.DecodedValue decoded = codec.decode(id);
-		boolean numeric = !decoded.error() && decoded.numeric();
-		if (sumGuardArmed && !numeric) {
-			sumSawNonNumeric = true;
-		}
-		return numeric;
+		return !decoded.error() && decoded.numeric();
 	}
 
 	@Override
 	public double doubleValue(long id) {
-		double result;
-		boolean integral;
 		if (ValueIds.isOrderedInteger(id)) {
-			result = ValueIds.orderedIntegerValue(id);
-			integral = true;
-		} else {
-			LmdbNativeValueCodec.DecodedValue decoded = codec.decode(id);
-			if (decoded.floatingValue() != null) {
-				result = decoded.floatingValue();
-				integral = false;
-			} else {
-				java.math.BigDecimal decimal = decoded.decimalValue();
-				result = decimal.doubleValue();
-				// SUM's result TYPE follows the input datatypes (xsd:integer stays integer; any decimal input
-				// promotes the result to xsd:decimal), so only the integer datatype family keeps the guard exact —
-				// an integral-valued xsd:decimal would still change the emitted literal's type.
-				integral = decoded.coreDatatype() instanceof org.eclipse.rdf4j.model.base.CoreDatatype.XSD
-						&& ((org.eclipse.rdf4j.model.base.CoreDatatype.XSD) decoded.coreDatatype())
-								.isIntegerDatatype()
-						&& decimal.stripTrailingZeros().scale() <= 0;
-			}
+			return ValueIds.orderedIntegerValue(id);
 		}
-		if (sumGuardArmed) {
-			sumInputs++;
-			sumMaxAbs = Math.max(sumMaxAbs, Math.abs(result));
-			if (!integral) {
-				sumSawNonInteger = true;
-			}
+		LmdbNativeValueCodec.DecodedValue decoded = codec.decode(id);
+		if (decoded.floatingValue() != null) {
+			return decoded.floatingValue();
 		}
-		return result;
+		return decoded.decimalValue().doubleValue();
+	}
+
+	@Override
+	public void accumulateNumeric(int aggregateId, int groupId, long valueId) {
+		requireNumericAccumulator(aggregateId, groupId);
+		ensureNumericCapacity(aggregateId, groupId);
+		if (numericErrors[aggregateId][groupId]) {
+			return;
+		}
+		Literal literal = AggState.numericLiteral(numericContext, valueId);
+		if (literal == null) {
+			numericErrors[aggregateId][groupId] = true;
+			return;
+		}
+		numericSums[aggregateId][groupId] = AggState.addNumeric(numericSums[aggregateId][groupId], literal);
+		if (numericKinds[aggregateId] == AggKind.AVG) {
+			numericCounts[aggregateId][groupId]++;
+		}
+	}
+
+	/**
+	 * Materializes one exact numeric aggregate. A null result represents SPARQL's type-error binding omission.
+	 */
+	Literal numericResult(int aggregateId, int groupId) {
+		requireNumericAccumulator(aggregateId, groupId);
+		if (groupId < numericErrors[aggregateId].length && numericErrors[aggregateId][groupId]) {
+			return null;
+		}
+		Literal sum = groupId < numericSums[aggregateId].length ? numericSums[aggregateId][groupId] : null;
+		if (numericKinds[aggregateId] == AggKind.SUM) {
+			return sum == null ? AggContext.INTEGER_ZERO : sum;
+		}
+		long count = groupId < numericCounts[aggregateId].length ? numericCounts[aggregateId][groupId] : 0L;
+		if (count == 0L) {
+			return AggContext.INTEGER_ZERO;
+		}
+		Literal size = SimpleValueFactory.getInstance().createLiteral(count);
+		return MathUtil.compute(sum == null ? AggContext.INTEGER_ZERO : sum, size, MathExpr.MathOp.DIVIDE);
+	}
+
+	private void requireNumericAccumulator(int aggregateId, int groupId) {
+		if (aggregateId < 0 || aggregateId >= numericKinds.length || numericKinds[aggregateId] == null) {
+			throw new IllegalArgumentException("aggregate " + aggregateId + " is not an exact numeric aggregate");
+		}
+		if (groupId < 0) {
+			throw new IllegalArgumentException("negative aggregate group ordinal: " + groupId);
+		}
+	}
+
+	private void ensureNumericCapacity(int aggregateId, int groupId) {
+		if (groupId < numericSums[aggregateId].length) {
+			return;
+		}
+		int capacity = numericSums[aggregateId].length;
+		while (capacity <= groupId) {
+			capacity = Math.multiplyExact(capacity, 2);
+		}
+		numericSums[aggregateId] = Arrays.copyOf(numericSums[aggregateId], capacity);
+		numericErrors[aggregateId] = Arrays.copyOf(numericErrors[aggregateId], capacity);
+		if (numericCounts[aggregateId] != null) {
+			numericCounts[aggregateId] = Arrays.copyOf(numericCounts[aggregateId], capacity);
+		}
 	}
 }

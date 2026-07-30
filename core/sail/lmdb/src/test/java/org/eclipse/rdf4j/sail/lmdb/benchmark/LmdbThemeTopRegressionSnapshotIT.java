@@ -478,8 +478,11 @@ class LmdbThemeTopRegressionSnapshotIT {
 					"BindingSetAssignment ([[optName=\"user7\"]",
 					"value=http://example.com/theme/social/name",
 					"value=http://example.com/theme/social/follows",
-					"value=http://example.com/theme/social/authored",
-					"plannedFilterPassRatio=0");
+					"value=http://example.com/theme/social/authored");
+			assertTrue(plan.contains("plannedFilterPassRatio=0") || plan.contains("plannedAccessRows=0"),
+					targetQuery.key()
+							+ " should retain explicit zero-cardinality pruning as a filter or access estimate:\n"
+							+ plan);
 			assertTrue(planHasBoundPredicateAccess(plan, "http://example.com/theme/social/follows"),
 					targetQuery.key() + " should use bound follows access:\n" + plan);
 			assertTrue(planHasBoundPredicateAccess(plan, "http://example.com/theme/social/authored"),
@@ -583,6 +586,8 @@ class LmdbThemeTopRegressionSnapshotIT {
 	private static List<String> socialMediaQ0FastShapeMismatches(String renderedQuery, String plan) {
 		List<String> mismatches = new ArrayList<>();
 		boolean combinedPairNameValues = renderedQuery.contains("VALUES (?u ?v ?optName)");
+		String optNameFilter = "FILTER (?optName IN (\"user0\", \"user1\", \"user2\"))";
+		boolean hasOptNameFilter = renderedQuery.contains(optNameFilter);
 		if (combinedPairNameValues) {
 			requireDoesNotContain(mismatches, renderedQuery,
 					"(<http://example.com/theme/social/user/0> <http://example.com/theme/social/user/0>",
@@ -595,9 +600,10 @@ class LmdbThemeTopRegressionSnapshotIT {
 			requireBefore(mismatches, renderedQuery, "?u <http://example.com/theme/social/follows> ?v .",
 					"?u <http://example.com/theme/social/name> ?optName .",
 					"name lookup should stay after the bounded follows lookup");
-			requireBefore(mismatches, renderedQuery, "?u <http://example.com/theme/social/name> ?optName .",
-					"FILTER (?optName IN (\"user0\", \"user1\", \"user2\"))",
-					"literal optName filter should stay after the name lookup");
+			if (hasOptNameFilter) {
+				requireBefore(mismatches, renderedQuery, "?u <http://example.com/theme/social/name> ?optName .",
+						optNameFilter, "literal optName filter should stay after the name lookup");
+			}
 		} else {
 			requireContains(mismatches, renderedQuery, "VALUES (?u ?v)",
 					"missing finite pair pruning prefix");
@@ -614,23 +620,29 @@ class LmdbThemeTopRegressionSnapshotIT {
 			requireBefore(mismatches, renderedQuery, "VALUES ?optName",
 					"?u <http://example.com/theme/social/name> ?optName .",
 					"optName VALUES should make the name lookup exact");
-			requireBefore(mismatches, renderedQuery, "VALUES ?optName",
-					"FILTER (?optName IN (\"user0\", \"user1\", \"user2\"))",
-					"optName VALUES should retain the literal filter");
+			if (hasOptNameFilter) {
+				requireBefore(mismatches, renderedQuery, "?u <http://example.com/theme/social/name> ?optName .",
+						optNameFilter, "literal optName filter should stay after the exact name lookup");
+			} else {
+				requireDoesNotContain(mismatches, renderedQuery, "OPTIONAL",
+						"exact name values without a residual filter should use a mandatory name lookup");
+			}
 		} else if (!combinedPairNameValues) {
 			requireBefore(mismatches, renderedQuery, "?u <http://example.com/theme/social/follows> ?v .",
 					"?u <http://example.com/theme/social/name> ?optName .",
 					"optional name lookup should stay after the bounded follows lookup");
 			requireBefore(mismatches, renderedQuery, "?u <http://example.com/theme/social/name> ?optName .",
-					"FILTER (?optName IN (\"user0\", \"user1\", \"user2\"))",
+					optNameFilter,
 					"literal optName filter should stay after the optional name lookup");
 			requireAnyPredicateHeaderContains(mismatches, plan, "http://example.com/theme/social/name",
 					"plannedLookupComponents=[S, P]",
 					"optional name lookup should use bound subject access when optName is filtered afterwards");
 		}
-		requireBefore(mismatches, renderedQuery, "FILTER (?optName IN (\"user0\", \"user1\", \"user2\"))",
-				"BIND(CONCAT(STR(?u), STR(?v)) AS ?pair)",
-				"literal optName filter should remain before projection");
+		if (hasOptNameFilter) {
+			requireBefore(mismatches, renderedQuery, optNameFilter,
+					"BIND(CONCAT(STR(?u), STR(?v)) AS ?pair)",
+					"literal optName filter should remain before projection");
+		}
 		requireBefore(mismatches, renderedQuery, "?u <http://example.com/theme/social/name> ?optName .",
 				"BIND(CONCAT(STR(?u), STR(?v)) AS ?pair)",
 				"pair projection should run after bounded follows/name lookups");
@@ -830,14 +842,17 @@ class LmdbThemeTopRegressionSnapshotIT {
 
 	private static List<String> trainQ8FastShapeMismatches(String renderedQuery, String plan) {
 		List<String> mismatches = new ArrayList<>();
+		String optNameFilter = "FILTER (?optName IN (\"Line 0\", \"Line 1\"))";
 		requireContains(mismatches, renderedQuery, "VALUES ?optName { \"Line 0\" \"Line 1\" }",
 				"missing finite line-name anchor");
 		requireBefore(mismatches, renderedQuery, "VALUES ?optName",
 				"?line <http://example.com/theme/train/name> ?optName .",
-				"literal optName filter should guard the line name lookup");
-		requireBefore(mismatches, renderedQuery, "FILTER (?optName IN (\"Line 0\", \"Line 1\"))",
-				"?s1 <http://example.com/theme/train/partOfLine> ?line .",
-				"retained optName filter should run before section fanout");
+				"finite optName values should guard the line name lookup");
+		if (renderedQuery.contains(optNameFilter)) {
+			requireBefore(mismatches, renderedQuery, optNameFilter,
+					"?s1 <http://example.com/theme/train/partOfLine> ?line .",
+					"retained optName filter should run before section fanout");
+		}
 		requireBefore(mismatches, renderedQuery, "?line <http://example.com/theme/train/name> ?optName .",
 				"?s1 <http://example.com/theme/train/partOfLine> ?line .",
 				"line name lookup should bind line before the first section lookup");
@@ -862,7 +877,8 @@ class LmdbThemeTopRegressionSnapshotIT {
 		requireBefore(mismatches, renderedQuery, "?s2 <http://example.com/theme/train/partOfLine> ?line .",
 				"FILTER EXISTS",
 				"bounded service/section lookups should run before the correlated operational-point EXISTS");
-		requirePlanAccess(mismatches, plan, "http://example.com/theme/train/name", "train name");
+		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/train/name",
+				"plannedLookupComponents=[P, O]", "train name should use the finite literal object domain");
 		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/train/partOfLine",
 				"plannedLookupComponents=[O]", "partOfLine should use bound line object access");
 		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/train/connectsOperationalPoint",
@@ -1058,15 +1074,18 @@ class LmdbThemeTopRegressionSnapshotIT {
 
 	private static List<String> libraryQ8FastShapeMismatches(String renderedQuery, String plan) {
 		List<String> mismatches = new ArrayList<>();
+		String optNameFilter = "FILTER (?optName IN (\"Member 1\", \"Member 2\", \"Member 3\"))";
 		requireContains(mismatches, renderedQuery,
 				"VALUES ?optName { \"Member 1\" \"Member 2\" \"Member 3\" }",
 				"missing finite member-name anchor");
-		requireContains(mismatches, renderedQuery,
-				"FILTER (?optName IN (\"Member 1\", \"Member 2\", \"Member 3\"))",
-				"missing retained member-name filter");
 		requireBefore(mismatches, renderedQuery, "VALUES ?optName",
 				"?member <http://example.com/theme/library/name> ?optName .",
 				"finite member-name values should guard the name lookup");
+		if (renderedQuery.contains(optNameFilter)) {
+			requireBefore(mismatches, renderedQuery, optNameFilter,
+					"?loan <http://example.com/theme/library/borrowedBy> ?member .",
+					"retained member-name filter should run before loan fanout");
+		}
 		requireBefore(mismatches, renderedQuery, "?member <http://example.com/theme/library/name> ?optName .",
 				"?loan <http://example.com/theme/library/borrowedBy> ?member .",
 				"name lookup should bind member before loan lookup");

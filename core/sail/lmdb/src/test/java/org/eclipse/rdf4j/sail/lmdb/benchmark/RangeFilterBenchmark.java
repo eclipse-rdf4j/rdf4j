@@ -45,10 +45,11 @@ import org.openjdk.jmh.annotations.Threads;
 import org.openjdk.jmh.annotations.Warmup;
 
 /**
- * Measures ordered-integer range pushdown against the generic evaluator over identical uniform data and query text.
+ * Measures native range-filter evaluation against the generic evaluator over identical uniform data and query text.
  * Each selectivity/mode pair is a separate method so the single-benchmark harness can target it directly. The default
  * two-million-statement fixture exceeds typical L2 capacity; {@link RangeState#inputRows} remains a JMH parameter for
- * larger acceptance runs.
+ * larger acceptance runs. The legacy CSR zone map no longer exists, so this benchmark verifies and measures the
+ * residual native filter instead of claiming range pushdown.
  *
  * <p>
  * Date windows are intentionally absent: plan 08 §2's versioned order-preserving temporal encoding is not yet
@@ -128,7 +129,7 @@ public class RangeFilterBenchmark {
 			queries = queries(inputRows);
 			expectedDigests = expectedDigests(inputRows);
 			System.setProperty(NATIVE_ENABLED, Boolean.toString(nativeEnabled()));
-			verifyPlanModes();
+			verifyEvaluationModes();
 		}
 
 		protected boolean nativeEnabled() {
@@ -172,15 +173,15 @@ public class RangeFilterBenchmark {
 			}
 		}
 
-		private void verifyPlanModes() {
+		private void verifyEvaluationModes() {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				for (Window window : Window.values()) {
 					String plan = connection.prepareTupleQuery(queries.get(window))
 							.explain(Explanation.Level.Optimized)
 							.toString();
-					boolean rangePlanned = plan.contains("range=posc");
-					if (rangePlanned != nativeEnabled()) {
-						throw new IllegalStateException(window + ": expected range=posc to be "
+					boolean nativePlanned = plan.contains("plannedExecutionEngine=lmdb-native");
+					if (nativePlanned != nativeEnabled()) {
+						throw new IllegalStateException(window + ": expected the native execution plan to be "
 								+ (nativeEnabled() ? "present" : "absent") + " in plan:\n" + plan);
 					}
 				}

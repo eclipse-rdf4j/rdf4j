@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.util.Map;
 
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -114,24 +115,28 @@ class LmdbNativeKernelLoweringTest {
 		}
 	}
 
-	/**
-	 * The guards that must survive: named-graph scoping and an ordered-scan promise carry meaning that lives in
-	 * PatternPlan.bind and in the consumer respectively, not in the scan, so neither may be lowered even with scans on.
-	 */
+	/** Named-graph scoping still lives in {@code PatternPlan.bind}, so a plain scan must not erase it. */
 	@Test
-	void scanLoweringRefusesGuardsWhoseMeaningIsNotInTheScan() {
+	void scanLoweringRefusesNamedGraphSemantics() {
 		MultiJoinPlan named = new MultiJoinPlan(new SlotPlan[] {
 				new PatternPlan(Term.slot(0), Term.slot(1), Term.slot(2), Term.unbound(),
 						ContextConstraint.UNRESTRICTED, true, 10D) },
 				new MaskedFilter[0]);
 		assertNull(lowerWithScans(named), "named-graph scoping must not be lowered to a plain scan");
+	}
 
+	/** An ordered pattern must retain its index-order promise when it is lowered to a kernel scan. */
+	@Test
+	void orderedPatternLowersToAnOrderedQuadScan() {
 		MultiJoinPlan ordered = new MultiJoinPlan(new SlotPlan[] {
 				new PatternPlan(Term.slot(0), Term.slot(1), Term.slot(2), Term.unbound(),
 						ContextConstraint.UNRESTRICTED, false,
 						org.eclipse.rdf4j.common.order.StatementOrder.S, "", 10D) },
 				new MaskedFilter[0]);
-		assertNull(lowerWithScans(ordered), "an ordered-scan promise must not be lowered to an unordered scan");
+		LmdbNativeKernelLowering.Lowered lowered = lowerWithScans(ordered);
+		assertNotNull(lowered, "an ordered-scan promise must be carried by the kernel scanner");
+		assertTrue(lowered.kernel.shapeKey().contains("SQ(s0,"), lowered.kernel.shapeKey());
+		assertArrayEquals(new StatementOrder[] { StatementOrder.S }, lowered.bindings.scanOrders);
 	}
 
 	@Test
@@ -466,6 +471,32 @@ class LmdbNativeKernelLoweringTest {
 	}
 
 	/**
+	 * A VALUES table joined on an outer variable is a membership filter, but its algebraic scope is still the branch
+	 * that contains it. In particular, VALUES inside a UNION inside OPTIONAL must not become a filter over the
+	 * OPTIONAL's left input.
+	 */
+	@Test
+	void boundValuesMembershipStaysInsideItsOptionalUnionBranch() {
+		SlotPlan anchor = pattern(Term.slot(0), Term.slot(1));
+		ValuesPlan values = new ValuesPlan(new ValuesRow[] {
+				new ValuesRow(new int[] { 0 }, new long[] { 100L }),
+				new ValuesRow(new int[] { 0 }, new long[] { 200L }) });
+		SlotPlan correlatedBranch = SlotPlan.join(values, pattern(Term.slot(0), Term.slot(2)));
+		SlotPlan independentBranch = pattern(Term.slot(2), Term.slot(3));
+		SlotPlan optional = new LeftJoinPlan(anchor, new UnionPlan(correlatedBranch, independentBranch));
+
+		LmdbNativeKernelLowering.Lowered lowered = lowerCountingWithUnions(optional, 1);
+		assertNotNull(lowered, "a bound VALUES table is a lowerable membership test");
+		String key = lowered.kernel.shapeKey();
+		int leftGroupStart = key.indexOf("lg[");
+		int leftGroupEnd = key.indexOf("];", leftGroupStart);
+		int membership = key.indexOf("in(v0");
+		assertTrue(leftGroupStart >= 0 && leftGroupEnd > leftGroupStart, "expected an OPTIONAL left group; key=" + key);
+		assertTrue(membership > leftGroupStart && membership < leftGroupEnd,
+				"the VALUES membership test must stay inside the OPTIONAL arm; key=" + key);
+	}
+
+	/**
 	 * A sticky (EXISTS-bearing) branch filter must still decline. Witness nodes are appended to the pipeline globally
 	 * by {@code pipeline.addAll(witnessNodes)}, i.e. after the union, so lowering one from inside a branch would apply
 	 * it to every branch's rows.
@@ -538,6 +569,83 @@ class LmdbNativeKernelLoweringTest {
 		String key = lowered.kernel.shapeKey();
 		assertTrue(key.contains("ex{"), "the EXISTS conjunct must lower to a witness; key=" + key);
 		assertTrue(key.contains("ne(v0,v2);"), "the comparison conjunct must lower to an id filter; key=" + key);
+	}
+
+	@Test
+	void aggregateWitnessJoinEnumeratesSingleVariableValues() {
+		StubSource source = new StubSource();
+		ValuesPlan values = new ValuesPlan(new ValuesRow[] {
+				new ValuesRow(new int[] { 3 }, new long[] { 100L }),
+				new ValuesRow(new int[] { 3 }, new long[] { 200L }) });
+		SlotPlan witness = new MultiJoinPlan(
+				new SlotPlan[] { values, pattern(Term.slot(1), Term.slot(3)) },
+				new MaskedFilter[0]);
+
+		LmdbNativeKernelLowering.Lowered lowered = lowerCountingWithSticky(source, new ExistsFilter(witness));
+
+		assertNotNull(lowered, "VALUES must be usable as a producer inside an EXISTS join");
+		String key = lowered.kernel.shapeKey();
+		assertTrue(key.contains("ex{ED(d0,k"), "the witness must enumerate its VALUES domain; key=" + key);
+		assertTrue(key.contains("C(a2,v1,v"), "the graph pattern must probe the enumerated value; key=" + key);
+		assertArrayEquals(new long[] { 100L, 200L }, lowered.bindings.keyDomains[0].literal);
+	}
+
+	@Test
+	void aggregateWitnessAcceptsDirectCorrelatedValuesWithDuplicates() {
+		StubSource source = new StubSource();
+		ValuesPlan values = new ValuesPlan(new ValuesRow[] {
+				new ValuesRow(new int[] { 1 }, new long[] { 100L }),
+				new ValuesRow(new int[] { 1 }, new long[] { 100L }),
+				new ValuesRow(new int[] { 1 }, new long[] { 200L }) });
+
+		LmdbNativeKernelLowering.Lowered lowered = lowerCountingWithSticky(source, new ExistsFilter(values));
+
+		assertNotNull(lowered, "duplicate VALUES rows do not change existential membership");
+		assertTrue(lowered.kernel.shapeKey().contains("ex{in(v1,"),
+				"a correlated VALUES witness must lower to membership; key=" + lowered.kernel.shapeKey());
+	}
+
+	@Test
+	void aggregateWitnessAcceptsACompleteMultiVariableValuesTable() {
+		StubSource source = new StubSource();
+		ValuesPlan values = new ValuesPlan(new ValuesRow[] {
+				new ValuesRow(new int[] { 1, 3 }, new long[] { 100L, 300L }),
+				new ValuesRow(new int[] { 1, 3 }, new long[] { 200L, 400L }) });
+
+		LmdbNativeKernelLowering.Lowered lowered = lowerCountingWithSticky(source, new ExistsFilter(values));
+
+		assertNotNull(lowered, "a complete VALUES table must lower as existential row alternatives");
+		String key = lowered.kernel.shapeKey();
+		assertTrue(key.contains("ex{u{["), "multiple VALUES rows must be witness alternatives; key=" + key);
+		assertTrue(key.contains("eq(v1,c"), "the correlated column must be checked per row; key=" + key);
+		assertTrue(key.contains("ba(c"), "the fresh column must be bound per row; key=" + key);
+	}
+
+	@Test
+	void aggregateWitnessTreatsAnEmptyValuesTableAsNoWitness() {
+		StubSource source = new StubSource();
+
+		LmdbNativeKernelLowering.Lowered lowered = lowerCountingWithSticky(source,
+				new ExistsFilter(new ValuesPlan(new ValuesRow[0])));
+
+		assertNotNull(lowered, "an empty VALUES table has a deterministic false existential result");
+		assertArrayEquals(new long[0], lowered.bindings.keyDomains[0].literal);
+		assertTrue(lowered.kernel.shapeKey().contains("ex{ED(d0,k"),
+				"enumerating an empty domain must produce no witness; key=" + lowered.kernel.shapeKey());
+	}
+
+	@Test
+	void aggregateWitnessDeclinesPartialValuesRowsBeforeAJoin() {
+		StubSource source = new StubSource();
+		ValuesPlan values = new ValuesPlan(new ValuesRow[] {
+				new ValuesRow(new int[] { 3 }, new long[] { 100L }),
+				new ValuesRow(new int[0], new long[0]) });
+		SlotPlan witness = new MultiJoinPlan(
+				new SlotPlan[] { values, pattern(Term.slot(1), Term.slot(3)) },
+				new MaskedFilter[0]);
+
+		assertNull(lowerCountingWithSticky(source, new ExistsFilter(witness)),
+				"UNDEF needs a row-specific unbound graph-pattern path, not a -1 adjacency probe");
 	}
 
 	/**

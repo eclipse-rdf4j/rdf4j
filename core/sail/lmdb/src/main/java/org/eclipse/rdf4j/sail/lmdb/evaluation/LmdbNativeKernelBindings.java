@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelScanner;
@@ -56,14 +57,12 @@ final class LmdbNativeKernelBindings {
 
 	// Aggregate-output encodings for KernelGroupLayout (plan 21).
 	static final int ENC_LONG_COUNT = 0;
-	static final int ENC_SUM_DOUBLE_BITS = 1;
+	static final int ENC_EXACT_NUMERIC = 1;
 	static final int ENC_VALUE_ID = 2;
-	/** AVG as two longs — sum bits then count — divided exactly at materialization. */
-	static final int ENC_AVG_PARTS = 3;
 
 	/** Longs this encoding occupies in the packed group row. */
 	static int encodingWidth(int encoding) {
-		return encoding == ENC_AVG_PARTS ? 2 : 1;
+		return 1;
 	}
 
 	/** One aggregate output as the group-row emitter must decode it. */
@@ -121,30 +120,45 @@ final class LmdbNativeKernelBindings {
 	final FilterHook[] filterHooks;
 	final int[] columnEngineSlots;
 	final List<MaskedFilter> residualFilters;
+	/** Bind-time order descriptor for each kernel scan site; null means the source's natural index choice. */
+	final StatementOrder[] scanOrders;
 	final KernelGroupLayout groupLayout; // null for row-side lowerings
-	final boolean hooksRequired; // outputs (min/max id order, SUM guard) need hooks even without filter hooks
-	final boolean sumGuard; // execution must arm the hooks' SUM exactness guard and discard on inexact
+	final boolean hooksRequired; // exact numeric and min/max outputs need hooks even without filter hooks
 	final int distinctExpected;
 
 	LmdbNativeKernelBindings(AdjacencyRequest[] adjacencies, long[] constants, int[] entrySlotIds,
 			DomainRequest[] keyDomains, FilterHook[] filterHooks, int[] columnEngineSlots,
 			List<MaskedFilter> residualFilters) {
 		this(adjacencies, constants, entrySlotIds, keyDomains, filterHooks, columnEngineSlots, residualFilters,
-				null, false, false, 16);
+				new StatementOrder[0], null, false, 16);
 	}
 
 	LmdbNativeKernelBindings(AdjacencyRequest[] adjacencies, long[] constants, int[] entrySlotIds,
 			DomainRequest[] keyDomains, FilterHook[] filterHooks, int[] columnEngineSlots,
-			List<MaskedFilter> residualFilters, KernelGroupLayout groupLayout, boolean hooksRequired,
-			boolean sumGuard) {
+			List<MaskedFilter> residualFilters, StatementOrder[] scanOrders) {
 		this(adjacencies, constants, entrySlotIds, keyDomains, filterHooks, columnEngineSlots, residualFilters,
-				groupLayout, hooksRequired, sumGuard, 16);
+				scanOrders, null, false, 16);
+	}
+
+	LmdbNativeKernelBindings(AdjacencyRequest[] adjacencies, long[] constants, int[] entrySlotIds,
+			DomainRequest[] keyDomains, FilterHook[] filterHooks, int[] columnEngineSlots,
+			List<MaskedFilter> residualFilters, KernelGroupLayout groupLayout, boolean hooksRequired) {
+		this(adjacencies, constants, entrySlotIds, keyDomains, filterHooks, columnEngineSlots, residualFilters,
+				new StatementOrder[0], groupLayout, hooksRequired, 16);
 	}
 
 	LmdbNativeKernelBindings(AdjacencyRequest[] adjacencies, long[] constants, int[] entrySlotIds,
 			DomainRequest[] keyDomains, FilterHook[] filterHooks, int[] columnEngineSlots,
 			List<MaskedFilter> residualFilters, KernelGroupLayout groupLayout, boolean hooksRequired,
-			boolean sumGuard, int distinctExpected) {
+			int distinctExpected) {
+		this(adjacencies, constants, entrySlotIds, keyDomains, filterHooks, columnEngineSlots, residualFilters,
+				new StatementOrder[0], groupLayout, hooksRequired, distinctExpected);
+	}
+
+	LmdbNativeKernelBindings(AdjacencyRequest[] adjacencies, long[] constants, int[] entrySlotIds,
+			DomainRequest[] keyDomains, FilterHook[] filterHooks, int[] columnEngineSlots,
+			List<MaskedFilter> residualFilters, StatementOrder[] scanOrders, KernelGroupLayout groupLayout,
+			boolean hooksRequired, int distinctExpected) {
 		this.adjacencies = adjacencies;
 		this.constants = constants;
 		this.entrySlotIds = entrySlotIds;
@@ -152,9 +166,9 @@ final class LmdbNativeKernelBindings {
 		this.filterHooks = filterHooks;
 		this.columnEngineSlots = columnEngineSlots;
 		this.residualFilters = residualFilters;
+		this.scanOrders = scanOrders;
 		this.groupLayout = groupLayout;
 		this.hooksRequired = hooksRequired;
-		this.sumGuard = sumGuard;
 		this.distinctExpected = distinctExpected;
 	}
 

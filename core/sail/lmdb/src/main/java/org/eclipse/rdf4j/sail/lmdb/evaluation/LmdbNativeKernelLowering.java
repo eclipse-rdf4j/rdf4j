@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
@@ -171,24 +172,31 @@ final class LmdbNativeKernelLowering {
 		}
 		Builder builder = new Builder(row, "agg:");
 		builder.preferScans = preferScans;
-		if (!builder.lowerJoinOperand(core, filters, row)) {
-			decline(declineTarget, builder.reason);
-			return null;
-		}
-		if (builder.joinOperands == 0) {
-			decline(declineTarget, "agg:no-children");
-			return null;
-		}
-		for (MaskedFilter masked : filters) {
-			if (!builder.lowerFilterStrict(masked)) {
+		if (core instanceof EmptyPlan) {
+			// Preserve empty global aggregate semantics inside the kernel. An empty domain is a real zero-row producer;
+			// dummy column mappings make aggregate/group references structurally valid, but no value can escape because
+			// the producer never invokes its continuation. Filters and MINUS arms above an empty input are unreachable.
+			builder.lowerEmptyAggregate(groupSlots, aggregates);
+		} else {
+			if (!builder.lowerJoinOperand(core, filters, row)) {
 				decline(declineTarget, builder.reason);
 				return null;
 			}
-		}
-		for (SlotPlan minusArm : minusArms) {
-			if (!builder.lowerMinusArm(minusArm)) {
-				decline(declineTarget, builder.reason);
+			if (builder.joinOperands == 0) {
+				decline(declineTarget, "agg:no-children");
 				return null;
+			}
+			for (MaskedFilter masked : filters) {
+				if (!builder.lowerFilterStrict(masked)) {
+					decline(declineTarget, builder.reason);
+					return null;
+				}
+			}
+			for (SlotPlan minusArm : minusArms) {
+				if (!builder.lowerMinusArm(minusArm)) {
+					decline(declineTarget, builder.reason);
+					return null;
+				}
 			}
 		}
 		Lowered lowered = builder.buildAggregate(groupSlots, aggregates,
@@ -298,6 +306,11 @@ final class LmdbNativeKernelLowering {
 		final List<List<Node>> nodesPerDepth = new ArrayList<>(); // nodes contributed by producer depth d
 		final List<Node> entryDepthFilters = new ArrayList<>(); // filters decidable before any producer
 		final List<List<Node>> filtersPerDepth = new ArrayList<>();
+		/**
+		 * Innermost lexical branch depth that filters may not escape. A condition depending only on an outer column
+		 * would otherwise be placed beside that column's producer, outside the UNION or OPTIONAL that owns it.
+		 */
+		int filterDepthFloor = -1;
 
 		final List<Long> constants = new ArrayList<>();
 		final List<Integer> entrySlotIds = new ArrayList<>();
@@ -375,21 +388,30 @@ final class LmdbNativeKernelLowering {
 		private boolean lowerOptionalGroup(SlotPlan arm) {
 			openDepth();
 			int homeDepth = nodesPerDepth.size() - 1;
-			int depthMark = nodesPerDepth.size();
 			int[] columnsBefore = slotColumn.clone();
 			long assuredBefore = assuredMask;
+			// Give the arm a lexical depth even when its first operation is only a guard over an outer column. This
+			// makes that guard harvestable instead of letting it escape beside the outer producer.
+			openDepth();
+			int depthMark = nodesPerDepth.size() - 1;
+			int previousFilterDepthFloor = filterDepthFloor;
+			filterDepthFloor = depthMark;
 			List<MaskedFilter> armFilters = new ArrayList<>(0);
-			if (!lowerJoinOperand(arm, armFilters, row, false)) {
-				return false;
+			boolean lowered;
+			try {
+				lowered = lowerJoinOperand(arm, armFilters, row, false)
+						&& lowerBranchFilters(armFilters, depthMark);
+			} finally {
+				filterDepthFloor = previousFilterDepthFloor;
 			}
-			if (!lowerBranchFilters(armFilters, depthMark)) {
+			if (!lowered) {
+				harvestDepths(depthMark);
 				return false;
 			}
 			List<Node> armNodes = harvestDepths(depthMark);
 			if (armNodes.isEmpty()) {
-				// Nothing opened a depth of its own — a bare BIND arm, say. There is no arm to make optional, and the
-				// nodes it did contribute have already gone into the group's home depth where they would run
-				// unconditionally, so this lowering cannot be completed.
+				// An OPTIONAL arm must contribute at least one guard or producer; otherwise there is no match signal
+				// for LeftGroup to distinguish from its null-extended row.
 				reason = reasonPrefix + "optional-arm-empty";
 				return false;
 			}
@@ -409,6 +431,7 @@ final class LmdbNativeKernelLowering {
 		final List<Integer> columnEngineSlots = new ArrayList<>();
 		final List<Integer> columnOrderedDomains = new ArrayList<>();
 		final List<MaskedFilter> residualFilters = new ArrayList<>();
+		final List<StatementOrder> scanOrders = new ArrayList<>();
 
 		final int[] slotColumn;
 		final int[] slotColumnDepth;
@@ -468,6 +491,11 @@ final class LmdbNativeKernelLowering {
 			return adjacencies.size() - 1;
 		}
 
+		private int scan(StatementOrder order) {
+			scanOrders.add(order);
+			return scanOrders.size() - 1;
+		}
+
 		/** Classifies a term as an available operand, or null when it is fresh (or unusable). */
 		private Operand operandOf(Term term) {
 			if (term.isConstant() && !term.hasSlot()) {
@@ -515,6 +543,32 @@ final class LmdbNativeKernelLowering {
 
 		/** Producers lowered out of the join tree so far, bounded by {@link #MAX_CHILDREN}. */
 		int joinOperands;
+
+		/**
+		 * Represents an aggregate over a statically empty input as enumeration of an empty bound domain. All referenced
+		 * slots may share one scratch column because the continuation is unreachable; the mappings exist only so the
+		 * aggregate terminal can be built and emit its global empty-group result.
+		 */
+		void lowerEmptyAggregate(int[] groupSlots, AggregateSpec[] aggregates) {
+			openDepth();
+			int column = scratchColumn();
+			keyDomains.add(new LmdbNativeKernelBindings.DomainRequest(new long[0]));
+			currentDepthNodes().add(new LmdbNativeKernelIr.EnumerateDomain(keyDomains.size() - 1, column));
+			joinOperands = 1;
+			for (int groupSlot : groupSlots) {
+				mapEmptySlot(groupSlot, column);
+			}
+			for (AggregateSpec aggregate : aggregates) {
+				mapEmptySlot(aggregate.slot, column);
+			}
+		}
+
+		private void mapEmptySlot(int slot, int column) {
+			if (slot >= 0 && slot < slotColumn.length) {
+				slotColumn[slot] = column;
+				slotColumnDepth[slot] = depth();
+			}
+		}
 
 		/**
 		 * Lowers one operand of an inner-join tree, collecting filters to be applied once every producer is in place.
@@ -667,16 +721,24 @@ final class LmdbNativeKernelLowering {
 				System.arraycopy(columnsBefore, 0, slotColumn, 0, slotColumn.length);
 				System.arraycopy(depthsBefore, 0, slotColumnDepth, 0, slotColumnDepth.length);
 				assuredMask = assuredBefore;
-				int depthMark = nodesPerDepth.size();
+				// A real branch depth is needed before lowering starts: a VALUES membership or FILTER over only outer
+				// columns is still branch-local even though none of its operands was produced in this branch.
+				openDepth();
+				int depthMark = nodesPerDepth.size() - 1;
+				int previousFilterDepthFloor = filterDepthFloor;
+				filterDepthFloor = depthMark;
 				// A branch's own filters must be lowered INSIDE the branch — applying them after the union would
 				// filter the other branch's rows too — so they are collected separately and lowered here, while this
 				// branch's depths are still open and `harvestDepths` will therefore collect them with it.
 				List<MaskedFilter> branchFilters = new ArrayList<>(0);
-				if (!lowerJoinOperand(arm, branchFilters, row, false)) {
-					harvestDepths(depthMark);
-					return false;
+				boolean lowered;
+				try {
+					lowered = lowerJoinOperand(arm, branchFilters, row, false)
+							&& lowerBranchFilters(branchFilters, depthMark);
+				} finally {
+					filterDepthFloor = previousFilterDepthFloor;
 				}
-				if (!lowerBranchFilters(branchFilters, depthMark)) {
+				if (!lowered) {
 					harvestDepths(depthMark);
 					return false;
 				}
@@ -887,7 +949,7 @@ final class LmdbNativeKernelLowering {
 				int adj = adjacency(step.predicate, true, minHops == 1);
 				int startColumn = newColumn(path.subjSlot);
 				if (minHops == 0) {
-					currentDepthNodes().add(new LmdbNativeKernelIr.EnumerateTerms(scanCount++, startColumn));
+					currentDepthNodes().add(new LmdbNativeKernelIr.EnumerateTerms(scan(null), startColumn));
 				} else {
 					currentDepthNodes().add(new LmdbNativeKernelIr.EnumerateAdjKeys(adj, startColumn, -1));
 				}
@@ -925,8 +987,11 @@ final class LmdbNativeKernelLowering {
 				return false;
 			}
 			// An ordered scan hint is a promise the consumer may rely on (ORDER BY satisfied by index order,
-			// merge-join inputs): the kernel enumerates CSR order, which need not match — decline.
+			// merge-join inputs). Adjacency order is not enough, so preserve the promise through an ordered scanner.
 			if (pattern.statementOrder != null) {
+				if (lowerPatternAsScan(pattern)) {
+					return true;
+				}
 				reason = "pattern-ordered-scan";
 				return false;
 			}
@@ -1008,7 +1073,7 @@ final class LmdbNativeKernelLowering {
 				return false;
 			}
 			if (pattern.contexts.isFixed() || pattern.c.isConstant() || pattern.s.bindConstant
-					|| pattern.o.bindConstant || pattern.p.bindConstant || pattern.statementOrder != null) {
+					|| pattern.o.bindConstant || pattern.p.bindConstant) {
 				return false;
 			}
 			// A named-graph scope is only expressible when the context is projected: the guard below is what excludes
@@ -1042,7 +1107,7 @@ final class LmdbNativeKernelLowering {
 			if (pattern.s.hasSlot()) {
 				assuredMask |= 1L << pattern.s.slot;
 			}
-			currentDepthNodes().add(new LmdbNativeKernelIr.ScanQuad(scanCount++, terms, outCols));
+			currentDepthNodes().add(new LmdbNativeKernelIr.ScanQuad(scan(pattern.statementOrder), terms, outCols));
 			// The equality guards belong with the scan, at the same depth, so they run per scanned quad.
 			currentDepthNodes().addAll(repeats);
 			if (pattern.namedContextScope) {
@@ -1339,19 +1404,17 @@ final class LmdbNativeKernelLowering {
 		}
 
 		private void placeFilter(Node filterNode, int filterDepth) {
-			if (filterDepth < 0) {
+			int placementDepth = Math.max(filterDepth, filterDepthFloor);
+			if (placementDepth < 0) {
 				entryDepthFilters.add(filterNode);
 			} else {
-				filtersPerDepth.get(filterDepth).add(filterNode);
+				filtersPerDepth.get(placementDepth).add(filterNode);
 			}
 		}
 
 		// ------------------------------------------------------------------
 		// Aggregate-side strict filters and witness sub-pipelines (plan 21)
 		// ------------------------------------------------------------------
-
-		/** Number of distinct LMDB scan sites this kernel opens; each gets its own probe at runtime. */
-		int scanCount;
 
 		final List<Node> witnessNodes = new ArrayList<>();
 		int scratchColumns;
@@ -1426,6 +1489,10 @@ final class LmdbNativeKernelLowering {
 					}
 				} else if (sub instanceof MultiValuePatternPlan) {
 					if (!lowerWitnessMultiValue((MultiValuePatternPlan) sub, witnessCols, pipeline)) {
+						return false;
+					}
+				} else if (sub instanceof ValuesPlan) {
+					if (!lowerWitnessValues((ValuesPlan) sub, witnessCols, pipeline)) {
 						return false;
 					}
 				} else if (sub instanceof MultiJoinPlan) {
@@ -1512,32 +1579,46 @@ final class LmdbNativeKernelLowering {
 		}
 
 		/**
-		 * Lowers a witness join bag with greedy connectivity ordering: the compiler's derived order is planned for the
-		 * uncorrelated case (entry mask 0), so a correlated pattern may sit behind an exists-local one — pick, on each
-		 * round, any remaining pattern with an available endpoint instead.
+		 * Lowers a witness join bag with greedy dependency ordering. The compiler's derived order is planned for the
+		 * uncorrelated case (entry mask 0), so a correlated pattern may sit behind an exists-local producer. On each
+		 * round, pick the first child whose inputs are available: a VALUES/folded-IN producer is always ready, while a
+		 * graph pattern needs one available endpoint.
 		 */
 		private boolean lowerWitnessJoin(MultiJoinPlan subJoin, java.util.Map<Integer, Integer> witnessCols,
 				List<Node> pipeline) {
-			List<PatternPlan> remaining = new ArrayList<>();
+			List<SlotPlan> remaining = new ArrayList<>();
 			for (SlotPlan child : subJoin.derivedPlan(0L).order) {
-				if (!(child instanceof PatternPlan)) {
+				if (!(child instanceof PatternPlan) && !(child instanceof MultiValuePatternPlan)
+						&& !(child instanceof ValuesPlan)) {
 					reason = "agg:witness-child:" + child.getClass().getSimpleName();
 					return false;
 				}
-				remaining.add((PatternPlan) child);
+				remaining.add(child);
 			}
 			while (!remaining.isEmpty()) {
 				boolean progressed = false;
 				for (int i = 0; i < remaining.size(); i++) {
-					PatternPlan candidate = remaining.get(i);
-					if (witnessPatternCorrelated(candidate, witnessCols)) {
-						if (!lowerWitnessPatternPlan(candidate, witnessCols, pipeline)) {
+					SlotPlan candidate = remaining.get(i);
+					if (candidate instanceof ValuesPlan) {
+						if (!lowerWitnessValues((ValuesPlan) candidate, witnessCols, pipeline)) {
 							return false;
 						}
-						remaining.remove(i);
-						progressed = true;
-						break;
+					} else if (candidate instanceof MultiValuePatternPlan) {
+						if (!lowerWitnessMultiValue((MultiValuePatternPlan) candidate, witnessCols, pipeline)) {
+							return false;
+						}
+					} else {
+						PatternPlan pattern = (PatternPlan) candidate;
+						if (!witnessPatternCorrelated(pattern, witnessCols)) {
+							continue;
+						}
+						if (!lowerWitnessPatternPlan(pattern, witnessCols, pipeline)) {
+							return false;
+						}
 					}
+					remaining.remove(i);
+					progressed = true;
+					break;
 				}
 				if (!progressed) {
 					reason = "agg:witness-uncorrelated";
@@ -1550,6 +1631,124 @@ final class LmdbNativeKernelLowering {
 				}
 			}
 			return true;
+		}
+
+		/**
+		 * An inline VALUES table inside EXISTS.
+		 *
+		 * Existential evaluation is set-like: repeated rows do not change whether a witness exists. That lets a
+		 * single-column table use a domain enumeration when the slot is fresh and a membership guard when it is
+		 * correlated. A complete multi-column table becomes a union of row alternatives; each alternative checks
+		 * correlated columns and binds fresh witness-local columns.
+		 *
+		 * Partial rows are deliberately refused when the table participates in a larger witness join. A downstream
+		 * graph pattern must treat an UNDEF variable as fresh for that row, whereas the adjacency IR chooses bound vs
+		 * fresh statically. Treating the NULL sentinel as a lookup key would silently turn a wildcard into no match.
+		 */
+		private boolean lowerWitnessValues(ValuesPlan plan, java.util.Map<Integer, Integer> witnessCols,
+				List<Node> pipeline) {
+			if (plan.rows.length == 0) {
+				keyDomains.add(new LmdbNativeKernelBindings.DomainRequest(new long[0]));
+				pipeline.add(new LmdbNativeKernelIr.EnumerateDomain(keyDomains.size() - 1, scratchColumn()));
+				return true;
+			}
+			if (!plan.bindsAllSlotsEveryRow) {
+				reason = "agg:witness-values-partial";
+				return false;
+			}
+			long produced = plan.producedMask();
+			int variables = Long.bitCount(produced);
+			if (variables == 0) {
+				// One or more all-UNDEF rows are one unconditional existential witness.
+				pipeline.add(new LmdbNativeKernelIr.EnumerateEntry());
+				return true;
+			}
+			if (plan.rows.length > MAX_VALUES_TABLE_ROWS || variables > MAX_HOOK_ARGS * 2) {
+				reason = "agg:witness-values-shape";
+				return false;
+			}
+
+			int[] slots = new int[variables];
+			Operand[] correlated = new Operand[variables];
+			int[] localColumns = new int[variables];
+			java.util.Arrays.fill(localColumns, -1);
+			int variable = 0;
+			for (int slot = 0; slot < 64; slot++) {
+				if ((produced >>> slot & 1L) == 0L) {
+					continue;
+				}
+				slots[variable] = slot;
+				Integer witnessLocal = witnessCols.get(slot);
+				Operand bound = witnessLocal != null ? Operand.col(witnessLocal) : slotOperand(slot);
+				if (bound != null) {
+					if (operandMaybeNull(bound)) {
+						reason = "agg:witness-values-slot-optional";
+						return false;
+					}
+					correlated[variable] = bound;
+				} else {
+					int column = scratchColumn();
+					localColumns[variable] = column;
+					witnessCols.put(slot, column);
+				}
+				variable++;
+			}
+
+			if (variables == 1) {
+				long[] domain = new long[plan.rows.length];
+				for (int row = 0; row < plan.rows.length; row++) {
+					domain[row] = witnessValue(plan.rows[row], slots[0]);
+					if (domain[row] == LmdbNativeAggregateCompiler.UNKNOWN) {
+						reason = "agg:witness-values-missing-binding";
+						return false;
+					}
+				}
+				if (correlated[0] == null) {
+					keyDomains.add(new LmdbNativeKernelBindings.DomainRequest(domain));
+					pipeline.add(new LmdbNativeKernelIr.EnumerateDomain(keyDomains.size() - 1, localColumns[0]));
+				} else {
+					int[] constants = new int[domain.length];
+					for (int i = 0; i < domain.length; i++) {
+						constants[i] = constantIndex(domain[i]);
+					}
+					pipeline.add(new LmdbNativeKernelIr.FilterInConstants(correlated[0], constants));
+				}
+				return true;
+			}
+
+			List<List<Node>> branches = new ArrayList<>(plan.rows.length);
+			for (ValuesRow row : plan.rows) {
+				List<Node> branch = new ArrayList<>(variables);
+				for (int i = 0; i < variables; i++) {
+					long value = witnessValue(row, slots[i]);
+					if (value == LmdbNativeAggregateCompiler.UNKNOWN) {
+						reason = "agg:witness-values-missing-binding";
+						return false;
+					}
+					Operand constant = Operand.constant(constantIndex(value));
+					if (correlated[i] != null) {
+						branch.add(new LmdbNativeKernelIr.FilterCompareId(false, correlated[i], constant));
+					} else {
+						branch.add(new LmdbNativeKernelIr.BindAlias(constant, localColumns[i]));
+					}
+				}
+				branches.add(branch);
+			}
+			if (branches.size() == 1) {
+				pipeline.addAll(branches.get(0));
+			} else {
+				pipeline.add(new LmdbNativeKernelIr.Union(branches));
+			}
+			return true;
+		}
+
+		private static long witnessValue(ValuesRow row, int slot) {
+			for (int i = 0; i < row.slots.length; i++) {
+				if (row.slots[i] == slot) {
+					return row.values[i];
+				}
+			}
+			return LmdbNativeAggregateCompiler.UNKNOWN;
 		}
 
 		/** True when at least one endpoint of the pattern is already available (probe-able) in this witness. */
@@ -1814,7 +2013,6 @@ final class LmdbNativeKernelLowering {
 			LmdbNativeKernelIr.AggregateOutput[] outputs = new LmdbNativeKernelIr.AggregateOutput[aggregates.length];
 			LmdbNativeKernelBindings.AggOut[] outs = new LmdbNativeKernelBindings.AggOut[aggregates.length];
 			boolean hooksRequired = false;
-			boolean sumGuard = false;
 			for (int i = 0; i < aggregates.length; i++) {
 				AggregateSpec spec = aggregates[i];
 				// COUNT over something that is never unbound — COUNT(*) or COUNT(<constant>) — contributes exactly one
@@ -1855,9 +2053,8 @@ final class LmdbNativeKernelLowering {
 					}
 					outputs[i] = LmdbNativeKernelIr.AggregateOutput.sum(col);
 					outs[i] = new LmdbNativeKernelBindings.AggOut(spec,
-							LmdbNativeKernelBindings.ENC_SUM_DOUBLE_BITS);
+							LmdbNativeKernelBindings.ENC_EXACT_NUMERIC);
 					hooksRequired = true;
-					sumGuard = true;
 					break;
 				case MIN:
 					outputs[i] = LmdbNativeKernelIr.AggregateOutput.minId(col);
@@ -1877,13 +2074,9 @@ final class LmdbNativeKernelLowering {
 						return null;
 					}
 					outputs[i] = LmdbNativeKernelIr.AggregateOutput.avg(col);
-					outs[i] = new LmdbNativeKernelBindings.AggOut(spec, LmdbNativeKernelBindings.ENC_AVG_PARTS);
+					outs[i] = new LmdbNativeKernelBindings.AggOut(spec,
+							LmdbNativeKernelBindings.ENC_EXACT_NUMERIC);
 					hooksRequired = true;
-					// Same guard as SUM, and needed for the same reason plus one more: the emitted accumulator is a
-					// double, so an inexact input makes the sum wrong, and `kernelGroupRow` additionally reconstructs
-					// that sum as an integer literal to divide exactly. Both steps are only valid while every input was
-					// an exact integer, which is precisely what `hooks.sumsExact()` certifies.
-					sumGuard = true;
 					break;
 				default:
 					reason = "agg:" + spec.kind;
@@ -1919,8 +2112,9 @@ final class LmdbNativeKernelLowering {
 					adjacencies.toArray(new LmdbNativeKernelBindings.AdjacencyRequest[0]), constantArray, entryArray,
 					keyDomains.toArray(new LmdbNativeKernelBindings.DomainRequest[0]),
 					filterHooks.toArray(new LmdbNativeKernelBindings.FilterHook[0]), columnArray, residualFilters,
+					scanOrders.toArray(new StatementOrder[0]),
 					new LmdbNativeKernelBindings.KernelGroupLayout(groupSlots.clone(), outs), hooksRequired,
-					sumGuard, distinctExpected);
+					distinctExpected);
 			return new Lowered(kernel, bindings);
 		}
 
@@ -1959,7 +2153,8 @@ final class LmdbNativeKernelLowering {
 			LmdbNativeKernelBindings bindings = new LmdbNativeKernelBindings(
 					adjacencies.toArray(new LmdbNativeKernelBindings.AdjacencyRequest[0]), constantArray, entryArray,
 					keyDomains.toArray(new LmdbNativeKernelBindings.DomainRequest[0]),
-					filterHooks.toArray(new LmdbNativeKernelBindings.FilterHook[0]), columnArray, residualFilters);
+					filterHooks.toArray(new LmdbNativeKernelBindings.FilterHook[0]), columnArray, residualFilters,
+					scanOrders.toArray(new StatementOrder[0]));
 			return new Lowered(kernel, bindings);
 		}
 	}

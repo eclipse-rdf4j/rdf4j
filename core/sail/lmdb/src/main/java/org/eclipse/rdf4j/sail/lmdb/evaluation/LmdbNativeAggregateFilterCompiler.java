@@ -360,14 +360,11 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 	}
 
 	NativeBooleanFilter compileBoolean(ValueExpr expr, long assuredMask) {
-		// EXISTS wrappers are exempt from the synthetic-var short-circuit (plan 22, Step 0): the guard's purpose —
-		// never raw-id-compare a plan-local synthetic id against store ids — is enforced at every leaf compiler,
-		// and expression leaves referencing synthetic vars inside the EXISTS body still fall back to per-row
-		// generic evaluation within the compiled sub-plan. Poisoning the whole EXISTS to an unintrospectable
-		// generic lambda was coarser than that justification and blocked whole-stage kernel lowering.
-		boolean existsRoot = expr instanceof Exists
-				|| (expr instanceof Not && ((Not) expr).getArg() instanceof Exists);
-		if (!existsRoot && !syntheticVarNames.isEmpty()
+		// EXISTS-bearing expressions are exempt from the synthetic-var short-circuit (plan 22, Step 0): the guard's
+		// purpose — never raw-id-compare a plan-local synthetic id against store ids — is enforced recursively at every
+		// non-EXISTS leaf compiler. Exempting only an EXISTS at the root poisoned a surrounding AND/OR into one
+		// unintrospectable generic predicate, hiding both its ordinary local conditions and its witness sub-plan.
+		if (!containsExists(expr) && !syntheticVarNames.isEmpty()
 				&& !Collections.disjoint(VarNameCollector.process(expr), syntheticVarNames)) {
 			// raw-id shortcuts (IN, sameTerm, = against constants) must never compare a plan-local
 			// synthetic id against a real store id; the generic path materializes values instead
@@ -499,10 +496,26 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			// a condition that fails to precompile (e.g. a constant sub-expression that always raises a
 			// type error) can never accept a row; the generic engine folds it to constant-false the same
 			// way in FilterIterator.supply instead of surfacing the error at evaluate() time
-			return row -> false;
+			return new GenericBooleanFilter(bindings -> false, 0L);
 		}
 		Predicate<BindingSet> predicate = step.asPredicate();
-		return row -> predicate.test(row.view);
+		return new GenericBooleanFilter(predicate, genericReadMask(expr));
+	}
+
+	/**
+	 * Exact fragment-local slot mask for a generic expression, or {@code -1} when it reads a name owned by an outer
+	 * fragment. Constants have mask zero and are safe to call as entry-depth hooks.
+	 */
+	private long genericReadMask(ValueExpr expr) {
+		long mask = 0L;
+		for (String name : VarNameCollector.process(expr)) {
+			Integer slot = slots.get(name);
+			if (slot == null || slot < 0 || slot >= Long.SIZE) {
+				return -1L;
+			}
+			mask |= 1L << slot;
+		}
+		return mask;
 	}
 
 	/**

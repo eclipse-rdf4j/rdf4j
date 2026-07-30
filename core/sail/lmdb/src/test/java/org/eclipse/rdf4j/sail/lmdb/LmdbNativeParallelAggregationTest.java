@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -58,6 +59,8 @@ public class LmdbNativeParallelAggregationTest {
 	private static final String MAX_TASKS_FLAG = "rdf4j.lmdb.parallel.maxTasks";
 	private static final String MERGE_FLAG = "rdf4j.lmdb.chunkPipeline.merge.enabled";
 	private static final String EXTERNAL_ROOT_CANDIDATE_FLAG = "rdf4j.lmdb.chunkPipeline.externalRoot.experimental";
+	private static final String COST_CALIBRATION_FLAG = "rdf4j.lmdb.costCalibration.enabled";
+	private static final String COST_EXPLORATION_FLAG = "rdf4j.lmdb.costCalibration.explore";
 	private static final String COUNTING_TRUE_FUNCTION = "urn:rdf4j:test:lmdb:counting-true";
 
 	@TempDir
@@ -69,11 +72,17 @@ public class LmdbNativeParallelAggregationTest {
 	@BeforeEach
 	public void setUp() {
 		previousProperties = snapshotProperties(NATIVE_FLAG, PARALLEL_FLAG, THRESHOLD_FLAG, THREADS_FLAG,
-				MAX_TASKS_FLAG, MERGE_FLAG, EXTERNAL_ROOT_CANDIDATE_FLAG);
+				MAX_TASKS_FLAG, MERGE_FLAG, EXTERNAL_ROOT_CANDIDATE_FLAG, COST_CALIBRATION_FLAG,
+				COST_EXPLORATION_FLAG);
 		System.setProperty(THRESHOLD_FLAG, "0");
 		System.setProperty(THREADS_FLAG, "4");
 		System.setProperty(MAX_TASKS_FLAG, "4");
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		System.setProperty(COST_CALIBRATION_FLAG, "false");
+		System.setProperty(COST_EXPLORATION_FLAG, "false");
+		LmdbNativeCostCalibration.reset();
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
+				.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
+		repository = new SailRepository(new LmdbStore(dataDir, config));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			IRI p1 = vf.createIRI(EX, "p1");
@@ -113,6 +122,7 @@ public class LmdbNativeParallelAggregationTest {
 				repository.shutDown();
 			}
 		} finally {
+			LmdbNativeCostCalibration.reset();
 			restoreProperties(previousProperties);
 		}
 	}

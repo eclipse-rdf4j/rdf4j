@@ -889,22 +889,23 @@ final class LmdbAdjacencyRunCodec {
 			int contextWidth = Byte.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U8, blockAt + 2));
 			long neighborBase = cursor.segment.get(LmdbAdjacencyArena.U64_LE, blockAt + 4);
 			long neighborLanesAt = blockAt + (cursor.contextsPresent ? 20 : 12);
-			long contextBase = cursor.contextsPresent
-					? cursor.segment.get(LmdbAdjacencyArena.U64_LE, blockAt + 12)
-					: 0;
-			long contextLanesAt = neighborLanesAt + packedBytes(lanes, neighborWidth);
-			for (int i = 0; i < take; i++) {
-				int currentLane = lane + i;
-				if (neighborTarget != null) {
-					neighborTarget[neighborOffset + output + i] = neighborBase
-							+ readLane(cursor.segment, neighborLanesAt, currentLane, neighborWidth);
-				}
-				if (contextTarget != null) {
-					long contextOrdinal = cursor.contextsPresent
-							? contextBase + readLane(cursor.segment, contextLanesAt, currentLane, contextWidth)
-							: 0;
-					contextTarget[contextOffset + output + i] = contextOrdinal == 0 ? 0
-							: contexts.rawForOrdinal(contextOrdinal);
+			if (neighborTarget != null) {
+				copyPackedLanes(cursor.segment, neighborLanesAt, lane, take, neighborWidth, neighborBase,
+						neighborTarget, neighborOffset + output);
+			}
+			if (contextTarget != null) {
+				if (!cursor.contextsPresent) {
+					Arrays.fill(contextTarget, contextOffset + output, contextOffset + output + take, 0L);
+				} else {
+					long contextBase = cursor.segment.get(LmdbAdjacencyArena.U64_LE, blockAt + 12);
+					long contextLanesAt = neighborLanesAt + packedBytes(lanes, neighborWidth);
+					copyPackedLanes(cursor.segment, contextLanesAt, lane, take, contextWidth, contextBase,
+							contextTarget, contextOffset + output);
+					for (int i = 0; i < take; i++) {
+						int target = contextOffset + output + i;
+						long contextOrdinal = contextTarget[target];
+						contextTarget[target] = contextOrdinal == 0 ? 0 : contexts.rawForOrdinal(contextOrdinal);
+					}
 				}
 			}
 			ordinal += take;
@@ -1054,6 +1055,173 @@ final class LmdbAdjacencyRunCodec {
 			value |= slice.get(LmdbAdjacencyArena.U64_LE, lanesAt + (wordIndex + 1) * 8) << (64 - bitOffset);
 		}
 		return width == 64 ? value : value & ((1L << width) - 1);
+	}
+
+	/**
+	 * Decodes one contiguous range while advancing a packed-bit cursor. Each backing word is loaded once instead of
+	 * recomputing and rereading its address for every lane.
+	 */
+	private static void copyPackedLanes(MemorySegment slice, long lanesAt, int fromLane, int count, int width,
+			long base, long[] target, int targetOffset) {
+		if (width == 0) {
+			Arrays.fill(target, targetOffset, targetOffset + count, base);
+			return;
+		}
+		if (width == Byte.SIZE) {
+			copyByteLanes(slice, lanesAt, fromLane, count, base, target, targetOffset);
+			return;
+		}
+		while (width == 15 && (fromLane & (Long.SIZE - 1)) == 0 && count >= Long.SIZE) {
+			copyFifteenBitLanes(slice, lanesAt + (long) fromLane * 15 / Byte.SIZE, base, target, targetOffset);
+			fromLane += Long.SIZE;
+			count -= Long.SIZE;
+			targetOffset += Long.SIZE;
+		}
+		if (count == 0) {
+			return;
+		}
+		long bitPosition = (long) fromLane * width;
+		long wordIndex = bitPosition >>> 6;
+		int bitOffset = (int) (bitPosition & (Long.SIZE - 1));
+		long word = slice.get(LmdbAdjacencyArena.U64_LE, lanesAt + wordIndex * Long.BYTES);
+		long mask = width == Long.SIZE ? -1L : (1L << width) - 1;
+		for (int i = 0; i < count; i++) {
+			long value = word >>> bitOffset;
+			int nextOffset = bitOffset + width;
+			if (nextOffset > Long.SIZE) {
+				word = slice.get(LmdbAdjacencyArena.U64_LE, lanesAt + ++wordIndex * Long.BYTES);
+				value |= word << (Long.SIZE - bitOffset);
+				bitOffset = nextOffset - Long.SIZE;
+			} else if (nextOffset == Long.SIZE) {
+				bitOffset = 0;
+				if (i + 1 < count) {
+					word = slice.get(LmdbAdjacencyArena.U64_LE, lanesAt + ++wordIndex * Long.BYTES);
+				}
+			} else {
+				bitOffset = nextOffset;
+			}
+			target[targetOffset + i] = base + (value & mask);
+		}
+	}
+
+	/**
+	 * Decodes 64 aligned 15-bit lanes from exactly 15 words. Reference ids reserve seven low type bits, making 15-bit
+	 * block deltas common when a 128-edge block spans fewer than 256 adjacent value-store ids.
+	 */
+	private static void copyFifteenBitLanes(MemorySegment slice, long lanesAt, long base, long[] target,
+			int targetOffset) {
+		long word0 = slice.get(LmdbAdjacencyArena.U64_LE, lanesAt);
+		long word1 = slice.get(LmdbAdjacencyArena.U64_LE, lanesAt + 8);
+		long word2 = slice.get(LmdbAdjacencyArena.U64_LE, lanesAt + 16);
+		long word3 = slice.get(LmdbAdjacencyArena.U64_LE, lanesAt + 24);
+		long word4 = slice.get(LmdbAdjacencyArena.U64_LE, lanesAt + 32);
+		long word5 = slice.get(LmdbAdjacencyArena.U64_LE, lanesAt + 40);
+		long word6 = slice.get(LmdbAdjacencyArena.U64_LE, lanesAt + 48);
+		long word7 = slice.get(LmdbAdjacencyArena.U64_LE, lanesAt + 56);
+		long word8 = slice.get(LmdbAdjacencyArena.U64_LE, lanesAt + 64);
+		long word9 = slice.get(LmdbAdjacencyArena.U64_LE, lanesAt + 72);
+		long word10 = slice.get(LmdbAdjacencyArena.U64_LE, lanesAt + 80);
+		long word11 = slice.get(LmdbAdjacencyArena.U64_LE, lanesAt + 88);
+		long word12 = slice.get(LmdbAdjacencyArena.U64_LE, lanesAt + 96);
+		long word13 = slice.get(LmdbAdjacencyArena.U64_LE, lanesAt + 104);
+		long word14 = slice.get(LmdbAdjacencyArena.U64_LE, lanesAt + 112);
+
+		target[targetOffset] = base + (word0 & 0x7FFFL);
+		target[targetOffset + 1] = base + ((word0 >>> 15) & 0x7FFFL);
+		target[targetOffset + 2] = base + ((word0 >>> 30) & 0x7FFFL);
+		target[targetOffset + 3] = base + ((word0 >>> 45) & 0x7FFFL);
+		target[targetOffset + 4] = base + (((word0 >>> 60) | (word1 << 4)) & 0x7FFFL);
+		target[targetOffset + 5] = base + ((word1 >>> 11) & 0x7FFFL);
+		target[targetOffset + 6] = base + ((word1 >>> 26) & 0x7FFFL);
+		target[targetOffset + 7] = base + ((word1 >>> 41) & 0x7FFFL);
+		target[targetOffset + 8] = base + (((word1 >>> 56) | (word2 << 8)) & 0x7FFFL);
+		target[targetOffset + 9] = base + ((word2 >>> 7) & 0x7FFFL);
+		target[targetOffset + 10] = base + ((word2 >>> 22) & 0x7FFFL);
+		target[targetOffset + 11] = base + ((word2 >>> 37) & 0x7FFFL);
+		target[targetOffset + 12] = base + (((word2 >>> 52) | (word3 << 12)) & 0x7FFFL);
+		target[targetOffset + 13] = base + ((word3 >>> 3) & 0x7FFFL);
+		target[targetOffset + 14] = base + ((word3 >>> 18) & 0x7FFFL);
+		target[targetOffset + 15] = base + ((word3 >>> 33) & 0x7FFFL);
+		target[targetOffset + 16] = base + ((word3 >>> 48) & 0x7FFFL);
+		target[targetOffset + 17] = base + (((word3 >>> 63) | (word4 << 1)) & 0x7FFFL);
+		target[targetOffset + 18] = base + ((word4 >>> 14) & 0x7FFFL);
+		target[targetOffset + 19] = base + ((word4 >>> 29) & 0x7FFFL);
+		target[targetOffset + 20] = base + ((word4 >>> 44) & 0x7FFFL);
+		target[targetOffset + 21] = base + (((word4 >>> 59) | (word5 << 5)) & 0x7FFFL);
+		target[targetOffset + 22] = base + ((word5 >>> 10) & 0x7FFFL);
+		target[targetOffset + 23] = base + ((word5 >>> 25) & 0x7FFFL);
+		target[targetOffset + 24] = base + ((word5 >>> 40) & 0x7FFFL);
+		target[targetOffset + 25] = base + (((word5 >>> 55) | (word6 << 9)) & 0x7FFFL);
+		target[targetOffset + 26] = base + ((word6 >>> 6) & 0x7FFFL);
+		target[targetOffset + 27] = base + ((word6 >>> 21) & 0x7FFFL);
+		target[targetOffset + 28] = base + ((word6 >>> 36) & 0x7FFFL);
+		target[targetOffset + 29] = base + (((word6 >>> 51) | (word7 << 13)) & 0x7FFFL);
+		target[targetOffset + 30] = base + ((word7 >>> 2) & 0x7FFFL);
+		target[targetOffset + 31] = base + ((word7 >>> 17) & 0x7FFFL);
+		target[targetOffset + 32] = base + ((word7 >>> 32) & 0x7FFFL);
+		target[targetOffset + 33] = base + ((word7 >>> 47) & 0x7FFFL);
+		target[targetOffset + 34] = base + (((word7 >>> 62) | (word8 << 2)) & 0x7FFFL);
+		target[targetOffset + 35] = base + ((word8 >>> 13) & 0x7FFFL);
+		target[targetOffset + 36] = base + ((word8 >>> 28) & 0x7FFFL);
+		target[targetOffset + 37] = base + ((word8 >>> 43) & 0x7FFFL);
+		target[targetOffset + 38] = base + (((word8 >>> 58) | (word9 << 6)) & 0x7FFFL);
+		target[targetOffset + 39] = base + ((word9 >>> 9) & 0x7FFFL);
+		target[targetOffset + 40] = base + ((word9 >>> 24) & 0x7FFFL);
+		target[targetOffset + 41] = base + ((word9 >>> 39) & 0x7FFFL);
+		target[targetOffset + 42] = base + (((word9 >>> 54) | (word10 << 10)) & 0x7FFFL);
+		target[targetOffset + 43] = base + ((word10 >>> 5) & 0x7FFFL);
+		target[targetOffset + 44] = base + ((word10 >>> 20) & 0x7FFFL);
+		target[targetOffset + 45] = base + ((word10 >>> 35) & 0x7FFFL);
+		target[targetOffset + 46] = base + (((word10 >>> 50) | (word11 << 14)) & 0x7FFFL);
+		target[targetOffset + 47] = base + ((word11 >>> 1) & 0x7FFFL);
+		target[targetOffset + 48] = base + ((word11 >>> 16) & 0x7FFFL);
+		target[targetOffset + 49] = base + ((word11 >>> 31) & 0x7FFFL);
+		target[targetOffset + 50] = base + ((word11 >>> 46) & 0x7FFFL);
+		target[targetOffset + 51] = base + (((word11 >>> 61) | (word12 << 3)) & 0x7FFFL);
+		target[targetOffset + 52] = base + ((word12 >>> 12) & 0x7FFFL);
+		target[targetOffset + 53] = base + ((word12 >>> 27) & 0x7FFFL);
+		target[targetOffset + 54] = base + ((word12 >>> 42) & 0x7FFFL);
+		target[targetOffset + 55] = base + (((word12 >>> 57) | (word13 << 7)) & 0x7FFFL);
+		target[targetOffset + 56] = base + ((word13 >>> 8) & 0x7FFFL);
+		target[targetOffset + 57] = base + ((word13 >>> 23) & 0x7FFFL);
+		target[targetOffset + 58] = base + ((word13 >>> 38) & 0x7FFFL);
+		target[targetOffset + 59] = base + (((word13 >>> 53) | (word14 << 11)) & 0x7FFFL);
+		target[targetOffset + 60] = base + ((word14 >>> 4) & 0x7FFFL);
+		target[targetOffset + 61] = base + ((word14 >>> 19) & 0x7FFFL);
+		target[targetOffset + 62] = base + ((word14 >>> 34) & 0x7FFFL);
+		target[targetOffset + 63] = base + ((word14 >>> 49) & 0x7FFFL);
+	}
+
+	/**
+	 * Decodes byte-wide packed lanes eight at a time.
+	 */
+	private static void copyByteLanes(MemorySegment slice, long lanesAt, int fromLane, int count, long base,
+			long[] target, int targetOffset) {
+		int lane = fromLane;
+		int output = targetOffset;
+		int remaining = count;
+		while (remaining > 0) {
+			int wordLane = lane & (Long.BYTES - 1);
+			long word = slice.get(LmdbAdjacencyArena.U64_LE, lanesAt + (long) (lane >>> 3) * Long.BYTES);
+			int take = Math.min(remaining, Long.BYTES - wordLane);
+			if (wordLane == 0 && take == Long.BYTES) {
+				target[output] = base + (word & 0xFFL);
+				target[output + 1] = base + ((word >>> 8) & 0xFFL);
+				target[output + 2] = base + ((word >>> 16) & 0xFFL);
+				target[output + 3] = base + ((word >>> 24) & 0xFFL);
+				target[output + 4] = base + ((word >>> 32) & 0xFFL);
+				target[output + 5] = base + ((word >>> 40) & 0xFFL);
+				target[output + 6] = base + ((word >>> 48) & 0xFFL);
+				target[output + 7] = base + (word >>> 56);
+			} else {
+				for (int i = 0; i < take; i++) {
+					target[output + i] = base + ((word >>> ((wordLane + i) << 3)) & 0xFFL);
+				}
+			}
+			lane += take;
+			output += take;
+			remaining -= take;
+		}
 	}
 
 	private static long packedBytes(int lanes, int width) {

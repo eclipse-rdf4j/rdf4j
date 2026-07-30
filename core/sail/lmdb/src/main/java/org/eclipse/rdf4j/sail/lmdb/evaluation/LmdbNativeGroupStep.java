@@ -1053,12 +1053,12 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 	/**
 	 * Generalized emission for IR-lowered aggregate kernels (plan:
 	 * plans/lmdb-native-engine/21-kernel-lowering-aggregate.md): the packed row holds the group ids first, then one
-	 * encoded value per aggregate output. Counts bind as xsd:integer; guarded-exact SUMs decode from double bits to an
-	 * integer literal (the execution rung discards the whole result when the exactness guard fails); MIN/MAX carry the
-	 * winning value id, resolved lazily, with the binding omitted when no input row contributed (matching the generic
-	 * evaluator's empty-aggregate behavior).
+	 * encoded value per aggregate output. Counts bind as xsd:integer; SUM/AVG carry an engine-side group ordinal whose
+	 * exact result is owned by the hook sidecar; MIN/MAX carry the winning value id, resolved lazily, with the binding
+	 * omitted when no input row contributed (matching the generic evaluator's empty-aggregate behavior).
 	 */
-	BindingSet kernelGroupRow(long[] rowBuf, int base, LmdbNativeKernelBindings.KernelGroupLayout layout) {
+	BindingSet kernelGroupRow(long[] rowBuf, int base, LmdbNativeKernelBindings.KernelGroupLayout layout,
+			LmdbNativeKernelHooks hooks) {
 		QueryBindingSet result = new QueryBindingSet(layout.groupEngineSlots.length + layout.outs.length);
 		for (int i = 0; i < layout.groupEngineSlots.length; i++) {
 			long id = rowBuf[base + i];
@@ -1076,23 +1076,10 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 				result.addBinding(out.spec.name,
 						SimpleValueFactory.getInstance().createLiteral(BigInteger.valueOf(raw)));
 				break;
-			case LmdbNativeKernelBindings.ENC_SUM_DOUBLE_BITS:
-				result.addBinding(out.spec.name, SimpleValueFactory.getInstance()
-						.createLiteral(BigInteger.valueOf((long) Double.longBitsToDouble(raw))));
-				break;
-			case LmdbNativeKernelBindings.ENC_AVG_PARTS: {
-				// Divide here rather than in the kernel, with the exact operation the interpreted aggregate uses, so
-				// AVG keeps SPARQL's xsd:decimal division semantics. The sum is reconstructed as an integer literal on
-				// the same footing as ENC_SUM_DOUBLE_BITS: the SUM exactness guard is armed for AVG too, and the whole
-				// kernel result is discarded when it fails, so reaching here means every input was an exact integer.
-				long count = rowBuf[offset - 1];
-				if (count == 0L) {
-					result.addBinding(out.spec.name, AggContext.INTEGER_ZERO);
-				} else {
-					Literal sum = SimpleValueFactory.getInstance()
-							.createLiteral(BigInteger.valueOf((long) Double.longBitsToDouble(raw)));
-					Literal size = SimpleValueFactory.getInstance().createLiteral(count);
-					result.addBinding(out.spec.name, MathUtil.compute(sum, size, MathExpr.MathOp.DIVIDE));
+			case LmdbNativeKernelBindings.ENC_EXACT_NUMERIC: {
+				Literal numeric = hooks.numericResult(i, Math.toIntExact(raw));
+				if (numeric != null) {
+					result.addBinding(out.spec.name, numeric);
 				}
 				break;
 			}

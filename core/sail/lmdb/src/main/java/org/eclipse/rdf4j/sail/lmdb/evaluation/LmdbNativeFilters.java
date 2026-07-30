@@ -79,6 +79,35 @@ interface NativeBooleanFilter {
 	}
 }
 
+/**
+ * Generic SPARQL predicate together with the exact fragment-local slots it reads.
+ * <p>
+ * The evaluator is intentionally still RDF4J's precompiled value-expression step; naming this wrapper does not
+ * substitute native comparison semantics. It only preserves information that an anonymous lambda discarded, allowing
+ * batch execution and generated-kernel hooks to install precisely the slots the generic evaluator reads. A
+ * {@code readMask} of {@code -1} means at least one name belongs to an outer fragment and remains sticky.
+ */
+@Experimental
+final class GenericBooleanFilter implements NativeBooleanFilter {
+	private final Predicate<BindingSet> predicate;
+	private final long readMask;
+
+	GenericBooleanFilter(Predicate<BindingSet> predicate, long readMask) {
+		this.predicate = predicate;
+		this.readMask = readMask;
+	}
+
+	@Override
+	public boolean accept(RowState row) {
+		return predicate.test(row.view);
+	}
+
+	@Override
+	public long batchReadMask() {
+		return readMask;
+	}
+}
+
 @Experimental
 final class RecordingNativeBooleanFilter implements NativeBooleanFilter {
 	final NativeBooleanFilter delegate;

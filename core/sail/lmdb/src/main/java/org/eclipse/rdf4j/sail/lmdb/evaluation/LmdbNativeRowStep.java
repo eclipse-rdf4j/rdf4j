@@ -867,18 +867,15 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_WCOJ);
 			return NativeUnorderedInput.rows(row, leapfrog);
 		}
-		if (multiJoin != null) {
-			RowCursor kernel = LmdbNativeJaninoPipeline.tryOpen(multiJoin, row);
+		// Kernels preserve a fixed filter placement. Defer them only when adaptive placement can genuinely move a
+		// filter; batch/parallel/factorized paths still get their normal opportunity and host their own adaptive
+		// sessions where applicable.
+		boolean adaptiveDefersKernel = LmdbNativeAdaptiveFilterPlacement.shouldDeferKernel(this, row);
+		if (!adaptiveDefersKernel) {
+			NativeUnorderedInput kernel = openKernelInput(row, multiJoin);
 			if (kernel != null) {
-				LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_JANINO_KERNEL);
-				return NativeUnorderedInput.rows(row, kernel);
+				return kernel;
 			}
-		}
-		// The IR rung handles more root shapes than MultiJoinPlan (LeftJoin chains since plan 22).
-		RowCursor irKernel = LmdbNativeKernelExecution.tryOpenRows(arg, row, originalExpr);
-		if (irKernel != null) {
-			LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL);
-			return NativeUnorderedInput.rows(row, irKernel);
 		}
 		boolean correlatedEntry = (arg.producedMask() & row.boundMask()) != 0L;
 		int[] retainedSlots = orderSlots.length == 0 ? sourceSlots : sortLayout.liveToPlan;
@@ -915,8 +912,31 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 					LmdbNativeAttemptMetrics.PATH_ADAPTIVE_FILTER_PLACEMENT);
 			return NativeUnorderedInput.rows(row, adaptive);
 		}
+		if (adaptiveDefersKernel) {
+			NativeUnorderedInput kernel = openKernelInput(row, multiJoin);
+			if (kernel != null) {
+				return kernel;
+			}
+		}
 		LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
 		return NativeUnorderedInput.rows(row, arg.open(row));
+	}
+
+	private NativeUnorderedInput openKernelInput(RowState row, MultiJoinPlan multiJoin) throws IOException {
+		if (multiJoin != null) {
+			RowCursor kernel = LmdbNativeJaninoPipeline.tryOpen(multiJoin, row);
+			if (kernel != null) {
+				LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_JANINO_KERNEL);
+				return NativeUnorderedInput.rows(row, kernel);
+			}
+		}
+		// The IR rung handles more root shapes than MultiJoinPlan (LeftJoin chains since plan 22).
+		RowCursor irKernel = LmdbNativeKernelExecution.tryOpenRows(arg, row, originalExpr);
+		if (irKernel != null) {
+			LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL);
+			return NativeUnorderedInput.rows(row, irKernel);
+		}
+		return null;
 	}
 
 	/**

@@ -507,7 +507,7 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	}
 
 	/**
-	 * @return the direct adjacency memory limit in bytes; zero means AUTO (50% of the effective JVM max heap)
+	 * @return the direct adjacency memory limit in bytes; zero means AUTO (50% of the container-aware memory limit)
 	 */
 	public long getDirectAdjacencyMaxBytes() {
 		return directAdjacencyMaxBytes;
@@ -515,7 +515,7 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	/**
 	 * Sets the direct adjacency memory limit in bytes. Zero means AUTO and resolves once, at store construction, to 50%
-	 * of the effective JVM max heap. A positive value below 256 MiB or a negative value is rejected.
+	 * of the container-aware memory limit. A positive value below 256 MiB or a negative value is rejected.
 	 */
 	public LmdbStoreConfig setDirectAdjacencyMaxBytes(long directAdjacencyMaxBytes) {
 		if (directAdjacencyMaxBytes < 0) {

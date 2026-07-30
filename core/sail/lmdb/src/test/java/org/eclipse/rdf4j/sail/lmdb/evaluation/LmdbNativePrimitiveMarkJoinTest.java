@@ -158,6 +158,59 @@ class LmdbNativePrimitiveMarkJoinTest {
 		assertThat(source.directHasCalls).isEqualTo(64);
 	}
 
+	@Test
+	void compositeMinusCorrelatesRightWhenEveryRowBindsTheSharedSlot() throws Exception {
+		long[][] blocked = new long[65][4];
+		for (int i = 0; i < blocked.length; i++) {
+			blocked[i] = new long[] { 100L + i, PREDICATE, OBJECT, NULL_CONTEXT_ID };
+		}
+		TrackingMembershipSource source = new TrackingMembershipSource(blocked);
+		RowState row = row(source, 1);
+		long[] outerKeys = new long[69];
+		for (int i = 0; i < 65; i++) {
+			outerKeys[i] = 100L + i;
+		}
+		outerKeys[65] = UNKNOWN;
+		outerKeys[66] = UNKNOWN;
+		outerKeys[67] = 999L;
+		outerKeys[68] = 999L;
+		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(PREDICATE), Term.constant(OBJECT),
+				Term.constant(NULL_CONTEXT_ID), ContextConstraint.UNRESTRICTED, false, blocked.length);
+		FilterPlan right = new FilterPlan(pattern, candidate -> true, 1L);
+		MinusCursor cursor = new MinusCursor(new KeySequenceCursor(row, outerKeys), right, 1L, row);
+		List<Long> emitted = new ArrayList<>();
+
+		try (cursor) {
+			while (cursor.next()) {
+				emitted.add(row.slots[0]);
+			}
+		}
+
+		assertThat(emitted).containsExactly(UNKNOWN, UNKNOWN, 999L, 999L);
+		assertThat(source.unboundSweepOpens)
+				.as("a right arm that always binds the shared slot can use an exact correlated probe")
+				.isZero();
+		assertThat(source.correlatedSweepOpens).isZero();
+		assertThat(source.directHasCalls).isEqualTo(66);
+	}
+
+	@Test
+	void compositeMinusKeepsIndependentEvaluationWhenAUnionArmLeavesTheSharedSlotUnbound() throws Exception {
+		TrackingMembershipSource source = new TrackingMembershipSource(new long[0][]);
+		RowState row = row(source, 1);
+		ValuesPlan bound = new ValuesPlan(
+				new ValuesRow[] { new ValuesRow(new int[] { 0 }, new long[] { 100L }) });
+		ValuesPlan undef = new ValuesPlan(new ValuesRow[] { new ValuesRow(new int[0], new long[0]) });
+		UnionPlan right = new UnionPlan(bound, undef);
+		MinusCursor cursor = new MinusCursor(new KeySequenceCursor(row, new long[] { 999L }), right, 1L, row);
+
+		try (cursor) {
+			assertThat(cursor.next()).isTrue();
+			assertThat(row.slots[0]).isEqualTo(999L);
+			assertThat(cursor.next()).isFalse();
+		}
+	}
+
 	private static void prime(PatternMembershipProbe probe, RowState row, TrackingMembershipSource source,
 			long[][] records, int count, boolean namedOnly, ContextConstraint contexts) {
 		for (int i = 0; i < count; i++) {
@@ -247,6 +300,8 @@ class LmdbNativePrimitiveMarkJoinTest {
 		private final long[][] records;
 		private final List<Long> requestedContexts = new ArrayList<>();
 		private int sweepOpens;
+		private int unboundSweepOpens;
+		private int correlatedSweepOpens;
 		private int directHasCalls;
 
 		private TrackingMembershipSource(long[][] records) {
@@ -271,6 +326,11 @@ class LmdbNativePrimitiveMarkJoinTest {
 		@Override
 		public RecordIterator statements(long subj, long pred, long obj, long context) {
 			sweepOpens++;
+			if (subj == UNKNOWN_ID) {
+				unboundSweepOpens++;
+			} else {
+				correlatedSweepOpens++;
+			}
 			requestedContexts.add(context);
 			return new RecordIterator() {
 				private int index;

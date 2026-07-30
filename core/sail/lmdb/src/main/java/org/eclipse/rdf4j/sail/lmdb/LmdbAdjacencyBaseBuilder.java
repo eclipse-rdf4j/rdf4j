@@ -178,12 +178,13 @@ final class LmdbAdjacencyBaseBuilder {
 				sizing.workspace.forEachActiveNode((type, payload, planeCounts) -> twoPhase.declareNode(type, payload,
 						planeCounts));
 				LmdbReferenceNodeLocator locator = twoPhase.finishAllocation();
+				LmdbAdjacencyKeyIndex[] keyIndexes = sizing.allocateKeyIndexes(baseArena, sortedPredicates.length);
 				LmdbAdjacencyArena.Partition[] runPartitions = baseArena.allocatePartitions(sizing.runPlans());
 				validateSourceFamily(sourceFamily);
 
 				// ---------------- Pass 3: encode runs and fill entries ----------------
 				FillState fill = new FillState(coverage, contextCatalog, predicateCatalog, baseArena, twoPhase,
-						runPartitions);
+						keyIndexes, runPartitions);
 				long pass3Started = System.nanoTime();
 				fill.scanAll(sourceFamily, buildThreads);
 				if (metrics != null) {
@@ -233,8 +234,8 @@ final class LmdbAdjacencyBaseBuilder {
 				LmdbAdjacencyArenaCatalog arenaCatalog = LmdbAdjacencyArenaCatalog.of(baseArena);
 				long statements = sizing.outgoingExplicitPairs + sizing.outgoingInferredPairs;
 				LmdbInMemoryAdjacencyIndex index = new LmdbInMemoryAdjacencyIndex(baseRevision, arenaCatalog,
-						predicateCatalog, contextCatalog, coverage, locator, fill.inlinePlanes, account, reservedBytes,
-						statements, sizing.pairCount);
+						predicateCatalog, contextCatalog, coverage, locator, keyIndexes, fill.inlinePlanes, account,
+						reservedBytes, statements, sizing.pairCount);
 				// the catalog is now the sole owner: release the builder's creator reference
 				baseArena.close();
 				if (metrics != null) {
@@ -317,6 +318,21 @@ final class LmdbAdjacencyBaseBuilder {
 			return plans;
 		}
 
+		LmdbAdjacencyKeyIndex[] allocateKeyIndexes(LmdbAdjacencyArena arena, int predicateCount) {
+			LmdbAdjacencyKeyIndex[] indexes = new LmdbAdjacencyKeyIndex[Math.multiplyExact(predicateCount,
+					LmdbReferenceNodeLocator.PLANE_COUNT)];
+			for (int plane = 0; plane < planes.length; plane++) {
+				long[] counts = planes[plane].keyCounts;
+				for (int predicateOrdinal = 0; predicateOrdinal < counts.length; predicateOrdinal++) {
+					if (counts[predicateOrdinal] > 0) {
+						indexes[predicateOrdinal * LmdbReferenceNodeLocator.PLANE_COUNT + plane] = LmdbAdjacencyKeyIndex
+								.allocate(arena, counts[predicateOrdinal]);
+					}
+				}
+			}
+			return indexes;
+		}
+
 		long predictedPhysicalBytes(long predicateCount, long contextCount, int predicateWidth, long regionBytes) {
 			long logicalMetadata = Math.subtractExact(
 					predictedBaseBytes(predicateCount, contextCount, predicateWidth), runBytes);
@@ -343,6 +359,7 @@ final class LmdbAdjacencyBaseBuilder {
 			private final int plane;
 			private final LmdbAdjacencyArenaSizingPlan runPlan;
 			private final Map<Long, InlinePlaneSizing> inlineSizing = new HashMap<>();
+			private final long[] keyCounts = new long[sortedPredicates.length];
 
 			private long runBytes;
 			private long groupCount;
@@ -418,10 +435,12 @@ final class LmdbAdjacencyBaseBuilder {
 						runBytes = Math.addExact(runBytes, result.totalBytes);
 						groupCount++;
 						pairCount = Math.addExact(pairCount, groupPairs);
+						long predicateOrdinal = unsignedIndexOf(sortedPredicates, predicate);
+						int predicateIndex = Math.toIntExact(predicateOrdinal);
+						keyCounts[predicateIndex] = Math.incrementExact(keyCounts[predicateIndex]);
 						if (ValueIds.isReference(key)) {
 							workspace.recordGroup(ValueIds.getIdType(key), ValueIds.getValue(key), plane);
 						} else {
-							long predicateOrdinal = unsignedIndexOf(sortedPredicates, predicate);
 							inlineSizing.computeIfAbsent(predicateOrdinal * 4 + plane, k -> new InlinePlaneSizing())
 									.addKey(key);
 						}
@@ -471,6 +490,8 @@ final class LmdbAdjacencyBaseBuilder {
 			}
 			total = Math.addExact(total, headerTotal[0]);
 			total = Math.addExact(total, pageTotal[0]);
+			// one raw key per nonempty (key, predicate, plane) row for predicate-wide kernel enumeration
+			total = Math.addExact(total, Math.multiplyExact(groupCount, (long) Long.BYTES));
 			for (InlinePlaneSizing plane : inlineSizing.values()) {
 				total = Math.addExact(total, plane.totalBytes());
 			}
@@ -536,6 +557,7 @@ final class LmdbAdjacencyBaseBuilder {
 		final LmdbAdjacencyPredicateCatalog predicateCatalog;
 		final LmdbAdjacencyArena baseArena;
 		final LmdbReferenceNodeLocator.TwoPhaseBuilder twoPhase;
+		final LmdbAdjacencyKeyIndex[] keyIndexes;
 		final FillPlaneState[] planes = new FillPlaneState[LmdbReferenceNodeLocator.PLANE_COUNT];
 
 		long runBytes;
@@ -546,12 +568,14 @@ final class LmdbAdjacencyBaseBuilder {
 
 		FillState(LmdbAdjacencyCoverage coverage, LmdbAdjacencyContextCatalog contextCatalog,
 				LmdbAdjacencyPredicateCatalog predicateCatalog, LmdbAdjacencyArena baseArena,
-				LmdbReferenceNodeLocator.TwoPhaseBuilder twoPhase, LmdbAdjacencyArena.Partition[] runPartitions) {
+				LmdbReferenceNodeLocator.TwoPhaseBuilder twoPhase, LmdbAdjacencyKeyIndex[] keyIndexes,
+				LmdbAdjacencyArena.Partition[] runPartitions) {
 			this.coverage = coverage;
 			this.contextCatalog = contextCatalog;
 			this.predicateCatalog = predicateCatalog;
 			this.baseArena = baseArena;
 			this.twoPhase = twoPhase;
+			this.keyIndexes = keyIndexes;
 			if (runPartitions.length != planes.length) {
 				throw new IllegalArgumentException("expected one run partition per plane");
 			}
@@ -582,6 +606,11 @@ final class LmdbAdjacencyBaseBuilder {
 					if (index != null) {
 						inlinePlanes.put(inlineKey, index);
 					}
+				}
+			}
+			for (LmdbAdjacencyKeyIndex keyIndex : keyIndexes) {
+				if (keyIndex != null) {
+					keyIndex.seal();
 				}
 			}
 		}
@@ -658,6 +687,8 @@ final class LmdbAdjacencyBaseBuilder {
 							throw new IllegalStateException(
 									"covered predicate missing from the dictionary: " + predicate);
 						}
+						keyIndexes[Math.toIntExact(predicateOrdinal * LmdbReferenceNodeLocator.PLANE_COUNT + plane)]
+								.append(key);
 						if (ValueIds.isReference(key)) {
 							twoPhase.fillEntry(ValueIds.getIdType(key), ValueIds.getValue(key), plane, predicateOrdinal,
 									result.rootRef);

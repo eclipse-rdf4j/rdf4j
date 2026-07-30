@@ -292,27 +292,26 @@ class LmdbNativeKernelIrEmitterTest {
 
 	@Test
 	void globalAggregateComputesAllFunctionKinds() throws Exception {
+		TestHooks hooks = new TestHooks();
 		Kernel ir = new Kernel(1, List.of(new EnumerateDomain(0, 0)),
 				new Aggregate(new int[0],
 						new AggregateOutput[] { AggregateOutput.countStar(), AggregateOutput.count(0),
 								AggregateOutput.countDistinct(0), AggregateOutput.sum(0), AggregateOutput.min(0),
 								AggregateOutput.max(0), AggregateOutput.avg(0) },
 						null, OutputMods.none()));
-		List<long[]> rows = run(ir, context().domains(new long[] { 5, 7, 9, 7 }).hooks(new TestHooks()));
+		List<long[]> rows = run(ir, context().domains(new long[] { 5, 7, 9, 7 }).hooks(hooks));
 		assertEquals(1, rows.size());
 		long[] row = rows.get(0);
 		assertEquals(4L, row[0]);
 		assertEquals(4L, row[1]);
 		assertEquals(3L, row[2]);
-		assertEquals(28.0, Double.longBitsToDouble(row[3]));
+		assertEquals(0L, row[3], "SUM emits the exact-sidecar group ordinal");
 		assertEquals(5.0, Double.longBitsToDouble(row[4]));
 		assertEquals(9.0, Double.longBitsToDouble(row[5]));
-		// AVG occupies two slots — its sum and its count — instead of one pre-divided number. The kernel cannot do the
-		// division itself and stay correct: SPARQL divides as xsd:decimal, so a double quotient would come back with
-		// the wrong datatype and, for any non-dyadic quotient, the wrong value. `kernelGroupRow` divides these two
-		// exactly. The average this encodes is still 28/4 = 7.
-		assertEquals(28.0, Double.longBitsToDouble(row[6]));
-		assertEquals(4L, row[7]);
+		assertEquals(0L, row[6], "AVG emits the exact-sidecar group ordinal");
+		assertEquals(28.0, hooks.numericSum(3, 0));
+		assertEquals(28.0, hooks.numericSum(6, 0));
+		assertEquals(4L, hooks.numericCount(6, 0));
 	}
 
 	@Test
@@ -373,12 +372,9 @@ class LmdbNativeKernelIrEmitterTest {
 		long[] row = rows.get(0);
 		assertEquals(0L, row[0]);
 		assertEquals(0L, row[1]);
-		assertEquals(0.0, Double.longBitsToDouble(row[2]));
+		assertEquals(0L, row[2], "empty SUM still points at global group zero");
 		assertEquals(-1L, row[3]);
-		// AVG's two slots: an empty group sums to zero over zero rows. The zero count is what tells `kernelGroupRow`
-		// not to divide — it binds the empty-aggregate value instead, as the interpreted aggregate does.
-		assertEquals(0.0, Double.longBitsToDouble(row[4]));
-		assertEquals(0L, row[5]);
+		assertEquals(0L, row[4], "empty AVG still points at global group zero");
 	}
 
 	@Test
@@ -1069,6 +1065,8 @@ class LmdbNativeKernelIrEmitterTest {
 	private static final class TestHooks implements KernelHooks {
 		LongPredicate filterAccept = id -> true;
 		LongUnaryOperator bindCompute = a -> a;
+		final Map<Long, Double> numericSums = new HashMap<>();
+		final Map<Long, Long> numericCounts = new HashMap<>();
 		int lastFilterId;
 		long lastA1;
 		long lastA2;
@@ -1099,6 +1097,25 @@ class LmdbNativeKernelIrEmitterTest {
 		@Override
 		public double doubleValue(long id) {
 			return id;
+		}
+
+		@Override
+		public void accumulateNumeric(int aggregateId, int groupId, long valueId) {
+			long key = numericKey(aggregateId, groupId);
+			numericSums.merge(key, (double) valueId, Double::sum);
+			numericCounts.merge(key, 1L, Long::sum);
+		}
+
+		double numericSum(int aggregateId, int groupId) {
+			return numericSums.getOrDefault(numericKey(aggregateId, groupId), 0D);
+		}
+
+		long numericCount(int aggregateId, int groupId) {
+			return numericCounts.getOrDefault(numericKey(aggregateId, groupId), 0L);
+		}
+
+		private static long numericKey(int aggregateId, int groupId) {
+			return ((long) aggregateId << 32) | Integer.toUnsignedLong(groupId);
 		}
 	}
 

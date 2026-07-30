@@ -22,6 +22,10 @@ if [ "${1:-}" = "--no-build" ]; then
 	shift
 fi
 
+if [ "$#" -eq 0 ]; then
+	set -- --interactive
+fi
+
 find_tool_jar() {
 	find "$tool_target" -maxdepth 1 -type f -name 'rdf4j-lmdb-bulk-load-*-executable.jar' \
 		-print 2>/dev/null | sort | tail -n 1

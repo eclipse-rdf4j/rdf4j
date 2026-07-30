@@ -932,6 +932,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		boolean success = false;
 		try {
 			while (true) {
+				if (closed) {
+					return false;
+				}
 				SealedDirectDelta head;
 				synchronized (applyQueue) {
 					head = applyQueue.peekFirst();
@@ -1128,18 +1131,37 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			}
 			closed = true;
 			maintenanceState = MaintenanceState.CLOSED;
-			publish(new LmdbAdjacencyPublishedState(epochs.incrementAndGet(), null, -1, Long.MAX_VALUE,
-					AdjacencyServingState.CLOSED));
 		} finally {
 			publicationLock.unlock();
 		}
+		// An in-flight applier borrows the current base/catalog while it builds the replacement generation. Retiring
+		// that publication before the executor quiesces closes native arenas underneath the applier. Stop admission
+		// first, wait without holding publicationLock (applyOne needs it to finish), then release the publication.
 		maintenanceExecutor.shutdown();
-		try {
-			if (!maintenanceExecutor.awaitTermination(60, TimeUnit.SECONDS)) {
-				logger.warn("Direct adjacency maintenance executor did not terminate within 60 seconds");
+		boolean interrupted = false;
+		while (!maintenanceExecutor.isTerminated()) {
+			try {
+				if (!maintenanceExecutor.awaitTermination(60, TimeUnit.SECONDS)) {
+					logger.warn("Direct adjacency maintenance executor did not terminate within 60 seconds; "
+							+ "interrupting queued maintenance before continuing close");
+					maintenanceExecutor.shutdownNow();
+				}
+			} catch (InterruptedException e) {
+				interrupted = true;
+				maintenanceExecutor.shutdownNow();
 			}
-		} catch (InterruptedException e) {
+		}
+		if (interrupted) {
 			Thread.currentThread().interrupt();
+		}
+		publicationLock.lock();
+		try {
+			publish(new LmdbAdjacencyPublishedState(epochs.incrementAndGet(), null, -1, Long.MAX_VALUE,
+					AdjacencyServingState.CLOSED));
+			// A task that was already running when close began may have completed a final publication.
+			maintenanceState = MaintenanceState.CLOSED;
+		} finally {
+			publicationLock.unlock();
 		}
 		synchronized (applyQueue) {
 			SealedDirectDelta sealed;
@@ -1171,6 +1193,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	@Override
 	public LmdbAdjacencyReadView acquire(long snapshotRevision) {
+		if (closed) {
+			return fallback(snapshotRevision, FallbackReason.DISABLED);
+		}
 		if (options.memoryRefused()) {
 			return fallback(snapshotRevision, FallbackReason.MEMORY_REFUSED);
 		}
@@ -1188,8 +1213,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				continue;
 			}
 			long emergencyGap = emergencyGapFromRevision.get();
-			if (published.get() != state) {
+			if (closed || published.get() != state) {
 				state.release();
+				if (closed) {
+					return fallback(snapshotRevision, FallbackReason.DISABLED);
+				}
 				continue;
 			}
 			if (emergencyGap <= snapshotRevision) {

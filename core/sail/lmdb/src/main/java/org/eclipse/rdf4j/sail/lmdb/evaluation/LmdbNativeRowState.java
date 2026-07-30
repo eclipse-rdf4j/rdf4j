@@ -28,6 +28,7 @@ final class RowState {
 	final BindingSet base;
 	final TupleExpr telemetryTarget;
 	final long[] slots;
+	final long baseBindingMask;
 	final RowBindingSetView view;
 	final ExactValuesRuntimeMetrics exactValuesMetrics;
 	final int[] trailSlots;
@@ -56,6 +57,13 @@ final class RowState {
 		this.base = base;
 		this.telemetryTarget = telemetryTarget;
 		this.slots = new long[layout.slotNames().length];
+		long baseMask = 0L;
+		for (int slot = 0; slot < layout.slotNames().length; slot++) {
+			if (base.hasBinding(layout.slotName(slot))) {
+				baseMask |= 1L << slot;
+			}
+		}
+		this.baseBindingMask = baseMask;
 		this.view = new RowBindingSetView(source, layout, base, slots, false);
 		this.exactValuesMetrics = exactValuesMetrics;
 		this.trailSlots = new int[Math.max(8, slots.length * 4)];

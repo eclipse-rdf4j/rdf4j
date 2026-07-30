@@ -49,6 +49,30 @@ final class LmdbNativeAdaptiveFilterPlacement {
 		return tryOpenWrapped(step, step.arg, row);
 	}
 
+	/**
+	 * Whether this step has an expensive adaptive placement that can actually be admitted. Dispatch uses this
+	 * side-effect-free preflight to keep a whole-stage kernel from shadowing costly value/composite-filter movement
+	 * that the kernel does not implement. Cheap id predicates keep kernel priority (fusion removes most of their cost),
+	 * and adaptive placement remains the fallback when such a kernel declines.
+	 */
+	static boolean shouldDeferKernel(NativeRowsStep step, RowState row) {
+		return shouldDeferKernelWrapped(step, step.arg, row);
+	}
+
+	private static boolean shouldDeferKernelWrapped(NativeRowsStep step, SlotPlan plan, RowState row) {
+		if (plan instanceof MultiJoinPlan multiJoin && multiJoin.children.length > 0) {
+			int targetIndex = selectTargetIndex(step.originalExpr, step.orderSlots.length != 0, step.offset, step.limit,
+					multiJoin, row, false, false);
+			return targetIndex >= 0
+					&& multiJoin.filters[targetIndex].adaptive.estimatedCostUnits >= AdaptiveFilterMetadata.EXPENSIVE;
+		}
+		if (plan instanceof ExtensionPlan extension) {
+			return SlotPlan.encounterOrderReplaySafe(extension)
+					&& shouldDeferKernelWrapped(step, extension.arg, row);
+		}
+		return false;
+	}
+
 	private static RowCursor tryOpenWrapped(NativeRowsStep step, SlotPlan plan, RowState row) throws IOException {
 		if (plan instanceof MultiJoinPlan multiJoin && multiJoin.children.length > 0) {
 			return tryOpen(step, multiJoin, row);
@@ -87,53 +111,9 @@ final class LmdbNativeAdaptiveFilterPlacement {
 
 	private static RowCursor tryOpen(TupleExpr telemetryExpr, boolean orderedExecution, long offset, long limit,
 			MultiJoinPlan plan, RowState row, RowCursor depth0) throws IOException {
-		if (!Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "true"))) {
-			return null;
-		}
-		if (plan.children.length < 2) {
-			decline(telemetryExpr, "TOO_FEW_CHILDREN", false);
-			return null;
-		}
-		if (!hasEligibleMetadata(plan)) {
-			decline(telemetryExpr, "NO_ELIGIBLE_FILTER", false);
-			return null;
-		}
-		if (isShortFiniteSlice(offset, limit)) {
-			decline(telemetryExpr, "SHORT_LIMIT", true);
-			return null;
-		}
-		if (orderedExecution || containsOrderedScan(plan)) {
-			decline(telemetryExpr, "ORDERED_EXECUTION", true);
-			return null;
-		}
-		if ((plan.producedMask() & row.boundMask()) != 0L) {
-			decline(telemetryExpr, "CORRELATED_ENTRY", true);
-			return null;
-		}
-		// the external-root caller's morsel root is order[0] of the selected factorized order, so this chain
-		// must derive through the same selection
-		MultiJoinPlan.OrderedPlan ordered = depth0 == null
-				? plan.derivedPlan(row)
-				: LmdbNativeFactorizedRows.selectFactorizedOrder(plan, row.boundMask(), 0L, 1);
-		int targetIndex = -1;
-		long bestScore = Long.MIN_VALUE;
-		int bestFilterId = Integer.MAX_VALUE;
-		for (int i = 0; i < plan.filters.length; i++) {
-			FilterPlacementEnvelope envelope = ordered.placement[i];
-			AdaptiveFilterMetadata metadata = plan.filters[i].adaptive;
-			if (envelope == null) {
-				continue;
-			}
-			long score = saturatingMultiply(metadata.estimatedCostUnits,
-					Math.max(1, envelope.legalDepthCount - 1));
-			if (score > bestScore || score == bestScore && metadata.filterId < bestFilterId) {
-				targetIndex = i;
-				bestScore = score;
-				bestFilterId = metadata.filterId;
-			}
-		}
+		int targetIndex = selectTargetIndex(telemetryExpr, orderedExecution, offset, limit, plan, row, depth0 != null,
+				true);
 		if (targetIndex < 0) {
-			decline(telemetryExpr, "NO_ADMISSIBLE_FILTER", true);
 			return null;
 		}
 
@@ -155,6 +135,65 @@ final class LmdbNativeAdaptiveFilterPlacement {
 			}
 			lease.abort(failure);
 			throw failure;
+		}
+	}
+
+	private static int selectTargetIndex(TupleExpr telemetryExpr, boolean orderedExecution, long offset, long limit,
+			MultiJoinPlan plan, RowState row, boolean factorizedOrder, boolean reportDecline) {
+		if (!Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "true"))) {
+			return -1;
+		}
+		if (plan.children.length < 2) {
+			reportDecline(telemetryExpr, "TOO_FEW_CHILDREN", false, reportDecline);
+			return -1;
+		}
+		if (!hasEligibleMetadata(plan)) {
+			reportDecline(telemetryExpr, "NO_ELIGIBLE_FILTER", false, reportDecline);
+			return -1;
+		}
+		if (isShortFiniteSlice(offset, limit)) {
+			reportDecline(telemetryExpr, "SHORT_LIMIT", true, reportDecline);
+			return -1;
+		}
+		if (orderedExecution || containsOrderedScan(plan)) {
+			reportDecline(telemetryExpr, "ORDERED_EXECUTION", true, reportDecline);
+			return -1;
+		}
+		if ((plan.producedMask() & row.boundMask()) != 0L) {
+			reportDecline(telemetryExpr, "CORRELATED_ENTRY", true, reportDecline);
+			return -1;
+		}
+		// the external-root caller's morsel root is order[0] of the selected factorized order, so this chain
+		// must derive through the same selection
+		MultiJoinPlan.OrderedPlan ordered = factorizedOrder
+				? LmdbNativeFactorizedRows.selectFactorizedOrder(plan, row.boundMask(), 0L, 1)
+				: plan.derivedPlan(row);
+		int targetIndex = -1;
+		long bestScore = Long.MIN_VALUE;
+		int bestFilterId = Integer.MAX_VALUE;
+		for (int i = 0; i < plan.filters.length; i++) {
+			FilterPlacementEnvelope envelope = ordered.placement[i];
+			AdaptiveFilterMetadata metadata = plan.filters[i].adaptive;
+			if (envelope == null) {
+				continue;
+			}
+			long score = saturatingMultiply(metadata.estimatedCostUnits,
+					Math.max(1, envelope.legalDepthCount - 1));
+			if (score > bestScore || score == bestScore && metadata.filterId < bestFilterId) {
+				targetIndex = i;
+				bestScore = score;
+				bestFilterId = metadata.filterId;
+			}
+		}
+		if (targetIndex < 0) {
+			reportDecline(telemetryExpr, "NO_ADMISSIBLE_FILTER", true, reportDecline);
+		}
+		return targetIndex;
+	}
+
+	private static void reportDecline(TupleExpr telemetryExpr, String reason, boolean eligible, boolean report) {
+		if (report) {
+			decline(telemetryExpr, reason, eligible);
 		}
 	}
 

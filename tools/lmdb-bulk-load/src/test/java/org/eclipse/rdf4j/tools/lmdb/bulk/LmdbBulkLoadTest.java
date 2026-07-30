@@ -19,6 +19,7 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Properties;
 import java.util.zip.GZIPOutputStream;
 
 import org.junit.jupiter.api.Test;
@@ -28,6 +29,134 @@ class LmdbBulkLoadTest {
 
 	@TempDir
 	Path temporaryDirectory;
+
+	@Test
+	void interactivelyCollectsMissingOptionsAndCreatesSelectedIndexes() throws Exception {
+		Path input = temporaryDirectory.resolve("input.nt");
+		Files.writeString(input, "<urn:subject> <urn:predicate> <urn:object> .\n");
+		Path store = temporaryDirectory.resolve("store");
+		String answers = String.join("\n",
+				store.toString(),
+				input.toString(),
+				"",
+				"",
+				"",
+				"",
+				"spoc,ospc,posc",
+				"spoc,cspo,posc",
+				"",
+				"",
+				"",
+				"1",
+				"2",
+				"none",
+				"",
+				"false",
+				"true",
+				"1000",
+				"1MiB") + "\n";
+		ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
+		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+
+		int exitCode = LmdbBulkLoad.run(new String[] { "--interactive" },
+				new ByteArrayInputStream(answers.getBytes(StandardCharsets.UTF_8)),
+				new PrintStream(standardOutput), new PrintStream(standardError));
+
+		assertThat(exitCode)
+				.as(standardError.toString(StandardCharsets.UTF_8))
+				.isZero();
+		assertThat(standardError.toString(StandardCharsets.UTF_8))
+				.contains("Interactive LMDB bulk-load setup")
+				.contains("Statement indexes [spoc,posc]")
+				.contains("RDF-star term indexes [spoc,cspo]");
+		assertThat(standardOutput.toString(StandardCharsets.UTF_8))
+				.contains("parsed=1")
+				.contains("stored=1");
+		Properties properties = new Properties();
+		try (var inputStream = Files.newInputStream(store.resolve("store.properties"))) {
+			properties.load(inputStream);
+		}
+		assertThat(properties)
+				.containsEntry("triple-indexes", "spoc,ospc,posc")
+				.containsEntry("triple-term-indexes", "spoc,cspo,posc")
+				.containsEntry("inline-literals", "false");
+	}
+
+	@Test
+	void interactiveSetupRejectsStandardInputAsRdfInput() {
+		ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
+		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+
+		int exitCode = LmdbBulkLoad.run(new String[] {
+				"--interactive",
+				"--store", temporaryDirectory.resolve("store").toString(),
+				"--input", "-"
+		}, new ByteArrayInputStream(new byte[0]), new PrintStream(standardOutput), new PrintStream(standardError));
+
+		assertThat(exitCode).isEqualTo(2);
+		assertThat(standardError.toString(StandardCharsets.UTF_8))
+				.contains("--interactive cannot be combined with --input -");
+	}
+
+	@Test
+	void interactiveSetupPreservesSuppliedArgumentsAndPromptsOnlyForMissingOnes() throws Exception {
+		Path input = temporaryDirectory.resolve("input.nt");
+		Files.writeString(input, "<urn:subject> <urn:predicate> <urn:object> .\n");
+		Path store = temporaryDirectory.resolve("store");
+		String answers = String.join("\n",
+				"",
+				"",
+				"",
+				"",
+				"",
+				"",
+				"",
+				"1",
+				"2",
+				"none",
+				"",
+				"",
+				"",
+				"",
+				"") + "\n";
+		ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
+		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+
+		int exitCode = LmdbBulkLoad.run(new String[] {
+				"--interactive",
+				"--store", store.toString(),
+				"--input", input.toString(),
+				"--statement-indexes", "ospc,spoc,posc"
+		}, new ByteArrayInputStream(answers.getBytes(StandardCharsets.UTF_8)),
+				new PrintStream(standardOutput), new PrintStream(standardError));
+
+		assertThat(exitCode)
+				.as(standardError.toString(StandardCharsets.UTF_8))
+				.isZero();
+		assertThat(standardError.toString(StandardCharsets.UTF_8))
+				.doesNotContain("Store directory:")
+				.doesNotContain("RDF input file or directory:")
+				.doesNotContain("Statement indexes [")
+				.contains("RDF-star term indexes [spoc,cspo]");
+		Properties properties = new Properties();
+		try (var inputStream = Files.newInputStream(store.resolve("store.properties"))) {
+			properties.load(inputStream);
+		}
+		assertThat(properties).containsEntry("triple-indexes", "ospc,spoc,posc");
+	}
+
+	@Test
+	void helpDocumentsInteractiveSetup() {
+		ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
+		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+
+		int exitCode = LmdbBulkLoad.run(new String[] { "--help" }, new ByteArrayInputStream(new byte[0]),
+				new PrintStream(standardOutput), new PrintStream(standardError));
+
+		assertThat(exitCode).isZero();
+		assertThat(standardOutput.toString(StandardCharsets.UTF_8))
+				.contains("--interactive");
+	}
 
 	@Test
 	void loadsRepeatedFilesAndDirectoriesWithLiveProgress() throws Exception {
@@ -60,6 +189,7 @@ class LmdbBulkLoadTest {
 				.contains("stored=3");
 		assertThat(standardError.toString(StandardCharsets.UTF_8))
 				.contains("phase=")
-				.contains("ops/s=");
+				.contains("ops/s=")
+				.doesNotContain("Interactive LMDB bulk-load setup");
 	}
 }

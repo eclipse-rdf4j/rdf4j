@@ -19,5 +19,9 @@ else
 	java_command=java
 fi
 
+if [ "$#" -eq 0 ]; then
+	set -- --interactive
+fi
+
 exec "$java_command" --enable-native-access=ALL-UNNAMED -cp "$lib_directory/*" \
 	org.eclipse.rdf4j.tools.lmdb.bulk.LmdbBulkLoad "$@"

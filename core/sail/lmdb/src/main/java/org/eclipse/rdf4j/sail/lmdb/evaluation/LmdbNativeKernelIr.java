@@ -976,7 +976,10 @@ final class LmdbNativeKernelIr {
 	static final int AGG_MIN_ID = 7;
 	static final int AGG_MAX_ID = 8;
 
-	/** One projected aggregate. Count kinds emit plain longs; numeric kinds emit {@code Double.doubleToLongBits}. */
+	/**
+	 * One projected aggregate. Count kinds emit plain longs; SUM/AVG emit their engine-side group ordinal so exact RDF
+	 * arithmetic can be materialized from the hook sidecar without storing objects in generated code.
+	 */
 	static final class AggregateOutput {
 		final int kind;
 		final int col; // -1 for COUNT_STAR
@@ -1042,16 +1045,9 @@ final class LmdbNativeKernelIr {
 			return kind == AGG_COUNT_STAR || kind == AGG_COUNT || kind == AGG_COUNT_DISTINCT;
 		}
 
-		/**
-		 * How many longs of the output row this aggregate occupies.
-		 *
-		 * Every kind takes one except AVG, which takes two: its sum and its count, emitted separately so the engine can
-		 * divide them with SPARQL's own semantics. Dividing inside the kernel would have to do it in {@code double} and
-		 * emit one number, and SPARQL divides as {@code xsd:decimal} — so an integer-input average would come back
-		 * typed {@code xsd:double} and, whenever the quotient is not a dyadic rational, valued differently too.
-		 */
+		/** How many longs of the output row this aggregate occupies. */
 		int width() {
-			return kind == AGG_AVG ? 2 : 1;
+			return 1;
 		}
 
 		boolean needsNumericHooks() {

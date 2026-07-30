@@ -2635,6 +2635,104 @@ Then from root:
 
 The `-q` here is formatter/resource processing, not a test run.
 
+### Milestone 10 — close branch failures and make adjacency access 1.5× faster
+
+Description: close every reproducible test failure on the current `optimize-lmdb` branch and improve the steady-state
+node-bound direct-adjacency access path by at least 50% without weakening snapshot, context, explicit/inferred, or
+fallback semantics. “50% faster” is measured locally, not inferred from a comparison with another graph engine:
+under identical source, data, JDK, JVM flags, forks, warmups, measurements, and benchmark parameters, the optimized
+implementation must deliver at least `1.50 * baseline throughput`, or average time no greater than
+`baseline / 1.50` (66.67% of baseline). ArcadeDB and Kuzu are design references for flat, primitive, node-local
+adjacency, but RDF4J's own before/after benchmark is the acceptance authority.
+
+Start by preserving the current full-module failure evidence in a new top-level `initial-evidence.txt`. Run
+`python3 .codex/skills/mvnf/scripts/mvnf.py core/sail/lmdb --retain-logs`, catalogue every Surefire/Failsafe failure,
+and rerun each failing method at smallest scope. A detached clean-HEAD or origin comparison may classify whether a
+failure predates the working-tree changes, but “pre-existing” is not a completion state for this milestone: every
+reproducible branch failure must either be fixed at its root or documented as an environmental/non-reproducible result
+with exact evidence. Because the working tree already contains user-owned direct-adjacency and bulk-load edits, preserve
+them and determine their intent from the diff and tests before editing overlapping lines.
+
+Author `DirectAdjacencyBenchmark` before changing the production hot path. Its primary access cases are:
+
+- `find` followed by complete scalar traversal for degrees 16, 128, and 4,096;
+- `find` followed by bulk `copy` traversal for the same degrees;
+- exact `lowerBound` and miss `lowerBound` within those runs;
+- one-predicate and 100-predicate node headers;
+- context-free and mixed-context runs;
+- base and one-delta sources.
+
+Keep construction out of measured methods, consume all results with a JMH `Blackhole`, and expose enough parameters
+to distinguish locator/header lookup from codec traversal. Add a focused correctness test for any benchmark fixture or
+new fast-path API; benchmark-only sources themselves are Routine B, but any production behavior change follows the
+repository's test-first rule.
+
+Run the baseline with `scripts/run-single-benchmark.sh` one benchmark method at a time and retain raw result text.
+Use the same wrapper, selector, active JDK, heap, direct-adjacency options, and dataset seed for the candidate. Compare
+results with `.codex/skills/jmh-benchmark-compare/scripts/jmh_benchmark_compare.py`. The primary acceptance metric is
+the geometric mean across the degree-16, degree-128, and degree-4,096 node-bound access rows for scalar and bulk
+traversal. It must improve by at least 50%, and no primary row may regress by more than 5%. Report lookup-only and
+lower-bound rows separately so a traversal win cannot hide a lookup regression.
+
+Profile the baseline before choosing the implementation. Capture JFR or async-profiler CPU/allocation evidence for the
+slowest representative primary row. Prefer an algorithm/layout win—direct slices over flat primitive memory, one
+run-view resolution per probe or batch, cursor reuse, hoisted catalog/context resolution, and no temporary
+materialization—before isolated loop syntax changes. Inspect HotSpot compilation/inlining only when the profile points
+to call-shape or code-generation overhead. Record the active JDK with every low-level conclusion.
+
+Correctness verification expands from each focused regression to the complete LMDB module, then the affected bulk-load
+module and `core/sail/base`, and finally a root reactor verify when the environment supports it. Test commands never
+use `-am` or `-q`; every Maven command uses `.m2_repo`. Preserve initial and post-fix Surefire/Failsafe evidence, raw
+JMH outputs, the generated comparison report, and profiler recordings.
+
+Acceptance:
+
+- every initially reproducible LMDB and affected bulk-load test failure is green at smallest scope and in its module;
+- `core/sail/lmdb`, `tools/lmdb-bulk-load`, and `core/sail/base` verify with zero failures and zero errors;
+- a root reactor verify has zero failures/errors, or an exact external/environmental blocker is recorded with the
+  unaffected modules still green;
+- the primary direct-adjacency access geometric mean is at least 1.50× baseline throughput (or at most 66.67% baseline
+  average time), with no primary row slower by more than 5%;
+- query parity covers the reported reproduction plus contexts, explicit/inferred data, base/delta snapshots,
+  supernodes, nested traversal, and LMDB fallback;
+- the measured hot path allocates zero per decoded edge after warmup;
+- the plan records baseline/candidate commands, raw artifacts, comparison table, profile evidence, root causes, and the
+  active JDK.
+
+### Milestone 11 — share the comprehensive renderer corpus with Janino
+
+Description: turn the deterministic query streams in
+`SparqlComprehensiveStreamingValidTest` into a reusable test-fixture API and consume that exact API from LMDB. Do not
+copy query strings into the sail module: the renderer tests and Janino census must have one source of truth, so adding
+a renderer-generated query automatically expands the kernel corpus.
+
+Keep the fixture in `rdf4j-queryrender` test sources and publish that module's test JAR. Expose stable case metadata
+(category and SPARQL text), retain lazy bounded streams and the existing deterministic deep-nesting seed, and have each
+renderer `@TestFactory` consume the same category stream exported to downstream tests. Add the queryrender test JAR as
+a test-scoped LMDB dependency.
+
+The LMDB census must enumerate every enabled generated case. It must parse every query, classify forms that cannot be
+executed locally (notably external SERVICE calls), and run locally executable algebra against a deterministic fixture
+with generic and Janino settings separated. Result comparisons must account for unordered bags and explicitly classify
+nondeterministic expressions rather than weakening equality globally. For every local case, record whether a Janino
+kernel was planned, opened, or declined; fail on execution errors, generic/native result disagreement, or an
+unclassified coverage state. Persist a compact category/coverage census under `target/` so a newly generated shape
+cannot disappear into aggregate counts.
+
+Start with a smallest generator-backed reproduction that is known to reach the kernel, observe it fail before the
+consumer/harness exists, then expand by category. Treat every newly exposed production semantic gap as its own
+test-first root-cause fix. Keep external SERVICE execution out of the test; parsing and explicit classification are the
+correct local contract because contacting the public network would make the suite nondeterministic.
+
+Acceptance:
+
+- renderer factories and LMDB consume the same exported query streams;
+- the queryrender test JAR is built and resolved from `.m2_repo`;
+- every enabled generated query is parsed and appears exactly once in the LMDB coverage census;
+- every locally executable deterministic query agrees between generic and Janino execution;
+- every local query has an explicit planned/opened/declined classification, with no silent or unclassified case;
+- the generator-backed focused test and both affected modules are green.
+
 ## Validation and acceptance
 
 The feature is complete only when all of these are true:
@@ -2796,7 +2894,8 @@ Do not write raw adjacency dumps as diagnostics. Stable counts, hashes, histogra
   Milestone-6 commit collector; vector 15 and the store-level build/query/reopen smoke land with Milestone-5 store
   integration, which also brings the production LMDB scanner (`getTriples` spoc/posc wrappers) and the ValueStore
   payload high-water in place of the reference path's generous default.
-- [~] Milestone 5 in progress (2026-07-28): `LmdbAdjacencyTripleStoreScanner` implemented — spoc/posc-prefixed
+- [x] Milestone 5 intermediate checkpoint (2026-07-28; later completed below):
+  `LmdbAdjacencyTripleStoreScanner` implemented — spoc/posc-prefixed
   `StatementOrder`-selected index scans over one pinned read transaction, contexts-DBI domain scan, merged distinct
   predicates, map-resize/version + revision-advance snapshot guards (revision guard is deliberately strict until the
   Milestone-6 collector provides online catch-up), and `supportsOrderedScan` prefix validation.
@@ -2919,6 +3018,17 @@ Do not write raw adjacency dumps as diagnostics. Stable counts, hashes, histogra
   plan's JMH benchmark classes (`DirectAdjacencyBenchmark`/`DirectAdjacencySealBenchmark`/
   `DirectAdjacencyBuildBenchmark`) are not yet authored — they belong with the M4B/M9 performance pass on the
   benchmark host.
+- [~] (2026-07-30 01:45Z) Milestone 10 verification in progress: every deterministic focused failure is green and the
+  six primary JDK-25 traversal rows improve by a 1.5719× geometric mean with no regression
+  (`benchmark-results/direct-adjacency/compare-{scalar,bulk}-final.txt`). The final Docker/JDK-26 degree-4,096 trace is
+  5,556.850 ns/op versus 11,693.552 ns/op at baseline (2.10×); the decoder fell from 51.28% to 12.73% sampled CPU.
+  JMH GC profiling reports 0.053 B/op and zero collections, with no hot-path allocation site in JFR. Full LMDB,
+  bulk-load, base, and reactor verification remains.
+- [x] (2026-07-30 00:44Z) Milestone 11 focused scope complete: queryrender publishes the same lazy deterministic
+  generator stream its factories consume; LMDB parses, classifies, and compares all 11,620 generated cases across
+  17 categories. The generator census is 11/11 green and persists
+  `core/sail/lmdb/target/generated-janino-coverage-census.txt`; its bound-VALUES/OPTIONAL/UNION case exposed and fixed
+  lexical filter escape in kernel lowering.
 
 ## Surprises & Discoveries
 
@@ -2947,6 +3057,10 @@ Do not write raw adjacency dumps as diagnostics. Stable counts, hashes, histogra
 - `Txn.version()` is a process-local reset/renew counter, not the LMDB snapshot identity. Parallel sibling validation
   must compare `mdb_txn_id` captured at scanner construction and retain `Txn.version()` only as the independent
   map-resize invalidation fence.
+- Reference ids reserve seven low type bits, so ordinary 128-edge blocks commonly use 15-bit packed deltas. The first
+  attempted byte-wide optimization targeted the wrong representation and left `readLane` at 21.52% sampled CPU.
+  A sequential packed-bit cursor improved it, and an aligned 64-lane/15-word decoder removed the per-lane branch and
+  redundant native word loads without changing the in-memory format.
 - Closing a pinned LMDB transaction from the coordinator while its sibling worker is still using that transaction
   violates the thread-confined scanner contract. Normal failure cancellation must interrupt and join first; cancellation
   polling must count all source visits rather than covered-run pairs, or a large uncovered SELECTED group can evade it.
@@ -3097,6 +3211,18 @@ Do not write raw adjacency dumps as diagnostics. Stable counts, hashes, histogra
   Rationale: plane partitions remain disjoint and handle-stable, while tiny bases and retained generations no longer
   pay a full owner-region charge apiece.
   Date/Author: 2026-07-29 / Codex.
+- Decision: define the requested “50% faster adjacency access” as at least 1.50× throughput, or no more than 66.67% of
+  baseline average time, on identical in-repository JMH cases; use the primary scalar/copy traversal geometric mean
+  with a 5% per-row regression guard.
+  Rationale: cross-engine Kuzu/ArcadeDB results use different storage and query processors and cannot prove the local
+  code changed. A same-fixture before/after threshold is reproducible, attributable, and prevents one large result
+  from hiding regressions in ordinary degrees.
+  Date/Author: 2026-07-29 / Codex.
+- Decision: publish the query-renderer generator as a test JAR API and classify external SERVICE cases instead of
+  executing them.
+  Rationale: one shared stream makes generator additions automatically expand LMDB coverage; executing public SERVICE
+  endpoints would make an otherwise deterministic unit suite dependent on the network.
+  Date/Author: 2026-07-29 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -3165,3 +3291,8 @@ mechanics with a 12-hour 20B gate, and made predicate-root acceptance an explici
 2026-07-29: Reopened Milestone 4B after validating the fixed build-workspace payload ceiling. Replaced it with a
 full-domain, dynamically allocated and hard-accounted radix; added exact-snapshot parallel Pass-1/Pass-3 construction,
 deterministic arena partitions, cancellation, and 20B projection metrics. Hardware rollout gates remain unchanged.
+
+2026-07-29: Reopened the plan for Milestone 10 after the user requested closure of all branch test failures and a
+measured 50% direct-adjacency access improvement. Added the missing benchmark-first, profile-guided workflow and an
+explicit same-JVM 1.50× acceptance contract so the result is attributable to this implementation rather than an
+external engine comparison.

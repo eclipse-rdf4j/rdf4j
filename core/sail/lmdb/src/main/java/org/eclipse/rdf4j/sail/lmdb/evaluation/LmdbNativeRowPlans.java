@@ -368,6 +368,13 @@ final class MinusCursor implements RowCursor {
 	final SlotPlan right;
 	final long sharedMask;
 	final RowState row;
+	final long compatibilityMask;
+	final int[] sharedSlots;
+	final long[] leftSharedValues;
+	final int[] clearedSlots;
+	final long[] clearedValues;
+	final boolean hasUnslottedBaseBindings;
+	final long assuredRightMask;
 	/**
 	 * When the right side's outcome depends only on the current values of a known slot set (see {@link #memoReadMask}),
 	 * the per-left-row existence probe is memoized on those values. Plans that may consult state outside the declared
@@ -383,8 +390,20 @@ final class MinusCursor implements RowCursor {
 		this.right = right;
 		this.sharedMask = sharedMask;
 		this.row = row;
+		// The monolithic native plan keeps surrounding join bindings in the mutable row. They are physical probe
+		// constraints, not part of either MINUS operand's algebraic solution domain. Only externally supplied base
+		// bindings occur in both operands in addition to names statically shared by the two children.
+		this.compatibilityMask = sharedMask | row.baseBindingMask;
+		this.sharedSlots = slotsOf(compatibilityMask);
+		this.leftSharedValues = new long[sharedSlots.length];
+		this.clearedSlots = new int[row.slots.length];
+		this.clearedValues = new long[row.slots.length];
+		this.hasUnslottedBaseBindings = row.base.size() > Long.bitCount(row.baseBindingMask);
+		this.assuredRightMask = SlotPlan.assuredMask(right);
 		long readMask = memoReadMask(right);
-		this.memoSlots = readMask < 0L ? null : slotsOf(readMask);
+		// Compatibility depends on the left values even when the right plan's own read mask does not mention them
+		// (notably a UNION branch that binds none of the shared variables).
+		this.memoSlots = readMask < 0L ? null : slotsOf(readMask | compatibilityMask);
 		this.membershipProbe = right instanceof PatternPlan
 				? PatternMembershipProbe.tryCreate(((PatternPlan) right).s, ((PatternPlan) right).p,
 						((PatternPlan) right).o, ((PatternPlan) right).c, ((PatternPlan) right).contexts,
@@ -408,13 +427,25 @@ final class MinusCursor implements RowCursor {
 	}
 
 	boolean hasCompatibleRight() throws IOException {
-		if ((row.boundMask() & sharedMask) == 0L) {
+		if ((row.boundMask() & compatibilityMask) == 0L && !hasUnslottedBaseBindings) {
 			return false;
 		}
-		if (membershipProbe != null) {
+		// A direct membership probe may correlate shared left values, but it must not see physical bindings from
+		// surrounding joins that the independently evaluated right operand does not own.
+		if (membershipProbe != null
+				&& (row.boundMask() & ~(sharedMask | row.baseBindingMask)) == 0L) {
 			int result = membershipProbe.test(row);
 			if (result >= 0) {
 				return result == 1;
+			}
+			// A single pattern binds every variable slot it names on every emitted row. Correlating its currently
+			// bound shared values is therefore an exact MINUS compatibility test, unlike a UNION/OPTIONAL arm that may
+			// emit a row with those variables unbound. Use the cheap existence probe while membership admission warms
+			// up; only the eventual membership build performs the unbound sweep.
+			try (PatternCursor cursor = ((PatternPlan) right).openRawForExistence(row)) {
+				boolean matched = cursor.next() != null;
+				membershipProbe.recordDirectResult(matched);
+				return matched;
 			}
 		}
 		if (memoSlots == null) {
@@ -438,8 +469,85 @@ final class MinusCursor implements RowCursor {
 	}
 
 	boolean openAndCheckRight() throws IOException {
-		try (RowCursor cursor = right.open(row)) {
-			return cursor.next();
+		long leftBoundMask = row.boundMask() & compatibilityMask;
+		long boundSharedMask = leftBoundMask & sharedMask;
+		if ((boundSharedMask & ~assuredRightMask) == 0L) {
+			return openCorrelatedRight();
+		}
+		return openIndependentAndCheckRight(leftBoundMask);
+	}
+
+	/**
+	 * A right plan that binds every currently bound shared variable on every emitted row can be evaluated as an exact
+	 * correlated existence probe. Retain only algebraically shared and external base bindings: surrounding join state
+	 * is still physical probe state and must not leak into the right operand.
+	 */
+	boolean openCorrelatedRight() throws IOException {
+		long clearMask = row.boundMask() & ~(sharedMask | row.baseBindingMask);
+		int clearedCount = clearSlots(clearMask);
+		try {
+			try (RowCursor cursor = right.open(row)) {
+				return cursor.next();
+			}
+		} finally {
+			restoreSlots(clearedCount);
+		}
+	}
+
+	boolean openIndependentAndCheckRight(long leftBoundMask) throws IOException {
+		// Evaluate the right operand from the external base row, exactly like RDF4J's algebra evaluator. Values
+		// accumulated by surrounding joins or by the left operand are only physical probe state and must not
+		// correlate the right operand. Save and clear all of them, then restore the active left row after the probe.
+		long clearMask = row.boundMask() & ~row.baseBindingMask;
+		for (int i = 0; i < sharedSlots.length; i++) {
+			int slot = sharedSlots[i];
+			leftSharedValues[i] = row.slots[slot];
+		}
+		int clearedCount = clearSlots(clearMask);
+		try {
+			// SPARQL MINUS evaluates the right side independently, then tests compatibility per solution. Correlating
+			// shared left values into the right plan is usually a useful semi-join, but is unsound for alternatives
+			// that leave every shared variable unbound: such a row has an empty domain intersection and must not remove
+			// the left row. Iterate until a genuinely compatible right solution is found.
+			try (RowCursor cursor = right.open(row)) {
+				while (cursor.next()) {
+					long overlap = leftBoundMask & row.boundMask() & compatibilityMask;
+					if (overlap == 0L && !hasUnslottedBaseBindings) {
+						continue;
+					}
+					boolean compatible = true;
+					for (int i = 0; i < sharedSlots.length; i++) {
+						int slot = sharedSlots[i];
+						if ((overlap >>> slot & 1L) != 0L && row.slots[slot] != leftSharedValues[i]) {
+							compatible = false;
+							break;
+						}
+					}
+					if (compatible) {
+						return true;
+					}
+				}
+				return false;
+			}
+		} finally {
+			restoreSlots(clearedCount);
+		}
+	}
+
+	int clearSlots(long clearMask) {
+		int clearedCount = 0;
+		for (long remaining = clearMask; remaining != 0L; remaining &= remaining - 1) {
+			int slot = Long.numberOfTrailingZeros(remaining);
+			clearedSlots[clearedCount] = slot;
+			clearedValues[clearedCount] = row.replaceSlot(slot, UNKNOWN);
+			clearedCount++;
+		}
+		return clearedCount;
+	}
+
+	void restoreSlots(int clearedCount) {
+		for (int i = clearedCount - 1; i >= 0; i--) {
+			row.replaceSlot(clearedSlots[i], clearedValues[i]);
 		}
 	}
 }

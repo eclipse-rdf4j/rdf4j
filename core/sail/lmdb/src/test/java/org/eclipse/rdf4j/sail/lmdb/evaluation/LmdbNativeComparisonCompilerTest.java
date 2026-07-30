@@ -152,6 +152,20 @@ class LmdbNativeComparisonCompilerTest {
 	}
 
 	@Test
+	void genericBooleanRetainsItsExactSlotReadMask() {
+		Compare oneSlot = new Compare(new Var("a"),
+				new ValueConstant(SimpleValueFactory.getInstance().createLiteral("")), Compare.CompareOp.NE);
+		Compare twoSlots = new Compare(new Var("a"), new Var("b"), Compare.CompareOp.NE);
+		Compare outsideFragment = new Compare(new Var("outside"), new Var("a"), Compare.CompareOp.NE);
+
+		assertThat(compiler.compileGenericBoolean(oneSlot).batchReadMask()).isEqualTo(1L);
+		assertThat(compiler.compileGenericBoolean(twoSlots).batchReadMask()).isEqualTo(3L);
+		assertThat(compiler.compileGenericBoolean(outsideFragment).batchReadMask())
+				.as("a name owned by an outer fragment cannot be represented by this fragment's slot mask")
+				.isEqualTo(-1L);
+	}
+
+	@Test
 	void scalarConstantsAreDecodedOnceAtCompileTime() {
 		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
 		LmdbNativeValueCodec codec = new LmdbNativeValueCodec(mock(ValueStore.class));

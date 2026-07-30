@@ -300,7 +300,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		if (containsUnsafeNestedVariableScopeChange(node)) {
 			return null;
 		}
-		if (!isBareBgpFragment(node)) {
+		if (!isBareRowFragment(node)) {
 			return null;
 		}
 		this.requiredAggregateNames = VarNameCollector.process(node);
@@ -323,15 +323,20 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				expr, context);
 	}
 
-	private boolean isBareBgpFragment(TupleExpr node) {
+	/**
+	 * A projection-less row fragment the slot compiler can emit while the generic evaluator owns surrounding
+	 * expressions. VALUES is included as a leaf so a generic BIND/Projection wrapper does not split
+	 * {@code VALUES + graph pattern} into a generic nested-loop join with one native pattern invocation per value.
+	 */
+	private boolean isBareRowFragment(TupleExpr node) {
 		if (node instanceof Filter) {
-			return isBareBgpFragment(((Filter) node).getArg());
+			return isBareRowFragment(((Filter) node).getArg());
 		}
 		if (node instanceof Join) {
 			Join join = (Join) node;
-			return isBareBgpFragment(join.getLeftArg()) && isBareBgpFragment(join.getRightArg());
+			return isBareRowFragment(join.getLeftArg()) && isBareRowFragment(join.getRightArg());
 		}
-		return node instanceof StatementPattern;
+		return node instanceof StatementPattern || node instanceof BindingSetAssignment;
 	}
 
 	private boolean supportedOrder(List<OrderElem> orderElems) {

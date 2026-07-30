@@ -342,20 +342,35 @@ final class AggState {
 		if (typeErrors[i]) {
 			return;
 		}
-		Value v = ctx.value(id);
-		if (!v.isLiteral()) {
+		Literal literal = numericLiteral(ctx, id);
+		if (literal == null) {
 			typeErrors[i] = true;
 			return;
 		}
-		Literal literal = (Literal) v;
-		CoreDatatype.XSD coreDatatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
-		if (coreDatatype != null && coreDatatype.isNumericDatatype()) {
-			ctx.preserveFloatingEncounterOrder(literal);
-			Literal sum = sums[i] == null ? AggContext.INTEGER_ZERO : sums[i];
-			sums[i] = MathUtil.compute(sum, literal, MathExpr.MathOp.PLUS);
-		} else {
-			typeErrors[i] = true;
+		sums[i] = addNumeric(sums[i], literal);
+	}
+
+	/**
+	 * Resolves one dictionary id to a numeric literal using the same acceptance and encounter-order rules as every
+	 * native value aggregate. The exact Janino sidecar uses this too so it cannot drift from the ordinary aggregate.
+	 */
+	static Literal numericLiteral(AggContext context, long id) {
+		Value value = context.value(id);
+		if (!value.isLiteral()) {
+			return null;
 		}
+		Literal literal = (Literal) value;
+		CoreDatatype.XSD coreDatatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
+		if (coreDatatype == null || !coreDatatype.isNumericDatatype()) {
+			return null;
+		}
+		context.preserveFloatingEncounterOrder(literal);
+		return literal;
+	}
+
+	/** Exact SPARQL numeric addition, including datatype promotion. */
+	static Literal addNumeric(Literal sum, Literal literal) {
+		return MathUtil.compute(sum == null ? AggContext.INTEGER_ZERO : sum, literal, MathExpr.MathOp.PLUS);
 	}
 
 	/**

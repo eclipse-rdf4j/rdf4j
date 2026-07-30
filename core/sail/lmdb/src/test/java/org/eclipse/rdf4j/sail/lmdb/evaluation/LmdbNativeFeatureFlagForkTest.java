@@ -240,8 +240,8 @@ class LmdbNativeFeatureFlagForkTest {
 			checkEquals(expectedSelect, serialSelect, "chunk-off serial SELECT result parity");
 			checkEquals(expectedSerialAggregate, serialAggregate, "chunk-off serial aggregate result parity");
 			check(serialSelectStrategy.startsWith("factorizedRows(")
-					&& serialSelectStrategy.contains("prefix=chunkedMemo"),
-					"chunk-off serial SELECT must retain the memoized factorized prefix, got "
+					&& !serialSelectStrategy.contains("prefix=chunkPipeline"),
+					"chunk-off serial SELECT must retain a non-chunk factorized prefix, got "
 							+ serialSelectStrategy);
 			check(serialAggregateStrategy.startsWith("factorizedTail(prefix=chain,"),
 					"chunk-off serial aggregate must retain the factorized tail over the chain prefix, got "
@@ -316,7 +316,6 @@ class LmdbNativeFeatureFlagForkTest {
 			long aggregateRunsBefore = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
 			long factorizedRowsBefore = LmdbNativeFactorizedRows.ENGAGED.get();
 			long factorizedTailBefore = FactorizedTail.ENGAGED.get();
-			long chunkBefore = LmdbNativeChunkPipeline.ENGAGED.get();
 
 			String selectStrategy = strategy(repository, SELECT_QUERY);
 			String aggregateStrategy = strategy(repository, AGGREGATE_QUERY);
@@ -325,10 +324,10 @@ class LmdbNativeFeatureFlagForkTest {
 
 			checkEquals(expectedSelect, actualSelect, "parallel-off SELECT result parity");
 			checkEquals(expectedAggregate, actualAggregate, "parallel-off aggregate result parity");
-			check(selectStrategy.startsWith("chunkPipeline("),
-					"parallel-off SELECT must use the sequential chunk/factorized path, got " + selectStrategy);
-			check(aggregateStrategy.startsWith("factorizedTail(prefix=chunkPipeline,"),
-					"parallel-off aggregate must use the sequential chunk/factorized path, got "
+			check(selectStrategy.startsWith("factorizedRows("),
+					"parallel-off SELECT must use sequential factorized rows, got " + selectStrategy);
+			check(aggregateStrategy.startsWith("factorizedTail("),
+					"parallel-off aggregate must use sequential factorized aggregation, got "
 							+ aggregateStrategy);
 			checkEquals(rowRunsBefore, LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get(),
 					"parallel-off SELECT must not start workers");
@@ -338,8 +337,6 @@ class LmdbNativeFeatureFlagForkTest {
 					"parallel-off SELECT must retain sequential factorized rows");
 			check(FactorizedTail.ENGAGED.get() > factorizedTailBefore,
 					"parallel-off aggregate must retain sequential factorized aggregation");
-			check(LmdbNativeChunkPipeline.ENGAGED.get() > chunkBefore,
-					"parallel-off executions must retain the sequential chunk substrate");
 			checkEquals("disabled", LmdbNativeParallelPipelines.LAST_REJECTION.get(),
 					"parallel-off SELECT rejection reason");
 		}
@@ -357,8 +354,10 @@ class LmdbNativeFeatureFlagForkTest {
 
 			checkEquals(expectedFull, actualFull, "ordered-factorized-off full-sort result parity");
 			checkEquals(expectedBounded, actualBounded, "ordered-factorized-off bounded result parity");
-			checkEquals("orderedFullSort", fullStrategy, "ordered-factorized-off full-sort strategy");
-			checkEquals("orderedTopK", boundedStrategy, "ordered-factorized-off bounded strategy");
+			check(fullStrategy.endsWith("orderedFullSort"),
+					"ordered-factorized-off full-sort strategy, got " + fullStrategy);
+			check(boundedStrategy.endsWith("orderedTopK"),
+					"ordered-factorized-off bounded strategy, got " + boundedStrategy);
 			checkEquals(sortsBefore, NativeRowsStep.ORDERED_FACTORIZED_SORTS.get(),
 					"ordered-factorized-off execution must not sort flat rows");
 			checkEquals(topKBefore, NativeRowsStep.ORDERED_FACTORIZED_TOPK.get(),

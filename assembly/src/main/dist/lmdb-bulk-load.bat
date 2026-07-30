@@ -17,4 +17,8 @@ if defined JAVA_HOME if exist "%JAVA_HOME%\bin\java.exe" (
 	set "JAVA=java"
 )
 
-"%JAVA%" --enable-native-access=ALL-UNNAMED -cp "%LIB_DIR%\*" org.eclipse.rdf4j.tools.lmdb.bulk.LmdbBulkLoad %*
+if "%~1"=="" (
+	"%JAVA%" --enable-native-access=ALL-UNNAMED -cp "%LIB_DIR%\*" org.eclipse.rdf4j.tools.lmdb.bulk.LmdbBulkLoad --interactive
+) else (
+	"%JAVA%" --enable-native-access=ALL-UNNAMED -cp "%LIB_DIR%\*" org.eclipse.rdf4j.tools.lmdb.bulk.LmdbBulkLoad %*
+)

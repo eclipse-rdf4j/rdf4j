@@ -38,6 +38,7 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 	private final LmdbAdjacencyContextCatalog contextCatalog;
 	private final LmdbAdjacencyCoverage coverage;
 	private final LmdbReferenceNodeLocator locator;
+	private final LmdbAdjacencyKeyIndex[] keyIndexes; // predicateOrdinal * 4 + plane
 	private final Map<Long, LmdbInlineIncomingIndex> inlinePlanes; // key: predicateOrdinal * 4 + plane
 	private final LmdbAdjacencyMemoryAccount account;
 	private final long baseChargedBytes;
@@ -46,7 +47,7 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 
 	LmdbInMemoryAdjacencyIndex(long baseRevision, LmdbAdjacencyArenaCatalog arenaCatalog,
 			LmdbAdjacencyPredicateCatalog predicateCatalog, LmdbAdjacencyContextCatalog contextCatalog,
-			LmdbAdjacencyCoverage coverage, LmdbReferenceNodeLocator locator,
+			LmdbAdjacencyCoverage coverage, LmdbReferenceNodeLocator locator, LmdbAdjacencyKeyIndex[] keyIndexes,
 			Map<Long, LmdbInlineIncomingIndex> inlinePlanes, LmdbAdjacencyMemoryAccount account,
 			long baseChargedBytes, long statementCount, long incidenceCount) {
 		this.baseRevision = baseRevision;
@@ -55,6 +56,7 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 		this.contextCatalog = contextCatalog;
 		this.coverage = coverage;
 		this.locator = locator;
+		this.keyIndexes = keyIndexes;
 		this.inlinePlanes = inlinePlanes;
 		this.account = account;
 		this.baseChargedBytes = baseChargedBytes;
@@ -84,6 +86,20 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 
 	LmdbReferenceNodeLocator locator() {
 		return locator;
+	}
+
+	LmdbAdjacencyKeyIndex keyIndex(long predicateOrdinal, int plane) {
+		if (predicateOrdinal < 0) {
+			return null;
+		}
+		if (plane < 0 || plane >= LmdbReferenceNodeLocator.PLANE_COUNT) {
+			throw new IllegalArgumentException("plane out of range: " + plane);
+		}
+		long index = predicateOrdinal * LmdbReferenceNodeLocator.PLANE_COUNT + plane;
+		if (index < 0 || index >= keyIndexes.length) {
+			throw new IllegalArgumentException("predicate ordinal out of range: " + predicateOrdinal);
+		}
+		return keyIndexes[(int) index];
 	}
 
 	long statementCount() {

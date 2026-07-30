@@ -221,15 +221,8 @@ final class LmdbNativeKernelEmitter {
 						}
 						break;
 					case LmdbNativeKernelIr.AGG_SUM:
-						source.append("    private double[] agS").append(i).append(";\n");
-						break;
 					case LmdbNativeKernelIr.AGG_AVG:
-						source.append("    private double[] agS")
-								.append(i)
-								.append(";\n")
-								.append("    private long[] agN")
-								.append(i)
-								.append(";\n");
+						// Exact numeric state lives in the engine hook sidecar; generated code keeps no RDF objects.
 						break;
 					case LmdbNativeKernelIr.AGG_MIN_ID:
 					case LmdbNativeKernelIr.AGG_MAX_ID:
@@ -315,15 +308,8 @@ final class LmdbNativeKernelEmitter {
 						}
 						break;
 					case LmdbNativeKernelIr.AGG_SUM:
-						source.append("        agS").append(i).append(" = new double[16];\n");
-						break;
 					case LmdbNativeKernelIr.AGG_AVG:
-						source.append("        agS")
-								.append(i)
-								.append(" = new double[16];\n")
-								.append("        agN")
-								.append(i)
-								.append(" = new long[16];\n");
+						// Exact numeric state is initialized with the bound engine hooks.
 						break;
 					case LmdbNativeKernelIr.AGG_MIN_ID:
 					case LmdbNativeKernelIr.AGG_MAX_ID:
@@ -652,12 +638,10 @@ final class LmdbNativeKernelEmitter {
 				case LmdbNativeKernelIr.AGG_SUM:
 					source.append("        if (")
 							.append(value)
-							.append(" != -1L && hooks.isNumeric(")
-							.append(value)
-							.append(")) {\n")
-							.append("            agS")
+							.append(" != -1L) {\n")
+							.append("            hooks.accumulateNumeric(")
 							.append(i)
-							.append("[g] += hooks.doubleValue(")
+							.append(", g, ")
 							.append(value)
 							.append(");\n")
 							.append("        }\n");
@@ -665,17 +649,12 @@ final class LmdbNativeKernelEmitter {
 				case LmdbNativeKernelIr.AGG_AVG:
 					source.append("        if (")
 							.append(value)
-							.append(" != -1L && hooks.isNumeric(")
-							.append(value)
-							.append(")) {\n")
-							.append("            agS")
+							.append(" != -1L) {\n")
+							.append("            hooks.accumulateNumeric(")
 							.append(i)
-							.append("[g] += hooks.doubleValue(")
+							.append(", g, ")
 							.append(value)
 							.append(");\n")
-							.append("            agN")
-							.append(i)
-							.append("[g]++;\n")
 							.append("        }\n");
 					break;
 				case LmdbNativeKernelIr.AGG_MIN_ID:
@@ -791,11 +770,8 @@ final class LmdbNativeKernelEmitter {
 					}
 					break;
 				case LmdbNativeKernelIr.AGG_SUM:
-					emitArrayGrow(source, "agS" + i, "double");
-					break;
 				case LmdbNativeKernelIr.AGG_AVG:
-					emitArrayGrow(source, "agS" + i, "double");
-					emitArrayGrow(source, "agN" + i, "long");
+					// Exact numeric arrays grow in the engine hook sidecar.
 					break;
 				case LmdbNativeKernelIr.AGG_MIN_ID:
 				case LmdbNativeKernelIr.AGG_MAX_ID:
@@ -856,8 +832,6 @@ final class LmdbNativeKernelEmitter {
 			}
 			for (int i = 0; i < aggregate.outputs.length; i++) {
 				AggregateOutput output = aggregate.outputs[i];
-				// Not `base + i`: an AVG occupies two slots, so every later aggregate's position depends on the widths
-				// of the ones before it.
 				String target = "rowScratch[" + aggregate.outputOffset(i) + "]";
 				switch (output.kind) {
 				case LmdbNativeKernelIr.AGG_COUNT_STAR:
@@ -872,27 +846,10 @@ final class LmdbNativeKernelEmitter {
 							.append(";\n");
 					break;
 				case LmdbNativeKernelIr.AGG_SUM:
-					source.append("        ")
-							.append(target)
-							.append(" = Double.doubleToLongBits(agS")
-							.append(i)
-							.append("[g]);\n");
-					break;
 				case LmdbNativeKernelIr.AGG_AVG:
-					// Two slots: the accumulated sum and the number of contributing rows. The division happens in
-					// `kernelGroupRow`, through the same `MathUtil.compute(..., DIVIDE)` the interpreted aggregate
-					// uses,
-					// so the result carries SPARQL's datatype rather than whatever a double quotient would suggest.
 					source.append("        ")
 							.append(target)
-							.append(" = Double.doubleToLongBits(agS")
-							.append(i)
-							.append("[g]);\n")
-							.append("        rowScratch[")
-							.append(aggregate.outputOffset(i) + 1)
-							.append("] = agN")
-							.append(i)
-							.append("[g];\n");
+							.append(" = g;\n");
 					break;
 				case LmdbNativeKernelIr.AGG_MIN_ID:
 				case LmdbNativeKernelIr.AGG_MAX_ID:

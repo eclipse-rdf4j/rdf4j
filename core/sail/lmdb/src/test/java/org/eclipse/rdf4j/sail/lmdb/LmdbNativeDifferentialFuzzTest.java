@@ -149,10 +149,13 @@ public class LmdbNativeDifferentialFuzzTest {
 
 	@BeforeAll
 	public void setUp() {
-		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc"));
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
+				.setDirectAdjacencyBuildOnStart(false);
+		store = new LmdbStore(dataDir, config);
 		lmdb = new SailRepository(store);
 		Random random = new Random(SEED);
 		try (SailRepositoryConnection lmdbConn = lmdb.getConnection()) {
+			lmdbConn.begin();
 			ValueFactory vf = lmdbConn.getValueFactory();
 			IRI[] types = new IRI[] { iri(vf, "T1"), iri(vf, "T2"), iri(vf, "T3") };
 			IRI[] preds = new IRI[] { iri(vf, "p1"), iri(vf, "p2"), iri(vf, "p3"), iri(vf, "p4"), iri(vf, "p5") };
@@ -193,7 +196,9 @@ public class LmdbNativeDifferentialFuzzTest {
 					lmdbConn.add(st.s, st.p, st.o, st.c);
 				}
 			}
+			lmdbConn.commit();
 		}
+		JaninoCeilingKernels.buildDirectAdjacency(store);
 	}
 
 	private static IRI iri(ValueFactory vf, String local) {
