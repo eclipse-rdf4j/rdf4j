@@ -30,8 +30,8 @@ class TripleTermIndexBulkRecordsTest {
 		assertThat(ValueStore.class.getDeclaredMethod("appendBulkTripleTermIndex", String.class,
 				ValueStore.BulkLongQuadSource.class, int.class, long.class))
 						.isNotNull();
-		assertThat(ValueStore.class.getDeclaredMethod("validateBulkTripleTermIndex", String.class,
-				ValueStore.BulkLongQuadSource.class))
-						.isNotNull();
+		assertThat(ValueStore.class.getDeclaredMethods())
+				.extracting(java.lang.reflect.Method::getName)
+				.doesNotContain("validateBulkTripleTermIndex");
 	}
 }

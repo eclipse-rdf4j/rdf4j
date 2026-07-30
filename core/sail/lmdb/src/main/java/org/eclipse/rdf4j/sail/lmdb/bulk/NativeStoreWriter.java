@@ -49,23 +49,11 @@ final class NativeStoreWriter {
 					return cursor.next();
 				}, maxTransactionRecords, maxTransactionBytes);
 			}
-			try (ByteRecordCursor cursor = new ByteRecordCursor(values.mainRecords().path())) {
-				store.validateValueRecords(() -> {
-					checkCancelled(cancellationSignal);
-					return cursor.next();
-				});
-			}
 			try (ByteRecordCursor cursor = new ByteRecordCursor(values.referenceCounts().path())) {
 				store.appendReferenceCounts(() -> {
 					checkCancelled(cancellationSignal);
 					return cursor.next();
 				}, maxTransactionRecords, maxTransactionBytes);
-			}
-			try (ByteRecordCursor cursor = new ByteRecordCursor(values.referenceCounts().path())) {
-				store.validateReferenceCounts(() -> {
-					checkCancelled(cancellationSignal);
-					return cursor.next();
-				});
 			}
 			long expectedTripleTerms = -1L;
 			for (TripleTermIndexBulkRecords.IndexRun indexRun : tripleTermIndexes.runs()) {
@@ -81,12 +69,6 @@ final class NativeStoreWriter {
 								+ expectedTripleTerms + " entries but " + indexRun.specification() + " contains "
 								+ termsInIndex);
 					}
-				}
-				try (LongTupleCursor cursor = new LongTupleCursor(indexRun.tuples().path(), 4)) {
-					store.validateTripleTermIndex(indexRun.specification(), target -> {
-						checkCancelled(cancellationSignal);
-						return cursor.next(target);
-					});
 				}
 			}
 			if (config.getValueHashCacheEnabled()) {
@@ -108,16 +90,7 @@ final class NativeStoreWriter {
 				store.setNamespace(prefix, namespace);
 			});
 			store.syncNamespaces();
-			try (IdQuadCursor cursor = new IdQuadCursor(statements.path())) {
-				long[] quad = new long[4];
-				while (cursor.next(quad)) {
-					for (long id : quad) {
-						store.requireValue(id);
-					}
-				}
-			}
 			long expectedStatements = -1L;
-			boolean writeContexts = true;
 			for (StatementIndexBulkRecords.IndexRun indexRun : statementIndexes.runs()) {
 				long statementsInIndex;
 				if (indexRun.tuples() != null) {
@@ -125,14 +98,14 @@ final class NativeStoreWriter {
 						statementsInIndex = store.appendExplicitIndex(indexRun.specification(), target -> {
 							checkCancelled(cancellationSignal);
 							return cursor.next(target);
-						}, writeContexts, maxTransactionRecords, maxTransactionBytes);
+						}, maxTransactionRecords, maxTransactionBytes);
 					}
 				} else {
 					try (ByteRecordCursor cursor = new ByteRecordCursor(indexRun.encodedRecords().path())) {
 						statementsInIndex = store.appendExplicitEncodedIndex(indexRun.specification(), () -> {
 							checkCancelled(cancellationSignal);
 							return cursor.next();
-						}, writeContexts, maxTransactionRecords, maxTransactionBytes);
+						}, maxTransactionRecords, maxTransactionBytes);
 					}
 				}
 				if (expectedStatements < 0L) {
@@ -141,22 +114,12 @@ final class NativeStoreWriter {
 					throw new IOException("Statement index cardinality mismatch: expected " + expectedStatements
 							+ " entries but " + indexRun.specification() + " contains " + statementsInIndex);
 				}
-				if (indexRun.tuples() != null) {
-					try (LongTupleCursor cursor = new LongTupleCursor(indexRun.tuples().path(), 4)) {
-						store.validateExplicitIndex(indexRun.specification(), target -> {
-							checkCancelled(cancellationSignal);
-							return cursor.next(target);
-						});
-					}
-				} else {
-					try (ByteRecordCursor cursor = new ByteRecordCursor(indexRun.encodedRecords().path())) {
-						store.validateExplicitEncodedIndex(indexRun.specification(), () -> {
-							checkCancelled(cancellationSignal);
-							return cursor.next();
-						});
-					}
-				}
-				writeContexts = false;
+			}
+			try (ContextCountCursor cursor = new ContextCountCursor(statementIndexes.contexts().path())) {
+				store.appendContexts(target -> {
+					checkCancelled(cancellationSignal);
+					return cursor.next(target);
+				}, maxTransactionRecords, maxTransactionBytes);
 			}
 			return new WriteResult(Math.max(0L, expectedStatements), store.mapGrowthCount());
 		}
@@ -245,34 +208,49 @@ final class NativeStoreWriter {
 		}
 	}
 
-	private static final class IdQuadCursor implements AutoCloseable {
+	private static final class ContextCountCursor implements AutoCloseable {
 
 		private final DataInputStream input;
-		private long expectedOrdinal;
+		private boolean hasPending;
+		private long pending;
 
-		private IdQuadCursor(Path path) throws IOException {
+		private ContextCountCursor(Path path) throws IOException {
 			input = new DataInputStream(new BufferedInputStream(Files.newInputStream(path), 64 * 1024));
 		}
 
 		private boolean next(long[] target) throws IOException {
-			long ordinal;
-			try {
-				ordinal = input.readLong();
-			} catch (EOFException e) {
-				return false;
+			if (target.length < 2) {
+				throw new IllegalArgumentException("Context-count target is smaller than 2");
 			}
-			try {
-				if (ordinal != expectedOrdinal) {
-					throw new IOException("ID-quad spool expected ordinal " + expectedOrdinal + " but got " + ordinal);
+			long context;
+			if (hasPending) {
+				context = pending;
+				hasPending = false;
+			} else {
+				try {
+					context = input.readLong();
+				} catch (EOFException e) {
+					return false;
 				}
-				for (int component = 0; component < 4; component++) {
-					target[component] = input.readLong();
-				}
-				expectedOrdinal++;
-				return true;
-			} catch (EOFException e) {
-				throw new IOException("Truncated ID-quad spool at ordinal " + ordinal, e);
 			}
+			long count = 1L;
+			while (true) {
+				try {
+					long next = input.readLong();
+					if (next == context) {
+						count = Math.addExact(count, 1L);
+					} else {
+						pending = next;
+						hasPending = true;
+						break;
+					}
+				} catch (EOFException e) {
+					break;
+				}
+			}
+			target[0] = context;
+			target[1] = count;
+			return true;
 		}
 
 		@Override

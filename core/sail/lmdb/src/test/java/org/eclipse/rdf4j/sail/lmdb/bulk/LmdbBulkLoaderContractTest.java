@@ -113,23 +113,12 @@ class LmdbBulkLoaderContractTest {
 	}
 
 	@Test
-	void nativeValidationRejectsMissingExactValueStoreRecords() throws Exception {
-		Method validateValues = LmdbNativeBulkStore.class
-				.getMethod("validateValueRecords", ValueStore.BulkRecordSource.class);
-		Method validateReferenceCounts = LmdbNativeBulkStore.class
-				.getMethod("validateReferenceCounts", ValueStore.BulkRecordSource.class);
-		Path generation = temporaryDirectory.resolve("native-record-validation");
-		try (LmdbNativeBulkStore store = new LmdbNativeBulkStore(generation, new LmdbStoreConfig("spoc,psoc"))) {
-			store.appendValueRecords(() -> null, 10, 1024);
-			store.appendReferenceCounts(() -> null, 10, 1024);
-
-			assertThatThrownBy(() -> validateValues.invoke(store, oneRecord()))
-					.hasRootCauseInstanceOf(IOException.class)
-					.hasRootCauseMessage("ValueStore main database is missing an expected bulk record");
-			assertThatThrownBy(() -> validateReferenceCounts.invoke(store, oneRecord()))
-					.hasRootCauseInstanceOf(IOException.class)
-					.hasRootCauseMessage("ValueStore reference-count database is missing an expected bulk record");
-		}
+	void nativeBulkStoreExposesOnlyWriteOperations() {
+		assertThat(LmdbNativeBulkStore.class.getDeclaredMethods())
+				.extracting(Method::getName)
+				.doesNotContain("validateIncompletePublication", "validateGeneration", "validateValueRecords",
+						"validateReferenceCounts", "validateTripleTermIndex", "requireValue", "validateExplicitIndex",
+						"validateExplicitEncodedIndex", "appendExplicitQuads");
 	}
 
 	@Test
@@ -153,7 +142,7 @@ class LmdbBulkLoaderContractTest {
 	}
 
 	@Test
-	void preservesChecksummedPromotedArtifactsUntilRecoveryValidationFinishes() throws Exception {
+	void preservesChecksummedPromotedArtifactsUntilRecoveryFinishes() throws Exception {
 		Path target = Files.createDirectory(temporaryDirectory.resolve("recoverable-store"));
 		String generationName = ".lmdb-bulk-generation-recovery-test";
 		Path artifact = target.resolve("values");
@@ -198,7 +187,7 @@ class LmdbBulkLoaderContractTest {
 	}
 
 	@Test
-	void resumesAndValidatesAPartiallyPromotedNativeStoreWithoutReadingInputAgain() throws Exception {
+	void resumesAPartiallyPromotedNativeStoreWithoutReadingInputAgain() throws Exception {
 		String input = """
 				<urn:s> <urn:p> <urn:o> .
 				<urn:s2> <urn:p> "value" <urn:g> .
@@ -234,7 +223,7 @@ class LmdbBulkLoaderContractTest {
 	}
 
 	@Test
-	void rebuildsOnlyManifestOwnedArtifactsWhenRecoveryValidationFails() throws Exception {
+	void rebuildsOnlyManifestOwnedArtifactsWhenRecoveryChecksumFails() throws Exception {
 		String input = """
 				<urn:s> <urn:p> <urn:o> .
 				<urn:s2> <urn:p> "value" <urn:g> .
@@ -341,10 +330,15 @@ class LmdbBulkLoaderContractTest {
 		try {
 			var valueFactory = SimpleValueFactory.getInstance();
 			try (RepositoryConnection connection = repository.getConnection()) {
+				Resource graph = valueFactory.createIRI("urn:graph");
 				assertThat(connection.size()).isEqualTo(2);
 				assertThat(connection.hasStatement(valueFactory.createIRI("urn:subject"),
 						valueFactory.createIRI("urn:predicate"), valueFactory.createLiteral("hello", "en"), false))
 								.isTrue();
+				assertThat(connection.getContextIDs().stream().toList()).containsExactly(graph);
+				connection.remove(valueFactory.createIRI("urn:subject"), valueFactory.createIRI("urn:predicate"),
+						valueFactory.createIRI("urn:object"), graph);
+				assertThat(connection.getContextIDs().stream().toList()).isEmpty();
 			}
 		} finally {
 			repository.shutDown();
@@ -492,7 +486,7 @@ class LmdbBulkLoaderContractTest {
 	}
 
 	@Test
-	void doesNotSynthesizeSketchSnapshotsDuringValidation() throws Exception {
+	void doesNotSynthesizeSketchSnapshotsDuringBulkLoad() throws Exception {
 		Path target = temporaryDirectory.resolve("no-bulk-sketch-store");
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,psoc").setSketchEstimatorEnabled(true);
 
@@ -889,6 +883,9 @@ class LmdbBulkLoaderContractTest {
 				.extracting(ProgressSnapshot::phase)
 				.contains(BulkLoadPhase.STAGE_INPUTS, BulkLoadPhase.PUBLISH_AND_CLEAN);
 		assertThat(snapshots)
+				.extracting(ProgressSnapshot::phase)
+				.doesNotContain(BulkLoadPhase.VALIDATE_GENERATION);
+		assertThat(snapshots)
 				.anyMatch(snapshot -> snapshot.phase() == BulkLoadPhase.STAGE_INPUTS
 						&& snapshot.currentOperationsPerSecond() > 0.0);
 		assertThat(snapshots)
@@ -1057,13 +1054,6 @@ class LmdbBulkLoaderContractTest {
 		} finally {
 			repository.shutDown();
 		}
-	}
-
-	private static ValueStore.BulkRecordSource oneRecord() {
-		AtomicInteger records = new AtomicInteger();
-		return () -> records.getAndIncrement() == 0
-				? new ValueStore.BulkRecord(new byte[] { 5, 1 }, new byte[] { 1 })
-				: null;
 	}
 
 	private static boolean stateHasPhase(Path stateFile, String phase, String status) {

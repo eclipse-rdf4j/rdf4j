@@ -25,7 +25,6 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler;
-import org.eclipse.rdf4j.sail.lmdb.LmdbNativeBulkStore;
 
 final class LmdbBulkLoaderEngine {
 
@@ -56,31 +55,15 @@ final class LmdbBulkLoaderEngine {
 					if (generation.recoveredPublication()) {
 						LmdbBulkLoadGeneration.PublicationStatistics statistics = generation.recoveredStatistics();
 						checkCancelled(loader);
-						try {
-							workspace.startPhase(BulkLoadPhase.VALIDATE_GENERATION);
-							long actualStatements = LmdbNativeBulkStore.validateIncompletePublication(loader.target(),
-									loader.config());
-							if (actualStatements != statistics.storedStatements()) {
-								throw new IOException("Recovered LMDB bulk-load publication expected "
-										+ statistics.storedStatements() + " statements but contains "
-										+ actualStatements);
-							}
-							workspace.completePhase(BulkLoadPhase.VALIDATE_GENERATION);
-							checkCancelled(loader);
-							workspace.startPhase(BulkLoadPhase.PUBLISH_AND_CLEAN);
-							generation.finishRecoveredPublication();
-							workspace.completePhase(BulkLoadPhase.PUBLISH_AND_CLEAN);
-							LmdbBulkLoader.Result result = new LmdbBulkLoader.Result(statistics.parsedStatements(),
-									statistics.storedStatements(), statistics.persistedValues(),
-									statistics.inlineValues(), statistics.temporaryBytes(), statistics.elapsedMillis(),
-									statistics.mapGrowthCount());
-							workspace.complete(result);
-							return result;
-						} catch (CancellationException e) {
-							throw e;
-						} catch (IOException | RuntimeException validationFailure) {
-							generation.rebuildAfterFailedRecoveryValidation();
-						}
+						workspace.startPhase(BulkLoadPhase.PUBLISH_AND_CLEAN);
+						generation.finishRecoveredPublication();
+						workspace.completePhase(BulkLoadPhase.PUBLISH_AND_CLEAN);
+						LmdbBulkLoader.Result result = new LmdbBulkLoader.Result(statistics.parsedStatements(),
+								statistics.storedStatements(), statistics.persistedValues(),
+								statistics.inlineValues(), statistics.temporaryBytes(), statistics.elapsedMillis(),
+								statistics.mapGrowthCount());
+						workspace.complete(result);
+						return result;
 					}
 
 					CanonicalStagedInput staged;
@@ -185,10 +168,6 @@ final class LmdbBulkLoaderEngine {
 
 					long storedStatements = writeResult.storedStatements();
 					long temporaryBytes = workspace.bytesWritten();
-					workspace.startPhase(BulkLoadPhase.VALIDATE_GENERATION);
-					validate(loader, generation.directory(), storedStatements);
-					workspace.progress(storedStatements, 0L);
-					workspace.completePhase(BulkLoadPhase.VALIDATE_GENERATION);
 					long elapsedMillis = (System.nanoTime() - started) / 1_000_000L;
 					workspace.startPhase(BulkLoadPhase.PUBLISH_AND_CLEAN);
 					generation.publish(new LmdbBulkLoadGeneration.PublicationStatistics(staged.statements(),
@@ -311,16 +290,6 @@ final class LmdbBulkLoaderEngine {
 			throw new IOException("Fast parser only supports N-Triples and N-Quads");
 		}
 		return false;
-	}
-
-	private static void validate(LmdbBulkLoader loader, java.nio.file.Path directory, long expectedStatements)
-			throws IOException {
-		checkCancelled(loader);
-		long actualStatements = LmdbNativeBulkStore.validateGeneration(directory, loader.config());
-		if (actualStatements != expectedStatements) {
-			throw new IOException("LMDB bulk-load validation expected " + expectedStatements
-					+ " statements but reopened store contains " + actualStatements);
-		}
 	}
 
 	private static void checkCancelled(LmdbBulkLoader loader) {

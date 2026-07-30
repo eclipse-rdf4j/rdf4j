@@ -19,6 +19,7 @@ import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -39,9 +40,11 @@ final class StatementIndexBulkRecords implements AutoCloseable {
 	private static final int COMPONENT_COUNT = 4;
 
 	private final List<IndexRun> runs;
+	private final ExternalLongTupleSorter.SortedTupleFile contexts;
 
-	private StatementIndexBulkRecords(List<IndexRun> runs) {
+	private StatementIndexBulkRecords(List<IndexRun> runs, ExternalLongTupleSorter.SortedTupleFile contexts) {
 		this.runs = List.copyOf(runs);
+		this.contexts = contexts;
 	}
 
 	static StatementIndexBulkRecords build(ResolvedIdQuadSpool spool, Path workspace, String configuredIndexes,
@@ -84,7 +87,9 @@ final class StatementIndexBulkRecords implements AutoCloseable {
 					runs.add(new IndexRun(specification, null, encodedSorters.get(i).finish(output)));
 				}
 			}
-			return new StatementIndexBulkRecords(runs);
+			ExternalLongTupleSorter.SortedTupleFile contexts = buildContexts(runs.getFirst(), workspace,
+					memoryBudgetBytes, maxOpenFiles, cancellationSignal);
+			return new StatementIndexBulkRecords(runs, contexts);
 		} catch (IOException | RuntimeException | Error failure) {
 			closeSorters(tupleSorters, failure);
 			closeSorters(encodedSorters, failure);
@@ -94,6 +99,10 @@ final class StatementIndexBulkRecords implements AutoCloseable {
 
 	List<IndexRun> runs() {
 		return runs;
+	}
+
+	ExternalLongTupleSorter.SortedTupleFile contexts() {
+		return contexts;
 	}
 
 	@Override
@@ -110,9 +119,68 @@ final class StatementIndexBulkRecords implements AutoCloseable {
 				}
 			}
 		}
+		try {
+			Files.deleteIfExists(contexts.path());
+		} catch (IOException e) {
+			if (failure == null) {
+				failure = e;
+			} else {
+				failure.addSuppressed(e);
+			}
+		}
 		if (failure != null) {
 			throw failure;
 		}
+	}
+
+	private static ExternalLongTupleSorter.SortedTupleFile buildContexts(IndexRun source, Path workspace,
+			long memoryBudgetBytes, int maxOpenFiles, BooleanSupplier cancellationSignal) throws IOException {
+		try (ExternalLongTupleSorter sorter = new ExternalLongTupleSorter(workspace, "contexts", 1,
+				memoryBudgetBytes, maxOpenFiles)) {
+			if (source.tuples() != null) {
+				addTupleContexts(source, sorter, cancellationSignal);
+			} else {
+				addEncodedContexts(source, sorter, cancellationSignal);
+			}
+			return sorter.finish(workspace.resolve("contexts-sorted.bin"));
+		}
+	}
+
+	private static void addTupleContexts(IndexRun source, ExternalLongTupleSorter sorter,
+			BooleanSupplier cancellationSignal) throws IOException {
+		long[] previous = new long[COMPONENT_COUNT];
+		boolean[] hasPrevious = { false };
+		int contextPosition = source.specification().indexOf('c');
+		source.tuples().forEach(tuple -> {
+			checkCancelled(cancellationSignal);
+			if (!hasPrevious[0] || !Arrays.equals(previous, tuple)) {
+				sorter.add1(tuple[contextPosition]);
+				System.arraycopy(tuple, 0, previous, 0, COMPONENT_COUNT);
+				hasPrevious[0] = true;
+			}
+		});
+	}
+
+	private static void addEncodedContexts(IndexRun source, ExternalLongTupleSorter sorter,
+			BooleanSupplier cancellationSignal) throws IOException {
+		byte[][] previousKey = { null };
+		byte[][] previousValue = { null };
+		source.encodedRecords().forEach((key, value) -> {
+			checkCancelled(cancellationSignal);
+			if (value.length != COMPONENT_COUNT * Long.BYTES) {
+				throw new IOException("Encoded statement index value must contain four longs for "
+						+ source.specification());
+			}
+			if (previousKey[0] != null && Arrays.equals(previousKey[0], key)) {
+				if (!Arrays.equals(previousValue[0], value)) {
+					throw new IOException("Encoded statement index key collision for " + source.specification());
+				}
+				return;
+			}
+			sorter.add1(ByteBuffer.wrap(value).getLong(3 * Long.BYTES));
+			previousKey[0] = key.clone();
+			previousValue[0] = value.clone();
+		});
 	}
 
 	static List<String> parseSpecifications(String configuredIndexes) {

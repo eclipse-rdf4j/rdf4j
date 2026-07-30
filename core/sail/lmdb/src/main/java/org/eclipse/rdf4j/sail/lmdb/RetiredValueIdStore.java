@@ -98,9 +98,7 @@ final class RetiredValueIdStore {
 	 * named databases; the caller is responsible for closing stale read transactions afterwards.
 	 */
 	void open(long env) throws IOException {
-		retiredByIdDbi = openDatabase(env, "retired_ids", MDB_CREATE);
-		retiredSeqDbi = openDatabase(env, "retired_ids_seq", MDB_CREATE);
-		metaDbi = openDatabase(env, "gc_meta", MDB_CREATE);
+		openDatabases(env);
 		LmdbUtil.transaction(env, (stack, txn) -> {
 			MDBVal keyVal = MDBVal.calloc(stack);
 			MDBVal dataVal = MDBVal.calloc(stack);
@@ -114,16 +112,49 @@ final class RetiredValueIdStore {
 			}
 			bootEpoch = lastEpoch + 1;
 
-			ByteBuffer valueBb = stack.malloc(MAX_VARINT);
-			Varint.writeUnsigned(valueBb, bootEpoch);
-			dataVal.mv_data(valueBb.flip());
-			E(mdb_put(txn, metaDbi, keyVal, dataVal, 0));
+			writeBootEpoch(stack, txn, keyVal, dataVal);
 
 			MDBStat stat = MDBStat.malloc(stack);
 			E(mdb_stat(txn, retiredSeqDbi, stat));
 			pendingCount = stat.ms_entries();
 			return null;
 		});
+		syncBootEpoch(env);
+	}
+
+	/**
+	 * Initializes the retirement queue for a newly-created bulk-load generation without querying its empty databases.
+	 */
+	void openFresh(long env) throws IOException {
+		openDatabases(env);
+		bootEpoch = 1L;
+		pendingCount = 0L;
+		LmdbUtil.transaction(env, (stack, txn) -> {
+			MDBVal keyVal = MDBVal.calloc(stack);
+			MDBVal dataVal = MDBVal.calloc(stack);
+			ByteBuffer keyBb = stack.malloc(1);
+			keyBb.put(BOOT_EPOCH_KEY);
+			keyVal.mv_data(keyBb.flip());
+			writeBootEpoch(stack, txn, keyVal, dataVal);
+			return null;
+		});
+		syncBootEpoch(env);
+	}
+
+	private void openDatabases(long env) throws IOException {
+		retiredByIdDbi = openDatabase(env, "retired_ids", MDB_CREATE);
+		retiredSeqDbi = openDatabase(env, "retired_ids_seq", MDB_CREATE);
+		metaDbi = openDatabase(env, "gc_meta", MDB_CREATE);
+	}
+
+	private void writeBootEpoch(MemoryStack stack, long txn, MDBVal keyVal, MDBVal dataVal) throws IOException {
+		ByteBuffer valueBb = stack.malloc(MAX_VARINT);
+		Varint.writeUnsigned(valueBb, bootEpoch);
+		dataVal.mv_data(valueBb.flip());
+		E(mdb_put(txn, metaDbi, keyVal, dataVal, 0));
+	}
+
+	private static void syncBootEpoch(long env) throws IOException {
 		// The environment runs MDB_NOSYNC; the epoch must never move backwards across a crash, so force one sync
 		// per boot. Losing anything else in a crash only delays reclamation.
 		E(mdb_env_sync(env, true));

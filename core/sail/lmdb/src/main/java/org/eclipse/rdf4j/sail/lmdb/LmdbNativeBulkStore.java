@@ -15,12 +15,9 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Map;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
-import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
-import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /**
  * Loader-only owner for the native value and statement stores of a new generation.
@@ -33,6 +30,11 @@ public final class LmdbNativeBulkStore implements AutoCloseable {
 	@FunctionalInterface
 	public interface QuadSource {
 		boolean next(long[] quad) throws IOException;
+	}
+
+	@FunctionalInterface
+	public interface ContextSource {
+		boolean next(long[] contextAndCount) throws IOException;
 	}
 
 	private final StoreProperties properties;
@@ -77,36 +79,6 @@ public final class LmdbNativeBulkStore implements AutoCloseable {
 		properties.save();
 	}
 
-	public static long validateIncompletePublication(Path directory, LmdbStoreConfig config) throws IOException {
-		Path marker = directory.resolve(".lmdb-bulk-load.incomplete");
-		if (!Files.isRegularFile(marker)) {
-			throw new IOException("LMDB bulk-load validation requires an incomplete publication marker: " + marker);
-		}
-		return validate(directory, config);
-	}
-
-	public static long validateGeneration(Path directory, LmdbStoreConfig config) throws IOException {
-		return validate(directory, config);
-	}
-
-	private static long validate(Path directory, LmdbStoreConfig config) throws IOException {
-		LmdbStore store = new LmdbStore(directory.toFile(), config, true);
-		boolean initialized = false;
-		try {
-			store.init();
-			initialized = true;
-			try (SailConnection connection = store.getConnection()) {
-				return connection.size();
-			}
-		} catch (RuntimeException failure) {
-			throw new IOException("Unable to validate LMDB bulk-load store " + directory, failure);
-		} finally {
-			if (initialized) {
-				store.shutDown();
-			}
-		}
-	}
-
 	public void appendValueRecords(ValueStore.BulkRecordSource source, int maxTransactionRecords,
 			long maxTransactionBytes) throws IOException {
 		valueStore.appendBulkRecords(source, maxTransactionRecords, maxTransactionBytes);
@@ -116,14 +88,6 @@ public final class LmdbNativeBulkStore implements AutoCloseable {
 	public void appendReferenceCounts(ValueStore.BulkRecordSource source, int maxTransactionRecords,
 			long maxTransactionBytes) throws IOException {
 		valueStore.appendBulkReferenceCounts(source, maxTransactionRecords, maxTransactionBytes);
-	}
-
-	public void validateValueRecords(ValueStore.BulkRecordSource source) throws IOException {
-		valueStore.validateBulkRecords(source);
-	}
-
-	public void validateReferenceCounts(ValueStore.BulkRecordSource source) throws IOException {
-		valueStore.validateBulkReferenceCounts(source);
 	}
 
 	public void appendTripleTerms(ValueStore.BulkLongQuadSource source, int maxTransactionRecords)
@@ -141,11 +105,6 @@ public final class LmdbNativeBulkStore implements AutoCloseable {
 		return valueStore.appendBulkTripleTermIndex(specification, source, maxTransactionRecords, maxTransactionBytes);
 	}
 
-	public void validateTripleTermIndex(String specification, ValueStore.BulkLongQuadSource source)
-			throws IOException {
-		valueStore.validateBulkTripleTermIndex(specification, source);
-	}
-
 	public void appendValueHashes(ValueStore.BulkHashSource source) throws IOException {
 		valueStore.appendBulkHashes(source);
 	}
@@ -158,94 +117,19 @@ public final class LmdbNativeBulkStore implements AutoCloseable {
 		namespaceStore.sync();
 	}
 
-	public void requireValue(long id) throws IOException {
-		if (id == 0L) {
-			return;
-		}
-		LmdbValue value = valueStore.getValue(id);
-		if (value == null) {
-			throw new IOException("Bulk-loaded ValueStore has no reverse record for ID " + id + " (type "
-					+ ValueIds.getIdType(id) + ")");
-		}
-	}
-
-	public long appendExplicitQuads(QuadSource source, int maxTransactionRecords) throws IOException {
-		if (maxTransactionRecords <= 0) {
-			throw new IllegalArgumentException("Bulk transaction record limit must be positive");
-		}
-		long[] subjects = new long[maxTransactionRecords];
-		long[] predicates = new long[maxTransactionRecords];
-		long[] objects = new long[maxTransactionRecords];
-		long[] contexts = new long[maxTransactionRecords];
-		long[] quad = new long[4];
-		boolean exhausted = false;
-		while (!exhausted) {
-			int count = 0;
-			while (count < maxTransactionRecords) {
-				if (!source.next(quad)) {
-					exhausted = true;
-					break;
-				}
-				subjects[count] = quad[0];
-				predicates[count] = quad[1];
-				objects[count] = quad[2];
-				contexts[count] = quad[3];
-				count++;
-			}
-			if (count == 0) {
-				break;
-			}
-			tripleStore.reserveWriteCapacity(Math.multiplyExact((long) count, 64L));
-			tripleStore.startTransaction();
-			try {
-				tripleStore.storeTriplesAligned(subjects, predicates, objects, contexts, count, true);
-				tripleStore.endTransaction(true);
-			} catch (Throwable failure) {
-				tripleStore.endTransaction(false);
-				throw failure;
-			}
-		}
-		Map<String, Long> counts = tripleStore.explicitIndexEntryCounts();
-		long expected = -1L;
-		for (Map.Entry<String, Long> entry : counts.entrySet()) {
-			if (expected < 0L) {
-				expected = entry.getValue();
-			} else if (expected != entry.getValue()) {
-				throw new IOException("Statement index cardinality mismatch after bulk load: " + counts);
-			}
-		}
-		return Math.max(0L, expected);
-	}
-
-	public long appendExplicitIndex(String specification, QuadSource source, boolean writeContexts,
-			int maxTransactionRecords) throws IOException {
-		return tripleStore.appendBulkIndex(specification, source::next, writeContexts, maxTransactionRecords);
-	}
-
-	public long appendExplicitIndex(String specification, QuadSource source, boolean writeContexts,
-			int maxTransactionRecords, long maxTransactionBytes) throws IOException {
-		return tripleStore.appendBulkIndex(specification, source::next, writeContexts, maxTransactionRecords,
-				maxTransactionBytes);
-	}
-
-	public long appendExplicitEncodedIndex(String specification, ValueStore.BulkRecordSource source,
-			boolean writeContexts, int maxTransactionRecords) throws IOException {
-		return tripleStore.appendBulkEncodedIndex(specification, source, writeContexts, maxTransactionRecords);
-	}
-
-	public long appendExplicitEncodedIndex(String specification, ValueStore.BulkRecordSource source,
-			boolean writeContexts, int maxTransactionRecords, long maxTransactionBytes) throws IOException {
-		return tripleStore.appendBulkEncodedIndex(specification, source, writeContexts, maxTransactionRecords,
-				maxTransactionBytes);
-	}
-
-	public void validateExplicitIndex(String specification, QuadSource source) throws IOException {
-		tripleStore.validateBulkIndex(specification, source::next);
-	}
-
-	public void validateExplicitEncodedIndex(String specification, ValueStore.BulkRecordSource source)
+	public void appendContexts(ContextSource source, int maxTransactionRecords, long maxTransactionBytes)
 			throws IOException {
-		tripleStore.validateBulkEncodedIndex(specification, source);
+		tripleStore.appendBulkContexts(source::next, maxTransactionRecords, maxTransactionBytes);
+	}
+
+	public long appendExplicitIndex(String specification, QuadSource source, int maxTransactionRecords,
+			long maxTransactionBytes) throws IOException {
+		return tripleStore.appendBulkIndex(specification, source::next, maxTransactionRecords, maxTransactionBytes);
+	}
+
+	public long appendExplicitEncodedIndex(String specification, ValueStore.BulkRecordSource source,
+			int maxTransactionRecords, long maxTransactionBytes) throws IOException {
+		return tripleStore.appendBulkEncodedIndex(specification, source, maxTransactionRecords, maxTransactionBytes);
 	}
 
 	public long mapGrowthCount() {

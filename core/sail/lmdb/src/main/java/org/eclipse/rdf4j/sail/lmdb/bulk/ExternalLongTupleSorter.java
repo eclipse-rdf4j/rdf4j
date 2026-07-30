@@ -99,6 +99,16 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 		nativeStorage = allocatedNative;
 	}
 
+	void add1(long value) throws IOException {
+		if (width != 1) {
+			throw new IllegalStateException("Tuple sorter width is not 1");
+		}
+		ensureWritable();
+		put(bufferedRows, value);
+		bufferedRows++;
+		rowCount++;
+	}
+
 	void add3(long first, long second, long third) throws IOException {
 		if (width != 3) {
 			throw new IllegalStateException("Tuple sorter width is not 3");

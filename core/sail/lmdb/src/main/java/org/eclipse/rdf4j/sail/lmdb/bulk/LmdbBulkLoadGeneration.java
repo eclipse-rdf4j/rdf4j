@@ -120,7 +120,7 @@ final class LmdbBulkLoadGeneration implements AutoCloseable {
 
 	Path directory() {
 		if (recoveryData != null) {
-			throw new IllegalStateException("Recovered publication must be validated before starting a new generation");
+			throw new IllegalStateException("Recovered publication must be finished before starting a new generation");
 		}
 		return generation;
 	}
@@ -141,25 +141,6 @@ final class LmdbBulkLoadGeneration implements AutoCloseable {
 			throw new IllegalStateException("No recovered LMDB bulk-load publication");
 		}
 		finishPublication();
-	}
-
-	void rebuildAfterFailedRecoveryValidation() throws IOException {
-		if (recoveryData == null) {
-			throw new IllegalStateException("No recovered LMDB bulk-load publication");
-		}
-		for (ArtifactDescriptor artifact : recoveryData.artifacts()) {
-			Path path = target.resolve(artifact.name());
-			if (Files.exists(path)) {
-				deleteOwnedTree(path, target);
-			}
-		}
-		Files.deleteIfExists(manifest);
-		Files.delete(marker);
-		forceDirectory(target);
-		recoveryData = null;
-		promotionStarted = false;
-		requireEmptyTarget();
-		startGeneration();
 	}
 
 	void publish(PublicationStatistics statistics) throws IOException {

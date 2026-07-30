@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb.bulk;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -76,17 +77,17 @@ class StatementIndexBulkRecordsTest {
 	@Test
 	void nativeStoreExposesPerIndexAppendPath() throws Exception {
 		assertThat(LmdbNativeBulkStore.class.getDeclaredMethod("appendExplicitIndex", String.class,
-				LmdbNativeBulkStore.QuadSource.class, boolean.class, int.class, long.class))
+				LmdbNativeBulkStore.QuadSource.class, int.class, long.class))
 						.isNotNull();
 		assertThat(LmdbNativeBulkStore.class.getDeclaredMethod("appendExplicitEncodedIndex", String.class,
-				ValueStore.BulkRecordSource.class, boolean.class, int.class, long.class))
+				ValueStore.BulkRecordSource.class, int.class, long.class))
 						.isNotNull();
-		assertThat(LmdbNativeBulkStore.class.getDeclaredMethod("validateExplicitIndex", String.class,
-				LmdbNativeBulkStore.QuadSource.class))
+		assertThat(LmdbNativeBulkStore.class.getDeclaredMethod("appendContexts",
+				LmdbNativeBulkStore.ContextSource.class, int.class, long.class))
 						.isNotNull();
-		assertThat(LmdbNativeBulkStore.class.getDeclaredMethod("validateExplicitEncodedIndex", String.class,
-				ValueStore.BulkRecordSource.class))
-						.isNotNull();
+		assertThat(LmdbNativeBulkStore.class.getDeclaredMethods())
+				.extracting(Method::getName)
+				.doesNotContain("validateExplicitIndex", "validateExplicitEncodedIndex");
 	}
 
 	@Test
@@ -122,7 +123,7 @@ class StatementIndexBulkRecordsTest {
 		try (LmdbNativeBulkStore store = new LmdbNativeBulkStore(generation, config)) {
 			var iterator = encoded.iterator();
 			assertThat(store.appendExplicitEncodedIndex("spoc",
-					() -> iterator.hasNext() ? iterator.next() : null, true, 1))
+					() -> iterator.hasNext() ? iterator.next() : null, 1, Long.MAX_VALUE))
 							.isEqualTo(1L);
 		}
 	}

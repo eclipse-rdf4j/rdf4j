@@ -139,6 +139,11 @@ class TripleStore implements Closeable {
 		boolean next(long[] tuple) throws IOException;
 	}
 
+	@FunctionalInterface
+	interface BulkContextSource {
+		boolean next(long[] contextAndCount) throws IOException;
+	}
+
 	/*-----------*
 	 * Variables *
 	 *-----------*/
@@ -211,6 +216,8 @@ class TripleStore implements Closeable {
 	private boolean fanOutStatsDirty;
 	private boolean trackResizeChecks;
 	private int trackedResizeChecks;
+	private final Set<String> bulkAppendedExplicitIndexes = new HashSet<>();
+	private boolean bulkContextsAppended;
 
 	private static final class PreparedSortWorkspace {
 		private int[] mainOrder = new int[0];
@@ -363,15 +370,10 @@ class TripleStore implements Closeable {
 		});
 	}
 
-	long appendBulkIndex(String specification, BulkIndexTupleSource source, boolean writeContexts,
-			int maxTransactionRecords) throws IOException {
-		return appendBulkIndex(specification, source, writeContexts, maxTransactionRecords, Long.MAX_VALUE);
-	}
-
-	long appendBulkIndex(String specification, BulkIndexTupleSource source, boolean writeContexts,
-			int maxTransactionRecords, long maxTransactionBytes) throws IOException {
+	long appendBulkIndex(String specification, BulkIndexTupleSource source, int maxTransactionRecords,
+			long maxTransactionBytes) throws IOException {
 		Objects.requireNonNull(source, "source");
-		int batchRecords = bulkBatchRecords(maxTransactionRecords, maxTransactionBytes, writeContexts ? 192L : 128L);
+		int batchRecords = bulkBatchRecords(maxTransactionRecords, maxTransactionBytes, 128L);
 		TripleIndex index = indexes.stream()
 				.filter(candidate -> candidate.toString().equals(specification))
 				.findFirst()
@@ -379,13 +381,8 @@ class TripleStore implements Closeable {
 		if (!TripleIndex.usesUnsignedTupleOrder(specification)) {
 			throw new IOException("Statement index requires encoded-key sorting: " + specification);
 		}
-		long existingEntries = readTransaction(env, (stack, txn) -> {
-			MDBStat stat = MDBStat.malloc(stack);
-			E(mdb_stat(txn, index.getDB(true), stat));
-			return stat.ms_entries();
-		});
-		if (existingEntries != 0L) {
-			throw new IOException("Bulk append requires an empty statement index: " + specification);
+		if (!bulkAppendedExplicitIndexes.add(specification)) {
+			throw new IOException("Statement index was already appended by this bulk load: " + specification);
 		}
 
 		long[] batch = new long[Math.multiplyExact(batchRecords, 4)];
@@ -419,33 +416,22 @@ class TripleStore implements Closeable {
 			if (count == 0) {
 				continue;
 			}
-			lastCommittedKey = appendBulkIndexBatch(index, specification, batch, count, writeContexts,
-					lastCommittedKey);
+			lastCommittedKey = appendBulkIndexBatch(index, specification, batch, count, lastCommittedKey);
 			uniqueStatements += count;
 		}
 		return uniqueStatements;
 	}
 
-	long appendBulkEncodedIndex(String specification, ValueStore.BulkRecordSource source, boolean writeContexts,
-			int maxTransactionRecords) throws IOException {
-		return appendBulkEncodedIndex(specification, source, writeContexts, maxTransactionRecords, Long.MAX_VALUE);
-	}
-
-	long appendBulkEncodedIndex(String specification, ValueStore.BulkRecordSource source, boolean writeContexts,
-			int maxTransactionRecords, long maxTransactionBytes) throws IOException {
+	long appendBulkEncodedIndex(String specification, ValueStore.BulkRecordSource source, int maxTransactionRecords,
+			long maxTransactionBytes) throws IOException {
 		Objects.requireNonNull(source, "source");
-		int batchRecords = bulkBatchRecords(maxTransactionRecords, maxTransactionBytes, writeContexts ? 192L : 128L);
+		int batchRecords = bulkBatchRecords(maxTransactionRecords, maxTransactionBytes, 128L);
 		TripleIndex index = indexes.stream()
 				.filter(candidate -> candidate.toString().equals(specification))
 				.findFirst()
 				.orElseThrow(() -> new IOException("Statement index is not configured: " + specification));
-		long existingEntries = readTransaction(env, (stack, txn) -> {
-			MDBStat stat = MDBStat.malloc(stack);
-			E(mdb_stat(txn, index.getDB(true), stat));
-			return stat.ms_entries();
-		});
-		if (existingEntries != 0L) {
-			throw new IOException("Bulk append requires an empty statement index: " + specification);
+		if (!bulkAppendedExplicitIndexes.add(specification)) {
+			throw new IOException("Statement index was already appended by this bulk load: " + specification);
 		}
 
 		long[] batch = new long[Math.multiplyExact(batchRecords, 4)];
@@ -486,125 +472,48 @@ class TripleStore implements Closeable {
 			if (count == 0) {
 				continue;
 			}
-			lastCommittedKey = appendBulkIndexBatch(index, specification, batch, count, writeContexts,
-					lastCommittedKey);
+			lastCommittedKey = appendBulkIndexBatch(index, specification, batch, count, lastCommittedKey);
 			uniqueStatements += count;
 		}
 		return uniqueStatements;
 	}
 
-	void validateBulkIndex(String specification, BulkIndexTupleSource source) throws IOException {
-		Objects.requireNonNull(source, "source");
-		TripleIndex index = configuredIndex(specification);
-		long[] tuple = new long[4];
-		long[] previousTuple = new long[4];
-		boolean[] hasPrevious = { false };
-		validateBulkIndexKeys(index, specification, () -> {
-			while (source.next(tuple)) {
-				if (hasPrevious[0]) {
-					int comparison = compareUnsignedTuple(previousTuple, tuple);
-					if (comparison > 0) {
-						throw new IOException("Statement index validation input is not sorted for " + specification);
-					}
-					if (comparison == 0) {
-						continue;
-					}
-				}
-				System.arraycopy(tuple, 0, previousTuple, 0, tuple.length);
-				hasPrevious[0] = true;
-				long[] quad = new long[4];
-				for (int field = 0; field < 4; field++) {
-					quad[indexComponent(specification.charAt(field))] = tuple[field];
-				}
-				return TripleIndex.encodeKey(specification, quad[0], quad[1], quad[2], quad[3]);
-			}
-			return null;
-		});
-	}
-
-	void validateBulkEncodedIndex(String specification, ValueStore.BulkRecordSource source) throws IOException {
-		Objects.requireNonNull(source, "source");
-		TripleIndex index = configuredIndex(specification);
-		byte[][] previousKey = { null };
-		long[] previousQuad = new long[4];
-		validateBulkIndexKeys(index, specification, () -> {
-			while (true) {
-				ValueStore.BulkRecord record = source.next();
-				if (record == null) {
-					return null;
-				}
-				long[] quad = decodeEncodedIndexRecord(specification, record);
-				if (previousKey[0] != null) {
-					int comparison = Arrays.compareUnsigned(previousKey[0], record.key());
-					if (comparison > 0) {
-						throw new IOException(
-								"Encoded statement index validation input is not sorted for " + specification);
-					}
-					if (comparison == 0) {
-						if (!Arrays.equals(previousQuad, quad)) {
-							throw new IOException("Encoded statement index key collision for " + specification);
-						}
-						continue;
-					}
-				}
-				previousKey[0] = record.key();
-				System.arraycopy(quad, 0, previousQuad, 0, quad.length);
-				return record.key();
-			}
-		});
-	}
-
-	private void validateBulkIndexKeys(TripleIndex index, String specification, BulkIndexKeySource source)
+	void appendBulkContexts(BulkContextSource source, int maxTransactionRecords, long maxTransactionBytes)
 			throws IOException {
-		readTransaction(env, (stack, txn) -> {
-			PointerBuffer cursorHandle = stack.mallocPointer(1);
-			E(mdb_cursor_open(txn, index.getDB(true), cursorHandle));
-			long cursor = cursorHandle.get(0);
-			try {
-				MDBVal key = MDBVal.malloc(stack);
-				MDBVal value = MDBVal.malloc(stack);
-				int result = mdb_cursor_get(cursor, key, value, MDB_FIRST);
-				byte[] expected;
-				while ((expected = source.next()) != null) {
-					if (result == MDB_NOTFOUND) {
-						throw new IOException(
-								"Statement index " + specification + " is missing an expected bulk key");
-					}
-					E(result);
-					if (!equalsUnsignedKey(expected, key.mv_data())) {
-						throw new IOException(
-								"Statement index " + specification + " differs from its sorted bulk source");
-					}
-					result = mdb_cursor_get(cursor, key, value, MDB_NEXT);
-				}
-				if (result != MDB_NOTFOUND) {
-					E(result);
-					throw new IOException("Statement index " + specification + " contains an unexpected bulk key");
-				}
-				return null;
-			} finally {
-				mdb_cursor_close(cursor);
-			}
-		});
-	}
-
-	private TripleIndex configuredIndex(String specification) throws IOException {
-		return indexes.stream()
-				.filter(candidate -> candidate.toString().equals(specification))
-				.findFirst()
-				.orElseThrow(() -> new IOException("Statement index is not configured: " + specification));
-	}
-
-	private static boolean equalsUnsignedKey(byte[] expected, ByteBuffer actual) {
-		if (expected.length != actual.remaining()) {
-			return false;
+		Objects.requireNonNull(source, "source");
+		if (bulkContextsAppended) {
+			throw new IOException("Contexts were already appended by this bulk load");
 		}
-		for (int i = 0; i < expected.length; i++) {
-			if (expected[i] != actual.get(actual.position() + i)) {
-				return false;
+		bulkContextsAppended = true;
+		int batchRecords = bulkBatchRecords(maxTransactionRecords, maxTransactionBytes, 64L);
+		long[] batch = new long[Math.multiplyExact(batchRecords, 2)];
+		long[] contextAndCount = new long[2];
+		long previousContext = 0L;
+		boolean hasPrevious = false;
+		boolean exhausted = false;
+		while (!exhausted) {
+			int count = 0;
+			while (count < batchRecords) {
+				if (!source.next(contextAndCount)) {
+					exhausted = true;
+					break;
+				}
+				if (contextAndCount[1] <= 0L) {
+					throw new IOException("Bulk context count must be positive");
+				}
+				if (hasPrevious && Long.compareUnsigned(previousContext, contextAndCount[0]) >= 0) {
+					throw new IOException("Bulk contexts are not strictly increasing");
+				}
+				previousContext = contextAndCount[0];
+				hasPrevious = true;
+				batch[count * 2] = contextAndCount[0];
+				batch[count * 2 + 1] = contextAndCount[1];
+				count++;
+			}
+			if (count > 0) {
+				appendBulkContextBatch(batch, count);
 			}
 		}
-		return true;
 	}
 
 	private static int bulkBatchRecords(int maxTransactionRecords, long maxTransactionBytes,
@@ -641,19 +550,14 @@ class TripleStore implements Closeable {
 		};
 	}
 
-	@FunctionalInterface
-	private interface BulkIndexKeySource {
-		byte[] next() throws IOException;
-	}
-
 	private byte[] appendBulkIndexBatch(TripleIndex index, String specification, long[] batch, int count,
-			boolean writeContexts, byte[] lastCommittedKey) throws IOException {
-		long reservation = Math.multiplyExact((long) count, writeContexts ? 192L : 128L);
+			byte[] lastCommittedKey) throws IOException {
+		long reservation = Math.multiplyExact((long) count, 128L);
 		while (true) {
 			reserveWriteCapacity(reservation);
 			startTransaction();
 			try {
-				byte[] finalKey = appendBulkIndexBatchInTransaction(index, specification, batch, count, writeContexts,
+				byte[] finalKey = appendBulkIndexBatchInTransaction(index, specification, batch, count,
 						lastCommittedKey);
 				endTransaction(true);
 				return finalKey;
@@ -671,7 +575,7 @@ class TripleStore implements Closeable {
 	}
 
 	private byte[] appendBulkIndexBatchInTransaction(TripleIndex index, String specification, long[] batch, int count,
-			boolean writeContexts, byte[] lastCommittedKey) throws IOException {
+			byte[] lastCommittedKey) throws IOException {
 		int subjectPosition = specification.indexOf('s');
 		int predicatePosition = specification.indexOf('p');
 		int objectPosition = specification.indexOf('o');
@@ -679,7 +583,6 @@ class TripleStore implements Closeable {
 		byte[] previousKey = lastCommittedKey == null ? new byte[TripleIndex.MAX_KEY_LENGTH]
 				: Arrays.copyOf(lastCommittedKey, TripleIndex.MAX_KEY_LENGTH);
 		int previousKeyLength = lastCommittedKey == null ? 0 : lastCommittedKey.length;
-		LongIntHashMap contextIncrements = writeContexts ? new LongIntHashMap() : null;
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			MDBVal keyVal = MDBVal.malloc(stack);
 			MDBVal dataVal = MDBVal.calloc(stack);
@@ -706,19 +609,46 @@ class TripleStore implements Closeable {
 				for (int i = 0; i < previousKeyLength; i++) {
 					previousKey[i] = keyBuffer.get(keyBuffer.position() + i);
 				}
-				if (contextIncrements != null) {
-					contextIncrements.addToValue(context, 1);
-				}
-			}
-			if (contextIncrements != null) {
-				LongIterator contexts = contextIncrements.keysView().longIterator();
-				while (contexts.hasNext()) {
-					long context = contexts.next();
-					incrementAlignedContext(stack, context, contextIncrements.get(context));
-				}
 			}
 		}
 		return Arrays.copyOf(previousKey, previousKeyLength);
+	}
+
+	private void appendBulkContextBatch(long[] batch, int count) throws IOException {
+		long reservation = Math.multiplyExact((long) count, 64L);
+		while (true) {
+			reserveWriteCapacity(reservation);
+			startTransaction();
+			try (MemoryStack stack = stackPush()) {
+				MDBVal key = MDBVal.malloc(stack);
+				MDBVal value = MDBVal.malloc(stack);
+				ByteBuffer keyBuffer = stack.malloc(1 + Long.BYTES);
+				ByteBuffer valueBuffer = stack.malloc(1 + Long.BYTES);
+				for (int row = 0; row < count; row++) {
+					keyBuffer.clear();
+					Varint.writeUnsigned(keyBuffer, batch[row * 2]);
+					key.mv_data(keyBuffer.flip());
+					valueBuffer.clear();
+					Varint.writeUnsigned(valueBuffer, batch[row * 2 + 1]);
+					value.mv_data(valueBuffer.flip());
+					int result = mdb_put(writeTxn, contextsDbi, key, value, MDB_APPEND);
+					if (result != MDB_SUCCESS) {
+						throw new IOException(mdb_strerror(result));
+					}
+				}
+				endTransaction(true);
+				return;
+			} catch (IOException e) {
+				endTransaction(false);
+				if (!shouldFallBackFromAlignedContextWrite(e)) {
+					throw e;
+				}
+				reservation = Math.multiplyExact(reservation, 2L);
+			} catch (RuntimeException | Error e) {
+				endTransaction(false);
+				throw e;
+			}
+		}
 	}
 
 	private static int compareUnsignedTuple(long[] left, long[] right) {

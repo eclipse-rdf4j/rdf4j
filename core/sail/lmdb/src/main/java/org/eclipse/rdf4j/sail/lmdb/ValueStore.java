@@ -529,6 +529,7 @@ public class ValueStore extends AbstractValueFactory {
 
 	private ValueStoreHashFile hashFile;
 	private final Map<Long, Integer> pendingHashUpdates = new HashMap<>();
+	private final Set<String> bulkAppendedTripleTermIndexes = new HashSet<>();
 
 	private volatile long nextValueEvictionTime = 0;
 	private final ConcurrentCleaner cleaner = new ConcurrentCleaner();
@@ -604,8 +605,8 @@ public class ValueStore extends AbstractValueFactory {
 		// Bulk appends can legitimately consume the last free pages. Reserve enough page-aligned headroom for the six
 		// deferred named databases, their catalog entries, and the retirement-epoch metadata transaction.
 		reserveWriteCapacity(Math.multiplyExact((long) pageSize, BULK_AUXILIARY_DATABASE_RESERVATION_PAGES));
-		openAuxiliaryDatabases();
-		initializeIdsAndTermIndexes(config);
+		openAuxiliaryDatabases(true);
+		initializeTermIndexes(config);
 	}
 
 	private void initializeIdsAndTermIndexes(LmdbStoreConfig config) throws IOException {
@@ -646,6 +647,10 @@ public class ValueStore extends AbstractValueFactory {
 			return null;
 		});
 
+		initializeTermIndexes(config);
+	}
+
+	private void initializeTermIndexes(LmdbStoreConfig config) throws IOException {
 		startTransaction(true);
 		initTermIndexes(config);
 		commit();
@@ -775,6 +780,10 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	private void openAuxiliaryDatabases() throws IOException {
+		openAuxiliaryDatabases(false);
+	}
+
+	private void openAuxiliaryDatabases(boolean freshBulkLoad) throws IOException {
 		if (auxiliaryDatabasesInitialized) {
 			throw new IllegalStateException("ValueStore auxiliary databases are already initialized");
 		}
@@ -785,12 +794,22 @@ public class ValueStore extends AbstractValueFactory {
 		// open ref_counts database
 		refCountsDbi = openDatabase(env, "ref_counts", MDB_CREATE);
 		// open the retirement queue databases and advance the persisted boot epoch
-		retiredIdStore.open(env);
+		if (freshBulkLoad) {
+			retiredIdStore.openFresh(env);
+		} else {
+			retiredIdStore.open(env);
+		}
 
 		// A read transaction opened before the named databases were created cannot use their database handles.
 		// This matters for deferred bulk initialization because capacity checks may have opened a pooled reader while
 		// the main database was being append-loaded.
 		txnManager.closeReadTxn();
+
+		if (freshBulkLoad) {
+			freeIdsAvailable = false;
+			auxiliaryDatabasesInitialized = true;
+			return;
+		}
 
 		// check if free IDs are available
 		readTransaction(env, (stack, txn) -> {
@@ -3264,80 +3283,6 @@ public class ValueStore extends AbstractValueFactory {
 		appendBulkRecords(source, refCountsDbi, maxTransactionRecords, maxTransactionBytes);
 	}
 
-	/**
-	 * Verifies the exact generated main-database records against LMDB in key order.
-	 */
-	@InternalUseOnly
-	public void validateBulkRecords(BulkRecordSource source) throws IOException {
-		validateBulkRecords(source, dbi, "main", true);
-	}
-
-	/**
-	 * Verifies the exact generated reference-count records against LMDB in key order.
-	 */
-	@InternalUseOnly
-	public void validateBulkReferenceCounts(BulkRecordSource source) throws IOException {
-		validateBulkRecords(source, refCountsDbi, "reference-count", false);
-	}
-
-	private void validateBulkRecords(BulkRecordSource source, int targetDbi, String database, boolean mainDatabase)
-			throws IOException {
-		readTransaction(env, (stack, txn) -> {
-			PointerBuffer cursorHandle = stack.mallocPointer(1);
-			E(mdb_cursor_open(txn, targetDbi, cursorHandle));
-			long cursor = cursorHandle.get(0);
-			try {
-				MDBVal key = MDBVal.malloc(stack);
-				MDBVal value = MDBVal.malloc(stack);
-				int result = nextBulkRecord(cursor, key, value, MDB_FIRST, mainDatabase);
-				BulkRecord expected;
-				while ((expected = source.next()) != null) {
-					if (result == MDB_NOTFOUND) {
-						throw new IOException(
-								"ValueStore " + database + " database is missing an expected bulk record");
-					}
-					E(result);
-					if (!matches(expected.key(), key.mv_data()) || !matches(expected.value(), value.mv_data())) {
-						throw new IOException(
-								"ValueStore " + database + " database differs from its generated bulk records");
-					}
-					result = nextBulkRecord(cursor, key, value, MDB_NEXT, mainDatabase);
-				}
-				if (result == MDB_SUCCESS) {
-					throw new IOException(
-							"ValueStore " + database + " database contains an unexpected bulk record");
-				}
-				if (result != MDB_NOTFOUND) {
-					E(result);
-				}
-			} finally {
-				mdb_cursor_close(cursor);
-			}
-			return null;
-		});
-	}
-
-	private static int nextBulkRecord(long cursor, MDBVal key, MDBVal value, int operation, boolean mainDatabase) {
-		int result = mdb_cursor_get(cursor, key, value, operation);
-		while (mainDatabase && result == MDB_SUCCESS
-				&& Byte.toUnsignedInt(key.mv_data().get(key.mv_data().position())) > HASHID_KEY) {
-			result = mdb_cursor_get(cursor, key, value, MDB_NEXT);
-		}
-		return result;
-	}
-
-	private static boolean matches(byte[] expected, ByteBuffer actual) {
-		if (actual.remaining() != expected.length) {
-			return false;
-		}
-		for (int index = 0; index < expected.length; index++) {
-			if (actual.get(actual.position() + index) != expected[index]) {
-				return false;
-			}
-		}
-		return true;
-	}
-
 	private void appendBulkRecords(BulkRecordSource source, int targetDbi, int maxTransactionRecords,
 			long maxTransactionBytes) throws IOException {
 		if (maxTransactionRecords <= 0 || maxTransactionBytes <= 0L) {
@@ -3355,6 +3300,10 @@ public class ValueStore extends AbstractValueFactory {
 				}
 				if (previousKey != null && Arrays.compareUnsigned(previousKey, pending.key()) >= 0) {
 					throw new IOException("ValueStore bulk records are not strictly increasing");
+				}
+				if (targetDbi == dbi && pending.key().length > 1 && pending.key()[0] == ID_KEY) {
+					nextId = Math.max(nextId,
+							Math.addExact(ValueIds.getValue(data2id(ByteBuffer.wrap(pending.key()))), 1L));
 				}
 				previousKey = pending.key().clone();
 				batch.add(pending);
@@ -3430,13 +3379,8 @@ public class ValueStore extends AbstractValueFactory {
 		if (!TripleIndex.usesUnsignedTupleOrder(specification)) {
 			throw new IOException("RDF-star term index requires encoded-key sorting: " + specification);
 		}
-		long existingEntries = readTransaction(env, (stack, txn) -> {
-			MDBStat stat = MDBStat.malloc(stack);
-			E(mdb_stat(txn, index.getDB(true), stat));
-			return stat.ms_entries();
-		});
-		if (existingEntries != 0L) {
-			throw new IOException("Bulk append requires an empty RDF-star term index: " + specification);
+		if (!bulkAppendedTripleTermIndexes.add(specification)) {
+			throw new IOException("RDF-star term index was already appended by this bulk load: " + specification);
 		}
 
 		long[] batch = new long[Math.multiplyExact(batchRecords, 4)];
@@ -3474,74 +3418,6 @@ public class ValueStore extends AbstractValueFactory {
 			uniqueTerms += count;
 		}
 		return uniqueTerms;
-	}
-
-	@InternalUseOnly
-	public void validateBulkTripleTermIndex(String specification, BulkLongQuadSource source) throws IOException {
-		TripleIndex index = tripleTermIndexes.stream()
-				.filter(candidate -> candidate.toString().equals(specification))
-				.findFirst()
-				.orElseThrow(() -> new IOException("RDF-star term index is not configured: " + specification));
-		readTransaction(env, (stack, txn) -> {
-			PointerBuffer cursorHandle = stack.mallocPointer(1);
-			E(mdb_cursor_open(txn, index.getDB(true), cursorHandle));
-			long cursor = cursorHandle.get(0);
-			try {
-				MDBVal key = MDBVal.malloc(stack);
-				MDBVal value = MDBVal.malloc(stack);
-				int result = mdb_cursor_get(cursor, key, value, MDB_FIRST);
-				long[] tuple = new long[4];
-				long[] previousTuple = new long[4];
-				boolean hasPrevious = false;
-				while (source.next(tuple)) {
-					if (hasPrevious) {
-						int comparison = compareUnsignedBulkTuple(previousTuple, tuple);
-						if (comparison > 0) {
-							throw new IOException(
-									"RDF-star term index validation input is not sorted for " + specification);
-						}
-						if (comparison == 0) {
-							continue;
-						}
-					}
-					System.arraycopy(tuple, 0, previousTuple, 0, tuple.length);
-					hasPrevious = true;
-					long[] quad = new long[4];
-					for (int field = 0; field < 4; field++) {
-						quad[bulkIndexComponent(specification.charAt(field))] = tuple[field];
-					}
-					byte[] expected = TripleIndex.encodeKey(specification, quad[0], quad[1], quad[2], quad[3]);
-					if (result == MDB_NOTFOUND) {
-						throw new IOException(
-								"RDF-star term index " + specification + " is missing an expected bulk key");
-					}
-					E(result);
-					if (!matches(expected, key.mv_data())) {
-						throw new IOException(
-								"RDF-star term index " + specification + " differs from its sorted bulk source");
-					}
-					result = mdb_cursor_get(cursor, key, value, MDB_NEXT);
-				}
-				if (result != MDB_NOTFOUND) {
-					E(result);
-					throw new IOException(
-							"RDF-star term index " + specification + " contains an unexpected bulk key");
-				}
-				return null;
-			} finally {
-				mdb_cursor_close(cursor);
-			}
-		});
-	}
-
-	private static int bulkIndexComponent(char field) {
-		return switch (field) {
-		case 's' -> 0;
-		case 'p' -> 1;
-		case 'o' -> 2;
-		case 'c' -> 3;
-		default -> throw new IllegalArgumentException("Unknown RDF-star term index field: " + field);
-		};
 	}
 
 	private static int bulkIndexBatchRecords(int maxTransactionRecords, long maxTransactionBytes) {
