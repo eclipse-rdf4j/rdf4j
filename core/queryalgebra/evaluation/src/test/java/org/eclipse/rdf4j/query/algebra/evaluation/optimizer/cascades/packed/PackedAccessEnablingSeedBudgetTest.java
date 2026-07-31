@@ -40,7 +40,7 @@ import org.junit.jupiter.api.Test;
 
 class PackedAccessEnablingSeedBudgetTest {
 
-	private static final int ACCESS_SEED_BUDGET = 11;
+	private static final int ACCESS_SEED_BUDGET = 22;
 
 	@Test
 	void seedsEveryLateAccessEnablingRecipeBeforeExhaustiveSearchInEitherInputOrder() {

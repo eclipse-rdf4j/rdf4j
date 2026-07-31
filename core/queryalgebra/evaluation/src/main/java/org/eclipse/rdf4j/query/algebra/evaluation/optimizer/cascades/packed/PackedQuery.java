@@ -237,6 +237,8 @@ final class PackedQuery {
 		int payloadId = relPayload(relationId);
 		return switch (operator) {
 		case PackedRelOp.FILTER, PackedRelOp.LEFT_JOIN -> scalarHasObservableEvaluationEffects(payloadId);
+		case PackedRelOp.SEMI_JOIN, PackedRelOp.ANTI_JOIN -> scalarHasObservableEvaluationEffects(
+				payloadPrimary(payloadId));
 		case PackedRelOp.EXTENSION -> extensionPayloadHasObservableEvaluationEffects(payloadId);
 		case PackedRelOp.ORDER -> orderPayloadHasObservableEvaluationEffects(payloadId);
 		case PackedRelOp.PROJECTION -> projectionPayloadHasObservableEvaluationEffects(payloadId);

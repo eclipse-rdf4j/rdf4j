@@ -20,6 +20,14 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 @PackedHotPath
 public final class PackedQueryView {
 
+	public static final int SEMI_ANTI_STREAMING = 0;
+	public static final int SEMI_ANTI_MEMOIZED = 1;
+	public static final int SEMI_ANTI_MATERIALIZED = 2;
+
+	public static final int SEMI_ANTI_EXISTS = 0;
+	public static final int SEMI_ANTI_NOT_EXISTS = 1;
+	public static final int SEMI_ANTI_MINUS_ASSURED_SHARED = 2;
+
 	private final PackedQuery query;
 
 	PackedQueryView(PackedQuery query) {
@@ -74,7 +82,58 @@ public final class PackedQueryView {
 	}
 
 	public boolean isFilter(int relationId) {
-		return query.relOperator(relationId) == PackedRelOp.FILTER;
+		int operator = query.relOperator(relationId);
+		return operator == PackedRelOp.FILTER
+				|| operator == PackedRelOp.SEMI_JOIN
+				|| operator == PackedRelOp.ANTI_JOIN;
+	}
+
+	public boolean isSemiJoin(int relationId) {
+		return query.relOperator(relationId) == PackedRelOp.SEMI_JOIN;
+	}
+
+	public boolean isAntiJoin(int relationId) {
+		return query.relOperator(relationId) == PackedRelOp.ANTI_JOIN;
+	}
+
+	public int semiAntiAlgorithm(int relationId) {
+		return query.payloadFlags(semiAntiPayload(relationId));
+	}
+
+	public int semiAntiKind(int relationId) {
+		return query.payloadSecondary(semiAntiPayload(relationId));
+	}
+
+	/**
+	 * Returns the packed RHS relation referenced by this semi/anti predicate.
+	 */
+	public int semiAntiRightRelationId(int relationId) {
+		int condition = query.payloadPrimary(semiAntiPayload(relationId));
+		if (query.scalarOperator(condition) == PackedScalarOp.NOT && query.scalarChildCount(condition) == 1) {
+			condition = query.scalarChild(condition, 0);
+		}
+		if (query.scalarOperator(condition) != PackedScalarOp.EXISTS) {
+			throw new IllegalStateException("packed semi/anti condition is not EXISTS or NOT EXISTS");
+		}
+		int subquery = query.scalarPayload(condition);
+		if (query.payloadOperator(subquery) != PackedPayloadOp.SUBQUERY_VALUE
+				|| query.payloadChildCount(subquery) != 1) {
+			throw new IllegalStateException("packed semi/anti condition has an invalid subquery payload");
+		}
+		return query.payloadChild(subquery, 0);
+	}
+
+	public int semiAntiCorrelationBindingCount(int relationId) {
+		int names = semiAntiCorrelationNames(relationId);
+		return query.payloadChildCount(names);
+	}
+
+	public String semiAntiCorrelationBindingName(int relationId, int ordinal) {
+		int names = semiAntiCorrelationNames(relationId);
+		if (ordinal < 0 || ordinal >= query.payloadChildCount(names)) {
+			throw new IndexOutOfBoundsException("semi/anti correlation binding ordinal outside payload");
+		}
+		return (String) query.objectValue(query.payloadChild(names, ordinal));
 	}
 
 	public String statementPatternName(int relationId, int component) {
@@ -136,6 +195,29 @@ public final class PackedQueryView {
 
 	public boolean isBindingSetAssignment(int relationId) {
 		return query.relOperator(relationId) == PackedRelOp.BINDING_SET_ASSIGNMENT;
+	}
+
+	private int semiAntiPayload(int relationId) {
+		if (!isSemiJoin(relationId) && !isAntiJoin(relationId)) {
+			throw new IllegalArgumentException("relation is not a packed semi/anti join");
+		}
+		int payload = query.relPayload(relationId);
+		if (query.payloadOperator(payload) != PackedPayloadOp.SEMI_ANTI_JOIN) {
+			throw new IllegalStateException("packed semi/anti relation has an invalid payload");
+		}
+		return payload;
+	}
+
+	private int semiAntiCorrelationNames(int relationId) {
+		int payload = semiAntiPayload(relationId);
+		if (query.payloadChildCount(payload) != 1) {
+			throw new IllegalStateException("packed semi/anti payload must contain one correlation name set");
+		}
+		int names = query.payloadChild(payload, 0);
+		if (query.payloadOperator(names) != PackedPayloadOp.NAME_SET) {
+			throw new IllegalStateException("packed semi/anti correlation payload is not a name set");
+		}
+		return names;
 	}
 
 	public int bindingAssignmentRowCount(int relationId) {

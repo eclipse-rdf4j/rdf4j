@@ -98,6 +98,7 @@ final class PackedLogicalRuleProgram {
 		}
 		switch (relations.operatorTag(expressionId)) {
 		case PackedRelOp.FILTER -> {
+			addSemiAntiAlternatives(expressionId);
 			addFiniteFilterAlternative(expressionId);
 			addPredicateRangeFilterAlternatives(expressionId);
 			addAdjacentFilterCommutationAlternative(expressionId);
@@ -165,9 +166,73 @@ final class PackedLogicalRuleProgram {
 			return;
 		}
 		metadata.addRelationRuleMask(alternativeId, PackedRuleProofs.MINUS_CORRELATED_NOT_EXISTS);
+		addTypedSemiAntiAlternatives(
+				differenceExpressionId,
+				PackedRelOp.ANTI_JOIN,
+				notExistsId,
+				PackedQueryView.SEMI_ANTI_MINUS_ASSURED_SHARED,
+				nameSetPayload(sharedNames),
+				leftExpressionId,
+				PackedRuleProofs.MINUS_CORRELATED_NOT_EXISTS);
 		int commutedAlternativeId = addAdjacentFilterCommutationAlternative(alternativeId);
 		if (commutedAlternativeId != 0) {
 			metadata.addRelationRuleMask(commutedAlternativeId, PackedRuleProofs.MINUS_CORRELATED_NOT_EXISTS);
+		}
+	}
+
+	private void addSemiAntiAlternatives(int filterExpressionId) {
+		if ((metadata.relationFlags(filterExpressionId) & PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE) != 0) {
+			return;
+		}
+		int conditionId = relations.payloadId(filterExpressionId);
+		int existsId = conditionId;
+		int operator = PackedRelOp.SEMI_JOIN;
+		int semanticKind = PackedQueryView.SEMI_ANTI_EXISTS;
+		if (scalars.operatorTag(conditionId) == PackedScalarOp.NOT && scalars.childCount(conditionId) == 1) {
+			existsId = scalars.childGroupId(conditionId, 0);
+			operator = PackedRelOp.ANTI_JOIN;
+			semanticKind = PackedQueryView.SEMI_ANTI_NOT_EXISTS;
+		}
+		if (scalars.operatorTag(existsId) != PackedScalarOp.EXISTS) {
+			return;
+		}
+		int subqueryPayloadId = scalars.payloadId(existsId);
+		if (payloads.operatorTag(subqueryPayloadId) != PackedPayloadOp.SUBQUERY_VALUE
+				|| payloads.childCount(subqueryPayloadId) != 1) {
+			return;
+		}
+		int rightExpressionId = payloads.childGroupId(subqueryPayloadId, 0);
+		if (!safeCorrelatedMinusProbe(rightExpressionId)) {
+			return;
+		}
+		int leftExpressionId = relations.childGroupId(filterExpressionId, 0);
+		long[] correlatedNames = relationOutputs(leftExpressionId);
+		andInto(correlatedNames, relationOutputs(rightExpressionId));
+		addTypedSemiAntiAlternatives(
+				filterExpressionId,
+				operator,
+				conditionId,
+				semanticKind,
+				nameSetPayload(correlatedNames),
+				leftExpressionId,
+				PackedRuleProofs.TYPED_SEMI_ANTI);
+	}
+
+	private void addTypedSemiAntiAlternatives(int sourceExpressionId, int operator, int conditionId,
+			int semanticKind, int correlationNamesId, int leftExpressionId, long ruleMask) {
+		unary[0] = relations.groupId(leftExpressionId);
+		for (int algorithm = PackedQueryView.SEMI_ANTI_STREAMING; algorithm <= PackedQueryView.SEMI_ANTI_MATERIALIZED; algorithm++) {
+			bindingPair[0] = correlationNamesId;
+			int payloadId = payloads.internCanonical(
+					PackedPayloadOp.SEMI_ANTI_JOIN,
+					conditionId,
+					semanticKind,
+					algorithm,
+					bindingPair,
+					0,
+					1);
+			int alternativeId = addAlternative(sourceExpressionId, operator, payloadId, unary, 1);
+			addAlternativeRuleMask(alternativeId, ruleMask);
 		}
 	}
 
@@ -284,22 +349,78 @@ final class PackedLogicalRuleProgram {
 
 	private boolean safeCorrelatedMinusProbe(int expressionId) {
 		int operator = relations.operatorTag(expressionId);
-		if ((metadata.relationFlags(expressionId) & PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE) != 0
-				&& operator != PackedRelOp.FILTER) {
-			return false;
-		}
 		return switch (operator) {
-		case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.BINDING_SET_ASSIGNMENT, PackedRelOp.SINGLETON_SET, PackedRelOp.EMPTY_SET -> true;
-		case PackedRelOp.JOIN -> safeCorrelatedMinusProbe(relations.childGroupId(expressionId, 0))
+		case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.BINDING_SET_ASSIGNMENT, PackedRelOp.SINGLETON_SET, PackedRelOp.EMPTY_SET, PackedRelOp.ZERO_LENGTH_PATH, PackedRelOp.ARBITRARY_LENGTH_PATH, PackedRelOp.TRIPLE_REF, PackedRelOp.REIFIED_TRIPLE_REF, PackedRelOp.ANNOTATION_TRIPLE_REF -> true;
+		case PackedRelOp.JOIN, PackedRelOp.UNION, PackedRelOp.DIFFERENCE, PackedRelOp.INTERSECTION -> safeCorrelatedMinusProbe(
+				relations.childGroupId(expressionId, 0))
 				&& safeCorrelatedMinusProbe(relations.childGroupId(expressionId, 1));
-		case PackedRelOp.FILTER -> (metadata.scalarFlags(relations.payloadId(expressionId))
-				& PackedNodeMetadataArena.SCALAR_REORDERING_SAFE) != 0
-				&& relationAssuresScalarDependencies(relations.childGroupId(expressionId, 0),
-						relations.payloadId(expressionId))
+		case PackedRelOp.LEFT_JOIN -> (relations.payloadId(expressionId) == 0
+				|| safeRepeatedScalar(relations.payloadId(expressionId)))
+				&& safeCorrelatedMinusProbe(relations.childGroupId(expressionId, 0))
+				&& safeCorrelatedMinusProbe(relations.childGroupId(expressionId, 1));
+		case PackedRelOp.FILTER -> safeRepeatedScalar(relations.payloadId(expressionId))
 				&& safeCorrelatedMinusProbe(relations.childGroupId(expressionId, 0));
-		case PackedRelOp.QUERY_ROOT -> safeCorrelatedMinusProbe(relations.childGroupId(expressionId, 0));
+		case PackedRelOp.QUERY_ROOT, PackedRelOp.DESCRIBE, PackedRelOp.SLICE, PackedRelOp.REDUCED, PackedRelOp.DISTINCT, PackedRelOp.MATERIALIZE, PackedRelOp.PROJECTION, PackedRelOp.MULTI_PROJECTION -> safeCorrelatedMinusProbe(
+				relations.childGroupId(expressionId, 0));
+		case PackedRelOp.ORDER -> safeOrderForRepeatedEvaluation(relations.payloadId(expressionId))
+				&& safeCorrelatedMinusProbe(relations.childGroupId(expressionId, 0));
+		case PackedRelOp.EXTENSION -> safeExtensionForRepeatedEvaluation(relations.payloadId(expressionId))
+				&& safeCorrelatedMinusProbe(relations.childGroupId(expressionId, 0));
+		case PackedRelOp.GROUP -> safeGroupForRepeatedEvaluation(relations.payloadId(expressionId))
+				&& safeCorrelatedMinusProbe(relations.childGroupId(expressionId, 0));
 		default -> false;
 		};
+	}
+
+	private boolean safeRepeatedScalar(int scalarId) {
+		if ((metadata.scalarFlags(scalarId) & PackedNodeMetadataArena.SCALAR_REORDERING_SAFE) != 0) {
+			return true;
+		}
+		if (scalars.operatorTag(scalarId) == PackedScalarOp.EXISTS) {
+			int payloadId = scalars.payloadId(scalarId);
+			return payloads.operatorTag(payloadId) == PackedPayloadOp.SUBQUERY_VALUE
+					&& payloads.childCount(payloadId) == 1
+					&& safeCorrelatedMinusProbe(payloads.childGroupId(payloadId, 0));
+		}
+		for (int ordinal = 0; ordinal < scalars.childCount(scalarId); ordinal++) {
+			if (!safeRepeatedScalar(scalars.childGroupId(scalarId, ordinal))) {
+				return false;
+			}
+		}
+		return switch (scalars.operatorTag(scalarId)) {
+		case PackedScalarOp.NOT, PackedScalarOp.AND, PackedScalarOp.OR -> true;
+		default -> false;
+		};
+	}
+
+	private boolean safeOrderForRepeatedEvaluation(int orderPayloadId) {
+		for (int ordinal = 0; ordinal < payloads.childCount(orderPayloadId); ordinal++) {
+			int elementId = payloads.childGroupId(orderPayloadId, ordinal);
+			if (!safeRepeatedScalar(payloads.payloadId(elementId))) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private boolean safeExtensionForRepeatedEvaluation(int extensionPayloadId) {
+		for (int ordinal = 0; ordinal < payloads.childCount(extensionPayloadId); ordinal++) {
+			int elementId = payloads.childGroupId(extensionPayloadId, ordinal);
+			if (!safeRepeatedScalar(payloads.semanticScopeId(elementId))) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private boolean safeGroupForRepeatedEvaluation(int groupPayloadId) {
+		for (int ordinal = 0; ordinal < payloads.childCount(groupPayloadId); ordinal++) {
+			int elementId = payloads.childGroupId(groupPayloadId, ordinal);
+			if (!safeRepeatedScalar(payloads.semanticScopeId(elementId))) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private int nameSetPayload(long[] names) {
@@ -2720,7 +2841,7 @@ final class PackedLogicalRuleProgram {
 		case PackedRelOp.JOIN, PackedRelOp.LATERAL -> relationAssuresSymbol(
 				relations.childGroupId(expressionId, 0), symbolId)
 				|| relationAssuresSymbol(relations.childGroupId(expressionId, 1), symbolId);
-		case PackedRelOp.FILTER, PackedRelOp.QUERY_ROOT, PackedRelOp.DESCRIBE, PackedRelOp.SLICE, PackedRelOp.REDUCED, PackedRelOp.DISTINCT, PackedRelOp.MATERIALIZE, PackedRelOp.ORDER -> relationAssuresSymbol(
+		case PackedRelOp.FILTER, PackedRelOp.SEMI_JOIN, PackedRelOp.ANTI_JOIN, PackedRelOp.QUERY_ROOT, PackedRelOp.DESCRIBE, PackedRelOp.SLICE, PackedRelOp.REDUCED, PackedRelOp.DISTINCT, PackedRelOp.MATERIALIZE, PackedRelOp.ORDER -> relationAssuresSymbol(
 				relations.childGroupId(expressionId, 0), symbolId);
 		case PackedRelOp.PROJECTION -> projectionListAssuresSymbol(
 				payloads.payloadId(relations.payloadId(expressionId)),

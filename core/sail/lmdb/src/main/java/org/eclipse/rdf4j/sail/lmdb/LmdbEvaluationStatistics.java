@@ -255,6 +255,11 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 	}
 
 	@Override
+	public void recordSemiAntiOutcome(Filter filter, SemiAntiOutcomeObservation observation) {
+		runtime.recordSemiAntiOutcome(filter, observation);
+	}
+
+	@Override
 	public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
 		CostContext context = CostContext.of(currentlyBoundVars == null ? Set.of() : currentlyBoundVars,
 				1.0d, 1.0d, false);

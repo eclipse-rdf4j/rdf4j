@@ -24,6 +24,7 @@ final class PackedIncumbentSearch {
 	private final int[] childGroupIds;
 	private final int[] childWinnerIds;
 	private final double[] selectedRowsByGroup;
+	private final int[] selectedEvidenceStateByGroup;
 	private final long[] joinChildWords;
 	private final PackedFilterRules filterRules;
 	private final PackedSearchBudget budget;
@@ -51,6 +52,7 @@ final class PackedIncumbentSearch {
 		childGroupIds = new int[maximumChildCount];
 		childWinnerIds = new int[maximumChildCount];
 		selectedRowsByGroup = new double[query.relationCount() + 1];
+		selectedEvidenceStateByGroup = new int[query.relationCount() + 1];
 		joinChildWords = joinChildren(query);
 		filterRules = new PackedFilterRules(query, memo, new PackedRuleState(query.relationCount(), 1),
 				selectedRowsByGroup);
@@ -70,11 +72,13 @@ final class PackedIncumbentSearch {
 			if (!hasLogicalAlternatives) {
 				enumerateJoinRegion(logicalExpressionId);
 			}
-			if (exploreReorderings && query.relOperator(logicalExpressionId) == PackedRelOp.FILTER) {
+			if (exploreReorderings && isCorrelatedPredicateOperator(query.relOperator(logicalExpressionId))) {
 				if (!hasLogicalAlternatives) {
 					enumerateCorrelatedFilterRegion(logicalExpressionId);
 				}
-				workUnits += filterRules.apply(logicalExpressionId);
+				if (query.relOperator(logicalExpressionId) == PackedRelOp.FILTER) {
+					workUnits += filterRules.apply(logicalExpressionId);
+				}
 			}
 		}
 
@@ -100,7 +104,7 @@ final class PackedIncumbentSearch {
 				}
 				rootWinnerId = offerLogicalImplementation(logicalExpressionId, anyPropertyId);
 				enumerateJoinRegion(logicalExpressionId);
-				if (exploreReorderings && query.relOperator(logicalExpressionId) == PackedRelOp.FILTER) {
+				if (exploreReorderings && isCorrelatedPredicateOperator(query.relOperator(logicalExpressionId))) {
 					enumerateCorrelatedFilterRegion(logicalExpressionId);
 				}
 			}
@@ -150,6 +154,9 @@ final class PackedIncumbentSearch {
 		estimate(logicalExpressionId);
 		double outputRows = outputRows(logicalExpressionId, childCount);
 		double totalCost = childCost + localWork(logicalExpressionId, outputRows);
+		if (childCount == 0 && costEstimate.hasExplicitPhysicalCost()) {
+			totalCost = costSession.objectiveScore(costEstimate);
+		}
 		if (childCount != 0 && costSession != null) {
 			refineOperator(logicalExpressionId, childCount, outputRows, totalCost);
 			boolean componentRefinement = costEstimate.hasComponentOutputRows();
@@ -157,9 +164,15 @@ final class PackedIncumbentSearch {
 				outputRows = costEstimate.outputRows();
 			}
 			if (!componentRefinement && finiteNonNegative(costEstimate.workRows())) {
-				totalCost = costEstimate.replacesChildWork()
-						? costEstimate.workRows()
-						: Math.max(childCost, costEstimate.workRows());
+				if (costEstimate.hasExplicitPhysicalCost()
+						&& costEstimate.costScope() == PackedCostEstimate.CostScope.LOCAL) {
+					for (int ordinal = 0; ordinal < childCount; ordinal++) {
+						memo.addWinnerPhysicalCost(childWinnerIds[ordinal], costEstimate);
+					}
+				}
+				totalCost = costEstimate.hasExplicitPhysicalCost()
+						? costSession.objectiveScore(costEstimate)
+						: costEstimate.workRows();
 			} else if (componentRefinement) {
 				/*
 				 * A canonical operator incumbent is a complete scalar. refineOperator does not identify which child
@@ -168,7 +181,24 @@ final class PackedIncumbentSearch {
 				 */
 				costEstimate.setReplacesChildWork(false);
 			}
-			costEstimate.setRows(outputRows, totalCost);
+			if (!costEstimate.dependentSubqueriesCosted()) {
+				double dependentCost = PackedDependentSubqueryCosting.defaultCost(query, memo, logicalExpressionId);
+				if (dependentCost > 0.0d) {
+					if (costEstimate.hasExplicitPhysicalCost()) {
+						costEstimate.addChildPhysicalCost(dependentCost, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+								0.0d, 0.0d);
+						totalCost = costSession.objectiveScore(costEstimate);
+					} else {
+						double completeCost = totalCost + dependentCost;
+						totalCost = Double.isFinite(completeCost) ? completeCost : Double.MAX_VALUE;
+					}
+				}
+			}
+			if (costEstimate.hasExplicitPhysicalCost()) {
+				costEstimate.setOutputRowsPreservingPhysicalCost(outputRows);
+			} else {
+				costEstimate.setRows(outputRows, totalCost);
+			}
 		}
 		int physicalExpressionId = memo.addPhysicalAlternative(groupId,
 				query.relOperator(logicalExpressionId), query.relPayload(logicalExpressionId), anyPropertyId,
@@ -189,6 +219,7 @@ final class PackedIncumbentSearch {
 						tieBreakRank, outputRows, totalCost, totalCost, childWinnerIds, 0, childCount);
 		if (memo.winnerPhysicalExpressionId(winnerId) == physicalExpressionId) {
 			selectedRowsByGroup[groupId] = memo.winnerOutputRows(winnerId);
+			selectedEvidenceStateByGroup[groupId] = costEstimate.evidenceStateId();
 		}
 		workUnits++;
 		return winnerId;
@@ -225,6 +256,12 @@ final class PackedIncumbentSearch {
 		workUnits += enumerator.optimizeCorrelatedFilter(logicalExpressionId);
 	}
 
+	private static boolean isCorrelatedPredicateOperator(int operator) {
+		return operator == PackedRelOp.FILTER
+				|| operator == PackedRelOp.SEMI_JOIN
+				|| operator == PackedRelOp.ANTI_JOIN;
+	}
+
 	private void seedAccessEnablingAlternatives() {
 		/*
 		 * Binary finite recipes have no search choice, but their mandatory BSA-prefix provider estimate must be
@@ -251,7 +288,7 @@ final class PackedIncumbentSearch {
 				enumerator = PackedJoinEnumerator.forSession(query, memo, selectedRowsByGroup, budget, costSession);
 				workUnits += enumerator.seedAnchored(logicalExpressionId);
 			}
-			if (exploreReorderings && operator == PackedRelOp.FILTER) {
+			if (exploreReorderings && isCorrelatedPredicateOperator(operator)) {
 				if (enumerator == null) {
 					enumerator = PackedJoinEnumerator.forSession(query, memo, selectedRowsByGroup, budget,
 							costSession);
@@ -317,7 +354,8 @@ final class PackedIncumbentSearch {
 			return PackedJoinEnumerator.joinRows(selectedRowsByGroup[leftGroup], selectedRowsByGroup[rightGroup],
 					query.masksIntersect(query.relOutputMaskId(leftGroup), query.relOutputMaskId(rightGroup)));
 		}
-		if (operator == PackedRelOp.FILTER && childCount == 1) {
+		if ((operator == PackedRelOp.FILTER || operator == PackedRelOp.SEMI_JOIN
+				|| operator == PackedRelOp.ANTI_JOIN) && childCount == 1) {
 			double inputRows = selectedRowsByGroup[childGroupIds[0]];
 			return inputRows == 0.0d ? 0.0d : Math.max(1.0d, inputRows * 0.25d);
 		}
@@ -410,9 +448,15 @@ final class PackedIncumbentSearch {
 
 	private void refineOperator(int logicalExpressionId, int childCount, double outputRows, double totalWorkRows) {
 		costEstimate.setRows(outputRows, totalWorkRows);
-		costContext.reset(emptyPrefix, 0, 0, 1.0d);
+		int leftEvidenceStateId = selectedEvidenceStateByGroup[childGroupIds[0]];
+		int rightEvidenceStateId = childCount > 1
+				? selectedEvidenceStateByGroup[childGroupIds[1]]
+				: 0;
+		costContext.reset(emptyPrefix, 0, 0, 1.0d, childCount == 1 ? leftEvidenceStateId : 0);
 		costContext.setOperatorInputs(selectedRowsByGroup[childGroupIds[0]],
-				childCount > 1 ? selectedRowsByGroup[childGroupIds[1]] : Double.NaN);
+				childCount > 1 ? selectedRowsByGroup[childGroupIds[1]] : Double.NaN,
+				leftEvidenceStateId,
+				rightEvidenceStateId);
 		costSession.refineOperator(logicalExpressionId, costContext, costEstimate);
 	}
 

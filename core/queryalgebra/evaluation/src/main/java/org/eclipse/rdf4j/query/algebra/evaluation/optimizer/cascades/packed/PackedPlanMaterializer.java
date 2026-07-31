@@ -174,6 +174,7 @@ final class PackedPlanMaterializer {
 		case PackedRelOp.BINDING_SET_ASSIGNMENT -> bindingSetAssignment(query, payloadId, sourceRelId);
 		case PackedRelOp.SERVICE -> service(query, recipe, nodeId);
 		case PackedRelOp.TUPLE_FUNCTION -> tupleFunction(query, payloadId);
+		case PackedRelOp.SEMI_JOIN, PackedRelOp.ANTI_JOIN -> semiAntiJoin(query, recipe, nodeId);
 		default -> throw new PackedMemoInvariantException(
 				"unknown packed relational opcode " + relOperator(query, recipe, nodeId));
 		};
@@ -184,6 +185,29 @@ final class PackedPlanMaterializer {
 			applyPhysicalMetadata(recipe, nodeId, result);
 		}
 		return result;
+	}
+
+	private static Filter semiAntiJoin(PackedQuery query, PackedPlanRecipe recipe, int nodeId) {
+		int payloadId = requirePayload(query, relPayload(query, recipe, nodeId), PackedPayloadOp.SEMI_ANTI_JOIN);
+		Filter filter = new Filter(
+				relation(query, recipe, relChild(query, recipe, nodeId, 0)),
+				scalar(query, recipe, nodeId, query.payloadPrimary(payloadId)));
+		String algorithm = switch (query.payloadFlags(payloadId)) {
+		case PackedQueryView.SEMI_ANTI_STREAMING -> "streaming-correlated";
+		case PackedQueryView.SEMI_ANTI_MEMOIZED -> "memoized-correlated";
+		case PackedQueryView.SEMI_ANTI_MATERIALIZED -> "materialized-hash";
+		default -> throw new PackedMemoInvariantException("unknown packed semi/anti algorithm");
+		};
+		String kind = switch (query.payloadSecondary(payloadId)) {
+		case PackedQueryView.SEMI_ANTI_EXISTS -> "exists";
+		case PackedQueryView.SEMI_ANTI_NOT_EXISTS -> "not-exists";
+		case PackedQueryView.SEMI_ANTI_MINUS_ASSURED_SHARED -> "minus-assured-shared";
+		default -> throw new PackedMemoInvariantException("unknown packed semi/anti semantic kind");
+		};
+		filter.setStringMetricPlanned("optimizer.filterAlgorithmHint", algorithm);
+		filter.setStringMetricPlanned("optimizer.semiAntiAlgorithm", algorithm);
+		filter.setStringMetricPlanned("optimizer.semiAntiKind", kind);
+		return filter;
 	}
 
 	private static int relOperator(PackedQuery query, PackedPlanRecipe recipe, int nodeId) {

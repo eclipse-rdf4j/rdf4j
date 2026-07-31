@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
+import java.lang.reflect.Method;
+
 import org.junit.jupiter.api.Test;
 
 class PackedWinnerTableTest {
@@ -62,5 +64,52 @@ class PackedWinnerTableTest {
 
 		assertNotEquals(left, right);
 		assertEquals(2, winners.size());
+	}
+
+	@Test
+	void exactCostTiePrefersOriginalLowerRuleRankBeforePhysicalId() {
+		PackedWinnerTable winners = new PackedWinnerTable(2, 2, 0, 1);
+		int[] none = new int[0];
+
+		int winner = winners.offerWithMetadata(1, 1, 0, 0, 0, 40, 0, 0, 10.0d, 10.0d, 10.0d, none, 0, 0);
+		assertEquals(winner,
+				winners.offerWithMetadata(1, 1, 0, 0, 0, 30, 0, 8, 10.0d, 10.0d, 10.0d, none, 0, 0));
+
+		assertEquals(40, winners.physicalExpressionId(winner));
+	}
+
+	@Test
+	void winnerOrderingUsesExpectedWorstAndStartupBeforeStablePhysicalId() {
+		PackedWinnerTable winners = new PackedWinnerTable(2, 2, 0, 1);
+		int[] none = new int[0];
+
+		int winner = winners.offerWithMetadata(1, 1, 0, 0, 0, 40, 0, 0, 5.0d, 10.0d, 20.0d, none, 0, 0);
+		assertEquals(winner,
+				winners.offerWithMetadata(1, 1, 0, 0, 0, 30, 0, 0, 5.0d, 11.0d, 20.0d, none, 0, 0));
+		assertEquals(40, winners.physicalExpressionId(winner));
+
+		assertEquals(winner,
+				winners.offerWithMetadata(1, 1, 0, 0, 0, 50, 0, 0, 5.0d, 10.0d, 19.0d, none, 0, 0));
+		assertEquals(50, winners.physicalExpressionId(winner));
+
+		assertEquals(winner,
+				winners.offerWithMetadata(1, 1, 0, 0, 0, 60, 0, 0, 4.0d, 10.0d, 19.0d, none, 0, 0));
+		assertEquals(60, winners.physicalExpressionId(winner));
+	}
+
+	@Test
+	void winnerOrderingUsesPeakMemoryBeforeStablePhysicalId() throws Exception {
+		PackedWinnerTable winners = new PackedWinnerTable(2, 2, 0, 1);
+		int[] none = new int[0];
+		Method offer = PackedWinnerTable.class.getDeclaredMethod("offerWithMetadata",
+				int.class, int.class, int.class, int.class, int.class, int.class, int.class, int.class,
+				double.class, double.class, double.class, double.class, int[].class, int.class, int.class);
+		offer.setAccessible(true);
+
+		int winner = (int) offer.invoke(winners, 1, 1, 0, 0, 0, 40, 0, 0,
+				5.0d, 10.0d, 20.0d, 100.0d, none, 0, 0);
+		assertEquals(winner, offer.invoke(winners, 1, 1, 0, 0, 0, 50, 0, 0,
+				5.0d, 10.0d, 20.0d, 10.0d, none, 0, 0));
+		assertEquals(50, winners.physicalExpressionId(winner));
 	}
 }

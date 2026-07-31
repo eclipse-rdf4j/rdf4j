@@ -58,6 +58,7 @@ import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics.SemiAntiOutcomeObservation;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingShape;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingUniverse;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoConfidenceModel;
@@ -90,7 +91,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	private static final String SIDECAR_SUFFIX = ".operators";
 	private static final String LEO_SURFACE_SUFFIX = ".leo";
-	private static final int PERSIST_VERSION = 12;
+	private static final int LEGACY_PERSIST_VERSION = 12;
+	private static final int PERSIST_VERSION = 13;
 	private static final int MAX_ENTRIES = 2048;
 	private static final double MIN_CORRECTION_RATIO = 0.0001d;
 	private static final double MAX_CORRECTION_RATIO = 100_000.0d;
@@ -151,6 +153,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private final Map<OperatorKey, LearnedMultiplierCounts> learnedMultipliers = new LinkedHashMap<>();
 	private final Map<OperatorKey, ShadowOperatorCounts> shadowByOperator = new LinkedHashMap<>();
 	private final Map<OperatorKey, PlanCandidateCounts> planCandidates = new LinkedHashMap<>();
+	private final Map<SemiAntiSurfaceKey, SemiAntiCounts> semiAntiBySurface = new LinkedHashMap<>();
 	private final IdentityHashMap<TupleExpr, OperatorKey> nullModeKeyCache = new IdentityHashMap<>();
 	// Canonical LeoOperatorKey per planning-side node; memo expressions are structurally stable during a
 	// Cascades search, so identity-keyed caching is safe there. Runtime feedback paths bypass this cache
@@ -189,7 +192,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	synchronized void reset() {
 		boolean hadOperatorEvidence = !learnedByOperator.isEmpty() || !learnedMultipliers.isEmpty()
-				|| !shadowByOperator.isEmpty() || !planCandidates.isEmpty();
+				|| !shadowByOperator.isEmpty() || !planCandidates.isEmpty() || !semiAntiBySurface.isEmpty();
 		boolean hadSurfaceEvidence = !leoSurfaceStats.isEmpty();
 		if (!hadOperatorEvidence && !hadSurfaceEvidence) {
 			return;
@@ -198,6 +201,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		learnedMultipliers.clear();
 		shadowByOperator.clear();
 		planCandidates.clear();
+		semiAntiBySurface.clear();
 		nullModeKeyCache.clear();
 		planningLeoKeyCache.clear();
 		leoSurfaceStats.clear();
@@ -231,7 +235,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			leoSurfaceStats.decayAll(feedbackEpoch);
 		}
 		dirty = !learnedByOperator.isEmpty() || !learnedMultipliers.isEmpty() || !shadowByOperator.isEmpty()
-				|| !planCandidates.isEmpty();
+				|| !planCandidates.isEmpty() || !semiAntiBySurface.isEmpty();
 		surfaceDirty = !leoSurfaceStats.isEmpty();
 	}
 
@@ -314,6 +318,32 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	synchronized void recordOperatorOutcome(TupleExpr node) {
 		recordObservation(node, false);
+	}
+
+	synchronized void recordSemiAntiOutcome(Filter filter, SemiAntiOutcomeObservation observation) {
+		if (!adaptiveEvidenceAllowed() || filter == null || observation == null || !observation.completed()
+				|| !observation.exclusionReason().isBlank()) {
+			return;
+		}
+		SemiAntiSurfaceKey key = SemiAntiSurfaceKey.from(
+				filter, observation.semanticKind(), observation.selectedAlgorithm());
+		if (key == null) {
+			return;
+		}
+		semiAntiBySurface.computeIfAbsent(key, ignored -> new SemiAntiCounts()).add(observation);
+		nextFeedbackEpoch();
+		evictOldestIfNeeded(semiAntiBySurface);
+		dirty = true;
+	}
+
+	synchronized SemiAntiEstimate semiAntiEstimate(
+			Filter filter, String semanticKind, String physicalAlgorithm) {
+		if (!adaptiveEvidenceAllowed() || filter == null) {
+			return null;
+		}
+		SemiAntiSurfaceKey key = SemiAntiSurfaceKey.from(filter, semanticKind, physicalAlgorithm);
+		SemiAntiCounts counts = key == null ? null : semiAntiBySurface.get(key);
+		return counts == null ? null : counts.estimate();
 	}
 
 	private synchronized void recordObservation(TupleExpr node, boolean completedRoot) {
@@ -632,11 +662,23 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	}
 
 	synchronized OperatorEstimate multiplierEstimate(TupleExpr node, double baseRows, double baseWorkRows) {
+		return multiplierEstimate(node, baseRows, baseWorkRows, null);
+	}
+
+	synchronized OperatorEstimate multiplierEstimate(TupleExpr node, double baseRows, double baseWorkRows,
+			String executionMode) {
 		if (!adaptiveEvidenceAllowed() || !isFiniteNonNegative(baseRows) || !isFiniteNonNegative(baseWorkRows)) {
 			return null;
 		}
-		OperatorKey key = multiplierKeyFor(node);
+		OperatorKey key = multiplierKeyFor(node, executionMode);
 		LearnedMultiplierCounts counts = key == null ? null : learnedMultipliers.get(key);
+		if (counts == null) {
+			OperatorKey legacyKey = legacyMultiplierKeyFor(node);
+			if (legacyKey != null && !legacyKey.equals(key)) {
+				key = legacyKey;
+				counts = learnedMultipliers.get(key);
+			}
+		}
 		if (counts == null || counts.sampleCount <= 0L) {
 			return null;
 		}
@@ -910,6 +952,11 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 				entry.getKey().writeTo(out);
 				entry.getValue().writeTo(out);
 			}
+			out.writeInt(semiAntiBySurface.size());
+			for (var entry : semiAntiBySurface.entrySet()) {
+				entry.getKey().writeTo(out);
+				entry.getValue().writeTo(out);
+			}
 		} catch (IOException e) {
 			deleteIfExists(tempPath);
 			return false;
@@ -963,12 +1010,13 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		Map<OperatorKey, LearnedMultiplierCounts> loadedMultipliers = new LinkedHashMap<>();
 		Map<OperatorKey, ShadowOperatorCounts> loadedShadow = new LinkedHashMap<>();
 		Map<OperatorKey, PlanCandidateCounts> loadedPlanCandidates = new LinkedHashMap<>();
+		Map<SemiAntiSurfaceKey, SemiAntiCounts> loadedSemiAnti = new LinkedHashMap<>();
 		long loadedEpoch = 0L;
 		long loadedSteeringCooldownUntilEpoch = 0L;
 		int loadedSteeringBadMisses = 0;
 		try (DataInputStream in = new DataInputStream(Files.newInputStream(sidecarPath))) {
 			int version = in.readInt();
-			if (version != PERSIST_VERSION) {
+			if (version != LEGACY_PERSIST_VERSION && version != PERSIST_VERSION) {
 				return;
 			}
 			SketchSnapshotIdentity persistedIdentity = SketchSnapshotIdentity.readFrom(in);
@@ -1000,6 +1048,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			if (version >= 11) {
 				readPlanCandidateEntries(in, loadedPlanCandidates);
 			}
+			if (version >= PERSIST_VERSION) {
+				readSemiAntiEntries(in, loadedSemiAnti);
+			}
 		} catch (IOException | RuntimeException e) {
 			return;
 		}
@@ -1013,6 +1064,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			shadowByOperator.putAll(loadedShadow);
 			planCandidates.clear();
 			planCandidates.putAll(loadedPlanCandidates);
+			semiAntiBySurface.clear();
+			semiAntiBySurface.putAll(loadedSemiAnti);
 			nullModeKeyCache.clear();
 			planningLeoKeyCache.clear();
 			feedbackEpoch = Math.max(feedbackEpoch, loadedEpoch);
@@ -1023,6 +1076,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			evictOldestIfNeeded(learnedMultipliers);
 			evictOldestIfNeeded(shadowByOperator);
 			evictOldestIfNeeded(planCandidates);
+			evictOldestIfNeeded(semiAntiBySurface);
 			dirty = false;
 		}
 	}
@@ -1095,6 +1149,13 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			return Double.NaN;
 		}
 		return (hasLeftRows ? leftRows : 0.0d) + (hasRightRows ? rightRows : 0.0d);
+	}
+
+	private static long saturatingAdd(long left, long right) {
+		if (right > 0L && left > Long.MAX_VALUE - right) {
+			return Long.MAX_VALUE;
+		}
+		return left + right;
 	}
 
 	private double leftRows(TupleExpr node) {
@@ -1392,7 +1453,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		evictOldestIfNeeded(learnedByOperator);
 	}
 
-	private void evictOldestIfNeeded(Map<OperatorKey, ?> map) {
+	private void evictOldestIfNeeded(Map<?, ?> map) {
 		while (map.size() > MAX_ENTRIES) {
 			var iterator = map.keySet().iterator();
 			if (!iterator.hasNext()) {
@@ -1532,8 +1593,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			return pathEndpointMode(node, executionMode);
 		}
 		String explicit = firstNonBlank(executionMode,
-				node == null ? null : node.getStringMetricPlanned(LEO_PHYSICAL_IMPLEMENTATION),
 				node == null ? null : node.getStringMetricPlanned(PLANNED_PHYSICAL_IMPLEMENTATION),
+				node == null ? null : node.getStringMetricPlanned(LEO_PHYSICAL_IMPLEMENTATION),
 				node == null ? null : node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE),
 				node == null ? null : node.getStringMetricPlanned("plannedEstimateFusion"));
 		if (explicit != null) {
@@ -1700,6 +1761,21 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		}
 	}
 
+	private static void readSemiAntiEntries(DataInputStream in, Map<SemiAntiSurfaceKey, SemiAntiCounts> target)
+			throws IOException {
+		int entries = in.readInt();
+		if (entries < 0 || entries > MAX_ENTRIES * 4) {
+			throw new IOException("Invalid semi/anti-feedback count: " + entries);
+		}
+		for (int i = 0; i < entries; i++) {
+			SemiAntiSurfaceKey key = SemiAntiSurfaceKey.readFrom(in);
+			SemiAntiCounts counts = SemiAntiCounts.readFrom(in);
+			if (counts.observationCount > 0L) {
+				target.put(key, counts);
+			}
+		}
+	}
+
 	private long nextFeedbackEpoch() {
 		return ++feedbackEpoch;
 	}
@@ -1725,6 +1801,15 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	}
 
 	private OperatorKey multiplierKeyFor(TupleExpr node) {
+		return multiplierKeyFor(node, null);
+	}
+
+	private OperatorKey multiplierKeyFor(TupleExpr node, String executionMode) {
+		OperatorKey key = physicalKeyForRuntimeObservable(node, "leo:multiplier:", executionMode);
+		return key == null ? null : key;
+	}
+
+	private OperatorKey legacyMultiplierKeyFor(TupleExpr node) {
 		OperatorKey key = keyForRuntimeObservable(node, "leo:multiplier:");
 		return key == null ? null : key;
 	}
@@ -1842,6 +1927,17 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 				? pathEndpointMode(node, null)
 				: null;
 		LeoOperatorKey leoKey = LeoOperatorKey.from(node, effectiveExecutionMode, LeoOperatorKey.ConstantMode.EXACT);
+		return new OperatorKey(prefix + leoKey.operatorType(), leoKey.structuralFingerprint(), "", "",
+				"mode=" + leoKey.executionMode(), displayBindings(node), "");
+	}
+
+	private OperatorKey physicalKeyForRuntimeObservable(TupleExpr node, String prefix, String executionMode) {
+		if (node == null || !isRuntimeObservableOperator(node)) {
+			return null;
+		}
+		String effectiveExecutionMode = physicalExecutionMode(node, executionMode);
+		LeoOperatorKey leoKey = LeoOperatorKey.from(
+				node, effectiveExecutionMode, LeoOperatorKey.ConstantMode.EXACT);
 		return new OperatorKey(prefix + leoKey.operatorType(), leoKey.structuralFingerprint(), "", "",
 				"mode=" + leoKey.executionMode(), displayBindings(node), "");
 	}
@@ -2183,9 +2279,117 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			double workQErrorMean, double workQErrorMax, double uncertaintyRows) {
 	}
 
+	record SemiAntiEstimate(long observationCount, long outerRows, long matchedRows, long unmatchedRows,
+			long distinctKeys, long matchedKeys, long unmatchedKeys, long repeatedOuterRows, long rhsRowsExamined,
+			long exhaustedFailures, long iteratorOpens, long hashBuildRows, long hashProbeRows, long cacheLookups,
+			long strategyChanges) {
+	}
+
 	private record OperatorObservation(double plannedRows, double plannedWorkRows, double actualRows, double leftRows,
 			double rightRows, double actualWorkRows, double leftRowsWithMatch, double emptyProbeCount,
 			double maxRightRowsPerLeft, double leftBranchRows, double rightBranchRows) {
+	}
+
+	private static final class SemiAntiCounts {
+		private long observationCount;
+		private long outerRows;
+		private long matchedRows;
+		private long unmatchedRows;
+		private long distinctKeys;
+		private long matchedKeys;
+		private long unmatchedKeys;
+		private long repeatedOuterRows;
+		private long rhsRowsExamined;
+		private long exhaustedFailures;
+		private long iteratorOpens;
+		private long hashBuildRows;
+		private long hashProbeRows;
+		private long cacheLookups;
+		private long strategyChanges;
+
+		private void add(SemiAntiOutcomeObservation observation) {
+			observationCount = saturatingAdd(observationCount, 1L);
+			outerRows = saturatingAdd(outerRows, observation.outerRows());
+			matchedRows = saturatingAdd(matchedRows, observation.matchedRows());
+			unmatchedRows = saturatingAdd(unmatchedRows, observation.unmatchedRows());
+			distinctKeys = saturatingAdd(distinctKeys, observation.distinctCorrelationKeys());
+			matchedKeys = saturatingAdd(matchedKeys, observation.matchedKeys());
+			unmatchedKeys = saturatingAdd(unmatchedKeys, observation.unmatchedKeys());
+			repeatedOuterRows = saturatingAdd(repeatedOuterRows, observation.repeatedOuterRows());
+			rhsRowsExamined = saturatingAdd(rhsRowsExamined, observation.rhsRowsExamined());
+			exhaustedFailures = saturatingAdd(exhaustedFailures, observation.exhaustedFailures());
+			iteratorOpens = saturatingAdd(iteratorOpens, observation.iteratorOpens());
+			hashBuildRows = saturatingAdd(hashBuildRows, observation.hashBuildRows());
+			hashProbeRows = saturatingAdd(hashProbeRows, observation.hashProbeRows());
+			cacheLookups = saturatingAdd(cacheLookups, observation.cacheLookups());
+			if (!observation.strategyChangeReason().isBlank()) {
+				strategyChanges = saturatingAdd(strategyChanges, 1L);
+			}
+		}
+
+		private SemiAntiEstimate estimate() {
+			return new SemiAntiEstimate(
+					observationCount,
+					outerRows,
+					matchedRows,
+					unmatchedRows,
+					distinctKeys,
+					matchedKeys,
+					unmatchedKeys,
+					repeatedOuterRows,
+					rhsRowsExamined,
+					exhaustedFailures,
+					iteratorOpens,
+					hashBuildRows,
+					hashProbeRows,
+					cacheLookups,
+					strategyChanges);
+		}
+
+		private void writeTo(DataOutputStream out) throws IOException {
+			out.writeLong(observationCount);
+			out.writeLong(outerRows);
+			out.writeLong(matchedRows);
+			out.writeLong(unmatchedRows);
+			out.writeLong(distinctKeys);
+			out.writeLong(matchedKeys);
+			out.writeLong(unmatchedKeys);
+			out.writeLong(repeatedOuterRows);
+			out.writeLong(rhsRowsExamined);
+			out.writeLong(exhaustedFailures);
+			out.writeLong(iteratorOpens);
+			out.writeLong(hashBuildRows);
+			out.writeLong(hashProbeRows);
+			out.writeLong(cacheLookups);
+			out.writeLong(strategyChanges);
+		}
+
+		private static SemiAntiCounts readFrom(DataInputStream in) throws IOException {
+			SemiAntiCounts counts = new SemiAntiCounts();
+			counts.observationCount = nonNegative(in.readLong());
+			counts.outerRows = nonNegative(in.readLong());
+			counts.matchedRows = nonNegative(in.readLong());
+			counts.unmatchedRows = nonNegative(in.readLong());
+			counts.distinctKeys = nonNegative(in.readLong());
+			counts.matchedKeys = nonNegative(in.readLong());
+			counts.unmatchedKeys = nonNegative(in.readLong());
+			counts.repeatedOuterRows = nonNegative(in.readLong());
+			counts.rhsRowsExamined = nonNegative(in.readLong());
+			counts.exhaustedFailures = nonNegative(in.readLong());
+			counts.iteratorOpens = nonNegative(in.readLong());
+			counts.hashBuildRows = nonNegative(in.readLong());
+			counts.hashProbeRows = nonNegative(in.readLong());
+			counts.cacheLookups = nonNegative(in.readLong());
+			counts.strategyChanges = nonNegative(in.readLong());
+			return counts;
+		}
+
+		private static long nonNegative(long value) throws IOException {
+			if (value < 0L) {
+				throw new IOException("Negative semi/anti feedback counter");
+			}
+			return value;
+		}
 	}
 
 	private record OperatorKey(String operatorType, String fingerprint, String leftBindings, String rightBindings,

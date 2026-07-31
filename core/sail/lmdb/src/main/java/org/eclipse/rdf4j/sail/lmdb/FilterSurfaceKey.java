@@ -20,6 +20,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
+import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -116,7 +119,18 @@ record FilterSurfaceKey(int schemaVersion, Kind kind, String inputTopology, Stri
 			return "<variable>";
 		}
 		Value value = variable.getValue();
-		return value == null ? "<null>" : value.getClass().getSimpleName() + ':' + value.stringValue();
+		if (value instanceof IRI iri) {
+			return "iri:" + iri.stringValue();
+		}
+		if (value instanceof Literal literal) {
+			return "literal:" + literal.getLabel()
+					+ "|lang=" + literal.getLanguage().orElse("")
+					+ "|dt=" + literal.getDatatype().stringValue();
+		}
+		if (value instanceof BNode bNode) {
+			return "bnode:" + bNode.getID();
+		}
+		return value == null ? "<null>" : "value:" + value.stringValue();
 	}
 
 	void writeTo(DataOutputStream output) throws IOException {

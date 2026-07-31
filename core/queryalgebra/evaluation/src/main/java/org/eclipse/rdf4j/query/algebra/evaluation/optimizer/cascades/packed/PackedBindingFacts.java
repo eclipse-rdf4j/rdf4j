@@ -261,7 +261,7 @@ final class PackedBindingFacts {
 				addAssuredChild(relationId, 0);
 				addAssuredChild(relationId, 1);
 			}
-			case PackedRelOp.LEFT_JOIN, PackedRelOp.DIFFERENCE, PackedRelOp.FILTER, PackedRelOp.QUERY_ROOT, PackedRelOp.DESCRIBE, PackedRelOp.SLICE, PackedRelOp.REDUCED, PackedRelOp.DISTINCT, PackedRelOp.MATERIALIZE, PackedRelOp.ORDER, PackedRelOp.EXTENSION -> addAssuredChild(
+			case PackedRelOp.LEFT_JOIN, PackedRelOp.DIFFERENCE, PackedRelOp.FILTER, PackedRelOp.SEMI_JOIN, PackedRelOp.ANTI_JOIN, PackedRelOp.QUERY_ROOT, PackedRelOp.DESCRIBE, PackedRelOp.SLICE, PackedRelOp.REDUCED, PackedRelOp.DISTINCT, PackedRelOp.MATERIALIZE, PackedRelOp.ORDER, PackedRelOp.EXTENSION -> addAssuredChild(
 					relationId, 0);
 			case PackedRelOp.UNION, PackedRelOp.INTERSECTION -> addAssuredIntersection(relationId);
 			case PackedRelOp.PROJECTION -> addAssuredProjection(relationId);

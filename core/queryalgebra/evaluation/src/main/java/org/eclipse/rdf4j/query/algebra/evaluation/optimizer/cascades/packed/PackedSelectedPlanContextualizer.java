@@ -44,6 +44,7 @@ final class PackedSelectedPlanContextualizer {
 	private final double[] costsByDepth;
 	private final PackedCostContext costContext = new PackedCostContext();
 	private final PackedCostEstimate costEstimate = new PackedCostEstimate();
+	private final PackedCostEstimate selectedPhysicalCost = new PackedCostEstimate();
 	private int workUnits;
 
 	PackedSelectedPlanContextualizer(PackedQuery query, PackedMemo memo, PackedSearchBudget budget,
@@ -271,33 +272,48 @@ final class PackedSelectedPlanContextualizer {
 			String incumbentEstimateFusion = incumbentMetadataId == 0
 					? null
 					: (String) memo.physicalMetadataEstimateFusion(incumbentMetadataId);
+			selectedPhysicalCost.clear();
+			if (incumbentMetadataId != 0) {
+				memo.restorePhysicalMetadataCost(incumbentMetadataId, selectedPhysicalCost);
+			}
 			costEstimate.clear();
 			costEstimate.setRows(rows, Math.max(1.0d, cost));
 			costEstimate.setEvidenceStateId(evidenceStateId);
 			costEstimate.setEstimateProvenance(incumbentEstimateSource, incumbentEstimateFusion);
+			restoreIncumbentPlannedMetrics(incumbentMetadataId);
 			if (contextualProbeJoin) {
 				costEstimate.putPlannedStringMetric("optimizer.joinAlgorithmContext", "inherited-binding-probe");
 			}
 			int relationId = sourceQueryRelationId(physicalExpressionId);
-			if (relationId != 0) {
-				if (physicalShapeDiffersFromSource(relationId, operator, childCount)) {
-					leftInputRows = canonicalChildWinnerRows(relationId, 0, leftInputRows);
-					rightInputRows = canonicalChildWinnerRows(relationId, 1, rightInputRows);
+			int refinementRelationId = refinementRelationId(relationId, operator);
+			if (refinementRelationId != 0) {
+				if (physicalShapeDiffersFromSource(refinementRelationId, operator, childCount)) {
+					leftInputRows = canonicalChildWinnerRows(refinementRelationId, 0, leftInputRows);
+					rightInputRows = canonicalChildWinnerRows(refinementRelationId, 1, rightInputRows);
 				}
 				costContext.reset(prefixRelations, localPrefixOffset, localPrefixCount, localPrefixRows,
 						evidenceStateId);
 				costContext.setAssuredBindingRelationId(localAssuredBindingRelationId);
 				costContext.setOperatorInputs(leftInputRows, rightInputRows,
 						leftInputEvidenceStateId, rightInputEvidenceStateId);
-				costSession.refineOperator(relationId, costContext, costEstimate);
+				costSession.refineOperator(refinementRelationId, costContext, costEstimate);
+				if (!costEstimate.hasExplicitPhysicalCost() && selectedPhysicalCost.hasExplicitPhysicalCost()) {
+					costEstimate.copyPhysicalCostFrom(selectedPhysicalCost);
+				}
 				boolean componentRefinement = costEstimate.hasComponentOutputRows();
 				if (!componentRefinement && finiteNonNegative(costEstimate.outputRows())) {
 					rows = costEstimate.outputRows();
 				}
 				if (!componentRefinement && finiteNonNegative(costEstimate.workRows())) {
-					cost = costEstimate.replacesChildWork()
-							? costEstimate.workRows()
-							: Math.max(childWorkFloor, costEstimate.workRows());
+					if (costEstimate.hasExplicitPhysicalCost()
+							&& costEstimate.costScope() == PackedCostEstimate.CostScope.LOCAL) {
+						for (int ordinal = 0; ordinal < childCount; ordinal++) {
+							memo.addWinnerPhysicalCost(childWinnerScratch[childOffset + ordinal], costEstimate);
+						}
+					}
+					cost = costEstimate.hasExplicitPhysicalCost()
+							? costSession.objectiveScore(costEstimate)
+							: costEstimate.workRows();
 				} else if (componentRefinement) {
 					/*
 					 * The selected winner is already a complete physical subtree. This operator callback has no aligned
@@ -312,6 +328,24 @@ final class PackedSelectedPlanContextualizer {
 				costContext.setOperatorInputs(leftInputRows, rightInputRows,
 						leftInputEvidenceStateId, rightInputEvidenceStateId);
 				costSession.refineIntermediateJoin(costContext, costEstimate);
+				if (costEstimate.hasExplicitPhysicalCost()
+						&& costEstimate.costScope() == PackedCostEstimate.CostScope.LOCAL) {
+					memo.addWinnerPhysicalCost(childWinnerScratch[childOffset], costEstimate);
+					memo.addWinnerPhysicalCost(childWinnerScratch[childOffset + 1], costEstimate);
+				}
+				if (costEstimate.hasExplicitPhysicalCost()) {
+					cost = costSession.objectiveScore(costEstimate);
+				}
+			}
+			/*
+			 * Contextual refinement can deliberately use the canonical logical source of a transformed physical
+			 * implementation (for example, the original MINUS behind a typed anti-join). That source supplies the exact
+			 * logical cardinality, but it cannot revoke the selected implementation's declaration that its physical
+			 * vector already owns dependent-subquery execution. Preserve that ownership independently of which relation
+			 * supplied the contextual cardinality refinement.
+			 */
+			if (selectedPhysicalCost.dependentSubqueriesCosted()) {
+				costEstimate.setDependentSubqueriesCosted(true);
 			}
 		}
 		if (scopeBarrier) {
@@ -323,16 +357,24 @@ final class PackedSelectedPlanContextualizer {
 			}
 		}
 		// Physical metadata stores the fully composed rows while the provider's access/provenance fields remain intact.
-		costEstimate.setRows(rows, cost);
+		if (costEstimate.hasExplicitPhysicalCost()) {
+			costEstimate.setContextualOutputRowsPreservingPhysicalCost(rows);
+		} else {
+			costEstimate.setRows(rows, cost);
+		}
 		int metadataId = memo.addPhysicalMetadata(costEstimate, rows, Math.max(1.0d, cost));
 		int inputContextId = prefixCount == 0 ? 0 : memo.internSequence(prefixRelations, prefixOffset, prefixCount);
 		int contextualWinnerId = memo.offerWinnerWithMetadata(memo.winnerGroupId(winnerId), memo.anyPropertyId(), 0,
 				inputContextId, CONTEXTUAL_COST_POLICY, physicalExpressionId, metadataId, rows, cost, cost,
 				childWinnerScratch, childOffset, childCount);
-		if (operator == PackedRelOp.FILTER && childCount == 1) {
-			contextualizeDependentSubqueries(contextualWinnerId, physicalExpressionId,
+		if (isFilterOperator(operator) && childCount == 1) {
+			double dependentCost = contextualizeDependentSubqueries(contextualWinnerId, physicalExpressionId,
 					childWinnerScratch[childOffset], localPrefixOffset, localPrefixCount,
 					memo.winnerOutputRows(childWinnerScratch[childOffset]));
+			if (dependentCost > 0.0d && !costEstimate.dependentSubqueriesCosted()) {
+				memo.addDependentCost(contextualWinnerId, dependentCost);
+				cost = saturatedAdd(cost, dependentCost, 0.0d);
+			}
 		}
 		winnerByDepth[depth] = contextualWinnerId;
 		evidenceStateByDepth[depth] = costEstimate.evidenceStateId();
@@ -509,6 +551,9 @@ final class PackedSelectedPlanContextualizer {
 	}
 
 	private double leafWork(int winnerId, double rows) {
+		if (costEstimate.hasExplicitPhysicalCost()) {
+			return costSession.objectiveScore(costEstimate);
+		}
 		if (finiteNonNegative(costEstimate.workRows())) {
 			return costEstimate.workRows();
 		}
@@ -654,11 +699,11 @@ final class PackedSelectedPlanContextualizer {
 		return start;
 	}
 
-	private void contextualizeDependentSubqueries(int ownerWinnerId, int physicalExpressionId, int inputWinnerId,
+	private double contextualizeDependentSubqueries(int ownerWinnerId, int physicalExpressionId, int inputWinnerId,
 			int prefixOffset, int prefixCount, double inputRows) {
-		int sourceRelationId = sourceQueryRelationId(physicalExpressionId);
-		if (sourceRelationId == 0 || query.relOperator(sourceRelationId) != PackedRelOp.FILTER) {
-			return;
+		int physicalOperator = memo.physicalOperatorTag(physicalExpressionId);
+		if (!isFilterOperator(physicalOperator)) {
+			return 0.0d;
 		}
 		int dependentPrefixCount = Math.min(prefixCount, dependentPrefixRelations.length);
 		System.arraycopy(prefixRelations, prefixOffset, dependentPrefixRelations, 0, dependentPrefixCount);
@@ -673,14 +718,27 @@ final class PackedSelectedPlanContextualizer {
 				dependentPrefixContributionRows[ordinal] = prefixLeafRows[sourceIndex];
 			}
 		}
-		collectDependentSubqueries(ownerWinnerId, query.relPayload(sourceRelationId), dependentPrefixCount,
+		return collectDependentSubqueries(ownerWinnerId,
+				physicalFilterConditionId(physicalExpressionId, physicalOperator), dependentPrefixCount,
 				inputRows);
 	}
 
-	private void collectDependentSubqueries(int ownerWinnerId, int scalarId, int prefixCount, double prefixRows) {
+	private int physicalFilterConditionId(int physicalExpressionId, int physicalOperator) {
+		int payloadId = memo.physicalPayloadId(physicalExpressionId);
+		return physicalOperator == PackedRelOp.FILTER ? payloadId : query.payloadPrimary(payloadId);
+	}
+
+	private static boolean isFilterOperator(int operator) {
+		return operator == PackedRelOp.FILTER
+				|| operator == PackedRelOp.SEMI_JOIN
+				|| operator == PackedRelOp.ANTI_JOIN;
+	}
+
+	private double collectDependentSubqueries(int ownerWinnerId, int scalarId, int prefixCount, double prefixRows) {
 		if (scalarId == 0) {
-			return;
+			return 0.0d;
 		}
+		double dependentCost = 0.0d;
 		if (query.scalarOperator(scalarId) == PackedScalarOp.EXISTS) {
 			int subqueryPayloadId = query.scalarPayload(scalarId);
 			if (query.payloadOperator(subqueryPayloadId) == PackedPayloadOp.SUBQUERY_VALUE
@@ -701,11 +759,16 @@ final class PackedSelectedPlanContextualizer {
 					workUnits += enumerator.contextualWorkUnits();
 				}
 				dependentPlans.put(ownerWinnerId, subqueryPayloadId, dependentWinnerId);
+				dependentCost = saturatedAdd(dependentCost, memo.winnerTotalCost(dependentWinnerId), 0.0d);
 			}
 		}
 		for (int ordinal = 0; ordinal < query.scalarChildCount(scalarId); ordinal++) {
-			collectDependentSubqueries(ownerWinnerId, query.scalarChild(scalarId, ordinal), prefixCount, prefixRows);
+			dependentCost = saturatedAdd(dependentCost,
+					collectDependentSubqueries(ownerWinnerId, query.scalarChild(scalarId, ordinal), prefixCount,
+							prefixRows),
+					0.0d);
 		}
+		return dependentCost;
 	}
 
 	private boolean hasAssuredOuterReference(int embeddedReferenceMaskId, int prefixCount) {
@@ -744,6 +807,10 @@ final class PackedSelectedPlanContextualizer {
 		if (logicalExpressionId <= 0) {
 			return 0;
 		}
+		int canonicalMinus = canonicalMinusRelationId(logicalExpressionId);
+		if (canonicalMinus != 0) {
+			return canonicalMinus;
+		}
 		if (logicalExpressionId <= query.relationCount()) {
 			return logicalExpressionId;
 		}
@@ -754,12 +821,78 @@ final class PackedSelectedPlanContextualizer {
 				return candidate;
 			}
 		}
+		if (memo.physicalOperatorTag(physicalExpressionId) == PackedRelOp.FILTER) {
+			int conditionId = memo.physicalPayloadId(physicalExpressionId);
+			for (int candidate = 1; candidate <= query.relationCount(); candidate++) {
+				if (query.relOperator(candidate) == PackedRelOp.FILTER
+						&& query.relPayload(candidate) == conditionId) {
+					return candidate;
+				}
+			}
+		}
 		return 0;
 	}
 
+	private int canonicalMinusRelationId(int logicalExpressionId) {
+		if (logicalExpressionId > query.relationCount()
+				|| (query.relRuleMask(logicalExpressionId)
+						& PackedRuleProofs.MINUS_CORRELATED_NOT_EXISTS) == 0L) {
+			return 0;
+		}
+		int groupId = memo.logicalGroupId(logicalExpressionId);
+		for (int candidate = memo.firstLogicalExpression(groupId); candidate != 0; candidate = memo
+				.nextLogicalExpression(candidate)) {
+			if (candidate <= query.relationCount() && query.relOperator(candidate) == PackedRelOp.DIFFERENCE) {
+				return candidate;
+			}
+		}
+		return 0;
+	}
+
+	private int refinementRelationId(int relationId, int physicalOperator) {
+		if (relationId == 0) {
+			return 0;
+		}
+		int sourceOperator = query.relOperator(relationId);
+		if (sourceOperator == physicalOperator
+				|| sourceOperator == PackedRelOp.FILTER
+						&& (physicalOperator == PackedRelOp.SEMI_JOIN
+								|| physicalOperator == PackedRelOp.ANTI_JOIN)
+				|| sourceOperator == PackedRelOp.DIFFERENCE && physicalOperator == PackedRelOp.ANTI_JOIN) {
+			return relationId;
+		}
+		if (sourceOperator == PackedRelOp.FILTER && query.relChildCount(relationId) == 1) {
+			int inputRelationId = query.relChild(relationId, 0);
+			if (query.relOperator(inputRelationId) == physicalOperator) {
+				return inputRelationId;
+			}
+		}
+		return 0;
+	}
+
+	private void restoreIncumbentPlannedMetrics(int metadataId) {
+		if (metadataId == 0) {
+			return;
+		}
+		for (int ordinal = 0; ordinal < memo.physicalMetadataPlannedStringMetricCount(metadataId); ordinal++) {
+			costEstimate.putPlannedStringMetric(
+					(String) memo.physicalMetadataPlannedStringMetricName(metadataId, ordinal),
+					(String) memo.physicalMetadataPlannedStringMetricValue(metadataId, ordinal));
+		}
+		for (int ordinal = 0; ordinal < memo.physicalMetadataPlannedDoubleMetricCount(metadataId); ordinal++) {
+			costEstimate.putPlannedDoubleMetric(
+					(String) memo.physicalMetadataPlannedDoubleMetricName(metadataId, ordinal),
+					memo.physicalMetadataPlannedDoubleMetricValue(metadataId, ordinal));
+		}
+	}
+
 	private boolean physicalShapeDiffersFromSource(int relationId, int physicalOperator, int physicalChildCount) {
-		return query.relOperator(relationId) != physicalOperator
-				|| query.relChildCount(relationId) != physicalChildCount;
+		int sourceOperator = query.relOperator(relationId);
+		boolean equivalentSemiAntiShape = sourceOperator == PackedRelOp.FILTER
+				&& (physicalOperator == PackedRelOp.SEMI_JOIN || physicalOperator == PackedRelOp.ANTI_JOIN)
+				&& query.relChildCount(relationId) == physicalChildCount;
+		return !equivalentSemiAntiShape && (sourceOperator != physicalOperator
+				|| query.relChildCount(relationId) != physicalChildCount);
 	}
 
 	private double canonicalChildWinnerRows(int relationId, int childOrdinal, double fallback) {
@@ -798,7 +931,7 @@ final class PackedSelectedPlanContextualizer {
 			}
 			return true;
 		}
-		if (operator == PackedRelOp.FILTER || operator == PackedRelOp.QUERY_ROOT
+		if (isFilterOperator(operator) || operator == PackedRelOp.QUERY_ROOT
 				|| operator == PackedRelOp.DESCRIBE || operator == PackedRelOp.SLICE
 				|| operator == PackedRelOp.REDUCED || operator == PackedRelOp.DISTINCT
 				|| operator == PackedRelOp.MATERIALIZE || operator == PackedRelOp.ORDER) {
@@ -837,4 +970,5 @@ final class PackedSelectedPlanContextualizer {
 		double result = left + right + local;
 		return Double.isFinite(result) ? result : Double.MAX_VALUE;
 	}
+
 }

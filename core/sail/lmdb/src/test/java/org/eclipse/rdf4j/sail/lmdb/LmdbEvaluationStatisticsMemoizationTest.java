@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -200,8 +201,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 					.getEvaluationStatistics();
 			LmdbEstimatorRuntime runtime = statistics.estimatorRuntime();
 			TupleExpr firstAlternative = new Union(
-					pattern("subject", firstLeft, "object"),
-					pattern("subject", firstRight, "object"));
+					pattern("subject", firstLeft, "leftObject"),
+					pattern("subject", firstRight, "rightObject"));
 			TupleExpr secondAlternative = new Union(
 					pattern("subject", secondLeft, "object"),
 					pattern("subject", secondRight, "object"));
@@ -212,6 +213,29 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				assertSame(first, runtime.exactAlternativeSurface(firstAlternative.clone()),
 						"Equivalent relations must reuse one exact scan result inside an optimization");
 				assertEquals(rowsPerPredicate * 2.0d, first.orElseThrow().surfaceRows(), 0.0d);
+				var relation = first.orElseThrow().relation();
+				assertNotNull(relation,
+						"An exact heterogeneous alternative must retain its tuples for downstream Frontier state");
+				assertEquals(Set.of("subject", "leftObject", "rightObject"), Set.copyOf(relation.variables()));
+				assertEquals(rowsPerPredicate * 2.0d, relation.rows(), 0.0d);
+				int leftSlot = relation.variables().indexOf("leftObject");
+				int rightSlot = relation.variables().indexOf("rightObject");
+				assertEquals(rowsPerPredicate,
+						relation.frequencies()
+								.entrySet()
+								.stream()
+								.filter(entry -> entry.getKey().get(leftSlot) != null)
+								.mapToDouble(java.util.Map.Entry::getValue)
+								.sum(),
+						0.0d);
+				assertEquals(rowsPerPredicate,
+						relation.frequencies()
+								.entrySet()
+								.stream()
+								.filter(entry -> entry.getKey().get(rightSlot) != null)
+								.mapToDouble(java.util.Map.Entry::getValue)
+								.sum(),
+						0.0d);
 				assertTrue(runtime.exactAlternativeSurface(secondAlternative).isEmpty(),
 						"Distinct exact scans must share one bounded query-local scan budget");
 			}

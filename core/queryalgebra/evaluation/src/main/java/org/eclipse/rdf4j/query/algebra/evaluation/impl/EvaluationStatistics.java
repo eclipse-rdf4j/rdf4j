@@ -135,6 +135,43 @@ public class EvaluationStatistics {
 		}
 	}
 
+	/**
+	 * Records completed semi/anti execution separately from ordinary scalar-filter selectivity. Store-specific
+	 * implementations may use these key- and algorithm-level counters for physical-cost and correlation feedback.
+	 */
+	public void recordSemiAntiOutcome(Filter filter, SemiAntiOutcomeObservation observation) {
+		// no-op by default
+	}
+
+	public record SemiAntiOutcomeObservation(String semanticKind, String selectedAlgorithm, String actualAlgorithm,
+			long outerRows, long matchedRows, long unmatchedRows, long distinctCorrelationKeys, long matchedKeys,
+			long unmatchedKeys, long repeatedOuterRows, long rhsRowsExamined, long exhaustedFailures,
+			long iteratorOpens, long hashBuildRows, long hashProbeRows, long cacheLookups, boolean completed,
+			String exclusionReason, String strategyChangeReason) {
+
+		public SemiAntiOutcomeObservation {
+			semanticKind = nonBlankOr(semanticKind, "UNKNOWN");
+			selectedAlgorithm = nonBlankOr(selectedAlgorithm, "unknown");
+			actualAlgorithm = nonBlankOr(actualAlgorithm, "unknown");
+			exclusionReason = exclusionReason == null ? "" : exclusionReason;
+			strategyChangeReason = strategyChangeReason == null ? "" : strategyChangeReason;
+			if (outerRows < 0L || matchedRows < 0L || unmatchedRows < 0L || distinctCorrelationKeys < 0L
+					|| matchedKeys < 0L || unmatchedKeys < 0L || repeatedOuterRows < 0L || rhsRowsExamined < 0L
+					|| exhaustedFailures < 0L || iteratorOpens < 0L || hashBuildRows < 0L || hashProbeRows < 0L
+					|| cacheLookups < 0L) {
+				throw new IllegalArgumentException("Semi/anti outcome counts must be nonnegative");
+			}
+			if (matchedRows + unmatchedRows != outerRows || matchedKeys + unmatchedKeys > distinctCorrelationKeys
+					|| distinctCorrelationKeys + repeatedOuterRows != outerRows) {
+				throw new IllegalArgumentException("Inconsistent semi/anti row or correlation-key counts");
+			}
+		}
+
+		private static String nonBlankOr(String value, String fallback) {
+			return value == null || value.isBlank() ? fallback : value;
+		}
+	}
+
 	public void recordOperatorOutcome(QueryModelNode node) {
 		// no-op by default
 	}

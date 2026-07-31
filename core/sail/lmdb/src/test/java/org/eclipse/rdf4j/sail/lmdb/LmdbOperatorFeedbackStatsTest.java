@@ -18,9 +18,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import java.lang.reflect.Method;
+import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -271,6 +273,25 @@ class LmdbOperatorFeedbackStatsTest {
 		LmdbOperatorFeedbackStats resetReloaded = persistentStats(estimatorPath);
 		assertNull(resetReloaded.estimate(new Union(sp("s", P1, "o1"), sp("s", P2, "o2")), 72_000, 72_000, 7, 7),
 				"Reset feedback should persist as empty");
+	}
+
+	@Test
+	void readsVersionTwelveOperatorSidecarWithoutSemiAntiSection(@TempDir Path tempDir) throws Exception {
+		Path estimatorPath = estimatorPath(tempDir);
+		LmdbOperatorFeedbackStats stats = persistentStats(estimatorPath);
+		Union observed = new Union(sp("s", P1, "o1"), sp("s", P2, "o2"));
+		completeBinary(observed, 144_000, 7, 7, 72_000, 72_000);
+		stats.recordOperatorOutcome(observed);
+		stats.persistIfDirty();
+
+		Path sidecar = estimatorPath.resolveSibling(estimatorPath.getFileName() + ".operators");
+		byte[] versionThirteen = Files.readAllBytes(sidecar);
+		ByteBuffer.wrap(versionThirteen).putInt(12);
+		Files.write(sidecar, Arrays.copyOf(versionThirteen, versionThirteen.length - Integer.BYTES));
+
+		LmdbOperatorFeedbackStats reloaded = persistentStats(estimatorPath);
+		assertNotNull(reloaded.estimate(
+				new Union(sp("s", P1, "o1"), sp("s", P2, "o2")), 72_000, 72_000, 7, 7));
 	}
 
 	@Test

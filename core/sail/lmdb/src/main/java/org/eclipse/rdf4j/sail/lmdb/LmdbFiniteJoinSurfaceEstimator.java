@@ -77,6 +77,7 @@ final class LmdbFiniteJoinSurfaceEstimator {
 		VarSlots slots = buildVarSlots(alternatives.branches());
 		long scannedRows = 0L;
 		long outputRows = 0L;
+		List<long[]> output = new ArrayList<>();
 		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
 			for (List<StatementPattern> branch : alternatives.branches()) {
 				Expansion expansion = expandConnectedBranch(txn, branch, slots, scannedRows, scanBudget);
@@ -88,9 +89,10 @@ final class LmdbFiniteJoinSurfaceEstimator {
 				if (outputRows > MAX_ROWS) {
 					return Optional.empty();
 				}
+				output.addAll(expansion.rows());
 			}
 			return Optional.of(new SurfaceEstimate(outputRows, 1.0d, scannedRows,
-					alternatives.branches().size(), null, true, 0));
+					alternatives.branches().size(), finiteRelation(slots, output), true, 0));
 		} catch (IOException | RuntimeException e) {
 			return Optional.empty();
 		}

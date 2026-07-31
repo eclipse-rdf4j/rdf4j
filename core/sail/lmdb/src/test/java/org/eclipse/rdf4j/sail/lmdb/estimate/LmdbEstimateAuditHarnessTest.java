@@ -1513,7 +1513,6 @@ class LmdbEstimateAuditHarnessTest {
 						.filter(query -> query.id().equals("audit-q18"))
 						.findFirst()
 						.orElseThrow();
-
 				List<LmdbEstimateAuditHarness.AuditRow> rows = LmdbEstimateAuditHarness
 						.auditQuery(connection, minusValuesQuery.id(), minusValuesQuery.sparql());
 				LmdbEstimateAuditHarness.AuditRow fullRow = rows.stream()
@@ -1557,7 +1556,6 @@ class LmdbEstimateAuditHarnessTest {
 						.filter(query -> query.id().equals("audit-q18"))
 						.findFirst()
 						.orElseThrow();
-
 				List<LmdbEstimateAuditHarness.AuditRow> rows = LmdbEstimateAuditHarness
 						.auditQuery(connection, minusValuesQuery.id(), minusValuesQuery.sparql());
 				LmdbEstimateAuditHarness.AuditRow difference = rows.stream()

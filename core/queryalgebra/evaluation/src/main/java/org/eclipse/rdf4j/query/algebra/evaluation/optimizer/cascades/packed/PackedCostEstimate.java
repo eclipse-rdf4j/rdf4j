@@ -24,8 +24,25 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarant
 @PackedHotPath
 public final class PackedCostEstimate {
 
+	/** Declares whether a physical vector describes only this operator or its complete subtree. */
+	public enum CostScope {
+		LOCAL,
+		INCLUSIVE
+	}
+
 	private double outputRows;
 	private double workRows;
+	private double sequentialRows;
+	private double randomSeeks;
+	private double iteratorOpens;
+	private double expressionEvaluations;
+	private double hashBuildRows;
+	private double hashProbeRows;
+	private double pathExpansions;
+	private double remoteCalls;
+	private double peakMemoryRows;
+	private CostScope costScope;
+	private boolean explicitPhysicalCost;
 	private double accessRows;
 	private double invocations;
 	private boolean contextualOutputRows;
@@ -40,6 +57,7 @@ public final class PackedCostEstimate {
 	private String estimateFusion;
 	private String accessMode;
 	private boolean replacesChildWork;
+	private boolean dependentSubqueriesCosted;
 	private String[] plannedStringMetricNames;
 	private String[] plannedStringMetricValues;
 	private String[] plannedDoubleMetricNames;
@@ -63,6 +81,17 @@ public final class PackedCostEstimate {
 		plannedDoubleMetricCount = 0;
 		outputRows = Double.NaN;
 		workRows = Double.NaN;
+		sequentialRows = Double.NaN;
+		randomSeeks = Double.NaN;
+		iteratorOpens = Double.NaN;
+		expressionEvaluations = Double.NaN;
+		hashBuildRows = Double.NaN;
+		hashProbeRows = Double.NaN;
+		pathExpansions = Double.NaN;
+		remoteCalls = Double.NaN;
+		peakMemoryRows = Double.NaN;
+		costScope = CostScope.LOCAL;
+		explicitPhysicalCost = false;
 		accessRows = Double.NaN;
 		invocations = 1.0d;
 		contextualOutputRows = false;
@@ -77,11 +106,12 @@ public final class PackedCostEstimate {
 		estimateFusion = null;
 		accessMode = null;
 		replacesChildWork = false;
+		dependentSubqueriesCosted = false;
 	}
 
 	public void setRows(double outputRows, double workRows) {
 		this.outputRows = outputRows;
-		this.workRows = workRows;
+		setScalarPhysicalCost(workRows);
 		contextualOutputRows = false;
 		componentOutputRows = false;
 	}
@@ -89,7 +119,7 @@ public final class PackedCostEstimate {
 	/** Records an output estimate derived for the supplied physical prefix, rather than the factor in isolation. */
 	public void setContextualRows(double outputRows, double workRows) {
 		this.outputRows = outputRows;
-		this.workRows = workRows;
+		setScalarPhysicalCost(workRows);
 		contextualOutputRows = true;
 		componentOutputRows = false;
 	}
@@ -100,9 +130,175 @@ public final class PackedCostEstimate {
 	 */
 	public void setComponentRows(double outputRows, double workRows) {
 		this.outputRows = outputRows;
-		this.workRows = workRows;
+		setScalarPhysicalCost(workRows);
 		contextualOutputRows = true;
 		componentOutputRows = true;
+	}
+
+	/**
+	 * Records physical work performed by this operator in addition to its implementation children.
+	 */
+	public void setLocalPhysicalCost(double sequentialRows, double randomSeeks, double iteratorOpens,
+			double expressionEvaluations, double hashBuildRows, double hashProbeRows, double pathExpansions,
+			double remoteCalls, double peakMemoryRows) {
+		setPhysicalCost(CostScope.LOCAL, sequentialRows, randomSeeks, iteratorOpens, expressionEvaluations,
+				hashBuildRows, hashProbeRows, pathExpansions, remoteCalls, peakMemoryRows);
+	}
+
+	/**
+	 * Records physical work that already includes the complete implementation subtree.
+	 */
+	public void setInclusivePhysicalCost(double sequentialRows, double randomSeeks, double iteratorOpens,
+			double expressionEvaluations, double hashBuildRows, double hashProbeRows, double pathExpansions,
+			double remoteCalls, double peakMemoryRows) {
+		setPhysicalCost(CostScope.INCLUSIVE, sequentialRows, randomSeeks, iteratorOpens, expressionEvaluations,
+				hashBuildRows, hashProbeRows, pathExpansions, remoteCalls, peakMemoryRows);
+	}
+
+	/**
+	 * Declares that this estimate already includes the work of every subquery embedded in the operator's scalar
+	 * expression. Providers should set this only when their physical vector accounts for those executions.
+	 */
+	public void setDependentSubqueriesCosted(boolean dependentSubqueriesCosted) {
+		this.dependentSubqueriesCosted = dependentSubqueriesCosted;
+	}
+
+	public boolean dependentSubqueriesCosted() {
+		return dependentSubqueriesCosted;
+	}
+
+	private void setPhysicalCost(CostScope costScope, double sequentialRows, double randomSeeks,
+			double iteratorOpens, double expressionEvaluations, double hashBuildRows, double hashProbeRows,
+			double pathExpansions, double remoteCalls, double peakMemoryRows) {
+		this.sequentialRows = physicalDimension(sequentialRows, "sequential rows");
+		this.randomSeeks = physicalDimension(randomSeeks, "random seeks");
+		this.iteratorOpens = physicalDimension(iteratorOpens, "iterator opens");
+		this.expressionEvaluations = physicalDimension(expressionEvaluations, "expression evaluations");
+		this.hashBuildRows = physicalDimension(hashBuildRows, "hash build rows");
+		this.hashProbeRows = physicalDimension(hashProbeRows, "hash probe rows");
+		this.pathExpansions = physicalDimension(pathExpansions, "path expansions");
+		this.remoteCalls = physicalDimension(remoteCalls, "remote calls");
+		this.peakMemoryRows = physicalDimension(peakMemoryRows, "peak memory rows");
+		this.costScope = costScope;
+		explicitPhysicalCost = true;
+		replacesChildWork = costScope == CostScope.INCLUSIVE;
+		workRows = saturatedAdd(this.sequentialRows, this.randomSeeks);
+		workRows = saturatedAdd(workRows, this.iteratorOpens);
+		workRows = saturatedAdd(workRows, this.expressionEvaluations);
+		workRows = saturatedAdd(workRows, this.hashBuildRows);
+		workRows = saturatedAdd(workRows, this.hashProbeRows);
+		workRows = saturatedAdd(workRows, this.pathExpansions);
+		workRows = saturatedAdd(workRows, this.remoteCalls);
+		publishPhysicalCostMetrics();
+	}
+
+	private void setScalarPhysicalCost(double workRows) {
+		if (!Double.isFinite(workRows) || workRows < 0.0d) {
+			this.workRows = workRows;
+			sequentialRows = workRows;
+			randomSeeks = Double.NaN;
+			iteratorOpens = Double.NaN;
+			expressionEvaluations = Double.NaN;
+			hashBuildRows = Double.NaN;
+			hashProbeRows = Double.NaN;
+			pathExpansions = Double.NaN;
+			remoteCalls = Double.NaN;
+			peakMemoryRows = Double.NaN;
+			costScope = replacesChildWork ? CostScope.INCLUSIVE : CostScope.LOCAL;
+			explicitPhysicalCost = false;
+			return;
+		}
+		this.workRows = workRows;
+		sequentialRows = workRows;
+		randomSeeks = 0.0d;
+		iteratorOpens = 0.0d;
+		expressionEvaluations = 0.0d;
+		hashBuildRows = 0.0d;
+		hashProbeRows = 0.0d;
+		pathExpansions = 0.0d;
+		remoteCalls = 0.0d;
+		peakMemoryRows = 0.0d;
+		costScope = replacesChildWork ? CostScope.INCLUSIVE : CostScope.LOCAL;
+		explicitPhysicalCost = false;
+		publishPhysicalCostMetrics();
+	}
+
+	/**
+	 * Adds one already-inclusive implementation child to this operator's physical work.
+	 */
+	void addChildPhysicalCost(double sequentialRows, double randomSeeks, double iteratorOpens,
+			double expressionEvaluations, double hashBuildRows, double hashProbeRows, double pathExpansions,
+			double remoteCalls, double peakMemoryRows) {
+		this.sequentialRows = saturatedAdd(finiteOrZero(this.sequentialRows),
+				physicalDimension(sequentialRows, "child sequential rows"));
+		this.randomSeeks = saturatedAdd(finiteOrZero(this.randomSeeks),
+				physicalDimension(randomSeeks, "child random seeks"));
+		this.iteratorOpens = saturatedAdd(finiteOrZero(this.iteratorOpens),
+				physicalDimension(iteratorOpens, "child iterator opens"));
+		this.expressionEvaluations = saturatedAdd(finiteOrZero(this.expressionEvaluations),
+				physicalDimension(expressionEvaluations, "child expression evaluations"));
+		this.hashBuildRows = saturatedAdd(finiteOrZero(this.hashBuildRows),
+				physicalDimension(hashBuildRows, "child hash build rows"));
+		this.hashProbeRows = saturatedAdd(finiteOrZero(this.hashProbeRows),
+				physicalDimension(hashProbeRows, "child hash probe rows"));
+		this.pathExpansions = saturatedAdd(finiteOrZero(this.pathExpansions),
+				physicalDimension(pathExpansions, "child path expansions"));
+		this.remoteCalls = saturatedAdd(finiteOrZero(this.remoteCalls),
+				physicalDimension(remoteCalls, "child remote calls"));
+		this.peakMemoryRows = Math.max(finiteOrZero(this.peakMemoryRows),
+				physicalDimension(peakMemoryRows, "child peak memory rows"));
+		costScope = CostScope.INCLUSIVE;
+		explicitPhysicalCost = true;
+		replacesChildWork = true;
+		recomputeWorkRows();
+		publishPhysicalCostMetrics();
+	}
+
+	void setOutputRowsPreservingPhysicalCost(double outputRows) {
+		this.outputRows = outputRows;
+		contextualOutputRows = false;
+		componentOutputRows = false;
+	}
+
+	void setContextualOutputRowsPreservingPhysicalCost(double outputRows) {
+		this.outputRows = outputRows;
+		contextualOutputRows = true;
+		componentOutputRows = false;
+	}
+
+	void copyPhysicalCostFrom(PackedCostEstimate source) {
+		if (source.explicitPhysicalCost) {
+			setPhysicalCost(source.costScope, source.sequentialRows, source.randomSeeks, source.iteratorOpens,
+					source.expressionEvaluations, source.hashBuildRows, source.hashProbeRows, source.pathExpansions,
+					source.remoteCalls, source.peakMemoryRows);
+		} else {
+			setScalarPhysicalCost(source.workRows);
+			setReplacesChildWork(source.costScope == CostScope.INCLUSIVE);
+		}
+		dependentSubqueriesCosted = source.dependentSubqueriesCosted;
+	}
+
+	private void recomputeWorkRows() {
+		workRows = saturatedAdd(sequentialRows, randomSeeks);
+		workRows = saturatedAdd(workRows, iteratorOpens);
+		workRows = saturatedAdd(workRows, expressionEvaluations);
+		workRows = saturatedAdd(workRows, hashBuildRows);
+		workRows = saturatedAdd(workRows, hashProbeRows);
+		workRows = saturatedAdd(workRows, pathExpansions);
+		workRows = saturatedAdd(workRows, remoteCalls);
+	}
+
+	private void publishPhysicalCostMetrics() {
+		putPlannedStringMetric("plannedCostScope", costScope == CostScope.INCLUSIVE ? "inclusive" : "local");
+		putPlannedDoubleMetric("plannedCostSequentialRows", sequentialRows);
+		putPlannedDoubleMetric("plannedCostRandomSeeks", randomSeeks);
+		putPlannedDoubleMetric("plannedCostIteratorOpens", iteratorOpens);
+		putPlannedDoubleMetric("plannedCostExpressionEvaluations", expressionEvaluations);
+		putPlannedDoubleMetric("plannedCostHashBuildRows", hashBuildRows);
+		putPlannedDoubleMetric("plannedCostHashProbeRows", hashProbeRows);
+		putPlannedDoubleMetric("plannedCostPathExpansions", pathExpansions);
+		putPlannedDoubleMetric("plannedCostRemoteCalls", remoteCalls);
+		putPlannedDoubleMetric("plannedCostPeakMemoryRows", peakMemoryRows);
 	}
 
 	/**
@@ -148,6 +344,10 @@ public final class PackedCostEstimate {
 	 */
 	public void setReplacesChildWork(boolean replacesChildWork) {
 		this.replacesChildWork = replacesChildWork;
+		costScope = replacesChildWork ? CostScope.INCLUSIVE : CostScope.LOCAL;
+		if (Double.isFinite(sequentialRows) && sequentialRows >= 0.0d) {
+			publishPhysicalCostMetrics();
+		}
 	}
 
 	/**
@@ -224,6 +424,50 @@ public final class PackedCostEstimate {
 
 	public double workRows() {
 		return workRows;
+	}
+
+	public CostScope costScope() {
+		return costScope;
+	}
+
+	boolean hasExplicitPhysicalCost() {
+		return explicitPhysicalCost;
+	}
+
+	public double sequentialRows() {
+		return sequentialRows;
+	}
+
+	public double randomSeeks() {
+		return randomSeeks;
+	}
+
+	public double iteratorOpens() {
+		return iteratorOpens;
+	}
+
+	public double expressionEvaluations() {
+		return expressionEvaluations;
+	}
+
+	public double hashBuildRows() {
+		return hashBuildRows;
+	}
+
+	public double hashProbeRows() {
+		return hashProbeRows;
+	}
+
+	public double pathExpansions() {
+		return pathExpansions;
+	}
+
+	public double remoteCalls() {
+		return remoteCalls;
+	}
+
+	public double peakMemoryRows() {
+		return peakMemoryRows;
 	}
 
 	/**
@@ -330,5 +574,21 @@ public final class PackedCostEstimate {
 			plannedDoubleMetricNames = Arrays.copyOf(plannedDoubleMetricNames, capacity);
 			plannedDoubleMetricValues = Arrays.copyOf(plannedDoubleMetricValues, capacity);
 		}
+	}
+
+	private static double physicalDimension(double value, String name) {
+		if (!Double.isFinite(value) || value < 0.0d) {
+			throw new IllegalArgumentException(name + " must be finite and non-negative");
+		}
+		return value;
+	}
+
+	private static double saturatedAdd(double left, double right) {
+		double sum = left + right;
+		return Double.isFinite(sum) ? sum : Double.MAX_VALUE;
+	}
+
+	private static double finiteOrZero(double value) {
+		return Double.isFinite(value) && value >= 0.0d ? value : 0.0d;
 	}
 }

@@ -48,7 +48,7 @@ import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 /** LMDB storage-cardinality adapter for the packed ID-based cost boundary. */
 final class LmdbPackedCostModel implements PackedCostModel {
 
-	static final long VERSION = 19L;
+	static final long VERSION = 20L;
 
 	private static final String[] DISTINCT_REQUIREMENT_METRICS = {
 			TelemetryMetricNames.PLANNED_DISTINCT_REQUIREMENT_VARS,
@@ -611,6 +611,25 @@ final class LmdbPackedCostModel implements PackedCostModel {
 		}
 		copyFactorDoubleMetrics(surface, output);
 		return true;
+	}
+
+	Optional<JoinFactorCostModel.FactorCostEstimate> estimateCorrelatedFactor(
+			TupleExpr expression, String[] correlationNames) {
+		if (expression == null || correlationNames == null || correlationNames.length == 0) {
+			return Optional.empty();
+		}
+		Set<String> boundNames = new LinkedHashSet<>(correlationNames.length);
+		for (String correlationName : correlationNames) {
+			if (correlationName != null && !correlationName.isBlank()) {
+				boundNames.add(correlationName);
+			}
+		}
+		if (boundNames.isEmpty()) {
+			return Optional.empty();
+		}
+		return runtime.factorCost(expression,
+				JoinFactorCostModel.CostContext.forOptimization(
+						boundNames, 1.0d, Double.NaN, true, true, Map.of(), List.of()));
 	}
 
 	private static int metricInt(JoinFactorCostModel.FactorCostEstimate estimate, String name) {

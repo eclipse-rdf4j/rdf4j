@@ -15,13 +15,20 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -77,6 +84,38 @@ class LmdbLearnedFilterSurfaceTest {
 	}
 
 	@Test
+	void filterSidecarUsesVersionSixAndReadsVersionFive(@TempDir File dataDir) throws IOException {
+		LmdbStore writer = initializedStore(dataDir);
+		try {
+			writer.getBackingStore().getEvaluationStatistics().recordFilterOutcome(filter("5"), 20L, 80L);
+		} finally {
+			writer.shutDown();
+		}
+
+		Path sidecar;
+		try (var files = Files.walk(dataDir.toPath())) {
+			sidecar = files.filter(path -> path.getFileName().toString().endsWith(".filters"))
+					.findFirst()
+					.orElseThrow();
+		}
+		byte[] bytes = Files.readAllBytes(sidecar);
+		assertEquals(6, ByteBuffer.wrap(bytes).getInt(), "new filter evidence must use the version-six format");
+
+		ByteBuffer.wrap(bytes).putInt(5);
+		Files.write(sidecar, bytes);
+		LmdbStore reader = initializedStore(dataDir);
+		try {
+			EvaluationStatistics.FilterPassEstimate estimate = reader.getBackingStore()
+					.getEvaluationStatistics()
+					.estimateFilterPass(filter("6"));
+			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE, estimate.getSource());
+			assertEquals(0.2d, estimate.getPassRatio(), 0.000_001d);
+		} finally {
+			reader.shutDown();
+		}
+	}
+
+	@Test
 	void incompleteObservationDoesNotTrainSurface(@TempDir File dataDir) {
 		LmdbStore store = initializedStore(dataDir);
 		try {
@@ -91,6 +130,30 @@ class LmdbLearnedFilterSurfaceTest {
 		} finally {
 			store.shutDown();
 		}
+	}
+
+	@Test
+	void filterSurfaceIdentityDoesNotDependOnValueImplementation() {
+		Filter simpleValues = filter("5");
+		Filter lmdbValues = simpleValues.clone();
+		lmdbValues.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern node) {
+				if (node.getPredicateVar().hasValue()) {
+					Var predicate = node.getPredicateVar();
+					node.replaceChildNode(
+							predicate,
+							new Var(
+									predicate.getName(),
+									new LmdbIRI(null, predicate.getValue().stringValue()),
+									predicate.isAnonymous(),
+									predicate.isConstant()));
+				}
+			}
+		});
+
+		assertEquals(FilterSurfaceKey.exact(simpleValues), FilterSurfaceKey.exact(lmdbValues));
+		assertEquals(FilterSurfaceKey.generalized(simpleValues), FilterSurfaceKey.generalized(lmdbValues));
 	}
 
 	private static LmdbStore initializedStore(File dataDir) {

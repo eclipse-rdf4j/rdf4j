@@ -583,8 +583,8 @@ class PackedSearchTest {
 
 		assertTrue(result.selectedPlan() instanceof Join, result.selectedPlan()::toString);
 		assertEquals(90.0d, result.outputRows(), result.selectedPlan()::toString);
-		assertFalse(filterInputRows.isEmpty());
-		assertTrue(filterInputRows.stream().allMatch(rows -> rows == 90.0d), filterInputRows::toString);
+		assertTrue(filterInputRows.contains(90.0d), filterInputRows::toString);
+		assertTrue(filterInputRows.contains(5.0d), filterInputRows::toString);
 	}
 
 	@Test
@@ -1105,7 +1105,7 @@ class PackedSearchTest {
 	}
 
 	@Test
-	void correlatedExistsRetainsDisconnectedOuterComponentRows() {
+	void correlatedExistsCostsDependentProbeAtItsExecutionBoundary() {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		StatementPattern first = pattern(values, "a", "urn:first", "firstValue", Double.NaN);
 		StatementPattern unrelated = pattern(values, "b", "urn:unrelated", "unrelatedValue", Double.NaN);
@@ -1154,7 +1154,7 @@ class PackedSearchTest {
 				.findFirst()
 				.orElseThrow(() -> new AssertionError(result.selectedPlan().toString()));
 		StatementPattern selectedProbe = (StatementPattern) ((Exists) selected.getCondition()).getSubQuery();
-		assertEquals(8.0d, selectedProbe.getResultSizeEstimate(), result.selectedPlan()::toString);
+		assertEquals(2.0d, selectedProbe.getResultSizeEstimate(), result.selectedPlan()::toString);
 	}
 
 	@Test

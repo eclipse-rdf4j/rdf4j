@@ -20,10 +20,24 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarant
 final class PackedPhysicalMetadataArena {
 
 	private static final EvidenceGuarantee[] EVIDENCE_GUARANTEES = EvidenceGuarantee.values();
+	private static final PackedCostEstimate.CostScope[] COST_SCOPES = PackedCostEstimate.CostScope.values();
+	private static final int EXPLICIT_PHYSICAL_COST = 1;
+	private static final int DEPENDENT_SUBQUERIES_COSTED = 1 << 1;
 
 	private final PackedObjectPool objects;
 	private double[] outputRows;
 	private double[] workRows;
+	private double[] sequentialRows;
+	private double[] randomSeeks;
+	private double[] iteratorOpens;
+	private double[] expressionEvaluations;
+	private double[] hashBuildRows;
+	private double[] hashProbeRows;
+	private double[] pathExpansions;
+	private double[] remoteCalls;
+	private double[] peakMemoryRows;
+	private byte[] costScopes;
+	private byte[] physicalCostFlags;
 	private double[] accessRows;
 	private double[] invocations;
 	private int[] evidenceStateIds;
@@ -52,6 +66,17 @@ final class PackedPhysicalMetadataArena {
 		objects = new PackedObjectPool(Math.max(4, expectedRows));
 		outputRows = new double[capacity];
 		workRows = new double[capacity];
+		sequentialRows = new double[capacity];
+		randomSeeks = new double[capacity];
+		iteratorOpens = new double[capacity];
+		expressionEvaluations = new double[capacity];
+		hashBuildRows = new double[capacity];
+		hashProbeRows = new double[capacity];
+		pathExpansions = new double[capacity];
+		remoteCalls = new double[capacity];
+		peakMemoryRows = new double[capacity];
+		costScopes = new byte[capacity];
+		physicalCostFlags = new byte[capacity];
 		accessRows = new double[capacity];
 		invocations = new double[capacity];
 		evidenceStateIds = new int[capacity];
@@ -74,6 +99,18 @@ final class PackedPhysicalMetadataArena {
 		ensureCapacity(metadataId);
 		outputRows[metadataId] = finiteNonNegative(estimate.outputRows(), fallbackRows);
 		workRows[metadataId] = finiteNonNegative(estimate.workRows(), fallbackWork);
+		sequentialRows[metadataId] = finiteNonNegative(estimate.sequentialRows(), workRows[metadataId]);
+		randomSeeks[metadataId] = finiteNonNegative(estimate.randomSeeks(), 0.0d);
+		iteratorOpens[metadataId] = finiteNonNegative(estimate.iteratorOpens(), 0.0d);
+		expressionEvaluations[metadataId] = finiteNonNegative(estimate.expressionEvaluations(), 0.0d);
+		hashBuildRows[metadataId] = finiteNonNegative(estimate.hashBuildRows(), 0.0d);
+		hashProbeRows[metadataId] = finiteNonNegative(estimate.hashProbeRows(), 0.0d);
+		pathExpansions[metadataId] = finiteNonNegative(estimate.pathExpansions(), 0.0d);
+		remoteCalls[metadataId] = finiteNonNegative(estimate.remoteCalls(), 0.0d);
+		peakMemoryRows[metadataId] = finiteNonNegative(estimate.peakMemoryRows(), 0.0d);
+		costScopes[metadataId] = (byte) estimate.costScope().ordinal();
+		physicalCostFlags[metadataId] = (byte) ((estimate.hasExplicitPhysicalCost() ? EXPLICIT_PHYSICAL_COST : 0)
+				| (estimate.dependentSubqueriesCosted() ? DEPENDENT_SUBQUERIES_COSTED : 0));
 		accessRows[metadataId] = finiteNonNegative(estimate.accessRows(), Double.NaN);
 		invocations[metadataId] = finiteNonNegative(estimate.invocations(), 1.0d);
 		evidenceStateIds[metadataId] = estimate.evidenceStateId();
@@ -100,6 +137,86 @@ final class PackedPhysicalMetadataArena {
 	double workRows(int metadataId) {
 		checkId(metadataId);
 		return workRows[metadataId];
+	}
+
+	double sequentialRows(int metadataId) {
+		checkId(metadataId);
+		return sequentialRows[metadataId];
+	}
+
+	double randomSeeks(int metadataId) {
+		checkId(metadataId);
+		return randomSeeks[metadataId];
+	}
+
+	double iteratorOpens(int metadataId) {
+		checkId(metadataId);
+		return iteratorOpens[metadataId];
+	}
+
+	double expressionEvaluations(int metadataId) {
+		checkId(metadataId);
+		return expressionEvaluations[metadataId];
+	}
+
+	double hashBuildRows(int metadataId) {
+		checkId(metadataId);
+		return hashBuildRows[metadataId];
+	}
+
+	double hashProbeRows(int metadataId) {
+		checkId(metadataId);
+		return hashProbeRows[metadataId];
+	}
+
+	double pathExpansions(int metadataId) {
+		checkId(metadataId);
+		return pathExpansions[metadataId];
+	}
+
+	double remoteCalls(int metadataId) {
+		checkId(metadataId);
+		return remoteCalls[metadataId];
+	}
+
+	double peakMemoryRows(int metadataId) {
+		checkId(metadataId);
+		return peakMemoryRows[metadataId];
+	}
+
+	PackedCostEstimate.CostScope costScope(int metadataId) {
+		checkId(metadataId);
+		return COST_SCOPES[Byte.toUnsignedInt(costScopes[metadataId])];
+	}
+
+	boolean hasExplicitPhysicalCost(int metadataId) {
+		checkId(metadataId);
+		return (physicalCostFlags[metadataId] & EXPLICIT_PHYSICAL_COST) != 0;
+	}
+
+	boolean dependentSubqueriesCosted(int metadataId) {
+		checkId(metadataId);
+		return (physicalCostFlags[metadataId] & DEPENDENT_SUBQUERIES_COSTED) != 0;
+	}
+
+	void restorePhysicalCost(int metadataId, PackedCostEstimate estimate) {
+		checkId(metadataId);
+		if (hasExplicitPhysicalCost(metadataId)) {
+			if (costScope(metadataId) == PackedCostEstimate.CostScope.INCLUSIVE) {
+				estimate.setInclusivePhysicalCost(sequentialRows[metadataId], randomSeeks[metadataId],
+						iteratorOpens[metadataId], expressionEvaluations[metadataId], hashBuildRows[metadataId],
+						hashProbeRows[metadataId], pathExpansions[metadataId], remoteCalls[metadataId],
+						peakMemoryRows[metadataId]);
+			} else {
+				estimate.setLocalPhysicalCost(sequentialRows[metadataId], randomSeeks[metadataId],
+						iteratorOpens[metadataId], expressionEvaluations[metadataId], hashBuildRows[metadataId],
+						hashProbeRows[metadataId], pathExpansions[metadataId], remoteCalls[metadataId],
+						peakMemoryRows[metadataId]);
+			}
+		} else {
+			estimate.setReplacesChildWork(costScope(metadataId) == PackedCostEstimate.CostScope.INCLUSIVE);
+		}
+		estimate.setDependentSubqueriesCosted(dependentSubqueriesCosted(metadataId));
 	}
 
 	double accessRows(int metadataId) {
@@ -238,6 +355,17 @@ final class PackedPhysicalMetadataArena {
 		int capacity = outputRows.length << 1;
 		outputRows = Arrays.copyOf(outputRows, capacity);
 		workRows = Arrays.copyOf(workRows, capacity);
+		sequentialRows = Arrays.copyOf(sequentialRows, capacity);
+		randomSeeks = Arrays.copyOf(randomSeeks, capacity);
+		iteratorOpens = Arrays.copyOf(iteratorOpens, capacity);
+		expressionEvaluations = Arrays.copyOf(expressionEvaluations, capacity);
+		hashBuildRows = Arrays.copyOf(hashBuildRows, capacity);
+		hashProbeRows = Arrays.copyOf(hashProbeRows, capacity);
+		pathExpansions = Arrays.copyOf(pathExpansions, capacity);
+		remoteCalls = Arrays.copyOf(remoteCalls, capacity);
+		peakMemoryRows = Arrays.copyOf(peakMemoryRows, capacity);
+		costScopes = Arrays.copyOf(costScopes, capacity);
+		physicalCostFlags = Arrays.copyOf(physicalCostFlags, capacity);
 		accessRows = Arrays.copyOf(accessRows, capacity);
 		invocations = Arrays.copyOf(invocations, capacity);
 		evidenceStateIds = Arrays.copyOf(evidenceStateIds, capacity);

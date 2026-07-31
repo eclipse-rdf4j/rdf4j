@@ -43,6 +43,8 @@ final class PackedRelOp {
 	static final int BINDING_SET_ASSIGNMENT = 27;
 	static final int SERVICE = 28;
 	static final int TUPLE_FUNCTION = 29;
+	static final int SEMI_JOIN = 30;
+	static final int ANTI_JOIN = 31;
 
 	private PackedRelOp() {
 	}

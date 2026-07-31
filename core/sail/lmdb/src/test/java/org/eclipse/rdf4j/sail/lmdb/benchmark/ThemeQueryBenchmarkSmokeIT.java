@@ -217,15 +217,15 @@ class ThemeQueryBenchmarkSmokeIT {
 			assertBefore(renderedQuery, "?med <http://example.com/theme/medical/code> ?code", "FILTER NOT EXISTS",
 					"q7 should apply the dosage anti-probe immediately after the finite code lookup\n"
 							+ renderedQuery + "\n" + plan);
-			assertBefore(renderedQuery, "FILTER NOT EXISTS",
-					"FILTER EXISTS",
-					"q7 should apply the selective dosage anti-probe before the patient EXISTS probe\n" + renderedQuery
-							+ "\n" + plan);
-			assertBefore(renderedQuery, "FILTER NOT EXISTS",
-					"?med a <http://example.com/theme/medical/Medication>",
-					"q7 should apply the selective dosage anti-probe before the broad Medication type guard\n"
-							+ renderedQuery
-							+ "\n" + plan);
+			assertTrue(plan.contains("optimizer.semiAntiKind=minus-assured-shared"),
+					"q7 should preserve the safe MINUS semantic kind in its typed anti-join\n"
+							+ renderedQuery + "\n" + plan);
+			assertTrue(plan.contains("optimizer.semiAntiAlgorithm=materialized-hash"),
+					"q7 should materialize the dosage side once after charging its complete physical work\n"
+							+ renderedQuery + "\n" + plan);
+			assertTrue(plan.contains("plannedPhysicalImplementation=materialized-minus-compatibility"),
+					"q7 should retain the proven MINUS-compatible materialized implementation\n"
+							+ renderedQuery + "\n" + plan);
 		} finally {
 			benchmark.tearDown();
 		}

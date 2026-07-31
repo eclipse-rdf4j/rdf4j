@@ -262,7 +262,7 @@ final class PackedMemo {
 		properties.satisfies(requiredPropertyId, requiredPropertyId);
 		return winners.offerWithMetadata(groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
 				costPolicyId, physicalExpressionId, physicalMetadataId, tieBreakRank, startupCost, totalCost,
-				comparisonCost,
+				comparisonCost, physicalMetadataId == 0 ? 0.0d : physicalMetadata.peakMemoryRows(physicalMetadataId),
 				childWinnerIds, childOffset, childCount);
 	}
 
@@ -281,11 +281,17 @@ final class PackedMemo {
 		properties.satisfies(requiredPropertyId, requiredPropertyId);
 		return winners.offerExecutableFallbackWithMetadata(groupId, requiredPropertyId, semanticRowGoalId,
 				inputContextId, costPolicyId, physicalExpressionId, physicalMetadataId, tieBreakRank, startupCost,
-				totalCost, comparisonCost, childWinnerIds, childOffset, childCount);
+				totalCost, comparisonCost,
+				physicalMetadataId == 0 ? 0.0d : physicalMetadata.peakMemoryRows(physicalMetadataId),
+				childWinnerIds, childOffset, childCount);
 	}
 
 	double winnerTotalCost(int winnerId) {
 		return winners.totalCost(winnerId);
+	}
+
+	void addDependentCost(int winnerId, double dependentCost) {
+		winners.addDependentCost(winnerId, dependentCost);
 	}
 
 	int winnerCount() {
@@ -320,6 +326,29 @@ final class PackedMemo {
 
 	double physicalMetadataWorkRows(int metadataId) {
 		return physicalMetadata.workRows(metadataId);
+	}
+
+	void restorePhysicalMetadataCost(int metadataId, PackedCostEstimate estimate) {
+		physicalMetadata.restorePhysicalCost(metadataId, estimate);
+	}
+
+	void addWinnerPhysicalCost(int winnerId, PackedCostEstimate estimate) {
+		int metadataId = winnerPhysicalMetadataId(winnerId);
+		if (metadataId == 0) {
+			estimate.addChildPhysicalCost(winnerTotalCost(winnerId), 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+					0.0d);
+			return;
+		}
+		estimate.addChildPhysicalCost(
+				physicalMetadata.sequentialRows(metadataId),
+				physicalMetadata.randomSeeks(metadataId),
+				physicalMetadata.iteratorOpens(metadataId),
+				physicalMetadata.expressionEvaluations(metadataId),
+				physicalMetadata.hashBuildRows(metadataId),
+				physicalMetadata.hashProbeRows(metadataId),
+				physicalMetadata.pathExpansions(metadataId),
+				physicalMetadata.remoteCalls(metadataId),
+				physicalMetadata.peakMemoryRows(metadataId));
 	}
 
 	double physicalMetadataAccessRows(int metadataId) {

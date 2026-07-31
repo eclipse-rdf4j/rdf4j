@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -156,6 +157,59 @@ class PackedCorrelatedMinusAlternativeTest {
 		assertEquals("urn:dosage", probe.getPredicateVar().getValue().stringValue());
 		assertTrue(boundProbeCosted[0], "The correlated alternative must be costed with ?entity assured by the left");
 		assertEquals(1.0d, probe.getCostEstimate(), result.selectedPlan()::toString);
+	}
+
+	@Test
+	void typedAntiJoinDoesNotDoubleChargeRegisteredDependentRecipe() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		Difference source = new Difference(assuredEntities(values), safeFilteredProbe(values, "entity"));
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(),
+				typedAntiJoinCosts());
+
+		Filter selected = assertInstanceOf(Filter.class, result.selectedPlan(), result.selectedPlan()::toString);
+		assertInstanceOf(Not.class, selected.getCondition(), result.selectedPlan()::toString);
+		assertTrue(result.totalCost() < 100.0d,
+				() -> "The typed anti-join already includes its RHS probe cost; the executable dependent recipe "
+						+ "must not be charged again. cost=" + result.totalCost() + ", plan=" + result.selectedPlan());
+	}
+
+	@Test
+	void safeMinusProducesThreeTypedAntiJoinImplementations() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		Difference source = new Difference(assuredEntities(values), safeFilteredProbe(values, "entity"));
+
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(source);
+		int rootGroupId = query.relGroup(query.rootRelId());
+		int typedAlternatives = 0;
+		for (int relationId = 1; relationId <= query.relationCount(); relationId++) {
+			if (query.relGroup(relationId) != rootGroupId
+					|| query.relOperator(relationId) != 31) {
+				continue;
+			}
+			typedAlternatives++;
+		}
+
+		assertEquals(3, typedAlternatives);
+	}
+
+	@Test
+	void typedSemiAntiAlternativesSupportComposedLocalRightHandSides() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		List<TupleExpr> rightHandSides = List.of(
+				new Union(probe(values, "entity"), safeFilteredProbe(values, "entity")),
+				new LeftJoin(probe(values, "entity"), patientProbe(values)),
+				new Difference(probe(values, "entity"), patientProbe(values)));
+
+		for (TupleExpr rightHandSide : rightHandSides) {
+			Filter notExists = new Filter(assuredEntities(values), new Not(new Exists(rightHandSide.clone())));
+			assertEquals(3, typedSemiAntiAlternativeCount(PackedQueryCodec.encodeForPlanning(notExists)),
+					() -> "pure NOT EXISTS must expose all physical anti-join algorithms for " + rightHandSide);
+
+			Difference minus = new Difference(assuredEntities(values), rightHandSide.clone());
+			assertEquals(3, typedSemiAntiAlternativeCount(PackedQueryCodec.encodeForPlanning(minus)),
+					() -> "assured shared MINUS must expose all physical anti-join algorithms for " + rightHandSide);
+		}
 	}
 
 	@Test
@@ -368,6 +422,19 @@ class PackedCorrelatedMinusAlternativeTest {
 		return 0;
 	}
 
+	private static int typedSemiAntiAlternativeCount(PackedQuery query) {
+		int rootGroupId = query.relGroup(query.rootRelId());
+		int alternatives = 0;
+		for (int relationId = 1; relationId <= query.relationCount(); relationId++) {
+			if (query.relGroup(relationId) == rootGroupId
+					&& (query.relOperator(relationId) == PackedRelOp.SEMI_JOIN
+							|| query.relOperator(relationId) == PackedRelOp.ANTI_JOIN)) {
+				alternatives++;
+			}
+		}
+		return alternatives;
+	}
+
 	private static StatementPattern probe(SimpleValueFactory values, String subjectName) {
 		return new StatementPattern(Var.of(subjectName), Var.of("dosagePredicate", values.createIRI("urn:dosage")),
 				Var.of("dose"));
@@ -424,6 +491,35 @@ class PackedCorrelatedMinusAlternativeTest {
 					output.setContextualRows(1.0d, 1.0d);
 				} else {
 					output.setRows(10_000.0d, 10_000.0d);
+				}
+			}
+		};
+	}
+
+	private static PackedCostModel typedAntiJoinCosts() {
+		return new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return query.isStatementPattern(relationId) ? 10_000.0d : Double.NaN;
+			}
+
+			@Override
+			public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (!Double.isFinite(context.leftInputRows())) {
+					return;
+				}
+				if (query.isAntiJoin(relationId)) {
+					output.setRows(context.leftInputRows(), output.workRows());
+					output.setLocalPhysicalCost(5.0d, 0.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+					output.setDependentSubqueriesCosted(true);
+				} else if (query.materializeRelation(relationId) instanceof Difference) {
+					/*
+					 * Selected-plan refinement uses the canonical MINUS for its exact logical cardinality. Its local
+					 * physical vector does not own the typed anti-join's separately registered execution recipe.
+					 */
+					output.setRows(context.leftInputRows(), output.workRows());
+					output.setLocalPhysicalCost(5.0d, 0.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
 				}
 			}
 		};

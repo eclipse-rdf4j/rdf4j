@@ -37,6 +37,7 @@ public final class PackedRuleProofs {
 	static final long PREDICATE_RANGE_ANCHOR = 1L << 12;
 	static final long MINUS_CORRELATED_NOT_EXISTS = 1L << 13;
 	static final long FILTER_COMMUTATION = 1L << 14;
+	static final long TYPED_SEMI_ANTI = 1L << 15;
 
 	private PackedRuleProofs() {
 	}
@@ -77,6 +78,8 @@ public final class PackedRuleProofs {
 				"MINUS with assured shared bindings is implemented as a safe correlated NOT EXISTS probe");
 		add(proofs, ruleMask, FILTER_COMMUTATION, "packed-filter-commutation", "assuredFilterDependencies",
 				"deterministic filters with assured dependencies commute over their common input");
+		add(proofs, ruleMask, TYPED_SEMI_ANTI, "packed-typed-semi-anti", "typedSemiAnti",
+				"pure existence predicate exposes streaming, memoized, and materialized physical alternatives");
 		return List.copyOf(proofs);
 	}
 

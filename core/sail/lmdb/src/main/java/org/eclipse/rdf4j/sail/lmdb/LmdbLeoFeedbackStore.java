@@ -22,7 +22,7 @@ import java.nio.file.StandardCopyOption;
 final class LmdbLeoFeedbackStore {
 
 	private static final String MAGIC = "rdf4j-lmdb-leo-surfaces";
-	private static final int VERSION = 4;
+	private static final int VERSION = 5;
 
 	private final Path path;
 	private final LmdbLeoFeedbackConfig config;

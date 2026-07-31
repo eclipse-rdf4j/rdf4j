@@ -263,7 +263,7 @@ final class PackedJoinEnumerator {
 	}
 
 	int optimizeCorrelatedFilter(int filterRelationId) {
-		if (query.relOperator(filterRelationId) != PackedRelOp.FILTER
+		if (!isCorrelatedPredicateOperator(query.relOperator(filterRelationId))
 				|| query.relChildCount(filterRelationId) != 1) {
 			return 0;
 		}
@@ -273,7 +273,7 @@ final class PackedJoinEnumerator {
 				|| query.relExecutionDomain(filterRelationId) != query.relExecutionDomain(inputRelationId)) {
 			return 0;
 		}
-		int conditionId = query.relPayload(filterRelationId);
+		int conditionId = predicateConditionId(filterRelationId);
 		int embeddedReferenceMaskId = query.scalarEmbeddedReferenceMaskId(conditionId);
 		int scalarFlags = query.scalarMetadataFlags(conditionId);
 		if (query.scalarSafeToRelocate(conditionId)
@@ -333,7 +333,7 @@ final class PackedJoinEnumerator {
 	 * evaluation barrier, applies the predicate at that first assured prefix, and retains the remaining written order.
 	 */
 	int seedCorrelatedFilter(int filterRelationId) {
-		if (query.relOperator(filterRelationId) != PackedRelOp.FILTER
+		if (!isCorrelatedPredicateOperator(query.relOperator(filterRelationId))
 				|| query.relChildCount(filterRelationId) != 1) {
 			return 0;
 		}
@@ -344,7 +344,7 @@ final class PackedJoinEnumerator {
 				|| query.relOperator(inputRelationId) != PackedRelOp.JOIN) {
 			return 0;
 		}
-		int conditionId = query.relPayload(filterRelationId);
+		int conditionId = predicateConditionId(filterRelationId);
 		int embeddedReferenceMaskId = query.scalarEmbeddedReferenceMaskId(conditionId);
 		int scalarFlags = query.scalarMetadataFlags(conditionId);
 		if (query.scalarSafeToRelocate(conditionId)
@@ -606,8 +606,8 @@ final class PackedJoinEnumerator {
 	}
 
 	private boolean containsNonRelocatableFilter(int relationId) {
-		if (query.relOperator(relationId) == PackedRelOp.FILTER
-				&& !query.scalarSafeToRelocate(query.relPayload(relationId))) {
+		if (isCorrelatedPredicateOperator(query.relOperator(relationId))
+				&& !query.scalarSafeToRelocate(predicateConditionId(relationId))) {
 			return true;
 		}
 		for (int ordinal = 0; ordinal < query.relChildCount(relationId); ordinal++) {
@@ -741,7 +741,7 @@ final class PackedJoinEnumerator {
 				costScheduledFilter(filterRelationId, prefixRelations, prefixCount,
 						rows[pendingState], costs[pendingState]);
 				int appliedState = densePredicateState(stateCount, subset, PREDICATE_APPLIED);
-				double candidateCost = costEstimate.workRows();
+				double candidateCost = completeOperatorWork(costs[pendingState], costEstimate);
 				int costComparison = Double.compare(candidateCost, costs[appliedState]);
 				if (costComparison < 0
 						|| costComparison == 0
@@ -881,9 +881,7 @@ final class PackedJoinEnumerator {
 				outputRows = costEstimate.outputRows();
 			}
 			if (!componentEstimate && finiteNonNegative(costEstimate.workRows())) {
-				totalWork = costEstimate.replacesChildWork()
-						? costEstimate.workRows()
-						: saturatedAdd(inputWork, costEstimate.workRows(), 0.0d);
+				totalWork = factorWork(inputWork, costEstimate);
 			}
 			costEstimate.setRows(outputRows, totalWork);
 			costEstimate.setReplacesChildWork(false);
@@ -897,12 +895,27 @@ final class PackedJoinEnumerator {
 				outputRows = costEstimate.outputRows();
 			}
 			if (!componentRefinement && finiteNonNegative(costEstimate.workRows())) {
-				totalWork = costEstimate.replacesChildWork()
-						? costEstimate.workRows()
-						: Math.max(inputWork, costEstimate.workRows());
+				totalWork = refinedOperatorWork(inputWork, costEstimate);
 			}
 		}
-		costEstimate.setRows(outputRows, totalWork);
+		if (!costEstimate.dependentSubqueriesCosted()) {
+			double dependentCost = PackedDependentSubqueryCosting.contextualCost(query, memo, filterRelationId,
+					prefixRelations, prefixCount);
+			if (dependentCost > 0.0d) {
+				if (costEstimate.hasExplicitPhysicalCost()) {
+					costEstimate.addChildPhysicalCost(dependentCost, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+							0.0d);
+					totalWork = costSession.objectiveScore(costEstimate);
+				} else {
+					totalWork = saturatedAdd(totalWork, dependentCost, 0.0d);
+				}
+			}
+		}
+		if (costEstimate.hasExplicitPhysicalCost()) {
+			costEstimate.setOutputRowsPreservingPhysicalCost(outputRows);
+		} else {
+			costEstimate.setRows(outputRows, totalWork);
+		}
 	}
 
 	private static int densePredicateState(int stateCount, int subset, int phase) {
@@ -1278,22 +1291,43 @@ final class PackedJoinEnumerator {
 			int prefixCount) {
 		int inputGroupId = memo.winnerGroupId(inputWinnerId);
 		double inputRows = memo.winnerOutputRows(inputWinnerId);
-		costScheduledFilter(filterRelationId, prefixRelations, prefixCount, inputRows,
-				memo.winnerTotalCost(inputWinnerId));
+		double inputWork = memo.winnerTotalCost(inputWinnerId);
+		costScheduledFilter(filterRelationId, prefixRelations, prefixCount, inputRows, inputWork);
+		if (costEstimate.hasExplicitPhysicalCost()
+				&& costEstimate.costScope() == PackedCostEstimate.CostScope.LOCAL) {
+			memo.addWinnerPhysicalCost(inputWinnerId, costEstimate);
+		}
+		double totalWork = costEstimate.hasExplicitPhysicalCost()
+				? costSession.objectiveScore(costEstimate)
+				: completeOperatorWork(inputWork, costEstimate);
 		childGroups[0] = inputGroupId;
-		int helperLogicalId = memo.addCanonicalLogical(PackedRelOp.FILTER, query.relPayload(filterRelationId),
+		int operator = query.relOperator(filterRelationId);
+		int helperLogicalId = memo.addCanonicalLogical(operator, query.relPayload(filterRelationId),
 				query.relSemanticScope(filterRelationId), query.relExecutionDomain(filterRelationId),
 				childGroups, 0, 1);
 		int helperGroupId = memo.logicalGroupId(helperLogicalId);
 		int anyPropertyId = memo.anyPropertyId();
-		int physicalExpressionId = memo.addPhysicalAlternative(helperGroupId, PackedRelOp.FILTER,
+		int physicalExpressionId = memo.addPhysicalAlternative(helperGroupId, operator,
 				query.relPayload(filterRelationId), anyPropertyId, CONTEXTUAL_FILTER_IMPLEMENTATION, helperLogicalId,
 				childGroups, 0, 1);
 		childWinners[0] = inputWinnerId;
-		int metadataId = memo.addPhysicalMetadata(costEstimate, costEstimate.outputRows(), costEstimate.workRows());
-		return memo.offerWinnerWithMetadata(helperGroupId, anyPropertyId, 0, 0, 0, physicalExpressionId,
-				metadataId, 0, costEstimate.outputRows(), costEstimate.workRows(), costEstimate.workRows(),
+		int metadataId = memo.addPhysicalMetadata(costEstimate, costEstimate.outputRows(), totalWork);
+		int winnerId = memo.offerWinnerWithMetadata(helperGroupId, anyPropertyId, 0, 0, 0, physicalExpressionId,
+				metadataId, 0, costEstimate.outputRows(), totalWork, totalWork,
 				childWinners, 0, 1);
+		return winnerId;
+	}
+
+	private static boolean isCorrelatedPredicateOperator(int operator) {
+		return operator == PackedRelOp.FILTER
+				|| operator == PackedRelOp.SEMI_JOIN
+				|| operator == PackedRelOp.ANTI_JOIN;
+	}
+
+	private int predicateConditionId(int relationId) {
+		return query.relOperator(relationId) == PackedRelOp.FILTER
+				? query.relPayload(relationId)
+				: query.payloadPrimary(query.relPayload(relationId));
 	}
 
 	private int optimizeSparseLong(int rootRelationId, int[] factors) {
@@ -2021,7 +2055,7 @@ final class PackedJoinEnumerator {
 		costEstimate.clear();
 		costContext.reset(prefixRelations, 0, prefixCount, prefixRows);
 		costSession.estimate(filterRelationId, costContext, costEstimate);
-		boolean replacesContextualChildWork = costEstimate.replacesChildWork()
+		boolean replacesContextualChildWork = factorCostIsInclusive(costEstimate)
 				&& costEstimate.hasContextualOutputRows()
 				&& !costEstimate.hasComponentOutputRows();
 		outputRows = rowComposition.effectiveRows(costEstimate, prefixRelations, prefixContributionRows, prefixCount,
@@ -2049,9 +2083,7 @@ final class PackedJoinEnumerator {
 				outputRows = costEstimate.outputRows();
 			}
 			if (finiteNonNegative(costEstimate.workRows())) {
-				totalWork = costEstimate.replacesChildWork()
-						? costEstimate.workRows()
-						: Math.max(inputWork, costEstimate.workRows());
+				totalWork = refinedOperatorWork(inputWork, costEstimate);
 			}
 		}
 		costEstimate.setRows(outputRows, totalWork);
@@ -2197,7 +2229,17 @@ final class PackedJoinEnumerator {
 		 * provider's access and provenance evidence.
 		 */
 		copyEstimate(estimate, composedMetadataEstimate);
-		composedMetadataEstimate.setContextualRows(outputRows, workRows);
+		if (estimate.hasExplicitPhysicalCost()) {
+			composedMetadataEstimate.setContextualOutputRowsPreservingPhysicalCost(outputRows);
+			double missingSequentialWork = workRows - estimate.workRows();
+			if (Double.isFinite(missingSequentialWork) && missingSequentialWork > 0.0d) {
+				composedMetadataEstimate.addChildPhysicalCost(missingSequentialWork, 0.0d, 0.0d, 0.0d, 0.0d,
+						0.0d, 0.0d, 0.0d, 0.0d);
+			}
+		} else {
+			composedMetadataEstimate.setContextualRows(outputRows, workRows);
+			composedMetadataEstimate.setReplacesChildWork(estimate.replacesChildWork());
+		}
 		return memo.addPhysicalMetadata(composedMetadataEstimate, outputRows, workRows);
 	}
 
@@ -2210,13 +2252,13 @@ final class PackedJoinEnumerator {
 		} else {
 			destination.setRows(source.outputRows(), source.workRows());
 		}
+		destination.copyPhysicalCostFrom(source);
 		destination.setEvidenceStateId(source.evidenceStateId());
 		destination.setEvidenceGuarantee(source.evidenceGuarantee());
 		destination.setAccess(source.lookupComponentMask(), source.missingLookupComponentMask(),
 				source.indexPrefixLength(), source.accessRows(), source.invocations(), source.indexName(),
 				source.estimateSource(), source.accessMode());
 		destination.setEstimateProvenance(source.estimateSource(), source.estimateFusion());
-		destination.setReplacesChildWork(source.replacesChildWork());
 		for (int index = 0; index < source.plannedStringMetricCount(); index++) {
 			destination.putPlannedStringMetric(source.plannedStringMetricName(index),
 					source.plannedStringMetricValue(index));
@@ -2236,6 +2278,7 @@ final class PackedJoinEnumerator {
 		}
 		costEstimate.setContextualRows(memo.physicalMetadataOutputRows(metadataId),
 				memo.physicalMetadataWorkRows(metadataId));
+		memo.restorePhysicalMetadataCost(metadataId, costEstimate);
 		costEstimate.setEvidenceStateId(memo.physicalMetadataEvidenceStateId(metadataId));
 		costEstimate.setEvidenceGuarantee(memo.physicalMetadataEvidenceGuarantee(metadataId));
 		costEstimate.setAccess(memo.physicalMetadataLookupMask(metadataId),
@@ -2883,5 +2926,37 @@ final class PackedJoinEnumerator {
 	private static double saturatedAdd(double left, double right, double local) {
 		double result = left + right + local;
 		return Double.isFinite(result) ? result : Double.MAX_VALUE;
+	}
+
+	private static double factorWork(double inputWork, PackedCostEstimate estimate) {
+		return factorCostIsInclusive(estimate)
+				? estimate.workRows()
+				: saturatedAdd(inputWork, estimate.workRows(), 0.0d);
+	}
+
+	private static boolean factorCostIsInclusive(PackedCostEstimate estimate) {
+		return estimate.replacesChildWork()
+				|| estimate.hasExplicitPhysicalCost()
+						&& estimate.costScope() == PackedCostEstimate.CostScope.INCLUSIVE;
+	}
+
+	private static double refinedOperatorWork(double inputWork, PackedCostEstimate estimate) {
+		if (!estimate.hasExplicitPhysicalCost()
+				|| estimate.costScope() == PackedCostEstimate.CostScope.INCLUSIVE) {
+			return estimate.workRows();
+		}
+		return saturatedAdd(inputWork, estimate.workRows(), 0.0d);
+	}
+
+	private double completeOperatorWork(double inputWork, PackedCostEstimate estimate) {
+		if (!estimate.hasExplicitPhysicalCost()) {
+			return estimate.workRows();
+		}
+		double operatorWork = costSession == null
+				? estimate.workRows()
+				: costSession.objectiveScore(estimate);
+		return estimate.costScope() == PackedCostEstimate.CostScope.INCLUSIVE
+				? operatorWork
+				: saturatedAdd(inputWork, operatorWork, 0.0d);
 	}
 }

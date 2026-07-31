@@ -54,6 +54,13 @@ public interface PackedCostSession extends AutoCloseable {
 	}
 
 	/**
+	 * Projects an inclusive physical vector into the scalar objective used by winner selection.
+	 */
+	default double objectiveScore(PackedCostEstimate estimate) {
+		return estimate.workRows();
+	}
+
+	/**
 	 * Closes query-local resources. The default is suitable for stateless adapters.
 	 */
 	@Override

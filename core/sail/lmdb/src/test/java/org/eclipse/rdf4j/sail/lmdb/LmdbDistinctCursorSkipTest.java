@@ -414,7 +414,11 @@ class LmdbDistinctCursorSkipTest {
 				assertEquals(expectedSubjects, resultSubjects);
 
 				Explanation explanation = explain(connection, query);
-				StatementPattern leftPattern = firstStatementPattern((TupleExpr) explanation.tupleExpr());
+				StatementPattern leftPattern = statementPatterns((TupleExpr) explanation.tupleExpr())
+						.stream()
+						.filter(pattern -> tag.equals(pattern.getPredicateVar().getValue()))
+						.findFirst()
+						.orElse(null);
 				assertNotNull(leftPattern, explanation::toString);
 				assertUsesCursorSkip(leftPattern, explanation);
 				assertTrue(leftPattern.getSourceRowsScannedActual() <= 6L,

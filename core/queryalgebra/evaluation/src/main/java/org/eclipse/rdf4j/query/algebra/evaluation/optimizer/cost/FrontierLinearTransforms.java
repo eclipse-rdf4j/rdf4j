@@ -40,6 +40,51 @@ public final class FrontierLinearTransforms {
 			FrontierStateKey outputKey,
 			int operationRecipeId,
 			int[] sourceSlotsByOutputSlot) {
+		return remap(
+				arena,
+				input,
+				outputKey,
+				operationRecipeId,
+				sourceSlotsByOutputSlot,
+				false,
+				FrontierStateOperation.PROJECT);
+	}
+
+	/**
+	 * Aligns an immutable Frontier measure to a wider ordered layout.
+	 *
+	 * <p>
+	 * An entry of {@code -1} in {@code sourceSlotsByOutputSlot} represents a variable that is absent from this input
+	 * and is therefore unbound in every aligned mapping. The output mask strata may contain masks produced by other
+	 * inputs that are being aligned to the same layout.
+	 * </p>
+	 *
+	 * @param sourceSlotsByOutputSlot input slot, or {@code -1} for an absent variable, for every output slot
+	 */
+	public static EvidenceStateRef align(
+			FrontierStateArena arena,
+			EvidenceStateRef input,
+			FrontierStateKey outputKey,
+			int operationRecipeId,
+			int[] sourceSlotsByOutputSlot) {
+		return remap(
+				arena,
+				input,
+				outputKey,
+				operationRecipeId,
+				sourceSlotsByOutputSlot,
+				true,
+				FrontierStateOperation.ALIGN);
+	}
+
+	private static EvidenceStateRef remap(
+			FrontierStateArena arena,
+			EvidenceStateRef input,
+			FrontierStateKey outputKey,
+			int operationRecipeId,
+			int[] sourceSlotsByOutputSlot,
+			boolean allowAbsentSourceSlots,
+			FrontierStateOperation operation) {
 		requireUnaryTransform(arena, input, outputKey, operationRecipeId);
 		Objects.requireNonNull(sourceSlotsByOutputSlot, "sourceSlotsByOutputSlot");
 		if (sourceSlotsByOutputSlot.length != outputKey.frontier().size()) {
@@ -48,7 +93,7 @@ public final class FrontierLinearTransforms {
 		FrontierStateKey inputKey = arena.key(input);
 		int inputWidth = inputKey.frontier().size();
 		for (int sourceSlot : sourceSlotsByOutputSlot) {
-			if (sourceSlot < 0 || sourceSlot >= inputWidth) {
+			if (sourceSlot < (allowAbsentSourceSlots ? -1 : 0) || sourceSlot >= inputWidth) {
 				throw new IllegalArgumentException("projection source slot is outside the input frontier");
 			}
 		}
@@ -73,7 +118,10 @@ public final class FrontierLinearTransforms {
 			try (FrontierMemoryReservation ignored = arena.reserveTemporary(
 					temporaryBytes, FrontierMemoryPurpose.TARGET_COALESCING)) {
 				int[] targetBySourceStratum = projectedStrata(
-						payload.masks(), outputKey.maskStrata(), sourceSlotsByOutputSlot);
+						payload.masks(),
+						outputKey.maskStrata(),
+						sourceSlotsByOutputSlot,
+						allowAbsentSourceSlots);
 				int[] exactCounts = new int[targetStrata];
 				int[] residualCounts = new int[targetStrata];
 				if (exactInput) {
@@ -82,7 +130,7 @@ public final class FrontierLinearTransforms {
 					buffer.coalesce(exactCounts);
 					return writeExactBuffer(
 							arena, input, null, outputKey, operationRecipeId,
-							FrontierStateOperation.PROJECT, buffer, exactCounts, residualCounts);
+							operation, buffer, exactCounts, residualCounts);
 				}
 
 				countProjectedResidual(payload, targetBySourceStratum, residualCounts);
@@ -91,7 +139,7 @@ public final class FrontierLinearTransforms {
 					writeProjectedResidual(
 							payload, sourceSlotsByOutputSlot, targetBySourceStratum, writer, exactCounts);
 					return internUnaryMeasure(
-							arena, input, outputKey, operationRecipeId, FrontierStateOperation.PROJECT,
+							arena, input, outputKey, operationRecipeId, operation,
 							writer, input.summary().certifiedUpperBound());
 				} catch (RuntimeException | Error failure) {
 					writer.close();
@@ -704,10 +752,11 @@ public final class FrontierLinearTransforms {
 	 *
 	 * <p>
 	 * The expansion is linear in the input measure: every emitted tuple inherits the weight of its outer mapping. Exact
-	 * inputs are coalesced by output mapping, while every sampled emission remains a residual particle. Probe results
-	 * are buffered in one pass. The work limit bounds both the number of probed outer mappings and retained output
-	 * mappings; an over-budget fanout becomes a typed unresolved boundary instead of executing an unbounded RHS during
-	 * planning.
+	 * inputs are coalesced by output mapping when the complete output fits. Larger fanouts are stratified by outer
+	 * mapping: every probed outer mapping retains at least one output particle, each particle receives its stratum's
+	 * exact output mass, and only the bounded output reservoir is retained. This preserves exact total mass and outer
+	 * correlation support without materializing the complete fanout. The work limit bounds the number of probed outer
+	 * mappings and retained output particles, but exact probes finish counting a selected outer mapping.
 	 * </p>
 	 */
 	public static EvidenceStateRef expandOuterMappings(
@@ -751,16 +800,18 @@ public final class FrontierLinearTransforms {
 					temporaryBytes, FrontierMemoryPurpose.BRIDGE_EMISSION)) {
 				ExactTupleBuffer buffer = new ExactTupleBuffer(
 						maximumProbeUnits, outputKey.frontier().size());
-				if (!appendExpandedMappings(
-						payload, outputKey.maskStrata(), expansion, buffer, maximumProbeUnits)) {
-					return unresolvedOuterExpansion(
-							arena, input, outputKey, operationRecipeId,
-							"frontier outer expansion output budget exhausted");
-				}
+				long expansionSeed = FrontierSeedSchedule.derive(
+						arena.deterministicSeed(input),
+						FrontierRandomDomain.RESAMPLE,
+						Integer.toUnsignedLong(operationRecipeId),
+						FrontierStateOperation.RESOLVE_OUTER_EXPANSION.ordinal());
+				boolean fanoutResampled = appendStratifiedExpandedMappings(
+						payload, outputKey.maskStrata(), expansion, buffer, maximumProbeUnits, entryCount,
+						expansionSeed);
 				int[] exactCounts = new int[targetStrata];
 				int[] residualCounts = new int[targetStrata];
 				boolean exactInput = input.summary().guarantee() == EvidenceGuarantee.DATABASE_EXACT;
-				if (exactInput) {
+				if (exactInput && !fanoutResampled) {
 					buffer.coalesce(exactCounts);
 					return writeExactBuffer(
 							arena, input, null, outputKey, operationRecipeId,
@@ -773,10 +824,18 @@ public final class FrontierLinearTransforms {
 						outputKey, exactCounts, residualCounts);
 				try {
 					buffer.writeResidual(writer, exactCounts);
-					return internUnaryMeasure(
+					if (!fanoutResampled) {
+						return internUnaryMeasure(
+								arena, input, outputKey, operationRecipeId,
+								FrontierStateOperation.RESOLVE_OUTER_EXPANSION,
+								writer, Double.POSITIVE_INFINITY);
+					}
+					return internResampledMeasure(
 							arena, input, outputKey, operationRecipeId,
 							FrontierStateOperation.RESOLVE_OUTER_EXPANSION,
-							writer, Double.POSITIVE_INFINITY);
+							writer,
+							exactInput ? writer.pointRows() : Double.POSITIVE_INFINITY,
+							0.0d);
 				} catch (RuntimeException | Error failure) {
 					writer.close();
 					throw failure;
@@ -984,37 +1043,55 @@ public final class FrontierLinearTransforms {
 		return Double.isFinite(variance) && variance >= 0.0d ? variance : Double.POSITIVE_INFINITY;
 	}
 
-	private static boolean appendExpandedMappings(FrontierPayloadLease payload, FrontierMaskStrata outputMasks,
-			FrontierExactTupleExpansion expansion, ExactTupleBuffer buffer, int maximumEmissions) {
-		try {
-			for (int stratum = 0; stratum < payload.stratumCount(); stratum++) {
-				for (int index = 0; index < payload.exactCount(stratum); index++) {
-					appendExpandedMapping(
-							payload, outputMasks, expansion, buffer, maximumEmissions,
-							true, stratum, index, payload.exactWeight(stratum, index));
-				}
-				for (int index = 0; index < payload.residualCount(stratum); index++) {
-					appendExpandedMapping(
-							payload, outputMasks, expansion, buffer, maximumEmissions,
-							false, stratum, index, payload.residualWeight(stratum, index));
-				}
+	private static boolean appendStratifiedExpandedMappings(FrontierPayloadLease payload,
+			FrontierMaskStrata outputMasks, FrontierExactTupleExpansion expansion, ExactTupleBuffer buffer,
+			int maximumEmissions, int entryCount, long seed) {
+		boolean resampled = false;
+		int sourceOrdinal = 0;
+		for (int stratum = 0; stratum < payload.stratumCount(); stratum++) {
+			for (int index = 0; index < payload.exactCount(stratum); index++) {
+				int remainingSources = entryCount - sourceOrdinal - 1;
+				int capacity = Math.max(1, maximumEmissions - buffer.size - remainingSources);
+				resampled |= appendStratifiedExpandedMapping(
+						payload, outputMasks, expansion, buffer, capacity, true, stratum, index,
+						payload.exactWeight(stratum, index), seed, sourceOrdinal++);
 			}
-			return true;
-		} catch (OuterExpansionBudgetExceeded ignored) {
-			return false;
+			for (int index = 0; index < payload.residualCount(stratum); index++) {
+				int remainingSources = entryCount - sourceOrdinal - 1;
+				int capacity = Math.max(1, maximumEmissions - buffer.size - remainingSources);
+				resampled |= appendStratifiedExpandedMapping(
+						payload, outputMasks, expansion, buffer, capacity, false, stratum, index,
+						payload.residualWeight(stratum, index), seed, sourceOrdinal++);
+			}
 		}
+		return resampled;
 	}
 
-	private static void appendExpandedMapping(FrontierPayloadLease payload, FrontierMaskStrata outputMasks,
-			FrontierExactTupleExpansion expansion, ExactTupleBuffer buffer, int maximumEmissions,
-			boolean exact, int stratum, int index, double weight) {
+	private static boolean appendStratifiedExpandedMapping(FrontierPayloadLease payload,
+			FrontierMaskStrata outputMasks, FrontierExactTupleExpansion expansion, ExactTupleBuffer buffer,
+			int capacity, boolean exact, int stratum, int index, double weight, long seed, int sourceOrdinal) {
+		int start = buffer.size;
+		long[] emitted = { 0L };
 		expansion.expand(payload, exact, stratum, index, (targetStratum, termIds) -> {
 			validateExpandedTuple(outputMasks, targetStratum, termIds);
-			if (buffer.size == maximumEmissions) {
-				throw OuterExpansionBudgetExceeded.INSTANCE;
+			long emissionCount = emitted[0] = Math.incrementExact(emitted[0]);
+			int retained = buffer.size - start;
+			if (retained < capacity) {
+				buffer.appendTuple(targetStratum, weight, termIds);
+				return;
 			}
-			buffer.appendTuple(targetStratum, weight, termIds);
+			long selected = (long) (unitInterval(FrontierSeedSchedule.derive(
+					seed, FrontierRandomDomain.RESAMPLE, sourceOrdinal, emissionCount)) * emissionCount);
+			if (selected < capacity) {
+				buffer.replaceTuple(Math.addExact(start, Math.toIntExact(selected)), targetStratum, weight, termIds);
+			}
 		});
+		int retained = buffer.size - start;
+		if (retained == 0 || emitted[0] == retained) {
+			return false;
+		}
+		buffer.multiplyWeights(start, retained, (double) emitted[0] / retained);
+		return true;
 	}
 
 	private static EvidenceStateRef unresolvedOuterExpansion(
@@ -1321,15 +1398,16 @@ public final class FrontierLinearTransforms {
 	}
 
 	private static int[] projectedStrata(FrontierMaskStrata sourceMasks, FrontierMaskStrata targetMasks,
-			int[] sourceSlotsByOutputSlot) {
+			int[] sourceSlotsByOutputSlot, boolean allowUnrepresentedTargetMasks) {
 		int[] targetBySource = new int[sourceMasks.stratumCount()];
 		for (int sourceStratum = 0; sourceStratum < sourceMasks.stratumCount(); sourceStratum++) {
 			int target = -1;
 			for (int targetStratum = 0; targetStratum < targetMasks.stratumCount(); targetStratum++) {
 				boolean matches = true;
 				for (int outputSlot = 0; outputSlot < sourceSlotsByOutputSlot.length; outputSlot++) {
-					if (sourceMasks.isBound(sourceStratum, sourceSlotsByOutputSlot[outputSlot]) != targetMasks
-							.isBound(targetStratum, outputSlot)) {
+					int sourceSlot = sourceSlotsByOutputSlot[outputSlot];
+					boolean sourceBound = sourceSlot >= 0 && sourceMasks.isBound(sourceStratum, sourceSlot);
+					if (sourceBound != targetMasks.isBound(targetStratum, outputSlot)) {
 						matches = false;
 						break;
 					}
@@ -1344,13 +1422,15 @@ public final class FrontierLinearTransforms {
 			}
 			targetBySource[sourceStratum] = target;
 		}
-		for (int targetStratum = 0; targetStratum < targetMasks.stratumCount(); targetStratum++) {
-			boolean represented = false;
-			for (int target : targetBySource) {
-				represented |= target == targetStratum;
-			}
-			if (!represented) {
-				throw new IllegalArgumentException("output mask strata contain a mask not produced by projection");
+		if (!allowUnrepresentedTargetMasks) {
+			for (int targetStratum = 0; targetStratum < targetMasks.stratumCount(); targetStratum++) {
+				boolean represented = false;
+				for (int target : targetBySource) {
+					represented |= target == targetStratum;
+				}
+				if (!represented) {
+					throw new IllegalArgumentException("output mask strata contain a mask not produced by projection");
+				}
 			}
 		}
 		return targetBySource;
@@ -1399,9 +1479,11 @@ public final class FrontierLinearTransforms {
 			int[] sourceSlotsByOutputSlot, long[] tuple) {
 		for (int outputSlot = 0; outputSlot < sourceSlotsByOutputSlot.length; outputSlot++) {
 			int sourceSlot = sourceSlotsByOutputSlot[outputSlot];
-			tuple[outputSlot] = exact
-					? payload.exactTermId(stratum, index, sourceSlot)
-					: payload.residualTermId(stratum, index, sourceSlot);
+			tuple[outputSlot] = sourceSlot < 0
+					? 0L
+					: exact
+							? payload.exactTermId(stratum, index, sourceSlot)
+							: payload.residualTermId(stratum, index, sourceSlot);
 		}
 	}
 
@@ -2053,9 +2135,11 @@ public final class FrontierLinearTransforms {
 			int offset = Math.multiplyExact(entry, width);
 			for (int slot = 0; slot < width; slot++) {
 				int sourceSlot = sourceSlotsByOutputSlot[slot];
-				terms[offset + slot] = exact
-						? payload.exactTermId(sourceStratum, sourceIndex, sourceSlot)
-						: payload.residualTermId(sourceStratum, sourceIndex, sourceSlot);
+				terms[offset + slot] = sourceSlot < 0
+						? 0L
+						: exact
+								? payload.exactTermId(sourceStratum, sourceIndex, sourceSlot)
+								: payload.residualTermId(sourceStratum, sourceIndex, sourceSlot);
 			}
 		}
 
@@ -2064,6 +2148,23 @@ public final class FrontierLinearTransforms {
 			strata[entry] = targetStratum;
 			weights[entry] = weight;
 			System.arraycopy(tuple, 0, terms, Math.multiplyExact(entry, width), width);
+		}
+
+		private void replaceTuple(int entry, int targetStratum, double weight, long[] tuple) {
+			strata[entry] = targetStratum;
+			weights[entry] = weight;
+			System.arraycopy(tuple, 0, terms, Math.multiplyExact(entry, width), width);
+		}
+
+		private void multiplyWeights(int start, int count, double multiplier) {
+			for (int entry = start; entry < start + count; entry++) {
+				double scaled = weights[entry] * multiplier;
+				if (!Double.isFinite(scaled) || scaled <= 0.0d) {
+					throw new IllegalStateException("stratified Frontier expansion weight overflow: weight="
+							+ weights[entry] + ", multiplier=" + multiplier + ", entry=" + entry);
+				}
+				weights[entry] = scaled;
+			}
 		}
 
 		private void coalesce(int[] exactCounts) {

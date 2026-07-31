@@ -168,6 +168,17 @@ final class LmdbEstimatorRuntime {
 		return LmdbLearnedFilterEvidence.from(filters, filter);
 	}
 
+	void recordSemiAntiOutcome(Filter filter, EvaluationStatistics.SemiAntiOutcomeObservation observation) {
+		if (feedback != null) {
+			feedback.recordSemiAntiOutcome(filter, observation);
+		}
+	}
+
+	LmdbOperatorFeedbackStats.SemiAntiEstimate semiAntiFeedback(
+			Filter filter, String semanticKind, String physicalAlgorithm) {
+		return feedback == null ? null : feedback.semiAntiEstimate(filter, semanticKind, physicalAlgorithm);
+	}
+
 	Optional<BindingSetAssignment> exactStoredTermFilterAnchor(StatementPattern pattern, ValueExpr condition,
 			String bindingName) {
 		if (filters == null || pattern == null || condition == null || bindingName == null
@@ -309,12 +320,17 @@ final class LmdbEstimatorRuntime {
 
 	LmdbOperatorFeedbackStats.OperatorEstimate operatorMultiplierFeedback(TupleExpr expression, double baseRows,
 			double baseWorkRows) {
+		return operatorMultiplierFeedback(expression, baseRows, baseWorkRows, null);
+	}
+
+	LmdbOperatorFeedbackStats.OperatorEstimate operatorMultiplierFeedback(TupleExpr expression, double baseRows,
+			double baseWorkRows, String executionMode) {
 		if (feedback == null || expression == null
 				|| !(Boolean.getBoolean(OPERATOR_FEEDBACK_APPLY_PROPERTY)
 						|| feedback.shouldExposeMultiplierPlanningEvidence(expression))) {
 			return null;
 		}
-		return feedback.multiplierEstimate(expression, baseRows, baseWorkRows);
+		return feedback.multiplierEstimate(expression, baseRows, baseWorkRows, executionMode);
 	}
 
 	long operatorFeedbackRevision() {

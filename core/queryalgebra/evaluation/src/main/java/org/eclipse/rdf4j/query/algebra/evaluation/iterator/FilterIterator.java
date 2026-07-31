@@ -21,6 +21,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -39,6 +41,7 @@ import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.Slice;
@@ -67,6 +70,12 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 public class FilterIterator extends FilterIteration<BindingSet> implements IndexReportingIterator {
 	private static final String OPTIMIZER_FILTER_ALGORITHM_HINT = "optimizer.filterAlgorithmHint";
 	private static final String STREAMING_EXISTS = "streaming-exists";
+	private static final String STREAMING_CORRELATED = "streaming-correlated";
+	private static final String MEMOIZED_CORRELATED = "memoized-correlated";
+	private static final String MATERIALIZED_HASH = "materialized-hash";
+	private static final String OPTIMIZER_SEMI_ANTI_KIND = "optimizer.semiAntiKind";
+	private static final String MINUS_ASSURED_SHARED = "minus-assured-shared";
+	private static final String PLANNED_SEMI_ANTI_BREAK_EVEN_DISTINCT_KEYS = "plannedSemiAntiBreakEvenDistinctKeys";
 
 	private final QueryValueEvaluationStep condition;
 	private final EvaluationStrategy strategy;
@@ -129,27 +138,46 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 	private static QueryEvaluationStep supplyMaterializedExistsSemiJoin(Filter filter, EvaluationStrategy strategy,
 			QueryEvaluationContext context, EvaluationStatistics evaluationStatistics) {
 		String algorithmHint = filter.getStringMetricPlanned(OPTIMIZER_FILTER_ALGORITHM_HINT);
-		if (STREAMING_EXISTS.equals(algorithmHint)
-				|| !(filter.getCondition()instanceof Exists exists)
+		if (STREAMING_EXISTS.equals(algorithmHint) || STREAMING_CORRELATED.equals(algorithmHint)
 				|| filter.isVariableScopeChange()
 				|| isPartOfSubQuery(filter)) {
 			return null;
 		}
+		boolean negated = filter.getCondition()instanceof Not not && not.getArg() instanceof Exists;
+		Exists exists = filter.getCondition()instanceof Exists direct
+				? direct
+				: negated ? (Exists) ((Not) filter.getCondition()).getArg() : null;
+		if (exists == null) {
+			return null;
+		}
 		TupleExpr subQuery = exists.getSubQuery();
+		boolean explicitlyPlanned = MEMOIZED_CORRELATED.equals(algorithmHint)
+				|| MATERIALIZED_HASH.equals(algorithmHint);
+		boolean assuredSharedMinus = MINUS_ASSURED_SHARED
+				.equals(filter.getStringMetricPlanned(OPTIMIZER_SEMI_ANTI_KIND));
 		if (subQuery == null
-				|| containsVariableScopeChange(subQuery)
+				|| containsVariableScopeChange(subQuery, assuredSharedMinus)
 				|| containsSubQueryValueOperator(subQuery)
-				|| !subqueryVarReferencesAreOutputs(subQuery)) {
+				|| !explicitlyPlanned && !subqueryVarReferencesAreOutputs(subQuery)) {
 			return null;
 		}
 
-		Set<String> sharedBindingNames = new LinkedHashSet<>(filter.getArg().getBindingNames());
-		sharedBindingNames.retainAll(subQuery.getBindingNames());
+		Set<String> subqueryOutputNames = new LinkedHashSet<>(subQuery.getBindingNames());
+		Set<String> correlationCandidates = new LinkedHashSet<>(subqueryOutputNames);
+		correlationCandidates.addAll(VarNameCollector.process(subQuery));
 		// getBindingNames() includes the names of anonymous constant vars, which never occur in any
 		// produced binding set. Leaving them in the shared set makes every row miss the
 		// exact-key hash and fall into a linear scan of the materialized relation.
-		sharedBindingNames.removeAll(constantVarNames(subQuery));
+		Set<String> constantNames = constantVarNames(subQuery);
+		subqueryOutputNames.removeAll(constantNames);
+		correlationCandidates.removeAll(constantNames);
+		Set<String> sharedBindingNames = new LinkedHashSet<>(filter.getArg().getBindingNames());
+		sharedBindingNames.retainAll(subqueryOutputNames);
+		Set<String> materializationParameterNames = new LinkedHashSet<>(correlationCandidates);
+		materializationParameterNames.removeAll(sharedBindingNames);
 		String[] sharedBindingArray = sharedBindingNames.toArray(String[]::new);
+		String[] correlationKeyBindingArray = correlationCandidates.toArray(String[]::new);
+		String[] materializationParameterBindingArray = materializationParameterNames.toArray(String[]::new);
 		QueryEvaluationStep arg;
 		QueryEvaluationStep existsArg;
 		try {
@@ -160,14 +188,36 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 			return null;
 		}
 		boolean recordFilterOutcomes = shouldRecordFilterOutcomes(filter, evaluationStatistics);
+		int strategyMode = MEMOIZED_CORRELATED.equals(algorithmHint)
+				? MaterializedExistsFilterIteration.MEMOIZED
+				: MATERIALIZED_HASH.equals(algorithmHint)
+						? MaterializedExistsFilterIteration.MATERIALIZED
+						: MaterializedExistsFilterIteration.ADAPTIVE;
 		// One probe budget for the whole step: joins re-instantiate this filter once per outer row, and a
 		// per-instance budget would keep every instance probing forever instead of amortizing into
 		// materialization (see MaterializedExistsFilterIteration.PROBE_LIMIT).
 		java.util.concurrent.atomic.AtomicInteger sharedProbeBudget = new java.util.concurrent.atomic.AtomicInteger(
-				MaterializedExistsFilterIteration.PROBE_LIMIT);
+				plannedSemiAntiProbeBudget(filter));
+		ConcurrentMap<BindingSetHashKey, Boolean> sharedProbeCache = new ConcurrentHashMap<>();
 		return bindings -> new MaterializedExistsFilterIteration(filter, arg.evaluate(bindings),
-				() -> existsArg.evaluate(bindings), existsArg::evaluate, sharedBindingArray, evaluationStatistics,
-				recordFilterOutcomes, sharedProbeBudget);
+				materializationBindings -> {
+					QueryBindingSet merged = new QueryBindingSet(bindings);
+					for (var binding : materializationBindings) {
+						merged.setBinding(binding);
+					}
+					return existsArg.evaluate(merged);
+				},
+				existsArg::evaluate, sharedBindingArray, correlationKeyBindingArray,
+				materializationParameterBindingArray, evaluationStatistics, recordFilterOutcomes, sharedProbeBudget,
+				sharedProbeCache, strategyMode, negated);
+	}
+
+	private static int plannedSemiAntiProbeBudget(Filter filter) {
+		double planned = filter.getDoubleMetricPlanned(PLANNED_SEMI_ANTI_BREAK_EVEN_DISTINCT_KEYS);
+		if (!Double.isFinite(planned) || planned < 0.0d) {
+			return MaterializedExistsFilterIteration.PROBE_LIMIT;
+		}
+		return planned >= Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) Math.ceil(planned);
 	}
 
 	private static Set<String> constantVarNames(TupleExpr subQuery) {
@@ -188,9 +238,13 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 		return referencedNames.isEmpty() || subQuery.getBindingNames().containsAll(referencedNames);
 	}
 
-	private static boolean containsVariableScopeChange(TupleExpr subQuery) {
+	private static boolean containsVariableScopeChange(TupleExpr subQuery, boolean allowRootScopeBoundary) {
 		Deque<TupleExpr> queue = new ArrayDeque<>();
-		queue.add(subQuery);
+		if (allowRootScopeBoundary) {
+			queue.addAll(TupleExprs.getChildren(subQuery));
+		} else {
+			queue.add(subQuery);
+		}
 		while (!queue.isEmpty()) {
 			TupleExpr current = queue.removeFirst();
 			if (TupleExprs.isVariableScopeChange(current)) {

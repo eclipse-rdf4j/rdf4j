@@ -123,9 +123,26 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 						"<http://example.com/theme/connected/weight> ?w",
 						"Highly connected q10 should evaluate the selective low-neighbor anti-join before "
 								+ "expanding outer weight rows\n" + plan);
-				Assertions.assertTrue(renderedQuery.contains("MINUS"),
-						"Highly connected q10 should keep the self-loop exclusion as a materialized anti-join "
-								+ "when the RHS is empty instead of probing it per candidate row\n" + plan);
+				Assertions.assertTrue(renderedQuery.contains(
+						"?node <http://example.com/theme/connected/connectsTo> ?node"),
+						"Highly connected q10 must retain its self-loop exclusion whether the safe MINUS is "
+								+ "rendered as Difference or typed NOT EXISTS\n" + plan);
+				Assertions.assertTrue(renderedQuery.contains("MINUS")
+						|| renderedQuery.contains("FILTER NOT EXISTS"),
+						"Highly connected q10 must retain an anti-join form for its exclusions\n" + plan);
+				String notExistsPlan = plan.lines()
+						.filter(line -> line.contains("optimizer.semiAntiKind=not-exists"))
+						.findFirst()
+						.orElseThrow(() -> new AssertionError(
+								"Highly connected q10 should expose its NOT EXISTS as a typed anti-join\n" + plan));
+				Assertions.assertFalse(notExistsPlan.contains("optimizer.semiAntiAlgorithm=streaming-correlated"),
+						"Highly connected q10 must cost the complete multi-join RHS before choosing an anti-join "
+								+ "implementation; one correlated probe per outer row is unbounded here\n"
+								+ notExistsPlan);
+				Assertions.assertTrue(notExistsPlan.contains("optimizer.semiAntiAlgorithm=memoized-correlated")
+						|| notExistsPlan.contains("optimizer.semiAntiAlgorithm=materialized-hash"),
+						"Highly connected q10 should choose a bounded-work NOT EXISTS implementation\n"
+								+ notExistsPlan);
 			} finally {
 				shutdownAndRelease(repository, store);
 			}

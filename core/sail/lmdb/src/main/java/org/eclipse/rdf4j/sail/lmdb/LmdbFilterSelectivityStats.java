@@ -86,7 +86,8 @@ class LmdbFilterSelectivityStats
 	private static final String SIDECAR_SUFFIX = ".filters";
 	private static final String COLD_SYNOPSIS_SUFFIX = ".cold";
 	private static final int LEGACY_PERSIST_VERSION = 4;
-	private static final int PERSIST_VERSION = 5;
+	private static final int SURFACE_PERSIST_VERSION = 5;
+	private static final int PERSIST_VERSION = 6;
 	private static final int SAMPLE_RESERVOIR_SIZE = 256;
 	private static final int ZERO_HIT_SAMPLE_MIN_EVIDENCE = SAMPLE_RESERVOIR_SIZE;
 	private static final int COLD_SYNOPSIS_MIN_MATCHING_ROWS = 32;
@@ -821,7 +822,9 @@ class LmdbFilterSelectivityStats
 		int persistedVersion;
 		try (DataInputStream in = new DataInputStream(Files.newInputStream(sidecarPath))) {
 			persistedVersion = in.readInt();
-			if (persistedVersion != LEGACY_PERSIST_VERSION && persistedVersion != PERSIST_VERSION) {
+			if (persistedVersion != LEGACY_PERSIST_VERSION
+					&& persistedVersion != SURFACE_PERSIST_VERSION
+					&& persistedVersion != PERSIST_VERSION) {
 				return;
 			}
 			SketchSnapshotIdentity persistedIdentity = SketchSnapshotIdentity.readFrom(in);
@@ -860,7 +863,7 @@ class LmdbFilterSelectivityStats
 				}
 				loadedSampled.put(key, sampled);
 			}
-			if (persistedVersion >= PERSIST_VERSION) {
+			if (persistedVersion >= SURFACE_PERSIST_VERSION) {
 				int surfaceEntries = in.readInt();
 				if (surfaceEntries < 0 || surfaceEntries > MAX_BACKGROUND_SAMPLING_REQUESTS) {
 					throw new IOException("Invalid learned filter surface count: " + surfaceEntries);

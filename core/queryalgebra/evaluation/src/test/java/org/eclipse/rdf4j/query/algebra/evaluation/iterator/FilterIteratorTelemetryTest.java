@@ -16,8 +16,10 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.same;
 import static org.mockito.Mockito.when;
 
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -38,6 +40,7 @@ import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -56,6 +59,15 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 class FilterIteratorTelemetryTest {
+
+	@Test
+	void evaluationStatisticsExposesSeparateSemiAntiObservationSurface() throws Exception {
+		Class<?> observationType = Class.forName(
+				EvaluationStatistics.class.getName() + "$SemiAntiOutcomeObservation");
+		Method method = EvaluationStatistics.class.getMethod("recordSemiAntiOutcome", Filter.class, observationType);
+
+		assertThat(method.getReturnType()).isEqualTo(void.class);
+	}
 
 	@Test
 	void skipsTelemetryCountersWhenRuntimeTelemetryDisabled() throws Exception {
@@ -252,7 +264,7 @@ class FilterIteratorTelemetryTest {
 	}
 
 	@Test
-	void safeExistsFilterProbesSubqueryPerRowForSmallSharedBindingSemiJoin() throws Exception {
+	void safeExistsFilterMemoizesDuplicateKeyForSmallSharedBindingSemiJoin() throws Exception {
 		Value matched = SimpleValueFactory.getInstance().createIRI("urn:matched");
 		Value filtered = SimpleValueFactory.getInstance().createIRI("urn:filtered");
 		BindingSetAssignment left = new BindingSetAssignment();
@@ -294,13 +306,13 @@ class FilterIteratorTelemetryTest {
 		assertThat(results).hasSize(2);
 		assertThat(results).allSatisfy(row -> assertThat(row.getValue("x")).isEqualTo(matched));
 		assertThat(leftEvaluations).hasValue(1);
-		// small inputs are probed correlated per row; the subquery is never fully materialized
-		assertThat(rightEvaluations).hasValue(3);
+		// Adaptive execution remembers completed key decisions without forcing a full RHS materialization.
+		assertThat(rightEvaluations).hasValue(2);
 		assertThat(conditionEvaluations).hasValue(0);
 	}
 
 	@Test
-	void safeExistsFilterMaterializesSubqueryOnceBeyondProbeLimit() throws Exception {
+	void safeExistsFilterMemoizesDuplicateKeysWithoutMaterializing() throws Exception {
 		Value matched = SimpleValueFactory.getInstance().createIRI("urn:matched");
 		Value filtered = SimpleValueFactory.getInstance().createIRI("urn:filtered");
 		List<BindingSet> leftRows = new ArrayList<>();
@@ -334,8 +346,176 @@ class FilterIteratorTelemetryTest {
 		}
 		assertThat(results).hasSize(50);
 		assertThat(results).allSatisfy(row -> assertThat(row.getValue("x")).isEqualTo(matched));
-		// 32 correlated probes, then a single unbound materialization covers the remaining rows
-		assertThat(rightEvaluations).hasValue(33);
+		// The adaptive budget counts distinct probes, so two duplicate-heavy keys never trigger a full build.
+		assertThat(rightEvaluations).hasValue(2);
+	}
+
+	@Test
+	void adaptiveExistsUsesPlannerBreakEvenThreshold() throws Exception {
+		List<BindingSet> rows = new ArrayList<>();
+		for (int index = 0; index < 5; index++) {
+			rows.add(singleBindingSet("x", "key-" + index));
+		}
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingNames(Set.of("x"));
+		left.setBindingSets(rows);
+		BindingSetAssignment right = new BindingSetAssignment();
+		right.setBindingNames(Set.of("x"));
+		right.setBindingSets(rows);
+		Exists exists = new Exists(right);
+		Filter filter = new Filter(left, exists);
+		filter.setDoubleMetricPlanned("plannedSemiAntiBreakEvenDistinctKeys", 2.0d);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		AtomicInteger rightEvaluations = new AtomicInteger();
+		QueryEvaluationStep leftStep = ignored -> new CloseableIteratorIteration<>(left.getBindingSets().iterator());
+		QueryEvaluationStep rightStep = bindings -> {
+			rightEvaluations.incrementAndGet();
+			return new CloseableIteratorIteration<>(compatibleAssignments(right, bindings).iterator());
+		};
+		QueryValueEvaluationStep conditionStep = ignored -> BooleanLiteral.FALSE;
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		doReturn(leftStep).when(strategy).precompile(same((TupleExpr) left), eq(context));
+		doReturn(rightStep).when(strategy).precompile(same((TupleExpr) right), eq(context));
+		doReturn(conditionStep).when(strategy).precompile(eq((ValueExpr) exists), eq(context));
+
+		QueryEvaluationStep step = FilterIterator.supply(filter, strategy, context);
+
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(drain(iteration)).hasSize(5);
+		}
+		assertThat(rightEvaluations).hasValue(3);
+	}
+
+	@Test
+	void memoizedNotExistsProbesOncePerDistinctCorrelationKey() throws Exception {
+		Value matched = SimpleValueFactory.getInstance().createIRI("urn:matched");
+		Value unmatched = SimpleValueFactory.getInstance().createIRI("urn:unmatched");
+		List<BindingSet> leftRows = new ArrayList<>();
+		for (int i = 0; i < 100; i++) {
+			leftRows.add(singleBindingSet("x", i % 2 == 0 ? matched : unmatched));
+		}
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingNames(Set.of("x"));
+		left.setBindingSets(leftRows);
+		BindingSetAssignment right = assignment("x", matched);
+		Exists exists = new Exists(right);
+		Not notExists = new Not(exists);
+		Filter filter = new Filter(left, notExists);
+		filter.setStringMetricPlanned("optimizer.filterAlgorithmHint", "memoized-correlated");
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		AtomicInteger rightEvaluations = new AtomicInteger();
+		QueryEvaluationStep leftStep = ignored -> new CloseableIteratorIteration<>(left.getBindingSets().iterator());
+		QueryEvaluationStep rightStep = bindings -> {
+			rightEvaluations.incrementAndGet();
+			return new CloseableIteratorIteration<>(compatibleAssignments(right, bindings).iterator());
+		};
+		QueryValueEvaluationStep conditionStep = ignored -> BooleanLiteral.FALSE;
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		doReturn(leftStep).when(strategy).precompile(eq((TupleExpr) left), eq(context));
+		doReturn(rightStep).when(strategy).precompile(eq((TupleExpr) right), eq(context));
+		doReturn(conditionStep).when(strategy).precompile(eq((ValueExpr) notExists), eq(context));
+		when(strategy.isTrue(eq(conditionStep), any(BindingSet.class))).thenAnswer(invocation -> {
+			BindingSet bindings = invocation.getArgument(1);
+			return unmatched.equals(bindings.getValue("x"));
+		});
+
+		QueryEvaluationStep step = FilterIterator.supply(filter, strategy, context);
+
+		List<BindingSet> results;
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			results = drain(iteration);
+		}
+		assertThat(results).hasSize(50);
+		assertThat(results).allSatisfy(row -> assertThat(row.getValue("x")).isEqualTo(unmatched));
+		assertThat(rightEvaluations).hasValue(2);
+	}
+
+	@Test
+	void completedNotExistsRecordsSeparatePerKeySemiAntiOutcome() throws Exception {
+		Value matched = SimpleValueFactory.getInstance().createIRI("urn:matched");
+		Value unmatched = SimpleValueFactory.getInstance().createIRI("urn:unmatched");
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingNames(Set.of("x"));
+		left.setBindingSets(List.of(singleBindingSet("x", matched), singleBindingSet("x", unmatched),
+				singleBindingSet("x", matched), singleBindingSet("x", unmatched)));
+		BindingSetAssignment right = assignment("x", matched);
+		Exists exists = new Exists(right);
+		Not notExists = new Not(exists);
+		Filter filter = new Filter(left, notExists);
+		filter.setStringMetricPlanned("optimizer.filterAlgorithmHint", "memoized-correlated");
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		QueryEvaluationStep leftStep = ignored -> new CloseableIteratorIteration<>(left.getBindingSets().iterator());
+		QueryEvaluationStep rightStep = bindings -> new CloseableIteratorIteration<>(
+				compatibleAssignments(right, bindings).iterator());
+		QueryValueEvaluationStep conditionStep = ignored -> BooleanLiteral.FALSE;
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		doReturn(leftStep).when(strategy).precompile(eq((TupleExpr) left), eq(context));
+		doReturn(rightStep).when(strategy).precompile(eq((TupleExpr) right), eq(context));
+		doReturn(conditionStep).when(strategy).precompile(eq((ValueExpr) notExists), eq(context));
+		RecordingEvaluationStatistics statistics = new RecordingEvaluationStatistics();
+
+		QueryEvaluationStep step = FilterIterator.supply(filter, strategy, context, statistics);
+
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(drain(iteration)).hasSize(2);
+		}
+		assertThat(statistics.recordCalls).isZero();
+		assertThat(statistics.semiAntiRecordCalls).isOne();
+		EvaluationStatistics.SemiAntiOutcomeObservation observation = statistics.semiAntiObservation;
+		assertThat(observation.semanticKind()).isEqualTo("NOT_EXISTS");
+		assertThat(observation.selectedAlgorithm()).isEqualTo("memoized-correlated");
+		assertThat(observation.actualAlgorithm()).isEqualTo("memoized-correlated");
+		assertThat(observation.outerRows()).isEqualTo(4L);
+		assertThat(observation.matchedRows()).isEqualTo(2L);
+		assertThat(observation.unmatchedRows()).isEqualTo(2L);
+		assertThat(observation.distinctCorrelationKeys()).isEqualTo(2L);
+		assertThat(observation.matchedKeys()).isEqualTo(1L);
+		assertThat(observation.unmatchedKeys()).isEqualTo(1L);
+		assertThat(observation.repeatedOuterRows()).isEqualTo(2L);
+		assertThat(observation.iteratorOpens()).isEqualTo(2L);
+		assertThat(observation.exhaustedFailures()).isEqualTo(1L);
+		assertThat(observation.completed()).isTrue();
+		assertThat(filter.getLongMetricActual("actualCostSequentialRows")).isEqualTo(1L);
+		assertThat(filter.getLongMetricActual("actualCostRandomSeeks")).isEqualTo(2L);
+		assertThat(filter.getLongMetricActual("actualCostIteratorOpens")).isEqualTo(2L);
+		assertThat(filter.getLongMetricActual("actualCostExpressionEvaluations")).isEqualTo(4L);
+		assertThat(filter.getLongMetricActual("actualCostHashBuildRows")).isZero();
+		assertThat(filter.getLongMetricActual("actualCostHashProbeRows")).isEqualTo(4L);
+		assertThat(filter.getLongMetricActual("actualCostPathExpansions")).isZero();
+		assertThat(filter.getLongMetricActual("actualCostRemoteCalls")).isZero();
+		assertThat(filter.getLongMetricActual("actualCostPeakMemoryRows")).isEqualTo(2L);
+	}
+
+	@Test
+	void safeMinusRecordsItsOwnSemanticKind() throws Exception {
+		Value matched = SimpleValueFactory.getInstance().createIRI("urn:matched");
+		Value unmatched = SimpleValueFactory.getInstance().createIRI("urn:unmatched");
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingNames(Set.of("x"));
+		left.setBindingSets(List.of(singleBindingSet("x", matched), singleBindingSet("x", unmatched)));
+		BindingSetAssignment right = assignment("x", matched);
+		Not notExists = new Not(new Exists(right));
+		Filter filter = new Filter(left, notExists);
+		filter.setStringMetricPlanned("optimizer.filterAlgorithmHint", "memoized-correlated");
+		filter.setStringMetricPlanned("optimizer.semiAntiKind", "minus-assured-shared");
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		QueryEvaluationStep leftStep = ignored -> new CloseableIteratorIteration<>(left.getBindingSets().iterator());
+		QueryEvaluationStep rightStep = bindings -> new CloseableIteratorIteration<>(
+				compatibleAssignments(right, bindings).iterator());
+		QueryValueEvaluationStep conditionStep = ignored -> BooleanLiteral.FALSE;
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		doReturn(leftStep).when(strategy).precompile(eq((TupleExpr) left), eq(context));
+		doReturn(rightStep).when(strategy).precompile(eq((TupleExpr) right), eq(context));
+		doReturn(conditionStep).when(strategy).precompile(eq((ValueExpr) notExists), eq(context));
+		RecordingEvaluationStatistics statistics = new RecordingEvaluationStatistics();
+
+		QueryEvaluationStep step = FilterIterator.supply(filter, strategy, context, statistics);
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(drain(iteration)).hasSize(1);
+		}
+
+		assertThat(statistics.semiAntiRecordCalls).isOne();
+		assertThat(statistics.semiAntiObservation.semanticKind()).isEqualTo("MINUS_ASSURED_SHARED");
 	}
 
 	@Test
@@ -366,6 +546,7 @@ class FilterIteratorTelemetryTest {
 		}
 
 		assertThat(statistics.recordCalls).isZero();
+		assertThat(statistics.semiAntiRecordCalls).isZero();
 	}
 
 	@Test
@@ -499,6 +680,52 @@ class FilterIteratorTelemetryTest {
 		assertThat(rightEvaluations).hasValue(0);
 	}
 
+	@Test
+	void materializedNotExistsPartitionsOuterOnlyCorrelationValues() throws Exception {
+		Value first = SimpleValueFactory.getInstance().createIRI("urn:first");
+		Value second = SimpleValueFactory.getInstance().createIRI("urn:second");
+		Value low = SimpleValueFactory.getInstance().createLiteral(1);
+		Value high = SimpleValueFactory.getInstance().createLiteral(2);
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingNames(Set.of("x", "threshold"));
+		left.setBindingSets(List.of(
+				bindingSet("x", first, "threshold", low),
+				bindingSet("x", second, "threshold", low),
+				bindingSet("x", first, "threshold", high),
+				bindingSet("x", second, "threshold", high)));
+		BindingSetAssignment right = assignment("x", first);
+		Filter subquery = new Filter(right,
+				new Compare(Var.of("threshold"), new ValueConstant(low), CompareOp.GE));
+		Not notExists = new Not(new Exists(subquery));
+		Filter filter = new Filter(left, notExists);
+		filter.setStringMetricPlanned("optimizer.filterAlgorithmHint", "materialized-hash");
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		AtomicInteger rightEvaluations = new AtomicInteger();
+		QueryEvaluationStep leftStep = ignored -> new CloseableIteratorIteration<>(left.getBindingSets().iterator());
+		QueryEvaluationStep rightStep = bindings -> {
+			rightEvaluations.incrementAndGet();
+			Value matched = low.equals(bindings.getValue("threshold")) ? first : second;
+			return new CloseableIteratorIteration<>(List.of(singleBindingSet("x", matched)).iterator());
+		};
+		QueryValueEvaluationStep conditionStep = ignored -> BooleanLiteral.FALSE;
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		doReturn(leftStep).when(strategy).precompile(eq((TupleExpr) left), eq(context));
+		doReturn(rightStep).when(strategy).precompile(eq((TupleExpr) subquery), eq(context));
+		doReturn(conditionStep).when(strategy).precompile(eq((ValueExpr) notExists), eq(context));
+
+		QueryEvaluationStep step = FilterIterator.supply(filter, strategy, context);
+
+		List<BindingSet> results;
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(iteration).isInstanceOf(MaterializedExistsFilterIteration.class);
+			results = drain(iteration);
+		}
+		assertThat(results).containsExactly(
+				bindingSet("x", second, "threshold", low),
+				bindingSet("x", first, "threshold", high));
+		assertThat(rightEvaluations).hasValue(2);
+	}
+
 	private static BindingSet singleBindingSet(String name, String value) {
 		return singleBindingSet(name, SimpleValueFactory.getInstance().createLiteral(value));
 	}
@@ -506,6 +733,13 @@ class FilterIteratorTelemetryTest {
 	private static BindingSet singleBindingSet(String name, Value value) {
 		MapBindingSet bindingSet = new MapBindingSet();
 		bindingSet.addBinding(name, value);
+		return bindingSet;
+	}
+
+	private static BindingSet bindingSet(String firstName, Value firstValue, String secondName, Value secondValue) {
+		MapBindingSet bindingSet = new MapBindingSet();
+		bindingSet.addBinding(firstName, firstValue);
+		bindingSet.addBinding(secondName, secondValue);
 		return bindingSet;
 	}
 
@@ -526,10 +760,18 @@ class FilterIteratorTelemetryTest {
 
 	private static final class RecordingEvaluationStatistics extends EvaluationStatistics {
 		private long recordCalls;
+		private long semiAntiRecordCalls;
+		private SemiAntiOutcomeObservation semiAntiObservation;
 
 		@Override
 		public void recordFilterOutcome(Filter filter, long passedCount, long filteredCount) {
 			recordCalls++;
+		}
+
+		@Override
+		public void recordSemiAntiOutcome(Filter filter, SemiAntiOutcomeObservation observation) {
+			semiAntiRecordCalls++;
+			semiAntiObservation = observation;
 		}
 	}
 }

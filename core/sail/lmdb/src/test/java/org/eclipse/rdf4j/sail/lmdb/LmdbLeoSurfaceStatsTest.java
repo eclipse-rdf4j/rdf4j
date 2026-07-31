@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -96,17 +97,37 @@ class LmdbLeoSurfaceStatsTest {
 
 	@Test
 	void storePersistsAndResetsOnRevisionMismatch(@TempDir Path tempDir) throws Exception {
-		LmdbLeoFeedbackStore store = new LmdbLeoFeedbackStore(tempDir.resolve("leo-surfaces.bin"),
+		Path path = tempDir.resolve("leo-surfaces.bin");
+		LmdbLeoFeedbackStore store = new LmdbLeoFeedbackStore(path,
 				LmdbLeoFeedbackConfig.defaultConfig());
 		LmdbLeoSurfaceStats stats = new LmdbLeoSurfaceStats(LmdbLeoFeedbackConfig.defaultConfig());
 		stats.recordFanout(3L, LmdbLeoSurfaceStats.BoundPosition.SUBJECT, 70L, 12L, 1L);
 		store.persist("revision-a", stats);
+
+		byte[] bytes = Files.readAllBytes(path);
+		assertEquals(5, persistedVersion(bytes), "new LEO evidence must use the version-five format");
 
 		LmdbLeoSurfaceStats loaded = store.load("revision-a");
 		assertTrue(loaded.estimateFanout(3L, LmdbLeoSurfaceStats.BoundPosition.SUBJECT, 70L).isPresent());
 
 		LmdbLeoSurfaceStats reset = store.load("revision-b");
 		assertFalse(reset.estimateFanout(3L, LmdbLeoSurfaceStats.BoundPosition.SUBJECT, 70L).isPresent());
+	}
+
+	@Test
+	void storeReadsVersionFourAsLegacyFallback(@TempDir Path tempDir) throws Exception {
+		Path path = tempDir.resolve("leo-surfaces.bin");
+		LmdbLeoFeedbackStore store = new LmdbLeoFeedbackStore(path, LmdbLeoFeedbackConfig.defaultConfig());
+		LmdbLeoSurfaceStats stats = new LmdbLeoSurfaceStats(LmdbLeoFeedbackConfig.defaultConfig());
+		stats.recordFanout(3L, LmdbLeoSurfaceStats.BoundPosition.SUBJECT, 70L, 12L, 1L);
+		store.persist("revision-a", stats);
+
+		byte[] bytes = Files.readAllBytes(path);
+		ByteBuffer.wrap(bytes).putInt(versionOffset(bytes), 4);
+		Files.write(path, bytes);
+
+		LmdbLeoSurfaceStats loaded = store.load("revision-a");
+		assertTrue(loaded.estimateFanout(3L, LmdbLeoSurfaceStats.BoundPosition.SUBJECT, 70L).isPresent());
 	}
 
 	@Test
@@ -139,5 +160,13 @@ class LmdbLeoSurfaceStatsTest {
 		Files.createDirectories(estimatorPath);
 		Files.writeString(estimatorPath.resolve("metadata.bin"), "metadata");
 		return estimatorPath;
+	}
+
+	private static int persistedVersion(byte[] bytes) {
+		return ByteBuffer.wrap(bytes).getInt(versionOffset(bytes));
+	}
+
+	private static int versionOffset(byte[] bytes) {
+		return Integer.BYTES + ByteBuffer.wrap(bytes).getInt();
 	}
 }

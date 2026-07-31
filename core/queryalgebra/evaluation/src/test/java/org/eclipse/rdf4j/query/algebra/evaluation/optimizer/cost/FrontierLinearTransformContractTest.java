@@ -231,7 +231,7 @@ class FrontierLinearTransformContractTest {
 	}
 
 	@Test
-	void outerExpansionFanoutStopsAtRefinementBudget() {
+	void exactOuterExpansionStratifiesFanoutWithinRefinementBudget() {
 		FrontierLayout inputLayout = FrontierLayout.of("x");
 		FrontierMaskStrata inputMasks = FrontierMaskStrata.of(inputLayout, 1, new long[] { 1L });
 		FrontierLayout outputLayout = FrontierLayout.of("x", "y");
@@ -242,11 +242,12 @@ class FrontierLinearTransformContractTest {
 		try (FrontierStateArena arena = new FrontierStateArena(256 * 1024L)) {
 			arena.declareCanonicalStates(inputKey, outputKey);
 			FrontierPayloadWriter inputWriter = arena.newPayloadWriter(
-					inputKey, new int[] { 1 }, new int[] { 0 });
+					inputKey, new int[] { 2 }, new int[] { 0 });
 			inputWriter.putExact(0, 0, 1.0d, new long[] { 11L }, 0);
+			inputWriter.putExact(0, 1, 1.0d, new long[] { 12L }, 0);
 			EvidenceStateRef input = arena.internPayload(
 					inputKey,
-					EvidenceStateSummary.exact(1.0d),
+					EvidenceStateSummary.exact(2.0d),
 					FrontierStateOperation.EXACT_LEAF,
 					null,
 					null,
@@ -262,16 +263,31 @@ class FrontierLinearTransformContractTest {
 					(payload, exact, stratum, index, emitter) -> {
 						for (int value = 0; value < 100; value++) {
 							emissionAttempts[0]++;
-							emitter.emit(0, new long[] { 11L, 100L + value });
+							long x = payload.exactTermId(stratum, index, 0);
+							emitter.emit(0, new long[] { x, 100L + value });
 						}
 					},
 					4);
 
-			assertEquals(EvidenceGuarantee.UNRESOLVED, output.summary().guarantee());
-			assertEquals("frontier outer expansion output budget exhausted",
-					output.summary().degradationReason());
-			assertTrue(emissionAttempts[0] <= 5,
-					() -> "Expansion continued after the first over-budget emission: " + emissionAttempts[0]);
+			assertEquals(EvidenceGuarantee.MEASURE_UNBIASED, output.summary().guarantee());
+			assertEquals(200.0d, output.summary().pointRows(), 1e-12);
+			assertEquals(200.0d, output.summary().certifiedUpperBound(), 1e-12);
+			assertEquals(200, emissionAttempts[0], "Exact probes must finish counting their bounded output measure");
+			try (FrontierPayloadLease payload = arena.openPayload(output)) {
+				assertEquals(0, payload.exactCount(0));
+				assertEquals(4, payload.residualCount(0));
+				boolean retainedFirstOuter = false;
+				boolean retainedSecondOuter = false;
+				double retainedMass = 0.0d;
+				for (int index = 0; index < payload.residualCount(0); index++) {
+					retainedFirstOuter |= payload.residualTermId(0, index, 0) == 11L;
+					retainedSecondOuter |= payload.residualTermId(0, index, 0) == 12L;
+					retainedMass += payload.residualWeight(0, index);
+				}
+				assertTrue(retainedFirstOuter, "Stratification must retain the first exact outer mapping");
+				assertTrue(retainedSecondOuter, "Stratification must retain the second exact outer mapping");
+				assertEquals(200.0d, retainedMass, 1e-12);
+			}
 			assertEquals(0L, arena.temporaryReservedBytes());
 		}
 	}

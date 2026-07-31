@@ -1044,7 +1044,7 @@ public final class FrontierStateArena implements AutoCloseable {
 		int parentCount = firstParent == null ? 0 : secondParent == null ? 1 : 2;
 		boolean valid = switch (operation) {
 		case EXACT_LEAF, COORDINATED_STAR, SUMMARY_ONLY -> parentCount == 0;
-		case BRIDGE_TRANSFER, BRIDGE_MUTATION, PROBE_FACTOR, RESOLVE_OUTER_KERNEL, RESOLVE_OUTER_EXPANSION, PROJECT, RESTRICT, CALIBRATE -> parentCount == 1;
+		case BRIDGE_TRANSFER, BRIDGE_MUTATION, PROBE_FACTOR, RESOLVE_OUTER_KERNEL, RESOLVE_OUTER_EXPANSION, PROJECT, ALIGN, RESTRICT, CALIBRATE -> parentCount == 1;
 		case JOIN, CARTESIAN, AVERAGE_DESIGN_LANES, UNION -> parentCount == 2;
 		case UNRESOLVED -> true;
 		};
