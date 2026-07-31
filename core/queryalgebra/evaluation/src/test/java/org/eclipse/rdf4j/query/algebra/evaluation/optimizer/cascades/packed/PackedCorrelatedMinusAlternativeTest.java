@@ -160,6 +160,34 @@ class PackedCorrelatedMinusAlternativeTest {
 	}
 
 	@Test
+	void exposesSafeMinusIdentityBeforeProviderRefinement() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		Difference source = new Difference(assuredEntities(values), safeFilteredProbe(values, "entity"));
+		boolean[] proofIdentityObserved = new boolean[1];
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return query.isStatementPattern(relationId) ? 10.0d : Double.NaN;
+			}
+
+			@Override
+			public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (query.isFilter(relationId)
+						&& "minus-assured-shared"
+								.equals(output.plannedStringMetrics().get("optimizer.semiAntiKind"))) {
+					proofIdentityObserved[0] = true;
+				}
+			}
+		};
+
+		PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), costs);
+
+		assertTrue(proofIdentityObserved[0],
+				"The cost provider must see safe-MINUS identity without a public rule-mask API");
+	}
+
+	@Test
 	void typedAntiJoinDoesNotDoubleChargeRegisteredDependentRecipe() {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		Difference source = new Difference(assuredEntities(values), safeFilteredProbe(values, "entity"));

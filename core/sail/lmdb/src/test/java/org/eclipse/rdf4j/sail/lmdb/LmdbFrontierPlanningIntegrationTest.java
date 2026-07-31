@@ -70,7 +70,7 @@ class LmdbFrontierPlanningIntegrationTest {
 
 	@Test
 	void packedPlanCacheVersionTracksPhysicalCostCutover() {
-		assertEquals(20L, LmdbPackedCostModel.VERSION);
+		assertEquals(21L, LmdbPackedCostModel.VERSION);
 	}
 
 	@Test
@@ -3482,12 +3482,14 @@ class LmdbFrontierPlanningIntegrationTest {
 		repository.init();
 		try {
 			IRI q = repository.getValueFactory().createIRI("urn:frontier:leo-minus-q");
+			IRI link = repository.getValueFactory().createIRI("urn:frontier:leo-minus-link");
 			try (var connection = repository.getConnection()) {
 				var values = connection.getValueFactory();
 				for (int index = 0; index < 128; index++) {
 					var subject = values.createIRI("urn:frontier:leo-minus-subject-" + index);
 					connection.add(subject, PREDICATE,
 							values.createIRI("urn:frontier:leo-minus-p-" + index));
+					connection.add(subject, link, subject);
 					if ((index & 1) == 0) {
 						connection.add(subject, q,
 								values.createIRI("urn:frontier:leo-minus-q-" + index));
@@ -3496,9 +3498,10 @@ class LmdbFrontierPlanningIntegrationTest {
 			}
 			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
 			String query = """
-					SELECT ?subject ?object
+					SELECT ?root ?object
 					WHERE {
-					  ?subject <urn:frontier:p> ?object .
+					  ?root <urn:frontier:p> ?object .
+					  OPTIONAL { ?root <urn:frontier:leo-minus-link> ?subject }
 					  MINUS { ?subject <urn:frontier:leo-minus-q> ?value }
 					}
 					""";
@@ -3586,6 +3589,68 @@ class LmdbFrontierPlanningIntegrationTest {
 				assertEquals(2.0d, antiJoin.getDoubleMetricPlanned("plannedCorrelationDistinctKeys"),
 						explanation::toString);
 				assertEquals(50, QueryResults.asList(connection.prepareTupleQuery(query).evaluate()).size());
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void socialMediaCliqueNotExistsUsesBoundProbeSurface(@TempDir Path dataDirectory) {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
+				.setFrontierSynopsisBudgetBytes(SYNOPSIS_BUDGET_BYTES);
+		LmdbStore store = new LmdbStore(dataDirectory.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			try (var connection = repository.getConnection()) {
+				var values = connection.getValueFactory();
+				for (int index = 0; index < 512; index++) {
+					connection.add(
+							values.createIRI("urn:frontier:social:source-" + index),
+							PREDICATE,
+							values.createIRI("urn:frontier:social:target-" + index));
+				}
+			}
+			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+			String query = """
+					SELECT ?u
+					WHERE {
+					  VALUES ?u {
+					    <urn:frontier:social:user-7>
+					    <urn:frontier:social:user-8>
+					    <urn:frontier:social:user-9>
+					    <urn:frontier:social:user-10>
+					    <urn:frontier:social:user-11>
+					  }
+					  FILTER NOT EXISTS { ?u <urn:frontier:p> ?u }
+					}
+					""";
+
+			try (var connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.Executed);
+				Filter antiJoin = findSemiAntiFilter((TupleExpr) explanation.tupleExpr());
+				assertNotNull(antiJoin, explanation::toString);
+				assertEquals("streaming-correlated",
+						antiJoin.getStringMetricPlanned("optimizer.semiAntiAlgorithm"), explanation::toString);
+				assertEquals("streaming-correlated",
+						antiJoin.getStringMetricActual("actualSemiAntiAlgorithm"), explanation::toString);
+				assertEquals(5.0d, antiJoin.getDoubleMetricPlanned("plannedCorrelationDistinctKeys"),
+						explanation::toString);
+				assertEquals(1.0d, antiJoin.getDoubleMetricPlanned("plannedSemiAntiProbeWorkRows"),
+						explanation::toString);
+				assertEquals("spoc", antiJoin.getStringMetricPlanned("plannedSemiAntiProbeIndexName"),
+						explanation::toString);
+				assertEquals("directLookup",
+						antiJoin.getStringMetricPlanned("plannedSemiAntiProbeAccessMode"), explanation::toString);
+				assertEquals("posc", antiJoin.getStringMetricPlanned("plannedSemiAntiMaterializationIndexName"),
+						explanation::toString);
+				assertEquals("prefixScan",
+						antiJoin.getStringMetricPlanned("plannedSemiAntiMaterializationAccessMode"),
+						explanation::toString);
+				assertEquals(5, QueryResults.asList(connection.prepareTupleQuery(query).evaluate()).size());
 			}
 		} finally {
 			repository.shutDown();

@@ -48,7 +48,7 @@ import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 /** LMDB storage-cardinality adapter for the packed ID-based cost boundary. */
 final class LmdbPackedCostModel implements PackedCostModel {
 
-	static final long VERSION = 20L;
+	static final long VERSION = 21L;
 
 	private static final String[] DISTINCT_REQUIREMENT_METRICS = {
 			TelemetryMetricNames.PLANNED_DISTINCT_REQUIREMENT_VARS,
@@ -618,18 +618,133 @@ final class LmdbPackedCostModel implements PackedCostModel {
 		if (expression == null || correlationNames == null || correlationNames.length == 0) {
 			return Optional.empty();
 		}
-		Set<String> boundNames = new LinkedHashSet<>(correlationNames.length);
-		for (String correlationName : correlationNames) {
-			if (correlationName != null && !correlationName.isBlank()) {
-				boundNames.add(correlationName);
-			}
+		return estimateCorrelatedFactor(expression, correlationNames, Double.NaN);
+	}
+
+	Optional<JoinFactorCostModel.FactorCostEstimate> estimateCorrelatedFactor(
+			TupleExpr expression, String[] correlationNames, double unboundOutputRows) {
+		if (expression == null || correlationNames == null || correlationNames.length == 0) {
+			return Optional.empty();
 		}
+		Set<String> boundNames = bindingNames(correlationNames);
 		if (boundNames.isEmpty()) {
 			return Optional.empty();
 		}
+		return estimateFactor(expression, correlationNames)
+				.map(estimate -> correlatedStatementPatternEstimate(
+						expression, boundNames, unboundOutputRows, estimate));
+	}
+
+	Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactor(
+			TupleExpr expression, String[] boundBindingNames) {
+		if (expression == null) {
+			return Optional.empty();
+		}
+		Set<String> boundNames = bindingNames(boundBindingNames);
 		return runtime.factorCost(expression,
 				JoinFactorCostModel.CostContext.forOptimization(
 						boundNames, 1.0d, Double.NaN, true, true, Map.of(), List.of()));
+	}
+
+	private static Set<String> bindingNames(String[] names) {
+		Set<String> result = new LinkedHashSet<>(names == null ? 0 : names.length);
+		if (names != null) {
+			for (String name : names) {
+				if (name != null && !name.isBlank()) {
+					result.add(name);
+				}
+			}
+		}
+		return result;
+	}
+
+	private static JoinFactorCostModel.FactorCostEstimate correlatedStatementPatternEstimate(
+			TupleExpr expression, Set<String> boundNames, double unboundOutputRows,
+			JoinFactorCostModel.FactorCostEstimate base) {
+		if (!(expression instanceof StatementPattern pattern) || !base.hasPhysicalAccessPath()
+				|| !correlationBindsPattern(pattern, boundNames)) {
+			return base;
+		}
+		double globalRows = finiteNonNegative(unboundOutputRows)
+				? unboundOutputRows
+				: finiteNonNegative(base.getOutputRows()) ? base.getOutputRows() : Double.MAX_VALUE;
+		double rowsPerInvocation = globalRows;
+		if (fullyBoundDataPattern(pattern, boundNames)) {
+			rowsPerInvocation = Math.min(1.0d, globalRows);
+		} else {
+			BagEstimate bag = base.getBagEstimate().orElse(null);
+			if (bag != null) {
+				for (String name : boundNames) {
+					double distinctRows = bag.variable(name).distinctRows();
+					if (finitePositive(distinctRows)) {
+						rowsPerInvocation = Math.min(rowsPerInvocation, globalRows / distinctRows);
+					}
+				}
+			}
+		}
+		rowsPerInvocation = finiteNonNegative(rowsPerInvocation) ? rowsPerInvocation : globalRows;
+		double accessRows = Math.max(1.0d, rowsPerInvocation);
+		Double baseAccessWork = base.getDoubleMetrics().get(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS);
+		if (baseAccessWork != null && finiteNonNegative(baseAccessWork)) {
+			accessRows = Math.min(accessRows, Math.max(1.0d, baseAccessWork));
+		}
+		boolean directLookup = base.getMissingLookupComponentMask() == 0
+				&& fullyBoundDataPattern(pattern, boundNames)
+				&& accessRows <= 1.0d;
+		Map<String, String> strings = new LinkedHashMap<>(base.getStringMetrics());
+		strings.put(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE,
+				directLookup ? "directLookup"
+						: strings.getOrDefault(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE, "prefixScan"));
+		Map<String, Double> metrics = new LinkedHashMap<>(base.getDoubleMetrics());
+		metrics.put("plannedRowsPerInvocation", rowsPerInvocation);
+		metrics.put("plannedRepeatedInvocations", 1.0d);
+		metrics.put("plannedSeeks", 1.0d);
+		metrics.put(TelemetryMetricNames.PLANNED_ACCESS_ROWS, accessRows);
+		metrics.put(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, accessRows);
+		metrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, rowsPerInvocation);
+		metrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, accessRows);
+		metrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, rowsPerInvocation);
+		metrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, accessRows);
+		return new JoinFactorCostModel.FactorCostEstimate(
+				accessRows,
+				rowsPerInvocation,
+				strings,
+				metrics,
+				true,
+				directLookup,
+				base.getLookupComponentMask(),
+				base.getMissingLookupComponentMask(),
+				accessRows,
+				false,
+				false);
+	}
+
+	private static boolean correlationBindsPattern(StatementPattern pattern, Set<String> boundNames) {
+		return correlated(pattern.getSubjectVar(), boundNames)
+				|| correlated(pattern.getPredicateVar(), boundNames)
+				|| correlated(pattern.getObjectVar(), boundNames)
+				|| correlated(pattern.getContextVar(), boundNames);
+	}
+
+	private static boolean fullyBoundDataPattern(StatementPattern pattern, Set<String> boundNames) {
+		return bound(pattern.getSubjectVar(), boundNames)
+				&& bound(pattern.getPredicateVar(), boundNames)
+				&& bound(pattern.getObjectVar(), boundNames)
+				&& (pattern.getContextVar() == null || bound(pattern.getContextVar(), boundNames));
+	}
+
+	private static boolean correlated(Var variable, Set<String> boundNames) {
+		return variable != null && !variable.hasValue()
+				&& variable.getName() != null && boundNames.contains(variable.getName());
+	}
+
+	private static boolean bound(Var variable, Set<String> boundNames) {
+		return variable != null && (variable.hasValue()
+				|| variable.getName() != null && boundNames.contains(variable.getName()));
+	}
+
+	private static boolean finitePositive(double value) {
+		return Double.isFinite(value) && value > 0.0d;
 	}
 
 	private static int metricInt(JoinFactorCostModel.FactorCostEstimate estimate, String name) {

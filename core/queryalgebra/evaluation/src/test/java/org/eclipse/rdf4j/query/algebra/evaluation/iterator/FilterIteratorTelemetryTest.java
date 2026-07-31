@@ -726,6 +726,38 @@ class FilterIteratorTelemetryTest {
 		assertThat(rightEvaluations).hasValue(2);
 	}
 
+	@Test
+	void emptyMaterializationReportsUnderlyingSourceWork() throws Exception {
+		Value unmatched = SimpleValueFactory.getInstance().createIRI("urn:unmatched");
+		BindingSetAssignment left = assignment("x", unmatched);
+		StatementPattern right = new StatementPattern(Var.of("x"), Var.of("p"), Var.of("x"));
+		Not notExists = new Not(new Exists(right));
+		Filter filter = new Filter(left, notExists);
+		filter.setStringMetricPlanned("optimizer.filterAlgorithmHint", "materialized-hash");
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		QueryEvaluationStep leftStep = ignored -> new CloseableIteratorIteration<>(left.getBindingSets().iterator());
+		QueryEvaluationStep rightStep = ignored -> {
+			right.setSourceRowsScannedActual(37L);
+			return new CloseableIteratorIteration<>(List.<BindingSet>of().iterator());
+		};
+		QueryValueEvaluationStep conditionStep = ignored -> BooleanLiteral.FALSE;
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		doReturn(leftStep).when(strategy).precompile(eq((TupleExpr) left), eq(context));
+		doReturn(rightStep).when(strategy).precompile(eq((TupleExpr) right), eq(context));
+		doReturn(conditionStep).when(strategy).precompile(eq((ValueExpr) notExists), eq(context));
+		RecordingEvaluationStatistics statistics = new RecordingEvaluationStatistics();
+
+		QueryEvaluationStep step = FilterIterator.supply(filter, strategy, context, statistics);
+
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(drain(iteration)).containsExactly(singleBindingSet("x", unmatched));
+		}
+		assertThat(statistics.semiAntiObservation.rhsRowsExamined()).isZero();
+		assertThat(statistics.semiAntiObservation.hashBuildRows()).isZero();
+		assertThat(filter.getLongMetricActual("actualSemiAntiSourceRowsScanned")).isEqualTo(37L);
+		assertThat(filter.getLongMetricActual("actualCostSequentialRows")).isEqualTo(37L);
+	}
+
 	private static BindingSet singleBindingSet(String name, String value) {
 		return singleBindingSet(name, SimpleValueFactory.getInstance().createLiteral(value));
 	}

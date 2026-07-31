@@ -205,19 +205,27 @@ final class LmdbEstimatorRuntime {
 			return Optional.empty();
 		}
 		OptimizationScope scope = optimizationScope.get();
-		if (scope == null) {
-			return finiteJoinSurfaceEstimator.estimateAlternative(expression);
+		return scope == null
+				? finiteJoinSurfaceEstimator.estimateAlternative(expression)
+				: scope.finiteSurfaces.estimateAlternative(expression, rootContext(expression));
+	}
+
+	Optional<LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate> exactCorrelatedSurface(
+			FiniteRelationEstimate relation, TupleExpr accessKernel) {
+		return finiteJoinSurfaceEstimator.estimate(relation, accessKernel);
+	}
+
+	Optional<LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate> exactCorrelatedSurface(
+			Object frontierStateKey, FiniteRelationEstimate correlatedRelation, TupleExpr accessKernel,
+			EstimationTier tier) {
+		if (correlatedRelation == null || accessKernel == null) {
+			return Optional.empty();
 		}
-		EstimateContext context = rootContext(expression);
-		ExactAlternativeSurfaceCacheKey cacheKey = ExactAlternativeSurfaceCacheKey.of(expression, context);
-		Optional<LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate> cached = scope.alternativeSurfaces.get(cacheKey);
-		if (cached != null) {
-			return cached;
-		}
-		Optional<LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate> estimate = finiteJoinSurfaceEstimator
-				.estimateAlternative(expression, scope.finiteSurfaceScanBudget);
-		scope.alternativeSurfaces.put(cacheKey, estimate);
-		return estimate;
+		OptimizationScope scope = optimizationScope.get();
+		return scope == null
+				? finiteJoinSurfaceEstimator.estimate(correlatedRelation, accessKernel)
+				: scope.finiteSurfaces.estimateCorrelated(
+						frontierStateKey, correlatedRelation, accessKernel, tier);
 	}
 
 	Optional<FactorCostEstimate> factorCost(TupleExpr expression, CostContext costContext) {
@@ -256,7 +264,7 @@ final class LmdbEstimatorRuntime {
 				? finiteJoinSurfaceEstimator.estimate(cost.getPrefixFactors(), expression,
 						cost.getFiniteBindingValues())
 				: finiteJoinSurfaceEstimator.estimate(cost.getPrefixFactors(), expression,
-						cost.getFiniteBindingValues(), scope.finiteSurfaceScanBudget);
+						cost.getFiniteBindingValues(), scope.finiteSurfaces.scanBudget());
 		if (surface.isEmpty()) {
 			return Optional.empty();
 		}
@@ -348,20 +356,12 @@ final class LmdbEstimatorRuntime {
 	QueryOptimizationScope beginScope() {
 		OptimizationScope scope = optimizationScope.get();
 		if (scope == null) {
-			scope = new OptimizationScope();
+			scope = new OptimizationScope(finiteJoinSurfaceEstimator);
 			optimizationScope.set(scope);
 		}
 		scope.depth++;
 		OptimizationScope active = scope;
 		return () -> closeScope(active);
-	}
-
-	Object factorFingerprint(TupleExpr expression) {
-		if (expression == null) {
-			return "null";
-		}
-		return new EstimatorFingerprint(expression.getClass().getName(), expression.toString(),
-				Set.copyOf(expression.getBindingNames()));
 	}
 
 	boolean hasPlannerCache() {
@@ -689,12 +689,12 @@ final class LmdbEstimatorRuntime {
 		private final PlanTemplateCache<Object> planTemplates = new PlanTemplateCache<>(256);
 		private final Map<ScopedFactorCostCacheKey, Optional<FactorCostEstimate>> factorCosts = new HashMap<>();
 		private final Map<PrefixEstimateCacheKey, BagEstimate> prefixEstimates = new HashMap<>();
-		private final Map<ExactAlternativeSurfaceCacheKey, Optional<LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate>> alternativeSurfaces = new HashMap<>();
-		private final LmdbFiniteJoinSurfaceEstimator.ScanBudget finiteSurfaceScanBudget = LmdbFiniteJoinSurfaceEstimator
-				.newScanBudget();
+		private final LmdbFiniteSurfaceCache finiteSurfaces;
 		private int depth;
+
+		private OptimizationScope(LmdbFiniteJoinSurfaceEstimator finiteJoinSurfaceEstimator) {
+			finiteSurfaces = new LmdbFiniteSurfaceCache(finiteJoinSurfaceEstimator);
+		}
 	}
 
-	private record EstimatorFingerprint(String nodeType, String rendering, Set<String> bindingNames) {
-	}
 }

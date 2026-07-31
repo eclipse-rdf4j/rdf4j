@@ -68,6 +68,14 @@ final class FactorCostCacheKey {
 				factor == null ? "" : factor.toString());
 	}
 
+	static Object estimatorFingerprint(TupleExpr expression) {
+		if (expression == null) {
+			return "null";
+		}
+		return new EstimatorFingerprint(expression.getClass().getName(), expression.toString(),
+				Set.copyOf(expression.getBindingNames()));
+	}
+
 	private static Object valueExprFingerprint(Object valueExpr) {
 		return valueExpr == null ? null
 				: FallbackFactorFingerprint.of(valueExpr.getClass().getName(),
@@ -108,6 +116,9 @@ final class FactorCostCacheKey {
 
 	private static int hashStep(int seed, boolean value) {
 		return 31 * seed + (value ? 1 : 0);
+	}
+
+	private record EstimatorFingerprint(String nodeType, String rendering, Set<String> bindingNames) {
 	}
 
 	private record StatementPatternFactorFingerprint(int hash, StatementPattern.Scope scope, VarFingerprint subject,

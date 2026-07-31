@@ -92,7 +92,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private static final String SIDECAR_SUFFIX = ".operators";
 	private static final String LEO_SURFACE_SUFFIX = ".leo";
 	private static final int LEGACY_PERSIST_VERSION = 12;
-	private static final int PERSIST_VERSION = 13;
+	private static final int SEMI_ANTI_PERSIST_VERSION = 13;
+	private static final int PERSIST_VERSION = 14;
 	private static final int MAX_ENTRIES = 2048;
 	private static final double MIN_CORRECTION_RATIO = 0.0001d;
 	private static final double MAX_CORRECTION_RATIO = 100_000.0d;
@@ -330,7 +331,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		if (key == null) {
 			return;
 		}
-		semiAntiBySurface.computeIfAbsent(key, ignored -> new SemiAntiCounts()).add(observation);
+		long rhsSourceRowsScanned = filter.getLongMetricActual("actualSemiAntiSourceRowsScanned");
+		semiAntiBySurface.computeIfAbsent(key, ignored -> new SemiAntiCounts())
+				.add(observation, rhsSourceRowsScanned);
 		nextFeedbackEpoch();
 		evictOldestIfNeeded(semiAntiBySurface);
 		dirty = true;
@@ -1016,7 +1019,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		int loadedSteeringBadMisses = 0;
 		try (DataInputStream in = new DataInputStream(Files.newInputStream(sidecarPath))) {
 			int version = in.readInt();
-			if (version != LEGACY_PERSIST_VERSION && version != PERSIST_VERSION) {
+			if (version != LEGACY_PERSIST_VERSION
+					&& version != SEMI_ANTI_PERSIST_VERSION
+					&& version != PERSIST_VERSION) {
 				return;
 			}
 			SketchSnapshotIdentity persistedIdentity = SketchSnapshotIdentity.readFrom(in);
@@ -1048,8 +1053,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			if (version >= 11) {
 				readPlanCandidateEntries(in, loadedPlanCandidates);
 			}
-			if (version >= PERSIST_VERSION) {
-				readSemiAntiEntries(in, loadedSemiAnti);
+			if (version >= SEMI_ANTI_PERSIST_VERSION) {
+				readSemiAntiEntries(in, loadedSemiAnti, version);
 			}
 		} catch (IOException | RuntimeException e) {
 			return;
@@ -1761,7 +1766,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		}
 	}
 
-	private static void readSemiAntiEntries(DataInputStream in, Map<SemiAntiSurfaceKey, SemiAntiCounts> target)
+	private static void readSemiAntiEntries(DataInputStream in, Map<SemiAntiSurfaceKey, SemiAntiCounts> target,
+			int version)
 			throws IOException {
 		int entries = in.readInt();
 		if (entries < 0 || entries > MAX_ENTRIES * 4) {
@@ -1769,7 +1775,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		}
 		for (int i = 0; i < entries; i++) {
 			SemiAntiSurfaceKey key = SemiAntiSurfaceKey.readFrom(in);
-			SemiAntiCounts counts = SemiAntiCounts.readFrom(in);
+			SemiAntiCounts counts = SemiAntiCounts.readFrom(in, version);
 			if (counts.observationCount > 0L) {
 				target.put(key, counts);
 			}
@@ -2282,7 +2288,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	record SemiAntiEstimate(long observationCount, long outerRows, long matchedRows, long unmatchedRows,
 			long distinctKeys, long matchedKeys, long unmatchedKeys, long repeatedOuterRows, long rhsRowsExamined,
 			long exhaustedFailures, long iteratorOpens, long hashBuildRows, long hashProbeRows, long cacheLookups,
-			long strategyChanges) {
+			long strategyChanges, long physicalObservationCount, long rhsSourceRowsScanned) {
 	}
 
 	private record OperatorObservation(double plannedRows, double plannedWorkRows, double actualRows, double leftRows,
@@ -2306,8 +2312,10 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		private long hashProbeRows;
 		private long cacheLookups;
 		private long strategyChanges;
+		private long physicalObservationCount;
+		private long rhsSourceRowsScanned;
 
-		private void add(SemiAntiOutcomeObservation observation) {
+		private void add(SemiAntiOutcomeObservation observation, long sourceRowsScanned) {
 			observationCount = saturatingAdd(observationCount, 1L);
 			outerRows = saturatingAdd(outerRows, observation.outerRows());
 			matchedRows = saturatingAdd(matchedRows, observation.matchedRows());
@@ -2324,6 +2332,10 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			cacheLookups = saturatingAdd(cacheLookups, observation.cacheLookups());
 			if (!observation.strategyChangeReason().isBlank()) {
 				strategyChanges = saturatingAdd(strategyChanges, 1L);
+			}
+			if (sourceRowsScanned >= 0L) {
+				physicalObservationCount = saturatingAdd(physicalObservationCount, 1L);
+				rhsSourceRowsScanned = saturatingAdd(rhsSourceRowsScanned, sourceRowsScanned);
 			}
 		}
 
@@ -2343,7 +2355,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 					hashBuildRows,
 					hashProbeRows,
 					cacheLookups,
-					strategyChanges);
+					strategyChanges,
+					physicalObservationCount,
+					rhsSourceRowsScanned);
 		}
 
 		private void writeTo(DataOutputStream out) throws IOException {
@@ -2362,9 +2376,11 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			out.writeLong(hashProbeRows);
 			out.writeLong(cacheLookups);
 			out.writeLong(strategyChanges);
+			out.writeLong(physicalObservationCount);
+			out.writeLong(rhsSourceRowsScanned);
 		}
 
-		private static SemiAntiCounts readFrom(DataInputStream in) throws IOException {
+		private static SemiAntiCounts readFrom(DataInputStream in, int version) throws IOException {
 			SemiAntiCounts counts = new SemiAntiCounts();
 			counts.observationCount = nonNegative(in.readLong());
 			counts.outerRows = nonNegative(in.readLong());
@@ -2381,6 +2397,10 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			counts.hashProbeRows = nonNegative(in.readLong());
 			counts.cacheLookups = nonNegative(in.readLong());
 			counts.strategyChanges = nonNegative(in.readLong());
+			if (version >= PERSIST_VERSION) {
+				counts.physicalObservationCount = nonNegative(in.readLong());
+				counts.rhsSourceRowsScanned = nonNegative(in.readLong());
+			}
 			return counts;
 		}
 

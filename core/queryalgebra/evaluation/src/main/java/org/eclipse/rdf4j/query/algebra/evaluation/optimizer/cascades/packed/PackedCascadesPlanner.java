@@ -126,8 +126,9 @@ public final class PackedCascadesPlanner {
 			return compute(query, workLimit, deadlineNanos, exploreReorderings, null, encodeNanos, cacheNanos,
 					queryTemplateCacheHit);
 		}
-		try (PackedCostSession costSession = Objects.requireNonNull(
-				costModel.openSession(new PackedQueryView(query)), "packed cost session")) {
+		PackedCostSession openedSession = Objects.requireNonNull(
+				costModel.openSession(new PackedQueryView(query)), "packed cost session");
+		try (PackedCostSession costSession = new ProofAwarePackedCostSession(query, openedSession)) {
 			return compute(query, workLimit, deadlineNanos, exploreReorderings, costSession, encodeNanos, cacheNanos,
 					queryTemplateCacheHit);
 		}

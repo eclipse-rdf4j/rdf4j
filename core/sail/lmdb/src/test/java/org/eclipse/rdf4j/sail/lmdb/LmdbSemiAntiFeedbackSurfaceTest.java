@@ -15,6 +15,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import java.io.File;
+import java.nio.ByteBuffer;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Arrays;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -95,6 +99,75 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 	}
 
 	@Test
+	void emptyMaterializationPersistsUnderlyingSourceWork(@TempDir File dataDir) {
+		LmdbStore writer = initializedStore(dataDir);
+		try {
+			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) writer.getBackingStore()
+					.getEvaluationStatistics();
+			Filter completed = filter();
+			completed.setRuntimeTelemetryEnabled(true);
+			completed.setLongMetricActual("actualSemiAntiSourceRowsScanned", 143_700L);
+			statistics.recordSemiAntiOutcome(completed, emptyMaterializationObservation());
+		} finally {
+			writer.shutDown();
+		}
+
+		LmdbStore reader = initializedStore(dataDir);
+		try {
+			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) reader.getBackingStore()
+					.getEvaluationStatistics();
+			LmdbOperatorFeedbackStats.SemiAntiEstimate estimate = statistics.estimatorRuntime()
+					.semiAntiFeedback(filter(), "NOT_EXISTS", "materialized-hash");
+			assertNotNull(estimate);
+			assertEquals(0L, estimate.rhsRowsExamined());
+			assertEquals(1L, longAccessor(estimate, "physicalObservationCount"));
+			assertEquals(143_700L, longAccessor(estimate, "rhsSourceRowsScanned"));
+		} finally {
+			reader.shutDown();
+		}
+	}
+
+	@Test
+	void versionThirteenRetainsLogicalButNotIncompletePhysicalFeedback(@TempDir File dataDir) throws Exception {
+		LmdbStore writer = initializedStore(dataDir);
+		try {
+			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) writer.getBackingStore()
+					.getEvaluationStatistics();
+			Filter completed = filter();
+			completed.setRuntimeTelemetryEnabled(true);
+			completed.setLongMetricActual("actualSemiAntiSourceRowsScanned", 143_700L);
+			statistics.recordSemiAntiOutcome(completed, emptyMaterializationObservation());
+		} finally {
+			writer.shutDown();
+		}
+
+		Path sidecar;
+		try (var files = Files.walk(dataDir.toPath())) {
+			sidecar = files.filter(path -> path.getFileName().toString().endsWith(".operators"))
+					.findFirst()
+					.orElseThrow();
+		}
+		byte[] versionFourteen = Files.readAllBytes(sidecar);
+		assertEquals(14, ByteBuffer.wrap(versionFourteen).getInt());
+		ByteBuffer.wrap(versionFourteen).putInt(13);
+		Files.write(sidecar, Arrays.copyOf(versionFourteen, versionFourteen.length - 2 * Long.BYTES));
+
+		LmdbStore reader = initializedStore(dataDir);
+		try {
+			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) reader.getBackingStore()
+					.getEvaluationStatistics();
+			LmdbOperatorFeedbackStats.SemiAntiEstimate estimate = statistics.estimatorRuntime()
+					.semiAntiFeedback(filter(), "NOT_EXISTS", "materialized-hash");
+			assertNotNull(estimate);
+			assertEquals(1L, estimate.observationCount());
+			assertEquals(0L, longAccessor(estimate, "physicalObservationCount"));
+			assertEquals(0L, longAccessor(estimate, "rhsSourceRowsScanned"));
+		} finally {
+			reader.shutDown();
+		}
+	}
+
+	@Test
 	void plannerConsumesPerAlgorithmSemiAntiCounters(@TempDir File dataDir) {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
 		SailRepository repository = new SailRepository(store);
@@ -114,8 +187,11 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 			}
 			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
 					.getEvaluationStatistics();
+			Filter trained = filter();
+			trained.setRuntimeTelemetryEnabled(true);
+			trained.setLongMetricActual("actualSemiAntiSourceRowsScanned", 1L);
 			for (int index = 0; index < 3; index++) {
-				statistics.recordSemiAntiOutcome(filter(), lowCostStreamingObservation());
+				statistics.recordSemiAntiOutcome(trained, lowCostStreamingObservation());
 			}
 
 			try (var connection = repository.getConnection()) {
@@ -182,6 +258,39 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 				true,
 				"",
 				"");
+	}
+
+	private static EvaluationStatistics.SemiAntiOutcomeObservation emptyMaterializationObservation() {
+		return new EvaluationStatistics.SemiAntiOutcomeObservation(
+				"NOT_EXISTS",
+				"materialized-hash",
+				"materialized-hash",
+				5L,
+				0L,
+				5L,
+				5L,
+				0L,
+				5L,
+				0L,
+				0L,
+				1L,
+				1L,
+				0L,
+				5L,
+				0L,
+				true,
+				"",
+				"");
+	}
+
+	private static long longAccessor(Object target, String methodName) {
+		try {
+			var method = target.getClass().getDeclaredMethod(methodName);
+			method.setAccessible(true);
+			return ((Number) method.invoke(target)).longValue();
+		} catch (ReflectiveOperationException failure) {
+			throw new AssertionError("Missing semi/anti physical feedback accessor " + methodName, failure);
+		}
 	}
 
 	private static LmdbStore initializedStore(File dataDir) {

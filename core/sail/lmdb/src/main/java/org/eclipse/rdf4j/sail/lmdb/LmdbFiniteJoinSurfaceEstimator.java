@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -30,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -101,6 +103,24 @@ final class LmdbFiniteJoinSurfaceEstimator {
 	Optional<SurfaceEstimate> estimate(List<TupleExpr> prefixFactors, TupleExpr factor,
 			Map<String, Set<Value>> finiteBindingValues) {
 		return estimate(prefixFactors, factor, finiteBindingValues, newScanBudget());
+	}
+
+	Optional<SurfaceEstimate> estimate(FiniteRelationEstimate correlatedRelation, TupleExpr accessKernel) {
+		return estimate(correlatedRelation, accessKernel, newScanBudget());
+	}
+
+	Optional<SurfaceEstimate> estimate(FiniteRelationEstimate correlatedRelation, TupleExpr accessKernel,
+			ScanBudget scanBudget) {
+		if (correlatedRelation == null || !(accessKernel instanceof StatementPattern)
+				|| !Double.isFinite(correlatedRelation.rows())
+				|| correlatedRelation.rows() < 0.0d
+				|| correlatedRelation.rows() > MAX_ROWS) {
+			return Optional.empty();
+		}
+		BindingSetAssignment assignment = correlatedAssignment(correlatedRelation);
+		return assignment == null
+				? Optional.empty()
+				: estimate(List.of(assignment), accessKernel, Map.of(), scanBudget);
 	}
 
 	Optional<SurfaceEstimate> estimate(List<TupleExpr> prefixFactors, TupleExpr factor,
@@ -397,6 +417,31 @@ final class LmdbFiniteJoinSurfaceEstimator {
 			finiteRows.add(row);
 		}
 		return finiteRows;
+	}
+
+	private static BindingSetAssignment correlatedAssignment(FiniteRelationEstimate relation) {
+		String[] variables = relation.variables().toArray(String[]::new);
+		List<BindingSet> rows = new ArrayList<>((int) relation.rows());
+		for (Map.Entry<List<Value>, Double> entry : relation.frequencies().entrySet()) {
+			double frequency = entry.getValue();
+			if (frequency != Math.rint(frequency) || frequency > MAX_ROWS - rows.size()) {
+				return null;
+			}
+			for (int occurrence = 0; occurrence < (int) frequency; occurrence++) {
+				ArrayBindingSet bindings = new ArrayBindingSet(variables);
+				for (int slot = 0; slot < variables.length; slot++) {
+					Value value = entry.getKey().get(slot);
+					if (value != null) {
+						bindings.setBinding(variables[slot], value);
+					}
+				}
+				rows.add(bindings);
+			}
+		}
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(new HashSet<>(relation.variables()));
+		assignment.setBindingSets(rows);
+		return assignment;
 	}
 
 	private Expansion expand(Txn txn, List<long[]> input, VarSlots slots, StatementPattern pattern,

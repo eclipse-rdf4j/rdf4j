@@ -138,8 +138,7 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 	private static QueryEvaluationStep supplyMaterializedExistsSemiJoin(Filter filter, EvaluationStrategy strategy,
 			QueryEvaluationContext context, EvaluationStatistics evaluationStatistics) {
 		String algorithmHint = filter.getStringMetricPlanned(OPTIMIZER_FILTER_ALGORITHM_HINT);
-		if (STREAMING_EXISTS.equals(algorithmHint) || STREAMING_CORRELATED.equals(algorithmHint)
-				|| filter.isVariableScopeChange()
+		if (STREAMING_EXISTS.equals(algorithmHint) || filter.isVariableScopeChange()
 				|| isPartOfSubQuery(filter)) {
 			return null;
 		}
@@ -151,7 +150,8 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 			return null;
 		}
 		TupleExpr subQuery = exists.getSubQuery();
-		boolean explicitlyPlanned = MEMOIZED_CORRELATED.equals(algorithmHint)
+		boolean explicitlyPlanned = STREAMING_CORRELATED.equals(algorithmHint)
+				|| MEMOIZED_CORRELATED.equals(algorithmHint)
 				|| MATERIALIZED_HASH.equals(algorithmHint);
 		boolean assuredSharedMinus = MINUS_ASSURED_SHARED
 				.equals(filter.getStringMetricPlanned(OPTIMIZER_SEMI_ANTI_KIND));
@@ -188,11 +188,13 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 			return null;
 		}
 		boolean recordFilterOutcomes = shouldRecordFilterOutcomes(filter, evaluationStatistics);
-		int strategyMode = MEMOIZED_CORRELATED.equals(algorithmHint)
-				? MaterializedExistsFilterIteration.MEMOIZED
-				: MATERIALIZED_HASH.equals(algorithmHint)
-						? MaterializedExistsFilterIteration.MATERIALIZED
-						: MaterializedExistsFilterIteration.ADAPTIVE;
+		int strategyMode = STREAMING_CORRELATED.equals(algorithmHint)
+				? MaterializedExistsFilterIteration.STREAMING
+				: MEMOIZED_CORRELATED.equals(algorithmHint)
+						? MaterializedExistsFilterIteration.MEMOIZED
+						: MATERIALIZED_HASH.equals(algorithmHint)
+								? MaterializedExistsFilterIteration.MATERIALIZED
+								: MaterializedExistsFilterIteration.ADAPTIVE;
 		// One probe budget for the whole step: joins re-instantiate this filter once per outer row, and a
 		// per-instance budget would keep every instance probing forever instead of amortizing into
 		// materialization (see MaterializedExistsFilterIteration.PROBE_LIMIT).
@@ -208,8 +210,8 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 					return existsArg.evaluate(merged);
 				},
 				existsArg::evaluate, sharedBindingArray, correlationKeyBindingArray,
-				materializationParameterBindingArray, evaluationStatistics, recordFilterOutcomes, sharedProbeBudget,
-				sharedProbeCache, strategyMode, negated);
+				materializationParameterBindingArray, subQuery, evaluationStatistics, recordFilterOutcomes,
+				sharedProbeBudget, sharedProbeCache, strategyMode, negated);
 	}
 
 	private static int plannedSemiAntiProbeBudget(Filter filter) {

@@ -27,14 +27,17 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
 final class MaterializedExistsFilterIteration extends LookAheadIteration<BindingSet> implements IndexReportingIterator {
 
 	static final int ADAPTIVE = 0;
 	static final int MEMOIZED = 1;
 	static final int MATERIALIZED = 2;
+	static final int STREAMING = 3;
 
 	// Materializing the EXISTS relation costs a full evaluation of the subquery regardless of how
 	// few outer rows arrive. Probe correlated per-row while the outer side is still small, and only
@@ -52,6 +55,8 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 	private final String[] sharedBindingNames;
 	private final String[] correlationKeyBindingNames;
 	private final String[] materializationParameterBindingNames;
+	private final TupleExpr rhsExpression;
+	private final SourceScanObservation rhsSourceRowsBaseline;
 	private final EvaluationStatistics evaluationStatistics;
 	private final boolean recordFilterOutcomes;
 	private final java.util.concurrent.atomic.AtomicInteger sharedProbeBudget;
@@ -75,6 +80,7 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 	private long hashProbeRows;
 	private long cacheLookups;
 	private long peakMaterializedRows;
+	private long rhsSourceRowsScannedActual = -1L;
 	private String strategyChangeReason = "";
 	private boolean inputExhausted;
 
@@ -82,7 +88,7 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 			Function<BindingSet, CloseableIteration<BindingSet>> existsMaterializationFunction,
 			Function<BindingSet, CloseableIteration<BindingSet>> existsProbeFunction, String[] sharedBindingNames,
 			String[] correlationKeyBindingNames, String[] materializationParameterBindingNames,
-			EvaluationStatistics evaluationStatistics, boolean recordFilterOutcomes,
+			TupleExpr rhsExpression, EvaluationStatistics evaluationStatistics, boolean recordFilterOutcomes,
 			java.util.concurrent.atomic.AtomicInteger sharedProbeBudget,
 			ConcurrentMap<BindingSetHashKey, Boolean> sharedProbeCache, int strategyMode, boolean negated) {
 		this.filterNode = filterNode;
@@ -92,6 +98,8 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 		this.sharedBindingNames = sharedBindingNames;
 		this.correlationKeyBindingNames = correlationKeyBindingNames;
 		this.materializationParameterBindingNames = materializationParameterBindingNames;
+		this.rhsExpression = rhsExpression;
+		this.rhsSourceRowsBaseline = sourceRowsScanned(rhsExpression);
 		this.evaluationStatistics = evaluationStatistics;
 		this.recordFilterOutcomes = recordFilterOutcomes;
 		this.sharedProbeBudget = sharedProbeBudget;
@@ -106,7 +114,9 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 			BindingSet left = leftIter.next();
 			sourceRowsScannedActual++;
 			boolean exists;
-			if (strategyMode == MATERIALIZED) {
+			if (strategyMode == STREAMING) {
+				exists = probe(left);
+			} else if (strategyMode == MATERIALIZED) {
 				MaterializedPartition partition = materializedPartition(left);
 				hashProbeRows++;
 				exists = matches(partition, left);
@@ -314,6 +324,8 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 		try {
 			leftIter.close();
 		} finally {
+			rhsSourceRowsScannedActual = sourceRowsScannedDelta(
+					rhsSourceRowsBaseline, sourceRowsScanned(rhsExpression));
 			if (recordFilterOutcomes && inputExhausted && sourceRowsScannedActual > 0L) {
 				try {
 					String selectedAlgorithm = selectedAlgorithm();
@@ -325,6 +337,10 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 					filterNode.setLongMetricActual("actualSemiAntiDistinctCorrelationKeys", distinctKeys);
 					filterNode.setLongMetricActual("actualSemiAntiIteratorOpens", iteratorOpens);
 					filterNode.setLongMetricActual("actualSemiAntiRowsExamined", rhsRowsExamined);
+					if (rhsSourceRowsScannedActual >= 0L) {
+						filterNode.setLongMetricActual("actualSemiAntiSourceRowsScanned",
+								rhsSourceRowsScannedActual);
+					}
 					filterNode.setLongMetricActual("actualSemiAntiHashBuildRows", hashBuildRows);
 					filterNode.setLongMetricActual("actualSemiAntiHashProbeRows", hashProbeRows);
 					publishActualPhysicalCost();
@@ -375,7 +391,8 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 		long randomSeeks = Math.max(0L, iteratorOpens - materializationOpens);
 		long physicalHashProbes = saturatedAdd(hashProbeRows, cacheLookups);
 		long peakMemoryRows = Math.max(peakMaterializedRows, sharedProbeCache.size());
-		filterNode.setLongMetricActual("actualCostSequentialRows", rhsRowsExamined);
+		filterNode.setLongMetricActual("actualCostSequentialRows",
+				rhsSourceRowsScannedActual >= 0L ? rhsSourceRowsScannedActual : rhsRowsExamined);
 		filterNode.setLongMetricActual("actualCostRandomSeeks", randomSeeks);
 		filterNode.setLongMetricActual("actualCostIteratorOpens", iteratorOpens);
 		filterNode.setLongMetricActual("actualCostExpressionEvaluations", sourceRowsScannedActual);
@@ -392,6 +409,7 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 
 	private String selectedAlgorithm() {
 		return switch (strategyMode) {
+		case STREAMING -> "streaming-correlated";
 		case MEMOIZED -> "memoized-correlated";
 		case MATERIALIZED -> "materialized-hash";
 		default -> "adaptive";
@@ -402,7 +420,36 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 		if (initialized || strategyMode == MATERIALIZED) {
 			return "materialized-hash";
 		}
-		return strategyMode == MEMOIZED ? "memoized-correlated" : "memoized-correlated";
+		return strategyMode == STREAMING ? "streaming-correlated" : "memoized-correlated";
+	}
+
+	private static SourceScanObservation sourceRowsScanned(TupleExpr expression) {
+		if (expression == null) {
+			return SourceScanObservation.UNREPORTED;
+		}
+		long childRows = 0L;
+		boolean childReported = false;
+		for (TupleExpr child : TupleExprs.getChildren(expression)) {
+			SourceScanObservation childObservation = sourceRowsScanned(child);
+			if (childObservation.reported()) {
+				childReported = true;
+				childRows = saturatedAdd(childRows, childObservation.rows());
+			}
+		}
+		if (childReported) {
+			return new SourceScanObservation(true, childRows);
+		}
+		long ownRows = expression.getSourceRowsScannedActual();
+		return ownRows >= 0L
+				? new SourceScanObservation(true, ownRows)
+				: SourceScanObservation.UNREPORTED;
+	}
+
+	private static long sourceRowsScannedDelta(SourceScanObservation baseline, SourceScanObservation completed) {
+		if (!completed.reported()) {
+			return -1L;
+		}
+		return baseline.reported() ? Math.max(0L, completed.rows() - baseline.rows()) : completed.rows();
 	}
 
 	@Override
@@ -427,5 +474,9 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 
 	private record MaterializedPartition(boolean existsNonEmpty, Set<BindingSetHashKey> exactKeys,
 			List<BindingSet> allRows, List<BindingSet> wildcardRows) {
+	}
+
+	private record SourceScanObservation(boolean reported, long rows) {
+		private static final SourceScanObservation UNREPORTED = new SourceScanObservation(false, 0L);
 	}
 }

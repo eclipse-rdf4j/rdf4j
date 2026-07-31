@@ -102,3 +102,52 @@ final class ScalarPackedCostSession implements PackedCostSession {
 		model.refineOperator(query, relationId, context, output);
 	}
 }
+
+/**
+ * Carries proof-derived logical identity into provider costing without exposing packed rule masks through the public
+ * provider API.
+ */
+final class ProofAwarePackedCostSession implements PackedCostSession {
+
+	private final PackedQuery query;
+	private final PackedCostSession delegate;
+
+	ProofAwarePackedCostSession(PackedQuery query, PackedCostSession delegate) {
+		this.query = Objects.requireNonNull(query, "query");
+		this.delegate = Objects.requireNonNull(delegate, "delegate");
+	}
+
+	@Override
+	public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+		delegate.estimateLeaf(relationId, context, output);
+	}
+
+	@Override
+	public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+		delegate.appendFactor(relationId, context, output);
+	}
+
+	@Override
+	public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+		if (query.relOperator(relationId) == PackedRelOp.FILTER
+				&& (query.relRuleMask(relationId) & PackedRuleProofs.MINUS_CORRELATED_NOT_EXISTS) != 0L) {
+			output.putPlannedStringMetric("optimizer.semiAntiKind", "minus-assured-shared");
+		}
+		delegate.refineOperator(relationId, context, output);
+	}
+
+	@Override
+	public void refineIntermediateJoin(PackedCostContext context, PackedCostEstimate output) {
+		delegate.refineIntermediateJoin(context, output);
+	}
+
+	@Override
+	public double objectiveScore(PackedCostEstimate estimate) {
+		return delegate.objectiveScore(estimate);
+	}
+
+	@Override
+	public void close() {
+		delegate.close();
+	}
+}

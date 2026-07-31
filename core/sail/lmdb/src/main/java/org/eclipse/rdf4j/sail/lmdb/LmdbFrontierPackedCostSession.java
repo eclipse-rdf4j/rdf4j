@@ -15,11 +15,16 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.OptionalLong;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -88,6 +93,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateKe
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateOperation;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierTupleEmitter;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
@@ -133,6 +139,8 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	private static final long MINIMUM_LEO_EVIDENCE_COUNT = 3L;
 	private static final long MINIMUM_SEMI_ANTI_EVIDENCE_COUNT = 3L;
 	private static final double MINIMUM_LEO_CORRECTION_CONFIDENCE = 0.55d;
+	private static final double SEMI_ANTI_EXACT_REFINEMENT_RATIO = 1.10d;
+	private static final int MAX_EXACT_CORRELATION_ROWS = 16_384;
 
 	private final PackedCostSession scalar;
 	private final LmdbPackedCostModel lmdbCostModel;
@@ -154,7 +162,8 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	private final Map<Integer, EvidenceStateRef> alternateReplayStates = new HashMap<>();
 	private final HashSet<Integer> alternateReplayFailures = new HashSet<>();
 	private final Map<Integer, CalibrationStages> calibrationStagesByStateId = new HashMap<>();
-	private final Map<CorrelationProfileKey, FrontierCorrelationProfile> correlationProfiles = new HashMap<>();
+	private final Map<CorrelationProfileKey, FrontierSemiAntiProfile> correlationProfiles = new HashMap<>();
+	private final Map<CorrelationDomainKey, FrontierCorrelationDomain> correlationDomains = new HashMap<>();
 	private final ArrayList<Exists> dependentExistsScratch = new ArrayList<>();
 	private String availabilityStatus;
 	private String fallbackReason;
@@ -1303,38 +1312,145 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			return;
 		}
 		boolean typed = query.isSemiJoin(relationId) || query.isAntiJoin(relationId);
-		int semanticKind = typed
-				? query.semiAntiKind(relationId)
-				: existsCondition.negated()
-						? PackedQueryView.SEMI_ANTI_NOT_EXISTS
-						: PackedQueryView.SEMI_ANTI_EXISTS;
+		SemiAntiPlanIdentity planIdentity = semiAntiPlanIdentity(relationId, existsCondition, output);
+		int semanticKind = planIdentity.semanticKind();
 		int rhsRelationId = typed ? query.semiAntiRightRelationId(relationId) : relationId;
-		String[] correlationNames = typed
-				? semiAntiCorrelationNames(relationId)
-				: sharedCorrelationNames(arena.key(input).frontier(), existsCondition.exists().getSubQuery());
+		TupleExpr rhs = typed
+				? query.materializeRelation(rhsRelationId)
+				: existsCondition.exists().getSubQuery();
+		SemiAntiBindingDomains bindingDomains = semiAntiBindingDomains(
+				arena.key(input).frontier().variables(), rhs);
 		double rhsRows = typed
 				? estimatedRelationRows(rhsRelationId)
-				: estimatedTupleRows(existsCondition.exists().getSubQuery());
-		FrontierCorrelationProfile profile = correlationProfile(
-				input, rawOutput, correlationNames, rhsRelationId, semanticKind, rhsRows);
+				: estimatedTupleRows(rhs);
+		FrontierSemiAntiProfile profile = correlationProfile(
+				input, rawOutput, bindingDomains, rhsRelationId, semanticKind);
 		annotateCorrelationProfile(output, profile);
 
-		int algorithm = typed ? query.semiAntiAlgorithm(relationId) : PackedQueryView.SEMI_ANTI_STREAMING;
-		applyFrontierSemiAntiPhysicalCost(filter, semanticKind, algorithm, rhsRows, profile, output);
+		applyFrontierSemiAntiPhysicalCost(
+				filter, semanticKind, planIdentity.algorithm(), rhs, rhsRows, profile, output);
 	}
 
 	private void applyFrontierSemiAntiPhysicalCost(Filter feedbackFilter, int semanticKind, int algorithm,
-			double rhsRows, FrontierCorrelationProfile profile, PackedCostEstimate output) {
+			TupleExpr rhs, double rhsRows, FrontierSemiAntiProfile profile, PackedCostEstimate output) {
 		double outerRows = profile.outerRows();
-		double distinctKeys = profile.planningDistinctKeys();
-		double averageFanout = Math.max(1.0d, profile.fanoutMean());
-		double memoizedRowsExamined = profile.expectedRhsRowsExamined() / averageFanout;
-		double breakEvenKeys = semiAntiBreakEvenDistinctKeys(rhsRows, memoizedRowsExamined, distinctKeys);
-		output.putPlannedDoubleMetric("plannedSemiAntiBreakEvenDistinctKeys", breakEvenKeys);
+		double distinctProbeKeys = profile.probeDomain().planningDistinctKeys();
+		double matchedDistinctProbeKeys = profile.planningMatchedDistinctProbeKeys();
+		double unmatchedDistinctProbeKeys = profile.planningUnmatchedDistinctProbeKeys();
+		double materializationPartitions = profile.materializationParameterDomain().planningDistinctKeys();
+		String[] probeNames = profile.probeDomain().bindingNames().toArray(String[]::new);
+		String[] materializationNames = profile.materializationParameterDomain()
+				.bindingNames()
+				.toArray(String[]::new);
+		JoinFactorCostModel.FactorCostEstimate probeFactor = candidateFactor(
+				rhs, probeNames, rhsRows)
+						.filter(JoinFactorCostModel.FactorCostEstimate::hasPhysicalAccessPath)
+						.orElse(null);
+		JoinFactorCostModel.FactorCostEstimate materializationFactor = candidateFactor(
+				rhs, materializationNames, rhsRows)
+						.filter(JoinFactorCostModel.FactorCostEstimate::hasPhysicalAccessPath)
+						.orElse(null);
+		double probeWorkRows = factorWorkRows(probeFactor, rhsRows);
+		double materializationWorkRows = factorWorkRows(materializationFactor, rhsRows);
+		double materializationOutputRows = Math.max(0.0d, rhsRows);
+		double streamingMatchedRowsExamined = saturatedMultiply(profile.matchedRows(), probeWorkRows);
+		double streamingUnmatchedRowsExamined = saturatedMultiply(profile.unmatchedRows(), probeWorkRows);
+		double streamingRowsExamined = saturatedAdd(
+				streamingMatchedRowsExamined, streamingUnmatchedRowsExamined);
+		double memoizedMatchedRowsExamined = saturatedMultiply(matchedDistinctProbeKeys, probeWorkRows);
+		double memoizedUnmatchedRowsExamined = saturatedMultiply(unmatchedDistinctProbeKeys, probeWorkRows);
+		double memoizedRowsExamined = saturatedAdd(
+				memoizedMatchedRowsExamined, memoizedUnmatchedRowsExamined);
+		double materializationAccessRows = saturatedMultiply(materializationPartitions, materializationWorkRows);
+		double materializationBuildRows = saturatedMultiply(materializationPartitions, materializationOutputRows);
+		double streamingObjective = semiAntiStreamingObjective(streamingRowsExamined, outerRows);
+		double memoizedObjective = semiAntiMemoizedObjective(
+				memoizedRowsExamined, distinctProbeKeys, outerRows);
+		double materializedObjective = semiAntiMaterializedObjective(
+				materializationAccessRows,
+				materializationPartitions,
+				materializationBuildRows,
+				outerRows);
+		ExactSemiAntiRefinement refinement = exactSemiAntiRefinement(
+				rhs,
+				profile,
+				streamingObjective,
+				memoizedObjective,
+				materializedObjective,
+				streamingRowsExamined,
+				memoizedRowsExamined,
+				materializationAccessRows,
+				materializationBuildRows);
+		if (refinement.applied()) {
+			streamingRowsExamined = refinement.streamingAccessRows();
+			memoizedRowsExamined = refinement.memoizedAccessRows();
+			materializationAccessRows = refinement.materializationAccessRows();
+			materializationBuildRows = refinement.materializationBuildRows();
+			probeWorkRows = outerRows == 0.0d ? 0.0d : streamingRowsExamined / outerRows;
+			materializationWorkRows = materializationPartitions == 0.0d
+					? 0.0d
+					: materializationAccessRows / materializationPartitions;
+			materializationOutputRows = materializationPartitions == 0.0d
+					? 0.0d
+					: materializationBuildRows / materializationPartitions;
+			streamingMatchedRowsExamined = outerRows == 0.0d
+					? 0.0d
+					: streamingRowsExamined * profile.matchedRows() / outerRows;
+			streamingUnmatchedRowsExamined = Math.max(
+					0.0d, streamingRowsExamined - streamingMatchedRowsExamined);
+			memoizedMatchedRowsExamined = distinctProbeKeys == 0.0d
+					? 0.0d
+					: memoizedRowsExamined * matchedDistinctProbeKeys / distinctProbeKeys;
+			memoizedUnmatchedRowsExamined = Math.max(
+					0.0d, memoizedRowsExamined - memoizedMatchedRowsExamined);
+			streamingObjective = semiAntiStreamingObjective(streamingRowsExamined, outerRows);
+			memoizedObjective = semiAntiMemoizedObjective(
+					memoizedRowsExamined, distinctProbeKeys, outerRows);
+			materializedObjective = semiAntiMaterializedObjective(
+					materializationAccessRows,
+					materializationPartitions,
+					materializationBuildRows,
+					outerRows);
+		}
+		int selectedAlgorithm = bestSemiAntiAlgorithm(
+				streamingObjective,
+				memoizedObjective,
+				distinctProbeKeys,
+				materializedObjective,
+				materializationBuildRows);
+		double breakEvenKeys = semiAntiBreakEvenDistinctKeys(
+				materializationAccessRows + materializationBuildRows, probeWorkRows, distinctProbeKeys);
 
-		switch (algorithm) {
+		output.putPlannedDoubleMetric("plannedCorrelationRhsRowsExamined", streamingRowsExamined);
+		output.putPlannedDoubleMetric("plannedSemiAntiProbeWorkRows", probeWorkRows);
+		output.putPlannedDoubleMetric("plannedSemiAntiProbeOutputRows", factorOutputRows(probeFactor, rhsRows));
+		output.putPlannedDoubleMetric("plannedSemiAntiStreamingMatchedProbeRows",
+				streamingMatchedRowsExamined);
+		output.putPlannedDoubleMetric("plannedSemiAntiStreamingUnmatchedProbeRows",
+				streamingUnmatchedRowsExamined);
+		output.putPlannedDoubleMetric("plannedSemiAntiMemoizedMatchedProbeKeys", matchedDistinctProbeKeys);
+		output.putPlannedDoubleMetric("plannedSemiAntiMemoizedUnmatchedProbeKeys", unmatchedDistinctProbeKeys);
+		output.putPlannedDoubleMetric("plannedSemiAntiMaterializationWorkRows", materializationAccessRows);
+		output.putPlannedDoubleMetric("plannedSemiAntiMaterializationOutputRows", materializationBuildRows);
+		output.putPlannedDoubleMetric("plannedSemiAntiMaterializationPartitions", materializationPartitions);
+		output.putPlannedDoubleMetric("plannedSemiAntiBreakEvenDistinctKeys", breakEvenKeys);
+		output.putPlannedDoubleMetric("plannedSemiAntiStreamingObjectiveCost", streamingObjective);
+		output.putPlannedDoubleMetric("plannedSemiAntiMemoizedObjectiveCost", memoizedObjective);
+		output.putPlannedDoubleMetric("plannedSemiAntiMaterializedObjectiveCost", materializedObjective);
+		output.putPlannedStringMetric("plannedSemiAntiPackedCandidateAlgorithm", semiAntiAlgorithmName(algorithm));
+		output.putPlannedStringMetric("plannedSemiAntiProbeBindingDomain",
+				String.join(",", profile.probeDomain().bindingNames()));
+		output.putPlannedStringMetric("plannedSemiAntiHashBindingDomain",
+				String.join(",", profile.sharedHashDomain().bindingNames()));
+		output.putPlannedStringMetric("plannedSemiAntiMaterializationParameterDomain",
+				String.join(",", profile.materializationParameterDomain().bindingNames()));
+		annotateCandidateAccess(output, "Probe", probeFactor);
+		annotateCandidateAccess(output, "Materialization", materializationFactor);
+		annotateExactRefinement(output, refinement);
+
+		switch (selectedAlgorithm) {
 		case PackedQueryView.SEMI_ANTI_STREAMING -> output.setLocalPhysicalCost(
-				profile.expectedRhsRowsExamined(),
+				streamingRowsExamined,
 				outerRows,
 				outerRows,
 				0.0d,
@@ -1345,30 +1461,273 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				0.0d);
 		case PackedQueryView.SEMI_ANTI_MEMOIZED -> output.setLocalPhysicalCost(
 				memoizedRowsExamined,
-				distinctKeys,
-				distinctKeys,
+				distinctProbeKeys,
+				distinctProbeKeys,
 				0.0d,
 				0.0d,
 				outerRows,
 				0.0d,
 				0.0d,
-				distinctKeys);
+				distinctProbeKeys);
 		case PackedQueryView.SEMI_ANTI_MATERIALIZED -> output.setLocalPhysicalCost(
-				rhsRows,
+				materializationAccessRows,
 				0.0d,
-				rhsRows == 0.0d ? 0.0d : 1.0d,
+				materializationAccessRows == 0.0d ? 0.0d : materializationPartitions,
 				0.0d,
-				rhsRows,
+				materializationBuildRows,
 				outerRows,
 				0.0d,
 				0.0d,
-				rhsRows);
+				materializationBuildRows);
 		default -> throw new IllegalStateException("unknown packed semi/anti algorithm " + algorithm);
 		}
-		output.putPlannedStringMetric("plannedPhysicalImplementation", semiAntiAlgorithmName(algorithm));
-		applySemiAntiPhysicalFeedback(feedbackFilter, semanticKind, algorithm, outerRows, output);
-		applySemiAntiLeoPhysicalResidual(feedbackFilter, algorithm, output);
+		String algorithmName = semiAntiAlgorithmName(selectedAlgorithm);
+		output.putPlannedStringMetric("optimizer.filterAlgorithmHint", algorithmName);
+		output.putPlannedStringMetric("optimizer.semiAntiAlgorithm", algorithmName);
+		output.putPlannedStringMetric("optimizer.semiAntiKind", semiAntiPlanSemanticName(semanticKind));
+		output.putPlannedStringMetric("plannedPhysicalImplementation",
+				semanticKind == PackedQueryView.SEMI_ANTI_MINUS_ASSURED_SHARED
+						&& selectedAlgorithm == PackedQueryView.SEMI_ANTI_MATERIALIZED
+								? "materialized-minus-compatibility"
+								: algorithmName);
+		applySemiAntiPhysicalFeedback(feedbackFilter, semanticKind, selectedAlgorithm, outerRows, output);
+		applySemiAntiLeoPhysicalResidual(feedbackFilter, selectedAlgorithm, output);
 		output.setDependentSubqueriesCosted(true);
+	}
+
+	private Optional<JoinFactorCostModel.FactorCostEstimate> candidateFactor(
+			TupleExpr rhs, String[] boundNames, double unboundOutputRows) {
+		return boundNames == null || boundNames.length == 0
+				? lmdbCostModel.estimateFactor(rhs, boundNames)
+				: lmdbCostModel.estimateCorrelatedFactor(rhs, boundNames, unboundOutputRows);
+	}
+
+	private static double factorWorkRows(JoinFactorCostModel.FactorCostEstimate factor, double fallbackRows) {
+		Double accessWorkRows = factor == null
+				? null
+				: factor.getDoubleMetrics().get(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS);
+		double rows = accessWorkRows != null && finiteNonNegative(accessWorkRows)
+				? accessWorkRows
+				: factor == null ? fallbackRows : factor.getWorkRows();
+		return finiteNonNegative(rows) ? Math.max(1.0d, rows) : Math.max(1.0d, fallbackRows);
+	}
+
+	private static double factorOutputRows(JoinFactorCostModel.FactorCostEstimate factor, double fallbackRows) {
+		double rows = factor == null ? fallbackRows : factor.getOutputRows();
+		return finiteNonNegative(rows) ? rows : Math.max(0.0d, fallbackRows);
+	}
+
+	private static void annotateCandidateAccess(PackedCostEstimate output, String candidate,
+			JoinFactorCostModel.FactorCostEstimate factor) {
+		if (factor == null) {
+			output.putPlannedStringMetric("plannedSemiAnti" + candidate + "AccessMode", "unavailable");
+			return;
+		}
+		String indexName = factor.getStringMetrics().get(TelemetryMetricNames.PLANNED_INDEX_NAME);
+		if (indexName != null) {
+			output.putPlannedStringMetric("plannedSemiAnti" + candidate + "IndexName", indexName);
+		}
+		String accessMode = factor.getStringMetrics().get(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE);
+		if (accessMode == null) {
+			accessMode = factor.isDirectLookup() ? "directLookup" : "prefixScan";
+		}
+		output.putPlannedStringMetric("plannedSemiAnti" + candidate + "AccessMode", accessMode);
+	}
+
+	private ExactSemiAntiRefinement exactSemiAntiRefinement(TupleExpr rhs, FrontierSemiAntiProfile profile,
+			double streamingObjective, double memoizedObjective, double materializedObjective,
+			double streamingAccessRows, double memoizedAccessRows, double materializationAccessRows,
+			double materializationBuildRows) {
+		double[] objectives = { streamingObjective, memoizedObjective, materializedObjective };
+		Arrays.sort(objectives);
+		boolean decisionClose = objectives[0] == 0.0d
+				? objectives[1] == 0.0d
+				: objectives[1] <= objectives[0] * SEMI_ANTI_EXACT_REFINEMENT_RATIO;
+		if (!decisionClose) {
+			return ExactSemiAntiRefinement.declined(
+					"not-needed", "decisive", streamingAccessRows, memoizedAccessRows,
+					materializationAccessRows, materializationBuildRows);
+		}
+		if (profile.guarantee() != EvidenceGuarantee.DATABASE_EXACT
+				|| profile.probeDomain().guarantee() != EvidenceGuarantee.DATABASE_EXACT) {
+			return ExactSemiAntiRefinement.declined(
+					"declined", "inexact-domain", streamingAccessRows, memoizedAccessRows,
+					materializationAccessRows, materializationBuildRows);
+		}
+		if (!(rhs instanceof StatementPattern)) {
+			return ExactSemiAntiRefinement.declined(
+					"declined", "unsupported-access-kernel", streamingAccessRows, memoizedAccessRows,
+					materializationAccessRows, materializationBuildRows);
+		}
+		ExactRelationResult probeRelation = exactCorrelationRelation(profile.probeDomain());
+		if (probeRelation.relation() == null) {
+			return ExactSemiAntiRefinement.declined(
+					"declined", probeRelation.declineReason(), streamingAccessRows, memoizedAccessRows,
+					materializationAccessRows, materializationBuildRows);
+		}
+		FiniteRelationEstimate distinctProbeRelation = distinctRelation(probeRelation.relation());
+		CorrelationSurfaceCacheIdentity probeIdentity = new CorrelationSurfaceCacheIdentity(
+				profile.probeDomain().stateId(),
+				String.join("\u0000", profile.probeDomain().bindingNames()),
+				"probe");
+		var streamingSurface = runtime.exactCorrelatedSurface(
+				probeIdentity,
+				probeRelation.relation(),
+				rhs,
+				JoinFactorCostModel.EstimationTier.DECISION_EXACT);
+		var memoizedSurface = runtime.exactCorrelatedSurface(
+				probeIdentity,
+				distinctProbeRelation,
+				rhs,
+				JoinFactorCostModel.EstimationTier.DECISION_EXACT);
+		if (streamingSurface.isEmpty() || memoizedSurface.isEmpty()) {
+			return ExactSemiAntiRefinement.declined(
+					"declined", "surface-budget-or-shape", streamingAccessRows, memoizedAccessRows,
+					materializationAccessRows, materializationBuildRows);
+		}
+
+		double exactStreamingAccessRows = exactSurfaceWork(streamingSurface.orElseThrow());
+		double exactMemoizedAccessRows = exactSurfaceWork(memoizedSurface.orElseThrow());
+		double exactMaterializationAccessRows = materializationAccessRows;
+		double exactMaterializationBuildRows = materializationBuildRows;
+		long materializationScannedRows = -1L;
+		String appliedScope = "probe";
+		ExactRelationResult parameterRelation = exactCorrelationRelation(
+				profile.materializationParameterDomain());
+		if (parameterRelation.relation() != null) {
+			FiniteRelationEstimate distinctParameters = distinctRelation(parameterRelation.relation());
+			CorrelationSurfaceCacheIdentity parameterIdentity = new CorrelationSurfaceCacheIdentity(
+					profile.materializationParameterDomain().stateId(),
+					String.join("\u0000", profile.materializationParameterDomain().bindingNames()),
+					"materialization");
+			var materializationSurface = runtime.exactCorrelatedSurface(
+					parameterIdentity,
+					distinctParameters,
+					rhs,
+					JoinFactorCostModel.EstimationTier.DECISION_EXACT);
+			if (materializationSurface.isPresent()) {
+				var surface = materializationSurface.orElseThrow();
+				exactMaterializationAccessRows = exactSurfaceWork(surface);
+				exactMaterializationBuildRows = surface.surfaceRows();
+				materializationScannedRows = surface.scannedRows();
+				appliedScope = "probe+materialization";
+			}
+		}
+		return new ExactSemiAntiRefinement(
+				true,
+				"applied",
+				appliedScope,
+				exactStreamingAccessRows,
+				exactMemoizedAccessRows,
+				exactMaterializationAccessRows,
+				exactMaterializationBuildRows,
+				streamingSurface.orElseThrow().scannedRows(),
+				memoizedSurface.orElseThrow().scannedRows(),
+				materializationScannedRows);
+	}
+
+	private ExactRelationResult exactCorrelationRelation(FrontierCorrelationDomain domain) {
+		if (domain.exactRelation() != null) {
+			return new ExactRelationResult(domain.exactRelation(), "");
+		}
+		FrontierPrimitiveCorrelationRelation primitive = domain.primitiveRelation();
+		if (primitive == null || primitive.size() > MAX_EXACT_CORRELATION_ROWS) {
+			return new ExactRelationResult(null, "row-budget");
+		}
+		double rows = 0.0d;
+		Map<List<Value>, Double> frequencies = new LinkedHashMap<>();
+		try {
+			for (int row = 0; row < primitive.size(); row++) {
+				double multiplicity = primitive.multiplicity(row);
+				if (!Double.isFinite(multiplicity) || multiplicity <= 0.0d
+						|| multiplicity != Math.rint(multiplicity)
+						|| rows + multiplicity > MAX_EXACT_CORRELATION_ROWS) {
+					return new ExactRelationResult(null, "row-budget");
+				}
+				List<Value> tuple = new ArrayList<>(primitive.width());
+				for (int column = 0; column < primitive.width(); column++) {
+					long termId = primitive.termId(row, column);
+					Value value = termId == 0L ? null : frontierValue(termId);
+					if (termId != 0L && value == null) {
+						return new ExactRelationResult(null, "unresolved-term");
+					}
+					tuple.add(value);
+				}
+				frequencies.merge(Collections.unmodifiableList(tuple), multiplicity, Double::sum);
+				rows += multiplicity;
+			}
+		} catch (IOException failure) {
+			return new ExactRelationResult(null, "value-resolution-failed");
+		}
+		return new ExactRelationResult(
+				FiniteRelationEstimate.fromFrequencies(
+						domain.bindingNames(), frequencies, "lmdb-frontier-correlation"),
+				"");
+	}
+
+	private static FiniteRelationEstimate distinctRelation(FiniteRelationEstimate relation) {
+		Map<List<Value>, Double> frequencies = new LinkedHashMap<>();
+		for (List<Value> tuple : relation.frequencies().keySet()) {
+			frequencies.put(tuple, 1.0d);
+		}
+		return FiniteRelationEstimate.fromFrequencies(
+				relation.variables(), frequencies, relation.source() + "-distinct");
+	}
+
+	private static double exactSurfaceWork(LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate surface) {
+		return Math.max(surface.prefixRows(), surface.scannedRows());
+	}
+
+	private static double semiAntiStreamingObjective(double accessRows, double outerRows) {
+		return saturatedAdd(accessRows, saturatedAdd(outerRows, outerRows));
+	}
+
+	private static double semiAntiMemoizedObjective(double accessRows, double distinctKeys, double outerRows) {
+		return saturatedAdd(
+				accessRows,
+				saturatedAdd(
+						distinctKeys,
+						saturatedAdd(distinctKeys, saturatedAdd(outerRows, distinctKeys))));
+	}
+
+	private static double semiAntiMaterializedObjective(double accessRows, double partitions,
+			double buildRows, double outerRows) {
+		return saturatedAdd(
+				accessRows,
+				saturatedAdd(partitions, saturatedAdd(buildRows, saturatedAdd(outerRows, buildRows))));
+	}
+
+	private static void annotateExactRefinement(PackedCostEstimate output, ExactSemiAntiRefinement refinement) {
+		output.putPlannedStringMetric("plannedSemiAntiExactRefinementStatus", refinement.status());
+		output.putPlannedStringMetric("plannedSemiAntiExactRefinement",
+				refinement.status() + ":" + refinement.detail());
+		if (!refinement.applied()) {
+			output.putPlannedStringMetric("plannedSemiAntiExactRefinementDeclineReason", refinement.detail());
+			return;
+		}
+		output.putPlannedDoubleMetric("plannedSemiAntiExactStreamingScannedRows",
+				refinement.streamingScannedRows());
+		output.putPlannedDoubleMetric("plannedSemiAntiExactMemoizedScannedRows",
+				refinement.memoizedScannedRows());
+		if (refinement.materializationScannedRows() >= 0L) {
+			output.putPlannedDoubleMetric("plannedSemiAntiExactMaterializationScannedRows",
+					refinement.materializationScannedRows());
+		}
+	}
+
+	private static int bestSemiAntiAlgorithm(double streamingObjective, double memoizedObjective,
+			double memoizedPeakRows, double materializedObjective, double materializedPeakRows) {
+		long maximumMaterializedRows = MinusQueryEvaluationStep.maxMaterializedRightRows();
+		double bestObjective = streamingObjective;
+		int bestAlgorithm = PackedQueryView.SEMI_ANTI_STREAMING;
+		if (memoizedPeakRows <= maximumMaterializedRows && memoizedObjective < bestObjective) {
+			bestObjective = memoizedObjective;
+			bestAlgorithm = PackedQueryView.SEMI_ANTI_MEMOIZED;
+		}
+		if (materializedPeakRows <= maximumMaterializedRows && materializedObjective < bestObjective) {
+			bestAlgorithm = PackedQueryView.SEMI_ANTI_MATERIALIZED;
+		}
+		return bestAlgorithm;
 	}
 
 	private void applyScalarDifferencePhysicalCost(PackedCostContext context, double rawWorkRows,
@@ -1389,6 +1748,9 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				0.0d,
 				0.0d,
 				rightRows);
+		output.putPlannedStringMetric("optimizer.filterAlgorithmHint", "materialized-hash");
+		output.putPlannedStringMetric("optimizer.semiAntiAlgorithm", "materialized-hash");
+		output.putPlannedStringMetric("optimizer.semiAntiKind", "minus-assured-shared");
 		output.putPlannedStringMetric("plannedPhysicalImplementation", "materialized-minus-compatibility");
 	}
 
@@ -1396,32 +1758,71 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			double rawWorkRows, PackedCostEstimate output) {
 		ExistsCondition existsCondition = pureExistsCondition(filter);
 		boolean typed = query.isSemiJoin(relationId) || query.isAntiJoin(relationId);
-		int algorithm = typed ? query.semiAntiAlgorithm(relationId) : PackedQueryView.SEMI_ANTI_STREAMING;
+		SemiAntiPlanIdentity planIdentity = semiAntiPlanIdentity(relationId, existsCondition, output);
+		int algorithm = planIdentity.algorithm();
 		int rhsRelationId = typed ? query.semiAntiRightRelationId(relationId) : 0;
+		TupleExpr rhs = typed
+				? query.materializeRelation(rhsRelationId)
+				: existsCondition.exists().getSubQuery();
 		String[] correlationNames = typed
 				? semiAntiCorrelationNames(relationId)
 				: sharedCorrelationNames(filter.getArg().getBindingNames(), existsCondition.exists().getSubQuery());
 		double rhsRows = typed
 				? estimatedRelationRows(rhsRelationId)
 				: estimatedTupleRows(existsCondition.exists().getSubQuery());
-		rhsRows = Math.max(1.0d, rhsRows);
-		double probeWorkRows = correlatedProbeWorkRows(
-				typed ? query.materializeRelation(rhsRelationId) : existsCondition.exists().getSubQuery(),
-				correlationNames, rhsRows);
+		rhsRows = Math.max(0.0d, rhsRows);
+		SemiAntiBindingDomains bindingDomains = semiAntiBindingDomains(filter.getArg().getBindingNames(), rhs);
+		JoinFactorCostModel.FactorCostEstimate probeFactor = candidateFactor(
+				rhs, correlationNames, rhsRows)
+						.filter(JoinFactorCostModel.FactorCostEstimate::hasPhysicalAccessPath)
+						.orElse(null);
+		JoinFactorCostModel.FactorCostEstimate materializationFactor = candidateFactor(
+				rhs,
+				bindingDomains.materializationParameterNames().toArray(String[]::new),
+				rhsRows)
+						.filter(JoinFactorCostModel.FactorCostEstimate::hasPhysicalAccessPath)
+						.orElse(null);
+		double probeWorkRows = factorWorkRows(probeFactor, rhsRows);
+		double materializationWorkRows = factorWorkRows(materializationFactor, rhsRows);
+		double materializationOutputRows = rhsRows;
 		double outerRows = finiteNonNegative(context.leftInputRows())
 				? context.leftInputRows()
 				: finiteNonNegative(output.outputRows()) ? output.outputRows() : 1.0d;
 		double conservativeOuterRows = Math.max(0.0d, outerRows);
 		double distinctLowerBound = conservativeOuterRows == 0.0d ? 0.0d : 1.0d;
 		double distinctUpperBound = conservativeOuterRows;
-		double breakEvenKeys = semiAntiBreakEvenDistinctKeys(rhsRows, probeWorkRows * distinctUpperBound,
-				distinctUpperBound);
+		double materializationPartitions = bindingDomains.materializationParameterNames().isEmpty()
+				? conservativeOuterRows == 0.0d ? 0.0d : 1.0d
+				: distinctUpperBound;
+		double materializationAccessRows = saturatedMultiply(
+				materializationPartitions, materializationWorkRows);
+		double materializationBuildRows = saturatedMultiply(
+				materializationPartitions, materializationOutputRows);
+		double breakEvenKeys = semiAntiBreakEvenDistinctKeys(
+				materializationAccessRows + materializationBuildRows, probeWorkRows, distinctUpperBound);
 
 		output.putPlannedDoubleMetric("plannedCorrelationOuterRows", conservativeOuterRows);
 		output.putPlannedDoubleMetric("plannedCorrelationDistinctKeysLowerBound", distinctLowerBound);
 		output.putPlannedDoubleMetric("plannedCorrelationDistinctKeysUpperBound", distinctUpperBound);
 		output.putPlannedDoubleMetric("plannedCorrelationProbeWorkRows", probeWorkRows);
+		output.putPlannedDoubleMetric("plannedSemiAntiProbeWorkRows", probeWorkRows);
+		output.putPlannedDoubleMetric("plannedSemiAntiProbeOutputRows",
+				factorOutputRows(probeFactor, rhsRows));
+		output.putPlannedDoubleMetric("plannedSemiAntiMaterializationWorkRows", materializationAccessRows);
+		output.putPlannedDoubleMetric("plannedSemiAntiMaterializationOutputRows", materializationBuildRows);
+		output.putPlannedDoubleMetric("plannedSemiAntiMaterializationPartitions", materializationPartitions);
 		output.putPlannedDoubleMetric("plannedSemiAntiBreakEvenDistinctKeys", breakEvenKeys);
+		output.putPlannedStringMetric("plannedSemiAntiProbeBindingDomain",
+				String.join(",", bindingDomains.probeNames()));
+		output.putPlannedStringMetric("plannedSemiAntiHashBindingDomain",
+				String.join(",", bindingDomains.sharedHashNames()));
+		output.putPlannedStringMetric("plannedSemiAntiMaterializationParameterDomain",
+				String.join(",", bindingDomains.materializationParameterNames()));
+		annotateCandidateAccess(output, "Probe", probeFactor);
+		annotateCandidateAccess(output, "Materialization", materializationFactor);
+		output.putPlannedStringMetric("plannedSemiAntiExactRefinementStatus", "declined");
+		output.putPlannedStringMetric("plannedSemiAntiExactRefinement", "declined:no-frontier-domain");
+		output.putPlannedStringMetric("plannedSemiAntiExactRefinementDeclineReason", "no-frontier-domain");
 		output.putPlannedStringMetric("plannedCorrelationGuarantee", "scalar_fallback");
 		output.putPlannedStringMetric("plannedCorrelationConfidence", "unknown");
 		switch (algorithm) {
@@ -1429,7 +1830,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				saturatedMultiply(conservativeOuterRows, probeWorkRows),
 				conservativeOuterRows,
 				conservativeOuterRows,
-				saturatedMultiply(conservativeOuterRows, probeWorkRows),
+				0.0d,
 				0.0d,
 				0.0d,
 				0.0d,
@@ -1439,34 +1840,34 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				saturatedMultiply(distinctUpperBound, probeWorkRows),
 				distinctUpperBound,
 				distinctUpperBound,
-				saturatedMultiply(distinctUpperBound, probeWorkRows),
+				0.0d,
 				0.0d,
 				conservativeOuterRows,
 				0.0d,
 				0.0d,
 				distinctUpperBound);
 		case PackedQueryView.SEMI_ANTI_MATERIALIZED -> output.setLocalPhysicalCost(
-				rhsRows,
+				materializationAccessRows,
 				0.0d,
-				1.0d,
-				rhsRows,
-				rhsRows,
+				materializationAccessRows == 0.0d ? 0.0d : materializationPartitions,
+				0.0d,
+				materializationBuildRows,
 				conservativeOuterRows,
 				0.0d,
 				0.0d,
-				rhsRows);
+				materializationBuildRows);
 		default -> throw new IllegalStateException("unknown packed semi/anti algorithm");
 		}
-		int semanticKind = typed
-				? query.semiAntiKind(relationId)
-				: existsCondition.negated()
-						? PackedQueryView.SEMI_ANTI_NOT_EXISTS
-						: PackedQueryView.SEMI_ANTI_EXISTS;
+		int semanticKind = planIdentity.semanticKind();
 		String algorithmName = semiAntiAlgorithmName(algorithm);
 		output.putPlannedStringMetric("optimizer.filterAlgorithmHint", algorithmName);
 		output.putPlannedStringMetric("optimizer.semiAntiAlgorithm", algorithmName);
 		output.putPlannedStringMetric("optimizer.semiAntiKind", semiAntiPlanSemanticName(semanticKind));
-		output.putPlannedStringMetric("plannedPhysicalImplementation", algorithmName);
+		output.putPlannedStringMetric("plannedPhysicalImplementation",
+				semanticKind == PackedQueryView.SEMI_ANTI_MINUS_ASSURED_SHARED
+						&& algorithm == PackedQueryView.SEMI_ANTI_MATERIALIZED
+								? "materialized-minus-compatibility"
+								: algorithmName);
 		applySemiAntiPhysicalFeedback(filter, semanticKind, algorithm, outerRows, output);
 		applySemiAntiLeoPhysicalResidual(filter, algorithm, output);
 		output.setDependentSubqueriesCosted(true);
@@ -1553,14 +1954,21 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				filter, semanticName, algorithmName);
 		if (feedback == null
 				|| feedback.observationCount() < MINIMUM_SEMI_ANTI_EVIDENCE_COUNT
+				|| feedback.physicalObservationCount() < MINIMUM_SEMI_ANTI_EVIDENCE_COUNT
 				|| feedback.outerRows() <= 0L) {
 			return;
 		}
 		double outerScale = Math.max(0.0d, plannedOuterRows) / feedback.outerRows();
 		double executionScale = 1.0d / feedback.observationCount();
+		double physicalExecutionScale = 1.0d / feedback.physicalObservationCount();
+		double physicalOuterRows = feedback.outerRows()
+				* ((double) feedback.physicalObservationCount() / feedback.observationCount());
 		boolean perExecutionBuild = algorithm == PackedQueryView.SEMI_ANTI_MATERIALIZED;
+		double sourceScanScale = perExecutionBuild
+				? physicalExecutionScale
+				: Math.max(0.0d, plannedOuterRows) / physicalOuterRows;
+		double sequentialRows = feedback.rhsSourceRowsScanned() * sourceScanScale;
 		double scanScale = perExecutionBuild ? executionScale : outerScale;
-		double sequentialRows = feedback.rhsRowsExamined() * scanScale;
 		double iteratorOpens = feedback.iteratorOpens() * scanScale;
 		double randomSeeks = algorithm == PackedQueryView.SEMI_ANTI_MATERIALIZED ? 0.0d : iteratorOpens;
 		double hashBuildRows = feedback.hashBuildRows() * executionScale;
@@ -1586,8 +1994,12 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		output.putPlannedDoubleMetric("plannedSemiAntiFeedbackOuterRows", feedback.outerRows());
 		output.putPlannedDoubleMetric("plannedSemiAntiFeedbackDistinctKeys", feedback.distinctKeys());
 		output.putPlannedDoubleMetric("plannedSemiAntiFeedbackRowsExamined", feedback.rhsRowsExamined());
+		output.putPlannedDoubleMetric("plannedSemiAntiFeedbackPhysicalEvidence",
+				feedback.physicalObservationCount());
+		output.putPlannedDoubleMetric("plannedSemiAntiFeedbackSourceRowsScanned",
+				feedback.rhsSourceRowsScanned());
 		output.putPlannedDoubleMetric("plannedSemiAntiFeedbackExhaustedFailures", feedback.exhaustedFailures());
-		output.putPlannedStringMetric("plannedSemiAntiFeedbackSource", "completed-key-outcomes");
+		output.putPlannedStringMetric("plannedSemiAntiFeedbackSource", "completed-key-outcomes+source-scans");
 	}
 
 	private void applySemiAntiLeoPhysicalResidual(Filter filter, int algorithm, PackedCostEstimate output) {
@@ -1640,6 +2052,38 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		};
 	}
 
+	private static int semiAntiAlgorithm(String algorithmName, int fallback) {
+		return switch (algorithmName == null ? "" : algorithmName) {
+		case "streaming-correlated" -> PackedQueryView.SEMI_ANTI_STREAMING;
+		case "memoized-correlated" -> PackedQueryView.SEMI_ANTI_MEMOIZED;
+		case "materialized-hash" -> PackedQueryView.SEMI_ANTI_MATERIALIZED;
+		default -> fallback;
+		};
+	}
+
+	private SemiAntiPlanIdentity semiAntiPlanIdentity(
+			int relationId, ExistsCondition condition, PackedCostEstimate output) {
+		if (query.isSemiJoin(relationId) || query.isAntiJoin(relationId)) {
+			return new SemiAntiPlanIdentity(
+					query.semiAntiKind(relationId), query.semiAntiAlgorithm(relationId));
+		}
+		boolean safeMinusAlternative = condition.negated()
+				&& "minus-assured-shared".equals(
+						output.plannedStringMetrics().get("optimizer.semiAntiKind"));
+		if (safeMinusAlternative) {
+			return new SemiAntiPlanIdentity(
+					PackedQueryView.SEMI_ANTI_MINUS_ASSURED_SHARED,
+					semiAntiAlgorithm(
+							output.plannedStringMetrics().get("optimizer.semiAntiAlgorithm"),
+							PackedQueryView.SEMI_ANTI_STREAMING));
+		}
+		return new SemiAntiPlanIdentity(
+				condition.negated()
+						? PackedQueryView.SEMI_ANTI_NOT_EXISTS
+						: PackedQueryView.SEMI_ANTI_EXISTS,
+				PackedQueryView.SEMI_ANTI_STREAMING);
+	}
+
 	private static String semiAntiPlanSemanticName(int semanticKind) {
 		return switch (semanticKind) {
 		case PackedQueryView.SEMI_ANTI_EXISTS -> "exists";
@@ -1649,25 +2093,69 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		};
 	}
 
-	private FrontierCorrelationProfile correlationProfile(EvidenceStateRef input, EvidenceStateRef rawOutput,
-			String[] correlationNames, int rhsRelationId, int semanticKind, double rhsRows) {
+	private FrontierSemiAntiProfile correlationProfile(EvidenceStateRef input, EvidenceStateRef rawOutput,
+			SemiAntiBindingDomains bindingDomains, int rhsRelationId, int semanticKind) {
 		CorrelationProfileKey key = new CorrelationProfileKey(
-				input.stateId(), rhsRelationId, semanticKind, String.join("\u0000", correlationNames));
-		FrontierCorrelationProfile existing = correlationProfiles.get(key);
+				input.stateId(), rhsRelationId, semanticKind, bindingDomains.cacheKey());
+		FrontierSemiAntiProfile existing = correlationProfiles.get(key);
 		if (existing != null) {
 			return existing;
 		}
-		FrontierLayout layout = arena.key(input).frontier();
-		int[] correlationSlots = new int[correlationNames.length];
-		for (int index = 0; index < correlationNames.length; index++) {
-			correlationSlots[index] = layout.indexOf(correlationNames[index]);
-			if (correlationSlots[index] < 0) {
-				throw new IllegalStateException("correlation binding is absent from the Frontier layout");
+		FrontierCorrelationDomain probeDomain = correlationDomain(input, bindingDomains.probeNames());
+		FrontierCorrelationDomain outputProbeDomain = correlationDomain(rawOutput, bindingDomains.probeNames());
+		FrontierCorrelationDomain sharedHashDomain = correlationDomain(input, bindingDomains.sharedHashNames());
+		FrontierCorrelationDomain materializationParameterDomain = correlationDomain(
+				input, bindingDomains.materializationParameterNames());
+		EvidenceStateSummary inputSummary = input.summary();
+		double outerRows = inputSummary.pointRows();
+		double outputRows = Math.min(outerRows, rawOutput.summary().pointRows());
+		boolean anti = semanticKind != PackedQueryView.SEMI_ANTI_EXISTS;
+		double matchedRows = anti ? outerRows - outputRows : outputRows;
+		double unmatchedRows = anti ? outputRows : outerRows - outputRows;
+		double matchedDistinctKeys = Double.NaN;
+		double unmatchedDistinctKeys = Double.NaN;
+		if (Double.isFinite(probeDomain.distinctKeyEstimate())
+				&& Double.isFinite(outputProbeDomain.distinctKeyEstimate())) {
+			double retainedOutputKeys = Math.min(
+					probeDomain.distinctKeyEstimate(), outputProbeDomain.distinctKeyEstimate());
+			if (anti) {
+				unmatchedDistinctKeys = retainedOutputKeys;
+				matchedDistinctKeys = probeDomain.distinctKeyEstimate() - retainedOutputKeys;
+			} else {
+				matchedDistinctKeys = retainedOutputKeys;
+				unmatchedDistinctKeys = probeDomain.distinctKeyEstimate() - retainedOutputKeys;
 			}
 		}
+		FrontierSemiAntiProfile profile = new FrontierSemiAntiProfile(
+				outerRows,
+				Math.max(0.0d, matchedRows),
+				Math.max(0.0d, unmatchedRows),
+				Math.max(0.0d, matchedDistinctKeys),
+				Math.max(0.0d, unmatchedDistinctKeys),
+				probeDomain,
+				sharedHashDomain,
+				materializationParameterDomain,
+				inputSummary.guarantee(),
+				inputSummary.confidence());
+		correlationProfiles.put(key, profile);
+		return profile;
+	}
+
+	private FrontierCorrelationDomain correlationDomain(EvidenceStateRef state, List<String> bindingNames) {
+		String[] names = bindingNames.toArray(String[]::new);
+		CorrelationDomainKey key = new CorrelationDomainKey(state.stateId(), String.join("\u0000", names));
+		FrontierCorrelationDomain existing = correlationDomains.get(key);
+		if (existing != null) {
+			return existing;
+		}
+		FrontierLayout layout = arena.key(state).frontier();
+		int[] correlationSlots = correlationSlots(layout, names);
+		if (correlationSlots == null) {
+			throw new IllegalStateException("correlation binding is absent from the Frontier layout");
+		}
 		PrimitiveCorrelationKeyTable keys;
-		double retainedOuterRows = 0.0d;
-		try (FrontierPayloadLease payload = arena.openPayload(input)) {
+		double retainedRows = 0.0d;
+		try (FrontierPayloadLease payload = arena.openPayload(state)) {
 			keys = new PrimitiveCorrelationKeyTable(payloadEntryCount(payload), correlationSlots.length);
 			long[] tuple = new long[correlationSlots.length];
 			for (int stratum = 0; stratum < payload.stratumCount(); stratum++) {
@@ -1675,48 +2163,50 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 					fillCorrelationTuple(payload, true, stratum, index, correlationSlots, tuple);
 					double weight = payload.exactWeight(stratum, index);
 					keys.add(tuple, weight);
-					retainedOuterRows += weight;
+					retainedRows += weight;
 				}
 				for (int index = 0; index < payload.residualCount(stratum); index++) {
 					fillCorrelationTuple(payload, false, stratum, index, correlationSlots, tuple);
 					double weight = payload.residualWeight(stratum, index);
 					keys.add(tuple, weight);
-					retainedOuterRows += weight;
+					retainedRows += weight;
 				}
 			}
 		}
-		EvidenceStateSummary inputSummary = input.summary();
-		double outerRows = inputSummary.pointRows();
-		double outputRows = Math.min(outerRows, rawOutput.summary().pointRows());
-		boolean anti = semanticKind != PackedQueryView.SEMI_ANTI_EXISTS;
-		double matchedRows = anti ? outerRows - outputRows : outputRows;
-		double unmatchedRows = anti ? outputRows : outerRows - outputRows;
-		double expectedRowsExamined = matchedRows + unmatchedRows * Math.max(1.0d, rhsRows);
+		EvidenceStateSummary summary = state.summary();
 		double retainedKeys = keys.size();
-		boolean exact = inputSummary.guarantee() == EvidenceGuarantee.DATABASE_EXACT;
-		double lineageUpperBound = exact ? retainedKeys : exactCorrelationKeyUpperBound(input, correlationNames, 0);
+		boolean exact = summary.guarantee() == EvidenceGuarantee.DATABASE_EXACT;
+		double lineageUpperBound = exact ? retainedKeys : exactCorrelationKeyUpperBound(state, names, 0);
 		boolean exactRetainedDomain = Double.isFinite(lineageUpperBound) && retainedKeys == lineageUpperBound;
-		double distinctEstimate = exact || exactRetainedDomain ? retainedKeys : Double.NaN;
+		/*
+		 * Coalesced Frontier tuples are the query-local distinct-key estimate even when their row masses are sampled.
+		 * Keep the independently certified upper bound alongside that estimate; exact refinement still requires a
+		 * database-exact guarantee.
+		 */
+		double distinctEstimate = retainedKeys > 0.0d || summary.pointRows() == 0.0d
+				? retainedKeys
+				: Double.NaN;
 		double distinctUpperBound = exact
 				? retainedKeys
 				: Double.isFinite(lineageUpperBound)
 						? Math.max(retainedKeys, lineageUpperBound)
-						: Math.max(retainedKeys, outerRows);
-		double fanoutMean = retainedKeys == 0.0d ? 0.0d : retainedOuterRows / retainedKeys;
-		FrontierCorrelationProfile profile = new FrontierCorrelationProfile(
-				outerRows,
-				Math.max(0.0d, matchedRows),
-				Math.max(0.0d, unmatchedRows),
-				expectedRowsExamined,
+						: Math.max(retainedKeys, summary.pointRows());
+		double fanoutMean = retainedKeys == 0.0d ? 0.0d : retainedRows / retainedKeys;
+		FrontierCorrelationDomain domain = new FrontierCorrelationDomain(
+				state.stateId(),
+				bindingNames,
+				summary.pointRows(),
 				retainedKeys,
 				distinctEstimate,
 				distinctUpperBound,
 				fanoutMean,
 				keys.maximumMass(),
-				inputSummary.guarantee(),
-				inputSummary.confidence());
-		correlationProfiles.put(key, profile);
-		return profile;
+				summary.guarantee(),
+				summary.confidence(),
+				keys.relation(),
+				null);
+		correlationDomains.put(key, domain);
+		return domain;
 	}
 
 	private double exactCorrelationKeyUpperBound(EvidenceStateRef state, String[] correlationNames, int depth) {
@@ -1742,29 +2232,46 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				return keys.size();
 			}
 		}
-		if (arena.parentCount(state) != 1 || !preservesCorrelationDomain(state, correlationNames)) {
+		FrontierStateOperation operation = arena.operation(state);
+		if (operation == FrontierStateOperation.UNION) {
+			double upperBound = 0.0d;
+			for (int parentIndex = 0; parentIndex < arena.parentCount(state); parentIndex++) {
+				EvidenceStateRef parent = arena.parent(state, parentIndex);
+				if (correlationSlots(arena.key(parent).frontier(), correlationNames) == null) {
+					return Double.NaN;
+				}
+				double parentUpperBound = exactCorrelationKeyUpperBound(parent, correlationNames, depth + 1);
+				if (!Double.isFinite(parentUpperBound)) {
+					return Double.NaN;
+				}
+				upperBound = saturatedAdd(upperBound, parentUpperBound);
+			}
+			return upperBound;
+		}
+		if (!preservesExistingCorrelationDomain(operation)) {
 			return Double.NaN;
 		}
-		return exactCorrelationKeyUpperBound(arena.parent(state, 0), correlationNames, depth + 1);
+		double upperBound = Double.NaN;
+		for (int parentIndex = 0; parentIndex < arena.parentCount(state); parentIndex++) {
+			EvidenceStateRef parent = arena.parent(state, parentIndex);
+			if (correlationSlots(arena.key(parent).frontier(), correlationNames) == null) {
+				continue;
+			}
+			double parentUpperBound = exactCorrelationKeyUpperBound(parent, correlationNames, depth + 1);
+			if (Double.isFinite(parentUpperBound)) {
+				upperBound = Double.isFinite(upperBound)
+						? Math.min(upperBound, parentUpperBound)
+						: parentUpperBound;
+			}
+		}
+		return upperBound;
 	}
 
-	private boolean preservesCorrelationDomain(EvidenceStateRef state, String[] correlationNames) {
-		FrontierStateOperation operation = arena.operation(state);
-		if (operation == FrontierStateOperation.RESTRICT
-				|| operation == FrontierStateOperation.RESOLVE_OUTER_KERNEL
-				|| operation == FrontierStateOperation.CALIBRATE
-				|| operation == FrontierStateOperation.PROJECT
-				|| operation == FrontierStateOperation.ALIGN) {
-			return correlationSlots(arena.key(arena.parent(state, 0)).frontier(), correlationNames) != null;
-		}
-		if (operation != FrontierStateOperation.RESOLVE_OUTER_EXPANSION) {
-			return false;
-		}
-		int relationId = arena.operationRecipeId(state);
-		return relationId > 0
-				&& relationId <= query.relationCount()
-				&& query.materializeRelation(relationId) instanceof LeftJoin
-				&& correlationSlots(arena.key(arena.parent(state, 0)).frontier(), correlationNames) != null;
+	private static boolean preservesExistingCorrelationDomain(FrontierStateOperation operation) {
+		return switch (operation) {
+		case BRIDGE_TRANSFER, BRIDGE_MUTATION, PROBE_FACTOR, JOIN, CARTESIAN, RESOLVE_OUTER_KERNEL, RESOLVE_OUTER_EXPANSION, PROJECT, ALIGN, RESTRICT, AVERAGE_DESIGN_LANES, CALIBRATE -> true;
+		default -> false;
+		};
 	}
 
 	private static int[] correlationSlots(FrontierLayout layout, String[] correlationNames) {
@@ -1788,20 +2295,58 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		}
 	}
 
-	private static void annotateCorrelationProfile(PackedCostEstimate output, FrontierCorrelationProfile profile) {
+	private static void annotateCorrelationProfile(PackedCostEstimate output, FrontierSemiAntiProfile profile) {
+		FrontierCorrelationDomain probeDomain = profile.probeDomain();
 		output.putPlannedDoubleMetric("plannedCorrelationOuterRows", profile.outerRows());
 		output.putPlannedDoubleMetric("plannedCorrelationMatchedRows", profile.matchedRows());
 		output.putPlannedDoubleMetric("plannedCorrelationUnmatchedRows", profile.unmatchedRows());
-		output.putPlannedDoubleMetric("plannedCorrelationRhsRowsExamined", profile.expectedRhsRowsExamined());
-		output.putPlannedDoubleMetric("plannedCorrelationDistinctKeyLowerBound", profile.distinctKeyLowerBound());
-		if (Double.isFinite(profile.distinctKeyEstimate())) {
-			output.putPlannedDoubleMetric("plannedCorrelationDistinctKeys", profile.distinctKeyEstimate());
+		output.putPlannedDoubleMetric("plannedCorrelationDistinctKeyLowerBound",
+				probeDomain.distinctKeyLowerBound());
+		if (Double.isFinite(probeDomain.distinctKeyEstimate())) {
+			output.putPlannedDoubleMetric("plannedCorrelationDistinctKeys", probeDomain.distinctKeyEstimate());
 		}
-		output.putPlannedDoubleMetric("plannedCorrelationDistinctKeyUpperBound", profile.distinctKeyUpperBound());
-		output.putPlannedDoubleMetric("plannedCorrelationFanoutMean", profile.fanoutMean());
-		output.putPlannedDoubleMetric("plannedCorrelationFanoutMaximum", profile.fanoutMaximum());
+		output.putPlannedDoubleMetric("plannedCorrelationDistinctKeyUpperBound",
+				probeDomain.distinctKeyUpperBound());
+		output.putPlannedDoubleMetric("plannedCorrelationMatchedDistinctKeys",
+				profile.planningMatchedDistinctProbeKeys());
+		output.putPlannedDoubleMetric("plannedCorrelationUnmatchedDistinctKeys",
+				profile.planningUnmatchedDistinctProbeKeys());
+		output.putPlannedDoubleMetric("plannedCorrelationFanoutMean", probeDomain.fanoutMean());
+		output.putPlannedDoubleMetric("plannedCorrelationFanoutMaximum", probeDomain.fanoutMaximum());
 		output.putPlannedDoubleMetric("plannedCorrelationConfidence", profile.confidence());
 		output.putPlannedStringMetric("plannedCorrelationGuarantee", statusName(profile.guarantee()));
+	}
+
+	private static SemiAntiBindingDomains semiAntiBindingDomains(Collection<String> outerNames, TupleExpr rhs) {
+		LinkedHashSet<String> constantNames = new LinkedHashSet<>();
+		rhs.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var var) {
+				if (var.hasValue() && var.getName() != null) {
+					constantNames.add(var.getName());
+				}
+			}
+		});
+		LinkedHashSet<String> outputNames = new LinkedHashSet<>(rhs.getBindingNames());
+		outputNames.removeAll(constantNames);
+		LinkedHashSet<String> probeNames = new LinkedHashSet<>(outputNames);
+		probeNames.addAll(VarNameCollector.process(rhs));
+		probeNames.removeAll(constantNames);
+		probeNames.retainAll(outerNames);
+		LinkedHashSet<String> sharedHashNames = new LinkedHashSet<>(outerNames);
+		sharedHashNames.retainAll(outputNames);
+		LinkedHashSet<String> materializationParameterNames = new LinkedHashSet<>(probeNames);
+		materializationParameterNames.removeAll(sharedHashNames);
+		return new SemiAntiBindingDomains(
+				sortedNames(probeNames),
+				sortedNames(sharedHashNames),
+				sortedNames(materializationParameterNames));
+	}
+
+	private static List<String> sortedNames(Collection<String> names) {
+		ArrayList<String> result = new ArrayList<>(names);
+		result.sort(String::compareTo);
+		return List.copyOf(result);
 	}
 
 	private String[] semiAntiCorrelationNames(int relationId) {
@@ -1963,13 +2508,9 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		if (condition == null) {
 			return rawState;
 		}
-		boolean typed = query.isSemiJoin(relationId) || query.isAntiJoin(relationId);
-		int semanticKind = typed
-				? query.semiAntiKind(relationId)
-				: condition.negated()
-						? PackedQueryView.SEMI_ANTI_NOT_EXISTS
-						: PackedQueryView.SEMI_ANTI_EXISTS;
-		int algorithm = typed ? query.semiAntiAlgorithm(relationId) : PackedQueryView.SEMI_ANTI_STREAMING;
+		SemiAntiPlanIdentity planIdentity = semiAntiPlanIdentity(relationId, condition, output);
+		int semanticKind = planIdentity.semanticKind();
+		int algorithm = planIdentity.algorithm();
 		String semanticName = semiAntiFeedbackSemanticName(semanticKind);
 		String algorithmName = semiAntiAlgorithmName(algorithm);
 		LmdbOperatorFeedbackStats.SemiAntiEstimate feedback = runtime.semiAntiFeedback(
@@ -2049,6 +2590,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				Math.clamp(posteriorPassRatio + posteriorMargin, 0.0d, 1.0d));
 		output.putPlannedDoubleMetric("plannedSemiAntiFrontierPseudoCount", frontierPseudoCount);
 		output.putPlannedDoubleMetric("plannedSemiAntiLearnedPseudoCount", learnedPseudoCount);
+		output.putPlannedDoubleMetric("plannedSemiAntiFeedbackEvidence", feedback.observationCount());
 		output.putPlannedStringMetric("plannedSemiAntiCardinalityEvidenceSource", "completed-key-outcomes");
 		return calibrated;
 	}
@@ -2827,33 +3369,30 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 
 	private void applySelectedMinusPhysicalCost(int relationId, Difference minus, EvidenceStateRef input,
 			EvidenceStateRef outputState, PackedCostEstimate output) {
-		String algorithmName = output.plannedStringMetrics().get("optimizer.semiAntiAlgorithm");
-		int algorithm = switch (algorithmName == null ? "" : algorithmName) {
-		case "streaming-correlated" -> PackedQueryView.SEMI_ANTI_STREAMING;
-		case "memoized-correlated" -> PackedQueryView.SEMI_ANTI_MEMOIZED;
-		case "materialized-hash" -> PackedQueryView.SEMI_ANTI_MATERIALIZED;
-		default -> -1;
-		};
+		int algorithm = semiAntiAlgorithm(
+				output.plannedStringMetrics().get("optimizer.semiAntiAlgorithm"), -1);
 		if (algorithm < 0) {
 			return;
 		}
-		String[] correlationNames = sharedCorrelationNames(arena.key(input).frontier(), minus.getRightArg());
-		double rhsRows = estimatedTupleRows(minus.getRightArg());
-		FrontierCorrelationProfile profile = correlationProfile(
+		TupleExpr rhs = minus.getRightArg();
+		SemiAntiBindingDomains bindingDomains = semiAntiBindingDomains(
+				arena.key(input).frontier().variables(), rhs);
+		double rhsRows = estimatedTupleRows(rhs);
+		FrontierSemiAntiProfile profile = correlationProfile(
 				input,
 				outputState,
-				correlationNames,
+				bindingDomains,
 				relationId,
-				PackedQueryView.SEMI_ANTI_MINUS_ASSURED_SHARED,
-				rhsRows);
+				PackedQueryView.SEMI_ANTI_MINUS_ASSURED_SHARED);
 		annotateCorrelationProfile(output, profile);
 		Filter feedbackFilter = new Filter(
 				minus.getLeftArg().clone(),
-				new Not(new Exists(minus.getRightArg().clone())));
+				new Not(new Exists(rhs.clone())));
 		applyFrontierSemiAntiPhysicalCost(
 				feedbackFilter,
 				PackedQueryView.SEMI_ANTI_MINUS_ASSURED_SHARED,
 				algorithm,
+				rhs,
 				rhsRows,
 				profile,
 				output);
@@ -5538,7 +6077,58 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	private record ExistsCondition(Exists exists, boolean negated) {
 	}
 
-	private record CorrelationProfileKey(int stateId, int rhsRelationId, int semanticKind, String correlationMask) {
+	private record SemiAntiPlanIdentity(int semanticKind, int algorithm) {
+	}
+
+	private record CorrelationProfileKey(int stateId, int rhsRelationId, int semanticKind, String bindingDomains) {
+	}
+
+	private record CorrelationDomainKey(int stateId, String bindingNames) {
+	}
+
+	private record CorrelationSurfaceCacheIdentity(int stateId, String bindingNames, String purpose) {
+	}
+
+	private record ExactRelationResult(FiniteRelationEstimate relation, String declineReason) {
+	}
+
+	private record ExactSemiAntiRefinement(
+			boolean applied,
+			String status,
+			String detail,
+			double streamingAccessRows,
+			double memoizedAccessRows,
+			double materializationAccessRows,
+			double materializationBuildRows,
+			long streamingScannedRows,
+			long memoizedScannedRows,
+			long materializationScannedRows) {
+
+		private static ExactSemiAntiRefinement declined(String status, String detail,
+				double streamingAccessRows, double memoizedAccessRows,
+				double materializationAccessRows, double materializationBuildRows) {
+			return new ExactSemiAntiRefinement(
+					false,
+					status,
+					detail,
+					streamingAccessRows,
+					memoizedAccessRows,
+					materializationAccessRows,
+					materializationBuildRows,
+					-1L,
+					-1L,
+					-1L);
+		}
+	}
+
+	private record SemiAntiBindingDomains(List<String> probeNames, List<String> sharedHashNames,
+			List<String> materializationParameterNames) {
+
+		private String cacheKey() {
+			return String.join("\u0000", probeNames)
+					+ "\u0001" + String.join("\u0000", sharedHashNames)
+					+ "\u0001" + String.join("\u0000", materializationParameterNames);
+		}
 	}
 
 	/**
@@ -5619,6 +6209,23 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 
 		private double maximumMass() {
 			return maximumMass;
+		}
+
+		private FrontierPrimitiveCorrelationRelation relation() {
+			long[] retainedTuples = new long[Math.multiplyExact(size, width)];
+			double[] retainedMasses = new double[size];
+			int row = 0;
+			for (int slot = 0; slot < occupied.length; slot++) {
+				if (occupied[slot] == 0) {
+					continue;
+				}
+				if (width != 0) {
+					System.arraycopy(tuples, slot * width, retainedTuples, row * width, width);
+				}
+				retainedMasses[row] = masses[slot];
+				row++;
+			}
+			return new FrontierPrimitiveCorrelationRelation(width, retainedTuples, retainedMasses);
 		}
 	}
 

@@ -220,11 +220,19 @@ class ThemeQueryBenchmarkSmokeIT {
 			assertTrue(plan.contains("optimizer.semiAntiKind=minus-assured-shared"),
 					"q7 should preserve the safe MINUS semantic kind in its typed anti-join\n"
 							+ renderedQuery + "\n" + plan);
-			assertTrue(plan.contains("optimizer.semiAntiAlgorithm=materialized-hash"),
-					"q7 should materialize the dosage side once after charging its complete physical work\n"
+			assertTrue(plan.contains("optimizer.semiAntiAlgorithm=streaming-correlated"),
+					"q7 should prefer its selective bound dosage probes over the larger materialization scan\n"
 							+ renderedQuery + "\n" + plan);
-			assertTrue(plan.contains("plannedPhysicalImplementation=materialized-minus-compatibility"),
-					"q7 should retain the proven MINUS-compatible materialized implementation\n"
+			assertTrue(plan.contains("plannedPhysicalImplementation=streaming-correlated"),
+					"q7 should execute the selected bound-probe implementation\n"
+							+ renderedQuery + "\n" + plan);
+			assertTrue(plan.contains("plannedSemiAntiProbeIndexName=spoc")
+					&& plan.contains("plannedSemiAntiProbeAccessMode=directLookup"),
+					"q7 should expose the selected bound SPOC lookup\n"
+							+ renderedQuery + "\n" + plan);
+			assertTrue(plan.contains("plannedSemiAntiMaterializationIndexName=posc")
+					&& plan.contains("plannedSemiAntiMaterializationAccessMode=prefixScan"),
+					"q7 should retain the competing POSC materialization access path in telemetry\n"
 							+ renderedQuery + "\n" + plan);
 		} finally {
 			benchmark.tearDown();
