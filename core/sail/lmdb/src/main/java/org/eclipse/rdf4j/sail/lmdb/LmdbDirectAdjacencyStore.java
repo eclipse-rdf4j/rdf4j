@@ -57,6 +57,8 @@ import org.slf4j.LoggerFactory;
 final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	private static final Logger logger = LoggerFactory.getLogger(LmdbDirectAdjacencyStore.class);
+	private static final String LEGACY_BASE_PROPERTY = "org.eclipse.rdf4j.sail.lmdb.directAdjacency.legacyBase";
+	private static final ThreadLocal<Boolean> BASE_FORMAT_OVERRIDE = new ThreadLocal<>();
 
 	/**
 	 * Maintenance lifecycle (closed enum from the plan); drives work and metrics, never read by the row resolver.
@@ -88,6 +90,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private final LmdbAdjacencyMetrics metrics = new LmdbAdjacencyMetrics();
 	private final long baseArenaRegionBytes;
 	private final long workspaceRegionBytes;
+	private final boolean legacyBase;
 
 	private final AtomicReference<LmdbAdjacencyPublishedState> published;
 	private final AtomicReference<GapMarker> emergencyGap = new AtomicReference<>(INITIAL_GAP_MARKER);
@@ -110,6 +113,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	volatile Runnable afterBuildScanForTest;
 	/** Test-only observation hook: runs before catch-up waits for a commit delta that has not arrived. */
 	volatile Runnable catchUpWaitForTest;
+	/** Test-only interleaving hook: runs after a candidate paged rewrite and before publication validation. */
+	volatile Runnable beforePagedCsfPublicationForTest;
 	private volatile MaintenanceState maintenanceState = MaintenanceState.EMPTY;
 	private volatile boolean closed;
 
@@ -119,6 +124,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		this.valueStore = valueStore;
 		this.storeTxnStarted = storeTxnStarted;
 		this.options = options;
+		Boolean baseFormatOverride = BASE_FORMAT_OVERRIDE.get();
+		this.legacyBase = baseFormatOverride != null ? baseFormatOverride : Boolean.getBoolean(LEGACY_BASE_PROPERTY);
 		this.account = new LmdbAdjacencyMemoryAccount(options.effectiveMaxBytes());
 		long region = LmdbAdjacencyArena.MAX_REGION_BYTES;
 		while (region > (1L << 20) && region * 4 > options.effectiveMaxBytes()) {
@@ -138,6 +145,38 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			logger.warn("Direct adjacency stays unavailable: the effective memory cap {} bytes is below the {}-byte "
 					+ "minimum; the store remains fully usable through LMDB", options.effectiveMaxBytes(),
 					LmdbDirectAdjacencyOptions.MIN_EXPLICIT_BYTES);
+		}
+	}
+
+	/**
+	 * Scoped, current-thread-only base selection for benchmarks that construct a complete {@link LmdbStore}. The
+	 * production constructor still samples the documented system property when no internal scope is active.
+	 */
+	static BaseFormatSelection overrideBaseFormatForCurrentThread(boolean legacyBase) {
+		Boolean previous = BASE_FORMAT_OVERRIDE.get();
+		BASE_FORMAT_OVERRIDE.set(legacyBase);
+		return new BaseFormatSelection(previous);
+	}
+
+	static final class BaseFormatSelection implements AutoCloseable {
+		private final Boolean previous;
+		private boolean closed;
+
+		private BaseFormatSelection(Boolean previous) {
+			this.previous = previous;
+		}
+
+		@Override
+		public void close() {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			if (previous == null) {
+				BASE_FORMAT_OVERRIDE.remove();
+			} else {
+				BASE_FORMAT_OVERRIDE.set(previous);
+			}
 		}
 	}
 
@@ -433,6 +472,59 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			return;
 		}
 		maintenanceState = MaintenanceState.CONSOLIDATING;
+		if (state.base().usesPagedCsf()) {
+			try {
+				consolidatePagedCsf(state, overlays);
+				return;
+			} catch (LmdbAdjacencyMemoryRefusedException refusal) {
+				// A pinned old view may temporarily retain pages that this rewrite wants to replace. Keep the exact
+				// published state and attempt only the bounded overlay coalescing fallback under memory pressure.
+				logger.debug("Paged-CSF merge-down refused; retaining the base and coalescing overlays", refusal);
+			} catch (RuntimeException failure) {
+				maintenanceState = MaintenanceState.ACTIVE;
+				logger.warn("Paged-CSF merge-down failed; the current base and overlays remain published", failure);
+				return;
+			}
+		}
+		consolidateOverlayOnly(state, overlays, state.base().usesPagedCsf());
+	}
+
+	private void consolidatePagedCsf(LmdbAdjacencyPublishedState state, LmdbAdjacencyOverlaySet overlays) {
+		LmdbPagedCsfConsolidator.Result result = LmdbPagedCsfConsolidator.consolidate(state, account,
+				workspaceRegionBytes);
+		Runnable interleave = beforePagedCsfPublicationForTest;
+		if (interleave != null) {
+			interleave.run();
+		}
+		boolean publishedReplacement = false;
+		publicationLock.lock();
+		try {
+			LmdbAdjacencyPublishedState current = published.get();
+			// Pending-only publications may share these identities. Any applied commit or maintenance publication
+			// invalidates this speculative rewrite and leaves the exact current state untouched.
+			if (current.base() != state.base() || current.overlays() != overlays
+					|| current.appliedRevision() != state.appliedRevision()) {
+				return;
+			}
+			publish(new LmdbAdjacencyPublishedState(epochs.incrementAndGet(), result.base(), null, current.pending(),
+					current.appliedRevision(), current.gapFromRevision(), current.servingState(),
+					current.appliedRevision()));
+			publishedReplacement = true;
+			maintenanceState = MaintenanceState.ACTIVE;
+			logger.debug("Folded {} overlay generations / {} rows into paged CSF: {} shared shards, {} replaced, "
+					+ "{} newly allocated native bytes", result.foldedGenerationCount(), result.foldedRowCount(),
+					result.rewrite().sharedShardCount(), result.rewrite().replacedShardCount(),
+					result.rewrite().allocatedNativeBytes());
+		} finally {
+			publicationLock.unlock();
+			if (!publishedReplacement) {
+				result.base().close();
+			}
+		}
+	}
+
+	private void consolidateOverlayOnly(LmdbAdjacencyPublishedState state, LmdbAdjacencyOverlaySet overlays,
+			boolean pagedBase) {
 		try {
 			LmdbAdjacencyDeltaGeneration merged = mergeGenerations(state);
 			publicationLock.lock();
@@ -461,11 +553,16 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				publicationLock.unlock();
 			}
 		} catch (LmdbAdjacencyMemoryRefusedException e) {
-			// the old set stays published and exact for its leased readers; schedule the no-overlap rebuild
-			maintenanceState = MaintenanceState.QUIESCING_FOR_REBUILD;
-			logger.warn("Direct adjacency consolidation refused by the memory account; scheduling quiescent rebuild",
-					e);
-			scheduleQuiescentRebuild();
+			maintenanceState = pagedBase ? MaintenanceState.ACTIVE : MaintenanceState.QUIESCING_FOR_REBUILD;
+			if (pagedBase) {
+				logger.warn("Direct adjacency overlay coalescing was refused; retaining the exact paged base/overlay "
+						+ "state until memory is reclaimed or a later commit retries", e);
+			} else {
+				logger.warn(
+						"Direct adjacency consolidation refused by the memory account; scheduling quiescent rebuild",
+						e);
+				scheduleQuiescentRebuild();
+			}
 		} catch (RuntimeException e) {
 			maintenanceState = MaintenanceState.ACTIVE;
 			logger.warn("Direct adjacency consolidation failed; the current overlay set remains published", e);
@@ -578,7 +675,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 						"consolidation exceeded its reservation by " + (actualBytes - reservedBytes) + " bytes");
 			}
 			LmdbInMemoryAdjacencyIndex base = state.base();
-			LmdbAdjacencyArenaCatalog slotZero = LmdbAdjacencyArenaCatalog.of(base.arenaCatalog().arena(0));
+			LmdbAdjacencyArenaCatalog slotZero = base.arenaCatalog().baseOnlyCopy();
 			LmdbAdjacencyArenaCatalog catalog;
 			try {
 				catalog = slotZero.appendRetained(arena);
@@ -625,6 +722,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	}
 
 	private LmdbAdjacencyContextCatalog consolidatedContextCatalog;
+
+	/** Deterministic package-local entry point for consolidation race and memory-refusal tests. */
+	void consolidateNowForTest() {
+		consolidateOnce();
+	}
 
 	/**
 	 * The no-overlap rebuild protocol (plan 27): publish UNAVAILABLE so new acquisitions fall back, let existing exact
@@ -882,13 +984,19 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		if (closed || options.memoryRefused()) {
 			return false;
 		}
+		AtomicBoolean usableBasePublished = new AtomicBoolean();
 		try {
-			Future<?> future = maintenanceExecutor.submit(this::buildOnce);
+			Future<?> future = maintenanceExecutor.submit(() -> {
+				buildOnce();
+				LmdbAdjacencyPublishedState state = published.get();
+				usableBasePublished.set(state.base() != null
+						&& state.servingState() == AdjacencyServingState.ROW_EXACT);
+			});
 			future.get();
 		} catch (Exception e) {
 			throw new IllegalStateException("direct adjacency build failed", e);
 		}
-		return maintenanceState == MaintenanceState.ACTIVE;
+		return usableBasePublished.get();
 	}
 
 	/**
@@ -919,8 +1027,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			try (LmdbAdjacencyBuildTxnFamily sourceFamily = new LmdbAdjacencyBuildTxnFamily(tripleStore)) {
 				baseRevision = sourceFamily.snapshotRevision();
 				capturedGap = emergencyGap.get();
-				index = LmdbAdjacencyBaseBuilder.build(sourceFamily, coverage, account, baseArenaRegionBytes,
-						workspaceRegionBytes, options.buildThreads(), metrics);
+				index = legacyBase
+						? LmdbAdjacencyBaseBuilder.build(sourceFamily, coverage, account, baseArenaRegionBytes,
+								workspaceRegionBytes, options.buildThreads(), metrics)
+						: LmdbPagedCsfBaseBuilder.build(sourceFamily, coverage, account, baseArenaRegionBytes,
+								workspaceRegionBytes, options.buildThreads(), metrics);
 			}
 			Runnable interleave = afterBuildScanForTest;
 			if (interleave != null) {
@@ -1458,7 +1569,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				metrics.recordFallback(FallbackReason.INDEX_ORDER_INCOMPATIBLE);
 				return null;
 			}
-			if (!base.coverage().isFull()) {
+			if (!base.coverage().isFull() || !base.supportsPredicateEnumeration()) {
+				// The compact base deliberately omits the duplicate node-to-all-predicates locator. LMDB remains the
+				// authoritative fallback for this shape while bound-predicate rows stay accelerated.
 				metrics.recordFallback(FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE);
 				return null;
 			}

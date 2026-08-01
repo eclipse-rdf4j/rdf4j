@@ -169,4 +169,60 @@ class LmdbAdjacencyMemoryAccountTest {
 		}
 		assertThat(account.totalChargedBytes()).isZero();
 	}
+
+	@Test
+	void prechargedCsfBudgetSplitsPhysicalOwnershipWithoutDoubleCharging() {
+		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1000);
+		Charge nativeCharge = account.tryCharge(MemoryKind.BASE, 600);
+		Charge metadataCharge = account.tryCharge(MemoryKind.JAVA_METADATA, 200);
+		assertThat(nativeCharge).isNotNull();
+		assertThat(metadataCharge).isNotNull();
+
+		try (LmdbAdjacencyCsfMemoryBudget budget = new LmdbAdjacencyCsfMemoryBudget(nativeCharge,
+				metadataCharge)) {
+			var first = budget.reserve(400, 50);
+			var second = budget.reserve(200, 150);
+			assertThat(first).isNotNull();
+			assertThat(second).isNotNull();
+			budget.assertExhausted();
+			assertThat(account.totalChargedBytes()).isEqualTo(800);
+
+			first.close();
+			assertThat(account.chargedBytes(MemoryKind.BASE)).isEqualTo(200);
+			assertThat(account.chargedBytes(MemoryKind.JAVA_METADATA)).isEqualTo(150);
+			second.close();
+		}
+		assertThat(account.totalChargedBytes()).isZero();
+	}
+
+	@Test
+	void prechargedCsfBudgetRefusalLeavesBothPoolsUnchanged() {
+		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1000);
+		Charge nativeCharge = account.tryCharge(MemoryKind.BASE, 600);
+		Charge metadataCharge = account.tryCharge(MemoryKind.JAVA_METADATA, 200);
+		try (LmdbAdjacencyCsfMemoryBudget budget = new LmdbAdjacencyCsfMemoryBudget(nativeCharge,
+				metadataCharge)) {
+			assertThat(budget.reserve(601, 1)).isNull();
+			assertThat(budget.remainingNativeBytes()).isEqualTo(600);
+			assertThat(budget.remainingMetadataBytes()).isEqualTo(200);
+			assertThat(account.totalChargedBytes()).isEqualTo(800);
+		}
+		assertThat(account.totalChargedBytes()).isZero();
+	}
+
+	@Test
+	void sharedChargeReleasesOnlyAfterItsFinalOwnerAndRejectsOverRelease() {
+		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1000);
+		LmdbAdjacencySharedCharge shared = new LmdbAdjacencySharedCharge(account.tryCharge(MemoryKind.BASE, 400));
+		shared.retain();
+
+		shared.close();
+		assertThat(account.totalChargedBytes()).isEqualTo(400);
+		shared.close();
+		assertThat(account.totalChargedBytes()).isZero();
+		assertThatThrownBy(shared::close)
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessageContaining("released more times than retained");
+		assertThat(account.totalChargedBytes()).isZero();
+	}
 }

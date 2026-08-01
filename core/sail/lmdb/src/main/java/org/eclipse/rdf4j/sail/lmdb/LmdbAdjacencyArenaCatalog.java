@@ -16,59 +16,88 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
+
 /**
  * Immutable arena slots for one overlay set (plan 27).
  * <p>
- * Slot zero is the base arena; later slots are consolidated and delta arenas retained by the owning overlay set. A u40
- * run reference is local to one arena, so the complete opaque query handle packs the unsigned slot byte with the local
- * reference:
- *
- * <pre>
- * runHandle = ((long) arenaSlot &lt;&lt; 40) | localRunRef
- * </pre>
- *
- * Valid handles are positive and cannot collide with the negative {@code NOT_FOUND}/{@code NOT_COVERED} sentinels. The
- * catalog owns one retained owner reference per arena; closing the catalog releases exactly those references (invariant
- * I14). Appending copy-creates a catalog and preserves every existing slot. Slot {@code 0xff} is permanently reserved
- * for the run codec's same-arena chunk sentinel, so published catalogs stop at slot 254.
+ * Slot zero and the following ordinary slots address legacy append-only arenas. Slot {@code 0xfe} is reserved for the
+ * immutable paged CSF base and slot {@code 0xff} remains the run codec's same-arena chunk sentinel. A CSF handle keeps
+ * the old 48-bit query ABI while its low u40 value identifies a page and local row coordinate.
+ * <p>
+ * The catalog owns one retained reference per ordinary arena and, when present, one retained CSF owner reference.
  */
 final class LmdbAdjacencyArenaCatalog implements AutoCloseable {
 
-	static final int MAX_SLOTS = LmdbAdjacencyRunCodec.CHUNK_SLOT_SELF;
+	static final int CSF_SLOT = ImmutablePagedQuadCsfIndex.HANDLE_SLOT;
+	static final int MAX_SLOTS = CSF_SLOT; // ordinary slots are 0..0xfd
 
 	private final LmdbAdjacencyArena[] arenas;
-
+	private final ImmutablePagedQuadCsfIndex csfBase;
 	private final AtomicBoolean closed = new AtomicBoolean();
 
-	private LmdbAdjacencyArenaCatalog(LmdbAdjacencyArena[] arenas) {
+	private LmdbAdjacencyArenaCatalog(LmdbAdjacencyArena[] arenas, ImmutablePagedQuadCsfIndex csfBase) {
 		this.arenas = arenas;
+		this.csfBase = csfBase;
 	}
 
-	/**
-	 * Creates a catalog with the base arena in slot zero, retaining one owner reference on it.
-	 */
+	/** Creates a legacy-only catalog with the base arena in slot zero. */
 	static LmdbAdjacencyArenaCatalog of(LmdbAdjacencyArena baseArena) {
+		return of(baseArena, null);
+	}
+
+	/** Creates a catalog with a tiny dictionary/overlay arena and an optional immutable CSF base. */
+	static LmdbAdjacencyArenaCatalog of(LmdbAdjacencyArena baseArena, ImmutablePagedQuadCsfIndex csfBase) {
 		Objects.requireNonNull(baseArena, "baseArena");
 		baseArena.retainOwner();
-		return new LmdbAdjacencyArenaCatalog(new LmdbAdjacencyArena[] { baseArena });
+		boolean csfRetained = false;
+		try {
+			if (csfBase != null) {
+				csfBase.retain();
+				csfRetained = true;
+			}
+			return new LmdbAdjacencyArenaCatalog(new LmdbAdjacencyArena[] { baseArena }, csfBase);
+		} catch (RuntimeException | Error e) {
+			baseArena.close();
+			if (csfRetained) {
+				csfBase.close();
+			}
+			throw e;
+		}
 	}
 
 	int size() {
 		return arenas.length;
 	}
 
+	boolean hasCsfBase() {
+		return csfBase != null;
+	}
+
+	ImmutablePagedQuadCsfIndex csfBase() {
+		checkOpen();
+		if (csfBase == null) {
+			throw new IllegalStateException("catalog has no paged CSF base");
+		}
+		return csfBase;
+	}
+
+	boolean isCsfHandle(long runHandle) {
+		checkHandle(runHandle);
+		return (int) (runHandle >>> 40) == CSF_SLOT;
+	}
+
 	LmdbAdjacencyArena arena(int unsignedSlot) {
 		checkOpen();
 		if (unsignedSlot < 0 || unsignedSlot >= arenas.length) {
-			throw new IllegalArgumentException("arena slot out of range: " + unsignedSlot);
+			throw new IllegalArgumentException("ordinary arena slot out of range: " + unsignedSlot);
 		}
 		return arenas[unsignedSlot];
 	}
 
-	/**
-	 * Packs an unsigned slot and nonzero local u40 reference into a positive opaque run handle.
-	 */
+	/** Packs an ordinary arena slot and nonzero local u40 reference into a positive opaque run handle. */
 	long packHandle(int unsignedSlot, long localU40Ref) {
+		checkOpen();
 		if (unsignedSlot < 0 || unsignedSlot >= arenas.length) {
 			throw new IllegalArgumentException("arena slot out of range: " + unsignedSlot);
 		}
@@ -76,6 +105,15 @@ final class LmdbAdjacencyArenaCatalog implements AutoCloseable {
 			throw new IllegalArgumentException("invalid local run reference: " + localU40Ref);
 		}
 		return (long) unsignedSlot << 40 | localU40Ref;
+	}
+
+	/** Packs a CSF local page/row coordinate into the reserved virtual slot. */
+	long packCsfHandle(long localU40Ref) {
+		checkOpen();
+		if (csfBase == null) {
+			throw new IllegalStateException("catalog has no paged CSF base");
+		}
+		return csfBase.packHandle(localU40Ref);
 	}
 
 	int unpackSlot(long runHandle) {
@@ -89,36 +127,67 @@ final class LmdbAdjacencyArenaCatalog implements AutoCloseable {
 	}
 
 	/**
-	 * Copy-appends one retained arena slot, preserving every existing slot. The new catalog retains one additional
-	 * owner reference on every arena it contains.
+	 * Returns a catalog containing only ordinary arena zero plus the same CSF base. Consolidation uses this instead of
+	 * dropping the virtual base when it replaces legacy delta slots.
 	 */
+	LmdbAdjacencyArenaCatalog baseOnlyCopy() {
+		return baseOnlyWithCsf(csfBase);
+	}
+
+	/** Returns an arena-zero catalog replacing the virtual CSF root while retaining both owners exactly once. */
+	LmdbAdjacencyArenaCatalog baseOnlyWithCsf(ImmutablePagedQuadCsfIndex replacementCsf) {
+		checkOpen();
+		LmdbAdjacencyArena base = arenas[0];
+		base.retainOwner();
+		boolean csfRetained = false;
+		try {
+			if (replacementCsf != null) {
+				replacementCsf.retain();
+				csfRetained = true;
+			}
+			return new LmdbAdjacencyArenaCatalog(new LmdbAdjacencyArena[] { base }, replacementCsf);
+		} catch (RuntimeException | Error e) {
+			base.close();
+			if (csfRetained) {
+				replacementCsf.close();
+			}
+			throw e;
+		}
+	}
+
+	/** Copy-appends one retained ordinary arena while preserving the CSF owner. */
 	LmdbAdjacencyArenaCatalog appendRetained(LmdbAdjacencyArena arena) {
 		checkOpen();
 		Objects.requireNonNull(arena, "arena");
 		if (arenas.length >= MAX_SLOTS) {
-			throw new IllegalStateException(
-					"arena catalog is full at " + MAX_SLOTS + " slots; consolidate or rebuild before publication");
+			throw new IllegalStateException("ordinary arena catalog is full at " + MAX_SLOTS
+					+ " slots; consolidate or rebuild before publication");
 		}
 		LmdbAdjacencyArena[] copy = Arrays.copyOf(arenas, arenas.length + 1);
 		copy[arenas.length] = arena;
 		int retained = 0;
+		boolean csfRetained = false;
 		try {
 			for (LmdbAdjacencyArena member : copy) {
 				member.retainOwner();
 				retained++;
 			}
-		} catch (RuntimeException e) {
+			if (csfBase != null) {
+				csfBase.retain();
+				csfRetained = true;
+			}
+			return new LmdbAdjacencyArenaCatalog(copy, csfBase);
+		} catch (RuntimeException | Error e) {
 			for (int i = 0; i < retained; i++) {
 				copy[i].close();
 			}
+			if (csfRetained) {
+				csfBase.close();
+			}
 			throw e;
 		}
-		return new LmdbAdjacencyArenaCatalog(copy);
 	}
 
-	/**
-	 * Releases this catalog's owner references exactly once.
-	 */
 	@Override
 	public void close() {
 		if (!closed.compareAndSet(false, true)) {
@@ -126,6 +195,9 @@ final class LmdbAdjacencyArenaCatalog implements AutoCloseable {
 		}
 		for (LmdbAdjacencyArena arena : arenas) {
 			arena.close();
+		}
+		if (csfBase != null) {
+			csfBase.close();
 		}
 	}
 
@@ -135,9 +207,15 @@ final class LmdbAdjacencyArenaCatalog implements AutoCloseable {
 		}
 	}
 
-	private static void checkHandle(long runHandle) {
+	private void checkHandle(long runHandle) {
+		checkOpen();
 		if (runHandle <= 0 || runHandle >>> 48 != 0) {
 			throw new IllegalArgumentException("invalid run handle: " + runHandle);
+		}
+		int slot = (int) (runHandle >>> 40);
+		long local = runHandle & LmdbAdjacencyArena.MAX_U40_VALUE;
+		if (local == 0 || (slot == CSF_SLOT ? csfBase == null : slot < 0 || slot >= arenas.length)) {
+			throw new IllegalArgumentException("run handle selects an unavailable slot: " + runHandle);
 		}
 	}
 }

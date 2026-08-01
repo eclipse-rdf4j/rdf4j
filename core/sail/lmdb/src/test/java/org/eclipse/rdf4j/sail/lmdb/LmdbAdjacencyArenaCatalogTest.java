@@ -40,9 +40,9 @@ class LmdbAdjacencyArenaCatalogTest {
 	}
 
 	@Test
-	void slot254IsTheLastPublishedArenaAndSlot255RemainsReserved() {
+	void slot253IsTheLastOrdinaryArenaAndSlots254And255RemainReserved() {
 		try (LmdbAdjacencyArena base = new LmdbAdjacencyArena(TEST_REGION_BYTES)) {
-			assertThat(LmdbAdjacencyArenaCatalog.MAX_SLOTS).isEqualTo(255);
+			assertThat(LmdbAdjacencyArenaCatalog.MAX_SLOTS).isEqualTo(254);
 			List<LmdbAdjacencyArenaCatalog> catalogs = new ArrayList<>();
 			LmdbAdjacencyArenaCatalog catalog = LmdbAdjacencyArenaCatalog.of(base);
 			catalogs.add(catalog);
@@ -51,14 +51,16 @@ class LmdbAdjacencyArenaCatalogTest {
 				catalogs.add(catalog);
 			}
 
-			assertThat(catalog.size()).isEqualTo(255);
-			long handle = catalog.packHandle(254, LmdbAdjacencyArena.MAX_U40_VALUE);
+			assertThat(catalog.size()).isEqualTo(254);
+			long handle = catalog.packHandle(253, LmdbAdjacencyArena.MAX_U40_VALUE);
 			assertThat(handle).isPositive();
-			assertThat(catalog.unpackSlot(handle)).isEqualTo(254);
+			assertThat(catalog.unpackSlot(handle)).isEqualTo(253);
 			assertThat(catalog.unpackLocalRef(handle)).isEqualTo(LmdbAdjacencyArena.MAX_U40_VALUE);
 
 			LmdbAdjacencyArenaCatalog full = catalog;
 			assertThatThrownBy(() -> full.appendRetained(base)).isInstanceOf(IllegalStateException.class);
+			assertThatIllegalArgumentException()
+					.isThrownBy(() -> full.packHandle(LmdbAdjacencyArenaCatalog.CSF_SLOT, 1));
 			assertThatIllegalArgumentException()
 					.isThrownBy(() -> full.packHandle(LmdbAdjacencyRunCodec.CHUNK_SLOT_SELF, 1));
 

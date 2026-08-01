@@ -18,12 +18,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.common.io.FileUtil;
-import org.eclipse.rdf4j.common.transaction.IsolationLevels;
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
@@ -77,10 +71,14 @@ public class DirectAdjacencyBenchmark {
 	@Param({ "base", "delta" })
 	public String sourceKind;
 
+	@Param({ "paged", "legacy" })
+	public String baseFormat;
+
 	private File dataDir;
 	private TripleStore tripleStore;
 	private LmdbDirectAdjacencyStore store;
 	private LmdbAdjacencyReadView view;
+	private TxnManager.Txn fallbackTxn;
 	private NativeLmdbQuerySource.NativeAdjacency adjacency;
 	private long targetPredicate;
 	private final long[] keys = new long[KEY_COUNT];
@@ -103,6 +101,10 @@ public class DirectAdjacencyBenchmark {
 		if (predicateCount != 1 && predicateCount != 100) {
 			throw new IllegalArgumentException("predicate count must be 1 or 100: " + predicateCount);
 		}
+		boolean legacyBase = "legacy".equals(baseFormat);
+		if (!legacyBase && !"paged".equals(baseFormat)) {
+			throw new IllegalArgumentException("unknown base format: " + baseFormat);
+		}
 
 		dataDir = Files.createTempDirectory("rdf4j-direct-adjacency-jmh-").toFile();
 		LmdbStoreConfig tripleConfig = new LmdbStoreConfig("spoc,posc");
@@ -112,7 +114,10 @@ public class DirectAdjacencyBenchmark {
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		LmdbDirectAdjacencyOptions options = LmdbDirectAdjacencyOptions.resolve(directConfig, 8L << 30, name -> null,
 				1);
-		store = new LmdbDirectAdjacencyStore(tripleStore, null, new AtomicBoolean(false), options);
+		try (LmdbDirectAdjacencyStore.BaseFormatSelection ignored = LmdbDirectAdjacencyStore
+				.overrideBaseFormatForCurrentThread(legacyBase)) {
+			store = new LmdbDirectAdjacencyStore(tripleStore, null, new AtomicBoolean(false), options);
+		}
 		tripleStore.setDirectAdjacencyCommitHooks(store.commitListener(), store.newCommitDelta());
 
 		targetPredicate = predicate(predicateCount - 1);
@@ -145,6 +150,7 @@ public class DirectAdjacencyBenchmark {
 			});
 		}
 
+		fallbackTxn = tripleStore.getTxnManager().createReadTxn();
 		view = store.acquire(tripleStore.getDataRevision());
 		if (!view.isExact()) {
 			throw new IllegalStateException("benchmark view is not exact");
@@ -162,6 +168,10 @@ public class DirectAdjacencyBenchmark {
 		if (view != null) {
 			view.close();
 			view = null;
+		}
+		if (fallbackTxn != null) {
+			fallbackTxn.close();
+			fallbackTxn = null;
 		}
 		if (store != null) {
 			store.close();
@@ -228,7 +238,7 @@ public class DirectAdjacencyBenchmark {
 	public void nodeEnumeration(Blackhole blackhole) throws IOException {
 		int key = nextKey();
 		long digest = 0;
-		try (RecordIterator iterator = store.tryOpen(view, null, keys[key], -1, -1, -1, true)) {
+		try (RecordIterator iterator = openNodeEnumeration(key)) {
 			long[] row;
 			while ((row = iterator.next()) != null) {
 				digest = Long.rotateLeft(digest, 7) ^ row[TripleIndex.PRED_IDX] ^ row[TripleIndex.OBJ_IDX];
@@ -273,6 +283,10 @@ public class DirectAdjacencyBenchmark {
 	}
 
 	void verifyFixture() {
+		boolean expectPaged = "paged".equals(baseFormat);
+		if (store.publishedStateForTest().base().usesPagedCsf() != expectPaged) {
+			throw new IllegalStateException("wrong base format: " + baseFormat);
+		}
 		for (int key = 0; key < KEY_COUNT; key++) {
 			long run = adjacency.find(keys[key]);
 			if (run <= 0 || adjacency.size(run) != degree) {
@@ -297,6 +311,24 @@ public class DirectAdjacencyBenchmark {
 		if (adjacency.find(uri(SUBJECT_PAYLOAD + KEY_COUNT + 1)) != NativeLmdbQuerySource.NativeAdjacency.NOT_FOUND) {
 			throw new IllegalStateException("missing key unexpectedly resolved");
 		}
+		try {
+			int rows = 0;
+			try (RecordIterator iterator = openNodeEnumeration(0)) {
+				while (iterator.next() != null) {
+					rows++;
+				}
+			}
+			if (rows != predicateCount - 1 + degree) {
+				throw new IllegalStateException("wrong node-enumeration row count: " + rows);
+			}
+		} catch (IOException e) {
+			throw new IllegalStateException(e);
+		}
+	}
+
+	private RecordIterator openNodeEnumeration(int key) throws IOException {
+		RecordIterator iterator = store.tryOpen(view, null, keys[key], -1, -1, -1, true);
+		return iterator != null ? iterator : tripleStore.getTriples(fallbackTxn, keys[key], -1, -1, -1, true);
 	}
 
 	private int nextKey() {
@@ -337,96 +369,4 @@ public class DirectAdjacencyBenchmark {
 		return ValueIds.createId(ValueIds.T_URI, payload);
 	}
 
-	/**
-	 * End-to-end retained-probe state. It exercises the private dataset-owned probe rather than a benchmark surrogate,
-	 * and setup verifies that the direct path is active.
-	 */
-	@State(Scope.Thread)
-	public static class RetainedDirectProbeState {
-
-		private File dataDir;
-		private SailRepository repository;
-		private SailDataset dataset;
-		private NativeLmdbQuerySource.NativeProbe probe;
-		private long predicate;
-		private final long[] subjects = new long[KEY_COUNT];
-
-		@Setup(Level.Trial)
-		public void setUp() throws IOException {
-			dataDir = Files.createTempDirectory("rdf4j-retained-direct-probe-jmh-").toFile();
-			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
-					.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
-					.setDirectAdjacencyMaxBytes(1L << 30);
-			LmdbStore sail = new LmdbStore(dataDir, config);
-			repository = new SailRepository(sail);
-			repository.init();
-			SimpleValueFactory values = SimpleValueFactory.getInstance();
-			IRI predicateValue = values.createIRI("urn:jmh:predicate");
-			try (RepositoryConnection connection = repository.getConnection()) {
-				for (int i = 0; i < KEY_COUNT; i++) {
-					connection.add(values.createIRI("urn:jmh:subject:" + i), predicateValue,
-							values.createIRI("urn:jmh:object:" + i));
-				}
-			}
-			LmdbSailStore backing = sail.getBackingStore();
-			if (!backing.directAdjacencyStore().buildNowForTest()) {
-				throw new IllegalStateException("direct adjacency build was refused");
-			}
-			dataset = backing.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT);
-			NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
-			predicate = source.idOf(predicateValue);
-			for (int i = 0; i < KEY_COUNT; i++) {
-				subjects[i] = source.idOf(values.createIRI("urn:jmh:subject:" + i));
-			}
-			probe = source.newProbe();
-			try (RecordIterator iterator = probe.open(subjects[0], predicate, -1, -1)) {
-				if (iterator.next() == null || !probe.adjacencyCacheBacked()) {
-					throw new IllegalStateException("retained-probe benchmark did not engage direct adjacency");
-				}
-			}
-		}
-
-		long probeAll() throws IOException {
-			long digest = 0;
-			for (int i = 0; i < 256; i++) {
-				RecordIterator iterator = probe.open(subjects[i & (KEY_COUNT - 1)], predicate, -1, -1);
-				long[] row = iterator.next();
-				if (row == null) {
-					throw new IllegalStateException("direct probe returned no row");
-				}
-				digest = Long.rotateLeft(digest, 7) ^ row[TripleIndex.OBJ_IDX];
-			}
-			return digest;
-		}
-
-		@TearDown(Level.Trial)
-		public void tearDown() throws IOException {
-			try {
-				if (probe != null) {
-					probe.close();
-				}
-			} finally {
-				try {
-					if (dataset != null) {
-						dataset.close();
-					}
-				} finally {
-					try {
-						if (repository != null) {
-							repository.shutDown();
-						}
-					} finally {
-						if (dataDir != null) {
-							FileUtil.deleteDir(dataDir);
-						}
-					}
-				}
-			}
-		}
-	}
-
-	@Benchmark
-	public void retainedDirectProbes(RetainedDirectProbeState state, Blackhole blackhole) throws IOException {
-		blackhole.consume(state.probeAll());
-	}
 }

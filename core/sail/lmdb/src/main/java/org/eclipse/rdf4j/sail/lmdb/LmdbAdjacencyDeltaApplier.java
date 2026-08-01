@@ -150,7 +150,7 @@ final class LmdbAdjacencyDeltaApplier {
 						"delta generation exceeded its reservation by " + (actualBytes - reservedBytes) + " bytes");
 			}
 
-			LmdbAdjacencyArenaCatalog slotZero = LmdbAdjacencyArenaCatalog.of(base.arenaCatalog().arena(0));
+			LmdbAdjacencyArenaCatalog slotZero = base.arenaCatalog().baseOnlyCopy();
 			LmdbAdjacencyArenaCatalog catalog;
 			try {
 				catalog = slotZero.appendRetained(arena);

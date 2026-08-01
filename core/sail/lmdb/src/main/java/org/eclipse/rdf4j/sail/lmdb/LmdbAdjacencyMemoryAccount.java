@@ -109,6 +109,20 @@ final class LmdbAdjacencyMemoryAccount {
 			return transferred;
 		}
 
+		/**
+		 * Splits an exact child owner from this already-accounted charge without changing the account total.
+		 */
+		synchronized Charge split(long childBytes) {
+			ensureOpen();
+			requireKindAndNonNegative(kind, childBytes);
+			if (childBytes > bytes) {
+				throw new IllegalArgumentException(
+						"split of " + childBytes + " bytes exceeds remaining charge of " + bytes);
+			}
+			bytes -= childBytes;
+			return new Charge(account, kind, childBytes);
+		}
+
 		@Override
 		public synchronized void close() {
 			if (closed) {

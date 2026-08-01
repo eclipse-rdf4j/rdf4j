@@ -16,21 +16,37 @@ import org.junit.jupiter.api.Test;
 class DirectAdjacencyBenchmarkTest {
 
 	@Test
-	void basePlainFixtureExercisesWideHeaders() throws Exception {
-		verify(16, 100, "plain", "base");
+	void pagedBasePlainFixtureExercisesWideHeadersAndEnumerationFallback() throws Exception {
+		verify(16, 100, "plain", "base", "paged");
 	}
 
 	@Test
-	void deltaMixedFixtureExercisesEncodedContexts() throws Exception {
-		verify(16, 1, "mixed", "delta");
+	void legacyDeltaMixedFixtureExercisesEncodedContextsAndAcceleratedEnumeration() throws Exception {
+		verify(16, 1, "mixed", "delta", "legacy");
 	}
 
-	private static void verify(int degree, int predicateCount, String contextMode, String sourceKind) throws Exception {
+	@Test
+	void retainedProbeFixtureCoversBothBaseFormats() throws Exception {
+		for (String baseFormat : new String[] { "paged", "legacy" }) {
+			DirectAdjacencyRetainedProbeBenchmark benchmark = new DirectAdjacencyRetainedProbeBenchmark();
+			benchmark.baseFormat = baseFormat;
+			try {
+				benchmark.setUp();
+				benchmark.probeAll();
+			} finally {
+				benchmark.tearDown();
+			}
+		}
+	}
+
+	private static void verify(int degree, int predicateCount, String contextMode, String sourceKind, String baseFormat)
+			throws Exception {
 		DirectAdjacencyBenchmark benchmark = new DirectAdjacencyBenchmark();
 		benchmark.degree = degree;
 		benchmark.predicateCount = predicateCount;
 		benchmark.contextMode = contextMode;
 		benchmark.sourceKind = sourceKind;
+		benchmark.baseFormat = baseFormat;
 		try {
 			benchmark.setUp();
 			benchmark.verifyFixture();

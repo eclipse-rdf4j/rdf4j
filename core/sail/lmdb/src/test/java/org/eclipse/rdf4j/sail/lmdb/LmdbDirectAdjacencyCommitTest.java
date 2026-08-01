@@ -184,9 +184,14 @@ class LmdbDirectAdjacencyCommitTest {
 				assertDeclined(view, -1, P1, O2, -1, true);
 				// an untouched row keeps serving from the older version
 				assertThat(probe(view, S2, P1, -1, -1, true)).hasSize(1);
-				// bound-node enumeration of a pending (key, plane) falls back before the first result
+				// A touched unbound-predicate row falls back before the first result.
 				assertDeclined(view, S1, -1, -1, -1, true);
-				assertThat(probe(view, S2, -1, -1, -1, true)).hasSize(1);
+				// Paged CSF deliberately has no node-to-all-predicates locator, including for untouched rows.
+				long enumerationBefore = store.snapshotMetrics()
+						.fallbacks(FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE);
+				assertDeclined(view, S2, -1, -1, -1, true);
+				assertThat(store.snapshotMetrics().fallbacks(FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE))
+						.isGreaterThan(enumerationBefore);
 			}
 		} finally {
 			store.pauseApplierForTest(false);
@@ -230,11 +235,14 @@ class LmdbDirectAdjacencyCommitTest {
 			assertThat(probe(newView, S1, P1, -1, -1, true)).isEmpty();
 			assertThat(store.snapshotMetrics().exactMisses).isGreaterThan(missesBefore);
 			assertThat(probe(oldView, S1, P1, -1, -1, true)).hasSize(1);
-			// node enumeration excludes the tombstoned group and keeps the surviving one (vector 20)
-			List<long[]> groups = probe(newView, S1, -1, -1, -1, true);
-			assertThat(groups).hasSize(1);
-			assertThat(groups.get(0)[1]).isEqualTo(P2);
-			assertThat(probe(oldView, S1, -1, -1, -1, true)).hasSize(2);
+			// The surviving predicate remains directly addressable while paged node enumeration falls back to LMDB.
+			assertThat(probe(newView, S1, P2, -1, -1, true)).hasSize(1);
+			long enumerationBefore = store.snapshotMetrics()
+					.fallbacks(FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE);
+			assertDeclined(newView, S1, -1, -1, -1, true);
+			assertThat(store.snapshotMetrics().fallbacks(FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE))
+					.isGreaterThan(enumerationBefore);
+			assertThat(probe(oldView, S1, P2, -1, -1, true)).hasSize(1);
 		}
 	}
 

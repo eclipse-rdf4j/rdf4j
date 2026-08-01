@@ -15,6 +15,8 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
 
+import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
+
 /**
  * Group run codecs for the strictly in-memory direct adjacency index (plan 27).
  * <p>
@@ -36,6 +38,8 @@ final class LmdbAdjacencyRunCodec {
 	static final int CODEC_BLOCK_FOR = 1;
 	static final int CODEC_CHUNK_DIRECTORY = 2;
 	static final int CODEC_RESERVED = 3;
+	/** Internal cursor-only codec discriminator for the virtual paged CSF handle slot. */
+	static final int CODEC_PAGED_CSF = 4;
 
 	static final int TAG_CONTEXT_PRESENT = 1 << 2;
 	static final int TAG_ORDERED_INTEGER = 1 << 3;
@@ -568,6 +572,7 @@ final class LmdbAdjacencyRunCodec {
 	static final class RunCursor {
 
 		private final LmdbAdjacencyArena.ReadCursor memory = new LmdbAdjacencyArena.ReadCursor();
+		private final ImmutablePagedQuadCsfIndex.RowCursor csf = new ImmutablePagedQuadCsfIndex.RowCursor();
 
 		private LmdbAdjacencyArenaCatalog catalog;
 		private long runHandle = Long.MIN_VALUE;
@@ -606,6 +611,23 @@ final class LmdbAdjacencyRunCodec {
 		}
 		int slot = catalog.unpackSlot(runHandle);
 		long localRef = runHandle & LmdbAdjacencyArena.MAX_U40_VALUE;
+		if (slot == LmdbAdjacencyArenaCatalog.CSF_SLOT) {
+			catalog.csfBase().resolve(localRef, target.csf);
+			target.catalog = catalog;
+			target.runHandle = runHandle;
+			target.arenaSlot = slot;
+			target.segment = null;
+			target.baseOffset = 0;
+			target.tag = target.csf.orderedIntegerDomain() ? TAG_ORDERED_INTEGER : 0;
+			target.codec = CODEC_PAGED_CSF;
+			target.contextsPresent = true;
+			target.edgeCount = target.csf.edgeCount();
+			target.blockCount = 0;
+			target.blockPayloadStart = 0;
+			target.blockPayloadBytes = 0;
+			target.currentBlockEnd = 0;
+			return;
+		}
 		LmdbAdjacencyArena arena = catalog.arena(slot);
 		arena.resolve(localRef, 8, target.memory);
 		MemorySegment header = target.memory.segment();
@@ -697,7 +719,8 @@ final class LmdbAdjacencyRunCodec {
 	static boolean orderedIntegerDomain(LmdbAdjacencyArenaCatalog catalog, long runHandle) {
 		RunCursor cursor = new RunCursor();
 		resolve(catalog, runHandle, cursor);
-		return (cursor.tag & TAG_ORDERED_INTEGER) != 0;
+		return cursor.codec == CODEC_PAGED_CSF ? cursor.csf.orderedIntegerDomain()
+				: (cursor.tag & TAG_ORDERED_INTEGER) != 0;
 	}
 
 	static long neighborAt(LmdbAdjacencyArenaCatalog catalog, long runHandle, long ordinal) {
@@ -717,6 +740,9 @@ final class LmdbAdjacencyRunCodec {
 
 	static long contextAt(ContextCatalog contexts, RunCursor cursor, long ordinal) {
 		checkOrdinal(cursor, ordinal);
+		if (cursor.codec == CODEC_PAGED_CSF) {
+			return cursor.csf.contextAt(ordinal);
+		}
 		long contextOrdinal = contextOrdinalAt(cursor, ordinal);
 		return contextOrdinal == 0 ? 0 : contexts.rawForOrdinal(contextOrdinal);
 	}
@@ -742,6 +768,9 @@ final class LmdbAdjacencyRunCodec {
 			throw new IllegalArgumentException("fromOrdinal out of range: " + fromOrdinal);
 		}
 		int copied = (int) Math.min(length, cursor.edgeCount - fromOrdinal);
+		if (cursor.codec == CODEC_PAGED_CSF) {
+			return cursor.csf.copy(fromOrdinal, copied, neighborTarget, neighborOffset, contextTarget, contextOffset);
+		}
 		switch (cursor.codec) {
 		case CODEC_SMALL_VARINT:
 			copySmall(contexts, cursor, fromOrdinal, copied, neighborTarget, neighborOffset, contextTarget,
@@ -775,6 +804,9 @@ final class LmdbAdjacencyRunCodec {
 		if (fromOrdinal < 0 || fromOrdinal > cursor.edgeCount) {
 			throw new IllegalArgumentException("fromOrdinal out of range: " + fromOrdinal);
 		}
+		if (cursor.codec == CODEC_PAGED_CSF) {
+			return cursor.csf.lowerBound(fromOrdinal, neighbor, rawContext);
+		}
 		long low = fromOrdinal;
 		long high = cursor.edgeCount;
 		while (low < high) {
@@ -803,6 +835,9 @@ final class LmdbAdjacencyRunCodec {
 
 	static long neighborAt(RunCursor cursor, long ordinal) {
 		checkOrdinal(cursor, ordinal);
+		if (cursor.codec == CODEC_PAGED_CSF) {
+			return cursor.csf.neighborAt(ordinal);
+		}
 		switch (cursor.codec) {
 		case CODEC_SMALL_VARINT: {
 			int neighborByteLength = Short
@@ -836,6 +871,9 @@ final class LmdbAdjacencyRunCodec {
 	}
 
 	private static long contextOrdinalAt(RunCursor cursor, long ordinal) {
+		if (cursor.codec == CODEC_PAGED_CSF) {
+			throw new IllegalStateException("paged CSF stores raw context IDs, not context ordinals");
+		}
 		if (!cursor.contextsPresent) {
 			return 0;
 		}

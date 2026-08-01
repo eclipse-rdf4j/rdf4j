@@ -16,6 +16,7 @@ import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.Charge;
+import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
 
 /**
  * One immutable published base of the strictly in-memory direct adjacency index (plan 27).
@@ -40,10 +41,12 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 	private final LmdbAdjacencyContextCatalog contextCatalog;
 	private final LmdbAdjacencyCoverage coverage;
 	private final LmdbReferenceNodeLocator locator;
+	private final ImmutablePagedQuadCsfIndex csfBase; // non-owning; retained by arenaCatalog
 	private final LmdbAdjacencyKeyIndex[] keyIndexes; // predicateOrdinal * 4 + plane
 	private final long[] inlinePlaneKeys;
 	private final LmdbInlineIncomingIndex[] inlinePlanes;
-	private final Charge baseCharge;
+	private final LmdbAdjacencySharedCharge sharedBaseCharge;
+	private final Charge[] ownedNativeCharges;
 	private final Charge metadataCharge;
 	private final long statementCount;
 	private final long incidenceCount;
@@ -53,16 +56,29 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 			LmdbAdjacencyCoverage coverage, LmdbReferenceNodeLocator locator, LmdbAdjacencyKeyIndex[] keyIndexes,
 			long[] inlinePlaneKeys, LmdbInlineIncomingIndex[] inlinePlanes, Charge baseCharge, Charge metadataCharge,
 			long statementCount, long incidenceCount) {
+		this(baseRevision, arenaCatalog, predicateCatalog, contextCatalog, coverage, locator, null, keyIndexes,
+				inlinePlaneKeys, inlinePlanes, new LmdbAdjacencySharedCharge(baseCharge), new Charge[0], metadataCharge,
+				statementCount, incidenceCount);
+	}
+
+	LmdbInMemoryAdjacencyIndex(long baseRevision, LmdbAdjacencyArenaCatalog arenaCatalog,
+			LmdbAdjacencyPredicateCatalog predicateCatalog, LmdbAdjacencyContextCatalog contextCatalog,
+			LmdbAdjacencyCoverage coverage, LmdbReferenceNodeLocator locator, ImmutablePagedQuadCsfIndex csfBase,
+			LmdbAdjacencyKeyIndex[] keyIndexes, long[] inlinePlaneKeys, LmdbInlineIncomingIndex[] inlinePlanes,
+			LmdbAdjacencySharedCharge sharedBaseCharge, Charge[] ownedNativeCharges, Charge metadataCharge,
+			long statementCount, long incidenceCount) {
 		this.baseRevision = baseRevision;
 		this.arenaCatalog = arenaCatalog;
 		this.predicateCatalog = predicateCatalog;
 		this.contextCatalog = contextCatalog;
 		this.coverage = coverage;
 		this.locator = locator;
+		this.csfBase = csfBase;
 		this.keyIndexes = keyIndexes;
 		this.inlinePlaneKeys = inlinePlaneKeys;
 		this.inlinePlanes = inlinePlanes;
-		this.baseCharge = baseCharge;
+		this.sharedBaseCharge = sharedBaseCharge;
+		this.ownedNativeCharges = ownedNativeCharges.clone();
 		this.metadataCharge = metadataCharge;
 		this.statementCount = statementCount;
 		this.incidenceCount = incidenceCount;
@@ -90,6 +106,27 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 
 	LmdbReferenceNodeLocator locator() {
 		return locator;
+	}
+
+	boolean usesPagedCsf() {
+		return csfBase != null;
+	}
+
+	ImmutablePagedQuadCsfIndex csfBase() {
+		if (csfBase == null) {
+			throw new IllegalStateException("base index does not use paged CSF");
+		}
+		return csfBase;
+	}
+
+	LmdbAdjacencySharedCharge retainSharedBaseCharge() {
+		sharedBaseCharge.retain();
+		return sharedBaseCharge;
+	}
+
+	/** The compact CSF intentionally omits the old all-predicates-per-node locator. */
+	boolean supportsPredicateEnumeration() {
+		return csfBase == null;
 	}
 
 	LmdbAdjacencyKeyIndex keyIndex(long predicateOrdinal, int plane) {
@@ -152,6 +189,12 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 		if (predicateOrdinal < 0) {
 			return predicateOrdinal;
 		}
+		if (csfBase != null) {
+			long localReference = searchContext == null
+					? csfBase.findLocalReference(predicateOrdinal, plane, rawKey)
+					: csfBase.findLocalReference(predicateOrdinal, plane, rawKey, searchContext.csfCursor());
+			return localReference == 0 ? NOT_FOUND : arenaCatalog.packCsfHandle(localReference);
+		}
 		if (ValueIds.isReference(rawKey)) {
 			int type = ValueIds.getIdType(rawKey);
 			long payload = ValueIds.getValue(rawKey);
@@ -187,6 +230,9 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 			if (current <= 0) {
 				throw new IllegalStateException("base index already closed");
 			}
+			if (current == Long.MAX_VALUE) {
+				throw new IllegalStateException("base index reference count overflow");
+			}
 		} while (!refs.compareAndSet(current, current + 1));
 	}
 
@@ -195,13 +241,19 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 	 */
 	@Override
 	public void close() {
-		long remaining = refs.decrementAndGet();
-		if (remaining < 0) {
-			throw new IllegalStateException("base index released more times than retained");
-		}
-		if (remaining == 0) {
+		long current;
+		do {
+			current = refs.get();
+			if (current <= 0) {
+				throw new IllegalStateException("base index released more times than retained");
+			}
+		} while (!refs.compareAndSet(current, current - 1));
+		if (current == 1) {
 			arenaCatalog.close();
-			baseCharge.close();
+			sharedBaseCharge.close();
+			for (Charge nativeCharge : ownedNativeCharges) {
+				nativeCharge.close();
+			}
 			metadataCharge.close();
 		}
 	}

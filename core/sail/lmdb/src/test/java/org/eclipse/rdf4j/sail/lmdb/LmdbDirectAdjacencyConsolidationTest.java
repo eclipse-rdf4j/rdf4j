@@ -20,6 +20,7 @@ import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -52,6 +53,8 @@ class LmdbDirectAdjacencyConsolidationTest {
 	private static final long S1 = uri(1);
 	private static final long P1 = uri(100);
 	private static final long O_BASE = uri(1000);
+	private static final long O_KEEP = uri(1001);
+	private static final long G1 = uri(9001);
 
 	@BeforeEach
 	void setUp(@TempDir File dataDir) throws Exception {
@@ -75,8 +78,20 @@ class LmdbDirectAdjacencyConsolidationTest {
 	}
 
 	private void commitAdd(long s, long p, long o) throws IOException {
+		commitAdd(s, p, o, 0, true);
+	}
+
+	private void commitAdd(long s, long p, long o, long context, boolean explicit) throws IOException {
 		tripleStore.startTransaction();
-		tripleStore.storeTriple(s, p, o, 0, true);
+		tripleStore.storeTriple(s, p, o, context, explicit);
+		tripleStore.commit();
+		store.applyCommitted(tripleStore.drainDirectAdjacencyCommitDelta());
+	}
+
+	private void commitRemove(long s, long p, long o, long context, boolean explicit) throws IOException {
+		tripleStore.startTransaction();
+		tripleStore.removeTriplesByContext(s, p, o, context, explicit, removed -> {
+		});
 		tripleStore.commit();
 		store.applyCommitted(tripleStore.drainDirectAdjacencyCommitDelta());
 	}
@@ -116,6 +131,146 @@ class LmdbDirectAdjacencyConsolidationTest {
 							state.minSnapshotRevision())
 					.isTrue();
 			assertThat(probe(view, S1, P1)).hasSize(13);
+		}
+	}
+
+	@Test
+	void pagedConsolidationFoldsOverlaysIntoANewBaseRevision() throws Exception {
+		commitAdd(S1, P1, O_BASE);
+		assertThat(store.buildNowForTest()).isTrue();
+		assertThat(store.publishedStateForTest().base().usesPagedCsf()).isTrue();
+
+		int commits = store.options().maxDeltaGenerations() + 1;
+		for (int i = 1; i <= commits; i++) {
+			commitAdd(S1, P1, uri(1000 + i));
+			store.pauseApplierForTest(false);
+		}
+
+		LmdbAdjacencyPublishedState state = store.publishedStateForTest();
+		assertThat(state.overlays()).isNull();
+		assertThat(state.base().baseRevision()).isEqualTo(state.appliedRevision());
+		assertThat(state.minSnapshotRevision()).isEqualTo(state.appliedRevision());
+		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
+			assertThat(view.isExact()).isTrue();
+			assertThat(probe(view, S1, P1)).hasSize(commits + 1);
+		}
+	}
+
+	@Test
+	void pagedConsolidationFoldsDeletesNewPredicatesAndContextExtensions() throws Exception {
+		long appendedPredicate = uri(50); // unsigned-before P1, but its new ordinal must append after P1
+		long addedObject = uri(2_000);
+		commitAdd(S1, P1, O_BASE);
+		commitAdd(S1, P1, O_KEEP);
+		assertThat(store.buildNowForTest()).isTrue();
+		long originalPredicateOrdinal = store.publishedStateForTest().base().predicateCatalog().ordinalForRaw(P1);
+
+		int commits = store.options().maxDeltaGenerations() + 1;
+		commitRemove(S1, P1, O_BASE, -1, true);
+		store.pauseApplierForTest(false);
+		commitAdd(S1, appendedPredicate, addedObject, G1, true);
+		store.pauseApplierForTest(false);
+		commitAdd(S1, P1, uri(3_000));
+		store.pauseApplierForTest(false);
+		for (int i = 3; i < commits; i++) {
+			commitAdd(uri(100 + i), P1, uri(4_000 + i));
+			store.pauseApplierForTest(false);
+		}
+
+		LmdbAdjacencyPublishedState state = store.publishedStateForTest();
+		assertThat(state.overlays()).isNull();
+		assertThat(state.base().predicateCatalog().ordinalForRaw(P1)).isEqualTo(originalPredicateOrdinal);
+		assertThat(state.base().predicateCatalog().ordinalForRaw(appendedPredicate))
+				.isGreaterThan(originalPredicateOrdinal);
+		assertThat(state.contextCatalog().ordinalForRaw(G1)).isPositive();
+
+		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
+			List<long[]> retained = probe(view, S1, P1);
+			assertThat(retained).extracting(row -> row[2]).containsExactly(O_KEEP, uri(3_000));
+			List<long[]> appended = probe(view, S1, appendedPredicate);
+			assertThat(appended).hasSize(1);
+			assertThat(appended.get(0)[2]).isEqualTo(addedObject);
+			assertThat(appended.get(0)[3]).isEqualTo(G1);
+			RecordIterator incoming = store.tryOpen(view, null, -1, appendedPredicate, addedObject, G1, true);
+			assertThat(incoming).isNotNull();
+			incoming.close();
+		}
+	}
+
+	@Test
+	void publicationRaceDiscardsCandidateBuiltFromOlderOverlayIdentities() throws Exception {
+		commitAdd(S1, P1, O_BASE);
+		assertThat(store.buildNowForTest()).isTrue();
+		commitAdd(S1, P1, uri(1_001));
+		store.pauseApplierForTest(false);
+		commitAdd(S1, P1, uri(1_002));
+		store.pauseApplierForTest(false);
+		LmdbInMemoryAdjacencyIndex originalBase = store.publishedStateForTest().base();
+
+		CountDownLatch candidateReady = new CountDownLatch(1);
+		CountDownLatch allowPublication = new CountDownLatch(1);
+		store.beforePagedCsfPublicationForTest = () -> {
+			candidateReady.countDown();
+			try {
+				if (!allowPublication.await(10, TimeUnit.SECONDS)) {
+					throw new AssertionError("test did not release candidate publication");
+				}
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new AssertionError(e);
+			}
+		};
+
+		CompletableFuture<Void> consolidation = CompletableFuture.runAsync(store::consolidateNowForTest);
+		long chargedWithCandidateAndCommit;
+		try {
+			assertThat(candidateReady.await(10, TimeUnit.SECONDS)).isTrue();
+			commitAdd(S1, P1, uri(1_003));
+			store.pauseApplierForTest(false);
+			chargedWithCandidateAndCommit = store.memoryAccount().totalChargedBytes();
+		} finally {
+			allowPublication.countDown();
+		}
+		consolidation.get(10, TimeUnit.SECONDS);
+		store.beforePagedCsfPublicationForTest = null;
+
+		LmdbAdjacencyPublishedState state = store.publishedStateForTest();
+		assertThat(state.base()).isSameAs(originalBase);
+		assertThat(state.overlays()).isNotNull();
+		assertThat(state.overlays().generationCount()).isEqualTo(3);
+		assertThat(store.memoryAccount().totalChargedBytes()).isLessThan(chargedWithCandidateAndCommit);
+		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
+			assertThat(probe(view, S1, P1)).hasSize(4);
+		}
+	}
+
+	@Test
+	void rewriteAndOverlayRefusalKeepExactStateAndLaterRetrySucceeds() throws Exception {
+		commitAdd(S1, P1, O_BASE);
+		assertThat(store.buildNowForTest()).isTrue();
+		commitAdd(S1, P1, uri(1_001));
+		store.pauseApplierForTest(false);
+		commitAdd(S1, P1, uri(1_002));
+		store.pauseApplierForTest(false);
+		LmdbAdjacencyPublishedState before = store.publishedStateForTest();
+		LmdbAdjacencyMemoryAccount account = store.memoryAccount();
+		long baselineCharged = account.totalChargedBytes();
+		long uncharged = account.maxBytes() - account.totalChargedBytes();
+
+		try (LmdbAdjacencyMemoryAccount.Charge pressure = account.tryCharge(MemoryKind.BUILD_COUNTERS, uncharged)) {
+			assertThat(pressure).isNotNull();
+			store.consolidateNowForTest();
+			assertThat(store.publishedStateForTest()).isSameAs(before);
+			assertThat(store.maintenanceState()).isEqualTo(LmdbDirectAdjacencyStore.MaintenanceState.ACTIVE);
+		}
+		assertThat(account.totalChargedBytes()).isEqualTo(baselineCharged);
+
+		store.consolidateNowForTest();
+		LmdbAdjacencyPublishedState retried = store.publishedStateForTest();
+		assertThat(retried.overlays()).isNull();
+		assertThat(retried.base().baseRevision()).isEqualTo(retried.appliedRevision());
+		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
+			assertThat(probe(view, S1, P1)).hasSize(3);
 		}
 	}
 

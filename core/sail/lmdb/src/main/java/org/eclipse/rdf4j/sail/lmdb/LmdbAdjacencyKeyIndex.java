@@ -13,24 +13,30 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.lang.foreign.MemorySegment;
 
+import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
+
 /**
  * Immutable unsigned-sorted raw-key domain for one base {@code (predicate, plane)}.
  * <p>
- * The builder allocates the exact native table after the sizing pass, appends keys while the corresponding ordered
- * source stream is encoded, and seals it before publication. Query-time enumeration is then one bounds check and one
- * native u64 read per key, with no per-key Java object and no copy of the base domain.
+ * Legacy bases use a dedicated native u64 table. Paged-CSF bases expose the row-coordinate fibres directly, avoiding an
+ * additional eight bytes per active row and making enumeration a zero-copy view over the compressed pages.
  */
 final class LmdbAdjacencyKeyIndex {
 
 	private final MemorySegment keys;
+	private final ImmutablePagedQuadCsfIndex.KeyDomain csfKeys;
 	private final long capacity;
 	private long size;
 	private long lastKey;
 	private boolean sealed;
 
-	private LmdbAdjacencyKeyIndex(MemorySegment keys, long capacity) {
+	private LmdbAdjacencyKeyIndex(MemorySegment keys, ImmutablePagedQuadCsfIndex.KeyDomain csfKeys, long capacity,
+			boolean sealed) {
 		this.keys = keys;
+		this.csfKeys = csfKeys;
 		this.capacity = capacity;
+		this.sealed = sealed;
+		this.size = sealed ? capacity : 0;
 	}
 
 	static LmdbAdjacencyKeyIndex allocate(LmdbAdjacencyArena arena, long keyCount) {
@@ -39,10 +45,20 @@ final class LmdbAdjacencyKeyIndex {
 		}
 		long bytes = Math.multiplyExact(keyCount, (long) Long.BYTES);
 		long reference = arena.allocateRef(bytes, Long.BYTES);
-		return new LmdbAdjacencyKeyIndex(arena.slice(reference, bytes), keyCount);
+		return new LmdbAdjacencyKeyIndex(arena.slice(reference, bytes), null, keyCount, false);
+	}
+
+	static LmdbAdjacencyKeyIndex fromCsf(ImmutablePagedQuadCsfIndex.KeyDomain keys) {
+		if (keys == null || keys.keyCount() == 0) {
+			return null;
+		}
+		return new LmdbAdjacencyKeyIndex(null, keys, keys.keyCount(), true);
 	}
 
 	void append(long key) {
+		if (csfKeys != null) {
+			throw new UnsupportedOperationException("CSF key domains are immutable views");
+		}
 		if (sealed) {
 			throw new IllegalStateException("key index is already sealed");
 		}
@@ -58,6 +74,9 @@ final class LmdbAdjacencyKeyIndex {
 	}
 
 	void seal() {
+		if (csfKeys != null) {
+			return;
+		}
 		if (size != capacity) {
 			throw new IllegalStateException("key index filled " + size + " of " + capacity + " planned keys");
 		}
@@ -72,10 +91,14 @@ final class LmdbAdjacencyKeyIndex {
 		if (ordinal < 0 || ordinal >= capacity) {
 			throw new IllegalArgumentException("key ordinal out of range: " + ordinal + " of " + capacity);
 		}
-		return keys.get(LmdbAdjacencyArena.U64_LE, ordinal * Long.BYTES);
+		return csfKeys != null ? csfKeys.keyAt(ordinal)
+				: keys.get(LmdbAdjacencyArena.U64_LE, ordinal * Long.BYTES);
 	}
 
 	boolean contains(long key) {
+		if (csfKeys != null) {
+			return csfKeys.contains(key);
+		}
 		long low = 0;
 		long high = capacity - 1;
 		while (low <= high) {

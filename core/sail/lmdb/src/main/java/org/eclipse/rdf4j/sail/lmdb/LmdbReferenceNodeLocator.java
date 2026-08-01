@@ -15,6 +15,8 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.lang.foreign.MemorySegment;
 import java.util.Objects;
 
+import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
+
 /**
  * Flat per-type reference-node locator with bitmap/rank pages and compact node headers (plan 27).
  * <p>
@@ -165,6 +167,7 @@ final class LmdbReferenceNodeLocator {
 
 		private final LmdbAdjacencyArena.ReadCursor pageCursor = new LmdbAdjacencyArena.ReadCursor();
 		private final LmdbAdjacencyArena.ReadCursor headerCursor = new LmdbAdjacencyArena.ReadCursor();
+		private final ImmutablePagedQuadCsfIndex.LookupCursor csfCursor = new ImmutablePagedQuadCsfIndex.LookupCursor();
 
 		private int pageType = -1;
 		private long pageNumber = -1;
@@ -174,6 +177,10 @@ final class LmdbReferenceNodeLocator {
 		private long incomingExplicitPosition = -1;
 		private long outgoingInferredPosition = -1;
 		private long incomingInferredPosition = -1;
+
+		ImmutablePagedQuadCsfIndex.LookupCursor csfCursor() {
+			return csfCursor;
+		}
 
 		private boolean pageMatches(int type, long pageNumber, long pageReference) {
 			return pageType == type && this.pageNumber == pageNumber && this.pageReference == pageReference;

@@ -108,21 +108,21 @@ class LmdbDirectAdjacencySnapshotTest {
 	}
 
 	@Test
-	void completedBuildExposesScaleProjectionAndTemporaryMemoryKinds() {
+	void completedPagedBuildExposesScaleProjectionAndExactMemoryKinds() {
 		openStore(null, null);
 
 		LmdbAdjacencyMetrics.Snapshot metrics = direct.snapshotMetrics();
 		assertThat(metrics.activeBuildThreads).isZero();
-		assertThat(metrics.lastBuildThreads).isEqualTo(2);
-		assertThat(metrics.pass1SourceVisits).isEqualTo(4);
-		assertThat(metrics.pass3SourceVisits).isEqualTo(4);
+		assertThat(metrics.lastBuildThreads).isEqualTo(1);
+		assertThat(metrics.pass1SourceVisits).isEqualTo(3);
+		assertThat(metrics.pass3SourceVisits).isEqualTo(3);
 		assertThat(metrics.pass1Nanos).isPositive();
 		assertThat(metrics.pass3Nanos).isPositive();
 		assertThat(metrics.buildElapsedNanos).isGreaterThanOrEqualTo(metrics.pass1Nanos + metrics.pass3Nanos);
 		assertThat(metrics.projectedBuildNanos).isPositive();
 		assertThat(metrics.buildCounterBytes).isZero();
 		assertThat(metrics.buildOutputBytes).isZero();
-		assertThat(metrics.javaMetadataBytes).isZero();
+		assertThat(metrics.javaMetadataBytes).isPositive();
 		assertThat(metrics.baseBytes).isPositive();
 		assertThat(metrics.detectedMemoryLimitBytes).isPositive();
 		assertThat(metrics.configuredMaxBytes).isEqualTo(1L << 30);
@@ -130,12 +130,12 @@ class LmdbDirectAdjacencySnapshotTest {
 	}
 
 	@Test
-	void selectedCoverageProjectionCountsUncoveredSourceVisits() {
+	void selectedCoverageProjectionCountsOnlyAcceptedGroups() {
 		openStore(DirectAdjacencyCoverage.SELECTED, List.of(P_NEW));
 
 		LmdbAdjacencyMetrics.Snapshot metrics = direct.snapshotMetrics();
-		assertThat(metrics.pass1SourceVisits).isEqualTo(4);
-		assertThat(metrics.pass3SourceVisits).isEqualTo(4);
+		assertThat(metrics.pass1SourceVisits).isZero();
+		assertThat(metrics.pass3SourceVisits).isZero();
 	}
 
 	@Test
