@@ -43,9 +43,9 @@ The core RDF4J databases are mainly intended for small to medium-sized datasets.
 
 #### Ontotext GraphDB
 
-[Ontotext GraphDB](http://www.ontotext.com/products/ontotext-graphdb/) is a leading RDF triplestore built on OWL (Ontology Web Language) standards.  GraphDB handles massive loads, queries and OWL inferencing in real time. Ontotext offers GraphDB in several editions, including  GraphDB™ Free, GraphDB™ Standard and GraphDB™ Enterprise.
+[Graphwise GraphDB](https://graphwise.ai/components/graphdb/) is an enterprise semantic database that unifies complex, interconnected data into an AI-ready environment. Built to handle relationships where traditional databases struggle, it integrates directly into AI workflows to improve LLM accuracy while guaranteeing high availability and zero data loss.
 
-Ontotext are a long-term contributor to the RDF4J project.
+Graphwise is a long-term contributor to the RDF4J project.
 
 #### Halyard
 

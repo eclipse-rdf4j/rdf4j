@@ -17,6 +17,9 @@ import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -28,14 +31,6 @@ import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 import java.util.zip.InflaterInputStream;
 
-import com.aayushatharva.brotli4j.Brotli4jLoader;
-import com.aayushatharva.brotli4j.decoder.BrotliInputStream;
-import com.aayushatharva.brotli4j.encoder.BrotliOutputStream;
-import com.aayushatharva.brotli4j.encoder.Encoder;
-import com.github.luben.zstd.Zstd;
-import com.github.luben.zstd.ZstdInputStream;
-import com.github.luben.zstd.ZstdOutputStream;
-
 /**
  * Compression codecs commonly used around RDF input and output streams.
  */
@@ -44,17 +39,17 @@ public enum RioCompression {
 	ZSTD("zstd", Set.of("zst", "zstd")) {
 		@Override
 		public InputStream decompress(InputStream inputStream) throws IOException {
-			return new ZstdInputStream(inputStream);
+			return ZstdSupport.decompress(inputStream);
 		}
 
 		@Override
 		public OutputStream compress(OutputStream outputStream) throws IOException {
-			return new ZstdOutputStream(new NonClosingOutputStream(outputStream));
+			return ZstdSupport.compress(new NonClosingOutputStream(outputStream));
 		}
 
 		@Override
-		public byte[] compress(byte[] uncompressed) {
-			return Zstd.compress(uncompressed);
+		public byte[] compress(byte[] uncompressed) throws IOException {
+			return ZstdSupport.compress(uncompressed);
 		}
 
 		@Override
@@ -62,12 +57,7 @@ public enum RioCompression {
 			if (isDisabled()) {
 				return false;
 			}
-			try {
-				Zstd.compress(new byte[0]);
-				return true;
-			} catch (RuntimeException | LinkageError e) {
-				return false;
-			}
+			return ZstdSupport.isAvailable();
 		}
 	},
 
@@ -98,15 +88,12 @@ public enum RioCompression {
 	BROTLI("br", Set.of("br", "brotli")) {
 		@Override
 		public InputStream decompress(InputStream inputStream) throws IOException {
-			Brotli4jLoader.ensureAvailability();
-			return new BrotliInputStream(inputStream);
+			return BrotliSupport.decompress(inputStream);
 		}
 
 		@Override
 		public OutputStream compress(OutputStream outputStream) throws IOException {
-			Brotli4jLoader.ensureAvailability();
-			return new BrotliOutputStream(new NonClosingOutputStream(outputStream),
-					new Encoder.Parameters().setQuality(4));
+			return BrotliSupport.compress(new NonClosingOutputStream(outputStream));
 		}
 
 		@Override
@@ -114,12 +101,7 @@ public enum RioCompression {
 			if (isDisabled()) {
 				return false;
 			}
-			try {
-				Brotli4jLoader.ensureAvailability();
-				return true;
-			} catch (RuntimeException | LinkageError e) {
-				return false;
-			}
+			return BrotliSupport.isAvailable();
 		}
 	};
 
@@ -277,6 +259,19 @@ public enum RioCompression {
 		return (cmf & 0x0f) == 8 && (cmf >> 4) <= 7 && ((cmf << 8) + flg) % 31 == 0;
 	}
 
+	private static Class<?> compressionClass(String className) throws IOException {
+		try {
+			return Class.forName(className);
+		} catch (ClassNotFoundException | LinkageError e) {
+			throw new IOException("Compression library is not available: " + className, e);
+		}
+	}
+
+	private static IOException compressionUnavailable(String name, ReflectiveOperationException e) {
+		Throwable cause = e instanceof InvocationTargetException ? ((InvocationTargetException) e).getCause() : e;
+		return new IOException("Compression library is not available: " + name, cause);
+	}
+
 	boolean isDisabled() {
 		String disabledEncodings = System.getProperty(DISABLED_ENCODINGS_PROPERTY);
 		if (disabledEncodings == null || disabledEncodings.isBlank()) {
@@ -288,6 +283,214 @@ public enum RioCompression {
 			}
 		}
 		return false;
+	}
+
+	private static final class ZstdSupport {
+
+		private static final String ZSTD = "com.github.luben.zstd.Zstd";
+		private static final String ZSTD_INPUT_STREAM = "com.github.luben.zstd.ZstdInputStream";
+		private static final String ZSTD_OUTPUT_STREAM = "com.github.luben.zstd.ZstdOutputStream";
+		private static volatile Constructor<?> zstdInputStreamConstructor;
+		private static volatile Constructor<?> zstdOutputStreamConstructor;
+		private static volatile Method zstdCompressMethod;
+
+		private static InputStream decompress(InputStream inputStream) throws IOException {
+			try {
+				return (InputStream) zstdInputStreamConstructor().newInstance(inputStream);
+			} catch (ReflectiveOperationException e) {
+				throw compressionUnavailable(ZSTD_INPUT_STREAM, e);
+			}
+		}
+
+		private static OutputStream compress(OutputStream outputStream) throws IOException {
+			try {
+				return (OutputStream) zstdOutputStreamConstructor().newInstance(outputStream);
+			} catch (ReflectiveOperationException e) {
+				throw compressionUnavailable(ZSTD_OUTPUT_STREAM, e);
+			}
+		}
+
+		private static byte[] compress(byte[] uncompressed) throws IOException {
+			try {
+				return (byte[]) zstdCompressMethod().invoke(null, uncompressed);
+			} catch (ReflectiveOperationException e) {
+				throw compressionUnavailable(ZSTD, e);
+			}
+		}
+
+		private static Constructor<?> zstdInputStreamConstructor() throws IOException {
+			Constructor<?> constructor = zstdInputStreamConstructor;
+			if (constructor == null) {
+				try {
+					constructor = compressionClass(ZSTD_INPUT_STREAM).getConstructor(InputStream.class);
+					zstdInputStreamConstructor = constructor;
+				} catch (ReflectiveOperationException e) {
+					throw compressionUnavailable(ZSTD_INPUT_STREAM, e);
+				}
+			}
+			return constructor;
+		}
+
+		private static Constructor<?> zstdOutputStreamConstructor() throws IOException {
+			Constructor<?> constructor = zstdOutputStreamConstructor;
+			if (constructor == null) {
+				try {
+					constructor = compressionClass(ZSTD_OUTPUT_STREAM).getConstructor(OutputStream.class);
+					zstdOutputStreamConstructor = constructor;
+				} catch (ReflectiveOperationException e) {
+					throw compressionUnavailable(ZSTD_OUTPUT_STREAM, e);
+				}
+			}
+			return constructor;
+		}
+
+		private static Method zstdCompressMethod() throws IOException {
+			Method method = zstdCompressMethod;
+			if (method == null) {
+				try {
+					method = compressionClass(ZSTD).getMethod("compress", byte[].class);
+					zstdCompressMethod = method;
+				} catch (ReflectiveOperationException e) {
+					throw compressionUnavailable(ZSTD, e);
+				}
+			}
+			return method;
+		}
+
+		private static boolean isAvailable() {
+			try {
+				compress(new byte[0]);
+				return true;
+			} catch (IOException | RuntimeException | LinkageError e) {
+				return false;
+			}
+		}
+	}
+
+	private static final class BrotliSupport {
+
+		private static final String BROTLI_LOADER = "com.aayushatharva.brotli4j.Brotli4jLoader";
+		private static final String BROTLI_INPUT_STREAM = "com.aayushatharva.brotli4j.decoder.BrotliInputStream";
+		private static final String BROTLI_OUTPUT_STREAM = "com.aayushatharva.brotli4j.encoder.BrotliOutputStream";
+		private static final String BROTLI_PARAMETERS = "com.aayushatharva.brotli4j.encoder.Encoder$Parameters";
+		private static volatile Constructor<?> brotliInputStreamConstructor;
+		private static volatile Constructor<?> brotliOutputStreamConstructor;
+		private static volatile Constructor<?> parametersConstructor;
+		private static volatile Method setQualityMethod;
+		private static volatile Method ensureAvailabilityMethod;
+		private static volatile Class<?> parametersClass;
+
+		private static InputStream decompress(InputStream inputStream) throws IOException {
+			ensureAvailable();
+			try {
+				return (InputStream) brotliInputStreamConstructor().newInstance(inputStream);
+			} catch (ReflectiveOperationException e) {
+				throw compressionUnavailable(BROTLI_INPUT_STREAM, e);
+			}
+		}
+
+		private static OutputStream compress(OutputStream outputStream) throws IOException {
+			ensureAvailable();
+			try {
+				Object parameters = parametersConstructor().newInstance();
+				setQualityMethod().invoke(parameters, 4);
+				return (OutputStream) brotliOutputStreamConstructor().newInstance(outputStream, parameters);
+			} catch (ReflectiveOperationException e) {
+				throw compressionUnavailable(BROTLI_OUTPUT_STREAM, e);
+			}
+		}
+
+		private static boolean isAvailable() {
+			try {
+				ensureAvailable();
+				return true;
+			} catch (IOException | RuntimeException | LinkageError e) {
+				return false;
+			}
+		}
+
+		private static void ensureAvailable() throws IOException {
+			try {
+				ensureAvailabilityMethod().invoke(null);
+			} catch (ReflectiveOperationException e) {
+				throw compressionUnavailable(BROTLI_LOADER, e);
+			}
+		}
+
+		private static Constructor<?> brotliInputStreamConstructor() throws IOException {
+			Constructor<?> constructor = brotliInputStreamConstructor;
+			if (constructor == null) {
+				try {
+					constructor = compressionClass(BROTLI_INPUT_STREAM).getConstructor(InputStream.class);
+					brotliInputStreamConstructor = constructor;
+				} catch (ReflectiveOperationException e) {
+					throw compressionUnavailable(BROTLI_INPUT_STREAM, e);
+				}
+			}
+			return constructor;
+		}
+
+		private static Constructor<?> brotliOutputStreamConstructor() throws IOException {
+			Constructor<?> constructor = brotliOutputStreamConstructor;
+			if (constructor == null) {
+				try {
+					constructor = compressionClass(BROTLI_OUTPUT_STREAM).getConstructor(OutputStream.class,
+							parametersClass());
+					brotliOutputStreamConstructor = constructor;
+				} catch (ReflectiveOperationException e) {
+					throw compressionUnavailable(BROTLI_OUTPUT_STREAM, e);
+				}
+			}
+			return constructor;
+		}
+
+		private static Constructor<?> parametersConstructor() throws IOException {
+			Constructor<?> constructor = parametersConstructor;
+			if (constructor == null) {
+				try {
+					constructor = parametersClass().getConstructor();
+					parametersConstructor = constructor;
+				} catch (ReflectiveOperationException e) {
+					throw compressionUnavailable(BROTLI_PARAMETERS, e);
+				}
+			}
+			return constructor;
+		}
+
+		private static Method setQualityMethod() throws IOException {
+			Method method = setQualityMethod;
+			if (method == null) {
+				try {
+					method = parametersClass().getMethod("setQuality", int.class);
+					setQualityMethod = method;
+				} catch (ReflectiveOperationException e) {
+					throw compressionUnavailable(BROTLI_PARAMETERS, e);
+				}
+			}
+			return method;
+		}
+
+		private static Method ensureAvailabilityMethod() throws IOException {
+			Method method = ensureAvailabilityMethod;
+			if (method == null) {
+				try {
+					method = compressionClass(BROTLI_LOADER).getMethod("ensureAvailability");
+					ensureAvailabilityMethod = method;
+				} catch (ReflectiveOperationException e) {
+					throw compressionUnavailable(BROTLI_LOADER, e);
+				}
+			}
+			return method;
+		}
+
+		private static Class<?> parametersClass() throws IOException {
+			Class<?> value = parametersClass;
+			if (value == null) {
+				value = compressionClass(BROTLI_PARAMETERS);
+				parametersClass = value;
+			}
+			return value;
+		}
 	}
 
 	private static final class NonClosingOutputStream extends FilterOutputStream {
