@@ -29,6 +29,7 @@ import org.apache.commons.io.FileUtils;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -82,6 +83,12 @@ public class LmdbNativeKernelAggregateTest {
 	private static final String MINUS_COUNT_QUERY = "PREFIX ex: <" + EX + ">\n"
 			+ "SELECT (COUNT(DISTINCT ?a) AS ?n) WHERE { ?a ex:knows ?b .\n"
 			+ "  MINUS { ?a ex:dislikes ?d } }";
+	private static final String UNION_DISTINCT_QUERY = "PREFIX ex: <" + EX + ">\n"
+			+ "SELECT (COUNT(DISTINCT ?a) AS ?n) WHERE {\n"
+			+ "  { ?a a ex:Person }\n"
+			+ "  UNION\n"
+			+ "  { ?combination a ex:Combination ; ex:member ?a }\n"
+			+ "}";
 	// The VALUES literal is absent from the store, so its id is plan-local synthetic: before the plan-22 Step-0
 	// guard relaxation the whole NOT EXISTS compiled to an unintrospectable generic lambda (catalog HC q10's shape).
 	private static final String SYNTHETIC_VALUES_WITNESS_QUERY = "PREFIX ex: <" + EX + ">\n"
@@ -100,6 +107,7 @@ public class LmdbNativeKernelAggregateTest {
 		save(WCOJ_FLAG, "false");
 		save(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "true");
 		save(LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY, "0");
+		save(LmdbNativeKernelLowering.UNION_SOURCES_PROPERTY, "true");
 		save("rdf4j.lmdb.janinoCodegen.debug", "true");
 		save(LmdbNativeJaninoCodegen.DUMP_DIR_PROPERTY, "target/kernel-dump");
 
@@ -119,6 +127,9 @@ public class LmdbNativeKernelAggregateTest {
 		IRI bucket = vf.createIRI(EX + "bucket");
 		IRI groupScore = vf.createIRI(EX + "groupScore");
 		IRI floatingScore = vf.createIRI(EX + "floatingScore");
+		IRI person = vf.createIRI(EX + "Person");
+		IRI combination = vf.createIRI(EX + "Combination");
+		IRI member = vf.createIRI(EX + "member");
 		int[][] edges = {
 				{ 0, 1 }, { 1, 2 }, { 2, 0 },
 				{ 3, 4 }, { 4, 5 }, { 5, 3 },
@@ -127,6 +138,14 @@ public class LmdbNativeKernelAggregateTest {
 		};
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
+			for (int i = 0; i < 9; i++) {
+				connection.add(vf.createIRI(EX + "p" + i), RDF.TYPE, person);
+			}
+			for (int i = 0; i < 4; i++) {
+				IRI combinationIri = vf.createIRI(EX + "combination" + i);
+				connection.add(combinationIri, RDF.TYPE, combination);
+				connection.add(combinationIri, member, vf.createIRI(EX + "p" + (i * 2)));
+			}
 			for (int[] edge : edges) {
 				connection.add(vf.createIRI(EX + "p" + edge[0]), knows, vf.createIRI(EX + "p" + edge[1]));
 			}
@@ -318,6 +337,15 @@ public class LmdbNativeKernelAggregateTest {
 		warmUntilEngaged(MINUS_COUNT_QUERY);
 		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L, "aggregate rung never engaged for MINUS");
 		assertEquals(expected, rows(MINUS_COUNT_QUERY));
+	}
+
+	@Test
+	public void unionBranchesWithDifferentProducersCountDistinctExactly() {
+		List<String> expected = genericRows(UNION_DISTINCT_QUERY);
+		warmUntilEngaged(UNION_DISTINCT_QUERY);
+		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
+				"aggregate rung never engaged for union COUNT DISTINCT");
+		assertEquals(expected, rows(UNION_DISTINCT_QUERY));
 	}
 
 	@Test

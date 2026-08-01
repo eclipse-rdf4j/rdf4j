@@ -341,10 +341,20 @@ class LmdbNativeKernelLoweringTest {
 	 * protects.
 	 */
 	private static LmdbNativeKernelLowering.Lowered lowerCountingWithUnions(SlotPlan core, int countedSlot) {
+		return lowerAggregateWithUnions(core, countedSlot, false);
+	}
+
+	private static LmdbNativeKernelLowering.Lowered lowerDistinctCountingWithUnions(SlotPlan core, int countedSlot) {
+		return lowerAggregateWithUnions(core, countedSlot, true);
+	}
+
+	private static LmdbNativeKernelLowering.Lowered lowerAggregateWithUnions(SlotPlan core, int countedSlot,
+			boolean distinct) {
 		String previous = System.getProperty(LmdbNativeKernelLowering.UNION_SOURCES_PROPERTY);
 		System.setProperty(LmdbNativeKernelLowering.UNION_SOURCES_PROPERTY, "true");
 		try {
-			return lowerCounting(core, countedSlot);
+			return LmdbNativeKernelLowering.lowerAggregate(core, freshRow(), new int[0],
+					new AggregateSpec[] { AggregateSpec.slot("count", countedSlot, distinct, AggKind.COUNT) }, null);
 		} finally {
 			if (previous == null) {
 				System.clearProperty(LmdbNativeKernelLowering.UNION_SOURCES_PROPERTY);
@@ -420,6 +430,82 @@ class LmdbNativeKernelLoweringTest {
 		assertNotNull(lowered, "a union of two lowerable branches must lower");
 		String key = lowered.kernel.shapeKey();
 		assertTrue(key.contains("u{"), "the union must lower to a Union node; key=" + key);
+	}
+
+	@Test
+	void distinctColumnProducedByDomainThenProbeAcrossUnionIsNotGloballyOrdered() {
+		SlotPlan union = new UnionPlan(classExtent(0, 17L), correlatedProducer(3, 0, 18L));
+
+		LmdbNativeKernelLowering.Lowered lowered = lowerDistinctCountingWithUnions(union, 0);
+
+		assertNotNull(lowered);
+		assertEquals(-1, aggregateOutput(lowered).orderedDomain,
+				"the second branch rewrites the shared column from an adjacency probe");
+	}
+
+	@Test
+	void distinctColumnProducedByProbeThenDomainAcrossUnionIsNotGloballyOrdered() {
+		SlotPlan union = new UnionPlan(correlatedProducer(3, 0, 18L), classExtent(0, 17L));
+
+		LmdbNativeKernelLowering.Lowered lowered = lowerDistinctCountingWithUnions(union, 0);
+
+		assertNotNull(lowered);
+		assertEquals(-1, aggregateOutput(lowered).orderedDomain,
+				"an ordered second branch cannot make the preceding probe output ordered");
+	}
+
+	@Test
+	void nestedUnionDoesNotRestoreSharedColumnOrdering() {
+		SlotPlan inner = new UnionPlan(classExtent(0, 17L), correlatedProducer(3, 0, 18L));
+		SlotPlan outer = new UnionPlan(inner, classExtent(2, 19L));
+
+		LmdbNativeKernelLowering.Lowered lowered = lowerDistinctCountingWithUnions(outer, 0);
+
+		assertNotNull(lowered);
+		assertEquals(-1, aggregateOutput(lowered).orderedDomain,
+				"nesting must not erase the inner union's order break");
+	}
+
+	@Test
+	void columnProducedByOnlyOneUnionBranchKeepsItsOrdering() {
+		SlotPlan union = new UnionPlan(classExtent(0, 17L), classExtent(3, 18L));
+
+		LmdbNativeKernelLowering.Lowered lowered = lowerDistinctCountingWithUnions(union, 0);
+
+		assertNotNull(lowered);
+		assertEquals(0, aggregateOutput(lowered).orderedDomain,
+				"unbound rows from the other branch do not disturb the producing branch's order");
+	}
+
+	@Test
+	void unionExpansionKeepsOrderingOfAnOuterColumn() {
+		SlotPlan expansion = new UnionPlan(pattern(Term.slot(0), Term.slot(1)),
+				pattern(Term.slot(0), Term.slot(2)));
+		SlotPlan core = new JoinPlan(classExtent(0, 17L), expansion);
+
+		LmdbNativeKernelLowering.Lowered lowered = lowerDistinctCountingWithUnions(core, 0);
+
+		assertNotNull(lowered);
+		assertEquals(0, aggregateOutput(lowered).orderedDomain,
+				"all union rows for an outer value remain contiguous");
+	}
+
+	private static PatternPlan classExtent(int slot, long classId) {
+		return new PatternPlan(Term.slot(slot), Term.constant(PRED), Term.constant(classId), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 512D);
+	}
+
+	private static SlotPlan correlatedProducer(int anchorSlot, int producedSlot, long classId) {
+		PatternPlan extent = classExtent(anchorSlot, classId);
+		PatternPlan correlated = new PatternPlan(Term.slot(anchorSlot), Term.constant(PRED + (1L << 7)),
+				Term.slot(producedSlot), Term.unbound(), ContextConstraint.UNRESTRICTED, false, 512D);
+		return new JoinPlan(extent, correlated);
+	}
+
+	private static LmdbNativeKernelIr.AggregateOutput aggregateOutput(
+			LmdbNativeKernelLowering.Lowered lowered) {
+		LmdbNativeKernelIr.Aggregate aggregate = (LmdbNativeKernelIr.Aggregate) lowered.kernel.terminal;
+		return aggregate.outputs[0];
 	}
 
 	/**

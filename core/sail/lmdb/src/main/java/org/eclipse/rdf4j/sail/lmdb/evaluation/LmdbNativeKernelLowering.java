@@ -476,8 +476,9 @@ final class LmdbNativeKernelLowering {
 
 		private void markOrderedDomain(int column, int domain) {
 			int current = columnOrderedDomains.get(column);
-			// Reusing a column in another UNION branch invalidates global order even when both branches use the same
-			// domain: the second branch restarts from its first value.
+			// A second ordered producer invalidates global order, even for the same domain, because it restarts at its
+			// first value. lowerUnionOperand handles another branch writing the pinned column through a probe or any
+			// producer without an ordered-domain marker.
 			columnOrderedDomains.set(column, current == UNASSIGNED_DOMAIN ? domain : -1);
 		}
 
@@ -770,6 +771,12 @@ final class LmdbNativeKernelLowering {
 				int column = pinnedColumns.get(slot);
 				slotColumn[slot] = column;
 				slotColumnDepth[slot] = homeDepth;
+				if ((producedByEvery >>> slot & 1L) != 0L) {
+					// UNION emits one complete branch after another. Even if each branch is ordered independently, a
+					// shared column can restart, overlap, or be produced by a probe in another branch. COUNT DISTINCT's
+					// last-seen fast path therefore cannot use either branch's local ordering proof.
+					columnOrderedDomains.set(column, -1);
+				}
 				if ((producedByEvery >>> slot & 1L) == 0L) {
 					optionalColMask |= 1L << column;
 				}
