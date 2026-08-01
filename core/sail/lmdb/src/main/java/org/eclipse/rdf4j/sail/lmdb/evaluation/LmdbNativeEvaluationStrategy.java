@@ -46,7 +46,8 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbStableOrderPlanner;
 @SuppressWarnings("deprecation")
 @Experimental
 @InternalUseOnly
-public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy {
+public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
+		implements org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BatchCorrelatedJoinProvider.Host {
 
 	private final NativeLmdbQuerySource nativeSource;
 	private final boolean nativeEnabled;
@@ -142,6 +143,11 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 			return;
 		}
 		LmdbNativeAggregateCompiler.tryAnnotateForExplain(expr, context, this, nativeSource);
+	}
+
+	@Override
+	public org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BatchCorrelatedJoinProvider batchCorrelatedJoinProvider() {
+		return nativeEnabled && nativeSource != null ? LmdbNativeAccumulateJoin.INSTANCE : null;
 	}
 
 	QueryEvaluationStep genericPrecompile(TupleExpr expr, QueryEvaluationContext context) {

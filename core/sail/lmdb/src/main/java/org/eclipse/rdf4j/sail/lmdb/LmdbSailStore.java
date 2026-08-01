@@ -3085,14 +3085,47 @@ class LmdbSailStore implements SailStore {
 		private final boolean explicit;
 		private final long snapshotId;
 		private final ParallelSnapshotLease lease;
+		private final boolean adjacencyEligible;
+		private final long adjacencyRevision;
+		private final long pinnedTxnVersion;
 		private final AtomicBoolean closed = new AtomicBoolean();
+		/** Own refcounted direct-adjacency view for this sibling's snapshot revision; resolved lazily. */
+		private LmdbAdjacencyReadView adjacencyView;
+		private boolean adjacencyViewResolved;
 
-		ParallelSnapshotSource(Txn txn, boolean explicit, long snapshotId, ParallelSnapshotLease lease) {
+		ParallelSnapshotSource(Txn txn, boolean explicit, long snapshotId, ParallelSnapshotLease lease,
+				boolean adjacencyEligible, long adjacencyRevision) {
 			this.txn = txn;
 			this.explicit = explicit;
 			this.snapshotId = snapshotId;
 			this.lease = lease;
+			this.adjacencyEligible = adjacencyEligible;
+			this.adjacencyRevision = adjacencyRevision;
+			this.pinnedTxnVersion = txn.version();
 			lease.retain();
+		}
+
+		/**
+		 * The sibling acquires its OWN view instead of borrowing the parent's (worker lifetime is not provably shorter
+		 * than the parent dataset's view; acquire/close is refcounted exactly for this). The revision is the PARENT
+		 * VIEW'S proven revision, not {@code txn.snapshotRevision()}: unpinned tracked reads carry -1 there, while the
+		 * sibling txn was verified to sit on the same LMDB snapshot the parent's exact view covers.
+		 */
+		private synchronized LmdbAdjacencyReadView adjacencyView() {
+			if (!adjacencyViewResolved) {
+				adjacencyViewResolved = true;
+				if (adjacencyEligible && directAdjacency != null) {
+					adjacencyView = directAdjacency.acquire(adjacencyRevision);
+				}
+			}
+			return adjacencyView;
+		}
+
+		private synchronized void closeAdjacencyView() {
+			if (adjacencyView != null) {
+				adjacencyView.close();
+				adjacencyView = null;
+			}
 		}
 
 		private void checkOpen() {
@@ -3110,9 +3143,13 @@ class LmdbSailStore implements SailStore {
 		public void close() {
 			if (closed.compareAndSet(false, true)) {
 				try {
-					txn.close();
+					closeAdjacencyView();
 				} finally {
-					lease.release();
+					try {
+						txn.close();
+					} finally {
+						lease.release();
+					}
 				}
 			}
 		}
@@ -3270,6 +3307,20 @@ class LmdbSailStore implements SailStore {
 						tripleStore.resetTriples(retained, subj, pred, obj, context, explicit);
 					}
 					return retained;
+				}
+
+				@Override
+				public NativeLmdbQuerySource.NativeAdjacency adjacency(long predicate, boolean bySubject)
+						throws IOException {
+					checkOpen();
+					if (!hasStatementsInSource()) {
+						return null;
+					}
+					LmdbAdjacencyReadView view = adjacencyView();
+					if (view == null || !view.isExact() || txn.version() != pinnedTxnVersion) {
+						return null;
+					}
+					return directAdjacency.adjacency(view, predicate, bySubject, explicit);
 				}
 
 				@Override
@@ -3972,7 +4023,11 @@ class LmdbSailStore implements SailStore {
 							// same LMDB snapshot id as the source ⇒ same data revision: siblings of a pinned
 							// SNAPSHOT dataset inherit its revision for generation-aware CSR lookups
 							siblingTxn.snapshotRevision = txn.snapshotRevision();
-							pending[i] = new ParallelSnapshotSource(siblingTxn, explicit, siblingSnapshotId, lease);
+							boolean siblingAdjacencyEligible = adjacencyEligible && adjacencyView != null
+									&& adjacencyView.isExact();
+							pending[i] = new ParallelSnapshotSource(siblingTxn, explicit, siblingSnapshotId, lease,
+									siblingAdjacencyEligible,
+									siblingAdjacencyEligible ? adjacencyView.snapshotRevision() : -1L);
 							transferred = true;
 						} finally {
 							if (!transferred) {

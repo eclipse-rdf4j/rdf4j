@@ -44,8 +44,9 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		QueryEvaluationStep left = JoinMetricsTracking
 				.wrapLeftInput(strategy.precompile(leftJoin.getLeftArg(), context), leftJoin, leftJoin.getLeftArg(),
 						runtimeTelemetryTrackingActive);
+		QueryEvaluationStep rightRaw = strategy.precompile(leftJoin.getRightArg(), context);
 		QueryEvaluationStep right = JoinMetricsTracking
-				.wrapRightInput(strategy.precompile(leftJoin.getRightArg(), context), leftJoin, leftJoin.getRightArg(),
+				.wrapRightInput(rightRaw, leftJoin, leftJoin.getRightArg(),
 						runtimeTelemetryTrackingActive);
 		if (TupleExprs.containsSubquery(leftJoin.getRightArg())) {
 			Set<String> leftBindingNames = leftJoin.getLeftArg().getBindingNames();
@@ -93,7 +94,37 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		} else {
 			condition = null;
 		}
-		return new LeftJoinQueryEvaluationStep(right, condition, left, leftJoin, optionalVarCollector.getVarNames());
+		LeftJoinQueryEvaluationStep defaultStep = new LeftJoinQueryEvaluationStep(right, condition, left, leftJoin,
+				optionalVarCollector.getVarNames());
+		// Batch-correlated seam (accumulate–semijoin–probe): only reachable on this well-designed,
+		// replay-stable, binding-injection-safe path, where independent right-operand evaluation is the
+		// algebraic definition. Entry bindings that pre-bind a right-only variable keep the default step —
+		// the batch merge join-checks only the declared shared variables.
+		if (!leftJoin.hasCondition() && strategy instanceof BatchCorrelatedJoinProvider.Host host) {
+			BatchCorrelatedJoinProvider provider = host.batchCorrelatedJoinProvider();
+			if (provider != null) {
+				Set<String> leftNames = leftJoin.getLeftArg().getBindingNames();
+				Set<String> rightNames = leftJoin.getRightArg().getBindingNames();
+				String[] shared = leftNames.stream().filter(rightNames::contains).toArray(String[]::new);
+				Set<String> rightOnly = new HashSet<>(rightNames);
+				rightOnly.removeAll(leftNames);
+				if (shared.length >= 1 && shared.length <= 4
+						&& provider.supports(rightRaw, shared, BatchCorrelatedJoinProvider.Mode.LEFT, false)) {
+					return bs -> {
+						for (String name : rightOnly) {
+							if (bs.hasBinding(name)) {
+								return defaultStep.evaluate(bs);
+							}
+						}
+						return provider.tryBatchJoin(
+								new BatchCorrelatedJoinProvider.BatchCorrelationRequest(left.evaluate(bs), bs,
+										shared, BatchCorrelatedJoinProvider.Mode.LEFT),
+								rightRaw);
+					};
+				}
+			}
+		}
+		return defaultStep;
 	}
 
 	public LeftJoinQueryEvaluationStep(QueryEvaluationStep right, QueryValueEvaluationStep condition,

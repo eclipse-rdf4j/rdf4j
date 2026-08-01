@@ -5,6 +5,47 @@ mark/anti joins for EXISTS/NOT EXISTS/MINUS, multi-key merge and SIP, cost-chose
 worst-case-optimal intersect for cyclic BGPs, and decorrelation via outer-side accumulation.
 
 
+## Status (2026-07-31)
+
+A code-verified audit (four independent deep reads against HEAD of `optimize-lmdb`) established which
+work items below are delivered. Execution of the remaining items now lives in
+`.agent/lmdb-join-strategy-execplan.md`; this file stays as roadmap context.
+
+DELIVERED (verified in code):
+
+- Work item 1 (hash join internals) — substantially complete in `LmdbNativeHashJoin`: flat primitive
+  key/payload layout, stored per-entry hashes, 8-bit fingerprints (`:403-404, :560`), unique-key fast
+  path (`:216, :450`), estimate-based smaller-side build selection (`:90-98`), cost-vs-INLJ admission
+  (`:103-106`). Remaining from item 1: payload key-slot exclusion not re-audited. Admission is still a
+  row-count cap (`DEFAULT_MAX_BUILD_ROWS = 1 << 20`, `:34`), replaced by byte-aware ledger admission in
+  the ExecPlan (its Milestone 2); overflow today discards the partial build and re-scans both sides
+  (`:310`, `:202-208`, counter `CAP_FALLBACKS` `:38`).
+- Work item 4 (worst-case-optimal multiway intersect) — delivered and exceeded by
+  `LmdbNativeLeapfrogJoin`: general GYO ear-reduction cyclic-core detection (`findCyclicCore` `:371`),
+  Leapfrog Triejoin over variables, pushed filters, direct EXISTS edges, multiplicity counting,
+  parallel execution. Remaining gaps → ExecPlan Milestone 1: frontiers are always materialized +
+  sorted (`scanFrontier` `:1154`), intersection is pattern-order not smallest-first with per-level
+  allocation (`Level.enter` `:1012`), dispatch is structural-first (`LmdbNativeRowStep.java:865`)
+  rather than cost-arbitrated, and multiplicity is emitted by row repetition (`:704-707, :749-757`).
+- Item 3.3 partial groundwork: single-slot SIP masks from completed hash builds are live
+  (`trySipTarget` `LmdbNativeChunkPipeline.java:408`, seek-ahead via `masksVerdict` `:713-743`). The
+  zero-copy adjacency-key borrow (`borrowSortedKeys` `:478` / `publishCsrMask` `:1044`) is DEAD in
+  production — no `NativeProbe` overrides `adjacencyCacheKeys()`; superseded by the ExecPlan's
+  domain-cursor producer.
+
+REMAINING (→ ExecPlan milestones):
+
+- Work item 3 (merge smaller-run buffering, multi-key merge/SIP) — merge still always buffers the
+  right run and rescans on overflow (`startRun` `LmdbNativeMergeJoin.java:341`, `openRescan` `:444`);
+  single-key gate still in place (`:91-95`). Now evidence-gated (ExecPlan Milestone 4: only if
+  overflow rescans ≥15% of operator CPU on representative workloads).
+- Work item 5 (accumulate/decorrelation) — nothing accumulates the outer stream; all bulk operators
+  reject correlated entry. NOTE: the line citations below (`:376-379, :1229`) have drifted; the
+  correlated-entry seams on HEAD are `LmdbNativeRowStep.java:583-586`, `:880-894`, `:959-964`. This is
+  ExecPlan Milestone 3 (accumulate–semijoin–probe, INNER → EXISTS/NOT EXISTS → OPTIONAL).
+- Work items 2 and 6 — not re-audited in this pass; unchanged as written.
+
+
 ## Current state
 
 Hash join (`LmdbNativeHashJoin`): payload materializes every right-produced slot including the key
@@ -141,6 +182,15 @@ to Σ-min-run scaling — the benchmark asserts the store-probe count, not just 
 3. OPTIONAL costing: let the left-join hash build consult estimates (plan 01 §2) instead of waiting
    1024 observed probes — build immediately when `estimatedOuterRows × rowsPerProbe` exceeds the build
    cost; keep the observational trigger as the no-estimate fallback.
+   STATUS (2026-07-31): DONE for multi-pattern OPTIONAL rights — but the mechanism differed from the
+   sketch above. For a fragment right (the acceptance shape), NO hash-build floor was reachable:
+   `PatternPayloadProbe` is single-pattern-only and the chunk pipeline never sees a `LeftJoinPlan`
+   root; the per-row cost was `RightMemoProbe`'s per-distinct-key fragment runs. Fix: estimate-triggered
+   key-unbound sweep in `RightMemoProbe` (`LmdbNativeLeftJoinMemo.java`), trigger
+   `expectedProbes × (SEEK_COST + perProbeRows) ≥ sweepEstimate`, flag
+   `rdf4j.lmdb.leftjoin.sweep.enabled` (default off), counter `LEFTJOIN_SWEEP_BUILDS`, tests
+   `LmdbNativeLeftJoinSweepTest`. Still open: the same estimate trigger for the single-pattern
+   `PatternPayloadProbe` 1024-probe floor and for inner `JoinCursor` correlated fragments.
 
 Tests: correlated-entry corpus (VALUES-driven, OPTIONAL-driven, subselect-driven) asserting bag
 equivalence and single-execution of the accumulated join (probe counters); overflow fallback test.

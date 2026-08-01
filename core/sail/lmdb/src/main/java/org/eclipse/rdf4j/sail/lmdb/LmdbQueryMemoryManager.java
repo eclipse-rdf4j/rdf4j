@@ -53,6 +53,14 @@ public final class LmdbQueryMemoryManager {
 	}
 
 	/**
+	 * A standalone manager with explicit limits, for tests that need deterministic admission outcomes without touching
+	 * the process-wide authority (whose limits freeze at first use).
+	 */
+	public static LmdbQueryMemoryManager createForTesting(long maxBytes, long perQueryMaxBytes) {
+		return new LmdbQueryMemoryManager(maxBytes, perQueryMaxBytes);
+	}
+
+	/**
 	 * Opens a sub-ledger whose lifetime should match one query cursor.
 	 */
 	public QueryLedger openQuery() {

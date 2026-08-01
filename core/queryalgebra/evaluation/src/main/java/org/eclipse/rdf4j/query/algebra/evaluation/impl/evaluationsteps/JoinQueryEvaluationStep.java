@@ -133,13 +133,57 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 			join.setAlgorithm(BoundStatementPatternGuardJoinIteration.class.getSimpleName());
 		} else {
 			if (rightDiscardable) {
-				eval = bindings -> JoinIterator.getInstance(leftPrepared, rightPrepared, bindings);
+				Function<BindingSet, CloseableIteration<BindingSet>> batched = tryBatchCorrelatedJoin(strategy, join,
+						leftPrepared, rightPrepared, rightRaw);
+				eval = batched != null ? batched
+						: bindings -> JoinIterator.getInstance(leftPrepared, rightPrepared, bindings);
 			} else {
 				eval = bindings -> withGuaranteedRightEvaluation(rightPrepared, bindings,
 						trackedRight -> JoinIterator.getInstance(leftPrepared, trackedRight, bindings));
 			}
 			join.setAlgorithm(JoinIterator.class.getSimpleName());
 		}
+	}
+
+	/**
+	 * Batch-correlated seam (accumulate–semijoin–probe), the INNER analog of the LeftJoin consult: only reachable on
+	 * the per-left-row bind-join fallback with a discardable right operand — after every specialized fast path and the
+	 * replay-stability analysis have declined. Mapping-parameterized right operands (property paths, SERVICE, extension
+	 * operators) keep the bind join: correlated per-input evaluation is their defined semantics. Entry bindings that
+	 * pre-bind a right-only variable take the default join, because the batch merge checks only the declared shared
+	 * variables.
+	 */
+	private static Function<BindingSet, CloseableIteration<BindingSet>> tryBatchCorrelatedJoin(
+			EvaluationStrategy strategy, Join join, QueryEvaluationStep leftPrepared, QueryEvaluationStep rightPrepared,
+			QueryEvaluationStep rightRaw) {
+		if (QueryEvaluationUtility.usesMappingParameterizedEvaluation(join.getRightArg())
+				|| !(strategy instanceof BatchCorrelatedJoinProvider.Host host)) {
+			return null;
+		}
+		BatchCorrelatedJoinProvider provider = host.batchCorrelatedJoinProvider();
+		if (provider == null) {
+			return null;
+		}
+		Set<String> leftNames = join.getLeftArg().getBindingNames();
+		Set<String> rightNames = join.getRightArg().getBindingNames();
+		String[] shared = leftNames.stream().filter(rightNames::contains).toArray(String[]::new);
+		if (shared.length < 1 || shared.length > 4
+				|| !provider.supports(rightRaw, shared, BatchCorrelatedJoinProvider.Mode.INNER, false)) {
+			return null;
+		}
+		Set<String> rightOnly = new LinkedHashSet<>(rightNames);
+		rightOnly.removeAll(leftNames);
+		return bindings -> {
+			for (String name : rightOnly) {
+				if (bindings.hasBinding(name)) {
+					return JoinIterator.getInstance(leftPrepared, rightPrepared, bindings);
+				}
+			}
+			return provider.tryBatchJoin(
+					new BatchCorrelatedJoinProvider.BatchCorrelationRequest(leftPrepared.evaluate(bindings), bindings,
+							shared, BatchCorrelatedJoinProvider.Mode.INNER),
+					rightRaw);
+		};
 	}
 
 	/**

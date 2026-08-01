@@ -747,6 +747,7 @@ final class LmdbNativeParallelPipelines {
 				producerInitialized = true;
 				NativeLmdbQuerySource producerSource = sources[workerPlans.length];
 				producerRow = new RowState(producerSource, step.layout, consumerRow.base);
+				producerRow.memoryScope = consumerRow.memoryScope;
 				if (NativeRowSeeder.seed(producerRow.slots, step.layout, consumerRow.base, producerSource)) {
 					producerRow.recomputeBoundMask();
 					producerCursor = root.openRaw(producerRow);
@@ -809,6 +810,7 @@ final class LmdbNativeParallelPipelines {
 		void runWorker(int worker) throws IOException {
 			NativeLmdbQuerySource source = sources[worker];
 			RowState row = new RowState(source, step.layout, consumerRow.base);
+			row.memoryScope = consumerRow.memoryScope;
 			if (!NativeRowSeeder.seed(row.slots, step.layout, consumerRow.base, source)) {
 				throw new IllegalStateException("worker seeding diverged from the query thread");
 			}

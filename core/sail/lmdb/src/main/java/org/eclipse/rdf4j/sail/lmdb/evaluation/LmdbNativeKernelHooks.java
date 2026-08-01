@@ -55,6 +55,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	LmdbNativeKernelHooks(RowState liveRow, LmdbNativeKernelBindings bindings) {
 		this.source = liveRow.source;
 		this.scratch = new RowState(liveRow.source, liveRow.layout, liveRow.base);
+		this.scratch.memoryScope = liveRow.memoryScope;
 		this.codec = liveRow.source.nativeValueCodec();
 		this.filters = bindings.filterHooks;
 		int aggregateCount = bindings.groupLayout == null ? 0 : bindings.groupLayout.outs.length;

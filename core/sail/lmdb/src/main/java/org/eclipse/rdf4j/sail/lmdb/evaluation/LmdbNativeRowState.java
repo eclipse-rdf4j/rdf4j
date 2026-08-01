@@ -36,6 +36,11 @@ final class RowState {
 	PathResultMemo pathEstimateMemos;
 	int trailSize;
 	long boundMask;
+	/**
+	 * Query-scoped memory ledger holder. Fresh per root row; derived rows (parallel workers, rescan rows, kernel
+	 * scratch) alias their parent's scope so byte admission draws on one per-query ledger.
+	 */
+	LmdbNativeQueryMemoryScope memoryScope = new LmdbNativeQueryMemoryScope();
 
 	RowState(NativeLmdbQuerySource source, NativeSlotLayout layout, BindingSet base) {
 		this(source, layout, base, null, null);

@@ -1049,6 +1049,7 @@ final class OrderedUnionCursor implements RowCursor {
 
 		Branch(SlotPlan plan, RowState parent) throws IOException {
 			this.row = new RowState(parent.source, parent.layout, parent.base);
+			this.row.memoryScope = parent.memoryScope;
 			System.arraycopy(parent.slots, 0, row.slots, 0, parent.slots.length);
 			row.recomputeBoundMask();
 			this.cursor = plan.open(row);

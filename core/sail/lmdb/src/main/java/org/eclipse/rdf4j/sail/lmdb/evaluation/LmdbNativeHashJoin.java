@@ -30,14 +30,52 @@ final class LmdbNativeHashJoin {
 	static final String ENABLED_PROPERTY = "rdf4j.lmdb.nativeHashJoin.enabled";
 	static final String MIN_ROWS_PROPERTY = "rdf4j.lmdb.nativeHashJoin.minRows";
 	static final String MAX_BUILD_ROWS_PROPERTY = "rdf4j.lmdb.nativeHashJoin.maxBuildRows";
+	/**
+	 * Opt-in (default off): admit the build against the query-memory ledger by physical byte footprint — estimated
+	 * shape preflighted before any scan, reservations grown as the table grows — instead of the blind row-count cap
+	 * (ExecPlan .agent/lmdb-join-strategy-execplan.md, Milestone 2). The row cap stays as a secondary guard.
+	 */
+	static final String BYTE_ADMISSION_PROPERTY = "rdf4j.lmdb.nativeHashJoin.byteAdmission.enabled";
 	static final long DEFAULT_MIN_ROWS = 4096;
 	static final int DEFAULT_MAX_BUILD_ROWS = 1 << 20;
 
 	static final AtomicLong BUILDS = new AtomicLong();
 	static final AtomicLong PROBE_BATCHES = new AtomicLong();
 	static final AtomicLong CAP_FALLBACKS = new AtomicLong();
+	/** Byte-admission refusals BEFORE any build scan (zero wasted work). Test hook. */
+	static final AtomicLong PREFLIGHT_REFUSALS = new AtomicLong();
+	/** Byte-admission refusals mid-build after the estimate proved too low (partial build discarded). Test hook. */
+	static final AtomicLong LATE_REFUSALS = new AtomicLong();
+
+	/** Test seam: admission authority override; null means the process-wide manager. */
+	static volatile org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager queryMemoryOverride;
 
 	private LmdbNativeHashJoin() {
+	}
+
+	static boolean byteAdmissionEnabled() {
+		return Boolean.getBoolean(BYTE_ADMISSION_PROPERTY);
+	}
+
+	static org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager queryMemory() {
+		org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager override = queryMemoryOverride;
+		return override != null ? override : org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.process();
+	}
+
+	/**
+	 * Physical byte footprint of a {@link PrimitiveHashJoinTable} sized for {@code rows} build rows: bucket arrays at
+	 * the power-of-two capacity the load factor (3/4) demands, plus the flat payload arrays. Used both by the preflight
+	 * and by tests deriving admission budgets.
+	 */
+	static long estimateBuildBytes(long rows, int keyWidth, int payloadWidth) {
+		long buckets = 32;
+		while (rows + 1 > buckets * 3 / 4) {
+			buckets <<= 1;
+		}
+		long payloadCapacity = Math.max(32, rows);
+		long bucketBytes = buckets * (8L * keyWidth + 1 + 1 + 4 + 4 + 4);
+		long payloadBytes = payloadCapacity * (8L * Math.max(1, payloadWidth) + 4);
+		return bucketBytes + payloadBytes;
 	}
 
 	static BatchCursor tryOpen(MultiJoinPlan plan, RowState row, int capacity) {
@@ -105,7 +143,8 @@ final class LmdbNativeHashJoin {
 			return reject(row, "higher-cost");
 		}
 		return new Candidate(probe, build, slotsOf(keyMask),
-				Integer.getInteger(MAX_BUILD_ROWS_PROPERTY, DEFAULT_MAX_BUILD_ROWS), hashCost);
+				Integer.getInteger(MAX_BUILD_ROWS_PROPERTY, DEFAULT_MAX_BUILD_ROWS), hashCost,
+				Math.min(leftRows, rightRows));
 	}
 
 	private static Candidate reject(RowState row, String reason) {
@@ -134,17 +173,21 @@ final class LmdbNativeHashJoin {
 		final int[] keySlots;
 		final int maxBuildRows;
 		final double estCost;
+		final double buildRowsEstimate;
 
-		Candidate(PatternPlan probe, PatternPlan build, int[] keySlots, int maxBuildRows, double estCost) {
+		Candidate(PatternPlan probe, PatternPlan build, int[] keySlots, int maxBuildRows, double estCost,
+				double buildRowsEstimate) {
 			this.probe = probe;
 			this.build = build;
 			this.keySlots = keySlots;
 			this.maxBuildRows = maxBuildRows;
 			this.estCost = estCost;
+			this.buildRowsEstimate = buildRowsEstimate;
 		}
 
 		BatchCursor open(MultiJoinPlan plan, RowState row, int capacity) {
-			BatchCursor cursor = new HashJoinBatchCursor(plan, probe, build, row, keySlots, capacity, maxBuildRows);
+			BatchCursor cursor = new HashJoinBatchCursor(plan, probe, build, row, keySlots, capacity, maxBuildRows,
+					buildRowsEstimate);
 			return FilterBatchCursor.wrapAll(cursor, plan.filters, row);
 		}
 	}
@@ -176,9 +219,11 @@ final class HashJoinBatchCursor implements BatchCursor {
 	BatchCursor fallback;
 	boolean initialized;
 	boolean closed;
+	final double buildRowsEstimate;
+	org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation reservation;
 
 	HashJoinBatchCursor(MultiJoinPlan plan, PatternPlan probe, PatternPlan build, RowState row, int[] keySlots,
-			int capacity, int maxBuildRows) {
+			int capacity, int maxBuildRows, double buildRowsEstimate) {
 		this.plan = plan;
 		this.probe = probe;
 		this.build = build;
@@ -187,6 +232,7 @@ final class HashJoinBatchCursor implements BatchCursor {
 		this.payloadSlots = slotsOf(build.producedMask() & ~maskOf(keySlots));
 		this.capacity = capacity;
 		this.maxBuildRows = Math.max(1, maxBuildRows);
+		this.buildRowsEstimate = buildRowsEstimate;
 		this.probeHashState = new long[capacity];
 		this.probeHashes = new int[capacity];
 		this.probeBuckets = new int[capacity];
@@ -202,8 +248,8 @@ final class HashJoinBatchCursor implements BatchCursor {
 		if (!initialized) {
 			initialized = true;
 			if (!build()) {
+				// The specific refusal counter (row cap, preflight, late) was recorded inside build().
 				fallback = new RowBatchCursor(new MultiJoinPlan(plan.children, new MaskedFilter[0]).open(row), row);
-				LmdbNativeHashJoin.CAP_FALLBACKS.incrementAndGet();
 			}
 		}
 		if (fallback != null) {
@@ -289,6 +335,10 @@ final class HashJoinBatchCursor implements BatchCursor {
 	}
 
 	boolean build() throws IOException {
+		if (LmdbNativeHashJoin.byteAdmissionEnabled() && !preflight()) {
+			LmdbNativeHashJoin.PREFLIGHT_REFUSALS.incrementAndGet();
+			return false;
+		}
 		long[] seed = Arrays.copyOf(row.slots, row.slots.length);
 		for (int keySlot : keySlots) {
 			seed[keySlot] = UNKNOWN;
@@ -309,9 +359,17 @@ final class HashJoinBatchCursor implements BatchCursor {
 					}
 					if (table.payloadCount >= maxBuildRows) {
 						table = null;
+						releaseLedger();
+						LmdbNativeHashJoin.CAP_FALLBACKS.incrementAndGet();
 						return false;
 					}
 					table.add(scratch, keySlots, payloadSlots);
+					if (reservation != null && !coverTableBytes()) {
+						table = null;
+						releaseLedger();
+						LmdbNativeHashJoin.LATE_REFUSALS.incrementAndGet();
+						return false;
+					}
 				}
 			}
 		}
@@ -319,6 +377,35 @@ final class HashJoinBatchCursor implements BatchCursor {
 		probeCursor = probe.openBatch(row, capacity);
 		probeBatch = new NativeBatch(row.slots.length, capacity);
 		return true;
+	}
+
+	/**
+	 * Byte admission (ExecPlan Milestone 2): reserve the estimated build footprint against the QUERY-shared ledger
+	 * (from {@code row.memoryScope}, so every build under one root iteration draws on one per-query cap) BEFORE
+	 * scanning either source. Refusal costs zero build work; the reservation then grows with the table and is released
+	 * when this cursor closes. The shared ledger itself is not cursor-owned and is never closed here.
+	 */
+	private boolean preflight() {
+		long estimatedRows = (long) Math.ceil(Math.max(1D, buildRowsEstimate));
+		long bytes = LmdbNativeHashJoin.estimateBuildBytes(estimatedRows, keySlots.length, payloadSlots.length);
+		org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.QueryLedger ledger = row.memoryScope
+				.ledger(LmdbNativeHashJoin.queryMemory());
+		reservation = ledger.reserve(bytes, null);
+		return reservation != null;
+	}
+
+	/** Grows the reservation to the table's actual physical footprint; false when the ledger refuses. */
+	private boolean coverTableBytes() {
+		long actual = table.byteSize();
+		long reserved = reservation.bytes();
+		return actual <= reserved || reservation.tryGrow(actual - reserved);
+	}
+
+	private void releaseLedger() {
+		if (reservation != null) {
+			reservation.close();
+			reservation = null;
+		}
 	}
 
 	boolean mergePayload(NativeBatch output, int outputRow, int payload) {
@@ -389,6 +476,7 @@ final class HashJoinBatchCursor implements BatchCursor {
 			}
 			table = null;
 			probeBatch = null;
+			releaseLedger();
 		}
 	}
 }
@@ -429,6 +517,12 @@ final class PrimitiveHashJoinTable {
 		this.payloads = new long[Math.max(32, payloadWidth * 32)];
 		this.next = new int[32];
 		Arrays.fill(next, -1);
+	}
+
+	/** Physical data bytes across every backing array (headers excluded; the admission estimate absorbs them). */
+	long byteSize() {
+		return 8L * keys.length + occupied.length + fingerprints.length + 4L * fullHashes.length + 4L * heads.length
+				+ 4L * tails.length + 8L * payloads.length + 4L * next.length;
 	}
 
 	void add(long[] row, int[] keySlots, int[] payloadSlots) {

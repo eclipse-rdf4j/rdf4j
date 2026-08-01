@@ -64,7 +64,7 @@ class LmdbNativeAdaptiveHashJoinTest {
 	void buildPayloadDoesNotDuplicateSharedKeySlots() {
 		Fixture fixture = fixture(20_000D, 3D);
 		HashJoinBatchCursor cursor = new HashJoinBatchCursor(fixture.plan, fixture.left, fixture.right, fixture.row,
-				new int[] { KEY_SLOT }, 2, 32);
+				new int[] { KEY_SLOT }, 2, 32, 3D);
 
 		assertThat(cursor.payloadSlots).containsExactly(RIGHT_SLOT);
 	}

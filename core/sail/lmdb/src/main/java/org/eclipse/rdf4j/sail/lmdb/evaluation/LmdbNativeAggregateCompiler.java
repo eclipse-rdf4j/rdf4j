@@ -53,6 +53,8 @@ final class LmdbNativeAggregateCompiler {
 	static final String LEFTJOIN_HASH_MIN_PROBES = "rdf4j.lmdb.leftjoin.hash.minProbes";
 	static final String LEFTJOIN_HASH_MAX_ROWS = "rdf4j.lmdb.leftjoin.hash.maxRows";
 	static final String LEFTJOIN_MEMO_ENABLED = "rdf4j.lmdb.leftjoin.memo.enabled";
+	static final String LEFTJOIN_SWEEP_ENABLED = "rdf4j.lmdb.leftjoin.sweep.enabled";
+	static final String LEFTJOIN_SWEEP_MAX_ROWS = "rdf4j.lmdb.leftjoin.sweep.maxRows";
 	static final String MEMBERSHIP_MAX_SIZE = "rdf4j.lmdb.membership.maxSize";
 	static final String[] NO_OPTIONAL_ONLY_NAMES = new String[0];
 
@@ -61,6 +63,10 @@ final class LmdbNativeAggregateCompiler {
 	static final AtomicLong LEFTJOIN_REPLAY_MATERIALIZATIONS = new AtomicLong();
 	static final AtomicLong LEFTJOIN_HASH_BUILDS = new AtomicLong();
 	static final AtomicLong LEFTJOIN_MEMO_MATERIALIZATIONS = new AtomicLong();
+	/** Test observability: correlated OPTIONAL fragments answered by ONE key-unbound sweep instead of per-key runs. */
+	static final AtomicLong LEFTJOIN_SWEEP_BUILDS = new AtomicLong();
+	/** Test observability: sweeps drained through a batch join strategy instead of per-row nested loops. */
+	static final AtomicLong LEFTJOIN_SWEEP_BATCHES = new AtomicLong();
 	/** Test observability: null-rejecting filters over a left join compiled as an inner join instead. */
 	static final AtomicLong LEFTJOIN_FILTER_INNER_JOIN_REWRITES = new AtomicLong();
 	/** Test observability: =/IN constant filters folded into exact statement-pattern probes. */

@@ -50,6 +50,12 @@ final class LmdbNativeLeapfrogJoin {
 
 	static final String ENABLED_PROPERTY = "rdf4j.lmdb.wcoj.enabled";
 	static final String PARALLEL_MIN_CANDIDATES_PROPERTY = "rdf4j.lmdb.wcoj.parallelMinCandidates";
+	/**
+	 * Opt-in (default off): serve member frontiers directly from the store's direct-adjacency runs — already (neighbor,
+	 * context)-ordered — instead of opening a fresh record iterator and sorting the collected values (ExecPlan
+	 * .agent/lmdb-join-strategy-execplan.md, Milestone 1).
+	 */
+	static final String DIRECT_FRONTIERS_PROPERTY = "rdf4j.lmdb.wcoj.directFrontiers.enabled";
 	/** Cyclic cores larger than this are left to the ordinary strategies (recognition cost sanity bound). */
 	private static final int MAX_CORE_PATTERNS = 16;
 
@@ -59,6 +65,12 @@ final class LmdbNativeLeapfrogJoin {
 	static final AtomicLong OPENED = new AtomicLong();
 	/** Times a leapfrog executed its levels across parallel workers. Test hook. */
 	static final AtomicLong PARALLEL_RUNS = new AtomicLong();
+	/** Frontiers served from a direct-adjacency run (no record iterator, no sort). Test hook. */
+	static final AtomicLong FRONTIERS_ADJACENCY = new AtomicLong();
+	/** Frontiers served by the record-iterator scan + sort path. Test hook. */
+	static final AtomicLong FRONTIERS_SCANNED = new AtomicLong();
+	/** Unbound-key frontiers served by enumerating an adjacency plane's key domain. Test hook. */
+	static final AtomicLong FRONTIERS_ENUMERATED = new AtomicLong();
 
 	private LmdbNativeLeapfrogJoin() {
 	}
@@ -67,10 +79,20 @@ final class LmdbNativeLeapfrogJoin {
 		return !"false".equalsIgnoreCase(System.getProperty(ENABLED_PROPERTY));
 	}
 
+	static boolean directFrontiersEnabled() {
+		// Default ON since 2026-07-31: ExecPlan Milestone 1 acceptance met (cycle3 1.88x/1.63x/1.64x disjoint
+		// pairs; cycle4 +14%; cycle5 and the only wcoj-serving theme cell HIGHLY_CONNECTED:8 regression-free at
+		// the 5x10s protocol). The property remains the kill switch.
+		return !"false".equalsIgnoreCase(System.getProperty(DIRECT_FRONTIERS_PROPERTY));
+	}
+
 	static void resetMetrics() {
 		PLANNED.set(0);
 		OPENED.set(0);
 		PARALLEL_RUNS.set(0);
+		FRONTIERS_ADJACENCY.set(0);
+		FRONTIERS_SCANNED.set(0);
+		FRONTIERS_ENUMERATED.set(0);
 	}
 
 	/**
@@ -958,6 +980,8 @@ final class LmdbNativeLeapfrogJoin {
 		private Frontier[] memoFrontier;
 		private long[] memoKeys;
 		private boolean[] memoValid;
+		/** Member visiting order, computed once per level from compile-time estimates ({@link #memberOrder}). */
+		private int[] orderScratch;
 
 		Level(int slot, int[] members, boolean[] finalLevel) {
 			this.slot = slot;
@@ -1008,12 +1032,19 @@ final class LmdbNativeLeapfrogJoin {
 			return frontier;
 		}
 
-		/** Computes and intersects the member frontiers under the current prefix. False when empty. */
+		/**
+		 * Computes and intersects the member frontiers under the current prefix. False when empty. Members are visited
+		 * in ascending estimated-cardinality order (I/O-free estimates), so the smallest expected frontier seeds the
+		 * intersection and the early exits fire before the larger frontiers are ever fetched. Multiplicity products are
+		 * commutative, so visiting order cannot change results.
+		 */
 		boolean enter(LeapfrogCursor cursor, RowState row) throws IOException {
 			release(row);
 			long[] intersection = null;
 			long[] mult = null;
-			for (int m = 0; m < members.length; m++) {
+			int[] order = memberOrder(cursor);
+			for (int k = 0; k < order.length; k++) {
+				int m = order[k];
 				PatternPlan member = cursor.plan.patterns[members[m]];
 				boolean needCounts = !cursor.plan.isExistential(members[m]) && finalLevel[m]
 						&& mayMatchMultipleQuads(member);
@@ -1060,6 +1091,35 @@ final class LmdbNativeLeapfrogJoin {
 			multiplicities = mult;
 			position = -1;
 			return values.length > 0;
+		}
+
+		/**
+		 * Member visiting order for {@link #enter}: ascending compile-time {@link PatternPlan#staticEstimate}, ties
+		 * keeping pattern order. Computed once per level and reused — runtime estimates proved far too expensive per
+		 * entry (the fan-out statistics chain dominated a profile), and the per-member frontier memo makes per-entry
+		 * adaptivity worthless anyway.
+		 */
+		private int[] memberOrder(LeapfrogCursor cursor) {
+			int[] order = orderScratch;
+			if (order != null) {
+				return order;
+			}
+			order = new int[members.length];
+			for (int m = 0; m < order.length; m++) {
+				order[m] = m;
+			}
+			for (int i = 1; i < order.length; i++) {
+				int candidate = order[i];
+				double estimate = cursor.plan.patterns[members[candidate]].staticEstimate;
+				int j = i - 1;
+				while (j >= 0 && cursor.plan.patterns[members[order[j]]].staticEstimate > estimate) {
+					order[j + 1] = order[j];
+					j--;
+				}
+				order[j + 1] = candidate;
+			}
+			orderScratch = order;
+			return order;
 		}
 
 		/** First index at or after {@code from} whose value is unsigned-≥ {@code target} (galloping search). */
@@ -1148,11 +1208,136 @@ final class LmdbNativeLeapfrogJoin {
 	}
 
 	/**
+	 * Serves the frontier from a direct-adjacency run when the pattern under the current prefix is exactly
+	 * representable as one bound-key neighbor lookup: resolved predicate, exactly one resolved endpoint (the run key),
+	 * the requested slot at the other endpoint, and an unrestricted context position. Runs are already (neighbor,
+	 * context)-ordered, so the frontier needs neither a record iterator nor a sort — equal neighbors are adjacent and
+	 * one dedup pass also yields the duplicate-quad counts. Returns {@code null} whenever the shape is not
+	 * representable or the view cannot answer ({@code NOT_COVERED}); the caller then uses the store scan.
+	 */
+	private static Frontier adjacencyFrontier(PatternPlan pattern, int slot, RowState row, boolean needCounts,
+			NativeLmdbQuerySource.NativeProbe probe) throws IOException {
+		if (probe == null || pattern.hasRepeatedSlot() || pattern.range != null || pattern.statementOrder != null) {
+			return null;
+		}
+		if (pattern.namedContextScope || pattern.contexts.isFixed() || pattern.c.lookup(row.slots) != UNKNOWN) {
+			return null;
+		}
+		long pred = pattern.p.lookup(row.slots);
+		if (pred == UNKNOWN) {
+			return null;
+		}
+		int quadPosition = pattern.quadPositionOfSlot(slot);
+		boolean bySubject;
+		long key;
+		if (quadPosition == org.eclipse.rdf4j.sail.lmdb.TripleIndex.OBJ_IDX && !pattern.o.isConstant()) {
+			key = pattern.s.lookup(row.slots);
+			bySubject = true;
+		} else if (quadPosition == org.eclipse.rdf4j.sail.lmdb.TripleIndex.SUBJ_IDX && !pattern.s.isConstant()) {
+			key = pattern.o.lookup(row.slots);
+			bySubject = false;
+		} else {
+			return null;
+		}
+		if (key == UNKNOWN) {
+			// The run key is a free slot: the frontier is the plane's whole key domain, keyed by the frontier
+			// position itself. Key enumeration merges the base key index with delta-generation inserts/removals,
+			// so read-your-writes visibility is preserved. Counts are never needed here — a free key slot means
+			// this level cannot be the member's final level (see Level.enter) — but decline defensively.
+			boolean keyIsFreeSlot = bySubject ? pattern.s.hasSlot() : pattern.o.hasSlot();
+			if (needCounts || !keyIsFreeSlot) {
+				return null;
+			}
+			return enumeratedKeyFrontier(probe, pred, !bySubject);
+		}
+		NativeLmdbQuerySource.NativeAdjacency adjacency = probe.adjacency(pred, bySubject);
+		if (adjacency == null || !adjacency.runsNeighborOrdered()) {
+			return null;
+		}
+		long run = adjacency.find(key);
+		if (run == NativeLmdbQuerySource.NativeAdjacency.NOT_FOUND) {
+			return new Frontier(Frontier.EMPTY_VALUES, null);
+		}
+		if (run <= 0L) {
+			return null;
+		}
+		long size = adjacency.size(run);
+		if (size <= 0L) {
+			return new Frontier(Frontier.EMPTY_VALUES, null);
+		}
+		if (size > Integer.MAX_VALUE - 8) {
+			return null;
+		}
+		int total = (int) size;
+		long[] neighbors = new long[total];
+		int copied = 0;
+		while (copied < total) {
+			int step = adjacency.copyNeighbors(run, copied, total - copied, neighbors, copied);
+			if (step <= 0) {
+				return null;
+			}
+			copied += step;
+		}
+		int distinct = 0;
+		long[] counts = needCounts ? new long[total] : null;
+		for (int i = 0; i < total; i++) {
+			if (distinct > 0 && neighbors[distinct - 1] == neighbors[i]) {
+				if (counts != null) {
+					counts[distinct - 1]++;
+				}
+				continue;
+			}
+			neighbors[distinct] = neighbors[i];
+			if (counts != null) {
+				counts[distinct] = 1;
+			}
+			distinct++;
+		}
+		long[] values = distinct == total ? neighbors : Arrays.copyOf(neighbors, distinct);
+		long[] resultCounts = counts == null ? null : Arrays.copyOf(counts, distinct);
+		return new Frontier(values, resultCounts);
+	}
+
+	/**
+	 * Serves an unbound-key frontier by enumerating the key domain of the adjacency plane keyed by the frontier
+	 * position: the distinct, unsigned-ascending set of keys with at least one visible entry at this snapshot. Returns
+	 * {@code null} when the plane is unavailable or cannot enumerate keys.
+	 */
+	private static Frontier enumeratedKeyFrontier(NativeLmdbQuerySource.NativeProbe probe, long pred,
+			boolean bySubject) throws IOException {
+		NativeLmdbQuerySource.NativeAdjacency adjacency = probe.adjacency(pred, bySubject);
+		if (adjacency == null || !adjacency.supportsKeyEnumeration()) {
+			return null;
+		}
+		long count = adjacency.keyCount();
+		if (count < 0 || count > Integer.MAX_VALUE - 8) {
+			return null;
+		}
+		if (count == 0) {
+			return new Frontier(Frontier.EMPTY_VALUES, null);
+		}
+		long[] keys = new long[(int) count];
+		for (int i = 0; i < keys.length; i++) {
+			keys[i] = adjacency.keyAt(i);
+		}
+		FRONTIERS_ENUMERATED.incrementAndGet();
+		return new Frontier(keys, null);
+	}
+
+	/**
 	 * One bounded scan collecting the distinct values at {@code slot}'s quad position given the pattern's currently
 	 * bound terms. Values are sorted in unsigned id order; duplicate counts are collected when requested.
 	 */
 	private static Frontier scanFrontier(PatternPlan pattern, int slot, RowState row, boolean needCounts,
 			NativeLmdbQuerySource.NativeProbe probe) throws IOException {
+		if (directFrontiersEnabled()) {
+			Frontier direct = adjacencyFrontier(pattern, slot, row, needCounts, probe);
+			if (direct != null) {
+				FRONTIERS_ADJACENCY.incrementAndGet();
+				return direct;
+			}
+		}
+		FRONTIERS_SCANNED.incrementAndGet();
 		int quadPosition = pattern.quadPositionOfSlot(slot);
 		long[] collected = new long[16];
 		int size = 0;
@@ -1397,6 +1582,7 @@ final class LmdbNativeLeapfrogJoin {
 				// happen against snapshot-sibling sources of the same store snapshot
 				LeapfrogPlan workerPlan = sharedPlan;
 				RowState workerRow = new RowState(workerSource, consumerRow.layout, consumerRow.base);
+				workerRow.memoryScope = consumerRow.memoryScope;
 				for (int i = 0; i < entrySlots.length; i++) {
 					workerRow.slots[i] = entrySlots[i];
 				}

@@ -58,7 +58,18 @@ final class LeftJoinPlan implements SlotPlan {
 
 	@Override
 	public RowCursor open(RowState row) throws IOException {
-		return new LeftJoinCursor(left.open(row), right, row, left.producedMask());
+		double expectedProbes = Double.NaN;
+		double perProbeRows = Double.NaN;
+		double sweepEstimate = Double.NaN;
+		if (RightMemoProbe.sweepEnabled()) {
+			long boundMask = row.boundMask();
+			expectedProbes = LmdbNativeWork.rowsOut(left, row, boundMask);
+			perProbeRows = RightMemoProbe.fragmentRowsForMask(right, row, boundMask | left.producedMask());
+			// correlated slots are unbound at open time, so this estimates the key-unbound fragment sweep
+			sweepEstimate = LmdbNativeWork.rowsOut(right, row, boundMask);
+		}
+		return new LeftJoinCursor(left.open(row), right, row, left.producedMask(), expectedProbes, perProbeRows,
+				sweepEstimate);
 	}
 
 	@Override
@@ -86,7 +97,8 @@ final class LeftJoinCursor implements RowCursor {
 	boolean nullExtendedPending;
 	boolean rightCursorFromPayload;
 
-	LeftJoinCursor(RowCursor leftCursor, SlotPlan right, RowState row, long leftProducedMask) {
+	LeftJoinCursor(RowCursor leftCursor, SlotPlan right, RowState row, long leftProducedMask,
+			double expectedProbes, double perProbeRows, double sweepEstimate) {
 		this.leftCursor = leftCursor;
 		this.right = right;
 		this.row = row;
@@ -96,7 +108,8 @@ final class LeftJoinCursor implements RowCursor {
 						? slotsOf(right.producedMask())
 						: null;
 		this.payloadProbe = PatternPayloadProbe.tryCreate(right);
-		this.rightMemo = RightMemoProbe.tryCreate(right, leftProducedMask, readMask);
+		this.rightMemo = RightMemoProbe.tryCreate(right, leftProducedMask, readMask, row, expectedProbes,
+				perProbeRows, sweepEstimate);
 	}
 
 	@Override

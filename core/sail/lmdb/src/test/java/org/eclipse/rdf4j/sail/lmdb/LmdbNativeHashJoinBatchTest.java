@@ -72,7 +72,9 @@ class LmdbNativeHashJoinBatchTest {
 		System.clearProperty(LmdbNativeHashJoin.ENABLED_PROPERTY);
 		System.clearProperty(LmdbNativeHashJoin.MIN_ROWS_PROPERTY);
 		System.clearProperty(LmdbNativeHashJoin.MAX_BUILD_ROWS_PROPERTY);
+		System.clearProperty(LmdbNativeHashJoin.BYTE_ADMISSION_PROPERTY);
 		System.clearProperty(LmdbNativeMergeJoin.ENABLED_PROPERTY);
+		LmdbNativeHashJoin.queryMemoryOverride = null;
 		repository.shutDown();
 	}
 
@@ -220,6 +222,174 @@ class LmdbNativeHashJoinBatchTest {
 		}
 	}
 
+	@Test
+	void byteAdmissionRefusesBuildBeyondBudgetBeforeScanning() {
+		List<String> generic = genericRows();
+		resetCounters();
+		// Budget far below the ~200-row build's physical footprint: preflight must refuse before any scan.
+		LmdbNativeHashJoin.queryMemoryOverride = org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager
+				.createForTesting(1024, 1024);
+		System.setProperty(LmdbNativeHashJoin.BYTE_ADMISSION_PROPERTY, "true");
+		try {
+			assertThat(rows()).isEqualTo(generic).hasSize(2000);
+			assertThat(LmdbNativeHashJoin.PREFLIGHT_REFUSALS.get()).as("preflight refusal").isOne();
+			assertThat(LmdbNativeHashJoin.BUILDS.get()).as("no build after refusal").isZero();
+			assertThat(LmdbNativeHashJoin.LATE_REFUSALS.get()).isZero();
+			assertThat(LmdbNativeHashJoin.CAP_FALLBACKS.get()).as("row-cap counter untouched").isZero();
+			assertThat(LmdbNativeHashJoin.queryMemoryOverride.usedBytes()).as("ledger balance").isZero();
+		} finally {
+			LmdbNativeHashJoin.queryMemoryOverride = null;
+		}
+	}
+
+	@Test
+	void byteAdmissionIgnoredWhenFlagOff() {
+		List<String> generic = genericRows();
+		resetCounters();
+		LmdbNativeHashJoin.queryMemoryOverride = org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager
+				.createForTesting(1024, 1024);
+		try {
+			assertThat(rows()).isEqualTo(generic).hasSize(2000);
+			assertThat(LmdbNativeHashJoin.BUILDS.get()).as("flag off: row-cap admission only").isOne();
+			assertThat(LmdbNativeHashJoin.PREFLIGHT_REFUSALS.get()).isZero();
+		} finally {
+			LmdbNativeHashJoin.queryMemoryOverride = null;
+		}
+	}
+
+	@Test
+	void byteAdmissionLateRefusalAfterDeliberateUnderestimate() {
+		// Unique join keys: the bucket-array estimate matches the actual table, but the payload arrays grow by
+		// doubling (…128 → 256 slots for 200 rows), overshooting the estimated 200-slot payload reservation. A
+		// budget barely above the preflight bytes admits the build and then refuses the growth — the
+		// late-refusal path with a discarded partial build and a correct fallback result.
+		String uniqueQuery = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?left ?key ?right WHERE { ?left ex:ukey ?key . ?right ex:ukey ?key }";
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			IRI ukey = vf.createIRI(EX, "ukey");
+			for (int i = 0; i < 200; i++) {
+				connection.add(vf.createIRI(EX, "urow" + i), ukey, vf.createIRI(EX, "unique" + i));
+			}
+		}
+		List<String> generic = genericRows(uniqueQuery);
+		resetCounters();
+		System.setProperty(LmdbNativeMergeJoin.ENABLED_PROPERTY, "false");
+		long preflightBytes = LmdbNativeHashJoin.estimateBuildBytes(200, 1, 1);
+		LmdbNativeHashJoin.queryMemoryOverride = org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager
+				.createForTesting(preflightBytes + 100, preflightBytes + 100);
+		System.setProperty(LmdbNativeHashJoin.BYTE_ADMISSION_PROPERTY, "true");
+		try {
+			assertThat(rows(uniqueQuery)).isEqualTo(generic).hasSize(200);
+			assertThat(LmdbNativeHashJoin.PREFLIGHT_REFUSALS.get()).as("preflight admitted").isZero();
+			assertThat(LmdbNativeHashJoin.LATE_REFUSALS.get()).as("growth refused mid-build").isOne();
+			assertThat(LmdbNativeHashJoin.BUILDS.get()).as("no completed build").isZero();
+			assertThat(LmdbNativeHashJoin.queryMemoryOverride.usedBytes()).as("ledger balance").isZero();
+		} finally {
+			LmdbNativeHashJoin.queryMemoryOverride = null;
+		}
+	}
+
+	@Test
+	void byteAdmissionReleasesLedgerWhenResultClosedMidStream() {
+		resetCounters();
+		LmdbNativeHashJoin.queryMemoryOverride = org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager
+				.createForTesting(1 << 24, 1 << 24);
+		System.setProperty(LmdbNativeHashJoin.BYTE_ADMISSION_PROPERTY, "true");
+		System.setProperty(NATIVE_FLAG, "true");
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			try (var result = connection.prepareTupleQuery(QUERY).evaluate()) {
+				assertThat(result.hasNext()).isTrue();
+				result.next();
+				// Abandon the rest: closing must release every reservation the admitted build holds.
+			}
+			assertThat(LmdbNativeHashJoin.BUILDS.get()).as("build admitted").isOne();
+			assertThat(LmdbNativeHashJoin.queryMemoryOverride.usedBytes())
+					.as("ledger balance after mid-stream close")
+					.isZero();
+		} finally {
+			LmdbNativeHashJoin.queryMemoryOverride = null;
+		}
+	}
+
+	@Test
+	void byteAdmissionSharesOneQueryLedgerAcrossBuildsInOneRootIteration() throws Exception {
+		// Two builds under the SAME root RowState must draw on ONE per-query ledger (ExecPlan Milestone 2,
+		// root-shared increment). With a per-query cap between one and two build footprints and a roomy global
+		// cap, the second build must be refused while the first table is alive; per-build ledgers would admit
+		// both because each fresh ledger starts at zero against the per-query cap.
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("s", 0, "left", 1, "right", 2), null);
+		layout.freeze(List.of("s", "left", "right"));
+		CountingJoinSource source = new CountingJoinSource();
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		assertThat(LmdbNativeAggregateCompiler.initializeRow(row, EmptyBindingSet.getInstance(), source, layout))
+				.isTrue();
+		PatternPlan left = new PatternPlan(Term.slot(0), Term.constant(7L), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 3);
+		PatternPlan right = new PatternPlan(Term.slot(0), Term.constant(8L), Term.slot(2), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 3);
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { left, right }, new MaskedFilter[0]);
+		long buildBytes = LmdbNativeHashJoin.estimateBuildBytes(6, 1, 1);
+		LmdbNativeHashJoin.queryMemoryOverride = org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager
+				.createForTesting(1 << 20, buildBytes + buildBytes / 2);
+		System.setProperty(LmdbNativeHashJoin.BYTE_ADMISSION_PROPERTY, "true");
+		resetCounters();
+		try {
+			NativeBatch batch = new NativeBatch(3, 2);
+			try (BatchCursor first = LmdbNativeHashJoin.tryOpen(plan, row, 2)) {
+				assertThat(first).isNotNull();
+				assertThat(first.fill(batch)).as("first build admitted and produces rows").isPositive();
+				assertThat(LmdbNativeHashJoin.BUILDS.get()).isOne();
+				try (BatchCursor second = LmdbNativeHashJoin.tryOpen(plan, row, 2)) {
+					assertThat(second).isNotNull();
+					int total = 0;
+					int count;
+					while ((count = second.fill(batch)) > 0) {
+						total += count;
+					}
+					assertThat(total).as("refused build still answers through the fallback").isEqualTo(3);
+					assertThat(LmdbNativeHashJoin.PREFLIGHT_REFUSALS.get())
+							.as("second build refused by the shared per-query cap")
+							.isOne();
+					assertThat(LmdbNativeHashJoin.BUILDS.get()).as("only the first build completed").isOne();
+				}
+			}
+			assertThat(LmdbNativeHashJoin.queryMemoryOverride.usedBytes()).as("ledger balance").isZero();
+		} finally {
+			LmdbNativeHashJoin.queryMemoryOverride = null;
+		}
+	}
+
+	@Test
+	void byteAdmissionDifferentiatesPayloadWidthAtEqualRows() {
+		String wideQuery = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?left ?key ?right ?p WHERE { ?left ex:key ?key . ?right ?p ?key }";
+		List<String> genericNarrow = genericRows();
+		List<String> genericWide = genericRows(wideQuery);
+		resetCounters();
+		System.setProperty(LmdbNativeMergeJoin.ENABLED_PROPERTY, "false");
+		// Same ~200 build rows; payload width 1 (narrow) vs 2 (wide). A budget between the two footprints must
+		// admit the narrow build and refuse the wide one.
+		long narrowBytes = LmdbNativeHashJoin.estimateBuildBytes(200, 1, 1);
+		long wideBytes = LmdbNativeHashJoin.estimateBuildBytes(200, 1, 2);
+		assertThat(wideBytes).isGreaterThan(narrowBytes);
+		long budget = (narrowBytes + wideBytes) / 2;
+		LmdbNativeHashJoin.queryMemoryOverride = org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager
+				.createForTesting(budget, budget);
+		System.setProperty(LmdbNativeHashJoin.BYTE_ADMISSION_PROPERTY, "true");
+		try {
+			assertThat(rows()).isEqualTo(genericNarrow);
+			assertThat(LmdbNativeHashJoin.BUILDS.get()).as("narrow build admitted").isOne();
+			assertThat(LmdbNativeHashJoin.PREFLIGHT_REFUSALS.get()).isZero();
+
+			assertThat(rows(wideQuery)).isEqualTo(genericWide);
+			assertThat(LmdbNativeHashJoin.PREFLIGHT_REFUSALS.get()).as("wide build refused").isOne();
+			assertThat(LmdbNativeHashJoin.queryMemoryOverride.usedBytes()).as("ledger balance").isZero();
+		} finally {
+			LmdbNativeHashJoin.queryMemoryOverride = null;
+		}
+	}
+
 	private List<String> genericRows() {
 		return genericRows(QUERY);
 	}
@@ -259,6 +429,8 @@ class LmdbNativeHashJoinBatchTest {
 		LmdbNativeHashJoin.BUILDS.set(0);
 		LmdbNativeHashJoin.PROBE_BATCHES.set(0);
 		LmdbNativeHashJoin.CAP_FALLBACKS.set(0);
+		LmdbNativeHashJoin.PREFLIGHT_REFUSALS.set(0);
+		LmdbNativeHashJoin.LATE_REFUSALS.set(0);
 	}
 
 	private static final class CountingJoinSource implements NativeLmdbQuerySource {
