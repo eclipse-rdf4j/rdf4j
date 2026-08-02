@@ -13,6 +13,10 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.io.File;
 import java.util.LinkedHashMap;
@@ -28,12 +32,36 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class LmdbCorrelatedFiniteSurfaceEstimatorTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
+	@Test
+	void queryScopedSurfaceBudgetReplaysIdenticalCardinalityProbes() throws Exception {
+		IRI subject = VF.createIRI("urn:test:correlated:cached-subject");
+		ValueStore valueStore = mock(ValueStore.class);
+		TripleStore tripleStore = mock(TripleStore.class);
+		when(valueStore.getId(subject)).thenReturn(101L);
+		when(tripleStore.planningCardinality(
+				101L, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID))
+						.thenReturn(5_000.0d);
+		LmdbFiniteJoinSurfaceEstimator estimator = new LmdbFiniteJoinSurfaceEstimator(valueStore, tripleStore);
+		FiniteRelationEstimate relation = FiniteRelationEstimate.fromRows(
+				List.of("subject"), List.of(List.of(subject)), "frontier-correlation");
+		StatementPattern accessKernel = new StatementPattern(
+				Var.of("subject"), Var.of("predicate"), Var.of("object"));
+		LmdbFiniteJoinSurfaceEstimator.ScanBudget queryBudget = LmdbFiniteJoinSurfaceEstimator.newScanBudget();
+
+		assertTrue(estimator.estimate(relation, accessKernel, queryBudget).isPresent());
+		assertTrue(estimator.estimate(relation, accessKernel, queryBudget).isPresent());
+
+		verify(tripleStore, times(1)).planningCardinality(
+				101L, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID);
+	}
 
 	@Test
 	void correlatedRelationPreservesMultiColumnTuplePairing(@TempDir File dataDir) throws Exception {
@@ -75,7 +103,49 @@ class LmdbCorrelatedFiniteSurfaceEstimatorTest {
 			Object surface = estimated.orElseThrow();
 			assertEquals(2.0d, number(surface, "surfaceRows"));
 			assertEquals(2.0d, number(surface, "prefixRows"));
+			assertEquals(2.0d, number(surface, "matchedPrefixRows"));
 			assertEquals(2.0d, number(surface, "scannedRows"));
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void exactSurfaceSeparatesMatchedOuterMultiplicityFromRhsFanout(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			IRI matchedSubject = VF.createIRI("urn:test:correlated:matched-subject");
+			IRI unmatchedSubject = VF.createIRI("urn:test:correlated:unmatched-subject");
+			IRI predicate = VF.createIRI("urn:test:correlated:predicate");
+			try (var connection = repository.getConnection()) {
+				connection.add(matchedSubject, predicate, VF.createIRI("urn:test:correlated:first-object"));
+				connection.add(matchedSubject, predicate, VF.createIRI("urn:test:correlated:second-object"));
+				connection.add(unmatchedSubject, VF.createIRI("urn:test:correlated:unrelated-predicate"),
+						VF.createIRI("urn:test:correlated:unrelated-object"));
+			}
+
+			Map<List<Value>, Double> frequencies = new LinkedHashMap<>();
+			frequencies.put(List.of(matchedSubject), 3.0d);
+			frequencies.put(List.of(unmatchedSubject), 2.0d);
+			FiniteRelationEstimate relation = FiniteRelationEstimate.fromFrequencies(
+					List.of("subject"), frequencies, "frontier-correlation");
+			StatementPattern accessKernel = new StatementPattern(
+					Var.of("subject"), Var.of("predicate", predicate), Var.of("object"));
+
+			Object runtime = ((LmdbEvaluationStatistics) store.getBackingStore().getEvaluationStatistics())
+					.estimatorRuntime();
+			var method = runtime.getClass()
+					.getDeclaredMethod("exactCorrelatedSurface", FiniteRelationEstimate.class,
+							org.eclipse.rdf4j.query.algebra.TupleExpr.class);
+			method.setAccessible(true);
+			Optional<?> estimated = (Optional<?>) method.invoke(runtime, relation, accessKernel);
+			assertTrue(estimated.isPresent());
+			Object surface = estimated.orElseThrow();
+			assertEquals(6.0d, number(surface, "surfaceRows"));
+			assertEquals(5.0d, number(surface, "prefixRows"));
+			assertEquals(3.0d, number(surface, "matchedPrefixRows"));
 		} finally {
 			repository.shutDown();
 		}

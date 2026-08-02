@@ -297,6 +297,8 @@ class PackedCorrelatedMinusAlternativeTest {
 				result.selectedPlan()::toString);
 		Not not = assertInstanceOf(Not.class, selectedAnti.getCondition(), result.selectedPlan()::toString);
 		assertInstanceOf(Exists.class, not.getArg(), result.selectedPlan()::toString);
+		assertEquals("minus-assured-shared", selectedAnti.getStringMetricPlanned("optimizer.semiAntiKind"),
+				"Filter commutation must retain the semantic identity of the predicate moved to the inner slot");
 		assertTrue(dosageProbeCosted[0], "The dosage anti-probe must be costed with ?entity bound");
 		assertTrue(patientProbeCosted[0], "The patient EXISTS probe must be costed with ?entity bound");
 	}

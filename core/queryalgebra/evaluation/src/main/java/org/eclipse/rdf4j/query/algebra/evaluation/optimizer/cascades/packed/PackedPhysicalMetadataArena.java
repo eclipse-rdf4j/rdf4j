@@ -14,15 +14,19 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 import java.util.Arrays;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDisposition;
 
 /** Query-local primitive columns for provider facts selected by winner rows. */
 @PackedHotPath
 final class PackedPhysicalMetadataArena {
 
 	private static final EvidenceGuarantee[] EVIDENCE_GUARANTEES = EvidenceGuarantee.values();
+	private static final FrontierStateDisposition[] EVIDENCE_DISPOSITIONS = FrontierStateDisposition.values();
 	private static final PackedCostEstimate.CostScope[] COST_SCOPES = PackedCostEstimate.CostScope.values();
 	private static final int EXPLICIT_PHYSICAL_COST = 1;
 	private static final int DEPENDENT_SUBQUERIES_COSTED = 1 << 1;
+	private static final int CONTEXTUAL_OUTPUT_ROWS = 1 << 2;
+	private static final int COMPONENT_OUTPUT_ROWS = 1 << 3;
 
 	private final PackedObjectPool objects;
 	private double[] outputRows;
@@ -34,6 +38,7 @@ final class PackedPhysicalMetadataArena {
 	private double[] hashBuildRows;
 	private double[] hashProbeRows;
 	private double[] pathExpansions;
+	private double[] resultRows;
 	private double[] remoteCalls;
 	private double[] peakMemoryRows;
 	private byte[] costScopes;
@@ -42,6 +47,9 @@ final class PackedPhysicalMetadataArena {
 	private double[] invocations;
 	private int[] evidenceStateIds;
 	private byte[] evidenceGuarantees;
+	private byte[] evidenceDispositions;
+	private int[] costEventIds;
+	private long[] ruleProofMasks;
 	private int[] lookupMasks;
 	private int[] missingLookupMasks;
 	private int[] indexPrefixLengths;
@@ -73,6 +81,7 @@ final class PackedPhysicalMetadataArena {
 		hashBuildRows = new double[capacity];
 		hashProbeRows = new double[capacity];
 		pathExpansions = new double[capacity];
+		resultRows = new double[capacity];
 		remoteCalls = new double[capacity];
 		peakMemoryRows = new double[capacity];
 		costScopes = new byte[capacity];
@@ -81,6 +90,9 @@ final class PackedPhysicalMetadataArena {
 		invocations = new double[capacity];
 		evidenceStateIds = new int[capacity];
 		evidenceGuarantees = new byte[capacity];
+		evidenceDispositions = new byte[capacity];
+		costEventIds = new int[capacity];
+		ruleProofMasks = new long[capacity];
 		lookupMasks = new int[capacity];
 		missingLookupMasks = new int[capacity];
 		indexPrefixLengths = new int[capacity];
@@ -106,11 +118,14 @@ final class PackedPhysicalMetadataArena {
 		hashBuildRows[metadataId] = finiteNonNegative(estimate.hashBuildRows(), 0.0d);
 		hashProbeRows[metadataId] = finiteNonNegative(estimate.hashProbeRows(), 0.0d);
 		pathExpansions[metadataId] = finiteNonNegative(estimate.pathExpansions(), 0.0d);
+		resultRows[metadataId] = finiteNonNegative(estimate.resultRows(), 0.0d);
 		remoteCalls[metadataId] = finiteNonNegative(estimate.remoteCalls(), 0.0d);
 		peakMemoryRows[metadataId] = finiteNonNegative(estimate.peakMemoryRows(), 0.0d);
 		costScopes[metadataId] = (byte) estimate.costScope().ordinal();
 		physicalCostFlags[metadataId] = (byte) ((estimate.hasExplicitPhysicalCost() ? EXPLICIT_PHYSICAL_COST : 0)
-				| (estimate.dependentSubqueriesCosted() ? DEPENDENT_SUBQUERIES_COSTED : 0));
+				| (estimate.dependentSubqueriesCosted() ? DEPENDENT_SUBQUERIES_COSTED : 0)
+				| (estimate.hasContextualOutputRows() ? CONTEXTUAL_OUTPUT_ROWS : 0)
+				| (estimate.hasComponentOutputRows() ? COMPONENT_OUTPUT_ROWS : 0));
 		accessRows[metadataId] = finiteNonNegative(estimate.accessRows(), Double.NaN);
 		invocations[metadataId] = finiteNonNegative(estimate.invocations(), 1.0d);
 		evidenceStateIds[metadataId] = estimate.evidenceStateId();
@@ -118,6 +133,11 @@ final class PackedPhysicalMetadataArena {
 		evidenceGuarantees[metadataId] = evidenceGuarantee == null
 				? 0
 				: (byte) (evidenceGuarantee.ordinal() + 1);
+		FrontierStateDisposition evidenceDisposition = estimate.evidenceDisposition();
+		evidenceDispositions[metadataId] = evidenceDisposition == null
+				? 0
+				: (byte) (evidenceDisposition.ordinal() + 1);
+		costEventIds[metadataId] = estimate.costEventId();
 		lookupMasks[metadataId] = estimate.lookupComponentMask();
 		missingLookupMasks[metadataId] = estimate.missingLookupComponentMask();
 		indexPrefixLengths[metadataId] = estimate.indexPrefixLength();
@@ -174,6 +194,11 @@ final class PackedPhysicalMetadataArena {
 		return pathExpansions[metadataId];
 	}
 
+	double resultRows(int metadataId) {
+		checkId(metadataId);
+		return resultRows[metadataId];
+	}
+
 	double remoteCalls(int metadataId) {
 		checkId(metadataId);
 		return remoteCalls[metadataId];
@@ -199,22 +224,41 @@ final class PackedPhysicalMetadataArena {
 		return (physicalCostFlags[metadataId] & DEPENDENT_SUBQUERIES_COSTED) != 0;
 	}
 
+	boolean hasContextualOutputRows(int metadataId) {
+		checkId(metadataId);
+		return (physicalCostFlags[metadataId] & CONTEXTUAL_OUTPUT_ROWS) != 0;
+	}
+
+	boolean hasComponentOutputRows(int metadataId) {
+		checkId(metadataId);
+		return (physicalCostFlags[metadataId] & COMPONENT_OUTPUT_ROWS) != 0;
+	}
+
 	void restorePhysicalCost(int metadataId, PackedCostEstimate estimate) {
 		checkId(metadataId);
 		if (hasExplicitPhysicalCost(metadataId)) {
 			if (costScope(metadataId) == PackedCostEstimate.CostScope.INCLUSIVE) {
 				estimate.setInclusivePhysicalCost(sequentialRows[metadataId], randomSeeks[metadataId],
 						iteratorOpens[metadataId], expressionEvaluations[metadataId], hashBuildRows[metadataId],
-						hashProbeRows[metadataId], pathExpansions[metadataId], remoteCalls[metadataId],
+						hashProbeRows[metadataId], pathExpansions[metadataId], resultRows[metadataId],
+						remoteCalls[metadataId],
 						peakMemoryRows[metadataId]);
 			} else {
 				estimate.setLocalPhysicalCost(sequentialRows[metadataId], randomSeeks[metadataId],
 						iteratorOpens[metadataId], expressionEvaluations[metadataId], hashBuildRows[metadataId],
-						hashProbeRows[metadataId], pathExpansions[metadataId], remoteCalls[metadataId],
+						hashProbeRows[metadataId], pathExpansions[metadataId], resultRows[metadataId],
+						remoteCalls[metadataId],
 						peakMemoryRows[metadataId]);
 			}
 		} else {
 			estimate.setReplacesChildWork(costScope(metadataId) == PackedCostEstimate.CostScope.INCLUSIVE);
+		}
+		if (hasComponentOutputRows(metadataId)) {
+			estimate.setComponentOutputRowsPreservingPhysicalCost(outputRows[metadataId]);
+		} else if (hasContextualOutputRows(metadataId)) {
+			estimate.setContextualOutputRowsPreservingPhysicalCost(outputRows[metadataId]);
+		} else {
+			estimate.setOutputRowsPreservingPhysicalCost(outputRows[metadataId]);
 		}
 		estimate.setDependentSubqueriesCosted(dependentSubqueriesCosted(metadataId));
 	}
@@ -238,6 +282,27 @@ final class PackedPhysicalMetadataArena {
 		checkId(metadataId);
 		int encoded = Byte.toUnsignedInt(evidenceGuarantees[metadataId]);
 		return encoded == 0 ? null : EVIDENCE_GUARANTEES[encoded - 1];
+	}
+
+	FrontierStateDisposition evidenceDisposition(int metadataId) {
+		checkId(metadataId);
+		int encoded = Byte.toUnsignedInt(evidenceDispositions[metadataId]);
+		return encoded == 0 ? null : EVIDENCE_DISPOSITIONS[encoded - 1];
+	}
+
+	int costEventId(int metadataId) {
+		checkId(metadataId);
+		return costEventIds[metadataId];
+	}
+
+	void addRuleProofMask(int metadataId, long ruleProofMask) {
+		checkId(metadataId);
+		ruleProofMasks[metadataId] |= ruleProofMask;
+	}
+
+	long ruleProofMask(int metadataId) {
+		checkId(metadataId);
+		return ruleProofMasks[metadataId];
 	}
 
 	int lookupMask(int metadataId) {
@@ -362,6 +427,7 @@ final class PackedPhysicalMetadataArena {
 		hashBuildRows = Arrays.copyOf(hashBuildRows, capacity);
 		hashProbeRows = Arrays.copyOf(hashProbeRows, capacity);
 		pathExpansions = Arrays.copyOf(pathExpansions, capacity);
+		resultRows = Arrays.copyOf(resultRows, capacity);
 		remoteCalls = Arrays.copyOf(remoteCalls, capacity);
 		peakMemoryRows = Arrays.copyOf(peakMemoryRows, capacity);
 		costScopes = Arrays.copyOf(costScopes, capacity);
@@ -370,6 +436,9 @@ final class PackedPhysicalMetadataArena {
 		invocations = Arrays.copyOf(invocations, capacity);
 		evidenceStateIds = Arrays.copyOf(evidenceStateIds, capacity);
 		evidenceGuarantees = Arrays.copyOf(evidenceGuarantees, capacity);
+		evidenceDispositions = Arrays.copyOf(evidenceDispositions, capacity);
+		costEventIds = Arrays.copyOf(costEventIds, capacity);
+		ruleProofMasks = Arrays.copyOf(ruleProofMasks, capacity);
 		lookupMasks = Arrays.copyOf(lookupMasks, capacity);
 		missingLookupMasks = Arrays.copyOf(missingLookupMasks, capacity);
 		indexPrefixLengths = Arrays.copyOf(indexPrefixLengths, capacity);

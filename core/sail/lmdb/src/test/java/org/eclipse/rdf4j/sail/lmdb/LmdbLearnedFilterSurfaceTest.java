@@ -21,6 +21,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -154,6 +155,26 @@ class LmdbLearnedFilterSurfaceTest {
 
 		assertEquals(FilterSurfaceKey.exact(simpleValues), FilterSurfaceKey.exact(lmdbValues));
 		assertEquals(FilterSurfaceKey.generalized(simpleValues), FilterSurfaceKey.generalized(lmdbValues));
+	}
+
+	@Test
+	void locallyClosedFilterSurfaceIgnoresScopeBoundary() {
+		Filter unscoped = filter("5");
+		Filter scoped = unscoped.clone();
+		scoped.setVariableScopeChange(true);
+
+		assertEquals(FilterSurfaceKey.exact(unscoped), FilterSurfaceKey.exact(scoped));
+		assertEquals(FilterSurfaceKey.generalized(unscoped), FilterSurfaceKey.generalized(scoped));
+	}
+
+	@Test
+	void externallyCorrelatedFilterSurfaceRetainsScopeBoundary() {
+		Filter unscoped = new Filter(filter("5").getArg().clone(), new Bound(new Var("external")));
+		Filter scoped = unscoped.clone();
+		scoped.setVariableScopeChange(true);
+
+		assertNotEquals(FilterSurfaceKey.exact(unscoped), FilterSurfaceKey.exact(scoped));
+		assertNotEquals(FilterSurfaceKey.generalized(unscoped), FilterSurfaceKey.generalized(scoped));
 	}
 
 	private static LmdbStore initializedStore(File dataDir) {

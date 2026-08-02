@@ -12,14 +12,18 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.junit.jupiter.api.Test;
@@ -57,6 +61,60 @@ class PackedCostSessionLifecycleTest {
 	}
 
 	@Test
+	void recordedFrontierSessionFailureRestartsExactlyOnceInScalarMode() {
+		int[] opens = new int[1];
+		int[] closes = new int[1];
+		PackedCostModel model = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return rows(query, relationId);
+			}
+
+			@Override
+			public PackedCostSession openSession(PackedQueryView query) {
+				opens[0]++;
+				return new PackedCostSession() {
+					@Override
+					public void estimateLeaf(int relationId, PackedCostContext context,
+							PackedCostEstimate output) {
+						double estimate = rows(query, relationId);
+						output.setRows(estimate, estimate);
+					}
+
+					@Override
+					public void appendFactor(int relationId, PackedCostContext context,
+							PackedCostEstimate output) {
+						throw new PackedCostSessionFailure("frontier-payload-corrupt");
+					}
+
+					@Override
+					public void refineOperator(int relationId, PackedCostContext context,
+							PackedCostEstimate output) {
+					}
+
+					@Override
+					public void close() {
+						closes[0]++;
+					}
+				};
+			}
+		};
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(query(), OptimizationGoal.root(), model);
+
+		assertNotNull(result.selectedPlan());
+		assertEquals(1, opens[0]);
+		assertEquals(1, closes[0]);
+		assertEquals("whole-session-failure",
+				result.selectedPlan().getStringMetricPlanned("optimizer.frontierSessionFallbackDisposition"));
+		assertEquals("frontier-payload-corrupt",
+				result.selectedPlan().getStringMetricPlanned("optimizer.frontierSessionFallbackReason"));
+		assertEquals("unavailable", result.selectedPlan().getStringMetricPlanned("plannedFrontierStatus"));
+		assertEquals("frontier-payload-corrupt",
+				result.selectedPlan().getStringMetricPlanned("plannedFrontierFallbackReason"));
+	}
+
+	@Test
 	void defaultScalarLambdaSessionPreservesPlanRowsAndCost() {
 		TupleExpr source = query();
 		PackedCostModel scalar = PackedCostSessionLifecycleTest::rows;
@@ -72,6 +130,408 @@ class PackedCostSessionLifecycleTest {
 		assertEquals(1, sessionOnly.openCount);
 		assertEquals(1, sessionOnly.closeCount);
 		assertEquals(0, sessionOnly.directCallCount);
+	}
+
+	@Test
+	void selectedPlanAndExactCacheHitRetainTheOriginalCostingEventBitForBit() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern source = pattern(values, "subject", "urn:event-source", "object");
+		int[] providerCalls = new int[1];
+		PackedCostModel changingProvider = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return Double.NaN;
+			}
+
+			@Override
+			public PackedCostSession openSession(PackedQueryView query) {
+				return new PackedCostSession() {
+					@Override
+					public void estimateLeaf(int relationId, PackedCostContext context,
+							PackedCostEstimate output) {
+						int invocation = ++providerCalls[0];
+						output.setRows(invocation == 1 ? 7.0d : 700.0d, invocation == 1 ? 11.0d : 1_100.0d);
+					}
+
+					@Override
+					public void appendFactor(int relationId, PackedCostContext context,
+							PackedCostEstimate output) {
+						estimateLeaf(relationId, context, output);
+					}
+
+					@Override
+					public void refineOperator(int relationId, PackedCostContext context,
+							PackedCostEstimate output) {
+					}
+				};
+			}
+		};
+		PackedPlanCache cache = new PackedPlanCache(8, 1);
+		PackedPlanCache.Context context = new PackedPlanCache.Context(1L, 2L, 3L, 4L, 5L, 6L, 7L);
+
+		PackedPlanningResult cold = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), cache, context,
+				changingProvider);
+		PackedPlanningResult hot = PackedCascadesPlanner.optimize(source.clone(), OptimizationGoal.root(), cache,
+				context, changingProvider);
+
+		assertEquals(1, providerCalls[0], "extraction, materialization, and exact cache reuse must not re-estimate");
+		assertEquals(7.0d, cold.outputRows(), 0.0d);
+		assertEquals(11.0d, cold.totalCost(), 0.0d);
+		assertEquals(7.0d, hot.outputRows(), 0.0d);
+		assertEquals(11.0d, hot.totalCost(), 0.0d);
+		assertEquals("leaf", cold.selectedPlan().getStringMetricPlanned("optimizer.costEventPhase"));
+		assertEquals(1.0d, cold.selectedPlan().getDoubleMetricPlanned("optimizer.costEventOrdinal"), 0.0d);
+		assertEquals(7.0d, cold.selectedPlan().getDoubleMetricPlanned("optimizer.costEventRows"), 0.0d);
+		assertEquals(11.0d, cold.selectedPlan().getDoubleMetricPlanned("optimizer.costEventWorkRows"), 0.0d);
+		assertNotNull(cold.selectedPlan().getStringMetricPlanned("optimizer.costEventDigest"));
+		assertEquals(cold.selectedPlan().getStringMetricPlanned("optimizer.costEventDigest"),
+				hot.selectedPlan().getStringMetricPlanned("optimizer.costEventDigest"));
+		assertTrue(hot.metrics().planCacheHit());
+	}
+
+	@Test
+	void identicalQueryLocalCostingCallReusesItsOriginatingEventAndFrontierState() {
+		int[] providerCalls = new int[1];
+		PackedCostSession provider = new PackedCostSession() {
+			@Override
+			public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				throw new AssertionError("this fixture exercises prefix costing only");
+			}
+
+			@Override
+			public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				int invocation = ++providerCalls[0];
+				output.setComponentRows(7.0d, 11.0d);
+				output.setEvidenceStateId(100 + invocation);
+				output.putPlannedStringMetric("provider.call", Integer.toString(invocation));
+			}
+
+			@Override
+			public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				throw new AssertionError("this fixture exercises prefix costing only");
+			}
+		};
+		EventSourcingPackedCostSession session = new EventSourcingPackedCostSession(provider);
+		PackedCostContext context = new PackedCostContext();
+		context.reset(new int[] { 3, 5 }, 0, 2, 13.0d, 41);
+		context.setEvidenceIdentity(7, 11, 17);
+		PackedCostEstimate first = new PackedCostEstimate();
+		first.setRows(19.0d, 23.0d);
+		PackedCostEstimate second = new PackedCostEstimate();
+		second.setRows(19.0d, 23.0d);
+
+		session.appendFactor(29, context, first);
+		session.appendFactor(29, context, second);
+
+		assertEquals(1, providerCalls[0], "one exact costing identity must invoke the provider only once");
+		assertEquals(first.costEventId(), second.costEventId());
+		assertEquals(first.evidenceStateId(), second.evidenceStateId());
+		assertEquals("1", second.plannedStringMetrics().get("provider.call"));
+		assertEquals(first.plannedStringMetrics(), second.plannedStringMetrics());
+		assertEquals(first.plannedDoubleMetrics(), second.plannedDoubleMetrics());
+	}
+
+	@Test
+	void demandedEvidenceIsRealizedBeforeInvocationIdentityAndProviderCosting() {
+		int[] providerCalls = new int[1];
+		int[] observedStateIds = new int[4];
+		PackedCostSession provider = new PackedCostSession() {
+			@Override
+			public int realizeEvidenceState(int evidenceStateId) {
+				return evidenceStateId == 0 || evidenceStateId >= 1_000 ? evidenceStateId : evidenceStateId + 1_000;
+			}
+
+			@Override
+			public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				throw new AssertionError("this fixture exercises prefix costing only");
+			}
+
+			@Override
+			public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				providerCalls[0]++;
+				observedStateIds[0] = context.evidenceStateId();
+				observedStateIds[1] = context.leftInputEvidenceStateId();
+				observedStateIds[2] = context.rightInputEvidenceStateId();
+				observedStateIds[3] = output.evidenceStateId();
+				output.setComponentRows(7.0d, 11.0d);
+				output.setEvidenceStateId(1_100);
+			}
+
+			@Override
+			public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				throw new AssertionError("this fixture exercises prefix costing only");
+			}
+		};
+		EventSourcingPackedCostSession session = new EventSourcingPackedCostSession(provider);
+		PackedCostContext firstContext = demandedEvidenceContext();
+		PackedCostContext secondContext = demandedEvidenceContext();
+		PackedCostEstimate first = demandedEvidenceProviderInput();
+		PackedCostEstimate second = demandedEvidenceProviderInput();
+
+		session.appendFactor(29, firstContext, first);
+		session.appendFactor(29, secondContext, second);
+
+		assertEquals(1, providerCalls[0], "realized identities must memoize one immutable provider invocation");
+		assertEquals(1_041, observedStateIds[0]);
+		assertEquals(1_042, observedStateIds[1]);
+		assertEquals(0, observedStateIds[2]);
+		assertEquals(1_043, observedStateIds[3]);
+		assertEquals(first.costEventId(), second.costEventId());
+		assertEquals(1_100, first.evidenceStateId());
+		assertEquals(1_100, second.evidenceStateId());
+		String event = session.describeEvent(first.costEventId());
+		assertTrue(event.contains("contextStates=1041/1042/0"), event);
+		assertTrue(event.contains("event/state=0/1043"), event);
+	}
+
+	@Test
+	void upstreamEventOrdinalIsProvenanceRatherThanAProviderInputDimension() {
+		int[] providerCalls = new int[1];
+		PackedCostSession provider = new PackedCostSession() {
+			@Override
+			public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				throw new AssertionError("this fixture exercises prefix costing only");
+			}
+
+			@Override
+			public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				int invocation = ++providerCalls[0];
+				output.setComponentRows(7.0d, 11.0d);
+				output.setEvidenceStateId(100 + invocation);
+			}
+
+			@Override
+			public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				throw new AssertionError("this fixture exercises prefix costing only");
+			}
+		};
+		EventSourcingPackedCostSession session = new EventSourcingPackedCostSession(provider);
+		PackedCostContext context = new PackedCostContext();
+		context.reset(new int[] { 3, 5 }, 0, 2, 13.0d, 41);
+		context.setEvidenceIdentity(7, 11, 17);
+		PackedCostEstimate first = equivalentProviderInput(7);
+		PackedCostEstimate second = equivalentProviderInput(9);
+
+		session.appendFactor(29, context, first);
+		session.appendFactor(29, context, second);
+
+		assertEquals(1, providerCalls[0],
+				"an upstream event ordinal must not split an otherwise identical provider invocation");
+		assertEquals(first.costEventId(), second.costEventId());
+		assertEquals(first.evidenceStateId(), second.evidenceStateId());
+	}
+
+	@Test
+	void equivalentContextualOperatorsShareTheirCanonicalCostingEvent() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		Filter firstFilter = new Filter(pattern(values, "subject", "urn:first-source", "object"), Var.of("object"));
+		Filter secondFilter = new Filter(
+				new Join(pattern(values, "subject", "urn:second-source", "object"),
+						pattern(values, "subject", "urn:second-detail", "detail")),
+				Var.of("object"));
+		firstFilter.setResultSizeEstimate(11.0d);
+		firstFilter.setCostEstimate(12.0d);
+		secondFilter.setResultSizeEstimate(21.0d);
+		secondFilter.setCostEstimate(22.0d);
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(new Union(firstFilter, secondFilter));
+		int[] filterRelationIds = new int[2];
+		int filterCount = 0;
+		for (int relationId = 1; relationId <= query.relationCount(); relationId++) {
+			if (query.relOperator(relationId) == PackedRelOp.FILTER) {
+				filterRelationIds[filterCount++] = relationId;
+			}
+		}
+		assertEquals(2, filterCount);
+
+		int[] providerCalls = new int[1];
+		PackedCostSession provider = new PackedCostSession() {
+			@Override
+			public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				throw new AssertionError("this fixture exercises contextual operators only");
+			}
+
+			@Override
+			public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				throw new AssertionError("this fixture exercises contextual operators only");
+			}
+
+			@Override
+			public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				int invocation = ++providerCalls[0];
+				output.setRows(57.0d, 114.0d);
+				output.setEvidenceStateId(100 + invocation);
+			}
+		};
+		EventSourcingPackedCostSession session = new EventSourcingPackedCostSession(provider, query);
+		PackedCostContext context = new PackedCostContext();
+		context.reset(new int[] { 3, 5 }, 0, 2, 57.0d, 51);
+		PackedCostEstimate first = new PackedCostEstimate();
+		first.setRows(14.25d, 318.40298670406423d);
+		first.setEvidenceStateId(51);
+		PackedCostEstimate second = new PackedCostEstimate();
+		second.setRows(14.25d, 318.40298670406423d);
+		second.setEvidenceStateId(51);
+
+		session.refineOperator(filterRelationIds[0], context, first);
+		session.refineOperator(filterRelationIds[1], context, second);
+
+		assertEquals(1, providerCalls[0],
+				"one canonical contextual transform must invoke the provider only once");
+		assertEquals(first.costEventId(), second.costEventId());
+		assertEquals(first.evidenceStateId(), second.evidenceStateId());
+	}
+
+	@Test
+	void scheduledFilterIsCostedOnlyAsAnOperatorTransition() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern left = pattern(values, "subject", "urn:left", "leftValue");
+		StatementPattern right = pattern(values, "subject", "urn:right", "rightValue");
+		StatementPattern tail = pattern(values, "subject", "urn:tail", "tailValue");
+		Filter source = new Filter(new Join(new Join(left, right), tail),
+				new Compare(Var.of("leftValue"), Var.of("rightValue"), Compare.CompareOp.NE));
+		int[] filterFactorCalls = new int[1];
+		int[] filterRefinementCalls = new int[1];
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return query.isStatementPattern(relationId) ? 10.0d : Double.NaN;
+			}
+
+			@Override
+			public PackedCostSession openSession(PackedQueryView query) {
+				return new PackedCostSession() {
+					@Override
+					public void estimateLeaf(int relationId, PackedCostContext context,
+							PackedCostEstimate output) {
+						output.setRows(10.0d, 10.0d);
+					}
+
+					@Override
+					public void appendFactor(int relationId, PackedCostContext context,
+							PackedCostEstimate output) {
+						if (query.isFilter(relationId)) {
+							filterFactorCalls[0]++;
+						}
+						output.setRows(10.0d, 10.0d);
+					}
+
+					@Override
+					public void refineOperator(int relationId, PackedCostContext context,
+							PackedCostEstimate output) {
+						if (query.isFilter(relationId)) {
+							filterRefinementCalls[0]++;
+						}
+					}
+				};
+			}
+		};
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), costs);
+
+		assertNotNull(result.selectedPlan());
+		assertEquals(0, filterFactorCalls[0],
+				"a scheduled FILTER is a contextual transform, not an appended relation factor");
+		assertTrue(filterRefinementCalls[0] > 0);
+	}
+
+	private static PackedCostContext demandedEvidenceContext() {
+		PackedCostContext context = new PackedCostContext();
+		context.reset(new int[] { 3, 5 }, 0, 2, 13.0d, 41);
+		context.setEvidenceIdentity(7, 11, 17);
+		context.setOperatorInputs(13.0d, 19.0d, 42, 0);
+		return context;
+	}
+
+	private static PackedCostEstimate demandedEvidenceProviderInput() {
+		PackedCostEstimate estimate = new PackedCostEstimate();
+		estimate.setRows(19.0d, 23.0d);
+		estimate.setEvidenceStateId(43);
+		return estimate;
+	}
+
+	private static PackedCostEstimate equivalentProviderInput(int costEventId) {
+		PackedCostEstimate estimate = new PackedCostEstimate();
+		estimate.setRows(19.0d, 23.0d);
+		estimate.setEvidenceStateId(41);
+		estimate.setCostEventId(costEventId);
+		return estimate;
+	}
+
+	@Test
+	void nestedPhysicalEventPayloadNeverRetainsParentEventTelemetry() {
+		PackedCostSession provider = new PackedCostSession() {
+			@Override
+			public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				throw new AssertionError("this fixture exercises intermediate joins only");
+			}
+
+			@Override
+			public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				throw new AssertionError("this fixture exercises intermediate joins only");
+			}
+
+			@Override
+			public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				throw new AssertionError("this fixture exercises intermediate joins only");
+			}
+		};
+		EventSourcingPackedCostSession session = new EventSourcingPackedCostSession(provider);
+		PackedCostContext context = new PackedCostContext();
+		context.reset(new int[] { 3 }, 0, 1, 3.0d, 0);
+		context.setOperatorInputs(3.0d, 5.0d, 0, 0);
+		PackedCostEstimate estimate = new PackedCostEstimate();
+		estimate.setRows(2.0d, 2.0d);
+
+		session.refineIntermediateJoin(context, estimate);
+		PackedPhysicalJoinCosting.refine(session, PackedPhysicalJoinCosting.INDEPENDENT_HASH, context, estimate);
+		PackedCostingTrace trace = session.snapshotTrace();
+
+		assertEquals(PackedCostingPhase.PHYSICAL_JOIN, trace.phase(2));
+		assertEquals(10.0d, trace.workRows(2));
+		for (int ordinal = 0; ordinal < trace.stringMetricCount(2); ordinal++) {
+			assertFalse(trace.stringMetricName(2, ordinal).startsWith("optimizer.costEvent"));
+		}
+		for (int ordinal = 0; ordinal < trace.doubleMetricCount(2); ordinal++) {
+			assertFalse(trace.doubleMetricName(2, ordinal).startsWith("optimizer.costEvent"));
+		}
+		assertEquals(10.0d, estimate.plannedDoubleMetrics().get("optimizer.costEventWorkRows"));
+	}
+
+	@Test
+	void selectedPlanAssemblyNeverInvokesAnEstimator() {
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(query());
+		int relationCount = query.relationCount();
+		PackedMemo memo = new PackedMemo(query, query.symbolCount(), relationCount, relationCount, 4,
+				relationCount, relationCount * 2);
+		PackedSearchBudget budget = new PackedSearchBudget(Long.MAX_VALUE, Long.MAX_VALUE);
+		PackedCostModel searchCosts = PackedCostSessionLifecycleTest::rows;
+		PackedIncumbentSearch search = new PackedIncumbentSearch(query, memo, budget, true, searchCosts);
+		int rootWinnerId = search.build();
+		PackedCostModel forbiddenRecost = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				throw new AssertionError("selected-plan assembly called the estimator");
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				throw new AssertionError("selected-plan assembly called the estimator");
+			}
+
+			@Override
+			public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				throw new AssertionError("selected-plan assembly called the estimator");
+			}
+		};
+		PackedSelectedPlanContextualizer assembler = new PackedSelectedPlanContextualizer(query, memo, budget,
+				forbiddenRecost, search.selectedRowsByGroup());
+
+		int assembledWinnerId = assembler.contextualize(rootWinnerId);
+
+		assertEquals(rootWinnerId, assembledWinnerId);
+		assertEquals(memo.winnerOutputRows(rootWinnerId), assembler.rootRows(), 0.0d);
 	}
 
 	private static TupleExpr query() {

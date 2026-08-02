@@ -27,7 +27,9 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -385,9 +387,64 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			Explanation explanation = connection.prepareTupleQuery(query)
 					.explain(Explanation.Level.Optimized);
+			TupleExpr optimized = (TupleExpr) explanation.tupleExpr();
 			return new OptimizerSnapshot(
-					explanation.toString(),
-					new TupleExprIRRenderer().render((TupleExpr) explanation.tupleExpr()));
+					explanation + semiAntiEventDiagnostics(optimized),
+					new TupleExprIRRenderer().render(optimized));
+		}
+	}
+
+	private static String semiAntiEventDiagnostics(TupleExpr root) {
+		StringBuilder diagnostics = new StringBuilder("\noptimizer-root");
+		appendStringMetric(diagnostics, root, "optimizer.cascadesPlanCacheHit");
+		appendStringMetric(diagnostics, root, "optimizer.planCacheValidationResult");
+		appendStringMetric(diagnostics, root, "optimizer.planCacheValidationReason");
+		appendDoubleMetric(diagnostics, root, "optimizer.planCacheValidationConfidence");
+		appendDoubleMetric(diagnostics, root, "optimizer.planCacheValidationExpectedRegret");
+		appendDoubleMetric(diagnostics, root, "optimizer.frontierLeoRevision");
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter filter) {
+				String kind = filter.getStringMetricPlanned("optimizer.semiAntiKind");
+				if (kind != null) {
+					diagnostics.append("\nsemi-anti-event kind=").append(kind);
+					appendStringMetric(diagnostics, filter, "optimizer.semiAntiAlgorithm");
+					appendStringMetric(diagnostics, filter, "plannedPhysicalImplementation");
+					appendStringMetric(diagnostics, filter, "plannedFrontierGuarantee");
+					appendStringMetric(diagnostics, filter, "plannedFrontierDisposition");
+					appendStringMetric(diagnostics, filter, "plannedEstimateSource");
+					appendStringMetric(diagnostics, filter, "optimizer.costEventDigest");
+					appendStringMetric(diagnostics, filter, "optimizer.frontierStateDigest");
+					appendStringMetric(diagnostics, filter, "optimizer.frontierLearningKey");
+					appendDoubleMetric(diagnostics, filter, "plannedFrontierRows");
+					appendDoubleMetric(diagnostics, filter, "plannedFrontierRawRows");
+					appendDoubleMetric(diagnostics, filter, "plannedObjectiveScore");
+					appendDoubleMetric(diagnostics, filter, "optimizer.costEventObjective");
+					appendDoubleMetric(diagnostics, filter, "plannedCorrelationOuterRows");
+					appendDoubleMetric(diagnostics, filter, "plannedCorrelationMatchedRows");
+					appendDoubleMetric(diagnostics, filter, "plannedCorrelationUnmatchedRows");
+					appendDoubleMetric(diagnostics, filter, "optimizer.frontierLeo.output_rows.raw");
+					appendDoubleMetric(diagnostics, filter, "optimizer.frontierLeo.output_rows.corrected");
+					appendDoubleMetric(diagnostics, filter, "optimizer.frontierLeo.output_rows.exactEvidence");
+					appendDoubleMetric(diagnostics, filter, "optimizer.frontierLeo.output_rows.familyEvidence");
+				}
+				super.meet(filter);
+			}
+		});
+		return diagnostics.toString();
+	}
+
+	private static void appendStringMetric(StringBuilder output, TupleExpr expression, String name) {
+		String value = expression.getStringMetricPlanned(name);
+		if (value != null) {
+			output.append(", ").append(name).append('=').append(value);
+		}
+	}
+
+	private static void appendDoubleMetric(StringBuilder output, TupleExpr expression, String name) {
+		Double value = expression.getDoubleMetricsPlanned().get(name);
+		if (value != null) {
+			output.append(", ").append(name).append('=').append(value);
 		}
 	}
 

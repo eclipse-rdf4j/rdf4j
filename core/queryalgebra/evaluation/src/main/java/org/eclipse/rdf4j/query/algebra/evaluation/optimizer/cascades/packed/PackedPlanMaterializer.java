@@ -109,6 +109,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MaterializeTupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierEvidenceBundle;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
@@ -126,7 +127,26 @@ final class PackedPlanMaterializer {
 		if (recipe == null) {
 			throw new NullPointerException("packed plan recipe must not be null");
 		}
-		return relation(query, recipe, recipe.rootRecipeId());
+		TupleExpr result = relation(query, recipe, recipe.rootRecipeId());
+		applyCacheValidation(recipe, result);
+		return result;
+	}
+
+	private static void applyCacheValidation(PackedPlanRecipe recipe, TupleExpr root) {
+		PackedCacheValidationEvent event = recipe.cacheValidationEvent();
+		if (event.eventOrdinal() == 0) {
+			return;
+		}
+		root.setStringMetricPlanned("optimizer.planCacheValidationResult", event.result());
+		root.setStringMetricPlanned("optimizer.planCacheValidationReason", event.reason());
+		root.setStringMetricPlanned("optimizer.costEventPhase", "cache-validation");
+		root.setStringMetricPlanned("optimizer.costEventDigest", event.digest());
+		root.setDoubleMetricPlanned("optimizer.costEventOrdinal", event.eventOrdinal());
+		root.setDoubleMetricPlanned("optimizer.planCacheValidationConfidence", event.confidence());
+		root.setDoubleMetricPlanned("optimizer.planCacheValidationExpectedRegret", event.expectedRegret());
+		root.setDoubleMetricPlanned("optimizer.planCacheValidationWorkUnits", event.workUnits());
+		root.setDoubleMetricPlanned("optimizer.planCacheDataRevision", event.dataRevision());
+		root.setDoubleMetricPlanned("optimizer.planCacheLeoRevision", event.leoRevision());
 	}
 
 	private static TupleExpr relation(PackedQuery query, PackedPlanRecipe recipe, int nodeId) {
@@ -183,8 +203,31 @@ final class PackedPlanMaterializer {
 		}
 		if (recipe != null && recipe.hasPhysicalMetadata(nodeId)) {
 			applyPhysicalMetadata(recipe, nodeId, result);
+			applyOriginatingCostingEvent(recipe, nodeId, result);
+			verifyDependentJoinCostingContext(recipe, nodeId);
 		}
 		return result;
+	}
+
+	private static void verifyDependentJoinCostingContext(PackedPlanRecipe recipe, int recipeId) {
+		if (recipe.operatorTag(recipeId) != PackedRelOp.JOIN || recipe.childCount(recipeId) != 2) {
+			return;
+		}
+		PackedCostingTrace trace = recipe.costingTrace();
+		int parentEventId = recipe.costEventId(recipeId);
+		int rightRecipeId = recipe.childRecipeId(recipeId, 1);
+		int rightEventId = recipe.costEventId(rightRecipeId);
+		if (parentEventId <= 0 || rightEventId <= 0
+				|| trace.phase(parentEventId) != PackedCostingPhase.PHYSICAL_JOIN
+				|| trace.phase(rightEventId) != PackedCostingPhase.PREFIX_EXTENSION
+				|| Double.compare(trace.prefixRows(parentEventId), trace.prefixRows(rightEventId)) == 0) {
+			return;
+		}
+		throw new PackedMemoInvariantException("materialized dependent join has mismatched costing contexts: recipe="
+				+ recipeId + ", implementation=" + recipe.implementationForm(recipeId) + ", parentEvent="
+				+ parentEventId + ", parentPrefixRows=" + trace.prefixRows(parentEventId) + ", rightRecipe="
+				+ rightRecipeId + ", rightEvent=" + rightEventId + ", rightPrefixRows="
+				+ trace.prefixRows(rightEventId));
 	}
 
 	private static Filter semiAntiJoin(PackedQuery query, PackedPlanRecipe recipe, int nodeId) {
@@ -725,6 +768,96 @@ final class PackedPlanMaterializer {
 		if (node instanceof Join
 				&& recipe.implementationForm(recipeId) == PackedJoinEnumerator.HASH_JOIN_IMPLEMENTATION) {
 			node.setStringMetricPlanned("optimizer.joinAlgorithmHint", "hash");
+		}
+	}
+
+	private static void applyOriginatingCostingEvent(PackedPlanRecipe recipe, int recipeId, TupleExpr node) {
+		int eventId = recipe.costEventId(recipeId);
+		PackedCostingTrace trace = recipe.costingTrace();
+		if (eventId <= 0 || eventId > trace.eventCount()) {
+			return;
+		}
+		for (int ordinal = 0; ordinal < trace.stringMetricCount(eventId); ordinal++) {
+			node.setStringMetricPlanned(trace.stringMetricName(eventId, ordinal),
+					trace.stringMetricValue(eventId, ordinal));
+		}
+		for (int ordinal = 0; ordinal < trace.doubleMetricCount(eventId); ordinal++) {
+			node.setDoubleMetricPlanned(trace.doubleMetricName(eventId, ordinal),
+					trace.doubleMetricValue(eventId, ordinal));
+		}
+		double rows = trace.outputRows(eventId);
+		double workRows = trace.workRows(eventId);
+		if (finiteNonNegative(rows)) {
+			node.setResultSizeEstimate(rows);
+			node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, rows);
+			node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, rows);
+		}
+		if (finiteNonNegative(workRows)) {
+			node.setCostEstimate(workRows);
+			node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
+			node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, workRows);
+		}
+		setFiniteMetric(node, "plannedCostSequentialRows", trace.sequentialRows(eventId));
+		setFiniteMetric(node, "plannedCostRandomSeeks", trace.randomSeeks(eventId));
+		setFiniteMetric(node, "plannedCostIteratorOpens", trace.iteratorOpens(eventId));
+		setFiniteMetric(node, "plannedCostExpressionEvaluations", trace.expressionEvaluations(eventId));
+		setFiniteMetric(node, "plannedCostHashBuildRows", trace.hashBuildRows(eventId));
+		setFiniteMetric(node, "plannedCostHashProbeRows", trace.hashProbeRows(eventId));
+		setFiniteMetric(node, "plannedCostPathExpansions", trace.pathExpansions(eventId));
+		setFiniteMetric(node, "plannedCostResultRows", trace.resultRows(eventId));
+		setFiniteMetric(node, "plannedCostRemoteCalls", trace.remoteCalls(eventId));
+		setFiniteMetric(node, "plannedCostPeakMemoryRows", trace.peakMemoryRows(eventId));
+		setFiniteMetric(node, TelemetryMetricNames.PLANNED_ACCESS_ROWS, trace.accessRows(eventId));
+		setFiniteMetric(node, "plannedRepeatedInvocations", trace.invocations(eventId));
+		setStringMetric(node, TelemetryMetricNames.PLANNED_INDEX_NAME, trace.indexName(eventId));
+		setStringMetric(node, TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE, trace.accessMode(eventId));
+		setStringMetric(node, TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, trace.estimateSource(eventId));
+		setStringMetric(node, "plannedEstimateFusion", trace.estimateFusion(eventId));
+		node.setDoubleMetricPlanned("optimizer.costEventOrdinal", eventId);
+		node.setStringMetricPlanned("optimizer.costEventPhase", trace.phase(eventId).metricValue());
+		node.setStringMetricPlanned("optimizer.costEventContextFingerprint",
+				Long.toUnsignedString(trace.contextFingerprint(eventId), 16));
+		setFiniteMetric(node, "optimizer.costEventPrefixRows", trace.prefixRows(eventId));
+		node.setStringMetricPlanned("optimizer.costEventDigest", trace.digest(eventId));
+		setFiniteMetric(node, "optimizer.costEventRows", rows);
+		setFiniteMetric(node, "optimizer.costEventWorkRows", workRows);
+		setFiniteMetric(node, "optimizer.costEventObjective", trace.objectiveCost(eventId));
+		setFiniteMetric(node, "optimizer.costEventSequentialRows", trace.sequentialRows(eventId));
+		setFiniteMetric(node, "optimizer.costEventRandomSeeks", trace.randomSeeks(eventId));
+		setFiniteMetric(node, "optimizer.costEventIteratorOpens", trace.iteratorOpens(eventId));
+		setFiniteMetric(node, "optimizer.costEventExpressionEvaluations", trace.expressionEvaluations(eventId));
+		setFiniteMetric(node, "optimizer.costEventHashBuildRows", trace.hashBuildRows(eventId));
+		setFiniteMetric(node, "optimizer.costEventHashProbeRows", trace.hashProbeRows(eventId));
+		setFiniteMetric(node, "optimizer.costEventPathExpansions", trace.pathExpansions(eventId));
+		setFiniteMetric(node, "optimizer.costEventResultRows", trace.resultRows(eventId));
+		setFiniteMetric(node, "optimizer.costEventRemoteCalls", trace.remoteCalls(eventId));
+		setFiniteMetric(node, "optimizer.costEventPeakMemoryRows", trace.peakMemoryRows(eventId));
+		setFiniteMetric(node, "optimizer.costEventAccessRows", trace.accessRows(eventId));
+		setFiniteMetric(node, "optimizer.costEventInvocations", trace.invocations(eventId));
+		int stateOrdinal = recipe.evidenceStateOrdinal(recipeId);
+		if (stateOrdinal > 0) {
+			FrontierEvidenceBundle bundle = recipe.frontierEvidenceBundle();
+			node.setDoubleMetricPlanned("plannedFrontierStateId", stateOrdinal);
+			node.setDoubleMetricPlanned("optimizer.frontierBundleOrdinal", stateOrdinal);
+			node.setStringMetricPlanned("optimizer.frontierBundleDigest",
+					PackedCostingTraceArena.digestString(
+							bundle.digestHigh(stateOrdinal), bundle.digestLow(stateOrdinal)));
+		}
+	}
+
+	private static boolean finiteNonNegative(double value) {
+		return Double.isFinite(value) && value >= 0.0d;
+	}
+
+	private static void setFiniteMetric(TupleExpr node, String name, double value) {
+		if (finiteNonNegative(value)) {
+			node.setDoubleMetricPlanned(name, value);
+		}
+	}
+
+	private static void setStringMetric(TupleExpr node, String name, Object value) {
+		if (value instanceof String string && !string.isBlank()) {
+			node.setStringMetricPlanned(name, string);
 		}
 	}
 

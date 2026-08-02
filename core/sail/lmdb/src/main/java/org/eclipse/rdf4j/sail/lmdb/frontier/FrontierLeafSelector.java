@@ -75,6 +75,10 @@ public final class FrontierLeafSelector {
 		return namedContexts;
 	}
 
+	int equalityMask() {
+		return equalityMask;
+	}
+
 	boolean matches(long actualSubject, long actualPredicate, long actualObject, long actualContext) {
 		if (namedContexts && actualContext == 0L) {
 			return false;

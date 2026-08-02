@@ -93,23 +93,36 @@ public final class CascadesPlanProvenanceAnnotator {
 		annotateIdentity(node, provenance, plannerIdOverride);
 		EstimateSnapshot estimate = provenance.estimate();
 		CostVector cost = provenance.cost();
+		boolean originatingCostEvent = hasOriginatingCostEvent(node);
 		for (Map.Entry<String, String> entry : estimate.stringMetrics().entrySet()) {
 			if (!isExactJoinSurfaceMetric(entry.getKey())) {
-				node.setStringMetricPlanned(entry.getKey(), entry.getValue());
+				if (originatingCostEvent) {
+					setStringIfMissing(node, entry.getKey(), entry.getValue());
+				} else {
+					node.setStringMetricPlanned(entry.getKey(), entry.getValue());
+				}
 			}
 		}
 		for (Map.Entry<String, Double> entry : estimate.doubleMetrics().entrySet()) {
 			if (!isExactJoinSurfaceMetric(entry.getKey())) {
-				node.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
+				if (originatingCostEvent) {
+					setDoubleIfMissing(node, entry.getKey(), entry.getValue());
+				} else {
+					node.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
+				}
 			}
 		}
 		node.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_DECISION_ID,
 				provenance.ruleId() + ":g" + provenance.memoGroupId() + ":e" + provenance.expressionId());
 		double plannedRows = finiteOr(cost.rows(), estimate.rows());
 		double plannedWorkRows = finiteOr(cost.workRows(), estimate.workRows());
-		node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, plannedRows);
-		node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS, plannedWorkRows);
-		node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, cost.workRows());
+		if (!originatingCostEvent) {
+			node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, plannedRows);
+			node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS, plannedWorkRows);
+			node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, cost.workRows());
+			node.setResultSizeEstimate(plannedRows);
+			node.setCostEstimate(plannedWorkRows);
+		}
 		node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE, cost.objectiveScore());
 		node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_UNCERTAINTY_ROWS, cost.uncertaintyRows());
 		node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_UNCERTAINTY_ROWS, cost.uncertaintyRows());
@@ -118,8 +131,12 @@ public final class CascadesPlanProvenanceAnnotator {
 		node.setDoubleMetricPlanned(PLANNED_COST_ROW_Q_ERROR_MAX, cost.rowQErrorMax());
 		node.setDoubleMetricPlanned(PLANNED_COST_WORK_Q_ERROR_MAX, cost.workQErrorMax());
 		node.setDoubleMetricPlanned("plannedCascadesEvidenceCount", cost.evidenceCount());
-		node.setResultSizeEstimate(plannedRows);
-		node.setCostEstimate(plannedWorkRows);
+	}
+
+	private static boolean hasOriginatingCostEvent(QueryModelNode node) {
+		double ordinal = node.getDoubleMetricPlanned("optimizer.costEventOrdinal");
+		return Double.isFinite(ordinal) && ordinal > 0.0d
+				&& !isBlank(node.getStringMetricPlanned("optimizer.costEventDigest"));
 	}
 
 	private static void sanitizeSubtree(TupleExpr root) {
@@ -145,6 +162,12 @@ public final class CascadesPlanProvenanceAnnotator {
 	private static void setStringIfMissing(QueryModelNode node, String metricName, String value) {
 		if (isBlank(node.getStringMetricPlanned(metricName)) && !isBlank(value)) {
 			node.setStringMetricPlanned(metricName, value);
+		}
+	}
+
+	private static void setDoubleIfMissing(QueryModelNode node, String metricName, double value) {
+		if (!Double.isFinite(node.getDoubleMetricPlanned(metricName)) && Double.isFinite(value)) {
+			node.setDoubleMetricPlanned(metricName, value);
 		}
 	}
 

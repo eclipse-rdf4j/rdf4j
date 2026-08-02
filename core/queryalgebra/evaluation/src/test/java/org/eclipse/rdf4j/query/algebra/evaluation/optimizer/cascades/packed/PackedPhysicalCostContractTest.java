@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Method;
 
@@ -22,13 +24,54 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDisposition;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.junit.jupiter.api.Test;
 
 class PackedPhysicalCostContractTest {
+
+	@Test
+	void reusableCostSlotIndexesMetricNamesWithoutChangingReplacementSemantics() {
+		PackedCostEstimate estimate = new PackedCostEstimate();
+		for (int ordinal = 0; ordinal < 80; ordinal++) {
+			estimate.putPlannedDoubleMetric("metric-" + ordinal, ordinal);
+		}
+		estimate.putPlannedDoubleMetric(new String("metric-37"), 137.0d);
+		estimate.putPlannedStringMetric("Aa", "first");
+		estimate.putPlannedStringMetric("BB", "collision");
+		estimate.putPlannedStringMetric(new String("Aa"), "replaced");
+
+		assertEquals(80, estimate.plannedDoubleMetrics().size());
+		assertEquals(137.0d, estimate.plannedDoubleMetrics().get("metric-37"));
+		assertEquals(2, estimate.plannedStringMetrics().size());
+		assertEquals("replaced", estimate.plannedStringMetrics().get("Aa"));
+		assertEquals("collision", estimate.plannedStringMetrics().get("BB"));
+		assertEquals(137.0d, estimate.plannedDoubleMetric(new String("metric-37"), -1.0d));
+		assertEquals(-1.0d, estimate.plannedDoubleMetric("missing", -1.0d));
+		assertEquals("replaced", estimate.plannedStringMetric(new String("Aa")));
+		assertEquals("collision", estimate.plannedStringMetric(new String("BB")));
+		assertNull(estimate.plannedStringMetric("missing"));
+
+		estimate.clear();
+		estimate.putPlannedDoubleMetric("metric-37", 237.0d);
+		estimate.putPlannedStringMetric("Aa", "after-clear");
+
+		assertEquals(1, estimate.plannedDoubleMetrics().size());
+		assertEquals(237.0d, estimate.plannedDoubleMetrics().get("metric-37"));
+		assertEquals(1, estimate.plannedStringMetrics().size());
+		assertEquals("after-clear", estimate.plannedStringMetrics().get("Aa"));
+		assertEquals(237.0d, estimate.plannedDoubleMetric("metric-37", -1.0d));
+		assertEquals(-1.0d, estimate.plannedDoubleMetric("metric-38", -1.0d));
+		assertEquals("after-clear", estimate.plannedStringMetric("Aa"));
+		assertNull(estimate.plannedStringMetric("BB"));
+	}
 
 	@Test
 	void reusableCostSlotCarriesPrimitiveLocalAndInclusivePhysicalCosts() throws Exception {
@@ -88,6 +131,35 @@ class PackedPhysicalCostContractTest {
 		assertEquals(53.0d, arenaDimension(arena, metadataId, "pathExpansions"));
 		assertEquals(59.0d, arenaDimension(arena, metadataId, "remoteCalls"));
 		assertEquals(61.0d, arenaDimension(arena, metadataId, "peakMemoryRows"));
+	}
+
+	@Test
+	void resultRowWorkRemainsIndependentFromSourceScans() throws Exception {
+		PackedCostEstimate estimate = new PackedCostEstimate();
+		Class<?>[] dimensions = {
+				double.class,
+				double.class,
+				double.class,
+				double.class,
+				double.class,
+				double.class,
+				double.class,
+				double.class,
+				double.class,
+				double.class
+		};
+		Method setLocal = PackedCostEstimate.class.getMethod("setLocalPhysicalCost", dimensions);
+
+		setLocal.invoke(estimate, 2.0d, 3.0d, 5.0d, 7.0d, 11.0d, 13.0d, 17.0d, 19.0d, 23.0d, 29.0d);
+
+		assertEquals(2.0d, estimate.sequentialRows());
+		assertEquals(19.0d, physicalDimension(estimate, "resultRows"));
+		assertEquals(100.0d, estimate.workRows());
+		assertEquals(19.0d, estimate.plannedDoubleMetrics().get("plannedCostResultRows"));
+
+		PackedPhysicalMetadataArena arena = new PackedPhysicalMetadataArena(1);
+		int metadataId = arena.append(estimate, 1.0d, estimate.workRows());
+		assertEquals(19.0d, arenaDimension(arena, metadataId, "resultRows"));
 	}
 
 	@Test
@@ -194,11 +266,130 @@ class PackedPhysicalCostContractTest {
 	}
 
 	@Test
+	void localParentRetainsObjectiveResidualFromSelectedChildEvent() {
+		Filter filter = new Filter(input(),
+				new ValueConstant(SimpleValueFactory.getInstance().createLiteral(true)));
+		PackedCostModel model = new PackedCostModel() {
+
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return Double.NaN;
+			}
+
+			@Override
+			public PackedCostSession openSession(PackedQueryView query) {
+				return new PackedCostSession() {
+
+					@Override
+					public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						if (!query.isStatementPattern(relationId)) {
+							return;
+						}
+						output.setRows(1.0d, 10.0d);
+						output.setInclusivePhysicalCost(10.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+								0.0d, 0.0d);
+						output.putPlannedDoubleMetric("testObjectiveResidual", 90.0d);
+					}
+
+					@Override
+					public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						estimateLeaf(relationId, context, output);
+					}
+
+					@Override
+					public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						if (query.isFilter(relationId)) {
+							output.setLocalPhysicalCost(1.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+									0.0d, 0.0d);
+						}
+					}
+
+					@Override
+					public double objectiveScore(PackedCostEstimate estimate) {
+						double residual = estimate.plannedDoubleMetrics()
+								.getOrDefault("testObjectiveResidual", 0.0d);
+						return estimate.workRows() + residual;
+					}
+				};
+			}
+		};
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(filter, OptimizationGoal.root(), model);
+
+		assertEquals(101.0d, result.totalCost(),
+				"a parent-local vector must not replace an objective component certified by its child winner");
+	}
+
+	@Test
+	void disconnectedComponentEvidenceIsNotStampedAsWholeJoinEvidence() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern left = new StatementPattern(Var.of("left"),
+				Var.of("leftPredicate", values.createIRI("urn:left")), Var.of("leftValue"));
+		StatementPattern right = new StatementPattern(Var.of("right"),
+				Var.of("rightPredicate", values.createIRI("urn:right")), Var.of("rightValue"));
+		int[] joinEvents = new int[2];
+		PackedCostModel model = new PackedCostModel() {
+
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return Double.NaN;
+			}
+
+			@Override
+			public PackedCostSession openSession(PackedQueryView query) {
+				return new PackedCostSession() {
+
+					@Override
+					public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						output.setRows(2.0d, 2.0d);
+						output.setEvidenceStateId(relationId);
+						output.setEvidenceGuarantee(EvidenceGuarantee.DATABASE_EXACT);
+						output.setEvidenceDisposition(FrontierStateDisposition.COMPOSABLE_PAYLOAD);
+					}
+
+					@Override
+					public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						output.setComponentRows(2.0d, 2.0d);
+						output.setEvidenceStateId(relationId);
+						output.setEvidenceGuarantee(EvidenceGuarantee.DATABASE_EXACT);
+						output.setEvidenceDisposition(FrontierStateDisposition.COMPOSABLE_PAYLOAD);
+					}
+
+					@Override
+					public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+					}
+
+					@Override
+					public void refineIntermediateJoin(PackedCostContext context, PackedCostEstimate output) {
+						if (context.leftInputEvidenceStateId() == 0 || context.rightInputEvidenceStateId() == 0
+								|| Double.compare(output.outputRows(), 4.0d) != 0) {
+							return;
+						}
+						joinEvents[0]++;
+						if (context.evidenceStateId() != 0) {
+							joinEvents[1]++;
+						}
+					}
+				};
+			}
+		};
+
+		PackedCascadesPlanner.optimize(new Join(left, right), OptimizationGoal.root(), model);
+
+		assertTrue(joinEvents[0] > 0, "the disconnected join must reach physical candidate costing");
+		assertEquals(0, joinEvents[1],
+				"component evidence describes only the appended factor and must not suppress child-state composition");
+	}
+
+	@Test
 	void metadataAndContextualCopiesPreserveExplicitPhysicalCostSemantics() throws Exception {
 		PackedCostEstimate source = new PackedCostEstimate();
 		source.setContextualRows(13.0d, 1.0d);
 		source.setInclusivePhysicalCost(2.0d, 3.0d, 5.0d, 7.0d, 11.0d, 13.0d, 17.0d, 19.0d, 23.0d);
 		source.setDependentSubqueriesCosted(true);
+		PackedCostEstimate.class
+				.getMethod("setEvidenceDisposition", FrontierStateDisposition.class)
+				.invoke(source, FrontierStateDisposition.OPAQUE_BOUNDARY);
 
 		PackedPhysicalMetadataArena arena = new PackedPhysicalMetadataArena(1);
 		int metadataId = arena.append(source, 1.0d, 1.0d);
@@ -206,6 +397,8 @@ class PackedPhysicalCostContractTest {
 		assertEquals("INCLUSIVE", arenaValue(arena, metadataId, "costScope").toString());
 		assertEquals(true, arenaValue(arena, metadataId, "hasExplicitPhysicalCost"));
 		assertEquals(true, arenaValue(arena, metadataId, "dependentSubqueriesCosted"));
+		assertEquals(FrontierStateDisposition.OPAQUE_BOUNDARY,
+				arenaValue(arena, metadataId, "evidenceDisposition"));
 
 		PackedCostEstimate copy = new PackedCostEstimate();
 		Method copyEstimate = PackedJoinEnumerator.class.getDeclaredMethod("copyEstimate",
@@ -219,6 +412,8 @@ class PackedPhysicalCostContractTest {
 		assertEquals(23.0d, copy.peakMemoryRows());
 		assertEquals(true, copy.hasExplicitPhysicalCost());
 		assertEquals(true, copy.dependentSubqueriesCosted());
+		assertEquals(FrontierStateDisposition.OPAQUE_BOUNDARY,
+				PackedCostEstimate.class.getMethod("evidenceDisposition").invoke(copy));
 	}
 
 	@Test
@@ -269,7 +464,7 @@ class PackedPhysicalCostContractTest {
 
 		PackedPlanningResult result = PackedCascadesPlanner.optimize(filter, OptimizationGoal.root(), model);
 
-		assertEquals(111.0d, result.totalCost());
+		assertEquals(111.0d, result.totalCost(), result.selectedPlan()::toString);
 	}
 
 	@Test
@@ -331,6 +526,200 @@ class PackedPhysicalCostContractTest {
 	}
 
 	@Test
+	void semiAntiProviderReceivesOriginatingDependentCostEvent() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern outer = new StatementPattern(Var.of("subject"),
+				Var.of("outerPredicate", values.createIRI("urn:event-outer")), Var.of("outerValue"));
+		StatementPattern dependent = new StatementPattern(Var.of("subject"),
+				Var.of("dependentPredicate", values.createIRI("urn:event-dependent")), Var.of("dependentValue"));
+		Filter filter = new Filter(outer, new Not(new Exists(dependent)));
+		boolean[] observed = new boolean[1];
+		PackedCostModel model = new PackedCostModel() {
+
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return Double.NaN;
+			}
+
+			@Override
+			public PackedCostSession openSession(PackedQueryView query) {
+				return new PackedCostSession() {
+
+					@Override
+					public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						if (!query.isStatementPattern(relationId)) {
+							return;
+						}
+						boolean dependentPattern = query.materializeRelation(relationId).equals(dependent);
+						output.setRows(dependentPattern ? 1.0d : 10.0d, dependentPattern ? 42.0d : 10.0d);
+						output.setInclusivePhysicalCost(dependentPattern ? 40.0d : 10.0d,
+								dependentPattern ? 2.0d : 0.0d, dependentPattern ? 1.0d : 0.0d,
+								0.0d, 0.0d, 0.0d, 0.0d, dependentPattern ? 1.0d : 0.0d, 0.0d, 0.0d);
+					}
+
+					@Override
+					public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						estimateLeaf(relationId, context, output);
+					}
+
+					@Override
+					public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						if (!query.isAntiJoin(relationId)) {
+							return;
+						}
+						assertTrue(output.plannedDoubleMetric("optimizer.dependentCostEventOrdinal", 0.0d) > 0.0d,
+								"The parent must reference the immutable event that costed its selected RHS plan");
+						assertEquals(40.0d,
+								output.plannedDoubleMetric("plannedDependentSubquerySequentialRows", Double.NaN));
+						assertEquals(2.0d,
+								output.plannedDoubleMetric("plannedDependentSubqueryRandomSeeks", Double.NaN));
+						assertEquals(1.0d,
+								output.plannedDoubleMetric("plannedDependentSubqueryIteratorOpens", Double.NaN));
+						assertEquals(1.0d,
+								output.plannedDoubleMetric("plannedDependentSubqueryResultRows", Double.NaN));
+						observed[0] = true;
+						output.setContextualOutputRowsPreservingPhysicalCost(9.0d);
+						output.setLocalPhysicalCost(1.0d, 0.0d, 1.0d, 0.0d, 0.0d, 10.0d, 0.0d, 9.0d, 0.0d,
+								0.0d);
+						output.setDependentSubqueriesCosted(true);
+					}
+				};
+			}
+		};
+
+		PackedCascadesPlanner.optimize(filter, OptimizationGoal.root(), model);
+
+		assertTrue(observed[0]);
+	}
+
+	@Test
+	void compositeDependentPlanPublishesOuterIndependentReopenEvent() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern outer = new StatementPattern(Var.of("subject"),
+				Var.of("outerPredicate", values.createIRI("urn:event-outer")), Var.of("outerValue"));
+		StatementPattern independent = new StatementPattern(Var.of("observation"),
+				Var.of("valuePredicate", values.createIRI("urn:event-value")), Var.of("value"));
+		StatementPattern correlated = new StatementPattern(Var.of("subject"),
+				Var.of("observationPredicate", values.createIRI("urn:event-observation")), Var.of("observation"));
+		Filter filter = new Filter(outer, new Not(new Exists(new Join(independent, correlated))));
+		boolean[] observed = new boolean[1];
+		PackedCostModel model = new PackedCostModel() {
+
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return Double.NaN;
+			}
+
+			@Override
+			public PackedCostSession openSession(PackedQueryView query) {
+				return new PackedCostSession() {
+
+					@Override
+					public void estimateLeaf(int relationId, PackedCostContext context,
+							PackedCostEstimate output) {
+						if (!query.isStatementPattern(relationId)) {
+							return;
+						}
+						TupleExpr expression = query.materializeRelation(relationId);
+						if (expression.equals(outer)) {
+							output.setRows(10.0d, 10.0d);
+							output.setInclusivePhysicalCost(10.0d, 0.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+									10.0d, 0.0d, 0.0d);
+						} else if (expression.equals(independent)) {
+							output.setRows(100.0d, 30.0d);
+							output.setInclusivePhysicalCost(30.0d, 0.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+									100.0d, 0.0d, 0.0d);
+						} else if (expression.equals(correlated)) {
+							boolean observationBound = query.prefixBindsStatementComponent(context, relationId, 2);
+							double work = observationBound ? 2.0d : 1_000.0d;
+							output.setRows(observationBound ? 1.0d : 1_000.0d, work);
+							output.setInclusivePhysicalCost(work, 0.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+									observationBound ? 1.0d : 1_000.0d, 0.0d, 0.0d);
+						}
+					}
+
+					@Override
+					public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						estimateLeaf(relationId, context, output);
+					}
+
+					@Override
+					public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						if (!query.isAntiJoin(relationId)) {
+							return;
+						}
+						assertEquals(1.0d,
+								output.plannedDoubleMetric(
+										"plannedDependentSubqueryContainsOuterIndependentWork", 0.0d));
+						assertEquals(30.0d,
+								output.plannedDoubleMetric("plannedDependentSubqueryReopenSequentialRows", Double.NaN));
+						assertTrue(output.plannedDoubleMetric(
+								"plannedDependentSubqueryReopenObjectiveCost", 0.0d) > 0.0d);
+						observed[0] = true;
+						output.setContextualOutputRowsPreservingPhysicalCost(9.0d);
+						output.setLocalPhysicalCost(1.0d, 0.0d, 1.0d, 0.0d, 0.0d, 10.0d, 0.0d, 9.0d, 0.0d,
+								0.0d);
+						output.setDependentSubqueriesCosted(true);
+					}
+				};
+			}
+		};
+
+		PackedCascadesPlanner.optimize(filter, OptimizationGoal.root(), model);
+
+		assertTrue(observed[0]);
+	}
+
+	@Test
+	void scheduledSemiAntiExactCacheHitRetainsOriginatingAlgorithmEvent() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern provider = new StatementPattern(Var.of("provider"),
+				Var.of("providerPredicate", values.createIRI("urn:provider")), Var.of("gate"));
+		StatementPattern continuation = new StatementPattern(Var.of("gate"),
+				Var.of("continuationPredicate", values.createIRI("urn:continuation")), Var.of("value"));
+		StatementPattern dependent = new StatementPattern(Var.of("gate"),
+				Var.of("dependentPredicate", values.createIRI("urn:dependent")), Var.of("dependentValue"));
+		Filter filter = new Filter(new Join(provider, continuation), new Not(new Exists(dependent)));
+		PackedCostModel model = new PackedCostModel() {
+
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return query.isStatementPattern(relationId) ? 10.0d : Double.NaN;
+			}
+
+			@Override
+			public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (query.isAntiJoin(relationId) || query.isFilter(relationId)) {
+					output.setContextualOutputRowsPreservingPhysicalCost(context.leftInputRows() * 0.8d);
+					output.setLocalPhysicalCost(1.0d, 0.0d, 0.0d, context.leftInputRows(), 0.0d, 0.0d,
+							0.0d, context.leftInputRows() * 0.8d, 0.0d, 0.0d);
+					output.setDependentSubqueriesCosted(true);
+				}
+			}
+		};
+		PackedPlanCache cache = new PackedPlanCache(8, 1);
+		PackedPlanCache.Context context = new PackedPlanCache.Context(1L, 2L, 3L, 4L, 5L, 6L, 7L);
+
+		PackedPlanningResult cold = PackedCascadesPlanner.optimize(filter, OptimizationGoal.root(), cache, context,
+				model);
+		PackedPlanningResult hot = PackedCascadesPlanner.optimize(filter.clone(), OptimizationGoal.root(), cache,
+				context, model);
+		Filter coldFilter = findSemiAntiFilter(cold.selectedPlan());
+		Filter hotFilter = findSemiAntiFilter(hot.selectedPlan());
+
+		assertNotNull(coldFilter, cold.selectedPlan()::toString);
+		assertNotNull(hotFilter, hot.selectedPlan()::toString);
+		assertEquals(coldFilter.getStringMetricPlanned("optimizer.semiAntiAlgorithm"),
+				hotFilter.getStringMetricPlanned("optimizer.semiAntiAlgorithm"));
+		assertEquals(coldFilter.getStringMetricPlanned("optimizer.semiAntiKind"),
+				hotFilter.getStringMetricPlanned("optimizer.semiAntiKind"));
+		assertEquals(coldFilter.getStringMetricPlanned("optimizer.costEventDigest"),
+				hotFilter.getStringMetricPlanned("optimizer.costEventDigest"));
+		assertTrue(hot.metrics().planCacheHit());
+	}
+
+	@Test
 	void scheduledSemiAntiLocalCostIncludesItsSelectedPrefix() {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		StatementPattern provider = new StatementPattern(Var.of("provider"),
@@ -381,6 +770,21 @@ class PackedPhysicalCostContractTest {
 
 	private static StatementPattern input() {
 		return new StatementPattern(Var.of("subject"), Var.of("predicate"), Var.of("object"));
+	}
+
+	private static Filter findSemiAntiFilter(TupleExpr expression) {
+		Filter[] result = new Filter[1];
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (result[0] == null && node instanceof Filter filter
+						&& filter.getStringMetricPlanned("optimizer.semiAntiAlgorithm") != null) {
+					result[0] = filter;
+				}
+				node.visitChildren(this);
+			}
+		});
+		return result[0];
 	}
 
 	private static PackedCostEstimate composedCost() {

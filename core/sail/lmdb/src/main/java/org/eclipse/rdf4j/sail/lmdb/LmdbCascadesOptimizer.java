@@ -138,7 +138,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 				// pipeline-normalized tree is still a correct executable plan — degrade to it instead of failing
 				// the query.
 				logger.warn("Packed cascades planning failed; falling back to the pipeline-normalized plan: {}",
-						internalInvariantFailure.getMessage());
+						internalInvariantFailure.getMessage(), internalInvariantFailure);
 				plan = null;
 			}
 			if (plan != null) {
@@ -148,11 +148,35 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 				annotateObjectGuarantees(tupleExpr);
 				annotateCartesianFallback(tupleExpr);
 				annotateSemanticExactZero(tupleExpr);
+				verifyInstalledCostingContexts(tupleExpr);
 			}
 		}
 		if (runtimeTelemetry) {
 			enableRuntimeTelemetry(tupleExpr);
 		}
+	}
+
+	private static void verifyInstalledCostingContexts(TupleExpr root) {
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Join join) {
+				TupleExpr right = join.getRightArg();
+				if ("physical-join".equals(join.getStringMetricPlanned("optimizer.costEventPhase"))
+						&& "prefix-extension".equals(right.getStringMetricPlanned("optimizer.costEventPhase"))) {
+					double parentPrefixRows = join.getDoubleMetricPlanned("optimizer.costEventPrefixRows");
+					double rightPrefixRows = right.getDoubleMetricPlanned("optimizer.costEventPrefixRows");
+					if (Double.isFinite(parentPrefixRows) && Double.isFinite(rightPrefixRows)
+							&& Double.compare(parentPrefixRows, rightPrefixRows) != 0) {
+						throw new IllegalStateException(
+								"installed dependent join has mismatched costing contexts: parent="
+										+ parentPrefixRows + ", right=" + rightPrefixRows + ", parentEvent="
+										+ join.getStringMetricPlanned("optimizer.costEventDigest") + ", rightEvent="
+										+ right.getStringMetricPlanned("optimizer.costEventDigest"));
+					}
+				}
+				super.meet(join);
+			}
+		});
 	}
 
 	CascadesPlan planPreparedInput(TupleExpr tupleExpr, OptimizationGoal goal) {
@@ -209,15 +233,17 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		long bindingShapeFingerprint = bindings == null ? 0L : unsignedHash(bindings.getBindingNames());
 		long parameterVariant = bindingFingerprint(bindings);
 		long goalFingerprint = goalFingerprint(goal);
-		long providerVersion = packedCostModel == null
-				? 0L
-				: mixCacheHash(packedCostModel.providerVersion(),
-						statistics instanceof LmdbEstimatorRuntimeProvider provider
-								? provider.estimatorRuntime().learnedEvidenceRevision()
-								: 0L);
+		long providerVersion = packedCostModel == null ? 0L : packedCostModel.providerVersion();
 		long predicateRangeVersion = rangeProvider == null ? 0L : rangeProvider.predicateRangeVersion();
+		long leoRevision = statistics instanceof LmdbEstimatorRuntimeProvider provider
+				? provider.estimatorRuntime().leoRevision()
+				: 0L;
+		long frontierRevision = statistics instanceof LmdbEstimatorRuntimeProvider provider
+				? provider.estimatorRuntime().frontierPlanningRevision()
+				: 0L;
 		return new PackedPlanCache.Context(datasetFingerprint, bindingShapeFingerprint, parameterVariant,
-				goalFingerprint, 1L, providerVersion, dataRevision, predicateRangeVersion);
+				goalFingerprint, 1L, providerVersion, dataRevision, predicateRangeVersion, leoRevision,
+				frontierRevision);
 	}
 
 	private static boolean datasetUsesStoreDefaults(Dataset dataset) {
@@ -295,6 +321,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			original.replaceWith(replacement);
 			return;
 		}
+		copyPlannedMetrics(replacement, original);
 		if (original instanceof QueryRoot originalRoot) {
 			originalRoot.setArg(replacement instanceof QueryRoot replacementRoot
 					? replacementRoot.getArg().clone()
@@ -314,6 +341,12 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		}
 		throw new CascadesPlanningException("Cannot install packed winner " + replacement.getClass().getName()
 				+ " into detached root " + original.getClass().getName());
+	}
+
+	private static void copyPlannedMetrics(TupleExpr source, TupleExpr target) {
+		source.getStringMetricsPlanned().forEach(target::setStringMetricPlanned);
+		source.getDoubleMetricsPlanned().forEach(target::setDoubleMetricPlanned);
+		source.getLongMetricsPlanned().forEach(target::setLongMetricPlanned);
 	}
 
 	private void annotatePlanningMetrics(TupleExpr root, Mode mode, CascadesPlan plan) {

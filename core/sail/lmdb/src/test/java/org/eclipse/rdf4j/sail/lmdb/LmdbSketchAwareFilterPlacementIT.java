@@ -65,6 +65,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.benchmark.BenchmarkJoinEstimatorSupport;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSynopsisStatus;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -336,6 +337,10 @@ class LmdbSketchAwareFilterPlacementIT {
 				var estimator = store.getBackingStore().getSketchBasedJoinEstimator();
 				estimator.rebuild();
 				LmdbPlannerAwait.awaitEstimatorReady(estimator);
+				assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+				dirtyFrontierWithUnrelatedBatch(repository);
+				assertEquals(FrontierSynopsisStatus.DIRTY_INSERTION,
+						store.getBackingStore().frontierSynopsisStatus());
 
 				String query = valuesLocalityQuery();
 				TupleExpr optimized;
@@ -935,6 +940,18 @@ class LmdbSketchAwareFilterPlacementIT {
 							valuesLocalityPredicate(valueIndex),
 							VF.createIRI("urn:test:noise-value:" + valueIndex + ":" + noiseIndex));
 				}
+			}
+			connection.commit();
+		}
+	}
+
+	private static void dirtyFrontierWithUnrelatedBatch(SailRepository repository) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			IRI predicate = VF.createIRI("urn:test:frontier-dirty");
+			for (int index = 0; index < 1_024; index++) {
+				connection.add(VF.createIRI("urn:test:frontier-dirty-subject:" + index), predicate,
+						VF.createIRI("urn:test:frontier-dirty-object:" + index));
 			}
 			connection.commit();
 		}

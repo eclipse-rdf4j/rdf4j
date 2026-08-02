@@ -23,9 +23,35 @@ final class PackedDependentSubqueryCosting {
 	}
 
 	static double contextualCost(PackedQuery query, PackedMemo memo, int relationId, int[] prefixRelations,
-			int prefixCount) {
-		int inputContextId = prefixCount == 0 ? 0 : memo.internSequence(prefixRelations, 0, prefixCount);
+			double[] prefixContributionRows, int prefixCount, double prefixRows, int prefixEvidenceStateId,
+			int bindingLayoutId, int correlationMaskId, int semanticScopeMaskId) {
+		int inputContextId = memo.internEvidenceContext(prefixRelations, prefixContributionRows, 0, prefixCount,
+				prefixRows, prefixEvidenceStateId, bindingLayoutId, correlationMaskId, semanticScopeMaskId);
 		return scalarCost(query, memo, conditionId(query, relationId), inputContextId);
+	}
+
+	static void publishDefaultPlanInputs(PackedQuery query, PackedMemo memo, int relationId,
+			PackedCostEstimate destination) {
+		publishScalarPlanInputs(query, memo, conditionId(query, relationId), 0,
+				query.relOutputMaskId(relationId), destination);
+	}
+
+	static void publishContextualPlanInputs(PackedQuery query, PackedMemo memo, int relationId,
+			int[] prefixRelations, double[] prefixContributionRows, int prefixCount, double prefixRows,
+			int prefixEvidenceStateId, int bindingLayoutId, int correlationMaskId, int semanticScopeMaskId,
+			PackedCostEstimate destination) {
+		int inputContextId = memo.internEvidenceContext(prefixRelations, prefixContributionRows, 0, prefixCount,
+				prefixRows, prefixEvidenceStateId, bindingLayoutId, correlationMaskId, semanticScopeMaskId);
+		publishScalarPlanInputs(query, memo, conditionId(query, relationId), inputContextId,
+				query.relOutputMaskId(relationId), destination);
+	}
+
+	static void recordContextualPlans(PackedQuery query, PackedMemo memo, int ownerWinnerId, int relationId,
+			int[] prefixRelations, double[] prefixContributionRows, int prefixCount, double prefixRows,
+			int prefixEvidenceStateId, int bindingLayoutId, int correlationMaskId, int semanticScopeMaskId) {
+		int inputContextId = memo.internEvidenceContext(prefixRelations, prefixContributionRows, 0, prefixCount,
+				prefixRows, prefixEvidenceStateId, bindingLayoutId, correlationMaskId, semanticScopeMaskId);
+		recordScalarPlans(query, memo, ownerWinnerId, conditionId(query, relationId), inputContextId);
 	}
 
 	private static int conditionId(PackedQuery query, int relationId) {
@@ -46,13 +72,7 @@ final class PackedDependentSubqueryCosting {
 			if (query.payloadOperator(payloadId) == PackedPayloadOp.SUBQUERY_VALUE
 					&& query.payloadChildCount(payloadId) == 1) {
 				int subqueryRelationId = query.payloadChild(payloadId, 0);
-				int groupId = memo.logicalGroupId(subqueryRelationId);
-				int winnerId = inputContextId == 0
-						? 0
-						: memo.findWinner(groupId, memo.anyPropertyId(), 0, inputContextId, 0);
-				if (winnerId == 0) {
-					winnerId = memo.findWinner(groupId, memo.anyPropertyId(), 0, 0, 0);
-				}
+				int winnerId = selectedWinner(query, memo, subqueryRelationId, inputContextId);
 				if (winnerId == 0) {
 					throw new PackedMemoInvariantException(
 							"embedded subquery " + subqueryRelationId + " has no incumbent");
@@ -65,6 +85,66 @@ final class PackedDependentSubqueryCosting {
 					scalarCost(query, memo, query.scalarChild(scalarId, ordinal), inputContextId));
 		}
 		return cost;
+	}
+
+	private static void publishScalarPlanInputs(PackedQuery query, PackedMemo memo, int scalarId, int inputContextId,
+			int outerBindingMaskId, PackedCostEstimate destination) {
+		if (scalarId == 0) {
+			return;
+		}
+		if (query.scalarOperator(scalarId) == PackedScalarOp.EXISTS) {
+			int payloadId = query.scalarPayload(scalarId);
+			if (query.payloadOperator(payloadId) == PackedPayloadOp.SUBQUERY_VALUE
+					&& query.payloadChildCount(payloadId) == 1) {
+				int subqueryRelationId = query.payloadChild(payloadId, 0);
+				int winnerId = selectedWinner(query, memo, subqueryRelationId, inputContextId);
+				if (winnerId != 0) {
+					memo.publishDependentPlanInput(winnerId, outerBindingMaskId, destination);
+				}
+			}
+		}
+		for (int ordinal = 0; ordinal < query.scalarChildCount(scalarId); ordinal++) {
+			publishScalarPlanInputs(query, memo, query.scalarChild(scalarId, ordinal), inputContextId,
+					outerBindingMaskId, destination);
+		}
+	}
+
+	private static int selectedWinner(PackedQuery query, PackedMemo memo, int subqueryRelationId,
+			int inputContextId) {
+		int groupId = memo.logicalGroupId(subqueryRelationId);
+		int winnerId = inputContextId == 0
+				? 0
+				: memo.findWinner(groupId, memo.anyPropertyId(), 0, inputContextId, 0);
+		return winnerId == 0
+				? memo.findWinner(groupId, memo.anyPropertyId(), 0, 0, 0)
+				: winnerId;
+	}
+
+	private static void recordScalarPlans(PackedQuery query, PackedMemo memo, int ownerWinnerId, int scalarId,
+			int inputContextId) {
+		if (scalarId == 0) {
+			return;
+		}
+		if (query.scalarOperator(scalarId) == PackedScalarOp.EXISTS) {
+			int payloadId = query.scalarPayload(scalarId);
+			if (query.payloadOperator(payloadId) == PackedPayloadOp.SUBQUERY_VALUE
+					&& query.payloadChildCount(payloadId) == 1) {
+				int subqueryRelationId = query.payloadChild(payloadId, 0);
+				int groupId = memo.logicalGroupId(subqueryRelationId);
+				int winnerId = inputContextId == 0
+						? 0
+						: memo.findWinner(groupId, memo.anyPropertyId(), 0, inputContextId, 0);
+				if (winnerId == 0) {
+					winnerId = memo.findWinner(groupId, memo.anyPropertyId(), 0, 0, 0);
+				}
+				if (winnerId != 0) {
+					memo.putDependentPlan(ownerWinnerId, payloadId, winnerId);
+				}
+			}
+		}
+		for (int ordinal = 0; ordinal < query.scalarChildCount(scalarId); ordinal++) {
+			recordScalarPlans(query, memo, ownerWinnerId, query.scalarChild(scalarId, ordinal), inputContextId);
+		}
 	}
 
 	private static double saturatedAdd(double left, double right) {

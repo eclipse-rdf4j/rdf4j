@@ -19,7 +19,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
@@ -54,11 +53,6 @@ final class FrontierQueryIndex implements AutoCloseable {
 	private static final int METADATA_LANE_ROLE = 1;
 	private static final int METADATA_LANE_INDEX = 2;
 	private static final int METADATA_DATABASE_EXACT = 3;
-	private static final ValueLayout.OfLong LONG_LAYOUT = ValueLayout.JAVA_LONG_UNALIGNED
-			.withOrder(ByteOrder.BIG_ENDIAN);
-	private static final ValueLayout.OfInt INT_LAYOUT = ValueLayout.JAVA_INT_UNALIGNED
-			.withOrder(ByteOrder.BIG_ENDIAN);
-
 	private final Path path;
 	private final FrontierManifestIdentity identity;
 	private final FrontierPayloadDescriptor descriptor;
@@ -71,7 +65,9 @@ final class FrontierQueryIndex implements AutoCloseable {
 	private final long[] indexOffsets = new long[4];
 	private final FileChannel channel;
 	private final Arena arena;
-	private final List<MemorySegment> segments;
+	private final MemorySegment[] segments;
+	private final ByteBuffer singleBuffer;
+	private final ByteBuffer[] buffers;
 
 	private FrontierQueryIndex(Path path, FrontierManifestIdentity identity, FrontierPayloadDescriptor descriptor,
 			long rowCount, double inclusionProbability, boolean databaseExact, long byteLength, FileChannel channel,
@@ -85,7 +81,12 @@ final class FrontierQueryIndex implements AutoCloseable {
 		this.byteLength = byteLength;
 		this.channel = channel;
 		this.arena = arena;
-		this.segments = segments;
+		this.segments = segments.toArray(MemorySegment[]::new);
+		this.buffers = new ByteBuffer[this.segments.length];
+		for (int index = 0; index < this.segments.length; index++) {
+			this.buffers[index] = this.segments[index].asByteBuffer().order(ByteOrder.BIG_ENDIAN);
+		}
+		this.singleBuffer = this.buffers.length == 1 ? this.buffers[0] : null;
 		long offset = HEADER_BYTES;
 		for (int component = 0; component < columnOffsets.length; component++) {
 			columnOffsets[component] = offset;
@@ -236,14 +237,15 @@ final class FrontierQueryIndex implements AutoCloseable {
 	}
 
 	long candidateRows(FrontierLeafSelector selector, int direction, int laneRole, int laneIndex) {
-		requireScope(direction, laneRole, laneIndex);
-		return candidateRange(selector, direction, laneRole, laneIndex).size();
+		return prepare(selector, direction, laneRole, laneIndex).size();
 	}
 
 	long countMatches(FrontierLeafSelector selector, int direction, int laneRole, int laneIndex) {
-		requireScope(direction, laneRole, laneIndex);
-		Range range = candidateRange(selector, direction, laneRole, laneIndex);
-		boolean verificationFree = selector.verificationFree(range.component);
+		return countMatches(selector, prepare(selector, direction, laneRole, laneIndex));
+	}
+
+	long countMatches(FrontierLeafSelector selector, PreparedRange range) {
+		boolean verificationFree = range.verificationFree;
 		if (verificationFree) {
 			return range.size();
 		}
@@ -263,9 +265,11 @@ final class FrontierQueryIndex implements AutoCloseable {
 
 	long visitMatches(FrontierLeafSelector selector, int direction, int laneRole, int laneIndex,
 			FrontierQueryIndexRowSink sink) {
-		requireScope(direction, laneRole, laneIndex);
-		Range range = candidateRange(selector, direction, laneRole, laneIndex);
-		boolean verificationFree = selector.verificationFree(range.component);
+		return visitMatches(selector, prepare(selector, direction, laneRole, laneIndex), sink);
+	}
+
+	long visitMatches(FrontierLeafSelector selector, PreparedRange range, FrontierQueryIndexRowSink sink) {
+		boolean verificationFree = range.verificationFree;
 		long matches = 0L;
 		for (long position = range.from; position < range.to; position++) {
 			int row = rowId(range.component, position);
@@ -280,6 +284,12 @@ final class FrontierQueryIndex implements AutoCloseable {
 			}
 		}
 		return matches;
+	}
+
+	PreparedRange prepare(FrontierLeafSelector selector, int direction, int laneRole, int laneIndex) {
+		requireScope(direction, laneRole, laneIndex);
+		Range range = candidateRange(selector, direction, laneRole, laneIndex);
+		return new PreparedRange(range.component, range.from, range.to, selector.verificationFree(range.component));
 	}
 
 	long accumulateLaneDiagnostics(FrontierLeafSelector selector, int direction,
@@ -625,13 +635,14 @@ final class FrontierQueryIndex implements AutoCloseable {
 	}
 
 	private long value(int component, int row) {
-		long offset = Math.addExact(columnOffsets[component], Math.multiplyExact((long) row, Long.BYTES));
-		return segment(offset).get(LONG_LAYOUT, segmentOffset(offset));
+		/* The constructor validated the complete encoded length, so every indexed row address is already in range. */
+		long offset = columnOffsets[component] + ((long) row << 3);
+		return readLong(offset);
 	}
 
 	private int metadata(int component, int row) {
-		long offset = Math.addExact(metadataOffsets[component], Math.multiplyExact((long) row, Integer.BYTES));
-		return segment(offset).get(INT_LAYOUT, segmentOffset(offset));
+		long offset = metadataOffsets[component] + ((long) row << 2);
+		return readInt(offset);
 	}
 
 	private static void requireScope(int direction, int laneRole, int laneIndex) {
@@ -645,16 +656,26 @@ final class FrontierQueryIndex implements AutoCloseable {
 	}
 
 	private int rowId(int component, long position) {
-		long offset = Math.addExact(indexOffsets[component], Math.multiplyExact(position, Integer.BYTES));
-		return segment(offset).get(INT_LAYOUT, segmentOffset(offset));
+		long offset = indexOffsets[component] + (position << 2);
+		return readInt(offset);
 	}
 
-	private MemorySegment segment(long offset) {
-		return segments.get((int) (offset / SEGMENT_BYTES));
+	private long readLong(long offset) {
+		ByteBuffer buffer = singleBuffer;
+		if (buffer != null) {
+			return buffer.getLong((int) offset);
+		}
+		int segmentIndex = (int) (offset / SEGMENT_BYTES);
+		return buffers[segmentIndex].getLong((int) (offset - (long) segmentIndex * SEGMENT_BYTES));
 	}
 
-	private long segmentOffset(long offset) {
-		return offset % SEGMENT_BYTES;
+	private int readInt(long offset) {
+		ByteBuffer buffer = singleBuffer;
+		if (buffer != null) {
+			return buffer.getInt((int) offset);
+		}
+		int segmentIndex = (int) (offset / SEGMENT_BYTES);
+		return buffers[segmentIndex].getInt((int) (offset - (long) segmentIndex * SEGMENT_BYTES));
 	}
 
 	private static Path queryIndexPath(Path directory, FrontierPayloadDescriptor descriptor) {
@@ -726,6 +747,13 @@ final class FrontierQueryIndex implements AutoCloseable {
 		private static final Range EMPTY = new Range(-1, 0L, 0L);
 
 		private long size() {
+			return to - from;
+		}
+	}
+
+	record PreparedRange(int component, long from, long to, boolean verificationFree) {
+
+		long size() {
 			return to - from;
 		}
 	}

@@ -65,6 +65,14 @@ final class PackedLogicalRuleProgram {
 	private int rewriteScratchSize;
 	private int[] renamedObjectIds = new int[16];
 	private long[] appliedExpressionWords = new long[1];
+	private int[] firstMovableFilterByGroup = new int[16];
+	private int[] nextMovableFilterByExpression = new int[16];
+	private byte[] movableFilterRegistered = new byte[16];
+	private int[] firstFilterJoinConsumerByGroup = new int[16];
+	private int[] nextFilterJoinConsumerLink = new int[32];
+	private int[] filterJoinExpressionByLink = new int[32];
+	private byte[] filterJoinChildOrdinalByLink = new byte[32];
+	private int filterJoinConsumerLinkCount;
 	private int finiteNameObjectId;
 	private int finiteSymbolId;
 	private int finiteValueCount;
@@ -98,13 +106,19 @@ final class PackedLogicalRuleProgram {
 		}
 		switch (relations.operatorTag(expressionId)) {
 		case PackedRelOp.FILTER -> {
+			registerMovableFilter(expressionId);
+			addSafeAliasFilterCommutationAlternative(expressionId);
 			addSemiAntiAlternatives(expressionId);
 			addFiniteFilterAlternative(expressionId);
 			addPredicateRangeFilterAlternatives(expressionId);
 			addAdjacentFilterCommutationAlternative(expressionId);
 		}
 		case PackedRelOp.STATEMENT_PATTERN -> addPredicateRangePatternAlternatives(expressionId);
-		case PackedRelOp.JOIN, PackedRelOp.LATERAL -> addEmptyDomainJoinAlternative(expressionId);
+		case PackedRelOp.JOIN -> {
+			addEmptyDomainJoinAlternative(expressionId);
+			registerFilterJoinConsumers(expressionId);
+		}
+		case PackedRelOp.LATERAL -> addEmptyDomainJoinAlternative(expressionId);
 		case PackedRelOp.PROJECTION -> addProjectionAlternatives(expressionId);
 		case PackedRelOp.GROUP -> addGroupAlternatives(expressionId);
 		case PackedRelOp.DISTINCT, PackedRelOp.REDUCED -> addUnusedOptionalAlternative(expressionId);
@@ -115,6 +129,219 @@ final class PackedLogicalRuleProgram {
 		default -> {
 		}
 		}
+	}
+
+	/**
+	 * Exposes a deterministic trivial alias to the contextual filter/join search while retaining that alias in the
+	 * result. Given an assured source binding, {@code FILTER(BIND(?source AS ?alias), condition(?alias))} is bag-
+	 * equivalent to {@code BIND(FILTER(condition(?source)), ?source AS ?alias)}. The rewritten filter can consequently
+	 * participate in the same factor ordering as the extension input instead of making the extension an opaque factor
+	 * boundary.
+	 */
+	private void addSafeAliasFilterCommutationAlternative(int filterExpressionId) {
+		if (relations.operatorTag(filterExpressionId) != PackedRelOp.FILTER
+				|| relations.childCount(filterExpressionId) != 1
+				|| relations.semanticScopeId(filterExpressionId) != 0
+				|| relations.executionDomainId(filterExpressionId) != 0) {
+			return;
+		}
+		int filterInputId = relations.childGroupId(filterExpressionId, 0);
+		if (!plainInnerJoinRegion(filterInputId)) {
+			return;
+		}
+		int conditionId = relations.payloadId(filterExpressionId);
+		int scalarFlags = metadata.scalarFlags(conditionId);
+		if ((scalarFlags & (PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE
+				| PackedNodeMetadataArena.SCALAR_REORDERING_SAFE)) != PackedNodeMetadataArena.SCALAR_REORDERING_SAFE
+				|| scalarHasEmbeddedRelationOrTerm(conditionId)) {
+			return;
+		}
+
+		factorCount = 0;
+		collectJoinFactors(filterInputId);
+		for (int candidateOrdinal = 0; candidateOrdinal < factorCount; candidateOrdinal++) {
+			addSafeAliasFilterCommutationAlternative(filterExpressionId, filterInputId, conditionId,
+					candidateOrdinal);
+		}
+	}
+
+	private void addSafeAliasFilterCommutationAlternative(int filterExpressionId, int filterInputId, int conditionId,
+			int candidateOrdinal) {
+		int extensionExpressionId = factorIds[candidateOrdinal];
+		if (relations.operatorTag(extensionExpressionId) != PackedRelOp.EXTENSION
+				|| relations.childCount(extensionExpressionId) != 1
+				|| relations.semanticScopeId(extensionExpressionId) != 0
+				|| relations.executionDomainId(extensionExpressionId) != 0) {
+			return;
+		}
+		int extensionPayloadId = relations.payloadId(extensionExpressionId);
+		if (payloads.operatorTag(extensionPayloadId) != PackedPayloadOp.EXTENSION
+				|| payloads.childCount(extensionPayloadId) != 1) {
+			return;
+		}
+		int elementId = payloads.childGroupId(extensionPayloadId, 0);
+		if (payloads.operatorTag(elementId) != PackedPayloadOp.EXTENSION_ELEMENT) {
+			return;
+		}
+
+		int aliasNameId = payloads.payloadId(elementId);
+		int sourceScalarId = payloads.semanticScopeId(elementId);
+		int sourceNameId = variableNameId(sourceScalarId);
+		int aliasSymbolId = aliasNameId == 0 ? 0 : symbols.symbolId(aliasNameId);
+		int sourceSymbolId = sourceNameId == 0 ? 0 : symbols.symbolId(sourceNameId);
+		int extensionInputId = relations.childGroupId(extensionExpressionId, 0);
+		if (aliasSymbolId == 0 || sourceSymbolId == 0
+				|| !scalarContainsName(conditionId, aliasNameId)
+				|| relationOutputContains(extensionInputId, aliasSymbolId)
+				|| !relationAssuresSymbol(extensionInputId, sourceSymbolId)) {
+			return;
+		}
+		for (int ordinal = 0; ordinal < factorCount; ordinal++) {
+			if (ordinal != candidateOrdinal && relationUsesName(factorIds[ordinal], aliasNameId)) {
+				return;
+			}
+		}
+
+		int rewrittenInputId = 0;
+		for (int ordinal = 0; ordinal < factorCount; ordinal++) {
+			int factorId = ordinal == candidateOrdinal ? extensionInputId : factorIds[ordinal];
+			if (rewrittenInputId == 0) {
+				rewrittenInputId = factorId;
+				continue;
+			}
+			binary[0] = relations.groupId(rewrittenInputId);
+			binary[1] = relations.groupId(factorId);
+			rewrittenInputId = canonicalRelation(PackedRelOp.JOIN, 0, binary, 2, filterInputId);
+		}
+
+		int rewrittenConditionId = replaceScalarVariable(conditionId, aliasNameId, sourceScalarId);
+		if (rewrittenConditionId == conditionId
+				|| !commutableFilterCondition(rewrittenConditionId, rewrittenInputId)) {
+			return;
+		}
+		unary[0] = relations.groupId(rewrittenInputId);
+		int before = relations.size();
+		int rewrittenFilterId = relations.internCanonical(PackedRelOp.FILTER, rewrittenConditionId,
+				relations.semanticScopeId(filterExpressionId), relations.executionDomainId(filterExpressionId), unary,
+				0, 1);
+		if (rewrittenFilterId > before) {
+			metadata.copyRelation(filterExpressionId, rewrittenFilterId);
+		}
+
+		unary[0] = relations.groupId(rewrittenFilterId);
+		int alternativeId = addAlternative(filterExpressionId, PackedRelOp.EXTENSION, extensionPayloadId, unary, 1);
+		if (alternativeId != 0) {
+			metadata.addRelationRuleMask(alternativeId,
+					metadata.relationRuleMask(extensionExpressionId) | PackedRuleProofs.TRIVIAL_BIND_ALIAS);
+		}
+	}
+
+	private boolean plainInnerJoinRegion(int expressionId) {
+		if (relations.operatorTag(expressionId) != PackedRelOp.JOIN) {
+			return true;
+		}
+		return relations.payloadId(expressionId) == 0
+				&& relations.semanticScopeId(expressionId) == 0
+				&& relations.executionDomainId(expressionId) == 0
+				&& plainInnerJoinRegion(relations.childGroupId(expressionId, 0))
+				&& plainInnerJoinRegion(relations.childGroupId(expressionId, 1));
+	}
+
+	/**
+	 * Pulls assured deterministic child-group filters over a pure inner join so one predicate DP sees the whole region.
+	 */
+	private void registerFilterJoinConsumers(int joinExpressionId) {
+		if (relations.childCount(joinExpressionId) != 2
+				|| relations.payloadId(joinExpressionId) != 0
+				|| relations.semanticScopeId(joinExpressionId) != 0
+				|| relations.executionDomainId(joinExpressionId) != 0) {
+			return;
+		}
+		for (int filteredOrdinal = 0; filteredOrdinal < 2; filteredOrdinal++) {
+			int filteredGroupId = relations.childGroupId(joinExpressionId, filteredOrdinal);
+			int siblingExpressionId = relations.childGroupId(joinExpressionId, 1 - filteredOrdinal);
+			ensureMovableFilterCapacity(filteredGroupId);
+			int linkId = appendFilterJoinConsumer(joinExpressionId, filteredOrdinal);
+			nextFilterJoinConsumerLink[linkId] = firstFilterJoinConsumerByGroup[filteredGroupId];
+			firstFilterJoinConsumerByGroup[filteredGroupId] = linkId;
+			for (int filterExpressionId = firstMovableFilterByGroup[filteredGroupId]; filterExpressionId != 0; filterExpressionId = nextMovableFilterByExpression[filterExpressionId]) {
+				addSafeChildFilterJoinAlternative(joinExpressionId, filteredOrdinal, filterExpressionId,
+						siblingExpressionId);
+			}
+		}
+	}
+
+	private int appendFilterJoinConsumer(int joinExpressionId, int filteredOrdinal) {
+		int linkId = ++filterJoinConsumerLinkCount;
+		if (linkId >= nextFilterJoinConsumerLink.length) {
+			int capacity = nextFilterJoinConsumerLink.length << 1;
+			nextFilterJoinConsumerLink = Arrays.copyOf(nextFilterJoinConsumerLink, capacity);
+			filterJoinExpressionByLink = Arrays.copyOf(filterJoinExpressionByLink, capacity);
+			filterJoinChildOrdinalByLink = Arrays.copyOf(filterJoinChildOrdinalByLink, capacity);
+		}
+		filterJoinExpressionByLink[linkId] = joinExpressionId;
+		filterJoinChildOrdinalByLink[linkId] = (byte) filteredOrdinal;
+		return linkId;
+	}
+
+	private void addSafeChildFilterJoinAlternative(int joinExpressionId, int filteredOrdinal, int filterExpressionId,
+			int siblingExpressionId) {
+		if (relations.operatorTag(filterExpressionId) != PackedRelOp.FILTER
+				|| relations.childCount(filterExpressionId) != 1
+				|| relations.semanticScopeId(filterExpressionId) != 0
+				|| relations.executionDomainId(filterExpressionId) != 0
+				|| !safeCorrelatedMinusProbe(siblingExpressionId)) {
+			return;
+		}
+		int conditionId = relations.payloadId(filterExpressionId);
+		int filterInputId = relations.childGroupId(filterExpressionId, 0);
+		if (canReplaceFilterWithFiniteAnchor(filterExpressionId)
+				|| scalarHasEmbeddedRelationOrTerm(conditionId)
+				|| !commutableFilterCondition(conditionId, filterInputId)) {
+			return;
+		}
+
+		binary[filteredOrdinal] = relations.groupId(filterInputId);
+		binary[1 - filteredOrdinal] = relations.groupId(siblingExpressionId);
+		int joinedInputId = canonicalRelation(PackedRelOp.JOIN, 0, binary, 2, joinExpressionId);
+		unary[0] = relations.groupId(joinedInputId);
+		int alternativeId = addAlternative(joinExpressionId, PackedRelOp.FILTER, conditionId, unary, 1);
+		if (alternativeId != 0) {
+			metadata.addRelationRuleMask(alternativeId,
+					metadata.relationRuleMask(filterExpressionId) | PackedRuleProofs.FILTER_COMMUTATION);
+			registerMovableFilter(alternativeId);
+		}
+	}
+
+	private void registerMovableFilter(int filterExpressionId) {
+		int groupId = relations.groupId(filterExpressionId);
+		ensureMovableFilterCapacity(Math.max(filterExpressionId, groupId));
+		if (movableFilterRegistered[filterExpressionId] != 0) {
+			return;
+		}
+		movableFilterRegistered[filterExpressionId] = 1;
+		nextMovableFilterByExpression[filterExpressionId] = firstMovableFilterByGroup[groupId];
+		firstMovableFilterByGroup[groupId] = filterExpressionId;
+		for (int linkId = firstFilterJoinConsumerByGroup[groupId]; linkId != 0; linkId = nextFilterJoinConsumerLink[linkId]) {
+			int joinExpressionId = filterJoinExpressionByLink[linkId];
+			int filteredOrdinal = Byte.toUnsignedInt(filterJoinChildOrdinalByLink[linkId]);
+			addSafeChildFilterJoinAlternative(joinExpressionId, filteredOrdinal, filterExpressionId,
+					relations.childGroupId(joinExpressionId, 1 - filteredOrdinal));
+		}
+	}
+
+	private void ensureMovableFilterCapacity(int requiredId) {
+		if (requiredId < firstMovableFilterByGroup.length) {
+			return;
+		}
+		int capacity = firstMovableFilterByGroup.length;
+		while (capacity <= requiredId) {
+			capacity <<= 1;
+		}
+		firstMovableFilterByGroup = Arrays.copyOf(firstMovableFilterByGroup, capacity);
+		nextMovableFilterByExpression = Arrays.copyOf(nextMovableFilterByExpression, capacity);
+		movableFilterRegistered = Arrays.copyOf(movableFilterRegistered, capacity);
+		firstFilterJoinConsumerByGroup = Arrays.copyOf(firstFilterJoinConsumerByGroup, capacity);
 	}
 
 	/** Attaches the predicate-range fact base derived during the explicit fact phase; null disables range rules. */
@@ -166,6 +393,8 @@ final class PackedLogicalRuleProgram {
 			return;
 		}
 		metadata.addRelationRuleMask(alternativeId, PackedRuleProofs.MINUS_CORRELATED_NOT_EXISTS);
+		metadata.addRelationSemanticFlags(
+				alternativeId, PackedNodeMetadataArena.SEMANTIC_ASSURED_SHARED_MINUS_FILTER);
 		addTypedSemiAntiAlternatives(
 				differenceExpressionId,
 				PackedRelOp.ANTI_JOIN,
@@ -188,10 +417,17 @@ final class PackedLogicalRuleProgram {
 		int existsId = conditionId;
 		int operator = PackedRelOp.SEMI_JOIN;
 		int semanticKind = PackedQueryView.SEMI_ANTI_EXISTS;
+		long ruleMask = PackedRuleProofs.TYPED_SEMI_ANTI;
 		if (scalars.operatorTag(conditionId) == PackedScalarOp.NOT && scalars.childCount(conditionId) == 1) {
 			existsId = scalars.childGroupId(conditionId, 0);
 			operator = PackedRelOp.ANTI_JOIN;
-			semanticKind = PackedQueryView.SEMI_ANTI_NOT_EXISTS;
+			if ((metadata.relationSemanticFlags(filterExpressionId)
+					& PackedNodeMetadataArena.SEMANTIC_ASSURED_SHARED_MINUS_FILTER) != 0) {
+				semanticKind = PackedQueryView.SEMI_ANTI_MINUS_ASSURED_SHARED;
+				ruleMask |= PackedRuleProofs.MINUS_CORRELATED_NOT_EXISTS;
+			} else {
+				semanticKind = PackedQueryView.SEMI_ANTI_NOT_EXISTS;
+			}
 		}
 		if (scalars.operatorTag(existsId) != PackedScalarOp.EXISTS) {
 			return;
@@ -215,7 +451,7 @@ final class PackedLogicalRuleProgram {
 				semanticKind,
 				nameSetPayload(correlatedNames),
 				leftExpressionId,
-				PackedRuleProofs.TYPED_SEMI_ANTI);
+				ruleMask);
 	}
 
 	private void addTypedSemiAntiAlternatives(int sourceExpressionId, int operator, int conditionId,
@@ -266,6 +502,11 @@ final class PackedLogicalRuleProgram {
 			metadata.attachRelation(commutedInnerId, 0, relations.semanticScopeId(outerFilterExpressionId),
 					Double.NaN, Double.NaN, 0);
 		}
+		if ((metadata.relationSemanticFlags(outerFilterExpressionId)
+				& PackedNodeMetadataArena.SEMANTIC_ASSURED_SHARED_MINUS_FILTER) != 0) {
+			metadata.addRelationSemanticFlags(
+					commutedInnerId, PackedNodeMetadataArena.SEMANTIC_ASSURED_SHARED_MINUS_FILTER);
+		}
 
 		unary[0] = relations.groupId(commutedInnerId);
 		int targetGroupId = relations.groupId(outerFilterExpressionId);
@@ -285,6 +526,11 @@ final class PackedLogicalRuleProgram {
 		if (commutedOuterId > before) {
 			metadata.attachRelation(commutedOuterId, 0, relations.semanticScopeId(outerFilterExpressionId),
 					metadata.relationResultSizeEstimate(outerFilterExpressionId), Double.NaN, 0);
+		}
+		if ((metadata.relationSemanticFlags(innerFilterExpressionId)
+				& PackedNodeMetadataArena.SEMANTIC_ASSURED_SHARED_MINUS_FILTER) != 0) {
+			metadata.addRelationSemanticFlags(
+					commutedOuterId, PackedNodeMetadataArena.SEMANTIC_ASSURED_SHARED_MINUS_FILTER);
 		}
 		addCommutationRuleMask(outerFilterExpressionId, innerFilterExpressionId, commutedOuterId);
 		return commutedOuterId;
@@ -311,6 +557,9 @@ final class PackedLogicalRuleProgram {
 	}
 
 	private void addCommutableScalarDependencies(int scalarId, long[] baseOutputs, long[] output) {
+		if (scalarId == 0) {
+			return;
+		}
 		for (int ordinal = 0; ordinal < scalars.childCount(scalarId); ordinal++) {
 			addCommutableScalarDependencies(scalars.childGroupId(scalarId, ordinal), baseOutputs, output);
 		}
@@ -373,6 +622,9 @@ final class PackedLogicalRuleProgram {
 	}
 
 	private boolean safeRepeatedScalar(int scalarId) {
+		if (scalarId == 0) {
+			return true;
+		}
 		if ((metadata.scalarFlags(scalarId) & PackedNodeMetadataArena.SCALAR_REORDERING_SAFE) != 0) {
 			return true;
 		}
@@ -756,6 +1008,9 @@ final class PackedLogicalRuleProgram {
 	}
 
 	private int variableNameId(int scalarId) {
+		if (scalarId == 0) {
+			return 0;
+		}
 		if (scalars.operatorTag(scalarId) != PackedScalarOp.VARIABLE) {
 			return 0;
 		}
@@ -1117,6 +1372,9 @@ final class PackedLogicalRuleProgram {
 	}
 
 	private boolean scalarContainsName(int scalarId, int nameId) {
+		if (scalarId == 0) {
+			return false;
+		}
 		if (scalars.operatorTag(scalarId) == PackedScalarOp.VARIABLE && variableNameId(scalarId) == nameId) {
 			return true;
 		}
@@ -1129,6 +1387,9 @@ final class PackedLogicalRuleProgram {
 	}
 
 	private int replaceScalarVariable(int scalarId, int aliasNameId, int sourceScalarId) {
+		if (scalarId == 0) {
+			return 0;
+		}
 		if (scalars.operatorTag(scalarId) == PackedScalarOp.VARIABLE && variableNameId(scalarId) == aliasNameId) {
 			return sourceScalarId;
 		}
@@ -1192,6 +1453,9 @@ final class PackedLogicalRuleProgram {
 	}
 
 	private boolean scalarHasEmbeddedRelationOrTerm(int scalarId) {
+		if (scalarId == 0) {
+			return false;
+		}
 		int operator = scalars.operatorTag(scalarId);
 		if (operator == PackedScalarOp.EXISTS || operator == PackedScalarOp.IN || operator == PackedScalarOp.COMPARE_ANY
 				|| operator == PackedScalarOp.COMPARE_ALL || operator == PackedScalarOp.VALUE_TRIPLE_REF
@@ -1266,6 +1530,9 @@ final class PackedLogicalRuleProgram {
 	}
 
 	private int anonymizeScalar(int scalarId, long[] preservedNames) {
+		if (scalarId == 0) {
+			return 0;
+		}
 		if (scalars.operatorTag(scalarId) == PackedScalarOp.VARIABLE) {
 			int termId = scalars.payloadId(scalarId);
 			int rewrittenTermId = anonymizeTerm(termId, preservedNames);
@@ -1545,22 +1812,27 @@ final class PackedLogicalRuleProgram {
 	}
 
 	private void addFiniteFilterAlternative(int filterExpressionId) {
-		int conditionId = relations.payloadId(filterExpressionId);
-		resetFiniteDomain();
-		if (!collectFiniteDomain(conditionId) || finiteValueCount == 0 || !finiteDomainTermIdentitySafe()) {
-			return;
-		}
-		int inputGroupId = relations.childGroupId(filterExpressionId, 0);
-		if (!relationAssuresSymbol(inputGroupId, finiteSymbolId)
-				|| containsBindingAssignmentFor(inputGroupId, finiteSymbolId)) {
+		if (!canReplaceFilterWithFiniteAnchor(filterExpressionId)) {
 			return;
 		}
 
+		int inputGroupId = relations.childGroupId(filterExpressionId, 0);
 		int anchorExpressionId = finiteBindingAssignment();
 		binary[0] = relations.groupId(anchorExpressionId);
 		binary[1] = inputGroupId;
 		int alternativeId = addAlternative(filterExpressionId, PackedRelOp.JOIN, 0, binary, 2);
 		addAlternativeRuleMask(alternativeId, PackedRuleProofs.FINITE_FILTER_VALUES);
+	}
+
+	private boolean canReplaceFilterWithFiniteAnchor(int filterExpressionId) {
+		int conditionId = relations.payloadId(filterExpressionId);
+		resetFiniteDomain();
+		if (!collectFiniteDomain(conditionId) || finiteValueCount == 0 || !finiteDomainTermIdentitySafe()) {
+			return false;
+		}
+		int inputGroupId = relations.childGroupId(filterExpressionId, 0);
+		return relationAssuresSymbol(inputGroupId, finiteSymbolId)
+				&& !containsBindingAssignmentFor(inputGroupId, finiteSymbolId);
 	}
 
 	private static final int VERDICT_UNKNOWN = 0;
@@ -2511,6 +2783,9 @@ final class PackedLogicalRuleProgram {
 	}
 
 	private boolean scalarContainsExists(int scalarId) {
+		if (scalarId == 0) {
+			return false;
+		}
 		if (scalars.operatorTag(scalarId) == PackedScalarOp.EXISTS) {
 			return true;
 		}
@@ -3014,6 +3289,9 @@ final class PackedLogicalRuleProgram {
 	}
 
 	private void addScalarDependencies(int scalarId, long[] output) {
+		if (scalarId == 0) {
+			return;
+		}
 		for (int ordinal = 0; ordinal < scalars.childCount(scalarId); ordinal++) {
 			addScalarDependencies(scalars.childGroupId(scalarId, ordinal), output);
 		}

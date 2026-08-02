@@ -375,9 +375,11 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 		}
 		LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate surface = finiteJoinSurfaceEstimator
 				.estimate(List.of(anchor), pattern, Map.of())
-				.filter(LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate::exact)
 				.orElse(null);
-		if (surface == null || !valid(surface.surfaceRows()) || surface.surfaceRows() == 0.0d) {
+		if (surface == null
+				|| !surface.exact() && surface.cardinalityProbes() == 0
+				|| !valid(surface.surfaceRows())
+				|| surface.surfaceRows() == 0.0d) {
 			if ("lmdb-finite-filter-probe-support-limit".equals(source)) {
 				return Optional.of(new FilterEvidence(0.5d, 0.0d, 1.0d, 0.0d, false, source));
 			}

@@ -96,8 +96,16 @@ class LmdbAASQuery2CascadesHypergraphPlanningTest {
 				assertTrue(LmdbCascadesOptimizer.PLANNER_ID
 						.equals(optimized.getStringMetricPlanned(TelemetryMetricNames.PLANNER_ID)),
 						() -> "The connected island must use the packed planner:\n" + plan);
+				assertTrue(optimized.getDoubleMetricPlanned("optimizer.cascadesCorrelatedLatticeBuilds") >= 1.0d,
+						() -> "The movable filter must be costed in the DPhyp lattice before extraction; workUnits="
+								+ optimized.getDoubleMetricPlanned("optimizer.cascadesWorkUnits") + ", searchNanos="
+								+ optimized.getDoubleMetricPlanned("optimizer.cascadesSearchNanos") + ", completeness="
+								+ optimized.getStringMetricPlanned("optimizer.cascadesCompleteness") + ":\n" + plan);
 				assertTrue(plan.contains("plannedPropertyPathEndpointMode=toEnd"),
-						() -> "The property path must be parameterized from the selective ?p1 endpoint:\n" + plan);
+						() -> "The property path must be parameterized from the selective ?p1 endpoint; workUnits="
+								+ optimized.getDoubleMetricPlanned("optimizer.cascadesWorkUnits") + ", searchNanos="
+								+ optimized.getDoubleMetricPlanned("optimizer.cascadesSearchNanos") + ", completeness="
+								+ optimized.getStringMetricPlanned("optimizer.cascadesCompleteness") + ":\n" + plan);
 				assertTrue(optimized.getDoubleMetricPlanned("plannedCostCartesianWorkRows") == 0.0d,
 						() -> "The connected query must not introduce Cartesian work:\n" + plan);
 				double plannedWork = optimized.getDoubleMetricPlanned("plannedCostWorkRows");
@@ -153,7 +161,8 @@ class LmdbAASQuery2CascadesHypergraphPlanningTest {
 						() -> "The connected query must not introduce Cartesian work:\n" + plan);
 				double plannedWork = optimized.getDoubleMetricPlanned("plannedCostWorkRows");
 				assertTrue(plannedWork > 0.0d && plannedWork < 2_000_000.0d,
-						() -> "The generated AAS query must retain bounded planned work, found " + plannedWork);
+						() -> "The generated AAS query must retain bounded planned work, found " + plannedWork
+								+ ":\n" + plan);
 			}
 		} finally {
 			repository.shutDown();

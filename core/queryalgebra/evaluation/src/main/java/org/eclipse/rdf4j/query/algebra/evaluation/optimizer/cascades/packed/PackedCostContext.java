@@ -24,6 +24,9 @@ public final class PackedCostContext {
 	private int prefixCount;
 	private int assuredBindingRelationId;
 	private int evidenceStateId;
+	private int bindingLayoutId;
+	private int correlationMaskId;
+	private int semanticScopeMaskId;
 	private double prefixRows;
 	private double leftInputRows;
 	private double rightInputRows;
@@ -49,11 +52,29 @@ public final class PackedCostContext {
 		prefixCount = count;
 		assuredBindingRelationId = 0;
 		this.evidenceStateId = evidenceStateId;
+		bindingLayoutId = 0;
+		correlationMaskId = 0;
+		semanticScopeMaskId = 0;
 		prefixRows = Double.isFinite(rows) && rows >= 0.0d ? rows : 1.0d;
 		leftInputRows = Double.NaN;
 		rightInputRows = Double.NaN;
 		leftInputEvidenceStateId = 0;
 		rightInputEvidenceStateId = 0;
+	}
+
+	void reset(PackedEvidenceContext context) {
+		reset(context.prefixRelationIds(), context.prefixOffset(), context.prefixCount(), context.prefixRows(),
+				context.evidenceStateId());
+		setEvidenceIdentity(context.bindingLayoutId(), context.correlationMaskId(), context.semanticScopeMaskId());
+	}
+
+	void setEvidenceIdentity(int bindingLayoutId, int correlationMaskId, int semanticScopeMaskId) {
+		if (bindingLayoutId < 0 || correlationMaskId < 0 || semanticScopeMaskId < 0) {
+			throw new IllegalArgumentException("packed evidence identities must be nonnegative");
+		}
+		this.bindingLayoutId = bindingLayoutId;
+		this.correlationMaskId = correlationMaskId;
+		this.semanticScopeMaskId = semanticScopeMaskId;
 	}
 
 	void setEvidenceStateId(int evidenceStateId) {
@@ -110,6 +131,21 @@ public final class PackedCostContext {
 	 */
 	public int evidenceStateId() {
 		return evidenceStateId;
+	}
+
+	/** Returns the query-local binding-layout identity used when the Frontier prefix was costed. */
+	public int bindingLayoutId() {
+		return bindingLayoutId;
+	}
+
+	/** Returns the query-local outer-correlation mask identity used when the Frontier prefix was costed. */
+	public int correlationMaskId() {
+		return correlationMaskId;
+	}
+
+	/** Returns the query-local semantic-scope mask identity used when the Frontier prefix was costed. */
+	public int semanticScopeMaskId() {
+		return semanticScopeMaskId;
 	}
 
 	/** Returns the first child's output rows for a non-leaf refinement, or {@link Double#NaN} when unavailable. */

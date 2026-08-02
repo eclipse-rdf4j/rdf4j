@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -22,6 +23,39 @@ import java.lang.reflect.Method;
 import org.junit.jupiter.api.Test;
 
 class FrontierLinearTransformContractTest {
+
+	@Test
+	void learnedBoundWithoutParticleSupportIsNotAComposableTransformInput() {
+		FrontierLayout layout = FrontierLayout.of("x");
+		FrontierMaskStrata masks = FrontierMaskStrata.of(layout, 1, new long[] { 1L });
+		FrontierStateKey inputKey = key(0b001L, masks);
+		FrontierStateKey outputKey = key(0b011L, masks);
+		try (FrontierStateArena arena = new FrontierStateArena(128 * 1024L)) {
+			arena.declareCanonicalStates(inputKey, outputKey);
+			EvidenceStateRef sampledZero;
+			try (FrontierPayloadWriter writer = arena.newPayloadWriter(inputKey, new int[] { 0 }, new int[] { 0 })) {
+				sampledZero = arena.internPayload(
+						inputKey,
+						unbiased(0.0d, 10.0d, 0.0d, 0.0d),
+						FrontierStateOperation.COORDINATED_STAR,
+						null,
+						null,
+						1,
+						writer);
+			}
+			EvidenceStateRef learnedBound = arena.calibrate(
+					sampledZero,
+					new EvidenceCalibrationSummary(
+							0.0d, 10.0d, Double.POSITIVE_INFINITY, "leo", 4L, 0.75d, "filter:x", 9L),
+					2);
+
+			assertEquals(FrontierStateDisposition.BOUND_ONLY, arena.disposition(learnedBound));
+			IllegalArgumentException failure = assertThrows(
+					IllegalArgumentException.class,
+					() -> FrontierLinearTransforms.project(arena, learnedBound, outputKey, 3, new int[] { 0 }));
+			assertEquals("linear transforms require composable input evidence", failure.getMessage());
+		}
+	}
 
 	@Test
 	void exposesExactProbeOuterKernelTransform() throws Exception {
@@ -95,6 +129,88 @@ class FrontierLinearTransformContractTest {
 				EvidenceStateRef.class,
 				FrontierStateKey.class,
 				int.class));
+		assertNotNull(FrontierLinearTransforms.class.getMethod(
+				"intersection",
+				FrontierStateArena.class,
+				EvidenceStateRef.class,
+				EvidenceStateRef.class,
+				FrontierStateKey.class,
+				int.class));
+	}
+
+	@Test
+	void exactIntersectionRetainsLeftMultiplicityForMappingsInRightSupport() throws Exception {
+		FrontierLayout layout = FrontierLayout.of("x");
+		FrontierMaskStrata masks = FrontierMaskStrata.of(layout, 1, new long[] { 1L });
+		FrontierStateKey leftKey = key(0b001L, masks);
+		FrontierStateKey rightKey = key(0b010L, masks);
+		FrontierStateKey outputKey = key(0b011L, masks);
+		try (FrontierStateArena arena = new FrontierStateArena(256 * 1024L)) {
+			arena.declareCanonicalStates(leftKey, rightKey, outputKey);
+			EvidenceStateRef left;
+			try (FrontierPayloadWriter writer = arena.newPayloadWriter(leftKey, new int[] { 2 }, new int[] { 0 })) {
+				writer.putExact(0, 0, 3.0d, new long[] { 11L }, 0);
+				writer.putExact(0, 1, 2.0d, new long[] { 12L }, 0);
+				left = arena.internPayload(leftKey, EvidenceStateSummary.exact(5.0d),
+						FrontierStateOperation.EXACT_LEAF, null, null, 1, writer);
+			}
+			EvidenceStateRef right;
+			try (FrontierPayloadWriter writer = arena.newPayloadWriter(rightKey, new int[] { 2 }, new int[] { 0 })) {
+				writer.putExact(0, 0, 5.0d, new long[] { 11L }, 0);
+				writer.putExact(0, 1, 5.0d, new long[] { 13L }, 0);
+				right = arena.internPayload(rightKey, EvidenceStateSummary.exact(10.0d),
+						FrontierStateOperation.EXACT_LEAF, null, null, 2, writer);
+			}
+
+			Method intersectionMethod = FrontierLinearTransforms.class.getMethod(
+					"intersection",
+					FrontierStateArena.class,
+					EvidenceStateRef.class,
+					EvidenceStateRef.class,
+					FrontierStateKey.class,
+					int.class);
+			EvidenceStateRef intersection = (EvidenceStateRef) intersectionMethod.invoke(
+					null, arena, left, right, outputKey, 3);
+
+			assertEquals(EvidenceStateSummary.exact(3.0d), intersection.summary());
+			assertEquals(FrontierStateOperation.valueOf("INTERSECTION"), arena.operation(intersection));
+			assertEquals(left, arena.parent(intersection, 0));
+			assertEquals(right, arena.parent(intersection, 1));
+			try (FrontierPayloadLease payload = arena.openPayload(intersection)) {
+				assertEquals(1, payload.exactCount(0));
+				assertEquals(11L, payload.exactTermId(0, 0, 0));
+				assertEquals(3.0d, payload.exactWeight(0, 0));
+			}
+		}
+	}
+
+	@Test
+	void exactDistinctCoalescesMappingsAndResetsBagMultiplicity() {
+		FrontierLayout layout = FrontierLayout.of("x");
+		FrontierMaskStrata masks = FrontierMaskStrata.of(layout, 1, new long[] { 1L });
+		FrontierStateKey inputKey = key(0b001L, masks);
+		FrontierStateKey outputKey = key(0b011L, masks);
+		try (FrontierStateArena arena = new FrontierStateArena(128 * 1024L)) {
+			arena.declareCanonicalStates(inputKey, outputKey);
+			EvidenceStateRef input;
+			try (FrontierPayloadWriter writer = arena.newPayloadWriter(inputKey, new int[] { 2 }, new int[] { 0 })) {
+				writer.putExact(0, 0, 2.0d, new long[] { 11L }, 0);
+				writer.putExact(0, 1, 3.0d, new long[] { 12L }, 0);
+				input = arena.internPayload(inputKey, EvidenceStateSummary.exact(5.0d),
+						FrontierStateOperation.EXACT_LEAF, null, null, 1, writer);
+			}
+
+			EvidenceStateRef distinct = FrontierLinearTransforms.distinct(arena, input, outputKey, 2);
+
+			assertEquals(EvidenceStateSummary.exact(2.0d), distinct.summary());
+			assertEquals(FrontierStateOperation.DISTINCT, arena.operation(distinct));
+			assertEquals(input, arena.parent(distinct, 0));
+			try (FrontierPayloadLease payload = arena.openPayload(distinct)) {
+				assertEquals(2, payload.exactCount(0));
+				assertEquals(1.0d, payload.exactWeight(0, 0));
+				assertEquals(1.0d, payload.exactWeight(0, 1));
+			}
+		}
 	}
 
 	@Test
@@ -335,6 +451,99 @@ class FrontierLinearTransformContractTest {
 				assertEquals(1.5d, payload.residualWeight(0, 1), 1e-12);
 			}
 			assertEquals(0L, arena.temporaryReservedBytes());
+		}
+	}
+
+	@Test
+	void zeroProbeBudgetRetainsOuterTupleSupportAsBoundOnlyEvidence() {
+		FrontierLayout layout = FrontierLayout.of("x");
+		FrontierMaskStrata masks = FrontierMaskStrata.of(layout, 1, new long[] { 1L });
+		FrontierStateKey inputKey = key(0b0001L, masks);
+		FrontierStateKey outputKey = key(0b0011L, masks);
+		int[] probes = { 0 };
+
+		try (FrontierStateArena arena = new FrontierStateArena(256 * 1024L)) {
+			arena.declareCanonicalStates(inputKey, outputKey);
+			FrontierPayloadWriter inputWriter = arena.newPayloadWriter(
+					inputKey, new int[] { 2 }, new int[] { 0 });
+			inputWriter.putExact(0, 0, 1.0d, new long[] { 11L }, 0);
+			inputWriter.putExact(0, 1, 1.0d, new long[] { 12L }, 0);
+			EvidenceStateRef input = arena.internPayload(
+					inputKey,
+					EvidenceStateSummary.exact(2.0d),
+					FrontierStateOperation.EXACT_LEAF,
+					null,
+					null,
+					50,
+					inputWriter);
+
+			EvidenceStateRef output = FrontierLinearTransforms.resolveProjectedOuterKernel(
+					arena,
+					input,
+					outputKey,
+					51,
+					FrontierOuterKernel.NOT_EXISTS,
+					(payload, exact, stratum, index) -> {
+						probes[0]++;
+						return 0L;
+					},
+					0,
+					1.0d);
+
+			assertEquals(0, probes[0]);
+			assertEquals(FrontierStateDisposition.BOUND_ONLY, arena.disposition(output));
+			assertEquals(EvidenceGuarantee.UNRESOLVED, output.summary().guarantee());
+			assertEquals(FrontierPayloadStatus.RESIDENT, arena.payloadStatus(output));
+			try (FrontierPayloadLease payload = arena.openPayload(output)) {
+				assertEquals(2, payload.exactCount(0));
+				assertEquals(11L, payload.exactTermId(0, 0, 0));
+				assertEquals(12L, payload.exactTermId(0, 1, 0));
+			}
+		}
+	}
+
+	@Test
+	void zeroProbeBudgetSupportSurvivesDetachedRoundTrip() {
+		FrontierLayout layout = FrontierLayout.of("x");
+		FrontierMaskStrata masks = FrontierMaskStrata.of(layout, 1, new long[] { 1L });
+		FrontierStateKey inputKey = key(0b0001L, masks);
+		FrontierStateKey outputKey = key(0b0011L, masks);
+		FrontierEvidenceBundle bundle;
+
+		try (FrontierStateArena source = new FrontierStateArena(256 * 1024L)) {
+			source.declareCanonicalStates(inputKey, outputKey);
+			FrontierPayloadWriter inputWriter = source.newPayloadWriter(
+					inputKey, new int[] { 1 }, new int[] { 0 });
+			inputWriter.putExact(0, 0, 2.0d, new long[] { 17L }, 0);
+			EvidenceStateRef input = source.internPayload(
+					inputKey,
+					EvidenceStateSummary.exact(2.0d),
+					FrontierStateOperation.EXACT_LEAF,
+					null,
+					null,
+					60,
+					inputWriter);
+			EvidenceStateRef output = FrontierLinearTransforms.resolveProjectedOuterKernel(
+					source,
+					input,
+					outputKey,
+					61,
+					FrontierOuterKernel.EXISTS,
+					(payload, exact, stratum, index) -> fail("zero budget must not execute the probe"),
+					0,
+					1.0d);
+			bundle = source.exportEvidence(new int[] { output.stateId() });
+		}
+
+		try (FrontierStateArena target = new FrontierStateArena(256 * 1024L)) {
+			EvidenceStateRef imported = target.importEvidence(bundle)[0];
+
+			assertEquals(FrontierStateDisposition.BOUND_ONLY, target.disposition(imported));
+			assertEquals(FrontierPayloadStatus.RESIDENT, target.payloadStatus(imported));
+			try (FrontierPayloadLease payload = target.openPayload(imported)) {
+				assertEquals(1, payload.exactCount(0));
+				assertEquals(17L, payload.exactTermId(0, 0, 0));
+			}
 		}
 	}
 

@@ -25,6 +25,11 @@ import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.InputBindingContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreeToGenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -72,6 +77,27 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 
 	public static LmdbBenchmarkQueryPlan prepare(LmdbStore store, SailRepositoryConnection connection, String query,
 			int maxExecutionTimeSeconds, boolean captureOptimizedPlan) {
+		return prepare(store, connection, query, maxExecutionTimeSeconds, captureOptimizedPlan, true);
+	}
+
+	public static LmdbBenchmarkQueryPlan prepareWrittenOrder(LmdbStore store, SailRepositoryConnection connection,
+			String query, int maxExecutionTimeSeconds) {
+		return prepare(store, connection, query, maxExecutionTimeSeconds, true, false);
+	}
+
+	public static LmdbBenchmarkQueryPlan prepareExactSequence(LmdbStore store, SailRepositoryConnection connection,
+			String query, int maxExecutionTimeSeconds) {
+		return prepare(store, connection, query, maxExecutionTimeSeconds, true, OptimizationMode.EXACT_SEQUENCE);
+	}
+
+	private static LmdbBenchmarkQueryPlan prepare(LmdbStore store, SailRepositoryConnection connection, String query,
+			int maxExecutionTimeSeconds, boolean captureOptimizedPlan, boolean optimize) {
+		return prepare(store, connection, query, maxExecutionTimeSeconds, captureOptimizedPlan,
+				optimize ? OptimizationMode.NORMAL : OptimizationMode.NONE);
+	}
+
+	private static LmdbBenchmarkQueryPlan prepare(LmdbStore store, SailRepositoryConnection connection, String query,
+			int maxExecutionTimeSeconds, boolean captureOptimizedPlan, OptimizationMode optimizationMode) {
 		SailTupleQuery tupleQuery = connection.prepareTupleQuery(QueryLanguage.SPARQL, query, null);
 		tupleQuery.setIncludeInferred(false);
 		tupleQuery.setMaxExecutionTime(maxExecutionTimeSeconds);
@@ -86,14 +112,21 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 		try {
 			branch = sailStore.getExplicitSailSource().fork();
 			dataset = branch.dataset(store.getDefaultIsolationLevel());
+			SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(sailStore.getValueFactory(),
+					dataset);
 			EvaluationStrategy strategy = store.getEvaluationStrategyFactory()
 					.createEvaluationStrategy(tupleQuery.getActiveDataset(),
-							new SailDatasetTripleTermSource(sailStore.getValueFactory(), dataset),
+							tripleSource,
 							sailStore.getEvaluationStatistics());
 			TupleExpr optimizationInput = tupleExpr;
 			OptimizedQuery optimizedQuery = withCascadesOptimizationTimeout(maxExecutionTimeSeconds, () -> {
-				TupleExpr optimized = strategy.optimize(optimizationInput, sailStore.getEvaluationStatistics(),
+				TupleExpr optimized = switch (optimizationMode) {
+				case NORMAL -> strategy.optimize(optimizationInput, sailStore.getEvaluationStatistics(),
 						tupleQuery.getBindings());
+				case EXACT_SEQUENCE -> optimizeExactSequence(strategy, tripleSource,
+						sailStore.getEvaluationStatistics(), optimizationInput, tupleQuery);
+				case NONE -> optimizationInput;
+				};
 				QueryEvaluationStep evaluationStep = strategy.precompile(optimized);
 				return new OptimizedQuery(optimized, evaluationStep);
 			});
@@ -116,6 +149,25 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 			closeQuietly(branch);
 			throw e;
 		}
+	}
+
+	private static TupleExpr optimizeExactSequence(EvaluationStrategy strategy,
+			SailDatasetTripleTermSource tripleSource,
+			EvaluationStatistics statistics, TupleExpr tupleExpr, SailTupleQuery tupleQuery) {
+		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource, statistics)
+				.getOptimizers()) {
+			if (optimizer instanceof LmdbCascadesOptimizer cascades) {
+				PhysicalProperties required = PhysicalProperties.builder()
+						.boundVars(tupleQuery.getBindings().getBindingNames())
+						.observationOrder(PhysicalProperties.ObservationOrder.EXACT_SEQUENCE)
+						.build();
+				OptimizationGoal goal = OptimizationGoal.root(tupleExpr, required)
+						.withInputBindingContext(InputBindingContext.fromBindingSet(tupleQuery.getBindings()));
+				return cascades.planPreparedInput(tupleExpr, goal).tupleExpr();
+			}
+			optimizer.optimize(tupleExpr, tupleQuery.getActiveDataset(), tupleQuery.getBindings());
+		}
+		throw new IllegalStateException("LMDB optimizer pipeline did not contain the Cascades optimizer");
 	}
 
 	public static <T> T withCascadesOptimizationTimeout(int maxExecutionTimeSeconds, Supplier<T> supplier) {
@@ -206,6 +258,12 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 	}
 
 	private record OptimizedQuery(TupleExpr tupleExpr, QueryEvaluationStep evaluationStep) {
+	}
+
+	private enum OptimizationMode {
+		NORMAL,
+		EXACT_SEQUENCE,
+		NONE
 	}
 
 	private static String optimizedDiagnostics(TupleExpr optimized) {

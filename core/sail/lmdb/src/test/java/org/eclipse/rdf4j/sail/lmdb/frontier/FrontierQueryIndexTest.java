@@ -57,6 +57,11 @@ class FrontierQueryIndexTest {
 						0L, 101L, 0L, 0L, false, 0);
 				assertEquals(2L, lease.candidateRows(predicate));
 				assertEquals(2L, lease.countMatches(predicate));
+				assertEquals(2L, lease.visitMatches(predicate, (subject, ignoredPredicate, object, context,
+						weight) -> {
+				}));
+				assertEquals(1, lease.preparedProbeCount(),
+						"one query lease must reuse the exact prepared range for an identical selector and scope");
 			}
 		}
 	}

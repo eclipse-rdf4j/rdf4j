@@ -81,6 +81,168 @@ public final class PackedCostTestSupport {
 		return new CostCall(view, context, factorRelationId);
 	}
 
+	public static PairCostCall connectedStatementFactors(StatementPattern prefix, StatementPattern factor) {
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(new Join(prefix, factor));
+		PackedQueryView view = new PackedQueryView(query);
+		Value prefixPredicate = prefix.getPredicateVar().getValue();
+		Value factorPredicate = factor.getPredicateVar().getValue();
+		int prefixRelationId = 0;
+		int factorRelationId = 0;
+		for (int relationId = 1; relationId <= view.relationCount(); relationId++) {
+			if (!view.isStatementPattern(relationId)) {
+				continue;
+			}
+			Value predicate = view.statementPatternValue(relationId, 1);
+			if (prefixPredicate.equals(predicate)) {
+				prefixRelationId = relationId;
+			} else if (factorPredicate.equals(predicate)) {
+				factorRelationId = relationId;
+			}
+		}
+		if (prefixRelationId == 0 || factorRelationId == 0) {
+			throw new AssertionError("Packed test fixture lost its connected statement factors");
+		}
+		return new PairCostCall(view, prefixRelationId, factorRelationId);
+	}
+
+	public static FilteredPairCostCall filteredConnectedStatementFactors(Filter prefix, StatementPattern factor) {
+		if (!(prefix.getArg()instanceof StatementPattern prefixStatement)) {
+			throw new IllegalArgumentException("Filtered packed test prefix must wrap one statement pattern");
+		}
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(new Join(prefix, factor));
+		PackedQueryView view = new PackedQueryView(query);
+		Value prefixPredicate = prefixStatement.getPredicateVar().getValue();
+		Value factorPredicate = factor.getPredicateVar().getValue();
+		int prefixStatementRelationId = 0;
+		int filterRelationId = 0;
+		int factorRelationId = 0;
+		for (int relationId = 1; relationId <= view.relationCount(); relationId++) {
+			if (view.isFilter(relationId)) {
+				filterRelationId = relationId;
+			} else if (view.isStatementPattern(relationId)) {
+				Value predicate = view.statementPatternValue(relationId, 1);
+				if (prefixPredicate.equals(predicate)) {
+					prefixStatementRelationId = relationId;
+				} else if (factorPredicate.equals(predicate)) {
+					factorRelationId = relationId;
+				}
+			}
+		}
+		if (prefixStatementRelationId == 0 || filterRelationId == 0 || factorRelationId == 0) {
+			throw new AssertionError("Packed test fixture lost its filtered connected statement factors");
+		}
+		return new FilteredPairCostCall(view, prefixStatementRelationId, filterRelationId, factorRelationId);
+	}
+
+	public static StatementFactorChainCostCall statementFactorChain(BindingSetAssignment bindings,
+			StatementPattern... factors) {
+		if (factors.length == 0) {
+			throw new IllegalArgumentException("Packed statement-factor chain requires at least one factor");
+		}
+		TupleExpr expression = bindings;
+		for (StatementPattern factor : factors) {
+			expression = new Join(expression, factor);
+		}
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(expression);
+		PackedQueryView view = new PackedQueryView(query);
+		int bindingRelationId = 0;
+		int[] factorRelationIds = new int[factors.length];
+		for (int relationId = 1; relationId <= view.relationCount(); relationId++) {
+			if (view.isBindingSetAssignment(relationId)) {
+				bindingRelationId = relationId;
+				continue;
+			}
+			if (!view.isStatementPattern(relationId)) {
+				continue;
+			}
+			Value predicate = view.statementPatternValue(relationId, 1);
+			for (int factorOrdinal = 0; factorOrdinal < factors.length; factorOrdinal++) {
+				if (predicate.equals(factors[factorOrdinal].getPredicateVar().getValue())) {
+					if (factorRelationIds[factorOrdinal] != 0) {
+						throw new AssertionError("Packed statement-factor fixture requires distinct predicates");
+					}
+					factorRelationIds[factorOrdinal] = relationId;
+				}
+			}
+		}
+		if (bindingRelationId == 0) {
+			throw new AssertionError("Packed statement-factor fixture lost its binding assignment");
+		}
+		for (int factorRelationId : factorRelationIds) {
+			if (factorRelationId == 0) {
+				throw new AssertionError("Packed statement-factor fixture lost a statement factor");
+			}
+		}
+		return new StatementFactorChainCostCall(view, bindingRelationId, factorRelationIds);
+	}
+
 	public record CostCall(PackedQueryView query, PackedCostContext context, int factorRelationId) {
+	}
+
+	public record PairCostCall(PackedQueryView query, int prefixRelationId, int factorRelationId) {
+
+		public PackedCostContext emptyContext() {
+			return new PackedCostContext();
+		}
+
+		public PackedCostContext prefixContext(double prefixRows, int evidenceStateId) {
+			PackedCostContext context = new PackedCostContext();
+			context.reset(new int[] { prefixRelationId }, 0, 1, prefixRows, evidenceStateId);
+			return context;
+		}
+	}
+
+	public record FilteredPairCostCall(PackedQueryView query, int prefixStatementRelationId, int filterRelationId,
+			int factorRelationId) {
+
+		public PackedCostContext emptyContext() {
+			return new PackedCostContext();
+		}
+
+		public PackedCostContext filterContext(double inputRows, int inputEvidenceStateId) {
+			PackedCostContext context = new PackedCostContext();
+			context.reset(new int[0], 0, 0, inputRows, inputEvidenceStateId);
+			context.setOperatorInputs(inputRows, Double.NaN, inputEvidenceStateId, 0);
+			return context;
+		}
+
+		public PackedCostContext prefixContext(double prefixRows, int evidenceStateId) {
+			PackedCostContext context = new PackedCostContext();
+			context.reset(new int[] { filterRelationId }, 0, 1, prefixRows, evidenceStateId);
+			return context;
+		}
+	}
+
+	public record StatementFactorChainCostCall(PackedQueryView query, int bindingRelationId,
+			int[] factorRelationIds) {
+
+		public StatementFactorChainCostCall {
+			factorRelationIds = factorRelationIds.clone();
+		}
+
+		@Override
+		public int[] factorRelationIds() {
+			return factorRelationIds.clone();
+		}
+
+		public int factorRelationId(int ordinal) {
+			return factorRelationIds[ordinal];
+		}
+
+		public PackedCostContext emptyContext() {
+			return new PackedCostContext();
+		}
+
+		public PackedCostContext prefixContext(int prefixFactorCount, double prefixRows, int evidenceStateId) {
+			if (prefixFactorCount < 0 || prefixFactorCount > factorRelationIds.length) {
+				throw new IndexOutOfBoundsException("invalid packed statement-factor prefix length");
+			}
+			int[] prefixRelationIds = new int[prefixFactorCount + 1];
+			prefixRelationIds[0] = bindingRelationId;
+			System.arraycopy(factorRelationIds, 0, prefixRelationIds, 1, prefixFactorCount);
+			PackedCostContext context = new PackedCostContext();
+			context.reset(prefixRelationIds, 0, prefixRelationIds.length, prefixRows, evidenceStateId);
+			return context;
+		}
 	}
 }

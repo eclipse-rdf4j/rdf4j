@@ -4,7 +4,7 @@
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
+ * http://www.eclipse.org/documents/edl-v10.php.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
@@ -13,714 +13,129 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import java.util.Arrays;
 
-/** Re-costs only the selected winner DAG under the input context delivered by its physical prefix. */
+/** Verifies the selected winner graph and assembles dependent-plan links without invoking an estimator. */
 @PackedHotPath
 final class PackedSelectedPlanContextualizer {
 
-	private static final int CONTEXTUAL_COST_POLICY = 1;
-
 	private final PackedQuery query;
 	private final PackedMemo memo;
-	private final PackedSearchBudget budget;
-	private final PackedCostSession costSession;
-	private final PackedQueryView queryView;
-	private final PackedPrefixRowComposition rowComposition;
 	private final double[] selectedRowsByGroup;
 	private final PackedDependentPlans dependentPlans = new PackedDependentPlans();
-	private final int prefixStride;
-	private final int[] prefixRelations;
-	private final int[] dependentPrefixRelations;
-	private final double[] dependentPrefixContributionRows;
-	private final double[] prefixLeafRows;
-	private final int[] prefixLeafRelationIds;
-	private final int[] componentParents;
-	private final boolean[] componentConsumed;
-	private final int[] childWinnerScratch;
-	private final int[] physicalChildGroupScratch = new int[2];
-	private final int childStride;
-	private final int[] winnerByDepth;
-	private final int[] evidenceStateByDepth;
-	private final double[] rowsByDepth;
-	private final double[] costsByDepth;
-	private final PackedCostContext costContext = new PackedCostContext();
-	private final PackedCostEstimate costEstimate = new PackedCostEstimate();
-	private final PackedCostEstimate selectedPhysicalCost = new PackedCostEstimate();
-	private int workUnits;
+	private int[] winnerStack;
+	private int[] prefixRelations;
+	private int stackSize;
+	private double rootRows;
 
 	PackedSelectedPlanContextualizer(PackedQuery query, PackedMemo memo, PackedSearchBudget budget,
-			PackedCostModel costModel,
-			double[] selectedRowsByGroup) {
-		this(query, memo, budget,
-				costModel == null ? null : PackedCostSession.scalar(costModel, new PackedQueryView(query)),
-				selectedRowsByGroup);
+			PackedCostModel costModel, double[] selectedRowsByGroup) {
+		this(query, memo, selectedRowsByGroup);
 	}
 
-	private PackedSelectedPlanContextualizer(PackedQuery query, PackedMemo memo, PackedSearchBudget budget,
-			PackedCostSession costSession,
-			double[] selectedRowsByGroup) {
+	private PackedSelectedPlanContextualizer(PackedQuery query, PackedMemo memo, double[] selectedRowsByGroup) {
 		this.query = query;
 		this.memo = memo;
-		this.budget = budget;
-		this.costSession = costSession;
 		this.selectedRowsByGroup = selectedRowsByGroup;
-		queryView = new PackedQueryView(query);
-		rowComposition = new PackedPrefixRowComposition(query);
-		prefixStride = Math.max(1, query.relationCount() + 1);
-		int depthCapacity = query.relationCount() + 2;
-		prefixRelations = new int[depthCapacity * prefixStride];
-		dependentPrefixRelations = new int[Math.max(2, query.relationCount() * 2 + 2)];
-		dependentPrefixContributionRows = new double[dependentPrefixRelations.length];
-		prefixLeafRows = new double[prefixRelations.length];
-		prefixLeafRelationIds = new int[prefixRelations.length];
-		componentParents = new int[prefixStride];
-		componentConsumed = new boolean[prefixStride];
-		childStride = maximumChildCount(query);
-		childWinnerScratch = new int[depthCapacity * childStride];
-		winnerByDepth = new int[depthCapacity];
-		evidenceStateByDepth = new int[depthCapacity];
-		rowsByDepth = new double[depthCapacity];
-		costsByDepth = new double[depthCapacity];
+		int initialCapacity = Math.max(4, query.relationCount() + 1);
+		winnerStack = new int[initialCapacity];
+		prefixRelations = new int[Math.max(2, query.relationCount() * 2 + 2)];
 	}
 
 	static PackedSelectedPlanContextualizer forSession(PackedQuery query, PackedMemo memo, PackedSearchBudget budget,
 			PackedCostSession costSession, double[] selectedRowsByGroup) {
-		return new PackedSelectedPlanContextualizer(query, memo, budget, costSession, selectedRowsByGroup);
+		return new PackedSelectedPlanContextualizer(query, memo, selectedRowsByGroup);
 	}
 
 	int contextualize(int rootWinnerId) {
-		visit(rootWinnerId, 0, 0, 1.0d, 0, 0, 0);
-		selectedRowsByGroup[memo.winnerGroupId(rootWinnerId)] = rowsByDepth[0];
-		return winnerByDepth[0];
+		memo.winnerPhysicalExpressionId(rootWinnerId);
+		rootRows = memo.winnerOutputRows(rootWinnerId);
+		selectedRowsByGroup[memo.winnerGroupId(rootWinnerId)] = rootRows;
+		stackSize = 0;
+		push(rootWinnerId);
+		while (stackSize != 0) {
+			int winnerId = winnerStack[--stackSize];
+			int physicalExpressionId = memo.winnerPhysicalExpressionId(winnerId);
+			int operator = memo.physicalOperatorTag(physicalExpressionId);
+			int childCount = memo.winnerChildCount(winnerId);
+			if (isFilterOperator(operator) && childCount == 1) {
+				assembleDependentPlans(winnerId, physicalExpressionId,
+						memo.winnerChildWinnerId(winnerId, 0));
+			}
+			for (int ordinal = childCount - 1; ordinal >= 0; ordinal--) {
+				push(memo.winnerChildWinnerId(winnerId, ordinal));
+			}
+		}
+		return rootWinnerId;
 	}
 
 	int workUnits() {
-		return workUnits;
+		return 0;
 	}
 
 	double rootRows() {
-		return rowsByDepth[0];
+		return rootRows;
 	}
 
 	PackedDependentPlans dependentPlans() {
 		return dependentPlans;
 	}
 
-	private void visit(int winnerId, int prefixOffset, int prefixCount, double prefixRows, int prefixEvidenceStateId,
-			int inheritedBindingRelationId, int depth) {
+	private void assembleDependentPlans(int ownerWinnerId, int physicalExpressionId, int inputWinnerId) {
+		int prefixCount = appendFactors(inputWinnerId, 0);
+		int inputContextId = prefixCount == 0 ? 0 : memo.internSequence(prefixRelations, 0, prefixCount);
+		int conditionId = physicalFilterConditionId(physicalExpressionId,
+				memo.physicalOperatorTag(physicalExpressionId));
+		collectDependentPlans(ownerWinnerId, conditionId, inputContextId);
+	}
+
+	private void collectDependentPlans(int ownerWinnerId, int scalarId, int inputContextId) {
+		if (scalarId == 0) {
+			return;
+		}
+		if (query.scalarOperator(scalarId) == PackedScalarOp.EXISTS) {
+			int subqueryPayloadId = query.scalarPayload(scalarId);
+			if (query.payloadOperator(subqueryPayloadId) == PackedPayloadOp.SUBQUERY_VALUE
+					&& query.payloadChildCount(subqueryPayloadId) == 1) {
+				int subqueryRelationId = query.payloadChild(subqueryPayloadId, 0);
+				int groupId = memo.logicalGroupId(subqueryRelationId);
+				int dependentWinnerId = memo.dependentPlanWinnerId(ownerWinnerId, subqueryPayloadId);
+				if (dependentWinnerId == 0) {
+					dependentWinnerId = inputContextId == 0
+							? 0
+							: memo.findWinner(groupId, memo.anyPropertyId(), 0, inputContextId, 0);
+				}
+				if (dependentWinnerId == 0) {
+					dependentWinnerId = memo.findWinner(groupId, memo.anyPropertyId(), 0, 0, 0);
+				}
+				if (dependentWinnerId == 0) {
+					throw new PackedMemoInvariantException(
+							"embedded subquery " + subqueryRelationId + " has no costed winner");
+				}
+				dependentPlans.put(ownerWinnerId, subqueryPayloadId, dependentWinnerId);
+				push(dependentWinnerId);
+			}
+		}
+		for (int ordinal = 0; ordinal < query.scalarChildCount(scalarId); ordinal++) {
+			collectDependentPlans(ownerWinnerId, query.scalarChild(scalarId, ordinal), inputContextId);
+		}
+	}
+
+	private int appendFactors(int winnerId, int start) {
 		int physicalExpressionId = memo.winnerPhysicalExpressionId(winnerId);
 		int operator = memo.physicalOperatorTag(physicalExpressionId);
-		int childCount = memo.winnerChildCount(winnerId);
-		boolean scopeBarrier = isScopeBarrier(physicalExpressionId, operator);
-		int localPrefixOffset = scopeBarrier ? (depth + 1) * prefixStride : prefixOffset;
-		int localPrefixCount = scopeBarrier ? 0 : prefixCount;
-		double localPrefixRows = scopeBarrier ? 1.0d : prefixRows;
-		int localPrefixEvidenceStateId = scopeBarrier ? 0 : prefixEvidenceStateId;
-		int localAssuredBindingRelationId = scopeBarrier ? 0 : inheritedBindingRelationId;
-		int childOffset = depth * childStride;
-		double rows;
-		double cost;
-		double leftInputRows = Double.NaN;
-		double rightInputRows = Double.NaN;
-		int leftInputEvidenceStateId = 0;
-		int rightInputEvidenceStateId = 0;
-		double childWorkFloor = 0.0d;
-		int evidenceStateId;
-		boolean contextualProbeJoin = false;
-
-		if (operator == PackedRelOp.JOIN && childCount == 2) {
-			boolean independentHashJoin = memo
-					.physicalImplementationForm(physicalExpressionId) == PackedJoinEnumerator.HASH_JOIN_IMPLEMENTATION;
-			if (independentHashJoin
-					&& inheritedContextAssuresJoinBinding(physicalExpressionId, localPrefixOffset, localPrefixCount,
-							localAssuredBindingRelationId)) {
-				physicalExpressionId = nestedLoopAlternative(winnerId, physicalExpressionId);
-				independentHashJoin = false;
-				contextualProbeJoin = true;
-			}
-			int leftWinnerId = memo.winnerChildWinnerId(winnerId, 0);
-			visit(leftWinnerId, localPrefixOffset, localPrefixCount, localPrefixRows,
-					localPrefixEvidenceStateId, localAssuredBindingRelationId, depth + 1);
-			int contextualLeft = winnerByDepth[depth + 1];
-			int leftEvidenceStateId = evidenceStateByDepth[depth + 1];
-			leftInputEvidenceStateId = leftEvidenceStateId;
-			double leftRows = rowsByDepth[depth + 1];
-			leftInputRows = leftRows;
-			double leftCost = costsByDepth[depth + 1];
-			int rightPrefixCount = independentHashJoin
-					? localPrefixCount
-					: appendFactors(contextualLeft, localPrefixOffset, localPrefixCount);
-			double rightPrefixRows = independentHashJoin ? localPrefixRows : leftRows;
-			int rightWinnerId = memo.winnerChildWinnerId(winnerId, 1);
-			visit(rightWinnerId, localPrefixOffset, rightPrefixCount, rightPrefixRows,
-					independentHashJoin ? localPrefixEvidenceStateId : leftEvidenceStateId,
-					localAssuredBindingRelationId, depth + 1);
-			rightInputRows = rowsByDepth[depth + 1];
-			rightInputEvidenceStateId = evidenceStateByDepth[depth + 1];
-			childWinnerScratch[childOffset] = contextualLeft;
-			childWinnerScratch[childOffset + 1] = winnerByDepth[depth + 1];
-			rows = independentHashJoin ? hashJoinRows(winnerId, leftRows) : rowsByDepth[depth + 1];
-			childWorkFloor = saturatedAdd(leftCost, costsByDepth[depth + 1], 0.0d);
-			cost = saturatedAdd(childWorkFloor, rows, 0.0d);
-			/*
-			 * A hash join does not pass its left rows as execution-time bindings to its right child, but that physical
-			 * distinction does not invalidate the query-local evidence state selected for the logical join. Retain the
-			 * winner's state as the candidate for operator refinement. In particular, an outer selected-plan hash join
-			 * may have hash-join children whose contextual traversal cannot reconstruct a prefix state from execution
-			 * order alone; dropping the memo state here would make every later bridge degrade with
-			 * join_child_state_unavailable.
-			 */
-			evidenceStateId = independentHashJoin
-					? winnerEvidenceStateId(winnerId)
-					: evidenceStateByDepth[depth + 1];
-		} else if (operator == PackedRelOp.UNION && childCount == 2) {
-			int leftWinnerId = memo.winnerChildWinnerId(winnerId, 0);
-			visit(leftWinnerId, localPrefixOffset, localPrefixCount, localPrefixRows,
-					localPrefixEvidenceStateId, localAssuredBindingRelationId, depth + 1);
-			int contextualLeft = winnerByDepth[depth + 1];
-			double leftRows = rowsByDepth[depth + 1];
-			leftInputEvidenceStateId = evidenceStateByDepth[depth + 1];
-			leftInputRows = leftRows;
-			double leftCost = costsByDepth[depth + 1];
-			int rightWinnerId = memo.winnerChildWinnerId(winnerId, 1);
-			visit(rightWinnerId, localPrefixOffset, localPrefixCount, localPrefixRows,
-					localPrefixEvidenceStateId, localAssuredBindingRelationId, depth + 1);
-			double rightRows = rowsByDepth[depth + 1];
-			rightInputEvidenceStateId = evidenceStateByDepth[depth + 1];
-			rightInputRows = rightRows;
-			childWinnerScratch[childOffset] = contextualLeft;
-			childWinnerScratch[childOffset + 1] = winnerByDepth[depth + 1];
-			rows = saturatedAdd(leftRows, rightRows, 0.0d);
-			childWorkFloor = saturatedAdd(leftCost, costsByDepth[depth + 1], 0.0d);
-			double incumbentInputRows = combinedRows(memo.winnerOutputRows(leftWinnerId),
-					memo.winnerOutputRows(rightWinnerId));
-			cost = saturatedAdd(childWorkFloor,
-					wrapperLocalWork(winnerId, rows, rows, incumbentInputRows), 0.0d);
-			evidenceStateId = 0;
-		} else if (operator == PackedRelOp.LEFT_JOIN && childCount == 2) {
-			int leftWinnerId = memo.winnerChildWinnerId(winnerId, 0);
-			visit(leftWinnerId, localPrefixOffset, localPrefixCount, localPrefixRows,
-					localPrefixEvidenceStateId, localAssuredBindingRelationId, depth + 1);
-			int contextualLeft = winnerByDepth[depth + 1];
-			int leftEvidenceStateId = evidenceStateByDepth[depth + 1];
-			leftInputEvidenceStateId = leftEvidenceStateId;
-			double leftRows = rowsByDepth[depth + 1];
-			leftInputRows = leftRows;
-			double leftCost = costsByDepth[depth + 1];
-			int rightPrefixCount = localPrefixCount;
-			if (assuresAllFactorOutputs(contextualLeft)) {
-				rightPrefixCount = appendFactors(contextualLeft, localPrefixOffset, localPrefixCount);
-			}
-			int rightWinnerId = memo.winnerChildWinnerId(winnerId, 1);
-			int rightBindingRelationId = sourceQueryRelationId(
-					memo.winnerPhysicalExpressionId(contextualLeft));
-			if (rightBindingRelationId == 0) {
-				rightBindingRelationId = localAssuredBindingRelationId;
-			}
-			visit(rightWinnerId, localPrefixOffset, rightPrefixCount, leftRows,
-					rightPrefixCount == localPrefixCount ? localPrefixEvidenceStateId : leftEvidenceStateId,
-					rightBindingRelationId, depth + 1);
-			rightInputRows = rowsByDepth[depth + 1];
-			rightInputEvidenceStateId = evidenceStateByDepth[depth + 1];
-			childWinnerScratch[childOffset] = contextualLeft;
-			childWinnerScratch[childOffset + 1] = winnerByDepth[depth + 1];
-			rows = wrapperRows(winnerId, leftRows);
-			childWorkFloor = saturatedAdd(leftCost, costsByDepth[depth + 1], 0.0d);
-			/*
-			 * LEFT JOIN local work is driven by the rows it emits (which also lower-bounds the number of left-side
-			 * probes), not solely by its left input. Contextualizing the OPTIONAL can collapse an incumbent
-			 * many-to-many fanout while leaving the left row count unchanged, so scaling by the left input would retain
-			 * the stale fanout cost.
-			 */
-			cost = saturatedAdd(childWorkFloor,
-					wrapperLocalWork(winnerId, rows, rows, memo.winnerOutputRows(winnerId)), 0.0d);
-			evidenceStateId = 0;
-		} else if (childCount == 0) {
-			rows = leafRows(winnerId, physicalExpressionId, localPrefixOffset, localPrefixCount, localPrefixRows,
-					localPrefixEvidenceStateId, localAssuredBindingRelationId);
-			cost = leafWork(winnerId, rows);
-			evidenceStateId = costEstimate.evidenceStateId();
-		} else {
-			double childCost = 0.0d;
-			double firstChildRows = Double.NaN;
+		if (!isScopeBarrier(physicalExpressionId, operator)
+				&& (operator == PackedRelOp.JOIN || operator == PackedRelOp.LATERAL)) {
+			int childCount = memo.winnerChildCount(winnerId);
 			for (int ordinal = 0; ordinal < childCount; ordinal++) {
-				visit(memo.winnerChildWinnerId(winnerId, ordinal), localPrefixOffset, localPrefixCount,
-						localPrefixRows, localPrefixEvidenceStateId, localAssuredBindingRelationId, depth + 1);
-				childWinnerScratch[childOffset + ordinal] = winnerByDepth[depth + 1];
-				childCost = saturatedAdd(childCost, costsByDepth[depth + 1], 0.0d);
-				if (ordinal == 0) {
-					firstChildRows = rowsByDepth[depth + 1];
-					leftInputRows = firstChildRows;
-					leftInputEvidenceStateId = evidenceStateByDepth[depth + 1];
-				} else if (ordinal == 1) {
-					rightInputRows = rowsByDepth[depth + 1];
-					rightInputEvidenceStateId = evidenceStateByDepth[depth + 1];
-				}
-			}
-			rows = operator == PackedRelOp.GROUP
-					? groupRows(physicalExpressionId, firstChildRows, wrapperRows(winnerId, firstChildRows))
-					: wrapperRows(winnerId, firstChildRows);
-			childWorkFloor = childCost;
-			cost = saturatedAdd(childCost, wrapperLocalWork(winnerId, rows, firstChildRows), 0.0d);
-			evidenceStateId = childCount == 1 ? evidenceStateByDepth[depth + 1] : 0;
-		}
-
-		if (childCount != 0) {
-			int incumbentMetadataId = memo.winnerPhysicalMetadataId(winnerId);
-			String incumbentEstimateSource = incumbentMetadataId == 0
-					? null
-					: (String) memo.physicalMetadataEstimateSource(incumbentMetadataId);
-			String incumbentEstimateFusion = incumbentMetadataId == 0
-					? null
-					: (String) memo.physicalMetadataEstimateFusion(incumbentMetadataId);
-			selectedPhysicalCost.clear();
-			if (incumbentMetadataId != 0) {
-				memo.restorePhysicalMetadataCost(incumbentMetadataId, selectedPhysicalCost);
-			}
-			costEstimate.clear();
-			costEstimate.setRows(rows, Math.max(1.0d, cost));
-			costEstimate.setEvidenceStateId(evidenceStateId);
-			costEstimate.setEstimateProvenance(incumbentEstimateSource, incumbentEstimateFusion);
-			restoreIncumbentPlannedMetrics(incumbentMetadataId);
-			if (contextualProbeJoin) {
-				costEstimate.putPlannedStringMetric("optimizer.joinAlgorithmContext", "inherited-binding-probe");
-			}
-			int relationId = sourceQueryRelationId(physicalExpressionId);
-			int refinementRelationId = refinementRelationId(relationId, operator);
-			if (refinementRelationId != 0) {
-				if (physicalShapeDiffersFromSource(refinementRelationId, operator, childCount)) {
-					leftInputRows = canonicalChildWinnerRows(refinementRelationId, 0, leftInputRows);
-					rightInputRows = canonicalChildWinnerRows(refinementRelationId, 1, rightInputRows);
-				}
-				costContext.reset(prefixRelations, localPrefixOffset, localPrefixCount, localPrefixRows,
-						evidenceStateId);
-				costContext.setAssuredBindingRelationId(localAssuredBindingRelationId);
-				costContext.setOperatorInputs(leftInputRows, rightInputRows,
-						leftInputEvidenceStateId, rightInputEvidenceStateId);
-				costSession.refineOperator(refinementRelationId, costContext, costEstimate);
-				if (!costEstimate.hasExplicitPhysicalCost() && selectedPhysicalCost.hasExplicitPhysicalCost()) {
-					costEstimate.copyPhysicalCostFrom(selectedPhysicalCost);
-				}
-				boolean componentRefinement = costEstimate.hasComponentOutputRows();
-				if (!componentRefinement && finiteNonNegative(costEstimate.outputRows())) {
-					rows = costEstimate.outputRows();
-				}
-				if (!componentRefinement && finiteNonNegative(costEstimate.workRows())) {
-					if (costEstimate.hasExplicitPhysicalCost()
-							&& costEstimate.costScope() == PackedCostEstimate.CostScope.LOCAL) {
-						for (int ordinal = 0; ordinal < childCount; ordinal++) {
-							memo.addWinnerPhysicalCost(childWinnerScratch[childOffset + ordinal], costEstimate);
-						}
-					}
-					cost = costEstimate.hasExplicitPhysicalCost()
-							? costSession.objectiveScore(costEstimate)
-							: costEstimate.workRows();
-				} else if (componentRefinement) {
-					/*
-					 * The selected winner is already a complete physical subtree. This operator callback has no aligned
-					 * child-component vector, so its component scalar cannot replace the subtree's rows or work.
-					 */
-					costEstimate.setReplacesChildWork(false);
-				}
-			} else if (costSession != null && operator == PackedRelOp.JOIN && childCount == 2) {
-				costContext.reset(prefixRelations, localPrefixOffset, localPrefixCount, localPrefixRows,
-						evidenceStateId);
-				costContext.setAssuredBindingRelationId(localAssuredBindingRelationId);
-				costContext.setOperatorInputs(leftInputRows, rightInputRows,
-						leftInputEvidenceStateId, rightInputEvidenceStateId);
-				costSession.refineIntermediateJoin(costContext, costEstimate);
-				if (costEstimate.hasExplicitPhysicalCost()
-						&& costEstimate.costScope() == PackedCostEstimate.CostScope.LOCAL) {
-					memo.addWinnerPhysicalCost(childWinnerScratch[childOffset], costEstimate);
-					memo.addWinnerPhysicalCost(childWinnerScratch[childOffset + 1], costEstimate);
-				}
-				if (costEstimate.hasExplicitPhysicalCost()) {
-					cost = costSession.objectiveScore(costEstimate);
-				}
-			}
-			/*
-			 * Contextual refinement can deliberately use the canonical logical source of a transformed physical
-			 * implementation (for example, the original MINUS behind a typed anti-join). That source supplies the exact
-			 * logical cardinality, but it cannot revoke the selected implementation's declaration that its physical
-			 * vector already owns dependent-subquery execution. Preserve that ownership independently of which relation
-			 * supplied the contextual cardinality refinement.
-			 */
-			if (selectedPhysicalCost.dependentSubqueriesCosted()) {
-				costEstimate.setDependentSubqueriesCosted(true);
-			}
-		}
-		if (scopeBarrier) {
-			int relationId = sourceQueryRelationId(physicalExpressionId);
-			double boundaryRows = rows;
-			recordPrefixLeaf(prefixOffset, prefixCount, relationId, boundaryRows);
-			if (prefixCount != 0 && relationId != 0) {
-				rows = composedPrefixRows(prefixOffset, relationId, prefixCount, boundaryRows);
-			}
-		}
-		// Physical metadata stores the fully composed rows while the provider's access/provenance fields remain intact.
-		if (costEstimate.hasExplicitPhysicalCost()) {
-			costEstimate.setContextualOutputRowsPreservingPhysicalCost(rows);
-		} else {
-			costEstimate.setRows(rows, cost);
-		}
-		int metadataId = memo.addPhysicalMetadata(costEstimate, rows, Math.max(1.0d, cost));
-		int inputContextId = prefixCount == 0 ? 0 : memo.internSequence(prefixRelations, prefixOffset, prefixCount);
-		int contextualWinnerId = memo.offerWinnerWithMetadata(memo.winnerGroupId(winnerId), memo.anyPropertyId(), 0,
-				inputContextId, CONTEXTUAL_COST_POLICY, physicalExpressionId, metadataId, rows, cost, cost,
-				childWinnerScratch, childOffset, childCount);
-		if (isFilterOperator(operator) && childCount == 1) {
-			double dependentCost = contextualizeDependentSubqueries(contextualWinnerId, physicalExpressionId,
-					childWinnerScratch[childOffset], localPrefixOffset, localPrefixCount,
-					memo.winnerOutputRows(childWinnerScratch[childOffset]));
-			if (dependentCost > 0.0d && !costEstimate.dependentSubqueriesCosted()) {
-				memo.addDependentCost(contextualWinnerId, dependentCost);
-				cost = saturatedAdd(cost, dependentCost, 0.0d);
-			}
-		}
-		winnerByDepth[depth] = contextualWinnerId;
-		evidenceStateByDepth[depth] = costEstimate.evidenceStateId();
-		rowsByDepth[depth] = rows;
-		costsByDepth[depth] = cost;
-		workUnits++;
-	}
-
-	private int winnerEvidenceStateId(int winnerId) {
-		int metadataId = memo.winnerPhysicalMetadataId(winnerId);
-		return metadataId == 0 ? 0 : memo.physicalMetadataEvidenceStateId(metadataId);
-	}
-
-	private boolean inheritedContextAssuresJoinBinding(int physicalExpressionId, int prefixOffset, int prefixCount,
-			int inheritedBindingRelationId) {
-		int relationId = sourceQueryRelationId(physicalExpressionId);
-		if (relationId == 0) {
-			return false;
-		}
-		for (int symbolId = 1; symbolId <= query.symbolCount(); symbolId++) {
-			if (!query.relationBindsSymbol(relationId, symbolId)) {
-				continue;
-			}
-			if (inheritedBindingRelationId != 0
-					&& query.relationAssuresSymbol(inheritedBindingRelationId, symbolId)) {
-				return true;
-			}
-			for (int ordinal = 0; ordinal < prefixCount; ordinal++) {
-				if (query.relationAssuresSymbol(prefixRelations[prefixOffset + ordinal], symbolId)) {
-					return true;
-				}
-			}
-		}
-		return false;
-	}
-
-	private int nestedLoopAlternative(int winnerId, int hashPhysicalExpressionId) {
-		int childCount = memo.winnerChildCount(winnerId);
-		if (childCount != 2) {
-			throw new PackedMemoInvariantException("hash join winner has " + childCount + " children");
-		}
-		for (int ordinal = 0; ordinal < childCount; ordinal++) {
-			physicalChildGroupScratch[ordinal] = memo.winnerGroupId(memo.winnerChildWinnerId(winnerId, ordinal));
-		}
-		return memo.addPhysicalAlternative(memo.winnerGroupId(winnerId), PackedRelOp.JOIN,
-				memo.physicalPayloadId(hashPhysicalExpressionId),
-				memo.physicalDeliveredPropertyId(hashPhysicalExpressionId),
-				PackedJoinEnumerator.JOIN_IMPLEMENTATION,
-				memo.physicalSourceLogicalExpressionId(hashPhysicalExpressionId),
-				physicalChildGroupScratch, 0, childCount);
-	}
-
-	private double leafRows(int winnerId, int physicalExpressionId, int prefixOffset, int prefixCount,
-			double prefixRows, int prefixEvidenceStateId, int assuredBindingRelationId) {
-		costEstimate.clear();
-		int relationId = sourceQueryRelationId(physicalExpressionId);
-		double factorRows = memo.winnerOutputRows(winnerId);
-		if (!finiteNonNegative(factorRows)) {
-			factorRows = selectedRowsByGroup[memo.winnerGroupId(winnerId)];
-		}
-		if (relationId != 0) {
-			costContext.reset(prefixRelations, prefixOffset, prefixCount, prefixRows, prefixEvidenceStateId);
-			costContext.setAssuredBindingRelationId(assuredBindingRelationId);
-			costSession.estimate(relationId, costContext, costEstimate);
-		}
-		if (!costEstimate.hasContextualOutputRows() && finiteNonNegative(costEstimate.outputRows())) {
-			factorRows = costEstimate.outputRows();
-		}
-		double fallbackRows = prefixCount == 0
-				? factorRows
-				: composedPrefixRows(prefixOffset, relationId, prefixCount, factorRows);
-		double rows = rowComposition.effectiveRows(costEstimate, prefixRelations, prefixLeafRows, prefixOffset,
-				prefixCount, relationId, fallbackRows);
-		recordPrefixLeaf(prefixOffset, prefixCount, relationId, rowComposition.factorContributionRows());
-		if (prefixCount == 0) {
-			return rows;
-		}
-		return rows;
-	}
-
-	private void recordPrefixLeaf(int prefixOffset, int prefixOrdinal, int relationId, double rows) {
-		int index = prefixOffset + prefixOrdinal;
-		if (index < prefixLeafRows.length) {
-			prefixLeafRows[index] = rows;
-			prefixLeafRelationIds[index] = relationId;
-		}
-	}
-
-	/**
-	 * Composes the join estimate as a product over the connected components of the prefix plus this leaf. Within a
-	 * component the newest member's contribution stands for the whole chain (the shared-variable join selects which of
-	 * its rows survive); across components the masses multiply as a Cartesian product, and an exactly-empty component
-	 * makes the whole join exactly empty.
-	 */
-	private double composedPrefixRows(int prefixOffset, int leafRelationId, int prefixCount,
-			double leafContribution) {
-		for (int ordinal = 0; ordinal <= prefixCount; ordinal++) {
-			componentParents[ordinal] = ordinal;
-			componentConsumed[ordinal] = false;
-		}
-		for (int left = 0; left <= prefixCount; left++) {
-			int leftRelationId = prefixOrdinalRelationId(prefixOffset, left, prefixCount, leafRelationId);
-			if (leftRelationId <= 0 || leftRelationId > query.relationCount()) {
-				continue;
-			}
-			for (int right = left + 1; right <= prefixCount; right++) {
-				int rightRelationId = prefixOrdinalRelationId(prefixOffset, right, prefixCount, leafRelationId);
-				if (rightRelationId <= 0 || rightRelationId > query.relationCount()) {
-					continue;
-				}
-				if (query.masksIntersect(query.relOutputMaskId(leftRelationId),
-						query.relOutputMaskId(rightRelationId))) {
-					union(left, right);
-				}
-			}
-		}
-		double total = 1.0d;
-		for (int ordinal = prefixCount; ordinal >= 0; ordinal--) {
-			int root = findComponent(ordinal);
-			if (componentConsumed[root]) {
-				continue;
-			}
-			componentConsumed[root] = true;
-			double componentRows = ordinal == prefixCount
-					? leafContribution
-					: prefixOrdinalRows(prefixOffset, ordinal);
-			total = saturatedMultiply(total, componentRows);
-		}
-		return total;
-	}
-
-	private int prefixOrdinalRelationId(int prefixOffset, int ordinal, int prefixCount, int leafRelationId) {
-		return ordinal == prefixCount ? leafRelationId : prefixRelations[prefixOffset + ordinal];
-	}
-
-	private double prefixOrdinalRows(int prefixOffset, int ordinal) {
-		int index = prefixOffset + ordinal;
-		int relationId = prefixRelations[index];
-		if (prefixLeafRelationIds[index] == relationId && finiteNonNegative(prefixLeafRows[index])) {
-			return prefixLeafRows[index];
-		}
-		if (relationId > 0 && relationId <= query.relationCount()) {
-			double rows = selectedRowsByGroup[memo.logicalGroupId(relationId)];
-			return finiteNonNegative(rows) ? rows : 1.0d;
-		}
-		return 1.0d;
-	}
-
-	private int findComponent(int ordinal) {
-		int root = ordinal;
-		while (componentParents[root] != root) {
-			root = componentParents[root];
-		}
-		while (componentParents[ordinal] != root) {
-			int next = componentParents[ordinal];
-			componentParents[ordinal] = root;
-			ordinal = next;
-		}
-		return root;
-	}
-
-	private void union(int left, int right) {
-		int leftRoot = findComponent(left);
-		int rightRoot = findComponent(right);
-		if (leftRoot != rightRoot) {
-			// The larger ordinal wins the root so the newest member's contribution stands for the component.
-			componentParents[Math.min(leftRoot, rightRoot)] = Math.max(leftRoot, rightRoot);
-		}
-	}
-
-	private static double saturatedMultiply(double left, double right) {
-		double product = left * right;
-		return Double.isFinite(product) ? product : Double.MAX_VALUE;
-	}
-
-	private double leafWork(int winnerId, double rows) {
-		if (costEstimate.hasExplicitPhysicalCost()) {
-			return costSession.objectiveScore(costEstimate);
-		}
-		if (finiteNonNegative(costEstimate.workRows())) {
-			return costEstimate.workRows();
-		}
-		double work = memo.winnerWorkRows(winnerId);
-		return finiteNonNegative(work) ? work : Math.max(1.0d, rows);
-	}
-
-	/**
-	 * A GROUP's contextual output is derived from its contextual input, not ratio-scaled from the incumbent: keyless
-	 * aggregation always yields exactly one row (zero on an exactly-empty input), and keyed grouping collapses to
-	 * roughly the square root of the input per key, never exceeding the input.
-	 */
-	private double groupRows(int physicalExpressionId, double childRows, double fallback) {
-		int relationId = memo.physicalSourceLogicalExpressionId(physicalExpressionId);
-		if (relationId <= 0 || relationId > query.relationCount() || !finiteNonNegative(childRows)) {
-			return fallback;
-		}
-		int keyCount = query.payloadChildCount(query.payloadPrimary(query.relPayload(relationId)));
-		if (keyCount == 0) {
-			return childRows > 0.0d ? 1.0d : 0.0d;
-		}
-		if (childRows == 0.0d) {
-			return 0.0d;
-		}
-		return Math.max(1.0d, Math.min(childRows, Math.sqrt(childRows) * keyCount));
-	}
-
-	private double wrapperRows(int winnerId, double childRows) {
-		costEstimate.clear();
-		double originalRows = memo.winnerOutputRows(winnerId);
-		if (!finiteNonNegative(childRows)) {
-			return finiteNonNegative(originalRows) ? originalRows : 1.0d;
-		}
-		int physicalExpressionId = memo.winnerPhysicalExpressionId(winnerId);
-		if (rowPreservingWrapper(memo.physicalOperatorTag(physicalExpressionId))) {
-			return childRows;
-		}
-		if (!finiteNonNegative(originalRows)) {
-			return childRows;
-		}
-		int firstChildWinner = memo.winnerChildWinnerId(winnerId, 0);
-		double originalChildRows = memo.winnerOutputRows(firstChildWinner);
-		if (!finiteNonNegative(originalChildRows) || originalChildRows == 0.0d) {
-			return Math.min(childRows, originalRows);
-		}
-		return Math.max(0.0d, childRows * Math.min(1.0d, originalRows / originalChildRows));
-	}
-
-	private double hashJoinRows(int winnerId, double leftRows) {
-		double originalRows = memo.winnerOutputRows(winnerId);
-		if (!finiteNonNegative(leftRows) || !finiteNonNegative(originalRows)) {
-			return finiteNonNegative(originalRows) ? originalRows : Math.max(1.0d, leftRows);
-		}
-		int leftWinnerId = memo.winnerChildWinnerId(winnerId, 0);
-		double originalLeftRows = memo.winnerOutputRows(leftWinnerId);
-		if (!finiteNonNegative(originalLeftRows) || originalLeftRows == 0.0d) {
-			return Math.min(leftRows, originalRows);
-		}
-		/*
-		 * Unlike a filtering wrapper, an inner join may legitimately emit several rows for each left row. Preserve the
-		 * selected hash join's average left-side fanout while contextualizing an inherited outer prefix.
-		 */
-		return saturatedMultiply(leftRows, originalRows / originalLeftRows);
-	}
-
-	private static boolean rowPreservingWrapper(int operator) {
-		return operator == PackedRelOp.QUERY_ROOT
-				|| operator == PackedRelOp.DESCRIBE
-				|| operator == PackedRelOp.MATERIALIZE
-				|| operator == PackedRelOp.PROJECTION
-				|| operator == PackedRelOp.ORDER
-				|| operator == PackedRelOp.EXTENSION;
-	}
-
-	private double wrapperLocalWork(int winnerId, double rows, double contextualChildRows) {
-		int firstChildWinnerId = memo.winnerChildCount(winnerId) > 0 ? memo.winnerChildWinnerId(winnerId, 0) : 0;
-		double incumbentChildRows = firstChildWinnerId != 0 ? memo.winnerOutputRows(firstChildWinnerId) : Double.NaN;
-		return wrapperLocalWork(winnerId, rows, contextualChildRows, incumbentChildRows);
-	}
-
-	private double wrapperLocalWork(int winnerId, double rows, double contextualChildRows,
-			double incumbentChildRows) {
-		double totalWork = memo.winnerWorkRows(winnerId);
-		if (!finiteNonNegative(totalWork)) {
-			return Math.max(1.0d, rows);
-		}
-		double childWork = 0.0d;
-		for (int ordinal = 0; ordinal < memo.winnerChildCount(winnerId); ordinal++) {
-			double work = memo.winnerWorkRows(memo.winnerChildWinnerId(winnerId, ordinal));
-			if (finiteNonNegative(work)) {
-				childWork += work;
-			}
-		}
-		double incumbentLocalWork = Math.max(1.0d, totalWork - childWork);
-		// The incumbent's local work was computed under written-order child rows. A wrapper's own
-		// work scales with the rows it actually processes in this context; inheriting the absolute
-		// incumbent number verbatim lets one blown-up written-order estimate saturate every plan
-		// that contains the wrapper.
-		if (finiteNonNegative(contextualChildRows) && finiteNonNegative(incumbentChildRows)) {
-			if (incumbentChildRows > 0.0d) {
-				double scaled = incumbentLocalWork * (contextualChildRows / incumbentChildRows);
-				if (finiteNonNegative(scaled)) {
-					return Math.max(1.0d, Math.max(scaled, rows));
-				}
-			} else {
-				/*
-				 * An exact-zero incumbent provides no usable per-row scaling denominator. It must not preserve an
-				 * unrelated annotated scan cost after contextual costing proves that the wrapper processes zero (or a
-				 * small positive number of) rows.
-				 */
-				return Math.max(1.0d, Math.max(contextualChildRows, rows));
-			}
-		}
-		return incumbentLocalWork;
-	}
-
-	private static double combinedRows(double leftRows, double rightRows) {
-		if (!finiteNonNegative(leftRows) || !finiteNonNegative(rightRows)) {
-			return Double.NaN;
-		}
-		return saturatedAdd(leftRows, rightRows, 0.0d);
-	}
-
-	private int appendFactors(int winnerId, int prefixOffset, int start) {
-		return appendFactors(winnerId, prefixRelations, prefixOffset, start);
-	}
-
-	private int appendFactors(int winnerId, int[] target, int prefixOffset, int start) {
-		int physicalExpressionId = memo.winnerPhysicalExpressionId(winnerId);
-		int operator = memo.physicalOperatorTag(physicalExpressionId);
-		if (isScopeBarrier(physicalExpressionId, operator)
-				|| operator != PackedRelOp.JOIN && operator != PackedRelOp.LATERAL) {
-			int relationId = sourceQueryRelationId(physicalExpressionId);
-			if (relationId != 0 && prefixOffset + start < target.length) {
-				target[prefixOffset + start++] = relationId;
+				start = appendFactors(memo.winnerChildWinnerId(winnerId, ordinal), start);
 			}
 			return start;
 		}
-		int childCount = memo.winnerChildCount(winnerId);
-		for (int ordinal = 0; ordinal < childCount; ordinal++) {
-			start = appendFactors(memo.winnerChildWinnerId(winnerId, ordinal), target, prefixOffset, start);
+		int relationId = sourceQueryRelationId(physicalExpressionId);
+		if (relationId != 0) {
+			ensurePrefixCapacity(start + 1);
+			prefixRelations[start++] = relationId;
 		}
 		return start;
-	}
-
-	private double contextualizeDependentSubqueries(int ownerWinnerId, int physicalExpressionId, int inputWinnerId,
-			int prefixOffset, int prefixCount, double inputRows) {
-		int physicalOperator = memo.physicalOperatorTag(physicalExpressionId);
-		if (!isFilterOperator(physicalOperator)) {
-			return 0.0d;
-		}
-		int dependentPrefixCount = Math.min(prefixCount, dependentPrefixRelations.length);
-		System.arraycopy(prefixRelations, prefixOffset, dependentPrefixRelations, 0, dependentPrefixCount);
-		dependentPrefixCount = appendFactors(inputWinnerId, dependentPrefixRelations, 0, dependentPrefixCount);
-		Arrays.fill(dependentPrefixContributionRows, 0, dependentPrefixCount, Double.NaN);
-		for (int ordinal = 0; ordinal < dependentPrefixCount; ordinal++) {
-			int sourceIndex = prefixOffset + ordinal;
-			if (sourceIndex < prefixRelations.length
-					&& prefixRelations[sourceIndex] == dependentPrefixRelations[ordinal]
-					&& prefixLeafRelationIds[sourceIndex] == dependentPrefixRelations[ordinal]
-					&& finiteNonNegative(prefixLeafRows[sourceIndex])) {
-				dependentPrefixContributionRows[ordinal] = prefixLeafRows[sourceIndex];
-			}
-		}
-		return collectDependentSubqueries(ownerWinnerId,
-				physicalFilterConditionId(physicalExpressionId, physicalOperator), dependentPrefixCount,
-				inputRows);
 	}
 
 	private int physicalFilterConditionId(int physicalExpressionId, int physicalOperator) {
@@ -732,64 +147,6 @@ final class PackedSelectedPlanContextualizer {
 		return operator == PackedRelOp.FILTER
 				|| operator == PackedRelOp.SEMI_JOIN
 				|| operator == PackedRelOp.ANTI_JOIN;
-	}
-
-	private double collectDependentSubqueries(int ownerWinnerId, int scalarId, int prefixCount, double prefixRows) {
-		if (scalarId == 0) {
-			return 0.0d;
-		}
-		double dependentCost = 0.0d;
-		if (query.scalarOperator(scalarId) == PackedScalarOp.EXISTS) {
-			int subqueryPayloadId = query.scalarPayload(scalarId);
-			if (query.payloadOperator(subqueryPayloadId) == PackedPayloadOp.SUBQUERY_VALUE
-					&& query.payloadChildCount(subqueryPayloadId) == 1) {
-				int subqueryRelationId = query.payloadChild(subqueryPayloadId, 0);
-				int dependentWinnerId = memo.findWinner(memo.logicalGroupId(subqueryRelationId),
-						memo.anyPropertyId(), 0, 0, 0);
-				if (dependentWinnerId == 0) {
-					throw new PackedMemoInvariantException(
-							"embedded subquery " + subqueryRelationId + " has no incumbent");
-				}
-				int embeddedReferences = query.scalarEmbeddedReferenceMaskId(scalarId);
-				if (hasAssuredOuterReference(embeddedReferences, prefixCount)) {
-					PackedJoinEnumerator enumerator = PackedJoinEnumerator.forSession(query, memo,
-							selectedRowsByGroup, budget, costSession);
-					dependentWinnerId = enumerator.optimizeWithInheritedPrefix(subqueryRelationId,
-							dependentPrefixRelations, dependentPrefixContributionRows, prefixCount, prefixRows);
-					workUnits += enumerator.contextualWorkUnits();
-				}
-				dependentPlans.put(ownerWinnerId, subqueryPayloadId, dependentWinnerId);
-				dependentCost = saturatedAdd(dependentCost, memo.winnerTotalCost(dependentWinnerId), 0.0d);
-			}
-		}
-		for (int ordinal = 0; ordinal < query.scalarChildCount(scalarId); ordinal++) {
-			dependentCost = saturatedAdd(dependentCost,
-					collectDependentSubqueries(ownerWinnerId, query.scalarChild(scalarId, ordinal), prefixCount,
-							prefixRows),
-					0.0d);
-		}
-		return dependentCost;
-	}
-
-	private boolean hasAssuredOuterReference(int embeddedReferenceMaskId, int prefixCount) {
-		boolean correlated = false;
-		for (int symbolId = 1; symbolId <= query.symbolCount(); symbolId++) {
-			if (!query.maskContainsSymbol(embeddedReferenceMaskId, symbolId)) {
-				continue;
-			}
-			boolean available = false;
-			boolean assured = false;
-			for (int ordinal = 0; ordinal < prefixCount; ordinal++) {
-				int relationId = dependentPrefixRelations[ordinal];
-				available |= query.relationBindsSymbol(relationId, symbolId);
-				assured |= query.relationAssuresSymbol(relationId, symbolId);
-			}
-			if (available && !assured) {
-				return false;
-			}
-			correlated |= assured;
-		}
-		return correlated;
 	}
 
 	private boolean isScopeBarrier(int physicalExpressionId, int operator) {
@@ -849,126 +206,21 @@ final class PackedSelectedPlanContextualizer {
 		return 0;
 	}
 
-	private int refinementRelationId(int relationId, int physicalOperator) {
-		if (relationId == 0) {
-			return 0;
+	private void push(int winnerId) {
+		if (stackSize == winnerStack.length) {
+			winnerStack = Arrays.copyOf(winnerStack, winnerStack.length << 1);
 		}
-		int sourceOperator = query.relOperator(relationId);
-		if (sourceOperator == physicalOperator
-				|| sourceOperator == PackedRelOp.FILTER
-						&& (physicalOperator == PackedRelOp.SEMI_JOIN
-								|| physicalOperator == PackedRelOp.ANTI_JOIN)
-				|| sourceOperator == PackedRelOp.DIFFERENCE && physicalOperator == PackedRelOp.ANTI_JOIN) {
-			return relationId;
-		}
-		if (sourceOperator == PackedRelOp.FILTER && query.relChildCount(relationId) == 1) {
-			int inputRelationId = query.relChild(relationId, 0);
-			if (query.relOperator(inputRelationId) == physicalOperator) {
-				return inputRelationId;
-			}
-		}
-		return 0;
+		winnerStack[stackSize++] = winnerId;
 	}
 
-	private void restoreIncumbentPlannedMetrics(int metadataId) {
-		if (metadataId == 0) {
+	private void ensurePrefixCapacity(int requiredSize) {
+		if (requiredSize <= prefixRelations.length) {
 			return;
 		}
-		for (int ordinal = 0; ordinal < memo.physicalMetadataPlannedStringMetricCount(metadataId); ordinal++) {
-			costEstimate.putPlannedStringMetric(
-					(String) memo.physicalMetadataPlannedStringMetricName(metadataId, ordinal),
-					(String) memo.physicalMetadataPlannedStringMetricValue(metadataId, ordinal));
+		int capacity = prefixRelations.length;
+		while (capacity < requiredSize) {
+			capacity <<= 1;
 		}
-		for (int ordinal = 0; ordinal < memo.physicalMetadataPlannedDoubleMetricCount(metadataId); ordinal++) {
-			costEstimate.putPlannedDoubleMetric(
-					(String) memo.physicalMetadataPlannedDoubleMetricName(metadataId, ordinal),
-					memo.physicalMetadataPlannedDoubleMetricValue(metadataId, ordinal));
-		}
+		prefixRelations = Arrays.copyOf(prefixRelations, capacity);
 	}
-
-	private boolean physicalShapeDiffersFromSource(int relationId, int physicalOperator, int physicalChildCount) {
-		int sourceOperator = query.relOperator(relationId);
-		boolean equivalentSemiAntiShape = sourceOperator == PackedRelOp.FILTER
-				&& (physicalOperator == PackedRelOp.SEMI_JOIN || physicalOperator == PackedRelOp.ANTI_JOIN)
-				&& query.relChildCount(relationId) == physicalChildCount;
-		return !equivalentSemiAntiShape && (sourceOperator != physicalOperator
-				|| query.relChildCount(relationId) != physicalChildCount);
-	}
-
-	private double canonicalChildWinnerRows(int relationId, int childOrdinal, double fallback) {
-		if (childOrdinal < 0 || childOrdinal >= query.relChildCount(relationId)) {
-			return Double.NaN;
-		}
-		int childGroupId = memo.logicalGroupId(query.relChild(relationId, childOrdinal));
-		int childWinnerId = memo.findWinner(childGroupId, memo.anyPropertyId(), 0, 0, 0);
-		if (childWinnerId == 0) {
-			return fallback;
-		}
-		double rows = memo.winnerOutputRows(childWinnerId);
-		return finiteNonNegative(rows) ? rows : fallback;
-	}
-
-	private boolean assuresAllFactorOutputs(int winnerId) {
-		int physicalExpressionId = memo.winnerPhysicalExpressionId(winnerId);
-		int operator = memo.physicalOperatorTag(physicalExpressionId);
-		int childCount = memo.winnerChildCount(winnerId);
-		if (childCount == 0) {
-			int relationId = memo.physicalSourceLogicalExpressionId(physicalExpressionId);
-			if (relationId <= 0 || relationId > query.relationCount()) {
-				return false;
-			}
-			return switch (query.relOperator(relationId)) {
-			case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.TRIPLE_REF, PackedRelOp.REIFIED_TRIPLE_REF, PackedRelOp.ANNOTATION_TRIPLE_REF -> true;
-			case PackedRelOp.BINDING_SET_ASSIGNMENT -> bindingAssignmentAssuresAllOutputs(relationId);
-			default -> false;
-			};
-		}
-		if (operator == PackedRelOp.JOIN || operator == PackedRelOp.LATERAL) {
-			for (int ordinal = 0; ordinal < childCount; ordinal++) {
-				if (!assuresAllFactorOutputs(memo.winnerChildWinnerId(winnerId, ordinal))) {
-					return false;
-				}
-			}
-			return true;
-		}
-		if (isFilterOperator(operator) || operator == PackedRelOp.QUERY_ROOT
-				|| operator == PackedRelOp.DESCRIBE || operator == PackedRelOp.SLICE
-				|| operator == PackedRelOp.REDUCED || operator == PackedRelOp.DISTINCT
-				|| operator == PackedRelOp.MATERIALIZE || operator == PackedRelOp.ORDER) {
-			return assuresAllFactorOutputs(memo.winnerChildWinnerId(winnerId, 0));
-		}
-		return false;
-	}
-
-	private boolean bindingAssignmentAssuresAllOutputs(int relationId) {
-		int rowCount = queryView.bindingAssignmentRowCount(relationId);
-		int outputCount = queryView.outputBindingCount(relationId);
-		if (rowCount == 0) {
-			return false;
-		}
-		for (int rowOrdinal = 0; rowOrdinal < rowCount; rowOrdinal++) {
-			if (queryView.bindingRowSize(queryView.bindingAssignmentRowId(relationId, rowOrdinal)) != outputCount) {
-				return false;
-			}
-		}
-		return true;
-	}
-
-	private static int maximumChildCount(PackedQuery query) {
-		int result = 1;
-		for (int relationId = 1; relationId <= query.relationCount(); relationId++) {
-			result = Math.max(result, query.relChildCount(relationId));
-		}
-		return result;
-	}
-
-	private static boolean finiteNonNegative(double value) {
-		return Double.isFinite(value) && value >= 0.0d;
-	}
-
-	private static double saturatedAdd(double left, double right, double local) {
-		double result = left + right + local;
-		return Double.isFinite(result) ? result : Double.MAX_VALUE;
-	}
-
 }

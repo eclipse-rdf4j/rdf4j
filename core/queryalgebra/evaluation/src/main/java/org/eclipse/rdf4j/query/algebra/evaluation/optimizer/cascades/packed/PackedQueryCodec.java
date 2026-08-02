@@ -290,8 +290,10 @@ final class PackedQueryCodec {
 
 		/**
 		 * Explicit fact-derive and rule-saturate phases over the frozen encoded structure: predicate-range facts
-		 * propagate bottom-up first, then the logical rule program runs once over every encoded relation. Rules are
-		 * idempotent, so re-discovered alternatives are no-ops and the single deterministic pass reaches quiescence.
+		 * propagate bottom-up first, then the logical rule program drains the append-only relation interner. Rules are
+		 * idempotent and each relation is marked after its first visit, so re-discovered alternatives are no-ops while
+		 * alternatives created by an earlier rule still receive every applicable downstream rule before the query is
+		 * frozen.
 		 */
 		private void deriveFactsAndSaturateRules() {
 			if (logicalRules == null) {
@@ -304,7 +306,7 @@ final class PackedQueryCodec {
 				}
 				logicalRules.attachDomainFacts(domainFacts);
 			}
-			for (int relationId = 1; relationId <= encodedRelationCount; relationId++) {
+			for (int relationId = 1; relationId <= relations.size(); relationId++) {
 				logicalRules.apply(relationId);
 			}
 		}

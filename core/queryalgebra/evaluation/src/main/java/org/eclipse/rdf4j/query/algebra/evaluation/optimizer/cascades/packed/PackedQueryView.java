@@ -96,6 +96,17 @@ public final class PackedQueryView {
 		return query.relOperator(relationId) == PackedRelOp.ANTI_JOIN;
 	}
 
+	/**
+	 * Whether this ordinary filter is the semantics-preserving correlated form of a MINUS whose shared bindings are
+	 * assured on both sides. This identity belongs to the logical candidate and must therefore be consumed while the
+	 * candidate is costed, before any query-model telemetry exists.
+	 */
+	public boolean isAssuredSharedMinusFilter(int relationId) {
+		return query.relOperator(relationId) == PackedRelOp.FILTER
+				&& (query.relSemanticFlags(relationId)
+						& PackedNodeMetadataArena.SEMANTIC_ASSURED_SHARED_MINUS_FILTER) != 0;
+	}
+
 	public int semiAntiAlgorithm(int relationId) {
 		return query.payloadFlags(semiAntiPayload(relationId));
 	}

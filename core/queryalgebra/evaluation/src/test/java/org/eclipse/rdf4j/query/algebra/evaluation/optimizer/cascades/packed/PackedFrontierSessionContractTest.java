@@ -54,6 +54,22 @@ class PackedFrontierSessionContractTest {
 	}
 
 	@Test
+	void packedSessionExposesAnIdentityDefaultForDemandedEvidenceRealization() throws Exception {
+		Class<?> sessionType = requiredClass(PACKED_COST_SESSION);
+		Method realizeEvidenceState = requiredMethod(sessionType, "realizeEvidenceState", int.class);
+		assertTrue(realizeEvidenceState.isDefault(),
+				"scalar providers must inherit a zero-work identity realization boundary");
+
+		PackedCostModel model = (query, relationId) -> 1.0d;
+		PackedQuery query = PackedQueryCodec.encode(new SingletonSet());
+		Object session = requiredMethod(PackedCostModel.class, "openSession", PackedQueryView.class)
+				.invoke(model, new PackedQueryView(query));
+		assertEquals(0, realizeEvidenceState.invoke(session, 0));
+		assertEquals(37, realizeEvidenceState.invoke(session, 37));
+		((AutoCloseable) session).close();
+	}
+
+	@Test
 	void defaultScalarSessionDelegatesEveryEstimationPhaseToTheLegacyModel() throws Exception {
 		int[] calls = new int[2];
 		PackedCostModel model = new PackedCostModel() {
@@ -158,12 +174,38 @@ class PackedFrontierSessionContractTest {
 	}
 
 	@Test
-	void detachedRecipesAndStoreWideCacheContainNoQueryLocalFrontierHandles() {
-		assertNoQueryLocalFrontierFields(PackedPlanRecipe.class);
+	void detachedRecipesRetainFrontierOrdinalsWithoutQueryLocalHandles() {
+		Class<?> bundleType = requiredClass(
+				"org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierEvidenceBundle");
+		assertEquals(bundleType, requiredField(PackedPlanRecipe.class, "frontierEvidenceBundle").getType());
+		assertEquals(int[].class, requiredField(PackedPlanRecipe.class, "frontierBundleOrdinals").getType());
+		assertEquals(byte[].class, requiredField(PackedPlanRecipe.class, "evidenceGuarantees").getType());
+		assertEquals(byte[].class, requiredField(PackedPlanRecipe.class, "evidenceDispositions").getType());
+		assertEquals(int[].class, requiredField(PackedPlanRecipe.class, "costEventIds").getType());
+		assertFalse(Arrays.stream(PackedPlanRecipe.class.getDeclaredFields())
+				.anyMatch(field -> field.getName().equals("evidenceStateIds")),
+				"A detached recipe must never retain arena-local state IDs");
+
 		assertNoQueryLocalFrontierFields(PackedPlanCache.class);
 		assertNoQueryLocalFrontierFields(PackedPlanCache.Context.class);
 		assertNoQueryLocalFrontierFields(PackedPlanCache.PlanEntry.class);
 		assertNoQueryLocalFrontierFields(PackedPlanCache.QueryEntry.class);
+	}
+
+	@Test
+	void inheritedPlanningUsesOnePackedEvidenceContextInsteadOfScalarPrefixArguments() {
+		Class<?> contextType = requiredClass(PackedCostModel.class.getPackageName() + ".PackedEvidenceContext");
+		assertEquals(int[].class, requiredField(contextType, "prefixRelationIds").getType());
+		assertEquals(double[].class, requiredField(contextType, "prefixContributionRows").getType());
+		assertEquals(double.class, requiredField(contextType, "prefixRows").getType());
+		assertEquals(int.class, requiredField(contextType, "evidenceStateId").getType());
+		assertEquals(int.class, requiredField(contextType, "bindingLayoutId").getType());
+		assertEquals(int.class, requiredField(contextType, "correlationMaskId").getType());
+		assertEquals(int.class, requiredField(contextType, "semanticScopeMaskId").getType());
+		requiredDeclaredMethod(PackedJoinEnumerator.class, "optimizeWithInheritedPrefix", int.class, contextType);
+		requiredMethod(PackedCostContext.class, "bindingLayoutId");
+		requiredMethod(PackedCostContext.class, "correlationMaskId");
+		requiredMethod(PackedCostContext.class, "semanticScopeMaskId");
 	}
 
 	private static Class<?> requiredClass(String name) {
@@ -190,6 +232,16 @@ class PackedFrontierSessionContractTest {
 		} catch (NoSuchMethodException exception) {
 			return fail("Missing packed Frontier hot-path contract " + owner.getSimpleName() + "." + name,
 					exception);
+		}
+	}
+
+	private static Field requiredField(Class<?> owner, String name) {
+		try {
+			Field field = owner.getDeclaredField(name);
+			field.setAccessible(true);
+			return field;
+		} catch (NoSuchFieldException exception) {
+			return fail("Missing packed Frontier field " + owner.getSimpleName() + "." + name, exception);
 		}
 	}
 

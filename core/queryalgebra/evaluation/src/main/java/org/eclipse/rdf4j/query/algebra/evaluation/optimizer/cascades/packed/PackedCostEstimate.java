@@ -18,6 +18,7 @@ import java.util.Map;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDisposition;
 
 /** Reusable primitive output slot for one context-sensitive physical factor estimate. */
 @Experimental
@@ -39,6 +40,7 @@ public final class PackedCostEstimate {
 	private double hashBuildRows;
 	private double hashProbeRows;
 	private double pathExpansions;
+	private double resultRows;
 	private double remoteCalls;
 	private double peakMemoryRows;
 	private CostScope costScope;
@@ -49,6 +51,8 @@ public final class PackedCostEstimate {
 	private boolean componentOutputRows;
 	private int evidenceStateId;
 	private EvidenceGuarantee evidenceGuarantee;
+	private FrontierStateDisposition evidenceDisposition;
+	private int costEventId;
 	private int lookupComponentMask;
 	private int missingLookupComponentMask;
 	private int indexPrefixLength;
@@ -62,6 +66,10 @@ public final class PackedCostEstimate {
 	private String[] plannedStringMetricValues;
 	private String[] plannedDoubleMetricNames;
 	private double[] plannedDoubleMetricValues;
+	private int[] plannedStringMetricSlots;
+	private int[] plannedDoubleMetricSlots;
+	private int plannedStringMetricResizeThreshold;
+	private int plannedDoubleMetricResizeThreshold;
 	private int plannedStringMetricCount;
 	private int plannedDoubleMetricCount;
 
@@ -73,9 +81,11 @@ public final class PackedCostEstimate {
 		if (plannedStringMetricNames != null) {
 			Arrays.fill(plannedStringMetricNames, 0, plannedStringMetricCount, null);
 			Arrays.fill(plannedStringMetricValues, 0, plannedStringMetricCount, null);
+			Arrays.fill(plannedStringMetricSlots, 0);
 		}
 		if (plannedDoubleMetricNames != null) {
 			Arrays.fill(plannedDoubleMetricNames, 0, plannedDoubleMetricCount, null);
+			Arrays.fill(plannedDoubleMetricSlots, 0);
 		}
 		plannedStringMetricCount = 0;
 		plannedDoubleMetricCount = 0;
@@ -88,6 +98,7 @@ public final class PackedCostEstimate {
 		hashBuildRows = Double.NaN;
 		hashProbeRows = Double.NaN;
 		pathExpansions = Double.NaN;
+		resultRows = Double.NaN;
 		remoteCalls = Double.NaN;
 		peakMemoryRows = Double.NaN;
 		costScope = CostScope.LOCAL;
@@ -98,6 +109,8 @@ public final class PackedCostEstimate {
 		componentOutputRows = false;
 		evidenceStateId = 0;
 		evidenceGuarantee = null;
+		evidenceDisposition = null;
+		costEventId = 0;
 		lookupComponentMask = 0;
 		missingLookupComponentMask = 0;
 		indexPrefixLength = 0;
@@ -142,7 +155,17 @@ public final class PackedCostEstimate {
 			double expressionEvaluations, double hashBuildRows, double hashProbeRows, double pathExpansions,
 			double remoteCalls, double peakMemoryRows) {
 		setPhysicalCost(CostScope.LOCAL, sequentialRows, randomSeeks, iteratorOpens, expressionEvaluations,
-				hashBuildRows, hashProbeRows, pathExpansions, remoteCalls, peakMemoryRows);
+				hashBuildRows, hashProbeRows, pathExpansions, 0.0d, remoteCalls, peakMemoryRows);
+	}
+
+	/**
+	 * Records local physical work while retaining result production independently from source scans.
+	 */
+	public void setLocalPhysicalCost(double sequentialRows, double randomSeeks, double iteratorOpens,
+			double expressionEvaluations, double hashBuildRows, double hashProbeRows, double pathExpansions,
+			double resultRows, double remoteCalls, double peakMemoryRows) {
+		setPhysicalCost(CostScope.LOCAL, sequentialRows, randomSeeks, iteratorOpens, expressionEvaluations,
+				hashBuildRows, hashProbeRows, pathExpansions, resultRows, remoteCalls, peakMemoryRows);
 	}
 
 	/**
@@ -152,7 +175,17 @@ public final class PackedCostEstimate {
 			double expressionEvaluations, double hashBuildRows, double hashProbeRows, double pathExpansions,
 			double remoteCalls, double peakMemoryRows) {
 		setPhysicalCost(CostScope.INCLUSIVE, sequentialRows, randomSeeks, iteratorOpens, expressionEvaluations,
-				hashBuildRows, hashProbeRows, pathExpansions, remoteCalls, peakMemoryRows);
+				hashBuildRows, hashProbeRows, pathExpansions, 0.0d, remoteCalls, peakMemoryRows);
+	}
+
+	/**
+	 * Records inclusive physical work while retaining result production independently from source scans.
+	 */
+	public void setInclusivePhysicalCost(double sequentialRows, double randomSeeks, double iteratorOpens,
+			double expressionEvaluations, double hashBuildRows, double hashProbeRows, double pathExpansions,
+			double resultRows, double remoteCalls, double peakMemoryRows) {
+		setPhysicalCost(CostScope.INCLUSIVE, sequentialRows, randomSeeks, iteratorOpens, expressionEvaluations,
+				hashBuildRows, hashProbeRows, pathExpansions, resultRows, remoteCalls, peakMemoryRows);
 	}
 
 	/**
@@ -169,7 +202,7 @@ public final class PackedCostEstimate {
 
 	private void setPhysicalCost(CostScope costScope, double sequentialRows, double randomSeeks,
 			double iteratorOpens, double expressionEvaluations, double hashBuildRows, double hashProbeRows,
-			double pathExpansions, double remoteCalls, double peakMemoryRows) {
+			double pathExpansions, double resultRows, double remoteCalls, double peakMemoryRows) {
 		this.sequentialRows = physicalDimension(sequentialRows, "sequential rows");
 		this.randomSeeks = physicalDimension(randomSeeks, "random seeks");
 		this.iteratorOpens = physicalDimension(iteratorOpens, "iterator opens");
@@ -177,6 +210,7 @@ public final class PackedCostEstimate {
 		this.hashBuildRows = physicalDimension(hashBuildRows, "hash build rows");
 		this.hashProbeRows = physicalDimension(hashProbeRows, "hash probe rows");
 		this.pathExpansions = physicalDimension(pathExpansions, "path expansions");
+		this.resultRows = physicalDimension(resultRows, "result rows");
 		this.remoteCalls = physicalDimension(remoteCalls, "remote calls");
 		this.peakMemoryRows = physicalDimension(peakMemoryRows, "peak memory rows");
 		this.costScope = costScope;
@@ -188,6 +222,7 @@ public final class PackedCostEstimate {
 		workRows = saturatedAdd(workRows, this.hashBuildRows);
 		workRows = saturatedAdd(workRows, this.hashProbeRows);
 		workRows = saturatedAdd(workRows, this.pathExpansions);
+		workRows = saturatedAdd(workRows, this.resultRows);
 		workRows = saturatedAdd(workRows, this.remoteCalls);
 		publishPhysicalCostMetrics();
 	}
@@ -202,6 +237,7 @@ public final class PackedCostEstimate {
 			hashBuildRows = Double.NaN;
 			hashProbeRows = Double.NaN;
 			pathExpansions = Double.NaN;
+			resultRows = Double.NaN;
 			remoteCalls = Double.NaN;
 			peakMemoryRows = Double.NaN;
 			costScope = replacesChildWork ? CostScope.INCLUSIVE : CostScope.LOCAL;
@@ -216,6 +252,7 @@ public final class PackedCostEstimate {
 		hashBuildRows = 0.0d;
 		hashProbeRows = 0.0d;
 		pathExpansions = 0.0d;
+		resultRows = 0.0d;
 		remoteCalls = 0.0d;
 		peakMemoryRows = 0.0d;
 		costScope = replacesChildWork ? CostScope.INCLUSIVE : CostScope.LOCAL;
@@ -229,6 +266,13 @@ public final class PackedCostEstimate {
 	void addChildPhysicalCost(double sequentialRows, double randomSeeks, double iteratorOpens,
 			double expressionEvaluations, double hashBuildRows, double hashProbeRows, double pathExpansions,
 			double remoteCalls, double peakMemoryRows) {
+		addChildPhysicalCost(sequentialRows, randomSeeks, iteratorOpens, expressionEvaluations, hashBuildRows,
+				hashProbeRows, pathExpansions, 0.0d, remoteCalls, peakMemoryRows);
+	}
+
+	void addChildPhysicalCost(double sequentialRows, double randomSeeks, double iteratorOpens,
+			double expressionEvaluations, double hashBuildRows, double hashProbeRows, double pathExpansions,
+			double resultRows, double remoteCalls, double peakMemoryRows) {
 		this.sequentialRows = saturatedAdd(finiteOrZero(this.sequentialRows),
 				physicalDimension(sequentialRows, "child sequential rows"));
 		this.randomSeeks = saturatedAdd(finiteOrZero(this.randomSeeks),
@@ -243,6 +287,8 @@ public final class PackedCostEstimate {
 				physicalDimension(hashProbeRows, "child hash probe rows"));
 		this.pathExpansions = saturatedAdd(finiteOrZero(this.pathExpansions),
 				physicalDimension(pathExpansions, "child path expansions"));
+		this.resultRows = saturatedAdd(finiteOrZero(this.resultRows),
+				physicalDimension(resultRows, "child result rows"));
 		this.remoteCalls = saturatedAdd(finiteOrZero(this.remoteCalls),
 				physicalDimension(remoteCalls, "child remote calls"));
 		this.peakMemoryRows = Math.max(finiteOrZero(this.peakMemoryRows),
@@ -254,27 +300,68 @@ public final class PackedCostEstimate {
 		publishPhysicalCostMetrics();
 	}
 
-	void setOutputRowsPreservingPhysicalCost(double outputRows) {
+	public void setOutputRowsPreservingPhysicalCost(double outputRows) {
 		this.outputRows = outputRows;
 		contextualOutputRows = false;
 		componentOutputRows = false;
 	}
 
-	void setContextualOutputRowsPreservingPhysicalCost(double outputRows) {
+	public void setContextualOutputRowsPreservingPhysicalCost(double outputRows) {
 		this.outputRows = outputRows;
 		contextualOutputRows = true;
 		componentOutputRows = false;
+	}
+
+	public void setComponentOutputRowsPreservingPhysicalCost(double outputRows) {
+		this.outputRows = outputRows;
+		contextualOutputRows = true;
+		componentOutputRows = true;
 	}
 
 	void copyPhysicalCostFrom(PackedCostEstimate source) {
 		if (source.explicitPhysicalCost) {
 			setPhysicalCost(source.costScope, source.sequentialRows, source.randomSeeks, source.iteratorOpens,
 					source.expressionEvaluations, source.hashBuildRows, source.hashProbeRows, source.pathExpansions,
-					source.remoteCalls, source.peakMemoryRows);
+					source.resultRows, source.remoteCalls, source.peakMemoryRows);
 		} else {
 			setScalarPhysicalCost(source.workRows);
 			setReplacesChildWork(source.costScope == CostScope.INCLUSIVE);
 		}
+		dependentSubqueriesCosted = source.dependentSubqueriesCosted;
+	}
+
+	void copyProviderInputFrom(PackedCostEstimate source) {
+		clear();
+		outputRows = source.outputRows;
+		workRows = source.workRows;
+		sequentialRows = source.sequentialRows;
+		randomSeeks = source.randomSeeks;
+		iteratorOpens = source.iteratorOpens;
+		expressionEvaluations = source.expressionEvaluations;
+		hashBuildRows = source.hashBuildRows;
+		hashProbeRows = source.hashProbeRows;
+		pathExpansions = source.pathExpansions;
+		resultRows = source.resultRows;
+		remoteCalls = source.remoteCalls;
+		peakMemoryRows = source.peakMemoryRows;
+		costScope = source.costScope;
+		explicitPhysicalCost = source.explicitPhysicalCost;
+		accessRows = source.accessRows;
+		invocations = source.invocations;
+		contextualOutputRows = source.contextualOutputRows;
+		componentOutputRows = source.componentOutputRows;
+		evidenceStateId = source.evidenceStateId;
+		evidenceGuarantee = source.evidenceGuarantee;
+		evidenceDisposition = source.evidenceDisposition;
+		costEventId = source.costEventId;
+		lookupComponentMask = source.lookupComponentMask;
+		missingLookupComponentMask = source.missingLookupComponentMask;
+		indexPrefixLength = source.indexPrefixLength;
+		indexName = source.indexName;
+		estimateSource = source.estimateSource;
+		estimateFusion = source.estimateFusion;
+		accessMode = source.accessMode;
+		replacesChildWork = source.replacesChildWork;
 		dependentSubqueriesCosted = source.dependentSubqueriesCosted;
 	}
 
@@ -285,6 +372,7 @@ public final class PackedCostEstimate {
 		workRows = saturatedAdd(workRows, hashBuildRows);
 		workRows = saturatedAdd(workRows, hashProbeRows);
 		workRows = saturatedAdd(workRows, pathExpansions);
+		workRows = saturatedAdd(workRows, resultRows);
 		workRows = saturatedAdd(workRows, remoteCalls);
 	}
 
@@ -297,6 +385,7 @@ public final class PackedCostEstimate {
 		putPlannedDoubleMetric("plannedCostHashBuildRows", hashBuildRows);
 		putPlannedDoubleMetric("plannedCostHashProbeRows", hashProbeRows);
 		putPlannedDoubleMetric("plannedCostPathExpansions", pathExpansions);
+		putPlannedDoubleMetric("plannedCostResultRows", resultRows);
 		putPlannedDoubleMetric("plannedCostRemoteCalls", remoteCalls);
 		putPlannedDoubleMetric("plannedCostPeakMemoryRows", peakMemoryRows);
 	}
@@ -309,11 +398,19 @@ public final class PackedCostEstimate {
 			throw new IllegalArgumentException("packed evidence state ID must be non-negative");
 		}
 		this.evidenceStateId = evidenceStateId;
+		if (evidenceStateId == 0) {
+			evidenceDisposition = null;
+		}
 	}
 
 	/** Records the strongest guarantee that directly supports the rows in this slot. */
 	public void setEvidenceGuarantee(EvidenceGuarantee evidenceGuarantee) {
 		this.evidenceGuarantee = evidenceGuarantee;
+	}
+
+	/** Records whether the attached Frontier state remains composable, bound-only, or opaque. */
+	public void setEvidenceDisposition(FrontierStateDisposition evidenceDisposition) {
+		this.evidenceDisposition = evidenceDisposition;
 	}
 
 	public void setAccess(int lookupComponentMask, int missingLookupComponentMask, int indexPrefixLength,
@@ -326,6 +423,13 @@ public final class PackedCostEstimate {
 		this.indexName = indexName;
 		this.estimateSource = estimateSource;
 		this.accessMode = accessMode;
+	}
+
+	void setInvocations(double invocations) {
+		if (!Double.isFinite(invocations) || invocations < 0.0d) {
+			throw new IllegalArgumentException("packed cost invocations must be finite and non-negative");
+		}
+		this.invocations = invocations;
 	}
 
 	/** Records how the selected provider estimate was fused with the packed planner's base estimate. */
@@ -360,15 +464,21 @@ public final class PackedCostEstimate {
 		if (name == null || value == null) {
 			return;
 		}
-		for (int index = 0; index < plannedStringMetricCount; index++) {
-			if (name.equals(plannedStringMetricNames[index])) {
-				plannedStringMetricValues[index] = value;
-				return;
-			}
+		ensurePlannedStringMetricTable();
+		int slot = findPlannedStringMetricSlot(name);
+		int retained = plannedStringMetricSlots[slot];
+		if (retained != 0) {
+			plannedStringMetricValues[retained - 1] = value;
+			return;
+		}
+		if (plannedStringMetricCount + 1 > plannedStringMetricResizeThreshold) {
+			resizePlannedStringMetricTable(plannedStringMetricSlots.length << 1);
+			slot = findPlannedStringMetricSlot(name);
 		}
 		ensurePlannedStringMetricCapacity();
 		plannedStringMetricNames[plannedStringMetricCount] = name;
 		plannedStringMetricValues[plannedStringMetricCount] = value;
+		plannedStringMetricSlots[slot] = plannedStringMetricCount + 1;
 		plannedStringMetricCount++;
 	}
 
@@ -382,16 +492,40 @@ public final class PackedCostEstimate {
 		if (name == null) {
 			return;
 		}
-		for (int index = 0; index < plannedDoubleMetricCount; index++) {
-			if (name.equals(plannedDoubleMetricNames[index])) {
-				plannedDoubleMetricValues[index] = value;
-				return;
-			}
+		ensurePlannedDoubleMetricTable();
+		int slot = findPlannedDoubleMetricSlot(name);
+		int retained = plannedDoubleMetricSlots[slot];
+		if (retained != 0) {
+			plannedDoubleMetricValues[retained - 1] = value;
+			return;
+		}
+		if (plannedDoubleMetricCount + 1 > plannedDoubleMetricResizeThreshold) {
+			resizePlannedDoubleMetricTable(plannedDoubleMetricSlots.length << 1);
+			slot = findPlannedDoubleMetricSlot(name);
 		}
 		ensurePlannedDoubleMetricCapacity();
 		plannedDoubleMetricNames[plannedDoubleMetricCount] = name;
 		plannedDoubleMetricValues[plannedDoubleMetricCount] = value;
+		plannedDoubleMetricSlots[slot] = plannedDoubleMetricCount + 1;
 		plannedDoubleMetricCount++;
+	}
+
+	/** Returns one provider-specific planned string metric without materializing a metrics snapshot. */
+	public String plannedStringMetric(String name) {
+		if (name == null || plannedStringMetricCount == 0) {
+			return null;
+		}
+		int retained = plannedStringMetricSlots[findPlannedStringMetricSlot(name)];
+		return retained == 0 ? null : plannedStringMetricValues[retained - 1];
+	}
+
+	/** Returns one provider-specific planned double metric without materializing a metrics snapshot. */
+	public double plannedDoubleMetric(String name, double defaultValue) {
+		if (name == null || plannedDoubleMetricCount == 0) {
+			return defaultValue;
+		}
+		int retained = plannedDoubleMetricSlots[findPlannedDoubleMetricSlot(name)];
+		return retained == 0 ? defaultValue : plannedDoubleMetricValues[retained - 1];
 	}
 
 	/** Returns an immutable snapshot of provider-specific planned string metrics. */
@@ -462,6 +596,10 @@ public final class PackedCostEstimate {
 		return pathExpansions;
 	}
 
+	public double resultRows() {
+		return resultRows;
+	}
+
 	public double remoteCalls() {
 		return remoteCalls;
 	}
@@ -480,6 +618,23 @@ public final class PackedCostEstimate {
 	/** Returns the guarantee for these rows, or {@code null} when the provider did not publish one. */
 	public EvidenceGuarantee evidenceGuarantee() {
 		return evidenceGuarantee;
+	}
+
+	/** Returns the composability disposition of the attached Frontier state. */
+	public FrontierStateDisposition evidenceDisposition() {
+		return evidenceDisposition;
+	}
+
+	void setCostEventId(int costEventId) {
+		if (costEventId < 0) {
+			throw new IllegalArgumentException("packed costing event ID must be non-negative");
+		}
+		this.costEventId = costEventId;
+	}
+
+	/** Returns the immutable costing event which produced this estimate, or zero before provider recording. */
+	public int costEventId() {
+		return costEventId;
 	}
 
 	public boolean hasContextualOutputRows() {
@@ -574,6 +729,74 @@ public final class PackedCostEstimate {
 			plannedDoubleMetricNames = Arrays.copyOf(plannedDoubleMetricNames, capacity);
 			plannedDoubleMetricValues = Arrays.copyOf(plannedDoubleMetricValues, capacity);
 		}
+	}
+
+	private void ensurePlannedStringMetricTable() {
+		if (plannedStringMetricSlots == null) {
+			plannedStringMetricSlots = new int[PackedPrimitiveHash.tableCapacity(4)];
+			plannedStringMetricResizeThreshold = PackedPrimitiveHash.maximumFill(plannedStringMetricSlots.length);
+		}
+	}
+
+	private void ensurePlannedDoubleMetricTable() {
+		if (plannedDoubleMetricSlots == null) {
+			plannedDoubleMetricSlots = new int[PackedPrimitiveHash.tableCapacity(4)];
+			plannedDoubleMetricResizeThreshold = PackedPrimitiveHash.maximumFill(plannedDoubleMetricSlots.length);
+		}
+	}
+
+	private int findPlannedStringMetricSlot(String name) {
+		int mask = plannedStringMetricSlots.length - 1;
+		int slot = PackedPrimitiveHash.slot(metricNameHash(name), plannedStringMetricSlots.length);
+		while (true) {
+			int retained = plannedStringMetricSlots[slot];
+			if (retained == 0 || name.equals(plannedStringMetricNames[retained - 1])) {
+				return slot;
+			}
+			slot = slot + 1 & mask;
+		}
+	}
+
+	private int findPlannedDoubleMetricSlot(String name) {
+		int mask = plannedDoubleMetricSlots.length - 1;
+		int slot = PackedPrimitiveHash.slot(metricNameHash(name), plannedDoubleMetricSlots.length);
+		while (true) {
+			int retained = plannedDoubleMetricSlots[slot];
+			if (retained == 0 || name.equals(plannedDoubleMetricNames[retained - 1])) {
+				return slot;
+			}
+			slot = slot + 1 & mask;
+		}
+	}
+
+	private void resizePlannedStringMetricTable(int capacity) {
+		plannedStringMetricSlots = new int[capacity];
+		int mask = capacity - 1;
+		for (int index = 0; index < plannedStringMetricCount; index++) {
+			int slot = PackedPrimitiveHash.slot(metricNameHash(plannedStringMetricNames[index]), capacity);
+			while (plannedStringMetricSlots[slot] != 0) {
+				slot = slot + 1 & mask;
+			}
+			plannedStringMetricSlots[slot] = index + 1;
+		}
+		plannedStringMetricResizeThreshold = PackedPrimitiveHash.maximumFill(capacity);
+	}
+
+	private void resizePlannedDoubleMetricTable(int capacity) {
+		plannedDoubleMetricSlots = new int[capacity];
+		int mask = capacity - 1;
+		for (int index = 0; index < plannedDoubleMetricCount; index++) {
+			int slot = PackedPrimitiveHash.slot(metricNameHash(plannedDoubleMetricNames[index]), capacity);
+			while (plannedDoubleMetricSlots[slot] != 0) {
+				slot = slot + 1 & mask;
+			}
+			plannedDoubleMetricSlots[slot] = index + 1;
+		}
+		plannedDoubleMetricResizeThreshold = PackedPrimitiveHash.maximumFill(capacity);
+	}
+
+	private static long metricNameHash(String name) {
+		return PackedPrimitiveHash.finish(Integer.toUnsignedLong(name.hashCode()));
 	}
 
 	private static double physicalDimension(double value, String name) {

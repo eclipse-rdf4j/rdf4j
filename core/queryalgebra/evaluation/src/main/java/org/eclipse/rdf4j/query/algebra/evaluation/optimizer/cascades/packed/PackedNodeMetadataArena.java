@@ -21,6 +21,7 @@ final class PackedNodeMetadataArena {
 	static final int MERGE_JOIN = 1 << 1;
 	static final int CACHEABLE_JOIN = 1 << 2;
 	static final int SCALAR_REORDERING_SAFE = 1 << 3;
+	static final int SEMANTIC_ASSURED_SHARED_MINUS_FILTER = 1;
 
 	private final Columns relations = new Columns(32);
 	private final Columns scalars = new Columns(48);
@@ -44,6 +45,13 @@ final class PackedNodeMetadataArena {
 			throw new IllegalStateException("packed node metadata is frozen");
 		}
 		relations.addRuleMask(relationId, ruleMask);
+	}
+
+	void addRelationSemanticFlags(int relationId, int semanticFlags) {
+		if (frozen) {
+			throw new IllegalStateException("packed node metadata is frozen");
+		}
+		relations.addSemanticFlags(relationId, semanticFlags);
 	}
 
 	void attachScalar(int scalarId, int metricSetId, int flags, double resultSizeEstimate, double costEstimate) {
@@ -96,6 +104,10 @@ final class PackedNodeMetadataArena {
 
 	long relationRuleMask(int relationId) {
 		return relations.ruleMask(relationId);
+	}
+
+	int relationSemanticFlags(int relationId) {
+		return relations.semanticFlags(relationId);
 	}
 
 	int scalarMetricSetId(int scalarId) {
@@ -151,6 +163,7 @@ final class PackedNodeMetadataArena {
 		private long[] costEstimateBits;
 		private int[] algorithmNameIds;
 		private long[] ruleMasks;
+		private int[] semanticFlags;
 
 		private Columns(int expectedRows) {
 			int capacity = Math.max(2, expectedRows + 1);
@@ -161,6 +174,7 @@ final class PackedNodeMetadataArena {
 			costEstimateBits = new long[capacity];
 			algorithmNameIds = new int[capacity];
 			ruleMasks = new long[capacity];
+			semanticFlags = new int[capacity];
 		}
 
 		private void attach(int id, int metricSetId, int nodeFlags, double resultSizeEstimate, double costEstimate,
@@ -205,11 +219,17 @@ final class PackedNodeMetadataArena {
 					Double.longBitsToDouble(resultSizeEstimateBits[sourceId]),
 					Double.longBitsToDouble(costEstimateBits[sourceId]), algorithmNameIds[sourceId]);
 			ruleMasks[targetId] |= ruleMasks[sourceId];
+			semanticFlags[targetId] |= semanticFlags[sourceId];
 		}
 
 		private void addRuleMask(int id, long ruleMask) {
 			checkId(id);
 			ruleMasks[id] |= ruleMask;
+		}
+
+		private void addSemanticFlags(int id, int flags) {
+			checkId(id);
+			semanticFlags[id] |= flags;
 		}
 
 		private int metricSetId(int id) {
@@ -242,6 +262,11 @@ final class PackedNodeMetadataArena {
 			return ruleMasks[id];
 		}
 
+		private int semanticFlags(int id) {
+			checkId(id);
+			return semanticFlags[id];
+		}
+
 		private void checkId(int id) {
 			if (id <= 0 || id >= present.length || present[id] == 0) {
 				throw new IndexOutOfBoundsException("unknown node metadata row " + id);
@@ -263,6 +288,7 @@ final class PackedNodeMetadataArena {
 			costEstimateBits = Arrays.copyOf(costEstimateBits, capacity);
 			algorithmNameIds = Arrays.copyOf(algorithmNameIds, capacity);
 			ruleMasks = Arrays.copyOf(ruleMasks, capacity);
+			semanticFlags = Arrays.copyOf(semanticFlags, capacity);
 		}
 	}
 }

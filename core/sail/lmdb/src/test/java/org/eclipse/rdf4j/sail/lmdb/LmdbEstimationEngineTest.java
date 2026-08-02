@@ -271,6 +271,30 @@ class LmdbEstimationEngineTest {
 	}
 
 	@Test
+	void compositeCorrelatedFactorReplacesGlobalLeafWorkWithBoundAccessWork() {
+		RecordingEvidenceSource source = new RecordingEvidenceSource();
+		LmdbEstimationEngine engine = new LmdbEstimationEngine(source, new EstimateEvidenceResolver());
+		StatementPattern connects = pattern("node", P1, "neighbor");
+		StatementPattern weight = pattern("neighbor", P2, "weight");
+		Filter rhs = new Filter(new Join(connects, weight), new ValueConstant(VF.createLiteral(true)));
+		BagEstimate prefix = BagEstimate.exact(1.0d, "one-bound-node")
+				.withVariable("node", VariableEstimate.bound(1.0d, 1.0d));
+		EstimateContext context = EstimateContext.root(rhs, IDENTITY, 4L)
+				.withBoundNames(Set.of("node"))
+				.withPrefixEstimate(prefix);
+		BagEstimate semantic = engine.estimate(rhs, context);
+
+		var estimate = new LmdbFactorCostAssembler(engine, null).assemble(rhs, context, semantic, false);
+
+		assertEquals(10.0d, semantic.workRows(),
+				"The semantic estimate retains global evidence work so it can be audited independently");
+		assertEquals(6.0d, estimate.getWorkRows(),
+				"One correlated invocation must charge the two conditioned accesses and filter evaluations, not "
+						+ "both global predicate buckets");
+		assertEquals(semantic.rows(), estimate.getOutputRows(), 0.0d);
+	}
+
+	@Test
 	void finiteValuesTreatUndefAsUnboundDuringExactJoin() {
 		LmdbEstimationEngine engine = new LmdbEstimationEngine(new RecordingEvidenceSource(),
 				new EstimateEvidenceResolver());

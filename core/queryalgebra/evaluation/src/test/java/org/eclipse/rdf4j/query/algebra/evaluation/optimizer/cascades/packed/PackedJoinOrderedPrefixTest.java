@@ -28,6 +28,59 @@ import org.junit.jupiter.api.Test;
 class PackedJoinOrderedPrefixTest {
 
 	@Test
+	void boundedSearchReachesTheSameCostedWinnerAsUnboundedSearch() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		List<String> optimalOrder = List.of("urn:i", "urn:h", "urn:g", "urn:f", "urn:e", "urn:d", "urn:c",
+				"urn:b", "urn:a");
+		List<TupleExpr> factors = new ArrayList<>(optimalOrder.size());
+		for (char suffix = 'a'; suffix <= 'i'; suffix++) {
+			factors.add(pattern(values, "shared", "urn:" + suffix, suffix + "Value"));
+		}
+		TupleExpr source = leftDeepJoin(factors);
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (!query.isStatementPattern(relationId)) {
+					return Double.NaN;
+				}
+				return predicate(query, relationId).charAt("urn:".length()) - 'a' + 1.0d;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				double baseRows = estimateRows(query, relationId);
+				if (!query.isStatementPattern(relationId) || context.prefixRelationCount() == 0) {
+					output.setRows(baseRows, baseRows);
+					return;
+				}
+				List<String> prefix = prefixPredicates(query, context);
+				String candidate = predicate(query, relationId);
+				boolean followsCostedOptimum = prefix.size() < optimalOrder.size()
+						&& prefix.equals(optimalOrder.subList(0, prefix.size()))
+						&& candidate.equals(optimalOrder.get(prefix.size()));
+				output.setContextualRows(1.0d, followsCostedOptimum ? 1.0d : 1_000_000.0d);
+			}
+		};
+
+		PackedPlanningResult unbounded = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), costs);
+		PackedPlanningResult bounded = PackedCascadesPlanner.optimize(source,
+				OptimizationGoal.root().asBudgeted(null, 256), costs);
+		List<String> unboundedOrder = statementFactors(unbounded.selectedPlan())
+				.stream()
+				.map(PackedJoinOrderedPrefixTest::predicate)
+				.toList();
+		List<String> boundedOrder = statementFactors(bounded.selectedPlan())
+				.stream()
+				.map(PackedJoinOrderedPrefixTest::predicate)
+				.toList();
+
+		assertEquals(optimalOrder, unboundedOrder);
+		assertEquals(unboundedOrder, boundedOrder,
+				"A work bound may stop exhaustive proof, but traversal order must retain the cheapest costed full plan");
+	}
+
+	@Test
 	void boundedSeedsLeaveEnoughBudgetForDensePlanThatBeatsEveryGreedySeed() {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		TupleExpr source = leftDeepJoin(List.of(

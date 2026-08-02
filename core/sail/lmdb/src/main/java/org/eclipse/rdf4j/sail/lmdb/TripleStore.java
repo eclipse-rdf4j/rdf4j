@@ -1789,6 +1789,59 @@ class TripleStore implements Closeable {
 				estimateSource, accessMode);
 	}
 
+	IndexCostProfile indexCostProfile(String indexFieldSequence, boolean includeInferred) throws IOException {
+		TripleIndex index = getIndex(indexFieldSequence);
+		if (index == null) {
+			throw new IOException("Unknown LMDB triple index: " + indexFieldSequence);
+		}
+		return txnManager.doWith((stack, txn) -> {
+			MDBStat explicit = MDBStat.malloc(stack);
+			mdb_stat(txn, index.getDB(true), explicit);
+			long entries = explicit.ms_entries();
+			long leafPages = explicit.ms_leaf_pages();
+			double randomSeekWork = indexSearchWork(explicit);
+			int databaseCount = 1;
+			if (includeInferred) {
+				MDBStat inferred = MDBStat.malloc(stack);
+				mdb_stat(txn, index.getDB(false), inferred);
+				entries = saturatingAdd(entries, inferred.ms_entries());
+				leafPages = saturatingAdd(leafPages, inferred.ms_leaf_pages());
+				randomSeekWork += indexSearchWork(inferred);
+				databaseCount++;
+			}
+			double sequentialWorkPerRow = entries == 0L
+					? 1.0d
+					: 1.0d + (double) leafPages / entries;
+			return new IndexCostProfile(sequentialWorkPerRow, randomSeekWork, databaseCount);
+		});
+	}
+
+	private static double indexSearchWork(MDBStat stat) {
+		/*
+		 * Keep random and sequential access in the same page/row work unit. Sequential work already accounts for
+		 * amortized leaf-page visits and emitted rows; charging every in-page binary-search comparison as another row
+		 * made a cached LMDB seek appear roughly an order of magnitude more expensive than scanning and materializing a
+		 * row. A point lookup visits one page per B-tree level. Result decoding remains represented independently by
+		 * the result-row dimension in the physical objective.
+		 */
+		return Math.max(1, stat.ms_depth());
+	}
+
+	private static long saturatingAdd(long left, long right) {
+		long result = left + right;
+		return result < 0L || result < left ? Long.MAX_VALUE : result;
+	}
+
+	record IndexCostProfile(double sequentialWorkPerRow, double randomSeekWork, int databaseCount) {
+		IndexCostProfile {
+			if (!Double.isFinite(sequentialWorkPerRow) || sequentialWorkPerRow < 1.0d
+					|| !Double.isFinite(randomSeekWork) || randomSeekWork < 1.0d
+					|| databaseCount < 1) {
+				throw new IllegalArgumentException("Invalid LMDB index cost profile");
+			}
+		}
+	}
+
 	List<IndexAccessPath> indexAccessPaths(int boundComponentMask) {
 		long subj = boundMask(boundComponentMask, Component.S);
 		long pred = boundMask(boundComponentMask, Component.P);

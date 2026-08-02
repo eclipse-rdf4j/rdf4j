@@ -14,12 +14,236 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.lang.reflect.Method;
 
 import org.junit.jupiter.api.Test;
 
 class FrontierStateArenaTest {
+
+	@Test
+	void detachedEvidenceBundlePreservesExactTuplePayloadAfterArenaClose() throws Exception {
+		FrontierLayout layout = FrontierLayout.of("x", "y");
+		FrontierStateKey stateKey = key(new long[] { 1L }, layout, new long[] { 3L },
+				2L, 3L, 4L, 5L, 6L, 0, 1);
+		Object bundle;
+		try (FrontierStateArena arena = new FrontierStateArena(64 * 1024L)) {
+			arena.declareCanonicalStates(stateKey);
+			try (FrontierPayloadWriter writer = arena.newPayloadWriter(stateKey, new int[] { 2 }, new int[] { 0 })) {
+				writer.putExact(0, 0, 2.0d, new long[] { 11L, 21L }, 0);
+				writer.putExact(0, 1, 3.0d, new long[] { 12L, 22L }, 0);
+				EvidenceStateRef state = arena.internPayload(stateKey, EvidenceStateSummary.exact(5.0d),
+						FrontierStateOperation.EXACT_LEAF, null, null, 0, writer);
+				Method export = FrontierStateArena.class.getMethod("exportEvidence", int[].class);
+				bundle = export.invoke(arena, (Object) new int[] { state.stateId() });
+			}
+		}
+
+		assertNotNull(bundle);
+		Class<?> bundleType = Class.forName(
+				"org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierEvidenceBundle");
+		assertEquals(bundleType, bundle.getClass());
+		assertEquals(1, bundleType.getMethod("stateCount").invoke(bundle));
+		assertEquals(1, bundleType.getMethod("requestedStateOrdinal", int.class).invoke(bundle, 0));
+		assertEquals(EvidenceStateSummary.exact(5.0d),
+				bundleType.getMethod("summary", int.class).invoke(bundle, 1));
+		assertEquals("INLINE", bundleType.getMethod("payloadKind", int.class).invoke(bundle, 1).toString());
+		assertEquals(2, bundleType.getMethod("exactCount", int.class, int.class).invoke(bundle, 1, 0));
+		assertEquals(11L,
+				bundleType.getMethod("exactTermId", int.class, int.class, int.class, int.class)
+						.invoke(bundle, 1, 0, 0, 0));
+		assertEquals(21L,
+				bundleType.getMethod("exactTermId", int.class, int.class, int.class, int.class)
+						.invoke(bundle, 1, 0, 0, 1));
+		assertEquals(12L,
+				bundleType.getMethod("exactTermId", int.class, int.class, int.class, int.class)
+						.invoke(bundle, 1, 0, 1, 0));
+		assertEquals(22L,
+				bundleType.getMethod("exactTermId", int.class, int.class, int.class, int.class)
+						.invoke(bundle, 1, 0, 1, 1));
+		assertEquals(2.0d,
+				bundleType.getMethod("exactWeight", int.class, int.class, int.class).invoke(bundle, 1, 0, 0));
+		assertEquals(3.0d,
+				bundleType.getMethod("exactWeight", int.class, int.class, int.class).invoke(bundle, 1, 0, 1));
+		assertTrue((long) bundleType.getMethod("retainedBytes").invoke(bundle) > 0L);
+	}
+
+	@Test
+	void detachedEvidenceBundleImportsIntoANewArenaWithStableTuplePairingAndDigest() throws Exception {
+		FrontierLayout layout = FrontierLayout.of("x", "y");
+		FrontierStateKey stateKey = key(new long[] { 1L }, layout, new long[] { 3L },
+				2L, 3L, 4L, 5L, 6L, 0, 1);
+		FrontierEvidenceBundle bundle;
+		try (FrontierStateArena source = new FrontierStateArena(64 * 1024L)) {
+			source.declareCanonicalStates(stateKey);
+			try (FrontierPayloadWriter writer = source.newPayloadWriter(stateKey, new int[] { 2 }, new int[] { 0 })) {
+				writer.putExact(0, 0, 2.0d, new long[] { 11L, 21L }, 0);
+				writer.putExact(0, 1, 3.0d, new long[] { 12L, 22L }, 0);
+				EvidenceStateRef state = source.internPayload(stateKey, EvidenceStateSummary.exact(5.0d),
+						FrontierStateOperation.EXACT_LEAF, null, null, 0, writer);
+				bundle = source.exportEvidence(new int[] { state.stateId() });
+			}
+		}
+
+		try (FrontierStateArena target = new FrontierStateArena(64 * 1024L)) {
+			Method importEvidence = FrontierStateArena.class.getMethod("importEvidence", FrontierEvidenceBundle.class);
+			EvidenceStateRef[] imported = (EvidenceStateRef[]) importEvidence.invoke(target, bundle);
+
+			assertEquals(1, imported.length);
+			assertEquals(EvidenceStateSummary.exact(5.0d), imported[0].summary());
+			assertEquals(FrontierStateDisposition.COMPOSABLE_PAYLOAD, target.disposition(imported[0]));
+			try (FrontierPayloadLease payload = target.openPayload(imported[0])) {
+				assertEquals(2, payload.exactCount(0));
+				assertEquals(11L, payload.exactTermId(0, 0, 0));
+				assertEquals(21L, payload.exactTermId(0, 0, 1));
+				assertEquals(12L, payload.exactTermId(0, 1, 0));
+				assertEquals(22L, payload.exactTermId(0, 1, 1));
+			}
+			FrontierEvidenceBundle roundTrip = target.exportEvidence(new int[] { imported[0].stateId() });
+			assertEquals(bundle.digestHigh(1), roundTrip.digestHigh(1));
+			assertEquals(bundle.digestLow(1), roundTrip.digestLow(1));
+		}
+	}
+
+	@Test
+	void stateDispositionSeparatesComposableBoundOnlyAndOpaqueLineage() throws Exception {
+		Class<?> dispositionType = Class.forName(
+				"org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDisposition");
+		Method disposition = FrontierStateArena.class.getMethod("disposition", EvidenceStateRef.class);
+		Method deriveOpaque = FrontierStateArena.class.getMethod("deriveOpaqueBoundary", EvidenceStateRef.class,
+				EvidenceStateSummary.class, int.class);
+		FrontierLayout layout = FrontierLayout.of("x");
+		FrontierStateKey exactKey = key(new long[] { 1L }, layout, new long[] { 1L },
+				2L, 3L, 4L, 5L, 6L, 0, 1);
+		FrontierStateKey boundedKey = key(new long[] { 3L }, layout, new long[] { 1L },
+				2L, 3L, 4L, 5L, 6L, 0, 1);
+		try (FrontierStateArena arena = new FrontierStateArena(64 * 1024L)) {
+			arena.declareCanonicalStates(exactKey, boundedKey);
+			EvidenceStateRef exact;
+			try (FrontierPayloadWriter writer = arena.newPayloadWriter(exactKey, new int[] { 1 }, new int[] { 0 })) {
+				writer.putExact(0, 0, 1.0d, new long[] { 11L }, 0);
+				exact = arena.internPayload(exactKey, EvidenceStateSummary.exact(1.0d),
+						FrontierStateOperation.EXACT_LEAF, null, null, 0, writer);
+			}
+			EvidenceStateRef bounded = arena.deriveSummary(boundedKey,
+					EvidenceStateSummary.unresolved(1.0d, 5.0d, "probe budget exhausted"),
+					FrontierStateOperation.UNRESOLVED, exact, null, 17);
+			EvidenceStateRef opaque = (EvidenceStateRef) deriveOpaque.invoke(arena, exact,
+					EvidenceStateSummary.unresolved(1.0d, Double.POSITIVE_INFINITY, "service boundary"), 19);
+
+			assertEquals("COMPOSABLE_PAYLOAD", disposition.invoke(arena, exact).toString());
+			assertEquals("BOUND_ONLY", disposition.invoke(arena, bounded).toString());
+			assertEquals("OPAQUE_BOUNDARY", disposition.invoke(arena, opaque).toString());
+			assertEquals("OPAQUE_BOUNDARY", arena.operation(opaque).toString());
+			assertEquals(1, arena.parentCount(opaque));
+			assertEquals(exact, arena.parent(opaque, 0));
+			assertTrue(dispositionType.isEnum());
+		}
+	}
+
+	@Test
+	void boundOnlyDispositionRetainsIndependentExactCardinalityGuarantee() {
+		FrontierLayout inputLayout = FrontierLayout.of("x");
+		FrontierStateKey inputKey = key(new long[] { 1L }, inputLayout, new long[] { 1L },
+				2L, 3L, 4L, 5L, 6L, 0, 1);
+		try (FrontierStateArena arena = new FrontierStateArena(64 * 1024L)) {
+			arena.declareCanonicalStates(inputKey);
+			EvidenceStateRef input;
+			try (FrontierPayloadWriter writer = arena.newPayloadWriter(inputKey, new int[] { 1 }, new int[] { 0 })) {
+				writer.putExact(0, 0, 1.0d, new long[] { 11L }, 0);
+				input = arena.internPayload(inputKey, EvidenceStateSummary.exact(1.0d),
+						FrontierStateOperation.EXACT_LEAF, null, null, 0, writer);
+			}
+
+			EvidenceStateRef boundary = arena.deriveBoundBoundary(
+					input, FrontierLayout.of("projected"), input.summary(), 23);
+
+			assertEquals(FrontierStateDisposition.BOUND_ONLY, arena.disposition(boundary));
+			assertEquals(EvidenceGuarantee.DATABASE_EXACT, boundary.summary().guarantee());
+			assertEquals(EvidenceStateSummary.exact(1.0d), boundary.summary());
+			assertEquals(FrontierPayloadStatus.NONE, arena.payloadStatus(boundary));
+		}
+	}
+
+	@Test
+	void keyedExactSummaryRemainsBoundOnlyUntilItsPayloadIsReplayed() {
+		FrontierLayout layout = FrontierLayout.of("x");
+		FrontierStateKey stateKey = key(new long[] { 1L }, layout, new long[] { 1L },
+				2L, 3L, 4L, 5L, 6L, 0, 1);
+		FrontierEvidenceBundle bundle;
+		try (FrontierStateArena source = new FrontierStateArena(64 * 1024L)) {
+			source.declareCanonicalStates(stateKey);
+			EvidenceStateRef deferred = source.deriveSummary(stateKey, EvidenceStateSummary.exact(7.0d),
+					FrontierStateOperation.SUMMARY_ONLY, null, null, 31);
+
+			assertEquals(FrontierStateDisposition.BOUND_ONLY, source.disposition(deferred));
+			assertEquals(EvidenceGuarantee.DATABASE_EXACT, deferred.summary().guarantee());
+			assertEquals(FrontierPayloadStatus.NONE, source.payloadStatus(deferred));
+			bundle = source.exportEvidence(new int[] { deferred.stateId() });
+		}
+
+		try (FrontierStateArena target = new FrontierStateArena(64 * 1024L)) {
+			EvidenceStateRef imported = target.importEvidence(bundle)[0];
+
+			assertEquals(FrontierStateDisposition.BOUND_ONLY, target.disposition(imported));
+			assertEquals(EvidenceGuarantee.DATABASE_EXACT, imported.summary().guarantee());
+			assertEquals(FrontierPayloadStatus.NONE, target.payloadStatus(imported));
+			assertEquals(FrontierStateOperation.SUMMARY_ONLY, target.operation(imported));
+		}
+	}
+
+	@Test
+	void unkeyedInitialStateRetainsOpaqueLineageAcrossBundleRoundTrip() {
+		FrontierEvidenceBundle bundle;
+		try (FrontierStateArena source = new FrontierStateArena(64 * 1024L)) {
+			EvidenceStateRef initial = source.append(FrontierLayout.of("x"),
+					EvidenceStateSummary.unresolved(3.0d, 9.0d, "source unavailable"));
+			EvidenceStateRef opaque = source.deriveOpaqueBoundary(initial,
+					EvidenceStateSummary.unresolved(2.0d, Double.POSITIVE_INFINITY, "service boundary"), 41);
+
+			assertEquals(1, source.parentCount(opaque));
+			assertEquals(initial, source.parent(opaque, 0));
+			bundle = source.exportEvidence(new int[] { opaque.stateId() });
+		}
+
+		try (FrontierStateArena target = new FrontierStateArena(64 * 1024L)) {
+			EvidenceStateRef imported = target.importEvidence(bundle)[0];
+
+			assertEquals(FrontierStateDisposition.OPAQUE_BOUNDARY, target.disposition(imported));
+			assertEquals(FrontierStateOperation.OPAQUE_BOUNDARY, target.operation(imported));
+			assertEquals(1, target.parentCount(imported));
+			assertEquals(FrontierLayout.of("x"), target.layout(target.parent(imported, 0)));
+		}
+	}
+
+	@Test
+	void binaryOpaqueBoundaryRetainsBothParentsAndOutputLayoutAcrossBundleRoundTrip() {
+		FrontierEvidenceBundle bundle;
+		try (FrontierStateArena source = new FrontierStateArena(64 * 1024L)) {
+			EvidenceStateRef left = source.append(FrontierLayout.of("x"),
+					EvidenceStateSummary.unresolved(3.0d, 9.0d, "left unresolved"));
+			EvidenceStateRef right = source.append(FrontierLayout.of("y"),
+					EvidenceStateSummary.unresolved(4.0d, 12.0d, "right unresolved"));
+			EvidenceStateRef boundary = source.deriveOpaqueBoundary(left, right, FrontierLayout.of("x", "y"),
+					EvidenceStateSummary.unresolved(7.0d, Double.POSITIVE_INFINITY, "union boundary"), 43);
+
+			assertEquals(2, source.parentCount(boundary));
+			assertEquals(left, source.parent(boundary, 0));
+			assertEquals(right, source.parent(boundary, 1));
+			bundle = source.exportEvidence(new int[] { boundary.stateId() });
+		}
+
+		try (FrontierStateArena target = new FrontierStateArena(64 * 1024L)) {
+			EvidenceStateRef imported = target.importEvidence(bundle)[0];
+
+			assertEquals(FrontierStateDisposition.OPAQUE_BOUNDARY, target.disposition(imported));
+			assertEquals(2, target.parentCount(imported));
+			assertEquals(FrontierLayout.of("x", "y"), target.layout(imported));
+		}
+	}
 
 	@Test
 	void canonicalStateKeyAndDeterministicSeedContractIsAvailable() {

@@ -132,7 +132,7 @@ public final class BagEstimate {
 					EvidenceQuality.VARIABLE_SKETCH, source()));
 		}
 		return withProfile(rows(), workRows(), memoryRows(), confidence(), source(), copy, finiteRelations(),
-				sketches, evidenceProfile.supportingSketches(), metrics(), false);
+				sketches, evidenceProfile.supportingSketches(), metrics(), true);
 	}
 
 	public BagEstimate withFiniteRelation(FiniteRelationEstimate relation) {
@@ -148,7 +148,7 @@ public final class BagEstimate {
 		Map<VariableSetKey, FiniteRelationEstimate> relationCopy = new LinkedHashMap<>(finiteRelations());
 		relationCopy.put(relation.variableSetKey(), relation);
 		return withProfile(rows(), workRows(), memoryRows(), confidence(), source(), variableCopy, relationCopy,
-				evidenceProfile.sketches(), evidenceProfile.supportingSketches(), metrics(), false);
+				evidenceProfile.sketches(), evidenceProfile.supportingSketches(), metrics(), true);
 	}
 
 	public BagEstimate withSketchRelation(Set<String> names, DistributionSketch sketch) {
@@ -162,7 +162,7 @@ public final class BagEstimate {
 		copy.put(key, new SketchEvidence(key, sketch, rows(), sketch.distinctRows(),
 				names.size() > 1 ? EvidenceQuality.TUPLE_SKETCH : EvidenceQuality.VARIABLE_SKETCH, source()));
 		return withProfile(rows(), workRows(), memoryRows(), confidence(), source(), variableCopy, finiteRelations(),
-				copy, evidenceProfile.supportingSketches(), metrics(), false);
+				copy, evidenceProfile.supportingSketches(), metrics(), true);
 	}
 
 	public BagEstimate withSketchRelations(Map<VariableSetKey, DistributionSketch> sketches) {
@@ -182,7 +182,7 @@ public final class BagEstimate {
 			}
 		}
 		return withProfile(rows(), workRows(), memoryRows(), confidence(), source(), variableCopy, finiteRelations(),
-				copy, evidenceProfile.supportingSketches(), metrics(), false);
+				copy, evidenceProfile.supportingSketches(), metrics(), true);
 	}
 
 	private void mergeVariableSketch(Map<String, VariableEstimate> variableCopy, VariableSetKey key,
@@ -202,15 +202,15 @@ public final class BagEstimate {
 
 	public BagEstimate withRows(double rows, String source) {
 		return withProfile(rows, workRows(), memoryRows(), confidence(), source, variables(), finiteRelations(),
-				evidenceProfile.sketches(), evidenceProfile.supportingSketches(), metrics(), false);
+				evidenceProfile.sketches(), evidenceProfile.supportingSketches(), metrics(), true);
 	}
 
 	public BagEstimate withRowsPreservingEvidence(double rows, double workRows, double confidence, String source,
 			Map<String, Double> metrics, boolean preserveFiniteRelations) {
 		RebaseMode mode = preserveFiniteRelations ? RebaseMode.PRESERVE_EXACT_RELATIONS
 				: RebaseMode.DROP_EXACT_RELATIONS;
-		return evidenceProfile.rebaseRows(rows, workRows, confidence, source, metrics, mode)
-				.toBagEstimate();
+		return new BagEstimate(evidenceProfile.rebaseRows(rows, workRows, confidence, source, metrics, mode),
+				evidenceState);
 	}
 
 	public BagEstimate withWorkRows(double workRows, String source) {

@@ -172,9 +172,11 @@ final class PackedWinnerTable {
 						totalCost, comparisonCost, peakMemoryRows, childWinnerIds, childOffset, childCount);
 				defaultWinnerByGroup[groupId] = winnerId;
 			} else {
-				replaceIfBetter(winnerId, comparisonTier, physicalExpressionId, physicalMetadataId, tieBreakRank,
+				winnerId = appendIfBetter(winnerId, comparisonTier, physicalExpressionId, physicalMetadataId,
+						tieBreakRank,
 						startupCost, totalCost, comparisonCost, peakMemoryRows, childWinnerIds, childOffset,
 						childCount);
+				defaultWinnerByGroup[groupId] = winnerId;
 			}
 			return winnerId;
 		}
@@ -183,8 +185,9 @@ final class PackedWinnerTable {
 				costPolicyId);
 		int winnerId = additionalTableSlots[slot];
 		if (winnerId != 0) {
-			replaceIfBetter(winnerId, comparisonTier, physicalExpressionId, physicalMetadataId, tieBreakRank,
+			winnerId = appendIfBetter(winnerId, comparisonTier, physicalExpressionId, physicalMetadataId, tieBreakRank,
 					startupCost, totalCost, comparisonCost, peakMemoryRows, childWinnerIds, childOffset, childCount);
+			additionalTableSlots[slot] = winnerId;
 			return winnerId;
 		}
 		if (additionalSize + 1 > additionalResizeThreshold) {
@@ -228,16 +231,6 @@ final class PackedWinnerTable {
 		return totalCosts[winnerId];
 	}
 
-	void addDependentCost(int winnerId, double dependentCost) {
-		checkWinnerId(winnerId);
-		if (!Double.isFinite(dependentCost) || dependentCost < 0.0d) {
-			throw new IllegalArgumentException("dependent cost must be finite and non-negative");
-		}
-		startupCosts[winnerId] = saturatedAdd(startupCosts[winnerId], dependentCost);
-		totalCosts[winnerId] = saturatedAdd(totalCosts[winnerId], dependentCost);
-		comparisonCosts[winnerId] = saturatedAdd(comparisonCosts[winnerId], dependentCost);
-	}
-
 	int childCount(int winnerId) {
 		checkWinnerId(winnerId);
 		return childCounts[winnerId];
@@ -253,6 +246,31 @@ final class PackedWinnerTable {
 
 	int size() {
 		return size;
+	}
+
+	int groupId(int winnerId) {
+		checkWinnerId(winnerId);
+		return groupIds[winnerId];
+	}
+
+	int requiredPropertyId(int winnerId) {
+		checkWinnerId(winnerId);
+		return requiredPropertyIds[winnerId];
+	}
+
+	int semanticRowGoalId(int winnerId) {
+		checkWinnerId(winnerId);
+		return semanticRowGoalIds[winnerId];
+	}
+
+	int inputContextId(int winnerId) {
+		checkWinnerId(winnerId);
+		return inputContextIds[winnerId];
+	}
+
+	int costPolicyId(int winnerId) {
+		checkWinnerId(winnerId);
+		return costPolicyIds[winnerId];
 	}
 
 	private int appendWinner(long hash, int groupId, int requiredPropertyId, int semanticRowGoalId,
@@ -281,7 +299,7 @@ final class PackedWinnerTable {
 		return winnerId;
 	}
 
-	private void replaceIfBetter(int winnerId, int comparisonTier, int physicalExpressionId, int physicalMetadataId,
+	private int appendIfBetter(int winnerId, int comparisonTier, int physicalExpressionId, int physicalMetadataId,
 			int tieBreakRank, double startupCost, double totalCost, double comparisonCost, double peakMemoryRows,
 			int[] candidateChildren, int childOffset, int childCount) {
 		if (candidateIsBetter(winnerId, comparisonTier, physicalExpressionId, tieBreakRank, startupCost, totalCost,
@@ -290,10 +308,12 @@ final class PackedWinnerTable {
 						tieBreakRank, startupCost, totalCost, comparisonCost, peakMemoryRows, candidateChildren,
 						childOffset,
 						childCount)) {
-			writeCandidate(winnerId, comparisonTier, physicalExpressionId, physicalMetadataId, tieBreakRank,
-					startupCost,
-					totalCost, comparisonCost, peakMemoryRows, candidateChildren, childOffset, childCount);
+			return appendWinner(hashes[winnerId], groupIds[winnerId], requiredPropertyIds[winnerId],
+					semanticRowGoalIds[winnerId], inputContextIds[winnerId], costPolicyIds[winnerId], comparisonTier,
+					physicalExpressionId, physicalMetadataId, tieBreakRank, startupCost, totalCost, comparisonCost,
+					peakMemoryRows, candidateChildren, childOffset, childCount);
 		}
+		return winnerId;
 	}
 
 	/**

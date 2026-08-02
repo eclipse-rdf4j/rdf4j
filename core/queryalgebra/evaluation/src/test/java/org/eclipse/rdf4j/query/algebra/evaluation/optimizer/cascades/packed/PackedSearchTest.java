@@ -23,6 +23,7 @@ import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -42,10 +43,13 @@ import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.Regex;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.Union;
@@ -155,8 +159,9 @@ class PackedSearchTest {
 
 		assertTrue(selected instanceof Join, selected::toString);
 		Join join = (Join) selected;
-		assertTrue(join.getRightArg() instanceof Filter, selected::toString);
-		assertEquals(ages, ((Filter) join.getRightArg()).getArg());
+		TupleExpr filtered = join.getLeftArg() instanceof Filter ? join.getLeftArg() : join.getRightArg();
+		assertTrue(filtered instanceof Filter, selected::toString);
+		assertEquals(ages, ((Filter) filtered).getArg());
 	}
 
 	@Test
@@ -310,13 +315,11 @@ class PackedSearchTest {
 	}
 
 	@Test
-	void sampledDeadlineExhaustionRemainsLatched() {
+	void expiredDeadlineStopsBeforeFirstWorkUnitAndRemainsLatched() {
 		PackedSearchBudget budget = new PackedSearchBudget(Long.MAX_VALUE, System.nanoTime() - 1L);
-		for (int workUnit = 1; workUnit < 64; workUnit++) {
-			assertTrue(budget.tryConsume());
-		}
 
 		assertFalse(budget.tryConsume());
+		assertEquals(0L, budget.workUnits());
 		assertTrue(budget.deadlineReached());
 		assertFalse(budget.tryConsume());
 		assertFalse(budget.canConsume(1L));
@@ -439,6 +442,23 @@ class PackedSearchTest {
 				.selectedPlan();
 
 		assertEquals(1.0d, selected.getRightArg().getResultSizeEstimate(), selected::toString);
+	}
+
+	@Test
+	void optionalRightPropagatesAssuredContextThroughSafeExtension() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern left = pattern(values, "shared", "urn:left", "leftValue", Double.NaN);
+		StatementPattern probe = pattern(values, "shared", "urn:right", "rightValue", Double.NaN);
+		Extension right = new Extension(probe, new ExtensionElem(Var.of("rightValue"), "projectedValue"));
+		LeftJoin source = new LeftJoin(left, right);
+		PackedCostModel costs = contextualProbeCostModel("urn:right");
+
+		LeftJoin selected = (LeftJoin) PackedCascadesPlanner
+				.optimize(source, OptimizationGoal.root(), costs)
+				.selectedPlan();
+		Extension selectedRight = (Extension) selected.getRightArg();
+
+		assertEquals(1.0d, selectedRight.getArg().getResultSizeEstimate(), selected::toString);
 	}
 
 	@Test
@@ -583,6 +603,9 @@ class PackedSearchTest {
 
 		assertTrue(result.selectedPlan() instanceof Join, result.selectedPlan()::toString);
 		assertEquals(90.0d, result.outputRows(), result.selectedPlan()::toString);
+		assertEquals("physical-join",
+				result.selectedPlan().getStringMetricPlanned("optimizer.costEventPhase"),
+				result.selectedPlan()::toString);
 		assertTrue(filterInputRows.contains(90.0d), filterInputRows::toString);
 		assertTrue(filterInputRows.contains(5.0d), filterInputRows::toString);
 	}
@@ -626,10 +649,14 @@ class PackedSearchTest {
 				selected.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE));
 		assertEquals("retained-without-fusion", selected.getStringMetricPlanned("plannedProviderDetail"));
 		assertEquals(0.8d, selected.getDoubleMetricPlanned("plannedProviderConfidence"));
-		assertEquals(memo.winnerTotalCost(rootWinnerId), selected.getCostEstimate());
+		assertEquals(21.0d, memo.winnerTotalCost(rootWinnerId));
+		assertEquals(1.0d, selected.getCostEstimate());
 
 		PackedPlanningResult contextualized = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), costs);
-		assertEquals(contextualized.totalCost(), contextualized.selectedPlan().getCostEstimate());
+		assertEquals(21.0d, contextualized.totalCost());
+		assertEquals(1.0d, contextualized.selectedPlan().getCostEstimate());
+		assertEquals("physical-join",
+				contextualized.selectedPlan().getStringMetricPlanned("optimizer.costEventPhase"));
 	}
 
 	@Test
@@ -640,10 +667,10 @@ class PackedSearchTest {
 				pattern(values, "shared", "urn:right", "rightValue", Double.NaN));
 
 		Join selected = (Join) PackedCascadesPlanner
-				.optimize(source, OptimizationGoal.root(), repeatedJoinCosts(1_000.0d, 1_000.0d))
+				.optimize(source, OptimizationGoal.root(), repeatedJoinCosts(1_000.0d, 10_000.0d))
 				.selectedPlan();
 
-		assertEquals("hash", selected.getStringMetricPlanned("optimizer.joinAlgorithmHint"));
+		assertEquals("hash", selected.getStringMetricPlanned("optimizer.joinAlgorithmHint"), selected::toString);
 	}
 
 	@Test
@@ -671,7 +698,7 @@ class PackedSearchTest {
 					output.setRows(rows, rows);
 					return;
 				}
-				output.setContextualRows(420.0d, 420.0d);
+				output.setContextualRows(420.0d, 2_000.0d);
 				output.setAccess(1, 0, 1, 420.0d, context.prefixRows(), "test-index",
 						"test-provider", "directLookup");
 			}
@@ -681,7 +708,7 @@ class PackedSearchTest {
 				.optimize(source, OptimizationGoal.root(), costs)
 				.selectedPlan();
 
-		assertEquals("hash", selected.getStringMetricPlanned("optimizer.joinAlgorithmHint"));
+		assertEquals("hash", selected.getStringMetricPlanned("optimizer.joinAlgorithmHint"), selected::toString);
 		assertEquals(420.0d, selected.getRightArg().getResultSizeEstimate());
 		assertEquals(420.0d, selected.getResultSizeEstimate());
 	}
@@ -701,7 +728,7 @@ class PackedSearchTest {
 	}
 
 	@Test
-	void hashAlgorithmChoiceRejectsDisconnectedAndVariableScopeInputs() {
+	void hashAlgorithmChoiceMatchesVariableScopeAndDisconnectedRuntime() {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		StatementPattern scopedLeft = pattern(values, "shared", "urn:scoped-left", "leftValue", Double.NaN);
 		StatementPattern scopedRight = pattern(values, "shared", "urn:scoped-right", "rightValue", Double.NaN);
@@ -720,8 +747,10 @@ class PackedSearchTest {
 				.optimize(disconnected, OptimizationGoal.root(), costs)
 				.selectedPlan();
 
-		assertFalse(selectedScoped.getStringMetricsPlanned().containsKey("optimizer.joinAlgorithmHint"));
-		assertFalse(selectedDisconnected.getStringMetricsPlanned().containsKey("optimizer.joinAlgorithmHint"));
+		assertEquals("hash", selectedScoped.getStringMetricPlanned("optimizer.joinAlgorithmHint"),
+				selectedScoped::toString);
+		assertFalse(selectedDisconnected.getStringMetricsPlanned().containsKey("optimizer.joinAlgorithmHint"),
+				selectedDisconnected::toString);
 	}
 
 	@Test
@@ -969,7 +998,7 @@ class PackedSearchTest {
 	}
 
 	@Test
-	void safeFilterKeepsPositionWhileInheritedFinitePrefixReordersInnerJoin() {
+	void safeFilterLetsOuterFiniteAnchorEnterTheSameJoinSearch() {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		MapBindingSet first = new MapBindingSet(1);
 		first.setBinding("branchName", values.createLiteral("first"));
@@ -990,18 +1019,54 @@ class PackedSearchTest {
 				.optimize(source, OptimizationGoal.root(), mobileFilterCosts());
 
 		assertTrue(result.selectedPlan() instanceof Join, result.selectedPlan()::toString);
-		Join selected = (Join) result.selectedPlan();
-		assertTrue(selected.getLeftArg() instanceof BindingSetAssignment, selected::toString);
-		assertTrue(selected.getRightArg() instanceof Filter, selected::toString);
-		Filter selectedFilter = (Filter) selected.getRightArg();
-		assertTrue(selectedFilter.getArg() instanceof Join, selected::toString);
-		assertEquals(List.of("urn:name", "urn:locatedAt"),
+		List<TupleExpr> selectedFactors = joinFactors(result.selectedPlan());
+		assertEquals(2, selectedFactors.size(), result.selectedPlan()::toString);
+		assertTrue(selectedFactors.get(0) instanceof Filter, result.selectedPlan()::toString);
+		Filter selectedFilter = (Filter) selectedFactors.get(0);
+		assertTrue(selectedFactors.get(1) instanceof StatementPattern, result.selectedPlan()::toString);
+		assertEquals("urn:locatedAt",
+				((StatementPattern) selectedFactors.get(1)).getPredicateVar().getValue().stringValue(),
+				result.selectedPlan()::toString);
+		assertEquals(List.of(BindingSetAssignment.class, StatementPattern.class),
 				joinFactors(selectedFilter.getArg())
 						.stream()
-						.map(StatementPattern.class::cast)
-						.map(pattern -> pattern.getPredicateVar().getValue().stringValue())
+						.map(Object::getClass)
 						.toList(),
-				selected::toString);
+				result.selectedPlan()::toString);
+		assertTrue(containsStatementPattern(selectedFilter, "urn:name", "branchName"),
+				result.selectedPlan()::toString);
+		assertFalse(containsStatementPattern(selectedFilter, "urn:locatedAt", "branch"),
+				result.selectedPlan()::toString);
+	}
+
+	@Test
+	void parentJoinDoesNotLossilyFlattenScheduledFilterHelper() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		MapBindingSet first = new MapBindingSet(1);
+		first.setBinding("branchName", values.createLiteral("first"));
+		MapBindingSet second = new MapBindingSet(1);
+		second.setBinding("branchName", values.createLiteral("second"));
+		BindingSetAssignment selectedNames = new BindingSetAssignment();
+		selectedNames.setBindingNames(new LinkedHashSet<>(List.of("branchName")));
+		selectedNames.setBindingSets(List.of(first, second));
+
+		StatementPattern name = pattern(values, "branch", "urn:name", "branchName", Double.NaN);
+		StatementPattern locatedAt = pattern(values, "copy", "urn:locatedAt", "branch", Double.NaN);
+		Filter residual = new Filter(new Join(locatedAt, name),
+				new Compare(Var.of("branch"), new ValueConstant(values.createIRI("urn:excluded")),
+						Compare.CompareOp.NE));
+		StatementPattern availability = pattern(values, "copy", "urn:availability", "available", Double.NaN);
+		Join source = new Join(new Join(selectedNames, residual), availability);
+
+		PackedPlanningResult result = PackedCascadesPlanner
+				.optimize(source, OptimizationGoal.root(), mobileFilterCosts());
+
+		assertTrue(containsStatementPattern(result.selectedPlan(), "urn:name", "branchName"),
+				result.selectedPlan()::toString);
+		assertTrue(containsStatementPattern(result.selectedPlan(), "urn:locatedAt", "branch"),
+				result.selectedPlan()::toString);
+		assertTrue(containsStatementPattern(result.selectedPlan(), "urn:availability", "available"),
+				result.selectedPlan()::toString);
 	}
 
 	@Test
@@ -1282,7 +1347,7 @@ class PackedSearchTest {
 		Filter source = new Filter(anchorFirstInput, new Not(new Exists(lowNeighbor)));
 
 		PackedPlanningResult result = PackedCascadesPlanner
-				.optimize(source, OptimizationGoal.root(), correlatedPredicateCosts());
+				.optimize(source, OptimizationGoal.root(), measuredCorrelatedSchedulingCosts());
 
 		List<TupleExpr> selectedFactors = joinFactors(result.selectedPlan());
 		assertEquals(3, selectedFactors.size(), result.selectedPlan()::toString);
@@ -1296,6 +1361,168 @@ class PackedSearchTest {
 		assertTrue(selectedFactors.get(1).getBindingNames().contains("weight"), result.selectedPlan()::toString);
 		assertTrue(isStatementPattern(selectedFactors.get(2), "urn:weight", "weight"),
 				result.selectedPlan()::toString);
+	}
+
+	@Test
+	void correlatedDenseSearchCostsEquivalentContinuationInRetainedState() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		MapBindingSet thresholdRow = new MapBindingSet(1);
+		thresholdRow.setBinding("threshold", values.createLiteral(3));
+		BindingSetAssignment threshold = new BindingSetAssignment();
+		threshold.setBindingNames(new LinkedHashSet<>(List.of("threshold")));
+		threshold.setBindingSets(List.of(thresholdRow));
+
+		StatementPattern type = pattern(values, "node", "urn:type", "nodeType", Double.NaN);
+		StatementPattern weight = pattern(values, "node", "urn:weight", "weight", Double.NaN);
+		ListMemberOperator selectedWeightValues = new ListMemberOperator();
+		selectedWeightValues.setArguments(List.of(
+				Var.of("weight"),
+				new ValueConstant(values.createLiteral(1)),
+				new ValueConstant(values.createLiteral(2))));
+		Filter selectedWeights = new Filter(weight, selectedWeightValues);
+		StatementPattern connects = pattern(values, "node", "urn:connects", "neighbor", Double.NaN);
+		StatementPattern neighborWeight = pattern(values, "neighbor", "urn:neighborWeight", "neighborWeight",
+				Double.NaN);
+		Filter lowNeighbor = new Filter(new Join(connects, neighborWeight),
+				new Compare(Var.of("neighborWeight"), Var.of("threshold"), Compare.CompareOp.LT));
+		Filter source = new Filter(new Join(new Join(threshold, type), selectedWeights),
+				new Not(new Exists(lowNeighbor)));
+		int antiStateId = 1_000_000;
+		boolean[] equivalentWeightPathCostedAfterAnti = new boolean[1];
+
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (query.isFilter(relationId)
+						&& query.materializeRelation(relationId).getBindingNames().equals(Set.of("node", "weight"))) {
+					return 100_000_000.0d;
+				}
+				if (query.isBindingSetAssignment(relationId)) {
+					return query.bindingAssignmentRowCount(relationId);
+				}
+				if (!query.isStatementPattern(relationId)) {
+					return Double.NaN;
+				}
+				return switch (query.statementPatternValue(relationId, 1).stringValue()) {
+				case "urn:type" -> 100.0d;
+				case "urn:weight" -> 100_000.0d;
+				default -> 2.0d;
+				};
+			}
+
+			@Override
+			public PackedCostSession openSession(PackedQueryView query) {
+				return new PackedCostSession() {
+					private int nextStateId = 1;
+
+					@Override
+					public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						double rows = estimateRows(query, relationId);
+						if (Double.isFinite(rows)) {
+							output.setRows(rows, rows);
+							stamp(output);
+						}
+					}
+
+					@Override
+					public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						if (query.isStatementPattern(relationId)
+								&& "urn:weight".equals(query.statementPatternValue(relationId, 1).stringValue())
+								&& context.evidenceStateId() == antiStateId) {
+							equivalentWeightPathCostedAfterAnti[0] = true;
+						}
+						if (selectedWeightFilter(query, relationId)) {
+							output.setContextualRows(Double.NaN, Double.NaN);
+						} else if (query.isBindingSetAssignment(relationId)) {
+							double rows = context.prefixRows() * query.bindingAssignmentRowCount(relationId);
+							output.setContextualRows(rows, query.bindingAssignmentRowCount(relationId));
+						} else if (query.isStatementPattern(relationId)
+								&& "urn:weight".equals(query.statementPatternValue(relationId, 1).stringValue())
+								&& query.prefixBindsStatementComponent(context, relationId, 2)) {
+							output.setComponentRows(1.0d, 1.0d);
+						} else {
+							double rows = estimateRows(query, relationId);
+							if (Double.isFinite(rows)) {
+								output.setContextualRows(rows, rows);
+							}
+						}
+						stamp(output);
+					}
+
+					@Override
+					public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						if (selectedWeightFilter(query, relationId)) {
+							if (context.prefixRelationCount() > 0) {
+								output.setContextualRows(context.leftInputRows(), context.leftInputRows());
+							}
+						} else if (antiFilter(query, relationId)) {
+							output.setContextualRows(Math.max(1.0d, context.leftInputRows() * 0.25d),
+									context.leftInputRows());
+							output.setEvidenceStateId(antiStateId);
+							return;
+						} else if (query.isFilter(relationId)) {
+							double rows = Math.max(1.0d, context.leftInputRows() * 0.25d);
+							output.setContextualRows(rows, rows);
+						}
+						stamp(output);
+					}
+
+					@Override
+					public void refineIntermediateJoin(PackedCostContext context, PackedCostEstimate output) {
+						if (context.leftInputEvidenceStateId() == antiStateId
+								|| context.rightInputEvidenceStateId() == antiStateId) {
+							output.setEvidenceStateId(antiStateId);
+						} else {
+							stamp(output);
+						}
+					}
+
+					private void stamp(PackedCostEstimate output) {
+						output.setEvidenceStateId(nextStateId++);
+					}
+
+					private boolean selectedWeightFilter(PackedQueryView view, int relationId) {
+						return view.materializeRelation(relationId)instanceof Filter filter
+								&& filter.getCondition() instanceof ListMemberOperator;
+					}
+
+					private boolean antiFilter(PackedQueryView view, int relationId) {
+						return view.materializeRelation(relationId)instanceof Filter filter
+								&& filter.getCondition() instanceof Not;
+					}
+				};
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (query.isFilter(relationId)
+						&& query.materializeRelation(relationId).getBindingNames().equals(Set.of("node", "weight"))
+						&& context.prefixRelationCount() > 0) {
+					output.setContextualRows(100_000_000.0d, 100_000_000.0d);
+					return;
+				}
+				if (query.isBindingSetAssignment(relationId)) {
+					double rows = query.bindingAssignmentRowCount(relationId);
+					output.setRows(rows, rows);
+					return;
+				}
+				double rows = estimateRows(query, relationId);
+				if (query.isStatementPattern(relationId)
+						&& "urn:weight".equals(query.statementPatternValue(relationId, 1).stringValue())
+						&& query.prefixBindsStatementComponent(context, relationId, 2)) {
+					output.setComponentRows(1.0d, 1.0d);
+				} else if (Double.isFinite(rows)) {
+					output.setRows(rows, rows);
+				}
+			}
+		};
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), costs);
+
+		assertTrue(equivalentWeightPathCostedAfterAnti[0],
+				() -> "The correlated DP must cost an equivalent weight access path in the retained anti state: "
+						+ result.selectedPlan());
 	}
 
 	@Test
@@ -1345,6 +1572,204 @@ class PackedSearchTest {
 						"Physical input order must not change the first assured filter boundary");
 			}
 		}
+	}
+
+	@Test
+	void safeAliasExtensionLetsFilterJoinSearchCostEveryFactorOrder() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		List<BindingSet> selectedUsers = new ArrayList<>();
+		for (int ordinal = 0; ordinal < 4; ordinal++) {
+			MapBindingSet row = new MapBindingSet(1);
+			row.setBinding("b", values.createIRI("urn:user:" + ordinal));
+			selectedUsers.add(row);
+		}
+		BindingSetAssignment selectedB = new BindingSetAssignment();
+		selectedB.setBindingNames(new LinkedHashSet<>(List.of("b")));
+		selectedB.setBindingSets(selectedUsers);
+
+		StatementPattern ab = pattern(values, "a", "urn:follows", "b", Double.NaN);
+		StatementPattern bc = pattern(values, "b", "urn:follows", "c", Double.NaN);
+		StatementPattern cd = pattern(values, "c", "urn:follows", "d", Double.NaN);
+		StatementPattern da = pattern(values, "d", "urn:follows", "a", Double.NaN);
+		StatementPattern name = pattern(values, "b", "urn:name", "optName", Double.NaN);
+		TupleExpr cycle = leftDeepJoin(List.of(selectedB, ab, bc, cd, da));
+		Extension alias = new Extension(name, new ExtensionElem(Var.of("optName"), "optAlias"));
+		Filter source = new Filter(new Join(cycle, alias),
+				new Compare(Var.of("optAlias"), new ValueConstant(values.createLiteral("")), Compare.CompareOp.NE));
+
+		PackedPlanningResult result = PackedCascadesPlanner
+				.optimize(source, OptimizationGoal.root(), socialCycleAliasCosts());
+
+		assertEquals(List.of("values-b", "name", "ab", "da", "bc", "cd"),
+				socialCycleFactorOrder(result.selectedPlan()), result.selectedPlan()::toString);
+		assertTrue(result.selectedPlan().getBindingNames().contains("optAlias"), result.selectedPlan()::toString);
+		assertTrue((result.ruleProofMask() & PackedRuleProofs.TRIVIAL_BIND_ALIAS) != 0L,
+				result.selectedPlan()::toString);
+	}
+
+	@Test
+	void nestedMovableFiltersDoNotHideSafeAliasFactorFromJoinSearch() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		List<BindingSet> selectedUsers = new ArrayList<>();
+		for (int ordinal = 0; ordinal < 4; ordinal++) {
+			MapBindingSet row = new MapBindingSet(1);
+			row.setBinding("b", values.createIRI("urn:user:" + ordinal));
+			selectedUsers.add(row);
+		}
+		BindingSetAssignment selectedB = new BindingSetAssignment();
+		selectedB.setBindingNames(new LinkedHashSet<>(List.of("b")));
+		selectedB.setBindingSets(selectedUsers);
+
+		StatementPattern ab = pattern(values, "a", "urn:follows", "b", Double.NaN);
+		StatementPattern bc = pattern(values, "b", "urn:follows", "c", Double.NaN);
+		StatementPattern cd = pattern(values, "c", "urn:follows", "d", Double.NaN);
+		StatementPattern da = pattern(values, "d", "urn:follows", "a", Double.NaN);
+		TupleExpr cycle = leftDeepJoin(List.of(selectedB, ab, bc, cd, da));
+		cycle = new Filter(cycle, new Compare(Var.of("a"), Var.of("b"), Compare.CompareOp.NE));
+		cycle = new Filter(cycle, new Compare(Var.of("b"), Var.of("c"), Compare.CompareOp.NE));
+		cycle = new Filter(cycle, new Compare(Var.of("c"), Var.of("d"), Compare.CompareOp.NE));
+		cycle = new Filter(cycle, new Compare(Var.of("d"), Var.of("a"), Compare.CompareOp.NE));
+
+		StatementPattern name = pattern(values, "b", "urn:name", "optName", Double.NaN);
+		Extension alias = new Extension(name, new ExtensionElem(Var.of("optName"), "optAlias"));
+		Filter source = new Filter(new Join(cycle, alias),
+				new Compare(Var.of("optAlias"), new ValueConstant(values.createLiteral("")), Compare.CompareOp.NE));
+
+		PackedPlanningResult result = PackedCascadesPlanner
+				.optimize(source, OptimizationGoal.root().asBudgeted(Duration.ofSeconds(30), 4_000),
+						socialCycleAliasCosts());
+
+		assertEquals(List.of("values-b", "name", "ab", "da", "bc", "cd"),
+				socialCycleFactorOrder(result.selectedPlan()), result.selectedPlan()::toString);
+		assertTrue(result.selectedPlan().getBindingNames().contains("optAlias"), result.selectedPlan()::toString);
+		assertTrue((result.ruleProofMask() & PackedRuleProofs.TRIVIAL_BIND_ALIAS) != 0L,
+				result.selectedPlan()::toString);
+	}
+
+	@Test
+	void containingFilterRegionScheduleIsInvariantUnderAlphaRenamingAndWrittenOrder() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		String a = "alpha";
+		String b = "beta";
+		String c = "gamma";
+		String d = "delta";
+		String follows = "urn:renamed-follows";
+		String namePredicate = "urn:renamed-name";
+		List<BindingSet> selectedUsers = new ArrayList<>();
+		for (int ordinal = 0; ordinal < 4; ordinal++) {
+			MapBindingSet row = new MapBindingSet(1);
+			row.setBinding(b, values.createIRI("urn:renamed-user:" + ordinal));
+			selectedUsers.add(row);
+		}
+		BindingSetAssignment selectedB = new BindingSetAssignment();
+		selectedB.setBindingNames(new LinkedHashSet<>(List.of(b)));
+		selectedB.setBindingSets(selectedUsers);
+
+		StatementPattern ab = pattern(values, a, follows, b, Double.NaN);
+		StatementPattern bc = pattern(values, b, follows, c, Double.NaN);
+		StatementPattern cd = pattern(values, c, follows, d, Double.NaN);
+		StatementPattern da = pattern(values, d, follows, a, Double.NaN);
+		TupleExpr cycle = leftDeepJoin(List.of(cd, selectedB, da, bc, ab));
+		cycle = new Filter(cycle, new Compare(Var.of(d), Var.of(a), Compare.CompareOp.NE));
+		cycle = new Filter(cycle, new Compare(Var.of(b), Var.of(c), Compare.CompareOp.NE));
+		cycle = new Filter(cycle, new Compare(Var.of(a), Var.of(b), Compare.CompareOp.NE));
+		cycle = new Filter(cycle, new Compare(Var.of(c), Var.of(d), Compare.CompareOp.NE));
+
+		String sourceName = "renamedName";
+		String aliasName = "renamedAlias";
+		StatementPattern name = pattern(values, b, namePredicate, sourceName, Double.NaN);
+		Extension alias = new Extension(name, new ExtensionElem(Var.of(sourceName), aliasName));
+		Filter source = new Filter(new Join(cycle, alias),
+				new Compare(Var.of(aliasName), new ValueConstant(values.createLiteral("")), Compare.CompareOp.NE));
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(),
+				socialCycleAliasCosts(a, b, c, d, namePredicate));
+
+		assertEquals(List.of("values-b", "name", "ab", "da", "bc", "cd"),
+				socialCycleFactorOrder(result.selectedPlan(), a, b, c, d, namePredicate),
+				result.selectedPlan()::toString);
+		assertTrue(result.selectedPlan().getBindingNames().contains(aliasName), result.selectedPlan()::toString);
+	}
+
+	@Test
+	void containmentSchedulingRetainsTheUnboundedWinner() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		List<BindingSet> selectedUsers = new ArrayList<>();
+		for (int ordinal = 0; ordinal < 4; ordinal++) {
+			MapBindingSet row = new MapBindingSet(1);
+			row.setBinding("b", values.createIRI("urn:user:" + ordinal));
+			selectedUsers.add(row);
+		}
+		BindingSetAssignment selectedB = new BindingSetAssignment();
+		selectedB.setBindingNames(new LinkedHashSet<>(List.of("b")));
+		selectedB.setBindingSets(selectedUsers);
+		TupleExpr cycle = leftDeepJoin(List.of(
+				selectedB,
+				pattern(values, "a", "urn:follows", "b", Double.NaN),
+				pattern(values, "b", "urn:follows", "c", Double.NaN),
+				pattern(values, "c", "urn:follows", "d", Double.NaN),
+				pattern(values, "d", "urn:follows", "a", Double.NaN)));
+		cycle = new Filter(cycle, new Compare(Var.of("a"), Var.of("b"), Compare.CompareOp.NE));
+		cycle = new Filter(cycle, new Compare(Var.of("b"), Var.of("c"), Compare.CompareOp.NE));
+		cycle = new Filter(cycle, new Compare(Var.of("c"), Var.of("d"), Compare.CompareOp.NE));
+		cycle = new Filter(cycle, new Compare(Var.of("d"), Var.of("a"), Compare.CompareOp.NE));
+		StatementPattern name = pattern(values, "b", "urn:name", "optName", Double.NaN);
+		Extension alias = new Extension(name, new ExtensionElem(Var.of("optName"), "optAlias"));
+		Filter source = new Filter(new Join(cycle, alias),
+				new Compare(Var.of("optAlias"), new ValueConstant(values.createLiteral("")), Compare.CompareOp.NE));
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(),
+				socialCycleAliasCosts());
+
+		assertEquals(List.of("values-b", "name", "ab", "da", "bc", "cd"),
+				socialCycleFactorOrder(result.selectedPlan()), result.selectedPlan()::toString);
+		assertEquals(2.0d,
+				result.selectedPlan().getDoubleMetricPlanned("optimizer.cascadesCorrelatedLatticeBuilds"),
+				"the original and alias-commuted factor spaces each require one exact lattice");
+		assertTrue(result.selectedPlan()
+				.getDoubleMetricPlanned("optimizer.cascadesCorrelatedLatticeReuses") > 0.0d,
+				"strict sub-lattices and unchanged propagation must replay retained states");
+	}
+
+	@Test
+	void aliasFilterCommutationRejectsNonTrivialUnassuredAndConsumedAliases() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		Extension nonTrivial = new Extension(pattern(values, "b", "urn:name", "optName", Double.NaN),
+				new ExtensionElem(new Str(Var.of("optName")), "optAlias"));
+		Filter nonTrivialFilter = new Filter(nonTrivial,
+				new Compare(Var.of("optAlias"), new ValueConstant(values.createLiteral("")), Compare.CompareOp.NE));
+
+		BindingSetAssignment nullableName = new BindingSetAssignment();
+		nullableName.setBindingNames(new LinkedHashSet<>(List.of("optName")));
+		nullableName.setBindingSets(List.of(new MapBindingSet()));
+		Extension unassured = new Extension(nullableName,
+				new ExtensionElem(Var.of("optName"), "optAlias"));
+		Filter unassuredFilter = new Filter(unassured,
+				new Compare(Var.of("optAlias"), new ValueConstant(values.createLiteral("")), Compare.CompareOp.NE));
+
+		Extension consumedAlias = new Extension(pattern(values, "b", "urn:name", "optName", Double.NaN),
+				new ExtensionElem(Var.of("optName"), "optAlias"));
+		StatementPattern consumer = pattern(values, "optAlias", "urn:consumes-alias", "value", Double.NaN);
+		Filter consumedFilter = new Filter(new Join(consumedAlias, consumer),
+				new Compare(Var.of("optAlias"), new ValueConstant(values.createLiteral("")), Compare.CompareOp.NE));
+
+		assertFalse(hasGeneratedRule(nonTrivialFilter, PackedRuleProofs.TRIVIAL_BIND_ALIAS));
+		assertFalse(hasGeneratedRule(unassuredFilter, PackedRuleProofs.TRIVIAL_BIND_ALIAS));
+		assertFalse(hasGeneratedRule(consumedFilter, PackedRuleProofs.TRIVIAL_BIND_ALIAS));
+	}
+
+	@Test
+	void aliasFilterCommutationTraversesNullableScalarOperands() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern name = pattern(values, "person", "urn:name", "name", Double.NaN);
+		Extension alias = new Extension(name, new ExtensionElem(Var.of("name"), "alias"));
+		Regex condition = new Regex(new Str(Var.of("alias")),
+				new ValueConstant(values.createLiteral("^A")), null);
+		Filter source = new Filter(alias, condition);
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, OptimizationGoal.root());
+
+		assertTrue(result.selectedPlan().getBindingNames().contains("alias"), result.selectedPlan()::toString);
 	}
 
 	@Test
@@ -1803,6 +2228,194 @@ class PackedSearchTest {
 		};
 	}
 
+	private static PackedCostModel socialCycleAliasCosts() {
+		return socialCycleAliasCosts("a", "b", "c", "d", "urn:name");
+	}
+
+	private static PackedCostModel socialCycleAliasCosts(String a, String b, String c, String d,
+			String namePredicate) {
+		return new PackedCostModel() {
+			@Override
+			public PackedCostSession openSession(PackedQueryView query) {
+				PackedCostSession scalar = PackedCostSession.scalar(this, query);
+				return new PackedCostSession() {
+					@Override
+					public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						scalar.estimateLeaf(relationId, context, output);
+					}
+
+					@Override
+					public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						scalar.appendFactor(relationId, context, output);
+					}
+
+					@Override
+					public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						scalar.refineOperator(relationId, context, output);
+					}
+
+					@Override
+					public void refineIntermediateJoin(PackedCostContext context, PackedCostEstimate output) {
+						scalar.refineIntermediateJoin(context, output);
+						if (output.evidenceStateId() == 0
+								&& (context.leftInputEvidenceStateId() != 0
+										|| context.rightInputEvidenceStateId() != 0)) {
+							output.setEvidenceStateId(testEvidenceState(context.leftInputEvidenceStateId(),
+									context.rightInputEvidenceStateId()));
+						}
+					}
+				};
+			}
+
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (query.isBindingSetAssignment(relationId)) {
+					return query.bindingAssignmentRowCount(relationId);
+				}
+				if (!query.isStatementPattern(relationId)) {
+					return Double.NaN;
+				}
+				return namePredicate.equals(query.statementPatternValue(relationId, 1).stringValue())
+						? 16_000.0d
+						: 144_000.0d;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (query.isFilter(relationId)) {
+					double inputRows = context.prefixRows();
+					output.setContextualRows(inputRows * 0.25d, inputRows);
+					output.setEvidenceStateId(testEvidenceState(context.evidenceStateId(), relationId));
+					return;
+				}
+				if (!query.isStatementPattern(relationId)) {
+					double rows = estimateRows(query, relationId);
+					if (Double.isFinite(rows)) {
+						output.setRows(rows, rows);
+						output.setEvidenceStateId(testEvidenceState(context.evidenceStateId(), relationId));
+					}
+					return;
+				}
+				if (context.prefixRelationCount() == 0) {
+					double rows = estimateRows(query, relationId);
+					output.setRows(rows, rows);
+					output.setEvidenceStateId(testEvidenceState(0, relationId));
+					return;
+				}
+
+				String predicate = query.statementPatternValue(relationId, 1).stringValue();
+				String subject = query.statementPatternName(relationId, 0);
+				String object = query.statementPatternName(relationId, 2);
+				boolean subjectBound = query.prefixBindsStatementComponent(context, relationId, 0);
+				boolean objectBound = query.prefixBindsStatementComponent(context, relationId, 2);
+				double fanout;
+				if (namePredicate.equals(predicate) && subjectBound) {
+					fanout = 1.0d;
+				} else if (a.equals(subject) && b.equals(object) && objectBound) {
+					fanout = 2.0d;
+				} else if (d.equals(subject) && a.equals(object) && objectBound) {
+					fanout = 1.5d;
+				} else if (b.equals(subject) && c.equals(object) && subjectBound) {
+					fanout = 3.0d;
+				} else if (c.equals(subject) && d.equals(object) && subjectBound && objectBound) {
+					fanout = 0.1d;
+				} else {
+					fanout = 100.0d;
+				}
+				double rows = context.prefixRows() * fanout;
+				output.setContextualRows(rows, rows);
+				output.setEvidenceStateId(testEvidenceState(context.evidenceStateId(), relationId));
+				output.setAccess(1, 0, 1, 1.0d, context.prefixRows(), "test-index", "social-cycle-test",
+						"directLookup");
+			}
+
+			@Override
+			public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (query.isFilter(relationId)) {
+					output.setRows(context.leftInputRows() * 0.25d, output.workRows());
+					output.setEvidenceStateId(testEvidenceState(context.leftInputEvidenceStateId(), relationId));
+				} else if (query.operatorTag(relationId) == PackedRelOp.EXTENSION) {
+					output.setRows(context.leftInputRows(), output.workRows());
+					output.setEvidenceStateId(testEvidenceState(context.leftInputEvidenceStateId(), relationId));
+				}
+			}
+		};
+	}
+
+	private static int testEvidenceState(int inputStateId, int relationId) {
+		long mixed = Integer.toUnsignedLong(inputStateId) ^ Long.rotateLeft(Integer.toUnsignedLong(relationId), 21);
+		mixed ^= mixed >>> 33;
+		mixed *= 0xff51afd7ed558ccdL;
+		mixed ^= mixed >>> 33;
+		int stateId = (int) (mixed ^ mixed >>> 32) & Integer.MAX_VALUE;
+		return stateId == 0 ? 1 : stateId;
+	}
+
+	private static List<String> socialCycleFactorOrder(TupleExpr expression) {
+		return socialCycleFactorOrder(expression, "a", "b", "c", "d", "urn:name");
+	}
+
+	private static List<String> socialCycleFactorOrder(TupleExpr expression, String a, String b, String c, String d,
+			String namePredicate) {
+		List<String> result = new ArrayList<>();
+		collectSocialCycleFactorOrder(expression, result, a, b, c, d, namePredicate);
+		return result;
+	}
+
+	private static boolean hasGeneratedRule(TupleExpr expression, long rule) {
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(expression);
+		for (int relationId = 1; relationId <= query.relationCount(); relationId++) {
+			if ((query.relRuleMask(relationId) & rule) != 0L) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static void collectSocialCycleFactorOrder(TupleExpr expression, List<String> result, String a, String b,
+			String c, String d, String namePredicate) {
+		if (expression instanceof Join join) {
+			collectSocialCycleFactorOrder(join.getLeftArg(), result, a, b, c, d, namePredicate);
+			collectSocialCycleFactorOrder(join.getRightArg(), result, a, b, c, d, namePredicate);
+			return;
+		}
+		if (expression instanceof Filter filter) {
+			collectSocialCycleFactorOrder(filter.getArg(), result, a, b, c, d, namePredicate);
+			return;
+		}
+		if (expression instanceof Extension extension) {
+			collectSocialCycleFactorOrder(extension.getArg(), result, a, b, c, d, namePredicate);
+			return;
+		}
+		if (expression instanceof BindingSetAssignment) {
+			result.add("values-b");
+			return;
+		}
+		if (!(expression instanceof StatementPattern pattern)) {
+			return;
+		}
+		String predicate = pattern.getPredicateVar().getValue().stringValue();
+		if (namePredicate.equals(predicate)) {
+			result.add("name");
+			return;
+		}
+		String subject = pattern.getSubjectVar().getName();
+		String object = pattern.getObjectVar().getName();
+		if (subject.equals(a) && object.equals(b)) {
+			result.add("ab");
+		} else if (subject.equals(b) && object.equals(c)) {
+			result.add("bc");
+		} else if (subject.equals(c) && object.equals(d)) {
+			result.add("cd");
+		} else if (subject.equals(d) && object.equals(a)) {
+			result.add("da");
+		} else {
+			result.add(subject + object);
+		}
+	}
+
 	private static TupleExpr leftDeepJoin(List<? extends TupleExpr> factors) {
 		TupleExpr joined = factors.get(0);
 		for (int ordinal = 1; ordinal < factors.size(); ordinal++) {
@@ -1900,15 +2513,84 @@ class PackedSearchTest {
 	}
 
 	private static PackedCostModel correlatedPredicateCosts() {
-		return (query, relationId) -> {
-			if (!query.isStatementPattern(relationId)) {
-				return Double.NaN;
+		return new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (!query.isStatementPattern(relationId)) {
+					return Double.NaN;
+				}
+				return switch (query.statementPatternValue(relationId, 1).stringValue()) {
+				case "urn:type", "urn:threshold" -> 10.0d;
+				case "urn:weight", "urn:thresholdMetadata" -> 100_000.0d;
+				default -> 2.0d;
+				};
 			}
-			return switch (query.statementPatternValue(relationId, 1).stringValue()) {
-			case "urn:type", "urn:threshold" -> 10.0d;
-			case "urn:weight", "urn:thresholdMetadata" -> 100_000.0d;
-			default -> 2.0d;
-			};
+
+			@Override
+			public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (query.isFilter(relationId)) {
+					double rows = context.leftInputRows() == 0.0d
+							? 0.0d
+							: Math.max(1.0d, context.leftInputRows() * 0.25d);
+					output.setContextualRows(rows, Math.max(rows, output.workRows()));
+				}
+			}
+		};
+	}
+
+	private static PackedCostModel measuredCorrelatedSchedulingCosts() {
+		return new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (!query.isStatementPattern(relationId)) {
+					return Double.NaN;
+				}
+				return switch (query.statementPatternValue(relationId, 1).stringValue()) {
+				case "urn:type", "urn:threshold" -> 10.0d;
+				case "urn:weight", "urn:thresholdMetadata" -> 100_000.0d;
+				default -> 2.0d;
+				};
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				double isolatedRows = estimateRows(query, relationId);
+				if (!query.isStatementPattern(relationId) || context.prefixRelationCount() == 0) {
+					output.setRows(isolatedRows, isolatedRows);
+					return;
+				}
+				String predicate = query.statementPatternValue(relationId, 1).stringValue();
+				boolean subjectBound = query.prefixBindsStatementComponent(context, relationId, 0);
+				boolean objectBound = query.prefixBindsStatementComponent(context, relationId, 2);
+				if ("urn:weight".equals(predicate)) {
+					/* Exact fixture surface: two-key probes are selective; either one-key direction has high fanout. */
+					double fanout = subjectBound && objectBound ? 0.1d
+							: subjectBound ? 100.0d
+									: objectBound ? 1_000.0d
+											: 100_000.0d;
+					double rows = context.prefixRows() * fanout;
+					output.setContextualRows(rows, Math.max(context.prefixRows(), rows));
+					return;
+				}
+				if ("urn:type".equals(predicate) && subjectBound) {
+					output.setContextualRows(context.prefixRows(), context.prefixRows());
+					return;
+				}
+				output.setRows(isolatedRows, isolatedRows);
+			}
+
+			@Override
+			public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (query.isFilter(relationId)) {
+					double rows = context.leftInputRows() == 0.0d
+							? 0.0d
+							: Math.max(1.0d, context.leftInputRows() * 0.25d);
+					output.setContextualRows(rows, Math.max(rows, output.workRows()));
+				}
+			}
 		};
 	}
 

@@ -87,8 +87,9 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 			assertTrue(diagnostics.contains("optimizer.cascadesCompleteness=COMPLETE"),
 					"PHARMA q7 should retain a complete Cascades search\n" + diagnostics);
 			assertTrue(plan.contains("plannerId=lmdb-packed-cascades")
-					&& plan.contains("plannedEstimateSource=cascades"),
-					"PHARMA q7 should retain packed-cascades provenance\n" + plan);
+					&& plan.contains("optimizer.costEventDigest=")
+					&& plan.contains("optimizer.costEventPhase="),
+					"PHARMA q7 should retain packed-cascades and originating-event provenance\n" + plan);
 			assertStatementPatternSeesBoundSubject(plan, "http://example.com/theme/pharma/name");
 		} finally {
 			state.tearDown();

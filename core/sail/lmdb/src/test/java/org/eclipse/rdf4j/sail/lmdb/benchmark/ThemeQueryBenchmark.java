@@ -121,14 +121,14 @@ public class ThemeQueryBenchmark {
 //			"TRAIN",
 //			"ELECTRICAL_GRID",
 //			"PHARMA",
-//			"SPARSE",
+			"SPARSE",
 	})
 	public String themeName;
 
 	@Param({ "false" })
 	public boolean sketchEstimatorEnabled;
 
-	@Param({ "Telemetry" })
+	@Param({ "Timed" })
 	public String queryExplanationLevel;
 
 	boolean loadOnlySelectedTheme;

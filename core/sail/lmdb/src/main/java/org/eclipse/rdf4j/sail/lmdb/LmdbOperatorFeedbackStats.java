@@ -25,6 +25,7 @@ import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -93,7 +94,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private static final String LEO_SURFACE_SUFFIX = ".leo";
 	private static final int LEGACY_PERSIST_VERSION = 12;
 	private static final int SEMI_ANTI_PERSIST_VERSION = 13;
-	private static final int PERSIST_VERSION = 14;
+	private static final int PHYSICAL_SEMI_ANTI_PERSIST_VERSION = 14;
+	private static final int PERSIST_VERSION = 15;
 	private static final int MAX_ENTRIES = 2048;
 	private static final double MIN_CORRECTION_RATIO = 0.0001d;
 	private static final double MAX_CORRECTION_RATIO = 100_000.0d;
@@ -142,6 +144,19 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private static final String PATH_EXPANSION_ITERATIONS_ACTUAL = "optimizer.pathExpansionIterationsActual";
 	private static final String PATH_RETURNED_ROWS_ACTUAL = "optimizer.pathReturnedRowsActual";
 	private static final String ZERO_LENGTH_CANDIDATE_ROWS_ACTUAL = "optimizer.zeroLengthPathCandidateRowsActual";
+	private static final String FRONTIER_LEARNING_KEY = "optimizer.frontierLearningKey";
+	private static final String FRONTIER_PHYSICAL_LEARNING_KEY = "optimizer.frontierPhysicalLearningKey";
+	private static final String FRONTIER_COST_EVENT_DIGEST = "optimizer.costEventDigest";
+	private static final String FRONTIER_STATE_DIGEST = "optimizer.frontierStateDigest";
+	private static final String FRONTIER_GUARANTEE = "plannedFrontierGuarantee";
+	private static final String ACTUAL_COST_SEQUENTIAL_ROWS = "actualCostSequentialRows";
+	private static final String ACTUAL_COST_RANDOM_SEEKS = "actualCostRandomSeeks";
+	private static final String ACTUAL_COST_ITERATOR_OPENS = "actualCostIteratorOpens";
+	private static final String ACTUAL_COST_EXPRESSION_EVALUATIONS = "actualCostExpressionEvaluations";
+	private static final String ACTUAL_COST_HASH_BUILD_ROWS = "actualCostHashBuildRows";
+	private static final String ACTUAL_COST_HASH_PROBE_ROWS = "actualCostHashProbeRows";
+	private static final String ACTUAL_COST_PATH_EXPANSIONS = "actualCostPathExpansions";
+	private static final String ACTUAL_COST_REMOTE_CALLS = "actualCostRemoteCalls";
 
 	private final Path sidecarPath;
 	private final Path leoSurfacePath;
@@ -155,6 +170,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private final Map<OperatorKey, ShadowOperatorCounts> shadowByOperator = new LinkedHashMap<>();
 	private final Map<OperatorKey, PlanCandidateCounts> planCandidates = new LinkedHashMap<>();
 	private final Map<SemiAntiSurfaceKey, SemiAntiCounts> semiAntiBySurface = new LinkedHashMap<>();
+	private FrontierLearningModel frontierLearning = new FrontierLearningModel();
 	private final IdentityHashMap<TupleExpr, OperatorKey> nullModeKeyCache = new IdentityHashMap<>();
 	// Canonical LeoOperatorKey per planning-side node; memo expressions are structurally stable during a
 	// Cascades search, so identity-keyed caching is safe there. Runtime feedback paths bypass this cache
@@ -193,7 +209,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	synchronized void reset() {
 		boolean hadOperatorEvidence = !learnedByOperator.isEmpty() || !learnedMultipliers.isEmpty()
-				|| !shadowByOperator.isEmpty() || !planCandidates.isEmpty() || !semiAntiBySurface.isEmpty();
+				|| !shadowByOperator.isEmpty() || !planCandidates.isEmpty() || !semiAntiBySurface.isEmpty()
+				|| frontierLearning.keyCount() > 0;
 		boolean hadSurfaceEvidence = !leoSurfaceStats.isEmpty();
 		if (!hadOperatorEvidence && !hadSurfaceEvidence) {
 			return;
@@ -203,6 +220,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		shadowByOperator.clear();
 		planCandidates.clear();
 		semiAntiBySurface.clear();
+		frontierLearning.clear();
 		nullModeKeyCache.clear();
 		planningLeoKeyCache.clear();
 		leoSurfaceStats.clear();
@@ -228,16 +246,27 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			reset();
 			return;
 		}
-		long decayEpochs = Math.max(1L, CONFIDENCE_DECAY_HALF_LIFE_EPOCHS / 2L);
-		feedbackEpoch += decayEpochs;
-		if (predicateIds != null && !predicateIds.isEmpty()) {
-			leoSurfaceStats.decayPredicates(predicateIds, feedbackEpoch);
-		} else {
-			leoSurfaceStats.decayAll(feedbackEpoch);
+		boolean hasLegacyEvidence = !learnedByOperator.isEmpty() || !learnedMultipliers.isEmpty()
+				|| !shadowByOperator.isEmpty() || !planCandidates.isEmpty() || !semiAntiBySurface.isEmpty()
+				|| frontierLearning.keyCount() > 0;
+		boolean hasSurfaceEvidence = !leoSurfaceStats.isEmpty();
+		if (!hasLegacyEvidence && !hasSurfaceEvidence) {
+			return;
 		}
-		dirty = !learnedByOperator.isEmpty() || !learnedMultipliers.isEmpty() || !shadowByOperator.isEmpty()
-				|| !planCandidates.isEmpty() || !semiAntiBySurface.isEmpty();
-		surfaceDirty = !leoSurfaceStats.isEmpty();
+		long decayEpochs = Math.max(1L, CONFIDENCE_DECAY_HALF_LIFE_EPOCHS / 2L);
+		long nextEpoch = Math.addExact(feedbackEpoch, decayEpochs);
+		boolean surfaceChanged;
+		if (predicateIds != null && !predicateIds.isEmpty()) {
+			surfaceChanged = leoSurfaceStats.decayPredicates(predicateIds, nextEpoch);
+		} else {
+			surfaceChanged = leoSurfaceStats.decayAll(nextEpoch);
+		}
+		if (!hasLegacyEvidence && !surfaceChanged) {
+			return;
+		}
+		feedbackEpoch = nextEpoch;
+		dirty |= hasLegacyEvidence;
+		surfaceDirty |= surfaceChanged;
 	}
 
 	@Override
@@ -334,9 +363,90 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		long rhsSourceRowsScanned = filter.getLongMetricActual("actualSemiAntiSourceRowsScanned");
 		semiAntiBySurface.computeIfAbsent(key, ignored -> new SemiAntiCounts())
 				.add(observation, rhsSourceRowsScanned);
-		nextFeedbackEpoch();
+		long epoch = nextFeedbackEpoch();
+		if (recordFrontierSemiAntiOutcome(filter, observation, epoch)) {
+			markFeedbackRecorded(filter);
+		}
 		evictOldestIfNeeded(semiAntiBySurface);
 		dirty = true;
+	}
+
+	private boolean recordFrontierSemiAntiOutcome(Filter filter, SemiAntiOutcomeObservation observation, long epoch) {
+		FrontierLearningKey key = FrontierLearningKey.parse(filter.getStringMetricPlanned(FRONTIER_LEARNING_KEY));
+		String plannedAlgorithm = filter.getStringMetricPlanned("optimizer.semiAntiAlgorithm");
+		if (key == null || plannedAlgorithm == null
+				|| !plannedAlgorithm.equalsIgnoreCase(observation.selectedAlgorithm())) {
+			return false;
+		}
+		String eventDigest = filter.getStringMetricPlanned(FRONTIER_COST_EVENT_DIGEST);
+		String stateDigest = filter.getStringMetricPlanned(FRONTIER_STATE_DIGEST);
+		if (eventDigest == null || eventDigest.isBlank() || stateDigest == null || stateDigest.isBlank()) {
+			trace("record-frontier-semi-anti-skip-origin", filter, null,
+					"event=" + eventDigest + ", state=" + stateDigest);
+			return false;
+		}
+
+		FrontierLearningKey physicalKey = FrontierLearningKey.parse(
+				filter.getStringMetricPlanned(FRONTIER_PHYSICAL_LEARNING_KEY));
+		if (physicalKey == null) {
+			physicalKey = key;
+		}
+		double actualRows = "EXISTS".equalsIgnoreCase(observation.semanticKind())
+				? observation.matchedRows()
+				: observation.unmatchedRows();
+		double predictedOutputRows = frontierEventPrediction(filter, FrontierCostDimension.OUTPUT_ROWS,
+				"optimizer.costEventRows", "plannedFrontierRows");
+		boolean databaseExact = "database_exact".equalsIgnoreCase(
+				filter.getStringMetricPlanned(FRONTIER_GUARANTEE));
+		if (!databaseExact) {
+			observeFrontierDimension(key, FrontierCostDimension.OUTPUT_ROWS, predictedOutputRows, actualRows, epoch);
+		}
+		observeFrontierDimension(physicalKey, FrontierCostDimension.RESULT_ROWS,
+				frontierEventPrediction(filter, FrontierCostDimension.RESULT_ROWS,
+						"optimizer.costEventResultRows", "plannedCostResultRows"),
+				actualRows, epoch);
+
+		boolean samePhysicalAlgorithm = observation.selectedAlgorithm().equalsIgnoreCase(observation.actualAlgorithm())
+				&& observation.strategyChangeReason().isBlank();
+		if (samePhysicalAlgorithm) {
+			observeFrontierDimension(physicalKey, FrontierCostDimension.SOURCE_ROWS_SCANNED,
+					frontierEventPrediction(filter, FrontierCostDimension.SOURCE_ROWS_SCANNED,
+							"optimizer.costEventSequentialRows", "plannedCostSequentialRows"),
+					longMetric(filter, ACTUAL_COST_SEQUENTIAL_ROWS), epoch);
+			observeFrontierDimension(physicalKey, FrontierCostDimension.INDEX_SEEKS,
+					frontierEventPrediction(filter, FrontierCostDimension.INDEX_SEEKS,
+							"optimizer.costEventRandomSeeks", "plannedCostRandomSeeks"),
+					longMetric(filter, ACTUAL_COST_RANDOM_SEEKS), epoch);
+			observeFrontierDimension(physicalKey, FrontierCostDimension.ITERATOR_OPENS,
+					frontierEventPrediction(filter, FrontierCostDimension.ITERATOR_OPENS,
+							"optimizer.costEventIteratorOpens", "plannedCostIteratorOpens"),
+					longMetric(filter, ACTUAL_COST_ITERATOR_OPENS), epoch);
+			observeFrontierDimension(physicalKey, FrontierCostDimension.EXPRESSION_EVALUATIONS,
+					frontierEventPrediction(filter, FrontierCostDimension.EXPRESSION_EVALUATIONS,
+							"optimizer.costEventExpressionEvaluations",
+							"plannedCostExpressionEvaluations"),
+					longMetric(filter, ACTUAL_COST_EXPRESSION_EVALUATIONS), epoch);
+			observeFrontierDimension(physicalKey, FrontierCostDimension.HASH_BUILD_ROWS,
+					frontierEventPrediction(filter, FrontierCostDimension.HASH_BUILD_ROWS,
+							"optimizer.costEventHashBuildRows", "plannedCostHashBuildRows"),
+					longMetric(filter, ACTUAL_COST_HASH_BUILD_ROWS), epoch);
+			observeFrontierDimension(physicalKey, FrontierCostDimension.HASH_PROBE_ROWS,
+					frontierEventPrediction(filter, FrontierCostDimension.HASH_PROBE_ROWS,
+							"optimizer.costEventHashProbeRows", "plannedCostHashProbeRows"),
+					longMetric(filter, ACTUAL_COST_HASH_PROBE_ROWS), epoch);
+			observeFrontierDimension(physicalKey, FrontierCostDimension.PATH_EXPANSIONS,
+					frontierEventPrediction(filter, FrontierCostDimension.PATH_EXPANSIONS,
+							"optimizer.costEventPathExpansions", "plannedCostPathExpansions"),
+					longMetric(filter, ACTUAL_COST_PATH_EXPANSIONS), epoch);
+			observeFrontierDimension(physicalKey, FrontierCostDimension.REMOTE_CALLS,
+					frontierEventPrediction(filter, FrontierCostDimension.REMOTE_CALLS,
+							"optimizer.costEventRemoteCalls", "plannedCostRemoteCalls"),
+					longMetric(filter, ACTUAL_COST_REMOTE_CALLS), epoch);
+		}
+		trace("record-frontier-semi-anti", filter, null,
+				"key=" + key.externalForm() + ", event=" + eventDigest + ", state=" + stateDigest
+						+ ", predictedOutputRows=" + predictedOutputRows + ", actualOutputRows=" + actualRows);
+		return true;
 	}
 
 	synchronized SemiAntiEstimate semiAntiEstimate(
@@ -370,6 +480,13 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			trace("record-skip-duplicate", node, null, completionDetails(node, completedRoot));
 			return;
 		}
+		String frontierKey = node.getStringMetricPlanned(FRONTIER_LEARNING_KEY);
+		if (frontierKey != null && !frontierKey.isBlank()) {
+			if (recordFrontierOutcome(node, frontierKey)) {
+				markFeedbackRecorded(node);
+			}
+			return;
+		}
 		boolean recorded = switch (policy) {
 		case LEARN_DIRECTLY -> recordDirectOperatorOutcome(node);
 		case LEARN_AS_CHILD_MULTIPLIER -> recordMultiplierOutcome(node);
@@ -379,6 +496,122 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		if (recorded) {
 			markFeedbackRecorded(node);
 		}
+	}
+
+	private boolean recordFrontierOutcome(TupleExpr node, String encodedKey) {
+		FrontierLearningKey key = FrontierLearningKey.parse(encodedKey);
+		FrontierLearningKey physicalKey = FrontierLearningKey.parse(
+				node.getStringMetricPlanned(FRONTIER_PHYSICAL_LEARNING_KEY));
+		if (physicalKey == null) {
+			physicalKey = key;
+		}
+		String eventDigest = node.getStringMetricPlanned(FRONTIER_COST_EVENT_DIGEST);
+		String stateDigest = node.getStringMetricPlanned(FRONTIER_STATE_DIGEST);
+		OperatorObservation observation = observationFor(node);
+		if (key == null || eventDigest == null || eventDigest.isBlank() || stateDigest == null
+				|| stateDigest.isBlank() || observation == null) {
+			trace("record-frontier-skip-origin", node, null, "event=" + eventDigest + ", state=" + stateDigest);
+			return false;
+		}
+		long epoch = nextFeedbackEpoch();
+		boolean databaseExact = "database_exact".equalsIgnoreCase(node.getStringMetricPlanned(FRONTIER_GUARANTEE));
+		if (!databaseExact) {
+			double predictedRows = frontierEventPrediction(node, FrontierCostDimension.OUTPUT_ROWS,
+					"optimizer.costEventRows", "plannedFrontierRows");
+			if (!isFiniteNonNegative(predictedRows)) {
+				predictedRows = observation.plannedRows();
+			}
+			observeFrontierDimension(key, FrontierCostDimension.OUTPUT_ROWS, predictedRows,
+					observation.actualRows(), epoch);
+		}
+		observeFrontierDimension(physicalKey, FrontierCostDimension.RESULT_ROWS,
+				frontierEventPrediction(node, FrontierCostDimension.RESULT_ROWS,
+						"optimizer.costEventResultRows", "plannedCostResultRows"),
+				observation.actualRows(), epoch);
+		observeFrontierDimension(physicalKey, FrontierCostDimension.SOURCE_ROWS_SCANNED,
+				frontierEventPrediction(node, FrontierCostDimension.SOURCE_ROWS_SCANNED,
+						"optimizer.costEventSequentialRows", "plannedCostSequentialRows"),
+				sourceRowsScannedActual(node), epoch);
+		observeFrontierDimension(physicalKey, FrontierCostDimension.INDEX_SEEKS,
+				frontierEventPrediction(node, FrontierCostDimension.INDEX_SEEKS,
+						"optimizer.costEventRandomSeeks", "plannedCostRandomSeeks"),
+				longMetric(node, TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL), epoch);
+		observeFrontierDimension(physicalKey, FrontierCostDimension.ITERATOR_OPENS,
+				frontierEventPrediction(node, FrontierCostDimension.ITERATOR_OPENS,
+						"optimizer.costEventIteratorOpens", "plannedCostIteratorOpens"),
+				longMetric(node, TelemetryMetricNames.OPEN_COUNT_ACTUAL), epoch);
+		observeFrontierDimension(physicalKey, FrontierCostDimension.EXPRESSION_EVALUATIONS,
+				frontierEventPrediction(node, FrontierCostDimension.EXPRESSION_EVALUATIONS,
+						"optimizer.costEventExpressionEvaluations",
+						"plannedCostExpressionEvaluations"),
+				firstAvailableActual(node, ACTUAL_COST_EXPRESSION_EVALUATIONS,
+						TelemetryMetricNames.EXPR_EVAL_COUNT_ACTUAL),
+				epoch);
+		observeFrontierDimension(physicalKey, FrontierCostDimension.HASH_BUILD_ROWS,
+				frontierEventPrediction(node, FrontierCostDimension.HASH_BUILD_ROWS,
+						"optimizer.costEventHashBuildRows", "plannedCostHashBuildRows"),
+				longMetric(node, ACTUAL_COST_HASH_BUILD_ROWS),
+				epoch);
+		observeFrontierDimension(physicalKey, FrontierCostDimension.HASH_PROBE_ROWS,
+				frontierEventPrediction(node, FrontierCostDimension.HASH_PROBE_ROWS,
+						"optimizer.costEventHashProbeRows", "plannedCostHashProbeRows"),
+				longMetric(node, ACTUAL_COST_HASH_PROBE_ROWS),
+				epoch);
+		observeFrontierDimension(physicalKey, FrontierCostDimension.PATH_EXPANSIONS,
+				frontierEventPrediction(node, FrontierCostDimension.PATH_EXPANSIONS,
+						"optimizer.costEventPathExpansions", "plannedCostPathExpansions"),
+				longMetric(node, PATH_EXPANSION_ITERATIONS_ACTUAL),
+				epoch);
+		observeFrontierDimension(physicalKey, FrontierCostDimension.REMOTE_CALLS,
+				frontierEventPrediction(node, FrontierCostDimension.REMOTE_CALLS,
+						"optimizer.costEventRemoteCalls", "plannedCostRemoteCalls"),
+				longMetric(node, TelemetryMetricNames.REMOTE_REQUEST_COUNT_ACTUAL), epoch);
+		dirty = true;
+		trace("record-frontier", node, null,
+				"key=" + encodedKey + ", event=" + eventDigest + ", state=" + stateDigest);
+		return true;
+	}
+
+	private static double frontierEventPrediction(TupleExpr node, FrontierCostDimension dimension,
+			String eventMetric, String legacyMetric) {
+		double rawPrediction = node.getDoubleMetricPlanned(
+				"optimizer.frontierLeo." + dimension.name().toLowerCase(Locale.ROOT) + ".raw");
+		if (isFiniteNonNegative(rawPrediction)) {
+			return rawPrediction;
+		}
+		double predicted = node.getDoubleMetricPlanned(eventMetric);
+		return isFiniteNonNegative(predicted) ? predicted : node.getDoubleMetricPlanned(legacyMetric);
+	}
+
+	private void observeFrontierDimension(FrontierLearningKey key, FrontierCostDimension dimension,
+			double predicted, double actual, long epoch) {
+		if (isFiniteNonNegative(predicted) && isFiniteNonNegative(actual)) {
+			frontierLearning.observe(key, dimension, predicted, actual, epoch);
+		}
+	}
+
+	private static double sourceRowsScannedActual(TupleExpr node) {
+		double sourceRows = node.getSourceRowsScannedActual();
+		return isFiniteNonNegative(sourceRows)
+				? sourceRows
+				: longMetric(node, "actualSemiAntiSourceRowsScanned");
+	}
+
+	private static double firstAvailableActual(TupleExpr node, String primary, String fallback) {
+		double actual = longMetric(node, primary);
+		return isFiniteNonNegative(actual) ? actual : longMetric(node, fallback);
+	}
+
+	synchronized java.util.OptionalDouble frontierCorrection(FrontierLearningKey key,
+			FrontierCostDimension dimension, double predicted, boolean databaseExactCardinality) {
+		return adaptiveEvidenceAllowed()
+				? frontierLearning.correct(key, dimension, predicted, databaseExactCardinality)
+				: java.util.OptionalDouble.empty();
+	}
+
+	synchronized FrontierLearningModel.DimensionEstimate frontierDimensionEstimate(FrontierLearningKey key,
+			FrontierCostDimension dimension, double predicted) {
+		return adaptiveEvidenceAllowed() ? frontierLearning.estimate(key, dimension, predicted) : null;
 	}
 
 	private boolean recordDirectOperatorOutcome(TupleExpr node) {
@@ -627,6 +860,10 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		if (!adaptiveEvidenceAllowed()) {
 			return null;
 		}
+		OperatorEstimate frontierEstimate = frontierOperatorEstimate(node, baseRows, baseWorkRows);
+		if (frontierEstimate != null) {
+			return frontierEstimate;
+		}
 		if (learnedByOperator.isEmpty()) {
 			trace("estimate-skip-empty", node, null, "");
 			return null;
@@ -662,6 +899,43 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			return estimate;
 		}
 		return null;
+	}
+
+	private OperatorEstimate frontierOperatorEstimate(TupleExpr node, double baseRows, double baseWorkRows) {
+		if (node == null) {
+			return null;
+		}
+		FrontierLearningKey key = FrontierLearningKey.parse(node.getStringMetricPlanned(FRONTIER_LEARNING_KEY));
+		if (key == null) {
+			return null;
+		}
+		FrontierLearningModel.DimensionEstimate rows = frontierLearning.estimate(
+				key, FrontierCostDimension.OUTPUT_ROWS, baseRows);
+		if (rows == null) {
+			return null;
+		}
+		boolean databaseExact = "database_exact".equalsIgnoreCase(node.getStringMetricPlanned(FRONTIER_GUARANTEE));
+		double correctedRows = databaseExact ? baseRows : rows.correctedValue();
+		FrontierLearningModel.DimensionEstimate work = frontierLearning.estimate(
+				key, FrontierCostDimension.SOURCE_ROWS_SCANNED, baseWorkRows);
+		double correctedWork = work == null ? baseWorkRows : work.correctedValue();
+		double confidence = posteriorConfidence(rows.posteriorPrecision());
+		double rowQError = Math.max(1.0d, Math.exp(Math.abs(rows.posteriorLogMean())));
+		double workQError = work == null ? 1.0d : Math.max(1.0d, Math.exp(Math.abs(work.posteriorLogMean())));
+		double uncertaintyRows = Math.sqrt(Math.max(0.0d, rows.posteriorLogMeanVariance()))
+				* Math.max(correctedRows, correctedWork);
+		return new OperatorEstimate(correctedRows, Math.max(correctedRows, correctedWork),
+				"frontier_hierarchical_nig", learningEvidenceCount(rows), confidence, confidence,
+				key.externalForm(), rowQError, rowQError, workQError, workQError, uncertaintyRows);
+	}
+
+	private static long learningEvidenceCount(FrontierLearningModel.DimensionEstimate estimate) {
+		return Math.max(1L, estimate.exactEvidenceCount() + estimate.familyEvidenceCount()
+				+ estimate.legacyEvidenceCount());
+	}
+
+	private static double posteriorConfidence(double precision) {
+		return isFiniteNonNegative(precision) ? Math.clamp(precision / (precision + 1.0d), 0.0d, 1.0d) : 0.0d;
 	}
 
 	synchronized OperatorEstimate multiplierEstimate(TupleExpr node, double baseRows, double baseWorkRows) {
@@ -960,6 +1234,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 				entry.getKey().writeTo(out);
 				entry.getValue().writeTo(out);
 			}
+			frontierLearning.writeTo(out);
 		} catch (IOException e) {
 			deleteIfExists(tempPath);
 			return false;
@@ -1014,6 +1289,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		Map<OperatorKey, ShadowOperatorCounts> loadedShadow = new LinkedHashMap<>();
 		Map<OperatorKey, PlanCandidateCounts> loadedPlanCandidates = new LinkedHashMap<>();
 		Map<SemiAntiSurfaceKey, SemiAntiCounts> loadedSemiAnti = new LinkedHashMap<>();
+		FrontierLearningModel loadedFrontierLearning = new FrontierLearningModel();
 		long loadedEpoch = 0L;
 		long loadedSteeringCooldownUntilEpoch = 0L;
 		int loadedSteeringBadMisses = 0;
@@ -1021,6 +1297,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			int version = in.readInt();
 			if (version != LEGACY_PERSIST_VERSION
 					&& version != SEMI_ANTI_PERSIST_VERSION
+					&& version != PHYSICAL_SEMI_ANTI_PERSIST_VERSION
 					&& version != PERSIST_VERSION) {
 				return;
 			}
@@ -1056,6 +1333,11 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			if (version >= SEMI_ANTI_PERSIST_VERSION) {
 				readSemiAntiEntries(in, loadedSemiAnti, version);
 			}
+			if (version >= PERSIST_VERSION) {
+				loadedFrontierLearning = FrontierLearningModel.readFrom(in);
+			} else {
+				importLegacyFrontierPriors(loadedFrontierLearning, loaded, loadedMultipliers);
+			}
 		} catch (IOException | RuntimeException e) {
 			return;
 		}
@@ -1071,6 +1353,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			planCandidates.putAll(loadedPlanCandidates);
 			semiAntiBySurface.clear();
 			semiAntiBySurface.putAll(loadedSemiAnti);
+			frontierLearning = loadedFrontierLearning;
 			nullModeKeyCache.clear();
 			planningLeoKeyCache.clear();
 			feedbackEpoch = Math.max(feedbackEpoch, loadedEpoch);
@@ -1373,6 +1656,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		if (isCompleted(node)) {
 			return true;
 		}
+
 		if (!isFiniteNonNegative(actualRows(node))) {
 			return false;
 		}
@@ -1734,6 +2018,40 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 				target.put(key, counts);
 			}
 		}
+	}
+
+	private static void importLegacyFrontierPriors(FrontierLearningModel target,
+			Map<OperatorKey, LearnedOperatorCounts> operators,
+			Map<OperatorKey, LearnedMultiplierCounts> multipliers) {
+		for (Map.Entry<OperatorKey, LearnedOperatorCounts> entry : operators.entrySet()) {
+			LearnedOperatorCounts counts = entry.getValue();
+			String family = legacyOperatorFamily(entry.getKey().operatorType());
+			target.importLegacyFamilyPrior(family, FrontierCostDimension.OUTPUT_ROWS, counts.plannedRowsSum,
+					counts.actualRowsSum, counts.sampleCount);
+			target.importLegacyFamilyPrior(family, FrontierCostDimension.SOURCE_ROWS_SCANNED,
+					counts.plannedWorkRowsSum, counts.actualWorkRowsSum, counts.sampleCount);
+		}
+		for (Map.Entry<OperatorKey, LearnedMultiplierCounts> entry : multipliers.entrySet()) {
+			LearnedMultiplierCounts counts = entry.getValue();
+			String family = legacyOperatorFamily(entry.getKey().operatorType());
+			target.importLegacyFamilyPrior(family, FrontierCostDimension.OUTPUT_ROWS, counts.plannedRowsSum,
+					counts.actualRowsSum, counts.sampleCount);
+			double workRatio = counts.confidenceModel.workCorrectionRatio();
+			double plannedWork = workRatio > 0.0d && Double.isFinite(workRatio)
+					? counts.actualWorkRowsSum / workRatio
+					: Double.NaN;
+			target.importLegacyFamilyPrior(family, FrontierCostDimension.SOURCE_ROWS_SCANNED, plannedWork,
+					counts.actualWorkRowsSum, counts.sampleCount);
+		}
+	}
+
+	private static String legacyOperatorFamily(String operatorType) {
+		if (operatorType == null || operatorType.isBlank()) {
+			return "unknown";
+		}
+		int separator = operatorType.lastIndexOf(':');
+		String family = separator < 0 ? operatorType : operatorType.substring(separator + 1);
+		return family.isBlank() ? "unknown" : family.toLowerCase(java.util.Locale.ROOT);
 	}
 
 	private static void readShadowEntries(DataInputStream in, Map<OperatorKey, ShadowOperatorCounts> target)
@@ -2397,7 +2715,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			counts.hashProbeRows = nonNegative(in.readLong());
 			counts.cacheLookups = nonNegative(in.readLong());
 			counts.strategyChanges = nonNegative(in.readLong());
-			if (version >= PERSIST_VERSION) {
+			if (version >= PHYSICAL_SEMI_ANTI_PERSIST_VERSION) {
 				counts.physicalObservationCount = nonNegative(in.readLong());
 				counts.rhsSourceRowsScanned = nonNegative(in.readLong());
 			}

@@ -78,6 +78,42 @@ final class PackedPrefixRowComposition {
 	}
 
 	/**
+	 * Returns whether the prefix and appended factor form one connected component under exact shared-binding overlap.
+	 * This is a structural property of the algebra graph; row estimates and planner thresholds do not participate in
+	 * the decision.
+	 */
+	boolean isConnectedWithAppendedFactor(int[] prefixRelations, int prefixCount, int factorRelationId) {
+		if (prefixCount == 0) {
+			return true;
+		}
+		if (factorRelationId <= 0 || factorRelationId > query.relationCount()) {
+			return false;
+		}
+		initializeComponents(prefixRelations, 0, prefixCount, factorRelationId);
+		for (int ordinal = prefixCount - 1; ordinal >= 0; ordinal--) {
+			int root = find(ordinal);
+			if (consumed[root]) {
+				continue;
+			}
+			consumed[root] = true;
+			if (!connectedToFactor[root]) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	double effectiveComponentValue(int[] prefixRelations, double[] prefixContributionRows, int prefixCount,
+			int factorRelationId, double componentValue) {
+		if (!finiteNonNegative(componentValue)) {
+			return Double.NaN;
+		}
+		double unrelatedRows = unrelatedRows(prefixRelations, prefixContributionRows, 0, prefixCount,
+				factorRelationId);
+		return finiteNonNegative(unrelatedRows) ? saturatedMultiply(unrelatedRows, componentValue) : Double.NaN;
+	}
+
+	/**
 	 * Initializes an inherited prefix only when its connected-component decomposition is recoverable without guessing.
 	 * A connected prefix has one exact component mass: its complete row count. A disconnected prefix requires the
 	 * caller to pass the retained per-factor contributions explicitly.

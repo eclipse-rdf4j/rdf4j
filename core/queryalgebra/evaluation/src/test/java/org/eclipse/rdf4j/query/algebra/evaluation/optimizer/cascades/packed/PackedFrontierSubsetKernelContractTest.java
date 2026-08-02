@@ -26,9 +26,13 @@ import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.junit.jupiter.api.Test;
@@ -63,6 +67,52 @@ class PackedFrontierSubsetKernelContractTest {
 	}
 
 	@Test
+	void denseAndSparseKernelsAssembleTheWinnerFromItsOriginalCostingEvents() {
+		for (int factorCount : new int[] { 2, 4, 17 }) {
+			int expectedKernel = factorCount <= 4
+					? PackedJoinEnumerator.DENSE_SUBSETS
+					: PackedJoinEnumerator.SPARSE_LONG_SUBSETS;
+			assertEquals(expectedKernel, PackedJoinEnumerator.subsetKernelForFactorCount(factorCount));
+			PackedQuery query = PackedQueryCodec.encodeForPlanning(chain(factorCount));
+			int relationCount = query.relationCount();
+			PackedMemo memo = new PackedMemo(query, query.symbolCount(), relationCount, relationCount, 4,
+					relationCount, relationCount * 2);
+			TrackingSession session = new TrackingSession(new PackedQueryView(query), false, () -> {
+			});
+			PackedIncumbentSearch baseline = PackedIncumbentSearch.forSession(query, memo,
+					new PackedSearchBudget(Long.MAX_VALUE, Long.MAX_VALUE), false, session);
+			baseline.build();
+			session.resetCandidateInvocations();
+
+			PackedJoinEnumerator enumerator = PackedJoinEnumerator.forSession(query, memo,
+					baseline.selectedRowsByGroup(), new PackedSearchBudget(Long.MAX_VALUE, Long.MAX_VALUE), session);
+			enumerator.optimize(query.rootRelId());
+
+			assertEquals(1, session.maximumCandidateInvocationCount(),
+					() -> factorCount + "-factor kernel recosted an exact ordered-prefix candidate during assembly: "
+							+ session.duplicateCandidateInvocations());
+		}
+	}
+
+	@Test
+	void retainedBinaryWinnerPreservesOpaqueFactorChildren() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern step = new StatementPattern(Var.of("stepStart"),
+				Var.of("pathPredicate", values.createIRI("urn:path")), Var.of("stepEnd"));
+		ArbitraryLengthPath path = new ArbitraryLengthPath(StatementPattern.Scope.DEFAULT_CONTEXTS,
+				Var.of("subject"), step, Var.of("object"), null, 1L);
+		StatementPattern marker = new StatementPattern(Var.of("subject"),
+				Var.of("markerPredicate", values.createIRI("urn:marker")), Var.of("marker"));
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(new Join(path, marker), OptimizationGoal.root(),
+				new TrackingCostModel());
+
+		assertNotNull(result.selectedPlan());
+		assertTrue(result.selectedPlan().getBindingNames().containsAll(Set.of("subject", "object", "marker")),
+				result.selectedPlan()::toString);
+	}
+
+	@Test
 	void internedMultiwordKernelPropagatesStateThroughGrowthWithoutCrossQueryLeakage() {
 		assertEquals(PackedJoinEnumerator.INTERNED_MULTIWORD_SUBSETS,
 				PackedJoinEnumerator.subsetKernelForFactorCount(65));
@@ -93,6 +143,25 @@ class PackedFrontierSubsetKernelContractTest {
 					() -> factorCount
 							+ "-factor root join must be refined with its combined and both child states");
 		}
+	}
+
+	@Test
+	void correlatedHypergraphOwnsCostingBeforeItsWrittenJoinSpine() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		Filter source = new Filter(chain(4), new Compare(Var.of("v4"),
+				new ValueConstant(values.createLiteral(0)), Compare.CompareOp.GT));
+		TopologyOrderCostModel model = new TopologyOrderCostModel();
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), model);
+
+		assertNotNull(result.selectedPlan());
+		TopologyOrderSession session = model.onlySession();
+		assertTrue(session.firstContextualTransitionOrdinal > 0,
+				"the correlated DPhyp lattice must cost at least one physical transition");
+		assertTrue(session.firstCoveredSpineOrdinal == 0
+				|| session.firstContextualTransitionOrdinal < session.firstCoveredSpineOrdinal,
+				() -> "the written context-free spine was costed before its owning DPhyp lattice: transition="
+						+ session.firstContextualTransitionOrdinal + ", spine=" + session.firstCoveredSpineOrdinal);
 	}
 
 	@Test
@@ -165,6 +234,80 @@ class PackedFrontierSubsetKernelContractTest {
 		}
 	}
 
+	private static final class TopologyOrderCostModel implements PackedCostModel {
+
+		private TopologyOrderSession session;
+		private int closeCount;
+
+		@Override
+		public double estimateRows(PackedQueryView query, int relationId) {
+			return query.isStatementPattern(relationId) ? 1.0d : Double.NaN;
+		}
+
+		@Override
+		public PackedCostSession openSession(PackedQueryView query) {
+			session = new TopologyOrderSession(query, () -> closeCount++);
+			return session;
+		}
+
+		private TopologyOrderSession onlySession() {
+			assertNotNull(session);
+			assertEquals(1, closeCount);
+			return session;
+		}
+	}
+
+	private static final class TopologyOrderSession implements PackedCostSession {
+
+		private final PackedQueryView query;
+		private final Runnable closeAction;
+		private int nextStateId = 1;
+		private int invocationOrdinal;
+		private int firstContextualTransitionOrdinal;
+		private int firstCoveredSpineOrdinal;
+
+		private TopologyOrderSession(PackedQueryView query, Runnable closeAction) {
+			this.query = query;
+			this.closeAction = closeAction;
+		}
+
+		@Override
+		public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+			invocationOrdinal++;
+			if (query.isStatementPattern(relationId)) {
+				output.setRows(1.0d, 1.0d);
+				output.setEvidenceStateId(nextStateId++);
+			}
+		}
+
+		@Override
+		public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+			invocationOrdinal++;
+			if (firstContextualTransitionOrdinal == 0) {
+				firstContextualTransitionOrdinal = invocationOrdinal;
+			}
+			output.setContextualRows(1.0d, 1.0d);
+			output.setEvidenceStateId(nextStateId++);
+		}
+
+		@Override
+		public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+			invocationOrdinal++;
+			if ((query.operatorTag(relationId) == PackedRelOp.JOIN || query.isFilter(relationId))
+					&& context.prefixRelationCount() == 0 && firstCoveredSpineOrdinal == 0) {
+				firstCoveredSpineOrdinal = invocationOrdinal;
+			}
+			if (output.evidenceStateId() == 0) {
+				output.setEvidenceStateId(nextStateId++);
+			}
+		}
+
+		@Override
+		public void close() {
+			closeAction.run();
+		}
+	}
+
 	private static final class TrackingSession implements PackedCostSession {
 
 		private final PackedQueryView query;
@@ -172,6 +315,7 @@ class PackedFrontierSubsetKernelContractTest {
 		private final Runnable closeAction;
 		private final Map<List<Integer>, Integer> stateByOrderedPrefix = new HashMap<>();
 		private final Map<List<Integer>, Set<List<Integer>>> ordersByLogicalSubset = new HashMap<>();
+		private final Map<List<Integer>, Integer> candidateInvocations = new HashMap<>();
 		private int nextStateId = 1;
 		private int appendCalls;
 		private int maximumPrefixLength;
@@ -214,15 +358,19 @@ class PackedFrontierSubsetKernelContractTest {
 			List<Integer> combined = new ArrayList<>(prefix.size() + 1);
 			combined.addAll(prefix);
 			combined.add(relationId);
+			candidateInvocations.merge(List.copyOf(combined), 1, Integer::sum);
 			recordPhysicalOrder(combined);
 			appendCalls++;
 			maximumPrefixLength = Math.max(maximumPrefixLength, prefix.size());
-			output.setRows(1.0d, 1.0d + relationId);
+			output.setContextualRows(1.0d, 1.0d + relationId);
 			output.setEvidenceStateId(stateFor(combined));
 		}
 
 		@Override
 		public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+			if (query.operatorTag(relationId) != PackedRelOp.JOIN && output.evidenceStateId() == 0) {
+				output.setEvidenceStateId(stateFor(List.of(relationId)));
+			}
 			if (query.operatorTag(relationId) == PackedRelOp.JOIN && context.prefixRelationCount() > 0) {
 				rootJoinRefinementCalls++;
 				if (requireRootState) {
@@ -265,6 +413,24 @@ class PackedFrontierSubsetKernelContractTest {
 
 		private long competingOrderCount() {
 			return ordersByLogicalSubset.values().stream().filter(orders -> orders.size() > 1).count();
+		}
+
+		private void resetCandidateInvocations() {
+			candidateInvocations.clear();
+		}
+
+		private int maximumCandidateInvocationCount() {
+			return candidateInvocations.values().stream().mapToInt(Integer::intValue).max().orElse(0);
+		}
+
+		private Map<List<Integer>, Integer> duplicateCandidateInvocations() {
+			Map<List<Integer>, Integer> duplicates = new HashMap<>();
+			candidateInvocations.forEach((candidate, calls) -> {
+				if (calls > 1) {
+					duplicates.put(candidate, calls);
+				}
+			});
+			return duplicates;
 		}
 	}
 }

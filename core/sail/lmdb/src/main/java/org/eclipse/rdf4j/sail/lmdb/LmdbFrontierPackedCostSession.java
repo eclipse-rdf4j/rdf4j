@@ -34,41 +34,62 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.AbstractAggregateOperator;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.Avg;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Max;
+import org.eclipse.rdf4j.query.algebra.Min;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Sum;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.MinusQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ScalarEvaluationEffects;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.FrontierDecisionRiskController;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostSession;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostSessionFailure;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostingReplay;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedFrontierDecisionValidator;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanValidationRequest;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedQueryView;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedStalePlanValidation;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceCalibrationSummary;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
@@ -77,6 +98,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceStateRe
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceStateSummary;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceZeroStatus;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierEvidenceBundle;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierLaneFamily;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierLayout;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierLinearTransforms;
@@ -85,13 +107,16 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierMemoryP
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierMemoryReservation;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierOuterKernel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierPayloadLease;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierPayloadStatus;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierPayloadWriter;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierRandomDomain;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierSeedSchedule;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateArena;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDisposition;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateKey;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateOperation;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierTupleEmitter;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorKey;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -127,7 +152,6 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	private static final int MAX_OPTIONAL_MASK_STRATA = 4_096;
 	private static final int MAX_ALTERNATE_REPLAY_DEPTH = 64;
 	private static final long MAXIMUM_LEAF_BUFFER_ROWS = Integer.MAX_VALUE / 5;
-	private static final long MAPPED_PROBE_WORK_MULTIPLIER = 64L;
 	private static final long DESIGN_LANE_AVERAGE_SCOPE_DOMAIN = 0xd6e8feb86659fd93L;
 	private static final double BRIDGE_FULL_SUPPORT_EPSILON = 0.1d;
 	private static final double NORMAL_95_Z = 1.959963984540054d;
@@ -137,7 +161,6 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	private static final String FRONTIER_LEARNED_FILTER_LEO_SOURCE = "lmdb-frontier+learned-filter+leo";
 	private static final String FRONTIER_EXECUTION_MODE = "frontier";
 	private static final long MINIMUM_LEO_EVIDENCE_COUNT = 3L;
-	private static final long MINIMUM_SEMI_ANTI_EVIDENCE_COUNT = 3L;
 	private static final double MINIMUM_LEO_CORRECTION_CONFIDENCE = 0.55d;
 	private static final double SEMI_ANTI_EXACT_REFINEMENT_RATIO = 1.10d;
 	private static final int MAX_EXACT_CORRELATION_ROWS = 16_384;
@@ -146,6 +169,8 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	private final LmdbPackedCostModel lmdbCostModel;
 	private final PackedQueryView query;
 	private final LmdbEstimatorRuntime runtime;
+	private final LmdbPhysicalCostObjective physicalCostObjective;
+	private final LmdbFrontierPlannerSettings settings;
 	private final FrontierEstimatorMode mode;
 	private final OptionalLong executionSnapshotEpoch;
 	private final boolean datasetUsesStoreDefaults;
@@ -157,6 +182,13 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	private LeafState[] leafStates;
 	private FiniteLeafState[] finiteLeafStates;
 	private EvidenceStateRef[] stateReferences;
+	private long[] factorCountWords;
+	private long[] candidateFactorWords;
+	private int[] factorCountVisitEpochs;
+	private int factorCountVisitEpoch;
+	private String[] learningOperatorFamilies;
+	private String[] learningRawTransforms;
+	private QueryEvaluationStep[] preparedTupleSteps;
 	private final Map<Value, Long> queryLocalValueIds = new HashMap<>();
 	private final ArrayList<Value> queryLocalValues = new ArrayList<>();
 	private final Map<Integer, EvidenceStateRef> alternateReplayStates = new HashMap<>();
@@ -165,6 +197,10 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	private final Map<CorrelationProfileKey, FrontierSemiAntiProfile> correlationProfiles = new HashMap<>();
 	private final Map<CorrelationDomainKey, FrontierCorrelationDomain> correlationDomains = new HashMap<>();
 	private final ArrayList<Exists> dependentExistsScratch = new ArrayList<>();
+	private LmdbFrontierLongObjectMemo<Value> storedFrontierValues;
+	private LmdbFrontierLongObjectMemo<Boolean> subjectCenterCompleteness;
+	private LmdbFrontierLongObjectMemo<Boolean> objectCenterCompleteness;
+	private LmdbFrontierStatementProbeMemo statementProbeMemo;
 	private String availabilityStatus;
 	private String fallbackReason;
 	private String queryIndexStatus;
@@ -189,6 +225,9 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	private long independentMaterializationWorkRemaining;
 	private boolean generationDatabaseExact;
 	private long preparationNanos;
+	private long pathExpansionPlanningNanos;
+	private long pathExpansionMappingProbes;
+	private long pathExpansionStates;
 	private boolean exposeFallback;
 	private boolean closed;
 
@@ -199,7 +238,9 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		this.lmdbCostModel = model;
 		this.query = query;
 		this.runtime = runtime;
-		this.mode = runtime.frontierMode();
+		this.physicalCostObjective = new LmdbPhysicalCostObjective(runtime);
+		this.settings = runtime.frontierSettings();
+		this.mode = settings.mode();
 		this.executionSnapshotEpoch = executionSnapshotEpoch == null ? OptionalLong.empty()
 				: executionSnapshotEpoch;
 		this.datasetUsesStoreDefaults = datasetUsesStoreDefaults;
@@ -217,7 +258,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
 		EvidenceStateRef state = leafEvidenceState(relationId);
 		boolean authoritativeFrontierLeaf = mode == FrontierEstimatorMode.AUTHORITATIVE
-				&& state != null
+				&& isComposableState(state)
 				&& query.isStatementPattern(relationId)
 				&& state.summary().guarantee() == EvidenceGuarantee.MEASURE_UNBIASED
 				&& state.summary().zeroStatus() != EvidenceZeroStatus.ESTIMATED_ZERO;
@@ -229,6 +270,9 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		String scalarSource = output.estimateSource();
 		String scalarFusion = output.estimateFusion();
 		if (state == null) {
+			state = materializeReplayableLeafState(relationId, output.outputRows());
+		}
+		if (state == null) {
 			annotateMissingLeafState(relationId, output);
 			return;
 		}
@@ -236,13 +280,23 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		EvidenceStateSummary summary = state.summary();
 		output.setEvidenceStateId(state.stateId());
 		annotateReady(output, state);
+		LeafState statementLeaf = leafState(relationId);
+		if (statementLeaf != null && statementLeaf.materialization != null) {
+			output.putPlannedStringMetric("plannedFrontierLeafMaterialization", statementLeaf.materialization);
+		}
 		output.putPlannedDoubleMetric("plannedFrontierFactorCount", 1.0d);
 		if (mode != FrontierEstimatorMode.AUTHORITATIVE) {
 			return;
 		}
+		if (!isComposableState(state)) {
+			output.setEvidenceGuarantee(summary.guarantee());
+			output.putPlannedStringMetric("plannedFrontierFallbackReason", summary.degradationReason());
+			annotateQueryIndex(output);
+			return;
+		}
 		if (summary.guarantee() == EvidenceGuarantee.MEASURE_UNBIASED
 				&& summary.zeroStatus() == EvidenceZeroStatus.ESTIMATED_ZERO) {
-			output.putPlannedStringMetric("plannedFrontierFallbackReason", "sampled_zero_not_authoritative");
+			publishSampledZeroFallback(relationId, output, state);
 			return;
 		}
 		double scalarWork = output.workRows();
@@ -258,6 +312,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		} else {
 			output.setEstimateProvenance(FRONTIER_SOURCE, "frontier_authoritative");
 		}
+		setFrontierFactorPhysicalCost(relationId, output, summary.pointRows());
 	}
 
 	private static boolean exactFiniteLeafSource(String source) {
@@ -275,19 +330,35 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		EvidenceStateRef input = stateReference(context.evidenceStateId());
 		LeafState factor = leafState(relationId);
 		FiniteLeafState finiteFactor = finiteLeafState(relationId);
-		if (input == null || factor == null && finiteFactor == null) {
+		if (input == null) {
 			scalar.appendFactor(relationId, context, output);
-			if (context.evidenceStateId() != 0) {
-				output.putPlannedStringMetric("plannedFrontierFallbackReason", "unsupported_append_factor");
-			}
 			return;
+		}
+		if (factor == null && finiteFactor == null) {
+			scalar.appendFactor(relationId, context, output);
+			if (appendBoundedLocalPath(relationId, context, input, output)) {
+				return;
+			}
+			degradeOperator(relationId, output, input, "unsupported_append_factor");
+			return;
+		}
+		if (factor != null && factor.state == null) {
+			factor.state = materializeReplayableLeafState(relationId, 1.0d);
 		}
 		if (factor != null && statementSource == null) {
 			scalar.appendFactor(relationId, context, output);
-			output.putPlannedStringMetric("plannedFrontierFallbackReason", "exact_snapshot_probe_unavailable");
+			degradeOperator(relationId, output, input, "exact_snapshot_probe_unavailable");
 			return;
 		}
 		FrontierStateKey factorKey = factor != null ? factor.key : finiteFactor.key;
+		EvidenceStateRef factorState = factor != null ? factor.state : finiteFactor.state;
+		if (!isComposableState(input)) {
+			scalar.appendFactor(relationId, context, output);
+			publishNonComposableAppend(relationId, output, input, factorState,
+					unionLayout(arena.layout(input), factorKey.frontier()),
+					input.summary().degradationReason());
+			return;
+		}
 		FrontierStateKey outputKey = joinedStateKey(arena.key(input), factorKey);
 		arena.declareCanonicalState(outputKey);
 		boolean invokingScalar = false;
@@ -303,7 +374,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			boolean sampledBypass = mode == FrontierEstimatorMode.AUTHORITATIVE
 					&& factor != null
 					&& state.summary().guarantee() != EvidenceGuarantee.DATABASE_EXACT
-					&& state.summary().guarantee().isComposablePointEstimate()
+					&& isComposableState(state)
 					&& state.summary().zeroStatus() != EvidenceZeroStatus.ESTIMATED_ZERO
 					&& lmdbCostModel.estimateFrontierAppendAccess(
 							query, relationId, context, state.summary().pointRows(), output);
@@ -312,46 +383,59 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				scalar.appendFactor(relationId, context, output);
 				invokingScalar = false;
 			}
+			FrontierFactorSurfaceRefinement factorSurface = refineFactorAccessSurface(input, state, relationId,
+					context, output);
+			output.putPlannedStringMetric("plannedFrontierFactorSurfaceRefinement", factorSurface.status());
+			if (!factorSurface.detail().isEmpty()) {
+				output.putPlannedStringMetric("plannedFrontierFactorSurfaceRefinementDetail", factorSurface.detail());
+			}
 			String scalarSource = output.estimateSource();
 			String scalarFusion = output.estimateFusion();
+			double scalarRows = output.outputRows();
 			boolean scalarExact = output.evidenceGuarantee() == EvidenceGuarantee.DATABASE_EXACT;
-			CalibratedState calibrated = scalarExact
-					? new CalibratedState(state, null)
-					: applyLeoCalibration(
-							relationId,
-							materializeJoinPrefix(context, relationId),
-							state,
-							input.summary().pointRows(),
-							factor != null
-									? factor.state.summary().pointRows()
-									: finiteFactor.state.summary().pointRows(),
-							output.workRows());
-			state = calibrated.state();
+			if (scalarExact && !isComposableState(state)) {
+				EvidenceStateRef recovered = recoverExactDerivedSurface(
+						input, outputKey, relationId, context, output);
+				if (recovered != null) {
+					state = recovered;
+				}
+			}
 			EvidenceStateSummary summary = state.summary();
-			if (!summary.guarantee().isComposablePointEstimate()) {
+			if (!isComposableState(state)) {
+				output.setEvidenceStateId(state.stateId());
 				annotateState(output, state, "degraded");
 				output.putPlannedStringMetric("plannedFrontierFallbackReason", summary.degradationReason());
 				return;
 			}
 			output.setEvidenceStateId(state.stateId());
 			annotateReady(output, state);
-			output.putPlannedDoubleMetric("plannedFrontierFactorCount", factorCount(state));
+			annotateFactorCount(output, state);
 			if (mode != FrontierEstimatorMode.AUTHORITATIVE) {
 				return;
 			}
 			if (summary.guarantee() == EvidenceGuarantee.MEASURE_UNBIASED
 					&& summary.zeroStatus() == EvidenceZeroStatus.ESTIMATED_ZERO) {
-				output.putPlannedStringMetric("plannedFrontierFallbackReason", "sampled_zero_not_authoritative");
+				publishSampledZeroFallback(relationId, output, state);
 				return;
 			}
 			double scalarWork = output.workRows();
 			double frontierWork = Double.isFinite(scalarWork) && scalarWork >= 0.0d
 					? Math.max(summary.pointRows(), scalarWork)
 					: summary.pointRows();
-			if (!scalarExact) {
-				output.setComponentRows(summary.pointRows(), frontierWork);
-				output.setEvidenceGuarantee(summary.guarantee());
+			if (scalarExact) {
+				/*
+				 * The exact access estimator also measured this complete prefix; retain its rows and physical vector.
+				 */
+				output.setContextualOutputRowsPreservingPhysicalCost(scalarRows);
+			} else {
+				/*
+				 * The state was produced by extending the input payload and its canonical key contains the entire
+				 * prefix, including Cartesian factors. Its point estimate is therefore contextual output, not the
+				 * appended factor's isolated connected-component contribution.
+				 */
+				output.setContextualRows(summary.pointRows(), frontierWork);
 			}
+			output.setEvidenceGuarantee(summary.guarantee());
 			boolean learned = !scalarExact && arena.nearestCalibration(state) != null;
 			if (scalarExact || preserveScalarLeafProvenance(scalarSource)) {
 				output.setEstimateProvenance(scalarSource, scalarFusion);
@@ -359,15 +443,177 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				output.setEstimateProvenance(learned ? FRONTIER_LEO_SOURCE : FRONTIER_SOURCE,
 						learned ? "frontier_learned_calibration" : "frontier_authoritative");
 			}
+			setFrontierFactorPhysicalCost(relationId, output, scalarExact ? scalarRows : summary.pointRows());
 		} catch (RuntimeException failure) {
 			if (invokingScalar) {
 				throw failure;
 			}
-			output.clear();
-			scalar.appendFactor(relationId, context, output);
-			output.setEvidenceStateId(0);
-			output.putPlannedStringMetric("plannedFrontierFallbackReason", "exact_append_failed");
+			throw new PackedCostSessionFailure("exact_append_failed", failure);
 		}
+	}
+
+	/**
+	 * Retains tuple-aware Frontier evidence across a locally evaluable property-path factor.
+	 *
+	 * <p>
+	 * A path with an endpoint bound in every retained input stratum is a deterministic expansion of the outer measure.
+	 * Evaluating that expansion against the planning snapshot therefore has the same linear semantics as an ordinary
+	 * bound statement probe: emitted tuples inherit the complete outer weight and retain all correlations.
+	 * {@link FrontierLinearTransforms#expandOuterMappings} applies the ordinary Frontier work and payload budgets,
+	 * preserving an exact result when it fits and a design-valid weighted sample otherwise. The scalar property-path
+	 * estimator remains the source of physical work; only its contextual result cardinality is replaced by the state
+	 * produced by this transform.
+	 * </p>
+	 */
+	private boolean appendBoundedLocalPath(int relationId, PackedCostContext context, EvidenceStateRef input,
+			PackedCostEstimate output) {
+		TupleExpr expression = query.materializeRelation(relationId);
+		if (!(expression instanceof ArbitraryLengthPath) && !(expression instanceof ZeroLengthPath)) {
+			return false;
+		}
+		if (evaluationStrategy == null || !isComposableState(input) || !exactLocalEvaluation(expression)
+				|| !everyStratumBindsPathEndpoint(arena.key(input).maskStrata(), expression)) {
+			return false;
+		}
+		FrontierMaskStrata outputMasks = optionalMaskStrata(arena.key(input).maskStrata(), expression);
+		if (outputMasks == null) {
+			return false;
+		}
+		FrontierStateKey outputKey = operatorStateKeyWithRelationFactors(arena.key(input), relationId, outputMasks);
+		arena.declareCanonicalState(outputKey);
+		double invocations = output.plannedDoubleMetric(
+				"plannedRepeatedInvocations", Math.max(1.0d, context.prefixRows()));
+		double workPerInvocation = finiteNonNegative(output.workRows()) && finiteNonNegative(invocations)
+				&& invocations > 0.0d
+						? output.workRows() / invocations
+						: Double.NaN;
+		int maximumMappings = maximumExactProbeMappings(
+				settings.refinementWorkUnits(), workPerInvocation, 0.0d);
+		output.putPlannedDoubleMetric("plannedFrontierPathWorkPerMapping", workPerInvocation);
+		output.putPlannedDoubleMetric("plannedFrontierPathMaximumMappings", maximumMappings);
+		FrontierLayout inputLayout = arena.key(input).frontier();
+		FrontierLayout outputLayout = outputKey.frontier();
+		long scratchBytes = Math.addExact(FILTER_BINDING_SCRATCH_BASE_BYTES,
+				Math.multiplyExact(FILTER_BINDING_SCRATCH_SLOT_BYTES,
+						Math.addExact(inputLayout.size(), outputLayout.size())));
+		try (FrontierMemoryReservation ignored = arena.reserveTemporary(
+				scratchBytes, FrontierMemoryPurpose.TARGET_COALESCING)) {
+			String[] inputNames = layoutVariables(inputLayout);
+			String[] outputNames = layoutVariables(outputLayout);
+			ArrayBindingSet outerBindings = new ArrayBindingSet(inputNames);
+			ArrayBindingSet mergedBindings = new ArrayBindingSet(outputNames);
+			boolean lineageSpecific = arena.nearestCalibration(input) != null;
+			EvidenceStateRef state = lineageSpecific ? null : arena.find(outputKey);
+			if (state == null) {
+				QueryEvaluationStep pathStep = preparedTupleStep(relationId, expression);
+				long started = System.nanoTime();
+				try {
+					state = FrontierLinearTransforms.expandOuterMappings(
+							arena,
+							input,
+							outputKey,
+							relationId,
+							(payload, exact, stratum, index, emitter) -> expandPathMapping(
+									pathStep, payload, exact, stratum, index, inputNames, outputNames,
+									outerBindings, mergedBindings, outputMasks, emitter),
+							maximumMappings);
+				} finally {
+					pathExpansionPlanningNanos = Math.addExact(
+							pathExpansionPlanningNanos, System.nanoTime() - started);
+				}
+				pathExpansionStates = Math.incrementExact(pathExpansionStates);
+				rememberState(state);
+			}
+			if (!isComposableState(state)) {
+				publishDegradedState(output, state);
+				output.putPlannedStringMetric("plannedFrontierPathExpansion", "budget-bound");
+				return true;
+			}
+			EvidenceStateSummary summary = state.summary();
+			output.setEvidenceStateId(state.stateId());
+			annotateReady(output, state);
+			annotateFactorCount(output, state);
+			output.putPlannedStringMetric("plannedPhysicalImplementation", "frontier-bounded-path");
+			output.putPlannedStringMetric("plannedFrontierPathExpansion", "bounded-local-expansion");
+			if (mode != FrontierEstimatorMode.AUTHORITATIVE) {
+				return true;
+			}
+			if (summary.guarantee() == EvidenceGuarantee.MEASURE_UNBIASED
+					&& summary.zeroStatus() == EvidenceZeroStatus.ESTIMATED_ZERO) {
+				publishSampledZeroFallback(relationId, output, state);
+				return true;
+			}
+			output.setContextualOutputRowsPreservingPhysicalCost(summary.pointRows());
+			output.setEvidenceGuarantee(summary.guarantee());
+			setFrontierProvenance(output, state);
+			return true;
+		} catch (OuterProbeFailure failure) {
+			throw new PackedCostSessionFailure("path_state_materialization_failed", failure);
+		} catch (RuntimeException failure) {
+			throw new PackedCostSessionFailure("path_state_materialization_failed", failure);
+		}
+	}
+
+	private QueryEvaluationStep preparedTupleStep(int relationId, TupleExpr expression) {
+		if (preparedTupleSteps == null) {
+			preparedTupleSteps = new QueryEvaluationStep[query.relationCount() + 1];
+		}
+		QueryEvaluationStep prepared = preparedTupleSteps[relationId];
+		if (prepared == null) {
+			prepared = evaluationStrategy.precompile(expression);
+			preparedTupleSteps[relationId] = prepared;
+		}
+		return prepared;
+	}
+
+	private void expandPathMapping(QueryEvaluationStep pathStep, FrontierPayloadLease payload, boolean exact,
+			int stratum,
+			int index, String[] inputNames, String[] outputNames, ArrayBindingSet outerBindings,
+			ArrayBindingSet mergedBindings, FrontierMaskStrata outputMasks, FrontierTupleEmitter emitter) {
+		try {
+			pathExpansionMappingProbes = Math.incrementExact(pathExpansionMappingProbes);
+			populateBindings(payload, exact, stratum, index, inputNames, outerBindings);
+			try (CloseableIteration<BindingSet> matches = pathStep.evaluate(outerBindings)) {
+				while (matches.hasNext()) {
+					populateMergedBindings(outputNames, outerBindings, matches.next(), mergedBindings);
+					emitter.emit(maskStratum(outputMasks, mergedBindings),
+							bindingTuple(outputNames, mergedBindings));
+				}
+			}
+		} catch (IOException | QueryEvaluationException failure) {
+			throw new OuterProbeFailure("Frontier property-path exact probe failed", failure);
+		}
+	}
+
+	private static boolean everyStratumBindsPathEndpoint(FrontierMaskStrata inputMasks, TupleExpr expression) {
+		Var subject;
+		Var object;
+		if (expression instanceof ArbitraryLengthPath path) {
+			subject = path.getSubjectVar();
+			object = path.getObjectVar();
+		} else if (expression instanceof ZeroLengthPath path) {
+			subject = path.getSubjectVar();
+			object = path.getObjectVar();
+		} else {
+			return false;
+		}
+		for (int stratum = 0; stratum < inputMasks.stratumCount(); stratum++) {
+			if (!endpointBound(inputMasks, stratum, subject) && !endpointBound(inputMasks, stratum, object)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean endpointBound(FrontierMaskStrata inputMasks, int stratum, Var endpoint) {
+		if (endpoint == null) {
+			return false;
+		}
+		if (endpoint.hasValue()) {
+			return true;
+		}
+		int slot = endpoint.getName() == null ? -1 : inputMasks.layout().indexOf(endpoint.getName());
+		return slot >= 0 && inputMasks.isBound(stratum, slot);
 	}
 
 	@Override
@@ -383,30 +629,38 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 								? Double.NaN
 								: output.workRows();
 		TupleExpr expression = query.materializeRelation(relationId);
+		EvidenceStateRef candidate = stateReference(context.evidenceStateId());
 		if (expression instanceof Join) {
-			EvidenceStateRef candidate = stateReference(context.evidenceStateId());
 			EvidenceStateRef left = stateReference(context.leftInputEvidenceStateId());
 			EvidenceStateRef right = stateReference(context.rightInputEvidenceStateId());
 			try {
 				EvidenceStateRef rawState = resolveRawJoinState(relationId, candidate, left, right);
 				if (rawState == null) {
-					degradeOperator(output, null, "join_child_state_unavailable");
+					degradeOperator(relationId, output, null, "join_child_state_unavailable");
 					return;
 				}
 				if (scalarExactJoin) {
 					attachExactJoinState(output, rawState);
 				} else {
-					refineJoin(relationId, context, (Join) expression, rawState, rawWorkRows, output);
+					refineJoin(rawState, output);
 				}
 			} catch (RuntimeException failure) {
-				degradeOperator(output, null, "join_state_materialization_failed");
+				throw new PackedCostSessionFailure("join_state_materialization_failed", failure);
 			}
 			return;
 		}
 		if (expression instanceof LeftJoin) {
 			EvidenceStateRef left = stateReference(context.leftInputEvidenceStateId());
+			if (candidate != null && !isComposableState(candidate)) {
+				publishOperatorState(relationId, output, candidate);
+				return;
+			}
 			if (left == null) {
-				degradeOperator(output, null, "optional_left_state_unavailable");
+				degradeOperator(relationId, output, null, "optional_left_state_unavailable");
+				return;
+			}
+			if (!isComposableState(left)) {
+				degradeOperator(relationId, output, left, left.summary().degradationReason());
 				return;
 			}
 			refineOptional(relationId, context, (LeftJoin) expression, left, rawWorkRows, output);
@@ -414,15 +668,40 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		}
 		if (expression instanceof Difference) {
 			EvidenceStateRef left = stateReference(context.leftInputEvidenceStateId());
+			if (candidate != null && !isComposableState(candidate)) {
+				publishOperatorState(relationId, output, candidate);
+				applyScalarDifferencePhysicalCost(context, rawWorkRows, output);
+				return;
+			}
 			if (left == null) {
-				degradeOperator(output, null, "minus_left_state_unavailable");
+				degradeOperator(relationId, output, null, "minus_left_state_unavailable");
+				applyScalarDifferencePhysicalCost(context, rawWorkRows, output);
+				return;
+			}
+			if (!isComposableState(left)) {
+				degradeOperator(relationId, output, left, left.summary().degradationReason());
 				applyScalarDifferencePhysicalCost(context, rawWorkRows, output);
 				return;
 			}
 			refineMinus(relationId, context, (Difference) expression, left, rawWorkRows, output);
 			return;
 		}
+		if (expression instanceof Intersection) {
+			EvidenceStateRef left = stateReference(context.leftInputEvidenceStateId());
+			EvidenceStateRef right = stateReference(context.rightInputEvidenceStateId());
+			if (left == null || right == null) {
+				degradeOperator(relationId, output, left != null ? left : right,
+						"intersection_child_state_unavailable");
+				return;
+			}
+			refineIntersection(relationId, left, right, output);
+			return;
+		}
 		if (expression instanceof Union) {
+			if (candidate != null && !isComposableState(candidate)) {
+				publishOperatorState(relationId, output, candidate);
+				return;
+			}
 			EvidenceStateRef exactSurface = exactAlternativeState(relationId, expression);
 			if (exactSurface != null) {
 				publishOperatorState(relationId, output, exactSurface);
@@ -431,27 +710,68 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			EvidenceStateRef left = stateReference(context.leftInputEvidenceStateId());
 			EvidenceStateRef right = stateReference(context.rightInputEvidenceStateId());
 			if (left == null || right == null) {
-				degradeOperator(output, left != null ? left : right, "union_child_state_unavailable");
+				degradeOperator(relationId, output, left != null ? left : right, "union_child_state_unavailable");
+				return;
+			}
+			if (!isComposableState(left) || !isComposableState(right)) {
+				publishUnionBoundary(relationId, output, left, right, "union_child_state_non_composable");
 				return;
 			}
 			refineUnion(relationId, (Union) expression, left, right, rawWorkRows, output);
 			return;
 		}
-		EvidenceStateRef input = stateReference(context.evidenceStateId());
+		/*
+		 * A contextual unary winner can be costed under an inherited prefix whose state is intentionally different from
+		 * the state produced by the winner's child. Unary transforms consume that child state. Callers that do not
+		 * publish explicit operator inputs retain the original prefix-state compatibility path.
+		 */
+		int inputStateId = context.leftInputEvidenceStateId() != 0
+				? context.leftInputEvidenceStateId()
+				: context.evidenceStateId();
+		EvidenceStateRef input = stateReference(inputStateId);
 		if (input == null) {
 			if (expression instanceof Filter filter) {
-				if (pureExistsCondition(filter) != null) {
-					applyScalarSemiAntiPhysicalCost(relationId, filter, context, rawWorkRows, output);
-				} else {
-					applyScalarDependentExpressionPhysicalCost(filter, context, output);
-				}
+				applyScalarFilterPhysicalCost(relationId, filter, context, rawWorkRows, output);
+			}
+			return;
+		}
+		if (!isComposableState(input)) {
+			if (FrontierOperatorCapabilities.isIdentity(expression)) {
+				publishOperatorState(relationId, output, input);
+			} else if (expression instanceof Filter filter && pureExistsCondition(filter) != null) {
+				refineBoundedSemiAntiFilter(relationId, filter, input, output);
+			} else if (expression instanceof Projection) {
+				publishCardinalityPreservingBoundary(
+						relationId, output, input, "projection_input_payload_unavailable", 0.0d);
+			} else if (expression instanceof Extension extension) {
+				publishCardinalityPreservingBoundary(
+						relationId,
+						output,
+						input,
+						"extension_input_payload_unavailable",
+						saturatedMultiply(input.summary().pointRows(), extension.getElements().size()));
+			} else if (expression instanceof MultiProjection multiProjection) {
+				refineBoundedMultiProjection(relationId, multiProjection, input, output);
+			} else if (expression instanceof Distinct) {
+				refineBoundedDistinct(relationId, input, output);
+			} else if (expression instanceof Group group) {
+				refineBoundedGroup(relationId, group, input, output);
+			} else if (expression instanceof Reduced) {
+				refineReduced(relationId, input, output);
+			} else if (expression instanceof Slice slice) {
+				refineSlice(relationId, slice, input, output);
+			} else {
+				degradeOperator(relationId, output, input, input.summary().degradationReason());
+			}
+			if (expression instanceof Filter filter && !output.dependentSubqueriesCosted()) {
+				applyScalarFilterPhysicalCost(relationId, filter, context, rawWorkRows, output);
 			}
 			return;
 		}
 		if (expression instanceof Filter filter) {
 			refineFilter(relationId, filter, input, rawWorkRows, output);
 			if (!output.dependentSubqueriesCosted()) {
-				applyScalarDependentExpressionPhysicalCost(filter, context, output);
+				applyScalarFilterPhysicalCost(relationId, filter, context, rawWorkRows, output);
 			}
 		} else if (expression instanceof Projection) {
 			refineProjection(relationId, input, output);
@@ -459,18 +779,58 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			refineExtension(relationId, (Extension) expression, input, rawWorkRows, output);
 		} else if (expression instanceof MultiProjection) {
 			refineMultiProjection(relationId, (MultiProjection) expression, input, rawWorkRows, output);
+		} else if (expression instanceof Distinct) {
+			refineDistinct(relationId, input, output);
+		} else if (expression instanceof Group group) {
+			refineGroup(relationId, group, input, output);
+		} else if (expression instanceof Reduced) {
+			refineReduced(relationId, input, output);
+		} else if (expression instanceof Slice slice) {
+			refineSlice(relationId, slice, input, output);
 		} else if (FrontierOperatorCapabilities.isIdentity(expression)) {
 			publishOperatorState(relationId, output, input);
 		} else {
-			degradeOperator(output, input, FrontierOperatorCapabilities.boundaryReason(expression));
+			degradeOperator(relationId, output, input, FrontierOperatorCapabilities.boundaryReason(expression));
 		}
 	}
 
 	@Override
 	public void refineIntermediateJoin(PackedCostContext context, PackedCostEstimate output) {
+		boolean physicalEvent = output.plannedStringMetric("optimizer.physicalJoinImplementation") != null;
 		EvidenceStateRef candidate = stateReference(context.evidenceStateId());
 		EvidenceStateRef left = stateReference(context.leftInputEvidenceStateId());
 		EvidenceStateRef right = stateReference(context.rightInputEvidenceStateId());
+		String eventRole = physicalEvent ? "Physical" : "Logical";
+		annotateIntermediateJoinState(output, eventRole + "Candidate", candidate);
+		annotateIntermediateJoinState(output, eventRole + "Left", left);
+		annotateIntermediateJoinState(output, eventRole + "Right", right);
+		boolean candidateMatchesChildLineage = !physicalEvent
+				&& candidate != null
+				&& intermediateCandidateMatchesChildLineage(candidate, left, right);
+		if (!physicalEvent) {
+			output.putPlannedDoubleMetric("optimizer.frontierJoinLogicalCandidateMatchesChildLineage",
+					candidateMatchesChildLineage ? 1.0d : 0.0d);
+		}
+		if (physicalEvent && candidate != null) {
+			/*
+			 * A physical implementation event refines the already-costed logical candidate. Preserve that exact state,
+			 * including calibration lineage, instead of invoking the join transform a second time after the decision.
+			 */
+			attachJoinState(output, candidate, true);
+			return;
+		}
+		if (candidateMatchesChildLineage) {
+			/*
+			 * A dependent factor is costed against the complete inherited prefix. Its resulting candidate is therefore
+			 * the logical join state, while the standalone memo winner supplied as the physical right child can
+			 * legitimately be bound-only. Verify the candidate against the transitive logical factors of both child
+			 * lineages before accepting it. Requiring both children themselves to be composable would discard the exact
+			 * contextual event and rebuild an opaque boundary even though the provider already measured the complete
+			 * join.
+			 */
+			attachJoinState(output, candidate, false);
+			return;
+		}
 		if (left == null || right == null) {
 			/*
 			 * A selected hash-join subtree can retain the query-local state chosen during enumeration even when its
@@ -479,28 +839,147 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			 * numeric ID. Without this, relation metadata can still say "ready" while the selected physical JOIN loses
 			 * the corresponding guarantee and interval.
 			 */
-			if (candidate != null) {
-				attachExactJoinState(output, candidate);
+			if (physicalEvent) {
+				retainPhysicalJoinBoundary(output, left != null ? left : right,
+						"intermediate_join_child_state_unavailable");
 			} else {
 				degradeOperator(output, null, "intermediate_join_child_state_unavailable");
 			}
+			return;
+		}
+		if (!isComposableState(left)
+				|| !isComposableState(right)
+				|| !arena.hasCanonicalKey(left)
+				|| !arena.hasCanonicalKey(right)) {
+			retainIntermediateJoinBoundary(output, left, right,
+					"intermediate_join_child_state_non_composable");
 			return;
 		}
 		try {
 			long[] factors = unionFactorWords(arena.key(left), arena.key(right));
 			EvidenceStateRef state = resolveRawJoinState(0, factors, candidate, left, right);
 			if (state != null) {
-				attachExactJoinState(output, state);
+				attachJoinState(output, state, physicalEvent);
 			}
 		} catch (RuntimeException failure) {
-			output.putPlannedStringMetric("plannedFrontierFallbackReason",
-					"intermediate_join_state_materialization_failed");
+			throw new PackedCostSessionFailure("intermediate_join_state_materialization_failed", failure);
 		}
+	}
+
+	private void annotateIntermediateJoinState(PackedCostEstimate output, String role, EvidenceStateRef state) {
+		output.putPlannedDoubleMetric("optimizer.frontierJoin" + role + "StateId",
+				state == null ? 0.0d : state.stateId());
+		output.putPlannedStringMetric("optimizer.frontierJoin" + role + "Disposition",
+				state == null ? "unavailable" : arena.disposition(state).name().toLowerCase(Locale.ROOT));
+		if (state != null) {
+			output.putPlannedDoubleMetric("optimizer.frontierJoin" + role + "FactorCount", factorCount(state));
+			output.putPlannedStringMetric("optimizer.frontierJoin" + role + "Guarantee",
+					state.summary().guarantee().name().toLowerCase(Locale.ROOT));
+		}
+	}
+
+	private boolean intermediateCandidateMatchesChildLineage(EvidenceStateRef candidate, EvidenceStateRef left,
+			EvidenceStateRef right) {
+		if (left == null || right == null) {
+			return false;
+		}
+		int factorWordCount = (query.relationCount() + 63) >>> 6;
+		if (factorCountWords == null || factorCountWords.length < factorWordCount) {
+			factorCountWords = new long[factorWordCount];
+		} else {
+			Arrays.fill(factorCountWords, 0, factorWordCount, 0L);
+		}
+		if (candidateFactorWords == null || candidateFactorWords.length < factorWordCount) {
+			candidateFactorWords = new long[factorWordCount];
+		} else {
+			Arrays.fill(candidateFactorWords, 0, factorWordCount, 0L);
+		}
+		int requiredVisitCapacity = stateReferences == null
+				? Math.max(candidate.stateId(), Math.max(left.stateId(), right.stateId())) + 1
+				: stateReferences.length;
+		if (factorCountVisitEpochs == null || factorCountVisitEpochs.length < requiredVisitCapacity) {
+			factorCountVisitEpochs = new int[requiredVisitCapacity];
+			factorCountVisitEpoch = 0;
+		}
+		int visitEpoch = nextFactorCountVisitEpoch();
+		collectLineageFactors(left, factorCountWords, factorCountVisitEpochs, visitEpoch);
+		collectLineageFactors(right, factorCountWords, factorCountVisitEpochs, visitEpoch);
+		visitEpoch = nextFactorCountVisitEpoch();
+		collectLineageFactors(candidate, candidateFactorWords, factorCountVisitEpochs, visitEpoch);
+		for (int word = 0; word < factorWordCount; word++) {
+			if (candidateFactorWords[word] != factorCountWords[word]) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private void retainIntermediateJoinBoundary(PackedCostEstimate output, EvidenceStateRef left,
+			EvidenceStateRef right, String reason) {
+		double pointRows = finiteNonNegative(output.outputRows())
+				? output.outputRows()
+				: saturatedMultiply(left.summary().pointRows(), right.summary().pointRows());
+		EvidenceStateRef boundary = arena.deriveOpaqueBoundary(
+				left,
+				right,
+				unionLayout(arena.layout(left), arena.layout(right)),
+				EvidenceStateSummary.unresolved(pointRows, Double.POSITIVE_INFINITY,
+						Double.POSITIVE_INFINITY, reason),
+				0);
+		rememberState(boundary);
+		output.setEvidenceStateId(boundary.stateId());
+		annotateState(output, boundary, "degraded");
+		output.putPlannedStringMetric("plannedFrontierFallbackReason", reason);
+	}
+
+	private void attachJoinState(PackedCostEstimate output, EvidenceStateRef state, boolean physicalEvent) {
+		if (physicalEvent && !isComposableState(state)) {
+			retainPhysicalJoinBoundary(output, state, state.summary().degradationReason());
+			return;
+		}
+		if (!physicalEvent && isComposableState(state)) {
+			/*
+			 * An intermediate logical join can be introduced solely by the physical enumerator, so its scalar fallback
+			 * need not have passed through appendFactor. Publish the Frontier point estimate on that originating event;
+			 * the subsequent physical event then consumes the immutable state and rows without reconstructing either.
+			 */
+			output.setContextualOutputRowsPreservingPhysicalCost(state.summary().pointRows());
+		}
+		attachExactJoinState(output, state);
+	}
+
+	/**
+	 * Retains typed Frontier lineage on an already-costed physical join without replacing its implementation vector.
+	 * Evidence disposition and physical work are independent axes: an opaque or bound-only state must not turn a hash
+	 * build/probe event back into scalar result-row work.
+	 */
+	private void retainPhysicalJoinBoundary(PackedCostEstimate output, EvidenceStateRef input, String reason) {
+		double pointRows = finiteNonNegative(output.outputRows()) ? output.outputRows() : 1.0d;
+		EvidenceStateSummary summary = EvidenceStateSummary.unresolved(pointRows, Double.POSITIVE_INFINITY,
+				Double.POSITIVE_INFINITY, reason);
+		EvidenceStateRef boundary;
+		if (input != null) {
+			boundary = arena.deriveOpaqueBoundary(input, summary, 0);
+		} else if (arena != null) {
+			boundary = arena.append(FrontierLayout.empty(), summary);
+		} else {
+			output.setEvidenceStateId(0);
+			output.putPlannedStringMetric("plannedFrontierStatus", "degraded");
+			output.putPlannedStringMetric("plannedFrontierMode", mode.getConfigValue());
+			output.putPlannedStringMetric("plannedFrontierFallbackReason", reason);
+			return;
+		}
+		rememberState(boundary);
+		output.setEvidenceStateId(boundary.stateId());
+		annotateState(output, boundary, "degraded");
+		annotateFactorCount(output, boundary);
+		output.putPlannedStringMetric("plannedFrontierFallbackReason", reason);
 	}
 
 	@Override
 	public double objectiveScore(PackedCostEstimate estimate) {
-		return normalizedObjectiveScore(estimate, MinusQueryEvaluationStep.maxMaterializedRightRows());
+		double normalized = normalizedObjectiveScore(estimate, MinusQueryEvaluationStep.maxMaterializedRightRows());
+		return normalized == Double.MAX_VALUE ? normalized : physicalCostObjective.score(estimate);
 	}
 
 	static double normalizedObjectiveScore(PackedCostEstimate estimate, long maxMaterializedRows) {
@@ -514,30 +993,17 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 
 	private void attachExactJoinState(PackedCostEstimate output, EvidenceStateRef state) {
 		EvidenceStateSummary summary = state.summary();
-		if (!summary.guarantee().isComposablePointEstimate()) {
-			degradeOperator(output, state, summary.degradationReason());
-			output.putPlannedDoubleMetric("plannedFrontierFactorCount", factorCount(state));
+		if (!isComposableState(state)) {
+			publishDegradedState(output, state);
 			return;
 		}
 		output.setEvidenceStateId(state.stateId());
 		annotateReady(output, state);
-		output.putPlannedDoubleMetric("plannedFrontierFactorCount", factorCount(state));
+		annotateFactorCount(output, state);
 	}
 
-	private void refineJoin(int relationId, PackedCostContext context, Join join, EvidenceStateRef rawState,
-			double rawWorkRows, PackedCostEstimate output) {
-		if (!rawState.summary().guarantee().isComposablePointEstimate()) {
-			publishJoinState(output, rawState, rawWorkRows, null);
-			return;
-		}
-		CalibratedState calibrated = applyLeoCalibration(
-				relationId,
-				join,
-				rawState,
-				evidenceRows(context.leftInputEvidenceStateId(), context.leftInputRows()),
-				evidenceRows(context.rightInputEvidenceStateId(), context.rightInputRows()),
-				rawWorkRows);
-		publishJoinState(output, calibrated.state(), rawWorkRows, calibrated.feedback());
+	private void refineJoin(EvidenceStateRef rawState, PackedCostEstimate output) {
+		publishJoinState(output, rawState);
 	}
 
 	private EvidenceStateRef resolveRawJoinState(int relationId, EvidenceStateRef candidate,
@@ -547,16 +1013,30 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 
 	private EvidenceStateRef resolveRawJoinState(int relationId, long[] relationFactors, EvidenceStateRef candidate,
 			EvidenceStateRef left, EvidenceStateRef right) {
-		boolean candidateCoversRelation = candidate != null
-				&& factorWordsEqual(arena.key(candidate), relationFactors);
+		boolean candidateComposable = isComposableState(candidate);
+		FrontierStateKey candidateKey = candidateComposable ? arena.key(candidate) : null;
+		boolean candidateCoversRelation = candidateComposable
+				&& candidateKey != null
+				&& factorWordsEqual(candidateKey, relationFactors);
+		EvidenceStateRef fallbackCandidate = candidate != null && (!candidateComposable || candidateCoversRelation)
+				? candidate
+				: null;
 		if (left == null || right == null) {
-			return candidateCoversRelation ? candidate : null;
+			return fallbackCandidate;
 		}
-		long[] childFactors = unionFactorWords(arena.key(left), arena.key(right));
+		if (!isComposableState(left) || !isComposableState(right)) {
+			return fallbackCandidate;
+		}
+		FrontierStateKey leftKey = arena.key(left);
+		FrontierStateKey rightKey = arena.key(right);
+		if (leftKey == null || rightKey == null) {
+			return fallbackCandidate;
+		}
+		long[] childFactors = unionFactorWords(leftKey, rightKey);
 		if (!Arrays.equals(childFactors, relationFactors)) {
-			return candidateCoversRelation ? candidate : null;
+			return fallbackCandidate;
 		}
-		FrontierStateKey outputKey = joinedStateKey(arena.key(left), arena.key(right));
+		FrontierStateKey outputKey = joinedStateKey(leftKey, rightKey);
 		EvidenceStateRef independentCartesian = resolveIndependentCartesian(
 				relationId, candidateCoversRelation ? candidate : null, outputKey);
 		if (independentCartesian != null) {
@@ -565,21 +1045,197 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		if (candidateCoversRelation) {
 			return candidate;
 		}
+		/*
+		 * A dependent child is costed in its inherited binding context, so its Frontier state can already contain the
+		 * complete prefix while its physical sibling denotes an earlier subset of that same prefix. Such states are not
+		 * independent join inputs. Reusing the child that already covers the complete logical factor set preserves the
+		 * exact costing event and avoids composing the inherited prefix twice.
+		 */
+		if (factorWordsEqual(leftKey, relationFactors)) {
+			return left;
+		}
+		if (factorWordsEqual(rightKey, relationFactors)) {
+			return right;
+		}
 		arena.declareCanonicalState(outputKey);
 		boolean lineageSpecific = arena.nearestCalibration(left) != null
 				|| arena.nearestCalibration(right) != null;
 		EvidenceStateRef state = lineageSpecific ? null : arena.find(outputKey);
 		if (state == null) {
-			state = FrontierLinearTransforms.join(
-					arena,
-					left,
-					right,
-					outputKey,
-					relationId,
-					runtime.frontierRefinementWorkUnits());
+			state = resolveConditionalStatementJoin(left, right, outputKey);
+			if (state == null) {
+				state = resolveConditionalTopologyJoin(left, right, outputKey);
+			}
+			if (state == null) {
+				state = FrontierLinearTransforms.join(
+						arena,
+						left,
+						right,
+						outputKey,
+						relationId,
+						settings.refinementWorkUnits());
+			}
 			rememberState(state);
 		}
 		return state;
+	}
+
+	private EvidenceStateRef resolveConditionalStatementJoin(EvidenceStateRef left, EvidenceStateRef right,
+			FrontierStateKey outputKey) {
+		if (statementSource == null
+				|| left.summary().guarantee() == EvidenceGuarantee.DATABASE_EXACT
+				|| right.summary().guarantee() == EvidenceGuarantee.DATABASE_EXACT) {
+			return null;
+		}
+		LeafState rightFactor = singleStatementFactor(right);
+		if (rightFactor != null) {
+			return extendInner(left, rightFactor, outputKey, rightFactor.relationId);
+		}
+		LeafState leftFactor = singleStatementFactor(left);
+		return leftFactor == null ? null : extendInner(right, leftFactor, outputKey, leftFactor.relationId);
+	}
+
+	/**
+	 * Replays a composable factor topology as bound transforms over the other input.
+	 *
+	 * <p>
+	 * Two sampled Frontier relations generally cannot be multiplied as independent reservoirs: they may share a
+	 * coordinated inclusion design, and their pair surface can also exceed the finite join budget. The RHS lineage
+	 * already records how its factors were constructed. When that lineage consists solely of replayable statement and
+	 * finite-relation additions, applying those same kernels to the left payload is the conditional join estimator that
+	 * matches dependent execution. This retains tuple covariance and avoids the scalar product fallback without
+	 * inventing an independence assumption.
+	 */
+	private EvidenceStateRef resolveConditionalTopologyJoin(EvidenceStateRef left, EvidenceStateRef right,
+			FrontierStateKey outputKey) {
+		if (statementSource == null
+				|| !disjointFactors(arena.key(left), arena.key(right))) {
+			return null;
+		}
+		EvidenceStateRef replayed = replayFactorTopology(left, right, outputKey);
+		if (replayed != null) {
+			return replayed;
+		}
+		return replayFactorTopology(right, left, outputKey);
+	}
+
+	private EvidenceStateRef replayFactorTopology(EvidenceStateRef input, EvidenceStateRef topology,
+			FrontierStateKey outputKey) {
+		int topologyFactorCount = factorCount(topology);
+		if (topologyFactorCount <= 1) {
+			return null;
+		}
+		int[] replayRelations = new int[topologyFactorCount];
+		boolean[] seenRelations = new boolean[query.relationCount() + 1];
+		int replayCount = collectReplayRelations(topology, replayRelations, 0, seenRelations);
+		if (replayCount != topologyFactorCount
+				|| !replayRelationsMatchState(topology, seenRelations)) {
+			return null;
+		}
+
+		EvidenceStateRef current = input;
+		for (int ordinal = 0; ordinal < replayCount; ordinal++) {
+			FrontierStateKey finalKey = ordinal + 1 == replayCount ? outputKey : null;
+			current = appendReplayFactor(current, replayRelations[ordinal], finalKey);
+			if (!isComposableState(current)) {
+				return null;
+			}
+		}
+		return factorWordsEqual(arena.key(current), logicalFactorWords(outputKey)) ? current : null;
+	}
+
+	private int collectReplayRelations(EvidenceStateRef state, int[] destination, int offset,
+			boolean[] seenRelations) {
+		return switch (arena.operation(state)) {
+		case EXACT_LEAF, COORDINATED_STAR -> appendReplayRelation(
+				arena.operationRecipeId(state), destination, offset, seenRelations);
+		case BRIDGE_TRANSFER, BRIDGE_MUTATION, PROBE_FACTOR -> {
+			if (arena.parentCount(state) != 1) {
+				yield -1;
+			}
+			int next = collectReplayRelations(arena.parent(state, 0), destination, offset, seenRelations);
+			yield next < 0 ? -1
+					: appendReplayRelation(
+							arena.operationRecipeId(state), destination, next, seenRelations);
+		}
+		case JOIN, CARTESIAN -> {
+			if (arena.parentCount(state) != 2) {
+				yield -1;
+			}
+			int next = collectReplayRelations(arena.parent(state, 0), destination, offset, seenRelations);
+			yield next < 0
+					? -1
+					: collectReplayRelations(arena.parent(state, 1), destination, next, seenRelations);
+		}
+		case AVERAGE_DESIGN_LANES -> arena.parentCount(state) == 2
+				? collectReplayRelations(arena.parent(state, 0), destination, offset, seenRelations)
+				: -1;
+		default -> -1;
+		};
+	}
+
+	private int appendReplayRelation(int relationId, int[] destination, int offset, boolean[] seenRelations) {
+		if (relationId <= 0 || relationId >= seenRelations.length
+				|| seenRelations[relationId] || offset >= destination.length
+				|| leafState(relationId) == null && finiteLeafState(relationId) == null) {
+			return -1;
+		}
+		seenRelations[relationId] = true;
+		destination[offset] = relationId;
+		return offset + 1;
+	}
+
+	private boolean replayRelationsMatchState(EvidenceStateRef state, boolean[] seenRelations) {
+		FrontierStateKey key = arena.key(state);
+		for (int relationId = 1; relationId < seenRelations.length; relationId++) {
+			if (seenRelations[relationId] != containsFactor(key, relationId)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private EvidenceStateRef appendReplayFactor(EvidenceStateRef input, int relationId,
+			FrontierStateKey requestedOutputKey) {
+		LeafState leaf = leafState(relationId);
+		FiniteLeafState finite = finiteLeafState(relationId);
+		FrontierStateKey factorKey = leaf != null ? leaf.key : finite != null ? finite.key : null;
+		if (factorKey == null
+				|| containsFactor(arena.key(input), relationId)
+				|| !sameSamplingIdentity(arena.key(input), factorKey)) {
+			return null;
+		}
+		FrontierStateKey naturalOutputKey = joinedStateKey(arena.key(input), factorKey);
+		FrontierStateKey outputKey = requestedOutputKey == null ? naturalOutputKey : requestedOutputKey;
+		if (!factorWordsEqual(outputKey, logicalFactorWords(naturalOutputKey))
+				|| !outputKey.maskStrata().equals(naturalOutputKey.maskStrata())
+				|| !sameSamplingIdentity(outputKey, naturalOutputKey)) {
+			return null;
+		}
+		arena.declareCanonicalState(outputKey);
+		boolean lineageSpecific = arena.nearestCalibration(input) != null;
+		EvidenceStateRef state = lineageSpecific ? null : arena.find(outputKey);
+		if (state == null) {
+			state = leaf != null
+					? extendInner(input, leaf, outputKey, relationId)
+					: extendFinite(input, finite, outputKey, relationId);
+			rememberState(state);
+		}
+		return state;
+	}
+
+	private LeafState singleStatementFactor(EvidenceStateRef state) {
+		if (leafStates == null || !arena.hasCanonicalKey(state) || factorCount(state) != 1) {
+			return null;
+		}
+		FrontierStateKey key = arena.key(state);
+		for (int relationId = 1; relationId < leafStates.length; relationId++) {
+			LeafState leaf = leafState(relationId);
+			if (leaf != null && containsFactor(key, relationId)) {
+				return leaf;
+			}
+		}
+		return null;
 	}
 
 	private EvidenceStateRef resolveIndependentCartesian(int relationId, EvidenceStateRef candidate,
@@ -641,7 +1297,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 					independentParent,
 					outputKey,
 					relationId,
-					runtime.frontierRefinementWorkUnits());
+					settings.refinementWorkUnits());
 			rememberState(state);
 		}
 		return state;
@@ -696,6 +1352,16 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				&& (key.logicalFactorWord(word) & 1L << (factorIndex & 63)) != 0L;
 	}
 
+	private static boolean disjointFactors(FrontierStateKey left, FrontierStateKey right) {
+		int wordCount = Math.min(left.logicalFactorWordCount(), right.logicalFactorWordCount());
+		for (int word = 0; word < wordCount; word++) {
+			if ((left.logicalFactorWord(word) & right.logicalFactorWord(word)) != 0L) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	private static boolean disjointLayouts(FrontierLayout left, FrontierLayout right) {
 		for (int slot = 0; slot < left.size(); slot++) {
 			if (right.indexOf(left.variable(slot)) >= 0) {
@@ -727,107 +1393,391 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		return true;
 	}
 
-	private TupleExpr materializeJoinPrefix(PackedCostContext context, int appendedRelationId) {
-		TupleExpr joined = null;
-		for (int ordinal = 0; ordinal < context.prefixRelationCount(); ordinal++) {
-			int prefixRelationId = context.prefixRelationId(ordinal);
-			if (prefixRelationId <= 0 || prefixRelationId > query.relationCount()) {
-				return null;
+	void applyFrontierLearning(int relationId, PackedCostContext context, PackedCostEstimate output) {
+		if (closed || arena == null || output == null || output.evidenceStateId() == 0) {
+			return;
+		}
+		EvidenceStateRef predictedState = stateReference(output.evidenceStateId());
+		if (predictedState == null) {
+			return;
+		}
+		EvidenceStateRef transformState = rawTransformState(predictedState);
+		FrontierStateKey stateKey = arena.hasCanonicalKey(transformState) ? arena.key(transformState) : null;
+		FrontierLearningKey learningKey = FrontierLearningKey.of(
+				learningOperatorFamily(relationId),
+				learningRawTransform(relationId, transformState),
+				learningLayoutFingerprint(stateKey, transformState, context),
+				stateKey == null ? context.correlationMaskId() : stateKey.correlationScope(),
+				learningAccessKernel(output),
+				output.indexName(),
+				output.accessMode());
+		String rawStateDigest = learningStateDigest(predictedState);
+		output.putPlannedStringMetric("optimizer.frontierLearningKey", learningKey.externalForm());
+		output.putPlannedStringMetric("optimizer.frontierRawStateDigest", rawStateDigest);
+		output.putPlannedStringMetric("optimizer.frontierStateDigest", rawStateDigest);
+		output.putPlannedDoubleMetric("optimizer.frontierLeoRevision", runtime.leoRevision());
+
+		LmdbOperatorFeedbackStats feedbackStats = runtime.feedback();
+		if (feedbackStats == null) {
+			return;
+		}
+		EvidenceStateSummary predictedSummary = predictedState.summary();
+		boolean databaseExact = predictedSummary.guarantee() == EvidenceGuarantee.DATABASE_EXACT;
+		double eventPredictionRows = finiteNonNegative(output.outputRows())
+				? output.outputRows()
+				: predictedSummary.pointRows();
+		double learningPredictionRows = isComposableState(predictedState)
+				? predictedSummary.pointRows()
+				: eventPredictionRows;
+		FrontierLearningModel.DimensionEstimate rowCorrection = feedbackStats.frontierDimensionEstimate(
+				learningKey, FrontierCostDimension.OUTPUT_ROWS, learningPredictionRows);
+		EvidenceStateRef correctedState = predictedState;
+		if (!databaseExact && rowCorrection != null) {
+			if (!isComposableState(predictedState)) {
+				predictedState = alignNonComposableCostingState(relationId, predictedState, output);
+				predictedSummary = predictedState.summary();
 			}
-			TupleExpr factor = query.materializeRelation(prefixRelationId);
-			joined = joined == null ? factor : new Join(joined, factor);
+			String evidenceKey = learningKey.externalForm() + ":output_rows";
+			if (!arena.containsCalibrationEvidence(predictedState, evidenceKey)) {
+				double confidence = posteriorConfidence(rowCorrection.posteriorPrecision());
+				double factor = predictedSummary.pointRows() == 0.0d
+						? rowCorrection.correctedValue() == 0.0d ? 0.0d : Double.POSITIVE_INFINITY
+						: rowCorrection.correctedValue() / predictedSummary.pointRows();
+				EvidenceCalibrationSummary calibration = new EvidenceCalibrationSummary(
+						predictedSummary.pointRows(),
+						rowCorrection.correctedValue(),
+						factor,
+						"frontier-hierarchical-nig",
+						learningEvidenceCount(rowCorrection),
+						confidence,
+						evidenceKey,
+						runtime.learnedEvidenceRevision());
+				correctedState = arena.calibrate(predictedState, calibration, relationId);
+				rememberState(correctedState);
+				output.setEvidenceStateId(correctedState.stateId());
+				output.setEvidenceGuarantee(correctedState.summary().guarantee());
+				if (output.hasComponentOutputRows()) {
+					output.setComponentOutputRowsPreservingPhysicalCost(correctedState.summary().pointRows());
+				} else if (output.hasContextualOutputRows()) {
+					output.setContextualOutputRowsPreservingPhysicalCost(correctedState.summary().pointRows());
+				} else {
+					output.setOutputRowsPreservingPhysicalCost(correctedState.summary().pointRows());
+				}
+				synchronizeSemiAntiCorrelationRows(output, correctedState.summary());
+				annotateReady(output, correctedState);
+				String currentSource = output.estimateSource();
+				String learnedSource = currentSource != null && currentSource.contains("learned-filter")
+						? FRONTIER_LEARNED_FILTER_LEO_SOURCE
+						: FRONTIER_LEO_SOURCE;
+				output.setEstimateProvenance(learnedSource, "frontier_event_leo");
+				annotateDimensionCorrection(output, FrontierCostDimension.OUTPUT_ROWS,
+						predictedSummary.pointRows(), rowCorrection);
+			}
 		}
-		if (appendedRelationId <= 0 || appendedRelationId > query.relationCount()) {
-			return null;
+
+		int physicalCorrections = applyFrontierPhysicalLearning(learningKey, output, feedbackStats);
+		if (rowCorrection != null || physicalCorrections > 0) {
+			output.putPlannedStringMetric("optimizer.frontierLeoModel", "hierarchical-nig");
+			output.putPlannedDoubleMetric("optimizer.frontierLeoPhysicalDimensionCount", physicalCorrections);
 		}
-		TupleExpr appended = query.materializeRelation(appendedRelationId);
-		return joined == null ? appended : new Join(joined, appended);
+		output.putPlannedStringMetric("optimizer.frontierStateDigest", learningStateDigest(correctedState));
 	}
 
-	private CalibratedState applyLeoCalibration(int relationId, TupleExpr expression, EvidenceStateRef rawState,
-			double leftRows, double rightRows, double rawWorkRows) {
-		EvidenceStateSummary rawSummary = rawState.summary();
-		if (rawSummary.guarantee() == EvidenceGuarantee.DATABASE_EXACT || expression == null) {
-			return new CalibratedState(rawState, null);
-		}
-		double safeRawWorkRows = finiteNonNegative(rawWorkRows)
-				? Math.max(rawSummary.pointRows(), rawWorkRows)
-				: rawSummary.pointRows();
-		LmdbOperatorFeedbackStats.OperatorEstimate feedback = runtime.operatorFeedback(
-				expression,
-				leftRows,
-				rightRows,
-				rawSummary.pointRows(),
-				safeRawWorkRows,
-				FRONTIER_EXECUTION_MODE);
-		return calibrateWithFeedback(relationId, rawState, feedback);
-	}
-
-	private CalibratedState applyLeoMultiplierCalibration(int relationId, TupleExpr expression,
-			EvidenceStateRef rawState, double rawWorkRows) {
-		EvidenceStateSummary rawSummary = rawState.summary();
-		if (rawSummary.guarantee() == EvidenceGuarantee.DATABASE_EXACT || expression == null) {
-			return new CalibratedState(rawState, null);
-		}
-		double safeRawWorkRows = finiteNonNegative(rawWorkRows)
-				? Math.max(rawSummary.pointRows(), rawWorkRows)
-				: rawSummary.pointRows();
-		LmdbOperatorFeedbackStats.OperatorEstimate feedback = runtime.operatorMultiplierFeedback(
-				expression, rawSummary.pointRows(), safeRawWorkRows, FRONTIER_EXECUTION_MODE);
-		return calibrateWithFeedback(relationId, rawState, feedback);
-	}
-
-	private CalibratedState calibrateWithFeedback(int relationId, EvidenceStateRef rawState,
-			LmdbOperatorFeedbackStats.OperatorEstimate feedback) {
-		EvidenceStateSummary rawSummary = rawState.summary();
-		if (!qualifiedLeoCorrection(feedback)
-				|| arena.containsCalibrationEvidence(rawState, feedback.feedbackKey())) {
-			return new CalibratedState(rawState, null);
-		}
-		double factor = rawSummary.pointRows() == 0.0d
-				? feedback.rows() == 0.0d ? 0.0d : Double.POSITIVE_INFINITY
-				: feedback.rows() / rawSummary.pointRows();
-		EvidenceCalibrationSummary calibration = new EvidenceCalibrationSummary(
-				rawSummary.pointRows(),
-				feedback.rows(),
-				factor,
-				feedback.source(),
-				feedback.evidenceCount(),
-				feedback.correctionConfidence(),
-				feedback.feedbackKey(),
-				runtime.learnedEvidenceRevision());
-		EvidenceStateRef calibrated = arena.calibrate(rawState, calibration, relationId);
-		rememberState(calibrated);
-		return new CalibratedState(calibrated, feedback);
-	}
-
-	private void publishJoinState(PackedCostEstimate output, EvidenceStateRef state, double rawWorkRows,
-			LmdbOperatorFeedbackStats.OperatorEstimate feedback) {
+	/**
+	 * Makes a non-composable state's scalar compatibility mirror explicit in Frontier lineage before the costing event
+	 * is recorded. The resulting boundary is still unresolved and non-composable; it merely ensures that LEO observes
+	 * the same immutable prediction that candidate ranking consumed. Composable payloads remain untouched.
+	 */
+	private EvidenceStateRef alignNonComposableCostingState(int relationId, EvidenceStateRef state,
+			PackedCostEstimate output) {
+		FrontierStateDisposition disposition = arena.disposition(state);
+		double eventRows = output.outputRows();
 		EvidenceStateSummary summary = state.summary();
-		if (!summary.guarantee().isComposablePointEstimate()) {
-			degradeOperator(output, state, summary.degradationReason());
-			output.putPlannedDoubleMetric("plannedFrontierFactorCount", factorCount(state));
+		if (disposition == FrontierStateDisposition.COMPOSABLE_PAYLOAD
+				|| !finiteNonNegative(eventRows)
+				|| Double.doubleToLongBits(eventRows) == Double.doubleToLongBits(summary.pointRows())) {
+			return state;
+		}
+		double upperRows = Math.max(eventRows, summary.upperRows());
+		double certifiedUpperBound = Math.max(eventRows, summary.certifiedUpperBound());
+		EvidenceStateSummary eventSummary = EvidenceStateSummary.unresolved(
+				eventRows, upperRows, certifiedUpperBound, summary.degradationReason());
+		EvidenceStateRef eventState = disposition == FrontierStateDisposition.OPAQUE_BOUNDARY
+				? arena.deriveOpaqueBoundary(state, eventSummary, Math.max(0, relationId))
+				: arena.deriveBoundBoundary(
+						state, arena.layout(state), eventSummary, Math.max(0, relationId));
+		rememberState(eventState);
+		publishDegradedState(output, eventState);
+		output.putPlannedStringMetric("plannedFrontierBoundaryRowsSource", "originating-cost-event");
+		return eventState;
+	}
+
+	void applyFrontierPhysicalEventLearning(PackedCostContext context, PackedCostEstimate output) {
+		if (closed || arena == null || output == null || output.evidenceStateId() == 0) {
+			return;
+		}
+		EvidenceStateRef predictedState = stateReference(output.evidenceStateId());
+		if (predictedState == null) {
+			return;
+		}
+		EvidenceStateRef transformState = rawTransformState(predictedState);
+		FrontierStateKey stateKey = arena.hasCanonicalKey(transformState) ? arena.key(transformState) : null;
+		FrontierLearningKey learningKey = FrontierLearningKey.of(
+				"join",
+				arena.operation(transformState).name(),
+				learningLayoutFingerprint(stateKey, transformState, context),
+				stateKey == null ? context.correlationMaskId() : stateKey.correlationScope(),
+				learningAccessKernel(output),
+				output.indexName(),
+				output.accessMode());
+		String stateDigest = learningStateDigest(predictedState);
+		output.putPlannedStringMetric("optimizer.frontierPhysicalLearningKey", learningKey.externalForm());
+		output.putPlannedStringMetric("optimizer.frontierRawStateDigest", stateDigest);
+		output.putPlannedStringMetric("optimizer.frontierStateDigest", stateDigest);
+		output.putPlannedDoubleMetric("optimizer.frontierLeoRevision", runtime.leoRevision());
+
+		LmdbOperatorFeedbackStats feedbackStats = runtime.feedback();
+		if (feedbackStats == null) {
+			return;
+		}
+		int physicalCorrections = applyFrontierPhysicalLearning(learningKey, output, feedbackStats);
+		if (physicalCorrections > 0) {
+			output.putPlannedStringMetric("optimizer.frontierLeoModel", "hierarchical-nig");
+			output.putPlannedDoubleMetric("optimizer.frontierLeoPhysicalDimensionCount", physicalCorrections);
+		}
+	}
+
+	private int applyFrontierPhysicalLearning(FrontierLearningKey key, PackedCostEstimate output,
+			LmdbOperatorFeedbackStats feedbackStats) {
+		double sequentialRows = correctedPhysicalDimension(key, FrontierCostDimension.SOURCE_ROWS_SCANNED,
+				output.sequentialRows(), output, feedbackStats);
+		double randomSeeks = correctedPhysicalDimension(key, FrontierCostDimension.INDEX_SEEKS,
+				output.randomSeeks(), output, feedbackStats);
+		double iteratorOpens = correctedPhysicalDimension(key, FrontierCostDimension.ITERATOR_OPENS,
+				output.iteratorOpens(), output, feedbackStats);
+		double expressionEvaluations = correctedPhysicalDimension(key, FrontierCostDimension.EXPRESSION_EVALUATIONS,
+				output.expressionEvaluations(), output, feedbackStats);
+		double hashBuildRows = correctedPhysicalDimension(key, FrontierCostDimension.HASH_BUILD_ROWS,
+				output.hashBuildRows(), output, feedbackStats);
+		double hashProbeRows = correctedPhysicalDimension(key, FrontierCostDimension.HASH_PROBE_ROWS,
+				output.hashProbeRows(), output, feedbackStats);
+		double pathExpansions = correctedPhysicalDimension(key, FrontierCostDimension.PATH_EXPANSIONS,
+				output.pathExpansions(), output, feedbackStats);
+		double resultRows = correctedPhysicalDimension(key, FrontierCostDimension.RESULT_ROWS,
+				output.resultRows(), output, feedbackStats);
+		double remoteCalls = correctedPhysicalDimension(key, FrontierCostDimension.REMOTE_CALLS,
+				output.remoteCalls(), output, feedbackStats);
+		int corrected = changed(output.sequentialRows(), sequentialRows)
+				+ changed(output.randomSeeks(), randomSeeks)
+				+ changed(output.iteratorOpens(), iteratorOpens)
+				+ changed(output.expressionEvaluations(), expressionEvaluations)
+				+ changed(output.hashBuildRows(), hashBuildRows)
+				+ changed(output.hashProbeRows(), hashProbeRows)
+				+ changed(output.pathExpansions(), pathExpansions)
+				+ changed(output.resultRows(), resultRows)
+				+ changed(output.remoteCalls(), remoteCalls);
+		if (corrected == 0 || !finiteNonNegative(sequentialRows) || !finiteNonNegative(randomSeeks)
+				|| !finiteNonNegative(iteratorOpens) || !finiteNonNegative(expressionEvaluations)
+				|| !finiteNonNegative(hashBuildRows) || !finiteNonNegative(hashProbeRows)
+				|| !finiteNonNegative(pathExpansions) || !finiteNonNegative(resultRows)
+				|| !finiteNonNegative(remoteCalls)
+				|| !finiteNonNegative(output.peakMemoryRows())) {
+			return 0;
+		}
+		if (output.costScope() == PackedCostEstimate.CostScope.INCLUSIVE) {
+			output.setInclusivePhysicalCost(sequentialRows, randomSeeks, iteratorOpens, expressionEvaluations,
+					hashBuildRows, hashProbeRows, pathExpansions, resultRows, remoteCalls, output.peakMemoryRows());
+		} else {
+			output.setLocalPhysicalCost(sequentialRows, randomSeeks, iteratorOpens, expressionEvaluations,
+					hashBuildRows, hashProbeRows, pathExpansions, resultRows, remoteCalls, output.peakMemoryRows());
+		}
+		return corrected;
+	}
+
+	private double correctedPhysicalDimension(FrontierLearningKey key, FrontierCostDimension dimension,
+			double rawValue, PackedCostEstimate output, LmdbOperatorFeedbackStats feedbackStats) {
+		if (!finiteNonNegative(rawValue)) {
+			return rawValue;
+		}
+		FrontierLearningModel.DimensionEstimate estimate = feedbackStats.frontierDimensionEstimate(
+				key, dimension, rawValue);
+		if (estimate == null) {
+			return rawValue;
+		}
+		annotateDimensionCorrection(output, dimension, rawValue, estimate);
+		return estimate.correctedValue();
+	}
+
+	private static void annotateDimensionCorrection(PackedCostEstimate output, FrontierCostDimension dimension,
+			double rawValue, FrontierLearningModel.DimensionEstimate estimate) {
+		String prefix = "optimizer.frontierLeo." + dimension.name().toLowerCase(Locale.ROOT);
+		output.putPlannedDoubleMetric(prefix + ".raw", rawValue);
+		output.putPlannedDoubleMetric(prefix + ".corrected", estimate.correctedValue());
+		output.putPlannedDoubleMetric(prefix + ".posteriorLogMean", estimate.posteriorLogMean());
+		output.putPlannedDoubleMetric(prefix + ".posteriorLogMeanVariance", estimate.posteriorLogMeanVariance());
+		output.putPlannedDoubleMetric(prefix + ".posteriorPrecision", estimate.posteriorPrecision());
+		output.putPlannedDoubleMetric(prefix + ".exactEvidence", estimate.exactEvidenceCount());
+		output.putPlannedDoubleMetric(prefix + ".familyEvidence", estimate.familyEvidenceCount());
+		output.putPlannedDoubleMetric(prefix + ".legacyEvidence", estimate.legacyEvidenceCount());
+	}
+
+	private EvidenceStateRef rawTransformState(EvidenceStateRef state) {
+		EvidenceStateRef current = state;
+		while (arena.operation(current) == FrontierStateOperation.CALIBRATE && arena.parentCount(current) == 1) {
+			current = arena.parent(current, 0);
+		}
+		return current;
+	}
+
+	private String learningOperatorFamily(int relationId) {
+		if (relationId == 0) {
+			return "join";
+		}
+		if (learningOperatorFamilies == null) {
+			learningOperatorFamilies = new String[query.relationCount() + 1];
+		}
+		String cached = learningOperatorFamilies[relationId];
+		if (cached != null) {
+			return cached;
+		}
+		TupleExpr expression = query.materializeRelation(relationId);
+		String simpleName = expression.getClass().getSimpleName();
+		String family = simpleName.isBlank() ? "tuple-expr" : camelToKebab(simpleName);
+		learningOperatorFamilies[relationId] = family;
+		return family;
+	}
+
+	private String learningRawTransform(int relationId, EvidenceStateRef state) {
+		String operation = arena.operation(state).name();
+		if (relationId <= 0 || relationId > query.relationCount()) {
+			return operation;
+		}
+		if (learningRawTransforms == null) {
+			learningRawTransforms = new String[query.relationCount() + 1];
+		}
+		String cached = learningRawTransforms[relationId];
+		if (cached != null && cached.startsWith(operation + '@')) {
+			return cached;
+		}
+		TupleExpr expression = query.materializeRelation(relationId);
+		String topology = LeoOperatorKey.from(expression, "", LeoOperatorKey.ConstantMode.EXACT)
+				.structuralFingerprint();
+		long fingerprint = 0xcbf29ce484222325L;
+		for (int index = 0; index < topology.length(); index++) {
+			fingerprint ^= topology.charAt(index);
+			fingerprint *= 0x100000001b3L;
+		}
+		String transform = operation + '@' + fixedHex(avalancheLearningFingerprint(fingerprint));
+		learningRawTransforms[relationId] = transform;
+		return transform;
+	}
+
+	private static String camelToKebab(String value) {
+		StringBuilder result = new StringBuilder(value.length() + 4);
+		for (int index = 0; index < value.length(); index++) {
+			char character = value.charAt(index);
+			if (Character.isUpperCase(character) && index > 0) {
+				result.append('-');
+			}
+			result.append(Character.toLowerCase(character));
+		}
+		return result.toString();
+	}
+
+	private long learningLayoutFingerprint(FrontierStateKey key, EvidenceStateRef state, PackedCostContext context) {
+		long hash = mixLearningFingerprint(0x243f6a8885a308d3L, arena.layout(state).hashCode());
+		if (key != null) {
+			hash = mixLearningFingerprint(hash, key.maskStrata().hashCode());
+			hash = mixLearningFingerprint(hash, key.semanticScope());
+		} else {
+			hash = mixLearningFingerprint(hash, context.bindingLayoutId());
+			hash = mixLearningFingerprint(hash, context.semanticScopeMaskId());
+		}
+		return avalancheLearningFingerprint(hash);
+	}
+
+	private static String learningAccessKernel(PackedCostEstimate output) {
+		String source = output.estimateSource() == null ? "unknown" : output.estimateSource();
+		String implementation = output.plannedStringMetric("plannedPhysicalImplementation");
+		if (implementation == null || implementation.isBlank()) {
+			implementation = "unspecified";
+		}
+		String kernel = source + ':' + output.lookupComponentMask() + ':' + output.missingLookupComponentMask() + ':'
+				+ output.indexPrefixLength() + ":implementation=" + implementation;
+		String physicalJoin = output.plannedStringMetric("optimizer.physicalJoinImplementation");
+		return physicalJoin == null || physicalJoin.isBlank() ? kernel : kernel + ":physical-join=" + physicalJoin;
+	}
+
+	private String learningStateDigest(EvidenceStateRef state) {
+		FrontierStateKey key = arena.hasCanonicalKey(state) ? arena.key(state) : null;
+		EvidenceStateSummary summary = state.summary();
+		long keyHash = key == null ? arena.layout(state).hashCode() : key.stableHash();
+		long high = mixLearningFingerprint(0x6a09e667f3bcc909L, keyHash);
+		high = mixLearningFingerprint(high, summary.hashCode());
+		high = mixLearningFingerprint(high, arena.operation(state).ordinal());
+		high = mixLearningFingerprint(high, arena.disposition(state).ordinal());
+		long low = mixLearningFingerprint(0xbb67ae8584caa73bL, Long.rotateLeft(keyHash, 29));
+		low = mixLearningFingerprint(low, summary.guarantee().ordinal());
+		low = mixLearningFingerprint(low, Double.doubleToLongBits(summary.pointRows()));
+		EvidenceCalibrationSummary calibration = arena.nearestCalibration(state);
+		if (calibration != null) {
+			high = mixLearningFingerprint(high, calibration.hashCode());
+			low = mixLearningFingerprint(low, calibration.evidenceRevision());
+		}
+		return fixedHex(avalancheLearningFingerprint(high)) + fixedHex(avalancheLearningFingerprint(low));
+	}
+
+	private static long learningEvidenceCount(FrontierLearningModel.DimensionEstimate estimate) {
+		return Math.max(1L, estimate.exactEvidenceCount() + estimate.familyEvidenceCount()
+				+ estimate.legacyEvidenceCount());
+	}
+
+	private static double posteriorConfidence(double precision) {
+		return finiteNonNegative(precision) ? Math.clamp(precision / (precision + 1.0d), 0.0d, 1.0d) : 0.0d;
+	}
+
+	private static int changed(double raw, double corrected) {
+		return Double.doubleToLongBits(raw) == Double.doubleToLongBits(corrected) ? 0 : 1;
+	}
+
+	private static long mixLearningFingerprint(long hash, long value) {
+		long mixed = value + 0x9e3779b97f4a7c15L + (hash << 6) + (hash >>> 2);
+		return hash ^ mixed;
+	}
+
+	private static long avalancheLearningFingerprint(long value) {
+		value ^= value >>> 33;
+		value *= 0xff51afd7ed558ccdL;
+		value ^= value >>> 33;
+		value *= 0xc4ceb9fe1a85ec53L;
+		return value ^ value >>> 33;
+	}
+
+	private static String fixedHex(long value) {
+		String hex = Long.toUnsignedString(value, 16);
+		return "0".repeat(16 - hex.length()) + hex;
+	}
+
+	private void publishJoinState(PackedCostEstimate output, EvidenceStateRef state) {
+		EvidenceStateSummary summary = state.summary();
+		if (!isComposableState(state)) {
+			publishDegradedState(output, state);
 			output.putPlannedStringMetric("plannedPhysicalImplementation", FRONTIER_EXECUTION_MODE);
 			return;
 		}
 		output.setEvidenceStateId(state.stateId());
 		annotateReady(output, state);
-		output.putPlannedDoubleMetric("plannedFrontierFactorCount", factorCount(state));
+		annotateFactorCount(output, state);
 		output.putPlannedStringMetric("plannedPhysicalImplementation", FRONTIER_EXECUTION_MODE);
 		if (mode != FrontierEstimatorMode.AUTHORITATIVE) {
 			return;
 		}
 		if (summary.guarantee() == EvidenceGuarantee.MEASURE_UNBIASED
 				&& summary.zeroStatus() == EvidenceZeroStatus.ESTIMATED_ZERO) {
-			output.putPlannedStringMetric("plannedFrontierFallbackReason", "sampled_zero_not_authoritative");
+			publishSampledZeroFallback(0, output, state);
 			return;
 		}
-		double frontierWork = feedback != null && finiteNonNegative(feedback.workRows())
-				? Math.max(summary.pointRows(), feedback.workRows())
-				: finiteNonNegative(rawWorkRows)
-						? Math.max(summary.pointRows(), rawWorkRows)
-						: summary.pointRows();
-		output.setRows(summary.pointRows(), frontierWork);
+		setLocalOperatorPhysicalCost(output, summary.pointRows(), 0.0d, 0.0d, 0.0d, 0.0d);
 		output.setEvidenceGuarantee(summary.guarantee());
 		boolean learned = arena.nearestCalibration(state) != null;
 		output.setEstimateProvenance(learned ? FRONTIER_LEO_SOURCE : FRONTIER_SOURCE,
@@ -850,12 +1800,190 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	}
 
 	@Override
+	public FrontierEvidenceBundle detachEvidence(int[] evidenceStateIds) {
+		if (closed || arena == null) {
+			return FrontierEvidenceBundle.empty(evidenceStateIds.length);
+		}
+		return arena.exportEvidence(evidenceStateIds);
+	}
+
+	PackedStalePlanValidation validateStalePlan(PackedPlanValidationRequest request) {
+		Objects.requireNonNull(request, "request");
+		if (arena == null || closed) {
+			return PackedStalePlanValidation.replan(0.0d, 1.0d, queryIndexVisitedRows,
+					"current-frontier-generation-unavailable");
+		}
+		if (request.cachedContext().predicateRangeVersion() != request.currentContext().predicateRangeVersion()) {
+			return PackedStalePlanValidation.replan(0.0d, 1.0d, queryIndexVisitedRows,
+					"predicate-range-semantics-changed");
+		}
+
+		PackedCostingReplay.Result replay = PackedCostingReplay.replay(request,
+				new LmdbFrontierLearningCostSession(this));
+		if (request.decisionCount() == 0) {
+			return PackedStalePlanValidation.replan(0.0d, 1.0d, replay.workUnits(),
+					"selected-cost-event-missing-from-certificate");
+		}
+		int[] selectedCandidates = new int[request.decisionCount()];
+		int comparisonCount = 0;
+		for (int decision = 0; decision < request.decisionCount(); decision++) {
+			int selected = selectedCandidate(request, decision);
+			if (selected < 0) {
+				return PackedStalePlanValidation.replan(0.0d, 1.0d, replay.workUnits(),
+						"selected-cost-event-missing-from-certificate");
+			}
+			selectedCandidates[decision] = selected;
+			int selectedTier = request.candidateTier(selected);
+			double selectedCost = replay.candidateCost(selected);
+			for (int candidate = request.decisionStart(decision); candidate < request
+					.decisionEnd(decision); candidate++) {
+				if (candidate == selected) {
+					continue;
+				}
+				comparisonCount++;
+				int tier = request.candidateTier(candidate);
+				double cost = replay.candidateCost(candidate);
+				if (tier < selectedTier || tier == selectedTier && cost < selectedCost) {
+					return PackedStalePlanValidation.replan(1.0d, relativeRegret(selectedCost, cost),
+							replay.workUnits(), request.acceptedWhenCosted(candidate)
+									? "current-cost-event-changed-winner"
+									: "current-cost-event-invalidated-pruning-proof");
+				}
+			}
+		}
+		double selectedCost = replay.candidateCost(selectedCandidates[0]);
+		boolean candidateStatesExact = allCandidateStatesExact(request, replay);
+		FrontierDecisionRiskController.Decision riskDecision = null;
+		if (!candidateStatesExact) {
+			riskDecision = settings.validationDecision(
+					request.decisionFamilyFingerprint(), Math.max(selectedCost, Double.MIN_NORMAL), replay.workUnits(),
+					Math.max(1, comparisonCount));
+			if (!riskDecision.certified()) {
+				return PackedStalePlanValidation.replan(riskDecision.confidence(), riskDecision.expectedRegret(),
+						replay.workUnits(), riskDecision.reason());
+			}
+		}
+		if (allCandidateEvidenceUnchanged(request, replay)) {
+			double[] candidateCosts = replayedCandidateCosts(replay);
+			return PackedStalePlanValidation.certified(replay, candidateCosts,
+					candidateStatesExact ? 1.0d : riskDecision.confidence(),
+					candidateStatesExact ? 0.0d : riskDecision.expectedRegret(), replay.workUnits(),
+					candidateStatesExact ? "current-cost-events-certified" : "paired-cost-events-certified");
+		}
+		if (!candidateStatesExact) {
+			long observations = 0L;
+			String reason = "paired-cost-events-certified";
+			for (int decision = 0; decision < request.decisionCount(); decision++) {
+				PackedFrontierDecisionValidator.Result paired = PackedFrontierDecisionValidator.validate(
+						request, replay, decision, selectedCandidates[decision], Math.max(1, comparisonCount),
+						riskDecision.confidence(), riskDecision.expectedRegret(),
+						settings.maximumExpectedRegret());
+				observations = Math.addExact(observations, paired.observations());
+				if (!paired.certified()) {
+					return PackedStalePlanValidation.replan(paired.confidence(), paired.expectedRegret(),
+							Math.addExact(replay.workUnits(), observations), paired.reason());
+				}
+				reason = paired.reason();
+			}
+			return PackedStalePlanValidation.certified(replay, replayedCandidateCosts(replay),
+					riskDecision.confidence(), riskDecision.expectedRegret(),
+					Math.addExact(replay.workUnits(), observations), reason);
+		}
+		double[] candidateCosts = replayedCandidateCosts(replay);
+		return PackedStalePlanValidation.certified(replay, candidateCosts, 1.0d, 0.0d,
+				replay.workUnits(), "current-cost-events-certified");
+	}
+
+	private static boolean allCandidateEvidenceUnchanged(PackedPlanValidationRequest request,
+			PackedCostingReplay.Result replay) {
+		FrontierEvidenceBundle cached = request.evidenceBundle();
+		FrontierEvidenceBundle current = replay.currentEvidence();
+		for (int candidate = 0; candidate < request.candidateCount(); candidate++) {
+			int cachedOrdinal = request.candidateStateOrdinal(candidate);
+			int currentOrdinal = replay.currentStateOrdinal(cachedOrdinal);
+			if (cachedOrdinal == 0 || currentOrdinal == 0
+					|| cached.guarantee(cachedOrdinal) != current.guarantee(currentOrdinal)
+					|| cached.disposition(cachedOrdinal) != current.disposition(currentOrdinal)
+					|| !cached.layout(cachedOrdinal).equals(current.layout(currentOrdinal))
+					|| !cached.summary(cachedOrdinal).equals(current.summary(currentOrdinal))
+					|| cached.payloadKind(cachedOrdinal) != current.payloadKind(currentOrdinal)
+					|| cached.contentDigestHigh(cachedOrdinal) != current.contentDigestHigh(currentOrdinal)
+					|| cached.contentDigestLow(cachedOrdinal) != current.contentDigestLow(currentOrdinal)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static double[] replayedCandidateCosts(PackedCostingReplay.Result replay) {
+		double[] candidateCosts = new double[replay.candidateCount()];
+		for (int candidate = 0; candidate < candidateCosts.length; candidate++) {
+			candidateCosts[candidate] = replay.candidateCost(candidate);
+		}
+		return candidateCosts;
+	}
+
+	private static int selectedCandidate(PackedPlanValidationRequest request, int decision) {
+		for (int candidate = request.decisionStart(decision); candidate < request.decisionEnd(decision); candidate++) {
+			if (request.candidateEventId(candidate) == request.selectedEventId(decision)) {
+				return candidate;
+			}
+		}
+		return -1;
+	}
+
+	private static boolean allCandidateStatesExact(PackedPlanValidationRequest request,
+			PackedCostingReplay.Result replay) {
+		FrontierEvidenceBundle current = replay.currentEvidence();
+		for (int candidate = 0; candidate < request.candidateCount(); candidate++) {
+			int cachedOrdinal = request.candidateStateOrdinal(candidate);
+			int currentOrdinal = replay.currentStateOrdinal(cachedOrdinal);
+			if (currentOrdinal == 0
+					|| current.guarantee(currentOrdinal) != EvidenceGuarantee.DATABASE_EXACT
+					|| current.disposition(currentOrdinal) != FrontierStateDisposition.COMPOSABLE_PAYLOAD) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static double relativeRegret(double selectedCost, double betterCost) {
+		if (!(selectedCost > 0.0d) || !Double.isFinite(selectedCost) || !Double.isFinite(betterCost)) {
+			return 1.0d;
+		}
+		return Math.max(0.0d, Math.min(1.0d, (selectedCost - betterCost) / selectedCost));
+	}
+
+	private boolean sameExactSourceContent(FrontierEvidenceBundle cached, int cachedOrdinal,
+			EvidenceStateRef currentState) {
+		if (currentState == null || currentState.summary().guarantee() != EvidenceGuarantee.DATABASE_EXACT) {
+			return false;
+		}
+		FrontierEvidenceBundle current = arena.exportEvidence(new int[] { currentState.stateId() });
+		int currentOrdinal = current.requestedStateOrdinal(0);
+		return currentOrdinal > 0
+				&& cached.layout(cachedOrdinal).equals(current.layout(currentOrdinal))
+				&& cached.contentDigestHigh(cachedOrdinal) == current.contentDigestHigh(currentOrdinal)
+				&& cached.contentDigestLow(cachedOrdinal) == current.contentDigestLow(currentOrdinal);
+	}
+
+	@Override
 	public void close() {
 		if (closed) {
 			return;
 		}
 		closed = true;
 		scalar.close();
+		closePrimitiveMemo(storedFrontierValues);
+		storedFrontierValues = null;
+		closePrimitiveMemo(subjectCenterCompleteness);
+		subjectCenterCompleteness = null;
+		closePrimitiveMemo(objectCenterCompleteness);
+		objectCenterCompleteness = null;
+		if (statementProbeMemo != null) {
+			statementProbeMemo.close();
+			statementProbeMemo = null;
+		}
 		if (sessionReservation != null) {
 			sessionReservation.close();
 			sessionReservation = null;
@@ -871,10 +1999,19 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		leafStates = null;
 		finiteLeafStates = null;
 		stateReferences = null;
+		factorCountWords = null;
+		candidateFactorWords = null;
+		factorCountVisitEpochs = null;
 		queryLocalValueIds.clear();
 		queryLocalValues.clear();
 		alternateReplayStates.clear();
 		alternateReplayFailures.clear();
+	}
+
+	private static void closePrimitiveMemo(LmdbFrontierLongObjectMemo<?> memo) {
+		if (memo != null) {
+			memo.close();
+		}
 	}
 
 	private void prepare() {
@@ -888,7 +2025,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			unavailable("persistent_" + statusName(currentStatus));
 			return;
 		}
-		if (runtime.frontierQueryMemoryBudgetBytes() <= 0L) {
+		if (settings.queryMemoryBudgetBytes() <= 0L) {
 			unavailable("query_memory_budget_disabled");
 			return;
 		}
@@ -919,14 +2056,16 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		if (!lease.ready()) {
 			availabilityStatus = statusName(lease.status());
 			fallbackReason = lease.fallbackReason();
+			FrontierSynopsisStatus unavailableStatus = lease.status();
 			lease.close();
+			prepareReplayableSources(candidates, finiteCandidates, unavailableStatus, requiredEpoch);
 			return;
 		}
 		queryIndexLease = lease;
 		queryIndexBytes = lease.byteLength();
 		FrontierSynopsisReadResult counted = lease.readResult();
 		generationDatabaseExact = counted.databaseExact();
-		long workBudget = runtime.frontierInitialMaterializationWorkUnits();
+		long workBudget = settings.initialMaterializationWorkUnits();
 		independentMaterializationWorkRemaining = workBudget;
 		boolean materializeIndependentLane = !generationDatabaseExact
 				&& lease.designLaneCount() > INDEPENDENT_DESIGN_LANE_INDEX;
@@ -937,7 +2076,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		FrontierMemoryReservation candidateReservation = null;
 		EvidenceStateRef[] candidateReferences = null;
 		try {
-			candidateArena = new FrontierStateArena(runtime.frontierQueryMemoryBudgetBytes());
+			candidateArena = new FrontierStateArena(settings.queryMemoryBudgetBytes());
 			long sessionBytes = Math.addExact(SESSION_BASE_BYTES,
 					Math.addExact(Math.multiplyExact(SESSION_RELATION_BYTES, candidates.length),
 							Math.multiplyExact(SESSION_LEAF_BYTES, declaredLeafCount)));
@@ -988,8 +2127,17 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				LeafState candidate = candidates[relationId];
 				long candidateRows = candidateRangeRows[relationId];
 				if (candidateRows > remainingWork || candidateRows > MAXIMUM_LEAF_BUFFER_ROWS) {
-					candidates[relationId] = null;
+					/*
+					 * The mapped synopsis could not materialize this leaf within the preparation budget, but the
+					 * descriptor remains a replayable snapshot source. Retaining it lets estimateLeaf publish a typed
+					 * bound-only state and lets a later append refine the actual correlated prefix directly. Removing
+					 * the descriptor here incorrectly turned ordinary statement patterns into unsupported opaque
+					 * boundaries.
+					 */
 					queryIndexExcludedLeaves = Math.incrementExact(queryIndexExcludedLeaves);
+					candidate.replayFallbackReason = candidateRows > MAXIMUM_LEAF_BUFFER_ROWS
+							? "query_index_leaf_buffer_limit_exceeded"
+							: "query_index_work_budget_exhausted";
 					continue;
 				}
 				long primaryCandidateRows = lease.designLaneCandidateRows(candidate.selector(), DESIGN_LANE_INDEX);
@@ -1006,8 +2154,9 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 					queryIndexVisitedRows = Math.addExact(queryIndexVisitedRows, scannedRows);
 					remainingWork -= scannedRows;
 					if (!scan.complete()) {
-						candidates[relationId] = null;
+						/* Retain the descriptor for the same replayable-source path as an up-front budget exclusion. */
 						queryIndexExcludedLeaves = Math.incrementExact(queryIndexExcludedLeaves);
+						candidate.replayFallbackReason = "query_index_work_budget_exhausted";
 						continue;
 					}
 					if (!generationDatabaseExact) {
@@ -1051,14 +2200,195 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			candidateArena = null;
 			candidateReservation = null;
 		} catch (RuntimeException failure) {
-			availabilityStatus = "ready";
-			fallbackReason = "query_state_materialization_failed";
+			throw new PackedCostSessionFailure("query_state_materialization_failed", failure);
 		} finally {
 			if (candidateReservation != null) {
 				candidateReservation.close();
 			}
 			if (candidateArena != null) {
 				candidateArena.close();
+			}
+		}
+	}
+
+	private void prepareReplayableSources(LeafState[] candidates, FiniteLeafState[] finiteCandidates,
+			FrontierSynopsisStatus sourceStatus, long snapshotEpoch) {
+		int statementLeafCount = supportedLeafCount(candidates);
+		int finiteCount = supportedFiniteLeafCount(finiteCandidates);
+		int declaredLeafCount = Math.addExact(statementLeafCount, finiteCount);
+		if (declaredLeafCount == 0) {
+			return;
+		}
+		FrontierStateArena candidateArena = null;
+		FrontierMemoryReservation candidateReservation = null;
+		try {
+			candidateArena = new FrontierStateArena(settings.queryMemoryBudgetBytes());
+			long sessionBytes = Math.addExact(SESSION_BASE_BYTES,
+					Math.addExact(Math.multiplyExact(SESSION_RELATION_BYTES, candidates.length),
+							Math.multiplyExact(SESSION_LEAF_BYTES, declaredLeafCount)));
+			sessionBytes = Math.addExact(sessionBytes,
+					Math.addExact(retainedArrayBytes(candidates.length, Long.BYTES),
+							retainedArrayBytes(Math.addExact(declaredLeafCount, 1), Long.BYTES)));
+			candidateReservation = candidateArena.reserveTemporary(sessionBytes, FrontierMemoryPurpose.ARRAY_GROWTH);
+
+			FrontierSynopsisReadResult generation = new FrontierSynopsisReadResult(sourceStatus, 0L, 0L,
+					snapshotEpoch, 0L, Double.NaN, false);
+			FrontierStateKey[] declaredKeys = new FrontierStateKey[declaredLeafCount];
+			int declaredKeyCount = 0;
+			for (int relationId = 1; relationId < candidates.length; relationId++) {
+				LeafState candidate = candidates[relationId];
+				if (candidate != null) {
+					candidate.key = leafStateKey(candidate, generation, candidates.length);
+					declaredKeys[declaredKeyCount++] = candidate.key;
+				}
+			}
+			for (FiniteLeafState candidate : finiteCandidates) {
+				if (candidate != null) {
+					candidate.key = finiteStateKey(candidate, generation, candidates.length);
+					declaredKeys[declaredKeyCount++] = candidate.key;
+				}
+			}
+			candidateArena.declareCanonicalStates(declaredKeys);
+			EvidenceStateRef[] candidateReferences = new EvidenceStateRef[declaredLeafCount + 1];
+			long[] candidateRangeRows = snapshotCandidateRangeRows(candidates);
+			int[] scanOrder = leafScanOrder(candidates, candidateRangeRows);
+			long remainingWork = settings.initialMaterializationWorkUnits();
+			for (int relationId : scanOrder) {
+				LeafState candidate = candidates[relationId];
+				long candidateRows = candidateRangeRows[relationId];
+				if (statementSource == null || candidateRows > remainingWork
+						|| candidateRows > MAXIMUM_LEAF_BUFFER_ROWS) {
+					candidate.replayFallbackReason = statementSource == null
+							? "exact_snapshot_source_unavailable"
+							: candidateRows > MAXIMUM_LEAF_BUFFER_ROWS
+									? "snapshot_leaf_buffer_limit_exceeded"
+									: "snapshot_leaf_work_budget_exhausted";
+					continue;
+				}
+				candidate.state = materializeSnapshotExactLeaf(candidateArena, candidate, candidateRows);
+				candidate.materialization = "snapshot_exact";
+				candidateReferences[candidate.state.stateId()] = candidate.state;
+				remainingWork -= candidateRows;
+			}
+			for (FiniteLeafState candidate : finiteCandidates) {
+				if (candidate == null) {
+					continue;
+				}
+				candidate.state = materializeFiniteLeaf(candidateArena, candidate);
+				candidateReferences[candidate.state.stateId()] = candidate.state;
+			}
+
+			arena = candidateArena;
+			sessionReservation = candidateReservation;
+			leafStates = candidates;
+			finiteLeafStates = finiteCandidates;
+			stateReferences = candidateReferences;
+			generationDatabaseExact = true;
+			candidateArena = null;
+			candidateReservation = null;
+		} catch (RuntimeException failure) {
+			throw new PackedCostSessionFailure("replayable_source_materialization_failed", failure);
+		} finally {
+			if (candidateReservation != null) {
+				candidateReservation.close();
+			}
+			if (candidateArena != null) {
+				candidateArena.close();
+			}
+		}
+	}
+
+	private long[] snapshotCandidateRangeRows(LeafState[] candidates) {
+		long[] rows = new long[candidates.length];
+		if (statementSource == null) {
+			return rows;
+		}
+		try {
+			for (int relationId = 1; relationId < candidates.length; relationId++) {
+				LeafState candidate = candidates[relationId];
+				if (candidate == null) {
+					continue;
+				}
+				Resource context = (Resource) candidate.constantValues[3];
+				Resource[] contexts = context == null ? new Resource[0] : new Resource[] { context };
+				rows[relationId] = statementSource.getStatementCount(
+						(Resource) candidate.constantValues[0],
+						(IRI) candidate.constantValues[1],
+						candidate.constantValues[2],
+						contexts);
+			}
+			return rows;
+		} catch (QueryEvaluationException failure) {
+			throw new PackedCostSessionFailure("snapshot_leaf_count_failed", failure);
+		}
+	}
+
+	private EvidenceStateRef materializeSnapshotExactLeaf(FrontierStateArena targetArena, LeafState candidate,
+			long candidateRows) {
+		int maximumEntries = Math.toIntExact(candidateRows);
+		ExactLeafAccumulator accumulator = null;
+		FrontierPayloadWriter writer = null;
+		try {
+			accumulator = new ExactLeafAccumulator(targetArena, maximumEntries, candidate.masks.layout().size());
+			long[] tuple = new long[candidate.masks.layout().size()];
+			Resource context = (Resource) candidate.constantValues[3];
+			Resource[] contexts = context == null ? new Resource[0] : new Resource[] { context };
+			long visitedRows = 0L;
+			try (CloseableIteration<? extends Statement> statements = statementSource.getStatements(
+					(Resource) candidate.constantValues[0],
+					(IRI) candidate.constantValues[1],
+					candidate.constantValues[2],
+					contexts)) {
+				while (statements.hasNext()) {
+					Statement statement = statements.next();
+					visitedRows = Math.incrementExact(visitedRows);
+					if (visitedRows > candidateRows) {
+						throw new IllegalStateException("snapshot leaf count underreported its candidate range");
+					}
+					if (!candidate.matches(statement, candidate.constantValues)) {
+						continue;
+					}
+					Arrays.fill(tuple, 0L);
+					for (int component = 0; component < candidate.componentToSlot.length; component++) {
+						int slot = candidate.componentToSlot[component];
+						if (slot < 0) {
+							continue;
+						}
+						Value value = statementValue(statement, component);
+						long termId = value == null ? 0L : runtime.valueStore().getId(value);
+						if (termId <= 0L) {
+							throw new IllegalStateException("snapshot-exact Frontier leaf returned an unstored term");
+						}
+						tuple[slot] = termId;
+					}
+					accumulator.add(tuple, 1.0d);
+				}
+			}
+			if (visitedRows != candidateRows) {
+				throw new IllegalStateException("snapshot leaf count changed within one LMDB read transaction");
+			}
+			writer = targetArena.newPayloadWriter(
+					candidate.key, new int[] { accumulator.size() }, new int[] { 0 });
+			accumulator.writeTo(writer);
+			double pointRows = writer.pointRows();
+			EvidenceStateRef state = targetArena.internPayload(
+					candidate.key,
+					EvidenceStateSummary.exact(pointRows),
+					FrontierStateOperation.EXACT_LEAF,
+					null,
+					null,
+					candidate.relationId,
+					writer);
+			writer = null;
+			return state;
+		} catch (IOException | QueryEvaluationException failure) {
+			throw new PackedCostSessionFailure("snapshot_leaf_materialization_failed", failure);
+		} finally {
+			if (writer != null) {
+				writer.close();
+			}
+			if (accumulator != null) {
+				accumulator.close();
 			}
 		}
 	}
@@ -1108,12 +2438,20 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 					|| expression instanceof SingletonSet
 					|| expression instanceof EmptySet) {
 				candidates[relationId] = FiniteLeafState.create(relationId, expression);
+			} else if (expression instanceof ZeroLengthPath path) {
+				candidates[relationId] = FiniteLeafState.createBoundedZeroLengthPath(relationId, path);
 			}
 		}
 		return candidates;
 	}
 
 	private EvidenceStateRef materializeFiniteLeaf(FrontierStateArena targetArena, FiniteLeafState candidate) {
+		return materializeFiniteState(
+				targetArena, candidate, FrontierStateOperation.EXACT_LEAF, null, null);
+	}
+
+	private EvidenceStateRef materializeFiniteState(FrontierStateArena targetArena, FiniteLeafState candidate,
+			FrontierStateOperation operation, EvidenceStateRef firstParent, EvidenceStateRef secondParent) {
 		int stratumCount = candidate.masks.stratumCount();
 		int[] maximumCounts = new int[stratumCount];
 		for (int stratum : candidate.rowStrata) {
@@ -1148,9 +2486,9 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			EvidenceStateRef state = targetArena.internPayload(
 					candidate.key,
 					EvidenceStateSummary.exact(writer.pointRows()),
-					FrontierStateOperation.EXACT_LEAF,
-					null,
-					null,
+					operation,
+					firstParent,
+					secondParent,
 					candidate.relationId,
 					writer);
 			writer = null;
@@ -1241,72 +2579,105 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			}
 			return queryLocalValues.get(Math.toIntExact(ordinal - 1L));
 		}
-		return runtime.valueStore().getValue(termId);
+		if (storedFrontierValues == null && arena != null) {
+			storedFrontierValues = LmdbFrontierLongObjectMemo.createIfCapacity(arena);
+		}
+		if (storedFrontierValues != null) {
+			Value cached = storedFrontierValues.get(termId);
+			if (cached != null) {
+				return cached;
+			}
+		}
+		Value value = runtime.valueStore().getValue(termId);
+		if (storedFrontierValues != null) {
+			storedFrontierValues.put(termId, value);
+		}
+		return value;
 	}
 
 	private void refineFilter(int relationId, Filter filter, EvidenceStateRef input, double rawWorkRows,
 			PackedCostEstimate output) {
-		FrontierStateKey outputKey = filterOperatorKey(relationId, input);
+		ExistsCondition existsCondition = pureExistsCondition(filter);
+		EvidenceStateRef kernelInput = existsCondition == null
+				? input
+				: averageIndependentDesignState(input, relationId);
+		FrontierStateKey outputKey = filterOperatorKey(relationId, kernelInput);
 		if (outputKey == null || evaluationStrategy == null) {
 			degradeOperator(output, input,
 					outputKey == null ? "filter_state_unavailable" : "filter_evaluator_unavailable");
 			return;
 		}
-		FrontierStateKey inputKey = arena.key(input);
+		FrontierStateKey inputKey = arena.key(kernelInput);
 		if (!filterCanInspectRetainedState(filter, inputKey.frontier())) {
 			degradeOperator(output, input, "filter_condition_not_retained_or_nondeterministic");
 			return;
 		}
 
 		try {
-			boolean lineageSpecific = arena.nearestCalibration(input) != null;
+			boolean lineageSpecific = arena.nearestCalibration(kernelInput) != null;
 			EvidenceStateRef state = lineageSpecific ? null : arena.find(outputKey);
+			ExactProbeBudget exactProbeBudget = existsCondition == null
+					? null
+					: exactProbeBudget(relationId, filter, kernelInput,
+							existsCondition.exists().getSubQuery(), output);
+			if (exactProbeBudget != null) {
+				output.putPlannedDoubleMetric("plannedFrontierExactProbeBoundWorkPerKey",
+						exactProbeBudget.boundWorkPerKey());
+				output.putPlannedDoubleMetric("plannedFrontierExactProbeDependentPlanWorkPerKey",
+						exactProbeBudget.dependentPlanWorkPerKey());
+				output.putPlannedDoubleMetric("plannedFrontierExactProbeEstimatedWorkPerKey",
+						exactProbeBudget.estimatedWorkPerKey());
+				output.putPlannedDoubleMetric("plannedFrontierExactProbeMaximumMappings",
+						exactProbeBudget.maximumMappings());
+				output.putPlannedDoubleMetric("plannedFrontierExactProbeWorkBudget",
+						settings.refinementWorkUnits());
+			}
 			if (state == null) {
-				state = containsExists(filter)
-						? restrictExistsFilter(input, outputKey, relationId, filter)
-						: restrictFilter(input, outputKey, relationId, filter);
+				state = existsCondition != null
+						? restrictExistsFilter(kernelInput, outputKey, relationId, filter,
+								exactProbeBudget.maximumMappings())
+						: restrictFilter(kernelInput, outputKey, relationId, filter);
 				rememberState(state);
 			}
 			EvidenceStateRef rawState = state;
-			state = pureExistsCondition(filter) == null
+			state = existsCondition == null
 					? applyLearnedFilterCalibration(relationId, filter, input, rawState, output)
-					: applyLearnedSemiAntiCalibration(relationId, filter, input, rawState, output);
-			state = applyLeoMultiplierCalibration(relationId, filter, state, rawWorkRows).state();
+					: rawState;
+			if (kernelInput.stateId() != input.stateId()) {
+				output.putPlannedStringMetric(
+						"plannedFrontierVarianceReduction", "independent_design_lane_average");
+			}
+			state = publishOperatorState(relationId, output, state);
 			EvidenceStateSummary summary = state.summary();
-			output.setEvidenceStateId(state.stateId());
-			annotateReady(output, state);
-			output.putPlannedDoubleMetric("plannedFrontierFactorCount", factorCount(state));
-			output.putPlannedStringMetric("plannedPhysicalImplementation", FRONTIER_EXECUTION_MODE);
-			if (!summary.guarantee().isComposablePointEstimate()) {
-				output.putPlannedStringMetric("plannedFrontierStatus", "degraded");
-				output.putPlannedStringMetric("plannedFrontierFallbackReason", summary.degradationReason());
-				return;
+			if (mode == FrontierEstimatorMode.AUTHORITATIVE
+					&& isComposableState(state)
+					&& !(summary.guarantee() == EvidenceGuarantee.MEASURE_UNBIASED
+							&& summary.zeroStatus() == EvidenceZeroStatus.ESTIMATED_ZERO)
+					&& existsCondition == null) {
+				setLocalOperatorPhysicalCost(
+						output,
+						summary.pointRows(),
+						input.summary().pointRows(),
+						0.0d,
+						0.0d,
+						0.0d);
 			}
-			if (mode != FrontierEstimatorMode.AUTHORITATIVE) {
-				return;
-			}
-			if (summary.guarantee() == EvidenceGuarantee.MEASURE_UNBIASED
-					&& summary.zeroStatus() == EvidenceZeroStatus.ESTIMATED_ZERO) {
-				output.putPlannedStringMetric("plannedFrontierFallbackReason", "sampled_zero_not_authoritative");
-				return;
-			}
-			double scalarWork = output.workRows();
-			double frontierWork = Double.isFinite(scalarWork) && scalarWork >= 0.0d
-					? Math.max(summary.pointRows(), scalarWork)
-					: summary.pointRows();
-			output.setRows(summary.pointRows(), frontierWork);
-			output.setEvidenceGuarantee(summary.guarantee());
-			setFrontierProvenance(output, state);
-			applySemiAntiPhysicalCost(relationId, filter, input, rawState, output);
+			/*
+			 * Candidate costs must consume the same immutable evidence state that was published for this candidate. In
+			 * particular, a semi/anti outcome calibration changes the matched and unmatched row masses even though the
+			 * underlying correlated key tuples remain attached through the CALIBRATE overlay. Passing rawState here
+			 * delayed that correction until after physical alternatives had already been priced.
+			 */
+			applySemiAntiPhysicalCost(relationId, filter, input, state, output);
 		} catch (FilterEvaluationFailure failure) {
 			degradeOperator(output, input, "filter_evaluation_failed");
 		} catch (RuntimeException failure) {
-			degradeOperator(output, input, "filter_state_materialization_failed");
+			throw new PackedCostSessionFailure("filter_state_materialization_failed", failure);
 		}
 	}
 
 	private void applySemiAntiPhysicalCost(int relationId, Filter filter, EvidenceStateRef input,
-			EvidenceStateRef rawOutput, PackedCostEstimate output) {
+			EvidenceStateRef outputEvidence, PackedCostEstimate output) {
 		ExistsCondition existsCondition = pureExistsCondition(filter);
 		if (existsCondition == null) {
 			return;
@@ -1318,17 +2689,51 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		TupleExpr rhs = typed
 				? query.materializeRelation(rhsRelationId)
 				: existsCondition.exists().getSubQuery();
+		Collection<String> structuralCorrelationNames = typed
+				? Arrays.asList(semiAntiCorrelationNames(relationId))
+				: filter.getArg().getBindingNames();
 		SemiAntiBindingDomains bindingDomains = semiAntiBindingDomains(
-				arena.key(input).frontier().variables(), rhs);
+				arena.layout(input).variables(), structuralCorrelationNames, rhs);
 		double rhsRows = typed
 				? estimatedRelationRows(rhsRelationId)
 				: estimatedTupleRows(rhs);
 		FrontierSemiAntiProfile profile = correlationProfile(
-				input, rawOutput, bindingDomains, rhsRelationId, semanticKind);
+				input, outputEvidence, bindingDomains, rhsRelationId, semanticKind);
 		annotateCorrelationProfile(output, profile);
+		if (!arena.layout(input).variables().containsAll(bindingDomains.probeNames())) {
+			output.putPlannedStringMetric(
+					"plannedCorrelationDomainDisposition", "bound-only-missing-layout");
+		}
 
 		applyFrontierSemiAntiPhysicalCost(
 				filter, semanticKind, planIdentity.algorithm(), rhs, rhsRows, profile, output);
+	}
+
+	private void refineBoundedSemiAntiFilter(int relationId, Filter filter, EvidenceStateRef input,
+			PackedCostEstimate output) {
+		EvidenceStateSummary inputSummary = input.summary();
+		double pointRows = finiteNonNegative(output.outputRows())
+				? output.outputRows()
+				: inputSummary.pointRows();
+		double certifiedUpperBound = inputSummary.certifiedUpperBound();
+		if (Double.isFinite(certifiedUpperBound)) {
+			pointRows = Math.min(pointRows, certifiedUpperBound);
+		}
+		double intervalUpperRows = inputSummary.upperRows();
+		if (Double.isFinite(intervalUpperRows)) {
+			pointRows = Math.min(pointRows, intervalUpperRows);
+		}
+		String reason = inputSummary.degradationReason().isBlank()
+				? "semi_anti_input_payload_unavailable"
+				: inputSummary.degradationReason();
+		EvidenceStateSummary outputSummary = EvidenceStateSummary.unresolved(
+				pointRows, intervalUpperRows, certifiedUpperBound, reason);
+		EvidenceStateRef state = arena.disposition(input) == FrontierStateDisposition.OPAQUE_BOUNDARY
+				? arena.deriveOpaqueBoundary(input, outputSummary, relationId)
+				: arena.deriveBoundBoundary(input, arena.layout(input), outputSummary, relationId);
+		rememberState(state);
+		publishOperatorState(relationId, output, state);
+		applySemiAntiPhysicalCost(relationId, filter, input, state, output);
 	}
 
 	private void applyFrontierSemiAntiPhysicalCost(Filter feedbackFilter, int semanticKind, int algorithm,
@@ -1352,25 +2757,33 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 						.orElse(null);
 		double probeWorkRows = factorWorkRows(probeFactor, rhsRows);
 		double materializationWorkRows = factorWorkRows(materializationFactor, rhsRows);
+		DependentReopenCost dependentReopenCost = DependentReopenCost.from(output);
+		double effectiveProbeWorkRows = dependentReopenCost.required()
+				? Math.max(probeWorkRows, dependentReopenCost.workRows())
+				: probeWorkRows;
 		double materializationOutputRows = Math.max(0.0d, rhsRows);
-		double streamingMatchedRowsExamined = saturatedMultiply(profile.matchedRows(), probeWorkRows);
-		double streamingUnmatchedRowsExamined = saturatedMultiply(profile.unmatchedRows(), probeWorkRows);
+		double streamingMatchedRowsExamined = saturatedMultiply(profile.matchedRows(), effectiveProbeWorkRows);
+		double streamingUnmatchedRowsExamined = saturatedMultiply(profile.unmatchedRows(), effectiveProbeWorkRows);
 		double streamingRowsExamined = saturatedAdd(
 				streamingMatchedRowsExamined, streamingUnmatchedRowsExamined);
-		double memoizedMatchedRowsExamined = saturatedMultiply(matchedDistinctProbeKeys, probeWorkRows);
-		double memoizedUnmatchedRowsExamined = saturatedMultiply(unmatchedDistinctProbeKeys, probeWorkRows);
+		double memoizedMatchedRowsExamined = saturatedMultiply(matchedDistinctProbeKeys, effectiveProbeWorkRows);
+		double memoizedUnmatchedRowsExamined = saturatedMultiply(unmatchedDistinctProbeKeys, effectiveProbeWorkRows);
 		double memoizedRowsExamined = saturatedAdd(
 				memoizedMatchedRowsExamined, memoizedUnmatchedRowsExamined);
 		double materializationAccessRows = saturatedMultiply(materializationPartitions, materializationWorkRows);
 		double materializationBuildRows = saturatedMultiply(materializationPartitions, materializationOutputRows);
-		double streamingObjective = semiAntiStreamingObjective(streamingRowsExamined, outerRows);
+		double streamingObjective = semiAntiStreamingObjective(
+				probeFactor, streamingRowsExamined, outerRows, output.outputRows(), dependentReopenCost);
 		double memoizedObjective = semiAntiMemoizedObjective(
-				memoizedRowsExamined, distinctProbeKeys, outerRows);
+				probeFactor, memoizedRowsExamined, distinctProbeKeys, outerRows, output.outputRows(),
+				dependentReopenCost);
 		double materializedObjective = semiAntiMaterializedObjective(
+				materializationFactor,
 				materializationAccessRows,
 				materializationPartitions,
 				materializationBuildRows,
-				outerRows);
+				outerRows,
+				output.outputRows());
 		ExactSemiAntiRefinement refinement = exactSemiAntiRefinement(
 				rhs,
 				profile,
@@ -1403,26 +2816,32 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 					: memoizedRowsExamined * matchedDistinctProbeKeys / distinctProbeKeys;
 			memoizedUnmatchedRowsExamined = Math.max(
 					0.0d, memoizedRowsExamined - memoizedMatchedRowsExamined);
-			streamingObjective = semiAntiStreamingObjective(streamingRowsExamined, outerRows);
+			streamingObjective = semiAntiStreamingObjective(
+					probeFactor, streamingRowsExamined, outerRows, output.outputRows(), dependentReopenCost);
 			memoizedObjective = semiAntiMemoizedObjective(
-					memoizedRowsExamined, distinctProbeKeys, outerRows);
+					probeFactor, memoizedRowsExamined, distinctProbeKeys, outerRows, output.outputRows(),
+					dependentReopenCost);
 			materializedObjective = semiAntiMaterializedObjective(
+					materializationFactor,
 					materializationAccessRows,
 					materializationPartitions,
 					materializationBuildRows,
-					outerRows);
+					outerRows,
+					output.outputRows());
 		}
-		int selectedAlgorithm = bestSemiAntiAlgorithm(
+		int cheapestAlgorithm = bestSemiAntiAlgorithm(
 				streamingObjective,
 				memoizedObjective,
 				distinctProbeKeys,
 				materializedObjective,
 				materializationBuildRows);
+		int selectedAlgorithm = algorithm;
 		double breakEvenKeys = semiAntiBreakEvenDistinctKeys(
-				materializationAccessRows + materializationBuildRows, probeWorkRows, distinctProbeKeys);
+				materializationAccessRows + materializationBuildRows, effectiveProbeWorkRows, distinctProbeKeys);
 
 		output.putPlannedDoubleMetric("plannedCorrelationRhsRowsExamined", streamingRowsExamined);
-		output.putPlannedDoubleMetric("plannedSemiAntiProbeWorkRows", probeWorkRows);
+		output.putPlannedDoubleMetric("plannedSemiAntiBoundAccessWorkRows", probeWorkRows);
+		output.putPlannedDoubleMetric("plannedSemiAntiProbeWorkRows", effectiveProbeWorkRows);
 		output.putPlannedDoubleMetric("plannedSemiAntiProbeOutputRows", factorOutputRows(probeFactor, rhsRows));
 		output.putPlannedDoubleMetric("plannedSemiAntiStreamingMatchedProbeRows",
 				streamingMatchedRowsExamined);
@@ -1438,37 +2857,45 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		output.putPlannedDoubleMetric("plannedSemiAntiMemoizedObjectiveCost", memoizedObjective);
 		output.putPlannedDoubleMetric("plannedSemiAntiMaterializedObjectiveCost", materializedObjective);
 		output.putPlannedStringMetric("plannedSemiAntiPackedCandidateAlgorithm", semiAntiAlgorithmName(algorithm));
+		output.putPlannedStringMetric("plannedSemiAntiCheapestRawAlgorithm", semiAntiAlgorithmName(cheapestAlgorithm));
 		output.putPlannedStringMetric("plannedSemiAntiProbeBindingDomain",
 				String.join(",", profile.probeDomain().bindingNames()));
 		output.putPlannedStringMetric("plannedSemiAntiHashBindingDomain",
 				String.join(",", profile.sharedHashDomain().bindingNames()));
 		output.putPlannedStringMetric("plannedSemiAntiMaterializationParameterDomain",
 				String.join(",", profile.materializationParameterDomain().bindingNames()));
+		if (dependentReopenCost.required()) {
+			output.putPlannedStringMetric("plannedSemiAntiDependentPlanDisposition",
+					dependentReopenCost.outerIndependentWork()
+							? "reopened-outer-independent-plan"
+							: "reopened-independent-hash");
+			output.putPlannedDoubleMetric("plannedSemiAntiDependentPlanObjectivePerInvocation",
+					dependentReopenCost.objectiveCost());
+		}
 		annotateCandidateAccess(output, "Probe", probeFactor);
 		annotateCandidateAccess(output, "Materialization", materializationFactor);
 		annotateExactRefinement(output, refinement);
 
 		switch (selectedAlgorithm) {
-		case PackedQueryView.SEMI_ANTI_STREAMING -> output.setLocalPhysicalCost(
-				streamingRowsExamined,
-				outerRows,
-				outerRows,
-				0.0d,
-				0.0d,
-				0.0d,
-				0.0d,
-				0.0d,
-				0.0d);
-		case PackedQueryView.SEMI_ANTI_MEMOIZED -> output.setLocalPhysicalCost(
-				memoizedRowsExamined,
-				distinctProbeKeys,
-				distinctProbeKeys,
-				0.0d,
-				0.0d,
-				outerRows,
-				0.0d,
-				0.0d,
-				distinctProbeKeys);
+		case PackedQueryView.SEMI_ANTI_STREAMING -> {
+			if (dependentReopenCost.required()) {
+				setReopenedDependentPhysicalCost(output, dependentReopenCost, outerRows, 0.0d, 0.0d);
+			} else {
+				output.setLocalPhysicalCost(
+						streamingRowsExamined, outerRows, outerRows, 0.0d, 0.0d, 0.0d, 0.0d,
+						output.outputRows(), 0.0d, 0.0d);
+			}
+		}
+		case PackedQueryView.SEMI_ANTI_MEMOIZED -> {
+			if (dependentReopenCost.required()) {
+				setReopenedDependentPhysicalCost(
+						output, dependentReopenCost, distinctProbeKeys, outerRows, distinctProbeKeys);
+			} else {
+				output.setLocalPhysicalCost(
+						memoizedRowsExamined, distinctProbeKeys, distinctProbeKeys, 0.0d, 0.0d, outerRows, 0.0d,
+						output.outputRows(), 0.0d, distinctProbeKeys);
+			}
+		}
 		case PackedQueryView.SEMI_ANTI_MATERIALIZED -> output.setLocalPhysicalCost(
 				materializationAccessRows,
 				0.0d,
@@ -1477,10 +2904,22 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				materializationBuildRows,
 				outerRows,
 				0.0d,
+				output.outputRows(),
 				0.0d,
 				materializationBuildRows);
 		default -> throw new IllegalStateException("unknown packed semi/anti algorithm " + algorithm);
 		}
+		stampSelectedSemiAntiAccess(
+				output,
+				selectedAlgorithm,
+				probeFactor,
+				materializationFactor,
+				streamingRowsExamined,
+				memoizedRowsExamined,
+				materializationAccessRows,
+				outerRows,
+				distinctProbeKeys,
+				materializationPartitions);
 		String algorithmName = semiAntiAlgorithmName(selectedAlgorithm);
 		output.putPlannedStringMetric("optimizer.filterAlgorithmHint", algorithmName);
 		output.putPlannedStringMetric("optimizer.semiAntiAlgorithm", algorithmName);
@@ -1503,6 +2942,15 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	}
 
 	private static double factorWorkRows(JoinFactorCostModel.FactorCostEstimate factor, double fallbackRows) {
+		if (factor != null && finiteNonNegative(factor.getWorkRows())) {
+			/*
+			 * A composite factor's access metric may describe only its leaf-most index scan. The factor work is the
+			 * provider's inclusive per-invocation estimate and is therefore the only valid quantity for probe budgeting
+			 * and correlated candidate costing. Retain the access metric solely as a compatibility fallback for older
+			 * providers that did not publish finite total work.
+			 */
+			return Math.max(1.0d, factor.getWorkRows());
+		}
 		Double accessWorkRows = factor == null
 				? null
 				: factor.getDoubleMetrics().get(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS);
@@ -1532,6 +2980,83 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			accessMode = factor.isDirectLookup() ? "directLookup" : "prefixScan";
 		}
 		output.putPlannedStringMetric("plannedSemiAnti" + candidate + "AccessMode", accessMode);
+	}
+
+	private static void stampSelectedSemiAntiAccess(PackedCostEstimate output, int algorithm,
+			JoinFactorCostModel.FactorCostEstimate probeFactor,
+			JoinFactorCostModel.FactorCostEstimate materializationFactor,
+			double streamingAccessRows, double memoizedAccessRows, double materializationAccessRows,
+			double outerRows, double distinctProbeKeys, double materializationPartitions) {
+		JoinFactorCostModel.FactorCostEstimate selectedFactor = algorithm == PackedQueryView.SEMI_ANTI_MATERIALIZED
+				? materializationFactor
+				: probeFactor;
+		if (selectedFactor == null) {
+			return;
+		}
+		double invocations;
+		double totalAccessRows;
+		switch (algorithm) {
+		case PackedQueryView.SEMI_ANTI_STREAMING -> {
+			invocations = outerRows;
+			totalAccessRows = streamingAccessRows;
+		}
+		case PackedQueryView.SEMI_ANTI_MEMOIZED -> {
+			invocations = distinctProbeKeys;
+			totalAccessRows = memoizedAccessRows;
+		}
+		case PackedQueryView.SEMI_ANTI_MATERIALIZED -> {
+			invocations = materializationPartitions;
+			totalAccessRows = materializationAccessRows;
+		}
+		default -> throw new IllegalStateException("unknown packed semi/anti algorithm " + algorithm);
+		}
+		double accessRows = invocations == 0.0d ? 0.0d : totalAccessRows / invocations;
+		if (!finiteNonNegative(accessRows)) {
+			accessRows = selectedFactor.getAccessRowsBeforeFilter();
+		}
+		if (!finiteNonNegative(accessRows)) {
+			accessRows = 0.0d;
+		}
+		Map<String, String> strings = selectedFactor.getStringMetrics();
+		String operatorEstimateSource = output.estimateSource();
+		String operatorEstimateFusion = output.estimateFusion();
+		String accessEstimateSource = strings.getOrDefault(
+				TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "lmdb-semi-anti");
+		String accessMode = strings.get(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE);
+		if (accessMode == null) {
+			accessMode = selectedFactor.isDirectLookup() ? "directLookup" : "prefixScan";
+		}
+		output.setAccess(
+				selectedFactor.getLookupComponentMask(),
+				selectedFactor.getMissingLookupComponentMask(),
+				factorIndexPrefixLength(selectedFactor),
+				accessRows,
+				invocations,
+				factorIndexName(selectedFactor),
+				accessEstimateSource,
+				accessMode);
+		output.putPlannedStringMetric("plannedSemiAntiSelectedAccessEstimateSource", accessEstimateSource);
+		if (operatorEstimateSource != null || operatorEstimateFusion != null) {
+			/*
+			 * setAccess retains the legacy single-source mirror used by leaf estimates. A semi/anti FILTER has two
+			 * independently measured facts: its output cardinality comes from the Frontier transform, while its probe
+			 * work comes from the selected RHS access event. Preserve both instead of letting the child access source
+			 * overwrite the originating operator estimate.
+			 */
+			output.setEstimateProvenance(operatorEstimateSource, operatorEstimateFusion);
+		}
+	}
+
+	private static int factorIndexPrefixLength(JoinFactorCostModel.FactorCostEstimate factor) {
+		Double prefixLength = factor.getDoubleMetrics().get(TelemetryMetricNames.PLANNED_INDEX_PREFIX_LENGTH);
+		if (prefixLength != null && finiteNonNegative(prefixLength)) {
+			return (int) Math.min(Integer.MAX_VALUE, prefixLength);
+		}
+		return Integer.bitCount(factor.getLookupComponentMask());
+	}
+
+	private static String factorIndexName(JoinFactorCostModel.FactorCostEstimate factor) {
+		return factor == null ? null : factor.getStringMetrics().get(TelemetryMetricNames.PLANNED_INDEX_NAME);
 	}
 
 	private ExactSemiAntiRefinement exactSemiAntiRefinement(TupleExpr rhs, FrontierSemiAntiProfile profile,
@@ -1678,23 +3203,77 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		return Math.max(surface.prefixRows(), surface.scannedRows());
 	}
 
-	private static double semiAntiStreamingObjective(double accessRows, double outerRows) {
-		return saturatedAdd(accessRows, saturatedAdd(outerRows, outerRows));
+	private double semiAntiStreamingObjective(JoinFactorCostModel.FactorCostEstimate probeFactor,
+			double accessRows, double outerRows, double resultRows, DependentReopenCost dependentReopenCost) {
+		if (dependentReopenCost.required()) {
+			return saturatedAdd(
+					saturatedMultiply(dependentReopenCost.objectiveCost(), outerRows),
+					physicalCostObjective.score(null, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+							resultRows, 0.0d));
+		}
+		return physicalCostObjective.score(
+				factorIndexName(probeFactor),
+				accessRows,
+				outerRows,
+				outerRows,
+				0.0d,
+				0.0d,
+				0.0d,
+				0.0d,
+				resultRows,
+				0.0d);
 	}
 
-	private static double semiAntiMemoizedObjective(double accessRows, double distinctKeys, double outerRows) {
-		return saturatedAdd(
+	private double semiAntiMemoizedObjective(JoinFactorCostModel.FactorCostEstimate probeFactor,
+			double accessRows, double distinctKeys, double outerRows, double resultRows,
+			DependentReopenCost dependentReopenCost) {
+		if (dependentReopenCost.required()) {
+			return saturatedAdd(
+					saturatedMultiply(dependentReopenCost.objectiveCost(), distinctKeys),
+					physicalCostObjective.score(null, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, outerRows, 0.0d,
+							resultRows, 0.0d));
+		}
+		return physicalCostObjective.score(
+				factorIndexName(probeFactor),
 				accessRows,
-				saturatedAdd(
-						distinctKeys,
-						saturatedAdd(distinctKeys, saturatedAdd(outerRows, distinctKeys))));
+				distinctKeys,
+				distinctKeys,
+				0.0d,
+				0.0d,
+				outerRows,
+				0.0d,
+				resultRows,
+				0.0d);
 	}
 
-	private static double semiAntiMaterializedObjective(double accessRows, double partitions,
-			double buildRows, double outerRows) {
-		return saturatedAdd(
+	private static void setReopenedDependentPhysicalCost(PackedCostEstimate output,
+			DependentReopenCost dependent, double invocations, double cacheProbeRows, double cacheRows) {
+		output.setLocalPhysicalCost(
+				saturatedMultiply(dependent.sequentialRows(), invocations),
+				saturatedMultiply(dependent.randomSeeks(), invocations),
+				saturatedMultiply(dependent.iteratorOpens(), invocations),
+				saturatedMultiply(dependent.expressionEvaluations(), invocations),
+				saturatedMultiply(dependent.hashBuildRows(), invocations),
+				saturatedAdd(saturatedMultiply(dependent.hashProbeRows(), invocations), cacheProbeRows),
+				saturatedMultiply(dependent.pathExpansions(), invocations),
+				saturatedAdd(saturatedMultiply(dependent.resultRows(), invocations), output.outputRows()),
+				saturatedMultiply(dependent.remoteCalls(), invocations),
+				saturatedMaximum(dependent.peakMemoryRows(), cacheRows));
+	}
+
+	private double semiAntiMaterializedObjective(JoinFactorCostModel.FactorCostEstimate materializationFactor,
+			double accessRows, double partitions, double buildRows, double outerRows, double resultRows) {
+		return physicalCostObjective.score(
+				factorIndexName(materializationFactor),
 				accessRows,
-				saturatedAdd(partitions, saturatedAdd(buildRows, saturatedAdd(outerRows, buildRows))));
+				0.0d,
+				accessRows == 0.0d ? 0.0d : partitions,
+				0.0d,
+				buildRows,
+				outerRows,
+				0.0d,
+				resultRows,
+				0.0d);
 	}
 
 	private static void annotateExactRefinement(PackedCostEstimate output, ExactSemiAntiRefinement refinement) {
@@ -1746,6 +3325,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				rightRows,
 				leftRows,
 				0.0d,
+				output.outputRows(),
 				0.0d,
 				rightRows);
 		output.putPlannedStringMetric("optimizer.filterAlgorithmHint", "materialized-hash");
@@ -1759,6 +3339,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		ExistsCondition existsCondition = pureExistsCondition(filter);
 		boolean typed = query.isSemiJoin(relationId) || query.isAntiJoin(relationId);
 		SemiAntiPlanIdentity planIdentity = semiAntiPlanIdentity(relationId, existsCondition, output);
+		int semanticKind = planIdentity.semanticKind();
 		int algorithm = planIdentity.algorithm();
 		int rhsRelationId = typed ? query.semiAntiRightRelationId(relationId) : 0;
 		TupleExpr rhs = typed
@@ -1789,6 +3370,18 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				? context.leftInputRows()
 				: finiteNonNegative(output.outputRows()) ? output.outputRows() : 1.0d;
 		double conservativeOuterRows = Math.max(0.0d, outerRows);
+		Optional<LmdbPackedCostModel.ExactSemiAntiOutcome> exactOutcome = lmdbCostModel.exactSemiAntiOutcome(
+				query, context, rhs, semanticKind != PackedQueryView.SEMI_ANTI_EXISTS);
+		if (exactOutcome.isPresent()) {
+			LmdbPackedCostModel.ExactSemiAntiOutcome exact = exactOutcome.orElseThrow();
+			output.setContextualOutputRowsPreservingPhysicalCost(exact.outputRows());
+			output.setEvidenceGuarantee(EvidenceGuarantee.DATABASE_EXACT);
+			output.putPlannedDoubleMetric("plannedCorrelationMatchedRows", exact.matchedRows());
+			output.putPlannedDoubleMetric("plannedCorrelationUnmatchedRows",
+					exact.outerRows() - exact.matchedRows());
+			output.putPlannedDoubleMetric("plannedSemiAntiExactRhsResultRows", exact.rhsResultRows());
+			output.putPlannedDoubleMetric("plannedSemiAntiExactScannedRows", exact.scannedRows());
+		}
 		double distinctLowerBound = conservativeOuterRows == 0.0d ? 0.0d : 1.0d;
 		double distinctUpperBound = conservativeOuterRows;
 		double materializationPartitions = bindingDomains.materializationParameterNames().isEmpty()
@@ -1820,11 +3413,18 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				String.join(",", bindingDomains.materializationParameterNames()));
 		annotateCandidateAccess(output, "Probe", probeFactor);
 		annotateCandidateAccess(output, "Materialization", materializationFactor);
-		output.putPlannedStringMetric("plannedSemiAntiExactRefinementStatus", "declined");
-		output.putPlannedStringMetric("plannedSemiAntiExactRefinement", "declined:no-frontier-domain");
-		output.putPlannedStringMetric("plannedSemiAntiExactRefinementDeclineReason", "no-frontier-domain");
-		output.putPlannedStringMetric("plannedCorrelationGuarantee", "scalar_fallback");
-		output.putPlannedStringMetric("plannedCorrelationConfidence", "unknown");
+		if (exactOutcome.isPresent()) {
+			output.putPlannedStringMetric("plannedSemiAntiExactRefinementStatus", "applied");
+			output.putPlannedStringMetric("plannedSemiAntiExactRefinement", "applied:bounded-prefix-surface");
+			output.putPlannedStringMetric("plannedCorrelationGuarantee", "database_exact");
+			output.putPlannedStringMetric("plannedCorrelationConfidence", "1.0");
+		} else {
+			output.putPlannedStringMetric("plannedSemiAntiExactRefinementStatus", "declined");
+			output.putPlannedStringMetric("plannedSemiAntiExactRefinement", "declined:no-frontier-domain");
+			output.putPlannedStringMetric("plannedSemiAntiExactRefinementDeclineReason", "no-frontier-domain");
+			output.putPlannedStringMetric("plannedCorrelationGuarantee", "scalar_fallback");
+			output.putPlannedStringMetric("plannedCorrelationConfidence", "unknown");
+		}
 		switch (algorithm) {
 		case PackedQueryView.SEMI_ANTI_STREAMING -> output.setLocalPhysicalCost(
 				saturatedMultiply(conservativeOuterRows, probeWorkRows),
@@ -1834,6 +3434,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				0.0d,
 				0.0d,
 				0.0d,
+				output.outputRows(),
 				0.0d,
 				0.0d);
 		case PackedQueryView.SEMI_ANTI_MEMOIZED -> output.setLocalPhysicalCost(
@@ -1844,6 +3445,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				0.0d,
 				conservativeOuterRows,
 				0.0d,
+				output.outputRows(),
 				0.0d,
 				distinctUpperBound);
 		case PackedQueryView.SEMI_ANTI_MATERIALIZED -> output.setLocalPhysicalCost(
@@ -1854,11 +3456,11 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				materializationBuildRows,
 				conservativeOuterRows,
 				0.0d,
+				output.outputRows(),
 				0.0d,
 				materializationBuildRows);
 		default -> throw new IllegalStateException("unknown packed semi/anti algorithm");
 		}
-		int semanticKind = planIdentity.semanticKind();
 		String algorithmName = semiAntiAlgorithmName(algorithm);
 		output.putPlannedStringMetric("optimizer.filterAlgorithmHint", algorithmName);
 		output.putPlannedStringMetric("optimizer.semiAntiAlgorithm", algorithmName);
@@ -1871,6 +3473,27 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		applySemiAntiPhysicalFeedback(filter, semanticKind, algorithm, outerRows, output);
 		applySemiAntiLeoPhysicalResidual(filter, algorithm, output);
 		output.setDependentSubqueriesCosted(true);
+	}
+
+	private void applyScalarFilterPhysicalCost(int relationId, Filter filter, PackedCostContext context,
+			double rawWorkRows, PackedCostEstimate output) {
+		if (pureExistsCondition(filter) != null) {
+			applyScalarSemiAntiPhysicalCost(relationId, filter, context, rawWorkRows, output);
+		} else if (!applyScalarDependentExpressionPhysicalCost(filter, context, output)
+				&& finiteNonNegative(context.leftInputRows())) {
+			/*
+			 * The scalar estimator reports FILTER result rows, but condition evaluation is performed over the complete
+			 * input. Keep those two physical dimensions separate so a broad scan followed by a selective predicate is
+			 * not priced as though only the surviving rows were inspected.
+			 */
+			setLocalOperatorPhysicalCost(
+					output,
+					finiteNonNegative(output.outputRows()) ? output.outputRows() : 0.0d,
+					context.leftInputRows(),
+					0.0d,
+					0.0d,
+					0.0d);
+		}
 	}
 
 	private boolean applyScalarDependentExpressionPhysicalCost(Filter filter, PackedCostContext context,
@@ -1895,6 +3518,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		double randomSeeks = 0.0d;
 		double iteratorOpens = 0.0d;
 		double expressionEvaluations = outerRows;
+		double resultRows = finiteNonNegative(output.outputRows()) ? output.outputRows() : 0.0d;
 		double totalProbeWorkRows = 0.0d;
 		for (Exists exists : dependentExistsScratch) {
 			TupleExpr rhs = exists.getSubQuery();
@@ -1927,6 +3551,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				0.0d,
 				0.0d,
 				0.0d,
+				resultRows,
 				0.0d,
 				0.0d);
 		output.putPlannedDoubleMetric("plannedDependentSubqueryCount", dependentExistsScratch.size());
@@ -1948,14 +3573,20 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 
 	private void applySemiAntiPhysicalFeedback(Filter filter, int semanticKind, int algorithm, double plannedOuterRows,
 			PackedCostEstimate output) {
+		if (output.evidenceStateId() != 0) {
+			/*
+			 * Frontier candidates consume the event-keyed, per-dimension posterior in LmdbFrontierLearningCostSession.
+			 * Surface aggregates are retained for scalar failover and persistence compatibility, but must never
+			 * overwrite an originating Frontier event with an unkeyed point estimate.
+			 */
+			return;
+		}
 		String semanticName = semiAntiFeedbackSemanticName(semanticKind);
 		String algorithmName = semiAntiAlgorithmName(algorithm);
 		LmdbOperatorFeedbackStats.SemiAntiEstimate feedback = runtime.semiAntiFeedback(
 				filter, semanticName, algorithmName);
-		if (feedback == null
-				|| feedback.observationCount() < MINIMUM_SEMI_ANTI_EVIDENCE_COUNT
-				|| feedback.physicalObservationCount() < MINIMUM_SEMI_ANTI_EVIDENCE_COUNT
-				|| feedback.outerRows() <= 0L) {
+		if (feedback == null || feedback.observationCount() <= 0L
+				|| feedback.physicalObservationCount() <= 0L || feedback.outerRows() <= 0L) {
 			return;
 		}
 		double outerScale = Math.max(0.0d, plannedOuterRows) / feedback.outerRows();
@@ -1988,6 +3619,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				hashBuildRows,
 				hashProbeRows,
 				output.pathExpansions(),
+				output.resultRows(),
 				output.remoteCalls(),
 				peakMemoryRows);
 		output.putPlannedDoubleMetric("plannedSemiAntiFeedbackEvidence", feedback.observationCount());
@@ -2003,6 +3635,10 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	}
 
 	private void applySemiAntiLeoPhysicalResidual(Filter filter, int algorithm, PackedCostEstimate output) {
+		if (output.evidenceStateId() != 0) {
+			// Frontier observations are calibrated by independent event-keyed dimensions after this raw transition.
+			return;
+		}
 		double baseWorkRows = output.workRows();
 		if (!finiteNonNegative(baseWorkRows) || baseWorkRows == 0.0d) {
 			return;
@@ -2025,6 +3661,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				saturatedMultiply(output.hashBuildRows(), factor),
 				saturatedMultiply(output.hashProbeRows(), factor),
 				saturatedMultiply(output.pathExpansions(), factor),
+				output.resultRows(),
 				saturatedMultiply(output.remoteCalls(), factor),
 				output.peakMemoryRows());
 		output.putPlannedDoubleMetric("plannedSemiAntiLeoPhysicalFactor", factor);
@@ -2067,14 +3704,12 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			return new SemiAntiPlanIdentity(
 					query.semiAntiKind(relationId), query.semiAntiAlgorithm(relationId));
 		}
-		boolean safeMinusAlternative = condition.negated()
-				&& "minus-assured-shared".equals(
-						output.plannedStringMetrics().get("optimizer.semiAntiKind"));
+		boolean safeMinusAlternative = condition.negated() && query.isAssuredSharedMinusFilter(relationId);
 		if (safeMinusAlternative) {
 			return new SemiAntiPlanIdentity(
 					PackedQueryView.SEMI_ANTI_MINUS_ASSURED_SHARED,
 					semiAntiAlgorithm(
-							output.plannedStringMetrics().get("optimizer.semiAntiAlgorithm"),
+							output.plannedStringMetric("optimizer.semiAntiAlgorithm"),
 							PackedQueryView.SEMI_ANTI_STREAMING));
 		}
 		return new SemiAntiPlanIdentity(
@@ -2093,22 +3728,22 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		};
 	}
 
-	private FrontierSemiAntiProfile correlationProfile(EvidenceStateRef input, EvidenceStateRef rawOutput,
+	private FrontierSemiAntiProfile correlationProfile(EvidenceStateRef input, EvidenceStateRef outputEvidence,
 			SemiAntiBindingDomains bindingDomains, int rhsRelationId, int semanticKind) {
 		CorrelationProfileKey key = new CorrelationProfileKey(
-				input.stateId(), rhsRelationId, semanticKind, bindingDomains.cacheKey());
+				input.stateId(), outputEvidence.stateId(), rhsRelationId, semanticKind, bindingDomains.cacheKey());
 		FrontierSemiAntiProfile existing = correlationProfiles.get(key);
 		if (existing != null) {
 			return existing;
 		}
 		FrontierCorrelationDomain probeDomain = correlationDomain(input, bindingDomains.probeNames());
-		FrontierCorrelationDomain outputProbeDomain = correlationDomain(rawOutput, bindingDomains.probeNames());
+		FrontierCorrelationDomain outputProbeDomain = correlationDomain(outputEvidence, bindingDomains.probeNames());
 		FrontierCorrelationDomain sharedHashDomain = correlationDomain(input, bindingDomains.sharedHashNames());
 		FrontierCorrelationDomain materializationParameterDomain = correlationDomain(
 				input, bindingDomains.materializationParameterNames());
 		EvidenceStateSummary inputSummary = input.summary();
 		double outerRows = inputSummary.pointRows();
-		double outputRows = Math.min(outerRows, rawOutput.summary().pointRows());
+		double outputRows = Math.min(outerRows, outputEvidence.summary().pointRows());
 		boolean anti = semanticKind != PackedQueryView.SEMI_ANTI_EXISTS;
 		double matchedRows = anti ? outerRows - outputRows : outputRows;
 		double unmatchedRows = anti ? outputRows : outerRows - outputRows;
@@ -2135,8 +3770,8 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				probeDomain,
 				sharedHashDomain,
 				materializationParameterDomain,
-				inputSummary.guarantee(),
-				inputSummary.confidence());
+				probeDomain.guarantee(),
+				Math.min(inputSummary.confidence(), probeDomain.confidence()));
 		correlationProfiles.put(key, profile);
 		return profile;
 	}
@@ -2148,10 +3783,40 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		if (existing != null) {
 			return existing;
 		}
-		FrontierLayout layout = arena.key(state).frontier();
+		FrontierLayout layout = arena.layout(state);
 		int[] correlationSlots = correlationSlots(layout, names);
 		if (correlationSlots == null) {
-			throw new IllegalStateException("correlation binding is absent from the Frontier layout");
+			FrontierCorrelationDomain domain = missingCorrelationDomain(state, bindingNames);
+			correlationDomains.put(key, domain);
+			return domain;
+		}
+		EvidenceStateSummary summary = state.summary();
+		if (arena.payloadStatus(state) != FrontierPayloadStatus.RESIDENT) {
+			double rows = summary.pointRows();
+			boolean emptyKey = correlationSlots.length == 0;
+			boolean exactEmpty = summary.guarantee() == EvidenceGuarantee.DATABASE_EXACT && rows == 0.0d;
+			double distinctKeys = emptyKey
+					? rows == 0.0d ? 0.0d : 1.0d
+					: exactEmpty ? 0.0d : Double.NaN;
+			double distinctUpperBound = Double.isFinite(distinctKeys)
+					? distinctKeys
+					: Math.max(0.0d, rows);
+			double fanoutMean = distinctUpperBound == 0.0d ? 0.0d : rows / distinctUpperBound;
+			FrontierCorrelationDomain domain = new FrontierCorrelationDomain(
+					state.stateId(),
+					bindingNames,
+					rows,
+					Double.isFinite(distinctKeys) ? distinctKeys : 0.0d,
+					distinctKeys,
+					distinctUpperBound,
+					fanoutMean,
+					rows,
+					summary.guarantee(),
+					summary.confidence(),
+					null,
+					null);
+			correlationDomains.put(key, domain);
+			return domain;
 		}
 		PrimitiveCorrelationKeyTable keys;
 		double retainedRows = 0.0d;
@@ -2173,7 +3838,6 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				}
 			}
 		}
-		EvidenceStateSummary summary = state.summary();
 		double retainedKeys = keys.size();
 		boolean exact = summary.guarantee() == EvidenceGuarantee.DATABASE_EXACT;
 		double lineageUpperBound = exact ? retainedKeys : exactCorrelationKeyUpperBound(state, names, 0);
@@ -2209,11 +3873,264 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		return domain;
 	}
 
+	private FrontierCorrelationDomain missingCorrelationDomain(EvidenceStateRef state, List<String> bindingNames) {
+		EvidenceStateSummary summary = state.summary();
+		double rows = summary.pointRows();
+		double distinctUpperBound = summary.certifiedUpperBound();
+		EvidenceGuarantee guarantee = EvidenceGuarantee.CERTIFIED_BOUND_ONLY;
+		if (!Double.isFinite(distinctUpperBound)) {
+			distinctUpperBound = summary.upperRows();
+		}
+		if (!Double.isFinite(distinctUpperBound)) {
+			distinctUpperBound = Double.POSITIVE_INFINITY;
+			guarantee = EvidenceGuarantee.UNRESOLVED;
+		}
+		if (rows == 0.0d && summary.zeroStatus() == EvidenceZeroStatus.EXACT_ZERO) {
+			distinctUpperBound = 0.0d;
+			guarantee = EvidenceGuarantee.DATABASE_EXACT;
+		}
+		return new FrontierCorrelationDomain(
+				state.stateId(),
+				bindingNames,
+				rows,
+				0.0d,
+				Double.NaN,
+				distinctUpperBound,
+				0.0d,
+				rows,
+				guarantee,
+				0.0d,
+				null,
+				null);
+	}
+
+	private FrontierFactorSurfaceRefinement refineFactorAccessSurface(EvidenceStateRef input,
+			EvidenceStateRef outputState, int relationId, PackedCostContext context, PackedCostEstimate output) {
+		if (!query.isStatementPattern(relationId)) {
+			return FrontierFactorSurfaceRefinement.declined("unsupported-access-kernel");
+		}
+		if (input.summary().guarantee() != EvidenceGuarantee.DATABASE_EXACT || !isComposableState(input)) {
+			return FrontierFactorSurfaceRefinement.declined("input-not-database-exact");
+		}
+		List<String> bindingNames = factorInputBindingNames(input, relationId);
+		if (bindingNames.isEmpty()) {
+			return FrontierFactorSurfaceRefinement.declined("uncorrelated-factor");
+		}
+		FrontierCorrelationDomain domain = correlationDomain(input, bindingNames);
+		if (!domain.hasExactDistinctKeys()) {
+			return FrontierFactorSurfaceRefinement.declined("distinct-domain-not-exact");
+		}
+		ExactRelationResult relationResult = exactCorrelationRelation(domain);
+		FiniteRelationEstimate relation = relationResult.relation();
+		if (relation == null) {
+			return FrontierFactorSurfaceRefinement.declined(relationResult.declineReason());
+		}
+		if (!fullyBound(relation)) {
+			return FrontierFactorSurfaceRefinement.declined("nullable-binding-domain");
+		}
+		CorrelationSurfaceCacheIdentity identity = new CorrelationSurfaceCacheIdentity(
+				input.stateId(), String.join("\u0000", bindingNames), "factor-access:" + relationId);
+		var estimated = runtime.exactCorrelatedSurface(
+				identity, relation, query.materializeRelation(relationId),
+				JoinFactorCostModel.EstimationTier.DECISION_EXACT);
+		if (estimated.isEmpty()) {
+			return FrontierFactorSurfaceRefinement.declined("surface-budget-or-kernel");
+		}
+		LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate surface = estimated.orElseThrow();
+		if (!finiteNonNegative(surface.surfaceRows())
+				|| !finiteNonNegative(surface.prefixRows())
+				|| Double.compare(surface.prefixRows(), input.summary().pointRows()) != 0) {
+			return FrontierFactorSurfaceRefinement.declined("surface-prefix-mismatch");
+		}
+		double resultRows = outputState.summary().guarantee() == EvidenceGuarantee.DATABASE_EXACT
+				? outputState.summary().pointRows()
+				: surface.surfaceRows();
+		boolean applied = lmdbCostModel.applyFrontierCorrelatedAccess(
+				query,
+				relationId,
+				bindingNames,
+				resultRows,
+				surface.prefixRows(),
+				domain.distinctKeyEstimate(),
+				String.join(",", bindingNames),
+				surface.cardinalityProbes(),
+				output);
+		return applied
+				? FrontierFactorSurfaceRefinement.applied(surface.exact() ? "materialized-exact" : "bounded-probe")
+				: FrontierFactorSurfaceRefinement.declined("invalid-surface");
+	}
+
+	private EvidenceStateRef recoverExactDerivedSurface(EvidenceStateRef input, FrontierStateKey outputKey,
+			int relationId, PackedCostContext context, PackedCostEstimate output) {
+		LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate surface = lmdbCostModel
+				.exactDerivedSurface(query, relationId, context)
+				.orElse(null);
+		if (surface == null) {
+			output.putPlannedStringMetric("plannedFrontierExactSurfaceStateRecovery", "declined:surface-unavailable");
+			return null;
+		}
+		if (!surface.exact()) {
+			output.putPlannedStringMetric("plannedFrontierExactSurfaceStateRecovery", "declined:surface-not-exact");
+			return null;
+		}
+		FiniteRelationEstimate relation = surface.relation();
+		if (relation == null) {
+			output.putPlannedStringMetric("plannedFrontierExactSurfaceStateRecovery", "declined:relation-unavailable");
+			return null;
+		}
+		if (Double.compare(surface.surfaceRows(), relation.rows()) != 0) {
+			output.putPlannedStringMetric("plannedFrontierExactSurfaceStateRecovery", "declined:row-mismatch");
+			return null;
+		}
+		String missingBinding = missingOutputBinding(outputKey.frontier(), relation);
+		if (missingBinding != null) {
+			output.putPlannedStringMetric("plannedFrontierExactSurfaceStateRecovery",
+					"declined:missing-binding:" + missingBinding);
+			return null;
+		}
+		if (!relation.frequencies().isEmpty() && settings.refinementWorkUnits() == 0L) {
+			output.putPlannedStringMetric("plannedFrontierExactSurfaceStateRecovery",
+					"declined:retention-budget-exhausted");
+			return null;
+		}
+		EvidenceStateRef recovered = materializeDerivedSurface(input, outputKey, relationId, relation);
+		if (recovered != null) {
+			output.putPlannedStringMetric("plannedFrontierExactSurfaceStateRecovery",
+					recovered.summary().guarantee() == EvidenceGuarantee.DATABASE_EXACT
+							? "inline-exact"
+							: "deterministic-weighted-sample");
+			output.putPlannedDoubleMetric(
+					"plannedFrontierExactSurfaceStateRows", recovered.summary().pointRows());
+		}
+		return recovered;
+	}
+
+	private static String missingOutputBinding(FrontierLayout outputLayout, FiniteRelationEstimate relation) {
+		for (int slot = 0; slot < outputLayout.size(); slot++) {
+			String bindingName = outputLayout.variable(slot);
+			if (!relation.variables().contains(bindingName)) {
+				return bindingName;
+			}
+		}
+		return null;
+	}
+
+	private EvidenceStateRef materializeDerivedSurface(EvidenceStateRef input, FrontierStateKey outputKey,
+			int relationId, FiniteRelationEstimate relation) {
+		FrontierLayout outputLayout = outputKey.frontier();
+		int[] relationSlots = new int[outputLayout.size()];
+		for (int slot = 0; slot < outputLayout.size(); slot++) {
+			relationSlots[slot] = relation.variables().indexOf(outputLayout.variable(slot));
+			if (relationSlots[slot] < 0) {
+				return null;
+			}
+		}
+
+		int entryCount = relation.frequencies().size();
+		int particleBudget = Math.toIntExact(Math.min(settings.refinementWorkUnits(), Integer.MAX_VALUE));
+		if (entryCount > 0 && particleBudget <= 0) {
+			return null;
+		}
+		boolean exact = entryCount <= particleBudget;
+		int target = exact ? entryCount : particleBudget;
+		long scratchBytes = exact || entryCount == 0
+				? 0L
+				: Math.addExact(
+						Math.multiplyExact(2L, retainedArrayBytes(entryCount, Double.BYTES)),
+						Math.addExact(retainedArrayBytes(entryCount, Integer.BYTES),
+								retainedArrayBytes(target, Double.BYTES)));
+		try (FrontierMemoryReservation ignored = scratchBytes == 0L
+				? null
+				: arena.reserveTemporary(scratchBytes, FrontierMemoryPurpose.ARRAY_GROWTH);
+				EmissionBuffer emissions = new EmissionBuffer(arena, outputLayout.size(), target)) {
+			int[] drawCounts = null;
+			double drawMass = 0.0d;
+			if (!exact) {
+				double[] weights = new double[entryCount];
+				int ordinal = 0;
+				double totalMass = 0.0d;
+				for (double frequency : relation.frequencies().values()) {
+					weights[ordinal++] = frequency;
+					totalMass += frequency;
+				}
+				long seed = FrontierSeedSchedule.derive(
+						arena.deterministicSeed(input), FrontierRandomDomain.RESAMPLE,
+						Integer.toUnsignedLong(relationId), 2L);
+				drawCounts = FrontierMultinomialResampler.drawCounts(weights, target, seed);
+				drawMass = totalMass / target;
+			}
+
+			long[] tuple = new long[outputLayout.size()];
+			int ordinal = 0;
+			for (Map.Entry<List<Value>, Double> entry : relation.frequencies().entrySet()) {
+				double weight = exact ? entry.getValue() : drawCounts[ordinal] * drawMass;
+				ordinal++;
+				if (weight <= 0.0d) {
+					continue;
+				}
+				Arrays.fill(tuple, 0L);
+				for (int slot = 0; slot < tuple.length; slot++) {
+					Value value = entry.getKey().get(relationSlots[slot]);
+					if (value != null) {
+						tuple[slot] = encodeFrontierValue(value);
+					}
+				}
+				emissions.add(tupleMaskStratum(outputKey.maskStrata(), tuple), tuple, 0, weight);
+			}
+
+			FrontierPayloadWriter writer = materializeEmissions(outputKey, emissions, exact);
+			try {
+				double pointRows = writer.pointRows();
+				EvidenceStateSummary summary = exact
+						? EvidenceStateSummary.exact(pointRows)
+						: sampledSummary(pointRows, writer.effectiveSampleSize(),
+								writer.maximumWeightFraction(), Double.POSITIVE_INFINITY);
+				FrontierStateOperation operation = exact
+						? FrontierStateOperation.BRIDGE_TRANSFER
+						: FrontierStateOperation.BRIDGE_MUTATION;
+				EvidenceStateRef state = arena.nearestCalibration(input) == null
+						? arena.internPayload(outputKey, summary, operation, input, null, relationId, writer)
+						: arena.derivePayload(outputKey, summary, operation, input, null, relationId, writer);
+				writer = null;
+				rememberState(state);
+				return state;
+			} finally {
+				if (writer != null) {
+					writer.close();
+				}
+			}
+		}
+	}
+
+	private List<String> factorInputBindingNames(EvidenceStateRef input, int relationId) {
+		FrontierLayout inputLayout = arena.layout(input);
+		List<String> names = new ArrayList<>(4);
+		for (int component = 0; component < 4; component++) {
+			if (query.statementPatternValue(relationId, component) != null) {
+				continue;
+			}
+			String name = query.statementPatternName(relationId, component);
+			if (name != null && inputLayout.indexOf(name) >= 0 && !names.contains(name)) {
+				names.add(name);
+			}
+		}
+		return names;
+	}
+
+	private static boolean fullyBound(FiniteRelationEstimate relation) {
+		for (List<Value> tuple : relation.frequencies().keySet()) {
+			if (tuple.contains(null)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	private double exactCorrelationKeyUpperBound(EvidenceStateRef state, String[] correlationNames, int depth) {
 		if (state == null || depth > MAX_ALTERNATE_REPLAY_DEPTH) {
 			return Double.NaN;
 		}
-		FrontierLayout layout = arena.key(state).frontier();
+		FrontierLayout layout = arena.layout(state);
 		int[] slots = correlationSlots(layout, correlationNames);
 		if (slots == null) {
 			return Double.NaN;
@@ -2317,7 +4234,41 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		output.putPlannedStringMetric("plannedCorrelationGuarantee", statusName(profile.guarantee()));
 	}
 
+	private static void synchronizeSemiAntiCorrelationRows(PackedCostEstimate output,
+			EvidenceStateSummary correctedSummary) {
+		String semanticKind = output.plannedStringMetric("optimizer.semiAntiKind");
+		double outerRows = output.plannedDoubleMetric("plannedCorrelationOuterRows", Double.NaN);
+		if (semanticKind == null || !finiteNonNegative(outerRows)
+				|| !finiteNonNegative(correctedSummary.pointRows())) {
+			return;
+		}
+		double selectedRows = Math.min(outerRows, correctedSummary.pointRows());
+		switch (semanticKind) {
+		case "exists" -> {
+			output.putPlannedDoubleMetric("plannedCorrelationMatchedRows", selectedRows);
+			output.putPlannedDoubleMetric("plannedCorrelationUnmatchedRows", outerRows - selectedRows);
+		}
+		case "not-exists", "minus-assured-shared" -> {
+			output.putPlannedDoubleMetric("plannedCorrelationMatchedRows", outerRows - selectedRows);
+			output.putPlannedDoubleMetric("plannedCorrelationUnmatchedRows", selectedRows);
+		}
+		default -> {
+			return;
+		}
+		}
+		output.putPlannedDoubleMetric("plannedCorrelationConfidence", correctedSummary.confidence());
+		output.putPlannedStringMetric("plannedCorrelationGuarantee", statusName(correctedSummary.guarantee()));
+		output.putPlannedStringMetric("plannedCorrelationRowsSource", "frontier-cost-event-leo");
+	}
+
 	private static SemiAntiBindingDomains semiAntiBindingDomains(Collection<String> outerNames, TupleExpr rhs) {
+		return semiAntiBindingDomains(outerNames, List.of(), rhs);
+	}
+
+	private static SemiAntiBindingDomains semiAntiBindingDomains(Collection<String> frontierNames,
+			Collection<String> structuralCorrelationNames, TupleExpr rhs) {
+		LinkedHashSet<String> outerNames = new LinkedHashSet<>(frontierNames);
+		outerNames.addAll(structuralCorrelationNames);
 		LinkedHashSet<String> constantNames = new LinkedHashSet<>();
 		rhs.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
@@ -2419,8 +4370,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			EvidenceStateRef rawState, PackedCostEstimate output) {
 		EvidenceStateSummary primaryRawSummary = rawState.summary();
 		EvidenceStateSummary rawSummary = primaryRawSummary;
-		if (rawSummary.guarantee() == EvidenceGuarantee.DATABASE_EXACT
-				|| !rawSummary.guarantee().isComposablePointEstimate()) {
+		if (rawSummary.guarantee() == EvidenceGuarantee.DATABASE_EXACT) {
 			return rawState;
 		}
 		LmdbLearnedFilterEvidence learned = runtime.learnedFilterEvidence(filter);
@@ -2497,106 +4447,64 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		return calibrated;
 	}
 
-	private EvidenceStateRef applyLearnedSemiAntiCalibration(int relationId, Filter filter, EvidenceStateRef input,
-			EvidenceStateRef rawState, PackedCostEstimate output) {
-		EvidenceStateSummary rawSummary = rawState.summary();
-		if (rawSummary.guarantee() == EvidenceGuarantee.DATABASE_EXACT
-				|| !rawSummary.guarantee().isComposablePointEstimate()) {
-			return rawState;
-		}
-		ExistsCondition condition = pureExistsCondition(filter);
-		if (condition == null) {
-			return rawState;
-		}
-		SemiAntiPlanIdentity planIdentity = semiAntiPlanIdentity(relationId, condition, output);
-		int semanticKind = planIdentity.semanticKind();
-		int algorithm = planIdentity.algorithm();
-		String semanticName = semiAntiFeedbackSemanticName(semanticKind);
-		String algorithmName = semiAntiAlgorithmName(algorithm);
-		LmdbOperatorFeedbackStats.SemiAntiEstimate feedback = runtime.semiAntiFeedback(
-				filter, semanticName, algorithmName);
-		if (feedback == null
-				|| feedback.observationCount() < MINIMUM_SEMI_ANTI_EVIDENCE_COUNT) {
-			return rawState;
-		}
-		long learnedPassedKeys = semanticKind == PackedQueryView.SEMI_ANTI_EXISTS
-				? feedback.matchedKeys()
-				: feedback.unmatchedKeys();
-		long learnedTotalKeys = saturatedLongAdd(feedback.matchedKeys(), feedback.unmatchedKeys());
-		if (learnedTotalKeys <= 0L) {
-			return rawState;
-		}
-		double inputRows = input.summary().pointRows();
-		if (!finiteNonNegative(inputRows)) {
-			return rawState;
-		}
-		double rawPassRatio = inputRows == 0.0d
-				? 0.0d
-				: Math.clamp(rawSummary.pointRows() / inputRows, 0.0d, 1.0d);
-		double frontierPseudoCount = finiteNonNegative(rawSummary.effectiveSampleSize())
-				? rawSummary.effectiveSampleSize()
+	private ExactProbeBudget exactProbeBudget(int relationId, Filter filter, EvidenceStateRef input,
+			TupleExpr right, PackedCostEstimate output) {
+		FrontierLayout layout = arena.key(input).frontier();
+		boolean typed = query.isSemiJoin(relationId) || query.isAntiJoin(relationId);
+		Collection<String> structuralCorrelationNames = typed
+				? Arrays.asList(semiAntiCorrelationNames(relationId))
+				: filter.getArg().getBindingNames();
+		SemiAntiBindingDomains bindingDomains = semiAntiBindingDomains(
+				layout.variables(), structuralCorrelationNames, right);
+		String[] probeNames = bindingDomains.probeNames().toArray(String[]::new);
+		double rhsRows = estimatedTupleRows(right);
+		JoinFactorCostModel.FactorCostEstimate factor = candidateFactor(
+				right, probeNames, rhsRows).orElse(null);
+		double boundWorkPerKey = factorWorkRows(factor, rhsRows);
+		DependentReopenCost dependentReopenCost = DependentReopenCost.from(output);
+		double dependentPlanWorkPerKey = dependentReopenCost.required()
+				? dependentReopenCost.workRows()
 				: 0.0d;
-		double learnedPseudoCount = learnedTotalKeys;
-		double learnedPassRatio = Math.clamp((double) learnedPassedKeys / learnedTotalKeys, 0.0d, 1.0d);
-		double posteriorAlpha = 0.5d
-				+ frontierPseudoCount * rawPassRatio
-				+ learnedPseudoCount * learnedPassRatio;
-		double posteriorBeta = 0.5d
-				+ frontierPseudoCount * (1.0d - rawPassRatio)
-				+ learnedPseudoCount * (1.0d - learnedPassRatio);
-		double posteriorTotal = posteriorAlpha + posteriorBeta;
-		double posteriorPassRatio = posteriorAlpha / posteriorTotal;
-		double posteriorVariance = posteriorAlpha * posteriorBeta
-				/ (posteriorTotal * posteriorTotal * (posteriorTotal + 1.0d));
-		double posteriorMargin = NORMAL_95_Z * Math.sqrt(Math.max(0.0d, posteriorVariance));
-		double finalRows = inputRows * posteriorPassRatio;
-		EvidenceStateRef calibrationParent = rawState;
-		if (rawSummary.pointRows() == 0.0d && finalRows > 0.0d) {
-			EvidenceStateRef replayed = replayFilterSupport(relationId, filter, input);
-			if (replayed != null && replayed.summary().pointRows() > 0.0d) {
-				calibrationParent = replayed;
-				rawSummary = replayed.summary();
-				output.putPlannedStringMetric("plannedSemiAntiSupportReplay", "alternate_design_lane");
-			} else {
-				output.putPlannedStringMetric("plannedSemiAntiSupportReplay", "exhausted");
-			}
+		double estimatedWorkPerKey = Math.max(boundWorkPerKey, dependentPlanWorkPerKey);
+		int maximumMappings = maximumExactProbeMappings(
+				settings.refinementWorkUnits(), boundWorkPerKey, dependentPlanWorkPerKey);
+		return new ExactProbeBudget(
+				boundWorkPerKey, dependentPlanWorkPerKey, estimatedWorkPerKey, maximumMappings);
+	}
+
+	private ExactProbeBudget exactProbeBudget(EvidenceStateRef input, TupleExpr right) {
+		FrontierLayout layout = arena.key(input).frontier();
+		SemiAntiBindingDomains bindingDomains = semiAntiBindingDomains(layout.variables(), right);
+		String[] probeNames = bindingDomains.probeNames().toArray(String[]::new);
+		double rhsRows = estimatedTupleRows(right);
+		JoinFactorCostModel.FactorCostEstimate factor = candidateFactor(
+				right, probeNames, rhsRows).orElse(null);
+		double boundWorkPerKey = factorWorkRows(factor, rhsRows);
+		int maximumMappings = maximumExactProbeMappings(
+				settings.refinementWorkUnits(), boundWorkPerKey, 0.0d);
+		return new ExactProbeBudget(boundWorkPerKey, 0.0d, boundWorkPerKey, maximumMappings);
+	}
+
+	private static int maximumExactProbeMappings(long workBudget, double boundWorkPerKey,
+			double dependentPlanWorkPerKey) {
+		if (workBudget <= 0L) {
+			return 0;
 		}
-		double factor = rawSummary.pointRows() == 0.0d
-				? finalRows == 0.0d ? 0.0d : Double.POSITIVE_INFINITY
-				: finalRows / rawSummary.pointRows();
-		SemiAntiSurfaceKey surfaceKey = SemiAntiSurfaceKey.from(filter, semanticName, algorithmName);
-		String evidenceKey = "semi-anti-surface:" + (surfaceKey == null ? semanticName + ':' + algorithmName
-				: surfaceKey);
-		double confidence = Math.clamp(1.0d - 1.0d / Math.sqrt(learnedPseudoCount + 1.0d), 0.0d, 1.0d);
-		EvidenceCalibrationSummary calibration = new EvidenceCalibrationSummary(
-				rawSummary.pointRows(),
-				finalRows,
-				factor,
-				"learned-filter-semi-anti",
-				learnedTotalKeys,
-				confidence,
-				evidenceKey,
-				runtime.learnedEvidenceRevision());
-		EvidenceStateRef calibrated = arena.calibrate(calibrationParent, calibration, relationId);
-		rememberState(calibrated);
-		output.putPlannedDoubleMetric("plannedSemiAntiRawPassRatio", rawPassRatio);
-		output.putPlannedDoubleMetric("plannedSemiAntiLearnedPassRatio", learnedPassRatio);
-		output.putPlannedDoubleMetric("plannedSemiAntiPosteriorPassRatio", posteriorPassRatio);
-		output.putPlannedDoubleMetric(
-				"plannedSemiAntiPosteriorLower95PassRatio",
-				Math.clamp(posteriorPassRatio - posteriorMargin, 0.0d, 1.0d));
-		output.putPlannedDoubleMetric(
-				"plannedSemiAntiPosteriorUpper95PassRatio",
-				Math.clamp(posteriorPassRatio + posteriorMargin, 0.0d, 1.0d));
-		output.putPlannedDoubleMetric("plannedSemiAntiFrontierPseudoCount", frontierPseudoCount);
-		output.putPlannedDoubleMetric("plannedSemiAntiLearnedPseudoCount", learnedPseudoCount);
-		output.putPlannedDoubleMetric("plannedSemiAntiFeedbackEvidence", feedback.observationCount());
-		output.putPlannedStringMetric("plannedSemiAntiCardinalityEvidenceSource", "completed-key-outcomes");
-		return calibrated;
+		double workPerKey = Math.max(boundWorkPerKey, dependentPlanWorkPerKey);
+		if (!finiteNonNegative(workPerKey)) {
+			return 0;
+		}
+		if (workPerKey == 0.0d) {
+			return Integer.MAX_VALUE;
+		}
+		double affordableMappings = workBudget / workPerKey;
+		return affordableMappings >= Integer.MAX_VALUE
+				? Integer.MAX_VALUE
+				: (int) Math.floor(affordableMappings);
 	}
 
 	private EvidenceStateRef restrictExistsFilter(EvidenceStateRef input, FrontierStateKey outputKey, int relationId,
-			Filter filter) {
+			Filter filter, int maximumProbeMappings) {
 		boolean negated = filter.getCondition() instanceof Not;
 		Exists exists = negated
 				? (Exists) ((Not) filter.getCondition()).getArg()
@@ -2616,7 +4524,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 					negated ? FrontierOuterKernel.NOT_EXISTS : FrontierOuterKernel.EXISTS,
 					(payload, exact, stratum, index) -> existsMatchMultiplicity(
 							exists, payload, exact, stratum, index, names, bindings),
-					runtime.frontierRefinementWorkUnits(),
+					maximumProbeMappings,
 					1.0d);
 		}
 	}
@@ -2684,7 +4592,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	 */
 	private EvidenceStateRef replayFilterSupport(int relationId, Filter filter, EvidenceStateRef input) {
 		EvidenceStateRef replayedInput = replayAlternateDesignState(input, MAX_ALTERNATE_REPLAY_DEPTH);
-		if (replayedInput == null || !replayedInput.summary().guarantee().isComposablePointEstimate()) {
+		if (!isComposableState(replayedInput)) {
 			return null;
 		}
 		FrontierStateKey outputKey = filterOperatorKey(relationId, replayedInput);
@@ -2696,14 +4604,14 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			replayed = restrictFilter(replayedInput, outputKey, relationId, filter);
 			rememberState(replayed);
 		}
-		return replayed.summary().guarantee().isComposablePointEstimate()
+		return isComposableState(replayed)
 				&& replayed.summary().pointRows() > 0.0d
 						? replayed
 						: null;
 	}
 
 	private EvidenceStateRef replayAlternateDesignState(EvidenceStateRef source, int remainingDepth) {
-		if (source == null || remainingDepth <= 0 || !source.summary().guarantee().isComposablePointEstimate()) {
+		if (remainingDepth <= 0 || !isComposableState(source)) {
 			return null;
 		}
 		FrontierStateKey sourceKey = arena.key(source);
@@ -2729,7 +4637,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		case UNION -> replayAlternateUnion(source, remainingDepth - 1);
 		default -> null;
 		};
-		if (replayed == null || !replayed.summary().guarantee().isComposablePointEstimate()) {
+		if (!isComposableState(replayed)) {
 			alternateReplayFailures.add(source.stateId());
 			return null;
 		}
@@ -2848,7 +4756,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 
 	private boolean exactProbeBudgetExceeded(EvidenceStateRef input) {
 		try (FrontierPayloadLease payload = arena.openPayload(input)) {
-			return payloadEntryCount(payload) > runtime.frontierRefinementWorkUnits();
+			return payloadEntryCount(payload) > settings.refinementWorkUnits();
 		}
 	}
 
@@ -2859,17 +4767,21 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 
 	private void refineProjection(int relationId, EvidenceStateRef input, PackedCostEstimate output) {
 		Projection projection = (Projection) query.materializeRelation(relationId);
+		int[] sourceSlots = projectionSourceSlots(arena.key(input).frontier(), projection);
+		if (sourceSlots == null) {
+			output.putPlannedStringMetric("plannedFrontierProjectionInputLayout",
+					arena.key(input).frontier().variables().toString());
+			publishCardinalityPreservingBoundary(
+					relationId, output, input, "projection_source_not_retained", 0.0d);
+			return;
+		}
 		FrontierStateKey outputKey = projectionStateKey(arena.key(input), relationId, projection);
 		if (outputKey == null) {
-			degradeOperator(output, input, "projection_state_unavailable");
+			publishCardinalityPreservingBoundary(
+					relationId, output, input, "projection_state_unavailable", 0.0d);
 			return;
 		}
 		arena.declareCanonicalState(outputKey);
-		int[] sourceSlots = projectionSourceSlots(arena.key(input).frontier(), projection);
-		if (sourceSlots == null) {
-			degradeOperator(output, input, "projection_source_not_retained");
-			return;
-		}
 		try {
 			boolean lineageSpecific = arena.nearestCalibration(input) != null;
 			EvidenceStateRef state = lineageSpecific ? null : arena.find(outputKey);
@@ -2879,7 +4791,381 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			}
 			publishOperatorState(relationId, output, state);
 		} catch (RuntimeException failure) {
-			degradeOperator(output, input, "projection_state_materialization_failed");
+			throw new PackedCostSessionFailure("projection_state_materialization_failed", failure);
+		}
+	}
+
+	private void refineDistinct(int relationId, EvidenceStateRef input, PackedCostEstimate output) {
+		FrontierStateKey inputKey = arena.key(input);
+		FrontierStateKey outputKey = operatorStateKey(inputKey, relationId, inputKey.maskStrata());
+		if (outputKey == null) {
+			degradeOperator(relationId, output, input, "distinct_state_unavailable");
+			return;
+		}
+		arena.declareCanonicalState(outputKey);
+		if (input.summary().guarantee() != EvidenceGuarantee.DATABASE_EXACT) {
+			publishBoundOperator(relationId, output, input, outputKey,
+					"sampled_distinct_requires_nonlinear_estimator", input.summary().certifiedUpperBound());
+			setLocalDistinctPhysicalCost(input, output);
+			return;
+		}
+		try {
+			EvidenceStateRef state = arena.find(outputKey);
+			if (state == null) {
+				state = FrontierLinearTransforms.distinct(arena, input, outputKey, relationId);
+				rememberState(state);
+			}
+			publishOperatorState(relationId, output, state);
+			setLocalDistinctPhysicalCost(input, output);
+		} catch (RuntimeException failure) {
+			throw new PackedCostSessionFailure("distinct_state_materialization_failed", failure);
+		}
+	}
+
+	private void refineBoundedDistinct(int relationId, EvidenceStateRef input, PackedCostEstimate output) {
+		publishBoundOperator(
+				relationId,
+				output,
+				input,
+				null,
+				"distinct_input_payload_unavailable",
+				input.summary().certifiedUpperBound());
+		setLocalDistinctPhysicalCost(input, output);
+	}
+
+	private void refineGroup(int relationId, Group group, EvidenceStateRef input, PackedCostEstimate output) {
+		FrontierStateKey inputKey = arena.key(input);
+		FrontierLayout outputLayout = outputLayout(relationId);
+		FrontierMaskStrata fallbackMasks = FrontierMaskStrata.of(
+				outputLayout,
+				1,
+				new long[(outputLayout.size() + 63) >>> 6]);
+		FrontierStateKey fallbackKey = operatorStateKey(inputKey, relationId, fallbackMasks);
+		if (fallbackKey == null) {
+			degradeOperator(relationId, output, input, "group_state_unavailable");
+			return;
+		}
+		arena.declareCanonicalState(fallbackKey);
+		double upperBound = group.getGroupBindingNames().isEmpty()
+				? 1.0d
+				: input.summary().certifiedUpperBound();
+		if (input.summary().guarantee() != EvidenceGuarantee.DATABASE_EXACT) {
+			publishBoundOperator(relationId, output, input, fallbackKey,
+					"sampled_group_requires_nonlinear_estimator", upperBound);
+			setLocalGroupPhysicalCost(group, input, output);
+			return;
+		}
+		if (evaluationStrategy == null) {
+			publishBoundOperator(relationId, output, input, fallbackKey,
+					"group_evaluator_unavailable", upperBound);
+			setLocalGroupPhysicalCost(group, input, output);
+			return;
+		}
+		String unsupportedReason = exactGroupFailureReason(group, inputKey.frontier());
+		if (unsupportedReason != null) {
+			publishBoundOperator(relationId, output, input, fallbackKey, unsupportedReason, upperBound);
+			setLocalGroupPhysicalCost(group, input, output);
+			return;
+		}
+		if (!isIntegralBoundedRows(input.summary().pointRows(), settings.refinementWorkUnits())) {
+			publishBoundOperator(relationId, output, input, fallbackKey,
+					"group_exact_work_budget_exhausted", upperBound);
+			setLocalGroupPhysicalCost(group, input, output);
+			return;
+		}
+		try {
+			EvidenceStateRef state = materializeExactGroup(relationId, group, input);
+			if (state == null) {
+				publishBoundOperator(relationId, output, input, fallbackKey,
+						"group_exact_memory_budget_exhausted", upperBound);
+				setLocalGroupPhysicalCost(group, input, output);
+				return;
+			}
+			publishOperatorState(relationId, output, state);
+			setLocalGroupPhysicalCost(group, input, output);
+		} catch (GroupEvaluationFailure failure) {
+			publishBoundOperator(relationId, output, input, fallbackKey,
+					"group_exact_evaluation_failed", upperBound);
+			setLocalGroupPhysicalCost(group, input, output);
+		} catch (RuntimeException failure) {
+			throw new PackedCostSessionFailure("group_state_materialization_failed", failure);
+		}
+	}
+
+	private void refineBoundedGroup(int relationId, Group group, EvidenceStateRef input,
+			PackedCostEstimate output) {
+		double upperBound = group.getGroupBindingNames().isEmpty()
+				? 1.0d
+				: input.summary().certifiedUpperBound();
+		publishBoundOperator(
+				relationId,
+				output,
+				input,
+				null,
+				"group_input_payload_unavailable",
+				upperBound);
+		setLocalGroupPhysicalCost(group, input, output);
+	}
+
+	private static void setLocalDistinctPhysicalCost(EvidenceStateRef input, PackedCostEstimate output) {
+		double resultRows = output.outputRows();
+		setLocalOperatorPhysicalCost(
+				output,
+				resultRows,
+				0.0d,
+				resultRows,
+				input.summary().pointRows(),
+				resultRows);
+	}
+
+	private static void setLocalGroupPhysicalCost(Group group, EvidenceStateRef input, PackedCostEstimate output) {
+		double resultRows = output.outputRows();
+		setLocalOperatorPhysicalCost(
+				output,
+				resultRows,
+				saturatedMultiply(input.summary().pointRows(), group.getGroupElements().size()),
+				resultRows,
+				input.summary().pointRows(),
+				resultRows);
+	}
+
+	private EvidenceStateRef materializeExactGroup(int relationId, Group group, EvidenceStateRef input) {
+		FrontierLayout inputLayout = arena.key(input).frontier();
+		int inputRows = Math.toIntExact(Math.round(input.summary().pointRows()));
+		int maximumOutputRows = Math.max(1, inputRows);
+		long scratchBytes = groupScratchBytes(inputRows, maximumOutputRows,
+				inputLayout.size(), group.getBindingNames().size());
+		if (scratchBytes > arena.remainingBytes()) {
+			return null;
+		}
+		try (FrontierMemoryReservation ignored = arena.reserveTemporary(
+				scratchBytes, FrontierMemoryPurpose.TARGET_COALESCING);
+				FrontierPayloadLease payload = arena.openPayload(input)) {
+			String[] inputNames = layoutVariables(inputLayout);
+			ArrayList<BindingSet> inputBindings = new ArrayList<>(inputRows);
+			for (int stratum = 0; stratum < payload.stratumCount(); stratum++) {
+				if (payload.residualCount(stratum) != 0) {
+					throw new IllegalStateException("database-exact group input contains residual particles");
+				}
+				for (int index = 0; index < payload.exactCount(stratum); index++) {
+					double weight = payload.exactWeight(stratum, index);
+					if (!isIntegralBoundedRows(weight, settings.refinementWorkUnits())) {
+						throw new IllegalStateException("database-exact group input has invalid multiplicity");
+					}
+					ArrayBindingSet bindings = new ArrayBindingSet(inputNames);
+					populateBindings(payload, true, stratum, index, inputNames, bindings);
+					int occurrences = Math.toIntExact(Math.round(weight));
+					if (inputBindings.size() > inputRows - occurrences) {
+						throw new IllegalStateException("database-exact group multiplicity exceeds its summary");
+					}
+					for (int occurrence = 0; occurrence < occurrences; occurrence++) {
+						inputBindings.add(bindings);
+					}
+				}
+			}
+			if (inputBindings.size() != inputRows) {
+				throw new IllegalStateException("database-exact group payload does not match its summary");
+			}
+
+			BindingSetAssignment assignment = new BindingSetAssignment();
+			assignment.setBindingNames(new LinkedHashSet<>(Arrays.asList(inputNames)));
+			assignment.setBindingSets(inputBindings);
+			Group boundedGroup = group.clone();
+			boundedGroup.setArg(assignment);
+			ArrayList<BindingSet> outputBindings = new ArrayList<>(maximumOutputRows);
+			try (CloseableIteration<BindingSet> evaluated = evaluationStrategy.evaluate(
+					boundedGroup, EmptyBindingSet.getInstance())) {
+				while (evaluated.hasNext()) {
+					if (outputBindings.size() == maximumOutputRows) {
+						throw new IllegalStateException("exact group output exceeded its cardinality bound");
+					}
+					outputBindings.add(new QueryBindingSet(evaluated.next()));
+				}
+			}
+
+			BindingSetAssignment result = new BindingSetAssignment();
+			result.setBindingNames(new LinkedHashSet<>(group.getBindingNames()));
+			result.setBindingSets(outputBindings);
+			FiniteLeafState finite = FiniteLeafState.create(relationId, result);
+			finite.key = operatorStateKey(arena.key(input), relationId, finite.masks);
+			arena.declareCanonicalState(finite.key);
+			EvidenceStateRef state = arena.find(finite.key);
+			if (state == null) {
+				state = materializeFiniteState(arena, finite, FrontierStateOperation.GROUP, input, null);
+				rememberState(state);
+			}
+			return state;
+		} catch (IOException | QueryEvaluationException failure) {
+			throw new GroupEvaluationFailure("Frontier GROUP exact evaluation failed", failure);
+		}
+	}
+
+	private static String exactGroupFailureReason(Group group, FrontierLayout inputLayout) {
+		for (String groupBinding : group.getGroupBindingNames()) {
+			if (inputLayout.indexOf(groupBinding) < 0) {
+				return "group_input_not_retained";
+			}
+		}
+		for (var element : group.getGroupElements()) {
+			if (!(element.getOperator()instanceof AbstractAggregateOperator aggregate)
+					|| !(aggregate instanceof Count || aggregate instanceof Sum || aggregate instanceof Avg
+							|| aggregate instanceof Min || aggregate instanceof Max)) {
+				return "group_aggregate_not_exactly_replayable";
+			}
+			ValueExpr argument = aggregate.getArg();
+			if (!ScalarEvaluationEffects.effectOf(argument).reorderingIsSafe()) {
+				return "group_aggregate_expression_not_repeatable";
+			}
+			if (argument != null) {
+				for (String variable : directValueExpressionVariables(argument)) {
+					if (inputLayout.indexOf(variable) < 0) {
+						return "group_aggregate_input_not_retained";
+					}
+				}
+			}
+		}
+		return null;
+	}
+
+	private static boolean isIntegralBoundedRows(double rows, int maximumRows) {
+		return Double.isFinite(rows) && rows >= 0.0d && rows == Math.rint(rows) && rows <= maximumRows;
+	}
+
+	private static long groupScratchBytes(int inputRows, int outputRows, int inputWidth, int outputWidth) {
+		long input = Math.multiplyExact((long) inputRows,
+				Math.addExact(64L, Math.multiplyExact((long) inputWidth, 16L)));
+		long output = Math.multiplyExact((long) outputRows,
+				Math.addExact(64L, Math.multiplyExact((long) outputWidth, 16L)));
+		return Math.addExact(256L, Math.addExact(input, output));
+	}
+
+	private void refineReduced(int relationId, EvidenceStateRef input, PackedCostEstimate output) {
+		FrontierStateKey inputKey = isComposableState(input)
+				? arena.key(input)
+				: null;
+		FrontierStateKey outputKey = inputKey == null
+				? null
+				: operatorStateKey(inputKey, relationId, inputKey.maskStrata());
+		if (outputKey == null && isComposableState(input)) {
+			degradeOperator(relationId, output, input, "reduced_state_unavailable");
+			return;
+		}
+		if (outputKey != null) {
+			arena.declareCanonicalState(outputKey);
+		}
+		publishBoundOperator(relationId, output, input, outputKey,
+				"reduced_preserves_support_with_unspecified_multiplicity",
+				input.summary().certifiedUpperBound());
+		if (mode == FrontierEstimatorMode.AUTHORITATIVE) {
+			setLocalOperatorPhysicalCost(
+					output,
+					output.outputRows(),
+					input.summary().pointRows(),
+					0.0d,
+					0.0d,
+					Math.min(1.0d, input.summary().pointRows()));
+		}
+	}
+
+	private void refineSlice(int relationId, Slice slice, EvidenceStateRef input, PackedCostEstimate output) {
+		FrontierStateKey inputKey = isComposableState(input)
+				? arena.key(input)
+				: null;
+		FrontierStateKey outputKey = inputKey == null
+				? null
+				: operatorStateKey(inputKey, relationId, inputKey.maskStrata());
+		if (outputKey == null && isComposableState(input)) {
+			degradeOperator(relationId, output, input, "slice_state_unavailable");
+			return;
+		}
+		if (outputKey != null) {
+			arena.declareCanonicalState(outputKey);
+		}
+		double pointRows = slicedRows(input.summary().pointRows(), slice);
+		double upperBound = slicedRows(input.summary().certifiedUpperBound(), slice);
+		output.setRows(pointRows, Math.max(pointRows, output.workRows()));
+		publishBoundOperator(relationId, output, input, outputKey,
+				"slice_retains_cardinality_bound_without_ordered_payload", upperBound);
+	}
+
+	private static double slicedRows(double rows, Slice slice) {
+		if (Double.isInfinite(rows)) {
+			return slice.hasLimit() ? slice.getLimit() : Double.POSITIVE_INFINITY;
+		}
+		double afterOffset = Math.max(0.0d, rows - (slice.hasOffset() ? slice.getOffset() : 0L));
+		return slice.hasLimit() ? Math.min(afterOffset, slice.getLimit()) : afterOffset;
+	}
+
+	private void publishBoundOperator(int relationId, PackedCostEstimate output, EvidenceStateRef input,
+			FrontierStateKey outputKey, String reason, double certifiedUpperBound) {
+		double bound = finiteNonNegative(certifiedUpperBound) ? certifiedUpperBound : Double.POSITIVE_INFINITY;
+		double pointRows = finiteNonNegative(output.outputRows()) ? Math.min(output.outputRows(), bound) : 0.0d;
+		EvidenceStateSummary summary = EvidenceStateSummary.unresolved(pointRows, bound, bound, reason);
+		EvidenceStateRef state;
+		if (!isComposableState(input) || outputKey == null) {
+			state = arena.deriveBoundBoundary(input, outputLayout(relationId), summary, relationId);
+		} else {
+			boolean lineageSpecific = arena.nearestCalibration(input) != null;
+			state = lineageSpecific ? null : arena.find(outputKey);
+			if (state == null) {
+				state = arena.deriveSummary(
+						outputKey,
+						summary,
+						FrontierStateOperation.UNRESOLVED,
+						input,
+						null,
+						relationId);
+			}
+		}
+		if (state.stateId() >= stateReferences.length || stateReferences[state.stateId()] == null) {
+			rememberState(state);
+		}
+		output.setEvidenceStateId(state.stateId());
+		annotateState(output, state, "degraded");
+		output.putPlannedStringMetric("plannedFrontierFallbackReason", reason);
+		if (mode == FrontierEstimatorMode.AUTHORITATIVE) {
+			setLocalOperatorPhysicalCost(output, pointRows, 0.0d, 0.0d, 0.0d, 0.0d);
+		}
+	}
+
+	private void publishBinaryBoundOperator(int relationId, PackedCostEstimate output, EvidenceStateRef left,
+			EvidenceStateRef right, String reason, double certifiedUpperBound) {
+		double bound = finiteNonNegative(certifiedUpperBound) ? certifiedUpperBound : Double.POSITIVE_INFINITY;
+		double defaultPoint = Math.min(left.summary().pointRows(), right.summary().pointRows());
+		double pointRows = finiteNonNegative(output.outputRows()) ? output.outputRows() : defaultPoint;
+		pointRows = Math.min(pointRows, bound);
+		EvidenceStateRef state = arena.deriveBoundBoundary(
+				left,
+				right,
+				outputLayout(relationId),
+				EvidenceStateSummary.unresolved(pointRows, bound, bound, reason),
+				relationId);
+		rememberState(state);
+		output.setEvidenceStateId(state.stateId());
+		annotateState(output, state, "degraded");
+		output.putPlannedStringMetric("plannedFrontierFallbackReason", reason);
+		if (mode == FrontierEstimatorMode.AUTHORITATIVE) {
+			setLocalOperatorPhysicalCost(
+					output,
+					pointRows,
+					0.0d,
+					right.summary().pointRows(),
+					left.summary().pointRows(),
+					right.summary().pointRows());
+		}
+	}
+
+	private void publishCardinalityPreservingBoundary(int relationId, PackedCostEstimate output,
+			EvidenceStateRef input, String reason, double expressionEvaluations) {
+		EvidenceStateRef state = arena.deriveBoundBoundary(
+				input, outputLayout(relationId), input.summary(), relationId);
+		rememberState(state);
+		output.setEvidenceStateId(state.stateId());
+		annotateState(output, state, "degraded");
+		output.putPlannedStringMetric("plannedFrontierFallbackReason", reason);
+		if (mode == FrontierEstimatorMode.AUTHORITATIVE) {
+			setLocalOperatorPhysicalCost(
+					output, input.summary().pointRows(), expressionEvaluations, 0.0d, 0.0d, 0.0d);
 		}
 	}
 
@@ -2921,19 +5207,25 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 						(payload, exact, stratum, index, emitter) -> expandExtensionMapping(
 								extension, payload, exact, stratum, index, inputNames, outputNames,
 								bindings, outputMasks, emitter),
-						runtime.frontierRefinementWorkUnits());
+						settings.refinementWorkUnits());
 				rememberState(state);
 			}
-			if (!state.summary().guarantee().isComposablePointEstimate()) {
-				degradeOperator(output, state, state.summary().degradationReason());
+			if (!isComposableState(state)) {
+				publishDegradedState(output, state);
 				return;
 			}
-			state = applyLeoMultiplierCalibration(relationId, extension, state, rawWorkRows).state();
 			publishOperatorState(relationId, output, state);
+			setLocalOperatorPhysicalCost(
+					output,
+					state.summary().pointRows(),
+					saturatedMultiply(input.summary().pointRows(), extension.getElements().size()),
+					0.0d,
+					0.0d,
+					0.0d);
 		} catch (ExtensionEvaluationFailure failure) {
 			degradeOperator(output, input, "extension_evaluation_failed");
 		} catch (RuntimeException failure) {
-			degradeOperator(output, input, "extension_state_materialization_failed");
+			throw new PackedCostSessionFailure("extension_state_materialization_failed", failure);
 		}
 	}
 
@@ -3016,18 +5308,30 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 						relationId,
 						(payload, exact, stratum, index, emitter) -> expandMultiProjectionMapping(
 								plan, payload, exact, stratum, index, tupleScratch, emitter),
-						runtime.frontierRefinementWorkUnits());
+						settings.refinementWorkUnits());
 				rememberState(state);
 			}
-			if (!state.summary().guarantee().isComposablePointEstimate()) {
-				degradeOperator(output, state, state.summary().degradationReason());
+			if (!isComposableState(state)) {
+				publishDegradedState(output, state);
 				return;
 			}
-			state = applyLeoMultiplierCalibration(relationId, multiProjection, state, rawWorkRows).state();
 			publishOperatorState(relationId, output, state);
 		} catch (RuntimeException failure) {
-			degradeOperator(output, input, "multi_projection_state_materialization_failed");
+			throw new PackedCostSessionFailure("multi_projection_state_materialization_failed", failure);
 		}
+	}
+
+	private void refineBoundedMultiProjection(int relationId, MultiProjection multiProjection,
+			EvidenceStateRef input, PackedCostEstimate output) {
+		double upperBound = saturatedMultiply(
+				input.summary().certifiedUpperBound(), multiProjection.getProjections().size());
+		publishBoundOperator(
+				relationId,
+				output,
+				input,
+				null,
+				"multi_projection_input_payload_unavailable",
+				upperBound);
 	}
 
 	private boolean isDuplicateFreeMultiProjection(EvidenceStateRef input, MultiProjectionPlan plan) {
@@ -3124,14 +5428,13 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 
 	private void refineUnion(int relationId, Union union, EvidenceStateRef left, EvidenceStateRef right,
 			double rawWorkRows, PackedCostEstimate output) {
-		if (!left.summary().guarantee().isComposablePointEstimate()
-				|| !right.summary().guarantee().isComposablePointEstimate()) {
-			degradeOperator(output, left, "union_child_state_non_composable");
+		if (!isComposableState(left) || !isComposableState(right)) {
+			publishUnionBoundary(relationId, output, left, right, "union_child_state_non_composable");
 			return;
 		}
 		if (!sameSamplingIdentity(arena.key(left), arena.key(right))
 				|| !sameEstimatorSemantics(arena.key(left), arena.key(right))) {
-			degradeOperator(output, left, "union_state_unavailable");
+			publishUnionBoundary(relationId, output, left, right, "union_state_unavailable");
 			return;
 		}
 		FrontierMaskStrata outputMasks = unionMaskStrata(
@@ -3142,7 +5445,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		FrontierStateKey outputKey = combinedOperatorStateKey(
 				arena.key(left), arena.key(right), relationId, outputMasks);
 		if (outputKey == null) {
-			degradeOperator(output, left, "union_state_unavailable");
+			publishUnionBoundary(relationId, output, left, right, "union_state_unavailable");
 			return;
 		}
 		arena.declareCanonicalState(outputKey);
@@ -3154,16 +5457,60 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				state = FrontierLinearTransforms.union(arena, left, right, outputKey, relationId);
 				rememberState(state);
 			}
-			CalibratedState calibrated = applyLeoCalibration(
-					relationId,
-					union,
-					state,
-					left.summary().pointRows(),
-					right.summary().pointRows(),
-					rawWorkRows);
-			publishOperatorState(relationId, output, calibrated.state());
+			publishOperatorState(relationId, output, state);
 		} catch (RuntimeException failure) {
-			degradeOperator(output, left, "union_state_materialization_failed");
+			throw new PackedCostSessionFailure("union_state_materialization_failed", failure);
+		}
+	}
+
+	private void refineIntersection(int relationId, EvidenceStateRef left, EvidenceStateRef right,
+			PackedCostEstimate output) {
+		double upperBound = Math.min(
+				left.summary().certifiedUpperBound(), right.summary().certifiedUpperBound());
+		if (!isComposableState(left)
+				|| !isComposableState(right)
+				|| left.summary().guarantee() != EvidenceGuarantee.DATABASE_EXACT
+				|| right.summary().guarantee() != EvidenceGuarantee.DATABASE_EXACT) {
+			publishBinaryBoundOperator(relationId, output, left, right,
+					"intersection_requires_database_exact_support", upperBound);
+			return;
+		}
+		if (!sameSamplingIdentity(arena.key(left), arena.key(right))
+				|| !sameEstimatorSemantics(arena.key(left), arena.key(right))) {
+			publishBinaryBoundOperator(relationId, output, left, right,
+					"intersection_state_identity_mismatch", upperBound);
+			return;
+		}
+		FrontierMaskStrata outputMasks = unionMaskStrata(
+				arena.key(left).maskStrata(), arena.key(right).maskStrata());
+		left = alignUnionBranch(left, outputMasks, relationId);
+		right = alignUnionBranch(right, outputMasks, relationId);
+		FrontierStateKey outputKey = combinedOperatorStateKey(
+				arena.key(left), arena.key(right), relationId, outputMasks);
+		if (outputKey == null) {
+			publishBinaryBoundOperator(relationId, output, left, right,
+					"intersection_state_unavailable", upperBound);
+			return;
+		}
+		arena.declareCanonicalState(outputKey);
+		try {
+			boolean lineageSpecific = arena.nearestCalibration(left) != null
+					|| arena.nearestCalibration(right) != null;
+			EvidenceStateRef state = lineageSpecific ? null : arena.find(outputKey);
+			if (state == null) {
+				state = FrontierLinearTransforms.intersection(arena, left, right, outputKey, relationId);
+				rememberState(state);
+			}
+			publishOperatorState(relationId, output, state);
+			setLocalOperatorPhysicalCost(
+					output,
+					state.summary().pointRows(),
+					0.0d,
+					right.summary().pointRows(),
+					left.summary().pointRows(),
+					right.summary().pointRows());
+		} catch (RuntimeException failure) {
+			throw new PackedCostSessionFailure("intersection_state_materialization_failed", failure);
 		}
 	}
 
@@ -3208,25 +5555,32 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 						(payload, exact, stratum, index, emitter) -> expandOptionalMapping(
 								optional, payload, exact, stratum, index, inputNames, outputNames,
 								outerBindings, mergedBindings, outputKey.maskStrata(), emitter),
-						runtime.frontierRefinementWorkUnits());
+						settings.refinementWorkUnits());
 				rememberState(state);
 			}
-			if (!state.summary().guarantee().isComposablePointEstimate()) {
-				degradeOperator(output, state, state.summary().degradationReason());
+			if (!isComposableState(state)) {
+				publishDegradedState(output, state);
 				return;
 			}
-			CalibratedState calibrated = applyLeoCalibration(
-					relationId,
-					optional,
-					state,
-					input.summary().pointRows(),
-					evidenceRows(context.rightInputEvidenceStateId(), context.rightInputRows()),
-					rawWorkRows);
-			publishOperatorState(relationId, output, calibrated.state());
+			publishOperatorState(relationId, output, state);
+			double conditionEvaluations = optional.getCondition() == null
+					? 0.0d
+					: evidenceRows(context.rightInputEvidenceStateId(), context.rightInputRows());
+			output.setLocalPhysicalCost(
+					0.0d,
+					0.0d,
+					0.0d,
+					conditionEvaluations,
+					0.0d,
+					0.0d,
+					0.0d,
+					state.summary().pointRows(),
+					0.0d,
+					0.0d);
 		} catch (OuterProbeFailure failure) {
 			degradeOperator(output, input, "optional_exact_probe_failed");
 		} catch (RuntimeException failure) {
-			degradeOperator(output, input, "optional_state_materialization_failed");
+			throw new PackedCostSessionFailure("optional_state_materialization_failed", failure);
 		}
 	}
 
@@ -3335,43 +5689,56 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			ArrayBindingSet bindings = new ArrayBindingSet(names);
 			boolean lineageSpecific = arena.nearestCalibration(probeInput) != null;
 			EvidenceStateRef state = lineageSpecific ? null : arena.find(outputKey);
+			ExactProbeBudget exactProbeBudget = exactProbeBudget(probeInput, minus.getRightArg());
+			output.putPlannedDoubleMetric("plannedFrontierExactProbeBoundWorkPerKey",
+					exactProbeBudget.boundWorkPerKey());
+			output.putPlannedDoubleMetric("plannedFrontierExactProbeDependentPlanWorkPerKey",
+					exactProbeBudget.dependentPlanWorkPerKey());
+			output.putPlannedDoubleMetric("plannedFrontierExactProbeEstimatedWorkPerKey",
+					exactProbeBudget.estimatedWorkPerKey());
+			output.putPlannedDoubleMetric("plannedFrontierExactProbeMaximumMappings",
+					exactProbeBudget.maximumMappings());
+			output.putPlannedDoubleMetric("plannedFrontierExactProbeWorkBudget",
+					settings.refinementWorkUnits());
 			if (state == null) {
 				state = FrontierLinearTransforms.resolveProjectedOuterKernel(arena, probeInput, outputKey, relationId,
 						FrontierOuterKernel.MINUS,
 						(payload, exact, stratum, index) -> minusMatchMultiplicity(
 								minus, payload, exact, stratum, index, sharedSlots, names, bindings),
-						runtime.frontierRefinementWorkUnits(), 1.0d);
+						exactProbeBudget.maximumMappings(), 1.0d);
 				rememberState(state);
 			}
-			if (!state.summary().guarantee().isComposablePointEstimate()) {
-				degradeOperator(output, state, state.summary().degradationReason());
+			if (!isComposableState(state)) {
+				publishDegradedState(output, state);
 				return;
 			}
-			CalibratedState calibrated = applyLeoCalibration(
-					relationId,
-					minus,
-					state,
-					probeInput.summary().pointRows(),
-					evidenceRows(context.rightInputEvidenceStateId(), context.rightInputRows()),
-					rawWorkRows);
 			if (probeInput.stateId() != input.stateId()) {
 				output.putPlannedStringMetric(
 						"plannedFrontierVarianceReduction", "independent_design_lane_average");
 			}
-			publishOperatorState(relationId, output, calibrated.state());
-			applySelectedMinusPhysicalCost(relationId, minus, input, calibrated.state(), output);
+			publishOperatorState(relationId, output, state);
+			applySelectedMinusPhysicalCost(relationId, context, minus, input, state, output);
 		} catch (OuterProbeFailure failure) {
 			degradeOperator(output, input, "minus_exact_probe_failed");
 		} catch (RuntimeException failure) {
-			degradeOperator(output, input, "minus_state_materialization_failed");
+			throw new PackedCostSessionFailure("minus_state_materialization_failed", failure);
 		}
 	}
 
-	private void applySelectedMinusPhysicalCost(int relationId, Difference minus, EvidenceStateRef input,
-			EvidenceStateRef outputState, PackedCostEstimate output) {
+	private void applySelectedMinusPhysicalCost(int relationId, PackedCostContext context, Difference minus,
+			EvidenceStateRef input, EvidenceStateRef outputState, PackedCostEstimate output) {
 		int algorithm = semiAntiAlgorithm(
-				output.plannedStringMetrics().get("optimizer.semiAntiAlgorithm"), -1);
+				output.plannedStringMetric("optimizer.semiAntiAlgorithm"), -1);
 		if (algorithm < 0) {
+			/*
+			 * The unre-written Difference implementation is MinusQueryEvaluationStep: it materializes the complete
+			 * right input and compatibility-probes that hash table for every left row. Frontier may refine the exact
+			 * result cardinality without changing that physical implementation. Retain the implementation's
+			 * independently measurable work dimensions instead of replacing them with result production alone;
+			 * otherwise the generic Difference falsely dominates the typed correlated alternatives that were costed
+			 * beside it.
+			 */
+			applyScalarDifferencePhysicalCost(context, Double.NaN, output);
 			return;
 		}
 		TupleExpr rhs = minus.getRightArg();
@@ -3460,32 +5827,136 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		return names;
 	}
 
-	private void publishOperatorState(int relationId, PackedCostEstimate output, EvidenceStateRef state) {
+	private EvidenceStateRef publishOperatorState(int relationId, PackedCostEstimate output, EvidenceStateRef state) {
 		EvidenceStateSummary summary = state.summary();
 		output.setEvidenceStateId(state.stateId());
 		annotateReady(output, state);
-		output.putPlannedDoubleMetric("plannedFrontierFactorCount", factorCount(state));
+		annotateFactorCount(output, state);
 		output.putPlannedStringMetric("plannedPhysicalImplementation", FRONTIER_EXECUTION_MODE);
-		if (!summary.guarantee().isComposablePointEstimate()) {
+		if (!isComposableState(state)) {
 			output.putPlannedStringMetric("plannedFrontierStatus", "degraded");
 			output.putPlannedStringMetric("plannedFrontierFallbackReason", summary.degradationReason());
-			return;
+			if (mode == FrontierEstimatorMode.AUTHORITATIVE) {
+				setLocalOperatorPhysicalCost(output, summary.pointRows(), 0.0d, 0.0d, 0.0d, 0.0d);
+			}
+			return state;
 		}
 		if (mode != FrontierEstimatorMode.AUTHORITATIVE) {
-			return;
+			return state;
 		}
 		if (summary.guarantee() == EvidenceGuarantee.MEASURE_UNBIASED
 				&& summary.zeroStatus() == EvidenceZeroStatus.ESTIMATED_ZERO) {
-			output.putPlannedStringMetric("plannedFrontierFallbackReason", "sampled_zero_not_authoritative");
-			return;
+			return publishSampledZeroFallback(relationId, output, state);
 		}
-		double scalarWork = output.workRows();
-		double frontierWork = Double.isFinite(scalarWork) && scalarWork >= 0.0d
-				? Math.max(summary.pointRows(), scalarWork)
-				: summary.pointRows();
-		output.setRows(summary.pointRows(), frontierWork);
+		setLocalOperatorPhysicalCost(output, summary.pointRows(), 0.0d, 0.0d, 0.0d, 0.0d);
 		output.setEvidenceGuarantee(summary.guarantee());
 		setFrontierProvenance(output, state);
+		return state;
+	}
+
+	/**
+	 * Retains a sampled-zero payload as audit lineage without letting its zero point estimate enter later composition.
+	 *
+	 * <p>
+	 * A design-valid sample may omit every tuple for a present mapping. In authoritative mode that estimate already
+	 * falls back to the scalar event rows. Keeping the sampled state composable would let the next join reinterpret
+	 * omission as absence. Publish a bound-only child whose unresolved point estimate matches the conservative rows
+	 * used for ranking, while its parent retains the raw sampled-zero payload for replay and LEO. This lets subsequent
+	 * supported operators continue costing from the same nonzero Frontier lineage without presenting the fallback as
+	 * measured tuple evidence.
+	 */
+	private EvidenceStateRef publishSampledZeroFallback(int relationId, PackedCostEstimate output,
+			EvidenceStateRef sampledState) {
+		EvidenceStateSummary sampledSummary = sampledState.summary();
+		double fallbackRows = finiteNonNegative(output.outputRows()) ? output.outputRows() : 0.0d;
+		double upperRows = Math.max(fallbackRows, sampledSummary.upperRows());
+		double certifiedUpperBound = Math.max(fallbackRows, sampledSummary.certifiedUpperBound());
+		EvidenceStateRef boundary = arena.deriveBoundBoundary(
+				sampledState,
+				arena.layout(sampledState),
+				EvidenceStateSummary.unresolved(fallbackRows, upperRows, certifiedUpperBound,
+						"sampled_zero_not_authoritative"),
+				Math.max(0, relationId));
+		rememberState(boundary);
+		publishDegradedState(output, boundary);
+		output.putPlannedDoubleMetric("plannedFrontierSampledRows", sampledSummary.pointRows());
+		output.putPlannedDoubleMetric("plannedFrontierFallbackRows", fallbackRows);
+		return boundary;
+	}
+
+	private static void setLocalOperatorPhysicalCost(PackedCostEstimate output, double resultRows,
+			double expressionEvaluations, double hashBuildRows, double hashProbeRows, double peakMemoryRows) {
+		boolean contextualRows = output.hasContextualOutputRows();
+		boolean componentRows = output.hasComponentOutputRows();
+		output.setLocalPhysicalCost(
+				0.0d,
+				0.0d,
+				0.0d,
+				expressionEvaluations,
+				hashBuildRows,
+				hashProbeRows,
+				0.0d,
+				resultRows,
+				0.0d,
+				peakMemoryRows);
+		if (componentRows) {
+			output.setComponentOutputRowsPreservingPhysicalCost(resultRows);
+		} else if (contextualRows) {
+			output.setContextualOutputRowsPreservingPhysicalCost(resultRows);
+		} else {
+			output.setOutputRowsPreservingPhysicalCost(resultRows);
+		}
+	}
+
+	private static void setLocalAccessPhysicalCost(PackedCostEstimate output, double resultRows,
+			boolean lmdbStatementAccess) {
+		boolean contextualRows = output.hasContextualOutputRows();
+		boolean componentRows = output.hasComponentOutputRows();
+		double invocations = finiteNonNegative(output.invocations()) ? output.invocations() : 0.0d;
+		boolean describedAccess = lmdbStatementAccess
+				&& output.indexName() != null
+				&& finiteNonNegative(output.accessRows());
+		double sequentialRows = describedAccess
+				? saturatedMultiply(output.accessRows(), invocations)
+				: lmdbStatementAccess && finiteNonNegative(output.sequentialRows()) ? output.sequentialRows() : 0.0d;
+		double randomSeeks = describedAccess ? invocations : 0.0d;
+		double iteratorOpens = describedAccess ? invocations : 0.0d;
+		output.setLocalPhysicalCost(
+				sequentialRows,
+				randomSeeks,
+				iteratorOpens,
+				0.0d,
+				0.0d,
+				0.0d,
+				0.0d,
+				resultRows,
+				0.0d,
+				0.0d);
+		if (componentRows) {
+			output.setComponentOutputRowsPreservingPhysicalCost(resultRows);
+		} else if (contextualRows) {
+			output.setContextualOutputRowsPreservingPhysicalCost(resultRows);
+		} else {
+			output.setOutputRowsPreservingPhysicalCost(resultRows);
+		}
+	}
+
+	private void setFrontierFactorPhysicalCost(int relationId, PackedCostEstimate output, double resultRows) {
+		if (query.isBindingSetAssignment(relationId)) {
+			preservePhysicalCostWithRows(output, resultRows);
+			return;
+		}
+		setLocalAccessPhysicalCost(output, resultRows, query.isStatementPattern(relationId));
+	}
+
+	private static void preservePhysicalCostWithRows(PackedCostEstimate output, double resultRows) {
+		if (output.hasComponentOutputRows()) {
+			output.setComponentOutputRowsPreservingPhysicalCost(resultRows);
+		} else if (output.hasContextualOutputRows()) {
+			output.setContextualOutputRowsPreservingPhysicalCost(resultRows);
+		} else {
+			output.setOutputRowsPreservingPhysicalCost(resultRows);
+		}
 	}
 
 	private void setFrontierProvenance(PackedCostEstimate output, EvidenceStateRef state) {
@@ -3547,8 +6018,6 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	}
 
 	private static boolean filterCanInspectRetainedState(Filter filter, FrontierLayout layout) {
-		boolean supportedExistsRoot = filter.getCondition() instanceof Exists
-				|| filter.getCondition()instanceof Not not && not.getArg() instanceof Exists;
 		boolean[] deterministic = { true };
 		filter.getCondition().visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
@@ -3557,7 +6026,13 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 					return;
 				}
 				if (node instanceof Exists exists) {
-					deterministic[0] = supportedExistsRoot && exactExistsCanEvaluate(exists);
+					/*
+					 * A locally evaluable EXISTS remains a deterministic predicate of the retained outer tuple even
+					 * when it is nested under AND, OR, or another scalar expression. The ordinary restriction kernel
+					 * evaluates the complete expression against that tuple, preserving tuple covariance and the input
+					 * design weights.
+					 */
+					deterministic[0] = exactExistsCanEvaluate(exists);
 					return;
 				}
 				if (node instanceof FunctionCall || node instanceof BNodeGenerator) {
@@ -3676,31 +6151,144 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	}
 
 	private void degradeOperator(PackedCostEstimate output, EvidenceStateRef input, String reason) {
-		output.setEvidenceStateId(0);
+		degradeOperator(0, output, input, reason);
+	}
+
+	private void publishDegradedState(PackedCostEstimate output, EvidenceStateRef state) {
+		output.setEvidenceStateId(state.stateId());
+		annotateState(output, state, "degraded");
+		annotateFactorCount(output, state);
+		output.putPlannedStringMetric("plannedFrontierFallbackReason", state.summary().degradationReason());
+	}
+
+	private void publishNonComposableAppend(int relationId, PackedCostEstimate output, EvidenceStateRef input,
+			EvidenceStateRef factor, FrontierLayout outputLayout, String reason) {
+		EvidenceGuarantee estimateGuarantee = output.evidenceGuarantee();
+		double pointRows = finiteNonNegative(output.outputRows())
+				? output.outputRows()
+				: saturatedMultiply(input.summary().pointRows(), factor.summary().pointRows());
+		EvidenceStateRef boundary = arena.deriveOpaqueBoundary(
+				input,
+				factor,
+				outputLayout,
+				EvidenceStateSummary.unresolved(pointRows, Double.POSITIVE_INFINITY,
+						Double.POSITIVE_INFINITY, reason),
+				relationId);
+		rememberState(boundary);
+		output.setEvidenceStateId(boundary.stateId());
+		annotateState(output, boundary, "degraded");
+		annotateFactorCount(output, boundary);
+		if (estimateGuarantee != null) {
+			/*
+			 * An exact scalar access surface and a composable Frontier payload are independent properties. In
+			 * particular, a bounded finite lookup may count its rows exactly even when an earlier opaque boundary
+			 * prevents tuple-level Frontier composition. Retain that event-local cardinality guarantee while the
+			 * boundary state honestly remains unresolved and non-composable.
+			 */
+			output.setEvidenceGuarantee(estimateGuarantee);
+		}
+		output.putPlannedStringMetric("plannedFrontierFallbackReason", reason);
+	}
+
+	private void degradeBinaryOperator(int relationId, PackedCostEstimate output, EvidenceStateRef left,
+			EvidenceStateRef right, String reason) {
+		if (left == null || right == null) {
+			degradeOperator(relationId, output, left != null ? left : right, reason);
+			return;
+		}
+		double pointRows = finiteNonNegative(output.outputRows())
+				? output.outputRows()
+				: Math.max(left.summary().pointRows(), right.summary().pointRows());
+		EvidenceStateRef boundary = arena.deriveOpaqueBoundary(
+				left,
+				right,
+				outputLayout(relationId),
+				EvidenceStateSummary.unresolved(pointRows, Double.POSITIVE_INFINITY,
+						Double.POSITIVE_INFINITY, reason),
+				relationId);
+		rememberState(boundary);
+		output.setEvidenceStateId(boundary.stateId());
+		annotateState(output, boundary, "degraded");
+		annotateFactorCount(output, boundary);
+		output.putPlannedStringMetric("plannedFrontierFallbackReason", reason);
+	}
+
+	private void publishUnionBoundary(int relationId, PackedCostEstimate output, EvidenceStateRef left,
+			EvidenceStateRef right, String reason) {
+		if (left == null || right == null) {
+			degradeOperator(relationId, output, left != null ? left : right, reason);
+			return;
+		}
+		double pointRows = saturatedAdd(left.summary().pointRows(), right.summary().pointRows());
+		double certifiedUpperBound = saturatedAdd(
+				left.summary().certifiedUpperBound(), right.summary().certifiedUpperBound());
+		EvidenceStateRef boundary = arena.deriveBoundBoundary(
+				left,
+				right,
+				outputLayout(relationId),
+				EvidenceStateSummary.unresolved(
+						pointRows, certifiedUpperBound, certifiedUpperBound, reason),
+				relationId);
+		rememberState(boundary);
+		output.setEvidenceStateId(boundary.stateId());
+		annotateState(output, boundary, "degraded");
+		annotateFactorCount(output, boundary);
+		output.putPlannedStringMetric("plannedFrontierFallbackReason", reason);
+	}
+
+	private void degradeOperator(int relationId, PackedCostEstimate output, EvidenceStateRef input, String reason) {
 		if (input != null) {
-			annotateState(output, input, "degraded");
+			double pointRows = finiteNonNegative(output.outputRows())
+					? output.outputRows()
+					: input.summary().pointRows();
+			EvidenceStateRef boundary = arena.deriveOpaqueBoundary(input,
+					EvidenceStateSummary.unresolved(pointRows, Double.POSITIVE_INFINITY,
+							Double.POSITIVE_INFINITY, reason),
+					relationId);
+			rememberState(boundary);
+			output.setEvidenceStateId(boundary.stateId());
+			annotateState(output, boundary, "degraded");
+			annotateFactorCount(output, boundary);
+		} else if (arena != null) {
+			double pointRows = finiteNonNegative(output.outputRows()) ? output.outputRows() : 1.0d;
+			EvidenceStateRef unresolved = arena.append(
+					outputLayout(relationId),
+					EvidenceStateSummary.unresolved(pointRows, Double.POSITIVE_INFINITY,
+							Double.POSITIVE_INFINITY, reason));
+			rememberState(unresolved);
+			output.setEvidenceStateId(unresolved.stateId());
+			annotateState(output, unresolved, "degraded");
+			annotateFactorCount(output, unresolved);
 		} else {
+			output.setEvidenceStateId(0);
 			output.putPlannedStringMetric("plannedFrontierStatus", "degraded");
 			output.putPlannedStringMetric("plannedFrontierMode", mode.getConfigValue());
 		}
 		output.putPlannedStringMetric("plannedFrontierFallbackReason", reason);
 	}
 
+	private FrontierLayout outputLayout(int relationId) {
+		if (relationId <= 0) {
+			return FrontierLayout.empty();
+		}
+		String[] variables = query.materializeRelation(relationId).getBindingNames().toArray(String[]::new);
+		Arrays.sort(variables);
+		return FrontierLayout.of(variables);
+	}
+
 	private EvidenceStateRef extendInner(EvidenceStateRef input, LeafState factor, FrontierStateKey outputKey,
 			int operationRecipeId) {
+		ExactExpansionScanBudget scanBudget = new ExactExpansionScanBudget(settings.refinementWorkUnits());
 		try (FrontierPayloadLease payload = arena.openPayload(input)) {
 			boolean learnedInput = arena.nearestCalibration(input) != null;
 			int inputEntries = payloadEntryCount(payload);
 			/*
-			 * A database-exact generation makes the mapped query index a complete explicit S2O quad set, so every probe
-			 * stays in mapped memory and long-space and earns a proportionally larger deterministic budget. Sampled
-			 * generations still answer individual probes from the index whenever the probed center is provably
-			 * complete; their budget stays conservative because the remaining probes use snapshot cursors.
+			 * Refinement work units count candidate probes, independently of the access kernel used to answer them. The
+			 * mapped query index changes the physical cost of a probe, but it does not create additional statistical
+			 * work budget. Keeping the configured limit literal also bounds planning time when an exact source is
+			 * large.
 			 */
-			boolean mappedOnly = queryIndexLease != null && generationDatabaseExact;
-			long probeBudget = mappedOnly
-					? Math.multiplyExact((long) runtime.frontierRefinementWorkUnits(), MAPPED_PROBE_WORK_MULTIPLIER)
-					: runtime.frontierRefinementWorkUnits();
+			long probeBudget = settings.refinementWorkUnits();
 			int[] drawCounts = null;
 			double resampledEntryMass = 0.0d;
 			FrontierMemoryReservation drawCountReservation = null;
@@ -3740,7 +6328,8 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				try (EmissionBuffer emissions = new EmissionBuffer(
 						arena, outputMasks.layout().size(), outputParticleBudget)) {
 					BridgeEmissionSurvey survey = new BridgeEmissionSurvey(emissions);
-					visitMatchingRows(payload, factor, outputMasks, drawCounts, resampledEntryMass, survey);
+					visitMatchingRows(
+							payload, factor, outputMasks, drawCounts, resampledEntryMass, scanBudget, survey);
 					boolean mutated = survey.emissionCount() > outputParticleBudget;
 					double mutationVariance = 0.0d;
 					if (mutated) {
@@ -3784,7 +6373,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 								outputParticleBudget,
 								mutationSeed)) {
 							visitMatchingRows(
-									payload, factor, outputMasks, drawCounts, resampledEntryMass, selector);
+									payload, factor, outputMasks, drawCounts, resampledEntryMass, scanBudget, selector);
 							selector.finish();
 							mutationVariance = selector.estimatedVariance();
 						}
@@ -3836,6 +6425,18 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 					drawCountReservation.close();
 				}
 			}
+		} catch (ExactExpansionScanBudgetExceeded exhausted) {
+			return arena.deriveSummary(
+					outputKey,
+					EvidenceStateSummary.unresolved(
+							input.summary().pointRows(),
+							Double.POSITIVE_INFINITY,
+							Double.POSITIVE_INFINITY,
+							"frontier exact expansion scan budget exhausted"),
+					FrontierStateOperation.UNRESOLVED,
+					input,
+					null,
+					operationRecipeId);
 		} catch (IOException | QueryEvaluationException failure) {
 			throw new IllegalStateException("snapshot-exact Frontier append probe failed", failure);
 		}
@@ -3908,10 +6509,11 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			int operationRecipeId) {
 		try (FrontierPayloadLease inputPayload = arena.openPayload(input);
 				FrontierPayloadLease factorPayload = arena.openPayload(factor.state)) {
-			long candidatePairs = Math.multiplyExact(
-					(long) payloadEntryCount(inputPayload),
-					payloadEntryCount(factorPayload));
-			if (candidatePairs > runtime.frontierRefinementWorkUnits()) {
+			int inputEntries = payloadEntryCount(inputPayload);
+			int factorEntries = payloadEntryCount(factorPayload);
+			long candidatePairs = Math.multiplyExact((long) inputEntries, factorEntries);
+			int workBudget = settings.refinementWorkUnits();
+			if (candidatePairs > 0L && workBudget <= 0) {
 				return arena.deriveSummary(
 						outputKey,
 						EvidenceStateSummary.unresolved(
@@ -3924,90 +6526,100 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 						factor.state,
 						operationRecipeId);
 			}
-			boolean learnedInput = arena.nearestCalibration(input) != null;
-			boolean exactOutput = input.summary().guarantee() == EvidenceGuarantee.DATABASE_EXACT;
-			FrontierMaskStrata outputMasks = outputKey.maskStrata();
-			try (EmissionBuffer emissions = new EmissionBuffer(arena, outputMasks.layout().size())) {
-				emitFiniteJoin(inputPayload, factorPayload, outputMasks, emissions);
-				int emissionCount = emissions.size();
-				FrontierPayloadWriter writer = null;
-				ExactLeafAccumulator[] accumulators = null;
-				try {
-					if (exactOutput) {
-						accumulators = new ExactLeafAccumulator[outputMasks.stratumCount()];
-						int[] maximumCounts = new int[outputMasks.stratumCount()];
-						for (int emission = 0; emission < emissionCount; emission++) {
-							int stratum = emissions.stratum(emission);
-							maximumCounts[stratum] = Math.incrementExact(maximumCounts[stratum]);
+			int[] sampleTargets = finiteJoinSampleTargets(inputEntries, factorEntries, workBudget);
+			try (PayloadResample inputSample = resamplePayload(
+					inputPayload, inputEntries, sampleTargets[0], input, operationRecipeId, 0L);
+					PayloadResample factorSample = resamplePayload(
+							factorPayload, factorEntries, sampleTargets[1], factor.state, operationRecipeId, 1L)) {
+				boolean learnedInput = arena.nearestCalibration(input) != null;
+				boolean exactOutput = !inputSample.sampled()
+						&& !factorSample.sampled()
+						&& input.summary().guarantee() == EvidenceGuarantee.DATABASE_EXACT;
+				FrontierMaskStrata outputMasks = outputKey.maskStrata();
+				try (EmissionBuffer emissions = new EmissionBuffer(arena, outputMasks.layout().size())) {
+					emitFiniteJoin(
+							inputPayload, inputSample, factorPayload, factorSample, outputMasks, emissions);
+					int emissionCount = emissions.size();
+					FrontierPayloadWriter writer = null;
+					ExactLeafAccumulator[] accumulators = null;
+					try {
+						if (exactOutput) {
+							accumulators = new ExactLeafAccumulator[outputMasks.stratumCount()];
+							int[] maximumCounts = new int[outputMasks.stratumCount()];
+							for (int emission = 0; emission < emissionCount; emission++) {
+								int stratum = emissions.stratum(emission);
+								maximumCounts[stratum] = Math.incrementExact(maximumCounts[stratum]);
+							}
+							for (int stratum = 0; stratum < accumulators.length; stratum++) {
+								accumulators[stratum] = new ExactLeafAccumulator(
+										arena, maximumCounts[stratum], outputMasks.layout().size());
+							}
+							for (int emission = 0; emission < emissionCount; emission++) {
+								accumulators[emissions.stratum(emission)].add(
+										emissions.tuples(), emissions.tupleOffset(emission),
+										emissions.weight(emission));
+							}
+							int[] exactCounts = new int[accumulators.length];
+							for (int stratum = 0; stratum < accumulators.length; stratum++) {
+								exactCounts[stratum] = accumulators[stratum].size();
+							}
+							writer = arena.newPayloadWriter(outputKey, exactCounts, new int[exactCounts.length]);
+							for (int stratum = 0; stratum < accumulators.length; stratum++) {
+								accumulators[stratum].writeTo(writer, stratum);
+							}
+						} else {
+							int[] residualCounts = new int[outputMasks.stratumCount()];
+							for (int emission = 0; emission < emissionCount; emission++) {
+								int stratum = emissions.stratum(emission);
+								residualCounts[stratum] = Math.incrementExact(residualCounts[stratum]);
+							}
+							writer = arena.newPayloadWriter(outputKey, new int[residualCounts.length], residualCounts);
+							int[] localIndexes = new int[residualCounts.length];
+							for (int emission = 0; emission < emissionCount; emission++) {
+								int stratum = emissions.stratum(emission);
+								writer.putResidual(stratum, localIndexes[stratum]++, emissions.weight(emission),
+										emissions.tuples(), emissions.tupleOffset(emission));
+							}
 						}
-						for (int stratum = 0; stratum < accumulators.length; stratum++) {
-							accumulators[stratum] = new ExactLeafAccumulator(
-									arena, maximumCounts[stratum], outputMasks.layout().size());
+						double pointRows = writer.pointRows();
+						if (learnedInput && pointRows == 0.0d) {
+							writer.close();
+							writer = null;
+							return arena.deriveSummary(
+									outputKey,
+									EvidenceStateSummary.unresolved(
+											0.0d,
+											Double.POSITIVE_INFINITY,
+											Double.POSITIVE_INFINITY,
+											"learned-calibrated-transform-zero-support"),
+									FrontierStateOperation.UNRESOLVED,
+									input,
+									factor.state,
+									operationRecipeId);
 						}
-						for (int emission = 0; emission < emissionCount; emission++) {
-							accumulators[emissions.stratum(emission)].add(
-									emissions.tuples(), emissions.tupleOffset(emission), emissions.weight(emission));
-						}
-						int[] exactCounts = new int[accumulators.length];
-						for (int stratum = 0; stratum < accumulators.length; stratum++) {
-							exactCounts[stratum] = accumulators[stratum].size();
-						}
-						writer = arena.newPayloadWriter(outputKey, exactCounts, new int[exactCounts.length]);
-						for (int stratum = 0; stratum < accumulators.length; stratum++) {
-							accumulators[stratum].writeTo(writer, stratum);
-						}
-					} else {
-						int[] residualCounts = new int[outputMasks.stratumCount()];
-						for (int emission = 0; emission < emissionCount; emission++) {
-							int stratum = emissions.stratum(emission);
-							residualCounts[stratum] = Math.incrementExact(residualCounts[stratum]);
-						}
-						writer = arena.newPayloadWriter(outputKey, new int[residualCounts.length], residualCounts);
-						int[] localIndexes = new int[residualCounts.length];
-						for (int emission = 0; emission < emissionCount; emission++) {
-							int stratum = emissions.stratum(emission);
-							writer.putResidual(stratum, localIndexes[stratum]++, emissions.weight(emission),
-									emissions.tuples(), emissions.tupleOffset(emission));
-						}
-					}
-					double pointRows = writer.pointRows();
-					if (learnedInput && pointRows == 0.0d) {
-						writer.close();
+						EvidenceStateSummary summary = exactOutput
+								? EvidenceStateSummary.exact(pointRows)
+								: learnedInput
+										? learnedSummary(pointRows, writer.effectiveSampleSize(),
+												writer.maximumWeightFraction())
+										: sampledSummary(pointRows, writer.effectiveSampleSize(),
+												writer.maximumWeightFraction());
+						EvidenceStateRef output = learnedInput
+								? arena.derivePayload(outputKey, summary, FrontierStateOperation.JOIN,
+										input, factor.state, operationRecipeId, writer)
+								: arena.internPayload(outputKey, summary, FrontierStateOperation.JOIN,
+										input, factor.state, operationRecipeId, writer);
 						writer = null;
-						return arena.deriveSummary(
-								outputKey,
-								EvidenceStateSummary.unresolved(
-										0.0d,
-										Double.POSITIVE_INFINITY,
-										Double.POSITIVE_INFINITY,
-										"learned-calibrated-transform-zero-support"),
-								FrontierStateOperation.UNRESOLVED,
-								input,
-								factor.state,
-								operationRecipeId);
-					}
-					EvidenceStateSummary summary = exactOutput
-							? EvidenceStateSummary.exact(pointRows)
-							: learnedInput
-									? learnedSummary(pointRows, writer.effectiveSampleSize(),
-											writer.maximumWeightFraction())
-									: sampledSummary(pointRows, writer.effectiveSampleSize(),
-											writer.maximumWeightFraction());
-					EvidenceStateRef output = learnedInput
-							? arena.derivePayload(outputKey, summary, FrontierStateOperation.JOIN,
-									input, factor.state, operationRecipeId, writer)
-							: arena.internPayload(outputKey, summary, FrontierStateOperation.JOIN,
-									input, factor.state, operationRecipeId, writer);
-					writer = null;
-					return output;
-				} finally {
-					if (writer != null) {
-						writer.close();
-					}
-					if (accumulators != null) {
-						for (ExactLeafAccumulator accumulator : accumulators) {
-							if (accumulator != null) {
-								accumulator.close();
+						return output;
+					} finally {
+						if (writer != null) {
+							writer.close();
+						}
+						if (accumulators != null) {
+							for (ExactLeafAccumulator accumulator : accumulators) {
+								if (accumulator != null) {
+									accumulator.close();
+								}
 							}
 						}
 					}
@@ -4016,35 +6628,123 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		}
 	}
 
-	private static void emitFiniteJoin(FrontierPayloadLease left, FrontierPayloadLease right,
-			FrontierMaskStrata outputMasks, EmissionBuffer emissions) {
+	private PayloadResample resamplePayload(FrontierPayloadLease payload, int entryCount, int target,
+			EvidenceStateRef state, int operationRecipeId, long streamOrdinal) {
+		if (entryCount == 0 || target >= entryCount) {
+			return PayloadResample.exact();
+		}
+		if (target <= 0) {
+			throw new IllegalArgumentException("a nonempty Frontier payload requires a positive sample target");
+		}
+		FrontierMemoryReservation retainedCounts = arena.reserveTemporary(
+				retainedArrayBytes(entryCount, Integer.BYTES), FrontierMemoryPurpose.ARRAY_GROWTH);
+		try {
+			long scratchBytes = Math.addExact(
+					retainedArrayBytes(entryCount, Double.BYTES),
+					retainedArrayBytes(target, Double.BYTES));
+			try (FrontierMemoryReservation scratch = arena.reserveTemporary(
+					scratchBytes, FrontierMemoryPurpose.ARRAY_GROWTH)) {
+				double[] weights = entryWeights(payload, entryCount);
+				double totalMass = 0.0d;
+				for (double weight : weights) {
+					totalMass += weight;
+				}
+				long seed = FrontierSeedSchedule.derive(
+						arena.deterministicSeed(state),
+						FrontierRandomDomain.RESAMPLE,
+						Integer.toUnsignedLong(operationRecipeId),
+						streamOrdinal);
+				int[] drawCounts = FrontierMultinomialResampler.drawCounts(weights, target, seed);
+				return new PayloadResample(drawCounts, totalMass / target, retainedCounts);
+			}
+		} catch (RuntimeException | Error failure) {
+			retainedCounts.close();
+			throw failure;
+		}
+	}
+
+	private static int[] finiteJoinSampleTargets(int leftEntries, int rightEntries, int workBudget) {
+		if (leftEntries == 0 || rightEntries == 0) {
+			return new int[] { leftEntries, rightEntries };
+		}
+		long candidatePairs = (long) leftEntries * rightEntries;
+		if (candidatePairs <= workBudget) {
+			return new int[] { leftEntries, rightEntries };
+		}
+		if (workBudget <= 0) {
+			return new int[] { 0, 0 };
+		}
+		/*
+		 * The right side is a database-exact finite relation. Retain its complete tuple domain whenever one full
+		 * expansion fits, and spend the remaining work on conditionally unbiased draws from the incoming bag. If the
+		 * finite relation itself is larger than the budget, retain the complete incoming bag when possible. Only when
+		 * neither side fits do both measures need resampling; equalizing their retained fractions minimizes the larger
+		 * inverse sampling factor subject to the product-work constraint.
+		 */
+		if (rightEntries <= workBudget) {
+			return new int[] { Math.max(1, workBudget / rightEntries), rightEntries };
+		}
+		if (leftEntries <= workBudget) {
+			return new int[] { leftEntries, Math.max(1, workBudget / leftEntries) };
+		}
+		double balancedLeft = Math.sqrt((double) workBudget * leftEntries / rightEntries);
+		int leftTarget = Math.max(1, Math.min(workBudget, (int) Math.round(balancedLeft)));
+		int rightTarget = Math.max(1, Math.min(rightEntries, workBudget / leftTarget));
+		leftTarget = Math.max(1, Math.min(leftEntries, workBudget / rightTarget));
+		return new int[] { leftTarget, rightTarget };
+	}
+
+	private static void emitFiniteJoin(FrontierPayloadLease left, PayloadResample leftSample,
+			FrontierPayloadLease right, PayloadResample rightSample, FrontierMaskStrata outputMasks,
+			EmissionBuffer emissions) {
+		int leftOrdinal = 0;
 		for (int leftStratum = 0; leftStratum < left.stratumCount(); leftStratum++) {
 			for (int leftIndex = 0; leftIndex < left.exactCount(leftStratum); leftIndex++) {
-				emitFiniteJoinRight(left, true, leftStratum, leftIndex, right, outputMasks, emissions);
+				double leftWeight = sampledEntryWeight(
+						left, leftSample, true, leftStratum, leftIndex, leftOrdinal++);
+				if (leftWeight > 0.0d) {
+					emitFiniteJoinRight(left, true, leftStratum, leftIndex, leftWeight,
+							right, rightSample, outputMasks, emissions);
+				}
 			}
 			for (int leftIndex = 0; leftIndex < left.residualCount(leftStratum); leftIndex++) {
-				emitFiniteJoinRight(left, false, leftStratum, leftIndex, right, outputMasks, emissions);
+				double leftWeight = sampledEntryWeight(
+						left, leftSample, false, leftStratum, leftIndex, leftOrdinal++);
+				if (leftWeight > 0.0d) {
+					emitFiniteJoinRight(left, false, leftStratum, leftIndex, leftWeight,
+							right, rightSample, outputMasks, emissions);
+				}
 			}
 		}
 	}
 
 	private static void emitFiniteJoinRight(FrontierPayloadLease left, boolean leftExact, int leftStratum,
-			int leftIndex, FrontierPayloadLease right, FrontierMaskStrata outputMasks, EmissionBuffer emissions) {
+			int leftIndex, double leftWeight, FrontierPayloadLease right, PayloadResample rightSample,
+			FrontierMaskStrata outputMasks, EmissionBuffer emissions) {
+		int rightOrdinal = 0;
 		for (int rightStratum = 0; rightStratum < right.stratumCount(); rightStratum++) {
 			for (int rightIndex = 0; rightIndex < right.exactCount(rightStratum); rightIndex++) {
-				emitFinitePair(left, leftExact, leftStratum, leftIndex, right, true, rightStratum, rightIndex,
-						outputMasks, emissions);
+				double rightWeight = sampledEntryWeight(
+						right, rightSample, true, rightStratum, rightIndex, rightOrdinal++);
+				if (rightWeight > 0.0d) {
+					emitFinitePair(left, leftExact, leftStratum, leftIndex, leftWeight,
+							right, true, rightStratum, rightIndex, rightWeight, outputMasks, emissions);
+				}
 			}
 			for (int rightIndex = 0; rightIndex < right.residualCount(rightStratum); rightIndex++) {
-				emitFinitePair(left, leftExact, leftStratum, leftIndex, right, false, rightStratum, rightIndex,
-						outputMasks, emissions);
+				double rightWeight = sampledEntryWeight(
+						right, rightSample, false, rightStratum, rightIndex, rightOrdinal++);
+				if (rightWeight > 0.0d) {
+					emitFinitePair(left, leftExact, leftStratum, leftIndex, leftWeight,
+							right, false, rightStratum, rightIndex, rightWeight, outputMasks, emissions);
+				}
 			}
 		}
 	}
 
 	private static void emitFinitePair(FrontierPayloadLease left, boolean leftExact, int leftStratum, int leftIndex,
-			FrontierPayloadLease right, boolean rightExact, int rightStratum, int rightIndex,
-			FrontierMaskStrata outputMasks, EmissionBuffer emissions) {
+			double leftWeight, FrontierPayloadLease right, boolean rightExact, int rightStratum, int rightIndex,
+			double rightWeight, FrontierMaskStrata outputMasks, EmissionBuffer emissions) {
 		FrontierLayout leftLayout = left.masks().layout();
 		FrontierLayout rightLayout = right.masks().layout();
 		for (int leftSlot = 0; leftSlot < leftLayout.size(); leftSlot++) {
@@ -4072,12 +6772,19 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				tuple[outputSlot] = payloadTermId(right, rightExact, rightStratum, rightIndex, rightSlot);
 			}
 		}
-		double weight = inputWeight(left, leftExact, leftStratum, leftIndex)
-				* inputWeight(right, rightExact, rightStratum, rightIndex);
+		double weight = leftWeight * rightWeight;
 		if (!Double.isFinite(weight) || weight <= 0.0d) {
 			throw new IllegalStateException("Frontier finite join produced an invalid weight");
 		}
 		emissions.add(tupleMaskStratum(outputMasks, tuple), tuple, 0, weight);
+	}
+
+	private static double sampledEntryWeight(FrontierPayloadLease payload, PayloadResample sample,
+			boolean exact, int stratum, int index, int ordinal) {
+		if (!sample.sampled()) {
+			return inputWeight(payload, exact, stratum, index);
+		}
+		return sample.drawCounts()[ordinal] * sample.drawMass();
 	}
 
 	private static int tupleMaskStratum(FrontierMaskStrata masks, long[] tuple) {
@@ -4111,7 +6818,8 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	}
 
 	private void visitMatchingRows(FrontierPayloadLease payload, LeafState factor, FrontierMaskStrata outputMasks,
-			int[] drawCounts, double resampledEntryMass, FrontierEmissionSink emissions)
+			int[] drawCounts, double resampledEntryMass, ExactExpansionScanBudget scanBudget,
+			FrontierEmissionSink emissions)
 			throws IOException, QueryEvaluationException {
 		FrontierLayout outputLayout = outputMasks.layout();
 		FrontierLayout inputLayout = payload.masks().layout();
@@ -4142,7 +6850,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				if (emissionWeight > 0.0d) {
 					visitMatchingRow(payload, factor, outputMasks, true, stratum, index, componentInputSlots,
 							outputInputSlots, outputFactorComponents, equalityMask, namedContexts, tuple,
-							emissionWeight, emissions);
+							emissionWeight, scanBudget, emissions);
 				}
 			}
 			for (int index = 0; index < payload.residualCount(stratum); index++) {
@@ -4153,7 +6861,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				if (emissionWeight > 0.0d) {
 					visitMatchingRow(payload, factor, outputMasks, false, stratum, index, componentInputSlots,
 							outputInputSlots, outputFactorComponents, equalityMask, namedContexts, tuple,
-							emissionWeight, emissions);
+							emissionWeight, scanBudget, emissions);
 				}
 			}
 		}
@@ -4162,7 +6870,8 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	private void visitMatchingRow(FrontierPayloadLease payload, LeafState factor, FrontierMaskStrata outputMasks,
 			boolean inputExact, int stratum, int index, int[] componentInputSlots, int[] outputInputSlots,
 			int[] outputFactorComponents, int equalityMask, boolean namedContexts, long[] tuple,
-			double emissionWeight, FrontierEmissionSink emissions) throws IOException, QueryEvaluationException {
+			double emissionWeight, ExactExpansionScanBudget scanBudget, FrontierEmissionSink emissions)
+			throws IOException, QueryEvaluationException {
 		FrontierLayout outputLayout = outputMasks.layout();
 		long[] constants = new long[4];
 		for (int component = 0; component < 4; component++) {
@@ -4188,18 +6897,19 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		if (queryIndexLease != null) {
 			if (generationDatabaseExact || impossibleConstant) {
 				mapped = true;
-			} else if (constants[0] > 0L && queryIndexLease.centerComplete(constants[0])) {
+			} else if (constants[0] > 0L && queryIndexCenterComplete(constants[0], false)) {
 				mapped = true;
-			} else if (constants[2] > 0L && queryIndexLease.objectCenterComplete(constants[2])) {
+			} else if (constants[2] > 0L && queryIndexCenterComplete(constants[2], true)) {
 				mapped = true;
 				reverseMapped = true;
 			}
 		}
 		if (!mapped) {
-			visitMatchingStatements(payload, inputExact, stratum, index, factor,
-					(ignoredExact, ignoredStratum, ignoredIndex, statement) -> {
+			visitMatchingStatements(payload, inputExact, stratum, index, factor, scanBudget,
+					(ignoredExact, ignoredStratum, ignoredIndex, subjectId, predicateId, objectId, contextId) -> {
 						long[] output = outputTuple(
-								payload, inputExact, stratum, index, statement, factor, outputLayout);
+								payload, inputExact, stratum, index, subjectId, predicateId, objectId, contextId,
+								factor, outputLayout);
 						emissions.add(
 								tupleMaskStratum(outputMasks, output), output, 0, emissionWeight);
 					});
@@ -4216,8 +6926,8 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				} else {
 					int component = outputFactorComponents[outputSlot];
 					if (component < 0) {
-						throw new IllegalStateException(
-								"Frontier output variable is not bound by its parent or factor");
+						tuple[outputSlot] = 0L;
+						continue;
 					}
 					tuple[outputSlot] = switch (component) {
 					case 0 -> subjectId;
@@ -4239,14 +6949,42 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		}
 	}
 
+	private boolean queryIndexCenterComplete(long centerId, boolean reverse) {
+		LmdbFrontierLongObjectMemo<Boolean> memo = reverse ? objectCenterCompleteness : subjectCenterCompleteness;
+		if (memo == null && arena != null) {
+			memo = LmdbFrontierLongObjectMemo.createIfCapacity(arena);
+			if (reverse) {
+				objectCenterCompleteness = memo;
+			} else {
+				subjectCenterCompleteness = memo;
+			}
+		}
+		if (memo != null) {
+			Boolean cached = memo.get(centerId);
+			if (cached != null) {
+				return cached;
+			}
+		}
+		boolean complete = reverse
+				? queryIndexLease.objectCenterComplete(centerId)
+				: queryIndexLease.centerComplete(centerId);
+		if (memo != null) {
+			memo.put(centerId, complete);
+		}
+		return complete;
+	}
+
 	private long visitMatchingStatements(FrontierPayloadLease payload, boolean inputExact, int stratum, int index,
-			LeafState factor, StatementMatchConsumer consumer) throws IOException, QueryEvaluationException {
+			LeafState factor, ExactExpansionScanBudget scanBudget, StatementMatchConsumer consumer)
+			throws IOException, QueryEvaluationException {
 		Value[] bound = new Value[4];
+		long[] boundIds = new long[4];
 		FrontierLayout inputLayout = payload.masks().layout();
 		for (int component = 0; component < bound.length; component++) {
 			Value constant = factor.constantValues[component];
 			if (constant != null) {
 				bound[component] = constant;
+				boundIds[component] = factor.constantIds[component];
 				continue;
 			}
 			String name = factor.componentNames[component];
@@ -4254,6 +6992,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			if (slot >= 0 && payload.masks().isBound(stratum, slot)) {
 				long id = payloadTermId(payload, inputExact, stratum, index, slot);
 				bound[component] = frontierValue(id);
+				boundIds[component] = id;
 			}
 		}
 		if (bound[0] != null && !(bound[0] instanceof Resource)
@@ -4264,25 +7003,69 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		Resource[] contexts = bound[3] == null
 				? new Resource[0]
 				: new Resource[] { (Resource) bound[3] };
-		long matches = 0L;
-		try (CloseableIteration<? extends Statement> statements = statementSource.getStatements(
-				(Resource) bound[0], (IRI) bound[1], bound[2], contexts)) {
-			while (statements.hasNext()) {
-				Statement statement = statements.next();
-				if (!factor.matches(statement, bound)) {
-					continue;
-				}
+		int probeFlags = factor.scope.ordinal() << 6 | factor.selectorEqualityMask();
+		if (statementProbeMemo == null && arena != null) {
+			statementProbeMemo = LmdbFrontierStatementProbeMemo.createIfCapacity(arena);
+		}
+		LmdbFrontierStatementProbeMemo.Result cached = statementProbeMemo == null
+				? null
+				: statementProbeMemo.get(boundIds[0], boundIds[1], boundIds[2], boundIds[3], probeFlags);
+		if (cached != null) {
+			scanBudget.consumeRows(cached.sourceRowsScanned());
+			for (int row = 0; row < cached.rowCount(); row++) {
 				if (consumer != null) {
-					consumer.accept(inputExact, stratum, index, statement);
+					consumer.accept(inputExact, stratum, index, cached.quad(row, 0), cached.quad(row, 1),
+							cached.quad(row, 2), cached.quad(row, 3));
 				}
-				matches = Math.incrementExact(matches);
+			}
+			return cached.rowCount();
+		}
+		LmdbFrontierStatementProbeMemo.Capture capture = statementProbeMemo == null
+				? null
+				: statementProbeMemo.beginCapture();
+		long matches = 0L;
+		long sourceRowsScanned = 0L;
+		boolean scanComplete = false;
+		try {
+			try (CloseableIteration<? extends Statement> statements = statementSource.getStatements(
+					(Resource) bound[0], (IRI) bound[1], bound[2], contexts)) {
+				while (statements.hasNext()) {
+					scanBudget.consumeRow();
+					Statement statement = statements.next();
+					sourceRowsScanned = Math.incrementExact(sourceRowsScanned);
+					if (!factor.matches(statement, bound)) {
+						continue;
+					}
+					long subjectId = statementTermId(statement, 0, boundIds[0]);
+					long predicateId = statementTermId(statement, 1, boundIds[1]);
+					long objectId = statementTermId(statement, 2, boundIds[2]);
+					long contextId = statementTermId(statement, 3, boundIds[3]);
+					if (capture != null && !capture.add(subjectId, predicateId, objectId, contextId)) {
+						capture = null;
+					}
+					if (consumer != null) {
+						consumer.accept(inputExact, stratum, index, subjectId, predicateId, objectId, contextId);
+					}
+					matches = Math.incrementExact(matches);
+				}
+			}
+			scanComplete = true;
+		} finally {
+			if (capture != null) {
+				if (scanComplete) {
+					statementProbeMemo.complete(boundIds[0], boundIds[1], boundIds[2], boundIds[3], probeFlags,
+							sourceRowsScanned, capture);
+				} else {
+					capture.close();
+				}
 			}
 		}
 		return matches;
 	}
 
 	private long[] outputTuple(FrontierPayloadLease payload, boolean inputExact, int stratum, int index,
-			Statement statement, LeafState factor, FrontierLayout outputLayout) throws IOException {
+			long subjectId, long predicateId, long objectId, long contextId, LeafState factor,
+			FrontierLayout outputLayout) {
 		FrontierLayout inputLayout = payload.masks().layout();
 		long[] tuple = new long[outputLayout.size()];
 		for (int outputSlot = 0; outputSlot < outputLayout.size(); outputSlot++) {
@@ -4294,15 +7077,33 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			}
 			int component = factor.component(variable);
 			if (component < 0) {
-				throw new IllegalStateException("Frontier output variable is not bound by its parent or factor");
+				tuple[outputSlot] = 0L;
+				continue;
 			}
-			long termId = runtime.valueStore().getId(statementValue(statement, component));
-			if (termId <= 0L) {
-				throw new IllegalStateException("snapshot-exact Frontier probe returned an unstored term");
-			}
-			tuple[outputSlot] = termId;
+			tuple[outputSlot] = switch (component) {
+			case 0 -> subjectId;
+			case 1 -> predicateId;
+			case 2 -> objectId;
+			case 3 -> contextId;
+			default -> throw new AssertionError("Unexpected Frontier tuple component");
+			};
 		}
 		return tuple;
+	}
+
+	private long statementTermId(Statement statement, int component, long boundId) throws IOException {
+		if (boundId > 0L) {
+			return boundId;
+		}
+		Value value = statementValue(statement, component);
+		if (value == null && component == 3) {
+			return 0L;
+		}
+		long termId = runtime.valueStore().getId(value);
+		if (termId <= 0L) {
+			throw new IllegalStateException("snapshot-exact Frontier probe returned an unstored term");
+		}
+		return termId;
 	}
 
 	private EvidenceStateRef stateReference(int stateId) {
@@ -4323,12 +7124,69 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	}
 
 	private int factorCount(EvidenceStateRef state) {
-		FrontierStateKey key = arena.key(state);
+		int factorWordCount = (query.relationCount() + 63) >>> 6;
+		if (factorCountWords == null || factorCountWords.length < factorWordCount) {
+			factorCountWords = new long[factorWordCount];
+		} else {
+			Arrays.fill(factorCountWords, 0, factorWordCount, 0L);
+		}
+		int requiredVisitCapacity = stateReferences == null ? state.stateId() + 1 : stateReferences.length;
+		if (factorCountVisitEpochs == null || factorCountVisitEpochs.length < requiredVisitCapacity) {
+			factorCountVisitEpochs = new int[requiredVisitCapacity];
+			factorCountVisitEpoch = 0;
+		}
+		int visitEpoch = nextFactorCountVisitEpoch();
+		collectLineageFactors(state, factorCountWords, factorCountVisitEpochs, visitEpoch);
 		int count = 0;
-		for (int word = 0; word < key.logicalFactorWordCount(); word++) {
-			count = Math.addExact(count, Long.bitCount(key.logicalFactorWord(word)));
+		for (int word = 0; word < factorWordCount; word++) {
+			count = Math.addExact(count, Long.bitCount(factorCountWords[word]));
 		}
 		return count;
+	}
+
+	private int nextFactorCountVisitEpoch() {
+		int visitEpoch = factorCountVisitEpoch + 1;
+		if (visitEpoch <= 0) {
+			Arrays.fill(factorCountVisitEpochs, 0);
+			visitEpoch = 1;
+		}
+		factorCountVisitEpoch = visitEpoch;
+		return visitEpoch;
+	}
+
+	private void collectLineageFactors(EvidenceStateRef state, long[] factors, int[] visitEpochs, int visitEpoch) {
+		int stateId = state.stateId();
+		if (stateId >= visitEpochs.length || visitEpochs[stateId] == visitEpoch) {
+			return;
+		}
+		visitEpochs[stateId] = visitEpoch;
+		if (arena.hasCanonicalKey(state)) {
+			FrontierStateKey key = arena.key(state);
+			boolean keyContainsFactors = false;
+			for (int word = 0; word < key.logicalFactorWordCount(); word++) {
+				long factorWord = key.logicalFactorWord(word);
+				factors[word] |= factorWord;
+				keyContainsFactors |= factorWord != 0L;
+			}
+			if (keyContainsFactors || arena.parentCount(state) == 0) {
+				return;
+			}
+		}
+		int parentCount = arena.parentCount(state);
+		for (int parent = 0; parent < parentCount; parent++) {
+			collectLineageFactors(arena.parent(state, parent), factors, visitEpochs, visitEpoch);
+		}
+		if (parentCount == 0) {
+			addRelationFactors(arena.operationRecipeId(state), factors,
+					new boolean[query.relationCount() + 1]);
+		}
+	}
+
+	private void annotateFactorCount(PackedCostEstimate output, EvidenceStateRef state) {
+		int factorCount = factorCount(state);
+		if (factorCount > 0) {
+			output.putPlannedDoubleMetric("plannedFrontierFactorCount", factorCount);
+		}
 	}
 
 	private static int payloadEntryCount(FrontierPayloadLease payload) {
@@ -4364,6 +7222,11 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		return Double.isFinite(sum) ? sum : Double.MAX_VALUE;
 	}
 
+	private static double saturatedMaximum(double left, double right) {
+		double maximum = Math.max(left, right);
+		return Double.isFinite(maximum) ? maximum : Double.MAX_VALUE;
+	}
+
 	private static long saturatedLongAdd(long left, long right) {
 		return left > Long.MAX_VALUE - right ? Long.MAX_VALUE : left + right;
 	}
@@ -4381,7 +7244,8 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	@FunctionalInterface
 	private interface StatementMatchConsumer {
 
-		void accept(boolean inputExact, int stratum, int index, Statement statement) throws IOException;
+		void accept(boolean inputExact, int stratum, int index, long subjectId, long predicateId, long objectId,
+				long contextId) throws IOException;
 	}
 
 	private static int supportedLeafCount(LeafState[] candidates) {
@@ -5223,15 +8087,44 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		return finiteLeaf == null ? null : finiteLeaf.state;
 	}
 
+	private EvidenceStateRef materializeReplayableLeafState(int relationId, double scalarRows) {
+		LeafState leaf = leafState(relationId);
+		if (leaf == null || leaf.key == null || arena == null) {
+			return null;
+		}
+		if (leaf.state != null) {
+			return leaf.state;
+		}
+		double pointRows = finiteNonNegative(scalarRows) ? scalarRows : 1.0d;
+		String reason = leaf.replayFallbackReason != null && !leaf.replayFallbackReason.isBlank()
+				? leaf.replayFallbackReason
+				: fallbackReason == null || fallbackReason.isBlank()
+						? "replayable_statement_source_without_synopsis_payload"
+						: fallbackReason;
+		leaf.state = arena.intern(leaf.key,
+				EvidenceStateSummary.unresolved(pointRows, Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, reason));
+		rememberState(leaf.state);
+		return leaf.state;
+	}
+
 	private void annotateReady(PackedCostEstimate output, EvidenceStateRef state) {
-		annotateState(output, state, "ready");
+		annotateState(output, state, isComposableState(state) ? "ready" : "degraded");
+	}
+
+	private boolean isComposableState(EvidenceStateRef state) {
+		return state != null
+				&& arena.disposition(state) == FrontierStateDisposition.COMPOSABLE_PAYLOAD
+				&& state.summary().guarantee().isComposablePointEstimate();
 	}
 
 	private void annotateState(PackedCostEstimate output, EvidenceStateRef state, String status) {
 		EvidenceStateSummary summary = state.summary();
+		output.setEvidenceDisposition(arena.disposition(state));
+		output.setEvidenceGuarantee(summary.guarantee());
 		output.putPlannedStringMetric("plannedFrontierStatus", status);
 		output.putPlannedStringMetric("plannedFrontierMode", mode.getConfigValue());
 		output.putPlannedStringMetric("plannedFrontierGuarantee", statusName(summary.guarantee()));
+		output.putPlannedStringMetric("plannedFrontierDisposition", statusName(arena.disposition(state)));
 		output.putPlannedStringMetric("plannedFrontierZeroStatus", statusName(summary.zeroStatus()));
 		output.putPlannedStringMetric("plannedFrontierIntervalKind", statusName(summary.intervalKind()));
 		output.putPlannedDoubleMetric("plannedFrontierRows", summary.pointRows());
@@ -5245,6 +8138,9 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		output.putPlannedDoubleMetric("plannedFrontierMaximumWeightFraction", summary.maximumWeightFraction());
 		output.putPlannedDoubleMetric("plannedFrontierCertifiedUpperBound", summary.certifiedUpperBound());
 		output.putPlannedDoubleMetric("plannedFrontierStateId", state.stateId());
+		if (arena != null) {
+			output.putPlannedStringMetric("plannedFrontierBindingLayout", arena.layout(state).variables().toString());
+		}
 		output.putPlannedDoubleMetric("plannedFrontierFinalRows", summary.pointRows());
 		if (arena != null) {
 			FrontierStateOperation operation = arena.operation(state);
@@ -5375,7 +8271,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 						.handling(expression) == FrontierOperatorCapabilities.Handling.STATEFUL
 								? "stateful_leaf_state_unavailable"
 								: FrontierOperatorCapabilities.boundaryReason(expression);
-		degradeOperator(output, null, reason);
+		degradeOperator(relationId, output, null, reason);
 		annotateQueryIndex(output);
 	}
 
@@ -5431,6 +8327,9 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		output.putPlannedDoubleMetric("plannedFrontierQueryIndexExcludedLeaves", queryIndexExcludedLeaves);
 		output.putPlannedDoubleMetric("plannedFrontierQueryIndexBytes", queryIndexBytes);
 		output.putPlannedDoubleMetric("plannedFrontierPreparationNanos", preparationNanos);
+		output.putPlannedDoubleMetric("plannedFrontierPathExpansionPlanningNanos", pathExpansionPlanningNanos);
+		output.putPlannedDoubleMetric("plannedFrontierPathExpansionMappingProbes", pathExpansionMappingProbes);
+		output.putPlannedDoubleMetric("plannedFrontierPathExpansionStates", pathExpansionStates);
 	}
 
 	private void recordLaneDiagnostics(FrontierQueryIndexLaneDiagnostics diagnostics) {
@@ -5458,11 +8357,6 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 
 	private static String statusName(Enum<?> value) {
 		return value.name().toLowerCase(Locale.ROOT);
-	}
-
-	private record CalibratedState(
-			EvidenceStateRef state,
-			LmdbOperatorFeedbackStats.OperatorEstimate feedback) {
 	}
 
 	private record CalibrationStages(
@@ -5507,6 +8401,51 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	private interface FrontierEmissionSink {
 
 		void add(int stratum, long[] source, int offset, double weight);
+	}
+
+	/**
+	 * Query-index probes are already bounded when the synopsis is built. Snapshot probes are not: one weakly bound
+	 * probe can traverse the complete store. Charge every cursor row to one budget shared by the survey and replay
+	 * passes so refinement work remains bounded by the configured planning budget.
+	 */
+	private static final class ExactExpansionScanBudget {
+
+		private long remainingRows;
+
+		private ExactExpansionScanBudget(long maximumRows) {
+			if (maximumRows < 0L) {
+				throw new IllegalArgumentException("exact expansion scan budget must be nonnegative");
+			}
+			remainingRows = maximumRows;
+		}
+
+		private void consumeRow() {
+			if (remainingRows == 0L) {
+				throw ExactExpansionScanBudgetExceeded.INSTANCE;
+			}
+			remainingRows--;
+		}
+
+		private void consumeRows(long rows) {
+			if (rows < 0L) {
+				throw new IllegalArgumentException("exact expansion scan rows must be nonnegative");
+			}
+			if (rows > remainingRows) {
+				throw ExactExpansionScanBudgetExceeded.INSTANCE;
+			}
+			remainingRows -= rows;
+		}
+	}
+
+	/** Stackless control signal converted by {@link #extendInner} into a typed, lineage-preserving state. */
+	private static final class ExactExpansionScanBudgetExceeded extends RuntimeException {
+
+		private static final long serialVersionUID = 1L;
+		private static final ExactExpansionScanBudgetExceeded INSTANCE = new ExactExpansionScanBudgetExceeded();
+
+		private ExactExpansionScanBudgetExceeded() {
+			super(null, null, false, false);
+		}
 	}
 
 	/** First pass over an exact bridge expansion: retain only the affordable prefix and summarize the full measure. */
@@ -5945,6 +8884,15 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		}
 	}
 
+	private static final class GroupEvaluationFailure extends RuntimeException {
+
+		private static final long serialVersionUID = 1L;
+
+		GroupEvaluationFailure(String message, Throwable cause) {
+			super(message, cause);
+		}
+	}
+
 	private record MultiProjectionPlan(
 			FrontierMaskStrata outputMasks,
 			int[][] sourceSlots,
@@ -6072,6 +9020,49 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			assignment.setBindingSets(rows);
 			return create(relationId, assignment);
 		}
+
+		static FiniteLeafState createBoundedZeroLengthPath(int relationId, ZeroLengthPath path) {
+			Value subject = path.getSubjectVar().hasValue() ? path.getSubjectVar().getValue() : null;
+			Value object = path.getObjectVar().hasValue() ? path.getObjectVar().getValue() : null;
+			if (subject == null && object == null) {
+				return null;
+			}
+			BindingSetAssignment assignment = new BindingSetAssignment();
+			assignment.setBindingNames(path.getBindingNames());
+			if (subject != null && object != null && !subject.equals(object)) {
+				assignment.setBindingSets(List.of());
+				return create(relationId, assignment);
+			}
+			Value endpoint = subject != null ? subject : object;
+			QueryBindingSet row = new QueryBindingSet();
+			if (!path.getSubjectVar().hasValue()) {
+				row.addBinding(path.getSubjectVar().getName(), endpoint);
+			}
+			if (!path.getObjectVar().hasValue()) {
+				row.addBinding(path.getObjectVar().getName(), endpoint);
+			}
+			assignment.setBindingSets(List.of(row));
+			return create(relationId, assignment);
+		}
+	}
+
+	private record PayloadResample(
+			int[] drawCounts, double drawMass, FrontierMemoryReservation retainedCounts) implements AutoCloseable {
+
+		static PayloadResample exact() {
+			return new PayloadResample(null, 0.0d, null);
+		}
+
+		boolean sampled() {
+			return drawCounts != null;
+		}
+
+		@Override
+		public void close() {
+			if (retainedCounts != null) {
+				retainedCounts.close();
+			}
+		}
 	}
 
 	private record ExistsCondition(Exists exists, boolean negated) {
@@ -6080,7 +9071,85 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	private record SemiAntiPlanIdentity(int semanticKind, int algorithm) {
 	}
 
-	private record CorrelationProfileKey(int stateId, int rhsRelationId, int semanticKind, String bindingDomains) {
+	private record DependentReopenCost(
+			boolean required,
+			boolean outerIndependentWork,
+			double objectiveCost,
+			double workRows,
+			double sequentialRows,
+			double randomSeeks,
+			double iteratorOpens,
+			double expressionEvaluations,
+			double hashBuildRows,
+			double hashProbeRows,
+			double pathExpansions,
+			double resultRows,
+			double remoteCalls,
+			double peakMemoryRows) {
+
+		private static DependentReopenCost from(PackedCostEstimate estimate) {
+			boolean outerIndependentWork = estimate.plannedDoubleMetric(
+					"plannedDependentSubqueryContainsOuterIndependentWork", 0.0d) >= 1.0d;
+			boolean independentHash = estimate.plannedDoubleMetric(
+					"plannedDependentSubqueryContainsIndependentHash", 0.0d) >= 1.0d;
+			String prefix = outerIndependentWork
+					? "plannedDependentSubqueryReopen"
+					: "plannedDependentSubquery";
+			double objective = preferredMetric(estimate, prefix + "ObjectiveCost",
+					"plannedDependentSubqueryObjectiveCost");
+			double workRows = preferredMetric(estimate, prefix + "WorkRows", prefix + "ObjectiveCost");
+			boolean required = (outerIndependentWork || independentHash)
+					&& finiteNonNegative(objective) && objective > 0.0d;
+			return new DependentReopenCost(
+					required,
+					outerIndependentWork,
+					required ? objective : 0.0d,
+					required && finiteNonNegative(workRows) ? workRows : 0.0d,
+					preferredMetricOrZero(estimate, prefix + "SequentialRows",
+							"plannedDependentSubquerySequentialRows"),
+					preferredMetricOrZero(estimate, prefix + "RandomSeeks",
+							"plannedDependentSubqueryRandomSeeks"),
+					preferredMetricOrZero(estimate, prefix + "IteratorOpens",
+							"plannedDependentSubqueryIteratorOpens"),
+					preferredMetricOrZero(estimate, prefix + "ExpressionEvaluations",
+							"plannedDependentSubqueryExpressionEvaluations"),
+					preferredMetricOrZero(estimate, prefix + "HashBuildRows",
+							"plannedDependentSubqueryHashBuildRows"),
+					preferredMetricOrZero(estimate, prefix + "HashProbeRows",
+							"plannedDependentSubqueryHashProbeRows"),
+					preferredMetricOrZero(estimate, prefix + "PathExpansions",
+							"plannedDependentSubqueryPathExpansions"),
+					preferredMetricOrZero(estimate, prefix + "ResultRows",
+							"plannedDependentSubqueryResultRows"),
+					preferredMetricOrZero(estimate, prefix + "RemoteCalls",
+							"plannedDependentSubqueryRemoteCalls"),
+					preferredMetricOrZero(estimate, prefix + "PeakMemoryRows",
+							"plannedDependentSubqueryPeakMemoryRows"));
+		}
+
+		private static double metric(PackedCostEstimate estimate, String name) {
+			return estimate.plannedDoubleMetric(name, Double.NaN);
+		}
+
+		private static double preferredMetric(PackedCostEstimate estimate, String preferredName,
+				String fallbackName) {
+			double preferred = metric(estimate, preferredName);
+			return finiteNonNegative(preferred) ? preferred : metric(estimate, fallbackName);
+		}
+
+		private static double preferredMetricOrZero(PackedCostEstimate estimate, String preferredName,
+				String fallbackName) {
+			double value = preferredMetric(estimate, preferredName, fallbackName);
+			return finiteNonNegative(value) ? value : 0.0d;
+		}
+	}
+
+	private record CorrelationProfileKey(
+			int inputStateId,
+			int outputStateId,
+			int rhsRelationId,
+			int semanticKind,
+			String bindingDomains) {
 	}
 
 	private record CorrelationDomainKey(int stateId, String bindingNames) {
@@ -6090,6 +9159,17 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	}
 
 	private record ExactRelationResult(FiniteRelationEstimate relation, String declineReason) {
+	}
+
+	private record FrontierFactorSurfaceRefinement(String status, String detail) {
+
+		private static FrontierFactorSurfaceRefinement applied(String detail) {
+			return new FrontierFactorSurfaceRefinement("applied", detail);
+		}
+
+		private static FrontierFactorSurfaceRefinement declined(String detail) {
+			return new FrontierFactorSurfaceRefinement("declined", detail == null ? "" : detail);
+		}
 	}
 
 	private record ExactSemiAntiRefinement(
@@ -6129,6 +9209,13 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 					+ "\u0001" + String.join("\u0000", sharedHashNames)
 					+ "\u0001" + String.join("\u0000", materializationParameterNames);
 		}
+	}
+
+	private record ExactProbeBudget(
+			double boundWorkPerKey,
+			double dependentPlanWorkPerKey,
+			double estimatedWorkPerKey,
+			int maximumMappings) {
 	}
 
 	/**
@@ -6244,6 +9331,8 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		FrontierStateKey independentKey;
 		EvidenceStateRef state;
 		EvidenceStateRef independentState;
+		String replayFallbackReason;
+		String materialization;
 
 		private LeafState(int relationId, StatementPattern.Scope scope, String[] componentNames,
 				Value[] constantValues, long[] constantIds, int[] componentToSlot, FrontierMaskStrata masks) {

@@ -12,10 +12,14 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.util.OptionalLong;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Compare;
@@ -103,6 +107,58 @@ class LmdbPackedPlanCacheTest {
 
 			CascadesPlan revised = plan(store, source.clone());
 			assertFalse(revised.metrics().planCacheHit());
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void providerIdentityIsStableAcrossIndependentDataAndLeoRevisions(@TempDir File dataDir) {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
+		store.init();
+		try {
+			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics();
+			LmdbEstimatorRuntime runtime = statistics.estimatorRuntime();
+			LmdbPackedCostModel model = new LmdbPackedCostModel(runtime);
+			long initialProviderVersion = model.providerVersion();
+			long initialDataRevision = runtime.snapshotVersion();
+			long initialLeoRevision = runtime.leoRevision();
+
+			statistics.recordFilterOutcome(filteredPattern(), 3L, 1L);
+
+			assertEquals(initialProviderVersion, model.providerVersion());
+			assertEquals(
+					new LmdbPackedCostModel(runtime, OptionalLong.of(11L), true).providerVersion(),
+					new LmdbPackedCostModel(runtime, OptionalLong.of(12L), true).providerVersion());
+			assertEquals(initialDataRevision, runtime.snapshotVersion());
+			assertNotEquals(initialLeoRevision, runtime.leoRevision());
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void adaptiveCacheConfidenceIsStoreOwnedAndAuditDriven(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
+		store.init();
+		try {
+			LmdbEstimatorRuntime runtime = ((LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics()).estimatorRuntime();
+			LmdbFrontierPlannerSettings settings = runtime.frontierSettings();
+			long family = 17L;
+			assertEquals(0.99d, settings.validationDecision(family, 100.0d, 5.0d, 4).confidence());
+
+			for (int audit = 0; audit < 100; audit++) {
+				settings.recordAudit(family, audit + 1L, audit & 1, true, 0.0d);
+			}
+			LmdbEstimatorRuntime laterRuntime = ((LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics()).estimatorRuntime();
+			assertSame(settings, laterRuntime.frontierSettings());
+			assertEquals(0.51d, settings.validationDecision(family, 100.0d, 5.0d, 4).confidence());
+
+			settings.recordAudit(family, 101L, 0, false, 5.0d);
+			assertTrue(settings.validationDecision(family, 100.0d, 5.0d, 4).confidence() > 0.51d);
 		} finally {
 			store.shutDown();
 		}

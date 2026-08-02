@@ -128,14 +128,24 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 			long frontierInitialMaterializationWorkUnits, int frontierRefinementWorkUnits,
 			double frontierTargetRelativeStandardError, double frontierDefensiveProposalEpsilon,
 			BooleanSupplier mayHaveInferred) {
+		this(valueStore, tripleStore, estimator, filters, feedback, cardinalities, cascadesPlanCache,
+				frontierSynopsis, LmdbFrontierPlannerSettings.defaults(frontierMode,
+						frontierQueryMemoryBudgetBytes, frontierInitialMaterializationWorkUnits,
+						frontierRefinementWorkUnits, frontierTargetRelativeStandardError,
+						frontierDefensiveProposalEpsilon),
+				mayHaveInferred);
+	}
+
+	LmdbEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
+			SketchBasedJoinEstimator estimator, LmdbFilterSelectivityStats filters,
+			LmdbOperatorFeedbackStats feedback, LmdbStatementPatternCardinalitySource cardinalities,
+			PackedPlanCache cascadesPlanCache, LmdbFrontierSynopsisService frontierSynopsis,
+			LmdbFrontierPlannerSettings frontierSettings, BooleanSupplier mayHaveInferred) {
 		filterStatistics = filters;
 		this.estimator = estimator;
 		runtime = new LmdbEstimatorRuntime(valueStore, tripleStore,
 				estimator == null ? null : estimator.synopsisService(), filters, feedback, cardinalities,
-				cascadesPlanCache, frontierSynopsis, frontierMode, frontierQueryMemoryBudgetBytes,
-				frontierInitialMaterializationWorkUnits, frontierRefinementWorkUnits,
-				frontierTargetRelativeStandardError,
-				frontierDefensiveProposalEpsilon, mayHaveInferred);
+				cascadesPlanCache, frontierSynopsis, frontierSettings, mayHaveInferred);
 	}
 
 	@Override

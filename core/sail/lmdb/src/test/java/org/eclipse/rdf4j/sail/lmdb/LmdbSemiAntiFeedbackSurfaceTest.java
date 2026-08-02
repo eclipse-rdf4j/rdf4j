@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import java.io.File;
@@ -147,10 +148,9 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 					.findFirst()
 					.orElseThrow();
 		}
-		byte[] versionFourteen = Files.readAllBytes(sidecar);
-		assertEquals(14, ByteBuffer.wrap(versionFourteen).getInt());
-		ByteBuffer.wrap(versionFourteen).putInt(13);
-		Files.write(sidecar, Arrays.copyOf(versionFourteen, versionFourteen.length - 2 * Long.BYTES));
+		byte[] versionFifteen = Files.readAllBytes(sidecar);
+		assertEquals(15, ByteBuffer.wrap(versionFifteen).getInt());
+		Files.write(sidecar, downgradeSingleSemiAntiSidecar(versionFifteen, 13));
 
 		LmdbStore reader = initializedStore(dataDir);
 		try {
@@ -168,7 +168,65 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 	}
 
 	@Test
-	void plannerConsumesPerAlgorithmSemiAntiCounters(@TempDir File dataDir) {
+	void versionFourteenRetainsCompletePhysicalFeedback(@TempDir File dataDir) throws Exception {
+		LmdbStore writer = initializedStore(dataDir);
+		try {
+			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) writer.getBackingStore()
+					.getEvaluationStatistics();
+			Filter completed = filter();
+			completed.setRuntimeTelemetryEnabled(true);
+			completed.setLongMetricActual("actualSemiAntiSourceRowsScanned", 143_700L);
+			statistics.recordSemiAntiOutcome(completed, emptyMaterializationObservation());
+		} finally {
+			writer.shutDown();
+		}
+
+		Path sidecar;
+		try (var files = Files.walk(dataDir.toPath())) {
+			sidecar = files.filter(path -> path.getFileName().toString().endsWith(".operators"))
+					.findFirst()
+					.orElseThrow();
+		}
+		byte[] versionFifteen = Files.readAllBytes(sidecar);
+		assertEquals(15, ByteBuffer.wrap(versionFifteen).getInt());
+		Files.write(sidecar, downgradeSingleSemiAntiSidecar(versionFifteen, 14));
+
+		LmdbStore reader = initializedStore(dataDir);
+		try {
+			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) reader.getBackingStore()
+					.getEvaluationStatistics();
+			LmdbOperatorFeedbackStats.SemiAntiEstimate estimate = statistics.estimatorRuntime()
+					.semiAntiFeedback(filter(), "NOT_EXISTS", "materialized-hash");
+			assertNotNull(estimate);
+			assertEquals(1L, estimate.observationCount());
+			assertEquals(1L, longAccessor(estimate, "physicalObservationCount"));
+			assertEquals(143_700L, longAccessor(estimate, "rhsSourceRowsScanned"));
+		} finally {
+			reader.shutDown();
+		}
+	}
+
+	private static byte[] downgradeSingleSemiAntiSidecar(byte[] versionFifteen, int targetVersion) {
+		/*
+		 * These fixtures contain one semi/anti observation and no keyed Frontier-learning observations. The v15 tail is
+		 * therefore exactly revision (8), exact-key count (4), and legacy-prior count (4). Version 13 also predates the
+		 * final two physical semi/anti counters, which immediately precede that tail.
+		 */
+		int frontierTailBytes = Long.BYTES + 2 * Integer.BYTES;
+		ByteBuffer frontierTail = ByteBuffer.wrap(versionFifteen,
+				versionFifteen.length - frontierTailBytes, frontierTailBytes).slice();
+		assertEquals(0L, frontierTail.getLong());
+		assertEquals(0, frontierTail.getInt());
+		assertEquals(0, frontierTail.getInt());
+		int physicalCounterBytes = targetVersion < 14 ? 2 * Long.BYTES : 0;
+		byte[] legacy = Arrays.copyOf(versionFifteen,
+				versionFifteen.length - frontierTailBytes - physicalCounterBytes);
+		ByteBuffer.wrap(legacy).putInt(targetVersion);
+		return legacy;
+	}
+
+	@Test
+	void frontierPlannerDoesNotApplyUnkeyedSemiAntiCounters(@TempDir File dataDir) {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
 		SailRepository repository = new SailRepository(store);
 		repository.init();
@@ -202,12 +260,15 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 						SemiAntiSurfaceKey.from(filter(), "NOT_EXISTS", "streaming-correlated"),
 						SemiAntiSurfaceKey.from(planned, "NOT_EXISTS", "streaming-correlated"),
 						explanation::toString);
-				assertNotNull(statistics.estimatorRuntime()
-						.semiAntiFeedback(planned, "NOT_EXISTS", "streaming-correlated"));
-				assertEquals("streaming-correlated",
-						planned.getStringMetricPlanned("optimizer.semiAntiAlgorithm"), explanation::toString);
-				assertEquals(3.0d,
-						planned.getDoubleMetricPlanned("plannedSemiAntiFeedbackEvidence"), explanation::toString);
+				LmdbOperatorFeedbackStats.SemiAntiEstimate feedback = statistics.estimatorRuntime()
+						.semiAntiFeedback(planned, "NOT_EXISTS", "streaming-correlated");
+				assertNotNull(feedback);
+				assertEquals(3L, feedback.observationCount());
+				assertEquals(planned.getStringMetricPlanned("plannedSemiAntiCheapestRawAlgorithm"),
+						planned.getStringMetricPlanned("optimizer.semiAntiAlgorithm"),
+						"A surface observation without an originating Frontier event must not override candidate costing");
+				assertFalse(planned.getDoubleMetricsPlanned().containsKey("plannedSemiAntiFeedbackEvidence"),
+						"Unkeyed compatibility counters must remain separate from Frontier event telemetry");
 			}
 		} finally {
 			repository.shutDown();

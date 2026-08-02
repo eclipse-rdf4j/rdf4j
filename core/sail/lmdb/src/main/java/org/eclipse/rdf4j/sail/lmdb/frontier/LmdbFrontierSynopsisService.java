@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 
@@ -53,6 +54,7 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 	private volatile FrontierSynopsisStatus status;
 	private volatile FrontierQueryIndexView queryIndexView;
 	private volatile String queryIndexFailureReason = "query_index_unavailable";
+	private final AtomicLong planningRevision = new AtomicLong(1L);
 
 	private LmdbFrontierSynopsisService(FrontierSynopsisStatus status) {
 		this(null, null, null, status);
@@ -247,6 +249,11 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 		return status;
 	}
 
+	/** Returns the in-process generation of Frontier availability and mapped evidence used during planning. */
+	public long planningRevision() {
+		return planningRevision.get();
+	}
+
 	/**
 	 * Retains the immutable mapped query view matching one LMDB read snapshot.
 	 */
@@ -309,10 +316,10 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 			manifest = new FrontierManifestStore(frontierDirectory, fileOps).load();
 			manifest.identity().requireCompatible(expectedIdentity(manifest.identity().snapshotEpoch()));
 		} catch (FrontierManifestException e) {
-			status = e.status();
+			publishStatus(e.status());
 			return unavailableRead(status, requiredSnapshotEpoch, 0L);
 		} catch (IOException e) {
-			status = FrontierSynopsisStatus.CORRUPT;
+			publishStatus(FrontierSynopsisStatus.CORRUPT);
 			return unavailableRead(status, requiredSnapshotEpoch, 0L);
 		}
 		FrontierManifestIdentity identity = manifest.identity();
@@ -325,10 +332,10 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 			streamPayload(manifest, sink, accumulator);
 			return readResult(FrontierSynopsisStatus.READY, identity, accumulator);
 		} catch (FrontierPayloadException e) {
-			status = e.status();
+			publishStatus(e.status());
 			return readResult(status, identity, accumulator);
 		} catch (IOException e) {
-			status = FrontierSynopsisStatus.CORRUPT;
+			publishStatus(FrontierSynopsisStatus.CORRUPT);
 			return readResult(status, identity, accumulator);
 		}
 	}
@@ -343,7 +350,7 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 			return status;
 		}
 		if (buildContext.storeId() == null) {
-			status = FrontierSynopsisStatus.STORE_MISMATCH;
+			publishStatus(FrontierSynopsisStatus.STORE_MISMATCH);
 			return status;
 		}
 		try (FrontierSnapshotSource snapshot = buildContext.snapshotSourceFactory().open()) {
@@ -369,7 +376,7 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 					snapshot,
 					fileOps);
 			if (snapshot.snapshotEpoch() != snapshotEpoch) {
-				status = FrontierSynopsisStatus.EPOCH_MISMATCH;
+				publishStatus(FrontierSynopsisStatus.EPOCH_MISMATCH);
 				return status;
 			}
 			FrontierManifest manifest = new FrontierManifest(generation, identity, descriptor);
@@ -380,16 +387,16 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 			 * vanished marker must never see a stale dirty status, while a crash between the two merely leaves a marker
 			 * that triggers one redundant coalesced rebuild.
 			 */
-			status = FrontierSynopsisStatus.READY;
+			publishStatus(FrontierSynopsisStatus.READY);
 			fileOps.deleteIfExists(frontierDirectory.resolve(DIRTY_MARKER_FILE));
 			fileOps.deleteIfExists(frontierDirectory.resolve(INSERTION_MARKER_FILE));
 			fileOps.forceDirectory(frontierDirectory);
 		} catch (FrontierSnapshotInvalidatedException e) {
-			status = FrontierSynopsisStatus.EPOCH_MISMATCH;
+			publishStatus(FrontierSynopsisStatus.EPOCH_MISMATCH);
 		} catch (FrontierPayloadException e) {
-			status = e.status();
+			publishStatus(e.status());
 		} catch (IOException | RuntimeException e) {
-			status = FrontierSynopsisStatus.CORRUPT;
+			publishStatus(FrontierSynopsisStatus.CORRUPT);
 		}
 		return status;
 	}
@@ -513,19 +520,19 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 			 * READY becomes visible before the durable insertion marker disappears so a marker-gone observation can
 			 * never coexist with a stale dirty status; a crash between the two just repeats one coalesced rebuild.
 			 */
-			status = FrontierSynopsisStatus.READY;
+			publishStatus(FrontierSynopsisStatus.READY);
 			fileOps.deleteIfExists(frontierDirectory.resolve(INSERTION_MARKER_FILE));
 			fileOps.forceDirectory(frontierDirectory);
 		} catch (FrontierManifestException e) {
-			status = e.status() == FrontierSynopsisStatus.BUDGET_EXCEEDED
+			publishStatus(e.status() == FrontierSynopsisStatus.BUDGET_EXCEEDED
 					? FrontierSynopsisStatus.BUDGET_EXCEEDED
-					: FrontierSynopsisStatus.DIRTY_INSERTION;
+					: FrontierSynopsisStatus.DIRTY_INSERTION);
 		} catch (FrontierPayloadException e) {
-			status = e.status() == FrontierSynopsisStatus.BUDGET_EXCEEDED
+			publishStatus(e.status() == FrontierSynopsisStatus.BUDGET_EXCEEDED
 					? FrontierSynopsisStatus.BUDGET_EXCEEDED
-					: FrontierSynopsisStatus.DIRTY_INSERTION;
+					: FrontierSynopsisStatus.DIRTY_INSERTION);
 		} catch (IOException | RuntimeException e) {
-			status = FrontierSynopsisStatus.DIRTY_INSERTION;
+			publishStatus(FrontierSynopsisStatus.DIRTY_INSERTION);
 		} finally {
 			clearPendingInsertions();
 		}
@@ -541,9 +548,9 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 		try {
 			fileOps.deleteIfExists(frontierDirectory.resolve(INSERTION_MARKER_FILE));
 			fileOps.forceDirectory(frontierDirectory);
-			status = FrontierSynopsisStatus.READY;
+			publishStatus(FrontierSynopsisStatus.READY);
 		} catch (IOException e) {
-			status = FrontierSynopsisStatus.DIRTY_INSERTION;
+			publishStatus(FrontierSynopsisStatus.DIRTY_INSERTION);
 		} finally {
 			clearPendingInsertions();
 		}
@@ -564,7 +571,7 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 			fileOps.moveAtomically(temporaryMarker, marker);
 			replaced = true;
 			fileOps.forceDirectory(frontierDirectory);
-			status = dirtyStatus;
+			publishStatus(dirtyStatus);
 		} finally {
 			if (!replaced) {
 				fileOps.deleteIfExists(temporaryMarker);
@@ -655,9 +662,15 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 		FrontierQueryIndexView previous = queryIndexView;
 		queryIndexView = replacement;
 		queryIndexFailureReason = failureReason;
+		planningRevision.incrementAndGet();
 		if (previous != null) {
 			previous.release();
 		}
+	}
+
+	private void publishStatus(FrontierSynopsisStatus replacement) {
+		status = Objects.requireNonNull(replacement, "replacement");
+		planningRevision.incrementAndGet();
 	}
 
 	private static void closeQueryIndexes(List<FrontierQueryIndex> indexes) {

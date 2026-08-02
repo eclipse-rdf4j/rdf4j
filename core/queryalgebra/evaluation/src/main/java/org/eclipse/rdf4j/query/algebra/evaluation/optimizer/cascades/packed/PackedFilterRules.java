@@ -23,18 +23,25 @@ final class PackedFilterRules {
 	private final PackedMemo memo;
 	private final PackedRuleState ruleState;
 	private final double[] selectedRowsByGroup;
+	private final PackedCostSession costSession;
 	private final int[] unaryGroup = new int[1];
 	private final int[] unaryWinner = new int[1];
 	private final int[] binaryGroups = new int[2];
 	private final int[] binaryWinners = new int[2];
+	private final int[] contextualPrefix = new int[1];
+	private final int[] physicalJoinPrefix = new int[1];
+	private final int[] emptyPrefix = new int[0];
+	private final PackedCostContext costContext = new PackedCostContext();
+	private final PackedCostEstimate helperEstimate = new PackedCostEstimate();
 	private final PackedCostEstimate rootEstimate = new PackedCostEstimate();
 
 	PackedFilterRules(PackedQuery query, PackedMemo memo, PackedRuleState ruleState,
-			double[] selectedRowsByGroup) {
+			double[] selectedRowsByGroup, PackedCostSession costSession) {
 		this.query = query;
 		this.memo = memo;
 		this.ruleState = ruleState;
 		this.selectedRowsByGroup = selectedRowsByGroup;
+		this.costSession = costSession;
 	}
 
 	int apply(int filterExpressionId) {
@@ -103,12 +110,62 @@ final class PackedFilterRules {
 		int helperGroupId = memo.logicalGroupId(helperLogicalId);
 		int helperPhysicalId = memo.addPhysicalAlternative(helperGroupId, PackedRelOp.FILTER, conditionId,
 				anyPropertyId, FILTER_IMPLEMENTATION, helperLogicalId, unaryGroup, 0, 1);
-		double filteredInputRows = selectedRowsByGroup[filteredGroupId];
-		double filteredRows = filteredInputRows == 0.0d ? 0.0d : Math.max(1.0d, filteredInputRows * 0.25d);
+		double filteredInputRows = memo.winnerOutputRows(filteredInputWinnerId);
+		/* Predicate output is bounded by its input; provider evidence below may tighten this event-time bound. */
+		double filteredRows = filteredInputRows;
 		double helperCost = memo.winnerTotalCost(filteredInputWinnerId) + filteredRows;
+		helperEstimate.clear();
+		helperEstimate.setRows(filteredRows, helperCost);
+		if (costSession != null) {
+			int inputEvidenceStateId = winnerEvidenceStateId(filteredInputWinnerId);
+			costContext.reset(emptyPrefix, 0, 0, 1.0d, inputEvidenceStateId);
+			costContext.setOperatorInputs(filteredInputRows, Double.NaN, inputEvidenceStateId, 0);
+			PackedDependentSubqueryCosting.publishDefaultPlanInputs(query, memo, filterExpressionId,
+					helperEstimate);
+			costSession.refineOperator(filterExpressionId, costContext, helperEstimate);
+			if (!helperEstimate.hasComponentOutputRows() && finiteNonNegative(helperEstimate.outputRows())) {
+				filteredRows = helperEstimate.outputRows();
+			}
+			if (!helperEstimate.hasComponentOutputRows() && finiteNonNegative(helperEstimate.workRows())) {
+				if (helperEstimate.hasExplicitPhysicalCost()
+						&& helperEstimate.costScope() == PackedCostEstimate.CostScope.LOCAL) {
+					memo.addWinnerPhysicalCost(filteredInputWinnerId, helperEstimate);
+				}
+				helperCost = helperEstimate.hasExplicitPhysicalCost()
+						? costSession.objectiveScore(helperEstimate)
+						: helperEstimate.workRows();
+			} else if (helperEstimate.hasComponentOutputRows()) {
+				helperEstimate.setReplacesChildWork(false);
+			}
+			if (!helperEstimate.dependentSubqueriesCosted()) {
+				double dependentCost = PackedDependentSubqueryCosting.defaultCost(query, memo, filterExpressionId);
+				if (dependentCost > 0.0d) {
+					if (helperEstimate.hasExplicitPhysicalCost()) {
+						helperEstimate.addChildPhysicalCost(dependentCost, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+								0.0d, 0.0d, 0.0d);
+						helperCost = costSession.objectiveScore(helperEstimate);
+					} else {
+						helperCost = saturatedAdd(helperCost, dependentCost);
+					}
+				}
+			}
+		}
+		if (helperEstimate.hasExplicitPhysicalCost()) {
+			helperEstimate.setOutputRowsPreservingPhysicalCost(filteredRows);
+		} else {
+			helperEstimate.setRows(filteredRows, helperCost);
+		}
 		unaryWinner[0] = filteredInputWinnerId;
-		int helperWinnerId = memo.offerWinner(helperGroupId, anyPropertyId, 0, 0, 0, helperPhysicalId,
-				filteredRows, helperCost, helperCost, unaryWinner, 0, 1);
+		int helperMetadataId = memo.addPhysicalMetadata(helperEstimate, filteredRows, helperCost);
+		int helperWinnerId = memo.offerWinnerWithMetadata(helperGroupId, anyPropertyId, 0, 0, 0,
+				helperPhysicalId, helperMetadataId, filteredRows, helperCost, helperCost, unaryWinner, 0, 1);
+		if (memo.winnerPhysicalExpressionId(helperWinnerId) == helperPhysicalId
+				&& memo.winnerPhysicalMetadataId(helperWinnerId) == helperMetadataId) {
+			contextualPrefix[0] = filteredRelationId;
+			PackedDependentSubqueryCosting.recordContextualPlans(query, memo, helperWinnerId, filterExpressionId,
+					contextualPrefix, null, 1, filteredInputRows, winnerEvidenceStateId(filteredInputWinnerId), 0, 0,
+					query.relSemanticScope(filterExpressionId));
+		}
 
 		if (leftContains) {
 			binaryGroups[0] = helperGroupId;
@@ -121,33 +178,72 @@ final class PackedFilterRules {
 			binaryWinners[0] = otherWinnerId;
 			binaryWinners[1] = helperWinnerId;
 		}
+		physicalJoinPrefix[0] = leftContains ? filteredRelationId : otherRelationId;
+		int physicalImplementation = PackedJoinEnumerator.runtimeJoinImplementation(query, physicalJoinPrefix, 1,
+				leftContains ? otherRelationId : filteredRelationId);
+		int physicalImplementationForm = physicalImplementation == PackedPhysicalJoinCosting.INDEPENDENT_HASH
+				? PackedJoinEnumerator.HASH_JOIN_IMPLEMENTATION
+				: JOIN_IMPLEMENTATION;
 		int rootGroupId = memo.logicalGroupId(filterExpressionId);
 		int rootLogicalId = memo.addLogicalAlternative(rootGroupId, PackedRelOp.JOIN, 0, 0, 0,
 				binaryGroups, 0, 2);
 		int rootPhysicalId = memo.addPhysicalAlternative(rootGroupId, PackedRelOp.JOIN, 0, anyPropertyId,
-				JOIN_IMPLEMENTATION, rootLogicalId, binaryGroups, 0, 2);
+				physicalImplementationForm, rootLogicalId, binaryGroups, 0, 2);
 		double otherRows = selectedRowsByGroup[otherGroupId];
 		boolean connected = query.masksIntersect(query.relOutputMaskId(leftRelationId),
 				query.relOutputMaskId(rightRelationId));
 		double physicalOutputRows = PackedJoinEnumerator.joinRows(
 				leftContains ? filteredRows : otherRows,
 				leftContains ? otherRows : filteredRows, connected);
-		/*
-		 * Every implementation in one logical group must expose the same cardinality estimate. Letting a physical
-		 * FILTER placement recompute the root rows from its application point makes equivalent join orders appear to
-		 * have different result sizes and poisons all ancestor costs.
-		 */
-		double outputRows = selectedRowsByGroup[rootGroupId];
-		if (!Double.isFinite(outputRows) || outputRows < 0.0d) {
-			outputRows = physicalOutputRows;
-		}
-		double totalCost = helperCost + memo.winnerTotalCost(otherWinnerId) + physicalOutputRows;
+		double leftRows = memo.winnerOutputRows(binaryWinners[0]);
+		double rightRows = memo.winnerOutputRows(binaryWinners[1]);
 		rootEstimate.clear();
-		rootEstimate.setRows(outputRows, totalCost);
+		rootEstimate.setRows(physicalOutputRows, physicalOutputRows);
+		double outputRows = physicalOutputRows;
+		double localObjective = physicalOutputRows;
+		if (costSession != null) {
+			int leftEvidenceStateId = winnerEvidenceStateId(binaryWinners[0]);
+			int rightEvidenceStateId = winnerEvidenceStateId(binaryWinners[1]);
+			costContext.reset(physicalJoinPrefix, 0, 1, leftRows, 0);
+			costContext.setOperatorInputs(leftRows, rightRows, leftEvidenceStateId, rightEvidenceStateId);
+			/*
+			 * Cost the rule-generated JOIN from its actual child events before winner selection. Copying the current
+			 * scalar for the target group here would detach this candidate from the logical JOIN event and can retain a
+			 * cardinality measured before a late child alternative was installed.
+			 */
+			costSession.refineOperator(joinExpressionId, costContext, rootEstimate);
+			if (!rootEstimate.hasComponentOutputRows() && finiteNonNegative(rootEstimate.outputRows())) {
+				outputRows = rootEstimate.outputRows();
+			}
+			rootEstimate.setOutputRowsPreservingPhysicalCost(outputRows);
+			PackedPhysicalJoinCosting.refine(costSession, physicalImplementation, costContext, rootEstimate);
+			rootEstimate.setOutputRowsPreservingPhysicalCost(outputRows);
+			localObjective = costSession.objectiveScore(rootEstimate);
+		}
+		double totalCost = memo.winnerTotalCost(binaryWinners[0])
+				+ memo.winnerTotalCost(binaryWinners[1])
+				+ localObjective;
+		if (costSession == null) {
+			rootEstimate.setRows(outputRows, totalCost);
+		}
 		int rootMetadataId = memo.addPhysicalMetadata(rootEstimate, outputRows, totalCost);
 		int rootWinnerId = memo.offerWinnerWithMetadata(rootGroupId, anyPropertyId, 0, 0, 0, rootPhysicalId,
 				rootMetadataId, physicalOutputRows, totalCost, totalCost, binaryWinners, 0, 2);
 		selectedRowsByGroup[rootGroupId] = memo.winnerOutputRows(rootWinnerId);
 		return 2;
+	}
+
+	private int winnerEvidenceStateId(int winnerId) {
+		int metadataId = memo.winnerPhysicalMetadataId(winnerId);
+		return metadataId == 0 ? 0 : memo.physicalMetadataEvidenceStateId(metadataId);
+	}
+
+	private static boolean finiteNonNegative(double value) {
+		return Double.isFinite(value) && value >= 0.0d;
+	}
+
+	private static double saturatedAdd(double left, double right) {
+		double result = left + right;
+		return Double.isFinite(result) ? result : Double.MAX_VALUE;
 	}
 }

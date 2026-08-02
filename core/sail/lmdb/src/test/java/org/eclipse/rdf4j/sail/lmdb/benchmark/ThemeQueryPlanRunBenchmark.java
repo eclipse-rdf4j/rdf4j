@@ -98,6 +98,13 @@ public class ThemeQueryPlanRunBenchmark {
 	}
 
 	@Benchmark
+	public int planUncachedQuery(UncachedPlanningState state) {
+		try (LmdbBenchmarkQueryPlan plan = state.prepareUncachedPlan()) {
+			return plan.bindingCount();
+		}
+	}
+
+	@Benchmark
 	public long runQuery(ExecutionState state) {
 		QueryResultSummary result = state.evaluatePlannedQuery();
 		state.assertExpectedResult(result);
@@ -442,7 +449,11 @@ public class ThemeQueryPlanRunBenchmark {
 		}
 
 		protected LmdbBenchmarkQueryPlan preparePlan(boolean captureOptimizedPlan) {
-			return LmdbBenchmarkQueryPlan.prepare(store, connection, query, QUERY_TIMEOUT_SECONDS,
+			return preparePlan(query, captureOptimizedPlan);
+		}
+
+		protected LmdbBenchmarkQueryPlan preparePlan(String queryText, boolean captureOptimizedPlan) {
+			return LmdbBenchmarkQueryPlan.prepare(store, connection, queryText, QUERY_TIMEOUT_SECONDS,
 					captureOptimizedPlan);
 		}
 
@@ -879,6 +890,17 @@ public class ThemeQueryPlanRunBenchmark {
 	}
 
 	@State(Scope.Benchmark)
+	public static class UncachedPlanningState extends BaseState {
+
+		private long invocation;
+
+		private LmdbBenchmarkQueryPlan prepareUncachedPlan() {
+			String uncachedQuery = alphaRenameVariables(query, ++invocation);
+			return preparePlan(uncachedQuery, false);
+		}
+	}
+
+	@State(Scope.Benchmark)
 	public static class ExecutionState extends BaseState {
 
 		private LmdbBenchmarkQueryPlan plannedQuery;
@@ -911,5 +933,107 @@ public class ThemeQueryPlanRunBenchmark {
 	}
 
 	private record QueryResultSummary(long rowCount, Long countBindingValue) {
+	}
+
+	static String alphaRenameVariables(String query, long discriminator) {
+		String suffix = "__uncached" + Long.toUnsignedString(discriminator);
+		StringBuilder renamed = new StringBuilder(query.length() + suffix.length() * 8);
+		int index = 0;
+		while (index < query.length()) {
+			char current = query.charAt(index);
+			if (current == '#') {
+				int end = index + 1;
+				while (end < query.length() && query.charAt(end) != '\n' && query.charAt(end) != '\r') {
+					end++;
+				}
+				renamed.append(query, index, end);
+				index = end;
+				continue;
+			}
+			if (current == '\'' || current == '"') {
+				int end = quotedTokenEnd(query, index, current);
+				renamed.append(query, index, end);
+				index = end;
+				continue;
+			}
+			if (current == '<') {
+				int end = iriTokenEnd(query, index);
+				if (end > index) {
+					renamed.append(query, index, end);
+					index = end;
+					continue;
+				}
+			}
+			if ((current == '?' || current == '$') && index + 1 < query.length()) {
+				int codePoint = query.codePointAt(index + 1);
+				if (variableNameStart(codePoint)) {
+					int end = index + 1 + Character.charCount(codePoint);
+					while (end < query.length()) {
+						codePoint = query.codePointAt(end);
+						if (!variableNameContinuation(codePoint)) {
+							break;
+						}
+						end += Character.charCount(codePoint);
+					}
+					renamed.append(query, index, end).append(suffix);
+					index = end;
+					continue;
+				}
+			}
+			renamed.append(current);
+			index++;
+		}
+		return renamed.toString();
+	}
+
+	private static int quotedTokenEnd(String query, int start, char quote) {
+		boolean longQuote = start + 2 < query.length()
+				&& query.charAt(start + 1) == quote
+				&& query.charAt(start + 2) == quote;
+		int delimiterLength = longQuote ? 3 : 1;
+		int index = start + delimiterLength;
+		while (index < query.length()) {
+			char current = query.charAt(index);
+			if (current == '\\' && index + 1 < query.length()) {
+				index += 2;
+				continue;
+			}
+			if (current == quote
+					&& (!longQuote || index + 2 < query.length()
+							&& query.charAt(index + 1) == quote
+							&& query.charAt(index + 2) == quote)) {
+				return index + delimiterLength;
+			}
+			index++;
+		}
+		return query.length();
+	}
+
+	private static int iriTokenEnd(String query, int start) {
+		for (int index = start + 1; index < query.length(); index++) {
+			char current = query.charAt(index);
+			if (current == '>') {
+				return index + 1;
+			}
+			if (current <= ' ' || current == '<' || current == '"' || current == '{' || current == '}'
+					|| current == '|' || current == '^' || current == '`') {
+				return -1;
+			}
+		}
+		return -1;
+	}
+
+	private static boolean variableNameStart(int codePoint) {
+		return codePoint == '_' || Character.isLetterOrDigit(codePoint);
+	}
+
+	private static boolean variableNameContinuation(int codePoint) {
+		if (variableNameStart(codePoint) || codePoint == 0x00b7) {
+			return true;
+		}
+		int type = Character.getType(codePoint);
+		return type == Character.NON_SPACING_MARK
+				|| type == Character.COMBINING_SPACING_MARK
+				|| type == Character.CONNECTOR_PUNCTUATION;
 	}
 }

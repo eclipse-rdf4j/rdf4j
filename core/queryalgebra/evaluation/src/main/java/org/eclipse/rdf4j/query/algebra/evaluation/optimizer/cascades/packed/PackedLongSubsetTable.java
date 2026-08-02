@@ -27,6 +27,10 @@ final class PackedLongSubsetTable {
 	private int[] preferenceRanks;
 	private int[] parentStateIds;
 	private int[] appendedFactorOrdinals;
+	private int[] appendedFactorWinnerIds;
+	private int[] transitionMetadataIds;
+	private int[] operatorMetadataIds;
+	private byte[] physicalImplementations;
 	private int[] tableSlots;
 	private int resizeThreshold;
 	private int size;
@@ -47,6 +51,10 @@ final class PackedLongSubsetTable {
 		preferenceRanks = new int[rowCapacity];
 		parentStateIds = new int[rowCapacity];
 		appendedFactorOrdinals = new int[rowCapacity];
+		appendedFactorWinnerIds = new int[rowCapacity];
+		transitionMetadataIds = new int[rowCapacity];
+		operatorMetadataIds = new int[rowCapacity];
+		physicalImplementations = new byte[rowCapacity];
 		int tableCapacity = PackedPrimitiveHash.tableCapacity(expectedStates);
 		tableSlots = new int[tableCapacity];
 		resizeThreshold = PackedPrimitiveHash.maximumFill(tableCapacity);
@@ -74,7 +82,17 @@ final class PackedLongSubsetTable {
 			int preferenceRank, int parentStateId, int appendedFactorOrdinal, long neighborMask) {
 		long hash = PackedPrimitiveHash.finish(PackedPrimitiveHash.step(PackedPrimitiveHash.SEED, mask));
 		return offerHashed(hash, mask, outputRows, totalCost, contributionRows, evidenceStateId, preferenceRank,
-				parentStateId, appendedFactorOrdinal, neighborMask);
+				parentStateId, appendedFactorOrdinal, neighborMask, 0, 0, 0, 0);
+	}
+
+	int offerRetained(long mask, double outputRows, double totalCost, double contributionRows, int evidenceStateId,
+			int preferenceRank, int parentStateId, int appendedFactorOrdinal, long neighborMask,
+			int appendedFactorWinnerId, int transitionMetadataId, int operatorMetadataId,
+			int physicalImplementation) {
+		long hash = PackedPrimitiveHash.finish(PackedPrimitiveHash.step(PackedPrimitiveHash.SEED, mask));
+		return offerHashed(hash, mask, outputRows, totalCost, contributionRows, evidenceStateId, preferenceRank,
+				parentStateId, appendedFactorOrdinal, neighborMask, appendedFactorWinnerId, transitionMetadataId,
+				operatorMetadataId, physicalImplementation);
 	}
 
 	int offerHashed(long hash, long mask, double outputRows, double totalCost, int parentStateId,
@@ -98,6 +116,14 @@ final class PackedLongSubsetTable {
 	int offerHashed(long hash, long mask, double outputRows, double totalCost, double contributionRows,
 			int evidenceStateId, int preferenceRank, int parentStateId, int appendedFactorOrdinal,
 			long neighborMask) {
+		return offerHashed(hash, mask, outputRows, totalCost, contributionRows, evidenceStateId, preferenceRank,
+				parentStateId, appendedFactorOrdinal, neighborMask, 0, 0, 0, 0);
+	}
+
+	private int offerHashed(long hash, long mask, double outputRows, double totalCost, double contributionRows,
+			int evidenceStateId, int preferenceRank, int parentStateId, int appendedFactorOrdinal,
+			long neighborMask, int appendedFactorWinnerId, int transitionMetadataId, int operatorMetadataId,
+			int physicalImplementation) {
 		if (mask == 0L) {
 			throw new IllegalArgumentException("a sparse join subset must not be empty");
 		}
@@ -110,7 +136,8 @@ final class PackedLongSubsetTable {
 			int costComparison = Double.compare(totalCost, costs[stateId]);
 			if (costComparison < 0 || costComparison == 0 && preferenceRank > preferenceRanks[stateId]) {
 				writeDerivedState(stateId, outputRows, totalCost, contributionRows, evidenceStateId, preferenceRank,
-						parentStateId, appendedFactorOrdinal, neighborMask);
+						parentStateId, appendedFactorOrdinal, neighborMask, appendedFactorWinnerId,
+						transitionMetadataId, operatorMetadataId, physicalImplementation);
 			}
 			return stateId;
 		}
@@ -123,7 +150,8 @@ final class PackedLongSubsetTable {
 		masks[stateId] = mask;
 		hashes[stateId] = hash;
 		writeDerivedState(stateId, outputRows, totalCost, contributionRows, evidenceStateId, preferenceRank,
-				parentStateId, appendedFactorOrdinal, neighborMask);
+				parentStateId, appendedFactorOrdinal, neighborMask, appendedFactorWinnerId, transitionMetadataId,
+				operatorMetadataId, physicalImplementation);
 		tableSlots[slot] = stateId;
 		return stateId;
 	}
@@ -185,6 +213,26 @@ final class PackedLongSubsetTable {
 		return appendedFactorOrdinals[stateId];
 	}
 
+	int appendedFactorWinnerId(int stateId) {
+		checkStateId(stateId);
+		return appendedFactorWinnerIds[stateId];
+	}
+
+	int transitionMetadataId(int stateId) {
+		checkStateId(stateId);
+		return transitionMetadataIds[stateId];
+	}
+
+	int operatorMetadataId(int stateId) {
+		checkStateId(stateId);
+		return operatorMetadataIds[stateId];
+	}
+
+	int physicalImplementation(int stateId) {
+		checkStateId(stateId);
+		return Byte.toUnsignedInt(physicalImplementations[stateId]);
+	}
+
 	private int findSlot(long hash, long mask) {
 		int slot = PackedPrimitiveHash.slot(hash, tableSlots.length);
 		while (true) {
@@ -197,7 +245,9 @@ final class PackedLongSubsetTable {
 	}
 
 	private void writeDerivedState(int stateId, double outputRows, double totalCost, double contributionRows,
-			int evidenceStateId, int preferenceRank, int parentStateId, int appendedFactorOrdinal, long neighborMask) {
+			int evidenceStateId, int preferenceRank, int parentStateId, int appendedFactorOrdinal, long neighborMask,
+			int appendedFactorWinnerId, int transitionMetadataId, int operatorMetadataId,
+			int physicalImplementation) {
 		rows[stateId] = outputRows;
 		costs[stateId] = totalCost;
 		appendedContributionRows[stateId] = contributionRows;
@@ -206,6 +256,10 @@ final class PackedLongSubsetTable {
 		parentStateIds[stateId] = parentStateId;
 		appendedFactorOrdinals[stateId] = appendedFactorOrdinal;
 		neighborMasks[stateId] = neighborMask;
+		appendedFactorWinnerIds[stateId] = appendedFactorWinnerId;
+		transitionMetadataIds[stateId] = transitionMetadataId;
+		operatorMetadataIds[stateId] = operatorMetadataId;
+		physicalImplementations[stateId] = (byte) physicalImplementation;
 	}
 
 	private void resizeTable(int newCapacity) {
@@ -238,6 +292,10 @@ final class PackedLongSubsetTable {
 		preferenceRanks = Arrays.copyOf(preferenceRanks, newCapacity);
 		parentStateIds = Arrays.copyOf(parentStateIds, newCapacity);
 		appendedFactorOrdinals = Arrays.copyOf(appendedFactorOrdinals, newCapacity);
+		appendedFactorWinnerIds = Arrays.copyOf(appendedFactorWinnerIds, newCapacity);
+		transitionMetadataIds = Arrays.copyOf(transitionMetadataIds, newCapacity);
+		operatorMetadataIds = Arrays.copyOf(operatorMetadataIds, newCapacity);
+		physicalImplementations = Arrays.copyOf(physicalImplementations, newCapacity);
 	}
 
 	private void checkStateId(int stateId) {

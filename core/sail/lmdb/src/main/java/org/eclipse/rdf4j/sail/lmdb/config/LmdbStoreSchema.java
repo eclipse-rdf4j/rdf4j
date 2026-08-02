@@ -152,6 +152,16 @@ public class LmdbStoreSchema {
 
 	public final static IRI FRONTIER_DEFENSIVE_PROPOSAL_EPSILON;
 
+	public final static IRI FRONTIER_CACHE_INITIAL_CONFIDENCE;
+
+	public final static IRI FRONTIER_CACHE_MINIMUM_CONFIDENCE;
+
+	public final static IRI FRONTIER_CACHE_MAXIMUM_CONFIDENCE;
+
+	public final static IRI FRONTIER_CACHE_MAXIMUM_EXPECTED_REGRET;
+
+	public final static IRI FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES;
+
 	public final static IRI OPTIMIZER_SAMPLING_ENABLED;
 
 	public final static IRI OPTIMIZER_SAMPLING_MAX_MILLIS;
@@ -224,6 +234,13 @@ public class LmdbStoreSchema {
 				"frontierTargetRelativeStandardError");
 		FRONTIER_DEFENSIVE_PROPOSAL_EPSILON = factory.createIRI(NAMESPACE,
 				"frontierDefensiveProposalEpsilon");
+		FRONTIER_CACHE_INITIAL_CONFIDENCE = factory.createIRI(NAMESPACE, "frontierCacheInitialConfidence");
+		FRONTIER_CACHE_MINIMUM_CONFIDENCE = factory.createIRI(NAMESPACE, "frontierCacheMinimumConfidence");
+		FRONTIER_CACHE_MAXIMUM_CONFIDENCE = factory.createIRI(NAMESPACE, "frontierCacheMaximumConfidence");
+		FRONTIER_CACHE_MAXIMUM_EXPECTED_REGRET = factory.createIRI(
+				NAMESPACE, "frontierCacheMaximumExpectedRegret");
+		FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES = factory.createIRI(
+				NAMESPACE, "frontierCacheEvidenceBudgetBytes");
 		OPTIMIZER_SAMPLING_ENABLED = factory.createIRI(NAMESPACE, "optimizerSamplingEnabled");
 		OPTIMIZER_SAMPLING_MAX_MILLIS = factory.createIRI(NAMESPACE, "optimizerSamplingMaxMillis");
 		OPTIMIZER_SAMPLING_MAX_ROWS = factory.createIRI(NAMESPACE, "optimizerSamplingMaxRows");

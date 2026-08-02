@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -74,6 +75,176 @@ class LmdbOperatorFeedbackStatsTest {
 		LmdbOperatorFeedbackStats.OperatorEstimate estimate = stats.estimate(join("s", "x", "o"), 200, 100, 10, 20);
 		assertNotNull(estimate, "Equivalent operator shape should reuse feedback");
 		assertTrue(estimate.rows() > 100.0d, "Join feedback should scale by learned output-per-left");
+	}
+
+	@Test
+	void frontierLearningUsesStableKeysAndIndependentDimensionPosteriors() throws Exception {
+		Class<?> keyType = Class.forName("org.eclipse.rdf4j.sail.lmdb.FrontierLearningKey");
+		Class<?> dimensionType = Class.forName("org.eclipse.rdf4j.sail.lmdb.FrontierCostDimension");
+		Class<?> modelType = Class.forName("org.eclipse.rdf4j.sail.lmdb.FrontierLearningModel");
+		Method keyFactory = keyType.getDeclaredMethod("of", String.class, String.class, long.class, long.class,
+				String.class, String.class, String.class);
+		Method observe = modelType.getDeclaredMethod("observe", keyType, dimensionType, double.class, double.class,
+				long.class);
+		Method correct = modelType.getDeclaredMethod("correct", keyType, dimensionType, double.class, boolean.class);
+		keyFactory.setAccessible(true);
+		observe.setAccessible(true);
+		correct.setAccessible(true);
+		var constructor = modelType.getDeclaredConstructor();
+		constructor.setAccessible(true);
+		Object model = constructor.newInstance();
+		Object key = keyFactory.invoke(null, "join", "JOIN", 17L, 23L, "spoc-prefix", "spoc", "prefix");
+		Object outputRows = Enum.valueOf(dimensionType.asSubclass(Enum.class), "OUTPUT_ROWS");
+		Object sourceScans = Enum.valueOf(dimensionType.asSubclass(Enum.class), "SOURCE_ROWS_SCANNED");
+		Object hashProbes = Enum.valueOf(dimensionType.asSubclass(Enum.class), "HASH_PROBE_ROWS");
+
+		observe.invoke(model, key, outputRows, 100.0d, 400.0d, 1L);
+		observe.invoke(model, key, sourceScans, 1_000.0d, 250.0d, 1L);
+
+		double learnedRows = correctedValue(correct.invoke(model, key, outputRows, 100.0d, false));
+		double exactRows = correctedValue(correct.invoke(model, key, outputRows, 100.0d, true));
+		double learnedScans = correctedValue(correct.invoke(model, key, sourceScans, 1_000.0d, false));
+		Object absentHashCorrection = correct.invoke(model, key, hashProbes, 50.0d, false);
+
+		assertTrue(learnedRows > 100.0d, "Cardinality should learn from its own log-error posterior");
+		assertEquals(100.0d, exactRows, 0.0d, "Database-exact cardinality must remain immutable");
+		assertTrue(learnedScans < 1_000.0d, "Source scans should learn independently from cardinality");
+		assertTrue(absentHashCorrection instanceof java.util.OptionalDouble optional && optional.isEmpty(),
+				"A missing runtime counter must remain missing rather than becoming zero");
+		assertTrue(Modifier.isFinal(keyType.getModifiers()), "A Frontier learning key must be immutable");
+	}
+
+	@Test
+	void frontierLearningRoutesRuntimeDimensionsByOriginKeyAndPersistsVersionFifteen(@TempDir Path tempDir)
+			throws Exception {
+		Path estimatorPath = estimatorPath(tempDir);
+		LmdbOperatorFeedbackStats stats = persistentStats(estimatorPath);
+		FrontierLearningKey key = FrontierLearningKey.of(
+				"join", "JOIN", 17L, 23L, "spoc-prefix", "spoc", "prefix");
+		Join observed = join("s", "x", "o");
+		completeCostFeedback(observed, 400, 100, 1_100, 650);
+		observed.setStringMetricPlanned("optimizer.frontierLearningKey", key.externalForm());
+		observed.setStringMetricPlanned("optimizer.costEventDigest", "event-7");
+		observed.setStringMetricPlanned("optimizer.frontierStateDigest", "state-a");
+		observed.setStringMetricPlanned("plannedFrontierGuarantee", "measure_unbiased");
+		observed.setDoubleMetricPlanned("plannedCostSequentialRows", 1_000.0d);
+		observed.setSourceRowsScannedActual(250L);
+
+		stats.recordOperatorOutcome(observed);
+
+		assertTrue(frontierCorrection(stats, key, FrontierCostDimension.OUTPUT_ROWS, 100.0d, false) > 100.0d);
+		assertTrue(
+				frontierCorrection(stats, key, FrontierCostDimension.SOURCE_ROWS_SCANNED, 1_000.0d, false) < 1_000.0d);
+		assertTrue(frontierCorrectionMissing(stats, key, FrontierCostDimension.HASH_PROBE_ROWS, 50.0d, false),
+				"No hash-probe counter was recorded");
+
+		stats.persistIfDirty();
+		Path sidecar = estimatorPath.resolveSibling(estimatorPath.getFileName() + ".operators");
+		assertEquals(15, ByteBuffer.wrap(Files.readAllBytes(sidecar)).getInt());
+		LmdbOperatorFeedbackStats reloaded = persistentStats(estimatorPath);
+		assertTrue(frontierCorrection(reloaded, key, FrontierCostDimension.SOURCE_ROWS_SCANNED, 1_000.0d,
+				false) < 1_000.0d, "Version-15 feedback must preserve the dimension posterior");
+	}
+
+	@Test
+	void frontierLearningObservesRawPredictionsWithoutFeedingCorrectionsBack(@TempDir Path tempDir)
+			throws Exception {
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+		FrontierLearningKey key = FrontierLearningKey.of(
+				"join", "JOIN", 17L, 23L, "spoc-prefix", "spoc", "prefix");
+		Join observed = join("s", "x", "o");
+		completeCostFeedback(observed, 40, 80, 500, 250);
+		observed.setStringMetricPlanned("optimizer.frontierLearningKey", key.externalForm());
+		observed.setStringMetricPlanned("optimizer.frontierPhysicalLearningKey", key.externalForm());
+		observed.setStringMetricPlanned("optimizer.costEventDigest", "event-corrected");
+		observed.setStringMetricPlanned("optimizer.frontierStateDigest", "state-corrected");
+		observed.setStringMetricPlanned("plannedFrontierGuarantee", "measure_unbiased");
+		observed.setDoubleMetricPlanned("optimizer.costEventRows", 80.0d);
+		observed.setDoubleMetricPlanned("optimizer.costEventSequentialRows", 500.0d);
+		observed.setDoubleMetricPlanned("optimizer.frontierLeo.output_rows.raw", 100.0d);
+		observed.setDoubleMetricPlanned("optimizer.frontierLeo.source_rows_scanned.raw", 1_000.0d);
+		observed.setSourceRowsScannedActual(250L);
+
+		stats.recordOperatorOutcome(observed);
+
+		FrontierLearningModel expected = new FrontierLearningModel();
+		expected.observe(key, FrontierCostDimension.OUTPUT_ROWS, 100.0d, 40.0d, 1L);
+		expected.observe(key, FrontierCostDimension.SOURCE_ROWS_SCANNED, 1_000.0d, 250.0d, 1L);
+		assertEquals(
+				expected.correct(key, FrontierCostDimension.OUTPUT_ROWS, 100.0d, false).orElseThrow(),
+				frontierCorrection(stats, key, FrontierCostDimension.OUTPUT_ROWS, 100.0d, false),
+				1.0e-12,
+				"Cardinality feedback must calibrate the raw transform, not its prior LEO correction");
+		assertEquals(
+				expected.correct(key, FrontierCostDimension.SOURCE_ROWS_SCANNED, 1_000.0d, false).orElseThrow(),
+				frontierCorrection(stats, key, FrontierCostDimension.SOURCE_ROWS_SCANNED, 1_000.0d, false),
+				1.0e-12,
+				"Physical feedback must calibrate raw access work, not its prior LEO correction");
+	}
+
+	@Test
+	void frontierLearningImprovesHeldOutQErrorAndPlanRegret() {
+		FrontierLearningModel model = new FrontierLearningModel();
+		FrontierLearningKey trainingKey = FrontierLearningKey.of(
+				"nested-loop", "BRIDGE_TRANSFER", 17L, 23L, "spoc-prefix", "spoc", "directLookup");
+		FrontierLearningKey heldOutKey = FrontierLearningKey.of(
+				"nested-loop", "BRIDGE_TRANSFER", 31L, 47L, "spoc-prefix", "spoc", "directLookup");
+		double predictedNestedLoopCost = 100.0d;
+		double actualNestedLoopCost = 400.0d;
+		double predictedAndActualHashCost = 220.0d;
+		for (int observation = 0; observation < 8; observation++) {
+			model.observe(trainingKey, FrontierCostDimension.SOURCE_ROWS_SCANNED,
+					predictedNestedLoopCost, actualNestedLoopCost, observation + 1L);
+		}
+
+		double correctedHeldOutCost = model.correct(heldOutKey, FrontierCostDimension.SOURCE_ROWS_SCANNED,
+				predictedNestedLoopCost, false).orElseThrow();
+		double coldQError = qError(predictedNestedLoopCost, actualNestedLoopCost);
+		double learnedQError = qError(correctedHeldOutCost, actualNestedLoopCost);
+		double coldRegret = executionRegret(actualNestedLoopCost, predictedAndActualHashCost,
+				predictedNestedLoopCost <= predictedAndActualHashCost);
+		double learnedRegret = executionRegret(actualNestedLoopCost, predictedAndActualHashCost,
+				correctedHeldOutCost <= predictedAndActualHashCost);
+
+		assertTrue(learnedQError < coldQError,
+				"Family shrinkage must improve a sibling key, not merely fit the observed key");
+		assertTrue(correctedHeldOutCost > predictedAndActualHashCost,
+				"The held-out correction must reverse the underestimated physical winner");
+		assertTrue(learnedRegret < coldRegret,
+				"The held-out physical ranking must reduce execution-cost regret");
+	}
+
+	@Test
+	void frontierFamilyLearningDoesNotCrossTransformOrAccessFamilies() {
+		FrontierLearningModel model = new FrontierLearningModel();
+		FrontierLearningKey observed = FrontierLearningKey.of(
+				"filter", "BOUNDARY@low-neighbor", 17L, 23L, "semi-anti:memoized", "spoc", "directLookup");
+		FrontierLearningKey siblingLayout = FrontierLearningKey.of(
+				"filter", "BOUNDARY@low-neighbor", 31L, 47L, "semi-anti:memoized", "spoc", "directLookup");
+		FrontierLearningKey unrelatedTransform = FrontierLearningKey.of(
+				"filter", "BOUNDARY@self-loop", 31L, 47L, "semi-anti:memoized", "spoc", "directLookup");
+		FrontierLearningKey unrelatedAccess = FrontierLearningKey.of(
+				"filter", "BOUNDARY@low-neighbor", 31L, 47L, "semi-anti:materialized", "posc", "prefixScan");
+		FrontierLearningKey alternateEvidenceRepresentation = FrontierLearningKey.of(
+				"filter", "UNRESOLVED@low-neighbor", 31L, 47L, "semi-anti:materialized", "posc", "prefixScan");
+
+		model.observe(observed, FrontierCostDimension.EXPRESSION_EVALUATIONS, 100.0d, 10_000.0d, 1L);
+		model.observe(observed, FrontierCostDimension.OUTPUT_ROWS, 100.0d, 400.0d, 1L);
+
+		assertTrue(model.correct(siblingLayout, FrontierCostDimension.EXPRESSION_EVALUATIONS, 100.0d, false)
+				.isPresent(), "A physical transform family should transfer evidence across binding layouts");
+		assertTrue(model.correct(unrelatedTransform, FrontierCostDimension.EXPRESSION_EVALUATIONS, 100.0d, false)
+				.isEmpty(), "Unrelated filter transforms must not share a physical-dimension posterior");
+		assertTrue(model.correct(unrelatedAccess, FrontierCostDimension.EXPRESSION_EVALUATIONS, 100.0d, false)
+				.isEmpty(), "Independent access kernels must not share a physical-dimension posterior");
+		assertTrue(model.correct(unrelatedAccess, FrontierCostDimension.OUTPUT_ROWS, 100.0d, false)
+				.isPresent(), "One raw transform must share cardinality evidence across physical alternatives");
+		assertTrue(model.correct(unrelatedTransform, FrontierCostDimension.OUTPUT_ROWS, 100.0d, false)
+				.isEmpty(), "Unrelated raw transforms must not share cardinality evidence");
+		assertTrue(model.correct(alternateEvidenceRepresentation, FrontierCostDimension.OUTPUT_ROWS, 100.0d, false)
+				.isPresent(), "Evidence representation must not split one logical transform's cardinality posterior");
+		assertTrue(model.correct(alternateEvidenceRepresentation, FrontierCostDimension.EXPRESSION_EVALUATIONS,
+				100.0d, false).isEmpty(), "Physical feedback must retain its Frontier representation identity");
 	}
 
 	@Test
@@ -276,7 +447,7 @@ class LmdbOperatorFeedbackStatsTest {
 	}
 
 	@Test
-	void readsVersionTwelveOperatorSidecarWithoutSemiAntiSection(@TempDir Path tempDir) throws Exception {
+	void readsGenuineVersionTwelveThroughFourteenOperatorSidecars(@TempDir Path tempDir) throws Exception {
 		Path estimatorPath = estimatorPath(tempDir);
 		LmdbOperatorFeedbackStats stats = persistentStats(estimatorPath);
 		Union observed = new Union(sp("s", P1, "o1"), sp("s", P2, "o2"));
@@ -285,13 +456,33 @@ class LmdbOperatorFeedbackStatsTest {
 		stats.persistIfDirty();
 
 		Path sidecar = estimatorPath.resolveSibling(estimatorPath.getFileName() + ".operators");
-		byte[] versionThirteen = Files.readAllBytes(sidecar);
-		ByteBuffer.wrap(versionThirteen).putInt(12);
-		Files.write(sidecar, Arrays.copyOf(versionThirteen, versionThirteen.length - Integer.BYTES));
+		byte[] versionFifteen = Files.readAllBytes(sidecar);
+		FrontierLearningKey currentUnionKey = FrontierLearningKey.of(
+				"union", "UNION", 31L, 0L, "union", "none", "none");
+		for (int version = 12; version <= 14; version++) {
+			Files.write(sidecar, emptyFrontierTailRemoved(versionFifteen, version));
+			LmdbOperatorFeedbackStats reloaded = persistentStats(estimatorPath);
+			assertNotNull(reloaded.estimate(
+					new Union(sp("s", P1, "o1"), sp("s", P2, "o2")), 72_000, 72_000, 7, 7),
+					"Version " + version + " must load its complete historical payload through exact EOF");
+			assertTrue(frontierCorrection(reloaded, currentUnionKey, FrontierCostDimension.OUTPUT_ROWS, 7.0d,
+					false) > 7.0d, "Version " + version + " scalar rows must import only as a family-level prior");
+		}
+	}
 
-		LmdbOperatorFeedbackStats reloaded = persistentStats(estimatorPath);
-		assertNotNull(reloaded.estimate(
-				new Union(sp("s", P1, "o1"), sp("s", P2, "o2")), 72_000, 72_000, 7, 7));
+	private static byte[] emptyFrontierTailRemoved(byte[] versionFifteen, int targetVersion) {
+		/*
+		 * This fixture deliberately starts from a persisted state with no semi/anti or Frontier-key entries. Its v15
+		 * suffix is therefore exactly: semi/anti count (4), Frontier revision (8), exact-key count (4), legacy-prior
+		 * count (4). Removing the schema-specific suffix produces a genuine legacy EOF rather than leaving newer bytes
+		 * for an old reader to ignore.
+		 */
+		int frontierTailBytes = Long.BYTES + 2 * Integer.BYTES;
+		int semiAntiCountBytes = targetVersion == 12 ? Integer.BYTES : 0;
+		byte[] legacy = Arrays.copyOf(versionFifteen,
+				versionFifteen.length - frontierTailBytes - semiAntiCountBytes);
+		ByteBuffer.wrap(legacy).putInt(targetVersion);
+		return legacy;
 	}
 
 	@Test
@@ -882,6 +1073,43 @@ class LmdbOperatorFeedbackStatsTest {
 		} catch (ReflectiveOperationException e) {
 			throw new AssertionError("Could not read " + accessorName, e);
 		}
+	}
+
+	private static double correctedValue(Object correction) {
+		assertTrue(correction instanceof java.util.OptionalDouble,
+				"A learned Frontier dimension must expose an optional correction");
+		java.util.OptionalDouble optional = (java.util.OptionalDouble) correction;
+		assertTrue(optional.isPresent(), "The observed Frontier dimension should have a posterior correction");
+		return optional.getAsDouble();
+	}
+
+	private static double frontierCorrection(LmdbOperatorFeedbackStats stats, FrontierLearningKey key,
+			FrontierCostDimension dimension, double predicted, boolean exactCardinality) throws Exception {
+		Method method = LmdbOperatorFeedbackStats.class.getDeclaredMethod("frontierCorrection",
+				FrontierLearningKey.class, FrontierCostDimension.class, double.class, boolean.class);
+		method.setAccessible(true);
+		return correctedValue(method.invoke(stats, key, dimension, predicted, exactCardinality));
+	}
+
+	private static boolean frontierCorrectionMissing(LmdbOperatorFeedbackStats stats, FrontierLearningKey key,
+			FrontierCostDimension dimension, double predicted, boolean exactCardinality) throws Exception {
+		Method method = LmdbOperatorFeedbackStats.class.getDeclaredMethod("frontierCorrection",
+				FrontierLearningKey.class, FrontierCostDimension.class, double.class, boolean.class);
+		method.setAccessible(true);
+		Object value = method.invoke(stats, key, dimension, predicted, exactCardinality);
+		return value instanceof java.util.OptionalDouble optional && optional.isEmpty();
+	}
+
+	private static double qError(double predicted, double actual) {
+		double safePredicted = Math.max(1.0d, predicted);
+		double safeActual = Math.max(1.0d, actual);
+		return Math.max(safePredicted / safeActual, safeActual / safePredicted);
+	}
+
+	private static double executionRegret(double firstActual, double secondActual, boolean selectedFirst) {
+		double selected = selectedFirst ? firstActual : secondActual;
+		double best = Math.min(firstActual, secondActual);
+		return (selected - best) / best;
 	}
 
 	private static void restoreOperatorFeedbackTrackingProperty(String previous) {

@@ -16,6 +16,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -128,8 +130,144 @@ class PackedOperatorComponentRefinementTest {
 
 		assertEquals(8.0d, memo.winnerOutputRows(contextualWinnerId), 0.0d,
 				"The retained four-row outer component must multiply the two-row refined FILTER component");
-		assertTrue(memo.winnerTotalCost(contextualWinnerId) >= 10.0d,
-				"Component-local work cannot replace the already contextualized FILTER child");
+		assertEquals(13.0d, memo.winnerTotalCost(contextualWinnerId), 0.0d,
+				"The four unrelated outer rows must invoke two units of component-local FILTER work");
+	}
+
+	@Test
+	void inheritedEvidenceContextReachesLeafAndFilterRefinementUnchanged() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern outer = pattern(values, "outer", "urn:evidence-outer", "outerValue");
+		outer.setResultSizeEstimate(4.0d);
+		StatementPattern inner = pattern(values, "inner", "urn:evidence-inner", "innerValue");
+		inner.setResultSizeEstimate(5.0d);
+		Filter filter = new Filter(inner,
+				new Compare(Var.of("innerValue"), new ValueConstant(values.createLiteral("excluded")),
+						Compare.CompareOp.NE));
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(new Join(outer, filter));
+		PackedMemo memo = memo(query);
+		PackedIncumbentSearch search = new PackedIncumbentSearch(query, memo, unboundedBudget(), false, null);
+		search.build();
+		PackedQueryView view = new PackedQueryView(query);
+		int outerRelationId = relationWithPredicate(view, "urn:evidence-outer");
+		int filterRelationId = filterRelation(view);
+		int[] contextualCalls = new int[2];
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return query.isStatementPattern(relationId) ? 5.0d : Double.NaN;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (context.prefixRelationCount() == 0) {
+					return;
+				}
+				assertEquals(91, context.evidenceStateId(), "the outer Frontier state must reach every candidate");
+				assertEquals(7, context.bindingLayoutId());
+				assertEquals(11, context.correlationMaskId());
+				assertEquals(13, context.semanticScopeMaskId());
+				contextualCalls[0]++;
+				output.setContextualRows(8.0d, 3.0d);
+				output.setEvidenceStateId(101);
+			}
+
+			@Override
+			public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (!query.isFilter(relationId)) {
+					return;
+				}
+				assertEquals(91, context.evidenceStateId());
+				assertEquals(101, context.leftInputEvidenceStateId(),
+						"FILTER refinement must receive the contextual child state");
+				assertEquals(7, context.bindingLayoutId());
+				assertEquals(11, context.correlationMaskId());
+				assertEquals(13, context.semanticScopeMaskId());
+				contextualCalls[1]++;
+				output.setEvidenceStateId(102);
+			}
+		};
+		PackedJoinEnumerator enumerator = new PackedJoinEnumerator(query, memo, search.selectedRowsByGroup(),
+				unboundedBudget(), costs);
+		PackedEvidenceContext inherited = new PackedEvidenceContext();
+		inherited.reset(new int[] { outerRelationId }, new double[] { 4.0d }, 0, 1, 4.0d, 91, 7, 11, 13);
+
+		int contextualWinnerId = enumerator.optimizeWithInheritedPrefix(filterRelationId, inherited);
+
+		assertTrue(contextualWinnerId > 0);
+		assertEquals(1, contextualCalls[0],
+				"the child access is estimated once; FILTER owns a separate operator-costing event");
+		assertEquals(1, contextualCalls[1]);
+	}
+
+	@Test
+	void inheritedEvidenceContextReachesLeafAndSafeExtensionRefinementUnchanged() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern outer = pattern(values, "shared", "urn:extension-outer", "outerValue");
+		outer.setResultSizeEstimate(4.0d);
+		StatementPattern inner = pattern(values, "shared", "urn:extension-inner", "innerValue");
+		inner.setResultSizeEstimate(5.0d);
+		Extension extension = new Extension(inner, new ExtensionElem(Var.of("innerValue"), "alias"));
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(new Join(outer, extension));
+		PackedMemo memo = memo(query);
+		PackedIncumbentSearch search = new PackedIncumbentSearch(query, memo, unboundedBudget(), false, null);
+		search.build();
+		PackedQueryView view = new PackedQueryView(query);
+		int outerRelationId = relationWithPredicate(view, "urn:extension-outer");
+		int extensionRelationId = relationWithOperator(view, PackedRelOp.EXTENSION);
+		int[] contextualCalls = new int[2];
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return query.isStatementPattern(relationId) ? 5.0d : Double.NaN;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (!query.isStatementPattern(relationId) || context.prefixRelationCount() == 0) {
+					return;
+				}
+				assertEquals(91, context.evidenceStateId());
+				assertEquals(7, context.bindingLayoutId());
+				assertEquals(11, context.correlationMaskId());
+				assertEquals(13, context.semanticScopeMaskId());
+				contextualCalls[0]++;
+				output.setContextualRows(2.0d, 3.0d);
+				output.setEvidenceStateId(101);
+			}
+
+			@Override
+			public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (query.operatorTag(relationId) != PackedRelOp.EXTENSION) {
+					return;
+				}
+				assertEquals(91, context.evidenceStateId());
+				assertEquals(101, context.leftInputEvidenceStateId(),
+						"Extension refinement must consume the contextual child state");
+				assertEquals(2.0d, context.leftInputRows(), 0.0d);
+				assertEquals(7, context.bindingLayoutId());
+				assertEquals(11, context.correlationMaskId());
+				assertEquals(13, context.semanticScopeMaskId());
+				contextualCalls[1]++;
+				output.setEvidenceStateId(102);
+			}
+		};
+		PackedJoinEnumerator enumerator = new PackedJoinEnumerator(query, memo, search.selectedRowsByGroup(),
+				unboundedBudget(), costs);
+		PackedEvidenceContext inherited = new PackedEvidenceContext();
+		inherited.reset(new int[] { outerRelationId }, new double[] { 4.0d }, 0, 1, 4.0d, 91, 7, 11, 13);
+
+		int contextualWinnerId = enumerator.optimizeWithInheritedPrefix(extensionRelationId, inherited);
+
+		assertTrue(contextualWinnerId > 0);
+		assertEquals(1, contextualCalls[0], "the wrapped leaf must be costed exactly once in inherited context");
+		assertEquals(1, contextualCalls[1], "the Extension must be costed exactly once in inherited context");
+		assertEquals(2.0d, memo.winnerOutputRows(contextualWinnerId), 0.0d);
+		assertEquals(102, memo.physicalMetadataEvidenceStateId(memo.winnerPhysicalMetadataId(contextualWinnerId)));
 	}
 
 	private static TupleExpr optional() {
@@ -188,6 +326,15 @@ class PackedOperatorComponentRefinementTest {
 			}
 		}
 		throw new AssertionError("Missing FILTER");
+	}
+
+	private static int relationWithOperator(PackedQueryView query, int operator) {
+		for (int relationId = 1; relationId <= query.relationCount(); relationId++) {
+			if (query.operatorTag(relationId) == operator) {
+				return relationId;
+			}
+		}
+		throw new AssertionError("Missing packed operator " + operator);
 	}
 
 	private static String predicate(PackedQueryView query, int relationId) {

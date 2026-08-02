@@ -106,6 +106,7 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 		this.sharedProbeCache = sharedProbeCache;
 		this.strategyMode = strategyMode;
 		this.negated = negated;
+		publishActualAlgorithm();
 	}
 
 	@Override
@@ -326,15 +327,15 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 		} finally {
 			rhsSourceRowsScannedActual = sourceRowsScannedDelta(
 					rhsSourceRowsBaseline, sourceRowsScanned(rhsExpression));
-			if (recordFilterOutcomes && inputExhausted && sourceRowsScannedActual > 0L) {
+			if (sourceRowsScannedActual > 0L) {
 				try {
 					String selectedAlgorithm = selectedAlgorithm();
-					String actualAlgorithm = actualAlgorithm();
 					long distinctKeys = observedCorrelationKeys.size();
-					filterNode.setRuntimeTelemetryEnabled(true);
-					filterNode.setStringMetricActual("actualSemiAntiAlgorithm", actualAlgorithm);
-					filterNode.setStringMetricActual("actualSemiAntiStrategyChangeReason", strategyChangeReason);
-					filterNode.setLongMetricActual("actualSemiAntiDistinctCorrelationKeys", distinctKeys);
+					publishActualAlgorithm();
+					String actualAlgorithm = actualAlgorithm();
+					if (recordFilterOutcomes) {
+						filterNode.setLongMetricActual("actualSemiAntiDistinctCorrelationKeys", distinctKeys);
+					}
 					filterNode.setLongMetricActual("actualSemiAntiIteratorOpens", iteratorOpens);
 					filterNode.setLongMetricActual("actualSemiAntiRowsExamined", rhsRowsExamined);
 					if (rhsSourceRowsScannedActual >= 0L) {
@@ -344,27 +345,29 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 					filterNode.setLongMetricActual("actualSemiAntiHashBuildRows", hashBuildRows);
 					filterNode.setLongMetricActual("actualSemiAntiHashProbeRows", hashProbeRows);
 					publishActualPhysicalCost();
-					evaluationStatistics.recordSemiAntiOutcome(filterNode,
-							new EvaluationStatistics.SemiAntiOutcomeObservation(
-									semanticKind(),
-									selectedAlgorithm,
-									actualAlgorithm,
-									sourceRowsScannedActual,
-									matchedRows,
-									unmatchedRows,
-									distinctKeys,
-									observedMatchedKeys.size(),
-									observedUnmatchedKeys.size(),
-									sourceRowsScannedActual - distinctKeys,
-									rhsRowsExamined,
-									exhaustedFailures,
-									iteratorOpens,
-									hashBuildRows,
-									hashProbeRows,
-									cacheLookups,
-									true,
-									"",
-									strategyChangeReason));
+					if (recordFilterOutcomes && inputExhausted) {
+						evaluationStatistics.recordSemiAntiOutcome(filterNode,
+								new EvaluationStatistics.SemiAntiOutcomeObservation(
+										semanticKind(),
+										selectedAlgorithm,
+										actualAlgorithm,
+										sourceRowsScannedActual,
+										matchedRows,
+										unmatchedRows,
+										distinctKeys,
+										observedMatchedKeys.size(),
+										observedUnmatchedKeys.size(),
+										sourceRowsScannedActual - distinctKeys,
+										rhsRowsExamined,
+										exhaustedFailures,
+										iteratorOpens,
+										hashBuildRows,
+										hashProbeRows,
+										cacheLookups,
+										true,
+										"",
+										strategyChangeReason));
+					}
 				} catch (RuntimeException e) {
 					// Estimation feedback must never break query evaluation.
 				}
@@ -421,6 +424,12 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 			return "materialized-hash";
 		}
 		return strategyMode == STREAMING ? "streaming-correlated" : "memoized-correlated";
+	}
+
+	private void publishActualAlgorithm() {
+		filterNode.setRuntimeTelemetryEnabled(true);
+		filterNode.setStringMetricActual("actualSemiAntiAlgorithm", actualAlgorithm());
+		filterNode.setStringMetricActual("actualSemiAntiStrategyChangeReason", strategyChangeReason);
 	}
 
 	private static SourceScanObservation sourceRowsScanned(TupleExpr expression) {

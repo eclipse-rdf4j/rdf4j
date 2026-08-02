@@ -63,10 +63,13 @@ class PackedExecutableFallbackTierTest {
 		int winnerId = winners.offerExecutableFallbackWithMetadata(1, 1, 0, 0, 0, 10, 101, 1.0d,
 				Double.MAX_VALUE, Double.MAX_VALUE, new int[] { 7 }, 0, 1);
 
-		assertEquals(winnerId, winners.offerWithMetadata(1, 1, 0, 0, 0, 20, 202, 1.0d, Double.MAX_VALUE,
-				Double.MAX_VALUE, new int[] { 8 }, 0, 1));
-		assertEquals(20, winners.physicalExpressionId(winnerId));
-		assertEquals(8, winners.childWinnerId(winnerId, 0));
+		int costedWinnerId = winners.offerWithMetadata(1, 1, 0, 0, 0, 20, 202, 1.0d, Double.MAX_VALUE,
+				Double.MAX_VALUE, new int[] { 8 }, 0, 1);
+		assertNotEquals(winnerId, costedWinnerId);
+		assertEquals(20, winners.physicalExpressionId(costedWinnerId));
+		assertEquals(8, winners.childWinnerId(costedWinnerId, 0));
+		assertEquals(costedWinnerId, winners.find(1, 1, 0, 0, 0));
+		assertEquals(10, winners.physicalExpressionId(winnerId));
 	}
 
 	@Test
@@ -88,11 +91,13 @@ class PackedExecutableFallbackTierTest {
 		int winnerId = winners.offerExecutableFallbackWithMetadata(1, 1, 0, 0, 0, 10, 101, 2.0d, 20.0d,
 				20.0d, new int[] { 7 }, 0, 1);
 
-		assertEquals(winnerId, winners.offerExecutableFallbackWithMetadata(1, 1, 0, 0, 0, 10, 202, 1.0d, 10.0d,
-				10.0d, new int[] { 8 }, 0, 1));
-		assertEquals(10.0d, winners.totalCost(winnerId));
-		assertEquals(202, winners.physicalMetadataId(winnerId));
-		assertEquals(8, winners.childWinnerId(winnerId, 0));
+		int cheaperWinnerId = winners.offerExecutableFallbackWithMetadata(1, 1, 0, 0, 0, 10, 202, 1.0d,
+				10.0d, 10.0d, new int[] { 8 }, 0, 1);
+		assertNotEquals(winnerId, cheaperWinnerId);
+		assertEquals(10.0d, winners.totalCost(cheaperWinnerId));
+		assertEquals(202, winners.physicalMetadataId(cheaperWinnerId));
+		assertEquals(8, winners.childWinnerId(cheaperWinnerId, 0));
+		assertEquals(101, winners.physicalMetadataId(winnerId));
 	}
 
 	@Test
@@ -101,11 +106,14 @@ class PackedExecutableFallbackTierTest {
 		int winnerId = winners.offerExecutableFallbackWithMetadata(1, 1, 0, 0, 0, 10, 101, 1.0d,
 				Double.MAX_VALUE, Double.MAX_VALUE, new int[] { 7 }, 0, 1);
 
-		assertEquals(winnerId, winners.offerExecutableFallbackWithMetadata(1, 1, 0, 0, 0, 10, 202, 1.0d,
-				Double.MAX_VALUE, Double.MAX_VALUE, new int[] { 8 }, 0, 1));
-		assertEquals(202, winners.physicalMetadataId(winnerId),
+		int refreshedWinnerId = winners.offerExecutableFallbackWithMetadata(1, 1, 0, 0, 0, 10, 202, 1.0d,
+				Double.MAX_VALUE, Double.MAX_VALUE, new int[] { 8 }, 0, 1);
+		assertNotEquals(winnerId, refreshedWinnerId);
+		assertEquals(202, winners.physicalMetadataId(refreshedWinnerId),
 				"Canonical-spine fallback refresh must publish current physical metadata");
-		assertEquals(8, winners.childWinnerId(winnerId, 0),
+		assertEquals(8, winners.childWinnerId(refreshedWinnerId, 0),
 				"Canonical-spine fallback refresh must publish current child winners");
+		assertEquals(101, winners.physicalMetadataId(winnerId));
 	}
+
 }

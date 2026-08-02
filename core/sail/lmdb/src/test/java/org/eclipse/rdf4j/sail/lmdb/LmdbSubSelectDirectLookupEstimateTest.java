@@ -255,7 +255,7 @@ class LmdbSubSelectDirectLookupEstimateTest {
 				super.meet(node);
 			}
 		});
-		assertTrue(offenders.isEmpty(), offenders.toString());
+		assertTrue(offenders.isEmpty(), () -> offenders + "\nSelected plan:\n" + tupleExpr);
 	}
 
 	private static void assertNoHiddenRepeatedTypeGuardFanout(TupleExpr tupleExpr) {
@@ -298,7 +298,7 @@ class LmdbSubSelectDirectLookupEstimateTest {
 				super.meet(node);
 			}
 		});
-		assertTrue(offenders.isEmpty(), offenders.toString());
+		assertTrue(offenders.isEmpty(), () -> offenders + "\nSelected plan:\n" + tupleExpr);
 	}
 
 	private static void assertNoTypeFilterBeforeDatasetBridge(TupleExpr tupleExpr) {

@@ -113,8 +113,8 @@ final class LmdbEstimateAuditHarness {
 
 	private static AuditRow auditFullQuery(SailRepositoryConnection connection, String queryId, String query,
 			TupleExpr tupleExpr) {
-		PlanEstimate planned = planEstimate(PieceKind.FULL_QUERY,
-				connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized));
+		Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+		PlanEstimate planned = planEstimate(PieceKind.FULL_QUERY, explanation);
 		BaselineEstimate baseline = baselineEstimate(connection, tupleExpr);
 		long actualRows = actualRows(connection, queryId, "full", PieceKind.FULL_QUERY, tupleExpr);
 		return new AuditRow(queryId, "full", PieceKind.FULL_QUERY, planned.rows(), actualRows,

@@ -320,6 +320,11 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	@Override
 	public Explanation explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset,
 			BindingSet bindings, boolean includeInferred, int timeoutSeconds) {
+		TupleExpr requestedTupleExpr = tupleExpr;
+		QueryRoot executionRoot = level == Explanation.Level.Unoptimized
+				? null
+				: tupleExpr instanceof QueryRoot queryRoot ? queryRoot : new QueryRoot(tupleExpr);
+		TupleExpr executionTupleExpr = executionRoot == null ? tupleExpr : executionRoot;
 		boolean queryTimedOut = false;
 		setRuntimeTelemetryEnabled(tupleExpr, false);
 
@@ -327,11 +332,12 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 			switch (level) {
 			case Telemetry:
-				setRuntimeTelemetryEnabled(tupleExpr, true);
+				setRuntimeTelemetryEnabled(executionTupleExpr, true);
 				this.trackResultSize = true;
 				this.cloneTupleExpression = false;
 
-				queryTimedOut = runQueryForExplain(tupleExpr, dataset, bindings, includeInferred, timeoutSeconds);
+				queryTimedOut = runQueryForExplain(executionTupleExpr, dataset, bindings, includeInferred,
+						timeoutSeconds);
 				break;
 
 			case Timed:
@@ -339,20 +345,22 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				this.trackResultSize = true;
 				this.cloneTupleExpression = false;
 
-				queryTimedOut = runQueryForExplain(tupleExpr, dataset, bindings, includeInferred, timeoutSeconds);
+				queryTimedOut = runQueryForExplain(executionTupleExpr, dataset, bindings, includeInferred,
+						timeoutSeconds);
 				break;
 
 			case Executed:
 				this.trackResultSize = true;
 				this.cloneTupleExpression = false;
 
-				queryTimedOut = runQueryForExplain(tupleExpr, dataset, bindings, includeInferred, timeoutSeconds);
+				queryTimedOut = runQueryForExplain(executionTupleExpr, dataset, bindings, includeInferred,
+						timeoutSeconds);
 				break;
 
 			case Optimized:
 				this.cloneTupleExpression = false;
 
-				evaluate(tupleExpr, dataset, bindings, includeInferred).close();
+				evaluate(executionTupleExpr, dataset, bindings, includeInferred).close();
 
 				break;
 
@@ -363,6 +371,9 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				throw new UnsupportedOperationException("Unsupported query explanation level: " + level);
 
 			}
+			if (executionRoot != null && executionRoot != requestedTupleExpr) {
+				tupleExpr = executionRoot.getArg();
+			}
 
 			Set<String> incomingBindings = bindings == null ? Collections.emptySet() : bindings.getBindingNames();
 			QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(tupleExpr,
@@ -372,6 +383,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			return new ExplanationImpl(converter.getGenericPlanNode(), queryTimedOut, tupleExpr);
 
 		} finally {
+			setRuntimeTelemetryEnabled(requestedTupleExpr, false);
 			setRuntimeTelemetryEnabled(tupleExpr, false);
 			this.cloneTupleExpression = true;
 			this.trackResultSize = false;

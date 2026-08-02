@@ -118,17 +118,12 @@ class LmdbSailStore implements SailStore {
 	private static final int CASCADES_PLAN_CACHE_CAPACITY = 1_024;
 
 	private final TripleStore tripleStore;
-	private final PackedPlanCache cascadesPlanCache = new PackedPlanCache(CASCADES_PLAN_CACHE_CAPACITY);
+	private final PackedPlanCache cascadesPlanCache;
 
 	private final ValueStore valueStore;
 	private final int bulkOperationSize;
 	private final int estimatorAddChunkSize;
-	private final FrontierEstimatorMode frontierEstimatorMode;
-	private final long frontierQueryMemoryBudgetBytes;
-	private final long frontierInitialMaterializationWorkUnits;
-	private final int frontierRefinementWorkUnits;
-	private final double frontierTargetRelativeStandardError;
-	private final double frontierDefensiveProposalEpsilon;
+	private final LmdbFrontierPlannerSettings frontierPlannerSettings;
 
 	private final ExecutorService tripleStoreExecutor = createTripleStoreExecutor();
 	private final ArrayBlockingQueue<Operation> opQueue = new ArrayBlockingQueue<>(1024);
@@ -376,12 +371,9 @@ class LmdbSailStore implements SailStore {
 		this.bulkOperationSize = config.getBulkOperationSize();
 		this.estimatorAddChunkSize = Math.max(EXACT_ESTIMATOR_ADD_CHUNK_SIZE, bulkOperationSize);
 		this.backgroundRawSamplingMaxMillisPerCycle = config.getBackgroundRawSamplingMaxMillisPerCycle();
-		this.frontierEstimatorMode = config.getFrontierEstimatorMode();
-		this.frontierQueryMemoryBudgetBytes = config.getFrontierQueryMemoryBudgetBytes();
-		this.frontierInitialMaterializationWorkUnits = config.getFrontierInitialMaterializationWorkUnits();
-		this.frontierRefinementWorkUnits = config.getFrontierRefinementWorkUnits();
-		this.frontierTargetRelativeStandardError = config.getFrontierTargetRelativeStandardError();
-		this.frontierDefensiveProposalEpsilon = config.getFrontierDefensiveProposalEpsilon();
+		this.frontierPlannerSettings = LmdbFrontierPlannerSettings.from(config);
+		this.cascadesPlanCache = new PackedPlanCache(CASCADES_PLAN_CACHE_CAPACITY, 16,
+				config.getFrontierCacheEvidenceBudgetBytes());
 		this.sketchBasedJoinEstimator = sketchBasedJoinEstimatorEnabled
 				? new SketchBasedJoinEstimator(new GuardedEstimatorStatementSource(), sketchEstimatorConfig(config))
 				: null;
@@ -1119,9 +1111,7 @@ class LmdbSailStore implements SailStore {
 	public EvaluationStatistics getEvaluationStatistics() {
 		return new LmdbEvaluationStatistics(valueStore, tripleStore, sketchBasedJoinEstimator, filterSelectivityStats,
 				operatorFeedbackStats, statementPatternCardinalitySource, cascadesPlanCache, frontierSynopsisService,
-				frontierEstimatorMode, frontierQueryMemoryBudgetBytes,
-				frontierInitialMaterializationWorkUnits, frontierRefinementWorkUnits,
-				frontierTargetRelativeStandardError, frontierDefensiveProposalEpsilon, () -> mayHaveInferred);
+				frontierPlannerSettings, () -> mayHaveInferred);
 	}
 
 	@Override

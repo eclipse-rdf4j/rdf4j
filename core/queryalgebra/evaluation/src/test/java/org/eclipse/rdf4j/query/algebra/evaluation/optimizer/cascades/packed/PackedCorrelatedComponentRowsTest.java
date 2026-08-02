@@ -16,8 +16,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -31,6 +33,66 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.junit.jupiter.api.Test;
 
 class PackedCorrelatedComponentRowsTest {
+
+	@Test
+	void correlatedWinnerAssemblyDoesNotReplayProviderCostingEvents() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern provider = pattern(values, "subject", "urn:event-provider", "gate");
+		StatementPattern middle = pattern(values, "subject", "urn:event-middle", "middle");
+		StatementPattern continuation = pattern(values, "middle", "urn:event-continuation", "tail");
+		StatementPattern probe = pattern(values, "gate", "urn:event-probe", "witness");
+		Filter source = new Filter(leftDeepJoin(List.of(provider, middle, continuation)), new Exists(probe));
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(source);
+		int relationCount = query.relationCount();
+		PackedMemo memo = new PackedMemo(query, query.symbolCount(), relationCount, relationCount, 4,
+				relationCount, relationCount * 2);
+		PackedSearchBudget budget = new PackedSearchBudget(Long.MAX_VALUE, Long.MAX_VALUE);
+		PackedCostModel baseline = (queryView, relationId) -> queryView.isStatementPattern(relationId)
+				? 10.0d
+				: Double.NaN;
+		PackedIncumbentSearch search = new PackedIncumbentSearch(query, memo, budget, false, baseline);
+		search.build();
+		Map<String, Integer> eventInvocations = new HashMap<>();
+		PackedCostModel replayRejectingCosts = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView queryView, int relationId) {
+				return queryView.isStatementPattern(relationId) ? 10.0d : Double.NaN;
+			}
+
+			@Override
+			public void estimate(PackedQueryView queryView, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				assertFalse(inCorrelatedWinnerAssembly(),
+						"winner assembly must copy the retained DP event instead of invoking the provider");
+				int invocation = eventInvocations.merge(contextKey("estimate", relationId, context), 1, Integer::sum);
+				double rows = invocation == 1
+						? context.prefixRelationCount() == 0 ? 10.0d : Math.max(1.0d, context.prefixRows() * 0.1d)
+						: 1_000_000.0d;
+				output.setContextualRows(rows, rows);
+			}
+
+			@Override
+			public void refineOperator(PackedQueryView queryView, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (!queryView.isFilter(relationId)) {
+					return;
+				}
+				assertFalse(inCorrelatedWinnerAssembly(),
+						"winner assembly must copy the retained FILTER event instead of refining it again");
+				int invocation = eventInvocations.merge(contextKey("operator", relationId, context), 1, Integer::sum);
+				double rows = invocation == 1
+						? Math.max(1.0d, context.leftInputRows() * 0.25d)
+						: 1_000_000.0d;
+				output.setContextualRows(rows, rows);
+			}
+		};
+		PackedJoinEnumerator enumerator = new PackedJoinEnumerator(query, memo, search.selectedRowsByGroup(), budget,
+				replayRejectingCosts);
+
+		int workUnits = enumerator.optimizeCorrelatedFilter(query.rootRelId());
+
+		assertTrue(workUnits > 0);
+	}
 
 	@Test
 	void correlatedDenseRetainsUnrelatedRowsAroundAPendingComponentEstimate() {
@@ -77,9 +139,9 @@ class PackedCorrelatedComponentRowsTest {
 		int workUnits = fixture.enumerator().seedCorrelatedFilter(fixture.filterRelationId());
 
 		assertTrue(workUnits > 0);
-		assertEquals(List.of(200.0d), continuationPrefixRows,
+		assertEquals(List.of(800.0d), continuationPrefixRows,
 				"The component estimate cannot collapse the conservative full-prefix winner after FILTER invalidated "
-						+ "an unrelated component");
+						+ "an unrelated component, and absent evidence FILTER cannot invent selectivity");
 	}
 
 	@Test
@@ -127,8 +189,151 @@ class PackedCorrelatedComponentRowsTest {
 		int workUnits = fixture.enumerator().seedCorrelatedFilter(fixture.filterRelationId());
 
 		assertTrue(workUnits > 0);
-		assertEquals(List.of(25.0d), continuationPrefixRows,
-				"Operator refinement has no component identity, so the whole-prefix filter estimate must survive");
+		assertEquals(List.of(100.0d), continuationPrefixRows,
+				"Operator refinement has no component identity, so the semantics-derived input bound must survive");
+	}
+
+	@Test
+	void correlatedDenseCarriesTheWinningFrontierStateThroughFilterScheduling() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern provider = pattern(values, "provider", "urn:state-provider", "gate");
+		StatementPattern continuation = pattern(values, "provider", "urn:state-continuation", "tail");
+		StatementPattern probe = pattern(values, "gate", "urn:state-probe", "witness");
+		Filter source = new Filter(new Join(provider, continuation), new Exists(probe));
+		int[] nextState = { 1 };
+		int[] statefulCandidateCalls = new int[1];
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return query.isStatementPattern(relationId) ? 10.0d : Double.NaN;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (context.prefixRelationCount() > 0) {
+					assertTrue(context.evidenceStateId() > 0,
+							() -> "every correlated candidate with a physical prefix needs its aligned Frontier state; "
+									+ "relation=" + relationId + ", prefixCount=" + context.prefixRelationCount()
+									+ ", prefixRows=" + context.prefixRows()
+									+ ", leftState=" + context.leftInputEvidenceStateId()
+									+ ", rightState=" + context.rightInputEvidenceStateId());
+					statefulCandidateCalls[0]++;
+				}
+				double rows = query.isStatementPattern(relationId) ? 10.0d : Math.max(1.0d, context.prefixRows());
+				output.setRows(rows, rows);
+				output.setEvidenceStateId(nextState[0]++);
+			}
+
+			@Override
+			public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (!query.isFilter(relationId) || context.prefixRelationCount() == 0) {
+					return;
+				}
+				assertTrue(context.evidenceStateId() > 0,
+						"scheduled FILTER refinement needs the pending prefix state");
+				assertTrue(context.leftInputEvidenceStateId() > 0,
+						"scheduled FILTER refinement needs its input state separately");
+				output.setEvidenceStateId(nextState[0]++);
+			}
+		};
+
+		Fixture fixture = fixture(source, costs);
+		statefulCandidateCalls[0] = 0;
+		int workUnits = fixture.enumerator().optimizeCorrelatedFilter(fixture.filterRelationId());
+
+		assertTrue(workUnits > 0);
+		assertTrue(statefulCandidateCalls[0] > 0);
+	}
+
+	@Test
+	void dependentSubqueryReceivesTheOwningOuterFrontierState() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern outer = pattern(values, "subject", "urn:dependent-outer", "gate");
+		StatementPattern dependent = pattern(values, "gate", "urn:dependent-inner", "witness");
+		Filter source = new Filter(outer, new Exists(dependent));
+		int[] contextualInnerCalls = new int[1];
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return query.isStatementPattern(relationId) ? 10.0d : Double.NaN;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (!query.isStatementPattern(relationId)) {
+					return;
+				}
+				String predicate = predicate(query, relationId);
+				if ("urn:dependent-inner".equals(predicate) && context.prefixRelationCount() > 0) {
+					assertEquals(41, context.evidenceStateId(),
+							"dependent planning must inherit the owning outer winner's Frontier state");
+					contextualInnerCalls[0]++;
+				}
+				output.setRows(10.0d, 10.0d);
+				output.setEvidenceStateId("urn:dependent-outer".equals(predicate) ? 41 : 42);
+			}
+		};
+
+		Fixture fixture = fixture(source, costs);
+		fixture.enumerator().optimizeCorrelatedFilter(fixture.filterRelationId());
+
+		assertTrue(contextualInnerCalls[0] > 0);
+	}
+
+	@Test
+	void selectedPlanDependentSubqueryUsesThePreviouslyCostedOuterFrontierState() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern outer = pattern(values, "subject", "urn:selected-dependent-outer", "gate");
+		StatementPattern dependent = pattern(values, "gate", "urn:selected-dependent-inner", "witness");
+		Filter source = new Filter(outer, new Exists(dependent));
+		int[] contextualInnerCalls = new int[1];
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return query.isStatementPattern(relationId) ? 10.0d : Double.NaN;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (!query.isStatementPattern(relationId)) {
+					return;
+				}
+				String predicate = predicate(query, relationId);
+				if ("urn:selected-dependent-inner".equals(predicate) && context.prefixRelationCount() > 0) {
+					assertEquals(51, context.evidenceStateId(),
+							"selected-plan dependent costing must retain its input winner's Frontier state");
+					contextualInnerCalls[0]++;
+				}
+				output.setRows(10.0d, 10.0d);
+				output.setEvidenceStateId("urn:selected-dependent-outer".equals(predicate) ? 51 : 52);
+			}
+		};
+
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(source);
+		int relationCount = query.relationCount();
+		PackedMemo memo = new PackedMemo(query, query.symbolCount(), relationCount, relationCount, 4,
+				relationCount, relationCount * 2);
+		PackedSearchBudget budget = new PackedSearchBudget(Long.MAX_VALUE, Long.MAX_VALUE);
+		PackedIncumbentSearch search = new PackedIncumbentSearch(query, memo, budget, false, costs);
+		search.build();
+		PackedJoinEnumerator enumerator = new PackedJoinEnumerator(query, memo, search.selectedRowsByGroup(), budget,
+				costs);
+		enumerator.optimizeCorrelatedFilter(query.rootRelId());
+		int rootWinnerId = memo.findWinner(memo.logicalGroupId(query.rootRelId()), memo.anyPropertyId(), 0, 0, 0);
+		int callsBeforeAssembly = contextualInnerCalls[0];
+		PackedSelectedPlanContextualizer contextualizer = new PackedSelectedPlanContextualizer(query, memo, budget,
+				costs, search.selectedRowsByGroup());
+
+		contextualizer.contextualize(rootWinnerId);
+
+		assertTrue(callsBeforeAssembly > 0);
+		assertEquals(callsBeforeAssembly, contextualInnerCalls[0],
+				"selected-plan assembly must link the contextual winner without re-estimating it");
+		assertEquals(1, contextualizer.dependentPlans().size());
 	}
 
 	private static Fixture fixture(TupleExpr source, PackedCostModel costs) {
@@ -143,6 +348,42 @@ class PackedCorrelatedComponentRowsTest {
 		assertTrue(new PackedQueryView(query).isFilter(filterRelationId));
 		return new Fixture(filterRelationId,
 				new PackedJoinEnumerator(query, memo, search.selectedRowsByGroup(), budget, costs));
+	}
+
+	private static String contextKey(String phase, int relationId, PackedCostContext context) {
+		StringBuilder key = new StringBuilder(phase).append(':').append(relationId).append(':');
+		for (int ordinal = 0; ordinal < context.prefixRelationCount(); ordinal++) {
+			key.append(context.prefixRelationId(ordinal)).append(',');
+		}
+		return key.append(':')
+				.append(Double.doubleToLongBits(context.prefixRows()))
+				.append(':')
+				.append(context.assuredBindingRelationId())
+				.append(':')
+				.append(context.evidenceStateId())
+				.append(':')
+				.append(context.bindingLayoutId())
+				.append(':')
+				.append(context.correlationMaskId())
+				.append(':')
+				.append(context.semanticScopeMaskId())
+				.append(':')
+				.append(Double.doubleToLongBits(context.leftInputRows()))
+				.append(':')
+				.append(Double.doubleToLongBits(context.rightInputRows()))
+				.append(':')
+				.append(context.leftInputEvidenceStateId())
+				.append(':')
+				.append(context.rightInputEvidenceStateId())
+				.toString();
+	}
+
+	private static boolean inCorrelatedWinnerAssembly() {
+		return StackWalker.getInstance()
+				.walk(frames -> frames
+						.anyMatch(frame -> frame.getClassName().equals(PackedJoinEnumerator.class.getName())
+								&& (frame.getMethodName().equals("emitDenseCorrelatedWinner")
+										|| frame.getMethodName().equals("emitScheduledFilterOrder"))));
 	}
 
 	private static PackedCostModel componentCosts(String componentPredicate, String observedPredicate,

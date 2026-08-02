@@ -78,10 +78,34 @@ final class LmdbEstimationEngine {
 				Objects.requireNonNull(context, "context"));
 	}
 
+	static boolean databaseExact(BagEstimate estimate) {
+		if (estimate == null) {
+			return false;
+		}
+		return "lmdb-exact".equals(estimate.source()) || "finite-values".equals(estimate.source())
+				|| "quad-total".equals(estimate.source())
+				|| "lmdb-finite-binding-lookup".equals(estimate.source()) && estimate.confidence() == 1.0d;
+	}
+
 	BagEstimate estimateFilter(TupleExpr input, ValueExpr condition, BagEstimate inputEstimate,
 			EstimateContext context) {
 		return filter(Objects.requireNonNull(input, "input"), Objects.requireNonNull(condition, "condition"),
 				Objects.requireNonNull(inputEstimate, "inputEstimate"), Objects.requireNonNull(context, "context"));
+	}
+
+	EstimateContext joinRightContext(TupleExpr leftExpression, TupleExpr rightExpression, EstimateContext context,
+			BagEstimate left) {
+		Set<String> shared = sharedNames(leftExpression, rightExpression);
+		Set<String> assuredShared = new LinkedHashSet<>(leftExpression.getAssuredBindingNames());
+		assuredShared.retainAll(shared);
+		if (assuredShared.isEmpty()) {
+			return context;
+		}
+		EstimateContext rightContext = context.withBoundNames(assuredShared)
+				.withPrefixEstimate(left)
+				.withInvocationCount(left.rows());
+		FiniteRelationEstimate relation = left.relationContaining(assuredShared).orElse(null);
+		return relation == null ? rightContext : rightContext.withFiniteBindings(relation);
 	}
 
 	private BagEstimate filter(TupleExpr input, ValueExpr condition, BagEstimate inputEstimate,
@@ -221,16 +245,8 @@ final class LmdbEstimationEngine {
 		private BagEstimate innerJoin(TupleExpr leftExpression, TupleExpr rightExpression, EstimateContext context) {
 			BagEstimate left = estimate(leftExpression, context);
 			Set<String> shared = sharedNames(leftExpression, rightExpression);
-			Set<String> assuredShared = new LinkedHashSet<>(leftExpression.getAssuredBindingNames());
-			assuredShared.retainAll(shared);
-			if (!assuredShared.isEmpty()) {
-				EstimateContext rightContext = context.withBoundNames(assuredShared)
-						.withPrefixEstimate(left)
-						.withInvocationCount(left.rows());
-				FiniteRelationEstimate relation = left.relationContaining(assuredShared).orElse(null);
-				if (relation != null) {
-					rightContext = rightContext.withFiniteBindings(relation);
-				}
+			EstimateContext rightContext = joinRightContext(leftExpression, rightExpression, context, left);
+			if (rightContext != context) {
 				BagEstimate right = estimate(rightExpression, rightContext);
 				BagEstimate composed = EstimateMath.innerJoin(left, right, shared);
 				double workRows = saturatingSum(left.workRows(), right.workRows());

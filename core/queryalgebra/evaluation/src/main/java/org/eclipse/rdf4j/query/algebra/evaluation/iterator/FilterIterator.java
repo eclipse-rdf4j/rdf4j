@@ -138,16 +138,21 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 	private static QueryEvaluationStep supplyMaterializedExistsSemiJoin(Filter filter, EvaluationStrategy strategy,
 			QueryEvaluationContext context, EvaluationStatistics evaluationStatistics) {
 		String algorithmHint = filter.getStringMetricPlanned(OPTIMIZER_FILTER_ALGORITHM_HINT);
-		if (STREAMING_EXISTS.equals(algorithmHint) || filter.isVariableScopeChange()
-				|| isPartOfSubQuery(filter)) {
-			return null;
+		if (STREAMING_EXISTS.equals(algorithmHint)) {
+			return declineMaterializedExists(filter, algorithmHint, "planned-streaming-exists");
+		}
+		if (filter.isVariableScopeChange()) {
+			return declineMaterializedExists(filter, algorithmHint, "filter-scope-boundary");
+		}
+		if (isPartOfSubQuery(filter)) {
+			return declineMaterializedExists(filter, algorithmHint, "nested-subquery-scope");
 		}
 		boolean negated = filter.getCondition()instanceof Not not && not.getArg() instanceof Exists;
 		Exists exists = filter.getCondition()instanceof Exists direct
 				? direct
 				: negated ? (Exists) ((Not) filter.getCondition()).getArg() : null;
 		if (exists == null) {
-			return null;
+			return declineMaterializedExists(filter, algorithmHint, "not-exists-semi-anti");
 		}
 		TupleExpr subQuery = exists.getSubQuery();
 		boolean explicitlyPlanned = STREAMING_CORRELATED.equals(algorithmHint)
@@ -155,11 +160,17 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 				|| MATERIALIZED_HASH.equals(algorithmHint);
 		boolean assuredSharedMinus = MINUS_ASSURED_SHARED
 				.equals(filter.getStringMetricPlanned(OPTIMIZER_SEMI_ANTI_KIND));
-		if (subQuery == null
-				|| containsVariableScopeChange(subQuery, assuredSharedMinus)
-				|| containsSubQueryValueOperator(subQuery)
-				|| !explicitlyPlanned && !subqueryVarReferencesAreOutputs(subQuery)) {
-			return null;
+		if (subQuery == null) {
+			return declineMaterializedExists(filter, algorithmHint, "missing-subquery");
+		}
+		if (containsVariableScopeChange(subQuery, assuredSharedMinus)) {
+			return declineMaterializedExists(filter, algorithmHint, "subquery-scope-boundary");
+		}
+		if (containsSubQueryValueOperator(subQuery)) {
+			return declineMaterializedExists(filter, algorithmHint, "nested-subquery-value-operator");
+		}
+		if (!explicitlyPlanned && !subqueryVarReferencesAreOutputs(subQuery)) {
+			return declineMaterializedExists(filter, algorithmHint, "unprojected-correlation-reference");
 		}
 
 		Set<String> subqueryOutputNames = new LinkedHashSet<>(subQuery.getBindingNames());
@@ -185,7 +196,7 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 			existsArg = strategy.precompile(subQuery, context);
 			strategy.precompile(filter.getCondition(), context);
 		} catch (QueryEvaluationException e) {
-			return null;
+			return declineMaterializedExists(filter, algorithmHint, "precompile-failure");
 		}
 		boolean recordFilterOutcomes = shouldRecordFilterOutcomes(filter, evaluationStatistics);
 		int strategyMode = STREAMING_CORRELATED.equals(algorithmHint)
@@ -201,6 +212,7 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 		java.util.concurrent.atomic.AtomicInteger sharedProbeBudget = new java.util.concurrent.atomic.AtomicInteger(
 				plannedSemiAntiProbeBudget(filter));
 		ConcurrentMap<BindingSetHashKey, Boolean> sharedProbeCache = new ConcurrentHashMap<>();
+		recordMaterializedExistsDisposition(filter, algorithmHint, "compiled-specialized");
 		return bindings -> new MaterializedExistsFilterIteration(filter, arg.evaluate(bindings),
 				materializationBindings -> {
 					QueryBindingSet merged = new QueryBindingSet(bindings);
@@ -212,6 +224,19 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 				existsArg::evaluate, sharedBindingArray, correlationKeyBindingArray,
 				materializationParameterBindingArray, subQuery, evaluationStatistics, recordFilterOutcomes,
 				sharedProbeBudget, sharedProbeCache, strategyMode, negated);
+	}
+
+	private static QueryEvaluationStep declineMaterializedExists(Filter filter, String algorithmHint, String reason) {
+		recordMaterializedExistsDisposition(filter, algorithmHint, "declined:" + reason);
+		return null;
+	}
+
+	private static void recordMaterializedExistsDisposition(Filter filter, String algorithmHint, String disposition) {
+		if (algorithmHint == null) {
+			return;
+		}
+		filter.setRuntimeTelemetryEnabled(true);
+		filter.setStringMetricActual("actualSemiAntiRuntimeDisposition", disposition);
 	}
 
 	private static int plannedSemiAntiProbeBudget(Filter filter) {

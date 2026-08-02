@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -68,6 +69,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.Pack
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostSession;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostTestSupport;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanningResult;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedQueryView;
@@ -79,7 +81,13 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
+import org.eclipse.rdf4j.sail.base.SailSource;
+import org.eclipse.rdf4j.sail.base.SailStore;
+import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSynopsisStatus;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
@@ -137,6 +145,8 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			double plannedAccessRows = plannedPartOf.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_ACCESS_ROWS);
 			double plannedInvocations = plannedPartOf.getDoubleMetricPlanned("plannedRepeatedInvocations");
 			double plannedWorkRows = plannedPartOf.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS);
+			double plannedSequentialRows = plannedPartOf.getDoubleMetricPlanned("plannedCostSequentialRows");
+			double plannedResultRows = plannedPartOf.getDoubleMetricPlanned("plannedCostResultRows");
 			boolean hashJoin = "hash".equals(
 					plan.tupleExpr().getStringMetricPlanned("optimizer.joinAlgorithmHint"));
 			if (hashJoin) {
@@ -160,9 +170,18 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			assertEquals(expectedSurfaceRows, plan.tupleExpr().getResultSizeEstimate(), expectedSurfaceRows * 0.25d,
 					"Both join implementations must retain the complete VALUES-derived partOf cardinality. plan="
 							+ plan.tupleExpr());
-			assertEquals(expectedSurfaceRows, plannedWorkRows, expectedSurfaceRows * 0.25d,
-					"Both join implementations should retain the same bounded partOf factor work. "
+			assertEquals(expectedSurfaceRows, plannedSequentialRows, expectedSurfaceRows * 0.25d,
+					"Both join implementations should retain the same bounded partOf scan work. "
 							+ "expectedSurfaceRows=" + expectedSurfaceRows + ", metrics=" + plannedPartOf
+							+ ", plan=" + plan.tupleExpr());
+			assertEquals(expectedSurfaceRows, plannedResultRows, expectedSurfaceRows * 0.25d,
+					"Both join implementations should retain the same bounded partOf result work. "
+							+ "expectedSurfaceRows=" + expectedSurfaceRows + ", metrics=" + plannedPartOf
+							+ ", plan=" + plan.tupleExpr());
+			assertTrue(plannedWorkRows >= plannedSequentialRows + plannedResultRows,
+					"Total physical work should include both access and result work. plannedWorkRows="
+							+ plannedWorkRows + ", plannedSequentialRows=" + plannedSequentialRows
+							+ ", plannedResultRows=" + plannedResultRows + ", metrics=" + plannedPartOf
 							+ ", plan=" + plan.tupleExpr());
 		} finally {
 			repository.shutDown();
@@ -546,7 +565,8 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			assertEquals("[P, O]",
 					plannedLocatedAt.getStringMetricPlanned(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS),
 					"AUTO must admit the finite-prefix winner before exhausting rule work. status="
-							+ plan.searchStatus() + ", metrics=" + plannedLocatedAt + ", plan=" + optimized);
+							+ plan.searchStatus() + ", metrics=" + plannedLocatedAt + ", provenance="
+							+ plan.provenance() + ", plan=" + optimized);
 			assertTrue(plannedLocatedAt.getDoubleMetricPlanned("plannedRepeatedInvocations") <= 4.0d,
 					"AUTO must not invoke locatedAt once per broad branch-name row. status=" + plan.searchStatus()
 							+ ", metrics=" + plannedLocatedAt + ", plan=" + optimized);
@@ -582,7 +602,8 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			assertEquals("[P, O]",
 					plannedLocatedAt.getStringMetricPlanned(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS),
 					"The finite branch prefix must cross the EXISTS scope without becoming a broad scan. status="
-							+ plan.searchStatus() + ", metrics=" + plannedLocatedAt + ", plan=" + optimized);
+							+ plan.searchStatus() + ", metrics=" + plannedLocatedAt + ", provenance="
+							+ plan.provenance() + ", plan=" + optimized);
 			assertTrue(plannedLocatedAt.getDoubleMetricPlanned("plannedRepeatedInvocations") <= 4.0d,
 					"EXISTS must not make locatedAt run once per broad branch-name row. status="
 							+ plan.searchStatus() + ", metrics=" + plannedLocatedAt + ", plan=" + optimized);
@@ -671,6 +692,215 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 	}
 
 	@Test
+	void scalarFilterChargesEveryInputExpressionEvaluation(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc,posc"));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticEngineeringAssemblies(repository);
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
+
+			String query = "SELECT ?assembly WHERE {\n"
+					+ "  ?assembly <" + ENG_NAME.stringValue() + "> ?assemblyName .\n"
+					+ "  FILTER (STR(?assemblyName) = \"Assembly 1\")\n"
+					+ "}";
+			Filter plannedFilter = findFilter(planAuto(store, query).tupleExpr());
+			assertTrue(plannedFilter != null, "Expected the scalar filter to remain in the selected plan");
+
+			double inputRows = plannedFilter.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_ACCESS_ROWS);
+			double expressionEvaluations = plannedFilter
+					.getDoubleMetricPlanned("plannedCostExpressionEvaluations");
+			assertTrue(inputRows > 0.0d, "Expected a positive filter input surface. filter=" + plannedFilter);
+			assertEquals(inputRows, expressionEvaluations, 0.0d,
+					"A scalar filter evaluates its condition once for every input row");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void opaqueFrontierAppendRetainsBoundStatementAccessDimensions(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
+				.setFrontierSynopsisBudgetBytes(1024L * 1024L);
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticEngineeringAssemblies(repository);
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
+			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+
+			StatementPattern name = new StatementPattern(Var.of("assembly"), Var.of("namePredicate", ENG_NAME),
+					Var.of("assemblyName"));
+			FunctionCall contains = new FunctionCall(FN.CONTAINS.stringValue());
+			contains.addArg(Var.of("assemblyName"));
+			contains.addArg(new ValueConstant(VF.createLiteral("Assembly 1")));
+			Filter filteredName = new Filter(name, contains);
+			StatementPattern type = new StatementPattern(Var.of("assembly"), Var.of("typePredicate", RDF_TYPE),
+					Var.of("assemblyType", ENG_ASSEMBLY));
+			PackedCostTestSupport.FilteredPairCostCall call = PackedCostTestSupport
+					.filteredConnectedStatementFactors(filteredName, type);
+			SailStore sailStore = store.getSailStore();
+			try (SailSource branch = sailStore.getExplicitSailSource().fork();
+					SailDataset dataset = branch.dataset(store.getDefaultIsolationLevel())) {
+				SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(
+						sailStore.getValueFactory(), dataset);
+				LmdbEstimatorRuntime runtime = ((LmdbEstimatorRuntimeProvider) sailStore.getEvaluationStatistics())
+						.estimatorRuntime();
+				var strategy = store.getEvaluationStrategyFactory()
+						.createEvaluationStrategy(null, tripleSource, sailStore.getEvaluationStatistics());
+				LmdbPackedCostModel model = new LmdbPackedCostModel(runtime,
+						OptionalLong.of(tripleSource.getSnapshotEpoch().orElseThrow()), true, tripleSource, strategy);
+
+				try (PackedCostSession session = model.openSession(call.query())) {
+					PackedCostEstimate prefix = new PackedCostEstimate();
+					session.estimateLeaf(call.prefixStatementRelationId(), call.emptyContext(), prefix);
+					assertNotEquals(0, prefix.evidenceStateId(),
+							"The bound access regression requires a retained Frontier prefix state");
+					PackedCostEstimate filtered = new PackedCostEstimate();
+					filtered.setRows(prefix.outputRows() * 0.5d, prefix.workRows() + prefix.outputRows());
+					session.refineOperator(call.filterRelationId(),
+							call.filterContext(prefix.outputRows(), prefix.evidenceStateId()), filtered);
+					assertEquals("opaque_boundary", filtered.plannedStringMetrics().get("plannedFrontierDisposition"),
+							"The fixture must exercise the same non-composable prefix handoff as q9");
+
+					PackedCostEstimate factor = new PackedCostEstimate();
+					session.estimateLeaf(call.factorRelationId(), call.emptyContext(), factor);
+					double isolatedRows = factor.outputRows();
+					double isolatedWork = factor.workRows();
+					factor.clear();
+					factor.setRows(isolatedRows, isolatedWork);
+					session.appendFactor(call.factorRelationId(),
+							call.prefixContext(filtered.outputRows(), filtered.evidenceStateId()), factor);
+
+					assertTrue(factor.invocations() > 1.0d,
+							"The connected type access should be invoked once per bound assembly. estimate=" + factor);
+					assertEquals(factor.invocations(), factor.randomSeeks(), 0.0d,
+							"Every bound LMDB invocation must retain its random-seek cost in the originating event");
+					assertEquals(factor.invocations(), factor.iteratorOpens(), 0.0d,
+							"Every bound LMDB invocation must retain its iterator-open cost in the originating event");
+					assertEquals(factor.outputRows(), factor.resultRows(), 0.0d,
+							"The bound access event must retain produced rows independently from source scans");
+					assertTrue(session.objectiveScore(factor) > factor.workRows(),
+							"Winner comparison must price each random LMDB lookup from the selected index's "
+									+ "stored B-tree shape while preserving the event's unweighted physical counters");
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void exactFrontierPrefixUsesFactorSpecificDistinctBindingInvocations(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
+				.setFrontierSynopsisBudgetBytes(1024L * 1024L);
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		IRI ab = VF.createIRI("urn:test:frontier-domain:ab");
+		IRI da = VF.createIRI("urn:test:frontier-domain:da");
+		IRI bc = VF.createIRI("urn:test:frontier-domain:bc");
+		IRI cd = VF.createIRI("urn:test:frontier-domain:cd");
+		BindingSetAssignment selectedB = new BindingSetAssignment();
+		List<BindingSet> selectedBindings = new ArrayList<>();
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				for (int bOrdinal = 0; bOrdinal < 4; bOrdinal++) {
+					Resource b = VF.createIRI("urn:test:frontier-domain:b:" + bOrdinal);
+					QueryBindingSet binding = new QueryBindingSet();
+					binding.addBinding("b", b);
+					selectedBindings.add(binding);
+					for (int branch = 0; branch < 3; branch++) {
+						Resource a = VF.createIRI("urn:test:frontier-domain:a:" + bOrdinal + ':' + branch);
+						Resource d = VF.createIRI("urn:test:frontier-domain:d:" + bOrdinal + ':' + branch);
+						Resource c = VF.createIRI("urn:test:frontier-domain:c:" + bOrdinal + ':' + branch);
+						connection.add(a, ab, b);
+						connection.add(d, da, a);
+						connection.add(c, cd, d);
+					}
+					connection.add(b, bc, VF.createIRI("urn:test:frontier-domain:bc-object:" + bOrdinal + ":0"));
+					connection.add(b, bc, VF.createIRI("urn:test:frontier-domain:bc-object:" + bOrdinal + ":1"));
+				}
+			}
+			selectedB.setBindingSets(selectedBindings);
+			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+
+			StatementPattern abFactor = new StatementPattern(Var.of("a"), Var.of("abPredicate", ab), Var.of("b"));
+			StatementPattern daFactor = new StatementPattern(Var.of("d"), Var.of("daPredicate", da), Var.of("a"));
+			StatementPattern bcFactor = new StatementPattern(Var.of("b"), Var.of("bcPredicate", bc), Var.of("c"));
+			StatementPattern cdFactor = new StatementPattern(Var.of("c"), Var.of("cdPredicate", cd), Var.of("d"));
+			PackedCostTestSupport.StatementFactorChainCostCall call = PackedCostTestSupport
+					.statementFactorChain(selectedB, abFactor, daFactor, bcFactor, cdFactor);
+			SailStore sailStore = store.getSailStore();
+			try (SailSource branch = sailStore.getExplicitSailSource().fork();
+					SailDataset dataset = branch.dataset(store.getDefaultIsolationLevel())) {
+				SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(
+						sailStore.getValueFactory(), dataset);
+				LmdbEstimatorRuntime runtime = ((LmdbEstimatorRuntimeProvider) sailStore.getEvaluationStatistics())
+						.estimatorRuntime();
+				var strategy = store.getEvaluationStrategyFactory()
+						.createEvaluationStrategy(null, tripleSource, sailStore.getEvaluationStatistics());
+				LmdbPackedCostModel model = new LmdbPackedCostModel(runtime,
+						OptionalLong.of(tripleSource.getSnapshotEpoch().orElseThrow()), true, tripleSource, strategy);
+
+				try (PackedCostSession session = model.openSession(call.query())) {
+					PackedCostEstimate prefix = new PackedCostEstimate();
+					session.estimateLeaf(call.bindingRelationId(), call.emptyContext(), prefix);
+					for (int factorOrdinal = 0; factorOrdinal < 2; factorOrdinal++) {
+						PackedCostEstimate next = new PackedCostEstimate();
+						session.estimateLeaf(call.factorRelationId(factorOrdinal), call.emptyContext(), next);
+						session.appendFactor(call.factorRelationId(factorOrdinal),
+								call.prefixContext(factorOrdinal, prefix.outputRows(), prefix.evidenceStateId()), next);
+						prefix = next;
+					}
+					assertEquals("database_exact", prefix.plannedStringMetrics().get("plannedFrontierGuarantee"),
+							"The fixture must retain the exact correlated (b,d) tuple domain");
+
+					PackedCostEstimate byB = new PackedCostEstimate();
+					session.estimateLeaf(call.factorRelationId(2), call.emptyContext(), byB);
+					session.appendFactor(call.factorRelationId(2),
+							call.prefixContext(2, prefix.outputRows(), prefix.evidenceStateId()), byB);
+					PackedCostEstimate byD = new PackedCostEstimate();
+					session.estimateLeaf(call.factorRelationId(3), call.emptyContext(), byD);
+					session.appendFactor(call.factorRelationId(3),
+							call.prefixContext(2, prefix.outputRows(), prefix.evidenceStateId()), byD);
+
+					assertEquals(12.0d, byB.invocations(), 0.0d,
+							"The nested-loop bc access should run once for every outer bag row");
+					assertEquals(12.0d, byD.invocations(), 0.0d,
+							"The nested-loop cd access should run once for every outer bag row");
+					assertEquals(4.0d,
+							byB.plannedDoubleMetrics()
+									.getOrDefault("plannedFrontierDistinctAccessBindings", Double.NaN),
+							0.0d, "The bc fanout surface should be weighted over four distinct b bindings");
+					assertEquals(12.0d,
+							byD.plannedDoubleMetrics()
+									.getOrDefault("plannedFrontierDistinctAccessBindings", Double.NaN),
+							0.0d, "The cd fanout surface should be weighted over twelve distinct d bindings");
+					assertEquals(2.0d, byB.accessRows(), 0.0d,
+							"Each distinct b binding has two bc results per outer invocation");
+					assertEquals(1.0d, byD.accessRows(), 0.0d,
+							"Each distinct d binding has one cd result per outer invocation");
+					assertEquals(4.0d,
+							byB.plannedDoubleMetrics().getOrDefault("plannedFrontierAccessSurfaceProbes", Double.NaN),
+							0.0d, "Repeated b multiplicity should weight four distinct storage probes");
+					assertEquals(12.0d,
+							byD.plannedDoubleMetrics().getOrDefault("plannedFrontierAccessSurfaceProbes", Double.NaN),
+							0.0d, "Each distinct d binding requires its own storage probe");
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
 	void disconnectedDecoratedFactorsPreserveProviderRowScope(@TempDir File dataDir)
 			throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc,posc"));
@@ -718,8 +948,20 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 					"The exact finite relation contains only the local FILTER component");
 			assertEquals(3.0d, estimate.outputRows(), 0.0d,
 					"Three local matches remain three component rows before packed prefix composition");
-			assertEquals(138.0d, estimate.workRows(), 0.0d,
-					"Twenty-three p1 rows are read and filtered for each of three outer invocations");
+			assertEquals(PackedCostEstimate.CostScope.INCLUSIVE, estimate.costScope(),
+					"A decorated factor must price its complete statement-and-filter subtree");
+			assertEquals(69.0d, estimate.sequentialRows(), 0.0d,
+					"Twenty-three p1 rows are read for each of three outer invocations");
+			assertEquals(3.0d, estimate.randomSeeks(), 0.0d,
+					"Each repeated LMDB statement access requires one index seek");
+			assertEquals(3.0d, estimate.iteratorOpens(), 0.0d,
+					"Each repeated LMDB statement access requires one iterator open");
+			assertEquals(69.0d, estimate.expressionEvaluations(), 0.0d,
+					"The filter condition is evaluated for every scanned statement row");
+			assertEquals(72.0d, estimate.resultRows(), 0.0d,
+					"The inclusive vector retains both statement and filtered result production");
+			assertEquals(216.0d, estimate.workRows(), 0.0d,
+					"The inclusive objective must contain scan, seek, open, filter, and result work");
 
 			ProjectionElemList elements = new ProjectionElemList();
 			elements.addElement(new ProjectionElem("v1"));
@@ -737,8 +979,15 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 					"A projection over repeated input already contains the unrelated three-row prefix");
 			assertEquals(69.0d, estimate.outputRows(), 0.0d,
 					"Twenty-three local rows repeated for three outer rows form one full contextual surface");
-			assertEquals(69.0d, estimate.workRows(), 0.0d,
-					"The identity projection retains the complete repeated input work");
+			assertEquals(PackedCostEstimate.CostScope.INCLUSIVE, estimate.costScope());
+			assertEquals(69.0d, estimate.sequentialRows(), 0.0d);
+			assertEquals(3.0d, estimate.randomSeeks(), 0.0d);
+			assertEquals(3.0d, estimate.iteratorOpens(), 0.0d);
+			assertEquals(0.0d, estimate.expressionEvaluations(), 0.0d);
+			assertEquals(138.0d, estimate.resultRows(), 0.0d,
+					"The inclusive vector retains statement and projected result production");
+			assertEquals(213.0d, estimate.workRows(), 0.0d,
+					"The projection factor objective must retain its complete physical subtree");
 		} finally {
 			repository.shutDown();
 		}
@@ -957,8 +1206,8 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			LmdbEstimatorRuntime runtime = ((LmdbEstimatorRuntimeProvider) store.getBackingStore()
 					.getEvaluationStatistics()).estimatorRuntime();
 			PackedCostModel delegate = new LmdbPackedCostModel(runtime);
-			record Observation(double prefixRows, double outputRows, double workRows, boolean contextual,
-					String source) {
+			record Observation(double prefixRows, double outputRows, double workRows, double iteratorOpens,
+					double expressionEvaluations, double resultRows, boolean contextual, String source) {
 			}
 			List<Observation> observations = new ArrayList<>();
 			PackedCostModel probe = new PackedCostModel() {
@@ -977,7 +1226,8 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 									.getBindingNames()
 									.contains("value")) {
 						observations.add(new Observation(context.prefixRows(), output.outputRows(),
-								output.workRows(), output.hasContextualOutputRows(), output.estimateSource()));
+								output.workRows(), output.iteratorOpens(), output.expressionEvaluations(),
+								output.resultRows(), output.hasContextualOutputRows(), output.estimateSource()));
 					}
 				}
 
@@ -1001,8 +1251,14 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 							+ boundValues);
 			assertEquals(900.0d, boundValues.outputRows(), 0.0d,
 					"One compatible VALUES row must preserve each row of the shared prefix");
-			assertEquals(2_700.0d, boundValues.workRows(), 0.0d,
-					"Nested VALUES membership work must scan all three rows for each prefix row");
+			assertEquals(2_700.0d, boundValues.expressionEvaluations(), 0.0d,
+					"Nested VALUES membership must test all three assignment rows for each prefix row");
+			assertEquals(900.0d, boundValues.iteratorOpens(), 0.0d,
+					"Nested VALUES membership must open one assignment iterator for each prefix row");
+			assertEquals(900.0d, boundValues.resultRows(), 0.0d,
+					"Nested VALUES membership must retain its independently costed compatible results");
+			assertEquals(4_500.0d, boundValues.workRows(), 0.0d,
+					"The physical objective must include assignment scans, iterator opens, and produced rows");
 			assertEquals("lmdb-binding-set-assignment-filter", boundValues.source(),
 					"The packed adapter must retain the delegated engine provenance");
 		} finally {
@@ -1263,6 +1519,20 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 						&& predicate.equals(node.getPredicateVar().getValue())
 						&& node.getObjectVar() != null
 						&& objectBindingName.equals(node.getObjectVar().getName())) {
+					matches.add(node);
+				}
+				super.meet(node);
+			}
+		});
+		return matches.isEmpty() ? null : matches.getFirst();
+	}
+
+	private static Filter findFilter(TupleExpr optimized) {
+		List<Filter> matches = new ArrayList<>(1);
+		optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter node) {
+				if (matches.isEmpty()) {
 					matches.add(node);
 				}
 				super.meet(node);

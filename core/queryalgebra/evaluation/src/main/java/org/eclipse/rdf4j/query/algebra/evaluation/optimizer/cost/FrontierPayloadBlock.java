@@ -32,6 +32,7 @@ final class FrontierPayloadBlock {
 
 	private long digestHigh;
 	private long digestLow;
+	private boolean canonicalized;
 	private boolean sealed;
 
 	FrontierPayloadBlock(FrontierMaskStrata masks, int[] exactCounts, int[] residualCounts) {
@@ -111,8 +112,12 @@ final class FrontierPayloadBlock {
 	}
 
 	void canonicalize() {
+		if (canonicalized) {
+			return;
+		}
 		sortEntries(exactOffsets, exactTermIds, exactWeights);
 		sortEntries(residualOffsets, residualTermIds, residualWeights);
+		canonicalized = true;
 	}
 
 	long digestHigh() {
@@ -221,6 +226,9 @@ final class FrontierPayloadBlock {
 		for (int stratum = 0; stratum + 1 < offsets.length; stratum++) {
 			int first = offsets[stratum];
 			int count = offsets[stratum + 1] - first;
+			if (count < 2 || isCanonicalOrder(first, count, termIds, weights)) {
+				continue;
+			}
 			for (int root = (count >>> 1) - 1; root >= 0; root--) {
 				siftDown(first, root, count, termIds, weights);
 			}
@@ -229,6 +237,16 @@ final class FrontierPayloadBlock {
 				siftDown(first, 0, end, termIds, weights);
 			}
 		}
+	}
+
+	private boolean isCanonicalOrder(int first, int count, long[] termIds, double[] weights) {
+		int end = first + count;
+		for (int entry = first + 1; entry < end; entry++) {
+			if (compareEntries(entry - 1, entry, termIds, weights) > 0) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private void siftDown(

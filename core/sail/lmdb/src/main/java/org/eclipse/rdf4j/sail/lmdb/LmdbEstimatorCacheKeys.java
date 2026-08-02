@@ -89,15 +89,39 @@ record ScopedFactorCostCacheKey(Object factor, Set<String> boundVars, long outer
 	}
 }
 
-record FiniteDerivedSurfaceCacheKey(FiniteBranchRowsCacheKey prefixFactors, Object factor,
-		String finiteVarName, Set<Value> finiteValues, boolean allowExact) {
+record FiniteDerivedPrefixCacheKey(Map<Object, Integer> factors,
+		Map<String, Set<Value>> finiteBindingValues) {
+
+	static FiniteDerivedPrefixCacheKey of(List<TupleExpr> factors,
+			Map<String, Set<Value>> finiteBindingValues) {
+		Map<Object, Integer> occurrences = new HashMap<>();
+		if (factors != null) {
+			for (TupleExpr factor : factors) {
+				occurrences.merge(FactorCostCacheKey.factorFingerprint(factor), 1, Integer::sum);
+			}
+		}
+		return new FiniteDerivedPrefixCacheKey(occurrences.isEmpty() ? Map.of() : Map.copyOf(occurrences),
+				ScopedFactorCostCacheKey.immutableFiniteBindingValues(finiteBindingValues));
+	}
+
+	FiniteDerivedPrefixCacheKey append(Object factor) {
+		Map<Object, Integer> occurrences = new HashMap<>(factors);
+		occurrences.merge(factor, 1, Integer::sum);
+		return new FiniteDerivedPrefixCacheKey(Map.copyOf(occurrences), finiteBindingValues);
+	}
+}
+
+record FiniteDerivedSurfaceCacheKey(FiniteDerivedPrefixCacheKey prefix, Object factor) {
 
 	static FiniteDerivedSurfaceCacheKey of(List<TupleExpr> prefixFactors, TupleExpr factor,
-			String finiteVarName, Set<Value> finiteValues, boolean allowExact) {
-		return new FiniteDerivedSurfaceCacheKey(FiniteBranchRowsCacheKey.of(prefixFactors),
-				FactorCostCacheKey.factorFingerprint(factor), finiteVarName,
-				finiteValues == null || finiteValues.isEmpty() ? Set.of() : Set.copyOf(finiteValues),
-				allowExact);
+			Map<String, Set<Value>> finiteBindingValues) {
+		return new FiniteDerivedSurfaceCacheKey(
+				FiniteDerivedPrefixCacheKey.of(prefixFactors, finiteBindingValues),
+				FactorCostCacheKey.factorFingerprint(factor));
+	}
+
+	FiniteDerivedPrefixCacheKey completedPrefix() {
+		return prefix.append(factor);
 	}
 }
 

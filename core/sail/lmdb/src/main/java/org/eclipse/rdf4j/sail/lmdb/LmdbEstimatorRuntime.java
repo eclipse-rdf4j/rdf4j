@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -74,20 +73,16 @@ final class LmdbEstimatorRuntime {
 	private final LmdbFactorCostAssembler factorCostAssembler;
 	private final PackedPlanCache cascadesPlanCache;
 	private final LmdbFrontierSynopsisService frontierSynopsis;
-	private final FrontierEstimatorMode frontierMode;
-	private final long frontierQueryMemoryBudgetBytes;
-	private final long frontierInitialMaterializationWorkUnits;
-	private final int frontierRefinementWorkUnits;
-	private final double frontierTargetRelativeStandardError;
-	private final double frontierDefensiveProposalEpsilon;
+	private final LmdbFrontierPlannerSettings frontierSettings;
 	private final BooleanSupplier mayHaveInferred;
-	private final ThreadLocal<OptimizationScope> optimizationScope = new ThreadLocal<>();
+	private final ThreadLocal<LmdbEstimatorOptimizationScope> optimizationScope = new ThreadLocal<>();
 
 	LmdbEstimatorRuntime(ValueStore valueStore, TripleStore tripleStore, LmdbQuadSynopsisService synopsis,
 			LmdbFilterSelectivityStats filters, LmdbOperatorFeedbackStats feedback,
 			LmdbStatementPatternCardinalitySource cardinalities, PackedPlanCache cascadesPlanCache) {
 		this(valueStore, tripleStore, synopsis, filters, feedback, cardinalities, cascadesPlanCache, null,
-				FrontierEstimatorMode.OFF, 0L, 0L, 0, 1.0d, 1.0d, () -> false);
+				LmdbFrontierPlannerSettings.defaults(FrontierEstimatorMode.OFF, 0L, 0L, 0, 1.0d, 1.0d),
+				() -> false);
 	}
 
 	LmdbEstimatorRuntime(ValueStore valueStore, TripleStore tripleStore, LmdbQuadSynopsisService synopsis,
@@ -98,10 +93,10 @@ final class LmdbEstimatorRuntime {
 			double frontierTargetRelativeStandardError, double frontierDefensiveProposalEpsilon,
 			BooleanSupplier mayHaveInferred) {
 		this(valueStore, tripleStore, synopsis, filters, feedback, cardinalities, cascadesPlanCache,
-				frontierSynopsis, frontierMode, frontierQueryMemoryBudgetBytes,
-				LmdbStoreConfig.FRONTIER_INITIAL_MATERIALIZATION_WORK_UNITS,
-				frontierRefinementWorkUnits, frontierTargetRelativeStandardError,
-				frontierDefensiveProposalEpsilon, mayHaveInferred);
+				frontierSynopsis, LmdbFrontierPlannerSettings.defaults(frontierMode, frontierQueryMemoryBudgetBytes,
+						LmdbStoreConfig.FRONTIER_INITIAL_MATERIALIZATION_WORK_UNITS, frontierRefinementWorkUnits,
+						frontierTargetRelativeStandardError, frontierDefensiveProposalEpsilon),
+				mayHaveInferred);
 	}
 
 	LmdbEstimatorRuntime(ValueStore valueStore, TripleStore tripleStore, LmdbQuadSynopsisService synopsis,
@@ -111,6 +106,18 @@ final class LmdbEstimatorRuntime {
 			long frontierQueryMemoryBudgetBytes, long frontierInitialMaterializationWorkUnits,
 			int frontierRefinementWorkUnits, double frontierTargetRelativeStandardError,
 			double frontierDefensiveProposalEpsilon, BooleanSupplier mayHaveInferred) {
+		this(valueStore, tripleStore, synopsis, filters, feedback, cardinalities, cascadesPlanCache,
+				frontierSynopsis, LmdbFrontierPlannerSettings.defaults(frontierMode, frontierQueryMemoryBudgetBytes,
+						frontierInitialMaterializationWorkUnits, frontierRefinementWorkUnits,
+						frontierTargetRelativeStandardError, frontierDefensiveProposalEpsilon),
+				mayHaveInferred);
+	}
+
+	LmdbEstimatorRuntime(ValueStore valueStore, TripleStore tripleStore, LmdbQuadSynopsisService synopsis,
+			LmdbFilterSelectivityStats filters, LmdbOperatorFeedbackStats feedback,
+			LmdbStatementPatternCardinalitySource cardinalities, PackedPlanCache cascadesPlanCache,
+			LmdbFrontierSynopsisService frontierSynopsis, LmdbFrontierPlannerSettings frontierSettings,
+			BooleanSupplier mayHaveInferred) {
 		this.valueStore = valueStore;
 		this.tripleStore = tripleStore;
 		this.cardinalities = cardinalities;
@@ -119,12 +126,7 @@ final class LmdbEstimatorRuntime {
 		this.feedback = feedback;
 		this.cascadesPlanCache = cascadesPlanCache;
 		this.frontierSynopsis = frontierSynopsis;
-		this.frontierMode = frontierMode == null ? FrontierEstimatorMode.OFF : frontierMode;
-		this.frontierQueryMemoryBudgetBytes = frontierQueryMemoryBudgetBytes;
-		this.frontierInitialMaterializationWorkUnits = frontierInitialMaterializationWorkUnits;
-		this.frontierRefinementWorkUnits = frontierRefinementWorkUnits;
-		this.frontierTargetRelativeStandardError = frontierTargetRelativeStandardError;
-		this.frontierDefensiveProposalEpsilon = frontierDefensiveProposalEpsilon;
+		this.frontierSettings = frontierSettings;
 		this.mayHaveInferred = mayHaveInferred == null ? () -> false : mayHaveInferred;
 		this.finiteJoinSurfaceEstimator = new LmdbFiniteJoinSurfaceEstimator(valueStore, tripleStore);
 		LmdbStorageEstimatorEvidence evidence = new LmdbStorageEstimatorEvidence(valueStore, cardinalities, synopsis,
@@ -204,10 +206,20 @@ final class LmdbEstimatorRuntime {
 		if (expression == null) {
 			return Optional.empty();
 		}
-		OptimizationScope scope = optimizationScope.get();
+		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
 		return scope == null
 				? finiteJoinSurfaceEstimator.estimateAlternative(expression)
 				: scope.finiteSurfaces.estimateAlternative(expression, rootContext(expression));
+	}
+
+	Optional<LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate> exactConnectedSurface(TupleExpr expression) {
+		if (expression == null) {
+			return Optional.empty();
+		}
+		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
+		return scope == null
+				? finiteJoinSurfaceEstimator.estimateConnected(expression)
+				: scope.finiteSurfaces.estimateConnected(expression, rootContext(expression));
 	}
 
 	Optional<LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate> exactCorrelatedSurface(
@@ -221,11 +233,20 @@ final class LmdbEstimatorRuntime {
 		if (correlatedRelation == null || accessKernel == null) {
 			return Optional.empty();
 		}
-		OptimizationScope scope = optimizationScope.get();
+		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
 		return scope == null
 				? finiteJoinSurfaceEstimator.estimate(correlatedRelation, accessKernel)
 				: scope.finiteSurfaces.estimateCorrelated(
 						frontierStateKey, correlatedRelation, accessKernel, tier);
+	}
+
+	Optional<LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate> exactDerivedSurface(
+			List<TupleExpr> prefixFactors, TupleExpr accessKernel,
+			Map<String, Set<Value>> finiteBindingValues) {
+		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
+		return scope == null
+				? finiteJoinSurfaceEstimator.estimate(prefixFactors, accessKernel, finiteBindingValues)
+				: scope.finiteSurfaces.estimateDerived(prefixFactors, accessKernel, finiteBindingValues);
 	}
 
 	Optional<FactorCostEstimate> factorCost(TupleExpr expression, CostContext costContext) {
@@ -234,7 +255,7 @@ final class LmdbEstimatorRuntime {
 		}
 		CostContext cost = costContext == null ? CostContext.of(Set.of(), 1.0d, 1.0d, false) : costContext;
 		EstimateContext context = context(expression, cost);
-		OptimizationScope scope = optimizationScope.get();
+		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
 		ScopedFactorCostCacheKey cacheKey = scope == null
 				? null
 				: ScopedFactorCostCacheKey.of(expression, cost, context);
@@ -245,7 +266,8 @@ final class LmdbEstimatorRuntime {
 			}
 		}
 		BagEstimate semantic = engine.estimate(expression, context);
-		FactorCostEstimate result = factorCostAssembler.assemble(expression, context, semantic, exact(semantic));
+		FactorCostEstimate result = factorCostAssembler.assemble(expression, context, semantic,
+				LmdbEstimationEngine.databaseExact(semantic));
 		result = finiteDerivedFactorCost(expression, cost, semantic, result, scope).orElse(result);
 		Optional<FactorCostEstimate> estimate = Optional.of(result);
 		if (cacheKey != null) {
@@ -255,16 +277,13 @@ final class LmdbEstimatorRuntime {
 	}
 
 	private Optional<FactorCostEstimate> finiteDerivedFactorCost(TupleExpr expression, CostContext cost,
-			BagEstimate semantic, FactorCostEstimate base, OptimizationScope scope) {
+			BagEstimate semantic, FactorCostEstimate base, LmdbEstimatorOptimizationScope scope) {
 		if (cost == null || base == null || !cost.isNestedIteratorInvocation()
 				|| (cost.getPrefixFactors().isEmpty() && cost.getFiniteBindingValues().size() != 1)) {
 			return Optional.empty();
 		}
-		Optional<LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate> surface = scope == null
-				? finiteJoinSurfaceEstimator.estimate(cost.getPrefixFactors(), expression,
-						cost.getFiniteBindingValues())
-				: finiteJoinSurfaceEstimator.estimate(cost.getPrefixFactors(), expression,
-						cost.getFiniteBindingValues(), scope.finiteSurfaces.scanBudget());
+		Optional<LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate> surface = exactDerivedSurface(
+				cost.getPrefixFactors(), expression, cost.getFiniteBindingValues());
 		if (surface.isEmpty()) {
 			return Optional.empty();
 		}
@@ -345,22 +364,30 @@ final class LmdbEstimatorRuntime {
 		return feedback == null ? 0L : feedback.planningRevision();
 	}
 
+	long leoRevision() {
+		long revision = mixRevision(0x4c454f5f52455649L, feedback == null ? 0L : feedback.planningRevision());
+		return mixRevision(revision, filters == null ? 0L : filters.planningRevision()) & Long.MAX_VALUE;
+	}
+
+	long frontierPlanningRevision() {
+		return frontierSynopsis == null ? 0L : frontierSynopsis.planningRevision();
+	}
+
 	long learnedEvidenceRevision() {
 		long revision = mixRevision(0x46524f4e54494552L, snapshotVersion());
-		revision = mixRevision(revision, feedback == null ? 0L : feedback.planningRevision());
-		revision = mixRevision(revision, filters == null ? 0L : filters.planningRevision());
+		revision = mixRevision(revision, leoRevision());
 		return mixRevision(revision, frontierSynopsis == null ? 0L : frontierSynopsis.status().ordinal() + 1L)
 				& Long.MAX_VALUE;
 	}
 
 	QueryOptimizationScope beginScope() {
-		OptimizationScope scope = optimizationScope.get();
+		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
 		if (scope == null) {
-			scope = new OptimizationScope(finiteJoinSurfaceEstimator);
+			scope = new LmdbEstimatorOptimizationScope(finiteJoinSurfaceEstimator);
 			optimizationScope.set(scope);
 		}
 		scope.depth++;
-		OptimizationScope active = scope;
+		LmdbEstimatorOptimizationScope active = scope;
 		return () -> closeScope(active);
 	}
 
@@ -369,7 +396,7 @@ final class LmdbEstimatorRuntime {
 	}
 
 	PlanTemplateCache<Object> planTemplateCache() {
-		OptimizationScope scope = optimizationScope.get();
+		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
 		return scope == null ? new PlanTemplateCache<>(1) : scope.planTemplates;
 	}
 
@@ -396,32 +423,19 @@ final class LmdbEstimatorRuntime {
 		return frontierSynopsis;
 	}
 
-	FrontierEstimatorMode frontierMode() {
-		return frontierMode;
-	}
-
-	long frontierQueryMemoryBudgetBytes() {
-		return frontierQueryMemoryBudgetBytes;
-	}
-
-	long frontierInitialMaterializationWorkUnits() {
-		return frontierInitialMaterializationWorkUnits;
-	}
-
-	int frontierRefinementWorkUnits() {
-		return frontierRefinementWorkUnits;
-	}
-
-	double frontierTargetRelativeStandardError() {
-		return frontierTargetRelativeStandardError;
-	}
-
-	double frontierDefensiveProposalEpsilon() {
-		return frontierDefensiveProposalEpsilon;
+	LmdbFrontierPlannerSettings frontierSettings() {
+		return frontierSettings;
 	}
 
 	boolean mayHaveInferred() {
 		return mayHaveInferred.getAsBoolean();
+	}
+
+	TripleStore.IndexCostProfile indexCostProfile(String indexFieldSequence) throws IOException {
+		if (tripleStore == null) {
+			throw new IOException("LMDB triple store is unavailable");
+		}
+		return tripleStore.indexCostProfile(indexFieldSequence, mayHaveInferred());
 	}
 
 	double packedStatementPatternRows(Resource subject, IRI predicate, Value object, Resource context,
@@ -590,7 +604,8 @@ final class LmdbEstimatorRuntime {
 		BagEstimate estimate = estimate(new Join(left.clone(), right.clone()), shared, EstimationTier.STANDARD, false);
 		double prefixRows = positive(knownLeftRows, estimate(left).rows());
 		return new BoundJoinProductEstimate(estimate.rows(), prefixRows, prefixRows, estimate.rows(),
-				shared.stream().sorted().findFirst().orElse(null), exact(estimate), estimate.source());
+				shared.stream().sorted().findFirst().orElse(null), LmdbEstimationEngine.databaseExact(estimate),
+				estimate.source());
 	}
 
 	OptionalBridgeProductEstimate optionalBridgeProduct(TupleExpr left, TupleExpr right, double knownLeftRows) {
@@ -632,7 +647,7 @@ final class LmdbEstimatorRuntime {
 						? EstimateContext.MetricsPreference.DETAILED
 						: EstimateContext.MetricsPreference.NONE)
 				.withExactProbePermission(tier != null && tier.allowsExactEstimates());
-		OptimizationScope scope = optimizationScope.get();
+		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
 		context = context.withPrefixEstimate(prefixEvidence.estimate(cost, context,
 				scope == null ? null : scope.prefixEstimates));
 		FiniteRelationEstimate finite = prefixEvidence.finiteBindings(cost.getFiniteBindingValues());
@@ -661,12 +676,6 @@ final class LmdbEstimatorRuntime {
 		return positive(context.getDistinctLookupBindings(), 1.0d);
 	}
 
-	private static boolean exact(BagEstimate estimate) {
-		return "lmdb-exact".equals(estimate.source()) || "finite-values".equals(estimate.source())
-				|| "quad-total".equals(estimate.source())
-				|| "lmdb-finite-binding-lookup".equals(estimate.source()) && estimate.confidence() == 1.0d;
-	}
-
 	private static double positive(double value, double fallback) {
 		return Double.isFinite(value) && value > 0.0d ? value : fallback;
 	}
@@ -676,24 +685,12 @@ final class LmdbEstimatorRuntime {
 		return Double.isFinite(sum) && sum >= 0.0d ? sum : Double.MAX_VALUE;
 	}
 
-	private void closeScope(OptimizationScope scope) {
+	private void closeScope(LmdbEstimatorOptimizationScope scope) {
 		if (optimizationScope.get() != scope) {
 			return;
 		}
 		if (--scope.depth <= 0) {
 			optimizationScope.remove();
-		}
-	}
-
-	private static final class OptimizationScope {
-		private final PlanTemplateCache<Object> planTemplates = new PlanTemplateCache<>(256);
-		private final Map<ScopedFactorCostCacheKey, Optional<FactorCostEstimate>> factorCosts = new HashMap<>();
-		private final Map<PrefixEstimateCacheKey, BagEstimate> prefixEstimates = new HashMap<>();
-		private final LmdbFiniteSurfaceCache finiteSurfaces;
-		private int depth;
-
-		private OptimizationScope(LmdbFiniteJoinSurfaceEstimator finiteJoinSurfaceEstimator) {
-			finiteSurfaces = new LmdbFiniteSurfaceCache(finiteJoinSurfaceEstimator);
 		}
 	}
 

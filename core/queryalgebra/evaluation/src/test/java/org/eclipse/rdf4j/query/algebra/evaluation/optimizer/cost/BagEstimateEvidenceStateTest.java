@@ -58,7 +58,7 @@ class BagEstimateEvidenceStateTest {
 	}
 
 	@Test
-	void scalarMetadataCopiesRetainStateButRowAndSchemaTransformsDropIt() {
+	void everyEstimateTransformRetainsFrontierStateUntilExplicitDetachment() {
 		try (FrontierStateArena arena = new FrontierStateArena(64 * 1024L)) {
 			EvidenceStateRef state = arena.append(FrontierLayout.of("x"), EvidenceStateSummary.exact(7.0d));
 			BagEstimate estimate = BagEstimate.exact(7.0d, "exact").withEvidenceState(state);
@@ -66,8 +66,12 @@ class BagEstimateEvidenceStateTest {
 			assertEquals(state, estimate.withWorkRows(9.0d, "work").evidenceState().orElseThrow());
 			assertEquals(state, estimate.withMemoryRows(2.0d, "memory").evidenceState().orElseThrow());
 			assertEquals(state, estimate.withMetrics(Map.of("metric", 1.0d)).evidenceState().orElseThrow());
-			assertTrue(estimate.withRows(8.0d, "changed-rows").evidenceState().isEmpty());
-			assertTrue(estimate.withVariable("x", VariableEstimate.bound(7.0d, 1.0d)).evidenceState().isEmpty());
+			assertEquals(state, estimate.withRows(8.0d, "changed-rows").evidenceState().orElseThrow());
+			assertEquals(state,
+					estimate.withVariable("x", VariableEstimate.bound(7.0d, 1.0d)).evidenceState().orElseThrow());
+			assertEquals(state, estimate.withRowsPreservingEvidence(8.0d, 9.0d, 0.8d, "rebased",
+					Map.of("metric", 2.0d), false).evidenceState().orElseThrow());
+			assertTrue(estimate.withoutEvidenceState().evidenceState().isEmpty());
 		}
 	}
 }

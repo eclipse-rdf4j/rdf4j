@@ -210,8 +210,10 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 					() -> assertFalse(
 							rendered.contains("FILTER (?condCode IN (\"DX-200\", \"DX-201\", \"DX-202\"))"),
 							"The condition-code filter must be satisfied by the finite relation\n" + rendered),
-					() -> assertTrue(plan.contains("Difference"),
-							"The anti join must remain materialized instead of reopening its RHS\n" + plan),
+					() -> assertTrue(plan.contains("optimizer.semiAntiAlgorithm=materialized-hash")
+							&& plan.contains("plannedPhysicalImplementation=materialized-minus-compatibility"),
+							"The originating anti-join event must remain materialized instead of reopening its RHS\n"
+									+ plan),
 					() -> assertExactFiniteDomain(snapshot.optimized(), "value",
 							Set.of("50", "51", "52", "53", "54", "55", "56", "57", "58", "59")),
 					() -> assertFalse(reopensFiniteLookupPerObservation(snapshot.optimized(), "value",

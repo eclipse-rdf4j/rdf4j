@@ -368,11 +368,20 @@ class LmdbEstimateAuditHarnessTest {
 						""")
 						.explain(Explanation.Level.Optimized);
 			}
-			assertTrue(StatementPatternCollector.process((TupleExpr) dirtyExplanation.tupleExpr())
-					.stream()
+			List<StatementPattern> dirtyPatterns = StatementPatternCollector
+					.process((TupleExpr) dirtyExplanation.tupleExpr());
+			boolean dirtyFallback = dirtyPatterns.stream()
 					.anyMatch(pattern -> "query_index_unavailable"
-							.equals(pattern.getStringMetricPlanned("plannedFrontierFallbackReason"))),
-					dirtyExplanation::toString);
+							.equals(pattern.getStringMetricPlanned("plannedFrontierFallbackReason")));
+			boolean currentExactGeneration = dirtyPatterns.stream()
+					.anyMatch(pattern -> "lmdb-frontier"
+							.equals(pattern.getStringMetricPlanned("plannedEstimateSource"))
+							&& "ready".equals(pattern.getStringMetricPlanned("plannedFrontierStatus"))
+							&& "database_exact"
+									.equals(pattern.getStringMetricPlanned("plannedFrontierGuarantee"))
+							&& Double.compare(16.0d,
+									pattern.getDoubleMetricPlanned("plannedFrontierRows")) == 0);
+			assertTrue(dirtyFallback || currentExactGeneration, dirtyExplanation::toString);
 			LmdbPlannerAwait.awaitPlannerAssertion("Frontier calibration background consolidation",
 					() -> assertTrue(!Files.exists(insertionMarker)));
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -755,7 +764,7 @@ class LmdbEstimateAuditHarnessTest {
 	}
 
 	@Test
-	void localBoundaryAuditDoesNotBorrowDescendantFrontierSource(@TempDir File dataDir) {
+	void localBoundaryAuditUsesItsOwnFrontierState(@TempDir File dataDir) {
 		LmdbStoreConfig config = new LmdbStoreConfig()
 				.setTripleIndexes("spoc,posc")
 				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
@@ -782,14 +791,19 @@ class LmdbEstimateAuditHarnessTest {
 						.findFirst()
 						.orElseThrow();
 
-				assertTrue(group.plannedSource() == null || !group.plannedSource().startsWith("lmdb-frontier"),
-						() -> "A GROUP boundary must not borrow a descendant estimate source: " + group);
+				assertEquals("lmdb-frontier", group.plannedSource(), group::toString);
+				assertEquals(1.0d, group.plannedRows(), 0.0d,
+						() -> "GROUP must publish its own bounded aggregate state rather than the two-row child: "
+								+ group);
+				assertEquals(group.plannedRows(), group.rawFrontierRows(), 0.0d,
+						() -> "GROUP telemetry must originate in its own costing event: " + group);
 				assertTrue(rows.stream()
 						.filter(row -> row.kind() == LmdbEstimateAuditHarness.PieceKind.PROJECTION
 								|| row.kind() == LmdbEstimateAuditHarness.PieceKind.EXTENSION)
-						.noneMatch(row -> row.plannedSource() != null
-								&& row.plannedSource().startsWith("lmdb-frontier")),
-						() -> "A transparent wrapper must stop source inheritance at its direct GROUP boundary: "
+						.allMatch(row -> "lmdb-frontier".equals(row.plannedSource())
+								&& row.plannedRows() == 1.0d
+								&& row.rawFrontierRows() == 1.0d),
+						() -> "Transparent wrappers must publish their own identity events over the GROUP state: "
 								+ rows);
 			}
 		} finally {
@@ -1234,6 +1248,37 @@ class LmdbEstimateAuditHarnessTest {
 	}
 
 	@Test
+	void warmFeedbackKeepsIndependentOptionalRowsInTheirCurrentContext(@TempDir File dataDir) {
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
+		repository.init();
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				loadMixedAuditData(connection);
+				LmdbEstimateAuditQueryCorpus.generatedQueries()
+						.stream()
+						.limit(75)
+						.forEach(warmup -> LmdbEstimateAuditHarness.auditQuery(connection, warmup.id(),
+								warmup.sparql()));
+				LmdbEstimateAuditQueryCorpus.AuditQuery query = generatedQuery("audit-q75");
+				List<LmdbEstimateAuditHarness.AuditRow> rows = LmdbEstimateAuditHarness
+						.auditQuery(connection, query.id(), query.sparql());
+				LmdbEstimateAuditHarness.AuditRow fullRow = rows
+						.stream()
+						.filter(row -> row.kind() == LmdbEstimateAuditHarness.PieceKind.FULL_QUERY)
+						.findFirst()
+						.orElseThrow();
+
+				assertEquals(15L, fullRow.actualRows(), fullRow::toString);
+				assertTrue(fullRow.qError() <= 10.0d,
+						() -> "Warm OPTIONAL feedback must be rescaled to the candidate input context: " + rows);
+			}
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
 	void disconnectedLowThresholdFilterRetainsCartesianRows(@TempDir File dataDir) {
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
 		repository.init();
@@ -1568,7 +1613,9 @@ class LmdbEstimateAuditHarnessTest {
 						.findFirst()
 						.orElseThrow();
 
-				assertEquals("lmdb-frontier", difference.plannedSource(), difference::toString);
+				assertEquals("lmdb-frontier+leo", difference.plannedSource(),
+						() -> "The MINUS transform must retain Frontier as its raw evidence and apply LEO at the "
+								+ "originating costing event: " + difference);
 				assertEquals(11L, difference.actualRows(), difference::toString);
 				assertTrue(difference.plannedRows() < leftInput.plannedRows(),
 						() -> "exact MINUS probes from independent lanes must remove sampled mass: " + rows);

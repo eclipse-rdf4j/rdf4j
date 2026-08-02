@@ -519,7 +519,7 @@ class FilterIteratorTelemetryTest {
 	}
 
 	@Test
-	void partiallyConsumedMaterializedExistsFilterDoesNotRecordOutcome() throws Exception {
+	void partiallyConsumedMaterializedExistsFilterPublishesPhysicalTelemetryWithoutRecordingOutcome() throws Exception {
 		Value matched = SimpleValueFactory.getInstance().createIRI("urn:matched");
 		BindingSetAssignment left = new BindingSetAssignment();
 		left.setBindingNames(Set.of("x"));
@@ -547,6 +547,43 @@ class FilterIteratorTelemetryTest {
 
 		assertThat(statistics.recordCalls).isZero();
 		assertThat(statistics.semiAntiRecordCalls).isZero();
+		assertThat(filter.getStringMetricActual("actualSemiAntiAlgorithm")).isEqualTo("memoized-correlated");
+		assertThat(filter.getLongMetricActual("actualSemiAntiIteratorOpens")).isOne();
+		assertThat(filter.getLongMetricActual("actualCostExpressionEvaluations")).isOne();
+	}
+
+	@Test
+	void executedMaterializedExistsFilterPublishesPhysicalTelemetryWithoutLearningRecorder() throws Exception {
+		Value matched = SimpleValueFactory.getInstance().createIRI("urn:matched");
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingNames(Set.of("x"));
+		left.setBindingSets(List.of(singleBindingSet("x", matched), singleBindingSet("x", matched)));
+		BindingSetAssignment right = assignment("x", matched);
+		Exists exists = new Exists(right);
+		Filter filter = new Filter(left, exists);
+		filter.setStringMetricPlanned("optimizer.filterAlgorithmHint", "memoized-correlated");
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		QueryEvaluationStep leftStep = ignored -> new CloseableIteratorIteration<>(left.getBindingSets().iterator());
+		QueryEvaluationStep rightStep = bindings -> new CloseableIteratorIteration<>(
+				compatibleAssignments(right, bindings).iterator());
+		QueryValueEvaluationStep conditionStep = ignored -> BooleanLiteral.FALSE;
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		doReturn(leftStep).when(strategy).precompile(eq((TupleExpr) left), eq(context));
+		doReturn(rightStep).when(strategy).precompile(eq((TupleExpr) right), eq(context));
+		doReturn(conditionStep).when(strategy).precompile(eq((ValueExpr) exists), eq(context));
+
+		QueryEvaluationStep step = FilterIterator.supply(filter, strategy, context);
+		assertThat(filter.getStringMetricActual("actualSemiAntiRuntimeDisposition"))
+				.isEqualTo("compiled-specialized");
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(filter.getStringMetricActual("actualSemiAntiAlgorithm")).isEqualTo("memoized-correlated");
+			assertThat(drain(iteration)).hasSize(2);
+		}
+
+		assertThat(filter.getStringMetricActual("actualSemiAntiAlgorithm")).isEqualTo("memoized-correlated");
+		assertThat(filter.getLongMetricActual("actualSemiAntiDistinctCorrelationKeys")).isEqualTo(-1L);
+		assertThat(filter.getLongMetricActual("actualSemiAntiIteratorOpens")).isOne();
+		assertThat(filter.getLongMetricActual("actualCostHashProbeRows")).isEqualTo(2L);
 	}
 
 	@Test

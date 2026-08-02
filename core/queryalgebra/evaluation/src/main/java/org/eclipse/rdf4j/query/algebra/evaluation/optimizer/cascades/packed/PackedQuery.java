@@ -394,6 +394,41 @@ final class PackedQuery {
 		return metadata.relationRuleMask(relId);
 	}
 
+	int relSemanticFlags(int relId) {
+		return metadata.relationSemanticFlags(relId);
+	}
+
+	int[] canonicalContextualOperatorRelationIds() {
+		int[] canonical = new int[relationCount() + 1];
+		for (int relationId = 1; relationId <= relationCount(); relationId++) {
+			canonical[relationId] = relationId;
+			for (int candidateId = 1; candidateId < relationId; candidateId++) {
+				if (sameContextualOperatorCostIdentity(relationId, candidateId)) {
+					canonical[relationId] = canonical[candidateId];
+					break;
+				}
+			}
+		}
+		return canonical;
+	}
+
+	private boolean sameContextualOperatorCostIdentity(int first, int second) {
+		/*
+		 * Only scheduled FILTER copies are contextual operators today. They are applied to the prefix carried by
+		 * PackedCostContext, not to either relation's encoded child. Binary operators, projections, extensions, and
+		 * scope boundaries retain child-specific algebra even when their packed payload happens to be equal.
+		 * Canonicalizing those nodes would make an immutable costing event invoke the provider with a different
+		 * operator's expression.
+		 */
+		return relOperator(first) == PackedRelOp.FILTER
+				&& relOperator(second) == PackedRelOp.FILTER
+				&& relPayload(first) == relPayload(second)
+				&& relSemanticScope(first) == relSemanticScope(second)
+				&& relExecutionDomain(first) == relExecutionDomain(second)
+				&& relSemanticFlags(first) == relSemanticFlags(second)
+				&& relMetadataFlags(first) == relMetadataFlags(second);
+	}
+
 	int scalarMetricSetId(int scalarId) {
 		return metadata.scalarMetricSetId(scalarId);
 	}

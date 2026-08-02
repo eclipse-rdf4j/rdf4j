@@ -1144,14 +1144,14 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
-	void lmdbPipelineDoesNotUsePredicateNamesForObjectLiteralAnchors() {
+	void lmdbPipelineUsesSemanticFiniteAnchorWithoutPredicateNameHeuristic() {
 		TripleSource tripleSource = new EmptyTripleSource();
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
 		TupleExpr tupleExpr = parseTupleExpr("""
 				SELECT * WHERE {
-				  ?book <http://example.com/theme/library/name> ?name .
-				  ?book a <http://example.com/theme/library/Book> .
-				  FILTER (?name IN ("Book 1", "Book 2"))
+				  ?entity <urn:unclassified-predicate> ?candidate .
+				  ?entity a <urn:unclassified-type> .
+				  FILTER (?candidate IN ("alpha", "beta"))
 				}
 				""");
 
@@ -1161,8 +1161,8 @@ class LmdbOptimizerPipelineTest {
 			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
 
-		assertFalse(containsBindingSetAssignmentFor(tupleExpr, "name"), tupleExpr.toString());
-		assertTrue(hasLiteralFilterFor(tupleExpr, "name", Set.of("Book 1", "Book 2")), tupleExpr.toString());
+		assertTrue(containsBindingSetAssignmentFor(tupleExpr, "candidate"), tupleExpr.toString());
+		assertFalse(hasLiteralFilterFor(tupleExpr, "candidate", Set.of("alpha", "beta")), tupleExpr.toString());
 	}
 
 	@Test

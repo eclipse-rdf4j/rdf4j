@@ -40,7 +40,8 @@ import org.junit.jupiter.api.Test;
 
 class PackedAccessEnablingSeedBudgetTest {
 
-	private static final int ACCESS_SEED_BUDGET = 22;
+	/* Includes the dependent RHS leaf event retained by the correlated seed's evidence context. */
+	private static final int ACCESS_SEED_BUDGET = 23;
 
 	@Test
 	void seedsEveryLateAccessEnablingRecipeBeforeExhaustiveSearchInEitherInputOrder() {
@@ -146,6 +147,143 @@ class PackedAccessEnablingSeedBudgetTest {
 	}
 
 	@Test
+	void ordinaryBinarySearchChargesEveryContextualDirection() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		TupleExpr source = new Join(
+				pattern(values, "left", "urn:left", "shared"),
+				pattern(values, "shared", "urn:right", "right"));
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(source);
+		int relationCount = query.relationCount();
+		PackedMemo memo = new PackedMemo(query, query.symbolCount(), relationCount, relationCount, 4,
+				relationCount, relationCount * 2);
+		PackedIncumbentSearch baseline = new PackedIncumbentSearch(query, memo,
+				new PackedSearchBudget(Long.MAX_VALUE, Long.MAX_VALUE), false, null);
+		baseline.build();
+		int[] contextualProviderCalls = { 0 };
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView queryView, int relationId) {
+				return queryView.isStatementPattern(relationId) ? 10.0d : Double.NaN;
+			}
+
+			@Override
+			public void estimate(PackedQueryView queryView, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (!queryView.isStatementPattern(relationId)) {
+					return;
+				}
+				if (context.prefixRelationCount() > 0) {
+					contextualProviderCalls[0]++;
+					output.setContextualRows(1.0d, 1.0d);
+				} else {
+					output.setRows(10.0d, 10.0d);
+				}
+			}
+		};
+		PackedSearchBudget oneTransition = new PackedSearchBudget(1, Long.MAX_VALUE);
+		PackedJoinEnumerator enumerator = new PackedJoinEnumerator(query, memo, baseline.selectedRowsByGroup(),
+				oneTransition, costs);
+
+		enumerator.optimize(query.rootRelId());
+
+		assertEquals(1L, oneTransition.workUnits());
+		assertEquals(1, contextualProviderCalls[0],
+				"Every contextual provider invocation must consume its own deterministic work unit");
+		assertTrue(oneTransition.workLimitReached());
+	}
+
+	@Test
+	void disconnectedSearchSeedsAccessEnablingFactorAndCrossesComponents() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		BindingSetAssignment unrelated = new BindingSetAssignment();
+		unrelated.setBindingNames(new LinkedHashSet<>(List.of("unrelated")));
+		QueryBindingSet first = new QueryBindingSet();
+		first.addBinding("unrelated", values.createLiteral("first"));
+		QueryBindingSet second = new QueryBindingSet();
+		second.addBinding("unrelated", values.createLiteral("second"));
+		unrelated.setBindingSets(List.of(first, second));
+
+		StatementPattern type = pattern(values, "entity", "urn:seed-type", "type");
+		StatementPattern link = pattern(values, "entity", "urn:seed-link", "carrier");
+		Filter finiteCode = finiteFilter(values, pattern(values, "carrier", "urn:seed-code", "code"),
+				"code", "code-first", "code-second");
+		TupleExpr source = leftDeepJoin(List.of(unrelated, type, link, finiteCode));
+		boolean[] finiteFactorSeeded = { false };
+		Set<Integer> observedSeedPrefixes = new LinkedHashSet<>();
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (!query.isStatementPattern(relationId)) {
+					return Double.NaN;
+				}
+				return switch (predicate(query, relationId)) {
+				case "urn:seed-type" -> 10.0d;
+				case "urn:seed-link" -> 20.0d;
+				case "urn:seed-code" -> 100.0d;
+				default -> Double.NaN;
+				};
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (context.prefixRelationCount() > 0) {
+					int firstPrefixRelationId = context.prefixRelationId(0);
+					observedSeedPrefixes.add(firstPrefixRelationId);
+					if (containsPredicate(query.materializeRelation(firstPrefixRelationId), "urn:seed-code")) {
+						finiteFactorSeeded[0] = true;
+					}
+				}
+				if (!query.isStatementPattern(relationId)) {
+					return;
+				}
+				double rows = estimateRows(query, relationId);
+				boolean unrelatedPrefix = false;
+				for (int ordinal = 0; ordinal < context.prefixRelationCount(); ordinal++) {
+					if (query.isBindingSetAssignment(context.prefixRelationId(ordinal))
+							&& query.materializeRelation(context.prefixRelationId(ordinal))
+									.getBindingNames()
+									.contains("unrelated")) {
+						unrelatedPrefix = true;
+						break;
+					}
+				}
+				if (unrelatedPrefix) {
+					output.setContextualRows(rows, 1_000.0d);
+				} else if ("urn:seed-code".equals(predicate(query, relationId))
+						&& query.prefixBindsStatementComponent(context, relationId, 2)) {
+					output.setContextualRows(60.0d, 60.0d);
+				} else {
+					output.setRows(rows, rows);
+				}
+			}
+
+			@Override
+			public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (query.isFilter(relationId)) {
+					output.setRows(60.0d, 1_000.0d);
+				}
+			}
+		};
+
+		OptimizationGoal goal = OptimizationGoal.root().asBudgeted(Duration.ofSeconds(30), 10_000);
+		PackedCascadesPlanner.optimize(source, goal, costs);
+
+		assertTrue(finiteFactorSeeded[0],
+				() -> "Proof-derived access-enabling factors must be seeded before ordinary starts consume the bounded "
+						+ "seed allowance; observed first prefixes=" + observedSeedPrefixes);
+
+		PackedPlanningResult exact = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), costs);
+		String exactPlan = exact.selectedPlan().toString();
+		int finiteAnchorIndex = exactPlan.indexOf("BindingSetAssignment ([[code=");
+		int unrelatedIndex = exactPlan.indexOf("BindingSetAssignment ([[unrelated=");
+		assertTrue(finiteAnchorIndex >= 0 && unrelatedIndex >= 0 && finiteAnchorIndex < unrelatedIndex,
+				() -> "Exact subset search must cross disconnected components and compare the finite-first order: "
+						+ exactPlan);
+	}
+
+	@Test
 	void parentPrefixSelectsAContextuallyCheapFiniteAlternativeThatLosesInIsolation() {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		StatementPattern prefix = pattern(values, "entity", "urn:type", "type");
@@ -169,7 +307,17 @@ class PackedAccessEnablingSeedBudgetTest {
 				}
 				String predicate = predicate(query, relationId);
 				if ("urn:type".equals(predicate)) {
-					output.setRows(1.0d, 1.0d);
+					if (context.prefixRelationCount() == 0) {
+						output.setRows(1.0d, 1.0d);
+					} else {
+						/*
+						 * Keep the reverse raw-FILTER-first permutation genuinely slower. The assertion below isolates
+						 * the intended comparison between raw and finite implementations under the one-row parent
+						 * prefix, rather than relying on the former scalar binary-order shortcut to suppress a cheaper
+						 * permutation.
+						 */
+						output.setContextualRows(1.0d, 100.0d);
+					}
 					return;
 				}
 				if (query.prefixBindsStatementComponent(context, relationId, 2)) {
@@ -272,7 +420,8 @@ class PackedAccessEnablingSeedBudgetTest {
 		PackedQueryView queryView = new PackedQueryView(query);
 		int prefixId = statementPatternWithPredicate(queryView, "urn:selected-type");
 		int filterId = filterWithPredicate(queryView, "urn:selected-code");
-		int prefixContextId = memo.internSequence(new int[] { prefixId }, 0, 1);
+		int prefixContextId = memo.internEvidenceContext(new int[] { prefixId }, new double[] { 1.0d }, 0, 1,
+				1.0d, 0, 0, 0, 0);
 		int contextualWinnerId = memo.findWinner(memo.logicalGroupId(filterId), memo.anyPropertyId(), 0,
 				prefixContextId, 0);
 		assertTrue(contextualWinnerId != 0 && memo.winnerChildCount(contextualWinnerId) == 2,
@@ -479,6 +628,42 @@ class PackedAccessEnablingSeedBudgetTest {
 
 		assertTrue(Double.isNaN(composition.factorContributionRows()),
 				"An overflow-saturated unrelated product cannot support an exact contribution ratio");
+	}
+
+	@Test
+	void appendedFactorCanStructurallyBridgeEveryPrefixComponent() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern left = pattern(values, "left", "urn:left-component", "leftEdge");
+		StatementPattern right = pattern(values, "right", "urn:right-component", "rightEdge");
+		StatementPattern bridge = pattern(values, "leftEdge", "urn:bridge", "right");
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(new Join(new Join(left, right), bridge));
+		PackedQueryView view = new PackedQueryView(query);
+		int leftId = statementPatternWithPredicate(view, "urn:left-component");
+		int rightId = statementPatternWithPredicate(view, "urn:right-component");
+		int bridgeId = statementPatternWithPredicate(view, "urn:bridge");
+
+		boolean connected = new PackedPrefixRowComposition(query)
+				.isConnectedWithAppendedFactor(new int[] { leftId, rightId }, 2, bridgeId);
+
+		assertTrue(connected, "The appended factor exactly connects both prior components");
+	}
+
+	@Test
+	void appendedFactorCannotHideAnUnrelatedPrefixComponent() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern left = pattern(values, "left", "urn:left-component", "leftEdge");
+		StatementPattern unrelated = pattern(values, "unrelated", "urn:unrelated-component", "unrelatedEdge");
+		StatementPattern continuation = pattern(values, "leftEdge", "urn:continuation", "tail");
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(new Join(new Join(left, unrelated), continuation));
+		PackedQueryView view = new PackedQueryView(query);
+		int leftId = statementPatternWithPredicate(view, "urn:left-component");
+		int unrelatedId = statementPatternWithPredicate(view, "urn:unrelated-component");
+		int continuationId = statementPatternWithPredicate(view, "urn:continuation");
+
+		boolean connected = new PackedPrefixRowComposition(query)
+				.isConnectedWithAppendedFactor(new int[] { leftId, unrelatedId }, 2, continuationId);
+
+		assertFalse(connected, "Exact binding overlap leaves the unrelated prefix component disconnected");
 	}
 
 	@Test
@@ -733,8 +918,12 @@ class PackedAccessEnablingSeedBudgetTest {
 				@Override
 				public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
 						PackedCostEstimate output) {
-					if (!query.isFilter(relationId)) {
+					boolean typedSemiAnti = query.isSemiJoin(relationId) || query.isAntiJoin(relationId);
+					if (!query.isFilter(relationId) && !typedSemiAnti) {
 						return;
+					}
+					if (typedSemiAnti) {
+						recordCorrelatedPrefix(query, context);
 					}
 					double inputRows = context.leftInputRows();
 					if (!Double.isFinite(inputRows)) {
@@ -767,6 +956,14 @@ class PackedAccessEnablingSeedBudgetTest {
 					|| !allPrefixRelationsArePatterns(query, context)) {
 				return;
 			}
+			recordCorrelatedPrefix(query, context);
+			output.setContextualRows(1.0d, 1.0d);
+		}
+
+		private void recordCorrelatedPrefix(PackedQueryView query, PackedCostContext context) {
+			if (context.prefixRelationCount() == 0 || !allPrefixRelationsArePatterns(query, context)) {
+				return;
+			}
 			List<String> prefixPredicates = new ArrayList<>(context.prefixRelationCount());
 			for (int ordinal = 0; ordinal < context.prefixRelationCount(); ordinal++) {
 				prefixPredicates.add(predicate(query, context.prefixRelationId(ordinal)));
@@ -776,7 +973,6 @@ class PackedAccessEnablingSeedBudgetTest {
 							|| "urn:late-type".equals(prefixPredicates.get(0)))) {
 				correlatedPrefixes.add(prefixPredicates.get(0));
 			}
-			output.setContextualRows(1.0d, 1.0d);
 		}
 
 		private static boolean isExistsFilter(PackedQueryView query, int relationId) {

@@ -118,9 +118,13 @@ final class FrontierQueryIndexView {
 	}
 
 	long candidateRows(FrontierLeafSelector selector, int direction, int laneRole, int laneIndex) {
+		return candidateRows(prepare(selector, direction, laneRole, laneIndex));
+	}
+
+	long candidateRows(PreparedProbe probe) {
 		long rows = 0L;
-		for (FrontierQueryIndex index : indexes) {
-			rows = Math.addExact(rows, index.candidateRows(selector, direction, laneRole, laneIndex));
+		for (FrontierQueryIndex.PreparedRange range : probe.ranges) {
+			rows = Math.addExact(rows, range.size());
 		}
 		return rows;
 	}
@@ -134,9 +138,13 @@ final class FrontierQueryIndexView {
 	}
 
 	long countMatches(FrontierLeafSelector selector, int direction, int laneRole, int laneIndex) {
+		return countMatches(prepare(selector, direction, laneRole, laneIndex));
+	}
+
+	long countMatches(PreparedProbe probe) {
 		long rows = 0L;
-		for (FrontierQueryIndex index : indexes) {
-			rows = Math.addExact(rows, index.countMatches(selector, direction, laneRole, laneIndex));
+		for (int ordinal = 0; ordinal < indexes.size(); ordinal++) {
+			rows = Math.addExact(rows, indexes.get(ordinal).countMatches(probe.selector, probe.ranges[ordinal]));
 		}
 		return rows;
 	}
@@ -152,11 +160,24 @@ final class FrontierQueryIndexView {
 
 	long visitMatches(FrontierLeafSelector selector, int direction, int laneRole, int laneIndex,
 			FrontierQueryIndexRowSink sink) {
+		return visitMatches(prepare(selector, direction, laneRole, laneIndex), sink);
+	}
+
+	long visitMatches(PreparedProbe probe, FrontierQueryIndexRowSink sink) {
 		long rows = 0L;
-		for (FrontierQueryIndex index : indexes) {
-			rows = Math.addExact(rows, index.visitMatches(selector, direction, laneRole, laneIndex, sink));
+		for (int ordinal = 0; ordinal < indexes.size(); ordinal++) {
+			rows = Math.addExact(rows,
+					indexes.get(ordinal).visitMatches(probe.selector, probe.ranges[ordinal], sink));
 		}
 		return rows;
+	}
+
+	PreparedProbe prepare(FrontierLeafSelector selector, int direction, int laneRole, int laneIndex) {
+		FrontierQueryIndex.PreparedRange[] ranges = new FrontierQueryIndex.PreparedRange[indexes.size()];
+		for (int ordinal = 0; ordinal < indexes.size(); ordinal++) {
+			ranges[ordinal] = indexes.get(ordinal).prepare(selector, direction, laneRole, laneIndex);
+		}
+		return new PreparedProbe(selector, ranges);
 	}
 
 	FrontierQueryIndexLaneDiagnostics laneDiagnostics(FrontierLeafSelector selector, int direction) {
@@ -280,5 +301,8 @@ final class FrontierQueryIndexView {
 
 	long byteLength() {
 		return byteLength;
+	}
+
+	record PreparedProbe(FrontierLeafSelector selector, FrontierQueryIndex.PreparedRange[] ranges) {
 	}
 }

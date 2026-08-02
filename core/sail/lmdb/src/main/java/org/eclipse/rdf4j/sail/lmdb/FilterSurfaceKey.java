@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalPro
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ScalarEvaluationEffects;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorKey;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 /**
  * Persistent learned-filter surface. The structural fingerprints canonicalize variable names and join order, while the
@@ -82,8 +83,9 @@ record FilterSurfaceKey(int schemaVersion, Kind kind, String inputTopology, Stri
 			return null;
 		}
 		TupleExpr input = filter.getArg();
+		Filter learningFilter = scopeInvariant(filter, input) ? withoutFilterScopeBoundary(filter) : filter;
 		LeoOperatorKey inputKey = LeoOperatorKey.from(input, "", constantMode);
-		LeoOperatorKey fullKey = LeoOperatorKey.from(filter, "", constantMode);
+		LeoOperatorKey fullKey = LeoOperatorKey.from(learningFilter, "", constantMode);
 		BindingUniverse universe = BindingUniverse.from(input, PhysicalProperties.ANY);
 		BindingShape shape = BindingShape.from(input, universe);
 		String shapeKey = "possible=" + shape.possible()
@@ -98,6 +100,17 @@ record FilterSurfaceKey(int schemaVersion, Kind kind, String inputTopology, Stri
 				shape.nullable().toString(),
 				predicateContextIdentity(input),
 				effect.name());
+	}
+
+	private static boolean scopeInvariant(Filter filter, TupleExpr input) {
+		return filter.isVariableScopeChange()
+				&& input.getAssuredBindingNames().containsAll(VarNameCollector.process(filter.getCondition()));
+	}
+
+	private static Filter withoutFilterScopeBoundary(Filter filter) {
+		Filter normalized = filter.clone();
+		normalized.setVariableScopeChange(false);
+		return normalized;
 	}
 
 	private static String predicateContextIdentity(TupleExpr input) {

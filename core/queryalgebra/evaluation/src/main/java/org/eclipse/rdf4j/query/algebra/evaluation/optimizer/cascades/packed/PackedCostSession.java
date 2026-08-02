@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierEvidenceBundle;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDisposition;
 
 /**
  * Query-local packed estimator session.
@@ -61,6 +63,32 @@ public interface PackedCostSession extends AutoCloseable {
 	}
 
 	/**
+	 * Realizes a query-local evidence state when a costing transition requires its payload.
+	 *
+	 * <p>
+	 * Scalar sessions and Frontier states that are already usable retain their identity through this default. Frontier
+	 * providers may return a distinct immutable child state whose payload was replayed from the original state's exact
+	 * descriptor. State zero remains the deliberate scalar/no-source sentinel.
+	 */
+	default int realizeEvidenceState(int evidenceStateId) {
+		if (evidenceStateId < 0) {
+			throw new IllegalArgumentException("packed evidence state ID must be non-negative");
+		}
+		return evidenceStateId;
+	}
+
+	/**
+	 * Detaches query-local Frontier states before the session and its backing arena close.
+	 *
+	 * <p>
+	 * Scalar providers retain the state-free behavior through this default. Frontier providers must return a
+	 * resource-free bundle whose requested positions align exactly with {@code evidenceStateIds}.
+	 */
+	default FrontierEvidenceBundle detachEvidence(int[] evidenceStateIds) {
+		return FrontierEvidenceBundle.empty(Objects.requireNonNull(evidenceStateIds, "evidenceStateIds").length);
+	}
+
+	/**
 	 * Closes query-local resources. The default is suitable for stateless adapters.
 	 */
 	@Override
@@ -94,12 +122,220 @@ final class ScalarPackedCostSession implements PackedCostSession {
 
 	@Override
 	public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+		double isolatedRows = output.outputRows();
 		model.estimate(query, relationId, context, output);
+		if (context.prefixRelationCount() > 0
+				&& finiteNonNegative(isolatedRows)
+				&& finiteNonNegative(output.outputRows())
+				&& Double.compare(isolatedRows, output.outputRows()) != 0
+				&& !output.hasContextualOutputRows()) {
+			/*
+			 * Before row-scope methods existed, a scalar provider expressed a prefix refinement by replacing the
+			 * isolated factor rows passed into the call. Preserve that contract from the event itself. An unchanged
+			 * scalar remains an isolated compatibility mirror and cannot make join cardinality orientation-dependent.
+			 */
+			output.setContextualOutputRowsPreservingPhysicalCost(output.outputRows());
+		}
 	}
 
 	@Override
 	public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
 		model.refineOperator(query, relationId, context, output);
+	}
+
+	private static boolean finiteNonNegative(double value) {
+		return Double.isFinite(value) && value >= 0.0d;
+	}
+}
+
+/** Records each completed provider invocation before its estimate can enter winner metadata. */
+@PackedHotPath
+final class EventSourcingPackedCostSession implements PackedCostSession {
+
+	private final PackedCostSession delegate;
+	private final PackedCostingTraceArena trace = new PackedCostingTraceArena();
+	private final PackedCostEstimate providerInput = new PackedCostEstimate();
+	private final int[] canonicalContextualOperatorRelationIds;
+
+	EventSourcingPackedCostSession(PackedCostSession delegate) {
+		this(delegate, null);
+	}
+
+	EventSourcingPackedCostSession(PackedCostSession delegate, PackedQuery query) {
+		this.delegate = Objects.requireNonNull(delegate, "delegate");
+		canonicalContextualOperatorRelationIds = query == null
+				? null
+				: query.canonicalContextualOperatorRelationIds();
+	}
+
+	@Override
+	public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+		providerInput.copyProviderInputFrom(output);
+		int retainedEventId = trace.findInvocation(PackedCostingPhase.LEAF, relationId, context, providerInput);
+		if (retainedEventId != 0) {
+			trace.restore(retainedEventId, output);
+			return;
+		}
+		delegate.estimateLeaf(relationId, context, output);
+		trace.append(PackedCostingPhase.LEAF, relationId, context, providerInput, output,
+				delegate.objectiveScore(output));
+	}
+
+	@Override
+	public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+		providerInput.copyProviderInputFrom(output);
+		int retainedEventId = trace.findInvocation(PackedCostingPhase.PREFIX_EXTENSION, relationId, context,
+				providerInput);
+		if (retainedEventId != 0) {
+			trace.restore(retainedEventId, output);
+			return;
+		}
+		delegate.appendFactor(relationId, context, output);
+		trace.append(PackedCostingPhase.PREFIX_EXTENSION, relationId, context, providerInput, output,
+				delegate.objectiveScore(output));
+	}
+
+	@Override
+	public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+		int canonicalRelationId = canonicalContextualOperatorRelationId(relationId);
+		providerInput.copyProviderInputFrom(output);
+		int retainedEventId = trace.findInvocation(
+				PackedCostingPhase.OPERATOR, canonicalRelationId, context, providerInput);
+		if (retainedEventId != 0) {
+			trace.restore(retainedEventId, output);
+			return;
+		}
+		delegate.refineOperator(canonicalRelationId, context, output);
+		trace.append(PackedCostingPhase.OPERATOR, canonicalRelationId, context, providerInput, output,
+				delegate.objectiveScore(output));
+	}
+
+	private int canonicalContextualOperatorRelationId(int relationId) {
+		return canonicalContextualOperatorRelationIds == null
+				|| relationId <= 0
+				|| relationId >= canonicalContextualOperatorRelationIds.length
+						? relationId
+						: canonicalContextualOperatorRelationIds[relationId];
+	}
+
+	@Override
+	public void refineIntermediateJoin(PackedCostContext context, PackedCostEstimate output) {
+		providerInput.copyProviderInputFrom(output);
+		int retainedEventId = trace.findInvocation(PackedCostingPhase.INTERMEDIATE_JOIN, 0, context, providerInput);
+		if (retainedEventId != 0) {
+			trace.restore(retainedEventId, output);
+			return;
+		}
+		delegate.refineIntermediateJoin(context, output);
+		trace.append(PackedCostingPhase.INTERMEDIATE_JOIN, 0, context, providerInput, output,
+				delegate.objectiveScore(output));
+	}
+
+	void refinePhysicalJoin(int implementation, PackedCostContext context, PackedCostEstimate output) {
+		providerInput.copyProviderInputFrom(output);
+		int retainedEventId = trace.findInvocation(PackedCostingPhase.PHYSICAL_JOIN, implementation, context,
+				providerInput);
+		if (retainedEventId != 0) {
+			trace.restore(retainedEventId, output);
+			return;
+		}
+		delegate.refineIntermediateJoin(context, output);
+		trace.append(PackedCostingPhase.PHYSICAL_JOIN, implementation, context, providerInput, output,
+				delegate.objectiveScore(output));
+	}
+
+	@Override
+	public double objectiveScore(PackedCostEstimate estimate) {
+		return delegate.objectiveScore(estimate);
+	}
+
+	@Override
+	public FrontierEvidenceBundle detachEvidence(int[] evidenceStateIds) {
+		return delegate.detachEvidence(evidenceStateIds);
+	}
+
+	PackedCostingTrace snapshotTrace() {
+		return trace.snapshot();
+	}
+
+	PackedCostingTrace.Projection snapshotTrace(int[] rootEventIds) {
+		return trace.snapshot().project(rootEventIds);
+	}
+
+	String describeEvent(int eventId) {
+		return trace.describe(eventId);
+	}
+
+	double eventPrefixRows(int eventId) {
+		return trace.prefixRows(eventId);
+	}
+
+	PackedCostingPhase eventPhase(int eventId) {
+		return trace.phase(eventId);
+	}
+
+	boolean eventHasContextualOutputRows(int eventId) {
+		return trace.hasContextualOutputRows(eventId);
+	}
+
+	@Override
+	public void close() {
+		delegate.close();
+	}
+}
+
+/** Marks every scalar estimate produced after one recorded whole-session Frontier failure. */
+@PackedHotPath
+final class FailoverPackedCostSession implements PackedCostSession {
+
+	private final PackedCostSession delegate;
+	private final String reason;
+
+	FailoverPackedCostSession(PackedCostSession delegate, String reason) {
+		this.delegate = Objects.requireNonNull(delegate, "delegate");
+		this.reason = reason == null || reason.isBlank() ? "frontier-session-failed" : reason;
+	}
+
+	@Override
+	public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+		delegate.estimateLeaf(relationId, context, output);
+		mark(output);
+	}
+
+	@Override
+	public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+		delegate.appendFactor(relationId, context, output);
+		mark(output);
+	}
+
+	@Override
+	public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+		delegate.refineOperator(relationId, context, output);
+		mark(output);
+	}
+
+	@Override
+	public void refineIntermediateJoin(PackedCostContext context, PackedCostEstimate output) {
+		delegate.refineIntermediateJoin(context, output);
+		mark(output);
+	}
+
+	@Override
+	public double objectiveScore(PackedCostEstimate estimate) {
+		return delegate.objectiveScore(estimate);
+	}
+
+	@Override
+	public void close() {
+		delegate.close();
+	}
+
+	private void mark(PackedCostEstimate output) {
+		output.setEvidenceDisposition(FrontierStateDisposition.WHOLE_SESSION_FAILURE);
+		output.putPlannedStringMetric("plannedFrontierStatus", "unavailable");
+		output.putPlannedStringMetric("plannedFrontierFallbackReason", reason);
+		output.putPlannedStringMetric("optimizer.frontierSessionFallbackDisposition", "whole-session-failure");
+		output.putPlannedStringMetric("optimizer.frontierSessionFallbackReason", reason);
 	}
 }
 
@@ -130,7 +366,8 @@ final class ProofAwarePackedCostSession implements PackedCostSession {
 	@Override
 	public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
 		if (query.relOperator(relationId) == PackedRelOp.FILTER
-				&& (query.relRuleMask(relationId) & PackedRuleProofs.MINUS_CORRELATED_NOT_EXISTS) != 0L) {
+				&& (query.relSemanticFlags(relationId)
+						& PackedNodeMetadataArena.SEMANTIC_ASSURED_SHARED_MINUS_FILTER) != 0) {
 			output.putPlannedStringMetric("optimizer.semiAntiKind", "minus-assured-shared");
 		}
 		delegate.refineOperator(relationId, context, output);
@@ -144,6 +381,11 @@ final class ProofAwarePackedCostSession implements PackedCostSession {
 	@Override
 	public double objectiveScore(PackedCostEstimate estimate) {
 		return delegate.objectiveScore(estimate);
+	}
+
+	@Override
+	public FrontierEvidenceBundle detachEvidence(int[] evidenceStateIds) {
+		return delegate.detachEvidence(evidenceStateIds);
 	}
 
 	@Override

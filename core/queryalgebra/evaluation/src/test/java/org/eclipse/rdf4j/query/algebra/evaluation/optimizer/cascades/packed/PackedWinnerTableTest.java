@@ -21,6 +21,27 @@ import org.junit.jupiter.api.Test;
 class PackedWinnerTableTest {
 
 	@Test
+	void improvedWinnerAppendsAnImmutableCandidateRecord() {
+		PackedWinnerTable winners = new PackedWinnerTable(2, 2, 2, 1);
+		int original = winners.offerWithMetadata(1, 1, 0, 0, 0, 40, 101, 2.0d, 20.0d, 20.0d,
+				new int[] { 7 }, 0, 1);
+
+		int improved = winners.offerWithMetadata(1, 1, 0, 0, 0, 41, 202, 1.0d, 10.0d, 10.0d,
+				new int[] { 8 }, 0, 1);
+
+		assertNotEquals(original, improved, "a candidate-costing record must never be rewritten in place");
+		assertEquals(improved, winners.find(1, 1, 0, 0, 0));
+		assertEquals(40, winners.physicalExpressionId(original));
+		assertEquals(101, winners.physicalMetadataId(original));
+		assertEquals(20.0d, winners.totalCost(original));
+		assertEquals(7, winners.childWinnerId(original, 0));
+		assertEquals(41, winners.physicalExpressionId(improved));
+		assertEquals(202, winners.physicalMetadataId(improved));
+		assertEquals(10.0d, winners.totalCost(improved));
+		assertEquals(8, winners.childWinnerId(improved, 0));
+	}
+
+	@Test
 	void denseDefaultSlotRetainsOnlyTheDeterministicCheapestWinner() {
 		PackedWinnerTable winners = new PackedWinnerTable(4, 4, 8, 1);
 		int[] children = { 7, 8 };
@@ -29,15 +50,19 @@ class PackedWinnerTableTest {
 		assertEquals(winner, winners.offer(3, 1, 0, 0, 0, 41, 1.0d, 30.0d, 30.0d, children, 0, 2));
 		assertEquals(40, winners.physicalExpressionId(winner));
 
-		assertEquals(winner, winners.offer(3, 1, 0, 0, 0, 42, 1.0d, 10.0d, 10.0d, new int[] { 9 }, 0, 1));
-		assertEquals(42, winners.physicalExpressionId(winner));
-		assertEquals(10.0d, winners.totalCost(winner));
-		assertEquals(1, winners.childCount(winner));
-		assertEquals(9, winners.childWinnerId(winner, 0));
+		int cheaper = winners.offer(3, 1, 0, 0, 0, 42, 1.0d, 10.0d, 10.0d, new int[] { 9 }, 0, 1);
+		assertNotEquals(winner, cheaper);
+		assertEquals(42, winners.physicalExpressionId(cheaper));
+		assertEquals(10.0d, winners.totalCost(cheaper));
+		assertEquals(1, winners.childCount(cheaper));
+		assertEquals(9, winners.childWinnerId(cheaper, 0));
 
-		assertEquals(winner, winners.offer(3, 1, 0, 0, 0, 39, 1.0d, 10.0d, 10.0d, children, 0, 2));
-		assertEquals(39, winners.physicalExpressionId(winner));
-		assertEquals(1, winners.size());
+		int deterministicTieWinner = winners.offer(3, 1, 0, 0, 0, 39, 1.0d, 10.0d, 10.0d, children, 0, 2);
+		assertNotEquals(cheaper, deterministicTieWinner);
+		assertEquals(39, winners.physicalExpressionId(deterministicTieWinner));
+		assertEquals(deterministicTieWinner, winners.find(3, 1, 0, 0, 0));
+		assertEquals(3, winners.size());
+		assertEquals(40, winners.physicalExpressionId(winner));
 	}
 
 	@Test
@@ -88,13 +113,17 @@ class PackedWinnerTableTest {
 				winners.offerWithMetadata(1, 1, 0, 0, 0, 30, 0, 0, 5.0d, 11.0d, 20.0d, none, 0, 0));
 		assertEquals(40, winners.physicalExpressionId(winner));
 
-		assertEquals(winner,
-				winners.offerWithMetadata(1, 1, 0, 0, 0, 50, 0, 0, 5.0d, 10.0d, 19.0d, none, 0, 0));
-		assertEquals(50, winners.physicalExpressionId(winner));
+		int lowerWorstCase = winners.offerWithMetadata(1, 1, 0, 0, 0, 50, 0, 0, 5.0d, 10.0d, 19.0d,
+				none, 0, 0);
+		assertNotEquals(winner, lowerWorstCase);
+		assertEquals(50, winners.physicalExpressionId(lowerWorstCase));
 
-		assertEquals(winner,
-				winners.offerWithMetadata(1, 1, 0, 0, 0, 60, 0, 0, 4.0d, 10.0d, 19.0d, none, 0, 0));
-		assertEquals(60, winners.physicalExpressionId(winner));
+		int lowerStartup = winners.offerWithMetadata(1, 1, 0, 0, 0, 60, 0, 0, 4.0d, 10.0d, 19.0d, none, 0,
+				0);
+		assertNotEquals(lowerWorstCase, lowerStartup);
+		assertEquals(60, winners.physicalExpressionId(lowerStartup));
+		assertEquals(lowerStartup, winners.find(1, 1, 0, 0, 0));
+		assertEquals(40, winners.physicalExpressionId(winner));
 	}
 
 	@Test
@@ -108,8 +137,10 @@ class PackedWinnerTableTest {
 
 		int winner = (int) offer.invoke(winners, 1, 1, 0, 0, 0, 40, 0, 0,
 				5.0d, 10.0d, 20.0d, 100.0d, none, 0, 0);
-		assertEquals(winner, offer.invoke(winners, 1, 1, 0, 0, 0, 50, 0, 0,
-				5.0d, 10.0d, 20.0d, 10.0d, none, 0, 0));
-		assertEquals(50, winners.physicalExpressionId(winner));
+		int lowerMemory = (int) offer.invoke(winners, 1, 1, 0, 0, 0, 50, 0, 0,
+				5.0d, 10.0d, 20.0d, 10.0d, none, 0, 0);
+		assertNotEquals(winner, lowerMemory);
+		assertEquals(50, winners.physicalExpressionId(lowerMemory));
+		assertEquals(40, winners.physicalExpressionId(winner));
 	}
 }

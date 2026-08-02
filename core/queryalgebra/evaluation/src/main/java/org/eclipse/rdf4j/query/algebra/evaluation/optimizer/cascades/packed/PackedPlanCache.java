@@ -37,25 +37,38 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 public final class PackedPlanCache {
 
 	private static final int DEFAULT_SEGMENTS = 16;
+	private static final long DEFAULT_EVIDENCE_BUDGET_BYTES = 64L * 1024L * 1024L;
 
 	private final Segment[] segments;
 	private final int segmentMask;
 	private final FingerprintStrategy fingerprintStrategy;
 
 	public PackedPlanCache(int capacity) {
-		this(capacity, DEFAULT_SEGMENTS);
+		this(capacity, DEFAULT_SEGMENTS, DEFAULT_EVIDENCE_BUDGET_BYTES);
 	}
 
 	public PackedPlanCache(int capacity, int segmentCount) {
-		this(capacity, segmentCount, PackedPlanCache::defaultFingerprint);
+		this(capacity, segmentCount, DEFAULT_EVIDENCE_BUDGET_BYTES);
+	}
+
+	public PackedPlanCache(int capacity, int segmentCount, long evidenceBudgetBytes) {
+		this(capacity, segmentCount, evidenceBudgetBytes, PackedPlanCache::defaultFingerprint);
 	}
 
 	PackedPlanCache(int capacity, int segmentCount, FingerprintStrategy fingerprintStrategy) {
+		this(capacity, segmentCount, DEFAULT_EVIDENCE_BUDGET_BYTES, fingerprintStrategy);
+	}
+
+	PackedPlanCache(int capacity, int segmentCount, long evidenceBudgetBytes,
+			FingerprintStrategy fingerprintStrategy) {
 		if (capacity <= 0) {
 			throw new IllegalArgumentException("packed plan cache capacity must be positive");
 		}
 		if (segmentCount <= 0) {
 			throw new IllegalArgumentException("packed plan cache segment count must be positive");
+		}
+		if (evidenceBudgetBytes < 0L) {
+			throw new IllegalArgumentException("packed plan cache evidence budget must be nonnegative");
 		}
 		int normalizedSegments = 1;
 		while (normalizedSegments < Math.min(capacity, segmentCount)) {
@@ -68,8 +81,10 @@ public final class PackedPlanCache {
 		while (segmentCapacity < perSegment) {
 			segmentCapacity <<= 1;
 		}
+		long baseEvidenceBudget = evidenceBudgetBytes / segments.length;
+		long remainder = evidenceBudgetBytes % segments.length;
 		for (int index = 0; index < segments.length; index++) {
-			segments[index] = new Segment(segmentCapacity);
+			segments[index] = new Segment(segmentCapacity, baseEvidenceBudget + (index < remainder ? 1L : 0L));
 		}
 		this.fingerprintStrategy = Objects.requireNonNull(fingerprintStrategy, "fingerprintStrategy");
 	}
@@ -80,6 +95,10 @@ public final class PackedPlanCache {
 
 	PlanEntry findPlan(Fingerprint fingerprint, Context context, TupleExpr source) {
 		return segment(fingerprint, context).findPlan(fingerprint, context, source);
+	}
+
+	PlanEntry findStructuralPlan(Fingerprint fingerprint, Context context, TupleExpr source) {
+		return segment(fingerprint, context).findStructuralPlan(fingerprint, context, source);
 	}
 
 	QueryEntry findQuery(Fingerprint fingerprint, Context context, TupleExpr source) {
@@ -99,7 +118,8 @@ public final class PackedPlanCache {
 	}
 
 	private Segment segment(Fingerprint fingerprint, Context context) {
-		long mixed = mix64(fingerprint.low() ^ Long.rotateLeft(fingerprint.high(), 23) ^ context.queryHash());
+		long mixed = mix64(
+				fingerprint.low() ^ Long.rotateLeft(fingerprint.high(), 23) ^ context.structuralQueryHash());
 		return segments[(int) mixed & segmentMask];
 	}
 
@@ -119,12 +139,26 @@ public final class PackedPlanCache {
 	/** Planning dependencies which are not already represented by the normalized query structure. */
 	public record Context(long datasetFingerprint, long bindingShapeFingerprint, long parameterVariant,
 			long goalFingerprint, long catalogVersion, long providerVersion, long dataRevision,
-			long predicateRangeVersion) {
+			long predicateRangeVersion, long leoRevision, long frontierRevision) {
+
+		public Context(long datasetFingerprint, long bindingShapeFingerprint, long parameterVariant,
+				long goalFingerprint, long catalogVersion, long providerVersion, long dataRevision,
+				long predicateRangeVersion, long leoRevision) {
+			this(datasetFingerprint, bindingShapeFingerprint, parameterVariant, goalFingerprint, catalogVersion,
+					providerVersion, dataRevision, predicateRangeVersion, leoRevision, 0L);
+		}
+
+		public Context(long datasetFingerprint, long bindingShapeFingerprint, long parameterVariant,
+				long goalFingerprint, long catalogVersion, long providerVersion, long dataRevision,
+				long predicateRangeVersion) {
+			this(datasetFingerprint, bindingShapeFingerprint, parameterVariant, goalFingerprint, catalogVersion,
+					providerVersion, dataRevision, predicateRangeVersion, 0L, 0L);
+		}
 
 		public Context(long datasetFingerprint, long bindingShapeFingerprint, long parameterVariant,
 				long goalFingerprint, long catalogVersion, long providerVersion, long dataRevision) {
 			this(datasetFingerprint, bindingShapeFingerprint, parameterVariant, goalFingerprint, catalogVersion,
-					providerVersion, dataRevision, 0L);
+					providerVersion, dataRevision, 0L, 0L, 0L);
 		}
 
 		long planHash() {
@@ -135,7 +169,9 @@ public final class PackedPlanCache {
 			hash = mix64(hash ^ catalogVersion);
 			hash = mix64(hash ^ providerVersion);
 			hash = mix64(hash ^ dataRevision);
-			return mix64(hash ^ predicateRangeVersion);
+			hash = mix64(hash ^ predicateRangeVersion);
+			hash = mix64(hash ^ leoRevision);
+			return mix64(hash ^ frontierRevision);
 		}
 
 		long queryHash() {
@@ -144,7 +180,34 @@ public final class PackedPlanCache {
 			hash = mix64(hash ^ parameterVariant);
 			hash = mix64(hash ^ catalogVersion);
 			hash = mix64(hash ^ dataRevision);
+			hash = mix64(hash ^ predicateRangeVersion);
+			hash = mix64(hash ^ leoRevision);
+			return mix64(hash ^ frontierRevision);
+		}
+
+		long structuralPlanHash() {
+			long hash = structuralQueryHash();
+			hash = mix64(hash ^ goalFingerprint);
+			return mix64(hash ^ providerVersion);
+		}
+
+		long structuralQueryHash() {
+			long hash = mix64(datasetFingerprint);
+			hash = mix64(hash ^ bindingShapeFingerprint);
+			hash = mix64(hash ^ parameterVariant);
+			hash = mix64(hash ^ catalogVersion);
 			return mix64(hash ^ predicateRangeVersion);
+		}
+
+		boolean structurallyMatches(Context other) {
+			return other != null
+					&& datasetFingerprint == other.datasetFingerprint
+					&& bindingShapeFingerprint == other.bindingShapeFingerprint
+					&& parameterVariant == other.parameterVariant
+					&& goalFingerprint == other.goalFingerprint
+					&& catalogVersion == other.catalogVersion
+					&& providerVersion == other.providerVersion
+					&& predicateRangeVersion == other.predicateRangeVersion;
 		}
 	}
 
@@ -244,6 +307,10 @@ public final class PackedPlanCache {
 			return recipe;
 		}
 
+		Context context() {
+			return context;
+		}
+
 		double outputRows() {
 			return outputRows;
 		}
@@ -263,6 +330,27 @@ public final class PackedPlanCache {
 		private boolean matches(Fingerprint candidateFingerprint, Context candidateContext, TupleExpr source) {
 			return fingerprint.equals(candidateFingerprint) && context.equals(candidateContext)
 					&& sourceSnapshot.equals(source);
+		}
+
+		private boolean structurallyMatches(Fingerprint candidateFingerprint, Context candidateContext,
+				TupleExpr source) {
+			return recipe.hasDetachedEvidence()
+					&& fingerprint.equals(candidateFingerprint)
+					&& context.structurallyMatches(candidateContext)
+					&& sourceSnapshot.equals(source);
+		}
+
+		private long evidenceBytes() {
+			return recipe.hasDetachedEvidence() ? recipe.detachedEvidenceBytes() : 0L;
+		}
+
+		private PlanEntry withoutDetachedEvidence() {
+			PackedPlanRecipe stripped = recipe.withoutDetachedEvidence();
+			if (stripped == recipe) {
+				return this;
+			}
+			return new PlanEntry(fingerprint, context, sourceSnapshot, query, stripped, outputRows, totalCost,
+					workLimitReached, deadlineReached);
 		}
 	}
 
@@ -320,13 +408,16 @@ public final class PackedPlanCache {
 		private final Flight[] flights;
 		private final byte[] planFrequencies;
 		private final byte[] queryFrequencies;
+		private final long evidenceBudgetBytes;
+		private long retainedEvidenceBytes;
 
-		private Segment(int capacity) {
+		private Segment(int capacity, long evidenceBudgetBytes) {
 			plans = new PlanEntry[capacity];
 			queries = new QueryEntry[capacity];
 			flights = new Flight[capacity];
 			planFrequencies = new byte[capacity];
 			queryFrequencies = new byte[capacity];
+			this.evidenceBudgetBytes = evidenceBudgetBytes;
 		}
 
 		private synchronized PlanEntry findPlan(Fingerprint fingerprint, Context context, TupleExpr source) {
@@ -344,6 +435,24 @@ public final class PackedPlanCache {
 				}
 			}
 			return null;
+		}
+
+		private synchronized PlanEntry findStructuralPlan(Fingerprint fingerprint, Context context,
+				TupleExpr source) {
+			PlanEntry best = null;
+			int bestIndex = -1;
+			for (int index = 0; index < plans.length; index++) {
+				PlanEntry entry = plans[index];
+				if (entry != null && entry.structurallyMatches(fingerprint, context, source)
+						&& newerGeneration(entry, best)) {
+					best = entry;
+					bestIndex = index;
+				}
+			}
+			if (bestIndex >= 0) {
+				planFrequencies[bestIndex] = increment(planFrequencies[bestIndex]);
+			}
+			return best;
 		}
 
 		private synchronized QueryEntry findQuery(Fingerprint fingerprint, Context context, TupleExpr source) {
@@ -406,8 +515,68 @@ public final class PackedPlanCache {
 		private void putPlan(PlanEntry entry) {
 			int start = slot(entry.fingerprint.low() ^ entry.context.planHash(), plans.length);
 			int target = victim(plans, planFrequencies, start);
-			plans[target] = entry;
+			PlanEntry replaced = plans[target];
+			if (replaced != null) {
+				retainedEvidenceBytes -= replaced.evidenceBytes();
+			}
+			PlanEntry admitted = admitEvidence(entry, target);
+			plans[target] = admitted;
+			retainedEvidenceBytes += admitted.evidenceBytes();
 			planFrequencies[target] = 1;
+		}
+
+		private PlanEntry admitEvidence(PlanEntry entry, int target) {
+			long evidenceBytes = entry.evidenceBytes();
+			if (evidenceBytes == 0L) {
+				return entry;
+			}
+			if (evidenceBudgetBytes == 0L || evidenceBytes > evidenceBudgetBytes) {
+				return entry.withoutDetachedEvidence();
+			}
+			while (retainedEvidenceBytes + evidenceBytes > evidenceBudgetBytes) {
+				int victim = evidenceVictim(target);
+				if (victim < 0) {
+					return entry.withoutDetachedEvidence();
+				}
+				PlanEntry retainedPlan = plans[victim];
+				retainedEvidenceBytes -= retainedPlan.evidenceBytes();
+				plans[victim] = retainedPlan.withoutDetachedEvidence();
+			}
+			return entry;
+		}
+
+		private int evidenceVictim(int excludedIndex) {
+			int victim = -1;
+			int victimFrequency = Integer.MAX_VALUE;
+			for (int index = 0; index < plans.length; index++) {
+				PlanEntry entry = plans[index];
+				if (index == excludedIndex || entry == null || entry.evidenceBytes() == 0L) {
+					continue;
+				}
+				int frequency = Byte.toUnsignedInt(planFrequencies[index]);
+				if (frequency < victimFrequency) {
+					victim = index;
+					victimFrequency = frequency;
+				}
+			}
+			return victim;
+		}
+
+		private static boolean newerGeneration(PlanEntry candidate, PlanEntry incumbent) {
+			if (incumbent == null) {
+				return true;
+			}
+			int dataComparison = Long.compareUnsigned(candidate.context.dataRevision(),
+					incumbent.context.dataRevision());
+			if (dataComparison != 0) {
+				return dataComparison > 0;
+			}
+			int frontierComparison = Long.compareUnsigned(candidate.context.frontierRevision(),
+					incumbent.context.frontierRevision());
+			if (frontierComparison != 0) {
+				return frontierComparison > 0;
+			}
+			return Long.compareUnsigned(candidate.context.leoRevision(), incumbent.context.leoRevision()) > 0;
 		}
 
 		private void putQuery(QueryEntry entry) {

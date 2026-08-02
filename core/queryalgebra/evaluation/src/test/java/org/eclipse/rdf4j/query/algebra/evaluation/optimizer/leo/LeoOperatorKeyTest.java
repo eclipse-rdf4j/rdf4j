@@ -15,7 +15,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -25,6 +27,7 @@ import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -45,6 +48,22 @@ class LeoOperatorKeyTest {
 				pattern("y", "urn:knows", "z"));
 
 		assertEquals(LeoOperatorKey.from(first), LeoOperatorKey.from(second));
+	}
+
+	@Test
+	void canonicalJoinSurfaceMatchesExhaustiveReference() {
+		List<StatementPattern> factors = List.of(
+				pattern("a", "urn:follows", "b"),
+				pattern("b", "urn:follows", "c"),
+				pattern("c", "urn:follows", "d"),
+				pattern("d", "urn:follows", "a"),
+				pattern("a", "urn:name", "name"),
+				pattern("name", "urn:language", "language"));
+		String expected = "JOIN|factors=" + exhaustiveStatementJoinSurface(factors);
+
+		assertEquals(expected, LeoOperatorKey.from(join(factors, 0, 1, 2, 3, 4, 5)).structuralFingerprint());
+		assertEquals(expected, LeoOperatorKey.from(join(factors, 5, 3, 1, 4, 2, 0)).structuralFingerprint());
+		assertEquals(expected, LeoOperatorKey.from(join(factors, 2, 4, 0, 5, 3, 1)).structuralFingerprint());
 	}
 
 	@Test
@@ -151,6 +170,66 @@ class LeoOperatorKeyTest {
 	private static StatementPattern constantSubjectPattern(String subject, String predicate, String object) {
 		return new StatementPattern(new Var("subject", VF.createIRI(subject)),
 				new Var("predicate", VF.createIRI(predicate)), new Var(object));
+	}
+
+	private static TupleExpr join(List<StatementPattern> factors, int... order) {
+		TupleExpr result = factors.get(order[0]).clone();
+		for (int ordinal = 1; ordinal < order.length; ordinal++) {
+			result = new Join(result, factors.get(order[ordinal]).clone());
+		}
+		return result;
+	}
+
+	private static String exhaustiveStatementJoinSurface(List<StatementPattern> factors) {
+		int[] order = new int[factors.size()];
+		for (int ordinal = 0; ordinal < order.length; ordinal++) {
+			order[ordinal] = ordinal;
+		}
+		String[] minimum = new String[1];
+		exhaustiveStatementJoinSurface(factors, order, 0, minimum);
+		return minimum[0];
+	}
+
+	private static void exhaustiveStatementJoinSurface(List<StatementPattern> factors, int[] order, int offset,
+			String[] minimum) {
+		if (offset == order.length) {
+			Map<String, Integer> variableOrdinals = new HashMap<>();
+			List<String> keys = new ArrayList<>(order.length);
+			for (int factorOrdinal : order) {
+				StatementPattern factor = factors.get(factorOrdinal);
+				keys.add("SP|patternScope=" + factor.getScope()
+						+ "|s=" + referenceVarKey(factor.getSubjectVar(), variableOrdinals)
+						+ "|p=" + referenceVarKey(factor.getPredicateVar(), variableOrdinals)
+						+ "|o=" + referenceVarKey(factor.getObjectVar(), variableOrdinals)
+						+ "|c=" + referenceVarKey(factor.getContextVar(), variableOrdinals));
+			}
+			String candidate = String.join(";", keys);
+			if (minimum[0] == null || candidate.compareTo(minimum[0]) < 0) {
+				minimum[0] = candidate;
+			}
+			return;
+		}
+		for (int index = offset; index < order.length; index++) {
+			swap(order, offset, index);
+			exhaustiveStatementJoinSurface(factors, order, offset + 1, minimum);
+			swap(order, offset, index);
+		}
+	}
+
+	private static String referenceVarKey(Var var, Map<String, Integer> variableOrdinals) {
+		if (var == null) {
+			return "<null>";
+		}
+		if (var.hasValue()) {
+			return "const:iri:" + var.getValue().stringValue();
+		}
+		return "v" + variableOrdinals.computeIfAbsent(var.getName(), ignored -> variableOrdinals.size());
+	}
+
+	private static void swap(int[] values, int left, int right) {
+		int value = values[left];
+		values[left] = values[right];
+		values[right] = value;
 	}
 
 	private static BindingSetAssignment values(List<? extends BindingSet> rows) {

@@ -135,6 +135,7 @@ public record LeoOperatorKey(String operatorType, String structuralFingerprint, 
 
 	private static final class Canonicalizer {
 		private final Map<String, Integer> variableOrdinals = new HashMap<>();
+		private final List<String> variableNamesByOrdinal = new ArrayList<>();
 		private final ConstantMode constantMode;
 		private final boolean allowJoinPermutations;
 
@@ -221,31 +222,70 @@ public record LeoOperatorKey(String operatorType, String structuralFingerprint, 
 				Collections.sort(factorKeys);
 				return String.join(";", factorKeys);
 			}
-			List<Integer> order = new ArrayList<>(factors.size());
-			for (int i = 0; i < factors.size(); i++) {
-				order.add(i);
+			int[] order = new int[factors.size()];
+			for (int index = 0; index < factors.size(); index++) {
+				order[index] = index;
 			}
-			List<String> candidates = new ArrayList<>();
-			addJoinPermutations(factors, order, 0, candidates);
-			Collections.sort(candidates);
-			return candidates.get(0);
+			String[] minimum = new String[1];
+			addJoinPermutations(factors, order, 0, new Canonicalizer(constantMode, false), new StringBuilder(),
+					minimum);
+			return minimum[0];
 		}
 
-		private void addJoinPermutations(List<TupleExpr> factors, List<Integer> order, int offset,
-				List<String> candidates) {
-			if (offset == order.size()) {
-				Canonicalizer candidateCanonicalizer = new Canonicalizer(constantMode, false);
-				List<String> keys = new ArrayList<>(order.size());
-				for (Integer index : order) {
-					keys.add(candidateCanonicalizer.fingerprint(factors.get(index)));
+		private void addJoinPermutations(List<TupleExpr> factors, int[] order, int offset,
+				Canonicalizer candidateCanonicalizer, StringBuilder prefix, String[] minimum) {
+			if (offset == order.length) {
+				String candidate = prefix.toString();
+				if (minimum[0] == null || candidate.compareTo(minimum[0]) < 0) {
+					minimum[0] = candidate;
 				}
-				candidates.add(String.join(";", keys));
 				return;
 			}
-			for (int i = offset; i < order.size(); i++) {
-				Collections.swap(order, offset, i);
-				addJoinPermutations(factors, order, offset + 1, candidates);
-				Collections.swap(order, offset, i);
+			for (int index = offset; index < order.length; index++) {
+				swap(order, offset, index);
+				int prefixLength = prefix.length();
+				int variableCheckpoint = candidateCanonicalizer.variableCheckpoint();
+				if (offset != 0) {
+					prefix.append(';');
+				}
+				prefix.append(candidateCanonicalizer.fingerprint(factors.get(order[offset])));
+				if (canImprove(prefix, minimum[0])) {
+					addJoinPermutations(factors, order, offset + 1, candidateCanonicalizer, prefix, minimum);
+				}
+				prefix.setLength(prefixLength);
+				candidateCanonicalizer.rollbackVariables(variableCheckpoint);
+				swap(order, offset, index);
+			}
+		}
+
+		private static boolean canImprove(StringBuilder prefix, String minimum) {
+			if (minimum == null) {
+				return true;
+			}
+			int sharedLength = Math.min(prefix.length(), minimum.length());
+			for (int index = 0; index < sharedLength; index++) {
+				int comparison = Character.compare(prefix.charAt(index), minimum.charAt(index));
+				if (comparison != 0) {
+					return comparison < 0;
+				}
+			}
+			return prefix.length() <= minimum.length();
+		}
+
+		private static void swap(int[] values, int left, int right) {
+			int value = values[left];
+			values[left] = values[right];
+			values[right] = value;
+		}
+
+		private int variableCheckpoint() {
+			return variableNamesByOrdinal.size();
+		}
+
+		private void rollbackVariables(int checkpoint) {
+			for (int index = variableNamesByOrdinal.size() - 1; index >= checkpoint; index--) {
+				String name = variableNamesByOrdinal.remove(index);
+				variableOrdinals.remove(name);
 			}
 		}
 
@@ -397,7 +437,13 @@ public record LeoOperatorKey(String operatorType, String structuralFingerprint, 
 			if (name == null || name.isBlank() || name.startsWith("_const_")) {
 				return "var:<anon>";
 			}
-			return "v" + variableOrdinals.computeIfAbsent(name, ignored -> variableOrdinals.size());
+			Integer ordinal = variableOrdinals.get(name);
+			if (ordinal == null) {
+				ordinal = variableNamesByOrdinal.size();
+				variableOrdinals.put(name, ordinal);
+				variableNamesByOrdinal.add(name);
+			}
+			return "v" + ordinal;
 		}
 
 		private static String normalize(String value) {

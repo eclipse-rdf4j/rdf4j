@@ -99,6 +99,16 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	public static final double FRONTIER_DEFENSIVE_PROPOSAL_EPSILON = 0.1d;
 
+	public static final double FRONTIER_CACHE_INITIAL_CONFIDENCE = 0.99d;
+
+	public static final double FRONTIER_CACHE_MINIMUM_CONFIDENCE = 0.51d;
+
+	public static final double FRONTIER_CACHE_MAXIMUM_CONFIDENCE = 0.999d;
+
+	public static final double FRONTIER_CACHE_MAXIMUM_EXPECTED_REGRET = 0.01d;
+
+	public static final long FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES = 64L * 1024L * 1024L;
+
 	public static final long BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE = 10L;
 
 	public static final long SKETCH_ESTIMATOR_THROTTLE_EVERY_N = 1024L * 1024L;
@@ -195,6 +205,16 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	private double frontierTargetRelativeStandardError = FRONTIER_TARGET_RELATIVE_STANDARD_ERROR;
 
 	private double frontierDefensiveProposalEpsilon = FRONTIER_DEFENSIVE_PROPOSAL_EPSILON;
+
+	private double frontierCacheInitialConfidence = FRONTIER_CACHE_INITIAL_CONFIDENCE;
+
+	private double frontierCacheMinimumConfidence = FRONTIER_CACHE_MINIMUM_CONFIDENCE;
+
+	private double frontierCacheMaximumConfidence = FRONTIER_CACHE_MAXIMUM_CONFIDENCE;
+
+	private double frontierCacheMaximumExpectedRegret = FRONTIER_CACHE_MAXIMUM_EXPECTED_REGRET;
+
+	private long frontierCacheEvidenceBudgetBytes = FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES;
 
 	private boolean optimizerSamplingEnabled = true;
 
@@ -662,6 +682,77 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	public double getFrontierCacheInitialConfidence() {
+		return frontierCacheInitialConfidence;
+	}
+
+	public LmdbStoreConfig setFrontierCacheInitialConfidence(double confidence) {
+		requireProbability(confidence, "Frontier cache initial confidence");
+		if (confidence < frontierCacheMinimumConfidence || confidence > frontierCacheMaximumConfidence) {
+			throw new IllegalArgumentException("Frontier cache initial confidence must remain within its bounds");
+		}
+		frontierCacheInitialConfidence = confidence;
+		return this;
+	}
+
+	public double getFrontierCacheMinimumConfidence() {
+		return frontierCacheMinimumConfidence;
+	}
+
+	public LmdbStoreConfig setFrontierCacheMinimumConfidence(double confidence) {
+		requireProbability(confidence, "Frontier cache minimum confidence");
+		if (confidence > frontierCacheInitialConfidence) {
+			throw new IllegalArgumentException("Frontier cache minimum confidence cannot exceed the initial value");
+		}
+		frontierCacheMinimumConfidence = confidence;
+		return this;
+	}
+
+	public double getFrontierCacheMaximumConfidence() {
+		return frontierCacheMaximumConfidence;
+	}
+
+	public LmdbStoreConfig setFrontierCacheMaximumConfidence(double confidence) {
+		requireProbability(confidence, "Frontier cache maximum confidence");
+		if (confidence < frontierCacheInitialConfidence) {
+			throw new IllegalArgumentException("Frontier cache maximum confidence cannot be below the initial value");
+		}
+		frontierCacheMaximumConfidence = confidence;
+		return this;
+	}
+
+	public double getFrontierCacheMaximumExpectedRegret() {
+		return frontierCacheMaximumExpectedRegret;
+	}
+
+	public LmdbStoreConfig setFrontierCacheMaximumExpectedRegret(double maximumExpectedRegret) {
+		if (!Double.isFinite(maximumExpectedRegret)
+				|| maximumExpectedRegret < 0.0d
+				|| maximumExpectedRegret > 1.0d) {
+			throw new IllegalArgumentException("Frontier cache expected-regret budget must be in [0, 1]");
+		}
+		frontierCacheMaximumExpectedRegret = maximumExpectedRegret;
+		return this;
+	}
+
+	public long getFrontierCacheEvidenceBudgetBytes() {
+		return frontierCacheEvidenceBudgetBytes;
+	}
+
+	public LmdbStoreConfig setFrontierCacheEvidenceBudgetBytes(long evidenceBudgetBytes) {
+		if (evidenceBudgetBytes < 0L) {
+			throw new IllegalArgumentException("Frontier cache evidence budget must be nonnegative");
+		}
+		frontierCacheEvidenceBudgetBytes = evidenceBudgetBytes;
+		return this;
+	}
+
+	private static void requireProbability(double value, String name) {
+		if (!Double.isFinite(value) || value <= 0.0d || value >= 1.0d) {
+			throw new IllegalArgumentException(name + " must be in (0, 1)");
+		}
+	}
+
 	public boolean getOptimizerSamplingEnabled() {
 		return optimizerSamplingEnabled;
 	}
@@ -904,6 +995,26 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (Double.compare(frontierDefensiveProposalEpsilon, FRONTIER_DEFENSIVE_PROPOSAL_EPSILON) != 0) {
 			m.add(implNode, LmdbStoreSchema.FRONTIER_DEFENSIVE_PROPOSAL_EPSILON,
 					vf.createLiteral(frontierDefensiveProposalEpsilon));
+		}
+		if (Double.compare(frontierCacheInitialConfidence, FRONTIER_CACHE_INITIAL_CONFIDENCE) != 0) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_CACHE_INITIAL_CONFIDENCE,
+					vf.createLiteral(frontierCacheInitialConfidence));
+		}
+		if (Double.compare(frontierCacheMinimumConfidence, FRONTIER_CACHE_MINIMUM_CONFIDENCE) != 0) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_CACHE_MINIMUM_CONFIDENCE,
+					vf.createLiteral(frontierCacheMinimumConfidence));
+		}
+		if (Double.compare(frontierCacheMaximumConfidence, FRONTIER_CACHE_MAXIMUM_CONFIDENCE) != 0) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_CACHE_MAXIMUM_CONFIDENCE,
+					vf.createLiteral(frontierCacheMaximumConfidence));
+		}
+		if (Double.compare(frontierCacheMaximumExpectedRegret, FRONTIER_CACHE_MAXIMUM_EXPECTED_REGRET) != 0) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_CACHE_MAXIMUM_EXPECTED_REGRET,
+					vf.createLiteral(frontierCacheMaximumExpectedRegret));
+		}
+		if (frontierCacheEvidenceBudgetBytes != FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES,
+					vf.createLiteral(frontierCacheEvidenceBudgetBytes));
 		}
 		if (!optimizerSamplingEnabled) {
 			m.add(implNode, LmdbStoreSchema.OPTIMIZER_SAMPLING_ENABLED, vf.createLiteral(false));
@@ -1273,6 +1384,62 @@ public class LmdbStoreConfig extends BaseSailConfig {
 									parseDouble(lit, LmdbStoreSchema.FRONTIER_DEFENSIVE_PROPOSAL_EPSILON));
 						} catch (IllegalArgumentException e) {
 							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_DEFENSIVE_PROPOSAL_EPSILON, lit, e);
+						}
+					});
+
+			Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.FRONTIER_CACHE_INITIAL_CONFIDENCE, null))
+					.ifPresent(lit -> {
+						try {
+							setFrontierCacheInitialConfidence(
+									parseDouble(lit, LmdbStoreSchema.FRONTIER_CACHE_INITIAL_CONFIDENCE));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_CACHE_INITIAL_CONFIDENCE, lit, e);
+						}
+					});
+
+			Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.FRONTIER_CACHE_MINIMUM_CONFIDENCE, null))
+					.ifPresent(lit -> {
+						try {
+							setFrontierCacheMinimumConfidence(
+									parseDouble(lit, LmdbStoreSchema.FRONTIER_CACHE_MINIMUM_CONFIDENCE));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_CACHE_MINIMUM_CONFIDENCE, lit, e);
+						}
+					});
+
+			Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.FRONTIER_CACHE_MAXIMUM_CONFIDENCE, null))
+					.ifPresent(lit -> {
+						try {
+							setFrontierCacheMaximumConfidence(
+									parseDouble(lit, LmdbStoreSchema.FRONTIER_CACHE_MAXIMUM_CONFIDENCE));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_CACHE_MAXIMUM_CONFIDENCE, lit, e);
+						}
+					});
+
+			Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.FRONTIER_CACHE_MAXIMUM_EXPECTED_REGRET, null))
+					.ifPresent(lit -> {
+						try {
+							setFrontierCacheMaximumExpectedRegret(
+									parseDouble(lit, LmdbStoreSchema.FRONTIER_CACHE_MAXIMUM_EXPECTED_REGRET));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(
+									LmdbStoreSchema.FRONTIER_CACHE_MAXIMUM_EXPECTED_REGRET, lit, e);
+						}
+					});
+
+			Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES, null))
+					.ifPresent(lit -> {
+						try {
+							setFrontierCacheEvidenceBudgetBytes(
+									parseLong(lit, LmdbStoreSchema.FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES, lit, e);
 						}
 					});
 

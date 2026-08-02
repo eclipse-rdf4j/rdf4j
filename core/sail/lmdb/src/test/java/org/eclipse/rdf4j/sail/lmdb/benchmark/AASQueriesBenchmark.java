@@ -18,6 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 
 import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
@@ -74,6 +75,7 @@ public class AASQueriesBenchmark {
 	private static final String CASCADES_CONNECTED_TRACE_PROPERTY = "rdf4j.optimizer.lmdb.cascades.connectedJoin.trace";
 	private static final String CASCADES_CONNECTED_TRACE_LIMIT_PROPERTY = "rdf4j.optimizer.lmdb.cascades.connectedJoin.traceLimit";
 	private static final String CASCADES_CONNECTED_TRACE_METRIC = "optimizer.connectedJoinTrace";
+	private static final Pattern SPARQL_VARIABLE = Pattern.compile("\\?([A-Za-z_][A-Za-z0-9_]*)");
 
 	private static final String QUERY_1 = """
 			PREFIX aas: <https://admin-shell.io/aas/3/>
@@ -150,6 +152,7 @@ public class AASQueriesBenchmark {
 	private SailRepository repository;
 	private LmdbStore lmdbStore;
 	private QuerySpec querySpec;
+	private long uncachedPlanningOrdinal;
 
 	static void main(String[] args) throws RunnerException {
 		enableFullExplanationAndTraceOutput();
@@ -382,6 +385,15 @@ public class AASQueriesBenchmark {
 	}
 
 	@Benchmark
+	public int planUncached() {
+		try (SailRepositoryConnection connection = repository.getConnection();
+				LmdbBenchmarkQueryPlan plan = LmdbBenchmarkQueryPlan.prepare(lmdbStore, connection,
+						nextUncachedPlanningQuery(), 5, false)) {
+			return plan.bindingCount();
+		}
+	}
+
+	@Benchmark
 	public long runQuery(PreparedQueryState state) {
 		return evaluatePlan(state.plan);
 	}
@@ -409,6 +421,12 @@ public class AASQueriesBenchmark {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			return LmdbBenchmarkQueryPlan.prepare(lmdbStore, connection, querySpec.query(), 5);
 		}
+	}
+
+	private String nextUncachedPlanningQuery() {
+		String suffix = "_planning_" + Long.toUnsignedString(uncachedPlanningOrdinal++);
+		return SPARQL_VARIABLE.matcher(querySpec.query())
+				.replaceAll(match -> "?" + match.group(1) + suffix);
 	}
 
 	private void printOptimizedPlan(String phase, LmdbBenchmarkQueryPlan plan) {

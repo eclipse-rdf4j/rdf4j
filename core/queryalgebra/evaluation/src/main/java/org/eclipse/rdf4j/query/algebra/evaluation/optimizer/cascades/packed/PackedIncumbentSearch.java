@@ -24,15 +24,22 @@ final class PackedIncumbentSearch {
 	private final int[] childGroupIds;
 	private final int[] childWinnerIds;
 	private final double[] selectedRowsByGroup;
-	private final int[] selectedEvidenceStateByGroup;
 	private final long[] joinChildWords;
+	private final int[] logicalInputStarts;
+	private final int[] lastLogicalInputWinnerIds;
+	private final int[] lastLogicalInputMetadataIds;
 	private final PackedFilterRules filterRules;
+	private final PackedJoinEnumerator joinEnumerator;
 	private final PackedSearchBudget budget;
 	private final boolean exploreReorderings;
 	private final PackedCostSession costSession;
 	private final PackedCostContext costContext = new PackedCostContext();
 	private final PackedCostEstimate costEstimate = new PackedCostEstimate();
+	private final PackedEvidenceContext inheritedEvidenceContext = new PackedEvidenceContext();
 	private final int[] emptyPrefix = new int[0];
+	private final int[] inheritedPrefix = new int[1];
+	private final int[] physicalJoinPrefix = new int[1];
+	private final byte[] preparedLogicalGroups;
 	private int workUnits;
 
 	PackedIncumbentSearch(PackedQuery query, PackedMemo memo, PackedSearchBudget budget,
@@ -52,10 +59,14 @@ final class PackedIncumbentSearch {
 		childGroupIds = new int[maximumChildCount];
 		childWinnerIds = new int[maximumChildCount];
 		selectedRowsByGroup = new double[query.relationCount() + 1];
-		selectedEvidenceStateByGroup = new int[query.relationCount() + 1];
 		joinChildWords = joinChildren(query);
+		logicalInputStarts = logicalInputStarts(query);
+		lastLogicalInputWinnerIds = new int[logicalInputStarts[query.relationCount() + 1]];
+		lastLogicalInputMetadataIds = new int[lastLogicalInputWinnerIds.length];
+		preparedLogicalGroups = new byte[query.relationCount() + 1];
 		filterRules = new PackedFilterRules(query, memo, new PackedRuleState(query.relationCount(), 1),
-				selectedRowsByGroup);
+				selectedRowsByGroup, costSession);
+		joinEnumerator = PackedJoinEnumerator.forSession(query, memo, selectedRowsByGroup, budget, costSession);
 	}
 
 	static PackedIncumbentSearch forSession(PackedQuery query, PackedMemo memo, PackedSearchBudget budget,
@@ -67,65 +78,361 @@ final class PackedIncumbentSearch {
 		int anyPropertyId = memo.anyPropertyId();
 		int rootWinnerId = 0;
 		boolean hasLogicalAlternatives = hasLogicalAlternatives();
+		boolean[] prioritizedCanonicalJoinRegions = new boolean[query.relationCount() + 1];
+		if (exploreReorderings && !hasLogicalAlternatives) {
+			/*
+			 * With no generated alternatives, maximal hypergraph regions own their internal topology immediately.
+			 * Prepare only their terminal factor groups, then cost connected alternatives before the source algebra's
+			 * arbitrary binary JOIN spine can consume bounded work on strict subregions. Correlated regions are
+			 * deferred until their complete canonical inputs exist; their descriptors may reference generated helper
+			 * groups.
+			 */
+			int[][] prioritizedWinnerIds = new int[query.relationCount() + 1][];
+			int[][] prioritizedMetadataIds = new int[query.relationCount() + 1][];
+			prioritizedCanonicalJoinRegions = prioritizeContainingJoinRegions(anyPropertyId, true,
+					prioritizedWinnerIds, prioritizedMetadataIds);
+		}
 		for (int logicalExpressionId = 1; logicalExpressionId <= query.relationCount(); logicalExpressionId++) {
-			rootWinnerId = offerLogicalImplementation(logicalExpressionId, anyPropertyId);
-			if (!hasLogicalAlternatives) {
+			if (hasLogicalAlternatives && !isCanonicalRelation(logicalExpressionId)) {
+				continue;
+			}
+			/*
+			 * The canonical child-before-parent tree establishes one executable incumbent for every group. Contextual
+			 * candidates are costed by the hypergraph pass below after all of their factor inputs exist.
+			 */
+			rootWinnerId = offerLogicalImplementation(logicalExpressionId, anyPropertyId, !hasLogicalAlternatives);
+			if (!hasLogicalAlternatives && !prioritizedCanonicalJoinRegions[logicalExpressionId]) {
 				enumerateJoinRegion(logicalExpressionId);
 			}
 			if (exploreReorderings && isCorrelatedPredicateOperator(query.relOperator(logicalExpressionId))) {
 				if (!hasLogicalAlternatives) {
 					enumerateCorrelatedFilterRegion(logicalExpressionId);
-				}
-				if (query.relOperator(logicalExpressionId) == PackedRelOp.FILTER) {
-					workUnits += filterRules.apply(logicalExpressionId);
+					applyUncoveredFilterPlacement(logicalExpressionId);
 				}
 			}
 		}
 
 		if (hasLogicalAlternatives) {
 			/*
-			 * Rule-generated access paths are appended after the canonical tree. Give each one complete, atomically
-			 * budgeted evidence before an earlier base join or correlated predicate can spend the budget on subset
-			 * exploration. These are ordinary candidates, not privileged winners; the normal pass below may still
-			 * improve them with any remaining budget.
+			 * The canonical child-before-parent pass above provides a physical incumbent for every memo group. Install
+			 * every generated logical alternative before starting a hypergraph search so a FILTER pulled over a JOIN is
+			 * visible to the same containing-region schedule as its factors. Searching the canonical JOIN first would
+			 * spend a bounded budget before that exact correlated search space even exists.
 			 */
+			for (int logicalExpressionId = 1; logicalExpressionId <= query.relationCount(); logicalExpressionId++) {
+				if (isCanonicalRelation(logicalExpressionId)) {
+					continue;
+				}
+				rootWinnerId = offerLogicalImplementation(logicalExpressionId, anyPropertyId, false);
+			}
 			seedAccessEnablingAlternatives();
+			boolean[] prioritizedCorrelatedRegions = prioritizeContainingCorrelatedRegions(anyPropertyId, false);
+			int[][] prioritizedJoinWinnerIds = new int[query.relationCount() + 1][];
+			int[][] prioritizedJoinMetadataIds = new int[query.relationCount() + 1][];
+			boolean[] prioritizedJoinRegions = prioritizeContainingJoinRegions(anyPropertyId, false,
+					prioritizedJoinWinnerIds, prioritizedJoinMetadataIds);
 			/*
 			 * Logical rules append alternatives after the canonical child-before-parent tree. A late alternative can
 			 * therefore improve a child group only after an already-costed JOIN, FILTER, DIFFERENCE, GROUP, or other
 			 * ancestor captured the old child cost. Winner ids are stable, but ancestor costs and join layouts are not.
-			 * Once every alternative has an incumbent, one child-before-parent refresh propagates those winners through
-			 * arbitrary operator nesting; join-region enumeration then sees the selected alternative as a current
-			 * factor.
+			 * Once every alternative has an incumbent, this pass explores the complete physical search space. The
+			 * dependency worklist below then propagates any late group improvement through arbitrary operator nesting.
 			 */
 			for (int logicalExpressionId = 1; logicalExpressionId <= query.relationCount(); logicalExpressionId++) {
 				if (query.relChildCount(logicalExpressionId) == 0) {
 					continue;
 				}
-				rootWinnerId = offerLogicalImplementation(logicalExpressionId, anyPropertyId);
-				enumerateJoinRegion(logicalExpressionId);
-				if (exploreReorderings && isCorrelatedPredicateOperator(query.relOperator(logicalExpressionId))) {
-					enumerateCorrelatedFilterRegion(logicalExpressionId);
+				boolean correlatedPredicate = isCorrelatedPredicateOperator(query.relOperator(logicalExpressionId));
+				boolean logicalInputsChanged = !logicalInputsAreCurrent(logicalExpressionId, anyPropertyId);
+				if (logicalInputsChanged
+						|| correlatedPredicate && !prioritizedCorrelatedRegions[logicalExpressionId]) {
+					rootWinnerId = offerLogicalImplementation(logicalExpressionId, anyPropertyId);
+				}
+				boolean prioritizedJoinContextChanged = prioritizedJoinRegions[logicalExpressionId]
+						&& !prioritizedJoinInputsAreCurrent(logicalExpressionId, anyPropertyId,
+								prioritizedJoinWinnerIds, prioritizedJoinMetadataIds);
+				if (!prioritizedJoinRegions[logicalExpressionId] || prioritizedJoinContextChanged) {
+					/*
+					 * A prioritized search is immutable evidence for the factor winners it actually opened. Internal
+					 * JOIN winners may change while that search fills its own lattice, so direct binary child
+					 * identities are not a valid staleness test. Only a change to a region factor invalidates the
+					 * certificate and requires another search against the new context.
+					 */
+					enumerateJoinRegion(logicalExpressionId);
+				}
+				if (exploreReorderings && correlatedPredicate) {
+					if (!prioritizedCorrelatedRegions[logicalExpressionId]) {
+						enumerateCorrelatedFilterRegion(logicalExpressionId);
+					}
+					applyUncoveredFilterPlacement(logicalExpressionId);
 				}
 			}
-			/*
-			 * Memo winners are immutable records, not pointers to their child groups. Exhaustive exploration can
-			 * improve an appended child after its canonical ancestors were refreshed, so rebuild the canonical
-			 * child-to-parent spine once more without charging or entering another search phase.
-			 */
-			for (int logicalExpressionId = 1; logicalExpressionId <= query.relationCount(); logicalExpressionId++) {
-				if (query.relChildCount(logicalExpressionId) == 0
-						|| query.relGroup(logicalExpressionId) != logicalExpressionId) {
-					continue;
-				}
-				rootWinnerId = offerLogicalImplementation(logicalExpressionId, anyPropertyId);
-			}
+			rootWinnerId = propagateChangedInputs(rootWinnerId, anyPropertyId);
 		}
 		return rootWinnerIdFor(rootWinnerId, anyPropertyId);
 	}
 
+	private boolean[] prioritizeContainingJoinRegions(int anyPropertyId, boolean canonicalOnly,
+			int[][] prioritizedWinnerIds, int[][] prioritizedMetadataIds) {
+		boolean[] prioritized = new boolean[query.relationCount() + 1];
+		if (!exploreReorderings) {
+			return prioritized;
+		}
+		PackedJoinEnumerator.JoinRegion[] regions = new PackedJoinEnumerator.JoinRegion[query.relationCount()];
+		int regionCount = 0;
+		for (int relationId = 1; relationId <= query.relationCount(); relationId++) {
+			if (canonicalOnly && !isCanonicalRelation(relationId)) {
+				continue;
+			}
+			if (!isJoinRegionRoot(relationId)) {
+				continue;
+			}
+			if (!prepareLogicalGroup(memo.logicalGroupId(relationId), anyPropertyId)) {
+				continue;
+			}
+			if (joinEnumerator.hasCurrentCompletedJoinSearch(relationId)) {
+				/*
+				 * A completed correlated lattice contains the exact no-filter lane for this same hypergraph and has
+				 * already published its full-set join winner. Re-enumerating the ordinary join lattice cannot add a
+				 * candidate; it would only repeat the identical provider events.
+				 */
+				prioritized[relationId] = true;
+				continue;
+			}
+			PackedJoinEnumerator.JoinRegion region = joinEnumerator.describeJoinRegion(relationId);
+			if (region == null) {
+				continue;
+			}
+			int equivalentOrdinal = -1;
+			for (int ordinal = 0; ordinal < regionCount; ordinal++) {
+				if (regions[ordinal].hasSameSearchSpace(region)) {
+					equivalentOrdinal = ordinal;
+					break;
+				}
+			}
+			if (equivalentOrdinal >= 0) {
+				/*
+				 * Equivalent logical aliases share a memo group and the same canonical factor lattice. Enumerating
+				 * either one produces the same physical alternatives, so the later alias is an exact common subproblem.
+				 */
+				prioritized[relationId] = true;
+			} else {
+				regions[regionCount++] = region;
+			}
+		}
+		int[] containingRegionCounts = new int[regionCount];
+		for (int outerOrdinal = 0; outerOrdinal < regionCount; outerOrdinal++) {
+			for (int innerOrdinal = 0; innerOrdinal < regionCount; innerOrdinal++) {
+				if (regions[outerOrdinal].strictlyContains(regions[innerOrdinal])) {
+					containingRegionCounts[innerOrdinal]++;
+				}
+			}
+		}
+		/*
+		 * Maximal associative regions own every join-order decision in their strict subregions. This containment
+		 * topological order prevents a bounded search from paying repeatedly for partial lattices before it has
+		 * produced the containing query's decision certificate; it does not rank candidates by a proxy cost.
+		 */
+		for (int destination = 0; destination < regionCount; destination++) {
+			int selected = destination;
+			for (int candidate = destination + 1; candidate < regionCount; candidate++) {
+				if (containingRegionCounts[candidate] < containingRegionCounts[selected]
+						|| containingRegionCounts[candidate] == containingRegionCounts[selected]
+								&& regions[candidate].rootRelationId() < regions[selected].rootRelationId()) {
+					selected = candidate;
+				}
+			}
+			if (selected != destination) {
+				PackedJoinEnumerator.JoinRegion region = regions[destination];
+				regions[destination] = regions[selected];
+				regions[selected] = region;
+				int containingCount = containingRegionCounts[destination];
+				containingRegionCounts[destination] = containingRegionCounts[selected];
+				containingRegionCounts[selected] = containingCount;
+			}
+		}
+		for (int ordinal = 0; ordinal < regionCount; ordinal++) {
+			PackedJoinEnumerator.JoinRegion region = regions[ordinal];
+			int relationId = region.rootRelationId();
+			if (!prepareRegionFactors(region.factorRelationIds(), anyPropertyId)) {
+				continue;
+			}
+			recordPrioritizedJoinInputs(region, anyPropertyId, prioritizedWinnerIds, prioritizedMetadataIds);
+			enumerateJoinRegion(relationId);
+			prioritized[relationId] = true;
+		}
+		return prioritized;
+	}
+
+	private void recordPrioritizedJoinInputs(PackedJoinEnumerator.JoinRegion region, int anyPropertyId,
+			int[][] prioritizedWinnerIds, int[][] prioritizedMetadataIds) {
+		int relationId = region.rootRelationId();
+		int[] factors = region.factorRelationIds();
+		int[] winnerIds = new int[factors.length];
+		int[] metadataIds = new int[factors.length];
+		for (int ordinal = 0; ordinal < factors.length; ordinal++) {
+			int winnerId = memo.findWinner(memo.logicalGroupId(factors[ordinal]), anyPropertyId, 0, 0, 0);
+			winnerIds[ordinal] = winnerId;
+			metadataIds[ordinal] = winnerId == 0 ? 0 : memo.winnerPhysicalMetadataId(winnerId);
+		}
+		prioritizedWinnerIds[relationId] = winnerIds;
+		prioritizedMetadataIds[relationId] = metadataIds;
+	}
+
+	private boolean prioritizedJoinInputsAreCurrent(int logicalExpressionId, int anyPropertyId,
+			int[][] prioritizedWinnerIds, int[][] prioritizedMetadataIds) {
+		int[] retainedWinnerIds = prioritizedWinnerIds[logicalExpressionId];
+		int[] retainedMetadataIds = prioritizedMetadataIds[logicalExpressionId];
+		if (retainedWinnerIds == null || retainedMetadataIds == null) {
+			/* Equivalent aliases are covered by the concrete region which owns their shared search space. */
+			return true;
+		}
+		PackedJoinEnumerator.JoinRegion region = joinEnumerator.describeJoinRegion(logicalExpressionId);
+		if (region == null || region.factorRelationIds().length != retainedWinnerIds.length) {
+			return false;
+		}
+		int[] factors = region.factorRelationIds();
+		for (int ordinal = 0; ordinal < factors.length; ordinal++) {
+			int currentWinnerId = memo.findWinner(memo.logicalGroupId(factors[ordinal]), anyPropertyId, 0, 0, 0);
+			int currentMetadataId = currentWinnerId == 0 ? 0 : memo.winnerPhysicalMetadataId(currentWinnerId);
+			if (currentWinnerId != retainedWinnerIds[ordinal]
+					|| currentMetadataId != retainedMetadataIds[ordinal]) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private boolean[] prioritizeContainingCorrelatedRegions(int anyPropertyId, boolean canonicalOnly) {
+		boolean[] prioritized = new boolean[query.relationCount() + 1];
+		if (!exploreReorderings) {
+			return prioritized;
+		}
+		PackedJoinEnumerator.RelocatableFilterRegion[] regions = new PackedJoinEnumerator.RelocatableFilterRegion[query
+				.relationCount()];
+		int regionCount = 0;
+		for (int relationId = 1; relationId <= query.relationCount(); relationId++) {
+			if (canonicalOnly && !isCanonicalRelation(relationId)) {
+				continue;
+			}
+			PackedJoinEnumerator.RelocatableFilterRegion region = joinEnumerator
+					.describeRelocatableFilterRegion(relationId);
+			if (region != null) {
+				int equivalentOrdinal = -1;
+				for (int ordinal = 0; ordinal < regionCount; ordinal++) {
+					if (regions[ordinal].hasSameSearchSpace(region)) {
+						equivalentOrdinal = ordinal;
+						break;
+					}
+				}
+				if (equivalentOrdinal >= 0) {
+					/*
+					 * Logical rewrites can expose the same factor/predicate lattice through several relation rows in
+					 * one memo group. The dense program is a function of that lattice and semantic context, so
+					 * re-running it cannot add a candidate or improve the group's winner. Mark the alias as covered by
+					 * the one canonical search. This is exact common-subproblem elimination, not a budget or cost
+					 * preference.
+					 */
+					prioritized[relationId] = true;
+				} else {
+					regions[regionCount++] = region;
+				}
+			}
+		}
+		int[] containingRegionCounts = new int[regionCount];
+		for (int outerOrdinal = 0; outerOrdinal < regionCount; outerOrdinal++) {
+			for (int innerOrdinal = 0; innerOrdinal < regionCount; innerOrdinal++) {
+				if (regions[outerOrdinal].strictlyContains(regions[innerOrdinal])) {
+					containingRegionCounts[innerOrdinal]++;
+				}
+			}
+		}
+		/*
+		 * This is a containment topological order, not a selectivity or join-order preference. A containing region owns
+		 * every placement decision in its nested regions plus at least one additional factor or predicate. Costing it
+		 * first prevents a bounded search from repeatedly spending its evidence budget on strict subproblems before it
+		 * has produced the root decision certificate which can compare those placements together.
+		 */
+		for (int destination = 0; destination < regionCount; destination++) {
+			int selected = destination;
+			for (int candidate = destination + 1; candidate < regionCount; candidate++) {
+				if (containingRegionCounts[candidate] < containingRegionCounts[selected]
+						|| containingRegionCounts[candidate] == containingRegionCounts[selected]
+								&& regions[candidate].rootRelationId() < regions[selected].rootRelationId()) {
+					selected = candidate;
+				}
+			}
+			if (selected != destination) {
+				PackedJoinEnumerator.RelocatableFilterRegion region = regions[destination];
+				regions[destination] = regions[selected];
+				regions[selected] = region;
+				int containingCount = containingRegionCounts[destination];
+				containingRegionCounts[destination] = containingRegionCounts[selected];
+				containingRegionCounts[selected] = containingCount;
+			}
+		}
+		for (int ordinal = 0; ordinal < regionCount; ordinal++) {
+			PackedJoinEnumerator.RelocatableFilterRegion region = regions[ordinal];
+			int relationId = region.rootRelationId();
+			if (!prepareRegionFactors(region.factorRelationIds(), anyPropertyId)) {
+				continue;
+			}
+			enumerateCorrelatedFilterRegion(relationId);
+			prioritized[relationId] = true;
+		}
+		return prioritized;
+	}
+
+	private boolean prepareRegionFactors(int[] factorRelationIds, int anyPropertyId) {
+		for (int relationId : factorRelationIds) {
+			if (!prepareLogicalGroup(memo.logicalGroupId(relationId), anyPropertyId)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private boolean prepareLogicalGroup(int groupId, int anyPropertyId) {
+		if (groupId <= 0 || groupId >= preparedLogicalGroups.length) {
+			return false;
+		}
+		if (preparedLogicalGroups[groupId] == 2) {
+			return memo.findWinner(groupId, anyPropertyId, 0, 0, 0) != 0;
+		}
+		if (preparedLogicalGroups[groupId] == 1) {
+			return false;
+		}
+		preparedLogicalGroups[groupId] = 1;
+		for (int relationId = 1; relationId <= query.relationCount(); relationId++) {
+			if (memo.logicalGroupId(relationId) != groupId) {
+				continue;
+			}
+			boolean inputsReady = true;
+			for (int ordinal = 0; ordinal < query.relChildCount(relationId); ordinal++) {
+				int childGroupId = query.relChild(relationId, ordinal);
+				if (!prepareLogicalGroup(childGroupId, anyPropertyId)) {
+					inputsReady = false;
+					break;
+				}
+			}
+			if (inputsReady) {
+				offerLogicalImplementation(relationId, anyPropertyId, false);
+			}
+		}
+		preparedLogicalGroups[groupId] = 2;
+		return memo.findWinner(groupId, anyPropertyId, 0, 0, 0) != 0;
+	}
+
 	int workUnits() {
 		return workUnits;
+	}
+
+	int correlatedLatticeBuilds() {
+		return joinEnumerator.correlatedLatticeBuilds();
+	}
+
+	int correlatedLatticeReuses() {
+		return joinEnumerator.correlatedLatticeReuses();
 	}
 
 	double rootRows() {
@@ -137,6 +444,11 @@ final class PackedIncumbentSearch {
 	}
 
 	private int offerLogicalImplementation(int logicalExpressionId, int anyPropertyId) {
+		return offerLogicalImplementation(logicalExpressionId, anyPropertyId, true);
+	}
+
+	private int offerLogicalImplementation(int logicalExpressionId, int anyPropertyId,
+			boolean costContextualCorrelatedImplementation) {
 		int childCount = query.relChildCount(logicalExpressionId);
 		double childCost = 0.0d;
 		for (int ordinal = 0; ordinal < childCount; ordinal++) {
@@ -150,7 +462,34 @@ final class PackedIncumbentSearch {
 			childWinnerIds[ordinal] = childWinnerId;
 			childCost += memo.winnerTotalCost(childWinnerId);
 		}
+		if (costSession != null && childCount == 2
+				&& query.relOperator(logicalExpressionId) == PackedRelOp.LEFT_JOIN) {
+			int contextualRightWinnerId = contextualizeOptionalRight(logicalExpressionId, childWinnerIds[0]);
+			if (contextualRightWinnerId != 0 && contextualRightWinnerId != childWinnerIds[1]) {
+				childWinnerIds[1] = contextualRightWinnerId;
+				childCost = memo.winnerTotalCost(childWinnerIds[0]) + memo.winnerTotalCost(childWinnerIds[1]);
+			}
+		}
+		rememberLogicalInputs(logicalExpressionId, childCount);
 		int groupId = memo.logicalGroupId(logicalExpressionId);
+		boolean typedSemiAntiReplacement = query.relOperator(logicalExpressionId) == PackedRelOp.FILTER
+				&& hasTypedSemiAntiAlternative(logicalExpressionId);
+		if (costContextualCorrelatedImplementation && costSession != null && childCount == 1
+				&& isCorrelatedPredicateOperator(query.relOperator(logicalExpressionId))) {
+			int contextualWinnerId = joinEnumerator.offerCanonicalCorrelatedPredicate(logicalExpressionId,
+					childWinnerIds[0]);
+			if (contextualWinnerId != 0) {
+				/*
+				 * A correlated predicate has no valid context-free physical implementation once its required outer
+				 * bindings are assured. In particular, a later canonical-spine refresh must not compete with the
+				 * contextual candidate using a globally costed dependent subquery. The selected child winner is the
+				 * immutable input to this candidate-costing event, so retain that event and its dependent-plan link.
+				 */
+				workUnits += joinEnumerator.contextualWorkUnits();
+				selectedRowsByGroup[groupId] = memo.winnerOutputRows(contextualWinnerId);
+				return contextualWinnerId;
+			}
+		}
 		estimate(logicalExpressionId);
 		double outputRows = outputRows(logicalExpressionId, childCount);
 		double totalCost = childCost + localWork(logicalExpressionId, outputRows);
@@ -164,15 +503,25 @@ final class PackedIncumbentSearch {
 				outputRows = costEstimate.outputRows();
 			}
 			if (!componentRefinement && finiteNonNegative(costEstimate.workRows())) {
-				if (costEstimate.hasExplicitPhysicalCost()
-						&& costEstimate.costScope() == PackedCostEstimate.CostScope.LOCAL) {
-					for (int ordinal = 0; ordinal < childCount; ordinal++) {
-						memo.addWinnerPhysicalCost(childWinnerIds[ordinal], costEstimate);
+				if (costEstimate.hasExplicitPhysicalCost()) {
+					if (costEstimate.costScope() == PackedCostEstimate.CostScope.LOCAL) {
+						/*
+						 * Winner cost is the immutable objective recorded when each child candidate won. Its physical
+						 * vector can be composed into this event for telemetry, but that vector need not encode every
+						 * decision term (for example a provider's risk or calibration residual). Add this operator's
+						 * local objective to the certified child objective before composing the child vectors.
+						 */
+						double localObjective = costSession.objectiveScore(costEstimate);
+						for (int ordinal = 0; ordinal < childCount; ordinal++) {
+							memo.addWinnerPhysicalCost(childWinnerIds[ordinal], costEstimate);
+						}
+						totalCost = saturatedAdd(childCost, localObjective);
+					} else {
+						totalCost = costSession.objectiveScore(costEstimate);
 					}
+				} else {
+					totalCost = costEstimate.workRows();
 				}
-				totalCost = costEstimate.hasExplicitPhysicalCost()
-						? costSession.objectiveScore(costEstimate)
-						: costEstimate.workRows();
 			} else if (componentRefinement) {
 				/*
 				 * A canonical operator incumbent is a complete scalar. refineOperator does not identify which child
@@ -185,9 +534,12 @@ final class PackedIncumbentSearch {
 				double dependentCost = PackedDependentSubqueryCosting.defaultCost(query, memo, logicalExpressionId);
 				if (dependentCost > 0.0d) {
 					if (costEstimate.hasExplicitPhysicalCost()) {
+						double objectiveBeforeDependent = costSession.objectiveScore(costEstimate);
 						costEstimate.addChildPhysicalCost(dependentCost, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d,
 								0.0d, 0.0d);
-						totalCost = costSession.objectiveScore(costEstimate);
+						double objectiveAfterDependent = costSession.objectiveScore(costEstimate);
+						totalCost = saturatedAdd(totalCost,
+								objectiveIncrement(objectiveBeforeDependent, objectiveAfterDependent));
 					} else {
 						double completeCost = totalCost + dependentCost;
 						totalCost = Double.isFinite(completeCost) ? completeCost : Double.MAX_VALUE;
@@ -210,16 +562,21 @@ final class PackedIncumbentSearch {
 		boolean learnedFiniteFallback = join
 				&& (query.relRuleMask(logicalExpressionId) & PackedRuleProofs.FINITE_FILTER_VALUES) != 0L
 				&& hasLearnedFilterRatio(logicalExpressionId);
-		boolean executableFallback = join && costSession != null || learnedFiniteFallback;
+		boolean executableFallback = join && costSession != null || learnedFiniteFallback || typedSemiAntiReplacement;
 		int winnerId = executableFallback
 				? memo.offerExecutableFallbackWinnerWithMetadata(groupId, anyPropertyId, 0, 0, 0,
 						physicalExpressionId, metadataId, tieBreakRank, outputRows, totalCost, totalCost,
 						childWinnerIds, 0, childCount)
 				: memo.offerWinnerWithMetadata(groupId, anyPropertyId, 0, 0, 0, physicalExpressionId, metadataId,
 						tieBreakRank, outputRows, totalCost, totalCost, childWinnerIds, 0, childCount);
-		if (memo.winnerPhysicalExpressionId(winnerId) == physicalExpressionId) {
+		boolean accepted = memo.winnerPhysicalExpressionId(winnerId) == physicalExpressionId
+				&& memo.winnerPhysicalMetadataId(winnerId) == metadataId;
+		if (accepted) {
 			selectedRowsByGroup[groupId] = memo.winnerOutputRows(winnerId);
-			selectedEvidenceStateByGroup[groupId] = costEstimate.evidenceStateId();
+			if (isCorrelatedPredicateOperator(query.relOperator(logicalExpressionId))) {
+				PackedDependentSubqueryCosting.recordContextualPlans(query, memo, winnerId, logicalExpressionId,
+						emptyPrefix, null, 0, 1.0d, 0, 0, 0, 0);
+			}
 		}
 		workUnits++;
 		return winnerId;
@@ -243,17 +600,26 @@ final class PackedIncumbentSearch {
 		if (query.relOperator(logicalExpressionId) != PackedRelOp.JOIN || !isJoinRegionRoot(logicalExpressionId)) {
 			return;
 		}
-		PackedJoinEnumerator enumerator = PackedJoinEnumerator.forSession(query, memo, selectedRowsByGroup, budget,
-				costSession);
 		workUnits += exploreReorderings
-				? enumerator.optimize(logicalExpressionId)
-				: enumerator.optimizeSequence(logicalExpressionId);
+				? joinEnumerator.optimize(logicalExpressionId)
+				: joinEnumerator.optimizeSequence(logicalExpressionId);
 	}
 
 	private void enumerateCorrelatedFilterRegion(int logicalExpressionId) {
-		PackedJoinEnumerator enumerator = PackedJoinEnumerator.forSession(query, memo, selectedRowsByGroup, budget,
-				costSession);
-		workUnits += enumerator.optimizeCorrelatedFilter(logicalExpressionId);
+		workUnits += joinEnumerator.optimizeCorrelatedFilter(logicalExpressionId);
+	}
+
+	private void applyUncoveredFilterPlacement(int logicalExpressionId) {
+		if (query.relOperator(logicalExpressionId) == PackedRelOp.FILTER
+				&& !joinEnumerator.hasCurrentCompletedCorrelatedSearch(logicalExpressionId)) {
+			/*
+			 * The dense correlated lattice has already enumerated every legal factor/predicate placement in this
+			 * logical region. Rebuilding one of those placements from context-free child winners cannot add a plan; it
+			 * can only detach the originating contextual events. Retain the binary rule as the exact fallback when the
+			 * lattice is unsupported, incomplete, or stale.
+			 */
+			workUnits += filterRules.apply(logicalExpressionId);
+		}
 	}
 
 	private static boolean isCorrelatedPredicateOperator(int operator) {
@@ -263,6 +629,7 @@ final class PackedIncumbentSearch {
 	}
 
 	private void seedAccessEnablingAlternatives() {
+		boolean[] seededGroups = new boolean[query.relationCount() + 1];
 		/*
 		 * Binary finite recipes have no search choice, but their mandatory BSA-prefix provider estimate must be
 		 * installed even when a later combinatorial seed cannot fit. Initialize every such base incumbent before any
@@ -274,28 +641,59 @@ final class PackedIncumbentSearch {
 							& PackedRuleProofs.FINITE_FILTER_VALUES) == 0L) {
 				continue;
 			}
-			PackedJoinEnumerator enumerator = PackedJoinEnumerator.forSession(query, memo, selectedRowsByGroup,
+			PackedJoinEnumerator seedEnumerator = PackedJoinEnumerator.forSession(query, memo, selectedRowsByGroup,
 					budget, costSession);
-			workUnits += enumerator.seedMandatoryBinaryAnchor(logicalExpressionId);
+			workUnits += seedEnumerator.seedMandatoryBinaryAnchor(logicalExpressionId);
 		}
 
 		for (int logicalExpressionId = 1; logicalExpressionId <= query.relationCount(); logicalExpressionId++) {
 			int operator = query.relOperator(logicalExpressionId);
-			PackedJoinEnumerator enumerator = null;
+			int groupId = memo.logicalGroupId(logicalExpressionId);
+			if (seededGroups[groupId]) {
+				continue;
+			}
+			PackedJoinEnumerator seedEnumerator = null;
+			int emittedWork = 0;
 			if (operator == PackedRelOp.JOIN
 					&& (query.relRuleMask(logicalExpressionId)
 							& PackedRuleProofs.FINITE_FILTER_VALUES) != 0L) {
-				enumerator = PackedJoinEnumerator.forSession(query, memo, selectedRowsByGroup, budget, costSession);
-				workUnits += enumerator.seedAnchored(logicalExpressionId);
+				seedEnumerator = PackedJoinEnumerator.forSession(query, memo, selectedRowsByGroup, budget,
+						costSession);
+				emittedWork = seedEnumerator.seedAnchored(logicalExpressionId);
 			}
-			if (exploreReorderings && isCorrelatedPredicateOperator(operator)) {
-				if (enumerator == null) {
-					enumerator = PackedJoinEnumerator.forSession(query, memo, selectedRowsByGroup, budget,
-							costSession);
-				}
-				workUnits += enumerator.seedCorrelatedFilter(logicalExpressionId);
+			workUnits += emittedWork;
+			if (emittedWork > 0) {
+				/*
+				 * Algorithms and rewrites in one memo group implement the same logical placement. Preserve one complete
+				 * access-enabling seed for every group before ordinary search compares additional physical variants.
+				 */
+				seededGroups[groupId] = true;
 			}
 		}
+	}
+
+	private boolean hasTypedSemiAntiAlternative(int logicalExpressionId) {
+		int groupId = memo.logicalGroupId(logicalExpressionId);
+		for (int alternativeId = memo.firstLogicalExpression(groupId); alternativeId != 0; alternativeId = memo
+				.nextLogicalExpression(alternativeId)) {
+			int operator = memo.logicalOperatorTag(alternativeId);
+			if (operator == PackedRelOp.SEMI_JOIN || operator == PackedRelOp.ANTI_JOIN) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean hasFiniteJoinAlternative(int logicalExpressionId) {
+		int groupId = memo.logicalGroupId(logicalExpressionId);
+		for (int alternativeId = memo.firstLogicalExpression(groupId); alternativeId != 0; alternativeId = memo
+				.nextLogicalExpression(alternativeId)) {
+			if (memo.logicalOperatorTag(alternativeId) == PackedRelOp.JOIN
+					&& (memo.logicalRuleMask(alternativeId) & PackedRuleProofs.FINITE_FILTER_VALUES) != 0L) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private boolean hasLogicalAlternatives() {
@@ -306,6 +704,121 @@ final class PackedIncumbentSearch {
 			}
 		}
 		return false;
+	}
+
+	private boolean isCanonicalRelation(int logicalExpressionId) {
+		return query.relGroup(logicalExpressionId) == logicalExpressionId;
+	}
+
+	/**
+	 * Re-costs exactly those logical expressions whose immutable child-winner inputs changed after they were last
+	 * measured. Rule alternatives are appended after the canonical algebra, so relation-ID order is not a dependency
+	 * order: an appended child alternative can improve a group after every canonical ancestor has already copied the
+	 * old winner. The consumer worklist reaches the algebra DAG's fixed point without an iteration limit and without
+	 * invoking the provider for candidates whose inputs are unchanged.
+	 */
+	private int propagateChangedInputs(int rootWinnerId, int anyPropertyId) {
+		int relationCount = query.relationCount();
+		int[] consumerStarts = new int[relationCount + 2];
+		int consumerCount = 0;
+		for (int relationId = 1; relationId <= relationCount; relationId++) {
+			int childCount = query.relChildCount(relationId);
+			consumerCount += childCount;
+			for (int ordinal = 0; ordinal < childCount; ordinal++) {
+				consumerStarts[query.relChild(relationId, ordinal) + 1]++;
+			}
+		}
+		for (int groupId = 1; groupId < consumerStarts.length; groupId++) {
+			consumerStarts[groupId] += consumerStarts[groupId - 1];
+		}
+		int[] consumerWriteOffsets = consumerStarts.clone();
+		int[] consumers = new int[consumerCount];
+		for (int relationId = 1; relationId <= relationCount; relationId++) {
+			int childCount = query.relChildCount(relationId);
+			for (int ordinal = 0; ordinal < childCount; ordinal++) {
+				int childGroupId = query.relChild(relationId, ordinal);
+				consumers[consumerWriteOffsets[childGroupId]++] = relationId;
+			}
+		}
+
+		int queueCapacity = relationCount + 1;
+		int[] queue = new int[queueCapacity];
+		boolean[] queued = new boolean[relationCount + 1];
+		int head = 0;
+		int tail = 0;
+		for (int relationId = 1; relationId <= relationCount; relationId++) {
+			if (query.relChildCount(relationId) != 0
+					&& !logicalInputsAreCurrent(relationId, anyPropertyId)) {
+				queue[tail] = relationId;
+				tail = (tail + 1) % queueCapacity;
+				queued[relationId] = true;
+			}
+		}
+
+		while (head != tail) {
+			int logicalExpressionId = queue[head];
+			head = (head + 1) % queueCapacity;
+			queued[logicalExpressionId] = false;
+			if (logicalInputsAreCurrent(logicalExpressionId, anyPropertyId)) {
+				continue;
+			}
+
+			int outputGroupId = memo.logicalGroupId(logicalExpressionId);
+			int previousWinnerId = memo.findWinner(outputGroupId, anyPropertyId, 0, 0, 0);
+			int previousMetadataId = previousWinnerId == 0 ? 0 : memo.winnerPhysicalMetadataId(previousWinnerId);
+			rootWinnerId = offerLogicalImplementation(logicalExpressionId, anyPropertyId);
+			enumerateJoinRegion(logicalExpressionId);
+			if (exploreReorderings && isCorrelatedPredicateOperator(query.relOperator(logicalExpressionId))) {
+				enumerateCorrelatedFilterRegion(logicalExpressionId);
+				applyUncoveredFilterPlacement(logicalExpressionId);
+			}
+			int currentWinnerId = memo.findWinner(outputGroupId, anyPropertyId, 0, 0, 0);
+			int currentMetadataId = currentWinnerId == 0 ? 0 : memo.winnerPhysicalMetadataId(currentWinnerId);
+			if (currentWinnerId == previousWinnerId && currentMetadataId == previousMetadataId) {
+				continue;
+			}
+			for (int offset = consumerStarts[outputGroupId]; offset < consumerStarts[outputGroupId + 1]; offset++) {
+				int consumerId = consumers[offset];
+				if (!queued[consumerId] && !logicalInputsAreCurrent(consumerId, anyPropertyId)) {
+					queue[tail] = consumerId;
+					tail = (tail + 1) % queueCapacity;
+					queued[consumerId] = true;
+				}
+			}
+		}
+		return rootWinnerId;
+	}
+
+	private boolean logicalInputsAreCurrent(int logicalExpressionId, int anyPropertyId) {
+		int inputStart = logicalInputStarts[logicalExpressionId];
+		int childCount = query.relChildCount(logicalExpressionId);
+		for (int ordinal = 0; ordinal < childCount; ordinal++) {
+			int retainedWinnerId = lastLogicalInputWinnerIds[inputStart + ordinal];
+			if (retainedWinnerId == 0) {
+				return false;
+			}
+			int currentWinnerId = memo.winnerInputContextId(retainedWinnerId) == 0
+					? memo.findWinner(query.relChild(logicalExpressionId, ordinal), anyPropertyId, 0, 0, 0)
+					: retainedWinnerId;
+			int currentMetadataId = currentWinnerId == 0 ? 0 : memo.winnerPhysicalMetadataId(currentWinnerId);
+			if (currentWinnerId == 0
+					|| retainedWinnerId != currentWinnerId
+					|| lastLogicalInputMetadataIds[inputStart + ordinal] != currentMetadataId) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private void rememberLogicalInputs(int logicalExpressionId, int childCount) {
+		int inputStart = logicalInputStarts[logicalExpressionId];
+		for (int ordinal = 0; ordinal < childCount; ordinal++) {
+			int winnerId = childWinnerIds[ordinal];
+			lastLogicalInputWinnerIds[inputStart + ordinal] = winnerId;
+			lastLogicalInputMetadataIds[inputStart + ordinal] = winnerId == 0
+					? 0
+					: memo.winnerPhysicalMetadataId(winnerId);
+		}
 	}
 
 	private int rootWinnerIdFor(int lastWinnerId, int anyPropertyId) {
@@ -326,16 +839,51 @@ final class PackedIncumbentSearch {
 		return maximum;
 	}
 
+	private static int[] logicalInputStarts(PackedQuery query) {
+		int relationCount = query.relationCount();
+		int[] starts = new int[relationCount + 2];
+		int inputCount = 0;
+		for (int relationId = 1; relationId <= relationCount; relationId++) {
+			starts[relationId] = inputCount;
+			inputCount += query.relChildCount(relationId);
+		}
+		starts[relationCount + 1] = inputCount;
+		return starts;
+	}
+
 	private double outputRows(int logicalExpressionId, int childCount) {
+		int operator = query.relOperator(logicalExpressionId);
+		if (operator == PackedRelOp.LEFT_JOIN && childCount == 2
+				&& memo.winnerHasContextualOutputRows(childWinnerIds[1])
+				&& !memo.winnerHasComponentOutputRows(childWinnerIds[1])) {
+			double leftRows = childRows(0);
+			double contextualRightRows = childRows(1);
+			/*
+			 * The RHS cardinality is already the total matching result mass produced over the inherited left bindings.
+			 * A LEFT JOIN adds no more than one null-extended row for each left binding, so their sum is a
+			 * semantics-derived upper bound. A context-free estimate for this operator cannot override the physically
+			 * costed child context.
+			 */
+			return saturatedAdd(leftRows, contextualRightRows);
+		}
 		double provided = costEstimate.outputRows();
 		if (Double.isFinite(provided) && provided >= 0.0d) {
 			return provided;
+		}
+		if ((operator == PackedRelOp.FILTER || operator == PackedRelOp.SEMI_JOIN
+				|| operator == PackedRelOp.ANTI_JOIN) && childCount == 1) {
+			/*
+			 * A predicate cannot increase bag cardinality. Until the provider refines this candidate with an exact
+			 * transform, measured feedback, or a calibrated Frontier state, the child cardinality is the only
+			 * evidence-free bound justified by relational semantics. Do not reuse a context-free annotation or invent a
+			 * fixed selectivity for the selected child winner.
+			 */
+			return childRows(0);
 		}
 		double annotated = query.relResultSizeEstimate(logicalExpressionId);
 		if (Double.isFinite(annotated) && annotated >= 0.0d) {
 			return annotated;
 		}
-		int operator = query.relOperator(logicalExpressionId);
 		if (operator == PackedRelOp.EMPTY_SET) {
 			return 0.0d;
 		}
@@ -351,16 +899,11 @@ final class PackedIncumbentSearch {
 		if (operator == PackedRelOp.JOIN && childCount == 2) {
 			int leftGroup = childGroupIds[0];
 			int rightGroup = childGroupIds[1];
-			return PackedJoinEnumerator.joinRows(selectedRowsByGroup[leftGroup], selectedRowsByGroup[rightGroup],
+			return PackedJoinEnumerator.joinRows(childRows(0), childRows(1),
 					query.masksIntersect(query.relOutputMaskId(leftGroup), query.relOutputMaskId(rightGroup)));
 		}
-		if ((operator == PackedRelOp.FILTER || operator == PackedRelOp.SEMI_JOIN
-				|| operator == PackedRelOp.ANTI_JOIN) && childCount == 1) {
-			double inputRows = selectedRowsByGroup[childGroupIds[0]];
-			return inputRows == 0.0d ? 0.0d : Math.max(1.0d, inputRows * 0.25d);
-		}
 		if (operator == PackedRelOp.GROUP && childCount == 1) {
-			double inputRows = selectedRowsByGroup[childGroupIds[0]];
+			double inputRows = childRows(0);
 			int keyCount = query.payloadChildCount(query.payloadPrimary(query.relPayload(logicalExpressionId)));
 			if (keyCount == 0) {
 				// Aggregation without GROUP BY always yields exactly one row.
@@ -374,14 +917,14 @@ final class PackedIncumbentSearch {
 			return Math.max(1.0d, Math.min(inputRows, Math.sqrt(inputRows) * keyCount));
 		}
 		if (operator == PackedRelOp.UNION && childCount == 2) {
-			return selectedRowsByGroup[childGroupIds[0]] + selectedRowsByGroup[childGroupIds[1]];
+			return childRows(0) + childRows(1);
 		}
 		if (operator == PackedRelOp.DIFFERENCE && childCount != 0) {
-			return selectedRowsByGroup[childGroupIds[0]];
+			return childRows(0);
 		}
 		if (operator == PackedRelOp.LEFT_JOIN && childCount == 2) {
-			double leftRows = selectedRowsByGroup[childGroupIds[0]];
-			double rightRows = selectedRowsByGroup[childGroupIds[1]];
+			double leftRows = childRows(0);
+			double rightRows = childRows(1);
 			double join = PackedJoinEnumerator.joinRows(leftRows, rightRows,
 					query.masksIntersect(query.relOutputMaskId(childGroupIds[0]),
 							query.relOutputMaskId(childGroupIds[1])));
@@ -397,7 +940,7 @@ final class PackedIncumbentSearch {
 		if (childCount == 0) {
 			return 1.0d;
 		}
-		return selectedRowsByGroup[childGroupIds[0]];
+		return childRows(0);
 	}
 
 	private double statementPatternRows(int relationId) {
@@ -437,6 +980,18 @@ final class PackedIncumbentSearch {
 		return Double.isFinite(product) ? product : Double.MAX_VALUE;
 	}
 
+	private static double saturatedAdd(double left, double right) {
+		double sum = left + right;
+		return Double.isFinite(sum) && sum >= 0.0d ? sum : Double.MAX_VALUE;
+	}
+
+	private static double objectiveIncrement(double before, double after) {
+		if (!finiteNonNegative(before) || !finiteNonNegative(after) || after < before) {
+			return Double.MAX_VALUE;
+		}
+		return after - before;
+	}
+
 	private void estimate(int logicalExpressionId) {
 		costEstimate.clear();
 		if (costSession == null) {
@@ -448,16 +1003,76 @@ final class PackedIncumbentSearch {
 
 	private void refineOperator(int logicalExpressionId, int childCount, double outputRows, double totalWorkRows) {
 		costEstimate.setRows(outputRows, totalWorkRows);
-		int leftEvidenceStateId = selectedEvidenceStateByGroup[childGroupIds[0]];
+		int leftEvidenceStateId = winnerEvidenceStateId(childWinnerIds[0]);
 		int rightEvidenceStateId = childCount > 1
-				? selectedEvidenceStateByGroup[childGroupIds[1]]
+				? winnerEvidenceStateId(childWinnerIds[1])
 				: 0;
 		costContext.reset(emptyPrefix, 0, 0, 1.0d, childCount == 1 ? leftEvidenceStateId : 0);
-		costContext.setOperatorInputs(selectedRowsByGroup[childGroupIds[0]],
-				childCount > 1 ? selectedRowsByGroup[childGroupIds[1]] : Double.NaN,
+		costContext.setOperatorInputs(childRows(0),
+				childCount > 1 ? childRows(1) : Double.NaN,
 				leftEvidenceStateId,
 				rightEvidenceStateId);
+		PackedDependentSubqueryCosting.publishDefaultPlanInputs(
+				query, memo, logicalExpressionId, costEstimate);
 		costSession.refineOperator(logicalExpressionId, costContext, costEstimate);
+		if (query.relOperator(logicalExpressionId) == PackedRelOp.JOIN && childCount == 2) {
+			physicalJoinPrefix[0] = query.relChild(logicalExpressionId, 0);
+			int implementation = PackedJoinEnumerator.runtimeJoinImplementation(
+					query, physicalJoinPrefix, 1, query.relChild(logicalExpressionId, 1));
+			PackedPhysicalJoinCosting.refine(costSession, implementation, costContext, costEstimate);
+		}
+	}
+
+	private int contextualizeOptionalRight(int logicalExpressionId, int leftWinnerId) {
+		int leftEvidenceStateId = winnerEvidenceStateId(leftWinnerId);
+		int leftRelationId = query.relChild(logicalExpressionId, 0);
+		if (query.maskCardinality(query.relAssuredMaskId(leftRelationId)) == 0) {
+			return 0;
+		}
+		inheritedPrefix[0] = leftRelationId;
+		inheritedEvidenceContext.reset(inheritedPrefix, null, 0, 1, memo.winnerOutputRows(leftWinnerId),
+				leftEvidenceStateId, query.relAssuredMaskId(leftRelationId),
+				query.relAssuredMaskId(leftRelationId), query.relSemanticScope(logicalExpressionId));
+		int winnerId = joinEnumerator.optimizeWithInheritedPrefix(query.relChild(logicalExpressionId, 1),
+				inheritedEvidenceContext);
+		workUnits += joinEnumerator.contextualWorkUnits();
+		return winnerHasMeasuredContextualRows(winnerId) ? winnerId : 0;
+	}
+
+	private boolean winnerHasMeasuredContextualRows(int winnerId) {
+		int metadataId = memo.winnerPhysicalMetadataId(winnerId);
+		if (metadataId != 0) {
+			if (memo.physicalMetadataEvidenceStateId(metadataId) != 0) {
+				return true;
+			}
+			int eventId = memo.physicalMetadataCostEventId(metadataId);
+			if (costSession instanceof EventSourcingPackedCostSession eventSession
+					&& eventSession.eventHasContextualOutputRows(eventId)) {
+				return true;
+			}
+		}
+		int physicalExpressionId = memo.winnerPhysicalExpressionId(winnerId);
+		int operator = memo.physicalOperatorTag(physicalExpressionId);
+		int childCount = memo.winnerChildCount(winnerId);
+		if (operator == PackedRelOp.UNION && childCount == 2) {
+			return winnerHasMeasuredContextualRows(memo.winnerChildWinnerId(winnerId, 0))
+					&& winnerHasMeasuredContextualRows(memo.winnerChildWinnerId(winnerId, 1));
+		}
+		return childCount == 1 && switch (operator) {
+		case PackedRelOp.QUERY_ROOT, PackedRelOp.PROJECTION, PackedRelOp.EXTENSION, PackedRelOp.ORDER, PackedRelOp.MATERIALIZE, PackedRelOp.FILTER, PackedRelOp.SEMI_JOIN, PackedRelOp.ANTI_JOIN -> winnerHasMeasuredContextualRows(
+				memo.winnerChildWinnerId(winnerId, 0));
+		default -> false;
+		};
+	}
+
+	private double childRows(int ordinal) {
+		double rows = memo.winnerOutputRows(childWinnerIds[ordinal]);
+		return finiteNonNegative(rows) ? rows : selectedRowsByGroup[childGroupIds[ordinal]];
+	}
+
+	private int winnerEvidenceStateId(int winnerId) {
+		int metadataId = memo.winnerPhysicalMetadataId(winnerId);
+		return metadataId == 0 ? 0 : memo.physicalMetadataEvidenceStateId(metadataId);
 	}
 
 	private static boolean finiteNonNegative(double value) {

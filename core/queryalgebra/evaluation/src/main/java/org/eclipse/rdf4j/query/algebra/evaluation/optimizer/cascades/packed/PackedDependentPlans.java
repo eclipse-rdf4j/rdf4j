@@ -65,6 +65,16 @@ final class PackedDependentPlans {
 		return dependentWinnerIds[ordinal];
 	}
 
+	int find(int ownerWinnerId, int subqueryPayloadId) {
+		for (int ordinal = 0; ordinal < size; ordinal++) {
+			if (ownerWinnerIds[ordinal] == ownerWinnerId
+					&& subqueryPayloadIds[ordinal] == subqueryPayloadId) {
+				return dependentWinnerIds[ordinal];
+			}
+		}
+		return 0;
+	}
+
 	private void ensureCapacity(int required) {
 		if (required <= ownerWinnerIds.length) {
 			return;

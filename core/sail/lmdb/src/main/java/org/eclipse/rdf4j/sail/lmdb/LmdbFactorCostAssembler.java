@@ -16,12 +16,17 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Intersection;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.FactorCostEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
@@ -40,6 +45,113 @@ final class LmdbFactorCostAssembler {
 	}
 
 	FactorCostEstimate assemble(TupleExpr expression, EstimateContext context, BagEstimate semantic, boolean exact) {
+		if (expression instanceof UnaryTupleOperator unary) {
+			BagEstimate childSemantic = engine.estimate(unary.getArg(), context);
+			FactorCostEstimate child = assemble(unary.getArg(), context, childSemantic, exact(childSemantic));
+			return assembleComposite(expression, context, semantic, exact,
+					List.of(new ChildCost(childSemantic, child)));
+		}
+		if (expression instanceof Lateral lateral) {
+			BagEstimate leftSemantic = engine.estimate(lateral.getLeftArg(), context);
+			EstimateContext rightContext = context.withBoundNames(lateral.getRightInputBindingNames())
+					.withPrefixEstimate(leftSemantic)
+					.withInvocationCount(Math.max(1.0d, leftSemantic.rows()));
+			BagEstimate rightSemantic = engine.estimate(lateral.getRightArg(), rightContext);
+			return assembleComposite(expression, context, semantic, exact, List.of(
+					new ChildCost(leftSemantic,
+							assemble(lateral.getLeftArg(), context, leftSemantic, exact(leftSemantic))),
+					new ChildCost(rightSemantic,
+							assemble(lateral.getRightArg(), rightContext, rightSemantic, exact(rightSemantic)))));
+		}
+		if (expression instanceof Join join) {
+			return assembleJoin(expression, join.getLeftArg(), join.getRightArg(), context, semantic, exact);
+		}
+		if (expression instanceof Intersection intersection) {
+			return assembleJoin(expression, intersection.getLeftArg(), intersection.getRightArg(), context, semantic,
+					exact);
+		}
+		if (expression instanceof BinaryTupleOperator binary) {
+			BagEstimate leftSemantic = engine.estimate(binary.getLeftArg(), context);
+			BagEstimate rightSemantic = engine.estimate(binary.getRightArg(), context);
+			return assembleComposite(expression, context, semantic, exact, List.of(
+					new ChildCost(leftSemantic,
+							assemble(binary.getLeftArg(), context, leftSemantic, exact(leftSemantic))),
+					new ChildCost(rightSemantic,
+							assemble(binary.getRightArg(), context, rightSemantic, exact(rightSemantic)))));
+		}
+		return assembleAccess(expression, context, semantic, exact);
+	}
+
+	private FactorCostEstimate assembleJoin(TupleExpr expression, TupleExpr leftExpression, TupleExpr rightExpression,
+			EstimateContext context, BagEstimate semantic, boolean exact) {
+		BagEstimate leftSemantic = engine.estimate(leftExpression, context);
+		EstimateContext rightContext = engine.joinRightContext(leftExpression, rightExpression, context, leftSemantic);
+		BagEstimate rightSemantic = engine.estimate(rightExpression, rightContext);
+		return assembleComposite(expression, context, semantic, exact, List.of(
+				new ChildCost(leftSemantic, assemble(leftExpression, context, leftSemantic, exact(leftSemantic))),
+				new ChildCost(rightSemantic,
+						assemble(rightExpression, rightContext, rightSemantic, exact(rightSemantic)))));
+	}
+
+	private FactorCostEstimate assembleComposite(TupleExpr expression, EstimateContext context, BagEstimate semantic,
+			boolean exact, List<ChildCost> children) {
+		double semanticChildWork = 0.0d;
+		double physicalChildWork = 0.0d;
+		double accessWork = 0.0d;
+		double seeks = 0.0d;
+		double memoryRows = 0.0d;
+		int accessPathCount = 0;
+		FactorCostEstimate driver = null;
+		StringBuilder accessPaths = new StringBuilder();
+		boolean repeatedInvocationsCosted = context.invocationCount() > 1.0d;
+		for (ChildCost child : children) {
+			semanticChildWork = saturatingAdd(semanticChildWork, child.semantic().workRows());
+			physicalChildWork = saturatingAdd(physicalChildWork, child.physical().getWorkRows());
+			accessWork = saturatingAdd(accessWork, totalAccessWork(child.physical()));
+			seeks = saturatingAdd(seeks, metric(child.physical(), "plannedSeeks", 0.0d));
+			memoryRows = Math.max(memoryRows, metric(child.physical(), "plannedMemoryRows", 0.0d));
+			repeatedInvocationsCosted |= child.physical().isRepeatedInvocationsCosted();
+			if (child.physical().hasPhysicalAccessPath()) {
+				accessPathCount++;
+				if (driver == null) {
+					driver = child.physical();
+				}
+				appendAccessPaths(accessPaths, child.physical());
+			}
+		}
+		double localWork = finiteDifference(semantic.workRows(), semanticChildWork);
+		double totalWork = saturatingAdd(physicalChildWork, localWork);
+		Map<String, String> strings = new LinkedHashMap<>();
+		if (driver != null) {
+			strings.putAll(driver.getStringMetrics());
+		}
+		strings.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, estimateSource(expression, context, semantic));
+		if (!accessPaths.isEmpty()) {
+			strings.put("plannedCompositeAccessPaths", accessPaths.toString());
+		}
+		Map<String, Double> metrics = new LinkedHashMap<>(semantic.metrics());
+		if (driver != null) {
+			metrics.putAll(driver.getDoubleMetrics());
+		}
+		metrics.put("plannedCompositeAccessPathCount", (double) accessPathCount);
+		metrics.put("plannedCompositeChildWorkRows", physicalChildWork);
+		metrics.put("plannedCompositeLocalWorkRows", localWork);
+		metrics.put("plannedSeeks", seeks);
+		metrics.put("plannedMemoryRows", memoryRows);
+		metrics.put(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, accessWork);
+		metrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, semantic.rows());
+		metrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, totalWork);
+		metrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, semantic.rows());
+		metrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, totalWork);
+		return new FactorCostEstimate(totalWork, semantic.rows(), Map.copyOf(strings), Map.copyOf(metrics),
+				driver != null, false, driver == null ? 0 : driver.getLookupComponentMask(),
+				driver == null ? 0 : driver.getMissingLookupComponentMask(),
+				driver == null ? Double.NaN : driver.getAccessRowsBeforeFilter(), repeatedInvocationsCosted, exact)
+						.withBag(semantic);
+	}
+
+	private FactorCostEstimate assembleAccess(TupleExpr expression, EstimateContext context, BagEstimate semantic,
+			boolean exact) {
 		StatementPattern accessPattern = accessPattern(expression);
 		BagEstimate accessSemantic = accessPattern == null || accessPattern == expression
 				? semantic
@@ -86,6 +198,60 @@ final class LmdbFactorCostAssembler {
 				accessPattern != null, accessPath.directLookup(), accessPath.lookupComponentMask(),
 				accessPath.missingLookupComponentMask(), access.accessRowsPerInvocation(),
 				access.invocations() > 1.0d, exact).withBag(semantic);
+	}
+
+	private static boolean exact(BagEstimate estimate) {
+		return LmdbEstimationEngine.databaseExact(estimate);
+	}
+
+	private static double totalAccessWork(FactorCostEstimate estimate) {
+		double perInvocation = metric(estimate, TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, 0.0d);
+		double invocations = metric(estimate, "plannedRepeatedInvocations", 1.0d);
+		return saturatingMultiply(perInvocation, Math.max(1.0d, invocations));
+	}
+
+	private static double metric(FactorCostEstimate estimate, String name, double fallback) {
+		Double value = estimate.getDoubleMetrics().get(name);
+		return value != null && Double.isFinite(value) && value >= 0.0d ? value : fallback;
+	}
+
+	private static double finiteDifference(double total, double children) {
+		if (!Double.isFinite(total) || total < 0.0d || !Double.isFinite(children) || children < 0.0d) {
+			return finiteNonNegative(total) ? total : Double.MAX_VALUE;
+		}
+		return Math.max(0.0d, total - children);
+	}
+
+	private static double saturatingAdd(double left, double right) {
+		double sum = left + right;
+		return Double.isFinite(sum) && sum >= 0.0d ? sum : Double.MAX_VALUE;
+	}
+
+	private static double saturatingMultiply(double left, double right) {
+		double product = left * right;
+		return Double.isFinite(product) && product >= 0.0d ? product : Double.MAX_VALUE;
+	}
+
+	private static boolean finiteNonNegative(double value) {
+		return Double.isFinite(value) && value >= 0.0d;
+	}
+
+	private static void appendAccessPaths(StringBuilder target, FactorCostEstimate estimate) {
+		String nested = estimate.getStringMetrics().get("plannedCompositeAccessPaths");
+		if (nested != null && !nested.isBlank()) {
+			appendAccessPath(target, nested);
+			return;
+		}
+		String index = estimate.getStringMetrics().get(TelemetryMetricNames.PLANNED_INDEX_NAME);
+		String mode = estimate.getStringMetrics().get(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE);
+		appendAccessPath(target, (index == null ? "unindexed" : index) + ':' + (mode == null ? "unknown" : mode));
+	}
+
+	private static void appendAccessPath(StringBuilder target, String path) {
+		if (!target.isEmpty()) {
+			target.append(" -> ");
+		}
+		target.append(path);
 	}
 
 	private static String estimateSource(TupleExpr expression, EstimateContext context, BagEstimate semantic) {
@@ -172,5 +338,8 @@ final class LmdbFactorCostAssembler {
 		private static AccessPathSelection none(int lookupMask) {
 			return new AccessPathSelection("", 0, 0, lookupMask, false, 0, "fullScan");
 		}
+	}
+
+	private record ChildCost(BagEstimate semantic, FactorCostEstimate physical) {
 	}
 }

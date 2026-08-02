@@ -69,6 +69,33 @@ class CascadesPlanProvenanceAnnotatorTest {
 		assertTrue(cartesianWork >= 0.0d && cartesianWork <= 1.0d);
 	}
 
+	@Test
+	void originatingCostEventRemainsAuthoritativeAtAnnotatedRoot() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern plan = pattern(values, "subject", "urn:predicate", "object", 7.0d);
+		plan.setCostEstimate(11.0d);
+		plan.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, 7.0d);
+		plan.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS, 11.0d);
+		plan.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, 11.0d);
+		plan.setDoubleMetricPlanned("optimizer.costEventOrdinal", 3.0d);
+		plan.setDoubleMetricPlanned("optimizer.costEventRows", 7.0d);
+		plan.setDoubleMetricPlanned("optimizer.costEventWorkRows", 11.0d);
+		plan.setStringMetricPlanned("optimizer.costEventDigest", "immutable-event");
+
+		CascadesPlanProvenanceAnnotator.annotate(plan, provenance(101.0d, 303.0d));
+
+		assertEquals(7.0d, plan.getResultSizeEstimate());
+		assertEquals(11.0d, plan.getCostEstimate());
+		assertEquals(7.0d,
+				plan.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS));
+		assertEquals(11.0d,
+				plan.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS));
+		assertEquals(11.0d,
+				plan.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS));
+		assertEquals(303.0d,
+				plan.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE));
+	}
+
 	private static StatementPattern pattern(SimpleValueFactory values, String subject, String predicate,
 			String object, double rows) {
 		StatementPattern pattern = new StatementPattern(Var.of(subject), Var.of(predicate, values.createIRI(predicate)),

@@ -220,6 +220,26 @@ class ThemeQueryPlanRunBenchmarkTest {
 		assertOrder(existsName, "VALUES ?u", "FILTER EXISTS", "?u social:follows ?v");
 	}
 
+	@Test
+	void uncachedPlanningVariableRenamingPreservesNonVariableLexicalForms() throws Exception {
+		Method method = ThemeQueryPlanRunBenchmark.class.getDeclaredMethod("alphaRenameVariables", String.class,
+				long.class);
+		method.setAccessible(true);
+		String source = "SELECT ?subject $object WHERE {\n"
+				+ "  ?subject <urn:predicate?inside> $object .\n"
+				+ "  BIND(\"?literal\" AS ?label) # ?comment\n"
+				+ "  BIND('''$longLiteral''' AS $other)\n"
+				+ "}";
+
+		String renamed = (String) method.invoke(null, source, 41L);
+
+		assertTrue(renamed.contains("SELECT ?subject__uncached41 $object__uncached41"), renamed);
+		assertTrue(renamed.contains("?subject__uncached41 <urn:predicate?inside> $object__uncached41"), renamed);
+		assertTrue(renamed.contains("\"?literal\" AS ?label__uncached41"), renamed);
+		assertTrue(renamed.contains("# ?comment"), renamed);
+		assertTrue(renamed.contains("'''$longLiteral''' AS $other__uncached41"), renamed);
+	}
+
 	private static void setTheme(ThemeQueryPlanRunBenchmark.BaseState state, Theme theme)
 			throws ReflectiveOperationException {
 		Field field = ThemeQueryPlanRunBenchmark.BaseState.class.getDeclaredField("theme");

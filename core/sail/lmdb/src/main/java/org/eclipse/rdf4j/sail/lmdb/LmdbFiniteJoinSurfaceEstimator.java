@@ -21,18 +21,35 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ScalarEvaluationEffects;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
@@ -54,10 +71,13 @@ final class LmdbFiniteJoinSurfaceEstimator {
 
 	private final ValueStore valueStore;
 	private final TripleStore tripleStore;
+	private final DefaultEvaluationStrategy filterEvaluationStrategy;
 
 	LmdbFiniteJoinSurfaceEstimator(ValueStore valueStore, TripleStore tripleStore) {
 		this.valueStore = valueStore;
 		this.tripleStore = tripleStore;
+		this.filterEvaluationStrategy = valueStore == null ? null
+				: new DefaultEvaluationStrategy(new FiniteSurfaceTripleSource(valueStore), null);
 	}
 
 	/**
@@ -76,12 +96,12 @@ final class LmdbFiniteJoinSurfaceEstimator {
 		if (alternatives == null || !alternatives.containsUnion()) {
 			return Optional.empty();
 		}
-		VarSlots slots = buildVarSlots(alternatives.branches());
+		VarSlots slots = buildAlternativeVarSlots(alternatives.branches());
 		long scannedRows = 0L;
 		long outputRows = 0L;
 		List<long[]> output = new ArrayList<>();
 		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
-			for (List<StatementPattern> branch : alternatives.branches()) {
+			for (AlternativeBranch branch : alternatives.branches()) {
 				Expansion expansion = expandConnectedBranch(txn, branch, slots, scannedRows, scanBudget);
 				if (expansion == null) {
 					return Optional.empty();
@@ -93,8 +113,43 @@ final class LmdbFiniteJoinSurfaceEstimator {
 				}
 				output.addAll(expansion.rows());
 			}
-			return Optional.of(new SurfaceEstimate(outputRows, 1.0d, scannedRows,
+			return Optional.of(new SurfaceEstimate(outputRows, 1.0d, outputRows == 0L ? 0.0d : 1.0d, scannedRows,
 					alternatives.branches().size(), finiteRelation(slots, output), true, 0));
+		} catch (IOException | RuntimeException e) {
+			return Optional.empty();
+		}
+	}
+
+	/**
+	 * Evaluates one connected basic graph pattern, including supported local FILTER conditions, exactly.
+	 *
+	 * <p>
+	 * This is the state-free counterpart of an exact Frontier join transition. It is used only when the packed
+	 * candidate has no composable Frontier state; the same factor, row, and scan budgets as every finite surface apply.
+	 * Unsupported, disconnected, or over-budget expressions are declined instead of receiving a scalar selectivity.
+	 */
+	Optional<SurfaceEstimate> estimateConnected(TupleExpr expression) {
+		return estimateConnected(expression, newScanBudget());
+	}
+
+	Optional<SurfaceEstimate> estimateConnected(TupleExpr expression, ScanBudget scanBudget) {
+		if (valueStore == null || tripleStore == null || expression == null) {
+			return Optional.empty();
+		}
+		AlternativeBranches alternatives = alternativeBranches(expression);
+		if (alternatives == null || alternatives.containsUnion() || alternatives.branches().size() != 1) {
+			return Optional.empty();
+		}
+		AlternativeBranch branch = alternatives.branches().get(0);
+		VarSlots slots = buildAlternativeVarSlots(alternatives.branches());
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			Expansion expansion = expandConnectedBranch(txn, branch, slots, 0L, scanBudget);
+			if (expansion == null) {
+				return Optional.empty();
+			}
+			double rows = expansion.rows().size();
+			return Optional.of(new SurfaceEstimate(rows, 1.0d, rows == 0.0d ? 0.0d : 1.0d,
+					expansion.scannedRows(), 1, finiteRelation(slots, expansion.rows()), true, 0));
 		} catch (IOException | RuntimeException e) {
 			return Optional.empty();
 		}
@@ -111,16 +166,108 @@ final class LmdbFiniteJoinSurfaceEstimator {
 
 	Optional<SurfaceEstimate> estimate(FiniteRelationEstimate correlatedRelation, TupleExpr accessKernel,
 			ScanBudget scanBudget) {
-		if (correlatedRelation == null || !(accessKernel instanceof StatementPattern)
+		ExactAccess access = exactAccess(accessKernel);
+		if (correlatedRelation == null || access == null
 				|| !Double.isFinite(correlatedRelation.rows())
 				|| correlatedRelation.rows() < 0.0d
 				|| correlatedRelation.rows() > MAX_ROWS) {
 			return Optional.empty();
 		}
+		SurfaceCardinality weighted = access.conditions().isEmpty()
+				? correlatedSurfaceCardinality(correlatedRelation, access.pattern(), scanBudget)
+				: SurfaceCardinality.unavailable();
+		if (!weighted.available() && access.conditions().isEmpty()) {
+			return Optional.empty();
+		}
+		if (weighted.available() && weighted.rows() > Math.min(MAX_ROWS, MAX_SCANNED_ROWS)) {
+			return Optional.of(new SurfaceEstimate(
+					weighted.rows(),
+					correlatedRelation.rows(),
+					weighted.matchedInputRows(),
+					0L,
+					correlatedRelation.frequencies().size(),
+					null,
+					false,
+					weighted.probes()));
+		}
 		BindingSetAssignment assignment = correlatedAssignment(correlatedRelation);
-		return assignment == null
-				? Optional.empty()
-				: estimate(List.of(assignment), accessKernel, Map.of(), scanBudget);
+		if (assignment == null) {
+			if (!weighted.available()) {
+				return Optional.empty();
+			}
+			return Optional.of(new SurfaceEstimate(
+					weighted.rows(),
+					correlatedRelation.rows(),
+					weighted.matchedInputRows(),
+					0L,
+					correlatedRelation.frequencies().size(),
+					null,
+					false,
+					weighted.probes()));
+		}
+		return estimate(List.of(assignment), accessKernel, Map.of(), scanBudget)
+				.map(surface -> new SurfaceEstimate(
+						surface.surfaceRows(),
+						surface.prefixRows(),
+						surface.matchedPrefixRows(),
+						surface.scannedRows(),
+						surface.branchCount(),
+						surface.relation(),
+						surface.exact(),
+						weighted.available() ? weighted.probes() : 0));
+	}
+
+	private SurfaceCardinality correlatedSurfaceCardinality(FiniteRelationEstimate relation,
+			StatementPattern pattern, ScanBudget scanBudget) {
+		VarSlots slots = new VarSlots();
+		for (String variable : relation.variables()) {
+			slots.add(variable);
+		}
+		addPatternVariables(slots, pattern);
+		double rows = 0.0d;
+		double matchedInputRows = 0.0d;
+		int probes = 0;
+		try {
+			for (Map.Entry<List<Value>, Double> entry : relation.frequencies().entrySet()) {
+				long[] row = emptyRow(slots.size());
+				boolean unknownBoundValue = false;
+				for (int column = 0; column < relation.variables().size(); column++) {
+					Value value = entry.getKey().get(column);
+					if (value == null) {
+						continue;
+					}
+					long id = storedId(value);
+					if (id == UNBOUND_ID) {
+						unknownBoundValue = true;
+						break;
+					}
+					row[slots.index(relation.variables().get(column))] = id;
+				}
+				if (unknownBoundValue) {
+					continue;
+				}
+				PatternIds ids = patternIds(pattern, row, slots);
+				if (ids == null || requiresUnboundRepeatedVariable(pattern, row, slots)) {
+					return SurfaceCardinality.unavailable();
+				}
+				if (ids.zeroRows()) {
+					continue;
+				}
+				double estimate = planningCardinality(ids, scanBudget);
+				if (!Double.isFinite(estimate) || estimate < 0.0d) {
+					return SurfaceCardinality.unavailable();
+				}
+				double frequency = entry.getValue();
+				rows = saturatingAdd(rows, estimate * frequency);
+				if (estimate > 0.0d) {
+					matchedInputRows = saturatingAdd(matchedInputRows, frequency);
+				}
+				probes++;
+			}
+		} catch (IOException | RuntimeException failure) {
+			return SurfaceCardinality.unavailable();
+		}
+		return new SurfaceCardinality(true, rows, matchedInputRows, probes);
 	}
 
 	Optional<SurfaceEstimate> estimate(List<TupleExpr> prefixFactors, TupleExpr factor,
@@ -131,35 +278,41 @@ final class LmdbFiniteJoinSurfaceEstimator {
 			return Optional.empty();
 		}
 		List<BindingSetAssignment> assignments = new ArrayList<>();
-		List<StatementPattern> prefixPatterns = new ArrayList<>();
+		List<ExactAccess> prefixAccesses = new ArrayList<>();
 		for (TupleExpr prefixFactor : effectivePrefix) {
 			if (prefixFactor instanceof BindingSetAssignment assignment) {
 				assignments.add(assignment);
-			} else if (prefixFactor instanceof StatementPattern pattern) {
-				prefixPatterns.add(pattern);
 			} else {
-				return Optional.empty();
+				ExactAccess access = exactAccess(prefixFactor);
+				if (access == null) {
+					return Optional.empty();
+				}
+				prefixAccesses.add(access);
 			}
 		}
-		if (!(factor instanceof StatementPattern surfacePattern)
-				|| assignments.isEmpty() && !hasSingleFiniteDomain(finiteBindingValues) && prefixPatterns.isEmpty()) {
+		ExactAccess surfaceAccess = exactAccess(factor);
+		if (surfaceAccess == null) {
 			return Optional.empty();
 		}
 
-		VarSlots slots = buildVarSlots(assignments, prefixPatterns, surfacePattern, finiteBindingValues);
+		VarSlots slots = buildVarSlots(assignments, prefixAccesses, surfaceAccess, finiteBindingValues);
 		List<long[]> rows;
 		long scannedRows = 0L;
 		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
-			List<StatementPattern> remainingPatterns = new ArrayList<>(prefixPatterns);
+			List<ExactAccess> remainingAccesses = new ArrayList<>(prefixAccesses);
+			boolean unboundSeed = assignments.isEmpty() && !hasSingleFiniteDomain(finiteBindingValues)
+					&& prefixAccesses.isEmpty();
 			if (!assignments.isEmpty() || hasSingleFiniteDomain(finiteBindingValues)) {
 				rows = initialRows(assignments, finiteBindingValues, slots);
+			} else if (unboundSeed) {
+				rows = List.of(emptyRow(slots.size()));
 			} else {
 				rows = List.of(emptyRow(slots.size()));
-				int seedIndex = exactSeedIndex(remainingPatterns, rows, slots);
+				int seedIndex = exactSeedIndex(remainingAccesses, rows, slots, scanBudget);
 				if (seedIndex < 0) {
 					return Optional.empty();
 				}
-				Expansion seed = expand(txn, rows, slots, remainingPatterns.remove(seedIndex), scannedRows,
+				Expansion seed = expand(txn, rows, slots, remainingAccesses.remove(seedIndex), scannedRows,
 						scanBudget);
 				if (seed == null) {
 					return Optional.empty();
@@ -171,18 +324,18 @@ final class LmdbFiniteJoinSurfaceEstimator {
 				return Optional.empty();
 			}
 			if (rows.isEmpty()) {
-				return Optional.of(new SurfaceEstimate(0.0d, 0.0d, scannedRows, 0,
+				return Optional.of(new SurfaceEstimate(0.0d, 0.0d, 0.0d, scannedRows, 0,
 						FiniteRelationEstimate.fromRows(slots.names(), List.of(),
 								"lmdb-finite-derived-surface"),
 						true, 0));
 			}
 
-			while (!remainingPatterns.isEmpty()) {
-				int connectedIndex = connectedPatternIndex(remainingPatterns, rows, slots);
+			while (!remainingAccesses.isEmpty()) {
+				int connectedIndex = connectedPatternIndex(remainingAccesses, rows, slots);
 				if (connectedIndex < 0) {
 					return Optional.empty();
 				}
-				Expansion expansion = expand(txn, rows, slots, remainingPatterns.remove(connectedIndex), scannedRows,
+				Expansion expansion = expand(txn, rows, slots, remainingAccesses.remove(connectedIndex), scannedRows,
 						scanBudget);
 				if (expansion == null) {
 					return Optional.empty();
@@ -190,40 +343,45 @@ final class LmdbFiniteJoinSurfaceEstimator {
 				rows = expansion.rows();
 				scannedRows = expansion.scannedRows();
 				if (rows.isEmpty()) {
-					return Optional.of(new SurfaceEstimate(0.0d, 0.0d, scannedRows, 0,
+					return Optional.of(new SurfaceEstimate(0.0d, 0.0d, 0.0d, scannedRows, 0,
 							finiteRelation(slots, rows), true, 0));
 				}
 			}
 			double prefixRows = rows.size();
-			if (!connectsToBoundRow(surfacePattern, rows, slots)) {
+			if (!unboundSeed && !connectsToBoundRow(surfaceAccess.pattern(), rows, slots)) {
 				return Optional.empty();
 			}
-			SurfaceCardinality cardinality = surfaceCardinality(rows, slots, surfacePattern);
+			SurfaceCardinality cardinality = surfaceAccess.conditions().isEmpty()
+					? surfaceCardinality(rows, slots, surfaceAccess.pattern(), scanBudget)
+					: SurfaceCardinality.unavailable();
 			if (cardinality.available()
 					&& cardinality.rows() > Math.min(MAX_ROWS, MAX_SCANNED_ROWS)) {
-				return Optional.of(new SurfaceEstimate(cardinality.rows(), prefixRows, scannedRows,
+				return Optional.of(new SurfaceEstimate(cardinality.rows(), prefixRows,
+						cardinality.matchedInputRows(), scannedRows,
 						rows.size(), null, false, cardinality.probes()));
 			}
-			Expansion surface = expand(txn, rows, slots, surfacePattern, scannedRows, scanBudget);
+			Expansion surface = expand(txn, rows, slots, surfaceAccess, scannedRows, scanBudget);
 			if (surface == null) {
 				return cardinality.available() && cardinality.rows() > 0.0d
-						? Optional.of(new SurfaceEstimate(cardinality.rows(), prefixRows, scannedRows,
+						? Optional.of(new SurfaceEstimate(cardinality.rows(), prefixRows,
+								cardinality.matchedInputRows(), scannedRows,
 								rows.size(), null, false, cardinality.probes()))
 						: Optional.empty();
 			}
 			return Optional.of(new SurfaceEstimate(surface.rows().size(), prefixRows,
-					surface.scannedRows(), rows.size(), finiteRelation(slots, surface.rows()), true,
+					surface.matchedInputRows(), surface.scannedRows(), rows.size(),
+					finiteRelation(slots, surface.rows()), true,
 					cardinality.probes()));
 		} catch (IOException | RuntimeException e) {
 			return Optional.empty();
 		}
 	}
 
-	private Expansion expandConnectedBranch(Txn txn, List<StatementPattern> branch, VarSlots slots,
+	private Expansion expandConnectedBranch(Txn txn, AlternativeBranch branch, VarSlots slots,
 			long alreadyScanned, ScanBudget scanBudget) throws IOException {
-		List<StatementPattern> remaining = new ArrayList<>(branch);
+		List<ExactAccess> remaining = new ArrayList<>(branch.accesses());
 		List<long[]> rows = List.of(emptyRow(slots.size()));
-		int seedIndex = exactSeedIndex(remaining, rows, slots);
+		int seedIndex = exactSeedIndex(remaining, rows, slots, scanBudget);
 		if (seedIndex < 0) {
 			return null;
 		}
@@ -245,12 +403,31 @@ final class LmdbFiniteJoinSurfaceEstimator {
 			rows = expansion.rows();
 			scannedRows = expansion.scannedRows();
 		}
-		return remaining.isEmpty() || rows.isEmpty() ? new Expansion(rows, scannedRows) : null;
+		if (!remaining.isEmpty() && !rows.isEmpty()) {
+			return null;
+		}
+		List<long[]> filtered = restrict(rows, slots, branch.conditions());
+		return filtered == null ? null : new Expansion(filtered, scannedRows, expansion.matchedInputRows());
 	}
 
-	private static AlternativeBranches alternativeBranches(TupleExpr expression) {
+	private AlternativeBranches alternativeBranches(TupleExpr expression) {
 		if (expression instanceof StatementPattern pattern) {
-			return new AlternativeBranches(List.of(List.of(pattern)), false, 1);
+			return new AlternativeBranches(
+					List.of(new AlternativeBranch(List.of(new ExactAccess(pattern, List.of())), List.of())), false, 1);
+		}
+		if (expression instanceof Filter filter && exactFilterCondition(filter.getCondition())) {
+			AlternativeBranches input = alternativeBranches(filter.getArg());
+			if (input == null) {
+				return null;
+			}
+			List<AlternativeBranch> branches = new ArrayList<>(input.branches().size());
+			for (AlternativeBranch branch : input.branches()) {
+				List<ValueExpr> conditions = new ArrayList<>(branch.conditions().size() + 1);
+				conditions.addAll(branch.conditions());
+				conditions.add(filter.getCondition());
+				branches.add(new AlternativeBranch(branch.accesses(), List.copyOf(conditions)));
+			}
+			return new AlternativeBranches(List.copyOf(branches), input.containsUnion(), input.factorOccurrences());
 		}
 		if (expression instanceof Union union) {
 			AlternativeBranches left = alternativeBranches(union.getLeftArg());
@@ -258,7 +435,7 @@ final class LmdbFiniteJoinSurfaceEstimator {
 			if (left == null || right == null) {
 				return null;
 			}
-			List<List<StatementPattern>> branches = new ArrayList<>(left.branches().size() + right.branches().size());
+			List<AlternativeBranch> branches = new ArrayList<>(left.branches().size() + right.branches().size());
 			branches.addAll(left.branches());
 			branches.addAll(right.branches());
 			int occurrences = left.factorOccurrences() + right.factorOccurrences();
@@ -273,19 +450,24 @@ final class LmdbFiniteJoinSurfaceEstimator {
 					|| left.branches().size() > MAX_ALTERNATIVE_BRANCHES / right.branches().size()) {
 				return null;
 			}
-			List<List<StatementPattern>> branches = new ArrayList<>(
+			List<AlternativeBranch> branches = new ArrayList<>(
 					left.branches().size() * right.branches().size());
 			int occurrences = 0;
-			for (List<StatementPattern> leftBranch : left.branches()) {
-				for (List<StatementPattern> rightBranch : right.branches()) {
-					if (leftBranch.size() > MAX_FACTORS - rightBranch.size()) {
+			for (AlternativeBranch leftBranch : left.branches()) {
+				for (AlternativeBranch rightBranch : right.branches()) {
+					if (leftBranch.accesses().size() > MAX_FACTORS - rightBranch.accesses().size()) {
 						return null;
 					}
-					List<StatementPattern> branch = new ArrayList<>(leftBranch.size() + rightBranch.size());
-					branch.addAll(leftBranch);
-					branch.addAll(rightBranch);
-					branches.add(List.copyOf(branch));
-					occurrences += branch.size();
+					List<ExactAccess> accesses = new ArrayList<>(
+							leftBranch.accesses().size() + rightBranch.accesses().size());
+					accesses.addAll(leftBranch.accesses());
+					accesses.addAll(rightBranch.accesses());
+					List<ValueExpr> conditions = new ArrayList<>(
+							leftBranch.conditions().size() + rightBranch.conditions().size());
+					conditions.addAll(leftBranch.conditions());
+					conditions.addAll(rightBranch.conditions());
+					branches.add(new AlternativeBranch(List.copyOf(accesses), List.copyOf(conditions)));
+					occurrences += accesses.size();
 					if (!withinAlternativeCaps(branches, occurrences)) {
 						return null;
 					}
@@ -297,17 +479,18 @@ final class LmdbFiniteJoinSurfaceEstimator {
 		return null;
 	}
 
-	private static boolean withinAlternativeCaps(List<List<StatementPattern>> branches, int factorOccurrences) {
+	private static boolean withinAlternativeCaps(List<AlternativeBranch> branches, int factorOccurrences) {
 		return !branches.isEmpty() && branches.size() <= MAX_ALTERNATIVE_BRANCHES
 				&& factorOccurrences <= MAX_ALTERNATIVE_FACTOR_OCCURRENCES;
 	}
 
-	private int exactSeedIndex(List<StatementPattern> patterns, List<long[]> rows, VarSlots slots)
+	private int exactSeedIndex(List<ExactAccess> accesses, List<long[]> rows, VarSlots slots,
+			ScanBudget scanBudget)
 			throws IOException {
 		int selectedIndex = -1;
 		double selectedRows = Double.POSITIVE_INFINITY;
-		for (int index = 0; index < patterns.size(); index++) {
-			SurfaceCardinality cardinality = surfaceCardinality(rows, slots, patterns.get(index));
+		for (int index = 0; index < accesses.size(); index++) {
+			SurfaceCardinality cardinality = surfaceCardinality(rows, slots, accesses.get(index).pattern(), scanBudget);
 			if (!cardinality.available() || cardinality.rows() > MAX_ROWS
 					|| cardinality.rows() > MAX_SCANNED_ROWS || cardinality.rows() >= selectedRows) {
 				continue;
@@ -318,9 +501,9 @@ final class LmdbFiniteJoinSurfaceEstimator {
 		return selectedIndex;
 	}
 
-	private static int connectedPatternIndex(List<StatementPattern> patterns, List<long[]> rows, VarSlots slots) {
-		for (int index = 0; index < patterns.size(); index++) {
-			if (connectsToBoundRow(patterns.get(index), rows, slots)) {
+	private static int connectedPatternIndex(List<ExactAccess> accesses, List<long[]> rows, VarSlots slots) {
+		for (int index = 0; index < accesses.size(); index++) {
+			if (connectsToBoundRow(accesses.get(index).pattern(), rows, slots)) {
 				return index;
 			}
 		}
@@ -328,8 +511,9 @@ final class LmdbFiniteJoinSurfaceEstimator {
 	}
 
 	private SurfaceCardinality surfaceCardinality(List<long[]> input, VarSlots slots,
-			StatementPattern pattern) throws IOException {
+			StatementPattern pattern, ScanBudget scanBudget) throws IOException {
 		double rows = 0.0d;
+		double matchedInputRows = 0.0d;
 		int probes = 0;
 		for (long[] row : input) {
 			PatternIds ids = patternIds(pattern, row, slots);
@@ -339,15 +523,28 @@ final class LmdbFiniteJoinSurfaceEstimator {
 			if (ids.zeroRows()) {
 				continue;
 			}
-			double estimate = tripleStore.planningCardinality(ids.subjectId(), ids.predicateId(),
-					ids.objectId(), ids.contextId());
+			double estimate = planningCardinality(ids, scanBudget);
 			if (!Double.isFinite(estimate) || estimate < 0.0d) {
 				return SurfaceCardinality.unavailable();
 			}
 			rows = saturatingAdd(rows, estimate);
+			if (estimate > 0.0d) {
+				matchedInputRows++;
+			}
 			probes++;
 		}
-		return new SurfaceCardinality(true, rows, probes);
+		return new SurfaceCardinality(true, rows, matchedInputRows, probes);
+	}
+
+	private double planningCardinality(PatternIds ids, ScanBudget scanBudget) throws IOException {
+		Double cached = scanBudget.cardinalityEstimates.get(ids);
+		if (cached != null) {
+			return cached;
+		}
+		double estimate = tripleStore.planningCardinality(
+				ids.subjectId(), ids.predicateId(), ids.objectId(), ids.contextId());
+		scanBudget.cardinalityEstimates.put(ids, estimate);
+		return estimate;
 	}
 
 	private static boolean requiresUnboundRepeatedVariable(StatementPattern pattern, long[] row, VarSlots slots) {
@@ -444,11 +641,18 @@ final class LmdbFiniteJoinSurfaceEstimator {
 		return assignment;
 	}
 
-	private Expansion expand(Txn txn, List<long[]> input, VarSlots slots, StatementPattern pattern,
+	private Expansion expand(Txn txn, List<long[]> input, VarSlots slots, ExactAccess access,
 			long alreadyScanned, ScanBudget scanBudget) throws IOException {
+		StatementPattern pattern = access.pattern();
+		PreparedConditions conditions = prepareConditions(access.conditions(), slots);
+		if (conditions == null) {
+			return null;
+		}
 		List<long[]> output = new ArrayList<>();
 		long scanned = alreadyScanned;
+		long matchedInputRows = 0L;
 		for (long[] row : input) {
+			int outputSizeBefore = output.size();
 			PatternIds ids = patternIds(pattern, row, slots);
 			if (ids == null) {
 				return null;
@@ -465,7 +669,7 @@ final class LmdbFiniteJoinSurfaceEstimator {
 					}
 					scanned++;
 					long[] merged = merge(row, slots, pattern, quad);
-					if (merged != null) {
+					if (merged != null && passes(merged, slots, conditions)) {
 						output.add(merged);
 						if (output.size() > MAX_ROWS) {
 							return null;
@@ -473,8 +677,11 @@ final class LmdbFiniteJoinSurfaceEstimator {
 					}
 				}
 			}
+			if (output.size() > outputSizeBefore) {
+				matchedInputRows++;
+			}
 		}
-		return new Expansion(output, scanned);
+		return new Expansion(output, scanned, matchedInputRows);
 	}
 
 	static ScanBudget newScanBudget() {
@@ -603,6 +810,105 @@ final class LmdbFiniteJoinSurfaceEstimator {
 		};
 	}
 
+	private ExactAccess exactAccess(TupleExpr expression) {
+		List<ValueExpr> conditions = new ArrayList<>();
+		TupleExpr access = expression;
+		while (access instanceof Filter filter) {
+			if (!exactFilterCondition(filter.getCondition())) {
+				return null;
+			}
+			conditions.add(filter.getCondition());
+			access = filter.getArg();
+		}
+		return access instanceof StatementPattern pattern
+				? new ExactAccess(pattern, List.copyOf(conditions))
+				: null;
+	}
+
+	private static boolean exactFilterCondition(ValueExpr condition) {
+		if (condition == null
+				|| ScalarEvaluationEffects.effectOf(condition) != ScalarEvaluationEffects.Effect.REPEATABLE) {
+			return false;
+		}
+		boolean[] local = { true };
+		condition.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node instanceof SubQueryValueOperator) {
+					local[0] = false;
+					return;
+				}
+				node.visitChildren(this);
+			}
+		});
+		return local[0];
+	}
+
+	private PreparedConditions prepareConditions(List<ValueExpr> conditions, VarSlots slots) {
+		if (conditions.isEmpty()) {
+			return PreparedConditions.EMPTY;
+		}
+		if (filterEvaluationStrategy == null) {
+			return null;
+		}
+		List<QueryValueEvaluationStep> prepared = new ArrayList<>(conditions.size());
+		try {
+			for (ValueExpr condition : conditions) {
+				if (!exactFilterCondition(condition)
+						|| !VarNameCollector.process(condition).stream().allMatch(slots::contains)) {
+					return null;
+				}
+				prepared.add(filterEvaluationStrategy.precompile(condition,
+						new QueryEvaluationContext.Minimal(null, valueStore, null)));
+			}
+		} catch (RuntimeException failure) {
+			return null;
+		}
+		String[] names = slots.names().toArray(String[]::new);
+		return new PreparedConditions(List.copyOf(prepared), names, new ArrayBindingSet(names));
+	}
+
+	private List<long[]> restrict(List<long[]> rows, VarSlots slots, List<ValueExpr> conditions) throws IOException {
+		PreparedConditions prepared = prepareConditions(conditions, slots);
+		if (prepared == null) {
+			return null;
+		}
+		if (prepared.steps().isEmpty() || rows.isEmpty()) {
+			return rows;
+		}
+		List<long[]> retained = new ArrayList<>(rows.size());
+		for (long[] row : rows) {
+			if (passes(row, slots, prepared)) {
+				retained.add(row);
+			}
+		}
+		return retained;
+	}
+
+	private boolean passes(long[] row, VarSlots slots, PreparedConditions conditions) throws IOException {
+		if (conditions.steps().isEmpty()) {
+			return true;
+		}
+		ArrayBindingSet bindings = conditions.bindings();
+		for (int slot = 0; slot < slots.size(); slot++) {
+			long id = row[slot];
+			bindings.setBinding(conditions.names()[slot], id == UNBOUND_ID ? null : valueStore.getValue(id));
+		}
+		try {
+			for (QueryValueEvaluationStep condition : conditions.steps()) {
+				if (!filterEvaluationStrategy.isTrue(condition, bindings)) {
+					return false;
+				}
+			}
+			return true;
+		} catch (ValueExprEvaluationException ignored) {
+			// SPARQL FILTER rejects an expression error without invalidating the exact surface.
+			return false;
+		} catch (QueryEvaluationException failure) {
+			throw new ExactFilterEvaluationFailure(failure);
+		}
+	}
+
 	private static boolean hasSingleFiniteDomain(Map<String, Set<Value>> finiteBindingValues) {
 		return finiteBindingValues != null && finiteBindingValues.size() == 1
 				&& finiteBindingValues.values().iterator().next() != null
@@ -610,7 +916,7 @@ final class LmdbFiniteJoinSurfaceEstimator {
 	}
 
 	private static VarSlots buildVarSlots(List<BindingSetAssignment> assignments,
-			List<StatementPattern> prefixPatterns, StatementPattern surfacePattern,
+			List<ExactAccess> prefixAccesses, ExactAccess surfaceAccess,
 			Map<String, Set<Value>> finiteBindingValues) {
 		VarSlots slots = new VarSlots();
 		for (BindingSetAssignment assignment : assignments) {
@@ -619,18 +925,18 @@ final class LmdbFiniteJoinSurfaceEstimator {
 		if (finiteBindingValues != null) {
 			finiteBindingValues.keySet().forEach(slots::add);
 		}
-		for (StatementPattern pattern : prefixPatterns) {
-			addPatternVariables(slots, pattern);
+		for (ExactAccess access : prefixAccesses) {
+			addPatternVariables(slots, access.pattern());
 		}
-		addPatternVariables(slots, surfacePattern);
+		addPatternVariables(slots, surfaceAccess.pattern());
 		return slots;
 	}
 
-	private static VarSlots buildVarSlots(List<List<StatementPattern>> branches) {
+	private static VarSlots buildAlternativeVarSlots(List<AlternativeBranch> branches) {
 		VarSlots slots = new VarSlots();
-		for (List<StatementPattern> branch : branches) {
-			for (StatementPattern pattern : branch) {
-				addPatternVariables(slots, pattern);
+		for (AlternativeBranch branch : branches) {
+			for (ExactAccess access : branch.accesses()) {
+				addPatternVariables(slots, access.pattern());
 			}
 		}
 		return slots;
@@ -650,17 +956,18 @@ final class LmdbFiniteJoinSurfaceEstimator {
 		return row;
 	}
 
-	record SurfaceEstimate(double surfaceRows, double prefixRows, long scannedRows, int branchCount,
+	record SurfaceEstimate(double surfaceRows, double prefixRows, double matchedPrefixRows, long scannedRows,
+			int branchCount,
 			FiniteRelationEstimate relation, boolean exact, int cardinalityProbes) {
 	}
 
-	private record SurfaceCardinality(boolean available, double rows, int probes) {
+	private record SurfaceCardinality(boolean available, double rows, double matchedInputRows, int probes) {
 		private static SurfaceCardinality unavailable() {
-			return new SurfaceCardinality(false, Double.NaN, 0);
+			return new SurfaceCardinality(false, Double.NaN, Double.NaN, 0);
 		}
 	}
 
-	private record Expansion(List<long[]> rows, long scannedRows) {
+	private record Expansion(List<long[]> rows, long scannedRows, long matchedInputRows) {
 	}
 
 	private record PatternIds(long subjectId, long predicateId, long objectId, long contextId, boolean zeroRows) {
@@ -669,8 +976,22 @@ final class LmdbFiniteJoinSurfaceEstimator {
 		}
 	}
 
-	private record AlternativeBranches(List<List<StatementPattern>> branches, boolean containsUnion,
+	private record ExactAccess(StatementPattern pattern, List<ValueExpr> conditions) {
+	}
+
+	private record AlternativeBranch(List<ExactAccess> accesses, List<ValueExpr> conditions) {
+	}
+
+	private record AlternativeBranches(List<AlternativeBranch> branches, boolean containsUnion,
 			int factorOccurrences) {
+	}
+
+	private record PreparedConditions(
+			List<QueryValueEvaluationStep> steps,
+			String[] names,
+			ArrayBindingSet bindings) {
+
+		private static final PreparedConditions EMPTY = new PreparedConditions(List.of(), new String[0], null);
 	}
 
 	private enum Component {
@@ -680,8 +1001,44 @@ final class LmdbFiniteJoinSurfaceEstimator {
 		CONTEXT
 	}
 
+	private static final class ExactFilterEvaluationFailure extends RuntimeException {
+
+		private static final long serialVersionUID = 1L;
+
+		private ExactFilterEvaluationFailure(QueryEvaluationException cause) {
+			super(cause);
+		}
+	}
+
+	private static final class FiniteSurfaceTripleSource implements TripleSource {
+
+		private final ValueFactory valueFactory;
+
+		private FiniteSurfaceTripleSource(ValueFactory valueFactory) {
+			this.valueFactory = valueFactory;
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
+				Resource... contexts) {
+			return TripleSource.EMPTY_ITERATION;
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(StatementOrder order, Resource subject,
+				IRI predicate, Value object, Resource... contexts) {
+			return TripleSource.EMPTY_ITERATION;
+		}
+
+		@Override
+		public ValueFactory getValueFactory() {
+			return valueFactory;
+		}
+	}
+
 	static final class ScanBudget {
 		private long remainingRows;
+		private final Map<PatternIds, Double> cardinalityEstimates = new HashMap<>();
 
 		private ScanBudget(long remainingRows) {
 			this.remainingRows = Math.max(0L, remainingRows);
@@ -710,6 +1067,10 @@ final class LmdbFiniteJoinSurfaceEstimator {
 		int index(String name) {
 			Integer index = indexes.get(name);
 			return index == null ? -1 : index;
+		}
+
+		boolean contains(String name) {
+			return indexes.containsKey(name);
 		}
 
 		int size() {

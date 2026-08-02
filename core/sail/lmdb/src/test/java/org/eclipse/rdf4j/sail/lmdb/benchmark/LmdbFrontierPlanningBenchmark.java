@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
-import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbBenchmarkQueryPlan;
@@ -192,13 +191,12 @@ public class LmdbFrontierPlanningBenchmark {
 			expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 				@Override
 				protected void meetNode(QueryModelNode node) {
-					String source = node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
-					if (source != null && source.startsWith("lmdb-frontier")) {
+					double stateId = node.getDoubleMetricPlanned("plannedFrontierStateId");
+					if (Double.isFinite(stateId) && stateId > 0.0d) {
 						metrics.frontierNodeCount++;
 						metrics.maximumFactorCount = Math.max(metrics.maximumFactorCount,
 								node.getDoubleMetricPlanned("plannedFrontierFactorCount"));
-						metrics.maximumStateId = Math.max(metrics.maximumStateId,
-								node.getDoubleMetricPlanned("plannedFrontierStateId"));
+						metrics.maximumStateId = Math.max(metrics.maximumStateId, stateId);
 						metrics.maximumRows = Math.max(metrics.maximumRows,
 								node.getDoubleMetricPlanned("plannedFrontierRows"));
 					}
