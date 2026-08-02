@@ -68,6 +68,22 @@ public final class PackedCostContext {
 		setEvidenceIdentity(context.bindingLayoutId(), context.correlationMaskId(), context.semanticScopeMaskId());
 	}
 
+	void copyFrom(PackedCostContext context) {
+		prefixRelationIds = context.prefixRelationIds;
+		prefixOffset = context.prefixOffset;
+		prefixCount = context.prefixCount;
+		assuredBindingRelationId = context.assuredBindingRelationId;
+		evidenceStateId = context.evidenceStateId;
+		bindingLayoutId = context.bindingLayoutId;
+		correlationMaskId = context.correlationMaskId;
+		semanticScopeMaskId = context.semanticScopeMaskId;
+		prefixRows = context.prefixRows;
+		leftInputRows = context.leftInputRows;
+		rightInputRows = context.rightInputRows;
+		leftInputEvidenceStateId = context.leftInputEvidenceStateId;
+		rightInputEvidenceStateId = context.rightInputEvidenceStateId;
+	}
+
 	void setEvidenceIdentity(int bindingLayoutId, int correlationMaskId, int semanticScopeMaskId) {
 		if (bindingLayoutId < 0 || correlationMaskId < 0 || semanticScopeMaskId < 0) {
 			throw new IllegalArgumentException("packed evidence identities must be nonnegative");

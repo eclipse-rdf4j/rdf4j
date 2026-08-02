@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDisposition;
 import org.junit.jupiter.api.Test;
 
 class PackedCostSessionLifecycleTest {
@@ -279,9 +280,52 @@ class PackedCostSessionLifecycleTest {
 		assertEquals(first.costEventId(), second.costEventId());
 		assertEquals(1_100, first.evidenceStateId());
 		assertEquals(1_100, second.evidenceStateId());
+		assertEquals(41, firstContext.evidenceStateId(), "event costing must not mutate the caller context");
+		assertEquals(42, firstContext.leftInputEvidenceStateId());
+		assertEquals(41, secondContext.evidenceStateId(), "memoized lookup must retain the deferred caller context");
+		assertEquals(42, secondContext.leftInputEvidenceStateId());
 		String event = session.describeEvent(first.costEventId());
 		assertTrue(event.contains("contextStates=1041/1042/0"), event);
 		assertTrue(event.contains("event/state=0/1043"), event);
+	}
+
+	@Test
+	void boundOnlyFactorDescriptorRemainsDeferredDuringParameterizedAppend() {
+		int[] observedStateIds = new int[2];
+		PackedCostSession provider = new PackedCostSession() {
+			@Override
+			public int realizeEvidenceState(int evidenceStateId) {
+				return evidenceStateId == 0 || evidenceStateId >= 1_000 ? evidenceStateId : evidenceStateId + 1_000;
+			}
+
+			@Override
+			public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				throw new AssertionError("this fixture exercises prefix costing only");
+			}
+
+			@Override
+			public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				observedStateIds[0] = context.evidenceStateId();
+				observedStateIds[1] = output.evidenceStateId();
+				output.setComponentRows(7.0d, 11.0d);
+				output.setEvidenceStateId(1_100);
+			}
+
+			@Override
+			public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				throw new AssertionError("this fixture exercises prefix costing only");
+			}
+		};
+		EventSourcingPackedCostSession session = new EventSourcingPackedCostSession(provider);
+		PackedCostContext context = demandedEvidenceContext();
+		PackedCostEstimate factor = demandedEvidenceProviderInput();
+		factor.setEvidenceDisposition(FrontierStateDisposition.BOUND_ONLY);
+
+		session.appendFactor(29, context, factor);
+
+		assertEquals(1_041, observedStateIds[0], "the consumed prefix must be realized before costing");
+		assertEquals(43, observedStateIds[1], "a parameterized append consumes the exact leaf descriptor directly");
+		assertEquals(41, context.evidenceStateId(), "the caller retains its immutable deferred prefix identity");
 	}
 
 	@Test

@@ -155,6 +155,7 @@ final class EventSourcingPackedCostSession implements PackedCostSession {
 	private final PackedCostSession delegate;
 	private final PackedCostingTraceArena trace = new PackedCostingTraceArena();
 	private final PackedCostEstimate providerInput = new PackedCostEstimate();
+	private final PackedCostContext realizedContext = new PackedCostContext();
 	private final int[] canonicalContextualOperatorRelationIds;
 
 	EventSourcingPackedCostSession(PackedCostSession delegate) {
@@ -170,44 +171,61 @@ final class EventSourcingPackedCostSession implements PackedCostSession {
 
 	@Override
 	public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
-		providerInput.copyProviderInputFrom(output);
-		int retainedEventId = trace.findInvocation(PackedCostingPhase.LEAF, relationId, context, providerInput);
-		if (retainedEventId != 0) {
-			trace.restore(retainedEventId, output);
-			return;
-		}
-		delegate.estimateLeaf(relationId, context, output);
-		trace.append(PackedCostingPhase.LEAF, relationId, context, providerInput, output,
-				delegate.objectiveScore(output));
-	}
-
-	@Override
-	public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
-		providerInput.copyProviderInputFrom(output);
-		int retainedEventId = trace.findInvocation(PackedCostingPhase.PREFIX_EXTENSION, relationId, context,
+		PackedCostContext invocationContext = prepareInvocation(context, output, false);
+		int retainedEventId = trace.findInvocation(PackedCostingPhase.LEAF, relationId, invocationContext,
 				providerInput);
 		if (retainedEventId != 0) {
 			trace.restore(retainedEventId, output);
 			return;
 		}
-		delegate.appendFactor(relationId, context, output);
-		trace.append(PackedCostingPhase.PREFIX_EXTENSION, relationId, context, providerInput, output,
+		delegate.estimateLeaf(relationId, invocationContext, output);
+		trace.append(PackedCostingPhase.LEAF, relationId, invocationContext, providerInput, output,
+				delegate.objectiveScore(output));
+	}
+
+	@Override
+	public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+		boolean replayFactorInput = output.evidenceDisposition() != FrontierStateDisposition.BOUND_ONLY;
+		PackedCostContext invocationContext = prepareInvocation(context, output, replayFactorInput);
+		int retainedEventId = trace.findInvocation(PackedCostingPhase.PREFIX_EXTENSION, relationId, invocationContext,
+				providerInput);
+		if (retainedEventId != 0) {
+			trace.restore(retainedEventId, output);
+			return;
+		}
+		delegate.appendFactor(relationId, invocationContext, output);
+		trace.append(PackedCostingPhase.PREFIX_EXTENSION, relationId, invocationContext, providerInput, output,
 				delegate.objectiveScore(output));
 	}
 
 	@Override
 	public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
 		int canonicalRelationId = canonicalContextualOperatorRelationId(relationId);
-		providerInput.copyProviderInputFrom(output);
+		PackedCostContext invocationContext = prepareInvocation(context, output, true);
 		int retainedEventId = trace.findInvocation(
-				PackedCostingPhase.OPERATOR, canonicalRelationId, context, providerInput);
+				PackedCostingPhase.OPERATOR, canonicalRelationId, invocationContext, providerInput);
 		if (retainedEventId != 0) {
 			trace.restore(retainedEventId, output);
 			return;
 		}
-		delegate.refineOperator(canonicalRelationId, context, output);
-		trace.append(PackedCostingPhase.OPERATOR, canonicalRelationId, context, providerInput, output,
+		delegate.refineOperator(canonicalRelationId, invocationContext, output);
+		trace.append(PackedCostingPhase.OPERATOR, canonicalRelationId, invocationContext, providerInput, output,
 				delegate.objectiveScore(output));
+	}
+
+	private PackedCostContext prepareInvocation(PackedCostContext context, PackedCostEstimate output,
+			boolean realizeProviderInput) {
+		realizedContext.copyFrom(context);
+		realizedContext.setEvidenceStateId(delegate.realizeEvidenceState(context.evidenceStateId()));
+		realizedContext.setOperatorInputs(context.leftInputRows(), context.rightInputRows(),
+				delegate.realizeEvidenceState(context.leftInputEvidenceStateId()),
+				delegate.realizeEvidenceState(context.rightInputEvidenceStateId()));
+		providerInput.copyProviderInputFrom(output);
+		if (realizeProviderInput) {
+			providerInput.setEvidenceStateId(delegate.realizeEvidenceState(providerInput.evidenceStateId()));
+		}
+		output.setEvidenceStateId(providerInput.evidenceStateId());
+		return realizedContext;
 	}
 
 	private int canonicalContextualOperatorRelationId(int relationId) {
@@ -220,28 +238,34 @@ final class EventSourcingPackedCostSession implements PackedCostSession {
 
 	@Override
 	public void refineIntermediateJoin(PackedCostContext context, PackedCostEstimate output) {
-		providerInput.copyProviderInputFrom(output);
-		int retainedEventId = trace.findInvocation(PackedCostingPhase.INTERMEDIATE_JOIN, 0, context, providerInput);
-		if (retainedEventId != 0) {
-			trace.restore(retainedEventId, output);
-			return;
-		}
-		delegate.refineIntermediateJoin(context, output);
-		trace.append(PackedCostingPhase.INTERMEDIATE_JOIN, 0, context, providerInput, output,
-				delegate.objectiveScore(output));
-	}
-
-	void refinePhysicalJoin(int implementation, PackedCostContext context, PackedCostEstimate output) {
-		providerInput.copyProviderInputFrom(output);
-		int retainedEventId = trace.findInvocation(PackedCostingPhase.PHYSICAL_JOIN, implementation, context,
+		PackedCostContext invocationContext = prepareInvocation(context, output, true);
+		int retainedEventId = trace.findInvocation(PackedCostingPhase.INTERMEDIATE_JOIN, 0, invocationContext,
 				providerInput);
 		if (retainedEventId != 0) {
 			trace.restore(retainedEventId, output);
 			return;
 		}
-		delegate.refineIntermediateJoin(context, output);
-		trace.append(PackedCostingPhase.PHYSICAL_JOIN, implementation, context, providerInput, output,
+		delegate.refineIntermediateJoin(invocationContext, output);
+		trace.append(PackedCostingPhase.INTERMEDIATE_JOIN, 0, invocationContext, providerInput, output,
 				delegate.objectiveScore(output));
+	}
+
+	void refinePhysicalJoin(int implementation, PackedCostContext context, PackedCostEstimate output) {
+		PackedCostContext invocationContext = prepareInvocation(context, output, true);
+		int retainedEventId = trace.findInvocation(PackedCostingPhase.PHYSICAL_JOIN, implementation, invocationContext,
+				providerInput);
+		if (retainedEventId != 0) {
+			trace.restore(retainedEventId, output);
+			return;
+		}
+		delegate.refineIntermediateJoin(invocationContext, output);
+		trace.append(PackedCostingPhase.PHYSICAL_JOIN, implementation, invocationContext, providerInput, output,
+				delegate.objectiveScore(output));
+	}
+
+	@Override
+	public int realizeEvidenceState(int evidenceStateId) {
+		return delegate.realizeEvidenceState(evidenceStateId);
 	}
 
 	@Override
@@ -326,6 +350,11 @@ final class FailoverPackedCostSession implements PackedCostSession {
 	}
 
 	@Override
+	public int realizeEvidenceState(int evidenceStateId) {
+		return delegate.realizeEvidenceState(evidenceStateId);
+	}
+
+	@Override
 	public void close() {
 		delegate.close();
 	}
@@ -381,6 +410,11 @@ final class ProofAwarePackedCostSession implements PackedCostSession {
 	@Override
 	public double objectiveScore(PackedCostEstimate estimate) {
 		return delegate.objectiveScore(estimate);
+	}
+
+	@Override
+	public int realizeEvidenceState(int evidenceStateId) {
+		return delegate.realizeEvidenceState(evidenceStateId);
 	}
 
 	@Override
