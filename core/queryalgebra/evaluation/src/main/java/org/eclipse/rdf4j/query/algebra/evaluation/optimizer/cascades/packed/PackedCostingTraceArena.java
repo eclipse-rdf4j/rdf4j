@@ -40,6 +40,9 @@ final class PackedCostingTraceArena {
 	private int[] inputStateIds = new int[INITIAL_CAPACITY];
 	private int[] leftStateIds = new int[INITIAL_CAPACITY];
 	private int[] rightStateIds = new int[INITIAL_CAPACITY];
+	private int[] inputSourceStateIds = new int[INITIAL_CAPACITY];
+	private int[] leftSourceStateIds = new int[INITIAL_CAPACITY];
+	private int[] rightSourceStateIds = new int[INITIAL_CAPACITY];
 	private int[] outputStateIds = new int[INITIAL_CAPACITY];
 	private int[] bindingLayoutIds = new int[INITIAL_CAPACITY];
 	private int[] correlationMaskIds = new int[INITIAL_CAPACITY];
@@ -62,6 +65,7 @@ final class PackedCostingTraceArena {
 	private double[] providerInputInvocations = new double[INITIAL_CAPACITY];
 	private int[] providerInputCostEventIds = new int[INITIAL_CAPACITY];
 	private int[] providerInputStateIds = new int[INITIAL_CAPACITY];
+	private int[] providerInputSourceStateIds = new int[INITIAL_CAPACITY];
 	private int[] providerInputLookupMasks = new int[INITIAL_CAPACITY];
 	private int[] providerInputMissingLookupMasks = new int[INITIAL_CAPACITY];
 	private int[] providerInputIndexPrefixLengths = new int[INITIAL_CAPACITY];
@@ -116,7 +120,8 @@ final class PackedCostingTraceArena {
 	private int doubleMetricSize;
 	private int size;
 
-	int append(PackedCostingPhase phase, int relationId, PackedCostContext context,
+	int append(PackedCostingPhase phase, int relationId, PackedCostContext sourceContext,
+			int providerInputSourceStateId, PackedCostContext context,
 			PackedCostEstimate providerInput, PackedCostEstimate estimate, double objectiveCost) {
 		int eventId = ++size;
 		ensureEventCapacity(eventId);
@@ -136,6 +141,12 @@ final class PackedCostingTraceArena {
 		inputStateIds[eventId] = context.evidenceStateId();
 		leftStateIds[eventId] = context.leftInputEvidenceStateId();
 		rightStateIds[eventId] = context.rightInputEvidenceStateId();
+		inputSourceStateIds[eventId] = realizationSource(
+				sourceContext.evidenceStateId(), context.evidenceStateId());
+		leftSourceStateIds[eventId] = realizationSource(
+				sourceContext.leftInputEvidenceStateId(), context.leftInputEvidenceStateId());
+		rightSourceStateIds[eventId] = realizationSource(
+				sourceContext.rightInputEvidenceStateId(), context.rightInputEvidenceStateId());
 		outputStateIds[eventId] = estimate.evidenceStateId();
 		bindingLayoutIds[eventId] = context.bindingLayoutId();
 		correlationMaskIds[eventId] = context.correlationMaskId();
@@ -158,6 +169,8 @@ final class PackedCostingTraceArena {
 		providerInputInvocations[eventId] = providerInput.invocations();
 		providerInputCostEventIds[eventId] = providerInput.costEventId();
 		providerInputStateIds[eventId] = providerInput.evidenceStateId();
+		providerInputSourceStateIds[eventId] = realizationSource(
+				providerInputSourceStateId, providerInput.evidenceStateId());
 		providerInputLookupMasks[eventId] = providerInput.lookupComponentMask();
 		providerInputMissingLookupMasks[eventId] = providerInput.missingLookupComponentMask();
 		providerInputIndexPrefixLengths[eventId] = providerInput.indexPrefixLength();
@@ -614,6 +627,10 @@ final class PackedCostingTraceArena {
 		return (byte) flags;
 	}
 
+	private static int realizationSource(int sourceStateId, int realizedStateId) {
+		return sourceStateId == realizedStateId ? 0 : sourceStateId;
+	}
+
 	private static byte enumCode(Enum<?> value) {
 		return value == null ? 0 : (byte) (value.ordinal() + 1);
 	}
@@ -660,6 +677,8 @@ final class PackedCostingTraceArena {
 				Arrays.copyOf(prefixRows, length), Arrays.copyOf(assuredBindingRelationIds, length),
 				Arrays.copyOf(inputStateIds, length),
 				Arrays.copyOf(leftStateIds, length), Arrays.copyOf(rightStateIds, length),
+				Arrays.copyOf(inputSourceStateIds, length), Arrays.copyOf(leftSourceStateIds, length),
+				Arrays.copyOf(rightSourceStateIds, length),
 				Arrays.copyOf(outputStateIds, length), Arrays.copyOf(bindingLayoutIds, length),
 				Arrays.copyOf(correlationMaskIds, length), Arrays.copyOf(semanticScopeMaskIds, length),
 				Arrays.copyOf(leftInputRows, length), Arrays.copyOf(rightInputRows, length),
@@ -672,7 +691,8 @@ final class PackedCostingTraceArena {
 				Arrays.copyOf(providerInputRemoteCalls, length),
 				Arrays.copyOf(providerInputPeakMemoryRows, length), Arrays.copyOf(providerInputAccessRows, length),
 				Arrays.copyOf(providerInputInvocations, length), Arrays.copyOf(providerInputCostEventIds, length),
-				Arrays.copyOf(providerInputStateIds, length), Arrays.copyOf(providerInputLookupMasks, length),
+				Arrays.copyOf(providerInputStateIds, length), Arrays.copyOf(providerInputSourceStateIds, length),
+				Arrays.copyOf(providerInputLookupMasks, length),
 				Arrays.copyOf(providerInputMissingLookupMasks, length),
 				Arrays.copyOf(providerInputIndexPrefixLengths, length),
 				Arrays.copyOf(providerInputIndexNameIds, length), Arrays.copyOf(providerInputAccessModeIds, length),
@@ -768,6 +788,9 @@ final class PackedCostingTraceArena {
 		hash = mix(hash, inputStateIds[eventId]);
 		hash = mix(hash, leftStateIds[eventId]);
 		hash = mix(hash, rightStateIds[eventId]);
+		hash = mix(hash, inputSourceStateIds[eventId]);
+		hash = mix(hash, leftSourceStateIds[eventId]);
+		hash = mix(hash, rightSourceStateIds[eventId]);
 		hash = mix(hash, outputStateIds[eventId]);
 		hash = mix(hash, Double.doubleToLongBits(providerInputRows[eventId]));
 		hash = mix(hash, Double.doubleToLongBits(providerInputWorkRows[eventId]));
@@ -785,6 +808,7 @@ final class PackedCostingTraceArena {
 		hash = mix(hash, Double.doubleToLongBits(providerInputInvocations[eventId]));
 		hash = mix(hash, providerInputCostEventIds[eventId]);
 		hash = mix(hash, providerInputStateIds[eventId]);
+		hash = mix(hash, providerInputSourceStateIds[eventId]);
 		hash = mix(hash, providerInputLookupMasks[eventId]);
 		hash = mix(hash, providerInputMissingLookupMasks[eventId]);
 		hash = mix(hash, providerInputIndexPrefixLengths[eventId]);
@@ -888,6 +912,9 @@ final class PackedCostingTraceArena {
 		inputStateIds = Arrays.copyOf(inputStateIds, capacity);
 		leftStateIds = Arrays.copyOf(leftStateIds, capacity);
 		rightStateIds = Arrays.copyOf(rightStateIds, capacity);
+		inputSourceStateIds = Arrays.copyOf(inputSourceStateIds, capacity);
+		leftSourceStateIds = Arrays.copyOf(leftSourceStateIds, capacity);
+		rightSourceStateIds = Arrays.copyOf(rightSourceStateIds, capacity);
 		outputStateIds = Arrays.copyOf(outputStateIds, capacity);
 		bindingLayoutIds = Arrays.copyOf(bindingLayoutIds, capacity);
 		correlationMaskIds = Arrays.copyOf(correlationMaskIds, capacity);
@@ -910,6 +937,7 @@ final class PackedCostingTraceArena {
 		providerInputInvocations = Arrays.copyOf(providerInputInvocations, capacity);
 		providerInputCostEventIds = Arrays.copyOf(providerInputCostEventIds, capacity);
 		providerInputStateIds = Arrays.copyOf(providerInputStateIds, capacity);
+		providerInputSourceStateIds = Arrays.copyOf(providerInputSourceStateIds, capacity);
 		providerInputLookupMasks = Arrays.copyOf(providerInputLookupMasks, capacity);
 		providerInputMissingLookupMasks = Arrays.copyOf(providerInputMissingLookupMasks, capacity);
 		providerInputIndexPrefixLengths = Arrays.copyOf(providerInputIndexPrefixLengths, capacity);

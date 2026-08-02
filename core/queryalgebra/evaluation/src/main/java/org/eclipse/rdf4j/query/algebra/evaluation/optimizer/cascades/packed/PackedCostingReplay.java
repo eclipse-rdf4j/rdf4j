@@ -69,9 +69,15 @@ public final class PackedCostingReplay {
 			int inputOrdinal = trace.inputStateOrdinal(eventId);
 			int leftOrdinal = trace.leftStateOrdinal(eventId);
 			int rightOrdinal = trace.rightStateOrdinal(eventId);
-			int inputStateId = currentState(inputOrdinal, currentStateByCachedOrdinal, eventId, "input");
-			int leftStateId = currentState(leftOrdinal, currentStateByCachedOrdinal, eventId, "left input");
-			int rightStateId = currentState(rightOrdinal, currentStateByCachedOrdinal, eventId, "right input");
+			int inputStateId = currentState(inputOrdinal, trace.inputSourceStateOrdinal(eventId), currentSession,
+					currentStateByCachedOrdinal, currentRowsByCachedOrdinal, trace.prefixRows(eventId), eventId,
+					"input");
+			int leftStateId = currentState(leftOrdinal, trace.leftSourceStateOrdinal(eventId), currentSession,
+					currentStateByCachedOrdinal, currentRowsByCachedOrdinal, trace.leftInputRows(eventId), eventId,
+					"left input");
+			int rightStateId = currentState(rightOrdinal, trace.rightSourceStateOrdinal(eventId), currentSession,
+					currentStateByCachedOrdinal, currentRowsByCachedOrdinal, trace.rightInputRows(eventId), eventId,
+					"right input");
 			double prefixRows = replayPrefixRows(trace, eventId, inputOrdinal, leftOrdinal, rightOrdinal,
 					currentRowsByCachedOrdinal);
 			double leftRows = currentRows(leftOrdinal, currentRowsByCachedOrdinal, trace.leftInputRows(eventId));
@@ -82,7 +88,8 @@ public final class PackedCostingReplay {
 					trace.semanticScopeMaskId(eventId));
 			context.setOperatorInputs(leftRows, rightRows, leftStateId, rightStateId);
 			estimate.clear();
-			restoreProviderInput(trace, eventId, estimate, currentStateByCachedOrdinal);
+			restoreProviderInput(trace, eventId, estimate, currentSession, currentStateByCachedOrdinal,
+					currentRowsByCachedOrdinal);
 			switch (trace.phase(eventId)) {
 			case LEAF -> replaySession.estimateLeaf(trace.relationId(eventId), context, estimate);
 			case PREFIX_EXTENSION -> replaySession.appendFactor(trace.relationId(eventId), context, estimate);
@@ -247,7 +254,8 @@ public final class PackedCostingReplay {
 	}
 
 	private static void restoreProviderInput(PackedCostingTrace trace, int eventId, PackedCostEstimate estimate,
-			int[] currentStateByCachedOrdinal) {
+			PackedCostSession currentSession, int[] currentStateByCachedOrdinal,
+			double[] currentRowsByCachedOrdinal) {
 		double rows = trace.providerInputRows(eventId);
 		double work = trace.providerInputWorkRows(eventId);
 		if (finiteNonNegative(rows) && finiteNonNegative(work)) {
@@ -294,7 +302,9 @@ public final class PackedCostingReplay {
 		estimate.setEstimateFusion(stringValue(trace.providerInputEstimateFusion(eventId)));
 		int cachedStateOrdinal = trace.providerInputStateOrdinal(eventId);
 		int currentStateId = currentState(
-				cachedStateOrdinal, currentStateByCachedOrdinal, eventId, "provider input");
+				cachedStateOrdinal, trace.providerInputSourceStateOrdinal(eventId), currentSession,
+				currentStateByCachedOrdinal, currentRowsByCachedOrdinal, trace.providerInputRows(eventId), eventId,
+				"provider input");
 		estimate.setEvidenceStateId(currentStateId);
 		estimate.setEvidenceGuarantee(trace.providerInputGuarantee(eventId));
 		if (currentStateId != 0) {
@@ -320,6 +330,35 @@ public final class PackedCostingReplay {
 					+ " Frontier state before its originating event");
 		}
 		return stateId;
+	}
+
+	private static int currentState(int cachedOrdinal, int sourceOrdinal, PackedCostSession currentSession,
+			int[] currentStateByCachedOrdinal, double[] currentRowsByCachedOrdinal, double fallbackRows, int eventId,
+			String role) {
+		if (cachedOrdinal == 0) {
+			return 0;
+		}
+		if (cachedOrdinal < 0 || cachedOrdinal >= currentStateByCachedOrdinal.length) {
+			throw new IllegalStateException("costing event " + eventId + " has an invalid " + role + " state ordinal");
+		}
+		int stateId = currentStateByCachedOrdinal[cachedOrdinal];
+		if (stateId != 0) {
+			return stateId;
+		}
+		if (sourceOrdinal == 0 || sourceOrdinal == cachedOrdinal) {
+			throw new IllegalStateException("costing event " + eventId + " uses " + role
+					+ " Frontier state before its originating event");
+		}
+		int sourceStateId = currentState(sourceOrdinal, currentStateByCachedOrdinal, eventId, role + " source");
+		int realizedStateId = currentSession.realizeEvidenceState(sourceStateId);
+		if (realizedStateId == sourceStateId) {
+			throw new IllegalStateException("costing event " + eventId + " did not reproduce its recorded " + role
+					+ " Frontier realization");
+		}
+		double rows = currentRows(sourceOrdinal, currentRowsByCachedOrdinal, fallbackRows);
+		bindCurrentState(cachedOrdinal, realizedStateId, rows, currentStateByCachedOrdinal,
+				currentRowsByCachedOrdinal, eventId);
+		return realizedStateId;
 	}
 
 	private static double currentRows(int cachedOrdinal, double[] currentRowsByCachedOrdinal, double fallback) {

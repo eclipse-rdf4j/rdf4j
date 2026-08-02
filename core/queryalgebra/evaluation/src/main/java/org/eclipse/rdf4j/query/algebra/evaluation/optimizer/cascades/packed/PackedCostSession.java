@@ -157,6 +157,7 @@ final class EventSourcingPackedCostSession implements PackedCostSession {
 	private final PackedCostEstimate providerInput = new PackedCostEstimate();
 	private final PackedCostContext realizedContext = new PackedCostContext();
 	private final int[] canonicalContextualOperatorRelationIds;
+	private int providerInputSourceStateId;
 
 	EventSourcingPackedCostSession(PackedCostSession delegate) {
 		this(delegate, null);
@@ -179,7 +180,8 @@ final class EventSourcingPackedCostSession implements PackedCostSession {
 			return;
 		}
 		delegate.estimateLeaf(relationId, invocationContext, output);
-		trace.append(PackedCostingPhase.LEAF, relationId, invocationContext, providerInput, output,
+		trace.append(PackedCostingPhase.LEAF, relationId, context, providerInputSourceStateId, invocationContext,
+				providerInput, output,
 				delegate.objectiveScore(output));
 	}
 
@@ -194,7 +196,8 @@ final class EventSourcingPackedCostSession implements PackedCostSession {
 			return;
 		}
 		delegate.appendFactor(relationId, invocationContext, output);
-		trace.append(PackedCostingPhase.PREFIX_EXTENSION, relationId, invocationContext, providerInput, output,
+		trace.append(PackedCostingPhase.PREFIX_EXTENSION, relationId, context, providerInputSourceStateId,
+				invocationContext, providerInput, output,
 				delegate.objectiveScore(output));
 	}
 
@@ -209,7 +212,8 @@ final class EventSourcingPackedCostSession implements PackedCostSession {
 			return;
 		}
 		delegate.refineOperator(canonicalRelationId, invocationContext, output);
-		trace.append(PackedCostingPhase.OPERATOR, canonicalRelationId, invocationContext, providerInput, output,
+		trace.append(PackedCostingPhase.OPERATOR, canonicalRelationId, context, providerInputSourceStateId,
+				invocationContext, providerInput, output,
 				delegate.objectiveScore(output));
 	}
 
@@ -221,6 +225,7 @@ final class EventSourcingPackedCostSession implements PackedCostSession {
 				delegate.realizeEvidenceState(context.leftInputEvidenceStateId()),
 				delegate.realizeEvidenceState(context.rightInputEvidenceStateId()));
 		providerInput.copyProviderInputFrom(output);
+		providerInputSourceStateId = providerInput.evidenceStateId();
 		if (realizeProviderInput) {
 			providerInput.setEvidenceStateId(delegate.realizeEvidenceState(providerInput.evidenceStateId()));
 		}
@@ -246,7 +251,8 @@ final class EventSourcingPackedCostSession implements PackedCostSession {
 			return;
 		}
 		delegate.refineIntermediateJoin(invocationContext, output);
-		trace.append(PackedCostingPhase.INTERMEDIATE_JOIN, 0, invocationContext, providerInput, output,
+		trace.append(PackedCostingPhase.INTERMEDIATE_JOIN, 0, context, providerInputSourceStateId, invocationContext,
+				providerInput, output,
 				delegate.objectiveScore(output));
 	}
 
@@ -259,7 +265,8 @@ final class EventSourcingPackedCostSession implements PackedCostSession {
 			return;
 		}
 		delegate.refineIntermediateJoin(invocationContext, output);
-		trace.append(PackedCostingPhase.PHYSICAL_JOIN, implementation, invocationContext, providerInput, output,
+		trace.append(PackedCostingPhase.PHYSICAL_JOIN, implementation, context, providerInputSourceStateId,
+				invocationContext, providerInput, output,
 				delegate.objectiveScore(output));
 	}
 

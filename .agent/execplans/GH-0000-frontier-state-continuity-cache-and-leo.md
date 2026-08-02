@@ -80,11 +80,20 @@ must either validate a newly recorded decision event or fully replan.
   query-index access checks, and canonicalize each completed Frontier payload exactly once; q9 reaches 627.240 ms/op.
 - [x] (2026-08-02 19:06Z) Trace the immutable candidate lifecycle for nested subselects and re-enumerate a prioritized
   JOIN when a descendant winner changes; the focused repeated-direct-lookup regression now passes in `AUTO` mode.
+- [x] (2026-08-02 22:52Z) Record and replay demand-realization aliases so a cached descriptor reproduces the canonical
+  Frontier state consumed by a later immutable costing event; 65 focused cache/lifecycle/arena tests pass.
 - [ ] Restore the formal packed join hypergraph and DPhyp CSG/CMP receiver so bounded search eliminates only
   topologically impossible subproblems and never substitutes traversal priority for enumeration completeness.
 - [ ] Verify LMDB, query snapshots, benchmarks, and the Theme corpus.
 
 ## Surprises & Discoveries
+
+- Observation: a canonical Frontier state can first appear as a later costing event input even though the event which
+  produced its logical evidence emitted only a replayable or bound-only descriptor.
+  Evidence: `costingReplayReconstructsDemandRealizedStatesFromRecordedDescriptorAliases` records a descriptor leaf,
+  realizes it before a physical join, and fails stale replay with `costing event 4 uses left input Frontier state
+  before its originating event`. The descriptor ordinal is already bound; the trace omitted the deterministic
+  descriptor-to-canonical realization which created the later input identity.
 
 - Observation: `PackedCostContext` already has a query-local `evidenceStateId`, and the normal dense, sparse, and
   multiword join searches use it. The loss is not a missing provider interface; it is a set of state-free contextual
@@ -435,6 +444,13 @@ must either validate a newly recorded decision event or fully replan.
   a bitwise floating-point contract proves canonical diagnostic order is unchanged.
 
 ## Decision Log
+
+- Decision: record source-to-realized state aliases on the originating immutable costing event and replay the exact
+  provider realization only when the realized ordinal has not already been bound.
+  Rationale: realization changes the representation required by a provider call without changing statistical
+  evidence. An explicit alias preserves event chronology and makes detached replay deterministic; inferring the alias
+  from rows, guarantees, state order, or payload similarity would be heuristic and could merge distinct evidence.
+  Date/Author: 2026-08-02 / Codex
 
 - Decision: after prioritized JOIN enumeration, re-enumerate that JOIN exactly when its direct child winner
   identities change; do not promote the executable-fallback tier to hide the stale certificate.
@@ -1091,3 +1107,11 @@ is not the architectural fix: a costly prefix can unlock a cheap bound access, s
 admissible ordering proof. Repository history confirmed that the binary packed rewrite had removed the prior formal
 DPhyp layer. The active milestone therefore restores the oracle-tested hypergraph/CSG-CMP abstraction and routes
 Frontier/event-aware costing through its receiver; no cost or cardinality value participates in topology generation.
+
+Revision note (2026-08-02 22:52Z): Demand realization is now an explicit event-sourced representation alias rather
+than an implicit jump between unrelated detached state ordinals. Each event records only source IDs which differ from
+the provider-consumed state, and stale replay invokes the current session's exact realization before reproducing the
+candidate. The focused regression first failed at event 4 with an unbound canonical left-input ordinal and now passes;
+the full cache/lifecycle/arena selection is 65/65 green, LMDB cache and semi/anti selections are 11/11 green, and the
+LMDB integration class retains only its same five previously isolated composition failures. This is provenance, not a
+costing rule: no estimate, threshold, candidate rank, query fingerprint, predicate, or access path controls it.

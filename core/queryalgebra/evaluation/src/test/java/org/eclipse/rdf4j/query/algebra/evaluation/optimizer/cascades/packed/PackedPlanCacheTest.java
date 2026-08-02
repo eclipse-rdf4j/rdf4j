@@ -471,6 +471,39 @@ class PackedPlanCacheTest {
 		}
 	}
 
+	@Test
+	void costingReplayReconstructsDemandRealizedStatesFromRecordedDescriptorAliases() {
+		PackedPlanCache cache = new PackedPlanCache(8, 1);
+		TupleExpr source = connectedJoin("left", "right");
+		PackedPlanCache.Context original = context(11L);
+		AtomicInteger coldRealizations = new AtomicInteger();
+		PackedCostModel coldModel = demandRealizedFrontierCostModel(coldRealizations);
+		PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), cache, original, coldModel);
+		PackedPlanCache.PlanEntry entry = cache.findPlan(cache.fingerprint(source), original, source);
+		PackedCostingTrace coldTrace = entry.recipe().costingTrace();
+		boolean recordedAlias = false;
+		for (int eventId = 1; eventId <= coldTrace.eventCount(); eventId++) {
+			recordedAlias |= coldTrace.inputSourceStateOrdinal(eventId) != 0;
+			recordedAlias |= coldTrace.leftSourceStateOrdinal(eventId) != 0;
+			recordedAlias |= coldTrace.rightSourceStateOrdinal(eventId) != 0;
+			recordedAlias |= coldTrace.providerInputSourceStateOrdinal(eventId) != 0;
+		}
+		assertTrue(recordedAlias, "the cold trace must detach the source of every demand-realized state");
+		PackedPlanValidationRequest request = new PackedPlanValidationRequest(
+				new PackedQueryView(entry.query()), entry.recipe(), original, context(12L));
+		AtomicInteger replayRealizations = new AtomicInteger();
+		PackedCostModel currentModel = demandRealizedFrontierCostModel(replayRealizations);
+
+		try (PackedCostSession session = currentModel.openSession(new PackedQueryView(entry.query()))) {
+			PackedCostingReplay.Result replay = PackedCostingReplay.replay(request, session);
+
+			assertEquals(request.candidateCount(), replay.candidateCount());
+		}
+		assertTrue(coldRealizations.get() > 0, "cold planning must consume at least one deferred descriptor");
+		assertTrue(replayRealizations.get() > 0,
+				"stale replay must reconstruct the current canonical state from the recorded descriptor alias");
+	}
+
 	private static double expectedReplayCost(PackedPlanValidationRequest request, int candidate,
 			double[] replayedEventCosts, double[] expectedCosts, byte[] states) {
 		if (states[candidate] == 2) {
@@ -926,6 +959,66 @@ class PackedPlanCacheTest {
 						output.setEvidenceStateId(state.stateId());
 						output.setEvidenceGuarantee(state.summary().guarantee());
 						output.setEvidenceDisposition(FrontierStateDisposition.COMPOSABLE_PAYLOAD);
+					}
+				};
+			}
+		};
+	}
+
+	private static PackedCostModel demandRealizedFrontierCostModel(AtomicInteger realizations) {
+		return new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return relationId + 1.0d;
+			}
+
+			@Override
+			public PackedCostSession openSession(PackedQueryView query) {
+				return new PackedCostSession() {
+					private final FrontierStateArena arena = new FrontierStateArena(64L * 1024L);
+					private final EvidenceStateRef descriptor = arena.append(
+							FrontierLayout.of("subject"), EvidenceStateSummary.exact(2.0d));
+					private final EvidenceStateRef canonical = arena.append(
+							FrontierLayout.of("subject"), EvidenceStateSummary.exact(2.0d));
+
+					@Override
+					public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						output.setRows(relationId + 1.0d, relationId + 1.0d);
+						output.setEvidenceStateId(descriptor.stateId());
+						output.setEvidenceGuarantee(descriptor.summary().guarantee());
+						output.setEvidenceDisposition(FrontierStateDisposition.BOUND_ONLY);
+					}
+
+					@Override
+					public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						assertEquals(canonical.stateId(), context.evidenceStateId());
+						output.setContextualRows(context.prefixRows() * 2.0d, context.prefixRows() * 2.0d);
+						output.setEvidenceStateId(canonical.stateId());
+						output.setEvidenceGuarantee(canonical.summary().guarantee());
+						output.setEvidenceDisposition(FrontierStateDisposition.COMPOSABLE_PAYLOAD);
+					}
+
+					@Override
+					public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+					}
+
+					@Override
+					public int realizeEvidenceState(int evidenceStateId) {
+						if (evidenceStateId == descriptor.stateId()) {
+							realizations.incrementAndGet();
+							return canonical.stateId();
+						}
+						return evidenceStateId;
+					}
+
+					@Override
+					public FrontierEvidenceBundle detachEvidence(int[] evidenceStateIds) {
+						return arena.exportEvidence(evidenceStateIds);
+					}
+
+					@Override
+					public void close() {
+						arena.close();
 					}
 				};
 			}

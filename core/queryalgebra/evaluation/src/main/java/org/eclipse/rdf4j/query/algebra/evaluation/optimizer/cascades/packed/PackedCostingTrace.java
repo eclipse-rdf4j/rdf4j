@@ -34,6 +34,9 @@ final class PackedCostingTrace {
 	private final int[] inputStateIds;
 	private final int[] leftStateIds;
 	private final int[] rightStateIds;
+	private final int[] inputSourceStateIds;
+	private final int[] leftSourceStateIds;
+	private final int[] rightSourceStateIds;
 	private final int[] outputStateIds;
 	private final int[] bindingLayoutIds;
 	private final int[] correlationMaskIds;
@@ -56,6 +59,7 @@ final class PackedCostingTrace {
 	private final double[] providerInputInvocations;
 	private final int[] providerInputCostEventIds;
 	private final int[] providerInputStateIds;
+	private final int[] providerInputSourceStateIds;
 	private final int[] providerInputLookupMasks;
 	private final int[] providerInputMissingLookupMasks;
 	private final int[] providerInputIndexPrefixLengths;
@@ -103,6 +107,7 @@ final class PackedCostingTrace {
 	PackedCostingTrace(byte[] phases, int[] relationIds, long[] contextFingerprints,
 			int[] prefixStarts, int[] prefixCounts, int[] prefixRelationIds, double[] prefixRows,
 			int[] assuredBindingRelationIds, int[] inputStateIds, int[] leftStateIds, int[] rightStateIds,
+			int[] inputSourceStateIds, int[] leftSourceStateIds, int[] rightSourceStateIds,
 			int[] outputStateIds, int[] bindingLayoutIds, int[] correlationMaskIds, int[] semanticScopeMaskIds,
 			double[] leftInputRows, double[] rightInputRows, double[] providerInputRows,
 			double[] providerInputWorkRows, double[] providerInputSequentialRows,
@@ -112,7 +117,8 @@ final class PackedCostingTrace {
 			double[] providerInputResultRows, double[] providerInputRemoteCalls,
 			double[] providerInputPeakMemoryRows,
 			double[] providerInputAccessRows, double[] providerInputInvocations,
-			int[] providerInputCostEventIds, int[] providerInputStateIds, int[] providerInputLookupMasks,
+			int[] providerInputCostEventIds, int[] providerInputStateIds, int[] providerInputSourceStateIds,
+			int[] providerInputLookupMasks,
 			int[] providerInputMissingLookupMasks, int[] providerInputIndexPrefixLengths,
 			int[] providerInputIndexNameIds, int[] providerInputAccessModeIds,
 			int[] providerInputEstimateSourceIds, int[] providerInputEstimateFusionIds,
@@ -139,6 +145,9 @@ final class PackedCostingTrace {
 		this.inputStateIds = inputStateIds;
 		this.leftStateIds = leftStateIds;
 		this.rightStateIds = rightStateIds;
+		this.inputSourceStateIds = inputSourceStateIds;
+		this.leftSourceStateIds = leftSourceStateIds;
+		this.rightSourceStateIds = rightSourceStateIds;
 		this.outputStateIds = outputStateIds;
 		this.bindingLayoutIds = bindingLayoutIds;
 		this.correlationMaskIds = correlationMaskIds;
@@ -161,6 +170,7 @@ final class PackedCostingTrace {
 		this.providerInputInvocations = providerInputInvocations;
 		this.providerInputCostEventIds = providerInputCostEventIds;
 		this.providerInputStateIds = providerInputStateIds;
+		this.providerInputSourceStateIds = providerInputSourceStateIds;
 		this.providerInputLookupMasks = providerInputLookupMasks;
 		this.providerInputMissingLookupMasks = providerInputMissingLookupMasks;
 		this.providerInputIndexPrefixLengths = providerInputIndexPrefixLengths;
@@ -218,11 +228,13 @@ final class PackedCostingTrace {
 		return new PackedCostingTrace(
 				eventBytes, eventInts, eventLongs,
 				eventInts, eventInts, new int[0], eventDoubles,
-				eventInts, eventInts, eventInts, eventInts, eventInts, eventInts, eventInts, eventInts,
+				eventInts, eventInts, eventInts, eventInts, eventInts, eventInts, eventInts, eventInts, eventInts,
+				eventInts, eventInts,
 				eventDoubles, eventDoubles,
 				eventDoubles, eventDoubles, eventDoubles, eventDoubles, eventDoubles, eventDoubles, eventDoubles,
 				eventDoubles, eventDoubles, eventDoubles, eventDoubles, eventDoubles, eventDoubles, eventDoubles,
 				eventInts, eventInts, eventInts, eventInts, eventInts, eventInts, eventInts, eventInts, eventInts,
+				eventInts,
 				eventBytes, eventBytes, eventBytes, eventBytes, eventBytes, eventBytes,
 				eventDoubles, eventDoubles, eventDoubles,
 				eventDoubles, eventDoubles, eventDoubles, eventDoubles, eventDoubles, eventDoubles, eventDoubles,
@@ -339,6 +351,8 @@ final class PackedCostingTrace {
 				projectedPrefixRelationIds, select(prefixRows, eventMapping, length),
 				select(assuredBindingRelationIds, eventMapping, length), select(inputStateIds, eventMapping, length),
 				select(leftStateIds, eventMapping, length), select(rightStateIds, eventMapping, length),
+				select(inputSourceStateIds, eventMapping, length), select(leftSourceStateIds, eventMapping, length),
+				select(rightSourceStateIds, eventMapping, length),
 				select(outputStateIds, eventMapping, length), select(bindingLayoutIds, eventMapping, length),
 				select(correlationMaskIds, eventMapping, length),
 				select(semanticScopeMaskIds, eventMapping, length), select(leftInputRows, eventMapping, length),
@@ -357,6 +371,7 @@ final class PackedCostingTrace {
 				select(providerInputAccessRows, eventMapping, length),
 				select(providerInputInvocations, eventMapping, length), projectedProviderInputCostEventIds,
 				select(providerInputStateIds, eventMapping, length),
+				select(providerInputSourceStateIds, eventMapping, length),
 				select(providerInputLookupMasks, eventMapping, length),
 				select(providerInputMissingLookupMasks, eventMapping, length),
 				select(providerInputIndexPrefixLengths, eventMapping, length), projectedProviderInputIndexNameIds,
@@ -570,6 +585,21 @@ final class PackedCostingTrace {
 		return rightStateIds[eventId];
 	}
 
+	int inputSourceStateOrdinal(int eventId) {
+		checkEventId(eventId);
+		return inputSourceStateIds[eventId];
+	}
+
+	int leftSourceStateOrdinal(int eventId) {
+		checkEventId(eventId);
+		return leftSourceStateIds[eventId];
+	}
+
+	int rightSourceStateOrdinal(int eventId) {
+		checkEventId(eventId);
+		return rightSourceStateIds[eventId];
+	}
+
 	int outputStateOrdinal(int eventId) {
 		checkEventId(eventId);
 		return outputStateIds[eventId];
@@ -705,6 +735,11 @@ final class PackedCostingTrace {
 	int providerInputStateOrdinal(int eventId) {
 		checkEventId(eventId);
 		return providerInputStateIds[eventId];
+	}
+
+	int providerInputSourceStateOrdinal(int eventId) {
+		checkEventId(eventId);
+		return providerInputSourceStateIds[eventId];
 	}
 
 	EvidenceGuarantee providerInputGuarantee(int eventId) {
@@ -908,7 +943,7 @@ final class PackedCostingTrace {
 	}
 
 	int stateReferenceCount() {
-		return Math.multiplyExact(eventCount(), 5);
+		return Math.multiplyExact(eventCount(), 9);
 	}
 
 	void appendEvidenceStateIds(int[] target, int offset) {
@@ -918,10 +953,14 @@ final class PackedCostingTrace {
 		int next = offset;
 		for (int eventId = 1; eventId <= eventCount(); eventId++) {
 			target[next++] = inputStateIds[eventId];
+			target[next++] = inputSourceStateIds[eventId];
 			target[next++] = leftStateIds[eventId];
+			target[next++] = leftSourceStateIds[eventId];
 			target[next++] = rightStateIds[eventId];
+			target[next++] = rightSourceStateIds[eventId];
 			target[next++] = outputStateIds[eventId];
 			target[next++] = providerInputStateIds[eventId];
+			target[next++] = providerInputSourceStateIds[eventId];
 		}
 	}
 
@@ -930,40 +969,53 @@ final class PackedCostingTrace {
 			throw new IndexOutOfBoundsException("costing-trace detached evidence alignment");
 		}
 		int[] detachedInput = new int[inputStateIds.length];
+		int[] detachedInputSource = new int[inputSourceStateIds.length];
 		int[] detachedLeft = new int[leftStateIds.length];
+		int[] detachedLeftSource = new int[leftSourceStateIds.length];
 		int[] detachedRight = new int[rightStateIds.length];
+		int[] detachedRightSource = new int[rightSourceStateIds.length];
 		int[] detachedOutput = new int[outputStateIds.length];
 		int[] detachedProviderInput = new int[providerInputStateIds.length];
+		int[] detachedProviderInputSource = new int[providerInputSourceStateIds.length];
 		int next = requestOffset;
 		for (int eventId = 1; eventId <= eventCount(); eventId++) {
 			detachedInput[eventId] = bundle.requestedStateOrdinal(next++);
+			detachedInputSource[eventId] = bundle.requestedStateOrdinal(next++);
 			detachedLeft[eventId] = bundle.requestedStateOrdinal(next++);
+			detachedLeftSource[eventId] = bundle.requestedStateOrdinal(next++);
 			detachedRight[eventId] = bundle.requestedStateOrdinal(next++);
+			detachedRightSource[eventId] = bundle.requestedStateOrdinal(next++);
 			detachedOutput[eventId] = bundle.requestedStateOrdinal(next++);
 			detachedProviderInput[eventId] = bundle.requestedStateOrdinal(next++);
+			detachedProviderInputSource[eventId] = bundle.requestedStateOrdinal(next++);
 		}
-		return copyWithStates(detachedInput, detachedLeft, detachedRight, detachedOutput, detachedProviderInput);
+		return copyWithStates(detachedInput, detachedInputSource, detachedLeft, detachedLeftSource, detachedRight,
+				detachedRightSource, detachedOutput, detachedProviderInput, detachedProviderInputSource);
 	}
 
 	PackedCostingTrace withoutDetachedEvidence() {
 		if (eventCount() == 0) {
 			return this;
 		}
-		return copyWithStates(new int[inputStateIds.length], new int[leftStateIds.length],
-				new int[rightStateIds.length], new int[outputStateIds.length], new int[providerInputStateIds.length]);
+		return copyWithStates(new int[inputStateIds.length], new int[inputSourceStateIds.length],
+				new int[leftStateIds.length], new int[leftSourceStateIds.length], new int[rightStateIds.length],
+				new int[rightSourceStateIds.length], new int[outputStateIds.length],
+				new int[providerInputStateIds.length], new int[providerInputSourceStateIds.length]);
 	}
 
-	private PackedCostingTrace copyWithStates(int[] inputStates, int[] leftStates, int[] rightStates,
-			int[] outputStates, int[] providerInputStates) {
+	private PackedCostingTrace copyWithStates(int[] inputStates, int[] inputSourceStates, int[] leftStates,
+			int[] leftSourceStates, int[] rightStates, int[] rightSourceStates, int[] outputStates,
+			int[] providerInputStates, int[] providerInputSourceStates) {
 		return new PackedCostingTrace(phases, relationIds, contextFingerprints, prefixStarts, prefixCounts,
 				prefixRelationIds, prefixRows, assuredBindingRelationIds, inputStates, leftStates, rightStates,
+				inputSourceStates, leftSourceStates, rightSourceStates,
 				outputStates, bindingLayoutIds, correlationMaskIds, semanticScopeMaskIds, leftInputRows, rightInputRows,
 				providerInputRows, providerInputWorkRows, providerInputSequentialRows, providerInputRandomSeeks,
 				providerInputIteratorOpens, providerInputExpressionEvaluations, providerInputHashBuildRows,
 				providerInputHashProbeRows, providerInputPathExpansions, providerInputResultRows,
 				providerInputRemoteCalls,
 				providerInputPeakMemoryRows, providerInputAccessRows, providerInputInvocations,
-				providerInputCostEventIds, providerInputStates, providerInputLookupMasks,
+				providerInputCostEventIds, providerInputStates, providerInputSourceStates, providerInputLookupMasks,
 				providerInputMissingLookupMasks, providerInputIndexPrefixLengths, providerInputIndexNameIds,
 				providerInputAccessModeIds, providerInputEstimateSourceIds, providerInputEstimateFusionIds,
 				providerInputCostScopes, providerInputFlags, providerInputGuarantees, providerInputDispositions,
@@ -1003,9 +1055,11 @@ final class PackedCostingTrace {
 				+ (long) dispositions.length * Byte.BYTES
 				+ (long) (relationIds.length + prefixStarts.length + prefixCounts.length + prefixRelationIds.length
 						+ assuredBindingRelationIds.length + inputStateIds.length + leftStateIds.length
-						+ rightStateIds.length + outputStateIds.length + bindingLayoutIds.length
+						+ rightStateIds.length + inputSourceStateIds.length + leftSourceStateIds.length
+						+ rightSourceStateIds.length + outputStateIds.length + bindingLayoutIds.length
 						+ correlationMaskIds.length + semanticScopeMaskIds.length
 						+ providerInputCostEventIds.length + providerInputStateIds.length
+						+ providerInputSourceStateIds.length
 						+ providerInputLookupMasks.length + providerInputMissingLookupMasks.length
 						+ providerInputIndexPrefixLengths.length + providerInputIndexNameIds.length
 						+ providerInputAccessModeIds.length + providerInputEstimateSourceIds.length
