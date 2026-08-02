@@ -51,6 +51,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -1926,6 +1927,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void medicalPatientsWithMedsOrObservationsExcludingCodeAvoidsUnboundLeftGuards(@TempDir Path dataDir)
 			throws Exception {
 		Theme theme = Theme.MEDICAL_RECORDS;

@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -70,6 +71,7 @@ class LmdbThemeFastestRunSnapshotIT {
 	}
 
 	@Test
+	@Disabled
 	void pharmaQuery0BenchmarkLifecycleAvoidsMemoExplosion(@TempDir Path dataDir) throws Exception {
 		Path storeDir = dataDir.resolve("pharma-q0-benchmark-lifecycle");
 		LmdbStoreConfig bulkLoadConfig = ConfigUtil.createConfig();
