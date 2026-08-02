@@ -28,6 +28,8 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.MemoryKind;
  */
 final class LmdbAdjacencyDeltaGeneration {
 
+	private static final int LOCAL_SCAN_ROWS = 8;
+
 	static final long NO_VERSION = -3L;
 	static final long ROW_TOMBSTONE = -4L;
 
@@ -43,6 +45,39 @@ final class LmdbAdjacencyDeltaGeneration {
 	private final long[] runRefs;
 
 	private final AtomicLong refs = new AtomicLong(1);
+
+	/**
+	 * Caller-owned cursor for an ascending batch of row lookups. Targets must be nondecreasing independently within
+	 * each plane for the lifetime of the cursor. The delta applier satisfies that contract because its outgoing and
+	 * incoming row streams are sorted by unsigned {@code (rawKey, plane, rawPredicateId)}. Query-time callers with
+	 * arbitrary access order must use {@link #find(long, int, long)}.
+	 */
+	static final class SearchContext {
+		private int outgoingExplicit;
+		private int incomingExplicit;
+		private int outgoingInferred;
+		private int incomingInferred;
+
+		private int position(int plane) {
+			return switch (plane) {
+			case LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT -> outgoingExplicit;
+			case LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT -> incomingExplicit;
+			case LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED -> outgoingInferred;
+			case LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED -> incomingInferred;
+			default -> throw new IllegalArgumentException("plane out of range: " + plane);
+			};
+		}
+
+		private void position(int plane, int position) {
+			switch (plane) {
+			case LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT -> outgoingExplicit = position;
+			case LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT -> incomingExplicit = position;
+			case LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED -> outgoingInferred = position;
+			case LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED -> incomingInferred = position;
+			default -> throw new IllegalArgumentException("plane out of range: " + plane);
+			}
+		}
+	}
 
 	LmdbAdjacencyDeltaGeneration(long revision, LmdbAdjacencyArena arena, LmdbAdjacencyArenaCatalog catalog,
 			LmdbAdjacencyMemoryAccount account, long chargedBytes, long[] rowKeys, byte[] rowPlanes,
@@ -109,10 +144,68 @@ final class LmdbAdjacencyDeltaGeneration {
 			} else if (cmp > 0) {
 				high = mid - 1;
 			} else {
-				return runRefs[mid] == 0 ? ROW_TOMBSTONE : catalog.packHandle(1, runRefs[mid]);
+				return resultAt(mid);
 			}
 		}
 		return NO_VERSION;
+	}
+
+	/**
+	 * Order-aware lookup for the applier's ascending row streams. The cursor retains one lower bound per plane, probes
+	 * a short cache-friendly window, then gallops and binary-searches only the bracket crossed by this target. Across a
+	 * batch this avoids restarting every generation search at {@code [0, rowCount)} for every changed row.
+	 */
+	long find(long rawKey, int plane, long rawPredicateId, SearchContext context) {
+		int length = rowKeys.length;
+		int index = context.position(plane);
+		if (index >= length) {
+			return NO_VERSION;
+		}
+
+		int cmp = compareRows(index, rawKey, plane, rawPredicateId);
+		if (cmp >= 0) {
+			return cmp == 0 ? resultAt(index) : NO_VERSION;
+		}
+
+		int linearEnd = index > length - LOCAL_SCAN_ROWS - 1 ? length : index + LOCAL_SCAN_ROWS + 1;
+		for (int candidate = index + 1; candidate < linearEnd; candidate++) {
+			cmp = compareRows(candidate, rawKey, plane, rawPredicateId);
+			if (cmp >= 0) {
+				context.position(plane, candidate);
+				return cmp == 0 ? resultAt(candidate) : NO_VERSION;
+			}
+		}
+		if (linearEnd == length) {
+			context.position(plane, length);
+			return NO_VERSION;
+		}
+
+		int low = linearEnd;
+		long distance = (long) LOCAL_SCAN_ROWS << 1;
+		int high = (int) Math.min(length - 1L, (long) index + distance);
+		while (compareRows(high, rawKey, plane, rawPredicateId) < 0) {
+			low = high + 1;
+			if (high == length - 1) {
+				context.position(plane, length);
+				return NO_VERSION;
+			}
+			distance = Math.min((long) Integer.MAX_VALUE, distance << 1);
+			high = (int) Math.min(length - 1L, (long) index + distance);
+		}
+		while (low < high) {
+			int mid = (low + high) >>> 1;
+			if (compareRows(mid, rawKey, plane, rawPredicateId) < 0) {
+				low = mid + 1;
+			} else {
+				high = mid;
+			}
+		}
+		context.position(plane, low);
+		return compareRows(low, rawKey, plane, rawPredicateId) == 0 ? resultAt(low) : NO_VERSION;
+	}
+
+	private long resultAt(int index) {
+		return runRefs[index] == 0 ? ROW_TOMBSTONE : catalog.packHandle(1, runRefs[index]);
 	}
 
 	/**

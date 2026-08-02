@@ -32,6 +32,7 @@ import java.util.function.LongPredicate;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyDeltaApplier.OldRun;
+import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyDeltaGeneration.SearchContext;
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMetrics.FallbackReason;
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyPublishedState.AdjacencyServingState;
 import org.eclipse.rdf4j.sail.lmdb.LmdbDirectAdjacencyCommitDelta.PendingTable;
@@ -884,22 +885,27 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	}
 
 	private LmdbAdjacencyDeltaApplier.PreviousRows previousRows(LmdbAdjacencyPublishedState state) {
+		LmdbAdjacencyOverlaySet overlays = state.overlays();
+		int generationCount = overlays == null ? 0 : overlays.generationCount();
+		SearchContext[] generationSearches = new SearchContext[generationCount];
+		for (int i = 0; i < generationCount; i++) {
+			generationSearches[i] = new SearchContext();
+		}
+		LmdbAdjacencyContextCatalog overlayContexts = state.contextCatalog();
+		LmdbInMemoryAdjacencyIndex base = state.base();
+		LmdbReferenceNodeLocator.SearchContext baseSearch = new LmdbReferenceNodeLocator.SearchContext();
 		return (rawKey, plane, rawPredicateId) -> {
-			LmdbAdjacencyOverlaySet overlays = state.overlays();
-			if (overlays != null) {
-				for (int i = overlays.generationCount() - 1; i >= 0; i--) {
-					LmdbAdjacencyDeltaGeneration generation = overlays.generation(i);
-					long found = generation.find(rawKey, plane, rawPredicateId);
-					if (found == LmdbAdjacencyDeltaGeneration.ROW_TOMBSTONE) {
-						return null;
-					}
-					if (found != LmdbAdjacencyDeltaGeneration.NO_VERSION) {
-						return new OldRun(generation.catalog(), state.contextCatalog(), found);
-					}
+			for (int i = generationCount - 1; i >= 0; i--) {
+				LmdbAdjacencyDeltaGeneration generation = overlays.generation(i);
+				long found = generation.find(rawKey, plane, rawPredicateId, generationSearches[i]);
+				if (found == LmdbAdjacencyDeltaGeneration.ROW_TOMBSTONE) {
+					return null;
+				}
+				if (found != LmdbAdjacencyDeltaGeneration.NO_VERSION) {
+					return new OldRun(generation.catalog(), overlayContexts, found);
 				}
 			}
-			LmdbInMemoryAdjacencyIndex base = state.base();
-			long handle = base.findRun(rawKey, plane, rawPredicateId);
+			long handle = base.findRun(rawKey, plane, rawPredicateId, baseSearch);
 			if (handle == LmdbInMemoryAdjacencyIndex.NOT_FOUND
 					|| handle == LmdbInMemoryAdjacencyIndex.NOT_COVERED) {
 				// NOT_COVERED here means a post-base classified-selected predicate: provably empty at the base
@@ -1238,10 +1244,17 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	private LmdbAdjacencyDeltaApplier.PreviousRows catchUpPreviousRows(LmdbInMemoryAdjacencyIndex index,
 			List<LmdbAdjacencyDeltaGeneration> generations, LmdbAdjacencyContextCatalog contexts) {
+		LmdbAdjacencyDeltaGeneration[] generationSnapshot = generations
+				.toArray(new LmdbAdjacencyDeltaGeneration[0]);
+		SearchContext[] generationSearches = new SearchContext[generationSnapshot.length];
+		for (int i = 0; i < generationSearches.length; i++) {
+			generationSearches[i] = new SearchContext();
+		}
+		LmdbReferenceNodeLocator.SearchContext baseSearch = new LmdbReferenceNodeLocator.SearchContext();
 		return (rawKey, plane, rawPredicateId) -> {
-			for (int i = generations.size() - 1; i >= 0; i--) {
-				LmdbAdjacencyDeltaGeneration generation = generations.get(i);
-				long found = generation.find(rawKey, plane, rawPredicateId);
+			for (int i = generationSnapshot.length - 1; i >= 0; i--) {
+				LmdbAdjacencyDeltaGeneration generation = generationSnapshot[i];
+				long found = generation.find(rawKey, plane, rawPredicateId, generationSearches[i]);
 				if (found == LmdbAdjacencyDeltaGeneration.ROW_TOMBSTONE) {
 					return null;
 				}
@@ -1249,7 +1262,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 					return new OldRun(generation.catalog(), contexts, found);
 				}
 			}
-			long handle = index.findRun(rawKey, plane, rawPredicateId);
+			long handle = index.findRun(rawKey, plane, rawPredicateId, baseSearch);
 			if (handle == LmdbInMemoryAdjacencyIndex.NOT_FOUND || handle == LmdbInMemoryAdjacencyIndex.NOT_COVERED) {
 				return null;
 			}
