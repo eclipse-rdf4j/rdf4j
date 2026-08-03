@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 
 import java.io.IOException;
+import java.util.Arrays;
 
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
@@ -100,6 +101,14 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 		}
 	}
 
+	/**
+	 * Collects the distinct predicates of one statement set in unsigned ascending order. The predicate is the leading
+	 * key field of the {@code po}-prefixed index, so after recording a predicate the scan jumps straight to the first
+	 * key of the next predicate (a loose index / skip scan via {@link RecordIterator#seekForward}) instead of walking
+	 * every triple that shares it — turning an O(triples) scan into O(distinct predicates) cursor seeks. When the
+	 * iterator cannot seek (an implementation without native support), the scan falls back to plain stepping with the
+	 * same duplicate-skipping guard, so the result is identical either way.
+	 */
 	private long[] distinctPredicates(boolean explicit) throws IOException {
 		long[] buffer = new long[16];
 		int size = 0;
@@ -107,6 +116,7 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 			long[] quad;
 			long last = 0;
 			boolean any = false;
+			boolean canSeek = true;
 			while ((quad = it.next()) != null) {
 				long predicate = quad[TripleIndex.PRED_IDX];
 				if (!any || predicate != last) {
@@ -114,15 +124,29 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 						throw new IOException("predicate stream is not unsigned ascending");
 					}
 					if (size == buffer.length) {
-						buffer = java.util.Arrays.copyOf(buffer, buffer.length * 2);
+						buffer = Arrays.copyOf(buffer, buffer.length * 2);
 					}
 					buffer[size++] = predicate;
 					last = predicate;
 					any = true;
+
+					if (canSeek) {
+						// seek past this whole predicate group to the first key of the next predicate;
+						// the leading key field is the predicate, so pred+1 with the remaining fields at
+						// their minimum (0) is the smallest key any later predicate can produce
+						long nextPredicate = predicate + 1;
+						if (nextPredicate == 0) {
+							// unsigned wrap: this predicate is the maximum id, nothing can follow it
+							break;
+						}
+						if (!it.seekForward(0, nextPredicate, 0, 0)) {
+							canSeek = false;
+						}
+					}
 				}
 			}
 		}
-		return java.util.Arrays.copyOf(buffer, size);
+		return Arrays.copyOf(buffer, size);
 	}
 
 	@Override
