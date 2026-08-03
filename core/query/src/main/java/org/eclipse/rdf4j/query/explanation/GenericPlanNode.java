@@ -148,6 +148,8 @@ public class GenericPlanNode {
 	private Map<String, Long> longMetricsPlanned = new LinkedHashMap<>();
 	private Map<String, Double> doubleMetricsPlanned = new LinkedHashMap<>();
 	private Map<String, String> stringMetricsPlanned = new LinkedHashMap<>();
+	/** Human-readable physical plan prelude. Kept out of JSON because the structured metric remains available there. */
+	private String physicalPlanPrelude;
 
 	// true if this node introduces a new scope
 	private Boolean newScope;
@@ -667,7 +669,20 @@ public class GenericPlanNode {
 	 */
 	@Override
 	public String toString() {
-		return getHumanReadable(0, isProjectionElemListNode());
+		String logical = getHumanReadable(0, isProjectionElemListNode());
+		if (physicalPlanPrelude == null || physicalPlanPrelude.isEmpty()) {
+			return logical;
+		}
+		return physicalPlanPrelude + newLine + newLine + "Query explanation" + newLine + logical;
+	}
+
+	@JsonIgnore
+	public String getPhysicalPlanPrelude() {
+		return physicalPlanPrelude;
+	}
+
+	public void setPhysicalPlanPrelude(String physicalPlanPrelude) {
+		this.physicalPlanPrelude = physicalPlanPrelude;
 	}
 
 	/**

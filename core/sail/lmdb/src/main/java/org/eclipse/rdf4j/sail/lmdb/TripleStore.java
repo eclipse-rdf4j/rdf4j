@@ -1721,6 +1721,7 @@ class TripleStore implements Closeable {
 			endTransaction(false);
 			closeSpoExistenceCursors();
 			cursorPool.close();
+			txnManager.close();
 			List<Throwable> caughtExceptions = new ArrayList<>();
 			if (pageEstimator != null) {
 				try {

@@ -130,7 +130,8 @@ final class LmdbNativeParallelPrefixRuns {
 						while ((range = queue.poll()) != null) {
 							long[] lo = range == 0 ? null : splits[range - 1];
 							long[] hi = range == splits.length ? null : splits[range];
-							rangeResults[range] = collectRange(it, workerSource, subj, pred, obj, context, lo, hi);
+							rangeResults[range] = collectRange(it, workerSource, subj, pred, obj, context, lo, hi,
+									row.runtimePlan);
 						}
 						return null;
 					}));
@@ -177,15 +178,18 @@ final class LmdbNativeParallelPrefixRuns {
 	 * run-row count. Runs sharing group ids across a boundary are summed during the merge.
 	 */
 	private static List<long[]> collectRange(NativeGroupIteration it, NativeLmdbQuerySource workerSource, long subj,
-			long pred, long obj, long context, long[] lo, long[] hi) throws IOException {
+			long pred, long obj, long context, long[] lo, long[] hi,
+			LmdbNativeRuntimePlan.Invocation runtimePlan) throws IOException {
 		int groupFieldCount = it.groupSlots.length;
 		int[] groupPositions = new int[groupFieldCount];
 		for (int i = 0; i < groupFieldCount; i++) {
 			groupPositions[i] = it.prefixPattern.quadPositionOfSlot(it.groupSlots[i]);
 		}
 		ArrayList<long[]> entries = new ArrayList<>();
+		NativeLmdbQuerySource.AdjacencyAccessObserver observer = runtimePlan == null ? null
+				: runtimePlan.adjacencyAccessAt(LmdbNativeExplain.describe(it.prefixPattern, it.layout));
 		try (LmdbPrefixRunCursor cursor = workerSource.prefixRuns(it.prefixRunPlan, subj, pred, obj, context,
-				it.prefixCountRunRows)) {
+				it.prefixCountRunRows, observer)) {
 			if (cursor == null) {
 				throw new QueryEvaluationException("parallel prefix-run worker could not open its cursor");
 			}

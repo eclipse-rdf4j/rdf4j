@@ -718,7 +718,14 @@ final class LmdbNativeOrderPlanner {
 			StatementOrder statementOrder = statementOrder(field);
 			NativeOrderedPlan candidate = orderedPattern(pattern, statementOrder, row);
 			int prefix = candidate.order.exactPrefixLength(requested, candidate.plan.producedMask());
-			if (prefix > bestPrefix) {
+			// An implicit/default scan's index name describes the LMDB fallback, but a runtime source such as direct
+			// adjacency may legitimately intercept that scan with a different physical order. When an explicit request
+			// proves the same useful prefix, prefer it: the source must then either honor that order or decline to
+			// LMDB.
+			// Keeping the implicit tie would make a MONOTONIC distinct channel depend on an order that was never
+			// opened.
+			if (prefix > bestPrefix
+					|| (prefix > 0 && prefix == bestPrefix && ((PatternPlan) best.plan).statementOrder == null)) {
 				best = candidate;
 				bestPrefix = prefix;
 			}
@@ -1050,6 +1057,7 @@ final class OrderedUnionCursor implements RowCursor {
 		Branch(SlotPlan plan, RowState parent) throws IOException {
 			this.row = new RowState(parent.source, parent.layout, parent.base);
 			this.row.memoryScope = parent.memoryScope;
+			this.row.runtimePlan = parent.runtimePlan;
 			System.arraycopy(parent.slots, 0, row.slots, 0, parent.slots.length);
 			row.recomputeBoundMask();
 			this.cursor = plan.open(row);

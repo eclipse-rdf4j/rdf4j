@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -33,6 +34,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.JaninoPipelineTestAccess;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -70,10 +72,13 @@ public class LmdbNativeQueryExplanationTest {
 	File dataDir;
 
 	private SailRepository repository;
+	private LmdbStore store;
 
 	@BeforeEach
 	public void setUp() {
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")
+				.setDirectAdjacencyMaxBytes(1L << 30));
+		repository = new SailRepository(store);
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			IRI item = vf.createIRI(EX, "Item");
@@ -239,11 +244,175 @@ public class LmdbNativeQueryExplanationTest {
 
 		assertThat(rendered)
 				.contains(NATIVE_EXECUTION_PATH + "=factorizedRows(")
-				.contains("countBranches=1");
-		assertThat(rendered).contains(NATIVE_RUNTIME_ENTRY_PLAN + "=");
+				.contains("countBranches=1")
+				.startsWith("LMDB native physical plan (executed)\n")
+				.contains("    actualOrder:\n      0: Pattern(")
+				.doesNotContain(NATIVE_RUNTIME_ENTRY_PLAN + "=");
 		assertThat(rendered).contains("nativeInitialBoundMask=");
 		assertThat(rendered).contains(NATIVE_CHUNK_ENGAGED_ACTUAL + "=");
 		assertThat(explanation.toJson()).contains("\"" + NATIVE_CHUNK_ENGAGED_ACTUAL + "\"");
+	}
+
+	@Test
+	public void telemetryExplanationPrependsTheExecutedNativePlanAndPreciseNonUseReasons() {
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s WHERE { ?s a ex:Item . ?s ex:price ?price }";
+
+		String rendered = explain(Explanation.Level.Telemetry, query).toString();
+
+		assertThat(rendered)
+				.startsWith("LMDB native physical plan (executed)\n")
+				.contains("  invocation[0]:\n")
+				.contains("    status: COMPLETED\n")
+				.contains("    actualOrder:\n      0: Pattern(")
+				.contains("    janino:\n      used: false\n"
+						+ "      reason: FEATURE_DISABLED[rdf4j.lmdb.janinoCodegen.enabled=false]")
+				.contains("    adjacencySIP:\n      used: false\n"
+						+ "      state: NOT_CONSIDERED\n"
+						+ "      reason: FEATURE_DISABLED[rdf4j.lmdb.sip.adjacencyMasks.enabled=false]")
+				.contains("\n\nQuery explanation\n")
+				.contains(NATIVE_EXECUTION_PATH + "=factorizedRows(");
+		assertThat(rendered.indexOf("LMDB native physical plan (executed)"))
+				.isLessThan(rendered.indexOf("Query explanation\n"));
+	}
+
+	@Test
+	public void telemetryExplanationReportsTheDirectAdjacencyScanThatActuallyRan() throws Exception {
+		assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s ?price WHERE { ?s ex:price ?price }";
+
+		String rendered = explain(Explanation.Level.Telemetry, query).toString();
+
+		assertThat(rendered)
+				.contains("    adjacencyAccess:\n"
+						+ "      used: true\n"
+						+ "      attempts:\n"
+						+ "        0:\n"
+						+ "          source: IN_MEMORY_ADJACENCY\n"
+						+ "          outcome: SERVED\n"
+						+ "          reason: ROOT_SCAN\n")
+				.contains("          where: Pattern(")
+				.contains("          requestedOrder: <default>\n")
+				.contains("          predicate: BOUND[");
+	}
+
+	@Test
+	public void telemetryExplanationReportsWhyAnOrderedScanUsedLmdbInsteadOfAdjacency() throws Exception {
+		assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (COUNT(DISTINCT ?price) AS ?count) WHERE { "
+				+ "{ ?s ex:price ?price } UNION { ?s ex:price ?price } }";
+
+		String rendered = explain(Explanation.Level.Telemetry, query).toString();
+
+		assertThat(rendered)
+				.contains("    adjacencyAccess:\n"
+						+ "      used: false\n"
+						+ "      attempts:\n"
+						+ "        0:\n"
+						+ "          source: LMDB\n"
+						+ "          outcome: DECLINED_TO_LMDB\n"
+						+ "          reason: INDEX_ORDER_INCOMPATIBLE\n")
+				.contains("          where: Pattern(")
+				.contains("          requestedOrder: O\n");
+	}
+
+	@Test
+	public void wrappedAggregateExplanationsPrependTheirNestedNativePlan() {
+		String optimized = explain(Explanation.Level.Optimized, aggregateQuery()).toString();
+		String telemetry = explain(Explanation.Level.Telemetry, aggregateQuery()).toString();
+
+		assertThat(optimized)
+				.startsWith("LMDB native physical plan (planned)\n")
+				.contains("\n\nQuery explanation\nProjection");
+		assertThat(telemetry)
+				.startsWith("LMDB native physical plan (executed)\n")
+				.contains("    status: COMPLETED\n")
+				.contains("    janino:\n")
+				.contains("    adjacencySIP:\n")
+				.contains("    adaptiveFilterPlacement:\n"
+						+ "      used: false\n"
+						+ "      reason: NO_ELIGIBLE_FILTER[filterCount=0]\n"
+						+ "      epochs: []\n"
+						+ "      finalDepth: <not applicable>\n")
+				.contains("\n\nQuery explanation\nProjection");
+	}
+
+	@Test
+	public void telemetryExplanationGivesThePreciseJaninoThresholdReason() {
+		String previousEnabled = System.getProperty("rdf4j.lmdb.janinoCodegen.enabled");
+		String previousThreshold = System.getProperty("rdf4j.lmdb.janinoCodegen.thresholdRows");
+		String previousWcoj = System.getProperty("rdf4j.lmdb.wcoj.enabled");
+		try {
+			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
+			System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", Long.toString(Long.MAX_VALUE));
+			System.setProperty("rdf4j.lmdb.wcoj.enabled", "false");
+
+			String rendered = explain(Explanation.Level.Telemetry, rowQuery()).toString();
+
+			assertThat(rendered)
+					.contains("    janino:\n      used: false\n      reason: BELOW_THRESHOLD[")
+					.contains("thresholdRows=" + Long.MAX_VALUE + "]");
+		} finally {
+			restoreProperty(previousEnabled, "rdf4j.lmdb.janinoCodegen.enabled");
+			restoreProperty(previousThreshold, "rdf4j.lmdb.janinoCodegen.thresholdRows");
+			restoreProperty(previousWcoj, "rdf4j.lmdb.wcoj.enabled");
+		}
+	}
+
+	@Test
+	public void telemetryAggregateExplanationGivesThePreciseJaninoThresholdReason() {
+		String previousEnabled = System.getProperty("rdf4j.lmdb.janinoCodegen.enabled");
+		String previousThreshold = System.getProperty("rdf4j.lmdb.janinoCodegen.thresholdRows");
+		try {
+			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
+			System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", Long.toString(Long.MAX_VALUE));
+
+			String rendered = explain(Explanation.Level.Telemetry, aggregateQuery()).toString();
+
+			assertThat(rendered)
+					.contains("    janino:\n      used: false\n      reason: BELOW_THRESHOLD[")
+					.contains("route=irAggregate")
+					.contains("thresholdRows=" + Long.MAX_VALUE + "]");
+		} finally {
+			restoreProperty(previousEnabled, "rdf4j.lmdb.janinoCodegen.enabled");
+			restoreProperty(previousThreshold, "rdf4j.lmdb.janinoCodegen.thresholdRows");
+		}
+	}
+
+	@Test
+	public void telemetryExplanationShowsTheGeneratedJaninoOrderThatActuallyRan() throws Exception {
+		String previousEnabled = System.getProperty("rdf4j.lmdb.janinoCodegen.enabled");
+		String previousThreshold = System.getProperty("rdf4j.lmdb.janinoCodegen.thresholdRows");
+		String previousWcoj = System.getProperty("rdf4j.lmdb.wcoj.enabled");
+		try {
+			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
+			System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
+			System.setProperty("rdf4j.lmdb.wcoj.enabled", "false");
+			assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+			JaninoPipelineTestAccess.resetMetrics();
+			String query = "PREFIX ex: <" + EX + ">\n"
+					+ "SELECT ?s ?price WHERE { ?s ex:price ?price . ?s a ex:Item }";
+			String rendered = "";
+			for (int attempt = 0; attempt < 100 && !rendered.contains("nativeExecutionPath=janinoKernel"); attempt++) {
+				rendered = explain(Explanation.Level.Telemetry, query).toString();
+			}
+
+			assertThat(JaninoPipelineTestAccess.opened()).isPositive();
+			assertThat(rendered)
+					.contains("nativeExecutionPath=janinoKernel")
+					.contains("    janino:\n      used: true\n      reason: ACTIVATED")
+					.contains("      generatedOrder:\n        0: Pattern(")
+					.contains("    actualOrder:\n      0: Pattern(");
+			assertThat(planSection(rendered, "    actualOrder:\n", "    janino:\n"))
+					.as("the physical plan must show the exact order embedded in the generated kernel")
+					.isEqualTo(planSection(rendered, "      generatedOrder:\n", "    adjacencyAccess:\n"));
+		} finally {
+			restoreProperty(previousEnabled, "rdf4j.lmdb.janinoCodegen.enabled");
+			restoreProperty(previousThreshold, "rdf4j.lmdb.janinoCodegen.thresholdRows");
+			restoreProperty(previousWcoj, "rdf4j.lmdb.wcoj.enabled");
+		}
 	}
 
 	@Test
@@ -285,10 +454,12 @@ public class LmdbNativeQueryExplanationTest {
 
 			assertThat(explanation.toString())
 					.contains(NATIVE_EXECUTION_PATH + "=")
-					.contains(NATIVE_RUNTIME_ENTRY_PLAN + "=")
+					.contains("    strategy: bareBulk | batch\n")
+					.contains("    actualOrder:\n      0: Pattern(")
 					.doesNotContain("staleExecutionPath")
 					.doesNotContain("staleRuntimeEntryPlan")
-					.doesNotContain("nativeStaleCounterActual");
+					.doesNotContain("nativeStaleCounterActual")
+					.doesNotContain(NATIVE_RUNTIME_ENTRY_PLAN + "=");
 		}
 	}
 
@@ -299,6 +470,7 @@ public class LmdbNativeQueryExplanationTest {
 		Explanation topK = explain(Explanation.Level.Telemetry, ordered);
 
 		assertThat(topK.toString())
+				.contains("    status: COMPLETED\n")
 				.contains(NATIVE_EXECUTION_PATH + "=")
 				.contains("orderedTopK")
 				.contains("nativeSortPackedRowsActual=")
@@ -312,6 +484,7 @@ public class LmdbNativeQueryExplanationTest {
 		Explanation spillSort = explain(Explanation.Level.Telemetry, unbounded);
 
 		assertThat(spillSort.toString())
+				.contains("    status: COMPLETED\n")
 				.contains(NATIVE_EXECUTION_PATH + "=")
 				.contains("orderedFullSort")
 				.contains("nativeSortPackedRowsActual=")
@@ -319,6 +492,25 @@ public class LmdbNativeQueryExplanationTest {
 				.contains("nativeSortKeyPrefixWidthActual=1")
 				.contains("nativeSortsActual=")
 				.doesNotContain("nativeSpillRunsActual");
+	}
+
+	@Test
+	public void telemetryExplanationCompletesEveryCorrelatedExistsInvocation() {
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (COUNT(DISTINCT ?s) AS ?count) WHERE { "
+				+ "?s a ex:Item . OPTIONAL { ?s ex:price ?price } "
+				+ "FILTER EXISTS { ?s ex:price ?price } }";
+
+		String rendered = explain(Explanation.Level.Telemetry, query).toString();
+
+		assertThat(rendered)
+				.contains("    strategy: bareExists\n")
+				.doesNotContain("    status: ACTIVE_OR_PARTIAL\n")
+				.contains("    status: COMPLETED\n")
+				.contains("    actualOrder:\n      0: Pattern(")
+				.contains("    janino:\n      used: false\n      reason: UNSUPPORTED_ROUTE[bareExists]")
+				.contains("    adjacencySIP:\n      used: false\n      state: NOT_CONSIDERED\n"
+						+ "      reason: UNSUPPORTED_ROUTE[bareExists]");
 	}
 
 	@Test
@@ -519,6 +711,15 @@ public class LmdbNativeQueryExplanationTest {
 		return node.getPlans()
 				.stream()
 				.anyMatch(child -> hasActualMetricOnType(child, type, metricName));
+	}
+
+	private static String planSection(String rendered, String startMarker, String endMarker) {
+		int start = rendered.indexOf(startMarker);
+		assertThat(start).as("missing section %s in:%n%s", startMarker, rendered).isNotNegative();
+		start += startMarker.length();
+		int end = rendered.indexOf(endMarker, start);
+		assertThat(end).as("missing end marker %s in:%n%s", endMarker, rendered).isGreaterThan(start);
+		return rendered.substring(start, end).replace("  ", "").strip();
 	}
 
 	private static void restoreProperty(String previous) {

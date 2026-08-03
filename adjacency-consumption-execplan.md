@@ -33,7 +33,13 @@ How to see it working at any point: run the census test (prints a per-query-shap
 - [x] (2026-08-03) Milestone 6 complete and default-enabled with an explicit `false` kill switch. The deterministic
   143-query plan audit is unchanged with exactly 28 engaged queries; the complete short screen plus longer paired
   reruns found no disjoint-interval regression, including reverse-order confirmation of the two noisy cells.
-- [ ] Milestone 7: SIP semijoin masks from adjacency key domains.
+- [ ] Milestone 7: SIP semijoin masks are implemented and focused-test green, including cursor ownership, composite
+  domains, a cheap exact-cardinality preflight, and runtime retirement. Docker JFR proves selective activation and
+  dense cost rejection, but the feature remains default OFF until exact runtime-plan telemetry makes the warmed,
+  multi-fork production-dispatch acceptance matrix route-verifiable.
+- [ ] Cross-cutting explain side quest: prepend the multiline physical plan actually executed and report exact runtime
+  order, dynamic filter-position epochs/final positions, adjacency use or typed non-use reason, and Janino use or typed
+  non-use reason.
 - [ ] Milestone 8: property paths fully over adjacency (seeding, workers, telemetry-verified).
 - [ ] Milestone 9 (evidence-gated): run-intersection semijoins, degree binding, bidirectional path search, exact-empty plan pruning.
 
@@ -119,6 +125,25 @@ How to see it working at any point: run the census test (prints a per-query-shap
   completed with result validation enabled.
   Evidence: `benchmark-results/m6-plannerStats-pharma-false-r1-2026-08-03.txt` and
   `benchmark-results/m6-plannerStats-highly_connected-false-r1-2026-08-03.txt`.
+- Observation: The first Docker M7 flag comparison did not exercise the chunk SIP implementation. Both recordings
+  executed `LmdbNativeJaninoPipeline$KernelRowCursor` and the same generated kernel; Janino is attempted before
+  factorized/chunk dispatch in `LmdbNativeRowStep.openUnorderedInput`. Sampling alone cannot prove non-engagement, but
+  the production dispatch and absence of chunk/SIP work make that pair invalid as M7 acceptance evidence.
+  Evidence: `benchmark-results/m7-docker-dense-{off,on}-2026-08-03.jfr`; off top CPU was 30.93% delta `find` and
+  4.44% Janino cursor, on was 30.44% and 4.35% respectively.
+- Observation: The first Docker flag-on fork completed its ten measurements and then SIGSEGV'd on `Cleaner-0` in
+  `nmdb_txn_reset`. The exact Java stack was `TxnManager$Txn.free -> close -> ConcurrentCleaner`; code inspection found
+  that `TripleStore.close()` destroyed its LMDB environment without the `txnManager.close()` drain already used by
+  `ValueStore.close()`. A safe red test observed the tracked native handle surviving store close; the lifecycle fix
+  clears it before environment teardown, and all subsequent profiled forks shut down normally.
+  Evidence: `benchmark-results/m7-docker-dense-on-hs_err_pid14379.log`,
+  `initial-evidence-lmdb-triplestore-teardown-red.txt`, and focused green log
+  `logs/mvnf/20260803-201617-verify.log`.
+- Observation: With Janino explicitly disabled for mechanism isolation, Docker JFR proves the selective case consumes
+  the new cursor (`AdjacencyKeyDomain.advance/seekAtLeast` are hot) while the dense static gate does not open it. The
+  diagnostic central scores favored the feature in both pairs: selective 6.172 versus 6.364 ms/op and dense 4.043
+  versus 4.104 ms/op. These no-warmup, one-fork JFR runs are path and hotspot evidence, not the default-enable gate.
+  Evidence: `benchmark-results/m7-docker-chunk-{selective,dense}-{off,on}-2026-08-03.jfr`.
 
 ## Decision Log
 
@@ -180,6 +205,21 @@ How to see it working at any point: run the census test (prints a per-query-shap
   statistics or overlapped. The tightest unresolved center, LIBRARY q10, was 12223.430 +/- 54.554 ms/op on versus
   12216.512 +/- 76.385 ms/op off (0.057%, deeply overlapping); reverse-order TRAIN q3 was 12.418 +/- 0.196 versus
   13.229 +/- 0.202 ms/op (6.130% faster). All other long cells were parity or faster, satisfying the user's gate.
+  Date/Author: 2026-08-03 / Håvard and Codex.
+- Decision: Keep M7 `rdf4j.lmdb.sip.adjacencyMasks.enabled` default OFF at the implementation checkpoint.
+  Rationale: route-isolated Docker profiles show selective improvement and dense parity, but ordinary production
+  dispatch selected Janino and the current benchmark has no evaluation-local witness for why adjacency/Janino was or
+  was not used. The user's parity-or-better rule requires every predeclared use case to pass independently under normal
+  dispatch; profiled one-fork diagnostics cannot establish that threshold.
+  Date/Author: 2026-08-03 / Håvard and Codex.
+- Decision: Implement the requested physical-plan output from runtime decision points rather than reconstructing it
+  from optimized algebra. The recorder must distinguish considered/opened/published/activated/retired adjacency states,
+  record Janino selection and decline reasons per subtree, preserve the actual reordered schedule, and store every
+  dynamic filter-position epoch plus its final position. Render the multiline physical plan before the ordinary query
+  explanation and mark partial/cancelled observations honestly.
+  Rationale: Docker profiling demonstrated that a plausible benchmark name and candidate plan can conceal the actual
+  Janino path. ChatGPT Pro independently recommended the same activation-based model; repository inspection of
+  `LmdbNativeRowStep` and `LmdbNativeExplain` confirmed it fits the existing runtime-metric seam.
   Date/Author: 2026-08-03 / Håvard and Codex.
 
 ## Outcomes & Retrospective

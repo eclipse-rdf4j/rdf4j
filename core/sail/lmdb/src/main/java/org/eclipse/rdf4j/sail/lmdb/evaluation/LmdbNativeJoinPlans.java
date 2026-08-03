@@ -142,6 +142,9 @@ final class MultiJoinPlan implements SlotPlan {
 	 * filters assigned to those depths. {@code upToExclusive == children.length} is the full plan.
 	 */
 	RowCursor openChain(OrderedPlan plan, int upToExclusive, RowState row) throws IOException {
+		if (row.runtimePlan != null) {
+			row.runtimePlan.actualOrder(plan.order);
+		}
 		SlotPlan[] ordered = plan.order;
 		RowCursor cursor = ordered[0].open(row);
 		cursor = applyFilters(cursor, plan.filterDepth, 0, row);
@@ -160,6 +163,9 @@ final class MultiJoinPlan implements SlotPlan {
 	 * reusable-probe {@link JoinCursor} chain.
 	 */
 	RowCursor openSuffix(OrderedPlan plan, int fromInclusive, RowState row) throws IOException {
+		if (row.runtimePlan != null) {
+			row.runtimePlan.actualOrder(plan.order);
+		}
 		SlotPlan[] ordered = plan.order;
 		if (fromInclusive >= ordered.length) {
 			return new SingletonCursor();
@@ -181,6 +187,9 @@ final class MultiJoinPlan implements SlotPlan {
 	 */
 	RowCursor openChainFrom(OrderedPlan plan, RowCursor leftmost, int upToExclusive, RowState row)
 			throws IOException {
+		if (row.runtimePlan != null) {
+			row.runtimePlan.actualOrder(plan.order);
+		}
 		SlotPlan[] ordered = plan.order;
 		RowCursor cursor = applyFilters(leftmost, plan.filterDepth, 0, row);
 		long leftProduced = ordered[0].producedMask();

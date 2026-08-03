@@ -122,28 +122,27 @@ final class LmdbNativeExplain {
 		return expr != null && (expr.isExecutionSummaryEnabled() || expr.isRuntimeTelemetryEnabled());
 	}
 
-	/** Records the first bound-derived plan entering runtime dispatch, before specialized path selection. */
-	static void recordRuntimeEntryPlan(TupleExpr expr, SlotPlan plan, NativeSlotLayout layout, long boundMask) {
+	/** Begins an execution-local physical-plan witness before specialized path selection. */
+	static LmdbNativeRuntimePlan.Invocation recordRuntimeEntryPlan(TupleExpr expr, SlotPlan plan,
+			NativeSlotLayout layout, long boundMask) {
 		if (expr == null || !expr.isRuntimeTelemetryEnabled()) {
-			return;
+			return null;
 		}
+		String initialBoundMask = describeBoundMask(boundMask, layout.slotNames());
 		synchronized (expr) {
-			if (expr.getStringMetricActual(RUNTIME_ENTRY_PLAN) != null) {
-				return;
+			if (expr.getStringMetricActual(INITIAL_BOUND_MASK) == null) {
+				expr.setStringMetricActual(INITIAL_BOUND_MASK, initialBoundMask);
 			}
-			String[] slotNames = layout.slotNames();
-			String runtimePlan = describe(plan, slotNames, boundMask);
-			String initialBoundMask = describeBoundMask(boundMask, slotNames);
-			expr.setStringMetricActual(RUNTIME_ENTRY_PLAN, runtimePlan);
-			expr.setStringMetricActual(INITIAL_BOUND_MASK, initialBoundMask);
 			if (expr instanceof QueryRoot) {
 				TupleExpr arg = ((QueryRoot) expr).getArg();
 				synchronized (arg) {
-					arg.setStringMetricActual(RUNTIME_ENTRY_PLAN, runtimePlan);
-					arg.setStringMetricActual(INITIAL_BOUND_MASK, initialBoundMask);
+					if (arg.getStringMetricActual(INITIAL_BOUND_MASK) == null) {
+						arg.setStringMetricActual(INITIAL_BOUND_MASK, initialBoundMask);
+					}
 				}
 			}
 		}
+		return LmdbNativeRuntimePlan.begin(expr, plan, layout, boundMask);
 	}
 
 	static void addRuntimeMetric(TupleExpr expr, String metricName, long delta) {
@@ -211,6 +210,8 @@ final class LmdbNativeExplain {
 		expr.setStringMetricPlanned(TelemetryMetricNames.PLANNED_EXECUTION_KIND, kind);
 		if (physicalPlan != null && !physicalPlan.isEmpty()) {
 			expr.setStringMetricPlanned(PHYSICAL_PLAN, physicalPlan);
+			expr.setStringMetricPlanned(TelemetryMetricNames.PLANNED_PHYSICAL_PLAN,
+					LmdbNativeRuntimePlan.planned(kind, physicalPlan));
 		}
 	}
 
@@ -233,7 +234,7 @@ final class LmdbNativeExplain {
 		return describeSlots(slots, layout.slotNames());
 	}
 
-	private static String describe(SlotPlan plan, String[] slotNames, long boundMask) {
+	static String describe(SlotPlan plan, String[] slotNames, long boundMask) {
 		if (plan == EmptyPlan.INSTANCE) {
 			return "Empty";
 		}

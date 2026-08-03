@@ -626,7 +626,7 @@ final class LmdbNativeFactorizedRows {
 			if (!adaptiveSuffixAttempted) {
 				adaptiveSuffixAttempted = true;
 				adaptiveSuffixSession = LmdbNativeAdaptiveFilterPlacement.tryCreateSuffixSession(
-						owner.metrics.explainTarget(), owner.plan, owner.derived, owner.flatCount);
+						owner.metrics.explainTarget(), owner.plan, owner.derived, owner.flatCount, row);
 			}
 			return adaptiveSuffixSession == null
 					? owner.plan.openSuffix(owner.derived, owner.flatCount, row)

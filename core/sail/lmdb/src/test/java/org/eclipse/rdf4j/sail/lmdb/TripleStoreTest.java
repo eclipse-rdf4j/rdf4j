@@ -93,6 +93,17 @@ public class TripleStoreTest {
 	}
 
 	@Test
+	public void closeDrainsActiveReadTransactionsBeforeClosingEnvironment() throws Exception {
+		Txn readTxn = tripleStore.getTxnManager().createReadTxn();
+		assertTrue("the fixture must start with a live native read transaction", readTxn.get() != 0L);
+
+		tripleStore.close();
+
+		assertEquals("store shutdown must invalidate tracked readers before LMDB environment teardown", 0L,
+				readTxn.get());
+	}
+
+	@Test
 	public void alignedBatchReusesMainIndexWriteCursor() throws Exception {
 		long[] subj = { 1, 2, 3 };
 		long[] pred = { 4, 4, 4 };

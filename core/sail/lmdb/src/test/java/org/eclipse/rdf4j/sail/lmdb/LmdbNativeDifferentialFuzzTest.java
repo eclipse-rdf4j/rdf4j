@@ -1001,6 +1001,18 @@ public class LmdbNativeDifferentialFuzzTest {
 	}
 
 	@Test
+	public void orderedUnionFallbackPreservesDistinctArgumentOrder() {
+		String previous = System.getProperty("rdf4j.lmdb.janinoCodegen.enabled");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
+		try {
+			assertSameResults("SELECT (COUNT(DISTINCT ?o) AS ?c) WHERE { "
+					+ "{ ?s <" + EX + "p1> ?o } UNION { ?s <" + EX + "p2> ?o } }");
+		} finally {
+			restoreProperty("rdf4j.lmdb.janinoCodegen.enabled", previous);
+		}
+	}
+
+	@Test
 	public void propertyPaths() {
 		String edge = "<" + EX + "edge>";
 		String[] starts = { "<" + EX + "s0>", "<" + EX + "s8>", "<" + EX + "s11>", "<" + EX + "s15>", "?x" };

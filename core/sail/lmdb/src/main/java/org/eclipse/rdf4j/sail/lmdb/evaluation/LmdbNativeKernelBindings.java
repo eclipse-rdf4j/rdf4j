@@ -201,6 +201,11 @@ final class LmdbNativeKernelBindings {
 	 * retained LMDB iterator remains the correctness fallback.
 	 */
 	long[][] materializeDomains(NativeLmdbQuerySource.NativeProbe probe) throws java.io.IOException {
+		return materializeDomains(probe, null, null);
+	}
+
+	long[][] materializeDomains(NativeLmdbQuerySource.NativeProbe probe, RowState row, String route)
+			throws java.io.IOException {
 		long[][] materialized = new long[keyDomains.length][];
 		for (int i = 0; i < keyDomains.length; i++) {
 			DomainRequest request = keyDomains[i];
@@ -209,7 +214,18 @@ final class LmdbNativeKernelBindings {
 				continue;
 			}
 			long[] nativeDomain = materializeNativeDomain(probe, request);
+			NativeLmdbQuerySource.AdjacencyAccessObserver observer = row == null || row.runtimePlan == null ? null
+					: row.runtimePlan.adjacencyAccessAt(route + ".keyDomain[" + i + "]");
 			if (nativeDomain != null) {
+				if (observer != null) {
+					observer.access(true,
+							"JANINO_KEY_DOMAIN_ADJACENCY[direction="
+									+ (request.bySubject ? "subject-to-object" : "object-to-subject") + "]",
+							null, request.bySubject ? request.key : NativeLmdbQuerySource.UNKNOWN_ID,
+							request.predicate,
+							request.bySubject ? NativeLmdbQuerySource.UNKNOWN_ID : request.key,
+							NativeLmdbQuerySource.UNKNOWN_ID);
+				}
 				materialized[i] = nativeDomain;
 				continue;
 			}
@@ -219,7 +235,7 @@ final class LmdbNativeKernelBindings {
 			long[] collected = new long[64];
 			int count = 0;
 			try (org.eclipse.rdf4j.sail.lmdb.RecordIterator matches = probe.open(subj, request.predicate, obj,
-					unknown)) {
+					unknown, observer)) {
 				long[] record;
 				while ((record = matches.next()) != null) {
 					if (count == collected.length) {

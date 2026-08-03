@@ -398,8 +398,14 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_EMPTY_SEED);
 			return List.of();
 		}
-		LmdbNativeExplain.recordRuntimeEntryPlan(originalExpr, arg, layout, row.boundMask());
+		row.runtimePlan = LmdbNativeExplain.recordRuntimeEntryPlan(originalExpr, arg, layout, row.boundMask());
 		LmdbNativeExplain.addRuntimeMetric(originalExpr, "nativeInvocationsActual", 1L);
+		List<BindingSet> result = evaluateAllInitialized(base, row);
+		row.completeRuntimePlan();
+		return result;
+	}
+
+	private List<BindingSet> evaluateAllInitialized(BindingSet base, RowState row) {
 		if (limit == 0L) {
 			LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_LIMIT_ZERO);
 			return List.of();
@@ -846,7 +852,9 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		long pred = prefixPattern.p.lookup(row.slots);
 		long obj = prefixPattern.o.lookup(row.slots);
 		long context = prefixPattern.c.lookup(row.slots);
-		LmdbPrefixRunCursor cursor = source.prefixRuns(prefixRunPlan, subj, pred, obj, context, false);
+		NativeLmdbQuerySource.AdjacencyAccessObserver observer = row.runtimePlan == null ? null
+				: row.runtimePlan.adjacencyAccessAt(LmdbNativeExplain.describe(prefixPattern, row.layout));
+		LmdbPrefixRunCursor cursor = source.prefixRuns(prefixRunPlan, subj, pred, obj, context, false, observer);
 		if (cursor == null) {
 			return null;
 		}
@@ -864,6 +872,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 				: null;
 		RowCursor leapfrog = LmdbNativeLeapfrogJoin.tryOpen(arg, row);
 		if (leapfrog != null) {
+			activateOrder(row, LmdbNativeAttemptMetrics.PATH_WCOJ, multiJoin);
 			LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_WCOJ);
 			return NativeUnorderedInput.rows(row, leapfrog);
 		}
@@ -898,6 +907,9 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 					LmdbNativeFactorizedRows.selectFactorizedOrder(multiJoin, row.boundMask(), 0L, 0), row,
 					row.boundMask(), retainedSlots, distinct, 0L, attemptMetrics);
 			if (factorized != null) {
+				if (row.runtimePlan != null) {
+					row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS, factorized.derived.order);
+				}
 				if (LmdbNativeExplain.recordsExecutionPaths(originalExpr)) {
 					attemptMetrics.deferStrategy(originalExpr, factorized.describeEngagement());
 				}
@@ -908,6 +920,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		}
 		RowCursor adaptive = LmdbNativeAdaptiveFilterPlacement.tryOpen(this, row);
 		if (adaptive != null) {
+			activateOrder(row, LmdbNativeAttemptMetrics.PATH_ADAPTIVE_FILTER_PLACEMENT, multiJoin);
 			LmdbNativeExplain.recordExecutionPath(originalExpr,
 					LmdbNativeAttemptMetrics.PATH_ADAPTIVE_FILTER_PLACEMENT);
 			return NativeUnorderedInput.rows(row, adaptive);
@@ -919,7 +932,19 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			}
 		}
 		LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+		activateOrder(row, LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, multiJoin);
 		return NativeUnorderedInput.rows(row, arg.open(row));
+	}
+
+	private void activateOrder(RowState row, String strategy, MultiJoinPlan multiJoin) {
+		if (row.runtimePlan != null) {
+			SlotPlan[] order = multiJoin == null ? new SlotPlan[] { arg } : multiJoin.derivedPlan(row).order;
+			row.runtimePlan.activate(runtimeStrategy(strategy), order);
+		}
+	}
+
+	private String runtimeStrategy(String selectedStrategy) {
+		return entryPath == null ? selectedStrategy : entryPath + " | " + selectedStrategy;
 	}
 
 	private NativeUnorderedInput openKernelInput(RowState row, MultiJoinPlan multiJoin) throws IOException {
@@ -929,6 +954,8 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 				LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_JANINO_KERNEL);
 				return NativeUnorderedInput.rows(row, kernel);
 			}
+		} else if (row.runtimePlan != null) {
+			row.runtimePlan.janinoDeclined("UNSUPPORTED_PLAN[type=" + arg.getClass().getSimpleName() + "]");
 		}
 		// The IR rung handles more root shapes than MultiJoinPlan (LeftJoin chains since plan 22).
 		RowCursor irKernel = LmdbNativeKernelExecution.tryOpenRows(arg, row, originalExpr);
@@ -1016,6 +1043,8 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		}
 		NativeBatch.ROOT_ITERATIONS.incrementAndGet();
 		LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_BATCH);
+		activateOrder(row, LmdbNativeAttemptMetrics.PATH_BATCH,
+				arg instanceof MultiJoinPlan ? (MultiJoinPlan) arg : null);
 		return NativeUnorderedInput.batch(row, candidate, capacity);
 	}
 
@@ -1023,12 +1052,13 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		if (candidate == null) {
 			return null;
 		}
+		String strategyLabel = candidate instanceof LmdbNativeParallelPipelines.ParallelRowCursor
+				? ((LmdbNativeParallelPipelines.ParallelRowCursor) candidate).strategyLabel()
+				: LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES;
 		if (LmdbNativeExplain.recordsExecutionPaths(originalExpr)) {
-			LmdbNativeExplain.recordExecutionPath(originalExpr,
-					candidate instanceof LmdbNativeParallelPipelines.ParallelRowCursor
-							? ((LmdbNativeParallelPipelines.ParallelRowCursor) candidate).strategyLabel()
-							: LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES);
+			LmdbNativeExplain.recordExecutionPath(originalExpr, strategyLabel);
 		}
+		activateOrder(row, strategyLabel, arg instanceof MultiJoinPlan ? (MultiJoinPlan) arg : null);
 		return NativeUnorderedInput.rows(row, candidate);
 	}
 
@@ -1131,14 +1161,24 @@ final class NativeExistsValueStep implements QueryValueEvaluationStep {
 			LmdbNativeExplain.recordExecutionPath(step.originalExpr, LmdbNativeAttemptMetrics.PATH_EMPTY_SEED);
 			return BooleanLiteral.FALSE;
 		}
-		LmdbNativeExplain.recordRuntimeEntryPlan(step.originalExpr, step.arg, step.layout, row.boundMask());
+		row.runtimePlan = LmdbNativeExplain.recordRuntimeEntryPlan(step.originalExpr, step.arg, step.layout,
+				row.boundMask());
 		LmdbNativeExplain.addRuntimeMetric(step.originalExpr, "nativeInvocationsActual", 1L);
 		LmdbNativeExplain.recordExecutionPath(step.originalExpr, LmdbNativeAttemptMetrics.PATH_BARE_EXISTS);
+		boolean exists;
 		try (NativeExistsPatternCursor cursor = new NativeExistsPatternCursor(existsPlan, row)) {
-			return BooleanLiteral.valueOf(cursor.exists());
+			if (row.runtimePlan != null) {
+				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_BARE_EXISTS, existsPlan.patterns);
+				row.runtimePlan.janinoDeclined("UNSUPPORTED_ROUTE[bareExists]");
+				row.runtimePlan.adjacencyDecision("NOT_CONSIDERED", "UNSUPPORTED_ROUTE[bareExists]",
+						LmdbNativeExplain.describe(step.arg, step.layout));
+			}
+			exists = cursor.exists();
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
 		}
+		row.completeRuntimePlan();
+		return BooleanLiteral.valueOf(exists);
 	}
 }
 
@@ -1384,20 +1424,20 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet> {
 		}
 		try {
 			if (!initialized && !initialize()) {
-				finish();
+				finish(true);
 				return false;
 			}
 			if (cursor.next()) {
 				next = step.snapshot(row.slots, base);
 				return true;
 			}
-			finish();
+			finish(true);
 			return false;
 		} catch (IOException e) {
-			finish();
+			finish(false);
 			throw new QueryEvaluationException(e);
 		} catch (RuntimeException | Error e) {
-			finish();
+			finish(false);
 			throw e;
 		}
 	}
@@ -1409,7 +1449,8 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet> {
 			LmdbNativeExplain.recordExecutionPath(step.originalExpr, LmdbNativeAttemptMetrics.PATH_EMPTY_SEED);
 			return false;
 		}
-		LmdbNativeExplain.recordRuntimeEntryPlan(step.originalExpr, step.arg, step.layout, row.boundMask());
+		row.runtimePlan = LmdbNativeExplain.recordRuntimeEntryPlan(step.originalExpr, step.arg, step.layout,
+				row.boundMask());
 		LmdbNativeExplain.addRuntimeMetric(step.originalExpr, "nativeInvocationsActual", 1L);
 		if (step.bulk.constantFalseFor(base)) {
 			LmdbNativeExplain.recordExecutionPath(step.originalExpr,
@@ -1418,6 +1459,9 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet> {
 		}
 		cursor = step.arg.open(row);
 		LmdbNativeExplain.recordExecutionPath(step.originalExpr, LmdbNativeAttemptMetrics.PATH_BARE_DIRECT);
+		if (row.runtimePlan != null) {
+			row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_BARE_DIRECT, new SlotPlan[] { step.arg });
+		}
 		return true;
 	}
 
@@ -1440,21 +1484,25 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet> {
 	public void close() {
 		closed = true;
 		synchronized (this) {
-			closeResources();
+			closeResources(false);
 		}
 	}
 
-	private void finish() {
+	private void finish(boolean completed) {
 		closed = true;
-		closeResources();
+		closeResources(completed);
 	}
 
-	private void closeResources() {
+	private void closeResources(boolean completed) {
 		RowCursor activeCursor = cursor;
+		RowState activeRow = row;
 		cursor = null;
 		try {
 			if (activeCursor != null) {
 				activeCursor.close();
+			}
+			if (completed && activeRow != null) {
+				activeRow.completeRuntimePlan();
 			}
 		} finally {
 			step = null;
@@ -1660,14 +1708,14 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 		try {
 			next = getNextElement();
 			if (next == null) {
-				finish();
+				finish(true);
 			}
 			return next != null;
 		} catch (IOException e) {
-			finish();
+			finish(false);
 			throw new QueryEvaluationException(e);
 		} catch (RuntimeException | Error e) {
-			finish();
+			finish(false);
 			throw e;
 		}
 	}
@@ -1768,7 +1816,8 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 		distinctPlan = step.distinct
 				? LmdbNativeOrderPlanner.tuple(step.arg, step.sourceSlots, row)
 				: NativeTupleDistinctPlan.global(step.arg, step.sourceSlots);
-		LmdbNativeExplain.recordRuntimeEntryPlan(step.originalExpr, distinctPlan.arg, step.layout, row.boundMask());
+		row.runtimePlan = LmdbNativeExplain.recordRuntimeEntryPlan(step.originalExpr, distinctPlan.arg, step.layout,
+				row.boundMask());
 		LmdbNativeExplain.addRuntimeMetric(step.originalExpr, "nativeInvocationsActual", 1L);
 		if (step.entryPath != null) {
 			LmdbNativeExplain.recordExecutionPath(step.originalExpr, step.entryPath);
@@ -1820,22 +1869,24 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 	public void close() {
 		closed = true;
 		synchronized (this) {
-			closeResources();
+			closeResources(false);
 		}
 	}
 
-	private void finish() {
+	private void finish(boolean completed) {
 		closed = true;
-		closeResources();
+		closeResources(completed);
 	}
 
-	private void closeResources() {
+	private void closeResources(boolean completed) {
 		NativeUnorderedInput activeInput = unorderedInput;
 		unorderedInput = null;
 		RowCursor activeCursor = cursor;
 		cursor = null;
 		BatchCursor activeBatchCursor = batchCursor;
+		RowState activeRow = row;
 		batchCursor = null;
+		boolean cleanupSucceeded = false;
 		try {
 			if (activeInput != null) {
 				activeInput.close();
@@ -1847,6 +1898,7 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 				if (activeInput == null && activeCursor != null) {
 					activeCursor.close();
 				}
+				cleanupSucceeded = true;
 			} finally {
 				step = null;
 				base = null;
@@ -1862,6 +1914,9 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 				batch = null;
 				batchIndex = 0;
 				remainingMultiplicity = 0;
+				if (completed && cleanupSucceeded && activeRow != null) {
+					activeRow.completeRuntimePlan();
+				}
 			}
 		}
 	}

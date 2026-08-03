@@ -1073,7 +1073,14 @@ class LmdbNativeChunkHashBuildTest {
 		LmdbNativeChunkPipeline.SipMask mask = tryCreateSipMask(keys, target, budget);
 
 		assertThat(mask).isNotNull();
-		assertThat(mask.sortedKeys).containsExactly(1L, 2L, 3L);
+		assertThat(mask.domain.cardinalityUpperBound()).isEqualTo(3L);
+		assertThat(mask.domain.advance()).isTrue();
+		assertThat(mask.domain.current()).isEqualTo(1L);
+		assertThat(mask.domain.advance()).isTrue();
+		assertThat(mask.domain.current()).isEqualTo(2L);
+		assertThat(mask.domain.advance()).isTrue();
+		assertThat(mask.domain.current()).isEqualTo(3L);
+		assertThat(mask.domain.advance()).isFalse();
 		assertThat(budget.tryReserve(1, 3))
 				.as("the retained mask must charge one owner entry and its complete primitive key capacity")
 				.isFalse();
@@ -1086,6 +1093,129 @@ class LmdbNativeChunkHashBuildTest {
 		assertThat(budget.tryReserve(1, 1))
 				.as("a repeated close must not release the same mask reservation twice")
 				.isFalse();
+	}
+
+	@Test
+	void nativeIdDomainUnionDeduplicatesAndSeeksAcrossMembers() {
+		LmdbNativeIdDomain union = LmdbNativeIdDomain.union(new LmdbNativeIdDomain[] {
+				LmdbNativeIdDomain.sortedDistinct(new long[] { 1L, 3L, 5L }),
+				LmdbNativeIdDomain.sortedDistinct(new long[] { 2L, 3L, 4L })
+		});
+		try {
+			assertThat(union.cardinalityUpperBound()).isEqualTo(6L);
+			assertThat(union.advance()).isTrue();
+			assertThat(union.current()).isEqualTo(1L);
+			assertThat(union.seekAtLeast(3L)).isTrue();
+			assertThat(union.current()).isEqualTo(3L);
+			assertThat(union.multiplicity()).isEqualTo(2L);
+			assertThat(union.advance()).isTrue();
+			assertThat(union.current()).isEqualTo(4L);
+			assertThat(union.seekAtLeast(2L)).isTrue();
+			assertThat(union.current()).isEqualTo(2L);
+			assertThat(union.advance()).isTrue();
+			assertThat(union.current()).isEqualTo(3L);
+			assertThat(union.advance()).isTrue();
+			assertThat(union.current()).isEqualTo(4L);
+			assertThat(union.advance()).isTrue();
+			assertThat(union.current()).isEqualTo(5L);
+			assertThat(union.advance()).isFalse();
+		} finally {
+			union.close();
+			union.close();
+		}
+	}
+
+	@Test
+	void adjacencyIdDomainCanRestartAfterExhaustion() {
+		long[] keys = { 1L, 3L, 5L };
+		NativeLmdbQuerySource.NativeAdjacency adjacency = new NativeLmdbQuerySource.NativeAdjacency() {
+			@Override
+			public long find(long key) {
+				return NOT_FOUND;
+			}
+
+			@Override
+			public long size(long runHandle) {
+				return 0L;
+			}
+
+			@Override
+			public long neighborAt(long runHandle, long runOffset) {
+				throw new UnsupportedOperationException();
+			}
+
+			@Override
+			public long contextAt(long runHandle, long runOffset) {
+				throw new UnsupportedOperationException();
+			}
+
+			@Override
+			public boolean supportsKeyEnumeration() {
+				return true;
+			}
+
+			@Override
+			public long keyCount() {
+				return keys.length;
+			}
+
+			@Override
+			public long keyAt(long keyOrdinal) {
+				return keys[(int) keyOrdinal];
+			}
+		};
+		LmdbNativeIdDomain domain = LmdbNativeIdDomain.adjacencyKeys(adjacency);
+		try {
+			assertThat(domain.seekAtLeast(4L)).isTrue();
+			assertThat(domain.current()).isEqualTo(5L);
+			assertThat(domain.advance()).isFalse();
+			assertThat(domain.seekAtLeast(2L)).isTrue();
+			assertThat(domain.current()).isEqualTo(3L);
+			assertThat(domain.seekAtLeast(6L)).isFalse();
+		} finally {
+			domain.close();
+		}
+	}
+
+	@Test
+	void sipMaskRetiresWhenItsBreakEvenSampleRejectsNothing() throws Exception {
+		CountingSource source = new CountingSource(32);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0, "value", 1), null);
+		layout.freeze(List.of("key", "value"));
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, UNKNOWN);
+		row.recomputeBoundMask();
+		PatternPlan root = new PatternPlan(Term.slot(0), Term.constant(7), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 32D);
+		LmdbNativeChunkPipeline.ScanStage stage = new LmdbNativeChunkPipeline.ScanStage(root, row,
+				LmdbNativeAttemptMetrics.direct());
+		long[] denseKeys = new long[32];
+		for (int i = 0; i < denseKeys.length; i++) {
+			denseKeys[i] = 100L + i;
+		}
+		LmdbNativeChunkPipeline.SipTarget target = new LmdbNativeChunkPipeline.SipTarget(
+				TripleIndex.SUBJ_IDX, true, new long[4]);
+		stage.publishMask(LmdbNativeChunkPipeline.SipMask.borrowDomain(
+				LmdbNativeIdDomain.sortedDistinct(denseKeys), target));
+		try {
+			assertThat(stage.fill(new NativeBatch(2, LmdbNativeChunkPipeline.SEEK_COST_KEYS)))
+					.isEqualTo(LmdbNativeChunkPipeline.SEEK_COST_KEYS);
+			assertThat(stage.masks)
+					.as("a dense exact domain must retire once its measured savings cannot repay membership checks")
+					.isEmpty();
+		} finally {
+			stage.close();
+		}
+	}
+
+	@Test
+	void adjacencyMaskCostGateRequiresStrictlyPositiveEstimatedSavings() {
+		assertThat(LmdbNativeChunkPipeline.adjacencyMaskEstimatedWorthwhile(8L, 8D)).isFalse();
+		assertThat(LmdbNativeChunkPipeline.adjacencyMaskEstimatedWorthwhile(7L, 8D)).isFalse();
+		assertThat(LmdbNativeChunkPipeline.adjacencyMaskEstimatedWorthwhile(6L, 8D)).isTrue();
+		assertThat(LmdbNativeChunkPipeline.adjacencyMaskEstimatedWorthwhile(1L, Double.NaN)).isFalse();
+		assertThat(LmdbNativeChunkPipeline.adjacencyMaskEstimatedWorthwhile(1L, Double.POSITIVE_INFINITY)).isFalse();
+		assertThat(LmdbNativeChunkPipeline.adjacencyMaskEstimatedWorthwhile(0L, Double.MAX_VALUE)).isTrue();
 	}
 
 	@Test

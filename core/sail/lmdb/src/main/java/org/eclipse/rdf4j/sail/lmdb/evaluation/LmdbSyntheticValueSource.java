@@ -94,28 +94,46 @@ final class SyntheticValueSource implements NativeLmdbQuerySource {
 
 	@Override
 	public RecordIterator statements(long subj, long pred, long obj, long context) throws IOException {
+		return statements(subj, pred, obj, context, (AdjacencyAccessObserver) null);
+	}
+
+	@Override
+	public RecordIterator statements(long subj, long pred, long obj, long context,
+			AdjacencyAccessObserver observer) throws IOException {
 		if (anySynthetic(subj, pred, obj, context)) {
 			return EMPTY;
 		}
-		return delegate.statements(subj, pred, obj, context);
+		return delegate.statements(subj, pred, obj, context, observer);
 	}
 
 	@Override
 	public RecordIterator statements(long subj, long pred, long obj, long context, LmdbKeyRange range)
 			throws IOException {
+		return statements(subj, pred, obj, context, range, null);
+	}
+
+	@Override
+	public RecordIterator statements(long subj, long pred, long obj, long context, LmdbKeyRange range,
+			AdjacencyAccessObserver observer) throws IOException {
 		if (anySynthetic(subj, pred, obj, context)) {
 			return EMPTY;
 		}
-		return delegate.statements(subj, pred, obj, context, range);
+		return delegate.statements(subj, pred, obj, context, range, observer);
 	}
 
 	@Override
 	public RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context)
 			throws IOException {
+		return statements(order, subj, pred, obj, context, null);
+	}
+
+	@Override
+	public RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context,
+			AdjacencyAccessObserver observer) throws IOException {
 		if (anySynthetic(subj, pred, obj, context)) {
 			return EMPTY;
 		}
-		return delegate.statements(order, subj, pred, obj, context);
+		return delegate.statements(order, subj, pred, obj, context, observer);
 	}
 
 	@Override
@@ -139,10 +157,16 @@ final class SyntheticValueSource implements NativeLmdbQuerySource {
 	@Override
 	public LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
 			boolean countRunRows) throws IOException {
+		return prefixRuns(plan, subj, pred, obj, context, countRunRows, null);
+	}
+
+	@Override
+	public LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
+			boolean countRunRows, AdjacencyAccessObserver observer) throws IOException {
 		if (anySynthetic(subj, pred, obj, context)) {
 			return LmdbPrefixRunCursor.EMPTY;
 		}
-		return delegate.prefixRuns(plan, subj, pred, obj, context, countRunRows);
+		return delegate.prefixRuns(plan, subj, pred, obj, context, countRunRows, observer);
 	}
 
 	@Override
@@ -160,10 +184,16 @@ final class SyntheticValueSource implements NativeLmdbQuerySource {
 		return new NativeProbe() {
 			@Override
 			public RecordIterator open(long subj, long pred, long obj, long context) throws IOException {
+				return open(subj, pred, obj, context, null);
+			}
+
+			@Override
+			public RecordIterator open(long subj, long pred, long obj, long context,
+					AdjacencyAccessObserver observer) throws IOException {
 				if (anySynthetic(subj, pred, obj, context)) {
 					return EMPTY;
 				}
-				return inner.open(subj, pred, obj, context);
+				return inner.open(subj, pred, obj, context, observer);
 			}
 
 			@Override
@@ -172,8 +202,8 @@ final class SyntheticValueSource implements NativeLmdbQuerySource {
 			}
 
 			@Override
-			public long[] adjacencyCacheKeys() {
-				return inner.adjacencyCacheKeys();
+			public LmdbNativeIdDomain adjacencyCacheKeyDomain() throws IOException {
+				return inner.adjacencyCacheKeyDomain();
 			}
 
 			@Override
@@ -215,6 +245,12 @@ final class SyntheticValueSource implements NativeLmdbQuerySource {
 	@Override
 	public OptionalDouble meanFanOut(long predicate, boolean bySubject) {
 		return synthetic(predicate) ? OptionalDouble.empty() : delegate.meanFanOut(predicate, bySubject);
+	}
+
+	@Override
+	public OptionalLong adjacencyKeyDomainCardinality(long predicate, boolean bySubject) {
+		return synthetic(predicate) ? OptionalLong.empty()
+				: delegate.adjacencyKeyDomainCardinality(predicate, bySubject);
 	}
 
 	@Override

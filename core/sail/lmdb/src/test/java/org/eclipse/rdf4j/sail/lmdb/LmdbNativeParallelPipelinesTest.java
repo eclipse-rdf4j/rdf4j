@@ -163,6 +163,26 @@ public class LmdbNativeParallelPipelinesTest {
 	}
 
 	@Test
+	public void telemetryRetainsPhysicalAccessesAcrossParallelWorkerRows() {
+		String query = chain("");
+		long parallelBefore = LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get();
+
+		String rendered;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			rendered = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toString();
+		}
+
+		assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get())
+				.as("parallel rejection: %s", LmdbNativeParallelPipelines.LAST_REJECTION.get())
+				.isEqualTo(parallelBefore + 1L);
+		assertThat(rendered)
+				.contains("nativeExecutionPath=parallelPipelines")
+				.contains("    adjacencyAccess:\n")
+				.contains("      attempts:\n        0:\n")
+				.contains("          where: Pattern(");
+	}
+
+	@Test
 	public void orderedChainKeepsBoundedTopKAboveSharedProducerLadder() {
 		String query = chain("") + " ORDER BY DESC(?value) ?subject LIMIT 17";
 		List<String> generic = orderedRowsWithProperty(NATIVE_FLAG, "false", query);

@@ -33,6 +33,7 @@ final class RowState {
 	final ExactValuesRuntimeMetrics exactValuesMetrics;
 	final int[] trailSlots;
 	final long[] trailOldValues;
+	LmdbNativeRuntimePlan.Invocation runtimePlan;
 	PathResultMemo pathEstimateMemos;
 	int trailSize;
 	long boundMask;
@@ -112,6 +113,12 @@ final class RowState {
 
 	long boundMask() {
 		return boundMask;
+	}
+
+	void completeRuntimePlan() {
+		if (runtimePlan != null) {
+			runtimePlan.complete();
+		}
 	}
 
 	/**

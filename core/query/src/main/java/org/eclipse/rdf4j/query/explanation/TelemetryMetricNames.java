@@ -67,6 +67,10 @@ public final class TelemetryMetricNames {
 	public static final String INDEX_NAME = "indexName";
 	public static final String INDEX_NAMES = "indexNames";
 	public static final String NATIVE_EXECUTION_PATH = "nativeExecutionPath";
+	/** Multiline physical plan chosen before execution, rendered ahead of the logical explanation. */
+	public static final String PLANNED_PHYSICAL_PLAN = "plannedPhysicalPlan";
+	/** Multiline physical plan witnessed by runtime activation points, rendered ahead of the logical explanation. */
+	public static final String RUNTIME_PHYSICAL_PLAN = "runtimePhysicalPlan";
 
 	public static final String REMOTE_REQUEST_COUNT_ACTUAL = "remoteRequestCountActual";
 	public static final String REMOTE_ASK_REQUEST_COUNT_ACTUAL = "remoteAskRequestCountActual";
@@ -175,6 +179,6 @@ public final class TelemetryMetricNames {
 	}
 
 	public static boolean isExecutionSummaryMetric(String metricName) {
-		return NATIVE_EXECUTION_PATH.equals(metricName);
+		return NATIVE_EXECUTION_PATH.equals(metricName) || RUNTIME_PHYSICAL_PLAN.equals(metricName);
 	}
 }

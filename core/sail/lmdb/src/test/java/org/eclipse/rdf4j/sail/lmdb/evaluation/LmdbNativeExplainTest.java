@@ -17,12 +17,13 @@ import java.util.List;
 import java.util.Map;
 
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.junit.jupiter.api.Test;
 
 class LmdbNativeExplainTest {
 
 	@Test
-	void runtimePlanKeepsTheFirstObservationInsteadOfRebuildingForEveryInvocation() {
+	void runtimePlanKeepsEveryInvocationWithoutPublishingTheLegacyDuplicate() {
 		SingletonSet target = new SingletonSet();
 		target.setRuntimeTelemetryEnabled(true);
 		NativeSlotLayout layout = layout();
@@ -30,7 +31,14 @@ class LmdbNativeExplainTest {
 		LmdbNativeExplain.recordRuntimeEntryPlan(target, SingletonPlan.INSTANCE, layout, 1L);
 		LmdbNativeExplain.recordRuntimeEntryPlan(target, EmptyPlan.INSTANCE, layout, 2L);
 
-		assertThat(target.getStringMetricActual(LmdbNativeExplain.RUNTIME_ENTRY_PLAN)).isEqualTo("Singleton");
+		assertThat(target.getStringMetricActual(TelemetryMetricNames.RUNTIME_PHYSICAL_PLAN))
+				.contains("  invocation[0]:")
+				.contains("initialBoundMask: 0x1")
+				.contains("entryPlan=Singleton")
+				.contains("  invocation[1]:")
+				.contains("initialBoundMask: 0x2")
+				.contains("entryPlan=Empty");
+		assertThat(target.getStringMetricActual(LmdbNativeExplain.RUNTIME_ENTRY_PLAN)).isNull();
 		assertThat(target.getStringMetricActual(LmdbNativeExplain.INITIAL_BOUND_MASK))
 				.isEqualTo("0x1 [?first#0]");
 	}

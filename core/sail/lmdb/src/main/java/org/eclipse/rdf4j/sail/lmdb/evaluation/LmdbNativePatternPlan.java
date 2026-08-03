@@ -128,22 +128,24 @@ final class PatternPlan implements SlotPlan {
 		long pred = p.lookup(row.slots);
 		long obj = o.lookup(row.slots);
 		long context = c.lookup(row.slots);
+		NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver = adjacencyAccessObserver(row);
 		if (namedContextScope && context == NULL_CONTEXT_ID) {
 			return PatternCursor.empty();
 		}
 		if (doesNotProduceBindings(row.slots) && (existenceOnly || atMostOneQuadCanMatch(context))) {
-			return openAsExistenceCheck(row.source, subj, pred, obj, context);
+			return openAsExistenceCheck(row.source, subj, pred, obj, context, accessObserver);
 		}
 		if (contexts.isFixed()) {
 			if (context != UNKNOWN) {
 				if (!contexts.contains(context)) {
 					return PatternCursor.empty();
 				}
-				return PatternCursor.single(openIterator(row.source, probe, subj, pred, obj, context));
+				return PatternCursor.single(
+						openIterator(row.source, probe, subj, pred, obj, context, accessObserver));
 			}
-			return openContexts(row.source, probe, subj, pred, obj, contexts.ids);
+			return openContexts(row.source, probe, subj, pred, obj, contexts.ids, accessObserver);
 		}
-		return PatternCursor.single(openIterator(row.source, probe, subj, pred, obj, context));
+		return PatternCursor.single(openIterator(row.source, probe, subj, pred, obj, context, accessObserver));
 	}
 
 	/**
@@ -193,6 +195,7 @@ final class PatternPlan implements SlotPlan {
 		long pred = lookupUnbinding(p, row.slots, unboundMask);
 		long obj = lookupUnbinding(o, row.slots, unboundMask);
 		long context = lookupUnbinding(c, row.slots, unboundMask);
+		NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver = adjacencyAccessObserver(row);
 		if (namedContextScope && context == NULL_CONTEXT_ID) {
 			return PatternCursor.empty();
 		}
@@ -201,33 +204,37 @@ final class PatternPlan implements SlotPlan {
 				if (!contexts.contains(context)) {
 					return PatternCursor.empty();
 				}
-				return PatternCursor.single(openIterator(row.source, probe, subj, pred, obj, context));
+				return PatternCursor.single(
+						openIterator(row.source, probe, subj, pred, obj, context, accessObserver));
 			}
-			return openContexts(row.source, probe, subj, pred, obj, contexts.ids);
+			return openContexts(row.source, probe, subj, pred, obj, contexts.ids, accessObserver);
 		}
-		return PatternCursor.single(openIterator(row.source, probe, subj, pred, obj, context));
+		return PatternCursor.single(openIterator(row.source, probe, subj, pred, obj, context, accessObserver));
 	}
 
 	private RecordIterator openIterator(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe,
-			long subj, long pred, long obj, long context) throws IOException {
+			long subj, long pred, long obj, long context,
+			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver) throws IOException {
 		if (statementOrder != null) {
-			return source.statements(statementOrder, subj, pred, obj, context);
+			return source.statements(statementOrder, subj, pred, obj, context, accessObserver);
 		}
 		if (range != null) {
-			return source.statements(subj, pred, obj, context, range);
+			return source.statements(subj, pred, obj, context, range, accessObserver);
 		}
-		return probe != null ? probe.open(subj, pred, obj, context) : source.statements(subj, pred, obj, context);
+		return probe != null ? probe.open(subj, pred, obj, context, accessObserver)
+				: source.statements(subj, pred, obj, context, accessObserver);
 	}
 
 	private PatternCursor openContexts(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe,
-			long subj, long pred, long obj, long[] contextIds) throws IOException {
+			long subj, long pred, long obj, long[] contextIds,
+			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver) throws IOException {
 		if (statementOrder == null) {
-			return PatternCursor.contexts(source, probe, subj, pred, obj, contextIds, range);
+			return PatternCursor.contexts(source, probe, subj, pred, obj, contextIds, range, accessObserver);
 		}
 		List<RecordIterator> iterators = new ArrayList<>(contextIds.length);
 		try {
 			for (long contextId : contextIds) {
-				iterators.add(source.statements(statementOrder, subj, pred, obj, contextId));
+				iterators.add(source.statements(statementOrder, subj, pred, obj, contextId, accessObserver));
 			}
 			return PatternCursor.single(OrderedRecordIterator.merge(iterators, statementOrder));
 		} catch (IOException | RuntimeException | Error e) {
@@ -236,6 +243,11 @@ final class PatternPlan implements SlotPlan {
 			}
 			throw e;
 		}
+	}
+
+	private NativeLmdbQuerySource.AdjacencyAccessObserver adjacencyAccessObserver(RowState row) {
+		return row.runtimePlan == null ? null
+				: row.runtimePlan.adjacencyAccessAt(LmdbNativeExplain.describe(this, row.layout));
 	}
 
 	static long lookupUnbinding(Term term, long[] slots, long unboundMask) {
@@ -463,7 +475,7 @@ final class PatternPlan implements SlotPlan {
 	}
 
 	PatternCursor openAsExistenceCheck(NativeLmdbQuerySource source, long subj, long pred, long obj,
-			long context) throws IOException {
+			long context, NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver) throws IOException {
 		if (contexts.isFixed()) {
 			if (context != UNKNOWN) {
 				return PatternCursor.exists(contexts.contains(context) && source.has(subj, pred, obj, context),
@@ -478,7 +490,7 @@ final class PatternPlan implements SlotPlan {
 			return PatternCursor.empty();
 		}
 		if (namedContextScope && context == UNKNOWN) {
-			return PatternCursor.single(source.statements(subj, pred, obj, context));
+			return PatternCursor.single(source.statements(subj, pred, obj, context, accessObserver));
 		}
 		return PatternCursor.exists(source.has(subj, pred, obj, context), subj, pred, obj, context);
 	}

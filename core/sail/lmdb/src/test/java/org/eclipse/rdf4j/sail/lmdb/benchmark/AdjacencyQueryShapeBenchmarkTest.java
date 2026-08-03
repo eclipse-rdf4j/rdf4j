@@ -43,6 +43,8 @@ class AdjacencyQueryShapeBenchmarkTest {
 			assertThat(benchmark.nodeEdgeDump()).isGreaterThan(0);
 			assertThat(benchmark.twoHopFromSeed()).isGreaterThan(0);
 			assertThat(benchmark.pathReachability()).isGreaterThan(0);
+			assertThat(benchmark.selectiveAdjacencySipChain()).isGreaterThan(0);
+			assertThat(benchmark.denseAdjacencySipChain()).isGreaterThan(0);
 			// The doubly-bound probe depends on a specific edge existing; assert it executes, not its cardinality.
 			assertThat(benchmark.doublyBoundProbe()).isGreaterThanOrEqualTo(0);
 		} finally {

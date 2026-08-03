@@ -88,7 +88,9 @@ import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAttemptMetrics;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeExpressionCompiler;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeIdDomain;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.AdjacencyAccessObserver;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -3170,15 +3172,44 @@ class LmdbSailStore implements SailStore {
 		private RecordIterator tryDirect(StatementOrder order, long subj, long pred, long obj, long context,
 				LmdbReferenceNodeLocator.SearchContext searchContext,
 				LmdbDirectAdjacencyIterator reusableIterator) throws IOException {
+			return tryDirect(order, subj, pred, obj, context, searchContext, reusableIterator, null);
+		}
+
+		private RecordIterator tryDirect(StatementOrder order, long subj, long pred, long obj, long context,
+				LmdbReferenceNodeLocator.SearchContext searchContext,
+				LmdbDirectAdjacencyIterator reusableIterator, AdjacencyAccessObserver observer) throws IOException {
 			LmdbAdjacencyReadView view = exactAdjacencyView(true);
 			if (view == null) {
+				if (observer != null) {
+					observer.access(false, parallelAdjacencyUnavailableReason(), order, subj, pred, obj, context);
+				}
 				return null;
 			}
 			return order == null
 					? directAdjacency.tryOpen(view, txn, subj, pred, obj, context, explicit, searchContext,
-							reusableIterator)
+							reusableIterator, observer)
 					: directAdjacency.tryOpenOrdered(view, txn, order, subj, pred, obj, context, explicit,
-							searchContext);
+							searchContext, observer);
+		}
+
+		private String parallelAdjacencyUnavailableReason() {
+			if (!directRowPathEnabled) {
+				return "FEATURE_DISABLED[" + LmdbDirectAdjacencyStore.PARALLEL_ROW_PATH_PROPERTY + "=false]";
+			}
+			if (!adjacencyEligible) {
+				return "READER_INELIGIBLE";
+			}
+			if (directAdjacency == null) {
+				return "FEATURE_DISABLED[direct adjacency is not configured]";
+			}
+			LmdbAdjacencyReadView view = adjacencyView();
+			if (view == null) {
+				return "NO_EXACT_VIEW";
+			}
+			if (!view.isExact()) {
+				return "VIEW_UNAVAILABLE[reason=" + view.fallbackReason() + "]";
+			}
+			return LmdbAdjacencyMetrics.FallbackReason.MAP_RESIZE_INVALIDATED.name();
 		}
 
 		private static boolean parallelRowPathEnabled() {
@@ -3255,11 +3286,17 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public RecordIterator statements(long subj, long pred, long obj, long context) throws IOException {
+			return statements(subj, pred, obj, context, (AdjacencyAccessObserver) null);
+		}
+
+		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context,
+				AdjacencyAccessObserver observer) throws IOException {
 			checkOpen();
 			if (!hasStatementsInSource()) {
 				return EmptyRecordIterator.INSTANCE;
 			}
-			RecordIterator direct = tryDirect(null, subj, pred, obj, context);
+			RecordIterator direct = tryDirect(null, subj, pred, obj, context, null, null, observer);
 			if (direct != null) {
 				return direct;
 			}
@@ -3269,13 +3306,24 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public RecordIterator statements(long subj, long pred, long obj, long context, LmdbKeyRange range)
 				throws IOException {
+			return statements(subj, pred, obj, context, range, null);
+		}
+
+		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context, LmdbKeyRange range,
+				AdjacencyAccessObserver observer) throws IOException {
 			checkOpen();
 			if (!hasStatementsInSource()) {
 				return EmptyRecordIterator.INSTANCE;
 			}
-			return rangeApplies(range, subj, pred, obj, context)
-					? tripleStore.getTriplesRange(txn, subj, pred, obj, context, explicit, range)
-					: statements(subj, pred, obj, context);
+			if (rangeApplies(range, subj, pred, obj, context)) {
+				if (observer != null) {
+					observer.access(false, "KEY_RANGE_REQUIRES_LMDB[index=" + range.indexFieldSeq() + "]", null,
+							subj, pred, obj, context);
+				}
+				return tripleStore.getTriplesRange(txn, subj, pred, obj, context, explicit, range);
+			}
+			return statements(subj, pred, obj, context, observer);
 		}
 
 		@Override
@@ -3303,11 +3351,17 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context)
 				throws IOException {
+			return statements(order, subj, pred, obj, context, null);
+		}
+
+		@Override
+		public RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context,
+				AdjacencyAccessObserver observer) throws IOException {
 			checkOpen();
 			if (!hasStatementsInSource()) {
 				return EmptyRecordIterator.INSTANCE;
 			}
-			RecordIterator direct = tryDirect(order, subj, pred, obj, context);
+			RecordIterator direct = tryDirect(order, subj, pred, obj, context, null, null, observer);
 			if (direct != null) {
 				return direct;
 			}
@@ -3346,15 +3400,31 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
 				boolean countRunRows) throws IOException {
+			return prefixRuns(plan, subj, pred, obj, context, countRunRows, null);
+		}
+
+		@Override
+		public LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
+				boolean countRunRows, AdjacencyAccessObserver observer) throws IOException {
 			checkOpen();
 			if (!hasStatementsInSource()) {
 				return LmdbPrefixRunCursor.EMPTY;
 			}
 			if (plan != null && plan.usesAdjacency()) {
 				LmdbAdjacencyReadView view = exactAdjacencyView(false);
-				return view == null ? null
-						: directAdjacency.tryPrefixRuns(view, plan, subj, pred, obj, context, explicit,
-								countRunRows);
+				LmdbPrefixRunCursor cursor = view == null ? null
+						: directAdjacency.tryPrefixRuns(view, plan, subj, pred, obj, context, explicit, countRunRows);
+				if (observer != null) {
+					observer.access(cursor != null,
+							cursor != null ? "ADJACENCY_PREFIX_RUN" : parallelAdjacencyUnavailableReason(), null,
+							subj, pred, obj, context);
+				}
+				return cursor;
+			}
+			if (observer != null) {
+				observer.access(false,
+						"PLAN_SELECTED_LMDB_PREFIX_RUN[index=" + (plan == null ? "<none>" : plan.indexName()) + "]",
+						null, subj, pred, obj, context);
 			}
 			return tripleStore.getPrefixRuns(txn, plan, subj, pred, obj, context, explicit, countRunRows);
 		}
@@ -3385,6 +3455,12 @@ class LmdbSailStore implements SailStore {
 
 				@Override
 				public RecordIterator open(long subj, long pred, long obj, long context) throws IOException {
+					return open(subj, pred, obj, context, null);
+				}
+
+				@Override
+				public RecordIterator open(long subj, long pred, long obj, long context,
+						AdjacencyAccessObserver observer) throws IOException {
 					if (closed) {
 						throw new SailException("Probe has been closed");
 					}
@@ -3396,7 +3472,7 @@ class LmdbSailStore implements SailStore {
 							return EmptyRecordIterator.INSTANCE;
 						}
 						RecordIterator direct = tryDirect(null, subj, pred, obj, context, searchContext,
-								retainedDirect);
+								retainedDirect, observer);
 						if (direct != null) {
 							currentDirect = direct;
 							servedDirect = true;
@@ -3511,6 +3587,18 @@ class LmdbSailStore implements SailStore {
 			return hasStatementsInSource()
 					? fanOutMean(predicate, bySubject, explicit, null)
 					: OptionalDouble.empty();
+		}
+
+		@Override
+		public OptionalLong adjacencyKeyDomainCardinality(long predicate, boolean bySubject) {
+			checkOpen();
+			if (!hasStatementsInSource()) {
+				return OptionalLong.empty();
+			}
+			LmdbAdjacencyReadView view = exactAdjacencyView(true);
+			return view == null
+					? OptionalLong.empty()
+					: directAdjacency.keyDomainCardinality(view, predicate, bySubject, explicit);
 		}
 
 		@Override
@@ -3643,7 +3731,7 @@ class LmdbSailStore implements SailStore {
 		 */
 		private RecordIterator tryDirect(StatementOrder order, long subj, long pred, long obj, long context)
 				throws IOException {
-			return tryDirect(order, subj, pred, obj, context, null);
+			return tryDirect(order, subj, pred, obj, context, null, null);
 		}
 
 		private RecordIterator tryDirect(StatementOrder order, long subj, long pred, long obj, long context,
@@ -3654,18 +3742,36 @@ class LmdbSailStore implements SailStore {
 		private RecordIterator tryDirect(StatementOrder order, long subj, long pred, long obj, long context,
 				LmdbReferenceNodeLocator.SearchContext searchContext,
 				LmdbDirectAdjacencyIterator reusableIterator) throws IOException {
+			return tryDirect(order, subj, pred, obj, context, searchContext, reusableIterator, null);
+		}
+
+		private RecordIterator tryDirect(StatementOrder order, long subj, long pred, long obj, long context,
+				LmdbReferenceNodeLocator.SearchContext searchContext,
+				LmdbDirectAdjacencyIterator reusableIterator, AdjacencyAccessObserver observer) throws IOException {
 			if (adjacencyView == null || !adjacencyView.isExact()) {
+				observeDirectUnavailable(observer, order, subj, pred, obj, context,
+						adjacencyView == null ? "NO_EXACT_VIEW"
+								: "VIEW_UNAVAILABLE[reason=" + adjacencyView.fallbackReason() + "]");
 				return null;
 			}
 			if (txn.version() != pinnedTxnVersion) {
 				directAdjacency.recordFallback(LmdbAdjacencyMetrics.FallbackReason.MAP_RESIZE_INVALIDATED);
+				observeDirectUnavailable(observer, order, subj, pred, obj, context,
+						LmdbAdjacencyMetrics.FallbackReason.MAP_RESIZE_INVALIDATED.name());
 				return null;
 			}
 			return order == null
 					? directAdjacency.tryOpen(adjacencyView, txn, subj, pred, obj, context, explicit, searchContext,
-							reusableIterator)
+							reusableIterator, observer)
 					: directAdjacency.tryOpenOrdered(adjacencyView, txn, order, subj, pred, obj, context, explicit,
-							searchContext);
+							searchContext, observer);
+		}
+
+		private void observeDirectUnavailable(AdjacencyAccessObserver observer, StatementOrder order, long subj,
+				long pred, long obj, long context, String reason) {
+			if (observer != null) {
+				observer.access(false, reason, order, subj, pred, obj, context);
+			}
 		}
 
 		private boolean directEligible() {
@@ -3820,6 +3926,12 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public RecordIterator statements(long subj, long pred, long obj, long context) throws IOException {
+			return statements(subj, pred, obj, context, (AdjacencyAccessObserver) null);
+		}
+
+		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context,
+				AdjacencyAccessObserver observer) throws IOException {
 			long readStamp = acquireNativeSourceReadLock();
 			boolean releaseReadLock = true;
 			try {
@@ -3827,7 +3939,7 @@ class LmdbSailStore implements SailStore {
 				if (!hasStatementsInSource()) {
 					return EmptyRecordIterator.INSTANCE;
 				}
-				RecordIterator direct = tryDirect(null, subj, pred, obj, context);
+				RecordIterator direct = tryDirect(null, subj, pred, obj, context, null, null, observer);
 				if (direct != null) {
 					// pure in-memory iterator holding its own read-view lease: release the read stamp now
 					return direct;
@@ -3845,8 +3957,14 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public RecordIterator statements(long subj, long pred, long obj, long context, LmdbKeyRange range)
 				throws IOException {
+			return statements(subj, pred, obj, context, range, null);
+		}
+
+		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context, LmdbKeyRange range,
+				AdjacencyAccessObserver observer) throws IOException {
 			if (!rangeApplies(range, subj, pred, obj, context)) {
-				return statements(subj, pred, obj, context);
+				return statements(subj, pred, obj, context, observer);
 			}
 			long readStamp = acquireNativeSourceReadLock();
 			boolean releaseReadLock = true;
@@ -3855,6 +3973,8 @@ class LmdbSailStore implements SailStore {
 				if (!hasStatementsInSource()) {
 					return EmptyRecordIterator.INSTANCE;
 				}
+				observeDirectUnavailable(observer, null, subj, pred, obj, context,
+						"KEY_RANGE_REQUIRES_LMDB[index=" + range.indexFieldSeq() + "]");
 				RecordIterator iterator = tripleStore.getTriplesRange(txn, subj, pred, obj, context, explicit, range);
 				releaseReadLock = false;
 				return new NativeSourceReadLockedRecordIterator(iterator, readStamp);
@@ -3868,6 +3988,12 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context)
 				throws IOException {
+			return statements(order, subj, pred, obj, context, null);
+		}
+
+		@Override
+		public RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context,
+				AdjacencyAccessObserver observer) throws IOException {
 			long readStamp = acquireNativeSourceReadLock();
 			boolean releaseReadLock = true;
 			try {
@@ -3875,7 +4001,7 @@ class LmdbSailStore implements SailStore {
 				if (!hasStatementsInSource()) {
 					return EmptyRecordIterator.INSTANCE;
 				}
-				RecordIterator direct = tryDirect(order, subj, pred, obj, context);
+				RecordIterator direct = tryDirect(order, subj, pred, obj, context, null, null, observer);
 				if (direct != null) {
 					// pure in-memory iterator holding its own read-view lease: release the read stamp now
 					return direct;
@@ -3974,6 +4100,12 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
 				boolean countRunRows) throws IOException {
+			return prefixRuns(plan, subj, pred, obj, context, countRunRows, null);
+		}
+
+		@Override
+		public LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
+				boolean countRunRows, AdjacencyAccessObserver observer) throws IOException {
 			long readStamp = acquireNativeSourceReadLock();
 			boolean releaseReadLock = true;
 			try {
@@ -3982,10 +4114,20 @@ class LmdbSailStore implements SailStore {
 					return LmdbPrefixRunCursor.EMPTY;
 				}
 				if (plan != null && plan.usesAdjacency()) {
-					return directEligible()
+					LmdbPrefixRunCursor cursor = directEligible()
 							? directAdjacency.tryPrefixRuns(adjacencyView, plan, subj, pred, obj, context, explicit,
 									countRunRows)
 							: null;
+					if (observer != null) {
+						observer.access(cursor != null,
+								cursor != null ? "ADJACENCY_PREFIX_RUN" : "ADJACENCY_PREFIX_RUN_UNAVAILABLE", null,
+								subj, pred, obj, context);
+					}
+					return cursor;
+				}
+				if (observer != null) {
+					observer.access(false, "PLAN_SELECTED_LMDB_PREFIX_RUN[index="
+							+ (plan == null ? "<none>" : plan.indexName()) + "]", null, subj, pred, obj, context);
 				}
 				LmdbPrefixRunCursor cursor = tripleStore.getPrefixRuns(txn, plan, subj, pred, obj, context, explicit,
 						countRunRows);
@@ -4037,15 +4179,25 @@ class LmdbSailStore implements SailStore {
 			private RecordIterator currentDirect;
 			private boolean closed;
 			private boolean servedDirect;
+			private long adjacencyDomainPredicate;
 
 			@Override
 			public RecordIterator open(long subj, long pred, long obj, long context) throws IOException {
+				return open(subj, pred, obj, context, null);
+			}
+
+			@Override
+			public RecordIterator open(long subj, long pred, long obj, long context,
+					AdjacencyAccessObserver observer) throws IOException {
 				if (closed) {
 					throw new SailException("Probe has been closed");
 				}
 				try {
 					closeCurrentDirect();
 					servedDirect = false;
+					// The predicate-wide outgoing domain is a safe semijoin superset for every context selection.
+					// Incoming domains deliberately decline because inlined-object keys live in a separate index.
+					adjacencyDomainPredicate = subj > 0 && obj <= 0 && pred > 0 ? pred : 0L;
 					if (!stampHeld) {
 						readStamp = acquireNativeSourceReadLock();
 						stampHeld = true;
@@ -4054,7 +4206,8 @@ class LmdbSailStore implements SailStore {
 					if (!hasStatementsInSource()) {
 						return EmptyRecordIterator.INSTANCE;
 					}
-					RecordIterator direct = tryDirect(null, subj, pred, obj, context, searchContext, retainedDirect);
+					RecordIterator direct = tryDirect(null, subj, pred, obj, context, searchContext, retainedDirect,
+							observer);
 					if (direct != null) {
 						currentDirect = direct;
 						servedDirect = true;
@@ -4083,6 +4236,14 @@ class LmdbSailStore implements SailStore {
 			@Override
 			public boolean adjacencyCacheBacked() {
 				return servedDirect;
+			}
+
+			@Override
+			public LmdbNativeIdDomain adjacencyCacheKeyDomain() throws IOException {
+				if (adjacencyDomainPredicate <= 0) {
+					return null;
+				}
+				return LmdbNativeIdDomain.adjacencyKeys(adjacency(adjacencyDomainPredicate, true));
 			}
 
 			@Override
@@ -4117,6 +4278,7 @@ class LmdbSailStore implements SailStore {
 				}
 				closed = true;
 				servedDirect = false;
+				adjacencyDomainPredicate = 0L;
 				try {
 					closeCurrentDirect();
 				} finally {
@@ -4212,6 +4374,15 @@ class LmdbSailStore implements SailStore {
 				}
 			}
 			return tripleStore.meanFanOut(predicate, bySubject, explicit);
+		}
+
+		@Override
+		public OptionalLong adjacencyKeyDomainCardinality(long predicate, boolean bySubject) {
+			assertNativeSourceOpen();
+			if (!hasStatementsInSource() || !directEligible()) {
+				return OptionalLong.empty();
+			}
+			return directAdjacency.keyDomainCardinality(adjacencyView, predicate, bySubject, explicit);
 		}
 
 		private OptionalDouble cachedPlannerFanOut(long predicate, boolean bySubject) {

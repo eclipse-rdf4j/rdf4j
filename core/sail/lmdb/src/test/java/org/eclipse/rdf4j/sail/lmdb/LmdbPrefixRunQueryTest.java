@@ -216,6 +216,32 @@ public class LmdbPrefixRunQueryTest {
 	}
 
 	@Test
+	public void distinctPredicateKeepsPrefetchedSuccessorAfterDenseRun() {
+		LmdbPrefixRunPlan.resetMetrics();
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+				.setDirectAdjacencyBuildOnStart(false);
+		repository = new SailRepository(new LmdbStore(dataDir, config));
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			ValueFactory vf = conn.getValueFactory();
+			IRI dense = vf.createIRI(EX, "dense");
+			IRI successor = vf.createIRI(EX, "successor");
+			conn.begin();
+			for (int row = 0; row < 32; row++) {
+				conn.add(vf.createIRI(EX, "dense-subject-" + row), dense,
+						vf.createIRI(EX, "dense-object-" + row));
+			}
+			conn.add(vf.createIRI(EX, "successor-subject"), successor, vf.createIRI(EX, "successor-object"));
+			conn.commit();
+		}
+
+		long before = LmdbPrefixRunPlan.OPENED.get();
+		assertThat(values("SELECT DISTINCT ?p WHERE { ?s ?p ?o }", "p"))
+				.containsExactly(EX + "dense", EX + "successor");
+		assertThat(LmdbPrefixRunPlan.OPENED.get()).isGreaterThan(before);
+	}
+
+	@Test
 	public void distinctProjectionsUseAvailablePrefixRunsBeforeAdjacencyBuild() {
 		LmdbPrefixRunPlan.resetMetrics();
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc,opsc")

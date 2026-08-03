@@ -17,9 +17,12 @@ import java.nio.file.Files;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.FileUtils;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -40,8 +43,9 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 /**
  * Acceptance workloads for direct-adjacency consumption beyond joins (Kuzu parity survey): full predicate scans,
  * distinct/degree/count aggregates over one predicate, point lookups in both directions, doubly-bound probes, node edge
- * dumps, multi-hop expansion, and property-path reachability. The dataset is the FOAF clique store used by
- * {@link FoafCliqueQueryBenchmark} so results are comparable with the WCOJ work on the same branch.
+ * dumps, multi-hop expansion, property-path reachability, and selective/non-selective adjacency-domain SIP chains. The
+ * dataset is the FOAF clique store used by {@link FoafCliqueQueryBenchmark} so results are comparable with the WCOJ
+ * work on the same branch.
  *
  * These shapes are the ones the adjacency-usage census ({@code LmdbAdjacencyUsageCensusTest}) shows falling back to
  * LMDB today (ROOT_SCAN, DOUBLY_BOUND, PREDICATE_ENUMERATION_INCOMPLETE) even though the in-memory structures hold the
@@ -57,8 +61,14 @@ public class AdjacencyQueryShapeBenchmark {
 
 	private static final String PREFIXES = "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n";
 	private static final String PERSON_NAMESPACE = "http://example.org/foaf/person/";
+	private static final String SHAPE_NAMESPACE = "urn:rdf4j:adjacency-shape:";
 	private static final String SEED_PERSON = "<" + PERSON_NAMESPACE + "0>";
 	private static final String SEED_PERSON_TARGET = "<" + PERSON_NAMESPACE + "1>";
+	private static final String ROOT_PREDICATE = "<" + SHAPE_NAMESPACE + "root>";
+	private static final String SELECTIVE_PREDICATE = "<" + SHAPE_NAMESPACE + "selective>";
+	private static final String SELECTIVE_LEAF_PREDICATE = "<" + SHAPE_NAMESPACE + "selectiveLeaf>";
+	private static final String DENSE_PREDICATE = "<" + SHAPE_NAMESPACE + "dense>";
+	private static final String DENSE_LEAF_PREDICATE = "<" + SHAPE_NAMESPACE + "denseLeaf>";
 
 	@Param({ "5000" })
 	public int peopleCount;
@@ -101,7 +111,9 @@ public class AdjacencyQueryShapeBenchmark {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			new FoafCliqueDataGenerator(peopleCount, cliquePercentage, minCliqueSize, maxCliqueSize, randomKnowsEdges,
 					seed).populate(connection);
+			populateSipMaskShapes(connection);
 		}
+		awaitDirectAdjacency();
 	}
 
 	@TearDown(Level.Trial)
@@ -167,6 +179,61 @@ public class AdjacencyQueryShapeBenchmark {
 	@Benchmark
 	public long pathReachability() {
 		return executeCount(PREFIXES + "SELECT ?o WHERE { " + SEED_PERSON + " foaf:knows+ ?o }");
+	}
+
+	@Benchmark
+	public long selectiveAdjacencySipChain() {
+		return executeCount("SELECT ?s ?leaf WHERE { ?s " + ROOT_PREDICATE + " ?middle . ?middle "
+				+ SELECTIVE_PREDICATE + " ?value . ?value " + SELECTIVE_LEAF_PREDICATE + " ?leaf }");
+	}
+
+	@Benchmark
+	public long denseAdjacencySipChain() {
+		return executeCount("SELECT ?s ?leaf WHERE { ?s " + ROOT_PREDICATE + " ?middle . ?middle " + DENSE_PREDICATE
+				+ " ?value . ?value " + DENSE_LEAF_PREDICATE + " ?leaf }");
+	}
+
+	private void populateSipMaskShapes(SailRepositoryConnection connection) {
+		ValueFactory vf = connection.getValueFactory();
+		IRI rootPredicate = vf.createIRI(SHAPE_NAMESPACE, "root");
+		IRI selectivePredicate = vf.createIRI(SHAPE_NAMESPACE, "selective");
+		IRI selectiveLeafPredicate = vf.createIRI(SHAPE_NAMESPACE, "selectiveLeaf");
+		IRI densePredicate = vf.createIRI(SHAPE_NAMESPACE, "dense");
+		IRI denseLeafPredicate = vf.createIRI(SHAPE_NAMESPACE, "denseLeaf");
+		connection.begin();
+		for (int person = 0; person < peopleCount; person++) {
+			IRI subject = vf.createIRI(SHAPE_NAMESPACE, "subject/" + person);
+			IRI middle = vf.createIRI(SHAPE_NAMESPACE, "middle/" + person);
+			connection.add(subject, rootPredicate, middle);
+			for (int edge = 0; edge < 2; edge++) {
+				IRI value = vf.createIRI(SHAPE_NAMESPACE, "denseValue/" + person + "/" + edge);
+				connection.add(middle, densePredicate, value);
+				connection.add(value, denseLeafPredicate,
+						vf.createIRI(SHAPE_NAMESPACE, "denseLeaf/" + person + "/" + edge));
+			}
+			if ((person & 63) == 0) {
+				for (int edge = 0; edge < 200; edge++) {
+					IRI value = vf.createIRI(SHAPE_NAMESPACE, "selectiveValue/" + person + "/" + edge);
+					connection.add(middle, selectivePredicate, value);
+					connection.add(value, selectiveLeafPredicate,
+							vf.createIRI(SHAPE_NAMESPACE, "selectiveLeaf/" + person + "/" + edge));
+				}
+			}
+		}
+		connection.commit();
+	}
+
+	private void awaitDirectAdjacency() throws IOException {
+		LmdbStore store = (LmdbStore) repository.getSail();
+		try {
+			if (!store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)) {
+				throw new IOException("LMDB direct adjacency did not become exact for adjacency-shape benchmark: "
+						+ store.getDirectAdjacencyReadinessDescription());
+			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while waiting for LMDB direct adjacency", e);
+		}
 	}
 
 	private long executeCount(String query) {

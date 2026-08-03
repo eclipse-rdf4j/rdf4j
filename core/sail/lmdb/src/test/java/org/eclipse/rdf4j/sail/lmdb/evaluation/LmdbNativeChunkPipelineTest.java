@@ -16,8 +16,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.QueryResults;
@@ -485,6 +487,109 @@ public class LmdbNativeChunkPipelineTest {
 		}
 	}
 
+	@Test
+	public void adjacencyKeyDomainMasksSelectiveChainBeforeHashBuild() throws Exception {
+		String adjacencyMaskProperty = LmdbNativeChunkPipeline.ADJACENCY_SIP_MASK_PROPERTY;
+		String previousAdjacencyMask = System.getProperty(adjacencyMaskProperty);
+		String previousMerge = System.getProperty("rdf4j.lmdb.chunkPipeline.merge.enabled");
+		String previousParallel = System.getProperty("rdf4j.lmdb.parallel.enabled");
+		System.setProperty("rdf4j.lmdb.chunkPipeline.merge.enabled", "false");
+		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
+		File maskDir = new File(dataDir, "adjacency-domain-mask");
+		LmdbStore store = new LmdbStore(maskDir,
+				new LmdbStoreConfig("spoc,posc,ospc")
+						.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+						.setDirectAdjacencyMaxBytes(1L << 30));
+		SailRepository selective = new SailRepository(store);
+		try {
+			try (SailRepositoryConnection conn = selective.getConnection()) {
+				ValueFactory vf = conn.getValueFactory();
+				IRI rootPredicate = vf.createIRI(EX, "maskRoot");
+				IRI selectivePredicate = vf.createIRI(EX, "maskSelective");
+				IRI leafPredicate = vf.createIRI(EX, "maskLeaf");
+				IRI densePredicate = vf.createIRI(EX, "maskDense");
+				IRI denseLeafPredicate = vf.createIRI(EX, "maskDenseLeaf");
+				conn.begin();
+				for (int i = 0; i < 2048; i++) {
+					IRI middle = vf.createIRI(EX, String.format("maskMiddle%04d", i));
+					conn.add(vf.createIRI(EX, String.format("maskSubject%04d", i)), rootPredicate, middle);
+					for (int edge = 0; edge < 2; edge++) {
+						IRI value = vf.createIRI(EX, "maskDenseValue" + i + "_" + edge);
+						conn.add(middle, densePredicate, value);
+						conn.add(value, denseLeafPredicate,
+								vf.createIRI(EX, "maskDenseLeaf" + i + "_" + edge));
+					}
+					if ((i & 63) == 0) {
+						for (int edge = 0; edge < 200; edge++) {
+							IRI value = vf.createIRI(EX, "maskValue" + i + "_" + edge);
+							conn.add(middle, selectivePredicate, value);
+							conn.add(value, leafPredicate, vf.createIRI(EX, "maskLeaf" + i + "_" + edge));
+						}
+					}
+				}
+				conn.commit();
+			}
+			assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+
+			String query = "PREFIX ex: <" + EX + ">\n"
+					+ "SELECT ?s ?leaf WHERE { ?s ex:maskRoot ?middle . "
+					+ "?middle ex:maskSelective ?value . ?value ex:maskLeaf ?leaf }";
+			System.setProperty(adjacencyMaskProperty, "false");
+			long masksBefore = LmdbNativeChunkPipeline.SIP_MASKS.get();
+			long maskedBefore = LmdbNativeChunkPipeline.SIP_MASKED_ROWS.get();
+			long engagedBefore = LmdbNativeChunkPipeline.ENGAGED.get();
+			assertThat(LmdbNativeChunkPipeline.mergeEnabled()).isFalse();
+			List<String> disabledRows = snapshotRows(selective, query);
+			String disabledTelemetry = telemetry(selective, query);
+			assertThat(disabledRows).hasSize(32 * 200);
+			assertThat(LmdbNativeChunkPipeline.SIP_MASKS.get()).isEqualTo(masksBefore);
+			assertThat(LmdbNativeChunkPipeline.SIP_MASKED_ROWS.get()).isEqualTo(maskedBefore);
+			assertThat(LmdbNativeChunkPipeline.ENGAGED.get()).isGreaterThan(engagedBefore);
+			assertThat(disabledTelemetry)
+					.contains("    adjacencySIP:\n      used: false\n"
+							+ "      state: NOT_CONSIDERED\n"
+							+ "      reason: FEATURE_DISABLED[rdf4j.lmdb.sip.adjacencyMasks.enabled=false]");
+			long engagedAfterDisabled = LmdbNativeChunkPipeline.ENGAGED.get();
+
+			System.setProperty(adjacencyMaskProperty, "true");
+			assertThat(LmdbNativeChunkPipeline.adjacencySipMasksEnabled()).isTrue();
+			List<String> enabledRows = snapshotRows(selective, query);
+			String enabledTelemetry = telemetry(selective, query);
+
+			assertThat(enabledRows).containsExactlyInAnyOrderElementsOf(disabledRows);
+			assertThat(LmdbNativeChunkPipeline.ENGAGED.get()).isGreaterThan(engagedAfterDisabled);
+			assertThat(LmdbNativeChunkPipeline.SIP_MASKS.get())
+					.as("the selective probe's exact adjacency key domain should mask the root scan")
+					.isGreaterThan(masksBefore);
+			assertThat(LmdbNativeChunkPipeline.SIP_MASKED_ROWS.get())
+					.as("root rows whose middle key is absent from the selective predicate should be dropped")
+					.isGreaterThan(maskedBefore);
+			assertThat(enabledTelemetry)
+					.contains("    adjacencySIP:\n      used: true\n      state: ACTIVATED")
+					.contains("      membershipChecks:")
+					.contains("      rowsRejected:");
+
+			long masksAfterSelective = LmdbNativeChunkPipeline.SIP_MASKS.get();
+			String denseQuery = "PREFIX ex: <" + EX + ">\n"
+					+ "SELECT ?s ?leaf WHERE { ?s ex:maskRoot ?middle . "
+					+ "?middle ex:maskDense ?value . ?value ex:maskDenseLeaf ?leaf }";
+			assertThat(snapshotRows(selective, denseQuery)).hasSize(2048 * 2);
+			String denseTelemetry = telemetry(selective, denseQuery);
+			assertThat(LmdbNativeChunkPipeline.SIP_MASKS.get())
+					.as("a domain covering every root key cannot repay installation and membership checks")
+					.isEqualTo(masksAfterSelective);
+			assertThat(denseTelemetry)
+					.contains("    adjacencySIP:\n      used: false\n      state: REJECTED")
+					.contains("      reason: STATIC_COST_REJECTED[")
+					.contains("domainCardinality=2048");
+		} finally {
+			selective.shutDown();
+			restoreProperty(adjacencyMaskProperty, previousAdjacencyMask);
+			restoreProperty("rdf4j.lmdb.chunkPipeline.merge.enabled", previousMerge);
+			restoreProperty("rdf4j.lmdb.parallel.enabled", previousParallel);
+		}
+	}
+
 	private void assertSameAsGeneric(String query) {
 		List<String> nativeRows = rows(repository, query);
 		String previous = System.getProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
@@ -504,17 +609,46 @@ public class LmdbNativeChunkPipelineTest {
 				.containsExactlyInAnyOrderElementsOf(genericRows);
 	}
 
+	private static void restoreProperty(String property, String previous) {
+		if (previous == null) {
+			System.clearProperty(property);
+		} else {
+			System.setProperty(property, previous);
+		}
+	}
+
 	/** Rows canonicalized by sorting binding names: the engines bind in different orders, which is not a diff. */
 	private static List<String> rows(SailRepository repo, String query) {
 		try (SailRepositoryConnection conn = repo.getConnection()) {
-			return QueryResults.asList(conn.prepareTupleQuery(query).evaluate())
-					.stream()
-					.map(bs -> bs.getBindingNames()
-							.stream()
-							.sorted()
-							.map(name -> name + "=" + bs.getValue(name))
-							.collect(Collectors.joining(";")))
-					.collect(Collectors.toList());
+			return canonicalRows(conn, query);
 		}
+	}
+
+	private static List<String> snapshotRows(SailRepository repo, String query) {
+		try (SailRepositoryConnection conn = repo.getConnection()) {
+			conn.begin(IsolationLevels.SNAPSHOT_READ);
+			List<String> rows = canonicalRows(conn, query);
+			conn.commit();
+			return rows;
+		}
+	}
+
+	private static String telemetry(SailRepository repo, String query) {
+		try (SailRepositoryConnection conn = repo.getConnection()) {
+			return conn.prepareTupleQuery(query)
+					.explain(org.eclipse.rdf4j.query.explanation.Explanation.Level.Telemetry)
+					.toString();
+		}
+	}
+
+	private static List<String> canonicalRows(SailRepositoryConnection conn, String query) {
+		return QueryResults.asList(conn.prepareTupleQuery(query).evaluate())
+				.stream()
+				.map(bs -> bs.getBindingNames()
+						.stream()
+						.sorted()
+						.map(name -> name + "=" + bs.getValue(name))
+						.collect(Collectors.joining(";")))
+				.collect(Collectors.toList());
 	}
 }

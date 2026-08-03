@@ -105,6 +105,53 @@ final class LmdbNativeJaninoCodegen {
 		return instantiate(entry);
 	}
 
+	/** Returns the exact gate/cache state that explains a null result from {@link #kernel}. */
+	static String declineReason(Object cacheOwner, String shapeKey, long observedRows, String route) {
+		long threshold = Long.getLong(THRESHOLD_ROWS_PROPERTY, DEFAULT_THRESHOLD_ROWS);
+		if (!enabled()) {
+			return "FEATURE_DISABLED[" + ENABLED_PROPERTY + "=false,route=" + route + "]";
+		}
+		if (observedRows < threshold) {
+			return "BELOW_THRESHOLD[route=" + route + ",observedRows=" + observedRows + ",thresholdRows="
+					+ threshold + "]";
+		}
+		Object owner = cacheOwner == null ? DEFAULT_CACHE_OWNER : cacheOwner;
+		StoreCache cache;
+		synchronized (CACHE_REGISTRY_LOCK) {
+			cache = STORE_CACHES.get(owner);
+		}
+		if (cache == null) {
+			return "CACHE_STATE_UNAVAILABLE[route=" + route + ",shape=" + shapeKey + "]";
+		}
+		Entry entry;
+		synchronized (cache) {
+			entry = cache.entries.get(shapeKey);
+		}
+		if (entry == null) {
+			return "CACHE_ENTRY_UNAVAILABLE[route=" + route + ",shape=" + shapeKey + "]";
+		}
+		if (entry.ready.getCount() != 0L) {
+			return "COMPILE_PENDING[route=" + route + ",shape=" + shapeKey + "]";
+		}
+		String compileFailure = entry.compileFailure;
+		if (compileFailure != null) {
+			return "COMPILE_FAILED[route=" + route + ",shape=" + shapeKey + ",cause="
+					+ singleLine(compileFailure) + "]";
+		}
+		String instantiationFailure = entry.instantiationFailure;
+		if (instantiationFailure != null) {
+			return "INSTANTIATION_FAILED[route=" + route + ",shape=" + shapeKey + ",cause="
+					+ singleLine(instantiationFailure) + "]";
+		}
+		return "KERNEL_UNAVAILABLE[route=" + route + ",shape=" + shapeKey + ",constructor="
+				+ (entry.constructor != null) + "]";
+	}
+
+	private static String singleLine(String text) {
+		String rendered = text.replace('\n', ' ').replace('\r', ' ');
+		return rendered.length() <= 256 ? rendered : rendered.substring(0, 256) + "...";
+	}
+
 	/** Test hook: waits for the shape's compile to finish, then returns a fresh instance or null. */
 	static JaninoKernel awaitKernel(Object cacheOwner, String shapeKey, long timeout, TimeUnit unit)
 			throws InterruptedException {
@@ -138,6 +185,7 @@ final class LmdbNativeJaninoCodegen {
 		}
 		try {
 			JaninoKernel kernel = (JaninoKernel) constructor.newInstance();
+			entry.instantiationFailure = null;
 			KERNEL_INSTANTIATIONS.incrementAndGet();
 //			System.out.println("Janino kernel cache: " + CACHE_HITS.get() + " hits, " + CACHE_MISSES.get() + " misses, "
 //					+ EVICTIONS.get() + " evictions, " + COMPILATIONS.get() + " compilations, "
@@ -145,6 +193,7 @@ final class LmdbNativeJaninoCodegen {
 //					+ FALLBACKS.get() + " fallbacks");
 			return kernel;
 		} catch (ReflectiveOperationException problem) {
+			entry.instantiationFailure = problem.toString();
 			FALLBACKS.incrementAndGet();
 			logger.debug("kernel instantiation failed", problem);
 			return null;
@@ -166,6 +215,7 @@ final class LmdbNativeJaninoCodegen {
 				JaninoKernel probe = (JaninoKernel) constructor.newInstance();
 				probe.close();
 				dump(className, source, null);
+				entry.compileFailure = null;
 				entry.constructor = constructor;
 				COMPILATIONS.incrementAndGet();
 //				System.out.println("Janino kernel cache: " + CACHE_HITS.get() + " hits, " + CACHE_MISSES.get()
@@ -174,6 +224,7 @@ final class LmdbNativeJaninoCodegen {
 //						+ COMPILE_FAILURES.get() + " failures, " + KERNEL_INSTANTIATIONS.get() + " instantiations, "
 //						+ FALLBACKS.get() + " fallbacks");
 			} catch (Throwable problem) {
+				entry.compileFailure = problem.toString();
 				COMPILE_FAILURES.incrementAndGet();
 				dump(className, source, problem);
 				logger.debug("Janino kernel compile failed for shape {}: {}", shapeKey, problem.toString());
@@ -264,5 +315,7 @@ final class LmdbNativeJaninoCodegen {
 	private static final class Entry {
 		final CountDownLatch ready = new CountDownLatch(1);
 		volatile Constructor<?> constructor;
+		volatile String compileFailure;
+		volatile String instantiationFailure;
 	}
 }

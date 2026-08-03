@@ -273,8 +273,14 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 			LmdbNativeExplain.recordExecutionPath(explainTarget, LmdbNativeAttemptMetrics.PATH_EMPTY_SEED);
 			return noInputResult();
 		}
-		LmdbNativeExplain.recordRuntimeEntryPlan(explainTarget, arg, layout, row.boundMask());
+		row.runtimePlan = LmdbNativeExplain.recordRuntimeEntryPlan(explainTarget, arg, layout, row.boundMask());
 		LmdbNativeExplain.addRuntimeMetric(explainTarget, "nativeInvocationsActual", 1L);
+		List<BindingSet> result = evaluateInitialized(row);
+		row.completeRuntimePlan();
+		return result;
+	}
+
+	private List<BindingSet> evaluateInitialized(RowState row) {
 		if (existsIntersection != null) {
 			List<BindingSet> intersection = existsIntersection.evaluate(source, row);
 			if (intersection != null) {
@@ -414,6 +420,10 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 			}
 		}
 		if (orderedDistinct.specialized()) {
+			if (row.runtimePlan != null) {
+				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS,
+						new SlotPlan[] { orderedDistinct.arg });
+			}
 			List<BindingSet> ordered = evaluateOrderedDistinct(row, orderedDistinct,
 					new AggContext(source, strictCompare, true), metrics);
 			metrics.deferStrategy(explainTarget, LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS);
@@ -739,8 +749,10 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		long pred = prefixPattern.p.lookup(row.slots);
 		long obj = prefixPattern.o.lookup(row.slots);
 		long context = prefixPattern.c.lookup(row.slots);
+		NativeLmdbQuerySource.AdjacencyAccessObserver observer = row.runtimePlan == null ? null
+				: row.runtimePlan.adjacencyAccessAt(LmdbNativeExplain.describe(prefixPattern, row.layout));
 		try (LmdbPrefixRunCursor cursor = source.prefixRuns(prefixRunPlan, subj, pred, obj, context,
-				prefixCountRunRows)) {
+				prefixCountRunRows, observer)) {
 			if (cursor == null) {
 				return null;
 			}

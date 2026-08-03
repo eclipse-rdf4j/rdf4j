@@ -65,6 +65,22 @@ public interface NativeLmdbQuerySource {
 	RecordIterator statements(long subj, long pred, long obj, long context) throws IOException;
 
 	/**
+	 * Query-invocation-local witness for the physical source selected by one statement access. Implementations call it
+	 * only after the direct-adjacency decision is final, so telemetry records the iterator that was actually opened,
+	 * never the candidate index advertised during planning.
+	 */
+	interface AdjacencyAccessObserver {
+
+		void access(boolean used, String reason, StatementOrder requestedOrder, long subj, long pred, long obj,
+				long context);
+	}
+
+	default RecordIterator statements(long subj, long pred, long obj, long context,
+			AdjacencyAccessObserver observer) throws IOException {
+		return statements(subj, pred, obj, context);
+	}
+
+	/**
 	 * Opens the pattern scan inside a preplanned raw key range. Implementations that cannot apply the range safely must
 	 * fall back to {@link #statements(long, long, long, long)} rather than risk dropping matches.
 	 */
@@ -73,9 +89,19 @@ public interface NativeLmdbQuerySource {
 		return statements(subj, pred, obj, context);
 	}
 
+	default RecordIterator statements(long subj, long pred, long obj, long context, LmdbKeyRange range,
+			AdjacencyAccessObserver observer) throws IOException {
+		return statements(subj, pred, obj, context, range);
+	}
+
 	default RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context)
 			throws IOException {
 		throw new UnsupportedOperationException("Ordered native statement scans are not supported");
+	}
+
+	default RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context,
+			AdjacencyAccessObserver observer) throws IOException {
+		return statements(order, subj, pred, obj, context);
 	}
 
 	default String indexName(long subj, long pred, long obj, long context) {
@@ -93,6 +119,11 @@ public interface NativeLmdbQuerySource {
 	default LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
 			boolean countRunRows) throws IOException {
 		return null;
+	}
+
+	default LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
+			boolean countRunRows, AdjacencyAccessObserver observer) throws IOException {
+		return prefixRuns(plan, subj, pred, obj, context, countRunRows);
 	}
 
 	/**
@@ -139,6 +170,11 @@ public interface NativeLmdbQuerySource {
 
 		RecordIterator open(long subj, long pred, long obj, long context) throws IOException;
 
+		default RecordIterator open(long subj, long pred, long obj, long context, AdjacencyAccessObserver observer)
+				throws IOException {
+			return open(subj, pred, obj, context);
+		}
+
 		/**
 		 * True when this probe's opens are being answered by the in-memory adjacency cache (O(1), no store access).
 		 * Operators use this to skip their own memo/replay/hash-build layers, which only add overhead on top of a
@@ -149,11 +185,11 @@ public interface NativeLmdbQuerySource {
 		}
 
 		/**
-		 * The immutable, unsigned-ascending probe-key vector owned by the adjacency entry serving this probe, or
-		 * {@code null} when no single entry owns every result or the entry cannot prove that key order. The returned
-		 * array is borrowed: callers may retain the reference for the probe stage's lifetime but must never mutate it.
+		 * A fresh cursor over the immutable, unsigned-ascending key domain owned by the adjacency entry serving this
+		 * probe, or {@code null} when no single entry owns every result or exact key enumeration is unavailable. The
+		 * cursor borrows the retained probe's revision-valid view and must be closed by its consumer.
 		 */
-		default long[] adjacencyCacheKeys() {
+		default LmdbNativeIdDomain adjacencyCacheKeyDomain() throws IOException {
 			return null;
 		}
 
@@ -263,6 +299,11 @@ public interface NativeLmdbQuerySource {
 	/** Advisory expected degree for a predicate probe keyed by subject or object. */
 	default OptionalDouble meanFanOut(long predicate, boolean bySubject) {
 		return OptionalDouble.empty();
+	}
+
+	/** Exact distinct-key count for a revision-valid adjacency entry, used for cost admission before opening it. */
+	default OptionalLong adjacencyKeyDomainCardinality(long predicate, boolean bySubject) {
+		return OptionalLong.empty();
 	}
 
 	/** Exact degree when a revision-valid adjacency entry contains the requested predicate direction. */

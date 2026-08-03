@@ -37,17 +37,28 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelScanner;
 final class LmdbNativeKernelScanner implements KernelScanner, Closeable {
 
 	private final NativeLmdbQuerySource source;
+	private final LmdbNativeRuntimePlan.Invocation runtimePlan;
 	private final NativeLmdbQuerySource.NativeProbe[] probes;
 	private final RecordIterator[] orderedIterators;
 	private final ReusableCursor[] cursors;
 	private final StatementOrder[] scanOrders;
 
 	LmdbNativeKernelScanner(NativeLmdbQuerySource source, int scanCount) {
-		this(source, new StatementOrder[scanCount]);
+		this(source, null, new StatementOrder[scanCount]);
 	}
 
 	LmdbNativeKernelScanner(NativeLmdbQuerySource source, StatementOrder[] scanOrders) {
+		this(source, null, scanOrders);
+	}
+
+	LmdbNativeKernelScanner(RowState row, StatementOrder[] scanOrders) {
+		this(row.source, row.runtimePlan, scanOrders);
+	}
+
+	private LmdbNativeKernelScanner(NativeLmdbQuerySource source, LmdbNativeRuntimePlan.Invocation runtimePlan,
+			StatementOrder[] scanOrders) {
 		this.source = source;
+		this.runtimePlan = runtimePlan;
 		this.scanOrders = scanOrders.clone();
 		this.probes = new NativeLmdbQuerySource.NativeProbe[scanOrders.length];
 		this.orderedIterators = new RecordIterator[scanOrders.length];
@@ -57,6 +68,8 @@ final class LmdbNativeKernelScanner implements KernelScanner, Closeable {
 	@Override
 	public KernelQuadCursor open(int scanId, long subj, long pred, long obj, long context) {
 		try {
+			NativeLmdbQuerySource.AdjacencyAccessObserver observer = runtimePlan == null ? null
+					: runtimePlan.adjacencyAccessAt("JaninoScan[" + scanId + "]");
 			ReusableCursor cursor = cursors[scanId];
 			if (cursor == null) {
 				cursor = new ReusableCursor();
@@ -69,13 +82,13 @@ final class LmdbNativeKernelScanner implements KernelScanner, Closeable {
 					probe = source.newProbe();
 					probes[scanId] = probe;
 				}
-				cursor.reset(probe.open(subj, pred, obj, context));
+				cursor.reset(probe.open(subj, pred, obj, context, observer));
 			} else {
 				RecordIterator previous = orderedIterators[scanId];
 				if (previous != null) {
 					previous.close();
 				}
-				RecordIterator current = source.statements(order, subj, pred, obj, context);
+				RecordIterator current = source.statements(order, subj, pred, obj, context, observer);
 				orderedIterators[scanId] = current;
 				cursor.reset(current);
 			}

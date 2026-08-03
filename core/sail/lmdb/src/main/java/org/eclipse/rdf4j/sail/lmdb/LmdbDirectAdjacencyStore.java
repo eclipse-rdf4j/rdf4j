@@ -45,6 +45,7 @@ import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyCoverage;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.AdjacencyAccessObserver;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -1648,42 +1649,60 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	@Override
 	public RecordIterator tryOpen(LmdbAdjacencyReadView view, Txn txn, long subject, long predicate, long object,
 			long context, boolean explicit) throws IOException {
-		return open(view, txn, null, subject, predicate, object, context, explicit, null, null);
+		return open(view, txn, null, subject, predicate, object, context, explicit, null, null, null);
 	}
 
 	RecordIterator tryOpen(LmdbAdjacencyReadView view, Txn txn, long subject, long predicate, long object, long context,
 			boolean explicit, LmdbReferenceNodeLocator.SearchContext searchContext) throws IOException {
-		return open(view, txn, null, subject, predicate, object, context, explicit, searchContext, null);
+		return open(view, txn, null, subject, predicate, object, context, explicit, searchContext, null, null);
 	}
 
 	RecordIterator tryOpen(LmdbAdjacencyReadView view, Txn txn, long subject, long predicate, long object, long context,
 			boolean explicit, LmdbReferenceNodeLocator.SearchContext searchContext,
 			LmdbDirectAdjacencyIterator reusableIterator) throws IOException {
-		return open(view, txn, null, subject, predicate, object, context, explicit, searchContext, reusableIterator);
+		return tryOpen(view, txn, subject, predicate, object, context, explicit, searchContext, reusableIterator, null);
+	}
+
+	RecordIterator tryOpen(LmdbAdjacencyReadView view, Txn txn, long subject, long predicate, long object, long context,
+			boolean explicit, LmdbReferenceNodeLocator.SearchContext searchContext,
+			LmdbDirectAdjacencyIterator reusableIterator, AdjacencyAccessObserver observer) throws IOException {
+		return open(view, txn, null, subject, predicate, object, context, explicit, searchContext, reusableIterator,
+				observer);
 	}
 
 	@Override
 	public RecordIterator tryOpenOrdered(LmdbAdjacencyReadView view, Txn txn, StatementOrder order, long subject,
 			long predicate, long object, long context, boolean explicit) throws IOException {
-		return open(view, txn, order, subject, predicate, object, context, explicit, null, null);
+		return open(view, txn, order, subject, predicate, object, context, explicit, null, null, null);
 	}
 
 	RecordIterator tryOpenOrdered(LmdbAdjacencyReadView view, Txn txn, StatementOrder order, long subject,
 			long predicate,
 			long object, long context, boolean explicit, LmdbReferenceNodeLocator.SearchContext searchContext)
 			throws IOException {
-		return open(view, txn, order, subject, predicate, object, context, explicit, searchContext, null);
+		return tryOpenOrdered(view, txn, order, subject, predicate, object, context, explicit, searchContext, null);
+	}
+
+	RecordIterator tryOpenOrdered(LmdbAdjacencyReadView view, Txn txn, StatementOrder order, long subject,
+			long predicate, long object, long context, boolean explicit,
+			LmdbReferenceNodeLocator.SearchContext searchContext, AdjacencyAccessObserver observer) throws IOException {
+		return open(view, txn, order, subject, predicate, object, context, explicit, searchContext, null, observer);
 	}
 
 	private RecordIterator open(LmdbAdjacencyReadView view, Txn txn, StatementOrder order, long subject,
 			long predicate, long object, long context, boolean explicit,
-			LmdbReferenceNodeLocator.SearchContext searchContext, LmdbDirectAdjacencyIterator reusableIterator)
+			LmdbReferenceNodeLocator.SearchContext searchContext, LmdbDirectAdjacencyIterator reusableIterator,
+			AdjacencyAccessObserver observer)
 			throws IOException {
 		if (view == null || !view.servesSnapshot() || closed) {
+			observe(observer, false, closed ? "STORE_CLOSED" : "VIEW_DOES_NOT_SERVE_SNAPSHOT", order, subject,
+					predicate, object, context);
 			return null;
 		}
 		if (writeTransactionBlocksAdjacency()) {
 			metrics.recordFallback(FallbackReason.READ_YOUR_WRITES);
+			observe(observer, false, FallbackReason.READ_YOUR_WRITES.name(), order, subject, predicate, object,
+					context);
 			return null;
 		}
 		boolean subjectBound = subject > 0;
@@ -1693,7 +1712,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		LmdbInMemoryAdjacencyIndex base = state.base();
 
 		if (predicateBound && subjectBound && objectBound) {
-			return openBoundProbe(view, subject, predicate, object, context, explicit, searchContext, reusableIterator);
+			return openBoundProbe(view, subject, predicate, object, context, explicit, searchContext, reusableIterator,
+					observer, order);
 		}
 
 		if (predicateBound && subjectBound != objectBound) {
@@ -1703,19 +1723,24 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			int plane = plane(subjectBound, explicit);
 			if (order != null && !orderCompatible(order, subjectBound)) {
 				metrics.recordFallback(FallbackReason.INDEX_ORDER_INCOMPATIBLE);
+				observe(observer, false, FallbackReason.INDEX_ORDER_INCOMPATIBLE.name(), order, subject, predicate,
+						object, context);
 				return null;
 			}
 			ResolvedRow row = resolveRow(view, key, plane, predicate, searchContext);
 			if (row.handle == LmdbInMemoryAdjacencyIndex.NOT_COVERED) {
 				metrics.recordFallback(row.reason);
+				observe(observer, false, row.reason.name(), order, subject, predicate, object, context);
 				return null;
 			}
 			if (options.mode() == DirectAdjacencyMode.SHADOW) {
 				maybeShadowCompare(view, txn, subject, predicate, object, context, explicit, row, key, direction);
+				observe(observer, false, "MODE_SHADOW", order, subject, predicate, object, context);
 				return null;
 			}
 			if (row.handle == LmdbInMemoryAdjacencyIndex.NOT_FOUND) {
 				metrics.recordExactMiss();
+				observe(observer, true, "EXACT_EMPTY", order, subject, predicate, object, context);
 				return EmptyRecordIterator.INSTANCE;
 			}
 			metrics.recordHit();
@@ -1723,6 +1748,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 					: reusableIterator;
 			iterator.init(view, row.catalog, state.contextCatalog(), row.handle, key, predicate, context, direction,
 					"direct");
+			observe(observer, true, "BOUND_ROW", order, subject, predicate, object, context);
 			return iterator;
 		}
 
@@ -1730,12 +1756,16 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			// bound node, unbound predicate: reference keys under FULL coverage only
 			if (order != null) {
 				metrics.recordFallback(FallbackReason.INDEX_ORDER_INCOMPATIBLE);
+				observe(observer, false, FallbackReason.INDEX_ORDER_INCOMPATIBLE.name(), order, subject, predicate,
+						object, context);
 				return null;
 			}
 			if (!base.coverage().isFull() || !base.supportsPredicateEnumeration()) {
 				// The compact base deliberately omits the duplicate node-to-all-predicates locator. LMDB remains the
 				// authoritative fallback for this shape while bound-predicate rows stay accelerated.
 				metrics.recordFallback(FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE);
+				observe(observer, false, FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE.name(), order, subject,
+						predicate, object, context);
 				return null;
 			}
 			long key = subjectBound ? subject : object;
@@ -1743,6 +1773,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			for (PendingTable pending : state.pending()) {
 				if (pending.revision() <= view.snapshotRevision() && pending.touchesNode(key, plane)) {
 					metrics.recordFallback(FallbackReason.PENDING_ROW);
+					observe(observer, false, FallbackReason.PENDING_ROW.name(), order, subject, predicate, object,
+							context);
 					return null;
 				}
 			}
@@ -1750,42 +1782,56 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				if (subjectBound) {
 					// subjects are never inlined: nothing can match an inlined subject key
 					metrics.recordExactMiss();
+					observe(observer, true, "EXACT_EMPTY", order, subject, predicate, object, context);
 					return options.mode() == DirectAdjacencyMode.SHADOW ? null : EmptyRecordIterator.INSTANCE;
 				}
 				metrics.recordFallback(FallbackReason.INLINE_NOT_COVERED);
+				observe(observer, false, FallbackReason.INLINE_NOT_COVERED.name(), order, subject, predicate, object,
+						context);
 				return null;
 			}
 			if (options.mode() == DirectAdjacencyMode.SHADOW) {
+				observe(observer, false, "MODE_SHADOW", order, subject, predicate, object, context);
 				return null;
 			}
 			metrics.recordHit();
+			observe(observer, true, "BOUND_NODE_PREDICATE_ENUMERATION", order, subject, predicate, object, context);
 			return new LmdbDirectNodeIterator(view, plane, key, context,
 					subjectBound ? LmdbDirectAdjacencyIterator.BY_SUBJECT : LmdbDirectAdjacencyIterator.BY_OBJECT);
 		}
 
 		if (predicateBound && !subjectBound && !objectBound) {
-			return openRootScan(view, order, predicate, context, explicit);
+			return openRootScan(view, order, predicate, context, explicit, observer, subject, object);
 		}
 
 		// Unbound-predicate root scans and doubly-bound probes remain visible in the decline census.
-		metrics.recordFallback(subjectBound && objectBound ? FallbackReason.DOUBLY_BOUND : FallbackReason.ROOT_SCAN);
+		FallbackReason fallback = subjectBound && objectBound ? FallbackReason.DOUBLY_BOUND : FallbackReason.ROOT_SCAN;
+		metrics.recordFallback(fallback);
+		observe(observer, false, fallback.name(), order, subject, predicate, object, context);
 		return null;
 	}
 
 	private RecordIterator openBoundProbe(LmdbAdjacencyReadView view, long subject, long predicate, long object,
 			long context, boolean explicit, LmdbReferenceNodeLocator.SearchContext searchContext,
-			LmdbDirectAdjacencyIterator reusableIterator) {
+			LmdbDirectAdjacencyIterator reusableIterator, AdjacencyAccessObserver observer,
+			StatementOrder requestedOrder) {
 		if (!boundProbeEnabled() || options.mode() != DirectAdjacencyMode.PREFER) {
 			metrics.recordFallback(FallbackReason.DOUBLY_BOUND);
+			String reason = !boundProbeEnabled()
+					? "FEATURE_DISABLED[" + BOUND_PROBE_PROPERTY + "=false]"
+					: "MODE_" + options.mode();
+			observe(observer, false, reason, requestedOrder, subject, predicate, object, context);
 			return null;
 		}
 		ResolvedRow row = resolveRow(view, subject, plane(true, explicit), predicate, searchContext);
 		if (row.handle == LmdbInMemoryAdjacencyIndex.NOT_COVERED) {
 			metrics.recordFallback(row.reason);
+			observe(observer, false, row.reason.name(), requestedOrder, subject, predicate, object, context);
 			return null;
 		}
 		if (row.handle == LmdbInMemoryAdjacencyIndex.NOT_FOUND) {
 			metrics.recordExactMiss();
+			observe(observer, true, "EXACT_EMPTY", requestedOrder, subject, predicate, object, context);
 			return EmptyRecordIterator.INSTANCE;
 		}
 		metrics.recordHit();
@@ -1793,25 +1839,75 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				: reusableIterator;
 		iterator.initBoundNeighbor(view, row.catalog, view.state().contextCatalog(), row.handle, subject, predicate,
 				object, context, LmdbDirectAdjacencyIterator.BY_SUBJECT, "direct");
+		observe(observer, true, "DOUBLY_BOUND_PROBE", requestedOrder, subject, predicate, object, context);
 		return iterator;
 	}
 
 	private RecordIterator openRootScan(LmdbAdjacencyReadView view, StatementOrder order, long predicate, long context,
-			boolean explicit) {
+			boolean explicit, AdjacencyAccessObserver observer, long subject, long object) {
 		if (!rootScanEnabled() || options.mode() != DirectAdjacencyMode.PREFER || context >= 0L) {
 			metrics.recordFallback(FallbackReason.ROOT_SCAN);
+			String reason;
+			if (!rootScanEnabled()) {
+				reason = "FEATURE_DISABLED[" + ROOT_SCAN_PROPERTY + "=false]";
+			} else if (options.mode() != DirectAdjacencyMode.PREFER) {
+				reason = "MODE_" + options.mode();
+			} else {
+				reason = "CONTEXT_BOUND[root scan requires an unbound context]";
+			}
+			observe(observer, false, reason, order, subject, predicate, object, context);
 			return null;
 		}
 		if (order != null && order != StatementOrder.S) {
 			metrics.recordFallback(FallbackReason.INDEX_ORDER_INCOMPATIBLE);
+			observe(observer, false, FallbackReason.INDEX_ORDER_INCOMPATIBLE.name(), order, subject, predicate,
+					object, context);
 			return null;
 		}
 		LmdbDirectNativeAdjacency adjacency = bindCompleteAdjacency(view, predicate, true, explicit);
 		if (adjacency == null) {
+			observe(observer, false, completeAdjacencyDeclineReason(view, predicate), order, subject, predicate,
+					object, context);
 			return null;
 		}
 		metrics.recordHit();
+		observe(observer, true, "ROOT_SCAN", order, subject, predicate, object, context);
 		return new LmdbDirectAdjacencyRootIterator(view, adjacency, predicate);
+	}
+
+	private String completeAdjacencyDeclineReason(LmdbAdjacencyReadView view, long predicate) {
+		if (view == null || !view.servesSnapshot()) {
+			return "VIEW_DOES_NOT_SERVE_SNAPSHOT";
+		}
+		if (closed) {
+			return "STORE_CLOSED";
+		}
+		if (options.mode() != DirectAdjacencyMode.PREFER) {
+			return "MODE_" + options.mode();
+		}
+		if (writeTransactionBlocksAdjacency()) {
+			return FallbackReason.READ_YOUR_WRITES.name();
+		}
+		if (predicate <= 0L) {
+			return "PREDICATE_UNBOUND";
+		}
+		LmdbAdjacencyPublishedState state = view.state();
+		if (view.snapshotRevision() > state.appliedRevision()) {
+			return FallbackReason.KERNEL_REQUIRES_COMPLETE_REVISION.name();
+		}
+		for (PendingTable pending : state.pending()) {
+			if (pending.revision() <= view.snapshotRevision()) {
+				return FallbackReason.KERNEL_REQUIRES_COMPLETE_REVISION.name();
+			}
+		}
+		return FallbackReason.PLANE_NOT_COVERED.name();
+	}
+
+	private static void observe(AdjacencyAccessObserver observer, boolean used, String reason,
+			StatementOrder requestedOrder, long subject, long predicate, long object, long context) {
+		if (observer != null) {
+			observer.access(used, reason, requestedOrder, subject, predicate, object, context);
+		}
 	}
 
 	private static boolean rootScanEnabled() {
@@ -2131,6 +2227,16 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 					+ ", plane " + plane);
 		}
 		return OptionalDouble.of((double) quads / keys);
+	}
+
+	OptionalLong keyDomainCardinality(LmdbAdjacencyReadView view, long predicate, boolean bySubject,
+			boolean explicit) {
+		if (view == null || !view.servesSnapshot() || closed || options.mode() != DirectAdjacencyMode.PREFER
+				|| writeTransactionBlocksAdjacency() || predicate <= 0
+				|| view.snapshotRevision() != view.state().appliedRevision() || !planeCovered(view, predicate)) {
+			return OptionalLong.empty();
+		}
+		return OptionalLong.of(view.state().planeStatistics().keyCount(predicate, plane(bySubject, explicit)));
 	}
 
 	@Override

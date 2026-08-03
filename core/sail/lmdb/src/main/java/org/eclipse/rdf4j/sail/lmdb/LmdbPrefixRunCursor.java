@@ -258,9 +258,10 @@ final class LmdbPrefixRunIterator implements LmdbPrefixRunCursor {
 	}
 
 	/**
-	 * Advances to the next run: short runs are stepped over inside the batch (no repositioning), and only after
-	 * {@link #SKIP_MIN_RUN} same-prefix rows does the historical sub-linear {@link RecordIterator#seekForward} skip
-	 * engage — a run of length one (fully distinct data) then costs exactly one batched row step.
+	 * Advances to the next run: short runs are stepped over inside the batch (no repositioning), and after
+	 * {@link #SKIP_MIN_RUN} same-prefix rows the historical sub-linear {@link RecordIterator#seekForward} skip engages
+	 * at the next full-batch boundary. Waiting for that boundary preserves any successor prefix already prefetched by
+	 * {@link RecordIterator#fill}; a run of length one (fully distinct data) still costs exactly one batched row step.
 	 */
 	private void advancePastCurrentRun() {
 		int scanned = 0;
@@ -274,7 +275,7 @@ final class LmdbPrefixRunIterator implements LmdbPrefixRunCursor {
 				batchIndex--;
 				return;
 			}
-			if (++scanned >= SKIP_MIN_RUN) {
+			if (++scanned >= SKIP_MIN_RUN && batchIndex >= batchCount && !delegateExhausted) {
 				seekPastCurrentRun();
 				return;
 			}

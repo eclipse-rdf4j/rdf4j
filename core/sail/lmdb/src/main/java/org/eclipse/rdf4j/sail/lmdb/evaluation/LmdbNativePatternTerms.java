@@ -115,6 +115,7 @@ final class PatternCursor implements AutoCloseable {
 	final long obj;
 	final long[] contexts;
 	final LmdbKeyRange range;
+	final NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver;
 	int contextIndex;
 	RecordIterator current;
 	long[] syntheticRow;
@@ -122,11 +123,12 @@ final class PatternCursor implements AutoCloseable {
 
 	PatternCursor(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe, long subj,
 			long pred, long obj, long[] contexts) {
-		this(source, probe, subj, pred, obj, contexts, null);
+		this(source, probe, subj, pred, obj, contexts, null, null);
 	}
 
 	PatternCursor(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe, long subj,
-			long pred, long obj, long[] contexts, LmdbKeyRange range) {
+			long pred, long obj, long[] contexts, LmdbKeyRange range,
+			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver) {
 		this.source = source;
 		this.probe = probe;
 		this.subj = subj;
@@ -134,6 +136,7 @@ final class PatternCursor implements AutoCloseable {
 		this.obj = obj;
 		this.contexts = contexts;
 		this.range = range;
+		this.accessObserver = accessObserver;
 	}
 
 	static PatternCursor empty() {
@@ -153,14 +156,21 @@ final class PatternCursor implements AutoCloseable {
 
 	static PatternCursor contexts(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe,
 			long subj, long pred, long obj, long[] contexts, LmdbKeyRange range) {
-		return new PatternCursor(source, probe, subj, pred, obj, contexts, range);
+		return new PatternCursor(source, probe, subj, pred, obj, contexts, range, null);
+	}
+
+	static PatternCursor contexts(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe,
+			long subj, long pred, long obj, long[] contexts, LmdbKeyRange range,
+			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver) {
+		return new PatternCursor(source, probe, subj, pred, obj, contexts, range, accessObserver);
 	}
 
 	RecordIterator openIterator(long context) throws IOException {
 		if (range != null) {
-			return source.statements(subj, pred, obj, context, range);
+			return source.statements(subj, pred, obj, context, range, accessObserver);
 		}
-		return probe != null ? probe.open(subj, pred, obj, context) : source.statements(subj, pred, obj, context);
+		return probe != null ? probe.open(subj, pred, obj, context, accessObserver)
+				: source.statements(subj, pred, obj, context, accessObserver);
 	}
 
 	static PatternCursor exists(boolean exists, long subj, long pred, long obj, long context) {

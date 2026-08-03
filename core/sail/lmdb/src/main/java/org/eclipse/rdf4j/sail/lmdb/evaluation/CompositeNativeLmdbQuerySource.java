@@ -81,21 +81,33 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 
 	@Override
 	public RecordIterator statements(long subj, long pred, long obj, long context) throws IOException {
+		return statements(subj, pred, obj, context, (AdjacencyAccessObserver) null);
+	}
+
+	@Override
+	public RecordIterator statements(long subj, long pred, long obj, long context,
+			AdjacencyAccessObserver observer) throws IOException {
 		NativeLmdbQuerySource active = onlyActiveSource();
 		if (active != null) {
-			return active.statements(subj, pred, obj, context);
+			return active.statements(subj, pred, obj, context, observer);
 		}
-		return new ConcatenatingRecordIterator(activeSources, subj, pred, obj, context, null);
+		return new ConcatenatingRecordIterator(activeSources, subj, pred, obj, context, null, observer);
 	}
 
 	@Override
 	public RecordIterator statements(long subj, long pred, long obj, long context, LmdbKeyRange range)
 			throws IOException {
+		return statements(subj, pred, obj, context, range, null);
+	}
+
+	@Override
+	public RecordIterator statements(long subj, long pred, long obj, long context, LmdbKeyRange range,
+			AdjacencyAccessObserver observer) throws IOException {
 		NativeLmdbQuerySource active = onlyActiveSource();
 		if (active != null) {
-			return active.statements(subj, pred, obj, context, range);
+			return active.statements(subj, pred, obj, context, range, observer);
 		}
-		return new ConcatenatingRecordIterator(activeSources, subj, pred, obj, context, range);
+		return new ConcatenatingRecordIterator(activeSources, subj, pred, obj, context, range, observer);
 	}
 
 	@Override
@@ -151,14 +163,20 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	@Override
 	public RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context)
 			throws IOException {
+		return statements(order, subj, pred, obj, context, null);
+	}
+
+	@Override
+	public RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context,
+			AdjacencyAccessObserver observer) throws IOException {
 		NativeLmdbQuerySource active = onlyActiveSource();
 		if (active != null) {
-			return active.statements(order, subj, pred, obj, context);
+			return active.statements(order, subj, pred, obj, context, observer);
 		}
 		List<RecordIterator> iterators = new ArrayList<>(activeSources.size());
 		for (NativeLmdbQuerySource source : activeSources) {
 			try {
-				iterators.add(source.statements(order, subj, pred, obj, context));
+				iterators.add(source.statements(order, subj, pred, obj, context, observer));
 			} catch (IOException | RuntimeException | Error e) {
 				closeIterators(iterators, e);
 				throw e;
@@ -222,9 +240,15 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	@Override
 	public LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
 			boolean countRunRows) throws IOException {
+		return prefixRuns(plan, subj, pred, obj, context, countRunRows, null);
+	}
+
+	@Override
+	public LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
+			boolean countRunRows, AdjacencyAccessObserver observer) throws IOException {
 		NativeLmdbQuerySource active = onlyActiveSource();
 		if (active != null) {
-			return active.prefixRuns(plan, subj, pred, obj, context, countRunRows);
+			return active.prefixRuns(plan, subj, pred, obj, context, countRunRows, observer);
 		}
 		if (activeSources.isEmpty() || plan == null) {
 			return LmdbPrefixRunCursor.EMPTY;
@@ -239,7 +263,8 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 					closePrefixRunCursors(cursors, null);
 					return null;
 				}
-				LmdbPrefixRunCursor cursor = source.prefixRuns(memberPlan, subj, pred, obj, context, countRunRows);
+				LmdbPrefixRunCursor cursor = source.prefixRuns(memberPlan, subj, pred, obj, context, countRunRows,
+						observer);
 				if (cursor == null) {
 					closePrefixRunCursors(cursors, null);
 					return null;
@@ -311,6 +336,25 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 			fanOut += sourceFanOut.getAsDouble();
 		}
 		return OptionalDouble.of(fanOut);
+	}
+
+	@Override
+	public OptionalLong adjacencyKeyDomainCardinality(long predicate, boolean bySubject) {
+		if (activeSources.isEmpty()) {
+			return OptionalLong.empty();
+		}
+		long cardinalityUpperBound = 0L;
+		for (NativeLmdbQuerySource source : activeSources) {
+			OptionalLong sourceCardinality = source.adjacencyKeyDomainCardinality(predicate, bySubject);
+			if (sourceCardinality.isEmpty()) {
+				return OptionalLong.empty();
+			}
+			long value = sourceCardinality.getAsLong();
+			cardinalityUpperBound = Long.MAX_VALUE - cardinalityUpperBound < value
+					? Long.MAX_VALUE
+					: cardinalityUpperBound + value;
+		}
+		return OptionalLong.of(cardinalityUpperBound);
 	}
 
 	@Override
@@ -846,6 +890,11 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		}
 
 		@Override
+		public OptionalLong adjacencyKeyDomainCardinality(long predicate, boolean bySubject) {
+			return delegate.adjacencyKeyDomainCardinality(predicate, bySubject);
+		}
+
+		@Override
 		public OptionalLong exactDegree(long predicate, long key, boolean bySubject) {
 			return delegate.exactDegree(predicate, key, bySubject);
 		}
@@ -867,6 +916,7 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		private final NativeProbe[] probes;
 		private final ConcatenatingProbeIterator iterator;
 		private ConcatenatingProbeIterator current;
+		private long domainPredicate;
 		private boolean closed;
 
 		private CompositeProbe(List<NativeLmdbQuerySource> sources) {
@@ -891,11 +941,20 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 
 		@Override
 		public RecordIterator open(long subj, long pred, long obj, long context) throws IOException {
+			return open(subj, pred, obj, context, null);
+		}
+
+		@Override
+		public RecordIterator open(long subj, long pred, long obj, long context,
+				AdjacencyAccessObserver observer) throws IOException {
 			if (closed) {
 				throw new IOException("composite probe already closed");
 			}
+			// Predicate-wide outgoing domains are a safe semijoin superset for every context selection. Incoming
+			// domains are not offered because an LMDB member may keep inlined-object keys in a separate index.
+			domainPredicate = subj > 0 && obj <= 0 && pred > 0 ? pred : 0L;
 			try {
-				iterator.reset(subj, pred, obj, context);
+				iterator.reset(subj, pred, obj, context, observer);
 			} catch (RuntimeException | Error e) {
 				fail(iterator, e);
 				throw e;
@@ -905,11 +964,57 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		}
 
 		@Override
+		public LmdbNativeIdDomain adjacencyCacheKeyDomain() throws IOException {
+			if (closed || domainPredicate <= 0) {
+				return null;
+			}
+			LmdbNativeIdDomain[] domains = new LmdbNativeIdDomain[probes.length];
+			int created = 0;
+			try {
+				for (; created < probes.length; created++) {
+					domains[created] = LmdbNativeIdDomain.adjacencyKeys(
+							probes[created].adjacency(domainPredicate, true));
+					if (domains[created] == null) {
+						closeDomains(domains, created, null);
+						return null;
+					}
+				}
+				return LmdbNativeIdDomain.union(domains);
+			} catch (IOException | RuntimeException | Error failure) {
+				closeDomains(domains, created, failure);
+				throw failure;
+			}
+		}
+
+		private static void closeDomains(LmdbNativeIdDomain[] domains, int last, Throwable primary) {
+			Throwable failure = primary;
+			for (int i = 0; i <= last && i < domains.length; i++) {
+				LmdbNativeIdDomain domain = domains[i];
+				if (domain == null) {
+					continue;
+				}
+				try {
+					domain.close();
+				} catch (RuntimeException | Error closeFailure) {
+					if (failure == null) {
+						failure = closeFailure;
+					} else {
+						addSuppressed(failure, closeFailure);
+					}
+				}
+			}
+			if (primary == null) {
+				throwUnchecked(failure);
+			}
+		}
+
+		@Override
 		public void close() {
 			if (closed) {
 				return;
 			}
 			closed = true;
+			domainPredicate = 0L;
 			Throwable failure = null;
 			ConcatenatingProbeIterator iterator = current;
 			current = null;
@@ -1019,6 +1124,7 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		private long pred;
 		private long obj;
 		private long context;
+		private AdjacencyAccessObserver observer;
 		private int index;
 		private RecordIterator current;
 		private boolean closed = true;
@@ -1028,7 +1134,7 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 			this.probes = probes;
 		}
 
-		private void reset(long subj, long pred, long obj, long context) {
+		private void reset(long subj, long pred, long obj, long context, AdjacencyAccessObserver observer) {
 			RecordIterator previous = current;
 			current = null;
 			if (previous != null) {
@@ -1038,6 +1144,7 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 			this.pred = pred;
 			this.obj = obj;
 			this.context = context;
+			this.observer = observer;
 			index = 0;
 			closed = false;
 		}
@@ -1050,7 +1157,7 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 			while (index < probes.length) {
 				if (current == null) {
 					try {
-						current = probes[index].open(subj, pred, obj, context);
+						current = probes[index].open(subj, pred, obj, context, observer);
 					} catch (IOException e) {
 						owner.fail(this, e);
 						throw new QueryEvaluationException(e);
@@ -1118,18 +1225,20 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		private final long obj;
 		private final long context;
 		private final LmdbKeyRange range;
+		private final AdjacencyAccessObserver observer;
 		private int index;
 		private RecordIterator current;
 		private boolean closed;
 
 		private ConcatenatingRecordIterator(List<NativeLmdbQuerySource> sources, long subj, long pred, long obj,
-				long context, LmdbKeyRange range) {
+				long context, LmdbKeyRange range, AdjacencyAccessObserver observer) {
 			this.sources = sources;
 			this.subj = subj;
 			this.pred = pred;
 			this.obj = obj;
 			this.context = context;
 			this.range = range;
+			this.observer = observer;
 		}
 
 		@Override
@@ -1140,8 +1249,8 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 			while (index < sources.size()) {
 				if (current == null) {
 					try {
-						current = range == null ? sources.get(index).statements(subj, pred, obj, context)
-								: sources.get(index).statements(subj, pred, obj, context, range);
+						current = range == null ? sources.get(index).statements(subj, pred, obj, context, observer)
+								: sources.get(index).statements(subj, pred, obj, context, range, observer);
 					} catch (IOException e) {
 						throw new QueryEvaluationException(e);
 					}

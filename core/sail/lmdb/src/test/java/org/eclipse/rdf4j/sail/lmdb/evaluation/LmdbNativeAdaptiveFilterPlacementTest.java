@@ -427,7 +427,11 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 	@Test
 	void outwardTrialRollsBackAndDoublesOnlyOnDepthChanges() throws Exception {
 		AlternatingFilter filter = new AlternatingFilter();
-		AdaptiveFilterSession session = policySession(filter);
+		SingletonSet telemetry = new SingletonSet();
+		telemetry.setRuntimeTelemetryEnabled(true);
+		AdaptiveFilterMetadata metadata = AdaptiveFilterMetadata.eligible(61, 4).withRequiredMask(1L);
+		AdaptiveFilterSession session = new AdaptiveFilterSession(filter, metadata,
+				new FilterPlacementEnvelope(61, new int[] { 0, 1, 2 }), telemetry);
 
 		drive(session, 1, 4, 16, 100L, 1_024);
 
@@ -444,6 +448,11 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 		assertThat(((long[]) field(session, "blacklistUntil"))[0]).isGreaterThan(session.completedPrefixes);
 		assertThat(longField(session, "cooldownUntil"))
 				.isEqualTo(session.completedPrefixes + longField(session, "interval"));
+		session.publishTelemetry();
+		assertThat(telemetry.getStringMetricActual("adaptiveFilterPlacementEpochs"))
+				.as("telemetry must retain every installed filter position and the final rollback position")
+				.isEqualTo("[0:2, 1:0, 2:2]");
+		assertThat(telemetry.getLongMetricActual("adaptiveFilterPlacementFinalDepth")).isEqualTo(2L);
 	}
 
 	@Test

@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -74,7 +75,15 @@ final class LmdbNativeChunkPipeline {
 
 	/** Sideways information passing: a probe stage's hash-build key set prunes the root scan as a semi-join mask. */
 	static boolean sipEnabled() {
-		return !"false".equals(System.getProperty("rdf4j.lmdb.chunkPipeline.sip.enabled"));
+		return !"false".equals(System.getProperty(SIP_PROPERTY));
+	}
+
+	static final String SIP_PROPERTY = "rdf4j.lmdb.chunkPipeline.sip.enabled";
+
+	static final String ADJACENCY_SIP_MASK_PROPERTY = "rdf4j.lmdb.sip.adjacencyMasks.enabled";
+
+	static boolean adjacencySipMasksEnabled() {
+		return Boolean.parseBoolean(System.getProperty(ADJACENCY_SIP_MASK_PROPERTY, "false"));
 	}
 
 	/** Test observability: semi-join masks published to the root scan by completed hash builds. */
@@ -108,6 +117,16 @@ final class LmdbNativeChunkPipeline {
 		for (int d = 0; d < flatCount; d++) {
 			if (!(derived.order[d] instanceof PatternPlan)) {
 				return null;
+			}
+		}
+		if (row.runtimePlan != null) {
+			row.runtimePlan.actualOrder(derived.order);
+			if (!adjacencySipMasksEnabled()) {
+				row.runtimePlan.adjacencyDecision("NOT_CONSIDERED",
+						"FEATURE_DISABLED[" + ADJACENCY_SIP_MASK_PROPERTY + "=false]", null);
+			} else if (!sipEnabled()) {
+				row.runtimePlan.adjacencyDecision("NOT_CONSIDERED",
+						"FEATURE_DISABLED[" + SIP_PROPERTY + "=false]", null);
 			}
 		}
 		PatternPlan root = (PatternPlan) derived.order[0];
@@ -440,6 +459,26 @@ final class LmdbNativeChunkPipeline {
 		return new SipTarget(quadPos, seekable, template);
 	}
 
+	/**
+	 * Cost gate for adjacency-domain SIP. The exact domain cardinality is an optimistic upper bound on accepted root
+	 * rows; the root estimate supplies the scan work. Installation is worthwhile only when the largest possible number
+	 * of rejected rows still saves strictly more store-probe work than membership checks. Runtime sampling protects the
+	 * optimistic assumption when several root rows share one key.
+	 */
+	static boolean adjacencyMaskEstimatedWorthwhile(long domainCardinalityUpperBound, double rootRowsEstimate) {
+		if (domainCardinalityUpperBound < 0L || !Double.isFinite(rootRowsEstimate) || rootRowsEstimate <= 0D) {
+			return false;
+		}
+		long rootRows = rootRowsEstimate >= Long.MAX_VALUE
+				? Long.MAX_VALUE
+				: Math.max(1L, (long) Math.ceil(rootRowsEstimate));
+		if (domainCardinalityUpperBound >= rootRows) {
+			return false;
+		}
+		long maximumRejectedRows = rootRows - domainCardinalityUpperBound;
+		return maximumRejectedRows > rootRows / SEEK_COST_KEYS;
+	}
+
 	private static long boundOrZero(Term term, RowState row) {
 		long value = term.lookup(row.slots);
 		return value == UNKNOWN ? 0L : value;
@@ -458,26 +497,38 @@ final class LmdbNativeChunkPipeline {
 		}
 	}
 
-	/** A published semi-join mask: the sorted key ids of one completed hash build plus its root landing spot. */
+	/** A published semi-join mask: one sorted id-domain cursor plus its root landing spot. */
 	static final class SipMask {
-		/** Key ids in unsigned ascending order (index key order). */
-		long[] sortedKeys;
+		LmdbNativeIdDomain domain;
 		final int quadPos;
 		final boolean seekable;
 		final long[] template;
 		final FactorizedTail.MemoBudget budget;
+		final long retainedValues;
+		final String where;
+		long admissionChecks;
+		long admissionMisses;
+		boolean admissionResolved;
 
-		private SipMask(long[] sortedKeys, SipTarget target, FactorizedTail.MemoBudget budget) {
-			this.sortedKeys = sortedKeys;
+		private SipMask(LmdbNativeIdDomain domain, SipTarget target, FactorizedTail.MemoBudget budget,
+				long retainedValues, String where) {
+			this.domain = domain;
 			this.quadPos = target.quadPos;
 			this.seekable = target.seekable;
 			this.template = target.template;
 			this.budget = budget;
+			this.retainedValues = retainedValues;
+			this.where = where;
 		}
 
-		/** Borrows an already unsigned-ascending immutable key vector without charging query-local memo capacity. */
-		static SipMask borrowSortedKeys(long[] sortedKeys, SipTarget target) {
-			return new SipMask(sortedKeys, target, null);
+		/** Borrows an immutable id domain without charging query-local memo capacity. */
+		static SipMask borrowDomain(LmdbNativeIdDomain domain, SipTarget target) {
+			return borrowDomain(domain, target, null);
+		}
+
+		/** Borrows an immutable id domain and associates its runtime activation location. */
+		static SipMask borrowDomain(LmdbNativeIdDomain domain, SipTarget target, String where) {
+			return new SipMask(domain, target, null, 0L, where);
 		}
 
 		/**
@@ -499,22 +550,49 @@ final class LmdbNativeChunkPipeline {
 					throw new IllegalStateException("SIP key set changed while materializing its mask");
 				}
 				sortUnsigned(sortedKeys);
-				return new SipMask(sortedKeys, target, budget);
+				return new SipMask(LmdbNativeIdDomain.sortedDistinct(sortedKeys), target, budget, capacity, null);
 			} catch (RuntimeException | Error problem) {
 				budget.release(1, capacity);
 				throw problem;
 			}
 		}
 
-		/** Drops this mask's reference and returns its exact reservation once when the key vector is mask-owned. */
+		/**
+		 * Keeps the mask only when one probe-cost-sized runtime sample demonstrates net work savings. A rejected root
+		 * row avoids a store probe, whose cost model is {@link #SEEK_COST_KEYS} scanned-key equivalents; a membership
+		 * check costs one equivalent. Strictly greater savings are required because parity is the admission floor.
+		 */
+		boolean retainAfterAdmissionSample(boolean miss) {
+			if (admissionResolved) {
+				return true;
+			}
+			admissionChecks++;
+			if (miss) {
+				admissionMisses++;
+			}
+			if (admissionChecks < SEEK_COST_KEYS) {
+				return true;
+			}
+			if (admissionMisses * SEEK_COST_KEYS <= admissionChecks) {
+				return false;
+			}
+			admissionResolved = true;
+			return true;
+		}
+
+		/** Drops this mask's cursor and returns its exact reservation once when the domain is mask-owned. */
 		void close() {
-			long[] retainedKeys = sortedKeys;
-			if (retainedKeys == null) {
+			LmdbNativeIdDomain retainedDomain = domain;
+			if (retainedDomain == null) {
 				return;
 			}
-			sortedKeys = null;
-			if (budget != null) {
-				budget.release(1, retainedKeys.length);
+			domain = null;
+			try {
+				retainedDomain.close();
+			} finally {
+				if (budget != null) {
+					budget.release(1, retainedValues);
+				}
 			}
 		}
 	}
@@ -556,21 +634,6 @@ final class LmdbNativeChunkPipeline {
 			}
 		}
 		return false;
-	}
-
-	/** Index of the smallest key strictly greater than {@code key} (unsigned), or {@code keys.length}. */
-	static int unsignedUpperBound(long[] keys, long key) {
-		int low = 0;
-		int high = keys.length;
-		while (low < high) {
-			int mid = (low + high) >>> 1;
-			if (Long.compareUnsigned(keys[mid], key) <= 0) {
-				low = mid + 1;
-			} else {
-				high = mid;
-			}
-		}
-		return low;
 	}
 
 	/** One columnar stage of the prefix chain: fills a caller-owned batch, returns rows filled (0 = exhausted). */
@@ -715,21 +778,35 @@ final class LmdbNativeChunkPipeline {
 		 * in between a guaranteed miss); a key beyond the largest mask key exhausts the scan entirely.
 		 */
 		private int masksVerdict(int offset) {
-			for (int m = 0; m < masks.size(); m++) {
+			for (int m = 0; m < masks.size();) {
 				SipMask mask = masks.get(m);
 				long key = quads[offset + mask.quadPos];
-				if (unsignedContains(mask.sortedKeys, key)) {
+				boolean candidate = mask.domain.seekAtLeast(key);
+				boolean miss = !candidate || mask.domain.current() != key;
+				if (row.runtimePlan != null && mask.where != null) {
+					row.runtimePlan.adjacencyMembershipCheck(mask.where, miss);
+				}
+				if (!mask.retainAfterAdmissionSample(miss)) {
+					if (row.runtimePlan != null && mask.where != null) {
+						row.runtimePlan.adjacencyRetired(mask.admissionChecks, mask.admissionMisses);
+					}
+					masks.remove(m);
+					mask.close();
+					consecutiveMaskMisses = 0;
+					continue;
+				}
+				if (!miss) {
+					m++;
 					continue;
 				}
 				metrics.recordChunkSipMaskedRow();
 				if (mask.seekable && ++consecutiveMaskMisses >= SEEK_COST_KEYS) {
 					consecutiveMaskMisses = 0;
-					int upper = unsignedUpperBound(mask.sortedKeys, key);
-					if (upper >= mask.sortedKeys.length) {
+					if (!candidate) {
 						return MASK_EXHAUSTED;
 					}
 					System.arraycopy(mask.template, 0, seekTarget, 0, 4);
-					seekTarget[mask.quadPos] = mask.sortedKeys[upper];
+					seekTarget[mask.quadPos] = mask.domain.current();
 					if (cursor.seekForward(seekTarget[TripleIndex.SUBJ_IDX], seekTarget[TripleIndex.PRED_IDX],
 							seekTarget[TripleIndex.OBJ_IDX], seekTarget[TripleIndex.CONTEXT_IDX])) {
 						metrics.recordChunkSipSeek();
@@ -766,6 +843,9 @@ final class LmdbNativeChunkPipeline {
 				}
 			}
 			masks.clear();
+			if (row.runtimePlan != null) {
+				row.runtimePlan.publish();
+			}
 			throwFailure(failure);
 		}
 	}
@@ -818,7 +898,9 @@ final class LmdbNativeChunkPipeline {
 		/** Set once the probe reports adjacency-cache-backed opens: memos and hash builds are skipped from then on. */
 		boolean probeCacheBacked;
 		/** True after this stage published its CSR entry's borrowed key vector as a root SIP mask. */
-		boolean csrMaskPublished;
+		boolean adjacencyMaskPublished;
+		/** True after this stage made its one snapshot-stable attempt to obtain an adjacency key domain. */
+		boolean adjacencyMaskAttempted;
 		/** Build requested at a completed classic probe, deferred until the consumer asks for another batch. */
 		boolean pendingHashBuild;
 		int storeProbes;
@@ -853,7 +935,7 @@ final class LmdbNativeChunkPipeline {
 		boolean mergeDraining;
 		final long[] mergeLastTarget = new long[4];
 		boolean mergeLastTargetValid;
-		/** SIP: where this stage's hash-build key set can prune the root scan; null when the gate refused. */
+		/** SIP: where this stage's completed key domain can prune the root scan; null when the gate refused. */
 		final ScanStage rootStage;
 		final SipTarget sip;
 
@@ -1019,13 +1101,21 @@ final class LmdbNativeChunkPipeline {
 				System.arraycopy(scratch, 0, row.slots, 0, scratch.length);
 				open = pattern.openRaw(row, probe);
 				storeProbes++;
+				if (!adjacencyMaskAttempted) {
+					adjacencyMaskAttempted = true;
+					if (!adjacencySipMasksEnabled()) {
+						adjacencyDecision("NOT_CONSIDERED",
+								"FEATURE_DISABLED[" + ADJACENCY_SIP_MASK_PROPERTY + "=false]");
+					} else if (adjacencyMaskEstimatedWorthTrying()) {
+						publishAdjacencyMask(probe.adjacencyCacheKeyDomain());
+					}
+				}
 				if (!probeCacheBacked && probe.adjacencyCacheBacked()) {
 					// the adjacency cache answers this probe in O(1): per-stage memos and hash builds would
 					// only duplicate it in query-local memory and waste the shared memo budget
 					probeCacheBacked = true;
 					hashBuildRefused = true;
 					metrics.recordChunkCsrBackedProbe();
-					publishCsrMask(probe.adjacencyCacheKeys());
 				}
 				quadCount = 0;
 				quadIndex = 0;
@@ -1041,12 +1131,80 @@ final class LmdbNativeChunkPipeline {
 			}
 		}
 
-		private void publishCsrMask(long[] sortedKeys) {
-			if (csrMaskPublished || sortedKeys == null || sip == null || !sipEnabled()) {
+		private boolean adjacencyMaskEstimatedWorthTrying() {
+			if (adjacencyMaskPublished) {
+				return false;
+			}
+			if (!sipEnabled()) {
+				adjacencyDecision("NOT_CONSIDERED", "FEATURE_DISABLED[" + SIP_PROPERTY + "=false]");
+				return false;
+			}
+			if (sip == null) {
+				adjacencyDecision("REJECTED", "SHAPE_REJECTED[probe key is not one root-produced slot]");
+				return false;
+			}
+			if (!sip.seekable) {
+				adjacencyDecision("REJECTED", "ROOT_SCAN_NOT_SEEKABLE[index=" + rootStage.pattern.indexName + "]");
+				return false;
+			}
+			long subject = pattern.s.lookup(row.slots);
+			long predicate = pattern.p.lookup(row.slots);
+			long object = pattern.o.lookup(row.slots);
+			if (subject <= 0L || predicate <= 0L || object > 0L) {
+				adjacencyDecision("REJECTED", "PROBE_SHAPE_REJECTED[subject=" + subject + ",predicate="
+						+ predicate + ",object=" + object
+						+ "; requires bound subject, constant predicate, fresh object]");
+				return false;
+			}
+			OptionalLong cardinality = row.source.adjacencyKeyDomainCardinality(predicate, true);
+			if (cardinality.isEmpty()) {
+				adjacencyDecision("REJECTED", "ADJACENCY_DOMAIN_CARDINALITY_UNAVAILABLE[predicate=" + predicate + "]");
+				return false;
+			}
+			long domainCardinality = cardinality.getAsLong();
+			if (!adjacencyMaskEstimatedWorthwhile(domainCardinality, rootStage.pattern.staticEstimate)) {
+				adjacencyDecision("REJECTED", "STATIC_COST_REJECTED[domainCardinality=" + domainCardinality
+						+ ",rootRowsEstimate=" + rootStage.pattern.staticEstimate + ",seekCostKeys=" + SEEK_COST_KEYS
+						+ "]");
+				return false;
+			}
+			adjacencyDecision("ADMITTED", "STATIC_COST_ADMITTED[domainCardinality=" + domainCardinality
+					+ ",rootRowsEstimate=" + rootStage.pattern.staticEstimate + "]");
+			return true;
+		}
+
+		private void publishAdjacencyMask(LmdbNativeIdDomain domain) {
+			if (domain == null) {
+				adjacencyDecision("REJECTED", "ADJACENCY_DOMAIN_CURSOR_UNAVAILABLE");
 				return;
 			}
-			csrMaskPublished = true;
-			rootStage.publishMask(SipMask.borrowSortedKeys(sortedKeys, sip));
+			if (adjacencyMaskPublished || sip == null || !sip.seekable || !sipEnabled()
+					|| !adjacencySipMasksEnabled()) {
+				adjacencyDecision("REJECTED", "ADMISSION_INVALIDATED[enabled=" + adjacencySipMasksEnabled()
+						+ ",sipEnabled=" + sipEnabled() + ",target=" + (sip != null) + ",seekable="
+						+ (sip != null && sip.seekable) + "]");
+				domain.close();
+				return;
+			}
+			if (!adjacencyMaskEstimatedWorthwhile(domain.cardinalityUpperBound(), rootStage.pattern.staticEstimate)) {
+				adjacencyDecision("REJECTED", "STATIC_COST_REJECTED[domainCardinality="
+						+ domain.cardinalityUpperBound() + ",rootRowsEstimate=" + rootStage.pattern.staticEstimate
+						+ ",seekCostKeys=" + SEEK_COST_KEYS + "]");
+				domain.close();
+				return;
+			}
+			adjacencyMaskPublished = true;
+			rootStage.publishMask(SipMask.borrowDomain(domain, sip, adjacencyWhere()));
+		}
+
+		private void adjacencyDecision(String state, String reason) {
+			if (row.runtimePlan != null) {
+				row.runtimePlan.adjacencyDecision(state, reason, adjacencyWhere());
+			}
+		}
+
+		private String adjacencyWhere() {
+			return LmdbNativeExplain.describe(pattern, row.layout);
 		}
 
 		/**

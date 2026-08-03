@@ -62,6 +62,7 @@ final class LmdbNativeJaninoPipeline {
 
 	static RowCursor tryOpen(MultiJoinPlan multiJoin, RowState row) throws IOException {
 		if (!LmdbNativeJaninoCodegen.enabled()) {
+			janinoDeclined(row, "FEATURE_DISABLED[" + LmdbNativeJaninoCodegen.ENABLED_PROPERTY + "=false]");
 			return null;
 		}
 		NativeLmdbQuerySource.NativeProbe probe = null;
@@ -70,11 +71,14 @@ final class LmdbNativeJaninoPipeline {
 			SlotPlan[] order = ordered.order;
 			if (order.length < 2 || order.length > MAX_PATTERNS) {
 				DECLINED.incrementAndGet();
+				janinoDeclined(row, "PATTERN_COUNT_OUT_OF_RANGE[count=" + order.length + ",supported=2.."
+						+ MAX_PATTERNS + "]");
 				return null;
 			}
 			Recognized shape = recognize(multiJoin, order, row);
-			if (shape == null) {
+			if (shape.declineReason != null) {
 				DECLINED.incrementAndGet();
+				janinoDeclined(row, shape.declineReason);
 				return null;
 			}
 			probe = row.source.newProbe();
@@ -83,20 +87,44 @@ final class LmdbNativeJaninoPipeline {
 			for (int i = 0; i < adjacencies.length; i++) {
 				Step step = shape.steps.get(i);
 				NativeLmdbQuerySource.NativeAdjacency adjacency = probe.adjacency(step.predicate, step.bySubject);
+				NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver = row.runtimePlan == null ? null
+						: row.runtimePlan.adjacencyAccessAt(LmdbNativeExplain.describe(order[i], row.layout));
 				if (adjacency == null || (step.kind == Step.ROOT_ENUM
 						&& (!adjacency.supportsKeyEnumeration() || adjacency.keyCount() < 0))) {
+					if (accessObserver != null) {
+						accessObserver.access(false,
+								"JANINO_ADJACENCY_VIEW_UNAVAILABLE[step=" + i + ",direction="
+										+ (step.bySubject ? "subject-to-object" : "object-to-subject")
+										+ ",keyEnumerationRequired=" + (step.kind == Step.ROOT_ENUM) + "]",
+								null, NativeLmdbQuerySource.UNKNOWN_ID, step.predicate,
+								NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.UNKNOWN_ID);
+					}
 					DECLINED.incrementAndGet();
+					janinoDeclined(row, "ADJACENCY_UNAVAILABLE[step=" + i + ",predicate=" + step.predicate
+							+ ",direction=" + (step.bySubject ? "subject-to-object" : "object-to-subject")
+							+ ",keyEnumerationRequired=" + (step.kind == Step.ROOT_ENUM) + "]");
 					probe.close();
 					return null;
+				}
+				if (accessObserver != null) {
+					accessObserver.access(true,
+							"JANINO_ADJACENCY_VIEW[direction="
+									+ (step.bySubject ? "subject-to-object" : "object-to-subject")
+									+ ",keyEnumeration=" + (step.kind == Step.ROOT_ENUM) + "]",
+							null, NativeLmdbQuerySource.UNKNOWN_ID, step.predicate,
+							NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.UNKNOWN_ID);
 				}
 				adjacencies[i] = adjacency;
 			}
 			PLANNED.incrementAndGet();
 
 			long opens = SHAPE_OPENS.computeIfAbsent(shape.shapeKey, key -> new AtomicLong()).incrementAndGet();
+			long observedRows = opens * ROWS_PER_OPEN_ESTIMATE;
 			JaninoKernel kernel = LmdbNativeJaninoCodegen.kernel(row.source.idSpace(), shape.shapeKey,
-					shape.className, () -> emitSource(shape), opens * ROWS_PER_OPEN_ESTIMATE);
+					shape.className, () -> emitSource(shape), observedRows);
 			if (kernel == null) {
+				janinoDeclined(row, LmdbNativeJaninoCodegen.declineReason(row.source.idSpace(), shape.shapeKey,
+						observedRows, "wholeStagePipeline"));
 				probe.close();
 				return null;
 			}
@@ -107,13 +135,25 @@ final class LmdbNativeJaninoPipeline {
 			}
 			kernel.bind(new KernelContext(adjacencies, shape.constants(), entrySlots, null));
 			OPENED.incrementAndGet();
+			if (row.runtimePlan != null) {
+				row.runtimePlan.janinoActivated("wholeStagePipeline", order);
+				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_JANINO_KERNEL, order);
+			}
 			return new KernelRowCursor(kernel, probe, row, shape.columnSlots(), shape.residualFilters);
 		} catch (RuntimeException problem) {
 			if (probe != null) {
 				probe.close();
 			}
 			DECLINED.incrementAndGet();
+			janinoDeclined(row, "RUNTIME_FAILURE[type=" + problem.getClass().getName() + ",message="
+					+ String.valueOf(problem.getMessage()) + "]");
 			return null;
+		}
+	}
+
+	private static void janinoDeclined(RowState row, String reason) {
+		if (row.runtimePlan != null) {
+			row.runtimePlan.janinoDeclined(reason);
 		}
 	}
 
@@ -198,6 +238,7 @@ final class LmdbNativeJaninoPipeline {
 		final List<Integer> columnEngineSlots = new ArrayList<>();
 		String shapeKey;
 		String className;
+		String declineReason;
 
 		long[] constants() {
 			long[] result = new long[constantValues.size()];
@@ -225,15 +266,18 @@ final class LmdbNativeJaninoPipeline {
 		java.util.Arrays.fill(slotColumn, -1);
 		StringBuilder key = new StringBuilder("pipe1:");
 
-		for (SlotPlan child : order) {
+		for (int childIndex = 0; childIndex < order.length; childIndex++) {
+			SlotPlan child = order[childIndex];
 			if (!(child instanceof PatternPlan)) {
-				return null;
+				shape.declineReason = "UNSUPPORTED_CHILD[index=" + childIndex + ",type="
+						+ child.getClass().getSimpleName() + "]";
+				return shape;
 			}
 			PatternPlan pattern = (PatternPlan) child;
-			if (pattern.hasRepeatedSlot() || pattern.namedContextScope || !pattern.p.isConstant()
-					|| pattern.p.hasSlot() || pattern.c.hasSlot() || pattern.c.isConstant()
-					|| pattern.contexts.isFixed() || pattern.s.bindConstant || pattern.o.bindConstant) {
-				return null;
+			String unsupported = unsupportedPatternReason(pattern);
+			if (unsupported != null) {
+				shape.declineReason = "UNSUPPORTED_PATTERN[index=" + childIndex + ",reason=" + unsupported + "]";
+				return shape;
 			}
 			Operand subject = classify(pattern.s, entryMask, slotColumn, slotColumnDepth, shape);
 			Operand object = classify(pattern.o, entryMask, slotColumn, slotColumnDepth, shape);
@@ -260,7 +304,10 @@ final class LmdbNativeJaninoPipeline {
 						valueColumn));
 				key.append("R;");
 			} else {
-				return null;
+				shape.declineReason = "UNSUPPORTED_CONNECTIVITY[index=" + childIndex
+						+ ",subjectKnown=" + (subject != null) + ",objectKnown=" + (object != null)
+						+ ",steps=" + shape.steps.size() + "]";
+				return shape;
 			}
 		}
 
@@ -289,6 +336,25 @@ final class LmdbNativeJaninoPipeline {
 		shape.className = "org.eclipse.rdf4j.sail.lmdb.gen.PipelineKernel_"
 				+ Long.toHexString(fnv(shape.shapeKey));
 		return shape;
+	}
+
+	private static String unsupportedPatternReason(PatternPlan pattern) {
+		if (pattern.hasRepeatedSlot()) {
+			return "REPEATED_SLOT";
+		}
+		if (pattern.namedContextScope) {
+			return "NAMED_CONTEXT_SCOPE";
+		}
+		if (!pattern.p.isConstant() || pattern.p.hasSlot()) {
+			return "PREDICATE_NOT_FIXED_CONSTANT";
+		}
+		if (pattern.c.hasSlot() || pattern.c.isConstant() || pattern.contexts.isFixed()) {
+			return "CONTEXT_CONSTRAINT";
+		}
+		if (pattern.s.bindConstant || pattern.o.bindConstant) {
+			return "CONSTANT_BINDING_REQUIRED";
+		}
+		return null;
 	}
 
 	private static Operand classify(Term term, long entryMask, int[] slotColumn, int[] slotColumnDepth,
