@@ -298,6 +298,23 @@ public class LmdbNativeQueryExplanationTest {
 	}
 
 	@Test
+	public void telemetryAggregatesRepeatedPhysicalAccessesByShape() throws Exception {
+		assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s ?price WHERE { ?s a ex:Item . ?s ex:price ?price }";
+
+		String rendered = explain(Explanation.Level.Telemetry, query).toString();
+		String accesses = planSection(rendered, "    adjacencyAccess:\n", "    adjacencySIP:\n");
+
+		assertThat(accesses)
+				.as("one root scan plus one repeated bound-row shape should be reported")
+				.contains("0:")
+				.contains("1:")
+				.contains("opens: 4")
+				.doesNotContain("2:");
+	}
+
+	@Test
 	public void telemetryExplanationReportsWhyAnOrderedScanUsedLmdbInsteadOfAdjacency() throws Exception {
 		assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
 		String query = "PREFIX ex: <" + EX + ">\n"

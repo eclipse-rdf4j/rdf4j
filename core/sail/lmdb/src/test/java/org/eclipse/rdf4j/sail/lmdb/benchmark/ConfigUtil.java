@@ -12,12 +12,16 @@
 
 package org.eclipse.rdf4j.sail.lmdb.benchmark;
 
+import java.util.Locale;
+
+import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 
 /**
  * Creates LMDB store configurations for benchmarking.
  */
 final class ConfigUtil {
+	static final String DIRECT_ADJACENCY_MODE_PROPERTY = "rdf4j.lmdb.benchmark.directAdjacencyMode";
 	private static final String DEFAULT_TRIPLE_INDEXES = "spoc,ospc,psoc,posc";
 	private static final String ALL_TRIPLE_INDEXES = "spoc,psoc,sopc,opsc,posc,ospc";
 	private static final int THEME_SUBJECT_BUCKET_COUNT = 4096;
@@ -50,6 +54,11 @@ final class ConfigUtil {
 		config.setSketchEstimatorObjectBucketCount(THEME_OBJECT_BUCKET_COUNT);
 		config.setSketchEstimatorContextBucketCount(THEME_CONTEXT_BUCKET_COUNT);
 		config.setSketchEstimatorContextPairSketchesEnabled(false);
+		String directAdjacencyMode = System.getProperty(DIRECT_ADJACENCY_MODE_PROPERTY);
+		if (directAdjacencyMode != null) {
+			config.setDirectAdjacencyMode(
+					DirectAdjacencyMode.valueOf(directAdjacencyMode.trim().toUpperCase(Locale.ROOT)));
+		}
 		return config;
 	}
 }

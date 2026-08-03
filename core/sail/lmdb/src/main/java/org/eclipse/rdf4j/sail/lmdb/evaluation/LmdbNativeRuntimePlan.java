@@ -12,7 +12,9 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -118,7 +120,7 @@ final class LmdbNativeRuntimePlan {
 		private String janinoRoute;
 		private List<String> generatedOrder = List.of();
 		private boolean adjacencyAccessUsed;
-		private final List<AdjacencyAccess> adjacencyAccesses = new ArrayList<>();
+		private final Map<AdjacencyAccessKey, AdjacencyAccess> adjacencyAccesses = new LinkedHashMap<>();
 		private boolean adjacencyUsed;
 		private String adjacencyState = "NOT_CONSIDERED";
 		private String adjacencyReason = "NOT_ATTEMPTED[no adjacency SIP activation point reached]";
@@ -215,23 +217,23 @@ final class LmdbNativeRuntimePlan {
 
 		NativeLmdbQuerySource.AdjacencyAccessObserver adjacencyAccessAt(String where) {
 			return (used, reason, requestedOrder, subj, pred, obj, context) -> {
+				boolean publish;
 				synchronized (this) {
 					adjacencyAccessUsed |= used;
-					AdjacencyAccess matched = null;
-					for (AdjacencyAccess access : adjacencyAccesses) {
-						if (access.matches(used, reason, requestedOrder, subj, pred, obj, context, where)) {
-							matched = access;
-							break;
-						}
-					}
+					AdjacencyAccessKey key = new AdjacencyAccessKey(used, reason, requestedOrder, subj > 0L,
+							pred > 0L, obj > 0L, context > 0L, where);
+					AdjacencyAccess matched = adjacencyAccesses.get(key);
 					if (matched == null) {
-						adjacencyAccesses.add(
+						adjacencyAccesses.put(key,
 								new AdjacencyAccess(used, reason, requestedOrder, subj, pred, obj, context, where));
+						publish = true;
 					} else {
-						matched.count++;
+						publish = matched.incrementAndShouldPublish();
 					}
 				}
-				owner.publish();
+				if (publish) {
+					owner.publish();
+				}
 			};
 		}
 
@@ -326,8 +328,9 @@ final class LmdbNativeRuntimePlan {
 			if (adjacencyAccesses.isEmpty()) {
 				out.append("\n        <none; reason=NO_STATEMENT_ACCESS_REACHED>");
 			} else {
-				for (int i = 0; i < adjacencyAccesses.size(); i++) {
-					adjacencyAccesses.get(i).render(out, i);
+				int accessIndex = 0;
+				for (AdjacencyAccess access : adjacencyAccesses.values()) {
+					access.render(out, accessIndex++);
 				}
 			}
 			out.append("\n    adjacencySIP:")
@@ -386,11 +389,9 @@ final class LmdbNativeRuntimePlan {
 				this.where = where;
 			}
 
-			private boolean matches(boolean used, String reason, StatementOrder requestedOrder, long subj, long pred,
-					long obj, long context, String where) {
-				return this.used == used && this.subj == subj && this.pred == pred && this.obj == obj
-						&& this.context == context && this.requestedOrder == requestedOrder
-						&& this.reason.equals(reason) && this.where.equals(where);
+			private boolean incrementAndShouldPublish() {
+				count++;
+				return (count & (count - 1L)) == 0L;
 			}
 
 			private void render(StringBuilder out, int index) {
@@ -415,6 +416,8 @@ final class LmdbNativeRuntimePlan {
 				appendTerm(out, obj);
 				out.append("\n          context: ");
 				appendTerm(out, context);
+				out.append("\n          bindingValues: ")
+						.append(count == 1L ? "exact" : "representative (aggregated by bound/unbound shape)");
 				out.append("\n          opens: ").append(count);
 			}
 
@@ -425,6 +428,10 @@ final class LmdbNativeRuntimePlan {
 					out.append("BOUND[").append(id).append(']');
 				}
 			}
+		}
+
+		private record AdjacencyAccessKey(boolean used, String reason, StatementOrder requestedOrder,
+				boolean subjectBound, boolean predicateBound, boolean objectBound, boolean contextBound, String where) {
 		}
 	}
 }
