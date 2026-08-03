@@ -82,11 +82,53 @@ must either validate a newly recorded decision event or fully replan.
   JOIN when a descendant winner changes; the focused repeated-direct-lookup regression now passes in `AUTO` mode.
 - [x] (2026-08-02 22:52Z) Record and replay demand-realization aliases so a cached descriptor reproduces the canonical
   Frontier state consumed by a later immutable costing event; 65 focused cache/lifecycle/arena tests pass.
-- [ ] Restore the formal packed join hypergraph and DPhyp CSG/CMP receiver so bounded search eliminates only
-  topologically impossible subproblems and never substitutes traversal priority for enumeration completeness.
+- [x] (2026-08-03 01:59Z) Restore the formal packed join hypergraph and DPhyp CSG/CMP receiver, encode exact
+  predicate-readiness and Cartesian topology, and pass all 1,139 query-algebra evaluation module tests.
 - [ ] Verify LMDB, query snapshots, benchmarks, and the Theme corpus.
 
 ## Surprises & Discoveries
+
+- Observation: the remaining access-enabling failure is not an inaccurate candidate cost; the candidate-costing
+  event is never reached. `seedAccessEnablingAlternatives` installs only finite-VALUES recipes, while the subsequent
+  correlated lattice expands states from a row-cost priority queue and exhausts the shared work budget before either
+  proof-ready predicate transition is visited. Its dormant `seedCorrelatedFilter` fallback would not be a valid fix:
+  `preferredSeedProvider` chooses one producer from scalar row estimates and relation IDs.
+  Evidence: the focused
+  `seedsEveryLateAccessEnablingRecipeBeforeExhaustiveSearchInEitherInputOrder` run reports both expected correlated
+  prefixes missing (`expected [urn:late-type, urn:direct-type] but was []`). The relevant production paths are
+  `PackedIncumbentSearch.seedAccessEnablingAlternatives`, `PackedJoinEnumerator.optimizeDenseCorrelatedFilters`, and
+  `PackedJoinEnumerator.preferredSeedProvider`.
+
+- Observation: the current packed DPhyp object is used only to precompute a singleton-extension adjacency table.
+  Dense join and correlated-filter search then discard DPhyp's CSG/CMP order and re-expand the retained states through
+  `PackedCostOrderedStateQueue`. Disconnected factor components have no hypergraph edge at all, so exact enumeration
+  cannot produce a Cartesian transition and falls back to the separately ordered greedy path.
+  Evidence: `PackedJoinEnumerator.singletonExtensions` marks all DPhyp unions as a connectivity oracle but retains
+  only singleton sides; `optimizeDense` and `optimizeDenseCorrelatedFilters` consume that table from a cost queue; and
+  `joinHypergraph` adds only pairwise shared-output edges. The focused disconnected-factor contract consequently
+  requires a fallback to find the finite-first Cartesian order.
+
+- Observation: a predicate seed whose readiness certificate contains every factor used to publish its completed input
+  JOIN directly into the predicate's root memo group, then publish the predicate only into an internal helper group.
+  Evidence: SERVICE, tuple-function, volatile-extension, volatile-OPTIONAL, and nullable-VALUES contracts all selected
+  an unfiltered JOIN. Making the terminal predicate the root transition restores all seven semantic-barrier cases.
+
+- Observation: repeated correlated enumeration can rediscover an already materialized factor in the exact same
+  evidence and event context. Reinvoking a stateful provider then produces a second Frontier state for one immutable
+  transition and violates event identity.
+  Evidence: `correlatedDenseCarriesTheWinningFrontierStateThroughFilterScheduling` retained equal scalar rows and cost
+  but rejected state 19 against the original state 12. Exact memo-context lookup now restores the originating event;
+  the component-row contract proves the initial 12-row event and zero provider replays.
+
+- Observation: full-module verification exposed three ordering contracts outside the initial focused selection. A
+  context-free JOIN spine was refined before its containing correlated DPhyp lattice; a one-unit binary search spent
+  that unit on a redundant greedy seed; and the direct DPhyp traversal did not reach a nine-factor reverse optimum
+  within the existing 256-event bound.
+  Evidence: `PackedFrontierSubsetKernelContractTest.correlatedHypergraphOwnsCostingBeforeItsWrittenJoinSpine` and
+  `PackedJoinOrderedPrefixTest` reported three failures while the other 1,136 module tests passed. The first two are
+  ownership defects: containing correlated regions must precede contained JOIN regions, and a two-node hypergraph has
+  no separate ceiling-search problem. The third requires an anytime search correction whose candidate evidence comes
+  from real cost events, not a scalar or workload-specific ordering rule.
 
 - Observation: a canonical Frontier state can first appear as a later costing event input even though the event which
   produced its logical evidence emitted only a replayable or bound-only descriptor.
@@ -730,6 +772,25 @@ must either validate a newly recorded decision event or fully replan.
   estimate threshold, query identity, preferred start, row ordering, or fixed join sequence. Cost ordering may only
   break an exact objective tie after DPhyp has produced the same legal candidate set.
   Date/Author: 2026-08-02 / Codex
+
+- Decision: model predicate readiness and Cartesian legality in the hypergraph instead of selecting an
+  access-enabling seed.
+  Rationale: for each relocatable predicate, every inclusion-minimal factor set which assures all required bindings
+  and evaluation barriers becomes one exact complex hyperedge to a predicate node. DPhyp therefore emits the
+  predicate transition only after a mathematically sufficient prefix, and emits every minimal alternative without
+  consulting rows, costs, relation IDs, predicates, or workload identity. Factor components receive explicit
+  Cartesian edges because INNER JOIN semantics permit every cross-component pairing; these edges represent legal
+  topology, not a preference. The receiver alone costs emitted factor and predicate transitions, while completed
+  greedy endpoint seeds only tighten the incumbent ceiling and cannot define enumeration order or justify pruning.
+  Date/Author: 2026-08-03 / Codex
+
+- Decision: let DPhyp enumerate the legal dense JOIN transitions, then schedule those transitions by the immutable
+  measured objective of their retained prefix state.
+  Rationale: CSG/CMP enumeration remains the sole topology authority, including Cartesian edges. The queue cannot add
+  an edge, remove an edge, or justify pruning; it only chooses which already-proved transition to cost next when a
+  finite work bound makes the search anytime. This restores the exact-cost ordering contract without a scalar
+  cardinality proxy or query-specific seed. Each provider transition is still costed once per retained state revision.
+  Date/Author: 2026-08-03 / Codex
 
 ## Outcomes & Retrospective
 

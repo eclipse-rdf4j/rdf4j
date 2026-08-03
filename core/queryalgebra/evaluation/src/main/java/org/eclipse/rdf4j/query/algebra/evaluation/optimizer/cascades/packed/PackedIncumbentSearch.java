@@ -79,14 +79,15 @@ final class PackedIncumbentSearch {
 		int rootWinnerId = 0;
 		boolean hasLogicalAlternatives = hasLogicalAlternatives();
 		boolean[] prioritizedCanonicalJoinRegions = new boolean[query.relationCount() + 1];
+		boolean[] prioritizedCanonicalCorrelatedRegions = new boolean[query.relationCount() + 1];
 		if (exploreReorderings && !hasLogicalAlternatives) {
 			/*
-			 * With no generated alternatives, maximal hypergraph regions own their internal topology immediately.
-			 * Prepare only their terminal factor groups, then cost connected alternatives before the source algebra's
-			 * arbitrary binary JOIN spine can consume bounded work on strict subregions. Correlated regions are
-			 * deferred until their complete canonical inputs exist; their descriptors may reference generated helper
-			 * groups.
+			 * With no generated alternatives, maximal hypergraph regions own their internal topology immediately. A
+			 * containing correlated region includes both its factor topology and its predicate placements, so cost it
+			 * before any contained context-free JOIN region. Preparing only terminal factor groups gives the correlated
+			 * DPhyp receiver every required input without refining the source algebra's arbitrary binary JOIN spine.
 			 */
+			prioritizedCanonicalCorrelatedRegions = prioritizeContainingCorrelatedRegions(anyPropertyId, true);
 			int[][] prioritizedWinnerIds = new int[query.relationCount() + 1][];
 			int[][] prioritizedMetadataIds = new int[query.relationCount() + 1][];
 			prioritizedCanonicalJoinRegions = prioritizeContainingJoinRegions(anyPropertyId, true,
@@ -105,7 +106,7 @@ final class PackedIncumbentSearch {
 				enumerateJoinRegion(logicalExpressionId);
 			}
 			if (exploreReorderings && isCorrelatedPredicateOperator(query.relOperator(logicalExpressionId))) {
-				if (!hasLogicalAlternatives) {
+				if (!hasLogicalAlternatives && !prioritizedCanonicalCorrelatedRegions[logicalExpressionId]) {
 					enumerateCorrelatedFilterRegion(logicalExpressionId);
 					applyUncoveredFilterPlacement(logicalExpressionId);
 				}
@@ -660,6 +661,18 @@ final class PackedIncumbentSearch {
 				seedEnumerator = PackedJoinEnumerator.forSession(query, memo, selectedRowsByGroup, budget,
 						costSession);
 				emittedWork = seedEnumerator.seedAnchored(logicalExpressionId);
+			} else if (isCorrelatedPredicateOperator(operator)
+					&& (operator != PackedRelOp.FILTER || !hasTypedSemiAntiAlternative(logicalExpressionId))) {
+				/*
+				 * Predicate readiness is represented by exact complex hyperedges. Install one complete graph-derived
+				 * incumbent for each logical placement before optional exhaustive transitions consume the shared
+				 * budget. EXISTS/NOT EXISTS groups use their typed semi/anti implementation instead of redundantly
+				 * seeding the source FILTER representation; the subsequent DPhyp receiver still enumerates and compares
+				 * the complete candidate space.
+				 */
+				seedEnumerator = PackedJoinEnumerator.forSession(query, memo, selectedRowsByGroup, budget,
+						costSession);
+				emittedWork = seedEnumerator.seedCorrelatedFilter(logicalExpressionId);
 			}
 			workUnits += emittedWork;
 			if (emittedWork > 0) {

@@ -349,10 +349,12 @@ final class PackedJoinEnumerator {
 				return 0;
 			}
 			/*
-			 * The dense kernel has exactly two transitions for a binary join. Retaining those candidate events avoids
-			 * the former compare-then-recost path and charges the search budget for the provider work actually done.
-			 * Binary finite anchors take the mandatory anchored path above and are therefore unaffected.
+			 * A binary hypergraph has no separate ceiling-search problem. Give its budget directly to the exact DPhyp
+			 * transitions so a one-event search costs the written orientation instead of spending that event on a
+			 * redundant greedy seed. When exactly one factor already carries a theorem-safe finite access proof, emit
+			 * that proven access-enabling orientation first; an unbounded search still costs both orientations.
 			 */
+			orderBinaryAccessEnablingFactor(factors);
 			return optimizeDense(rootRelationId, factors);
 		}
 		/*
@@ -781,17 +783,13 @@ final class PackedJoinEnumerator {
 			return 0;
 		}
 		int evaluationBarrierMask = 0;
-		int bindingAnchorMask = 0;
 		for (int ordinal = 0; ordinal < factorCount; ordinal++) {
 			if (query.relationHasObservableEvaluationEffects(factors[ordinal])) {
 				evaluationBarrierMask |= 1 << ordinal;
 			}
-			if (query.relOperator(factors[ordinal]) == PackedRelOp.BINDING_SET_ASSIGNMENT) {
-				bindingAnchorMask |= 1 << ordinal;
-			}
 		}
 		return optimizeDenseCorrelatedFilter(filterRelationId, inputRelationId, factors,
-				requiredProviderMasks, requiredProviderCount, evaluationBarrierMask, bindingAnchorMask);
+				requiredProviderMasks, requiredProviderCount, evaluationBarrierMask);
 	}
 
 	private int optimizeRelocatableFilterRegion(int rootFilterRelationId, int inputRelationId) {
@@ -835,17 +833,13 @@ final class PackedJoinEnumerator {
 		requiredProviderMasks = Arrays.copyOf(requiredProviderMasks, requiredProviderCount);
 
 		int evaluationBarrierMask = 0;
-		int bindingAnchorMask = 0;
 		for (int ordinal = 0; ordinal < factors.length; ordinal++) {
 			if (query.relationHasObservableEvaluationEffects(factors[ordinal])) {
 				evaluationBarrierMask |= 1 << ordinal;
 			}
-			if (query.relOperator(factors[ordinal]) == PackedRelOp.BINDING_SET_ASSIGNMENT) {
-				bindingAnchorMask |= 1 << ordinal;
-			}
 		}
 		return optimizeDenseCorrelatedFilters(rootFilterRelationId, inputRelationId, factors, filters,
-				requiredProviderMasks, requiredProviderStarts, evaluationBarrierMask, bindingAnchorMask);
+				requiredProviderMasks, requiredProviderStarts, evaluationBarrierMask);
 	}
 
 	private boolean reuseCompletedCorrelatedLattice(int rootFilterRelationId, int inputRelationId,
@@ -1087,9 +1081,10 @@ final class PackedJoinEnumerator {
 	}
 
 	/**
-	 * Emits one complete theorem-safe correlated-FILTER schedule before any subset search can consume the shared
-	 * budget. The seed chooses the smallest stable provider for every required binding, includes every observable
-	 * evaluation barrier, applies the predicate at that first assured prefix, and retains the remaining written order.
+	 * Installs one complete DPhyp-derived dependent-access schedule for every inclusion-minimal connected binding
+	 * certificate. Ordinary scalar predicates remain nodes in complete correlated enumeration, but they do not open a
+	 * dependent access kernel and therefore do not consume this mandatory pre-enumeration budget. The graph, rather
+	 * than a row estimate or relation-id preference, determines both readiness and a legal left-deep CSG/CMP path.
 	 */
 	int seedCorrelatedFilter(int filterRelationId) {
 		if (!isCorrelatedPredicateOperator(query.relOperator(filterRelationId))
@@ -1106,13 +1101,11 @@ final class PackedJoinEnumerator {
 		int conditionId = predicateConditionId(filterRelationId);
 		int embeddedReferenceMaskId = query.scalarEmbeddedReferenceMaskId(conditionId);
 		int scalarFlags = query.scalarMetadataFlags(conditionId);
-		boolean freelyRelocatable = query.scalarSafeToRelocate(conditionId);
 		boolean guardedCorrelatedPredicate = embeddedReferenceMaskId != 0
 				&& query.scalarSafeWhenAssured(conditionId)
 				&& (scalarFlags & PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE) == 0
 				&& (scalarFlags & PackedNodeMetadataArena.SCALAR_REORDERING_SAFE) != 0;
-		if (!freelyRelocatable && !guardedCorrelatedPredicate
-				|| freelyRelocatable && query.scalarDependencyMaskId(conditionId) == 0) {
+		if (!guardedCorrelatedPredicate) {
 			return 0;
 		}
 		int outerOutputMaskId = query.relOutputMaskId(inputRelationId);
@@ -1121,7 +1114,7 @@ final class PackedJoinEnumerator {
 			return 0;
 		}
 		int factorCount = factorCount(inputRelationId);
-		if (factorCount < 2 || subsetKernelForFactorCount(factorCount) != DENSE_SUBSETS) {
+		if (factorCount < 2 || factorCount + 1 > DENSE_FACTOR_LIMIT) {
 			return 0;
 		}
 		int[] factors = new int[factorCount];
@@ -1136,39 +1129,129 @@ final class PackedJoinEnumerator {
 		if (requiredProviderCount <= 0) {
 			return 0;
 		}
-
-		int requiredPrefixMask = 0;
+		int evaluationBarrierMask = 0;
 		for (int ordinal = 0; ordinal < factorCount; ordinal++) {
 			if (query.relationHasObservableEvaluationEffects(factors[ordinal])) {
-				requiredPrefixMask |= 1 << ordinal;
+				evaluationBarrierMask |= 1 << ordinal;
 			}
 		}
-		for (int ordinal = 0; ordinal < requiredProviderCount; ordinal++) {
-			int providerMask = requiredProviderMasks[ordinal];
-			if ((requiredPrefixMask & providerMask) == 0) {
-				requiredPrefixMask |= preferredSeedProvider(factors, providerMask);
+		PackedJoinHypergraph factorGraph = factorHypergraph(factors, factorCount);
+		int stateCount = 1 << factorCount;
+		int[][] schedulesByReadiness = new int[stateCount][];
+		int scheduleCount = 0;
+		for (int readiness = 1; readiness < stateCount; readiness++) {
+			if ((readiness & evaluationBarrierMask) != evaluationBarrierMask
+					|| uncoveredProviderMask(readiness, requiredProviderMasks, 0, requiredProviderCount) != 0
+					|| !isMinimalPredicatePrefix(factorGraph, readiness, evaluationBarrierMask,
+							requiredProviderMasks, 0, requiredProviderCount)) {
+				continue;
 			}
+			int[] schedule = firstDphypFactorOrder(factorGraph, factorCount, readiness);
+			if (schedule == null) {
+				throw new PackedMemoInvariantException(
+						"connected predicate-readiness certificate has no left-deep DPhyp schedule");
+			}
+			schedulesByReadiness[readiness] = schedule;
+			scheduleCount++;
 		}
-		int applyAfterFactorCount = Integer.bitCount(requiredPrefixMask);
-		if (applyAfterFactorCount <= 0 || applyAfterFactorCount >= factorCount) {
+		if (scheduleCount == 0) {
 			return 0;
 		}
-		int[] orderedFactors = new int[factorCount];
-		int prefixIndex = 0;
-		int suffixIndex = applyAfterFactorCount;
-		for (int ordinal = 0; ordinal < factorCount; ordinal++) {
-			if ((requiredPrefixMask & 1 << ordinal) != 0) {
-				orderedFactors[prefixIndex++] = factors[ordinal];
-			} else {
-				orderedFactors[suffixIndex++] = factors[ordinal];
+		long reservedWork = (long) scheduleCount * factorCount;
+		long workBeforeReservation = budget.workUnits();
+		if (!budget.tryReserve(reservedWork)) {
+			return saturatedInt(budget.workUnits() - workBeforeReservation);
+		}
+		int emittedWork = 0;
+		for (int readiness = 1; readiness < stateCount; readiness++) {
+			int[] schedule = schedulesByReadiness[readiness];
+			if (schedule == null) {
+				continue;
 			}
+			int[] orderedFactors = new int[factorCount];
+			for (int ordinal = 0; ordinal < factorCount; ordinal++) {
+				orderedFactors[ordinal] = factors[schedule[ordinal]];
+			}
+			emitScheduledFilterOrder(filterRelationId, inputRelationId, orderedFactors,
+					Integer.bitCount(readiness), false);
+			emittedWork += factorCount;
 		}
-		int rootWinnerId = memo.findWinner(memo.logicalGroupId(filterRelationId), memo.anyPropertyId(), 0, 0, 0);
-		if (rootWinnerId == 0) {
-			throw new PackedMemoInvariantException("correlated FILTER " + filterRelationId
-					+ " has no logical root incumbent");
+		return emittedWork;
+	}
+
+	private static int[] firstDphypFactorOrder(PackedJoinHypergraph graph, int factorCount,
+			int requiredPrefixMask) {
+		int stateCount = 1 << factorCount;
+		boolean[] seenSubgraphs = new boolean[stateCount];
+		boolean[] executable = new boolean[stateCount];
+		int[] parentStates = new int[stateCount];
+		int[] appendedNodes = new int[stateCount];
+		int fullState = stateCount - 1;
+		PackedDphypEnumerator.enumerate(graph, new PackedDphypEnumerator.Receiver() {
+			@Override
+			public boolean hasSeen(long nodes) {
+				return seenSubgraphs[(int) nodes];
+			}
+
+			@Override
+			public boolean foundSingleNode(int node) {
+				int state = 1 << node;
+				seenSubgraphs[state] = true;
+				executable[state] = true;
+				appendedNodes[state] = state;
+				return false;
+			}
+
+			@Override
+			public boolean foundSubgraphPair(long left, long right, int edge) {
+				int leftState = (int) left;
+				int rightState = (int) right;
+				int combined = leftState | rightState;
+				seenSubgraphs[combined] = true;
+				if (!executable[combined] && prefixOrderPermits(combined, requiredPrefixMask)) {
+					if (Integer.bitCount(rightState) == 1 && executable[leftState]
+							&& prefixOrderPermits(leftState, requiredPrefixMask)) {
+						parentStates[combined] = leftState;
+						appendedNodes[combined] = rightState;
+						executable[combined] = true;
+					} else if (Integer.bitCount(leftState) == 1 && executable[rightState]
+							&& prefixOrderPermits(rightState, requiredPrefixMask)) {
+						parentStates[combined] = rightState;
+						appendedNodes[combined] = leftState;
+						executable[combined] = true;
+					}
+				}
+				return executable[fullState];
+			}
+		});
+		if (!executable[fullState]) {
+			return null;
 		}
-		return emitScheduledFilterOrder(filterRelationId, inputRelationId, orderedFactors, applyAfterFactorCount);
+		int[] order = new int[factorCount];
+		int state = fullState;
+		for (int destination = factorCount - 1; destination >= 0; destination--) {
+			int appendedNode = appendedNodes[state];
+			if (appendedNode == 0) {
+				throw new PackedMemoInvariantException("DPhyp seed lost its left-deep predecessor");
+			}
+			order[destination] = Integer.numberOfTrailingZeros(appendedNode);
+			state = parentStates[state];
+		}
+		int reconstructedPrefix = 0;
+		for (int ordinal = 0; ordinal < Integer.bitCount(requiredPrefixMask); ordinal++) {
+			reconstructedPrefix |= 1 << order[ordinal];
+		}
+		if (reconstructedPrefix != requiredPrefixMask) {
+			throw new PackedMemoInvariantException("DPhyp seed crossed a predicate-readiness boundary: required="
+					+ Integer.toBinaryString(requiredPrefixMask) + ", reconstructed="
+					+ Integer.toBinaryString(reconstructedPrefix) + ", order=" + Arrays.toString(order));
+		}
+		return order;
+	}
+
+	private static boolean prefixOrderPermits(int combined, int requiredPrefixMask) {
+		return (combined & ~requiredPrefixMask) == 0
+				|| (combined & requiredPrefixMask) == requiredPrefixMask;
 	}
 
 	/**
@@ -1231,30 +1314,6 @@ final class PackedJoinEnumerator {
 			}
 		}
 		return true;
-	}
-
-	private int preferredSeedProvider(int[] factors, int providerMask) {
-		int selectedBit = 0;
-		int selectedRelationId = Integer.MAX_VALUE;
-		double selectedRows = Double.POSITIVE_INFINITY;
-		int remaining = providerMask;
-		while (remaining != 0) {
-			int factorBit = remaining & -remaining;
-			remaining ^= factorBit;
-			int factorOrdinal = Integer.numberOfTrailingZeros(factorBit);
-			int relationId = factors[factorOrdinal];
-			double rows = selectedRowsByGroup[memo.logicalGroupId(relationId)];
-			int rowsComparison = Double.compare(rows, selectedRows);
-			if (rowsComparison < 0 || rowsComparison == 0 && relationId < selectedRelationId) {
-				selectedBit = factorBit;
-				selectedRelationId = relationId;
-				selectedRows = rows;
-			}
-		}
-		if (selectedBit == 0) {
-			throw new PackedMemoInvariantException("correlated FILTER lost a required provider");
-		}
-		return selectedBit;
 	}
 
 	private int optimizeSingleInputCorrelatedFilter(int filterRelationId, int inputRelationId, int conditionId,
@@ -1426,6 +1485,26 @@ final class PackedJoinEnumerator {
 		return (memo.logicalRuleMask(rootRelationId) & PackedRuleProofs.FINITE_FILTER_VALUES) != 0L;
 	}
 
+	private void orderBinaryAccessEnablingFactor(int[] factors) {
+		if (!hasFiniteAccessProof(factors[0]) && hasFiniteAccessProof(factors[1])) {
+			swap(factors, 0, 1);
+		}
+	}
+
+	private boolean hasFiniteAccessProof(int relationId) {
+		if ((memo.logicalRuleMask(relationId) & PackedRuleProofs.FINITE_FILTER_VALUES) != 0L) {
+			return true;
+		}
+		int winnerId = memo.findWinner(memo.logicalGroupId(relationId), memo.anyPropertyId(), 0, 0, 0);
+		if (winnerId == 0) {
+			return false;
+		}
+		int metadataId = memo.winnerPhysicalMetadataId(winnerId);
+		return metadataId != 0
+				&& (memo.physicalMetadataRuleProofMask(metadataId)
+						& PackedRuleProofs.FINITE_FILTER_VALUES) != 0L;
+	}
+
 	private boolean requiresWrittenSequence(int[] factors) {
 		for (int factor : factors) {
 			if (containsNonRelocatableFilter(factor)) {
@@ -1470,20 +1549,18 @@ final class PackedJoinEnumerator {
 	}
 
 	private int optimizeDenseCorrelatedFilter(int filterRelationId, int inputJoinRelationId, int[] factors,
-			int[] requiredProviderMasks, int requiredProviderCount, int evaluationBarrierMask,
-			int bindingAnchorMask) {
+			int[] requiredProviderMasks, int requiredProviderCount, int evaluationBarrierMask) {
 		int[] filters = { filterRelationId };
 		if (reuseCompletedCorrelatedLattice(filterRelationId, inputJoinRelationId, factors, filters)) {
 			return 0;
 		}
 		int[] requiredProviderStarts = { 0, requiredProviderCount };
 		return optimizeDenseCorrelatedFilters(filterRelationId, inputJoinRelationId, factors, filters,
-				requiredProviderMasks, requiredProviderStarts, evaluationBarrierMask, bindingAnchorMask);
+				requiredProviderMasks, requiredProviderStarts, evaluationBarrierMask);
 	}
 
 	private int optimizeDenseCorrelatedFilters(int rootFilterRelationId, int inputJoinRelationId, int[] factors,
-			int[] filters, int[] requiredProviderMasks, int[] requiredProviderStarts, int evaluationBarrierMask,
-			int bindingAnchorMask) {
+			int[] filters, int[] requiredProviderMasks, int[] requiredProviderStarts, int evaluationBarrierMask) {
 		/*
 		 * A lane is identified by the exact set of predicates already evaluated. Lanes do not dominate one another:
 		 * applying a predicate spends work now but can reduce every later bound lookup, while delaying it preserves the
@@ -1521,89 +1598,68 @@ final class PackedJoinEnumerator {
 			states.stateRevisions[factorBit] = 1;
 		}
 
-		int[] singletonExtensions = singletonExtensions(factors);
 		int[] workUnits = { 0 };
 		/*
-		 * DPhyp supplies the complete legal topology above. Expand those transitions in nondecreasing retained
-		 * objective cost. Every physical transition includes its input work, so an unexpanded state's current cost is
-		 * an admissible lower bound for every complete plan reachable from it. Once both full-set lanes have been
-		 * popped and the queue minimum is strictly larger than the filtered winner, the winner and the no-filter join
-		 * lane are certified without costing dominated continuations. This is uniform-cost dynamic programming, not a
-		 * proxy selectivity or fixed-order rule.
+		 * Factor nodes are connected by legal INNER JOIN edges. Each predicate is an additional node connected through
+		 * every inclusion-minimal factor set which assures its dependencies and evaluation barriers. DPhyp therefore
+		 * emits exactly the CSG/CMP transitions the receiver may cost; rows and objective costs never affect traversal.
 		 */
-		PackedCostOrderedStateQueue pendingStates = new PackedCostOrderedStateQueue(states.costs.length);
-		for (int ordinal = 0; ordinal < factors.length; ordinal++) {
-			int state = 1 << ordinal;
-			pendingStates.offer(state, states.stateRevisions[state], states.costs[state]);
-		}
 		int fullNoFilterState = states.state(states.fullSet, 0);
 		int fullAppliedState = states.state(states.fullSet, states.fullFilterSet);
-		boolean fullNoFilterPopped = false;
-		boolean fullAppliedPopped = false;
-		boolean searchCompleted = false;
-		denseCorrelatedSearch: while (!pendingStates.isEmpty()) {
-			int state = pendingStates.pollStateId();
-			if (states.stateRevisions[state] != pendingStates.polledRevision()
-					|| Double.compare(states.costs[state], pendingStates.polledCost()) != 0) {
-				continue;
-			}
-			if (state == fullNoFilterState) {
-				fullNoFilterPopped = true;
-			}
-			if (state == fullAppliedState) {
-				fullAppliedPopped = true;
-			}
-			if (fullNoFilterPopped && fullAppliedPopped
-					&& pendingStates.minimumCost() > states.costs[fullAppliedState]) {
-				searchCompleted = true;
-				break;
-			}
-			int subset = denseFilterSubset(state, states.stateCount);
-			int appliedFilterSet = denseFilterSet(state, states.stateCount);
-			if ((subset & evaluationBarrierMask) == evaluationBarrierMask) {
-				int unappliedFilters = states.fullFilterSet ^ appliedFilterSet;
-				while (unappliedFilters != 0) {
-					int filterBit = unappliedFilters & -unappliedFilters;
-					unappliedFilters ^= filterBit;
-					int filterOrdinal = Integer.numberOfTrailingZeros(filterBit);
-					if (uncoveredProviderMask(subset, requiredProviderMasks,
-							requiredProviderStarts[filterOrdinal], requiredProviderStarts[filterOrdinal + 1]) != 0) {
-						continue;
+		boolean[] seenSubgraphs = new boolean[states.costs.length];
+		boolean stopped = PackedDphypEnumerator.enumerate(
+				correlatedHypergraph(factors, filters, requiredProviderMasks, requiredProviderStarts,
+						evaluationBarrierMask),
+				new PackedDphypEnumerator.Receiver() {
+					@Override
+					public boolean hasSeen(long nodes) {
+						return seenSubgraphs[(int) nodes];
 					}
-					if (!budget.tryConsume()) {
-						break denseCorrelatedSearch;
+
+					@Override
+					public boolean foundSingleNode(int node) {
+						seenSubgraphs[1 << node] = true;
+						return false;
 					}
-					int targetState = states.state(subset, appliedFilterSet | filterBit);
-					int previousRevision = states.stateRevisions[targetState];
-					workUnits[0] += costDenseCorrelatedFilterTransition(factors, filters, requiredProviderMasks,
-							requiredProviderStarts, adjacency, states, subset, appliedFilterSet, filterOrdinal,
-							scheduledPrefixRelations, scheduledPrefixContributionRows);
-					if (states.stateRevisions[targetState] != previousRevision) {
-						pendingStates.offer(targetState, states.stateRevisions[targetState], states.costs[targetState]);
+
+					@Override
+					public boolean foundSubgraphPair(long left, long right, int edge) {
+						int leftState = (int) left;
+						int rightState = (int) right;
+						seenSubgraphs[leftState | rightState] = true;
+						if (Integer.bitCount(rightState) == 1 && !costTransition(leftState, rightState)) {
+							return true;
+						}
+						return Integer.bitCount(leftState) == 1 && !costTransition(rightState, leftState);
 					}
-				}
-			}
-			for (int missing = singletonExtensions[subset]; missing != 0; missing &= missing - 1) {
-				int factorBit = missing & -missing;
-				if ((subset & factorBit) != 0) {
-					continue;
-				}
-				if (!budget.tryConsume()) {
-					break denseCorrelatedSearch;
-				}
-				int targetState = states.state(subset | factorBit, appliedFilterSet);
-				int previousRevision = states.stateRevisions[targetState];
-				workUnits[0] += costDenseCorrelatedAppend(rootFilterRelationId, inputJoinRelationId, factors,
-						appliedFilterSet, states, subset, Integer.numberOfTrailingZeros(factorBit), prefixRelations,
-						prefixContributionRows);
-				if (states.stateRevisions[targetState] != previousRevision) {
-					pendingStates.offer(targetState, states.stateRevisions[targetState], states.costs[targetState]);
-				}
-			}
-		}
-		if (pendingStates.isEmpty() && fullNoFilterPopped && fullAppliedPopped) {
-			searchCompleted = true;
-		}
+
+					private boolean costTransition(int prefixState, int appendedNode) {
+						int subset = denseFilterSubset(prefixState, states.stateCount);
+						if (subset == 0 || !Double.isFinite(states.costs[prefixState])) {
+							return true;
+						}
+						int nodeOrdinal = Integer.numberOfTrailingZeros(appendedNode);
+						if (!budget.tryConsume()) {
+							return false;
+						}
+						int appliedFilterSet = denseFilterSet(prefixState, states.stateCount);
+						if (nodeOrdinal < factors.length) {
+							workUnits[0] += costDenseCorrelatedAppend(rootFilterRelationId, inputJoinRelationId,
+									factors, appliedFilterSet, states, subset, nodeOrdinal, prefixRelations,
+									prefixContributionRows);
+						} else {
+							int filterOrdinal = nodeOrdinal - factors.length;
+							workUnits[0] += costDenseCorrelatedFilterTransition(factors, filters,
+									requiredProviderMasks, requiredProviderStarts, adjacency, states, subset,
+									appliedFilterSet, filterOrdinal, scheduledPrefixRelations,
+									scheduledPrefixContributionRows);
+						}
+						return true;
+					}
+				});
+		boolean searchCompleted = !stopped
+				&& states.parentStates[fullNoFilterState] != 0
+				&& states.parentStates[fullAppliedState] != 0;
 		if (states.parentStates[fullAppliedState] == 0) {
 			return workUnits[0];
 		}
@@ -1717,8 +1773,9 @@ final class PackedJoinEnumerator {
 		int combined = subset | factorBit;
 		int defaultFactorWinnerId = states.factorWinnerIds[factorOrdinal];
 		int factorWinnerId = defaultFactorWinnerId;
+		boolean connected = connectedToSubset(factors, subset, factorOrdinal);
 		double candidateRows = joinRowsForSubset(factors, Integer.toUnsignedLong(subset), factorOrdinal,
-				states.rows[state], states.rows[factorBit], true);
+				states.rows[state], states.rows[factorBit], connected);
 		double factorContributionRows = states.rows[factorBit];
 		double factorWork = states.costs[factorBit];
 		double iteratorProbeWork = 0.0d;
@@ -1732,16 +1789,25 @@ final class PackedJoinEnumerator {
 			resetFactorEstimate(states.rows[factorBit], factorWork);
 			costContext.reset(prefixRelations, 0, prefixCount, states.rows[state], states.evidenceStateIds[state]);
 			costContext.setEvidenceIdentity(0, 0, query.relSemanticScope(rootFilterRelationId));
-			costSession.estimate(factors[factorOrdinal], costContext, costEstimate);
+			int retainedContextualWinnerId = restoreExistingContextualFactor(factors[factorOrdinal], prefixRelations,
+					prefixContributionRows, prefixCount, states.rows[state], states.evidenceStateIds[state], 0, 0,
+					query.relSemanticScope(rootFilterRelationId), states.costEventIds[state]);
+			if (retainedContextualWinnerId == 0) {
+				costSession.estimate(factors[factorOrdinal], costContext, costEstimate);
+			} else {
+				factorWinnerId = retainedContextualWinnerId;
+			}
 			candidateRows = rowComposition.effectiveRows(costEstimate, prefixRelations, prefixContributionRows,
 					prefixCount, factors[factorOrdinal], candidateRows);
 			factorContributionRows = rowComposition.factorContributionRows();
 			if (finiteNonNegative(costEstimate.workRows())) {
 				factorWork = objectiveWork(costEstimate);
 			}
-			factorWinnerId = contextualizeEquivalentAccessPaths(factors[factorOrdinal], defaultFactorWinnerId,
-					prefixRelations, prefixContributionRows, prefixCount, states.rows[state],
-					states.evidenceStateIds[state], 0, 0, query.relSemanticScope(rootFilterRelationId));
+			if (retainedContextualWinnerId == 0) {
+				factorWinnerId = contextualizeEquivalentAccessPaths(factors[factorOrdinal], defaultFactorWinnerId,
+						prefixRelations, prefixContributionRows, prefixCount, states.rows[state],
+						states.evidenceStateIds[state], 0, 0, query.relSemanticScope(rootFilterRelationId));
+			}
 			if (factorWinnerId != defaultFactorWinnerId) {
 				double contextualRows = memo.winnerOutputRows(factorWinnerId);
 				contextualWinnerEstimate.clear();
@@ -1840,6 +1906,20 @@ final class PackedJoinEnumerator {
 					"correlated join");
 		}
 		return (costSession == null ? 0 : contextualFactorWorkUnits) + 1;
+	}
+
+	private int restoreExistingContextualFactor(int relationId, int[] prefixRelations,
+			double[] prefixContributionRows, int prefixCount, double prefixRows, int prefixEvidenceStateId,
+			int bindingLayoutId, int correlationMaskId, int semanticScopeMaskId, int prefixCostEventId) {
+		int inputContextId = memo.internEvidenceContext(prefixRelations, prefixContributionRows, 0, prefixCount,
+				prefixRows, prefixEvidenceStateId, bindingLayoutId, correlationMaskId, semanticScopeMaskId,
+				prefixCostEventId);
+		int contextualWinnerId = memo.findWinner(memo.logicalGroupId(relationId), memo.anyPropertyId(), 0,
+				inputContextId, 0);
+		if (contextualWinnerId != 0) {
+			restoreWinnerEstimate(contextualWinnerId);
+		}
+		return contextualWinnerId;
 	}
 
 	private int costScheduledFilter(int filterRelationId, int[] prefixRelations, double[] prefixContributionRows,
@@ -2086,49 +2166,62 @@ final class PackedJoinEnumerator {
 			states.stateRevisions[subset] = 1;
 		}
 
-		int[] singletonExtensions = singletonExtensions(factors);
-		PackedCostOrderedStateQueue pendingStates = new PackedCostOrderedStateQueue(states.costs.length);
-		if (requiredFirstBit == 0) {
-			for (int ordinal = 0; ordinal < factorCount; ordinal++) {
-				int state = 1 << ordinal;
-				pendingStates.offer(state, states.stateRevisions[state], states.costs[state]);
+		int[] legalExtensions = dphypSingletonExtensions(factors);
+		int workUnits = 0;
+		if (factorCount == 2) {
+			int firstOrdinal = fixedFirstOrdinal < 0 ? 0 : fixedFirstOrdinal;
+			int lastOrdinal = fixedFirstOrdinal < 0 ? factorCount : fixedFirstOrdinal + 1;
+			for (int prefixOrdinal = firstOrdinal; prefixOrdinal < lastOrdinal; prefixOrdinal++) {
+				int prefixSubset = 1 << prefixOrdinal;
+				int factorBit = legalExtensions[prefixSubset] & ~prefixSubset;
+				if (factorBit == 0 || !budget.tryConsume()) {
+					break;
+				}
+				workUnits += costDenseAppend(rootRelationId, factors, states, prefixSubset,
+						Integer.numberOfTrailingZeros(factorBit), prefixRelations, prefixContributionRows);
 			}
 		} else {
-			pendingStates.offer(requiredFirstBit, states.stateRevisions[requiredFirstBit],
-					states.costs[requiredFirstBit]);
-		}
-		int[] workUnits = { 0 };
-		denseSearch: while (!pendingStates.isEmpty()) {
-			int subset = pendingStates.pollStateId();
-			if (states.stateRevisions[subset] != pendingStates.polledRevision()
-					|| Double.compare(states.costs[subset], pendingStates.polledCost()) != 0) {
-				continue;
+			PackedCostOrderedStateQueue pendingStates = new PackedCostOrderedStateQueue(states.costs.length);
+			if (requiredFirstBit == 0) {
+				for (int ordinal = 0; ordinal < factorCount; ordinal++) {
+					int state = 1 << ordinal;
+					pendingStates.offer(state, states.stateRevisions[state], states.costs[state]);
+				}
+			} else {
+				pendingStates.offer(requiredFirstBit, states.stateRevisions[requiredFirstBit],
+						states.costs[requiredFirstBit]);
 			}
-			if (factorCount > 2 && subset == states.fullSet
-					&& pendingStates.minimumCost() > states.costs[states.fullSet]) {
-				break;
-			}
-			for (int missing = singletonExtensions[subset]; missing != 0; missing &= missing - 1) {
-				int factorBit = missing & -missing;
-				if ((subset & factorBit) != 0) {
+			denseSearch: while (!pendingStates.isEmpty()) {
+				int subset = pendingStates.pollStateId();
+				if (states.stateRevisions[subset] != pendingStates.polledRevision()
+						|| Double.compare(states.costs[subset], pendingStates.polledCost()) != 0) {
 					continue;
 				}
-				if (!budget.tryConsume()) {
-					break denseSearch;
+				if (subset == states.fullSet && pendingStates.minimumCost() > states.costs[states.fullSet]) {
+					break;
 				}
-				int combined = subset | factorBit;
-				int previousRevision = states.stateRevisions[combined];
-				workUnits[0] += costDenseAppend(rootRelationId, factors, states, subset,
-						Integer.numberOfTrailingZeros(factorBit), prefixRelations, prefixContributionRows);
-				if (states.stateRevisions[combined] != previousRevision) {
-					pendingStates.offer(combined, states.stateRevisions[combined], states.costs[combined]);
+				for (int missing = legalExtensions[subset]; missing != 0; missing &= missing - 1) {
+					int factorBit = missing & -missing;
+					if ((subset & factorBit) != 0) {
+						continue;
+					}
+					if (!budget.tryConsume()) {
+						break denseSearch;
+					}
+					int combined = subset | factorBit;
+					int previousRevision = states.stateRevisions[combined];
+					workUnits += costDenseAppend(rootRelationId, factors, states, subset,
+							Integer.numberOfTrailingZeros(factorBit), prefixRelations, prefixContributionRows);
+					if (states.stateRevisions[combined] != previousRevision) {
+						pendingStates.offer(combined, states.stateRevisions[combined], states.costs[combined]);
+					}
 				}
 			}
 		}
 		int rootGroupId = memo.logicalGroupId(rootRelationId);
 		int rootWinnerId = memo.findWinner(rootGroupId, anyPropertyId, 0, 0, 0);
 		if (states.parentSubsets[states.fullSet] == 0) {
-			return workUnits[0] + optimizeGreedy(rootRelationId, factors, fixedFirstOrdinal);
+			return workUnits + optimizeGreedy(rootRelationId, factors, fixedFirstOrdinal);
 		}
 		if (costSession != null || states.costs[states.fullSet] < memo.winnerTotalCost(rootWinnerId)) {
 			if (costSession == null) {
@@ -2140,7 +2233,7 @@ final class PackedJoinEnumerator {
 						states.physicalImplementations);
 			}
 		}
-		return workUnits[0];
+		return workUnits;
 	}
 
 	private int costDenseAppend(int rootRelationId, int[] factors, DenseJoinStates states, int subset,
@@ -2149,8 +2242,9 @@ final class PackedJoinEnumerator {
 		int combined = subset | factorBit;
 		int defaultFactorWinnerId = states.appendedFactorWinnerIds[factorBit];
 		int factorWinnerId = defaultFactorWinnerId;
+		boolean connected = connectedToSubset(factors, subset, factorOrdinal);
 		double candidateRows = joinRowsForSubset(factors, Integer.toUnsignedLong(subset), factorOrdinal,
-				states.rows[subset], states.rows[factorBit], true);
+				states.rows[subset], states.rows[factorBit], connected);
 		double factorWork = states.costs[factorBit];
 		double factorContributionRows = states.rows[factorBit];
 		double iteratorProbeWork = 0.0d;
@@ -2674,14 +2768,28 @@ final class PackedJoinEnumerator {
 	private int emitScheduledFilterOrder(int filterRelationId, int inputJoinRelationId, int[] factors,
 			int applyAfterFactorCount) {
 		return emitScheduledFilterOrder(filterRelationId, inputJoinRelationId, factors, applyAfterFactorCount,
-				Double.NaN);
+				Double.NaN, true);
 	}
 
 	private int emitScheduledFilterOrder(int filterRelationId, int inputJoinRelationId, int[] factors,
 			int applyAfterFactorCount, double selectedOutputRows) {
-		long workBeforeReservation = budget.workUnits();
-		if (!budget.tryReserve(factors.length)) {
-			return saturatedInt(budget.workUnits() - workBeforeReservation);
+		return emitScheduledFilterOrder(filterRelationId, inputJoinRelationId, factors, applyAfterFactorCount,
+				selectedOutputRows, true);
+	}
+
+	private int emitScheduledFilterOrder(int filterRelationId, int inputJoinRelationId, int[] factors,
+			int applyAfterFactorCount, boolean reserveWork) {
+		return emitScheduledFilterOrder(filterRelationId, inputJoinRelationId, factors, applyAfterFactorCount,
+				Double.NaN, reserveWork);
+	}
+
+	private int emitScheduledFilterOrder(int filterRelationId, int inputJoinRelationId, int[] factors,
+			int applyAfterFactorCount, double selectedOutputRows, boolean reserveWork) {
+		if (reserveWork) {
+			long workBeforeReservation = budget.workUnits();
+			if (!budget.tryReserve(factors.length)) {
+				return saturatedInt(budget.workUnits() - workBeforeReservation);
+			}
 		}
 		int anyPropertyId = memo.anyPropertyId();
 		int currentGroupId = memo.logicalGroupId(factors[0]);
@@ -2691,12 +2799,15 @@ final class PackedJoinEnumerator {
 		int currentEvidenceStateId = winnerEvidenceStateId(currentWinnerId);
 		int[] prefixRelations = new int[factors.length];
 		double[] prefixContributionRows = new double[factors.length];
+		int rootGroupId = memo.logicalGroupId(filterRelationId);
+		long rootRuleMask = memo.logicalRuleMask(filterRelationId) | memo.logicalRuleMask(inputJoinRelationId);
 		prefixRelations[0] = factors[0];
 		prefixContributionRows[0] = currentRows;
 		int prefixCount = 1;
 		if (applyAfterFactorCount == prefixCount) {
+			boolean rootTransition = prefixCount == factors.length;
 			currentWinnerId = offerScheduledFilter(filterRelationId, currentWinnerId, prefixRelations,
-					prefixContributionRows, prefixCount);
+					prefixContributionRows, prefixCount, rootTransition ? rootGroupId : 0, rootRuleMask);
 			currentGroupId = memo.winnerGroupId(currentWinnerId);
 			currentRows = memo.winnerOutputRows(currentWinnerId);
 			currentCost = memo.winnerTotalCost(currentWinnerId);
@@ -2704,8 +2815,6 @@ final class PackedJoinEnumerator {
 			rowComposition.initializeInherited(prefixRelations, prefixCount, currentRows, prefixContributionRows);
 		}
 
-		int rootGroupId = memo.logicalGroupId(filterRelationId);
-		long rootRuleMask = memo.logicalRuleMask(filterRelationId) | memo.logicalRuleMask(inputJoinRelationId);
 		for (int ordinal = 1; ordinal < factors.length; ordinal++) {
 			int factorRelationId = factors[ordinal];
 			int factorGroupId = memo.logicalGroupId(factorRelationId);
@@ -2745,7 +2854,7 @@ final class PackedJoinEnumerator {
 			double iteratorProbeWork = costSession == null ? 0.0d : iteratorProbeWork(costEstimate);
 			double totalCost = saturatedAdd(currentCost, factorWork, outputRows);
 			totalCost = saturatedAdd(totalCost, iteratorProbeWork, 0.0d);
-			boolean rootJoin = ordinal + 1 == factors.length;
+			boolean rootJoin = ordinal + 1 == factors.length && applyAfterFactorCount < factors.length;
 			if (rootJoin && finiteNonNegative(selectedOutputRows)) {
 				/*
 				 * Copy the row value retained by the winning DP transition; do not consult a post-selection estimate.
@@ -2843,8 +2952,9 @@ final class PackedJoinEnumerator {
 					: Double.NaN;
 			prefixCount++;
 			if (applyAfterFactorCount == prefixCount) {
+				boolean rootTransition = prefixCount == factors.length;
 				currentWinnerId = offerScheduledFilter(filterRelationId, currentWinnerId, prefixRelations,
-						prefixContributionRows, prefixCount);
+						prefixContributionRows, prefixCount, rootTransition ? rootGroupId : 0, rootRuleMask);
 				currentGroupId = memo.winnerGroupId(currentWinnerId);
 				currentRows = memo.winnerOutputRows(currentWinnerId);
 				currentCost = memo.winnerTotalCost(currentWinnerId);
@@ -2859,6 +2969,12 @@ final class PackedJoinEnumerator {
 
 	private int offerScheduledFilter(int filterRelationId, int inputWinnerId, int[] prefixRelations,
 			double[] prefixContributionRows, int prefixCount) {
+		return offerScheduledFilter(filterRelationId, inputWinnerId, prefixRelations, prefixContributionRows,
+				prefixCount, 0, 0L);
+	}
+
+	private int offerScheduledFilter(int filterRelationId, int inputWinnerId, int[] prefixRelations,
+			double[] prefixContributionRows, int prefixCount, int rootGroupId, long rootRuleMask) {
 		int inputGroupId = memo.winnerGroupId(inputWinnerId);
 		double inputRows = memo.winnerOutputRows(inputWinnerId);
 		double inputWork = memo.winnerTotalCost(inputWinnerId);
@@ -2874,18 +2990,30 @@ final class PackedJoinEnumerator {
 				: completeOperatorWork(inputWork, costEstimate);
 		childGroups[0] = inputGroupId;
 		int operator = query.relOperator(filterRelationId);
-		int helperLogicalId = memo.addCanonicalLogical(operator, query.relPayload(filterRelationId),
-				query.relSemanticScope(filterRelationId), query.relExecutionDomain(filterRelationId),
-				childGroups, 0, 1);
-		int helperGroupId = memo.logicalGroupId(helperLogicalId);
+		boolean rootTransition = rootGroupId != 0;
+		int helperLogicalId = rootTransition
+				? memo.addLogicalAlternative(rootGroupId, operator, query.relPayload(filterRelationId),
+						query.relSemanticScope(filterRelationId), query.relExecutionDomain(filterRelationId),
+						childGroups, 0, 1)
+				: memo.addCanonicalLogical(operator, query.relPayload(filterRelationId),
+						query.relSemanticScope(filterRelationId), query.relExecutionDomain(filterRelationId),
+						childGroups, 0, 1);
+		int helperGroupId = rootTransition ? rootGroupId : memo.logicalGroupId(helperLogicalId);
 		int anyPropertyId = memo.anyPropertyId();
 		int physicalExpressionId = memo.addPhysicalAlternative(helperGroupId, operator,
 				query.relPayload(filterRelationId), anyPropertyId, CONTEXTUAL_FILTER_IMPLEMENTATION, helperLogicalId,
 				childGroups, 0, 1);
 		childWinners[0] = inputWinnerId;
 		int metadataId = memo.addPhysicalMetadata(costEstimate, costEstimate.outputRows(), totalWork);
+		if (rootTransition) {
+			memo.addPhysicalMetadataRuleProofMask(metadataId, rootRuleMask);
+			if (helperLogicalId > query.relationCount()) {
+				memo.addLogicalRuleMask(helperLogicalId, rootRuleMask);
+			}
+		}
+		int tieBreakRank = rootTransition ? (Long.bitCount(rootRuleMask) << 1) | 1 : 0;
 		int winnerId = memo.offerWinnerWithMetadata(helperGroupId, anyPropertyId, 0, 0, 0, physicalExpressionId,
-				metadataId, 0, costEstimate.outputRows(), totalWork, totalWork,
+				metadataId, tieBreakRank, costEstimate.outputRows(), totalWork, totalWork,
 				childWinners, 0, 1);
 		if (memo.winnerPhysicalExpressionId(winnerId) == physicalExpressionId
 				&& memo.winnerPhysicalMetadataId(winnerId) == metadataId) {
@@ -4605,6 +4733,17 @@ final class PackedJoinEnumerator {
 		return false;
 	}
 
+	private boolean connectedToSubset(int[] factors, int subset, int factorOrdinal) {
+		int factorOutputMaskId = query.relOutputMaskId(factors[factorOrdinal]);
+		for (int remaining = subset; remaining != 0; remaining &= remaining - 1) {
+			int prefixOrdinal = Integer.numberOfTrailingZeros(remaining);
+			if (query.masksIntersect(query.relOutputMaskId(factors[prefixOrdinal]), factorOutputMaskId)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private double hashJoinCost(int[] prefixRelations, int prefixCount, int factorRelationId, double leftRows,
 			double leftWork, double rightRows, double rightWork, double outputRows) {
 		boolean runtimeRequired = runtimeRequiresIndependentHashJoin(prefixRelations, prefixCount, factorRelationId);
@@ -4922,8 +5061,8 @@ final class PackedJoinEnumerator {
 				break;
 			}
 			/*
-			 * Give each feasible endpoint one complete candidate before spending work on DP extensions. This is a
-			 * bounded coverage schedule; candidate ranking still uses the provider's measured objective.
+			 * Each completed seed progressively tightens the initial objective ceiling. DPhyp traversal remains purely
+			 * topological, and no seed suppresses a candidate without a separately proved admissible lower bound.
 			 */
 			int emitted = emitSelectedOrder(rootRelationId, greedyOrder(factors, startOrdinal));
 			workUnits += emitted;
@@ -5031,22 +5170,13 @@ final class PackedJoinEnumerator {
 	}
 
 	private PackedJoinHypergraph joinHypergraph(int[] factors) {
-		PackedJoinHypergraph graph = new PackedJoinHypergraph(factors.length);
-		for (int left = 0; left < factors.length; left++) {
-			for (int right = left + 1; right < factors.length; right++) {
-				if (query.masksIntersect(query.relOutputMaskId(factors[left]),
-						query.relOutputMaskId(factors[right]))) {
-					graph.addEdge(1L << left, 1L << right);
-				}
-			}
-		}
-		return graph;
+		return factorHypergraph(factors, factors.length);
 	}
 
-	private int[] singletonExtensions(int[] factors) {
+	private int[] dphypSingletonExtensions(int[] factors) {
 		int stateCount = 1 << factors.length;
 		boolean[] seenSubgraphs = new boolean[stateCount];
-		int[] singletonExtensions = new int[stateCount];
+		int[] extensions = new int[stateCount];
 		PackedDphypEnumerator.enumerate(joinHypergraph(factors), new PackedDphypEnumerator.Receiver() {
 			@Override
 			public boolean hasSeen(long nodes) {
@@ -5063,21 +5193,122 @@ final class PackedJoinEnumerator {
 			public boolean foundSubgraphPair(long left, long right, int edge) {
 				int leftSubset = (int) left;
 				int rightSubset = (int) right;
-				if (Long.bitCount(right) == 1) {
-					singletonExtensions[leftSubset] |= rightSubset;
+				if (Integer.bitCount(rightSubset) == 1) {
+					extensions[leftSubset] |= rightSubset;
 				}
-				if (Long.bitCount(left) == 1) {
-					singletonExtensions[rightSubset] |= leftSubset;
+				if (Integer.bitCount(leftSubset) == 1) {
+					extensions[rightSubset] |= leftSubset;
 				}
-				/*
-				 * DPhyp's hasSeen callback is a connectivity oracle, independent of whether this left-deep physical
-				 * receiver can implement the particular (possibly bushy) cut.
-				 */
 				seenSubgraphs[leftSubset | rightSubset] = true;
 				return false;
 			}
 		});
-		return singletonExtensions;
+		return extensions;
+	}
+
+	private PackedJoinHypergraph correlatedHypergraph(int[] factors, int[] filters,
+			int[] requiredProviderMasks, int[] requiredProviderStarts, int evaluationBarrierMask) {
+		PackedJoinHypergraph graph = factorHypergraph(factors, factors.length + filters.length);
+		int stateCount = 1 << factors.length;
+		for (int filterOrdinal = 0; filterOrdinal < filters.length; filterOrdinal++) {
+			long filterNode = 1L << (factors.length + filterOrdinal);
+			int providerStart = requiredProviderStarts[filterOrdinal];
+			int providerEnd = requiredProviderStarts[filterOrdinal + 1];
+			for (int subset = 1; subset < stateCount; subset++) {
+				if ((subset & evaluationBarrierMask) != evaluationBarrierMask
+						|| uncoveredProviderMask(subset, requiredProviderMasks, providerStart, providerEnd) != 0
+						|| !isMinimalPredicatePrefix(graph, subset, evaluationBarrierMask, requiredProviderMasks,
+								providerStart, providerEnd)) {
+					continue;
+				}
+				graph.addEdge(Integer.toUnsignedLong(subset), filterNode);
+			}
+		}
+		return graph;
+	}
+
+	private static boolean isMinimalPredicatePrefix(PackedJoinHypergraph graph, int subset,
+			int evaluationBarrierMask,
+			int[] requiredProviderMasks, int providerStart, int providerEnd) {
+		if (!isConnectedFactorSubset(graph, subset)) {
+			return false;
+		}
+		for (int proper = (subset - 1) & subset; proper != 0; proper = (proper - 1) & subset) {
+			if ((proper & evaluationBarrierMask) == evaluationBarrierMask
+					&& uncoveredProviderMask(proper, requiredProviderMasks, providerStart, providerEnd) == 0
+					&& isConnectedFactorSubset(graph, proper)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean isConnectedFactorSubset(PackedJoinHypergraph graph, int subset) {
+		int reached = subset & -subset;
+		int frontier = reached;
+		while (frontier != 0) {
+			int nodeBit = frontier & -frontier;
+			frontier ^= nodeBit;
+			int neighborhood = (int) graph.simpleNeighborhood(Integer.numberOfTrailingZeros(nodeBit)) & subset;
+			int discovered = neighborhood & ~reached;
+			reached |= discovered;
+			frontier |= discovered;
+		}
+		return reached == subset;
+	}
+
+	private PackedJoinHypergraph factorHypergraph(int[] factors, int nodeCount) {
+		PackedJoinHypergraph graph = new PackedJoinHypergraph(nodeCount);
+		int[] componentParents = new int[factors.length];
+		for (int ordinal = 0; ordinal < factors.length; ordinal++) {
+			componentParents[ordinal] = ordinal;
+		}
+		for (int left = 0; left < factors.length; left++) {
+			for (int right = left + 1; right < factors.length; right++) {
+				if (query.masksIntersect(query.relOutputMaskId(factors[left]),
+						query.relOutputMaskId(factors[right]))) {
+					graph.addEdge(1L << left, 1L << right);
+					unionComponents(componentParents, left, right);
+				}
+			}
+		}
+		for (int ordinal = 0; ordinal < componentParents.length; ordinal++) {
+			componentParents[ordinal] = findComponent(componentParents, ordinal);
+		}
+		for (int left = 0; left < factors.length; left++) {
+			for (int right = left + 1; right < factors.length; right++) {
+				if (componentParents[left] != componentParents[right]) {
+					/*
+					 * INNER JOIN permits a Cartesian transition between every pair of disconnected components. Encoding
+					 * those legal transitions as graph edges lets DPhyp enumerate every cross-component order without a
+					 * preferred bridge or fallback traversal.
+					 */
+					graph.addEdge(1L << left, 1L << right);
+				}
+			}
+		}
+		return graph;
+	}
+
+	private static int findComponent(int[] parents, int member) {
+		int root = member;
+		while (parents[root] != root) {
+			root = parents[root];
+		}
+		while (parents[member] != member) {
+			int parent = parents[member];
+			parents[member] = root;
+			member = parent;
+		}
+		return root;
+	}
+
+	private static void unionComponents(int[] parents, int left, int right) {
+		int leftRoot = findComponent(parents, left);
+		int rightRoot = findComponent(parents, right);
+		if (leftRoot != rightRoot) {
+			parents[rightRoot] = leftRoot;
+		}
 	}
 
 	private long[] longAdjacency(int[] factors) {

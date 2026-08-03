@@ -50,8 +50,10 @@ class PackedAccessEnablingSeedBudgetTest {
 
 		Set<String> expectedFiniteLookups = Set.of("urn:alpha-name", "urn:beta-code");
 		Set<String> expectedCorrelatedPrefixes = Set.of("urn:direct-type", "urn:late-type");
-		assertEquals(expectedFiniteLookups, written.observations().finiteLookups());
-		assertEquals(expectedCorrelatedPrefixes, written.observations().correlatedPrefixes());
+		assertEquals(expectedFiniteLookups, written.observations().finiteLookups(),
+				() -> "correlated prefixes cost before exhaustion=" + written.observations().correlatedPrefixes());
+		assertEquals(expectedCorrelatedPrefixes, written.observations().correlatedPrefixes(),
+				() -> "finite lookups cost before exhaustion=" + written.observations().finiteLookups());
 		assertEquals(written.observations().finiteLookups(), reversed.observations().finiteLookups(),
 				"Reversing top-level exploration order must not starve a later finite recipe");
 		assertEquals(written.observations().correlatedPrefixes(), reversed.observations().correlatedPrefixes(),

@@ -108,13 +108,15 @@ class PackedCorrelatedComponentRowsTest {
 				"urn:pending-unrelated", 4.0d, providerPrefixRows);
 
 		Fixture fixture = fixture(source, costs);
+		List<Double> initialProviderPrefixRows = List.copyOf(providerPrefixRows);
 		providerPrefixRows.clear();
 		int workUnits = fixture.enumerator().optimizeCorrelatedFilter(fixture.filterRelationId());
 
 		assertTrue(workUnits > 0);
-		assertFalse(providerPrefixRows.isEmpty(), "The correlated dense search must cost the complete pending prefix");
-		assertEquals(List.of(12.0d), providerPrefixRows.stream().distinct().toList(),
+		assertEquals(List.of(12.0d), initialProviderPrefixRows.stream().distinct().toList(),
 				"A three-row connected component must retain the unrelated four-row component");
+		assertTrue(providerPrefixRows.isEmpty(),
+				"Repeating the same correlated search must reuse its contextual factor event");
 	}
 
 	@Test
