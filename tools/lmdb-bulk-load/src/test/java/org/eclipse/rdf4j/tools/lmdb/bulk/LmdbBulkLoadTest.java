@@ -83,6 +83,34 @@ class LmdbBulkLoadTest {
 	}
 
 	@Test
+	void treatsNoneRdfStarTermIndexesAsStoreDefaults() throws Exception {
+		// "none" is the CLI's sentinel for "nothing"; for RDF-star term indexes it must mean "no custom term
+		// indexes" (fall back to the store defaults) rather than being passed verbatim to the index-spec parser,
+		// which rejects it with "invalid value 'none' in index specification: none".
+		Path input = temporaryDirectory.resolve("input.nt");
+		Files.writeString(input, "<urn:subject> <urn:predicate> <urn:object> .\n");
+		Path store = temporaryDirectory.resolve("store");
+
+		ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
+		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+		int exitCode = LmdbBulkLoad.run(new String[] {
+				"--store", store.toString(),
+				"--input", input.toString(),
+				"--triple-term-indexes", "none",
+				"--progress", "none"
+		}, new ByteArrayInputStream(new byte[0]), new PrintStream(standardOutput), new PrintStream(standardError));
+
+		assertThat(exitCode)
+				.as(standardError.toString(StandardCharsets.UTF_8))
+				.isZero();
+		Properties properties = new Properties();
+		try (var inputStream = Files.newInputStream(store.resolve("store.properties"))) {
+			properties.load(inputStream);
+		}
+		assertThat(properties).containsEntry("triple-term-indexes", "spoc,cspo");
+	}
+
+	@Test
 	void interactiveSetupRejectsStandardInputAsRdfInput() {
 		ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
 		ByteArrayOutputStream standardError = new ByteArrayOutputStream();

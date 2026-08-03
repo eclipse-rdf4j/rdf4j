@@ -14,12 +14,27 @@ package org.eclipse.rdf4j.sail.lmdb.bulk;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.function.BooleanSupplier;
 
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
 import org.junit.jupiter.api.Test;
 
 class TripleTermIndexBulkRecordsTest {
+
+	@Test
+	void noneDisablesTermIndexSpecifications() {
+		assertThat(TripleTermIndexBulkRecords.specifications("none")).isEmpty();
+		assertThat(TripleTermIndexBulkRecords.specifications("  NONE  ")).isEmpty();
+	}
+
+	@Test
+	void defaultsAlwaysIncludeRequiredTermIndexes() {
+		assertThat(TripleTermIndexBulkRecords.specifications(null))
+				.containsExactly("spoc", "cspo");
+		assertThat(TripleTermIndexBulkRecords.specifications("posc"))
+				.containsExactlyInAnyOrderElementsOf(List.of("spoc", "cspo", "posc"));
+	}
 
 	@Test
 	void exposesIndependentTermIndexRunsAndNativeAppend() throws Exception {

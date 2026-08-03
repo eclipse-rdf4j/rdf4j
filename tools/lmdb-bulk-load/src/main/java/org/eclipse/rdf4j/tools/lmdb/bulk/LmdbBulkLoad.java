@@ -77,7 +77,9 @@ public final class LmdbBulkLoad {
 			if (options.statementIndexes() != null) {
 				config.setTripleIndexes(options.statementIndexes());
 			}
-			if (options.tripleTermIndexes() != null) {
+			// "none" is the CLI's sentinel for "nothing"; treat it as "no custom RDF-star term indexes" so the
+			// store applies its defaults instead of forwarding "none" to the index-spec parser, which rejects it.
+			if (options.tripleTermIndexes() != null && !"none".equalsIgnoreCase(options.tripleTermIndexes().trim())) {
 				config.setTripleTermIndexes(options.tripleTermIndexes());
 			}
 			if (options.inlineLiterals() != null) {

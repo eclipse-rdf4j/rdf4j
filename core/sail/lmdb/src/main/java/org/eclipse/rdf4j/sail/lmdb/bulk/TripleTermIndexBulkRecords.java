@@ -30,6 +30,14 @@ final class TripleTermIndexBulkRecords implements AutoCloseable {
 
 	private static final String REQUIRED_INDEXES = "spoc,cspo";
 
+	/**
+	 * Sentinel value that disables triple-term index construction entirely. When the configured triple-term index list
+	 * equals this token (case-insensitive, ignoring surrounding whitespace), the bulk loader skips building any
+	 * triple-term index runs. Only use it when the imported data contains no RDF-star triple terms; the runtime
+	 * {@code ValueStore} still creates the (empty) term-index databases so the store remains consistent.
+	 */
+	private static final String DISABLED_INDEXES = "none";
+
 	private final List<IndexRun> runs;
 
 	private TripleTermIndexBulkRecords(List<IndexRun> runs) {
@@ -40,6 +48,10 @@ final class TripleTermIndexBulkRecords implements AutoCloseable {
 			String configuredIndexes, long memoryBudgetBytes, int maxOpenFiles, BooleanSupplier cancellationSignal)
 			throws IOException {
 		List<String> specifications = specifications(configuredIndexes);
+		if (specifications.isEmpty()) {
+			// Triple-term indexing disabled ("none"): skip reading the source and build no runs.
+			return new TripleTermIndexBulkRecords(List.of());
+		}
 		long perSorterBudget = Math.max(8L * Long.BYTES, memoryBudgetBytes / specifications.size());
 		int perSorterOpenFiles = Math.max(3, maxOpenFiles / specifications.size());
 		List<ExternalLongTupleSorter> sorters = new ArrayList<>(specifications.size());
@@ -104,10 +116,17 @@ final class TripleTermIndexBulkRecords implements AutoCloseable {
 	}
 
 	static List<String> specifications(String configuredIndexes) {
+		if (isDisabled(configuredIndexes)) {
+			return List.of();
+		}
 		Set<String> specifications = new LinkedHashSet<>();
 		addSpecifications(specifications, REQUIRED_INDEXES);
 		addSpecifications(specifications, configuredIndexes);
 		return List.copyOf(specifications);
+	}
+
+	private static boolean isDisabled(String configuredIndexes) {
+		return configuredIndexes != null && configuredIndexes.trim().equalsIgnoreCase(DISABLED_INDEXES);
 	}
 
 	private static void addSpecifications(Set<String> target, String source) {
