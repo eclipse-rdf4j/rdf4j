@@ -18,6 +18,8 @@ import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Immutable predicate/plane-partitioned paged compressed sparse fibre (CSF) root.
@@ -51,6 +53,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	private static final long MODELED_PARTITION_BUILD_SCRATCH_BYTES = 208L << 10;
 	private static final long MODELED_FIXED_BUILD_SCRATCH_BYTES = 4L << 20;
 	private static final long MODELED_INDEX_FIXED_BYTES = 4L << 10;
+	private static final Logger log = LoggerFactory.getLogger(ImmutablePagedQuadCsfIndex.class);
 
 	/** Reservation attached to one native shard or one root's Java metadata. */
 	@FunctionalInterface
@@ -513,6 +516,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			}
 			return retained;
 		} catch (RuntimeException | Error failure) {
+			log.warn(failure.getMessage(), failure);
 			if (retained != null) {
 				for (int i = 0; i < retainedCount; i++) {
 					retained[i].release();
@@ -824,6 +828,8 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 				}
 				return result;
 			} catch (RuntimeException | Error failure) {
+				log.warn(failure.getMessage(), failure);
+
 				for (int i = 0; i < built; i++) {
 					result[i].release();
 				}
@@ -1409,8 +1415,12 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 				try {
 					closeable.close();
 				} catch (RuntimeException | Error failure) {
+					log.warn(failure.getMessage(), failure);
+
 					throw failure;
 				} catch (Exception impossible) {
+					log.warn(impossible.getMessage(), impossible);
+
 					throw new IllegalStateException(impossible);
 				}
 			}

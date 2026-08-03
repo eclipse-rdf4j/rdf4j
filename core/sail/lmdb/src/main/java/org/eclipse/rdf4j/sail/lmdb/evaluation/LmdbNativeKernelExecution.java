@@ -81,6 +81,8 @@ final class LmdbNativeKernelExecution {
 			int[] groupSlots, AggregateSpec[] aggregates, NativeGroupIteration emitter, TupleExpr explainTarget,
 			boolean preferScans) {
 		if (!LmdbNativeJaninoCodegen.enabled()) {
+			LmdbNativeAttemptMetrics.recordDecline(explainTarget, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
+					"disabled");
 			return null;
 		}
 		NativeLmdbQuerySource.NativeProbe probe = null;
@@ -257,6 +259,7 @@ final class LmdbNativeKernelExecution {
 	private static RowCursor tryOpenRows(SlotPlan arg, RowState row, TupleExpr originalExpr, boolean preferScans)
 			throws IOException {
 		if (!LmdbNativeJaninoCodegen.enabled()) {
+			LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL, "disabled");
 			return null;
 		}
 		NativeLmdbQuerySource.NativeProbe probe = null;

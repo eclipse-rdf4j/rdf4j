@@ -18,6 +18,8 @@ import java.util.Objects;
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.Charge;
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.MemoryKind;
 import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Exact two-pass base builder for the JDK-25/Unsafe paged CSF representation.
@@ -32,6 +34,7 @@ final class LmdbPagedCsfBaseBuilder {
 
 	private static final long ARRAY_HEADER_BYTES = 16;
 	private static final long REFERENCE_BYTES = 8;
+	private static final Logger log = LoggerFactory.getLogger(LmdbPagedCsfBaseBuilder.class);
 
 	private LmdbPagedCsfBaseBuilder() {
 	}
@@ -242,6 +245,7 @@ final class LmdbPagedCsfBaseBuilder {
 			long[] sortedPredicates, ImmutablePagedQuadCsfIndex.Builder target) throws IOException {
 		ScanTotals totals = new ScanTotals();
 		for (int plane = 0; plane < ImmutablePagedQuadCsfIndex.PLANE_COUNT; plane++) {
+			log.info("Scanning plane " + plane);
 			AdjacencySourceScanner scanner = sourceFamily.scanner(plane);
 			int expectedPlane = plane;
 			scanPlane(scanner, plane, new AdjacencySourceScanner.GroupConsumer() {

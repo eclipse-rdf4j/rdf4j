@@ -19,6 +19,8 @@ import java.util.Arrays;
 
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Production {@link AdjacencySourceScanner} over one pinned LMDB read transaction (plan 27).
@@ -34,6 +36,8 @@ import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
  * (invariant I15).
  */
 final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
+
+	private static final Logger logger = LoggerFactory.getLogger(LmdbAdjacencyTripleStoreScanner.class);
 
 	private final TripleStore tripleStore;
 
@@ -163,12 +167,16 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 
 	@Override
 	public void scanOutgoing(boolean explicit, GroupConsumer consumer) throws IOException {
+		long scanned = 0;
 		try (RecordIterator it = tripleStore.getTriples(txn, StatementOrder.S, -1, -1, -1, -1, explicit)) {
 			long[] quad;
 			boolean inGroup = false;
 			long groupSubject = 0;
 			long groupPredicate = 0;
 			while ((quad = it.next()) != null) {
+				if (++scanned % 100_000_000 == 0 && logger.isInfoEnabled()) {
+					logger.info("scanOutgoing: {}", scanned);
+				}
 				long subject = quad[TripleIndex.SUBJ_IDX];
 				long predicate = quad[TripleIndex.PRED_IDX];
 				if (!inGroup || subject != groupSubject || predicate != groupPredicate) {
@@ -197,7 +205,11 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 			boolean inGroup = false;
 			long groupObject = 0;
 			long groupPredicate = 0;
+			long scanned = 0;
 			while ((quad = it.next()) != null) {
+				if (++scanned % 100_000_000 == 0 && logger.isInfoEnabled()) {
+					logger.info("scanIncoming: {}", scanned);
+				}
 				long object = quad[TripleIndex.OBJ_IDX];
 				long predicate = quad[TripleIndex.PRED_IDX];
 				if (!inGroup || object != groupObject || predicate != groupPredicate) {

@@ -3408,6 +3408,11 @@ class LmdbSailStore implements SailStore {
 		private final long pinnedTxnVersion;
 		/** Direct-adjacency view acquired after the transaction is registered, or {@code null} (plan 27). */
 		private final LmdbAdjacencyReadView adjacencyView;
+		/**
+		 * Store-wide direct-adjacency metrics captured when this dataset opened, or {@code null} when INFO logging is
+		 * off or the index is disabled. Diffed at close to attribute this dataset's decline census (diagnostic only).
+		 */
+		private final LmdbAdjacencyMetrics.Snapshot adjacencyOpenSnapshot;
 		private final StampedLongAdderLockManager nativeSourceLock = new StampedLongAdderLockManager();
 		private final AtomicBoolean closed = new AtomicBoolean();
 
@@ -3450,6 +3455,29 @@ class LmdbSailStore implements SailStore {
 			this.adjacencyView = directAdjacency != null && adjacencyEligible
 					? directAdjacency.acquire(adjacencyRevision)
 					: null;
+			if (directAdjacency != null && logger.isInfoEnabled()) {
+				String kind = explicit ? "explicit" : "inferred";
+				if (!adjacencyEligible) {
+					logger.info(
+							"Direct adjacency will not serve this {} dataset: reader ineligible (trackActiveTxn={}, "
+									+ "pinSnapshot={}, adjacencyBypass={}, snapshotRevision={}); SERIALIZABLE and untracked "
+									+ "readers always use LMDB",
+							kind, trackActiveTxn, pinSnapshot, adjacencyBypass, snapshotRevision);
+				} else if (adjacencyView == null || !adjacencyView.isExact()) {
+					logger.info(
+							"Direct adjacency acquired a fallback view for this {} dataset (reason={}, snapshotRevision={}); "
+									+ "every probe will use LMDB",
+							kind, adjacencyView == null ? "NO_VIEW" : adjacencyView.fallbackReason(), snapshotRevision);
+				} else {
+					logger.info(
+							"Direct adjacency acquired an exact view for this {} dataset (snapshotRevision={}); "
+									+ "shape-covered probes are served, others fall back (see close-time decline census)",
+							kind, snapshotRevision);
+				}
+				this.adjacencyOpenSnapshot = directAdjacency.snapshotMetrics();
+			} else {
+				this.adjacencyOpenSnapshot = null;
+			}
 		}
 
 		/**
@@ -3520,6 +3548,7 @@ class LmdbSailStore implements SailStore {
 			if (!closed.compareAndSet(false, true)) {
 				return;
 			}
+			logAdjacencyDeclineCensus();
 			boolean interrupted = false;
 			long writeStamp = 0;
 			boolean stampHeld = false;
@@ -3551,6 +3580,43 @@ class LmdbSailStore implements SailStore {
 					}
 				}
 			}
+		}
+
+		/**
+		 * Logs, at INFO, how this dataset used the direct adjacency index over its lifetime: probes served, exact-empty
+		 * answers, and every decline bucketed by {@link LmdbAdjacencyMetrics.FallbackReason} (ROOT_SCAN, DOUBLY_BOUND,
+		 * PLANE_NOT_COVERED, INLINE_NOT_COVERED, INDEX_ORDER_INCOMPATIBLE, PENDING_ROW, READ_YOUR_WRITES, ...). Silent
+		 * when the dataset never touched the direct index (nothing to explain) or when the index is disabled. Counts
+		 * are deltas against the store-wide census captured at dataset open, so under a single serial query they
+		 * attribute cleanly; concurrent datasets may overlap. Diagnostic only.
+		 */
+		private void logAdjacencyDeclineCensus() {
+			if (adjacencyOpenSnapshot == null || directAdjacency == null || !logger.isInfoEnabled()) {
+				return;
+			}
+			LmdbAdjacencyMetrics.Snapshot now = directAdjacency.snapshotMetrics();
+			long served = now.lookupHits - adjacencyOpenSnapshot.lookupHits;
+			long exactEmpty = now.exactMisses - adjacencyOpenSnapshot.exactMisses;
+			StringBuilder declines = new StringBuilder();
+			long declined = 0;
+			for (LmdbAdjacencyMetrics.FallbackReason reason : LmdbAdjacencyMetrics.FallbackReason.values()) {
+				long delta = now.fallbacks(reason) - adjacencyOpenSnapshot.fallbacks(reason);
+				if (delta > 0) {
+					if (declines.length() > 0) {
+						declines.append(", ");
+					}
+					declines.append(reason).append('=').append(delta);
+					declined += delta;
+				}
+			}
+			if (served == 0 && exactEmpty == 0 && declined == 0) {
+				return;
+			}
+			logger.info(
+					"Direct adjacency usage for closed {} dataset (snapshotRevision={}, servingState={}): served={}, "
+							+ "exactEmpty={}, declinedToLmdb={} [{}]",
+					explicit ? "explicit" : "inferred", snapshotRevision, now.state, served, exactEmpty, declined,
+					declines.length() == 0 ? "none" : declines);
 		}
 
 		@Override
