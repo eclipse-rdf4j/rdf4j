@@ -16,9 +16,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.List;
+
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.Charge;
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.MemoryKind;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
+
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 
 class LmdbAdjacencyMemoryAccountTest {
 
@@ -208,6 +216,78 @@ class LmdbAdjacencyMemoryAccountTest {
 			assertThat(account.totalChargedBytes()).isEqualTo(800);
 		}
 		assertThat(account.totalChargedBytes()).isZero();
+	}
+
+	@Test
+	void logsOneCoalescedMilestoneWithTheLiveMemoryBreakdown() {
+		long intervalBytes = 128L << 20;
+		Logger logger = (Logger) LoggerFactory.getLogger(LmdbAdjacencyMemoryAccount.class);
+		ListAppender<ILoggingEvent> appender = new ListAppender<>();
+		appender.start();
+		Level previousLevel = logger.getLevel();
+		logger.setLevel(Level.INFO);
+		logger.addAppender(appender);
+		try {
+			LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(intervalBytes * 4);
+
+			assertThat(account.tryReserve(MemoryKind.BASE, intervalBytes - 1)).isTrue();
+			assertThat(progressMessages(appender)).isEmpty();
+
+			long metadataBytes = intervalBytes * 2 + 5;
+			assertThat(account.tryReserve(MemoryKind.JAVA_METADATA, metadataBytes)).isTrue();
+
+			List<String> messages = progressMessages(appender);
+			assertThat(messages).hasSize(1);
+			assertThat(messages.get(0))
+					.contains("usedBytes=" + (intervalBytes * 3 + 4))
+					.contains("maxBytes=" + intervalBytes * 4)
+					.contains("BASE=" + (intervalBytes - 1))
+					.contains("JAVA_METADATA=" + metadataBytes);
+		} finally {
+			logger.detachAppender(appender);
+			logger.setLevel(previousLevel);
+			appender.stop();
+		}
+	}
+
+	@Test
+	void resetsProgressMilestonesFromTheLiveTotalForEachBuild() {
+		long intervalBytes = 128L << 20;
+		Logger logger = (Logger) LoggerFactory.getLogger(LmdbAdjacencyMemoryAccount.class);
+		ListAppender<ILoggingEvent> appender = new ListAppender<>();
+		appender.start();
+		Level previousLevel = logger.getLevel();
+		logger.setLevel(Level.INFO);
+		logger.addAppender(appender);
+		try {
+			LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(intervalBytes * 4);
+
+			assertThat(account.tryReserve(MemoryKind.BASE, 100L << 20)).isTrue();
+			account.beginProgressLogging();
+			assertThat(account.tryReserve(MemoryKind.BUILD_OUTPUT, 40L << 20)).isTrue();
+			assertThat(progressMessages(appender)).hasSize(1);
+
+			appender.list.clear();
+			account.release(MemoryKind.BASE, 100L << 20);
+			account.release(MemoryKind.BUILD_OUTPUT, 40L << 20);
+			assertThat(account.tryReserve(MemoryKind.BASE, 100L << 20)).isTrue();
+			assertThat(progressMessages(appender)).isEmpty();
+
+			account.beginProgressLogging();
+			assertThat(account.tryReserve(MemoryKind.JAVA_METADATA, 30L << 20)).isTrue();
+			assertThat(progressMessages(appender)).hasSize(1);
+		} finally {
+			logger.detachAppender(appender);
+			logger.setLevel(previousLevel);
+			appender.stop();
+		}
+	}
+
+	private static List<String> progressMessages(ListAppender<ILoggingEvent> appender) {
+		return appender.list.stream()
+				.map(ILoggingEvent::getFormattedMessage)
+				.filter(message -> message.contains("memory milestone"))
+				.toList();
 	}
 
 	@Test

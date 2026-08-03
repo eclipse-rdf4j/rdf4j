@@ -46,6 +46,12 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.slf4j.LoggerFactory;
+
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 
 /**
  * Plan 27 Milestone 5: bound-probe integration through {@link LmdbSailStore} arbitration. Every direct answer must
@@ -158,6 +164,33 @@ class LmdbDirectAdjacencyQueryTest {
 
 	private void openPreferStore() throws IOException {
 		openStore(DirectAdjacencyMode.PREFER, null, null);
+	}
+
+	@Test
+	void directAdjacencyBuildLogsMemoryLifecycle() throws Exception {
+		Logger logger = (Logger) LoggerFactory.getLogger(LmdbDirectAdjacencyStore.class);
+		ListAppender<ILoggingEvent> appender = new ListAppender<>();
+		appender.start();
+		Level previousLevel = logger.getLevel();
+		logger.setLevel(Level.INFO);
+		logger.addAppender(appender);
+		try {
+			openPreferStore();
+
+			List<String> messages = appender.list.stream()
+					.map(ILoggingEvent::getFormattedMessage)
+					.toList();
+			assertThat(messages).anyMatch(message -> message.contains("Creating in-memory adjacency structures"));
+			assertThat(messages).anyMatch(message -> message.contains("Published in-memory adjacency structures"));
+			assertThat(messages.stream()
+					.filter(message -> message.contains("in-memory adjacency structures"))
+					.allMatch(message -> message.contains("memoryUsedBytes=") && message.contains("highWaterBytes=")))
+							.isTrue();
+		} finally {
+			logger.detachAppender(appender);
+			logger.setLevel(previousLevel);
+			appender.stop();
+		}
 	}
 
 	@Test

@@ -1025,6 +1025,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 		metrics.recordBuildStarted();
 		maintenanceState = MaintenanceState.BUILDING;
+		String baseFormat = legacyBase ? "legacy" : "paged-csf";
 		try {
 			LmdbAdjacencyCoverage coverage = resolveCoverage();
 			LmdbInMemoryAdjacencyIndex index;
@@ -1033,6 +1034,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			try (LmdbAdjacencyBuildTxnFamily sourceFamily = new LmdbAdjacencyBuildTxnFamily(tripleStore)) {
 				baseRevision = sourceFamily.snapshotRevision();
 				capturedGap = emergencyGap.get();
+				account.beginProgressLogging();
+				logger.info("Creating in-memory adjacency structures: format={}, snapshotRevision={}, {}", baseFormat,
+						baseRevision, account.memoryUsageSummary());
 				index = legacyBase
 						? LmdbAdjacencyBaseBuilder.build(sourceFamily, coverage, account, baseArenaRegionBytes,
 								workspaceRegionBytes, options.buildThreads(), metrics)
@@ -1053,8 +1057,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			}
 			if (published) {
 				metrics.recordBuildCompleted();
+				logger.info("Published in-memory adjacency structures: format={}, snapshotRevision={}, {}", baseFormat,
+						baseRevision, account.memoryUsageSummary());
 			} else {
 				metrics.recordBuildAborted();
+				logger.info("Aborted in-memory adjacency structure build before publication: format={}, "
+						+ "snapshotRevision={}, {}", baseFormat, baseRevision, account.memoryUsageSummary());
 				if (!closed) {
 					maintenanceState = MaintenanceState.EMPTY;
 					triggerBuild();
@@ -1063,9 +1071,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		} catch (LmdbAdjacencyMemoryRefusedException e) {
 			metrics.recordBuildAborted();
 			maintenanceState = MaintenanceState.MEMORY_REFUSED;
+			logger.info("Refused in-memory adjacency structure build: {}", account.memoryUsageSummary());
 			logger.warn("Direct adjacency build refused by the memory account: {}", e.getMessage());
 		} catch (IOException | RuntimeException e) {
 			metrics.recordBuildAborted();
+			logger.info("Aborted in-memory adjacency structure build: {}", account.memoryUsageSummary());
 			if (!closed) {
 				maintenanceState = MaintenanceState.EMPTY;
 				logger.warn("Direct adjacency build aborted; LMDB continues to serve", e);

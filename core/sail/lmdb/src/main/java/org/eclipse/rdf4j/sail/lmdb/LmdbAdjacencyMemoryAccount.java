@@ -14,6 +14,10 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.EnumMap;
 import java.util.Map;
+import java.util.StringJoiner;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Hard memory accounting for the strictly in-memory direct adjacency index (plan 27, invariant I17).
@@ -23,6 +27,10 @@ import java.util.Map;
  * between kinds without changing the total.
  */
 final class LmdbAdjacencyMemoryAccount {
+
+	private static final long BYTES_PER_MIB = 1L << 20;
+	private static final long PROGRESS_LOG_INTERVAL_BYTES = 16L << 20;
+	private static final Logger logger = LoggerFactory.getLogger(LmdbAdjacencyMemoryAccount.class);
 
 	enum MemoryKind {
 		BASE,
@@ -42,6 +50,8 @@ final class LmdbAdjacencyMemoryAccount {
 	private long totalChargedBytes;
 
 	private long highWaterBytes;
+
+	private long nextProgressLogBytes = PROGRESS_LOG_INTERVAL_BYTES;
 
 	private long refusedBytes;
 
@@ -157,6 +167,24 @@ final class LmdbAdjacencyMemoryAccount {
 	}
 
 	/**
+	 * Resets the progress-log milestones for a new base build while retaining the currently live charges as the
+	 * starting point.
+	 */
+	synchronized void beginProgressLogging() {
+		nextProgressLogBytes = nextProgressBoundary(totalChargedBytes);
+	}
+
+	/**
+	 * Returns a consistent snapshot suitable for lifecycle logging. The total is the account's modeled adjacency
+	 * memory, not a JVM-wide heap or RSS measurement.
+	 */
+	synchronized String memoryUsageSummary() {
+		return "memoryUsedBytes=" + totalChargedBytes + " (" + mib(totalChargedBytes) + " MiB), highWaterBytes="
+				+ highWaterBytes + " (" + mib(highWaterBytes) + " MiB), maxBytes=" + maxBytes + " (" + mib(maxBytes)
+				+ " MiB), byKind=" + nonZeroKindBreakdown();
+	}
+
+	/**
 	 * Attempts to create a new exclusive charge owner. Returns {@code null} when the hard limit refuses the
 	 * reservation.
 	 */
@@ -194,6 +222,7 @@ final class LmdbAdjacencyMemoryAccount {
 		if (newTotal > highWaterBytes) {
 			highWaterBytes = newTotal;
 		}
+		logMilestoneIfNeeded(kind, bytes, newTotal);
 		return true;
 	}
 
@@ -250,5 +279,46 @@ final class LmdbAdjacencyMemoryAccount {
 		if (bytes < 0) {
 			throw new IllegalArgumentException("bytes must not be negative: " + bytes);
 		}
+	}
+
+	private void logMilestoneIfNeeded(MemoryKind kind, long bytes, long newTotal) {
+		if (!logger.isInfoEnabled() || newTotal < nextProgressLogBytes) {
+			return;
+		}
+
+		nextProgressLogBytes = nextProgressBoundary(newTotal);
+		logger.info(
+				"In-memory adjacency structures memory milestone reached: usedBytes={} ({} MiB), maxBytes={} ({} MiB), "
+						+ "kind={}, allocationBytes={}, byKind={}",
+				newTotal,
+				mib(newTotal),
+				maxBytes,
+				mib(maxBytes),
+				kind,
+				bytes,
+				nonZeroKindBreakdown());
+	}
+
+	private String nonZeroKindBreakdown() {
+		StringJoiner breakdown = new StringJoiner(", ", "{", "}");
+		for (MemoryKind kind : MemoryKind.values()) {
+			long bytes = chargedByKind.get(kind);
+			if (bytes != 0) {
+				breakdown.add(kind + "=" + bytes);
+			}
+		}
+		return breakdown.toString();
+	}
+
+	private static long nextProgressBoundary(long bytes) {
+		long intervalCount = bytes / PROGRESS_LOG_INTERVAL_BYTES + 1;
+		if (intervalCount > Long.MAX_VALUE / PROGRESS_LOG_INTERVAL_BYTES) {
+			return Long.MAX_VALUE;
+		}
+		return intervalCount * PROGRESS_LOG_INTERVAL_BYTES;
+	}
+
+	private static long mib(long bytes) {
+		return bytes / BYTES_PER_MIB;
 	}
 }
