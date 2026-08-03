@@ -72,6 +72,61 @@ class LmdbDirectAdjacencyEphemeralTest {
 	}
 
 	@Test
+	void scanPredicatesUsesPredicatePrefixRunsWhenAvailable() throws Exception {
+		tripleStore.startTransaction();
+		for (int i = 0; i < 64; i++) {
+			tripleStore.storeTriple(uri(1000 + i), uri(10), uri(2000 + i), 0, true);
+			tripleStore.storeTriple(uri(3000 + i), uri(20), uri(4000 + i), 0, true);
+		}
+		tripleStore.storeTriple(uri(5000), uri(20), uri(6000), 0, false);
+		tripleStore.storeTriple(uri(5001), uri(30), uri(6001), 0, false);
+		tripleStore.commit();
+
+		LmdbPrefixRunPlan.resetMetrics();
+		try (Txn txn = tripleStore.getTxnManager().createReadTxnPinned(tripleStore::getDataRevision)) {
+			LmdbAdjacencyTripleStoreScanner scanner = new LmdbAdjacencyTripleStoreScanner(tripleStore, txn,
+					tripleStore.getDataRevision());
+			List<Long> predicates = new ArrayList<>();
+			scanner.scanPredicates(predicates::add);
+
+			assertThat(predicates).containsExactly(uri(10), uri(20), uri(30));
+		}
+
+		assertThat(LmdbPrefixRunPlan.PLANNED.get()).isEqualTo(2);
+		assertThat(LmdbPrefixRunPlan.OPENED.get()).isEqualTo(2);
+		assertThat(LmdbPrefixRunPlan.PREFIXES_EMITTED.get()).isEqualTo(4);
+	}
+
+	@Test
+	void scanPredicatesFallsBackWhenPrefixRunsAreDisabled() throws Exception {
+		tripleStore.startTransaction();
+		tripleStore.storeTriple(uri(1), uri(10), uri(2), 0, true);
+		tripleStore.storeTriple(uri(3), uri(20), uri(4), 0, true);
+		tripleStore.commit();
+
+		String previous = System.getProperty(LmdbPrefixRunPlan.ENABLED_PROPERTY);
+		try {
+			System.setProperty(LmdbPrefixRunPlan.ENABLED_PROPERTY, "false");
+			LmdbPrefixRunPlan.resetMetrics();
+			try (Txn txn = tripleStore.getTxnManager().createReadTxnPinned(tripleStore::getDataRevision)) {
+				LmdbAdjacencyTripleStoreScanner scanner = new LmdbAdjacencyTripleStoreScanner(tripleStore, txn,
+						tripleStore.getDataRevision());
+				List<Long> predicates = new ArrayList<>();
+				scanner.scanPredicates(predicates::add);
+				assertThat(predicates).containsExactly(uri(10), uri(20));
+			}
+			assertThat(LmdbPrefixRunPlan.PLANNED.get()).isZero();
+			assertThat(LmdbPrefixRunPlan.OPENED.get()).isZero();
+		} finally {
+			if (previous == null) {
+				System.clearProperty(LmdbPrefixRunPlan.ENABLED_PROPERTY);
+			} else {
+				System.setProperty(LmdbPrefixRunPlan.ENABLED_PROPERTY, previous);
+			}
+		}
+	}
+
+	@Test
 	void buildAndCloseCreatesNoAdjacencyFiles() throws Exception {
 		long g1 = uri(9001);
 		long[][] quads = {

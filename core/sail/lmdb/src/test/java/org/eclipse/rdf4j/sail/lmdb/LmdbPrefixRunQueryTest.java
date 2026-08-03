@@ -22,10 +22,12 @@ import java.util.stream.Collectors;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -176,6 +178,41 @@ public class LmdbPrefixRunQueryTest {
 
 		assertThat(LmdbPrefixRunPlan.OPENED.get()).isGreaterThan(before);
 		assertThat(LmdbPrefixRunPlan.ROWS_SCANNED.get()).isLessThanOrEqualTo(statementCount());
+	}
+
+	@Test
+	public void distinctPredicateUsesPrefixRunBeforeAdjacencyBuild() {
+		LmdbPrefixRunPlan.resetMetrics();
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+				.setDirectAdjacencyBuildOnStart(false);
+		LmdbStore store = new LmdbStore(dataDir, config);
+		repository = new SailRepository(store);
+		try (LmdbStoreConnection conn = (LmdbStoreConnection) store.getConnection()) {
+			ValueFactory vf = SimpleValueFactory.getInstance();
+			IRI explicitPredicate = vf.createIRI(EX, "explicit");
+			IRI inferredPredicate = vf.createIRI(EX, "inferred");
+			conn.begin();
+			conn.addStatement(vf.createIRI(EX, "explicitSubject"), explicitPredicate,
+					vf.createIRI(EX, "explicitObject"));
+			conn.addInferredStatement(vf.createIRI(EX, "inferredSubject"), inferredPredicate,
+					vf.createIRI(EX, "inferredObject"));
+			conn.commit();
+		}
+
+		long before = LmdbPrefixRunPlan.OPENED.get();
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			var query = conn.prepareTupleQuery("SELECT DISTINCT ?p WHERE { ?s ?p ?o }");
+			query.setIncludeInferred(true);
+			assertThat(QueryResults.asList(query.evaluate())
+					.stream()
+					.map(bs -> bs.getValue("p").stringValue())
+					.sorted()
+					.collect(Collectors.toList()))
+							.containsExactly(EX + "explicit", EX + "inferred");
+		}
+
+		assertThat(LmdbPrefixRunPlan.OPENED.get()).isGreaterThan(before);
 	}
 
 	@Test

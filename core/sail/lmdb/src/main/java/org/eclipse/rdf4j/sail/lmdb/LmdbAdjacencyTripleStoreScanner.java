@@ -37,6 +37,8 @@ import org.slf4j.LoggerFactory;
  */
 final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 
+	private static final int[] PREDICATE_PREFIX_FIELDS = { TripleIndex.PRED_IDX };
+
 	private static final Logger logger = LoggerFactory.getLogger(LmdbAdjacencyTripleStoreScanner.class);
 
 	private final TripleStore tripleStore;
@@ -78,8 +80,8 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 
 	@Override
 	public void scanPredicates(PredicateConsumer consumer) throws IOException {
-		// distinct predicates of both statement sets, merged in unsigned order; the streams themselves are
-		// predicate-ordered because they come from the po-prefixed index
+		// Merge both statement sets' distinct predicates in unsigned order.
+		// Predicate-leading indexes support prefix runs; the fallback is an ordered row scan.
 		long[] explicitPredicates = distinctPredicates(true);
 		long[] inferredPredicates = distinctPredicates(false);
 		int e = 0;
@@ -116,36 +118,39 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 	private long[] distinctPredicates(boolean explicit) throws IOException {
 		long[] buffer = new long[16];
 		int size = 0;
-		try (RecordIterator it = incomingIterator(explicit)) {
-			long[] quad;
-			long last = 0;
-			boolean any = false;
-			boolean canSeek = true;
-			while ((quad = it.next()) != null) {
-				long predicate = quad[TripleIndex.PRED_IDX];
-				if (!any || predicate != last) {
-					if (any && Long.compareUnsigned(last, predicate) > 0) {
+		LmdbPrefixRunPlan prefixPlan = tripleStore.prefixRunPlan(PREDICATE_PREFIX_FIELDS, -1, -1, -1, -1);
+		if (prefixPlan != null) {
+			// Pass 0 only needs one row per predicate. A predicate-leading index lets LMDB skip the remaining rows in
+			// each predicate run instead of decoding every statement in the incoming stream.
+			try (LmdbPrefixRunCursor it = tripleStore.getPrefixRuns(txn, prefixPlan, -1, -1, -1, -1, explicit, false)) {
+				while (it.next()) {
+					long predicate = it.quad()[TripleIndex.PRED_IDX];
+					if (size > 0 && Long.compareUnsigned(buffer[size - 1], predicate) > 0) {
 						throw new IOException("predicate stream is not unsigned ascending");
 					}
 					if (size == buffer.length) {
-						buffer = Arrays.copyOf(buffer, buffer.length * 2);
+						buffer = java.util.Arrays.copyOf(buffer, buffer.length * 2);
 					}
 					buffer[size++] = predicate;
-					last = predicate;
-					any = true;
-
-					if (canSeek) {
-						// seek past this whole predicate group to the first key of the next predicate;
-						// the leading key field is the predicate, so pred+1 with the remaining fields at
-						// their minimum (0) is the smallest key any later predicate can produce
-						long nextPredicate = predicate + 1;
-						if (nextPredicate == 0) {
-							// unsigned wrap: this predicate is the maximum id, nothing can follow it
-							break;
+				}
+			}
+		} else {
+			try (RecordIterator it = incomingIterator(explicit)) {
+				long[] quad;
+				long last = 0;
+				boolean any = false;
+				while ((quad = it.next()) != null) {
+					long predicate = quad[TripleIndex.PRED_IDX];
+					if (!any || predicate != last) {
+						if (any && Long.compareUnsigned(last, predicate) > 0) {
+							throw new IOException("predicate stream is not unsigned ascending");
 						}
-						if (!it.seekForward(0, nextPredicate, 0, 0)) {
-							canSeek = false;
+						if (size == buffer.length) {
+							buffer = java.util.Arrays.copyOf(buffer, buffer.length * 2);
 						}
+						buffer[size++] = predicate;
+						last = predicate;
+						any = true;
 					}
 				}
 			}
