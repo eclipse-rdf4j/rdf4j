@@ -249,21 +249,25 @@ final class BulkLoadWorkspace implements AutoCloseable {
 		return PredicateIdPlan.restore(directory, count);
 	}
 
-	void recordResolved(ResolvedIdQuadSpool statements, ResolvedValueRecords values) {
+	void recordResolved(ResolvedIdQuadSpool statements, ResolvedValueRecords values) throws IOException {
 		state.setProperty("resolved.statements", Long.toString(statements.statements()));
+		state.setProperty("resolved.statements.bytes", Long.toString(Files.size(statements.path())));
 		state.setProperty("resolved.values", Long.toString(values.records()));
 		state.setProperty("resolved.value-dependencies", Long.toString(values.dependencyRecords()));
+		state.setProperty("resolved.value-dependencies.bytes", Long.toString(Files.size(values.dependenciesPath())));
 	}
 
 	ResolvedIdQuadSpool resolvedStatements() throws IOException {
 		requireComplete(BulkLoadPhase.RESOLVE_IDS);
-		return ResolvedIdQuadSpool.restore(directory, parseNonNegativeLong("resolved.statements"));
+		return ResolvedIdQuadSpool.restore(directory, parseNonNegativeLong("resolved.statements"),
+				parseNonNegativeLong("resolved.statements.bytes"));
 	}
 
 	ResolvedValueRecords resolvedValues() throws IOException {
 		requireComplete(BulkLoadPhase.RESOLVE_IDS);
 		return ResolvedValueRecords.restore(directory, parseNonNegativeLong("resolved.values"),
-				parseNonNegativeLong("resolved.value-dependencies"));
+				parseNonNegativeLong("resolved.value-dependencies"),
+				parseNonNegativeLong("resolved.value-dependencies.bytes"));
 	}
 
 	long dictionaryPersistedValues() throws IOException {
@@ -283,7 +287,9 @@ final class BulkLoadWorkspace implements AutoCloseable {
 		recordByteRecords("native.main", output.mainRecords());
 		recordByteRecords("native.reference-counts", output.referenceCounts());
 		state.setProperty("native.triple-terms.records", Long.toString(output.tripleTerms().rows()));
+		state.setProperty("native.triple-terms.bytes", Long.toString(Files.size(output.tripleTerms().path())));
 		state.setProperty("native.value-hashes.records", Long.toString(output.valueHashes().rows()));
+		state.setProperty("native.value-hashes.bytes", Long.toString(Files.size(output.valueHashes().path())));
 	}
 
 	ValueStoreBulkRecords.Output nativeRecords() throws IOException {
@@ -294,7 +300,9 @@ final class BulkLoadWorkspace implements AutoCloseable {
 				parseNonNegativeLong("native.reference-counts.records"),
 				parseNonNegativeLong("native.reference-counts.bytes"),
 				parseNonNegativeLong("native.triple-terms.records"),
-				parseNonNegativeLong("native.value-hashes.records"));
+				parseNonNegativeLong("native.triple-terms.bytes"),
+				parseNonNegativeLong("native.value-hashes.records"),
+				parseNonNegativeLong("native.value-hashes.bytes"));
 	}
 
 	void reclaimAfterNativeRecords() throws IOException {

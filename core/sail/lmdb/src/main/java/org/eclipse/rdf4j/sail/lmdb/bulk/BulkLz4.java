@@ -24,6 +24,7 @@ import java.util.Objects;
 
 import net.jpountz.lz4.LZ4BlockInputStream;
 import net.jpountz.lz4.LZ4BlockOutputStream;
+import net.jpountz.lz4.LZ4Compressor;
 import net.jpountz.lz4.LZ4Factory;
 
 final class BulkLz4 {
@@ -36,11 +37,57 @@ final class BulkLz4 {
 	}
 
 	static DataOutputStream appendOutput(Path path) throws IOException {
+		return appendOutput(path, false);
+	}
+
+	/**
+	 * Append-mode output using the high-ratio LZ4 compressor, for long-lived staged inputs that are read multiple times
+	 * and therefore warrant spending extra CPU to shrink on disk.
+	 */
+	static DataOutputStream appendOutputHigh(Path path) throws IOException {
+		return appendOutput(path, true);
+	}
+
+	private static DataOutputStream appendOutput(Path path, boolean high) throws IOException {
 		Objects.requireNonNull(path, "path");
 		Files.createDirectories(path.getParent());
 		return new DataOutputStream(new LZ4BlockOutputStream(new BufferedOutputStream(Files.newOutputStream(path,
 				StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.APPEND)), BLOCK_BYTES,
-				LZ4.fastCompressor()));
+				compressor(high)));
+	}
+
+	/**
+	 * Single-stream (truncating) output for fixed-width binary run and spool files that are written once and read back
+	 * sequentially. Uses the fast LZ4 compressor to keep the hot merge/spool path cheap.
+	 */
+	static DataOutputStream output(Path path) throws IOException {
+		Objects.requireNonNull(path, "path");
+		Path parent = path.getParent();
+		if (parent != null) {
+			Files.createDirectories(parent);
+		}
+		return new DataOutputStream(new LZ4BlockOutputStream(
+				new BufferedOutputStream(Files.newOutputStream(path, StandardOpenOption.CREATE,
+						StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)),
+				BLOCK_BYTES, compressor(false)));
+	}
+
+	/**
+	 * Sequential read side for a single-stream {@link #output(Path)} file. Empty files (zero bytes, e.g. a sorter run
+	 * with no records) yield an immediately-exhausted stream. The LZ4 block format is codec-agnostic on read, so this
+	 * decompresses output produced by either the fast or high compressor.
+	 */
+	static DataInputStream input(Path path) throws IOException {
+		Objects.requireNonNull(path, "path");
+		if (Files.size(path) == 0L) {
+			return new DataInputStream(InputStream.nullInputStream());
+		}
+		return new DataInputStream(
+				new LZ4BlockInputStream(new BufferedInputStream(Files.newInputStream(path)), LZ4.fastDecompressor()));
+	}
+
+	private static LZ4Compressor compressor(boolean high) {
+		return high ? LZ4.highCompressor(9) : LZ4.fastCompressor();
 	}
 
 	static boolean readConcatenated(Path path, StreamReader reader) throws IOException {

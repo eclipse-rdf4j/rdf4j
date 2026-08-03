@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.sail.lmdb.bulk;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.io.BufferedInputStream;
 import java.io.DataInputStream;
 import java.lang.foreign.MemorySegment;
 import java.lang.reflect.Field;
@@ -69,8 +68,7 @@ class ResolvedIdQuadSpoolTest {
 		path.setAccessible(true);
 		byte[] optimizedBytes = Files.readAllBytes((Path) path.invoke(spool));
 
-		try (DataInputStream input = new DataInputStream(
-				new BufferedInputStream(Files.newInputStream((Path) path.invoke(spool))))) {
+		try (DataInputStream input = BulkLz4.input((Path) path.invoke(spool))) {
 			assertRow(input, 0L, dictionary, first);
 			assertRow(input, 1L, dictionary, second);
 			assertThat(input.read()).isEqualTo(-1);

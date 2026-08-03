@@ -91,16 +91,17 @@ final class ValueStoreBulkRecords {
 	}
 
 	static Output restore(Path workspace, long mainRecords, long mainBytes, long referenceCounts,
-			long referenceCountBytes, long tripleTerms, long valueHashes) throws IOException {
+			long referenceCountBytes, long tripleTerms, long tripleTermBytes, long valueHashes, long valueHashBytes)
+			throws IOException {
 		return new Output(
 				ExternalByteKeySorter.SortedRecordFile.restore(workspace.resolve("value-main-records.bin"),
 						mainRecords, mainBytes),
 				ExternalByteKeySorter.SortedRecordFile.restore(workspace.resolve("value-ref-count-records.bin"),
 						referenceCounts, referenceCountBytes),
 				ExternalLongTupleSorter.SortedTupleFile.restore(workspace.resolve("value-triple-terms.bin"), 4,
-						tripleTerms),
+						tripleTerms, tripleTermBytes),
 				ExternalLongTupleSorter.SortedTupleFile.restore(workspace.resolve("value-hashes.bin"), 3,
-						valueHashes));
+						valueHashes, valueHashBytes));
 	}
 
 	private static void addDataRecords(ExternalByteKeySorter sorter, long sequence, long id, byte[] data,

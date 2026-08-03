@@ -109,7 +109,7 @@ final class CanonicalStatementStager implements Closeable {
 
 	private void writeCanonicalRecord(byte[] subject, byte[] predicate, byte[] object, byte[] context)
 			throws IOException {
-		DataOutputStream output = outputs.output(STATEMENT_OUTPUT_KEY, () -> BulkLz4.appendOutput(statementPath));
+		DataOutputStream output = outputs.output(STATEMENT_OUTPUT_KEY, () -> BulkLz4.appendOutputHigh(statementPath));
 		output.writeLong(statements);
 		writeBytes(output, subject);
 		writeBytes(output, predicate);
@@ -137,7 +137,7 @@ final class CanonicalStatementStager implements Closeable {
 	}
 
 	void writeNamespace(String prefix, String namespace) throws IOException {
-		DataOutputStream output = outputs.output(NAMESPACE_OUTPUT_KEY, () -> BulkLz4.appendOutput(namespacePath));
+		DataOutputStream output = outputs.output(NAMESPACE_OUTPUT_KEY, () -> BulkLz4.appendOutputHigh(namespacePath));
 		writeUtf8(output, prefix);
 		writeUtf8(output, namespace);
 	}
@@ -190,7 +190,7 @@ final class CanonicalStatementStager implements Closeable {
 		}
 		int partition = (int) hash & (partitionCount - 1);
 		DataOutputStream output = outputs.output(partition,
-				() -> BulkLz4.appendOutput(valueBucketPath(valueDirectory, partition)));
+				() -> BulkLz4.appendOutputHigh(valueBucketPath(valueDirectory, partition)));
 		output.writeLong(hash);
 		output.writeByte(newRoles);
 		writeBytes(output, canonicalBytes);
