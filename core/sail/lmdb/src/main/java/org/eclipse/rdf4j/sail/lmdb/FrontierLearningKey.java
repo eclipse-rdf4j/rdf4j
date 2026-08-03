@@ -108,10 +108,37 @@ final class FrontierLearningKey {
 		 * source scans, seeks, expression evaluations, and hash work are not exchangeable across unrelated kernels.
 		 */
 		if (dimension == FrontierCostDimension.OUTPUT_ROWS) {
+			/*
+			 * Optional (default off): separate full-scan from bound-invocation layouts. A scan's cumulative output
+			 * total and a bound access's sum of per-invocation totals are not exchangeable observations, but the split
+			 * also halves each family's sibling pool — enable only with benchmark evidence.
+			 */
+			if (outputRowsLayoutFamilyEnabled()) {
+				return operatorFamily + '\u001f' + semanticTransformIdentity() + '\u001f'
+						+ (boundAccessKernel() ? "bound" : "scan");
+			}
 			return operatorFamily + '\u001f' + semanticTransformIdentity();
 		}
 		String transformFamily = operatorFamily + '\u001f' + rawTransform;
 		return transformFamily + '\u001f' + accessKernel + '\u001f' + indexName + '\u001f' + accessMode;
+	}
+
+	static final String OUTPUT_ROWS_LAYOUT_FAMILY_PROPERTY = "rdf4j.optimizer.lmdb.outputRowsLayoutFamily";
+
+	private static boolean outputRowsLayoutFamilyEnabled() {
+		return "true".equalsIgnoreCase(System.getProperty(OUTPUT_ROWS_LAYOUT_FAMILY_PROPERTY, "false"));
+	}
+
+	private boolean boundAccessKernel() {
+		// The access kernel's second ':'-separated token is the lookup component mask; non-zero means the access
+		// is driven by bound components.
+		int first = accessKernel.indexOf(':');
+		if (first < 0) {
+			return false;
+		}
+		int second = accessKernel.indexOf(':', first + 1);
+		String mask = second < 0 ? accessKernel.substring(first + 1) : accessKernel.substring(first + 1, second);
+		return !mask.isBlank() && !"0".equals(mask.trim());
 	}
 
 	private String semanticTransformIdentity() {

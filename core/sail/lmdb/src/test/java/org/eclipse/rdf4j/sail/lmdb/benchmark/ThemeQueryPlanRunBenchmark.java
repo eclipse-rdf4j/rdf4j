@@ -76,6 +76,8 @@ public class ThemeQueryPlanRunBenchmark {
 	private static final String VALUES_DATA_SIZE_PROPERTY = "values.data.mdb.size.bytes";
 	private static final String TRIPLE_INDEXES_PROPERTY = "triple.indexes";
 	private static final String PROFILING_PROPERTY = "rdf4j.benchmark.profiling";
+	private static final String EXPLANATION_LOGGING_PROPERTY = "rdf4j.benchmark.themeQueryPlanRun.explanationLogging";
+	private static final String PLAN_LIFECYCLE_PROPERTY = "rdf4j.benchmark.themeQueryPlanRun.planLifecycle";
 	private static final String COUNT_BINDING_NAME = "count";
 	private static final int QUERY_TIMEOUT_SECONDS = 60;
 	private static final long OPTIMIZATION_TIMEOUT_MILLIS = 30_000L;
@@ -133,14 +135,14 @@ public class ThemeQueryPlanRunBenchmark {
 
 		@Param({
 				"MEDICAL_RECORDS",
-				"SOCIAL_MEDIA",
-				"LIBRARY",
-				"ENGINEERING",
-				"HIGHLY_CONNECTED",
-				"TRAIN",
-				"ELECTRICAL_GRID",
-				"PHARMA",
-				"SPARSE"
+//				"SOCIAL_MEDIA",
+//				"LIBRARY",
+//				"ENGINEERING",
+//				"HIGHLY_CONNECTED",
+//				"TRAIN",
+//				"ELECTRICAL_GRID",
+//				"PHARMA",
+//				"SPARSE"
 		})
 		public String themeName;
 
@@ -173,6 +175,8 @@ public class ThemeQueryPlanRunBenchmark {
 		private long expectedRows;
 		private OptionalLong expectedCountBindingValue;
 		protected SailRepositoryConnection connection;
+		private LmdbBenchmarkQueryPlan.PreparedPlanSnapshot firstPreparedPlanSnapshot;
+		private LmdbBenchmarkQueryPlan.PreparedPlanSnapshot lastPreparedPlanSnapshot;
 		private String previousDphypEnabled;
 		private String previousLeoRolloutProfile;
 
@@ -217,10 +221,15 @@ public class ThemeQueryPlanRunBenchmark {
 		@TearDown(Level.Trial)
 		public void tearDown() {
 			try {
+				beforeTrialTearDown();
 				printTelemetryPlanAtTrialTeardown();
 			} finally {
 				closeResources();
 			}
+		}
+
+		protected void beforeTrialTearDown() {
+			// Hook for execution states that own a prepared plan across the trial.
 		}
 
 		private void closeResources() {
@@ -453,8 +462,32 @@ public class ThemeQueryPlanRunBenchmark {
 		}
 
 		protected LmdbBenchmarkQueryPlan preparePlan(String queryText, boolean captureOptimizedPlan) {
-			return LmdbBenchmarkQueryPlan.prepare(store, connection, queryText, QUERY_TIMEOUT_SECONDS,
-					captureOptimizedPlan);
+			LmdbBenchmarkQueryPlan plan = LmdbBenchmarkQueryPlan.prepare(store, connection, queryText,
+					QUERY_TIMEOUT_SECONDS, captureOptimizedPlan);
+			rememberPreparedPlan(plan.preparedPlanSnapshot());
+			return plan;
+		}
+
+		private void rememberPreparedPlan(LmdbBenchmarkQueryPlan.PreparedPlanSnapshot snapshot) {
+			if (snapshot == null) {
+				return;
+			}
+			if (firstPreparedPlanSnapshot == null) {
+				firstPreparedPlanSnapshot = snapshot;
+			}
+			lastPreparedPlanSnapshot = snapshot;
+		}
+
+		protected LmdbBenchmarkQueryPlan.PreparedPlanSnapshot firstPreparedPlanSnapshot() {
+			return firstPreparedPlanSnapshot;
+		}
+
+		protected LmdbBenchmarkQueryPlan.PreparedPlanSnapshot lastPreparedPlanSnapshot() {
+			return lastPreparedPlanSnapshot;
+		}
+
+		protected PlanLifecycle planLifecycle() {
+			return PlanLifecycle.parse(System.getProperty(PLAN_LIFECYCLE_PROPERTY));
 		}
 
 		protected long evaluateQueryAndAssertExpectedResult() {
@@ -470,14 +503,23 @@ public class ThemeQueryPlanRunBenchmark {
 		}
 
 		protected void printOptimizedPlanBeforeRunQuery(LmdbBenchmarkQueryPlan plan) {
+			LmdbBenchmarkQueryPlan.PreparedPlanSnapshot snapshot = plan.preparedPlanSnapshot();
+			String optimizedPlan = snapshot == null ? plan.optimizedPlan() : snapshot.optimizedPlan();
+			String optimizedDiagnostics = snapshot == null ? plan.optimizedDiagnostics()
+					: snapshot.optimizedDiagnostics();
 			String renderedPlan = "\n### Optimized Query - Before runQuery benchmark method ###\n"
 					+ queryDescription() + "\n"
-					+ plan.optimizedPlan() + "\n";
+					+ optimizedPlan + "\n";
 			writeOptimizedPlanBeforeRunQuery(renderedPlan);
-			writeOptimizedDiagnosticsBeforeRunQuery(plan.optimizedDiagnostics());
+			writeOptimizedDiagnosticsBeforeRunQuery(optimizedDiagnostics);
 			System.out.print(renderedPlan);
+			logPreparedSnapshot("prepared-before-runQuery", snapshot);
+			if (snapshot == null) {
+				logPlanSummary("prepared-before-runQuery", optimizedPlan);
+				logDiagnosticsSummary("prepared-before-runQuery", optimizedDiagnostics);
+			}
 			System.out.println("Optimized plan file: " + optimizedPlanFile().getAbsolutePath());
-			if (!plan.optimizedDiagnostics().isBlank()) {
+			if (!optimizedDiagnostics.isBlank()) {
 				System.out.println("Optimized diagnostics file: " + optimizedDiagnosticsFile().getAbsolutePath());
 			}
 			System.out.flush();
@@ -497,23 +539,176 @@ public class ThemeQueryPlanRunBenchmark {
 			var tupleQuery = connection.prepareTupleQuery(query);
 			tupleQuery.setIncludeInferred(false);
 			tupleQuery.setMaxExecutionTime(QUERY_TIMEOUT_SECONDS);
-			String renderedPlan = LmdbBenchmarkQueryPlan.withCascadesOptimizationTimeout(QUERY_TIMEOUT_SECONDS,
-					() -> "\n### Telemetry Query - Trial teardown ###\n"
-							+ queryDescription() + "\n"
-							+ tupleQuery.explain(Explanation.Level.Telemetry) + "\n");
-			System.out.print(renderedPlan);
-			var optimizedQuery = connection.prepareTupleQuery(query);
-			optimizedQuery.setIncludeInferred(false);
-			optimizedQuery.setMaxExecutionTime(QUERY_TIMEOUT_SECONDS);
-			Explanation optimized = LmdbBenchmarkQueryPlan.withCascadesOptimizationTimeout(QUERY_TIMEOUT_SECONDS,
-					() -> optimizedQuery.explain(Explanation.Level.Optimized));
-			String renderedSparql = "\n### Rendered Optimized SPARQL - Trial teardown ###\n"
+			Explanation telemetry = LmdbBenchmarkQueryPlan.withCascadesOptimizationTimeout(QUERY_TIMEOUT_SECONDS,
+					() -> tupleQuery.explain(Explanation.Level.Telemetry));
+			String renderedPlan = "\n### Telemetry Query - Trial teardown ###\n"
 					+ queryDescription() + "\n"
-					+ new TupleExprIRRenderer().render((TupleExpr) optimized.tupleExpr()) + "\n";
-			writeRenderedSparqlAtTrialTeardown(renderedSparql);
-			System.out.print(renderedSparql);
-			System.out.println("Rendered optimized SPARQL file: " + renderedSparqlFile().getAbsolutePath());
+					+ telemetry + "\n";
+			System.out.print(renderedPlan);
+			TupleExpr telemetryTupleExpr = (TupleExpr) telemetry.tupleExpr();
+			String telemetryFingerprint = LmdbBenchmarkQueryPlan.structuralPlanFingerprint(telemetryTupleExpr);
+			String telemetryRevision = LmdbBenchmarkQueryPlan.plannedEstimatorRevision(telemetryTupleExpr);
+			String telemetryTupleExprIdentity = "0x"
+					+ Integer.toHexString(System.identityHashCode(telemetryTupleExpr));
+			logExplanationSummary("telemetry-at-trial-teardown", "telemetry", telemetry, telemetryFingerprint,
+					telemetryRevision);
+
+			LmdbBenchmarkQueryPlan.PreparedPlanSnapshot preparedSnapshot = lastPreparedPlanSnapshot();
+			if (preparedSnapshot != null) {
+				String renderedPreparedSparql = "\n### Rendered Prepared SPARQL - Trial teardown ###\n"
+						+ queryDescription() + "\n"
+						+ "source=prepared, planFingerprint=" + preparedSnapshot.planFingerprint()
+						+ ", estimatorRevision=" + preparedSnapshot.estimatorRevision() + ", tupleExprIdentity="
+						+ preparedSnapshot.tupleExprIdentity() + "\n"
+						+ preparedSnapshot.renderedSparql() + "\n";
+				writeRenderedSparqlAtTrialTeardown(renderedPreparedSparql);
+				System.out.print(renderedPreparedSparql);
+				logRenderedQuerySummary("prepared-at-trial-teardown", "prepared", renderedPreparedSparql,
+						preparedSnapshot.planFingerprint(), preparedSnapshot.estimatorRevision(), true);
+				System.out.println("Rendered Prepared SPARQL file: " + renderedSparqlFile().getAbsolutePath());
+			}
+
+			String renderedTelemetrySparql = "\n### Rendered Telemetry SPARQL - Trial teardown ###\n"
+					+ queryDescription() + "\n"
+					+ "source=telemetry, planFingerprint=" + telemetryFingerprint + ", estimatorRevision="
+					+ telemetryRevision + ", tupleExprIdentity=" + telemetryTupleExprIdentity
+					+ ", planShapeMatchesPrepared="
+					+ (preparedSnapshot != null && preparedSnapshot.planFingerprint().equals(telemetryFingerprint))
+					+ "\n"
+					+ new TupleExprIRRenderer().render(telemetryTupleExpr) + "\n";
+			writeTelemetrySparqlAtTrialTeardown(renderedTelemetrySparql);
+			System.out.print(renderedTelemetrySparql);
+			boolean telemetryMatchesPrepared = preparedSnapshot != null
+					&& preparedSnapshot.planFingerprint().equals(telemetryFingerprint);
+			logRenderedQuerySummary("telemetry-at-trial-teardown", "telemetry", renderedTelemetrySparql,
+					telemetryFingerprint, telemetryRevision, telemetryMatchesPrepared);
+			System.out.println("Rendered Telemetry SPARQL file: " + telemetrySparqlFile().getAbsolutePath());
 			System.out.flush();
+		}
+
+		private void logPreparedSnapshot(String phase, LmdbBenchmarkQueryPlan.PreparedPlanSnapshot snapshot) {
+			if (!explanationLogging() || snapshot == null) {
+				return;
+			}
+			System.out.println("explanationPhase=" + phase + ", source=prepared, planFingerprint="
+					+ snapshot.planFingerprint() + ", estimatorRevision=" + snapshot.estimatorRevision()
+					+ ", tupleExprIdentity=" + snapshot.tupleExprIdentity() + ", planShapeMatchesPrepared=true");
+			logPlanSummary(phase, snapshot.optimizedPlan());
+			logDiagnosticsSummary(phase, snapshot.optimizedDiagnostics());
+		}
+
+		private void logExplanationSummary(String phase, String source, Explanation explanation, String fingerprint,
+				String estimatorRevision) {
+			if (!explanationLogging()) {
+				return;
+			}
+			TupleExpr tupleExpr = (TupleExpr) explanation.tupleExpr();
+			System.out.println("### Explanation lifecycle summary ###");
+			LmdbBenchmarkQueryPlan.PreparedPlanSnapshot preparedSnapshot = lastPreparedPlanSnapshot();
+			boolean matchesPrepared = preparedSnapshot != null
+					&& preparedSnapshot.planFingerprint().equals(fingerprint);
+			System.out.println("phase=" + phase + ", source=" + source + ", planFingerprint=" + fingerprint
+					+ ", estimatorRevision=" + estimatorRevision + ", tupleExprIdentity=0x"
+					+ Integer.toHexString(System.identityHashCode(tupleExpr)) + ", tupleExprClass="
+					+ tupleExpr.getClass().getSimpleName() + ", planShapeMatchesPrepared=" + matchesPrepared);
+			logPlanSummary(phase, explanation.toString());
+		}
+
+		private void logPlanSummary(String phase, String plan) {
+			if (!explanationLogging() || plan == null || plan.isBlank()) {
+				return;
+			}
+			System.out.println("planPhase=" + phase + ", planHash=0x"
+					+ Integer.toHexString(plan.hashCode()));
+			plan.lines()
+					.filter(line -> line.contains("optimizer.objectGuaranteePredicate="))
+					.limit(12)
+					.map(ThemeQueryPlanRunBenchmark.BaseState::compactPlanMetrics)
+					.filter(line -> line.contains("optimizer.guaranteeOptions="))
+					.forEach(line -> System.out.println("  " + line));
+		}
+
+		private void logDiagnosticsSummary(String phase, String diagnostics) {
+			if (!explanationLogging() || diagnostics == null || diagnostics.isBlank()) {
+				return;
+			}
+			String compact = diagnostics.lines()
+					.filter(line -> line.contains("optimizer.cascadesCompleteness=")
+							|| line.contains("optimizer.cascadesPlanCacheHit=")
+							|| line.contains("optimizer.cascadesQueryTemplateCacheHit=")
+							|| line.contains("optimizer.cascadesApplied=")
+							|| line.contains("optimizer.cascadesApproximate="))
+					.collect(java.util.stream.Collectors.joining(", "));
+			String guarantee = diagnostics.lines()
+					.filter(line -> line.contains("optimizer.guarantee"))
+					.collect(java.util.stream.Collectors.joining(", "));
+			System.out.println("diagnosticsPhase=" + phase + ", diagnosticsHash=0x"
+					+ Integer.toHexString(diagnostics.hashCode()) + ", hasPackedMemoFailure="
+					+ diagnostics.contains("PackedMemoInvariantException") + ", " + compact
+					+ (guarantee.isBlank() ? "" : ", " + guarantee));
+		}
+
+		private void logRenderedQuerySummary(String phase, String source, String renderedQuery, String fingerprint,
+				String estimatorRevision, boolean matchesPrepared) {
+			if (!explanationLogging()) {
+				return;
+			}
+			System.out.println("renderPhase=" + phase + ", source=" + source + ", planFingerprint=" + fingerprint
+					+ ", estimatorRevision=" + estimatorRevision + ", planShapeMatchesPrepared=" + matchesPrepared
+					+ ", renderedHash=0x"
+					+ Integer.toHexString(renderedQuery.hashCode()) + ", hasDateValues="
+					+ renderedQuery.contains("VALUES ?date") + ", hasDateFilter="
+					+ (renderedQuery.contains("FILTER (?date IN") || renderedQuery.contains("FILTER(?date IN")));
+		}
+
+		private boolean explanationLogging() {
+			return Boolean.getBoolean(EXPLANATION_LOGGING_PROPERTY);
+		}
+
+		private static String compactPlanMetrics(String line) {
+			String[] metricNames = {
+					"optimizer.cascadesCompleteness=",
+					"optimizer.cascadesPlanCacheHit=",
+					"optimizer.cascadesQueryTemplateCacheHit=",
+					"optimizer.cascadesApplied=",
+					"optimizer.cascadesApproximate=",
+					"optimizer.objectGuaranteePredicate=",
+					"optimizer.guaranteeOptions=",
+					"optimizer.guaranteeOptionReason=",
+					"plannedEstimateSource=",
+					"plannedFrontierStatus=",
+					"plannedFrontierGuarantee=",
+					"plannedFrontierDisposition=",
+					"optimizer.frontierLeoRevision=",
+					"plannedIndexName=",
+					"plannedIndexAccessMode=",
+					"plannedLookupComponents=",
+					"plannedAccessRows=",
+					"sourceRowsScannedActual=",
+					"sourceRowsMatchedActual="
+			};
+			StringBuilder compact = new StringBuilder();
+			for (String metricName : metricNames) {
+				int start = line.indexOf(metricName);
+				if (start < 0) {
+					continue;
+				}
+				int end = line.indexOf(", ", start);
+				if (metricName.equals("plannedLookupComponents=")) {
+					int closingBracket = line.indexOf(']', start);
+					if (closingBracket >= 0) {
+						end = closingBracket + 1;
+					}
+				}
+				if (end < 0) {
+					end = line.length();
+				}
+				if (compact.length() > 0) {
+					compact.append(", ");
+				}
+				compact.append(line, start, end);
+			}
+			return compact.toString();
 		}
 
 		private void writeOptimizedPlanBeforeRunQuery(String renderedPlan) {
@@ -528,7 +723,11 @@ public class ThemeQueryPlanRunBenchmark {
 		}
 
 		private void writeRenderedSparqlAtTrialTeardown(String renderedSparql) {
-			writeTextFile(renderedSparqlFile(), renderedSparql, "rendered optimized SPARQL");
+			writeTextFile(renderedSparqlFile(), renderedSparql, "rendered prepared SPARQL");
+		}
+
+		private void writeTelemetrySparqlAtTrialTeardown(String renderedSparql) {
+			writeTextFile(telemetrySparqlFile(), renderedSparql, "rendered telemetry SPARQL");
 		}
 
 		private void writeTextFile(File file, String text, String description) {
@@ -557,6 +756,11 @@ public class ThemeQueryPlanRunBenchmark {
 		private File renderedSparqlFile() {
 			return new File(STORE_DIRECTORY,
 					"plans/" + themeName + "-q" + z_queryIndex + variantFileSuffix() + "-runQuery-rendered.sparql");
+		}
+
+		private File telemetrySparqlFile() {
+			return new File(STORE_DIRECTORY,
+					"plans/" + themeName + "-q" + z_queryIndex + variantFileSuffix() + "-runQuery-telemetry.sparql");
 		}
 
 		protected QueryResultSummary evaluate(LmdbBenchmarkQueryPlan plan) {
@@ -905,27 +1109,102 @@ public class ThemeQueryPlanRunBenchmark {
 
 		private LmdbBenchmarkQueryPlan plannedQuery;
 		private boolean printedOptimizedPlan;
+		private String previousPlanFingerprint;
+		private String previousEstimatorRevision;
+		private long preparedPlanUses;
+		private long preparedPlanChanges;
 
 		@Setup(Level.Invocation)
 		public void prepareQuery() {
-			boolean captureOptimizedPlan = !printedOptimizedPlan && !profiling();
+			preparedPlanUses++;
+			boolean fixedPlan = planLifecycle() == PlanLifecycle.FIXED;
+			if (fixedPlan && plannedQuery != null) {
+				return;
+			}
+			boolean captureOptimizedPlan = !profiling();
 			plannedQuery = preparePlan(captureOptimizedPlan);
-			if (captureOptimizedPlan) {
+			if (!printedOptimizedPlan && captureOptimizedPlan) {
 				printOptimizedPlanBeforeRunQuery(plannedQuery);
 			}
+			recordPreparedPlan(plannedQuery.preparedPlanSnapshot());
 			printedOptimizedPlan = true;
 		}
 
 		@TearDown(Level.Invocation)
 		public void clearPreparedQuery() {
-			if (plannedQuery != null) {
-				plannedQuery.close();
-				plannedQuery = null;
+			if (planLifecycle() == PlanLifecycle.ADAPTIVE) {
+				closePreparedQuery();
 			}
+		}
+
+		@Override
+		protected void beforeTrialTearDown() {
+			logPlanLifecycleSummary();
+			closePreparedQuery();
+		}
+
+		void recordPreparedPlan(LmdbBenchmarkQueryPlan.PreparedPlanSnapshot snapshot) {
+			if (snapshot == null) {
+				return;
+			}
+			boolean planChanged = previousPlanFingerprint != null
+					&& (!previousPlanFingerprint.equals(snapshot.planFingerprint())
+							|| !previousEstimatorRevision.equals(snapshot.estimatorRevision()));
+			if (planChanged) {
+				preparedPlanChanges++;
+				System.out.println("planLifecycle=" + planLifecycle() + ", planChange=true, previousPlanFingerprint="
+						+ previousPlanFingerprint + ", previousEstimatorRevision=" + previousEstimatorRevision
+						+ ", planFingerprint=" + snapshot.planFingerprint() + ", estimatorRevision="
+						+ snapshot.estimatorRevision());
+			}
+			previousPlanFingerprint = snapshot.planFingerprint();
+			previousEstimatorRevision = snapshot.estimatorRevision();
+		}
+
+		private void logPlanLifecycleSummary() {
+			LmdbBenchmarkQueryPlan.PreparedPlanSnapshot first = firstPreparedPlanSnapshot();
+			LmdbBenchmarkQueryPlan.PreparedPlanSnapshot last = lastPreparedPlanSnapshot();
+			if (first == null || last == null) {
+				return;
+			}
+			System.out.println("planLifecycle=" + planLifecycle() + ", preparedPlanUses=" + preparedPlanUses
+					+ ", planChanges=" + preparedPlanChanges + ", firstPlanFingerprint=" + first.planFingerprint()
+					+ ", lastPlanFingerprint=" + last.planFingerprint() + ", planShapeStable="
+					+ first.planFingerprint().equals(last.planFingerprint()) + ", firstEstimatorRevision="
+					+ first.estimatorRevision() + ", lastEstimatorRevision=" + last.estimatorRevision()
+					+ ", estimatorRevisionStable=" + first.estimatorRevision().equals(last.estimatorRevision())
+					+ ", firstTupleExprIdentity=" + first.tupleExprIdentity() + ", lastTupleExprIdentity="
+					+ last.tupleExprIdentity());
+		}
+
+		private void closePreparedQuery() {
+			if (plannedQuery == null) {
+				return;
+			}
+			plannedQuery.close();
+			plannedQuery = null;
 		}
 
 		private QueryResultSummary evaluatePlannedQuery() {
 			return evaluate(plannedQuery);
+		}
+	}
+
+	enum PlanLifecycle {
+		FIXED,
+		ADAPTIVE;
+
+		private static PlanLifecycle parse(String value) {
+			if (value == null || value.isBlank()) {
+				return FIXED;
+			}
+			try {
+				return valueOf(value.trim().toUpperCase(java.util.Locale.ROOT));
+			} catch (IllegalArgumentException e) {
+				throw new IllegalArgumentException("Unsupported "
+						+ "rdf4j.benchmark.themeQueryPlanRun.planLifecycle=" + value
+						+ "; expected FIXED or ADAPTIVE", e);
+			}
 		}
 	}
 

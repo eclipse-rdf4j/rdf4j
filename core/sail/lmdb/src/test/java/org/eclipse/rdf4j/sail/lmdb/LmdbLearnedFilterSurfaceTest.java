@@ -85,7 +85,7 @@ class LmdbLearnedFilterSurfaceTest {
 	}
 
 	@Test
-	void filterSidecarUsesVersionSixAndReadsVersionFive(@TempDir File dataDir) throws IOException {
+	void filterSidecarUsesVersionSevenAndReadsVersionFive(@TempDir File dataDir) throws IOException {
 		LmdbStore writer = initializedStore(dataDir);
 		try {
 			writer.getBackingStore().getEvaluationStatistics().recordFilterOutcome(filter("5"), 20L, 80L);
@@ -100,10 +100,14 @@ class LmdbLearnedFilterSurfaceTest {
 					.orElseThrow();
 		}
 		byte[] bytes = Files.readAllBytes(sidecar);
-		assertEquals(6, ByteBuffer.wrap(bytes).getInt(), "new filter evidence must use the version-six format");
+		assertEquals(7, ByteBuffer.wrap(bytes).getInt(), "new filter evidence must use the version-seven format");
 
-		ByteBuffer.wrap(bytes).putInt(5);
-		Files.write(sidecar, bytes);
+		// A version-5 file has no data stamp after the 24-byte identity — drop it along with the version.
+		byte[] versionFive = new byte[bytes.length - Long.BYTES];
+		System.arraycopy(bytes, 0, versionFive, 0, 4 + 24);
+		System.arraycopy(bytes, 4 + 24 + Long.BYTES, versionFive, 4 + 24, bytes.length - 4 - 24 - Long.BYTES);
+		ByteBuffer.wrap(versionFive).putInt(5);
+		Files.write(sidecar, versionFive);
 		LmdbStore reader = initializedStore(dataDir);
 		try {
 			EvaluationStatistics.FilterPassEstimate estimate = reader.getBackingStore()

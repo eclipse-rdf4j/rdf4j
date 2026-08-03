@@ -448,7 +448,8 @@ class LmdbSailStore implements SailStore {
 				}
 				operatorFeedbackStats = new LmdbOperatorFeedbackStats(estimatorPath,
 						identitySupplier,
-						() -> !"snapshot-only".equalsIgnoreCase(config.getSketchEstimatorEvidenceMode()));
+						() -> !"snapshot-only".equalsIgnoreCase(config.getSketchEstimatorEvidenceMode()),
+						this::learnedSidecarDataStamp);
 				startBackgroundFilterSampling();
 			}
 			if (sketchBasedJoinEstimator != null) {
@@ -619,6 +620,19 @@ class LmdbSailStore implements SailStore {
 				.withColdSynopsisCapacity(config.getSketchEstimatorColdSynopsisCapacity())
 				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.fromConfigValue(
 						config.getSketchEstimatorStrategy(), SketchBasedJoinEstimator.SketchStrategy.UNIFIED));
+	}
+
+	/**
+	 * The LMDB write-transaction id: a persistent, monotonic data version used to reject learned sidecars whose
+	 * evidence predates data that changed after the sketch identity was last published (the crash window between a
+	 * mutating commit and the asynchronous synopsis rebuild).
+	 */
+	private long learnedSidecarDataStamp() {
+		try {
+			return LmdbFrontierSnapshotSource.snapshotEpoch(tripleStore.getTxnManager().getReadTxn());
+		} catch (IOException | RuntimeException e) {
+			return 0L;
+		}
 	}
 
 	private SketchSnapshotIdentity learnedSnapshotIdentity(UUID storeId) {

@@ -45,7 +45,17 @@ record FrontierCorrelationDomain(
 	}
 
 	double planningDistinctKeys() {
-		return Double.isFinite(distinctKeyEstimate) ? distinctKeyEstimate : distinctKeyUpperBound;
+		if (Double.isFinite(distinctKeyEstimate)) {
+			return distinctKeyEstimate;
+		}
+		if (Double.isFinite(distinctKeyUpperBound)) {
+			return distinctKeyUpperBound;
+		}
+		/*
+		 * Unresolved domains carry an infinite certified key bound. Distinct keys can never exceed the domain's row
+		 * mass, so plan with the row estimate; packed physical costing rejects non-finite dimensions.
+		 */
+		return Double.isFinite(rows) ? Math.max(0.0d, rows) : Double.MAX_VALUE;
 	}
 
 	FrontierCorrelationDomain withExactRelation(FiniteRelationEstimate relation) {

@@ -81,6 +81,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	static final String OPTIMIZER_OBJECT_GUARANTEE_PREDICATE = "optimizer.objectGuaranteePredicate";
 	static final String OPTIMIZER_GUARANTEE_OPTIONS = "optimizer.guaranteeOptions";
 	static final String OPTIMIZER_GUARANTEE_OPTION_REASON = "optimizer.guaranteeOptionReason";
+	static final String OPTIMIZER_GUARANTEE_CANDIDATE = "optimizer.guaranteeCandidate";
 	static final String OPTIMIZER_GUARANTEE_ANCHOR_PREDICATE = "optimizer.guaranteeAnchorPredicate";
 
 	private final EvaluationStatistics statistics;
@@ -125,6 +126,13 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			return;
 		}
 		boolean runtimeTelemetry = trackResultSize || tupleExpr.isRuntimeTelemetryEnabled();
+		if (!datasetUsesStoreDefaults(dataset)) {
+			// FROM/FROM NAMED restrict the data a query sees, but legacy operator keys carry no dataset identity —
+			// evidence recorded under a restricted dataset would calibrate unrestricted queries (and vice versa).
+			// The frontier path already refuses restricted datasets at planning time; this stamp lets the legacy
+			// recording path refuse too.
+			tupleExpr.setStringMetricPlanned("optimizer.datasetRestricted", "true");
+		}
 		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = beginQueryOptimizationScope()) {
 			Mode mode = configuredMode();
 			OptimizationGoal goal = configuredGoal(tupleExpr, bindings, mode);
@@ -139,6 +147,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 				// the query.
 				logger.warn("Packed cascades planning failed; falling back to the pipeline-normalized plan: {}",
 						internalInvariantFailure.getMessage(), internalInvariantFailure);
+				annotateCascadesFallback(tupleExpr, internalInvariantFailure);
 				plan = null;
 			}
 			if (plan != null) {
@@ -500,25 +509,55 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			// predicate-range anchor rule), so the guarantee was consumed, not rejected.
 			node.setStringMetricPlanned(OPTIMIZER_GUARANTEE_OPTIONS,
 					"generated=1, selected=values-anchor:" + objectVar.getName());
+			node.setStringMetricPlanned(OPTIMIZER_GUARANTEE_OPTION_REASON, "selected-by-range-anchor");
+			node.setStringMetricPlanned(OPTIMIZER_GUARANTEE_CANDIDATE, "generated-and-selected");
 			return;
 		}
 		node.setStringMetricPlanned(OPTIMIZER_GUARANTEE_OPTIONS, "generated=0, selected=original");
-		node.setStringMetricPlanned(OPTIMIZER_GUARANTEE_OPTION_REASON, guaranteeRejectionReason(node, guarantee));
+		String rejectionReason = guaranteeRejectionReason(node, guarantee);
+		node.setStringMetricPlanned(OPTIMIZER_GUARANTEE_OPTION_REASON, rejectionReason);
+		node.setStringMetricPlanned(OPTIMIZER_GUARANTEE_CANDIDATE, guaranteeCandidateStatus(node, guarantee));
 	}
 
-	private static String guaranteeRejectionReason(org.eclipse.rdf4j.query.algebra.StatementPattern node,
+	static String guaranteeRejectionReason(org.eclipse.rdf4j.query.algebra.StatementPattern node,
+			RdfTermDomain guarantee) {
+		org.eclipse.rdf4j.query.algebra.Var objectVar = node.getObjectVar();
+		if (objectVar == null) {
+			return "object-not-variable";
+		}
+		if (objectVar.hasValue()) {
+			return "object-already-bound";
+		}
+		if (guarantee.isFinite() && guarantee.finiteValues().size() > 64) {
+			return "candidate-rejected-by-value-limit";
+		}
+		if (!guarantee.isFinite()) {
+			return "no-finite-rewrite-domain";
+		}
+		return "candidate-dominated";
+	}
+
+	static String guaranteeCandidateStatus(org.eclipse.rdf4j.query.algebra.StatementPattern node,
 			RdfTermDomain guarantee) {
 		org.eclipse.rdf4j.query.algebra.Var objectVar = node.getObjectVar();
 		if (objectVar == null || objectVar.hasValue()) {
-			return "unsupported-filter";
-		}
-		if (guarantee.isFinite() && guarantee.finiteValues().size() > 64) {
-			return "too-many-values";
+			return "not-generated-unsupported-shape";
 		}
 		if (!guarantee.isFinite()) {
-			return "unsupported-filter";
+			return "not-generated-no-finite-domain";
 		}
-		return "candidate-dominated";
+		if (guarantee.finiteValues().size() > 64) {
+			return "rejected-by-value-limit";
+		}
+		return "generated-but-cost-dominated";
+	}
+
+	static void annotateCascadesFallback(TupleExpr root, IllegalStateException failure) {
+		root.setStringMetricPlanned("optimizer.cascadesFallback", "true");
+		root.setStringMetricPlanned("optimizer.cascadesFallbackReason",
+				failure.getClass().getSimpleName() + ": " + String.valueOf(failure.getMessage()));
+		root.setStringMetricPlanned(OPTIMIZER_GUARANTEE_OPTION_REASON, "cascades-fallback");
+		root.setStringMetricPlanned(OPTIMIZER_GUARANTEE_CANDIDATE, "not-observable-after-fallback");
 	}
 
 	/**

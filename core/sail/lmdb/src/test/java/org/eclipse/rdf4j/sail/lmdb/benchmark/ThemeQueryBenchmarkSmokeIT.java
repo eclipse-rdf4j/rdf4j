@@ -119,6 +119,30 @@ class ThemeQueryBenchmarkSmokeIT {
 	}
 
 	@Test
+	void medicalRecordsQueryTwoBenchmarkUsesRecordedOnPredicateRangeAnchor() throws Exception {
+		ThemeQueryBenchmark benchmark = newBenchmark(Theme.MEDICAL_RECORDS, 2);
+		benchmark.sketchEstimatorEnabled = false;
+
+		benchmark.setup();
+		try {
+			String plan = benchmark.explainOptimizedPlan();
+			String renderedQuery = benchmark.renderOptimizedQuery(ThemeQueryCatalog.queryFor(Theme.MEDICAL_RECORDS, 2));
+
+			assertTrue(plan.contains("packed-predicate-range-anchor"),
+					"MEDICAL q2 should retain the predicate-range anchor proof\n" + plan);
+			assertTrue(plan.contains("optimizer.objectGuaranteePredicate=" + MEDICAL_RECORDED_ON)
+					&& plan.contains("optimizer.guaranteeOptions=generated=1, selected=values-anchor:date")
+					&& plan.contains("optimizer.guaranteeOptionReason=selected-by-range-anchor"),
+					"The recordedOn access should be selected as the predicate-range anchor\n" + plan);
+			assertTrue(renderedQuery.contains("VALUES ?date") && !renderedQuery.contains("FILTER (?date IN")
+					&& !renderedQuery.contains("FILTER(?date IN"),
+					"MEDICAL q2 should render the date filter as a finite relation\n" + renderedQuery);
+		} finally {
+			benchmark.tearDown();
+		}
+	}
+
+	@Test
 	@Disabled("Disabled until we can verify if this test is correct or not")
 	void executeQueryReturnsExpectedCountForPharmaQueryOne() throws Exception {
 		assertThemeQueryCount(Theme.PHARMA, 1);

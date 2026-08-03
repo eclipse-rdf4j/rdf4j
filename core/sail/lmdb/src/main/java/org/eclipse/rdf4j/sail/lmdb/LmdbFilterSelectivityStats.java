@@ -87,7 +87,8 @@ class LmdbFilterSelectivityStats
 	private static final String COLD_SYNOPSIS_SUFFIX = ".cold";
 	private static final int LEGACY_PERSIST_VERSION = 4;
 	private static final int SURFACE_PERSIST_VERSION = 5;
-	private static final int PERSIST_VERSION = 6;
+	private static final int STAMPLESS_PERSIST_VERSION = 6;
+	private static final int PERSIST_VERSION = 7;
 	private static final int SAMPLE_RESERVOIR_SIZE = 256;
 	private static final int ZERO_HIT_SAMPLE_MIN_EVIDENCE = SAMPLE_RESERVOIR_SIZE;
 	private static final int COLD_SYNOPSIS_MIN_MATCHING_ROWS = 32;
@@ -407,7 +408,7 @@ class LmdbFilterSelectivityStats
 		synchronized (this) {
 			SampledPassRatio cached = sampledByFilter.get(key);
 			if (isUsableSampledPassRatio(cached)) {
-				return new PatternFilterSampleEstimate(cached.passRatio, cached.sampleSize);
+				return new PatternFilterSampleEstimate(cached.passRatio, cached.reportedSampleSize());
 			}
 		}
 		return new PatternFilterSampleEstimate(-1.0d, -1L);
@@ -436,7 +437,7 @@ class LmdbFilterSelectivityStats
 			dirty = true;
 			planningRevision++;
 		}
-		return new PatternFilterSampleEstimate(sampled.passRatio, sampled.sampleSize);
+		return new PatternFilterSampleEstimate(sampled.passRatio, sampled.reportedSampleSize());
 	}
 
 	@Override
@@ -721,6 +722,7 @@ class LmdbFilterSelectivityStats
 		try (DataOutputStream out = new DataOutputStream(Files.newOutputStream(tempPath))) {
 			out.writeInt(PERSIST_VERSION);
 			snapshotIdentity.writeTo(out);
+			out.writeLong(dataStamp());
 			out.writeInt(learnedByFilter.size());
 			for (var entry : learnedByFilter.entrySet()) {
 				entry.getKey().writeTo(out);
@@ -824,12 +826,21 @@ class LmdbFilterSelectivityStats
 			persistedVersion = in.readInt();
 			if (persistedVersion != LEGACY_PERSIST_VERSION
 					&& persistedVersion != SURFACE_PERSIST_VERSION
+					&& persistedVersion != STAMPLESS_PERSIST_VERSION
 					&& persistedVersion != PERSIST_VERSION) {
 				return;
 			}
 			SketchSnapshotIdentity persistedIdentity = SketchSnapshotIdentity.readFrom(in);
 			if (!persistedIdentity.equals(currentIdentity)) {
 				return;
+			}
+			if (persistedVersion >= PERSIST_VERSION) {
+				// LMDB write-txn id: rejects evidence persisted before data that changed without the (async)
+				// sketch identity republishing — the crash window the identity check alone cannot see.
+				long persistedDataStamp = in.readLong();
+				if (sidecarDataStampCheckEnabled() && persistedDataStamp != dataStamp()) {
+					return;
+				}
 			}
 
 			int learnedEntries = in.readInt();
@@ -857,7 +868,7 @@ class LmdbFilterSelectivityStats
 			int sampledEntries = in.readInt();
 			for (int i = 0; i < sampledEntries; i++) {
 				PatternFilterKey key = PatternFilterKey.readFrom(in);
-				SampledPassRatio sampled = SampledPassRatio.readFrom(in);
+				SampledPassRatio sampled = SampledPassRatio.readFrom(in, persistedVersion);
 				if (!isUsableSampledPassRatio(sampled)) {
 					continue;
 				}
@@ -1042,38 +1053,96 @@ class LmdbFilterSelectivityStats
 
 		int reservoirSize = Math.min(SAMPLE_RESERVOIR_SIZE, scanBudget);
 		List<BindingSet> samples = new ArrayList<>(reservoirSize);
-		int eligibleRows = 0;
-		int scannedRows = 0;
+		int[] eligibleRows = { 0 };
+		int[] scannedRows = { 0 };
+		boolean truncated = false;
+		boolean stratifiedDelivered = false;
 
-		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
-			for (boolean explicit : new boolean[] { true, false }) {
-				try (RecordIterator triples = tripleStore.getTriples(txn, candidate.subjId, candidate.predId,
-						candidate.objId, candidate.contextId, explicit)) {
-					long[] row;
-					while (scannedRows < scanBudget && !samplingDeadlineExceeded(deadlineNanos)
-							&& (row = triples.next()) != null) {
-						scannedRows++;
-						if (!matchesRepeatedVarEquality(candidate.pattern, row)) {
-							continue;
-						}
-						BindingSet bindingSet = toBindingSet(candidate.pattern, row);
-						eligibleRows++;
-						if (samples.size() < reservoirSize) {
-							samples.add(bindingSet);
-							continue;
-						}
-						int replacementIndex = ThreadLocalRandom.current().nextInt(eligibleRows);
-						if (replacementIndex < reservoirSize) {
-							samples.set(replacementIndex, bindingSet);
-						}
+		if (stratifiedSamplingEnabled()) {
+			/*
+			 * A budget-capped prefix scan reads only the FIRST scanBudget rows in index order — systematically wrong
+			 * whenever the filtered variable correlates with index order (e.g. a range filter over an object-ordered
+			 * index). Stratified starts cover the whole key range under the same row budget.
+			 */
+			int strata = Math.min(16, Math.max(1, scanBudget / 64));
+			int rowsPerStratum = Math.max(1, scanBudget / strata / 2);
+			long stratifiedDeadline = deadlineNanos;
+			boolean[] conversionFailed = { false };
+			try {
+				for (boolean explicit : new boolean[] { true, false }) {
+					tripleStore.sampleTriplesStratified(candidate.subjId, candidate.predId,
+							candidate.objId, candidate.contextId, explicit, strata, rowsPerStratum, row -> {
+								scannedRows[0]++;
+								if (samplingDeadlineExceeded(stratifiedDeadline)) {
+									return false;
+								}
+								if (!matchesRepeatedVarEquality(candidate.pattern, row)) {
+									return true;
+								}
+								BindingSet bindingSet;
+								try {
+									bindingSet = toBindingSet(candidate.pattern, row);
+								} catch (IOException e) {
+									conversionFailed[0] = true;
+									return false;
+								}
+								eligibleRows[0]++;
+								if (samples.size() < reservoirSize) {
+									samples.add(bindingSet);
+									return true;
+								}
+								int replacementIndex = ThreadLocalRandom.current().nextInt(eligibleRows[0]);
+								if (replacementIndex < reservoirSize) {
+									samples.set(replacementIndex, bindingSet);
+								}
+								return true;
+							});
+					if (conversionFailed[0]) {
+						break;
 					}
 				}
-				if (scannedRows >= scanBudget || samplingDeadlineExceeded(deadlineNanos)) {
-					break;
-				}
+				stratifiedDelivered = !conversionFailed[0] && eligibleRows[0] > 0;
+			} catch (IOException e) {
+				stratifiedDelivered = false;
 			}
-		} catch (IOException e) {
-			return null;
+		}
+
+		if (!stratifiedDelivered) {
+			samples.clear();
+			eligibleRows[0] = 0;
+			scannedRows[0] = 0;
+			try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+				for (boolean explicit : new boolean[] { true, false }) {
+					try (RecordIterator triples = tripleStore.getTriples(txn, candidate.subjId, candidate.predId,
+							candidate.objId, candidate.contextId, explicit)) {
+						long[] row;
+						while (scannedRows[0] < scanBudget && !samplingDeadlineExceeded(deadlineNanos)
+								&& (row = triples.next()) != null) {
+							scannedRows[0]++;
+							if (!matchesRepeatedVarEquality(candidate.pattern, row)) {
+								continue;
+							}
+							BindingSet bindingSet = toBindingSet(candidate.pattern, row);
+							eligibleRows[0]++;
+							if (samples.size() < reservoirSize) {
+								samples.add(bindingSet);
+								continue;
+							}
+							int replacementIndex = ThreadLocalRandom.current().nextInt(eligibleRows[0]);
+							if (replacementIndex < reservoirSize) {
+								samples.set(replacementIndex, bindingSet);
+							}
+						}
+					}
+					if (scannedRows[0] >= scanBudget || samplingDeadlineExceeded(deadlineNanos)) {
+						// The scan stopped before covering the pattern's range: an index-order prefix sample.
+						truncated = true;
+						break;
+					}
+				}
+			} catch (IOException e) {
+				return null;
+			}
 		}
 
 		if (samples.size() < minimumSamplingEvidence(candidate.expectedRuntimeRows, scanBudget)) {
@@ -1097,7 +1166,27 @@ class LmdbFilterSelectivityStats
 			return null;
 		}
 
-		return new SampledPassRatio((double) passed / samples.size(), samples.size());
+		return new SampledPassRatio((double) passed / samples.size(), samples.size(), truncated);
+	}
+
+	static final String FILTER_SAMPLING_MODE_PROPERTY = "rdf4j.optimizer.lmdb.filterSamplingMode";
+
+	private static boolean stratifiedSamplingEnabled() {
+		return !"prefix".equalsIgnoreCase(System.getProperty(FILTER_SAMPLING_MODE_PROPERTY, "stratified"));
+	}
+
+	private static boolean sidecarDataStampCheckEnabled() {
+		return !"false".equalsIgnoreCase(
+				System.getProperty(LmdbOperatorFeedbackStats.SIDECAR_DATA_STAMP_CHECK_PROPERTY, "true"));
+	}
+
+	/** The LMDB write-transaction id — a persistent monotonic data version independent of the sketch identity. */
+	private long dataStamp() {
+		try {
+			return LmdbFrontierSnapshotSource.snapshotEpoch(tripleStore.getTxnManager().getReadTxn());
+		} catch (IOException | RuntimeException e) {
+			return 0L;
+		}
 	}
 
 	private synchronized void voteBackgroundSamplingRequest(SamplingCandidate candidate, boolean foregroundNeeded) {
@@ -1791,15 +1880,26 @@ class LmdbFilterSelectivityStats
 		}
 	}
 
-	private record SampledPassRatio(double passRatio, int sampleSize) {
+	private record SampledPassRatio(double passRatio, int sampleSize, boolean truncated) {
+
+		/*
+		 * An index-order prefix sample that stopped before covering the pattern's range is systematically biased when
+		 * the filtered variable correlates with index order; its evidence is reported at a quarter weight so a fresh
+		 * unbiased sample or learned evidence out-ranks it.
+		 */
+		int reportedSampleSize() {
+			return truncated ? Math.max(1, sampleSize / 4) : sampleSize;
+		}
 
 		private void writeTo(DataOutputStream out) throws IOException {
 			out.writeDouble(passRatio);
 			out.writeInt(sampleSize);
+			out.writeBoolean(truncated);
 		}
 
-		private static SampledPassRatio readFrom(DataInputStream in) throws IOException {
-			return new SampledPassRatio(in.readDouble(), in.readInt());
+		private static SampledPassRatio readFrom(DataInputStream in, int version) throws IOException {
+			return new SampledPassRatio(in.readDouble(), in.readInt(),
+					version >= PERSIST_VERSION && in.readBoolean());
 		}
 	}
 

@@ -74,6 +74,69 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 	}
 
 	@Test
+	@Timeout(600)
+	void medicalQ2KeepsPredicateRangeAnchorAfterRunningQ0AndQ1() throws Exception {
+		RunQueryPlanState state = new RunQueryPlanState();
+		state.themeName = Theme.MEDICAL_RECORDS.name();
+		state.z_queryIndex = 2;
+		state.sketchEstimatorEnabled = false;
+		state.sketchEstimatorStrategy = "unified";
+		state.loadSelectedThemeOnly = false;
+		state.rebuildStoreBeforeSetup = true;
+
+		try {
+			state.setup();
+			// Executing other queries first feeds runtime feedback into the shared learned estimator. A drifted
+			// observation from q0's re-invoked recordedOn scan used to crush q2's scan estimate (24.4K -> 2 rows)
+			// under a shared learning key, flipping the plan from the predicate-range anchor to a full scan + filter.
+			state.runQueryToCompletion(0);
+			state.runQueryToCompletion(1);
+			OptimizedPlanSnapshot snapshot = state.optimizedPlanSnapshot();
+			String plan = snapshot.plan();
+
+			assertTrue(plan.contains("packed-predicate-range-anchor"),
+					"MEDICAL q2 must keep the predicate-range anchor after q0 and q1 ran on the same store\n" + plan);
+		} finally {
+			state.disableTelemetryTeardown();
+			state.tearDown();
+		}
+	}
+
+	@Test
+	@Timeout(300)
+	void medicalQ2PreparedBenchmarkPlanUsesRecordedOnPredicateRangeAnchor() throws Exception {
+		RunQueryPlanState state = new RunQueryPlanState();
+		state.themeName = Theme.MEDICAL_RECORDS.name();
+		state.z_queryIndex = 2;
+		state.sketchEstimatorEnabled = false;
+		state.sketchEstimatorStrategy = "unified";
+		state.loadSelectedThemeOnly = false;
+		state.rebuildStoreBeforeSetup = true;
+
+		try {
+			state.setup();
+			OptimizedPlanSnapshot snapshot = state.optimizedPlanSnapshot();
+			String plan = snapshot.plan();
+
+			assertTrue(plan.contains("packed-predicate-range-anchor"),
+					"MEDICAL q2 prepared benchmark plan must retain the predicate-range anchor proof\n" + plan);
+			assertTrue(
+					plan.contains("optimizer.objectGuaranteePredicate=http://example.com/theme/medical/recordedOn")
+							&& plan.contains("optimizer.guaranteeOptions=generated=1, selected=values-anchor:date")
+							&& plan.contains("optimizer.guaranteeOptionReason=selected-by-range-anchor")
+							&& plan.contains("optimizer.guaranteeCandidate=generated-and-selected"),
+					"The prepared complete-store recordedOn access must be the selected predicate-range anchor\n"
+							+ plan);
+			assertTrue(snapshot.diagnostics().contains("optimizer.guaranteeOptionReason=selected-by-range-anchor"),
+					"Predicate-range selection must also be present in the prepared diagnostics artifact\n"
+							+ snapshot.diagnostics());
+		} finally {
+			state.disableTelemetryTeardown();
+			state.tearDown();
+		}
+	}
+
+	@Test
 	@Timeout(180)
 	void medicalQ5UsesFiniteValueAnchorBeforeBroadAccessWithTransparentAntiChildren() throws Exception {
 		RunQueryPlanState state = new RunQueryPlanState();
@@ -246,6 +309,19 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 			return new ExplainedPlanSnapshot(explanation.toString(), new TupleExprIRRenderer().render(optimized),
 					optimized.getStringMetricPlanned("optimizer.cascadesCompleteness"),
 					optimized.getStringMetricPlanned("optimizer.cascadesDiagnostics"), optimized);
+		}
+
+		private void runQueryToCompletion(int queryIndex) {
+			String queryText = org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog
+					.queryFor(Theme.valueOf(themeName), queryIndex);
+			var tupleQuery = connection.prepareTupleQuery(queryText);
+			tupleQuery.setIncludeInferred(false);
+			tupleQuery.setMaxExecutionTime(120);
+			try (var result = tupleQuery.evaluate()) {
+				while (result.hasNext()) {
+					result.next();
+				}
+			}
 		}
 
 		private void disableTelemetryTeardown() {

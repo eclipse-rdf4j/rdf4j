@@ -162,6 +162,29 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	private static final String FRONTIER_EXECUTION_MODE = "frontier";
 	private static final long MINIMUM_LEO_EVIDENCE_COUNT = 3L;
 	private static final double MINIMUM_LEO_CORRECTION_CONFIDENCE = 0.55d;
+	static final String SEMI_ANTI_FAILOVER_GATES_PROPERTY = "rdf4j.optimizer.lmdb.semiAntiFailoverGates";
+
+	private static boolean semiAntiFailoverGatesEnabled() {
+		return !"false".equalsIgnoreCase(System.getProperty(SEMI_ANTI_FAILOVER_GATES_PROPERTY, "true"));
+	}
+
+	private static double clampToRawFactor(double learned, double raw, double maxFactor, boolean[] clamped) {
+		if (!(raw > 0.0d) || !finiteNonNegative(learned)) {
+			return learned;
+		}
+		double upper = raw * maxFactor;
+		double lower = raw / maxFactor;
+		if (learned > upper) {
+			clamped[0] = true;
+			return upper;
+		}
+		if (learned < lower) {
+			clamped[0] = true;
+			return lower;
+		}
+		return learned;
+	}
+
 	private static final double SEMI_ANTI_EXACT_REFINEMENT_RATIO = 1.10d;
 	private static final int MAX_EXACT_CORRELATION_ROWS = 16_384;
 
@@ -188,6 +211,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	private int factorCountVisitEpoch;
 	private String[] learningOperatorFamilies;
 	private String[] learningRawTransforms;
+	private long[] relationTopologyFingerprints;
 	private QueryEvaluationStep[] preparedTupleSteps;
 	private final Map<Value, Long> queryLocalValueIds = new HashMap<>();
 	private final ArrayList<Value> queryLocalValues = new ArrayList<>();
@@ -1409,7 +1433,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		FrontierStateKey stateKey = arena.hasCanonicalKey(transformState) ? arena.key(transformState) : null;
 		FrontierLearningKey learningKey = FrontierLearningKey.of(
 				learningOperatorFamily(relationId),
-				learningRawTransform(relationId, transformState),
+				learningRawTransform(relationId, transformState, context),
 				learningLayoutFingerprint(stateKey, transformState, context),
 				stateKey == null ? context.correlationMaskId() : stateKey.correlationScope(),
 				learningAccessKernel(output),
@@ -1433,8 +1457,8 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		double learningPredictionRows = isComposableState(predictedState)
 				? predictedSummary.pointRows()
 				: eventPredictionRows;
-		FrontierLearningModel.DimensionEstimate rowCorrection = feedbackStats.frontierDimensionEstimate(
-				learningKey, FrontierCostDimension.OUTPUT_ROWS, learningPredictionRows);
+		FrontierLearningModel.DimensionEstimate rowCorrection = pinnedDimensionEstimate(
+				feedbackStats, learningKey, FrontierCostDimension.OUTPUT_ROWS, learningPredictionRows);
 		EvidenceStateRef correctedState = predictedState;
 		if (!databaseExact && rowCorrection != null) {
 			if (!isComposableState(predictedState)) {
@@ -1603,13 +1627,47 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		if (!finiteNonNegative(rawValue)) {
 			return rawValue;
 		}
-		FrontierLearningModel.DimensionEstimate estimate = feedbackStats.frontierDimensionEstimate(
-				key, dimension, rawValue);
+		FrontierLearningModel.DimensionEstimate estimate = pinnedDimensionEstimate(
+				feedbackStats, key, dimension, rawValue);
 		if (estimate == null) {
 			return rawValue;
 		}
 		annotateDimensionCorrection(output, dimension, rawValue, estimate);
 		return estimate.correctedValue();
+	}
+
+	static final String PLANNING_CALIBRATION_PINNING_PROPERTY = "rdf4j.optimizer.lmdb.planningCalibrationPinning";
+	private static final Object NO_POSTERIOR = new Object();
+	private java.util.HashMap<String, Object> pinnedPosteriors;
+
+	private static boolean planningCalibrationPinningEnabled() {
+		return !"false".equalsIgnoreCase(System.getProperty(PLANNING_CALIBRATION_PINNING_PROPERTY, "true"));
+	}
+
+	/*
+	 * Observations from concurrently executing queries land in the shared learning model while this session is still
+	 * comparing plan alternatives; a live read per costing event would price some alternatives with old calibration and
+	 * some with new. Pinning each (key, dimension) posterior on first read keeps every alternative in one Cascades
+	 * search on identical calibration.
+	 */
+	private FrontierLearningModel.DimensionEstimate pinnedDimensionEstimate(
+			LmdbOperatorFeedbackStats feedbackStats, FrontierLearningKey key, FrontierCostDimension dimension,
+			double predicted) {
+		if (!planningCalibrationPinningEnabled()) {
+			return feedbackStats.frontierDimensionEstimate(key, dimension, predicted);
+		}
+		if (pinnedPosteriors == null) {
+			pinnedPosteriors = new java.util.HashMap<>();
+		}
+		String memoKey = key.externalForm() + '|' + dimension.ordinal();
+		Object snapshot = pinnedPosteriors.get(memoKey);
+		if (snapshot == null) {
+			FrontierLearningModel.PosteriorSnapshot computed = feedbackStats.frontierPosterior(key, dimension);
+			snapshot = computed == null ? NO_POSTERIOR : computed;
+			pinnedPosteriors.put(memoKey, snapshot);
+		}
+		return snapshot == NO_POSTERIOR ? null
+				: FrontierLearningModel.estimate((FrontierLearningModel.PosteriorSnapshot) snapshot, predicted);
 	}
 
 	private static void annotateDimensionCorrection(PackedCostEstimate output, FrontierCostDimension dimension,
@@ -1651,9 +1709,24 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		return family;
 	}
 
-	private String learningRawTransform(int relationId, EvidenceStateRef state) {
+	private String learningRawTransform(int relationId, EvidenceStateRef state, PackedCostContext context) {
 		String operation = arena.operation(state).name();
 		if (relationId <= 0 || relationId > query.relationCount()) {
+			/*
+			 * Without a topology suffix every intermediate join in the store shares one OUTPUT_ROWS learning family
+			 * ("joinJOIN"), letting workload A's join corrections calibrate unrelated queries. The prefix relation set
+			 * gives the join a stable topology identity: same-topology pooling across binding layouts and access
+			 * kernels (the useful generalization) survives; cross-topology pooling does not. The joined factor is not
+			 * part of the prefix, so joins extending the same prefix still pool — that residual is bounded by the
+			 * family clamp credit in FrontierLearningModel.
+			 */
+			if (relationId <= 0 && frontierJoinFamilyTopologyEnabled() && context != null
+					&& context.prefixRelationCount() > 0) {
+				long fingerprint = prefixTopologyFingerprint(context);
+				if (fingerprint != 0L) {
+					return operation + '@' + fixedHex(fingerprint);
+				}
+			}
 			return operation;
 		}
 		if (learningRawTransforms == null) {
@@ -1666,14 +1739,61 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		TupleExpr expression = query.materializeRelation(relationId);
 		String topology = LeoOperatorKey.from(expression, "", LeoOperatorKey.ConstantMode.EXACT)
 				.structuralFingerprint();
-		long fingerprint = 0xcbf29ce484222325L;
-		for (int index = 0; index < topology.length(); index++) {
-			fingerprint ^= topology.charAt(index);
-			fingerprint *= 0x100000001b3L;
-		}
-		String transform = operation + '@' + fixedHex(avalancheLearningFingerprint(fingerprint));
+		String transform = operation + '@' + fixedHex(avalancheLearningFingerprint(fnvFingerprint(topology)));
 		learningRawTransforms[relationId] = transform;
 		return transform;
+	}
+
+	static final String FRONTIER_JOIN_FAMILY_TOPOLOGY_PROPERTY = "rdf4j.optimizer.lmdb.frontierJoinFamilyTopology";
+
+	private static boolean frontierJoinFamilyTopologyEnabled() {
+		return !"false".equalsIgnoreCase(System.getProperty(FRONTIER_JOIN_FAMILY_TOPOLOGY_PROPERTY, "true"));
+	}
+
+	private long prefixTopologyFingerprint(PackedCostContext context) {
+		int count = context.prefixRelationCount();
+		long[] fingerprints = new long[count];
+		for (int ordinal = 0; ordinal < count; ordinal++) {
+			int prefixRelationId = context.prefixRelationId(ordinal);
+			if (prefixRelationId <= 0 || prefixRelationId > query.relationCount()) {
+				return 0L;
+			}
+			fingerprints[ordinal] = relationTopologyFingerprint(prefixRelationId);
+		}
+		java.util.Arrays.sort(fingerprints);
+		long hash = 0x9e3779b97f4a7c15L;
+		for (long fingerprint : fingerprints) {
+			hash ^= fingerprint;
+			hash *= 0x100000001b3L;
+		}
+		long avalanched = avalancheLearningFingerprint(hash);
+		return avalanched == 0L ? 1L : avalanched;
+	}
+
+	private long relationTopologyFingerprint(int relationId) {
+		if (relationTopologyFingerprints == null) {
+			relationTopologyFingerprints = new long[query.relationCount() + 1];
+		}
+		long cached = relationTopologyFingerprints[relationId];
+		if (cached != 0L) {
+			return cached;
+		}
+		TupleExpr expression = query.materializeRelation(relationId);
+		String topology = LeoOperatorKey.from(expression, "", LeoOperatorKey.ConstantMode.EXACT)
+				.structuralFingerprint();
+		long fingerprint = fnvFingerprint(topology);
+		fingerprint = fingerprint == 0L ? 1L : fingerprint;
+		relationTopologyFingerprints[relationId] = fingerprint;
+		return fingerprint;
+	}
+
+	private static long fnvFingerprint(String value) {
+		long fingerprint = 0xcbf29ce484222325L;
+		for (int index = 0; index < value.length(); index++) {
+			fingerprint ^= value.charAt(index);
+			fingerprint *= 0x100000001b3L;
+		}
+		return fingerprint;
 	}
 
 	private static String camelToKebab(String value) {
@@ -3594,6 +3714,13 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				|| feedback.physicalObservationCount() <= 0L || feedback.outerRows() <= 0L) {
 			return;
 		}
+		boolean failoverGates = semiAntiFailoverGatesEnabled();
+		if (failoverGates && (feedback.observationCount() < MINIMUM_LEO_EVIDENCE_COUNT
+				|| feedback.physicalObservationCount() < MINIMUM_LEO_EVIDENCE_COUNT)) {
+			// A surface replacement rewrites every physical dimension; a single aliased observation must not be
+			// allowed to do that — mirror the ≥3-observation gate of the residual path below.
+			return;
+		}
 		double outerScale = Math.max(0.0d, plannedOuterRows) / feedback.outerRows();
 		double executionScale = 1.0d / feedback.observationCount();
 		double physicalExecutionScale = 1.0d / feedback.physicalObservationCount();
@@ -3616,6 +3743,19 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		case PackedQueryView.SEMI_ANTI_MATERIALIZED -> hashBuildRows;
 		default -> throw new IllegalStateException("unknown packed semi/anti algorithm " + algorithm);
 		};
+		boolean[] clamped = { false };
+		if (failoverGates) {
+			// Bound each replacement to within 4^physicalObservations of the raw model value (mirroring the
+			// frontier ln(4)-per-observation clamp); a raw value of 0 accepts the learned value outright since
+			// streaming paths legitimately introduce dimensions from zero.
+			double maxFactor = Math.pow(4.0d, Math.min(feedback.physicalObservationCount(), 8L));
+			sequentialRows = clampToRawFactor(sequentialRows, output.sequentialRows(), maxFactor, clamped);
+			randomSeeks = clampToRawFactor(randomSeeks, output.randomSeeks(), maxFactor, clamped);
+			iteratorOpens = clampToRawFactor(iteratorOpens, output.iteratorOpens(), maxFactor, clamped);
+			hashBuildRows = clampToRawFactor(hashBuildRows, output.hashBuildRows(), maxFactor, clamped);
+			hashProbeRows = clampToRawFactor(hashProbeRows, output.hashProbeRows(), maxFactor, clamped);
+			peakMemoryRows = clampToRawFactor(peakMemoryRows, output.peakMemoryRows(), maxFactor, clamped);
+		}
 		output.setLocalPhysicalCost(
 				sequentialRows,
 				randomSeeks,
@@ -3627,6 +3767,9 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				output.resultRows(),
 				output.remoteCalls(),
 				peakMemoryRows);
+		if (clamped[0]) {
+			output.putPlannedDoubleMetric("plannedSemiAntiFeedbackClamped", 1.0d);
+		}
 		output.putPlannedDoubleMetric("plannedSemiAntiFeedbackEvidence", feedback.observationCount());
 		output.putPlannedDoubleMetric("plannedSemiAntiFeedbackOuterRows", feedback.outerRows());
 		output.putPlannedDoubleMetric("plannedSemiAntiFeedbackDistinctKeys", feedback.distinctKeys());

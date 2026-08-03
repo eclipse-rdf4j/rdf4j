@@ -31,8 +31,8 @@ import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity;
 record EstimateContext(BindingUniverse universe, BindingMask boundMask,
 		Optional<FiniteRelationEstimate> finiteBindings, BagEstimate prefixEstimate, double invocationCount,
 		EvidencePolicy evidencePolicy, JoinFactorCostModel.EstimationTier estimationTier,
-		QuadSnapshotIdentity snapshotIdentity, long snapshotVersion, MetricsPreference metricsPreference,
-		boolean exactProbePermitted) {
+		QuadSnapshotIdentity snapshotIdentity, long snapshotVersion, long learnedRevision,
+		MetricsPreference metricsPreference, boolean exactProbePermitted) {
 
 	enum EvidencePolicy {
 		SNAPSHOT_ONLY,
@@ -59,11 +59,16 @@ record EstimateContext(BindingUniverse universe, BindingMask boundMask,
 	}
 
 	static EstimateContext root(TupleExpr expression, QuadSnapshotIdentity snapshotIdentity, long snapshotVersion) {
+		return root(expression, snapshotIdentity, snapshotVersion, 0L);
+	}
+
+	static EstimateContext root(TupleExpr expression, QuadSnapshotIdentity snapshotIdentity, long snapshotVersion,
+			long learnedRevision) {
 		BindingUniverse universe = BindingUniverse.from(Objects.requireNonNull(expression, "expression"),
 				PhysicalProperties.ANY);
 		return new EstimateContext(universe, BindingMask.EMPTY, Optional.empty(),
 				BagEstimate.exact(1.0d, "root-prefix"), 1.0d, EvidencePolicy.ADAPTIVE,
-				JoinFactorCostModel.EstimationTier.STANDARD, snapshotIdentity, snapshotVersion,
+				JoinFactorCostModel.EstimationTier.STANDARD, snapshotIdentity, snapshotVersion, learnedRevision,
 				MetricsPreference.SUMMARY, false);
 	}
 
@@ -140,7 +145,7 @@ record EstimateContext(BindingUniverse universe, BindingMask boundMask,
 			double invocations, EvidencePolicy policy, JoinFactorCostModel.EstimationTier tier,
 			MetricsPreference preference, boolean exactPermission) {
 		return new EstimateContext(universe, mask, bindings, prefix, invocations, policy, tier, snapshotIdentity,
-				snapshotVersion, preference, exactPermission);
+				snapshotVersion, learnedRevision, preference, exactPermission);
 	}
 
 	private static double finiteNonNegative(double value, double fallback) {

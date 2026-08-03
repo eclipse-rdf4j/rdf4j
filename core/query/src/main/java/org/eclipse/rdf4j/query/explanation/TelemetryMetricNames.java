@@ -210,6 +210,12 @@ public final class TelemetryMetricNames {
 	public static final String OPTIMIZER_RUNTIME_FEEDBACK = OPTIMIZER_PREFIX + "runtimeFeedback";
 	public static final String OPTIMIZER_RUNTIME_FEEDBACK_CONFIDENCE = OPTIMIZER_PREFIX + "runtimeFeedbackConfidence";
 
+	// Feedback-coherence markers. Optimizer-prefixed so writes bypass the runtime-telemetry gate in
+	// setLongMetricActual — they must be recordable in cost-feedback-only mode.
+	public static final String CANCELLED_COUNT_ACTUAL = OPTIMIZER_PREFIX + "queryCancelled";
+	public static final String ABORTED_COUNT_ACTUAL = OPTIMIZER_PREFIX + "queryAborted";
+	public static final String EXHAUSTED_CLOSE_COUNT_ACTUAL = OPTIMIZER_PREFIX + "exhaustedCloseCountActual";
+
 	public static boolean isOptimizerMetric(String metricName) {
 		return metricName != null && metricName.startsWith(OPTIMIZER_PREFIX);
 	}

@@ -16,11 +16,14 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.util.List;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -94,6 +97,29 @@ class LmdbPackedPredicateRangePlanningTest {
 	}
 
 	@Test
+	void knownUnboundedRangeReportsNoFiniteRewriteDomain(@TempDir File dataDir) throws Exception {
+		String query = """
+				SELECT ?s ?o WHERE {
+				  ?s <http://example.com/iriValued> ?o .
+				}
+				""";
+		SailRepository repository = repository(dataDir);
+		try {
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.add(VF.createIRI("http://example.com/s1"), IRI_PREDICATE,
+						VF.createIRI("http://example.com/o1"));
+			}
+			makeLmdbOptimizerReady(repository);
+
+			String plan = explainOptimized(repository, query);
+			assertTrue(plan.contains("optimizer.guaranteeOptionReason=no-finite-rewrite-domain"), plan);
+			assertTrue(plan.contains("optimizer.guaranteeCandidate=not-generated-no-finite-domain"), plan);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
 	void kindMismatchedEqualityPlansEmptySet(@TempDir File dataDir) throws Exception {
 		String query = """
 				SELECT ?s WHERE {
@@ -159,11 +185,42 @@ class LmdbPackedPredicateRangePlanningTest {
 			assertTrue(plan.contains("optimizer.objectGuarantee="), plan);
 			assertTrue(plan.contains("optimizer.guaranteeOptions=generated=0"),
 					"A visible unused guarantee must not stay silent\n" + plan);
-			assertTrue(plan.contains("optimizer.guaranteeOptionReason="), plan);
+			assertTrue(plan.contains("optimizer.guaranteeOptionReason=no-finite-rewrite-domain"), plan);
+			assertTrue(plan.contains("optimizer.guaranteeCandidate=not-generated-no-finite-domain"), plan);
 			assertEquals(1, countResults(repository, query));
 		} finally {
 			repository.shutDown();
 		}
+	}
+
+	@Test
+	void rangeDiagnosticClassificationsDistinguishDominatedAndUnsupportedCandidates() {
+		StatementPattern unbound = new StatementPattern(Var.of("s"), Var.of("predicate", INT_PREDICATE),
+				Var.of("o"));
+		RdfTermDomain finite = RdfTermDomain.finiteValues(List.of(VF.createLiteral("7", XSD.INT)));
+
+		assertEquals("candidate-dominated", LmdbCascadesOptimizer.guaranteeRejectionReason(unbound, finite));
+		assertEquals("generated-but-cost-dominated", LmdbCascadesOptimizer.guaranteeCandidateStatus(unbound, finite));
+
+		StatementPattern bound = new StatementPattern(Var.of("s"), Var.of("predicate", INT_PREDICATE),
+				new Var("o", VF.createLiteral("7", XSD.INT)));
+		assertEquals("object-already-bound", LmdbCascadesOptimizer.guaranteeRejectionReason(bound, finite));
+		assertEquals("not-generated-unsupported-shape", LmdbCascadesOptimizer.guaranteeCandidateStatus(bound, finite));
+	}
+
+	@Test
+	void cascadesFallbackReportsItsDiagnosticClassification() {
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("predicate", IRI_PREDICATE),
+				Var.of("o"));
+
+		LmdbCascadesOptimizer.annotateCascadesFallback(pattern, new IllegalStateException("memo invariant"));
+
+		assertEquals("true", pattern.getStringMetricPlanned("optimizer.cascadesFallback"));
+		assertTrue(pattern.getStringMetricPlanned("optimizer.cascadesFallbackReason").contains("memo invariant"));
+		assertEquals("cascades-fallback",
+				pattern.getStringMetricPlanned("optimizer.guaranteeOptionReason"));
+		assertEquals("not-observable-after-fallback",
+				pattern.getStringMetricPlanned("optimizer.guaranteeCandidate"));
 	}
 
 	@Test

@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -259,7 +260,8 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 	@Override
 	public void recordFilterOutcome(Filter filter, FilterOutcomeObservation observation) {
 		if (filterStatistics != null && filter != null && observation != null && observation.completed()
-				&& observation.poisonReason().isEmpty()) {
+				&& observation.poisonReason().isEmpty()
+				&& LmdbReinvocablePositions.filterOutcomeRecordable(filter)) {
 			filterStatistics.recordFilterOutcome(filter, observation.passedCount(), observation.filteredCount());
 		}
 	}
@@ -414,7 +416,10 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 	@Override
 	public void recordOperatorOutcome(QueryModelNode node) {
 		if (runtime.feedback() != null && node instanceof TupleExpr expression) {
-			runtime.feedback().observe(expression, expression.getParentNode() == null);
+			// A QueryRoot wrapper is not evaluated as a tracked operator, so the node directly beneath it is the
+			// outermost close that can trigger the completed-tree pass.
+			QueryModelNode parent = expression.getParentNode();
+			runtime.feedback().observe(expression, parent == null || parent instanceof QueryRoot);
 		}
 	}
 

@@ -2524,7 +2524,13 @@ class LmdbFrontierPlanningIntegrationTest {
 				assertTrue(rawRows > 0.0d, rawExplanation::toString);
 			}
 
-			store.getBackingStore().getEvaluationStatistics().recordFilterOutcome(observed, 20L, 80L);
+			/*
+			 * The optimized plan places this filter in a re-invocable position, where production recording is
+			 * (correctly) refused since per-invocation counts are conditioned on the outer stream. These synthetic
+			 * counts describe the full surface, so record them through a detached clone: same surface key, standalone
+			 * position.
+			 */
+			store.getBackingStore().getEvaluationStatistics().recordFilterOutcome(observed.clone(), 20L, 80L);
 
 			Filter learnedFilterPlan;
 			double learnedFilterRows;
@@ -4781,7 +4787,7 @@ class LmdbFrontierPlanningIntegrationTest {
 						.explain(Explanation.Level.Optimized);
 				Filter observed = findCompareFilter((TupleExpr) rawExplanation.tupleExpr());
 				assertNotNull(observed, rawExplanation::toString);
-				store.getBackingStore().getEvaluationStatistics().recordFilterOutcome(observed, 10_000L, 0L);
+				store.getBackingStore().getEvaluationStatistics().recordFilterOutcome(observed.clone(), 10_000L, 0L);
 				Explanation learnedExplanation = connection.prepareTupleQuery(query)
 						.explain(Explanation.Level.Optimized);
 				assertNotNull(findSemiAntiFilter((TupleExpr) learnedExplanation.tupleExpr()),

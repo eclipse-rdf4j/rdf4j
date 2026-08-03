@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.io.File;
 import java.nio.ByteBuffer;
@@ -148,9 +149,9 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 					.findFirst()
 					.orElseThrow();
 		}
-		byte[] versionFifteen = Files.readAllBytes(sidecar);
-		assertEquals(15, ByteBuffer.wrap(versionFifteen).getInt());
-		Files.write(sidecar, downgradeSingleSemiAntiSidecar(versionFifteen, 13));
+		byte[] versionSixteen = Files.readAllBytes(sidecar);
+		assertEquals(16, ByteBuffer.wrap(versionSixteen).getInt());
+		Files.write(sidecar, downgradeSingleSemiAntiSidecar(versionSixteen, 13));
 
 		LmdbStore reader = initializedStore(dataDir);
 		try {
@@ -187,9 +188,9 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 					.findFirst()
 					.orElseThrow();
 		}
-		byte[] versionFifteen = Files.readAllBytes(sidecar);
-		assertEquals(15, ByteBuffer.wrap(versionFifteen).getInt());
-		Files.write(sidecar, downgradeSingleSemiAntiSidecar(versionFifteen, 14));
+		byte[] versionSixteen = Files.readAllBytes(sidecar);
+		assertEquals(16, ByteBuffer.wrap(versionSixteen).getInt());
+		Files.write(sidecar, downgradeSingleSemiAntiSidecar(versionSixteen, 14));
 
 		LmdbStore reader = initializedStore(dataDir);
 		try {
@@ -206,21 +207,27 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 		}
 	}
 
-	private static byte[] downgradeSingleSemiAntiSidecar(byte[] versionFifteen, int targetVersion) {
+	private static byte[] downgradeSingleSemiAntiSidecar(byte[] versionSixteen, int targetVersion) {
 		/*
-		 * These fixtures contain one semi/anti observation and no keyed Frontier-learning observations. The v15 tail is
-		 * therefore exactly revision (8), exact-key count (4), and legacy-prior count (4). Version 13 also predates the
-		 * final two physical semi/anti counters, which immediately precede that tail.
+		 * These fixtures contain one semi/anti observation and no keyed Frontier-learning observations. The v16 format
+		 * prefixes the payload with an 8-byte data stamp after the 24-byte identity, and its tail is exactly revision
+		 * (8), exact-key count (4), and legacy-prior count (4). Version 13 also predates the final two physical
+		 * semi/anti counters, which immediately precede that tail.
 		 */
+		int identityBytes = 4 + 24;
+		byte[] stampless = new byte[versionSixteen.length - Long.BYTES];
+		System.arraycopy(versionSixteen, 0, stampless, 0, identityBytes);
+		System.arraycopy(versionSixteen, identityBytes + Long.BYTES, stampless, identityBytes,
+				versionSixteen.length - identityBytes - Long.BYTES);
 		int frontierTailBytes = Long.BYTES + 2 * Integer.BYTES;
-		ByteBuffer frontierTail = ByteBuffer.wrap(versionFifteen,
-				versionFifteen.length - frontierTailBytes, frontierTailBytes).slice();
+		ByteBuffer frontierTail = ByteBuffer.wrap(stampless,
+				stampless.length - frontierTailBytes, frontierTailBytes).slice();
 		assertEquals(0L, frontierTail.getLong());
 		assertEquals(0, frontierTail.getInt());
 		assertEquals(0, frontierTail.getInt());
 		int physicalCounterBytes = targetVersion < 14 ? 2 * Long.BYTES : 0;
-		byte[] legacy = Arrays.copyOf(versionFifteen,
-				versionFifteen.length - frontierTailBytes - physicalCounterBytes);
+		byte[] legacy = Arrays.copyOf(stampless,
+				stampless.length - frontierTailBytes - physicalCounterBytes);
 		ByteBuffer.wrap(legacy).putInt(targetVersion);
 		return legacy;
 	}
@@ -273,6 +280,81 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 		} finally {
 			repository.shutDown();
 		}
+	}
+
+	private static final String COMMON_CONSTANT_QUERY = """
+			SELECT * WHERE {
+				?person <urn:test:memberOf> ?organization .
+				FILTER NOT EXISTS { ?person <urn:test:type> <urn:test:CommonThing> }
+			}
+			""";
+
+	private static final String RARE_CONSTANT_QUERY = """
+			SELECT * WHERE {
+				?person <urn:test:memberOf> ?organization .
+				FILTER NOT EXISTS { ?person <urn:test:type> <urn:test:RareThing> }
+			}
+			""";
+
+	@Test
+	void semiAntiExactConstantTierDoesNotLeakAcrossConstants(@TempDir File dataDir) {
+		LmdbStore store = initializedStore(dataDir);
+		try {
+			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics();
+			Filter commonFilter = firstFilter(COMMON_CONSTANT_QUERY);
+			for (int index = 0; index < 3; index++) {
+				statistics.recordSemiAntiOutcome(commonFilter, observation());
+			}
+
+			assertNotNull(statistics.estimatorRuntime()
+					.semiAntiFeedback(commonFilter, "NOT_EXISTS", "memoized-correlated"),
+					"The trained constant keeps its evidence through the exact tier");
+			assertNull(statistics.estimatorRuntime()
+					.semiAntiFeedback(firstFilter(RARE_CONSTANT_QUERY), "NOT_EXISTS", "memoized-correlated"),
+					"A structurally identical filter over a different rhs constant must not inherit the trained"
+							+ " selectivity below the generalized-evidence threshold");
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void semiAntiGeneralizedTierServesOnlyWithAmpleEvidence(@TempDir File dataDir) {
+		LmdbStore store = initializedStore(dataDir);
+		try {
+			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics();
+			Filter commonFilter = firstFilter(COMMON_CONSTANT_QUERY);
+			for (int index = 0; index < 5; index++) {
+				statistics.recordSemiAntiOutcome(commonFilter, observation());
+			}
+
+			LmdbOperatorFeedbackStats.SemiAntiEstimate generalized = statistics.estimatorRuntime()
+					.semiAntiFeedback(firstFilter(RARE_CONSTANT_QUERY), "NOT_EXISTS", "memoized-correlated");
+			assertNotNull(generalized,
+					"Once the generalized surface has proven itself across enough evidence it may stand in"
+							+ " for a cold exact key");
+			assertEquals(5L, generalized.observationCount());
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	private static Filter firstFilter(String query) {
+		Filter[] found = new Filter[1];
+		QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null)
+				.getTupleExpr()
+				.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+					@Override
+					public void meet(Filter node) {
+						if (found[0] == null) {
+							found[0] = node;
+						}
+						super.meet(node);
+					}
+				});
+		return found[0];
 	}
 
 	private static EvaluationStatistics.SemiAntiOutcomeObservation observation() {

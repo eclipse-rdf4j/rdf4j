@@ -32,7 +32,7 @@ record ExactAlternativeSurfaceCacheKey(Object factor, QuadSnapshotIdentity snaps
 
 record PrefixEstimateCacheKey(FiniteBranchRowsCacheKey factors, long rowsBits,
 		JoinFactorCostModel.EstimationTier estimationTier, QuadSnapshotIdentity snapshotIdentity,
-		long snapshotVersion) {
+		long snapshotVersion, long learnedRevision) {
 
 	static PrefixEstimateCacheKey of(List<TupleExpr> factors, double rows,
 			JoinFactorCostModel.EstimationTier estimationTier, EstimateContext estimateContext) {
@@ -40,7 +40,8 @@ record PrefixEstimateCacheKey(FiniteBranchRowsCacheKey factors, long rowsBits,
 				? JoinFactorCostModel.EstimationTier.STANDARD
 				: estimationTier;
 		return new PrefixEstimateCacheKey(FiniteBranchRowsCacheKey.of(factors), Double.doubleToLongBits(rows), tier,
-				estimateContext.snapshotIdentity(), estimateContext.snapshotVersion());
+				estimateContext.snapshotIdentity(), estimateContext.snapshotVersion(),
+				estimateContext.learnedRevision());
 	}
 }
 
@@ -48,7 +49,7 @@ record ScopedFactorCostCacheKey(Object factor, Set<String> boundVars, long outer
 		long distinctLookupBindingsBits, boolean nestedIteratorInvocation, boolean collectMetrics,
 		Map<String, Set<Value>> finiteBindingValues, JoinFactorCostModel.EstimationTier estimationTier,
 		FiniteBranchRowsCacheKey prefixFactors,
-		QuadSnapshotIdentity snapshotIdentity, long snapshotVersion) {
+		QuadSnapshotIdentity snapshotIdentity, long snapshotVersion, long learnedRevision) {
 
 	static ScopedFactorCostCacheKey of(TupleExpr factor, JoinFactorCostModel.CostContext context,
 			EstimateContext estimateContext) {
@@ -56,6 +57,8 @@ record ScopedFactorCostCacheKey(Object factor, Set<String> boundVars, long outer
 				? JoinFactorCostModel.EstimationTier.STANDARD
 				: context.getEstimationTier();
 		FiniteBranchRowsCacheKey prefixFactors = FiniteBranchRowsCacheKey.of(context.getPrefixFactors());
+		// A cached factor cost bakes in learned calibration; a mid-planning calibration update (e.g. a live
+		// filter sample) must not let pre-update entries mix with post-update computations.
 		return new ScopedFactorCostCacheKey(FactorCostCacheKey.factorFingerprint(factor),
 				FactorCostCacheKey.immutableBoundVars(context.getCurrentlyBoundVars()),
 				Double.doubleToLongBits(context.getOuterPrefixRows()),
@@ -63,7 +66,8 @@ record ScopedFactorCostCacheKey(Object factor, Set<String> boundVars, long outer
 				context.isNestedIteratorInvocation(),
 				context.shouldCollectMetrics(),
 				immutableFiniteBindingValues(context.getFiniteBindingValues()), tier, prefixFactors,
-				estimateContext.snapshotIdentity(), estimateContext.snapshotVersion());
+				estimateContext.snapshotIdentity(), estimateContext.snapshotVersion(),
+				estimateContext.learnedRevision());
 	}
 
 	static Map<String, Set<Value>> immutableFiniteBindingValues(
@@ -85,7 +89,7 @@ record ScopedFactorCostCacheKey(Object factor, Set<String> boundVars, long outer
 		return new ScopedFactorCostCacheKey(factor, FactorCostCacheKey.immutableBoundVars(boundVars),
 				outerPrefixRowsBits, distinctLookupBindingsBits, nestedIteratorInvocation, collectMetrics,
 				immutableFiniteBindingValues(finiteBindingValues), estimationTier, prefixFactors,
-				snapshotIdentity, snapshotVersion);
+				snapshotIdentity, snapshotVersion, learnedRevision);
 	}
 }
 

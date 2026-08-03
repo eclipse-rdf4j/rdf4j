@@ -188,6 +188,9 @@ class TripleStore implements Closeable {
 	private final int[] leadingFieldRadixCounts = new int[256];
 	private final int[] leadingFieldRadixOffsets = new int[256];
 	private final LmdbPageCardinalityEstimator pageEstimator;
+	// JVM-unique store identity for shared caches; identityHashCode collides across instances.
+	private static final AtomicLong INSTANCE_IDS = new AtomicLong();
+	private final long instanceId = INSTANCE_IDS.incrementAndGet();
 	private final AtomicLong dataRevision = new AtomicLong();
 	private final boolean predicateGuaranteeIndexEnabled;
 	private final boolean predicateGuaranteeIndexAutoRebuild;
@@ -328,6 +331,10 @@ class TripleStore implements Closeable {
 
 	long getDataRevision() {
 		return dataRevision.get();
+	}
+
+	long instanceId() {
+		return instanceId;
 	}
 
 	private void initializeRdfTermDomains() throws IOException {
@@ -1108,6 +1115,7 @@ class TripleStore implements Closeable {
 	@Override
 	public void close() throws IOException {
 		if (env != 0) {
+			LmdbStatementPatternCardinalitySource.evictStore(instanceId);
 			endTransaction(false);
 			txnManager.close();
 
@@ -1320,6 +1328,115 @@ class TripleStore implements Closeable {
 				startValues[i] = 0;
 			}
 		}
+	}
+
+	/**
+	 * Stratified sample of rows matching the pattern: interpolates {@code strata} start keys across the pattern's key
+	 * range on the best index and scans up to {@code rowsPerStratum} rows from each stratum, bounded by the next
+	 * stratum's start so regions are never scanned twice. Unlike a budget-capped prefix scan, every region of the range
+	 * is visited, which removes the systematic bias when the sampled variable correlates with index order. Key-space
+	 * interpolation is still not perfectly row-uniform under skewed key density.
+	 *
+	 * @return the number of rows delivered to {@code sink}; the sink returns {@code false} to stop early.
+	 */
+	int sampleTriplesStratified(long subj, long pred, long obj, long context, boolean explicit,
+			int strata, int rowsPerStratum, java.util.function.Predicate<long[]> sink) throws IOException {
+		TripleIndex index = getBestIndex(subj, pred, obj, context);
+		if (index == null || strata < 1 || rowsPerStratum < 1) {
+			return 0;
+		}
+		return txnManager.doWith((stack, txn) -> {
+			MDBVal maxKey = MDBVal.malloc(stack);
+			ByteBuffer maxKeyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
+			maxKeyBuf.flip();
+			maxKey.mv_data(maxKeyBuf);
+
+			PointerBuffer pp = stack.mallocPointer(1);
+			MDBVal keyData = MDBVal.malloc(stack);
+			MDBVal valueData = MDBVal.malloc(stack);
+			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			MDBVal boundaryKey = MDBVal.malloc(stack);
+			ByteBuffer boundaryBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+
+			long[] minValues = new long[4];
+			long[] maxValues = new long[4];
+			long[] startValues = new long[4];
+			long[] quad = new long[4];
+			boolean matchValues = subj > 0 || pred > 0 || obj > 0 || context >= 0;
+			GroupMatcher matcher = matchValues ? index.createMatcher(subj, pred, obj, context) : null;
+			int delivered = 0;
+			int dbi = index.getDB(explicit);
+			long cursor = 0;
+			try {
+				E(mdb_cursor_open(txn, dbi, pp));
+				cursor = pp.get(0);
+
+				keyBuf.clear();
+				index.getMinKey(keyBuf, subj, pred, obj, context);
+				keyBuf.flip();
+				keyData.mv_data(keyBuf);
+				int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+				if (rc != MDB_SUCCESS || mdb_cmp(txn, dbi, keyData, maxKey) >= 0) {
+					return 0;
+				}
+				Varint.readListUnsigned(keyData.mv_data(), minValues);
+
+				keyData.mv_data(maxKeyBuf);
+				rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+				rc = rc == MDB_SUCCESS
+						? mdb_cursor_get(cursor, keyData, valueData, MDB_PREV)
+						: mdb_cursor_get(cursor, keyData, valueData, MDB_LAST);
+				if (rc != MDB_SUCCESS) {
+					return 0;
+				}
+				Varint.readListUnsigned(keyData.mv_data(), maxValues);
+
+				for (int stratum = 0; stratum < strata; stratum++) {
+					if (stratum == 0) {
+						keyBuf.clear();
+						index.getMinKey(keyBuf, subj, pred, obj, context);
+						keyBuf.flip();
+					} else {
+						bucketStart((double) stratum / strata, minValues, maxValues, startValues);
+						keyBuf.clear();
+						Varint.writeListUnsigned(keyBuf, startValues);
+						keyBuf.flip();
+					}
+					boolean lastStratum = stratum == strata - 1;
+					if (!lastStratum) {
+						bucketStart((double) (stratum + 1) / strata, minValues, maxValues, startValues);
+						boundaryBuf.clear();
+						Varint.writeListUnsigned(boundaryBuf, startValues);
+						boundaryBuf.flip();
+						boundaryKey.mv_data(boundaryBuf);
+					}
+					keyData.mv_data(keyBuf);
+					rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+					int taken = 0;
+					while (rc == MDB_SUCCESS && taken < rowsPerStratum) {
+						if (mdb_cmp(txn, dbi, keyData, maxKey) > 0
+								|| !lastStratum && mdb_cmp(txn, dbi, keyData, boundaryKey) >= 0) {
+							break;
+						}
+						taken++;
+						if (matcher == null || matcher.matches(keyData.mv_data())) {
+							index.keyToQuad(keyData.mv_data(), quad);
+							delivered++;
+							if (!sink.test(quad.clone())) {
+								return delivered;
+							}
+						}
+						rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+					}
+				}
+			} finally {
+				if (cursor != 0) {
+					mdb_cursor_close(cursor);
+				}
+			}
+			return delivered;
+		});
 	}
 
 	/**

@@ -34,12 +34,23 @@ final class LmdbStatementPatternCardinalitySource {
 
 	private final ValueStore valueStore;
 	private final TripleStore tripleStore;
-	private final int tripleStoreIdentity;
+	private final long tripleStoreIdentity;
 
 	LmdbStatementPatternCardinalitySource(ValueStore valueStore, TripleStore tripleStore) {
+		this(valueStore, tripleStore, tripleStore == null ? 0L : tripleStore.instanceId());
+	}
+
+	// Identity override for tests only — production identity is the store's JVM-unique instance id.
+	LmdbStatementPatternCardinalitySource(ValueStore valueStore, TripleStore tripleStore, long tripleStoreIdentity) {
 		this.valueStore = valueStore;
 		this.tripleStore = tripleStore;
-		this.tripleStoreIdentity = System.identityHashCode(tripleStore);
+		this.tripleStoreIdentity = tripleStoreIdentity;
+	}
+
+	static void evictStore(long tripleStoreIdentity) {
+		SHARED_CARDINALITY_CACHE.keySet().removeIf(key -> key.tripleStoreIdentity == tripleStoreIdentity);
+		SHARED_EXACT_CARDINALITY_CACHE.keySet().removeIf(key -> key.tripleStoreIdentity() == tripleStoreIdentity);
+		SHARED_DISTINCT_CARDINALITY_CACHE.keySet().removeIf(key -> key.tripleStoreIdentity() == tripleStoreIdentity);
 	}
 
 	double estimate(StatementPattern pattern) {
@@ -77,8 +88,9 @@ final class LmdbStatementPatternCardinalitySource {
 				return 0.0d;
 			}
 			int repeatedMask = repeatedComponentPairMask(pattern);
+			long dataRevision = tripleStore.getDataRevision();
 			SharedExactCardinalityKey key = new SharedExactCardinalityKey(tripleStoreIdentity,
-					tripleStore.getDataRevision(), subjId, predId, objId, ctxId, repeatedMask);
+					dataRevision, subjId, predId, objId, ctxId, repeatedMask);
 			Double cached = SHARED_EXACT_CARDINALITY_CACHE.get(key);
 			if (cached != null) {
 				return cached;
@@ -86,7 +98,11 @@ final class LmdbStatementPatternCardinalitySource {
 			double cardinality = repeatedMask == 0
 					? tripleStore.exactCardinality(subjId, predId, objId, ctxId)
 					: tripleStore.repeatedVariableCardinality(subjId, predId, objId, ctxId, repeatedMask);
-			cacheSharedExactCardinality(key, cardinality);
+			// A commit between key construction and the count would cache a post-commit value under the
+			// pre-commit revision — only cache when the revision is unchanged.
+			if (tripleStore.getDataRevision() == dataRevision) {
+				cacheSharedExactCardinality(key, cardinality);
+			}
 			return cardinality;
 		} catch (IOException | RuntimeException e) {
 			return -1.0d;
@@ -110,8 +126,9 @@ final class LmdbStatementPatternCardinalitySource {
 			if (distinctComponentMask == 0) {
 				return OptionalDouble.empty();
 			}
+			long dataRevision = tripleStore.getDataRevision();
 			SharedDistinctCardinalityKey key = new SharedDistinctCardinalityKey(tripleStoreIdentity,
-					tripleStore.getDataRevision(), subjId, predId, objId, ctxId, distinctComponentMask);
+					dataRevision, subjId, predId, objId, ctxId, distinctComponentMask);
 			DistinctCardinalityProbe cached = SHARED_DISTINCT_CARDINALITY_CACHE.get(key);
 			if (cached != null && (cached.complete() || cached.probedLimit() >= maximumPrefixes)) {
 				return cached.cardinality();
@@ -121,7 +138,9 @@ final class LmdbStatementPatternCardinalitySource {
 			DistinctCardinalityProbe probe = prefixes.isPresent()
 					? DistinctCardinalityProbe.complete(prefixes.getAsLong())
 					: DistinctCardinalityProbe.incomplete(maximumPrefixes);
-			cacheSharedDistinctCardinality(key, probe);
+			if (tripleStore.getDataRevision() == dataRevision) {
+				cacheSharedDistinctCardinality(key, probe);
+			}
 			return probe.cardinality();
 		} catch (IOException | RuntimeException e) {
 			return OptionalDouble.empty();
@@ -241,7 +260,8 @@ final class LmdbStatementPatternCardinalitySource {
 
 	private double estimateIds(long subjId, long predId, long objId, long ctxId, boolean planning) {
 		try {
-			SharedCardinalityKey key = new SharedCardinalityKey(tripleStoreIdentity, tripleStore.getDataRevision(),
+			long dataRevision = tripleStore.getDataRevision();
+			SharedCardinalityKey key = new SharedCardinalityKey(tripleStoreIdentity, dataRevision,
 					subjId, predId, objId, ctxId, 0, planning);
 			Double cached = SHARED_CARDINALITY_CACHE.get(key);
 			if (cached != null) {
@@ -250,7 +270,9 @@ final class LmdbStatementPatternCardinalitySource {
 			double cardinality = planning
 					? tripleStore.planningCardinality(subjId, predId, objId, ctxId)
 					: tripleStore.cardinality(subjId, predId, objId, ctxId);
-			cacheSharedCardinality(key, cardinality);
+			if (tripleStore.getDataRevision() == dataRevision) {
+				cacheSharedCardinality(key, cardinality);
+			}
 			return cardinality;
 		} catch (IOException | RuntimeException e) {
 			return -1.0d;
@@ -260,7 +282,8 @@ final class LmdbStatementPatternCardinalitySource {
 	private double estimateRepeatedIds(long subjId, long predId, long objId, long ctxId,
 			int repeatedComponentPairMask) {
 		try {
-			SharedCardinalityKey key = new SharedCardinalityKey(tripleStoreIdentity, tripleStore.getDataRevision(),
+			long dataRevision = tripleStore.getDataRevision();
+			SharedCardinalityKey key = new SharedCardinalityKey(tripleStoreIdentity, dataRevision,
 					subjId, predId, objId, ctxId, repeatedComponentPairMask, false);
 			Double cached = SHARED_CARDINALITY_CACHE.get(key);
 			if (cached != null) {
@@ -268,7 +291,9 @@ final class LmdbStatementPatternCardinalitySource {
 			}
 			double cardinality = tripleStore.repeatedVariableCardinality(subjId, predId, objId, ctxId,
 					repeatedComponentPairMask);
-			cacheSharedCardinality(key, cardinality);
+			if (tripleStore.getDataRevision() == dataRevision) {
+				cacheSharedCardinality(key, cardinality);
+			}
 			return cardinality;
 		} catch (IOException | RuntimeException e) {
 			return -1.0d;
@@ -359,11 +384,11 @@ final class LmdbStatementPatternCardinalitySource {
 		SHARED_DISTINCT_CARDINALITY_CACHE.merge(key, probe, DistinctCardinalityProbe::stronger);
 	}
 
-	private record SharedDistinctCardinalityKey(int tripleStoreIdentity, long dataRevision, long subjId, long predId,
+	private record SharedDistinctCardinalityKey(long tripleStoreIdentity, long dataRevision, long subjId, long predId,
 			long objId, long ctxId, int distinctComponentMask) {
 	}
 
-	private record SharedExactCardinalityKey(int tripleStoreIdentity, long dataRevision, long subjId, long predId,
+	private record SharedExactCardinalityKey(long tripleStoreIdentity, long dataRevision, long subjId, long predId,
 			long objId, long ctxId, int repeatedComponentPairMask) {
 	}
 
@@ -393,7 +418,7 @@ final class LmdbStatementPatternCardinalitySource {
 	}
 
 	private static final class SharedCardinalityKey {
-		private final int tripleStoreIdentity;
+		private final long tripleStoreIdentity;
 		private final long dataRevision;
 		private final long subjId;
 		private final long predId;
@@ -403,7 +428,7 @@ final class LmdbStatementPatternCardinalitySource {
 		private final boolean planning;
 		private final int hashCode;
 
-		private SharedCardinalityKey(int tripleStoreIdentity, long dataRevision, long subjId, long predId,
+		private SharedCardinalityKey(long tripleStoreIdentity, long dataRevision, long subjId, long predId,
 				long objId, long ctxId, int repeatedComponentPairMask, boolean planning) {
 			this.tripleStoreIdentity = tripleStoreIdentity;
 			this.dataRevision = dataRevision;
@@ -413,7 +438,7 @@ final class LmdbStatementPatternCardinalitySource {
 			this.ctxId = ctxId;
 			this.repeatedComponentPairMask = repeatedComponentPairMask;
 			this.planning = planning;
-			int hash = Integer.hashCode(tripleStoreIdentity);
+			int hash = Long.hashCode(tripleStoreIdentity);
 			hash = 31 * hash + Long.hashCode(dataRevision);
 			hash = 31 * hash + Long.hashCode(subjId);
 			hash = 31 * hash + Long.hashCode(predId);

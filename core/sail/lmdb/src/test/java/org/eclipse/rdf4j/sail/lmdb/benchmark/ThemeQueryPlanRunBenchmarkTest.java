@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.sail.lmdb.benchmark;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayOutputStream;
@@ -25,6 +27,7 @@ import java.nio.file.Path;
 
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.lmdb.LmdbBenchmarkQueryPlan;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
@@ -33,6 +36,7 @@ import org.junit.jupiter.api.io.TempDir;
 class ThemeQueryPlanRunBenchmarkTest {
 
 	private static final String PROFILING_PROPERTY = "rdf4j.benchmark.profiling";
+	private static final String EXPLANATION_LOGGING_PROPERTY = "rdf4j.benchmark.themeQueryPlanRun.explanationLogging";
 
 	@TempDir
 	Path tempDir;
@@ -82,36 +86,194 @@ class ThemeQueryPlanRunBenchmarkTest {
 
 		SailRepository repository = new SailRepository(
 				new LmdbStore(new File(tempDir.toFile(), "store"), ConfigUtil.createConfig()));
+		LmdbStore store = (LmdbStore) repository.getSail();
 		PrintStream previousOut = System.out;
+		String previousExplanationLogging = System.getProperty(EXPLANATION_LOGGING_PROPERTY);
 		ByteArrayOutputStream out = new ByteArrayOutputStream();
 
+		LmdbBenchmarkQueryPlan.PreparedPlanSnapshot preparedSnapshot;
 		try {
 			state.connection = repository.getConnection();
+			state.store = store;
+			try (LmdbBenchmarkQueryPlan plan = state.preparePlan(true)) {
+				// Capture the plan that the benchmark will report as its prepared plan.
+				preparedSnapshot = plan.preparedPlanSnapshot();
+			}
+			System.setProperty(EXPLANATION_LOGGING_PROPERTY, "true");
 			System.setOut(new PrintStream(out, true, StandardCharsets.UTF_8));
 
 			state.tearDown();
 
 			String output = out.toString(StandardCharsets.UTF_8);
 			int telemetryIndex = output.indexOf("### Telemetry Query - Trial teardown ###");
-			int renderedIndex = output.indexOf("### Rendered Optimized SPARQL - Trial teardown ###");
+			int renderedIndex = output.indexOf("### Rendered Prepared SPARQL - Trial teardown ###");
+			int telemetryRenderedIndex = output.indexOf("### Rendered Telemetry SPARQL - Trial teardown ###");
 			assertTrue(telemetryIndex >= 0, output);
 			assertTrue(renderedIndex > telemetryIndex, output);
+			assertTrue(telemetryRenderedIndex > telemetryIndex, output);
 			assertTrue(output.substring(renderedIndex).contains("SELECT"), output);
-			assertTrue(output.contains("Rendered optimized SPARQL file:"), output);
+			assertTrue(output.contains("Rendered Prepared SPARQL file:"), output);
+			assertTrue(output.contains("Rendered Telemetry SPARQL file:"), output);
+			assertFalse(output.contains("fresh-optimized-at-trial-teardown"), output);
 			String renderedFilePath = output.lines()
-					.filter(line -> line.startsWith("Rendered optimized SPARQL file:"))
-					.map(line -> line.substring("Rendered optimized SPARQL file:".length()).trim())
+					.filter(line -> line.startsWith("Rendered Prepared SPARQL file:"))
+					.map(line -> line.substring("Rendered Prepared SPARQL file:".length()).trim())
 					.findFirst()
 					.orElseThrow();
 			File renderedFile = new File(renderedFilePath);
 			assertTrue(renderedFile.isFile(), "Expected rendered SPARQL file: " + renderedFile + "\n" + output);
-			assertTrue(java.nio.file.Files.readString(renderedFile.toPath()).contains("SELECT"));
+			String renderedPrepared = java.nio.file.Files.readString(renderedFile.toPath());
+			assertTrue(
+					renderedPrepared.contains("source=prepared, planFingerprint=" + preparedSnapshot.planFingerprint()),
+					renderedPrepared);
+			assertTrue(renderedPrepared.contains("tupleExprIdentity=" + preparedSnapshot.tupleExprIdentity()),
+					renderedPrepared);
+			assertTrue(renderedPrepared.contains(preparedSnapshot.renderedSparql()), renderedPrepared);
+			String telemetryFilePath = output.lines()
+					.filter(line -> line.startsWith("Rendered Telemetry SPARQL file:"))
+					.map(line -> line.substring("Rendered Telemetry SPARQL file:".length()).trim())
+					.findFirst()
+					.orElseThrow();
+			String renderedTelemetry = java.nio.file.Files.readString(new File(telemetryFilePath).toPath());
+			assertTrue(renderedTelemetry.contains("source=telemetry, planFingerprint="), renderedTelemetry);
+			assertTrue(renderedTelemetry.contains("tupleExprIdentity=0x"), renderedTelemetry);
+			assertTrue(renderedTelemetry.contains("SELECT"), renderedTelemetry);
 		} finally {
+			if (previousExplanationLogging == null) {
+				System.clearProperty(EXPLANATION_LOGGING_PROPERTY);
+			} else {
+				System.setProperty(EXPLANATION_LOGGING_PROPERTY, previousExplanationLogging);
+			}
 			System.setOut(previousOut);
 			if (state.connection != null) {
 				state.connection.close();
 			}
 			repository.shutDown();
+		}
+	}
+
+	@Test
+	void preparedPlanSnapshotContainsRenderedPlanAndStableShapeFingerprint() throws Exception {
+		ThemeQueryPlanRunBenchmark.BaseState state = new ThemeQueryPlanRunBenchmark.BaseState();
+		state.themeName = Theme.MEDICAL_RECORDS.name();
+		state.z_queryIndex = 2;
+		state.sketchEstimatorEnabled = false;
+		state.sketchEstimatorStrategy = "fastagms";
+		state.query = "SELECT * WHERE { ?s ?p ?o }";
+		setTheme(state, Theme.MEDICAL_RECORDS);
+
+		LmdbStore store = new LmdbStore(new File(tempDir.toFile(), "snapshot-store"), ConfigUtil.createConfig());
+		SailRepository repository = new SailRepository(store);
+		try {
+			state.store = store;
+			state.connection = repository.getConnection();
+			try (LmdbBenchmarkQueryPlan plan = state.preparePlan(true)) {
+				LmdbBenchmarkQueryPlan.PreparedPlanSnapshot snapshot = plan.preparedPlanSnapshot();
+
+				assertNotNull(snapshot);
+				assertTrue(snapshot.optimizedPlan().contains("Projection"), snapshot.optimizedPlan());
+				assertTrue(snapshot.renderedSparql().contains("SELECT"), snapshot.renderedSparql());
+				assertTrue(snapshot.planFingerprint().matches("[0-9a-f]{64}"), snapshot.planFingerprint());
+				assertFalse(snapshot.estimatorRevision().isBlank(), snapshot.toString());
+				assertTrue(snapshot.tupleExprIdentity().startsWith("0x"), snapshot.toString());
+			}
+		} finally {
+			if (state.connection != null) {
+				state.connection.close();
+			}
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void fixedPlanLifecycleIsDefaultAndAdaptiveIsExplicit() {
+		ThemeQueryPlanRunBenchmark.BaseState state = new ThemeQueryPlanRunBenchmark.BaseState();
+		String property = "rdf4j.benchmark.themeQueryPlanRun.planLifecycle";
+		String previous = System.getProperty(property);
+
+		try {
+			System.clearProperty(property);
+			assertEquals(ThemeQueryPlanRunBenchmark.PlanLifecycle.FIXED, state.planLifecycle());
+
+			System.setProperty(property, "ADAPTIVE");
+			assertEquals(ThemeQueryPlanRunBenchmark.PlanLifecycle.ADAPTIVE, state.planLifecycle());
+		} finally {
+			if (previous == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, previous);
+			}
+		}
+	}
+
+	@Test
+	void fixedLifecycleReusesThePreparedSnapshotAcrossInvocationSetups() throws Exception {
+		ThemeQueryPlanRunBenchmark.ExecutionState state = new ThemeQueryPlanRunBenchmark.ExecutionState();
+		state.themeName = Theme.MEDICAL_RECORDS.name();
+		state.z_queryIndex = 0;
+		state.sketchEstimatorEnabled = false;
+		state.sketchEstimatorStrategy = "fastagms";
+		state.query = "SELECT * WHERE { ?s ?p ?o }";
+		setTheme(state, Theme.MEDICAL_RECORDS);
+		String lifecycleProperty = "rdf4j.benchmark.themeQueryPlanRun.planLifecycle";
+		String previousLifecycle = System.getProperty(lifecycleProperty);
+		SailRepository repository = new SailRepository(
+				new LmdbStore(new File(tempDir.toFile(), "fixed-lifecycle-store"), ConfigUtil.createConfig()));
+		PrintStream previousOut = System.out;
+		try {
+			System.clearProperty(lifecycleProperty);
+			state.store = (LmdbStore) repository.getSail();
+			state.connection = repository.getConnection();
+			System.setOut(new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8));
+
+			state.prepareQuery();
+			LmdbBenchmarkQueryPlan.PreparedPlanSnapshot first = state.lastPreparedPlanSnapshot();
+			state.prepareQuery();
+			LmdbBenchmarkQueryPlan.PreparedPlanSnapshot last = state.lastPreparedPlanSnapshot();
+
+			assertNotNull(first);
+			assertSame(first, last);
+		} finally {
+			System.setOut(previousOut);
+			state.beforeTrialTearDown();
+			if (state.connection != null) {
+				state.connection.close();
+			}
+			repository.shutDown();
+			if (previousLifecycle == null) {
+				System.clearProperty(lifecycleProperty);
+			} else {
+				System.setProperty(lifecycleProperty, previousLifecycle);
+			}
+		}
+	}
+
+	@Test
+	void adaptiveLifecycleReportsEstimatorRevisionDrift() {
+		ThemeQueryPlanRunBenchmark.ExecutionState state = new ThemeQueryPlanRunBenchmark.ExecutionState();
+		String lifecycleProperty = "rdf4j.benchmark.themeQueryPlanRun.planLifecycle";
+		String previousLifecycle = System.getProperty(lifecycleProperty);
+		PrintStream previousOut = System.out;
+		ByteArrayOutputStream out = new ByteArrayOutputStream();
+		try {
+			System.setProperty(lifecycleProperty, "ADAPTIVE");
+			System.setOut(new PrintStream(out, true, StandardCharsets.UTF_8));
+			state.recordPreparedPlan(new LmdbBenchmarkQueryPlan.PreparedPlanSnapshot(
+					"plan-a", "diagnostics-a", "SELECT * WHERE { ?s ?p ?o }", "a", "1"));
+			state.recordPreparedPlan(new LmdbBenchmarkQueryPlan.PreparedPlanSnapshot(
+					"plan-a", "diagnostics-b", "SELECT * WHERE { ?s ?p ?o }", "a", "2"));
+
+			String output = out.toString(StandardCharsets.UTF_8);
+			assertTrue(output.contains("planLifecycle=ADAPTIVE, planChange=true"), output);
+			assertTrue(output.contains("previousEstimatorRevision=1"), output);
+			assertTrue(output.contains("estimatorRevision=2"), output);
+		} finally {
+			System.setOut(previousOut);
+			if (previousLifecycle == null) {
+				System.clearProperty(lifecycleProperty);
+			} else {
+				System.setProperty(lifecycleProperty, previousLifecycle);
+			}
 		}
 	}
 

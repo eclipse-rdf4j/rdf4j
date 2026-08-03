@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Exists;
@@ -38,6 +39,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -317,6 +319,110 @@ class DefaultEvaluationStrategyTelemetryRegressionTest {
 		}
 
 		assertThat(statistics.recordCalls).isZero();
+	}
+
+	@Test
+	void abortedIterationMarksCancellationMetricOnNode() {
+		BindingSetAssignment assignment = trackedAssignment();
+		DefaultEvaluationStrategy strategy = failAfterFirstRowStrategy(assignment, true);
+
+		boolean interrupted = false;
+		try (CloseableIteration<BindingSet> results = strategy.precompile(assignment)
+				.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(results.hasNext()).isTrue();
+			results.next();
+			results.hasNext();
+		} catch (QueryInterruptedException expected) {
+			interrupted = true;
+		}
+
+		assertThat(interrupted).isTrue();
+		assertThat(assignment.getLongMetricActual(TelemetryMetricNames.CANCELLED_COUNT_ACTUAL))
+				.as("a throw out of hasNext() must be flagged — the plain counters are indistinguishable"
+						+ " from genuine exhaustion")
+				.isGreaterThan(0L);
+		assertThat(assignment.getLongMetricActual(TelemetryMetricNames.ABORTED_COUNT_ACTUAL)).isEqualTo(-1L);
+	}
+
+	@Test
+	void cleanExhaustionLeavesAbortMetricsUnsetAndCountsExhaustedCloses() {
+		BindingSetAssignment assignment = trackedAssignment();
+		DefaultEvaluationStrategy strategy = failAfterFirstRowStrategy(assignment, false);
+
+		try (CloseableIteration<BindingSet> results = strategy.precompile(assignment)
+				.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(results.hasNext()).isTrue();
+			results.next();
+			assertThat(results.hasNext()).isFalse();
+		}
+
+		assertThat(assignment.getLongMetricActual(TelemetryMetricNames.CANCELLED_COUNT_ACTUAL)).isEqualTo(-1L);
+		assertThat(assignment.getLongMetricActual(TelemetryMetricNames.ABORTED_COUNT_ACTUAL)).isEqualTo(-1L);
+		assertThat(assignment.getLongMetricActual(TelemetryMetricNames.EXHAUSTED_CLOSE_COUNT_ACTUAL)).isEqualTo(1L);
+	}
+
+	@Test
+	void abortedIterationDoesNotCountAnExhaustedClose() {
+		BindingSetAssignment assignment = trackedAssignment();
+		DefaultEvaluationStrategy strategy = failAfterFirstRowStrategy(assignment, true);
+
+		try (CloseableIteration<BindingSet> results = strategy.precompile(assignment)
+				.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(results.hasNext()).isTrue();
+			results.next();
+			results.hasNext();
+		} catch (QueryInterruptedException expected) {
+			// close runs during unwinding
+		}
+
+		assertThat(assignment.getLongMetricActual(TelemetryMetricNames.EXHAUSTED_CLOSE_COUNT_ACTUAL)).isEqualTo(0L);
+	}
+
+	private static BindingSetAssignment trackedAssignment() {
+		QueryBindingSet row = new QueryBindingSet();
+		row.addBinding("value", SimpleValueFactory.getInstance().createLiteral("row"));
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(List.of(row));
+		assignment.setRuntimeTelemetryEnabled(true);
+		return assignment;
+	}
+
+	private static DefaultEvaluationStrategy failAfterFirstRowStrategy(BindingSetAssignment assignment,
+			boolean failAfterFirstRow) {
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null) {
+			@Override
+			protected QueryEvaluationStep prepare(BindingSetAssignment node, QueryEvaluationContext context) {
+				return bindings -> new CloseableIteration<>() {
+					private final java.util.Iterator<BindingSet> rows = node.getBindingSets().iterator();
+					private boolean served;
+
+					@Override
+					public boolean hasNext() {
+						if (failAfterFirstRow && served) {
+							throw new QueryInterruptedException("query timed out");
+						}
+						return rows.hasNext();
+					}
+
+					@Override
+					public BindingSet next() {
+						served = true;
+						return rows.next();
+					}
+
+					@Override
+					public void remove() {
+						throw new UnsupportedOperationException();
+					}
+
+					@Override
+					public void close() {
+					}
+				};
+			}
+		};
+		strategy.setTrackResultSize(true);
+		return strategy;
 	}
 
 	private static StatementPattern statementPatternWithMetrics(int index) {

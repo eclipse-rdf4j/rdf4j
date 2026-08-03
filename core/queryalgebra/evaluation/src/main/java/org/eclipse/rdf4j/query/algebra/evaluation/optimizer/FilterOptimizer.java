@@ -471,8 +471,16 @@ public class FilterOptimizer implements QueryOptimizer {
 		private void relocate(Filter filter, TupleExpr newFilterArg) {
 			if (filter.getArg() != newFilterArg) {
 				if (filter.getParentNode() != null) {
+					TupleExpr formerArg = filter.getArg();
 					// Remove filter from its original location
-					filter.replaceWith(filter.getArg());
+					filter.replaceWith(formerArg);
+					if (filter.isVariableScopeChange() && formerArg instanceof VariableScopeChange scopeRoot) {
+						// The scope boundary belongs to the position, not to the relocated filter: leave it
+						// on the subtree that now roots the scope instead of planting a phantom interior
+						// boundary wherever the filter lands.
+						scopeRoot.setVariableScopeChange(true);
+						filter.setVariableScopeChange(false);
+					}
 				}
 
 				// Insert filter at the new location

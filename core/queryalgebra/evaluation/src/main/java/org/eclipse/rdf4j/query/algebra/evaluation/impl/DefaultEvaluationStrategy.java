@@ -43,6 +43,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
@@ -1695,6 +1696,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		boolean telemetryEnabled;
 		boolean costFeedbackTracking;
 		boolean exhausted;
+		boolean sawTerminalFalse;
 		long openedAtNanos;
 		boolean firstRowSeen;
 
@@ -1719,10 +1721,16 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			long started = telemetryEnabled ? System.nanoTime() : 0L;
 			try {
 				hasNext = iterator.hasNext();
-				if (!hasNext && costFeedbackTracking) {
-					exhausted = true;
+				if (!hasNext) {
+					sawTerminalFalse = true;
+					if (costFeedbackTracking) {
+						exhausted = true;
+					}
 				}
 				return hasNext;
+			} catch (Throwable t) {
+				markAborted(t);
+				throw t;
 			} finally {
 				if (telemetryEnabled) {
 					long elapsed = System.nanoTime() - started;
@@ -1742,6 +1750,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				BindingSet next = iterator.next();
 				queryModelNode.setResultSizeActual(queryModelNode.getResultSizeActual() + 1);
 				return next;
+			} catch (Throwable t) {
+				markAborted(t);
+				throw t;
 			} finally {
 				if (telemetryEnabled) {
 					long elapsed = System.nanoTime() - started;
@@ -1767,6 +1778,15 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				closeFailure = e;
 			}
 			try {
+				if (closeFailure != null) {
+					markAborted(closeFailure);
+				}
+				if (telemetryEnabled || costFeedbackTracking) {
+					// Always materialized so readers can distinguish "never exhausted" (0) from legacy data (absent).
+					queryModelNode.setLongMetricActual(TelemetryMetricNames.EXHAUSTED_CLOSE_COUNT_ACTUAL,
+							longMetric(queryModelNode, TelemetryMetricNames.EXHAUSTED_CLOSE_COUNT_ACTUAL)
+									+ (sawTerminalFalse ? 1L : 0L));
+				}
 				if ((telemetryEnabled || costFeedbackTracking)
 						&& iterator instanceof IndexReportingIterator sourceMetrics) {
 					queryModelNode.setSourceRowsScannedActual(Math.max(0, queryModelNode.getSourceRowsScannedActual()));
@@ -1819,6 +1839,18 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				if (closeFailure != null) {
 					throw closeFailure;
 				}
+			}
+		}
+
+		/*
+		 * A throw out of hasNext()/next() (timeout, cancellation, evaluation error) leaves the cumulative counters
+		 * indistinguishable from genuine exhaustion, so the abort is flagged explicitly for feedback readers.
+		 */
+		private void markAborted(Throwable t) {
+			if (telemetryEnabled || costFeedbackTracking) {
+				incrementLongMetric(queryModelNode,
+						t instanceof QueryInterruptedException ? TelemetryMetricNames.CANCELLED_COUNT_ACTUAL
+								: TelemetryMetricNames.ABORTED_COUNT_ACTUAL);
 			}
 		}
 

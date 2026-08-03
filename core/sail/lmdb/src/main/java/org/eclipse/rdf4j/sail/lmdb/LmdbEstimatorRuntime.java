@@ -657,10 +657,11 @@ final class LmdbEstimatorRuntime {
 	private EstimateContext rootContext(TupleExpr expression) {
 		if (synopsis == null) {
 			return EstimateContext.root(expression, new org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity(0L,
-					0L, Math.max(0L, tripleStore == null ? 0L : tripleStore.getDataRevision())), snapshotVersion());
+					0L, Math.max(0L, tripleStore == null ? 0L : tripleStore.getDataRevision())), snapshotVersion(),
+					leoRevision());
 		}
 		EstimateContext context = EstimateContext.root(expression, synopsis.snapshotIdentity(),
-				synopsis.snapshotVersion());
+				synopsis.snapshotVersion(), leoRevision());
 		return synopsis.adaptiveEvidenceAllowed() ? context
 				: context.withEvidencePolicy(EstimateContext.EvidencePolicy.SNAPSHOT_ONLY);
 	}

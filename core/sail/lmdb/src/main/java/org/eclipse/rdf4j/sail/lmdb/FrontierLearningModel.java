@@ -28,6 +28,50 @@ final class FrontierLearningModel {
 	private static final double BASE_ALPHA = 2.0d;
 	private static final double BASE_BETA = 1.0d;
 	private static final double MAX_ABS_LOG_ERROR = Math.log1p(1.0e12d);
+	/*
+	 * The weak base precision lets a single observation dominate the posterior mean, so one incoherent runtime
+	 * observation (for example a plan-vs-execution invocation drift) could shift an estimate by many orders of
+	 * magnitude and still be published as a calibrated correction. The applied correction is therefore capped at a
+	 * factor of 4 per unit of evidence weight: one observation can move an estimate at most 4x, two at most 16x, and
+	 * consistent evidence still converges to arbitrarily large corrections within a few observations.
+	 */
+	private static final double MAX_LOG_CORRECTION_PER_EVIDENCE_WEIGHT = Math.log(4.0d);
+	/*
+	 * Family evidence legitimately informs the direction of a cold key's correction, but the magnitude license must
+	 * come from evidence observed in this exact context: with the family's full pooled weight in the clamp budget, a
+	 * family with 20 observations permits a 4^20 shift on a key that has never been observed itself. Capped at 2.0,
+	 * family-only evidence can move a cold key at most 16x — enough to reverse a bad plan choice — while exact evidence
+	 * still unlocks arbitrarily large convergent corrections within a few observations.
+	 */
+	private static final double FAMILY_CLAMP_CREDIT_CAP = 2.0d;
+	static final String FAMILY_CLAMP_CREDIT_PROPERTY = "rdf4j.optimizer.lmdb.frontierFamilyClampCredit";
+	/*
+	 * One exact context repeated many times must not outvote its family siblings: each exact key contributes at most
+	 * this much effective evidence weight to its family aggregate (mean and clamp credit alike). Eight is enough for a
+	 * sibling's direction to converge, small enough that a benchmark loop cannot drown two or three observations from
+	 * genuinely different contexts.
+	 */
+	private static final double FAMILY_CONTRIBUTION_CAP = 8.0d;
+	static final String FAMILY_CONTRIBUTION_CAP_PROPERTY = "rdf4j.optimizer.lmdb.frontierFamilyContributionCap";
+	private static final long EPOCH_DECAY_HALF_LIFE = 4096L;
+	static final String EPOCH_DECAY_PROPERTY = "rdf4j.optimizer.lmdb.frontierEpochDecay";
+	static final String VARIANCE_DAMPING_PROPERTY = "rdf4j.optimizer.lmdb.frontierVarianceDamping";
+
+	private static boolean familyClampCreditEnabled() {
+		return !"false".equalsIgnoreCase(System.getProperty(FAMILY_CLAMP_CREDIT_PROPERTY, "true"));
+	}
+
+	private static boolean familyContributionCapEnabled() {
+		return !"false".equalsIgnoreCase(System.getProperty(FAMILY_CONTRIBUTION_CAP_PROPERTY, "true"));
+	}
+
+	private static boolean epochDecayEnabled() {
+		return !"false".equalsIgnoreCase(System.getProperty(EPOCH_DECAY_PROPERTY, "true"));
+	}
+
+	private static boolean varianceDampingEnabled() {
+		return !"false".equalsIgnoreCase(System.getProperty(VARIANCE_DAMPING_PROPERTY, "true"));
+	}
 
 	private final LinkedHashMap<FrontierLearningKey, DimensionCounts> exact = new LinkedHashMap<>();
 	private final Map<String, DimensionCounts> families = new LinkedHashMap<>();
@@ -47,11 +91,29 @@ final class FrontierLearningModel {
 			return;
 		}
 		logError = Math.clamp(logError, -MAX_ABS_LOG_ERROR, MAX_ABS_LOG_ERROR);
-		exact.computeIfAbsent(key, ignored -> new DimensionCounts()).observe(dimension, logError, epoch);
-		families.computeIfAbsent(key.familyKey(dimension), ignored -> new DimensionCounts())
-				.observe(dimension, logError, epoch);
+		DimensionCounts childCounts = exact.computeIfAbsent(key, ignored -> new DimensionCounts());
+		DimensionCounts familyCounts = families.computeIfAbsent(key.familyKey(dimension),
+				ignored -> new DimensionCounts());
+		if (familyContributionCapEnabled()) {
+			// The family holds each child's CAPPED contribution: swap the old capped view for the new one so a
+			// context repeated many times cannot outvote its siblings.
+			SufficientStatistics before = cappedContribution(childCounts.statistics(dimension));
+			childCounts.observe(dimension, logError, epoch);
+			familyCounts.replaceContribution(dimension, before,
+					cappedContribution(childCounts.statistics(dimension)), epoch);
+		} else {
+			childCounts.observe(dimension, logError, epoch);
+			familyCounts.observe(dimension, logError, epoch);
+		}
 		revision = Math.max(revision + 1L, Math.max(0L, epoch));
 		evictOldestExactKey();
+	}
+
+	private static SufficientStatistics cappedContribution(SufficientStatistics statistics) {
+		if (!familyContributionCapEnabled() || statistics.weight() <= FAMILY_CONTRIBUTION_CAP) {
+			return statistics;
+		}
+		return statistics.withWeight(FAMILY_CONTRIBUTION_CAP / statistics.weight());
 	}
 
 	synchronized OptionalDouble correct(FrontierLearningKey key, FrontierCostDimension dimension, double predicted,
@@ -68,28 +130,70 @@ final class FrontierLearningModel {
 
 	synchronized DimensionEstimate estimate(FrontierLearningKey key, FrontierCostDimension dimension,
 			double predicted) {
-		if (key == null || dimension == null || !finiteNonNegative(predicted)) {
+		return estimate(posterior(key, dimension), predicted);
+	}
+
+	/**
+	 * Immutable view of a key's posterior at one instant. Cost sessions pin these per planning request so all plan
+	 * alternatives compared in one search see identical calibration even when observations land concurrently.
+	 */
+	synchronized PosteriorSnapshot posterior(FrontierLearningKey key, FrontierCostDimension dimension) {
+		if (key == null || dimension == null) {
 			return null;
 		}
-		SufficientStatistics child = statistics(exact.get(key), dimension);
-		SufficientStatistics family = statistics(families.get(key.familyKey(dimension)), dimension);
-		SufficientStatistics legacy = statistics(legacyFamilyPriors.get(key.operatorFamily()), dimension);
+		SufficientStatistics child = statistics(exact.get(key), dimension, revision);
+		SufficientStatistics family = statistics(families.get(key.familyKey(dimension)), dimension, revision);
+		SufficientStatistics legacy = statistics(legacyFamilyPriors.get(key.operatorFamily()), dimension, revision);
 		if (child.count == 0L && family.count == 0L && legacy.count == 0L) {
 			return null;
 		}
-		SufficientStatistics otherFamily = family.minus(child);
+		SufficientStatistics cappedChild = cappedContribution(child);
+		SufficientStatistics otherFamily = family.minus(cappedChild);
 		Posterior base = Posterior.base();
+		double evidenceWeight = child.weight() + (familyClampCreditEnabled()
+				? Math.min(otherFamily.weight(), FAMILY_CLAMP_CREDIT_CAP)
+				: otherFamily.weight());
 		if (legacy.count > 0L) {
-			base = base.update(legacy.withWeight(0.10d));
+			SufficientStatistics legacyPrior = legacy.withWeight(0.10d);
+			base = base.update(legacyPrior);
+			evidenceWeight += legacyPrior.weight();
 		}
 		Posterior parent = base.update(otherFamily);
 		Posterior posterior = parent.update(child);
-		double corrected = Math.expm1(Math.log1p(predicted) + posterior.mean);
+		double correctionCap = MAX_LOG_CORRECTION_PER_EVIDENCE_WEIGHT * evidenceWeight;
+		return new PosteriorSnapshot(posterior.mean, posterior.meanVariance(), posterior.precision, correctionCap,
+				child.count, otherFamily.count, legacy.count);
+	}
+
+	static DimensionEstimate estimate(PosteriorSnapshot snapshot, double predicted) {
+		if (snapshot == null || !finiteNonNegative(predicted)) {
+			return null;
+		}
+		double appliedLogShift = Math.clamp(snapshot.mean(), -snapshot.correctionCap(), snapshot.correctionCap());
+		if (varianceDampingEnabled()) {
+			/*
+			 * Student-t style shrinkage of the applied shift by the posterior mean's signal-to-noise: conflicting
+			 * observations inflate the NIG beta (and so the mean's variance), collapsing the shift toward zero, while
+			 * coherent evidence applies the full posterior mean. Converges to the undamped shift as consistent evidence
+			 * accumulates.
+			 */
+			double meanVariance = snapshot.meanVariance();
+			if (Double.isFinite(meanVariance) && meanVariance > 0.0d) {
+				double snr = snapshot.mean() * snapshot.mean() / meanVariance;
+				appliedLogShift = Math.clamp(snapshot.mean() * (snr / (snr + 1.0d)),
+						-snapshot.correctionCap(), snapshot.correctionCap());
+			}
+		}
+		double corrected = Math.expm1(Math.log1p(predicted) + appliedLogShift);
 		if (!finiteNonNegative(corrected)) {
 			return null;
 		}
-		return new DimensionEstimate(corrected, posterior.mean, posterior.meanVariance(), posterior.precision,
-				child.count, otherFamily.count, legacy.count);
+		return new DimensionEstimate(corrected, snapshot.mean(), snapshot.meanVariance(), snapshot.precision(),
+				snapshot.exactEvidenceCount(), snapshot.familyEvidenceCount(), snapshot.legacyEvidenceCount());
+	}
+
+	record PosteriorSnapshot(double mean, double meanVariance, double precision, double correctionCap,
+			long exactEvidenceCount, long familyEvidenceCount, long legacyEvidenceCount) {
 	}
 
 	synchronized void importLegacyFamilyPrior(String operatorFamily, FrontierCostDimension dimension,
@@ -123,6 +227,39 @@ final class FrontierLearningModel {
 		revision++;
 	}
 
+	/*
+	 * Store mutations invalidate learned corrections in proportion to how much data changed. Weight decay is the exact
+	 * NIG analogue of forgetting evidence: the posterior is entirely weight-driven, so scaling weight, sum and
+	 * sumSquares preserves the mean while shrinking the effective sample size. FrontierLearningKey retains no predicate
+	 * identity, so decay is necessarily global. lastEpoch is deliberately untouched so that epoch-based aging composes
+	 * multiplicatively with mutation decay instead of double-counting.
+	 */
+	synchronized void decay(double factor) {
+		if (!(factor > 0.0d)) {
+			clear();
+			return;
+		}
+		if (factor >= 1.0d) {
+			return;
+		}
+		for (DimensionCounts counts : exact.values()) {
+			counts.decay(factor);
+		}
+		for (DimensionCounts counts : legacyFamilyPriors.values()) {
+			counts.decay(factor);
+		}
+		// Families hold capped child contributions; rebuilding them from the decayed exact keys keeps the two in
+		// exact agreement (a proportional family decay would drift against the cap).
+		families.clear();
+		for (Map.Entry<FrontierLearningKey, DimensionCounts> entry : exact.entrySet()) {
+			for (FrontierCostDimension dimension : FrontierCostDimension.values()) {
+				families.computeIfAbsent(entry.getKey().familyKey(dimension), ignored -> new DimensionCounts())
+						.mergeCappedContribution(dimension, entry.getValue());
+			}
+		}
+		revision++;
+	}
+
 	synchronized void writeTo(DataOutputStream out) throws IOException {
 		out.writeLong(revision);
 		out.writeInt(exact.size());
@@ -147,7 +284,7 @@ final class FrontierLearningModel {
 			model.exact.put(key, counts);
 			for (FrontierCostDimension dimension : FrontierCostDimension.values()) {
 				model.families.computeIfAbsent(key.familyKey(dimension), ignored -> new DimensionCounts())
-						.merge(dimension, counts);
+						.mergeCappedContribution(dimension, counts);
 			}
 		}
 		int legacyCount = boundedCount(in.readInt(), MAX_KEYS * 4, "legacy Frontier learning family");
@@ -169,14 +306,15 @@ final class FrontierLearningModel {
 			for (FrontierCostDimension dimension : FrontierCostDimension.values()) {
 				DimensionCounts family = families.get(eldest.getKey().familyKey(dimension));
 				if (family != null) {
-					family.subtract(dimension, eldest.getValue());
+					family.subtractCappedContribution(dimension, eldest.getValue());
 				}
 			}
 		}
 	}
 
-	private static SufficientStatistics statistics(DimensionCounts counts, FrontierCostDimension dimension) {
-		return counts == null ? SufficientStatistics.EMPTY : counts.statistics(dimension);
+	private static SufficientStatistics statistics(DimensionCounts counts, FrontierCostDimension dimension,
+			long currentEpoch) {
+		return counts == null ? SufficientStatistics.EMPTY : counts.statistics(dimension, currentEpoch);
 	}
 
 	private static int boundedCount(int value, int maximum, String label) throws IOException {
@@ -211,6 +349,36 @@ final class FrontierLearningModel {
 			return statistics == null ? SufficientStatistics.EMPTY : statistics.snapshot();
 		}
 
+		SufficientStatistics statistics(FrontierCostDimension dimension, long currentEpoch) {
+			MutableStatistics statistics = dimensions.get(dimension);
+			return statistics == null ? SufficientStatistics.EMPTY : statistics.snapshot(currentEpoch);
+		}
+
+		void replaceContribution(FrontierCostDimension dimension, SufficientStatistics before,
+				SufficientStatistics after, long epoch) {
+			MutableStatistics statistics = dimensions.computeIfAbsent(dimension,
+					ignored -> new MutableStatistics());
+			statistics.subtractStatistics(before);
+			statistics.addStatistics(after, epoch);
+		}
+
+		void mergeCappedContribution(FrontierCostDimension dimension, DimensionCounts other) {
+			MutableStatistics otherStatistics = other.dimensions.get(dimension);
+			if (otherStatistics == null || otherStatistics.count == 0L) {
+				return;
+			}
+			dimensions.computeIfAbsent(dimension, ignored -> new MutableStatistics())
+					.addStatistics(cappedContribution(otherStatistics.snapshot()), otherStatistics.lastEpoch);
+		}
+
+		void subtractCappedContribution(FrontierCostDimension dimension, DimensionCounts other) {
+			MutableStatistics current = dimensions.get(dimension);
+			MutableStatistics otherStatistics = other.dimensions.get(dimension);
+			if (current != null && otherStatistics != null) {
+				current.subtractStatistics(cappedContribution(otherStatistics.snapshot()));
+			}
+		}
+
 		void merge(FrontierCostDimension dimension, DimensionCounts other) {
 			MutableStatistics otherStatistics = other.dimensions.get(dimension);
 			if (otherStatistics != null) {
@@ -223,6 +391,12 @@ final class FrontierLearningModel {
 			MutableStatistics otherStatistics = other.dimensions.get(dimension);
 			if (current != null && otherStatistics != null) {
 				current.subtract(otherStatistics);
+			}
+		}
+
+		void decay(double factor) {
+			for (MutableStatistics statistics : dimensions.values()) {
+				statistics.decay(factor);
 			}
 		}
 
@@ -285,8 +459,52 @@ final class FrontierLearningModel {
 			}
 		}
 
+		void decay(double factor) {
+			weight *= factor;
+			sum *= factor;
+			sumSquares *= factor;
+			count = Math.max(0L, Math.round(count * factor));
+			if (weight < 1.0e-9d || count == 0L) {
+				weight = 0.0d;
+				count = 0L;
+				sum = 0.0d;
+				sumSquares = 0.0d;
+			}
+		}
+
 		SufficientStatistics snapshot() {
 			return new SufficientStatistics(weight, count, sum, sumSquares);
+		}
+
+		/*
+		 * Effective-sample-size aging: evidence not refreshed for a half-life counts half as much. The scale is applied
+		 * to the snapshot, never the stored counts, so refreshed keys recover their full weight history.
+		 */
+		SufficientStatistics snapshot(long currentEpoch) {
+			if (!epochDecayEnabled() || currentEpoch <= lastEpoch || count == 0L) {
+				return snapshot();
+			}
+			double scale = Math.pow(0.5d, (currentEpoch - lastEpoch) / (double) EPOCH_DECAY_HALF_LIFE);
+			return snapshot().withWeight(scale);
+		}
+
+		void addStatistics(SufficientStatistics statistics, long epoch) {
+			weight += statistics.weight();
+			count += statistics.count();
+			sum += statistics.sum();
+			sumSquares += statistics.sumSquares();
+			lastEpoch = Math.max(lastEpoch, epoch);
+		}
+
+		void subtractStatistics(SufficientStatistics statistics) {
+			weight = Math.max(0.0d, weight - statistics.weight());
+			count = Math.max(0L, count - statistics.count());
+			sum -= statistics.sum();
+			sumSquares = Math.max(0.0d, sumSquares - statistics.sumSquares());
+			if (weight == 0.0d && count == 0L) {
+				sum = 0.0d;
+				sumSquares = 0.0d;
+			}
 		}
 
 		void writeTo(DataOutputStream out) throws IOException {

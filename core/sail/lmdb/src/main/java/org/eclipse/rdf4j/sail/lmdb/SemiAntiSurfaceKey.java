@@ -61,6 +61,11 @@ record SemiAntiSurfaceKey(int schemaVersion, String semanticKind, String physica
 	}
 
 	static SemiAntiSurfaceKey from(Filter filter, String semanticKind, String physicalAlgorithm) {
+		return from(filter, semanticKind, physicalAlgorithm, LeoOperatorKey.ConstantMode.PREDICATE_AND_CONTEXT_EXACT);
+	}
+
+	static SemiAntiSurfaceKey from(Filter filter, String semanticKind, String physicalAlgorithm,
+			LeoOperatorKey.ConstantMode constantMode) {
 		TupleExpr rhs = rhs(filter);
 		if (rhs == null || containsUnsafeEvidenceSource(rhs)) {
 			return null;
@@ -69,8 +74,7 @@ record SemiAntiSurfaceKey(int schemaVersion, String semanticKind, String physica
 		correlated.retainAll(rhs.getBindingNames());
 		Set<String> nullable = new HashSet<>(correlated);
 		nullable.removeAll(filter.getArg().getAssuredBindingNames());
-		LeoOperatorKey rhsKey = LeoOperatorKey.from(
-				rhs, physicalAlgorithm, LeoOperatorKey.ConstantMode.PREDICATE_AND_CONTEXT_EXACT);
+		LeoOperatorKey rhsKey = LeoOperatorKey.from(rhs, physicalAlgorithm, constantMode);
 		return new SemiAntiSurfaceKey(
 				SCHEMA_VERSION,
 				semanticKind,
@@ -81,7 +85,7 @@ record SemiAntiSurfaceKey(int schemaVersion, String semanticKind, String physica
 				predicateContextIdentity(rhs));
 	}
 
-	private static TupleExpr rhs(Filter filter) {
+	static TupleExpr rhs(Filter filter) {
 		if (filter == null || filter.getArg() == null || filter.getCondition() == null) {
 			return null;
 		}

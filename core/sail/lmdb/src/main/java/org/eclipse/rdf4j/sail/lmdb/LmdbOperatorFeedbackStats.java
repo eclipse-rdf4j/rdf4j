@@ -54,6 +54,7 @@ import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
@@ -83,6 +84,20 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	private static final String ESTIMATE_TRACE_PROPERTY = "rdf4j.optimizer.lmdb.estimateTrace";
 	static final String COMPLETED_TREE_RESCUE_PROPERTY = "rdf4j.optimizer.lmdb.operatorFeedbackCompletedTreeRescue";
+	static final String DEFER_REINVOCABLE_PROPERTY = "rdf4j.optimizer.lmdb.operatorFeedbackDeferReinvocable";
+	static final String ABORT_POISONING_PROPERTY = "rdf4j.optimizer.lmdb.operatorFeedbackAbortPoisoning";
+	static final String EXHAUSTED_CLOSE_INVARIANT_PROPERTY = "rdf4j.optimizer.lmdb.operatorFeedbackExhaustedCloseInvariant";
+	static final String SHORT_CIRCUIT_GUARD_PROPERTY = "rdf4j.optimizer.lmdb.operatorFeedbackShortCircuitGuard";
+	static final String JOIN_ALGORITHM_DRIFT_GUARD_PROPERTY = "rdf4j.optimizer.lmdb.joinAlgorithmDriftGuard";
+	static final String OUTPUT_ROWS_DRIFT_SKIP_PROPERTY = "rdf4j.optimizer.lmdb.outputRowsDriftSkip";
+	static final String SEMI_ANTI_DRIFT_GUARD_PROPERTY = "rdf4j.optimizer.lmdb.semiAntiDriftGuard";
+	static final String SEMI_ANTI_EXACT_SURFACE_TIER_PROPERTY = "rdf4j.optimizer.lmdb.semiAntiExactSurfaceTier";
+	static final String LEGACY_EVIDENCE_SCALED_CLAMP_PROPERTY = "rdf4j.optimizer.lmdb.legacyEvidenceScaledClamp";
+	static final String LEGACY_Q_ERROR_CONFIDENCE_PENALTY_PROPERTY = "rdf4j.optimizer.lmdb.legacyQErrorConfidencePenalty";
+	static final String LEGACY_DATASET_GATING_PROPERTY = "rdf4j.optimizer.lmdb.legacyDatasetGating";
+	static final String FRONTIER_MUTATION_DECAY_PROPERTY = "rdf4j.optimizer.lmdb.frontierMutationDecay";
+	static final String FRONTIER_MUTATION_DECAY_FACTOR_PROPERTY = "rdf4j.optimizer.lmdb.frontierMutationDecay.factor";
+	static final String DATASET_RESTRICTED_METRIC = "optimizer.datasetRestricted";
 	private static final int KEY_CACHE_MAX_SIZE = 4096;
 
 	static final String LEARNED_OPERATOR = "learned_operator";
@@ -95,7 +110,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private static final int LEGACY_PERSIST_VERSION = 12;
 	private static final int SEMI_ANTI_PERSIST_VERSION = 13;
 	private static final int PHYSICAL_SEMI_ANTI_PERSIST_VERSION = 14;
-	private static final int PERSIST_VERSION = 15;
+	private static final int FRONTIER_PERSIST_VERSION = 15;
+	private static final int PERSIST_VERSION = 16;
+	static final String SIDECAR_DATA_STAMP_CHECK_PROPERTY = "rdf4j.optimizer.lmdb.sidecarDataStampCheck";
 	private static final int MAX_ENTRIES = 2048;
 	private static final double MIN_CORRECTION_RATIO = 0.0001d;
 	private static final double MAX_CORRECTION_RATIO = 100_000.0d;
@@ -105,6 +122,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private static final double MAX_UNCERTAINTY_Q_ERROR = 100.0d;
 	private static final long MIN_GENERALIZED_KEY_SAMPLES = 3L;
 	private static final int MIN_GENERALIZED_DISTINCT_SIGNATURES = 2;
+	private static final long MIN_GENERALIZED_SEMI_ANTI_OBSERVATIONS = 5L;
+	private static final double COHERENT_Q_ERROR_DISPERSION_LIMIT = 1.5d;
 	private static final long CONFIDENCE_DECAY_HALF_LIFE_EPOCHS = 4096L;
 	private static final String LEO_RECORDED_OPERATOR_ACTUAL = "optimizer.leoOperatorFeedbackRecordedActual";
 	private static final String LEO_RECORDED_PLAN_ACTUAL = "optimizer.leoPlanFeedbackRecordedActual";
@@ -161,6 +180,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private final Path sidecarPath;
 	private final Path leoSurfacePath;
 	private final Supplier<SketchSnapshotIdentity> snapshotIdentitySupplier;
+	private java.util.function.LongSupplier dataStampSupplier = () -> 0L;
 	private final BooleanSupplier adaptiveEvidenceAllowedSupplier;
 	private final LmdbLeoFeedbackConfig leoFeedbackConfig;
 	private final LmdbLeoFeedbackStore leoFeedbackStore;
@@ -195,11 +215,19 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	LmdbOperatorFeedbackStats(Path estimatorPath,
 			Supplier<SketchSnapshotIdentity> snapshotIdentitySupplier,
 			BooleanSupplier adaptiveEvidenceAllowedSupplier) {
+		this(estimatorPath, snapshotIdentitySupplier, adaptiveEvidenceAllowedSupplier, () -> 0L);
+	}
+
+	LmdbOperatorFeedbackStats(Path estimatorPath,
+			Supplier<SketchSnapshotIdentity> snapshotIdentitySupplier,
+			BooleanSupplier adaptiveEvidenceAllowedSupplier,
+			java.util.function.LongSupplier dataStampSupplier) {
 		Objects.requireNonNull(estimatorPath, "estimatorPath");
 		this.sidecarPath = estimatorPath.resolveSibling(estimatorPath.getFileName().toString() + SIDECAR_SUFFIX);
 		this.snapshotIdentitySupplier = Objects.requireNonNull(snapshotIdentitySupplier, "snapshotIdentitySupplier");
 		this.adaptiveEvidenceAllowedSupplier = Objects.requireNonNull(adaptiveEvidenceAllowedSupplier,
 				"adaptiveEvidenceAllowedSupplier");
+		this.dataStampSupplier = Objects.requireNonNull(dataStampSupplier, "dataStampSupplier");
 		this.leoFeedbackConfig = LmdbLeoFeedbackConfig.defaultConfig();
 		this.leoSurfacePath = estimatorPath.resolveSibling(estimatorPath.getFileName().toString() + LEO_SURFACE_SUFFIX);
 		this.leoFeedbackStore = new LmdbLeoFeedbackStore(leoSurfacePath, leoFeedbackConfig);
@@ -261,6 +289,12 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		} else {
 			surfaceChanged = leoSurfaceStats.decayAll(nextEpoch);
 		}
+		if (frontierMutationDecayEnabled() && frontierLearning.keyCount() > 0) {
+			// The frontier NIG model previously survived mutations at full posterior weight; halving the
+			// evidence per mutating commit makes stale calibration fade instead of requiring an equal volume
+			// of contradicting observations to un-learn. Keys carry no predicate identity, so decay is global.
+			frontierLearning.decay(frontierMutationDecayFactor());
+		}
 		if (!hasLegacyEvidence && !surfaceChanged) {
 			return;
 		}
@@ -282,12 +316,28 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	}
 
 	void recordCompletedQuery(TupleExpr root) {
-		if (!Boolean.getBoolean(COMPLETED_TREE_RESCUE_PROPERTY) || root == null || !isCompleted(root)
+		if (!completedTreeRescueEnabled() || root == null || !isCompleted(root)
 				|| containsSlice(root)) {
+			return;
+		}
+		// An aborted root still closes (during exception unwinding) and would otherwise run this pass over the
+		// whole tree, recording truncated actuals for every operator — and learning a plan shadow from the abort.
+		if (abortPoisoningEnabled() && (isAbortMarked(root) || hasAbortedAncestor(root))) {
+			trace("record-skip-poison", root, null, "aborted-root");
 			return;
 		}
 		List<TupleExpr> operators = new ArrayList<>();
 		root.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+			@Override
+			protected void meetSubQueryValueOperator(SubQueryValueOperator node) {
+				// EXISTS-style bodies are re-invocable AND short-circuiting (hasNext once, never next), so the
+				// root's completion cannot vouch for their internal cumulative counters. EXISTS costing keeps its
+				// dedicated recordSemiAntiOutcome channel.
+				if (!shortCircuitGuardEnabled()) {
+					super.meetSubQueryValueOperator(node);
+				}
+			}
+
 			@Override
 			protected void meetBinaryTupleOperator(BinaryTupleOperator node) {
 				addObservable(node);
@@ -350,6 +400,102 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		recordObservation(node, false);
 	}
 
+	/*
+	 * The completed-tree pass is the only observation point whose actuals are guaranteed to be final totals, so it is
+	 * on by default and the property is an opt-out escape hatch.
+	 */
+	private static boolean completedTreeRescueEnabled() {
+		return !"false".equalsIgnoreCase(System.getProperty(COMPLETED_TREE_RESCUE_PROPERTY, "true"));
+	}
+
+	/*
+	 * Deferral must not be coupled to the rescue pass: with rescue disabled, a deferred node must stay unrecorded (safe
+	 * evidence loss) rather than fall back to the incoherent first-close observation.
+	 */
+	private static boolean deferReinvocableEnabled() {
+		return !"false".equalsIgnoreCase(System.getProperty(DEFER_REINVOCABLE_PROPERTY, "true"));
+	}
+
+	private static boolean abortPoisoningEnabled() {
+		return !"false".equalsIgnoreCase(System.getProperty(ABORT_POISONING_PROPERTY, "true"));
+	}
+
+	private static boolean exhaustedCloseInvariantEnabled() {
+		return !"false".equalsIgnoreCase(System.getProperty(EXHAUSTED_CLOSE_INVARIANT_PROPERTY, "true"));
+	}
+
+	private static boolean shortCircuitGuardEnabled() {
+		return !"false".equalsIgnoreCase(System.getProperty(SHORT_CIRCUIT_GUARD_PROPERTY, "true"));
+	}
+
+	private static boolean joinAlgorithmDriftGuardEnabled() {
+		return !"false".equalsIgnoreCase(System.getProperty(JOIN_ALGORITHM_DRIFT_GUARD_PROPERTY, "true"));
+	}
+
+	private static boolean outputRowsDriftSkipEnabled() {
+		return !"false".equalsIgnoreCase(System.getProperty(OUTPUT_ROWS_DRIFT_SKIP_PROPERTY, "true"));
+	}
+
+	private static boolean semiAntiDriftGuardEnabled() {
+		return !"false".equalsIgnoreCase(System.getProperty(SEMI_ANTI_DRIFT_GUARD_PROPERTY, "true"));
+	}
+
+	private static boolean semiAntiExactSurfaceTierEnabled() {
+		return !"false".equalsIgnoreCase(System.getProperty(SEMI_ANTI_EXACT_SURFACE_TIER_PROPERTY, "true"));
+	}
+
+	private static boolean legacyEvidenceScaledClampEnabled() {
+		return !"false".equalsIgnoreCase(System.getProperty(LEGACY_EVIDENCE_SCALED_CLAMP_PROPERTY, "true"));
+	}
+
+	private static boolean legacyQErrorConfidencePenaltyEnabled() {
+		return !"false".equalsIgnoreCase(System.getProperty(LEGACY_Q_ERROR_CONFIDENCE_PENALTY_PROPERTY, "true"));
+	}
+
+	private static boolean legacyDatasetGatingEnabled() {
+		return !"false".equalsIgnoreCase(System.getProperty(LEGACY_DATASET_GATING_PROPERTY, "true"));
+	}
+
+	private static boolean sidecarDataStampCheckEnabled() {
+		return !"false".equalsIgnoreCase(System.getProperty(SIDECAR_DATA_STAMP_CHECK_PROPERTY, "true"));
+	}
+
+	private static boolean frontierMutationDecayEnabled() {
+		return !"false".equalsIgnoreCase(System.getProperty(FRONTIER_MUTATION_DECAY_PROPERTY, "true"));
+	}
+
+	private static double frontierMutationDecayFactor() {
+		try {
+			double factor = Double.parseDouble(
+					System.getProperty(FRONTIER_MUTATION_DECAY_FACTOR_PROPERTY, "0.5"));
+			return factor > 0.0d && factor < 1.0d ? factor : 0.5d;
+		} catch (NumberFormatException invalid) {
+			return 0.5d;
+		}
+	}
+
+	private static boolean hasDatasetRestrictedSelfOrAncestor(QueryModelNode node) {
+		QueryModelNode current = node;
+		while (current != null) {
+			if ("true".equalsIgnoreCase(current.getStringMetricPlanned(DATASET_RESTRICTED_METRIC))) {
+				return true;
+			}
+			current = current.getParentNode();
+		}
+		return false;
+	}
+
+	/*
+	 * Operators in a re-invocable position (the right side of a binary join operator, a property-path body, or an
+	 * EXISTS-style subquery) may be re-evaluated once per upstream binding while the plan may have costed a single
+	 * standalone evaluation. Their first close then pairs a whole-relation prediction with a single-invocation actual,
+	 * which poisons the learned evidence for every plan that shares the learning key. Such operators are only observed
+	 * by the completed-tree pass, where cumulative actuals are final.
+	 */
+	private static boolean deferObservationToCompletedRoot(TupleExpr node) {
+		return LmdbReinvocablePositions.isReinvocable(node);
+	}
+
 	synchronized void recordSemiAntiOutcome(Filter filter, SemiAntiOutcomeObservation observation) {
 		if (!adaptiveEvidenceAllowed() || filter == null || observation == null || !observation.completed()
 				|| !observation.exclusionReason().isBlank()) {
@@ -363,6 +509,16 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		long rhsSourceRowsScanned = filter.getLongMetricActual("actualSemiAntiSourceRowsScanned");
 		semiAntiBySurface.computeIfAbsent(key, ignored -> new SemiAntiCounts())
 				.add(observation, rhsSourceRowsScanned);
+		// Dual-write an exact-constants key: the generalized key abstracts rhs subject/object constants, so
+		// selective and unselective EXISTS bodies share it. Estimates consult the exact tier first.
+		if (semiAntiExactSurfaceTierEnabled()) {
+			SemiAntiSurfaceKey exactKey = SemiAntiSurfaceKey.from(filter, observation.semanticKind(),
+					observation.selectedAlgorithm(), LeoOperatorKey.ConstantMode.EXACT);
+			if (exactKey != null && !exactKey.equals(key)) {
+				semiAntiBySurface.computeIfAbsent(exactKey, ignored -> new SemiAntiCounts())
+						.add(observation, rhsSourceRowsScanned);
+			}
+		}
 		long epoch = nextFeedbackEpoch();
 		if (recordFrontierSemiAntiOutcome(filter, observation, epoch)) {
 			markFeedbackRecorded(filter);
@@ -401,11 +557,26 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		if (!databaseExact) {
 			observeFrontierDimension(key, FrontierCostDimension.OUTPUT_ROWS, predictedOutputRows, actualRows, epoch);
 		}
+		/*
+		 * Mirror of the access-drift guard on the plain frontier path: when the rhs is a single statement pattern and
+		 * the executor read it through a different index than the physical key describes, its physical actuals belong
+		 * to a different kernel. OUTPUT_ROWS above stays recorded — match cardinality is access-independent.
+		 */
+		if (semiAntiDriftGuardEnabled()
+				&& SemiAntiSurfaceKey.rhs(filter)instanceof StatementPattern rhsPattern) {
+			String runtimeIndexName = rhsPattern.getIndexName();
+			if (runtimeIndexName != null && !runtimeIndexName.isBlank() && !"none".equals(physicalKey.indexName())
+					&& !physicalKey.indexName().equalsIgnoreCase(runtimeIndexName.trim())) {
+				trace("record-frontier-semi-anti-skip-access-drift", filter, null,
+						"key=" + physicalKey.externalForm() + ", plannedIndex=" + physicalKey.indexName()
+								+ ", runtimeIndex=" + runtimeIndexName);
+				return true;
+			}
+		}
 		observeFrontierDimension(physicalKey, FrontierCostDimension.RESULT_ROWS,
 				frontierEventPrediction(filter, FrontierCostDimension.RESULT_ROWS,
 						"optimizer.costEventResultRows", "plannedCostResultRows"),
 				actualRows, epoch);
-
 		boolean samePhysicalAlgorithm = observation.selectedAlgorithm().equalsIgnoreCase(observation.actualAlgorithm())
 				&& observation.strategyChangeReason().isBlank();
 		if (samePhysicalAlgorithm) {
@@ -455,7 +626,28 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			return null;
 		}
 		SemiAntiSurfaceKey key = SemiAntiSurfaceKey.from(filter, semanticKind, physicalAlgorithm);
-		SemiAntiCounts counts = key == null ? null : semiAntiBySurface.get(key);
+		if (key == null) {
+			return null;
+		}
+		if (semiAntiExactSurfaceTierEnabled()) {
+			SemiAntiSurfaceKey exactKey = SemiAntiSurfaceKey.from(filter, semanticKind, physicalAlgorithm,
+					LeoOperatorKey.ConstantMode.EXACT);
+			SemiAntiCounts exactCounts = exactKey == null ? null : semiAntiBySurface.get(exactKey);
+			if (exactCounts != null) {
+				return exactCounts.estimate();
+			}
+			if (exactKey != null && !exactKey.equals(key)) {
+				// The generalized surface pools observations across distinct rhs constants — it must prove
+				// itself across more evidence before standing in for a cold exact key.
+				SemiAntiCounts generalizedCounts = semiAntiBySurface.get(key);
+				SemiAntiEstimate generalized = generalizedCounts == null ? null : generalizedCounts.estimate();
+				return generalized != null
+						&& generalized.observationCount() >= MIN_GENERALIZED_SEMI_ANTI_OBSERVATIONS
+								? generalized
+								: null;
+			}
+		}
+		SemiAntiCounts counts = semiAntiBySurface.get(key);
 		return counts == null ? null : counts.estimate();
 	}
 
@@ -470,6 +662,10 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 				node.setStringMetricPlanned(LEO_POISON_SKIP_REASON, poisonReason);
 			}
 			trace("record-skip-poison", node, null, poisonReason);
+			return;
+		}
+		if (!completedRoot && deferReinvocableEnabled() && deferObservationToCompletedRoot(node)) {
+			trace("record-skip-deferred-to-completed-root", node, null, "re-invocable-position");
 			return;
 		}
 		if (!policy.runtimeObservable() || !(completedRoot ? isObservedInCompletedRoot(node) : isCompleted(node))) {
@@ -514,8 +710,19 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			return false;
 		}
 		long epoch = nextFeedbackEpoch();
+		/*
+		 * The physical learning key identifies the access kernel the plan costed. When the executor ran the operator
+		 * through a different index than the plan assumed, the physical actuals describe a different kernel and would
+		 * corrupt the costed kernel's evidence. Under bound-loop drift the cumulative output total is Σ per-binding
+		 * restricted matches (duplicates recounted, absent values never counted) — not the cardinality of any stable
+		 * key — so OUTPUT_ROWS is skipped as well.
+		 */
+		String runtimeIndexName = node instanceof StatementPattern pattern ? pattern.getIndexName() : null;
+		boolean accessDrift = runtimeIndexName != null && !runtimeIndexName.isBlank()
+				&& !"none".equals(physicalKey.indexName())
+				&& !physicalKey.indexName().equalsIgnoreCase(runtimeIndexName.trim());
 		boolean databaseExact = "database_exact".equalsIgnoreCase(node.getStringMetricPlanned(FRONTIER_GUARANTEE));
-		if (!databaseExact) {
+		if (!databaseExact && !(accessDrift && outputRowsDriftSkipEnabled())) {
 			double predictedRows = frontierEventPrediction(node, FrontierCostDimension.OUTPUT_ROWS,
 					"optimizer.costEventRows", "plannedFrontierRows");
 			if (!isFiniteNonNegative(predictedRows)) {
@@ -523,6 +730,27 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			}
 			observeFrontierDimension(key, FrontierCostDimension.OUTPUT_ROWS, predictedRows,
 					observation.actualRows(), epoch);
+		}
+		if (accessDrift) {
+			trace("record-frontier-skip-physical-access-drift", node, null,
+					"key=" + encodedKey + ", plannedIndex=" + physicalKey.indexName()
+							+ ", runtimeIndex=" + runtimeIndexName);
+			dirty = true;
+			return true;
+		}
+		/*
+		 * Joins carry no index name, but the executor stamps the iterator it actually ran. When that differs from the
+		 * planned physical implementation (e.g. a planned hash join fell back to a nested loop), the physical actuals
+		 * describe the fallback kernel. OUTPUT_ROWS stays recorded: join cardinality is algorithm-independent.
+		 */
+		if (joinAlgorithmDriftGuardEnabled() && node instanceof BinaryTupleOperator binary
+				&& joinAlgorithmDrifted(binary)) {
+			trace("record-frontier-skip-physical-join-drift", node, null,
+					"key=" + encodedKey
+							+ ", planned=" + node.getStringMetricPlanned(PLANNED_PHYSICAL_JOIN_IMPLEMENTATION)
+							+ ", runtime=" + binary.getAlgorithmName());
+			dirty = true;
+			return true;
 		}
 		observeFrontierDimension(physicalKey, FrontierCostDimension.RESULT_ROWS,
 				frontierEventPrediction(node, FrontierCostDimension.RESULT_ROWS,
@@ -572,6 +800,28 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		return true;
 	}
 
+	private static final String PLANNED_PHYSICAL_JOIN_IMPLEMENTATION = "optimizer.physicalJoinImplementation";
+	private static final Set<String> DEPENDENT_ITERATION_ALGORITHMS = Set.of(
+			"joiniterator", "boundstatementpatternjoiniteration", "boundstatementpatternguardjoiniteration",
+			"boundstatementpatternleftjoiniteration", "innermergejoiniterator", "leftjoiniterator");
+	private static final Set<String> INDEPENDENT_HASH_ALGORITHMS = Set.of("hashjoiniteration");
+
+	private static boolean joinAlgorithmDrifted(BinaryTupleOperator binary) {
+		String planned = binary.getStringMetricPlanned(PLANNED_PHYSICAL_JOIN_IMPLEMENTATION);
+		String runtime = binary.getAlgorithmName();
+		if (planned == null || planned.isBlank() || runtime == null || runtime.isBlank()
+				|| planned.equalsIgnoreCase(runtime)) {
+			return false;
+		}
+		String normalizedRuntime = runtime.trim().toLowerCase(Locale.ROOT);
+		return switch (planned.trim().toLowerCase(Locale.ROOT)) {
+		case "independent-hash" -> !INDEPENDENT_HASH_ALGORITHMS.contains(normalizedRuntime);
+		case "dependent-iteration" -> !DEPENDENT_ITERATION_ALGORITHMS.contains(normalizedRuntime);
+		// Unknown planned implementations cannot be checked — assume no drift rather than discard evidence.
+		default -> false;
+		};
+	}
+
 	private static double frontierEventPrediction(TupleExpr node, FrontierCostDimension dimension,
 			String eventMetric, String legacyMetric) {
 		double rawPrediction = node.getDoubleMetricPlanned(
@@ -612,6 +862,11 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	synchronized FrontierLearningModel.DimensionEstimate frontierDimensionEstimate(FrontierLearningKey key,
 			FrontierCostDimension dimension, double predicted) {
 		return adaptiveEvidenceAllowed() ? frontierLearning.estimate(key, dimension, predicted) : null;
+	}
+
+	synchronized FrontierLearningModel.PosteriorSnapshot frontierPosterior(FrontierLearningKey key,
+			FrontierCostDimension dimension) {
+		return adaptiveEvidenceAllowed() ? frontierLearning.posterior(key, dimension) : null;
 	}
 
 	private boolean recordDirectOperatorOutcome(TupleExpr node) {
@@ -1206,6 +1461,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		try (DataOutputStream out = new DataOutputStream(Files.newOutputStream(tempPath))) {
 			out.writeInt(PERSIST_VERSION);
 			snapshotIdentity.writeTo(out);
+			// The sketch identity only changes when the async synopsis rebuild publishes; the LMDB write-txn id is
+			// a persistent monotonic data version that closes the crash window between a commit and that publish.
+			out.writeLong(dataStampSupplier.getAsLong());
 			out.writeLong(feedbackEpoch);
 			out.writeLong(ruleSteeringCooldownUntilEpoch);
 			out.writeInt(ruleSteeringBadMisses);
@@ -1298,12 +1556,19 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			if (version != LEGACY_PERSIST_VERSION
 					&& version != SEMI_ANTI_PERSIST_VERSION
 					&& version != PHYSICAL_SEMI_ANTI_PERSIST_VERSION
+					&& version != FRONTIER_PERSIST_VERSION
 					&& version != PERSIST_VERSION) {
 				return;
 			}
 			SketchSnapshotIdentity persistedIdentity = SketchSnapshotIdentity.readFrom(in);
 			if (!persistedIdentity.equals(currentIdentity)) {
 				return;
+			}
+			if (version >= PERSIST_VERSION) {
+				long persistedDataStamp = in.readLong();
+				if (sidecarDataStampCheckEnabled() && persistedDataStamp != dataStampSupplier.getAsLong()) {
+					return;
+				}
 			}
 			if (version >= 10) {
 				loadedEpoch = Math.max(0L, in.readLong());
@@ -1333,6 +1598,13 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			if (version >= SEMI_ANTI_PERSIST_VERSION) {
 				readSemiAntiEntries(in, loadedSemiAnti, version);
 			}
+			/*
+			 * Version-15 files DO carry a serialized frontier model, but it predates the topology-suffixed join keys
+			 * and the recording-coherence guards — its exact-key corrections can contain drift poison that the new keys
+			 * would only partially orphan (leaving e.g. crushed leaf-scan costs live while the join corrections that
+			 * compensated them go cold). Discard it and fall back to the legacy prior import; the model relearns
+			 * coherently under the new guards.
+			 */
 			if (version >= PERSIST_VERSION) {
 				loadedFrontierLearning = FrontierLearningModel.readFrom(in);
 			} else {
@@ -1610,9 +1882,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		if (plannedSource != null && plannedSource.toLowerCase(java.util.Locale.ROOT).contains("service")) {
 			return "remote-service";
 		}
-		if (node.getLongMetricActual("optimizer.queryCancelled") > 0L
-				|| node.getLongMetricActual("optimizer.timeoutAborted") > 0L
-				|| node.getLongMetricActual("optimizer.transactionRolledBack") > 0L) {
+		// Written by ResultSizeCountingIterator when hasNext()/next()/close throws (timeout, cancel, error).
+		if (node.getLongMetricActual(TelemetryMetricNames.CANCELLED_COUNT_ACTUAL) > 0L
+				|| node.getLongMetricActual(TelemetryMetricNames.ABORTED_COUNT_ACTUAL) > 0L) {
 			return "aborted-or-rolled-back";
 		}
 		if (node instanceof Service) {
@@ -1633,10 +1905,11 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		if (node.isCostFeedbackCompletedActual() && isFiniteNonNegative(actualRows(node))) {
 			double plannedOperatorRepeatedInvocations = node
 					.getDoubleMetricPlanned(PLANNED_OPERATOR_REPEATED_INVOCATIONS);
-			return !isFiniteNonNegative(plannedOperatorRepeatedInvocations)
+			boolean invocationsCovered = !isFiniteNonNegative(plannedOperatorRepeatedInvocations)
 					|| plannedOperatorRepeatedInvocations <= 1.0d
 					|| node.getCostFeedbackCloseCountActual() >= Math.max(1L,
 							Math.round(plannedOperatorRepeatedInvocations));
+			return invocationsCovered && everyCloseExhausted(node, node.getCostFeedbackCloseCountActual());
 		}
 		long closeCount = node.getLongMetricActual(TelemetryMetricNames.CLOSE_COUNT_ACTUAL);
 		if (closeCount <= 0L) {
@@ -1649,7 +1922,24 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		}
 		long hasNextCalls = node.getHasNextCallCountActual();
 		long hasNextTrueCalls = node.getHasNextTrueCountActual();
-		return hasNextCalls >= 0L && hasNextTrueCalls >= 0L && hasNextCalls > hasNextTrueCalls;
+		return hasNextCalls >= 0L && hasNextTrueCalls >= 0L && hasNextCalls > hasNextTrueCalls
+				&& everyCloseExhausted(node, closeCount);
+	}
+
+	/*
+	 * Cumulative counters cannot vouch for individual invocations: one exhausted close among N truncated ones still
+	 * leaves hasNextCalls > hasNextTrueCalls for the whole history. Close-path completeness therefore requires every
+	 * recorded close to have observed a terminal hasNext()==false. Absent metric (-1) means the counters come from a
+	 * writer that predates the marker (or a synthetic tree) — fall back to the older, lenient rules. Deliberately NOT
+	 * enforced in isObservedInCompletedRoot: the completed-tree rescue exists to accept final cumulative totals for
+	 * nodes without terminal-false closes.
+	 */
+	private static boolean everyCloseExhausted(TupleExpr node, long closeCount) {
+		if (!exhaustedCloseInvariantEnabled() || closeCount <= 0L) {
+			return true;
+		}
+		long exhaustedCloses = node.getLongMetricActual(TelemetryMetricNames.EXHAUSTED_CLOSE_COUNT_ACTUAL);
+		return exhaustedCloses < 0L || exhaustedCloses >= closeCount;
 	}
 
 	private static boolean isObservedInCompletedRoot(TupleExpr node) {
@@ -1663,6 +1953,13 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		long hasNextCalls = node.getHasNextCallCountActual();
 		long hasNextTrueCalls = node.getHasNextTrueCountActual();
 		if (hasNextCalls >= 0L && hasNextTrueCalls >= 0L && hasNextCalls < hasNextTrueCalls) {
+			return false;
+		}
+		// Rows signaled but never consumed (hasNext true, next never called) mark a short-circuiting consumer:
+		// its cumulative actual is a truncation artifact, not a final total.
+		long nextCalls = node.getNextCallCountActual();
+		if (shortCircuitGuardEnabled() && nextCalls >= 0L && hasNextTrueCalls >= 0L
+				&& hasNextTrueCalls > nextCalls) {
 			return false;
 		}
 		long closeCount = node.getLongMetricActual(TelemetryMetricNames.CLOSE_COUNT_ACTUAL);
@@ -1694,12 +1991,24 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		if (longMetric(node, TelemetryMetricNames.REMOTE_TIMEOUT_COUNT_ACTUAL) > 0.0d
 				|| longMetric(node, TelemetryMetricNames.REMOTE_ERROR_COUNT_ACTUAL) > 0.0d
 				|| longMetric(node, TelemetryMetricNames.EXPR_ERROR_COUNT_ACTUAL) > 0.0d
+				|| longMetric(node, TelemetryMetricNames.CANCELLED_COUNT_ACTUAL) > 0.0d
+				|| longMetric(node, TelemetryMetricNames.ABORTED_COUNT_ACTUAL) > 0.0d
 				|| longMetric(node, "timeoutActual") > 0.0d
 				|| longMetric(node, "cancelledActual") > 0.0d
 				|| longMetric(node, "abortedActual") > 0.0d
 				|| longMetric(node, "rollbackActual") > 0.0d
 				|| longMetric(node, "optimizer.feedbackPoisonedActual") > 0.0d) {
 			return "error-timeout-cancel-or-rollback";
+		}
+		// An abort anywhere above this operator truncates its ancestors' consumption of it, and the throw
+		// itself unwinds through every enclosing iterator — cumulative actuals on the whole path are suspect.
+		if (abortPoisoningEnabled() && hasAbortedAncestor(node)) {
+			return "aborted-ancestor";
+		}
+		// Legacy operator keys carry no dataset identity; evidence from FROM/FROM NAMED-restricted queries
+		// would calibrate unrestricted queries over different data.
+		if (legacyDatasetGatingEnabled() && hasDatasetRestrictedSelfOrAncestor(node)) {
+			return "dataset-restricted";
 		}
 		if (longMetric(node, TelemetryMetricNames.ROWS_DROPPED_BY_LIMIT_ACTUAL) > 0.0d
 				|| longMetric(node, TelemetryMetricNames.ROWS_SKIPPED_BY_OFFSET_ACTUAL) > 0.0d) {
@@ -1723,6 +2032,22 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			current = current.getParentNode();
 		}
 		return false;
+	}
+
+	private static boolean hasAbortedAncestor(QueryModelNode node) {
+		QueryModelNode current = node == null ? null : node.getParentNode();
+		while (current != null) {
+			if (isAbortMarked(current)) {
+				return true;
+			}
+			current = current.getParentNode();
+		}
+		return false;
+	}
+
+	private static boolean isAbortMarked(QueryModelNode node) {
+		return node.getLongMetricActual(TelemetryMetricNames.CANCELLED_COUNT_ACTUAL) > 0L
+				|| node.getLongMetricActual(TelemetryMetricNames.ABORTED_COUNT_ACTUAL) > 0L;
 	}
 
 	private static boolean containsSlice(TupleExpr node) {
@@ -2504,9 +2829,18 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		return Double.isFinite(value) && value >= 0.0d;
 	}
 
-	private static double clampCorrection(double ratio) {
+	private static double clampCorrection(double ratio, long sampleCount) {
 		if (!Double.isFinite(ratio) || ratio <= 0.0d) {
 			return Double.NaN;
+		}
+		if (legacyEvidenceScaledClampEnabled()) {
+			// Evidence-scaled FLOOR only (4x down per observation): downward crushes flip plans toward risky
+			// alternatives — the static 1e-4 floor let a single bad run shrink an estimate 10000x. Upward
+			// corrections are conservative and keep the static ceiling; single-sample large upward misses are
+			// the signal legacy learning exists to correct.
+			double evidenceFactor = Math.pow(4.0d, Math.min(Math.max(1L, sampleCount), 8L));
+			double lower = Math.max(MIN_CORRECTION_RATIO, 1.0d / evidenceFactor);
+			return Math.max(lower, Math.min(MAX_CORRECTION_RATIO, ratio));
 		}
 		return Math.max(MIN_CORRECTION_RATIO, Math.min(MAX_CORRECTION_RATIO, ratio));
 	}
@@ -2871,7 +3205,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 					? confidenceModel.decayedConfidence(currentEpoch, CONFIDENCE_DECAY_HALF_LIFE_EPOCHS)
 					: confidence(sampleCount);
 			double correctionConfidence = correctionBlendConfidence(confidence, sampleCount, rowQErrorMax,
-					workQErrorMax);
+					workQErrorMax, qErrorMean(rowQErrorSum, rowQErrorSampleCount),
+					qErrorMean(workQErrorSum, workQErrorSampleCount));
 			double rows = blend(baseRows, learnedRows, correctionConfidence);
 			double workRows = blend(baseWorkRows, learnedWorkRows, correctionConfidence);
 			if (!isFiniteNonNegative(workRows)) {
@@ -2894,11 +3229,25 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		}
 
 		private double correctionBlendConfidence(double confidence, long sampleCount, double rowQErrorMax,
-				double workQErrorMax) {
+				double workQErrorMax, double rowQErrorMean, double workQErrorMean) {
 			double boundedConfidence = Math.max(0.0d, Math.min(0.95d, confidence));
-			double qError = Math.max(finiteQErrorMax(rowQErrorMax), finiteQErrorMax(workQErrorMax));
+			double rowMax = finiteQErrorMax(rowQErrorMax);
+			double workMax = finiteQErrorMax(workQErrorMax);
+			double qError = Math.max(rowMax, workMax);
 			if (qError <= 1.0d || sampleCount <= 0L) {
 				return boundedConfidence;
+			}
+			if (legacyQErrorConfidencePenaltyEnabled()) {
+				/*
+				 * The boost exists so that a consistent large miss (every sample off by the same magnitude — the signal
+				 * legacy learning corrects) can act quickly. When the history CONFLICTS (max q-error well above the
+				 * mean), the correction ratio is an average of disagreeing observations and must never be trusted MORE
+				 * because its evidence is unreliable.
+				 */
+				double qErrorMean = rowMax >= workMax ? rowQErrorMean : workQErrorMean;
+				if (qError > Math.max(1.0d, qErrorMean) * COHERENT_Q_ERROR_DISPERSION_LIMIT) {
+					return boundedConfidence;
+				}
 			}
 			double qErrorBoost = Math.min(0.40d, Math.log10(qError) * 0.15d);
 			return Math.min(0.80d, Math.max(boundedConfidence, confidence(sampleCount) + qErrorBoost));
@@ -2957,7 +3306,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 		private double estimateByOperatorRatio(double baseRows) {
 			if (plannedRowsSum > 0.0d && isFiniteNonNegative(baseRows)) {
-				double correction = clampCorrection(actualRowsSum / plannedRowsSum);
+				double correction = clampCorrection(actualRowsSum / plannedRowsSum, sampleCount);
 				if (Double.isFinite(correction)) {
 					return baseRows * correction;
 				}
@@ -2983,7 +3332,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 		private double estimateByWorkRatio(double baseWorkRows) {
 			if (plannedWorkRowsSum > 0.0d && isFiniteNonNegative(baseWorkRows)) {
-				double correction = clampCorrection(actualWorkRowsSum / plannedWorkRowsSum);
+				double correction = clampCorrection(actualWorkRowsSum / plannedWorkRowsSum, sampleCount);
 				if (Double.isFinite(correction)) {
 					return baseWorkRows * correction;
 				}
