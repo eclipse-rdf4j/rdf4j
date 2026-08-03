@@ -196,6 +196,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	private final Map<Integer, CalibrationStages> calibrationStagesByStateId = new HashMap<>();
 	private final Map<CorrelationProfileKey, FrontierSemiAntiProfile> correlationProfiles = new HashMap<>();
 	private final Map<CorrelationDomainKey, FrontierCorrelationDomain> correlationDomains = new HashMap<>();
+	private final Map<FrontierStateKey, EvidenceStateRef> exactDerivedStates = new HashMap<>();
 	private final ArrayList<Exists> dependentExistsScratch = new ArrayList<>();
 	private LmdbFrontierLongObjectMemo<Value> storedFrontierValues;
 	private LmdbFrontierLongObjectMemo<Boolean> subjectCenterCompleteness;
@@ -383,11 +384,14 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				scalar.appendFactor(relationId, context, output);
 				invokingScalar = false;
 			}
-			FrontierFactorSurfaceRefinement factorSurface = refineFactorAccessSurface(input, state, relationId,
-					context, output);
+			FrontierFactorSurfaceRefinement factorSurface = refineFactorAccessSurface(input, state, outputKey,
+					relationId, context, output);
 			output.putPlannedStringMetric("plannedFrontierFactorSurfaceRefinement", factorSurface.status());
 			if (!factorSurface.detail().isEmpty()) {
 				output.putPlannedStringMetric("plannedFrontierFactorSurfaceRefinementDetail", factorSurface.detail());
+			}
+			if (factorSurface.retainedState() != null) {
+				state = factorSurface.retainedState();
 			}
 			String scalarSource = output.estimateSource();
 			String scalarFusion = output.estimateFusion();
@@ -2006,6 +2010,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		queryLocalValues.clear();
 		alternateReplayStates.clear();
 		alternateReplayFailures.clear();
+		exactDerivedStates.clear();
 	}
 
 	private static void closePrimitiveMemo(LmdbFrontierLongObjectMemo<?> memo) {
@@ -3905,7 +3910,8 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	}
 
 	private FrontierFactorSurfaceRefinement refineFactorAccessSurface(EvidenceStateRef input,
-			EvidenceStateRef outputState, int relationId, PackedCostContext context, PackedCostEstimate output) {
+			EvidenceStateRef outputState, FrontierStateKey outputKey, int relationId, PackedCostContext context,
+			PackedCostEstimate output) {
 		if (!query.isStatementPattern(relationId)) {
 			return FrontierFactorSurfaceRefinement.declined("unsupported-access-kernel");
 		}
@@ -3928,10 +3934,24 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		if (!fullyBound(relation)) {
 			return FrontierFactorSurfaceRefinement.declined("nullable-binding-domain");
 		}
+		List<String> inputBindingNames = List.of(layoutVariables(arena.layout(input)));
+		FiniteRelationEstimate correlatedRelation = relation;
+		if (!relation.containsAll(inputBindingNames)) {
+			ExactRelationResult inputRelationResult = exactCorrelationRelation(
+					correlationDomain(input, inputBindingNames));
+			correlatedRelation = inputRelationResult.relation();
+			if (correlatedRelation == null) {
+				return FrontierFactorSurfaceRefinement.declined(
+						"complete-input-" + inputRelationResult.declineReason());
+			}
+			if (Double.compare(correlatedRelation.rows(), input.summary().pointRows()) != 0) {
+				throw new IllegalStateException("database-exact Frontier input relation has inconsistent row mass");
+			}
+		}
 		CorrelationSurfaceCacheIdentity identity = new CorrelationSurfaceCacheIdentity(
 				input.stateId(), String.join("\u0000", bindingNames), "factor-access:" + relationId);
 		var estimated = runtime.exactCorrelatedSurface(
-				identity, relation, query.materializeRelation(relationId),
+				identity, correlatedRelation, query.materializeRelation(relationId),
 				JoinFactorCostModel.EstimationTier.DECISION_EXACT);
 		if (estimated.isEmpty()) {
 			return FrontierFactorSurfaceRefinement.declined("surface-budget-or-kernel");
@@ -3955,9 +3975,15 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				String.join(",", bindingNames),
 				surface.cardinalityProbes(),
 				output);
-		return applied
-				? FrontierFactorSurfaceRefinement.applied(surface.exact() ? "materialized-exact" : "bounded-probe")
-				: FrontierFactorSurfaceRefinement.declined("invalid-surface");
+		if (!applied) {
+			return FrontierFactorSurfaceRefinement.declined("invalid-surface");
+		}
+		EvidenceStateRef retainedState = surface.exact()
+				? retainMeasuredExactSurface(input, outputKey, relationId, surface, output)
+				: outputState;
+		return FrontierFactorSurfaceRefinement.applied(
+				surface.exact() ? "materialized-exact" : "bounded-probe",
+				retainedState == null ? outputState : retainedState);
 	}
 
 	private EvidenceStateRef recoverExactDerivedSurface(EvidenceStateRef input, FrontierStateKey outputKey,
@@ -3969,6 +3995,11 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			output.putPlannedStringMetric("plannedFrontierExactSurfaceStateRecovery", "declined:surface-unavailable");
 			return null;
 		}
+		return retainMeasuredExactSurface(input, outputKey, relationId, surface, output);
+	}
+
+	private EvidenceStateRef retainMeasuredExactSurface(EvidenceStateRef input, FrontierStateKey outputKey,
+			int relationId, LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate surface, PackedCostEstimate output) {
 		if (!surface.exact()) {
 			output.putPlannedStringMetric("plannedFrontierExactSurfaceStateRecovery", "declined:surface-not-exact");
 			return null;
@@ -4032,6 +4063,25 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			return null;
 		}
 		boolean exact = entryCount <= particleBudget;
+		EvidenceStateRef retainedExact = exactDerivedStates.get(outputKey);
+		if (retainedExact != null) {
+			if (retainedExact.summary().guarantee() != EvidenceGuarantee.DATABASE_EXACT
+					|| !isComposableState(retainedExact)
+					|| Double.compare(retainedExact.summary().pointRows(), relation.rows()) != 0) {
+				throw new IllegalStateException("retained database-exact Frontier derivation is inconsistent");
+			}
+			return retainedExact;
+		}
+		EvidenceStateRef canonicalState = arena.find(outputKey);
+		if (canonicalState != null
+				&& canonicalState.summary().guarantee() == EvidenceGuarantee.DATABASE_EXACT
+				&& isComposableState(canonicalState)) {
+			if (Double.compare(canonicalState.summary().pointRows(), relation.rows()) != 0) {
+				throw new IllegalStateException("database-exact Frontier derivations disagree for one logical state");
+			}
+			exactDerivedStates.put(outputKey, canonicalState);
+			return canonicalState;
+		}
 		int target = exact ? entryCount : particleBudget;
 		long scratchBytes = exact || entryCount == 0
 				? 0L
@@ -4088,11 +4138,14 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				FrontierStateOperation operation = exact
 						? FrontierStateOperation.BRIDGE_TRANSFER
 						: FrontierStateOperation.BRIDGE_MUTATION;
-				EvidenceStateRef state = arena.nearestCalibration(input) == null
+				EvidenceStateRef state = arena.nearestCalibration(input) == null && canonicalState == null
 						? arena.internPayload(outputKey, summary, operation, input, null, relationId, writer)
 						: arena.derivePayload(outputKey, summary, operation, input, null, relationId, writer);
 				writer = null;
 				rememberState(state);
+				if (exact) {
+					exactDerivedStates.put(outputKey, state);
+				}
 				return state;
 			} finally {
 				if (writer != null) {
@@ -9161,14 +9214,14 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	private record ExactRelationResult(FiniteRelationEstimate relation, String declineReason) {
 	}
 
-	private record FrontierFactorSurfaceRefinement(String status, String detail) {
+	private record FrontierFactorSurfaceRefinement(String status, String detail, EvidenceStateRef retainedState) {
 
-		private static FrontierFactorSurfaceRefinement applied(String detail) {
-			return new FrontierFactorSurfaceRefinement("applied", detail);
+		private static FrontierFactorSurfaceRefinement applied(String detail, EvidenceStateRef retainedState) {
+			return new FrontierFactorSurfaceRefinement("applied", detail, retainedState);
 		}
 
 		private static FrontierFactorSurfaceRefinement declined(String detail) {
-			return new FrontierFactorSurfaceRefinement("declined", detail == null ? "" : detail);
+			return new FrontierFactorSurfaceRefinement("declined", detail == null ? "" : detail, null);
 		}
 	}
 

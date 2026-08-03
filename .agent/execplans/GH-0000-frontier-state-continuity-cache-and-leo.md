@@ -1176,3 +1176,31 @@ candidate. The focused regression first failed at event 4 with an unbound canoni
 the full cache/lifecycle/arena selection is 65/65 green, LMDB cache and semi/anti selections are 11/11 green, and the
 LMDB integration class retains only its same five previously isolated composition failures. This is provenance, not a
 costing rule: no estimate, threshold, candidate rank, query fingerprint, predicate, or access path controls it.
+
+Revision note (2026-08-03 00:20Z): A logging-enabled fresh-store SOCIAL_MEDIA q9 run exposed an exploration-order
+precision collision below DPhyp. The exact `VALUES -> name` event retained four tuples, and the finite `ab` surface
+measured 57 exact result rows, but the output key had already been occupied by a sampled derivation from another
+physical orientation. Candidate costing copied the exact surface rows while retaining the earlier
+`UNRESOLVED`/`BOUND_ONLY` state, so later joins lost tuple pairing and exact refinement. An independent one-key
+fixture reproduces the same contradiction: seven exact surface rows are stamped beside a sampled-zero fallback.
+The repair will retain the already-measured finite relation as an immutable lineage-specific state whenever a weaker
+canonical derivation exists, and cache that exact state by its complete logical key. It will not mutate prior events,
+rerun the estimator, compare candidates by guarantee, or inspect relation identities; database-exact evidence is a
+proof that dominates a sampled representation of the same logical state.
+
+Revision note (2026-08-03 00:55Z): The exact-surface repair now derives the estimator input from the complete
+database-exact Frontier tuple relation, while continuing to price index access from only the factor's shared binding
+domain. This preserves unrelated carry-through columns and their multiplicities instead of attempting to reconstruct
+them from an already projected key surface. Exact states are retained query-locally by their complete logical key; an
+existing exact state must agree on row mass, while a weaker canonical state remains immutable and receives a
+lineage-specific exact child. The carried-binding regression first failed with
+`declined:missing-binding:tag`/`UNRESOLVED` and now passes as `DATABASE_EXACT`/`COMPOSABLE_PAYLOAD`. Fresh-store and
+logging-enabled SOCIAL_MEDIA q9 runs both select `VALUES -> name -> ab -> da -> cd -> bc`; the q4 five-key anti-probe,
+six semi/anti persistence tests, and 78 unaffected Frontier integration tests pass. The integration class retains its
+same five previously documented failures after this repair. Docker q9 uncached planning measures
+402.264 +/- 48.313 ms/op versus 472.924 +/- 61.897 before the repair, a 14.94 percent decrease (below the 20 percent
+classification threshold). The post-fix recording is
+`profiles/lmdb/social-q9-plan-uncached-post-exact-surface.jfr`; its planning samples are led by Frontier query-index
+reads and payload operations. The older recording also contains fresh-store construction and 15.1 million StorePath
+events, so its setup hotspots are not a controlled comparison of planner internals. No candidate cost, relation ID,
+predicate, query fingerprint, access-path preference, or cardinality threshold controls the repair.

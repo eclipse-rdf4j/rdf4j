@@ -1616,7 +1616,7 @@ class LmdbFrontierPlanningIntegrationTest {
 	}
 
 	@Test
-	void sampledBridgeUsesExactFiniteLookupInsteadOfPublishingSampledZero(@TempDir Path dataDirectory) {
+	void sampledBridgeUsesExactFiniteLookupWhilePreservingCarriedBindings(@TempDir Path dataDirectory) {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc")
 				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
 				.setFrontierSynopsisBudgetBytes(16L * 1024L);
@@ -1638,9 +1638,9 @@ class LmdbFrontierPlanningIntegrationTest {
 			}
 			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
 			String query = """
-					SELECT ?subject
+					SELECT ?subject ?tag
 					WHERE {
-					  VALUES ?object { <urn:frontier:reverse-heavy-object> }
+					  VALUES (?object ?tag) { (<urn:frontier:reverse-heavy-object> "kept") }
 					  ?subject <urn:frontier:p> ?object
 					}
 					""";
@@ -1655,11 +1655,12 @@ class LmdbFrontierPlanningIntegrationTest {
 				assertNotNull(refined, explanation::toString);
 				assertEquals(7.0d, refined.getDoubleMetricPlanned("plannedFrontierRows"),
 						explanation::toString);
-				assertEquals(0.0d, refined.getDoubleMetricPlanned("plannedFrontierSampledRows"),
-						"The raw sampled-zero parent must remain separate from the conservative bound overlay");
-				assertEquals("sampled_zero_not_authoritative",
-						refined.getStringMetricPlanned("plannedFrontierFallbackReason"),
-						explanation::toString);
+				assertEquals("database_exact",
+						refined.getStringMetricPlanned("plannedFrontierGuarantee"), explanation::toString);
+				assertEquals("composable_payload",
+						refined.getStringMetricPlanned("plannedFrontierDisposition"), explanation::toString);
+				assertNull(refined.getStringMetricPlanned("plannedFrontierFallbackReason"),
+						"An exact finite surface must replace a weaker canonical derivation, not retain its fallback");
 				assertEquals("lmdb-frontier-correlated-surface",
 						refined.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE),
 						explanation::toString);
