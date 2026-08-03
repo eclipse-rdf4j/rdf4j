@@ -745,11 +745,47 @@ class LmdbDirectAdjacencyQueryTest {
 	}
 
 	@Test
-	void flaggedPlannerFanOutUsesExactPlaneCounts() throws IOException {
+	void plannerFanOutIsExactByDefaultAndFalseRestoresSampledStatistics() throws Exception {
+		openPreferStore();
+		assertThat(sail.awaitDirectAdjacencyReady(0, TimeUnit.MILLISECONDS)).isTrue();
+
+		try (var enabledByDefault = dataset()) {
+			assertThat(enabledByDefault.source.meanFanOut(p1, true).orElseThrow()).isEqualTo(1.5);
+		}
+
+		System.setProperty(LmdbDirectAdjacencyStore.PLANNER_STATS_PROPERTY, "false");
+		try (var disabled = dataset()) {
+			assertThat(disabled.source.meanFanOut(p1, true).orElseThrow()).isNotEqualTo(1.5);
+		}
+	}
+
+	@Test
+	void cachedPlannerFanOutRespectsDirtyWriterBypass() throws Exception {
+		openPreferStore();
+		assertThat(sail.awaitDirectAdjacencyReady(0, TimeUnit.MILLISECONDS)).isTrue();
+
+		try (var dataset = dataset()) {
+			assertThat(dataset.source.meanFanOut(p1, true).orElseThrow()).isEqualTo(1.5);
+			direct.storeTxnStartedFlag().set(true);
+			direct.storeTxnDirtyFlag().set(true);
+			try {
+				assertThat(dataset.source.meanFanOut(p1, true).orElseThrow()).isNotEqualTo(1.5);
+			} finally {
+				direct.storeTxnDirtyFlag().set(false);
+				direct.storeTxnStartedFlag().set(false);
+			}
+		}
+	}
+
+	@Test
+	void flaggedPlannerFanOutUsesExactPlaneCounts() throws Exception {
 		System.setProperty(LmdbDirectAdjacencyStore.PLANNER_STATS_PROPERTY, "true");
 		openPreferStore();
+		assertThat(sail.awaitDirectAdjacencyReady(0, TimeUnit.MILLISECONDS)).isTrue();
+		long plannerStatsHitsBefore = sail.getDirectAdjacencyPlannerStatsHitCount();
 
 		try (var pinned = dataset()) {
+			assertThat(pinned.source.meanFanOut(p1, true).orElseThrow()).isEqualTo(1.5);
 			assertThat(pinned.source.meanFanOut(p1, true).orElseThrow()).isEqualTo(1.5);
 			assertThat(pinned.source.meanFanOut(p1, false).orElseThrow()).isEqualTo(1.5);
 
@@ -776,6 +812,7 @@ class LmdbDirectAdjacencyQueryTest {
 				assertThat(pinned.source.meanFanOut(p4, true).orElseThrow()).isZero();
 			}
 		}
+		assertThat(sail.getDirectAdjacencyPlannerStatsHitCount()).isEqualTo(plannerStatsHitsBefore + 2);
 	}
 
 	@Test

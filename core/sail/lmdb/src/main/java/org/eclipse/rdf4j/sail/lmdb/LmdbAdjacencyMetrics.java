@@ -52,6 +52,7 @@ final class LmdbAdjacencyMetrics {
 	private static final FallbackReason[] REASONS = FallbackReason.values();
 
 	private final LongAdder lookupHits = new LongAdder();
+	private final LongAdder plannerStatsHits = new LongAdder();
 	private final LongAdder exactMisses = new LongAdder();
 	private final AtomicLongArray fallbacks = new AtomicLongArray(REASONS.length);
 	private final LongAdder buildsStarted = new LongAdder();
@@ -73,6 +74,10 @@ final class LmdbAdjacencyMetrics {
 
 	void recordHit() {
 		lookupHits.increment();
+	}
+
+	void recordPlannerStatsHit() {
+		plannerStatsHits.increment();
 	}
 
 	void recordExactMiss() {
@@ -158,7 +163,8 @@ final class LmdbAdjacencyMetrics {
 				emergencyGapFromRevision, activeViews, baseBytes, buildCounterBytes, buildOutputBytes,
 				javaMetadataBytes,
 				totalChargedBytes, highWaterBytes, configuredMaxBytes, detectedMemoryLimitBytes, effectiveMaxBytes,
-				lookupHits.sum(), exactMisses.sum(), Map.copyOf(byReason), buildsStarted.sum(), buildsCompleted.sum(),
+				lookupHits.sum(), plannerStatsHits.sum(), exactMisses.sum(), Map.copyOf(byReason), buildsStarted.sum(),
+				buildsCompleted.sum(),
 				buildsAborted.sum(),
 				shadowComparisons.sum(), shadowMismatches.sum(), activeBuildThreads.get(), lastBuildThreads.get(),
 				pass1SourceVisits.get(), pass1Nanos.get(), pass3SourceVisits.get(), pass3Nanos.get(),
@@ -215,6 +221,7 @@ final class LmdbAdjacencyMetrics {
 		final long detectedMemoryLimitBytes;
 		final long effectiveMaxBytes;
 		final long lookupHits;
+		final long plannerStatsHits;
 		final long exactMisses;
 		final Map<FallbackReason, Long> fallbacksByReason;
 		final long buildsStarted;
@@ -235,7 +242,8 @@ final class LmdbAdjacencyMetrics {
 				long gapFromRevision, long emergencyGapFromRevision, long activeViews, long baseBytes,
 				long buildCounterBytes, long buildOutputBytes, long javaMetadataBytes, long totalChargedBytes,
 				long highWaterBytes, long configuredMaxBytes, long detectedMemoryLimitBytes, long effectiveMaxBytes,
-				long lookupHits, long exactMisses, Map<FallbackReason, Long> fallbacksByReason, long buildsStarted,
+				long lookupHits, long plannerStatsHits, long exactMisses, Map<FallbackReason, Long> fallbacksByReason,
+				long buildsStarted,
 				long buildsCompleted, long buildsAborted, long shadowComparisons, long shadowMismatches,
 				long activeBuildThreads, long lastBuildThreads, long pass1SourceVisits, long pass1Nanos,
 				long pass3SourceVisits, long pass3Nanos, long buildElapsedNanos, long projectedBuildNanos) {
@@ -256,6 +264,7 @@ final class LmdbAdjacencyMetrics {
 			this.detectedMemoryLimitBytes = detectedMemoryLimitBytes;
 			this.effectiveMaxBytes = effectiveMaxBytes;
 			this.lookupHits = lookupHits;
+			this.plannerStatsHits = plannerStatsHits;
 			this.exactMisses = exactMisses;
 			this.fallbacksByReason = fallbacksByReason;
 			this.buildsStarted = buildsStarted;

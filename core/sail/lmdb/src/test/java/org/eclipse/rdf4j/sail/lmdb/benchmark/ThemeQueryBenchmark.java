@@ -103,7 +103,10 @@ public class ThemeQueryBenchmark {
 	private static final String COUNT_BINDING_NAME = "count";
 	static final String WAIT_FOR_SKETCHES_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.waitForSketches";
 	static final String WAIT_FOR_SKETCHES_TIMEOUT_SECONDS_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.waitForSketchesTimeoutSeconds";
+	static final String WAIT_FOR_DIRECT_ADJACENCY_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.waitForDirectAdjacency";
+	static final String WAIT_FOR_DIRECT_ADJACENCY_TIMEOUT_SECONDS_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.waitForDirectAdjacencyTimeoutSeconds";
 	private static final long DEFAULT_WAIT_FOR_SKETCHES_TIMEOUT_SECONDS = 60L;
+	private static final long DEFAULT_WAIT_FOR_DIRECT_ADJACENCY_TIMEOUT_SECONDS = 300L;
 
 	@Param({
 			"0",
@@ -177,6 +180,7 @@ public class ThemeQueryBenchmark {
 			ensureDataLoadedAndValidated();
 			ensureSketchesAvailable(storeDirectory);
 			waitForSketchesIfEnabled();
+			waitForDirectAdjacencyIfEnabled();
 			if (QueryPlanCapture.isCaptureEnabled()) {
 				captureQueryPlanSnapshot();
 			}
@@ -280,6 +284,25 @@ public class ThemeQueryBenchmark {
 
 	private boolean waitForSketchesEnabled() {
 		return Boolean.parseBoolean(System.getProperty(WAIT_FOR_SKETCHES_PROPERTY, "false"));
+	}
+
+	private void waitForDirectAdjacencyIfEnabled() throws IOException {
+		if (!Boolean.parseBoolean(System.getProperty(WAIT_FOR_DIRECT_ADJACENCY_PROPERTY, "false"))) {
+			return;
+		}
+		repository.init();
+		long timeoutSeconds = Long.getLong(WAIT_FOR_DIRECT_ADJACENCY_TIMEOUT_SECONDS_PROPERTY,
+				DEFAULT_WAIT_FOR_DIRECT_ADJACENCY_TIMEOUT_SECONDS);
+		try {
+			if (!store.awaitDirectAdjacencyReady(timeoutSeconds, TimeUnit.SECONDS)) {
+				throw new IOException("LMDB direct adjacency did not become exact within " + timeoutSeconds
+						+ " seconds: " + store.getDirectAdjacencyReadinessDescription());
+			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while waiting for LMDB direct adjacency", e);
+		}
+		System.out.println("LMDB direct adjacency is exact for the benchmark trial.");
 	}
 
 	private void ensureSketchesAvailable(File storeDirectory) throws IOException {

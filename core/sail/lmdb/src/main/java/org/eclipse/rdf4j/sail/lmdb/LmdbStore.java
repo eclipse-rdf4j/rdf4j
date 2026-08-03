@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
@@ -557,6 +558,61 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	public boolean awaitSketchesReady(long timeout, TimeUnit unit) throws InterruptedException {
 		SketchBasedJoinEstimator estimator = getSketchBasedJoinEstimator();
 		return estimator != null && estimator.awaitReady(timeout, unit);
+	}
+
+	/**
+	 * Waits for the configured direct-adjacency maintenance work to publish an exact view of the current LMDB data
+	 * revision. Returns {@code false} when direct adjacency is disabled, refused, failed, has no scheduled build, or
+	 * the timeout expires.
+	 */
+	@InternalUseOnly
+	public boolean awaitDirectAdjacencyReady(long timeout, TimeUnit unit) throws InterruptedException {
+		Objects.requireNonNull(unit, "unit");
+		if (timeout < 0L) {
+			throw new IllegalArgumentException("timeout must be non-negative");
+		}
+		LmdbSailStore current = backingStore;
+		if (current == null) {
+			throw new IllegalStateException("LMDB store is not initialized");
+		}
+		LmdbDirectAdjacencyStore adjacency = current.directAdjacencyStore();
+		return adjacency != null && adjacency.awaitCurrentRevisionReady(timeout, unit);
+	}
+
+	/**
+	 * Returns the number of owning query datasets that engaged exact direct-adjacency fan-out statistics since this
+	 * store was initialized. Multiple estimates within one dataset count as one coarse diagnostic event.
+	 */
+	@InternalUseOnly
+	public long getDirectAdjacencyPlannerStatsHitCount() {
+		LmdbSailStore current = backingStore;
+		if (current == null) {
+			throw new IllegalStateException("LMDB store is not initialized");
+		}
+		LmdbDirectAdjacencyStore adjacency = current.directAdjacencyStore();
+		return adjacency == null ? 0L : adjacency.snapshotMetrics().plannerStatsHits;
+	}
+
+	/**
+	 * Returns a compact diagnostic description of direct-adjacency readiness.
+	 */
+	@InternalUseOnly
+	public String getDirectAdjacencyReadinessDescription() {
+		LmdbSailStore current = backingStore;
+		if (current == null) {
+			return "uninitialized";
+		}
+		LmdbDirectAdjacencyStore adjacency = current.directAdjacencyStore();
+		if (adjacency == null) {
+			return "disabled";
+		}
+		LmdbAdjacencyMetrics.Snapshot snapshot = adjacency.snapshotMetrics();
+		return "state=" + snapshot.state + ", baseRevision=" + snapshot.baseRevision + ", appliedRevision="
+				+ snapshot.appliedRevision + ", currentDataRevision=" + snapshot.currentDataRevision
+				+ ", gapFromRevision=" + snapshot.gapFromRevision + ", emergencyGapFromRevision="
+				+ snapshot.emergencyGapFromRevision + ", buildsStarted=" + snapshot.buildsStarted
+				+ ", buildsCompleted=" + snapshot.buildsCompleted + ", buildsAborted=" + snapshot.buildsAborted
+				+ ", lastBuildFailure=" + adjacency.lastBuildFailureDescription();
 	}
 
 	private boolean shouldUseSketchBasedJoinEstimator() {

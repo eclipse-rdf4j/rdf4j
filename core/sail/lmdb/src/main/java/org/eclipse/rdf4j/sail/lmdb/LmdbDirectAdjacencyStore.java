@@ -17,12 +17,16 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -89,6 +93,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	record GapMarker(long fromRevision, long sequence) {
 	}
 
+	private enum ReadinessProbe {
+		READY,
+		PROGRESS_PENDING,
+		UNAVAILABLE
+	}
+
 	private static final GapMarker INITIAL_GAP_MARKER = new GapMarker(Long.MAX_VALUE, 0);
 
 	private final TripleStore tripleStore;
@@ -126,6 +136,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	/** Test-only interleaving hook: runs after a candidate paged rewrite and before publication validation. */
 	volatile Runnable beforePagedCsfPublicationForTest;
 	private volatile MaintenanceState maintenanceState = MaintenanceState.EMPTY;
+	private volatile String lastBuildFailureDescription = "<none>";
 	private volatile boolean closed;
 
 	LmdbDirectAdjacencyStore(TripleStore tripleStore, ValueStore valueStore, AtomicBoolean storeTxnStarted,
@@ -202,6 +213,10 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	MaintenanceState maintenanceState() {
 		return maintenanceState;
+	}
+
+	String lastBuildFailureDescription() {
+		return lastBuildFailureDescription;
 	}
 
 	LmdbAdjacencyMemoryAccount memoryAccount() {
@@ -1009,6 +1024,86 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	}
 
 	/**
+	 * Waits until the maintenance executor has published an exact view for the data revision current at the readiness
+	 * check. This is a bounded diagnostic seam for benchmarks and operational startup checks; it never starts a build
+	 * that configuration disabled.
+	 */
+	boolean awaitCurrentRevisionReady(long timeout, TimeUnit unit) throws InterruptedException {
+		Objects.requireNonNull(unit, "unit");
+		if (timeout < 0L) {
+			throw new IllegalArgumentException("timeout must be non-negative");
+		}
+		long timeoutNanos = unit.toNanos(timeout);
+		long startedNanos = System.nanoTime();
+		while (true) {
+			if (servesCurrentRevisionExactly()) {
+				return true;
+			}
+			long elapsedNanos = Math.max(0L, System.nanoTime() - startedNanos);
+			long remainingNanos = timeoutNanos - Math.min(timeoutNanos, elapsedNanos);
+			if (remainingNanos == 0L) {
+				return false;
+			}
+
+			Future<ReadinessProbe> barrier;
+			try {
+				barrier = maintenanceExecutor.submit(() -> {
+					if (servesCurrentRevisionExactly()) {
+						return ReadinessProbe.READY;
+					}
+					return maintenanceCanReachReadiness() ? ReadinessProbe.PROGRESS_PENDING
+							: ReadinessProbe.UNAVAILABLE;
+				});
+			} catch (RejectedExecutionException e) {
+				return false;
+			}
+			try {
+				ReadinessProbe result = barrier.get(remainingNanos, TimeUnit.NANOSECONDS);
+				if (result == ReadinessProbe.READY) {
+					return true;
+				}
+				if (result == ReadinessProbe.UNAVAILABLE) {
+					return false;
+				}
+			} catch (TimeoutException e) {
+				return false;
+			} catch (ExecutionException e) {
+				throw new IllegalStateException("direct adjacency readiness barrier failed", e.getCause());
+			}
+		}
+	}
+
+	private boolean servesCurrentRevisionExactly() {
+		if (closed || options.memoryRefused() || writeTransactionBlocksAdjacency()) {
+			return false;
+		}
+		long currentRevision = tripleStore.getDataRevision();
+		LmdbAdjacencyPublishedState state = published.get();
+		return state.servingState() == AdjacencyServingState.ROW_EXACT && state.base() != null
+				&& state.appliedRevision() == currentRevision && currentRevision >= state.minSnapshotRevision()
+				&& currentRevision <= state.horizonRevision() && state.gapFromRevision() > currentRevision
+				&& emergencyGap.get().fromRevision() > currentRevision;
+	}
+
+	private boolean maintenanceCanReachReadiness() {
+		if (closed || options.memoryRefused() || maintenanceState == MaintenanceState.CLOSED
+				|| maintenanceState == MaintenanceState.MEMORY_REFUSED
+				|| maintenanceState == MaintenanceState.FAILED_CORRUPT) {
+			return false;
+		}
+		if (rebuildPending.get() || quiescentRebuildPending.get()
+				|| maintenanceState == MaintenanceState.BUILDING
+				|| maintenanceState == MaintenanceState.CATCHING_UP
+				|| maintenanceState == MaintenanceState.CONSOLIDATING
+				|| maintenanceState == MaintenanceState.QUIESCING_FOR_REBUILD) {
+			return true;
+		}
+		synchronized (applyQueue) {
+			return !applyQueue.isEmpty();
+		}
+	}
+
+	/**
 	 * Deterministic synchronous build for tests: runs one build on the maintenance executor and reports success.
 	 */
 	boolean buildNowForTest() {
@@ -1081,10 +1176,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				}
 			}
 			if (published) {
+				lastBuildFailureDescription = "<none>";
 				metrics.recordBuildCompleted();
 				logger.info("Published in-memory adjacency structures: format={}, snapshotRevision={}, {}", baseFormat,
 						baseRevision, account.memoryUsageSummary());
 			} else {
+				lastBuildFailureDescription = "online catch-up could not prove revision continuity";
 				metrics.recordBuildAborted();
 				logger.info("Aborted in-memory adjacency structure build before publication: format={}, "
 						+ "snapshotRevision={}, {}", baseFormat, baseRevision, account.memoryUsageSummary());
@@ -1094,11 +1191,13 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				}
 			}
 		} catch (LmdbAdjacencyMemoryRefusedException e) {
+			lastBuildFailureDescription = describeFailure(e);
 			metrics.recordBuildAborted();
 			maintenanceState = MaintenanceState.MEMORY_REFUSED;
 			logger.info("Refused in-memory adjacency structure build: {}", account.memoryUsageSummary());
 			logger.warn("Direct adjacency build refused by the memory account: {}", e.getMessage());
 		} catch (IOException | RuntimeException e) {
+			lastBuildFailureDescription = describeFailure(e);
 			metrics.recordBuildAborted();
 			logger.info("Aborted in-memory adjacency structure build: {}", account.memoryUsageSummary());
 			if (!closed) {
@@ -1106,6 +1205,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				logger.warn("Direct adjacency build aborted; LMDB continues to serve", e);
 			}
 		}
+	}
+
+	private static String describeFailure(Throwable failure) {
+		String message = failure.getMessage();
+		return failure.getClass().getName() + (message == null || message.isBlank() ? "" : ": " + message);
 	}
 
 	/**
@@ -1466,6 +1570,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		metrics.recordFallback(reason);
 	}
 
+	/** Records one coarse planner-stat engagement event for an owning query dataset. */
+	void recordPlannerStatsHit() {
+		metrics.recordPlannerStatsHit();
+	}
+
 	// ------------------------------------------------------------------
 	// row resolution
 	// ------------------------------------------------------------------
@@ -1720,11 +1829,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		return configured == null || Boolean.parseBoolean(configured);
 	}
 
-	private static boolean plannerStatsEnabled() {
-		return Boolean.parseBoolean(System.getProperty(PLANNER_STATS_PROPERTY, "false"));
+	static boolean plannerStatsEnabled() {
+		String configured = System.getProperty(PLANNER_STATS_PROPERTY);
+		return configured == null || Boolean.parseBoolean(configured);
 	}
 
-	private boolean writeTransactionBlocksAdjacency() {
+	boolean writeTransactionBlocksAdjacency() {
 		if (!storeTxnStarted.get()) {
 			return false;
 		}

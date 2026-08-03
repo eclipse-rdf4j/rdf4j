@@ -35,6 +35,7 @@ final class QueryPlanSnapshotCliOptions {
 	boolean renameRunsByCommit;
 	boolean compareLatest;
 	boolean runAllThemeQueries;
+	boolean planOnly;
 	boolean persist = true;
 	DiffMode diffMode = DiffMode.STRUCTURE;
 	ComparisonPair compareIndices;
@@ -52,6 +53,7 @@ final class QueryPlanSnapshotCliOptions {
 	Path emitCsv;
 	Path lmdbDataDirectory;
 	Integer queryTimeoutSeconds;
+	Integer directAdjacencyReadyTimeoutSeconds;
 	Integer executionRepeatMinRuns;
 	Integer executionRepeatMaxRuns;
 	Long executionRepeatSoftLimitMillis;
@@ -71,6 +73,7 @@ final class QueryPlanSnapshotCliOptions {
 		copy.renameRunsByCommit = renameRunsByCommit;
 		copy.compareLatest = compareLatest;
 		copy.runAllThemeQueries = runAllThemeQueries;
+		copy.planOnly = planOnly;
 		copy.persist = persist;
 		copy.diffMode = diffMode;
 		copy.compareIndices = compareIndices;
@@ -88,6 +91,7 @@ final class QueryPlanSnapshotCliOptions {
 		copy.emitCsv = emitCsv;
 		copy.lmdbDataDirectory = lmdbDataDirectory;
 		copy.queryTimeoutSeconds = queryTimeoutSeconds;
+		copy.directAdjacencyReadyTimeoutSeconds = directAdjacencyReadyTimeoutSeconds;
 		copy.executionRepeatMinRuns = executionRepeatMinRuns;
 		copy.executionRepeatMaxRuns = executionRepeatMaxRuns;
 		copy.executionRepeatSoftLimitMillis = executionRepeatSoftLimitMillis;
@@ -148,6 +152,9 @@ final class QueryPlanSnapshotCliOptions {
 			case "--all-theme-queries":
 				options.runAllThemeQueries = true;
 				break;
+			case "--plan-only":
+				options.planOnly = true;
+				break;
 			case "--diff-mode":
 				options.diffMode = parseDiffMode(requireValue(args, ++i, arg), arg);
 				break;
@@ -203,6 +210,9 @@ final class QueryPlanSnapshotCliOptions {
 			case "--query-timeout-seconds":
 				options.queryTimeoutSeconds = parseNonNegativeInteger(requireValue(args, ++i, arg), arg);
 				break;
+			case "--await-direct-adjacency-seconds":
+				options.directAdjacencyReadyTimeoutSeconds = parsePositiveInteger(requireValue(args, ++i, arg), arg);
+				break;
 			case "--execution-repeat-min-runs":
 				options.executionRepeatMinRuns = parsePositiveInteger(requireValue(args, ++i, arg), arg);
 				break;
@@ -242,6 +252,13 @@ final class QueryPlanSnapshotCliOptions {
 		}
 
 		if (options.compareExisting) {
+			if (options.planOnly) {
+				throw new IllegalArgumentException("--plan-only is only supported in run mode.");
+			}
+			if (options.directAdjacencyReadyTimeoutSeconds != null) {
+				throw new IllegalArgumentException(
+						"--await-direct-adjacency-seconds is only supported in run mode.");
+			}
 			if (options.compareLatest) {
 				throw new IllegalArgumentException("Use either --compare-existing or --compare-latest, not both.");
 			}
@@ -272,6 +289,9 @@ final class QueryPlanSnapshotCliOptions {
 
 		if (options.emitCsv != null) {
 			throw new IllegalArgumentException("--emit-csv is only supported in --compare-existing mode.");
+		}
+		if (options.directAdjacencyReadyTimeoutSeconds != null && options.store == StoreType.MEMORY) {
+			throw new IllegalArgumentException("--await-direct-adjacency-seconds requires --store lmdb.");
 		}
 
 		if (options.runAllThemeQueries) {
@@ -532,9 +552,13 @@ final class QueryPlanSnapshotCliOptions {
 		output.println("  --theme-query <THEME:INDEX>          shortcut for themed query");
 		output.println(
 				"  --all-theme-queries                  run all queries (all themes, or only --theme if supplied)");
+		output.println(
+				"  --plan-only                         capture unoptimized/optimized plans without executing queries");
 		output.println("  --query <SPARQL>                     direct query text");
 		output.println("  --query-file <path>                  load query text from file");
 		output.println("  --query-timeout-seconds <int>=0      per-query max execution time (0 disables timeout)");
+		output.println("  --await-direct-adjacency-seconds <int>=1");
+		output.println("                                       fail unless LMDB adjacency becomes exact in time");
 		output.println("  --execution-repeat-min-runs <int>=1  minimum repeated verification runs");
 		output.println("  --execution-repeat-max-runs <int>=1  maximum repeated verification runs");
 		output.println("  --execution-repeat-soft-limit-millis <long>=1");

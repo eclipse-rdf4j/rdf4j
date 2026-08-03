@@ -30,8 +30,9 @@ How to see it working at any point: run the census test (prints a per-query-shap
   its row/probe/count/has/degree surface is adjacency-backed, while range partitions retain their bounded LMDB scan.
 - [x] (2026-08-03) Milestone 5 complete and default-enabled: immutable snapshot plane counts feed subject/predicate
   prefix cursors and exact COUNT/DISTINCT/degree/predicate aggregates; every paired acceptance workload beat LMDB.
-- [ ] Milestone 6: exact optimizer statistics are implemented behind a default-off property; finish the plan-snapshot
-  audit and paired acceptance measurements before deciding whether to default-enable them.
+- [x] (2026-08-03) Milestone 6 complete and default-enabled with an explicit `false` kill switch. The deterministic
+  143-query plan audit is unchanged with exactly 28 engaged queries; the complete short screen plus longer paired
+  reruns found no disjoint-interval regression, including reverse-order confirmation of the two noisy cells.
 - [ ] Milestone 7: SIP semijoin masks from adjacency key domains.
 - [ ] Milestone 8: property paths fully over adjacency (seeding, workers, telemetry-verified).
 - [ ] Milestone 9 (evidence-gated): run-intersection semijoins, degree binding, bidirectional path search, exact-empty plan pruning.
@@ -83,6 +84,41 @@ How to see it working at any point: run the census test (prints a per-query-shap
   all need distinct handling; an incomplete object key domain must decline rather than silently undercount.
   Evidence: the M5 focused cases in `LmdbDirectAdjacencyQueryTest` and
   `initial-evidence-adjacency-{empty-count,predicate-analytics,subject-aggregates}-red.txt`.
+- Observation: The plan-snapshot harness's original LMDB index set (`spoc,ospc,psoc`) could never publish the complete
+  direct-adjacency structure because the incoming plane needs `posc` to stream its grouping order. Adding `posc` and a
+  bounded readiness barrier made the audit deterministic instead of silently comparing sampled statistics twice.
+  Evidence: the first audit reported `NOT_BUILDABLE_WITH_INDEX_CONFIG: plane 1 cannot stream its grouping order`;
+  `QueryPlanSnapshotCliTest.directAdjacencyWaitInitializesReusedLmdbStore` covers the corrected persistent-store path.
+- Observation: The valid corpus audit captured all 143 theme queries with the feature explicitly off and on. Exact
+  adjacency statistics engaged in 28 queries (225 exact lookups before counter coarsening), yet optimized structure,
+  join algorithms, actual sizes, estimates, and structure fingerprints were identical in every comparison cell.
+  Evidence: `/tmp/adjacency-m6-plan-snapshots-ready`, `/tmp/adjacency-m6-plan-comparison-ready.csv`, and
+  `/tmp/adjacency-m6-planner-stats-{off,on}-ready.log`.
+- Observation: Counting every exact `meanFanOut` call put a `LongAdder` increment in runtime costing as well as
+  planning, because `LmdbNativePatternPlan` consults that method while executing. The engagement metric is now one
+  coarse event per owning dataset; exact lookups remain allocation-free and atomic-free after the first consultation.
+  Evidence: `initial-evidence-adjacency-planner-stats-hot-counter-red.txt` observed five increments where the two
+  owning datasets required two; `logs/mvnf/20260803-165211-verify.log` is green after the correction.
+- Observation: Runtime costing is much hotter than the optimized-plan audit suggests: a 25-second method trace of
+  ELECTRICAL_GRID q1 observed 4,302,295 calls to direct `meanFanOut` (about 2,200 per query execution). A lazy
+  per-dataset primitive-map cache removes repeated plane-stat lookups while retaining the property and dirty-writer
+  gates on every call. The cache is scoped to the dataset's pinned exact view, so commit and map-resize isolation are
+  unchanged.
+  Evidence: `/tmp/m6-electrical-q1-on-mean-fanout-trace.txt`, the cached q1 pair under
+  `benchmark-results/m6-plannerStats-electrical_grid-q1-*-cached-long-r3-2026-08-03.txt`, and
+  `initial-evidence-adjacency-planner-stats-cache-dirty-red.txt`.
+- Observation: The final explicit off/on audit, after counter coarsening, caching, and the default change, reproduced
+  the same result: 143 shared queries; zero normalized structure, join-algorithm, estimate, or node-count differences;
+  off engaged 0 queries and on engaged exactly 28 queries with one event each. Thirty-seven raw structure hashes
+  differed only in anonymous type tokens and normalized to identical signatures.
+  Evidence: `/tmp/adjacency-m6-plan-snapshots-default` and
+  `/tmp/adjacency-m6-plan-comparison-default.csv`.
+- Observation: Two feature-off benchmark cells are not timing baselines because they fail deterministic result
+  validation: PHARMA q4 reports the wrong aggregate binding and HIGHLY_CONNECTED q6 reports the wrong row count.
+  Feature-on returns the catalogued answers in both cases; the remaining engaged-query screen and long reruns all
+  completed with result validation enabled.
+  Evidence: `benchmark-results/m6-plannerStats-pharma-false-r1-2026-08-03.txt` and
+  `benchmark-results/m6-plannerStats-highly_connected-false-r1-2026-08-03.txt`.
 
 ## Decision Log
 
@@ -138,6 +174,13 @@ How to see it working at any point: run the census test (prints a per-query-shap
   Rationale: exact per-plane fan-out and pinned-snapshot behavior are implemented and focused-test green, but the
   required query-plan snapshot audit and paired query benchmarks have not yet been completed.
   Date/Author: 2026-08-03 / Codex.
+- Decision: Default-enable M6 and retain `...plannerStats.enabled=false` as the sampled-LMDB rollback switch.
+  Rationale: both 143-query audits found identical normalized optimized plans and exactly 28 engaged queries. The
+  full engaged-query screen found no correctness regression; rigorous representative/outlier pairs favored exact
+  statistics or overlapped. The tightest unresolved center, LIBRARY q10, was 12223.430 +/- 54.554 ms/op on versus
+  12216.512 +/- 76.385 ms/op off (0.057%, deeply overlapping); reverse-order TRAIN q3 was 12.418 +/- 0.196 versus
+  13.229 +/- 0.202 ms/op (6.130% faster). All other long cells were parity or faster, satisfying the user's gate.
+  Date/Author: 2026-08-03 / Håvard and Codex.
 
 ## Outcomes & Retrospective
 
@@ -173,9 +216,13 @@ Selected coverage and explicit/inferred unions are exact; unsupported inline-obj
 Every focused and analytics acceptance pair was faster than LMDB, so scan aggregates are default-on with an explicit
 false switch.
 
-Milestone 6 has begun: covered current snapshots can expose exact outgoing/incoming mean fan-out from the published
-plane counts, including asymmetric delta-only updates and pinned historical snapshots. The implementation remains
-default-off until its query-plan snapshot and end-to-end performance gates are complete.
+Milestone 6 exposes exact outgoing/incoming mean fan-out for covered current and pinned snapshots, including asymmetric
+delta-only updates. The plan CLI can capture optimized plans without executing queries, block until direct adjacency is
+exact, and record one coarse engagement per owning dataset. A per-dataset primitive cache makes repeated runtime
+costing cheap without bypassing dirty-writer or kill-switch checks. Two complete 143-query audits engaged the same 28
+queries and found no normalized plan, estimate, algorithm, actual-size, or node-count differences. The full short screen
+and rigorous representative/outlier pairs produced no disjoint-interval regression; therefore planner statistics are
+default-on and `rdf4j.lmdb.directAdjacency.plannerStats.enabled=false` restores sampled LMDB statistics.
 
 ## Context and Orientation
 
@@ -351,7 +398,7 @@ In `core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNati
 
 Per-plane accounting (M5a) surfaces on `LmdbAdjacencyPublishedState` (exact `quadCount(plane, predicateOrdinal)` and `keyCount(plane, predicateOrdinal)`), consumed by `tryCount` (whole-plane case), the M5c aggregate fast path, and `meanFanOut` (M6).
 
-System properties introduced: `rdf4j.lmdb.directAdjacency.rootScan.enabled`, `rdf4j.lmdb.directAdjacency.boundProbe.enabled`, `rdf4j.lmdb.directAdjacency.cleanTxnReads.enabled`, and `rdf4j.lmdb.directAdjacency.parallelRowPath.enabled` are default-on after passing their gates; the remaining milestone properties stay default-off until their own gates pass: `rdf4j.lmdb.directAdjacency.scanAggregates.enabled`, `rdf4j.lmdb.directAdjacency.plannerStats.enabled`, `rdf4j.lmdb.sip.adjacencyMasks.enabled`, `rdf4j.lmdb.nativePath.adjacencySeeds.enabled`.
+System properties introduced: `rdf4j.lmdb.directAdjacency.rootScan.enabled`, `rdf4j.lmdb.directAdjacency.boundProbe.enabled`, `rdf4j.lmdb.directAdjacency.cleanTxnReads.enabled`, `rdf4j.lmdb.directAdjacency.parallelRowPath.enabled`, `rdf4j.lmdb.directAdjacency.scanAggregates.enabled`, and `rdf4j.lmdb.directAdjacency.plannerStats.enabled` are default-on after passing their gates; the remaining milestone properties stay default-off until their own gates pass: `rdf4j.lmdb.sip.adjacencyMasks.enabled`, `rdf4j.lmdb.nativePath.adjacencySeeds.enabled`.
 
 ---
 

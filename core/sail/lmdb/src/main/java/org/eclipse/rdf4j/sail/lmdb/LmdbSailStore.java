@@ -51,6 +51,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+import org.eclipse.collections.impl.map.mutable.primitive.LongObjectHashMap;
 import org.eclipse.collections.impl.map.mutable.primitive.ObjectIntHashMap;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -3562,6 +3563,15 @@ class LmdbSailStore implements SailStore {
 		private final LmdbAdjacencyMetrics.Snapshot adjacencyOpenSnapshot;
 		private final StampedLongAdderLockManager nativeSourceLock = new StampedLongAdderLockManager();
 		private final AtomicBoolean closed = new AtomicBoolean();
+		/**
+		 * Coarse diagnostic engagement only. The owning dataset is the single-threaded source; parallel workers receive
+		 * their own {@link ParallelSnapshotSource}. Keeping this ordinary avoids an atomic increment in runtime
+		 * costing.
+		 */
+		private boolean plannerStatsHitRecorded;
+		/** Snapshot-local memoization: exact fan-out is immutable for this dataset's pinned adjacency view. */
+		private LongObjectHashMap<OptionalDouble> plannerFanOutBySubject;
+		private LongObjectHashMap<OptionalDouble> plannerFanOutByObject;
 
 		public LmdbSailDataset(boolean explicit, boolean trackActiveTxn) throws SailException {
 			this(explicit, trackActiveTxn, false, false);
@@ -4181,9 +4191,45 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public OptionalDouble meanFanOut(long predicate, boolean bySubject) {
 			assertNativeSourceOpen();
-			return hasStatementsInSource()
-					? fanOutMean(predicate, bySubject, explicit, directEligible() ? adjacencyView : null)
-					: OptionalDouble.empty();
+			if (!hasStatementsInSource()) {
+				return OptionalDouble.empty();
+			}
+			if (directEligible() && LmdbDirectAdjacencyStore.plannerStatsEnabled()
+					&& !directAdjacency.writeTransactionBlocksAdjacency()) {
+				OptionalDouble exact = cachedPlannerFanOut(predicate, bySubject);
+				if (exact == null) {
+					exact = directAdjacency.meanFanOut(adjacencyView, predicate, bySubject, explicit);
+					if (exact.isPresent()) {
+						cachePlannerFanOut(predicate, bySubject, exact);
+					}
+				}
+				if (exact.isPresent()) {
+					if (!plannerStatsHitRecorded) {
+						plannerStatsHitRecorded = true;
+						directAdjacency.recordPlannerStatsHit();
+					}
+					return exact;
+				}
+			}
+			return tripleStore.meanFanOut(predicate, bySubject, explicit);
+		}
+
+		private OptionalDouble cachedPlannerFanOut(long predicate, boolean bySubject) {
+			LongObjectHashMap<OptionalDouble> cache = bySubject ? plannerFanOutBySubject : plannerFanOutByObject;
+			return cache == null ? null : cache.get(predicate);
+		}
+
+		private void cachePlannerFanOut(long predicate, boolean bySubject, OptionalDouble fanOut) {
+			LongObjectHashMap<OptionalDouble> cache = bySubject ? plannerFanOutBySubject : plannerFanOutByObject;
+			if (cache == null) {
+				cache = new LongObjectHashMap<>();
+				if (bySubject) {
+					plannerFanOutBySubject = cache;
+				} else {
+					plannerFanOutByObject = cache;
+				}
+			}
+			cache.put(predicate, fanOut);
 		}
 
 		@Override
