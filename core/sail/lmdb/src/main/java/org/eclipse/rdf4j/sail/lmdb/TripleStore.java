@@ -1837,6 +1837,9 @@ class TripleStore implements Closeable {
 		if (plan == null) {
 			throw new IllegalArgumentException("Prefix-run plan must not be null");
 		}
+		if (plan.usesAdjacency()) {
+			throw new IllegalArgumentException("Direct-adjacency prefix plans must not enter the LMDB cursor path");
+		}
 		return new LmdbPrefixRunIterator(plan, txn, subj, pred, obj, context, explicit, countRunRows);
 	}
 
@@ -2507,6 +2510,9 @@ class TripleStore implements Closeable {
 	 */
 	long[][] planPrefixRunSplitValues(Txn txnRef, LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
 			boolean explicit, int targetPartitions, int tupleLength) throws IOException {
+		if (plan.usesAdjacency()) {
+			return null;
+		}
 		List<byte[]> splitKeys = planBalancedSplitKeys(txnRef, plan.index(), subj, pred, obj, context, explicit,
 				targetPartitions);
 		if (splitKeys.isEmpty()) {

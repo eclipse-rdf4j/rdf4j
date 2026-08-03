@@ -134,7 +134,7 @@ final class LmdbPagedCsfConsolidator {
 						catalog,
 						predicates, contexts, coverage, null, newCsf, keyIndexes, new long[0],
 						new LmdbInlineIncomingIndex[0], sharedDictionaryCharge, ownedNative, persistentMetadata,
-						statements, incidences);
+						statements, incidences, state.planeStatistics().flattened());
 				catalog = null;
 				sharedDictionaryCharge = null;
 				contextCharge = null;

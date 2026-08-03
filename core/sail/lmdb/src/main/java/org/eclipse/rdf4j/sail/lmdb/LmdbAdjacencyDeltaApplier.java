@@ -57,12 +57,14 @@ final class LmdbAdjacencyDeltaApplier {
 		final LmdbAdjacencyDeltaGeneration generation;
 		final LmdbAdjacencyContextCatalog contextCatalog;
 		final long[] extraSelectedAfter;
+		final LmdbAdjacencyPlaneStatistics.Update planeStatisticsUpdate;
 
 		Result(LmdbAdjacencyDeltaGeneration generation, LmdbAdjacencyContextCatalog contextCatalog,
-				long[] extraSelectedAfter) {
+				long[] extraSelectedAfter, LmdbAdjacencyPlaneStatistics.Update planeStatisticsUpdate) {
 			this.generation = generation;
 			this.contextCatalog = contextCatalog;
 			this.extraSelectedAfter = extraSelectedAfter;
+			this.planeStatisticsUpdate = planeStatisticsUpdate;
 		}
 	}
 
@@ -73,6 +75,7 @@ final class LmdbAdjacencyDeltaApplier {
 	private final LongPredicate covered;
 	private final LmdbAdjacencyMemoryAccount account;
 	private final long arenaRegionBytes;
+	private final LmdbAdjacencyPlaneStatistics.UpdateBuilder planeStatistics = new LmdbAdjacencyPlaneStatistics.UpdateBuilder();
 
 	private LmdbAdjacencyDeltaApplier(SealedDirectDelta sealed, LmdbInMemoryAdjacencyIndex base,
 			LmdbAdjacencyContextCatalog previousContexts, PreviousRows previousRows, LongPredicate covered,
@@ -113,7 +116,7 @@ final class LmdbAdjacencyDeltaApplier {
 		mergeDirection(outgoing, true, sizingContexts, plan, plan, null);
 		mergeDirection(incoming, false, sizingContexts, plan, plan, null);
 		if (plan.changedRows == 0) {
-			return new Result(null, previousContexts, extraSelectedAfter);
+			return new Result(null, previousContexts, extraSelectedAfter, planeStatistics.build());
 		}
 
 		long contextExtensionBytes = newContexts.length == 0 ? 0 : (long) newContexts.length * Long.BYTES + 8;
@@ -167,7 +170,7 @@ final class LmdbAdjacencyDeltaApplier {
 					catalog, generationCharge, directory.keys, directory.planes, directory.predicates,
 					directory.runRefs);
 			success = true;
-			return new Result(generation, extendedContexts, extraSelectedAfter);
+			return new Result(generation, extendedContexts, extraSelectedAfter, planeStatistics.build());
 		} finally {
 			if (!success && arena != null) {
 				arena.close();
@@ -518,6 +521,10 @@ final class LmdbAdjacencyDeltaApplier {
 		if (!anyChange) {
 			plan.record(RowPlan.UNCHANGED);
 			return;
+		}
+		if (emitState == null) {
+			long keyDelta = oldCount == 0 ? 1 : emitted == 0 ? -1 : 0;
+			planeStatistics.add(predicate, plane, Math.subtractExact(emitted, oldCount), keyDelta);
 		}
 		if (emitted == 0) {
 			// removal emptied the row: tombstone, no run allocation

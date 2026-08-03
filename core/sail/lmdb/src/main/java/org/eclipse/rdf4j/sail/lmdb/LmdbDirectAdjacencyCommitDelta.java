@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.MemoryKind;
 
@@ -52,6 +53,7 @@ final class LmdbDirectAdjacencyCommitDelta {
 	private static final int DIRECT_ROWS_ORDERED = 1;
 	private static final int EVENT_ORDINAL_RADIX = 2;
 	private final LmdbAdjacencyMemoryAccount account;
+	private final AtomicBoolean transactionDirty;
 	private long commitMaxBytes;
 	private long startRevision;
 	private boolean begun;
@@ -66,8 +68,14 @@ final class LmdbDirectAdjacencyCommitDelta {
 	private long chargedBytes;
 
 	LmdbDirectAdjacencyCommitDelta(LmdbAdjacencyMemoryAccount account, long commitMaxBytes) {
+		this(account, commitMaxBytes, new AtomicBoolean());
+	}
+
+	LmdbDirectAdjacencyCommitDelta(LmdbAdjacencyMemoryAccount account, long commitMaxBytes,
+			AtomicBoolean transactionDirty) {
 		this.account = account;
 		this.commitMaxBytes = commitMaxBytes;
+		this.transactionDirty = transactionDirty;
 	}
 
 	void begin(long startRevision) {
@@ -78,6 +86,7 @@ final class LmdbDirectAdjacencyCommitDelta {
 		this.begun = true;
 		this.overflowed = false;
 		this.count = 0;
+		this.transactionDirty.set(false);
 	}
 
 	boolean begun() {
@@ -104,6 +113,7 @@ final class LmdbDirectAdjacencyCommitDelta {
 		if (!begun) {
 			throw new IllegalStateException("commit delta not begun");
 		}
+		transactionDirty.set(true);
 		if (overflowed) {
 			return;
 		}
@@ -926,6 +936,7 @@ final class LmdbDirectAdjacencyCommitDelta {
 	void reset() {
 		begun = false;
 		overflowed = false;
+		transactionDirty.set(false);
 		releaseArrays();
 	}
 

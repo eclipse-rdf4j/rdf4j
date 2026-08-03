@@ -366,7 +366,8 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 
 	private static boolean compatiblePrefixRunPlans(LmdbPrefixRunPlan expected, LmdbPrefixRunPlan candidate) {
 		return candidate != null && expected.prefixLength() == candidate.prefixLength()
-				&& Arrays.equals(expected.index().getFieldSeq(), candidate.index().getFieldSeq());
+				&& expected.usesAdjacency() == candidate.usesAdjacency()
+				&& Arrays.equals(expected.fieldSequence(), candidate.fieldSequence());
 	}
 
 	private static void closePrefixRunCursors(List<LmdbPrefixRunCursor> cursors, Throwable primary) {
@@ -404,7 +405,7 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 			this.cursors = List.copyOf(cursors);
 			this.orderedPrefixFields = orderedPrefixFields(plan);
 			this.countRunRows = countRunRows;
-			this.indexName = plan.index().toString();
+			this.indexName = plan.indexName();
 			this.heads = new long[cursors.size()][];
 		}
 
@@ -598,7 +599,7 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		}
 
 		private static int[] orderedPrefixFields(LmdbPrefixRunPlan plan) {
-			char[] fieldSequence = plan.index().getFieldSeq();
+			char[] fieldSequence = plan.fieldSequence();
 			int[] fields = new int[plan.prefixLength()];
 			for (int i = 0; i < fields.length; i++) {
 				fields[i] = switch (fieldSequence[i]) {

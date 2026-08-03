@@ -147,15 +147,15 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 				.append(distinctPlan.groupPrefixSlots.length);
 		if (prefixRunPlan != null) {
 			sb.append(", prefixRun=index(")
-					.append(prefixRunPlan.index().getName(false))
+					.append(prefixRunPlan.indexName())
 					.append("), prefixLength=")
 					.append(prefixRunPlan.prefixLength());
 		}
 		if (existsIntersection != null) {
 			sb.append(", existsIntersection=outerIndex(")
-					.append(existsIntersection.outerPlan.index().getName(false))
+					.append(existsIntersection.outerPlan.indexName())
 					.append("), existsIndex(")
-					.append(existsIntersection.existsPlan.index().getName(false))
+					.append(existsIntersection.existsPlan.indexName())
 					.append(")");
 		}
 		return sb.append(")").toString();
@@ -753,7 +753,13 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 					try {
 						if (prefixPattern.bind(cursor.quad(), row) && acceptRun(row)) {
 							sawRow = true;
-							state.add(row);
+							if (prefixCountRunRows) {
+								for (int i = 0; i < aggregates.length; i++) {
+									state.counts[i] = Math.addExact(state.counts[i], cursor.runRowCount());
+								}
+							} else {
+								state.add(row);
+							}
 						}
 					} finally {
 						row.rollback(mark);

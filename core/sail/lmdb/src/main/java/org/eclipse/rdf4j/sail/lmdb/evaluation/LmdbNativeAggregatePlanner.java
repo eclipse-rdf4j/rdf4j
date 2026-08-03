@@ -371,6 +371,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		int[] prefixSlots;
 		boolean countRunRows = false;
 		boolean distinctRuns = false;
+		boolean wholePlaneCount = false;
 		if (groupSlots.length > 0) {
 			if (aggregates.length == 0) {
 				prefixSlots = groupSlots;
@@ -385,10 +386,17 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			} else {
 				return null;
 			}
-		} else if (aggregates.length == 1 && isCountDistinctSlot(aggregates[0])) {
-			prefixSlots = new int[] { aggregates[0].slot };
 		} else {
-			return null;
+			if (aggregates.length == 1 && isCountDistinctSlot(aggregates[0])) {
+				prefixSlots = new int[] { aggregates[0].slot };
+			} else if (aggregates.length >= 1 && allCountEveryPatternRow(aggregates, pattern)
+					&& pattern.s.hasSlot()) {
+				prefixSlots = new int[] { pattern.s.slot };
+				countRunRows = true;
+				wholePlaneCount = true;
+			} else {
+				return null;
+			}
 		}
 		if (runFilter != null && (filterMask & ~slotBits(prefixSlots)) != 0L) {
 			return null;
@@ -396,6 +404,12 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		LmdbPrefixRunPlan plan = tryPrefixRunPlan(stepSource, pattern, prefixSlots);
 		if (plan == null) {
 			return null;
+		}
+		if (wholePlaneCount) {
+			if (!plan.usesAdjacency()) {
+				return null;
+			}
+			plan = plan.asWholePlaneCount();
 		}
 		long minRunCount = countRunRows ? minimumHavingCount(havingCondition, aggregates) : 0L;
 		return new PrefixRunGroupCandidate(pattern, plan, countRunRows, distinctRuns, runFilter, minRunCount);

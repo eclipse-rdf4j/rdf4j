@@ -385,7 +385,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		}
 		if (prefixRunPlan != null) {
 			sb.append(", prefixRun=index(")
-					.append(prefixRunPlan.index().getName(false))
+					.append(prefixRunPlan.indexName())
 					.append("), prefixLength=")
 					.append(prefixRunPlan.prefixLength());
 		}

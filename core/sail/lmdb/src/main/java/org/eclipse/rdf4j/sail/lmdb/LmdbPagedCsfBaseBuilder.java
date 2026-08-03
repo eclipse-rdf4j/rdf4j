@@ -205,7 +205,8 @@ final class LmdbPagedCsfBaseBuilder {
 				LmdbInMemoryAdjacencyIndex index = new LmdbInMemoryAdjacencyIndex(baseRevision, catalog,
 						predicateCatalog, contextCatalog, coverage, null, csf, keyIndexes, new long[0],
 						new LmdbInlineIncomingIndex[0], sharedDictionaryCharge, new Charge[0],
-						persistentWrapperMetadata, statements, incidences);
+						persistentWrapperMetadata, statements, incidences,
+						LmdbAdjacencyPlaneStatistics.fromCsf(sortedPredicates, csf));
 				catalog = null;
 				sharedDictionaryCharge = null;
 				persistentWrapperMetadata = null;

@@ -71,6 +71,12 @@ final class PathPlan implements SlotPlan {
 	static final AtomicLong ENGAGED = new AtomicLong();
 	/** Test observability: incremented when the bounded path memo refuses a completed traversal. */
 	static final AtomicLong MEMO_BYPASSES = new AtomicLong();
+	/** Frontier nodes expanded from a cached direct-adjacency view, aggregated once per level or worker slice. */
+	static final AtomicLong ADJACENCY_EXPANSIONS = new AtomicLong();
+	/** Frontier nodes expanded by the ordered sweep path, aggregated once per level or worker slice. */
+	static final AtomicLong SWEEP_EXPANSIONS = new AtomicLong();
+	/** Frontier nodes expanded through per-node record cursors, aggregated once per level or worker slice. */
+	static final AtomicLong CURSOR_EXPANSIONS = new AtomicLong();
 
 	static final boolean ENABLED = !"false".equals(System.getProperty("rdf4j.lmdb.nativePath.enabled"));
 	static final String MEMO_ENABLED_PROPERTY = "rdf4j.lmdb.nativePath.memo.enabled";
@@ -82,6 +88,12 @@ final class PathPlan implements SlotPlan {
 	static final int ESTIMATE_DEPTH_CAP = 4;
 
 	static final int BATCH_ROWS = 256;
+
+	static void resetExpansionMetrics() {
+		ADJACENCY_EXPANSIONS.set(0L);
+		SWEEP_EXPANSIONS.set(0L);
+		CURSOR_EXPANSIONS.set(0L);
+	}
 
 	final PathStep[] steps;
 	final Term ctx;
@@ -1223,6 +1235,7 @@ final class PathParallelExpansion implements AutoCloseable {
 						if (sweep != null) {
 							long[] swept = sweep.expand(task.frontier, from, to, task.discovered);
 							if (swept != null) {
+								PathPlan.SWEEP_EXPANSIONS.addAndGet(to - from);
 								if (delta.length - size < swept.length) {
 									delta = Arrays.copyOf(delta, expandedCapacity(delta.length, size + swept.length));
 								}
@@ -1232,6 +1245,11 @@ final class PathParallelExpansion implements AutoCloseable {
 							}
 						}
 					}
+				}
+				if (cached != null) {
+					PathPlan.ADJACENCY_EXPANSIONS.addAndGet(to - from);
+				} else {
+					PathPlan.CURSOR_EXPANSIONS.addAndGet(to - from);
 				}
 				for (int frontierIndex = from; frontierIndex < to; frontierIndex++) {
 					long near = task.frontier[frontierIndex];
@@ -1770,6 +1788,7 @@ final class PathCursor implements RowCursor {
 			if (sweep != null) {
 				long[] swept = sweep.expand(currentLevel, 0, currentLevel.length, discovered);
 				if (swept != null) {
+					PathPlan.SWEEP_EXPANSIONS.addAndGet(currentLevel.length);
 					for (long far : swept) {
 						pushNextLevel(far);
 					}
@@ -1777,6 +1796,7 @@ final class PathCursor implements RowCursor {
 				}
 			}
 		}
+		PathPlan.CURSOR_EXPANSIONS.addAndGet(currentLevel.length);
 		for (long near : currentLevel) {
 			try (PatternCursor cursor = plan.openStep(row.source, probe(), near, nearPos, step.predicate)) {
 				int rows;
@@ -1797,6 +1817,7 @@ final class PathCursor implements RowCursor {
 	}
 
 	void expandCachedLevel(long[] currentLevel, NativeLmdbQuerySource.NativeAdjacency cached) {
+		PathPlan.ADJACENCY_EXPANSIONS.addAndGet(currentLevel.length);
 		for (long near : currentLevel) {
 			long run = cached.find(near);
 			if (run <= 0L) {

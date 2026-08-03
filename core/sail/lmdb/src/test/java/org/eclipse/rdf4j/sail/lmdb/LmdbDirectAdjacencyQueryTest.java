@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMetrics.FallbackReason;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyCoverage;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
@@ -71,6 +72,7 @@ class LmdbDirectAdjacencyQueryTest {
 	private static final IRI O1 = F.createIRI("http://example.org/o1");
 	private static final IRI O2 = F.createIRI("http://example.org/o2");
 	private static final IRI G1 = F.createIRI("http://example.org/g1");
+	private static final IRI G2 = F.createIRI("http://example.org/g2");
 
 	private static final String IR_AGGREGATE_QUERY = """
 			SELECT ?patient (COUNT(?med) AS ?medCount) WHERE {
@@ -99,6 +101,7 @@ class LmdbDirectAdjacencyQueryTest {
 	File dataDir;
 
 	private Repository repo;
+	private LmdbStore sail;
 	private LmdbSailStore backing;
 	private LmdbDirectAdjacencyStore direct;
 
@@ -120,6 +123,13 @@ class LmdbDirectAdjacencyQueryTest {
 		}
 		System.clearProperty(LmdbDirectAdjacencyOptions.SHADOW_SAMPLE_EVERY_PROPERTY);
 		System.clearProperty(LEGACY_BASE_PROPERTY);
+		System.clearProperty(LmdbDirectAdjacencyStore.ROOT_SCAN_PROPERTY);
+		System.clearProperty(LmdbDirectAdjacencyStore.BOUND_PROBE_PROPERTY);
+		System.clearProperty(LmdbDirectAdjacencyStore.CLEAN_TXN_READS_PROPERTY);
+		System.clearProperty(LmdbDirectAdjacencyStore.PARALLEL_ROW_PATH_PROPERTY);
+		System.clearProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY);
+		System.clearProperty(LmdbDirectAdjacencyStore.PLANNER_STATS_PROPERTY);
+		System.clearProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
 	}
 
 	private void openStore(DirectAdjacencyMode mode, DirectAdjacencyCoverage coverage, List<IRI> selected)
@@ -133,7 +143,7 @@ class LmdbDirectAdjacencyQueryTest {
 		if (selected != null) {
 			config.setDirectAdjacencyPredicates(selected);
 		}
-		LmdbStore sail = new LmdbStore(dataDir, config);
+		sail = new LmdbStore(dataDir, config);
 		repo = new SailRepository(sail);
 		repo.init();
 		try (RepositoryConnection conn = repo.getConnection()) {
@@ -322,6 +332,26 @@ class LmdbDirectAdjacencyQueryTest {
 		}
 	}
 
+	private List<String> queryRows(String query, String... bindingNames) {
+		try (RepositoryConnection connection = repo.getConnection();
+				TupleQueryResult result = connection.prepareTupleQuery(query).evaluate()) {
+			List<String> rows = new ArrayList<>();
+			while (result.hasNext()) {
+				var row = result.next();
+				StringBuilder rendered = new StringBuilder();
+				for (String bindingName : bindingNames) {
+					if (!rendered.isEmpty()) {
+						rendered.append('=');
+					}
+					rendered.append(row.getValue(bindingName).stringValue());
+				}
+				rows.add(rendered.toString());
+			}
+			rows.sort(String::compareTo);
+			return rows;
+		}
+	}
+
 	private static void restoreProperties(Map<String, String> previous) {
 		previous.forEach((property, value) -> {
 			if (value == null) {
@@ -378,6 +408,7 @@ class LmdbDirectAdjacencyQueryTest {
 
 	@Test
 	void nativeProbeRetainsOwnershipAcrossDirectAndLmdbTransitions() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.ROOT_SCAN_PROPERTY, "false");
 		openPreferStore();
 		RecordIterator firstDirect = null;
 		RecordIterator secondDirect = null;
@@ -421,6 +452,96 @@ class LmdbDirectAdjacencyQueryTest {
 				firstDirect.close();
 			}
 		}
+	}
+
+	@Test
+	void parallelWorkerRowSurfaceServesDirectAdjacency() throws Exception {
+		System.setProperty(LmdbDirectAdjacencyStore.PARALLEL_ROW_PATH_PROPERTY, "true");
+		openPreferStore();
+		int workerCount = 2;
+		ExecutorService workers = Executors.newFixedThreadPool(workerCount);
+		NativeLmdbQuerySource.ParallelSource[] sources = null;
+		try (var dataset = dataset()) {
+			sources = dataset.source.openParallelSources(workerCount);
+			assertThat(sources).hasSize(workerCount).doesNotContainNull();
+			long hitsBefore = direct.snapshotMetrics().lookupHits;
+			CountDownLatch start = new CountDownLatch(1);
+			List<Future<?>> tasks = new ArrayList<>(workerCount);
+			for (NativeLmdbQuerySource.ParallelSource source : sources) {
+				tasks.add(workers.submit(() -> {
+					start.await();
+					assertThat(CloseableDataset.collect(source.statements(s1, p1, -1, -1))).hasSize(2);
+					assertThat(CloseableDataset.collect(
+							source.statements(StatementOrder.O, s1, p1, -1, -1))).hasSize(2);
+					try (NativeLmdbQuerySource.NativeProbe probe = source.newProbe()) {
+						assertThat(CloseableDataset.collect(probe.open(s1, p1, -1, -1))).hasSize(2);
+						assertThat(probe.adjacencyCacheBacked()).isTrue();
+					}
+					assertThat(source.count(s1, p1, -1, -1)).isEqualTo(2);
+					assertThat(source.has(s1, p1, o1, -1)).isTrue();
+					assertThat(source.exactDegree(p1, s1, true)).hasValue(2);
+					return null;
+				}));
+			}
+			start.countDown();
+			for (Future<?> task : tasks) {
+				task.get(5, TimeUnit.SECONDS);
+			}
+			assertThat(direct.snapshotMetrics().lookupHits)
+					.isGreaterThanOrEqualTo(hitsBefore + 6L * workerCount);
+		} finally {
+			if (sources != null) {
+				for (NativeLmdbQuerySource.ParallelSource source : sources) {
+					if (source != null) {
+						source.close();
+					}
+				}
+			}
+			workers.shutdownNow();
+		}
+		assertThat(direct.snapshotMetrics().activeViews).isZero();
+	}
+
+	@Test
+	void disabledParallelRowPathKeepsWorkerKernelAdjacencyAvailable() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.PARALLEL_ROW_PATH_PROPERTY, "false");
+		openPreferStore();
+		try (var dataset = dataset()) {
+			NativeLmdbQuerySource.ParallelSource[] sources = dataset.source.openParallelSources(1);
+			assertThat(sources).hasSize(1).doesNotContainNull();
+			try (NativeLmdbQuerySource.ParallelSource source = sources[0];
+					NativeLmdbQuerySource.NativeProbe probe = source.newProbe()) {
+				long hitsBefore = direct.snapshotMetrics().lookupHits;
+				assertThat(CloseableDataset.collect(source.statements(s1, p1, -1, -1))).hasSize(2);
+				assertThat(CloseableDataset.collect(probe.open(s1, p1, -1, -1))).hasSize(2);
+				assertThat(probe.adjacencyCacheBacked()).isFalse();
+				assertThat(source.count(s1, p1, -1, -1)).isEqualTo(2);
+				assertThat(source.has(s1, p1, o1, -1)).isTrue();
+				assertThat(source.exactDegree(p1, s1, true)).isEmpty();
+				assertThat(direct.snapshotMetrics().lookupHits).isEqualTo(hitsBefore);
+
+				NativeLmdbQuerySource.NativeAdjacency adjacency = probe.adjacency(p1, true);
+				assertThat(adjacency).isNotNull();
+				assertThat(adjacency.size(adjacency.find(s1))).isEqualTo(2);
+				assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
+			}
+		}
+		assertThat(direct.snapshotMetrics().activeViews).isZero();
+	}
+
+	@Test
+	void parallelWorkerRowPathServesByDefault() throws IOException {
+		openPreferStore();
+		try (var dataset = dataset()) {
+			NativeLmdbQuerySource.ParallelSource[] sources = dataset.source.openParallelSources(1);
+			assertThat(sources).hasSize(1).doesNotContainNull();
+			try (NativeLmdbQuerySource.ParallelSource source = sources[0]) {
+				long hitsBefore = direct.snapshotMetrics().lookupHits;
+				assertThat(CloseableDataset.collect(source.statements(s1, p1, -1, -1))).hasSize(2);
+				assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
+			}
+		}
+		assertThat(direct.snapshotMetrics().activeViews).isZero();
 	}
 
 	@Test
@@ -590,6 +711,249 @@ class LmdbDirectAdjacencyQueryTest {
 	}
 
 	@Test
+	void flaggedPlaneCountTracksBaseDeltasAndPinnedSnapshots() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
+		openPreferStore();
+
+		try (var pinned = dataset()) {
+			long hitsBeforeBaseCount = direct.snapshotMetrics().lookupHits;
+			assertThat(pinned.source.count(-1, p1, -1, -1)).isEqualTo(3);
+			assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBeforeBaseCount);
+
+			try (RepositoryConnection connection = repo.getConnection()) {
+				connection.add(S2, P1, O2);
+			}
+			direct.pauseApplierForTest(false);
+			try (var afterAdd = dataset()) {
+				long hitsBeforeAddCount = direct.snapshotMetrics().lookupHits;
+				assertThat(afterAdd.source.count(-1, p1, -1, -1)).isEqualTo(4);
+				assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBeforeAddCount);
+			}
+			assertThat(pinned.source.count(-1, p1, -1, -1)).isEqualTo(3);
+
+			try (RepositoryConnection connection = repo.getConnection()) {
+				connection.remove(S1, P1, O1);
+			}
+			direct.pauseApplierForTest(false);
+			try (var afterRemove = dataset()) {
+				long hitsBeforeRemoveCount = direct.snapshotMetrics().lookupHits;
+				assertThat(afterRemove.source.count(-1, p1, -1, -1)).isEqualTo(3);
+				assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBeforeRemoveCount);
+			}
+			assertThat(pinned.source.count(-1, p1, -1, -1)).isEqualTo(3);
+		}
+	}
+
+	@Test
+	void flaggedPlannerFanOutUsesExactPlaneCounts() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.PLANNER_STATS_PROPERTY, "true");
+		openPreferStore();
+
+		try (var pinned = dataset()) {
+			assertThat(pinned.source.meanFanOut(p1, true).orElseThrow()).isEqualTo(1.5);
+			assertThat(pinned.source.meanFanOut(p1, false).orElseThrow()).isEqualTo(1.5);
+
+			System.setProperty(LmdbDirectAdjacencyStore.PLANNER_STATS_PROPERTY, "false");
+			try (var fallback = dataset()) {
+				assertThat(fallback.source.meanFanOut(p1, true).orElseThrow()).isNotEqualTo(1.5);
+			}
+			System.setProperty(LmdbDirectAdjacencyStore.PLANNER_STATS_PROPERTY, "true");
+
+			IRI p4Value = F.createIRI("http://example.org/fanOut");
+			try (RepositoryConnection connection = repo.getConnection()) {
+				connection.begin();
+				connection.add(S1, p4Value, F.createIRI("http://example.org/fanOut/o1"));
+				connection.add(S1, p4Value, F.createIRI("http://example.org/fanOut/o2"));
+				connection.add(S1, p4Value, F.createIRI("http://example.org/fanOut/o3"));
+				connection.add(S2, p4Value, F.createIRI("http://example.org/fanOut/o4"));
+				connection.commit();
+			}
+			direct.pauseApplierForTest(false);
+			try (var current = dataset()) {
+				long p4 = current.idOf(p4Value);
+				assertThat(current.source.meanFanOut(p4, true).orElseThrow()).isEqualTo(2.0);
+				assertThat(current.source.meanFanOut(p4, false).orElseThrow()).isEqualTo(1.0);
+				assertThat(pinned.source.meanFanOut(p4, true).orElseThrow()).isZero();
+			}
+		}
+	}
+
+	@Test
+	void flaggedSubjectAggregatesUseAdjacencyKeyDomainsAcrossDeltas() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		openPreferStore();
+		IRI s3Value = F.createIRI("http://example.org/s3");
+		try (RepositoryConnection connection = repo.getConnection()) {
+			connection.begin();
+			connection.add(s3Value, P1, O2);
+			connection.remove(S2, P1, O1);
+			connection.commit();
+		}
+		direct.pauseApplierForTest(false);
+
+		LmdbPrefixRunPlan.resetMetrics();
+		long hitsBefore = direct.snapshotMetrics().lookupHits;
+		assertThat(queryRows("SELECT DISTINCT ?s WHERE { ?s <" + P1 + "> ?o }", "s"))
+				.containsExactly(S1.stringValue(), s3Value.stringValue());
+		assertThat(queryRows("SELECT ?s (COUNT(?o) AS ?degree) WHERE { ?s <" + P1
+				+ "> ?o } GROUP BY ?s", "s", "degree"))
+						.containsExactly(S1.stringValue() + "=2", s3Value.stringValue() + "=1");
+		assertThat(LmdbPrefixRunPlan.OPENED.get()).isGreaterThan(0);
+		assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
+	}
+
+	@Test
+	void flaggedCountAggregateUsesExactPlaneTotal() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		openPreferStore();
+
+		LmdbPrefixRunPlan.resetMetrics();
+		assertThat(queryRows("SELECT (COUNT(*) AS ?count) WHERE { ?s <" + P1 + "> ?o }", "count"))
+				.containsExactly("3");
+		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get()).isGreaterThan(0);
+		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get()).isEqualTo(3);
+	}
+
+	@Test
+	void scanAggregatesDefaultOnWithExplicitFalseKillSwitch() throws IOException {
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		openPreferStore();
+
+		LmdbPrefixRunPlan.resetMetrics();
+		assertThat(queryRows("SELECT ?s (COUNT(?o) AS ?degree) WHERE { ?s <" + P1
+				+ "> ?o } GROUP BY ?s", "s", "degree"))
+						.containsExactly(S1.stringValue() + "=2", S2.stringValue() + "=1");
+		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get()).isGreaterThan(0);
+
+		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "false");
+		LmdbPrefixRunPlan.resetMetrics();
+		assertThat(queryRows("SELECT ?s (COUNT(?o) AS ?degree) WHERE { ?s <" + P1
+				+ "> ?o } GROUP BY ?s", "s", "degree"))
+						.containsExactly(S1.stringValue() + "=2", S2.stringValue() + "=1");
+		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get()).isZero();
+	}
+
+	@Test
+	void flaggedPredicateAnalyticsUseFullCoveragePlaneCatalog() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		openPreferStore();
+		IRI p4Value = F.createIRI("http://example.org/p4");
+		try (RepositoryConnection connection = repo.getConnection()) {
+			connection.begin();
+			connection.remove(S1, P2, O1);
+			connection.add(S1, p4Value, O1);
+			connection.add(S2, p4Value, O2);
+			connection.commit();
+		}
+		direct.pauseApplierForTest(false);
+
+		LmdbPrefixRunPlan.resetMetrics();
+		assertThat(queryRows("SELECT DISTINCT ?p WHERE { ?s ?p ?o }", "p"))
+				.containsExactly(P1.stringValue(), P3.stringValue(), p4Value.stringValue());
+		assertThat(queryRows("SELECT ?p (COUNT(*) AS ?count) WHERE { ?s ?p ?o } GROUP BY ?p", "p", "count"))
+				.containsExactly(P1.stringValue() + "=3", P3.stringValue() + "=1", p4Value.stringValue() + "=2");
+		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get()).isGreaterThan(0);
+		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get()).isEqualTo(6);
+	}
+
+	@Test
+	void flaggedObjectAggregatesDeclineAdjacencyForInlineKeyDomains() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		openPreferStore();
+
+		LmdbPrefixRunPlan.resetMetrics();
+		assertThat(queryRows("SELECT DISTINCT ?o WHERE { ?s <" + P3 + "> ?o }", "o"))
+				.containsExactly("42");
+		assertThat(queryRows("SELECT ?o (COUNT(?s) AS ?degree) WHERE { ?s <" + P3
+				+ "> ?o } GROUP BY ?o", "o", "degree")).containsExactly("42=1");
+		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get()).isZero();
+	}
+
+	@Test
+	void flaggedPredicateAnalyticsDeclineSelectedCoverage() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		openStore(DirectAdjacencyMode.PREFER, DirectAdjacencyCoverage.SELECTED, List.of(P1));
+
+		LmdbPrefixRunPlan.resetMetrics();
+		assertThat(queryRows("SELECT DISTINCT ?p WHERE { ?s ?p ?o }", "p"))
+				.containsExactly(P1.stringValue(), P2.stringValue(), P3.stringValue());
+		assertThat(queryRows("SELECT ?p (COUNT(*) AS ?count) WHERE { ?s ?p ?o } GROUP BY ?p", "p", "count"))
+				.containsExactly(P1.stringValue() + "=3", P2.stringValue() + "=1", P3.stringValue() + "=1");
+		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get()).isZero();
+	}
+
+	@Test
+	void flaggedPredicateAnalyticsMergeExplicitAndInferredPlaneTotals() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		openPreferStore();
+		IRI p4Value = F.createIRI("http://example.org/p4");
+		try (LmdbStoreConnection connection = (LmdbStoreConnection) sail.getConnection()) {
+			connection.begin();
+			connection.addInferredStatement(S2, P1, O2);
+			connection.addInferredStatement(S2, p4Value, O1);
+			connection.commit();
+		}
+		direct.pauseApplierForTest(false);
+
+		LmdbPrefixRunPlan.resetMetrics();
+		assertThat(queryRows("SELECT DISTINCT ?p WHERE { ?s ?p ?o }", "p"))
+				.containsExactly(P1.stringValue(), P2.stringValue(), P3.stringValue(), p4Value.stringValue());
+		assertThat(queryRows("SELECT ?p (COUNT(*) AS ?count) WHERE { ?s ?p ?o } GROUP BY ?p", "p", "count"))
+				.containsExactly(P1.stringValue() + "=4", P2.stringValue() + "=1", P3.stringValue() + "=1",
+						p4Value.stringValue() + "=1");
+		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get()).isGreaterThan(0);
+		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get()).isEqualTo(7);
+	}
+
+	@Test
+	void flaggedEmptyPlaneCountUsesExactZeroWithoutScanningLmdb() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		openPreferStore();
+		try (RepositoryConnection connection = repo.getConnection()) {
+			connection.remove(S1, P2, O1);
+		}
+		direct.pauseApplierForTest(false);
+
+		long hitsBefore = direct.snapshotMetrics().lookupHits;
+		try (var dataset = dataset()) {
+			assertThat(dataset.source.count(-1, p2, -1, -1)).isZero();
+		}
+		assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
+		LmdbPrefixRunPlan.resetMetrics();
+		assertThat(queryRows("SELECT (COUNT(*) AS ?count) WHERE { ?s <" + P2 + "> ?o }", "count"))
+				.containsExactly("0");
+		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get())
+				.as("the optimizer prunes an exactly empty pattern before opening a prefix cursor")
+				.isZero();
+		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get()).isZero();
+		assertThat(direct.snapshotMetrics().activeViews).isZero();
+	}
+
+	@Test
+	void flaggedLegacyBaseServesExactCountAndPredicateAnalytics() throws IOException {
+		System.setProperty(LEGACY_BASE_PROPERTY, "true");
+		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		openPreferStore();
+
+		LmdbPrefixRunPlan.resetMetrics();
+		assertThat(queryRows("SELECT (COUNT(*) AS ?count) WHERE { ?s <" + P1 + "> ?o }", "count"))
+				.containsExactly("3");
+		assertThat(queryRows("SELECT ?p (COUNT(*) AS ?count) WHERE { ?s ?p ?o } GROUP BY ?p", "p", "count"))
+				.containsExactly(P1.stringValue() + "=3", P2.stringValue() + "=1", P3.stringValue() + "=1");
+		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get()).isGreaterThan(0);
+		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get()).isEqualTo(8);
+		assertThat(direct.snapshotMetrics().activeViews).isZero();
+	}
+
+	@Test
 	void inlineIncomingProbeServes() throws IOException {
 		openPreferStore();
 		long hitsBefore = direct.snapshotMetrics().lookupHits;
@@ -617,7 +981,8 @@ class LmdbDirectAdjacencyQueryTest {
 	}
 
 	@Test
-	void rootScanFallsBackWithItsOwnReason() throws IOException {
+	void disabledRootScanFallsBackWithItsOwnReason() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.ROOT_SCAN_PROPERTY, "false");
 		openPreferStore();
 		long hitsBefore = direct.snapshotMetrics().lookupHits;
 		FallbackReason rootScan = FallbackReason.valueOf("ROOT_SCAN");
@@ -633,7 +998,136 @@ class LmdbDirectAdjacencyQueryTest {
 	}
 
 	@Test
-	void doublyBoundOpenFallsBackWithItsOwnReason() throws IOException {
+	void rootScanServesFromDirectAdjacencyByDefault() throws IOException {
+		openPreferStore();
+		long hitsBefore = direct.snapshotMetrics().lookupHits;
+		long fallbacksBefore = direct.snapshotMetrics().fallbacks(FallbackReason.ROOT_SCAN);
+		try (var dataset = dataset()) {
+			assertSameRows(dataset.rows(-1, p1, -1, -1), List.of(
+					new long[] { s1, p1, o1, 0 },
+					new long[] { s1, p1, o2, g1 },
+					new long[] { s2, p1, o1, 0 }));
+		}
+		assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
+		assertThat(direct.snapshotMetrics().fallbacks(FallbackReason.ROOT_SCAN)).isEqualTo(fallbacksBefore);
+	}
+
+	@Test
+	void flaggedRootScanMergesDeltaOnlyKeysAndTombstones() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.ROOT_SCAN_PROPERTY, "true");
+		openPreferStore();
+		IRI s3Value = F.createIRI("http://example.org/s3");
+		try (RepositoryConnection connection = repo.getConnection()) {
+			connection.begin();
+			connection.add(s3Value, P1, O2);
+			connection.remove(S1, P1, O1);
+			connection.remove(S2, P1, O1);
+			connection.commit();
+		}
+		direct.pauseApplierForTest(false);
+
+		long hitsBefore = direct.snapshotMetrics().lookupHits;
+		try (var dataset = dataset()) {
+			long s3 = dataset.idOf(s3Value);
+			assertSameRows(dataset.rows(-1, p1, -1, -1), List.of(
+					new long[] { s1, p1, o2, g1 },
+					new long[] { s3, p1, o2, 0 }));
+		}
+		assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
+	}
+
+	@Test
+	void flaggedRootScanPreservesContextMultiplicity() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.ROOT_SCAN_PROPERTY, "true");
+		openPreferStore();
+		try (RepositoryConnection connection = repo.getConnection()) {
+			connection.begin();
+			connection.add(S1, P1, O1, G1);
+			connection.add(S1, P1, O1, G2);
+			connection.commit();
+		}
+		direct.pauseApplierForTest(false);
+
+		try (var dataset = dataset()) {
+			long g2 = dataset.idOf(G2);
+			assertSameRows(dataset.rows(-1, p1, -1, -1), List.of(
+					new long[] { s1, p1, o1, 0 },
+					new long[] { s1, p1, o1, g1 },
+					new long[] { s1, p1, o1, g2 },
+					new long[] { s1, p1, o2, g1 },
+					new long[] { s2, p1, o1, 0 }));
+		}
+	}
+
+	@Test
+	void flaggedRootScanDeclinesScopedContextAndDirtyWriter() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.ROOT_SCAN_PROPERTY, "true");
+		openPreferStore();
+		long hitsBefore = direct.snapshotMetrics().lookupHits;
+		long rootBefore = direct.snapshotMetrics().fallbacks(FallbackReason.ROOT_SCAN);
+		long writesBefore = direct.snapshotMetrics().fallbacks(FallbackReason.READ_YOUR_WRITES);
+		try (var dataset = dataset()) {
+			assertSameRows(dataset.rows(-1, p1, -1, g1), List.of(new long[] { s1, p1, o2, g1 }));
+			direct.storeTxnStartedFlag().set(true);
+			direct.storeTxnDirtyFlag().set(true);
+			try {
+				assertThat(dataset.rows(-1, p1, -1, -1)).hasSize(3);
+			} finally {
+				direct.storeTxnDirtyFlag().set(false);
+				direct.storeTxnStartedFlag().set(false);
+			}
+		}
+		assertThat(direct.snapshotMetrics().lookupHits).isEqualTo(hitsBefore);
+		assertThat(direct.snapshotMetrics().fallbacks(FallbackReason.ROOT_SCAN)).isEqualTo(rootBefore + 1);
+		assertThat(direct.snapshotMetrics().fallbacks(FallbackReason.READ_YOUR_WRITES)).isEqualTo(writesBefore + 1);
+	}
+
+	@Test
+	void flaggedRootScanServesSubjectOrderAndExactEmpty() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.ROOT_SCAN_PROPERTY, "true");
+		openPreferStore();
+		try (RepositoryConnection connection = repo.getConnection()) {
+			connection.remove(S1, P2, O1);
+		}
+		direct.pauseApplierForTest(false);
+
+		long hitsBefore = direct.snapshotMetrics().lookupHits;
+		try (var dataset = dataset()) {
+			List<long[]> ordered = dataset.rows(StatementOrder.S, -1, p1, -1, -1);
+			assertThat(ordered).hasSize(3);
+			assertThat(Long.compareUnsigned(ordered.get(0)[0], ordered.get(1)[0])).isLessThanOrEqualTo(0);
+			assertThat(Long.compareUnsigned(ordered.get(1)[0], ordered.get(2)[0])).isLessThanOrEqualTo(0);
+			assertThat(dataset.rows(-1, p2, -1, -1)).isEmpty();
+		}
+		assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore + 1);
+	}
+
+	@Test
+	void flaggedRootScanBulkDecodesSupernodeRun() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.ROOT_SCAN_PROPERTY, "true");
+		openPreferStore();
+		IRI widePredicate = F.createIRI("http://example.org/root-wide");
+		int edgeCount = 65_537;
+		try (RepositoryConnection connection = repo.getConnection()) {
+			connection.begin();
+			for (int edge = 0; edge < edgeCount; edge++) {
+				connection.add(S2, widePredicate, F.createIRI("http://example.org/root-wide/object/" + edge));
+			}
+			connection.commit();
+		}
+		assertThat(direct.buildNowForTest()).isTrue();
+
+		long hitsBefore = direct.snapshotMetrics().lookupHits;
+		try (var dataset = dataset()) {
+			long predicate = dataset.idOf(widePredicate);
+			assertThat(dataset.rows(-1, predicate, -1, -1)).hasSize(edgeCount);
+		}
+		assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
+	}
+
+	@Test
+	void disabledDoublyBoundOpenFallsBackWithItsOwnReason() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.BOUND_PROBE_PROPERTY, "false");
 		openPreferStore();
 		FallbackReason doublyBound = FallbackReason.valueOf("DOUBLY_BOUND");
 		long fallbacksBefore = direct.snapshotMetrics().fallbacks(doublyBound);
@@ -641,6 +1135,47 @@ class LmdbDirectAdjacencyQueryTest {
 			assertSameRows(dataset.rows(s1, p1, o1, -1), List.of(new long[] { s1, p1, o1, 0 }));
 		}
 		assertThat(direct.snapshotMetrics().fallbacks(doublyBound)).isEqualTo(fallbacksBefore + 1);
+	}
+
+	@Test
+	void doublyBoundProbeServesFromDirectAdjacencyByDefault() throws IOException {
+		openPreferStore();
+		long hitsBefore = direct.snapshotMetrics().lookupHits;
+		long fallbacksBefore = direct.snapshotMetrics().fallbacks(FallbackReason.DOUBLY_BOUND);
+		try (var dataset = dataset()) {
+			assertSameRows(dataset.rows(s1, p1, o1, -1), List.of(new long[] { s1, p1, o1, 0 }));
+		}
+		assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
+		assertThat(direct.snapshotMetrics().fallbacks(FallbackReason.DOUBLY_BOUND)).isEqualTo(fallbacksBefore);
+	}
+
+	@Test
+	void flaggedDoublyBoundProbePreservesContextsExactEmptyAndInlineObjects() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.BOUND_PROBE_PROPERTY, "true");
+		openPreferStore();
+		try (RepositoryConnection connection = repo.getConnection()) {
+			connection.begin();
+			connection.add(S1, P1, O1, G1);
+			connection.add(S1, P1, O1, G2);
+			connection.commit();
+		}
+		direct.pauseApplierForTest(false);
+
+		long hitsBefore = direct.snapshotMetrics().lookupHits;
+		long fallbacksBefore = direct.snapshotMetrics().fallbacks(FallbackReason.DOUBLY_BOUND);
+		try (var dataset = dataset()) {
+			long g2 = dataset.idOf(G2);
+			assertSameRows(dataset.rows(s1, p1, o1, -1), List.of(
+					new long[] { s1, p1, o1, 0 },
+					new long[] { s1, p1, o1, g1 },
+					new long[] { s1, p1, o1, g2 }));
+			assertSameRows(dataset.rows(s1, p1, o1, g1), List.of(new long[] { s1, p1, o1, g1 }));
+			assertThat(dataset.rows(s2, p1, o2, -1)).isEmpty();
+			assertSameRows(dataset.rows(s1, p3, inline42, -1),
+					List.of(new long[] { s1, p3, inline42, 0 }));
+		}
+		assertThat(direct.snapshotMetrics().lookupHits).isGreaterThanOrEqualTo(hitsBefore + 4);
+		assertThat(direct.snapshotMetrics().fallbacks(FallbackReason.DOUBLY_BOUND)).isEqualTo(fallbacksBefore);
 	}
 
 	@Test
@@ -669,7 +1204,111 @@ class LmdbDirectAdjacencyQueryTest {
 	}
 
 	@Test
-	void readYourWritesBypassesDirectAdjacency() throws IOException {
+	void flaggedCleanWriteTransactionServesDirectLookup() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.CLEAN_TXN_READS_PROPERTY, "true");
+		assertCleanWriteTransactionServesDirectLookup();
+	}
+
+	@Test
+	void cleanWriteTransactionServesDirectLookupByDefault() throws IOException {
+		assertCleanWriteTransactionServesDirectLookup();
+	}
+
+	private void assertCleanWriteTransactionServesDirectLookup() throws IOException {
+		openPreferStore();
+		backing.enableMultiThreading = false;
+		SailSink sink = backing.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED);
+		try {
+			sink.approve(S1, P1, O1, null);
+			assertThat(direct.storeTxnStartedFlag()).isTrue();
+
+			long hitsBefore = direct.snapshotMetrics().lookupHits;
+			long bypassBefore = direct.snapshotMetrics().fallbacks(FallbackReason.READ_YOUR_WRITES);
+			try (var dataset = dataset()) {
+				assertSameRows(dataset.rows(s1, p1, -1, -1), List.of(
+						new long[] { s1, p1, o1, 0 },
+						new long[] { s1, p1, o2, g1 }));
+			}
+			assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
+			assertThat(direct.snapshotMetrics().fallbacks(FallbackReason.READ_YOUR_WRITES))
+					.isEqualTo(bypassBefore);
+		} finally {
+			sink.flush();
+			sink.close();
+		}
+	}
+
+	@Test
+	void flaggedDirtyWriteTransactionFallsBackAndReadsItsOwnAddAndRemove() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.CLEAN_TXN_READS_PROPERTY, "true");
+		openPreferStore();
+		backing.enableMultiThreading = false;
+		IRI uncommitted = F.createIRI("http://example.org/uncommitted");
+		SailSink sink = backing.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED);
+		try {
+			sink.approve(S1, P1, uncommitted, null);
+			sink.deprecate(F.createStatement(S1, P1, O1));
+			assertThat(direct.storeTxnStartedFlag()).isTrue();
+			assertThat(direct.storeTxnDirtyFlag()).isTrue();
+
+			TripleStore tripleStore = backing.getTripleStore();
+			var writerTxn = tripleStore.getTxnManager().createTxn(tripleStore.writeTxn);
+			List<long[]> writerRows = CloseableDataset
+					.collect(tripleStore.getTriples(writerTxn, s1, p1, -1, -1, true));
+			assertThat(writerRows).hasSize(2);
+			assertThat(writerRows.stream().anyMatch(row -> row[2] == o1)).isFalse();
+			assertThat(writerRows.stream().anyMatch(row -> row[2] == o2)).isTrue();
+
+			long hitsBefore = direct.snapshotMetrics().lookupHits;
+			long bypassBefore = direct.snapshotMetrics().fallbacks(FallbackReason.READ_YOUR_WRITES);
+			try (var dataset = dataset()) {
+				assertSameRows(dataset.rows(s1, p1, -1, -1), List.of(
+						new long[] { s1, p1, o1, 0 },
+						new long[] { s1, p1, o2, g1 }));
+			}
+			assertThat(direct.snapshotMetrics().lookupHits).isEqualTo(hitsBefore);
+			assertThat(direct.snapshotMetrics().fallbacks(FallbackReason.READ_YOUR_WRITES))
+					.isGreaterThan(bypassBefore);
+		} finally {
+			backing.rollback();
+			sink.close();
+		}
+	}
+
+	@Test
+	void flaggedRollbackResetsDirtyStateAndSameConnectionServesAgain() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.CLEAN_TXN_READS_PROPERTY, "true");
+		openPreferStore();
+		backing.enableMultiThreading = false;
+		IRI rolledBack = F.createIRI("http://example.org/rolled-back");
+		SailSink sink = backing.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED);
+		try {
+			sink.approve(S1, P1, rolledBack, null);
+			assertThat(direct.storeTxnDirtyFlag()).isTrue();
+			backing.rollback();
+			assertThat(direct.storeTxnStartedFlag()).isFalse();
+			assertThat(direct.storeTxnDirtyFlag()).isFalse();
+
+			sink.approve(S1, P1, O1, null);
+			assertThat(direct.storeTxnStartedFlag()).isTrue();
+			assertThat(direct.storeTxnDirtyFlag()).isFalse();
+			long hitsBefore = direct.snapshotMetrics().lookupHits;
+			try (var dataset = dataset()) {
+				assertThat(dataset.source.has(s1, p1, o1, -1)).isTrue();
+			}
+			assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
+			backing.rollback();
+		} finally {
+			if (direct.storeTxnStartedFlag().get()) {
+				backing.rollback();
+			}
+			sink.close();
+		}
+	}
+
+	@Test
+	void disabledCleanTransactionReadsRestoresConservativeBypass() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.CLEAN_TXN_READS_PROPERTY, "false");
 		openPreferStore();
 		try (var dataset = dataset()) {
 			long hitsBefore = direct.snapshotMetrics().lookupHits;

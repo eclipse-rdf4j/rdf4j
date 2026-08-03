@@ -1,0 +1,97 @@
+[INFO] Reactor Summary for Eclipse RDF4J 6.1.0-SNAPSHOT:
+[INFO]
+[INFO] Eclipse RDF4J ...................................... SUCCESS [  0.125 s]
+[INFO] RDF4J: Assembly Descriptors ........................ SUCCESS [  0.233 s]
+[INFO] RDF4J: Core ........................................ SUCCESS [  1.171 s]
+[INFO] RDF4J: common ...................................... SUCCESS [  2.866 s]
+[INFO] RDF4J: common annotation ........................... SUCCESS [  1.010 s]
+[INFO] RDF4J: Model API ................................... SUCCESS [  1.215 s]
+[INFO] RDF4J: common exception ............................ SUCCESS [  1.589 s]
+[INFO] RDF4J: common IO ................................... SUCCESS [  1.863 s]
+[INFO] RDF4J: common order ................................ SUCCESS [  1.624 s]
+[INFO] RDF4J: common iterators ............................ SUCCESS [  1.221 s]
+[INFO] RDF4J: common text ................................. SUCCESS [  1.184 s]
+[INFO] RDF4J: RDF Vocabularies ............................ SUCCESS [  1.634 s]
+[INFO] RDF4J: Model ....................................... SUCCESS [  1.632 s]
+[INFO] RDF4J: common transaction .......................... SUCCESS [  1.522 s]
+[INFO] RDF4J: common XML .................................. SUCCESS [  1.855 s]
+[INFO] RDF4J: Rio ......................................... SUCCESS [  2.831 s]
+[INFO] RDF4J: Rio - API ................................... SUCCESS [  1.928 s]
+[INFO] RDF4J: Rio - Languages ............................. SUCCESS [  1.991 s]
+[INFO] RDF4J: Rio - Datatypes ............................. SUCCESS [  2.022 s]
+[INFO] RDF4J: Query ....................................... SUCCESS [  2.120 s]
+[INFO] RDF4J: Rio - Binary ................................ SUCCESS [  2.270 s]
+[INFO] RDF4J: Rio - N-Triples ............................. SUCCESS [  2.423 s]
+[INFO] RDF4J: Query algebra ............................... SUCCESS [  2.519 s]
+[INFO] RDF4J: Query algebra - model ....................... SUCCESS [  2.401 s]
+[INFO] RDF4J: Rio - N-Quads ............................... SUCCESS [  2.723 s]
+[INFO] RDF4J: Query parser ................................ SUCCESS [  2.817 s]
+[INFO] RDF4J: Query parser - API .......................... SUCCESS [  2.562 s]
+[INFO] RDF4J: Rio - Turtle ................................ SUCCESS [  2.697 s]
+[INFO] RDF4J: Rio - TriG .................................. SUCCESS [  2.002 s]
+[INFO] RDF4J: Query parser - SPARQL ....................... SUCCESS [  2.693 s]
+[INFO] RDF4J: Test Suites ................................. SUCCESS [  0.010 s]
+[INFO] RDF4J: benchmarks .................................. SUCCESS [  1.941 s]
+[INFO] RDF4J: Rio - JSON-LD ............................... SUCCESS [  2.756 s]
+[INFO] RDF4J: Collection Factory that may be shared ....... SUCCESS [  2.830 s]
+[INFO] RDF4J: Collection Factory - API .................... SUCCESS [  2.139 s]
+[INFO] RDF4J: Sail ........................................ SUCCESS [  2.424 s]
+[INFO] RDF4J: Sail API .................................... SUCCESS [  2.990 s]
+[INFO] RDF4J: Query result IO ............................. SUCCESS [  2.856 s]
+[INFO] RDF4J: Query result IO - API ....................... SUCCESS [  1.904 s]
+[INFO] RDF4J: QueryResultIO testsuite ..................... SUCCESS [  0.011 s]
+[INFO] RDF4J: Query result IO - binary .................... SUCCESS [  2.306 s]
+[INFO] RDF4J: Query result IO - SPARQL/JSON ............... SUCCESS [  2.541 s]
+[INFO] RDF4J: Query result IO - SPARQL/XML ................ SUCCESS [  2.544 s]
+[INFO] RDF4J: Repository .................................. SUCCESS [  2.603 s]
+[INFO] RDF4J: Repository - API ............................ SUCCESS [  7.430 s]
+[INFO] RDF4J: HTTP ........................................ SUCCESS [  2.865 s]
+[INFO] RDF4J: HTTP protocol ............................... SUCCESS [  2.075 s]
+[INFO] RDF4J: HTTP client API ............................. SUCCESS [  1.038 s]
+[INFO] RDF4J: HTTP client JDK implementation .............. SUCCESS [  1.173 s]
+[INFO] RDF4J: HTTP client Apache HttpComponents 5 implementation SUCCESS [  1.320 s]
+[INFO] RDF4J: HTTP client ................................. SUCCESS [  7.393 s]
+[INFO] RDF4J: SPARQL Repository ........................... SUCCESS [  2.235 s]
+[INFO] RDF4J: Query algebra - evaluation .................. SUCCESS [  3.371 s]
+[INFO] RDF4J: Repository API testsuite .................... SUCCESS [  0.029 s]
+[INFO] RDF4J: SailRepository .............................. SUCCESS [  2.636 s]
+[INFO] RDF4J: Query Rendering ............................. SUCCESS [  2.819 s]
+[INFO] RDF4J: Repository - event (wrapper) ................ SUCCESS [  2.023 s]
+[INFO] RDF4J: HTTPRepository .............................. SUCCESS [  7.760 s]
+[INFO] RDF4J: Repository manager .......................... SUCCESS [  7.464 s]
+[INFO] RDF4J: Sail base implementations ................... SUCCESS [  2.430 s]
+[INFO] RDF4J: Sail API testsuite .......................... SUCCESS [  0.048 s]
+[INFO] RDF4J: Model API testsuite ......................... SUCCESS [  0.014 s]
+[INFO] RDF4J: Collection Factory - Map DB v3 backed ....... SUCCESS [  4.155 s]
+[INFO] RDF4J: LmdbStore ................................... SUCCESS [ 14.118 s]
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  01:14 min (Wall Clock)
+[INFO] Finished at: 2026-08-03T16:53:37+02:00
+[INFO] ------------------------------------------------------------------------
+Running benchmark with jar /Users/havardottestad/Documents/Programming/rdf4j/core/sail/lmdb/target/jmh-benchmarks.jar
+# JMH version: 1.37
+# VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
+# VM options: -Xms16G -Xmx16G -XX:+UseG1GC -Drdf4j.lmdb.directAdjacency.scanAggregates.enabled=false
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 1 iterations, 2 s each
+# Measurement: 3 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.AdjacencyQueryShapeBenchmark.distinctSubjects
+# Parameters: (cliquePercentage = 30, engineMode = native, maxCliqueSize = 8, minCliqueSize = 3, peopleCount = 5000, randomKnowsEdges = 15000, seed = 12345)
+# Run progress: 0.00% complete, ETA 00:00:08
+# Fork: 1 of 1
+# Warmup Iteration   1: 16:53:37,902 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.5.37
+1.147 ms/op
+Iteration   1: 1.035 ms/op
+Iteration   2: 0.912 ms/op
+Iteration   3: 0.905 ms/op
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.AdjacencyQueryShapeBenchmark.distinctSubjects":
+  0.951 ±(99.9%) 1.331 ms/op [Average]
+# Run complete. Total time: 00:00:08
+Benchmark                                      (cliquePercentage)  (engineMode)  (maxCliqueSize)  (minCliqueSize)  (peopleCount)  (randomKnowsEdges)  (seed)  Mode  Cnt  Score   Error  Units
+AdjacencyQueryShapeBenchmark.distinctSubjects                  30        native                8                3           5000               15000   12345  avgt    3  0.951 ± 1.331  ms/op

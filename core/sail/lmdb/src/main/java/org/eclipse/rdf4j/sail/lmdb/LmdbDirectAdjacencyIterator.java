@@ -54,6 +54,19 @@ final class LmdbDirectAdjacencyIterator implements RecordIterator {
 	 */
 	void init(LmdbAdjacencyReadView view, LmdbAdjacencyArenaCatalog arenaCatalog, ContextCatalog contextCatalog,
 			long runHandle, long key, long pred, long boundContext, int direction, String indexName) {
+		init(view, arenaCatalog, contextCatalog, runHandle, key, pred, -1L, boundContext, direction, indexName);
+	}
+
+	void initBoundNeighbor(LmdbAdjacencyReadView view, LmdbAdjacencyArenaCatalog arenaCatalog,
+			ContextCatalog contextCatalog, long runHandle, long key, long pred, long boundNeighbor, long boundContext,
+			int direction, String indexName) {
+		init(view, arenaCatalog, contextCatalog, runHandle, key, pred, boundNeighbor, boundContext, direction,
+				indexName);
+	}
+
+	private void init(LmdbAdjacencyReadView view, LmdbAdjacencyArenaCatalog arenaCatalog, ContextCatalog contextCatalog,
+			long runHandle, long key, long pred, long boundNeighbor, long boundContext, int direction,
+			String indexName) {
 		if (this.view != null) {
 			throw new IllegalStateException("iterator still owns a read-view lease");
 		}
@@ -86,6 +99,9 @@ final class LmdbDirectAdjacencyIterator implements RecordIterator {
 						end = 0;
 					}
 				}
+				if (boundNeighbor > 0 && end > 0) {
+					positionOnBoundNeighbor(boundNeighbor);
+				}
 			}
 			initialized = true;
 		} finally {
@@ -96,6 +112,38 @@ final class LmdbDirectAdjacencyIterator implements RecordIterator {
 				}
 			}
 		}
+	}
+
+	private void positionOnBoundNeighbor(long boundNeighbor) {
+		long start = LmdbAdjacencyRunCodec.lowerBound(contextCatalog, runCursor, 0, boundNeighbor,
+				boundContext >= 0 ? boundContext : 0);
+		if (start >= end || LmdbAdjacencyRunCodec.neighborAt(runCursor, start) != boundNeighbor) {
+			pos = start;
+			end = start;
+			return;
+		}
+		if (boundContext >= 0) {
+			if (LmdbAdjacencyRunCodec.contextAt(contextCatalog, runCursor, start) != boundContext) {
+				pos = start;
+				end = start;
+				return;
+			}
+			pos = start;
+			end = start + 1;
+			return;
+		}
+		long low = start + 1;
+		long high = end;
+		while (low < high) {
+			long mid = (low + high) >>> 1;
+			if (Long.compareUnsigned(LmdbAdjacencyRunCodec.neighborAt(runCursor, mid), boundNeighbor) <= 0) {
+				low = mid + 1;
+			} else {
+				high = mid;
+			}
+		}
+		pos = start;
+		end = low;
 	}
 
 	@Override

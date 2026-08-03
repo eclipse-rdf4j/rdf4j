@@ -50,15 +50,16 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 	private final Charge metadataCharge;
 	private final long statementCount;
 	private final long incidenceCount;
+	private final LmdbAdjacencyPlaneStatistics planeStatistics;
 
 	LmdbInMemoryAdjacencyIndex(long baseRevision, LmdbAdjacencyArenaCatalog arenaCatalog,
 			LmdbAdjacencyPredicateCatalog predicateCatalog, LmdbAdjacencyContextCatalog contextCatalog,
 			LmdbAdjacencyCoverage coverage, LmdbReferenceNodeLocator locator, LmdbAdjacencyKeyIndex[] keyIndexes,
 			long[] inlinePlaneKeys, LmdbInlineIncomingIndex[] inlinePlanes, Charge baseCharge, Charge metadataCharge,
-			long statementCount, long incidenceCount) {
+			long statementCount, long incidenceCount, LmdbAdjacencyPlaneStatistics planeStatistics) {
 		this(baseRevision, arenaCatalog, predicateCatalog, contextCatalog, coverage, locator, null, keyIndexes,
 				inlinePlaneKeys, inlinePlanes, new LmdbAdjacencySharedCharge(baseCharge), new Charge[0], metadataCharge,
-				statementCount, incidenceCount);
+				statementCount, incidenceCount, planeStatistics);
 	}
 
 	LmdbInMemoryAdjacencyIndex(long baseRevision, LmdbAdjacencyArenaCatalog arenaCatalog,
@@ -66,7 +67,7 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 			LmdbAdjacencyCoverage coverage, LmdbReferenceNodeLocator locator, ImmutablePagedQuadCsfIndex csfBase,
 			LmdbAdjacencyKeyIndex[] keyIndexes, long[] inlinePlaneKeys, LmdbInlineIncomingIndex[] inlinePlanes,
 			LmdbAdjacencySharedCharge sharedBaseCharge, Charge[] ownedNativeCharges, Charge metadataCharge,
-			long statementCount, long incidenceCount) {
+			long statementCount, long incidenceCount, LmdbAdjacencyPlaneStatistics planeStatistics) {
 		this.baseRevision = baseRevision;
 		this.arenaCatalog = arenaCatalog;
 		this.predicateCatalog = predicateCatalog;
@@ -82,6 +83,7 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 		this.metadataCharge = metadataCharge;
 		this.statementCount = statementCount;
 		this.incidenceCount = incidenceCount;
+		this.planeStatistics = planeStatistics;
 	}
 
 	long baseRevision() {
@@ -149,6 +151,10 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 
 	long incidenceCount() {
 		return incidenceCount;
+	}
+
+	LmdbAdjacencyPlaneStatistics planeStatistics() {
+		return planeStatistics;
 	}
 
 	/**

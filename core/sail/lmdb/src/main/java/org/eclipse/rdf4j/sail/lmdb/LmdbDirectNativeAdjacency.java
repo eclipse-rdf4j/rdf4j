@@ -232,6 +232,121 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		return LmdbAdjacencyRunCodec.copy(contexts, runCursor, runOffset, copied, null, 0, target, targetOffset);
 	}
 
+	private int copyPairs(long runHandle, long runOffset, int length, long[] neighborTarget, int neighborOffset,
+			long[] contextTarget, int contextOffset) {
+		resolve(runHandle);
+		int copied = checkedCopyCount(runOffset, length, neighborTarget, neighborOffset);
+		if (contextTarget == null) {
+			throw new NullPointerException("contextTarget");
+		}
+		if (contextOffset < 0 || contextOffset > contextTarget.length
+				|| copied > contextTarget.length - contextOffset) {
+			throw new IllegalArgumentException(
+					"context target range out of bounds: offset " + contextOffset + ", length "
+							+ copied + ", capacity " + contextTarget.length);
+		}
+		return LmdbAdjacencyRunCodec.copy(contexts, runCursor, runOffset, copied, neighborTarget, neighborOffset,
+				contextTarget, contextOffset);
+	}
+
+	RootScanCursor rootScanCursor() {
+		return new RootScanCursor(view.state().overlays() == null && baseKeys != null ? baseKeys.cursor() : null);
+	}
+
+	/**
+	 * Root-scan cursor that uses row coordinates already present in a paged-CSF key domain as run handles. A composed
+	 * snapshot with overlays keeps the general key-domain/find path so generation replacement and tombstone semantics
+	 * stay centralized in {@link #find(long)}.
+	 */
+	final class RootScanCursor {
+		private final LmdbAdjacencyKeyIndex.Cursor baseCursor;
+		private final long generalKeyCount;
+		private long generalOrdinal;
+		private long key;
+		private long run;
+		private long size;
+		private boolean directBaseRun;
+		private final long[] scalarNeighbor = new long[1];
+		private final long[] scalarContext = new long[1];
+		private long scalarOrdinal = -1;
+
+		private RootScanCursor(LmdbAdjacencyKeyIndex.Cursor baseCursor) {
+			this.baseCursor = baseCursor;
+			this.generalKeyCount = baseCursor == null ? keyCount() : 0;
+		}
+
+		boolean advance() {
+			while (baseCursor != null ? baseCursor.advance() : generalOrdinal < generalKeyCount) {
+				if (baseCursor != null) {
+					key = baseCursor.key();
+					directBaseRun = baseCursor.hasDirectRunReference();
+					if (directBaseRun) {
+						run = 0;
+						size = baseCursor.directRunSize();
+					} else {
+						run = find(key);
+					}
+				} else {
+					key = keyAt(generalOrdinal++);
+					run = find(key);
+					directBaseRun = false;
+				}
+				if (!directBaseRun && run > 0) {
+					size = LmdbDirectNativeAdjacency.this.size(run);
+				}
+				if ((directBaseRun || run > 0) && size > 0) {
+					scalarOrdinal = -1;
+					return true;
+				}
+			}
+			return false;
+		}
+
+		long key() {
+			return key;
+		}
+
+		long run() {
+			return run;
+		}
+
+		long size() {
+			return size;
+		}
+
+		int copyPairs(long runOffset, int length, long[] neighborTarget, long[] contextTarget) {
+			return directBaseRun ? baseCursor.copyDirectPairs(runOffset, length, neighborTarget, contextTarget)
+					: LmdbDirectNativeAdjacency.this.copyPairs(run, runOffset, length, neighborTarget, 0, contextTarget,
+							0);
+		}
+
+		long neighborAt(long runOffset) {
+			if (directBaseRun) {
+				ensureScalar(runOffset);
+				return scalarNeighbor[0];
+			}
+			return LmdbDirectNativeAdjacency.this.neighborAt(run, runOffset);
+		}
+
+		long contextAt(long runOffset) {
+			if (directBaseRun) {
+				ensureScalar(runOffset);
+				return scalarContext[0];
+			}
+			return LmdbDirectNativeAdjacency.this.contextAt(run, runOffset);
+		}
+
+		private void ensureScalar(long runOffset) {
+			if (scalarOrdinal != runOffset) {
+				int copied = baseCursor.copyDirectPairs(runOffset, 1, scalarNeighbor, scalarContext);
+				if (copied != 1) {
+					throw new IllegalStateException("CSF root row ended before scalar ordinal " + runOffset);
+				}
+				scalarOrdinal = runOffset;
+			}
+		}
+	}
+
 	private void checkElementOffset(long runOffset) {
 		if (runOffset < 0 || runOffset >= cachedSize) {
 			throw new IllegalArgumentException("run offset out of range: " + runOffset + " of " + cachedSize);

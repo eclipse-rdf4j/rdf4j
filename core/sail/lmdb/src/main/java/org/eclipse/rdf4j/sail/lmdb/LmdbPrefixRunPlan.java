@@ -29,16 +29,56 @@ public final class LmdbPrefixRunPlan {
 	static final AtomicLong PREFIXES_EMITTED = new AtomicLong();
 	static final AtomicLong ROWS_SCANNED = new AtomicLong();
 	static final AtomicLong RUN_ROWS_COUNTED = new AtomicLong();
+	static final AtomicLong ADJACENCY_OPENED = new AtomicLong();
+	static final AtomicLong ADJACENCY_PREFIXES_EMITTED = new AtomicLong();
 
 	private final TripleIndex index;
 	private final int[] prefixFields;
 	private final int prefixLength;
+	private final char[] fieldSequence;
+	private final String indexName;
+	private final boolean adjacency;
+	private final boolean wholePlaneCount;
 
 	LmdbPrefixRunPlan(TripleIndex index, int[] prefixFields, int prefixLength) {
+		this(index, prefixFields, prefixLength, index.getFieldSeq(), index.getName(false), false, false);
+	}
+
+	private LmdbPrefixRunPlan(TripleIndex index, int[] prefixFields, int prefixLength, char[] fieldSequence,
+			String indexName, boolean adjacency, boolean wholePlaneCount) {
 		this.index = index;
 		this.prefixFields = Arrays.copyOf(prefixFields, prefixFields.length);
 		this.prefixLength = prefixLength;
+		this.fieldSequence = Arrays.copyOf(fieldSequence, fieldSequence.length);
+		this.indexName = indexName;
+		this.adjacency = adjacency;
+		this.wholePlaneCount = wholePlaneCount;
 		PLANNED.incrementAndGet();
+	}
+
+	static LmdbPrefixRunPlan adjacencySubject(int[] prefixFields) {
+		if (prefixFields == null || prefixFields.length != 1 || prefixFields[0] != TripleIndex.SUBJ_IDX) {
+			throw new IllegalArgumentException("adjacency subject runs require the subject as their only prefix field");
+		}
+		return new LmdbPrefixRunPlan(null, prefixFields, 1, new char[] { 's', 'p', 'o', 'c' },
+				"direct-adjacency", true, false);
+	}
+
+	static LmdbPrefixRunPlan adjacencyPredicate(int[] prefixFields) {
+		if (prefixFields == null || prefixFields.length != 1 || prefixFields[0] != TripleIndex.PRED_IDX) {
+			throw new IllegalArgumentException(
+					"adjacency predicate runs require the predicate as their only prefix field");
+		}
+		return new LmdbPrefixRunPlan(null, prefixFields, 1, new char[] { 'p', 's', 'o', 'c' },
+				"direct-adjacency", true, false);
+	}
+
+	@InternalUseOnly
+	public LmdbPrefixRunPlan asWholePlaneCount() {
+		if (!adjacency) {
+			throw new IllegalStateException("whole-plane counts require a direct-adjacency prefix plan");
+		}
+		return new LmdbPrefixRunPlan(index, prefixFields, prefixLength, fieldSequence, indexName, true, true);
 	}
 
 	static boolean isEnabled() {
@@ -51,11 +91,36 @@ public final class LmdbPrefixRunPlan {
 		PREFIXES_EMITTED.set(0);
 		ROWS_SCANNED.set(0);
 		RUN_ROWS_COUNTED.set(0);
+		ADJACENCY_OPENED.set(0);
+		ADJACENCY_PREFIXES_EMITTED.set(0);
 	}
 
 	@InternalUseOnly
 	public TripleIndex index() {
+		if (index == null) {
+			throw new IllegalStateException("direct-adjacency prefix plans do not own an LMDB index");
+		}
 		return index;
+	}
+
+	@InternalUseOnly
+	public char[] fieldSequence() {
+		return Arrays.copyOf(fieldSequence, fieldSequence.length);
+	}
+
+	@InternalUseOnly
+	public String indexName() {
+		return indexName;
+	}
+
+	@InternalUseOnly
+	public boolean usesAdjacency() {
+		return adjacency;
+	}
+
+	@InternalUseOnly
+	public boolean wholePlaneCount() {
+		return wholePlaneCount;
 	}
 
 	@InternalUseOnly

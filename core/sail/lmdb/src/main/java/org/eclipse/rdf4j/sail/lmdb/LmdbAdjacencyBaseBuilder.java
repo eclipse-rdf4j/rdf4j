@@ -266,7 +266,8 @@ final class LmdbAdjacencyBaseBuilder {
 				Charge metadataCharge = inlineMetadataCharge.transfer();
 				LmdbInMemoryAdjacencyIndex index = new LmdbInMemoryAdjacencyIndex(baseRevision, arenaCatalog,
 						predicateCatalog, contextCatalog, coverage, locator, keyIndexes, fill.inlinePlaneKeys,
-						fill.inlinePlanes, baseCharge, metadataCharge, statements, sizing.pairCount);
+						fill.inlinePlanes, baseCharge, metadataCharge, statements, sizing.pairCount,
+						sizing.planeStatistics());
 				// the catalog is now the sole owner: release the builder's creator reference
 				baseArena.close();
 				if (metrics != null) {
@@ -342,6 +343,20 @@ final class LmdbAdjacencyBaseBuilder {
 			return plans;
 		}
 
+		LmdbAdjacencyPlaneStatistics planeStatistics() {
+			int countLength = Math.multiplyExact(sortedPredicates.length, LmdbReferenceNodeLocator.PLANE_COUNT);
+			long[] quadCounts = new long[countLength];
+			long[] keyCounts = new long[countLength];
+			for (int plane = 0; plane < planes.length; plane++) {
+				for (int predicate = 0; predicate < sortedPredicates.length; predicate++) {
+					int index = predicate * LmdbReferenceNodeLocator.PLANE_COUNT + plane;
+					quadCounts[index] = planes[plane].quadCounts[predicate];
+					keyCounts[index] = planes[plane].keyCounts[predicate];
+				}
+			}
+			return LmdbAdjacencyPlaneStatistics.base(sortedPredicates, quadCounts, keyCounts);
+		}
+
 		LmdbAdjacencyKeyIndex[] allocateKeyIndexes(LmdbAdjacencyArena arena, int predicateCount) {
 			LmdbAdjacencyKeyIndex[] indexes = new LmdbAdjacencyKeyIndex[Math.multiplyExact(predicateCount,
 					LmdbReferenceNodeLocator.PLANE_COUNT)];
@@ -384,6 +399,7 @@ final class LmdbAdjacencyBaseBuilder {
 			private final LmdbAdjacencyArenaSizingPlan runPlan;
 			private final LmdbInlineIncomingIndex.Sizing[] inlineSizing;
 			private final long[] keyCounts = new long[sortedPredicates.length];
+			private final long[] quadCounts = new long[sortedPredicates.length];
 
 			private long runBytes;
 			private long groupCount;
@@ -473,6 +489,7 @@ final class LmdbAdjacencyBaseBuilder {
 						long predicateOrdinal = unsignedIndexOf(sortedPredicates, predicate);
 						int predicateIndex = Math.toIntExact(predicateOrdinal);
 						keyCounts[predicateIndex] = Math.incrementExact(keyCounts[predicateIndex]);
+						quadCounts[predicateIndex] = Math.addExact(quadCounts[predicateIndex], groupPairs);
 						if (ValueIds.isReference(key)) {
 							workspace.recordGroup(ValueIds.getIdType(key), ValueIds.getValue(key), plane);
 						} else {

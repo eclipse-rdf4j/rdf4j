@@ -95,6 +95,10 @@ final class LmdbAdjacencyKeyIndex {
 				: keys.get(LmdbAdjacencyArena.U64_LE, ordinal * Long.BYTES);
 	}
 
+	Cursor cursor() {
+		return new Cursor(keys, csfKeys, capacity);
+	}
+
 	boolean contains(long key) {
 		if (csfKeys != null) {
 			return csfKeys.contains(key);
@@ -113,5 +117,60 @@ final class LmdbAdjacencyKeyIndex {
 			}
 		}
 		return false;
+	}
+
+	/** Forward-only base-key cursor; a CSF cursor also exposes the row's direct local run reference. */
+	static final class Cursor {
+		private final MemorySegment keys;
+		private final ImmutablePagedQuadCsfIndex.KeyCursor csf;
+		private final long capacity;
+		private long ordinal;
+		private long key;
+
+		private Cursor(MemorySegment keys, ImmutablePagedQuadCsfIndex.KeyDomain csfKeys, long capacity) {
+			this.keys = keys;
+			this.csf = csfKeys == null ? null : csfKeys.cursor();
+			this.capacity = capacity;
+		}
+
+		boolean advance() {
+			if (csf != null) {
+				return csf.advance();
+			}
+			if (ordinal >= capacity) {
+				return false;
+			}
+			key = keys.get(LmdbAdjacencyArena.U64_LE, ordinal++ * Long.BYTES);
+			return true;
+		}
+
+		long key() {
+			return csf == null ? key : csf.key();
+		}
+
+		boolean hasDirectRunReference() {
+			return csf != null;
+		}
+
+		long directRunReference() {
+			if (csf == null) {
+				throw new IllegalStateException("legacy key domains do not encode run references");
+			}
+			return csf.localReference();
+		}
+
+		long directRunSize() {
+			if (csf == null) {
+				throw new IllegalStateException("legacy key domains do not encode run sizes");
+			}
+			return csf.edgeCount();
+		}
+
+		int copyDirectPairs(long fromOrdinal, int length, long[] neighborTarget, long[] contextTarget) {
+			if (csf == null) {
+				throw new IllegalStateException("legacy key domains do not encode run rows");
+			}
+			return csf.copyPairs(fromOrdinal, length, neighborTarget, 0, contextTarget, 0);
+		}
 	}
 }

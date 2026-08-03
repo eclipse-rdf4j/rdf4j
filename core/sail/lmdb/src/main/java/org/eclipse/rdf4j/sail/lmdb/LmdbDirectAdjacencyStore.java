@@ -59,7 +59,15 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	private static final Logger logger = LoggerFactory.getLogger(LmdbDirectAdjacencyStore.class);
 	private static final String LEGACY_BASE_PROPERTY = "org.eclipse.rdf4j.sail.lmdb.directAdjacency.legacyBase";
+	static final String ROOT_SCAN_PROPERTY = "rdf4j.lmdb.directAdjacency.rootScan.enabled";
+	static final String BOUND_PROBE_PROPERTY = "rdf4j.lmdb.directAdjacency.boundProbe.enabled";
+	static final String CLEAN_TXN_READS_PROPERTY = "rdf4j.lmdb.directAdjacency.cleanTxnReads.enabled";
+	static final String PARALLEL_ROW_PATH_PROPERTY = "rdf4j.lmdb.directAdjacency.parallelRowPath.enabled";
+	static final String SCAN_AGGREGATES_PROPERTY = "rdf4j.lmdb.directAdjacency.scanAggregates.enabled";
+	static final String PLANNER_STATS_PROPERTY = "rdf4j.lmdb.directAdjacency.plannerStats.enabled";
 	private static final ThreadLocal<Boolean> BASE_FORMAT_OVERRIDE = new ThreadLocal<>();
+	/** Kernel adjacency views served; one increment per successful operator bind, never per row lookup. */
+	static final AtomicLong KERNEL_VIEWS_SERVED = new AtomicLong();
 
 	/**
 	 * Maintenance lifecycle (closed enum from the plan); drives work and metrics, never read by the row resolver.
@@ -86,6 +94,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private final TripleStore tripleStore;
 	private final ValueStore valueStore;
 	private final AtomicBoolean storeTxnStarted;
+	private final AtomicBoolean storeTxnDirty;
 	private final LmdbDirectAdjacencyOptions options;
 	private final LmdbAdjacencyMemoryAccount account;
 	private final LmdbAdjacencyMetrics metrics = new LmdbAdjacencyMetrics();
@@ -121,9 +130,15 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	LmdbDirectAdjacencyStore(TripleStore tripleStore, ValueStore valueStore, AtomicBoolean storeTxnStarted,
 			LmdbDirectAdjacencyOptions options) {
+		this(tripleStore, valueStore, storeTxnStarted, new AtomicBoolean(), options);
+	}
+
+	LmdbDirectAdjacencyStore(TripleStore tripleStore, ValueStore valueStore, AtomicBoolean storeTxnStarted,
+			AtomicBoolean storeTxnDirty, LmdbDirectAdjacencyOptions options) {
 		this.tripleStore = tripleStore;
 		this.valueStore = valueStore;
 		this.storeTxnStarted = storeTxnStarted;
+		this.storeTxnDirty = storeTxnDirty;
 		this.options = options;
 		Boolean baseFormatOverride = BASE_FORMAT_OVERRIDE.get();
 		this.legacyBase = baseFormatOverride != null ? baseFormatOverride : Boolean.getBoolean(LEGACY_BASE_PROPERTY);
@@ -198,6 +213,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		return storeTxnStarted;
 	}
 
+	/** Test seam for the first-genuine-mutation marker. */
+	AtomicBoolean storeTxnDirtyFlag() {
+		return storeTxnDirty;
+	}
+
 	/** Test/diagnostic accessor for the current publication (not retained; do not read rows through it). */
 	LmdbAdjacencyPublishedState publishedStateForTest() {
 		return published.get();
@@ -212,7 +232,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	 * snapshot is acquired (online catch-up requirement).
 	 */
 	LmdbDirectAdjacencyCommitDelta newCommitDelta() {
-		return new LmdbDirectAdjacencyCommitDelta(account, options.commitMaxBytes());
+		return new LmdbDirectAdjacencyCommitDelta(account, options.commitMaxBytes(), storeTxnDirty);
 	}
 
 	/**
@@ -299,7 +319,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			overlays.retain();
 		}
 		return new LmdbAdjacencyPublishedState(epochs.incrementAndGet(), base, overlays, pending, appliedRevision,
-				current.gapFromRevision(), current.servingState(), current.minSnapshotRevision());
+				current.gapFromRevision(), current.servingState(), current.minSnapshotRevision(),
+				current.planeStatistics());
 	}
 
 	/**
@@ -397,6 +418,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		LmdbAdjacencyDeltaGeneration generation = null;
 		LmdbAdjacencyContextCatalog contextCatalog = state.contextCatalog();
 		long[] extraSelected = state.overlays() == null ? new long[0] : state.overlays().extraSelectedSnapshot();
+		LmdbAdjacencyPlaneStatistics.Update planeStatisticsUpdate = null;
 
 		if (!sealed.isEmpty()) {
 			long[] mergedExtra = classifySelected(extraSelected, sealed);
@@ -406,6 +428,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			generation = result.generation;
 			contextCatalog = result.contextCatalog;
 			extraSelected = result.extraSelectedAfter;
+			planeStatisticsUpdate = result.planeStatisticsUpdate;
 		}
 
 		publicationLock.lock();
@@ -449,7 +472,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				newOverlays = new LmdbAdjacencyOverlaySet(generations, contextCatalog, extraSelected);
 			}
 			publish(new LmdbAdjacencyPublishedState(epochs.incrementAndGet(), sharedBase, newOverlays, remaining,
-					revision, state.gapFromRevision(), state.servingState(), state.minSnapshotRevision()));
+					revision, state.gapFromRevision(), state.servingState(), state.minSnapshotRevision(),
+					state.planeStatistics().with(planeStatisticsUpdate)));
 			maintenanceState = MaintenanceState.ACTIVE;
 		} finally {
 			publicationLock.unlock();
@@ -509,7 +533,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			}
 			publish(new LmdbAdjacencyPublishedState(epochs.incrementAndGet(), result.base(), null, current.pending(),
 					current.appliedRevision(), current.gapFromRevision(), current.servingState(),
-					current.appliedRevision()));
+					current.appliedRevision(), result.base().planeStatistics()));
 			publishedReplacement = true;
 			maintenanceState = MaintenanceState.ACTIVE;
 			logger.debug("Folded {} overlay generations / {} rows into paged CSF: {} shared shards, {} replaced, "
@@ -548,7 +572,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 						overlays.extraSelectedSnapshot());
 				publish(new LmdbAdjacencyPublishedState(epochs.incrementAndGet(), base, consolidated,
 						current.pending(), current.appliedRevision(), current.gapFromRevision(),
-						current.servingState(), current.appliedRevision()));
+						current.servingState(), current.appliedRevision(), current.planeStatistics().flattened()));
 				maintenanceState = MaintenanceState.ACTIVE;
 			} finally {
 				publicationLock.unlock();
@@ -793,7 +817,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			// drop base and overlays: their arenas free when the last read-view lease closes (invariant I14);
 			// pending markers carry so the replacement build keeps its continuity evidence
 			publish(new LmdbAdjacencyPublishedState(epochs.incrementAndGet(), null, null, current.pending(),
-					current.appliedRevision(), current.gapFromRevision(), AdjacencyServingState.UNAVAILABLE, -1));
+					current.appliedRevision(), current.gapFromRevision(), AdjacencyServingState.UNAVAILABLE, -1,
+					LmdbAdjacencyPlaneStatistics.empty()));
 		} finally {
 			publicationLock.unlock();
 		}
@@ -1093,6 +1118,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		List<LmdbAdjacencyDeltaGeneration> generations = new ArrayList<>();
 		LmdbAdjacencyContextCatalog contextCatalog = index.contextCatalog();
 		long[] extraSelected = new long[0];
+		LmdbAdjacencyPlaneStatistics planeStatistics = index.planeStatistics();
 		long appliedRevision = baseRevision;
 		boolean success = false;
 		try {
@@ -1149,7 +1175,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 														contextCatalog, extraSelected);
 								publish(new LmdbAdjacencyPublishedState(epochs.incrementAndGet(), index, overlays,
 										carried.toArray(new PendingTable[0]), appliedRevision, Long.MAX_VALUE,
-										AdjacencyServingState.ROW_EXACT, index.baseRevision()));
+										AdjacencyServingState.ROW_EXACT, index.baseRevision(), planeStatistics));
 								GapMarker clearedGap = new GapMarker(Long.MAX_VALUE, capturedGap.sequence());
 								if (emergencyGap.compareAndSet(capturedGap, clearedGap)) {
 									maintenanceState = MaintenanceState.ACTIVE;
@@ -1207,6 +1233,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 					}
 					contextCatalog = result.contextCatalog;
 					extraSelected = result.extraSelectedAfter;
+					planeStatistics = planeStatistics.with(result.planeStatisticsUpdate);
 				}
 				appliedRevision = head.revision();
 				removeHead(head).close();
@@ -1385,7 +1412,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		if (options.memoryRefused()) {
 			return fallback(snapshotRevision, FallbackReason.MEMORY_REFUSED);
 		}
-		if (storeTxnStarted.get()) {
+		if (writeTransactionBlocksAdjacency()) {
 			return fallback(snapshotRevision, FallbackReason.READ_YOUR_WRITES);
 		}
 		for (int attempt = 0; attempt < 3; attempt++) {
@@ -1546,7 +1573,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		if (view == null || !view.servesSnapshot() || closed) {
 			return null;
 		}
-		if (storeTxnStarted.get()) {
+		if (writeTransactionBlocksAdjacency()) {
 			metrics.recordFallback(FallbackReason.READ_YOUR_WRITES);
 			return null;
 		}
@@ -1555,6 +1582,10 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		boolean predicateBound = predicate > 0;
 		LmdbAdjacencyPublishedState state = view.state();
 		LmdbInMemoryAdjacencyIndex base = state.base();
+
+		if (predicateBound && subjectBound && objectBound) {
+			return openBoundProbe(view, subject, predicate, object, context, explicit, searchContext, reusableIterator);
+		}
 
 		if (predicateBound && subjectBound != objectBound) {
 			long key = subjectBound ? subject : object;
@@ -1623,9 +1654,83 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 					subjectBound ? LmdbDirectAdjacencyIterator.BY_SUBJECT : LmdbDirectAdjacencyIterator.BY_OBJECT);
 		}
 
-		// Root scans and doubly-bound probes stay on CSR/LMDB in version 1, but remain visible in the decline census.
+		if (predicateBound && !subjectBound && !objectBound) {
+			return openRootScan(view, order, predicate, context, explicit);
+		}
+
+		// Unbound-predicate root scans and doubly-bound probes remain visible in the decline census.
 		metrics.recordFallback(subjectBound && objectBound ? FallbackReason.DOUBLY_BOUND : FallbackReason.ROOT_SCAN);
 		return null;
+	}
+
+	private RecordIterator openBoundProbe(LmdbAdjacencyReadView view, long subject, long predicate, long object,
+			long context, boolean explicit, LmdbReferenceNodeLocator.SearchContext searchContext,
+			LmdbDirectAdjacencyIterator reusableIterator) {
+		if (!boundProbeEnabled() || options.mode() != DirectAdjacencyMode.PREFER) {
+			metrics.recordFallback(FallbackReason.DOUBLY_BOUND);
+			return null;
+		}
+		ResolvedRow row = resolveRow(view, subject, plane(true, explicit), predicate, searchContext);
+		if (row.handle == LmdbInMemoryAdjacencyIndex.NOT_COVERED) {
+			metrics.recordFallback(row.reason);
+			return null;
+		}
+		if (row.handle == LmdbInMemoryAdjacencyIndex.NOT_FOUND) {
+			metrics.recordExactMiss();
+			return EmptyRecordIterator.INSTANCE;
+		}
+		metrics.recordHit();
+		LmdbDirectAdjacencyIterator iterator = reusableIterator == null ? new LmdbDirectAdjacencyIterator()
+				: reusableIterator;
+		iterator.initBoundNeighbor(view, row.catalog, view.state().contextCatalog(), row.handle, subject, predicate,
+				object, context, LmdbDirectAdjacencyIterator.BY_SUBJECT, "direct");
+		return iterator;
+	}
+
+	private RecordIterator openRootScan(LmdbAdjacencyReadView view, StatementOrder order, long predicate, long context,
+			boolean explicit) {
+		if (!rootScanEnabled() || options.mode() != DirectAdjacencyMode.PREFER || context >= 0L) {
+			metrics.recordFallback(FallbackReason.ROOT_SCAN);
+			return null;
+		}
+		if (order != null && order != StatementOrder.S) {
+			metrics.recordFallback(FallbackReason.INDEX_ORDER_INCOMPATIBLE);
+			return null;
+		}
+		LmdbDirectNativeAdjacency adjacency = bindCompleteAdjacency(view, predicate, true, explicit);
+		if (adjacency == null) {
+			return null;
+		}
+		metrics.recordHit();
+		return new LmdbDirectAdjacencyRootIterator(view, adjacency, predicate);
+	}
+
+	private static boolean rootScanEnabled() {
+		String configured = System.getProperty(ROOT_SCAN_PROPERTY);
+		return configured == null || Boolean.parseBoolean(configured);
+	}
+
+	private static boolean boundProbeEnabled() {
+		String configured = System.getProperty(BOUND_PROBE_PROPERTY);
+		return configured == null || Boolean.parseBoolean(configured);
+	}
+
+	private static boolean scanAggregatesEnabled() {
+		String configured = System.getProperty(SCAN_AGGREGATES_PROPERTY);
+		return configured == null || Boolean.parseBoolean(configured);
+	}
+
+	private static boolean plannerStatsEnabled() {
+		return Boolean.parseBoolean(System.getProperty(PLANNER_STATS_PROPERTY, "false"));
+	}
+
+	private boolean writeTransactionBlocksAdjacency() {
+		if (!storeTxnStarted.get()) {
+			return false;
+		}
+		String configured = System.getProperty(CLEAN_TXN_READS_PROPERTY);
+		boolean cleanTransactionReadsEnabled = configured == null || Boolean.parseBoolean(configured);
+		return !cleanTransactionReadsEnabled || storeTxnDirty.get();
 	}
 
 	private static int plane(boolean bySubject, boolean explicit) {
@@ -1703,21 +1808,121 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	@Override
 	public NativeLmdbQuerySource.NativeAdjacency adjacency(LmdbAdjacencyReadView view, long predicate,
 			boolean bySubject, boolean explicit) {
-		if (view == null || !view.servesSnapshot() || closed || options.mode() != DirectAdjacencyMode.PREFER
-				|| storeTxnStarted.get() || predicate <= 0) {
+		LmdbDirectNativeAdjacency adjacency = bindCompleteAdjacency(view, predicate, bySubject, explicit);
+		if (adjacency == null) {
 			return null;
+		}
+		metrics.recordHit();
+		KERNEL_VIEWS_SERVED.incrementAndGet();
+		return adjacency;
+	}
+
+	LmdbPrefixRunPlan tryPrefixRunPlan(LmdbAdjacencyReadView view, int[] prefixFields, long subject, long predicate,
+			long object, long context) {
+		if (!scanAggregatesEnabled() || prefixFields == null || prefixFields.length != 1 || subject > 0 || object > 0
+				|| context >= 0) {
+			return null;
+		}
+		if (prefixFields[0] == TripleIndex.SUBJ_IDX && predicate > 0) {
+			return completeBasePredicateOrdinal(view, predicate) == LmdbInMemoryAdjacencyIndex.NOT_COVERED
+					? null
+					: LmdbPrefixRunPlan.adjacencySubject(prefixFields);
+		}
+		if (prefixFields[0] == TripleIndex.PRED_IDX && predicate <= 0 && exactCurrentFullCoverage(view)) {
+			return LmdbPrefixRunPlan.adjacencyPredicate(prefixFields);
+		}
+		return null;
+	}
+
+	LmdbPrefixRunCursor tryPrefixRuns(LmdbAdjacencyReadView view, LmdbPrefixRunPlan plan, long subject,
+			long predicate, long object, long context, boolean explicit, boolean countRunRows) {
+		if (plan == null || !plan.usesAdjacency() || !scanAggregatesEnabled() || subject > 0 || object > 0
+				|| context >= 0) {
+			return null;
+		}
+		int[] prefixFields = plan.prefixFields();
+		if (prefixFields.length != 1) {
+			return null;
+		}
+		if (prefixFields[0] == TripleIndex.PRED_IDX) {
+			if (predicate > 0 || !exactCurrentFullCoverage(view)) {
+				return null;
+			}
+			metrics.recordHit();
+			return new LmdbDirectAdjacencyPredicatePrefixRunCursor(this, view, explicit, countRunRows);
+		}
+		if (prefixFields[0] != TripleIndex.SUBJ_IDX || predicate <= 0) {
+			return null;
+		}
+		LmdbDirectNativeAdjacency adjacency = bindCompleteAdjacency(view, predicate, true, explicit);
+		if (adjacency == null) {
+			return null;
+		}
+		long wholePlaneRows = -1;
+		if (plan.wholePlaneCount()) {
+			if (view.snapshotRevision() != view.state().appliedRevision()) {
+				return null;
+			}
+			wholePlaneRows = view.state().planeStatistics().quadCount(predicate, plane(true, explicit));
+		}
+		metrics.recordHit();
+		return new LmdbDirectAdjacencyPrefixRunCursor(view, adjacency, predicate, countRunRows, wholePlaneRows);
+	}
+
+	private boolean exactCurrentFullCoverage(LmdbAdjacencyReadView view) {
+		return view != null && view.servesSnapshot() && !closed && options.mode() == DirectAdjacencyMode.PREFER
+				&& !writeTransactionBlocksAdjacency() && view.snapshotRevision() == view.state().appliedRevision()
+				&& view.state().base().coverage().isFull();
+	}
+
+	private LmdbDirectNativeAdjacency bindCompleteAdjacency(LmdbAdjacencyReadView view, long predicate,
+			boolean bySubject, boolean explicit) {
+		long basePredicateOrdinal = completeBasePredicateOrdinal(view, predicate);
+		if (basePredicateOrdinal == LmdbInMemoryAdjacencyIndex.NOT_COVERED) {
+			return null;
+		}
+		return bindRetainedAdjacency(view, predicate, basePredicateOrdinal, bySubject, explicit);
+	}
+
+	LmdbDirectNativeAdjacency bindRetainedAdjacency(LmdbAdjacencyReadView view, long predicate, boolean bySubject,
+			boolean explicit) {
+		long basePredicateOrdinal = view.state().base().bindPredicate(predicate);
+		if (basePredicateOrdinal == LmdbInMemoryAdjacencyIndex.NOT_COVERED) {
+			return null;
+		}
+		return bindRetainedAdjacency(view, predicate, basePredicateOrdinal, bySubject, explicit);
+	}
+
+	private LmdbDirectNativeAdjacency bindRetainedAdjacency(LmdbAdjacencyReadView view, long predicate,
+			long basePredicateOrdinal, boolean bySubject, boolean explicit) {
+		LmdbAdjacencyPublishedState state = view.state();
+		LmdbAdjacencyOverlaySet overlays = state.overlays();
+		int generationCount = overlays == null ? 0 : overlays.generationCount();
+		LmdbAdjacencyArenaCatalog[] sources = new LmdbAdjacencyArenaCatalog[1 + generationCount];
+		sources[0] = state.base().arenaCatalog();
+		for (int i = 0; i < generationCount; i++) {
+			sources[i + 1] = overlays.generation(i).catalog();
+		}
+		return new LmdbDirectNativeAdjacency(this, view, predicate, basePredicateOrdinal, plane(bySubject, explicit),
+				sources, state.contextCatalog());
+	}
+
+	private long completeBasePredicateOrdinal(LmdbAdjacencyReadView view, long predicate) {
+		if (view == null || !view.servesSnapshot() || closed || options.mode() != DirectAdjacencyMode.PREFER
+				|| writeTransactionBlocksAdjacency() || predicate <= 0) {
+			return LmdbInMemoryAdjacencyIndex.NOT_COVERED;
 		}
 		LmdbAdjacencyPublishedState state = view.state();
 		// kernel completeness rule: a kernel can touch keys unknown at bind time and cannot restart after partial
 		// output, so it may only bind when the snapshot is continuously applied with no pending rows before it
 		if (view.snapshotRevision() > state.appliedRevision()) {
 			metrics.recordFallback(FallbackReason.KERNEL_REQUIRES_COMPLETE_REVISION);
-			return null;
+			return LmdbInMemoryAdjacencyIndex.NOT_COVERED;
 		}
 		for (PendingTable pending : state.pending()) {
 			if (pending.revision() <= view.snapshotRevision()) {
 				metrics.recordFallback(FallbackReason.KERNEL_REQUIRES_COMPLETE_REVISION);
-				return null;
+				return LmdbInMemoryAdjacencyIndex.NOT_COVERED;
 			}
 		}
 		LmdbInMemoryAdjacencyIndex base = state.base();
@@ -1726,21 +1931,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		if (basePredicateOrdinal == LmdbInMemoryAdjacencyIndex.NOT_COVERED) {
 			if (overlays == null || !overlays.extraSelected(predicate)) {
 				metrics.recordFallback(FallbackReason.PLANE_NOT_COVERED);
-				return null;
+				return LmdbInMemoryAdjacencyIndex.NOT_COVERED;
 			}
 			// The predicate was selected after this base was built. Generations may contain it; the base is empty.
 			basePredicateOrdinal = LmdbInMemoryAdjacencyIndex.NOT_FOUND;
 		}
-		int generationCount = overlays == null ? 0 : overlays.generationCount();
-		LmdbAdjacencyArenaCatalog[] sources = new LmdbAdjacencyArenaCatalog[1 + generationCount];
-		sources[0] = base.arenaCatalog();
-		for (int i = 0; i < generationCount; i++) {
-			sources[i + 1] = overlays.generation(i).catalog();
-		}
-		metrics.recordHit();
-		return new LmdbDirectNativeAdjacency(this, view, predicate, basePredicateOrdinal, plane(bySubject, explicit),
-				sources,
-				state.contextCatalog());
+		return basePredicateOrdinal;
 	}
 
 	/**
@@ -1789,7 +1985,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	public OptionalLong exactDegree(LmdbAdjacencyReadView view, long predicate, long key, boolean bySubject,
 			boolean explicit) {
 		if (view == null || !view.servesSnapshot() || closed || options.mode() != DirectAdjacencyMode.PREFER
-				|| storeTxnStarted.get() || predicate <= 0 || key <= 0) {
+				|| writeTransactionBlocksAdjacency() || predicate <= 0 || key <= 0) {
 			return OptionalLong.empty();
 		}
 		ResolvedRow row = resolveRow(view, key, plane(bySubject, explicit), predicate);
@@ -1808,8 +2004,23 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	@Override
 	public OptionalDouble meanFanOut(LmdbAdjacencyReadView view, long predicate, boolean bySubject,
 			boolean explicit) {
-		// per-plane statistics require complete-plane accounting; decline until Milestone 8
-		return OptionalDouble.empty();
+		if (!plannerStatsEnabled() || view == null || !view.servesSnapshot() || closed
+				|| options.mode() != DirectAdjacencyMode.PREFER || writeTransactionBlocksAdjacency() || predicate <= 0
+				|| view.snapshotRevision() != view.state().appliedRevision() || !planeCovered(view, predicate)) {
+			return OptionalDouble.empty();
+		}
+		LmdbAdjacencyPlaneStatistics statistics = view.state().planeStatistics();
+		int plane = plane(bySubject, explicit);
+		long quads = statistics.quadCount(predicate, plane);
+		if (quads == 0) {
+			return OptionalDouble.of(0D);
+		}
+		long keys = statistics.keyCount(predicate, plane);
+		if (keys <= 0) {
+			throw new IllegalStateException("non-empty adjacency plane has no keys for predicate " + predicate
+					+ ", plane " + plane);
+		}
+		return OptionalDouble.of((double) quads / keys);
 	}
 
 	@Override
@@ -1828,13 +2039,19 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private long tryCountInternal(LmdbAdjacencyReadView view, long subject, long predicate, long object, long context,
 			boolean explicit, boolean existenceOnly) {
 		if (view == null || !view.servesSnapshot() || closed || options.mode() != DirectAdjacencyMode.PREFER
-				|| storeTxnStarted.get() || predicate <= 0) {
+				|| writeTransactionBlocksAdjacency() || predicate <= 0) {
 			return -1;
 		}
 		boolean subjectBound = subject > 0;
 		boolean objectBound = object > 0;
 		if (!subjectBound && !objectBound) {
-			return -1;
+			if (!scanAggregatesEnabled() || context >= 0 || view.snapshotRevision() != view.state().appliedRevision()
+					|| !planeCovered(view, predicate)) {
+				return -1;
+			}
+			long count = view.state().planeStatistics().quadCount(predicate, plane(true, explicit));
+			metrics.recordHit();
+			return count;
 		}
 		boolean bySubject;
 		long key;
@@ -1897,6 +2114,15 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 		metrics.recordHit();
 		return matches;
+	}
+
+	private static boolean planeCovered(LmdbAdjacencyReadView view, long rawPredicate) {
+		LmdbAdjacencyPublishedState state = view.state();
+		if (state.base().coverage().covers(rawPredicate)) {
+			return true;
+		}
+		LmdbAdjacencyOverlaySet overlays = state.overlays();
+		return overlays != null && overlays.extraSelected(rawPredicate);
 	}
 
 	@Override

@@ -1771,6 +1771,14 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			return owner.partitionRowCounts[partition];
 		}
 
+		/**
+		 * Returns a forward-only cursor over this partition's row coordinates. Unlike {@link #keyAt(long)}, the cursor
+		 * keeps its shard and page position, so a full domain walk does not repeat two binary searches per key.
+		 */
+		public KeyCursor cursor() {
+			return new KeyCursor(owner, partition);
+		}
+
 		public long keyAt(long ordinal) {
 			long count = keyCount();
 			if (ordinal < 0 || ordinal >= count) {
@@ -1840,6 +1848,163 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 				}
 			}
 			return false;
+		}
+	}
+
+	/** Allocation-free-after-construction sequential cursor over one {@link KeyDomain}. */
+	public static final class KeyCursor {
+		private final ImmutablePagedQuadCsfIndex owner;
+		private final int shardEnd;
+		private final CompactCsfPageReader page = new CompactCsfPageReader();
+		private final CompactCsfPageReader extentPage = new CompactCsfPageReader();
+		private int shardIndex;
+		private int localPage;
+		private int localRow;
+		private int loadedShard = -1;
+		private int loadedPage = -1;
+		private long key;
+		private long localReference;
+		private int firstPageId;
+		private int firstLocalRow;
+		private long edgeCount;
+		private boolean ready;
+
+		private KeyCursor(ImmutablePagedQuadCsfIndex owner, int partition) {
+			this.owner = owner;
+			this.shardIndex = owner.partitionShardStarts[partition];
+			this.shardEnd = shardIndex + owner.partitionShardCounts[partition];
+		}
+
+		public boolean advance() {
+			ready = false;
+			while (shardIndex < shardEnd) {
+				CsfShard shard = owner.shards[shardIndex];
+				while (localPage < shard.pageCount()) {
+					load(shard);
+					if (page.continuation()) {
+						localPage++;
+						localRow = 0;
+						continue;
+					}
+					if (localRow < page.rowCount()) {
+						key = page.rowAt(localRow);
+						firstPageId = owner.shardFirstPageIds[shardIndex] + localPage;
+						firstLocalRow = localRow;
+						localReference = packLocalReference(firstPageId, firstLocalRow);
+						edgeCount = countEdges();
+						localRow++;
+						ready = true;
+						return true;
+					}
+					localPage++;
+					localRow = 0;
+				}
+				shardIndex++;
+				localPage = 0;
+				localRow = 0;
+			}
+			return false;
+		}
+
+		public long key() {
+			ensureReady();
+			return key;
+		}
+
+		/** Local u40 page/row coordinate suitable for {@link ImmutablePagedQuadCsfIndex#packHandle(long)}. */
+		public long localReference() {
+			ensureReady();
+			return localReference;
+		}
+
+		public long edgeCount() {
+			ensureReady();
+			return edgeCount;
+		}
+
+		/** Bulk-decodes the current logical row without resolving its page/row coordinate again. */
+		public int copyPairs(long fromOrdinal, int length, long[] neighborTarget, int neighborOffset,
+				long[] contextTarget, int contextOffset) {
+			ensureReady();
+			if (length < 0 || fromOrdinal < 0 || fromOrdinal > edgeCount) {
+				throw new IllegalArgumentException("invalid CSF key-cursor copy range");
+			}
+			int requested = (int) Math.min(length, edgeCount - fromOrdinal);
+			if (requested == 0) {
+				return 0;
+			}
+			long global = 0;
+			int pageId = firstPageId;
+			int row = firstLocalRow;
+			int output = 0;
+			CompactCsfPageReader reader = page;
+			while (pageId != CompactCsfPageFormat.NO_PAGE && output < requested) {
+				if (pageId != firstPageId) {
+					owner.page(pageId, extentPage);
+					reader = extentPage;
+					if (!reader.continuation() || reader.firstRow() != key) {
+						throw new IllegalStateException("CSF extent chain changes row coordinate");
+					}
+				}
+				int pageEdges = reader.rowQuadCount(row);
+				long pageEnd = global + pageEdges;
+				if (fromOrdinal < pageEnd) {
+					int localFrom = (int) Math.max(0, fromOrdinal - global);
+					int take = Math.min(requested - output, pageEdges - localFrom);
+					int copied = reader.copyRow(row, localFrom, take, neighborTarget,
+							neighborTarget == null ? 0 : neighborOffset + output, contextTarget,
+							contextTarget == null ? 0 : contextOffset + output);
+					if (copied != take) {
+						throw new IllegalStateException("CSF key cursor copied " + copied + " of " + take);
+					}
+					output += copied;
+				}
+				global = pageEnd;
+				pageId = nextExtentPageId(pageId, reader);
+				row = 0;
+			}
+			return output;
+		}
+
+		private long countEdges() {
+			long count = page.rowQuadCount(firstLocalRow);
+			int next = nextExtentPageId(firstPageId, page);
+			while (next != CompactCsfPageFormat.NO_PAGE) {
+				owner.page(next, extentPage);
+				if (!extentPage.continuation() || extentPage.firstRow() != key) {
+					throw new IllegalStateException("CSF extent chain changes row coordinate");
+				}
+				count = Math.addExact(count, extentPage.rowQuadCount(0));
+				next = nextExtentPageId(next, extentPage);
+			}
+			return count;
+		}
+
+		private int nextExtentPageId(int pageId, CompactCsfPageReader current) {
+			if (current.rowCount() != 1) {
+				return CompactCsfPageFormat.NO_PAGE;
+			}
+			int next = pageId + 1;
+			if (next >= owner.pageCount) {
+				return CompactCsfPageFormat.NO_PAGE;
+			}
+			owner.page(next, extentPage);
+			return extentPage.continuation() && extentPage.firstRow() == key ? next
+					: CompactCsfPageFormat.NO_PAGE;
+		}
+
+		private void load(CsfShard shard) {
+			if (loadedShard != shardIndex || loadedPage != localPage) {
+				shard.page(localPage, page);
+				loadedShard = shardIndex;
+				loadedPage = localPage;
+			}
+		}
+
+		private void ensureReady() {
+			if (!ready) {
+				throw new IllegalStateException("key cursor is not positioned on a row");
+			}
 		}
 	}
 
