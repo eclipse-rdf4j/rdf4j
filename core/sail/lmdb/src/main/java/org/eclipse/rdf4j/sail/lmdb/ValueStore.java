@@ -3330,9 +3330,22 @@ public class ValueStore extends AbstractValueFactory {
 					for (BulkRecord record : batch) {
 						stack.push();
 						try {
+							byte[] valueBytes = record.value();
 							key.mv_data(stack.bytes(record.key()));
-							value.mv_data(stack.bytes(record.value()));
-							int result = mdb_cursor_put(cursor, key, value, MDB_APPEND);
+							int result;
+							if (valueBytes.length <= MAX_KEY_SIZE) {
+								value.mv_data(stack.bytes(valueBytes));
+								result = mdb_cursor_put(cursor, key, value, MDB_APPEND);
+							} else {
+								// Large values (e.g. big literals) do not fit on the fixed-size LWJGL MemoryStack.
+								// Reserve space inside LMDB and copy the payload directly into the reserved buffer,
+								// mirroring the incremental write path in persistPreparedValues.
+								value.mv_size(valueBytes.length);
+								result = mdb_cursor_put(cursor, key, value, MDB_APPEND | MDB_RESERVE);
+								if (result == MDB_SUCCESS) {
+									value.mv_data().put(valueBytes);
+								}
+							}
 							if (result == org.lwjgl.util.lmdb.LMDB.MDB_MAP_FULL) {
 								mapFull = true;
 								break;

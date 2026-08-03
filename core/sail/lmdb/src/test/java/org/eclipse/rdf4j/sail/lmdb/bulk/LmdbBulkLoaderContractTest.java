@@ -346,6 +346,46 @@ class LmdbBulkLoaderContractTest {
 	}
 
 	@Test
+	void loadsLiteralsLargerThanTheNativeMemoryStack() throws Exception {
+		// A single literal whose serialized data exceeds the fixed-size LWJGL MemoryStack (64 KiB by default)
+		// must be written into LMDB via a reserved buffer instead of being copied onto the stack. Otherwise the
+		// WRITE_GENERATION phase fails with "OutOfMemoryError: Out of stack space".
+		int literalLength = 256 * 1024;
+		StringBuilder largeText = new StringBuilder(literalLength);
+		for (int i = 0; i < literalLength; i++) {
+			largeText.append((char) ('a' + (i % 26)));
+		}
+		String largeLiteral = largeText.toString();
+		String input = "<urn:subject> <urn:predicate> \"" + largeLiteral + "\" .\n";
+
+		Path target = temporaryDirectory.resolve("large-literal-store");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,psoc");
+
+		LmdbBulkLoader.Result result = LmdbBulkLoader.builder(target, config)
+				.partitionCount(4)
+				.build()
+				.load(new ByteArrayInputStream(input.getBytes(StandardCharsets.UTF_8)), "urn:bulk-test:",
+						RDFFormat.NQUADS);
+
+		assertThat(result.parsedStatements()).isEqualTo(1);
+		assertThat(result.storedStatements()).isEqualTo(1);
+
+		SailRepository repository = new SailRepository(new LmdbStore(target.toFile(), config));
+		repository.init();
+		try {
+			var valueFactory = SimpleValueFactory.getInstance();
+			try (RepositoryConnection connection = repository.getConnection()) {
+				assertThat(connection.size()).isEqualTo(1);
+				assertThat(connection.hasStatement(valueFactory.createIRI("urn:subject"),
+						valueFactory.createIRI("urn:predicate"), valueFactory.createLiteral(largeLiteral), false))
+								.isTrue();
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
 	void stagesCallerOwnedInputWithBoundedOpenFilesAndCleansItsWorkspace() throws Exception {
 		String input = """
 				<urn:subject:0> <urn:predicate:0> <urn:object:0> .
