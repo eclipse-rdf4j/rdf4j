@@ -216,6 +216,80 @@ public class LmdbPrefixRunQueryTest {
 	}
 
 	@Test
+	public void distinctProjectionsUseAvailablePrefixRunsBeforeAdjacencyBuild() {
+		LmdbPrefixRunPlan.resetMetrics();
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc,opsc")
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+				.setDirectAdjacencyBuildOnStart(false);
+		LmdbStore store = new LmdbStore(dataDir, config);
+		repository = new SailRepository(store);
+		try (LmdbStoreConnection conn = (LmdbStoreConnection) store.getConnection()) {
+			ValueFactory vf = SimpleValueFactory.getInstance();
+			IRI p1 = vf.createIRI(EX, "p1");
+			IRI p2 = vf.createIRI(EX, "p2");
+			conn.begin();
+			conn.addStatement(vf.createIRI(EX, "s1"), p1, vf.createIRI(EX, "o1"));
+			conn.addStatement(vf.createIRI(EX, "s2"), p1, vf.createIRI(EX, "o2"));
+			conn.addStatement(vf.createIRI(EX, "s3"), p2, vf.createIRI(EX, "o3"));
+			conn.addInferredStatement(vf.createIRI(EX, "s1"), p1, vf.createIRI(EX, "o1"));
+			conn.addInferredStatement(vf.createIRI(EX, "s4"), p2, vf.createIRI(EX, "o4"));
+			conn.commit();
+		}
+
+		assertDistinctValuesBeforeAdjacencyBuild("SELECT DISTINCT ?s WHERE { ?s ?p ?o }", "s",
+				List.of(EX + "s1", EX + "s2", EX + "s3", EX + "s4"));
+		assertDistinctValuesBeforeAdjacencyBuild("SELECT DISTINCT ?p WHERE { ?s ?p ?o }", "p",
+				List.of(EX + "p1", EX + "p2"));
+		assertDistinctValuesBeforeAdjacencyBuild("SELECT DISTINCT ?o WHERE { ?s ?p ?o }", "o",
+				List.of(EX + "o1", EX + "o2", EX + "o3", EX + "o4"));
+		assertDistinctPairsBeforeAdjacencyBuild("SELECT DISTINCT ?s ?p WHERE { ?s ?p ?o }", "s", "p",
+				List.of(EX + "s1/" + EX + "p1", EX + "s2/" + EX + "p1", EX + "s3/" + EX + "p2",
+						EX + "s4/" + EX + "p2"));
+		assertDistinctPairsBeforeAdjacencyBuild("SELECT DISTINCT ?o ?p WHERE { ?s ?p ?o }", "o", "p",
+				List.of(EX + "o1/" + EX + "p1", EX + "o2/" + EX + "p1", EX + "o3/" + EX + "p2",
+						EX + "o4/" + EX + "p2"));
+	}
+
+	@Test
+	public void countStarGroupedByPredicateMergesPrefixRunsBeforeAdjacencyBuild() {
+		LmdbPrefixRunPlan.resetMetrics();
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+				.setDirectAdjacencyBuildOnStart(false);
+		LmdbStore store = new LmdbStore(dataDir, config);
+		repository = new SailRepository(store);
+		try (LmdbStoreConnection conn = (LmdbStoreConnection) store.getConnection()) {
+			ValueFactory vf = SimpleValueFactory.getInstance();
+			IRI sharedPredicate = vf.createIRI(EX, "shared");
+			IRI uniquePredicate = vf.createIRI(EX, "unique");
+			conn.begin();
+			conn.addStatement(vf.createIRI(EX, "explicitSubject1"), sharedPredicate,
+					vf.createIRI(EX, "explicitObject1"));
+			conn.addStatement(vf.createIRI(EX, "explicitSubject2"), sharedPredicate,
+					vf.createIRI(EX, "explicitObject2"));
+			conn.addInferredStatement(vf.createIRI(EX, "inferredSubject"), sharedPredicate,
+					vf.createIRI(EX, "inferredObject"));
+			conn.addInferredStatement(vf.createIRI(EX, "uniqueSubject"), uniquePredicate,
+					vf.createIRI(EX, "uniqueObject"));
+			conn.commit();
+		}
+
+		long before = LmdbPrefixRunPlan.OPENED.get();
+		Map<String, Long> counts = new HashMap<>();
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			var query = conn.prepareTupleQuery("SELECT ?p (COUNT(*) AS ?c) WHERE { ?s ?p ?o } GROUP BY ?p");
+			query.setIncludeInferred(true);
+			for (BindingSet bs : QueryResults.asList(query.evaluate())) {
+				counts.put(bs.getValue("p").stringValue(), ((Literal) bs.getValue("c")).longValue());
+			}
+		}
+
+		assertThat(counts).isEqualTo(Map.of(EX + "shared", 3L, EX + "unique", 1L));
+		assertThat(LmdbPrefixRunPlan.OPENED.get()).isGreaterThan(before);
+		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get()).isEqualTo(4L);
+	}
+
+	@Test
 	public void distinctPredicateObjectUsesPrefixRun() {
 		openRepository("spoc,posc,ospc");
 
@@ -225,6 +299,18 @@ public class LmdbPrefixRunQueryTest {
 						EX + "likes/" + EX + "carol", EX + "tag/" + EX + "dave");
 
 		assertThat(LmdbPrefixRunPlan.OPENED.get()).isGreaterThan(before);
+	}
+
+	@Test
+	public void distinctObjectPredicateFallsBackWithoutObjectPredicateIndex() {
+		openRepository("spoc,posc,ospc");
+
+		long before = LmdbPrefixRunPlan.OPENED.get();
+		assertThat(pairs("SELECT DISTINCT ?o ?p WHERE { ?s ?p ?o }", "o", "p"))
+				.containsExactly(EX + "alice/" + EX + "knows", EX + "bob/" + EX + "knows",
+						EX + "carol/" + EX + "likes", EX + "dave/" + EX + "tag");
+
+		assertThat(LmdbPrefixRunPlan.OPENED.get()).isEqualTo(before);
 	}
 
 	@Test
@@ -345,8 +431,14 @@ public class LmdbPrefixRunQueryTest {
 	}
 
 	private List<String> values(String query, String bindingName) {
+		return values(query, bindingName, false);
+	}
+
+	private List<String> values(String query, String bindingName, boolean includeInferred) {
 		try (SailRepositoryConnection conn = repository.getConnection()) {
-			return QueryResults.asList(conn.prepareTupleQuery(query).evaluate())
+			var tupleQuery = conn.prepareTupleQuery(query);
+			tupleQuery.setIncludeInferred(includeInferred);
+			return QueryResults.asList(tupleQuery.evaluate())
 					.stream()
 					.map(bs -> bs.getValue(bindingName).stringValue())
 					.sorted()
@@ -355,13 +447,41 @@ public class LmdbPrefixRunQueryTest {
 	}
 
 	private List<String> pairs(String query) {
+		return pairs(query, "p", "o");
+	}
+
+	private List<String> pairs(String query, String firstBinding, String secondBinding) {
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			return QueryResults.asList(conn.prepareTupleQuery(query).evaluate())
 					.stream()
-					.map(bs -> bs.getValue("p").stringValue() + "/" + bs.getValue("o").stringValue())
+					.map(bs -> bs.getValue(firstBinding).stringValue() + "/"
+							+ bs.getValue(secondBinding).stringValue())
 					.sorted()
 					.collect(Collectors.toList());
 		}
+	}
+
+	private void assertDistinctValuesBeforeAdjacencyBuild(String query, String bindingName, List<String> expected) {
+		long before = LmdbPrefixRunPlan.OPENED.get();
+		assertThat(values(query, bindingName, true)).containsExactlyElementsOf(expected);
+		assertThat(LmdbPrefixRunPlan.OPENED.get()).isGreaterThan(before);
+	}
+
+	private void assertDistinctPairsBeforeAdjacencyBuild(String query, String firstBinding, String secondBinding,
+			List<String> expected) {
+		long before = LmdbPrefixRunPlan.OPENED.get();
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			var tupleQuery = conn.prepareTupleQuery(query);
+			tupleQuery.setIncludeInferred(true);
+			List<String> actual = QueryResults.asList(tupleQuery.evaluate())
+					.stream()
+					.map(bs -> bs.getValue(firstBinding).stringValue() + "/"
+							+ bs.getValue(secondBinding).stringValue())
+					.sorted()
+					.collect(Collectors.toList());
+			assertThat(actual).containsExactlyElementsOf(expected);
+		}
+		assertThat(LmdbPrefixRunPlan.OPENED.get()).isGreaterThan(before);
 	}
 
 	private List<String> subjectObjectPairs(String query) {

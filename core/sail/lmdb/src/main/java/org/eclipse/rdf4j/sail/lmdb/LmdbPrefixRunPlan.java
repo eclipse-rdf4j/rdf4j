@@ -58,7 +58,8 @@ public final class LmdbPrefixRunPlan {
 		return index;
 	}
 
-	int[] prefixFields() {
+	@InternalUseOnly
+	public int[] prefixFields() {
 		return Arrays.copyOf(prefixFields, prefixFields.length);
 	}
 

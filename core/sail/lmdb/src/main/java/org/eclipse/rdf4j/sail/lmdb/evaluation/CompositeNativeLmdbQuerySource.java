@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
@@ -26,6 +27,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
+import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 
 @Experimental
 final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
@@ -197,16 +199,58 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	@Override
 	public LmdbPrefixRunPlan prefixRunPlan(int[] prefixFields, long subj, long pred, long obj, long context) {
 		NativeLmdbQuerySource active = onlyActiveSource();
-		return active == null ? null : active.prefixRunPlan(prefixFields, subj, pred, obj, context);
+		if (active != null) {
+			return active.prefixRunPlan(prefixFields, subj, pred, obj, context);
+		}
+		if (activeSources.isEmpty()) {
+			return null;
+		}
+
+		LmdbPrefixRunPlan commonPlan = activeSources.get(0).prefixRunPlan(prefixFields, subj, pred, obj, context);
+		if (commonPlan == null) {
+			return null;
+		}
+		for (int i = 1; i < activeSources.size(); i++) {
+			LmdbPrefixRunPlan memberPlan = activeSources.get(i).prefixRunPlan(prefixFields, subj, pred, obj, context);
+			if (!compatiblePrefixRunPlans(commonPlan, memberPlan)) {
+				return null;
+			}
+		}
+		return commonPlan;
 	}
 
 	@Override
 	public LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
 			boolean countRunRows) throws IOException {
 		NativeLmdbQuerySource active = onlyActiveSource();
-		return active == null ? LmdbPrefixRunCursor.EMPTY
-				: active.prefixRuns(plan, subj, pred, obj, context,
-						countRunRows);
+		if (active != null) {
+			return active.prefixRuns(plan, subj, pred, obj, context, countRunRows);
+		}
+		if (activeSources.isEmpty() || plan == null) {
+			return LmdbPrefixRunCursor.EMPTY;
+		}
+
+		List<LmdbPrefixRunCursor> cursors = new ArrayList<>(activeSources.size());
+		try {
+			int[] prefixFields = plan.prefixFields();
+			for (NativeLmdbQuerySource source : activeSources) {
+				LmdbPrefixRunPlan memberPlan = source.prefixRunPlan(prefixFields, subj, pred, obj, context);
+				if (!compatiblePrefixRunPlans(plan, memberPlan)) {
+					closePrefixRunCursors(cursors, null);
+					return null;
+				}
+				LmdbPrefixRunCursor cursor = source.prefixRuns(memberPlan, subj, pred, obj, context, countRunRows);
+				if (cursor == null) {
+					closePrefixRunCursors(cursors, null);
+					return null;
+				}
+				cursors.add(cursor);
+			}
+			return new CompositePrefixRunCursor(cursors, plan, countRunRows);
+		} catch (IOException | RuntimeException | Error e) {
+			closePrefixRunCursors(cursors, e);
+			throw e;
+		}
 	}
 
 	@Override
@@ -318,6 +362,265 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 
 	private NativeLmdbQuerySource onlyActiveSource() {
 		return activeSources.size() == 1 ? activeSources.get(0) : null;
+	}
+
+	private static boolean compatiblePrefixRunPlans(LmdbPrefixRunPlan expected, LmdbPrefixRunPlan candidate) {
+		return candidate != null && expected.prefixLength() == candidate.prefixLength()
+				&& Arrays.equals(expected.index().getFieldSeq(), candidate.index().getFieldSeq());
+	}
+
+	private static void closePrefixRunCursors(List<LmdbPrefixRunCursor> cursors, Throwable primary) {
+		Throwable failure = primary;
+		for (LmdbPrefixRunCursor cursor : cursors) {
+			try {
+				cursor.close();
+			} catch (RuntimeException | Error closeFailure) {
+				if (failure == null) {
+					failure = closeFailure;
+				} else {
+					addSuppressed(failure, closeFailure);
+				}
+			}
+		}
+		if (primary == null) {
+			throwUnchecked(failure);
+		}
+	}
+
+	private static final class CompositePrefixRunCursor implements LmdbPrefixRunCursor {
+
+		private final List<LmdbPrefixRunCursor> cursors;
+		private final int[] orderedPrefixFields;
+		private final boolean countRunRows;
+		private final String indexName;
+		private final long[][] heads;
+		private final long[] quad = new long[4];
+		private boolean closed;
+		private long runRowCount;
+		private long[] stopPrefix;
+
+		private CompositePrefixRunCursor(List<LmdbPrefixRunCursor> cursors, LmdbPrefixRunPlan plan,
+				boolean countRunRows) {
+			this.cursors = List.copyOf(cursors);
+			this.orderedPrefixFields = orderedPrefixFields(plan);
+			this.countRunRows = countRunRows;
+			this.indexName = plan.index().toString();
+			this.heads = new long[cursors.size()][];
+		}
+
+		@Override
+		public boolean next() throws IOException {
+			if (closed) {
+				return false;
+			}
+			for (int i = 0; i < cursors.size(); i++) {
+				if (heads[i] == null && cursors.get(i).next()) {
+					heads[i] = copyQuad(cursors.get(i).quad());
+				}
+			}
+
+			int first = firstHead();
+			if (first < 0) {
+				close();
+				return false;
+			}
+
+			long[] emittedPrefix = heads[first];
+			if (stopPrefix != null && comparePrefixTo(emittedPrefix, stopPrefix) >= 0) {
+				close();
+				return false;
+			}
+			System.arraycopy(emittedPrefix, 0, quad, 0, quad.length);
+			long mergedRunRowCount = 0L;
+			for (int i = 0; i < heads.length; i++) {
+				if (heads[i] != null && samePrefix(emittedPrefix, heads[i])) {
+					if (countRunRows) {
+						mergedRunRowCount = addSaturated(mergedRunRowCount, cursors.get(i).runRowCount());
+					}
+					headNext(i);
+				}
+			}
+			runRowCount = countRunRows ? mergedRunRowCount : 1L;
+			return true;
+		}
+
+		private int firstHead() {
+			int first = -1;
+			for (int i = 0; i < heads.length; i++) {
+				if (heads[i] == null) {
+					continue;
+				}
+				if (first < 0 || comparePrefix(heads[i], heads[first]) < 0) {
+					first = i;
+				}
+			}
+			return first;
+		}
+
+		private int comparePrefix(long[] left, long[] right) {
+			for (int field : orderedPrefixFields) {
+				int compared = Long.compareUnsigned(left[field], right[field]);
+				if (compared != 0) {
+					return compared;
+				}
+			}
+			return 0;
+		}
+
+		private int comparePrefixTo(long[] head, long[] prefixValues) {
+			int length = Math.min(orderedPrefixFields.length, prefixValues.length);
+			for (int i = 0; i < length; i++) {
+				int compared = Long.compareUnsigned(head[orderedPrefixFields[i]], prefixValues[i]);
+				if (compared != 0) {
+					return compared;
+				}
+			}
+			return Integer.compare(orderedPrefixFields.length, prefixValues.length);
+		}
+
+		private boolean samePrefix(long[] left, long[] right) {
+			return comparePrefix(left, right) == 0;
+		}
+
+		private void headNext(int index) throws IOException {
+			LmdbPrefixRunCursor cursor = cursors.get(index);
+			if (cursor.next()) {
+				heads[index] = copyQuad(cursor.quad());
+				return;
+			}
+			heads[index] = null;
+		}
+
+		@Override
+		public boolean seekTo(long value) throws IOException {
+			if (closed) {
+				return false;
+			}
+			int streamedField = orderedPrefixFields[orderedPrefixFields.length - 1];
+			boolean any = false;
+			for (int i = 0; i < cursors.size(); i++) {
+				long[] head = heads[i];
+				if (head != null && Long.compareUnsigned(head[streamedField], value) >= 0) {
+					any = true;
+				} else {
+					heads[i] = null;
+					any |= cursors.get(i).seekTo(value);
+				}
+			}
+			return any;
+		}
+
+		@Override
+		public boolean seekTo(long[] prefixValues) throws IOException {
+			if (closed) {
+				return false;
+			}
+			boolean any = false;
+			for (int i = 0; i < cursors.size(); i++) {
+				long[] head = heads[i];
+				if (head != null && comparePrefixTo(head, prefixValues) >= 0) {
+					any = true;
+				} else {
+					heads[i] = null;
+					any |= cursors.get(i).seekTo(prefixValues);
+				}
+			}
+			return any;
+		}
+
+		@Override
+		public void stopBefore(long[] prefixValues) {
+			if (closed) {
+				return;
+			}
+			stopPrefix = prefixValues == null ? null : Arrays.copyOf(prefixValues, prefixValues.length);
+			for (LmdbPrefixRunCursor cursor : cursors) {
+				cursor.stopBefore(prefixValues);
+			}
+		}
+
+		@Override
+		public long[] quad() {
+			return quad;
+		}
+
+		@Override
+		public long runRowCount() {
+			return runRowCount;
+		}
+
+		@Override
+		public long getSourceRowsScannedActual() {
+			return metric(Metric.SCANNED);
+		}
+
+		@Override
+		public long getSourceRowsMatchedActual() {
+			return metric(Metric.MATCHED);
+		}
+
+		@Override
+		public long getSourceRowsFilteredActual() {
+			return metric(Metric.FILTERED);
+		}
+
+		private long metric(Metric metric) {
+			long total = 0L;
+			for (LmdbPrefixRunCursor cursor : cursors) {
+				long value = switch (metric) {
+				case SCANNED -> cursor.getSourceRowsScannedActual();
+				case MATCHED -> cursor.getSourceRowsMatchedActual();
+				case FILTERED -> cursor.getSourceRowsFilteredActual();
+				};
+				total = addSaturated(total, value);
+			}
+			return total;
+		}
+
+		@Override
+		public String getIndexName() {
+			return indexName;
+		}
+
+		@Override
+		public void close() {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			closePrefixRunCursors(cursors, null);
+		}
+
+		private static long[] copyQuad(long[] source) {
+			long[] copy = new long[4];
+			System.arraycopy(source, 0, copy, 0, copy.length);
+			return copy;
+		}
+
+		private static int[] orderedPrefixFields(LmdbPrefixRunPlan plan) {
+			char[] fieldSequence = plan.index().getFieldSeq();
+			int[] fields = new int[plan.prefixLength()];
+			for (int i = 0; i < fields.length; i++) {
+				fields[i] = switch (fieldSequence[i]) {
+				case 's' -> TripleIndex.SUBJ_IDX;
+				case 'p' -> TripleIndex.PRED_IDX;
+				case 'o' -> TripleIndex.OBJ_IDX;
+				case 'c' -> TripleIndex.CONTEXT_IDX;
+				default -> throw new IllegalArgumentException("Invalid statement field: " + fieldSequence[i]);
+				};
+			}
+			return fields;
+		}
+
+		private static long addSaturated(long left, long right) {
+			return Long.MAX_VALUE - left < right ? Long.MAX_VALUE : left + right;
+		}
+
+		private enum Metric {
+			SCANNED,
+			MATCHED,
+			FILTERED
+		}
 	}
 
 	@Override
