@@ -670,7 +670,8 @@ final class LmdbEstimatorRuntime {
 		if (synopsis == null) {
 			EstimateContext context = EstimateContext.root(expression,
 					new org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity(0L,
-					0L, Math.max(0L, tripleStore == null ? 0L : tripleStore.getDataRevision())), snapshotVersion(),
+							0L, Math.max(0L, tripleStore == null ? 0L : tripleStore.getDataRevision())),
+					snapshotVersion(),
 					leoRevision());
 			return adaptiveEvidenceAllowed() ? context
 					: context.withEvidencePolicy(EstimateContext.EvidencePolicy.SNAPSHOT_ONLY);

@@ -928,7 +928,8 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private void startBackgroundFilterSampling() {
-		if (!adaptiveEvidenceAllowed || filterSelectivityStats == null || backgroundRawSamplingMaxMillisPerCycle <= 0L) {
+		if (!adaptiveEvidenceAllowed || filterSelectivityStats == null
+				|| backgroundRawSamplingMaxMillisPerCycle <= 0L) {
 			logger.info(
 					"LMDB background filter sampling not scheduled: filterStatsPresent={}, maxMillisPerCycle={}",
 					filterSelectivityStats != null, backgroundRawSamplingMaxMillisPerCycle);
