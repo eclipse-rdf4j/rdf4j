@@ -44,8 +44,13 @@ How to see it working at any point: run the census test (prints a per-query-shap
   parity and opens compiled kernels; the full 11,620-query generated census has zero capability declines. General
   `PlanRows`, SUM(DISTINCT), and AVG(DISTINCT) support remains explicitly opt-in because Linux Docker/JFR gates were
   slower than LMDB (49-query suite 4.189 vs 3.892 ms/op; SUM 0.017 vs 0.015; AVG 0.014 vs 0.011).
-- [ ] Milestone 8: property paths fully over adjacency (seeding, workers, telemetry-verified).
-- [ ] Milestone 9 (evidence-gated): run-intersection semijoins, degree binding, bidirectional path search, exact-empty plan pruning.
+- [x] (2026-08-04) Milestone 8 complete and default-enabled with an explicit `false` kill switch. Exact adjacency key
+  domains seed unbound `+` paths and alternations; inverse directions, worker-owned views, `*` identity semantics, and
+  precise seed/frontier telemetry are covered. Docker JFR and warmed pairs show a 22.7-26.1% affected-workload win.
+- [x] (2026-08-04) Milestone 9 evidence audit complete. Existing native run intersection already satisfies the EXISTS
+  item; degree binding and exact-empty pruning had no qualifying unmet workload. Bidirectional bound-path existence is
+  implemented and default-enabled with precise telemetry and an explicit `false` switch after a ~230.7x deep-tree
+  Docker/JFR win and exact one-hop parity.
 
 ## Surprises & Discoveries
 
@@ -176,6 +181,51 @@ How to see it working at any point: run the census test (prints a per-query-shap
   Evidence: `profiles/lmdb/m7-sip-selective-isolated-{off,on}-2026-08-04.jfr` and
   `profiles/lmdb/m7-sip-selective-prefetch-cap-on-2026-08-04.jfr`; summary in
   `benchmark-results/m7-adjacency-sip-docker-2026-08-04.md`.
+- Observation: M0 was correct that property-path frontier expansion was already adjacency-backed; M8's only remaining
+  LMDB leg for `+` was enumeration of an unbound start. Borrowing every alternative's exact key domain and taking their
+  unsigned union removes that scan without changing BFS or result semantics. A `*` path must still enumerate the
+  dataset-wide value domain for zero-length identities, including vertices that have no edge for the path predicate.
+  Evidence: the 48-case `LmdbNativePropertyPathTest` corpus, including alternation, inverse direction, named graphs,
+  cycles, worker views, and `*` identities.
+- Observation: Seed and frontier adjacency are independent runtime decisions and must be reported at distinct physical
+  sites. A path can decline seed key enumeration but still expand every frontier from adjacency. The observer-aware
+  adjacency probe now records exact `PATH_SEED_KEY_ENUMERATION` and `PATH_FRONTIER_ADJACENCY` successes, or the concrete
+  underlying unavailable/dirty/feature-disabled reason, from the path invocation that actually ran.
+  Evidence: `initial-evidence-path-adjacency-telemetry-red.txt` and the 32-case
+  `LmdbNativeQueryExplanationTest` suite.
+- Observation: Linux Docker profiling confirms the removed LMDB seed leg was material. The no-warmup JFR pair improved
+  from 2.166 +/- 0.129 to 1.675 +/- 0.104 ms/op; the warmed three-fork pair improved from 2.102 +/- 0.124 to
+  1.554 +/- 0.072 ms/op. Four bound-start controls were statistical parity. The disabled JFR included
+  `LmdbDirectAdjacencyRootIterator.fill` among its top methods; that method disappeared from the enabled top 25.
+  Evidence: `benchmark-results/m8-path-adjacency-seeds-docker-2026-08-04.md` and
+  `profiles/lmdb/m8-path-adjacency-seeds-{off,on}-2026-08-04.jfr`.
+- Observation: The M9 run-intersection proposal is already subsumed by `LmdbNativeExistsIntersection`, whose existing
+  ANALYTICS q10 gate improved 2975.712 ms to 162.8 ms. M5 already covers standalone exact degree binding, while theme
+  telemetry supplied no larger-plan degree witness. Endpoint-bound `PatternPlan.estimate` already asks
+  `source.exactDegree`, so exact-empty pruning also lacked the required startup/planning witness.
+  Evidence: `plans/lmdb-native-engine/14-exists-distinct-intersection.md`, existing intersection tests, and the M9 code
+  audit summarized in `benchmark-results/m9-evidence-gate-bidirectional-docker-2026-08-04.md`.
+- Observation: A benchmark repository can have adjacency configured but still measure LMDB fallback while its
+  asynchronous initial build is pending. The path harness now bulk-loads without adjacency, reopens with FULL/PREFER,
+  initializes the repository, and waits for an exact published view before timing. This converted a misleading
+  3.299/3.409 ms pair into a route-proven 2.999/0.013 ms pair.
+  Evidence: retained diagnostic JFRs `profiles/lmdb/m9-path-bidirectional-{off,on}-2026-08-04.jfr`, the failed readiness
+  recording, and the accepted `...-exact-{off,on}-...jfr` pair.
+- Observation: Deep bound-path existence is dominated by forward BFS visited-set membership, not adjacency lookup.
+  Meeting exact outgoing and incoming frontiers removed that work and improved the Docker workload about 230.7x. A
+  direct-forward hit check was still necessary to make the one-hop control exactly 0.010 +/- 0.001 ms/op both ways.
+  Evidence: `benchmark-results/m9-evidence-gate-bidirectional-docker-2026-08-04.md` and the accepted JFR pair.
+- Observation: Bidirectional eligibility is a runtime conjunction, not merely a query shape: both endpoint ids, both
+  exact directional views, compatible context scope, and a non-zero distinct-endpoint search are required. Runtime
+  telemetry therefore reports forward and backward adjacency sites independently and records precise feature-disabled,
+  unavailable-view, same-endpoint-cycle, direct-hit, or meet-in-middle outcomes from the invocation actually evaluated.
+  Evidence: focused explanation assertions and the 56-case `LmdbNativePropertyPathTest` corpus.
+- Observation: The final full-module safety run produced 258 green Surefire report files, then remained in the
+  pre-existing `LmdbNativeFactorizedOverflowTest.setUp` batch load for more than 20 minutes. That lifecycle setup is
+  outside the method's 120-second timeout, so the run was interrupted rather than allowed to race final formatting.
+  No completed report had a nonzero failure or error; the complete 56-case path and 32-case explanation suites passed
+  separately before and after formatting.
+  Evidence: `logs/mvnf/20260804-041418-verify.log` and `core/sail/lmdb/target/surefire-reports/`.
 
 ## Decision Log
 
@@ -265,6 +315,24 @@ How to see it working at any point: run the census test (prints a per-query-shap
   Janino path. ChatGPT Pro independently recommended the same activation-based model; repository inspection of
   `LmdbNativeRowStep` and `LmdbNativeExplain` confirmed it fits the existing runtime-metric seam.
   Date/Author: 2026-08-03 / Håvard and Codex.
+- Decision: Default-enable M8 and retain `rdf4j.lmdb.nativePath.adjacencySeeds.enabled=false` as the LMDB seed-scan
+  rollback switch.
+  Rationale: exact parity covers `+`, `*`, alternation, inverse paths, named graphs, cycles, zero-length identities, and
+  parallel workers. The affected Linux Docker workload is 26.1% faster warmed (1.554 versus 2.102 ms/op), while all
+  four bound-start controls overlap. Runtime telemetry proves the exact seed and frontier access decisions.
+  Date/Author: 2026-08-04 / Håvard and Codex.
+- Decision: Close the M9 run-intersection item with the existing general native intersection operator, and leave
+  degree-shape expansion and exact-empty pruning unimplemented until their explicit telemetry/workload gates exist.
+  Rationale: the ExecPlan forbids speculative M9 work. Duplicating an already faster general operator would add risk,
+  while neither remaining proposal demonstrated material uncovered work.
+  Date/Author: 2026-08-04 / Håvard and Codex.
+- Decision: Default-enable M9 bidirectional path existence and retain
+  `rdf4j.lmdb.nativePath.bidirectional.enabled=false` as the forward-only rollback switch.
+  Rationale: exact generic parity covers deep/unreachable/direct/cyclic paths, inverse and alternative predicates,
+  fixed graphs, unavailable adjacency, and explicit disablement. Linux Docker/JFR measured 0.013 +/- 0.001 ms/op on
+  versus 2.999 +/- 0.176 off for the qualifying deep tree, while the post-fast-path one-hop control was exactly
+  0.010 +/- 0.001 ms/op both ways.
+  Date/Author: 2026-08-04 / Håvard and Codex.
 
 ## Outcomes & Retrospective
 
@@ -307,6 +375,25 @@ costing cheap without bypassing dirty-writer or kill-switch checks. Two complete
 queries and found no normalized plan, estimate, algorithm, actual-size, or node-count differences. The full short screen
 and rigorous representative/outlier pairs produced no disjoint-interval regression; therefore planner statistics are
 default-on and `rdf4j.lmdb.directAdjacency.plannerStats.enabled=false` restores sampled LMDB statistics.
+
+Milestone 7 publishes exact adjacency key domains as seekable SIP masks and reports both activation and static rejection
+from the runtime plan. After capping root prefetch to the remaining miss budget, the warmed selective and dense Docker
+pairs were parity or faster. The feature is default-on with an explicit `false` rollback.
+
+Milestone 8 replaces the unbound `+` path's LMDB predicate-root scan with the unsigned union of exact adjacency key
+domains. Frontier expansion remains on the cached adjacency view, including parallel workers; unavailable views fall
+back atomically and explain the concrete reason. `*` deliberately retains its dataset-wide identity enumeration. The
+full path and explanation corpora are green, and the warmed affected benchmark is 26.1% faster, so adjacency seeding is
+default-on with an explicit `false` rollback.
+
+Milestone 9's evidence audit avoided three redundant or speculative operators and funded bidirectional bound-path
+existence. The path engine first checks the exact outgoing run for a direct hit, then opens the exact incoming view and
+expands the smaller frontier until the searches meet; any incomplete direction falls back atomically to the original
+path evaluator. Exact forward/backward activation and non-use reasons appear in the executed physical plan. The
+qualifying deep-tree Docker workload improved about 230.7x and the one-hop control is exact parity, so bidirectional
+search is default-on with an explicit `false` rollback. The complete adjacency-consumption plan is now implemented and
+closed; opt-in Janino PlanRows and DISTINCT numeric aggregates remain intentionally disabled because their independent
+Docker gates failed the user's parity-or-faster rule.
 
 ## Context and Orientation
 
@@ -417,10 +504,15 @@ Acceptance: path counters show zero sweep/cursor expansions on adjacency-covered
 
 Do not start any of these without the stated evidence; each is its own Routine A mini-arc with its own flag when funded.
 
-- Run-intersection semijoin: FILTER EXISTS sharing one variable between two adjacency-covered patterns = galloping intersection of two sorted runs (the leapfrog `Level.enter` machinery outside leapfrog). Gate: census/theme telemetry showing EXISTS shapes on the nested-loop path with adjacency-covered predicates and material time share.
-- Degree binding: `?s (COUNT(?o) ...)` bound directly from run sizes without expansion — largely delivered by 5b; the remainder is recognizing the shape inside larger queries. Gate: theme telemetry showing degree subpatterns inside bigger plans.
-- Bidirectional path search: expand `:p+`/shortest-path from both ends (both planes exist), meet in the middle. Gate: M8 done and a workload where forward-only BFS visits ≥10× the meet-in-middle frontier (construct in `PropertyPathReachabilityBenchmark`).
-- Exact-empty plan pruning: `NOT_FOUND` on a bound endpoint at plan time kills the containing join subtree before execution (today it only serves an empty iterator at run time). Gate: a demonstrated workload where empty-branch detection saves planning/startup work — check `PatternPlan.estimate` first; if estimates already yield zero there, this is dead — record and drop.
+- Run-intersection semijoin: closed as already delivered by the more general `LmdbNativeExistsIntersection`; its
+  existing ANALYTICS q10 benchmark and parity corpus satisfy this item without duplicate code.
+- Degree binding: not funded. M5 already binds standalone degree shapes from exact run sizes and the required theme
+  witness of an uncovered larger-query subpattern was absent.
+- Bidirectional path search: complete behind `rdf4j.lmdb.nativePath.bidirectional.enabled`, default-on after the deep
+  Docker/JFR and one-hop control gate. It applies only to bound-endpoint existence; same-endpoint `+` cycle semantics
+  and any incomplete adjacency direction fall back atomically.
+- Exact-empty plan pruning: dropped. `PatternPlan.estimate` already consumes exact degree for endpoint-bound shapes,
+  and no workload demonstrated remaining material planning/startup cost.
 
 ## Concrete Steps
 
@@ -482,7 +574,7 @@ In `core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNati
 
 Per-plane accounting (M5a) surfaces on `LmdbAdjacencyPublishedState` (exact `quadCount(plane, predicateOrdinal)` and `keyCount(plane, predicateOrdinal)`), consumed by `tryCount` (whole-plane case), the M5c aggregate fast path, and `meanFanOut` (M6).
 
-System properties introduced: `rdf4j.lmdb.directAdjacency.rootScan.enabled`, `rdf4j.lmdb.directAdjacency.boundProbe.enabled`, `rdf4j.lmdb.directAdjacency.cleanTxnReads.enabled`, `rdf4j.lmdb.directAdjacency.parallelRowPath.enabled`, `rdf4j.lmdb.directAdjacency.scanAggregates.enabled`, `rdf4j.lmdb.directAdjacency.plannerStats.enabled`, and `rdf4j.lmdb.sip.adjacencyMasks.enabled` are default-on after passing their gates; the remaining milestone property stays default-off until its gate passes: `rdf4j.lmdb.nativePath.adjacencySeeds.enabled`.
+System properties introduced: `rdf4j.lmdb.directAdjacency.rootScan.enabled`, `rdf4j.lmdb.directAdjacency.boundProbe.enabled`, `rdf4j.lmdb.directAdjacency.cleanTxnReads.enabled`, `rdf4j.lmdb.directAdjacency.parallelRowPath.enabled`, `rdf4j.lmdb.directAdjacency.scanAggregates.enabled`, `rdf4j.lmdb.directAdjacency.plannerStats.enabled`, `rdf4j.lmdb.sip.adjacencyMasks.enabled`, `rdf4j.lmdb.nativePath.adjacencySeeds.enabled`, and `rdf4j.lmdb.nativePath.bidirectional.enabled` are default-on after passing their gates. Every property accepts explicit `false` to restore its prior LMDB route.
 
 ---
 
@@ -521,3 +613,12 @@ all three measured slower than LMDB; the decision and profiles are recorded abov
 Revision note (2026-08-04, Codex): Completed and default-enabled M7 after exact route telemetry invalidated the old
 direct-root comparison, Docker JFR identified LMDB batch prefetch discarded by SIP seeks, and the corrected warmed
 three-fork selective/dense matrix passed the user's parity-or-faster gate.
+
+Revision note (2026-08-04, Codex): Completed and default-enabled M8. Unbound `+` paths now seed from exact adjacency
+key-domain unions, workers and fallback diagnostics are runtime-truthful, `*` preserves dataset-wide identities, the
+48-case parity corpus is green, and Linux Docker/JFR plus warmed controls passed the default-on gate.
+
+Revision note (2026-08-04, Codex): Closed M9 after its evidence audit. Existing native EXISTS intersection subsumes
+the proposed semijoin, degree and exact-empty proposals lacked their required witnesses, and bidirectional bound-path
+existence passed exact parity plus a 230.7x deep-tree Docker/JFR win and exact one-hop parity. It is default-on with a
+forward-only rollback property.
