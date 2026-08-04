@@ -29,7 +29,7 @@ import org.slf4j.LoggerFactory;
 final class LmdbAdjacencyMemoryAccount {
 
 	private static final long BYTES_PER_MIB = 1L << 20;
-	private static final long PROGRESS_LOG_INTERVAL_BYTES = 16L << 20;
+	private static final long PROGRESS_LOG_INTERVAL_BYTES = 128L << 20;
 	private static final Logger logger = LoggerFactory.getLogger(LmdbAdjacencyMemoryAccount.class);
 
 	enum MemoryKind {

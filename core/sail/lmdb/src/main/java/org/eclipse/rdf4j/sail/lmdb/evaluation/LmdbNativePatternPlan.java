@@ -141,11 +141,12 @@ final class PatternPlan implements SlotPlan {
 					return PatternCursor.empty();
 				}
 				return PatternCursor.single(
-						openIterator(row.source, probe, subj, pred, obj, context, accessObserver));
+						openIterator(row.source, probe, subj, pred, obj, context, accessObserver, row.lmdbScanOnly));
 			}
-			return openContexts(row.source, probe, subj, pred, obj, contexts.ids, accessObserver);
+			return openContexts(row.source, probe, subj, pred, obj, contexts.ids, accessObserver, row.lmdbScanOnly);
 		}
-		return PatternCursor.single(openIterator(row.source, probe, subj, pred, obj, context, accessObserver));
+		return PatternCursor.single(
+				openIterator(row.source, probe, subj, pred, obj, context, accessObserver, row.lmdbScanOnly));
 	}
 
 	/**
@@ -205,21 +206,26 @@ final class PatternPlan implements SlotPlan {
 					return PatternCursor.empty();
 				}
 				return PatternCursor.single(
-						openIterator(row.source, probe, subj, pred, obj, context, accessObserver));
+						openIterator(row.source, probe, subj, pred, obj, context, accessObserver, row.lmdbScanOnly));
 			}
-			return openContexts(row.source, probe, subj, pred, obj, contexts.ids, accessObserver);
+			return openContexts(row.source, probe, subj, pred, obj, contexts.ids, accessObserver, row.lmdbScanOnly);
 		}
-		return PatternCursor.single(openIterator(row.source, probe, subj, pred, obj, context, accessObserver));
+		return PatternCursor.single(
+				openIterator(row.source, probe, subj, pred, obj, context, accessObserver, row.lmdbScanOnly));
 	}
 
 	private RecordIterator openIterator(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe,
 			long subj, long pred, long obj, long context,
-			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver) throws IOException {
+			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver, boolean lmdbScanOnly) throws IOException {
 		if (statementOrder != null) {
-			return source.statements(statementOrder, subj, pred, obj, context, accessObserver);
+			return lmdbScanOnly ? source.lmdbStatements(statementOrder, subj, pred, obj, context, accessObserver)
+					: source.statements(statementOrder, subj, pred, obj, context, accessObserver);
 		}
 		if (range != null) {
 			return source.statements(subj, pred, obj, context, range, accessObserver);
+		}
+		if (lmdbScanOnly) {
+			return source.lmdbStatements(subj, pred, obj, context, accessObserver);
 		}
 		return probe != null ? probe.open(subj, pred, obj, context, accessObserver)
 				: source.statements(subj, pred, obj, context, accessObserver);
@@ -227,14 +233,17 @@ final class PatternPlan implements SlotPlan {
 
 	private PatternCursor openContexts(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe,
 			long subj, long pred, long obj, long[] contextIds,
-			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver) throws IOException {
+			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver, boolean lmdbScanOnly) throws IOException {
 		if (statementOrder == null) {
-			return PatternCursor.contexts(source, probe, subj, pred, obj, contextIds, range, accessObserver);
+			return PatternCursor.contexts(source, probe, subj, pred, obj, contextIds, range, accessObserver,
+					lmdbScanOnly);
 		}
 		List<RecordIterator> iterators = new ArrayList<>(contextIds.length);
 		try {
 			for (long contextId : contextIds) {
-				iterators.add(source.statements(statementOrder, subj, pred, obj, contextId, accessObserver));
+				iterators.add(lmdbScanOnly
+						? source.lmdbStatements(statementOrder, subj, pred, obj, contextId, accessObserver)
+						: source.statements(statementOrder, subj, pred, obj, contextId, accessObserver));
 			}
 			return PatternCursor.single(OrderedRecordIterator.merge(iterators, statementOrder));
 		} catch (IOException | RuntimeException | Error e) {

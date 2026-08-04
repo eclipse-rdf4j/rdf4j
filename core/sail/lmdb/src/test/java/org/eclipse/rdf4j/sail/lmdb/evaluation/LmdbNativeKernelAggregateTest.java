@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
@@ -310,6 +311,20 @@ public class LmdbNativeKernelAggregateTest {
 				"order-sensitive floating accumulation must not surface from a reordered kernel");
 		assertTrue(KernelExecutionTestAccess.aggDeclined() > 0L, "floating fallback was not observed");
 		assertEquals(expected, rows(FLOATING_SUM_AVG_QUERY));
+		String telemetry;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			telemetry = connection.prepareTupleQuery(FLOATING_SUM_AVG_QUERY)
+					.explain(Explanation.Level.Telemetry)
+					.toString();
+		}
+		assertTrue(telemetry.contains("strategy: SEQUENTIAL_FALLBACK[reason=FLOATING_SUM_OR_AVG]"), telemetry);
+		assertTrue(telemetry.contains("janino:\n      used: false\n"
+				+ "      reason: ENCOUNTER_ORDER_REQUIRES_LMDB[reason=FLOATING_SUM_OR_AVG]"), telemetry);
+		assertTrue(telemetry.contains("adjacencyAccess:\n      used: false\n"
+				+ "      attempts:\n        0:\n          source: LMDB\n"
+				+ "          outcome: DECLINED_TO_LMDB\n"
+				+ "          reason: ENCOUNTER_ORDER_REQUIRES_LMDB[index=posc]"), telemetry);
+		assertFalse(telemetry.contains("reason: ROOT_SCAN"), telemetry);
 	}
 
 	@Test

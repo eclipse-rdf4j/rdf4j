@@ -172,6 +172,36 @@ final class LmdbNativeRuntimePlan {
 			synchronized (this) {
 				this.strategy = strategy;
 				setActualOrder(order);
+				if (janinoUsed && !adjacencyUsed) {
+					adjacencyState = "NOT_CONSIDERED";
+					adjacencyReason = "SUPERSEDED_BY_STRATEGY[strategy=" + strategy + "]";
+					adjacencyWhere = null;
+				}
+			}
+			owner.publish();
+		}
+
+		void restartWithEncounterOrderFallback(EncounterOrderFallback.Reason reason, SlotPlan entryOrder) {
+			String renderedReason = NativeLmdbQuerySource.LMDB_ENCOUNTER_ORDER_REASON + "[reason=" + reason + "]";
+			synchronized (this) {
+				strategy = "SEQUENTIAL_FALLBACK[reason=" + reason + "]";
+				setActualOrder(new SlotPlan[] { entryOrder });
+				janinoUsed = false;
+				janinoReason = renderedReason;
+				janinoRoute = null;
+				generatedOrder = List.of();
+				adjacencyAccessUsed = false;
+				adjacencyAccesses.clear();
+				adjacencyUsed = false;
+				adjacencyState = "NOT_CONSIDERED";
+				adjacencyReason = renderedReason;
+				adjacencyWhere = null;
+				adjacencyMembershipChecks = 0L;
+				adjacencyRowsRejected = 0L;
+				adaptiveUsed = false;
+				adaptiveReason = renderedReason;
+				adaptiveEpochs = "[]";
+				adaptiveFinalDepth = null;
 			}
 			owner.publish();
 		}

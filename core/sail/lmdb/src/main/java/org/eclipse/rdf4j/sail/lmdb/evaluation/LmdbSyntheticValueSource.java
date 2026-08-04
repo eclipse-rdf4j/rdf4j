@@ -107,6 +107,15 @@ final class SyntheticValueSource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public RecordIterator lmdbStatements(long subj, long pred, long obj, long context,
+			AdjacencyAccessObserver observer) throws IOException {
+		if (anySynthetic(subj, pred, obj, context)) {
+			return EMPTY;
+		}
+		return delegate.lmdbStatements(subj, pred, obj, context, observer);
+	}
+
+	@Override
 	public RecordIterator statements(long subj, long pred, long obj, long context, LmdbKeyRange range)
 			throws IOException {
 		return statements(subj, pred, obj, context, range, null);
@@ -134,6 +143,15 @@ final class SyntheticValueSource implements NativeLmdbQuerySource {
 			return EMPTY;
 		}
 		return delegate.statements(order, subj, pred, obj, context, observer);
+	}
+
+	@Override
+	public RecordIterator lmdbStatements(StatementOrder order, long subj, long pred, long obj, long context,
+			AdjacencyAccessObserver observer) throws IOException {
+		if (anySynthetic(subj, pred, obj, context)) {
+			return EMPTY;
+		}
+		return delegate.lmdbStatements(order, subj, pred, obj, context, observer);
 	}
 
 	@Override

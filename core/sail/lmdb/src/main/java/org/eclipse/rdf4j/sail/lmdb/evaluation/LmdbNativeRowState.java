@@ -35,6 +35,7 @@ final class RowState {
 	final long[] trailOldValues;
 	LmdbNativeRuntimePlan.Invocation runtimePlan;
 	PathResultMemo pathEstimateMemos;
+	boolean lmdbScanOnly;
 	int trailSize;
 	long boundMask;
 	/**

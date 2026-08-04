@@ -83,7 +83,7 @@ final class LmdbNativeChunkPipeline {
 	static final String ADJACENCY_SIP_MASK_PROPERTY = "rdf4j.lmdb.sip.adjacencyMasks.enabled";
 
 	static boolean adjacencySipMasksEnabled() {
-		return Boolean.parseBoolean(System.getProperty(ADJACENCY_SIP_MASK_PROPERTY, "false"));
+		return !"false".equalsIgnoreCase(System.getProperty(ADJACENCY_SIP_MASK_PROPERTY));
 	}
 
 	/** Test observability: semi-join masks published to the root scan by completed hash builds. */
@@ -741,7 +741,15 @@ final class LmdbNativeChunkPipeline {
 			}
 			int outputRows = 0;
 			refill: while (outputRows < out.capacity) {
-				int rawRows = cursor.fill(quads, out.capacity - outputRows);
+				int requestedRows = out.capacity - outputRows;
+				if (!masks.isEmpty()) {
+					// A successful seek invalidates the unread portion of this raw buffer. Do not let the LMDB
+					// iterator predecode rows beyond the exact number of misses that can trigger the next seek;
+					// otherwise a selective mask repeatedly scans and then rewinds across almost a whole batch.
+					requestedRows = Math.min(requestedRows,
+							Math.max(1, SEEK_COST_KEYS - consecutiveMaskMisses));
+				}
+				int rawRows = cursor.fill(quads, requestedRows);
 				if (rawRows == 0) {
 					close();
 					break;

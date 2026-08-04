@@ -33,10 +33,9 @@ How to see it working at any point: run the census test (prints a per-query-shap
 - [x] (2026-08-03) Milestone 6 complete and default-enabled with an explicit `false` kill switch. The deterministic
   143-query plan audit is unchanged with exactly 28 engaged queries; the complete short screen plus longer paired
   reruns found no disjoint-interval regression, including reverse-order confirmation of the two noisy cells.
-- [ ] Milestone 7: SIP semijoin masks are implemented and focused-test green, including cursor ownership, composite
-  domains, a cheap exact-cardinality preflight, and runtime retirement. Docker JFR proves selective activation and
-  dense cost rejection, but the feature remains default OFF until exact runtime-plan telemetry makes the warmed,
-  multi-fork production-dispatch acceptance matrix route-verifiable.
+- [x] (2026-08-04) Milestone 7 complete and default-enabled with an explicit `false` kill switch. Exact runtime-plan
+  telemetry verified the route, Docker JFR exposed and validated the prefetch/seek fix, and the warmed three-fork
+  acceptance matrix favored SIP for the selective chain while the dense cost rejection remained at parity.
 - [x] (2026-08-04) Cross-cutting explain side quest complete: telemetry prepends the multiline physical plan actually
   executed, preserves runtime reorderings and dynamic filter epochs/final positions, and reports typed adjacency and
   Janino use/non-use reasons. `ThemeQueryBenchmark` MEDICAL_RECORDS q0 printed the physical prelude before the logical
@@ -168,6 +167,15 @@ How to see it working at any point: run the census test (prints a per-query-shap
   numeric DISTINCT also lost on these small exact workloads, so neither new gate defaults on.
   Evidence: `benchmark-results/janino-general-coverage-docker-2026-08-04.md` and the three
   `profiles/lmdb/janino-*-d49fb95e9c.jfr` recordings.
+- Observation: Truthful root index telemetry exposed that the original M7 focused test had admitted SIP over a
+  `direct-spoc` iterator only because planning mislabeled it `posc`. The valid mechanism is an LMDB seekable root plus
+  adjacency-backed probes; the test and Docker matrix now isolate exactly that route. The first valid warmed gate found
+  SIP 17% slower because each seek discarded up to 1,024 already-decoded LMDB rows. Limiting active-mask prefetch to
+  the exact remaining miss budget removed the redundant scan/rewind work: JFR membership checks fell from 1,391 to
+  566, and the LMDB cursor/decode methods disappeared from the top CPU list.
+  Evidence: `profiles/lmdb/m7-sip-selective-isolated-{off,on}-2026-08-04.jfr` and
+  `profiles/lmdb/m7-sip-selective-prefetch-cap-on-2026-08-04.jfr`; summary in
+  `benchmark-results/m7-adjacency-sip-docker-2026-08-04.md`.
 
 ## Decision Log
 
@@ -242,6 +250,12 @@ How to see it working at any point: run the census test (prints a per-query-shap
   was not used. The user's parity-or-better rule requires every predeclared use case to pass independently under normal
   dispatch; profiled one-fork diagnostics cannot establish that threshold.
   Date/Author: 2026-08-03 / Håvard and Codex.
+- Decision: Default-enable M7 and retain `rdf4j.lmdb.sip.adjacencyMasks.enabled=false` as the rollback switch.
+  Rationale: after correcting root-route attribution and eliminating speculative prefetch waste, the warmed Docker
+  selective pair was 4.548 +/- 0.437 ms/op on versus 4.852 +/- 0.217 off; the dense static-rejection pair was
+  3.495 +/- 0.151 on versus 3.559 +/- 0.181 off. Both predeclared use cases satisfy parity-or-faster, and telemetry
+  proves activation for selective plus `STATIC_COST_REJECTED` for dense.
+  Date/Author: 2026-08-04 / Håvard and Codex.
 - Decision: Implement the requested physical-plan output from runtime decision points rather than reconstructing it
   from optimized algebra. The recorder must distinguish considered/opened/published/activated/retired adjacency states,
   record Janino selection and decline reasons per subtree, preserve the actual reordered schedule, and store every
@@ -468,7 +482,7 @@ In `core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNati
 
 Per-plane accounting (M5a) surfaces on `LmdbAdjacencyPublishedState` (exact `quadCount(plane, predicateOrdinal)` and `keyCount(plane, predicateOrdinal)`), consumed by `tryCount` (whole-plane case), the M5c aggregate fast path, and `meanFanOut` (M6).
 
-System properties introduced: `rdf4j.lmdb.directAdjacency.rootScan.enabled`, `rdf4j.lmdb.directAdjacency.boundProbe.enabled`, `rdf4j.lmdb.directAdjacency.cleanTxnReads.enabled`, `rdf4j.lmdb.directAdjacency.parallelRowPath.enabled`, `rdf4j.lmdb.directAdjacency.scanAggregates.enabled`, and `rdf4j.lmdb.directAdjacency.plannerStats.enabled` are default-on after passing their gates; the remaining milestone properties stay default-off until their own gates pass: `rdf4j.lmdb.sip.adjacencyMasks.enabled`, `rdf4j.lmdb.nativePath.adjacencySeeds.enabled`.
+System properties introduced: `rdf4j.lmdb.directAdjacency.rootScan.enabled`, `rdf4j.lmdb.directAdjacency.boundProbe.enabled`, `rdf4j.lmdb.directAdjacency.cleanTxnReads.enabled`, `rdf4j.lmdb.directAdjacency.parallelRowPath.enabled`, `rdf4j.lmdb.directAdjacency.scanAggregates.enabled`, `rdf4j.lmdb.directAdjacency.plannerStats.enabled`, and `rdf4j.lmdb.sip.adjacencyMasks.enabled` are default-on after passing their gates; the remaining milestone property stays default-off until its gate passes: `rdf4j.lmdb.nativePath.adjacencySeeds.enabled`.
 
 ---
 
@@ -503,3 +517,7 @@ Revision note (2026-08-04, Codex): Completed the exact runtime-plan/explain side
 generality side quest. Added a streaming engine-plan IR producer, exact DISTINCT numeric aggregation, a frozen 50-query
 gate, a zero-decline 11,620-query census, and Linux Docker/JFR workload gates. The new admissions remain opt-in because
 all three measured slower than LMDB; the decision and profiles are recorded above.
+
+Revision note (2026-08-04, Codex): Completed and default-enabled M7 after exact route telemetry invalidated the old
+direct-root comparison, Docker JFR identified LMDB batch prefetch discarded by SIP seeks, and the corrected warmed
+three-fork selective/dense matrix passed the user's parity-or-faster gate.

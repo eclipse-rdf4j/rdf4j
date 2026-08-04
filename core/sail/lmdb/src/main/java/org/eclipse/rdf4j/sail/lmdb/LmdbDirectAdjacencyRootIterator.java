@@ -18,6 +18,7 @@ package org.eclipse.rdf4j.sail.lmdb;
  * and bulk-decodes each resolved run.
  */
 final class LmdbDirectAdjacencyRootIterator implements RecordIterator {
+	static final String INDEX_NAME = "direct-spoc";
 
 	private static final int COPY_EDGES = 256;
 
@@ -49,7 +50,7 @@ final class LmdbDirectAdjacencyRootIterator implements RecordIterator {
 
 	@Override
 	public String getIndexName() {
-		return "direct-spoc";
+		return INDEX_NAME;
 	}
 
 	private boolean advanceRun() {

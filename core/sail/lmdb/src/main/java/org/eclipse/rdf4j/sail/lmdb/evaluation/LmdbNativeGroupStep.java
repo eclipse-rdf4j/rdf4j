@@ -339,7 +339,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		} catch (EncounterOrderFallback fallback) {
 			filterLease.discard();
 			throwRealFailureSuppressedBy(fallback);
-			return evaluateSequentialFallback();
+			return evaluateSequentialFallback(row, fallback.reason);
 		} catch (RuntimeException | Error failure) {
 			filterLease.abort(failure);
 			throw failure;
@@ -453,7 +453,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 			metrics.deferStrategy(explainTarget, LmdbNativeAttemptMetrics.PATH_ORDERED_SINGLE_PATTERN_GROUPS);
 			return orderedGroups;
 		}
-		return evaluateSequential(row, aggContext, metrics);
+		return evaluateSequential(row, new AggContext(source, strictCompare, true), metrics);
 	}
 
 	private List<BindingSet> evaluateParallelOrFactorized(RowState row, MultiJoinPlan parallelPlan,
@@ -495,8 +495,13 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		}
 	}
 
-	List<BindingSet> evaluateSequentialFallback() {
+	List<BindingSet> evaluateSequentialFallback(RowState speculativeRow, EncounterOrderFallback.Reason reason) {
 		RowState row = new RowState(source, layout, base, explainTarget);
+		row.lmdbScanOnly = true;
+		row.runtimePlan = speculativeRow.runtimePlan;
+		if (row.runtimePlan != null) {
+			row.runtimePlan.restartWithEncounterOrderFallback(reason, arg);
+		}
 		if (!initialize(row)) {
 			return noInputResult();
 		}

@@ -116,6 +116,7 @@ final class PatternCursor implements AutoCloseable {
 	final long[] contexts;
 	final LmdbKeyRange range;
 	final NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver;
+	final boolean lmdbScanOnly;
 	int contextIndex;
 	RecordIterator current;
 	long[] syntheticRow;
@@ -129,6 +130,12 @@ final class PatternCursor implements AutoCloseable {
 	PatternCursor(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe, long subj,
 			long pred, long obj, long[] contexts, LmdbKeyRange range,
 			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver) {
+		this(source, probe, subj, pred, obj, contexts, range, accessObserver, false);
+	}
+
+	PatternCursor(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe, long subj,
+			long pred, long obj, long[] contexts, LmdbKeyRange range,
+			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver, boolean lmdbScanOnly) {
 		this.source = source;
 		this.probe = probe;
 		this.subj = subj;
@@ -137,6 +144,7 @@ final class PatternCursor implements AutoCloseable {
 		this.contexts = contexts;
 		this.range = range;
 		this.accessObserver = accessObserver;
+		this.lmdbScanOnly = lmdbScanOnly;
 	}
 
 	static PatternCursor empty() {
@@ -165,9 +173,18 @@ final class PatternCursor implements AutoCloseable {
 		return new PatternCursor(source, probe, subj, pred, obj, contexts, range, accessObserver);
 	}
 
+	static PatternCursor contexts(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe,
+			long subj, long pred, long obj, long[] contexts, LmdbKeyRange range,
+			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver, boolean lmdbScanOnly) {
+		return new PatternCursor(source, probe, subj, pred, obj, contexts, range, accessObserver, lmdbScanOnly);
+	}
+
 	RecordIterator openIterator(long context) throws IOException {
 		if (range != null) {
 			return source.statements(subj, pred, obj, context, range, accessObserver);
+		}
+		if (lmdbScanOnly) {
+			return source.lmdbStatements(subj, pred, obj, context, accessObserver);
 		}
 		return probe != null ? probe.open(subj, pred, obj, context, accessObserver)
 				: source.statements(subj, pred, obj, context, accessObserver);

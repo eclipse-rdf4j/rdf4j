@@ -1875,6 +1875,21 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		return new LmdbDirectAdjacencyRootIterator(view, adjacency, predicate);
 	}
 
+	/**
+	 * Returns the index identity an immediately opened root scan will actually expose, or {@code null} when this shape
+	 * will use LMDB. This is a side-effect-free planning witness: unlike opening the scan it does not increment hit or
+	 * decline metrics.
+	 */
+	String rootScanIndexName(LmdbAdjacencyReadView view, StatementOrder order, long subject, long predicate,
+			long object, long context) {
+		if (!rootScanEnabled() || options.mode() != DirectAdjacencyMode.PREFER || subject > 0L || predicate <= 0L
+				|| object > 0L || context >= 0L || order != null && order != StatementOrder.S) {
+			return null;
+		}
+		return completeBasePredicateOrdinal(view, predicate, false) == LmdbInMemoryAdjacencyIndex.NOT_COVERED ? null
+				: LmdbDirectAdjacencyRootIterator.INDEX_NAME;
+	}
+
 	private String completeAdjacencyDeclineReason(LmdbAdjacencyReadView view, long predicate) {
 		if (view == null || !view.servesSnapshot()) {
 			return "VIEW_DOES_NOT_SERVE_SNAPSHOT";
@@ -2114,6 +2129,10 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	}
 
 	private long completeBasePredicateOrdinal(LmdbAdjacencyReadView view, long predicate) {
+		return completeBasePredicateOrdinal(view, predicate, true);
+	}
+
+	private long completeBasePredicateOrdinal(LmdbAdjacencyReadView view, long predicate, boolean recordFallback) {
 		if (view == null || !view.servesSnapshot() || closed || options.mode() != DirectAdjacencyMode.PREFER
 				|| writeTransactionBlocksAdjacency() || predicate <= 0) {
 			return LmdbInMemoryAdjacencyIndex.NOT_COVERED;
@@ -2122,12 +2141,16 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		// kernel completeness rule: a kernel can touch keys unknown at bind time and cannot restart after partial
 		// output, so it may only bind when the snapshot is continuously applied with no pending rows before it
 		if (view.snapshotRevision() > state.appliedRevision()) {
-			metrics.recordFallback(FallbackReason.KERNEL_REQUIRES_COMPLETE_REVISION);
+			if (recordFallback) {
+				metrics.recordFallback(FallbackReason.KERNEL_REQUIRES_COMPLETE_REVISION);
+			}
 			return LmdbInMemoryAdjacencyIndex.NOT_COVERED;
 		}
 		for (PendingTable pending : state.pending()) {
 			if (pending.revision() <= view.snapshotRevision()) {
-				metrics.recordFallback(FallbackReason.KERNEL_REQUIRES_COMPLETE_REVISION);
+				if (recordFallback) {
+					metrics.recordFallback(FallbackReason.KERNEL_REQUIRES_COMPLETE_REVISION);
+				}
 				return LmdbInMemoryAdjacencyIndex.NOT_COVERED;
 			}
 		}
@@ -2136,7 +2159,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		long basePredicateOrdinal = base.bindPredicate(predicate);
 		if (basePredicateOrdinal == LmdbInMemoryAdjacencyIndex.NOT_COVERED) {
 			if (overlays == null || !overlays.extraSelected(predicate)) {
-				metrics.recordFallback(FallbackReason.PLANE_NOT_COVERED);
+				if (recordFallback) {
+					metrics.recordFallback(FallbackReason.PLANE_NOT_COVERED);
+				}
 				return LmdbInMemoryAdjacencyIndex.NOT_COVERED;
 			}
 			// The predicate was selected after this base was built. Generations may contain it; the base is empty.

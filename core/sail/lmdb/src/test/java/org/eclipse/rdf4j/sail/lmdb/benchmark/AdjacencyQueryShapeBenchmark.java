@@ -20,6 +20,7 @@ import org.apache.commons.io.FileUtils;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
@@ -69,6 +70,12 @@ public class AdjacencyQueryShapeBenchmark {
 	private static final String SELECTIVE_LEAF_PREDICATE = "<" + SHAPE_NAMESPACE + "selectiveLeaf>";
 	private static final String DENSE_PREDICATE = "<" + SHAPE_NAMESPACE + "dense>";
 	private static final String DENSE_LEAF_PREDICATE = "<" + SHAPE_NAMESPACE + "denseLeaf>";
+	private static final String PRINT_TELEMETRY_PROPERTY = "rdf4j.lmdb.adjacencyQueryShapeBenchmark.printTelemetry";
+	private static final String SELECTIVE_SIP_QUERY = "SELECT ?s ?leaf WHERE { ?s " + ROOT_PREDICATE
+			+ " ?middle . ?middle " + SELECTIVE_PREDICATE + " ?value . ?value " + SELECTIVE_LEAF_PREDICATE
+			+ " ?leaf }";
+	private static final String DENSE_SIP_QUERY = "SELECT ?s ?leaf WHERE { ?s " + ROOT_PREDICATE
+			+ " ?middle . ?middle " + DENSE_PREDICATE + " ?value . ?value " + DENSE_LEAF_PREDICATE + " ?leaf }";
 
 	@Param({ "5000" })
 	public int peopleCount;
@@ -119,6 +126,10 @@ public class AdjacencyQueryShapeBenchmark {
 	@TearDown(Level.Trial)
 	public void tearDown() throws IOException {
 		if (repository != null) {
+			if (Boolean.getBoolean(PRINT_TELEMETRY_PROPERTY)) {
+				printTelemetry("selectiveAdjacencySipChain", SELECTIVE_SIP_QUERY);
+				printTelemetry("denseAdjacencySipChain", DENSE_SIP_QUERY);
+			}
 			repository.shutDown();
 		}
 		if (dataDir != null && dataDir.exists()) {
@@ -183,14 +194,12 @@ public class AdjacencyQueryShapeBenchmark {
 
 	@Benchmark
 	public long selectiveAdjacencySipChain() {
-		return executeCount("SELECT ?s ?leaf WHERE { ?s " + ROOT_PREDICATE + " ?middle . ?middle "
-				+ SELECTIVE_PREDICATE + " ?value . ?value " + SELECTIVE_LEAF_PREDICATE + " ?leaf }");
+		return executeCount(SELECTIVE_SIP_QUERY);
 	}
 
 	@Benchmark
 	public long denseAdjacencySipChain() {
-		return executeCount("SELECT ?s ?leaf WHERE { ?s " + ROOT_PREDICATE + " ?middle . ?middle " + DENSE_PREDICATE
-				+ " ?value . ?value " + DENSE_LEAF_PREDICATE + " ?leaf }");
+		return executeCount(DENSE_SIP_QUERY);
 	}
 
 	private void populateSipMaskShapes(SailRepositoryConnection connection) {
@@ -241,6 +250,13 @@ public class AdjacencyQueryShapeBenchmark {
 			try (TupleQueryResult evaluate = connection.prepareTupleQuery(query).evaluate()) {
 				return evaluate.stream().count();
 			}
+		}
+	}
+
+	private void printTelemetry(String benchmark, String query) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			System.out.println("=== Runtime plan after warmed " + benchmark + " ===");
+			System.out.println(connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry));
 		}
 	}
 }

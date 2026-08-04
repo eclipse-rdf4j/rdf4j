@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.sail.lmdb.ValueStore;
 @Experimental
 @InternalUseOnly
 public interface NativeLmdbQuerySource {
+	String LMDB_ENCOUNTER_ORDER_REASON = "ENCOUNTER_ORDER_REQUIRES_LMDB";
 
 	long UNKNOWN_ID = org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID;
 
@@ -81,6 +82,17 @@ public interface NativeLmdbQuerySource {
 	}
 
 	/**
+	 * Opens the persistent LMDB index directly, bypassing derived in-memory adjacency. Encounter-order-sensitive
+	 * fallbacks use this after a speculative native plan discovers that changing the authoritative index order can
+	 * change a floating-point or representative-term aggregate. Sources without a derived layer may delegate to
+	 * {@link #statements(long, long, long, long, AdjacencyAccessObserver)}.
+	 */
+	default RecordIterator lmdbStatements(long subj, long pred, long obj, long context,
+			AdjacencyAccessObserver observer) throws IOException {
+		return statements(subj, pred, obj, context, observer);
+	}
+
+	/**
 	 * Opens the pattern scan inside a preplanned raw key range. Implementations that cannot apply the range safely must
 	 * fall back to {@link #statements(long, long, long, long)} rather than risk dropping matches.
 	 */
@@ -102,6 +114,12 @@ public interface NativeLmdbQuerySource {
 	default RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context,
 			AdjacencyAccessObserver observer) throws IOException {
 		return statements(order, subj, pred, obj, context);
+	}
+
+	/** Ordered counterpart of {@link #lmdbStatements(long, long, long, long, AdjacencyAccessObserver)}. */
+	default RecordIterator lmdbStatements(StatementOrder order, long subj, long pred, long obj, long context,
+			AdjacencyAccessObserver observer) throws IOException {
+		return statements(order, subj, pred, obj, context, observer);
 	}
 
 	default String indexName(long subj, long pred, long obj, long context) {

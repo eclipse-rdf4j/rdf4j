@@ -3304,6 +3304,22 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public RecordIterator lmdbStatements(long subj, long pred, long obj, long context,
+				AdjacencyAccessObserver observer) throws IOException {
+			checkOpen();
+			if (!hasStatementsInSource()) {
+				return EmptyRecordIterator.INSTANCE;
+			}
+			if (observer != null) {
+				observer.access(false,
+						NativeLmdbQuerySource.LMDB_ENCOUNTER_ORDER_REASON + "[index="
+								+ tripleStore.getIndexName(subj, pred, obj, context) + "]",
+						null, subj, pred, obj, context);
+			}
+			return tripleStore.getTriples(txn, subj, pred, obj, context, explicit);
+		}
+
+		@Override
 		public RecordIterator statements(long subj, long pred, long obj, long context, LmdbKeyRange range)
 				throws IOException {
 			return statements(subj, pred, obj, context, range, null);
@@ -3369,14 +3385,42 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public RecordIterator lmdbStatements(StatementOrder order, long subj, long pred, long obj, long context,
+				AdjacencyAccessObserver observer) throws IOException {
+			checkOpen();
+			if (!hasStatementsInSource()) {
+				return EmptyRecordIterator.INSTANCE;
+			}
+			if (observer != null) {
+				observer.access(false,
+						NativeLmdbQuerySource.LMDB_ENCOUNTER_ORDER_REASON + "[index="
+								+ tripleStore.getIndexName(order, subj, pred, obj, context) + "]",
+						order, subj, pred, obj, context);
+			}
+			return tripleStore.getTriples(txn, order, subj, pred, obj, context, explicit);
+		}
+
+		@Override
 		public String indexName(long subj, long pred, long obj, long context) {
 			checkOpen();
+			LmdbAdjacencyReadView view = exactAdjacencyView(true);
+			String direct = view == null ? null
+					: directAdjacency.rootScanIndexName(view, null, subj, pred, obj, context);
+			if (direct != null) {
+				return direct;
+			}
 			return tripleStore.getIndexName(subj, pred, obj, context);
 		}
 
 		@Override
 		public String indexName(StatementOrder order, long subj, long pred, long obj, long context) {
 			checkOpen();
+			LmdbAdjacencyReadView view = exactAdjacencyView(true);
+			String direct = view == null ? null
+					: directAdjacency.rootScanIndexName(view, order, subj, pred, obj, context);
+			if (direct != null) {
+				return direct;
+			}
 			return tripleStore.getIndexName(order, subj, pred, obj, context);
 		}
 
@@ -3955,6 +3999,32 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public RecordIterator lmdbStatements(long subj, long pred, long obj, long context,
+				AdjacencyAccessObserver observer) throws IOException {
+			long readStamp = acquireNativeSourceReadLock();
+			boolean releaseReadLock = true;
+			try {
+				assertNativeSourceOpen();
+				if (!hasStatementsInSource()) {
+					return EmptyRecordIterator.INSTANCE;
+				}
+				if (observer != null) {
+					observer.access(false,
+							NativeLmdbQuerySource.LMDB_ENCOUNTER_ORDER_REASON + "[index="
+									+ tripleStore.getIndexName(subj, pred, obj, context) + "]",
+							null, subj, pred, obj, context);
+				}
+				RecordIterator iterator = tripleStore.getTriples(txn, subj, pred, obj, context, explicit);
+				releaseReadLock = false;
+				return new NativeSourceReadLockedRecordIterator(iterator, readStamp);
+			} finally {
+				if (releaseReadLock) {
+					nativeSourceLock.unlockRead(readStamp);
+				}
+			}
+		}
+
+		@Override
 		public RecordIterator statements(long subj, long pred, long obj, long context, LmdbKeyRange range)
 				throws IOException {
 			return statements(subj, pred, obj, context, range, null);
@@ -4017,6 +4087,32 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public RecordIterator lmdbStatements(StatementOrder order, long subj, long pred, long obj, long context,
+				AdjacencyAccessObserver observer) throws IOException {
+			long readStamp = acquireNativeSourceReadLock();
+			boolean releaseReadLock = true;
+			try {
+				assertNativeSourceOpen();
+				if (!hasStatementsInSource()) {
+					return EmptyRecordIterator.INSTANCE;
+				}
+				if (observer != null) {
+					observer.access(false,
+							NativeLmdbQuerySource.LMDB_ENCOUNTER_ORDER_REASON + "[index="
+									+ tripleStore.getIndexName(order, subj, pred, obj, context) + "]",
+							order, subj, pred, obj, context);
+				}
+				RecordIterator iterator = tripleStore.getTriples(txn, order, subj, pred, obj, context, explicit);
+				releaseReadLock = false;
+				return new NativeSourceReadLockedRecordIterator(iterator, readStamp);
+			} finally {
+				if (releaseReadLock) {
+					nativeSourceLock.unlockRead(readStamp);
+				}
+			}
+		}
+
+		@Override
 		public LmdbRootScanPartition[] planRootScanPartitions(long subj, long pred, long obj, long context,
 				int targetPartitions) throws IOException {
 			long readStamp = acquireNativeSourceReadLock();
@@ -4059,6 +4155,12 @@ class LmdbSailStore implements SailStore {
 			long readStamp = acquireNativeSourceReadLockUnchecked();
 			try {
 				assertNativeSourceOpen();
+				if (directEligible()) {
+					String direct = directAdjacency.rootScanIndexName(adjacencyView, null, subj, pred, obj, context);
+					if (direct != null) {
+						return direct;
+					}
+				}
 				return tripleStore.getIndexName(subj, pred, obj, context);
 			} finally {
 				nativeSourceLock.unlockRead(readStamp);
@@ -4070,6 +4172,12 @@ class LmdbSailStore implements SailStore {
 			long readStamp = acquireNativeSourceReadLockUnchecked();
 			try {
 				assertNativeSourceOpen();
+				if (directEligible()) {
+					String direct = directAdjacency.rootScanIndexName(adjacencyView, order, subj, pred, obj, context);
+					if (direct != null) {
+						return direct;
+					}
+				}
 				return tripleStore.getIndexName(order, subj, pred, obj, context);
 			} finally {
 				nativeSourceLock.unlockRead(readStamp);

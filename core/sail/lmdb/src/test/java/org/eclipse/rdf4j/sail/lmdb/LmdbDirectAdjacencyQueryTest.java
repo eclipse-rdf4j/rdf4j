@@ -1025,6 +1025,7 @@ class LmdbDirectAdjacencyQueryTest {
 		FallbackReason rootScan = FallbackReason.valueOf("ROOT_SCAN");
 		long fallbacksBefore = direct.snapshotMetrics().fallbacks(rootScan);
 		try (var dataset = dataset()) {
+			assertThat(dataset.source.indexName(-1, p1, -1, -1)).doesNotStartWith("direct-");
 			assertSameRows(dataset.rows(-1, p1, -1, -1), List.of(
 					new long[] { s1, p1, o1, 0 },
 					new long[] { s1, p1, o2, g1 },
@@ -1040,6 +1041,7 @@ class LmdbDirectAdjacencyQueryTest {
 		long hitsBefore = direct.snapshotMetrics().lookupHits;
 		long fallbacksBefore = direct.snapshotMetrics().fallbacks(FallbackReason.ROOT_SCAN);
 		try (var dataset = dataset()) {
+			assertThat(dataset.source.indexName(-1, p1, -1, -1)).isEqualTo("direct-spoc");
 			assertSameRows(dataset.rows(-1, p1, -1, -1), List.of(
 					new long[] { s1, p1, o1, 0 },
 					new long[] { s1, p1, o2, g1 },

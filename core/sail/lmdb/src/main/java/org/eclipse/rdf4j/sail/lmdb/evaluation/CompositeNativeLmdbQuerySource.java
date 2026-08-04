@@ -91,7 +91,17 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		if (active != null) {
 			return active.statements(subj, pred, obj, context, observer);
 		}
-		return new ConcatenatingRecordIterator(activeSources, subj, pred, obj, context, null, observer);
+		return new ConcatenatingRecordIterator(activeSources, subj, pred, obj, context, null, observer, false);
+	}
+
+	@Override
+	public RecordIterator lmdbStatements(long subj, long pred, long obj, long context,
+			AdjacencyAccessObserver observer) throws IOException {
+		NativeLmdbQuerySource active = onlyActiveSource();
+		if (active != null) {
+			return active.lmdbStatements(subj, pred, obj, context, observer);
+		}
+		return new ConcatenatingRecordIterator(activeSources, subj, pred, obj, context, null, observer, true);
 	}
 
 	@Override
@@ -107,7 +117,7 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		if (active != null) {
 			return active.statements(subj, pred, obj, context, range, observer);
 		}
-		return new ConcatenatingRecordIterator(activeSources, subj, pred, obj, context, range, observer);
+		return new ConcatenatingRecordIterator(activeSources, subj, pred, obj, context, range, observer, false);
 	}
 
 	@Override
@@ -177,6 +187,25 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		for (NativeLmdbQuerySource source : activeSources) {
 			try {
 				iterators.add(source.statements(order, subj, pred, obj, context, observer));
+			} catch (IOException | RuntimeException | Error e) {
+				closeIterators(iterators, e);
+				throw e;
+			}
+		}
+		return OrderedRecordIterator.merge(iterators, order);
+	}
+
+	@Override
+	public RecordIterator lmdbStatements(StatementOrder order, long subj, long pred, long obj, long context,
+			AdjacencyAccessObserver observer) throws IOException {
+		NativeLmdbQuerySource active = onlyActiveSource();
+		if (active != null) {
+			return active.lmdbStatements(order, subj, pred, obj, context, observer);
+		}
+		List<RecordIterator> iterators = new ArrayList<>(activeSources.size());
+		for (NativeLmdbQuerySource source : activeSources) {
+			try {
+				iterators.add(source.lmdbStatements(order, subj, pred, obj, context, observer));
 			} catch (IOException | RuntimeException | Error e) {
 				closeIterators(iterators, e);
 				throw e;
@@ -1226,12 +1255,13 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		private final long context;
 		private final LmdbKeyRange range;
 		private final AdjacencyAccessObserver observer;
+		private final boolean lmdbOnly;
 		private int index;
 		private RecordIterator current;
 		private boolean closed;
 
 		private ConcatenatingRecordIterator(List<NativeLmdbQuerySource> sources, long subj, long pred, long obj,
-				long context, LmdbKeyRange range, AdjacencyAccessObserver observer) {
+				long context, LmdbKeyRange range, AdjacencyAccessObserver observer, boolean lmdbOnly) {
 			this.sources = sources;
 			this.subj = subj;
 			this.pred = pred;
@@ -1239,6 +1269,7 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 			this.context = context;
 			this.range = range;
 			this.observer = observer;
+			this.lmdbOnly = lmdbOnly;
 		}
 
 		@Override
@@ -1249,8 +1280,10 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 			while (index < sources.size()) {
 				if (current == null) {
 					try {
-						current = range == null ? sources.get(index).statements(subj, pred, obj, context, observer)
-								: sources.get(index).statements(subj, pred, obj, context, range, observer);
+						current = range != null
+								? sources.get(index).statements(subj, pred, obj, context, range, observer)
+								: lmdbOnly ? sources.get(index).lmdbStatements(subj, pred, obj, context, observer)
+										: sources.get(index).statements(subj, pred, obj, context, observer);
 					} catch (IOException e) {
 						throw new QueryEvaluationException(e);
 					}

@@ -488,11 +488,28 @@ public class LmdbNativeChunkPipelineTest {
 	}
 
 	@Test
+	public void adjacencySipMasksAreEnabledByDefault() {
+		String property = LmdbNativeChunkPipeline.ADJACENCY_SIP_MASK_PROPERTY;
+		String previous = System.getProperty(property);
+		try {
+			System.clearProperty(property);
+			assertThat(LmdbNativeChunkPipeline.adjacencySipMasksEnabled()).isTrue();
+		} finally {
+			restoreProperty(property, previous);
+		}
+	}
+
+	@Test
 	public void adjacencyKeyDomainMasksSelectiveChainBeforeHashBuild() throws Exception {
 		String adjacencyMaskProperty = LmdbNativeChunkPipeline.ADJACENCY_SIP_MASK_PROPERTY;
+		String directRootScanProperty = "rdf4j.lmdb.directAdjacency.rootScan.enabled";
 		String previousAdjacencyMask = System.getProperty(adjacencyMaskProperty);
+		String previousDirectRootScan = System.getProperty(directRootScanProperty);
 		String previousMerge = System.getProperty("rdf4j.lmdb.chunkPipeline.merge.enabled");
 		String previousParallel = System.getProperty("rdf4j.lmdb.parallel.enabled");
+		// This test isolates adjacency-domain SIP over a seekable LMDB root. A direct-spoc root is already an
+		// in-memory adjacency consumer and deliberately does not advertise the LMDB seek contract.
+		System.setProperty(directRootScanProperty, "false");
 		System.setProperty("rdf4j.lmdb.chunkPipeline.merge.enabled", "false");
 		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 		File maskDir = new File(dataDir, "adjacency-domain-mask");
@@ -559,7 +576,8 @@ public class LmdbNativeChunkPipelineTest {
 			assertThat(enabledRows).containsExactlyInAnyOrderElementsOf(disabledRows);
 			assertThat(LmdbNativeChunkPipeline.ENGAGED.get()).isGreaterThan(engagedAfterDisabled);
 			assertThat(LmdbNativeChunkPipeline.SIP_MASKS.get())
-					.as("the selective probe's exact adjacency key domain should mask the root scan")
+					.as("the selective probe's exact adjacency key domain should mask the root scan%n%s",
+							enabledTelemetry)
 					.isGreaterThan(masksBefore);
 			assertThat(LmdbNativeChunkPipeline.SIP_MASKED_ROWS.get())
 					.as("root rows whose middle key is absent from the selective predicate should be dropped")
@@ -585,6 +603,7 @@ public class LmdbNativeChunkPipelineTest {
 		} finally {
 			selective.shutDown();
 			restoreProperty(adjacencyMaskProperty, previousAdjacencyMask);
+			restoreProperty(directRootScanProperty, previousDirectRootScan);
 			restoreProperty("rdf4j.lmdb.chunkPipeline.merge.enabled", previousMerge);
 			restoreProperty("rdf4j.lmdb.parallel.enabled", previousParallel);
 		}

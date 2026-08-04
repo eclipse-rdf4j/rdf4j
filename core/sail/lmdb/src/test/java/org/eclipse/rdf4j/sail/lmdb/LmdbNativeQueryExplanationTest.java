@@ -257,8 +257,16 @@ public class LmdbNativeQueryExplanationTest {
 	public void telemetryExplanationPrependsTheExecutedNativePlanAndPreciseNonUseReasons() {
 		String query = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT ?s WHERE { ?s a ex:Item . ?s ex:price ?price }";
+		String property = "rdf4j.lmdb.sip.adjacencyMasks.enabled";
+		String previous = System.getProperty(property);
 
-		String rendered = explain(Explanation.Level.Telemetry, query).toString();
+		String rendered;
+		try {
+			System.setProperty(property, "false");
+			rendered = explain(Explanation.Level.Telemetry, query).toString();
+		} finally {
+			restoreProperty(previous, property);
+		}
 
 		assertThat(rendered)
 				.startsWith("LMDB native physical plan (executed)\n")
@@ -420,6 +428,9 @@ public class LmdbNativeQueryExplanationTest {
 			assertThat(rendered)
 					.contains("nativeExecutionPath=janinoKernel")
 					.contains("    janino:\n      used: true\n      reason: ACTIVATED")
+					.contains("    adjacencySIP:\n      used: false\n"
+							+ "      state: NOT_CONSIDERED\n"
+							+ "      reason: SUPERSEDED_BY_STRATEGY[strategy=janinoKernel]")
 					.contains("      generatedOrder:\n        0: Pattern(")
 					.contains("    actualOrder:\n      0: Pattern(");
 			assertThat(planSection(rendered, "    actualOrder:\n", "    janino:\n"))
