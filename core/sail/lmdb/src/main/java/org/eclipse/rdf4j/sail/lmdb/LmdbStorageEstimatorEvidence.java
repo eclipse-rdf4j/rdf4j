@@ -203,10 +203,10 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 			return Optional.empty();
 		}
 		if (!(input instanceof StatementPattern pattern)) {
-			return filters == null ? Optional.empty() : exactMandatoryPatternFilterZero(input, condition);
+			return filters == null ? Optional.empty() : exactMandatoryPatternFilterZero(input, condition, context);
 		}
 		if (filters != null) {
-			Optional<FilterEvidence> evidence = filterEvidence(pattern, condition);
+			Optional<FilterEvidence> evidence = filterEvidence(pattern, condition, context);
 			if (evidence.isPresent()) {
 				return evidence;
 			}
@@ -280,7 +280,8 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 		return false;
 	}
 
-	private Optional<FilterEvidence> exactMandatoryPatternFilterZero(TupleExpr input, ValueExpr condition) {
+	private Optional<FilterEvidence> exactMandatoryPatternFilterZero(TupleExpr input, ValueExpr condition,
+			EstimateContext context) {
 		Set<String> conditionVariables = VarNameCollector.process(condition);
 		if (conditionVariables.isEmpty() || !input.getAssuredBindingNames().containsAll(conditionVariables)) {
 			return Optional.empty();
@@ -291,7 +292,7 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 			if (!pattern.getAssuredBindingNames().containsAll(conditionVariables)) {
 				continue;
 			}
-			FilterEvidence evidence = filterEvidence(pattern, condition).orElse(null);
+			FilterEvidence evidence = filterEvidence(pattern, condition, context).orElse(null);
 			if (evidence != null && evidence.complete() && evidence.passRatio() == 0.0d) {
 				return Optional.of(evidence);
 			}
@@ -312,10 +313,14 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 				"lmdb-exact-leaf-filter-surface"));
 	}
 
-	private Optional<FilterEvidence> filterEvidence(StatementPattern pattern, ValueExpr condition) {
+	private Optional<FilterEvidence> filterEvidence(StatementPattern pattern, ValueExpr condition,
+			EstimateContext context) {
 		Filter synthetic = new Filter(pattern.clone(), condition.clone());
 		EvaluationStatistics.FilterPassEstimate estimate = filters.estimateSnapshotFilterPass(synthetic, pattern);
 		if (!validPassRatio(estimate.getPassRatio())) {
+			if (context.evidencePolicy() == EstimateContext.EvidencePolicy.SNAPSHOT_ONLY) {
+				return Optional.empty();
+			}
 			PatternFilterSampleEstimate sampled = filters.estimateCachedFilterPass(synthetic, pattern);
 			if (!validPassRatio(sampled.passRatio())) {
 				sampled = filters.estimateLiveFilterPass(synthetic, pattern);

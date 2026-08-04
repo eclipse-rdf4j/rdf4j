@@ -29,6 +29,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -103,6 +104,7 @@ class LmdbFilterSelectivityStats
 	private final Path sidecarPath;
 	private final Path coldSynopsisPath;
 	private final Supplier<SketchSnapshotIdentity> snapshotIdentitySupplier;
+	private final boolean adaptiveEvidenceAllowed;
 	private final int coldSynopsisCapacity;
 	private final boolean optimizerSamplingEnabled;
 	private final long optimizerSamplingMaxMillis;
@@ -154,11 +156,22 @@ class LmdbFilterSelectivityStats
 			boolean optimizerSamplingEnabled, long optimizerSamplingMaxMillis, int optimizerSamplingMaxRows,
 			boolean backgroundRawSamplingEnabled,
 			Supplier<SketchSnapshotIdentity> snapshotIdentitySupplier, int coldSynopsisCapacity) {
+		this(estimatorPath, tripleStore, valueStore, optimizerSamplingEnabled, optimizerSamplingMaxMillis,
+				optimizerSamplingMaxRows, backgroundRawSamplingEnabled, snapshotIdentitySupplier, coldSynopsisCapacity,
+				() -> true);
+	}
+
+	LmdbFilterSelectivityStats(Path estimatorPath, TripleStore tripleStore, ValueStore valueStore,
+			boolean optimizerSamplingEnabled, long optimizerSamplingMaxMillis, int optimizerSamplingMaxRows,
+			boolean backgroundRawSamplingEnabled,
+			Supplier<SketchSnapshotIdentity> snapshotIdentitySupplier, int coldSynopsisCapacity,
+			BooleanSupplier adaptiveEvidenceAllowedSupplier) {
 		Objects.requireNonNull(estimatorPath, "estimatorPath");
 		this.sidecarPath = estimatorPath.resolveSibling(estimatorPath.getFileName().toString() + SIDECAR_SUFFIX);
 		this.coldSynopsisPath = estimatorPath.resolveSibling(
 				estimatorPath.getFileName().toString() + COLD_SYNOPSIS_SUFFIX);
 		this.snapshotIdentitySupplier = Objects.requireNonNull(snapshotIdentitySupplier, "snapshotIdentitySupplier");
+		this.adaptiveEvidenceAllowed = readAdaptiveEvidenceAllowed(adaptiveEvidenceAllowedSupplier);
 		this.coldSynopsisCapacity = Math.clamp(coldSynopsisCapacity, 0, ColdFilterSynopsis.MAX_CAPACITY);
 		this.tripleStore = Objects.requireNonNull(tripleStore, "tripleStore");
 		this.valueStore = Objects.requireNonNull(valueStore, "valueStore");
@@ -166,7 +179,9 @@ class LmdbFilterSelectivityStats
 		this.optimizerSamplingMaxMillis = Math.max(0L, optimizerSamplingMaxMillis);
 		this.optimizerSamplingMaxRows = Math.max(0, optimizerSamplingMaxRows);
 		this.backgroundRawSamplingEnabled = backgroundRawSamplingEnabled;
-		loadIfPresent();
+		if (adaptiveEvidenceAllowed) {
+			loadIfPresent();
+		}
 		loadColdSynopsisIfPresent();
 	}
 
@@ -230,11 +245,17 @@ class LmdbFilterSelectivityStats
 	@Override
 	public synchronized void recordFilterOutcome(PatternKey key, String filterKey, long passedCount,
 			long filteredCount) {
+		if (!adaptiveEvidenceAllowed()) {
+			return;
+		}
 		recordFilterOutcome(key, filterKey, null, passedCount, filteredCount, true);
 	}
 
 	public synchronized void recordFilterOutcome(PatternKey key, String filterKey, String filterTemplateKey,
 			long passedCount, long filteredCount) {
+		if (!adaptiveEvidenceAllowed()) {
+			return;
+		}
 		recordFilterOutcome(key, filterKey, filterTemplateKey, passedCount, filteredCount, true);
 	}
 
@@ -246,7 +267,8 @@ class LmdbFilterSelectivityStats
 
 	synchronized void recordFilterOutcome(Filter filter, StatementPattern legacyPattern, long passedCount,
 			long filteredCount) {
-		if (filter == null || filter.getCondition() == null || (passedCount <= 0L && filteredCount <= 0L)) {
+		if (!adaptiveEvidenceAllowed() || filter == null || filter.getCondition() == null
+				|| (passedCount <= 0L && filteredCount <= 0L)) {
 			return;
 		}
 		boolean changed = false;
@@ -278,6 +300,9 @@ class LmdbFilterSelectivityStats
 
 	synchronized void recordFilterOutcome(PatternKey key, String filterKey, String filterTemplateKey,
 			long passedCount, long filteredCount, boolean includePatternAggregate) {
+		if (!adaptiveEvidenceAllowed()) {
+			return;
+		}
 		if (!addLegacyFilterOutcome(key, filterKey, filterTemplateKey, passedCount, filteredCount,
 				includePatternAggregate)) {
 			return;
@@ -307,6 +332,9 @@ class LmdbFilterSelectivityStats
 	}
 
 	synchronized LearnedSurfaceEstimate estimateLearnedSurface(Filter filter) {
+		if (!adaptiveEvidenceAllowed()) {
+			return null;
+		}
 		FilterSurfaceKey exact = FilterSurfaceKey.exact(filter);
 		LearnedCounts exactCounts = exact == null ? null : learnedBySurface.get(exact);
 		if (exactCounts != null && exactCounts.total() > 0L) {
@@ -327,36 +355,54 @@ class LmdbFilterSelectivityStats
 
 	@Override
 	public synchronized double getFilterPassRatio(PatternKey key, String filterKey) {
+		if (!adaptiveEvidenceAllowed()) {
+			return -1.0d;
+		}
 		LearnedCounts counts = learnedByFilter.get(new PatternFilterKey(key, filterKey));
 		return counts == null ? -1.0d : counts.passRatio();
 	}
 
 	@Override
 	public synchronized double getFilterTemplatePassRatio(PatternKey key, String filterTemplateKey) {
+		if (!adaptiveEvidenceAllowed()) {
+			return -1.0d;
+		}
 		LearnedCounts counts = learnedByTemplate.get(new PatternFilterKey(key, filterTemplateKey));
 		return counts == null ? -1.0d : counts.passRatio();
 	}
 
 	@Override
 	public synchronized double getPatternPassRatio(PatternKey key) {
+		if (!adaptiveEvidenceAllowed()) {
+			return -1.0d;
+		}
 		LearnedCounts counts = learnedByPattern.get(key);
 		return counts == null ? -1.0d : counts.passRatio();
 	}
 
 	@Override
 	public synchronized long getFilterObservationCount(PatternKey key, String filterKey) {
+		if (!adaptiveEvidenceAllowed()) {
+			return -1L;
+		}
 		LearnedCounts counts = learnedByFilter.get(new PatternFilterKey(key, filterKey));
 		return counts == null ? -1L : counts.total();
 	}
 
 	@Override
 	public synchronized long getFilterTemplateObservationCount(PatternKey key, String filterTemplateKey) {
+		if (!adaptiveEvidenceAllowed()) {
+			return -1L;
+		}
 		LearnedCounts counts = learnedByTemplate.get(new PatternFilterKey(key, filterTemplateKey));
 		return counts == null ? -1L : counts.total();
 	}
 
 	@Override
 	public synchronized long getPatternObservationCount(PatternKey key) {
+		if (!adaptiveEvidenceAllowed()) {
+			return -1L;
+		}
 		LearnedCounts counts = learnedByPattern.get(key);
 		return counts == null ? -1L : counts.total();
 	}
@@ -373,6 +419,9 @@ class LmdbFilterSelectivityStats
 
 	@Override
 	public synchronized boolean hasStats(PatternKey key) {
+		if (!adaptiveEvidenceAllowed()) {
+			return false;
+		}
 		LearnedCounts counts = learnedByPattern.get(key);
 		return counts != null && counts.total() > 0L;
 	}
@@ -390,12 +439,18 @@ class LmdbFilterSelectivityStats
 	@Override
 	public PatternFilterSampleEstimate estimateFilterPass(Filter filter,
 			StatementPattern pattern) {
+		if (!adaptiveEvidenceAllowed()) {
+			return new PatternFilterSampleEstimate(-1.0d, -1L);
+		}
 		PatternFilterSampleEstimate cached = estimateCachedFilterPass(filter, pattern);
 		return isValidPassRatio(cached.passRatio()) ? cached : estimateLiveFilterPass(filter, pattern);
 	}
 
 	@Override
 	public PatternFilterSampleEstimate estimateCachedFilterPass(Filter filter, StatementPattern pattern) {
+		if (!adaptiveEvidenceAllowed()) {
+			return new PatternFilterSampleEstimate(-1.0d, -1L);
+		}
 		PatternFilterKey key = samplingKey(filter, pattern);
 		if (key == null) {
 			return new PatternFilterSampleEstimate(-1.0d, -1L);
@@ -416,6 +471,9 @@ class LmdbFilterSelectivityStats
 
 	@Override
 	public PatternFilterSampleEstimate estimateLiveFilterPass(Filter filter, StatementPattern pattern) {
+		if (!adaptiveEvidenceAllowed()) {
+			return new PatternFilterSampleEstimate(-1.0d, -1L);
+		}
 		PatternFilterKey key = samplingKey(filter, pattern);
 		if (key == null || !supportsSampling(filter, pattern)) {
 			return new PatternFilterSampleEstimate(-1.0d, -1L);
@@ -632,7 +690,7 @@ class LmdbFilterSelectivityStats
 	}
 
 	synchronized List<BackgroundSamplingRequest> drainBackgroundSamplingRequests(int maxCount) {
-		if (maxCount <= 0 || backgroundSamplingRequests.isEmpty()) {
+		if (!adaptiveEvidenceAllowed() || maxCount <= 0 || backgroundSamplingRequests.isEmpty()) {
 			return List.of();
 		}
 
@@ -649,7 +707,7 @@ class LmdbFilterSelectivityStats
 	}
 
 	int runBackgroundSamplingCycle(long maxMillis) {
-		if (!backgroundRawSamplingEnabled || maxMillis <= 0L) {
+		if (!adaptiveEvidenceAllowed() || !backgroundRawSamplingEnabled || maxMillis <= 0L) {
 			return 0;
 		}
 		int pendingBefore = pendingBackgroundSamplingRequests();
@@ -709,7 +767,7 @@ class LmdbFilterSelectivityStats
 		if (snapshotIdentity == null) {
 			return;
 		}
-		if (dirty && persistFilterSidecar(snapshotIdentity)) {
+		if (dirty && adaptiveEvidenceAllowed() && persistFilterSidecar(snapshotIdentity)) {
 			dirty = false;
 		}
 		if (coldSynopsisDirty && persistColdSynopsis(snapshotIdentity)) {
@@ -1180,6 +1238,19 @@ class LmdbFilterSelectivityStats
 				System.getProperty(LmdbOperatorFeedbackStats.SIDECAR_DATA_STAMP_CHECK_PROPERTY, "true"));
 	}
 
+	private boolean adaptiveEvidenceAllowed() {
+		return adaptiveEvidenceAllowed;
+	}
+
+	private static boolean readAdaptiveEvidenceAllowed(BooleanSupplier adaptiveEvidenceAllowedSupplier) {
+		Objects.requireNonNull(adaptiveEvidenceAllowedSupplier, "adaptiveEvidenceAllowedSupplier");
+		try {
+			return adaptiveEvidenceAllowedSupplier.getAsBoolean();
+		} catch (RuntimeException e) {
+			return false;
+		}
+	}
+
 	/** The LMDB write-transaction id — a persistent monotonic data version independent of the sketch identity. */
 	private long dataStamp() {
 		try {
@@ -1190,7 +1261,8 @@ class LmdbFilterSelectivityStats
 	}
 
 	private synchronized void voteBackgroundSamplingRequest(SamplingCandidate candidate, boolean foregroundNeeded) {
-		if (!backgroundRawSamplingEnabled || candidate == null || candidate.expectedRuntimeRows <= 0.0d
+		if (!adaptiveEvidenceAllowed() || !backgroundRawSamplingEnabled || candidate == null
+				|| candidate.expectedRuntimeRows <= 0.0d
 				|| candidate.expectedBenefitRows <= 0.0d || !Double.isFinite(candidate.expectedRuntimeRows)
 				|| !Double.isFinite(candidate.expectedBenefitRows)) {
 			return;

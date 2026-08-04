@@ -164,6 +164,7 @@ class LmdbSailStore implements SailStore {
 	private volatile long frontierRebuildRequestedNanos;
 	private volatile boolean closing;
 	private final long backgroundRawSamplingMaxMillisPerCycle;
+	private final boolean adaptiveEvidenceAllowed;
 
 	/**
 	 * An operation that can be executed asynchronously.
@@ -371,6 +372,8 @@ class LmdbSailStore implements SailStore {
 		this.bulkOperationSize = config.getBulkOperationSize();
 		this.estimatorAddChunkSize = Math.max(EXACT_ESTIMATOR_ADD_CHUNK_SIZE, bulkOperationSize);
 		this.backgroundRawSamplingMaxMillisPerCycle = config.getBackgroundRawSamplingMaxMillisPerCycle();
+		this.adaptiveEvidenceAllowed = !"snapshot-only"
+				.equalsIgnoreCase(config.getSketchEstimatorEvidenceMode());
 		this.frontierPlannerSettings = LmdbFrontierPlannerSettings.from(config);
 		this.cascadesPlanCache = new PackedPlanCache(CASCADES_PLAN_CACHE_CAPACITY, 16,
 				config.getFrontierCacheEvidenceBudgetBytes());
@@ -442,13 +445,13 @@ class LmdbSailStore implements SailStore {
 						config.getOptimizerSamplingEnabled(), config.getOptimizerSamplingMaxMillis(),
 						config.getOptimizerSamplingMaxRows(), config.getBackgroundRawSamplingEnabled(),
 						identitySupplier,
-						config.getSketchEstimatorColdSynopsisCapacity());
+						config.getSketchEstimatorColdSynopsisCapacity(), () -> adaptiveEvidenceAllowed);
 				if (sketchBasedJoinEstimator != null) {
 					sketchBasedJoinEstimator.setRebuildObserver(filterSelectivityStats.coldSynopsisRebuildObserver());
 				}
 				operatorFeedbackStats = new LmdbOperatorFeedbackStats(estimatorPath,
 						identitySupplier,
-						() -> !"snapshot-only".equalsIgnoreCase(config.getSketchEstimatorEvidenceMode()),
+						() -> adaptiveEvidenceAllowed,
 						this::learnedSidecarDataStamp);
 				startBackgroundFilterSampling();
 			}
@@ -925,7 +928,7 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private void startBackgroundFilterSampling() {
-		if (filterSelectivityStats == null || backgroundRawSamplingMaxMillisPerCycle <= 0L) {
+		if (!adaptiveEvidenceAllowed || filterSelectivityStats == null || backgroundRawSamplingMaxMillisPerCycle <= 0L) {
 			logger.info(
 					"LMDB background filter sampling not scheduled: filterStatsPresent={}, maxMillisPerCycle={}",
 					filterSelectivityStats != null, backgroundRawSamplingMaxMillisPerCycle);
@@ -1125,7 +1128,7 @@ class LmdbSailStore implements SailStore {
 	public EvaluationStatistics getEvaluationStatistics() {
 		return new LmdbEvaluationStatistics(valueStore, tripleStore, sketchBasedJoinEstimator, filterSelectivityStats,
 				operatorFeedbackStats, statementPatternCardinalitySource, cascadesPlanCache, frontierSynopsisService,
-				frontierPlannerSettings, () -> mayHaveInferred);
+				frontierPlannerSettings, () -> mayHaveInferred, () -> adaptiveEvidenceAllowed);
 	}
 
 	@Override

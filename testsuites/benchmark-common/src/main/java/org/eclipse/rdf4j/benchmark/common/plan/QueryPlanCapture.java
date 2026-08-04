@@ -16,8 +16,10 @@ import java.io.InputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
@@ -299,6 +301,12 @@ public final class QueryPlanCapture {
 	public Path captureAndWrite(QueryPlanCaptureContext context, Supplier<? extends TupleQuery> tupleQuerySupplier)
 			throws IOException {
 		QueryPlanSnapshot snapshot = capture(context, tupleQuerySupplier);
+		return writeSnapshot(context, snapshot);
+	}
+
+	public Path writeSnapshot(QueryPlanCaptureContext context, QueryPlanSnapshot snapshot) throws IOException {
+		Objects.requireNonNull(context, "context");
+		Objects.requireNonNull(snapshot, "snapshot");
 		Path outputDirectory = context.getOutputDirectory();
 		Files.createDirectories(outputDirectory);
 
@@ -316,11 +324,30 @@ public final class QueryPlanCapture {
 	public void writeSnapshot(Path outputFile, QueryPlanSnapshot snapshot) throws IOException {
 		Objects.requireNonNull(outputFile, "outputFile");
 		Objects.requireNonNull(snapshot, "snapshot");
-		Path parent = outputFile.getParent();
-		if (parent != null) {
-			Files.createDirectories(parent);
+		Path absoluteOutputFile = outputFile.toAbsolutePath().normalize();
+		Path parent = absoluteOutputFile.getParent();
+		if (parent == null) {
+			throw new IOException("Snapshot output file has no parent directory: " + outputFile);
 		}
-		snapshotMapper.writeValue(outputFile.toFile(), snapshot);
+		Files.createDirectories(parent);
+
+		Path temporaryFile = Files.createTempFile(parent,
+				"snapshot-" + absoluteOutputFile.getFileName() + '.', ".tmp");
+		boolean published = false;
+		try {
+			snapshotMapper.writeValue(temporaryFile.toFile(), snapshot);
+			try {
+				Files.move(temporaryFile, absoluteOutputFile, StandardCopyOption.ATOMIC_MOVE,
+						StandardCopyOption.REPLACE_EXISTING);
+			} catch (AtomicMoveNotSupportedException e) {
+				Files.move(temporaryFile, absoluteOutputFile, StandardCopyOption.REPLACE_EXISTING);
+			}
+			published = true;
+		} finally {
+			if (!published) {
+				Files.deleteIfExists(temporaryFile);
+			}
+		}
 	}
 
 	public QueryPlanSnapshot readSnapshot(Path inputFile) throws IOException {
@@ -423,7 +450,7 @@ public final class QueryPlanCapture {
 		metrics.put("rootTypeNormalized", rootTypeNormalized);
 		metrics.put("rootAlgorithm", readText(root, "algorithm"));
 		metrics.put("rootCostEstimate", readNumberToken(root, "costEstimate"));
-		metrics.put("rootResultSizeEstimate", readNumberToken(root, "resultSizeEstimate"));
+		metrics.put("rootResultSizeEstimate", readResultSizeEstimateToken(root));
 		metrics.put("rootResultSizeActual", readNumberToken(root, "resultSizeActual"));
 		metrics.put("rootTotalTimeActual", readNumberToken(root, "totalTimeActual"));
 		metrics.put("rootSelfTimeActual", readNumberToken(root, "selfTimeActual"));
@@ -732,10 +759,8 @@ public final class QueryPlanCapture {
 		if (isBarrierType(normalizedType)) {
 			accumulator.modeledBarrierCount++;
 		}
-		BigDecimal resultSizeEstimateValue = parseDecimalToken(node, "resultSizeEstimate");
 		BigDecimal resultSizeActualValue = parseDecimalToken(node, "resultSizeActual");
-		BigDecimal effectiveResultSizeEstimateValue = effectiveResultSizeEstimateForActualComparison(node,
-				resultSizeEstimateValue);
+		BigDecimal effectiveResultSizeEstimateValue = effectiveResultSizeEstimateForActualComparison(node);
 		recordEstimateAccuracy(accumulator, effectiveResultSizeEstimateValue, resultSizeActualValue,
 				isJoinType(normalizedType));
 		BigDecimal selfTimeActual = parseDecimalToken(node, "selfTimeActual");
@@ -780,7 +805,7 @@ public final class QueryPlanCapture {
 		updateAggregate(actual, AggregateKind.ACTUAL_RESULT_SIZE, accumulator);
 
 		String cost = readNumberToken(node, "costEstimate");
-		String estimate = readNumberToken(node, "resultSizeEstimate");
+		String estimate = readResultSizeEstimateToken(node);
 		accumulator.estimatesSignature.append('(')
 				.append(normalizedType)
 				.append("|costEstimate=")
@@ -886,7 +911,7 @@ public final class QueryPlanCapture {
 		if (actualRows != null) {
 			return actualRows.max(BigDecimal.ZERO);
 		}
-		BigDecimal estimatedRows = parseDecimalToken(node, "resultSizeEstimate");
+		BigDecimal estimatedRows = parseResultSizeEstimate(node);
 		if (estimatedRows != null) {
 			return estimatedRows.max(BigDecimal.ZERO);
 		}
@@ -920,7 +945,7 @@ public final class QueryPlanCapture {
 
 	private static boolean isTupleChild(JsonNode node) {
 		return parseDecimalToken(node, "resultSizeActual") != null
-				|| parseDecimalToken(node, "resultSizeEstimate") != null
+				|| parseResultSizeEstimate(node) != null
 				|| parseDecimalToken(node, "costEstimate") != null
 				|| parseDecimalToken(node, "totalTimeActual") != null;
 	}
@@ -1048,7 +1073,10 @@ public final class QueryPlanCapture {
 	}
 
 	private static BigDecimal parseDecimalToken(JsonNode node, String field) {
-		JsonNode value = node.get(field);
+		return parseDecimalValue(node.get(field));
+	}
+
+	private static BigDecimal parseDecimalValue(JsonNode value) {
 		if (value == null || value.isNull()) {
 			return null;
 		}
@@ -1059,10 +1087,13 @@ public final class QueryPlanCapture {
 		}
 	}
 
-	private static BigDecimal effectiveResultSizeEstimateForActualComparison(JsonNode node,
-			BigDecimal resultSizeEstimate) {
+	private static BigDecimal effectiveResultSizeEstimateForActualComparison(JsonNode node) {
+		BigDecimal resultSizeEstimate = parseResultSizeEstimate(node);
 		if (resultSizeEstimate == null) {
 			return null;
+		}
+		if (hasPlannedCardinalityRows(node)) {
+			return resultSizeEstimate;
 		}
 		BigDecimal repeatedInvocations = parseNestedDecimalToken(node, "doubleMetricsPlanned",
 				"plannedRepeatedInvocations");
@@ -1077,6 +1108,32 @@ public final class QueryPlanCapture {
 			repeatedEstimate = plannedWorkRows;
 		}
 		return repeatedEstimate.compareTo(resultSizeEstimate) > 0 ? repeatedEstimate : resultSizeEstimate;
+	}
+
+	private static BigDecimal parseResultSizeEstimate(JsonNode node) {
+		return parseDecimalValue(resultSizeEstimateNode(node));
+	}
+
+	private static String readResultSizeEstimateToken(JsonNode node) {
+		return readNumberToken(resultSizeEstimateNode(node));
+	}
+
+	private static JsonNode resultSizeEstimateNode(JsonNode node) {
+		JsonNode plannedMetrics = node.get("doubleMetricsPlanned");
+		if (plannedMetrics != null && !plannedMetrics.isNull()) {
+			JsonNode plannedCardinalityRows = plannedMetrics.get("plannedCardinalityRows");
+			if (plannedCardinalityRows != null && !plannedCardinalityRows.isNull()) {
+				return plannedCardinalityRows;
+			}
+		}
+		return node.get("resultSizeEstimate");
+	}
+
+	private static boolean hasPlannedCardinalityRows(JsonNode node) {
+		JsonNode plannedMetrics = node.get("doubleMetricsPlanned");
+		return plannedMetrics != null
+				&& !plannedMetrics.isNull()
+				&& plannedMetrics.hasNonNull("plannedCardinalityRows");
 	}
 
 	private static BigDecimal parseNestedDecimalToken(JsonNode node, String objectField, String field) {
@@ -1261,7 +1318,10 @@ public final class QueryPlanCapture {
 	}
 
 	private static String readNumberToken(JsonNode node, String field) {
-		JsonNode value = node.get(field);
+		return readNumberToken(node.get(field));
+	}
+
+	private static String readNumberToken(JsonNode value) {
 		if (value == null || value.isNull()) {
 			return "<null>";
 		}

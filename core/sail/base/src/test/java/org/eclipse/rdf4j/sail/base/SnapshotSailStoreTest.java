@@ -12,13 +12,20 @@
 package org.eclipse.rdf4j.sail.base;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -37,6 +44,9 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.query.QueryOperationContext;
+import org.eclipse.rdf4j.query.QueryOperationDeadline;
 import org.eclipse.rdf4j.query.algebra.InsertData;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -164,6 +174,69 @@ public class SnapshotSailStoreTest {
 	}
 
 	@Test
+	public void optimizedExplainHonorsQueryOperationDeadline() {
+		SnapshotSailStore sailStore = createSnapshotSailStore(level -> new TestSailSink());
+		Sail sail = createSail(sailStore);
+
+		try (SailConnection connection = sail.getConnection();
+				QueryOperationContext.Scope ignored = QueryOperationContext
+						.open(QueryOperationDeadline.after(0, java.util.concurrent.TimeUnit.NANOSECONDS))) {
+			TupleExpr tupleExpr = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+			assertThatThrownBy(() -> connection.explain(Explanation.Level.Optimized, tupleExpr, null,
+					EmptyBindingSet.getInstance(), true, 60))
+							.isInstanceOf(QueryInterruptedException.class)
+							.hasMessage("Query evaluation took too long");
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void executedExplainPreservesExistingThreadInterrupt() {
+		SnapshotSailStore sailStore = createSnapshotSailStore(level -> new TestSailSink());
+		Sail sail = createSail(sailStore);
+		Thread.interrupted();
+
+		try (SailConnection connection = sail.getConnection()) {
+			Thread.currentThread().interrupt();
+			TupleExpr tupleExpr = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+			connection.explain(Explanation.Level.Executed, tupleExpr, null, EmptyBindingSet.getInstance(), true, 60);
+			assertTrue(Thread.currentThread().isInterrupted());
+		} finally {
+			Thread.interrupted();
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void executedExplainClosesBlockingIterationAtDeadline() throws Exception {
+		BlockingStatementIteration blockingIteration = new BlockingStatementIteration();
+		SnapshotSailStore sailStore = createSnapshotSailStore(level -> new TestSailSink(), LinkedHashModel::new,
+				() -> blockingIteration);
+		Sail sail = createSail(sailStore);
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+
+		try (SailConnection connection = sail.getConnection()) {
+			TupleExpr tupleExpr = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+			Future<Explanation> future = executor.submit(() -> connection.explain(Explanation.Level.Executed, tupleExpr,
+					null, EmptyBindingSet.getInstance(), true, 1));
+
+			try {
+				assertTrue(blockingIteration.awaitHasNext(1, TimeUnit.SECONDS));
+				Explanation explanation = future.get(3, TimeUnit.SECONDS);
+				assertThat(explanation.toGenericPlanNode().getTimedOut()).isTrue();
+				assertTrue(blockingIteration.isClosed());
+			} finally {
+				blockingIteration.close();
+			}
+		} finally {
+			executor.shutdown();
+			executor.awaitTermination(5, TimeUnit.SECONDS);
+			sail.shutDown();
+		}
+	}
+
+	@Test
 	public void testAutoFlushDoesNotCloseAutoCloseableModelAfterCommit() {
 		AtomicInteger closeCount = new AtomicInteger();
 		SnapshotSailStore sailStore = createSnapshotSailStore(level -> new TestSailSink(),
@@ -256,11 +329,16 @@ public class SnapshotSailStoreTest {
 	}
 
 	private SnapshotSailStore createSnapshotSailStore(Function<IsolationLevel, SailSink> sinkFactory) {
-		return createSnapshotSailStore(sinkFactory, LinkedHashModel::new);
+		return createSnapshotSailStore(sinkFactory, LinkedHashModel::new, EmptyIteration::new);
 	}
 
 	private SnapshotSailStore createSnapshotSailStore(Function<IsolationLevel, SailSink> sinkFactory,
 			ModelFactory modelFactory) {
+		return createSnapshotSailStore(sinkFactory, modelFactory, EmptyIteration::new);
+	}
+
+	private SnapshotSailStore createSnapshotSailStore(Function<IsolationLevel, SailSink> sinkFactory,
+			ModelFactory modelFactory, Supplier<CloseableIteration<? extends Statement>> statementIterations) {
 		BackingSailSource dummySource = new BackingSailSource() {
 			@Override
 			public SailSink sink(IsolationLevel level) throws SailException {
@@ -293,7 +371,7 @@ public class SnapshotSailStoreTest {
 					public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred,
 							Value obj,
 							Resource... contexts) throws SailException {
-						return new EmptyIteration<>();
+						return statementIterations.get();
 					}
 				};
 			}
@@ -323,6 +401,47 @@ public class SnapshotSailStoreTest {
 			public void close() throws SailException {
 			}
 		}, modelFactory);
+	}
+
+	private static final class BlockingStatementIteration implements CloseableIteration<Statement> {
+		private final CountDownLatch hasNext = new CountDownLatch(1);
+		private final CountDownLatch closed = new CountDownLatch(1);
+
+		@Override
+		public boolean hasNext() {
+			hasNext.countDown();
+			while (closed.getCount() != 0) {
+				try {
+					closed.await();
+				} catch (InterruptedException ignored) {
+					// This deliberately non-cooperative test iterator only responds to close().
+				}
+			}
+			return false;
+		}
+
+		@Override
+		public Statement next() {
+			throw new IllegalStateException("The closed iteration has no next statement");
+		}
+
+		@Override
+		public void remove() {
+			throw new IllegalStateException("The closed iteration has no statement to remove");
+		}
+
+		@Override
+		public void close() {
+			closed.countDown();
+		}
+
+		private boolean awaitHasNext(long timeout, TimeUnit unit) throws InterruptedException {
+			return hasNext.await(timeout, unit);
+		}
+
+		private boolean isClosed() {
+			return closed.getCount() == 0;
+		}
 	}
 
 	private static final class CloseCountingModel extends LinkedHashModel implements AutoCloseable {

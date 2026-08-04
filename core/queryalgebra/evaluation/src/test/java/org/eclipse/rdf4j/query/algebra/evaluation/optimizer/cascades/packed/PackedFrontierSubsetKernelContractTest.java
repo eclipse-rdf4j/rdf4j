@@ -67,6 +67,30 @@ class PackedFrontierSubsetKernelContractTest {
 	}
 
 	@Test
+	void denseKernelRetainsTheGloballyOptimalOrderedContinuationState() {
+		assertEquals(PackedJoinEnumerator.DENSE_SUBSETS, PackedJoinEnumerator.subsetKernelForFactorCount(3));
+		BellmanCounterexampleCostModel model = new BellmanCounterexampleCostModel();
+		ExhaustivePlan exhaustive = model.exhaustiveConnectedOptimum();
+
+		assertTrue(
+				model.costOf(List.of(BellmanCounterexampleCostModel.A, BellmanCounterexampleCostModel.B)) < model
+						.costOf(List.of(BellmanCounterexampleCostModel.B, BellmanCounterexampleCostModel.A)),
+				"A,B must be the locally cheaper representative of logical subset {A,B}");
+		assertEquals(
+				new ExhaustivePlan(List.of(BellmanCounterexampleCostModel.B, BellmanCounterexampleCostModel.A,
+						BellmanCounterexampleCostModel.C), 3.0d),
+				exhaustive,
+				"exhaustive connected-prefix costing must establish the deliberately non-greedy optimum");
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(chain(3), OptimizationGoal.root(), model);
+		ExhaustivePlan selected = new ExhaustivePlan(statementPredicates(result.selectedPlan()), result.totalCost());
+
+		assertEquals(exhaustive, selected,
+				() -> "one state per logical subset pruned the continuation state needed by the exhaustive optimum: "
+						+ result.selectedPlan());
+	}
+
+	@Test
 	void denseAndSparseKernelsAssembleTheWinnerFromItsOriginalCostingEvents() {
 		for (int factorCount : new int[] { 2, 4, 17 }) {
 			int expectedKernel = factorCount <= 4
@@ -188,6 +212,21 @@ class PackedFrontierSubsetKernelContractTest {
 				Var.of("v" + (ordinal + 1)));
 	}
 
+	private static List<String> statementPredicates(TupleExpr expression) {
+		List<String> predicates = new ArrayList<>();
+		collectStatementPredicates(expression, predicates);
+		return List.copyOf(predicates);
+	}
+
+	private static void collectStatementPredicates(TupleExpr expression, List<String> predicates) {
+		if (expression instanceof Join join) {
+			collectStatementPredicates(join.getLeftArg(), predicates);
+			collectStatementPredicates(join.getRightArg(), predicates);
+		} else if (expression instanceof StatementPattern pattern) {
+			predicates.add(pattern.getPredicateVar().getValue().stringValue());
+		}
+	}
+
 	private static void assertNoQueryLocalState(Class<?> owner) {
 		for (Field field : owner.getDeclaredFields()) {
 			String normalizedName = field.getName().replace("_", "").toLowerCase();
@@ -306,6 +345,120 @@ class PackedFrontierSubsetKernelContractTest {
 		public void close() {
 			closeAction.run();
 		}
+	}
+
+	private static final class BellmanCounterexampleCostModel implements PackedCostModel {
+
+		private static final String A = "urn:frontier-factor:0";
+		private static final String B = "urn:frontier-factor:1";
+		private static final String C = "urn:frontier-factor:2";
+		private static final double JOIN_OUTPUT_ROWS = 1.0d;
+		private static final double EXPENSIVE_CONTINUATION_WORK = 100.0d;
+		private static final List<List<String>> CONNECTED_ORDERS = List.of(
+				List.of(A, B, C),
+				List.of(B, A, C),
+				List.of(B, C, A),
+				List.of(C, B, A));
+
+		@Override
+		public double estimateRows(PackedQueryView query, int relationId) {
+			return query.isStatementPattern(relationId) ? 1_000.0d : Double.NaN;
+		}
+
+		@Override
+		public PackedCostSession openSession(PackedQueryView query) {
+			return new BellmanCounterexampleSession(query);
+		}
+
+		private ExhaustivePlan exhaustiveConnectedOptimum() {
+			ExhaustivePlan optimum = null;
+			for (List<String> order : CONNECTED_ORDERS) {
+				ExhaustivePlan candidate = new ExhaustivePlan(order, costOf(order));
+				if (optimum == null || candidate.cost() < optimum.cost()) {
+					optimum = candidate;
+				}
+			}
+			return optimum;
+		}
+
+		private double costOf(List<String> order) {
+			double cost = 0.0d;
+			for (int ordinal = 1; ordinal < order.size(); ordinal++) {
+				cost += transitionWork(order.subList(0, ordinal), order.get(ordinal)) + JOIN_OUTPUT_ROWS;
+			}
+			return cost;
+		}
+
+		private static double transitionWork(List<String> prefix, String candidate) {
+			if (prefix.equals(List.of(A)) && B.equals(candidate)) {
+				return 0.0d;
+			}
+			if (prefix.equals(List.of(B)) && A.equals(candidate)) {
+				return 1.0d;
+			}
+			if (prefix.equals(List.of(B, A)) && C.equals(candidate)) {
+				return 0.0d;
+			}
+			return EXPENSIVE_CONTINUATION_WORK;
+		}
+	}
+
+	private static final class BellmanCounterexampleSession implements PackedCostSession {
+
+		private final PackedQueryView query;
+		private final Map<List<Integer>, Integer> stateByOrderedPrefix = new HashMap<>();
+		private int nextStateId = 1;
+
+		private BellmanCounterexampleSession(PackedQueryView query) {
+			this.query = query;
+		}
+
+		@Override
+		public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+			if (!query.isStatementPattern(relationId)) {
+				return;
+			}
+			output.setRows(1_000.0d, 0.0d);
+			output.setEvidenceStateId(stateFor(List.of(relationId)));
+		}
+
+		@Override
+		public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+			List<Integer> prefix = orderedPrefix(context);
+			assertEquals(stateFor(prefix), context.evidenceStateId(),
+					"continuation evidence must identify the exact ordered prefix being extended");
+			List<String> prefixPredicates = prefix.stream().map(this::predicate).toList();
+			output.setContextualRows(1.0d,
+					BellmanCounterexampleCostModel.transitionWork(prefixPredicates, predicate(relationId)));
+
+			List<Integer> combined = new ArrayList<>(prefix.size() + 1);
+			combined.addAll(prefix);
+			combined.add(relationId);
+			output.setEvidenceStateId(stateFor(combined));
+		}
+
+		@Override
+		public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+		}
+
+		private List<Integer> orderedPrefix(PackedCostContext context) {
+			List<Integer> prefix = new ArrayList<>(context.prefixRelationCount());
+			for (int ordinal = 0; ordinal < context.prefixRelationCount(); ordinal++) {
+				prefix.add(context.prefixRelationId(ordinal));
+			}
+			return List.copyOf(prefix);
+		}
+
+		private String predicate(int relationId) {
+			return query.statementPatternValue(relationId, 1).stringValue();
+		}
+
+		private int stateFor(List<Integer> orderedPrefix) {
+			return stateByOrderedPrefix.computeIfAbsent(List.copyOf(orderedPrefix), ignored -> nextStateId++);
+		}
+	}
+
+	private record ExhaustivePlan(List<String> order, double cost) {
 	}
 
 	private static final class TrackingSession implements PackedCostSession {

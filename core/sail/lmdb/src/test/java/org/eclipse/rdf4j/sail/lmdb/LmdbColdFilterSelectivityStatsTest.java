@@ -38,6 +38,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 class LmdbColdFilterSelectivityStatsTest {
 	private static final String COLD_SYNOPSIS_FILE = "join-estimator.rjes.cold";
+	private static final String FILTER_SIDECAR_FILE = "join-estimator.rjes.filters";
 
 	private static final String QUERY = """
 			SELECT * WHERE {
@@ -45,6 +46,54 @@ class LmdbColdFilterSelectivityStatsTest {
 				FILTER(?value = "keep")
 			}
 			""";
+
+	@Test
+	void snapshotOnlyPlanningNeverSamplesOrPersistsAdaptiveFilterEvidence(@TempDir File dataDir) {
+		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setTripleIndexes("spoc")
+				.setSketchEstimatorEnabled(true)
+				.setSketchEstimatorEvidenceMode("snapshot-only")
+				.setSketchEstimatorColdSynopsisCapacity(0)
+				.setOptimizerSamplingEnabled(true)
+				.setOptimizerSamplingMaxMillis(1_000L)
+				.setOptimizerSamplingMaxRows(4_096)
+				.setBackgroundRawSamplingEnabled(false);
+		LmdbStore store = initializedStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			loadRows(repository, 64);
+			store.getBackingStore().getEvaluationStatistics().getCardinality(firstFilter(QUERY));
+		} finally {
+			repository.shutDown();
+		}
+
+		assertFalse(Files.exists(dataDir.toPath().resolve(FILTER_SIDECAR_FILE)),
+				"Snapshot-only planning must not persist a live filter sample.");
+	}
+
+	@Test
+	void snapshotOnlyPlanningNeverQueuesBackgroundFilterSampling(@TempDir File dataDir) {
+		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setTripleIndexes("spoc")
+				.setSketchEstimatorEnabled(true)
+				.setSketchEstimatorEvidenceMode("snapshot-only")
+				.setSketchEstimatorColdSynopsisCapacity(0)
+				.setOptimizerSamplingEnabled(false)
+				.setBackgroundRawSamplingEnabled(true);
+		LmdbStore store = initializedStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			loadRows(repository, 64);
+			store.getBackingStore().getEvaluationStatistics().getCardinality(firstFilter(QUERY));
+
+			assertEquals(0, store.getBackingStore().runBackgroundFilterSamplingCycle(5_000L),
+					"Snapshot-only planning must not enqueue adaptive background work.");
+		} finally {
+			repository.shutDown();
+		}
+	}
 
 	@Test
 	void completeColdSynopsisSurvivesRestartAndIsExactInSnapshotOnlyMode(@TempDir File dataDir) throws Exception {

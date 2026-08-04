@@ -35,6 +35,14 @@ search. q4 must remain a five-probe streaming anti plan. The q10 queries must re
 plans. Repeating an unchanged query must produce a zero-estimator cache hit, while changing the data or LEO revision
 must either validate a newly recorded decision event or fully replan.
 
+The closing campaign expands that focused evidence to every query in `ThemeQueryCatalog`: nine themes with thirteen
+queries each, for 117 required cells. Each cell must have a semantic result check, an optimized-plan snapshot, a
+planner-completeness/fallback classification, cardinality and physical-cost evidence, and a cold-planning benchmark.
+Correctness and plan-quality defects are repaired before throughput tuning. The performance phase then makes the
+same exact search and evidence cheaper through better algorithms, data structures, locality, and deduplication. It
+must not introduce query identities, selectivity cutoffs, preferred join orders, fixed physical-algorithm thresholds,
+or any other heuristic that substitutes for Frontier, DPhyp, rewrite legality, or cost-model correctness.
+
 ## Progress
 
 - [x] (2026-07-31 20:31Z) Read the repository ExecPlan, Maven, and HotSpot performance instructions.
@@ -84,9 +92,232 @@ must either validate a newly recorded decision event or fully replan.
   Frontier state consumed by a later immutable costing event; 65 focused cache/lifecycle/arena tests pass.
 - [x] (2026-08-03 01:59Z) Restore the formal packed join hypergraph and DPhyp CSG/CMP receiver, encode exact
   predicate-readiness and Cartesian topology, and pass all 1,139 query-algebra evaluation module tests.
-- [ ] Verify LMDB, query snapshots, benchmarks, and the Theme corpus.
+- [x] (2026-08-04 00:24Z) Re-establish the clean-build baseline: the required offline root clean install passed all
+  modules in 38.897 seconds. The complete LMDB verify then ran 1,822 tests in 16:30 with eight failures and no
+  errors: one DPhyp/filter deadline, one repeated-probe multiplicity error, five Frontier state/degradation failures,
+  and the generated estimate corpus's 15.144 join q-error. The retained log is
+  `logs/mvnf/20260803-220705-verify.log`.
+- [x] (2026-08-04 01:10 CEST) Parse and structurally inventory all 117 Theme queries. All parse; strict
+  alpha-normalized algebra/topology comparison leaves 111 distinct structures. Three queries contain genuinely
+  unused VALUES variables, and q11/q12 supply 16 distinct nested-OPTIONAL/UNION stress structures rather than
+  interchangeable copies.
+- [x] (2026-08-04 01:10 CEST) Capture the first 37 authoritative LMDB snapshots through LIBRARY q10. MEDICAL q12 and
+  SOCIAL_MEDIA q11 hit the configured execution limit; LIBRARY q11 then left the batch at 37/117 for more than four
+  minutes despite `--query-timeout-seconds 120`. The interrupted batch log is
+  `profiles/lmdb-opt/theme-audit-2026-08-04/baseline.log`; its 37 completed JSON snapshots are retained alongside it.
+- [x] (2026-08-04 01:01 CEST) Audit every retained field in the first 37 snapshots and publish the 37-row ledger plus
+  root-cause report. The built-in estimate/actual summaries compare zero nodes in every snapshot, 245 selected
+  Frontier nodes degrade, Social q11/q12 consume 1.113B/850.708M modeled work units, and exact finite state is lost
+  across cycles, UNION/MINUS, disconnected components, projection, extension, group, and OPTIONAL boundaries. The
+  artifacts are `profiles/lmdb-opt/theme-audit-2026-08-04/snapshots/first-37-query-audit.tsv` and
+  `profiles/lmdb-opt/theme-audit-2026-08-04/snapshots/first-37-root-cause-report.md`.
+- [x] (2026-08-04 01:09 CEST) Turn the Bellman-correctness concern into a deterministic three-factor red test. The
+  exhaustive connected optimum retains ordered/evidence state `B -> A -> C` at cost 3, while the dense one-slot
+  subset kernel discards `B -> A` and returns `A -> B -> C` at cost 102. The failing report is preserved in
+  `initial-evidence.continuation-dp.txt`.
+- [x] (2026-08-04 01:34 CEST) Specify the exact continuation-equivalence frontier which replaces one-winner subset
+  retention. The design identifies every provider-observable state dimension, equality-only and certified monotone
+  dominance modes, a proved subset-Markov `k = 1` fast path, primitive arena/interning layouts, dense/sparse/
+  correlated/memo migration points, and unavoidable worst-case bounds. It explicitly rejects beams, caps, epsilon
+  thresholds, and deadline pruning. The design is
+  `profiles/lmdb-opt/theme-audit-2026-08-04/packed-continuation-equivalence-frontier-design.md`.
+- [x] (2026-08-04 03:07 CEST) Make query timeouts cover optimization, precompilation, iterator opening, execution,
+  and explanation under one monotonic lexical deadline. Focused and module tests pass in the `query-deadline`
+  workspace. Because arbitrary optimizer code is not cooperatively preemptible, also add an opt-in one-child-per-query
+  batch runner with a parent-owned 117-row atomic audit ledger, phase sidecars, retained stdout/stderr, process-tree
+  termination, and continuation after worker timeout or failure. Its focused CLI and real-process tests pass; red and
+  green evidence is retained in `initial-evidence.query-deadline.txt` and `initial-evidence.batch-audit.txt`.
+- [x] (2026-08-04 03:07 CEST) Correct snapshot metric extraction to read packed
+  `doubleMetricsPlanned.plannedCardinalityRows` as the already invocation-scaled planned cardinality while preserving
+  the legacy top-level metric contract. All 14 focused capture tests pass with evidence in
+  `initial-evidence.query-plan-metrics.txt`. A complete benchmark-common run exposed one separate catalog marker
+  failure for SPARSE q6, which remains an audit item rather than being hidden.
+- [x] (2026-08-04 03:07 CEST) Complete the read-only GROUP root-cause audit. Global aggregation has two zero-row
+  violations; keyed GROUP discards joint NDV, substitutes minimum marginal NDV, then applies the prohibited
+  `sqrt(rows) * keyCount` fallback; sampled unique keys are mislabeled as point NDV; and aggregate/key boundness is
+  overstated. The exact projected-key and typed-bound design plus ten-step TDD matrix is
+  `profiles/lmdb-opt/theme-audit-2026-08-04/group-cardinality-root-cause-and-design.md`.
+- [x] (2026-08-04 04:14 CEST) Add and fully verify an explicit `--lmdb-evidence-mode snapshot-only|adaptive`
+  capture policy. The default remains adaptive, while isolated cold audits now propagate snapshot-only through
+  preflight and every worker and reject invalid/non-LMDB/compare combinations. All 50 CLI tests pass; evidence is
+  retained in `initial-evidence.snapshot-evidence-mode.txt`. Persist the pre-capture sidecar hashes so the 117-cell
+  run can prove that snapshot-only neither reads adaptive evidence for ranking nor mutates it.
+- [x] (2026-08-04 04:31 CEST) Audit the active packed/DPhyp traversal and numeric plan gates before changing planner
+  behavior. Dense and sparse kernels both retain a single Bellman-invalid state per subset, ordinary dense DPhyp is
+  reduced to singleton extensions, the sparse kernel has a distinct adjacency traversal, and hard numeric rules
+  exclude hash joins or manufacture GROUP/OPTIONAL/access cardinalities. The source-grounded inventory and required
+  replacements are `profiles/lmdb-opt/theme-audit-2026-08-04/planner-algorithm-invariant-audit.md`.
+- [x] (2026-08-04 04:38 CEST) Design authoritative semantic validation for all 117 cells. Existing Jena defaults
+  value-check 64 global aggregates, row-count-check 26 non-global cells, and exclude 27; 42 cells therefore need
+  exact complete-bag comparison and SPARSE q2--q12 need a generic factorized exact bag-algebra oracle. Stable
+  fingerprints remain the iterative guard, not independent proof. The coverage map, dataset/query identity contract,
+  bounded external-sort certification, ordering and blank-node policies, artifacts, and TDD sequence are in
+  `profiles/lmdb-opt/theme-audit-2026-08-04/authoritative-theme-semantic-validation-workflow.md`.
+- [x] (2026-08-04 02:18 CEST) Replace row-count-only repeated execution with a streaming, schema-aware RDF-term bag
+  fingerprint and authoritative catalog `?count` contract. Equal-count/different-binding runs now fail with both
+  digests, incomplete and unavailable fingerprints remain explicit, and the 54-test CLI class passes. Red evidence
+  is retained in `initial-evidence.result-verification.txt`; the encoding/performance contract is covered by eight
+  `SolutionBagFingerprintTest` methods.
+- [x] (2026-08-04 02:18 CEST) Complete the exactness/performance audit of DPhyp and every packed subset kernel. The
+  16/17 boundary changes legal disconnected interleavings, the 65+ path is one greedy order, and dense K16 emits
+  21,457,825 bushy CSG/CMP pairs to derive only 524,272 singleton transitions. The exact shared-transition/frontier
+  design and post-baseline TDD queue are in
+  `profiles/lmdb-opt/theme-audit-2026-08-04/dphyp-subset-kernel-exactness-and-performance-design.md`.
+- [x] (2026-08-04 02:18 CEST) Audit every rewrite family reachable from all 117 structures. Two generic semantic
+  counterexamples are now P0: unsafe FILTER distribution into a MINUS right operand, and false DISTINCT idempotence
+  for self-JOIN/self-LEFT_JOIN over heterogeneous compatible mappings. The audit also maps irreversible OPTIONAL
+  ordering, finite-domain admission caps, effect-safety gaps, UNION/subquery omissions, proof/test coverage, and its
+  prioritized TDD queue in `profiles/lmdb-opt/theme-audit-2026-08-04/rewrite-semantics-and-coverage-audit.md`.
+- [x] (2026-08-04 02:34 CEST) Complete the first audit-safe capture-hardening pass after repository formatting. Operation deadlines,
+  parser/repository/sail propagation, packed metric extraction, result fingerprints, isolated batch accounting, and
+  real process-tree termination pass 104 focused tests across seven module selections; the final CLI selection is
+  54/54 in `capture-cli-serial`. A transient concurrent Maven/Jansi startup stall was diagnosed by thread dump and
+  rerun serially before any corpus evidence was accepted. The first sandboxed corpus launch then exposed a denied
+  `ProcessHandle.descendants()` syscall before preflight. A focused red/green contract now degrades only this
+  non-nesting Java worker launcher to exact direct-child lifecycle control, records that reduced termination scope,
+  and keeps full process-tree control where inspection is available; all three launcher tests pass with the red
+  preserved in `initial-evidence.process-tree-fallback.txt`. The later real cold run reopened this gate by exposing
+  adaptive-filter mutation and lifecycle boundary cases not covered by that first pass.
+- [x] (2026-08-04 02:48 CEST) Define the matched 117-cell performance protocol before throughput changes. Existing
+  artifacts measure execution, the default JMH annotations cover only 11 cells, and the uncached endpoint currently
+  charges alpha-renaming plus an exact-mode no-op global property mutation. The accepted protocol uses separately
+  reported process-cold and fixed-count saturated-miss lanes, complete fixture/evidence identity, exactness and
+  semantic gates, paired block-first statistics, and requires the 95% lower confidence bound to exceed 10x for both
+  equal-query geometric mean and fixed-corpus summed time. The design and benchmark-only TDD queue are in
+  `profiles/lmdb-opt/theme-audit-2026-08-04/all-query-planning-performance-methodology.md`.
+- [x] (2026-08-04 04:14 CEST) Stop the first isolated cold corpus run after 25/117 workers when a live hash check
+  proved that `snapshot-only` still trained and persisted `join-estimator.rjes.filters`. Preserve those 25 snapshots
+  as diagnostics only, clone the resulting store to
+  `/private/tmp/rdf4j-lmdb-theme-audit-20260804-frozen-e2ca677b`, and add failing repository tests for foreground
+  sampling, background queuing, completed-result feedback, storage-evidence routing, legacy-sidecar loading, and the
+  sketch-disabled CLI path. The final policy is immutable for the store lifetime, never opens adaptive `.filters`
+  in snapshot-only, and reports the physical queue truthfully. Red evidence is
+  `initial-evidence.snapshot-filter-policy-red.txt`; the focused post-format selections pass 3/3, 12/12, and 10/10.
+- [x] (2026-08-04 04:14 CEST) Run a two-execution SOCIAL_MEDIA q2 smoke against the frozen clone. The catalog count is
+  1, the complete solution-bag digest is stable at
+  `8d38fbcebe5fa351edaf472c18f68269e5cf7605a7f58ddd9de299955994e863`, and the optimized-plan hash is stable.
+  Before/after manifests under
+  `profiles/lmdb-opt/theme-audit-2026-08-04/snapshot-freeze-smoke-q2-post-filter-fix/` prove identical paths, sizes,
+  inodes, mtimes, and SHA-256 values for all 14 persistent non-lock files and no new `.cold` or temp sidecar. LMDB's
+  writable open advanced only ctime on `triples/data.mdb` and `values/data.mdb`; no persisted bytes changed.
+- [x] (2026-08-04 04:45 CEST) Close the reopened process-lifecycle gate: retain already-discovered descendants after
+  later inspection failure, classify deadline-boundary completion by exit status, reap and audit interrupted workers,
+  make termination scope conservative/final, include launch/setup in the hard budget, and remove the lingering
+  `TimeLimitIteration` scheduler seen in the q2 smoke. The timer repair is an exact lease-counted shared scheduler:
+  overlapping deadlines share one generation, close and timeout race through one atomic release, the last lease
+  terminates the generation, and a later deadline recreates it. Red evidence is
+  `initial-evidence.time-limit-scheduler.txt`; the focused four-test contract and eight-test iterator module are green.
+- [x] (2026-08-04 06:00 CEST) Close the semantic-publication gate before corpus capture: atomically publish only final
+  verified snapshots, enforce catalog row counts for all 117 queries (plus authoritative numeric `?count` values),
+  make one-run result/plan stability explicitly `not-assessed`, propagate verification and aggregate batch failure to
+  a nonzero outcome after retaining diagnostics, audit preflight as its own row, and replace scalar-size reuse with a
+  fail-closed schema-v1 manifest of every persistent non-lock path, exact size, SHA-256, and effective LMDB config.
+  Preflight validates without opening LMDB; isolated workers use its header and a full postflight digest rejects any
+  mutation. Red evidence is in `initial-evidence.catalog-row-count.txt`, `initial-evidence.one-run-stability.txt`,
+  `initial-evidence.verification-failure-propagation.txt`, `initial-evidence.isolated-batch-summary.txt`,
+  `initial-evidence.preflight-audit-row.txt`, `initial-evidence.store-manifest.txt`,
+  `initial-evidence.validation-only-preflight.txt`, `initial-evidence.postflight-store-validation.txt`, and
+  `initial-evidence.manifest-recording-command.txt`. The final 71-test benchmark selection and 15-test capture
+  selection are green; exact commands and the frozen fixture digest are preserved in
+  `profiles/lmdb-opt/theme-audit-2026-08-04/semantic-publication-gate-green.txt`.
+- [ ] Capture all 117 LMDB query snapshots and execution-result checks, including q11/q12 and every query omitted
+  from the current default JMH annotations or the incomplete 2026-08-03 history.
+- [ ] Maintain a 117-row audit ledger classifying semantic parity, rewrite legality, packed-codec coverage, planner
+  completeness/fallback, selected physical algorithms, estimate quality, cost quality, and actionable root cause.
+- [ ] Repair every discovered query defect test-first at its shared optimizer boundary; add compositional variants for
+  UNION, OPTIONAL, MINUS, EXISTS/NOT EXISTS, subqueries, filters, paths, aggregation, and nested combinations.
+- [ ] Capture complete uncached and cached 117-cell planning JMH baselines plus fixed-plan execution baselines in a
+  planning-specific history format; do not compare them with legacy prepare-plus-execute history.
+- [ ] Profile the slowest planning cells and aggregate Frontier/DPhyp/costing phases, then deliver at least a tenfold
+  reduction in both full-corpus geometric-mean and summed uncached planning time without an accuracy regression.
+- [ ] Re-run the full query-evaluation and LMDB modules, all 117 snapshots/results, plan-quality gates, and the matched
+  benchmark matrix; document every intentional plan change and every remaining statistically inconclusive delta.
 
 ## Surprises & Discoveries
+
+- Observation: the original `snapshot-only` policy suppressed adaptive estimator reads during selection but still
+  loaded `.filters`, sampled filters, recorded execution outcomes, queued background work, and persisted the adaptive
+  sidecar at shutdown. Twenty-five isolated workers grew the sidecar from 191,385 to 214,211 bytes while triples,
+  values, operator evidence, and Frontier content remained byte-identical.
+  Evidence: the original sidecar SHA was
+  `509115145226902c93c5eeed1bc7cdfbcd00dfc3c03d3bd1eb63b8d6f445c0c2`; the stopped-run/frozen-fixture SHA is
+  `e2ca677bccaca20f8afca8ba0f61156f702a0347437a9d56ab4ea0c1523418bf`; the focused three-test policy contract
+  failed 3/3 before the root fix and is preserved in `initial-evidence.snapshot-filter-policy-red.txt`.
+
+- Observation: a normal LMDB query-only open is byte-stable but not metadata-no-op. The q2 smoke preserved every
+  persistent file's size, inode, mtime, and SHA-256, yet advanced ctime on the triple and value data files. The same
+  run exited successfully only after Maven warned that a `TimeLimitIteration` thread remained alive for 15 seconds.
+  Evidence: exact before/after manifests and the retained CLI log are in
+  `profiles/lmdb-opt/theme-audit-2026-08-04/snapshot-freeze-smoke-q2-post-filter-fix/`.
+
+- Observation: `TimeLimitIteration` used one eager process-lifetime `Timer`; closing a query canceled only its task,
+  so Maven waited its full 15-second thread-cleanup window even after the result and repository were closed. A lazy
+  scheduler generation now exists exactly while timed iterations own leases. Normal close and timeout completion
+  release once through the task itself, preserving one shared thread for overlap and terminating it at idle without
+  a grace period, per-wrapper executor, or process-global shutdown hook.
+
+- Observation: process success is not yet semantic success. All 117 catalog entries have an expected result-row
+  count, but repeated execution currently enforces only the 75 queries with an authoritative `?count` binding; the
+  other 42 can return a deterministic wrong bag and pass. One completed run is labeled stable vacuously, final JSON
+  is written non-atomically (and once before verification), worker verification failures exit zero, the parent drops
+  its failure summary, preflight has no ledger row, and store reuse trusts a scalar size with a one-mebibyte tolerance.
+  These are capture-harness correctness defects and must be repaired test-first before any new corpus snapshot is
+  accepted as evidence.
+
+- Observation: the current snapshot accuracy summaries are structurally blind rather than accurate. All first 37
+  snapshots report zero comparable nodes and zero maximum q-error even when selected relation estimates differ from
+  executed rows by as much as `9.33e25`. Planned rows live under `doubleMetricsPlanned.plannedCardinalityRows`, while
+  executed rows live under `resultSizeActual`, but no stable semantic node pairing joins them. The result verifier has
+  the analogous gap: it checks only row count, so a one-row aggregate with a wrong binding value passes. The repair
+  requires stable planned/executed identities, explicit unavailable/incomplete states, and a term-type-aware,
+  multiplicity-sensitive result-bag fingerprint.
+
+- Observation: the first 37 queries exhibit two independent continuation failures. Exact finite payloads are correct
+  at their leaves and remain exact in positive-control queries, but disappear across repeated-variable cycles,
+  UNION/MINUS, disconnected scalar components, projection/extension, GROUP, and OPTIONAL boundaries. Separately,
+  learned calibration remains rankable after the structured payload it calibrated becomes non-composable. Both must
+  be repaired by exact state transforms and continuation-equivalence classes; a larger exploration budget, fixed
+  beam, single winner per subset, or learned scalar multiplier cannot restore the missing information.
+
+- Observation: Social q11/q12 select catastrophic nested OPTIONAL implementations even though q12 records a
+  proof-backed well-designed normalization. Their telemetry consumes 1.113B and 850.708M modeled work units,
+  respectively, with q11 dominated by dependent and badly-designed left joins and q12 by DISTINCT over OPTIONAL
+  fanout. Rewrite legality and physical implementability are therefore separate proof obligations. The physical
+  frontier must preserve assured outer bindings, compatibility keys, and OPTIONAL scope, then cost every safe
+  dependent lookup, keyed materialization, and hash-compatibility implementation without algorithm thresholds.
+
+- Observation: GROUP cardinality loses otherwise accurate input evidence. Several selected joins are within one
+  percent while their containing group is wrong by 11.6x to 51.8x, and global aggregate nodes are sometimes planned
+  at zero even though SPARQL emits one row for an empty input. Exact global-aggregate semantics and key-domain/NDV
+  propagation are required; a square-root or fixed-ratio group estimate would only replace one heuristic with
+  another.
+
+- Observation: GROUP has enough information for exact cardinality without evaluating aggregates. For a global group
+  the answer is algebraically one; for an exact finite Frontier input the answer is the number of distinct projected
+  `(bound mask, term-ID tuple)` keys. The current implementation instead expands multiplicities into `BindingSet`
+  objects and replays aggregate evaluation, so payload/work limits can turn known cardinality into unresolved zero.
+  Sampled unique keys supply only a certified lower bound unless a genuine joint distinct estimator supplies a point
+  and interval.
+
+- Observation: the packed join dynamic program is not Bellman-correct for its current cost-provider contract.
+  Dense search retains one state per relation subset, sparse search retains one state per subset mask, and correlated
+  search retains one state per `(factor subset, applied-filter set)`, but `PackedCostContext` makes future cost depend
+  on ordered prefix, rows/contribution vector, evidence/calibration lineage, scopes, and delivered properties. A
+  three-factor counterexample costs `A->B=1`, `B->A=2`, `AB->C=100`, and `BA->C=1`: cost-only pruning discards the
+  globally optimal `B,A,C` continuation (5) and returns `A,B,C` (103). The repair must retain exact
+  continuation-equivalence classes/Pareto states with a provably canonical `k=1` fast path, never a beam or cap.
+
+- Observation: `--query-timeout-seconds` is not an operation deadline. `SailTupleQuery.evaluate` starts its
+  `TimeLimitIteration` only after `SailConnection.evaluate` has optimized, precompiled, and opened the iterator;
+  optimized explanation ignores the supplied timeout; and telemetry interruption depends on operators observing a
+  thread interrupt while a top-level `hasNext` is still running. This allowed LIBRARY q11 to wedge the 117-query
+  audit after query 37. Deadline propagation and batch failure continuation are correctness requirements for the
+  audit harness, not reasons to raise the timeout.
+
+- Observation: ten non-aggregate q11/q12 catalog entries use an expected row count of one as a placeholder, while the
+  Jena oracle and default JMH matrices omit those cells. Those constants cannot serve as semantic oracles. The audit
+  must compare complete result bags against an independent implementation/bounded store and record stable,
+  multiplicity-sensitive hashes instead of treating placeholder row counts as truth.
 
 - Observation: the remaining access-enabling failure is not an inaccurate candidate cost; the candidate-costing
   event is never reached. `seedAccessEnablingAlternatives` installs only finite-VALUES recipes, while the subsequent
@@ -99,14 +330,29 @@ must either validate a newly recorded decision event or fully replan.
   `PackedIncumbentSearch.seedAccessEnablingAlternatives`, `PackedJoinEnumerator.optimizeDenseCorrelatedFilters`, and
   `PackedJoinEnumerator.preferredSeedProvider`.
 
-- Observation: the current packed DPhyp object is used only to precompute a singleton-extension adjacency table.
-  Dense join and correlated-filter search then discard DPhyp's CSG/CMP order and re-expand the retained states through
-  `PackedCostOrderedStateQueue`. Disconnected factor components have no hypergraph edge at all, so exact enumeration
-  cannot produce a Cartesian transition and falls back to the separately ordered greedy path.
-  Evidence: `PackedJoinEnumerator.singletonExtensions` marks all DPhyp unions as a connectivity oracle but retains
-  only singleton sides; `optimizeDense` and `optimizeDenseCorrelatedFilters` consume that table from a cost queue; and
-  `joinHypergraph` adds only pairwise shared-output edges. The focused disconnected-factor contract consequently
-  requires a fallback to find the finite-first Cartesian order.
+- Observation: ordinary dense join planning uses DPhyp only to precompute a singleton-extension table, then discards
+  CSG/CMP traversal order and re-expands retained states through `PackedCostOrderedStateQueue`. Correlated-filter
+  planning consumes CSG/CMP transitions directly, while the 17--64-factor sparse kernel uses a separate adjacency
+  traversal. `factorHypergraph` now correctly adds Cartesian edges between disconnected components, repairing the
+  earlier missing-transition defect, but dense/sparse transition parity and the declared left-deep physical search
+  contract still need exhaustive boundary oracles. The Theme corpus reaches 20 statement patterns, so this is an
+  exercised boundary rather than theoretical cleanup.
+
+- Observation: several active numeric rules alter the candidate space or invent cardinalities instead of expressing
+  evidence. A connected hash join is assigned infinity below 256 total input rows even when its modeled cost is much
+  lower than repeated lookup; an existing test explicitly codifies that outcome with 100,000 repeated-probe work.
+  GROUP and OPTIONAL use square-root cardinality functions; bound-access propagation uses 2x and 10x disagreement
+  gates plus geometric means. Semantic feasibility checks such as scope safety and `SERVICE` dependence remain valid,
+  but every feasible physical implementation must be compared by measured cost and every estimate fusion must be
+  evidence/uncertainty based. The complete provisional inventory is
+  `profiles/lmdb-opt/theme-audit-2026-08-04/planner-algorithm-invariant-audit.md`.
+
+- Observation: the catalog and current Jena test do not independently certify all 117 solution bags. Only 64 cells
+  currently receive an independent numeric aggregate check; 26 receive only a row-count check and 27 are disabled by
+  default. A repeated RDF4J solution-bag fingerprint detects drift but cannot prove that a stable result is correct.
+  The 42 non-global bags require bounded external-sort comparison against Jena, while SPARSE q2--q12 require a generic
+  exact factorized bag evaluator cross-checked against Jena on reduced datasets. Oracle records must bind exact query,
+  dataset, schema, term policy, and algorithm identities; timeout or missing evidence is unverified, never success.
 
 - Observation: a predicate seed whose readiness certificate contains every factor used to publish its completed input
   JOIN directly into the predicate's root memo group, then publish the predicate only into an internal helper group.
@@ -487,6 +733,47 @@ must either validate a newly recorded decision event or fully replan.
 
 ## Decision Log
 
+- Decision: validate cold snapshots under an explicit LMDB `snapshot-only` evidence policy and isolate every query in
+  a child JVM with a parent-owned audit row before using the corpus to diagnose planner quality.
+  Rationale: persisted LEO/operator sidecars otherwise make query order part of the planning input, and an in-process
+  timeout cannot guarantee termination inside non-cooperative optimization code. Snapshot-only keeps the synopsis but
+  disables adaptive evidence use/learning; process isolation makes every timeout observable and allows all remaining
+  cells to continue.
+  Date/Author: 2026-08-04 / Codex
+
+- Decision: represent repeated-execution semantics with a versioned, binding-schema-aware, RDF-term-type-aware,
+  order-independent and multiplicity-sensitive solution-bag fingerprint in addition to row count.
+  Rationale: equal counts do not detect changed bindings, and one-row aggregates can be numerically wrong. The
+  streaming fingerprint avoids materializing large result bags and is explicitly diagnostic rather than a proof;
+  authoritative equality still requires an independent oracle or actual bag comparison.
+  Date/Author: 2026-08-04 / Codex
+
+- Decision: validate query semantics in two tiers tied to canonical dataset/query/schema identities: streaming
+  solution-bag fingerprints on every iterative capture, and exact bounded-memory canonical-row merge comparison when
+  certifying the oracle. Use Jena for the 106 tractable cells and a query-independent factorized bag-algebra evaluator
+  for SPARSE q2--q12, cross-checked against Jena on reduced configurations.
+  Rationale: a commutative digest is an excellent O(1)-memory regression signal but cannot be an authoritative bag
+  equality proof; expanded execution of the SPARSE aggregates is infeasible even though their exact multiplicities
+  are representable compactly. Neither tier may branch on theme, query index, expected answer, or plan estimates.
+  Date/Author: 2026-08-04 / Codex
+
+- Decision: derive GROUP cardinality from algebraic exactness, exact projected key support, current joint NDV with an
+  honest interval, or certified key-domain bounds—in that order—and keep cardinality certainty independent of
+  aggregate payload composability.
+  Rationale: no function of input row count and key count identifies joint NDV. Primitive projected-key deduplication
+  is exact without aggregate replay, while incomplete sampled unique keys are lower bounds rather than point
+  estimates.
+  Date/Author: 2026-08-04 / Codex
+
+- Decision: retain an exact continuation frontier per logical planning cell, partitioned by a canonical identity for
+  every value a legal future cost transition can observe. Default dominance is equality-only; physical-property or
+  resource dominance is enabled only by an explicit transitive substitutability/monotone-composition certificate.
+  Preserve one-state storage only as a representation optimization or under a proved subset-Markov additive kernel.
+  Rationale: subset masks are not Bellman state for the current provider contract. Any fixed width, top-K rule,
+  tolerance, elapsed-time cutoff, or scalar winner can discard the globally optimal continuation. Exact primitive
+  frontiers repair the contract, while provider certificates—not observed workload behavior—recover the fast path.
+  Date/Author: 2026-08-04 / Codex
+
 - Decision: record source-to-realized state aliases on the originating immutable costing event and replay the exact
   provider realization only when the realized ordinal has not already been bound.
   Rationale: realization changes the representation required by a provider call without changing statistical
@@ -792,6 +1079,34 @@ must either validate a newly recorded decision event or fully replan.
   cardinality proxy or query-specific seed. Each provider transition is still costed once per retained state revision.
   Date/Author: 2026-08-03 / Codex
 
+- Decision: define the Theme corpus as all 117 catalog entries, not the currently uncommented JMH defaults or the 92
+  rows present in the latest execution-history file.
+  Rationale: `ThemeQueryCatalog.QUERY_COUNT` is thirteen and `Theme.values()` contains nine themes. q11/q12 and
+  omitted/failed benchmark cells exercise supported algebra and cannot disappear from an exhaustive optimizer audit.
+  Date/Author: 2026-08-03 / Codex
+
+- Decision: treat semantic result parity, legal rewrite proofs, no unexpected packed-planner fallback, and honest
+  estimate/cost provenance as gates before execution speed or planning throughput.
+  Rationale: a fast query with the wrong result or a fast normalized fallback is not an optimizer success. Separating
+  these gates also prevents historical execution latency from being mistaken for planner-quality evidence.
+  Date/Author: 2026-08-03 / Codex
+
+- Decision: measure the tenfold target on matched `ThemeQueryPlanRunBenchmark.planUncachedQuery` results for every one
+  of the 117 cells, requiring both the geometric mean and the sum of cell latencies to improve by at least 10x.
+  Measure `planQuery` and fixed-lifecycle `runQuery` separately, reject missing cells, and investigate every material
+  per-cell regression. Freeze a post-correctness plan/accuracy baseline before performance-only work.
+  Rationale: the geometric mean gives every query equal proportional weight, while the sum prevents large absolute
+  planning outliers from being hidden by tiny queries. Separate cached planning and fixed-plan execution avoid mixing
+  cache benefits or execution-plan changes into the cold-planner claim.
+  Date/Author: 2026-08-03 / Codex
+
+- Decision: remove or replace fixed selectivity assumptions and physical-algorithm cutoffs only with typed unknown
+  evidence, mathematically legal alternatives, analytic cost equations, or measured/posterior evidence. Any search
+  reduction must have an equivalence, dominance, or topology certificate independent of query identity and estimates.
+  Rationale: the current scalar fallbacks and row-threshold candidate suppression can directly choose a plan. The
+  user's constraint rules out hiding these defects behind workload-tuned constants or special cases.
+  Date/Author: 2026-08-03 / Codex
+
 ## Outcomes & Retrospective
 
 Implementation is in progress. Frontier states now survive supported transitions, recipe extraction, arena closure,
@@ -939,6 +1254,26 @@ HIGHLY_CONNECTED q10, and LIBRARY q10 benchmarks, followed by the full Theme com
 above 20 percent. If primitive trace/bundle work causes unexplained planning CPU or allocation growth, capture JFR or
 async-profiler evidence before tuning.
 
+Milestone 8 performs the exhaustive Theme audit and planner-throughput campaign. Capture one named LMDB snapshot run
+for all 117 catalog queries with a reusable store, one bounded execution verification per cell, and structure-plus-
+estimate output. Build a machine-readable ledger from those snapshots and classify every cell; a query is not closed
+while it has a wrong result, exception, timeout, unsupported packed operator, planner fallback, incomplete search,
+unexplained evidence degradation, unjustified rewrite, missing legal physical alternative, or estimate/cost defect
+capable of changing the winner. For every behavior defect, add the smallest failing in-repository test before editing
+production, then extend coverage to the related algebra compositions rather than matching the query text.
+
+After all correctness and plan-quality classifications are closed, capture the complete 117-cell
+`planUncachedQuery`, `planQuery`, and fixed-lifecycle `runQuery` matrices as JMH JSON. Add once-per-plan phase
+accounting for cost-session/Frontier preparation, packed encoding and rules, DPhyp topology/enumeration, provider
+estimation calls, physical costing, contextualization, extraction, materialization, cache validation, candidate
+counts, and unexplained residual. Use aggregate timers or JFR events instead of a clock read around each candidate.
+Profile the slowest cells with the supported Docker JFR loop and optimize in descending Amdahl share. Candidate
+changes include readiness-antichain construction instead of subset rescans, component-aware exact DPhyp, proof-keyed
+Pareto state retention where one-state Bellman optimality fails, demand-driven Frontier materialization, packed
+relation/symbol reuse instead of repeated `TupleExpr` and boxed-map construction, primitive query-local tables, and
+interned/deferred cost-event telemetry. Each change must preserve the exact legal candidate set unless an explicit
+equivalence or dominance proof justifies removing work.
+
 ## Concrete Steps
 
 Run commands from the repository root. The initial clean install is already complete and recorded in
@@ -1008,6 +1343,14 @@ End-to-end results are unchanged. SOCIAL_MEDIA q9 selects the measured cycle ord
 five exact SPOC probes and `streaming-correlated`. HIGHLY_CONNECTED q10 and LIBRARY q10 retain bounded beneficial
 materialization. Candidate telemetry is event-sourced, every stale reuse is statistically certified, and no
 query-specific heuristic, fixed join preference, new dependency, or breaking query-evaluation API is introduced.
+
+The exhaustive gate additionally requires 117/117 semantic result checks and snapshots, with no unexpected planner
+fallback and no unclassified cell. Every intentional rewrite or physical-plan change has focused and compositional
+tests plus a ledger rationale. Against matched pre-campaign measurements on the same hardware, JDK, dataset, flags,
+and JMH configuration, both the geometric mean and sum of all 117 `planUncachedQuery` scores improve by at least 10x;
+cached planning and fixed-plan execution are reported separately. Cardinality q-error, decision regret, exactness,
+Frontier guarantees, and result multiplicities are unchanged or improved. A performance-only slice must preserve the
+post-correctness selected-plan/evidence baseline bit-for-bit unless its proof and measured benefit are documented.
 
 ## Idempotence and Recovery
 
@@ -1204,3 +1547,8 @@ classification threshold). The post-fix recording is
 reads and payload operations. The older recording also contains fresh-store construction and 15.1 million StorePath
 events, so its setup hotspots are not a controlled comparison of planner internals. No candidate cost, relation ID,
 predicate, query fingerprint, access-path preference, or cardinality threshold controls the repair.
+
+Revision note (2026-08-03 22:16Z): Expanded the closing milestone from four focused queries to the complete 117-query
+Theme catalog and added separate semantic, rewrite, packed-coverage, fallback, estimate, physical-cost, and planning-
+latency gates. Defined the matched 117-cell 10x acceptance metric, prohibited heuristic candidate suppression, and
+recorded the required phase instrumentation and algorithm/data-structure optimization order.

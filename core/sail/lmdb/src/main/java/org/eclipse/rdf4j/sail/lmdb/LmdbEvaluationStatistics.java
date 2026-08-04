@@ -74,6 +74,7 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 	private final LmdbEstimatorRuntime runtime;
 	private final LmdbFilterSelectivityStats filterStatistics;
 	private final SketchBasedJoinEstimator estimator;
+	private final BooleanSupplier adaptiveEvidenceAllowedSupplier;
 
 	LmdbEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
 			SketchBasedJoinEstimator estimator) {
@@ -142,11 +143,24 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 			LmdbOperatorFeedbackStats feedback, LmdbStatementPatternCardinalitySource cardinalities,
 			PackedPlanCache cascadesPlanCache, LmdbFrontierSynopsisService frontierSynopsis,
 			LmdbFrontierPlannerSettings frontierSettings, BooleanSupplier mayHaveInferred) {
+		this(valueStore, tripleStore, estimator, filters, feedback, cardinalities, cascadesPlanCache, frontierSynopsis,
+				frontierSettings, mayHaveInferred, () -> true);
+	}
+
+	LmdbEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
+			SketchBasedJoinEstimator estimator, LmdbFilterSelectivityStats filters,
+			LmdbOperatorFeedbackStats feedback, LmdbStatementPatternCardinalitySource cardinalities,
+			PackedPlanCache cascadesPlanCache, LmdbFrontierSynopsisService frontierSynopsis,
+			LmdbFrontierPlannerSettings frontierSettings, BooleanSupplier mayHaveInferred,
+			BooleanSupplier adaptiveEvidenceAllowedSupplier) {
 		filterStatistics = filters;
 		this.estimator = estimator;
+		this.adaptiveEvidenceAllowedSupplier = adaptiveEvidenceAllowedSupplier == null ? () -> true
+				: adaptiveEvidenceAllowedSupplier;
 		runtime = new LmdbEstimatorRuntime(valueStore, tripleStore,
 				estimator == null ? null : estimator.synopsisService(), filters, feedback, cardinalities,
-				cascadesPlanCache, frontierSynopsis, frontierSettings, mayHaveInferred);
+				cascadesPlanCache, frontierSynopsis, frontierSettings, mayHaveInferred,
+				this.adaptiveEvidenceAllowedSupplier);
 	}
 
 	@Override
@@ -197,7 +211,7 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 		if (pattern != null) {
 			best = prefer(validOrNull(filterStatistics.estimateSnapshotFilterPass(filter, pattern)), best);
 		}
-		if (estimator != null && !estimator.adaptiveEvidenceAllowed()) {
+		if (!adaptiveEvidenceAllowed() || estimator != null && !estimator.adaptiveEvidenceAllowed()) {
 			return best == null ? unknownFilterPass() : best;
 		}
 		best = prefer(best, learnedSurfaceFilterPass(filterStatistics, filter));
@@ -259,10 +273,19 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 
 	@Override
 	public void recordFilterOutcome(Filter filter, FilterOutcomeObservation observation) {
-		if (filterStatistics != null && filter != null && observation != null && observation.completed()
+		if (adaptiveEvidenceAllowed() && filterStatistics != null && filter != null && observation != null
+				&& observation.completed()
 				&& observation.poisonReason().isEmpty()
 				&& LmdbReinvocablePositions.filterOutcomeRecordable(filter)) {
 			filterStatistics.recordFilterOutcome(filter, observation.passedCount(), observation.filteredCount());
+		}
+	}
+
+	private boolean adaptiveEvidenceAllowed() {
+		try {
+			return adaptiveEvidenceAllowedSupplier.getAsBoolean();
+		} catch (RuntimeException e) {
+			return false;
 		}
 	}
 

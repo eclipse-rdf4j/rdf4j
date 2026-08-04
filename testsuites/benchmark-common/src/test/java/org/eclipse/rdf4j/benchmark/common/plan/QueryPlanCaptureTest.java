@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.benchmark.common.plan;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -186,6 +187,22 @@ class QueryPlanCaptureTest {
 				snapshot.getUnoptimizedFingerprint());
 		assertTrue(byFingerprint.isPresent(), "Expected lookup by unoptimized fingerprint to find artifact");
 		assertEquals(outputFile.getFileName(), byFingerprint.get().getFileName());
+	}
+
+	@Test
+	void failedSerializationPreservesExistingSnapshotAndPublishesNoJsonTemp() throws IOException {
+		QueryPlanCapture capture = new QueryPlanCapture();
+		Path outputFile = tempDir.resolve("existing.json");
+		Files.writeString(outputFile, "existing snapshot");
+
+		QueryPlanSnapshot snapshot = new QueryPlanSnapshot();
+		snapshot.setOptimizerTrace(Map.of("failure", new FailingJsonValue()));
+
+		assertThrows(IOException.class, () -> capture.writeSnapshot(outputFile, snapshot));
+		assertEquals("existing snapshot", Files.readString(outputFile));
+		try (var paths = Files.list(tempDir)) {
+			assertEquals(List.of(outputFile), paths.toList());
+		}
 	}
 
 	@Test
@@ -373,8 +390,94 @@ class QueryPlanCaptureTest {
 
 		Map<String, String> metrics = QueryPlanCapture.extractDebugMetrics(explanationJson);
 
+		assertEquals("1", metrics.get("rootResultSizeEstimate"));
 		assertEquals("1", metrics.get("estimateActualComparableNodeCount"));
 		assertEquals("1", metrics.get("estimateActualQErrorMax"));
+		assertEquals("1", metrics.get("resultSizeEstimateSum"));
+	}
+
+	@Test
+	void packedPlannedCardinalityIsTotalRowsForEstimateAccuracy() {
+		String explanationJson = """
+				{
+				  "type" : "StatementPattern",
+				  "resultSizeActual" : 3,
+				  "doubleMetricsPlanned" : {
+				    "plannedCardinalityRows" : 3.0,
+				    "plannedRepeatedInvocations" : 3.0
+				  }
+				}
+				""";
+
+		Map<String, String> metrics = QueryPlanCapture.extractDebugMetrics(explanationJson);
+
+		assertEquals("3", metrics.get("rootResultSizeEstimate"));
+		assertEquals("1", metrics.get("estimateActualComparableNodeCount"));
+		assertEquals("1", metrics.get("estimateActualQErrorMax"));
+		assertEquals("3", metrics.get("resultSizeEstimateSum"));
+	}
+
+	@Test
+	void packedPlannedCardinalityWinsWhenBothEstimateRepresentationsExist() {
+		String packedExplanationJson = """
+				{
+				  "type" : "StatementPattern",
+				  "resultSizeEstimate" : 99.0,
+				  "resultSizeActual" : 3,
+				  "doubleMetricsPlanned" : {
+				    "plannedCardinalityRows" : 3.0,
+				    "plannedRepeatedInvocations" : 3.0
+				  }
+				}
+				""";
+		String canonicalExplanationJson = """
+				{
+				  "type" : "StatementPattern",
+				  "resultSizeEstimate" : 3.0,
+				  "resultSizeActual" : 3
+				}
+				""";
+
+		Map<String, String> packedMetrics = QueryPlanCapture.extractDebugMetrics(packedExplanationJson);
+		Map<String, String> canonicalMetrics = QueryPlanCapture.extractDebugMetrics(canonicalExplanationJson);
+
+		assertEquals("3", packedMetrics.get("rootResultSizeEstimate"));
+		assertEquals("1", packedMetrics.get("estimateActualQErrorMax"));
+		assertEquals("3", packedMetrics.get("resultSizeEstimateSum"));
+		assertEquals("3", packedMetrics.get("resultSizeEstimateMax"));
+		for (String signature : List.of(
+				"estimatesSignatureSha256",
+				"estimatesMultisetSignatureSha256",
+				"statementPatternEstimatesMultisetSignatureSha256")) {
+			assertEquals(canonicalMetrics.get(signature), packedMetrics.get(signature), signature);
+		}
+	}
+
+	@Test
+	void packedPlannedCardinalityFeedsModeledRowsAndTupleChildren() {
+		String explanationJson = """
+				{
+				  "type" : "Filter",
+				  "doubleMetricsPlanned" : {
+				    "plannedCardinalityRows" : 2.0
+				  },
+				  "plans" : [ {
+				    "type" : "StatementPattern",
+				    "doubleMetricsPlanned" : {
+				      "plannedCardinalityRows" : 4.0
+				    }
+				  } ]
+				}
+				""";
+
+		Map<String, String> metrics = QueryPlanCapture.extractDebugMetrics(explanationJson);
+
+		assertEquals("2", metrics.get("rootResultSizeEstimate"));
+		assertEquals("6", metrics.get("resultSizeEstimateSum"));
+		assertEquals("4", metrics.get("resultSizeEstimateMax"));
+		assertEquals("6", metrics.get("modeledOutputRowsSum"));
+		assertEquals("8", metrics.get("modeledInputRowsSum"));
+		assertEquals("5.2", metrics.get("modeledWorkUnits"));
 	}
 
 	@Test
@@ -543,6 +646,14 @@ class QueryPlanCaptureTest {
 			return '\0';
 		}
 		return null;
+	}
+
+	private static final class FailingJsonValue {
+
+		@SuppressWarnings("unused")
+		public String getValue() {
+			throw new IllegalStateException("serialization failed");
+		}
 	}
 
 	private static final class ProbeTarget {

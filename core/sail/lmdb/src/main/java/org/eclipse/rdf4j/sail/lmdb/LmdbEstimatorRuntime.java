@@ -75,6 +75,7 @@ final class LmdbEstimatorRuntime {
 	private final LmdbFrontierSynopsisService frontierSynopsis;
 	private final LmdbFrontierPlannerSettings frontierSettings;
 	private final BooleanSupplier mayHaveInferred;
+	private final BooleanSupplier adaptiveEvidenceAllowedSupplier;
 	private final ThreadLocal<LmdbEstimatorOptimizationScope> optimizationScope = new ThreadLocal<>();
 
 	LmdbEstimatorRuntime(ValueStore valueStore, TripleStore tripleStore, LmdbQuadSynopsisService synopsis,
@@ -118,6 +119,15 @@ final class LmdbEstimatorRuntime {
 			LmdbStatementPatternCardinalitySource cardinalities, PackedPlanCache cascadesPlanCache,
 			LmdbFrontierSynopsisService frontierSynopsis, LmdbFrontierPlannerSettings frontierSettings,
 			BooleanSupplier mayHaveInferred) {
+		this(valueStore, tripleStore, synopsis, filters, feedback, cardinalities, cascadesPlanCache, frontierSynopsis,
+				frontierSettings, mayHaveInferred, () -> true);
+	}
+
+	LmdbEstimatorRuntime(ValueStore valueStore, TripleStore tripleStore, LmdbQuadSynopsisService synopsis,
+			LmdbFilterSelectivityStats filters, LmdbOperatorFeedbackStats feedback,
+			LmdbStatementPatternCardinalitySource cardinalities, PackedPlanCache cascadesPlanCache,
+			LmdbFrontierSynopsisService frontierSynopsis, LmdbFrontierPlannerSettings frontierSettings,
+			BooleanSupplier mayHaveInferred, BooleanSupplier adaptiveEvidenceAllowedSupplier) {
 		this.valueStore = valueStore;
 		this.tripleStore = tripleStore;
 		this.cardinalities = cardinalities;
@@ -128,6 +138,8 @@ final class LmdbEstimatorRuntime {
 		this.frontierSynopsis = frontierSynopsis;
 		this.frontierSettings = frontierSettings;
 		this.mayHaveInferred = mayHaveInferred == null ? () -> false : mayHaveInferred;
+		this.adaptiveEvidenceAllowedSupplier = adaptiveEvidenceAllowedSupplier == null ? () -> true
+				: adaptiveEvidenceAllowedSupplier;
 		this.finiteJoinSurfaceEstimator = new LmdbFiniteJoinSurfaceEstimator(valueStore, tripleStore);
 		LmdbStorageEstimatorEvidence evidence = new LmdbStorageEstimatorEvidence(valueStore, cardinalities, synopsis,
 				filters, feedback, finiteJoinSurfaceEstimator);
@@ -656,14 +668,25 @@ final class LmdbEstimatorRuntime {
 
 	private EstimateContext rootContext(TupleExpr expression) {
 		if (synopsis == null) {
-			return EstimateContext.root(expression, new org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity(0L,
+			EstimateContext context = EstimateContext.root(expression,
+					new org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity(0L,
 					0L, Math.max(0L, tripleStore == null ? 0L : tripleStore.getDataRevision())), snapshotVersion(),
 					leoRevision());
+			return adaptiveEvidenceAllowed() ? context
+					: context.withEvidencePolicy(EstimateContext.EvidencePolicy.SNAPSHOT_ONLY);
 		}
 		EstimateContext context = EstimateContext.root(expression, synopsis.snapshotIdentity(),
 				synopsis.snapshotVersion(), leoRevision());
-		return synopsis.adaptiveEvidenceAllowed() ? context
+		return adaptiveEvidenceAllowed() && synopsis.adaptiveEvidenceAllowed() ? context
 				: context.withEvidencePolicy(EstimateContext.EvidencePolicy.SNAPSHOT_ONLY);
+	}
+
+	private boolean adaptiveEvidenceAllowed() {
+		try {
+			return adaptiveEvidenceAllowedSupplier.getAsBoolean();
+		} catch (RuntimeException e) {
+			return false;
+		}
 	}
 
 	private static double invocations(CostContext context) {
