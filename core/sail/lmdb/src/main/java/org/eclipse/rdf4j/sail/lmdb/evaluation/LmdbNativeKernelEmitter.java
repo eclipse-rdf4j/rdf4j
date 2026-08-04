@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Node;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Operand;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.OutputMods;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.PathExpand;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.PlanRows;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Probe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ProbeClose;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ScanQuad;
@@ -86,6 +87,7 @@ final class LmdbNativeKernelEmitter {
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;\n")
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;\n")
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;\n")
+					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPlan;\n")
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQuadCursor;\n")
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelScanner;\n")
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;\n\n")
@@ -96,6 +98,7 @@ final class LmdbNativeKernelEmitter {
 			emitFields(source);
 			emitBind(source);
 			emitFill(source);
+			emitClose(source);
 
 			source.append("    private void run() {\n")
 					.append("        ")
@@ -146,6 +149,14 @@ final class LmdbNativeKernelEmitter {
 					source.append("    private KernelQuadCursor sc").append(i).append(";\n");
 				}
 			}
+			if (kernel.requirements.plans > 0) {
+				for (int i = 0; i < kernel.requirements.plans; i++) {
+					// Staging buffer and live cursor are per plan site, mirroring direct scan sites.
+					source.append("    private KernelPlan p").append(i).append(";\n");
+					source.append("    private KernelPlan.Cursor pc").append(i).append(";\n");
+					source.append("    private long[] pb").append(i).append(";\n");
+				}
+			}
 			if (kernel.vectorTailIndex >= 0) {
 				// Vector-tail scratch: one run slice and its selection, allocated once in bind and reused per run.
 				source.append("    private long[] tvec;\n");
@@ -193,7 +204,7 @@ final class LmdbNativeKernelEmitter {
 							.append("];\n");
 				}
 				source.append("    private int accCap;\n");
-				if (hasCountDistinct(aggregate)) {
+				if (hasDistinctAggregate(aggregate)) {
 					source.append("    private int distinctExpected;\n");
 				}
 				for (int i = 0; i < aggregate.outputs.length; i++) {
@@ -204,8 +215,10 @@ final class LmdbNativeKernelEmitter {
 						source.append("    private long[] agC").append(i).append(";\n");
 						break;
 					case LmdbNativeKernelIr.AGG_COUNT_DISTINCT:
+					case LmdbNativeKernelIr.AGG_SUM_DISTINCT:
+					case LmdbNativeKernelIr.AGG_AVG_DISTINCT:
 						source.append("    private KernelRuntime.LongHashSet[] agD").append(i).append(";\n");
-						if (output.orderedDomain >= 0) {
+						if (output.kind == LmdbNativeKernelIr.AGG_COUNT_DISTINCT && output.orderedDomain >= 0) {
 							source.append("    private long[] agC")
 									.append(i)
 									.append(";\n")
@@ -265,12 +278,15 @@ final class LmdbNativeKernelEmitter {
 			if (kernel.requirements.scans > 0) {
 				source.append("        scanner = context.scanner;\n");
 			}
+			for (int i = 0; i < kernel.requirements.plans; i++) {
+				source.append("        p").append(i).append(" = context.plans[").append(i).append("];\n");
+			}
 			if (isDistinct()) {
 				source.append("        dedup = new KernelRuntime.RowSet(").append(stride).append(");\n");
 			}
 			if (kernel.terminal instanceof Aggregate) {
 				Aggregate aggregate = (Aggregate) kernel.terminal;
-				if (hasCountDistinct(aggregate)) {
+				if (hasDistinctAggregate(aggregate)) {
 					source.append("        distinctExpected = context.distinctExpected;\n");
 				}
 				if (aggregate.groupCols.length == 1) {
@@ -289,8 +305,10 @@ final class LmdbNativeKernelEmitter {
 						source.append("        agC").append(i).append(" = new long[16];\n");
 						break;
 					case LmdbNativeKernelIr.AGG_COUNT_DISTINCT:
+					case LmdbNativeKernelIr.AGG_SUM_DISTINCT:
+					case LmdbNativeKernelIr.AGG_AVG_DISTINCT:
 						source.append("        agD").append(i).append(" = new KernelRuntime.LongHashSet[16];\n");
-						if (output.orderedDomain >= 0) {
+						if (output.kind == LmdbNativeKernelIr.AGG_COUNT_DISTINCT && output.orderedDomain >= 0) {
 							source.append("        agC")
 									.append(i)
 									.append(" = new long[16];\n")
@@ -330,6 +348,30 @@ final class LmdbNativeKernelEmitter {
 						break;
 					}
 				}
+			}
+			source.append("    }\n\n");
+		}
+
+		private void emitClose(StringBuilder source) {
+			source.append("    public void close() {\n");
+			for (int i = 0; i < kernel.requirements.plans; i++) {
+				source.append("        if (pc")
+						.append(i)
+						.append(" != null) {\n")
+						.append("            pc")
+						.append(i)
+						.append(".close();\n")
+						.append("            pc")
+						.append(i)
+						.append(" = null;\n")
+						.append("        }\n")
+						.append("        if (p")
+						.append(i)
+						.append(" != null) {\n")
+						.append("            p")
+						.append(i)
+						.append(".close();\n")
+						.append("        }\n");
 			}
 			source.append("    }\n\n");
 		}
@@ -539,13 +581,19 @@ final class LmdbNativeKernelEmitter {
 		// Aggregate machinery
 		// ------------------------------------------------------------------
 
-		private static boolean hasCountDistinct(Aggregate aggregate) {
+		private static boolean hasDistinctAggregate(Aggregate aggregate) {
 			for (AggregateOutput output : aggregate.outputs) {
-				if (output.kind == LmdbNativeKernelIr.AGG_COUNT_DISTINCT) {
+				if (isDistinctAggregate(output)) {
 					return true;
 				}
 			}
 			return false;
+		}
+
+		private static boolean isDistinctAggregate(AggregateOutput output) {
+			return output.kind == LmdbNativeKernelIr.AGG_COUNT_DISTINCT
+					|| output.kind == LmdbNativeKernelIr.AGG_SUM_DISTINCT
+					|| output.kind == LmdbNativeKernelIr.AGG_AVG_DISTINCT;
 		}
 
 		private static String distinctCountExpression(AggregateOutput output, int index) {
@@ -639,6 +687,22 @@ final class LmdbNativeKernelEmitter {
 					source.append("        if (")
 							.append(value)
 							.append(" != -1L) {\n")
+							.append("            hooks.accumulateNumeric(")
+							.append(i)
+							.append(", g, ")
+							.append(value)
+							.append(");\n")
+							.append("        }\n");
+					break;
+				case LmdbNativeKernelIr.AGG_SUM_DISTINCT:
+				case LmdbNativeKernelIr.AGG_AVG_DISTINCT:
+					source.append("        if (")
+							.append(value)
+							.append(" != -1L && agD")
+							.append(i)
+							.append("[g].add(")
+							.append(value)
+							.append(")) {\n")
 							.append("            hooks.accumulateNumeric(")
 							.append(i)
 							.append(", g, ")
@@ -762,8 +826,10 @@ final class LmdbNativeKernelEmitter {
 					emitArrayGrow(source, "agC" + i, "long");
 					break;
 				case LmdbNativeKernelIr.AGG_COUNT_DISTINCT:
+				case LmdbNativeKernelIr.AGG_SUM_DISTINCT:
+				case LmdbNativeKernelIr.AGG_AVG_DISTINCT:
 					emitArrayGrow(source, "agD" + i, "KernelRuntime.LongHashSet");
-					if (output.orderedDomain >= 0) {
+					if (output.kind == LmdbNativeKernelIr.AGG_COUNT_DISTINCT && output.orderedDomain >= 0) {
 						emitArrayGrow(source, "agC" + i, "long");
 						emitArrayGrow(source, "agL" + i, "long");
 						emitArrayGrow(source, "agB" + i, "boolean");
@@ -788,9 +854,10 @@ final class LmdbNativeKernelEmitter {
 					.append("        }\n");
 			for (int i = 0; i < aggregate.outputs.length; i++) {
 				AggregateOutput output = aggregate.outputs[i];
-				if (output.kind == LmdbNativeKernelIr.AGG_COUNT_DISTINCT) {
+				if (isDistinctAggregate(output)) {
 					source.append("        if (")
-							.append(output.orderedDomain >= 0 ? "!agO" + i + " && " : "")
+							.append(output.kind == LmdbNativeKernelIr.AGG_COUNT_DISTINCT
+									&& output.orderedDomain >= 0 ? "!agO" + i + " && " : "")
 							.append("agD")
 							.append(i)
 							.append("[g] == null) {\n")
@@ -846,7 +913,9 @@ final class LmdbNativeKernelEmitter {
 							.append(";\n");
 					break;
 				case LmdbNativeKernelIr.AGG_SUM:
+				case LmdbNativeKernelIr.AGG_SUM_DISTINCT:
 				case LmdbNativeKernelIr.AGG_AVG:
+				case LmdbNativeKernelIr.AGG_AVG_DISTINCT:
 					source.append("        ")
 							.append(target)
 							.append(" = g;\n");
@@ -1588,6 +1657,50 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append(b).append(" = -1;\n");
 				return true;
 			}
+			if (node instanceof PlanRows) {
+				PlanRows plan = (PlanRows) node;
+				String cursor = "pc" + plan.plan;
+				String buffer = "pb" + plan.plan;
+				body.append(indent).append("if (").append(cursor).append(" == null) {\n");
+				body.append(indent).append("    ").append(cursor).append(" = p").append(plan.plan).append(".open();\n");
+				body.append(indent).append("    ").append(a).append(" = 0;\n");
+				body.append(indent).append("    ").append(b).append(" = 0;\n");
+				body.append(indent).append("}\n");
+				emitPlanBuffer(body, indent, buffer, plan.outCols.length);
+				body.append(indent).append("while (true) {\n");
+				body.append(indent).append("    if (").append(a).append(" >= ").append(b).append(") {\n");
+				body.append(indent)
+						.append("        ")
+						.append(b)
+						.append(" = ")
+						.append(cursor)
+						.append(".fill(")
+						.append(buffer)
+						.append(", KernelRuntime.SCAN_BATCH_ROWS);\n");
+				body.append(indent).append("        ").append(a).append(" = 0;\n");
+				body.append(indent).append("        if (").append(b).append(" <= 0) {\n");
+				body.append(indent).append("            break;\n");
+				body.append(indent).append("        }\n");
+				body.append(indent).append("    }\n");
+				body.append(indent)
+						.append("    for (; ")
+						.append(a)
+						.append(" < ")
+						.append(b)
+						.append("; ")
+						.append(a)
+						.append("++) {\n");
+				emitPlanColumns(body, indent + "        ", plan, buffer, a);
+				body.append(next(nextTemplate, indent + "        "));
+				emitPause(body, indent + "        ", a, tailmost);
+				body.append(indent).append("    }\n");
+				body.append(indent).append("}\n");
+				body.append(indent).append(cursor).append(".close();\n");
+				body.append(indent).append(cursor).append(" = null;\n");
+				body.append(indent).append(a).append(" = -1;\n");
+				body.append(indent).append(b).append(" = -1;\n");
+				return true;
+			}
 			if (node instanceof EnumerateAdjKeys) {
 				EnumerateAdjKeys enumerate = (EnumerateAdjKeys) node;
 				String view = "a" + enumerate.adjacency;
@@ -1674,6 +1787,38 @@ final class LmdbNativeKernelEmitter {
 						.append(") * 4");
 				if (position > 0) {
 					body.append(" + ").append(position);
+				}
+				body.append("];\n");
+			}
+		}
+
+		/** Allocates one engine-plan staging buffer lazily; zero-column plans still need room to count rows. */
+		private static void emitPlanBuffer(StringBuilder body, String indent, String buffer, int columns) {
+			body.append(indent).append("if (").append(buffer).append(" == null) {\n");
+			body.append(indent)
+					.append("    ")
+					.append(buffer)
+					.append(" = new long[KernelRuntime.SCAN_BATCH_ROWS * ")
+					.append(Math.max(columns, 1))
+					.append("];\n");
+			body.append(indent).append("}\n");
+		}
+
+		/** Copies one packed engine-plan row into the columns registered for that plan site. */
+		private static void emitPlanColumns(StringBuilder body, String indent, PlanRows plan, String buffer,
+				String row) {
+			for (int i = 0; i < plan.outCols.length; i++) {
+				body.append(indent)
+						.append("v")
+						.append(plan.outCols[i])
+						.append(" = ")
+						.append(buffer)
+						.append("[(int) (")
+						.append(row)
+						.append(") * ")
+						.append(plan.outCols.length);
+				if (i > 0) {
+					body.append(" + ").append(i);
 				}
 				body.append("];\n");
 			}
@@ -1781,6 +1926,34 @@ final class LmdbNativeKernelEmitter {
 						.append(", KernelRuntime.SCAN_BATCH_ROWS);\n");
 				body.append(indent).append("}\n");
 				body.append(indent).append("cur.close();\n");
+				return;
+			}
+			if (node instanceof PlanRows) {
+				PlanRows plan = (PlanRows) node;
+				String cursor = "pc" + plan.plan;
+				String buffer = "pb" + plan.plan;
+				body.append(indent).append(cursor).append(" = p").append(plan.plan).append(".open();\n");
+				emitPlanBuffer(body, indent, buffer, plan.outCols.length);
+				body.append(indent)
+						.append("int n = ")
+						.append(cursor)
+						.append(".fill(")
+						.append(buffer)
+						.append(", KernelRuntime.SCAN_BATCH_ROWS);\n");
+				body.append(indent).append("while (n > 0) {\n");
+				body.append(indent).append("    for (int i = 0; i < n; i++) {\n");
+				emitPlanColumns(body, indent + "        ", plan, buffer, "i");
+				body.append(next(nextTemplate, indent + "        "));
+				body.append(indent).append("    }\n");
+				body.append(indent)
+						.append("    n = ")
+						.append(cursor)
+						.append(".fill(")
+						.append(buffer)
+						.append(", KernelRuntime.SCAN_BATCH_ROWS);\n");
+				body.append(indent).append("}\n");
+				body.append(indent).append(cursor).append(".close();\n");
+				body.append(indent).append(cursor).append(" = null;\n");
 				return;
 			}
 			if (node instanceof EnumerateAdjKeys) {

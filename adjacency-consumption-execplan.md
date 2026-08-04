@@ -37,9 +37,14 @@ How to see it working at any point: run the census test (prints a per-query-shap
   domains, a cheap exact-cardinality preflight, and runtime retirement. Docker JFR proves selective activation and
   dense cost rejection, but the feature remains default OFF until exact runtime-plan telemetry makes the warmed,
   multi-fork production-dispatch acceptance matrix route-verifiable.
-- [ ] Cross-cutting explain side quest: prepend the multiline physical plan actually executed and report exact runtime
-  order, dynamic filter-position epochs/final positions, adjacency use or typed non-use reason, and Janino use or typed
-  non-use reason.
+- [x] (2026-08-04) Cross-cutting explain side quest complete: telemetry prepends the multiline physical plan actually
+  executed, preserves runtime reorderings and dynamic filter epochs/final positions, and reports typed adjacency and
+  Janino use/non-use reasons. `ThemeQueryBenchmark` MEDICAL_RECORDS q0 printed the physical prelude before the logical
+  explanation and identified adjacency readiness plus the exact Janino threshold values.
+- [x] (2026-08-04) Janino coverage side quest complete: a frozen 50-query formerly unsupported corpus has generic
+  parity and opens compiled kernels; the full 11,620-query generated census has zero capability declines. General
+  `PlanRows`, SUM(DISTINCT), and AVG(DISTINCT) support remains explicitly opt-in because Linux Docker/JFR gates were
+  slower than LMDB (49-query suite 4.189 vs 3.892 ms/op; SUM 0.017 vs 0.015; AVG 0.014 vs 0.011).
 - [ ] Milestone 8: property paths fully over adjacency (seeding, workers, telemetry-verified).
 - [ ] Milestone 9 (evidence-gated): run-intersection semijoins, degree binding, bidirectional path search, exact-empty plan pruning.
 
@@ -144,6 +149,25 @@ How to see it working at any point: run the census test (prints a per-query-shap
   diagnostic central scores favored the feature in both pairs: selective 6.172 versus 6.364 ms/op and dense 4.043
   versus 4.104 ms/op. These no-warmup, one-fork JFR runs are path and hotspot evidence, not the default-enable gate.
   Evidence: `benchmark-results/m7-docker-chunk-{selective,dense}-{off,on}-2026-08-03.jfr`.
+- Observation: MEDICAL_RECORDS q0's three constant-predicate patterns were eligible for direct adjacency; the first
+  explanation missed only because the asynchronous view was still BUILDING. With the benchmark readiness barrier all
+  three runtime access sites reported adjacency use. Janino separately declined because the observed row counts
+  (4,096/8,192) were below the configured 32,768 threshold, not because of predicate shape.
+  Evidence: the one-query ThemeQueryBenchmark explain run and
+  `profiles/lmdb/medical-records-q0-adjacency-70c8386b9f.jfr`.
+- Observation: A streaming engine-plan producer closes Janino's semantic coverage gap without duplicating MINUS,
+  OPTIONAL, UNION, dataset, or nested-filter semantics in generated source. The full generated census moved from 2,375
+  capability declines to zero; zero-column plan rows required relaxing the IR's non-distinct `Emit` invariant so empty
+  input and one empty binding remain distinguishable.
+  Evidence: `initial-evidence-janino-50-corpus-red.txt`,
+  `initial-evidence-janino-planrows-zero-width-red.txt`, and
+  `core/sail/lmdb/target/generated-janino-coverage-census.txt`.
+- Observation: Total semantic coverage is not sufficient for production admission. Docker JFR attributes the PlanRows
+  regression to work layered around the unchanged engine plan: outer `KernelRowCursor` construction contributed 2.44%
+  of allocation pressure, bridge lowering/bindings about 2.6% combined, plus staging arrays and cloned row state. Direct
+  numeric DISTINCT also lost on these small exact workloads, so neither new gate defaults on.
+  Evidence: `benchmark-results/janino-general-coverage-docker-2026-08-04.md` and the three
+  `profiles/lmdb/janino-*-d49fb95e9c.jfr` recordings.
 
 ## Decision Log
 
@@ -156,6 +180,12 @@ How to see it working at any point: run the census test (prints a per-query-shap
 - Decision: Milestone 0 adds coarse-grained counters only (per-operator-bind and per-frontier, never per-neighbor-lookup). A `LongAdder` increment per `find()` call is banned.
   Rationale: `kernelFind` is an allocation-free hot path; the WCOJ work already proved per-DFS-node bookkeeping regresses real queries 60-70% (join ExecPlan, Surprises).
   Date/Author: 2026-08-03 / Claude.
+- Decision: Keep `rdf4j.lmdb.janinoCodegen.planBridge` and
+  `rdf4j.lmdb.janinoCodegen.distinctNumericAggregates` default OFF while shipping complete opt-in support and precise
+  decline reasons.
+  Rationale: the 2026-08-04 Linux/JDK 26 Docker gates measured PlanRows about 7.6%, SUM(DISTINCT) about 13%, and
+  AVG(DISTINCT) about 27% slower than their LMDB controls. This directly applies the user's parity-or-faster rule.
+  Date/Author: 2026-08-04 / Codex.
 - Decision: Milestone 1 serves root scans from the OUTGOING (subject-keyed) plane only; object-keyed enumeration joins the plan in Milestone 5 (distinct-objects) where the inlined-object complication is handled deliberately.
   Rationale: subjects are always reference ids, so the subject plane's key domain is complete by construction; object key domains additionally involve `LmdbInlineIncomingIndex` for inlined literals — a correctness trap that deserves its own red tests.
   Date/Author: 2026-08-03 / Claude.
@@ -468,3 +498,8 @@ wrapped 19-shape census.
 Revision note (2026-08-03, Codex): Completed and default-enabled M4. Worker siblings now use their own exact,
 version-fenced adjacency views across the complete row surface; forced-parallel parity and proportional hit coverage are
 green, and the optimized three-pair `parallelOverlap` mean is 1.5% faster than LMDB.
+
+Revision note (2026-08-04, Codex): Completed the exact runtime-plan/explain side quest and the requested Janino
+generality side quest. Added a streaming engine-plan IR producer, exact DISTINCT numeric aggregation, a frozen 50-query
+gate, a zero-decline 11,620-query census, and Linux Docker/JFR workload gates. The new admissions remain opt-in because
+all three measured slower than LMDB; the decision and profiles are recorded above.

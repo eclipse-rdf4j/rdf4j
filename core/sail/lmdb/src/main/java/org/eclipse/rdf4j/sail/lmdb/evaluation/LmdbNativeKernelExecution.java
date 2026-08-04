@@ -171,7 +171,7 @@ final class LmdbNativeKernelExecution {
 				SlotPlan[] actualOrder = arg instanceof MultiJoinPlan
 						? ((MultiJoinPlan) arg).derivedPlan(row).order
 						: new SlotPlan[] { arg };
-				row.runtimePlan.janinoActivated("irAggregate", actualOrder);
+				row.runtimePlan.janinoActivated(activationRoute("irAggregate", lowered), actualOrder);
 				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, actualOrder);
 			}
 			return results;
@@ -360,7 +360,7 @@ final class LmdbNativeKernelExecution {
 				SlotPlan[] actualOrder = arg instanceof MultiJoinPlan
 						? ((MultiJoinPlan) arg).derivedPlan(row).order
 						: new SlotPlan[] { arg };
-				row.runtimePlan.janinoActivated("irKernel", actualOrder);
+				row.runtimePlan.janinoActivated(activationRoute("irKernel", lowered), actualOrder);
 				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_IR_KERNEL, actualOrder);
 			}
 			return new KernelRowCursor(kernel, probe, scanner, row, lowered.bindings.columnEngineSlots,
@@ -376,6 +376,11 @@ final class LmdbNativeKernelExecution {
 			}
 			return null;
 		}
+	}
+
+	private static String activationRoute(String route, LmdbNativeKernelLowering.Lowered lowered) {
+		return lowered.planBridgeReason == null ? route
+				: route + ".enginePlanBridge[directLoweringReason=" + lowered.planBridgeReason + "]";
 	}
 
 	private static void recordAdjacencyBindings(RowState row, LmdbNativeKernelBindings bindings,
@@ -434,7 +439,11 @@ final class LmdbNativeKernelExecution {
 			}
 			while (true) {
 				if (bufferPos == bufferRows) {
-					bufferRows = kernel.fill(buffer, FILL_ROWS);
+					try {
+						bufferRows = kernel.fill(buffer, FILL_ROWS);
+					} catch (LmdbNativeKernelBindings.PlanFailure problem) {
+						throw problem.ioCause();
+					}
 					bufferPos = 0;
 					if (bufferRows == 0) {
 						return false;

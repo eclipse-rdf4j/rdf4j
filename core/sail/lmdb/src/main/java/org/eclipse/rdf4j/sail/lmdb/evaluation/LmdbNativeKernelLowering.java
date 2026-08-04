@@ -82,6 +82,29 @@ final class LmdbNativeKernelLowering {
 		return Boolean.parseBoolean(System.getProperty(UNION_SOURCES_PROPERTY, "true"));
 	}
 
+	/**
+	 * Enables the total-coverage {@code PlanRows} producer for a native {@link SlotPlan} that direct IR lowering cannot
+	 * yet express. It is deliberately default-off until the Docker corpus proves every affected shape is no slower than
+	 * the ordinary LMDB plan: the bridge preserves semantics and streaming, but it still adds a generated call boundary
+	 * around an engine-owned cursor and therefore must earn production admission with measurements.
+	 */
+	static final String PLAN_BRIDGE_PROPERTY = "rdf4j.lmdb.janinoCodegen.planBridge";
+
+	static boolean planBridgeEnabled() {
+		return Boolean.parseBoolean(System.getProperty(PLAN_BRIDGE_PROPERTY, "false"));
+	}
+
+	/**
+	 * Enables generated DISTINCT state for SUM and AVG. Exact RDF numeric arithmetic remains in the engine hook
+	 * sidecar; only the primitive value-id membership test is generated. This stays default-off until its Docker
+	 * benchmark is at least as fast as the ordinary LMDB aggregate path.
+	 */
+	static final String DISTINCT_NUMERIC_PROPERTY = "rdf4j.lmdb.janinoCodegen.distinctNumericAggregates";
+
+	static boolean distinctNumericAggregatesEnabled() {
+		return Boolean.parseBoolean(System.getProperty(DISTINCT_NUMERIC_PROPERTY, "false"));
+	}
+
 	private static final int MAX_CHILDREN = 12;
 	private static final int MAX_HOOK_ARGS = 3;
 	/** Rows of a multi-variable VALUES table the lowering will unroll into generated source. */
@@ -93,10 +116,16 @@ final class LmdbNativeKernelLowering {
 	static final class Lowered {
 		final Kernel kernel;
 		final LmdbNativeKernelBindings bindings;
+		final String planBridgeReason;
 
 		Lowered(Kernel kernel, LmdbNativeKernelBindings bindings) {
+			this(kernel, bindings, null);
+		}
+
+		Lowered(Kernel kernel, LmdbNativeKernelBindings bindings, String planBridgeReason) {
 			this.kernel = kernel;
 			this.bindings = bindings;
+			this.planBridgeReason = planBridgeReason;
 		}
 	}
 
@@ -133,7 +162,7 @@ final class LmdbNativeKernelLowering {
 				break;
 			}
 		}
-		return lowerRowCore(core, optionalArms, outerFilters, row, declineTarget, preferScans);
+		return lowerRowCore(arg, core, optionalArms, outerFilters, row, declineTarget, preferScans);
 	}
 
 	/**
@@ -179,32 +208,58 @@ final class LmdbNativeKernelLowering {
 			builder.lowerEmptyAggregate(groupSlots, aggregates);
 		} else {
 			if (!builder.lowerJoinOperand(core, filters, row)) {
-				decline(declineTarget, builder.reason);
-				return null;
+				return aggregateDeclineOrBridge(arg, row, groupSlots, aggregates, declineTarget,
+						builder.reason);
 			}
 			if (builder.joinOperands == 0) {
-				decline(declineTarget, "agg:no-children");
-				return null;
+				return aggregateDeclineOrBridge(arg, row, groupSlots, aggregates, declineTarget,
+						"agg:no-children");
 			}
 			for (MaskedFilter masked : filters) {
 				if (!builder.lowerFilterStrict(masked)) {
-					decline(declineTarget, builder.reason);
-					return null;
+					return aggregateDeclineOrBridge(arg, row, groupSlots, aggregates, declineTarget,
+							builder.reason);
 				}
 			}
 			for (SlotPlan minusArm : minusArms) {
 				if (!builder.lowerMinusArm(minusArm)) {
-					decline(declineTarget, builder.reason);
-					return null;
+					return aggregateDeclineOrBridge(arg, row, groupSlots, aggregates, declineTarget,
+							builder.reason);
 				}
 			}
 		}
 		Lowered lowered = builder.buildAggregate(groupSlots, aggregates,
 				distinctExpected(arg, row, groupSlots.length > 0));
 		if (lowered == null) {
-			decline(declineTarget, builder.reason);
+			return aggregateDeclineOrBridge(arg, row, groupSlots, aggregates, declineTarget, builder.reason);
 		}
 		return lowered;
+	}
+
+	private static Lowered aggregateDeclineOrBridge(SlotPlan arg, RowState row, int[] groupSlots,
+			AggregateSpec[] aggregates, TupleExpr declineTarget, String reason) {
+		if (planBridgeEnabled()) {
+			Builder bridge = new Builder(row, "agg:");
+			long requiredMask = 0L;
+			for (int groupSlot : groupSlots) {
+				if (groupSlot >= 0) {
+					requiredMask |= 1L << groupSlot;
+				}
+			}
+			for (AggregateSpec aggregate : aggregates) {
+				if (aggregate.slot >= 0) {
+					requiredMask |= 1L << aggregate.slot;
+				}
+			}
+			bridge.lowerPlanRows(arg, requiredMask);
+			Lowered lowered = bridge.buildAggregate(groupSlots, aggregates,
+					distinctExpected(arg, row, groupSlots.length > 0));
+			if (lowered != null) {
+				return new Lowered(lowered.kernel, lowered.bindings, reason);
+			}
+		}
+		decline(declineTarget, reason);
+		return null;
 	}
 
 	private static int distinctExpected(SlotPlan arg, RowState row, boolean grouped) {
@@ -243,23 +298,20 @@ final class LmdbNativeKernelLowering {
 	 * Filters keep this rung's three-tier treatment (id, hook, then residual re-applied by the row cursor) rather than
 	 * the aggregate rung's strict one, so a filter still never causes a decline here.
 	 */
-	private static Lowered lowerRowCore(SlotPlan core, List<SlotPlan> optionalArms,
+	private static Lowered lowerRowCore(SlotPlan original, SlotPlan core, List<SlotPlan> optionalArms,
 			List<MaskedFilter> outerFilters, RowState row, TupleExpr declineTarget, boolean preferScans) {
 		Builder builder = new Builder(row, "");
 		builder.preferScans = preferScans;
 		List<MaskedFilter> coreFilters = new ArrayList<>(0);
 		if (!builder.lowerJoinOperand(core, coreFilters, row)) {
-			decline(declineTarget, builder.reason);
-			return null;
+			return rowDeclineOrBridge(original, row, declineTarget, builder.reason);
 		}
 		if (builder.joinOperands == 0) {
-			decline(declineTarget, "no-children");
-			return null;
+			return rowDeclineOrBridge(original, row, declineTarget, "no-children");
 		}
 		for (SlotPlan arm : optionalArms) {
 			if (!builder.lowerOptionalArm(arm)) {
-				decline(declineTarget, builder.reason);
-				return null;
+				return rowDeclineOrBridge(original, row, declineTarget, builder.reason);
 			}
 		}
 		for (MaskedFilter masked : coreFilters) {
@@ -270,9 +322,52 @@ final class LmdbNativeKernelLowering {
 		}
 		Lowered lowered = builder.build();
 		if (lowered == null) {
-			decline(declineTarget, "no-columns");
+			return rowDeclineOrBridge(original, row, declineTarget, "no-columns");
 		}
 		return lowered;
+	}
+
+	private static Lowered rowDeclineOrBridge(SlotPlan original, RowState row, TupleExpr declineTarget,
+			String reason) {
+		if (planBridgeEnabled()) {
+			return lowerRowsWithPlanBridge(original, row, reason);
+		}
+		decline(declineTarget, reason);
+		return null;
+	}
+
+	private static Lowered lowerRowsWithPlanBridge(SlotPlan plan, RowState row, String reason) {
+		int[] outputSlots = slots(plan.producedMask(), row.slots.length);
+		int[] outputColumns = new int[outputSlots.length];
+		for (int i = 0; i < outputColumns.length; i++) {
+			outputColumns[i] = i;
+		}
+		Kernel kernel = new Kernel(outputColumns.length,
+				List.of(new LmdbNativeKernelIr.PlanRows(0, outputColumns)),
+				new LmdbNativeKernelIr.Emit(outputColumns, false, LmdbNativeKernelIr.OutputMods.none()));
+		LmdbNativeKernelBindings bindings = new LmdbNativeKernelBindings(
+				new LmdbNativeKernelBindings.AdjacencyRequest[0], new long[0], new int[0],
+				new LmdbNativeKernelBindings.DomainRequest[0], new LmdbNativeKernelBindings.FilterHook[0], outputSlots,
+				List.of(), new StatementOrder[0],
+				new LmdbNativeKernelBindings.PlanRequest[] {
+						new LmdbNativeKernelBindings.PlanRequest(plan, outputSlots) },
+				null, false, 16);
+		return new Lowered(kernel, bindings, reason);
+	}
+
+	private static int[] slots(long mask, int slotCount) {
+		int count = 0;
+		for (int slot = 0; slot < slotCount && slot < 64; slot++) {
+			count += (mask >>> slot & 1L) != 0L ? 1 : 0;
+		}
+		int[] slots = new int[count];
+		int out = 0;
+		for (int slot = 0; slot < slotCount && slot < 64; slot++) {
+			if ((mask >>> slot & 1L) != 0L) {
+				slots[out++] = slot;
+			}
+		}
+		return slots;
 	}
 
 	private static void decline(TupleExpr declineTarget, String reason) {
@@ -315,6 +410,7 @@ final class LmdbNativeKernelLowering {
 		final List<Long> constants = new ArrayList<>();
 		final List<Integer> entrySlotIds = new ArrayList<>();
 		final List<LmdbNativeKernelBindings.DomainRequest> keyDomains = new ArrayList<>();
+		final List<LmdbNativeKernelBindings.PlanRequest> planRequests = new ArrayList<>();
 
 		private boolean slotFresh(int slot) {
 			return slot >= 0 && slot < slotColumn.length && (entryMask >>> slot & 1L) == 0L
@@ -562,6 +658,23 @@ final class LmdbNativeKernelLowering {
 			for (AggregateSpec aggregate : aggregates) {
 				mapEmptySlot(aggregate.slot, column);
 			}
+		}
+
+		/** Installs one streaming engine-plan producer and maps every aggregate-visible slot to its packed output. */
+		void lowerPlanRows(SlotPlan plan, long requiredMask) {
+			openDepth();
+			int[] outputSlots = slots(requiredMask, slotColumn.length);
+			int[] outputColumns = new int[outputSlots.length];
+			for (int i = 0; i < outputSlots.length; i++) {
+				outputColumns[i] = newColumn(outputSlots[i]);
+			}
+			if (outputColumns.length == 0) {
+				// COUNT(*) still needs a structurally non-empty kernel even though the producer exports no values.
+				scratchColumn();
+			}
+			planRequests.add(new LmdbNativeKernelBindings.PlanRequest(plan, outputSlots));
+			currentDepthNodes().add(new LmdbNativeKernelIr.PlanRows(planRequests.size() - 1, outputColumns));
+			joinOperands = 1;
 		}
 
 		private void mapEmptySlot(int slot, int column) {
@@ -2054,11 +2167,13 @@ final class LmdbNativeKernelLowering {
 					outs[i] = new LmdbNativeKernelBindings.AggOut(spec, LmdbNativeKernelBindings.ENC_LONG_COUNT);
 					break;
 				case SUM:
-					if (spec.distinct) {
-						reason = "agg:sum-distinct";
+					if (spec.distinct && !distinctNumericAggregatesEnabled()) {
+						reason = "agg:sum-distinct-disabled[property=" + DISTINCT_NUMERIC_PROPERTY + "=false]";
 						return null;
 					}
-					outputs[i] = LmdbNativeKernelIr.AggregateOutput.sum(col);
+					outputs[i] = spec.distinct
+							? LmdbNativeKernelIr.AggregateOutput.sumDistinct(col)
+							: LmdbNativeKernelIr.AggregateOutput.sum(col);
 					outs[i] = new LmdbNativeKernelBindings.AggOut(spec,
 							LmdbNativeKernelBindings.ENC_EXACT_NUMERIC);
 					hooksRequired = true;
@@ -2074,13 +2189,13 @@ final class LmdbNativeKernelLowering {
 					hooksRequired = true;
 					break;
 				case AVG:
-					if (spec.distinct) {
-						// DISTINCT would have to dedupe the inputs before summing and counting; the accumulator pair
-						// has no set behind it, and reusing the COUNT DISTINCT set would still leave the sum wrong.
-						reason = "agg:avg-distinct";
+					if (spec.distinct && !distinctNumericAggregatesEnabled()) {
+						reason = "agg:avg-distinct-disabled[property=" + DISTINCT_NUMERIC_PROPERTY + "=false]";
 						return null;
 					}
-					outputs[i] = LmdbNativeKernelIr.AggregateOutput.avg(col);
+					outputs[i] = spec.distinct
+							? LmdbNativeKernelIr.AggregateOutput.avgDistinct(col)
+							: LmdbNativeKernelIr.AggregateOutput.avg(col);
 					outs[i] = new LmdbNativeKernelBindings.AggOut(spec,
 							LmdbNativeKernelBindings.ENC_EXACT_NUMERIC);
 					hooksRequired = true;
@@ -2120,6 +2235,7 @@ final class LmdbNativeKernelLowering {
 					keyDomains.toArray(new LmdbNativeKernelBindings.DomainRequest[0]),
 					filterHooks.toArray(new LmdbNativeKernelBindings.FilterHook[0]), columnArray, residualFilters,
 					scanOrders.toArray(new StatementOrder[0]),
+					planRequests.toArray(new LmdbNativeKernelBindings.PlanRequest[0]),
 					new LmdbNativeKernelBindings.KernelGroupLayout(groupSlots.clone(), outs), hooksRequired,
 					distinctExpected);
 			return new Lowered(kernel, bindings);
@@ -2161,7 +2277,8 @@ final class LmdbNativeKernelLowering {
 					adjacencies.toArray(new LmdbNativeKernelBindings.AdjacencyRequest[0]), constantArray, entryArray,
 					keyDomains.toArray(new LmdbNativeKernelBindings.DomainRequest[0]),
 					filterHooks.toArray(new LmdbNativeKernelBindings.FilterHook[0]), columnArray, residualFilters,
-					scanOrders.toArray(new StatementOrder[0]));
+					scanOrders.toArray(new StatementOrder[0]),
+					planRequests.toArray(new LmdbNativeKernelBindings.PlanRequest[0]), null, false, 16);
 			return new Lowered(kernel, bindings);
 		}
 	}

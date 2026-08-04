@@ -117,6 +117,7 @@ final class LmdbNativeKernelIr {
 		int entries;
 		int domains;
 		int scans;
+		int plans;
 		boolean hooks;
 
 		void adjacency(int index) {
@@ -125,6 +126,10 @@ final class LmdbNativeKernelIr {
 
 		void scan(int index) {
 			scans = Math.max(scans, index + 1);
+		}
+
+		void plan(int index) {
+			plans = Math.max(plans, index + 1);
 		}
 
 		void operand(Operand operand) {
@@ -242,6 +247,43 @@ final class LmdbNativeKernelIr {
 				}
 			}
 			requirements.scan(scan);
+		}
+	}
+
+	/**
+	 * Stream an engine-owned physical plan into generated columns. This is the total-coverage producer for native plan
+	 * shapes whose semantics are intentionally not duplicated in generated Java (for example nested MINUS compatibility
+	 * or dataset-scoped statement patterns). The bound {@code KernelPlan} owns the real row state and cursor; this node
+	 * sees only the registered output ids.
+	 */
+	static final class PlanRows extends Node {
+		final int plan;
+		final int[] outCols;
+
+		PlanRows(int plan, int[] outCols) {
+			this.plan = plan;
+			this.outCols = outCols.clone();
+		}
+
+		@Override
+		void key(StringBuilder key) {
+			key.append("PR(p").append(plan).append("->");
+			for (int i = 0; i < outCols.length; i++) {
+				key.append(i == 0 ? "" : ",").append(outCols[i]);
+			}
+			key.append(");");
+		}
+
+		@Override
+		void produced(BitSet columns) {
+			for (int col : outCols) {
+				columns.set(col);
+			}
+		}
+
+		@Override
+		void requirements(Requirements requirements) {
+			requirements.plan(plan);
 		}
 	}
 
@@ -927,8 +969,8 @@ final class LmdbNativeKernelIr {
 
 		Emit(int[] cols, boolean distinct, OutputMods mods) {
 			super(mods);
-			if (cols.length == 0) {
-				throw new IllegalArgumentException("emit needs at least one column");
+			if (cols.length == 0 && distinct) {
+				throw new IllegalArgumentException("zero-column emit cannot own DISTINCT state");
 			}
 			this.cols = cols;
 			this.distinct = distinct;
@@ -975,6 +1017,8 @@ final class LmdbNativeKernelIr {
 	static final int AGG_AVG = 6;
 	static final int AGG_MIN_ID = 7;
 	static final int AGG_MAX_ID = 8;
+	static final int AGG_SUM_DISTINCT = 9;
+	static final int AGG_AVG_DISTINCT = 10;
 
 	/**
 	 * One projected aggregate. Count kinds emit plain longs; SUM/AVG emit their engine-side group ordinal so exact RDF
@@ -1019,6 +1063,10 @@ final class LmdbNativeKernelIr {
 			return new AggregateOutput(AGG_SUM, col);
 		}
 
+		static AggregateOutput sumDistinct(int col) {
+			return new AggregateOutput(AGG_SUM_DISTINCT, col);
+		}
+
 		static AggregateOutput min(int col) {
 			return new AggregateOutput(AGG_MIN, col);
 		}
@@ -1029,6 +1077,10 @@ final class LmdbNativeKernelIr {
 
 		static AggregateOutput avg(int col) {
 			return new AggregateOutput(AGG_AVG, col);
+		}
+
+		static AggregateOutput avgDistinct(int col) {
+			return new AggregateOutput(AGG_AVG_DISTINCT, col);
 		}
 
 		/** Id-preserving MIN: keeps the winning id via {@code hooks.compareValues}; exact typed emission downstream. */
@@ -1051,7 +1103,8 @@ final class LmdbNativeKernelIr {
 		}
 
 		boolean needsNumericHooks() {
-			return kind == AGG_SUM || kind == AGG_MIN || kind == AGG_MAX || kind == AGG_AVG;
+			return kind == AGG_SUM || kind == AGG_SUM_DISTINCT || kind == AGG_MIN || kind == AGG_MAX
+					|| kind == AGG_AVG || kind == AGG_AVG_DISTINCT;
 		}
 
 		boolean needsHooks() {
@@ -1225,7 +1278,7 @@ final class LmdbNativeKernelIr {
 		}
 		for (Node node : pipeline) {
 			boolean streamable = isFilter(node) || node instanceof EnumerateDomain || node instanceof Probe
-					|| node instanceof ScanQuad || node instanceof ProbeClose
+					|| node instanceof ScanQuad || node instanceof PlanRows || node instanceof ProbeClose
 					|| node instanceof EnumerateAdjKeys && ((EnumerateAdjKeys) node).valueCol >= 0;
 			if (!streamable) {
 				return false;

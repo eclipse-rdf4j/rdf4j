@@ -51,12 +51,14 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Node;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Operand;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.OutputMods;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.PathExpand;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.PlanRows;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Probe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ProbeClose;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Union;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPlan;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.junit.jupiter.api.Test;
 
@@ -97,6 +99,21 @@ class LmdbNativeKernelIrEmitterTest {
 		Kernel ir = new Kernel(2, List.of(new EnumerateAdjKeys(0, 0, 1)), emit(0, 1));
 		List<long[]> rows = run(ir, context().adjacencies(follows()));
 		assertRows(rows, new long[][] { { 1, 2 }, { 1, 3 }, { 2, 3 }, { 3, 1 }, { 4, 5 } });
+	}
+
+	@Test
+	void enginePlanRowsPreserveZeroWidthEmptyAndSingletonSemantics() throws Exception {
+		Kernel ir = new Kernel(0, List.of(new PlanRows(0, new int[0])), emit());
+		assertRows(run(ir, context().plans(new FixturePlan(0, new long[0][]))), new long[0][]);
+		assertRows(run(ir, context().plans(new FixturePlan(0, new long[][] { new long[0] }))),
+				new long[][] { new long[0] });
+	}
+
+	@Test
+	void enginePlanRowsStreamPackedColumnsWithoutMaterializing() throws Exception {
+		Kernel ir = new Kernel(2, List.of(new PlanRows(0, new int[] { 0, 1 })), emit(0, 1));
+		assertRows(run(ir, context().plans(new FixturePlan(2, new long[][] { { 11, 12 }, { 21, 22 } }))),
+				new long[][] { { 11, 12 }, { 21, 22 } });
 	}
 
 	@Test
@@ -296,8 +313,9 @@ class LmdbNativeKernelIrEmitterTest {
 		Kernel ir = new Kernel(1, List.of(new EnumerateDomain(0, 0)),
 				new Aggregate(new int[0],
 						new AggregateOutput[] { AggregateOutput.countStar(), AggregateOutput.count(0),
-								AggregateOutput.countDistinct(0), AggregateOutput.sum(0), AggregateOutput.min(0),
-								AggregateOutput.max(0), AggregateOutput.avg(0) },
+								AggregateOutput.countDistinct(0), AggregateOutput.sum(0),
+								AggregateOutput.sumDistinct(0), AggregateOutput.min(0), AggregateOutput.max(0),
+								AggregateOutput.avg(0), AggregateOutput.avgDistinct(0) },
 						null, OutputMods.none()));
 		List<long[]> rows = run(ir, context().domains(new long[] { 5, 7, 9, 7 }).hooks(hooks));
 		assertEquals(1, rows.size());
@@ -306,12 +324,18 @@ class LmdbNativeKernelIrEmitterTest {
 		assertEquals(4L, row[1]);
 		assertEquals(3L, row[2]);
 		assertEquals(0L, row[3], "SUM emits the exact-sidecar group ordinal");
-		assertEquals(5.0, Double.longBitsToDouble(row[4]));
-		assertEquals(9.0, Double.longBitsToDouble(row[5]));
-		assertEquals(0L, row[6], "AVG emits the exact-sidecar group ordinal");
+		assertEquals(0L, row[4], "SUM(DISTINCT) emits the exact-sidecar group ordinal");
+		assertEquals(5.0, Double.longBitsToDouble(row[5]));
+		assertEquals(9.0, Double.longBitsToDouble(row[6]));
+		assertEquals(0L, row[7], "AVG emits the exact-sidecar group ordinal");
+		assertEquals(0L, row[8], "AVG(DISTINCT) emits the exact-sidecar group ordinal");
 		assertEquals(28.0, hooks.numericSum(3, 0));
-		assertEquals(28.0, hooks.numericSum(6, 0));
-		assertEquals(4L, hooks.numericCount(6, 0));
+		assertEquals(21.0, hooks.numericSum(4, 0));
+		assertEquals(3L, hooks.numericCount(4, 0));
+		assertEquals(28.0, hooks.numericSum(7, 0));
+		assertEquals(4L, hooks.numericCount(7, 0));
+		assertEquals(21.0, hooks.numericSum(8, 0));
+		assertEquals(3L, hooks.numericCount(8, 0));
 	}
 
 	@Test
@@ -953,6 +977,7 @@ class LmdbNativeKernelIrEmitterTest {
 		private long[] entries = new long[0];
 		private long[][] domains = new long[0][];
 		private KernelHooks hooks;
+		private KernelPlan[] plans = new KernelPlan[0];
 		private int distinctExpected = 16;
 
 		ContextBuilder adjacencies(NativeLmdbQuerySource.NativeAdjacency... adjacencies) {
@@ -980,13 +1005,56 @@ class LmdbNativeKernelIrEmitterTest {
 			return this;
 		}
 
+		ContextBuilder plans(KernelPlan... plans) {
+			this.plans = plans;
+			return this;
+		}
+
 		ContextBuilder distinctExpected(int distinctExpected) {
 			this.distinctExpected = distinctExpected;
 			return this;
 		}
 
 		KernelContext build() {
-			return new KernelContext(adjacencies, constants, entries, domains, hooks, null, distinctExpected);
+			return new KernelContext(adjacencies, constants, entries, domains, hooks, null, plans, distinctExpected);
+		}
+	}
+
+	private static final class FixturePlan implements KernelPlan {
+		private final int columns;
+		private final long[][] rows;
+
+		FixturePlan(int columns, long[][] rows) {
+			this.columns = columns;
+			this.rows = rows;
+			for (long[] row : rows) {
+				assertEquals(columns, row.length, "fixture row width");
+			}
+		}
+
+		@Override
+		public Cursor open() {
+			return new Cursor() {
+				private int next;
+
+				@Override
+				public int fill(long[] rowBuffer, int maxRows) {
+					int count = Math.min(maxRows, rows.length - next);
+					for (int row = 0; row < count; row++) {
+						System.arraycopy(rows[next + row], 0, rowBuffer, row * columns, columns);
+					}
+					next += count;
+					return count;
+				}
+
+				@Override
+				public void close() {
+				}
+			};
+		}
+
+		@Override
+		public void close() {
 		}
 	}
 

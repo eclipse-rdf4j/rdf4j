@@ -25,6 +25,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -53,12 +54,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
 
 /**
  * Shared-corpus gate for the LMDB Janino engine. The renderer module owns query generation; this class consumes its
  * published test fixture so a new generated query is automatically parsed and classified here as well.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@Isolated
 class LmdbNativeGeneratedQueryCoverageTest {
 
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
@@ -69,6 +72,57 @@ class LmdbNativeGeneratedQueryCoverageTest {
 	private static final Pattern KERNEL_DECLINE = Pattern.compile("(irKernel|irAggregate):([^ ,)|]+)");
 	private static final Set<String> NON_CAPABILITY_REASONS = Set.of("below-threshold-or-pending",
 			"no-fusion-opportunity");
+	static final List<JaninoCorpusCase> PREVIOUSLY_UNSUPPORTED_CORPUS = List.of(
+			new JaninoCorpusCase(1403, "DeepNest50", "agg:minus-arm:MinusPlan"),
+			new JaninoCorpusCase(1405, "DeepNest50", "pattern-guards"),
+			new JaninoCorpusCase(1434, "DeepNest50", "pattern-guards"),
+			new JaninoCorpusCase(1436, "DeepNest50", "agg:minus-arm:MinusPlan"),
+			new JaninoCorpusCase(1305, "Builtins", "child:SingletonPlan"),
+			new JaninoCorpusCase(1209, "Aggregates", "agg:sum-distinct"),
+			new JaninoCorpusCase(3045, "DeepNest50", "too-many-children"),
+			new JaninoCorpusCase(3160, "DeepNest50", "too-many-children"),
+			new JaninoCorpusCase(3814, "DeepNest50", "too-many-children"),
+			new JaninoCorpusCase(1313, "GraphScoping", "pattern-guards"),
+			new JaninoCorpusCase(1314, "GraphScoping", "pattern-guards"),
+			new JaninoCorpusCase(1325, "DeepNest50", "pattern-guards"),
+			new JaninoCorpusCase(1330, "DeepNest50", "pattern-guards"),
+			new JaninoCorpusCase(1374, "DeepNest50", "pattern-guards"),
+			new JaninoCorpusCase(1375, "DeepNest50", "pattern-guards"),
+			new JaninoCorpusCase(1459, "DeepNest50", "optional-arm-guards"),
+			new JaninoCorpusCase(1483, "DeepNest50", "optional-arm-guards"),
+			new JaninoCorpusCase(1827, "DeepNest50", "optional-arm-guards"),
+			new JaninoCorpusCase(1879, "DeepNest50", "optional-arm-guards"),
+			new JaninoCorpusCase(2195, "DeepNest50", "optional-arm-guards"),
+			new JaninoCorpusCase(1465, "DeepNest50", "union-branch-sticky"),
+			new JaninoCorpusCase(1832, "DeepNest50", "union-branch-sticky"),
+			new JaninoCorpusCase(2244, "DeepNest50", "union-branch-sticky"),
+			new JaninoCorpusCase(2820, "DeepNest50", "union-branch-sticky"),
+			new JaninoCorpusCase(3097, "DeepNest50", "union-branch-sticky"),
+			new JaninoCorpusCase(1339, "DeepNest50", "agg:minus-arm:JoinPlan"),
+			new JaninoCorpusCase(1344, "DeepNest50", "agg:minus-arm:JoinPlan"),
+			new JaninoCorpusCase(1668, "DeepNest50", "agg:minus-arm:JoinPlan"),
+			new JaninoCorpusCase(2034, "DeepNest50", "agg:minus-arm:JoinPlan"),
+			new JaninoCorpusCase(1419, "DeepNest50", "agg:minus-arm:LeftJoinPlan"),
+			new JaninoCorpusCase(1540, "DeepNest50", "agg:minus-arm:LeftJoinPlan"),
+			new JaninoCorpusCase(1551, "DeepNest50", "agg:minus-arm:LeftJoinPlan"),
+			new JaninoCorpusCase(1647, "DeepNest50", "agg:minus-arm:LeftJoinPlan"),
+			new JaninoCorpusCase(1348, "DeepNest50", "agg:minus-arm:MinusPlan"),
+			new JaninoCorpusCase(1388, "DeepNest50", "agg:minus-arm:MinusPlan"),
+			new JaninoCorpusCase(1389, "DeepNest50", "agg:minus-arm:MinusPlan"),
+			new JaninoCorpusCase(1392, "DeepNest50", "agg:minus-arm:MinusPlan"),
+			new JaninoCorpusCase(1326, "DeepNest50", "agg:minus-arm:UnionPlan"),
+			new JaninoCorpusCase(1397, "DeepNest50", "agg:minus-arm:UnionPlan"),
+			new JaninoCorpusCase(1430, "DeepNest50", "agg:minus-arm:UnionPlan"),
+			new JaninoCorpusCase(1439, "DeepNest50", "agg:minus-arm:UnionPlan"),
+			new JaninoCorpusCase(1784, "DeepNest50", "agg:witness-filter-mask"),
+			new JaninoCorpusCase(2126, "DeepNest50", "agg:witness-filter-mask"),
+			new JaninoCorpusCase(2571, "DeepNest50", "agg:witness-filter-mask"),
+			new JaninoCorpusCase(3503, "DeepNest50", "agg:witness-filter-mask"),
+			new JaninoCorpusCase(1349, "DeepNest50", "agg:witness-pattern-guards"),
+			new JaninoCorpusCase(1377, "DeepNest50", "agg:witness-pattern-guards"),
+			new JaninoCorpusCase(1437, "DeepNest50", "agg:witness-pattern-guards"),
+			new JaninoCorpusCase(1443, "DeepNest50", "agg:witness-pattern-guards"),
+			new JaninoCorpusCase(1456, "DeepNest50", "agg:witness-pattern-guards"));
 	private static final String MINUS_UNBOUND_UNION_QUERY = """
 			PREFIX ex: <http://ex/>
 			SELECT ?s WHERE {
@@ -192,6 +246,8 @@ class LmdbNativeGeneratedQueryCoverageTest {
 		save(WCOJ_FLAG, "false");
 		save(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "true");
 		save(LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY, "0");
+		save(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "true");
+		save(LmdbNativeKernelLowering.DISTINCT_NUMERIC_PROPERTY, "true");
 
 		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc,posc")
 				.setDirectAdjacencyBuildOnStart(false));
@@ -290,6 +346,7 @@ class LmdbNativeGeneratedQueryCoverageTest {
 	void everyLocalGeneratedTupleQueryHasParityAndAnExplicitJaninoCoverageState() throws Exception {
 		Map<String, CoverageCounts> coverage = new LinkedHashMap<>();
 		List<String> failures = new ArrayList<>();
+		List<String> capabilityDeclines = new ArrayList<>();
 		int total = 0;
 		try (java.util.stream.Stream<GeneratedQuery> generated = SparqlComprehensiveStreamingValidTest
 				.generatedQueries()) {
@@ -340,6 +397,8 @@ class LmdbNativeGeneratedQueryCoverageTest {
 						counts.noOpportunity++;
 					} else {
 						counts.capabilityDecline++;
+						capabilityDeclines.add("index=" + total + " category=" + query.category() + " reasons="
+								+ reasons + "\n" + query.sparql() + "\n---\n");
 						for (String reason : reasons) {
 							if (!NON_CAPABILITY_REASONS.contains(reason)) {
 								counts.declineReasons.merge(reason, 1, Integer::sum);
@@ -356,6 +415,8 @@ class LmdbNativeGeneratedQueryCoverageTest {
 		Path target = Path.of("target", "generated-janino-coverage-census.txt");
 		Files.createDirectories(target.getParent());
 		Files.writeString(target, census);
+		Files.writeString(Path.of("target", "generated-janino-capability-declines.txt"),
+				String.join("", capabilityDeclines));
 		System.out.println(census);
 
 		int accounted = coverage.values()
@@ -365,10 +426,55 @@ class LmdbNativeGeneratedQueryCoverageTest {
 		assertThat(failures)
 				.as("generated-query Janino failures; census written to %s", target)
 				.isEmpty();
+		assertThat(capabilityDeclines)
+				.as("all local tuple-plan shapes must be supported; full declines written beside %s", target)
+				.isEmpty();
 		assertThat(accounted).as("every generated query must have one explicit coverage state").isEqualTo(total);
 		assertThat(coverage.values().stream().mapToInt(count -> count.opened).sum())
 				.as("the shared corpus must exercise compiled Janino kernels")
 				.isPositive();
+	}
+
+	@Test
+	void fiftyPreviouslyUnsupportedQueriesHaveParityAndEngageJanino() {
+		Map<Integer, GeneratedQuery> selected = new LinkedHashMap<>();
+		Set<Integer> wanted = new LinkedHashSet<>();
+		PREVIOUSLY_UNSUPPORTED_CORPUS.forEach(candidate -> wanted.add(candidate.index));
+		int[] index = { 0 };
+		try (java.util.stream.Stream<GeneratedQuery> generated = SparqlComprehensiveStreamingValidTest
+				.generatedQueries()) {
+			generated.forEach(query -> {
+				int current = ++index[0];
+				if (wanted.contains(current)) {
+					selected.put(current, query);
+				}
+			});
+		}
+
+		assertThat(selected).hasSize(PREVIOUSLY_UNSUPPORTED_CORPUS.size());
+		assertThat(PREVIOUSLY_UNSUPPORTED_CORPUS).hasSize(50);
+		List<String> failures = new ArrayList<>();
+		for (JaninoCorpusCase candidate : PREVIOUSLY_UNSUPPORTED_CORPUS) {
+			GeneratedQuery query = selected.get(candidate.index);
+			if (!candidate.category.equals(query.category())) {
+				failures.add(candidate.label() + " moved to category " + query.category());
+				continue;
+			}
+			boolean unordered = !query.sparql().toUpperCase(Locale.ROOT).contains("ORDER BY");
+			List<String> expected = genericRows(query.sparql(), unordered);
+			resetMetricsOnly();
+			List<String> actual = nativeRowsUntilClassified(query.sparql(), unordered);
+			if (!actual.equals(expected)) {
+				failures.add(candidate.label() + " native/generic mismatch\nQUERY:\n" + query.sparql()
+						+ "\nGENERIC:\n" + expected + "\nNATIVE:\n" + actual);
+			}
+			if (openedKernels() == 0L) {
+				failures.add(candidate.label() + " did not engage Janino; current reasons="
+						+ declineReasons(query.sparql()) + "\nQUERY:\n" + query.sparql());
+			}
+		}
+
+		assertThat(failures).as("50-query Janino capability corpus").isEmpty();
 	}
 
 	@Test
@@ -491,7 +597,16 @@ class LmdbNativeGeneratedQueryCoverageTest {
 
 	private List<String> nativeRowsUntilClassified(String query, boolean unordered) {
 		List<String> result = rows(query, unordered);
-		for (int round = 1; round < KERNEL_WARMUP_RUNS && openedKernels() == 0L && declinedKernels() > 0L; round++) {
+		for (int round = 1; round < KERNEL_WARMUP_RUNS && openedKernels() == 0L
+				&& (plannedKernels() > 0L || declinedKernels() > 0L); round++) {
+			try {
+				assertThat(LmdbNativeJaninoCodegen.awaitCompilationsForTests(10, TimeUnit.SECONDS))
+						.as("scheduled Janino compilation completed")
+						.isTrue();
+			} catch (InterruptedException interrupted) {
+				Thread.currentThread().interrupt();
+				throw new AssertionError("interrupted while waiting for Janino compilation", interrupted);
+			}
 			result = rows(query, unordered);
 		}
 		return result;
@@ -622,6 +737,12 @@ class LmdbNativeGeneratedQueryCoverageTest {
 
 		int accounted() {
 			return opened + capabilityDecline + noOpportunity + noAttempt + externalService + nonTuple;
+		}
+	}
+
+	record JaninoCorpusCase(int index, String category, String baselineReason) {
+		String label() {
+			return "index=" + index + " category=" + category + " baselineReason=" + baselineReason;
 		}
 	}
 }

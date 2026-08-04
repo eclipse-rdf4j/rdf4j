@@ -34,6 +34,8 @@ public final class KernelContext {
 	public final KernelHooks hooks;
 	/** Opens direct LMDB scans for patterns no adjacency view can serve; null when the kernel needs none. */
 	public final KernelScanner scanner;
+	/** Opens engine-owned physical sub-plans for IR plan-producer sites; empty when the kernel needs none. */
+	public final KernelPlan[] plans;
 	/** Bounded planner estimate used to size per-group DISTINCT sets before their first insertion. */
 	public final int distinctExpected;
 
@@ -54,12 +56,18 @@ public final class KernelContext {
 
 	public KernelContext(NativeLmdbQuerySource.NativeAdjacency[] adjacencies, long[] constants, long[] entrySlots,
 			long[][] keyDomains, KernelHooks hooks, KernelScanner scanner, int distinctExpected) {
+		this(adjacencies, constants, entrySlots, keyDomains, hooks, scanner, new KernelPlan[0], distinctExpected);
+	}
+
+	public KernelContext(NativeLmdbQuerySource.NativeAdjacency[] adjacencies, long[] constants, long[] entrySlots,
+			long[][] keyDomains, KernelHooks hooks, KernelScanner scanner, KernelPlan[] plans, int distinctExpected) {
 		this.adjacencies = adjacencies;
 		this.constants = constants;
 		this.entrySlots = entrySlots;
 		this.keyDomains = keyDomains;
 		this.hooks = hooks;
 		this.scanner = scanner;
+		this.plans = plans;
 		this.distinctExpected = Math.max(2, distinctExpected);
 	}
 }

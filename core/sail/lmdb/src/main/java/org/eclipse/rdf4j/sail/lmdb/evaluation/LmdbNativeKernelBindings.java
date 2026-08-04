@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPlan;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelScanner;
 
 /**
@@ -113,6 +114,17 @@ final class LmdbNativeKernelBindings {
 		}
 	}
 
+	/** One engine-owned physical producer, index-aligned with the IR's {@code PlanRows.plan} id. */
+	static final class PlanRequest {
+		final SlotPlan plan;
+		final int[] outputSlots;
+
+		PlanRequest(SlotPlan plan, int[] outputSlots) {
+			this.plan = plan;
+			this.outputSlots = outputSlots.clone();
+		}
+	}
+
 	final AdjacencyRequest[] adjacencies;
 	final long[] constants;
 	final int[] entrySlotIds;
@@ -122,6 +134,7 @@ final class LmdbNativeKernelBindings {
 	final List<MaskedFilter> residualFilters;
 	/** Bind-time order descriptor for each kernel scan site; null means the source's natural index choice. */
 	final StatementOrder[] scanOrders;
+	final PlanRequest[] planRequests;
 	final KernelGroupLayout groupLayout; // null for row-side lowerings
 	final boolean hooksRequired; // exact numeric and min/max outputs need hooks even without filter hooks
 	final int distinctExpected;
@@ -159,6 +172,14 @@ final class LmdbNativeKernelBindings {
 			DomainRequest[] keyDomains, FilterHook[] filterHooks, int[] columnEngineSlots,
 			List<MaskedFilter> residualFilters, StatementOrder[] scanOrders, KernelGroupLayout groupLayout,
 			boolean hooksRequired, int distinctExpected) {
+		this(adjacencies, constants, entrySlotIds, keyDomains, filterHooks, columnEngineSlots, residualFilters,
+				scanOrders, new PlanRequest[0], groupLayout, hooksRequired, distinctExpected);
+	}
+
+	LmdbNativeKernelBindings(AdjacencyRequest[] adjacencies, long[] constants, int[] entrySlotIds,
+			DomainRequest[] keyDomains, FilterHook[] filterHooks, int[] columnEngineSlots,
+			List<MaskedFilter> residualFilters, StatementOrder[] scanOrders, PlanRequest[] planRequests,
+			KernelGroupLayout groupLayout, boolean hooksRequired, int distinctExpected) {
 		this.adjacencies = adjacencies;
 		this.constants = constants;
 		this.entrySlotIds = entrySlotIds;
@@ -167,6 +188,7 @@ final class LmdbNativeKernelBindings {
 		this.columnEngineSlots = columnEngineSlots;
 		this.residualFilters = residualFilters;
 		this.scanOrders = scanOrders;
+		this.planRequests = planRequests;
 		this.groupLayout = groupLayout;
 		this.hooksRequired = hooksRequired;
 		this.distinctExpected = distinctExpected;
@@ -294,6 +316,109 @@ final class LmdbNativeKernelBindings {
 		for (int i = 0; i < entrySlots.length; i++) {
 			entrySlots[i] = row.slots[entrySlotIds[i]];
 		}
-		return new KernelContext(views, constants, entrySlots, domains, hooks, scanner, distinctExpected);
+		KernelPlan[] plans = new KernelPlan[planRequests.length];
+		for (int i = 0; i < plans.length; i++) {
+			plans[i] = new BoundPlan(planRequests[i], row);
+		}
+		return new KernelContext(views, constants, entrySlots, domains, hooks, scanner, plans, distinctExpected);
+	}
+
+	/** Runtime wrapper that isolates an interpreted producer from the row receiving generated-kernel output. */
+	private static final class BoundPlan implements KernelPlan {
+		private final PlanRequest request;
+		private final RowState parent;
+		private BoundCursor active;
+
+		private BoundPlan(PlanRequest request, RowState parent) {
+			this.request = request;
+			this.parent = parent;
+		}
+
+		@Override
+		public Cursor open() {
+			close();
+			RowState scratch = new RowState(parent.source, parent.layout, parent.base, parent.exactValuesMetrics);
+			scratch.memoryScope = parent.memoryScope;
+			scratch.runtimePlan = parent.runtimePlan;
+			System.arraycopy(parent.slots, 0, scratch.slots, 0, parent.slots.length);
+			scratch.recomputeBoundMask();
+			try {
+				active = new BoundCursor(request.plan.open(scratch), scratch, request.outputSlots, this);
+				return active;
+			} catch (java.io.IOException problem) {
+				throw new PlanFailure(problem);
+			}
+		}
+
+		@Override
+		public void close() {
+			if (active != null) {
+				active.close();
+			}
+		}
+
+		private void released(BoundCursor cursor) {
+			if (active == cursor) {
+				active = null;
+			}
+		}
+	}
+
+	private static final class BoundCursor implements KernelPlan.Cursor {
+		private final RowCursor cursor;
+		private final RowState row;
+		private final int[] outputSlots;
+		private final BoundPlan owner;
+		private boolean closed;
+
+		private BoundCursor(RowCursor cursor, RowState row, int[] outputSlots, BoundPlan owner) {
+			this.cursor = cursor;
+			this.row = row;
+			this.outputSlots = outputSlots;
+			this.owner = owner;
+		}
+
+		@Override
+		public int fill(long[] rowBuffer, int maxRows) {
+			if (closed || maxRows <= 0) {
+				return 0;
+			}
+			int rows = 0;
+			try {
+				while (rows < maxRows && cursor.next()) {
+					int base = rows * outputSlots.length;
+					for (int i = 0; i < outputSlots.length; i++) {
+						rowBuffer[base + i] = row.slots[outputSlots[i]];
+					}
+					rows++;
+				}
+				return rows;
+			} catch (java.io.IOException problem) {
+				close();
+				throw new PlanFailure(problem);
+			}
+		}
+
+		@Override
+		public void close() {
+			if (!closed) {
+				closed = true;
+				cursor.close();
+				owner.released(this);
+			}
+		}
+	}
+
+	/** Carries a checked store failure through the generated kernel's unchecked SPI. */
+	static final class PlanFailure extends RuntimeException {
+		private static final long serialVersionUID = 1L;
+
+		private PlanFailure(java.io.IOException cause) {
+			super(cause);
+		}
+
+		java.io.IOException ioCause() {
+			return (java.io.IOException) getCause();
+		}
 	}
 }

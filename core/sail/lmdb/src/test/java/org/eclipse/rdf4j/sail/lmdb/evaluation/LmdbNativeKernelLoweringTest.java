@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.junit.jupiter.api.Test;
@@ -244,7 +245,29 @@ class LmdbNativeKernelLoweringTest {
 
 	@Test
 	void unsupportedRootDeclines() {
-		assertNull(LmdbNativeKernelLowering.lowerRows(EmptyPlan.INSTANCE, freshRow(), null));
+		String previous = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
+		try {
+			assertNull(LmdbNativeKernelLowering.lowerRows(EmptyPlan.INSTANCE, freshRow(), null));
+		} finally {
+			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previous);
+		}
+	}
+
+	@Test
+	void unsupportedRootUsesPlanBridgeOnlyWhenExplicitlyEnabled() {
+		String previous = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "true");
+		try {
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(EmptyPlan.INSTANCE,
+					freshRow(), null);
+			assertNotNull(lowered);
+			assertTrue(lowered.kernel.shapeKey().contains("PR(p0->);"), lowered.kernel.shapeKey());
+			assertEquals("unsupported:EmptyPlan", lowered.planBridgeReason);
+			assertEquals(1, lowered.kernel.requirements.plans);
+		} finally {
+			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previous);
+		}
 	}
 
 	// ------------------------------------------------------------------
@@ -275,6 +298,59 @@ class LmdbNativeKernelLoweringTest {
 				"the outer class-extent domain keeps each subject's rows contiguous");
 		assertEquals(512, lowered.bindings.distinctExpected,
 				"the fallback set should be sized from the producer estimate");
+	}
+
+	@Test
+	void aggregateRungSupportsAvgDistinctWithoutPlanBridge() {
+		MultiJoinPlan plan = new MultiJoinPlan(
+				new SlotPlan[] { pattern(Term.slot(0), Term.slot(1)), pattern(Term.slot(1), Term.slot(2)) },
+				new MaskedFilter[0]);
+		String previous = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
+		String previousDistinct = System.getProperty(LmdbNativeKernelLowering.DISTINCT_NUMERIC_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
+		System.setProperty(LmdbNativeKernelLowering.DISTINCT_NUMERIC_PROPERTY, "true");
+		try {
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerAggregate(plan, freshRow(),
+					new int[0],
+					new AggregateSpec[] { AggregateSpec.slot("avg", 1, true, AggKind.AVG) }, null);
+			assertNotNull(lowered, "AVG(DISTINCT) needs a generated distinct set before exact accumulation");
+		} finally {
+			restoreProperty(LmdbNativeKernelLowering.DISTINCT_NUMERIC_PROPERTY, previousDistinct);
+			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previous);
+		}
+	}
+
+	@Test
+	void distinctNumericGateRecordsTheExactJaninoDeclineReason() {
+		MultiJoinPlan plan = new MultiJoinPlan(
+				new SlotPlan[] { pattern(Term.slot(0), Term.slot(1)), pattern(Term.slot(1), Term.slot(2)) },
+				new MaskedFilter[0]);
+		String previousBridge = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
+		String previousDistinct = System.getProperty(LmdbNativeKernelLowering.DISTINCT_NUMERIC_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
+		System.setProperty(LmdbNativeKernelLowering.DISTINCT_NUMERIC_PROPERTY, "false");
+		try {
+			for (AggKind kind : new AggKind[] { AggKind.SUM, AggKind.AVG }) {
+				SingletonSet target = new SingletonSet();
+				target.setRuntimeTelemetryEnabled(true);
+				assertNull(LmdbNativeKernelLowering.lowerAggregate(plan, freshRow(), new int[0],
+						new AggregateSpec[] { AggregateSpec.slot(kind.name().toLowerCase(), 1, true, kind) }, target));
+				assertEquals("irKernel:agg:" + kind.name().toLowerCase()
+						+ "-distinct-disabled[property=" + LmdbNativeKernelLowering.DISTINCT_NUMERIC_PROPERTY
+						+ "=false]", LmdbNativeAttemptMetrics.dispatchTrace(target).declineReasons());
+			}
+		} finally {
+			restoreProperty(LmdbNativeKernelLowering.DISTINCT_NUMERIC_PROPERTY, previousDistinct);
+			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
+		}
+	}
+
+	private static void restoreProperty(String property, String previous) {
+		if (previous == null) {
+			System.clearProperty(property);
+		} else {
+			System.setProperty(property, previous);
+		}
 	}
 
 	/**
