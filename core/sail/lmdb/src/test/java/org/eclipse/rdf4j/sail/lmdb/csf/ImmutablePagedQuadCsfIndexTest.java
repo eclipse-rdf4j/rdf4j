@@ -149,6 +149,32 @@ class ImmutablePagedQuadCsfIndexTest {
 	}
 
 	@Test
+	void scalarAccessOnAMultiPageRunLoadsOnePageNotTheWholeChain() {
+		int count = 80_000;
+		long[] neighbours = new long[count];
+		long[] contexts = new long[count];
+		for (int i = 0; i < count; i++) {
+			neighbours[i] = id(1, 1_000_000L + i);
+		}
+		try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0,
+				List.of(new Row(id(1, 77), neighbours, contexts)))) {
+			assertThat(index.pageCount()).isGreaterThan(1);
+			ImmutablePagedQuadCsfIndex.RowCursor cursor = new ImmutablePagedQuadCsfIndex.RowCursor();
+			index.resolve(index.findLocalReference(0, 0, id(1, 77)), cursor);
+
+			long decodesBefore = CompactCsfPageReader.DECODES.sum();
+			for (long ordinal = 0; ordinal < count; ordinal += 997) {
+				assertThat(cursor.neighborAt(ordinal)).isEqualTo(neighbours[(int) ordinal]);
+			}
+			long decodes = CompactCsfPageReader.DECODES.sum() - decodesBefore;
+			assertThat(decodes)
+					.as("an ascending scalar sweep must decode each extent page at most once, "
+							+ "not re-walk the chain from its first page per access")
+					.isLessThanOrEqualTo(index.pageCount());
+		}
+	}
+
+	@Test
 	void splitsOneNeighborFibreAtContextCoordinateBoundaries() {
 		int count = 80_000;
 		long neighbor = id(1, 1_000_000);

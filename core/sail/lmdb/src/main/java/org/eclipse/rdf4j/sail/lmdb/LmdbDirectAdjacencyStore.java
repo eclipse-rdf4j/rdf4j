@@ -1846,34 +1846,38 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	private RecordIterator openRootScan(LmdbAdjacencyReadView view, StatementOrder order, long predicate, long context,
 			boolean explicit, AdjacencyAccessObserver observer, long subject, long object) {
-		if (!rootScanEnabled() || options.mode() != DirectAdjacencyMode.PREFER || context >= 0L) {
+		if (!rootScanEnabled() || options.mode() != DirectAdjacencyMode.PREFER) {
 			metrics.recordFallback(FallbackReason.ROOT_SCAN);
-			String reason;
-			if (!rootScanEnabled()) {
-				reason = "FEATURE_DISABLED[" + ROOT_SCAN_PROPERTY + "=false]";
-			} else if (options.mode() != DirectAdjacencyMode.PREFER) {
-				reason = "MODE_" + options.mode();
-			} else {
-				reason = "CONTEXT_BOUND[root scan requires an unbound context]";
-			}
+			String reason = !rootScanEnabled()
+					? "FEATURE_DISABLED[" + ROOT_SCAN_PROPERTY + "=false]"
+					: "MODE_" + options.mode();
 			observe(observer, false, reason, order, subject, predicate, object, context);
 			return null;
 		}
-		if (order != null && order != StatementOrder.S) {
+		// key-major walk order: subject keys (outgoing plane) serve S, object keys (incoming plane) serve O
+		if (order != null && order != StatementOrder.S && order != StatementOrder.O) {
 			metrics.recordFallback(FallbackReason.INDEX_ORDER_INCOMPATIBLE);
 			observe(observer, false, FallbackReason.INDEX_ORDER_INCOMPATIBLE.name(), order, subject, predicate,
 					object, context);
 			return null;
 		}
-		LmdbDirectNativeAdjacency adjacency = bindCompleteAdjacency(view, predicate, true, explicit);
+		boolean bySubject = order != StatementOrder.O;
+		LmdbDirectNativeAdjacency adjacency = bindCompleteAdjacency(view, predicate, bySubject, explicit);
 		if (adjacency == null) {
 			observe(observer, false, completeAdjacencyDeclineReason(view, predicate), order, subject, predicate,
 					object, context);
 			return null;
 		}
+		if (context > 0L && view.state().overlays() == null
+				&& view.state().contextCatalog().ordinalForRaw(context) < 0) {
+			// a bound context absent from the read view's catalog proves no row can match
+			metrics.recordExactMiss();
+			observe(observer, true, "EXACT_EMPTY", order, subject, predicate, object, context);
+			return EmptyRecordIterator.INSTANCE;
+		}
 		metrics.recordHit();
 		observe(observer, true, "ROOT_SCAN", order, subject, predicate, object, context);
-		return new LmdbDirectAdjacencyRootIterator(view, adjacency, predicate);
+		return new LmdbDirectAdjacencyRootIterator(view, adjacency, predicate, context, bySubject);
 	}
 
 	/**
@@ -1884,10 +1888,13 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	String rootScanIndexName(LmdbAdjacencyReadView view, StatementOrder order, long subject, long predicate,
 			long object, long context) {
 		if (!rootScanEnabled() || options.mode() != DirectAdjacencyMode.PREFER || subject > 0L || predicate <= 0L
-				|| object > 0L || context >= 0L || order != null && order != StatementOrder.S) {
+				|| object > 0L || order != null && order != StatementOrder.S && order != StatementOrder.O) {
 			return null;
 		}
-		return completeBasePredicateOrdinal(view, predicate, false) == LmdbInMemoryAdjacencyIndex.NOT_COVERED ? null
+		if (completeBasePredicateOrdinal(view, predicate, false) == LmdbInMemoryAdjacencyIndex.NOT_COVERED) {
+			return null;
+		}
+		return order == StatementOrder.O ? LmdbDirectAdjacencyRootIterator.INCOMING_INDEX_NAME
 				: LmdbDirectAdjacencyRootIterator.INDEX_NAME;
 	}
 

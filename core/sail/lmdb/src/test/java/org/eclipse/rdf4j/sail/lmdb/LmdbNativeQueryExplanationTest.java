@@ -375,7 +375,9 @@ public class LmdbNativeQueryExplanationTest {
 	}
 
 	@Test
-	public void telemetryExplanationReportsWhyAnOrderedScanUsedLmdbInsteadOfAdjacency() throws Exception {
+	public void telemetryExplanationReportsTheObjectOrderedAdjacencyRootScan() throws Exception {
+		// three-tier parity plan Milestone 3: an O-ordered root scan is served from the incoming plane's key
+		// domain, so the shape that used to decline with INDEX_ORDER_INCOMPATIBLE now reports adjacency service
 		assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
 		String query = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT (COUNT(DISTINCT ?price) AS ?count) WHERE { "
@@ -385,12 +387,12 @@ public class LmdbNativeQueryExplanationTest {
 
 		assertThat(rendered)
 				.contains("    adjacencyAccess:\n"
-						+ "      used: false\n"
+						+ "      used: true\n"
 						+ "      attempts:\n"
 						+ "        0:\n"
-						+ "          source: LMDB\n"
-						+ "          outcome: DECLINED_TO_LMDB\n"
-						+ "          reason: INDEX_ORDER_INCOMPATIBLE\n")
+						+ "          source: IN_MEMORY_ADJACENCY\n"
+						+ "          outcome: SERVED\n"
+						+ "          reason: ROOT_SCAN\n")
 				.contains("          where: Pattern(")
 				.contains("          requestedOrder: O\n");
 	}

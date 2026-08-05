@@ -95,6 +95,55 @@ class PackedLongVectorTest {
 	}
 
 	@Test
+	void binarySearchHintServesRepeatedSequentialAndRandomLookups() {
+		int size = 3 * PackedLongVector.BLOCK_SIZE + 17;
+		long[] values = new long[size];
+		java.util.Random random = new java.util.Random(42);
+		long value = Long.MAX_VALUE - 3L * size;
+		for (int i = 0; i < size; i++) {
+			value += 2 + random.nextInt(5);
+			values[i] = value;
+		}
+		byte[] encoded = PackedLongVector.encode(values, 0, values.length, PackedLongVector.Hint.UNSORTED_IDS);
+		long address = UnsafeAccess.allocateZeroed(encoded.length);
+		try {
+			UnsafeAccess.copyFromArray(encoded, 0, address, encoded.length);
+			PackedLongVector.Reader reader = PackedLongVector.reader(address, encoded.length);
+			for (int i = 0; i < size; i++) {
+				assertThat(reader.binarySearchUnsigned(values[i])).isEqualTo(i);
+				assertThat(reader.binarySearchUnsigned(values[i])).isEqualTo(i);
+				assertThat(reader.binarySearchUnsigned(values[i] + 1))
+						.isEqualTo(referenceSearchUnsigned(values, values[i] + 1));
+			}
+			for (int i = size - 1; i >= 0; i--) {
+				assertThat(reader.binarySearchUnsigned(values[i])).isEqualTo(i);
+				assertThat(reader.binarySearchUnsigned(values[i] - 1))
+						.isEqualTo(referenceSearchUnsigned(values, values[i] - 1));
+			}
+			for (int round = 0; round < 4_000; round++) {
+				long target = values[random.nextInt(size)] + random.nextInt(9) - 4;
+				assertThat(reader.binarySearchUnsigned(target)).isEqualTo(referenceSearchUnsigned(values, target));
+			}
+			assertThat(reader.binarySearchUnsigned(0)).isEqualTo(-1);
+			assertThat(reader.binarySearchUnsigned(0)).isEqualTo(-1);
+			assertThat(reader.binarySearchUnsigned(-1L)).isEqualTo(-1);
+			assertThat(reader.binarySearchUnsigned(values[0])).isZero();
+			assertThat(reader.binarySearchUnsigned(values[size - 1])).isEqualTo(size - 1);
+		} finally {
+			UnsafeAccess.free(address);
+		}
+	}
+
+	private static int referenceSearchUnsigned(long[] values, long target) {
+		for (int i = 0; i < values.length; i++) {
+			if (values[i] == target) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	@Test
 	void malformedHeadersDirectoriesAndBlocksFailAtReaderConstruction() {
 		long[] values = new long[257];
 		for (int i = 0; i < values.length; i++) {

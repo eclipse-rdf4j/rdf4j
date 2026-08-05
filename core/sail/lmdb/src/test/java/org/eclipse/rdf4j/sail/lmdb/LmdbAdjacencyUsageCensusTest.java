@@ -119,9 +119,13 @@ class LmdbAdjacencyUsageCensusTest {
 			new Scenario("ordered_neighbors",
 					PREFIX + "SELECT ?o WHERE { ex:person42 ex:knows ?o } ORDER BY ?o", 3),
 			new Scenario("all_predicates",
-					PREFIX + "SELECT DISTINCT ?p WHERE { ?s ?p ?o }", 5),
+					PREFIX + "SELECT DISTINCT ?p WHERE { ?s ?p ?o }", 6),
 			new Scenario("predicate_histogram",
-					PREFIX + "SELECT ?p (COUNT(*) AS ?count) WHERE { ?s ?p ?o } GROUP BY ?p", 5));
+					PREFIX + "SELECT ?p (COUNT(*) AS ?count) WHERE { ?s ?p ?o } GROUP BY ?p", 6),
+			new Scenario("graph_scoped_scan",
+					PREFIX + "SELECT ?s ?o WHERE { GRAPH ex:g1 { ?s ex:memberOf ?o } }", PEOPLE / 5),
+			new Scenario("ordered_objects_scan",
+					PREFIX + "SELECT ?s ?o WHERE { ?s ex:knows ?o } ORDER BY ?o", -1));
 
 	@BeforeAll
 	void setUp() {
@@ -141,6 +145,10 @@ class LmdbAdjacencyUsageCensusTest {
 				conn.add(person, iri("name"), F.createLiteral("person-" + i));
 				conn.add(person, iri("age"), F.createLiteral(18 + (i % 60)));
 				conn.add(person, iri("worksAt"), company(i % COMPANIES));
+				if (i % 5 == 0) {
+					// named-graph-only membership: the context-bound root scan scenarios read this graph
+					conn.add(person, iri("memberOf"), company(i % COMPANIES), iri("g1"));
+				}
 			}
 			for (int c = 0; c < COMPANIES; c++) {
 				conn.add(company(c), iri("locatedIn"), city(c % CITIES));
@@ -287,6 +295,29 @@ class LmdbAdjacencyUsageCensusTest {
 						after.fallbacks(FallbackReason.ROOT_SCAN),
 						scenario.name() + " must not fall back to a root scan");
 			}
+		} finally {
+			restoreProperties(previous);
+		}
+	}
+
+	@Test
+	void flaggedContextBoundRootScanServesFromAdjacency() {
+		Map<String, String> previous = replaceProperties(Map.of(
+				"rdf4j.lmdb.nativeQueryEngine.enabled", "true"));
+		try {
+			Scenario scenario = scenarios.stream()
+					.filter(candidate -> "graph_scoped_scan".equals(candidate.name()))
+					.findFirst()
+					.orElseThrow();
+			LmdbAdjacencyMetrics.Snapshot before = direct.snapshotMetrics();
+			long rows = executeAndCount(scenario.query());
+			LmdbAdjacencyMetrics.Snapshot after = direct.snapshotMetrics();
+
+			assertEquals(scenario.expectedRows(), rows, "graph_scoped_scan row count");
+			assertTrue(after.lookupHits > before.lookupHits,
+					"a context-bound root scan must be served from the adjacency planes");
+			assertEquals(before.fallbacks(FallbackReason.ROOT_SCAN), after.fallbacks(FallbackReason.ROOT_SCAN),
+					"a context-bound root scan must not fall back to an LMDB cursor");
 		} finally {
 			restoreProperties(previous);
 		}

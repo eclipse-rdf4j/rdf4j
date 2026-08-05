@@ -162,6 +162,25 @@ class CompactCsfPageTest {
 		assertMalformed(badVectorDirectory);
 	}
 
+	@Test
+	void resolvingTheSameAddressAgainSkipsTheDecode() {
+		CompactCsfPageEncoder.PageImage image = encodeRows(16);
+		long address = UnsafeAccess.allocateZeroed(image.capacity());
+		try {
+			UnsafeAccess.copyFromArray(image.bytes(), 0, address, image.bytes().length);
+			CompactCsfPageReader reader = new CompactCsfPageReader(address);
+			int rows = reader.rowCount();
+			long decodesBefore = CompactCsfPageReader.DECODES.sum();
+			reader.resolve(address);
+			assertThat(CompactCsfPageReader.DECODES.sum())
+					.as("re-resolving the address this reader already holds must not decode the page again")
+					.isEqualTo(decodesBefore);
+			assertThat(reader.rowCount()).isEqualTo(rows);
+		} finally {
+			UnsafeAccess.free(address);
+		}
+	}
+
 	private static CompactCsfPageEncoder.PageImage encodeRows(int rows) {
 		CompactCsfPageEncoder.PageImage image = tryEncodeRows(rows);
 		if (image == null) {

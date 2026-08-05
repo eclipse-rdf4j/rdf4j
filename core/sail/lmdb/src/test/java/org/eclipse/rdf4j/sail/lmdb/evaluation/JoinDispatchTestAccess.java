@@ -49,6 +49,18 @@ public final class JoinDispatchTestAccess {
 		return LmdbNativeLeapfrogJoin.FRONTIERS_STREAMED.get();
 	}
 
+	public static long exactEmptyPrunes() {
+		return LmdbNativeAggregatePatternCompiler.EXACT_EMPTY_PRUNES.get();
+	}
+
+	public static long factorizedEngaged() {
+		return LmdbNativeFactorizedRows.ENGAGED.get();
+	}
+
+	public static long factorizedCacheBackedMemoSkips() {
+		return LmdbNativeFactorizedRows.CACHE_BACKED_MEMO_SKIPS.get();
+	}
+
 	public static long adjacencySemijoinAnswered() {
 		return AdjacencyIntersectionProbe.ANSWERED.get();
 	}

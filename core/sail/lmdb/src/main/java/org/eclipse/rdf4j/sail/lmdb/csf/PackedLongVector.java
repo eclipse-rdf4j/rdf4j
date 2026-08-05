@@ -465,6 +465,9 @@ final class PackedLongVector {
 		private long address;
 		private int size;
 		private int blockCount;
+		/** Last value resolved by {@link #binarySearchUnsigned(long)}; readers are single-cursor state, not shared. */
+		private int searchHintIndex = -1;
+		private long searchHintValue;
 
 		Reader() {
 		}
@@ -483,12 +486,14 @@ final class PackedLongVector {
 			this.address = address;
 			this.size = resolvedSize;
 			this.blockCount = resolvedBlockCount;
+			this.searchHintIndex = -1;
 		}
 
 		void clear() {
 			address = 0;
 			size = 0;
 			blockCount = 0;
+			searchHintIndex = -1;
 		}
 
 		int size() {
@@ -506,8 +511,78 @@ final class PackedLongVector {
 		}
 
 		int binarySearchUnsigned(long target) {
-			int low = 0;
+			// callers re-probe the same or a nearby row far more often than a random one, so
+			// resolve repeats from the memo and gallop out from the last position before
+			// falling back to a binary search over the remaining window; the memo fast path
+			// stays in this small dispatch method so the JIT can inline it into callers
+			int hint = searchHintIndex;
+			if (hint < 0) {
+				return searchWindow(target, 0, size - 1, -1, 0);
+			}
+			int hintComparison = Long.compareUnsigned(searchHintValue, target);
+			if (hintComparison == 0) {
+				return hint;
+			}
+			return hintComparison < 0 ? gallopForward(target, hint) : gallopBackward(target, hint);
+		}
+
+		private int gallopForward(long target, int hint) {
+			int floorIndex = hint;
+			long floorValue = searchHintValue;
+			int low = hint + 1;
 			int high = size - 1;
+			for (int step = 1;; step <<= 1) {
+				int probe = hint + step;
+				if (probe > high || probe < 0) {
+					break;
+				}
+				long value = get(probe);
+				int comparison = Long.compareUnsigned(value, target);
+				if (comparison < 0) {
+					floorIndex = probe;
+					floorValue = value;
+					low = probe + 1;
+				} else if (comparison > 0) {
+					high = probe - 1;
+					break;
+				} else {
+					searchHintIndex = probe;
+					searchHintValue = value;
+					return probe;
+				}
+			}
+			return searchWindow(target, low, high, floorIndex, floorValue);
+		}
+
+		private int gallopBackward(long target, int hint) {
+			int low = 0;
+			int high = hint - 1;
+			int floorIndex = -1;
+			long floorValue = 0;
+			for (int step = 1;; step <<= 1) {
+				int probe = hint - step;
+				if (probe < 0) {
+					break;
+				}
+				long value = get(probe);
+				int comparison = Long.compareUnsigned(value, target);
+				if (comparison > 0) {
+					high = probe - 1;
+				} else if (comparison < 0) {
+					floorIndex = probe;
+					floorValue = value;
+					low = probe + 1;
+					break;
+				} else {
+					searchHintIndex = probe;
+					searchHintValue = value;
+					return probe;
+				}
+			}
+			return searchWindow(target, low, high, floorIndex, floorValue);
+		}
+
+		private int searchWindow(long target, int low, int high, int floorIndex, long floorValue) {
 			int cachedBlock = -1;
 			int cachedMode = -1;
 			int cachedType = 0;
@@ -543,12 +618,20 @@ final class PackedLongVector {
 				}
 				int comparison = Long.compareUnsigned(value, target);
 				if (comparison < 0) {
+					floorIndex = mid;
+					floorValue = value;
 					low = mid + 1;
 				} else if (comparison > 0) {
 					high = mid - 1;
 				} else {
+					searchHintIndex = mid;
+					searchHintValue = value;
 					return mid;
 				}
+			}
+			if (floorIndex >= 0) {
+				searchHintIndex = floorIndex;
+				searchHintValue = floorValue;
 			}
 			return -1;
 		}

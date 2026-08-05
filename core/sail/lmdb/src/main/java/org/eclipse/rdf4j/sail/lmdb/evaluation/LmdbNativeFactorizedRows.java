@@ -71,6 +71,8 @@ final class LmdbNativeFactorizedRows {
 	static final AtomicLong ENGAGED = new AtomicLong();
 	/** No-silent-caps counter: memo entries or value batches that exceeded the caps and bypassed the memo. */
 	static final AtomicLong MEMO_BYPASSES = new AtomicLong();
+	/** Tail-branch enum scans whose per-key value memo was skipped because the probe is adjacency-cache-backed. */
+	static final AtomicLong CACHE_BACKED_MEMO_SKIPS = new AtomicLong();
 
 	static final boolean ENABLED = !"false".equals(System.getProperty("rdf4j.lmdb.factorizedRows.enabled"));
 	/** Separately benchmarkable migration step: batched fills + per-key quad memo for the flat prefix depths. */
@@ -1048,6 +1050,12 @@ final class LmdbNativeFactorizedRows {
 			}
 
 			TailResult transientResult = count == 0L ? TailResult.EMPTY : new TailResult(count, enumScratch);
+			// a cache-served probe already holds these runs in process memory: memoizing per-key value copies
+			// would only duplicate the shared adjacency cache (same rule as the aggregate twin's value memo)
+			if (probe.adjacencyCacheBacked()) {
+				CACHE_BACKED_MEMO_SKIPS.incrementAndGet();
+				return transientResult;
+			}
 			if (repeatedKey) {
 				return promoteRepeatedEnumResult(transientResult);
 			}

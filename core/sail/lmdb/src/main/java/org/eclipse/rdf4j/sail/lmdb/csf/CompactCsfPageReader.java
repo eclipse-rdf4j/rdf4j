@@ -43,6 +43,9 @@ final class CompactCsfPageReader {
 			CompactCsfPageFormat.CONTEXT_TAILS_OFFSET_AT
 	};
 
+	/** Full page decodes (header validation + vector section resolution); address-equal re-resolves skip this. */
+	static final java.util.concurrent.atomic.LongAdder DECODES = new java.util.concurrent.atomic.LongAdder();
+
 	CompactCsfPageReader() {
 	}
 
@@ -51,6 +54,12 @@ final class CompactCsfPageReader {
 	}
 
 	void resolve(long address) {
+		if (this.address == address) {
+			// pages are immutable for the lifetime of their slab: this reader already holds the decoded
+			// header and vector sections for that address, so re-resolving would be pure repeated work
+			return;
+		}
+		DECODES.increment();
 		this.address = address;
 		if (UnsafeAccess.getIntLE(address + CompactCsfPageFormat.MAGIC_AT) != CompactCsfPageFormat.MAGIC) {
 			throw new IllegalStateException("malformed CSF page magic");

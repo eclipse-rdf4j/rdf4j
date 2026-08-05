@@ -50,6 +50,14 @@ import org.eclipse.rdf4j.sail.lmdb.Varint;
 @Experimental
 abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePlannerBase {
 	private static final String RANGE_PUSHDOWN_ENABLED = "rdf4j.lmdb.native.rangePushdown";
+	static final String EXACT_EMPTY_PRUNING_PROPERTY = "rdf4j.lmdb.directAdjacency.exactEmptyPruning.enabled";
+	/** Statement patterns folded to the empty plan at compile time by an exact adjacency NOT_FOUND proof. */
+	static final java.util.concurrent.atomic.AtomicLong EXACT_EMPTY_PRUNES = new java.util.concurrent.atomic.AtomicLong();
+
+	static boolean exactEmptyPruningEnabled() {
+		String configured = System.getProperty(EXACT_EMPTY_PRUNING_PROPERTY);
+		return configured == null || Boolean.parseBoolean(configured);
+	}
 
 	LmdbNativeAggregatePatternCompiler(QueryEvaluationContext context, LmdbNativeEvaluationStrategy strategy,
 			NativeLmdbQuerySource source) {
@@ -342,6 +350,9 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 		if (s == null || p == null || o == null || c == null) {
 			return null;
 		}
+		if (provablyEmptyByAdjacency(s, p, o)) {
+			return null;
+		}
 		return new PatternPlan(s, p, o, c, contexts, sp.getScope() == Scope.NAMED_CONTEXTS,
 				sp.getStatementOrder(), indexName(sp.getStatementOrder(), s, p, o, c),
 				staticEstimate(s, p, o, c, contexts));
@@ -520,9 +531,43 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 		if (s == null || p == null || o == null || c == null) {
 			return null;
 		}
+		if (provablyEmptyByAdjacency(s, p, o)) {
+			return null;
+		}
 		return new PatternPlan(s, p, o, c, contexts, sp.getScope() == Scope.NAMED_CONTEXTS,
 				sp.getStatementOrder(), indexName(sp.getStatementOrder(), s, p, o, c),
 				algebraEstimate(sp));
+	}
+
+	/**
+	 * Exact-empty pruning: a constant predicate with a constant endpoint whose adjacency lookup returns the exact
+	 * NOT_FOUND proof compiles to the empty plan, letting the existing empty-plan folding kill the enclosing subtree
+	 * before execution. The proof counts the degree over all contexts, so no context constraint or named-graph scope
+	 * can resurrect a row. {@code OptionalLong.empty()} means the planes cannot answer and the pattern compiles
+	 * normally.
+	 */
+	private boolean provablyEmptyByAdjacency(Term s, Term p, Term o) {
+		if (!exactEmptyPruningEnabled() || !p.isConstant() || p.constant <= 0L) {
+			return false;
+		}
+		if (s.isConstant() && s.constant > 0L) {
+			java.util.OptionalLong degree = source.exactDegree(p.constant, s.constant, true);
+			if (degree.isPresent()) {
+				if (degree.getAsLong() == 0L) {
+					EXACT_EMPTY_PRUNES.incrementAndGet();
+					return true;
+				}
+				return false;
+			}
+		}
+		if (o.isConstant() && o.constant > 0L) {
+			java.util.OptionalLong degree = source.exactDegree(p.constant, o.constant, false);
+			if (degree.isPresent() && degree.getAsLong() == 0L) {
+				EXACT_EMPTY_PRUNES.incrementAndGet();
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private String indexName(Term s, Term p, Term o, Term c) {

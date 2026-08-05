@@ -42,6 +42,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMetrics.FallbackReason;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyCoverage;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.JoinDispatchTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.junit.jupiter.api.AfterEach;
@@ -1099,14 +1100,12 @@ class LmdbDirectAdjacencyQueryTest {
 	}
 
 	@Test
-	void flaggedRootScanDeclinesScopedContextAndDirtyWriter() throws IOException {
+	void flaggedRootScanDeclinesDirtyWriter() throws IOException {
 		System.setProperty(LmdbDirectAdjacencyStore.ROOT_SCAN_PROPERTY, "true");
 		openPreferStore();
 		long hitsBefore = direct.snapshotMetrics().lookupHits;
-		long rootBefore = direct.snapshotMetrics().fallbacks(FallbackReason.ROOT_SCAN);
 		long writesBefore = direct.snapshotMetrics().fallbacks(FallbackReason.READ_YOUR_WRITES);
 		try (var dataset = dataset()) {
-			assertSameRows(dataset.rows(-1, p1, -1, g1), List.of(new long[] { s1, p1, o2, g1 }));
 			direct.storeTxnStartedFlag().set(true);
 			direct.storeTxnDirtyFlag().set(true);
 			try {
@@ -1117,8 +1116,77 @@ class LmdbDirectAdjacencyQueryTest {
 			}
 		}
 		assertThat(direct.snapshotMetrics().lookupHits).isEqualTo(hitsBefore);
-		assertThat(direct.snapshotMetrics().fallbacks(FallbackReason.ROOT_SCAN)).isEqualTo(rootBefore + 1);
 		assertThat(direct.snapshotMetrics().fallbacks(FallbackReason.READ_YOUR_WRITES)).isEqualTo(writesBefore + 1);
+	}
+
+	@Test
+	void flaggedRootScanServesBoundContext() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.ROOT_SCAN_PROPERTY, "true");
+		openPreferStore();
+		long hitsBefore = direct.snapshotMetrics().lookupHits;
+		long rootBefore = direct.snapshotMetrics().fallbacks(FallbackReason.ROOT_SCAN);
+		try (var dataset = dataset()) {
+			assertSameRows(dataset.rows(-1, p1, -1, g1), List.of(new long[] { s1, p1, o2, g1 }));
+			assertSameRows(dataset.rows(-1, p1, -1, 0), List.of(
+					new long[] { s1, p1, o1, 0 },
+					new long[] { s2, p1, o1, 0 }));
+		}
+		assertThat(direct.snapshotMetrics().lookupHits)
+				.as("bound-context root scans must be served from the adjacency planes")
+				.isGreaterThan(hitsBefore + 1);
+		assertThat(direct.snapshotMetrics().fallbacks(FallbackReason.ROOT_SCAN)).isEqualTo(rootBefore);
+	}
+
+	@Test
+	void flaggedRootScanBoundContextAbsentFromCatalogIsExactEmpty() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.ROOT_SCAN_PROPERTY, "true");
+		openPreferStore();
+		long missesBefore = direct.snapshotMetrics().exactMisses;
+		long rootBefore = direct.snapshotMetrics().fallbacks(FallbackReason.ROOT_SCAN);
+		try (var dataset = dataset()) {
+			// o2 is a valid id that never occurs as a context: the catalog proves the scan empty
+			assertThat(dataset.rows(-1, p1, -1, o2)).isEmpty();
+		}
+		assertThat(direct.snapshotMetrics().exactMisses)
+				.as("a context absent from the catalog must be an exact-empty answer, not a fallback")
+				.isGreaterThan(missesBefore);
+		assertThat(direct.snapshotMetrics().fallbacks(FallbackReason.ROOT_SCAN)).isEqualTo(rootBefore);
+	}
+
+	@Test
+	void flaggedRootScanServesObjectOrder() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.ROOT_SCAN_PROPERTY, "true");
+		openPreferStore();
+		long hitsBefore = direct.snapshotMetrics().lookupHits;
+		long orderBefore = direct.snapshotMetrics().fallbacks(FallbackReason.INDEX_ORDER_INCOMPATIBLE);
+		try (var dataset = dataset()) {
+			List<long[]> ordered = dataset.rows(StatementOrder.O, -1, p1, -1, -1);
+			assertThat(ordered).hasSize(3);
+			for (int i = 1; i < ordered.size(); i++) {
+				assertThat(Long.compareUnsigned(ordered.get(i - 1)[2], ordered.get(i)[2]))
+						.as("object-ordered root scan must be unsigned non-decreasing on the object")
+						.isLessThanOrEqualTo(0);
+			}
+		}
+		assertThat(direct.snapshotMetrics().lookupHits)
+				.as("object-ordered root scans must be served from the incoming plane")
+				.isGreaterThan(hitsBefore);
+		assertThat(direct.snapshotMetrics().fallbacks(FallbackReason.INDEX_ORDER_INCOMPATIBLE))
+				.isEqualTo(orderBefore);
+	}
+
+	@Test
+	void flaggedExactEmptyPruningKillsJoinSubtreeBeforeExecution() throws IOException {
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		openPreferStore();
+		long prunesBefore = JoinDispatchTestAccess.exactEmptyPrunes();
+		// s2 has no p3 edges: the adjacency NOT_FOUND proof must fold the whole join to an empty plan
+		List<String> rows = queryRows("SELECT ?x ?y WHERE { <" + S2 + "> <" + P3 + "> ?x . ?x <" + P1 + "> ?y }",
+				"x", "y");
+		assertThat(rows).isEmpty();
+		assertThat(JoinDispatchTestAccess.exactEmptyPrunes())
+				.as("the compile-time NOT_FOUND proof must prune the pattern before execution")
+				.isGreaterThan(prunesBefore);
 	}
 
 	@Test

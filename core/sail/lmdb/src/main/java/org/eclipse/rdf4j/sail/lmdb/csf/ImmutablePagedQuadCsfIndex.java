@@ -1571,6 +1571,14 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		private int locatedLocalRow;
 		private int locatedLocalOrdinal;
 		private int loadedPageId = CompactCsfPageFormat.NO_PAGE;
+		/**
+		 * Extent-chain page ids and their starting global ordinals, recorded once during {@link #resolve}'s chain walk.
+		 * {@link #locate} binary-searches these instead of re-walking (and re-decoding) the chain from its first page
+		 * on every scalar access — that walk is where one address used to be resolved hundreds of times per query.
+		 */
+		private int[] extentPageIds = new int[4];
+		private long[] extentStarts = new long[4];
+		private int extentCount;
 
 		public long edgeCount() {
 			ensureResolved();
@@ -1607,28 +1615,21 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 				return page.copyRow(firstLocalRow, Math.toIntExact(fromOrdinal), copied, neighborTarget, neighborOffset,
 						contextTarget, contextOffset);
 			}
-			long global = 0;
-			int pageId = firstPageId;
-			int localRow = firstLocalRow;
 			int output = 0;
-			while (pageId != CompactCsfPageFormat.NO_PAGE && output < copied) {
-				loadPage(pageId);
+			for (int index = extentIndexOf(fromOrdinal); index < extentCount && output < copied; index++) {
+				loadPage(extentPageIds[index]);
+				int localRow = index == 0 ? firstLocalRow : 0;
+				long global = extentStarts[index];
 				int pageEdges = page.rowQuadCount(localRow);
-				long pageEnd = global + pageEdges;
-				if (fromOrdinal < pageEnd) {
-					int localFrom = (int) Math.max(0, fromOrdinal - global);
-					int take = Math.min(copied - output, pageEdges - localFrom);
-					int got = page.copyRow(localRow, localFrom, take, neighborTarget,
-							neighborTarget == null ? 0 : neighborOffset + output, contextTarget,
-							contextTarget == null ? 0 : contextOffset + output);
-					if (got != take) {
-						throw new IllegalStateException("CSF page copied " + got + " of " + take);
-					}
-					output += got;
+				int localFrom = (int) Math.max(0, fromOrdinal - global);
+				int take = Math.min(copied - output, pageEdges - localFrom);
+				int got = page.copyRow(localRow, localFrom, take, neighborTarget,
+						neighborTarget == null ? 0 : neighborOffset + output, contextTarget,
+						contextTarget == null ? 0 : contextOffset + output);
+				if (got != take) {
+					throw new IllegalStateException("CSF page copied " + got + " of " + take);
 				}
-				global = pageEnd;
-				pageId = nextExtentPageId(pageId, expectedRow);
-				localRow = 0;
+				output += got;
 			}
 			return output;
 		}
@@ -1642,23 +1643,19 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 				loadPage(firstPageId);
 				return page.lowerBound(firstLocalRow, Math.toIntExact(fromOrdinal), neighbor, context);
 			}
-			long global = 0;
-			int pageId = firstPageId;
-			int localRow = firstLocalRow;
-			while (pageId != CompactCsfPageFormat.NO_PAGE) {
-				loadPage(pageId);
+			if (fromOrdinal == edgeCount) {
+				return edgeCount;
+			}
+			for (int index = extentIndexOf(fromOrdinal); index < extentCount; index++) {
+				loadPage(extentPageIds[index]);
+				int localRow = index == 0 ? firstLocalRow : 0;
+				long global = extentStarts[index];
 				int pageEdges = page.rowQuadCount(localRow);
-				long end = global + pageEdges;
-				if (fromOrdinal < end) {
-					int localFrom = (int) Math.max(0, fromOrdinal - global);
-					int found = page.lowerBound(localRow, localFrom, neighbor, context);
-					if (found < pageEdges) {
-						return global + found;
-					}
+				int localFrom = (int) Math.max(0, fromOrdinal - global);
+				int found = page.lowerBound(localRow, localFrom, neighbor, context);
+				if (found < pageEdges) {
+					return global + found;
 				}
-				global = end;
-				pageId = nextExtentPageId(pageId, expectedRow);
-				localRow = 0;
 			}
 			return edgeCount;
 		}
@@ -1681,9 +1678,12 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			long row = page.rowCount() == 1 ? page.firstRow() : 0;
 			long count = page.rowQuadCount(localRow);
 			boolean ordered = page.allOrderedIntegerNeighbors();
+			extentCount = 0;
+			addExtent(pageId, 0L);
 			int currentPage = nextExtentPageId(pageId, row);
 			boolean singlePage = currentPage == CompactCsfPageFormat.NO_PAGE;
 			while (currentPage != CompactCsfPageFormat.NO_PAGE) {
+				addExtent(currentPage, count);
 				loadPage(currentPage);
 				if (page.firstRow() != row) {
 					throw new IllegalStateException("CSF extent chain changes row coordinate");
@@ -1713,22 +1713,38 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 				locatedLocalOrdinal = Math.toIntExact(ordinal);
 				return;
 			}
-			long global = 0;
-			int pageId = firstPageId;
-			int localRow = firstLocalRow;
-			while (pageId != CompactCsfPageFormat.NO_PAGE) {
-				loadPage(pageId);
-				int count = page.rowQuadCount(localRow);
-				if (ordinal < global + count) {
-					locatedLocalRow = localRow;
-					locatedLocalOrdinal = (int) (ordinal - global);
-					return;
-				}
-				global += count;
-				pageId = nextExtentPageId(pageId, expectedRow);
-				localRow = 0;
+			if (ordinal >= edgeCount) {
+				throw new IllegalStateException("CSF extent chain does not contain ordinal " + ordinal);
 			}
-			throw new IllegalStateException("CSF extent chain does not contain ordinal " + ordinal);
+			int index = extentIndexOf(ordinal);
+			loadPage(extentPageIds[index]);
+			locatedLocalRow = index == 0 ? firstLocalRow : 0;
+			locatedLocalOrdinal = (int) (ordinal - extentStarts[index]);
+		}
+
+		/** Greatest extent index whose starting global ordinal is at most {@code ordinal}. */
+		private int extentIndexOf(long ordinal) {
+			int low = 0;
+			int high = extentCount - 1;
+			while (low < high) {
+				int middle = (low + high + 1) >>> 1;
+				if (extentStarts[middle] <= ordinal) {
+					low = middle;
+				} else {
+					high = middle - 1;
+				}
+			}
+			return low;
+		}
+
+		private void addExtent(int pageId, long start) {
+			if (extentCount == extentPageIds.length) {
+				extentPageIds = Arrays.copyOf(extentPageIds, extentCount * 2);
+				extentStarts = Arrays.copyOf(extentStarts, extentCount * 2);
+			}
+			extentPageIds[extentCount] = pageId;
+			extentStarts[extentCount] = start;
+			extentCount++;
 		}
 
 		private void ensureResolved() {

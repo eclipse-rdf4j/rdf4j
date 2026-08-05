@@ -754,7 +754,7 @@ final class LmdbNativeOrderPlanner {
 	}
 
 	private static NativeSlotOrder patternOrder(PatternPlan pattern, RowState row) {
-		String index = pattern.indexName;
+		String index = orderComponentsOf(pattern.indexName);
 		if (index.length() != 4) {
 			return NativeSlotOrder.NONE;
 		}
@@ -784,6 +784,19 @@ final class LmdbNativeOrderPlanner {
 			keys[i] = positions.get(i);
 		}
 		return new NativeSlotOrder(keys, fixed);
+	}
+
+	/**
+	 * A direct adjacency root scan provides the full component order of its LMDB namesake for the constant-predicate
+	 * shape it serves (keys unsigned ascending, runs (neighbor, context) ordered), so its planning witness maps to
+	 * those components. It still does not advertise the LMDB seek contract — seek-alignment checks keep matching on the
+	 * raw four-character names.
+	 */
+	private static String orderComponentsOf(String indexName) {
+		if (indexName.startsWith("direct-")) {
+			return indexName.substring("direct-".length());
+		}
+		return indexName;
 	}
 
 	private static NativeSlotOrder requestedOrder(int[] requested, long fixedMask) {
