@@ -148,7 +148,6 @@ public class GenericPlanNode {
 	private Map<String, Long> longMetricsPlanned = new LinkedHashMap<>();
 	private Map<String, Double> doubleMetricsPlanned = new LinkedHashMap<>();
 	private Map<String, String> stringMetricsPlanned = new LinkedHashMap<>();
-	/** Human-readable physical plan prelude. Kept out of JSON because the structured metric remains available there. */
 	private String physicalPlanPrelude;
 
 	// true if this node introduces a new scope
@@ -194,7 +193,6 @@ public class GenericPlanNode {
 	 *
 	 * @return a cost estimate as a double value
 	 */
-	@JsonIgnore
 	public Double getCostEstimate() {
 		return costEstimate;
 	}
@@ -210,7 +208,6 @@ public class GenericPlanNode {
 	 *
 	 * @return result size estimate
 	 */
-	@JsonIgnore
 	public Double getResultSizeEstimate() {
 		return resultSizeEstimate;
 	}
@@ -411,7 +408,6 @@ public class GenericPlanNode {
 		this.runtimeTelemetryEnabled = runtimeTelemetryEnabled;
 	}
 
-	@JsonIgnore
 	public boolean isRuntimeTelemetryEnabled() {
 		return runtimeTelemetryEnabled;
 	}
@@ -420,7 +416,6 @@ public class GenericPlanNode {
 		this.executionSummaryEnabled = executionSummaryEnabled;
 	}
 
-	@JsonIgnore
 	public boolean isExecutionSummaryEnabled() {
 		return executionSummaryEnabled;
 	}
@@ -676,7 +671,6 @@ public class GenericPlanNode {
 		return physicalPlanPrelude + newLine + newLine + "Query explanation" + newLine + logical;
 	}
 
-	@JsonIgnore
 	public String getPhysicalPlanPrelude() {
 		return physicalPlanPrelude;
 	}
