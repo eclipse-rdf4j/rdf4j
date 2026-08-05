@@ -82,10 +82,20 @@ public class LmdbNativeLeftJoinCursorTest {
 
 	@Test
 	public void uncorrelatedOptionalMaterializesEmptyRightAndNullExtends() {
-		assertAllModesAgree(q("SELECT ?s ?tag WHERE {\n"
-				+ "  ?s ex:type ex:Item .\n"
-				+ "  OPTIONAL { ex:global ex:probe ?tag }\n"
-				+ "}"), true);
+		// This case pins the replay path for an EMPTY uncorrelated right side. Exact-empty pruning (default on
+		// since Milestone 3 of the three-tier plan) folds the constant-endpoint right to an empty plan at compile
+		// time, so the replay machinery is legitimately never reached — disable it here to keep exercising replay.
+		String pruningFlag = "rdf4j.lmdb.directAdjacency.exactEmptyPruning.enabled";
+		String previous = System.getProperty(pruningFlag);
+		try {
+			System.setProperty(pruningFlag, "false");
+			assertAllModesAgree(q("SELECT ?s ?tag WHERE {\n"
+					+ "  ?s ex:type ex:Item .\n"
+					+ "  OPTIONAL { ex:global ex:probe ?tag }\n"
+					+ "}"), true);
+		} finally {
+			restore(pruningFlag, previous);
+		}
 	}
 
 	@Test

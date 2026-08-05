@@ -72,6 +72,17 @@ public class CorrelatedBenchmark {
 		return state.runAndVerify(Workload.OUTER_ACCUMULATE);
 	}
 
+	/**
+	 * Materialization-light acceptance workload for the accumulate/sweep work (three-tier parity plan, Milestone 4):
+	 * COUNT over the correlated OPTIONAL keeps result materialization out of the measured path, so decorrelation
+	 * speedups are not Amdahl-capped the way {@link #outerAccumulate} is (the 2026-07-31 sessions measured its ceiling
+	 * at ~1.2x).
+	 */
+	@Benchmark
+	public long outerAccumulateCount(CorrelatedState state) {
+		return state.runAndVerify(Workload.OUTER_ACCUMULATE_COUNT);
+	}
+
 	@Benchmark
 	public long pathUnderJoin(CorrelatedState state) {
 		return state.runAndVerify(Workload.PATH_UNDER_JOIN);
@@ -187,9 +198,11 @@ public class CorrelatedBenchmark {
 					TupleQueryResult result = connection.prepareTupleQuery(workload.query).evaluate()) {
 				while (result.hasNext()) {
 					BindingSet bindings = result.next();
-					digest += workload == Workload.OUTER_ACCUMULATE
-							? accumulateDigest(bindings)
-							: pathDigest(bindings);
+					digest += switch (workload) {
+					case OUTER_ACCUMULATE -> accumulateDigest(bindings);
+					case OUTER_ACCUMULATE_COUNT -> countDigest(bindings);
+					case PATH_UNDER_JOIN -> pathDigest(bindings);
+					};
 					rows++;
 				}
 			}
@@ -243,6 +256,15 @@ public class CorrelatedBenchmark {
 		return rowDigest(outer.stringValue().hashCode(), literal.longValue());
 	}
 
+	private static long countDigest(BindingSet bindings) {
+		Value outer = bindings.getValue("outer");
+		Value matches = bindings.getValue("matches");
+		if (!(outer instanceof IRI) || !(matches instanceof Literal literal)) {
+			throw new IllegalStateException("OUTER_ACCUMULATE_COUNT returned an unexpected row: " + bindings);
+		}
+		return rowDigest(outer.stringValue().hashCode(), literal.longValue());
+	}
+
 	private static long pathDigest(BindingSet bindings) {
 		Value outer = bindings.getValue("outer");
 		Value end = bindings.getValue("end");
@@ -256,12 +278,14 @@ public class CorrelatedBenchmark {
 			int distinctPathStarts, int pathDepth) {
 		EnumMap<Workload, QueryDigest> expected = new EnumMap<>(Workload.class);
 		long accumulateDigest = 0L;
+		long countDigest = 0L;
 		long pathDigest = 0L;
 		for (int outer = 0; outer < outerRows; outer++) {
 			int outerHash = (EX + "outer/" + outer).hashCode();
 			for (int inner = 0; inner < innerFanOut; inner++) {
 				accumulateDigest += rowDigest(outerHash, payload(outer, inner));
 			}
+			countDigest += rowDigest(outerHash, innerFanOut);
 			int start = outer % distinctPathStarts;
 			for (int depth = 1; depth <= pathDepth; depth++) {
 				pathDigest += rowDigest(outerHash, (EX + "path/" + start + "/" + depth).hashCode());
@@ -269,6 +293,7 @@ public class CorrelatedBenchmark {
 		}
 		expected.put(Workload.OUTER_ACCUMULATE,
 				new QueryDigest((long) outerRows * innerFanOut, accumulateDigest));
+		expected.put(Workload.OUTER_ACCUMULATE_COUNT, new QueryDigest(outerRows, countDigest));
 		expected.put(Workload.PATH_UNDER_JOIN, new QueryDigest((long) outerRows * pathDepth, pathDigest));
 		return expected;
 	}
@@ -311,6 +336,9 @@ public class CorrelatedBenchmark {
 		OUTER_ACCUMULATE(
 				"SELECT ?outer ?value WHERE { ?outer <" + EX + "seed> ?seed . OPTIONAL { ?seed <" + EX
 						+ "inner> ?leaf . ?leaf <" + EX + "payload> ?value } }"),
+		OUTER_ACCUMULATE_COUNT(
+				"SELECT ?outer (COUNT(?value) AS ?matches) WHERE { ?outer <" + EX + "seed> ?seed . OPTIONAL { ?seed <"
+						+ EX + "inner> ?leaf . ?leaf <" + EX + "payload> ?value } } GROUP BY ?outer"),
 		PATH_UNDER_JOIN(
 				"SELECT ?outer ?end WHERE { ?outer <" + EX + "pathStart> ?start . ?start <" + EX
 						+ "next>+ ?end }");

@@ -12,12 +12,14 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -33,13 +35,13 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 
 /**
  * Accumulate–semijoin–probe provider for correlated entries into native fragments (ExecPlan
- * .agent/lmdb-join-strategy-execplan.md, Milestone 3): buffers the outer binding stream (query-ledger budgeted),
- * derives the distinct join-key id domain, executes the native right fragment ONCE — a {@link ValuesPlan} over the
- * domain prepended to the fragment's plan, so the sweep is bounded by the outer key set — and probes the accumulated
- * rows. Modes: LEFT (OPTIONAL) and INNER, each with exactly one shared variable and no join condition — LEFT is the
- * shape of the plan-09 acceptance benchmark. Outer rows the batch cannot serve (unbound shared variable, budget-refusal
- * tail) flow through the same per-outer-row evaluation the generic step would have used, so no row is dropped or
- * duplicated.
+ * .agent/lmdb-join-strategy-execplan.md, Milestone 3; completed in .agent/three-tier-parity-execplan.md, Milestone 4):
+ * buffers the outer binding stream (query-ledger budgeted), derives the distinct join-key id domain, executes the
+ * native right fragment ONCE — a {@link ValuesPlan} over the domain prepended to the fragment's plan, so the sweep is
+ * bounded by the outer key set — and probes the accumulated rows. Modes: LEFT (OPTIONAL), INNER, SEMI (EXISTS) and ANTI
+ * (NOT EXISTS), each with 1–4 shared variables; LEFT and INNER additionally accept a join condition evaluated per
+ * matched pair. Outer rows the batch cannot serve (unbound shared variable, budget-refusal tail) flow through the same
+ * per-outer-row evaluation the generic step would have used, so no row is dropped or duplicated.
  */
 @Experimental
 final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
@@ -76,13 +78,21 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 
 	@Override
 	public boolean supports(QueryEvaluationStep rightStep, String[] sharedVariables, Mode mode, boolean hasCondition) {
-		if (!enabled() || (mode != Mode.LEFT && mode != Mode.INNER) || hasCondition || sharedVariables.length != 1) {
+		if (!enabled() || sharedVariables.length < 1 || sharedVariables.length > 4) {
+			return false;
+		}
+		if (hasCondition && mode != Mode.LEFT && mode != Mode.INNER) {
 			return false;
 		}
 		if (!(rightStep instanceof NativeBareRowsStep step)) {
 			return false;
 		}
-		return slotOf(step.layout, sharedVariables[0]) >= 0;
+		for (String name : sharedVariables) {
+			if (slotOf(step.layout, name) < 0) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	@Override
@@ -101,22 +111,24 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 	}
 
 	/**
-	 * Mode-aware emission over the accumulated batch: matched outer rows emit one merged row per fragment match (bag
-	 * order: matches grouped per outer row, outer rows in arrival order); unmatched outer rows emit bare in LEFT mode
-	 * and nothing in INNER mode; rows with an unbound shared variable and any budget-refusal tail run through the
-	 * per-outer-row native evaluation.
+	 * Mode-aware emission over the accumulated batch. LEFT/INNER: matched outer rows emit one merged row per
+	 * condition-accepted fragment match (bag order: matches grouped per outer row, outer rows in arrival order), and a
+	 * LEFT outer row with no accepted match emits bare. SEMI/ANTI: each outer row emits itself at most once, on
+	 * presence respectively absence of an accepted match. Rows with an unbound shared variable and any budget-refusal
+	 * tail run through the per-outer-row native evaluation.
 	 */
 	private static final class AccumulateJoinIteration extends LookAheadIteration<BindingSet> {
 
 		private final NativeBareRowsStep step;
 		private final BatchCorrelationRequest request;
-		private final String sharedName;
+		private final String[] sharedNames;
 		private final Mode mode;
+		private final Predicate<BindingSet> condition;
 
 		private boolean initialized;
 		private List<BindingSet> outerRows;
 		private List<BindingSet> perRowRows;
-		private Map<Value, List<BindingSet>> matches;
+		private Map<List<Value>, List<BindingSet>> matches;
 		private boolean overflow;
 
 		private LmdbQueryMemoryManager.QueryLedger ledger;
@@ -125,18 +137,20 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 		private int outerIndex;
 		private List<BindingSet> currentMatches;
 		private int matchIndex;
+		private boolean anyAccepted;
 		private BindingSet currentOuter;
 
 		private int perRowIndex;
 		private CloseableIteration<BindingSet> perRowIteration;
 		private BindingSet perRowOuter;
-		private boolean perRowEmitted;
+		private boolean perRowMatched;
 
 		AccumulateJoinIteration(NativeBareRowsStep step, BatchCorrelationRequest request) {
 			this.step = step;
 			this.request = request;
-			this.sharedName = request.sharedVariables()[0];
+			this.sharedNames = request.sharedVariables();
 			this.mode = request.mode();
+			this.condition = request.condition();
 		}
 
 		@Override
@@ -145,25 +159,35 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 				initialize();
 			}
 			while (true) {
-				// 1: matched products of the current accumulated outer row
+				// 1: verdict/products of the current accumulated outer row
 				if (currentMatches != null) {
-					if (matchIndex < currentMatches.size()) {
-						return merge(currentOuter, currentMatches.get(matchIndex++));
+					while (matchIndex < currentMatches.size()) {
+						BindingSet merged = merge(currentOuter, currentMatches.get(matchIndex++));
+						if (condition == null || condition.test(merged)) {
+							anyAccepted = true;
+							if (mode == Mode.LEFT || mode == Mode.INNER) {
+								return merged;
+							}
+							// SEMI/ANTI: the first accepted match settles the verdict
+							matchIndex = currentMatches.size();
+						}
 					}
 					currentMatches = null;
+					if (mode == Mode.SEMI && anyAccepted) {
+						return currentOuter;
+					}
+					if (!anyAccepted && (mode == Mode.LEFT || mode == Mode.ANTI)) {
+						return currentOuter;
+					}
+					continue;
 				}
 				// 2: next accumulated outer row
 				if (outerIndex < outerRows.size()) {
 					currentOuter = outerRows.get(outerIndex++);
-					List<BindingSet> found = matches.get(currentOuter.getValue(sharedName));
-					if (found == null || found.isEmpty()) {
-						if (mode == Mode.LEFT) {
-							return currentOuter;
-						}
-						continue;
-					}
-					currentMatches = found;
+					List<BindingSet> found = matches.get(keyOf(currentOuter));
+					currentMatches = found == null ? List.of() : found;
 					matchIndex = 0;
+					anyAccepted = false;
 					continue;
 				}
 				// 3: per-row fallback rows (unbound shared variable)
@@ -190,19 +214,30 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 			if (reservation == null) {
 				overflow = true;
 			}
-			Set<Long> keyIds = new HashSet<>();
+			Set<List<Long>> keyTuples = new HashSet<>();
 			int sinceGrow = 0;
-			while (!overflow && request.outer().hasNext()) {
+			outer: while (!overflow && request.outer().hasNext()) {
 				BindingSet row = request.outer().next();
-				Value shared = row.getValue(sharedName);
-				if (shared == null) {
-					perRowRows.add(row);
-					continue;
+				for (String name : sharedNames) {
+					if (row.getValue(name) == null) {
+						perRowRows.add(row);
+						continue outer;
+					}
 				}
 				outerRows.add(row);
-				long id = step.source.idOf(shared);
-				if (id != NativeLmdbQuerySource.UNKNOWN_ID && id != 0L) {
-					keyIds.add(id);
+				List<Long> ids = new ArrayList<>(sharedNames.length);
+				boolean known = true;
+				for (String name : sharedNames) {
+					long id = step.source.idOf(row.getValue(name));
+					if (id == NativeLmdbQuerySource.UNKNOWN_ID || id == 0L) {
+						// A value the store has no id for cannot appear in fragment output: no matches.
+						known = false;
+						break;
+					}
+					ids.add(id);
+				}
+				if (known) {
+					keyTuples.add(ids);
 				}
 				if (++sinceGrow >= GROW_STEP) {
 					sinceGrow = 0;
@@ -211,16 +246,23 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 					}
 				}
 			}
-			matches = keyIds.isEmpty() ? Map.of() : sweepFragmentOnce(keyIds);
+			matches = keyTuples.isEmpty() ? Map.of() : sweepFragmentOnce(keyTuples);
 		}
 
-		/** One native execution of the fragment, key-bounded by a VALUES table over the outer id domain. */
-		private Map<Value, List<BindingSet>> sweepFragmentOnce(Set<Long> keyIds) {
-			int sharedSlot = slotOf(step.layout, sharedName);
-			ValuesRow[] rows = new ValuesRow[keyIds.size()];
+		/** One native execution of the fragment, key-bounded by a VALUES table over the outer id-tuple domain. */
+		private Map<List<Value>, List<BindingSet>> sweepFragmentOnce(Set<List<Long>> keyTuples) {
+			int[] sharedSlots = new int[sharedNames.length];
+			for (int i = 0; i < sharedNames.length; i++) {
+				sharedSlots[i] = slotOf(step.layout, sharedNames[i]);
+			}
+			ValuesRow[] rows = new ValuesRow[keyTuples.size()];
 			int at = 0;
-			for (long id : keyIds) {
-				rows[at++] = new ValuesRow(new int[] { sharedSlot }, new long[] { id });
+			for (List<Long> tuple : keyTuples) {
+				long[] ids = new long[tuple.size()];
+				for (int i = 0; i < ids.length; i++) {
+					ids[i] = tuple.get(i);
+				}
+				rows[at++] = new ValuesRow(sharedSlots.clone(), ids);
 			}
 			SlotPlan combined = new MultiJoinPlan(new SlotPlan[] { new ValuesPlan(rows), step.arg },
 					new MaskedFilter[0]);
@@ -228,45 +270,61 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 					step.bulk.sourceSlots, step.bulk.targetNames, step.bulk.strictCompare, step.bulk.strategy,
 					step.bulk.originalExpr, step.bulk.context);
 			FRAGMENT_EXECUTIONS.incrementAndGet();
-			Map<Value, List<BindingSet>> result = new HashMap<>();
+			Map<List<Value>, List<BindingSet>> result = new HashMap<>();
 			try (CloseableIteration<BindingSet> iteration = sweep.evaluate(EmptyBindingSet.getInstance())) {
 				while (iteration.hasNext()) {
 					BindingSet fragmentRow = iteration.next();
-					result.computeIfAbsent(fragmentRow.getValue(sharedName), key -> new ArrayList<>())
-							.add(fragmentRow);
+					result.computeIfAbsent(keyOf(fragmentRow), key -> new ArrayList<>()).add(fragmentRow);
 				}
 			}
 			return result;
 		}
 
+		/** Join-key tuple of a row; every shared variable is bound by construction on both sides of the probe. */
+		private List<Value> keyOf(BindingSet row) {
+			Value[] key = new Value[sharedNames.length];
+			for (int i = 0; i < sharedNames.length; i++) {
+				key[i] = row.getValue(sharedNames[i]);
+			}
+			return Arrays.asList(key);
+		}
+
 		private BindingSet nextPerRowResult() {
 			while (true) {
 				if (perRowIteration != null) {
-					if (perRowIteration.hasNext()) {
-						perRowEmitted = true;
-						return perRowIteration.next();
+					while (perRowIteration.hasNext()) {
+						BindingSet row = perRowIteration.next();
+						if (condition == null || condition.test(row)) {
+							perRowMatched = true;
+							if (mode == Mode.LEFT || mode == Mode.INNER) {
+								return row;
+							}
+							// SEMI/ANTI: presence settled
+							break;
+						}
 					}
 					perRowIteration.close();
 					perRowIteration = null;
-					if (!perRowEmitted && mode == Mode.LEFT) {
+					if (mode == Mode.SEMI && perRowMatched) {
+						return perRowOuter;
+					}
+					if (!perRowMatched && (mode == Mode.LEFT || mode == Mode.ANTI)) {
 						return perRowOuter;
 					}
 				}
-				BindingSet next;
 				if (perRowIndex < perRowRows.size()) {
-					next = perRowRows.get(perRowIndex++);
+					startPerRow(perRowRows.get(perRowIndex++));
 				} else {
 					return null;
 				}
-				startPerRow(next);
 			}
 		}
 
-		/** Today's per-outer-row LEFT evaluation for one row the batch cannot serve. */
+		/** Today's per-outer-row evaluation for one row the batch cannot serve. */
 		private void startPerRow(BindingSet outerRow) {
 			PER_ROW_FALLBACK_ROWS.incrementAndGet();
 			perRowOuter = outerRow;
-			perRowEmitted = false;
+			perRowMatched = false;
 			perRowIteration = step.evaluate(outerRow);
 		}
 

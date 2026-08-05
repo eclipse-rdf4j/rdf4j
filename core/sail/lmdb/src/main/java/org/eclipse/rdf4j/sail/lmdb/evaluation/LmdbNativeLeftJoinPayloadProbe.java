@@ -47,6 +47,12 @@ final class PatternPayloadProbe {
 	int[] payloadSlots;
 	int[] payloadQuadIdx;
 	KeyedMatches matches;
+	/**
+	 * Milestone 4 (three-tier parity ExecPlan): plan-time estimate trigger, sharing the fragment sweep's cost rule —
+	 * when the expected probe count already amortizes one key-unbound pattern scan, the hash is built on the first
+	 * probe instead of waiting out the 1024-observed-probe floor.
+	 */
+	boolean buildImmediately;
 
 	PatternPayloadProbe(PatternPlan pattern, NativeBooleanFilter filter, int[] varyingIdx) {
 		this.pattern = pattern;
@@ -54,6 +60,16 @@ final class PatternPayloadProbe {
 		this.terms = new Term[] { pattern.s, pattern.p, pattern.o, pattern.c };
 		this.varyingIdx = varyingIdx;
 		this.rejectNullContext = pattern.rejectsNullContextAtBind();
+	}
+
+	static PatternPayloadProbe tryCreate(SlotPlan right, double expectedProbes, double perProbeRows,
+			double sweepEstimate) {
+		PatternPayloadProbe probe = tryCreate(right);
+		if (probe != null && RightMemoProbe.sweepEnabled()
+				&& RightMemoProbe.sweepJustified(expectedProbes, perProbeRows, sweepEstimate)) {
+			probe.buildImmediately = true;
+		}
+		return probe;
 	}
 
 	static PatternPayloadProbe tryCreate(SlotPlan right) {
@@ -100,10 +116,12 @@ final class PatternPayloadProbe {
 		}
 		if (matches == null) {
 			probes++;
-			long estimatedRows = normalizedEstimate(pattern.staticEstimate);
-			int minProbes = Integer.getInteger(LEFTJOIN_HASH_MIN_PROBES, 1024);
-			if (probes < minProbes || probes * (long) SEEK_COST_KEYS + cumulativeMatched < estimatedRows) {
-				return null;
+			if (!buildImmediately) {
+				long estimatedRows = normalizedEstimate(pattern.staticEstimate);
+				int minProbes = Integer.getInteger(LEFTJOIN_HASH_MIN_PROBES, 1024);
+				if (probes < minProbes || probes * (long) SEEK_COST_KEYS + cumulativeMatched < estimatedRows) {
+					return null;
+				}
 			}
 			build(row, boundIdx);
 			if (disabled) {

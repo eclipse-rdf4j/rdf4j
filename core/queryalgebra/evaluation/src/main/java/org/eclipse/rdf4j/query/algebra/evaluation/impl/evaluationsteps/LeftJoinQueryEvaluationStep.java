@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -98,27 +99,33 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 				optionalVarCollector.getVarNames());
 		// Batch-correlated seam (accumulate–semijoin–probe): only reachable on this well-designed,
 		// replay-stable, binding-injection-safe path, where independent right-operand evaluation is the
-		// algebraic definition. Entry bindings that pre-bind a right-only variable keep the default step —
-		// the batch merge join-checks only the declared shared variables.
-		if (!leftJoin.hasCondition() && strategy instanceof BatchCorrelatedJoinProvider.Host host) {
+		// algebraic definition. A join condition is handed to the provider as a merged-row predicate with the
+		// post-filter scope and error-to-false semantics. Entry bindings that pre-bind a variable the left
+		// operand does not produce (right-side or condition variables) keep the default step — the batch merge
+		// join-checks only the declared shared variables.
+		if (strategy instanceof BatchCorrelatedJoinProvider.Host host) {
 			BatchCorrelatedJoinProvider provider = host.batchCorrelatedJoinProvider();
 			if (provider != null) {
 				Set<String> leftNames = leftJoin.getLeftArg().getBindingNames();
 				Set<String> rightNames = leftJoin.getRightArg().getBindingNames();
 				String[] shared = leftNames.stream().filter(rightNames::contains).toArray(String[]::new);
-				Set<String> rightOnly = new HashSet<>(rightNames);
-				rightOnly.removeAll(leftNames);
+				Set<String> guardNames = new HashSet<>(rightNames);
+				guardNames.addAll(optionalVarCollector.getVarNames());
+				guardNames.removeAll(leftNames);
 				if (shared.length >= 1 && shared.length <= 4
-						&& provider.supports(rightRaw, shared, BatchCorrelatedJoinProvider.Mode.LEFT, false)) {
+						&& provider.supports(rightRaw, shared, BatchCorrelatedJoinProvider.Mode.LEFT,
+								condition != null)) {
+					Predicate<BindingSet> batchCondition = condition == null ? null
+							: new ScopedQueryValueEvaluationStep(leftJoin.getBindingNames(), condition).asPredicate();
 					return bs -> {
-						for (String name : rightOnly) {
+						for (String name : guardNames) {
 							if (bs.hasBinding(name)) {
 								return defaultStep.evaluate(bs);
 							}
 						}
 						return provider.tryBatchJoin(
 								new BatchCorrelatedJoinProvider.BatchCorrelationRequest(left.evaluate(bs), bs,
-										shared, BatchCorrelatedJoinProvider.Mode.LEFT),
+										shared, BatchCorrelatedJoinProvider.Mode.LEFT, batchCondition),
 								rightRaw);
 					};
 				}

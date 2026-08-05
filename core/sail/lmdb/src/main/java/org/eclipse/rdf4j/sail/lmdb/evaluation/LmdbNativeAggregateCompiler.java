@@ -309,6 +309,14 @@ final class LmdbNativeAggregateCompiler {
 			long right = memoReadMask(union.right);
 			return left < 0L || right < 0L ? -1L : left | right;
 		}
+		if (plan instanceof MinusPlan) {
+			// The removal check additionally consults entry base bindings, which are constant for any one
+			// evaluation — the same lifetime every memoReadMask consumer caches within.
+			MinusPlan minus = (MinusPlan) plan;
+			long left = memoReadMask(minus.left);
+			long right = memoReadMask(minus.right);
+			return left < 0L || right < 0L ? -1L : left | right | minus.sharedMask;
+		}
 		if (plan instanceof FilterPlan) {
 			FilterPlan filterPlan = (FilterPlan) plan;
 			if (filterPlan.filterMask < 0L) {
