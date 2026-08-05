@@ -56,7 +56,7 @@ final class NativeFilterLease {
 			attempt = original;
 		}
 
-		Entry entry = new Entry(attempt, recorder);
+		Entry entry = new Entry(attempt, recorder, attempt != original);
 		borrowed.put(original, entry);
 		entries.add(entry);
 		return entry.facade;
@@ -109,10 +109,29 @@ final class NativeFilterLease {
 			return;
 		}
 		finished = true;
-		for (Entry entry : entries) {
+		Throwable failure = null;
+		for (int i = entries.size() - 1; i >= 0; i--) {
+			Entry entry = entries.get(i);
 			if (entry.recorder != null) {
 				entry.recorder.discardOutcomes();
 			}
+			// A used ATTEMPT-LOCAL copy may hold lazily created native resources (an adjacency semijoin probe's
+			// read view); the facade's close only latches `used`, so the lease owns the real release even on the
+			// discard path. Shared originals stay open — the same-evaluation fallback is about to reuse them, and
+			// their release belongs to the fallback's own cursors (pinned by
+			// LmdbNativeParallelAggregationCleanupTest). Recorders are skipped: they hold no native state and
+			// closing one would cascade into its possibly-shared delegate.
+			if (!entry.used || !entry.owned || entry.recorder != null) {
+				continue;
+			}
+			try {
+				entry.attempt.close();
+			} catch (RuntimeException | Error closeFailure) {
+				failure = addFailure(failure, closeFailure);
+			}
+		}
+		if (failure != null) {
+			rethrow(failure);
 		}
 	}
 
@@ -165,12 +184,15 @@ final class NativeFilterLease {
 	private static final class Entry {
 		final NativeBooleanFilter attempt;
 		final RecordingNativeBooleanFilter recorder;
+		/** True when {@code attempt} is a lease-constructed copy the lease may close on every terminal path. */
+		final boolean owned;
 		final NativeBooleanFilter facade = new BorrowedFilter(this);
 		boolean used;
 
-		Entry(NativeBooleanFilter attempt, RecordingNativeBooleanFilter recorder) {
+		Entry(NativeBooleanFilter attempt, RecordingNativeBooleanFilter recorder, boolean owned) {
 			this.attempt = attempt;
 			this.recorder = recorder;
+			this.owned = owned;
 		}
 	}
 

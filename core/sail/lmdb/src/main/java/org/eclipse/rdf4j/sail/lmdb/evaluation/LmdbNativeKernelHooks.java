@@ -200,6 +200,62 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		return MathUtil.compute(sum == null ? AggContext.INTEGER_ZERO : sum, size, MathExpr.MathOp.DIVIDE);
 	}
 
+	/**
+	 * Releases the lazily allocated native resources of every plan filter this hook set can invoke. Kernel routes
+	 * bypass the cursor machinery that normally closes filters, so the route that created the hooks owns this call —
+	 * without it, a filter that lazily acquired an adjacency-semijoin or membership probe during a kernel run leaks its
+	 * native read stamp and eventually wedges the dataset close (found via the generated-query coverage hang,
+	 * 2026-08-05). Filter close is reuse-tolerant by convention (closed filters lazily re-acquire).
+	 */
+	void closeFilters() {
+		Throwable failure = null;
+		for (LmdbNativeKernelBindings.FilterHook hook : filters) {
+			try {
+				hook.source.filter.close();
+			} catch (RuntimeException | Error problem) {
+				if (failure == null) {
+					failure = problem;
+				} else if (failure != problem) {
+					failure.addSuppressed(problem);
+				}
+			}
+		}
+		if (failure instanceof RuntimeException runtimeException) {
+			throw runtimeException;
+		}
+		if (failure != null) {
+			throw (Error) failure;
+		}
+	}
+
+	/** Partial-state accessors and installer for the parallel aggregate merge (three-tier plan, Milestone 10B). */
+	Literal numericSumAt(int aggregateId, int groupId) {
+		requireNumericAccumulator(aggregateId, groupId);
+		return groupId < numericSums[aggregateId].length ? numericSums[aggregateId][groupId] : null;
+	}
+
+	long numericCountAt(int aggregateId, int groupId) {
+		requireNumericAccumulator(aggregateId, groupId);
+		long[] counts = numericCounts[aggregateId];
+		return counts != null && groupId < counts.length ? counts[groupId] : 0L;
+	}
+
+	boolean numericErrorAt(int aggregateId, int groupId) {
+		requireNumericAccumulator(aggregateId, groupId);
+		return groupId < numericErrors[aggregateId].length && numericErrors[aggregateId][groupId];
+	}
+
+	/** Installs one merged partial so {@link #numericResult} finalizes it with the ordinary emission rules. */
+	void installNumericPartial(int aggregateId, int groupId, Literal sum, long count, boolean error) {
+		requireNumericAccumulator(aggregateId, groupId);
+		ensureNumericCapacity(aggregateId, groupId);
+		numericSums[aggregateId][groupId] = sum;
+		numericErrors[aggregateId][groupId] = error;
+		if (numericCounts[aggregateId] != null) {
+			numericCounts[aggregateId][groupId] = count;
+		}
+	}
+
 	private void requireNumericAccumulator(int aggregateId, int groupId) {
 		if (aggregateId < 0 || aggregateId >= numericKinds.length || numericKinds[aggregateId] == null) {
 			throw new IllegalArgumentException("aggregate " + aggregateId + " is not an exact numeric aggregate");

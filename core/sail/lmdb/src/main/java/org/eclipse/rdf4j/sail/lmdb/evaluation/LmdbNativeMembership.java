@@ -262,6 +262,15 @@ final class AdjacencyIntersectionProbe implements java.io.Closeable {
 	static final AtomicLong ANSWERED = new AtomicLong();
 	/** Per-row membership probes served by galloping inside a cached constant-key run. */
 	static final AtomicLong CACHED_RUN_PROBES = new AtomicLong();
+	/** Native probes currently held by semijoin probes; a nonzero count at dataset close is a leak. Test witness. */
+	static final AtomicLong ACTIVE_PROBES = new AtomicLong();
+	/** DEBUG: creation stacks of live probes, populated only under {@code rdf4j.lmdb.adjacencySemijoin.trackProbes}. */
+	static final java.util.Map<AdjacencyIntersectionProbe, Throwable> ACTIVE_TRACES = java.util.Collections
+			.synchronizedMap(new java.util.IdentityHashMap<>());
+
+	static boolean trackProbes() {
+		return Boolean.getBoolean("rdf4j.lmdb.adjacencySemijoin.trackProbes");
+	}
 
 	private static final long UNRESOLVED_RUN = Long.MIN_VALUE;
 	private static final long NOT_FOUND = NativeLmdbQuerySource.NativeAdjacency.NOT_FOUND;
@@ -434,6 +443,10 @@ final class AdjacencyIntersectionProbe implements java.io.Closeable {
 	private NativeLmdbQuerySource.NativeAdjacency view(RowState row, boolean bySubject) throws IOException {
 		if (probe == null) {
 			probe = row.source.newProbe();
+			ACTIVE_PROBES.incrementAndGet();
+			if (trackProbes()) {
+				ACTIVE_TRACES.put(this, new Throwable("semijoin probe created"));
+			}
 		}
 		if (bySubject) {
 			if (!outgoingResolved) {
@@ -466,6 +479,8 @@ final class AdjacencyIntersectionProbe implements java.io.Closeable {
 		NativeLmdbQuerySource.NativeProbe ownedProbe = probe;
 		probe = null;
 		if (ownedProbe != null) {
+			ACTIVE_PROBES.decrementAndGet();
+			ACTIVE_TRACES.remove(this);
 			ownedProbe.close();
 		}
 	}

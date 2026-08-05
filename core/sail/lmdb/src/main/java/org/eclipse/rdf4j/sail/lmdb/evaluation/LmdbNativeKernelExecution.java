@@ -92,6 +92,7 @@ final class LmdbNativeKernelExecution {
 		NativeLmdbQuerySource.NativeProbe probe = null;
 		LmdbNativeKernelScanner scanner = null;
 		JaninoKernel kernel = null;
+		LmdbNativeKernelHooks hooks = null;
 		try {
 			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerAggregate(arg, row, groupSlots,
 					aggregates, explainTarget, preferScans);
@@ -147,7 +148,25 @@ final class LmdbNativeKernelExecution {
 				AGG_DECLINED.incrementAndGet();
 				return null;
 			}
-			LmdbNativeKernelHooks hooks = lowered.bindings.needsHooks()
+			LmdbNativeKernelLowering.Lowered loweredFinal = lowered;
+			java.util.List<org.eclipse.rdf4j.query.BindingSet> parallel = LmdbNativeParallelKernelAggregate
+					.tryEvaluate(lowered, views, arg, row, emitter, explainTarget,
+							() -> LmdbNativeJaninoCodegen.kernel(CACHE_OWNER, shapeKey,
+									loweredFinal.kernel.className(),
+									() -> LmdbNativeKernelEmitter.emit(loweredFinal.kernel), observedRows));
+			if (parallel != null) {
+				AGG_OPENED.incrementAndGet();
+				AGG_ROWS.addAndGet(parallel.size());
+				if (row.runtimePlan != null) {
+					SlotPlan[] actualOrder = arg instanceof MultiJoinPlan
+							? ((MultiJoinPlan) arg).derivedPlan(row).order
+							: new SlotPlan[] { arg };
+					row.runtimePlan.janinoActivated(activationRoute("irAggregateParallel", lowered), actualOrder);
+					row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, actualOrder);
+				}
+				return parallel;
+			}
+			hooks = lowered.bindings.needsHooks()
 					? new LmdbNativeKernelHooks(row, lowered.bindings)
 					: null;
 			scanner = lowered.kernel.requirements.scans > 0
@@ -186,14 +205,20 @@ final class LmdbNativeKernelExecution {
 			}
 			return null;
 		} finally {
-			if (scanner != null) {
-				scanner.close();
-			}
-			if (probe != null) {
-				probe.close();
-			}
-			if (kernel != null) {
-				kernel.close();
+			try {
+				if (hooks != null) {
+					hooks.closeFilters();
+				}
+			} finally {
+				if (scanner != null) {
+					scanner.close();
+				}
+				if (probe != null) {
+					probe.close();
+				}
+				if (kernel != null) {
+					kernel.close();
+				}
 			}
 		}
 	}
@@ -363,7 +388,7 @@ final class LmdbNativeKernelExecution {
 				row.runtimePlan.janinoActivated(activationRoute("irKernel", lowered), actualOrder);
 				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_IR_KERNEL, actualOrder);
 			}
-			return new KernelRowCursor(kernel, probe, scanner, row, lowered.bindings.columnEngineSlots,
+			return new KernelRowCursor(kernel, probe, scanner, hooks, row, lowered.bindings.columnEngineSlots,
 					lowered.bindings.residualFilters);
 		} catch (RuntimeException problem) {
 			if (probe != null) {
@@ -412,6 +437,7 @@ final class LmdbNativeKernelExecution {
 		private final NativeLmdbQuerySource.NativeProbe probe;
 		private final LmdbNativeKernelScanner scanner;
 		private final RowState row;
+		private final LmdbNativeKernelHooks hooks;
 		private final int[] columnSlots;
 		private final List<MaskedFilter> residualFilters;
 		private final long[] buffer;
@@ -420,11 +446,12 @@ final class LmdbNativeKernelExecution {
 		private int activeMark = -1;
 
 		KernelRowCursor(JaninoKernel kernel, NativeLmdbQuerySource.NativeProbe probe,
-				LmdbNativeKernelScanner scanner, RowState row, int[] columnSlots,
+				LmdbNativeKernelScanner scanner, LmdbNativeKernelHooks hooks, RowState row, int[] columnSlots,
 				List<MaskedFilter> residualFilters) {
 			this.kernel = kernel;
 			this.probe = probe;
 			this.scanner = scanner;
+			this.hooks = hooks;
 			this.row = row;
 			this.columnSlots = columnSlots;
 			this.residualFilters = residualFilters;
@@ -485,11 +512,33 @@ final class LmdbNativeKernelExecution {
 				row.rollback(activeMark);
 				activeMark = -1;
 			}
-			kernel.close();
-			if (scanner != null) {
-				scanner.close();
+			try {
+				// residual filters and hook-invoked filters run without an owning FilterCursor here, so this
+				// cursor owns their release (lazily acquired semijoin/membership probes hold native read stamps)
+				Throwable failure = null;
+				for (MaskedFilter residual : residualFilters) {
+					try {
+						residual.filter.close();
+					} catch (RuntimeException | Error problem) {
+						failure = failure == null ? problem : failure;
+					}
+				}
+				if (hooks != null) {
+					hooks.closeFilters();
+				}
+				if (failure instanceof RuntimeException runtimeException) {
+					throw runtimeException;
+				}
+				if (failure != null) {
+					throw (Error) failure;
+				}
+			} finally {
+				kernel.close();
+				if (scanner != null) {
+					scanner.close();
+				}
+				probe.close();
 			}
-			probe.close();
 		}
 	}
 }

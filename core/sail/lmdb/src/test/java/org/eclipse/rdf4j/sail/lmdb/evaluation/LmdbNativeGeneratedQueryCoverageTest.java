@@ -248,6 +248,7 @@ class LmdbNativeGeneratedQueryCoverageTest {
 		save(LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY, "0");
 		save(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "true");
 		save(LmdbNativeKernelLowering.DISTINCT_NUMERIC_PROPERTY, "true");
+		save("rdf4j.lmdb.adjacencySemijoin.trackProbes", "true"); // leak witness: capture creation stacks
 
 		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc,posc")
 				.setDirectAdjacencyBuildOnStart(false));
@@ -385,6 +386,20 @@ class LmdbNativeGeneratedQueryCoverageTest {
 				} catch (RuntimeException problem) {
 					failures.add(query.category() + " execution failed: " + problem + "\n" + query.sparql());
 					continue;
+				}
+				// Leak witness: every adjacency-semijoin probe must be released when its query finishes. A held
+				// probe pins a native read stamp and wedges the dataset close — the 2026-08-05 coverage hang was
+				// exactly this, from kernel routes bypassing the cursor machinery that closes plan filters.
+				if (AdjacencyIntersectionProbe.ACTIVE_PROBES.get() != 0) {
+					StringBuilder leak = new StringBuilder("LEAKED semijoin probes after query:\n" + query.sparql());
+					synchronized (AdjacencyIntersectionProbe.ACTIVE_TRACES) {
+						for (Throwable trace : AdjacencyIntersectionProbe.ACTIVE_TRACES.values()) {
+							java.io.StringWriter sw = new java.io.StringWriter();
+							trace.printStackTrace(new java.io.PrintWriter(sw));
+							leak.append("\n").append(sw);
+						}
+					}
+					throw new AssertionError(leak.toString());
 				}
 
 				if (openedKernels() > 0L) {
