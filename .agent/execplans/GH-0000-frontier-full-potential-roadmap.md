@@ -99,7 +99,7 @@ planning/complete-theme benchmarks. Run them (no-red policy: triage every red). 
   delegating constructors with `LmdbStoreConfig.FRONTIER_INITIAL_MATERIALIZATION_WORK_UNITS`.
 - Fix `queryIndexVisitedRows` telemetry (currently definitionally 2 x candidateRows).
 
-## Phase 1 — Remove the leaf-path budget cliffs (~1 week, pure engineering)
+## Phase 1 — Remove the leaf-path budget cliffs
 
 1. Single-pass leaf materialization: in the count pass, buffer matching row positions (int per
    match, bounded by the work budget, <= 1 MiB); the write pass replays the buffer instead of
@@ -116,7 +116,7 @@ planning/complete-theme benchmarks. Run them (no-red policy: triage every red). 
 Acceptance: no theme query loses all Frontier evidence because of one unselective pattern; prep
 p95 target still holds; audit KPI node coverage strictly increases.
 
-## Phase 2 — Halve and then bypass probe I/O (~1–2 weeks, engineering)
+## Phase 2 — Halve and then bypass probe I/O
 
 1. Single-pass `extendInner`: buffer emissions (tuples + weights) during the count pass, then size
    the writer and replay. Today every DP extension executes its real LMDB probes twice.
@@ -151,7 +151,7 @@ new bias risk, and the existing exact-probe integration suite doubles as the equ
 The sampled-sampled HT-weight composition (distinct-center event pricing) remains future work and
 must go through exhaustive-expectation oracle tests before production.
 
-## Phase 3 — Implement `coordinatedStar` (the centerpiece; ~2–3 weeks, proved math)
+## Phase 3 — Implement `coordinatedStar`
 
 The builder retains complete adjacency per surviving center (selection is by
 `laneHash(center) < p`), heavy centers exact — precisely so a k-arm same-center star can be
@@ -171,7 +171,7 @@ Acceptance: the bare two-star/one-bridge synthetic (THEME_COVERAGE missing-shape
 plans with zero store probes for star arms; probe counter shows the drop; estimates match the probe
 path within tolerance.
 
-## Phase 4 — Bounded conditionally-unbiased resampling (~2–3 weeks, proved math, delicate)
+## Phase 4 — Bounded conditionally-unbiased resampling 
 
 The theory's answer to bag growth is bounded resampling; `EvidenceStateSummary.resamplingVariance`
 exists but nothing fills it, and oversized bags go `unresolved`. Implement the resampling transform
@@ -182,7 +182,7 @@ already exists). Oracle tests with exact rational expectations are mandatory bef
 Acceptance: hub-heavy prefixes beyond 4,096 particles retain `MEASURE_UNBIASED` on synthetic
 many-to-many chains instead of `unresolved`; no bias in oracle tests.
 
-## Phase 5 — Sidecar format v2: per-record exactness, O2S, exact-mode dedup (~2 weeks)
+## Phase 5 — Sidecar format v2: per-record exactness, O2S, exact-mode dedup 
 
 - Add a per-row flags column (VERSION=2) carrying record-level `databaseExact`. Heavy centers are
   exact even in sampled generations; a leaf anchored on a heavy subject can then be certified
@@ -195,7 +195,7 @@ many-to-many chains instead of `unresolved`; no bias in oracle tests.
   complete-theme payload from ~267 MiB toward ~33 MiB and making every rebuild/verify ~8x cheaper.
   This touches the authoritative payload format — separate ExecPlan, version bump, migration test.
 
-## Phase 6 — Cash in the lanes: variance and audit (~1–2 weeks)
+## Phase 6 — Cash in the lanes: variance and audit 
 
 - Materialize the selected plan's key states from design lane 1 as a paired replicate; populate the
   currently-empty interval fields (`intervalKind=NONE`, upper `inf`, confidence 0) with empirical

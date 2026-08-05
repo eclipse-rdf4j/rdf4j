@@ -138,7 +138,8 @@ final class PackedFilterRules {
 				helperEstimate.setReplacesChildWork(false);
 			}
 			if (!helperEstimate.dependentSubqueriesCosted()) {
-				double dependentCost = PackedDependentSubqueryCosting.defaultCost(query, memo, filterExpressionId);
+				double dependentCost = PackedDependentSubqueryCosting.defaultCost(query, memo, filterExpressionId,
+						filteredInputRows);
 				if (dependentCost > 0.0d) {
 					if (helperEstimate.hasExplicitPhysicalCost()) {
 						helperEstimate.addChildPhysicalCost(dependentCost, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d,

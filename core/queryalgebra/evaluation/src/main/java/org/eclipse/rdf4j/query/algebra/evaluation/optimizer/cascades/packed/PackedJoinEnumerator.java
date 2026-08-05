@@ -1967,7 +1967,7 @@ final class PackedJoinEnumerator {
 		if (!costEstimate.dependentSubqueriesCosted()) {
 			double dependentCost = PackedDependentSubqueryCosting.contextualCost(query, memo, filterRelationId,
 					prefixRelations, prefixContributionRows, prefixCount, inputRows, inputEvidenceStateId, 0, 0,
-					semanticScopeMaskId);
+					semanticScopeMaskId, inputRows);
 			if (dependentCost > 0.0d) {
 				if (costEstimate.hasExplicitPhysicalCost()) {
 					costEstimate.addChildPhysicalCost(dependentCost, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d,

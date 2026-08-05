@@ -168,6 +168,31 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		return !"false".equalsIgnoreCase(System.getProperty(SEMI_ANTI_FAILOVER_GATES_PROPERTY, "true"));
 	}
 
+	/*
+	 * A correlated semi/anti probe is re-executed once per outer row, so the invocation count is the single most
+	 * dangerous quantity in its price. The correlation profile historically took it from the frontier evidence estimate
+	 * of the filter's input alone; a degraded, learned-calibrated input state (interval [0, inf), no composable
+	 * payload) could then collapse the count to ~1 and make the probe look nearly free while its true invocation count
+	 * was five orders of magnitude larger (MEDICAL q9, 2026-08-04). With the floor enabled, an input state that is not
+	 * authoritative for cardinality is cross-checked against the planner's own structural estimate of the same input,
+	 * and the larger of the two is charged. Overstating probes is the conservative failure: it pushes near-ties back
+	 * toward the bounded materialized alternatives.
+	 */
+	static final String SEMI_ANTI_STRUCTURAL_OUTER_ROWS_FLOOR_PROPERTY = "rdf4j.optimizer.lmdb.semiAntiStructuralOuterRowsFloor";
+
+	private static boolean semiAntiStructuralOuterRowsFloorEnabled() {
+		return !"false".equalsIgnoreCase(
+				System.getProperty(SEMI_ANTI_STRUCTURAL_OUTER_ROWS_FLOOR_PROPERTY, "true"));
+	}
+
+	/*
+	 * When the structural floor overrides a distrusted evidence input, the probe-key domain derived from that same
+	 * input is equally distrusted: a distinct-key estimate far below the corrected invocation count would hand the
+	 * memoized algorithm an unearned cache-hit discount. Below this fraction of the corrected outer rows the domain
+	 * estimate is replaced by the outer rows themselves (no cache benefit assumed).
+	 */
+	private static final double DISTRUSTED_DISTINCT_KEY_FRACTION = 0.01d;
+
 	private static double clampToRawFactor(double learned, double raw, double maxFactor, boolean[] clamped) {
 		if (!(raw > 0.0d) || !finiteNonNegative(learned)) {
 			return learned;
@@ -211,6 +236,8 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	private int factorCountVisitEpoch;
 	private String[] learningOperatorFamilies;
 	private String[] learningRawTransforms;
+	private String[] logicalGroupFactKeys;
+	private int[] contextualCanonicalGroupIds;
 	private long[] relationTopologyFingerprints;
 	private QueryEvaluationStep[] preparedTupleSteps;
 	private final Map<Value, Long> queryLocalValueIds = new HashMap<>();
@@ -767,7 +794,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			if (FrontierOperatorCapabilities.isIdentity(expression)) {
 				publishOperatorState(relationId, output, input);
 			} else if (expression instanceof Filter filter && pureExistsCondition(filter) != null) {
-				refineBoundedSemiAntiFilter(relationId, filter, input, output);
+				refineBoundedSemiAntiFilter(relationId, context, filter, input, output);
 			} else if (expression instanceof Projection) {
 				publishCardinalityPreservingBoundary(
 						relationId, output, input, "projection_input_payload_unavailable", 0.0d);
@@ -797,7 +824,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			return;
 		}
 		if (expression instanceof Filter filter) {
-			refineFilter(relationId, filter, input, rawWorkRows, output);
+			refineFilter(relationId, context, filter, input, rawWorkRows, output);
 			if (!output.dependentSubqueriesCosted()) {
 				applyScalarFilterPhysicalCost(relationId, filter, context, rawWorkRows, output);
 			}
@@ -1451,12 +1478,93 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		}
 		EvidenceStateSummary predictedSummary = predictedState.summary();
 		boolean databaseExact = predictedSummary.guarantee() == EvidenceGuarantee.DATABASE_EXACT;
+		String groupFactKey = null;
+		double exactFactRows = Double.NaN;
+		if (frontierExactCardinalityFactsEnabled()
+				&& (stateKey == null ? context.correlationMaskId() : stateKey.correlationScope()) == 0
+				&& prefixCoversRelationInput(relationId, context)) {
+			groupFactKey = logicalGroupFactKey(relationId);
+			if (groupFactKey != null) {
+				output.putPlannedStringMetric("optimizer.frontierLogicalGroupKey", groupFactKey);
+				exactFactRows = feedbackStats.exactCardinalityFact(groupFactKey);
+			}
+		}
 		double eventPredictionRows = finiteNonNegative(output.outputRows())
 				? output.outputRows()
 				: predictedSummary.pointRows();
 		double learningPredictionRows = isComposableState(predictedState)
 				? predictedSummary.pointRows()
 				: eventPredictionRows;
+		if (!databaseExact && finiteNonNegative(exactFactRows)) {
+			// Same-stamp observed cardinality: the fact replaces both the raw estimate and any learned correction.
+			if (!isComposableState(predictedState)) {
+				predictedState = alignNonComposableCostingState(relationId, predictedState, output);
+				predictedSummary = predictedState.summary();
+			}
+			String evidenceKey = groupFactKey + ":exact_fact";
+			if (!arena.containsCalibrationEvidence(predictedState, evidenceKey)) {
+				double factor = predictedSummary.pointRows() == 0.0d
+						? exactFactRows == 0.0d ? 0.0d : Double.POSITIVE_INFINITY
+						: exactFactRows / predictedSummary.pointRows();
+				EvidenceCalibrationSummary calibration = new EvidenceCalibrationSummary(
+						predictedSummary.pointRows(),
+						exactFactRows,
+						factor,
+						"frontier-exact-fact",
+						1L,
+						1.0d,
+						evidenceKey,
+						runtime.learnedEvidenceRevision());
+				EvidenceStateRef factState = arena.calibrate(predictedState, calibration, relationId);
+				rememberState(factState);
+				output.setEvidenceStateId(factState.stateId());
+				output.setEvidenceGuarantee(factState.summary().guarantee());
+				if (output.hasComponentOutputRows()) {
+					output.setComponentOutputRowsPreservingPhysicalCost(factState.summary().pointRows());
+				} else if (output.hasContextualOutputRows()) {
+					output.setContextualOutputRowsPreservingPhysicalCost(factState.summary().pointRows());
+				} else {
+					output.setOutputRowsPreservingPhysicalCost(factState.summary().pointRows());
+				}
+				synchronizeSemiAntiCorrelationRows(output, factState.summary(), factState.summary().pointRows());
+				annotateReady(output, factState);
+				output.setEstimateProvenance(FRONTIER_LEO_SOURCE, "frontier_exact_fact");
+				output.putPlannedStringMetric("optimizer.frontierLeo.output_rows.source", "exact-fact");
+				output.putPlannedDoubleMetric("optimizer.frontierLeo.output_rows.raw",
+						predictedSummary.pointRows());
+				output.putPlannedDoubleMetric("optimizer.frontierLeo.output_rows.corrected", exactFactRows);
+				int factPhysicalCorrections = applyFrontierPhysicalLearning(learningKey, output, feedbackStats);
+				output.putPlannedDoubleMetric(
+						"optimizer.frontierLeoPhysicalDimensionCount", factPhysicalCorrections);
+				output.putPlannedStringMetric("optimizer.frontierStateDigest", learningStateDigest(factState));
+				return;
+			}
+			/*
+			 * The fact already sits in this state's calibration lineage: an earlier costing event of the same search
+			 * applied it. The learned row correction must STILL be skipped — running it here would stack a posterior on
+			 * top of the measured cardinality and re-introduce exactly the drift the fact disproved (observed as a
+			 * frontier-hierarchical-nig calibration multiplying a fact-pinned estimate back up, 2026-08-05). Pin the
+			 * event's own row estimate to the fact as well: every alternative pricing this logical relation at this
+			 * data stamp must see the same measured output.
+			 */
+			if (output.hasComponentOutputRows()) {
+				output.setComponentOutputRowsPreservingPhysicalCost(exactFactRows);
+			} else if (output.hasContextualOutputRows()) {
+				output.setContextualOutputRowsPreservingPhysicalCost(exactFactRows);
+			} else {
+				output.setOutputRowsPreservingPhysicalCost(exactFactRows);
+			}
+			synchronizeSemiAntiCorrelationRows(output, predictedSummary, exactFactRows);
+			output.setEstimateProvenance(FRONTIER_LEO_SOURCE, "frontier_exact_fact");
+			output.putPlannedStringMetric("optimizer.frontierLeo.output_rows.source", "exact-fact");
+			output.putPlannedDoubleMetric("optimizer.frontierLeo.output_rows.raw", predictedSummary.pointRows());
+			output.putPlannedDoubleMetric("optimizer.frontierLeo.output_rows.corrected", exactFactRows);
+			int factPhysicalCorrections = applyFrontierPhysicalLearning(learningKey, output, feedbackStats);
+			output.putPlannedDoubleMetric(
+					"optimizer.frontierLeoPhysicalDimensionCount", factPhysicalCorrections);
+			output.putPlannedStringMetric("optimizer.frontierStateDigest", learningStateDigest(predictedState));
+			return;
+		}
 		FrontierLearningModel.DimensionEstimate rowCorrection = pinnedDimensionEstimate(
 				feedbackStats, learningKey, FrontierCostDimension.OUTPUT_ROWS, learningPredictionRows);
 		EvidenceStateRef correctedState = predictedState;
@@ -1465,15 +1573,44 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				predictedState = alignNonComposableCostingState(relationId, predictedState, output);
 				predictedSummary = predictedState.summary();
 			}
+			double correctedRows = rowCorrection.correctedValue();
+			/*
+			 * A calibration may move a point estimate freely only inside the state's certified interval. A state with a
+			 * vacuous interval and no composable payload has announced it knows nothing about its cardinality — a
+			 * learned posterior applied to it is not "correcting" anything, it is inventing the estimate outright.
+			 * Bound that authority to 4^exactEvidence of the raw structural value (mirroring the ln(4)-per-observation
+			 * clamp): with zero exact observations the raw estimate stands, and each same-key observation earns a
+			 * factor of four. Family- or legacy-pooled evidence alone earns nothing here — pooled corrections applied
+			 * to degraded states are exactly how an unrelated query's inflation crushed the q9 anti-join input to ~1
+			 * row (2026-08-04). Vacuity is judged like the semi-anti authority test: a HEURISTIC interval still
+			 * carrying [0, inf) constrains nothing and earns no more authority than intervalKind NONE.
+			 */
+			boolean vacuousInterval = predictedSummary.intervalKind() == EvidenceIntervalKind.NONE
+					|| !(predictedSummary.lowerRows() > 0.0d || Double.isFinite(predictedSummary.upperRows()));
+			if (degradedCalibrationClampEnabled()
+					&& !isComposableState(predictedState)
+					&& vacuousInterval
+					&& predictedSummary.pointRows() > 0.0d
+					&& finiteNonNegative(correctedRows)) {
+				double band = Math.pow(4.0d, Math.min(rowCorrection.exactEvidenceCount(), 8.0d));
+				double clamped = Math.min(
+						Math.max(correctedRows, predictedSummary.pointRows() / band),
+						predictedSummary.pointRows() * band);
+				if (clamped != correctedRows) {
+					correctedRows = clamped;
+					output.putPlannedDoubleMetric("optimizer.frontierLeo.output_rows.clamped", 1.0d);
+					output.putPlannedDoubleMetric("optimizer.frontierLeo.output_rows.clampBand", band);
+				}
+			}
 			String evidenceKey = learningKey.externalForm() + ":output_rows";
 			if (!arena.containsCalibrationEvidence(predictedState, evidenceKey)) {
 				double confidence = posteriorConfidence(rowCorrection.posteriorPrecision());
 				double factor = predictedSummary.pointRows() == 0.0d
-						? rowCorrection.correctedValue() == 0.0d ? 0.0d : Double.POSITIVE_INFINITY
-						: rowCorrection.correctedValue() / predictedSummary.pointRows();
+						? correctedRows == 0.0d ? 0.0d : Double.POSITIVE_INFINITY
+						: correctedRows / predictedSummary.pointRows();
 				EvidenceCalibrationSummary calibration = new EvidenceCalibrationSummary(
 						predictedSummary.pointRows(),
-						rowCorrection.correctedValue(),
+						correctedRows,
 						factor,
 						"frontier-hierarchical-nig",
 						learningEvidenceCount(rowCorrection),
@@ -1491,7 +1628,8 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				} else {
 					output.setOutputRowsPreservingPhysicalCost(correctedState.summary().pointRows());
 				}
-				synchronizeSemiAntiCorrelationRows(output, correctedState.summary());
+				synchronizeSemiAntiCorrelationRows(output, correctedState.summary(),
+						correctedState.summary().pointRows());
 				annotateReady(output, correctedState);
 				String currentSource = output.estimateSource();
 				String learnedSource = currentSource != null && currentSource.contains("learned-filter")
@@ -1691,6 +1829,187 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		return current;
 	}
 
+	/*
+	 * Learning identity of a relation: the canonical member of its logical memo group. Rule-program alternatives
+	 * (Difference vs correlated NOT-EXISTS filter vs typed anti-join over the same MINUS) share a group, and output
+	 * cardinality is a property of that logical relation, not of the physical framing that happened to execute. Keying
+	 * OUTPUT_ROWS learning by the alternative's own algebra let the executed framing accumulate corrections while its
+	 * never-executed siblings kept raw estimates — flipping near-tied choices toward whichever plan had not run yet
+	 * (MEDICAL q9 oscillation, 2026-08-04). Physical-dimension families keep the alternative's access identity (kernel,
+	 * index, mode, operation prefix), so scan/seek/hash evidence still does not pool across kernels. Unlike
+	 * canonicalContextualOperatorRelationIds this never routes a costing event through the canonical member's
+	 * expression — it only derives a fingerprint string from it.
+	 */
+	static final String GROUP_CANONICAL_OUTPUT_ROWS_LEARNING_PROPERTY = "rdf4j.optimizer.lmdb.groupCanonicalOutputRowsLearning";
+
+	private static boolean groupCanonicalOutputRowsLearningEnabled() {
+		return !"false".equalsIgnoreCase(
+				System.getProperty(GROUP_CANONICAL_OUTPUT_ROWS_LEARNING_PROPERTY, "true"));
+	}
+
+	static final String DEGRADED_CALIBRATION_CLAMP_PROPERTY = "rdf4j.optimizer.lmdb.degradedCalibrationClamp";
+
+	private static boolean degradedCalibrationClampEnabled() {
+		return !"false".equalsIgnoreCase(
+				System.getProperty(DEGRADED_CALIBRATION_CLAMP_PROPERTY, "true"));
+	}
+
+	/*
+	 * An observed cardinality of a top-level, uncorrelated logical relation at the current data stamp is a fact, not an
+	 * estimate: at this exact data version that relation produced exactly N rows. Keyed by the logical group's
+	 * canonical fingerprint, one execution's measurement overrides both raw estimates and learned corrections for EVERY
+	 * physical alternative over the same relation — which is what makes near-tie ranking symmetric again after one run.
+	 * Facts are minted and validated inside LmdbOperatorFeedbackStats against its LMDB write-txn data stamp; any store
+	 * mutation silently demotes them back to priors. Correlated or prefix-conditioned evaluations observe a different
+	 * conditional relation and never mint or consume facts.
+	 */
+	static final String FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY = "rdf4j.optimizer.lmdb.frontierExactCardinalityFacts";
+
+	private static boolean frontierExactCardinalityFactsEnabled() {
+		return !"false".equalsIgnoreCase(
+				System.getProperty(FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, "true"));
+	}
+
+	/**
+	 * Operation-independent logical identity of the relation's memo group: canonical member's operator family plus its
+	 * structural-topology hex. Group-canonical regardless of the A1 learning-key flag — facts are meaningless under
+	 * per-alternative identities. Empty-string cache slots encode "no key".
+	 */
+	private String logicalGroupFactKey(int relationId) {
+		if (relationId <= 0 || relationId > query.relationCount()) {
+			return null;
+		}
+		if (logicalGroupFactKeys == null) {
+			logicalGroupFactKeys = new String[query.relationCount() + 1];
+		}
+		String cached = logicalGroupFactKeys[relationId];
+		if (cached != null) {
+			return cached.isEmpty() ? null : cached;
+		}
+		int identity = contextualCanonicalGroupId(relationId);
+		TupleExpr expression = query.materializeRelation(identity);
+		String simpleName = expression.getClass().getSimpleName();
+		String family = simpleName.isBlank() ? "tuple-expr" : camelToKebab(simpleName);
+		String topology = LeoOperatorKey.from(expression, "", LeoOperatorKey.ConstantMode.EXACT)
+				.structuralFingerprint();
+		String key = family + '@' + fixedHex(avalancheLearningFingerprint(fnvFingerprint(topology)));
+		logicalGroupFactKeys[relationId] = key;
+		return key;
+	}
+
+	private int learningIdentityRelationId(int relationId) {
+		if (!groupCanonicalOutputRowsLearningEnabled()
+				|| relationId <= 0 || relationId > query.relationCount()) {
+			return relationId;
+		}
+		return contextualCanonicalGroupId(relationId);
+	}
+
+	/*
+	 * Fact and learning identities are keyed by memo group, but one scheduled predicate can span several groups: a
+	 * rule-derived framing (e.g. the duplicate-insensitive unused-optional rewrite of a MINUS) re-interns the operator
+	 * and its scheduled FILTER copies under a fresh group. Those copies share one contextual operator cost identity
+	 * with the source framing's copies, and the outer costing wrapper already routes their events through the earliest
+	 * copy — so an executed DIFFERENCE framing and its scheduled-FILTER framing would otherwise mint and consume group
+	 * facts under different keys (MEDICAL q9 run-2 plan flip, 2026-08-05). Union the groups bridged by that mapping and
+	 * key every member by the earliest group in its union.
+	 */
+	private int contextualCanonicalGroupId(int relationId) {
+		int[] canonicalGroups = contextualCanonicalGroupIds;
+		if (canonicalGroups == null) {
+			canonicalGroups = buildContextualCanonicalGroupIds();
+			contextualCanonicalGroupIds = canonicalGroups;
+		}
+		return canonicalGroups[memberGroupId(relationId)];
+	}
+
+	private int[] buildContextualCanonicalGroupIds() {
+		int[] roots = new int[query.relationCount() + 1];
+		for (int id = 0; id < roots.length; id++) {
+			roots[id] = id;
+		}
+		for (int relationId = 1; relationId <= query.relationCount(); relationId++) {
+			int canonicalId = query.canonicalContextualOperatorRelationId(relationId);
+			if (canonicalId == relationId || canonicalId <= 0 || canonicalId > query.relationCount()) {
+				continue;
+			}
+			int left = rootGroupId(roots, memberGroupId(relationId));
+			int right = rootGroupId(roots, memberGroupId(canonicalId));
+			if (left != right) {
+				roots[Math.max(left, right)] = Math.min(left, right);
+			}
+		}
+		for (int id = 1; id < roots.length; id++) {
+			roots[id] = rootGroupId(roots, id);
+		}
+		return roots;
+	}
+
+	private static int rootGroupId(int[] roots, int groupId) {
+		int current = groupId;
+		while (roots[current] != current) {
+			current = roots[current];
+		}
+		return current;
+	}
+
+	private int memberGroupId(int relationId) {
+		int groupId = query.relGroup(relationId);
+		return groupId > 0 && groupId <= query.relationCount() ? groupId : relationId;
+	}
+
+	/*
+	 * A group cardinality fact describes the standalone logical relation. A costing event may still mint or consume one
+	 * with a non-empty prefix in exactly one shape: a unary operator (a contextually interned scheduled FILTER copy)
+	 * whose prefix is precisely its own encoded input — that event is the same top-of-stream application a prefix-free
+	 * operator refinement describes, merely reached through the join enumerator's contextual route. Partial prefixes
+	 * observe a different conditional relation, and per-outer-row probes are already excluded by the correlation-scope
+	 * gate; both stay barred from facts.
+	 */
+	/*
+	 * An exact same-stamp cardinality fact for a semi/anti relation bounds its probe invocation count from below:
+	 * retained rows are a subset of the outer input, so outer rows can never be smaller than an observed output. Unlike
+	 * the structural floor this also overrules a composable input whose learned interval authoritatively vouches for a
+	 * crushed row count — the fact is a measurement at the current data stamp. Correlated probes and partial-prefix
+	 * schedules observe conditional relations and take no floor.
+	 */
+	private double semiAntiFactOuterRowsFloor(int relationId, PackedCostContext context) {
+		if (!frontierExactCardinalityFactsEnabled()
+				|| context == null || context.correlationMaskId() != 0
+				|| !prefixCoversRelationInput(relationId, context)) {
+			return Double.NaN;
+		}
+		LmdbOperatorFeedbackStats feedbackStats = runtime.feedback();
+		String groupFactKey = feedbackStats == null ? null : logicalGroupFactKey(relationId);
+		double factRows = groupFactKey == null ? Double.NaN : feedbackStats.exactCardinalityFact(groupFactKey);
+		return finiteNonNegative(factRows) ? factRows : Double.NaN;
+	}
+
+	private boolean prefixCoversRelationInput(int relationId, PackedCostContext context) {
+		int prefixCount = context.prefixRelationCount();
+		if (prefixCount == 0) {
+			return true;
+		}
+		if (relationId <= 0 || relationId > query.relationCount() || query.childCount(relationId) != 1) {
+			return false;
+		}
+		long[] inputFactors = relationFactorWords(query.childRelationId(relationId, 0));
+		long[] prefixFactors = new long[(query.relationCount() + 63) >>> 6];
+		boolean[] visited = new boolean[query.relationCount() + 1];
+		for (int ordinal = 0; ordinal < prefixCount; ordinal++) {
+			addRelationFactors(context.prefixRelationId(ordinal), prefixFactors, visited);
+		}
+		int wordCount = Math.max(inputFactors.length, prefixFactors.length);
+		for (int word = 0; word < wordCount; word++) {
+			long inputWord = word < inputFactors.length ? inputFactors[word] : 0L;
+			long prefixWord = word < prefixFactors.length ? prefixFactors[word] : 0L;
+			if (inputWord != prefixWord) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	private String learningOperatorFamily(int relationId) {
 		if (relationId == 0) {
 			return "join";
@@ -1702,7 +2021,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		if (cached != null) {
 			return cached;
 		}
-		TupleExpr expression = query.materializeRelation(relationId);
+		TupleExpr expression = query.materializeRelation(learningIdentityRelationId(relationId));
 		String simpleName = expression.getClass().getSimpleName();
 		String family = simpleName.isBlank() ? "tuple-expr" : camelToKebab(simpleName);
 		learningOperatorFamilies[relationId] = family;
@@ -1736,7 +2055,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		if (cached != null && cached.startsWith(operation + '@')) {
 			return cached;
 		}
-		TupleExpr expression = query.materializeRelation(relationId);
+		TupleExpr expression = query.materializeRelation(learningIdentityRelationId(relationId));
 		String topology = LeoOperatorKey.from(expression, "", LeoOperatorKey.ConstantMode.EXACT)
 				.structuralFingerprint();
 		String transform = operation + '@' + fixedHex(avalancheLearningFingerprint(fnvFingerprint(topology)));
@@ -2720,8 +3039,8 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		return value;
 	}
 
-	private void refineFilter(int relationId, Filter filter, EvidenceStateRef input, double rawWorkRows,
-			PackedCostEstimate output) {
+	private void refineFilter(int relationId, PackedCostContext context, Filter filter, EvidenceStateRef input,
+			double rawWorkRows, PackedCostEstimate output) {
 		ExistsCondition existsCondition = pureExistsCondition(filter);
 		EvidenceStateRef kernelInput = existsCondition == null
 				? input
@@ -2793,7 +3112,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			 * underlying correlated key tuples remain attached through the CALIBRATE overlay. Passing rawState here
 			 * delayed that correction until after physical alternatives had already been priced.
 			 */
-			applySemiAntiPhysicalCost(relationId, filter, input, state, output);
+			applySemiAntiPhysicalCost(relationId, context, filter, input, state, output);
 		} catch (FilterEvaluationFailure failure) {
 			degradeOperator(output, input, "filter_evaluation_failed");
 		} catch (RuntimeException failure) {
@@ -2801,8 +3120,8 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		}
 	}
 
-	private void applySemiAntiPhysicalCost(int relationId, Filter filter, EvidenceStateRef input,
-			EvidenceStateRef outputEvidence, PackedCostEstimate output) {
+	private void applySemiAntiPhysicalCost(int relationId, PackedCostContext context, Filter filter,
+			EvidenceStateRef input, EvidenceStateRef outputEvidence, PackedCostEstimate output) {
 		ExistsCondition existsCondition = pureExistsCondition(filter);
 		if (existsCondition == null) {
 			return;
@@ -2822,8 +3141,21 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		double rhsRows = typed
 				? estimatedRelationRows(rhsRelationId)
 				: estimatedTupleRows(rhs);
+		/*
+		 * The structural cross-check for the probe invocation count: the costing context's input rows when the caller
+		 * published them, else the annotator's standalone estimate of the filter's own argument. The context value wins
+		 * when finite — a prefix-conditioned invocation legitimately sees fewer rows — but several costing routes never
+		 * publish inputs, and without the fallback a degraded frontier input state was the sole authority for the
+		 * invocation count.
+		 */
+		double structuralOuterRows = context != null && finiteNonNegative(context.leftInputRows())
+				? context.leftInputRows()
+				: typed && query.childCount(relationId) > 0
+						? estimatedRelationRows(query.childRelationId(relationId, 0))
+						: estimatedTupleRows(filter.getArg());
 		FrontierSemiAntiProfile profile = correlationProfile(
-				input, outputEvidence, bindingDomains, rhsRelationId, semanticKind);
+				input, outputEvidence, bindingDomains, rhsRelationId, semanticKind,
+				structuralOuterRows, semiAntiFactOuterRowsFloor(relationId, context));
 		annotateCorrelationProfile(output, profile);
 		if (!arena.layout(input).variables().containsAll(bindingDomains.probeNames())) {
 			output.putPlannedStringMetric(
@@ -2834,8 +3166,8 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				filter, semanticKind, planIdentity.algorithm(), rhs, rhsRows, profile, output);
 	}
 
-	private void refineBoundedSemiAntiFilter(int relationId, Filter filter, EvidenceStateRef input,
-			PackedCostEstimate output) {
+	private void refineBoundedSemiAntiFilter(int relationId, PackedCostContext context, Filter filter,
+			EvidenceStateRef input, PackedCostEstimate output) {
 		EvidenceStateSummary inputSummary = input.summary();
 		double pointRows = finiteNonNegative(output.outputRows())
 				? output.outputRows()
@@ -2858,7 +3190,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				: arena.deriveBoundBoundary(input, arena.layout(input), outputSummary, relationId);
 		rememberState(state);
 		publishOperatorState(relationId, output, state);
-		applySemiAntiPhysicalCost(relationId, filter, input, state, output);
+		applySemiAntiPhysicalCost(relationId, context, filter, input, state, output);
 	}
 
 	private void applyFrontierSemiAntiPhysicalCost(Filter feedbackFilter, int semanticKind, int algorithm,
@@ -2867,6 +3199,16 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		double distinctProbeKeys = profile.probeDomain().planningDistinctKeys();
 		double matchedDistinctProbeKeys = profile.planningMatchedDistinctProbeKeys();
 		double unmatchedDistinctProbeKeys = profile.planningUnmatchedDistinctProbeKeys();
+		if (profile.structuralFloorApplied()
+				&& distinctProbeKeys < outerRows * DISTRUSTED_DISTINCT_KEY_FRACTION) {
+			// The probe-key domain shares lineage with the overridden input estimate; scale the key masses to the
+			// corrected invocation count instead of granting the memoized algorithm a near-total cache-hit rate.
+			double matchedShare = outerRows > 0.0d ? profile.matchedRows() / outerRows : 0.0d;
+			distinctProbeKeys = outerRows;
+			matchedDistinctProbeKeys = outerRows * matchedShare;
+			unmatchedDistinctProbeKeys = outerRows - matchedDistinctProbeKeys;
+			output.putPlannedDoubleMetric("plannedCorrelationDistinctKeysOverride", distinctProbeKeys);
+		}
 		double materializationPartitions = profile.materializationParameterDomain().planningDistinctKeys();
 		String[] probeNames = profile.probeDomain().bindingNames().toArray(String[]::new);
 		String[] materializationNames = profile.materializationParameterDomain()
@@ -3491,9 +3833,20 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		double probeWorkRows = factorWorkRows(probeFactor, rhsRows);
 		double materializationWorkRows = factorWorkRows(materializationFactor, rhsRows);
 		double materializationOutputRows = rhsRows;
+		/*
+		 * Without published context inputs the previous fallback was the filter's own output estimate — for an
+		 * anti-join that is the post-filter cardinality, which a poisoned calibration can crush to ~1 and thereby
+		 * charge the probe almost nothing. The filter's argument estimate is the honest invocation count.
+		 */
 		double outerRows = finiteNonNegative(context.leftInputRows())
 				? context.leftInputRows()
-				: finiteNonNegative(output.outputRows()) ? output.outputRows() : 1.0d;
+				: semiAntiStructuralOuterRowsFloorEnabled()
+						? Math.max(
+								finiteNonNegative(output.outputRows()) ? output.outputRows() : 0.0d,
+								Math.max(0.0d, typed && query.childCount(relationId) > 0
+										? estimatedRelationRows(query.childRelationId(relationId, 0))
+										: estimatedTupleRows(filter.getArg())))
+						: finiteNonNegative(output.outputRows()) ? output.outputRows() : 1.0d;
 		double conservativeOuterRows = Math.max(0.0d, outerRows);
 		Optional<LmdbPackedCostModel.ExactSemiAntiOutcome> exactOutcome = lmdbCostModel.exactSemiAntiOutcome(
 				query, context, rhs, semanticKind != PackedQueryView.SEMI_ANTI_EXISTS);
@@ -3877,9 +4230,11 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	}
 
 	private FrontierSemiAntiProfile correlationProfile(EvidenceStateRef input, EvidenceStateRef outputEvidence,
-			SemiAntiBindingDomains bindingDomains, int rhsRelationId, int semanticKind) {
+			SemiAntiBindingDomains bindingDomains, int rhsRelationId, int semanticKind,
+			double structuralOuterRows, double factOuterRowsFloor) {
 		CorrelationProfileKey key = new CorrelationProfileKey(
-				input.stateId(), outputEvidence.stateId(), rhsRelationId, semanticKind, bindingDomains.cacheKey());
+				input.stateId(), outputEvidence.stateId(), rhsRelationId, semanticKind, bindingDomains.cacheKey(),
+				structuralOuterRows, factOuterRowsFloor);
 		FrontierSemiAntiProfile existing = correlationProfiles.get(key);
 		if (existing != null) {
 			return existing;
@@ -3890,8 +4245,34 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		FrontierCorrelationDomain materializationParameterDomain = correlationDomain(
 				input, bindingDomains.materializationParameterNames());
 		EvidenceStateSummary inputSummary = input.summary();
-		double outerRows = inputSummary.pointRows();
-		double outputRows = Math.min(outerRows, outputEvidence.summary().pointRows());
+		double evidenceOuterRows = inputSummary.pointRows();
+		double outerRows = evidenceOuterRows;
+		String outerRowsSource = FrontierSemiAntiProfile.OUTER_ROWS_SOURCE_FRONTIER_EVIDENCE;
+		if (semiAntiStructuralOuterRowsFloorEnabled()) {
+			// The interval must actually constrain: a heuristic interval carries [0, inf) and vouches for nothing.
+			boolean authoritativeInput = isComposableState(input)
+					&& (inputSummary.lowerRows() > 0.0d || Double.isFinite(inputSummary.upperRows()));
+			if (authoritativeInput) {
+				outerRows = Math.min(
+						Math.max(evidenceOuterRows, inputSummary.lowerRows()), inputSummary.upperRows());
+			} else if (finiteNonNegative(structuralOuterRows) && structuralOuterRows > outerRows) {
+				outerRows = structuralOuterRows;
+				outerRowsSource = FrontierSemiAntiProfile.OUTER_ROWS_SOURCE_STRUCTURAL_FLOOR;
+			}
+		}
+		if (finiteNonNegative(factOuterRowsFloor) && factOuterRowsFloor > outerRows) {
+			outerRows = factOuterRowsFloor;
+			outerRowsSource = FrontierSemiAntiProfile.OUTER_ROWS_SOURCE_EXACT_FACT_FLOOR;
+		}
+		double evidenceOutputRows = Math.min(evidenceOuterRows, outputEvidence.summary().pointRows());
+		/*
+		 * The output evidence shares lineage with the distrusted input, so when the floor rescales the invocation count
+		 * the outcome masses keep the evidence's survival ratio instead of its absolute row count — otherwise a floored
+		 * anti-join would claim that every added outer row is eliminated by the probe.
+		 */
+		double outputRows = outerRows == evidenceOuterRows || !(evidenceOuterRows > 0.0d)
+				? evidenceOutputRows
+				: Math.min(1.0d, evidenceOutputRows / evidenceOuterRows) * outerRows;
 		boolean anti = semanticKind != PackedQueryView.SEMI_ANTI_EXISTS;
 		double matchedRows = anti ? outerRows - outputRows : outputRows;
 		double unmatchedRows = anti ? outputRows : outerRows - outputRows;
@@ -3911,6 +4292,8 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		}
 		FrontierSemiAntiProfile profile = new FrontierSemiAntiProfile(
 				outerRows,
+				evidenceOuterRows,
+				outerRowsSource,
 				Math.max(0.0d, matchedRows),
 				Math.max(0.0d, unmatchedRows),
 				Math.max(0.0d, matchedDistinctKeys),
@@ -4411,6 +4794,8 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	private static void annotateCorrelationProfile(PackedCostEstimate output, FrontierSemiAntiProfile profile) {
 		FrontierCorrelationDomain probeDomain = profile.probeDomain();
 		output.putPlannedDoubleMetric("plannedCorrelationOuterRows", profile.outerRows());
+		output.putPlannedDoubleMetric("plannedCorrelationEvidenceOuterRows", profile.evidenceOuterRows());
+		output.putPlannedStringMetric("plannedCorrelationOuterRowsSource", profile.outerRowsSource());
 		output.putPlannedDoubleMetric("plannedCorrelationMatchedRows", profile.matchedRows());
 		output.putPlannedDoubleMetric("plannedCorrelationUnmatchedRows", profile.unmatchedRows());
 		output.putPlannedDoubleMetric("plannedCorrelationDistinctKeyLowerBound",
@@ -4431,14 +4816,14 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	}
 
 	private static void synchronizeSemiAntiCorrelationRows(PackedCostEstimate output,
-			EvidenceStateSummary correctedSummary) {
+			EvidenceStateSummary correctedSummary, double correctedRows) {
 		String semanticKind = output.plannedStringMetric("optimizer.semiAntiKind");
 		double outerRows = output.plannedDoubleMetric("plannedCorrelationOuterRows", Double.NaN);
 		if (semanticKind == null || !finiteNonNegative(outerRows)
-				|| !finiteNonNegative(correctedSummary.pointRows())) {
+				|| !finiteNonNegative(correctedRows)) {
 			return;
 		}
-		double selectedRows = Math.min(outerRows, correctedSummary.pointRows());
+		double selectedRows = Math.min(outerRows, correctedRows);
 		switch (semanticKind) {
 		case "exists" -> {
 			output.putPlannedDoubleMetric("plannedCorrelationMatchedRows", selectedRows);
@@ -5946,7 +6331,9 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				outputState,
 				bindingDomains,
 				relationId,
-				PackedQueryView.SEMI_ANTI_MINUS_ASSURED_SHARED);
+				PackedQueryView.SEMI_ANTI_MINUS_ASSURED_SHARED,
+				context == null ? Double.NaN : context.leftInputRows(),
+				semiAntiFactOuterRowsFloor(relationId, context));
 		annotateCorrelationProfile(output, profile);
 		Filter feedbackFilter = new Filter(
 				minus.getLeftArg().clone(),
@@ -9345,7 +9732,9 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			int outputStateId,
 			int rhsRelationId,
 			int semanticKind,
-			String bindingDomains) {
+			String bindingDomains,
+			double structuralOuterRows,
+			double factOuterRowsFloor) {
 	}
 
 	private record CorrelationDomainKey(int stateId, String bindingNames) {

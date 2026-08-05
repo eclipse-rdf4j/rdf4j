@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
@@ -45,17 +46,50 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
  */
 public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 
+	/**
+	 * Which input is buffered into the hash table. {@link #UNKNOWN} keeps the adaptive behaviour of draining both
+	 * inputs in lockstep until one is exhausted; the planner can pin the side instead when it already knows which input
+	 * is smaller, which avoids buffering a prefix of the probe side as well.
+	 */
+	public enum BuildSide {
+		UNKNOWN,
+		LEFT,
+		RIGHT
+	}
+
+	private static final PartialKeyIndex[] NO_PARTIAL_INDEXES = new PartialKeyIndex[0];
+	private static final String[] NO_ATTRIBUTES = new String[0];
+
+	/**
+	 * Sentinel for build rows whose bound join attributes cannot be tracked individually because there are more join
+	 * attributes than bits in a {@code long}. Such rows share one group that is matched with an explicit compatibility
+	 * check. A real partial mask can never collide with this value: it always has at least one clear bit below the
+	 * attribute count, and the all-bits-set mask only arises for fully bound rows.
+	 */
+	private static final long CATCH_ALL_MASK = -1L;
+
 	protected final String[] joinAttributes;
 	private final CloseableIteration<BindingSet> leftIter;
 	private final CloseableIteration<BindingSet> rightIter;
 	private final boolean leftJoin;
+	private final BuildSide buildSide;
+	private final QueryModelNode joinNode;
 
 	private Iterator<BindingSet> scanList;
 	private CloseableIteration<BindingSet> restIter;
 	private Map<BindingSetHashKey, List<BindingSet>> hashTable;
 	private BindingSet currentScanElem;
 	private Iterator<BindingSet> hashTableValues;
-	private List<BindingSet> wildcardHashRows = Collections.emptyList();
+
+	/**
+	 * Build rows that do not have a value for every join attribute, grouped by the set of attributes they do bind and
+	 * indexed on that subset. A fully bound probe row can then look each group up by key instead of scanning every
+	 * partially bound row.
+	 */
+	private PartialKeyIndex[] partialIndexes = NO_PARTIAL_INDEXES;
+
+	private long hashBuildRows;
+	private long hashProbeRows;
 
 	private final IntFunction<Map<BindingSetHashKey, List<BindingSet>>> mapMaker;
 
@@ -70,10 +104,26 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 			BindingSet bindings,
 			boolean leftJoin, String[] joinAttributes, QueryEvaluationContext context)
 			throws QueryEvaluationException {
+		this(left, right, bindings, leftJoin, joinAttributes, context, BuildSide.UNKNOWN, null);
+	}
+
+	/**
+	 * @param buildSide which input to buffer into the hash table, or {@link BuildSide#UNKNOWN} to decide adaptively.
+	 *                  Ignored for a left join, where the optional side is always the build side.
+	 * @param joinNode  the join this iteration implements, used to publish actual physical cost counters. May be
+	 *                  {@code null}.
+	 */
+	public HashJoinIteration(QueryEvaluationStep left, QueryEvaluationStep right,
+			BindingSet bindings,
+			boolean leftJoin, String[] joinAttributes, QueryEvaluationContext context, BuildSide buildSide,
+			QueryModelNode joinNode)
+			throws QueryEvaluationException {
 		this.leftIter = left.evaluate(bindings);
 		this.rightIter = right.evaluate(bindings);
 		this.joinAttributes = joinAttributes;
 		this.leftJoin = leftJoin;
+		this.buildSide = buildSide == null ? BuildSide.UNKNOWN : buildSide;
+		this.joinNode = joinNode;
 		this.mapMaker = this::makeHashTable;
 		this.mapValueMaker = this::makeHashValue;
 		this.bsMaker = context::createBindingSet;
@@ -92,6 +142,8 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 		joinAttributes = leftBindingNames.stream().filter(rightBindingNames::contains).toArray(String[]::new);
 
 		this.leftJoin = leftJoin;
+		this.buildSide = BuildSide.UNKNOWN;
+		this.joinNode = null;
 		this.mapValueMaker = this::makeHashValue;
 		this.bsMaker = QueryBindingSet::new;
 	}
@@ -176,34 +228,45 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 	@Override
 	protected void handleClose() throws QueryEvaluationException {
 		try {
-			if (leftIter != null) {
-				leftIter.close();
-			}
+			publishActualPhysicalCost();
 		} finally {
 			try {
-				if (rightIter != null) {
-					rightIter.close();
+				if (leftIter != null) {
+					leftIter.close();
 				}
 			} finally {
 				try {
-					Iterator<BindingSet> toCloseHashTableValues = hashTableValues;
-					hashTableValues = null;
-					if (toCloseHashTableValues != null) {
-						closeHashValue(toCloseHashTableValues);
+					if (rightIter != null) {
+						rightIter.close();
 					}
 				} finally {
 					try {
-						Iterator<BindingSet> toCloseScanList = scanList;
-						scanList = null;
-						if (toCloseScanList != null) {
-							disposeCache(toCloseScanList);
+						Iterator<BindingSet> toCloseHashTableValues = hashTableValues;
+						hashTableValues = null;
+						if (toCloseHashTableValues != null) {
+							closeHashValue(toCloseHashTableValues);
 						}
 					} finally {
-						Map<BindingSetHashKey, List<BindingSet>> toCloseHashTable = hashTable;
-						hashTable = null;
-						wildcardHashRows = Collections.emptyList();
-						if (toCloseHashTable != null) {
-							disposeHashTable(toCloseHashTable);
+						try {
+							Iterator<BindingSet> toCloseScanList = scanList;
+							scanList = null;
+							if (toCloseScanList != null) {
+								disposeCache(toCloseScanList);
+							}
+						} finally {
+							try {
+								PartialKeyIndex[] toClosePartialIndexes = partialIndexes;
+								partialIndexes = NO_PARTIAL_INDEXES;
+								for (PartialKeyIndex index : toClosePartialIndexes) {
+									disposeHashTable(index.rows);
+								}
+							} finally {
+								Map<BindingSetHashKey, List<BindingSet>> toCloseHashTable = hashTable;
+								hashTable = null;
+								if (toCloseHashTable != null) {
+									disposeHashTable(toCloseHashTable);
+								}
+							}
 						}
 					}
 				}
@@ -211,50 +274,108 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 		}
 	}
 
+	/**
+	 * Records what this join actually built and probed, so a degenerate probe becomes visible to cost feedback instead
+	 * of being assumed linear. Counters accumulate because one join is re-evaluated once per outer binding set.
+	 */
+	private void publishActualPhysicalCost() {
+		if (joinNode == null
+				|| !joinNode.isRuntimeTelemetryEnabled() && !joinNode.isCostFeedbackTrackingEnabled()) {
+			return;
+		}
+		addLongMetricActual("actualCostHashBuildRows", hashBuildRows);
+		addLongMetricActual("actualCostHashProbeRows", hashProbeRows);
+		long peakMemoryRows = Math.max(0L, joinNode.getLongMetricActual("actualCostPeakMemoryRows"));
+		if (hashBuildRows > peakMemoryRows) {
+			joinNode.setLongMetricActual("actualCostPeakMemoryRows", hashBuildRows);
+		}
+	}
+
+	private void addLongMetricActual(String metricName, long delta) {
+		if (delta <= 0L) {
+			return;
+		}
+		long current = Math.max(0L, joinNode.getLongMetricActual(metricName));
+		joinNode.setLongMetricActual(metricName, current > Long.MAX_VALUE - delta ? Long.MAX_VALUE : current + delta);
+	}
+
 	private Map<BindingSetHashKey, List<BindingSet>> setupHashTable() throws QueryEvaluationException {
-
-		Collection<BindingSet> leftArgResults;
-		Collection<BindingSet> rightArgResults = makeIterationCache(rightIter);
-		if (!leftJoin) {
-			leftArgResults = makeIterationCache(leftIter);
-
-			while (leftIter.hasNext() && rightIter.hasNext()) {
-				add(leftArgResults, leftIter.next());
-				add(rightArgResults, rightIter.next());
-			}
+		Collection<BindingSet> buildResult;
+		if (leftJoin) {
+			// The optional side must be the build side: every left row has to survive, with or without a match.
+			buildResult = drain(rightIter);
+			scanList = Collections.<BindingSet>emptyList().iterator();
+			restIter = leftIter;
+		} else if (buildSide == BuildSide.LEFT) {
+			buildResult = drain(leftIter);
+			scanList = Collections.<BindingSet>emptyList().iterator();
+			restIter = rightIter;
+		} else if (buildSide == BuildSide.RIGHT) {
+			buildResult = drain(rightIter);
+			scanList = Collections.<BindingSet>emptyList().iterator();
+			restIter = leftIter;
 		} else {
-			leftArgResults = Collections.emptyList();
-
-			while (rightIter.hasNext()) {
-				add(rightArgResults, rightIter.next());
-			}
+			buildResult = drainSmallerInput();
 		}
 
-		Collection<BindingSet> smallestResult;
+		return buildIndex(buildResult);
+	}
 
-		if (leftJoin || leftIter.hasNext()) { // leftArg is the greater relation
-			smallestResult = rightArgResults;
+	/**
+	 * Buffers one input completely. Used when the build side is known up front, so the probe side is never buffered.
+	 */
+	private Collection<BindingSet> drain(CloseableIteration<BindingSet> iter) throws QueryEvaluationException {
+		Collection<BindingSet> result = makeIterationCache(iter);
+		while (iter.hasNext()) {
+			add(result, iter.next());
+		}
+		return result;
+	}
+
+	/**
+	 * Discovers the smaller input by drawing from both in lockstep, and buffers a prefix of both. Used only when the
+	 * caller could not tell us which side to build from.
+	 */
+	private Collection<BindingSet> drainSmallerInput() throws QueryEvaluationException {
+		Collection<BindingSet> rightArgResults = makeIterationCache(rightIter);
+		Collection<BindingSet> leftArgResults = makeIterationCache(leftIter);
+
+		while (leftIter.hasNext() && rightIter.hasNext()) {
+			add(leftArgResults, leftIter.next());
+			add(rightArgResults, rightIter.next());
+		}
+
+		if (leftIter.hasNext()) { // leftArg is the greater relation
 			scanList = leftArgResults.iterator();
 			restIter = leftIter;
-		} else { // rightArg is the greater relation (or they are equal)
-			smallestResult = leftArgResults;
-			scanList = rightArgResults.iterator();
-			restIter = rightIter;
+			return rightArgResults;
 		}
+		// rightArg is the greater relation (or they are equal)
+		scanList = rightArgResults.iterator();
+		restIter = rightIter;
+		return leftArgResults;
+	}
 
-		// help free memory before allocating the hash table
-		leftArgResults = null;
-		rightArgResults = null;
-
+	private Map<BindingSetHashKey, List<BindingSet>> buildIndex(Collection<BindingSet> buildResult)
+			throws QueryEvaluationException {
 		// create the hash table for our join
-		// hash table will never be any bigger than smallestResult.size()
-		Map<BindingSetHashKey, List<BindingSet>> resultHashTable = mapMaker.apply(smallestResult.size());
-		List<BindingSet> nextWildcardHashRows = joinAttributes.length == 0 ? Collections.emptyList()
-				: new ArrayList<>();
+		// hash table will never be any bigger than buildResult.size()
+		Map<BindingSetHashKey, List<BindingSet>> resultHashTable = mapMaker.apply(buildResult.size());
+		List<PartialKeyIndex> nextPartialIndexes = null;
 		int maxListSize = 1;
-		for (BindingSet b : smallestResult) {
+		for (BindingSet b : buildResult) {
+			hashBuildRows++;
 			if (joinAttributes.length > 0 && !hasAllJoinAttributeValues(b)) {
-				nextWildcardHashRows.add(b);
+				/*
+				 * A row that does not bind every join attribute cannot be found through the full key, so it goes into a
+				 * group keyed on the attributes it does bind instead of into a flat list that every probe has to scan.
+				 * Keeping it out of the main table is safe: a key holding a null can never equal a fully bound key.
+				 */
+				if (nextPartialIndexes == null) {
+					nextPartialIndexes = new ArrayList<>(2);
+				}
+				addPartialRow(nextPartialIndexes, b);
+				continue;
 			}
 			BindingSetHashKey hashKey = BindingSetHashKey.create(joinAttributes, b);
 
@@ -270,38 +391,158 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 
 			maxListSize = Math.max(maxListSize, hashValue.size());
 		}
-		wildcardHashRows = nextWildcardHashRows.isEmpty() ? Collections.emptyList() : nextWildcardHashRows;
+		partialIndexes = nextPartialIndexes == null
+				? NO_PARTIAL_INDEXES
+				: nextPartialIndexes.toArray(PartialKeyIndex[]::new);
 		return resultHashTable;
+	}
+
+	private void addPartialRow(List<PartialKeyIndex> indexes, BindingSet b) throws QueryEvaluationException {
+		long presentMask = presentAttributeMask(b);
+		PartialKeyIndex index = null;
+		for (PartialKeyIndex candidate : indexes) {
+			if (candidate.presentMask == presentMask) {
+				index = candidate;
+				break;
+			}
+		}
+		if (index == null) {
+			String[] attributes = presentMask == CATCH_ALL_MASK ? NO_ATTRIBUTES : presentAttributes(presentMask);
+			index = new PartialKeyIndex(presentMask, attributes, mapMaker.apply(1));
+			indexes.add(index);
+		}
+		BindingSetHashKey hashKey = BindingSetHashKey.create(index.attributes, b);
+		List<BindingSet> hashValue = index.rows.get(hashKey);
+		boolean newEntry = hashValue == null;
+		if (newEntry) {
+			hashValue = mapValueMaker.apply(1);
+		}
+		add(hashValue, b);
+		putHashTableEntry(index.rows, hashKey, hashValue, newEntry);
+	}
+
+	private long presentAttributeMask(BindingSet bindings) {
+		if (joinAttributes.length > Long.SIZE) {
+			return CATCH_ALL_MASK;
+		}
+		long mask = 0L;
+		for (int i = 0; i < joinAttributes.length; i++) {
+			if (bindings.getValue(joinAttributes[i]) != null) {
+				mask |= 1L << i;
+			}
+		}
+		return mask;
+	}
+
+	private String[] presentAttributes(long presentMask) {
+		String[] attributes = new String[Long.bitCount(presentMask)];
+		int next = 0;
+		for (int i = 0; i < joinAttributes.length; i++) {
+			if ((presentMask & (1L << i)) != 0) {
+				attributes[next++] = joinAttributes[i];
+			}
+		}
+		return attributes;
+	}
+
+	/** One group of build rows that all bind exactly the same subset of the join attributes. */
+	private static final class PartialKeyIndex {
+
+		private final long presentMask;
+		private final String[] attributes;
+		private final Map<BindingSetHashKey, List<BindingSet>> rows;
+
+		private PartialKeyIndex(long presentMask, String[] attributes,
+				Map<BindingSetHashKey, List<BindingSet>> rows) {
+			this.presentMask = presentMask;
+			this.attributes = attributes;
+			this.rows = rows;
+		}
+
+		/**
+		 * Whether a hit on this group's key is already a match. It is, unless the group is the catch-all bucket, whose
+		 * key carries no attributes and therefore proves nothing.
+		 */
+		private boolean exact() {
+			return presentMask != CATCH_ALL_MASK;
+		}
 	}
 
 	private Iterator<BindingSet> matchingHashRows(Map<BindingSetHashKey, List<BindingSet>> nextHashTable,
 			BindingSet scanElem) {
-		if (joinAttributes.length == 0 || !hasAllJoinAttributeValues(scanElem)) {
-			return compatibleIterator(allHashRows(nextHashTable), scanElem);
+		if (joinAttributes.length == 0) {
+			/*
+			 * Without join attributes this is a cross product, and every build row matches. Hand back the single bucket
+			 * directly rather than wrapping it in a compatibility filter that cannot reject anything.
+			 */
+			List<BindingSet> rows = nextHashTable.get(BindingSetHashKey.EMPTY);
+			if (rows == null || rows.isEmpty()) {
+				return new EmptyIterator<>();
+			}
+			hashProbeRows += rows.size();
+			return rows.iterator();
+		}
+
+		if (!hasAllJoinAttributeValues(scanElem)) {
+			// The probe row itself is partially bound, so no single key decides the match.
+			return compatibleIterator(allHashRows(nextHashTable), scanElem, true);
 		}
 
 		List<BindingSet> exactMatches = nextHashTable.get(BindingSetHashKey.create(joinAttributes, scanElem));
-		if (wildcardHashRows.isEmpty()) {
-			return exactMatches == null || exactMatches.isEmpty() ? new EmptyIterator<>() : exactMatches.iterator();
+		if (partialIndexes.length == 0) {
+			if (exactMatches == null || exactMatches.isEmpty()) {
+				return new EmptyIterator<>();
+			}
+			hashProbeRows += exactMatches.size();
+			return exactMatches.iterator();
 		}
 
-		List<List<BindingSet>> candidates = new ArrayList<>(2);
+		List<List<BindingSet>> candidates = new ArrayList<>(partialIndexes.length + 1);
+		boolean needsCompatibilityCheck = false;
 		if (exactMatches != null && !exactMatches.isEmpty()) {
+			hashProbeRows += exactMatches.size();
 			candidates.add(exactMatches);
 		}
-		candidates.add(wildcardHashRows);
-		return compatibleIterator(new UnionIterator<>(candidates), scanElem);
+		for (PartialKeyIndex index : partialIndexes) {
+			List<BindingSet> rows = index.rows.get(BindingSetHashKey.create(index.attributes, scanElem));
+			if (rows != null && !rows.isEmpty()) {
+				hashProbeRows += rows.size();
+				candidates.add(rows);
+				needsCompatibilityCheck |= !index.exact();
+			}
+		}
+		if (candidates.isEmpty()) {
+			return new EmptyIterator<>();
+		}
+		Iterator<BindingSet> matches = candidates.size() == 1
+				? candidates.get(0).iterator()
+				: new UnionIterator<>(candidates);
+		return needsCompatibilityCheck ? compatibleIterator(matches, scanElem, false) : matches;
 	}
 
 	private Iterator<BindingSet> allHashRows(Map<BindingSetHashKey, List<BindingSet>> nextHashTable) {
-		Collection<List<BindingSet>> values = nextHashTable.values();
-		if (values.isEmpty() || values.size() == 1 && values.contains(null)) {
+		List<Collection<BindingSet>> buckets = new ArrayList<>(nextHashTable.size() + partialIndexes.length);
+		collectBuckets(nextHashTable, buckets);
+		for (PartialKeyIndex index : partialIndexes) {
+			collectBuckets(index.rows, buckets);
+		}
+		if (buckets.isEmpty()) {
 			return new EmptyIterator<>();
 		}
-		return new UnionIterator<>(values);
+		return new UnionIterator<>(buckets);
 	}
 
-	private Iterator<BindingSet> compatibleIterator(Iterator<BindingSet> candidates, BindingSet scanElem) {
+	private static void collectBuckets(Map<BindingSetHashKey, List<BindingSet>> table,
+			List<Collection<BindingSet>> buckets) {
+		for (List<BindingSet> bucket : table.values()) {
+			if (bucket != null && !bucket.isEmpty()) {
+				buckets.add(bucket);
+			}
+		}
+	}
+
+	private Iterator<BindingSet> compatibleIterator(Iterator<BindingSet> candidates, BindingSet scanElem,
+			boolean countExaminedRows) {
 		return new Iterator<>() {
 			private BindingSet next;
 			private boolean computed;
@@ -329,6 +570,9 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 			private BindingSet nextCompatible() {
 				while (candidates.hasNext()) {
 					BindingSet candidate = candidates.next();
+					if (countExaminedRows) {
+						hashProbeRows++;
+					}
 					if (compatible(scanElem, candidate)) {
 						return candidate;
 					}

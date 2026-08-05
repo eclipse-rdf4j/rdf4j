@@ -66,13 +66,15 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 			join.setAlgorithm(ServiceJoinIterator.class.getSimpleName());
 		} else if (isHashJoinHint(join)) {
 			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(join);
+			HashJoinIteration.BuildSide buildSide = plannedBuildSide(join);
 			eval = bindings -> new HashJoinIteration(leftPrepared, rightPrepared, bindings, false,
-					joinAttributes, context);
+					joinAttributes, context, buildSide, join);
 			join.setAlgorithm(HashJoinIteration.class.getSimpleName());
 		} else if (isOutOfScopeForLeftArgBindings(join.getRightArg()) || rightLocallyProducesSharedBinding(join)) {
 			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(join);
+			HashJoinIteration.BuildSide buildSide = plannedBuildSide(join);
 			eval = bindings -> new HashJoinIteration(leftPrepared, rightPrepared, bindings, false,
-					joinAttributes, context);
+					joinAttributes, context, buildSide, join);
 			join.setAlgorithm(HashJoinIteration.class.getSimpleName());
 		} else if (join.isMergeJoin() && context.getComparator() != null) {
 			eval = bindings -> InnerMergeJoinIterator.getInstance(leftPrepared, rightPrepared, bindings,
@@ -128,6 +130,21 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 		return join != null && (join.isCostFeedbackTrackingEnabled()
 				|| join.getLeftArg().isCostFeedbackTrackingEnabled()
 				|| join.getRightArg().isCostFeedbackTrackingEnabled());
+	}
+
+	/**
+	 * Reads the input the planner already decided to buffer. Absent or unrecognised, the iteration falls back to
+	 * discovering the smaller input itself.
+	 */
+	private static HashJoinIteration.BuildSide plannedBuildSide(Join join) {
+		String buildSide = join.getStringMetricPlanned("optimizer.hashJoinBuildSide");
+		if ("left".equals(buildSide)) {
+			return HashJoinIteration.BuildSide.LEFT;
+		}
+		if ("right".equals(buildSide)) {
+			return HashJoinIteration.BuildSide.RIGHT;
+		}
+		return HashJoinIteration.BuildSide.UNKNOWN;
 	}
 
 	private static boolean isHashJoinHint(Join join) {

@@ -29,6 +29,7 @@ public final class PackedQueryView {
 	public static final int SEMI_ANTI_MINUS_ASSURED_SHARED = 2;
 
 	private final PackedQuery query;
+	private int[] canonicalContextualOperatorRelationIds;
 
 	PackedQueryView(PackedQuery query) {
 		this.query = query;
@@ -47,6 +48,41 @@ public final class PackedQueryView {
 	 */
 	public TupleExpr materializeRelation(int relationId) {
 		return PackedPlanMaterializer.materialize(query, relationId);
+	}
+
+	/**
+	 * The logical memo group of the relation, identified by the group's canonical member expression id. Rule-program
+	 * alternatives (e.g. a MINUS rewritten as a correlated NOT-EXISTS filter) share their source relation's group, so
+	 * this is the equivalence class "same logical relation" across physical framings.
+	 *
+	 * @param relationId canonical packed relation ID
+	 * @return the canonical relation id of the group containing {@code relationId}
+	 */
+	public int relGroup(int relationId) {
+		return query.relGroup(relationId);
+	}
+
+	/**
+	 * Canonical cost-identity member for contextual operator copies (today: scheduled FILTER copies interned per
+	 * costing context, see {@code PackedQuery.canonicalContextualOperatorRelationIds}). Copies of one scheduled
+	 * predicate live in the memo group of whichever framing they were derived for, so group-level learning identities
+	 * must consult this mapping to see that two groups are framings of the same scheduled operator. Fingerprint and
+	 * identity derivation only — routing a costing event through the returned relation would replay another operator's
+	 * expression.
+	 *
+	 * @param relationId canonical packed relation ID
+	 * @return the earliest relation with the same contextual operator cost identity, or {@code relationId} itself
+	 */
+	public int canonicalContextualOperatorRelationId(int relationId) {
+		if (relationId <= 0 || relationId > query.relationCount()) {
+			return relationId;
+		}
+		int[] canonical = canonicalContextualOperatorRelationIds;
+		if (canonical == null) {
+			canonical = query.canonicalContextualOperatorRelationIds();
+			canonicalContextualOperatorRelationIds = canonical;
+		}
+		return relationId < canonical.length ? canonical[relationId] : relationId;
 	}
 
 	public int operatorTag(int relationId) {

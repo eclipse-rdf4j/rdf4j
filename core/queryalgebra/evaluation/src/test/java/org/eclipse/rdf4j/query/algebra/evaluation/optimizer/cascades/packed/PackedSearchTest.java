@@ -1223,6 +1223,84 @@ class PackedSearchTest {
 	}
 
 	@Test
+	void correlatedScalarExistsChargedPerInvocation() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		// The Or() makes the condition non-pure, so the typed semi-anti rules stay out and the correlated
+		// EXISTS is priced by the dependent scalar-subquery costing (the 2026-07 charged-once family).
+		StatementPattern outer = pattern(values, "a", "urn:outer", "x", Double.NaN);
+		StatementPattern correlatedProbe = pattern(values, "a", "urn:probe", "v", Double.NaN);
+		Filter correlatedSource = new Filter(outer, new Or(new Exists(correlatedProbe),
+				new Compare(new Var("x"), new ValueConstant(values.createIRI("urn:constant")))));
+		StatementPattern uncorrelatedProbe = pattern(values, "b", "urn:probe", "v", Double.NaN);
+		Filter uncorrelatedSource = new Filter(outer.clone(), new Or(new Exists(uncorrelatedProbe),
+				new Compare(new Var("x"), new ValueConstant(values.createIRI("urn:constant")))));
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (!query.isStatementPattern(relationId)) {
+					return Double.NaN;
+				}
+				return "urn:probe".equals(query.statementPatternValue(relationId, 1).stringValue())
+						? 50.0d
+						: 100.0d;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				double rows = estimateRows(query, relationId);
+				if (Double.isFinite(rows)) {
+					output.setRows(rows, rows);
+				}
+			}
+		};
+
+		String previousOn = System.getProperty(
+				PackedDependentSubqueryCosting.CORRELATED_DEPENDENT_INVOCATIONS_PROPERTY);
+		System.setProperty(PackedDependentSubqueryCosting.CORRELATED_DEPENDENT_INVOCATIONS_PROPERTY, "true");
+		double correlatedCost;
+		double uncorrelatedCost;
+		try {
+			correlatedCost = PackedCascadesPlanner.optimize(correlatedSource, OptimizationGoal.root(), costs)
+					.totalCost();
+			uncorrelatedCost = PackedCascadesPlanner.optimize(uncorrelatedSource, OptimizationGoal.root(), costs)
+					.totalCost();
+		} finally {
+			if (previousOn == null) {
+				System.clearProperty(PackedDependentSubqueryCosting.CORRELATED_DEPENDENT_INVOCATIONS_PROPERTY);
+			} else {
+				System.setProperty(PackedDependentSubqueryCosting.CORRELATED_DEPENDENT_INVOCATIONS_PROPERTY,
+						previousOn);
+			}
+		}
+
+		assertTrue(correlatedCost >= 100.0d * 50.0d,
+				"A subquery winner that consumes outer bindings re-opens once per outer row (100 here) and must"
+						+ " be charged its ~50-row winner cost per invocation, but the plan cost was "
+						+ correlatedCost);
+		assertTrue(uncorrelatedCost < correlatedCost / 10.0d,
+				"An outer-independent subquery is computed once and shared, but cost was " + uncorrelatedCost);
+
+		String previous = System.getProperty(
+				PackedDependentSubqueryCosting.CORRELATED_DEPENDENT_INVOCATIONS_PROPERTY);
+		System.setProperty(PackedDependentSubqueryCosting.CORRELATED_DEPENDENT_INVOCATIONS_PROPERTY, "false");
+		try {
+			double chargedOnce = PackedCascadesPlanner
+					.optimize(correlatedSource.clone(), OptimizationGoal.root(), costs)
+					.totalCost();
+			assertTrue(chargedOnce < correlatedCost / 10.0d,
+					"The kill-switch must restore the charged-once pre-fix behavior, but cost was " + chargedOnce);
+		} finally {
+			if (previous == null) {
+				System.clearProperty(PackedDependentSubqueryCosting.CORRELATED_DEPENDENT_INVOCATIONS_PROPERTY);
+			} else {
+				System.setProperty(PackedDependentSubqueryCosting.CORRELATED_DEPENDENT_INVOCATIONS_PROPERTY,
+						previous);
+			}
+		}
+	}
+
+	@Test
 	void correlatedExistsDoesNotUseNullableOuterContextForInnerWinner() {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		MapBindingSet boundDrug = new MapBindingSet(1);
@@ -1346,21 +1424,44 @@ class PackedSearchTest {
 		TupleExpr anchorFirstInput = new Join(new Join(new Join(selectedWeights, weight), type), threshold);
 		Filter source = new Filter(anchorFirstInput, new Not(new Exists(lowNeighbor)));
 
-		PackedPlanningResult result = PackedCascadesPlanner
-				.optimize(source, OptimizationGoal.root(), measuredCorrelatedSchedulingCosts());
+		String previous = System.getProperty(
+				PackedDependentSubqueryCosting.CORRELATED_DEPENDENT_INVOCATIONS_PROPERTY);
+		System.setProperty(PackedDependentSubqueryCosting.CORRELATED_DEPENDENT_INVOCATIONS_PROPERTY, "true");
+		PackedPlanningResult result;
+		PackedPlanningResult reordered;
+		try {
+			result = PackedCascadesPlanner
+					.optimize(source, OptimizationGoal.root(), measuredCorrelatedSchedulingCosts());
+			TupleExpr weightLastInput = new Join(new Join(new Join(threshold, type), weight.clone()),
+					selectedWeights.clone());
+			reordered = PackedCascadesPlanner.optimize(
+					new Filter(weightLastInput, new Not(new Exists(lowNeighbor.clone()))),
+					OptimizationGoal.root(), measuredCorrelatedSchedulingCosts());
+		} finally {
+			if (previous == null) {
+				System.clearProperty(PackedDependentSubqueryCosting.CORRELATED_DEPENDENT_INVOCATIONS_PROPERTY);
+			} else {
+				System.setProperty(PackedDependentSubqueryCosting.CORRELATED_DEPENDENT_INVOCATIONS_PROPERTY,
+						previous);
+			}
+		}
 
-		List<TupleExpr> selectedFactors = joinFactors(result.selectedPlan());
-		assertEquals(3, selectedFactors.size(), result.selectedPlan()::toString);
-		assertTrue(selectedFactors.get(0) instanceof Filter, result.selectedPlan()::toString);
-		TupleExpr filteredPrefix = selectedFactors.get(0);
-		assertTrue(((Filter) filteredPrefix).getCondition() instanceof Not, result.selectedPlan()::toString);
-		assertFalse(containsStatementPattern(filteredPrefix, "urn:weight", "weight"),
-				result.selectedPlan()::toString);
-		assertFalse(filteredPrefix.getBindingNames().contains("weight"), result.selectedPlan()::toString);
-		assertTrue(selectedFactors.get(1) instanceof BindingSetAssignment, result.selectedPlan()::toString);
-		assertTrue(selectedFactors.get(1).getBindingNames().contains("weight"), result.selectedPlan()::toString);
-		assertTrue(isStatementPattern(selectedFactors.get(2), "urn:weight", "weight"),
-				result.selectedPlan()::toString);
+		/*
+		 * With the correlated NOT-EXISTS probe charged once per outer invocation (2026-08,
+		 * rdf4j.optimizer.packed.correlatedDependentInvocations), probing the fully joined two-row stream beats probing
+		 * any wider partial prefix — the anti-join moves to the top of the stream, and it does so for every syntactic
+		 * order of the same join.
+		 */
+		for (PackedPlanningResult planned : List.of(result, reordered)) {
+			List<TupleExpr> selectedFactors = joinFactors(planned.selectedPlan());
+			assertEquals(1, selectedFactors.size(), planned.selectedPlan()::toString);
+			assertTrue(selectedFactors.get(0) instanceof Filter, planned.selectedPlan()::toString);
+			Filter root = (Filter) selectedFactors.get(0);
+			assertTrue(root.getCondition() instanceof Not, planned.selectedPlan()::toString);
+			assertTrue(containsStatementPattern(root.getArg(), "urn:weight", "weight"),
+					planned.selectedPlan()::toString);
+			assertTrue(root.getBindingNames().contains("weight"), planned.selectedPlan()::toString);
+		}
 	}
 
 	@Test

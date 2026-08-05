@@ -90,6 +90,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	static final String SHORT_CIRCUIT_GUARD_PROPERTY = "rdf4j.optimizer.lmdb.operatorFeedbackShortCircuitGuard";
 	static final String JOIN_ALGORITHM_DRIFT_GUARD_PROPERTY = "rdf4j.optimizer.lmdb.joinAlgorithmDriftGuard";
 	static final String OUTPUT_ROWS_DRIFT_SKIP_PROPERTY = "rdf4j.optimizer.lmdb.outputRowsDriftSkip";
+	static final String REINVOKED_ROWS_NORMALIZATION_PROPERTY = "rdf4j.optimizer.lmdb.reinvokedRowsNormalization";
 	static final String SEMI_ANTI_DRIFT_GUARD_PROPERTY = "rdf4j.optimizer.lmdb.semiAntiDriftGuard";
 	static final String SEMI_ANTI_EXACT_SURFACE_TIER_PROPERTY = "rdf4j.optimizer.lmdb.semiAntiExactSurfaceTier";
 	static final String LEGACY_EVIDENCE_SCALED_CLAMP_PROPERTY = "rdf4j.optimizer.lmdb.legacyEvidenceScaledClamp";
@@ -111,7 +112,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private static final int SEMI_ANTI_PERSIST_VERSION = 13;
 	private static final int PHYSICAL_SEMI_ANTI_PERSIST_VERSION = 14;
 	private static final int FRONTIER_PERSIST_VERSION = 15;
-	private static final int PERSIST_VERSION = 16;
+	private static final int DATA_STAMP_PERSIST_VERSION = 16;
+	private static final int PERSIST_VERSION = 17;
 	static final String SIDECAR_DATA_STAMP_CHECK_PROPERTY = "rdf4j.optimizer.lmdb.sidecarDataStampCheck";
 	private static final int MAX_ENTRIES = 2048;
 	private static final double MIN_CORRECTION_RATIO = 0.0001d;
@@ -151,6 +153,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private static final String PLANNED_LEO_CANDIDATE_OPERATOR_TYPE = "plannedLeoCandidateOperatorType";
 	private static final String PLANNED_REPEATED_INVOCATIONS = "plannedRepeatedInvocations";
 	private static final String PLANNED_OPERATOR_REPEATED_INVOCATIONS = "plannedOperatorRepeatedInvocations";
+	private static final String COST_EVENT_INVOCATIONS = "optimizer.costEventInvocations";
 	private static final String PLANNED_PROPERTY_PATH_ENDPOINT_MODE = "plannedPropertyPathEndpointMode";
 	private static final String OPTIMIZER_PATH_ENDPOINT_MODE = "optimizer.pathEndpointMode";
 	private static final String PATH_MODE_FULL_SCAN = "fullScan";
@@ -164,6 +167,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private static final String PATH_RETURNED_ROWS_ACTUAL = "optimizer.pathReturnedRowsActual";
 	private static final String ZERO_LENGTH_CANDIDATE_ROWS_ACTUAL = "optimizer.zeroLengthPathCandidateRowsActual";
 	private static final String FRONTIER_LEARNING_KEY = "optimizer.frontierLearningKey";
+	private static final String FRONTIER_LOGICAL_GROUP_KEY = "optimizer.frontierLogicalGroupKey";
 	private static final String FRONTIER_PHYSICAL_LEARNING_KEY = "optimizer.frontierPhysicalLearningKey";
 	private static final String FRONTIER_COST_EVENT_DIGEST = "optimizer.costEventDigest";
 	private static final String FRONTIER_STATE_DIGEST = "optimizer.frontierStateDigest";
@@ -190,6 +194,16 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private final Map<OperatorKey, ShadowOperatorCounts> shadowByOperator = new LinkedHashMap<>();
 	private final Map<OperatorKey, PlanCandidateCounts> planCandidates = new LinkedHashMap<>();
 	private final Map<SemiAntiSurfaceKey, SemiAntiCounts> semiAntiBySurface = new LinkedHashMap<>();
+	private final Map<String, ExactCardinalityFact> exactCardinalityFacts = new LinkedHashMap<>();
+
+	/**
+	 * Observed output cardinality of a top-level, uncorrelated logical relation, valid only while the store's LMDB
+	 * write-txn data stamp still matches {@code dataStamp}. Facts beat estimates and learned corrections for every
+	 * physical alternative sharing the logical group key; a single write demotes them silently.
+	 */
+	record ExactCardinalityFact(double rows, long dataStamp) {
+	}
+
 	private FrontierLearningModel frontierLearning = new FrontierLearningModel();
 	private final IdentityHashMap<TupleExpr, OperatorKey> nullModeKeyCache = new IdentityHashMap<>();
 	// Canonical LeoOperatorKey per planning-side node; memo expressions are structurally stable during a
@@ -436,6 +450,19 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		return !"false".equalsIgnoreCase(System.getProperty(OUTPUT_ROWS_DRIFT_SKIP_PROPERTY, "true"));
 	}
 
+	/*
+	 * A re-invoked operator's cumulative row total is Σ over all invocations while the plan's prediction is either
+	 * per-invocation or a contextual total with its own invocation basis stamped beside it. Pairing the two without
+	 * normalizing taught the model corrections as large as the invocation count itself (a 2-row VALUES relation
+	 * "observed" at 99.6K rows over 49.8K bound invocations — the MEDICAL q9 oscillation, 2026-08-04). With
+	 * normalization on, both sides of an OUTPUT_ROWS / RESULT_ROWS observation are divided by their own invocation
+	 * count first; a re-invocable node whose runtime invocation count is unknown records nothing rather than something
+	 * incoherent.
+	 */
+	private static boolean reinvokedRowsNormalizationEnabled() {
+		return !"false".equalsIgnoreCase(System.getProperty(REINVOKED_ROWS_NORMALIZATION_PROPERTY, "true"));
+	}
+
 	private static boolean semiAntiDriftGuardEnabled() {
 		return !"false".equalsIgnoreCase(System.getProperty(SEMI_ANTI_DRIFT_GUARD_PROPERTY, "true"));
 	}
@@ -490,7 +517,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	 * EXISTS-style subquery) may be re-evaluated once per upstream binding while the plan may have costed a single
 	 * standalone evaluation. Their first close then pairs a whole-relation prediction with a single-invocation actual,
 	 * which poisons the learned evidence for every plan that shares the learning key. Such operators are only observed
-	 * by the completed-tree pass, where cumulative actuals are final.
+	 * by the completed-tree pass, where cumulative actuals are final — and where the frontier row observations re-base
+	 * those cumulative totals to a per-invocation figure before recording (see reinvokedRowsNormalizationEnabled).
 	 */
 	private static boolean deferObservationToCompletedRoot(TupleExpr node) {
 		return LmdbReinvocablePositions.isReinvocable(node);
@@ -678,7 +706,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		}
 		String frontierKey = node.getStringMetricPlanned(FRONTIER_LEARNING_KEY);
 		if (frontierKey != null && !frontierKey.isBlank()) {
-			if (recordFrontierOutcome(node, frontierKey)) {
+			if (recordFrontierOutcome(node, frontierKey, completedRoot)) {
 				markFeedbackRecorded(node);
 			}
 			return;
@@ -694,7 +722,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		}
 	}
 
-	private boolean recordFrontierOutcome(TupleExpr node, String encodedKey) {
+	private boolean recordFrontierOutcome(TupleExpr node, String encodedKey, boolean completedRoot) {
 		FrontierLearningKey key = FrontierLearningKey.parse(encodedKey);
 		FrontierLearningKey physicalKey = FrontierLearningKey.parse(
 				node.getStringMetricPlanned(FRONTIER_PHYSICAL_LEARNING_KEY));
@@ -710,6 +738,14 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			return false;
 		}
 		long epoch = nextFeedbackEpoch();
+		boolean normalizeRows = reinvokedRowsNormalizationEnabled();
+		double actualInvocations = actualInvocationCount(node);
+		boolean reinvokedBasisUnknown = normalizeRows
+				&& Double.isNaN(actualInvocations)
+				&& LmdbReinvocablePositions.isReinvocable(node);
+		// x / 1.0 is an IEEE identity, so a single-invocation node records bit-identically to the unnormalized path.
+		double actualRowsDivisor = normalizeRows && actualInvocations > 0.0d ? actualInvocations : 1.0d;
+		double predictedRowsDivisor = normalizeRows ? predictedInvocationBasis(node) : 1.0d;
 		/*
 		 * The physical learning key identifies the access kernel the plan costed. When the executor ran the operator
 		 * through a different index than the plan assumed, the physical actuals describe a different kernel and would
@@ -722,14 +758,18 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 				&& !"none".equals(physicalKey.indexName())
 				&& !physicalKey.indexName().equalsIgnoreCase(runtimeIndexName.trim());
 		boolean databaseExact = "database_exact".equalsIgnoreCase(node.getStringMetricPlanned(FRONTIER_GUARANTEE));
-		if (!databaseExact && !(accessDrift && outputRowsDriftSkipEnabled())) {
+		if (reinvokedBasisUnknown) {
+			trace("record-frontier-skip-reinvoked-invocations-unknown", node, null,
+					"key=" + encodedKey + ", plannedInvocations=" + predictedInvocationBasis(node));
+		} else if (!databaseExact && !(accessDrift && outputRowsDriftSkipEnabled())) {
 			double predictedRows = frontierEventPrediction(node, FrontierCostDimension.OUTPUT_ROWS,
 					"optimizer.costEventRows", "plannedFrontierRows");
 			if (!isFiniteNonNegative(predictedRows)) {
 				predictedRows = observation.plannedRows();
 			}
-			observeFrontierDimension(key, FrontierCostDimension.OUTPUT_ROWS, predictedRows,
-					observation.actualRows(), epoch);
+			observeFrontierDimension(key, FrontierCostDimension.OUTPUT_ROWS,
+					predictedRows / predictedRowsDivisor,
+					observation.actualRows() / actualRowsDivisor, epoch);
 		}
 		if (accessDrift) {
 			trace("record-frontier-skip-physical-access-drift", node, null,
@@ -737,6 +777,29 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 							+ ", runtimeIndex=" + runtimeIndexName);
 			dirty = true;
 			return true;
+		}
+		/*
+		 * Cardinality facts require a run-to-completion certification plus a single-invocation basis — a re-invoked
+		 * node observes per-binding conditional relations, never the standalone one the planning-side stamp describes.
+		 * Both recording paths qualify: the direct path already enforced the strict isCompleted (every close exhausted)
+		 * and the poison guards before reaching this point, and the completed-tree pass is abort-guarded with final
+		 * cumulative counters. Nodes without a close counter (cost-feedback tracking is source-gated) qualify when they
+		 * are structurally non-re-invocable: such a node runs exactly once per query evaluation, and only the first
+		 * completion reaches this point (later passes dedup on isFeedbackRecorded).
+		 */
+		String logicalGroupKey = node.getStringMetricPlanned(FRONTIER_LOGICAL_GROUP_KEY);
+		double factInvocations = actualInvocationCount(node);
+		boolean singleInvocationBasis = factInvocations == 1.0d
+				|| Double.isNaN(factInvocations) && !LmdbReinvocablePositions.isReinvocable(node);
+		if (exactCardinalityFactsEnabled()
+				&& logicalGroupKey != null && !logicalGroupKey.isBlank()
+				&& singleInvocationBasis
+				&& isFiniteNonNegative(observation.actualRows())) {
+			exactCardinalityFacts.put(logicalGroupKey,
+					new ExactCardinalityFact(observation.actualRows(), dataStampSupplier.getAsLong()));
+			evictOldestIfNeeded(exactCardinalityFacts);
+			trace("record-frontier-exact-fact", node, null,
+					"groupKey=" + logicalGroupKey + ", rows=" + observation.actualRows());
 		}
 		/*
 		 * Joins carry no index name, but the executor stamps the iterator it actually ran. When that differs from the
@@ -752,10 +815,12 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			dirty = true;
 			return true;
 		}
-		observeFrontierDimension(physicalKey, FrontierCostDimension.RESULT_ROWS,
-				frontierEventPrediction(node, FrontierCostDimension.RESULT_ROWS,
-						"optimizer.costEventResultRows", "plannedCostResultRows"),
-				observation.actualRows(), epoch);
+		if (!reinvokedBasisUnknown) {
+			observeFrontierDimension(physicalKey, FrontierCostDimension.RESULT_ROWS,
+					frontierEventPrediction(node, FrontierCostDimension.RESULT_ROWS,
+							"optimizer.costEventResultRows", "plannedCostResultRows") / predictedRowsDivisor,
+					observation.actualRows() / actualRowsDivisor, epoch);
+		}
 		observeFrontierDimension(physicalKey, FrontierCostDimension.SOURCE_ROWS_SCANNED,
 				frontierEventPrediction(node, FrontierCostDimension.SOURCE_ROWS_SCANNED,
 						"optimizer.costEventSequentialRows", "plannedCostSequentialRows"),
@@ -798,6 +863,41 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		trace("record-frontier", node, null,
 				"key=" + encodedKey + ", event=" + eventDigest + ", state=" + stateDigest);
 		return true;
+	}
+
+	/**
+	 * Runtime invocation count of the operator, or NaN when no counter is available. The dedicated cost-feedback close
+	 * counter is the only one maintained in cost-feedback-only mode; the telemetry close counter is exact when
+	 * telemetry is on; the exhausted-close counter (optimizer-prefixed, always recordable) is a lower bound, which errs
+	 * toward the unnormalized behavior and never past it.
+	 */
+	private static double actualInvocationCount(TupleExpr node) {
+		long closes = node.getCostFeedbackCloseCountActual();
+		if (closes > 0L) {
+			return closes;
+		}
+		closes = node.getLongMetricActual(TelemetryMetricNames.CLOSE_COUNT_ACTUAL);
+		if (closes > 0L) {
+			return closes;
+		}
+		closes = node.getLongMetricActual(TelemetryMetricNames.EXHAUSTED_CLOSE_COUNT_ACTUAL);
+		if (closes > 0L) {
+			return closes;
+		}
+		return Double.NaN;
+	}
+
+	/**
+	 * Invocation basis of the stamped row predictions: the originating costing event's invocation count (the same event
+	 * supplies {@code optimizer.costEventRows}), falling back to the materializer's repeated-invocations stamp. A
+	 * standalone estimate has basis 1 and divides out as an identity.
+	 */
+	private static double predictedInvocationBasis(TupleExpr node) {
+		double invocations = node.getDoubleMetricPlanned(COST_EVENT_INVOCATIONS);
+		if (!isFiniteNonNegative(invocations) || invocations < 1.0d) {
+			invocations = node.getDoubleMetricPlanned(PLANNED_REPEATED_INVOCATIONS);
+		}
+		return isFiniteNonNegative(invocations) && invocations > 1.0d ? invocations : 1.0d;
 	}
 
 	private static final String PLANNED_PHYSICAL_JOIN_IMPLEMENTATION = "optimizer.physicalJoinImplementation";
@@ -862,6 +962,24 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	synchronized FrontierLearningModel.DimensionEstimate frontierDimensionEstimate(FrontierLearningKey key,
 			FrontierCostDimension dimension, double predicted) {
 		return adaptiveEvidenceAllowed() ? frontierLearning.estimate(key, dimension, predicted) : null;
+	}
+
+	/**
+	 * Observed output cardinality for the logical-group key at the CURRENT data stamp, or NaN when no same-stamp fact
+	 * exists. Stale facts are left in place (they revalidate if the stamp ever matches again after reload) but never
+	 * served.
+	 */
+	synchronized double exactCardinalityFact(String groupKey) {
+		if (groupKey == null || !exactCardinalityFactsEnabled()) {
+			return Double.NaN;
+		}
+		ExactCardinalityFact fact = exactCardinalityFacts.get(groupKey);
+		return fact != null && fact.dataStamp() == dataStampSupplier.getAsLong() ? fact.rows() : Double.NaN;
+	}
+
+	private static boolean exactCardinalityFactsEnabled() {
+		return !"false".equalsIgnoreCase(System.getProperty(
+				LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, "true"));
 	}
 
 	synchronized FrontierLearningModel.PosteriorSnapshot frontierPosterior(FrontierLearningKey key,
@@ -1493,6 +1611,12 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 				entry.getValue().writeTo(out);
 			}
 			frontierLearning.writeTo(out);
+			out.writeInt(exactCardinalityFacts.size());
+			for (var entry : exactCardinalityFacts.entrySet()) {
+				out.writeUTF(entry.getKey());
+				out.writeDouble(entry.getValue().rows());
+				out.writeLong(entry.getValue().dataStamp());
+			}
 		} catch (IOException e) {
 			deleteIfExists(tempPath);
 			return false;
@@ -1547,6 +1671,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		Map<OperatorKey, ShadowOperatorCounts> loadedShadow = new LinkedHashMap<>();
 		Map<OperatorKey, PlanCandidateCounts> loadedPlanCandidates = new LinkedHashMap<>();
 		Map<SemiAntiSurfaceKey, SemiAntiCounts> loadedSemiAnti = new LinkedHashMap<>();
+		Map<String, ExactCardinalityFact> loadedExactFacts = new LinkedHashMap<>();
 		FrontierLearningModel loadedFrontierLearning = new FrontierLearningModel();
 		long loadedEpoch = 0L;
 		long loadedSteeringCooldownUntilEpoch = 0L;
@@ -1557,6 +1682,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 					&& version != SEMI_ANTI_PERSIST_VERSION
 					&& version != PHYSICAL_SEMI_ANTI_PERSIST_VERSION
 					&& version != FRONTIER_PERSIST_VERSION
+					&& version != DATA_STAMP_PERSIST_VERSION
 					&& version != PERSIST_VERSION) {
 				return;
 			}
@@ -1564,7 +1690,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			if (!persistedIdentity.equals(currentIdentity)) {
 				return;
 			}
-			if (version >= PERSIST_VERSION) {
+			if (version >= DATA_STAMP_PERSIST_VERSION) {
 				long persistedDataStamp = in.readLong();
 				if (sidecarDataStampCheckEnabled() && persistedDataStamp != dataStampSupplier.getAsLong()) {
 					return;
@@ -1602,11 +1728,26 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			 * Version-15 files DO carry a serialized frontier model, but it predates the topology-suffixed join keys
 			 * and the recording-coherence guards — its exact-key corrections can contain drift poison that the new keys
 			 * would only partially orphan (leaving e.g. crushed leaf-scan costs live while the join corrections that
-			 * compensated them go cold). Discard it and fall back to the legacy prior import; the model relearns
-			 * coherently under the new guards.
+			 * compensated them go cold). Version-16 models are discarded for the same reason a generation later: they
+			 * pair cumulative actuals with per-invocation predictions for re-invoked operators (and pre-date the
+			 * group-canonical OUTPUT_ROWS families), so partially retaining them would leave e.g. a 4.9x VALUES-anchor
+			 * inflation live while the commensurate observations that should replace it start from zero. Discard and
+			 * fall back to the legacy prior import; the model relearns coherently under the new recording rules.
 			 */
 			if (version >= PERSIST_VERSION) {
 				loadedFrontierLearning = FrontierLearningModel.readFrom(in);
+				int factCount = in.readInt();
+				if (factCount < 0 || factCount > MAX_ENTRIES * 4) {
+					return;
+				}
+				for (int i = 0; i < factCount; i++) {
+					String factKey = in.readUTF();
+					double rows = in.readDouble();
+					long dataStamp = in.readLong();
+					if (isFiniteNonNegative(rows)) {
+						loadedExactFacts.put(factKey, new ExactCardinalityFact(rows, dataStamp));
+					}
+				}
 			} else {
 				importLegacyFrontierPriors(loadedFrontierLearning, loaded, loadedMultipliers);
 			}
@@ -1625,6 +1766,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			planCandidates.putAll(loadedPlanCandidates);
 			semiAntiBySurface.clear();
 			semiAntiBySurface.putAll(loadedSemiAnti);
+			exactCardinalityFacts.clear();
+			exactCardinalityFacts.putAll(loadedExactFacts);
 			frontierLearning = loadedFrontierLearning;
 			nullModeKeyCache.clear();
 			planningLeoKeyCache.clear();

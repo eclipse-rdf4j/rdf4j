@@ -334,7 +334,7 @@ class LmdbFrontierPlanningIntegrationTest {
 
 	@Test
 	void packedPlanCacheVersionTracksPhysicalCostCutover() {
-		assertEquals(22L, LmdbPackedCostModel.VERSION);
+		assertEquals(23L, LmdbPackedCostModel.VERSION);
 	}
 
 	@Test
@@ -2485,6 +2485,23 @@ class LmdbFrontierPlanningIntegrationTest {
 
 	@Test
 	void sampledFrontierAppliesLearnedFilterThenLeoResidualExactlyOnce(@TempDir Path dataDirectory) {
+		/*
+		 * This test stages the learned-filter -> LEO residual layering. Its synthetic single-invocation completed
+		 * observations would also mint a same-stamp exact-cardinality fact, which (by design) supersedes the whole
+		 * learned stack on the next plan — disable facts here to keep the layering itself observable.
+		 */
+		String previousFacts = System.getProperty(
+				LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY);
+		System.setProperty(LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, "false");
+		try {
+			learnedFilterThenLeoResidualScenario(dataDirectory);
+		} finally {
+			restoreProperty(
+					LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, previousFacts);
+		}
+	}
+
+	private static void learnedFilterThenLeoResidualScenario(Path dataDirectory) {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc")
 				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
 				.setFrontierSynopsisBudgetBytes(16L * 1024L);
@@ -5095,6 +5112,561 @@ class LmdbFrontierPlanningIntegrationTest {
 		join.setJoinRightBindingsConsumedActual(rightRows);
 	}
 
+	@Test
+	void minusAlternativesShareOutputRowsLearningFamily(@TempDir Path dataDirectory) {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
+				.setFrontierSynopsisBudgetBytes(SYNOPSIS_BUDGET_BYTES);
+		LmdbStore store = new LmdbStore(dataDirectory.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			IRI q = repository.getValueFactory().createIRI("urn:frontier:group-minus-q");
+			IRI q2 = repository.getValueFactory().createIRI("urn:frontier:group-minus-q2");
+			try (var connection = repository.getConnection()) {
+				var values = connection.getValueFactory();
+				for (int index = 0; index < 50; index++) {
+					connection.add(values.createIRI("urn:frontier:group-minus-first"), PREDICATE,
+							values.createIRI("urn:frontier:group-minus-first-" + index));
+					connection.add(values.createIRI("urn:frontier:group-minus-second"), PREDICATE,
+							values.createIRI("urn:frontier:group-minus-second-" + index));
+				}
+				connection.add(values.createIRI("urn:frontier:group-minus-first"), q,
+						values.createIRI("urn:frontier:group-minus-match"));
+				connection.add(values.createIRI("urn:frontier:group-minus-first"), q2,
+						values.createIRI("urn:frontier:group-minus-match"));
+			}
+			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+			String query = """
+					SELECT ?subject ?object
+					WHERE {
+					  ?subject <urn:frontier:p> ?object .
+					  MINUS { ?subject <urn:frontier:group-minus-q> ?value }
+					}
+					""";
+			// Same shape over a second rhs predicate: re-planned from scratch after the kill-switch flips.
+			String killSwitchQuery = query.replace("group-minus-q", "group-minus-q2");
+
+			String previousOn = System.getProperty(
+					LmdbFrontierPackedCostSession.GROUP_CANONICAL_OUTPUT_ROWS_LEARNING_PROPERTY);
+			System.setProperty(
+					LmdbFrontierPackedCostSession.GROUP_CANONICAL_OUTPUT_ROWS_LEARNING_PROPERTY, "true");
+			try (var connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.Optimized);
+				Filter antiJoin = findSemiAntiFilter((TupleExpr) explanation.tupleExpr());
+				assertNotNull(antiJoin, explanation::toString);
+				FrontierLearningKey learningKey = FrontierLearningKey.parse(
+						antiJoin.getStringMetricPlanned("optimizer.frontierLearningKey"));
+				assertNotNull(learningKey, explanation::toString);
+				assertEquals("difference", learningKey.operatorFamily(),
+						() -> "An executed semi/anti framing must learn OUTPUT_ROWS under its memo group's"
+								+ " canonical member (the MINUS), not its own physical framing: " + explanation);
+			} finally {
+				restoreProperty(
+						LmdbFrontierPackedCostSession.GROUP_CANONICAL_OUTPUT_ROWS_LEARNING_PROPERTY, previousOn);
+			}
+
+			String previous = System.getProperty(
+					LmdbFrontierPackedCostSession.GROUP_CANONICAL_OUTPUT_ROWS_LEARNING_PROPERTY);
+			System.setProperty(
+					LmdbFrontierPackedCostSession.GROUP_CANONICAL_OUTPUT_ROWS_LEARNING_PROPERTY, "false");
+			try (var connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(killSwitchQuery)
+						.explain(Explanation.Level.Optimized);
+				Filter antiJoin = findSemiAntiFilter((TupleExpr) explanation.tupleExpr());
+				assertNotNull(antiJoin, explanation::toString);
+				FrontierLearningKey learningKey = FrontierLearningKey.parse(
+						antiJoin.getStringMetricPlanned("optimizer.frontierLearningKey"));
+				assertNotNull(learningKey, explanation::toString);
+				assertNotEquals("difference", learningKey.operatorFamily(),
+						() -> "The kill-switch must restore per-alternative learning identities: " + explanation);
+			} finally {
+				restoreProperty(
+						LmdbFrontierPackedCostSession.GROUP_CANONICAL_OUTPUT_ROWS_LEARNING_PROPERTY, previous);
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void exactFactOverridesLearnedCorrectionForEveryAlternative(@TempDir Path dataDirectory) {
+		String previousFacts = System.getProperty(
+				LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY);
+		System.setProperty(LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, "true");
+		try {
+			exactFactOverrideScenario(dataDirectory);
+		} finally {
+			restoreProperty(
+					LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, previousFacts);
+		}
+	}
+
+	private static void exactFactOverrideScenario(Path dataDirectory) {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
+				.setFrontierSynopsisBudgetBytes(16L * 1024L);
+		LmdbStore store = new LmdbStore(dataDirectory.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			IRI q = repository.getValueFactory().createIRI("urn:frontier:fact-minus-q");
+			IRI link = repository.getValueFactory().createIRI("urn:frontier:fact-minus-link");
+			try (var connection = repository.getConnection()) {
+				var values = connection.getValueFactory();
+				for (int index = 0; index < 128; index++) {
+					var subject = values.createIRI("urn:frontier:fact-minus-subject-" + index);
+					connection.add(subject, PREDICATE, values.createIRI("urn:frontier:fact-minus-p-" + index));
+					connection.add(subject, link, subject);
+					if ((index & 1) == 0) {
+						connection.add(subject, q, values.createIRI("urn:frontier:fact-minus-q-" + index));
+					}
+				}
+			}
+			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+			// The OPTIONAL keeps the MINUS in its Difference framing, whose costing event is uncorrelated and
+			// prefix-free — the framing facts serve. (Correlation-scoped probe framings stay fact-barred and are
+			// covered by the exact-fact outer-rows floor instead.)
+			String query = """
+					SELECT ?root ?object
+					WHERE {
+					  ?root <urn:frontier:p> ?object .
+					  OPTIONAL { ?root <urn:frontier:fact-minus-link> ?subject }
+					  MINUS { ?subject <urn:frontier:fact-minus-q> ?value }
+					}
+					""";
+
+			TupleExpr observed;
+			double rawRows;
+			String groupKey;
+			try (var connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.Optimized);
+				observed = findMinusFraming((TupleExpr) explanation.tupleExpr());
+				assertNotNull(observed, explanation::toString);
+				assertNotEquals("database_exact",
+						observed.getStringMetricPlanned("plannedFrontierGuarantee"), explanation::toString);
+				groupKey = observed.getStringMetricPlanned("optimizer.frontierLogicalGroupKey");
+				assertNotNull(groupKey,
+						() -> "A top-of-stream uncorrelated operator refinement must stamp its logical group fact"
+								+ " key: " + explanation);
+				assertTrue(groupKey.startsWith("difference@"),
+						() -> "The fact key must name the memo group's canonical member: " + explanation);
+				rawRows = observed.getDoubleMetricPlanned("plannedFrontierRows");
+				assertTrue(rawRows > 0.0d, explanation::toString);
+			}
+
+			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics();
+			// One completed single-invocation execution: 64 rows survive the MINUS at this data stamp.
+			TupleExpr completed = observed.clone();
+			completeLeoOperator(completed, 64L, rawRows, rawRows, 64.0d);
+			statistics.estimatorRuntime().feedback().recordOperatorOutcome(completed);
+			assertEquals(64.0d, statistics.estimatorRuntime().feedback().exactCardinalityFact(groupKey), 0.0d,
+					"A single-invocation completed observation must mint the group fact");
+
+			try (var connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.Optimized);
+				TupleExpr pinned = findMinusFraming((TupleExpr) explanation.tupleExpr());
+				assertNotNull(pinned, explanation::toString);
+				assertEquals("exact-fact",
+						pinned.getStringMetricPlanned("optimizer.frontierLeo.output_rows.source"),
+						() -> "One measured cardinality must replace both the raw estimate and the learned"
+								+ " correction for every alternative of the group: " + explanation);
+				assertEquals(64.0d, pinned.getDoubleMetricPlanned("plannedFrontierRows"), 0.0001d,
+						explanation::toString);
+				assertEquals(64, QueryResults.asList(connection.prepareTupleQuery(query).evaluate()).size());
+			}
+
+			// Any store mutation moves the data stamp past the fact: it must silently stop being served.
+			try (var connection = repository.getConnection()) {
+				var values = connection.getValueFactory();
+				connection.add(values.createIRI("urn:frontier:fact-minus-extra"), PREDICATE,
+						values.createIRI("urn:frontier:fact-minus-extra-object"));
+			}
+			try (var connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.Optimized);
+				TupleExpr demoted = findMinusFraming((TupleExpr) explanation.tupleExpr());
+				assertNotNull(demoted, explanation::toString);
+				assertNotEquals("exact-fact",
+						demoted.getStringMetricPlanned("optimizer.frontierLeo.output_rows.source"),
+						() -> "A fact describes one exact data version and must not survive a mutation: "
+								+ explanation);
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void exactFactSurvivesUnusedOptionalGroupDerivation(@TempDir Path dataDirectory) {
+		String previousFacts = System.getProperty(
+				LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY);
+		System.setProperty(LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, "true");
+		try {
+			unusedOptionalGroupDerivationScenario(dataDirectory);
+		} finally {
+			restoreProperty(
+					LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, previousFacts);
+		}
+	}
+
+	/*
+	 * The q9 contextual-copy shape: under a duplicate-insensitive observer (COUNT DISTINCT) the unused OPTIONAL is
+	 * dropped by the rule program, re-interning the MINUS as a second memo group whose scheduled FILTER copies share
+	 * one contextual cost identity with the original framing's copies. Fact and learning identities must union the two
+	 * groups: a fact minted by one run's framing has to reach the other run's winner (2026-08-05 closure).
+	 */
+	private static void unusedOptionalGroupDerivationScenario(Path dataDirectory) {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
+				.setFrontierSynopsisBudgetBytes(16L * 1024L);
+		LmdbStore store = new LmdbStore(dataDirectory.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			IRI q = repository.getValueFactory().createIRI("urn:frontier:derived-minus-q");
+			IRI handled = repository.getValueFactory().createIRI("urn:frontier:derived-minus-handled");
+			try (var connection = repository.getConnection()) {
+				var values = connection.getValueFactory();
+				for (int index = 0; index < 128; index++) {
+					var root = values.createIRI("urn:frontier:derived-minus-root-" + index);
+					connection.add(root, PREDICATE, values.createIRI("urn:frontier:derived-minus-p-" + index));
+					if (index < 4) {
+						connection.add(root, handled,
+								values.createIRI("urn:frontier:derived-minus-practitioner-" + index));
+					}
+					if ((index & 1) == 0) {
+						connection.add(root, q, values.createIRI("urn:frontier:derived-minus-q-" + index));
+					}
+				}
+			}
+			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+			String query = """
+					SELECT (COUNT(DISTINCT ?root) AS ?count)
+					WHERE {
+					  ?root <urn:frontier:p> ?object .
+					  OPTIONAL { ?root <urn:frontier:derived-minus-handled> ?practitioner }
+					  MINUS { ?root <urn:frontier:derived-minus-q> ?value }
+					}
+					""";
+
+			TupleExpr observed;
+			double rawRows;
+			String groupKey;
+			try (var connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.Optimized);
+				observed = findMinusFraming((TupleExpr) explanation.tupleExpr());
+				assertNotNull(observed, explanation::toString);
+				groupKey = observed.getStringMetricPlanned("optimizer.frontierLogicalGroupKey");
+				assertNotNull(groupKey, explanation::toString);
+				assertTrue(groupKey.startsWith("difference@"),
+						() -> "Whatever framing wins, its fact key must name the unioned group's canonical"
+								+ " member: " + explanation);
+				rawRows = observed.getDoubleMetricPlanned("plannedFrontierRows");
+				assertTrue(rawRows > 0.0d, explanation::toString);
+			}
+
+			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics();
+			TupleExpr completed = observed.clone();
+			completeLeoOperator(completed, 64L, rawRows, rawRows, 64.0d);
+			statistics.estimatorRuntime().feedback().recordOperatorOutcome(completed);
+			assertEquals(64.0d, statistics.estimatorRuntime().feedback().exactCardinalityFact(groupKey), 0.0d,
+					"The completed framing must mint the fact under the unioned group key");
+
+			try (var connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.Optimized);
+				TupleExpr pinned = findMinusFraming((TupleExpr) explanation.tupleExpr());
+				assertNotNull(pinned, explanation::toString);
+				assertEquals(groupKey, pinned.getStringMetricPlanned("optimizer.frontierLogicalGroupKey"),
+						() -> "The re-planned framing must key facts by the same unioned group: " + explanation);
+				assertEquals("exact-fact",
+						pinned.getStringMetricPlanned("optimizer.frontierLeo.output_rows.source"),
+						() -> "Run 2's winner must see run 1's measured cardinality regardless of which framing"
+								+ " executed: " + explanation);
+				var results = QueryResults.asList(connection.prepareTupleQuery(query).evaluate());
+				assertEquals(1, results.size());
+				assertEquals("64", results.get(0).getValue("count").stringValue());
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void exactFactFloorsCorrelatedNotExistsOuterRowsUnderCrushedEvidence(@TempDir Path dataDirectory) {
+		String previousFacts = System.getProperty(
+				LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY);
+		System.setProperty(LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, "true");
+		try {
+			exactFactFloorScenario(dataDirectory);
+		} finally {
+			restoreProperty(
+					LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, previousFacts);
+		}
+	}
+
+	private static void exactFactFloorScenario(Path dataDirectory) {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
+				.setFrontierSynopsisBudgetBytes(16L * 1024L);
+		LmdbStore store = new LmdbStore(dataDirectory.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			IRI q = repository.getValueFactory().createIRI("urn:frontier:floor-minus-q");
+			try (var connection = repository.getConnection()) {
+				var values = connection.getValueFactory();
+				for (int index = 0; index < 200; index++) {
+					connection.add(values.createIRI("urn:frontier:floor-minus-first"), PREDICATE,
+							values.createIRI("urn:frontier:floor-minus-first-" + index));
+					connection.add(values.createIRI("urn:frontier:floor-minus-second"), PREDICATE,
+							values.createIRI("urn:frontier:floor-minus-second-" + index));
+				}
+				connection.add(values.createIRI("urn:frontier:floor-minus-first"), q,
+						values.createIRI("urn:frontier:floor-minus-match"));
+			}
+			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+			String query = """
+					SELECT ?subject ?object
+					WHERE {
+					  ?subject <urn:frontier:p> ?object .
+					  MINUS { ?subject <urn:frontier:floor-minus-q> ?value }
+					}
+					""";
+
+			StatementPattern observedScan;
+			double rawScanRows;
+			TupleExpr observedFraming;
+			double rawFramingRows;
+			try (var connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.Optimized);
+				observedScan = findPattern((TupleExpr) explanation.tupleExpr(), PREDICATE);
+				assertNotNull(observedScan, explanation::toString);
+				assertNotEquals("database_exact",
+						observedScan.getStringMetricPlanned("plannedFrontierGuarantee"),
+						() -> "The fixture needs a learnable (sampled) outer scan: " + explanation);
+				rawScanRows = observedScan.getDoubleMetricPlanned("plannedFrontierRows");
+				assertTrue(rawScanRows > 100.0d, explanation::toString);
+				observedFraming = findMinusFraming((TupleExpr) explanation.tupleExpr());
+				assertNotNull(observedFraming, explanation::toString);
+				assertTrue(observedFraming.getStringMetricPlanned("optimizer.frontierLogicalGroupKey")
+						.startsWith("difference@"), explanation::toString);
+				rawFramingRows = observedFraming.getDoubleMetricPlanned("plannedFrontierRows");
+			}
+
+			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics();
+			// One truthful completed run of the whole MINUS mints an exact group fact: 350 rows at this stamp.
+			TupleExpr factSource = observedFraming.clone();
+			completeLeoOperator(factSource, 350L, rawFramingRows, rawFramingRows, 350.0d);
+			statistics.estimatorRuntime().feedback().recordOperatorOutcome(factSource);
+			// Cross-query poison: an unrelated workload's feedback then crushes the outer scan's learned estimate
+			// (the group fact key is blanked so the lie stays a calibration, not a same-stamp measured fact).
+			for (int observation = 0; observation < 6; observation++) {
+				StatementPattern completed = observedScan.clone();
+				completed.setStringMetricPlanned("optimizer.frontierLogicalGroupKey", "");
+				completed.setStringMetricPlanned("optimizer.costEventDigest", "event-floor-" + observation);
+				completed.setStringMetricPlanned("optimizer.frontierStateDigest", "state-floor-" + observation);
+				completeLeoOperator(completed, 1L, rawScanRows, rawScanRows, 1.0d);
+				statistics.estimatorRuntime().feedback().recordOperatorOutcome(completed);
+			}
+
+			try (var connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.Optimized);
+				Filter antiJoin = findSemiAntiFilter((TupleExpr) explanation.tupleExpr());
+				assertNotNull(antiJoin, explanation::toString);
+				double outerRows = antiJoin.getDoubleMetricPlanned("plannedCorrelationOuterRows");
+				assertTrue(outerRows >= 300.0d,
+						() -> "An exact same-stamp output measurement bounds the probe invocation count from"
+								+ " below (output is a subset of the outer input), overruling the crushed learned"
+								+ " evidence, but outerRows=" + outerRows + ": " + explanation);
+				assertEquals("exact-fact-floor",
+						antiJoin.getStringMetricPlanned("plannedCorrelationOuterRowsSource"),
+						explanation::toString);
+			}
+
+			String previous = System.getProperty(
+					LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY);
+			System.setProperty(
+					LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, "false");
+			try {
+				// Bump the learned revision so the re-planned query cannot reuse the floored plan.
+				StatementPattern completed = observedScan.clone();
+				completed.setStringMetricPlanned("optimizer.frontierLogicalGroupKey", "");
+				completed.setStringMetricPlanned("optimizer.costEventDigest", "event-floor-off");
+				completed.setStringMetricPlanned("optimizer.frontierStateDigest", "state-floor-off");
+				completeLeoOperator(completed, 1L, rawScanRows, rawScanRows, 1.0d);
+				statistics.estimatorRuntime().feedback().recordOperatorOutcome(completed);
+				try (var connection = repository.getConnection()) {
+					Explanation explanation = connection.prepareTupleQuery(query)
+							.explain(Explanation.Level.Optimized);
+					Filter antiJoin = findSemiAntiFilter((TupleExpr) explanation.tupleExpr());
+					assertNotNull(antiJoin, explanation::toString);
+					double outerRows = antiJoin.getDoubleMetricPlanned("plannedCorrelationOuterRows");
+					assertTrue(outerRows < 300.0d,
+							() -> "The kill-switch must restore evidence-only outer rows (pre-fix behavior), but"
+									+ " outerRows=" + outerRows + ": " + explanation);
+				}
+			} finally {
+				restoreProperty(
+						LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, previous);
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void degradedCalibrationClampedToStructuralBand(@TempDir Path dataDirectory) throws Exception {
+		String previousClamp = System.getProperty(LmdbFrontierPackedCostSession.DEGRADED_CALIBRATION_CLAMP_PROPERTY);
+		System.setProperty(LmdbFrontierPackedCostSession.DEGRADED_CALIBRATION_CLAMP_PROPERTY, "true");
+		try {
+			degradedCalibrationClampScenario(dataDirectory);
+		} finally {
+			restoreProperty(LmdbFrontierPackedCostSession.DEGRADED_CALIBRATION_CLAMP_PROPERTY, previousClamp);
+		}
+	}
+
+	private static void degradedCalibrationClampScenario(Path dataDirectory) {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
+				.setFrontierSynopsisBudgetBytes(16L * 1024L);
+		LmdbStore store = new LmdbStore(dataDirectory.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			IRI score = repository.getValueFactory().createIRI("urn:frontier:clamp-score");
+			try (var connection = repository.getConnection()) {
+				var values = connection.getValueFactory();
+				for (int index = 0; index < 512; index++) {
+					connection.add(
+							values.createIRI("urn:frontier:clamp-subject-" + index),
+							score,
+							values.createIRI("urn:frontier:clamp-value-" + index));
+				}
+			}
+			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics();
+			String query = """
+					SELECT ?subject ?value
+					WHERE {
+					  ?subject <urn:frontier:clamp-score> ?value .
+					  FILTER (STR(?value) = "urn:frontier:clamp-value-1")
+					}
+					""";
+
+			// An opaque STR() filter over a sampled scan degrades once positive learned mass arrives.
+			Filter observed;
+			try (var connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.Optimized);
+				observed = findFilter((TupleExpr) explanation.tupleExpr());
+				assertNotNull(observed, explanation::toString);
+			}
+			statistics.recordFilterOutcome(observed.clone(), 1L, 512L);
+
+			Filter degraded;
+			double degradedRows;
+			FrontierLearningKey degradedKey;
+			try (var connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.Optimized);
+				degraded = findFilter((TupleExpr) explanation.tupleExpr());
+				assertNotNull(degraded, explanation::toString);
+				assertEquals("degraded", degraded.getStringMetricPlanned("plannedFrontierStatus"),
+						explanation::toString);
+				degradedRows = degraded.getResultSizeEstimate();
+				assertTrue(degradedRows > 0.0d, explanation::toString);
+				degradedKey = FrontierLearningKey.parse(
+						degraded.getStringMetricPlanned("optimizer.frontierLearningKey"));
+				assertNotNull(degradedKey, explanation::toString);
+			}
+
+			/*
+			 * Pool-only poison: wild observations under a SIBLING key (same family, different binding layout) leave the
+			 * degraded key itself with zero exact evidence — exactly the shape that crushed q9's anti-join input. With
+			 * the clamp on, a family posterior with no exact observations earns a band of 4^0 = 1: the raw degraded
+			 * estimate stands.
+			 */
+			FrontierLearningKey sibling = FrontierLearningKey.of(
+					degradedKey.operatorFamily(), degradedKey.rawTransform(),
+					degradedKey.bindingLayoutFingerprint() + 1L, degradedKey.correlationFingerprint(),
+					degradedKey.accessKernel(), degradedKey.indexName(), degradedKey.accessMode());
+			for (int observation = 0; observation < 6; observation++) {
+				Filter poisoned = degraded.clone();
+				poisoned.setStringMetricPlanned("optimizer.frontierLearningKey", sibling.externalForm());
+				poisoned.setStringMetricPlanned("optimizer.frontierLogicalGroupKey", "");
+				poisoned.setStringMetricPlanned("optimizer.costEventDigest", "event-clamp-" + observation);
+				poisoned.setStringMetricPlanned("optimizer.frontierStateDigest", "state-clamp-" + observation);
+				completeLeoOperator(poisoned, Math.round(degradedRows * 400.0d), degradedRows, 512.0d,
+						degradedRows * 400.0d);
+				statistics.estimatorRuntime().feedback().recordOperatorOutcome(poisoned);
+			}
+
+			try (var connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.Optimized);
+				Filter clamped = findFilter((TupleExpr) explanation.tupleExpr());
+				assertNotNull(clamped, explanation::toString);
+				assertEquals(1.0d, clamped.getDoubleMetricPlanned("optimizer.frontierLeo.output_rows.clamped"),
+						0.0d, () -> "A pooled correction applied to a degraded state with zero exact evidence"
+								+ " must be clamped to the raw structural estimate: " + explanation);
+				double raw = clamped.getDoubleMetricPlanned("optimizer.frontierLeo.output_rows.raw");
+				// The .corrected annotation documents the unclamped posterior; the APPLIED estimate is the rows.
+				assertEquals(raw, clamped.getDoubleMetricPlanned("plannedFrontierRows"), raw * 0.0001d,
+						() -> "With zero exact observations the band is 4^0 = 1 — the raw estimate stands: "
+								+ explanation);
+			}
+
+			String previous = System.getProperty(LmdbFrontierPackedCostSession.DEGRADED_CALIBRATION_CLAMP_PROPERTY);
+			System.setProperty(LmdbFrontierPackedCostSession.DEGRADED_CALIBRATION_CLAMP_PROPERTY, "false");
+			try {
+				// Bump the learned revision so the re-planned query cannot reuse the clamped plan.
+				Filter poisoned = degraded.clone();
+				poisoned.setStringMetricPlanned("optimizer.frontierLearningKey", sibling.externalForm());
+				poisoned.setStringMetricPlanned("optimizer.frontierLogicalGroupKey", "");
+				poisoned.setStringMetricPlanned("optimizer.costEventDigest", "event-clamp-off");
+				poisoned.setStringMetricPlanned("optimizer.frontierStateDigest", "state-clamp-off");
+				completeLeoOperator(poisoned, Math.round(degradedRows * 400.0d), degradedRows, 512.0d,
+						degradedRows * 400.0d);
+				statistics.estimatorRuntime().feedback().recordOperatorOutcome(poisoned);
+				try (var connection = repository.getConnection()) {
+					Explanation explanation = connection.prepareTupleQuery(query)
+							.explain(Explanation.Level.Optimized);
+					Filter unclamped = findFilter((TupleExpr) explanation.tupleExpr());
+					assertNotNull(unclamped, explanation::toString);
+					double raw = unclamped.getDoubleMetricPlanned("optimizer.frontierLeo.output_rows.raw");
+					double applied = unclamped.getDoubleMetricPlanned("plannedFrontierRows");
+					assertTrue(applied > raw * 2.0d,
+							() -> "The kill-switch must restore unclamped pooled calibration (raw=" + raw
+									+ ", applied=" + applied + "): " + explanation);
+				}
+			} finally {
+				restoreProperty(LmdbFrontierPackedCostSession.DEGRADED_CALIBRATION_CLAMP_PROPERTY, previous);
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private static void restoreProperty(String propertyName, String previous) {
+		if (previous == null) {
+			System.clearProperty(propertyName);
+		} else {
+			System.setProperty(propertyName, previous);
+		}
+	}
+
 	private static void completeLeoOperator(TupleExpr operator, long actualRows, double plannedRows,
 			double plannedWorkRows, double actualWorkRows) {
 		operator.setCostFeedbackTrackingEnabled(true);
@@ -5343,6 +5915,12 @@ class LmdbFrontierPlanningIntegrationTest {
 			}
 		});
 		return matches;
+	}
+
+	/** The winning framing of a MINUS: the Difference operator itself or a semi/anti filter alternative. */
+	private static TupleExpr findMinusFraming(TupleExpr expression) {
+		Difference difference = findDifference(expression);
+		return difference != null ? difference : findSemiAntiFilter(expression);
 	}
 
 	private static Difference findDifference(TupleExpr expression) {

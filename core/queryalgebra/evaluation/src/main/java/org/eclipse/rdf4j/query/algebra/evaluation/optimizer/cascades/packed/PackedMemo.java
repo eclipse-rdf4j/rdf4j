@@ -573,7 +573,7 @@ final class PackedMemo {
 		return objective;
 	}
 
-	private boolean winnerDependsOnOuterBindings(int winnerId, int outerBindingMaskId) {
+	boolean winnerDependsOnOuterBindings(int winnerId, int outerBindingMaskId) {
 		int physicalExpressionId = winnerPhysicalExpressionId(winnerId);
 		int sourceLogicalExpressionId = physicalSourceLogicalExpressionId(physicalExpressionId);
 		if (sourceLogicalExpressionId > 0 && sourceLogicalExpressionId <= baseLogicalExpressionCount

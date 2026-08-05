@@ -17,6 +17,9 @@ final class PackedPhysicalJoinCosting {
 	static final int DEPENDENT_ITERATION = 1;
 	static final int INDEPENDENT_HASH = 2;
 
+	/** Names the input the runtime should buffer into the hash table. Values are {@code "left"} and {@code "right"}. */
+	static final String HASH_JOIN_BUILD_SIDE_METRIC = "optimizer.hashJoinBuildSide";
+
 	private PackedPhysicalJoinCosting() {
 	}
 
@@ -62,12 +65,19 @@ final class PackedPhysicalJoinCosting {
 			double leftRows = requireRows(context.leftInputRows(), "left join input");
 			double rightRows = requireRows(context.rightInputRows(), "right join input");
 			double repeatedRightRows = saturatedMultiply(rightRows, invocations);
-			double buildRows = Math.min(leftRows, repeatedRightRows);
-			double probeRows = Math.max(leftRows, repeatedRightRows);
+			boolean buildFromLeft = leftRows <= repeatedRightRows;
+			double buildRows = buildFromLeft ? leftRows : repeatedRightRows;
+			double probeRows = buildFromLeft ? repeatedRightRows : leftRows;
 			double peakMemoryRows = Math.min(leftRows, rightRows);
 			output.setLocalPhysicalCost(
 					0.0d, 0.0d, 0.0d, 0.0d, buildRows, probeRows, 0.0d, resultRows, 0.0d,
 					peakMemoryRows);
+			/*
+			 * The cost above already assumes the smaller input is buffered. Publish that choice so the runtime buffers
+			 * the same side instead of rediscovering it by racing both inputs, which buffers a prefix of the probe side
+			 * as well.
+			 */
+			output.putPlannedStringMetric(HASH_JOIN_BUILD_SIDE_METRIC, buildFromLeft ? "left" : "right");
 		}
 		default -> throw new IllegalArgumentException("unknown physical join implementation " + implementation);
 		}

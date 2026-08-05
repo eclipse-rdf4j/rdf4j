@@ -532,7 +532,11 @@ final class PackedIncumbentSearch {
 				costEstimate.setReplacesChildWork(false);
 			}
 			if (!costEstimate.dependentSubqueriesCosted()) {
-				double dependentCost = PackedDependentSubqueryCosting.defaultCost(query, memo, logicalExpressionId);
+				double dependentInvocations = childCount >= 1
+						? memo.winnerOutputRows(childWinnerIds[0])
+						: 1.0d;
+				double dependentCost = PackedDependentSubqueryCosting.defaultCost(query, memo, logicalExpressionId,
+						dependentInvocations);
 				if (dependentCost > 0.0d) {
 					if (costEstimate.hasExplicitPhysicalCost()) {
 						double objectiveBeforeDependent = costSession.objectiveScore(costEstimate);

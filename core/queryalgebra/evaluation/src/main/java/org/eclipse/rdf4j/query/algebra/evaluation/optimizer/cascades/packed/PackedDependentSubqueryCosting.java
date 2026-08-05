@@ -15,19 +15,34 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 @PackedHotPath
 final class PackedDependentSubqueryCosting {
 
+	/*
+	 * A subquery whose winner consumes outer bindings is re-evaluated once per row of the owning operator's input, not
+	 * once per query. Charging its winner cost a single time made a correlated EXISTS probe look cheaper than any
+	 * bounded alternative regardless of how many rows re-open it (the 2026-07 benchmark-timeout family). An
+	 * outer-independent subquery is still charged once: its result is computable up front and shared.
+	 */
+	static final String CORRELATED_DEPENDENT_INVOCATIONS_PROPERTY = "rdf4j.optimizer.packed.correlatedDependentInvocations";
+
 	private PackedDependentSubqueryCosting() {
 	}
 
-	static double defaultCost(PackedQuery query, PackedMemo memo, int relationId) {
-		return scalarCost(query, memo, conditionId(query, relationId), 0);
+	private static boolean correlatedDependentInvocationsEnabled() {
+		return !"false".equalsIgnoreCase(
+				System.getProperty(CORRELATED_DEPENDENT_INVOCATIONS_PROPERTY, "true"));
+	}
+
+	static double defaultCost(PackedQuery query, PackedMemo memo, int relationId, double expectedInvocations) {
+		return scalarCost(query, memo, conditionId(query, relationId), 0,
+				query.relOutputMaskId(relationId), expectedInvocations);
 	}
 
 	static double contextualCost(PackedQuery query, PackedMemo memo, int relationId, int[] prefixRelations,
 			double[] prefixContributionRows, int prefixCount, double prefixRows, int prefixEvidenceStateId,
-			int bindingLayoutId, int correlationMaskId, int semanticScopeMaskId) {
+			int bindingLayoutId, int correlationMaskId, int semanticScopeMaskId, double expectedInvocations) {
 		int inputContextId = memo.internEvidenceContext(prefixRelations, prefixContributionRows, 0, prefixCount,
 				prefixRows, prefixEvidenceStateId, bindingLayoutId, correlationMaskId, semanticScopeMaskId);
-		return scalarCost(query, memo, conditionId(query, relationId), inputContextId);
+		return scalarCost(query, memo, conditionId(query, relationId), inputContextId,
+				query.relOutputMaskId(relationId), expectedInvocations);
 	}
 
 	static void publishDefaultPlanInputs(PackedQuery query, PackedMemo memo, int relationId,
@@ -62,7 +77,8 @@ final class PackedDependentSubqueryCosting {
 		};
 	}
 
-	private static double scalarCost(PackedQuery query, PackedMemo memo, int scalarId, int inputContextId) {
+	private static double scalarCost(PackedQuery query, PackedMemo memo, int scalarId, int inputContextId,
+			int outerBindingMaskId, double expectedInvocations) {
 		if (scalarId == 0) {
 			return 0.0d;
 		}
@@ -78,11 +94,17 @@ final class PackedDependentSubqueryCosting {
 							"embedded subquery " + subqueryRelationId + " has no incumbent");
 				}
 				cost = memo.winnerTotalCost(winnerId);
+				if (correlatedDependentInvocationsEnabled()
+						&& expectedInvocations > 1.0d
+						&& memo.winnerDependsOnOuterBindings(winnerId, outerBindingMaskId)) {
+					cost = saturatedMultiply(cost, expectedInvocations);
+				}
 			}
 		}
 		for (int ordinal = 0; ordinal < query.scalarChildCount(scalarId); ordinal++) {
 			cost = saturatedAdd(cost,
-					scalarCost(query, memo, query.scalarChild(scalarId, ordinal), inputContextId));
+					scalarCost(query, memo, query.scalarChild(scalarId, ordinal), inputContextId,
+							outerBindingMaskId, expectedInvocations));
 		}
 		return cost;
 	}
@@ -149,6 +171,11 @@ final class PackedDependentSubqueryCosting {
 
 	private static double saturatedAdd(double left, double right) {
 		double result = left + right;
+		return Double.isFinite(result) ? result : Double.MAX_VALUE;
+	}
+
+	private static double saturatedMultiply(double left, double right) {
+		double result = left * right;
 		return Double.isFinite(result) ? result : Double.MAX_VALUE;
 	}
 }

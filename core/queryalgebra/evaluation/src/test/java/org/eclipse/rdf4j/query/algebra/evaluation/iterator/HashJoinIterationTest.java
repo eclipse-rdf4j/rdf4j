@@ -15,6 +15,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -26,11 +28,14 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
@@ -305,5 +310,92 @@ public class HashJoinIterationTest {
 		assertEquals("x", actual.getValue("i").stringValue());
 		assertEquals("left", actual.getValue("optional").stringValue());
 		assertFalse(iter.hasNext());
+	}
+
+	@Test
+	public void testPinnedBuildSideProducesTheSameRowsAsTheAdaptiveChoice() throws QueryEvaluationException {
+		BindingSetAssignment left = assignment(row("a", "1", "i", "x"), row("a", "2", "i", "y"),
+				row("a", "3", "i", "z"));
+		BindingSetAssignment right = assignment(row("b", "1", "i", "x"), row("b", "2", "i", "y"),
+				row("b", "3", "i", "w"));
+		String[] joinAttributes = { "i" };
+
+		List<String> adaptive = join(left, right, joinAttributes, HashJoinIteration.BuildSide.UNKNOWN);
+		List<String> buildLeft = join(left, right, joinAttributes, HashJoinIteration.BuildSide.LEFT);
+		List<String> buildRight = join(left, right, joinAttributes, HashJoinIteration.BuildSide.RIGHT);
+
+		assertEquals(List.of("a=1,b=1,i=x", "a=2,b=2,i=y"), adaptive);
+		assertEquals(adaptive, buildLeft);
+		assertEquals(adaptive, buildRight);
+	}
+
+	@Test
+	public void testPartiallyBoundBuildRowsAreMatchedByTheAttributesTheyBind()
+			throws QueryEvaluationException {
+		BindingSetAssignment left = assignment(row("a", "1", "i", "x", "j", "p"));
+		BindingSetAssignment right = assignment(
+				row("b", "1", "i", "x", "j", "p"), // binds both join attributes
+				row("b", "2", "i", "x"), // binds i only, and agrees on it
+				row("b", "3", "j", "p"), // binds j only, and agrees on it
+				row("b", "4", "i", "q"), // binds i only, and disagrees on it
+				row("b", "5", "j", "q")); // binds j only, and disagrees on it
+		String[] joinAttributes = { "i", "j" };
+
+		List<String> matches = join(left, right, joinAttributes, HashJoinIteration.BuildSide.RIGHT);
+
+		assertEquals(List.of("a=1,b=1,i=x,j=p", "a=1,b=2,i=x,j=p", "a=1,b=3,i=x,j=p"), matches);
+	}
+
+	@Test
+	public void testPartiallyBoundProbeRowStillSeesPartiallyBoundBuildRows() throws QueryEvaluationException {
+		BindingSetAssignment left = assignment(row("a", "1", "i", "x"));
+		BindingSetAssignment right = assignment(row("b", "1", "i", "x", "j", "p"), row("b", "2", "j", "p"));
+		String[] joinAttributes = { "i", "j" };
+
+		List<String> matches = join(left, right, joinAttributes, HashJoinIteration.BuildSide.RIGHT);
+
+		assertEquals(List.of("a=1,b=1,i=x,j=p", "a=1,b=2,i=x,j=p"), matches);
+	}
+
+	private List<String> join(BindingSetAssignment left, BindingSetAssignment right, String[] joinAttributes,
+			HashJoinIteration.BuildSide buildSide) throws QueryEvaluationException {
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		QueryEvaluationStep leftStep = evaluator.precompile(left, context);
+		QueryEvaluationStep rightStep = evaluator.precompile(right, context);
+		List<String> rows = new ArrayList<>();
+		try (HashJoinIteration iter = new HashJoinIteration(leftStep, rightStep, EmptyBindingSet.getInstance(),
+				false, joinAttributes, context, buildSide, null)) {
+			while (iter.hasNext()) {
+				rows.add(render(iter.next()));
+			}
+		}
+		Collections.sort(rows);
+		return rows;
+	}
+
+	private static String render(BindingSet bindingSet) {
+		List<String> bindings = new ArrayList<>();
+		for (String name : bindingSet.getBindingNames()) {
+			Value value = bindingSet.getValue(name);
+			if (value != null) {
+				bindings.add(name + "=" + value.stringValue());
+			}
+		}
+		Collections.sort(bindings);
+		return String.join(",", bindings);
+	}
+
+	private BindingSetAssignment assignment(BindingSet... rows) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(List.of(rows));
+		return assignment;
+	}
+
+	private BindingSet row(String... nameValuePairs) {
+		QueryBindingSet bindingSet = new QueryBindingSet();
+		for (int i = 0; i < nameValuePairs.length; i += 2) {
+			bindingSet.addBinding(nameValuePairs[i], vf.createLiteral(nameValuePairs[i + 1]));
+		}
+		return bindingSet;
 	}
 }

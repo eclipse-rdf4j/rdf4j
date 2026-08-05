@@ -462,9 +462,24 @@ class PackedPhysicalCostContractTest {
 			}
 		};
 
-		PackedPlanningResult result = PackedCascadesPlanner.optimize(filter, OptimizationGoal.root(), model);
+		String previous = System.getProperty(
+				PackedDependentSubqueryCosting.CORRELATED_DEPENDENT_INVOCATIONS_PROPERTY);
+		System.setProperty(PackedDependentSubqueryCosting.CORRELATED_DEPENDENT_INVOCATIONS_PROPERTY, "true");
+		try {
+			PackedPlanningResult result = PackedCascadesPlanner.optimize(filter, OptimizationGoal.root(), model);
 
-		assertEquals(111.0d, result.totalCost(), result.selectedPlan()::toString);
+			// outer scan (10) + filter refinement (1) + the correlated dependent subquery's winner (100) charged
+			// once per outer row (10 invocations): the subquery consumes ?subject, so it re-opens per row
+			// (2026-08, rdf4j.optimizer.packed.correlatedDependentInvocations).
+			assertEquals(1_011.0d, result.totalCost(), result.selectedPlan()::toString);
+		} finally {
+			if (previous == null) {
+				System.clearProperty(PackedDependentSubqueryCosting.CORRELATED_DEPENDENT_INVOCATIONS_PROPERTY);
+			} else {
+				System.setProperty(PackedDependentSubqueryCosting.CORRELATED_DEPENDENT_INVOCATIONS_PROPERTY,
+						previous);
+			}
+		}
 	}
 
 	@Test

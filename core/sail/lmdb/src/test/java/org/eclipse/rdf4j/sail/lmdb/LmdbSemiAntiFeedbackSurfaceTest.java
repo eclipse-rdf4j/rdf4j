@@ -149,9 +149,9 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 					.findFirst()
 					.orElseThrow();
 		}
-		byte[] versionSixteen = Files.readAllBytes(sidecar);
-		assertEquals(16, ByteBuffer.wrap(versionSixteen).getInt());
-		Files.write(sidecar, downgradeSingleSemiAntiSidecar(versionSixteen, 13));
+		byte[] versionSeventeen = Files.readAllBytes(sidecar);
+		assertEquals(17, ByteBuffer.wrap(versionSeventeen).getInt());
+		Files.write(sidecar, downgradeSingleSemiAntiSidecar(versionSeventeen, 13));
 
 		LmdbStore reader = initializedStore(dataDir);
 		try {
@@ -188,9 +188,9 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 					.findFirst()
 					.orElseThrow();
 		}
-		byte[] versionSixteen = Files.readAllBytes(sidecar);
-		assertEquals(16, ByteBuffer.wrap(versionSixteen).getInt());
-		Files.write(sidecar, downgradeSingleSemiAntiSidecar(versionSixteen, 14));
+		byte[] versionSeventeen = Files.readAllBytes(sidecar);
+		assertEquals(17, ByteBuffer.wrap(versionSeventeen).getInt());
+		Files.write(sidecar, downgradeSingleSemiAntiSidecar(versionSeventeen, 14));
 
 		LmdbStore reader = initializedStore(dataDir);
 		try {
@@ -207,22 +207,23 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 		}
 	}
 
-	private static byte[] downgradeSingleSemiAntiSidecar(byte[] versionSixteen, int targetVersion) {
+	private static byte[] downgradeSingleSemiAntiSidecar(byte[] versionSeventeen, int targetVersion) {
 		/*
-		 * These fixtures contain one semi/anti observation and no keyed Frontier-learning observations. The v16 format
+		 * These fixtures contain one semi/anti observation and no keyed Frontier-learning observations. The v17 format
 		 * prefixes the payload with an 8-byte data stamp after the 24-byte identity, and its tail is exactly revision
-		 * (8), exact-key count (4), and legacy-prior count (4). Version 13 also predates the final two physical
-		 * semi/anti counters, which immediately precede that tail.
+		 * (8), exact-key count (4), legacy-prior count (4), and exact-fact count (4). Version 13 also predates the
+		 * final two physical semi/anti counters, which immediately precede that tail.
 		 */
 		int identityBytes = 4 + 24;
-		byte[] stampless = new byte[versionSixteen.length - Long.BYTES];
-		System.arraycopy(versionSixteen, 0, stampless, 0, identityBytes);
-		System.arraycopy(versionSixteen, identityBytes + Long.BYTES, stampless, identityBytes,
-				versionSixteen.length - identityBytes - Long.BYTES);
-		int frontierTailBytes = Long.BYTES + 2 * Integer.BYTES;
+		byte[] stampless = new byte[versionSeventeen.length - Long.BYTES];
+		System.arraycopy(versionSeventeen, 0, stampless, 0, identityBytes);
+		System.arraycopy(versionSeventeen, identityBytes + Long.BYTES, stampless, identityBytes,
+				versionSeventeen.length - identityBytes - Long.BYTES);
+		int frontierTailBytes = Long.BYTES + 3 * Integer.BYTES;
 		ByteBuffer frontierTail = ByteBuffer.wrap(stampless,
 				stampless.length - frontierTailBytes, frontierTailBytes).slice();
 		assertEquals(0L, frontierTail.getLong());
+		assertEquals(0, frontierTail.getInt());
 		assertEquals(0, frontierTail.getInt());
 		assertEquals(0, frontierTail.getInt());
 		int physicalCounterBytes = targetVersion < 14 ? 2 * Long.BYTES : 0;
