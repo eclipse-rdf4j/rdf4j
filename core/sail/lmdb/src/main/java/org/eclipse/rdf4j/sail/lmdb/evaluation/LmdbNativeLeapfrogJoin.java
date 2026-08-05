@@ -583,7 +583,7 @@ final class LmdbNativeLeapfrogJoin {
 		 * depth-first, so their reuse is always "same resolved key as the previous entry at this level".
 		 */
 		Frontier constantFrontier(int patternIndex, int slot, RowState row, boolean needCounts,
-				NativeLmdbQuerySource.NativeProbe probe) throws IOException {
+				LeapfrogCursor cursor) throws IOException {
 			PatternPlan pattern = patterns[patternIndex];
 			FrontierKey key = new FrontierKey(patternIndex, pattern.s.lookup(row.slots), pattern.p.lookup(row.slots),
 					pattern.o.lookup(row.slots), pattern.c.lookup(row.slots),
@@ -593,7 +593,7 @@ final class LmdbNativeLeapfrogJoin {
 				return cached;
 			}
 			// Materialized on purpose: this cache is shared by every parallel worker and budgeted by value count.
-			Frontier frontier = scanFrontier(pattern, slot, row, needCounts, probe, false);
+			Frontier frontier = scanFrontier(pattern, patternIndex, slot, row, needCounts, cursor, false);
 			if (cachedValues.get() + frontier.sizeBound() <= MAX_CACHED_VALUES) {
 				if (frontierCache.putIfAbsent(key, frontier) == null) {
 					cachedValues.addAndGet(frontier.sizeBound());
@@ -699,6 +699,16 @@ final class LmdbNativeLeapfrogJoin {
 		private final RowState row;
 		/** Lazily created reusable probes, one per core pattern, so prefix-bound scans reuse LMDB cursor machinery. */
 		private final NativeLmdbQuerySource.NativeProbe[] probes;
+		/**
+		 * Per-pattern memoized adjacency adapter, so the many frontier scans of one pattern reuse a single adapter (and
+		 * therefore its retained page-decode locality) instead of rebuilding a cold adapter — and re-decoding the same
+		 * CSF pages — for every probed key. Keyed by the pattern's current {@code (predicate, direction)}; rebuilt when
+		 * either changes. One adapter per pattern is required for correctness: distinct binding sites must keep
+		 * independent run/page cursors, so this is memoized per pattern rather than deduplicated on the shared probe.
+		 */
+		private final NativeLmdbQuerySource.NativeAdjacency[] adjacencies;
+		private final long[] adjacencyPreds;
+		private final boolean[] adjacencyBySubject;
 		private Level[] levels;
 		private NativeBooleanFilter[] openCoveredFilters;
 		private ParallelLeapfrog parallel;
@@ -726,6 +736,9 @@ final class LmdbNativeLeapfrogJoin {
 			this.allowParallel = allowParallel;
 			this.filters = filters;
 			this.probes = new NativeLmdbQuerySource.NativeProbe[plan.patterns.length];
+			this.adjacencies = new NativeLmdbQuerySource.NativeAdjacency[plan.patterns.length];
+			this.adjacencyPreds = new long[plan.patterns.length];
+			this.adjacencyBySubject = new boolean[plan.patterns.length];
 		}
 
 		private NativeLmdbQuerySource.NativeProbe probe(int patternIndex) {
@@ -735,6 +748,29 @@ final class LmdbNativeLeapfrogJoin {
 				probes[patternIndex] = probe;
 			}
 			return probe;
+		}
+
+		/**
+		 * Returns the adjacency adapter for {@code patternIndex} at the current {@code (pred, bySubject)}, reusing the
+		 * previously built adapter when both match so its page-decode locality survives across frontier scans. A single
+		 * slot per pattern suffices: within one pattern the frontier calls are serial, and the predicate is constant
+		 * for the common case (rebuilt only when a runtime-bound predicate changes). {@code null} results are not
+		 * cached, so a not-covered plane simply re-decides on the next call, exactly as before.
+		 */
+		private NativeLmdbQuerySource.NativeAdjacency adjacency(int patternIndex, long pred, boolean bySubject)
+				throws IOException {
+			NativeLmdbQuerySource.NativeAdjacency cached = adjacencies[patternIndex];
+			if (cached != null && adjacencyPreds[patternIndex] == pred
+					&& adjacencyBySubject[patternIndex] == bySubject) {
+				return cached;
+			}
+			NativeLmdbQuerySource.NativeAdjacency built = probe(patternIndex).adjacency(pred, bySubject);
+			if (built != null) {
+				adjacencies[patternIndex] = built;
+				adjacencyPreds[patternIndex] = pred;
+				adjacencyBySubject[patternIndex] = bySubject;
+			}
+			return built;
 		}
 
 		@Override
@@ -1022,7 +1058,7 @@ final class LmdbNativeLeapfrogJoin {
 		private Frontier memberFrontier(LeapfrogCursor cursor, RowState row, int m, PatternPlan member,
 				boolean needCounts, boolean allowView) throws IOException {
 			if (!member.hasRuntimeBoundSlot(row)) {
-				return cursor.plan.constantFrontier(members[m], slot, row, needCounts, cursor.probe(members[m]));
+				return cursor.plan.constantFrontier(members[m], slot, row, needCounts, cursor);
 			}
 			if (memoFrontier == null) {
 				memoFrontier = new Frontier[members.length];
@@ -1038,7 +1074,7 @@ final class LmdbNativeLeapfrogJoin {
 					&& memoKeys[keyBase + 3] == c) {
 				return memoFrontier[m];
 			}
-			Frontier frontier = scanFrontier(member, slot, row, needCounts, cursor.probe(members[m]), allowView);
+			Frontier frontier = scanFrontier(member, members[m], slot, row, needCounts, cursor, allowView);
 			memoFrontier[m] = frontier;
 			memoKeys[keyBase] = s;
 			memoKeys[keyBase + 1] = p;
@@ -1501,9 +1537,9 @@ final class LmdbNativeLeapfrogJoin {
 	 * When {@code allowView} is set and no duplicate counts are needed, the run is handed back as a {@link RunFrontier}
 	 * — the intersection then seeks inside it instead of copying it out.
 	 */
-	private static Frontier adjacencyFrontier(PatternPlan pattern, int slot, RowState row, boolean needCounts,
-			NativeLmdbQuerySource.NativeProbe probe, boolean allowView) throws IOException {
-		if (probe == null || pattern.hasRepeatedSlot() || pattern.range != null || pattern.statementOrder != null) {
+	private static Frontier adjacencyFrontier(PatternPlan pattern, int patternIndex, int slot, RowState row,
+			boolean needCounts, LeapfrogCursor leapfrog, boolean allowView) throws IOException {
+		if (leapfrog == null || pattern.hasRepeatedSlot() || pattern.range != null || pattern.statementOrder != null) {
 			return null;
 		}
 		if (pattern.namedContextScope || pattern.contexts.isFixed() || pattern.c.lookup(row.slots) != UNKNOWN) {
@@ -1534,9 +1570,9 @@ final class LmdbNativeLeapfrogJoin {
 			if (needCounts || !keyIsFreeSlot) {
 				return null;
 			}
-			return enumeratedKeyFrontier(probe, pred, !bySubject);
+			return enumeratedKeyFrontier(leapfrog, patternIndex, pred, !bySubject);
 		}
-		NativeLmdbQuerySource.NativeAdjacency adjacency = probe.adjacency(pred, bySubject);
+		NativeLmdbQuerySource.NativeAdjacency adjacency = leapfrog.adjacency(patternIndex, pred, bySubject);
 		if (adjacency == null || !adjacency.runsNeighborOrdered()) {
 			return null;
 		}
@@ -1593,9 +1629,9 @@ final class LmdbNativeLeapfrogJoin {
 	 * position: the distinct, unsigned-ascending set of keys with at least one visible entry at this snapshot. Returns
 	 * {@code null} when the plane is unavailable or cannot enumerate keys.
 	 */
-	private static Frontier enumeratedKeyFrontier(NativeLmdbQuerySource.NativeProbe probe, long pred,
+	private static Frontier enumeratedKeyFrontier(LeapfrogCursor leapfrog, int patternIndex, long pred,
 			boolean bySubject) throws IOException {
-		NativeLmdbQuerySource.NativeAdjacency adjacency = probe.adjacency(pred, bySubject);
+		NativeLmdbQuerySource.NativeAdjacency adjacency = leapfrog.adjacency(patternIndex, pred, bySubject);
 		if (adjacency == null || !adjacency.supportsKeyEnumeration()) {
 			return null;
 		}
@@ -1618,10 +1654,10 @@ final class LmdbNativeLeapfrogJoin {
 	 * One bounded scan collecting the distinct values at {@code slot}'s quad position given the pattern's currently
 	 * bound terms. Values are sorted in unsigned id order; duplicate counts are collected when requested.
 	 */
-	private static Frontier scanFrontier(PatternPlan pattern, int slot, RowState row, boolean needCounts,
-			NativeLmdbQuerySource.NativeProbe probe, boolean allowView) throws IOException {
+	private static Frontier scanFrontier(PatternPlan pattern, int patternIndex, int slot, RowState row,
+			boolean needCounts, LeapfrogCursor leapfrog, boolean allowView) throws IOException {
 		if (directFrontiersEnabled()) {
-			Frontier direct = adjacencyFrontier(pattern, slot, row, needCounts, probe, allowView);
+			Frontier direct = adjacencyFrontier(pattern, patternIndex, slot, row, needCounts, leapfrog, allowView);
 			if (direct != null) {
 				FRONTIERS_ADJACENCY.incrementAndGet();
 				return direct;
@@ -1631,7 +1667,7 @@ final class LmdbNativeLeapfrogJoin {
 		int quadPosition = pattern.quadPositionOfSlot(slot);
 		long[] collected = new long[16];
 		int size = 0;
-		try (PatternCursor cursor = pattern.openRaw(row, probe)) {
+		try (PatternCursor cursor = pattern.openRaw(row, leapfrog.probe(patternIndex))) {
 			long[] quad;
 			while ((quad = cursor.next()) != null) {
 				if (size == collected.length) {
