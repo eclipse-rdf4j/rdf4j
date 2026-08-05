@@ -1579,11 +1579,38 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append("    if (rh > 0L) {\n");
 				body.append(indent).append("        long m = 0L;\n");
 				body.append(indent).append("        long end = ").append(view).append(".size(rh);\n");
-				body.append(indent).append("        for (long i = 0L; i < end; i++) {\n");
-				body.append(indent).append("            if (").append(view).append(".neighborAt(rh, i) == target) {\n");
-				body.append(indent).append("                m++;\n");
-				body.append(indent).append("            }\n");
-				body.append(indent).append("        }\n");
+				if (close.seek) {
+					body.append(indent)
+							.append("        long off = ")
+							.append(view)
+							.append(".lowerBound(rh, 0L, target, 0L);\n");
+					body.append(indent).append("        if (off >= 0L) {\n");
+					body.append(indent)
+							.append("            for (long i = off; i < end && ")
+							.append(view)
+							.append(".neighborAt(rh, i) == target; i++) {\n");
+					body.append(indent).append("                m++;\n");
+					body.append(indent).append("            }\n");
+					body.append(indent).append("        } else {\n");
+					body.append(indent).append("            for (long i = 0L; i < end; i++) {\n");
+					body.append(indent)
+							.append("                if (")
+							.append(view)
+							.append(".neighborAt(rh, i) == target) {\n");
+					body.append(indent).append("                    m++;\n");
+					body.append(indent).append("                }\n");
+					body.append(indent).append("            }\n");
+					body.append(indent).append("        }\n");
+				} else {
+					body.append(indent).append("        for (long i = 0L; i < end; i++) {\n");
+					body.append(indent)
+							.append("            if (")
+							.append(view)
+							.append(".neighborAt(rh, i) == target) {\n");
+					body.append(indent).append("                m++;\n");
+					body.append(indent).append("            }\n");
+					body.append(indent).append("        }\n");
+				}
 				if (close.multiplicity) {
 					body.append(indent).append("        reps = m;\n");
 				} else {
@@ -2078,19 +2105,56 @@ final class LmdbNativeKernelEmitter {
 						.append(indent)
 						.append("        long end = ")
 						.append(a)
-						.append(".size(rh);\n")
-						.append(indent)
-						.append("        for (long i = 0L; i < end; i++) {\n")
-						.append(indent)
-						.append("            if (")
-						.append(a)
-						.append(".neighborAt(rh, i) == target) {\n")
-						.append(indent)
-						.append("                m++;\n")
-						.append(indent)
-						.append("            }\n")
-						.append(indent)
-						.append("        }\n");
+						.append(".size(rh);\n");
+				if (close.seek) {
+					// Runs are (neighbor,context)-ordered, so equal neighbors are contiguous: seek to the first
+					// occurrence of the target and count the equal block. lowerBound returns -1 only for a view that
+					// cannot seek, in which case fall back to a full linear scan so the kernel stays correct against
+					// the interface contract.
+					body.append(indent)
+							.append("        long off = ")
+							.append(a)
+							.append(".lowerBound(rh, 0L, target, 0L);\n")
+							.append(indent)
+							.append("        if (off >= 0L) {\n")
+							.append(indent)
+							.append("            for (long i = off; i < end && ")
+							.append(a)
+							.append(".neighborAt(rh, i) == target; i++) {\n")
+							.append(indent)
+							.append("                m++;\n")
+							.append(indent)
+							.append("            }\n")
+							.append(indent)
+							.append("        } else {\n")
+							.append(indent)
+							.append("            for (long i = 0L; i < end; i++) {\n")
+							.append(indent)
+							.append("                if (")
+							.append(a)
+							.append(".neighborAt(rh, i) == target) {\n")
+							.append(indent)
+							.append("                    m++;\n")
+							.append(indent)
+							.append("                }\n")
+							.append(indent)
+							.append("            }\n")
+							.append(indent)
+							.append("        }\n");
+				} else {
+					body.append(indent)
+							.append("        for (long i = 0L; i < end; i++) {\n")
+							.append(indent)
+							.append("            if (")
+							.append(a)
+							.append(".neighborAt(rh, i) == target) {\n")
+							.append(indent)
+							.append("                m++;\n")
+							.append(indent)
+							.append("            }\n")
+							.append(indent)
+							.append("        }\n");
+				}
 				if (close.multiplicity && !booleanMode) {
 					body.append(indent)
 							.append("        for (long r = 0L; r < m; r++) {\n")

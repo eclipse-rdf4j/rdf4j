@@ -164,7 +164,9 @@ class LmdbNativeKernelLoweringTest {
 				new MaskedFilter[0]);
 		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, freshRow(), null);
 		assertNotNull(lowered);
-		assertTrue(lowered.kernel.shapeKey().contains("C(a2,v2,v0,m);"), lowered.kernel.shapeKey());
+		// The closing edge lowers to a ProbeClose in seek mode by default (the ",k" token), so the run's target is
+		// found with a binary-search seek instead of a linear scan.
+		assertTrue(lowered.kernel.shapeKey().contains("C(a2,v2,v0,m,k);"), lowered.kernel.shapeKey());
 	}
 
 	@Test

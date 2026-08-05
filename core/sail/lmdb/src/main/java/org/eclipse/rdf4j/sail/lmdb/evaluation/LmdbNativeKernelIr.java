@@ -408,12 +408,24 @@ final class LmdbNativeKernelIr {
 		final Operand key;
 		final Operand target;
 		final boolean multiplicity;
+		/**
+		 * When true, the emitter finds the target in the key's run with a binary-search seek ({@code lowerBound})
+		 * instead of a full linear scan. Runs are {@code (neighbor,context)}-ordered, so all occurrences of a target
+		 * neighbor are contiguous; the seek jumps to the first and a short loop counts the equal block. Folded into the
+		 * shape key so the seek and linear forms are distinct compiled classes.
+		 */
+		final boolean seek;
 
 		ProbeClose(int adjacency, Operand key, Operand target, boolean multiplicity) {
+			this(adjacency, key, target, multiplicity, false);
+		}
+
+		ProbeClose(int adjacency, Operand key, Operand target, boolean multiplicity, boolean seek) {
 			this.adjacency = adjacency;
 			this.key = key;
 			this.target = target;
 			this.multiplicity = multiplicity;
+			this.seek = seek;
 		}
 
 		@Override
@@ -425,6 +437,7 @@ final class LmdbNativeKernelIr {
 					.append(',')
 					.append(target.token())
 					.append(multiplicity ? ",m" : ",s")
+					.append(seek ? ",k" : "")
 					.append(");");
 		}
 
@@ -1249,6 +1262,18 @@ final class LmdbNativeKernelIr {
 
 	static boolean resumableEnabled() {
 		return !"false".equals(System.getProperty(RESUMABLE_PROPERTY));
+	}
+
+	/**
+	 * Enables the {@code ProbeClose} binary-search seek ({@code lowerBound}) instead of a full linear run scan. On by
+	 * default: it is a strict improvement that self-guards (the emitted code falls back to a linear scan when a view
+	 * returns -1 from {@code lowerBound}). Read at lowering time and folded into the shape key via
+	 * {@code ProbeClose.seek}.
+	 */
+	static final String PROBE_CLOSE_SEEK_PROPERTY = "rdf4j.lmdb.janinoCodegen.probeCloseSeek";
+
+	static boolean probeCloseSeekEnabled() {
+		return !"false".equals(System.getProperty(PROBE_CLOSE_SEEK_PROPERTY));
 	}
 
 	/**

@@ -1155,7 +1155,8 @@ final class LmdbNativeKernelLowering {
 			}
 			if (subject != null && object != null) {
 				int adj = adjacency(pattern.p.constant, true, false);
-				currentDepthNodes().add(new LmdbNativeKernelIr.ProbeClose(adj, subject, object, true));
+				currentDepthNodes().add(new LmdbNativeKernelIr.ProbeClose(adj, subject, object, true,
+						LmdbNativeKernelIr.probeCloseSeekEnabled()));
 				return true;
 			}
 			if (subject == null && object == null && pattern.s.hasSlot() && pattern.o.hasSlot()) {
@@ -1903,7 +1904,8 @@ final class LmdbNativeKernelLowering {
 					Operand endpoint = witnessOperand(pattern.s, witnessCols);
 					if (endpoint != null) {
 						int adj = adjacency(pattern.p.constant, true, false);
-						pipeline.add(new LmdbNativeKernelIr.ProbeClose(adj, endpoint, endpoint, false));
+						pipeline.add(new LmdbNativeKernelIr.ProbeClose(adj, endpoint, endpoint, false,
+								LmdbNativeKernelIr.probeCloseSeekEnabled()));
 						return true;
 					}
 				}
@@ -1961,7 +1963,8 @@ final class LmdbNativeKernelLowering {
 			Operand object = witnessOperand(o, witnessCols);
 			if (subject != null && object != null) {
 				int adj = adjacency(predicate, true, false);
-				pipeline.add(new LmdbNativeKernelIr.ProbeClose(adj, subject, object, false));
+				pipeline.add(new LmdbNativeKernelIr.ProbeClose(adj, subject, object, false,
+						LmdbNativeKernelIr.probeCloseSeekEnabled()));
 				return true;
 			}
 			// Existential endpoints may carry a slot (readable by later witness patterns) or be fully anonymous.
