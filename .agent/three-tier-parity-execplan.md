@@ -20,7 +20,7 @@ Scope boundary set by the user (2026-08-04): implement missing algorithms, short
 - [x] (2026-08-04) This ExecPlan authored; all file/line anchors verified against the working tree the same day. Line numbers WILL drift as work proceeds — re-verify with `rg` before editing.
 - [x] (2026-08-04) Milestone 0 harness built: `ThreeTierParityBenchmark` (41 cells over three datasets, regime as a JMH `@Param`), `ThreeTierEngagementCensusTest` (per-regime engagement witness, green), `ThreeTierParityCorpus` / `ThreeTierRegime` / `ThreeTierParityFixtures` support classes, the test-scope bridge `AdjacencyEngagementTestAccess`, and `scripts/three-tier-report.py` with `scripts/test_three_tier_report.py` (10 tests, green). Nothing wired into production.
 - [x] (2026-08-04) Milestone 0 baseline complete: generated-dataset matrix (35 cells, 9 clean captures, 0 inverted / 10 OK / 60 overlap) and theme matrix (6 cells, 9 captures, 2 inverted / 1 OK / 9 overlap) recorded under Artifacts, both engagement censuses green (3 tests). The work list Milestones 1 to 10 must close is: one proven inverted cell (`themeHighlyConnectedQ4`, inverted on both rungs), four suspected inversions where a tier engages and its mean worsens (`chainJoinOpen`, `optionalHeavy`, `minusShape`, `sequencePath`), 22 of 35 generated cells with no kernel at all, and three cells needing the long-iteration protocol before any verdict (`themeAnalyticsQ9`, `cycle5ValuesCountMailboxHomepage`, `cycle5ValuesDistinctMailboxOrdered`).
-- [ ] Milestone 1: streaming adjacency frontiers with in-run galloping (`lowerBound`) and context columns (`copyContexts`).
+- [x] (2026-08-05) Milestone 1 delivered, with a **negative benchmark gate on its streaming half**: the run-view seek surface (`RunFrontier`/`RunCursor` with `lowerBound` galloping and in-place duplicate counts) is implemented and correct behind `rdf4j.lmdb.wcoj.streamingFrontiers.enabled`, but it is measurably slower than materializing on every cell measured, so the flag stays default OFF. The context-column half (bulk `copyNeighbors`/`copyContexts`, and skipping the context column outright when the plan restricts no graphs) landed unflagged at parity. Stale `directFrontiers` javadoc fixed. Full `core/sail/lmdb` verify clean (2940 unit + 118 IT, zero failures).
 - [ ] Milestone 2: adjacency-served semijoins — O(1) EXISTS edge checks, run-intersection semijoin, membership/left-join probe integration.
 - [ ] Milestone 3: adjacency coverage residuals — context-bound root scans, object-order scans, exact-empty plan pruning, row-side factorized branch cache consult.
 - [ ] Milestone 4: correlated-entry batching completeness (accumulate SEMI/ANTI/multi-key/conditions; estimate-triggered single-pattern OPTIONAL build; inner correlated fragments).
@@ -61,6 +61,18 @@ Scope boundary set by the user (2026-08-04): implement missing algorithms, short
   Evidence: `ls -d $TMPDIR/rdf4j-lmdb-three-tier-*` returned 29 directories mid-sweep and `du -shc` 806 MB; after the fix a full census run leaves zero.
 - Observation: (2026-08-04, M0) JMH stops forwarding a forked JVM's stdout before `@TearDown(Level.Trial)` runs, so a once-per-trial engagement summary never reaches the result file. The benchmark reports the witness per measured iteration instead, which also makes it a steady-state delta rather than a total inflated by preparation.
   Evidence: a trial-teardown print produced zero matches in the captured result file; the same print at `Level.Iteration` appears in it.
+- Observation: (2026-08-05, M1) **The rule this plan wrote for Milestone 1 — "view path when `runsNeighborOrdered()` and no counts needed; materialize otherwise" — makes the feature dead code on the shapes it was written for.** In a triangle, a member is served from a bound-key adjacency run exactly when its key endpoint is already bound; the frontier slot is then that member's *other* endpoint, i.e. its last free slot, i.e. its final level — which is precisely when duplicate counts are required (unrestricted context). Counting members and run-served members are the same members. Implemented literally, `FRONTIERS_STREAMED` stayed at 0 for every cell, which is how this was found.
+  Evidence: first green-attempt run of `LmdbWcojStreamingFrontierTest` — 3 parity tests passing, both engagement assertions failing at `0`, with the view branch present and the flag set.
+  Resolution: the run cursor counts duplicates in place instead of declining. Runs are (neighbor, context)-ordered, so a value's multiplicity is the width of its equal-neighbor group, and the group's end is the same lower-bound probe the cursor already needs to skip duplicates — so counts cost nothing extra and no `copyNeighbors` fallback is needed. The plan's fallback clause is therefore unused.
+- Observation: (2026-08-05, M1) Only the *first* member visited at a level can be spared materialization-free treatment: it becomes the intersection accumulator, which the level iterates by index in `advance` and which the parallel path tiles into worker ranges, so it must be an array. Since members are visited in ascending static estimate, the materialized one is always the smallest and every larger run streams — which is the distribution the optimization wanted anyway.
+- Observation: (2026-08-05, M1) The `copyContexts` half of Milestone 1 turned out to be worth more as a *skip* than as a bulk copy: the four adjacency expansion loops in `LmdbNativePathPlan` read one context per neighbor purely to feed `acceptsContext`, and for an unrestricted-graph traversal that predicate is constantly true. `PathPlan.acceptsAllContexts()` now decides once per run, and the context column is only touched when the plan actually restricts contexts; neighbors are bulk-copied either way.
+- Observation: (2026-08-05, M1) **Seeking in place loses to materializing, and the premise behind it is wrong twice over.** Milestone 1 assumed the copy-then-intersect pattern wastes both time and allocation. Measured on `FoafCliqueQueryBenchmark.cycle3` with `-prof gc`, paired flag off/on:
+  - Sparse (the shipped 15000-edge fixture, `knows` fan-out ~3–6): 5.791 ± 0.539 → 5.853 ± 0.441 ms/op, allocation 120.8 ± 1.3 → 122.8 ± 2.4 MB/op. Indistinguishable in time; not one byte saved.
+  - Dense (`randomKnowsEdges=150000`, the case the design was written for), two paired runs: 18.967 ± 4.667 → 22.401 ± 1.147 and 18.675 ± 4.069 → 21.853 ± 4.834 ms/op; allocation 588.9 ± 4.0 → 588.1 ± 2.2 and 589.0 ± 3.8 → 588.0 ± 3.2 MB/op. Consistently ~17% slower on the mean, with allocation flat.
+
+  Two independent reasons, both worth carrying into later milestones. First, the frontier arrays were never the allocation driver: 588 MB/op is result rows and the per-level merged intersection arrays, so removing the member copies moves a rounding error. Second, on the paged-CSF adjacency base `copyNeighbors` is a *block decode* while `neighborAt`/`lowerBound` pay the decode per element — so "materialize once into a primitive array, then gallop over the array" beats "gallop inside the run" even when the run is large and the skips are real.
+  Consequence for Milestone 9, which this plan lists as depending on M1's "run-view seek surface": the seek surface exists and is correct, but the assumption that in-kernel galloping over runs is the fast shape is now contradicted by measurement on the interpreted side. M9 should either lower to a materialize-then-gallop kernel or first show that a kernel's per-element access avoids the decode cost the interpreter cannot.
+- Observation: (2026-08-05, M1) A cursor abstraction is not free at this scale. The first implementation routed *both* frontier kinds through a `FrontierCursor`, which allocated one cursor per intersection step even with the flag off — visible as the flag-off allocation baseline. The final shape keeps the original array-vs-array loop verbatim for materialized frontiers and uses a cursor only for run views, with the run frontier reusing a single cursor instance across re-entries (it is memoized per member, never shared across workers, and never has two live cursors).
 
 ## Decision Log
 
@@ -97,6 +109,12 @@ Scope boundary set by the user (2026-08-04): implement missing algorithms, short
 - Decision: Milestone 0's corpus lives in one enum (`ThreeTierParityCorpus`) shared by the benchmark and the census, and the chain-shape data generation is duplicated from `AdjacencyQueryShapeBenchmark` rather than extracted into a shared helper.
   Rationale: one corpus definition means a JMH row and a census row for the same shape are the same query by construction. Duplicating twenty lines of fixture generation keeps the harness self-contained and leaves a benchmark the user is actively running untouched.
   Date/Author: 2026-08-04 / Claude (Milestone 0).
+- Decision: (M1) `rdf4j.lmdb.wcoj.streamingFrontiers.enabled` stays default OFF and the code stays in the tree. It is correct (5 focused tests, 27/27 clique parity, 26/26 differential fuzz, 8/8 direct-frontier, all with the flag on) but slower on every measured cell, so the standing parity-or-better gate refuses the flip. It is kept rather than reverted because Milestone 9 is specified against exactly this seek surface, and because the negative measurement is only meaningful if the thing measured survives to be re-measured on a different access path (a kernel's).
+  Rationale: the plan's own rule — "if a benchmark gate fails, the feature stays off and the code remains merge-safe".
+  Date/Author: 2026-08-05 / Claude (Milestone 1).
+- Decision: (M1) Only the first member visited at a level is materialized; it is the intersection accumulator, which `Level.advance` indexes and `ParallelLeapfrog` tiles, so it must be an array. The plan-level constant frontier cache stays materialized unconditionally — it is shared across parallel workers and budgeted in values — so run views only ever appear in the per-level per-member memo, which is what makes single-cursor reuse safe.
+  Rationale: forced by the existing consumers of `Level.values`; also puts the smallest run (members are visited in ascending static estimate) on the materialized side.
+  Date/Author: 2026-08-05 / Claude (Milestone 1).
 - Decision: Milestone order is harness → adjacency completions → interpreted completeness → kernel parity. Interpreted-side improvements (M4–M6) land BEFORE the kernel milestones that must beat them (M7–M10), so the kernel work is measured against its true target.
   Rationale: "Janino always faster than both" is only meaningful against the finished interpreter; building kernels first would validate them against a target that then moves.
   Date/Author: 2026-08-04 / Claude.
@@ -118,6 +136,16 @@ Four more cells (`chainJoinOpen`, `optionalHeavy`, `minusShape`, `sequencePath`)
 What the retrospective should carry forward as method, not result: the engagement witness paid for itself immediately by preventing a false positive (`cycle5` looks like a 13% kernel regression until `kernelOpens=0` proves both upper columns are the same code path) and by catching a false negative in the harness itself (the kernel counter omitted the legacy aggregate rung, hiding compiled grouped shapes). Two process failures are also worth carrying: a JVM-scoped JMH fixture leaks a store per forked cell unless a shutdown hook owns it, and running any compile during a measurement invalidates that capture — one capture had to be discarded and replaced for exactly that reason.
 
 What is not done: the plan's noise floor is still the binding constraint on 60 of 70 generated comparisons and on 9 of 12 theme comparisons. Before Milestone 1 claims anything, the long-iteration protocol needs to be defined concretely for the three cells whose error bars currently exceed any plausible effect (`themeAnalyticsQ9`, `cycle5ValuesCountMailboxHomepage`, `cycle5ValuesDistinctMailboxOrdered`), or those cells cannot be used as gates at all.
+
+### Milestone 1 (2026-08-05)
+
+Milestone 1 asked for two things and got a clear answer to both, one of them the answer the plan did not want.
+
+The streaming frontier is built, correct, and off. `LmdbNativeLeapfrogJoin` now has a `Frontier` abstraction with a materialized side (`ArrayFrontier`, byte-for-byte the old intersection loop) and a run-view side (`RunFrontier`/`RunCursor`) that seeks with `NativeAdjacency.lowerBound`, deduplicates by group boundary, and derives multiplicity from equal-neighbor group width — so the "materialize when counts are needed" fallback the plan specified was never needed and does not exist. What the plan did not anticipate is that materializing is simply the faster shape here: on the paged-CSF base, `copyNeighbors` is a block decode and per-element access is not, and the frontier arrays were never where the allocation was. Both dense pairs regress; the flag stays off; the seek surface survives for Milestone 9 to re-measure on a kernel's access path, with the warning that M9's premise is now contradicted on the interpreted side.
+
+The context-column work went the other way and is unflagged: four adjacency expansion loops in `LmdbNativePathPlan` were reading one context per neighbor to feed a predicate that is constantly true whenever the query restricts no graphs. They now bulk-copy neighbors and consult the context column only when the plan actually restricts contexts. Parity on all six path benchmark variants, and one fewer decode per edge on every unrestricted traversal.
+
+Method notes worth carrying: an abstraction introduced "for the flag-on path" silently taxed the flag-off path (one cursor allocation per intersection step) until the materialized side was given its original loop back — when a feature is gated, measure the gate closed as well as open. And the plan's own eligibility rule (`no counts needed`) would have produced a feature that never engages, which only the engagement counter revealed; a milestone that ships a capability without a counter proving it engaged cannot tell "off" from "broken".
 
 ## Context and Orientation
 
@@ -360,6 +388,29 @@ Report: 6 cells, 12 comparisons, 1 OK, 9 OVERLAP, **2 INVERTED**. Mean, ms, lmdb
     themeAnalyticsQ9          408.557 → 431.883 → 440.728   unusable error bars (±994 on 441); needs long iterations
 
 `themeHighlyConnectedQ4` is the plan's first proven inverted cell and the sharpest single result of Milestone 0. `themeAnalyticsQ9` must be re-measured under the long-iteration protocol before it is read at all — its janino interval is wider than its mean.
+
+### Milestone 1 gate (2026-08-05)
+
+Streaming frontiers, `FoafCliqueQueryBenchmark.cycle3`, 2 warm-up + 3 measurement iterations, one fork, `-prof gc`, paired off/on:
+
+    benchmark-results/tier-m1-cycle3-off-r1-2026-08-05.txt        benchmark-results/tier-m1-cycle3-on-r1-2026-08-05.txt
+    benchmark-results/tier-m1-cycle3-off-r2-2026-08-05.txt        benchmark-results/tier-m1-cycle3-on-r2-2026-08-05.txt
+    benchmark-results/tier-m1-cycle3dense-off-r{1,2}-2026-08-05.txt  benchmark-results/tier-m1-cycle3dense-on-r{1,2}-2026-08-05.txt
+
+The `r1` sparse pair predates the cursor rework (it measures the version that allocated a cursor per intersection step, including with the flag off) and is retained as the evidence that motivated the rework; `r2` and the dense pairs measure the final code. Verdict: no cell improves, the dense cells regress ~17% on the mean, allocation is flat. Flag stays OFF.
+
+Path bulk copy, `PropertyPathReachabilityBenchmark`, six variants, A/B against the committed `LmdbNativePathPlan` (HEAD version restored into the tree, measured, then the Milestone 1 version restored and measured):
+
+    benchmark-results/tier-m1-path-base-r1-2026-08-05.txt        benchmark-results/tier-m1-path-bulkcopy-r1-2026-08-05.txt
+
+    selectReachable    0.378 ± 0.024 → 0.374 ± 0.047
+    countReachable     0.145 ± 0.005 → 0.144 ± 0.002
+    reverseReachable   0.405 ± 0.163 → 0.399 ± 0.062
+    unboundStarts      1.278 ± 0.425 → 1.184 ± 0.070
+    boundDirect        0.010 ± 0.001 → 0.011 ± 0.001
+    boundExistence     0.012 ± 0.001 → 0.012 ± 0.003
+
+Every interval overlaps: parity, no regression. This benchmark's bushy-tree fixture has small runs, so it cannot show the win either; the change ships because it is behaviour-neutral, strictly fewer per-element virtual calls, and removes the context column read entirely from unrestricted traversals.
 
 ### Milestone 0 engagement census (2026-08-04)
 

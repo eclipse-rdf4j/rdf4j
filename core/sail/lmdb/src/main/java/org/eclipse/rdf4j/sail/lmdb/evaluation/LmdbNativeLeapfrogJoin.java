@@ -51,11 +51,19 @@ final class LmdbNativeLeapfrogJoin {
 	static final String ENABLED_PROPERTY = "rdf4j.lmdb.wcoj.enabled";
 	static final String PARALLEL_MIN_CANDIDATES_PROPERTY = "rdf4j.lmdb.wcoj.parallelMinCandidates";
 	/**
-	 * Opt-in (default off): serve member frontiers directly from the store's direct-adjacency runs — already (neighbor,
-	 * context)-ordered — instead of opening a fresh record iterator and sorting the collected values (ExecPlan
-	 * .agent/lmdb-join-strategy-execplan.md, Milestone 1).
+	 * Kill switch (default ON since 2026-07-31): serve member frontiers directly from the store's direct-adjacency runs
+	 * — already (neighbor, context)-ordered — instead of opening a fresh record iterator and sorting the collected
+	 * values (ExecPlan .agent/lmdb-join-strategy-execplan.md, Milestone 1). Set to {@code false} to force the record
+	 * iterator path.
 	 */
 	static final String DIRECT_FRONTIERS_PROPERTY = "rdf4j.lmdb.wcoj.directFrontiers.enabled";
+	/**
+	 * Opt-in (default off): intersect an adjacency-served frontier without materializing it, by seeking inside the
+	 * (neighbor, context)-ordered run with {@link NativeLmdbQuerySource.NativeAdjacency#lowerBound}. Only the smallest
+	 * member of a level is materialized (it becomes the intersection accumulator); every larger member streams
+	 * (ExecPlan .agent/three-tier-parity-execplan.md, Milestone 1).
+	 */
+	static final String STREAMING_FRONTIERS_PROPERTY = "rdf4j.lmdb.wcoj.streamingFrontiers.enabled";
 	/** Cyclic cores larger than this are left to the ordinary strategies (recognition cost sanity bound). */
 	private static final int MAX_CORE_PATTERNS = 16;
 
@@ -71,6 +79,8 @@ final class LmdbNativeLeapfrogJoin {
 	static final AtomicLong FRONTIERS_SCANNED = new AtomicLong();
 	/** Unbound-key frontiers served by enumerating an adjacency plane's key domain. Test hook. */
 	static final AtomicLong FRONTIERS_ENUMERATED = new AtomicLong();
+	/** Frontiers intersected in place on an adjacency run, with no materialized value array. Test hook. */
+	static final AtomicLong FRONTIERS_STREAMED = new AtomicLong();
 
 	private LmdbNativeLeapfrogJoin() {
 	}
@@ -86,6 +96,10 @@ final class LmdbNativeLeapfrogJoin {
 		return !"false".equalsIgnoreCase(System.getProperty(DIRECT_FRONTIERS_PROPERTY));
 	}
 
+	static boolean streamingFrontiersEnabled() {
+		return Boolean.getBoolean(STREAMING_FRONTIERS_PROPERTY);
+	}
+
 	static void resetMetrics() {
 		PLANNED.set(0);
 		OPENED.set(0);
@@ -93,6 +107,7 @@ final class LmdbNativeLeapfrogJoin {
 		FRONTIERS_ADJACENCY.set(0);
 		FRONTIERS_SCANNED.set(0);
 		FRONTIERS_ENUMERATED.set(0);
+		FRONTIERS_STREAMED.set(0);
 	}
 
 	/**
@@ -577,10 +592,11 @@ final class LmdbNativeLeapfrogJoin {
 			if (cached != null) {
 				return cached;
 			}
-			Frontier frontier = scanFrontier(pattern, slot, row, needCounts, probe);
-			if (cachedValues.get() + frontier.values.length <= MAX_CACHED_VALUES) {
+			// Materialized on purpose: this cache is shared by every parallel worker and budgeted by value count.
+			Frontier frontier = scanFrontier(pattern, slot, row, needCounts, probe, false);
+			if (cachedValues.get() + frontier.sizeBound() <= MAX_CACHED_VALUES) {
 				if (frontierCache.putIfAbsent(key, frontier) == null) {
-					cachedValues.addAndGet(frontier.values.length);
+					cachedValues.addAndGet(frontier.sizeBound());
 				}
 			}
 			return frontier;
@@ -1004,7 +1020,7 @@ final class LmdbNativeLeapfrogJoin {
 		 * the previous frontier is almost always the right one and no growing map is needed.
 		 */
 		private Frontier memberFrontier(LeapfrogCursor cursor, RowState row, int m, PatternPlan member,
-				boolean needCounts) throws IOException {
+				boolean needCounts, boolean allowView) throws IOException {
 			if (!member.hasRuntimeBoundSlot(row)) {
 				return cursor.plan.constantFrontier(members[m], slot, row, needCounts, cursor.probe(members[m]));
 			}
@@ -1022,7 +1038,7 @@ final class LmdbNativeLeapfrogJoin {
 					&& memoKeys[keyBase + 3] == c) {
 				return memoFrontier[m];
 			}
-			Frontier frontier = scanFrontier(member, slot, row, needCounts, cursor.probe(members[m]));
+			Frontier frontier = scanFrontier(member, slot, row, needCounts, cursor.probe(members[m]), allowView);
 			memoFrontier[m] = frontier;
 			memoKeys[keyBase] = s;
 			memoKeys[keyBase + 1] = p;
@@ -1048,36 +1064,59 @@ final class LmdbNativeLeapfrogJoin {
 				PatternPlan member = cursor.plan.patterns[members[m]];
 				boolean needCounts = !cursor.plan.isExistential(members[m]) && finalLevel[m]
 						&& mayMatchMultipleQuads(member);
-				Frontier frontier = memberFrontier(cursor, row, m, member, needCounts);
-				if (frontier.values.length == 0) {
+				// The first member visited becomes the intersection accumulator and must therefore be materialized;
+				// every later (larger) member is only ever read through a cursor, so it may stay in its run.
+				Frontier frontier = memberFrontier(cursor, row, m, member, needCounts, k > 0);
+				if (frontier.isEmpty()) {
 					values = Frontier.EMPTY_VALUES;
 					multiplicities = null;
 					position = -1;
 					return false;
 				}
 				if (intersection == null) {
-					intersection = frontier.values;
-					mult = frontier.counts;
+					intersection = frontier.values();
+					mult = frontier.counts();
 				} else {
-					long[] merged = new long[Math.min(intersection.length, frontier.values.length)];
+					long[] otherValues = frontier.values();
+					long[] merged = new long[Math.min(intersection.length, frontier.sizeBound())];
 					long[] mergedMult = new long[merged.length];
 					int out = 0;
 					int i = 0;
-					int j = 0;
-					while (i < intersection.length && j < frontier.values.length) {
-						int cmp = Long.compareUnsigned(intersection[i], frontier.values[j]);
-						if (cmp == 0) {
-							merged[out] = intersection[i];
-							long left = mult == null ? 1 : mult[i];
-							long right = frontier.counts == null ? 1 : frontier.counts[j];
-							mergedMult[out] = left * right;
-							out++;
-							i++;
-							j++;
-						} else if (cmp < 0) {
-							i = gallopTo(intersection, i + 1, frontier.values[j]);
-						} else {
-							j = gallopTo(frontier.values, j + 1, intersection[i]);
+					if (otherValues != null) {
+						long[] otherCounts = frontier.counts();
+						int j = 0;
+						while (i < intersection.length && j < otherValues.length) {
+							int cmp = Long.compareUnsigned(intersection[i], otherValues[j]);
+							if (cmp == 0) {
+								merged[out] = intersection[i];
+								long left = mult == null ? 1 : mult[i];
+								long right = otherCounts == null ? 1 : otherCounts[j];
+								mergedMult[out] = left * right;
+								out++;
+								i++;
+								j++;
+							} else if (cmp < 0) {
+								i = gallopTo(intersection, i + 1, otherValues[j]);
+							} else {
+								j = gallopTo(otherValues, j + 1, intersection[i]);
+							}
+						}
+					} else {
+						FrontierCursor other = frontier.open();
+						while (i < intersection.length && !other.atEnd()) {
+							int cmp = Long.compareUnsigned(intersection[i], other.value());
+							if (cmp == 0) {
+								merged[out] = intersection[i];
+								long left = mult == null ? 1 : mult[i];
+								mergedMult[out] = left * other.count();
+								out++;
+								i++;
+								other.next();
+							} else if (cmp < 0) {
+								i = gallopTo(intersection, i + 1, other.value());
+							} else {
+								other.seek(intersection[i]);
+							}
 						}
 					}
 					intersection = Arrays.copyOf(merged, out);
@@ -1187,15 +1226,258 @@ final class LmdbNativeLeapfrogJoin {
 		}
 	}
 
-	/** Sorted distinct candidate values (and optional duplicate counts) of one pattern position under a prefix. */
-	private static final class Frontier {
+	/**
+	 * Sorted distinct candidate values (and optional duplicate counts) of one pattern position under a prefix, either
+	 * materialized into arrays ({@link ArrayFrontier}) or left in the adjacency run it came from ({@link RunFrontier}).
+	 */
+	private abstract static class Frontier {
 		static final long[] EMPTY_VALUES = new long[0];
-		final long[] values;
-		final long[] counts;
 
-		Frontier(long[] values, long[] counts) {
+		abstract boolean isEmpty();
+
+		/** Upper bound on the number of distinct values; exact for a materialized frontier. */
+		abstract int sizeBound();
+
+		/** The materialized distinct values, or {@code null} when this frontier is a run view. */
+		long[] values() {
+			return null;
+		}
+
+		/** The materialized duplicate counts, or {@code null} when none were collected. */
+		long[] counts() {
+			return null;
+		}
+
+		/** A forward-only cursor over the distinct values, in unsigned ascending order. */
+		abstract FrontierCursor open();
+	}
+
+	/** A frontier whose distinct values (and optional counts) live in arrays. */
+	private static final class ArrayFrontier extends Frontier {
+		private final long[] values;
+		private final long[] counts;
+
+		ArrayFrontier(long[] values, long[] counts) {
 			this.values = values;
 			this.counts = counts;
+		}
+
+		@Override
+		boolean isEmpty() {
+			return values.length == 0;
+		}
+
+		@Override
+		int sizeBound() {
+			return values.length;
+		}
+
+		@Override
+		long[] values() {
+			return values;
+		}
+
+		@Override
+		long[] counts() {
+			return counts;
+		}
+
+		@Override
+		FrontierCursor open() {
+			throw new UnsupportedOperationException("materialized frontiers are intersected through their arrays");
+		}
+	}
+
+	/**
+	 * A frontier that stays in its adjacency run: distinct values are produced by seeking inside the (neighbor,
+	 * context)-ordered run, so an intersection member is never copied into a value array. Duplicate neighbors — the
+	 * same edge recorded under several contexts — are adjacent in the run, so a member's multiplicity is the width of
+	 * its equal-neighbor group and needs no extra pass.
+	 */
+	private static final class RunFrontier extends Frontier {
+		private final NativeLmdbQuerySource.NativeAdjacency adjacency;
+		private final long run;
+		private final long size;
+		private final boolean counted;
+		private RunCursor cursor;
+
+		RunFrontier(NativeLmdbQuerySource.NativeAdjacency adjacency, long run, long size, boolean counted) {
+			this.adjacency = adjacency;
+			this.run = run;
+			this.size = size;
+			this.counted = counted;
+		}
+
+		@Override
+		boolean isEmpty() {
+			return size <= 0;
+		}
+
+		@Override
+		int sizeBound() {
+			return (int) Math.min(size, Integer.MAX_VALUE - 8);
+		}
+
+		@Override
+		FrontierCursor open() {
+			// One cursor per frontier, reset on each open: a run frontier is memoized per member of one level, is
+			// never shared across threads (the cross-worker constant cache only ever holds materialized frontiers),
+			// and only one of its cursors is alive at a time, so reuse costs nothing and allocates nothing.
+			if (cursor == null) {
+				cursor = new RunCursor(adjacency, run, size, counted);
+			} else {
+				cursor.reset();
+			}
+			return cursor;
+		}
+	}
+
+	/** Forward-only iteration over a frontier's distinct values, with a seek that may skip ahead. */
+	private interface FrontierCursor {
+
+		boolean atEnd();
+
+		/** The current distinct value; only valid while {@link #atEnd()} is false. */
+		long value();
+
+		/** How many stored quads back the current value (always 1 when counts were not collected). */
+		long count();
+
+		/** Steps to the next distinct value. */
+		void next();
+
+		/** Positions at the first distinct value unsigned-≥ {@code target}, or at the end. */
+		void seek(long target);
+	}
+
+	/**
+	 * Iterates the distinct neighbors of one adjacency run without materializing it. Runs are (neighbor,
+	 * context)-ordered, so equal neighbors are adjacent and both "next distinct" and "seek" are one lower-bound probe:
+	 * {@code lowerBound(run, offset, target, 0)} lands on the first incidence whose neighbor is unsigned-≥
+	 * {@code target}. Views that cannot seek ({@code lowerBound} returning a negative value) fall back to galloping
+	 * over {@code neighborAt}.
+	 */
+	private static final class RunCursor implements FrontierCursor {
+		private final NativeLmdbQuerySource.NativeAdjacency adjacency;
+		private final long run;
+		private final long size;
+		private final boolean counted;
+		private long offset;
+		private long current;
+		/** Start of the next equal-neighbor group, or -1 when it has not been located yet. */
+		private long groupEnd = -1L;
+
+		RunCursor(NativeLmdbQuerySource.NativeAdjacency adjacency, long run, long size, boolean counted) {
+			this.adjacency = adjacency;
+			this.run = run;
+			this.size = size;
+			this.counted = counted;
+			reset();
+		}
+
+		void reset() {
+			offset = 0;
+			groupEnd = -1L;
+			if (size > 0) {
+				current = adjacency.neighborAt(run, 0);
+			}
+		}
+
+		@Override
+		public boolean atEnd() {
+			return offset >= size;
+		}
+
+		@Override
+		public long value() {
+			return current;
+		}
+
+		@Override
+		public long count() {
+			return counted ? groupEnd() - offset : 1;
+		}
+
+		@Override
+		public void next() {
+			long end = groupEnd();
+			offset = end;
+			groupEnd = -1L;
+			if (offset < size) {
+				current = adjacency.neighborAt(run, offset);
+			}
+		}
+
+		@Override
+		public void seek(long target) {
+			if (Long.compareUnsigned(target, current) <= 0) {
+				return;
+			}
+			positionAtOrAfter(target);
+		}
+
+		/** Offset one past the last incidence carrying the current neighbor. */
+		private long groupEnd() {
+			if (groupEnd >= 0) {
+				return groupEnd;
+			}
+			if (current == -1L) {
+				// The maximum unsigned id: nothing can follow it, so the group runs to the end of the run.
+				groupEnd = size;
+				return groupEnd;
+			}
+			long peek = offset + 1;
+			if (peek >= size || adjacency.neighborAt(run, peek) != current) {
+				// Overwhelmingly the common case — a neighbor recorded under a single context — so one element
+				// read decides it and no seek is paid.
+				groupEnd = Math.min(peek, size);
+				return groupEnd;
+			}
+			groupEnd = boundaryAtOrAfter(current + 1);
+			return groupEnd;
+		}
+
+		private void positionAtOrAfter(long target) {
+			offset = boundaryAtOrAfter(target);
+			groupEnd = -1L;
+			if (offset < size) {
+				current = adjacency.neighborAt(run, offset);
+			}
+		}
+
+		/** First offset at or after the current one whose neighbor is unsigned-≥ {@code target}. */
+		private long boundaryAtOrAfter(long target) {
+			long next = adjacency.lowerBound(run, offset, target, 0L);
+			if (next < 0 || next < offset) {
+				return gallopTo(target);
+			}
+			if (next < size && Long.compareUnsigned(adjacency.neighborAt(run, next), target) < 0) {
+				// Defensive: a view whose lower bound under-shoots would otherwise stall the intersection.
+				return gallopTo(target);
+			}
+			return next;
+		}
+
+		/** First run offset at or after the current one whose neighbor is unsigned-≥ {@code target}. */
+		private long gallopTo(long target) {
+			long lo = offset;
+			long hi = offset;
+			long bound = 1;
+			while (hi < size && Long.compareUnsigned(adjacency.neighborAt(run, hi), target) < 0) {
+				lo = hi + 1;
+				hi = offset + bound;
+				bound <<= 1;
+			}
+			hi = Math.min(hi, size);
+			while (lo < hi) {
+				long mid = (lo + hi) >>> 1;
+				if (Long.compareUnsigned(adjacency.neighborAt(run, mid), target) < 0) {
+					lo = mid + 1;
+				} else {
+					hi = mid;
+				}
+			}
+			return lo;
 		}
 	}
 
@@ -1214,9 +1496,13 @@ final class LmdbNativeLeapfrogJoin {
 	 * context)-ordered, so the frontier needs neither a record iterator nor a sort — equal neighbors are adjacent and
 	 * one dedup pass also yields the duplicate-quad counts. Returns {@code null} whenever the shape is not
 	 * representable or the view cannot answer ({@code NOT_COVERED}); the caller then uses the store scan.
+	 *
+	 * <p>
+	 * When {@code allowView} is set and no duplicate counts are needed, the run is handed back as a {@link RunFrontier}
+	 * — the intersection then seeks inside it instead of copying it out.
 	 */
 	private static Frontier adjacencyFrontier(PatternPlan pattern, int slot, RowState row, boolean needCounts,
-			NativeLmdbQuerySource.NativeProbe probe) throws IOException {
+			NativeLmdbQuerySource.NativeProbe probe, boolean allowView) throws IOException {
 		if (probe == null || pattern.hasRepeatedSlot() || pattern.range != null || pattern.statementOrder != null) {
 			return null;
 		}
@@ -1256,17 +1542,21 @@ final class LmdbNativeLeapfrogJoin {
 		}
 		long run = adjacency.find(key);
 		if (run == NativeLmdbQuerySource.NativeAdjacency.NOT_FOUND) {
-			return new Frontier(Frontier.EMPTY_VALUES, null);
+			return new ArrayFrontier(Frontier.EMPTY_VALUES, null);
 		}
 		if (run <= 0L) {
 			return null;
 		}
 		long size = adjacency.size(run);
 		if (size <= 0L) {
-			return new Frontier(Frontier.EMPTY_VALUES, null);
+			return new ArrayFrontier(Frontier.EMPTY_VALUES, null);
 		}
 		if (size > Integer.MAX_VALUE - 8) {
 			return null;
+		}
+		if (allowView && streamingFrontiersEnabled()) {
+			FRONTIERS_STREAMED.incrementAndGet();
+			return new RunFrontier(adjacency, run, size, needCounts);
 		}
 		int total = (int) size;
 		long[] neighbors = new long[total];
@@ -1295,7 +1585,7 @@ final class LmdbNativeLeapfrogJoin {
 		}
 		long[] values = distinct == total ? neighbors : Arrays.copyOf(neighbors, distinct);
 		long[] resultCounts = counts == null ? null : Arrays.copyOf(counts, distinct);
-		return new Frontier(values, resultCounts);
+		return new ArrayFrontier(values, resultCounts);
 	}
 
 	/**
@@ -1314,14 +1604,14 @@ final class LmdbNativeLeapfrogJoin {
 			return null;
 		}
 		if (count == 0) {
-			return new Frontier(Frontier.EMPTY_VALUES, null);
+			return new ArrayFrontier(Frontier.EMPTY_VALUES, null);
 		}
 		long[] keys = new long[(int) count];
 		for (int i = 0; i < keys.length; i++) {
 			keys[i] = adjacency.keyAt(i);
 		}
 		FRONTIERS_ENUMERATED.incrementAndGet();
-		return new Frontier(keys, null);
+		return new ArrayFrontier(keys, null);
 	}
 
 	/**
@@ -1329,9 +1619,9 @@ final class LmdbNativeLeapfrogJoin {
 	 * bound terms. Values are sorted in unsigned id order; duplicate counts are collected when requested.
 	 */
 	private static Frontier scanFrontier(PatternPlan pattern, int slot, RowState row, boolean needCounts,
-			NativeLmdbQuerySource.NativeProbe probe) throws IOException {
+			NativeLmdbQuerySource.NativeProbe probe, boolean allowView) throws IOException {
 		if (directFrontiersEnabled()) {
-			Frontier direct = adjacencyFrontier(pattern, slot, row, needCounts, probe);
+			Frontier direct = adjacencyFrontier(pattern, slot, row, needCounts, probe, allowView);
 			if (direct != null) {
 				FRONTIERS_ADJACENCY.incrementAndGet();
 				return direct;
@@ -1351,7 +1641,7 @@ final class LmdbNativeLeapfrogJoin {
 			}
 		}
 		if (size == 0) {
-			return new Frontier(Frontier.EMPTY_VALUES, null);
+			return new ArrayFrontier(Frontier.EMPTY_VALUES, null);
 		}
 		long[] values = Arrays.copyOf(collected, size);
 		unsignedSort(values);
@@ -1372,7 +1662,7 @@ final class LmdbNativeLeapfrogJoin {
 		}
 		long[] resultValues = distinct == size ? values : Arrays.copyOf(values, distinct);
 		long[] resultCounts = counts == null ? null : Arrays.copyOf(counts, distinct);
-		return new Frontier(resultValues, resultCounts);
+		return new ArrayFrontier(resultValues, resultCounts);
 	}
 
 	/** In-place unsigned ascending sort (matches LMDB key order for ids). */

@@ -301,6 +301,29 @@ final class PathPlan implements SlotPlan {
 		}
 		return !contexts.isFixed() || contexts.contains(contextId);
 	}
+
+	/**
+	 * True when {@link #acceptsContext(long)} is constantly true, so an adjacency expansion never has to read the
+	 * context column at all — the common unrestricted-graph traversal.
+	 */
+	boolean acceptsAllContexts() {
+		return !namedContextScope && !ctx.isConstant() && !contexts.isFixed();
+	}
+
+	/**
+	 * Copies one batch of an adjacency run into {@code scratch}: neighbors at {@code [0, copied)} and, only when this
+	 * plan restricts contexts, their contexts at {@code [BATCH_ROWS, BATCH_ROWS + copied)}. Bulk-copying beats the
+	 * per-incidence {@code neighborAt}/{@code contextAt} pair a run walk would otherwise pay, and an unrestricted plan
+	 * skips the context column entirely.
+	 */
+	static int copyRunBatch(NativeLmdbQuerySource.NativeAdjacency view, long run, long offset, int length,
+			long[] scratch, boolean withContexts) {
+		int copied = view.copyNeighbors(run, offset, length, scratch, 0);
+		if (copied > 0 && withContexts) {
+			view.copyContexts(run, offset, copied, scratch, BATCH_ROWS);
+		}
+		return copied;
+	}
 }
 
 /**
@@ -1272,14 +1295,23 @@ final class PathParallelExpansion implements AutoCloseable {
 							continue;
 						}
 						long runSize = cached.size(run);
-						for (long offset = 0L; offset < runSize; offset++) {
-							if (!plan.acceptsContext(cached.contextAt(run, offset))) {
-								continue;
+						boolean withContexts = !plan.acceptsAllContexts();
+						for (long offset = 0L; offset < runSize;) {
+							int batch = (int) Math.min(PathPlan.BATCH_ROWS, runSize - offset);
+							int copied = PathPlan.copyRunBatch(cached, run, offset, batch, buffer, withContexts);
+							if (copied <= 0) {
+								break;
 							}
-							if (size == delta.length) {
-								delta = Arrays.copyOf(delta, delta.length * 2);
+							for (int i = 0; i < copied; i++) {
+								if (withContexts && !plan.acceptsContext(buffer[PathPlan.BATCH_ROWS + i])) {
+									continue;
+								}
+								if (size == delta.length) {
+									delta = Arrays.copyOf(delta, delta.length * 2);
+								}
+								delta[size++] = buffer[i];
 							}
-							delta[size++] = cached.neighborAt(run, offset);
+							offset += copied;
 						}
 					} else {
 						try (PatternCursor cursor = plan.openStep(source, probe, near, nearPos, step.predicate)) {
@@ -1662,10 +1694,20 @@ final class PathCursor implements RowCursor {
 				continue;
 			}
 			long runSize = view.size(run);
-			for (long offset = 0L; offset < runSize; offset++) {
-				if (plan.acceptsContext(view.contextAt(run, offset)) && view.neighborAt(run, offset) == targetId) {
-					return stepIndex;
+			boolean withContexts = !plan.acceptsAllContexts();
+			for (long offset = 0L; offset < runSize;) {
+				int batch = (int) Math.min(PathPlan.BATCH_ROWS, runSize - offset);
+				int copied = PathPlan.copyRunBatch(view, run, offset, batch, buffer, withContexts);
+				if (copied <= 0) {
+					break;
 				}
+				for (int i = 0; i < copied; i++) {
+					if (buffer[i] == targetId
+							&& (!withContexts || plan.acceptsContext(buffer[PathPlan.BATCH_ROWS + i]))) {
+						return stepIndex;
+					}
+				}
+				offset += copied;
 			}
 		}
 		return -1;
@@ -1693,22 +1735,31 @@ final class PathCursor implements RowCursor {
 					continue;
 				}
 				long runSize = view.size(run);
-				for (long offset = 0L; offset < runSize; offset++) {
-					if (!plan.acceptsContext(view.contextAt(run, offset))) {
-						continue;
+				boolean withContexts = !plan.acceptsAllContexts();
+				for (long offset = 0L; offset < runSize;) {
+					int batch = (int) Math.min(PathPlan.BATCH_ROWS, runSize - offset);
+					int copied = PathPlan.copyRunBatch(view, run, offset, batch, buffer, withContexts);
+					if (copied <= 0) {
+						break;
 					}
-					long far = view.neighborAt(run, offset);
-					if (!ownSeen.add(far)) {
-						continue;
+					for (int i = 0; i < copied; i++) {
+						if (withContexts && !plan.acceptsContext(buffer[PathPlan.BATCH_ROWS + i])) {
+							continue;
+						}
+						long far = buffer[i];
+						if (!ownSeen.add(far)) {
+							continue;
+						}
+						if (oppositeSeen.contains(far)) {
+							bidirectionalMeet = true;
+							return EMPTY_FRONTIER;
+						}
+						if (nextSize == next.length) {
+							next = Arrays.copyOf(next, nextSize * 2);
+						}
+						next[nextSize++] = far;
 					}
-					if (oppositeSeen.contains(far)) {
-						bidirectionalMeet = true;
-						return EMPTY_FRONTIER;
-					}
-					if (nextSize == next.length) {
-						next = Arrays.copyOf(next, nextSize * 2);
-					}
-					next[nextSize++] = far;
+					offset += copied;
 				}
 			}
 		}
@@ -2163,20 +2214,29 @@ final class PathCursor implements RowCursor {
 
 	void expandCachedLevel(long[] currentLevel, NativeLmdbQuerySource.NativeAdjacency cached) {
 		PathPlan.ADJACENCY_EXPANSIONS.addAndGet(currentLevel.length);
+		boolean withContexts = !plan.acceptsAllContexts();
 		for (long near : currentLevel) {
 			long run = cached.find(near);
 			if (run <= 0L) {
 				continue;
 			}
 			long runSize = cached.size(run);
-			for (long offset = 0L; offset < runSize; offset++) {
-				if (!plan.acceptsContext(cached.contextAt(run, offset))) {
-					continue;
+			for (long offset = 0L; offset < runSize;) {
+				int batch = (int) Math.min(PathPlan.BATCH_ROWS, runSize - offset);
+				int copied = PathPlan.copyRunBatch(cached, run, offset, batch, buffer, withContexts);
+				if (copied <= 0) {
+					break;
 				}
-				long far = cached.neighborAt(run, offset);
-				if (!discovered.contains(far)) {
-					pushNextLevel(far);
+				for (int i = 0; i < copied; i++) {
+					if (withContexts && !plan.acceptsContext(buffer[PathPlan.BATCH_ROWS + i])) {
+						continue;
+					}
+					long far = buffer[i];
+					if (!discovered.contains(far)) {
+						pushNextLevel(far);
+					}
 				}
+				offset += copied;
 			}
 		}
 	}

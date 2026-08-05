@@ -45,6 +45,10 @@ public final class JoinDispatchTestAccess {
 		return LmdbNativeLeapfrogJoin.FRONTIERS_ENUMERATED.get();
 	}
 
+	public static long leapfrogStreamedFrontiers() {
+		return LmdbNativeLeapfrogJoin.FRONTIERS_STREAMED.get();
+	}
+
 	public static long janinoAggregatePlanned() {
 		return LmdbNativeJaninoAggregate.PLANNED.get();
 	}
