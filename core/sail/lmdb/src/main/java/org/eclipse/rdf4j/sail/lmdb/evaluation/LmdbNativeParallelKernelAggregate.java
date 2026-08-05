@@ -33,8 +33,6 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelBindings.KernelGroupLayout;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Aggregate;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateAdjKeys;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Node;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
 
 /**
@@ -71,21 +69,14 @@ final class LmdbNativeParallelKernelAggregate {
 		return Boolean.getBoolean(ENABLED_PROPERTY);
 	}
 
-	/** Deliberate fallback marker: the parallel attempt cannot serve this evaluation, the sequential drain must. */
-	private static final class ParallelKernelDecline extends RuntimeException {
-		private static final long serialVersionUID = 1L;
-
-		ParallelKernelDecline(String reason) {
-			super(reason, null, false, false);
-		}
-	}
-
 	/**
 	 * Runs the compiled aggregate partitioned across workers, or returns null when any gate fails and the sequential
-	 * kernel drain must run instead. Never partially emits: a failure inside the parallel attempt declines cleanly.
+	 * kernel drain must run instead. Never partially emits: a failure inside the parallel attempt declines cleanly. The
+	 * materialized {@code domains} are the query thread's — workers share the immutable arrays, which also guarantees
+	 * every worker slices the SAME domain ordering (per-worker re-materialization could not).
 	 */
 	static List<BindingSet> tryEvaluate(LmdbNativeKernelLowering.Lowered lowered,
-			NativeLmdbQuerySource.NativeAdjacency[] queryViews, SlotPlan arg, RowState row,
+			NativeLmdbQuerySource.NativeAdjacency[] queryViews, long[][] domains, SlotPlan arg, RowState row,
 			NativeGroupIteration emitter, TupleExpr explainTarget, Supplier<JaninoKernel> kernelFactory) {
 		if (!enabled() || !LmdbNativeParallelPipelines.enabled()) {
 			return null;
@@ -123,16 +114,11 @@ final class LmdbNativeParallelKernelAggregate {
 		if (bindings.filterHooks.length > 0 || !bindings.residualFilters.isEmpty()) {
 			return debugDecline("filter-hooks");
 		}
-		List<Node> pipeline = lowered.kernel.pipeline;
-		if (pipeline.isEmpty() || !(pipeline.get(0) instanceof EnumerateAdjKeys)) {
-			return debugDecline("root-not-key-enumeration");
-		}
-		int rootAdjacency = ((EnumerateAdjKeys) pipeline.get(0)).adjacency;
-		for (int i = 1; i < pipeline.size(); i++) {
-			Node node = pipeline.get(i);
-			if (node instanceof EnumerateAdjKeys && ((EnumerateAdjKeys) node).adjacency == rootAdjacency) {
-				return debugDecline("root-view-reenumerated");
-			}
+		int rootAdjacency = LmdbNativeKernelPartitions.partitionableRootAdjacency(lowered.kernel.pipeline);
+		int rootDomain = rootAdjacency >= 0 ? -1
+				: LmdbNativeKernelPartitions.partitionableRootDomain(lowered.kernel.pipeline);
+		if (rootAdjacency < 0 && rootDomain < 0) {
+			return debugDecline("root-not-partitionable");
 		}
 		int desiredWorkers = LmdbNativeParallelPipelines.configuredThreads();
 		if (desiredWorkers < 2) {
@@ -142,18 +128,13 @@ final class LmdbNativeParallelKernelAggregate {
 		if (!(totalWork >= LmdbNativeParallelPipelines.minimumWorkEstimate())) {
 			return debugDecline("below-threshold");
 		}
-		long rootKeys = queryViews[rootAdjacency].keyCount();
+		long rootKeys = rootAdjacency >= 0 ? queryViews[rootAdjacency].keyCount() : domains[rootDomain].length;
 		if (rootKeys < 2L * desiredWorkers) {
 			return debugDecline("root-too-small");
 		}
 		// The workers re-seed from the entry bindings; a live row carrying additional correlated slots would not be
 		// reproducible from the base, so such entries keep the sequential drain.
-		RowState seeded = new RowState(emitter.source, emitter.layout, emitter.base);
-		if (!NativeRowSeeder.seed(seeded.slots, emitter.layout, emitter.base, emitter.source)) {
-			return debugDecline("seed-unavailable");
-		}
-		seeded.recomputeBoundMask();
-		if (seeded.boundMask() != row.boundMask() || !Arrays.equals(seeded.slots, row.slots)) {
+		if (!LmdbNativeKernelPartitions.entryReseedable(emitter.source, emitter.layout, emitter.base, row)) {
 			return debugDecline("correlated-entry");
 		}
 		LmdbNativeParallelPipelines.TaskReservation reservation = LmdbNativeParallelPipelines.tryReserveTasks(false,
@@ -177,7 +158,8 @@ final class LmdbNativeParallelKernelAggregate {
 			if (sources == null) {
 				return debugDecline("snapshot-unavailable");
 			}
-			return execute(lowered, rootAdjacency, rootKeys, sources, threads, row, emitter, kernelFactory);
+			return execute(lowered, rootAdjacency, rootDomain, domains, rootKeys, sources, threads, row, emitter,
+					kernelFactory);
 		} finally {
 			cleanupFailure = LmdbNativeParallelPipelines.closeSources(sources, cleanupFailure);
 			reservation.close();
@@ -190,19 +172,10 @@ final class LmdbNativeParallelKernelAggregate {
 		}
 	}
 
-	private static List<BindingSet> execute(LmdbNativeKernelLowering.Lowered lowered, int rootAdjacency, long rootKeys,
-			NativeLmdbQuerySource.ParallelSource[] sources, int threads, RowState row, NativeGroupIteration emitter,
-			Supplier<JaninoKernel> kernelFactory) {
-		ConcurrentLinkedQueue<long[]> ranges = new ConcurrentLinkedQueue<>();
-		long chunkCount = Math.min(rootKeys, (long) threads * RANGES_PER_WORKER);
-		long chunk = rootKeys / chunkCount;
-		long remainder = rootKeys % chunkCount;
-		long at = 0L;
-		for (long c = 0; c < chunkCount; c++) {
-			long size = chunk + (c < remainder ? 1L : 0L);
-			ranges.add(new long[] { at, at + size });
-			at += size;
-		}
+	private static List<BindingSet> execute(LmdbNativeKernelLowering.Lowered lowered, int rootAdjacency, int rootDomain,
+			long[][] domains, long rootKeys, NativeLmdbQuerySource.ParallelSource[] sources, int threads, RowState row,
+			NativeGroupIteration emitter, Supplier<JaninoKernel> kernelFactory) {
+		ConcurrentLinkedQueue<long[]> ranges = LmdbNativeKernelPartitions.ranges(rootKeys, threads, RANGES_PER_WORKER);
 		AtomicReference<Throwable> failure = new AtomicReference<>();
 		ArrayList<Future<HashMap<LongsKey, Partial>>> futures = new ArrayList<>(threads);
 		for (int w = 0; w < threads; w++) {
@@ -210,7 +183,8 @@ final class LmdbNativeParallelKernelAggregate {
 			try {
 				futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
 					try {
-						return runWorker(lowered, rootAdjacency, source, emitter, ranges, kernelFactory, failure);
+						return runWorker(lowered, rootAdjacency, rootDomain, domains, source, emitter, ranges,
+								kernelFactory, failure);
 					} catch (Throwable t) {
 						failure.compareAndSet(null, t);
 						throw t;
@@ -317,14 +291,15 @@ final class LmdbNativeParallelKernelAggregate {
 	}
 
 	private static HashMap<LongsKey, Partial> runWorker(LmdbNativeKernelLowering.Lowered lowered, int rootAdjacency,
-			NativeLmdbQuerySource source, NativeGroupIteration emitter, Queue<long[]> ranges,
-			Supplier<JaninoKernel> kernelFactory, AtomicReference<Throwable> failure) throws IOException {
+			int rootDomain, long[][] domains, NativeLmdbQuerySource source, NativeGroupIteration emitter,
+			Queue<long[]> ranges, Supplier<JaninoKernel> kernelFactory, AtomicReference<Throwable> failure)
+			throws IOException {
 		LmdbNativeKernelBindings bindings = lowered.bindings;
 		Aggregate aggregate = (Aggregate) lowered.kernel.terminal;
 		KernelGroupLayout layout = bindings.groupLayout;
 		RowState workerRow = new RowState(source, emitter.layout, emitter.base);
 		if (!NativeRowSeeder.seed(workerRow.slots, emitter.layout, emitter.base, source)) {
-			throw new ParallelKernelDecline("worker-seed-unavailable");
+			throw new LmdbNativeKernelPartitions.ParallelKernelDecline("worker-seed-unavailable");
 		}
 		workerRow.recomputeBoundMask();
 		HashMap<LongsKey, Partial> merged = new HashMap<>();
@@ -333,9 +308,8 @@ final class LmdbNativeParallelKernelAggregate {
 		try {
 			NativeLmdbQuerySource.NativeAdjacency[] views = bindings.requestAdjacencies(probe);
 			if (views == null) {
-				throw new ParallelKernelDecline("worker-adjacency-unavailable");
+				throw new LmdbNativeKernelPartitions.ParallelKernelDecline("worker-adjacency-unavailable");
 			}
-			long[][] domains = bindings.materializeDomains(probe, workerRow, "irAggregateParallel");
 			if (lowered.kernel.requirements.scans > 0) {
 				scanner = new LmdbNativeKernelScanner(workerRow, bindings.scanOrders);
 			}
@@ -345,15 +319,24 @@ final class LmdbNativeParallelKernelAggregate {
 			while ((range = ranges.poll()) != null && failure.get() == null) {
 				JaninoKernel kernel = kernelFactory.get();
 				if (kernel == null) {
-					throw new ParallelKernelDecline("kernel-instance-unavailable");
+					throw new LmdbNativeKernelPartitions.ParallelKernelDecline("kernel-instance-unavailable");
 				}
 				try {
 					LmdbNativeKernelHooks hooks = bindings.needsHooks()
 							? new LmdbNativeKernelHooks(workerRow, bindings)
 							: null;
-					NativeLmdbQuerySource.NativeAdjacency[] windowViews = views.clone();
-					windowViews[rootAdjacency] = new KeyWindowView(views[rootAdjacency], range[0], range[1]);
-					kernel.bind(bindings.context(windowViews, domains, workerRow, hooks, scanner));
+					NativeLmdbQuerySource.NativeAdjacency[] windowViews = views;
+					long[][] windowDomains = domains;
+					if (rootAdjacency >= 0) {
+						windowViews = views.clone();
+						windowViews[rootAdjacency] = new LmdbNativeKernelPartitions.KeyWindowView(views[rootAdjacency],
+								range[0], range[1]);
+					} else {
+						windowDomains = domains.clone();
+						windowDomains[rootDomain] = Arrays.copyOfRange(domains[rootDomain],
+								Math.toIntExact(range[0]), Math.toIntExact(range[1]));
+					}
+					kernel.bind(bindings.context(windowViews, windowDomains, workerRow, hooks, scanner));
 					int filled;
 					while ((filled = kernel.fill(buffer, FILL_ROWS)) > 0) {
 						for (int r = 0; r < filled; r++) {
@@ -503,75 +486,4 @@ final class LmdbNativeParallelKernelAggregate {
 		}
 	}
 
-	/**
-	 * The partition surface: identical to the delegate except that key enumeration only exposes the ordinal window
-	 * {@code [from, to)}. Probes by {@code find} pass through untouched, so downstream nodes sharing the view keep
-	 * their full semantics.
-	 */
-	private static final class KeyWindowView implements NativeLmdbQuerySource.NativeAdjacency {
-		private final NativeLmdbQuerySource.NativeAdjacency delegate;
-		private final long from;
-		private final long to;
-
-		KeyWindowView(NativeLmdbQuerySource.NativeAdjacency delegate, long from, long to) {
-			this.delegate = delegate;
-			this.from = from;
-			this.to = to;
-		}
-
-		@Override
-		public long find(long key) {
-			return delegate.find(key);
-		}
-
-		@Override
-		public long size(long runHandle) {
-			return delegate.size(runHandle);
-		}
-
-		@Override
-		public long neighborAt(long runHandle, long runOffset) {
-			return delegate.neighborAt(runHandle, runOffset);
-		}
-
-		@Override
-		public long contextAt(long runHandle, long runOffset) {
-			return delegate.contextAt(runHandle, runOffset);
-		}
-
-		@Override
-		public int copyNeighbors(long runHandle, long runOffset, int length, long[] target, int targetOffset) {
-			return delegate.copyNeighbors(runHandle, runOffset, length, target, targetOffset);
-		}
-
-		@Override
-		public int copyContexts(long runHandle, long runOffset, int length, long[] target, int targetOffset) {
-			return delegate.copyContexts(runHandle, runOffset, length, target, targetOffset);
-		}
-
-		@Override
-		public long lowerBound(long runHandle, long fromOffset, long neighbor, long context) {
-			return delegate.lowerBound(runHandle, fromOffset, neighbor, context);
-		}
-
-		@Override
-		public boolean supportsKeyEnumeration() {
-			return delegate.supportsKeyEnumeration();
-		}
-
-		@Override
-		public long keyCount() {
-			return to - from;
-		}
-
-		@Override
-		public long keyAt(long keyOrdinal) {
-			return delegate.keyAt(from + keyOrdinal);
-		}
-
-		@Override
-		public boolean runsNeighborOrdered() {
-			return delegate.runsNeighborOrdered();
-		}
-	}
 }

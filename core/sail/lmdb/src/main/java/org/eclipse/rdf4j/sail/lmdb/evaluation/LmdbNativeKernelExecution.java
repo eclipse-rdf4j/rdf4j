@@ -13,11 +13,13 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
@@ -72,12 +74,12 @@ final class LmdbNativeKernelExecution {
 	 * group rows, or null to let the ordinary ladder continue. RDF numeric state remains in the engine hook sidecar so
 	 * generated loops preserve exact SUM/AVG semantics without carrying objects.
 	 */
-	static java.util.List<org.eclipse.rdf4j.query.BindingSet> tryEvaluateAggregate(SlotPlan arg, RowState row,
+	static List<BindingSet> tryEvaluateAggregate(SlotPlan arg, RowState row,
 			int[] groupSlots, AggregateSpec[] aggregates, NativeGroupIteration emitter, TupleExpr explainTarget) {
 		return tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget, false);
 	}
 
-	private static java.util.List<org.eclipse.rdf4j.query.BindingSet> tryEvaluateAggregate(SlotPlan arg, RowState row,
+	private static List<BindingSet> tryEvaluateAggregate(SlotPlan arg, RowState row,
 			int[] groupSlots, AggregateSpec[] aggregates, NativeGroupIteration emitter, TupleExpr explainTarget,
 			boolean preferScans) {
 		if (!LmdbNativeJaninoCodegen.enabled()) {
@@ -149,8 +151,9 @@ final class LmdbNativeKernelExecution {
 				return null;
 			}
 			LmdbNativeKernelLowering.Lowered loweredFinal = lowered;
-			java.util.List<org.eclipse.rdf4j.query.BindingSet> parallel = LmdbNativeParallelKernelAggregate
-					.tryEvaluate(lowered, views, arg, row, emitter, explainTarget,
+			long[][] domains = lowered.bindings.materializeDomains(probe, row, "irAggregate");
+			List<BindingSet> parallel = LmdbNativeParallelKernelAggregate
+					.tryEvaluate(lowered, views, domains, arg, row, emitter, explainTarget,
 							() -> LmdbNativeJaninoCodegen.kernel(CACHE_OWNER, shapeKey,
 									loweredFinal.kernel.className(),
 									() -> LmdbNativeKernelEmitter.emit(loweredFinal.kernel), observedRows));
@@ -172,12 +175,10 @@ final class LmdbNativeKernelExecution {
 			scanner = lowered.kernel.requirements.scans > 0
 					? new LmdbNativeKernelScanner(row, lowered.bindings.scanOrders)
 					: null;
-			kernel.bind(
-					lowered.bindings.context(views, lowered.bindings.materializeDomains(probe, row, "irAggregate"), row,
-							hooks, scanner));
+			kernel.bind(lowered.bindings.context(views, domains, row, hooks, scanner));
 			int stride = lowered.kernel.stride();
 			long[] buffer = new long[stride * FILL_ROWS];
-			java.util.List<org.eclipse.rdf4j.query.BindingSet> results = new java.util.ArrayList<>();
+			List<BindingSet> results = new ArrayList<>();
 			int filled;
 			while ((filled = kernel.fill(buffer, FILL_ROWS)) > 0) {
 				for (int r = 0; r < filled; r++) {
@@ -194,7 +195,7 @@ final class LmdbNativeKernelExecution {
 				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, actualOrder);
 			}
 			return results;
-		} catch (RuntimeException | java.io.IOException problem) {
+		} catch (RuntimeException | IOException problem) {
 			if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
 				System.err.println("[ir-aggregate] decline: exception " + problem);
 			}
@@ -370,6 +371,26 @@ final class LmdbNativeKernelExecution {
 				DECLINED.incrementAndGet();
 				return null;
 			}
+			LmdbNativeKernelLowering.Lowered loweredFinal = lowered;
+			long[][] domains = lowered.bindings.materializeDomains(probe, row, "irKernel");
+			RowCursor parallel = LmdbNativeParallelKernelRows.tryOpen(lowered, views, domains, arg, row, originalExpr,
+					() -> LmdbNativeJaninoCodegen.kernel(CACHE_OWNER, shapeKey, loweredFinal.kernel.className(),
+							() -> LmdbNativeKernelEmitter.emit(loweredFinal.kernel), observedRows));
+			if (parallel != null) {
+				// the workers own their probes and kernel instances; the sequential pair is surplus
+				kernel.close();
+				probe.close();
+				probe = null;
+				OPENED.incrementAndGet();
+				if (row.runtimePlan != null) {
+					SlotPlan[] actualOrder = arg instanceof MultiJoinPlan
+							? ((MultiJoinPlan) arg).derivedPlan(row).order
+							: new SlotPlan[] { arg };
+					row.runtimePlan.janinoActivated(activationRoute("irKernelParallel", lowered), actualOrder);
+					row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_IR_KERNEL, actualOrder);
+				}
+				return parallel;
+			}
 			LmdbNativeKernelHooks hooks = lowered.bindings.needsHooks()
 					? new LmdbNativeKernelHooks(row, lowered.bindings)
 					: null;
@@ -377,9 +398,7 @@ final class LmdbNativeKernelExecution {
 			LmdbNativeKernelScanner scanner = lowered.kernel.requirements.scans > 0
 					? new LmdbNativeKernelScanner(row, lowered.bindings.scanOrders)
 					: null;
-			kernel.bind(
-					lowered.bindings.context(views, lowered.bindings.materializeDomains(probe, row, "irKernel"), row,
-							hooks, scanner));
+			kernel.bind(lowered.bindings.context(views, domains, row, hooks, scanner));
 			OPENED.incrementAndGet();
 			if (row.runtimePlan != null) {
 				SlotPlan[] actualOrder = arg instanceof MultiJoinPlan

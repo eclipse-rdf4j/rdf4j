@@ -33,14 +33,16 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Milestone 10B (three-tier parity ExecPlan): with {@code rdf4j.lmdb.irAggregateParallel.enabled=true}, an IR aggregate
- * kernel whose root enumerates an adjacency view's keys must run partitioned across worker threads — one kernel
- * instance per key-range window, per-worker partial group states merged exactly — with a result multiset identical to
- * the sequential kernel and to the generic evaluator. DISTINCT aggregates and the flag-off path must stay sequential.
+ * Milestone 10B second half (three-tier parity ExecPlan): {@code irKernelParallel} is ON BY DEFAULT (2026-08-05 user
+ * decision) — a stateless IR row kernel whose root enumerates an adjacency view's keys (or a key domain) must run
+ * partitioned across worker threads with no property set — one kernel instance per key-range window, packed rows
+ * streamed back to the query thread — with a result multiset identical to the sequential kernel and to the generic
+ * evaluator. Kernels carrying filter hooks (shared plan-filter state) and the kill-switch path
+ * ({@code rdf4j.lmdb.irKernelParallel.enabled=false}) must stay sequential.
  */
-class LmdbNativeIrAggregateParallelTest {
+class LmdbNativeIrKernelParallelTest {
 
-	private static final String EX = "http://example.com/iragg/";
+	private static final String EX = "http://example.com/irkernel/";
 
 	private static final String[] PROPERTIES = {
 			"rdf4j.lmdb.nativeQueryEngine.enabled",
@@ -48,18 +50,22 @@ class LmdbNativeIrAggregateParallelTest {
 			"rdf4j.lmdb.janinoCodegen.thresholdRows",
 			"rdf4j.lmdb.parallel.threads",
 			"rdf4j.lmdb.parallel.minWorkEstimate",
-			LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY };
+			LmdbNativeParallelKernelRows.ENABLED_PROPERTY };
 
-	private static final String GROUPED_QUERY = "SELECT ?s (COUNT(?v) AS ?c) (SUM(?v) AS ?sum) (MIN(?v) AS ?mn) "
-			+ "(MAX(?v) AS ?mx) (AVG(?v) AS ?av) WHERE { ?s <" + EX + "p> ?m . ?m <" + EX
-			+ "q> ?v . } GROUP BY ?s";
+	/**
+	 * LeftJoin chains route only through the IR rung ({@code openKernelInput} hands non-MultiJoin roots straight to
+	 * {@code tryOpenRows}), so the legacy janino pipeline cannot absorb the shape the way it absorbs plain chains.
+	 */
+	private static final String OPTIONAL_QUERY = "SELECT ?s ?v ?w WHERE { ?s <" + EX + "p> ?m . ?m <" + EX
+			+ "q> ?v . OPTIONAL { ?m <" + EX + "r> ?w } }";
 
-	private static final String DISTINCT_QUERY = "SELECT ?s (COUNT(DISTINCT ?v) AS ?c) WHERE { ?s <" + EX
-			+ "p> ?m . ?m <" + EX + "q> ?v . } GROUP BY ?s";
+	/** The EXISTS filter becomes a kernel filter hook: shared plan state, so parallel must decline. */
+	private static final String EXISTS_QUERY = "SELECT ?s ?v WHERE { ?s <" + EX + "p> ?m . ?m <" + EX
+			+ "q> ?v . FILTER EXISTS { ?m <" + EX + "r> ?x } }";
 
 	/** The constant-object class pattern lowers to an {@code EnumerateDomain} root (the type extent). */
-	private static final String DOMAIN_ROOT_QUERY = "SELECT ?s (COUNT(?v) AS ?c) (SUM(?v) AS ?sum) WHERE { ?s <"
-			+ EX + "t> <" + EX + "X> . ?s <" + EX + "p> ?m . ?m <" + EX + "q> ?v . } GROUP BY ?s";
+	private static final String DOMAIN_ROOT_QUERY = "SELECT ?s ?v ?w WHERE { ?s <" + EX + "t> <" + EX
+			+ "X> . ?s <" + EX + "p> ?m . ?m <" + EX + "q> ?v . OPTIONAL { ?m <" + EX + "r> ?w } }";
 
 	@TempDir
 	File dataDir;
@@ -81,6 +87,7 @@ class LmdbNativeIrAggregateParallelTest {
 			ValueFactory vf = conn.getValueFactory();
 			IRI p = vf.createIRI(EX, "p");
 			IRI q = vf.createIRI(EX, "q");
+			IRI r = vf.createIRI(EX, "r");
 			IRI t = vf.createIRI(EX, "t");
 			IRI x = vf.createIRI(EX, "X");
 			// One transaction, deliberately: per-add autocommit floods the direct adjacency store with thousands of
@@ -94,6 +101,9 @@ class LmdbNativeIrAggregateParallelTest {
 					IRI m = vf.createIRI(EX, "m" + i + "_" + j);
 					conn.add(s, p, m);
 					conn.add(m, q, vf.createLiteral(i * 7 + j));
+					if ((i + j) % 3 == 0) {
+						conn.add(m, r, vf.createLiteral("tag" + i + "_" + j));
+					}
 				}
 			}
 			conn.commit();
@@ -118,75 +128,74 @@ class LmdbNativeIrAggregateParallelTest {
 	}
 
 	@Test
-	void parallelIrAggregateMatchesGenericAndEngages() {
+	void parallelIrKernelMatchesGenericAndEngages() {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
-		List<String> expected = rows(GROUPED_QUERY);
-		assertThat(expected).hasSize(600);
+		List<String> expected = rows(OPTIONAL_QUERY);
+		assertThat(expected).hasSize(1200);
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
-		System.setProperty(LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "true");
 
 		KernelExecutionTestAccess.resetMetrics();
-		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
+		long parallelBefore = LmdbNativeParallelKernelRows.PARALLEL_RUNS.get();
 		for (int round = 0; round < 300
-				&& LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get() == parallelBefore; round++) {
-			assertThat(rows(GROUPED_QUERY)).as("parity on round " + round)
+				&& LmdbNativeParallelKernelRows.PARALLEL_RUNS.get() == parallelBefore; round++) {
+			assertThat(rows(OPTIONAL_QUERY)).as("parity on round " + round)
 					.containsExactlyInAnyOrderElementsOf(expected);
 		}
-		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
-				.as("the compiled aggregate must run partitioned across workers")
+		assertThat(LmdbNativeParallelKernelRows.PARALLEL_RUNS.get())
+				.as("the compiled row pipeline must run partitioned across workers")
 				.isGreaterThan(parallelBefore);
 		// one more run with the parallel path known-active must still be exact
-		assertThat(rows(GROUPED_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(rows(OPTIONAL_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
 	}
 
 	@Test
-	void parallelIrAggregatePartitionsDomainRoot() {
+	void parallelIrKernelPartitionsDomainRoot() {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
 		List<String> expected = rows(DOMAIN_ROOT_QUERY);
-		assertThat(expected).hasSize(600);
+		assertThat(expected).hasSize(1200);
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
-		System.setProperty(LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "true");
 
 		KernelExecutionTestAccess.resetMetrics();
-		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
+		long parallelBefore = LmdbNativeParallelKernelRows.PARALLEL_RUNS.get();
 		for (int round = 0; round < 300
-				&& LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get() == parallelBefore; round++) {
+				&& LmdbNativeParallelKernelRows.PARALLEL_RUNS.get() == parallelBefore; round++) {
 			assertThat(rows(DOMAIN_ROOT_QUERY)).as("parity on round " + round)
 					.containsExactlyInAnyOrderElementsOf(expected);
 		}
-		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
-				.as("a domain-rooted aggregate kernel must partition by domain slice")
+		assertThat(LmdbNativeParallelKernelRows.PARALLEL_RUNS.get())
+				.as("a domain-rooted row kernel must partition by domain slice")
 				.isGreaterThan(parallelBefore);
 		assertThat(rows(DOMAIN_ROOT_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
 	}
 
 	@Test
-	void distinctAggregateDeclinesParallelButKeepsTheSequentialKernel() {
+	void filterHookKernelDeclinesParallelButKeepsTheSequentialKernel() {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
-		List<String> expected = rows(DISTINCT_QUERY);
+		List<String> expected = rows(EXISTS_QUERY);
+		assertThat(expected).isNotEmpty();
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
-		System.setProperty(LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "true");
 
 		KernelExecutionTestAccess.resetMetrics();
-		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
-		for (int round = 0; round < 300 && KernelExecutionTestAccess.aggOpened() == 0; round++) {
-			assertThat(rows(DISTINCT_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
+		long parallelBefore = LmdbNativeParallelKernelRows.PARALLEL_RUNS.get();
+		for (int round = 0; round < 300 && KernelExecutionTestAccess.opened() == 0; round++) {
+			assertThat(rows(EXISTS_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
 		}
-		assertThat(KernelExecutionTestAccess.aggOpened()).as("sequential kernel still serves").isGreaterThan(0);
-		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
-				.as("per-partition DISTINCT would double-count; parallel must decline")
+		assertThat(KernelExecutionTestAccess.opened()).as("sequential kernel still serves").isGreaterThan(0);
+		assertThat(LmdbNativeParallelKernelRows.PARALLEL_RUNS.get())
+				.as("shared filter-hook state would race across workers; parallel must decline")
 				.isEqualTo(parallelBefore);
 	}
 
 	@Test
-	void flagOffNeverRunsParallel() {
+	void killSwitchDisablesParallelButKeepsTheSequentialKernel() {
+		System.setProperty(LmdbNativeParallelKernelRows.ENABLED_PROPERTY, "false");
 		KernelExecutionTestAccess.resetMetrics();
-		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
-		for (int round = 0; round < 300 && KernelExecutionTestAccess.aggOpened() == 0; round++) {
-			rows(GROUPED_QUERY);
+		long parallelBefore = LmdbNativeParallelKernelRows.PARALLEL_RUNS.get();
+		for (int round = 0; round < 300 && KernelExecutionTestAccess.opened() == 0; round++) {
+			rows(OPTIONAL_QUERY);
 		}
-		assertThat(KernelExecutionTestAccess.aggOpened()).isGreaterThan(0);
-		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get()).isEqualTo(parallelBefore);
+		assertThat(KernelExecutionTestAccess.opened()).isGreaterThan(0);
+		assertThat(LmdbNativeParallelKernelRows.PARALLEL_RUNS.get()).isEqualTo(parallelBefore);
 	}
 
 	private List<String> rows(String query) {
