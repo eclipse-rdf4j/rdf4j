@@ -65,6 +65,38 @@ class LmdbNativeAccumulateJoinTest {
 			+ "  ?seed <" + EX + "mid> ?m . ?m <" + EX + "value> ?value .\n"
 			+ "}";
 
+	/**
+	 * Milestone 4 condition support: the FILTER references both sides, so it becomes the LeftJoin's condition —
+	 * previously a hard decline for the batch seam. Outers whose limit rejects every match must fall back to a bare
+	 * LEFT row.
+	 */
+	private static final String CONDITION_QUERY = "SELECT ?outer ?value WHERE {\n"
+			+ "  { SELECT ?outer ?seed ?limit WHERE { ?outer <" + EX + "seed> ?seed . ?outer <" + EX
+			+ "limit> ?limit . } }\n"
+			+ "  OPTIONAL { ?seed <" + EX + "mid> ?m . ?m <" + EX + "value> ?value . FILTER(?value < ?limit) }\n"
+			+ "}";
+
+	/**
+	 * Milestone 4 multi-key support: two shared variables ({@code ?seed}, {@code ?m}) between the outer subselect and
+	 * the fragment.
+	 */
+	private static final String MULTI_KEY_QUERY = "SELECT ?outer ?m ?value WHERE {\n"
+			+ "  { SELECT ?outer ?seed ?m WHERE { ?outer <" + EX + "seed> ?seed . ?seed <" + EX + "mid> ?m . } }\n"
+			+ "  OPTIONAL { ?seed <" + EX + "mid> ?m . ?m <" + EX + "value> ?value . }\n"
+			+ "}";
+
+	/** Milestone 4 SEMI mode: FILTER EXISTS over a two-pattern native fragment, decorrelated to one sweep. */
+	private static final String SEMI_QUERY = "SELECT ?outer WHERE {\n"
+			+ "  { SELECT ?outer ?seed WHERE { ?outer <" + EX + "seed> ?seed . } }\n"
+			+ "  FILTER EXISTS { ?seed <" + EX + "mid> ?m . ?m <" + EX + "value> ?value . }\n"
+			+ "}";
+
+	/** Milestone 4 ANTI mode: FILTER NOT EXISTS over the same fragment. */
+	private static final String ANTI_QUERY = "SELECT ?outer WHERE {\n"
+			+ "  { SELECT ?outer ?seed WHERE { ?outer <" + EX + "seed> ?seed . } }\n"
+			+ "  FILTER NOT EXISTS { ?seed <" + EX + "mid> ?m . ?m <" + EX + "value> ?value . }\n"
+			+ "}";
+
 	@TempDir
 	File dataDir;
 
@@ -93,6 +125,12 @@ class LmdbNativeAccumulateJoinTest {
 			}
 			// Duplicate outer edge: outer0 carries a second seed binding to seedNode1 — bag multiplicity.
 			conn.add(vf.createIRI(EX, "outer0"), seed, vf.createIRI(EX, "seedNode1"));
+			// Condition-query limits: outers divisible by 5 reject every match (limit == smallest value), the
+			// rest accept two of their three matches (values i*10..i*10+2, limit i*10+2).
+			IRI limit = vf.createIRI(EX, "limit");
+			for (int i = 0; i < 40; i++) {
+				conn.add(vf.createIRI(EX, "outer" + i), limit, vf.createLiteral(i % 5 == 0 ? i * 10 : i * 10 + 2));
+			}
 		}
 		System.setProperty(NATIVE_FLAG, "true");
 	}
@@ -128,6 +166,76 @@ class LmdbNativeAccumulateJoinTest {
 		System.setProperty(LmdbNativeAccumulateJoin.ENABLED_PROPERTY, "true");
 		LmdbNativeAccumulateJoin.resetMetrics();
 		List<String> actual = rows(INNER_QUERY);
+
+		assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(LmdbNativeAccumulateJoin.BATCHES.get()).as("accumulate batch engaged").isOne();
+		assertThat(LmdbNativeAccumulateJoin.FRAGMENT_EXECUTIONS.get())
+				.as("the fragment must execute exactly once for the whole outer stream")
+				.isOne();
+	}
+
+	@Test
+	void correlatedOptionalWithConditionCollapsesToOneFragmentExecution() {
+		List<String> expected = rows(CONDITION_QUERY);
+		// 24 outers accept 2 of 3 matches each; 6 outers reject all matches (bare); outer0's second seed pair is
+		// rejected by outer0's limit (bare); 10 outers have no matches at all (bare).
+		assertThat(expected).hasSize(24 * 2 + 6 + 1 + 10);
+
+		System.setProperty(LmdbNativeAccumulateJoin.ENABLED_PROPERTY, "true");
+		LmdbNativeAccumulateJoin.resetMetrics();
+		List<String> actual = rows(CONDITION_QUERY);
+
+		assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(LmdbNativeAccumulateJoin.BATCHES.get()).as("accumulate batch engaged").isOne();
+		assertThat(LmdbNativeAccumulateJoin.FRAGMENT_EXECUTIONS.get())
+				.as("the fragment must execute exactly once for the whole outer stream")
+				.isOne();
+	}
+
+	@Test
+	void correlatedMultiKeyOptionalCollapsesToOneFragmentExecution() {
+		List<String> expected = rows(MULTI_KEY_QUERY);
+		// Every (outer, seed, m) row matches exactly one fragment row keyed on (seed, m): 30*3 plus outer0's
+		// second seed fan-out of 3.
+		assertThat(expected).hasSize(30 * 3 + 3);
+
+		System.setProperty(LmdbNativeAccumulateJoin.ENABLED_PROPERTY, "true");
+		LmdbNativeAccumulateJoin.resetMetrics();
+		List<String> actual = rows(MULTI_KEY_QUERY);
+
+		assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(LmdbNativeAccumulateJoin.BATCHES.get()).as("accumulate batch engaged").isOne();
+		assertThat(LmdbNativeAccumulateJoin.FRAGMENT_EXECUTIONS.get())
+				.as("the fragment must execute exactly once for the whole outer stream")
+				.isOne();
+	}
+
+	@Test
+	void filterExistsCollapsesToOneFragmentExecution() {
+		List<String> expected = rows(SEMI_QUERY);
+		// 30 seeded outer rows pass plus outer0's second (seeded) pair; the 10 unseeded outers drop.
+		assertThat(expected).hasSize(31);
+
+		System.setProperty(LmdbNativeAccumulateJoin.ENABLED_PROPERTY, "true");
+		LmdbNativeAccumulateJoin.resetMetrics();
+		List<String> actual = rows(SEMI_QUERY);
+
+		assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(LmdbNativeAccumulateJoin.BATCHES.get()).as("accumulate batch engaged").isOne();
+		assertThat(LmdbNativeAccumulateJoin.FRAGMENT_EXECUTIONS.get())
+				.as("the fragment must execute exactly once for the whole outer stream")
+				.isOne();
+	}
+
+	@Test
+	void filterNotExistsCollapsesToOneFragmentExecution() {
+		List<String> expected = rows(ANTI_QUERY);
+		// Only the 10 unseeded outer rows survive NOT EXISTS.
+		assertThat(expected).hasSize(10);
+
+		System.setProperty(LmdbNativeAccumulateJoin.ENABLED_PROPERTY, "true");
+		LmdbNativeAccumulateJoin.resetMetrics();
+		List<String> actual = rows(ANTI_QUERY);
 
 		assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
 		assertThat(LmdbNativeAccumulateJoin.BATCHES.get()).as("accumulate batch engaged").isOne();

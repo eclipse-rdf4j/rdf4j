@@ -74,6 +74,14 @@ class LmdbNativeLeftJoinSweepTest {
 			}
 			// Duplicate outer edge: outer0 carries a second seed binding to seedNode1 — bag multiplicity.
 			conn.add(vf.createIRI(EX, "outer0"), seed, vf.createIRI(EX, "seedNode1"));
+			// Direct payloads on the seed nodes: the single-pattern OPTIONAL shape for the payload-probe floor.
+			IRI direct = vf.createIRI(EX, "direct");
+			for (int i = 0; i < 180; i++) {
+				IRI seedNode = vf.createIRI(EX, "seedNode" + i);
+				for (int f = 0; f < 2; f++) {
+					conn.add(seedNode, direct, vf.createLiteral(i * 100 + f));
+				}
+			}
 		}
 		System.setProperty(NATIVE_FLAG, "true");
 	}
@@ -158,6 +166,26 @@ class LmdbNativeLeftJoinSweepTest {
 		assertThat(LmdbNativeAggregateCompiler.LEFTJOIN_SWEEP_BUILDS.get() - sweepsBefore)
 				.as("a selective outer must not justify sweeping the whole fragment")
 				.isZero();
+	}
+
+	@Test
+	void estimateJustifiedSinglePatternOptionalBuildsPayloadHashImmediately() {
+		// Milestone 4 (three-tier parity plan): the PatternPayloadProbe 1024-probe floor has the identical
+		// 201-outers-just-under trap the sweep fixed for fragments — with the sweep flag on, the estimate
+		// trigger must build the payload hash on the first probe.
+		String singlePattern = "SELECT ?outer ?value WHERE { ?outer <" + EX + "seed> ?seed . OPTIONAL { ?seed <" + EX
+				+ "direct> ?value } }";
+		List<String> expected = rows(singlePattern);
+		assertThat(expected).hasSize(180 * 2 + 2 + 20); // 360 matched + outer0's second seed fan-out + 20 bare
+
+		System.setProperty(SWEEP_FLAG, "true");
+		long hashBuildsBefore = LmdbNativeAggregateCompiler.LEFTJOIN_HASH_BUILDS.get();
+		List<String> actual = rows(singlePattern);
+
+		assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(LmdbNativeAggregateCompiler.LEFTJOIN_HASH_BUILDS.get() - hashBuildsBefore)
+				.as("201 outer rows sit under the 1024-probe floor; the estimate trigger must build immediately")
+				.isOne();
 	}
 
 	@Test

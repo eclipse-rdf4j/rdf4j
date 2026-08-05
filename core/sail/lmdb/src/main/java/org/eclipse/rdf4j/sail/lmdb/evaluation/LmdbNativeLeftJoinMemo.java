@@ -85,6 +85,18 @@ final class RightMemoProbe {
 		return probe;
 	}
 
+	/**
+	 * Milestone 4 (three-tier parity ExecPlan): the estimate-triggered key-unbound sweep for INNER correlated
+	 * fragments. Unlike {@link #tryCreate} this engages ONLY when the sweep is justified, keeping the inner
+	 * {@code JoinCursor} untouched everywhere else; an aborted sweep degrades to the per-key memo, same as LEFT.
+	 */
+	static RightMemoProbe tryCreateSweepOnly(SlotPlan right, long leftProducedMask, long readMask, RowState row,
+			double expectedProbes, double perProbeRows, double sweepEstimate) {
+		RightMemoProbe probe = tryCreate(right, leftProducedMask, readMask, row, expectedProbes, perProbeRows,
+				sweepEstimate);
+		return probe != null && probe.sweepPending ? probe : null;
+	}
+
 	static boolean sweepEnabled() {
 		return Boolean.parseBoolean(System.getProperty(LEFTJOIN_SWEEP_ENABLED, "false"));
 	}

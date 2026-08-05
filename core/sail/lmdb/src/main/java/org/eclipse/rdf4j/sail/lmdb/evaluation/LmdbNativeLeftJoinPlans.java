@@ -108,7 +108,7 @@ final class LeftJoinCursor implements RowCursor {
 				&& readMask >= 0L && (readMask & leftProducedMask) == 0L
 						? slotsOf(right.producedMask())
 						: null;
-		this.payloadProbe = PatternPayloadProbe.tryCreate(right);
+		this.payloadProbe = PatternPayloadProbe.tryCreate(right, expectedProbes, perProbeRows, sweepEstimate);
 		this.rightMemo = RightMemoProbe.tryCreate(right, leftProducedMask, readMask, row, expectedProbes,
 				perProbeRows, sweepEstimate);
 	}

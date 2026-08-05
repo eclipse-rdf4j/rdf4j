@@ -688,11 +688,22 @@ final class JoinPlan implements SlotPlan {
 	}
 
 	RowCursor open(RowState row, PathTargetSet targets, boolean ownsTargets) throws IOException {
+		double expectedProbes = Double.NaN;
+		double perProbeRows = Double.NaN;
+		double sweepEstimate = Double.NaN;
+		if (RightMemoProbe.sweepEnabled()) {
+			long boundMask = row.boundMask();
+			expectedProbes = LmdbNativeWork.rowsOut(left, row, boundMask);
+			perProbeRows = RightMemoProbe.fragmentRowsForMask(right, row, boundMask | left.producedMask());
+			// correlated slots are unbound at open time, so this estimates the key-unbound fragment sweep
+			sweepEstimate = LmdbNativeWork.rowsOut(right, row, boundMask);
+		}
 		// only left-produced slots vary across left rows; slots bound at open time are constant for
 		// the lifetime of this cursor and do not disqualify replay
 		RowCursor leftCursor = openWithTargets(left, row, targets);
 		try {
-			return new JoinCursor(leftCursor, right, row, left.producedMask(), targets, ownsTargets);
+			return new JoinCursor(leftCursor, right, row, left.producedMask(), targets, ownsTargets,
+					expectedProbes, perProbeRows, sweepEstimate);
 		} catch (RuntimeException | Error problem) {
 			leftCursor.close();
 			throw problem;
@@ -737,6 +748,12 @@ final class JoinCursor implements RowCursor {
 	 * replaySlots marks the right side as replayable; they list the slots the replay re-binds.
 	 */
 	final int[] replaySlots;
+	/**
+	 * Milestone 4 (three-tier parity ExecPlan): estimate-triggered key-unbound sweep for a CORRELATED right fragment —
+	 * the inner twin of the {@code LeftJoinCursor} sweep. Non-null only when the sweep flag is on and the left-side row
+	 * estimate justifies one fragment sweep over per-row re-execution.
+	 */
+	final RightMemoProbe rightMemo;
 	NativeLmdbQuerySource.NativeProbe rightProbe;
 	PathResultMemo pathMemo;
 	boolean pathMemoInitialized;
@@ -746,11 +763,12 @@ final class JoinCursor implements RowCursor {
 	int replayMark = -1;
 
 	JoinCursor(RowCursor leftCursor, SlotPlan right, RowState row, long leftProducedMask) {
-		this(leftCursor, right, row, leftProducedMask, null, false);
+		this(leftCursor, right, row, leftProducedMask, null, false, Double.NaN, Double.NaN, Double.NaN);
 	}
 
 	JoinCursor(RowCursor leftCursor, SlotPlan right, RowState row, long leftProducedMask,
-			PathTargetSet pathTargets, boolean ownsPathTargets) {
+			PathTargetSet pathTargets, boolean ownsPathTargets, double expectedProbes, double perProbeRows,
+			double sweepEstimate) {
 		this.leftCursor = leftCursor;
 		this.right = right;
 		this.row = row;
@@ -759,6 +777,10 @@ final class JoinCursor implements RowCursor {
 		long readMask = memoReadMask(right);
 		this.replaySlots = readMask >= 0L && (readMask & leftProducedMask) == 0L
 				? slotsOf(right.producedMask())
+				: null;
+		this.rightMemo = replaySlots == null
+				? RightMemoProbe.tryCreateSweepOnly(right, leftProducedMask, readMask, row, expectedProbes,
+						perProbeRows, sweepEstimate)
 				: null;
 	}
 
@@ -815,6 +837,12 @@ final class JoinCursor implements RowCursor {
 				pathMemoInitialized = true;
 			}
 			return ((PathPlan) right).open(row, rightProbe, pathMemo);
+		}
+		if (rightMemo != null) {
+			RowCursor memoized = rightMemo.open(row);
+			if (memoized != null) {
+				return memoized;
+			}
 		}
 		return right.open(row);
 	}
@@ -877,6 +905,9 @@ final class JoinCursor implements RowCursor {
 		if (pathMemo != null) {
 			pathMemo.close();
 			pathMemo = null;
+		}
+		if (rightMemo != null) {
+			rightMemo.close();
 		}
 		if (rightProbe != null) {
 			rightProbe.close();
