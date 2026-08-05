@@ -546,6 +546,8 @@ final class ExistsFilter implements NativeBooleanFilter {
 	final int[] memoSlots;
 	final PatternMembershipProbe membershipProbe;
 	final AdjacencyIntersectionProbe adjacencyProbe;
+	/** Build-once mark tier for multi-operator subplans (Milestone 5); single patterns use the probes above. */
+	final SubplanMarkProbe markProbe;
 	KeyedMatches memo;
 
 	ExistsFilter(SlotPlan subPlan) {
@@ -563,6 +565,7 @@ final class ExistsFilter implements NativeBooleanFilter {
 						((PatternPlan) subPlan).o, ((PatternPlan) subPlan).c, ((PatternPlan) subPlan).contexts,
 						((PatternPlan) subPlan).namedContextScope)
 				: null;
+		this.markProbe = memoSlots != null ? SubplanMarkProbe.tryCreateExists(subPlan, memoSlots) : null;
 	}
 
 	@Override
@@ -586,7 +589,8 @@ final class ExistsFilter implements NativeBooleanFilter {
 		if (cached != null) {
 			return cached;
 		}
-		boolean result = exists(row);
+		int marked = markProbe != null ? markProbe.test(row) : PatternMembershipProbe.NOT_APPLICABLE;
+		boolean result = marked >= 0 ? marked == 1 : exists(row);
 		if (membershipProbe != null) {
 			membershipProbe.recordDirectResult(result);
 		}
@@ -668,7 +672,8 @@ final class ExistsFilter implements NativeBooleanFilter {
 		if (cached != null) {
 			return cached;
 		}
-		boolean result = exists(row);
+		int marked = markProbe != null ? markProbe.test(row) : PatternMembershipProbe.NOT_APPLICABLE;
+		boolean result = marked >= 0 ? marked == 1 : exists(row);
 		if (membershipProbe != null) {
 			membershipProbe.recordDirectResult(result);
 		}

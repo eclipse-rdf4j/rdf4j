@@ -383,6 +383,8 @@ final class MinusCursor implements RowCursor {
 	final int[] memoSlots;
 	final PatternMembershipProbe membershipProbe;
 	final AdjacencyIntersectionProbe adjacencyProbe;
+	/** Build-once hash anti-join for multi-operator right sides (Milestone 5); single patterns use the probes above. */
+	final SubplanMarkProbe markProbe;
 	HashMap<GroupKey, Boolean> memo;
 	GroupKey probe;
 
@@ -415,6 +417,9 @@ final class MinusCursor implements RowCursor {
 						((PatternPlan) right).o, ((PatternPlan) right).c, ((PatternPlan) right).contexts,
 						((PatternPlan) right).namedContextScope)
 				: null;
+		// The mark table reproduces the independent-evaluation verdict, which is only memoizable at all when the
+		// right plan's read set is known — the same gate the per-key memo uses.
+		this.markProbe = memoSlots != null ? SubplanMarkProbe.tryCreateMinus(right, sharedMask) : null;
 	}
 
 	@Override
@@ -498,7 +503,8 @@ final class MinusCursor implements RowCursor {
 				return result;
 			}
 		}
-		boolean result = openAndCheckRight();
+		int marked = markProbe != null ? markProbe.test(row) : PatternMembershipProbe.NOT_APPLICABLE;
+		boolean result = marked >= 0 ? marked == 1 : openAndCheckRight();
 		if (membershipProbe != null) {
 			membershipProbe.recordDirectResult(result);
 		}
