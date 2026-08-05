@@ -96,6 +96,7 @@ final class LeftJoinCursor implements RowCursor {
 	boolean matchedCurrentLeft;
 	boolean nullExtendedPending;
 	boolean rightCursorFromPayload;
+	boolean rightProbeCacheBacked;
 
 	LeftJoinCursor(RowCursor leftCursor, SlotPlan right, RowState row, long leftProducedMask,
 			double expectedProbes, double perProbeRows, double sweepEstimate) {
@@ -163,7 +164,7 @@ final class LeftJoinCursor implements RowCursor {
 	}
 
 	RowCursor openRight() throws IOException {
-		if (payloadProbe != null) {
+		if (payloadProbe != null && !rightProbeCacheBacked) {
 			RowCursor hashed = payloadProbe.open(row);
 			if (hashed != null) {
 				rightCursorFromPayload = true;
@@ -181,7 +182,13 @@ final class LeftJoinCursor implements RowCursor {
 			if (rightProbe == null) {
 				rightProbe = row.source.newProbe();
 			}
-			return ((PatternPlan) right).open(row, rightProbe);
+			RowCursor cursor = ((PatternPlan) right).open(row, rightProbe);
+			if (!rightProbeCacheBacked && AdjacencyIntersectionProbe.enabled() && rightProbe.adjacencyCacheBacked()) {
+				// the adjacency cache answers this probe in O(1): a query-local payload hash would only duplicate
+				// it in memory (same rule as the chunk pipeline's cache-backed latch)
+				rightProbeCacheBacked = true;
+			}
+			return cursor;
 		}
 		return right.open(row);
 	}

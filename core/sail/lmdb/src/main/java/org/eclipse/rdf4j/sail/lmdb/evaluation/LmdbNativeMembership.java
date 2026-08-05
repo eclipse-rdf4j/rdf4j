@@ -17,6 +17,7 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
@@ -242,5 +243,230 @@ final class PatternMembershipProbe {
 			}
 		}
 		return false;
+	}
+}
+
+/**
+ * Answers single-pattern EXISTS / NOT EXISTS / MINUS existence verdicts straight from the in-memory adjacency planes
+ * instead of per-row store probes plus query-local memo or membership layers (three-tier parity plan, Milestone 2).
+ * Verdict shapes: bound key with a free neighbor is one {@code find(key)} presence test; a constant key resolves its
+ * run once and answers every row by galloping {@code lowerBound} inside that cached run (the run-intersection
+ * semijoin); doubly-bound rows are one {@code lowerBound} equality check. Context-restricted patterns decline so the
+ * exact fallback paths keep serving them. Kill switch: {@code rdf4j.lmdb.adjacencySemijoin.enabled} (default on;
+ * flipped 2026-08-05 after the M2 gate showed parity-or-better on the existsSemijoin/minusShape/optionalHeavy cells).
+ */
+@Experimental
+final class AdjacencyIntersectionProbe implements java.io.Closeable {
+	static final String ENABLED_PROPERTY = "rdf4j.lmdb.adjacencySemijoin.enabled";
+	/** Verdicts answered from the planes (either polarity). */
+	static final AtomicLong ANSWERED = new AtomicLong();
+	/** Per-row membership probes served by galloping inside a cached constant-key run. */
+	static final AtomicLong CACHED_RUN_PROBES = new AtomicLong();
+
+	private static final long UNRESOLVED_RUN = Long.MIN_VALUE;
+	private static final long NOT_FOUND = NativeLmdbQuerySource.NativeAdjacency.NOT_FOUND;
+
+	private final Term s;
+	private final Term p;
+	private final Term o;
+	private final Term c;
+
+	private NativeLmdbQuerySource.NativeProbe probe;
+	private NativeLmdbQuerySource.NativeAdjacency outgoing;
+	private boolean outgoingResolved;
+	private NativeLmdbQuerySource.NativeAdjacency incoming;
+	private boolean incomingResolved;
+	private boolean disabled;
+
+	/** Constant-key run, resolved once and galloped per row: the run-intersection side of the semijoin. */
+	private long cachedRun = UNRESOLVED_RUN;
+	private long cachedRunSize;
+	private boolean cachedRunFailed;
+	private long lastOffset;
+	private long lastMember;
+	private boolean lastValid;
+
+	private AdjacencyIntersectionProbe(Term s, Term p, Term o, Term c) {
+		this.s = s;
+		this.p = p;
+		this.o = o;
+		this.c = c;
+	}
+
+	static boolean enabled() {
+		return !"false".equalsIgnoreCase(System.getProperty(ENABLED_PROPERTY));
+	}
+
+	static void resetMetrics() {
+		ANSWERED.set(0L);
+		CACHED_RUN_PROBES.set(0L);
+	}
+
+	static AdjacencyIntersectionProbe tryCreate(Term s, Term p, Term o, Term c, ContextConstraint contexts,
+			boolean namedContextScope) {
+		if (!enabled() || namedContextScope || contexts.isFixed() || c.isConstant()) {
+			return null;
+		}
+		if (!p.isConstant() || p.constant <= 0L) {
+			return null;
+		}
+		return new AdjacencyIntersectionProbe(s, p, o, c);
+	}
+
+	/**
+	 * 1 = pattern matches for this row, 0 = provably no match, -1 = not answerable here (use the fallback path).
+	 * {@code allowedMask} restricts which row slots may correlate the pattern (MINUS must not see physical bindings
+	 * from surrounding joins); pass {@code -1L} for EXISTS filters, which see every current binding.
+	 */
+	int test(RowState row, long allowedMask) {
+		if (disabled) {
+			return PatternMembershipProbe.NOT_APPLICABLE;
+		}
+		if (lookup(c, row, allowedMask) != UNKNOWN) {
+			// a per-row context restriction: leave it to the exact fallback paths
+			return PatternMembershipProbe.NOT_APPLICABLE;
+		}
+		long subj = lookup(s, row, allowedMask);
+		long obj = lookup(o, row, allowedMask);
+		if (subj == UNKNOWN && obj == UNKNOWN) {
+			return PatternMembershipProbe.NOT_APPLICABLE;
+		}
+		try {
+			if (subj != UNKNOWN && obj != UNKNOWN) {
+				return doublyBound(row, subj, obj);
+			}
+			if (subj != UNKNOWN) {
+				return presence(row, true, subj);
+			}
+			return presence(row, false, obj);
+		} catch (IOException e) {
+			disabled = true;
+			return PatternMembershipProbe.NOT_APPLICABLE;
+		}
+	}
+
+	private int doublyBound(RowState row, long subj, long obj) throws IOException {
+		if ((s.isConstant() || o.isConstant()) && !cachedRunFailed) {
+			boolean keyBySubject = s.isConstant();
+			long key = keyBySubject ? subj : obj;
+			long member = keyBySubject ? obj : subj;
+			NativeLmdbQuerySource.NativeAdjacency view = view(row, keyBySubject);
+			if (view != null) {
+				if (cachedRun == UNRESOLVED_RUN) {
+					cachedRun = view.find(key);
+					cachedRunSize = cachedRun > 0L ? view.size(cachedRun) : 0L;
+				}
+				if (cachedRun == NOT_FOUND) {
+					return answer(0);
+				}
+				if (cachedRun > 0L) {
+					long from = lastValid && Long.compareUnsigned(lastMember, member) <= 0 ? lastOffset : 0L;
+					long index = view.lowerBound(cachedRun, from, member, 0L);
+					if (index >= 0L) {
+						lastValid = true;
+						lastMember = member;
+						lastOffset = index;
+						CACHED_RUN_PROBES.incrementAndGet();
+						if (index >= cachedRunSize) {
+							return answer(0);
+						}
+						return answer(view.neighborAt(cachedRun, index) == member ? 1 : 0);
+					}
+				}
+				cachedRunFailed = true;
+			}
+		}
+		NativeLmdbQuerySource.NativeAdjacency out = view(row, true);
+		if (out != null) {
+			int verdict = runMembership(out, subj, obj);
+			if (verdict >= 0) {
+				return verdict;
+			}
+		}
+		NativeLmdbQuerySource.NativeAdjacency in = view(row, false);
+		if (in != null) {
+			return runMembership(in, obj, subj);
+		}
+		return PatternMembershipProbe.NOT_APPLICABLE;
+	}
+
+	/** Existence of {@code member} inside the key's run, or NOT_APPLICABLE when the view cannot answer. */
+	private int runMembership(NativeLmdbQuerySource.NativeAdjacency view, long key, long member) throws IOException {
+		long run = view.find(key);
+		if (run == NOT_FOUND) {
+			return answer(0);
+		}
+		if (run <= 0L) {
+			return PatternMembershipProbe.NOT_APPLICABLE;
+		}
+		long index = view.lowerBound(run, 0L, member, 0L);
+		if (index < 0L) {
+			return PatternMembershipProbe.NOT_APPLICABLE;
+		}
+		if (index >= view.size(run)) {
+			return answer(0);
+		}
+		return answer(view.neighborAt(run, index) == member ? 1 : 0);
+	}
+
+	private int presence(RowState row, boolean bySubject, long key) throws IOException {
+		NativeLmdbQuerySource.NativeAdjacency view = view(row, bySubject);
+		if (view == null) {
+			return PatternMembershipProbe.NOT_APPLICABLE;
+		}
+		long run = view.find(key);
+		if (run == NOT_FOUND) {
+			return answer(0);
+		}
+		if (run <= 0L) {
+			return PatternMembershipProbe.NOT_APPLICABLE;
+		}
+		return answer(view.size(run) > 0L ? 1 : 0);
+	}
+
+	private int answer(int verdict) {
+		if (verdict >= 0) {
+			ANSWERED.incrementAndGet();
+		}
+		return verdict;
+	}
+
+	private NativeLmdbQuerySource.NativeAdjacency view(RowState row, boolean bySubject) throws IOException {
+		if (probe == null) {
+			probe = row.source.newProbe();
+		}
+		if (bySubject) {
+			if (!outgoingResolved) {
+				outgoingResolved = true;
+				outgoing = probe.adjacency(p.constant, true);
+			}
+			return outgoing;
+		}
+		if (!incomingResolved) {
+			incomingResolved = true;
+			incoming = probe.adjacency(p.constant, false);
+		}
+		return incoming;
+	}
+
+	private static long lookup(Term term, RowState row, long allowedMask) {
+		if (term.isConstant()) {
+			return term.constant;
+		}
+		if (term.slot < 0 || (allowedMask >>> term.slot & 1L) == 0L) {
+			return UNKNOWN;
+		}
+		return row.slots[term.slot];
+	}
+
+	@Override
+	public void close() {
+		outgoing = null;
+		incoming = null;
+		NativeLmdbQuerySource.NativeProbe ownedProbe = probe;
+		probe = null;
+		if (ownedProbe != null) {
+			ownedProbe.close();
+		}
 	}
 }

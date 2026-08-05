@@ -49,6 +49,18 @@ public final class JoinDispatchTestAccess {
 		return LmdbNativeLeapfrogJoin.FRONTIERS_STREAMED.get();
 	}
 
+	public static long adjacencySemijoinAnswered() {
+		return AdjacencyIntersectionProbe.ANSWERED.get();
+	}
+
+	public static long adjacencySemijoinRunProbes() {
+		return AdjacencyIntersectionProbe.CACHED_RUN_PROBES.get();
+	}
+
+	public static long leftJoinHashBuilds() {
+		return LmdbNativeAggregateCompiler.LEFTJOIN_HASH_BUILDS.get();
+	}
+
 	public static long janinoAggregatePlanned() {
 		return LmdbNativeJaninoAggregate.PLANNED.get();
 	}

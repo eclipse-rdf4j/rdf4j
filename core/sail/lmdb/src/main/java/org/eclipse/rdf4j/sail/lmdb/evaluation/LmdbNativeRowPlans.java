@@ -382,6 +382,7 @@ final class MinusCursor implements RowCursor {
 	 */
 	final int[] memoSlots;
 	final PatternMembershipProbe membershipProbe;
+	final AdjacencyIntersectionProbe adjacencyProbe;
 	HashMap<GroupKey, Boolean> memo;
 	GroupKey probe;
 
@@ -409,6 +410,11 @@ final class MinusCursor implements RowCursor {
 						((PatternPlan) right).o, ((PatternPlan) right).c, ((PatternPlan) right).contexts,
 						((PatternPlan) right).namedContextScope)
 				: null;
+		this.adjacencyProbe = right instanceof PatternPlan
+				? AdjacencyIntersectionProbe.tryCreate(((PatternPlan) right).s, ((PatternPlan) right).p,
+						((PatternPlan) right).o, ((PatternPlan) right).c, ((PatternPlan) right).contexts,
+						((PatternPlan) right).namedContextScope)
+				: null;
 	}
 
 	@Override
@@ -423,6 +429,9 @@ final class MinusCursor implements RowCursor {
 
 	@Override
 	public void close() {
+		if (adjacencyProbe != null) {
+			adjacencyProbe.close();
+		}
 		leftCursor.close();
 	}
 
@@ -438,6 +447,17 @@ final class MinusCursor implements RowCursor {
 			if (result >= 0) {
 				return result == 1;
 			}
+			// Adjacency pre-step: a single-pattern right side binds every shared variable on every emitted row, so
+			// the masked correlated existence verdict (the openCorrelatedRight semantics) can be answered straight
+			// from the planes while membership admission warms up, replacing the per-row store probe.
+			if (adjacencyProbe != null) {
+				int served = adjacencyProbe.test(row, sharedMask | row.baseBindingMask);
+				if (served >= 0) {
+					boolean matched = served == 1;
+					membershipProbe.recordDirectResult(matched);
+					return matched;
+				}
+			}
 			// A single pattern binds every variable slot it names on every emitted row. Correlating its currently
 			// bound shared values is therefore an exact MINUS compatibility test, unlike a UNION/OPTIONAL arm that may
 			// emit a row with those variables unbound. Use the cheap existence probe while membership admission warms
@@ -448,7 +468,15 @@ final class MinusCursor implements RowCursor {
 				return matched;
 			}
 		}
+		boolean adjacencyEligible = adjacencyProbe != null
+				&& (row.boundMask() & sharedMask & ~assuredRightMask) == 0L;
 		if (memoSlots == null) {
+			if (adjacencyEligible) {
+				int served = adjacencyProbe.test(row, sharedMask | row.baseBindingMask);
+				if (served >= 0) {
+					return served == 1;
+				}
+			}
 			return openAndCheckRight();
 		}
 		if (memo == null) {
@@ -459,6 +487,16 @@ final class MinusCursor implements RowCursor {
 		Boolean cached = memo.get(probe);
 		if (cached != null) {
 			return cached;
+		}
+		// The per-key memo stays the O(1) front; the plane views answer memo misses (the masked lookups reproduce
+		// openCorrelatedRight, which is exact for a single-pattern right side).
+		if (adjacencyEligible) {
+			int served = adjacencyProbe.test(row, sharedMask | row.baseBindingMask);
+			if (served >= 0) {
+				boolean result = served == 1;
+				memo.put(probe.storedCopy(), result);
+				return result;
+			}
 		}
 		boolean result = openAndCheckRight();
 		if (membershipProbe != null) {

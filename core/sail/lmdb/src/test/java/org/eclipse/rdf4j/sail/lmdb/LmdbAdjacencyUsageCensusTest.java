@@ -293,6 +293,34 @@ class LmdbAdjacencyUsageCensusTest {
 	}
 
 	@Test
+	void flaggedSemijoinServesExistsVerdictsFromAdjacency() {
+		Map<String, String> previous = replaceProperties(Map.of(
+				"rdf4j.lmdb.nativeQueryEngine.enabled", "true",
+				"rdf4j.lmdb.adjacencySemijoin.enabled", "true"));
+		try {
+			Scenario scenario = scenarios.stream()
+					.filter(candidate -> "exists_semijoin".equals(candidate.name()))
+					.findFirst()
+					.orElseThrow();
+			long answeredBefore = JoinDispatchTestAccess.adjacencySemijoinAnswered();
+			long runProbesBefore = JoinDispatchTestAccess.adjacencySemijoinRunProbes();
+			LmdbAdjacencyMetrics.Snapshot before = direct.snapshotMetrics();
+			long rows = executeAndCount(scenario.query());
+			LmdbAdjacencyMetrics.Snapshot after = direct.snapshotMetrics();
+
+			assertTrue(rows > 0, "exists_semijoin must produce rows");
+			assertTrue(JoinDispatchTestAccess.adjacencySemijoinAnswered() > answeredBefore,
+					"EXISTS verdicts must be served by the adjacency semijoin probe");
+			assertTrue(JoinDispatchTestAccess.adjacencySemijoinRunProbes() > runProbesBefore,
+					"the constant-key EXISTS case must gallop inside one cached adjacency run");
+			assertTrue(after.lookupHits > before.lookupHits,
+					"exists_semijoin must record direct-adjacency engagement");
+		} finally {
+			restoreProperties(previous);
+		}
+	}
+
+	@Test
 	void forcedParallelChainServesBoundWorkerLookups() {
 		String query = PREFIX
 				+ "SELECT ?person ?city WHERE { ?person ex:worksAt ?company . ?company ex:locatedIn ?city }";

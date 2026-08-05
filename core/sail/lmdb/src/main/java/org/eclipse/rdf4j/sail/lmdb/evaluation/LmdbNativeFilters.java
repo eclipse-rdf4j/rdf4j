@@ -308,6 +308,7 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 	 */
 	final int[] varyingSlots;
 	final PatternMembershipProbe membershipProbe;
+	final AdjacencyIntersectionProbe adjacencyProbe;
 	KeyedMatches memo;
 	byte constantResult;
 
@@ -329,10 +330,14 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 		}
 		this.varyingSlots = Arrays.copyOf(varying, n);
 		this.membershipProbe = PatternMembershipProbe.tryCreate(s, p, o, c, contexts, namedContextScope);
+		this.adjacencyProbe = AdjacencyIntersectionProbe.tryCreate(s, p, o, c, contexts, namedContextScope);
 	}
 
 	@Override
 	public boolean accept(RowState row) {
+		if (adjacencyProbe != null) {
+			return acceptWithAdjacency(row);
+		}
 		if (membershipProbe != null) {
 			int result = membershipProbe.test(row);
 			if (result >= 0) {
@@ -369,6 +374,50 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 		return result;
 	}
 
+	/**
+	 * Adjacency-semijoin variant: the membership set and per-key memo stay the O(1) front exactly as in the default
+	 * path — the plane views only replace the expensive store probe on a miss, and their verdicts feed the same
+	 * membership admission and memo so the steady state is unchanged.
+	 */
+	private boolean acceptWithAdjacency(RowState row) {
+		if (membershipProbe != null) {
+			int result = membershipProbe.test(row);
+			if (result >= 0) {
+				return result == 1;
+			}
+		}
+		long subj = s.lookup(row.slots);
+		long pred = p.lookup(row.slots);
+		long obj = o.lookup(row.slots);
+		long context = c.lookup(row.slots);
+		if (namedContextScope && context == NULL_CONTEXT_ID) {
+			return false;
+		}
+		if (varyingSlots.length == 0) {
+			if (constantResult != 0) {
+				return constantResult == 1;
+			}
+			int served = adjacencyProbe.test(row, -1L);
+			boolean result = served >= 0 ? served == 1 : evaluate(subj, pred, obj, context);
+			constantResult = result ? (byte) 1 : (byte) 2;
+			return result;
+		}
+		if (memo == null) {
+			memo = new KeyedMatches(varyingSlots.length, 256).withVerdicts();
+		}
+		Boolean cached = memo.memoGet(row.slots, varyingSlots);
+		if (cached != null) {
+			return cached;
+		}
+		int served = adjacencyProbe.test(row, -1L);
+		boolean result = served >= 0 ? served == 1 : evaluate(subj, pred, obj, context);
+		if (membershipProbe != null) {
+			membershipProbe.recordDirectResult(result);
+		}
+		memo.memoPut(row.slots, varyingSlots, result);
+		return result;
+	}
+
 	@Override
 	public int selectBatch(NativeBatch batch, int[] sel, int n, RowState scratch) {
 		if (varyingSlots.length < 2 || varyingSlots.length > 4) {
@@ -391,6 +440,9 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 	}
 
 	private boolean acceptPrepared(NativeBatch batch, int physicalRow, int preparedIndex, RowState row) {
+		if (adjacencyProbe != null) {
+			return acceptPreparedWithAdjacency(batch, physicalRow, preparedIndex, row);
+		}
 		if (membershipProbe != null) {
 			int result = membershipProbe.test(row);
 			if (result >= 0) {
@@ -409,6 +461,34 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 			return cached;
 		}
 		boolean result = evaluate(subj, pred, obj, context);
+		if (membershipProbe != null) {
+			membershipProbe.recordDirectResult(result);
+		}
+		memo.memoPutPrepared(row.slots, varyingSlots, preparedIndex, result);
+		return result;
+	}
+
+	/** Prepared-batch twin of {@link #acceptWithAdjacency}: same layers, planes replacing the store probe on miss. */
+	private boolean acceptPreparedWithAdjacency(NativeBatch batch, int physicalRow, int preparedIndex, RowState row) {
+		if (membershipProbe != null) {
+			int result = membershipProbe.test(row);
+			if (result >= 0) {
+				return result == 1;
+			}
+		}
+		long subj = s.lookup(row.slots);
+		long pred = p.lookup(row.slots);
+		long obj = o.lookup(row.slots);
+		long context = c.lookup(row.slots);
+		if (namedContextScope && context == NULL_CONTEXT_ID) {
+			return false;
+		}
+		Boolean cached = memo.memoGetPrepared(batch, physicalRow, varyingSlots, preparedIndex);
+		if (cached != null) {
+			return cached;
+		}
+		int served = adjacencyProbe.test(row, -1L);
+		boolean result = served >= 0 ? served == 1 : evaluate(subj, pred, obj, context);
 		if (membershipProbe != null) {
 			membershipProbe.recordDirectResult(result);
 		}
@@ -445,6 +525,13 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 			throw new SailException(e);
 		}
 	}
+
+	@Override
+	public void close() {
+		if (adjacencyProbe != null) {
+			adjacencyProbe.close();
+		}
+	}
 }
 
 @Experimental
@@ -458,6 +545,7 @@ final class ExistsFilter implements NativeBooleanFilter {
 	 */
 	final int[] memoSlots;
 	final PatternMembershipProbe membershipProbe;
+	final AdjacencyIntersectionProbe adjacencyProbe;
 	KeyedMatches memo;
 
 	ExistsFilter(SlotPlan subPlan) {
@@ -470,10 +558,18 @@ final class ExistsFilter implements NativeBooleanFilter {
 						((PatternPlan) subPlan).o, ((PatternPlan) subPlan).c, ((PatternPlan) subPlan).contexts,
 						((PatternPlan) subPlan).namedContextScope)
 				: null;
+		this.adjacencyProbe = subPlan instanceof PatternPlan
+				? AdjacencyIntersectionProbe.tryCreate(((PatternPlan) subPlan).s, ((PatternPlan) subPlan).p,
+						((PatternPlan) subPlan).o, ((PatternPlan) subPlan).c, ((PatternPlan) subPlan).contexts,
+						((PatternPlan) subPlan).namedContextScope)
+				: null;
 	}
 
 	@Override
 	public boolean accept(RowState row) {
+		if (adjacencyProbe != null) {
+			return acceptWithAdjacency(row);
+		}
 		if (membershipProbe != null) {
 			int result = membershipProbe.test(row);
 			if (result >= 0) {
@@ -491,6 +587,45 @@ final class ExistsFilter implements NativeBooleanFilter {
 			return cached;
 		}
 		boolean result = exists(row);
+		if (membershipProbe != null) {
+			membershipProbe.recordDirectResult(result);
+		}
+		memo.memoPut(row.slots, memoSlots, result);
+		return result;
+	}
+
+	/**
+	 * Adjacency-semijoin variant: the membership set and per-key memo stay the O(1) front exactly as in the default
+	 * path — the plane views only replace the expensive subplan probe on a miss, and their verdicts feed the same
+	 * membership admission and memo so the steady state is unchanged.
+	 */
+	private boolean acceptWithAdjacency(RowState row) {
+		if (membershipProbe != null) {
+			int result = membershipProbe.test(row);
+			if (result >= 0) {
+				return result == 1;
+			}
+		}
+		if (memoSlots == null) {
+			int served = adjacencyProbe.test(row, -1L);
+			if (served >= 0) {
+				boolean result = served == 1;
+				if (membershipProbe != null) {
+					membershipProbe.recordDirectResult(result);
+				}
+				return result;
+			}
+			return exists(row);
+		}
+		if (memo == null) {
+			memo = new KeyedMatches(memoSlots.length, 256).withVerdicts();
+		}
+		Boolean cached = memo.memoGet(row.slots, memoSlots);
+		if (cached != null) {
+			return cached;
+		}
+		int served = adjacencyProbe.test(row, -1L);
+		boolean result = served >= 0 ? served == 1 : exists(row);
 		if (membershipProbe != null) {
 			membershipProbe.recordDirectResult(result);
 		}
@@ -520,6 +655,9 @@ final class ExistsFilter implements NativeBooleanFilter {
 	}
 
 	private boolean acceptPrepared(NativeBatch batch, int physicalRow, int preparedIndex, RowState row) {
+		if (adjacencyProbe != null) {
+			return acceptPreparedWithAdjacency(batch, physicalRow, preparedIndex, row);
+		}
 		if (membershipProbe != null) {
 			int result = membershipProbe.test(row);
 			if (result >= 0) {
@@ -531,6 +669,27 @@ final class ExistsFilter implements NativeBooleanFilter {
 			return cached;
 		}
 		boolean result = exists(row);
+		if (membershipProbe != null) {
+			membershipProbe.recordDirectResult(result);
+		}
+		memo.memoPutPrepared(row.slots, memoSlots, preparedIndex, result);
+		return result;
+	}
+
+	/** Prepared-batch twin of {@link #acceptWithAdjacency}: same layers, planes replacing the subplan probe on miss. */
+	private boolean acceptPreparedWithAdjacency(NativeBatch batch, int physicalRow, int preparedIndex, RowState row) {
+		if (membershipProbe != null) {
+			int result = membershipProbe.test(row);
+			if (result >= 0) {
+				return result == 1;
+			}
+		}
+		Boolean cached = memo.memoGetPrepared(batch, physicalRow, memoSlots, preparedIndex);
+		if (cached != null) {
+			return cached;
+		}
+		int served = adjacencyProbe.test(row, -1L);
+		boolean result = served >= 0 ? served == 1 : exists(row);
 		if (membershipProbe != null) {
 			membershipProbe.recordDirectResult(result);
 		}
@@ -550,6 +709,13 @@ final class ExistsFilter implements NativeBooleanFilter {
 			}
 		} catch (IOException e) {
 			throw new SailException(e);
+		}
+	}
+
+	@Override
+	public void close() {
+		if (adjacencyProbe != null) {
+			adjacencyProbe.close();
 		}
 	}
 }
