@@ -345,6 +345,9 @@ final class LmdbNativeParallelKernelRows {
 		OutputMods mods = emit.mods;
 		// the comparator is the generated code's own: KernelRuntime with the kernel's hook sidecar for value order
 		LmdbNativeKernelHooks orderHooks = mods.valueOrder ? new LmdbNativeKernelHooks(row, lowered.bindings) : null;
+		if (orderHooks != null) {
+			orderHooks.orderComparatorStrict(lowered.strictOrderCompare);
+		}
 		if (mods.limit >= 0) {
 			int cap = (int) Math.min(saturatedSum(mods.limit, mods.offset), Integer.MAX_VALUE);
 			count = KernelRuntime.topKRows(rows, count, stride, mods.orderKeys, mods.descending, orderHooks, cap);
@@ -391,6 +394,10 @@ final class LmdbNativeParallelKernelRows {
 					? new LmdbNativeKernelHooks(workerRow, bindings,
 							forkedHooks != null ? forkedHooks : bindings.filterHooks)
 					: null;
+			if (hooks != null && lowered.kernel.terminal.mods.orderKeys != null
+					&& lowered.kernel.terminal.mods.valueOrder) {
+				hooks.orderComparatorStrict(lowered.strictOrderCompare);
+			}
 			RowState residualRow = null;
 			if (forkedResiduals != null) {
 				// residual filters see exactly the state the consumer's bind loop would produce: a fresh entry-seeded

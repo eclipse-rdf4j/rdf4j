@@ -162,6 +162,15 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		}
 	}
 
+	/**
+	 * Ordered-emission kernels (M7 OutputMods) align this comparator with the consumer's strict/extended evaluation
+	 * mode at bind time, mirroring the interpreted sort's {@code AggContext} comparator configuration. Every other
+	 * route leaves the constructor default untouched.
+	 */
+	void orderComparatorStrict(boolean strict) {
+		comparator.setStrict(strict);
+	}
+
 	@Override
 	public int compareValues(long left, long right) {
 		if (codec != null && left != UNKNOWN && left != NULL_CONTEXT_ID && right != UNKNOWN

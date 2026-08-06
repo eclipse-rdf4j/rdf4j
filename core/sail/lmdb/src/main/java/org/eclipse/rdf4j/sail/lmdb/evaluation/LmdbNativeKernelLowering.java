@@ -158,6 +158,23 @@ final class LmdbNativeKernelLowering {
 	/** Context-bearing producers lowered against adjacency views (M7 witness). */
 	static final AtomicLong CONTEXT_COLUMN_LOWERINGS = new AtomicLong();
 
+	/**
+	 * Enables sinking a consumer's ORDER BY / LIMIT / OFFSET into the kernel terminal's {@code OutputMods} (three-tier
+	 * parity plan, M7): the generated {@code flush()} sorts (or bounded-heap top-Ks) the materialized rows with the
+	 * exact comparator stack the interpreted sort uses ({@code hooks.compareValues}: ordered-integer fast path, decoded
+	 * compare, {@code ValueComparator} fallback) and applies the slice, so {@code ORDER BY … LIMIT k} shapes keep the
+	 * whole pipeline fused instead of feeding an engine-side sort. Kill switch, default ON: a shape that does not sink
+	 * runs exactly as before (the ordinary ladder still sorts outside the kernel).
+	 */
+	static final String OUTPUT_MODS_PROPERTY = "rdf4j.lmdb.janinoCodegen.outputMods";
+
+	static boolean outputModsEnabled() {
+		return Boolean.parseBoolean(System.getProperty(OUTPUT_MODS_PROPERTY, "true"));
+	}
+
+	/** Row kernels whose terminal took the consumer's ORDER/LIMIT/OFFSET mods (M7 witness). */
+	static final AtomicLong OUTPUT_MODS_LOWERINGS = new AtomicLong();
+
 	private static final int MAX_CHILDREN = 12;
 	private static final int MAX_HOOK_ARGS = 3;
 	/** Rows of a multi-variable VALUES table the lowering will unroll into generated source. */
@@ -170,15 +187,28 @@ final class LmdbNativeKernelLowering {
 		final Kernel kernel;
 		final LmdbNativeKernelBindings bindings;
 		final String planBridgeReason;
+		/**
+		 * ORDER-sunk kernels only (M7 OutputMods): whether the consumer evaluates in STRICT mode, so every hooks-backed
+		 * comparator this open constructs (sequential, parallel workers, parallel merge) aligns with the interpreted
+		 * sort's {@code ValueComparator.setStrict} configuration. Bind-time property — deliberately NOT part of the
+		 * kernel shape key, because the generated source never depends on it.
+		 */
+		final boolean strictOrderCompare;
 
 		Lowered(Kernel kernel, LmdbNativeKernelBindings bindings) {
 			this(kernel, bindings, null);
 		}
 
 		Lowered(Kernel kernel, LmdbNativeKernelBindings bindings, String planBridgeReason) {
+			this(kernel, bindings, planBridgeReason, false);
+		}
+
+		Lowered(Kernel kernel, LmdbNativeKernelBindings bindings, String planBridgeReason,
+				boolean strictOrderCompare) {
 			this.kernel = kernel;
 			this.bindings = bindings;
 			this.planBridgeReason = planBridgeReason;
+			this.strictOrderCompare = strictOrderCompare;
 		}
 	}
 
@@ -277,13 +307,86 @@ final class LmdbNativeKernelLowering {
 	}
 
 	/**
+	 * Row lowering with the consumer's ORDER BY / LIMIT / OFFSET sunk into the kernel terminal (three-tier parity plan,
+	 * M7): the ordinary row lowering runs first, then the {@code Emit} terminal takes {@code OutputMods} with the order
+	 * keys mapped from engine slots to emit columns, so the generated {@code flush()} sorts (bounded-heap top-K under a
+	 * LIMIT) and slices the rows itself. Value order is used unconditionally — {@code hooks.compareValues} is the exact
+	 * comparator stack the interpreted sort applies (ordered-integer fast path, decoded compare,
+	 * {@code ValueComparator} fallback, unbound first). An order slot the kernel does not emit is constant across this
+	 * execution's rows (bound at entry, or never produced and therefore UNKNOWN on every row), so it cannot influence
+	 * the order and drops out of the key list. Returns null when the shape cannot carry the mods — quietly, because the
+	 * caller's ordinary ladder (including the unordered kernel feeding the engine-side sort) still serves, so a
+	 * recorded decline would double-count in the census.
+	 */
+	static Lowered lowerOrderedRows(SlotPlan arg, RowState row, boolean preferScans, int[] orderSlots,
+			boolean[] orderAscending, long limit, long offset, boolean strictCompare) {
+		if (!outputModsEnabled()) {
+			return null;
+		}
+		Lowered lowered = lowerRows(arg, row, null, preferScans);
+		if (lowered == null || lowered.planBridgeReason != null) {
+			// Bridge-fed kernels bring no fusion win over the engine-side sort machinery; let the ladder serve.
+			declineQuiet("order-sink:" + (lowered == null ? "lowering-declined" : "plan-bridge"));
+			return null;
+		}
+		LmdbNativeKernelIr.Emit emit = (LmdbNativeKernelIr.Emit) lowered.kernel.terminal;
+		if (emit.distinct) {
+			declineQuiet("order-sink:distinct-terminal");
+			return null;
+		}
+		LmdbNativeKernelBindings bindings = lowered.bindings;
+		if (!bindings.residualFilters.isEmpty()) {
+			// Residual filters drop rows AFTER kernel emission; a sunk LIMIT would trim rows the residual pass still
+			// needs to inspect, returning fewer rows than the interpreted slice.
+			declineQuiet("order-sink:residual-filter");
+			return null;
+		}
+		if (bindings.planRequests.length > 0) {
+			declineQuiet("order-sink:plan-producer");
+			return null;
+		}
+		int[] emittedSlots = bindings.columnEngineSlots;
+		int[] keys = new int[orderSlots.length];
+		boolean[] descending = new boolean[orderSlots.length];
+		int keyCount = 0;
+		for (int i = 0; i < orderSlots.length; i++) {
+			int col = -1;
+			for (int c = 0; c < emittedSlots.length; c++) {
+				if (emittedSlots[c] == orderSlots[i]) {
+					col = c;
+					break;
+				}
+			}
+			if (col >= 0) {
+				keys[keyCount] = col;
+				descending[keyCount] = !orderAscending[i];
+				keyCount++;
+			}
+		}
+		LmdbNativeKernelIr.OutputMods mods = keyCount == 0
+				? new LmdbNativeKernelIr.OutputMods(null, null, false, limit, offset)
+				: new LmdbNativeKernelIr.OutputMods(java.util.Arrays.copyOf(keys, keyCount),
+						java.util.Arrays.copyOf(descending, keyCount), true, limit, offset);
+		Kernel kernel = new Kernel(lowered.kernel.columnCount, lowered.kernel.pipeline, emit.withMods(mods));
+		// Value ordering runs through hooks.compareValues, so the engine must construct the hook sidecar even when no
+		// filter or bind hook asked for it.
+		LmdbNativeKernelBindings sunk = keyCount == 0 ? bindings
+				: new LmdbNativeKernelBindings(bindings.adjacencies, bindings.constants, bindings.entrySlotIds,
+						bindings.keyDomains, bindings.filterHooks, bindings.bindHooks, bindings.columnEngineSlots,
+						bindings.residualFilters, bindings.scanOrders, bindings.planRequests, bindings.groupLayout,
+						true, bindings.distinctExpected);
+		OUTPUT_MODS_LOWERINGS.incrementAndGet();
+		return new Lowered(kernel, sunk, null, strictCompare);
+	}
+
+	/**
 	 * A sinking refusal is not a kernel capability decline: the ordinary rungs (including the plain kernel via
 	 * {@code openUnorderedInput}) still get their full opportunity afterwards, so recording it against
 	 * {@code PATH_IR_KERNEL} would double-count in the decline census. Debug visibility only.
 	 */
 	private static void declineQuiet(String reason) {
 		if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
-			System.err.println("[ir-lowering] distinct-sink decline: " + reason);
+			System.err.println("[ir-lowering] quiet decline: " + reason);
 		}
 	}
 

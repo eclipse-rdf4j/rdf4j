@@ -439,6 +439,15 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			}
 			return 0;
 		};
+		// Kernel-fused ORDER BY (three-tier parity plan, M7 OutputMods): the kernel terminal owns the sort and the
+		// slice, so an engaged cursor returns rows already ordered and sliced — no engine-side sort pass at all.
+		// DISTINCT stays out: this class dedups after sorting, and a kernel LIMIT would trim rows that dedup needs.
+		if (orderSlots.length != 0 && !distinct) {
+			List<BindingSet> kernelOrdered = tryEvaluateOrderedKernel(row, values);
+			if (kernelOrdered != null) {
+				return kernelOrdered;
+			}
+		}
 		List<BindingSet> factorizedSorted = tryEvaluateOrderedFactorized(base, values, comparator, emitCap);
 		if (factorizedSorted != null) {
 			return factorizedSorted;
@@ -475,6 +484,32 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 					sortMetrics.commitToParent();
 				}
 				return result;
+			}
+		} catch (IOException e) {
+			throw new QueryEvaluationException(e);
+		}
+	}
+
+	/**
+	 * ORDER BY shapes fused end-to-end (M7 OutputMods): the compiled kernel materializes, sorts with the same
+	 * comparator stack this class's own sort uses ({@code hooks.compareValues}), and slices — the returned list is the
+	 * final answer. Null when the kernel declines; every later tier (ordered-factorized, top-K, spill sort — each free
+	 * to use the unordered kernel as its row producer) then runs unchanged.
+	 */
+	private List<BindingSet> tryEvaluateOrderedKernel(RowState row, AggContext values) {
+		try {
+			RowCursor cursor = LmdbNativeKernelExecution.tryOpenOrderedRows(arg, row, originalExpr, orderSlots,
+					orderAscending, limit, offset, strictCompare);
+			if (cursor == null) {
+				return null;
+			}
+			try (RowCursor ordered = cursor) {
+				LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL);
+				ArrayList<BindingSet> results = new ArrayList<>();
+				while (ordered.next()) {
+					results.add(project(row.slots, values));
+				}
+				return results;
 			}
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);

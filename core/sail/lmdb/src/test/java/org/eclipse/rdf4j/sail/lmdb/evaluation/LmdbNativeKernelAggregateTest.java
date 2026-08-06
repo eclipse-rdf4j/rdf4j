@@ -119,6 +119,26 @@ public class LmdbNativeKernelAggregateTest {
 			+ "SELECT ?x (COUNT(*) AS ?n) WHERE { ?s ex:word ?w . BIND(5 AS ?x) }\n"
 			+ "GROUP BY ?x";
 
+	// M7 output mods: ORDER BY + LIMIT over a two-pattern chain (fusion opportunity) must sink into the kernel
+	// terminal's OutputMods so the generated flush() top-Ks the rows itself (OUTPUT_MODS_LOWERINGS witness). The
+	// compound key ?l ?a is unique per row, so the ordered result list is deterministic across tiers.
+	private static final String ORDER_LIMIT_QUERY = "PREFIX ex: <" + EX + ">\n"
+			+ "SELECT ?a ?b ?l WHERE { ?a ex:knows ?b . ?b ex:label ?l }\n"
+			+ "ORDER BY ?l ?a LIMIT 3";
+	// Descending key plus OFFSET: the kernel top-K keeps offset+limit rows, then flush drops the offset.
+	private static final String ORDER_DESC_OFFSET_QUERY = "PREFIX ex: <" + EX + ">\n"
+			+ "SELECT ?a ?b ?l WHERE { ?a ex:knows ?b . ?b ex:label ?l }\n"
+			+ "ORDER BY DESC(?l) ?a OFFSET 2 LIMIT 3";
+	// No LIMIT: the sink still applies (full in-kernel sort instead of the engine-side spill sort).
+	private static final String ORDER_NO_LIMIT_QUERY = "PREFIX ex: <" + EX + ">\n"
+			+ "SELECT ?a ?b ?l WHERE { ?a ex:knows ?b . ?b ex:label ?l }\n"
+			+ "ORDER BY ?l ?a";
+	// DISTINCT above ORDER BY: the interpreted path dedups after sorting; sinking mods under a consumer dedup would
+	// trim rows before the dedup sees them, so the sink must decline (v1) and results must stay correct.
+	private static final String ORDER_DISTINCT_QUERY = "PREFIX ex: <" + EX + ">\n"
+			+ "SELECT DISTINCT ?l WHERE { ?a ex:knows ?b . ?b ex:label ?l }\n"
+			+ "ORDER BY ?l LIMIT 2";
+
 	// M7 context columns: a constant GRAPH restriction previously declined the kernel outright (the adjacency guards
 	// reject any context term and the quad-scan lowering refuses a constant context) — it must now lower against the
 	// adjacency view with an in-node context match (CONTEXT_COLUMN_LOWERINGS witness).
@@ -623,6 +643,67 @@ public class LmdbNativeKernelAggregateTest {
 	}
 
 	@Test
+	public void orderByLimitSinksIntoTheKernelTopK() {
+		List<String> expected = genericOrderedRows(ORDER_LIMIT_QUERY);
+		assertEquals(3, expected.size(), "fixture must fill the LIMIT, got " + expected);
+		warmUntilRowEngaged(ORDER_LIMIT_QUERY);
+		assertTrue(KernelExecutionTestAccess.opened() > 0L,
+				"row rung never engaged for the ORDER BY + LIMIT shape (planned="
+						+ KernelExecutionTestAccess.planned() + ", declined="
+						+ KernelExecutionTestAccess.declined() + ")");
+		assertTrue(KernelExecutionTestAccess.outputModsLowerings() > 0L,
+				"ORDER BY + LIMIT was not sunk into the kernel terminal's OutputMods");
+		assertEquals(expected, orderedRows(ORDER_LIMIT_QUERY));
+	}
+
+	@Test
+	public void orderByDescendingWithOffsetMatchesGeneric() {
+		List<String> expected = genericOrderedRows(ORDER_DESC_OFFSET_QUERY);
+		assertEquals(3, expected.size(), "fixture must fill the OFFSET+LIMIT window, got " + expected);
+		warmUntilRowEngaged(ORDER_DESC_OFFSET_QUERY);
+		assertTrue(KernelExecutionTestAccess.outputModsLowerings() > 0L,
+				"descending ORDER BY + OFFSET was not sunk into the kernel terminal's OutputMods");
+		assertEquals(expected, orderedRows(ORDER_DESC_OFFSET_QUERY));
+	}
+
+	@Test
+	public void orderByWithoutLimitSinksTheFullSort() {
+		List<String> expected = genericOrderedRows(ORDER_NO_LIMIT_QUERY);
+		assertFalse(expected.isEmpty(), "fixture must produce ordered rows");
+		warmUntilRowEngaged(ORDER_NO_LIMIT_QUERY);
+		assertTrue(KernelExecutionTestAccess.outputModsLowerings() > 0L,
+				"ORDER BY without LIMIT was not sunk into the kernel terminal's OutputMods");
+		assertEquals(expected, orderedRows(ORDER_NO_LIMIT_QUERY));
+	}
+
+	@Test
+	public void orderedDistinctKeepsTheInterpretedDedupAndStaysCorrect() {
+		List<String> expected = genericOrderedRows(ORDER_DISTINCT_QUERY);
+		assertEquals(2, expected.size(), "fixture must produce distinct ordered labels, got " + expected);
+		long before = KernelExecutionTestAccess.outputModsLowerings();
+		for (int round = 0; round < 20; round++) {
+			assertEquals(expected, orderedRows(ORDER_DISTINCT_QUERY));
+		}
+		assertEquals(before, KernelExecutionTestAccess.outputModsLowerings(),
+				"DISTINCT above ORDER BY must not sink mods into the kernel (v1 dedup-order contract)");
+	}
+
+	@Test
+	public void outputModsFlagOffRestoresTheInterpretedSort() {
+		System.setProperty(LmdbNativeKernelLowering.OUTPUT_MODS_PROPERTY, "false");
+		try {
+			List<String> expected = genericOrderedRows(ORDER_LIMIT_QUERY);
+			for (int round = 0; round < 20; round++) {
+				assertEquals(expected, orderedRows(ORDER_LIMIT_QUERY));
+			}
+			assertEquals(0L, KernelExecutionTestAccess.outputModsLowerings(),
+					"flag off must keep ORDER/LIMIT/OFFSET outside the kernel");
+		} finally {
+			System.clearProperty(LmdbNativeKernelLowering.OUTPUT_MODS_PROPERTY);
+		}
+	}
+
+	@Test
 	public void disabledFlagKeepsAggregateCountersSilent() {
 		System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "false");
 		try {
@@ -674,6 +755,51 @@ public class LmdbNativeKernelAggregateTest {
 			return rows(query);
 		} finally {
 			System.setProperty(NATIVE_FLAG, "true");
+		}
+	}
+
+	/** Like {@link #rows} but preserves the result order — ORDER BY parity must compare the sequence, not the bag. */
+	private List<String> orderedRows(String query) {
+		List<String> result = new ArrayList<>();
+		try (SailRepositoryConnection connection = repository.getConnection();
+				TupleQueryResult tupleResult = connection.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+			while (tupleResult.hasNext()) {
+				BindingSet row = tupleResult.next();
+				List<String> bindings = new ArrayList<>();
+				for (String name : row.getBindingNames()) {
+					bindings.add(name + "=" + row.getValue(name).toString());
+				}
+				Collections.sort(bindings);
+				result.add(String.join("|", bindings));
+			}
+		}
+		return result;
+	}
+
+	private List<String> genericOrderedRows(String query) {
+		System.setProperty(NATIVE_FLAG, "false");
+		try {
+			return orderedRows(query);
+		} finally {
+			System.setProperty(NATIVE_FLAG, "true");
+		}
+	}
+
+	/** Row-rung sibling of {@link #warmUntilEngaged}: loops until the IR row kernel opens for the query. */
+	private void warmUntilRowEngaged(String query) {
+		String seeds = "VALUES ?a { ex:p0 ex:p1 ex:p2 ex:p3 ex:p4 ex:p5 ex:p6 ex:p7 ex:p8 }";
+		for (int i = 0; i < 4; i++) {
+			rows("PREFIX ex: <" + EX + "> SELECT * WHERE { " + seeds + " ?a ex:knows ?o }");
+			rows("PREFIX ex: <" + EX + "> SELECT * WHERE { " + seeds + " ?o ex:knows ?a }");
+			rows("PREFIX ex: <" + EX + "> SELECT * WHERE { " + seeds + " ?a ex:label ?l }");
+		}
+		// The seed queries themselves can open kernels once their shapes sit warm in the compile cache, so gating on
+		// opened() alone can exit before the ordered query ever ran — loop until the query itself both engaged the
+		// rung and sank its mods.
+		for (int round = 0; round < 300
+				&& (KernelExecutionTestAccess.opened() == 0L
+						|| KernelExecutionTestAccess.outputModsLowerings() == 0L); round++) {
+			orderedRows(query);
 		}
 	}
 }

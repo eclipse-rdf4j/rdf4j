@@ -70,6 +70,7 @@ final class LmdbNativeKernelExecution {
 		LmdbNativeKernelLowering.HAVING_SINKS.set(0L);
 		LmdbNativeKernelLowering.BIND_HOOK_LOWERINGS.set(0L);
 		LmdbNativeKernelLowering.CONTEXT_COLUMN_LOWERINGS.set(0L);
+		LmdbNativeKernelLowering.OUTPUT_MODS_LOWERINGS.set(0L);
 		SHAPE_OPENS.clear();
 	}
 
@@ -239,7 +240,39 @@ final class LmdbNativeKernelExecution {
 					"no-fusion-opportunity");
 			return null;
 		}
-		return tryOpenRows(arg, row, originalExpr, false, null);
+		return tryOpenRows(arg, row, originalExpr, false, null, null);
+	}
+
+	/** The consumer's ORDER BY / LIMIT / OFFSET, offered to the kernel terminal (M7 OutputMods). */
+	static final class OrderedMods {
+		final int[] orderSlots;
+		final boolean[] ascending;
+		final long limit;
+		final long offset;
+		final boolean strictCompare;
+
+		OrderedMods(int[] orderSlots, boolean[] ascending, long limit, long offset, boolean strictCompare) {
+			this.orderSlots = orderSlots;
+			this.ascending = ascending;
+			this.limit = limit;
+			this.offset = offset;
+			this.strictCompare = strictCompare;
+		}
+	}
+
+	/**
+	 * Ordered row rung (M7 OutputMods): a compiled cursor whose rows arrive already sorted and sliced — the kernel
+	 * terminal owns the ORDER BY comparator work and the OFFSET/LIMIT window — or null to let the engine-side sort
+	 * machinery serve. All declines are quiet: the ordinary ladder (including the unordered kernel feeding the
+	 * engine-side sort) still gets its full opportunity afterwards, so recording them would double-count.
+	 */
+	static RowCursor tryOpenOrderedRows(SlotPlan arg, RowState row, TupleExpr originalExpr, int[] orderSlots,
+			boolean[] orderAscending, long limit, long offset, boolean strictCompare) throws IOException {
+		if (!hasFusionOpportunity(arg) || !LmdbNativeJaninoCodegen.enabled()) {
+			return null;
+		}
+		return tryOpenRows(arg, row, originalExpr, false, null,
+				new OrderedMods(orderSlots, orderAscending, limit, offset, strictCompare));
 	}
 
 	/**
@@ -254,7 +287,7 @@ final class LmdbNativeKernelExecution {
 			// attempt against PATH_IR_KERNEL would double-count in the decline census.
 			return null;
 		}
-		return tryOpenRows(arg, row, originalExpr, false, distinctSlots);
+		return tryOpenRows(arg, row, originalExpr, false, distinctSlots, null);
 	}
 
 	/**
@@ -336,8 +369,11 @@ final class LmdbNativeKernelExecution {
 	}
 
 	private static RowCursor tryOpenRows(SlotPlan arg, RowState row, TupleExpr originalExpr, boolean preferScans,
-			int[] distinctSlots) throws IOException {
+			int[] distinctSlots, OrderedMods ordered) throws IOException {
 		if (!LmdbNativeJaninoCodegen.enabled()) {
+			if (ordered != null) {
+				return null;
+			}
 			if (row.runtimePlan != null) {
 				row.runtimePlan.janinoDeclined("FEATURE_DISABLED[" + LmdbNativeJaninoCodegen.ENABLED_PROPERTY
 						+ "=false]");
@@ -347,10 +383,18 @@ final class LmdbNativeKernelExecution {
 		}
 		NativeLmdbQuerySource.NativeProbe probe = null;
 		try {
-			LmdbNativeKernelLowering.Lowered lowered = distinctSlots != null
-					? LmdbNativeKernelLowering.lowerDistinctRows(arg, row, originalExpr, preferScans, distinctSlots)
-					: LmdbNativeKernelLowering.lowerRows(arg, row, originalExpr, preferScans);
+			LmdbNativeKernelLowering.Lowered lowered = ordered != null
+					? LmdbNativeKernelLowering.lowerOrderedRows(arg, row, preferScans, ordered.orderSlots,
+							ordered.ascending, ordered.limit, ordered.offset, ordered.strictCompare)
+					: distinctSlots != null
+							? LmdbNativeKernelLowering.lowerDistinctRows(arg, row, originalExpr, preferScans,
+									distinctSlots)
+							: LmdbNativeKernelLowering.lowerRows(arg, row, originalExpr, preferScans);
 			if (lowered == null) {
+				if (ordered != null) {
+					// Quiet: the ordinary ladder still sorts outside the kernel; see tryOpenOrderedRows.
+					return null;
+				}
 				DECLINED.incrementAndGet();
 				if (row.runtimePlan != null) {
 					row.runtimePlan.janinoDeclined("IR_LOWERING_DECLINED[preferScans=" + preferScans
@@ -368,6 +412,9 @@ final class LmdbNativeKernelExecution {
 					lowered.kernel.className(), () -> LmdbNativeKernelEmitter.emit(lowered.kernel),
 					observedRows);
 			if (kernel == null) {
+				if (ordered != null) {
+					return null;
+				}
 				if (row.runtimePlan != null) {
 					row.runtimePlan.janinoDeclined(
 							LmdbNativeJaninoCodegen.declineReason(CACHE_OWNER, shapeKey, observedRows, "irKernel"));
@@ -385,7 +432,10 @@ final class LmdbNativeKernelExecution {
 				probe = null;
 				kernel.close();
 				if (!preferScans && LmdbNativeKernelLowering.scanSourcesEnabled()) {
-					return tryOpenRows(arg, row, originalExpr, true, distinctSlots);
+					return tryOpenRows(arg, row, originalExpr, true, distinctSlots, ordered);
+				}
+				if (ordered != null) {
+					return null;
 				}
 				LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
 						"adjacency-unavailable");
@@ -424,7 +474,9 @@ final class LmdbNativeKernelExecution {
 					SlotPlan[] actualOrder = arg instanceof MultiJoinPlan
 							? ((MultiJoinPlan) arg).derivedPlan(row).order
 							: new SlotPlan[] { arg };
-					row.runtimePlan.janinoActivated(activationRoute("irKernelParallel", lowered), actualOrder);
+					row.runtimePlan.janinoActivated(
+							activationRoute(ordered == null ? "irKernelParallel" : "irKernelParallelTopK", lowered),
+							actualOrder);
 					row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_IR_KERNEL, actualOrder);
 				}
 				return parallel;
@@ -432,6 +484,14 @@ final class LmdbNativeKernelExecution {
 			LmdbNativeKernelHooks hooks = lowered.bindings.needsHooks()
 					? new LmdbNativeKernelHooks(row, lowered.bindings)
 					: null;
+			if (hooks != null) {
+				LmdbNativeKernelIr.OutputMods mods = lowered.kernel.terminal.mods;
+				if (mods.orderKeys != null && mods.valueOrder) {
+					// Align the value comparator with the consumer's strict/extended evaluation mode, exactly like
+					// the interpreted sort's AggContext comparator (M7 OutputMods).
+					hooks.orderComparatorStrict(lowered.strictOrderCompare);
+				}
+			}
 			// A scan-bearing kernel opens LMDB cursors of its own; the row cursor owns that scanner and closes it.
 			LmdbNativeKernelScanner scanner = lowered.kernel.requirements.scans > 0
 					? new LmdbNativeKernelScanner(row, lowered.bindings.scanOrders)
@@ -442,7 +502,8 @@ final class LmdbNativeKernelExecution {
 				SlotPlan[] actualOrder = arg instanceof MultiJoinPlan
 						? ((MultiJoinPlan) arg).derivedPlan(row).order
 						: new SlotPlan[] { arg };
-				row.runtimePlan.janinoActivated(activationRoute("irKernel", lowered), actualOrder);
+				row.runtimePlan.janinoActivated(
+						activationRoute(ordered == null ? "irKernel" : "irKernelTopK", lowered), actualOrder);
 				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_IR_KERNEL, actualOrder);
 			}
 			return new KernelRowCursor(kernel, probe, scanner, hooks, row, lowered.bindings.columnEngineSlots,

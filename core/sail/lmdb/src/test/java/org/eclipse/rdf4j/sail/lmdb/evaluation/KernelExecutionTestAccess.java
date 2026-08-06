@@ -64,6 +64,10 @@ public final class KernelExecutionTestAccess {
 		return LmdbNativeKernelLowering.CONTEXT_COLUMN_LOWERINGS.get();
 	}
 
+	public static long outputModsLowerings() {
+		return LmdbNativeKernelLowering.OUTPUT_MODS_LOWERINGS.get();
+	}
+
 	public static void resetMetrics() {
 		LmdbNativeKernelExecution.resetMetrics();
 	}

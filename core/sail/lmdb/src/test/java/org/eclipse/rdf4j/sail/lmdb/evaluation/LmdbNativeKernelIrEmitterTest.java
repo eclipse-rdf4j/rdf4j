@@ -123,6 +123,28 @@ class LmdbNativeKernelIrEmitterTest {
 		assertRows(rows, new long[][] { { 10 }, { 20 }, { 30 } });
 	}
 
+	// M7 OutputMods: the terminal's flush() must top-K (bounded-heap) or fully sort the materialized rows and apply
+	// the OFFSET/LIMIT slice; a mods-bearing kernel gives up streaming (resumable) because ordering is a whole-result
+	// property.
+	@Test
+	void outputModsTopKSortsSlicesAndDisablesStreaming() throws Exception {
+		Kernel ir = new Kernel(1, List.of(new EnumerateDomain(0, 0)),
+				new Emit(new int[] { 0 }, false,
+						new OutputMods(new int[] { 0 }, null, false, 2L, 1L)));
+		assertFalse(ir.resumable, "ordering/slice mods must force the materializing emitter");
+		List<long[]> rows = run(ir, context().domains(new long[] { 30, 7, 900, 12 }));
+		assertRows(rows, new long[][] { { 12 }, { 30 } }, "unsigned id order, offset 1, limit 2");
+	}
+
+	@Test
+	void outputModsDescendingFullSortOrdersEveryRow() throws Exception {
+		Kernel ir = new Kernel(1, List.of(new EnumerateDomain(0, 0)),
+				new Emit(new int[] { 0 }, false,
+						new OutputMods(new int[] { 0 }, new boolean[] { true }, false, -1L, 0L)));
+		List<long[]> rows = run(ir, context().domains(new long[] { 5, 9, 7 }));
+		assertRows(rows, new long[][] { { 9 }, { 7 }, { 5 } }, "descending full sort without a limit");
+	}
+
 	@Test
 	void enumerateEntrySeedsSingleRowFromEntrySlots() throws Exception {
 		Kernel ir = new Kernel(1, List.of(new EnumerateEntry(), new BindAlias(Operand.entry(0), 0)), emit(0));
