@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -352,6 +353,53 @@ class LmdbNativeKernelLoweringTest {
 			System.clearProperty(property);
 		} else {
 			System.setProperty(property, previous);
+		}
+	}
+
+	/**
+	 * M8 kernel hash join: a two-pattern join whose estimates pass the interpreted hash join's own cost gate (probe
+	 * side large, build side small, probe rows over the minimum) must lower to a HashBuild preamble plus an in-loop
+	 * HashProbe instead of the nested probe chain.
+	 */
+	@Test
+	void twoPatternJoinWithHashFavoredCostsLowersToHashBuildProbe() {
+		PatternPlan probe = new PatternPlan(Term.slot(0), Term.constant(PRED), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 100_000D);
+		PatternPlan build = new PatternPlan(Term.slot(1), Term.constant(PRED + 2), Term.slot(2), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 100D);
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { probe, build }, new MaskedFilter[0]);
+		String previousBridge = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
+		try {
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, freshRow(), null);
+			assertNotNull(lowered, "the two-pattern join must still lower");
+			String key = lowered.kernel.shapeKey();
+			assertTrue(key.contains("hb0("), "expected a HashBuild preamble in the shape key: " + key);
+			assertTrue(key.contains("hp0("), "expected a HashProbe in the shape key: " + key);
+		} finally {
+			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
+		}
+	}
+
+	/** The kernel hash sink honors its kill switch: flag off keeps the probe chain. */
+	@Test
+	void hashJoinKernelFlagOffKeepsTheProbeChain() {
+		PatternPlan probe = new PatternPlan(Term.slot(0), Term.constant(PRED), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 100_000D);
+		PatternPlan build = new PatternPlan(Term.slot(1), Term.constant(PRED + 2), Term.slot(2), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 100D);
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { probe, build }, new MaskedFilter[0]);
+		String previousBridge = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
+		System.setProperty(LmdbNativeKernelLowering.HASH_JOIN_PROPERTY, "false");
+		try {
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, freshRow(), null);
+			assertNotNull(lowered);
+			String key = lowered.kernel.shapeKey();
+			assertFalse(key.contains("hb0("), "flag off must keep the probe chain: " + key);
+		} finally {
+			System.clearProperty(LmdbNativeKernelLowering.HASH_JOIN_PROPERTY);
+			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
 		}
 	}
 

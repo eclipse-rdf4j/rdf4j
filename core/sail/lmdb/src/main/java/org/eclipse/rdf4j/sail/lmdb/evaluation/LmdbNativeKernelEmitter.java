@@ -29,6 +29,8 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterCompareId
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterInConstants;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterRangeUnsigned;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterValue;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.HashBuild;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.HashProbe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Intersect;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Kernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.LeftProbe;
@@ -164,6 +166,23 @@ final class LmdbNativeKernelEmitter {
 				if (ctxActive(kernel.pipeline.get(kernel.vectorTailIndex))) {
 					// The context column of the same slice, bulk-copied beside the neighbors.
 					source.append("    private long[] cvec;\n");
+				}
+			}
+			for (Node node : kernel.pipeline) {
+				if (node instanceof HashBuild) {
+					HashBuild build = (HashBuild) node;
+					// The table plus key/payload staging rows for its build inserts and probe lookups.
+					source.append("    private KernelRuntime.LongRowMap t").append(build.tableId).append(";\n");
+					source.append("    private long[] tk")
+							.append(build.tableId)
+							.append(" = new long[")
+							.append(build.keyCols.length)
+							.append("];\n");
+					source.append("    private long[] tp")
+							.append(build.tableId)
+							.append(" = new long[")
+							.append(build.payloadCols.length)
+							.append("];\n");
 				}
 			}
 			for (int i = 0; i < kernel.columnCount; i++) {
@@ -2572,6 +2591,87 @@ final class LmdbNativeKernelEmitter {
 						.append(witness)
 						.append("()) {\n")
 						.append(next(nextTemplate, indent + "    "))
+						.append(indent)
+						.append("}\n");
+			} else if (node instanceof HashBuild) {
+				HashBuild build = (HashBuild) node;
+				// The build drains once into the table, then the continuation (the probe-side loop) runs once.
+				StringBuilder insert = new StringBuilder();
+				for (int i = 0; i < build.keyCols.length; i++) {
+					insert.append("tk")
+							.append(build.tableId)
+							.append('[')
+							.append(i)
+							.append("] = v")
+							.append(build.keyCols[i])
+							.append("; ");
+				}
+				for (int i = 0; i < build.payloadCols.length; i++) {
+					insert.append("tp")
+							.append(build.tableId)
+							.append('[')
+							.append(i)
+							.append("] = v")
+							.append(build.payloadCols[i])
+							.append("; ");
+				}
+				insert.append('t')
+						.append(build.tableId)
+						.append(".add(tk")
+						.append(build.tableId)
+						.append(", tp")
+						.append(build.tableId)
+						.append(");");
+				String first = emitPipeline(build.pipeline, insert.toString(), false);
+				body.append(indent)
+						.append('t')
+						.append(build.tableId)
+						.append(" = new KernelRuntime.LongRowMap(")
+						.append(build.keyCols.length)
+						.append(", ")
+						.append(build.payloadCols.length)
+						.append(", ")
+						.append(build.maxRows)
+						.append(");\n")
+						.append(indent)
+						.append(first)
+						.append("();\n")
+						.append(next(nextTemplate, indent));
+			} else if (node instanceof HashProbe) {
+				HashProbe probe = (HashProbe) node;
+				for (int i = 0; i < probe.keys.length; i++) {
+					body.append(indent)
+							.append("tk")
+							.append(probe.tableId)
+							.append('[')
+							.append(i)
+							.append("] = ")
+							.append(probe.keys[i].token())
+							.append(";\n");
+				}
+				body.append(indent)
+						.append("int m = t")
+						.append(probe.tableId)
+						.append(".lookup(tk")
+						.append(probe.tableId)
+						.append(");\n")
+						.append(indent)
+						.append("while (m >= 0) {\n");
+				for (int i = 0; i < probe.dstCols.length; i++) {
+					body.append(indent)
+							.append("    v")
+							.append(probe.dstCols[i])
+							.append(" = t")
+							.append(probe.tableId)
+							.append(".payload(m, ")
+							.append(i)
+							.append(");\n");
+				}
+				body.append(next(nextTemplate, indent + "    "))
+						.append(indent)
+						.append("    m = t")
+						.append(probe.tableId)
+						.append(".next(m);\n")
 						.append(indent)
 						.append("}\n");
 			} else if (node instanceof Union) {

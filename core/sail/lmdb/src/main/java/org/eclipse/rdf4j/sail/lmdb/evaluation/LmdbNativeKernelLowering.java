@@ -175,6 +175,22 @@ final class LmdbNativeKernelLowering {
 	/** Row kernels whose terminal took the consumer's ORDER/LIMIT/OFFSET mods (M7 witness). */
 	static final AtomicLong OUTPUT_MODS_LOWERINGS = new AtomicLong();
 
+	/**
+	 * Enables lowering a two-pattern join whose estimates favor a hash join (the interpreted {@code LmdbNativeHashJoin}
+	 * cost gate, shared verbatim) into an in-kernel {@code HashBuild}/{@code HashProbe} pair (three-tier parity plan,
+	 * M8): the build side drains once into a {@code KernelRuntime.LongRowMap} before the probe-side loop runs, keeping
+	 * the whole join fused in generated code. Kill switch, default ON — a shape that does not lower this way keeps
+	 * today's probe chain.
+	 */
+	static final String HASH_JOIN_PROPERTY = "rdf4j.lmdb.janinoCodegen.hashJoin";
+
+	static boolean hashJoinKernelEnabled() {
+		return Boolean.parseBoolean(System.getProperty(HASH_JOIN_PROPERTY, "true"));
+	}
+
+	/** Two-pattern joins lowered through the kernel hash seam (M8 witness). */
+	static final AtomicLong HASH_JOIN_LOWERINGS = new AtomicLong();
+
 	private static final int MAX_CHILDREN = 12;
 	private static final int MAX_HOOK_ARGS = 3;
 	/** Rows of a multi-variable VALUES table the lowering will unroll into generated source. */
@@ -1175,6 +1191,9 @@ final class LmdbNativeKernelLowering {
 			if (plan instanceof MultiJoinPlan) {
 				MultiJoinPlan multiJoin = (MultiJoinPlan) plan;
 				filters.addAll(java.util.Arrays.asList(multiJoin.filters));
+				if (tryLowerHashJoin(multiJoin, row)) {
+					return true;
+				}
 				SlotPlan[] order = multiJoin.derivedPlan(row).order;
 				// Under DISTINCT sinking (plan 32 M4), branches whose fresh variables are all projected away
 				// contribute existence only — they lower to Exists semijoins AFTER the spine has produced their
@@ -2147,6 +2166,126 @@ final class LmdbNativeKernelLowering {
 		}
 
 		/**
+		 * Hash-favored two-pattern join awaiting its build-side lowering (M8). The build sub-pipeline writes scratch
+		 * columns, and scratch indices live PAST the engine-slot-backed ones, so the sub-pipeline can only lower once
+		 * the engine column space is final — {@code build()} does it and prepends the {@code HashBuild} preamble,
+		 * exactly like witness sub-pipelines defer to {@code buildAggregate()}.
+		 */
+		private LmdbNativeHashJoin.KernelHashPlan pendingHashBuild;
+
+		/**
+		 * Chooses the in-kernel hash join for a two-pattern MultiJoin when the interpreted hash join's own cost gate
+		 * prefers it (M8). Row rung only (v1): the memory-ledger reservation seam lives on the row cursor. All checks
+		 * that could refuse run BEFORE any builder state mutates, so a false return leaves the ordinary probe-chain
+		 * path free to lower the same children.
+		 */
+		private boolean tryLowerHashJoin(MultiJoinPlan multiJoin, RowState row) {
+			if (!hashJoinKernelEnabled() || !reasonPrefix.isEmpty() || distinctRetainedMask != 0L
+					|| pendingHashBuild != null || multiJoin.children.length != 2
+					|| !(multiJoin.children[0] instanceof PatternPlan)
+					|| !(multiJoin.children[1] instanceof PatternPlan)) {
+				return false;
+			}
+			PatternPlan first = (PatternPlan) multiJoin.children[0];
+			PatternPlan second = (PatternPlan) multiJoin.children[1];
+			if (!hashJoinablePattern(first) || !hashJoinablePattern(second)) {
+				return false;
+			}
+			LmdbNativeHashJoin.KernelHashPlan plan = LmdbNativeHashJoin.tryPlanKernel(first, second, row);
+			if (plan == null) {
+				return false;
+			}
+			// Commit: lower the probe side as the ordinary chain root, then join through the table. The guards above
+			// make the probe-side lowering deterministic, so no failure can leave half-lowered state behind.
+			pendingHashBuild = plan;
+			List<MaskedFilter> probeFilters = new ArrayList<>(0);
+			if (!lowerJoinOperand(plan.probe, probeFilters, row, false) || !probeFilters.isEmpty()) {
+				throw new IllegalStateException(
+						"hash-join probe side failed to lower after passing its guards: " + reason);
+			}
+			long keyMaskUsed = 0L;
+			Operand[] keyOps = new Operand[plan.keySlots.length];
+			for (int i = 0; i < plan.keySlots.length; i++) {
+				keyOps[i] = slotOperand(plan.keySlots[i]);
+				if (keyOps[i] == null) {
+					throw new IllegalStateException("hash-join key slot " + plan.keySlots[i] + " has no operand");
+				}
+				keyMaskUsed |= 1L << plan.keySlots[i];
+			}
+			long payloadMask = plan.build.producedMask() & ~keyMaskUsed;
+			int[] payloadSlots = LmdbNativeAggregateCompiler.slotsOf(payloadMask);
+			int[] dstCols = new int[payloadSlots.length];
+			for (int i = 0; i < payloadSlots.length; i++) {
+				dstCols[i] = newColumn(payloadSlots[i]);
+			}
+			assuredMask |= payloadMask;
+			currentDepthNodes().add(new LmdbNativeKernelIr.HashProbe(0, keyOps, dstCols));
+			HASH_JOIN_LOWERINGS.incrementAndGet();
+			return true;
+		}
+
+		/**
+		 * v1 build/probe shapes: a plain adjacency-expressible pattern — constant predicate, subject/object each a
+		 * fresh slot or a plain constant, no repeated slot, no bind-constants, no context work, no ordered-scan
+		 * promise. Anything else keeps the probe chain (which has scan fallbacks the hash seam does not).
+		 */
+		private boolean hashJoinablePattern(PatternPlan pattern) {
+			return !pattern.hasRepeatedSlot() && pattern.p.isConstant() && !pattern.p.hasSlot()
+					&& !pattern.s.bindConstant && !pattern.o.bindConstant && !pattern.namedContextScope
+					&& !pattern.c.isConstant() && !pattern.c.hasSlot() && !pattern.contexts.isFixed()
+					&& pattern.statementOrder == null
+					&& (pattern.s.hasSlot() || pattern.s.isConstant())
+					&& (pattern.o.hasSlot() || pattern.o.isConstant())
+					&& (pattern.s.hasSlot() || pattern.o.hasSlot());
+		}
+
+		/** Lowers the deferred build side into scratch columns and returns the HashBuild preamble node (M8). */
+		private Node lowerPendingHashBuild() {
+			LmdbNativeHashJoin.KernelHashPlan plan = pendingHashBuild;
+			PatternPlan pattern = plan.build;
+			int subjectCol = pattern.s.hasSlot() ? scratchColumn() : -1;
+			int objectCol = pattern.o.hasSlot() ? scratchColumn() : -1;
+			List<Node> sub = new ArrayList<>(1);
+			if (pattern.s.hasSlot() && pattern.o.hasSlot()) {
+				int adj = adjacency(pattern.p.constant, true, true);
+				sub.add(new LmdbNativeKernelIr.EnumerateAdjKeys(adj, subjectCol, objectCol));
+			} else if (pattern.s.isConstant()) {
+				int adj = adjacency(pattern.p.constant, true, false);
+				sub.add(new LmdbNativeKernelIr.Probe(adj, Operand.constant(constantIndex(pattern.s.constant)),
+						objectCol));
+			} else {
+				int adj = adjacency(pattern.p.constant, false, false);
+				sub.add(new LmdbNativeKernelIr.Probe(adj, Operand.constant(constantIndex(pattern.o.constant)),
+						subjectCol));
+			}
+			int[] keyCols = new int[plan.keySlots.length];
+			for (int i = 0; i < plan.keySlots.length; i++) {
+				keyCols[i] = buildSideColumn(pattern, plan.keySlots[i], subjectCol, objectCol);
+			}
+			long keyMask = 0L;
+			for (int slot : plan.keySlots) {
+				keyMask |= 1L << slot;
+			}
+			int[] payloadSlots = LmdbNativeAggregateCompiler.slotsOf(pattern.producedMask() & ~keyMask);
+			int[] payloadCols = new int[payloadSlots.length];
+			for (int i = 0; i < payloadSlots.length; i++) {
+				payloadCols[i] = buildSideColumn(pattern, payloadSlots[i], subjectCol, objectCol);
+			}
+			return new LmdbNativeKernelIr.HashBuild(0, keyCols, payloadCols, sub, plan.maxBuildRows,
+					(long) Math.ceil(Math.max(1D, plan.buildRowsEstimate)));
+		}
+
+		private int buildSideColumn(PatternPlan pattern, int slot, int subjectCol, int objectCol) {
+			if (pattern.s.hasSlot() && pattern.s.slot == slot) {
+				return subjectCol;
+			}
+			if (pattern.o.hasSlot() && pattern.o.slot == slot) {
+				return objectCol;
+			}
+			throw new IllegalStateException("hash-join build slot " + slot + " is not produced by the build pattern");
+		}
+
+		/**
 		 * Partitions the derived join order into the retained "spine" and existential components: maximal groups of
 		 * patterns connected through variables that are neither DISTINCT keys nor entry-bound. A component qualifies
 		 * only when nothing outside it observes those scratch variables (no filter, no non-pattern child) and every
@@ -3040,7 +3179,13 @@ final class LmdbNativeKernelLowering {
 			if (columnEngineSlots.isEmpty() || columnEngineSlots.size() > 64) {
 				return null;
 			}
+			// The hash-join build side lowers here, once the engine column space is final (its scratch columns index
+			// past it), and its preamble runs after the entry filters but before every producer loop.
+			Node hashPreamble = pendingHashBuild == null ? null : lowerPendingHashBuild();
 			List<Node> pipeline = new ArrayList<>(entryDepthFilters);
+			if (hashPreamble != null) {
+				pipeline.add(hashPreamble);
+			}
 			for (int d = 0; d < nodesPerDepth.size(); d++) {
 				pipeline.addAll(nodesPerDepth.get(d));
 				pipeline.addAll(filtersPerDepth.get(d));

@@ -237,6 +237,75 @@ final class LmdbNativeHashJoin {
 				Math.min(leftRows, rightRows));
 	}
 
+	/**
+	 * Kernel-lowering variant of the two-pattern cost gate (three-tier parity plan, M8): the SAME estimates, the same
+	 * minimum-rows and cost thresholds as {@link #tryPlan}, but no cursor — the kernel lowering asks whether a hash
+	 * join would beat the probe chain and, when yes, builds the {@code HashBuild}/{@code HashProbe} pair itself.
+	 * Declines are quiet: the probe chain still lowers, so the interpreted decline census must not double-count.
+	 */
+	static KernelHashPlan tryPlanKernel(PatternPlan left, PatternPlan right, RowState row) {
+		if (!Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "true"))) {
+			return null;
+		}
+		if (row.source == null) {
+			return null;
+		}
+		if (left.hasRuntimeBoundSlot(row) || right.hasRuntimeBoundSlot(row)) {
+			return null;
+		}
+		long keyMask = left.producedMask() & right.producedMask() & ~row.boundMask();
+		int keyWidth = Long.bitCount(keyMask);
+		if (keyWidth == 0 || keyWidth > 4) {
+			return null;
+		}
+		if (!safeContextKeys(left, right, keyMask)) {
+			return null;
+		}
+		double leftRows = left.estimateForBoundMask(row.boundMask(), row.source);
+		double rightRows = right.estimateForBoundMask(row.boundMask(), row.source);
+		double hashCost = LmdbNativeStrategyProposal.batchCost(leftRows, rightRows);
+		PatternPlan build;
+		PatternPlan probe;
+		double probeRows;
+		if (leftRows < rightRows) {
+			build = left;
+			probe = right;
+			probeRows = rightRows;
+		} else {
+			build = right;
+			probe = left;
+			probeRows = leftRows;
+		}
+		if (probeRows < Long.getLong(MIN_ROWS_PROPERTY, DEFAULT_MIN_ROWS)) {
+			return null;
+		}
+		double indexNestedLoopCost = leftRows * RuntimeBuildAdmission.SEEK_WORK_UNITS;
+		if (!Double.isFinite(hashCost) || !(hashCost < indexNestedLoopCost)) {
+			return null;
+		}
+		return new KernelHashPlan(probe, build, slotsOf(keyMask),
+				Integer.getInteger(MAX_BUILD_ROWS_PROPERTY, DEFAULT_MAX_BUILD_ROWS),
+				Math.min(leftRows, rightRows));
+	}
+
+	/** The kernel lowering's slice of a hash-favored two-pattern plan (M8). */
+	static final class KernelHashPlan {
+		final PatternPlan probe;
+		final PatternPlan build;
+		final int[] keySlots;
+		final int maxBuildRows;
+		final double buildRowsEstimate;
+
+		KernelHashPlan(PatternPlan probe, PatternPlan build, int[] keySlots, int maxBuildRows,
+				double buildRowsEstimate) {
+			this.probe = probe;
+			this.build = build;
+			this.keySlots = keySlots;
+			this.maxBuildRows = maxBuildRows;
+			this.buildRowsEstimate = buildRowsEstimate;
+		}
+	}
+
 	private static Candidate reject(RowState row, String reason) {
 		LmdbNativeAttemptMetrics.recordDecline(row.telemetryTarget,
 				LmdbNativeAttemptMetrics.STRATEGY_HASH_JOIN, reason);

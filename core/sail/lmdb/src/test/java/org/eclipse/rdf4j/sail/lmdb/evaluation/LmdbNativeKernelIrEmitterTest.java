@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -143,6 +144,49 @@ class LmdbNativeKernelIrEmitterTest {
 						new OutputMods(new int[] { 0 }, new boolean[] { true }, false, -1L, 0L)));
 		List<long[]> rows = run(ir, context().domains(new long[] { 5, 9, 7 }));
 		assertRows(rows, new long[][] { { 9 }, { 7 }, { 5 } }, "descending full sort without a limit");
+	}
+
+	// M8 kernel hash join: the build sub-pipeline drains once into the LongRowMap before the main loop, the probe
+	// walks the duplicate chain, and multiplicity survives.
+	@Test
+	void hashBuildProbeJoinsAndPreservesDuplicateChains() throws Exception {
+		Kernel ir = new Kernel(4, List.of(
+				new LmdbNativeKernelIr.HashBuild(0, new int[] { 2 }, new int[] { 3 },
+						List.of(new EnumerateAdjKeys(0, 2, 3)), 1 << 20),
+				new EnumerateDomain(0, 0),
+				new LmdbNativeKernelIr.HashProbe(0, new Operand[] { Operand.col(0) }, new int[] { 1 })),
+				emit(0, 1));
+		List<long[]> rows = run(ir, context().adjacencies(follows()).domains(new long[] { 1, 4, 9 }));
+		assertRows(rows, new long[][] { { 1, 2 }, { 1, 3 }, { 4, 5 } });
+	}
+
+	@Test
+	void hashBuildRowCapAbortsTheKernelAtRuntime() {
+		Kernel ir = new Kernel(4, List.of(
+				new LmdbNativeKernelIr.HashBuild(0, new int[] { 2 }, new int[] { 3 },
+						List.of(new EnumerateAdjKeys(0, 2, 3)), 2),
+				new EnumerateDomain(0, 0),
+				new LmdbNativeKernelIr.HashProbe(0, new Operand[] { Operand.col(0) }, new int[] { 1 })),
+				emit(0, 1));
+		assertThrows(IllegalStateException.class,
+				() -> run(ir, context().adjacencies(follows()).domains(new long[] { 1 })),
+				"a build beyond its row cap must abort the kernel so the ladder serves");
+	}
+
+	@Test
+	void hashProbeWithZeroPayloadStillEmitsPerDuplicateBuildRow() throws Exception {
+		// build rows (7,8), (7,9), (10,11): two build rows share key 7, and with no payload columns the probe's
+		// multiplicity comes solely from walking the duplicate chain
+		NativeLmdbQuerySource.NativeAdjacency duplicates = new FixtureAdjacency(
+				new long[][] { { 7, 8, 9 }, { 10, 11 } });
+		Kernel ir = new Kernel(3, List.of(
+				new LmdbNativeKernelIr.HashBuild(0, new int[] { 1 }, new int[0],
+						List.of(new EnumerateAdjKeys(0, 1, 2)), 1 << 20),
+				new EnumerateDomain(0, 0),
+				new LmdbNativeKernelIr.HashProbe(0, new Operand[] { Operand.col(0) }, new int[0])),
+				emit(0));
+		List<long[]> rows = run(ir, context().adjacencies(duplicates).domains(new long[] { 7, 10, 12 }));
+		assertRows(rows, new long[][] { { 7 }, { 7 }, { 10 } });
 	}
 
 	@Test

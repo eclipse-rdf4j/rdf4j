@@ -71,6 +71,7 @@ final class LmdbNativeKernelExecution {
 		LmdbNativeKernelLowering.BIND_HOOK_LOWERINGS.set(0L);
 		LmdbNativeKernelLowering.CONTEXT_COLUMN_LOWERINGS.set(0L);
 		LmdbNativeKernelLowering.OUTPUT_MODS_LOWERINGS.set(0L);
+		LmdbNativeKernelLowering.HASH_JOIN_LOWERINGS.set(0L);
 		SHAPE_OPENS.clear();
 	}
 
@@ -496,6 +497,30 @@ final class LmdbNativeKernelExecution {
 			LmdbNativeKernelScanner scanner = lowered.kernel.requirements.scans > 0
 					? new LmdbNativeKernelScanner(row, lowered.bindings.scanOrders)
 					: null;
+			// In-kernel hash builds charge their estimated footprint to the query-shared memory ledger up front
+			// (M8); a refusal declines this open quietly and the ladder (including the interpreted hash join with
+			// its own admission) serves instead.
+			org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation hashReservation = null;
+			long hashBuildBytes = hashBuildBytesEstimate(lowered.kernel);
+			if (hashBuildBytes > 0L) {
+				hashReservation = row.memoryScope
+						.ledger(LmdbNativeHashJoin.queryMemory())
+						.reserve(hashBuildBytes, null);
+				if (hashReservation == null) {
+					if (scanner != null) {
+						scanner.close();
+					}
+					probe.close();
+					probe = null;
+					kernel.close();
+					if (row.runtimePlan != null) {
+						row.runtimePlan.janinoDeclined("HASH_BUILD_ADMISSION[route=irKernel,bytes="
+								+ hashBuildBytes + "]");
+					}
+					DECLINED.incrementAndGet();
+					return null;
+				}
+			}
 			kernel.bind(lowered.bindings.context(views, domains, row, hooks, scanner));
 			OPENED.incrementAndGet();
 			if (row.runtimePlan != null) {
@@ -507,7 +532,7 @@ final class LmdbNativeKernelExecution {
 				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_IR_KERNEL, actualOrder);
 			}
 			return new KernelRowCursor(kernel, probe, scanner, hooks, row, lowered.bindings.columnEngineSlots,
-					lowered.bindings.residualFilters);
+					lowered.bindings.residualFilters, hashReservation);
 		} catch (RuntimeException problem) {
 			if (probe != null) {
 				probe.close();
@@ -545,6 +570,19 @@ final class LmdbNativeKernelExecution {
 			}
 		}
 		return true;
+	}
+
+	/** Estimated ledger charge for the kernel's in-kernel hash builds (M8), or 0 when the kernel has none. */
+	private static long hashBuildBytesEstimate(LmdbNativeKernelIr.Kernel kernel) {
+		long bytes = 0L;
+		for (LmdbNativeKernelIr.Node node : kernel.pipeline) {
+			if (node instanceof LmdbNativeKernelIr.HashBuild) {
+				LmdbNativeKernelIr.HashBuild build = (LmdbNativeKernelIr.HashBuild) node;
+				bytes += LmdbNativeHashJoin.estimateBuildBytes(build.estimatedRows, build.keyCols.length,
+						build.payloadCols.length);
+			}
+		}
+		return bytes;
 	}
 
 	private static String activationRoute(String route, LmdbNativeKernelLowering.Lowered lowered) {
@@ -589,9 +627,18 @@ final class LmdbNativeKernelExecution {
 		private int bufferPos;
 		private int activeMark = -1;
 
+		private final org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation hashReservation;
+
 		KernelRowCursor(JaninoKernel kernel, NativeLmdbQuerySource.NativeProbe probe,
 				LmdbNativeKernelScanner scanner, LmdbNativeKernelHooks hooks, RowState row, int[] columnSlots,
 				List<MaskedFilter> residualFilters) {
+			this(kernel, probe, scanner, hooks, row, columnSlots, residualFilters, null);
+		}
+
+		KernelRowCursor(JaninoKernel kernel, NativeLmdbQuerySource.NativeProbe probe,
+				LmdbNativeKernelScanner scanner, LmdbNativeKernelHooks hooks, RowState row, int[] columnSlots,
+				List<MaskedFilter> residualFilters,
+				org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation hashReservation) {
 			this.kernel = kernel;
 			this.probe = probe;
 			this.scanner = scanner;
@@ -599,6 +646,7 @@ final class LmdbNativeKernelExecution {
 			this.row = row;
 			this.columnSlots = columnSlots;
 			this.residualFilters = residualFilters;
+			this.hashReservation = hashReservation;
 			this.buffer = new long[Math.max(columnSlots.length, 1) * FILL_ROWS];
 		}
 
@@ -682,6 +730,9 @@ final class LmdbNativeKernelExecution {
 					scanner.close();
 				}
 				probe.close();
+				if (hashReservation != null) {
+					hashReservation.close();
+				}
 			}
 		}
 	}

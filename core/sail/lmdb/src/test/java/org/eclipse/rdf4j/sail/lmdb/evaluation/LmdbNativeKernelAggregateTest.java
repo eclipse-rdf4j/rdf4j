@@ -139,6 +139,16 @@ public class LmdbNativeKernelAggregateTest {
 			+ "SELECT DISTINCT ?l WHERE { ?a ex:knows ?b . ?b ex:label ?l }\n"
 			+ "ORDER BY ?l LIMIT 2";
 
+	// M8 kernel hash join: with the minimum-rows gate lifted the two-pattern join must lower through the in-kernel
+	// HashBuild/HashProbe seam (HASH_JOIN_LOWERINGS witness) and match the generic evaluator's bag.
+	private static final String HASH_JOIN_QUERY = "PREFIX ex: <" + EX + ">\n"
+			+ "SELECT ?a ?b ?l WHERE { ?a ex:knows ?b . ?b ex:label ?l }";
+	// Both variables are shared, so the kernel hash join runs with a two-column key and an EMPTY payload — the
+	// probe's multiplicity comes solely from the duplicate chain. The fixture has no mutual edges, so parity means
+	// both tiers agree on emptiness (and the shape still engages the seam).
+	private static final String HASH_JOIN_TWO_KEY_QUERY = "PREFIX ex: <" + EX + ">\n"
+			+ "SELECT ?a ?b WHERE { ?a ex:knows ?b . ?b ex:knows ?a }";
+
 	// M7 context columns: a constant GRAPH restriction previously declined the kernel outright (the adjacency guards
 	// reject any context term and the quad-scan lowering refuses a constant context) — it must now lower against the
 	// adjacency view with an in-node context match (CONTEXT_COLUMN_LOWERINGS witness).
@@ -643,6 +653,47 @@ public class LmdbNativeKernelAggregateTest {
 	}
 
 	@Test
+	public void hashFavoredTwoPatternJoinLowersThroughTheKernelHashSeam() {
+		System.setProperty("rdf4j.lmdb.nativeHashJoin.minRows", "0");
+		try {
+			List<String> expected = genericRows(HASH_JOIN_QUERY);
+			assertFalse(expected.isEmpty(), "fixture must join knows into labels");
+			warmRowSeeds();
+			for (int round = 0; round < 300
+					&& (KernelExecutionTestAccess.opened() == 0L
+							|| KernelExecutionTestAccess.hashJoinLowerings() == 0L); round++) {
+				rows(HASH_JOIN_QUERY);
+			}
+			assertTrue(KernelExecutionTestAccess.opened() > 0L,
+					"row rung never engaged for the hash-favored join (planned="
+							+ KernelExecutionTestAccess.planned() + ", declined="
+							+ KernelExecutionTestAccess.declined() + ")");
+			assertTrue(KernelExecutionTestAccess.hashJoinLowerings() > 0L,
+					"the hash-favored two-pattern join was not lowered through HashBuild/HashProbe");
+			assertEquals(expected, rows(HASH_JOIN_QUERY));
+		} finally {
+			System.clearProperty("rdf4j.lmdb.nativeHashJoin.minRows");
+		}
+	}
+
+	@Test
+	public void twoKeyZeroPayloadHashJoinMatchesGeneric() {
+		System.setProperty("rdf4j.lmdb.nativeHashJoin.minRows", "0");
+		try {
+			List<String> expected = genericRows(HASH_JOIN_TWO_KEY_QUERY);
+			warmRowSeeds();
+			for (int round = 0; round < 300 && KernelExecutionTestAccess.hashJoinLowerings() == 0L; round++) {
+				rows(HASH_JOIN_TWO_KEY_QUERY);
+			}
+			assertTrue(KernelExecutionTestAccess.hashJoinLowerings() > 0L,
+					"the two-key join was not lowered through HashBuild/HashProbe");
+			assertEquals(expected, rows(HASH_JOIN_TWO_KEY_QUERY));
+		} finally {
+			System.clearProperty("rdf4j.lmdb.nativeHashJoin.minRows");
+		}
+	}
+
+	@Test
 	public void orderByLimitSinksIntoTheKernelTopK() {
 		List<String> expected = genericOrderedRows(ORDER_LIMIT_QUERY);
 		assertEquals(3, expected.size(), "fixture must fill the LIMIT, got " + expected);
@@ -785,14 +836,19 @@ public class LmdbNativeKernelAggregateTest {
 		}
 	}
 
-	/** Row-rung sibling of {@link #warmUntilEngaged}: loops until the IR row kernel opens for the query. */
-	private void warmUntilRowEngaged(String query) {
+	/** Keyed-probe traffic so the CSR adjacency views the row-rung shapes need are admitted. */
+	private void warmRowSeeds() {
 		String seeds = "VALUES ?a { ex:p0 ex:p1 ex:p2 ex:p3 ex:p4 ex:p5 ex:p6 ex:p7 ex:p8 }";
 		for (int i = 0; i < 4; i++) {
 			rows("PREFIX ex: <" + EX + "> SELECT * WHERE { " + seeds + " ?a ex:knows ?o }");
 			rows("PREFIX ex: <" + EX + "> SELECT * WHERE { " + seeds + " ?o ex:knows ?a }");
 			rows("PREFIX ex: <" + EX + "> SELECT * WHERE { " + seeds + " ?a ex:label ?l }");
 		}
+	}
+
+	/** Row-rung sibling of {@link #warmUntilEngaged}: loops until the IR row kernel opens for the query. */
+	private void warmUntilRowEngaged(String query) {
+		warmRowSeeds();
 		// The seed queries themselves can open kernels once their shapes sit warm in the compile cache, so gating on
 		// opened() alone can exit before the ordered query ever ran — loop until the query itself both engaged the
 		// rung and sank its mods.

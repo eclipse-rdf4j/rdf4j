@@ -745,6 +745,121 @@ final class LmdbNativeKernelIr {
 	}
 
 	/**
+	 * Kernel hash-join build (three-tier parity plan, M8): drains {@code pipeline} once — before the enclosing loop
+	 * runs — inserting each produced row into an in-kernel {@code KernelRuntime.LongRowMap} keyed by {@code keyCols}
+	 * with {@code payloadCols} as the stored row. Duplicate keys chain, so multiplicity survives. The sub-pipeline
+	 * writes scratch columns (allocated past the engine-slot-backed ones, like witness sub-pipelines), so nothing it
+	 * binds leaks into the main loop's column state.
+	 */
+	static final class HashBuild extends Node {
+		final int tableId;
+		final int[] keyCols;
+		final int[] payloadCols;
+		final List<Node> pipeline;
+		/** Build rows beyond this cap abort the kernel at runtime (the ladder then serves). */
+		final int maxRows;
+		/**
+		 * Planner estimate of build rows, for the open-time memory-ledger reservation. Deliberately NOT part of the
+		 * shape key: the generated source never depends on it, so differing estimates share one compiled class.
+		 */
+		final long estimatedRows;
+
+		HashBuild(int tableId, int[] keyCols, int[] payloadCols, List<Node> pipeline, int maxRows) {
+			this(tableId, keyCols, payloadCols, pipeline, maxRows, 1L);
+		}
+
+		HashBuild(int tableId, int[] keyCols, int[] payloadCols, List<Node> pipeline, int maxRows,
+				long estimatedRows) {
+			if (pipeline.isEmpty()) {
+				throw new IllegalArgumentException("hash build sub-pipeline must not be empty");
+			}
+			if (keyCols.length == 0) {
+				throw new IllegalArgumentException("hash build needs at least one key column");
+			}
+			this.tableId = tableId;
+			this.keyCols = keyCols;
+			this.payloadCols = payloadCols;
+			this.pipeline = List.copyOf(pipeline);
+			this.maxRows = maxRows;
+			this.estimatedRows = estimatedRows;
+		}
+
+		@Override
+		void key(StringBuilder key) {
+			key.append("hb").append(tableId).append('(');
+			for (int i = 0; i < keyCols.length; i++) {
+				key.append(i == 0 ? "" : ",").append(keyCols[i]);
+			}
+			key.append('|');
+			for (int i = 0; i < payloadCols.length; i++) {
+				key.append(i == 0 ? "" : ",").append(payloadCols[i]);
+			}
+			key.append("|m").append(maxRows).append("){");
+			for (Node node : pipeline) {
+				node.key(key);
+			}
+			key.append("};");
+		}
+
+		@Override
+		void produced(BitSet columns) {
+			for (Node node : pipeline) {
+				node.produced(columns);
+			}
+		}
+
+		@Override
+		void requirements(Requirements requirements) {
+			for (Node node : pipeline) {
+				node.requirements(requirements);
+			}
+		}
+	}
+
+	/** Kernel hash-join probe (M8): looks up the main row's {@code keys} and emits one continuation per match. */
+	static final class HashProbe extends Node {
+		final int tableId;
+		final Operand[] keys;
+		final int[] dstCols; // one destination column per table payload column
+
+		HashProbe(int tableId, Operand[] keys, int[] dstCols) {
+			if (keys.length == 0) {
+				throw new IllegalArgumentException("hash probe needs at least one key operand");
+			}
+			this.tableId = tableId;
+			this.keys = keys;
+			this.dstCols = dstCols;
+		}
+
+		@Override
+		void key(StringBuilder key) {
+			key.append("hp").append(tableId).append('(');
+			for (int i = 0; i < keys.length; i++) {
+				key.append(i == 0 ? "" : ",").append(keys[i].token());
+			}
+			key.append("->");
+			for (int i = 0; i < dstCols.length; i++) {
+				key.append(i == 0 ? "" : ",").append(dstCols[i]);
+			}
+			key.append(");");
+		}
+
+		@Override
+		void produced(BitSet columns) {
+			for (int col : dstCols) {
+				columns.set(col);
+			}
+		}
+
+		@Override
+		void requirements(Requirements requirements) {
+			for (Operand key : keys) {
+				requirements.operand(key);
+			}
+		}
+	}
+
+	/**
 	 * UNION: branches run sequentially, each followed by the shared continuation. Every column produced by any branch
 	 * is reset to NULL before each branch so bindings cannot leak across branches.
 	 */

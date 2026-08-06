@@ -56,6 +56,186 @@ public final class KernelRuntime {
 	}
 
 	/** Open-addressing set of longs. Slot value 0 marks empty; the real key 0 is tracked by a side flag. */
+	/**
+	 * In-kernel hash-join table (three-tier parity plan, M8), mirroring the interpreted
+	 * {@code PrimitiveHashJoinTable}'s layout: open-addressed buckets with stored full hashes and 8-bit fingerprints
+	 * over flat {@code long[]} keys, plus head/tail/next chains over a flat payload arena so duplicate keys keep their
+	 * multiplicity. The generated build loop calls {@link #add}; the generated probe loop walks
+	 * {@link #lookup}/{@link #next}/{@link #payload}.
+	 */
+	public static final class LongRowMap {
+
+		private final int keyWidth;
+		private final int payloadWidth;
+		private final int maxRows;
+		private long[] keys;
+		private byte[] occupied;
+		private byte[] fingerprints;
+		private int[] fullHashes;
+		private int[] heads;
+		private int[] tails;
+		private long[] payloads;
+		private int[] next;
+		private int payloadCount;
+		private int distinctKeys;
+
+		public LongRowMap(int keyWidth, int payloadWidth, int maxRows) {
+			this.keyWidth = keyWidth;
+			this.payloadWidth = payloadWidth;
+			this.maxRows = maxRows;
+			int capacity = 32;
+			this.keys = new long[keyWidth * capacity];
+			this.occupied = new byte[capacity];
+			this.fingerprints = new byte[capacity];
+			this.fullHashes = new int[capacity];
+			this.heads = new int[capacity];
+			this.tails = new int[capacity];
+			java.util.Arrays.fill(heads, -1);
+			java.util.Arrays.fill(tails, -1);
+			this.payloads = new long[Math.max(capacity, payloadWidth * capacity)];
+			this.next = new int[capacity];
+			java.util.Arrays.fill(next, -1);
+		}
+
+		/** Inserts one build row; duplicate keys chain. Aborts the kernel when the build exceeds its row cap. */
+		public void add(long[] key, long[] payload) {
+			if (payloadCount >= maxRows) {
+				throw new IllegalStateException("kernel hash build exceeded its row cap of " + maxRows);
+			}
+			if ((distinctKeys + 1) * 4 > occupied.length * 3) {
+				growBuckets();
+			}
+			int hash = hash(key);
+			int bucket = find(key, hash);
+			if (occupied[bucket] == 0) {
+				occupied[bucket] = 1;
+				fingerprints[bucket] = (byte) (hash >>> 24);
+				fullHashes[bucket] = hash;
+				int offset = bucket * keyWidth;
+				for (int i = 0; i < keyWidth; i++) {
+					keys[offset + i] = key[i];
+				}
+				distinctKeys++;
+			}
+			if (payloadCount == next.length) {
+				growPayloads();
+			}
+			int row = payloadCount++;
+			for (int i = 0; i < payloadWidth; i++) {
+				payloads[row * payloadWidth + i] = payload[i];
+			}
+			if (heads[bucket] < 0) {
+				heads[bucket] = row;
+			} else {
+				next[tails[bucket]] = row;
+			}
+			tails[bucket] = row;
+		}
+
+		/** Head payload index for the probe key, or -1 when absent. */
+		public int lookup(long[] key) {
+			int hash = hash(key);
+			int bucket = hash & (occupied.length - 1);
+			byte fingerprint = (byte) (hash >>> 24);
+			while (occupied[bucket] != 0) {
+				if (fingerprints[bucket] == fingerprint && fullHashes[bucket] == hash && keysEqual(bucket, key)) {
+					return heads[bucket];
+				}
+				bucket = bucket + 1 & (occupied.length - 1);
+			}
+			return -1;
+		}
+
+		/** Next payload index in the duplicate chain, or -1. */
+		public int next(int row) {
+			return next[row];
+		}
+
+		public long payload(int row, int column) {
+			return payloads[row * payloadWidth + column];
+		}
+
+		public int rows() {
+			return payloadCount;
+		}
+
+		/** Physical data bytes across every backing array (headers excluded; admission estimates absorb them). */
+		public long byteSize() {
+			return 8L * keys.length + occupied.length + fingerprints.length + 4L * fullHashes.length
+					+ 4L * heads.length + 4L * tails.length + 8L * payloads.length + 4L * next.length;
+		}
+
+		private boolean keysEqual(int bucket, long[] key) {
+			int offset = bucket * keyWidth;
+			for (int i = 0; i < keyWidth; i++) {
+				if (keys[offset + i] != key[i]) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		private int hash(long[] key) {
+			long hash = 0x9E3779B97F4A7C15L;
+			for (int i = 0; i < keyWidth; i++) {
+				hash = mix(hash ^ key[i]);
+			}
+			return (int) (hash ^ hash >>> 32);
+		}
+
+		private int find(long[] key, int hash) {
+			int bucket = hash & (occupied.length - 1);
+			byte fingerprint = (byte) (hash >>> 24);
+			while (occupied[bucket] != 0) {
+				if (fingerprints[bucket] == fingerprint && fullHashes[bucket] == hash && keysEqual(bucket, key)) {
+					return bucket;
+				}
+				bucket = bucket + 1 & (occupied.length - 1);
+			}
+			return bucket;
+		}
+
+		private void growBuckets() {
+			long[] oldKeys = keys;
+			byte[] oldOccupied = occupied;
+			int[] oldHashes = fullHashes;
+			int[] oldHeads = heads;
+			int[] oldTails = tails;
+			int capacity = occupied.length * 2;
+			keys = new long[keyWidth * capacity];
+			occupied = new byte[capacity];
+			fingerprints = new byte[capacity];
+			fullHashes = new int[capacity];
+			heads = new int[capacity];
+			tails = new int[capacity];
+			java.util.Arrays.fill(heads, -1);
+			java.util.Arrays.fill(tails, -1);
+			for (int oldBucket = 0; oldBucket < oldOccupied.length; oldBucket++) {
+				if (oldOccupied[oldBucket] == 0) {
+					continue;
+				}
+				int hash = oldHashes[oldBucket];
+				int bucket = hash & (capacity - 1);
+				while (occupied[bucket] != 0) {
+					bucket = bucket + 1 & (capacity - 1);
+				}
+				occupied[bucket] = 1;
+				fingerprints[bucket] = (byte) (hash >>> 24);
+				fullHashes[bucket] = hash;
+				System.arraycopy(oldKeys, oldBucket * keyWidth, keys, bucket * keyWidth, keyWidth);
+				heads[bucket] = oldHeads[oldBucket];
+				tails[bucket] = oldTails[oldBucket];
+			}
+		}
+
+		private void growPayloads() {
+			payloads = java.util.Arrays.copyOf(payloads, Math.max(payloads.length * 2, payloadWidth * next.length * 2));
+			int oldLength = next.length;
+			next = java.util.Arrays.copyOf(next, oldLength * 2);
+			java.util.Arrays.fill(next, oldLength, next.length, -1);
+		}
+	}
+
 	public static final class LongHashSet {
 
 		private long[] keys;
