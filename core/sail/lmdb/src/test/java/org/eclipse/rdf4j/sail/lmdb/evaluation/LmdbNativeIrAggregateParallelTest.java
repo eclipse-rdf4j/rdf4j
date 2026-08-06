@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -69,6 +71,24 @@ class LmdbNativeIrAggregateParallelTest {
 	private static final String DOMAIN_ROOT_QUERY = "SELECT ?s (COUNT(?v) AS ?c) (SUM(?v) AS ?sum) WHERE { ?s <"
 			+ EX + "t> <" + EX + "X> . ?s <" + EX + "p> ?m . ?m <" + EX + "q> ?v . } GROUP BY ?s";
 
+	/**
+	 * The global minimum is claimed by two DISTINCT terms that compare equal ({@code "1"^^xsd:decimal} on the first
+	 * root key, {@code "1"^^xsd:integer} on the last), so the per-range minima tie at the merge and the surviving
+	 * representative would depend on partition and merge order. The interpreted parallel engine refuses exactly this
+	 * ({@code AggContext.preserveExtremaRepresentative} throws {@code distinctTermExtremaTie}); the kernel rung must
+	 * decline to the sequential drain the same way (parallel-parity audit, three-tier ExecPlan 2026-08-06).
+	 */
+	private static final String EXTREMA_TIE_QUERY = "SELECT (MIN(?v) AS ?mn) WHERE { ?s <" + EX + "p> ?m . ?m <" + EX
+			+ "q3> ?v . }";
+
+	/**
+	 * SUM over {@code xsd:double}: sequential floating rounding is encounter-order-sensitive, so both the interpreted
+	 * parallel engine and every kernel route refuse it ({@code EncounterOrderFallback.floatingSumOrAvg}); the result
+	 * must always come from an order-preserving drain and the parallel counter must never move.
+	 */
+	private static final String FLOATING_SUM_QUERY = "SELECT ?s (SUM(?v) AS ?sum) WHERE { ?s <" + EX + "p> ?m . ?m <"
+			+ EX + "f> ?v . } GROUP BY ?s";
+
 	@TempDir
 	File dataDir;
 
@@ -90,6 +110,8 @@ class LmdbNativeIrAggregateParallelTest {
 			IRI p = vf.createIRI(EX, "p");
 			IRI q = vf.createIRI(EX, "q");
 			IRI q2 = vf.createIRI(EX, "q2");
+			IRI q3 = vf.createIRI(EX, "q3");
+			IRI f = vf.createIRI(EX, "f");
 			IRI t = vf.createIRI(EX, "t");
 			IRI x = vf.createIRI(EX, "X");
 			// One transaction, deliberately: per-add autocommit floods the direct adjacency store with thousands of
@@ -105,6 +127,16 @@ class LmdbNativeIrAggregateParallelTest {
 					conn.add(m, q, vf.createLiteral(i * 7 + j));
 					// q2 equals q for j==0 and differs for j==1, so FILTER(?v != ?v2) keeps exactly the j==1 rows
 					conn.add(m, q2, vf.createLiteral(i * 7 + 2 * j));
+					// q3: the global minimum is a tie between two distinct terms on the first and last root keys
+					if (i == 0 && j == 0) {
+						conn.add(m, q3, vf.createLiteral(new BigDecimal("1")));
+					} else if (i == 599 && j == 1) {
+						conn.add(m, q3, vf.createLiteral(BigInteger.ONE));
+					} else {
+						conn.add(m, q3, vf.createLiteral(i * 3 + j + 10));
+					}
+					// f: xsd:double values, order-sensitive under SUM
+					conn.add(m, f, vf.createLiteral(0.5d + i * 2 + j));
 				}
 			}
 			conn.commit();
@@ -208,6 +240,47 @@ class LmdbNativeIrAggregateParallelTest {
 		assertThat(KernelExecutionTestAccess.aggOpened()).as("sequential kernel still serves").isGreaterThan(0);
 		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
 				.as("per-partition DISTINCT would double-count; parallel must decline")
+				.isEqualTo(parallelBefore);
+	}
+
+	@Test
+	void distinctTermExtremaTieDeclinesParallelButKeepsTheSequentialKernel() {
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		List<String> expected = rows(EXTREMA_TIE_QUERY);
+		assertThat(expected).hasSize(1);
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		System.setProperty(LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "true");
+
+		KernelExecutionTestAccess.resetMetrics();
+		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
+		for (int round = 0; round < 300 && KernelExecutionTestAccess.aggOpened() == 0; round++) {
+			assertThat(rows(EXTREMA_TIE_QUERY)).as("parity on round " + round)
+					.containsExactlyInAnyOrderElementsOf(expected);
+		}
+		assertThat(KernelExecutionTestAccess.aggOpened()).as("the sequential kernel still serves").isGreaterThan(0);
+		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
+				.as("distinct terms comparing equal: the parallel winner would depend on partition and merge order; "
+						+ "the interpreted parallel engine refuses this tie and so must the kernel rung")
+				.isEqualTo(parallelBefore);
+		assertThat(rows(EXTREMA_TIE_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	@Test
+	void floatingSumNeverRunsParallelAndStaysExact() {
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		List<String> expected = rows(FLOATING_SUM_QUERY);
+		assertThat(expected).hasSize(600);
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		System.setProperty(LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "true");
+
+		KernelExecutionTestAccess.resetMetrics();
+		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
+		for (int round = 0; round < 50; round++) {
+			assertThat(rows(FLOATING_SUM_QUERY)).as("parity on round " + round)
+					.containsExactlyInAnyOrderElementsOf(expected);
+		}
+		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
+				.as("floating SUM rounding is encounter-order-sensitive; no parallel merge may ever complete")
 				.isEqualTo(parallelBefore);
 	}
 

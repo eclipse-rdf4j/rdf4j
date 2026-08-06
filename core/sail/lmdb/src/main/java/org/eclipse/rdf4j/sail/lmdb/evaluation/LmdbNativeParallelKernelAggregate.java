@@ -268,15 +268,23 @@ final class LmdbNativeParallelKernelAggregate {
 		KernelGroupLayout layout = bindings.groupLayout;
 		LmdbNativeKernelHooks mergeHooks = bindings.needsHooks() ? new LmdbNativeKernelHooks(row, bindings) : null;
 		HashMap<LongsKey, Partial> total = new HashMap<>();
-		for (HashMap<LongsKey, Partial> workerResult : workerResults) {
-			for (Map.Entry<LongsKey, Partial> entry : workerResult.entrySet()) {
-				Partial merged = total.get(entry.getKey());
-				if (merged == null) {
-					total.put(entry.getKey(), entry.getValue());
-				} else {
-					mergePartial(merged, entry.getValue(), aggregate, mergeHooks);
+		try {
+			for (HashMap<LongsKey, Partial> workerResult : workerResults) {
+				for (Map.Entry<LongsKey, Partial> entry : workerResult.entrySet()) {
+					Partial merged = total.get(entry.getKey());
+					if (merged == null) {
+						total.put(entry.getKey(), entry.getValue());
+					} else {
+						mergePartial(merged, entry.getValue(), aggregate, mergeHooks);
+					}
 				}
 			}
+		} catch (EncounterOrderFallback fallback) {
+			// Same contract as a worker-side fallback: nothing has been emitted, so the sequential drain is exact.
+			if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
+				System.err.println("[ir-aggregate-parallel] fallback: " + fallback);
+			}
+			return null;
 		}
 		int groupLength = layout.groupEngineSlots.length;
 		if (total.isEmpty() && groupLength == 0) {
@@ -522,6 +530,12 @@ final class LmdbNativeParallelKernelAggregate {
 			return;
 		}
 		int comparison = hooks.compareValues(candidate, partial.winners[out]);
+		if (comparison == 0 && candidate != partial.winners[out]) {
+			// Two distinct terms compare equal: the surviving representative would depend on partition and merge
+			// order. The interpreted parallel engine refuses exactly this tie (AggContext.preserveExtremaRepresentative
+			// with encounterOrderChanging); declining to the sequential drain keeps the representative deterministic.
+			throw EncounterOrderFallback.distinctTermExtremaTie();
+		}
 		if (min ? comparison < 0 : comparison > 0) {
 			partial.winners[out] = candidate;
 		}
