@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
@@ -290,6 +291,43 @@ class LmdbNativeMergeJoinTest {
 				IRI predicate = i % 2 == 0 ? valueA : valueB;
 				connection.add(subject, predicate, vf.createIRI(EX, "pairValue" + i));
 			}
+		}
+	}
+
+	@Test
+	void orderedDistinctOnTheJoinKeyExecutesThroughTheMergeJoin() {
+		// DISTINCT on the shared key plans the ADJACENT ordered-distinct strategy; the merge join emits exactly the
+		// key-ordered stream that strategy needs and must serve it instead of the nested-loop ordered chain
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT DISTINCT ?key WHERE { ?left ex:key ?key . ?right ex:key ?key }";
+		List<String> generic = genericRows(query);
+		resetCounters();
+
+		assertThat(explain(query)).contains("distinctStrategy=ADJACENT")
+				.contains("MergeOrderedJoin(keySlots=[?key#1]");
+		assertThat(rows(query)).isEqualTo(generic).hasSize(20);
+		assertThat(LmdbNativeMergeJoin.JOINS.get()).isOne();
+	}
+
+	@Test
+	void orderedDistinctOnMultiKeyValuePairsExecutesThroughTheMergeJoin() {
+		addValuePairData();
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT DISTINCT ?a ?p WHERE { ?a ?p ?x . ?a ?p ?y }";
+		List<String> generic = genericRows(query);
+		resetCounters();
+
+		assertThat(explain(query)).contains("distinctStrategy=ADJACENT")
+				.contains("MergeOrderedJoin(keySlots=[?a#0, ?p#1]");
+		assertThat(rows(query)).isEqualTo(generic);
+		assertThat(LmdbNativeMergeJoin.JOINS.get()).isOne();
+	}
+
+	private String explain(String query) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return connection.prepareTupleQuery(query)
+					.explain(Explanation.Level.Optimized)
+					.toString();
 		}
 	}
 

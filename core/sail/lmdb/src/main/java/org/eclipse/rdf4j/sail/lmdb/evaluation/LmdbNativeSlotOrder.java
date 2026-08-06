@@ -547,6 +547,15 @@ final class LmdbNativeOrderPlanner {
 				bestPrefix = prefix;
 			}
 		}
+		NativeOrderedPlan merge = LmdbNativeMergeJoin.orderedProposal(plan, requested, row);
+		if (merge != null) {
+			int mergePrefix = merge.order.exactPrefixLength(requested, merge.plan.producedMask());
+			// at an equal proven prefix the merge join dominates the promoted chain: it streams both ordered
+			// scans instead of probing the right index once per left row (merge-before-hash, batch-tier rule)
+			if (mergePrefix > bestPrefix || (mergePrefix > 0 && mergePrefix == bestPrefix)) {
+				return merge;
+			}
+		}
 		return best;
 	}
 

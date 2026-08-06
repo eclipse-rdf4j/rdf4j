@@ -32,7 +32,9 @@ import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
  * buffered instead if it fits (whichever side terminates first is the cheaper build side), and only when both runs
  * overflow do repeated left rows fall back to per-key probe rescans.
  * <p>
- * The output batches are non-decreasing in the join-key tuple, but that ordering is not yet propagated to the planner.
+ * The output batches are non-decreasing in the join-key tuple. {@link #orderedProposal} propagates that ordering to the
+ * order planner as a {@link MergeOrderedJoinPlan} node, so ordered DISTINCT and streaming GROUP BY consumers can
+ * execute through the merge join instead of the nested-loop ordered chain.
  */
 @Experimental
 final class LmdbNativeMergeJoin {
@@ -70,68 +72,25 @@ final class LmdbNativeMergeJoin {
 	}
 
 	private static Candidate tryPlan(MultiJoinPlan plan, RowState row) {
-		if (!Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "true"))) {
-			return reject(row, "disabled");
-		}
-		if (plan.children.length != 2) {
-			return reject(row, "not-two-patterns");
-		}
-		if (!(plan.children[0] instanceof PatternPlan) || !(plan.children[1] instanceof PatternPlan)) {
-			return reject(row, "non-pattern-child");
-		}
-		if (row.source == null) {
-			return reject(row, "source-unavailable");
-		}
-		PatternPlan left = (PatternPlan) plan.children[0];
-		PatternPlan right = (PatternPlan) plan.children[1];
-		if (left.hasRuntimeBoundSlot(row) || right.hasRuntimeBoundSlot(row)) {
-			// correlated entry: the nested-loop chain is the strategy that exploits the entry binding
-			return reject(row, "correlated-entry");
-		}
-		if (left.hasRepeatedSlot() || right.hasRepeatedSlot()) {
-			return reject(row, "repeated-slot");
-		}
-		if (left.statementOrder != null || right.statementOrder != null) {
-			// a pre-ordered pattern carries an ordering obligation this operator does not preserve
-			return reject(row, "preordered-pattern");
-		}
-		long keyMask = left.producedMask & right.producedMask & ~row.boundMask();
-		int keyWidth = Long.bitCount(keyMask);
-		if (keyWidth == 0 || keyWidth > MAX_KEY_WIDTH) {
-			return reject(row, "join-key-width");
-		}
-		if (contextKey(left, keyMask) || contextKey(right, keyMask)) {
-			return reject(row, "context-key");
-		}
-		if (left.contexts.isFixed() && left.contexts.ids.length > 1
-				|| right.contexts.isFixed() && right.contexts.ids.length > 1) {
-			// fixed multi-context scans concatenate or merge per-context ranges: context-major, not key-major
-			return reject(row, "multi-context");
-		}
-		long minimumRows = Long.getLong(MIN_ROWS_PROPERTY, DEFAULT_MIN_ROWS);
-		if (left.staticEstimate < minimumRows || right.staticEstimate < minimumRows) {
-			return reject(row, "below-min-rows");
-		}
-		if (keyWidth > 1 && (!singleOrderedBranch(left, row, keyMask) || !singleOrderedBranch(right, row, keyMask))) {
-			// composite (explicit+inferred) ordered scans merge per order field, which guarantees contiguous runs
-			// for one leading field but never full multi-field tuple order: keep the single-key restriction there
-			return reject(row, "composite-multi-branch");
+		Admission admission = admit(plan, row, true);
+		if (admission == null) {
+			return null;
 		}
 		Side leftSide = null;
 		Side rightSide = null;
-		long remaining = keyMask;
+		long remaining = admission.keyMask;
 		while (remaining != 0L && leftSide == null) {
 			int leader = Long.numberOfTrailingZeros(remaining);
 			remaining &= remaining - 1;
-			int[] keySeqSlots = candidateKeySequence(left, row, keyMask, leader);
+			int[] keySeqSlots = candidateKeySequence(admission.left, row, admission.keyMask, leader);
 			if (keySeqSlots == null) {
 				continue;
 			}
-			Side candidateLeft = orderedSide(left, row, keyMask, keySeqSlots);
+			Side candidateLeft = orderedSide(admission.left, row, admission.keyMask, keySeqSlots);
 			if (candidateLeft == null) {
 				continue;
 			}
-			Side candidateRight = orderedSide(right, row, keyMask, keySeqSlots);
+			Side candidateRight = orderedSide(admission.right, row, admission.keyMask, keySeqSlots);
 			if (candidateRight == null) {
 				continue;
 			}
@@ -141,11 +100,167 @@ final class LmdbNativeMergeJoin {
 		if (leftSide == null) {
 			return reject(row, "key-order-unavailable");
 		}
+		return candidate(admission, row, leftSide, rightSide);
+	}
+
+	/**
+	 * The eligibility checks shared by every merge entry, or null when this join cannot merge. With {@code record} the
+	 * failing check is recorded as a strategy decline; the order planner's probes pass false because one plan may be
+	 * probed under several order signatures.
+	 */
+	private static Admission admit(MultiJoinPlan plan, RowState row, boolean record) {
+		if (!Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "true"))) {
+			return rejectAdmission(row, "disabled", record);
+		}
+		if (plan.children.length != 2) {
+			return rejectAdmission(row, "not-two-patterns", record);
+		}
+		if (!(plan.children[0] instanceof PatternPlan) || !(plan.children[1] instanceof PatternPlan)) {
+			return rejectAdmission(row, "non-pattern-child", record);
+		}
+		if (row.source == null) {
+			return rejectAdmission(row, "source-unavailable", record);
+		}
+		PatternPlan left = (PatternPlan) plan.children[0];
+		PatternPlan right = (PatternPlan) plan.children[1];
+		if (left.hasRuntimeBoundSlot(row) || right.hasRuntimeBoundSlot(row)) {
+			// correlated entry: the nested-loop chain is the strategy that exploits the entry binding
+			return rejectAdmission(row, "correlated-entry", record);
+		}
+		if (left.hasRepeatedSlot() || right.hasRepeatedSlot()) {
+			return rejectAdmission(row, "repeated-slot", record);
+		}
+		if (left.statementOrder != null || right.statementOrder != null) {
+			// a pre-ordered pattern carries an ordering obligation this operator does not preserve
+			return rejectAdmission(row, "preordered-pattern", record);
+		}
+		long keyMask = left.producedMask & right.producedMask & ~row.boundMask();
+		int keyWidth = Long.bitCount(keyMask);
+		if (keyWidth == 0 || keyWidth > MAX_KEY_WIDTH) {
+			return rejectAdmission(row, "join-key-width", record);
+		}
+		if (contextKey(left, keyMask) || contextKey(right, keyMask)) {
+			return rejectAdmission(row, "context-key", record);
+		}
+		if (left.contexts.isFixed() && left.contexts.ids.length > 1
+				|| right.contexts.isFixed() && right.contexts.ids.length > 1) {
+			// fixed multi-context scans concatenate or merge per-context ranges: context-major, not key-major
+			return rejectAdmission(row, "multi-context", record);
+		}
+		long minimumRows = Long.getLong(MIN_ROWS_PROPERTY, DEFAULT_MIN_ROWS);
+		if (left.staticEstimate < minimumRows || right.staticEstimate < minimumRows) {
+			return rejectAdmission(row, "below-min-rows", record);
+		}
+		if (keyWidth > 1 && (!singleOrderedBranch(left, row, keyMask) || !singleOrderedBranch(right, row, keyMask))) {
+			// composite (explicit+inferred) ordered scans merge per order field, which guarantees contiguous runs
+			// for one leading field but never full multi-field tuple order: keep the single-key restriction there
+			return rejectAdmission(row, "composite-multi-branch", record);
+		}
+		return new Admission(left, right, keyMask);
+	}
+
+	private static Admission rejectAdmission(RowState row, String reason, boolean record) {
+		if (record) {
+			reject(row, reason);
+		}
+		return null;
+	}
+
+	private static Candidate candidate(Admission admission, RowState row, Side leftSide, Side rightSide) {
 		double estCost = LmdbNativeStrategyProposal.batchCost(
-				left.estimateForBoundMask(row.boundMask(), row.source),
-				right.estimateForBoundMask(row.boundMask(), row.source));
-		return new Candidate(keyMask, leftSide.keySeqSlots, leftSide, rightSide,
+				admission.left.estimateForBoundMask(row.boundMask(), row.source),
+				admission.right.estimateForBoundMask(row.boundMask(), row.source));
+		return new Candidate(admission.keyMask, leftSide.keySeqSlots, leftSide, rightSide,
 				Integer.getInteger(MAX_RUN_ROWS_PROPERTY, DEFAULT_MAX_RUN_ROWS), estCost);
+	}
+
+	/**
+	 * Order-planner entry: a plan node committing this two-pattern join to the merge join, promising the merge output's
+	 * non-decreasing join-key order — one order position per key in sequence, then a barrier, because within an
+	 * equal-key run the emission is a cross product that orders nothing further. Among the workable key sequences the
+	 * one covering the longest leading prefix of the requested signature wins; null when the merge join is inadmissible
+	 * on this join or no workable sequence covers any leading requested slot.
+	 */
+	static NativeOrderedPlan orderedProposal(MultiJoinPlan plan, int[] requested, RowState row) {
+		Admission admission = admit(plan, row, false);
+		if (admission == null) {
+			return null;
+		}
+		Side bestLeft = null;
+		NativeSlotOrder bestOrder = null;
+		int bestPrefix = 0;
+		long remaining = admission.keyMask;
+		while (remaining != 0L) {
+			int leader = Long.numberOfTrailingZeros(remaining);
+			remaining &= remaining - 1;
+			int[] keySeqSlots = candidateKeySequence(admission.left, row, admission.keyMask, leader);
+			if (keySeqSlots == null) {
+				continue;
+			}
+			Side candidateLeft = orderedSide(admission.left, row, admission.keyMask, keySeqSlots);
+			if (candidateLeft == null || orderedSide(admission.right, row, admission.keyMask, keySeqSlots) == null) {
+				continue;
+			}
+			NativeSlotOrder order = keyTupleOrder(keySeqSlots, row.boundMask());
+			int prefix = order.exactPrefixLength(requested, plan.producedMask());
+			if (prefix > bestPrefix) {
+				bestPrefix = prefix;
+				bestLeft = candidateLeft;
+				bestOrder = order;
+			}
+		}
+		if (bestLeft == null) {
+			return null;
+		}
+		// the fallback chain leads with the same key fields: a nested loop preserves its outer scan's order, so
+		// both executions honor the promised (weaker) key-tuple order
+		MultiJoinPlan fallback = new MultiJoinPlan(new SlotPlan[] { bestLeft.plan, admission.right }, plan.filters);
+		return new NativeOrderedPlan(new MergeOrderedJoinPlan(plan, fallback, bestLeft.keySeqSlots), bestOrder);
+	}
+
+	/**
+	 * Runtime companion of {@link #orderedProposal}: reopens the merge join on the pinned key sequence, or null when
+	 * the sequence is no longer workable under this entry row (the caller then falls back to its order-preserving
+	 * chain).
+	 */
+	static BatchCursor tryOpenOrdered(MultiJoinPlan plan, RowState row, int[] pinnedKeySeqSlots) {
+		Admission admission = admit(plan, row, true);
+		if (admission == null) {
+			return null;
+		}
+		int[] keySeqSlots = candidateKeySequence(admission.left, row, admission.keyMask, pinnedKeySeqSlots[0]);
+		if (keySeqSlots == null || !Arrays.equals(keySeqSlots, pinnedKeySeqSlots)) {
+			reject(row, "ordered-sequence-drift");
+			return null;
+		}
+		Side leftSide = orderedSide(admission.left, row, admission.keyMask, keySeqSlots);
+		Side rightSide = leftSide == null ? null : orderedSide(admission.right, row, admission.keyMask, keySeqSlots);
+		if (leftSide == null || rightSide == null) {
+			reject(row, "ordered-sequence-drift");
+			return null;
+		}
+		return candidate(admission, row, leftSide, rightSide).open(plan, row);
+	}
+
+	private static NativeSlotOrder keyTupleOrder(int[] keySeqSlots, long boundMask) {
+		long[] positions = new long[keySeqSlots.length + 1];
+		for (int i = 0; i < keySeqSlots.length; i++) {
+			positions[i] = 1L << keySeqSlots[i];
+		}
+		// trailing zero = explicit barrier: the cross product within an equal-key run orders no later slot
+		return new NativeSlotOrder(positions, boundMask);
+	}
+
+	private static final class Admission {
+		final PatternPlan left;
+		final PatternPlan right;
+		final long keyMask;
+
+		Admission(PatternPlan left, PatternPlan right, long keyMask) {
+			this.left = left;
+			this.right = right;
+			this.keyMask = keyMask;
+		}
 	}
 
 	private static Candidate reject(RowState row, String reason) {
@@ -755,6 +870,95 @@ final class MergeJoinBatchCursor implements BatchCursor {
 			leftRunQuads = null;
 			seed = null;
 			scratch = null;
+		}
+	}
+}
+
+/**
+ * Order-planner plan node: commits a two-pattern join to the batch merge join and promises the merge output's
+ * non-decreasing join-key order (the keys in {@link #keySeqSlots} sequence, nothing beyond them). When the merge join
+ * cannot reopen at evaluation time, the ordered nested-loop chain in {@link #orderedFallback} serves the same promise:
+ * its left scan leads with the same key fields, and a nested-loop chain preserves its outer scan's order.
+ */
+@Experimental
+final class MergeOrderedJoinPlan implements SlotPlan {
+	final MultiJoinPlan join;
+	final MultiJoinPlan orderedFallback;
+	final int[] keySeqSlots;
+
+	MergeOrderedJoinPlan(MultiJoinPlan join, MultiJoinPlan orderedFallback, int[] keySeqSlots) {
+		this.join = join;
+		this.orderedFallback = orderedFallback;
+		this.keySeqSlots = keySeqSlots;
+	}
+
+	@Override
+	public RowCursor open(RowState row) throws IOException {
+		BatchCursor merge = LmdbNativeMergeJoin.tryOpenOrdered(join, row, keySeqSlots);
+		if (merge == null) {
+			return orderedFallback.open(row);
+		}
+		return new MergeOrderedRowCursor(merge, row);
+	}
+
+	@Override
+	public long producedMask() {
+		return join.producedMask();
+	}
+
+	@Override
+	public double estimate(RowState row) {
+		return join.estimate(row);
+	}
+
+	@Override
+	public LmdbNativeWork estimateWork(RowState row, long boundMask) {
+		return join.estimateWork(row, boundMask);
+	}
+
+	@Override
+	public double estimateRows(RowState row, long boundMask) {
+		return join.estimateRows(row, boundMask);
+	}
+}
+
+/** Row view over the merge join's batches for the ordered row-tier consumers. */
+@Experimental
+final class MergeOrderedRowCursor implements RowCursor {
+	final BatchCursor delegate;
+	final RowState row;
+	final NativeBatch batch;
+	int batchIndex;
+	boolean closed;
+
+	MergeOrderedRowCursor(BatchCursor delegate, RowState row) {
+		this.delegate = delegate;
+		this.row = row;
+		this.batch = new NativeBatch(row.slots.length, NativeBatch.configuredRows());
+	}
+
+	@Override
+	public boolean next() throws IOException {
+		if (closed) {
+			return false;
+		}
+		while (batchIndex >= batch.selectedCount) {
+			if (delegate.fill(batch) == 0) {
+				return false;
+			}
+			batchIndex = 0;
+		}
+		int physicalRow = batch.selection[batchIndex++];
+		batch.copyToRow(physicalRow, row.slots);
+		row.recomputeBoundMask();
+		return true;
+	}
+
+	@Override
+	public void close() {
+		if (!closed) {
+			closed = true;
+			delegate.close();
 		}
 	}
 }
