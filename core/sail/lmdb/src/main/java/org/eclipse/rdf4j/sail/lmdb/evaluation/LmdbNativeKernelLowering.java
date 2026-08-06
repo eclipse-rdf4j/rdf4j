@@ -1901,16 +1901,23 @@ final class LmdbNativeKernelLowering {
 			List<PatternPlan> remaining = new ArrayList<>(component);
 			boolean witnessed = true;
 			while (!remaining.isEmpty() && witnessed) {
-				boolean progressed = false;
-				for (int i = 0; i < remaining.size() && !progressed; i++) {
-					if (witnessPatternCorrelated(remaining.get(i), witnessCols)) {
-						witnessed = lowerWitnessPatternPlan(remaining.remove(i), witnessCols, sub);
-						progressed = true;
+				// Variable correlation FIRST, constants only as a last resort: a constant endpoint makes a pattern
+				// "correlated" trivially, but lowering it before the anchor variable is known turns the witness into a
+				// full extent scan PER OUTER ROW (a class pattern picked first enumerates every instance of the class
+				// inside the Exists — persons x extent on SP2B, the 60 s timeout), where the variable-anchored pattern
+				// probes one run and the constant pattern closes it with a seek.
+				int pick = -1;
+				for (int i = 0; i < remaining.size() && pick < 0; i++) {
+					if (witnessVariableCorrelated(remaining.get(i), witnessCols)) {
+						pick = i;
 					}
 				}
-				if (!progressed) {
-					witnessed = lowerWitnessPatternPlan(remaining.remove(0), witnessCols, sub);
+				for (int i = 0; i < remaining.size() && pick < 0; i++) {
+					if (witnessPatternCorrelated(remaining.get(i), witnessCols)) {
+						pick = i;
+					}
 				}
+				witnessed = lowerWitnessPatternPlan(remaining.remove(Math.max(pick, 0)), witnessCols, sub);
 			}
 			if (witnessed) {
 				currentDepthNodes().add(new LmdbNativeKernelIr.Exists(false, sub));
@@ -2259,6 +2266,17 @@ final class LmdbNativeKernelLowering {
 		/** True when at least one endpoint of the pattern is already available (probe-able) in this witness. */
 		private boolean witnessPatternCorrelated(PatternPlan pattern, java.util.Map<Integer, Integer> witnessCols) {
 			return witnessTermAvailable(pattern.s, witnessCols) || witnessTermAvailable(pattern.o, witnessCols);
+		}
+
+		/** Correlation through an available VARIABLE binding; constants deliberately do not qualify. */
+		private boolean witnessVariableCorrelated(PatternPlan pattern, java.util.Map<Integer, Integer> witnessCols) {
+			return witnessVariableAvailable(pattern.s, witnessCols) || witnessVariableAvailable(pattern.o, witnessCols);
+		}
+
+		private boolean witnessVariableAvailable(Term term, java.util.Map<Integer, Integer> witnessCols) {
+			return !term.isConstant() && term.hasSlot()
+					&& (witnessCols.containsKey(term.slot) || (entryMask >>> term.slot & 1L) == 1L
+							|| slotColumn[term.slot] >= 0);
 		}
 
 		private boolean witnessTermAvailable(Term term, java.util.Map<Integer, Integer> witnessCols) {

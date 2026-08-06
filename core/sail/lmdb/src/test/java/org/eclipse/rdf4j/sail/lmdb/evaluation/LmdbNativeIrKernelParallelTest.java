@@ -48,6 +48,7 @@ class LmdbNativeIrKernelParallelTest {
 			"rdf4j.lmdb.nativeQueryEngine.enabled",
 			"rdf4j.lmdb.janinoCodegen.enabled",
 			"rdf4j.lmdb.janinoCodegen.thresholdRows",
+			"rdf4j.lmdb.janinoCodegen.dumpDir",
 			"rdf4j.lmdb.parallel.threads",
 			"rdf4j.lmdb.parallel.minWorkEstimate",
 			LmdbNativeParallelKernelRows.ENABLED_PROPERTY };
@@ -233,6 +234,38 @@ class LmdbNativeIrKernelParallelTest {
 				.as("a plain DISTINCT BGP with a constant-key root must run partitioned across workers")
 				.isGreaterThan(parallelBefore);
 		assertThat(rows(DISTINCT_BGP_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	/**
+	 * Plan 32 witness-ordering pin: inside an existential rewrite, probes must anchor on VARIABLES (the outer join
+	 * column), never on a constant. A constant-anchored witness probe (`find(c<i>)` in the generated source) enumerates
+	 * a whole class extent per outer row — persons x extent on SP2B-scale stores, observed as a 60 s timeout against a
+	 * 60 ms interpreted baseline, with the profile pinned in the paged-CSF per-ordinal reader.
+	 */
+	@Test
+	void existentialWitnessesProbeFromVariableAnchorsNotConstants() throws Exception {
+		File dumpDir = new File(dataDir, "kernel-dump");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.dumpDir", dumpDir.getAbsolutePath());
+		KernelExecutionTestAccess.resetMetrics();
+		LmdbNativeJaninoCodegen.resetForTests();
+		for (int round = 0; round < 300 && KernelExecutionTestAccess.opened() == 0; round++) {
+			rows(DISTINCT_BGP_QUERY);
+		}
+		assertThat(KernelExecutionTestAccess.opened()).as("the kernel rung must engage").isGreaterThan(0);
+		assertThat(LmdbNativeJaninoCodegen.awaitCompilationsForTests(30, java.util.concurrent.TimeUnit.SECONDS))
+				.isTrue();
+		File[] sources = dumpDir.listFiles((dir, name) -> name.endsWith(".java"));
+		assertThat(sources).as("compiled kernels must be dumped").isNotEmpty();
+		boolean witnessed = false;
+		for (File source : sources) {
+			String text = java.nio.file.Files.readString(source.toPath());
+			assertThat(text)
+					.as("no witness probe may anchor on a constant (full-extent scan per outer row): "
+							+ source.getName())
+					.doesNotContain(".find(c");
+			witnessed |= text.contains("return true;");
+		}
+		assertThat(witnessed).as("the existential rewrite must produce a boolean witness method").isTrue();
 	}
 
 	@Test
