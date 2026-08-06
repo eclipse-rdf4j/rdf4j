@@ -39,6 +39,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
@@ -65,6 +66,8 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 	final NativeBooleanFilter prefixRunFilter;
 	final long prefixMinRunCount;
 	final LmdbNativeExistsIntersection existsIntersection;
+	/** The HAVING condition the caller enforces above this step, offered to the kernel as a sinkable pre-filter. */
+	final ValueExpr havingCondition;
 	final NativeAggregateDistinctPlan distinctPlan;
 	QueryEvaluationStep genericStep;
 
@@ -73,7 +76,7 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 			TupleExpr originalExpr, QueryEvaluationContext context, Set<String> optionalOnlyNames,
 			PatternPlan prefixPattern, LmdbPrefixRunPlan prefixRunPlan, boolean prefixCountRunRows,
 			boolean prefixDistinctRuns, NativeBooleanFilter prefixRunFilter, long prefixMinRunCount,
-			LmdbNativeExistsIntersection existsIntersection) {
+			LmdbNativeExistsIntersection existsIntersection, ValueExpr havingCondition) {
 		this.source = source;
 		this.arg = arg;
 		this.layout = layout;
@@ -92,6 +95,7 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 		this.prefixRunFilter = prefixRunFilter;
 		this.prefixMinRunCount = prefixMinRunCount;
 		this.existsIntersection = existsIntersection;
+		this.havingCondition = havingCondition;
 		this.distinctPlan = previewDistinctPlan();
 	}
 
@@ -112,7 +116,7 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 		}
 		return new NativeGroupIteration(source, arg, layout, groupSlots, aggregates, strictCompare, bindings,
 				prefixPattern, prefixRunPlan, prefixCountRunRows, prefixDistinctRuns, prefixRunFilter,
-				prefixMinRunCount, existsIntersection, originalExpr);
+				prefixMinRunCount, existsIntersection, havingCondition, originalExpr);
 	}
 
 	boolean hasOptionalOnlyBinding(BindingSet bindings) {
@@ -187,6 +191,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 	final NativeBooleanFilter prefixRunFilter;
 	final long prefixMinRunCount;
 	final LmdbNativeExistsIntersection existsIntersection;
+	/** The externally enforced HAVING condition, offered to the aggregate kernel as a sinkable pre-filter. */
+	final ValueExpr havingCondition;
 	/** Compiled expression to stamp with the executed-strategy explain metric; may be null in tests. */
 	final TupleExpr explainTarget;
 	Iterator<BindingSet> resultIterator;
@@ -198,7 +204,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 			PatternPlan prefixPattern, LmdbPrefixRunPlan prefixRunPlan, boolean prefixCountRunRows,
 			TupleExpr explainTarget) {
 		this(source, arg, layout, groupSlots, aggregates, strictCompare, base, prefixPattern, prefixRunPlan,
-				prefixCountRunRows, false, null, 0L, null, explainTarget);
+				prefixCountRunRows, false, null, 0L, null, null, explainTarget);
 	}
 
 	NativeGroupIteration(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout,
@@ -206,6 +212,16 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 			PatternPlan prefixPattern, LmdbPrefixRunPlan prefixRunPlan, boolean prefixCountRunRows,
 			boolean prefixDistinctRuns, NativeBooleanFilter prefixRunFilter, long prefixMinRunCount,
 			LmdbNativeExistsIntersection existsIntersection, TupleExpr explainTarget) {
+		this(source, arg, layout, groupSlots, aggregates, strictCompare, base, prefixPattern, prefixRunPlan,
+				prefixCountRunRows, prefixDistinctRuns, prefixRunFilter, prefixMinRunCount, existsIntersection, null,
+				explainTarget);
+	}
+
+	NativeGroupIteration(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout,
+			int[] groupSlots, AggregateSpec[] aggregates, boolean strictCompare, BindingSet base,
+			PatternPlan prefixPattern, LmdbPrefixRunPlan prefixRunPlan, boolean prefixCountRunRows,
+			boolean prefixDistinctRuns, NativeBooleanFilter prefixRunFilter, long prefixMinRunCount,
+			LmdbNativeExistsIntersection existsIntersection, ValueExpr havingCondition, TupleExpr explainTarget) {
 		this.source = source;
 		this.arg = arg;
 		this.layout = layout;
@@ -224,6 +240,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		this.prefixRunFilter = prefixRunFilter;
 		this.prefixMinRunCount = prefixMinRunCount;
 		this.existsIntersection = existsIntersection;
+		this.havingCondition = havingCondition;
 		this.explainTarget = explainTarget;
 	}
 
@@ -305,7 +322,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		}
 		if (!moreSpecializedStrategyHandlesRow(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, row)) {
 			List<BindingSet> irFused = LmdbNativeKernelExecution.tryEvaluateAggregate(arg, row, groupSlots,
-					aggregates, this, explainTarget);
+					aggregates, this, explainTarget, havingCondition);
 			if (irFused != null) {
 				LmdbNativeExplain.recordExecutionPath(explainTarget, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE);
 				return irFused;
@@ -375,7 +392,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 	private NativeGroupIteration withArg(SlotPlan attemptArg) {
 		return new NativeGroupIteration(source, attemptArg, layout, groupSlots, aggregates, strictCompare, base,
 				prefixPattern, prefixRunPlan, prefixCountRunRows, prefixDistinctRuns, prefixRunFilter,
-				prefixMinRunCount, existsIntersection, explainTarget);
+				prefixMinRunCount, existsIntersection, havingCondition, explainTarget);
 	}
 
 	private static void throwRealFailureSuppressedBy(EncounterOrderFallback fallback) {

@@ -52,6 +52,10 @@ public final class KernelExecutionTestAccess {
 		return LmdbNativeKernelExecution.AGG_DECLINED.get();
 	}
 
+	public static long havingSinks() {
+		return LmdbNativeKernelLowering.HAVING_SINKS.get();
+	}
+
 	public static void resetMetrics() {
 		LmdbNativeKernelExecution.resetMetrics();
 	}

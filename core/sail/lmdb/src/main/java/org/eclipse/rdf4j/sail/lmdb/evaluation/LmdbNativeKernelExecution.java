@@ -21,6 +21,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 
@@ -66,6 +67,7 @@ final class LmdbNativeKernelExecution {
 		AGG_OPENED.set(0L);
 		AGG_ROWS.set(0L);
 		AGG_DECLINED.set(0L);
+		LmdbNativeKernelLowering.HAVING_SINKS.set(0L);
 		SHAPE_OPENS.clear();
 	}
 
@@ -75,13 +77,14 @@ final class LmdbNativeKernelExecution {
 	 * generated loops preserve exact SUM/AVG semantics without carrying objects.
 	 */
 	static List<BindingSet> tryEvaluateAggregate(SlotPlan arg, RowState row,
-			int[] groupSlots, AggregateSpec[] aggregates, NativeGroupIteration emitter, TupleExpr explainTarget) {
-		return tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget, false);
+			int[] groupSlots, AggregateSpec[] aggregates, NativeGroupIteration emitter, TupleExpr explainTarget,
+			ValueExpr havingCondition) {
+		return tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget, havingCondition, false);
 	}
 
 	private static List<BindingSet> tryEvaluateAggregate(SlotPlan arg, RowState row,
 			int[] groupSlots, AggregateSpec[] aggregates, NativeGroupIteration emitter, TupleExpr explainTarget,
-			boolean preferScans) {
+			ValueExpr havingCondition, boolean preferScans) {
 		if (!LmdbNativeJaninoCodegen.enabled()) {
 			if (row.runtimePlan != null) {
 				row.runtimePlan.janinoDeclined("FEATURE_DISABLED[" + LmdbNativeJaninoCodegen.ENABLED_PROPERTY
@@ -97,7 +100,8 @@ final class LmdbNativeKernelExecution {
 		LmdbNativeKernelHooks hooks = null;
 		try {
 			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerAggregate(arg, row, groupSlots,
-					aggregates, explainTarget, preferScans);
+					aggregates, LmdbNativeKernelLowering.recognizeHaving(havingCondition, aggregates), explainTarget,
+					preferScans);
 			if (lowered == null) {
 				AGG_DECLINED.incrementAndGet();
 				if (row.runtimePlan != null) {
@@ -136,7 +140,8 @@ final class LmdbNativeKernelExecution {
 					probe = null;
 					kernel.close();
 					kernel = null;
-					return tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget, true);
+					return tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget,
+							havingCondition, true);
 				}
 				if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
 					System.err.println("[ir-aggregate] decline: adjacency-unavailable");

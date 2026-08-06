@@ -16,11 +16,18 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Kernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Node;
@@ -104,6 +111,22 @@ final class LmdbNativeKernelLowering {
 	static boolean distinctNumericAggregatesEnabled() {
 		return Boolean.parseBoolean(System.getProperty(DISTINCT_NUMERIC_PROPERTY, "false"));
 	}
+
+	/**
+	 * Enables sinking a count-kind HAVING guard into the aggregate kernel terminal (three-tier parity plan, M7). The
+	 * engine's outer HAVING filter always remains in place — the sunk guard is a strict pre-filter over the same
+	 * condition — so this switch only decides whether failing groups are dropped inside the generated drain or
+	 * materialized into binding sets first. Kill switch, default ON: admission risk is nil because a shape that does
+	 * not sink runs exactly as before.
+	 */
+	static final String HAVING_SINK_PROPERTY = "rdf4j.lmdb.irAggregate.having.enabled";
+
+	static boolean havingSinkEnabled() {
+		return Boolean.parseBoolean(System.getProperty(HAVING_SINK_PROPERTY, "true"));
+	}
+
+	/** HAVING guards sunk into an aggregate kernel terminal (M7 witness). */
+	static final AtomicLong HAVING_SINKS = new AtomicLong();
 
 	private static final int MAX_CHILDREN = 12;
 	private static final int MAX_HOOK_ARGS = 3;
@@ -380,6 +403,12 @@ final class LmdbNativeKernelLowering {
 	/** As above, retried with {@code preferScans} when bind time reports no usable adjacency view. */
 	static Lowered lowerAggregate(SlotPlan arg, RowState row, int[] groupSlots, AggregateSpec[] aggregates,
 			TupleExpr declineTarget, boolean preferScans) {
+		return lowerAggregate(arg, row, groupSlots, aggregates, null, declineTarget, preferScans);
+	}
+
+	/** As above with a recognized HAVING guard to sink into the aggregate terminal when its output is count-kind. */
+	static Lowered lowerAggregate(SlotPlan arg, RowState row, int[] groupSlots, AggregateSpec[] aggregates,
+			LmdbNativeKernelIr.Having having, TupleExpr declineTarget, boolean preferScans) {
 		// Sticky (EXISTS-bearing) filters never flatten into a MultiJoinPlan — they arrive as FilterPlan wrappers
 		// around the producer. Peel the wrapper chain, collecting the conditions, then lower the core.
 		List<MaskedFilter> filters = new ArrayList<>();
@@ -409,36 +438,127 @@ final class LmdbNativeKernelLowering {
 			builder.lowerEmptyAggregate(groupSlots, aggregates);
 		} else {
 			if (!builder.lowerJoinOperand(core, filters, row)) {
-				return aggregateDeclineOrBridge(arg, row, groupSlots, aggregates, declineTarget,
+				return aggregateDeclineOrBridge(arg, row, groupSlots, aggregates, having, declineTarget,
 						builder.reason);
 			}
 			if (builder.joinOperands == 0) {
-				return aggregateDeclineOrBridge(arg, row, groupSlots, aggregates, declineTarget,
+				return aggregateDeclineOrBridge(arg, row, groupSlots, aggregates, having, declineTarget,
 						"agg:no-children");
 			}
 			for (MaskedFilter masked : filters) {
 				if (!builder.lowerFilterStrict(masked)) {
-					return aggregateDeclineOrBridge(arg, row, groupSlots, aggregates, declineTarget,
+					return aggregateDeclineOrBridge(arg, row, groupSlots, aggregates, having, declineTarget,
 							builder.reason);
 				}
 			}
 			for (SlotPlan minusArm : minusArms) {
 				if (!builder.lowerMinusArm(minusArm)) {
-					return aggregateDeclineOrBridge(arg, row, groupSlots, aggregates, declineTarget,
+					return aggregateDeclineOrBridge(arg, row, groupSlots, aggregates, having, declineTarget,
 							builder.reason);
 				}
 			}
 		}
-		Lowered lowered = builder.buildAggregate(groupSlots, aggregates,
+		Lowered lowered = builder.buildAggregate(groupSlots, aggregates, having,
 				distinctExpected(arg, row, groupSlots.length > 0));
 		if (lowered == null) {
-			return aggregateDeclineOrBridge(arg, row, groupSlots, aggregates, declineTarget, builder.reason);
+			return aggregateDeclineOrBridge(arg, row, groupSlots, aggregates, having, declineTarget, builder.reason);
 		}
 		return lowered;
 	}
 
+	/**
+	 * Recognizes a HAVING condition (or one conjunct of it) the aggregate kernel can enforce in its terminal: a
+	 * comparison between one aggregate output variable and one exact-integer constant. Sinking a single conjunct is
+	 * sound because the guard is a strict pre-filter — the engine's outer HAVING filter still applies the full
+	 * condition — and a count/integer comparison reduces to one long compare with no value semantics left over. The
+	 * count-kind requirement is enforced where the outputs exist, in {@code buildAggregate}; every unrecognized shape
+	 * returns null and never declines the kernel.
+	 */
+	static LmdbNativeKernelIr.Having recognizeHaving(ValueExpr condition, AggregateSpec[] aggregates) {
+		if (condition == null || !havingSinkEnabled()) {
+			return null;
+		}
+		if (condition instanceof And) {
+			LmdbNativeKernelIr.Having left = recognizeHaving(((And) condition).getLeftArg(), aggregates);
+			return left != null ? left : recognizeHaving(((And) condition).getRightArg(), aggregates);
+		}
+		if (!(condition instanceof Compare)) {
+			return null;
+		}
+		Compare compare = (Compare) condition;
+		Compare.CompareOp op = compare.getOperator();
+		String name = aggregateVariableName(compare.getLeftArg());
+		Long threshold = exactIntegerConstant(compare.getRightArg());
+		if (name == null || threshold == null) {
+			name = aggregateVariableName(compare.getRightArg());
+			threshold = exactIntegerConstant(compare.getLeftArg());
+			op = reverseCompare(op);
+		}
+		if (name == null || threshold == null) {
+			return null;
+		}
+		for (int i = 0; i < aggregates.length; i++) {
+			if (name.equals(aggregates[i].name)) {
+				return new LmdbNativeKernelIr.Having(i, irCompareOp(op), threshold);
+			}
+		}
+		return null;
+	}
+
+	private static String aggregateVariableName(ValueExpr expr) {
+		return expr instanceof Var && !((Var) expr).hasValue() ? ((Var) expr).getName() : null;
+	}
+
+	private static Long exactIntegerConstant(ValueExpr expr) {
+		if (!(expr instanceof ValueConstant) || !(((ValueConstant) expr).getValue() instanceof Literal)) {
+			return null;
+		}
+		Literal literal = (Literal) ((ValueConstant) expr).getValue();
+		CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
+		if (datatype == null || !datatype.isIntegerDatatype()) {
+			return null;
+		}
+		try {
+			return literal.integerValue().longValueExact();
+		} catch (ArithmeticException | IllegalArgumentException ignored) {
+			return null;
+		}
+	}
+
+	private static Compare.CompareOp reverseCompare(Compare.CompareOp op) {
+		switch (op) {
+		case LT:
+			return Compare.CompareOp.GT;
+		case LE:
+			return Compare.CompareOp.GE;
+		case GT:
+			return Compare.CompareOp.LT;
+		case GE:
+			return Compare.CompareOp.LE;
+		default:
+			return op;
+		}
+	}
+
+	private static int irCompareOp(Compare.CompareOp op) {
+		switch (op) {
+		case EQ:
+			return LmdbNativeKernelIr.OP_EQ;
+		case NE:
+			return LmdbNativeKernelIr.OP_NE;
+		case LT:
+			return LmdbNativeKernelIr.OP_LT;
+		case LE:
+			return LmdbNativeKernelIr.OP_LE;
+		case GT:
+			return LmdbNativeKernelIr.OP_GT;
+		default:
+			return LmdbNativeKernelIr.OP_GE;
+		}
+	}
+
 	private static Lowered aggregateDeclineOrBridge(SlotPlan arg, RowState row, int[] groupSlots,
-			AggregateSpec[] aggregates, TupleExpr declineTarget, String reason) {
+			AggregateSpec[] aggregates, LmdbNativeKernelIr.Having having, TupleExpr declineTarget, String reason) {
 		if (planBridgeEnabled()) {
 			Builder bridge = new Builder(row, "agg:");
 			long requiredMask = 0L;
@@ -453,7 +573,7 @@ final class LmdbNativeKernelLowering {
 				}
 			}
 			bridge.lowerPlanRows(arg, requiredMask);
-			Lowered lowered = bridge.buildAggregate(groupSlots, aggregates,
+			Lowered lowered = bridge.buildAggregate(groupSlots, aggregates, having,
 					distinctExpected(arg, row, groupSlots.length > 0));
 			if (lowered != null) {
 				return new Lowered(lowered.kernel, lowered.bindings, reason);
@@ -2527,6 +2647,11 @@ final class LmdbNativeKernelLowering {
 		}
 
 		Lowered buildAggregate(int[] groupSlots, AggregateSpec[] aggregates, int distinctExpected) {
+			return buildAggregate(groupSlots, aggregates, null, distinctExpected);
+		}
+
+		Lowered buildAggregate(int[] groupSlots, AggregateSpec[] aggregates, LmdbNativeKernelIr.Having having,
+				int distinctExpected) {
 			int[] groupCols = new int[groupSlots.length];
 			for (int i = 0; i < groupSlots.length; i++) {
 				if (groupSlots[i] < 0 || groupSlots[i] >= slotColumn.length || slotColumn[groupSlots[i]] < 0) {
@@ -2621,8 +2746,15 @@ final class LmdbNativeKernelLowering {
 				reason = "agg:no-columns";
 				return null;
 			}
-			Kernel kernel = new Kernel(columnCount, pipeline,
-					new LmdbNativeKernelIr.Aggregate(groupCols, outputs, null, LmdbNativeKernelIr.OutputMods.none()));
+			LmdbNativeKernelIr.Aggregate terminal = new LmdbNativeKernelIr.Aggregate(groupCols, outputs, null,
+					LmdbNativeKernelIr.OutputMods.none());
+			// The guard is only attachable over a count-kind output (the IR's own contract); anything else keeps the
+			// engine-side HAVING filter as the sole enforcement — a skip, never a decline.
+			if (having != null && outputs[having.outputIndex].isCountKind()) {
+				terminal = terminal.having(having.outputIndex, having.op, having.threshold);
+				HAVING_SINKS.incrementAndGet();
+			}
+			Kernel kernel = new Kernel(columnCount, pipeline, terminal);
 			long[] constantArray = new long[constants.size()];
 			for (int i = 0; i < constantArray.length; i++) {
 				constantArray[i] = constants.get(i);

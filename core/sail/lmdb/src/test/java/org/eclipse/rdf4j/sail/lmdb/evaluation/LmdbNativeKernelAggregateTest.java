@@ -90,6 +90,20 @@ public class LmdbNativeKernelAggregateTest {
 			+ "  UNION\n"
 			+ "  { ?combination a ex:Combination ; ex:member ?a }\n"
 			+ "}";
+	// M7 HAVING sink: the two-pattern chain keeps the shape off the prefix-run and legacy janino recognizers, so the
+	// IR aggregate rung owns it; the count-kind guard must sink into the kernel terminal (HAVING_SINKS witness).
+	private static final String HAVING_GROUPED_QUERY = "PREFIX ex: <" + EX + ">\n"
+			+ "SELECT ?a (COUNT(*) AS ?n) WHERE { ?a ex:knows ?b . ?b ex:knows ?c }\n"
+			+ "GROUP BY ?a HAVING(COUNT(*) > 1)";
+	// Constant-on-the-left comparison: recognition must reverse the operator, not drop the guard.
+	private static final String HAVING_REVERSED_QUERY = "PREFIX ex: <" + EX + ">\n"
+			+ "SELECT ?a (COUNT(*) AS ?n) WHERE { ?a ex:knows ?b . ?b ex:knows ?c }\n"
+			+ "GROUP BY ?a HAVING(1 < COUNT(*))";
+	// SUM is not count-kind in the kernel tier: the guard must stay outside without costing the kernel itself.
+	private static final String HAVING_SUM_QUERY = "PREFIX ex: <" + EX + ">\n"
+			+ "SELECT ?g (SUM(?v) AS ?total) WHERE {\n"
+			+ "  ?s ex:bucket ?g ; ex:groupScore ?v . } GROUP BY ?g HAVING(SUM(?v) > 5.0)";
+
 	// The VALUES literal is absent from the store, so its id is plan-local synthetic: before the plan-22 Step-0
 	// guard relaxation the whole NOT EXISTS compiled to an unintrospectable generic lambda (catalog HC q10's shape).
 	private static final String SYNTHETIC_VALUES_WITNESS_QUERY = "PREFIX ex: <" + EX + ">\n"
@@ -361,6 +375,54 @@ public class LmdbNativeKernelAggregateTest {
 		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
 				"aggregate rung never engaged for union COUNT DISTINCT");
 		assertEquals(expected, rows(UNION_DISTINCT_QUERY));
+	}
+
+	@Test
+	public void havingCountGuardSinksIntoTheKernelAndMatchesGeneric() {
+		List<String> expected = genericRows(HAVING_GROUPED_QUERY);
+		assertFalse(expected.isEmpty(), "fixture must keep at least one group past the guard");
+		assertTrue(expected.size() < genericRows(HAVING_GROUPED_QUERY.replace("HAVING(COUNT(*) > 1)", "")).size(),
+				"fixture must also drop at least one group, or the guard proves nothing");
+		warmUntilEngaged(HAVING_GROUPED_QUERY);
+		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L, "aggregate rung never engaged for HAVING shape");
+		assertTrue(KernelExecutionTestAccess.havingSinks() > 0L,
+				"count-kind HAVING guard was not sunk into the kernel terminal");
+		assertEquals(expected, rows(HAVING_GROUPED_QUERY));
+	}
+
+	@Test
+	public void havingGuardWithConstantOnTheLeftReversesTheOperator() {
+		List<String> expected = genericRows(HAVING_REVERSED_QUERY);
+		assertFalse(expected.isEmpty(), "fixture must keep at least one group past the guard");
+		warmUntilEngaged(HAVING_REVERSED_QUERY);
+		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L, "aggregate rung never engaged for reversed HAVING");
+		assertTrue(KernelExecutionTestAccess.havingSinks() > 0L, "reversed HAVING guard was not sunk");
+		assertEquals(expected, rows(HAVING_REVERSED_QUERY));
+	}
+
+	@Test
+	public void nonCountHavingKeepsTheKernelWithoutSinking() {
+		List<String> expected = genericRows(HAVING_SUM_QUERY);
+		assertFalse(expected.isEmpty(), "fixture must keep at least one group past the SUM guard");
+		warmUntilEngaged(HAVING_SUM_QUERY);
+		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L, "aggregate rung never engaged for SUM HAVING");
+		assertEquals(0L, KernelExecutionTestAccess.havingSinks(),
+				"a non-count guard must not sink into the count-only kernel tier");
+		assertEquals(expected, rows(HAVING_SUM_QUERY));
+	}
+
+	@Test
+	public void havingSinkFlagOffStaysInertWithCorrectResults() {
+		System.setProperty(LmdbNativeKernelLowering.HAVING_SINK_PROPERTY, "false");
+		try {
+			List<String> expected = genericRows(HAVING_GROUPED_QUERY);
+			warmUntilEngaged(HAVING_GROUPED_QUERY);
+			assertTrue(KernelExecutionTestAccess.aggOpened() > 0L, "aggregate rung never engaged with the flag off");
+			assertEquals(0L, KernelExecutionTestAccess.havingSinks(), "flag off must keep the guard outside");
+			assertEquals(expected, rows(HAVING_GROUPED_QUERY));
+		} finally {
+			System.clearProperty(LmdbNativeKernelLowering.HAVING_SINK_PROPERTY);
+		}
 	}
 
 	@Test

@@ -138,7 +138,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				originalExpr, context, optionalOnlyNames, prefixRun == null ? null : prefixRun.pattern,
 				prefixRun == null ? null : prefixRun.plan, prefixRun != null && prefixRun.countRunRows,
 				prefixRun != null && prefixRun.distinctRuns, prefixRun == null ? null : prefixRun.runFilter,
-				prefixRun == null ? 0L : prefixRun.minRunCount, existsIntersection);
+				prefixRun == null ? 0L : prefixRun.minRunCount, existsIntersection, havingCondition);
 	}
 
 	/**
