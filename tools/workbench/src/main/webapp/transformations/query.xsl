@@ -145,6 +145,17 @@
                                     Timed
                                 </option>
                             </select>
+                            <span id="explanation-highlight-mode" class="query-explanation-highlight-mode"
+                                  role="group" aria-label="Text explanation highlighting" aria-hidden="false">
+                                <button id="explanation-highlight-syntax"
+                                        class="query-explanation-highlight-mode__button" type="button"
+                                        aria-pressed="true">Syntax</button>
+                                <button id="explanation-highlight-hotspot"
+                                        class="query-explanation-highlight-mode__button" type="button"
+                                        aria-pressed="false">Hotspots</button>
+                            </span>
+                            <span id="explanation-hotspot-legend" class="query-explanation-hotspot-legend"
+                                  aria-live="polite"></span>
                         </span>
                         <span id="primary-explain-repeat-controls" class="query-form__field--controls-group">
                             <input id="rerun-explanation" type="button"
@@ -440,6 +451,7 @@
         <script src="../../scripts/viz/viz.js" type="text/javascript"></script>
         <script src="../../scripts/viz/full.render.js" type="text/javascript"></script>
         <script src="../../scripts/svg-pan-zoom.min.js" type="text/javascript"></script>
+        <script src="../../scripts/queryExplanationHighlighter.js" type="text/javascript"></script>
         <script src="../../scripts/query.js" type="text/javascript"></script>
 
     </xsl:template>

@@ -92,6 +92,7 @@ function createQueryBrowserHarness(options = {}) {
     const getJSONRequests = [];
     const pendingGetJSONRequests = [];
     const pendingExplainRequests = [];
+    const createdBlobs = [];
     const getJSONResponses = Array.from(options.getJSONResponses || []);
     const harness = createScriptHarness(Object.assign({}, options, {
         ajaxHandler(ajaxOptions, helpers) {
@@ -122,6 +123,7 @@ function createQueryBrowserHarness(options = {}) {
     context.Blob = function Blob(parts, options) {
         this.parts = parts;
         this.options = options;
+        createdBlobs.push(this);
     };
     context.URL = {
         createObjectURL() {
@@ -282,6 +284,23 @@ function createQueryBrowserHarness(options = {}) {
     const queryErrorsCompare = registerElement('div', { id: 'queryString.errors-compare' });
     const downloadExplanation = registerElement('button', { id: 'download-explanation' });
     const primaryExplainSettings = registerElement('div', { id: 'primary-explain-settings' });
+    const explanationHighlightMode = registerElement('span', {
+        id: 'explanation-highlight-mode',
+        attributes: { 'aria-label': 'Text explanation highlighting' }
+    });
+    const explanationHighlightSyntax = registerElement('button', {
+        id: 'explanation-highlight-syntax',
+        type: 'button',
+        attributes: { 'aria-pressed': 'true' }
+    });
+    const explanationHighlightHotspot = registerElement('button', {
+        id: 'explanation-highlight-hotspot',
+        type: 'button',
+        attributes: { 'aria-pressed': 'false' }
+    });
+    explanationHighlightMode.appendChild(explanationHighlightSyntax);
+    explanationHighlightMode.appendChild(explanationHighlightHotspot);
+    const explanationHotspotLegend = registerElement('span', { id: 'explanation-hotspot-legend' });
     const primaryExplainRepeatControls = registerElement('div', { id: 'primary-explain-repeat-controls' });
     const compareToggle = registerElement('button', { id: 'compare-toggle' });
     const queryDiffTrigger = registerElement('button', { id: 'query-diff-trigger' });
@@ -353,6 +372,8 @@ function createQueryBrowserHarness(options = {}) {
         queryErrorsCompare,
         downloadExplanation,
         primaryExplainSettings,
+        explanationHighlightMode,
+        explanationHotspotLegend,
         primaryExplainRepeatControls,
         compareToggle,
         queryDiffTrigger,
@@ -378,6 +399,7 @@ function createQueryBrowserHarness(options = {}) {
         harness.runScript('tools/workbench/src/main/webapp/scripts/diff.min.js');
     }
     harness.runScript('tools/workbench/src/main/webapp/scripts/queryCancelPolicy.js');
+    harness.runScript('tools/workbench/src/main/webapp/scripts/queryExplanationHighlighter.js');
     harness.runScript('tools/workbench/src/main/webapp/scripts/query.js');
 
     explainTrigger.onclick = () => context.workbench.query.runExplain(null, 'explain-trigger');
@@ -388,8 +410,11 @@ function createQueryBrowserHarness(options = {}) {
     explainCompareCancel.onclick = () => context.workbench.query.cancelCompareExplain();
     explainLevel.onchange = () => context.workbench.query.notifyQueryPageInputChange('EXPLAIN_LEVEL_CHANGED');
     explainFormat.onchange = () => context.workbench.query.notifyQueryPageInputChange('EXPLAIN_FORMAT_CHANGED');
+    explanationHighlightSyntax.onclick = () => context.workbench.query.setExplanationHighlightMode('syntax');
+    explanationHighlightHotspot.onclick = () => context.workbench.query.setExplanationHighlightMode('hotspot');
 
     return Object.assign({}, harness, {
+        createdBlobs,
         getJSONRequests,
         pendingGetJSONRequests,
         pendingExplainRequests,

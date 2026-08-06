@@ -138,6 +138,7 @@ test('query testing helpers cover serialization, explanation parsing, diff rende
 
     form.formControls = [];
     assert.match(testing.serializeExplainFormData('ASK {}', 'Optimized', 'json', 'server-1'), /action=explain/);
+    assert.match(testing.serializeExplainFormData('ASK {}', 'Optimized', 'text', 'server-2'), /explain-format=json/);
     assert.equal(testing.serializeCancelExplainFormData('server-1'), 'action=cancel-explain&explain-request-id=server-1');
 
     assert.equal(testing.getExplanationDownloadMimeType('dot'), 'text/vnd.graphviz');
@@ -149,7 +150,9 @@ test('query testing helpers cover serialization, explanation parsing, diff rende
     assert.equal(testing.getExplainErrorMessage({}, '', 'Broken'), 'Explain request failed: Broken');
     assert.equal(testing.getExplainErrorMessage({}, '', ''), 'Explain request failed.');
 
-    assert.equal(testing.createStableExplanationFromResponse(createSignature(), { content: '{bad', format: 'json', error: '' }, 'json').view, 'jsonRawFallback');
+    assert.equal(testing.createStableExplanationFromResponse(createSignature(), { content: '{bad', format: 'json', error: '' }, 'json').view, 'text');
+    assert.equal(testing.createStableExplanationFromResponse(createSignature(), { content: '[]', format: 'json', error: '' }, 'json').view, 'text');
+    assert.equal(testing.createStableExplanationFromResponse(createSignature({ format: 'json' }), { content: '{bad', format: 'json', error: '' }, 'json').view, 'jsonRawFallback');
     assert.equal(testing.createStableExplanationFromResponse(createSignature(), { content: 'digraph{}', format: 'dot', error: '' }, 'dot').view, 'dotRendering');
 
     assert.deepEqual(Array.from(testing.splitDiffLines('a\r\nb')), ['a', 'b']);

@@ -1,6 +1,7 @@
 /// <reference path="template.ts" />
 /// <reference path="jquery.d.ts" />
 /// <reference path="queryCancelPolicy.ts" />
+/// <reference path="queryExplanationHighlighter.ts" />
 /// <reference path="yasqe.d.ts" />
 /// <reference path="yasqeHelper.ts" />
 
@@ -44,11 +45,13 @@ module workbench {
         var compareQuerySeeded = false;
         var diffNotReadyLabel = '';
         var lastDiffTriggerElement: HTMLElement = null;
+        var explanationHighlightMode: queryExplanationHighlighter.HighlightMode = 'syntax';
 
         type ExplainLevel = 'Unoptimized' | 'Optimized' | 'Executed' | 'Telemetry' | 'Timed';
         type ExplainFormat = 'text' | 'dot' | 'json';
         type StaleReason = 'query' | 'level' | 'format';
-        type ExplanationView = 'text' | 'jsonTree' | 'jsonRawFallback' | 'dotRendering' | 'dotReady' | 'dotRenderError';
+        type ExplanationView = 'text' | 'highlightedText' | 'jsonTree' | 'jsonRawFallback'
+            | 'dotRendering' | 'dotReady' | 'dotRenderError';
         type PaneKey = 'primary' | 'compare';
         type ExplainRequestControllerKey = 'primary' | 'compare';
 
@@ -63,6 +66,8 @@ module workbench {
             responseFormat: 'text' | 'json' | 'dot';
             view: ExplanationView;
             rawContent: string;
+            displayContent: string;
+            plan?: queryExplanationHighlighter.QueryPlanNode;
         }
 
         interface RequestSignature {
@@ -624,8 +629,20 @@ module workbench {
                 requestedFormat: explanation.requestedFormat,
                 responseFormat: explanation.responseFormat,
                 view: explanation.view,
-                rawContent: explanation.rawContent
+                rawContent: explanation.rawContent,
+                displayContent: explanation.displayContent,
+                plan: explanation.plan
             };
+        }
+
+        function getExplanationDisplayContent(explanation: StableExplanation): string {
+            if (!explanation) {
+                return '';
+            }
+            return explanation.requestedFormat === 'text'
+                ? (typeof explanation.displayContent === 'string'
+                    ? explanation.displayContent : explanation.rawContent)
+                : explanation.rawContent;
         }
 
         function getStableExplanationKey(explanation: StableExplanation): string {
@@ -638,7 +655,8 @@ module workbench {
                 explanation.requestedFormat,
                 explanation.responseFormat,
                 explanation.view,
-                explanation.rawContent
+                explanation.rawContent,
+                getExplanationDisplayContent(explanation)
             ].join('||');
         }
 
@@ -651,7 +669,8 @@ module workbench {
                 explanation.level,
                 explanation.requestedFormat,
                 explanation.responseFormat,
-                explanation.rawContent
+                explanation.rawContent,
+                getExplanationDisplayContent(explanation)
             ].join('||');
         }
 
@@ -930,8 +949,8 @@ module workbench {
         function syncLegacyExplanationCache(paneKey: PaneKey) {
             var paneState = getPaneState(paneKey);
             var paneSnapshot = getPaneSnapshot(getPaneMachineState(paneKey));
-            paneState.latestExplanation = paneSnapshot ? paneSnapshot.rawContent : '';
-            paneState.latestExplanationFormat = paneSnapshot ? paneSnapshot.responseFormat : 'text';
+            paneState.latestExplanation = getExplanationDisplayContent(paneSnapshot);
+            paneState.latestExplanationFormat = paneSnapshot ? paneSnapshot.requestedFormat : 'text';
         }
 
         function dispatchQueryPageEvent(event: QueryPageEvent) {
@@ -1381,6 +1400,7 @@ module workbench {
             $('#compare-toggle').toggle(compareModeEnabled || primaryPaneMachineState.kind !== 'empty');
             $('#rerun-explanation').prop('disabled', primaryActionsDisabled);
             $('#explain-trigger').prop('disabled', primaryActionsDisabled);
+            syncExplanationHighlightControls();
         }
 
         function syncCompareSidebarState() {
@@ -1656,7 +1676,7 @@ module workbench {
             var paneState = getPaneState(paneKey);
             lockExplanationDimensions(paneKey);
             var explanation = $('#' + paneState.explanationId);
-            explanation.text('');
+            explanation.removeClass('query-explanation--highlighted').text('');
             var normalizedFormat = (pendingFormat || paneState.latestExplanationFormat || 'text').toLowerCase();
             explanation.attr('data-format', normalizedFormat);
             paneState.latestExplanation = '';
@@ -1997,6 +2017,95 @@ module workbench {
             restoreExplainButtonViewportTopIfNeeded(paneKey);
         }
 
+        function getSharedHotspotSummary(): queryExplanationHighlighter.HotspotSummary {
+            if (explanationHighlightMode !== 'hotspot') {
+                return null;
+            }
+            var result: queryExplanationHighlighter.HotspotSummary = null;
+            var paneKeys: PaneKey[] = ['primary', 'compare'];
+            for (var i = 0; i < paneKeys.length; i++) {
+                var explanation = getPaneDisplayExplanation(getPaneMachineState(paneKeys[i]));
+                if (!explanation || explanation.requestedFormat !== 'text' || !explanation.plan) {
+                    continue;
+                }
+                var paneHotspot = queryExplanationHighlighter.getHotspot(explanation.plan, explanation.level);
+                if (!paneHotspot) {
+                    continue;
+                }
+                if (result && result.metric !== paneHotspot.metric) {
+                    return null;
+                }
+                if (!result || paneHotspot.maximum > result.maximum) {
+                    result = {
+                        metric: paneHotspot.metric,
+                        label: paneHotspot.label,
+                        maximum: paneHotspot.maximum
+                    };
+                }
+            }
+            return result;
+        }
+
+        function syncExplanationHighlightControls() {
+            var controlsVisible = !!queryPageState
+                && queryPageState.inputs.explainFormat === 'text'
+                && (compareModeEnabled || queryPageState.primaryPane.kind !== 'empty');
+            $('#explanation-highlight-mode')
+                .toggle(controlsVisible)
+                .attr('aria-hidden', controlsVisible ? 'false' : 'true');
+            $('#explanation-highlight-syntax').attr(
+                'aria-pressed', explanationHighlightMode === 'syntax' ? 'true' : 'false'
+            );
+            $('#explanation-highlight-hotspot').attr(
+                'aria-pressed', explanationHighlightMode === 'hotspot' ? 'true' : 'false'
+            );
+            var hotspot = controlsVisible ? getSharedHotspotSummary() : null;
+            $('#explanation-hotspot-legend')
+                .toggle(!!hotspot)
+                .text(hotspot ? 'Heat: ' + hotspot.label : '');
+        }
+
+        export function setExplanationHighlightMode(mode: string) {
+            if (mode !== 'syntax' && mode !== 'hotspot') {
+                return;
+            }
+            if (explanationHighlightMode === mode) {
+                syncExplanationHighlightControls();
+                return;
+            }
+            explanationHighlightMode = <queryExplanationHighlighter.HighlightMode>mode;
+            lastRenderedExplanationKeys = {};
+            renderQueryPageState();
+        }
+
+        function renderHighlightedText(paneKey: string, explanation: StableExplanation, sharedMaximum: number) {
+            var paneState = getPaneState(paneKey);
+            var explanationElement = <HTMLElement>document.getElementById(paneState.explanationId);
+            var rendered = queryExplanationHighlighter.render(explanation.plan, {
+                level: explanation.level,
+                mode: explanationHighlightMode,
+                sharedMaximum: sharedMaximum
+            });
+            $('#' + paneState.explanationRowId).show();
+            if (paneState.explanationControlsRowId) {
+                $('#' + paneState.explanationControlsRowId).show();
+            }
+            $('#' + paneState.explanationId)
+                .empty()
+                .addClass('query-explanation--highlighted')
+                .attr('data-format', 'text');
+            explanationElement.appendChild(rendered.fragment);
+            setExplanationDisplayMode(paneKey, 'text');
+            paneState.latestExplanation = rendered.text;
+            paneState.latestExplanationFormat = 'text';
+            if (paneKey !== 'compare') {
+                updateDownloadButtonState();
+                syncPrimaryExplanationControls();
+            }
+            restoreExplainButtonViewportTopIfNeeded(paneKey);
+            clearExplanationDimensionLock(paneKey);
+        }
+
         function renderExplanation(paneKey: string, explanationText: string, format: string) {
             var paneState = getPaneState(paneKey);
             var normalizedFormat = (format || 'text').toLowerCase();
@@ -2005,9 +2114,15 @@ module workbench {
                 $('#' + paneState.explanationControlsRowId).show();
             }
             if (normalizedFormat === 'dot' || normalizedFormat === 'json') {
-                $('#' + paneState.explanationId).text('').attr('data-format', normalizedFormat);
+                $('#' + paneState.explanationId)
+                    .removeClass('query-explanation--highlighted')
+                    .text('')
+                    .attr('data-format', normalizedFormat);
             } else {
-                $('#' + paneState.explanationId).text(explanationText).attr('data-format', normalizedFormat);
+                $('#' + paneState.explanationId)
+                    .removeClass('query-explanation--highlighted')
+                    .text(explanationText)
+                    .attr('data-format', normalizedFormat);
             }
             setExplanationDisplayMode(paneKey, normalizedFormat);
             paneState.latestExplanation = explanationText;
@@ -2024,6 +2139,24 @@ module workbench {
             clearExplanationDimensionLock(paneKey);
         }
 
+        function renderStableExplanation(paneKey: PaneKey, explanation: StableExplanation,
+                                         sharedMaximum: number) {
+            if (explanation.requestedFormat === 'text') {
+                if (explanation.view === 'highlightedText' && explanation.plan) {
+                    try {
+                        renderHighlightedText(paneKey, explanation, sharedMaximum);
+                        return;
+                    } catch (renderError) {
+                        renderExplanation(paneKey, getExplanationDisplayContent(explanation), 'text');
+                        return;
+                    }
+                }
+                renderExplanation(paneKey, getExplanationDisplayContent(explanation), 'text');
+                return;
+            }
+            renderExplanation(paneKey, explanation.rawContent, explanation.requestedFormat);
+        }
+
         function renderPanePresentation(paneKey: PaneKey) {
             var paneMachineState = getPaneMachineState(paneKey);
             var paneState = getPaneState(paneKey);
@@ -2034,7 +2167,10 @@ module workbench {
             var paneStatusClassName = getPaneStatusClassName(paneMachineState);
             var paneOverlayMessage = getPaneOverlayMessage(paneMachineState);
             var rowVisible = paneMachineState.kind !== 'inactive' && paneMachineState.kind !== 'empty';
-            var renderContentKey = getStableExplanationContentKey(paneDisplayExplanation);
+            var sharedHotspot = getSharedHotspotSummary();
+            var sharedMaximum = sharedHotspot ? sharedHotspot.maximum : null;
+            var renderContentKey = getStableExplanationContentKey(paneDisplayExplanation)
+                + '||' + explanationHighlightMode + '||' + String(sharedMaximum);
 
             $('#' + paneState.explanationRowId).toggle(rowVisible);
             $('#' + paneState.copyButtonId).prop('disabled', !paneDisplayExplanation);
@@ -2103,7 +2239,7 @@ module workbench {
 
             if (lastRenderedExplanationKeys[paneKey] !== renderContentKey) {
                 lastRenderedExplanationKeys[paneKey] = renderContentKey;
-                renderExplanation(paneKey, paneDisplayExplanation.rawContent, paneDisplayExplanation.responseFormat);
+                renderStableExplanation(paneKey, paneDisplayExplanation, sharedMaximum);
             }
         }
 
@@ -2135,8 +2271,8 @@ module workbench {
                         && queryPageState.comparePane.kind === 'ready') {
                     renderDiffView(
                         '#query-diff-explanation',
-                        queryPageState.primaryPane.explanation.rawContent,
-                        queryPageState.comparePane.explanation.rawContent,
+                        getExplanationDisplayContent(queryPageState.primaryPane.explanation),
+                        getExplanationDisplayContent(queryPageState.comparePane.explanation),
                         diffNotReadyLabel
                     );
                 } else {
@@ -2173,6 +2309,7 @@ module workbench {
 
         function serializeExplainFormData(queryValue: string, level: string, format: string, serverRequestId: string): string {
             var serializedForm: any[] = <any[]>$('form[action="query"]').serializeArray();
+            var transportFormat = getNormalizedExplainFormat(format) === 'text' ? 'json' : format;
             var seenAction = false;
             var seenExplain = false;
             var seenFormat = false;
@@ -2187,7 +2324,7 @@ module workbench {
                     serializedForm[i].value = level;
                     seenExplain = true;
                 } else if (serializedForm[i].name === 'explain-format') {
-                    serializedForm[i].value = format;
+                    serializedForm[i].value = transportFormat;
                     seenFormat = true;
                 } else if (serializedForm[i].name === 'infer') {
                     seenInfer = true;
@@ -2206,7 +2343,7 @@ module workbench {
                 serializedForm.push({ name: 'explain', value: level });
             }
             if (!seenFormat) {
-                serializedForm.push({ name: 'explain-format', value: format });
+                serializedForm.push({ name: 'explain-format', value: transportFormat });
             }
             if (!seenInfer) {
                 serializedForm.push({ name: 'infer', value: 'false' });
@@ -2246,7 +2383,24 @@ module workbench {
             var responseFormat = getNormalizedExplainFormat(response.format || fallbackFormat || 'text');
             var explanationText = response.content || '';
             var explanationView: ExplanationView = 'text';
-            if (responseFormat === 'json') {
+            var displayContent = explanationText;
+            var parsedPlan: queryExplanationHighlighter.QueryPlanNode = null;
+            if (signature.format === 'text' && responseFormat === 'json') {
+                if (explanationText) {
+                    try {
+                        var parsedResponse = JSON.parse(explanationText);
+                        if (!parsedResponse || typeof parsedResponse !== 'object'
+                                || Array.isArray(parsedResponse) || typeof parsedResponse.type !== 'string') {
+                            throw new Error('JSON explanation does not contain a plan root.');
+                        }
+                        parsedPlan = <queryExplanationHighlighter.QueryPlanNode>parsedResponse;
+                        displayContent = queryExplanationHighlighter.format(parsedPlan, signature.level).text;
+                        explanationView = 'highlightedText';
+                    } catch (parseError) {
+                        explanationView = 'text';
+                    }
+                }
+            } else if (signature.format === 'json' && responseFormat === 'json') {
                 explanationView = 'jsonTree';
                 if (explanationText) {
                     try {
@@ -2264,7 +2418,9 @@ module workbench {
                 requestedFormat: signature.format,
                 responseFormat: responseFormat,
                 view: explanationView,
-                rawContent: explanationText
+                rawContent: explanationText,
+                displayContent: displayContent,
+                plan: parsedPlan
             };
         }
 
@@ -2942,10 +3098,11 @@ module workbench {
                 return;
             }
             var primaryExplanation = queryPageState.primaryPane.explanation;
-            var format = primaryExplanation.responseFormat || <string>$('#explain-format').val() || 'text';
+            var format = primaryExplanation.requestedFormat || <string>$('#explain-format').val() || 'text';
             var extension = getExplanationDownloadExtension(format);
             var mimeType = getExplanationDownloadMimeType(format);
-            var blob = new Blob([primaryExplanation.rawContent], { type: mimeType + ';charset=utf-8' });
+            var blob = new Blob([getExplanationDisplayContent(primaryExplanation)],
+                { type: mimeType + ';charset=utf-8' });
             var link = document.createElement('a');
             var selectedLevel = <string>$('#explain-level').val() || 'query';
             link.download = 'query-explanation-' + selectedLevel.toLowerCase() + '.' + extension;
@@ -2959,7 +3116,8 @@ module workbench {
         export function copyExplanation(paneKey?: string) {
             var normalizedPaneKey: PaneKey = paneKey === 'compare' ? 'compare' : 'primary';
             var paneDisplayExplanation = getPaneDisplayExplanation(getPaneMachineState(normalizedPaneKey));
-            if (!paneDisplayExplanation || !paneDisplayExplanation.rawContent) {
+            var displayContent = getExplanationDisplayContent(paneDisplayExplanation);
+            if (!paneDisplayExplanation || !displayContent) {
                 return false;
             }
             if (!window.navigator
@@ -2967,7 +3125,7 @@ module workbench {
                     || typeof window.navigator.clipboard.writeText !== 'function') {
                 return false;
             }
-            return window.navigator.clipboard.writeText(paneDisplayExplanation.rawContent);
+            return window.navigator.clipboard.writeText(displayContent);
         }
 
         export function initializeExplanationView() {
@@ -3200,6 +3358,7 @@ module workbench {
             getExplainTriggerButtonElement: getExplainTriggerButtonElement,
             getExplanationDownloadExtension: getExplanationDownloadExtension,
             getExplanationDownloadMimeType: getExplanationDownloadMimeType,
+            getExplanationDisplayContent: getExplanationDisplayContent,
             getJsonSummary: getJsonSummary,
             getNormalizedExplainFormat: getNormalizedExplainFormat,
             getNormalizedExplainLevel: getNormalizedExplainLevel,
@@ -3241,6 +3400,7 @@ module workbench {
             renderJsonExplanationTree: renderJsonExplanationTree,
             renderJsonView: renderJsonView,
             renderQueryPageState: renderQueryPageState,
+            renderStableExplanation: renderStableExplanation,
             resetComparePaneState: resetComparePaneState,
             restorePaneStateFromPrevious: restorePaneStateFromPrevious,
             restoreExplainButtonViewportTopIfNeeded: restoreExplainButtonViewportTopIfNeeded,
@@ -3281,6 +3441,7 @@ module workbench {
                     currentQueryLn: currentQueryLn,
                     diffNotReadyLabel: diffNotReadyLabel,
                     explainServerRequestIdCounter: explainServerRequestIdCounter,
+                    explanationHighlightMode: explanationHighlightMode,
                     lastRenderedExplanationKeys: lastRenderedExplanationKeys,
                     pendingDotRenderKeys: pendingDotRenderKeys,
                     primaryPaneState: primaryPaneState,
@@ -3311,6 +3472,7 @@ module workbench {
                 compareQuerySeeded = false;
                 diffNotReadyLabel = '';
                 lastDiffTriggerElement = null;
+                explanationHighlightMode = 'syntax';
                 primaryPaneState.latestExplanation = '';
                 primaryPaneState.latestExplanationFormat = 'text';
                 primaryPaneState.dotPanZoomInstance = null;
@@ -3496,6 +3658,24 @@ workbench.addLoad(function queryPageLoaded() {
         workbench.query.copyExplanation('compare');
     });
     $('#download-explanation').click(workbench.query.downloadExplanation);
+    $('#explanation-highlight-syntax').click(function() {
+        workbench.query.setExplanationHighlightMode('syntax');
+    });
+    $('#explanation-highlight-hotspot').click(function() {
+        workbench.query.setExplanationHighlightMode('hotspot');
+    });
+    $('#explanation-highlight-mode').bind('keydown', function(event: any) {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+            return;
+        }
+        event.preventDefault();
+        var nextMode = event.key === 'ArrowLeft' ? 'syntax' : 'hotspot';
+        workbench.query.setExplanationHighlightMode(nextMode);
+        var nextButton = <HTMLElement>document.getElementById('explanation-highlight-' + nextMode);
+        if (nextButton) {
+            nextButton.focus();
+        }
+    });
     // Add event handlers to the save name field to react to changes in it.
     $('#query-name').bind('keydown cut paste', workbench.query.handleNameChange);
 

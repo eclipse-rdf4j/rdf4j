@@ -173,8 +173,7 @@ public class GenericPlanNode {
 	}
 
 	public List<GenericPlanNode> getPlans() {
-		List<GenericPlanNode> orderedPlans = orderedPlansForDisplay();
-		return orderedPlans.isEmpty() ? null : orderedPlans; // for simplified json
+		return plans.isEmpty() ? null : plans; // for simplified json
 	}
 
 	public void setPlans(List<GenericPlanNode> plans) {
@@ -191,7 +190,6 @@ public class GenericPlanNode {
 	 *
 	 * @return a cost estimate as a double value
 	 */
-	@JsonIgnore
 	public Double getCostEstimate() {
 		return costEstimate;
 	}
@@ -207,7 +205,6 @@ public class GenericPlanNode {
 	 *
 	 * @return result size estimate
 	 */
-	@JsonIgnore
 	public Double getResultSizeEstimate() {
 		return resultSizeEstimate;
 	}

@@ -35,6 +35,20 @@ import org.junit.jupiter.api.Test;
 class QueryTemplateTest {
 
 	@Test
+	void textExplanationShouldLoadJsonHighlighterAndModeControl() throws IOException {
+		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
+				StandardCharsets.UTF_8);
+
+		assertThat(queryTemplate)
+				.contains("id=\"explanation-highlight-mode\"")
+				.contains("id=\"explanation-highlight-syntax\"")
+				.contains("id=\"explanation-highlight-hotspot\"")
+				.contains("aria-pressed=\"true\"")
+				.contains("scripts/queryExplanationHighlighter.js")
+				.containsSubsequence("scripts/queryExplanationHighlighter.js", "scripts/query.js");
+	}
+
+	@Test
 	void queryPageShouldIncludeOpenSourceGraphvizVisualizerScript() throws IOException {
 		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
 				StandardCharsets.UTF_8);
@@ -51,7 +65,7 @@ class QueryTemplateTest {
 
 		assertThat(queryScript)
 				.contains("function clearRenderedExplanation(paneKey: string")
-				.contains("explanation.text('');")
+				.contains("explanation.removeClass('query-explanation--highlighted').text('');")
 				.contains("jqXHR.responseText")
 				.contains("css('min-height'")
 				.contains("css('min-width'");

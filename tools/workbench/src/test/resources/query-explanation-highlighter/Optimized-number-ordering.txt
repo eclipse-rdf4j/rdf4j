@@ -1,0 +1,4 @@
+ProjectionElemList (costEstimate=∞)
+   ProjectionElem "Z" (costEstimate=1.0M)
+   ProjectionElem "a" (resultSizeEstimate=1.0K)
+   ProjectionElem "ä" (costEstimate=1000.0K)

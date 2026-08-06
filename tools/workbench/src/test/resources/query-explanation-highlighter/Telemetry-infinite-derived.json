@@ -1,0 +1,14 @@
+{
+  "type": "Projection",
+  "costEstimate": "Infinity",
+  "resultSizeActual": 10,
+  "totalTimeActual": 5,
+  "selfTimeActual": 5,
+  "plans": [
+    {
+      "type": "StatementPattern",
+      "resultSizeEstimate": "Infinity",
+      "resultSizeActual": 10
+    }
+  ]
+}
