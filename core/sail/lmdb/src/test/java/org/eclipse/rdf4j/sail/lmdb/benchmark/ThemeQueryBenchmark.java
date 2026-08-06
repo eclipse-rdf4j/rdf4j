@@ -150,9 +150,9 @@ public class ThemeQueryBenchmark {
 		var opt = new OptionsBuilder()
 				.include(ThemeQueryBenchmark.class.getName() + ".executeQuery")
 				.forks(0)
-				.measurementIterations(10)
+				.measurementIterations(1)
 				.measurementBatchSize(1)
-				.measurementTime(TimeValue.seconds(1))
+				.measurementTime(TimeValue.nanoseconds(1))
 				.warmupIterations(0)
 				.build();
 		new Runner(opt).run();
