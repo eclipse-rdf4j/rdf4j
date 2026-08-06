@@ -154,16 +154,45 @@ final class LmdbNativeKernelIr {
 		final int adjacency;
 		final int keyCol;
 		final int valueCol; // -1 = keys only
+		/** Destination column for the run entry's context id, or -1 when the context is not projected. */
+		final int ctxCol;
+		/** Only entries whose context equals this operand's value are produced; null = no restriction. */
+		final Operand ctxMatch;
+		/** Named-graph scope: entries in the default graph (context id 0) are skipped. */
+		final boolean ctxExcludeDefault;
 
 		EnumerateAdjKeys(int adjacency, int keyCol, int valueCol) {
+			this(adjacency, keyCol, valueCol, -1, null, false);
+		}
+
+		EnumerateAdjKeys(int adjacency, int keyCol, int valueCol, int ctxCol, Operand ctxMatch,
+				boolean ctxExcludeDefault) {
+			if (valueCol < 0 && (ctxCol >= 0 || ctxMatch != null || ctxExcludeDefault)) {
+				throw new IllegalArgumentException("context access needs the neighbor run expanded");
+			}
 			this.adjacency = adjacency;
 			this.keyCol = keyCol;
 			this.valueCol = valueCol;
+			this.ctxCol = ctxCol;
+			this.ctxMatch = ctxMatch;
+			this.ctxExcludeDefault = ctxExcludeDefault;
+		}
+
+		boolean ctxActive() {
+			return ctxCol >= 0 || ctxMatch != null || ctxExcludeDefault;
 		}
 
 		@Override
 		void key(StringBuilder key) {
-			key.append("EA(a").append(adjacency).append(",k").append(keyCol).append(",x").append(valueCol).append(");");
+			key.append("EA(a").append(adjacency).append(",k").append(keyCol).append(",x").append(valueCol);
+			if (ctxActive()) {
+				key.append(",g")
+						.append(ctxCol)
+						.append(',')
+						.append(ctxMatch == null ? "_" : ctxMatch.token())
+						.append(ctxExcludeDefault ? ",n" : "");
+			}
+			key.append(");");
 		}
 
 		@Override
@@ -172,11 +201,17 @@ final class LmdbNativeKernelIr {
 			if (valueCol >= 0) {
 				columns.set(valueCol);
 			}
+			if (ctxCol >= 0) {
+				columns.set(ctxCol);
+			}
 		}
 
 		@Override
 		void requirements(Requirements requirements) {
 			requirements.adjacency(adjacency);
+			if (ctxMatch != null) {
+				requirements.operand(ctxMatch);
+			}
 		}
 	}
 
@@ -369,11 +404,28 @@ final class LmdbNativeKernelIr {
 		final int adjacency;
 		final Operand key;
 		final int valueCol;
+		/** Destination column for the run entry's context id, or -1 when the context is not projected. */
+		final int ctxCol;
+		/** Only entries whose context equals this operand's value are produced; null = no restriction. */
+		final Operand ctxMatch;
+		/** Named-graph scope: entries in the default graph (context id 0) are skipped. */
+		final boolean ctxExcludeDefault;
 
 		Probe(int adjacency, Operand key, int valueCol) {
+			this(adjacency, key, valueCol, -1, null, false);
+		}
+
+		Probe(int adjacency, Operand key, int valueCol, int ctxCol, Operand ctxMatch, boolean ctxExcludeDefault) {
 			this.adjacency = adjacency;
 			this.key = key;
 			this.valueCol = valueCol;
+			this.ctxCol = ctxCol;
+			this.ctxMatch = ctxMatch;
+			this.ctxExcludeDefault = ctxExcludeDefault;
+		}
+
+		boolean ctxActive() {
+			return ctxCol >= 0 || ctxMatch != null || ctxExcludeDefault;
 		}
 
 		@Override
@@ -383,19 +435,32 @@ final class LmdbNativeKernelIr {
 					.append(',')
 					.append(this.key.token())
 					.append("->")
-					.append(valueCol)
-					.append(");");
+					.append(valueCol);
+			if (ctxActive()) {
+				key.append(",g")
+						.append(ctxCol)
+						.append(',')
+						.append(ctxMatch == null ? "_" : ctxMatch.token())
+						.append(ctxExcludeDefault ? ",n" : "");
+			}
+			key.append(");");
 		}
 
 		@Override
 		void produced(BitSet columns) {
 			columns.set(valueCol);
+			if (ctxCol >= 0) {
+				columns.set(ctxCol);
+			}
 		}
 
 		@Override
 		void requirements(Requirements requirements) {
 			requirements.adjacency(adjacency);
 			requirements.operand(key);
+			if (ctxMatch != null) {
+				requirements.operand(ctxMatch);
+			}
 		}
 	}
 

@@ -69,6 +69,7 @@ final class LmdbNativeKernelExecution {
 		AGG_DECLINED.set(0L);
 		LmdbNativeKernelLowering.HAVING_SINKS.set(0L);
 		LmdbNativeKernelLowering.BIND_HOOK_LOWERINGS.set(0L);
+		LmdbNativeKernelLowering.CONTEXT_COLUMN_LOWERINGS.set(0L);
 		SHAPE_OPENS.clear();
 	}
 

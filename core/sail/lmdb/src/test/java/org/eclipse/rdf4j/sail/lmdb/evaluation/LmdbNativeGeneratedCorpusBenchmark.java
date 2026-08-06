@@ -97,6 +97,9 @@ public class LmdbNativeGeneratedCorpusBenchmark {
 		save(LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY, "0");
 		save(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, Boolean.toString(bridge));
 		save(LmdbNativeKernelLowering.DISTINCT_NUMERIC_PROPERTY, Boolean.toString(numericDistinct));
+		// The M7 context-column lowering graduates the corpus's GRAPH shape off the PlanRows bridge; this gate
+		// measures the bridge route on all 49 shapes, so pin the old lowering here.
+		save(LmdbNativeKernelLowering.CONTEXT_COLUMNS_PROPERTY, "false");
 
 		dataDir = Files.newTemporaryFolder();
 		LmdbStore store = new LmdbStore(dataDir,

@@ -119,6 +119,24 @@ public class LmdbNativeKernelAggregateTest {
 			+ "SELECT ?x (COUNT(*) AS ?n) WHERE { ?s ex:word ?w . BIND(5 AS ?x) }\n"
 			+ "GROUP BY ?x";
 
+	// M7 context columns: a constant GRAPH restriction previously declined the kernel outright (the adjacency guards
+	// reject any context term and the quad-scan lowering refuses a constant context) — it must now lower against the
+	// adjacency view with an in-node context match (CONTEXT_COLUMN_LOWERINGS witness).
+	private static final String GRAPH_CONSTANT_COUNT_QUERY = "PREFIX ex: <" + EX + ">\n"
+			+ "SELECT (COUNT(*) AS ?n) WHERE { GRAPH ex:graph1 { ?s ex:edge ?o } }";
+	// A projected GRAPH variable previously lowered only as an LMDB quad scan; it must now project the run's context
+	// column from the adjacency view, with default-graph quads excluded by the in-node guard.
+	private static final String GRAPH_VARIABLE_GROUPED_QUERY = "PREFIX ex: <" + EX + ">\n"
+			+ "SELECT ?g (COUNT(*) AS ?n) WHERE { GRAPH ?g { ?s ex:edge ?o } } GROUP BY ?g";
+	// The join binds ?b before the GRAPH pattern, so the context-bearing producer sits mid-chain rather than at the
+	// root; whichever join order the planner picks, results must match the generic evaluator.
+	private static final String GRAPH_VARIABLE_PROBE_QUERY = "PREFIX ex: <" + EX + ">\n"
+			+ "SELECT ?g (COUNT(*) AS ?n) WHERE { ?a ex:knows ?b . GRAPH ?g { ?b ex:edge ?x } } GROUP BY ?g";
+	// Two patterns share ?g: the first producer projects the context column, the second must match against the
+	// already-bound value — a cross-graph pair (edge in graph1, edge2 in graph2) must not join.
+	private static final String GRAPH_SHARED_VARIABLE_QUERY = "PREFIX ex: <" + EX + ">\n"
+			+ "SELECT ?g (COUNT(*) AS ?n) WHERE { GRAPH ?g { ?s ex:edge ?o . ?o ex:edge2 ?t } } GROUP BY ?g";
+
 	// The VALUES literal is absent from the store, so its id is plan-local synthetic: before the plan-22 Step-0
 	// guard relaxation the whole NOT EXISTS compiled to an unintrospectable generic lambda (catalog HC q10's shape).
 	private static final String SYNTHETIC_VALUES_WITNESS_QUERY = "PREFIX ex: <" + EX + ">\n"
@@ -216,6 +234,24 @@ public class LmdbNativeKernelAggregateTest {
 			connection.add(vf.createIRI(EX + "t1"), token, vf.createLiteral("xyz"));
 			connection.add(vf.createIRI(EX + "t2"), token, vf.createLiteral(BigInteger.valueOf(42)));
 			connection.add(vf.createIRI(EX + "t3"), token, vf.createIRI(EX + "not-a-string"));
+			// Context-column fixture: ex:edge / ex:edge2 quads spread over two named graphs plus the default graph,
+			// with one triple (p1 edge x1) present in both graphs and one edge/edge2 pair split across graphs
+			// (x1's edge2 targets differ per graph) so shared-?g joins must not cross graphs.
+			IRI edge = vf.createIRI(EX + "edge");
+			IRI edge2 = vf.createIRI(EX + "edge2");
+			IRI graph1 = vf.createIRI(EX + "graph1");
+			IRI graph2 = vf.createIRI(EX + "graph2");
+			connection.add(vf.createIRI(EX + "p1"), edge, vf.createIRI(EX + "x1"), graph1);
+			connection.add(vf.createIRI(EX + "p1"), edge, vf.createIRI(EX + "x2"), graph1);
+			connection.add(vf.createIRI(EX + "p2"), edge, vf.createIRI(EX + "x1"), graph1);
+			connection.add(vf.createIRI(EX + "x1"), edge2, vf.createIRI(EX + "y1"), graph1);
+			connection.add(vf.createIRI(EX + "p1"), edge, vf.createIRI(EX + "x1"), graph2);
+			connection.add(vf.createIRI(EX + "p3"), edge, vf.createIRI(EX + "x3"), graph2);
+			connection.add(vf.createIRI(EX + "x1"), edge2, vf.createIRI(EX + "y2"), graph2);
+			connection.add(vf.createIRI(EX + "x3"), edge2, vf.createIRI(EX + "y3"), graph2);
+			connection.add(vf.createIRI(EX + "p0"), edge, vf.createIRI(EX + "x4"));
+			connection.add(vf.createIRI(EX + "p4"), edge, vf.createIRI(EX + "x5"));
+			connection.add(vf.createIRI(EX + "x4"), edge2, vf.createIRI(EX + "y4"));
 			connection.commit();
 		}
 	}
@@ -268,6 +304,14 @@ public class LmdbNativeKernelAggregateTest {
 					+ "> SELECT * WHERE { VALUES ?a { ex:w0 ex:w1 ex:w2 ex:w3 ex:w4 } ?a ex:word ?w }");
 			rows("PREFIX ex: <" + EX
 					+ "> SELECT * WHERE { VALUES ?a { ex:t0 ex:t1 ex:t2 ex:t3 } ?a ex:token ?w }");
+			rows("PREFIX ex: <" + EX
+					+ "> SELECT * WHERE { VALUES ?a { ex:p0 ex:p1 ex:p2 ex:p3 ex:p4 } ?a ex:edge ?o }");
+			rows("PREFIX ex: <" + EX
+					+ "> SELECT * WHERE { VALUES ?o { ex:x1 ex:x2 ex:x3 ex:x4 ex:x5 } ?s ex:edge ?o }");
+			rows("PREFIX ex: <" + EX
+					+ "> SELECT * WHERE { VALUES ?a { ex:x1 ex:x3 ex:x4 } ?a ex:edge2 ?t }");
+			rows("PREFIX ex: <" + EX
+					+ "> SELECT * WHERE { VALUES ?t { ex:y1 ex:y2 ex:y3 ex:y4 } ?a ex:edge2 ?t }");
 		}
 		for (int round = 0; round < 300 && KernelExecutionTestAccess.aggOpened() == 0L; round++) {
 			rows(query);
@@ -490,6 +534,76 @@ public class LmdbNativeKernelAggregateTest {
 		assertEquals(0L, KernelExecutionTestAccess.bindHookLowerings(),
 				"a constant expression must fold at lowering time, not run a per-row hook");
 		assertEquals(expected, rows(BIND_CONSTANT_QUERY));
+	}
+
+	@Test
+	public void graphConstantCountEngagesTheKernelAndMatchesGeneric() {
+		List<String> expected = genericRows(GRAPH_CONSTANT_COUNT_QUERY);
+		assertFalse(expected.isEmpty(), "fixture must produce a count for the constant graph");
+		warmUntilEngaged(GRAPH_CONSTANT_COUNT_QUERY);
+		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
+				"aggregate rung never engaged for the constant-GRAPH shape (planned="
+						+ KernelExecutionTestAccess.aggPlanned() + ", declined="
+						+ KernelExecutionTestAccess.aggDeclined() + ")");
+		assertTrue(KernelExecutionTestAccess.contextColumnLowerings() > 0L,
+				"constant-GRAPH pattern was not lowered against the adjacency context column");
+		assertEquals(expected, rows(GRAPH_CONSTANT_COUNT_QUERY));
+	}
+
+	@Test
+	public void graphVariableGroupedCountProjectsTheContextColumn() {
+		List<String> expected = genericRows(GRAPH_VARIABLE_GROUPED_QUERY);
+		assertEquals(2, expected.size(),
+				"fixture must produce exactly the two named graphs (default graph excluded), got " + expected);
+		warmUntilEngaged(GRAPH_VARIABLE_GROUPED_QUERY);
+		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
+				"aggregate rung never engaged for the GRAPH-variable shape");
+		assertTrue(KernelExecutionTestAccess.contextColumnLowerings() > 0L,
+				"GRAPH-variable pattern was not lowered against the adjacency context column");
+		assertEquals(expected, rows(GRAPH_VARIABLE_GROUPED_QUERY));
+	}
+
+	@Test
+	public void graphVariableMidChainGroupedMatchesGeneric() {
+		List<String> expected = genericRows(GRAPH_VARIABLE_PROBE_QUERY);
+		assertEquals(2, expected.size(), "fixture must join into both named graphs, got " + expected);
+		warmUntilEngaged(GRAPH_VARIABLE_PROBE_QUERY);
+		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
+				"aggregate rung never engaged for the mid-chain GRAPH shape");
+		assertTrue(KernelExecutionTestAccess.contextColumnLowerings() > 0L,
+				"mid-chain GRAPH pattern was not lowered against the adjacency context column");
+		assertEquals(expected, rows(GRAPH_VARIABLE_PROBE_QUERY));
+	}
+
+	@Test
+	public void sharedGraphVariableJoinsOnlyWithinOneGraph() {
+		List<String> expected = genericRows(GRAPH_SHARED_VARIABLE_QUERY);
+		assertEquals(2, expected.size(), "fixture must produce a per-graph join count, got " + expected);
+		warmUntilEngaged(GRAPH_SHARED_VARIABLE_QUERY);
+		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
+				"aggregate rung never engaged for the shared-GRAPH-variable shape");
+		assertTrue(KernelExecutionTestAccess.contextColumnLowerings() > 0L,
+				"shared-GRAPH-variable patterns were not lowered against the adjacency context column");
+		assertEquals(expected, rows(GRAPH_SHARED_VARIABLE_QUERY));
+	}
+
+	@Test
+	public void contextColumnsFlagOffKeepsCorrectResultsWithoutLowering() {
+		System.setProperty(LmdbNativeKernelLowering.CONTEXT_COLUMNS_PROPERTY, "false");
+		try {
+			List<String> expectedVariable = genericRows(GRAPH_VARIABLE_GROUPED_QUERY);
+			List<String> expectedConstant = genericRows(GRAPH_CONSTANT_COUNT_QUERY);
+			for (int round = 0; round < 20; round++) {
+				rows(GRAPH_VARIABLE_GROUPED_QUERY);
+				rows(GRAPH_CONSTANT_COUNT_QUERY);
+			}
+			assertEquals(0L, KernelExecutionTestAccess.contextColumnLowerings(),
+					"flag off must keep context-bearing patterns off the adjacency context column");
+			assertEquals(expectedVariable, rows(GRAPH_VARIABLE_GROUPED_QUERY));
+			assertEquals(expectedConstant, rows(GRAPH_CONSTANT_COUNT_QUERY));
+		} finally {
+			System.clearProperty(LmdbNativeKernelLowering.CONTEXT_COLUMNS_PROPERTY);
+		}
 	}
 
 	@Test

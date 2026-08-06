@@ -143,6 +143,21 @@ final class LmdbNativeKernelLowering {
 	/** Computed BIND copies lowered through the bind-hook seam (M7 witness; constant folds do not count). */
 	static final AtomicLong BIND_HOOK_LOWERINGS = new AtomicLong();
 
+	/**
+	 * Enables lowering context-bearing patterns (a projected {@code GRAPH ?g} variable, a constant {@code GRAPH <g>}
+	 * restriction, or a named-graph scope) against adjacency views by reading the run's context column, instead of
+	 * falling back to an LMDB quad scan or declining (three-tier parity plan, M7). Kill switch, default ON: a shape
+	 * that does not lower this way runs exactly as before.
+	 */
+	static final String CONTEXT_COLUMNS_PROPERTY = "rdf4j.lmdb.janinoCodegen.contextColumns";
+
+	static boolean contextColumnsEnabled() {
+		return Boolean.parseBoolean(System.getProperty(CONTEXT_COLUMNS_PROPERTY, "true"));
+	}
+
+	/** Context-bearing producers lowered against adjacency views (M7 witness). */
+	static final AtomicLong CONTEXT_COLUMN_LOWERINGS = new AtomicLong();
+
 	private static final int MAX_CHILDREN = 12;
 	private static final int MAX_HOOK_ARGS = 3;
 	/** Rows of a multi-variable VALUES table the lowering will unroll into generated source. */
@@ -346,7 +361,12 @@ final class LmdbNativeKernelLowering {
 			boolean sorted;
 			if (node instanceof LmdbNativeKernelIr.EnumerateAdjKeys) {
 				LmdbNativeKernelIr.EnumerateAdjKeys keys = (LmdbNativeKernelIr.EnumerateAdjKeys) node;
-				if (keys.valueCol >= 0) {
+				if (keys.ctxCol >= 0) {
+					// The context column varies within an equal-neighbor block and restarts across blocks: never
+					// sorted, never unique — it ends any aligned chain it appears in.
+					loopCols = new int[] { keys.keyCol, keys.valueCol, keys.ctxCol };
+					uniqueCols = new boolean[] { true, false, false };
+				} else if (keys.valueCol >= 0) {
 					loopCols = new int[] { keys.keyCol, keys.valueCol };
 					uniqueCols = new boolean[] { true, false };
 				} else {
@@ -355,8 +375,14 @@ final class LmdbNativeKernelLowering {
 				}
 				sorted = true;
 			} else if (node instanceof LmdbNativeKernelIr.Probe) {
-				loopCols = new int[] { ((LmdbNativeKernelIr.Probe) node).valueCol };
-				uniqueCols = new boolean[] { false };
+				LmdbNativeKernelIr.Probe probe = (LmdbNativeKernelIr.Probe) node;
+				if (probe.ctxCol >= 0) {
+					loopCols = new int[] { probe.valueCol, probe.ctxCol };
+					uniqueCols = new boolean[] { false, false };
+				} else {
+					loopCols = new int[] { probe.valueCol };
+					uniqueCols = new boolean[] { false };
+				}
 				sorted = true;
 			} else if (node instanceof LmdbNativeKernelIr.EnumerateDomain) {
 				LmdbNativeKernelIr.EnumerateDomain domain = (LmdbNativeKernelIr.EnumerateDomain) node;
@@ -1516,9 +1542,15 @@ final class LmdbNativeKernelLowering {
 			if (preferScans && lowerPatternAsScan(pattern)) {
 				return true;
 			}
-			if (pattern.hasRepeatedSlot() || pattern.namedContextScope || !pattern.p.isConstant()
-					|| pattern.p.hasSlot() || pattern.c.hasSlot() || pattern.c.isConstant()
-					|| pattern.contexts.isFixed() || pattern.s.bindConstant || pattern.o.bindConstant) {
+			// Context work the adjacency run's context column can express (M7): a constant GRAPH restriction, a
+			// projected or already-bound graph variable, and the named-graph default exclusion. A fixed dataset
+			// (context SET membership) and a bind-constant graph term stay out.
+			boolean ctxBearing = pattern.namedContextScope || pattern.c.isConstant() || pattern.c.hasSlot()
+					|| pattern.contexts.isFixed();
+			boolean ctxLowerable = ctxBearing && contextColumnsEnabled() && !pattern.contexts.isFixed()
+					&& !(pattern.c.isConstant() && pattern.c.hasSlot());
+			if (pattern.hasRepeatedSlot() || !pattern.p.isConstant() || pattern.p.hasSlot()
+					|| pattern.s.bindConstant || pattern.o.bindConstant || (ctxBearing && !ctxLowerable)) {
 				// No adjacency view can express this pattern. A direct LMDB scan can, for a subset of the reasons.
 				if (lowerPatternAsScan(pattern)) {
 					return true;
@@ -1535,10 +1567,27 @@ final class LmdbNativeKernelLowering {
 				reason = "pattern-ordered-scan";
 				return false;
 			}
+			Operand ctxMatch = null;
+			boolean ctxProject = false;
+			boolean ctxExclude = pattern.namedContextScope;
+			if (ctxLowerable) {
+				if (pattern.c.isConstant()) {
+					ctxMatch = Operand.constant(constantIndex(pattern.c.constant));
+				} else if (pattern.c.hasSlot()) {
+					Operand bound = slotOperand(pattern.c.slot);
+					if (bound != null) {
+						ctxMatch = bound;
+					} else {
+						ctxProject = true;
+					}
+				}
+			}
+			boolean ctxActive = ctxMatch != null || ctxProject || ctxExclude;
 			// Pure-constant key with a fresh other end: materialize the single run as a key domain at bind time
 			// instead of demanding a whole-predicate CSR view (a class extent needs one rdf:type run, not 84MB).
-			if (pattern.s.isConstant() && !pattern.s.hasSlot() && !pattern.o.isConstant() && pattern.o.hasSlot()
-					&& slotFresh(pattern.o.slot)) {
+			// A domain enumeration has no context column, so context-bearing patterns fall through to the probes.
+			if (!ctxActive && pattern.s.isConstant() && !pattern.s.hasSlot() && !pattern.o.isConstant()
+					&& pattern.o.hasSlot() && slotFresh(pattern.o.slot)) {
 				keyDomains.add(new LmdbNativeKernelBindings.DomainRequest(pattern.p.constant, pattern.s.constant,
 						true));
 				int domain = keyDomains.size() - 1;
@@ -1547,8 +1596,8 @@ final class LmdbNativeKernelLowering {
 				currentDepthNodes().add(new LmdbNativeKernelIr.EnumerateDomain(domain, column));
 				return true;
 			}
-			if (pattern.o.isConstant() && !pattern.o.hasSlot() && !pattern.s.isConstant() && pattern.s.hasSlot()
-					&& slotFresh(pattern.s.slot)) {
+			if (!ctxActive && pattern.o.isConstant() && !pattern.o.hasSlot() && !pattern.s.isConstant()
+					&& pattern.s.hasSlot() && slotFresh(pattern.s.slot)) {
 				keyDomains.add(new LmdbNativeKernelBindings.DomainRequest(pattern.p.constant, pattern.o.constant,
 						false));
 				int domain = keyDomains.size() - 1;
@@ -1565,15 +1614,28 @@ final class LmdbNativeKernelLowering {
 			}
 			if (subject != null && object == null && pattern.o.hasSlot()) {
 				int adj = adjacency(pattern.p.constant, true, false);
-				currentDepthNodes().add(new LmdbNativeKernelIr.Probe(adj, subject, newColumn(pattern.o.slot)));
+				currentDepthNodes().add(new LmdbNativeKernelIr.Probe(adj, subject, newColumn(pattern.o.slot),
+						ctxProject ? newColumn(pattern.c.slot) : -1, ctxMatch, ctxExclude));
+				witnessCtxLowering(ctxActive);
 				return true;
 			}
 			if (object != null && subject == null && pattern.s.hasSlot()) {
 				int adj = adjacency(pattern.p.constant, false, false);
-				currentDepthNodes().add(new LmdbNativeKernelIr.Probe(adj, object, newColumn(pattern.s.slot)));
+				currentDepthNodes().add(new LmdbNativeKernelIr.Probe(adj, object, newColumn(pattern.s.slot),
+						ctxProject ? newColumn(pattern.c.slot) : -1, ctxMatch, ctxExclude));
+				witnessCtxLowering(ctxActive);
 				return true;
 			}
 			if (subject != null && object != null) {
+				if (ctxActive) {
+					// Both endpoints known: the multiplicity counter has no per-entry continuation to guard, so the
+					// context restriction cannot ride it yet. A scan can still express the projected-variable form.
+					if (lowerPatternAsScan(pattern)) {
+						return true;
+					}
+					reason = "pattern-ctx-shape";
+					return false;
+				}
 				int adj = adjacency(pattern.p.constant, true, false);
 				currentDepthNodes().add(new LmdbNativeKernelIr.ProbeClose(adj, subject, object, true,
 						LmdbNativeKernelIr.probeCloseSeekEnabled()));
@@ -1585,11 +1647,19 @@ final class LmdbNativeKernelLowering {
 				int adj = adjacency(pattern.p.constant, true, true);
 				int keyColumn = newColumn(pattern.s.slot);
 				int valueColumn = newColumn(pattern.o.slot);
-				currentDepthNodes().add(new LmdbNativeKernelIr.EnumerateAdjKeys(adj, keyColumn, valueColumn));
+				currentDepthNodes().add(new LmdbNativeKernelIr.EnumerateAdjKeys(adj, keyColumn, valueColumn,
+						ctxProject ? newColumn(pattern.c.slot) : -1, ctxMatch, ctxExclude));
+				witnessCtxLowering(ctxActive);
 				return true;
 			}
 			reason = "pattern-shape";
 			return false;
+		}
+
+		private void witnessCtxLowering(boolean ctxActive) {
+			if (ctxActive) {
+				CONTEXT_COLUMN_LOWERINGS.incrementAndGet();
+			}
 		}
 
 		/**

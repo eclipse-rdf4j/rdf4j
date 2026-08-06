@@ -161,6 +161,10 @@ final class LmdbNativeKernelEmitter {
 				// Vector-tail scratch: one run slice and its selection, allocated once in bind and reused per run.
 				source.append("    private long[] tvec;\n");
 				source.append("    private int[] tsel;\n");
+				if (ctxActive(kernel.pipeline.get(kernel.vectorTailIndex))) {
+					// The context column of the same slice, bulk-copied beside the neighbors.
+					source.append("    private long[] cvec;\n");
+				}
 			}
 			for (int i = 0; i < kernel.columnCount; i++) {
 				source.append("    private long v").append(i).append(" = -1L;\n");
@@ -1181,6 +1185,7 @@ final class LmdbNativeKernelEmitter {
 				open = indent + "    ";
 			}
 
+			boolean ctx = ctxActive(producer);
 			body.append(open).append("long rend = ").append(a).append(".size(rh);\n");
 			body.append(open).append("if (").append(runState).append(" < 0) {\n");
 			body.append(open).append("    ").append(runState).append(" = 0;\n");
@@ -1196,12 +1201,22 @@ final class LmdbNativeKernelEmitter {
 			if (!vectorized.isEmpty()) {
 				body.append(loop).append("    tsel = new int[rn];\n");
 			}
+			if (ctx) {
+				body.append(loop).append("    cvec = new long[rn];\n");
+			}
 			body.append(loop).append("}\n");
 			body.append(loop)
 					.append(a)
 					.append(".copyNeighbors(rh, ")
 					.append(runState)
 					.append(", rn, tvec, 0);\n");
+			if (ctx) {
+				body.append(loop)
+						.append(a)
+						.append(".copyContexts(rh, ")
+						.append(runState)
+						.append(", rn, cvec, 0);\n");
+			}
 			body.append(loop).append("int cnt = rn;\n");
 			boolean selected = false;
 			for (Node filter : vectorized) {
@@ -1218,23 +1233,26 @@ final class LmdbNativeKernelEmitter {
 					.append(sliceState)
 					.append("++) {\n");
 			String inner = loop + "    ";
-			body.append(inner)
+			String index = selected ? "tsel[(int) " + sliceState + "]" : "(int) " + sliceState;
+			String guarded = emitCtxSliceEntry(body, inner, ctx ? producer : null, index);
+			body.append(guarded)
 					.append("v")
 					.append(valueCol)
 					.append(" = tvec[")
-					.append(selected ? "tsel[(int) " + sliceState + "]" : "(int) " + sliceState)
+					.append(index)
 					.append("];\n");
 			if (residual.isEmpty()) {
-				body.append(next(nextTemplate, inner));
+				body.append(next(nextTemplate, guarded));
 			} else {
-				body.append(inner).append("if (");
+				body.append(guarded).append("if (");
 				for (int i = 0; i < residual.size(); i++) {
 					body.append(i == 0 ? "" : " && ").append(scalarFilterCondition(residual.get(i)));
 				}
 				body.append(") {\n");
-				body.append(next(nextTemplate, inner + "    "));
-				body.append(inner).append("}\n");
+				body.append(next(nextTemplate, guarded + "    "));
+				body.append(guarded).append("}\n");
 			}
+			closeCtxSliceEntry(body, inner, ctx ? producer : null);
 			// The slice loop always feeds the sink (a vector tail only ever has filters below it), so it must step past
 			// the row it just emitted before pausing, or that row would be produced again on resume.
 			emitPause(body, inner, sliceState, true);
@@ -1332,6 +1350,7 @@ final class LmdbNativeKernelEmitter {
 				closeVectorTail(body, indent, keyToken != null, leftProbe, valueCol, filters, nextTemplate);
 				return;
 			}
+			boolean ctx = ctxActive(producer);
 			body.append(open).append("while (rpos < rend) {\n");
 			String loop = open + "    ";
 			body.append(loop).append("int rn = (int) Math.min(rend - rpos, (long) KernelRuntime.VECTOR_SIZE);\n");
@@ -1343,8 +1362,14 @@ final class LmdbNativeKernelEmitter {
 			if (!vectorized.isEmpty()) {
 				body.append(loop).append("    tsel = new int[rn];\n");
 			}
+			if (ctx) {
+				body.append(loop).append("    cvec = new long[rn];\n");
+			}
 			body.append(loop).append("}\n");
 			body.append(loop).append(a).append(".copyNeighbors(rh, rpos, rn, tvec, 0);\n");
+			if (ctx) {
+				body.append(loop).append(a).append(".copyContexts(rh, rpos, rn, cvec, 0);\n");
+			}
 			body.append(loop).append("int cnt = rn;\n");
 			boolean selected = false;
 			for (Node filter : vectorized) {
@@ -1365,11 +1390,13 @@ final class LmdbNativeKernelEmitter {
 			}
 			body.append(loop).append("for (int ti = 0; ti < cnt; ti++) {\n");
 			String inner = loop + "    ";
+			String index = selected ? "tsel[ti]" : "ti";
+			inner = emitCtxSliceEntry(body, inner, ctx ? producer : null, index);
 			body.append(inner)
 					.append("v")
 					.append(valueCol)
 					.append(" = tvec[")
-					.append(selected ? "tsel[ti]" : "ti")
+					.append(index)
 					.append("];\n");
 			if (residual.isEmpty()) {
 				body.append(next(nextTemplate, inner));
@@ -1382,10 +1409,39 @@ final class LmdbNativeKernelEmitter {
 				body.append(next(nextTemplate, inner + "    "));
 				body.append(inner).append("}\n");
 			}
+			closeCtxSliceEntry(body, loop + "    ", ctx ? producer : null);
 			body.append(loop).append("}\n");
 			body.append(loop).append("rpos = rpos + rn;\n");
 			body.append(open).append("}\n");
 			closeVectorTail(body, indent, keyToken != null, leftProbe, valueCol, filters, nextTemplate);
+		}
+
+		/**
+		 * The vector-tail twin of {@link #emitCtxEntry}: the context comes from the bulk-copied {@code cvec} slice
+		 * instead of a per-element {@code contextAt} call. Pass a null node for a context-free tail (no-op).
+		 */
+		private static String emitCtxSliceEntry(StringBuilder body, String indent, Node node, String index) {
+			if (node == null) {
+				return indent;
+			}
+			body.append(indent).append("long ctx = cvec[").append(index).append("];\n");
+			String condition = ctxCondition(node);
+			if (condition != null) {
+				body.append(indent).append("if (").append(condition).append(") {\n");
+				indent = indent + "    ";
+			}
+			int ctxCol = ctxColOf(node);
+			if (ctxCol >= 0) {
+				body.append(indent).append("v").append(ctxCol).append(" = ctx;\n");
+			}
+			return indent;
+		}
+
+		/** Closes the guard block {@link #emitCtxSliceEntry} opened, if any. */
+		private static void closeCtxSliceEntry(StringBuilder body, String indent, Node node) {
+			if (node != null && ctxCondition(node) != null) {
+				body.append(indent).append("}\n");
+			}
 		}
 
 		/**
@@ -1557,6 +1613,85 @@ final class LmdbNativeKernelEmitter {
 			return true;
 		}
 
+		/**
+		 * True when the node is an adjacency producer carrying context access — a projected context column, a context
+		 * match operand, or a named-graph default exclusion (three-tier parity plan, M7).
+		 */
+		private static boolean ctxActive(Node node) {
+			if (node instanceof Probe) {
+				return ((Probe) node).ctxActive();
+			}
+			if (node instanceof EnumerateAdjKeys) {
+				return ((EnumerateAdjKeys) node).ctxActive();
+			}
+			return false;
+		}
+
+		private static int ctxColOf(Node node) {
+			if (node instanceof Probe) {
+				return ((Probe) node).ctxCol;
+			}
+			return node instanceof EnumerateAdjKeys ? ((EnumerateAdjKeys) node).ctxCol : -1;
+		}
+
+		/**
+		 * The per-entry context guard over a local {@code ctx} variable ({@code "ctx != 0L && ctx == <match>"}), or
+		 * null when the producer restricts nothing and only projects.
+		 */
+		private static String ctxCondition(Node node) {
+			Operand match;
+			boolean exclude;
+			if (node instanceof Probe) {
+				match = ((Probe) node).ctxMatch;
+				exclude = ((Probe) node).ctxExcludeDefault;
+			} else {
+				match = ((EnumerateAdjKeys) node).ctxMatch;
+				exclude = ((EnumerateAdjKeys) node).ctxExcludeDefault;
+			}
+			StringBuilder condition = new StringBuilder();
+			if (exclude) {
+				condition.append("ctx != 0L");
+			}
+			if (match != null) {
+				condition.append(condition.length() > 0 ? " && " : "").append("ctx == ").append(match.token());
+			}
+			return condition.length() == 0 ? null : condition.toString();
+		}
+
+		/**
+		 * Emits the per-entry context read, guard and projection for a context-bearing adjacency producer, and returns
+		 * the indent the entry body continues at. A context-free producer emits nothing and keeps the given indent.
+		 * Every producer body is its own wrapped method, so the local {@code ctx} cannot collide across nodes.
+		 */
+		private static String emitCtxEntry(StringBuilder body, String indent, Node node, String view, String index) {
+			if (!ctxActive(node)) {
+				return indent;
+			}
+			body.append(indent)
+					.append("long ctx = ")
+					.append(view)
+					.append(".contextAt(rh, ")
+					.append(index)
+					.append(");\n");
+			String condition = ctxCondition(node);
+			if (condition != null) {
+				body.append(indent).append("if (").append(condition).append(") {\n");
+				indent = indent + "    ";
+			}
+			int ctxCol = ctxColOf(node);
+			if (ctxCol >= 0) {
+				body.append(indent).append("v").append(ctxCol).append(" = ctx;\n");
+			}
+			return indent;
+		}
+
+		/** Closes the guard block {@link #emitCtxEntry} opened, if any. */
+		private static void closeCtxEntry(StringBuilder body, String indent, Node node) {
+			if (ctxActive(node) && ctxCondition(node) != null) {
+				body.append(indent).append("}\n");
+			}
+		}
+
 		/** Emits the pause check for a streaming loop, advancing the counter first when the loop feeds the sink. */
 		private static void emitPause(StringBuilder body, String indent, String counter, boolean advance) {
 			body.append(indent).append("if (full) {\n");
@@ -1603,15 +1738,17 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append("            ").append(a).append(" = 0;\n");
 				body.append(indent).append("        }\n");
 				body.append(indent).append("        for (; ").append(a).append(" < end; ").append(a).append("++) {\n");
-				body.append(indent)
-						.append("            v")
+				String probeInner = emitCtxEntry(body, indent + "            ", probe, view, a);
+				body.append(probeInner)
+						.append("v")
 						.append(probe.valueCol)
 						.append(" = ")
 						.append(view)
 						.append(".neighborAt(rh, ")
 						.append(a)
 						.append(");\n");
-				body.append(next(nextTemplate, indent + "            "));
+				body.append(next(nextTemplate, probeInner));
+				closeCtxEntry(body, indent + "            ", probe);
 				emitPause(body, indent + "            ", a, tailmost);
 				body.append(indent).append("        }\n");
 				body.append(indent).append("    }\n");
@@ -1815,15 +1952,17 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append("        ").append(b).append(" = 0;\n");
 				body.append(indent).append("    }\n");
 				body.append(indent).append("    for (; ").append(b).append(" < end; ").append(b).append("++) {\n");
-				body.append(indent)
-						.append("        v")
+				String enumInner = emitCtxEntry(body, indent + "        ", enumerate, view, b);
+				body.append(enumInner)
+						.append("v")
 						.append(enumerate.valueCol)
 						.append(" = ")
 						.append(view)
 						.append(".neighborAt(rh, ")
 						.append(b)
 						.append(");\n");
-				body.append(next(nextTemplate, indent + "        "));
+				body.append(next(nextTemplate, enumInner));
+				closeCtxEntry(body, indent + "        ", enumerate);
 				emitPause(body, indent + "        ", b, tailmost);
 				body.append(indent).append("    }\n");
 				body.append(indent).append("    ").append(b).append(" = -1;\n");
@@ -1935,6 +2074,11 @@ final class LmdbNativeKernelEmitter {
 				return false;
 			}
 			Node producer = kernel.pipeline.get(kernel.vectorTailIndex);
+			if (ctxActive(producer)) {
+				// A context restriction must inspect every entry, and a projected context column varies within the
+				// slice — neither folds into a per-slice count.
+				return false;
+			}
 			int valueCol = tailValueCol(producer);
 			for (int i = kernel.vectorTailIndex + 1; i < kernel.pipeline.size(); i++) {
 				if (vectorFilterCall(kernel.pipeline.get(i), valueCol, false) == null) {
@@ -2073,16 +2217,18 @@ final class LmdbNativeKernelEmitter {
 							.append(a)
 							.append(".size(rh);\n")
 							.append(indent)
-							.append("    for (long i = 0L; i < end; i++) {\n")
-							.append(indent)
-							.append("        v")
+							.append("    for (long i = 0L; i < end; i++) {\n");
+					String enumInner = indent + "        ";
+					enumInner = emitCtxEntry(body, enumInner, enumerate, a, "i");
+					body.append(enumInner)
+							.append("v")
 							.append(enumerate.valueCol)
 							.append(" = ")
 							.append(a)
 							.append(".neighborAt(rh, i);\n")
-							.append(next(nextTemplate, indent + "        "))
-							.append(indent)
-							.append("    }\n");
+							.append(next(nextTemplate, enumInner));
+					closeCtxEntry(body, indent + "        ", enumerate);
+					body.append(indent).append("    }\n");
 				} else {
 					body.append(next(nextTemplate, indent + "    "));
 				}
@@ -2124,15 +2270,18 @@ final class LmdbNativeKernelEmitter {
 						.append(a)
 						.append(".size(rh);\n")
 						.append(indent)
-						.append("        for (long i = 0L; i < end; i++) {\n")
-						.append(indent)
-						.append("            v")
+						.append("        for (long i = 0L; i < end; i++) {\n");
+				String probeInner = indent + "            ";
+				probeInner = emitCtxEntry(body, probeInner, probe, a, "i");
+				body.append(probeInner)
+						.append("v")
 						.append(probe.valueCol)
 						.append(" = ")
 						.append(a)
 						.append(".neighborAt(rh, i);\n")
-						.append(next(nextTemplate, indent + "            "))
-						.append(indent)
+						.append(next(nextTemplate, probeInner));
+				closeCtxEntry(body, indent + "            ", probe);
+				body.append(indent)
 						.append("        }\n")
 						.append(indent)
 						.append("    }\n")

@@ -905,6 +905,85 @@ class LmdbNativeKernelIrEmitterTest {
 		}
 	}
 
+	// ------------------------------------------------------------------
+	// Context columns (three-tier parity plan, M7)
+	// ------------------------------------------------------------------
+
+	// Key 1 -> (2 in default graph), (2 in graph 10), (3 in graph 20); key 4 -> (5 in graph 10).
+	private static NativeLmdbQuerySource.NativeAdjacency followsWithContexts() {
+		return new ContextFixtureAdjacency(new long[][] { { 1, 2, 0, 2, 10, 3, 20 }, { 4, 5, 10 } });
+	}
+
+	@Test
+	void probeProjectsTheContextColumnAndExcludesTheDefaultGraph() throws Exception {
+		Kernel ir = new Kernel(3,
+				List.of(new EnumerateDomain(0, 0), new Probe(0, Operand.col(0), 1, 2, null, true)),
+				emit(0, 1, 2));
+		List<long[]> rows = run(ir, context().adjacencies(followsWithContexts()).domains(new long[] { 1, 4 }));
+		assertRows(rows, new long[][] { { 1, 2, 10 }, { 1, 3, 20 }, { 4, 5, 10 } });
+	}
+
+	@Test
+	void probeMatchesAConstantContext() throws Exception {
+		Kernel ir = new Kernel(2,
+				List.of(new EnumerateDomain(0, 0), new Probe(0, Operand.col(0), 1, -1, Operand.constant(0), false)),
+				emit(0, 1));
+		List<long[]> rows = run(ir,
+				context().adjacencies(followsWithContexts()).domains(new long[] { 1, 4 }).constants(10L));
+		assertRows(rows, new long[][] { { 1, 2 }, { 4, 5 } });
+	}
+
+	@Test
+	void enumerateAdjKeysStreamsTheContextColumnAcrossPauses() throws Exception {
+		// The context-bearing enumeration is the pipeline tail, so this drives the resumable vector tail: the
+		// context slice must be re-copied beside the neighbors on every resume.
+		Kernel streaming = new Kernel(3, List.of(new EnumerateAdjKeys(0, 0, 1, 2, null, true)), emit(0, 1, 2));
+		assertTrue(streaming.resumable, "a context projection adds no cross-row state, so it must stream");
+		long[][] expected = { { 1, 2, 10 }, { 1, 3, 20 }, { 4, 5, 10 } };
+		for (int maxRows : new int[] { 1, 2, 3, 64 }) {
+			List<long[]> rows = drain(streaming, context().adjacencies(followsWithContexts()), maxRows);
+			assertRows(rows, expected, "drained " + maxRows + " row(s) at a time");
+		}
+	}
+
+	@Test
+	void contextGuardedProbeStreamsMidPipelineAcrossPauses() throws Exception {
+		// A plain probe below the context-bearing one keeps the latter off the vector tail, so this drives the
+		// resumable scalar emission with the guard wrapping the continuation.
+		Kernel streaming = new Kernel(3,
+				List.of(new EnumerateDomain(0, 0), new Probe(0, Operand.col(0), 1, -1, Operand.constant(0), false),
+						new Probe(1, Operand.col(1), 2)),
+				emit(0, 1, 2));
+		assertTrue(streaming.resumable, "a context match adds no cross-row state, so it must stream");
+		// Context 10 keeps 1->2 and 4->5; follows() then expands 2->{3} and 5->{} (no run for key 5).
+		long[][] expected = { { 1, 2, 3 } };
+		for (int maxRows : new int[] { 1, 2, 64 }) {
+			List<long[]> rows = drain(streaming,
+					context().adjacencies(followsWithContexts(), follows())
+							.domains(new long[] { 1, 4 })
+							.constants(10L),
+					maxRows);
+			assertRows(rows, expected, "drained " + maxRows + " row(s) at a time");
+		}
+	}
+
+	@Test
+	void vectorizedFilterSelectionStaysAlignedWithTheContextSlice() throws Exception {
+		// A vectorizable id filter below the context probe compacts the selection (tsel); the context read must
+		// follow the selection index, not the dense slice position.
+		Kernel ir = new Kernel(3,
+				List.of(new EnumerateDomain(0, 0), new Probe(0, Operand.col(0), 1, 2, null, true),
+						new FilterCompareId(true, Operand.col(1), Operand.constant(0))),
+				emit(0, 1, 2));
+		long[][] expected = { { 1, 3, 20 }, { 4, 5, 10 } };
+		for (int maxRows : new int[] { 1, 2, 64 }) {
+			List<long[]> rows = drain(ir,
+					context().adjacencies(followsWithContexts()).domains(new long[] { 1, 4 }).constants(2L),
+					maxRows);
+			assertRows(rows, expected, "drained " + maxRows + " row(s) at a time");
+		}
+	}
+
 	@Test
 	void streamingDeclinesWhereTheWholeResultIsNeededFirst() {
 		// ORDER BY and LIMIT need every row in hand before the first can be served.
@@ -1137,6 +1216,85 @@ class LmdbNativeKernelIrEmitterTest {
 		@Override
 		public long contextAt(long runHandle, long runOffset) {
 			return 0;
+		}
+
+		@Override
+		public boolean supportsKeyEnumeration() {
+			return true;
+		}
+
+		@Override
+		public long keyCount() {
+			return keys.length;
+		}
+
+		@Override
+		public long keyAt(long keyOrdinal) {
+			return keys[(int) keyOrdinal];
+		}
+
+		@Override
+		public boolean runsNeighborOrdered() {
+			return true;
+		}
+	}
+
+	/**
+	 * Adjacency fixture whose entries carry contexts: each row is {@code {key, n1, c1, n2, c2, ...}}, with the
+	 * (neighbor, context) pairs already in run order.
+	 */
+	private static final class ContextFixtureAdjacency implements NativeLmdbQuerySource.NativeAdjacency {
+		private final long[] keys;
+		private final int[] starts;
+		private final long[] neighbors;
+		private final long[] contexts;
+		private final Map<Long, Integer> denseByKey = new HashMap<>();
+
+		ContextFixtureAdjacency(long[][] rows) {
+			keys = new long[rows.length];
+			starts = new int[rows.length + 1];
+			int total = 0;
+			for (long[] row : rows) {
+				total += (row.length - 1) / 2;
+			}
+			neighbors = new long[total];
+			contexts = new long[total];
+			int position = 0;
+			for (int i = 0; i < rows.length; i++) {
+				keys[i] = rows[i][0];
+				denseByKey.put(rows[i][0], i);
+				starts[i] = position;
+				for (int j = 1; j < rows[i].length; j += 2) {
+					neighbors[position] = rows[i][j];
+					contexts[position] = rows[i][j + 1];
+					position++;
+				}
+			}
+			starts[rows.length] = position;
+		}
+
+		@Override
+		public long find(long key) {
+			Integer dense = denseByKey.get(key);
+			return dense == null ? NOT_FOUND : dense + 1L;
+		}
+
+		@Override
+		public long size(long runHandle) {
+			int dense = (int) runHandle - 1;
+			return starts[dense + 1] - starts[dense];
+		}
+
+		@Override
+		public long neighborAt(long runHandle, long runOffset) {
+			int dense = (int) runHandle - 1;
+			return neighbors[starts[dense] + (int) runOffset];
+		}
+
+		@Override
+		public long contextAt(long runHandle, long runOffset) {
+			int dense = (int) runHandle - 1;
+			return contexts[starts[dense] + (int) runOffset];
 		}
 
 		@Override

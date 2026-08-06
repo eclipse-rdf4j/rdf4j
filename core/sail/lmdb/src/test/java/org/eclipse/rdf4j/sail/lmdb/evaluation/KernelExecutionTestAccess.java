@@ -60,6 +60,10 @@ public final class KernelExecutionTestAccess {
 		return LmdbNativeKernelLowering.BIND_HOOK_LOWERINGS.get();
 	}
 
+	public static long contextColumnLowerings() {
+		return LmdbNativeKernelLowering.CONTEXT_COLUMN_LOWERINGS.get();
+	}
+
 	public static void resetMetrics() {
 		LmdbNativeKernelExecution.resetMetrics();
 	}
