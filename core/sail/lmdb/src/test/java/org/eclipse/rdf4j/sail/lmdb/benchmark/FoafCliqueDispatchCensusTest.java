@@ -22,7 +22,6 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.benchmark.FoafCliqueQueryCatalog.QueryScenario;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.JaninoPipelineTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.JoinDispatchTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess;
 import org.junit.jupiter.api.AfterAll;
@@ -95,8 +94,8 @@ class FoafCliqueDispatchCensusTest {
 
 	@Test
 	void censusOfOperatorDispatchPerCatalogQuery() {
-		System.out.printf("%n%-40s %8s %6s %6s %6s %6s %6s %6s %6s %6s%n",
-				"scenario", "rows", "lfPln", "lfOpn", "lfPar", "jaPln", "jaOpn", "jaDcl", "pipOpn", "irOpn");
+		System.out.printf("%n%-40s %8s %6s %6s %6s %6s %6s %6s %6s%n",
+				"scenario", "rows", "lfPln", "lfOpn", "lfPar", "jaPln", "jaOpn", "jaDcl", "irOpn");
 		for (QueryScenario scenario : FoafCliqueQueryCatalog.allScenarios()) {
 			// Warm once so per-plan one-time work (compilation, caches) does not skew the counted run.
 			executeAndCount(scenario.query());
@@ -107,12 +106,11 @@ class FoafCliqueDispatchCensusTest {
 			long jaPlanned = JoinDispatchTestAccess.janinoAggregatePlanned();
 			long jaOpened = JoinDispatchTestAccess.janinoAggregateOpened();
 			long jaDeclined = JoinDispatchTestAccess.janinoAggregateDeclined();
-			long pipOpened = JaninoPipelineTestAccess.opened();
 			long irOpened = KernelExecutionTestAccess.opened() + KernelExecutionTestAccess.aggOpened();
 
 			long rows = executeAndCount(scenario.query());
 
-			System.out.printf("%-40s %8d %6d %6d %6d %6d %6d %6d %6d %6d%n",
+			System.out.printf("%-40s %8d %6d %6d %6d %6d %6d %6d %6d%n",
 					scenario.benchmarkMethodName(), rows,
 					JoinDispatchTestAccess.leapfrogPlanned() - lfPlanned,
 					JoinDispatchTestAccess.leapfrogOpened() - lfOpened,
@@ -120,7 +118,6 @@ class FoafCliqueDispatchCensusTest {
 					JoinDispatchTestAccess.janinoAggregatePlanned() - jaPlanned,
 					JoinDispatchTestAccess.janinoAggregateOpened() - jaOpened,
 					JoinDispatchTestAccess.janinoAggregateDeclined() - jaDeclined,
-					JaninoPipelineTestAccess.opened() - pipOpened,
 					KernelExecutionTestAccess.opened() + KernelExecutionTestAccess.aggOpened() - irOpened);
 
 			assertTrue(rows > 0, scenario.benchmarkMethodName() + " must produce rows under the native engine");

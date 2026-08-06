@@ -49,14 +49,13 @@ public final class LmdbNativeAttemptMetrics {
 	static final String PATH_ADAPTIVE_FILTER_PLACEMENT = "adaptiveFilterPlacement";
 	static final String PATH_NESTED_LOOP = "nestedLoop";
 	static final String PATH_WCOJ = "wcoj";
-	static final String PATH_JANINO_KERNEL = "janinoKernel";
 	static final String PATH_JANINO_AGGREGATE = "janinoAggregate";
 	static final String PATH_IR_KERNEL = "irKernel";
 	static final String PATH_IR_AGGREGATE = "irAggregate";
 	/**
 	 * Whole-stage codegen strategies; declines against these are logged at INFO to explain why Janino was not picked.
 	 */
-	private static final Set<String> JANINO_STRATEGIES = Set.of(PATH_JANINO_KERNEL, PATH_JANINO_AGGREGATE,
+	private static final Set<String> JANINO_STRATEGIES = Set.of(PATH_JANINO_AGGREGATE,
 			PATH_IR_KERNEL, PATH_IR_AGGREGATE);
 	static final String PATH_ORDERED_FACTORIZED_TOP_K = "orderedFactorizedTopK";
 	static final String PATH_ORDERED_FACTORIZED_SORT = "orderedFactorizedSort";
@@ -92,7 +91,7 @@ public final class LmdbNativeAttemptMetrics {
 			PATH_ORDERED_DISTINCT_GROUPS, PATH_PARALLEL_AGGREGATION, PATH_FACTORIZED_TAIL,
 			PATH_ORDERED_SINGLE_PATTERN_GROUPS, PATH_AGG_STATE, PATH_SINGLE_SLOT_GROUPS,
 			PATH_PRIMITIVE_TUPLE_GROUPS, PATH_HASH_GROUPS, PATH_EXISTS_INTERSECTION, PATH_RUN_COUNT_HISTOGRAM,
-			PATH_DATATYPE_HISTOGRAM, PATH_TYPE_MATRIX, PATH_JANINO_KERNEL, PATH_JANINO_AGGREGATE, PATH_IR_KERNEL,
+			PATH_DATATYPE_HISTOGRAM, PATH_TYPE_MATRIX, PATH_JANINO_AGGREGATE, PATH_IR_KERNEL,
 			PATH_IR_AGGREGATE, PATH_CONSTANT_FALSE_FILTER);
 
 	private static final LmdbNativeAttemptMetrics DIRECT = new LmdbNativeAttemptMetrics(null, true, null);

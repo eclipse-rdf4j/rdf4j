@@ -427,7 +427,7 @@ public class LmdbNativeDifferentialFuzzTest {
 				}
 				assertSameResults(query);
 			}
-			assertThat(org.eclipse.rdf4j.sail.lmdb.evaluation.JaninoPipelineTestAccess.opened())
+			assertThat(org.eclipse.rdf4j.sail.lmdb.evaluation.JaninoPipelineTestAccess.openedAny())
 					.as("the Janino kernel rung never engaged during the forced-on round")
 					.isGreaterThan(0L);
 		} finally {

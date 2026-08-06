@@ -232,7 +232,22 @@ final class LmdbNativeKernelExecution {
 					"no-fusion-opportunity");
 			return null;
 		}
-		return tryOpenRows(arg, row, originalExpr, false);
+		return tryOpenRows(arg, row, originalExpr, false, null);
+	}
+
+	/**
+	 * DISTINCT-sinking row rung (plan 32 M3/M4): the kernel emits only the distinct key columns and dedups them itself,
+	 * order-aware where the pipeline's producers are sorted; the caller may therefore skip its own dedup entirely when
+	 * this returns a cursor. Null falls through to the ordinary distinct tiers.
+	 */
+	static RowCursor tryOpenDistinctRows(SlotPlan arg, RowState row, TupleExpr originalExpr, int[] distinctSlots)
+			throws IOException {
+		if (!hasFusionOpportunity(arg)) {
+			// Quiet: the ordinary ladder (including the plain kernel) still gets its opportunity, so recording this
+			// attempt against PATH_IR_KERNEL would double-count in the decline census.
+			return null;
+		}
+		return tryOpenRows(arg, row, originalExpr, false, distinctSlots);
 	}
 
 	/**
@@ -313,8 +328,8 @@ final class LmdbNativeKernelExecution {
 		return found + 2;
 	}
 
-	private static RowCursor tryOpenRows(SlotPlan arg, RowState row, TupleExpr originalExpr, boolean preferScans)
-			throws IOException {
+	private static RowCursor tryOpenRows(SlotPlan arg, RowState row, TupleExpr originalExpr, boolean preferScans,
+			int[] distinctSlots) throws IOException {
 		if (!LmdbNativeJaninoCodegen.enabled()) {
 			if (row.runtimePlan != null) {
 				row.runtimePlan.janinoDeclined("FEATURE_DISABLED[" + LmdbNativeJaninoCodegen.ENABLED_PROPERTY
@@ -325,8 +340,9 @@ final class LmdbNativeKernelExecution {
 		}
 		NativeLmdbQuerySource.NativeProbe probe = null;
 		try {
-			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(arg, row, originalExpr,
-					preferScans);
+			LmdbNativeKernelLowering.Lowered lowered = distinctSlots != null
+					? LmdbNativeKernelLowering.lowerDistinctRows(arg, row, originalExpr, preferScans, distinctSlots)
+					: LmdbNativeKernelLowering.lowerRows(arg, row, originalExpr, preferScans);
 			if (lowered == null) {
 				DECLINED.incrementAndGet();
 				if (row.runtimePlan != null) {
@@ -362,7 +378,7 @@ final class LmdbNativeKernelExecution {
 				probe = null;
 				kernel.close();
 				if (!preferScans && LmdbNativeKernelLowering.scanSourcesEnabled()) {
-					return tryOpenRows(arg, row, originalExpr, true);
+					return tryOpenRows(arg, row, originalExpr, true, distinctSlots);
 				}
 				LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
 						"adjacency-unavailable");
@@ -373,6 +389,19 @@ final class LmdbNativeKernelExecution {
 				return null;
 			}
 			long[][] domains = lowered.bindings.materializeDomains(probe, row, "irKernel");
+			if (!alignedInputsOrdered(lowered, views, domains)) {
+				// The aligned dedup tier is compiled against grouped emission; a bind-time input that cannot promise
+				// its order (an unordered view or domain) must not run that shape. Quiet toward the decline census —
+				// the ordinary ladder still serves the query.
+				probe.close();
+				probe = null;
+				kernel.close();
+				if (row.runtimePlan != null) {
+					row.runtimePlan.janinoDeclined("BIND_INPUT_UNAVAILABLE[route=irKernel,resource=orderedInput]");
+				}
+				DECLINED.incrementAndGet();
+				return null;
+			}
 			// The parallel rung may request a worker kernel VARIANT (offset folded into the limit); every requested
 			// shape compiles through the same cache under its own shape key, so the sequential shape stays untouched.
 			RowCursor parallel = LmdbNativeParallelKernelRows.tryOpen(lowered, views, domains, arg, row, originalExpr,
@@ -422,6 +451,32 @@ final class LmdbNativeKernelExecution {
 			}
 			return null;
 		}
+	}
+
+	/**
+	 * Bind-time promise check for the aligned dedup tier (plan 32 M3): every adjacency view must iterate its runs in
+	 * neighbor order and every materialized domain must be non-decreasing in unsigned id order, or the compiled
+	 * grouped-emission assumption does not hold on this store. Kernels without an aligned prefix skip the check.
+	 */
+	private static boolean alignedInputsOrdered(LmdbNativeKernelLowering.Lowered lowered,
+			NativeLmdbQuerySource.NativeAdjacency[] views, long[][] domains) {
+		if (!(lowered.kernel.terminal instanceof LmdbNativeKernelIr.Emit)
+				|| ((LmdbNativeKernelIr.Emit) lowered.kernel.terminal).alignedCount == 0) {
+			return true;
+		}
+		for (NativeLmdbQuerySource.NativeAdjacency view : views) {
+			if (view != null && !view.runsNeighborOrdered()) {
+				return false;
+			}
+		}
+		for (long[] domain : domains) {
+			for (int i = 1; domain != null && i < domain.length; i++) {
+				if (Long.compareUnsigned(domain[i - 1], domain[i]) > 0) {
+					return false;
+				}
+			}
+		}
+		return true;
 	}
 
 	private static String activationRoute(String route, LmdbNativeKernelLowering.Lowered lowered) {

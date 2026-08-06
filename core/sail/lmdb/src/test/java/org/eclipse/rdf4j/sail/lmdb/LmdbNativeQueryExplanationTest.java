@@ -474,17 +474,17 @@ public class LmdbNativeQueryExplanationTest {
 			String query = "PREFIX ex: <" + EX + ">\n"
 					+ "SELECT ?s ?price WHERE { ?s ex:price ?price . ?s a ex:Item }";
 			String rendered = "";
-			for (int attempt = 0; attempt < 100 && !rendered.contains("nativeExecutionPath=janinoKernel"); attempt++) {
+			for (int attempt = 0; attempt < 100 && !rendered.contains("nativeExecutionPath=irKernel"); attempt++) {
 				rendered = explain(Explanation.Level.Telemetry, query).toString();
 			}
 
 			assertThat(JaninoPipelineTestAccess.opened()).isPositive();
 			assertThat(rendered)
-					.contains("nativeExecutionPath=janinoKernel")
+					.contains("nativeExecutionPath=irKernel")
 					.contains("    janino:\n      used: true\n      reason: ACTIVATED")
 					.contains("    adjacencySIP:\n      used: false\n"
 							+ "      state: NOT_CONSIDERED\n"
-							+ "      reason: SUPERSEDED_BY_STRATEGY[strategy=janinoKernel]")
+							+ "      reason: SUPERSEDED_BY_STRATEGY[strategy=irKernel]")
 					.contains("      generatedOrder:\n        0: Pattern(")
 					.contains("    actualOrder:\n      0: Pattern(");
 			assertThat(planSection(rendered, "    actualOrder:\n", "    janino:\n"))

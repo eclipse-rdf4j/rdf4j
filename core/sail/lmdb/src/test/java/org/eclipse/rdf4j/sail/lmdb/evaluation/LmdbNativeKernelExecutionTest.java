@@ -42,10 +42,10 @@ import org.junit.jupiter.api.TestInstance;
 
 /**
  * Engagement tests for the general IR kernel rung ({@code LmdbNativeKernelExecution}, plan:
- * plans/lmdb-native-engine/20-kernel-lowering-row.md M1). The fixture queries use shapes the shape-specific
- * {@code LmdbNativeJaninoPipeline} recognizer structurally declines (VALUES seeds, value-tier filters over a chain), so
- * engagement proves the new lowering path, not the old rung. WCOJ is disabled throughout so the leapfrog rung cannot
- * absorb the shapes first.
+ * plans/lmdb-native-engine/20-kernel-lowering-row.md M1). The fixture queries use VALUES seeds and value-tier filters
+ * over a chain, exercising the general lowering path. (The historical shape-specific {@code LmdbNativeJaninoPipeline}
+ * rung these fixtures were written to bypass was removed by plan 32.) WCOJ is disabled throughout so the leapfrog rung
+ * cannot absorb the shapes first.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public class LmdbNativeKernelExecutionTest {

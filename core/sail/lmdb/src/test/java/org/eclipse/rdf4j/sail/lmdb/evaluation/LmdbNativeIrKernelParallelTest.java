@@ -53,11 +53,23 @@ class LmdbNativeIrKernelParallelTest {
 			LmdbNativeParallelKernelRows.ENABLED_PROPERTY };
 
 	/**
-	 * LeftJoin chains route only through the IR rung ({@code openKernelInput} hands non-MultiJoin roots straight to
-	 * {@code tryOpenRows}), so the legacy janino pipeline cannot absorb the shape the way it absorbs plain chains.
+	 * LeftJoin chain: routes through the IR rung via {@code openKernelInput} handing the root to {@code tryOpenRows}.
 	 */
 	private static final String OPTIONAL_QUERY = "SELECT ?s ?v ?w WHERE { ?s <" + EX + "p> ?m . ?m <" + EX
 			+ "q> ?v . OPTIONAL { ?m <" + EX + "r> ?w } }";
+
+	/**
+	 * The plan-32 acceptance shape: a plain five-pattern BGP with two constant-object class extents joining through a
+	 * shared variable, DISTINCT over two variables (the SP2B "authors of both an Article and an Inproceedings" shape).
+	 * Until plan 32 removed the legacy whole-stage pipeline, that serial rung absorbed every plain chain before the IR
+	 * kernel — and its parallel rung — could see it.
+	 */
+	private static final String DISTINCT_BGP_QUERY = "SELECT DISTINCT ?person ?pname WHERE { "
+			+ "?article <" + EX + "t> <" + EX + "A> . "
+			+ "?article <" + EX + "creator> ?person . "
+			+ "?inproc <" + EX + "t> <" + EX + "B> . "
+			+ "?inproc <" + EX + "creator> ?person . "
+			+ "?person <" + EX + "name> ?pname }";
 
 	/** The EXISTS filter's memo and probe state cannot fork a worker copy, so parallel must still decline. */
 	private static final String EXISTS_QUERY = "SELECT ?s ?v WHERE { ?s <" + EX + "p> ?m . ?m <" + EX
@@ -116,6 +128,29 @@ class LmdbNativeIrKernelParallelTest {
 						conn.add(m, r, vf.createLiteral("tag" + i + "_" + j));
 					}
 				}
+			}
+			// plan-32 acceptance fixture (fresh predicates/classes so the counts above stay untouched): 100 persons,
+			// 200 Articles, 150 Inproceedings; persons 0..49 author both kinds, 50..74 only Articles, 75..99 only
+			// Inproceedings; several works per person so DISTINCT actually collapses duplicates.
+			IRI creator = vf.createIRI(EX, "creator");
+			IRI name = vf.createIRI(EX, "name");
+			IRI classA = vf.createIRI(EX, "A");
+			IRI classB = vf.createIRI(EX, "B");
+			IRI[] persons = new IRI[100];
+			for (int i = 0; i < persons.length; i++) {
+				persons[i] = vf.createIRI(EX, "person" + i);
+				conn.add(persons[i], name, vf.createLiteral("person-" + i));
+			}
+			for (int i = 0; i < 200; i++) {
+				IRI article = vf.createIRI(EX, "article" + i);
+				conn.add(article, t, classA);
+				conn.add(article, creator, persons[i % 75]);
+			}
+			for (int i = 0; i < 150; i++) {
+				IRI inproc = vf.createIRI(EX, "inproc" + i);
+				conn.add(inproc, t, classB);
+				conn.add(inproc, creator, persons[i % 50]);
+				conn.add(inproc, creator, persons[75 + i % 25]);
 			}
 			conn.commit();
 		}
@@ -177,6 +212,27 @@ class LmdbNativeIrKernelParallelTest {
 				.as("a domain-rooted row kernel must partition by domain slice")
 				.isGreaterThan(parallelBefore);
 		assertThat(rows(DOMAIN_ROOT_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	@Test
+	void parallelIrKernelRunsDistinctBgpWithConstantKeyRoot() {
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		List<String> expected = rows(DISTINCT_BGP_QUERY);
+		// persons 0..49 author both kinds; DISTINCT collapses their several works to one row each
+		assertThat(expected).hasSize(50);
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+
+		KernelExecutionTestAccess.resetMetrics();
+		long parallelBefore = LmdbNativeParallelKernelRows.PARALLEL_RUNS.get();
+		for (int round = 0; round < 300
+				&& LmdbNativeParallelKernelRows.PARALLEL_RUNS.get() == parallelBefore; round++) {
+			assertThat(rows(DISTINCT_BGP_QUERY)).as("parity on round " + round)
+					.containsExactlyInAnyOrderElementsOf(expected);
+		}
+		assertThat(LmdbNativeParallelKernelRows.PARALLEL_RUNS.get())
+				.as("a plain DISTINCT BGP with a constant-key root must run partitioned across workers")
+				.isGreaterThan(parallelBefore);
+		assertThat(rows(DISTINCT_BGP_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
 	}
 
 	@Test

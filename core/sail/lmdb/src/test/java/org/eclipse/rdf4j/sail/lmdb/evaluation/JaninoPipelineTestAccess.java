@@ -14,34 +14,35 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.concurrent.TimeUnit;
 
-/** Test-scope bridge so tests outside the evaluation package can observe the Janino pipeline rung's engagement. */
+/**
+ * Test-scope bridge so tests outside the evaluation package can observe the IR kernel rungs' engagement. (Historical
+ * name: it originally bridged the legacy {@code LmdbNativeJaninoPipeline} rung, removed by plan 32.)
+ */
 public final class JaninoPipelineTestAccess {
 
 	private JaninoPipelineTestAccess() {
 	}
 
 	public static long opened() {
-		return LmdbNativeJaninoPipeline.OPENED.get();
+		return LmdbNativeKernelExecution.OPENED.get();
 	}
 
 	public static long planned() {
-		return LmdbNativeJaninoPipeline.PLANNED.get();
+		return LmdbNativeKernelExecution.PLANNED.get();
 	}
 
 	public static void resetMetrics() {
-		LmdbNativeJaninoPipeline.resetMetrics();
+		LmdbNativeKernelExecution.resetMetrics();
 	}
 
-	/** All generated-kernel opens, including the general IR row and aggregate rungs. */
+	/** All generated-kernel opens across the IR row and aggregate rungs. */
 	public static long openedAny() {
-		return LmdbNativeJaninoPipeline.OPENED.get()
-				+ LmdbNativeKernelExecution.OPENED.get()
+		return LmdbNativeKernelExecution.OPENED.get()
 				+ LmdbNativeKernelExecution.AGG_OPENED.get();
 	}
 
 	/** Clears generated-kernel counters and compiled test shapes before a benchmark trial. */
 	public static void resetAll() {
-		LmdbNativeJaninoPipeline.resetMetrics();
 		LmdbNativeKernelExecution.resetMetrics();
 		LmdbNativeJaninoCodegen.resetForTests();
 	}

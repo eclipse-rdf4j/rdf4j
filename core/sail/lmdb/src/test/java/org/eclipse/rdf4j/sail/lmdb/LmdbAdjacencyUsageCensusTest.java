@@ -33,7 +33,6 @@ import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMetrics.FallbackReason;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.JaninoPipelineTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.JoinDispatchTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.PathDispatchTestAccess;
@@ -196,9 +195,9 @@ class LmdbAdjacencyUsageCensusTest {
 
 	@Test
 	void censusOfAdjacencyEngagementPerQueryShape() {
-		System.out.printf("%n%-26s %9s %7s %7s %6s %6s %6s %6s %6s %6s %6s %6s %7s %7s %7s  %s%n",
+		System.out.printf("%n%-26s %9s %7s %7s %6s %6s %6s %6s %6s %6s %6s %6s %7s %7s  %s%n",
 				"scenario", "rows", "adjHit", "adjMiss", "knBind", "paAdj", "paSwp", "paCur", "lfOpn", "frAdj",
-				"frEnu", "frScn", "pipOpn", "irOpn", "jaOpn", "fallback deltas");
+				"frEnu", "frScn", "irOpn", "jaOpn", "fallback deltas");
 		for (Scenario scenario : scenarios) {
 			// Warm once so per-plan one-time work (compilation, caches) does not skew the counted run.
 			executeAndCount(scenario.query());
@@ -212,14 +211,13 @@ class LmdbAdjacencyUsageCensusTest {
 			long frAdj = JoinDispatchTestAccess.leapfrogAdjacencyFrontiers();
 			long frEnum = JoinDispatchTestAccess.leapfrogEnumeratedFrontiers();
 			long frScan = JoinDispatchTestAccess.leapfrogScannedFrontiers();
-			long pipOpened = JaninoPipelineTestAccess.opened();
 			long irOpened = KernelExecutionTestAccess.opened() + KernelExecutionTestAccess.aggOpened();
 			long jaOpened = JoinDispatchTestAccess.janinoAggregateOpened();
 
 			long rows = executeAndCount(scenario.query());
 
 			LmdbAdjacencyMetrics.Snapshot after = direct.snapshotMetrics();
-			System.out.printf("%-26s %9d %7d %7d %6d %6d %6d %6d %6d %6d %6d %6d %7d %7d %7d  %s%n",
+			System.out.printf("%-26s %9d %7d %7d %6d %6d %6d %6d %6d %6d %6d %6d %7d %7d  %s%n",
 					scenario.name(), rows,
 					after.lookupHits - before.lookupHits,
 					after.exactMisses - before.exactMisses,
@@ -231,7 +229,6 @@ class LmdbAdjacencyUsageCensusTest {
 					JoinDispatchTestAccess.leapfrogAdjacencyFrontiers() - frAdj,
 					JoinDispatchTestAccess.leapfrogEnumeratedFrontiers() - frEnum,
 					JoinDispatchTestAccess.leapfrogScannedFrontiers() - frScan,
-					JaninoPipelineTestAccess.opened() - pipOpened,
 					KernelExecutionTestAccess.opened() + KernelExecutionTestAccess.aggOpened() - irOpened,
 					JoinDispatchTestAccess.janinoAggregateOpened() - jaOpened,
 					fallbackDeltas(before, after));

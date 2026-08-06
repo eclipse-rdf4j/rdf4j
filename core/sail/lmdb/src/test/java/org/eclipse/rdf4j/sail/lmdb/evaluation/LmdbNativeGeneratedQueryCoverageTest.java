@@ -304,7 +304,6 @@ class LmdbNativeGeneratedQueryCoverageTest {
 
 	@BeforeEach
 	void resetKernelState() {
-		LmdbNativeJaninoPipeline.resetMetrics();
 		LmdbNativeKernelExecution.resetMetrics();
 		LmdbNativeJaninoCodegen.resetForTests();
 	}
@@ -712,25 +711,21 @@ class LmdbNativeGeneratedQueryCoverageTest {
 	}
 
 	private static long plannedKernels() {
-		return LmdbNativeJaninoPipeline.PLANNED.get()
-				+ LmdbNativeKernelExecution.PLANNED.get()
+		return LmdbNativeKernelExecution.PLANNED.get()
 				+ LmdbNativeKernelExecution.AGG_PLANNED.get();
 	}
 
 	private static long openedKernels() {
-		return LmdbNativeJaninoPipeline.OPENED.get()
-				+ LmdbNativeKernelExecution.OPENED.get()
+		return LmdbNativeKernelExecution.OPENED.get()
 				+ LmdbNativeKernelExecution.AGG_OPENED.get();
 	}
 
 	private static long declinedKernels() {
-		return LmdbNativeJaninoPipeline.DECLINED.get()
-				+ LmdbNativeKernelExecution.DECLINED.get()
+		return LmdbNativeKernelExecution.DECLINED.get()
 				+ LmdbNativeKernelExecution.AGG_DECLINED.get();
 	}
 
 	private static void resetMetricsOnly() {
-		LmdbNativeJaninoPipeline.resetMetrics();
 		LmdbNativeKernelExecution.resetMetrics();
 	}
 

@@ -78,7 +78,6 @@ final class LmdbNativeStrategyPreference {
 			LmdbNativeAttemptMetrics.PATH_CHUNK_PIPELINE,
 			// Constant-factor reducers: same rows, cheaper per row.
 			LmdbNativeAttemptMetrics.PATH_JANINO_AGGREGATE,
-			LmdbNativeAttemptMetrics.PATH_JANINO_KERNEL,
 			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
 			LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
 			// Last resorts.

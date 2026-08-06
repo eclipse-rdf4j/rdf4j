@@ -979,22 +979,37 @@ final class LmdbNativeKernelIr {
 	static final class Emit extends Terminal {
 		final int[] cols;
 		final boolean distinct;
+		/**
+		 * Leading emit columns whose values arrive grouped by the pipeline's nested-loop order over sorted producers
+		 * (plan 32 M3): equal aligned prefixes are adjacent, so the generated dedup compares against the previous row
+		 * instead of hashing, and the residual columns' hash set resets on every prefix advance. Only meaningful with
+		 * {@code distinct}; 0 means hash-only dedup.
+		 */
+		final int alignedCount;
 
 		Emit(int[] cols, boolean distinct, OutputMods mods) {
+			this(cols, distinct, 0, mods);
+		}
+
+		Emit(int[] cols, boolean distinct, int alignedCount, OutputMods mods) {
 			super(mods);
 			if (cols.length == 0 && distinct) {
 				throw new IllegalArgumentException("zero-column emit cannot own DISTINCT state");
 			}
+			if (alignedCount < 0 || alignedCount > cols.length || (alignedCount > 0 && !distinct)) {
+				throw new IllegalArgumentException("aligned prefix must lie within a DISTINCT emit's columns");
+			}
 			this.cols = cols;
 			this.distinct = distinct;
+			this.alignedCount = alignedCount;
 		}
 
 		Emit distinct() {
-			return new Emit(cols, true, mods);
+			return new Emit(cols, true, alignedCount, mods);
 		}
 
 		Emit withMods(OutputMods mods) {
-			return new Emit(cols, distinct, mods);
+			return new Emit(cols, distinct, alignedCount, mods);
 		}
 
 		@Override
@@ -1008,7 +1023,11 @@ final class LmdbNativeKernelIr {
 			for (int i = 0; i < cols.length; i++) {
 				key.append(i == 0 ? "" : ",").append(cols[i]);
 			}
-			key.append(distinct ? ",distinct" : "").append(");");
+			key.append(distinct ? ",distinct" : "");
+			if (alignedCount > 0) {
+				key.append(",al").append(alignedCount);
+			}
+			key.append(");");
 			mods.key(key);
 		}
 

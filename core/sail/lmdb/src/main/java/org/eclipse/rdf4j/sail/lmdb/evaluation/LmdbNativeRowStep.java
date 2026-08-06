@@ -881,7 +881,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		// sessions where applicable.
 		boolean adaptiveDefersKernel = LmdbNativeAdaptiveFilterPlacement.shouldDeferKernel(this, row);
 		if (!adaptiveDefersKernel) {
-			NativeUnorderedInput kernel = openKernelInput(row, multiJoin);
+			NativeUnorderedInput kernel = openKernelInput(row);
 			if (kernel != null) {
 				return kernel;
 			}
@@ -926,7 +926,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			return NativeUnorderedInput.rows(row, adaptive);
 		}
 		if (adaptiveDefersKernel) {
-			NativeUnorderedInput kernel = openKernelInput(row, multiJoin);
+			NativeUnorderedInput kernel = openKernelInput(row);
 			if (kernel != null) {
 				return kernel;
 			}
@@ -947,17 +947,22 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		return entryPath == null ? selectedStrategy : entryPath + " | " + selectedStrategy;
 	}
 
-	private NativeUnorderedInput openKernelInput(RowState row, MultiJoinPlan multiJoin) throws IOException {
-		if (multiJoin != null) {
-			RowCursor kernel = LmdbNativeJaninoPipeline.tryOpen(multiJoin, row);
-			if (kernel != null) {
-				LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_JANINO_KERNEL);
-				return NativeUnorderedInput.rows(row, kernel);
-			}
-		} else if (row.runtimePlan != null) {
-			row.runtimePlan.janinoDeclined("UNSUPPORTED_PLAN[type=" + arg.getClass().getSimpleName() + "]");
+	/**
+	 * DISTINCT-sinking kernel attempt (plan 32 M3/M4): a compiled cursor that emits only the distinct key slots and
+	 * owns the whole dedup (order-aware in-kernel tiers; the parallel rung's consumer removes cross-window duplicates),
+	 * or null to let the ordinary distinct tiers serve. A non-null cursor makes the consumer's own dedup redundant, so
+	 * the caller marks the DISTINCT as handled.
+	 */
+	RowCursor openDistinctKernelCursor(RowState row) throws IOException {
+		RowCursor kernel = LmdbNativeKernelExecution.tryOpenDistinctRows(arg, row, originalExpr, sourceSlots);
+		if (kernel != null) {
+			LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL);
 		}
-		// The IR rung handles more root shapes than MultiJoinPlan (LeftJoin chains since plan 22).
+		return kernel;
+	}
+
+	private NativeUnorderedInput openKernelInput(RowState row) throws IOException {
+		// The IR rung handles MultiJoinPlan chains and more root shapes (LeftJoin chains since plan 22).
 		RowCursor irKernel = LmdbNativeKernelExecution.tryOpenRows(arg, row, originalExpr);
 		if (irKernel != null) {
 			LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL);
@@ -1836,6 +1841,13 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 		}
 		LmdbNativeAttemptMetrics.recordDecline(step.originalExpr, LmdbNativeAttemptMetrics.PATH_PREFIX_RUN,
 				"not-applicable");
+		if (step.distinct) {
+			cursor = step.openDistinctKernelCursor(row);
+			if (cursor != null) {
+				distinctHandledByCursor = true;
+				return true;
+			}
+		}
 		if (distinctPlan.strategy != NativeDistinctStrategy.GLOBAL_HASH) {
 			cursor = distinctPlan.arg.open(row);
 			LmdbNativeExplain.recordExecutionPath(step.originalExpr, LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT);

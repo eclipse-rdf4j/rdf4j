@@ -191,7 +191,16 @@ final class LmdbNativeKernelEmitter {
 				}
 			}
 			if (isDistinct()) {
-				source.append("    private KernelRuntime.RowSet dedup;\n");
+				Emit emit = (Emit) kernel.terminal;
+				if (emit.alignedCount < emit.cols.length) {
+					source.append("    private KernelRuntime.RowSet dedup;\n");
+				}
+				for (int i = 0; i < emit.alignedCount; i++) {
+					source.append("    private long dal").append(i).append(";\n");
+				}
+				if (emit.alignedCount > 0) {
+					source.append("    private boolean dseen;\n");
+				}
 			}
 			if (kernel.terminal instanceof Aggregate) {
 				Aggregate aggregate = (Aggregate) kernel.terminal;
@@ -282,7 +291,14 @@ final class LmdbNativeKernelEmitter {
 				source.append("        p").append(i).append(" = context.plans[").append(i).append("];\n");
 			}
 			if (isDistinct()) {
-				source.append("        dedup = new KernelRuntime.RowSet(").append(stride).append(");\n");
+				Emit emit = (Emit) kernel.terminal;
+				int residual = emit.cols.length - emit.alignedCount;
+				if (residual > 0) {
+					source.append("        dedup = new KernelRuntime.RowSet(").append(residual).append(");\n");
+				}
+				if (emit.alignedCount > 0) {
+					source.append("        dseen = false;\n");
+				}
 			}
 			if (kernel.terminal instanceof Aggregate) {
 				Aggregate aggregate = (Aggregate) kernel.terminal;
@@ -519,9 +535,7 @@ final class LmdbNativeKernelEmitter {
 								.append(emit.cols[i])
 								.append(";\n");
 					}
-					source.append("        if (dedup.addIfAbsent(rowScratch, 0) < 0) {\n")
-							.append("            return;\n")
-							.append("        }\n");
+					emitDistinctGuard(source, emit);
 				}
 				source.append("        int base = sinkRows * ").append(stride).append(";\n");
 				for (int i = 0; i < emit.cols.length; i++) {
@@ -541,9 +555,7 @@ final class LmdbNativeKernelEmitter {
 					source.append("        rowScratch[").append(i).append("] = v").append(emit.cols[i]).append(";\n");
 				}
 				if (emit.distinct) {
-					source.append("        if (dedup.addIfAbsent(rowScratch, 0) < 0) {\n")
-							.append("            return;\n")
-							.append("        }\n");
+					emitDistinctGuard(source, emit);
 				}
 				OutputMods mods = emit.mods;
 				if (mods.limit >= 0 && mods.orderKeys == null) {
@@ -985,6 +997,51 @@ final class LmdbNativeKernelEmitter {
 
 		private boolean isDistinct() {
 			return kernel.terminal instanceof Emit && ((Emit) kernel.terminal).distinct;
+		}
+
+		/**
+		 * DISTINCT guard over the packed {@code rowScratch}, tiered by data order (plan 32 M3). The first
+		 * {@code alignedCount} columns arrive grouped (equal prefixes adjacent — nested loops over sorted producers),
+		 * so a compare against the previous row's prefix replaces hashing; the residual columns fall back to a hash set
+		 * that is SCOPED to the current prefix group and cleared on every prefix advance, bounding it by group width
+		 * instead of result size. With no aligned prefix this degenerates to the historical whole-row hash.
+		 */
+		private void emitDistinctGuard(StringBuilder source, Emit emit) {
+			int aligned = emit.alignedCount;
+			int residual = emit.cols.length - aligned;
+			if (aligned > 0) {
+				source.append("        boolean dadv = !dseen;\n")
+						.append("        if (!dadv) {\n")
+						.append("            dadv = ");
+				for (int i = 0; i < aligned; i++) {
+					source.append(i == 0 ? "" : " || ")
+							.append("rowScratch[")
+							.append(i)
+							.append("] != dal")
+							.append(i);
+				}
+				source.append(";\n").append("        }\n");
+				source.append("        if (dadv) {\n").append("            dseen = true;\n");
+				for (int i = 0; i < aligned; i++) {
+					source.append("            dal").append(i).append(" = rowScratch[").append(i).append("];\n");
+				}
+				if (residual > 0) {
+					source.append("            dedup.clear();\n");
+				}
+				source.append("        }");
+				if (residual == 0) {
+					source.append(" else {\n").append("            return;\n").append("        }\n");
+				} else {
+					source.append('\n');
+				}
+			}
+			if (residual > 0) {
+				source.append("        if (dedup.addIfAbsent(rowScratch, ")
+						.append(aligned)
+						.append(") < 0) {\n")
+						.append("            return;\n")
+						.append("        }\n");
+			}
 		}
 
 		// ------------------------------------------------------------------

@@ -455,6 +455,37 @@ class LmdbNativeKernelIrEmitterTest {
 	// ------------------------------------------------------------------
 
 	@Test
+	void distinctAlignedPrefixDedupsByTransitionsWithoutHashing() throws Exception {
+		// Sorted runs may repeat a neighbor (multi-context edges): duplicates are adjacent, so a fully aligned
+		// DISTINCT key dedups by comparing against the previous row — the generated source needs no hash set at all.
+		NativeLmdbQuerySource.NativeAdjacency followsWithDuplicates = new FixtureAdjacency(
+				new long[][] { { 1, 2, 2, 3 }, { 2, 3, 3, 3 }, { 4, 5 } });
+		Kernel ir = new Kernel(2, List.of(new EnumerateAdjKeys(0, 0, 1)),
+				new Emit(new int[] { 0, 1 }, true, 2, OutputMods.none()));
+		String source = LmdbNativeKernelEmitter.emit(ir);
+		assertFalse(source.contains("dedup"), "a fully aligned DISTINCT must not allocate a hash set:\n" + source);
+		List<long[]> rows = run(ir, context().adjacencies(followsWithDuplicates));
+		assertRows(rows, new long[][] { { 1, 2 }, { 1, 3 }, { 2, 3 }, { 4, 5 } });
+	}
+
+	@Test
+	void distinctResidualHashScopeResetsOnAlignedPrefixAdvance() throws Exception {
+		// key -> mid -> value with the mid column projected away: within one key, the same value reached through two
+		// mids must collapse (scoped set), while the same value under ANOTHER key must survive the set's reset.
+		NativeLmdbQuerySource.NativeAdjacency keys = new FixtureAdjacency(new long[][] { { 1 }, { 2 } });
+		NativeLmdbQuerySource.NativeAdjacency mids = new FixtureAdjacency(
+				new long[][] { { 1, 10, 11 }, { 2, 10 } });
+		NativeLmdbQuerySource.NativeAdjacency values = new FixtureAdjacency(
+				new long[][] { { 10, 100 }, { 11, 100 } });
+		Kernel ir = new Kernel(3,
+				List.of(new EnumerateAdjKeys(0, 0, -1), new Probe(1, Operand.col(0), 1),
+						new Probe(2, Operand.col(1), 2)),
+				new Emit(new int[] { 0, 2 }, true, 1, OutputMods.none()));
+		List<long[]> rows = run(ir, context().adjacencies(keys, mids, values));
+		assertRows(rows, new long[][] { { 1, 100 }, { 2, 100 } });
+	}
+
+	@Test
 	void dedupOrderByOffsetAndLimitStack() throws Exception {
 		Emit distinctOrdered = emit(0).distinct()
 				.withMods(new OutputMods(new int[] { 0 }, null, false, 2L, 1L));

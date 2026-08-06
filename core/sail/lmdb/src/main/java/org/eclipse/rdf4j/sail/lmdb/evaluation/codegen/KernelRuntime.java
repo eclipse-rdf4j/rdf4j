@@ -316,6 +316,12 @@ public final class KernelRuntime {
 			return count;
 		}
 
+		/** Forgets every interned row while keeping the allocated capacity (scoped dedup groups reset here). */
+		public void clear() {
+			count = 0;
+			java.util.Arrays.fill(table, -1);
+		}
+
 		public long value(int ordinal, int column) {
 			return rows[ordinal * stride + column];
 		}

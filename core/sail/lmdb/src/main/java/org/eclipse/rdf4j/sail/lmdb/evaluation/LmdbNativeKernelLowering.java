@@ -166,6 +166,207 @@ final class LmdbNativeKernelLowering {
 	}
 
 	/**
+	 * Row lowering with the consumer's DISTINCT sunk into the kernel (plan 32 M3/M4): the kernel emits only the
+	 * distinct key columns, dedups inside the generated code exploiting the pipeline's data order
+	 * ({@link LmdbNativeKernelIr.Emit#alignedCount}), and join branches whose fresh variables are all projected away
+	 * are rewritten into {@code Exists} semijoins (sound only under DISTINCT, where multiplicity is unobservable).
+	 * Returns null when sinking cannot be proven sound; the caller falls back to the ordinary ladder — never to an
+	 * unsunk form of this lowering, whose semijoin rewrite would drop multiplicities a non-DISTINCT consumer needs.
+	 */
+	static Lowered lowerDistinctRows(SlotPlan arg, RowState row, TupleExpr declineTarget, boolean preferScans,
+			int[] distinctSlots) {
+		List<MaskedFilter> outerFilters = new ArrayList<>(0);
+		SlotPlan core = arg;
+		while (core instanceof FilterPlan) {
+			FilterPlan filterPlan = (FilterPlan) core;
+			outerFilters.add(new MaskedFilter(filterPlan.filter, filterPlan.filterMask));
+			core = filterPlan.arg;
+		}
+		if (core instanceof LeftJoinPlan) {
+			// v1 boundary: OPTIONAL introduces maybe-null key columns whose grouping story is not yet proven.
+			declineQuiet("distinct-sink:optional");
+			return null;
+		}
+		long retained = 0L;
+		for (int slot : distinctSlots) {
+			if (slot >= 0 && slot < 64) {
+				retained |= 1L << slot;
+			}
+		}
+		if (retained == 0L) {
+			declineQuiet("distinct-sink:no-keys");
+			return null;
+		}
+		Builder builder = new Builder(row, "");
+		builder.preferScans = preferScans;
+		builder.distinctRetainedMask = retained;
+		List<MaskedFilter> coreFilters = new ArrayList<>(0);
+		if (!builder.lowerJoinOperand(core, coreFilters, row)) {
+			declineQuiet(builder.reason);
+			return null;
+		}
+		if (builder.joinOperands == 0) {
+			declineQuiet("no-children");
+			return null;
+		}
+		for (MaskedFilter masked : coreFilters) {
+			builder.lowerFilter(masked);
+		}
+		for (MaskedFilter masked : outerFilters) {
+			builder.lowerFilter(masked);
+		}
+		Lowered lowered = builder.build();
+		if (lowered == null) {
+			declineQuiet("no-columns");
+			return null;
+		}
+		return sinkDistinct(lowered, builder, distinctSlots);
+	}
+
+	/**
+	 * A sinking refusal is not a kernel capability decline: the ordinary rungs (including the plain kernel via
+	 * {@code openUnorderedInput}) still get their full opportunity afterwards, so recording it against
+	 * {@code PATH_IR_KERNEL} would double-count in the decline census. Debug visibility only.
+	 */
+	private static void declineQuiet(String reason) {
+		if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
+			System.err.println("[ir-lowering] distinct-sink decline: " + reason);
+		}
+	}
+
+	/**
+	 * Rewrites a plain row lowering into its DISTINCT-sunk form: emit columns restricted to the distinct keys
+	 * (aligned-prefix first), {@code Emit.distinct} with the order-aware dedup tiers, and multiplicity
+	 * {@code ProbeClose} nodes demoted to semi — a DISTINCT consumer cannot observe the repeat count, and semi keeps
+	 * emission grouped for the aligned tiers. Declines (null) whenever the emitted columns could not carry the exact
+	 * DISTINCT the consumer expects.
+	 */
+	private static Lowered sinkDistinct(Lowered lowered, Builder builder, int[] distinctSlots) {
+		LmdbNativeKernelBindings bindings = lowered.bindings;
+		if (!bindings.residualFilters.isEmpty()) {
+			// Residual filters read arbitrary engine slots on the consumer row; restricting emission would starve them.
+			declineQuiet("distinct-sink:residual-filter");
+			return null;
+		}
+		if (bindings.planRequests.length > 0) {
+			declineQuiet("distinct-sink:plan-producer");
+			return null;
+		}
+		List<LmdbNativeKernelIr.Node> pipeline = new ArrayList<>(lowered.kernel.pipeline);
+		for (LmdbNativeKernelIr.Node node : pipeline) {
+			if (node instanceof LmdbNativeKernelIr.LeftProbe || node instanceof LmdbNativeKernelIr.LeftGroup
+					|| node instanceof LmdbNativeKernelIr.Union || node instanceof LmdbNativeKernelIr.PathExpand) {
+				declineQuiet("distinct-sink:node:" + node.getClass().getSimpleName());
+				return null;
+			}
+		}
+		for (int i = 0; i < pipeline.size(); i++) {
+			if (pipeline.get(i) instanceof LmdbNativeKernelIr.ProbeClose) {
+				LmdbNativeKernelIr.ProbeClose close = (LmdbNativeKernelIr.ProbeClose) pipeline.get(i);
+				if (close.multiplicity) {
+					pipeline.set(i, new LmdbNativeKernelIr.ProbeClose(close.adjacency, close.key, close.target, false,
+							close.seek));
+				}
+			}
+		}
+		// Distinct engine slots -> kernel columns. A slot bound at entry is constant per execution and drops out of
+		// the dedup key; a slot that is neither produced nor bound cannot be deduped here.
+		int[] emittedSlots = bindings.columnEngineSlots;
+		java.util.LinkedHashSet<Integer> keyCols = new java.util.LinkedHashSet<>();
+		for (int slot : distinctSlots) {
+			int col = -1;
+			for (int i = 0; i < emittedSlots.length; i++) {
+				if (emittedSlots[i] == slot) {
+					col = i;
+					break;
+				}
+			}
+			if (col >= 0) {
+				keyCols.add(col);
+			} else if (slot < 0 || slot >= 64 || (builder.entryMask >>> slot & 1L) == 0L) {
+				declineQuiet("distinct-sink:unproduced-key[slot=" + slot + "]");
+				return null;
+			}
+		}
+		if (keyCols.isEmpty()) {
+			declineQuiet("distinct-sink:no-key-columns");
+			return null;
+		}
+		// The aligned prefix: walking the loop producers outermost-in, a chain of sorted-producer columns that are
+		// all distinct keys emits its value combinations GROUPED (equal prefixes adjacent). Two ways a producer ends
+		// the chain: an unsorted producer or a non-key loop column breaks grouping outright, and a sorted producer
+		// that may REPEAT a value (neighbor runs and materialized runs carry one entry per context) is safe only as
+		// the LAST aligned column — a repeated value re-runs every deeper loop, so equal longer prefixes stop being
+		// adjacent. Only provably unique-and-sorted columns (a view's key domain) may continue the chain below
+		// themselves. Non-looping nodes (guards, Exists, semi ProbeClose, single-row seeds, alias copies) do not
+		// affect grouping.
+		List<Integer> aligned = new ArrayList<>();
+		boolean chain = true;
+		for (LmdbNativeKernelIr.Node node : pipeline) {
+			int[] loopCols;
+			boolean[] uniqueCols;
+			boolean sorted;
+			if (node instanceof LmdbNativeKernelIr.EnumerateAdjKeys) {
+				LmdbNativeKernelIr.EnumerateAdjKeys keys = (LmdbNativeKernelIr.EnumerateAdjKeys) node;
+				if (keys.valueCol >= 0) {
+					loopCols = new int[] { keys.keyCol, keys.valueCol };
+					uniqueCols = new boolean[] { true, false };
+				} else {
+					loopCols = new int[] { keys.keyCol };
+					uniqueCols = new boolean[] { true };
+				}
+				sorted = true;
+			} else if (node instanceof LmdbNativeKernelIr.Probe) {
+				loopCols = new int[] { ((LmdbNativeKernelIr.Probe) node).valueCol };
+				uniqueCols = new boolean[] { false };
+				sorted = true;
+			} else if (node instanceof LmdbNativeKernelIr.EnumerateDomain) {
+				LmdbNativeKernelIr.EnumerateDomain domain = (LmdbNativeKernelIr.EnumerateDomain) node;
+				loopCols = new int[] { domain.col };
+				uniqueCols = new boolean[] { false };
+				sorted = domain.col < builder.columnOrderedDomains.size()
+						&& builder.columnOrderedDomains.get(domain.col) >= 0;
+			} else if (node instanceof LmdbNativeKernelIr.ScanQuad || node instanceof LmdbNativeKernelIr.PlanRows
+					|| node instanceof LmdbNativeKernelIr.Intersect
+					|| node instanceof LmdbNativeKernelIr.EnumerateTerms) {
+				chain = false;
+				continue;
+			} else {
+				continue;
+			}
+			for (int i = 0; i < loopCols.length; i++) {
+				if (chain && sorted && keyCols.contains(loopCols[i])) {
+					aligned.add(loopCols[i]);
+					chain = uniqueCols[i];
+				} else {
+					chain = false;
+				}
+			}
+		}
+		int[] emitCols = new int[keyCols.size()];
+		int out = 0;
+		for (int col : aligned) {
+			emitCols[out++] = col;
+		}
+		for (int col : keyCols) {
+			if (!aligned.contains(col)) {
+				emitCols[out++] = col;
+			}
+		}
+		LmdbNativeKernelIr.Kernel kernel = new LmdbNativeKernelIr.Kernel(lowered.kernel.columnCount, pipeline,
+				new LmdbNativeKernelIr.Emit(emitCols, true, aligned.size(), LmdbNativeKernelIr.OutputMods.none()));
+		int[] sunkSlots = new int[emitCols.length];
+		for (int i = 0; i < emitCols.length; i++) {
+			sunkSlots[i] = emittedSlots[emitCols[i]];
+		}
+		LmdbNativeKernelBindings sunk = new LmdbNativeKernelBindings(bindings.adjacencies, bindings.constants,
+				bindings.entrySlotIds, bindings.keyDomains, bindings.filterHooks, sunkSlots,
+				bindings.residualFilters, bindings.scanOrders, bindings.planRequests, bindings.groupLayout,
+				bindings.hooksRequired, bindings.distinctExpected);
+		return new Lowered(kernel, sunk, lowered.planBridgeReason);
+	}
+
+	/**
 	 * Lowers a whole native aggregation (plan 21): producer bag, EXISTS/NOT-EXISTS witness filters as short-circuit
 	 * sub-pipelines, and an Aggregate terminal from the specs. Unlike the row side there is no residual surface — the
 	 * aggregate consumer applies no per-row wrapper — so every filter must lower (id, hook, or witness) or the whole
@@ -708,8 +909,28 @@ final class LmdbNativeKernelLowering {
 			if (plan instanceof MultiJoinPlan) {
 				MultiJoinPlan multiJoin = (MultiJoinPlan) plan;
 				filters.addAll(java.util.Arrays.asList(multiJoin.filters));
-				for (SlotPlan child : multiJoin.derivedPlan(row).order) {
+				SlotPlan[] order = multiJoin.derivedPlan(row).order;
+				// Under DISTINCT sinking (plan 32 M4), branches whose fresh variables are all projected away
+				// contribute existence only — they lower to Exists semijoins AFTER the spine has produced their
+				// anchor variables, instead of multiplying rows the DISTINCT would collapse anyway.
+				List<List<PatternPlan>> existential = distinctRetainedMask == 0L
+						? java.util.Collections.emptyList()
+						: existentialComponents(order, filters);
+				java.util.Set<SlotPlan> deferred = java.util.Collections
+						.newSetFromMap(new java.util.IdentityHashMap<>());
+				for (List<PatternPlan> component : existential) {
+					deferred.addAll(component);
+				}
+				for (SlotPlan child : order) {
+					if (deferred.contains(child)) {
+						continue;
+					}
 					if (!lowerJoinOperand(child, filters, row, false)) {
+						return false;
+					}
+				}
+				for (List<PatternPlan> component : existential) {
+					if (!lowerExistentialComponent(component)) {
 						return false;
 					}
 				}
@@ -1540,9 +1761,172 @@ final class LmdbNativeKernelLowering {
 		final List<Node> witnessNodes = new ArrayList<>();
 		int scratchColumns;
 
+		/**
+		 * Engine slots the DISTINCT consumer retains (plan 32): non-zero activates the existential rewrite of join
+		 * branches whose fresh variables all fall outside this mask. Only {@code lowerDistinctRows} sets it — the
+		 * rewrite is sound solely under a DISTINCT consumer, where branch multiplicity is unobservable.
+		 */
+		long distinctRetainedMask;
+
 		/** A kernel column not backed by an engine slot: witness-local probe targets. */
 		private int scratchColumn() {
 			return columnEngineSlots.size() + scratchColumns++;
+		}
+
+		/**
+		 * Partitions the derived join order into the retained "spine" and existential components: maximal groups of
+		 * patterns connected through variables that are neither DISTINCT keys nor entry-bound. A component qualifies
+		 * only when nothing outside it observes those scratch variables (no filter, no non-pattern child) and every
+		 * retained variable its patterns touch is produced by the spine — otherwise it simply stays in the spine.
+		 */
+		private List<List<PatternPlan>> existentialComponents(SlotPlan[] order, List<MaskedFilter> filters) {
+			long anchored = distinctRetainedMask | entryMask;
+			long filterMask = 0L;
+			for (MaskedFilter filter : filters) {
+				if (filter.mask < 0L) {
+					return java.util.Collections.emptyList(); // unknown read set: no rewrite
+				}
+				filterMask |= filter.mask;
+			}
+			int n = order.length;
+			long[] varMask = new long[n];
+			long[] scratch = new long[n];
+			boolean[] pattern = new boolean[n];
+			for (int i = 0; i < n; i++) {
+				if (order[i] instanceof PatternPlan) {
+					PatternPlan child = (PatternPlan) order[i];
+					pattern[i] = !child.c.hasSlot();
+					if (child.s.hasSlot()) {
+						varMask[i] |= 1L << child.s.slot;
+					}
+					if (child.o.hasSlot()) {
+						varMask[i] |= 1L << child.o.slot;
+					}
+				} else {
+					varMask[i] = order[i].producedMask();
+				}
+				scratch[i] = varMask[i] & ~anchored;
+			}
+			// Union scratch-sharing children into components (index-labelled union-find; n is at most MAX_CHILDREN).
+			int[] root = new int[n];
+			for (int i = 0; i < n; i++) {
+				root[i] = i;
+			}
+			for (int i = 0; i < n; i++) {
+				for (int j = i + 1; j < n; j++) {
+					if ((scratch[i] & scratch[j]) != 0L) {
+						root[find(root, i)] = find(root, j);
+					}
+				}
+			}
+			java.util.Map<Integer, List<Integer>> components = new java.util.LinkedHashMap<>();
+			for (int i = 0; i < n; i++) {
+				if (scratch[i] != 0L) {
+					components.computeIfAbsent(find(root, i), key -> new ArrayList<>()).add(i);
+				}
+			}
+			List<List<Integer>> eligible = new ArrayList<>();
+			for (List<Integer> member : components.values()) {
+				long componentScratch = 0L;
+				boolean allPatterns = true;
+				for (int index : member) {
+					componentScratch |= scratch[index];
+					allPatterns &= pattern[index];
+				}
+				if (allPatterns && (componentScratch & filterMask) == 0L) {
+					eligible.add(member);
+				}
+			}
+			// Retained coverage: dissolve components until every retained variable a component touches is produced by
+			// the remaining spine. Dissolving only grows the spine, so the loop converges.
+			boolean changed = true;
+			while (changed && !eligible.isEmpty()) {
+				changed = false;
+				boolean[] deferredIndex = new boolean[n];
+				for (List<Integer> member : eligible) {
+					for (int index : member) {
+						deferredIndex[index] = true;
+					}
+				}
+				long spineVars = entryMask;
+				boolean spineEmpty = true;
+				for (int i = 0; i < n; i++) {
+					if (!deferredIndex[i]) {
+						spineVars |= varMask[i];
+						spineEmpty = false;
+					}
+				}
+				for (java.util.Iterator<List<Integer>> iterator = eligible.iterator(); iterator.hasNext();) {
+					List<Integer> member = iterator.next();
+					long touchedRetained = 0L;
+					for (int index : member) {
+						touchedRetained |= varMask[index] & distinctRetainedMask;
+					}
+					if (spineEmpty || (touchedRetained & ~spineVars) != 0L) {
+						iterator.remove();
+						changed = true;
+						break;
+					}
+				}
+			}
+			List<List<PatternPlan>> result = new ArrayList<>(eligible.size());
+			for (List<Integer> member : eligible) {
+				List<PatternPlan> patterns = new ArrayList<>(member.size());
+				for (int index : member) {
+					patterns.add((PatternPlan) order[index]);
+				}
+				result.add(patterns);
+			}
+			return result;
+		}
+
+		private static int find(int[] root, int index) {
+			int at = index;
+			while (root[at] != at) {
+				at = root[at];
+			}
+			root[index] = at;
+			return at;
+		}
+
+		/**
+		 * Lowers one existential component as an {@code Exists} semijoin through the witness machinery, connecting
+		 * patterns greedily through already-available endpoints. When the witness tier refuses a pattern (for example a
+		 * maybe-null correlation), the component falls back to ordinary producer lowering — correct, merely
+		 * unrewritten.
+		 */
+		private boolean lowerExistentialComponent(List<PatternPlan> component) {
+			List<Node> sub = new ArrayList<>();
+			java.util.Map<Integer, Integer> witnessCols = new java.util.HashMap<>();
+			List<PatternPlan> remaining = new ArrayList<>(component);
+			boolean witnessed = true;
+			while (!remaining.isEmpty() && witnessed) {
+				boolean progressed = false;
+				for (int i = 0; i < remaining.size() && !progressed; i++) {
+					if (witnessPatternCorrelated(remaining.get(i), witnessCols)) {
+						witnessed = lowerWitnessPatternPlan(remaining.remove(i), witnessCols, sub);
+						progressed = true;
+					}
+				}
+				if (!progressed) {
+					witnessed = lowerWitnessPatternPlan(remaining.remove(0), witnessCols, sub);
+				}
+			}
+			if (witnessed) {
+				currentDepthNodes().add(new LmdbNativeKernelIr.Exists(false, sub));
+				return true;
+			}
+			reason = null;
+			for (PatternPlan patternPlan : component) {
+				if (++joinOperands > MAX_CHILDREN) {
+					reason = reasonPrefix + "too-many-children";
+					return false;
+				}
+				if (!lowerPattern(patternPlan)) {
+					return false;
+				}
+			}
+			return true;
 		}
 
 		/** Aggregate-side filter lowering: id tier, hook tier, or witness — never residual. */
@@ -2261,7 +2645,9 @@ final class LmdbNativeKernelLowering {
 			for (int i = 0; i < emitColumns.length; i++) {
 				emitColumns[i] = i;
 			}
-			Kernel kernel = new Kernel(columnEngineSlots.size(), pipeline,
+			// Witness sub-pipelines (Exists rewrites under DISTINCT sinking) hold their scratch in columns past the
+			// engine-slot-backed ones; the kernel must declare those fields too.
+			Kernel kernel = new Kernel(columnEngineSlots.size() + scratchColumns, pipeline,
 					new LmdbNativeKernelIr.Emit(emitColumns, false, LmdbNativeKernelIr.OutputMods.none()));
 
 			long[] constantArray = new long[constants.size()];
