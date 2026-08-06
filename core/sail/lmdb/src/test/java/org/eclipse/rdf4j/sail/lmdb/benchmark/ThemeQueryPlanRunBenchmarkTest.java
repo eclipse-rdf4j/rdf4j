@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.openjdk.jmh.annotations.Param;
 
 class ThemeQueryPlanRunBenchmarkTest {
 
@@ -40,6 +41,16 @@ class ThemeQueryPlanRunBenchmarkTest {
 
 	@TempDir
 	Path tempDir;
+
+	@Test
+	void leoRolloutProfileIsAnExplicitJmhParameter() throws Exception {
+		Field field = ThemeQueryPlanRunBenchmark.BaseState.class.getField("leoRolloutProfile");
+
+		Param parameter = field.getAnnotation(Param.class);
+
+		assertNotNull(parameter, "The benchmark must accept -p leoRolloutProfile=off|observe-only");
+		assertEquals("safe-cardinality-correction", parameter.value()[0]);
+	}
 
 	@Test
 	void createStoreConfigBudgetsOptimizerSamplingToHalfQueryTimeout() throws Exception {

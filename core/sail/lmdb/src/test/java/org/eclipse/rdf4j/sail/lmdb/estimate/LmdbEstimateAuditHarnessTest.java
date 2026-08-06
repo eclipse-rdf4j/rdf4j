@@ -337,9 +337,10 @@ class LmdbEstimateAuditHarnessTest {
 					.sorted(Comparator.comparingDouble(LmdbEstimateAuditHarness.AuditRow::qError).reversed())
 					.limit(20)
 					.toList();
-			long falseZeros = frontierRows.stream()
+			List<LmdbEstimateAuditHarness.AuditRow> falseZeroRows = frontierRows.stream()
 					.filter(row -> row.plannedRows() == 0.0d && row.actualRows() > 0L)
-					.count();
+					.toList();
+			long falseZeros = falseZeroRows.size();
 
 			double[] insertionMillis = new double[16];
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -419,7 +420,8 @@ class LmdbEstimateAuditHarnessTest {
 					buildMillis, durableBytes, insertionP95Millis, queryMemoryPeakBytes,
 					preparationP95Millis, preparationMaximumMillis);
 			assertTrue(frontierRows.size() > 0, "the bounded calibration must exercise Frontier-authoritative pieces");
-			assertEquals(0L, falseZeros, "Frontier must not publish a sampled zero as authoritative");
+			assertEquals(0L, falseZeros,
+					() -> "Frontier must not publish a sampled zero as authoritative: " + falseZeroRows);
 			assertTrue(Double.isFinite(p95QError) && p95QError < 5.0d,
 					() -> "Frontier generated-corpus p95 q-error exceeds the promotion gate: p95="
 							+ p95QError + ", worst=" + worstFrontierRows);
@@ -747,13 +749,15 @@ class LmdbEstimateAuditHarnessTest {
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				LmdbEstimateAuditQueryCorpus.AuditQuery query = generatedQuery("audit-q16");
-				LmdbEstimateAuditHarness.AuditRow filter = LmdbEstimateAuditHarness
-						.auditQuery(connection, query.id(), query.sparql())
+				List<LmdbEstimateAuditHarness.AuditRow> rows = LmdbEstimateAuditHarness
+						.auditQuery(connection, query.id(), query.sparql());
+				LmdbEstimateAuditHarness.AuditRow filter = rows
 						.stream()
 						.filter(row -> row.kind() == LmdbEstimateAuditHarness.PieceKind.FILTER
 								&& Double.isFinite(row.finalFrontierRows()))
 						.findFirst()
-						.orElseThrow();
+						.orElseThrow(() -> new AssertionError(
+								"A Frontier-restricted filter must publish final-stage telemetry: " + rows));
 				assertEquals(filter.finalFrontierRows(), filter.plannedRows(), 0.0d,
 						() -> "A Frontier-restricted filter must publish the retained final mass: " + filter);
 			}
@@ -800,9 +804,15 @@ class LmdbEstimateAuditHarnessTest {
 				assertTrue(rows.stream()
 						.filter(row -> row.kind() == LmdbEstimateAuditHarness.PieceKind.PROJECTION
 								|| row.kind() == LmdbEstimateAuditHarness.PieceKind.EXTENSION)
-						.allMatch(row -> "lmdb-frontier".equals(row.plannedSource())
+						.allMatch(row -> ("lmdb-frontier".equals(row.plannedSource())
+								|| "lmdb-frontier+leo".equals(row.plannedSource()))
 								&& row.plannedRows() == 1.0d
-								&& row.rawFrontierRows() == 1.0d),
+								&& row.rawFrontierRows() == 1.0d
+								&& row.finalFrontierRows() == 1.0d
+								&& row.runtimeContractPresent()
+								&& row.logicalKeyDigest() != null
+								&& ("lmdb-frontier".equals(row.plannedSource())
+										|| "exact-fact".equals(row.correctionSource()))),
 						() -> "Transparent wrappers must publish their own identity events over the GROUP state: "
 								+ rows);
 			}
@@ -1014,6 +1024,35 @@ class LmdbEstimateAuditHarnessTest {
 						.toList();
 				double worstQError = worstRows.isEmpty() ? 1.0d : worstRows.getFirst().qError();
 				assertTrue(worstQError <= 10.0d, () -> "Worst full corpus estimate q-error too high: " + worstRows);
+			}
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void scalarMixedDomainCartesianJoinRetainsComponentCardinality(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, scalarAuditConfig());
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				loadMixedAuditData(connection);
+				assertTrue(store.forceFlushSketchEstimator(), "Expected full rebuild before the focused audit");
+				assertTrue(store.awaitSketchesReady(10, TimeUnit.SECONDS));
+
+				LmdbEstimateAuditQueryCorpus.AuditQuery query = generatedQuery("audit-q14");
+				LmdbEstimateAuditHarness.AuditRow join = LmdbEstimateAuditHarness
+						.auditQuery(connection, query.id(), query.sparql())
+						.stream()
+						.filter(row -> row.kind() == LmdbEstimateAuditHarness.PieceKind.JOIN)
+						.filter(row -> row.actualRows() == 432L)
+						.findFirst()
+						.orElseThrow();
+
+				assertTrue(join.qError() <= 10.0d,
+						() -> "A disconnected join must multiply the retained component estimates: " + join);
 			}
 		} finally {
 			repository.shutDown();

@@ -51,6 +51,7 @@ public class GenericPlanNode {
 	private final static String newLine = System.getProperty("line.separator");
 	private static final Pattern OFFSET_PATTERN = Pattern.compile("offset=([0-9]+)");
 	private static final Pattern LIMIT_PATTERN = Pattern.compile("limit=([0-9]+)");
+	private static final String FRONTIER_LEARNING_KEY = "optimizer.frontierLearningKey";
 	private static final Set<String> JOIN_ONLY_METRICS = Set.of(
 			TelemetryMetricNames.LEFT_ROWS_PROBED_ACTUAL,
 			TelemetryMetricNames.RIGHT_ROWS_SCANNED_ACTUAL,
@@ -1070,7 +1071,7 @@ public class GenericPlanNode {
 			String metricName = entry.getKey();
 			String metricValue = entry.getValue();
 			if (metricValue == null || metricValue.isEmpty() || metrics.containsKey(metricName)
-					|| !displayPlannedMetric(metricName)) {
+					|| FRONTIER_LEARNING_KEY.equals(metricName) || !displayPlannedMetric(metricName)) {
 				continue;
 			}
 			metrics.put(metricName, metricValue);

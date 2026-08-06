@@ -41,6 +41,8 @@ final class PackedCostingTrace {
 	private final int[] bindingLayoutIds;
 	private final int[] correlationMaskIds;
 	private final int[] semanticScopeMaskIds;
+	private final int[] hashLookupMaskIds;
+	private final int[] hashCompatibilityMaskIds;
 	private final double[] leftInputRows;
 	private final double[] rightInputRows;
 	private final double[] providerInputRows;
@@ -109,6 +111,7 @@ final class PackedCostingTrace {
 			int[] assuredBindingRelationIds, int[] inputStateIds, int[] leftStateIds, int[] rightStateIds,
 			int[] inputSourceStateIds, int[] leftSourceStateIds, int[] rightSourceStateIds,
 			int[] outputStateIds, int[] bindingLayoutIds, int[] correlationMaskIds, int[] semanticScopeMaskIds,
+			int[] hashLookupMaskIds, int[] hashCompatibilityMaskIds,
 			double[] leftInputRows, double[] rightInputRows, double[] providerInputRows,
 			double[] providerInputWorkRows, double[] providerInputSequentialRows,
 			double[] providerInputRandomSeeks, double[] providerInputIteratorOpens,
@@ -152,6 +155,8 @@ final class PackedCostingTrace {
 		this.bindingLayoutIds = bindingLayoutIds;
 		this.correlationMaskIds = correlationMaskIds;
 		this.semanticScopeMaskIds = semanticScopeMaskIds;
+		this.hashLookupMaskIds = hashLookupMaskIds;
+		this.hashCompatibilityMaskIds = hashCompatibilityMaskIds;
 		this.leftInputRows = leftInputRows;
 		this.rightInputRows = rightInputRows;
 		this.providerInputRows = providerInputRows;
@@ -229,7 +234,7 @@ final class PackedCostingTrace {
 				eventBytes, eventInts, eventLongs,
 				eventInts, eventInts, new int[0], eventDoubles,
 				eventInts, eventInts, eventInts, eventInts, eventInts, eventInts, eventInts, eventInts, eventInts,
-				eventInts, eventInts,
+				eventInts, eventInts, eventInts, eventInts,
 				eventDoubles, eventDoubles,
 				eventDoubles, eventDoubles, eventDoubles, eventDoubles, eventDoubles, eventDoubles, eventDoubles,
 				eventDoubles, eventDoubles, eventDoubles, eventDoubles, eventDoubles, eventDoubles, eventDoubles,
@@ -355,7 +360,8 @@ final class PackedCostingTrace {
 				select(rightSourceStateIds, eventMapping, length),
 				select(outputStateIds, eventMapping, length), select(bindingLayoutIds, eventMapping, length),
 				select(correlationMaskIds, eventMapping, length),
-				select(semanticScopeMaskIds, eventMapping, length), select(leftInputRows, eventMapping, length),
+				select(semanticScopeMaskIds, eventMapping, length), select(hashLookupMaskIds, eventMapping, length),
+				select(hashCompatibilityMaskIds, eventMapping, length), select(leftInputRows, eventMapping, length),
 				select(rightInputRows, eventMapping, length), select(providerInputRows, eventMapping, length),
 				select(providerInputWorkRows, eventMapping, length),
 				select(providerInputSequentialRows, eventMapping, length),
@@ -618,6 +624,16 @@ final class PackedCostingTrace {
 	int semanticScopeMaskId(int eventId) {
 		checkEventId(eventId);
 		return semanticScopeMaskIds[eventId];
+	}
+
+	int hashLookupMaskId(int eventId) {
+		checkEventId(eventId);
+		return hashLookupMaskIds[eventId];
+	}
+
+	int hashCompatibilityMaskId(int eventId) {
+		checkEventId(eventId);
+		return hashCompatibilityMaskIds[eventId];
 	}
 
 	double leftInputRows(int eventId) {
@@ -1009,7 +1025,8 @@ final class PackedCostingTrace {
 		return new PackedCostingTrace(phases, relationIds, contextFingerprints, prefixStarts, prefixCounts,
 				prefixRelationIds, prefixRows, assuredBindingRelationIds, inputStates, leftStates, rightStates,
 				inputSourceStates, leftSourceStates, rightSourceStates,
-				outputStates, bindingLayoutIds, correlationMaskIds, semanticScopeMaskIds, leftInputRows, rightInputRows,
+				outputStates, bindingLayoutIds, correlationMaskIds, semanticScopeMaskIds, hashLookupMaskIds,
+				hashCompatibilityMaskIds, leftInputRows, rightInputRows,
 				providerInputRows, providerInputWorkRows, providerInputSequentialRows, providerInputRandomSeeks,
 				providerInputIteratorOpens, providerInputExpressionEvaluations, providerInputHashBuildRows,
 				providerInputHashProbeRows, providerInputPathExpansions, providerInputResultRows,
@@ -1057,7 +1074,8 @@ final class PackedCostingTrace {
 						+ assuredBindingRelationIds.length + inputStateIds.length + leftStateIds.length
 						+ rightStateIds.length + inputSourceStateIds.length + leftSourceStateIds.length
 						+ rightSourceStateIds.length + outputStateIds.length + bindingLayoutIds.length
-						+ correlationMaskIds.length + semanticScopeMaskIds.length
+						+ correlationMaskIds.length + semanticScopeMaskIds.length + hashLookupMaskIds.length
+						+ hashCompatibilityMaskIds.length
 						+ providerInputCostEventIds.length + providerInputStateIds.length
 						+ providerInputSourceStateIds.length
 						+ providerInputLookupMasks.length + providerInputMissingLookupMasks.length

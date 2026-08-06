@@ -1047,29 +1047,29 @@ public final class FrontierLinearTransforms {
 			long[] outputMultiplicities = new long[draws];
 			double drawWeight = entries.totalWeight() / draws;
 			ExactTupleBuffer buffer = new ExactTupleBuffer(draws, outputKey.frontier().size());
-			try {
-				for (int draw = 0; draw < draws; draw++) {
-					int drawIndex = draw;
-					int entry = selectedEntries[draw];
-					expansion.expand(
-							payload,
-							entries.exact(entry),
-							entries.stratum(entry),
-							entries.index(entry),
-							(targetStratum, termIds) -> {
-								validateExpandedTuple(outputKey.maskStrata(), targetStratum, termIds);
-								if (buffer.size == draws) {
-									throw OuterExpansionBudgetExceeded.INSTANCE;
-								}
-								buffer.appendTuple(targetStratum, drawWeight, termIds);
-								outputMultiplicities[drawIndex] = Math.incrementExact(
-										outputMultiplicities[drawIndex]);
-							});
-				}
-			} catch (OuterExpansionBudgetExceeded ignoredBudget) {
-				return unresolvedOuterExpansion(
-						arena, input, outputKey, operationRecipeId,
-						"frontier outer expansion output budget exhausted");
+			long expansionSeed = FrontierSeedSchedule.derive(
+					arena.deterministicSeed(input),
+					FrontierRandomDomain.RESAMPLE,
+					Integer.toUnsignedLong(operationRecipeId),
+					FrontierStateOperation.RESOLVE_OUTER_EXPANSION.ordinal());
+			for (int draw = 0; draw < draws; draw++) {
+				int entry = selectedEntries[draw];
+				int remainingSources = draws - draw - 1;
+				int capacity = Math.max(1, draws - buffer.size - remainingSources);
+				appendStratifiedExpandedMapping(
+						payload,
+						outputKey.maskStrata(),
+						expansion,
+						buffer,
+						capacity,
+						entries.exact(entry),
+						entries.stratum(entry),
+						entries.index(entry),
+						drawWeight,
+						expansionSeed,
+						draw,
+						outputMultiplicities,
+						draw);
 			}
 
 			int[] residualCounts = new int[targetStrata];
@@ -1162,6 +1162,15 @@ public final class FrontierLinearTransforms {
 	private static boolean appendStratifiedExpandedMapping(FrontierPayloadLease payload,
 			FrontierMaskStrata outputMasks, FrontierExactTupleExpansion expansion, ExactTupleBuffer buffer,
 			int capacity, boolean exact, int stratum, int index, double weight, long seed, int sourceOrdinal) {
+		return appendStratifiedExpandedMapping(
+				payload, outputMasks, expansion, buffer, capacity, exact, stratum, index, weight, seed,
+				sourceOrdinal, null, -1);
+	}
+
+	private static boolean appendStratifiedExpandedMapping(FrontierPayloadLease payload,
+			FrontierMaskStrata outputMasks, FrontierExactTupleExpansion expansion, ExactTupleBuffer buffer,
+			int capacity, boolean exact, int stratum, int index, double weight, long seed, int sourceOrdinal,
+			long[] outputMultiplicities, int outputMultiplicityIndex) {
 		int start = buffer.size;
 		long[] emitted = { 0L };
 		expansion.expand(payload, exact, stratum, index, (targetStratum, termIds) -> {
@@ -1178,6 +1187,9 @@ public final class FrontierLinearTransforms {
 				buffer.replaceTuple(Math.addExact(start, Math.toIntExact(selected)), targetStratum, weight, termIds);
 			}
 		});
+		if (outputMultiplicities != null) {
+			outputMultiplicities[outputMultiplicityIndex] = emitted[0];
+		}
 		int retained = buffer.size - start;
 		if (retained == 0 || emitted[0] == retained) {
 			return false;
@@ -2176,16 +2188,6 @@ public final class FrontierLinearTransforms {
 			return exact
 					? payload.exactTermId(stratum, index, slot)
 					: payload.residualTermId(stratum, index, slot);
-		}
-	}
-
-	private static final class OuterExpansionBudgetExceeded extends RuntimeException {
-
-		private static final long serialVersionUID = 1L;
-		private static final OuterExpansionBudgetExceeded INSTANCE = new OuterExpansionBudgetExceeded();
-
-		private OuterExpansionBudgetExceeded() {
-			super(null, null, false, false);
 		}
 	}
 

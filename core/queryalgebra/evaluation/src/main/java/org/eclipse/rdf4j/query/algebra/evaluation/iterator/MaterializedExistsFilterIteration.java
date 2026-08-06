@@ -29,10 +29,12 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
-final class MaterializedExistsFilterIteration extends LookAheadIteration<BindingSet> implements IndexReportingIterator {
+final class MaterializedExistsFilterIteration extends LookAheadIteration<BindingSet>
+		implements IndexReportingIterator, FeedbackWorkReportingIterator {
 
 	static final int ADAPTIVE = 0;
 	static final int MEMOIZED = 1;
@@ -59,15 +61,22 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 	private final SourceScanObservation rhsSourceRowsBaseline;
 	private final EvaluationStatistics evaluationStatistics;
 	private final boolean recordFilterOutcomes;
+	private final boolean recordLegacyFilterOutcomes;
+	private final boolean runtimeTelemetryEnabled;
+	private final RuntimeFeedbackContract.Algorithm plannedAlgorithm;
+	private final int plannedPhysicalImplementationId;
 	private final java.util.concurrent.atomic.AtomicInteger sharedProbeBudget;
 	private final ConcurrentMap<BindingSetHashKey, Boolean> sharedProbeCache;
+	private final java.util.concurrent.atomic.AtomicInteger sharedProbeCacheEntries;
+	private final int sharedProbeCacheCapacity;
+	private final PrimitiveDistinctBindingTracker distinctBindings;
+	private final MaterializationCache materializationCache;
+	private final long distinctBindingsBaseline;
+	private final long matchedBindingsBaseline;
+	private final long unmatchedBindingsBaseline;
 	private final int strategyMode;
 	private final boolean negated;
 	private boolean initialized;
-	private final Map<BindingSetHashKey, MaterializedPartition> materializedPartitions = new HashMap<>();
-	private final Set<BindingSetHashKey> observedCorrelationKeys = new HashSet<>();
-	private final Set<BindingSetHashKey> observedMatchedKeys = new HashSet<>();
-	private final Set<BindingSetHashKey> observedUnmatchedKeys = new HashSet<>();
 	private long sourceRowsScannedActual;
 	private long sourceRowsMatchedActual;
 	private long sourceRowsFilteredActual;
@@ -79,7 +88,15 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 	private long hashBuildRows;
 	private long hashProbeRows;
 	private long cacheLookups;
-	private long peakMaterializedRows;
+	private long cacheHits;
+	private long cacheMisses;
+	private long cacheEvictions;
+	private long firstMatchWork;
+	private long exhaustionWork;
+	private long materializationBuilds;
+	private long distinctBindingExposure;
+	private long distinctMatchedBindings;
+	private long distinctUnmatchedBindings;
 	private long rhsSourceRowsScannedActual = -1L;
 	private String strategyChangeReason = "";
 	private boolean inputExhausted;
@@ -90,7 +107,12 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 			String[] correlationKeyBindingNames, String[] materializationParameterBindingNames,
 			TupleExpr rhsExpression, EvaluationStatistics evaluationStatistics, boolean recordFilterOutcomes,
 			java.util.concurrent.atomic.AtomicInteger sharedProbeBudget,
-			ConcurrentMap<BindingSetHashKey, Boolean> sharedProbeCache, int strategyMode, boolean negated) {
+			ConcurrentMap<BindingSetHashKey, Boolean> sharedProbeCache,
+			java.util.concurrent.atomic.AtomicInteger sharedProbeCacheEntries, int sharedProbeCacheCapacity,
+			PrimitiveDistinctBindingTracker distinctBindings, MaterializationCache materializationCache,
+			boolean recordLegacyFilterOutcomes,
+			boolean runtimeTelemetryEnabled, RuntimeFeedbackContract.Algorithm plannedAlgorithm,
+			int plannedPhysicalImplementationId, int strategyMode, boolean negated) {
 		this.filterNode = filterNode;
 		this.leftIter = leftIter;
 		this.existsMaterializationFunction = existsMaterializationFunction;
@@ -99,11 +121,24 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 		this.correlationKeyBindingNames = correlationKeyBindingNames;
 		this.materializationParameterBindingNames = materializationParameterBindingNames;
 		this.rhsExpression = rhsExpression;
-		this.rhsSourceRowsBaseline = sourceRowsScanned(rhsExpression);
 		this.evaluationStatistics = evaluationStatistics;
 		this.recordFilterOutcomes = recordFilterOutcomes;
+		this.recordLegacyFilterOutcomes = recordLegacyFilterOutcomes;
+		this.runtimeTelemetryEnabled = runtimeTelemetryEnabled;
+		this.plannedAlgorithm = plannedAlgorithm;
+		this.plannedPhysicalImplementationId = plannedPhysicalImplementationId;
+		this.rhsSourceRowsBaseline = runtimeTelemetryEnabled || recordLegacyFilterOutcomes
+				? sourceRowsScanned(rhsExpression)
+				: SourceScanObservation.UNREPORTED;
 		this.sharedProbeBudget = sharedProbeBudget;
 		this.sharedProbeCache = sharedProbeCache;
+		this.sharedProbeCacheEntries = sharedProbeCacheEntries;
+		this.sharedProbeCacheCapacity = sharedProbeCacheCapacity;
+		this.distinctBindings = distinctBindings;
+		this.materializationCache = materializationCache;
+		this.distinctBindingsBaseline = distinctBindings.distinctCount();
+		this.matchedBindingsBaseline = distinctBindings.matchedCount();
+		this.unmatchedBindingsBaseline = distinctBindings.unmatchedCount();
 		this.strategyMode = strategyMode;
 		this.negated = negated;
 		publishActualAlgorithm();
@@ -145,10 +180,13 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 		iteratorOpens++;
 		try (CloseableIteration<BindingSet> probeIter = existsProbeFunction.apply(left)) {
 			boolean exists = probeIter.hasNext();
+			long work = probeWork(probeIter, exists);
+			rhsRowsExamined = saturatedAdd(rhsRowsExamined, work);
 			if (exists) {
-				rhsRowsExamined++;
+				firstMatchWork = saturatedAdd(firstMatchWork, work);
 			} else {
 				exhaustedFailures++;
+				exhaustionWork = saturatedAdd(exhaustionWork, work);
 			}
 			return exists;
 		}
@@ -159,17 +197,19 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 		BindingSetHashKey key = BindingSetHashKey.create(correlationKeyBindingNames, left);
 		Boolean cached = sharedProbeCache.get(key);
 		if (cached != null) {
+			cacheHits++;
 			return cached;
 		}
+		cacheMisses++;
 		boolean exists = probe(left);
-		Boolean raced = sharedProbeCache.putIfAbsent(key, exists);
-		return raced != null ? raced : exists;
+		return cacheProbeResult(key, exists);
 	}
 
 	private boolean adaptiveDecision(BindingSet left) {
 		BindingSetHashKey materializationKey = materializationKey(left);
-		MaterializedPartition partition = materializedPartitions.get(materializationKey);
+		MaterializedPartition partition = materializationCache.get(materializationKey);
 		if (partition != null) {
+			initialized = true;
 			hashProbeRows++;
 			return matches(partition, left);
 		}
@@ -177,12 +217,13 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 		BindingSetHashKey key = BindingSetHashKey.create(correlationKeyBindingNames, left);
 		Boolean cached = sharedProbeCache.get(key);
 		if (cached != null) {
+			cacheHits++;
 			return cached;
 		}
+		cacheMisses++;
 		if (tryAcquireProbeBudget()) {
 			boolean exists = probe(left);
-			Boolean raced = sharedProbeCache.putIfAbsent(key, exists);
-			return raced != null ? raced : exists;
+			return cacheProbeResult(key, exists);
 		}
 		strategyChangeReason = "distinct-key break-even reached";
 		partition = materializedPartition(materializationKey, left);
@@ -201,59 +242,79 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 		return false;
 	}
 
+	private boolean cacheProbeResult(BindingSetHashKey key, boolean exists) {
+		int entries = sharedProbeCacheEntries.get();
+		while (entries < sharedProbeCacheCapacity) {
+			if (sharedProbeCacheEntries.compareAndSet(entries, entries + 1)) {
+				Boolean raced = sharedProbeCache.putIfAbsent(key, exists);
+				if (raced != null) {
+					sharedProbeCacheEntries.decrementAndGet();
+					return raced;
+				}
+				return exists;
+			}
+			entries = sharedProbeCacheEntries.get();
+		}
+		cacheEvictions++;
+		return exists;
+	}
+
 	private MaterializedPartition materializedPartition(BindingSet left) {
 		return materializedPartition(materializationKey(left), left);
 	}
 
 	private MaterializedPartition materializedPartition(BindingSetHashKey parameterKey, BindingSet left) {
-		MaterializedPartition existing = materializedPartitions.get(parameterKey);
-		if (existing != null) {
-			return existing;
-		}
-		initialized = true;
-		iteratorOpens++;
-		QueryBindingSet materializationBindings = new QueryBindingSet(materializationParameterBindingNames.length);
-		for (String bindingName : materializationParameterBindingNames) {
-			Value value = left.getValue(bindingName);
-			if (value != null) {
-				materializationBindings.setBinding(bindingName, value);
+		synchronized (materializationCache) {
+			MaterializedPartition existing = materializationCache.getUnsynchronized(parameterKey);
+			if (existing != null) {
+				initialized = true;
+				return existing;
 			}
-		}
-		MaterializedPartition built;
-		try (CloseableIteration<BindingSet> existsIter = existsMaterializationFunction.apply(materializationBindings)) {
-			if (sharedBindingNames.length == 0) {
-				boolean existsNonEmpty = existsIter.hasNext();
-				if (existsNonEmpty) {
-					rhsRowsExamined++;
-					hashBuildRows++;
+			initialized = true;
+			materializationBuilds++;
+			iteratorOpens++;
+			QueryBindingSet materializationBindings = new QueryBindingSet(materializationParameterBindingNames.length);
+			for (String bindingName : materializationParameterBindingNames) {
+				Value value = left.getValue(bindingName);
+				if (value != null) {
+					materializationBindings.setBinding(bindingName, value);
 				}
-				built = new MaterializedPartition(existsNonEmpty, Set.of(), List.of(), List.of());
-			} else {
-				HashSet<BindingSetHashKey> nextExactKeys = new HashSet<>();
-				ArrayList<BindingSet> nextAllRows = new ArrayList<>();
-				ArrayList<BindingSet> nextWildcardRows = new ArrayList<>();
-				while (existsIter.hasNext()) {
-					BindingSet row = existsIter.next();
-					rhsRowsExamined++;
-					hashBuildRows++;
-					nextAllRows.add(row);
-					if (hasAllSharedBindings(row)) {
-						nextExactKeys.add(BindingSetHashKey.create(sharedBindingNames, row));
-					} else {
-						nextWildcardRows.add(row);
+			}
+			MaterializedPartition built;
+			try (CloseableIteration<BindingSet> existsIter = existsMaterializationFunction
+					.apply(materializationBindings)) {
+				if (sharedBindingNames.length == 0) {
+					boolean existsNonEmpty = existsIter.hasNext();
+					if (existsNonEmpty) {
+						rhsRowsExamined++;
+						hashBuildRows++;
 					}
+					built = new MaterializedPartition(existsNonEmpty, Set.of(), List.of(), List.of());
+				} else {
+					HashSet<BindingSetHashKey> nextExactKeys = new HashSet<>();
+					ArrayList<BindingSet> nextAllRows = new ArrayList<>();
+					ArrayList<BindingSet> nextWildcardRows = new ArrayList<>();
+					while (existsIter.hasNext()) {
+						BindingSet row = existsIter.next();
+						rhsRowsExamined++;
+						hashBuildRows++;
+						nextAllRows.add(row);
+						if (hasAllSharedBindings(row)) {
+							nextExactKeys.add(BindingSetHashKey.create(sharedBindingNames, row));
+						} else {
+							nextWildcardRows.add(row);
+						}
+					}
+					built = new MaterializedPartition(
+							!nextAllRows.isEmpty(),
+							nextExactKeys.isEmpty() ? Set.of() : nextExactKeys,
+							nextAllRows.isEmpty() ? List.of() : nextAllRows,
+							nextWildcardRows.isEmpty() ? List.of() : nextWildcardRows);
 				}
-				built = new MaterializedPartition(
-						!nextAllRows.isEmpty(),
-						nextExactKeys.isEmpty() ? Set.of() : nextExactKeys,
-						nextAllRows.isEmpty() ? List.of() : nextAllRows,
-						nextWildcardRows.isEmpty() ? List.of() : nextWildcardRows);
 			}
+			materializationCache.putUnsynchronized(parameterKey, built);
+			return built;
 		}
-		materializedPartitions.put(parameterKey, built);
-		peakMaterializedRows = Math.max(peakMaterializedRows,
-				built.allRows().isEmpty() && built.existsNonEmpty() ? 1L : built.allRows().size());
-		return built;
 	}
 
 	private BindingSetHashKey materializationKey(BindingSet left) {
@@ -309,14 +370,11 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 		if (!recordFilterOutcomes) {
 			return;
 		}
-		BindingSetHashKey key = BindingSetHashKey.create(correlationKeyBindingNames, left);
-		observedCorrelationKeys.add(key);
+		distinctBindings.record(left, correlationKeyBindingNames, exists);
 		if (exists) {
 			matchedRows++;
-			observedMatchedKeys.add(key);
 		} else {
 			unmatchedRows++;
-			observedUnmatchedKeys.add(key);
 		}
 	}
 
@@ -325,54 +383,103 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 		try {
 			leftIter.close();
 		} finally {
-			rhsSourceRowsScannedActual = sourceRowsScannedDelta(
-					rhsSourceRowsBaseline, sourceRowsScanned(rhsExpression));
-			if (sourceRowsScannedActual > 0L) {
+			distinctBindingExposure = Math.max(0L, distinctBindings.distinctCount() - distinctBindingsBaseline);
+			distinctMatchedBindings = Math.max(0L, distinctBindings.matchedCount() - matchedBindingsBaseline);
+			distinctUnmatchedBindings = Math.max(0L,
+					distinctBindings.unmatchedCount() - unmatchedBindingsBaseline);
+			if (runtimeTelemetryEnabled || recordLegacyFilterOutcomes) {
+				rhsSourceRowsScannedActual = sourceRowsScannedDelta(
+						rhsSourceRowsBaseline, sourceRowsScanned(rhsExpression));
+			} else {
+				rhsSourceRowsScannedActual = rhsRowsExamined;
+			}
+			if (sourceRowsScannedActual > 0L && (runtimeTelemetryEnabled || recordLegacyFilterOutcomes)) {
 				try {
 					String selectedAlgorithm = selectedAlgorithm();
-					long distinctKeys = observedCorrelationKeys.size();
+					long distinctKeys = distinctBindingExposure;
 					publishActualAlgorithm();
 					String actualAlgorithm = actualAlgorithm();
-					if (recordFilterOutcomes) {
+					if (runtimeTelemetryEnabled) {
 						filterNode.setLongMetricActual("actualSemiAntiDistinctCorrelationKeys", distinctKeys);
+						filterNode.setLongMetricActual("actualSemiAntiIteratorOpens", iteratorOpens);
+						filterNode.setLongMetricActual("actualSemiAntiRowsExamined", rhsRowsExamined);
+						if (rhsSourceRowsScannedActual >= 0L) {
+							filterNode.setLongMetricActual("actualSemiAntiSourceRowsScanned",
+									rhsSourceRowsScannedActual);
+						}
+						filterNode.setLongMetricActual("actualSemiAntiHashBuildRows", hashBuildRows);
+						filterNode.setLongMetricActual("actualSemiAntiHashProbeRows", hashProbeRows);
+						publishActualPhysicalCost();
 					}
-					filterNode.setLongMetricActual("actualSemiAntiIteratorOpens", iteratorOpens);
-					filterNode.setLongMetricActual("actualSemiAntiRowsExamined", rhsRowsExamined);
-					if (rhsSourceRowsScannedActual >= 0L) {
-						filterNode.setLongMetricActual("actualSemiAntiSourceRowsScanned",
-								rhsSourceRowsScannedActual);
-					}
-					filterNode.setLongMetricActual("actualSemiAntiHashBuildRows", hashBuildRows);
-					filterNode.setLongMetricActual("actualSemiAntiHashProbeRows", hashProbeRows);
-					publishActualPhysicalCost();
-					if (recordFilterOutcomes && inputExhausted) {
-						evaluationStatistics.recordSemiAntiOutcome(filterNode,
-								new EvaluationStatistics.SemiAntiOutcomeObservation(
-										semanticKind(),
-										selectedAlgorithm,
-										actualAlgorithm,
-										sourceRowsScannedActual,
-										matchedRows,
-										unmatchedRows,
-										distinctKeys,
-										observedMatchedKeys.size(),
-										observedUnmatchedKeys.size(),
-										sourceRowsScannedActual - distinctKeys,
-										rhsRowsExamined,
-										exhaustedFailures,
-										iteratorOpens,
-										hashBuildRows,
-										hashProbeRows,
-										cacheLookups,
-										true,
-										"",
-										strategyChangeReason));
+					if (recordLegacyFilterOutcomes) {
+						EvaluationStatistics.SemiAntiOutcomeObservation observation = new EvaluationStatistics.SemiAntiOutcomeObservation(
+								semanticKind(),
+								selectedAlgorithm,
+								actualAlgorithm,
+								sourceRowsScannedActual,
+								matchedRows,
+								unmatchedRows,
+								distinctKeys,
+								distinctMatchedBindings,
+								distinctUnmatchedBindings,
+								sourceRowsScannedActual - distinctKeys,
+								rhsRowsExamined,
+								exhaustedFailures,
+								iteratorOpens,
+								hashBuildRows,
+								hashProbeRows,
+								cacheLookups,
+								inputExhausted,
+								inputExhausted ? "" : "partial-left-input",
+								strategyChangeReason,
+								rawPredictedRows(),
+								appliedPredictedRows(),
+								firstMatchWork,
+								exhaustionWork,
+								cacheHits,
+								cacheMisses,
+								cacheEvictions,
+								distinctKeys,
+								inputExhausted
+										? EvaluationStatistics.TerminationClassification.EXHAUSTED
+										: EvaluationStatistics.TerminationClassification.PARTIAL,
+								false);
+						if (inputExhausted) {
+							evaluationStatistics.recordSemiAntiOutcome(filterNode, observation);
+						}
 					}
 				} catch (RuntimeException e) {
 					// Estimation feedback must never break query evaluation.
 				}
 			}
 		}
+	}
+
+	private static long probeWork(CloseableIteration<BindingSet> probeIter, boolean exists) {
+		if (probeIter instanceof IndexReportingIterator metrics) {
+			long sourceRows = metrics.getSourceRowsScannedActual();
+			if (sourceRows >= 0L) {
+				return Math.max(exists ? 1L : 0L, sourceRows);
+			}
+			long matchedRows = metrics.getSourceRowsMatchedActual();
+			if (matchedRows >= 0L) {
+				return Math.max(exists ? 1L : 0L, matchedRows);
+			}
+		}
+		return exists ? 1L : 0L;
+	}
+
+	private double rawPredictedRows() {
+		double raw = filterNode.getDoubleMetricPlanned("optimizer.frontierLeo.output_rows.raw");
+		return Double.isFinite(raw) && raw >= 0.0d ? raw : appliedPredictedRows();
+	}
+
+	private double appliedPredictedRows() {
+		double applied = filterNode.getDoubleMetricPlanned("optimizer.costEventRows");
+		if (!Double.isFinite(applied) || applied < 0.0d) {
+			applied = filterNode.getCostFeedbackExpectedRows();
+		}
+		return Double.isFinite(applied) && applied >= 0.0d ? applied : Double.NaN;
 	}
 
 	private String semanticKind() {
@@ -390,10 +497,9 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 	}
 
 	private void publishActualPhysicalCost() {
-		long materializationOpens = materializedPartitions.size();
-		long randomSeeks = Math.max(0L, iteratorOpens - materializationOpens);
+		long randomSeeks = Math.max(0L, iteratorOpens - materializationBuilds);
 		long physicalHashProbes = saturatedAdd(hashProbeRows, cacheLookups);
-		long peakMemoryRows = Math.max(peakMaterializedRows, sharedProbeCache.size());
+		long peakMemoryRows = Math.max(materializationCache.residentRows(), sharedProbeCache.size());
 		filterNode.setLongMetricActual("actualCostSequentialRows",
 				rhsSourceRowsScannedActual >= 0L ? rhsSourceRowsScannedActual : rhsRowsExamined);
 		filterNode.setLongMetricActual("actualCostRandomSeeks", randomSeeks);
@@ -404,6 +510,10 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 		filterNode.setLongMetricActual("actualCostPathExpansions", 0L);
 		filterNode.setLongMetricActual("actualCostRemoteCalls", 0L);
 		filterNode.setLongMetricActual("actualCostPeakMemoryRows", peakMemoryRows);
+		filterNode.setLongMetricActual("actualSemiAntiCacheLookups", cacheLookups);
+		filterNode.setLongMetricActual("actualSemiAntiCacheHits", cacheHits);
+		filterNode.setLongMetricActual("actualSemiAntiCacheMisses", cacheMisses);
+		filterNode.setLongMetricActual("actualSemiAntiCacheEvictions", cacheEvictions);
 	}
 
 	private static long saturatedAdd(long left, long right) {
@@ -427,9 +537,122 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 	}
 
 	private void publishActualAlgorithm() {
-		filterNode.setRuntimeTelemetryEnabled(true);
-		filterNode.setStringMetricActual("actualSemiAntiAlgorithm", actualAlgorithm());
-		filterNode.setStringMetricActual("actualSemiAntiStrategyChangeReason", strategyChangeReason);
+		if (runtimeTelemetryEnabled) {
+			filterNode.setStringMetricActual("actualSemiAntiAlgorithm", actualAlgorithm());
+			filterNode.setStringMetricActual("actualSemiAntiStrategyChangeReason", strategyChangeReason);
+		}
+	}
+
+	@Override
+	public long feedbackSourceRows() {
+		return rhsSourceRowsScannedActual >= 0L ? rhsSourceRowsScannedActual : rhsRowsExamined;
+	}
+
+	@Override
+	public long feedbackRandomSeeks() {
+		return Math.max(0L, iteratorOpens - materializationBuilds);
+	}
+
+	@Override
+	public long feedbackExpressionEvaluations() {
+		return sourceRowsScannedActual;
+	}
+
+	@Override
+	public long feedbackHashBuildRows() {
+		return hashBuildRows;
+	}
+
+	@Override
+	public long feedbackHashProbeRows() {
+		return saturatedAdd(hashProbeRows, cacheLookups);
+	}
+
+	@Override
+	public long feedbackPeakMemoryRows() {
+		return Math.max(materializationCache.residentRows(), sharedProbeCacheEntries.get());
+	}
+
+	@Override
+	public long feedbackCacheHits() {
+		return cacheHits;
+	}
+
+	@Override
+	public long feedbackCacheMisses() {
+		return cacheMisses;
+	}
+
+	@Override
+	public long feedbackCacheEvictions() {
+		return cacheEvictions;
+	}
+
+	@Override
+	public long feedbackDistinctBindingExposure() {
+		return distinctBindingExposure;
+	}
+
+	@Override
+	public long feedbackMaterializationBuilds() {
+		return materializationBuilds;
+	}
+
+	@Override
+	public long feedbackMaterializationLookups() {
+		return hashProbeRows;
+	}
+
+	@Override
+	public long feedbackMaterializationBuildWork() {
+		return hashBuildRows;
+	}
+
+	@Override
+	public long feedbackMaterializationLookupWork() {
+		return hashProbeRows;
+	}
+
+	@Override
+	public long feedbackFilterPassed() {
+		return sourceRowsMatchedActual;
+	}
+
+	@Override
+	public long feedbackFilterRejected() {
+		return sourceRowsFilteredActual;
+	}
+
+	@Override
+	public long feedbackSemiAntiHits() {
+		return matchedRows;
+	}
+
+	@Override
+	public long feedbackSemiAntiMisses() {
+		return unmatchedRows;
+	}
+
+	@Override
+	public long feedbackFirstMatchWork() {
+		return firstMatchWork;
+	}
+
+	@Override
+	public long feedbackExhaustionWork() {
+		return exhaustionWork;
+	}
+
+	@Override
+	public int feedbackPhysicalImplementationId() {
+		RuntimeFeedbackContract.Algorithm actual = initialized || strategyMode == MATERIALIZED
+				? RuntimeFeedbackContract.Algorithm.MATERIALIZED_HASH
+				: strategyMode == STREAMING
+						? RuntimeFeedbackContract.Algorithm.STREAMING_CORRELATED
+						: RuntimeFeedbackContract.Algorithm.MEMOIZED_CORRELATED;
+		return plannedAlgorithm == RuntimeFeedbackContract.Algorithm.UNKNOWN || actual == plannedAlgorithm
+				? plannedPhysicalImplementationId
+				: -1;
 	}
 
 	private static SourceScanObservation sourceRowsScanned(TupleExpr expression) {
@@ -461,6 +684,112 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 		return baseline.reported() ? Math.max(0L, completed.rows() - baseline.rows()) : completed.rows();
 	}
 
+	/** Precompiled bounded primitive distinct tracker; recording a result allocates nothing. */
+	static final class PrimitiveDistinctBindingTracker {
+		private static final int MAX_CAPACITY = 16_384;
+		private static final byte OCCUPIED = 1;
+		private static final byte MATCHED = 2;
+		private static final byte UNMATCHED = 4;
+
+		private final long[] fingerprints;
+		private final byte[] states;
+		private final int mask;
+		private long distinctCount;
+		private long matchedCount;
+		private long unmatchedCount;
+
+		PrimitiveDistinctBindingTracker(int requestedCapacity) {
+			int target = Math.clamp(requestedCapacity, 64, MAX_CAPACITY);
+			int capacity = 1;
+			while (capacity < target) {
+				capacity <<= 1;
+			}
+			fingerprints = new long[capacity];
+			states = new byte[capacity];
+			mask = capacity - 1;
+		}
+
+		void record(BindingSet bindings, String[] bindingNames, boolean matched) {
+			long fingerprint = fingerprint(bindings, bindingNames);
+			int slot = (int) fingerprint & mask;
+			for (int probe = 0; probe < fingerprints.length; probe++) {
+				byte state = states[slot];
+				if (state == 0) {
+					fingerprints[slot] = fingerprint;
+					states[slot] = (byte) (OCCUPIED | (matched ? MATCHED : UNMATCHED));
+					distinctCount++;
+					if (matched) {
+						matchedCount++;
+					} else {
+						unmatchedCount++;
+					}
+					return;
+				}
+				if (fingerprints[slot] == fingerprint) {
+					byte outcome = matched ? MATCHED : UNMATCHED;
+					if ((state & outcome) == 0) {
+						states[slot] = (byte) (state | outcome);
+						if (matched) {
+							matchedCount++;
+						} else {
+							unmatchedCount++;
+						}
+					}
+					return;
+				}
+				slot = (slot + 1) & mask;
+			}
+		}
+
+		long distinctCount() {
+			return distinctCount;
+		}
+
+		long matchedCount() {
+			return matchedCount;
+		}
+
+		long unmatchedCount() {
+			return unmatchedCount;
+		}
+
+		private static long fingerprint(BindingSet bindings, String[] bindingNames) {
+			long hash = 0xcbf29ce484222325L;
+			for (String bindingName : bindingNames) {
+				Value value = bindings.getValue(bindingName);
+				hash ^= value == null ? 0x9e3779b97f4a7c15L : value.hashCode();
+				hash *= 0x100000001b3L;
+			}
+			hash ^= hash >>> 33;
+			hash *= 0xff51afd7ed558ccdL;
+			hash ^= hash >>> 33;
+			return hash == 0L ? 1L : hash;
+		}
+	}
+
+	/** One query-execution cache owned by the precompiled step, shared by all of its dependent reopens. */
+	static final class MaterializationCache {
+		private final Map<BindingSetHashKey, MaterializedPartition> partitions = new HashMap<>();
+		private long residentRows;
+
+		synchronized MaterializedPartition get(BindingSetHashKey key) {
+			return getUnsynchronized(key);
+		}
+
+		private MaterializedPartition getUnsynchronized(BindingSetHashKey key) {
+			return partitions.get(key);
+		}
+
+		private void putUnsynchronized(BindingSetHashKey key, MaterializedPartition partition) {
+			partitions.put(key, partition);
+			residentRows = saturatedAdd(residentRows, partition.memoryRows());
+		}
+
+		synchronized long residentRows() {
+			return residentRows;
+		}
+	}
+
 	@Override
 	public String getIndexName() {
 		return MaterializedExistsFilterIteration.class.getSimpleName();
@@ -483,6 +812,9 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 
 	private record MaterializedPartition(boolean existsNonEmpty, Set<BindingSetHashKey> exactKeys,
 			List<BindingSet> allRows, List<BindingSet> wildcardRows) {
+		private long memoryRows() {
+			return allRows.isEmpty() && existsNonEmpty ? 1L : allRows.size();
+		}
 	}
 
 	private record SourceScanObservation(boolean reported, long rows) {

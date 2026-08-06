@@ -34,7 +34,9 @@ import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.RuntimeFeedbackTarget;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
@@ -427,6 +429,60 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 				&& runtime.feedback().shouldTrackRuntimeFeedback(expression);
 	}
 
+	@Override
+	public RuntimeFeedbackTarget resolveRuntimeFeedbackTarget(QueryModelNode node,
+			RuntimeFeedbackContract contract) {
+		LmdbOperatorFeedbackStats feedback = runtime.feedback();
+		if (!(node instanceof TupleExpr) || feedback == null || contract == null
+				|| contract.dataEpoch() != runtime.snapshotVersion()
+				|| contract.catalogEpoch() != runtime.snapshotVersion()) {
+			if (Boolean.getBoolean("rdf4j.optimizer.lmdb.estimateTrace")) {
+				System.err.println("[lmdb-operator-feedback-trace] event=resolve-runtime-target-rejected"
+						+ " node=" + (node == null ? "<null>" : node.getClass().getSimpleName())
+						+ " feedback=" + (feedback != null)
+						+ " contract=" + (contract != null)
+						+ " contractData=" + (contract == null ? -1L : contract.dataEpoch())
+						+ " contractCatalog=" + (contract == null ? -1L : contract.catalogEpoch())
+						+ " runtime=" + runtime.snapshotVersion());
+			}
+			return RuntimeFeedbackTarget.NO_OP;
+		}
+		LmdbFilterSelectivityStats.ResolvedFilterCells filterCells = node instanceof Filter filter
+				&& filterStatistics != null && contract.admits(RuntimeFeedbackContract.ADMIT_FILTER)
+						? filterStatistics.resolveRuntimeFeedbackTarget(filter)
+						: null;
+		RuntimeFeedbackTarget target = feedback.resolveRuntimeFeedbackTarget(contract, filterStatistics, filterCells);
+		if (Boolean.getBoolean("rdf4j.optimizer.lmdb.estimateTrace")) {
+			System.err.println("[lmdb-operator-feedback-trace] event=resolve-runtime-target"
+					+ " node=" + node.getClass().getSimpleName() + " active=" + target.active()
+					+ (contract.descriptor()instanceof LmdbRuntimeFeedbackDescriptor descriptor
+							? " logical=" + descriptor.logicalKey().digest()
+									+ " applicability=" + descriptor.applicability().digest()
+									+ " physical=" + descriptor.physicalKey().digest()
+							: ""));
+		}
+		if (!target.active() && filterStatistics != null) {
+			filterStatistics.releaseRuntimeFeedbackTarget(filterCells);
+		}
+		return target;
+	}
+
+	@Override
+	public boolean requiresPreboundRuntimeFeedback() {
+		return true;
+	}
+
+	@Override
+	public void publishRuntimeFeedbackTargets(RuntimeFeedbackTarget[] targets, int targetCount,
+			boolean rootCompleted) {
+		LmdbOperatorFeedbackStats feedback = runtime.feedback();
+		if (feedback == null) {
+			super.publishRuntimeFeedbackTargets(targets, targetCount, rootCompleted);
+		} else {
+			feedback.publishRuntimeFeedbackTargets(targets, targetCount, rootCompleted);
+		}
+	}
+
 	boolean supportsOperatorFeedbackTracking(TupleExpr expression) {
 		return runtime.feedback() != null && runtime.feedback().shouldTrackRuntimeFeedback(expression);
 	}
@@ -442,7 +498,22 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 			// A QueryRoot wrapper is not evaluated as a tracked operator, so the node directly beneath it is the
 			// outermost close that can trigger the completed-tree pass.
 			QueryModelNode parent = expression.getParentNode();
-			runtime.feedback().observe(expression, parent == null || parent instanceof QueryRoot);
+			boolean completedRoot = parent == null || parent instanceof QueryRoot;
+			EvaluationStatistics.InvocationAggregateObservation observation = EvaluationStatistics
+					.invocationAggregateObservation(expression, completedRoot);
+			if (observation == null) {
+				runtime.feedback().observe(expression, completedRoot);
+			} else {
+				runtime.feedback().observe(expression, completedRoot, observation);
+			}
+		}
+	}
+
+	@Override
+	public void recordOperatorOutcome(QueryModelNode node, InvocationAggregateObservation observation) {
+		if (runtime.feedback() != null && node instanceof TupleExpr expression) {
+			QueryModelNode parent = expression.getParentNode();
+			runtime.feedback().observe(expression, parent == null || parent instanceof QueryRoot, observation);
 		}
 	}
 

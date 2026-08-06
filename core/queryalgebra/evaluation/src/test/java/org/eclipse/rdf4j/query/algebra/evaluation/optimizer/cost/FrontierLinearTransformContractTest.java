@@ -599,6 +599,62 @@ class FrontierLinearTransformContractTest {
 	}
 
 	@Test
+	void overBudgetOuterExpansionStratifiesFanoutAndRemainsComposable() {
+		FrontierLayout inputLayout = FrontierLayout.of("x");
+		FrontierMaskStrata inputMasks = FrontierMaskStrata.of(inputLayout, 1, new long[] { 1L });
+		FrontierLayout outputLayout = FrontierLayout.of("x", "y");
+		FrontierMaskStrata outputMasks = FrontierMaskStrata.of(outputLayout, 1, new long[] { 3L });
+		FrontierStateKey inputKey = key(0b0100L, inputMasks);
+		FrontierStateKey outputKey = key(0b1100L, outputMasks);
+
+		try (FrontierStateArena arena = new FrontierStateArena(256 * 1024L)) {
+			arena.declareCanonicalStates(inputKey, outputKey);
+			FrontierPayloadWriter inputWriter = arena.newPayloadWriter(
+					inputKey, new int[] { 3 }, new int[] { 0 });
+			inputWriter.putExact(0, 0, 1.0d, new long[] { 21L }, 0);
+			inputWriter.putExact(0, 1, 1.0d, new long[] { 22L }, 0);
+			inputWriter.putExact(0, 2, 1.0d, new long[] { 23L }, 0);
+			EvidenceStateRef input = arena.internPayload(
+					inputKey,
+					EvidenceStateSummary.exact(3.0d),
+					FrontierStateOperation.EXACT_LEAF,
+					null,
+					null,
+					44,
+					inputWriter);
+			int[] emissionAttempts = { 0 };
+
+			EvidenceStateRef output = FrontierLinearTransforms.expandOuterMappings(
+					arena,
+					input,
+					outputKey,
+					45,
+					(payload, exact, stratum, index, emitter) -> {
+						long x = exact
+								? payload.exactTermId(stratum, index, 0)
+								: payload.residualTermId(stratum, index, 0);
+						for (int value = 0; value < 3; value++) {
+							emissionAttempts[0]++;
+							emitter.emit(0, new long[] { x, 100L + value });
+						}
+					},
+					2);
+
+			assertEquals(EvidenceGuarantee.MEASURE_UNBIASED, output.summary().guarantee());
+			assertEquals(9.0d, output.summary().pointRows(), 1e-12);
+			assertEquals(6, emissionAttempts[0], "Every selected outer probe must finish counting its fanout");
+			assertEquals(FrontierStateDisposition.COMPOSABLE_PAYLOAD, arena.disposition(output));
+			try (FrontierPayloadLease payload = arena.openPayload(output)) {
+				assertEquals(0, payload.exactCount(0));
+				assertEquals(2, payload.residualCount(0));
+				assertEquals(4.5d, payload.residualWeight(0, 0), 1e-12);
+				assertEquals(4.5d, payload.residualWeight(0, 1), 1e-12);
+			}
+			assertEquals(0L, arena.temporaryReservedBytes());
+		}
+	}
+
+	@Test
 	void projectionRestrictionAndUnionPreserveFiniteBagSemantics() {
 		FrontierLayout inputLayout = FrontierLayout.of("x", "y");
 		FrontierMaskStrata inputMasks = FrontierMaskStrata.of(inputLayout, 2, new long[] { 1L, 3L });

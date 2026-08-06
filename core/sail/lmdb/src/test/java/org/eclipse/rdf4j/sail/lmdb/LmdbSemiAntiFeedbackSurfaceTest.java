@@ -149,8 +149,7 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 					.findFirst()
 					.orElseThrow();
 		}
-		byte[] versionSeventeen = Files.readAllBytes(sidecar);
-		assertEquals(17, ByteBuffer.wrap(versionSeventeen).getInt());
+		byte[] versionSeventeen = withoutLogicalPhysicalAndLifecycleTail(Files.readAllBytes(sidecar));
 		Files.write(sidecar, downgradeSingleSemiAntiSidecar(versionSeventeen, 13));
 
 		LmdbStore reader = initializedStore(dataDir);
@@ -188,8 +187,7 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 					.findFirst()
 					.orElseThrow();
 		}
-		byte[] versionSeventeen = Files.readAllBytes(sidecar);
-		assertEquals(17, ByteBuffer.wrap(versionSeventeen).getInt());
+		byte[] versionSeventeen = withoutLogicalPhysicalAndLifecycleTail(Files.readAllBytes(sidecar));
 		Files.write(sidecar, downgradeSingleSemiAntiSidecar(versionSeventeen, 14));
 
 		LmdbStore reader = initializedStore(dataDir);
@@ -231,6 +229,17 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 				stampless.length - frontierTailBytes - physicalCounterBytes);
 		ByteBuffer.wrap(legacy).putInt(targetVersion);
 		return legacy;
+	}
+
+	private static byte[] withoutLogicalPhysicalAndLifecycleTail(byte[] versionTwenty) {
+		assertEquals(20, ByteBuffer.wrap(versionTwenty).getInt());
+		/*
+		 * These fixtures contain no typed logical/physical or lifecycle records. V20 adds two empty typed-map counts
+		 * before the v17 exact-fact count, plus an empty lifecycle revision/count/history tail. Remove only those bytes
+		 * so the historical downgrade helper receives the genuine v17 payload it describes.
+		 */
+		return Arrays.copyOf(versionTwenty,
+				versionTwenty.length - Long.BYTES - 4 * Integer.BYTES);
 	}
 
 	@Test

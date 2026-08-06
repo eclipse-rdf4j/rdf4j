@@ -121,7 +121,7 @@ public class ThemeQueryBenchmark {
 //			"TRAIN",
 //			"ELECTRICAL_GRID",
 //			"PHARMA",
-			"SPARSE",
+//			"SPARSE",
 	})
 	public String themeName;
 
@@ -255,6 +255,39 @@ public class ThemeQueryBenchmark {
 			assertExpectedCountQueryResult(queryString, result, expectedCountBindingValue);
 			return result.countBindingValue;
 		}
+	}
+
+	TimedCountQuery executeTimedCountQuery(String queryString, long expectedCountBindingValue,
+			int maxExecutionTimeSeconds) {
+		long started = System.nanoTime();
+		try (var connection = repository.getConnection()) {
+			TupleQuery tupleQuery = connection.prepareTupleQuery(queryString);
+			tupleQuery.setMaxExecutionTime(maxExecutionTimeSeconds);
+			long prepared = System.nanoTime();
+			long rowCount = 0L;
+			Long countBindingValue = null;
+			long opened;
+			try (TupleQueryResult result = tupleQuery.evaluate()) {
+				opened = System.nanoTime();
+				while (result.hasNext()) {
+					BindingSet bindings = result.next();
+					rowCount++;
+					if (rowCount > 1) {
+						throw new IllegalStateException("Expected exactly one count row for " + queryDescription()
+								+ " but saw at least " + rowCount + " rows");
+					}
+					countBindingValue = countBindingValue(bindings);
+				}
+			}
+			long completed = System.nanoTime();
+			QueryResultSummary result = new QueryResultSummary(rowCount, countBindingValue);
+			assertExpectedCountQueryResult(queryString, result, expectedCountBindingValue);
+			return new TimedCountQuery(result.countBindingValue, prepared - started, opened - prepared,
+					completed - opened);
+		}
+	}
+
+	record TimedCountQuery(long countBindingValue, long preparationNanos, long openNanos, long consumptionNanos) {
 	}
 
 	private QueryResultSummary evaluateQuery(TupleQuery tupleQuery, boolean captureCountBinding) {

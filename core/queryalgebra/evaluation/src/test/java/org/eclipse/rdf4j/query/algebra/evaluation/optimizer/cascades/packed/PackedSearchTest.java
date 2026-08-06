@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Method;
@@ -56,6 +57,8 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
+import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackDescriptor;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -200,6 +203,26 @@ class PackedSearchTest {
 
 		assertTrue(result.workLimitReached());
 		assertTrue(allJoinsConnected(result.selectedPlan()), result.selectedPlan()::toString);
+	}
+
+	@Test
+	void budgetedCorrelatedSearchSeedsCompleteFilteredIncumbentBeforeSubsetExploration() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		List<TupleExpr> factors = new ArrayList<>();
+		for (int ordinal = 0; ordinal < 9; ordinal++) {
+			String object = ordinal == 8 ? "filtered" : "node" + (ordinal + 1);
+			factors.add(pattern(values, "node" + ordinal, "urn:step" + ordinal, object, 1.0d));
+		}
+		Filter source = new Filter(leftDeepJoin(factors),
+				new Compare(Var.of("filtered"), new ValueConstant(values.createLiteral(0)), Compare.CompareOp.GT));
+
+		OptimizationGoal goal = OptimizationGoal.root().asBudgeted(Duration.ofSeconds(30), 9);
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, goal);
+
+		assertTrue(result.workLimitReached());
+		assertEquals(1.0d,
+				result.selectedPlan().getDoubleMetricPlanned("optimizer.cascadesCorrelatedLatticeBuilds"),
+				"A bounded predicate lattice must retain one complete filtered plan before exploring alternatives");
 	}
 
 	@Test
@@ -649,18 +672,64 @@ class PackedSearchTest {
 				selected.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE));
 		assertEquals("retained-without-fusion", selected.getStringMetricPlanned("plannedProviderDetail"));
 		assertEquals(0.8d, selected.getDoubleMetricPlanned("plannedProviderConfidence"));
-		assertEquals(21.0d, memo.winnerTotalCost(rootWinnerId));
+		assertEquals(102.0d, memo.winnerTotalCost(rootWinnerId),
+				"A scalar provider without components must pay startup once and reopen non-startup child work");
 		assertEquals(1.0d, selected.getCostEstimate());
 
 		PackedPlanningResult contextualized = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), costs);
-		assertEquals(21.0d, contextualized.totalCost());
+		assertEquals(102.0d, contextualized.totalCost());
 		assertEquals(1.0d, contextualized.selectedPlan().getCostEstimate());
 		assertEquals("physical-join",
 				contextualized.selectedPlan().getStringMetricPlanned("optimizer.costEventPhase"));
 	}
 
 	@Test
-	void costedLargeConnectedJoinMaterializesHashAlgorithmHint() {
+	void learnedPhysicalPlanMaterializationRetainsInvocationFeedbackContract() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		RuntimeFeedbackContract.PredictionVector prediction = new RuntimeFeedbackContract.PredictionVector(
+				12.0d, 30.0d, 12.0d, 30.0d, 0.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+		RuntimeFeedbackContract contract = new RuntimeFeedbackContract(
+				new PackedSearchFeedbackDescriptor(), prediction, prediction,
+				30.0d, 30.0d, 30.0d, Double.POSITIVE_INFINITY,
+				RuntimeFeedbackContract.SemanticKind.ORDINARY,
+				RuntimeFeedbackContract.Algorithm.HASH_JOIN,
+				RuntimeFeedbackContract.Access.NONE, 17, 0L, 0L, 0L,
+				RuntimeFeedbackContract.ADMIT_LOGICAL | RuntimeFeedbackContract.ADMIT_PHYSICAL);
+		TupleExpr source = new Join(
+				pattern(values, "subject", "urn:left", "leftObject", Double.NaN),
+				pattern(values, "subject", "urn:right", "rightObject", Double.NaN));
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return 12.0d;
+			}
+
+			@Override
+			public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (query.operatorTag(relationId) != PackedRelOp.JOIN) {
+					return;
+				}
+				output.setRows(12.0d, 30.0d);
+				output.putPlannedStringMetric("optimizer.logicalLearningKey", "llk1|test-logical");
+				output.putPlannedStringMetric("optimizer.learningApplicability", "lap1|test-applicability");
+				output.putPlannedStringMetric("optimizer.physicalResidualKey", "prk1|test-physical");
+				output.setRuntimeFeedbackContract(contract);
+			}
+		};
+
+		TupleExpr selected = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), costs).selectedPlan();
+
+		assertEquals("llk1|test-logical", selected.getStringMetricPlanned("optimizer.logicalLearningKey"));
+		assertSame(contract, selected.getRuntimeFeedbackContract());
+		assertTrue(selected.isCostFeedbackTrackingEnabled(),
+				"A keyed packed winner must retain the O(1)-per-open invocation observation contract");
+		assertEquals(contract.appliedPrediction().rows(), selected.getCostFeedbackExpectedRows());
+		assertEquals(contract.appliedPrediction().workRows(), selected.getCostFeedbackExpectedWorkRows());
+	}
+
+	@Test
+	void missingBucketEvidenceKeepsLargeConnectedJoinOnIterator() {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		Join source = new Join(
 				pattern(values, "shared", "urn:left", "leftValue", Double.NaN),
@@ -670,15 +739,18 @@ class PackedSearchTest {
 				.optimize(source, OptimizationGoal.root(), repeatedJoinCosts(1_000.0d, 10_000.0d))
 				.selectedPlan();
 
-		assertEquals("hash", selected.getStringMetricPlanned("optimizer.joinAlgorithmHint"), selected::toString);
+		assertFalse(selected.getStringMetricsPlanned().containsKey("optimizer.joinAlgorithmHint"),
+				selected::toString);
 	}
 
 	@Test
 	void hashJoinRetainsIndependentRightWinnerDuringContextualization() {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern right = pattern(values, "shared", "urn:right", "rightValue", Double.NaN);
+		right.setVariableScopeChange(true);
 		Join source = new Join(
 				pattern(values, "shared", "urn:left", "leftValue", Double.NaN),
-				pattern(values, "shared", "urn:right", "rightValue", Double.NaN));
+				right);
 		PackedCostModel costs = new PackedCostModel() {
 			@Override
 			public double estimateRows(PackedQueryView query, int relationId) {
@@ -839,6 +911,11 @@ class PackedSearchTest {
 					PackedCostEstimate output) {
 				double rows = estimateRows(query, relationId);
 				if (query.isStatementPattern(relationId)
+						&& "urn:name".equals(query.statementPatternValue(relationId, 1).stringValue())
+						&& context.prefixRelationCount() != 0
+						&& query.isBindingSetAssignment(context.prefixRelationId(0))) {
+					output.setContextualRows(2.0d, 1_000.0d);
+				} else if (query.isStatementPattern(relationId)
 						&& "urn:details".equals(query.statementPatternValue(relationId, 1).stringValue())
 						&& context.prefixRelationCount() != 0
 						&& isFiniteAnchorJoin(query, context.prefixRelationId(0))) {
@@ -1288,8 +1365,8 @@ class PackedSearchTest {
 			double chargedOnce = PackedCascadesPlanner
 					.optimize(correlatedSource.clone(), OptimizationGoal.root(), costs)
 					.totalCost();
-			assertTrue(chargedOnce < correlatedCost / 10.0d,
-					"The kill-switch must restore the charged-once pre-fix behavior, but cost was " + chargedOnce);
+			assertEquals(correlatedCost, chargedOnce, 0.0d,
+					"Disabling learned D3 refinements must retain conservative invocation costing");
 		} finally {
 			if (previous == null) {
 				System.clearProperty(PackedDependentSubqueryCosting.CORRELATED_DEPENDENT_INVOCATIONS_PROPERTY);
@@ -1654,7 +1731,7 @@ class PackedSearchTest {
 					.map(pattern -> pattern.getPredicateVar().getValue().stringValue())
 					.sorted()
 					.toList();
-			assertEquals(List.of("urn:threshold", "urn:type"), boundaryPredicates,
+			assertEquals(List.of("urn:detail", "urn:threshold", "urn:type"), boundaryPredicates,
 					withFilter.selectedPlan()::toString);
 
 			double inputRows = selectedFilter.getArg().getResultSizeEstimate();
@@ -2301,6 +2378,7 @@ class PackedSearchTest {
 				if (query.isFilter(relationId)) {
 					double inputRows = context.prefixRows();
 					output.setContextualRows(inputRows * 0.25d, inputRows * 2.0d);
+					output.setDependentSubqueriesCosted(true);
 					return;
 				}
 				if (!query.isStatementPattern(relationId)) {
@@ -2323,7 +2401,8 @@ class PackedSearchTest {
 			public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
 					PackedCostEstimate output) {
 				if (query.isFilter(relationId)) {
-					output.setRows(context.leftInputRows() * 0.25d, output.workRows());
+					output.setContextualOutputRowsPreservingPhysicalCost(context.leftInputRows() * 0.25d);
+					output.setDependentSubqueriesCosted(true);
 				}
 			}
 		};
@@ -2717,6 +2796,9 @@ class PackedSearchTest {
 						"test-provider", "repeatedLookup");
 			}
 		};
+	}
+
+	private record PackedSearchFeedbackDescriptor() implements RuntimeFeedbackDescriptor {
 	}
 
 	private static void assertCorrelatedExistsWaitsForExtension(ValueExpr generatedValue) {

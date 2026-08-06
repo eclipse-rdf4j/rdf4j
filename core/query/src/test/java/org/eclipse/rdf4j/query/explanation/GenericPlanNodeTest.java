@@ -121,6 +121,22 @@ class GenericPlanNodeTest {
 	}
 
 	@Test
+	void toStringOmitsFrontierLearningKeyButJsonRetainsIt() {
+		GenericPlanNode node = new GenericPlanNode("Join");
+		String learningKey = "flk1|logical-expression|applicability";
+		node.setStringMetricPlanned("plannedEstimateUsage", "alternative_ranking");
+		node.setStringMetricPlanned("optimizer.frontierLearningKey", learningKey);
+
+		String text = node.toString();
+		String json = new ExplanationImpl(node, false, null).toJson();
+
+		assertFalse(text.contains("optimizer.frontierLearningKey"), text);
+		assertFalse(text.contains(learningKey), text);
+		assertTrue(json.contains("\"optimizer.frontierLearningKey\""), json);
+		assertTrue(json.contains(learningKey), json);
+	}
+
+	@Test
 	void toStringOmitsZeroTelemetryFields() {
 		GenericPlanNode node = new GenericPlanNode("Join");
 		node.setCostEstimate(1.0);

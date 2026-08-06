@@ -55,7 +55,7 @@ import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 /** LMDB storage-cardinality adapter for the packed ID-based cost boundary. */
 final class LmdbPackedCostModel implements PackedCostModel, PackedStalePlanValidator {
 
-	static final long VERSION = 23L;
+	static final long VERSION = 24L;
 
 	private static final String[] DISTINCT_REQUIREMENT_METRICS = {
 			TelemetryMetricNames.PLANNED_DISTINCT_REQUIREMENT_VARS,
@@ -679,11 +679,9 @@ final class LmdbPackedCostModel implements PackedCostModel, PackedStalePlanValid
 		}
 		if (connected) {
 			/*
-			 * Property-path semantics deliberately remain factor-local when an endpoint is bound: the estimator uses
-			 * the bound endpoint to choose a direction, but it does not condition the path bag on the complete outer
-			 * prefix (see LmdbEstimationEngine.resolvedLeaf). In particular, that prefix may contain independent
-			 * components whose multiplicities are absent from this estimate. Publish the path result as a connected
-			 * component so the packed row composer retains those unrelated components exactly once.
+			 * VALUES compatibility is evaluated only for the connected binding component. The prefix may also contain
+			 * independent components whose multiplicities are absent from this estimate, so publish component rows and
+			 * let the packed row composer retain those multiplicities exactly once.
 			 */
 			output.setComponentRows(rows, workRows);
 		} else {
@@ -891,8 +889,16 @@ final class LmdbPackedCostModel implements PackedCostModel, PackedStalePlanValid
 		if (!finiteNonNegative(rows) || !finiteNonNegative(workRows)) {
 			return false;
 		}
-		if (connected) {
+		if (connected && prefixFullyConnectedTo(expression, prefixFactors)) {
 			output.setContextualRows(rows, workRows);
+		} else if (connected) {
+			/*
+			 * A bound endpoint chooses the path direction, but resolvedLeaf deliberately leaves the path bag local to
+			 * its connected component. Prefixes can contain independent components whose multiplicities are therefore
+			 * absent from this estimate. Mark the rows as component-scoped so packed composition preserves each
+			 * unrelated component exactly once.
+			 */
+			output.setComponentRows(rows, workRows);
 		} else {
 			output.setRows(rows, workRows);
 		}
@@ -1226,6 +1232,33 @@ final class LmdbPackedCostModel implements PackedCostModel, PackedStalePlanValid
 			}
 		}
 		return false;
+	}
+
+	private static boolean prefixFullyConnectedTo(TupleExpr expression, List<TupleExpr> prefixFactors) {
+		if (prefixFactors.isEmpty()) {
+			return true;
+		}
+		Set<String> connectedNames = new LinkedHashSet<>(expression.getBindingNames());
+		boolean[] connected = new boolean[prefixFactors.size()];
+		int connectedCount = 0;
+		boolean changed;
+		do {
+			changed = false;
+			for (int ordinal = 0; ordinal < prefixFactors.size(); ordinal++) {
+				if (connected[ordinal]) {
+					continue;
+				}
+				Set<String> factorNames = prefixFactors.get(ordinal).getBindingNames();
+				if (factorNames.stream().noneMatch(connectedNames::contains)) {
+					continue;
+				}
+				connected[ordinal] = true;
+				connectedCount++;
+				connectedNames.addAll(factorNames);
+				changed = true;
+			}
+		} while (changed && connectedCount < prefixFactors.size());
+		return connectedCount == prefixFactors.size();
 	}
 
 	private static Map<String, Set<Value>> finiteBindingValues(List<TupleExpr> prefixFactors) {

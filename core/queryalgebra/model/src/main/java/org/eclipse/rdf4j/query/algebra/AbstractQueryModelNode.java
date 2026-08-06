@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreePrinter;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
@@ -46,6 +47,8 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	private long resultSizeActual = -1;
 	private double costEstimate = -1;
 	private boolean costFeedbackTrackingEnabled;
+	@JsonIgnore
+	private transient RuntimeFeedbackContract runtimeFeedbackContract;
 	private double costFeedbackExpectedRows = -1;
 	private double costFeedbackExpectedWorkRows = -1;
 	private long costFeedbackActualRows = -1;
@@ -215,6 +218,16 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	@Override
 	public void setCostFeedbackTrackingEnabled(boolean costFeedbackTrackingEnabled) {
 		this.costFeedbackTrackingEnabled = costFeedbackTrackingEnabled;
+	}
+
+	@Override
+	public RuntimeFeedbackContract getRuntimeFeedbackContract() {
+		return runtimeFeedbackContract;
+	}
+
+	@Override
+	public void setRuntimeFeedbackContract(RuntimeFeedbackContract runtimeFeedbackContract) {
+		this.runtimeFeedbackContract = runtimeFeedbackContract;
 	}
 
 	@Override

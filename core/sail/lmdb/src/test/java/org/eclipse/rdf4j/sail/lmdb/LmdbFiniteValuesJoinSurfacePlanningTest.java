@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
@@ -58,7 +59,9 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.RuntimeFeedbackTarget;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPlan;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationCompleteness;
@@ -723,7 +726,9 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 	void opaqueFrontierAppendRetainsBoundStatementAccessDimensions(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
 				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
-				.setFrontierSynopsisBudgetBytes(1024L * 1024L);
+				.setFrontierSynopsisBudgetBytes(1024L * 1024L)
+				.setFrontierInitialMaterializationWorkUnits(8L)
+				.setFrontierRefinementWorkUnits(8);
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
@@ -784,9 +789,219 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 							"Every bound LMDB invocation must retain its iterator-open cost in the originating event");
 					assertEquals(factor.outputRows(), factor.resultRows(), 0.0d,
 							"The bound access event must retain produced rows independently from source scans");
+					assertNotNull(factor.runtimeFeedbackContract(),
+							"The selected bound access must carry its typed precompile contract");
+					RuntimeFeedbackContract.PredictionVector openPrediction = factor.runtimeFeedbackContract()
+							.rawPrediction();
+					assertEquals(factor.plannedDoubleMetric("plannedRowsPerInvocation", Double.NaN),
+							openPrediction.rows(), 0.0d,
+							"The immutable prediction captured at each runtime open is the explicit per-open row estimate,"
+									+ " not the contextual total across all planned invocations");
+					assertEquals(factor.plannedDoubleMetric("plannedRowsPerInvocation", Double.NaN),
+							openPrediction.resultRows(), 0.0d,
+							"Per-open result work must be commensurate with the per-open cardinality prediction");
+					assertEquals(factor.sequentialRows() / factor.invocations(), openPrediction.sourceRows(), 0.0d,
+							"The costing event must decompose its additive source work before precompile");
+					assertEquals(factor.randomSeeks() / factor.invocations(), openPrediction.randomSeeks(), 0.0d,
+							"The costing event must decompose its additive seek work before precompile");
+					assertEquals(factor.iteratorOpens() / factor.invocations(), openPrediction.iteratorOpens(), 0.0d,
+							"The costing event must decompose its additive iterator-open work before precompile");
+
+					LmdbRuntimeFeedbackDescriptor descriptor = (LmdbRuntimeFeedbackDescriptor) factor
+							.runtimeFeedbackContract()
+							.descriptor();
+					LmdbOperatorFeedbackStats feedback = new LmdbOperatorFeedbackStats(
+							dataDir.toPath().resolve("bound-access-feedback"));
+					RuntimeFeedbackTarget target = feedback
+							.resolveRuntimeFeedbackTarget(factor.runtimeFeedbackContract());
+					long runtimeOpens = Math.max(2L, (long) Math.floor(factor.invocations()));
+					for (long open = 0L; open < runtimeOpens; open++) {
+						target.open();
+						target.close(1L, 1.0d, 1L, 1L, 0L, 0L, 0L, 0L, 0L, 0L,
+								EvaluationStatistics.TerminationClassification.EXHAUSTED);
+					}
+					feedback.publishRuntimeFeedbackTargets(new RuntimeFeedbackTarget[] { target }, 1, true);
+					FrontierLearningModel.PosteriorSnapshot logical = feedback.logicalPosterior(
+							descriptor.logicalKey(), descriptor.applicability(), FrontierCostDimension.OUTPUT_ROWS);
+					assertNotNull(logical);
+					assertTrue(logical.mean() >= Math.log1p(factor.outputRows()) * 0.4d,
+							"A commensurate bound-access execution must calibrate the contextual logical cardinality;"
+									+ " its per-open row prediction is only the physical invocation exposure");
 					assertTrue(session.objectiveScore(factor) > factor.workRows(),
 							"Winner comparison must price each random LMDB lookup from the selected index's "
 									+ "stored B-tree shape while preserving the event's unweighted physical counters");
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void physicalJoinCannotInheritNonEquivalentLogicalContract(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
+				.setFrontierSynopsisBudgetBytes(1024L * 1024L)
+				.setFrontierInitialMaterializationWorkUnits(8L)
+				.setFrontierRefinementWorkUnits(8);
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticEngineeringAssemblies(repository);
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
+			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+
+			StatementPattern name = new StatementPattern(Var.of("assembly"), Var.of("namePredicate", ENG_NAME),
+					Var.of("assemblyName"));
+			FunctionCall contains = new FunctionCall(FN.CONTAINS.stringValue());
+			contains.addArg(Var.of("assemblyName"));
+			contains.addArg(new ValueConstant(VF.createLiteral("Assembly 1")));
+			Filter filteredName = new Filter(name, contains);
+			StatementPattern type = new StatementPattern(Var.of("assembly"), Var.of("typePredicate", RDF_TYPE),
+					Var.of("assemblyType", ENG_ASSEMBLY));
+			PackedCostTestSupport.FilteredPairCostCall call = PackedCostTestSupport
+					.filteredConnectedStatementFactors(filteredName, type);
+			SailStore sailStore = store.getSailStore();
+			try (SailSource branch = sailStore.getExplicitSailSource().fork();
+					SailDataset dataset = branch.dataset(store.getDefaultIsolationLevel())) {
+				SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(
+						sailStore.getValueFactory(), dataset);
+				LmdbEstimatorRuntime runtime = ((LmdbEstimatorRuntimeProvider) sailStore.getEvaluationStatistics())
+						.estimatorRuntime();
+				var strategy = store.getEvaluationStrategyFactory()
+						.createEvaluationStrategy(null, tripleSource, sailStore.getEvaluationStatistics());
+				LmdbPackedCostModel model = new LmdbPackedCostModel(runtime,
+						OptionalLong.of(tripleSource.getSnapshotEpoch().orElseThrow()), true, tripleSource, strategy);
+
+				try (PackedCostSession session = model.openSession(call.query())) {
+					PackedCostEstimate prefix = new PackedCostEstimate();
+					session.estimateLeaf(call.prefixStatementRelationId(), call.emptyContext(), prefix);
+					PackedCostEstimate filtered = new PackedCostEstimate();
+					filtered.setRows(prefix.outputRows() * 0.5d, prefix.workRows() + prefix.outputRows());
+					session.refineOperator(call.filterRelationId(),
+							call.filterContext(prefix.outputRows(), prefix.evidenceStateId()), filtered);
+					LogicalLearningKey filterKey = LogicalLearningKey.parse(
+							filtered.plannedStringMetric("optimizer.logicalLearningKey"));
+					assertNotNull(filterKey);
+					assertEquals("filter", filterKey.logicalOperator());
+
+					PackedCostEstimate factor = new PackedCostEstimate();
+					session.estimateLeaf(call.factorRelationId(), call.emptyContext(), factor);
+					double isolatedRows = factor.outputRows();
+					double isolatedWork = factor.workRows();
+					factor.clear();
+					factor.setRows(isolatedRows, isolatedWork);
+					session.appendFactor(call.factorRelationId(),
+							call.prefixContext(filtered.outputRows(), filtered.evidenceStateId()), factor);
+
+					PackedCostEstimate physicalJoin = new PackedCostEstimate();
+					physicalJoin.setContextualRows(factor.outputRows(), factor.workRows());
+					physicalJoin.setEvidenceStateId(factor.evidenceStateId());
+					physicalJoin.setRuntimeFeedbackContract(filtered.runtimeFeedbackContract());
+					physicalJoin.putPlannedStringMetric("optimizer.physicalJoinImplementation", "dependent-iteration");
+					session.refineIntermediateJoin(
+							call.prefixContext(filtered.outputRows(), factor.evidenceStateId()), physicalJoin);
+
+					LogicalLearningKey physicalJoinKey = LogicalLearningKey.parse(
+							physicalJoin.plannedStringMetric("optimizer.logicalLearningKey"));
+					assertNotNull(physicalJoinKey);
+					assertEquals("join", physicalJoinKey.logicalOperator(),
+							"A physical join must use its current canonical factor group, not an inherited filter key");
+					assertNotEquals(filterKey, physicalJoinKey,
+							"Non-equivalent logical groups must never share a cardinality posterior");
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void exactBoundAccessRetainsDisconnectedPrefixCardinality(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
+				.setFrontierSynopsisBudgetBytes(1024L * 1024L);
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		IRI leftPredicate = VF.createIRI("urn:test:frontier-cartesian:left");
+		IRI lookupPredicate = VF.createIRI("urn:test:frontier-cartesian:lookup");
+		Value[] outerValues = new Value[4];
+		Value[] componentKeys = new Value[4];
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				for (int index = 0; index < 4; index++) {
+					outerValues[index] = VF.createIRI("urn:test:frontier-cartesian:outer:" + index);
+					componentKeys[index] = VF.createIRI("urn:test:frontier-cartesian:key:" + index);
+					connection.add(VF.createIRI("urn:test:frontier-cartesian:left:" + index), leftPredicate,
+							outerValues[index]);
+					IRI key = VF.createIRI("urn:test:frontier-cartesian:key:" + index);
+					for (int detail = 0; detail < 128; detail++) {
+						connection.add(VF.createIRI("urn:test:frontier-cartesian:detail:" + index + ':' + detail),
+								lookupPredicate, key);
+					}
+				}
+				connection.commit();
+			}
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
+			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+
+			BindingSetAssignment selectedOuter = bindingAssignment("outerKey", outerValues);
+			BindingSetAssignment selectedComponent = bindingAssignment("componentKey", componentKeys);
+			StatementPattern left = new StatementPattern(Var.of("left"),
+					Var.of("leftPredicate", leftPredicate), Var.of("outerKey"));
+			StatementPattern lookup = new StatementPattern(Var.of("detail"),
+					Var.of("lookupPredicate", lookupPredicate), Var.of("componentKey"));
+			PackedCostTestSupport.TwoFiniteComponentCostCall call = PackedCostTestSupport
+					.twoFiniteComponents(selectedOuter, left, selectedComponent, lookup);
+			SailStore sailStore = store.getSailStore();
+			try (SailSource branch = sailStore.getExplicitSailSource().fork();
+					SailDataset dataset = branch.dataset(store.getDefaultIsolationLevel())) {
+				SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(
+						sailStore.getValueFactory(), dataset);
+				LmdbEstimatorRuntime runtime = ((LmdbEstimatorRuntimeProvider) sailStore.getEvaluationStatistics())
+						.estimatorRuntime();
+				var strategy = store.getEvaluationStrategyFactory()
+						.createEvaluationStrategy(null, tripleSource, sailStore.getEvaluationStatistics());
+				LmdbPackedCostModel model = new LmdbPackedCostModel(runtime,
+						OptionalLong.of(tripleSource.getSnapshotEpoch().orElseThrow()), true, tripleSource, strategy);
+
+				try (PackedCostSession session = model.openSession(call.query())) {
+					PackedCostEstimate prefix = new PackedCostEstimate();
+					session.estimateLeaf(call.outerBindingRelationId(), call.emptyContext(), prefix);
+					PackedCostEstimate next = new PackedCostEstimate();
+					session.estimateLeaf(call.outerFactorRelationId(), call.emptyContext(), next);
+					session.appendFactor(call.outerFactorRelationId(),
+							call.outerFactorContext(prefix.outputRows(), prefix.evidenceStateId()), next);
+					prefix = next;
+
+					next = new PackedCostEstimate();
+					session.estimateLeaf(call.componentBindingRelationId(), call.emptyContext(), next);
+					session.appendFactor(call.componentBindingRelationId(),
+							call.componentBindingContext(prefix.outputRows(), prefix.evidenceStateId()), next);
+					prefix = next;
+
+					next = new PackedCostEstimate();
+					session.estimateLeaf(call.componentFactorRelationId(), call.emptyContext(), next);
+					session.appendFactor(call.componentFactorRelationId(),
+							call.componentFactorContext(prefix.outputRows(), prefix.evidenceStateId()), next);
+					prefix = next;
+
+					double frontierRows = prefix.plannedDoubleMetric("plannedFrontierRows", Double.NaN);
+					assertTrue(frontierRows > 512.0d,
+							"The retained state must include the unrelated four-row outer multiplicity");
+					double exactAccessRows = prefix.plannedDoubleMetric(
+							"plannedFrontierExactAccessComponentRows", Double.NaN);
+					assertTrue(exactAccessRows <= frontierRows,
+							"Exact component rows cannot exceed their complete contextual prefix");
+					assertEquals(exactAccessRows, prefix.resultRows(), 0.0d,
+							"Physical result work belongs to the exact lookup access");
+					assertEquals(frontierRows, prefix.outputRows(), 0.0d,
+							"An exact component access must not overwrite the complete sampled logical prefix");
 				}
 			}
 		} finally {

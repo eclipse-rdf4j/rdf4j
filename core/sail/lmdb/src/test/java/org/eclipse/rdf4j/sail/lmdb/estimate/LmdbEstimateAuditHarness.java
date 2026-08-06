@@ -117,10 +117,15 @@ final class LmdbEstimateAuditHarness {
 		PlanEstimate planned = planEstimate(PieceKind.FULL_QUERY, explanation);
 		BaselineEstimate baseline = baselineEstimate(connection, tupleExpr);
 		long actualRows = actualRows(connection, queryId, "full", PieceKind.FULL_QUERY, tupleExpr);
-		return new AuditRow(queryId, "full", PieceKind.FULL_QUERY, planned.rows(), actualRows,
+		return new AuditRow(queryId, "full", PieceKind.FULL_QUERY, tupleExpr.getSignature(), planned.rows(), actualRows,
 				qError(planned.rows(), actualRows), planned.source(), planned.usage(),
+				planned.feedbackTracking(), planned.runtimeContractPresent(),
 				planned.frontierStages().rawRows(), planned.frontierStages().learnedFilterRows(),
 				planned.frontierStages().leoRows(), planned.frontierStages().finalRows(),
+				planned.frontierStages().calibrationSource(), planned.frontierStages().correctionSource(),
+				planned.frontierStages().logicalKeyDigest(), planned.frontierStages().applicabilityDigest(),
+				planned.frontierStages().guarantee(), planned.frontierStages().logicalKey(),
+				planned.frontierStages().applicability(), planned.frontierStages().zeroStatus(),
 				baseline.fastAgmsRows(), baseline.joinSketchRows(), baseline.fastAgmsBytes(),
 				baseline.joinSketchBytes(), baseline.memoryBudgetBytes(), baseline.seed());
 	}
@@ -200,10 +205,16 @@ final class LmdbEstimateAuditHarness {
 		PlanEstimate planned = plannedRows(connection, kind, tupleExpr);
 		BaselineEstimate baseline = baselineEstimate(connection, tupleExpr);
 		long actualRows = actualRows(connection, queryId, pieceId, kind, tupleExpr);
-		return new AuditRow(queryId, pieceId, kind, planned.rows(), actualRows, qError(planned.rows(), actualRows),
-				planned.source(), planned.usage(), planned.frontierStages().rawRows(),
+		return new AuditRow(queryId, pieceId, kind, tupleExpr.toString(), planned.rows(), actualRows,
+				qError(planned.rows(), actualRows),
+				planned.source(), planned.usage(), planned.feedbackTracking(), planned.runtimeContractPresent(),
+				planned.frontierStages().rawRows(),
 				planned.frontierStages().learnedFilterRows(), planned.frontierStages().leoRows(),
-				planned.frontierStages().finalRows(), baseline.fastAgmsRows(), baseline.joinSketchRows(),
+				planned.frontierStages().finalRows(), planned.frontierStages().calibrationSource(),
+				planned.frontierStages().correctionSource(), planned.frontierStages().logicalKeyDigest(),
+				planned.frontierStages().applicabilityDigest(), planned.frontierStages().guarantee(),
+				planned.frontierStages().logicalKey(), planned.frontierStages().applicability(),
+				planned.frontierStages().zeroStatus(), baseline.fastAgmsRows(), baseline.joinSketchRows(),
 				baseline.fastAgmsBytes(), baseline.joinSketchBytes(), baseline.memoryBudgetBytes(), baseline.seed());
 	}
 
@@ -306,7 +317,7 @@ final class LmdbEstimateAuditHarness {
 	private static PlanEstimate planEstimate(PieceKind kind, Explanation explanation) {
 		Object explainedObject = explanation.tupleExpr();
 		if (!(explainedObject instanceof QueryModelNode explained)) {
-			return new PlanEstimate(Double.NaN, null, null, FrontierStageRows.NONE);
+			return new PlanEstimate(Double.NaN, null, null, false, false, FrontierStageRows.NONE);
 		}
 		QueryModelNode estimationRoot = estimationRoot(explained);
 		FrontierStageRows frontierStages = frontierStageRows(estimationRoot);
@@ -316,6 +327,8 @@ final class LmdbEstimateAuditHarness {
 		}
 		String source = estimationRoot.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
 		String usage = estimationRoot.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE);
+		boolean feedbackTracking = estimationRoot.isCostFeedbackTrackingEnabled();
+		boolean runtimeContractPresent = estimationRoot.getRuntimeFeedbackContract() != null;
 		if (transparentSourceWrapper(kind) && !isSpecificSource(source)) {
 			SourceAttribution inherited = transparentSourceAttribution(estimationRoot);
 			if (inherited != null) {
@@ -324,11 +337,11 @@ final class LmdbEstimateAuditHarness {
 			}
 		}
 		if (Double.isFinite(rootRows) && rootRows >= 0.0d) {
-			return new PlanEstimate(rootRows, source, usage, frontierStages);
+			return new PlanEstimate(rootRows, source, usage, feedbackTracking, runtimeContractPresent, frontierStages);
 		}
 		FiniteEstimateVisitor visitor = new FiniteEstimateVisitor();
 		estimationRoot.visit(visitor);
-		return new PlanEstimate(visitor.rows, source, usage, frontierStages);
+		return new PlanEstimate(visitor.rows, source, usage, feedbackTracking, runtimeContractPresent, frontierStages);
 	}
 
 	private static boolean transparentSourceWrapper(PieceKind kind) {
@@ -362,7 +375,15 @@ final class LmdbEstimateAuditHarness {
 				plannedStage(node, FRONTIER_RAW_ROWS),
 				plannedStage(node, FRONTIER_LEARNED_FILTER_ROWS),
 				plannedStage(node, FRONTIER_LEO_ROWS),
-				plannedStage(node, FRONTIER_FINAL_ROWS));
+				plannedStage(node, FRONTIER_FINAL_ROWS),
+				node.getStringMetricPlanned("plannedFrontierCalibrationSource"),
+				node.getStringMetricPlanned("optimizer.frontierLeo.output_rows.source"),
+				node.getStringMetricPlanned("optimizer.logicalLearningKeyDigest"),
+				node.getStringMetricPlanned("optimizer.learningApplicabilityDigest"),
+				node.getStringMetricPlanned("optimizer.logicalLearningKey"),
+				node.getStringMetricPlanned("optimizer.learningApplicability"),
+				node.getStringMetricPlanned("plannedFrontierGuarantee"),
+				node.getStringMetricPlanned("plannedFrontierZeroStatus"));
 	}
 
 	private static double plannedStage(QueryModelNode node, String metric) {
@@ -534,9 +555,13 @@ final class LmdbEstimateAuditHarness {
 		}
 	}
 
-	record AuditRow(String queryId, String pieceId, PieceKind kind, double plannedRows, long actualRows,
-			double qError, String plannedSource, String plannedUsage, double rawFrontierRows,
-			double learnedFilterRows, double leoRows, double finalFrontierRows, double fastAgmsRows,
+	record AuditRow(String queryId, String pieceId, PieceKind kind, String logicalExpression, double plannedRows,
+			long actualRows,
+			double qError, String plannedSource, String plannedUsage, boolean feedbackTracking,
+			boolean runtimeContractPresent, double rawFrontierRows,
+			double learnedFilterRows, double leoRows, double finalFrontierRows, String frontierCalibrationSource,
+			String correctionSource, String logicalKeyDigest, String applicabilityDigest, String frontierGuarantee,
+			String logicalKey, String applicability, String frontierZeroStatus, double fastAgmsRows,
 			double joinSketchRows, long fastAgmsBytes, long joinSketchBytes, long baselineMemoryBudgetBytes,
 			long baselineSeed) {
 	}
@@ -547,13 +572,16 @@ final class LmdbEstimateAuditHarness {
 	private record SourceAttribution(String source, String usage) {
 	}
 
-	private record PlanEstimate(double rows, String source, String usage, FrontierStageRows frontierStages) {
+	private record PlanEstimate(double rows, String source, String usage, boolean feedbackTracking,
+			boolean runtimeContractPresent, FrontierStageRows frontierStages) {
 	}
 
-	private record FrontierStageRows(double rawRows, double learnedFilterRows, double leoRows, double finalRows) {
+	private record FrontierStageRows(double rawRows, double learnedFilterRows, double leoRows, double finalRows,
+			String calibrationSource, String correctionSource, String logicalKeyDigest, String applicabilityDigest,
+			String logicalKey, String applicability, String guarantee, String zeroStatus) {
 
 		private static final FrontierStageRows NONE = new FrontierStageRows(
-				Double.NaN, Double.NaN, Double.NaN, Double.NaN);
+				Double.NaN, Double.NaN, Double.NaN, Double.NaN, null, null, null, null, null, null, null, null);
 	}
 
 	private record BaselineEstimate(double fastAgmsRows, double joinSketchRows, long fastAgmsBytes,

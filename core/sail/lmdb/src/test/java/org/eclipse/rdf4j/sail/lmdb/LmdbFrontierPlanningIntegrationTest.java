@@ -23,6 +23,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.OptionalLong;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -59,6 +60,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPla
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostTestSupport;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -334,7 +336,7 @@ class LmdbFrontierPlanningIntegrationTest {
 
 	@Test
 	void packedPlanCacheVersionTracksPhysicalCostCutover() {
-		assertEquals(23L, LmdbPackedCostModel.VERSION);
+		assertEquals(24L, LmdbPackedCostModel.VERSION);
 	}
 
 	@Test
@@ -528,7 +530,7 @@ class LmdbFrontierPlanningIntegrationTest {
 	}
 
 	@Test
-	void exactUnchangedFrontierSourceCertifiesReuseAcrossUnrelatedDataRevision(@TempDir Path dataDirectory)
+	void dataRevisionStalesLifecycleBeforeCertifyingUnchangedFrontierSource(@TempDir Path dataDirectory)
 			throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc")
 				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
@@ -563,7 +565,8 @@ class LmdbFrontierPlanningIntegrationTest {
 						values.createIRI("urn:frontier:unrelated-predicate"),
 						values.createIRI("urn:frontier:unrelated-object"));
 			}
-			assertEquals(leoRevision, runtime.leoRevision(), "data commits must not advance the LEO generation");
+			assertNotEquals(leoRevision, runtime.leoRevision(),
+					"a data epoch transition must stale lifecycle state and advance the safety revision");
 			assertNotEquals(dataRevision, runtime.snapshotVersion(),
 					"every data commit needs a distinct cache generation");
 
@@ -723,10 +726,16 @@ class LmdbFrontierPlanningIntegrationTest {
 				TupleExpr cold = (TupleExpr) connection.prepareTupleQuery(QUERY)
 						.explain(Explanation.Level.Optimized)
 						.tupleExpr();
+				TupleExpr lifecycleRefresh = (TupleExpr) connection.prepareTupleQuery(QUERY)
+						.explain(Explanation.Level.Optimized)
+						.tupleExpr();
 				TupleExpr exactHit = (TupleExpr) connection.prepareTupleQuery(QUERY)
 						.explain(Explanation.Level.Optimized)
 						.tupleExpr();
 				assertFalse(Boolean.parseBoolean(cold.getStringMetricPlanned("optimizer.cascadesPlanCacheHit")));
+				assertFalse(Boolean.parseBoolean(
+						lifecycleRefresh.getStringMetricPlanned("optimizer.cascadesPlanCacheHit")),
+						"creating Monitoring records must invalidate the recipe built before their safety revision");
 				assertTrue(Boolean.parseBoolean(exactHit.getStringMetricPlanned("optimizer.cascadesPlanCacheHit")));
 			}
 
@@ -926,6 +935,54 @@ class LmdbFrontierPlanningIntegrationTest {
 	}
 
 	@Test
+	void logicalLearningApplicabilitySeparatesBoundAndUnboundPatternInputs(@TempDir Path dataDirectory) {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
+				.setFrontierSynopsisBudgetBytes(SYNOPSIS_BUDGET_BYTES);
+		LmdbStore store = new LmdbStore(dataDirectory.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			try (var connection = repository.getConnection()) {
+				var values = connection.getValueFactory();
+				for (int index = 0; index < 32; index++) {
+					connection.add(values.createIRI("urn:frontier:binding-shape-s" + index), PREDICATE,
+							values.createLiteral(index));
+				}
+			}
+			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+			String boundQuery = """
+					SELECT ?subject ?object
+					WHERE {
+					  VALUES ?subject { <urn:frontier:binding-shape-s1> }
+					  ?subject <urn:frontier:p> ?object
+					}
+					""";
+
+			try (var connection = repository.getConnection()) {
+				Explanation unboundExplanation = connection.prepareTupleQuery(QUERY)
+						.explain(Explanation.Level.Optimized);
+				StatementPattern unbound = findPattern((TupleExpr) unboundExplanation.tupleExpr(), PREDICATE);
+				assertNotNull(unbound, unboundExplanation::toString);
+
+				Explanation boundExplanation = connection.prepareTupleQuery(boundQuery)
+						.explain(Explanation.Level.Optimized);
+				StatementPattern bound = findPattern((TupleExpr) boundExplanation.tupleExpr(), PREDICATE);
+				assertNotNull(bound, boundExplanation::toString);
+
+				assertEquals(unbound.getStringMetricPlanned("optimizer.logicalLearningKey"),
+						bound.getStringMetricPlanned("optimizer.logicalLearningKey"),
+						"Input bindings belong to applicability, not canonical logical truth");
+				assertNotEquals(unbound.getStringMetricPlanned("optimizer.learningApplicability"),
+						bound.getStringMetricPlanned("optimizer.learningApplicability"),
+						"A conditional lookup must not train the standalone relation cardinality");
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
 	void exactDisconnectedStatementsUseBoundedCartesianState(@TempDir Path dataDirectory) {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc")
 				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
@@ -970,6 +1027,67 @@ class LmdbFrontierPlanningIntegrationTest {
 						explanation::toString);
 				assertEquals(6.0d, join.getDoubleMetricPlanned("plannedFrontierRows"), explanation::toString);
 				assertEquals(6, QueryResults.asList(connection.prepareTupleQuery(query).evaluate()).size());
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void nestedPhysicalJoinsRetainTheirOwnLogicalLearningIdentity(@TempDir Path dataDirectory) {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
+				.setFrontierSynopsisBudgetBytes(SYNOPSIS_BUDGET_BYTES);
+		LmdbStore store = new LmdbStore(dataDirectory.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			try (var connection = repository.getConnection()) {
+				var values = connection.getValueFactory();
+				IRI outerPredicate = values.createIRI("urn:frontier:nested-identity-outer");
+				IRI leftPredicate = values.createIRI("urn:frontier:nested-identity-left");
+				IRI codePredicate = values.createIRI("urn:frontier:nested-identity-code");
+				IRI linkPredicate = values.createIRI("urn:frontier:nested-identity-link");
+				for (int index = 0; index < 4; index++) {
+					IRI outer = values.createIRI("urn:frontier:nested-identity-outer-" + index);
+					IRI left = values.createIRI("urn:frontier:nested-identity-left-" + index);
+					IRI right = values.createIRI("urn:frontier:nested-identity-right-" + index);
+					connection.add(outer, outerPredicate, values.createLiteral(index));
+					connection.add(outer, leftPredicate, left);
+					connection.add(left, linkPredicate, right);
+					connection.add(right, codePredicate, values.createLiteral(index & 1));
+				}
+			}
+			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+			String query = """
+					SELECT ?outer
+					WHERE {
+					  ?outer <urn:frontier:nested-identity-outer> ?outerValue .
+					  FILTER NOT EXISTS {
+					    VALUES ?leftCode { 0 1 }
+					    ?outer <urn:frontier:nested-identity-left> ?left .
+					    VALUES ?rightCode { 0 1 2 }
+					    ?right <urn:frontier:nested-identity-code> ?rightCode .
+					    ?left <urn:frontier:nested-identity-link> ?right .
+					  }
+					}
+					""";
+
+			try (var connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.Optimized);
+				List<Join> physicalJoins = findJoins((TupleExpr) explanation.tupleExpr()).stream()
+						.filter(join -> join.getStringMetricPlanned("optimizer.physicalJoinImplementation") != null)
+						.toList();
+				assertFalse(physicalJoins.isEmpty(), explanation::toString);
+				for (Join join : physicalJoins) {
+					LogicalLearningKey key = LogicalLearningKey.parse(
+							join.getStringMetricPlanned("optimizer.logicalLearningKey"));
+					assertNotNull(key, explanation::toString);
+					assertEquals("join", key.logicalOperator(),
+							() -> "A nested physical join must not inherit its enclosing logical operator's key: "
+									+ explanation);
+				}
 			}
 		} finally {
 			repository.shutDown();
@@ -2036,6 +2154,8 @@ class LmdbFrontierPlanningIntegrationTest {
 			Join observedPrefix;
 			double rawPrefixRows;
 			double rawRootRows;
+			String prefixLogicalKey;
+			String prefixApplicability;
 			try (var connection = repository.getConnection()) {
 				Explanation rawExplanation = connection.prepareTupleQuery(query)
 						.explain(Explanation.Level.Optimized);
@@ -2052,6 +2172,10 @@ class LmdbFrontierPlanningIntegrationTest {
 				assertNotNull(rawRoot, rawExplanation::toString);
 				rawPrefixRows = observedPrefix.getDoubleMetricPlanned("plannedFrontierRows");
 				rawRootRows = rawRoot.getDoubleMetricPlanned("plannedFrontierRows");
+				prefixLogicalKey = observedPrefix.getStringMetricPlanned("optimizer.logicalLearningKey");
+				prefixApplicability = observedPrefix.getStringMetricPlanned("optimizer.learningApplicability");
+				assertNotNull(prefixLogicalKey, rawExplanation::toString);
+				assertNotNull(prefixApplicability, rawExplanation::toString);
 				assertTrue(rawPrefixRows > 0.0d, rawExplanation::toString);
 				assertTrue(rawRootRows > 0.0d, rawExplanation::toString);
 			}
@@ -2061,9 +2185,24 @@ class LmdbFrontierPlanningIntegrationTest {
 			long learnedRows = Math.max(2L, Math.round(rawPrefixRows * 1.25d));
 			for (int observation = 0; observation < 4; observation++) {
 				Join completed = observedPrefix.clone();
-				completeLeoJoin(completed, learnedRows, rawPrefixRows, rawPrefixRows, learnedRows);
-				statistics.estimatorRuntime().feedback().recordOperatorOutcome(completed);
+				completeLeoOperator(completed, learnedRows, rawPrefixRows, rawPrefixRows, rawPrefixRows);
+				double plannedSourceRows = completed
+						.getDoubleMetricPlanned("optimizer.costEventSequentialRows");
+				if (Double.isFinite(plannedSourceRows) && plannedSourceRows >= 0.0d) {
+					completed.setSourceRowsScannedActual(Math.round(plannedSourceRows));
+				}
+				statistics.estimatorRuntime()
+						.feedback()
+						.observe(completed, true, typedCompletedObservation(completed));
 			}
+			FrontierLearningModel.DimensionEstimate prefixPosterior = statistics.estimatorRuntime()
+					.feedback()
+					.logicalDimensionEstimate(LogicalLearningKey.parse(prefixLogicalKey),
+							LearningApplicability.parse(prefixApplicability), FrontierCostDimension.OUTPUT_ROWS,
+							rawPrefixRows);
+			assertNotNull(prefixPosterior, "The completed prefix must train its exact logical/applicability key");
+			assertTrue(prefixPosterior.correctedValue() > rawPrefixRows,
+					"The recorded logical posterior must move the prefix toward its larger completed cardinality");
 
 			try (var connection = repository.getConnection()) {
 				Explanation calibratedExplanation = connection.prepareTupleQuery(query)
@@ -2407,6 +2546,17 @@ class LmdbFrontierPlanningIntegrationTest {
 
 	@Test
 	void sampledFilterAppliesLeoMultiplierAfterRawRestriction(@TempDir Path dataDirectory) {
+		String previousFacts = System.getProperty(
+				LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY);
+		System.setProperty(LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, "false");
+		try {
+			sampledFilterAppliesLeoMultiplierAfterRawRestrictionWithoutExactFacts(dataDirectory);
+		} finally {
+			restoreProperty(LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, previousFacts);
+		}
+	}
+
+	private void sampledFilterAppliesLeoMultiplierAfterRawRestrictionWithoutExactFacts(Path dataDirectory) {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc")
 				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
 				.setFrontierSynopsisBudgetBytes(16L * 1024L);
@@ -2677,6 +2827,11 @@ class LmdbFrontierPlanningIntegrationTest {
 				assertNotNull(observed, explanation::toString);
 				assertEquals("measure_unbiased",
 						observed.getStringMetricPlanned("plannedFrontierGuarantee"), explanation::toString);
+				assertTrue(Double.isInfinite(observed.getDoubleMetricPlanned("plannedFrontierUpperRows")),
+						"The sampled candidate must expose its unresolved structural upper bound");
+				assertEquals(Double.MAX_VALUE,
+						observed.getDoubleMetricPlanned("optimizer.objectiveUpper"),
+						"A lifecycle challenger cannot collapse an unbounded row interval to a point-cost interval");
 				rawRows = observed.getDoubleMetricPlanned("plannedFrontierRows");
 			}
 
@@ -2705,12 +2860,16 @@ class LmdbFrontierPlanningIntegrationTest {
 								"",
 								""));
 			}
-			FrontierLearningKey originatingKey = FrontierLearningKey.parse(
-					observed.getStringMetricPlanned("optimizer.frontierLearningKey"));
+			LogicalLearningKey originatingKey = LogicalLearningKey.parse(
+					observed.getStringMetricPlanned("optimizer.logicalLearningKey"));
+			LearningApplicability applicability = LearningApplicability.parse(
+					observed.getStringMetricPlanned("optimizer.learningApplicability"));
 			assertNotNull(originatingKey);
+			assertNotNull(applicability);
 			FrontierLearningModel.DimensionEstimate learnedRows = statistics.estimatorRuntime()
 					.feedback()
-					.frontierDimensionEstimate(originatingKey, FrontierCostDimension.OUTPUT_ROWS, rawRows);
+					.logicalDimensionEstimate(originatingKey, applicability, FrontierCostDimension.OUTPUT_ROWS,
+							rawRows);
 			assertNotNull(learnedRows);
 			assertEquals(1L, learnedRows.exactEvidenceCount(),
 					"Only the observation for the physical candidate stamped on this event belongs to its key");
@@ -2771,6 +2930,8 @@ class LmdbFrontierPlanningIntegrationTest {
 			double plannedEventSourceRows;
 			String algorithm;
 			String initialEventDigest;
+			String logicalLearningKey;
+			String learningApplicability;
 			try (var connection = repository.getConnection()) {
 				Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
 				observed = findSemiAntiFilter((TupleExpr) explanation.tupleExpr());
@@ -2791,6 +2952,10 @@ class LmdbFrontierPlanningIntegrationTest {
 				assertNotNull(observed.getStringMetricPlanned("optimizer.costEventDigest"),
 						explanation::toString);
 				initialEventDigest = observed.getStringMetricPlanned("optimizer.costEventDigest");
+				logicalLearningKey = observed.getStringMetricPlanned("optimizer.logicalLearningKey");
+				learningApplicability = observed.getStringMetricPlanned("optimizer.learningApplicability");
+				assertNotNull(logicalLearningKey, explanation::toString);
+				assertNotNull(learningApplicability, explanation::toString);
 				assertNotNull(observed.getStringMetricPlanned("optimizer.frontierStateDigest"),
 						explanation::toString);
 				assertEquals(algorithm,
@@ -2808,18 +2973,29 @@ class LmdbFrontierPlanningIntegrationTest {
 						plannedWorkRows,
 						plannedWorkRows * 0.25d);
 				completed.setSourceRowsScannedActual(Math.max(1L, Math.round(plannedEventSourceRows * 0.25d)));
-				statistics.estimatorRuntime().feedback().recordOperatorOutcome(completed);
+				statistics.estimatorRuntime()
+						.feedback()
+						.observe(completed, true, typedCompletedObservation(completed));
 			}
 			FrontierLearningKey originatingKey = FrontierLearningKey.parse(
 					observed.getStringMetricPlanned("optimizer.frontierLearningKey"));
+			LogicalLearningKey originatingLogicalKey = LogicalLearningKey.parse(logicalLearningKey);
+			LearningApplicability originatingApplicability = LearningApplicability.parse(learningApplicability);
+			PhysicalResidualKey originatingPhysicalKey = PhysicalResidualKey.parse(
+					observed.getStringMetricPlanned("optimizer.physicalResidualKey"));
 			assertNotNull(originatingKey);
+			assertNotNull(originatingLogicalKey);
+			assertNotNull(originatingApplicability);
+			assertNotNull(originatingPhysicalKey);
 			assertTrue(originatingKey.accessKernel().contains(algorithm),
 					"Physical semi/anti implementations must have independent learning posteriors");
-			assertTrue(statistics.estimatorRuntime()
+			FrontierLearningModel.DimensionEstimate physicalEstimate = statistics.estimatorRuntime()
 					.feedback()
-					.frontierCorrection(originatingKey, FrontierCostDimension.SOURCE_ROWS_SCANNED,
-							plannedEventSourceRows, false)
-					.orElseThrow() < plannedEventSourceRows,
+					.physicalDimensionEstimate(originatingLogicalKey, originatingPhysicalKey,
+							originatingApplicability, FrontierCostDimension.SOURCE_ROWS_SCANNED,
+							plannedEventSourceRows);
+			assertNotNull(physicalEstimate);
+			assertTrue(physicalEstimate.correctedValue() < plannedEventSourceRows,
 					"The source-scan observation must update the exact originating learning key");
 
 			Filter calibratedPlan;
@@ -2841,6 +3017,10 @@ class LmdbFrontierPlanningIntegrationTest {
 						calibrated.getDoubleMetricPlanned("plannedFrontierRows"), 0.0d, explanation::toString);
 				assertEquals(algorithm,
 						calibrated.getStringMetricPlanned("plannedPhysicalImplementation"), explanation::toString);
+				assertEquals(originatingPhysicalKey,
+						PhysicalResidualKey.parse(
+								calibrated.getStringMetricPlanned("optimizer.physicalResidualKey")),
+						"Applying learned estimate provenance must not rename the same physical implementation");
 				assertEquals("database_exact",
 						calibrated.getStringMetricPlanned("plannedFrontierGuarantee"), explanation::toString);
 				assertTrue(calibrated.getDoubleMetricPlanned("plannedCostSequentialRows") < plannedEventSourceRows,
@@ -2860,8 +3040,19 @@ class LmdbFrontierPlanningIntegrationTest {
 				completeLeoOperator(completed, Math.round(exactRows), exactRows,
 						calibratedPlan.getCostEstimate(), calibratedPlan.getCostEstimate());
 				completed.setSourceRowsScannedActual(Math.round(plannedEventSourceRows * 256.0d));
-				statistics.estimatorRuntime().feedback().recordOperatorOutcome(completed);
+				statistics.estimatorRuntime()
+						.feedback()
+						.observe(completed, true, typedCompletedObservation(completed));
 			}
+			FrontierLearningModel.DimensionEstimate regressedPhysicalEstimate = statistics.estimatorRuntime()
+					.feedback()
+					.physicalDimensionEstimate(originatingLogicalKey, originatingPhysicalKey,
+							originatingApplicability, FrontierCostDimension.SOURCE_ROWS_SCANNED,
+							plannedEventSourceRows);
+			assertNotNull(regressedPhysicalEstimate,
+					"The completed high-work executions must retain the originating physical posterior");
+			assertTrue(regressedPhysicalEstimate.correctedValue() > plannedEventSourceRows,
+					"High-work executions must reverse the earlier optimistic source-scan correction");
 
 			try (var connection = repository.getConnection()) {
 				Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
@@ -2873,11 +3064,32 @@ class LmdbFrontierPlanningIntegrationTest {
 						explanation::toString);
 				assertEquals("replan", findPlannedStringMetric(replannedRoot,
 						"optimizer.planCacheValidationResult"), explanation::toString);
-				assertEquals("streaming-correlated",
-						replanned.getStringMetricPlanned("optimizer.semiAntiAlgorithm"), explanation::toString);
-				assertNotEquals(algorithm,
-						replanned.getStringMetricPlanned("optimizer.semiAntiAlgorithm"),
-						"A materially changed algorithm-specific posterior must invalidate the cached winner");
+				String replannedAlgorithm = replanned.getStringMetricPlanned("optimizer.semiAntiAlgorithm");
+				assertTrue(Set.of("streaming-correlated", "memoized-correlated", "materialized-hash")
+						.contains(replannedAlgorithm), explanation::toString);
+				assertEquals(logicalLearningKey,
+						replanned.getStringMetricPlanned("optimizer.logicalLearningKey"),
+						"Equivalent semi/anti implementations must retain one canonical logical identity");
+				assertEquals(learningApplicability,
+						replanned.getStringMetricPlanned("optimizer.learningApplicability"),
+						"Physical algorithm selection must not change logical binding applicability");
+				if (algorithm.equals(replannedAlgorithm)) {
+					assertEquals(originatingPhysicalKey,
+							PhysicalResidualKey.parse(
+									replanned.getStringMetricPlanned("optimizer.physicalResidualKey")),
+							"The same implementation must retain its exact physical residual identity");
+				}
+				double correctedSourceRows = replanned
+						.getDoubleMetricPlanned("optimizer.frontierLeo.source_rows_scanned.corrected");
+				assertNotEquals(algorithm, replannedAlgorithm,
+						"A materially changed algorithm-specific posterior must invalidate the cached winner; "
+								+ "correctedSourceRows=" + correctedSourceRows
+								+ ", selectedSequentialRows="
+								+ replanned.getDoubleMetricPlanned("plannedCostSequentialRows")
+								+ ", rawObjectives=["
+								+ replanned.getDoubleMetricPlanned("plannedSemiAntiStreamingObjectiveCost") + ','
+								+ replanned.getDoubleMetricPlanned("plannedSemiAntiMemoizedObjectiveCost") + ','
+								+ replanned.getDoubleMetricPlanned("plannedSemiAntiMaterializedObjectiveCost") + ']');
 			}
 		} finally {
 			repository.shutDown();
@@ -3939,8 +4151,12 @@ class LmdbFrontierPlanningIntegrationTest {
 				statistics.estimatorRuntime().feedback().recordOperatorOutcome(completed);
 			}
 			assertNotNull(statistics.estimatorRuntime()
-					.operatorFeedback(
-							observed, rawRows / 2.0d, rawRows / 2.0d, rawRows, rawRows, null));
+					.feedback()
+					.logicalPosterior(
+							LogicalLearningKey.parse(observed.getStringMetricPlanned("optimizer.logicalLearningKey")),
+							LearningApplicability
+									.parse(observed.getStringMetricPlanned("optimizer.learningApplicability")),
+							FrontierCostDimension.OUTPUT_ROWS));
 
 			try (var connection = repository.getConnection()) {
 				Explanation explanation = connection.prepareTupleQuery(query)
@@ -4844,9 +5060,17 @@ class LmdbFrontierPlanningIntegrationTest {
 						8_000.0d / learnedUnmatchedRows, learnedUnmatchedRows / 8_000.0d);
 				assertTrue(learnedQError < rawQError,
 						"Hierarchical LEO must improve q-error without fitting the observations exactly");
-				assertTrue(
-						antiJoin.getDoubleMetricPlanned("optimizer.frontierLeo.output_rows.exactEvidence") > 0.0d,
-						"The selected transform/access key must retain its own observation");
+				LogicalLearningKey selectedLogicalKey = LogicalLearningKey.parse(
+						antiJoin.getStringMetricPlanned("optimizer.logicalLearningKey"));
+				PhysicalResidualKey selectedPhysicalKey = PhysicalResidualKey.parse(
+						antiJoin.getStringMetricPlanned("optimizer.physicalResidualKey"));
+				assertNotNull(selectedLogicalKey,
+						"The selected transform must carry its canonical logical cardinality identity");
+				assertNotNull(selectedPhysicalKey,
+						"The selected transform must separately carry its physical residual identity");
+				assertEquals(antiJoin.getStringMetricPlanned("optimizer.semiAntiAlgorithm"),
+						selectedPhysicalKey.algorithm(),
+						"The physical residual key must identify the implementation that was actually costed");
 				assertEquals(antiJoin.getDoubleMetricPlanned("plannedFrontierRows"), learnedUnmatchedRows, 0.0d,
 						"Correlation telemetry must be copied from the calibrated costing event");
 				assertEquals("frontier-cost-event-leo",
@@ -5240,6 +5464,7 @@ class LmdbFrontierPlanningIntegrationTest {
 			TupleExpr observed;
 			double rawRows;
 			String groupKey;
+			LearningApplicability applicability;
 			try (var connection = repository.getConnection()) {
 				Explanation explanation = connection.prepareTupleQuery(query)
 						.explain(Explanation.Level.Optimized);
@@ -5251,7 +5476,13 @@ class LmdbFrontierPlanningIntegrationTest {
 				assertNotNull(groupKey,
 						() -> "A top-of-stream uncorrelated operator refinement must stamp its logical group fact"
 								+ " key: " + explanation);
-				assertTrue(groupKey.startsWith("difference@"),
+				LogicalLearningKey logicalGroupKey = LogicalLearningKey.parse(groupKey);
+				assertNotNull(logicalGroupKey,
+						() -> "The fact key must be a versioned canonical logical identity: " + explanation);
+				applicability = LearningApplicability.parse(
+						observed.getStringMetricPlanned("optimizer.learningApplicability"));
+				assertNotNull(applicability, explanation::toString);
+				assertEquals("difference", logicalGroupKey.logicalOperator(),
 						() -> "The fact key must name the memo group's canonical member: " + explanation);
 				rawRows = observed.getDoubleMetricPlanned("plannedFrontierRows");
 				assertTrue(rawRows > 0.0d, explanation::toString);
@@ -5263,7 +5494,11 @@ class LmdbFrontierPlanningIntegrationTest {
 			TupleExpr completed = observed.clone();
 			completeLeoOperator(completed, 64L, rawRows, rawRows, 64.0d);
 			statistics.estimatorRuntime().feedback().recordOperatorOutcome(completed);
-			assertEquals(64.0d, statistics.estimatorRuntime().feedback().exactCardinalityFact(groupKey), 0.0d,
+			assertEquals(64.0d, statistics.estimatorRuntime()
+					.feedback()
+					.exactCardinalityFact(
+							LogicalLearningKey.parse(groupKey), applicability),
+					0.0d,
 					"A single-invocation completed observation must mint the group fact");
 
 			try (var connection = repository.getConnection()) {
@@ -5314,6 +5549,76 @@ class LmdbFrontierPlanningIntegrationTest {
 		}
 	}
 
+	@Test
+	void fullQueryAndIsolatedMinusShareLogicalApplicabilityAfterContextualRewrite(@TempDir Path dataDirectory) {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
+				.setFrontierSynopsisBudgetBytes(SYNOPSIS_BUDGET_BYTES);
+		LmdbStore store = new LmdbStore(dataDirectory.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			IRI q = repository.getValueFactory().createIRI("urn:frontier:applicability-minus-q");
+			try (var connection = repository.getConnection()) {
+				var values = connection.getValueFactory();
+				for (int index = 0; index < 32; index++) {
+					var root = values.createIRI("urn:frontier:applicability-minus-root-" + index);
+					connection.add(root, PREDICATE,
+							values.createIRI("urn:frontier:applicability-minus-object-" + index));
+					if ((index & 1) == 0) {
+						connection.add(root, q,
+								values.createIRI("urn:frontier:applicability-minus-value-" + index));
+					}
+				}
+			}
+			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+
+			StatementPattern left = new StatementPattern(Var.of("root"), Var.of("p", PREDICATE), Var.of("object"));
+			StatementPattern right = new StatementPattern(Var.of("root"), Var.of("q", q), Var.of("value"));
+			PackedCostTestSupport.DifferenceCostCall call = PackedCostTestSupport.difference(left, right);
+			SailStore sailStore = store.getSailStore();
+			try (SailSource branch = sailStore.getExplicitSailSource().fork();
+					SailDataset dataset = branch.dataset(store.getDefaultIsolationLevel())) {
+				SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(
+						sailStore.getValueFactory(), dataset);
+				var statistics = sailStore.getEvaluationStatistics();
+				var strategy = store.getEvaluationStrategyFactory()
+						.createEvaluationStrategy(null, tripleSource, statistics);
+				LmdbEstimatorRuntime runtime = ((LmdbEstimatorRuntimeProvider) statistics).estimatorRuntime();
+				LmdbPackedCostModel model = new LmdbPackedCostModel(runtime,
+						OptionalLong.of(tripleSource.getSnapshotEpoch().orElseThrow()), true, tripleSource, strategy);
+				try (var session = model.openSession(call.query())) {
+					PackedCostEstimate leftEstimate = new PackedCostEstimate();
+					session.estimateLeaf(call.leftRelationId(), call.emptyContext(), leftEstimate);
+					PackedCostEstimate rightEstimate = new PackedCostEstimate();
+					session.estimateLeaf(call.rightRelationId(), call.emptyContext(), rightEstimate);
+					assertTrue(leftEstimate.evidenceStateId() > 0);
+					assertTrue(rightEstimate.evidenceStateId() > 0);
+
+					PackedCostEstimate standalone = new PackedCostEstimate();
+					session.refineOperator(call.differenceRelationId(),
+							call.standaloneContext(leftEstimate.outputRows(), rightEstimate.outputRows(),
+									leftEstimate.evidenceStateId(), rightEstimate.evidenceStateId()),
+							standalone);
+					PackedCostEstimate exactInputPrefix = new PackedCostEstimate();
+					session.refineOperator(call.differenceRelationId(),
+							call.exactLeftPrefixContext(leftEstimate.outputRows(), rightEstimate.outputRows(),
+									leftEstimate.evidenceStateId(), rightEstimate.evidenceStateId()),
+							exactInputPrefix);
+
+					assertEquals(standalone.plannedStringMetric("optimizer.logicalLearningKey"),
+							exactInputPrefix.plannedStringMetric("optimizer.logicalLearningKey"),
+							"The same canonical Difference must retain one logical key");
+					assertEquals(standalone.plannedStringMetric("optimizer.learningApplicability"),
+							exactInputPrefix.plannedStringMetric("optimizer.learningApplicability"),
+							"Its exact left-input enumeration prefix is topology, not conditional applicability");
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
 	/*
 	 * The q9 contextual-copy shape: under a duplicate-insensitive observer (COUNT DISTINCT) the unused OPTIONAL is
 	 * dropped by the rule program, re-interning the MINUS as a second memo group whose scheduled FILTER copies share
@@ -5357,6 +5662,7 @@ class LmdbFrontierPlanningIntegrationTest {
 			TupleExpr observed;
 			double rawRows;
 			String groupKey;
+			LearningApplicability applicability;
 			try (var connection = repository.getConnection()) {
 				Explanation explanation = connection.prepareTupleQuery(query)
 						.explain(Explanation.Level.Optimized);
@@ -5364,7 +5670,13 @@ class LmdbFrontierPlanningIntegrationTest {
 				assertNotNull(observed, explanation::toString);
 				groupKey = observed.getStringMetricPlanned("optimizer.frontierLogicalGroupKey");
 				assertNotNull(groupKey, explanation::toString);
-				assertTrue(groupKey.startsWith("difference@"),
+				LogicalLearningKey logicalGroupKey = LogicalLearningKey.parse(groupKey);
+				assertNotNull(logicalGroupKey,
+						() -> "Whatever framing wins, its fact key must be versioned and canonical: " + explanation);
+				applicability = LearningApplicability.parse(
+						observed.getStringMetricPlanned("optimizer.learningApplicability"));
+				assertNotNull(applicability, explanation::toString);
+				assertEquals("difference", logicalGroupKey.logicalOperator(),
 						() -> "Whatever framing wins, its fact key must name the unioned group's canonical"
 								+ " member: " + explanation);
 				rawRows = observed.getDoubleMetricPlanned("plannedFrontierRows");
@@ -5376,7 +5688,11 @@ class LmdbFrontierPlanningIntegrationTest {
 			TupleExpr completed = observed.clone();
 			completeLeoOperator(completed, 64L, rawRows, rawRows, 64.0d);
 			statistics.estimatorRuntime().feedback().recordOperatorOutcome(completed);
-			assertEquals(64.0d, statistics.estimatorRuntime().feedback().exactCardinalityFact(groupKey), 0.0d,
+			assertEquals(64.0d, statistics.estimatorRuntime()
+					.feedback()
+					.exactCardinalityFact(
+							LogicalLearningKey.parse(groupKey), applicability),
+					0.0d,
 					"The completed framing must mint the fact under the unioned group key");
 
 			try (var connection = repository.getConnection()) {
@@ -5457,8 +5773,10 @@ class LmdbFrontierPlanningIntegrationTest {
 				assertTrue(rawScanRows > 100.0d, explanation::toString);
 				observedFraming = findMinusFraming((TupleExpr) explanation.tupleExpr());
 				assertNotNull(observedFraming, explanation::toString);
-				assertTrue(observedFraming.getStringMetricPlanned("optimizer.frontierLogicalGroupKey")
-						.startsWith("difference@"), explanation::toString);
+				LogicalLearningKey logicalGroupKey = LogicalLearningKey.parse(
+						observedFraming.getStringMetricPlanned("optimizer.frontierLogicalGroupKey"));
+				assertNotNull(logicalGroupKey, explanation::toString);
+				assertEquals("difference", logicalGroupKey.logicalOperator(), explanation::toString);
 				rawFramingRows = observedFraming.getDoubleMetricPlanned("plannedFrontierRows");
 			}
 
@@ -5526,17 +5844,17 @@ class LmdbFrontierPlanningIntegrationTest {
 	}
 
 	@Test
-	void degradedCalibrationClampedToStructuralBand(@TempDir Path dataDirectory) throws Exception {
+	void siblingFamilyFeedbackCannotAlterExactLogicalAlternative(@TempDir Path dataDirectory) throws Exception {
 		String previousClamp = System.getProperty(LmdbFrontierPackedCostSession.DEGRADED_CALIBRATION_CLAMP_PROPERTY);
 		System.setProperty(LmdbFrontierPackedCostSession.DEGRADED_CALIBRATION_CLAMP_PROPERTY, "true");
 		try {
-			degradedCalibrationClampScenario(dataDirectory);
+			siblingFamilyIsolationScenario(dataDirectory);
 		} finally {
 			restoreProperty(LmdbFrontierPackedCostSession.DEGRADED_CALIBRATION_CLAMP_PROPERTY, previousClamp);
 		}
 	}
 
-	private static void degradedCalibrationClampScenario(Path dataDirectory) {
+	private static void siblingFamilyIsolationScenario(Path dataDirectory) {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc")
 				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
 				.setFrontierSynopsisBudgetBytes(16L * 1024L);
@@ -5578,6 +5896,7 @@ class LmdbFrontierPlanningIntegrationTest {
 			Filter degraded;
 			double degradedRows;
 			FrontierLearningKey degradedKey;
+			LogicalLearningKey degradedLogicalKey;
 			try (var connection = repository.getConnection()) {
 				Explanation explanation = connection.prepareTupleQuery(query)
 						.explain(Explanation.Level.Optimized);
@@ -5590,22 +5909,29 @@ class LmdbFrontierPlanningIntegrationTest {
 				degradedKey = FrontierLearningKey.parse(
 						degraded.getStringMetricPlanned("optimizer.frontierLearningKey"));
 				assertNotNull(degradedKey, explanation::toString);
+				degradedLogicalKey = LogicalLearningKey.parse(
+						degraded.getStringMetricPlanned("optimizer.logicalLearningKey"));
+				assertNotNull(degradedLogicalKey, explanation::toString);
 			}
 
 			/*
-			 * Pool-only poison: wild observations under a SIBLING key (same family, different binding layout) leave the
-			 * degraded key itself with zero exact evidence — exactly the shape that crushed q9's anti-join input. With
-			 * the clamp on, a family posterior with no exact observations earns a band of 4^0 = 1: the raw degraded
-			 * estimate stands.
+			 * Pool-only poison: wild observations under a SIBLING key (same family, different binding layout) must
+			 * remain diagnostic. D2 permits only the exact canonical logical key and applicability to influence a
+			 * winner.
 			 */
 			FrontierLearningKey sibling = FrontierLearningKey.of(
 					degradedKey.operatorFamily(), degradedKey.rawTransform(),
 					degradedKey.bindingLayoutFingerprint() + 1L, degradedKey.correlationFingerprint(),
 					degradedKey.accessKernel(), degradedKey.indexName(), degradedKey.accessMode());
+			LogicalLearningKey siblingLogicalKey = LogicalLearningKey.of(
+					degradedLogicalKey.logicalOperator(), degradedLogicalKey.canonicalExpressionDigest() + "-sibling",
+					"sibling-child-groups", "sibling-predicate-domain", "v0,v1", "none",
+					"bag|duplicate-sensitive|sparql-unbound", "store-defaults|mixed-scope");
 			for (int observation = 0; observation < 6; observation++) {
 				Filter poisoned = degraded.clone();
 				poisoned.setStringMetricPlanned("optimizer.frontierLearningKey", sibling.externalForm());
-				poisoned.setStringMetricPlanned("optimizer.frontierLogicalGroupKey", "");
+				poisoned.setStringMetricPlanned("optimizer.logicalLearningKey", siblingLogicalKey.externalForm());
+				poisoned.setStringMetricPlanned("optimizer.frontierLogicalGroupKey", siblingLogicalKey.externalForm());
 				poisoned.setStringMetricPlanned("optimizer.costEventDigest", "event-clamp-" + observation);
 				poisoned.setStringMetricPlanned("optimizer.frontierStateDigest", "state-clamp-" + observation);
 				completeLeoOperator(poisoned, Math.round(degradedRows * 400.0d), degradedRows, 512.0d,
@@ -5616,25 +5942,24 @@ class LmdbFrontierPlanningIntegrationTest {
 			try (var connection = repository.getConnection()) {
 				Explanation explanation = connection.prepareTupleQuery(query)
 						.explain(Explanation.Level.Optimized);
-				Filter clamped = findFilter((TupleExpr) explanation.tupleExpr());
-				assertNotNull(clamped, explanation::toString);
-				assertEquals(1.0d, clamped.getDoubleMetricPlanned("optimizer.frontierLeo.output_rows.clamped"),
-						0.0d, () -> "A pooled correction applied to a degraded state with zero exact evidence"
-								+ " must be clamped to the raw structural estimate: " + explanation);
-				double raw = clamped.getDoubleMetricPlanned("optimizer.frontierLeo.output_rows.raw");
-				// The .corrected annotation documents the unclamped posterior; the APPLIED estimate is the rows.
-				assertEquals(raw, clamped.getDoubleMetricPlanned("plannedFrontierRows"), raw * 0.0001d,
-						() -> "With zero exact observations the band is 4^0 = 1 — the raw estimate stands: "
+				Filter isolated = findFilter((TupleExpr) explanation.tupleExpr());
+				assertNotNull(isolated, explanation::toString);
+				assertEquals(degradedKey,
+						FrontierLearningKey.parse(isolated.getStringMetricPlanned("optimizer.frontierLearningKey")),
+						explanation::toString);
+				assertEquals(degradedRows, isolated.getResultSizeEstimate(), degradedRows * 0.0001d,
+						() -> "A sibling family posterior must not alter the exact logical alternative: "
 								+ explanation);
 			}
 
 			String previous = System.getProperty(LmdbFrontierPackedCostSession.DEGRADED_CALIBRATION_CLAMP_PROPERTY);
 			System.setProperty(LmdbFrontierPackedCostSession.DEGRADED_CALIBRATION_CLAMP_PROPERTY, "false");
 			try {
-				// Bump the learned revision so the re-planned query cannot reuse the clamped plan.
+				// Bump the learned revision and prove that disabling the old clamp cannot resurrect family pooling.
 				Filter poisoned = degraded.clone();
 				poisoned.setStringMetricPlanned("optimizer.frontierLearningKey", sibling.externalForm());
-				poisoned.setStringMetricPlanned("optimizer.frontierLogicalGroupKey", "");
+				poisoned.setStringMetricPlanned("optimizer.logicalLearningKey", siblingLogicalKey.externalForm());
+				poisoned.setStringMetricPlanned("optimizer.frontierLogicalGroupKey", siblingLogicalKey.externalForm());
 				poisoned.setStringMetricPlanned("optimizer.costEventDigest", "event-clamp-off");
 				poisoned.setStringMetricPlanned("optimizer.frontierStateDigest", "state-clamp-off");
 				completeLeoOperator(poisoned, Math.round(degradedRows * 400.0d), degradedRows, 512.0d,
@@ -5643,13 +5968,10 @@ class LmdbFrontierPlanningIntegrationTest {
 				try (var connection = repository.getConnection()) {
 					Explanation explanation = connection.prepareTupleQuery(query)
 							.explain(Explanation.Level.Optimized);
-					Filter unclamped = findFilter((TupleExpr) explanation.tupleExpr());
-					assertNotNull(unclamped, explanation::toString);
-					double raw = unclamped.getDoubleMetricPlanned("optimizer.frontierLeo.output_rows.raw");
-					double applied = unclamped.getDoubleMetricPlanned("plannedFrontierRows");
-					assertTrue(applied > raw * 2.0d,
-							() -> "The kill-switch must restore unclamped pooled calibration (raw=" + raw
-									+ ", applied=" + applied + "): " + explanation);
+					Filter stillIsolated = findFilter((TupleExpr) explanation.tupleExpr());
+					assertNotNull(stillIsolated, explanation::toString);
+					assertEquals(degradedRows, stillIsolated.getResultSizeEstimate(), degradedRows * 0.0001d,
+							() -> "A safety kill-switch must not restore unsafe family pooling: " + explanation);
 				}
 			} finally {
 				restoreProperty(LmdbFrontierPackedCostSession.DEGRADED_CALIBRATION_CLAMP_PROPERTY, previous);
@@ -5669,6 +5991,7 @@ class LmdbFrontierPlanningIntegrationTest {
 
 	private static void completeLeoOperator(TupleExpr operator, long actualRows, double plannedRows,
 			double plannedWorkRows, double actualWorkRows) {
+		operator.setParentNode(null);
 		operator.setCostFeedbackTrackingEnabled(true);
 		operator.setCostFeedbackExpectedRows(plannedRows);
 		operator.setCostFeedbackExpectedWorkRows(plannedWorkRows);
@@ -5681,6 +6004,27 @@ class LmdbFrontierPlanningIntegrationTest {
 		operator.setCostFeedbackActualWorkRows(actualWorkRows);
 		operator.setCostFeedbackCloseCountActual(1L);
 		operator.setCostFeedbackCompletedActual(true);
+		operator.setLongMetricActual(EvaluationStatistics.EXHAUSTED_OPEN_COUNT, 1L);
+		operator.setLongMetricActual(TelemetryMetricNames.EXHAUSTED_CLOSE_COUNT_ACTUAL, 1L);
+	}
+
+	private static EvaluationStatistics.InvocationAggregateObservation typedCompletedObservation(TupleExpr operator) {
+		double plannedRows = operator.getCostFeedbackExpectedRows();
+		double actualRows = operator.getCostFeedbackActualRows();
+		double plannedWorkRows = operator.getCostFeedbackExpectedWorkRows();
+		double actualWorkRows = operator.getCostFeedbackActualWorkRows();
+		double plannedSourceRows = operator.getDoubleMetricPlanned("optimizer.costEventSequentialRows");
+		double actualSourceRows = operator.getSourceRowsScannedActual();
+		EvaluationStatistics.PhysicalWorkVector plannedWork = new EvaluationStatistics.PhysicalWorkVector(
+				plannedWorkRows, plannedRows, plannedSourceRows, 0.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+				0.0d, 0.0d);
+		EvaluationStatistics.PhysicalWorkVector actualWork = new EvaluationStatistics.PhysicalWorkVector(
+				actualWorkRows, actualRows, actualSourceRows, 0.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+				0.0d, 0.0d);
+		return new EvaluationStatistics.InvocationAggregateObservation(
+				plannedRows, plannedRows, actualRows, plannedWork, plannedWork, actualWork,
+				1L, 1L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
+				EvaluationStatistics.TerminationClassification.EXHAUSTED, true);
 	}
 
 	private static StatementPattern findPattern(TupleExpr expression, IRI predicate) {

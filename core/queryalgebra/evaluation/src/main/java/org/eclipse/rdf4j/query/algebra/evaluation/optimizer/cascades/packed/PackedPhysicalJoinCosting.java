@@ -19,6 +19,12 @@ final class PackedPhysicalJoinCosting {
 
 	/** Names the input the runtime should buffer into the hash table. Values are {@code "left"} and {@code "right"}. */
 	static final String HASH_JOIN_BUILD_SIDE_METRIC = "optimizer.hashJoinBuildSide";
+	static final String HASH_JOIN_BUILD_ROWS_METRIC = "optimizer.hashJoinBuildRows";
+	static final String HASH_JOIN_PROBE_INPUT_ROWS_METRIC = "optimizer.hashJoinProbeInputRows";
+	static final String HASH_JOIN_CANDIDATE_ROWS_METRIC = "optimizer.hashJoinCandidateRows";
+	static final String HASH_JOIN_CANDIDATE_SOURCE_METRIC = "optimizer.hashJoinCandidateEstimateSource";
+	static final String HASH_JOIN_PEAK_MEMORY_ROWS_METRIC = "optimizer.hashJoinPeakMemoryRows";
+	static final String HASH_JOIN_EXECUTION_PARTITIONS_METRIC = "optimizer.hashJoinExecutionPartitions";
 
 	private PackedPhysicalJoinCosting() {
 	}
@@ -65,10 +71,16 @@ final class PackedPhysicalJoinCosting {
 			double leftRows = requireRows(context.leftInputRows(), "left join input");
 			double rightRows = requireRows(context.rightInputRows(), "right join input");
 			double repeatedRightRows = saturatedMultiply(rightRows, invocations);
-			boolean buildFromLeft = leftRows <= repeatedRightRows;
+			double candidateRows = saturatedMultiply(leftRows, repeatedRightRows);
+			double leftBuildScore = hashOrientationScore(
+					leftRows, repeatedRightRows, candidateRows, resultRows, leftRows);
+			double rightBuildScore = hashOrientationScore(
+					repeatedRightRows, leftRows, candidateRows, resultRows, rightRows);
+			boolean buildFromLeft = leftBuildScore <= rightBuildScore;
 			double buildRows = buildFromLeft ? leftRows : repeatedRightRows;
-			double probeRows = buildFromLeft ? repeatedRightRows : leftRows;
-			double peakMemoryRows = Math.min(leftRows, rightRows);
+			double probeInputRows = buildFromLeft ? repeatedRightRows : leftRows;
+			double probeRows = saturatedAdd(probeInputRows, candidateRows);
+			double peakMemoryRows = buildFromLeft ? leftRows : rightRows;
 			output.setLocalPhysicalCost(
 					0.0d, 0.0d, 0.0d, 0.0d, buildRows, probeRows, 0.0d, resultRows, 0.0d,
 					peakMemoryRows);
@@ -78,9 +90,27 @@ final class PackedPhysicalJoinCosting {
 			 * as well.
 			 */
 			output.putPlannedStringMetric(HASH_JOIN_BUILD_SIDE_METRIC, buildFromLeft ? "left" : "right");
+			output.putPlannedStringMetric(HASH_JOIN_CANDIDATE_SOURCE_METRIC,
+					context.hashLookupMaskId() == 0 ? "product-no-assured-key" : "product-missing-evidence");
+			output.putPlannedDoubleMetric(HASH_JOIN_BUILD_ROWS_METRIC, buildRows);
+			output.putPlannedDoubleMetric(HASH_JOIN_PROBE_INPUT_ROWS_METRIC, probeInputRows);
+			output.putPlannedDoubleMetric(HASH_JOIN_CANDIDATE_ROWS_METRIC, candidateRows);
+			output.putPlannedDoubleMetric(HASH_JOIN_PEAK_MEMORY_ROWS_METRIC, peakMemoryRows);
+			output.putPlannedDoubleMetric(HASH_JOIN_EXECUTION_PARTITIONS_METRIC, invocations);
 		}
 		default -> throw new IllegalArgumentException("unknown physical join implementation " + implementation);
 		}
+	}
+
+	private static double hashOrientationScore(double buildRows, double probeInputRows, double candidateRows,
+			double resultRows, double peakMemoryRows) {
+		return saturatedAdd(saturatedAdd(buildRows, probeInputRows),
+				saturatedAdd(candidateRows, saturatedAdd(resultRows, peakMemoryRows)));
+	}
+
+	private static double saturatedAdd(double left, double right) {
+		double sum = left + right;
+		return Double.isFinite(sum) ? sum : Double.MAX_VALUE;
 	}
 
 	private static double saturatedMultiply(double left, double right) {

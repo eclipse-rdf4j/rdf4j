@@ -16,6 +16,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.concurrent.atomic.AtomicInteger;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.IRI;
@@ -28,6 +30,7 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -36,7 +39,9 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.ArrayBindingBasedQueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -157,6 +162,21 @@ public class PathIterationTest {
 	}
 
 	@Test
+	public void oneHopEndConstant() {
+		Var startVar = Var.of("subClass");
+		Var endVar = Var.of("superClass", three, true, true);
+		TupleExpr pathExpression = new StatementPattern(startVar, Var.of("predicate", RDFS.SUBCLASSOF, true, true),
+				endVar);
+
+		try (PathIteration pathIteration = new PathIteration(evaluator, Scope.DEFAULT_CONTEXTS, startVar,
+				pathExpression, endVar, null, 1, new QueryBindingSet())) {
+			assertExpected(pathIteration.getNextElement(), two, three);
+			assertExpected(pathIteration.getNextElement(), one, three);
+			assertNull(pathIteration.getNextElement());
+		}
+	}
+
+	@Test
 	public void fixedEndpointsStopAfterFirstReachabilityHit() {
 		// SELECT * WHERE { <one> rdfs:subClassOf+ <three> }
 
@@ -204,6 +224,61 @@ public class PathIterationTest {
 		assertTrue(pathNode.getLongMetricActual(PathIteration.PATH_CANDIDATE_ROWS_ACTUAL) >= 3L);
 		assertTrue(pathNode.getLongMetricActual(PathIteration.PATH_EXPANSION_ITERATIONS_ACTUAL) >= 1L);
 		assertTrue(pathNode.getLongMetricActual(PathIteration.PATH_QUEUE_ENQUEUE_ROWS_ACTUAL) >= 1L);
+	}
+
+	@Test
+	public void reusesPreparedExpansionShapeAcrossFrontierSteps() {
+		AtomicInteger cloneCount = new AtomicInteger();
+		Var startVar = Var.of("subClass");
+		Var endVar = Var.of("superClass");
+		TupleExpr pathExpression = new CloneCountingStatementPattern(startVar,
+				Var.of("predicate", RDFS.SUBCLASSOF, true, true), endVar, cloneCount);
+
+		try (PathIteration pathIteration = new PathIteration(evaluator, Scope.DEFAULT_CONTEXTS, startVar,
+				pathExpression, endVar, null, 1, new QueryBindingSet())) {
+			assertExpected(pathIteration.getNextElement(), one, two);
+			assertExpected(pathIteration.getNextElement(), two, three);
+			assertExpected(pathIteration.getNextElement(), one, three);
+			assertNull(pathIteration.getNextElement());
+		}
+
+		assertEquals(1, cloneCount.get(), "the expansion algebra shape should be cloned once per path iterator");
+	}
+
+	@Test
+	public void preparedExpansionReadsFrontierBindingOutsideFixedArrayContext() {
+		Var startVar = Var.of("subClass");
+		Var endVar = Var.of("superClass");
+		TupleExpr pathExpression = new StatementPattern(startVar,
+				Var.of("predicate", RDFS.SUBCLASSOF, true, true), endVar);
+		QueryEvaluationContext fixedArrayContext = new ArrayBindingBasedQueryEvaluationContext(
+				new QueryEvaluationContext.Minimal((Dataset) null),
+				new String[] { startVar.getName(), endVar.getName() }, null);
+		ArbitraryLengthPath path = new ArbitraryLengthPath(startVar.clone(), pathExpression, endVar.clone(), 1);
+
+		try (PathIteration pathIteration = (PathIteration) evaluator.precompile(path, fixedArrayContext)
+				.evaluate(new QueryBindingSet())) {
+			assertExpected(pathIteration.getNextElement(), one, two);
+			assertExpected(pathIteration.getNextElement(), two, three);
+			assertExpected(pathIteration.getNextElement(), one, three);
+			assertNull(pathIteration.getNextElement());
+		}
+	}
+
+	private static final class CloneCountingStatementPattern extends StatementPattern {
+		private static final long serialVersionUID = 1L;
+		private final AtomicInteger cloneCount;
+
+		private CloneCountingStatementPattern(Var subject, Var predicate, Var object, AtomicInteger cloneCount) {
+			super(subject, predicate, object);
+			this.cloneCount = cloneCount;
+		}
+
+		@Override
+		public CloneCountingStatementPattern clone() {
+			cloneCount.incrementAndGet();
+			return (CloneCountingStatementPattern) super.clone();
+		}
 	}
 
 	private static final class CountingTripleSource implements TripleSource {

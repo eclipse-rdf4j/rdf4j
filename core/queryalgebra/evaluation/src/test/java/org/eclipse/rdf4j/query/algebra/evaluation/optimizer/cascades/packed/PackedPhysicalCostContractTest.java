@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
@@ -468,10 +469,9 @@ class PackedPhysicalCostContractTest {
 		try {
 			PackedPlanningResult result = PackedCascadesPlanner.optimize(filter, OptimizationGoal.root(), model);
 
-			// outer scan (10) + filter refinement (1) + the correlated dependent subquery's winner (100) charged
-			// once per outer row (10 invocations): the subquery consumes ?subject, so it re-opens per row
-			// (2026-08, rdf4j.optimizer.packed.correlatedDependentInvocations).
-			assertEquals(1_011.0d, result.totalCost(), result.selectedPlan()::toString);
+			// outer scan (10) + filter refinement (1) + dependent startup (1) once + ten invocations of the
+			// non-startup child work (99). Startup belongs to the physical recipe, not to every rebind.
+			assertEquals(1_002.0d, result.totalCost(), result.selectedPlan()::toString);
 		} finally {
 			if (previous == null) {
 				System.clearProperty(PackedDependentSubqueryCosting.CORRELATED_DEPENDENT_INVOCATIONS_PROPERTY);
@@ -686,6 +686,148 @@ class PackedPhysicalCostContractTest {
 	}
 
 	@Test
+	void inheritedPrefixChargesEveryReopenOfNestedJoinChildren() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern outer = new StatementPattern(Var.of("subject"),
+				Var.of("outerPredicate", values.createIRI("urn:outer")), Var.of("outerValue"));
+		StatementPattern first = new StatementPattern(Var.of("subject"),
+				Var.of("firstPredicate", values.createIRI("urn:first")), Var.of("joinKey"));
+		StatementPattern second = new StatementPattern(Var.of("joinKey"),
+				Var.of("secondPredicate", values.createIRI("urn:second")), Var.of("result"));
+		Join nestedJoin = new Join(first, second);
+		Union source = new Union(outer, nestedJoin);
+		PackedCostModel model = new PackedCostModel() {
+
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (!query.isStatementPattern(relationId)) {
+					return Double.NaN;
+				}
+				TupleExpr expression = query.materializeRelation(relationId);
+				return expression.equals(outer) ? 10.0d : expression.equals(first) ? 2.0d : 1.0d;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (!query.isStatementPattern(relationId)) {
+					return;
+				}
+				TupleExpr expression = query.materializeRelation(relationId);
+				if (expression.equals(outer)) {
+					output.setRows(10.0d, 20.0d);
+					output.setInclusivePhysicalCost(10.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+							10.0d, 0.0d, 0.0d);
+					return;
+				}
+				double sourceRows = expression.equals(first) ? 2.0d : 4.0d;
+				double isolatedRows = expression.equals(first) ? 2.0d : 1.0d;
+				if (context.prefixRelationCount() == 0) {
+					output.setRows(isolatedRows, sourceRows + 1.0d + isolatedRows);
+					output.setInclusivePhysicalCost(sourceRows, 0.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+							isolatedRows, 0.0d, 0.0d);
+					return;
+				}
+				output.setContextualRows(10.0d, sourceRows + 1.0d + 10.0d);
+				output.setInclusivePhysicalCost(sourceRows, 0.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+						10.0d, 0.0d, 0.0d);
+			}
+		};
+
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(source);
+		int relationCount = query.relationCount();
+		PackedMemo memo = new PackedMemo(query, query.symbolCount(), relationCount, relationCount, 4,
+				relationCount, relationCount * 2);
+		PackedSearchBudget budget = new PackedSearchBudget(Long.MAX_VALUE, Long.MAX_VALUE);
+		PackedIncumbentSearch search = new PackedIncumbentSearch(query, memo, budget, false, model);
+		search.build();
+		int outerRelationId = relationId(query, outer);
+		int nestedJoinRelationId = relationId(query, nestedJoin);
+		PackedJoinEnumerator enumerator = new PackedJoinEnumerator(query, memo, search.selectedRowsByGroup(),
+				budget, model);
+
+		int winnerId = enumerator.optimizeWithInheritedPrefix(
+				nestedJoinRelationId, new int[] { outerRelationId }, 1, 10.0d);
+
+		assertEquals(120.0d, memo.winnerTotalCost(winnerId),
+				"ten inherited bindings must repeat both child scans and opens, but not aggregate result rows");
+	}
+
+	@Test
+	void disconnectedComponentResultWorkRepeatsAcrossInheritedInvocations() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern outer = new StatementPattern(Var.of("outerSubject"),
+				Var.of("outerPredicate", values.createIRI("urn:outer")), Var.of("outerValue"));
+		StatementPattern first = new StatementPattern(Var.of("componentSubject"),
+				Var.of("firstPredicate", values.createIRI("urn:first")), Var.of("joinKey"));
+		StatementPattern second = new StatementPattern(Var.of("joinKey"),
+				Var.of("secondPredicate", values.createIRI("urn:second")), Var.of("result"));
+		Join nestedJoin = new Join(first, second);
+		Union source = new Union(outer, nestedJoin);
+		PackedCostModel model = new PackedCostModel() {
+
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (!query.isStatementPattern(relationId)) {
+					return Double.NaN;
+				}
+				TupleExpr expression = query.materializeRelation(relationId);
+				return expression.equals(outer) ? 10.0d : expression.equals(first) ? 2.0d : 100.0d;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (!query.isStatementPattern(relationId)) {
+					return;
+				}
+				TupleExpr expression = query.materializeRelation(relationId);
+				if (expression.equals(outer)) {
+					output.setRows(10.0d, 21.0d);
+					output.setInclusivePhysicalCost(10.0d, 0.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+							10.0d, 0.0d, 0.0d);
+					return;
+				}
+				if (expression.equals(first)) {
+					output.setComponentRows(2.0d, 5.0d);
+					output.setInclusivePhysicalCost(2.0d, 0.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+							2.0d, 0.0d, 0.0d);
+					return;
+				}
+				boolean joinKeyBound = query.prefixBindsStatementComponent(context, relationId, 0);
+				if (!joinKeyBound) {
+					output.setComponentRows(100.0d, 201.0d);
+					output.setInclusivePhysicalCost(100.0d, 0.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+							100.0d, 0.0d, 0.0d);
+					return;
+				}
+				output.setComponentRows(2.0d, 6.0d);
+				output.setInclusivePhysicalCost(2.0d, 0.0d, 2.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+						2.0d, 0.0d, 0.0d);
+				output.setInvocations(2.0d);
+			}
+		};
+
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(source);
+		int relationCount = query.relationCount();
+		PackedMemo memo = new PackedMemo(query, query.symbolCount(), relationCount, relationCount, 4,
+				relationCount, relationCount * 2);
+		PackedSearchBudget budget = new PackedSearchBudget(Long.MAX_VALUE, Long.MAX_VALUE);
+		PackedIncumbentSearch search = new PackedIncumbentSearch(query, memo, budget, false, model);
+		search.build();
+		int outerRelationId = relationId(query, outer);
+		int nestedJoinRelationId = relationId(query, nestedJoin);
+		PackedJoinEnumerator enumerator = new PackedJoinEnumerator(query, memo, search.selectedRowsByGroup(),
+				budget, model);
+
+		int winnerId = enumerator.optimizeWithInheritedPrefix(
+				nestedJoinRelationId, new int[] { outerRelationId }, 1, 10.0d);
+
+		assertEquals(150.0d, memo.winnerTotalCost(winnerId),
+				"component-scoped child result rows must repeat for every unrelated inherited binding");
+	}
+
+	@Test
 	void scheduledSemiAntiExactCacheHitRetainsOriginatingAlgorithmEvent() {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		StatementPattern provider = new StatementPattern(Var.of("provider"),
@@ -779,12 +921,26 @@ class PackedPhysicalCostContractTest {
 		int rootWinnerId = memo.findWinner(memo.logicalGroupId(query.rootRelId()), memo.anyPropertyId(), 0, 0, 0);
 
 		assertEquals(2, workUnits);
-		assertEquals(630.0d, memo.winnerTotalCost(rootWinnerId),
-				"a scheduled LOCAL semi/anti vector must be added to the selected ten-row prefix");
+		/*
+		 * Provider scan (10) + scheduled local semi/anti work (20) leaves five rows. The disconnected continuation pays
+		 * one startup unit plus five rebinds of its remaining 99 work units, then produces 500 join rows.
+		 */
+		assertEquals(1_026.0d, memo.winnerTotalCost(rootWinnerId),
+				"a scheduled LOCAL semi/anti vector must retain invocation-aware continuation work");
 	}
 
 	private static StatementPattern input() {
 		return new StatementPattern(Var.of("subject"), Var.of("predicate"), Var.of("object"));
+	}
+
+	private static int relationId(PackedQuery query, TupleExpr expression) {
+		PackedQueryView view = new PackedQueryView(query);
+		for (int relationId = 1; relationId <= query.relationCount(); relationId++) {
+			if (view.materializeRelation(relationId).equals(expression)) {
+				return relationId;
+			}
+		}
+		throw new AssertionError("missing packed relation for " + expression);
 	}
 
 	private static Filter findSemiAntiFilter(TupleExpr expression) {

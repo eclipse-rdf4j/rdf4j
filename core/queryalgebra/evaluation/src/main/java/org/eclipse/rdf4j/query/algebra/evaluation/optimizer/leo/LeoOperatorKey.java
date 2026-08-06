@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -125,6 +126,33 @@ public record LeoOperatorKey(String operatorType, String structuralFingerprint, 
 				sharedMask, executionMode);
 	}
 
+	/**
+	 * Returns an alpha-normalized description of which variables in an expression are already bound by its input. Names
+	 * that the expression does not reference are ignored.
+	 *
+	 * @param tupleExpr         expression receiving the bindings
+	 * @param inputBindingNames names bound before the expression is evaluated
+	 * @return {@code unbound} when no referenced variable is bound, otherwise a canonical binding-shape fingerprint
+	 */
+	public static String alphaNormalizedInputBindingShape(TupleExpr tupleExpr,
+			Collection<String> inputBindingNames) {
+		if (tupleExpr == null || inputBindingNames == null || inputBindingNames.isEmpty()) {
+			return "unbound";
+		}
+		Set<String> normalizedNames = new LinkedHashSet<>();
+		for (String name : inputBindingNames) {
+			if (name != null && !name.isBlank()) {
+				normalizedNames.add(name);
+			}
+		}
+		if (normalizedNames.isEmpty()) {
+			return "unbound";
+		}
+		String unbound = new Canonicalizer(ConstantMode.EXACT).fingerprint(tupleExpr);
+		String conditional = new Canonicalizer(ConstantMode.EXACT, true, normalizedNames).fingerprint(tupleExpr);
+		return conditional.equals(unbound) ? "unbound" : conditional;
+	}
+
 	private enum VarRole {
 		SUBJECT,
 		PREDICATE,
@@ -138,6 +166,7 @@ public record LeoOperatorKey(String operatorType, String structuralFingerprint, 
 		private final List<String> variableNamesByOrdinal = new ArrayList<>();
 		private final ConstantMode constantMode;
 		private final boolean allowJoinPermutations;
+		private final Set<String> inputBindingNames;
 
 		private Canonicalizer() {
 			this(ConstantMode.EXACT);
@@ -148,8 +177,14 @@ public record LeoOperatorKey(String operatorType, String structuralFingerprint, 
 		}
 
 		private Canonicalizer(ConstantMode constantMode, boolean allowJoinPermutations) {
+			this(constantMode, allowJoinPermutations, Set.of());
+		}
+
+		private Canonicalizer(ConstantMode constantMode, boolean allowJoinPermutations,
+				Set<String> inputBindingNames) {
 			this.constantMode = constantMode == null ? ConstantMode.EXACT : constantMode;
 			this.allowJoinPermutations = allowJoinPermutations;
+			this.inputBindingNames = inputBindingNames == null ? Set.of() : Set.copyOf(inputBindingNames);
 		}
 
 		String fingerprint(TupleExpr tupleExpr) {
@@ -217,7 +252,7 @@ public record LeoOperatorKey(String operatorType, String structuralFingerprint, 
 			if (!allowJoinPermutations || factorial(factors.size()) > MAX_CANONICAL_JOIN_PERMUTATIONS) {
 				List<String> factorKeys = new ArrayList<>(factors.size());
 				for (TupleExpr factor : factors) {
-					factorKeys.add(new Canonicalizer(constantMode, false).fingerprint(factor));
+					factorKeys.add(new Canonicalizer(constantMode, false, inputBindingNames).fingerprint(factor));
 				}
 				Collections.sort(factorKeys);
 				return String.join(";", factorKeys);
@@ -227,7 +262,8 @@ public record LeoOperatorKey(String operatorType, String structuralFingerprint, 
 				order[index] = index;
 			}
 			String[] minimum = new String[1];
-			addJoinPermutations(factors, order, 0, new Canonicalizer(constantMode, false), new StringBuilder(),
+			addJoinPermutations(factors, order, 0,
+					new Canonicalizer(constantMode, false, inputBindingNames), new StringBuilder(),
 					minimum);
 			return minimum[0];
 		}
@@ -299,9 +335,9 @@ public record LeoOperatorKey(String operatorType, String structuralFingerprint, 
 		}
 
 		private String canonicalUnion(Union union) {
-			Canonicalizer leftFirst = new Canonicalizer(constantMode, allowJoinPermutations);
+			Canonicalizer leftFirst = new Canonicalizer(constantMode, allowJoinPermutations, inputBindingNames);
 			String first = leftFirst.fingerprint(union.getLeftArg()) + ";" + leftFirst.fingerprint(union.getRightArg());
-			Canonicalizer rightFirst = new Canonicalizer(constantMode, allowJoinPermutations);
+			Canonicalizer rightFirst = new Canonicalizer(constantMode, allowJoinPermutations, inputBindingNames);
 			String second = rightFirst.fingerprint(union.getRightArg()) + ";"
 					+ rightFirst.fingerprint(union.getLeftArg());
 			return first.compareTo(second) <= 0 ? first : second;
@@ -443,7 +479,7 @@ public record LeoOperatorKey(String operatorType, String structuralFingerprint, 
 				variableOrdinals.put(name, ordinal);
 				variableNamesByOrdinal.add(name);
 			}
-			return "v" + ordinal;
+			return "v" + ordinal + (inputBindingNames.contains(name) ? "!input" : "");
 		}
 
 		private static String normalize(String value) {

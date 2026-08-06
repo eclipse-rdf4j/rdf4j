@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -79,6 +80,23 @@ public final class PackedCostTestSupport {
 		PackedCostContext context = new PackedCostContext();
 		context.reset(new int[] { prefixRelationId }, 0, 1, prefixRows);
 		return new CostCall(view, context, factorRelationId);
+	}
+
+	public static DifferenceCostCall difference(TupleExpr left, TupleExpr right) {
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(new Difference(left, right));
+		PackedQueryView view = new PackedQueryView(query);
+		int differenceRelationId = 0;
+		for (int relationId = 1; relationId <= view.relationCount(); relationId++) {
+			if (view.materializeRelation(relationId) instanceof Difference) {
+				differenceRelationId = relationId;
+				break;
+			}
+		}
+		if (differenceRelationId == 0 || view.childCount(differenceRelationId) != 2) {
+			throw new AssertionError("Packed test fixture lost its Difference relation");
+		}
+		return new DifferenceCostCall(view, differenceRelationId,
+				view.childRelationId(differenceRelationId, 0), view.childRelationId(differenceRelationId, 1));
 	}
 
 	public static PairCostCall connectedStatementFactors(StatementPattern prefix, StatementPattern factor) {
@@ -176,7 +194,64 @@ public final class PackedCostTestSupport {
 		return new StatementFactorChainCostCall(view, bindingRelationId, factorRelationIds);
 	}
 
+	public static TwoFiniteComponentCostCall twoFiniteComponents(BindingSetAssignment outerBindings,
+			StatementPattern outerFactor, BindingSetAssignment componentBindings, StatementPattern componentFactor) {
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(
+				new Join(new Join(new Join(outerBindings, outerFactor), componentBindings), componentFactor));
+		PackedQueryView view = new PackedQueryView(query);
+		int outerBindingRelationId = 0;
+		int outerFactorRelationId = 0;
+		int componentBindingRelationId = 0;
+		int componentFactorRelationId = 0;
+		for (int relationId = 1; relationId <= view.relationCount(); relationId++) {
+			TupleExpr relation = view.materializeRelation(relationId);
+			if (relation instanceof BindingSetAssignment assignment) {
+				if (assignment.getBindingNames().equals(outerBindings.getBindingNames())) {
+					outerBindingRelationId = relationId;
+				} else if (assignment.getBindingNames().equals(componentBindings.getBindingNames())) {
+					componentBindingRelationId = relationId;
+				}
+			} else if (relation instanceof StatementPattern pattern) {
+				Value predicate = pattern.getPredicateVar().getValue();
+				if (predicate.equals(outerFactor.getPredicateVar().getValue())) {
+					outerFactorRelationId = relationId;
+				} else if (predicate.equals(componentFactor.getPredicateVar().getValue())) {
+					componentFactorRelationId = relationId;
+				}
+			}
+		}
+		if (outerBindingRelationId == 0 || outerFactorRelationId == 0
+				|| componentBindingRelationId == 0 || componentFactorRelationId == 0) {
+			throw new AssertionError("Packed test fixture lost a finite component relation");
+		}
+		return new TwoFiniteComponentCostCall(view, outerBindingRelationId, outerFactorRelationId,
+				componentBindingRelationId, componentFactorRelationId);
+	}
+
 	public record CostCall(PackedQueryView query, PackedCostContext context, int factorRelationId) {
+	}
+
+	public record DifferenceCostCall(PackedQueryView query, int differenceRelationId, int leftRelationId,
+			int rightRelationId) {
+
+		public PackedCostContext emptyContext() {
+			return new PackedCostContext();
+		}
+
+		public PackedCostContext standaloneContext(double leftRows, double rightRows, int leftEvidenceStateId,
+				int rightEvidenceStateId) {
+			PackedCostContext context = new PackedCostContext();
+			context.setOperatorInputs(leftRows, rightRows, leftEvidenceStateId, rightEvidenceStateId);
+			return context;
+		}
+
+		public PackedCostContext exactLeftPrefixContext(double leftRows, double rightRows, int leftEvidenceStateId,
+				int rightEvidenceStateId) {
+			PackedCostContext context = new PackedCostContext();
+			context.reset(new int[] { leftRelationId }, 0, 1, leftRows, leftEvidenceStateId);
+			context.setOperatorInputs(leftRows, rightRows, leftEvidenceStateId, rightEvidenceStateId);
+			return context;
+		}
 	}
 
 	public record PairCostCall(PackedQueryView query, int prefixRelationId, int factorRelationId) {
@@ -242,6 +317,35 @@ public final class PackedCostTestSupport {
 			System.arraycopy(factorRelationIds, 0, prefixRelationIds, 1, prefixFactorCount);
 			PackedCostContext context = new PackedCostContext();
 			context.reset(prefixRelationIds, 0, prefixRelationIds.length, prefixRows, evidenceStateId);
+			return context;
+		}
+	}
+
+	public record TwoFiniteComponentCostCall(PackedQueryView query, int outerBindingRelationId,
+			int outerFactorRelationId, int componentBindingRelationId, int componentFactorRelationId) {
+
+		public PackedCostContext emptyContext() {
+			return new PackedCostContext();
+		}
+
+		public PackedCostContext outerFactorContext(double prefixRows, int evidenceStateId) {
+			return prefixContext(new int[] { outerBindingRelationId }, prefixRows, evidenceStateId);
+		}
+
+		public PackedCostContext componentBindingContext(double prefixRows, int evidenceStateId) {
+			return prefixContext(new int[] { outerBindingRelationId, outerFactorRelationId }, prefixRows,
+					evidenceStateId);
+		}
+
+		public PackedCostContext componentFactorContext(double prefixRows, int evidenceStateId) {
+			return prefixContext(
+					new int[] { outerBindingRelationId, outerFactorRelationId, componentBindingRelationId },
+					prefixRows, evidenceStateId);
+		}
+
+		private static PackedCostContext prefixContext(int[] relationIds, double prefixRows, int evidenceStateId) {
+			PackedCostContext context = new PackedCostContext();
+			context.reset(relationIds, 0, relationIds.length, prefixRows, evidenceStateId);
 			return context;
 		}
 	}

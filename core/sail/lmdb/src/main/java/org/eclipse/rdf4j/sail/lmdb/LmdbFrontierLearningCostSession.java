@@ -31,18 +31,21 @@ final class LmdbFrontierLearningCostSession implements PackedCostSession {
 	public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
 		delegate.estimateLeaf(relationId, context, output);
 		delegate.applyFrontierLearning(relationId, context, output);
+		delegate.refreshRuntimeFeedbackContract(output);
 	}
 
 	@Override
 	public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
 		delegate.appendFactor(relationId, context, output);
 		delegate.applyFrontierLearning(relationId, context, output);
+		delegate.refreshRuntimeFeedbackContract(output);
 	}
 
 	@Override
 	public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
 		delegate.refineOperator(relationId, context, output);
 		delegate.applyFrontierLearning(relationId, context, output);
+		delegate.refreshRuntimeFeedbackContract(output);
 	}
 
 	@Override
@@ -54,6 +57,7 @@ final class LmdbFrontierLearningCostSession implements PackedCostSession {
 		} else {
 			delegate.applyFrontierLearning(0, context, output);
 		}
+		delegate.refreshRuntimeFeedbackContract(output);
 	}
 
 	@Override

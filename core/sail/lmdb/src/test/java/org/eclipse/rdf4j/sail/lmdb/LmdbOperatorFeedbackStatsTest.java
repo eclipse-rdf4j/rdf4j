@@ -117,7 +117,7 @@ class LmdbOperatorFeedbackStatsTest {
 	}
 
 	@Test
-	void frontierLearningRoutesRuntimeDimensionsByOriginKeyAndPersistsVersionSeventeen(@TempDir Path tempDir)
+	void frontierLearningRoutesRuntimeDimensionsByOriginKeyAndPersistsVersionTwenty(@TempDir Path tempDir)
 			throws Exception {
 		Path estimatorPath = estimatorPath(tempDir);
 		LmdbOperatorFeedbackStats stats = persistentStats(estimatorPath);
@@ -142,10 +142,124 @@ class LmdbOperatorFeedbackStatsTest {
 
 		stats.persistIfDirty();
 		Path sidecar = estimatorPath.resolveSibling(estimatorPath.getFileName() + ".operators");
-		assertEquals(17, ByteBuffer.wrap(Files.readAllBytes(sidecar)).getInt());
+		assertEquals(20, ByteBuffer.wrap(Files.readAllBytes(sidecar)).getInt());
 		LmdbOperatorFeedbackStats reloaded = persistentStats(estimatorPath);
 		assertTrue(frontierCorrection(reloaded, key, FrontierCostDimension.SOURCE_ROWS_SCANNED, 1_000.0d,
-				false) < 1_000.0d, "Version-17 feedback must preserve the dimension posterior");
+				false) < 1_000.0d, "Version-20 feedback must preserve the compatibility posterior");
+	}
+
+	@Test
+	void versionNineteenResidualLogicalStateIsDeterministicallyQuarantined(@TempDir Path tempDir)
+			throws Exception {
+		Path estimatorPath = estimatorPath(tempDir);
+		LmdbOperatorFeedbackStats stats = persistentStats(estimatorPath);
+		LogicalLearningKey logical = LogicalLearningKey.of("difference", "legacy-residual-expression", "children",
+				"predicates", "x", "none", "bag|duplicate-sensitive|sparql-unbound", "default");
+		LearningApplicability applicability = new LearningApplicability(
+				11L, 0L, "unconditional", 19L, 23L, 1L);
+		PhysicalResidualKey physical = PhysicalResidualKey.of("streaming-correlated", "statement-pattern",
+				"spoc", "per-binding", "none", "none", "none", "bound");
+		Join observed = join("s", "x", "o");
+		completeCostFeedback(observed, 400L, 100.0d, 1_100.0d, 650.0d);
+		observed.setStringMetricPlanned("optimizer.frontierLearningKey", FrontierLearningKey.of(
+				"join", "JOIN@legacy-residual", 17L, 23L, "spoc-prefix", "spoc", "prefix").externalForm());
+		observed.setStringMetricPlanned("optimizer.logicalLearningKey", logical.externalForm());
+		observed.setStringMetricPlanned("optimizer.learningApplicability", applicability.externalForm());
+		observed.setStringMetricPlanned("optimizer.physicalResidualKey", physical.externalForm());
+		observed.setStringMetricPlanned("optimizer.costEventDigest", "event-v19-residual");
+		observed.setStringMetricPlanned("optimizer.frontierStateDigest", "state-v19-residual");
+		observed.setStringMetricPlanned("plannedFrontierGuarantee", "measure_unbiased");
+
+		stats.recordOperatorOutcome(observed);
+		assertNotNull(stats.logicalDimensionEstimate(
+				logical, applicability, FrontierCostDimension.OUTPUT_ROWS, 100.0d));
+		stats.persistIfDirty();
+
+		Path sidecar = estimatorPath.resolveSibling(estimatorPath.getFileName() + ".operators");
+		byte[] versionNineteen = Files.readAllBytes(sidecar);
+		ByteBuffer.wrap(versionNineteen).putInt(19);
+		Files.write(sidecar, versionNineteen);
+
+		LmdbOperatorFeedbackStats reloaded = persistentStats(estimatorPath);
+		assertNull(reloaded.logicalDimensionEstimate(
+				logical, applicability, FrontierCostDimension.OUTPUT_ROWS, 100.0d),
+				"V19 stored output rows as a raw-relative residual and must never be reinterpreted as absolute logical truth");
+	}
+
+	@Test
+	void catastrophicLifecycleOutcomePersistsAndInvalidatesPlanningRevision(@TempDir Path tempDir)
+			throws Exception {
+		String priorProfile = System.getProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY);
+		try {
+			System.setProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY, "safe-plan-lifecycle");
+			Path estimatorPath = estimatorPath(tempDir);
+			LmdbOperatorFeedbackStats stats = persistentStats(estimatorPath);
+			LogicalLearningKey logical = LogicalLearningKey.of("difference", "expression", "children",
+					"predicates", "x", "none", "bag|duplicate-sensitive|sparql-unbound", "default");
+			LearningApplicability applicability = new LearningApplicability(
+					1L, 2L, "unconditional", 3L, 4L, 5L);
+			PhysicalResidualKey physical = PhysicalResidualKey.of("streaming-correlated", "statement-pattern",
+					"spoc", "per-binding", "none", "none", "none", "bound");
+			PlanLifecycleStore.ObjectiveEnvelope planned = new PlanLifecycleStore.ObjectiveEnvelope(
+					50.0d, 60.0d, 70.0d);
+			Join observed = join("s", "x", "o");
+			completeCostFeedback(observed, 400L, 100.0d, 60.0d, 10_000.0d);
+			observed.setStringMetricPlanned("optimizer.frontierLearningKey", FrontierLearningKey.of(
+					"join", "JOIN", 17L, 23L, "spoc-prefix", "spoc", "prefix").externalForm());
+			observed.setStringMetricPlanned("optimizer.logicalLearningKey", logical.externalForm());
+			observed.setStringMetricPlanned("optimizer.learningApplicability", applicability.externalForm());
+			observed.setStringMetricPlanned("optimizer.physicalResidualKey", physical.externalForm());
+			observed.setStringMetricPlanned("optimizer.costEventDigest", "event-lifecycle");
+			observed.setStringMetricPlanned("optimizer.frontierStateDigest", "state-lifecycle");
+			observed.setStringMetricPlanned("plannedFrontierGuarantee", "measure_unbiased");
+			observed.setDoubleMetricPlanned("optimizer.objectiveLower", planned.lower());
+			observed.setDoubleMetricPlanned("optimizer.objectivePoint", planned.point());
+			observed.setDoubleMetricPlanned("optimizer.objectiveUpper", planned.upper());
+			observed.setDoubleMetricPlanned("optimizer.lifecycleRegressionLimit", 110.0d);
+			long revisionBefore = stats.planningRevision();
+
+			stats.observe(observed, true);
+
+			assertTrue(stats.planningRevision() > revisionBefore,
+					"An actionable safety transition must invalidate packed plan-cache revisions");
+			assertEquals(PlanLifecycleStore.State.QUARANTINED,
+					stats.planLifecycleDecision(logical, physical, applicability, planned).state());
+			stats.persistIfDirty();
+			assertEquals(20, ByteBuffer.wrap(Files.readAllBytes(
+					estimatorPath.resolveSibling(estimatorPath.getFileName() + ".operators"))).getInt());
+
+			LmdbOperatorFeedbackStats reloaded = persistentStats(estimatorPath);
+			assertEquals(PlanLifecycleStore.State.QUARANTINED,
+					reloaded.planLifecycleDecision(logical, physical, applicability, planned).state(),
+					"Next-execution rollback state must survive a sidecar restart");
+		} finally {
+			restoreProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY, priorProfile);
+		}
+	}
+
+	@Test
+	void versionSeventeenTopologyModelIsDeterministicallyQuarantined(@TempDir Path tempDir) throws Exception {
+		Path estimatorPath = estimatorPath(tempDir);
+		LmdbOperatorFeedbackStats stats = persistentStats(estimatorPath);
+		FrontierLearningKey key = FrontierLearningKey.of(
+				"join", "JOIN@legacy-v17", 37L, 41L, "spoc-prefix", "spoc", "prefix");
+		Join observed = join("s", "x", "o");
+		completeCostFeedback(observed, 400, 100, 1_100, 650);
+		observed.setStringMetricPlanned("optimizer.frontierLearningKey", key.externalForm());
+		observed.setStringMetricPlanned("optimizer.costEventDigest", "event-v17");
+		observed.setStringMetricPlanned("optimizer.frontierStateDigest", "state-v17");
+		observed.setStringMetricPlanned("plannedFrontierGuarantee", "measure_unbiased");
+		stats.recordOperatorOutcome(observed);
+		stats.persistIfDirty();
+
+		Path sidecar = estimatorPath.resolveSibling(estimatorPath.getFileName() + ".operators");
+		byte[] versionSeventeen = withoutLogicalPhysicalAndLifecycleTail(Files.readAllBytes(sidecar));
+		ByteBuffer.wrap(versionSeventeen).putInt(17);
+		Files.write(sidecar, versionSeventeen);
+
+		LmdbOperatorFeedbackStats reloaded = persistentStats(estimatorPath);
+		assertTrue(frontierCorrectionMissing(reloaded, key, FrontierCostDimension.OUTPUT_ROWS, 100.0d, false),
+				"V17 topology-keyed cardinalities must be consumed and quarantined, never reinterpreted as logical truth");
 	}
 
 	@Test
@@ -169,7 +283,7 @@ class LmdbOperatorFeedbackStatsTest {
 		// Rewrite the v17 sidecar as v16: drop the trailing exact-cardinality-fact section (empty here — one
 		// 4-byte count); everything before it is byte-identical between the two versions.
 		Path sidecar = estimatorPath.resolveSibling(estimatorPath.getFileName() + ".operators");
-		byte[] versionSeventeen = Files.readAllBytes(sidecar);
+		byte[] versionSeventeen = withoutLogicalPhysicalAndLifecycleTail(Files.readAllBytes(sidecar));
 		byte[] versionSixteen = Arrays.copyOf(versionSeventeen, versionSeventeen.length - Integer.BYTES);
 		ByteBuffer.wrap(versionSixteen).putInt(16);
 		Files.write(sidecar, versionSixteen);
@@ -201,7 +315,7 @@ class LmdbOperatorFeedbackStatsTest {
 		// Rewrite the v17 sidecar as v15: drop the 8-byte data stamp after the 24-byte identity and the trailing
 		// exact-cardinality-fact section (empty here — one 4-byte count).
 		Path sidecar = estimatorPath.resolveSibling(estimatorPath.getFileName() + ".operators");
-		byte[] versionSeventeen = Files.readAllBytes(sidecar);
+		byte[] versionSeventeen = withoutLogicalPhysicalAndLifecycleTail(Files.readAllBytes(sidecar));
 		byte[] versionFifteen = new byte[versionSeventeen.length - Long.BYTES - Integer.BYTES];
 		System.arraycopy(versionSeventeen, 0, versionFifteen, 0, 4 + 24);
 		System.arraycopy(versionSeventeen, 4 + 24 + Long.BYTES, versionFifteen, 4 + 24,
@@ -339,11 +453,11 @@ class LmdbOperatorFeedbackStatsTest {
 		assertTrue(model.correct(unrelatedAccess, FrontierCostDimension.EXPRESSION_EVALUATIONS, 100.0d, false)
 				.isEmpty(), "Independent access kernels must not share a physical-dimension posterior");
 		assertTrue(model.correct(unrelatedAccess, FrontierCostDimension.OUTPUT_ROWS, 100.0d, false)
-				.isPresent(), "One raw transform must share cardinality evidence across physical alternatives");
+				.isEmpty(), "Broad topology families are diagnostic and cannot alter a winner");
 		assertTrue(model.correct(unrelatedTransform, FrontierCostDimension.OUTPUT_ROWS, 100.0d, false)
 				.isEmpty(), "Unrelated raw transforms must not share cardinality evidence");
 		assertTrue(model.correct(alternateEvidenceRepresentation, FrontierCostDimension.OUTPUT_ROWS, 100.0d, false)
-				.isPresent(), "Evidence representation must not split one logical transform's cardinality posterior");
+				.isEmpty(), "Only an explicit LogicalLearningKey may bridge evidence representations");
 		assertTrue(model.correct(alternateEvidenceRepresentation, FrontierCostDimension.EXPRESSION_EVALUATIONS,
 				100.0d, false).isEmpty(), "Physical feedback must retain its Frontier representation identity");
 	}
@@ -413,6 +527,37 @@ class LmdbOperatorFeedbackStatsTest {
 	}
 
 	@Test
+	void reinvokedFrontierObservationUsesSummedPerOpenPredictions(@TempDir Path tempDir) throws Exception {
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+		FrontierLearningKey key = FrontierLearningKey.of(
+				"binding-set-assignment", "VALUES@varying-predictions", 18L, 0L, "values", "none", "none");
+		Join root = join("s", "x", "o");
+		TupleExpr rightAnchor = root.getRightArg();
+		completeCostFeedback(rightAnchor, 111, 100.0d, 100.0d, 111.0d);
+		rightAnchor.setCostFeedbackCloseCountActual(3L);
+		rightAnchor.setLongMetricActual(TelemetryMetricNames.EXHAUSTED_CLOSE_COUNT_ACTUAL, 3L);
+		rightAnchor.setStringMetricPlanned("optimizer.frontierLearningKey", key.externalForm());
+		rightAnchor.setStringMetricPlanned("optimizer.costEventDigest", "event-varying-predictions");
+		rightAnchor.setStringMetricPlanned("optimizer.frontierStateDigest", "state-varying-predictions");
+		rightAnchor.setStringMetricPlanned("plannedFrontierGuarantee", "measure_unbiased");
+		// The three open-time predictions were 1, 10, and 100. The last costing event alone cannot reconstruct this.
+		rightAnchor.setDoubleMetricPlanned("optimizer.feedback.rawPredictedRowsSum", 111.0d);
+		rightAnchor.setDoubleMetricPlanned("optimizer.feedback.appliedPredictedRowsSum", 111.0d);
+		rightAnchor.setDoubleMetricPlanned("optimizer.costEventRows", 100.0d);
+		completeCostFeedback(root, 111, 111.0d, 111.0d, 111.0d);
+
+		stats.observe(root, true);
+
+		FrontierLearningModel expected = new FrontierLearningModel();
+		expected.observe(key, FrontierCostDimension.OUTPUT_ROWS, 111.0d, 111.0d, 1L);
+		assertEquals(
+				expected.correct(key, FrontierCostDimension.OUTPUT_ROWS, 111.0d, false).orElseThrow(),
+				frontierCorrection(stats, key, FrontierCostDimension.OUTPUT_ROWS, 111.0d, false),
+				1.0e-12,
+				"A varying sequence of per-open predictions must be compared as Σ predicted_i versus Σ actual_i");
+	}
+
+	@Test
 	void reinvokedFrontierObservationWithStampedInvocationsStaysCommensurate(@TempDir Path tempDir) throws Exception {
 		String previous = System.getProperty(LmdbOperatorFeedbackStats.REINVOKED_ROWS_NORMALIZATION_PROPERTY);
 		System.setProperty(LmdbOperatorFeedbackStats.REINVOKED_ROWS_NORMALIZATION_PROPERTY, "true");
@@ -438,13 +583,13 @@ class LmdbOperatorFeedbackStatsTest {
 			stats.observe(root, true);
 
 			FrontierLearningModel expected = new FrontierLearningModel();
-			expected.observe(key, FrontierCostDimension.OUTPUT_ROWS, 10.0d, 20.0d, 1L);
+			expected.observe(key, FrontierCostDimension.OUTPUT_ROWS, 1_000.0d, 2_000.0d, 1L);
 			assertEquals(
 					expected.correct(key, FrontierCostDimension.OUTPUT_ROWS, 1_000.0d, false).orElseThrow(),
 					frontierCorrection(stats, key, FrontierCostDimension.OUTPUT_ROWS, 1_000.0d, false),
 					1.0e-12,
-					"A cumulative prediction with a stamped invocation basis must learn the x2 per-invocation"
-							+ " ratio, not a ratio against the un-based total");
+					"A cumulative prediction with a stamped invocation basis must compare the exact 1,000-row"
+							+ " predicted sum with the exact 2,000-row actual sum");
 		} finally {
 			restoreProperty(LmdbOperatorFeedbackStats.REINVOKED_ROWS_NORMALIZATION_PROPERTY, previous);
 		}
@@ -520,7 +665,7 @@ class LmdbOperatorFeedbackStatsTest {
 	}
 
 	@Test
-	void reinvokedNormalizationKillSwitchRestoresCumulativePairing(@TempDir Path tempDir) throws Exception {
+	void reinvokedNormalizationKillSwitchSuppressesUnsafeRowLearning(@TempDir Path tempDir) throws Exception {
 		String previous = System.getProperty(LmdbOperatorFeedbackStats.REINVOKED_ROWS_NORMALIZATION_PROPERTY);
 		System.setProperty(LmdbOperatorFeedbackStats.REINVOKED_ROWS_NORMALIZATION_PROPERTY, "false");
 		try {
@@ -541,13 +686,9 @@ class LmdbOperatorFeedbackStatsTest {
 
 			stats.observe(root, true);
 
-			FrontierLearningModel expected = new FrontierLearningModel();
-			expected.observe(key, FrontierCostDimension.OUTPUT_ROWS, 2.0d, 99_600.0d, 1L);
-			assertEquals(
-					expected.correct(key, FrontierCostDimension.OUTPUT_ROWS, 2.0d, false).orElseThrow(),
-					frontierCorrection(stats, key, FrontierCostDimension.OUTPUT_ROWS, 2.0d, false),
-					1.0e-12,
-					"The kill-switch must restore the pre-fix cumulative pairing");
+			assertTrue(frontierCorrectionMissing(stats, key, FrontierCostDimension.OUTPUT_ROWS, 2.0d, false),
+					"Disabling typed re-invocation learning must suppress the observation, never restore"
+							+ " cumulative-actual versus single-open prediction poisoning");
 		} finally {
 			restoreProperty(LmdbOperatorFeedbackStats.REINVOKED_ROWS_NORMALIZATION_PROPERTY, previous);
 		}
@@ -589,7 +730,7 @@ class LmdbOperatorFeedbackStatsTest {
 		LmdbOperatorFeedbackStats reloaded = new LmdbOperatorFeedbackStats(estimatorPath,
 				() -> TEST_SNAPSHOT_IDENTITY, () -> true, dataStamp::get);
 		assertEquals(65_346.0d, reloaded.exactCardinalityFact("difference@1fad0aa0"), 0.0d,
-				"Facts persist in the v17 sidecar section and reload at the same data stamp");
+				"Facts persist in the v20 sidecar section and reload at the same data stamp");
 
 		dataStamp.set(42L);
 		assertTrue(Double.isNaN(stats.exactCardinalityFact("difference@1fad0aa0")),
@@ -1146,11 +1287,8 @@ class LmdbOperatorFeedbackStatsTest {
 				"join", "JOIN@cap", 75L, 6L, "spoc-prefix", "spoc", "prefix");
 		FrontierLearningModel.DimensionEstimate estimate = model.estimate(
 				cold, FrontierCostDimension.OUTPUT_ROWS, 100.0d);
-		assertNotNull(estimate);
-		assertTrue(estimate.familyEvidenceCount() <= 500L, "sanity");
-		assertTrue(estimate.correctedValue() >= 100.0d / 16.0d - 1.0d,
-				"One context repeated 500 times contributes at most the capped family weight, so a cold sibling"
-						+ " may move at most 16x (corrected to " + estimate.correctedValue() + ")");
+		assertNull(estimate,
+				"Repeated evidence from one exact context cannot move a cold cardinality key at all");
 	}
 
 	@Test
@@ -1205,11 +1343,8 @@ class LmdbOperatorFeedbackStatsTest {
 
 		FrontierLearningKey cold = FrontierLearningKey.of(
 				"join", "JOIN@abc123", 72L, 6L, "spoc-prefix", "spoc", "prefix");
-		double corrected = model.correct(cold, FrontierCostDimension.OUTPUT_ROWS, 100.0d, false).orElseThrow();
-
-		assertTrue(corrected >= 100.0d / 16.0d - 1.0d,
-				"Family-only evidence must not raise its own clamp cap: a key never observed in this exact"
-						+ " context may move at most 16x on pooled evidence, but corrected to " + corrected);
+		assertTrue(model.correct(cold, FrontierCostDimension.OUTPUT_ROWS, 100.0d, false).isEmpty(),
+				"A cold exact context receives no winner-affecting family correction");
 	}
 
 	@Test
@@ -1444,7 +1579,7 @@ class LmdbOperatorFeedbackStatsTest {
 		stats.persistIfDirty();
 
 		Path sidecar = estimatorPath.resolveSibling(estimatorPath.getFileName() + ".operators");
-		byte[] versionSeventeen = Files.readAllBytes(sidecar);
+		byte[] versionSeventeen = withoutLogicalPhysicalAndLifecycleTail(Files.readAllBytes(sidecar));
 		FrontierLearningKey currentUnionKey = FrontierLearningKey.of(
 				"union", "UNION", 31L, 0L, "union", "none", "none");
 		for (int version = 12; version <= 14; version++) {
@@ -1477,6 +1612,17 @@ class LmdbOperatorFeedbackStatsTest {
 				stampless.length - frontierTailBytes - semiAntiCountBytes);
 		ByteBuffer.wrap(legacy).putInt(targetVersion);
 		return legacy;
+	}
+
+	private static byte[] withoutLogicalPhysicalAndLifecycleTail(byte[] versionTwenty) {
+		assertEquals(20, ByteBuffer.wrap(versionTwenty).getInt());
+		/*
+		 * These compatibility fixtures contain no typed logical/physical entries and no lifecycle entries. V20 adds two
+		 * empty typed-map counts before the v17 exact-fact count, plus an empty lifecycle tail consisting of a
+		 * revision, entry count, and history count. Remove only those bytes to recover the genuine v17 payload.
+		 */
+		return Arrays.copyOf(versionTwenty,
+				versionTwenty.length - Long.BYTES - 4 * Integer.BYTES);
 	}
 
 	@Test

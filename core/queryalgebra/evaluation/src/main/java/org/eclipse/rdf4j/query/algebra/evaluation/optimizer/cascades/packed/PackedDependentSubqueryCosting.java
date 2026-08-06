@@ -26,11 +26,6 @@ final class PackedDependentSubqueryCosting {
 	private PackedDependentSubqueryCosting() {
 	}
 
-	private static boolean correlatedDependentInvocationsEnabled() {
-		return !"false".equalsIgnoreCase(
-				System.getProperty(CORRELATED_DEPENDENT_INVOCATIONS_PROPERTY, "true"));
-	}
-
 	static double defaultCost(PackedQuery query, PackedMemo memo, int relationId, double expectedInvocations) {
 		return scalarCost(query, memo, conditionId(query, relationId), 0,
 				query.relOutputMaskId(relationId), expectedInvocations);
@@ -88,16 +83,39 @@ final class PackedDependentSubqueryCosting {
 			if (query.payloadOperator(payloadId) == PackedPayloadOp.SUBQUERY_VALUE
 					&& query.payloadChildCount(payloadId) == 1) {
 				int subqueryRelationId = query.payloadChild(payloadId, 0);
-				int winnerId = selectedWinner(query, memo, subqueryRelationId, inputContextId);
+				int groupId = memo.logicalGroupId(subqueryRelationId);
+				int contextualWinnerId = inputContextId == 0
+						? 0
+						: memo.findWinner(groupId, memo.anyPropertyId(), 0, inputContextId, 0);
+				int winnerId = contextualWinnerId == 0
+						? memo.findWinner(groupId, memo.anyPropertyId(), 0, 0, 0)
+						: contextualWinnerId;
 				if (winnerId == 0) {
 					throw new PackedMemoInvariantException(
 							"embedded subquery " + subqueryRelationId + " has no incumbent");
 				}
 				cost = memo.winnerTotalCost(winnerId);
-				if (correlatedDependentInvocationsEnabled()
-						&& expectedInvocations > 1.0d
+				double pricedInvocations = 1.0d;
+				int metadataId = memo.winnerPhysicalMetadataId(winnerId);
+				if (metadataId != 0) {
+					double explicitInvocations = memo.physicalMetadataInvocations(metadataId);
+					if (Double.isFinite(explicitInvocations) && explicitInvocations > 0.0d) {
+						pricedInvocations = explicitInvocations;
+					}
+				}
+				double remainingInvocations = expectedInvocations / pricedInvocations;
+				if (Double.isFinite(remainingInvocations) && remainingInvocations > 1.0d
 						&& memo.winnerDependsOnOuterBindings(winnerId, outerBindingMaskId)) {
-					cost = saturatedMultiply(cost, expectedInvocations);
+					/*
+					 * Without a complete component profile, exempt at most the constant setup unit and repeat all
+					 * remaining traversal. An explicit invocation stamp records how much of the required domain this
+					 * winner already priced, so contextual plans are neither double-charged nor assumed complete merely
+					 * because their output rows are contextual.
+					 */
+					double startupOnce = Math.min(cost,
+							Math.min(1.0d, Math.max(0.0d, memo.winnerStartupCost(winnerId))));
+					double nonStartupWork = Math.max(0.0d, cost - startupOnce);
+					cost = saturatedAdd(startupOnce, saturatedMultiply(nonStartupWork, remainingInvocations));
 				}
 			}
 		}

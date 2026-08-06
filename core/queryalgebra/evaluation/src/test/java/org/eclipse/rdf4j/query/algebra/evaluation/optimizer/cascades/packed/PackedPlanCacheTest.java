@@ -40,6 +40,8 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
+import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackDescriptor;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceStateRef;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceStateSummary;
@@ -50,6 +52,24 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDi
 import org.junit.jupiter.api.Test;
 
 class PackedPlanCacheTest {
+
+	@Test
+	void cachedRecipeRetainsTypedFeedbackContractThroughMaterialization() {
+		PackedPlanCache cache = new PackedPlanCache(8, 1);
+		PackedPlanCache.Context context = context(11L);
+		RuntimeFeedbackContract contract = runtimeFeedbackContract();
+		TupleExpr source = new StatementPattern(Var.of("subject"), Var.of("predicate"), Var.of("object"));
+
+		PackedPlanningResult cold = PackedCascadesPlanner.optimize(source.clone(), OptimizationGoal.root(), cache,
+				context, frontierCostModel(contract));
+		PackedPlanningResult hot = PackedCascadesPlanner.optimize(source.clone(), OptimizationGoal.root(), cache,
+				context, frontierCostModel(contract));
+
+		assertFalse(cold.metrics().planCacheHit());
+		assertTrue(hot.metrics().planCacheHit());
+		assertSame(contract, cold.selectedPlan().getRuntimeFeedbackContract());
+		assertSame(contract, hot.selectedPlan().getRuntimeFeedbackContract());
+	}
 
 	@Test
 	void strictAndStructuralKeysSeparateDataAndLeoRevisions() throws Exception {
@@ -860,6 +880,10 @@ class PackedPlanCacheTest {
 	}
 
 	private static PackedCostModel frontierCostModel() {
+		return frontierCostModel(null);
+	}
+
+	private static PackedCostModel frontierCostModel(RuntimeFeedbackContract runtimeFeedbackContract) {
 		return new PackedCostModel() {
 			@Override
 			public double estimateRows(PackedQueryView query, int relationId) {
@@ -900,6 +924,7 @@ class PackedPlanCacheTest {
 
 					private void publish(PackedCostEstimate output) {
 						output.setRows(1.0d, 1.0d);
+						output.setRuntimeFeedbackContract(runtimeFeedbackContract);
 						output.setEvidenceStateId(state.stateId());
 						output.setEvidenceGuarantee(state.summary().guarantee());
 						output.setEvidenceDisposition(FrontierStateDisposition.COMPOSABLE_PAYLOAD);
@@ -907,6 +932,20 @@ class PackedPlanCacheTest {
 				};
 			}
 		};
+	}
+
+	private static RuntimeFeedbackContract runtimeFeedbackContract() {
+		RuntimeFeedbackContract.PredictionVector prediction = new RuntimeFeedbackContract.PredictionVector(
+				1.0d, 1.0d, 1.0d, 1.0d, 0.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+		return new RuntimeFeedbackContract(new CacheFeedbackDescriptor(), prediction, prediction,
+				1.0d, 1.0d, 1.0d, Double.POSITIVE_INFINITY,
+				RuntimeFeedbackContract.SemanticKind.ORDINARY,
+				RuntimeFeedbackContract.Algorithm.SCAN,
+				RuntimeFeedbackContract.Access.FULL_SCAN, 17, 1L, 1L, 1L,
+				RuntimeFeedbackContract.ADMIT_LOGICAL | RuntimeFeedbackContract.ADMIT_PHYSICAL);
+	}
+
+	private record CacheFeedbackDescriptor() implements RuntimeFeedbackDescriptor {
 	}
 
 	private static PackedCostModel multiplyingFrontierCostModel() {

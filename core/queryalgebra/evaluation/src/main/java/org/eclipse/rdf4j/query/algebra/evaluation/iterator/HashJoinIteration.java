@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.HashJoinBindingContract;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 /**
@@ -68,7 +69,12 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 	 */
 	private static final long CATCH_ALL_MASK = -1L;
 
+	/** @deprecated use the contract-aware constructors; retained for subclasses of this internal iterator. */
+	@Deprecated(since = "6.1.0")
 	protected final String[] joinAttributes;
+	private final String[] lookupAttributes;
+	private final String[] compatibilityAttributes;
+	private final boolean lookupProvesCompatibility;
 	private final CloseableIteration<BindingSet> leftIter;
 	private final CloseableIteration<BindingSet> rightIter;
 	private final boolean leftJoin;
@@ -89,7 +95,8 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 	private PartialKeyIndex[] partialIndexes = NO_PARTIAL_INDEXES;
 
 	private long hashBuildRows;
-	private long hashProbeRows;
+	private long hashProbeInputRows;
+	private long hashCandidateRows;
 
 	private final IntFunction<Map<BindingSetHashKey, List<BindingSet>>> mapMaker;
 
@@ -104,7 +111,15 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 			BindingSet bindings,
 			boolean leftJoin, String[] joinAttributes, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		this(left, right, bindings, leftJoin, joinAttributes, context, BuildSide.UNKNOWN, null);
+		this(left, right, bindings, leftJoin, HashJoinBindingContract.legacy(joinAttributes), context,
+				BuildSide.UNKNOWN, null);
+	}
+
+	public HashJoinIteration(QueryEvaluationStep left, QueryEvaluationStep right,
+			BindingSet bindings,
+			boolean leftJoin, HashJoinBindingContract contract, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		this(left, right, bindings, leftJoin, contract, context, BuildSide.UNKNOWN, null);
 	}
 
 	/**
@@ -118,9 +133,25 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 			boolean leftJoin, String[] joinAttributes, QueryEvaluationContext context, BuildSide buildSide,
 			QueryModelNode joinNode)
 			throws QueryEvaluationException {
+		this(left, right, bindings, leftJoin, HashJoinBindingContract.legacy(joinAttributes), context, buildSide,
+				joinNode);
+	}
+
+	public HashJoinIteration(QueryEvaluationStep left, QueryEvaluationStep right,
+			BindingSet bindings,
+			boolean leftJoin, HashJoinBindingContract contract, QueryEvaluationContext context, BuildSide buildSide,
+			QueryModelNode joinNode)
+			throws QueryEvaluationException {
 		this.leftIter = left.evaluate(bindings);
 		this.rightIter = right.evaluate(bindings);
-		this.joinAttributes = joinAttributes;
+		HashJoinBindingContract requiredContract = contract == null
+				? HashJoinBindingContract.legacy(NO_ATTRIBUTES)
+				: contract;
+		this.lookupAttributes = requiredContract.lookupBindings().toArray(String[]::new);
+		this.compatibilityAttributes = requiredContract.compatibilityBindings().toArray(String[]::new);
+		this.lookupProvesCompatibility = requiredContract.lookupBindings()
+				.equals(requiredContract.compatibilityBindings());
+		this.joinAttributes = compatibilityAttributes;
 		this.leftJoin = leftJoin;
 		this.buildSide = buildSide == null ? BuildSide.UNKNOWN : buildSide;
 		this.joinNode = joinNode;
@@ -139,7 +170,12 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 		this.rightIter = rightIter;
 		this.mapMaker = this::makeHashTable;
 
-		joinAttributes = leftBindingNames.stream().filter(rightBindingNames::contains).toArray(String[]::new);
+		HashJoinBindingContract contract = HashJoinBindingContract.legacy(
+				leftBindingNames.stream().filter(rightBindingNames::contains).toArray(String[]::new));
+		lookupAttributes = contract.lookupBindings().toArray(String[]::new);
+		compatibilityAttributes = contract.compatibilityBindings().toArray(String[]::new);
+		lookupProvesCompatibility = true;
+		joinAttributes = compatibilityAttributes;
 
 		this.leftJoin = leftJoin;
 		this.buildSide = BuildSide.UNKNOWN;
@@ -284,11 +320,17 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 			return;
 		}
 		addLongMetricActual("actualCostHashBuildRows", hashBuildRows);
-		addLongMetricActual("actualCostHashProbeRows", hashProbeRows);
+		addLongMetricActual("actualCostHashProbeInputRows", hashProbeInputRows);
+		addLongMetricActual("actualCostHashCandidateRows", hashCandidateRows);
+		addLongMetricActual("actualCostHashProbeRows", saturatedAdd(hashProbeInputRows, hashCandidateRows));
 		long peakMemoryRows = Math.max(0L, joinNode.getLongMetricActual("actualCostPeakMemoryRows"));
 		if (hashBuildRows > peakMemoryRows) {
 			joinNode.setLongMetricActual("actualCostPeakMemoryRows", hashBuildRows);
 		}
+	}
+
+	private static long saturatedAdd(long left, long right) {
+		return left > Long.MAX_VALUE - right ? Long.MAX_VALUE : left + right;
 	}
 
 	private void addLongMetricActual(String metricName, long delta) {
@@ -365,7 +407,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 		int maxListSize = 1;
 		for (BindingSet b : buildResult) {
 			hashBuildRows++;
-			if (joinAttributes.length > 0 && !hasAllJoinAttributeValues(b)) {
+			if (lookupAttributes.length > 0 && !hasAllLookupAttributeValues(b)) {
 				/*
 				 * A row that does not bind every join attribute cannot be found through the full key, so it goes into a
 				 * group keyed on the attributes it does bind instead of into a flat list that every probe has to scan.
@@ -377,7 +419,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 				addPartialRow(nextPartialIndexes, b);
 				continue;
 			}
-			BindingSetHashKey hashKey = BindingSetHashKey.create(joinAttributes, b);
+			BindingSetHashKey hashKey = BindingSetHashKey.create(lookupAttributes, b);
 
 			List<BindingSet> hashValue = resultHashTable.get(hashKey);
 			boolean newEntry = hashValue == null;
@@ -422,12 +464,12 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 	}
 
 	private long presentAttributeMask(BindingSet bindings) {
-		if (joinAttributes.length > Long.SIZE) {
+		if (lookupAttributes.length > Long.SIZE) {
 			return CATCH_ALL_MASK;
 		}
 		long mask = 0L;
-		for (int i = 0; i < joinAttributes.length; i++) {
-			if (bindings.getValue(joinAttributes[i]) != null) {
+		for (int i = 0; i < lookupAttributes.length; i++) {
+			if (bindings.getValue(lookupAttributes[i]) != null) {
 				mask |= 1L << i;
 			}
 		}
@@ -437,9 +479,9 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 	private String[] presentAttributes(long presentMask) {
 		String[] attributes = new String[Long.bitCount(presentMask)];
 		int next = 0;
-		for (int i = 0; i < joinAttributes.length; i++) {
+		for (int i = 0; i < lookupAttributes.length; i++) {
 			if ((presentMask & (1L << i)) != 0) {
-				attributes[next++] = joinAttributes[i];
+				attributes[next++] = lookupAttributes[i];
 			}
 		}
 		return attributes;
@@ -470,7 +512,8 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 
 	private Iterator<BindingSet> matchingHashRows(Map<BindingSetHashKey, List<BindingSet>> nextHashTable,
 			BindingSet scanElem) {
-		if (joinAttributes.length == 0) {
+		hashProbeInputRows = saturatedAdd(hashProbeInputRows, 1L);
+		if (lookupAttributes.length == 0) {
 			/*
 			 * Without join attributes this is a cross product, and every build row matches. Hand back the single bucket
 			 * directly rather than wrapping it in a compatibility filter that cannot reject anything.
@@ -479,36 +522,33 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 			if (rows == null || rows.isEmpty()) {
 				return new EmptyIterator<>();
 			}
-			hashProbeRows += rows.size();
-			return rows.iterator();
+			return candidateIterator(rows.iterator(), scanElem, compatibilityAttributes.length > 0);
 		}
 
-		if (!hasAllJoinAttributeValues(scanElem)) {
+		if (!hasAllLookupAttributeValues(scanElem)) {
 			// The probe row itself is partially bound, so no single key decides the match.
-			return compatibleIterator(allHashRows(nextHashTable), scanElem, true);
+			return candidateIterator(allHashRows(nextHashTable), scanElem, true);
 		}
 
-		List<BindingSet> exactMatches = nextHashTable.get(BindingSetHashKey.create(joinAttributes, scanElem));
+		List<BindingSet> exactMatches = nextHashTable.get(BindingSetHashKey.create(lookupAttributes, scanElem));
 		if (partialIndexes.length == 0) {
 			if (exactMatches == null || exactMatches.isEmpty()) {
 				return new EmptyIterator<>();
 			}
-			hashProbeRows += exactMatches.size();
-			return exactMatches.iterator();
+			return candidateIterator(exactMatches.iterator(), scanElem, !lookupProvesCompatibility);
 		}
 
 		List<List<BindingSet>> candidates = new ArrayList<>(partialIndexes.length + 1);
 		boolean needsCompatibilityCheck = false;
 		if (exactMatches != null && !exactMatches.isEmpty()) {
-			hashProbeRows += exactMatches.size();
 			candidates.add(exactMatches);
+			needsCompatibilityCheck = !lookupProvesCompatibility;
 		}
 		for (PartialKeyIndex index : partialIndexes) {
 			List<BindingSet> rows = index.rows.get(BindingSetHashKey.create(index.attributes, scanElem));
 			if (rows != null && !rows.isEmpty()) {
-				hashProbeRows += rows.size();
 				candidates.add(rows);
-				needsCompatibilityCheck |= !index.exact();
+				needsCompatibilityCheck |= !lookupProvesCompatibility || !index.exact();
 			}
 		}
 		if (candidates.isEmpty()) {
@@ -517,7 +557,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 		Iterator<BindingSet> matches = candidates.size() == 1
 				? candidates.get(0).iterator()
 				: new UnionIterator<>(candidates);
-		return needsCompatibilityCheck ? compatibleIterator(matches, scanElem, false) : matches;
+		return candidateIterator(matches, scanElem, needsCompatibilityCheck);
 	}
 
 	private Iterator<BindingSet> allHashRows(Map<BindingSetHashKey, List<BindingSet>> nextHashTable) {
@@ -541,8 +581,8 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 		}
 	}
 
-	private Iterator<BindingSet> compatibleIterator(Iterator<BindingSet> candidates, BindingSet scanElem,
-			boolean countExaminedRows) {
+	private Iterator<BindingSet> candidateIterator(Iterator<BindingSet> candidates, BindingSet scanElem,
+			boolean checkCompatibility) {
 		return new Iterator<>() {
 			private BindingSet next;
 			private boolean computed;
@@ -570,10 +610,8 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 			private BindingSet nextCompatible() {
 				while (candidates.hasNext()) {
 					BindingSet candidate = candidates.next();
-					if (countExaminedRows) {
-						hashProbeRows++;
-					}
-					if (compatible(scanElem, candidate)) {
+					hashCandidateRows = saturatedAdd(hashCandidateRows, 1L);
+					if (!checkCompatibility || compatible(scanElem, candidate)) {
 						return candidate;
 					}
 				}
@@ -583,7 +621,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 	}
 
 	private boolean compatible(BindingSet left, BindingSet right) {
-		for (String joinAttribute : joinAttributes) {
+		for (String joinAttribute : compatibilityAttributes) {
 			Value leftValue = left.getValue(joinAttribute);
 			Value rightValue = right.getValue(joinAttribute);
 			if (leftValue != null && rightValue != null && !leftValue.equals(rightValue)) {
@@ -593,8 +631,8 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 		return true;
 	}
 
-	private boolean hasAllJoinAttributeValues(BindingSet bindings) {
-		for (String joinAttribute : joinAttributes) {
+	private boolean hasAllLookupAttributeValues(BindingSet bindings) {
+		for (String joinAttribute : lookupAttributes) {
 			if (bindings.getValue(joinAttribute) == null) {
 				return false;
 			}
@@ -627,7 +665,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 	 */
 	protected Map<BindingSetHashKey, List<BindingSet>> makeHashTable(int initialSize) {
 		Map<BindingSetHashKey, List<BindingSet>> nextHashTable;
-		if (joinAttributes.length > 0) {
+		if (lookupAttributes.length > 0) {
 			// we should probably adjust for the load factor
 			// but we are only one rehash away and this might save a bit of memory
 			// when we have more than one value per entry
@@ -683,14 +721,14 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 	}
 
 	public static String[] hashJoinAttributeNames(Join join) {
-		Set<String> leftBindingNames = join.getLeftArg().getBindingNames();
-		Set<String> rightBindingNames = join.getRightArg().getBindingNames();
-		return leftBindingNames.stream().filter(rightBindingNames::contains).toArray(String[]::new);
+		return HashJoinBindingContract.from(join.getLeftArg(), join.getRightArg())
+				.lookupBindings()
+				.toArray(String[]::new);
 	}
 
 	public static String[] hashJoinAttributeNames(LeftJoin join) {
-		Set<String> leftBindingNames = join.getLeftArg().getBindingNames();
-		Set<String> rightBindingNames = join.getRightArg().getBindingNames();
-		return leftBindingNames.stream().filter(rightBindingNames::contains).toArray(String[]::new);
+		return HashJoinBindingContract.from(join.getLeftArg(), join.getRightArg())
+				.lookupBindings()
+				.toArray(String[]::new);
 	}
 }

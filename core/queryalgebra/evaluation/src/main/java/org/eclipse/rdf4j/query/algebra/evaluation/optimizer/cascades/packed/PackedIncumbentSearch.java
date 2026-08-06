@@ -349,9 +349,11 @@ final class PackedIncumbentSearch {
 			}
 		}
 		/*
-		 * This is a containment topological order, not a selectivity or join-order preference. A containing region owns
-		 * every placement decision in its nested regions plus at least one additional factor or predicate. Costing it
-		 * first prevents a bounded search from repeatedly spending its evidence budget on strict subproblems before it
+		 * This is a structural topological order, not a selectivity or join-order preference. A containing region owns
+		 * every placement decision in its nested regions plus at least one additional factor or predicate. Among equal
+		 * regions, the form exposing more terminal factors owns the more complete contextual-access search space; a
+		 * unary wrapper retained as one factor hides its child access path. Costing those regions first prevents a
+		 * bounded search from spending its evidence budget on strict subproblems or opaque equivalent forms before it
 		 * has produced the root decision certificate which can compare those placements together.
 		 */
 		for (int destination = 0; destination < regionCount; destination++) {
@@ -359,6 +361,11 @@ final class PackedIncumbentSearch {
 			for (int candidate = destination + 1; candidate < regionCount; candidate++) {
 				if (containingRegionCounts[candidate] < containingRegionCounts[selected]
 						|| containingRegionCounts[candidate] == containingRegionCounts[selected]
+								&& regions[candidate].unexpandedFactorCount() < regions[selected]
+										.unexpandedFactorCount()
+						|| containingRegionCounts[candidate] == containingRegionCounts[selected]
+								&& regions[candidate].unexpandedFactorCount() == regions[selected]
+										.unexpandedFactorCount()
 								&& regions[candidate].rootRelationId() < regions[selected].rootRelationId()) {
 					selected = candidate;
 				}
@@ -372,13 +379,20 @@ final class PackedIncumbentSearch {
 				containingRegionCounts[selected] = containingCount;
 			}
 		}
+		boolean[] prepared = new boolean[regionCount];
 		for (int ordinal = 0; ordinal < regionCount; ordinal++) {
 			PackedJoinEnumerator.RelocatableFilterRegion region = regions[ordinal];
-			int relationId = region.rootRelationId();
-			if (!prepareRegionFactors(region.factorRelationIds(), anyPropertyId)) {
+			prepared[ordinal] = prepareRegionFactors(region.factorRelationIds(), anyPropertyId);
+			if (prepared[ordinal]) {
+				workUnits += joinEnumerator.seedRelocatableFilterLattice(region.rootRelationId());
+			}
+		}
+		for (int ordinal = 0; ordinal < regionCount; ordinal++) {
+			if (!prepared[ordinal]) {
 				continue;
 			}
-			enumerateCorrelatedFilterRegion(relationId);
+			int relationId = regions[ordinal].rootRelationId();
+			workUnits += joinEnumerator.optimizeRelocatableFilterAlternatives(relationId);
 			prioritized[relationId] = true;
 		}
 		return prioritized;

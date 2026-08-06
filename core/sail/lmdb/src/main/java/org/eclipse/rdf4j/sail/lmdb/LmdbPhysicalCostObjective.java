@@ -39,12 +39,20 @@ final class LmdbPhysicalCostObjective {
 				estimate.hashProbeRows(),
 				estimate.pathExpansions(),
 				estimate.resultRows(),
-				estimate.remoteCalls());
+				estimate.remoteCalls(),
+				estimate.peakMemoryRows());
 	}
 
 	double score(String indexName, double sequentialRows, double randomSeeks, double iteratorOpens,
 			double expressionEvaluations, double hashBuildRows, double hashProbeRows, double pathExpansions,
 			double resultRows, double remoteCalls) {
+		return score(indexName, sequentialRows, randomSeeks, iteratorOpens, expressionEvaluations, hashBuildRows,
+				hashProbeRows, pathExpansions, resultRows, remoteCalls, 0.0d);
+	}
+
+	double score(String indexName, double sequentialRows, double randomSeeks, double iteratorOpens,
+			double expressionEvaluations, double hashBuildRows, double hashProbeRows, double pathExpansions,
+			double resultRows, double remoteCalls, double peakMemoryRows) {
 		double sequentialMultiplier = 1.0d;
 		double randomSeekMultiplier = 1.0d;
 		if (indexName != null && !indexName.isBlank()
@@ -62,7 +70,8 @@ final class LmdbPhysicalCostObjective {
 		objective = saturatedAdd(objective, hashProbeRows);
 		objective = saturatedAdd(objective, pathExpansions);
 		objective = saturatedAdd(objective, resultRows);
-		return saturatedAdd(objective, remoteCalls);
+		objective = saturatedAdd(objective, remoteCalls);
+		return saturatedAdd(objective, peakMemoryRows);
 	}
 
 	private TripleStore.IndexCostProfile loadProfile(String indexName) {

@@ -56,6 +56,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
@@ -67,7 +68,8 @@ import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
-public class FilterIterator extends FilterIteration<BindingSet> implements IndexReportingIterator {
+public class FilterIterator extends FilterIteration<BindingSet>
+		implements IndexReportingIterator, FeedbackWorkReportingIterator {
 	private static final String OPTIMIZER_FILTER_ALGORITHM_HINT = "optimizer.filterAlgorithmHint";
 	private static final String STREAMING_EXISTS = "streaming-exists";
 	private static final String STREAMING_CORRELATED = "streaming-correlated";
@@ -76,6 +78,9 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 	private static final String OPTIMIZER_SEMI_ANTI_KIND = "optimizer.semiAntiKind";
 	private static final String MINUS_ASSURED_SHARED = "minus-assured-shared";
 	private static final String PLANNED_SEMI_ANTI_BREAK_EVEN_DISTINCT_KEYS = "plannedSemiAntiBreakEvenDistinctKeys";
+	private static final String SEMI_ANTI_MEMO_CAPACITY_PROPERTY = "rdf4j.evaluation.semiAntiMemoCapacity";
+	private static final String OPTIMIZER_SEMI_ANTI_CACHE_CAPACITY = "optimizer.semiAntiCacheCapacity";
+	private static final int DEFAULT_SEMI_ANTI_MEMO_CAPACITY = 4_096;
 
 	private final QueryValueEvaluationStep condition;
 	private final EvaluationStrategy strategy;
@@ -83,7 +88,10 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 	private final Filter filterNode;
 	private final EvaluationStatistics evaluationStatistics;
 	private final boolean runtimeTelemetryEnabled;
+	private final boolean directFeedbackEnabled;
 	private final boolean recordFilterOutcomes;
+	private final boolean recordLegacyFilterOutcomes;
+	private final int feedbackPhysicalImplementationId;
 	private final CompletionTrackingIteration<BindingSet> observedInput;
 	private long sourceRowsScannedActual;
 	private long sourceRowsMatchedActual;
@@ -131,8 +139,10 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 		} else {
 			retain = Function.identity();
 		}
+		FilterFeedbackMode feedbackMode = feedbackMode(filter, evaluationStatistics);
 
-		return (bs) -> new FilterIterator(filter, arg.evaluate(bs), ves, strategy, retain, evaluationStatistics);
+		return (bs) -> new FilterIterator(filter, arg.evaluate(bs), ves, strategy, retain, evaluationStatistics,
+				feedbackMode);
 	}
 
 	private static QueryEvaluationStep supplyMaterializedExistsSemiJoin(Filter filter, EvaluationStrategy strategy,
@@ -199,6 +209,9 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 			return declineMaterializedExists(filter, algorithmHint, "precompile-failure");
 		}
 		boolean recordFilterOutcomes = shouldRecordFilterOutcomes(filter, evaluationStatistics);
+		RuntimeFeedbackContract feedbackContract = filter.getRuntimeFeedbackContract();
+		boolean recordLegacyFilterOutcomes = recordFilterOutcomes && evaluationStatistics != null
+				&& !evaluationStatistics.requiresPreboundRuntimeFeedback();
 		int strategyMode = STREAMING_CORRELATED.equals(algorithmHint)
 				? MaterializedExistsFilterIteration.STREAMING
 				: MEMOIZED_CORRELATED.equals(algorithmHint)
@@ -212,18 +225,36 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 		java.util.concurrent.atomic.AtomicInteger sharedProbeBudget = new java.util.concurrent.atomic.AtomicInteger(
 				plannedSemiAntiProbeBudget(filter));
 		ConcurrentMap<BindingSetHashKey, Boolean> sharedProbeCache = new ConcurrentHashMap<>();
+		java.util.concurrent.atomic.AtomicInteger sharedProbeCacheEntries = new java.util.concurrent.atomic.AtomicInteger();
+		int sharedProbeCacheCapacity = plannedSemiAntiCacheCapacity(filter);
+		MaterializedExistsFilterIteration.PrimitiveDistinctBindingTracker distinctBindings = new MaterializedExistsFilterIteration.PrimitiveDistinctBindingTracker(
+				sharedProbeCacheCapacity);
+		MaterializedExistsFilterIteration.MaterializationCache materializationCache = new MaterializedExistsFilterIteration.MaterializationCache();
 		recordMaterializedExistsDisposition(filter, algorithmHint, "compiled-specialized");
 		return bindings -> new MaterializedExistsFilterIteration(filter, arg.evaluate(bindings),
-				materializationBindings -> {
-					QueryBindingSet merged = new QueryBindingSet(bindings);
-					for (var binding : materializationBindings) {
-						merged.setBinding(binding);
-					}
-					return existsArg.evaluate(merged);
-				},
+				existsArg::evaluate,
 				existsArg::evaluate, sharedBindingArray, correlationKeyBindingArray,
 				materializationParameterBindingArray, subQuery, evaluationStatistics, recordFilterOutcomes,
-				sharedProbeBudget, sharedProbeCache, strategyMode, negated);
+				sharedProbeBudget, sharedProbeCache, sharedProbeCacheEntries, sharedProbeCacheCapacity,
+				distinctBindings, materializationCache, recordLegacyFilterOutcomes, filter.isRuntimeTelemetryEnabled(),
+				feedbackContract == null ? RuntimeFeedbackContract.Algorithm.UNKNOWN : feedbackContract.algorithm(),
+				feedbackContract == null ? 0 : feedbackContract.physicalImplementationId(), strategyMode, negated);
+	}
+
+	private static int plannedSemiAntiCacheCapacity(Filter filter) {
+		double planned = filter.getDoubleMetricPlanned(OPTIMIZER_SEMI_ANTI_CACHE_CAPACITY);
+		if (Double.isFinite(planned) && planned >= 1.0d) {
+			return (int) Math.min(Integer.MAX_VALUE, Math.floor(planned));
+		}
+		String configured = System.getProperty(SEMI_ANTI_MEMO_CAPACITY_PROPERTY);
+		if (configured != null) {
+			try {
+				return Math.max(1, Integer.parseInt(configured));
+			} catch (NumberFormatException ignored) {
+				// A malformed optional tuning property retains the safe bounded default.
+			}
+		}
+		return DEFAULT_SEMI_ANTI_MEMO_CAPACITY;
 	}
 
 	private static QueryEvaluationStep declineMaterializedExists(Filter filter, String algorithmHint, String reason) {
@@ -232,10 +263,9 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 	}
 
 	private static void recordMaterializedExistsDisposition(Filter filter, String algorithmHint, String disposition) {
-		if (algorithmHint == null) {
+		if (algorithmHint == null || !filter.isRuntimeTelemetryEnabled()) {
 			return;
 		}
-		filter.setRuntimeTelemetryEnabled(true);
 		filter.setStringMetricActual("actualSemiAntiRuntimeDisposition", disposition);
 	}
 
@@ -433,11 +463,20 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 	private FilterIterator(Filter filter, CompletionTrackingIteration<BindingSet> iter,
 			QueryValueEvaluationStep condition, EvaluationStrategy strategy,
 			EvaluationStatistics evaluationStatistics) {
+		this(filter, iter, condition, strategy, evaluationStatistics, feedbackMode(filter, evaluationStatistics));
+	}
+
+	private FilterIterator(Filter filter, CompletionTrackingIteration<BindingSet> iter,
+			QueryValueEvaluationStep condition, EvaluationStrategy strategy,
+			EvaluationStatistics evaluationStatistics, FilterFeedbackMode feedbackMode) {
 		super(iter);
 		this.filterNode = filter;
 		this.evaluationStatistics = evaluationStatistics;
 		this.runtimeTelemetryEnabled = filter != null && filter.isRuntimeTelemetryEnabled();
-		this.recordFilterOutcomes = shouldRecordFilterOutcomes(filter, evaluationStatistics);
+		this.directFeedbackEnabled = feedbackMode.direct();
+		this.feedbackPhysicalImplementationId = feedbackMode.physicalImplementationId();
+		this.recordFilterOutcomes = feedbackMode.collect();
+		this.recordLegacyFilterOutcomes = feedbackMode.legacy();
 		this.observedInput = iter;
 		this.condition = condition;
 		this.strategy = strategy;
@@ -461,17 +500,29 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 			QueryValueEvaluationStep condition, EvaluationStrategy strategy, Function<BindingSet, BindingSet> retain,
 			EvaluationStatistics evaluationStatistics)
 			throws QueryEvaluationException {
-		this(filterNode, new CompletionTrackingIteration<>(iter), condition, strategy, retain, evaluationStatistics);
+		this(filterNode, new CompletionTrackingIteration<>(iter), condition, strategy, retain, evaluationStatistics,
+				feedbackMode(filterNode, evaluationStatistics));
+	}
+
+	private FilterIterator(Filter filterNode, CloseableIteration<BindingSet> iter,
+			QueryValueEvaluationStep condition, EvaluationStrategy strategy, Function<BindingSet, BindingSet> retain,
+			EvaluationStatistics evaluationStatistics, FilterFeedbackMode feedbackMode)
+			throws QueryEvaluationException {
+		this(filterNode, new CompletionTrackingIteration<>(iter), condition, strategy, retain, evaluationStatistics,
+				feedbackMode);
 	}
 
 	private FilterIterator(Filter filterNode, CompletionTrackingIteration<BindingSet> iter,
 			QueryValueEvaluationStep condition, EvaluationStrategy strategy, Function<BindingSet, BindingSet> retain,
-			EvaluationStatistics evaluationStatistics) {
+			EvaluationStatistics evaluationStatistics, FilterFeedbackMode feedbackMode) {
 		super(iter);
 		this.filterNode = filterNode;
 		this.evaluationStatistics = evaluationStatistics;
 		this.runtimeTelemetryEnabled = filterNode != null && filterNode.isRuntimeTelemetryEnabled();
-		this.recordFilterOutcomes = shouldRecordFilterOutcomes(filterNode, evaluationStatistics);
+		this.directFeedbackEnabled = feedbackMode.direct();
+		this.feedbackPhysicalImplementationId = feedbackMode.physicalImplementationId();
+		this.recordFilterOutcomes = feedbackMode.collect();
+		this.recordLegacyFilterOutcomes = feedbackMode.legacy();
 		this.observedInput = iter;
 		this.condition = condition;
 		this.strategy = strategy;
@@ -571,6 +622,16 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 				&& !containsPoisoningTupleOperator(filter.getArg());
 	}
 
+	private static FilterFeedbackMode feedbackMode(Filter filter, EvaluationStatistics evaluationStatistics) {
+		RuntimeFeedbackContract contract = filter == null ? null : filter.getRuntimeFeedbackContract();
+		boolean collect = shouldRecordFilterOutcomes(filter, evaluationStatistics);
+		boolean direct = contract != null;
+		boolean legacy = collect && evaluationStatistics != null
+				&& !evaluationStatistics.requiresPreboundRuntimeFeedback();
+		return new FilterFeedbackMode(collect, direct, legacy,
+				contract == null ? 0 : contract.physicalImplementationId());
+	}
+
 	private static boolean containsPoisoningTupleOperator(TupleExpr expression) {
 		boolean[] poisoned = { false };
 		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
@@ -591,7 +652,7 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 
 	@Override
 	protected boolean accept(BindingSet bindings) throws QueryEvaluationException {
-		if (runtimeTelemetryEnabled) {
+		if (runtimeTelemetryEnabled || directFeedbackEnabled) {
 			sourceRowsScannedActual++;
 			exprEvalCountActual++;
 		}
@@ -601,7 +662,7 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 			// Limit the bindings to the ones that are in scope for this filter
 			BindingSet scopeBindings = this.retain.apply(bindings);
 			boolean accepted = strategy.isTrue(condition, scopeBindings);
-			if (runtimeTelemetryEnabled) {
+			if (runtimeTelemetryEnabled || directFeedbackEnabled) {
 				if (accepted) {
 					sourceRowsMatchedActual++;
 					exprTrueCountActual++;
@@ -620,7 +681,7 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 			return accepted;
 		} catch (ValueExprEvaluationException e) {
 			// failed to evaluate condition
-			if (runtimeTelemetryEnabled) {
+			if (runtimeTelemetryEnabled || directFeedbackEnabled) {
 				sourceRowsFilteredActual++;
 				predicateErrorCountActual++;
 			}
@@ -650,7 +711,7 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 
 	@Override
 	protected void handleClose() {
-		if (filterNode != null && recordFilterOutcomes && observedInput.exhausted()
+		if (filterNode != null && recordLegacyFilterOutcomes && observedInput.exhausted()
 				&& (recordedPassedCount > 0L || recordedFilteredCount > 0L)) {
 			try {
 				evaluationStatistics.recordFilterOutcome(filterNode,
@@ -699,6 +760,31 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 		return sourceRowsFilteredActual;
 	}
 
+	@Override
+	public long feedbackSourceRows() {
+		return sourceRowsScannedActual;
+	}
+
+	@Override
+	public long feedbackExpressionEvaluations() {
+		return exprEvalCountActual;
+	}
+
+	@Override
+	public long feedbackFilterPassed() {
+		return recordedPassedCount;
+	}
+
+	@Override
+	public long feedbackFilterRejected() {
+		return recordedFilteredCount;
+	}
+
+	@Override
+	public int feedbackPhysicalImplementationId() {
+		return feedbackPhysicalImplementationId;
+	}
+
 	private static final class CompletionTrackingIteration<E> implements CloseableIteration<E> {
 
 		private final CloseableIteration<? extends E> delegate;
@@ -735,6 +821,10 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 		private boolean exhausted() {
 			return exhausted;
 		}
+	}
+
+	private record FilterFeedbackMode(boolean collect, boolean direct, boolean legacy,
+			int physicalImplementationId) {
 	}
 
 }

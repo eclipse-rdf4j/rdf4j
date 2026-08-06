@@ -144,6 +144,157 @@ class PackedMemoContractTest {
 	}
 
 	@Test
+	void lifecycleEnforcementRanksRobustUpperCostBeforeOptimisticPointCost() {
+		PackedQuery query = query();
+		PackedMemo memo = memo(query);
+		int rootGroupId = memo.logicalGroupId(query.rootRelId());
+		int anyPropertyId = memo.anyPropertyId();
+		int[] noChildren = new int[0];
+		int incumbentPhysical = memo.addPhysicalAlternative(rootGroupId, PackedRelOp.JOIN, 0,
+				anyPropertyId, 41, noChildren, 0, 0);
+		int riskyPhysical = memo.addPhysicalAlternative(rootGroupId, PackedRelOp.JOIN, 0,
+				anyPropertyId, 42, noChildren, 0, 0);
+
+		PackedCostEstimate incumbent = event(51, 9, 100.0d);
+		incumbent.setObjectiveInterval(90.0d, 100.0d, 110.0d);
+		incumbent.putPlannedDoubleMetric("optimizer.lifecycleEnforced", 1.0d);
+		PackedCostEstimate risky = event(52, 10, 95.0d);
+		risky.setObjectiveInterval(70.0d, 95.0d, 130.0d);
+		risky.putPlannedDoubleMetric("optimizer.lifecycleEnforced", 1.0d);
+
+		int incumbentMetadata = memo.addPhysicalMetadata(incumbent, 100.0d, 100.0d);
+		int retained = memo.offerWinnerWithMetadata(rootGroupId, anyPropertyId, 0, 0, 0,
+				incumbentPhysical, incumbentMetadata, 100.0d, 100.0d, 100.0d, noChildren, 0, 0);
+		int riskyMetadata = memo.addPhysicalMetadata(risky, 95.0d, 95.0d);
+		retained = memo.offerWinnerWithMetadata(rootGroupId, anyPropertyId, 0, 0, 0,
+				riskyPhysical, riskyMetadata, 95.0d, 95.0d, 95.0d, noChildren, 0, 0);
+
+		assertEquals(incumbentPhysical, memo.winnerPhysicalExpressionId(retained),
+				"SAFE_PLAN_LIFECYCLE must prefer the smaller robust upper objective over a risky point estimate");
+	}
+
+	@Test
+	void monitoringLifecyclePreservesLegacyTotalCostRanking() {
+		PackedQuery query = query();
+		PackedMemo memo = memo(query);
+		int rootGroupId = memo.logicalGroupId(query.rootRelId());
+		int anyPropertyId = memo.anyPropertyId();
+		int[] noChildren = new int[0];
+		int lowerTotalPhysical = memo.addPhysicalAlternative(rootGroupId, PackedRelOp.JOIN, 0,
+				anyPropertyId, 43, noChildren, 0, 0);
+		int lowerComparisonPhysical = memo.addPhysicalAlternative(rootGroupId, PackedRelOp.JOIN, 0,
+				anyPropertyId, 44, noChildren, 0, 0);
+
+		PackedCostEstimate lowerTotal = event(53, 11, 100.0d);
+		int lowerTotalMetadata = memo.addPhysicalMetadata(lowerTotal, 100.0d, 100.0d);
+		int retained = memo.offerWinnerWithMetadata(rootGroupId, anyPropertyId, 0, 0, 0,
+				lowerTotalPhysical, lowerTotalMetadata, 100.0d, 100.0d, 200.0d, noChildren, 0, 0);
+		PackedCostEstimate lowerComparison = event(54, 12, 110.0d);
+		int lowerComparisonMetadata = memo.addPhysicalMetadata(lowerComparison, 110.0d, 110.0d);
+		retained = memo.offerWinnerWithMetadata(rootGroupId, anyPropertyId, 0, 0, 0,
+				lowerComparisonPhysical, lowerComparisonMetadata, 110.0d, 110.0d, 1.0d, noChildren, 0, 0);
+
+		assertEquals(lowerTotalPhysical, memo.winnerPhysicalExpressionId(retained),
+				"Monitoring-only lifecycle metadata must not alter legacy point-cost winner selection");
+	}
+
+	@Test
+	void lifecycleExclusionYieldsToEligibleFallbackAndAllBlockedUsesLeastRegret() {
+		PackedQuery query = query();
+		PackedMemo memo = memo(query);
+		int rootGroupId = memo.logicalGroupId(query.rootRelId());
+		int propertyId = memo.anyPropertyId();
+		int[] noChildren = new int[0];
+		int blockedPhysical = memo.addPhysicalAlternative(rootGroupId, PackedRelOp.JOIN, 0,
+				propertyId, 61, noChildren, 0, 0);
+		int eligiblePhysical = memo.addPhysicalAlternative(rootGroupId, PackedRelOp.JOIN, 0,
+				propertyId, 62, noChildren, 0, 0);
+		PackedCostEstimate blocked = event(71, 11, 1.0d);
+		blocked.setObjectiveInterval(1.0d, 1.0d, 1.0d);
+		blocked.putPlannedDoubleMetric("optimizer.lifecycleEnforced", 1.0d);
+		blocked.putPlannedDoubleMetric("optimizer.lifecycleComparisonCost", Double.MAX_VALUE);
+		int blockedMetadata = memo.addPhysicalMetadata(blocked, 1.0d, 1.0d);
+		memo.offerWinnerWithMetadata(rootGroupId, propertyId, 0, 0, 0, blockedPhysical,
+				blockedMetadata, 1.0d, 1.0d, 1.0d, noChildren, 0, 0);
+
+		PackedCostEstimate eligible = event(72, 12, 20.0d);
+		eligible.setObjectiveInterval(20.0d, 20.0d, 20.0d);
+		eligible.putPlannedDoubleMetric("optimizer.lifecycleEnforced", 1.0d);
+		int eligibleMetadata = memo.addPhysicalMetadata(eligible, 20.0d, 20.0d);
+		int eligibleWinner = memo.offerExecutableFallbackWinnerWithMetadata(rootGroupId, propertyId, 0, 0, 0,
+				eligiblePhysical, eligibleMetadata, 0, 20.0d, 20.0d, 20.0d, noChildren, 0, 0);
+		assertEquals(eligiblePhysical, memo.winnerPhysicalExpressionId(eligibleWinner),
+				"A blocked costed candidate must not outrank an eligible executable alternative");
+
+		PackedMemo allBlocked = memo(query);
+		int allBlockedGroup = allBlocked.logicalGroupId(query.rootRelId());
+		int cheapPhysical = allBlocked.addPhysicalAlternative(allBlockedGroup, PackedRelOp.JOIN, 0,
+				allBlocked.anyPropertyId(), 63, noChildren, 0, 0);
+		int expensivePhysical = allBlocked.addPhysicalAlternative(allBlockedGroup, PackedRelOp.JOIN, 0,
+				allBlocked.anyPropertyId(), 64, noChildren, 0, 0);
+		int cheapMetadata = allBlocked.addPhysicalMetadata(blocked, 1.0d, 1.0d);
+		int retained = allBlocked.offerWinnerWithMetadata(allBlockedGroup, allBlocked.anyPropertyId(), 0, 0, 0,
+				cheapPhysical, cheapMetadata, 1.0d, 1.0d, 1.0d, noChildren, 0, 0);
+		PackedCostEstimate expensiveBlocked = event(73, 13, 2.0d);
+		expensiveBlocked.setObjectiveInterval(2.0d, 2.0d, 2.0d);
+		expensiveBlocked.putPlannedDoubleMetric("optimizer.lifecycleEnforced", 1.0d);
+		expensiveBlocked.putPlannedDoubleMetric("optimizer.lifecycleComparisonCost", Double.MAX_VALUE);
+		int expensiveMetadata = allBlocked.addPhysicalMetadata(expensiveBlocked, 2.0d, 2.0d);
+		retained = allBlocked.offerWinnerWithMetadata(allBlockedGroup, allBlocked.anyPropertyId(), 0, 0, 0,
+				expensivePhysical, expensiveMetadata, 2.0d, 2.0d, 2.0d, noChildren, 0, 0);
+		assertEquals(cheapPhysical, allBlocked.winnerPhysicalExpressionId(retained),
+				"When every implementation is blocked, the least-regret executable must remain available");
+	}
+
+	@Test
+	void lifecycleLastGoodWithUnboundedIntervalOutranksExcludedCheaperFallback() {
+		PackedQuery query = query();
+		PackedMemo memo = memo(query);
+		int rootGroupId = memo.logicalGroupId(query.rootRelId());
+		int propertyId = memo.anyPropertyId();
+		int[] noChildren = new int[0];
+		int childGroupId = query.relChild(query.rootRelId(), 0);
+		int childPhysical = memo.addPhysicalAlternative(childGroupId, PackedRelOp.STATEMENT_PATTERN, 0,
+				propertyId, 64, noChildren, 0, 0);
+		PackedCostEstimate unavoidableChild = event(73, 13, 5.0d);
+		unavoidableChild.setObjectiveInterval(0.0d, 5.0d, Double.MAX_VALUE);
+		unavoidableChild.putPlannedDoubleMetric("optimizer.lifecycleEnforced", 1.0d);
+		unavoidableChild.putPlannedDoubleMetric("optimizer.lifecycleEligible", 0.0d);
+		unavoidableChild.putPlannedDoubleMetric("optimizer.lifecycleComparisonCost", Double.MAX_VALUE);
+		int childMetadata = memo.addPhysicalMetadata(unavoidableChild, 5.0d, 5.0d);
+		int childWinner = memo.offerWinnerWithMetadata(childGroupId, propertyId, 0, 0, 0,
+				childPhysical, childMetadata, 5.0d, 5.0d, 5.0d, noChildren, 0, 0);
+		int[] childGroups = { childGroupId };
+		int[] childWinners = { childWinner };
+		int excludedPhysical = memo.addPhysicalAlternative(rootGroupId, PackedRelOp.JOIN, 0,
+				propertyId, 65, childGroups, 0, 1);
+		int lastGoodPhysical = memo.addPhysicalAlternative(rootGroupId, PackedRelOp.JOIN, 0,
+				propertyId, 66, childGroups, 0, 1);
+
+		PackedCostEstimate excluded = event(74, 14, 1.0d);
+		excluded.setObjectiveInterval(0.0d, 1.0d, Double.MAX_VALUE);
+		excluded.putPlannedDoubleMetric("optimizer.lifecycleEnforced", 1.0d);
+		excluded.putPlannedDoubleMetric("optimizer.lifecycleEligible", 0.0d);
+		excluded.putPlannedDoubleMetric("optimizer.lifecycleComparisonCost", Double.MAX_VALUE);
+		int excludedMetadata = memo.addPhysicalMetadata(excluded, 1.0d, 1.0d);
+		memo.offerExecutableFallbackWinnerWithMetadata(rootGroupId, propertyId, 0, 0, 0,
+				excludedPhysical, excludedMetadata, 0, 1.0d, 1.0d, 1.0d, childWinners, 0, 1);
+
+		PackedCostEstimate lastGood = event(75, 15, 20.0d);
+		lastGood.setObjectiveInterval(0.0d, 20.0d, Double.MAX_VALUE);
+		lastGood.putPlannedDoubleMetric("optimizer.lifecycleEnforced", 1.0d);
+		lastGood.putPlannedDoubleMetric("optimizer.lifecycleEligible", 1.0d);
+		lastGood.putPlannedDoubleMetric("optimizer.lifecycleLastGood", 1.0d);
+		lastGood.putPlannedDoubleMetric("optimizer.lifecycleComparisonCost", Double.MAX_VALUE);
+		int lastGoodMetadata = memo.addPhysicalMetadata(lastGood, 20.0d, 20.0d);
+		int retained = memo.offerExecutableFallbackWinnerWithMetadata(rootGroupId, propertyId, 0, 0, 0,
+				lastGoodPhysical, lastGoodMetadata, 0, 20.0d, 20.0d, 20.0d, childWinners, 0, 1);
+
+		assertEquals(lastGoodPhysical, memo.winnerPhysicalExpressionId(retained),
+				"A verified LastGood must outrank an excluded optimistic fallback even when a shared child saturates both upper bounds");
+	}
+
+	@Test
 	void decisionTraceNeverConflatesContextFrontierOrChildEvidence() {
 		PackedDecisionTraceArena trace = new PackedDecisionTraceArena();
 		PackedPhysicalMetadataArena metadata = new PackedPhysicalMetadataArena(8);

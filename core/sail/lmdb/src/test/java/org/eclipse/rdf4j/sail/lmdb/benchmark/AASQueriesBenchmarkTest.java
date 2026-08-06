@@ -12,18 +12,25 @@
 package org.eclipse.rdf4j.sail.lmdb.benchmark;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTimeout;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.sail.lmdb.LmdbBenchmarkQueryPlan;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 import org.junit.jupiter.api.Test;
 
@@ -181,6 +188,40 @@ class AASQueriesBenchmarkTest {
 		}
 	}
 
+	@Test
+	void aasAggregateQueriesMatchClassicEvaluationWithinExecutionDeadline() throws Exception {
+		Map<String, String> previousProperties = snapshotBenchmarkOutputProperties();
+		try {
+			disableBenchmarkOutput();
+			for (String query : List.of("query2ThresholdCount", "query3LineAggregates")) {
+				AASQueriesBenchmark cascades = configuredBenchmark(12, true, query);
+				AASQueriesBenchmark classic = configuredBenchmark(12, false, query);
+				AASQueriesBenchmark.PreparedQueryState cascadesState = new AASQueriesBenchmark.PreparedQueryState();
+				AASQueriesBenchmark.PreparedQueryState classicState = new AASQueriesBenchmark.PreparedQueryState();
+				try {
+					cascades.setup();
+					classic.setup();
+					cascadesState.setup(cascades);
+					classicState.setup(classic);
+
+					List<String> cascadesRows = assertTimeout(Duration.ofSeconds(5),
+							() -> evaluateRows(cascadesState));
+					List<String> classicRows = assertTimeout(Duration.ofSeconds(5),
+							() -> evaluateRows(classicState));
+					assertEquals(classicRows, cascadesRows, query);
+					assertSelectedHashContracts(preparedPlan(cascadesState).optimizedPlan());
+				} finally {
+					classicState.tearDown();
+					cascadesState.tearDown();
+					classic.tearDown();
+					cascades.tearDown();
+				}
+			}
+		} finally {
+			restore(previousProperties);
+		}
+	}
+
 	private static Map<String, String> snapshotBenchmarkOutputProperties() {
 		Map<String, String> previous = new LinkedHashMap<>();
 		for (String property : BENCHMARK_OUTPUT_PROPERTIES) {
@@ -196,6 +237,62 @@ class AASQueriesBenchmarkTest {
 		setField(benchmark, "store", "lmdb");
 		setField(benchmark, "useCascades", "true");
 		setField(benchmark, "query", "query2ThresholdCount");
+	}
+
+	private static AASQueriesBenchmark configuredBenchmark(int count, boolean cascades, String query)
+			throws ReflectiveOperationException {
+		AASQueriesBenchmark benchmark = new AASQueriesBenchmark();
+		setField(benchmark, "productionLineCount", count);
+		setField(benchmark, "driveUnitCount", count);
+		setField(benchmark, "sensorCount", count);
+		setField(benchmark, "store", "lmdb");
+		setField(benchmark, "useCascades", Boolean.toString(cascades));
+		setField(benchmark, "query", query);
+		return benchmark;
+	}
+
+	private static void disableBenchmarkOutput() {
+		for (String property : BENCHMARK_OUTPUT_PROPERTIES) {
+			System.setProperty(property, "false");
+		}
+	}
+
+	private static List<String> evaluateRows(AASQueriesBenchmark.PreparedQueryState state)
+			throws ReflectiveOperationException {
+		List<String> rows = new ArrayList<>();
+		try (CloseableIteration<BindingSet> result = preparedPlan(state).evaluate()) {
+			while (result.hasNext()) {
+				BindingSet row = result.next();
+				rows.add(row.getBindingNames()
+						.stream()
+						.sorted()
+						.map(name -> name + "=" + row.getValue(name))
+						.collect(Collectors.joining(",")));
+			}
+		}
+		Collections.sort(rows);
+		return rows;
+	}
+
+	private static LmdbBenchmarkQueryPlan preparedPlan(AASQueriesBenchmark.PreparedQueryState state)
+			throws ReflectiveOperationException {
+		Field field = AASQueriesBenchmark.PreparedQueryState.class.getDeclaredField("plan");
+		field.setAccessible(true);
+		return (LmdbBenchmarkQueryPlan) field.get(state);
+	}
+
+	private static void assertSelectedHashContracts(String optimizedPlan) {
+		for (String line : optimizedPlan.lines()
+				.filter(candidate -> candidate.contains("optimizer.joinAlgorithmHint=hash"))
+				.toList()) {
+			assertTrue(line.contains("optimizer.hashJoinLookupBindings="), line);
+			assertTrue(line.contains("optimizer.hashJoinCompatibilityBindings="), line);
+			assertTrue(line.contains("optimizer.hashJoinBuildSide="), line);
+			assertTrue(line.contains("optimizer.hashJoinProbeInputRows="), line);
+			assertTrue(line.contains("optimizer.hashJoinCandidateRows="), line);
+			assertTrue(line.contains("optimizer.hashJoinCandidateEstimateSource="), line);
+			assertTrue(line.contains("optimizer.hashJoinPeakMemoryRows="), line);
+		}
 	}
 
 	private static void setField(AASQueriesBenchmark benchmark, String name, Object value)

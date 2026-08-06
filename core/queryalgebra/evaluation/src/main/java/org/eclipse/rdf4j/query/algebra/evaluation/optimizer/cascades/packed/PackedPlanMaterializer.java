@@ -108,6 +108,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MaterializeTupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierEvidenceBundle;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -204,6 +205,7 @@ final class PackedPlanMaterializer {
 		if (recipe != null && recipe.hasPhysicalMetadata(nodeId)) {
 			applyPhysicalMetadata(recipe, nodeId, result);
 			applyOriginatingCostingEvent(recipe, nodeId, result);
+			applyInvocationFeedbackContract(result);
 			verifyDependentJoinCostingContext(recipe, nodeId);
 		}
 		return result;
@@ -705,6 +707,7 @@ final class PackedPlanMaterializer {
 	}
 
 	private static void applyPhysicalMetadata(PackedPlanRecipe recipe, int recipeId, TupleExpr node) {
+		node.setRuntimeFeedbackContract(recipe.runtimeFeedbackContract(recipeId));
 		double rows = recipe.outputRows(recipeId);
 		double work = recipe.workRows(recipeId);
 		node.setResultSizeEstimate(rows);
@@ -769,6 +772,21 @@ final class PackedPlanMaterializer {
 				&& recipe.implementationForm(recipeId) == PackedJoinEnumerator.HASH_JOIN_IMPLEMENTATION) {
 			node.setStringMetricPlanned("optimizer.joinAlgorithmHint", "hash");
 		}
+	}
+
+	private static void applyInvocationFeedbackContract(TupleExpr node) {
+		RuntimeFeedbackContract contract = node.getRuntimeFeedbackContract();
+		if (contract == null) {
+			return;
+		}
+		double expectedRows = contract.appliedPrediction().rows();
+		double expectedWorkRows = contract.appliedPrediction().workRows();
+		if (!finiteNonNegative(expectedRows) || !finiteNonNegative(expectedWorkRows)) {
+			return;
+		}
+		node.setCostFeedbackExpectedRows(expectedRows);
+		node.setCostFeedbackExpectedWorkRows(expectedWorkRows);
+		node.setCostFeedbackTrackingEnabled(true);
 	}
 
 	private static void applyOriginatingCostingEvent(PackedPlanRecipe recipe, int recipeId, TupleExpr node) {

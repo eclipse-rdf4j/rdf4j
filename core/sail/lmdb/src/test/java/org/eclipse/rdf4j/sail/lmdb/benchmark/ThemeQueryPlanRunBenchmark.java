@@ -158,7 +158,7 @@ public class ThemeQueryPlanRunBenchmark {
 //		@Param({ "false" })
 		public boolean loadSelectedThemeOnly;
 
-//		@Param({ "safe-cardinality-correction" })
+		@Param({ "safe-cardinality-correction" })
 		public String leoRolloutProfile;
 
 		public boolean rebuildStoreBeforeSetup;

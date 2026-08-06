@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
 
@@ -68,9 +69,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 	public static final String PATH_DISCARD_RATIO_ACTUAL = "optimizer.pathDiscardRatioActual";
 
-	/**
-	 * Required as we can't prepare the queries yet.
-	 */
+	/** Evaluation strategy remains necessary for the one-off zero-length branch. */
 	private final EvaluationStrategy strategy;
 
 	private long currentLength;
@@ -125,6 +124,12 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 	private final String internalEndVarName;
 
+	private final String internalInputVarName;
+
+	private final QueryEvaluationStep initialEvaluationStep;
+
+	private final QueryEvaluationStep expansionEvaluationStep;
+
 	private final Value fixedStartValue;
 
 	private final Value fixedEndValue;
@@ -167,6 +172,15 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 			TupleExpr pathExpression, Var endVar, Var contextVar, long minLength, BindingSet bindings,
 			QueryModelNode pathNode)
 			throws QueryEvaluationException {
+		this(strategy, scope, startVar, pathExpression, endVar, contextVar, minLength, bindings, pathNode,
+				strategy::precompile);
+	}
+
+	@InternalUseOnly
+	public PathIteration(EvaluationStrategy strategy, Scope scope, Var startVar,
+			TupleExpr pathExpression, Var endVar, Var contextVar, long minLength, BindingSet bindings,
+			QueryModelNode pathNode, Function<TupleExpr, QueryEvaluationStep> stepCompiler)
+			throws QueryEvaluationException {
 		this.strategy = strategy;
 		this.scope = scope;
 		this.startVar = startVar;
@@ -174,6 +188,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 		this.startVarName = startVar.getName();
 		this.endVarName = endVar.getName();
 		this.internalEndVarName = "END_" + JOINVAR_PREFIX + pathIteratorId;
+		this.internalInputVarName = "INPUT_" + JOINVAR_PREFIX + pathIteratorId;
 
 		this.startVarFixed = startVar.hasValue() || bindings.hasBinding(startVarName);
 		this.endVarFixed = endVar.hasValue() || bindings.hasBinding(endVarName);
@@ -184,6 +199,8 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 		this.contextVar = contextVar;
 		this.pathNode = pathNode;
 		this.runtimeTelemetryEnabled = pathNode != null;
+		this.initialEvaluationStep = prepareInitialEvaluationStep(Objects.requireNonNull(stepCompiler));
+		this.expansionEvaluationStep = prepareExpansionEvaluationStep(stepCompiler);
 
 		this.currentLength = minLength;
 		this.bindings = bindings;
@@ -201,6 +218,31 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 		this.valueQueue = collectionFactory.createBindingSetQueue(ValuePair::new, PathIteration::getHas,
 				PathIteration::getGet, PathIteration::getSet);
 		createIteration();
+	}
+
+	private QueryEvaluationStep prepareInitialEvaluationStep(Function<TupleExpr, QueryEvaluationStep> stepCompiler) {
+		TupleExpr initialExpression = pathExpression;
+		if (startVarFixed && endVarFixed) {
+			initialExpression = pathExpression.clone();
+			Var replacement = createAnonVar(internalEndVarName, null, true);
+			initialExpression.visit(new VarReplacer(endVar, replacement, 0, false));
+		}
+		return stepCompiler.apply(initialExpression);
+	}
+
+	private QueryEvaluationStep prepareExpansionEvaluationStep(Function<TupleExpr, QueryEvaluationStep> stepCompiler) {
+		TupleExpr expansionExpression = pathExpression.clone();
+		if (startVarFixed && endVarFixed) {
+			Var startReplacement = createAnonVar(internalInputVarName, null, false);
+			Var endReplacement = createAnonVar(internalEndVarName, null, false);
+			expansionExpression.visit(new VarReplacer(startVar, startReplacement, 0, false));
+			expansionExpression.visit(new VarReplacer(endVar, endReplacement, 0, false));
+		} else {
+			Var endpoint = endVarFixed ? endVar : startVar;
+			Var replacement = createAnonVar(internalInputVarName, null, true);
+			expansionExpression.visit(new VarReplacer(endpoint, replacement, 0, false));
+		}
+		return stepCompiler.apply(expansionExpression);
 	}
 
 	private static Value fixedValue(Var var, String varName, BindingSet bindings) {
@@ -390,12 +432,9 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 	private ValuePair valuePairFromStartAndEnd(MutableBindingSet nextElement) {
 		Value v1, v2;
 
-		if (startVarFixed && endVarFixed && currentLength > 2) {
+		if (startVarFixed && endVarFixed) {
 			v1 = getVarValue(startVar, startVarFixed, nextElement);
 			v2 = nextElement.getValue(internalEndVarName);
-		} else if (startVarFixed && endVarFixed && currentLength == 2) {
-			v1 = getVarValue(startVar, startVarFixed, nextElement);
-			v2 = nextElement.getValue(varNameAtPathLengthOf(currentLength - 1));
 		} else {
 			v1 = getVarValue(startVar, startVarFixed, nextElement);
 			v2 = getVarValue(endVar, endVarFixed, nextElement);
@@ -495,16 +534,10 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 			pathExpansionIterationsActual++;
 			currentLength++;
 		} else if (currentLength == 1) {
-			TupleExpr pathExprClone = pathExpression.clone();
-
 			if (startVarFixed && endVarFixed) {
-				String varName = varNameAtPathLengthOf(currentLength);
-				Var replacement = createAnonVar(varName, null, true);
-
-				VarReplacer replacer = new VarReplacer(endVar, replacement, 0, false);
-				pathExprClone.visit(replacer);
+				rememberCurrentJoinVar(internalEndVarName);
 			}
-			currentIter = this.strategy.evaluate(pathExprClone, bindings);
+			currentIter = initialEvaluationStep.evaluate(bindings);
 			pathExpansionIterationsActual++;
 			currentLength++;
 		} else {
@@ -512,40 +545,18 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 			currentVp = (ValuePair) valueQueue.poll();
 
 			if (currentVp != null) {
-
-				TupleExpr pathExprClone = pathExpression.clone();
-
-				if (startVarFixed && endVarFixed) {
-
-					Value v = currentVp.getEndValue();
-					Var startReplacement = createAnonVar(varNameAtPathLengthOf(currentLength), v,
-							false);
-					Var endReplacement = createAnonVar(internalEndVarName, null, false);
-
-					VarReplacer replacer = new VarReplacer(startVar, startReplacement, 0, false);
-					pathExprClone.visit(replacer);
-
-					replacer = new VarReplacer(endVar, endReplacement, 0, false);
-					pathExprClone.visit(replacer);
-				} else {
-					Var toBeReplaced;
-					Value v;
-					if (!endVarFixed) {
-						toBeReplaced = startVar;
-						v = currentVp.getEndValue();
-					} else {
-						toBeReplaced = endVar;
-						v = currentVp.getStartValue();
-					}
-
-					String varName = varNameAtPathLengthOf(currentLength);
-					Var replacement = createAnonVar(varName, v, true);
-
-					VarReplacer replacer = new VarReplacer(toBeReplaced, replacement, 0, false);
-					pathExprClone.visit(replacer);
+				Value inputValue = startVarFixed && endVarFixed
+						? currentVp.getEndValue()
+						: endVarFixed ? currentVp.getStartValue() : currentVp.getEndValue();
+				QueryBindingSet expansionBindings = new QueryBindingSet(bindings);
+				if (inputValue != null) {
+					expansionBindings.addBinding(internalInputVarName, inputValue);
 				}
-
-				currentIter = this.strategy.evaluate(pathExprClone, bindings);
+				rememberCurrentJoinVar(internalInputVarName);
+				if (startVarFixed && endVarFixed) {
+					rememberCurrentJoinVar(internalEndVarName);
+				}
+				currentIter = expansionEvaluationStep.evaluate(expansionBindings);
 				pathExpansionIterationsActual++;
 			} else {
 				currentIter = null;
@@ -553,10 +564,6 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 			currentLength++;
 
 		}
-	}
-
-	private String varNameAtPathLengthOf(long atLength) {
-		return JOINVAR_PREFIX + atLength + "_" + pathIteratorId;
 	}
 
 	private void resetCurrentJoinVars() {

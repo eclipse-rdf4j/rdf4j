@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -25,6 +26,8 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
+import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackDescriptor;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDisposition;
 import org.junit.jupiter.api.Test;
@@ -193,6 +196,7 @@ class PackedCostSessionLifecycleTest {
 	@Test
 	void identicalQueryLocalCostingCallReusesItsOriginatingEventAndFrontierState() {
 		int[] providerCalls = new int[1];
+		RuntimeFeedbackContract feedbackContract = runtimeFeedbackContract(7.0d, 11.0d, 1);
 		PackedCostSession provider = new PackedCostSession() {
 			@Override
 			public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
@@ -205,6 +209,7 @@ class PackedCostSessionLifecycleTest {
 				output.setComponentRows(7.0d, 11.0d);
 				output.setEvidenceStateId(100 + invocation);
 				output.putPlannedStringMetric("provider.call", Integer.toString(invocation));
+				output.setRuntimeFeedbackContract(feedbackContract);
 			}
 
 			@Override
@@ -227,9 +232,46 @@ class PackedCostSessionLifecycleTest {
 		assertEquals(1, providerCalls[0], "one exact costing identity must invoke the provider only once");
 		assertEquals(first.costEventId(), second.costEventId());
 		assertEquals(first.evidenceStateId(), second.evidenceStateId());
+		assertSame(feedbackContract, second.runtimeFeedbackContract());
 		assertEquals("1", second.plannedStringMetrics().get("provider.call"));
 		assertEquals(first.plannedStringMetrics(), second.plannedStringMetrics());
 		assertEquals(first.plannedDoubleMetrics(), second.plannedDoubleMetrics());
+	}
+
+	@Test
+	void distinctTypedProviderInputsDoNotShareOneCostingEvent() {
+		int[] providerCalls = new int[1];
+		PackedCostSession provider = new PackedCostSession() {
+			@Override
+			public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				throw new AssertionError("this fixture exercises prefix costing only");
+			}
+
+			@Override
+			public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				providerCalls[0]++;
+				output.setComponentRows(7.0d, 11.0d);
+			}
+
+			@Override
+			public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				throw new AssertionError("this fixture exercises prefix costing only");
+			}
+		};
+		EventSourcingPackedCostSession session = new EventSourcingPackedCostSession(provider);
+		PackedCostContext context = new PackedCostContext();
+		context.reset(new int[] { 3, 5 }, 0, 2, 13.0d, 41);
+		PackedCostEstimate first = new PackedCostEstimate();
+		first.setRows(19.0d, 23.0d);
+		first.setRuntimeFeedbackContract(runtimeFeedbackContract(19.0d, 23.0d, 1));
+		PackedCostEstimate second = new PackedCostEstimate();
+		second.setRows(19.0d, 23.0d);
+		second.setRuntimeFeedbackContract(runtimeFeedbackContract(19.0d, 23.0d, 2));
+
+		session.appendFactor(29, context, first);
+		session.appendFactor(29, context, second);
+
+		assertEquals(2, providerCalls[0], "distinct typed identities must not reuse one provider result");
 	}
 
 	@Test
@@ -531,14 +573,55 @@ class PackedCostSessionLifecycleTest {
 		PackedCostingTrace trace = session.snapshotTrace();
 
 		assertEquals(PackedCostingPhase.PHYSICAL_JOIN, trace.phase(2));
-		assertEquals(10.0d, trace.workRows(2));
+		assertEquals(25.0d, trace.workRows(2));
+		assertEquals(5.0d, estimate.plannedDoubleMetric("optimizer.hashJoinProbeInputRows", -1.0d));
+		assertEquals(15.0d, estimate.plannedDoubleMetric("optimizer.hashJoinCandidateRows", -1.0d));
+		assertEquals(20.0d, estimate.hashProbeRows());
+		assertEquals(3.0d, estimate.peakMemoryRows());
 		for (int ordinal = 0; ordinal < trace.stringMetricCount(2); ordinal++) {
 			assertFalse(trace.stringMetricName(2, ordinal).startsWith("optimizer.costEvent"));
 		}
 		for (int ordinal = 0; ordinal < trace.doubleMetricCount(2); ordinal++) {
 			assertFalse(trace.doubleMetricName(2, ordinal).startsWith("optimizer.costEvent"));
 		}
-		assertEquals(10.0d, estimate.plannedDoubleMetrics().get("optimizer.costEventWorkRows"));
+		assertEquals(25.0d, estimate.plannedDoubleMetrics().get("optimizer.costEventWorkRows"));
+	}
+
+	@Test
+	void physicalHashTraceIdentityIncludesLookupAndCompatibilityMasks() {
+		PackedCostSession provider = new PackedCostSession() {
+			@Override
+			public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+			}
+
+			@Override
+			public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+			}
+
+			@Override
+			public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+			}
+		};
+		EventSourcingPackedCostSession session = new EventSourcingPackedCostSession(provider);
+		PackedCostContext context = new PackedCostContext();
+		context.reset(new int[] { 3 }, 0, 1, 4.0d, 0);
+		context.setOperatorInputs(4.0d, 6.0d, 0, 0);
+		context.setHashJoinMasks(7, 11);
+		PackedCostEstimate first = new PackedCostEstimate();
+		first.setRows(2.0d, 2.0d);
+
+		PackedPhysicalJoinCosting.refine(session, PackedPhysicalJoinCosting.INDEPENDENT_HASH, context, first);
+		context.setHashJoinMasks(13, 17);
+		PackedCostEstimate second = new PackedCostEstimate();
+		second.setRows(2.0d, 2.0d);
+		PackedPhysicalJoinCosting.refine(session, PackedPhysicalJoinCosting.INDEPENDENT_HASH, context, second);
+		PackedCostingTrace trace = session.snapshotTrace();
+
+		assertEquals(2, trace.eventCount());
+		assertEquals(7, trace.hashLookupMaskId(1));
+		assertEquals(11, trace.hashCompatibilityMaskId(1));
+		assertEquals(13, trace.hashLookupMaskId(2));
+		assertEquals(17, trace.hashCompatibilityMaskId(2));
 	}
 
 	@Test
@@ -601,6 +684,21 @@ class PackedCostSessionLifecycleTest {
 		case "urn:tail" -> 4.0d;
 		default -> Double.NaN;
 		};
+	}
+
+	private static RuntimeFeedbackContract runtimeFeedbackContract(double rows, double workRows,
+			int implementationId) {
+		RuntimeFeedbackContract.PredictionVector prediction = new RuntimeFeedbackContract.PredictionVector(
+				rows, workRows, rows, workRows, 0.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+		return new RuntimeFeedbackContract(new CostSessionFeedbackDescriptor(implementationId),
+				prediction, prediction, workRows, workRows, workRows, Double.POSITIVE_INFINITY,
+				RuntimeFeedbackContract.SemanticKind.ORDINARY,
+				RuntimeFeedbackContract.Algorithm.SCAN,
+				RuntimeFeedbackContract.Access.NONE, implementationId, 0L, 0L, 0L,
+				RuntimeFeedbackContract.ADMIT_LOGICAL | RuntimeFeedbackContract.ADMIT_PHYSICAL);
+	}
+
+	private record CostSessionFeedbackDescriptor(int implementationId) implements RuntimeFeedbackDescriptor {
 	}
 
 	private static final class SessionOnlyCostModel implements PackedCostModel {

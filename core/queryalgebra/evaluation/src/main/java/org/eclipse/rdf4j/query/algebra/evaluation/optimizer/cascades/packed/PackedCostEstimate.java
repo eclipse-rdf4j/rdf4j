@@ -17,6 +17,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDisposition;
 
@@ -62,6 +63,26 @@ public final class PackedCostEstimate {
 	private String accessMode;
 	private boolean replacesChildWork;
 	private boolean dependentSubqueriesCosted;
+	private boolean explicitDependentCostComponents;
+	private double startupOnceWork;
+	private double dependentInvocationCount;
+	private double hitProbability;
+	private double firstMatchWork;
+	private double exhaustionWork;
+	private double rebindWork;
+	private double closeWork;
+	private double outputWork;
+	private double distinctKeyMisses;
+	private double cacheHits;
+	private double cacheMisses;
+	private double cacheEvictions;
+	private double materializationBuilds;
+	private double materializationLookups;
+	private double memorySpillWork;
+	private double objectiveLower;
+	private double objectivePoint;
+	private double objectiveUpper;
+	private RuntimeFeedbackContract runtimeFeedbackContract;
 	private String[] plannedStringMetricNames;
 	private String[] plannedStringMetricValues;
 	private String[] plannedDoubleMetricNames;
@@ -120,6 +141,26 @@ public final class PackedCostEstimate {
 		accessMode = null;
 		replacesChildWork = false;
 		dependentSubqueriesCosted = false;
+		explicitDependentCostComponents = false;
+		startupOnceWork = Double.NaN;
+		dependentInvocationCount = Double.NaN;
+		hitProbability = Double.NaN;
+		firstMatchWork = Double.NaN;
+		exhaustionWork = Double.NaN;
+		rebindWork = Double.NaN;
+		closeWork = Double.NaN;
+		outputWork = Double.NaN;
+		distinctKeyMisses = Double.NaN;
+		cacheHits = Double.NaN;
+		cacheMisses = Double.NaN;
+		cacheEvictions = Double.NaN;
+		materializationBuilds = Double.NaN;
+		materializationLookups = Double.NaN;
+		memorySpillWork = Double.NaN;
+		objectiveLower = Double.NaN;
+		objectivePoint = Double.NaN;
+		objectiveUpper = Double.NaN;
+		runtimeFeedbackContract = null;
 	}
 
 	public void setRows(double outputRows, double workRows) {
@@ -198,6 +239,122 @@ public final class PackedCostEstimate {
 
 	public boolean dependentSubqueriesCosted() {
 		return dependentSubqueriesCosted;
+	}
+
+	/**
+	 * Records the primitive inputs to dependent, memoized, and materialized execution costing. Work quantities are per
+	 * invocation unless their name is an explicit count or says startup/output/spill.
+	 */
+	public void setDependentCostComponents(double startupOnceWork, double invocationCount, double hitProbability,
+			double firstMatchWork, double exhaustionWork, double rebindWork, double closeWork, double outputWork,
+			double distinctKeyMisses, double cacheHits, double cacheMisses, double cacheEvictions,
+			double materializationBuilds, double materializationLookups, double memorySpillWork) {
+		this.startupOnceWork = dependentDimension(startupOnceWork, "startup-once work");
+		this.dependentInvocationCount = dependentDimension(invocationCount, "dependent invocation count");
+		if (!Double.isFinite(hitProbability) || hitProbability < 0.0d || hitProbability > 1.0d) {
+			throw new IllegalArgumentException("hit probability must be finite and in [0, 1]");
+		}
+		this.hitProbability = hitProbability;
+		this.firstMatchWork = dependentDimension(firstMatchWork, "first-match work");
+		this.exhaustionWork = dependentDimension(exhaustionWork, "exhaustion work");
+		this.rebindWork = dependentDimension(rebindWork, "rebind work");
+		this.closeWork = dependentDimension(closeWork, "close work");
+		this.outputWork = dependentDimension(outputWork, "output work");
+		this.distinctKeyMisses = dependentDimension(distinctKeyMisses, "distinct-key misses");
+		this.cacheHits = dependentDimension(cacheHits, "cache hits");
+		this.cacheMisses = dependentDimension(cacheMisses, "cache misses");
+		this.cacheEvictions = dependentDimension(cacheEvictions, "cache evictions");
+		this.materializationBuilds = dependentDimension(materializationBuilds, "materialization builds");
+		this.materializationLookups = dependentDimension(materializationLookups, "materialization lookups");
+		this.memorySpillWork = dependentDimension(memorySpillWork, "memory/spill work");
+		explicitDependentCostComponents = true;
+		publishDependentCostMetrics();
+	}
+
+	/** Prices a correlated streaming implementation from its primitive, invocation-aware components. */
+	public static double streamingDependentCost(double startupOnceWork, double invocationCount,
+			double hitProbability, double firstMatchWork, double exhaustionWork, double rebindWork,
+			double closeWork, double outputWork) {
+		dependentDimension(startupOnceWork, "startup-once work");
+		dependentDimension(invocationCount, "dependent invocation count");
+		if (!Double.isFinite(hitProbability) || hitProbability < 0.0d || hitProbability > 1.0d) {
+			throw new IllegalArgumentException("hit probability must be finite and in [0, 1]");
+		}
+		dependentDimension(firstMatchWork, "first-match work");
+		dependentDimension(exhaustionWork, "exhaustion work");
+		dependentDimension(rebindWork, "rebind work");
+		dependentDimension(closeWork, "close work");
+		dependentDimension(outputWork, "output work");
+		double expectedProbeWork = saturatedAdd(
+				saturatedMultiply(hitProbability, firstMatchWork),
+				saturatedMultiply(1.0d - hitProbability, exhaustionWork));
+		double perInvocation = saturatedAdd(expectedProbeWork, saturatedAdd(rebindWork, closeWork));
+		return saturatedAdd(saturatedAdd(startupOnceWork, saturatedMultiply(invocationCount, perInvocation)),
+				outputWork);
+	}
+
+	/** Prices a memoized implementation using distinct-key misses, cache hits, and evictions. */
+	public static double memoizedDependentCost(double startupOnceWork, double matchedDistinctMisses,
+			double unmatchedDistinctMisses, double firstMatchWork, double exhaustionWork, double cacheHits,
+			double cacheHitWork, double cacheEvictions, double cacheEvictionWork, double rebindWork,
+			double closeWork, double outputWork) {
+		dependentDimension(startupOnceWork, "startup-once work");
+		dependentDimension(matchedDistinctMisses, "matched distinct-key misses");
+		dependentDimension(unmatchedDistinctMisses, "unmatched distinct-key misses");
+		dependentDimension(firstMatchWork, "first-match work");
+		dependentDimension(exhaustionWork, "exhaustion work");
+		dependentDimension(cacheHits, "cache hits");
+		dependentDimension(cacheHitWork, "cache-hit work");
+		dependentDimension(cacheEvictions, "cache evictions");
+		dependentDimension(cacheEvictionWork, "cache-eviction work");
+		dependentDimension(rebindWork, "rebind work");
+		dependentDimension(closeWork, "close work");
+		dependentDimension(outputWork, "output work");
+		double misses = saturatedAdd(matchedDistinctMisses, unmatchedDistinctMisses);
+		double missWork = saturatedAdd(
+				saturatedMultiply(matchedDistinctMisses, firstMatchWork),
+				saturatedMultiply(unmatchedDistinctMisses, exhaustionWork));
+		missWork = saturatedAdd(missWork, saturatedMultiply(misses, saturatedAdd(rebindWork, closeWork)));
+		double hitWork = saturatedMultiply(cacheHits, cacheHitWork);
+		double evictionWork = saturatedMultiply(cacheEvictions, cacheEvictionWork);
+		return saturatedAdd(saturatedAdd(startupOnceWork, saturatedAdd(missWork, hitWork)),
+				saturatedAdd(evictionWork, outputWork));
+	}
+
+	/** Prices a materialize-once implementation by parameter partition and membership lookup. */
+	public static double materializedDependentCost(double startupOnceWork, double materializationBuilds,
+			double buildWork, double materializationLookups, double lookupWork, double memorySpillWork,
+			double outputWork) {
+		dependentDimension(startupOnceWork, "startup-once work");
+		dependentDimension(materializationBuilds, "materialization builds");
+		dependentDimension(buildWork, "materialization build work");
+		dependentDimension(materializationLookups, "materialization lookups");
+		dependentDimension(lookupWork, "materialization lookup work");
+		dependentDimension(memorySpillWork, "memory/spill work");
+		dependentDimension(outputWork, "output work");
+		return saturatedAdd(
+				saturatedAdd(startupOnceWork, saturatedMultiply(materializationBuilds, buildWork)),
+				saturatedAdd(saturatedMultiply(materializationLookups, lookupWork),
+						saturatedAdd(memorySpillWork, outputWork)));
+	}
+
+	/** Sets a robust objective interval; legacy point estimates use {@code lower == point == upper}. */
+	public void setObjectiveInterval(double lower, double point, double upper) {
+		if (!Double.isFinite(lower) || !Double.isFinite(point) || !Double.isFinite(upper)
+				|| lower < 0.0d || lower > point || point > upper) {
+			throw new IllegalArgumentException("objective interval must be finite, non-negative, and ordered");
+		}
+		objectiveLower = lower;
+		objectivePoint = point;
+		objectiveUpper = upper;
+		putPlannedDoubleMetric("optimizer.objectiveLower", lower);
+		putPlannedDoubleMetric("optimizer.objectivePoint", point);
+		putPlannedDoubleMetric("optimizer.objectiveUpper", upper);
+	}
+
+	/** Carries the provider's typed learned-feedback identity without encoding it into metric strings. */
+	public void setRuntimeFeedbackContract(RuntimeFeedbackContract runtimeFeedbackContract) {
+		this.runtimeFeedbackContract = runtimeFeedbackContract;
 	}
 
 	private void setPhysicalCost(CostScope costScope, double sequentialRows, double randomSeeks,
@@ -328,6 +485,7 @@ public final class PackedCostEstimate {
 			setReplacesChildWork(source.costScope == CostScope.INCLUSIVE);
 		}
 		dependentSubqueriesCosted = source.dependentSubqueriesCosted;
+		copyDependentComponentsFrom(source);
 	}
 
 	void copyProviderInputFrom(PackedCostEstimate source) {
@@ -363,6 +521,30 @@ public final class PackedCostEstimate {
 		accessMode = source.accessMode;
 		replacesChildWork = source.replacesChildWork;
 		dependentSubqueriesCosted = source.dependentSubqueriesCosted;
+		runtimeFeedbackContract = source.runtimeFeedbackContract;
+		copyDependentComponentsFrom(source);
+	}
+
+	private void copyDependentComponentsFrom(PackedCostEstimate source) {
+		explicitDependentCostComponents = source.explicitDependentCostComponents;
+		startupOnceWork = source.startupOnceWork;
+		dependentInvocationCount = source.dependentInvocationCount;
+		hitProbability = source.hitProbability;
+		firstMatchWork = source.firstMatchWork;
+		exhaustionWork = source.exhaustionWork;
+		rebindWork = source.rebindWork;
+		closeWork = source.closeWork;
+		outputWork = source.outputWork;
+		distinctKeyMisses = source.distinctKeyMisses;
+		cacheHits = source.cacheHits;
+		cacheMisses = source.cacheMisses;
+		cacheEvictions = source.cacheEvictions;
+		materializationBuilds = source.materializationBuilds;
+		materializationLookups = source.materializationLookups;
+		memorySpillWork = source.memorySpillWork;
+		objectiveLower = source.objectiveLower;
+		objectivePoint = source.objectivePoint;
+		objectiveUpper = source.objectiveUpper;
 	}
 
 	private void recomputeWorkRows() {
@@ -388,6 +570,24 @@ public final class PackedCostEstimate {
 		putPlannedDoubleMetric("plannedCostResultRows", resultRows);
 		putPlannedDoubleMetric("plannedCostRemoteCalls", remoteCalls);
 		putPlannedDoubleMetric("plannedCostPeakMemoryRows", peakMemoryRows);
+	}
+
+	private void publishDependentCostMetrics() {
+		putPlannedDoubleMetric("optimizer.dependentStartupOnce", startupOnceWork);
+		putPlannedDoubleMetric("optimizer.dependentInvocationCount", dependentInvocationCount);
+		putPlannedDoubleMetric("optimizer.dependentHitProbability", hitProbability);
+		putPlannedDoubleMetric("optimizer.dependentFirstMatchWork", firstMatchWork);
+		putPlannedDoubleMetric("optimizer.dependentExhaustionWork", exhaustionWork);
+		putPlannedDoubleMetric("optimizer.dependentRebindWork", rebindWork);
+		putPlannedDoubleMetric("optimizer.dependentCloseWork", closeWork);
+		putPlannedDoubleMetric("optimizer.dependentOutputWork", outputWork);
+		putPlannedDoubleMetric("optimizer.dependentDistinctKeyMisses", distinctKeyMisses);
+		putPlannedDoubleMetric("optimizer.dependentCacheHits", cacheHits);
+		putPlannedDoubleMetric("optimizer.dependentCacheMisses", cacheMisses);
+		putPlannedDoubleMetric("optimizer.dependentCacheEvictions", cacheEvictions);
+		putPlannedDoubleMetric("optimizer.dependentMaterializationBuilds", materializationBuilds);
+		putPlannedDoubleMetric("optimizer.dependentMaterializationLookups", materializationLookups);
+		putPlannedDoubleMetric("optimizer.dependentMemorySpillWork", memorySpillWork);
 	}
 
 	/**
@@ -608,6 +808,86 @@ public final class PackedCostEstimate {
 		return peakMemoryRows;
 	}
 
+	public boolean hasDependentCostComponents() {
+		return explicitDependentCostComponents;
+	}
+
+	public double startupOnceWork() {
+		return startupOnceWork;
+	}
+
+	public double dependentInvocationCount() {
+		return dependentInvocationCount;
+	}
+
+	public double hitProbability() {
+		return hitProbability;
+	}
+
+	public double firstMatchWork() {
+		return firstMatchWork;
+	}
+
+	public double exhaustionWork() {
+		return exhaustionWork;
+	}
+
+	public double rebindWork() {
+		return rebindWork;
+	}
+
+	public double closeWork() {
+		return closeWork;
+	}
+
+	public double outputWork() {
+		return outputWork;
+	}
+
+	public double distinctKeyMisses() {
+		return distinctKeyMisses;
+	}
+
+	public double cacheHits() {
+		return cacheHits;
+	}
+
+	public double cacheMisses() {
+		return cacheMisses;
+	}
+
+	public double cacheEvictions() {
+		return cacheEvictions;
+	}
+
+	public double materializationBuilds() {
+		return materializationBuilds;
+	}
+
+	public double materializationLookups() {
+		return materializationLookups;
+	}
+
+	public double memorySpillWork() {
+		return memorySpillWork;
+	}
+
+	public double objectiveLower() {
+		return Double.isFinite(objectiveLower) ? objectiveLower : objectivePoint();
+	}
+
+	public double objectivePoint() {
+		return Double.isFinite(objectivePoint) ? objectivePoint : workRows;
+	}
+
+	public double objectiveUpper() {
+		return Double.isFinite(objectiveUpper) ? objectiveUpper : objectivePoint();
+	}
+
+	public RuntimeFeedbackContract runtimeFeedbackContract() {
+		return runtimeFeedbackContract;
+	}
+
 	/**
 	 * Returns the query-local output evidence state, or zero when this estimate has no composable Frontier state.
 	 */
@@ -720,6 +1000,13 @@ public final class PackedCostEstimate {
 		}
 	}
 
+	private static double dependentDimension(double value, String label) {
+		if (!Double.isFinite(value) || value < 0.0d) {
+			throw new IllegalArgumentException(label + " must be finite and non-negative");
+		}
+		return value;
+	}
+
 	private void ensurePlannedDoubleMetricCapacity() {
 		if (plannedDoubleMetricNames == null) {
 			plannedDoubleMetricNames = new String[4];
@@ -809,6 +1096,11 @@ public final class PackedCostEstimate {
 	private static double saturatedAdd(double left, double right) {
 		double sum = left + right;
 		return Double.isFinite(sum) ? sum : Double.MAX_VALUE;
+	}
+
+	private static double saturatedMultiply(double left, double right) {
+		double product = left * right;
+		return Double.isFinite(product) ? product : Double.MAX_VALUE;
 	}
 
 	private static double finiteOrZero(double value) {

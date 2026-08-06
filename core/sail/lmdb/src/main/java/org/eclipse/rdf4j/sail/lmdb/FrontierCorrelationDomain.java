@@ -90,4 +90,102 @@ record FrontierPrimitiveCorrelationRelation(int width, long[] tuples, double[] m
 	double multiplicity(int row) {
 		return multiplicities[row];
 	}
+
+	boolean fullyBound() {
+		for (long tuple : tuples) {
+			if (tuple == 0L) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	double weightedOverlap(FrontierPrimitiveCorrelationRelation other) {
+		if (other == null || width != other.width) {
+			throw new IllegalArgumentException("correlation relations must have the same key width");
+		}
+		if (size() == 0 || other.size() == 0) {
+			return 0.0d;
+		}
+		FrontierPrimitiveCorrelationRelation indexed = size() <= other.size() ? this : other;
+		FrontierPrimitiveCorrelationRelation probed = indexed == this ? other : this;
+		int capacity = 2;
+		int target = Math.multiplyExact(indexed.size(), 2);
+		while (capacity < target) {
+			capacity = Math.multiplyExact(capacity, 2);
+		}
+		int mask = capacity - 1;
+		int[] indexedRows = new int[capacity];
+		long[] hashes = new long[capacity];
+		double[] masses = new double[capacity];
+		for (int row = 0; row < indexed.size(); row++) {
+			long hash = indexed.tupleHash(row);
+			int slot = (int) hash & mask;
+			boolean merged = false;
+			while (indexedRows[slot] != 0) {
+				if (hashes[slot] == hash && indexed.sameTuple(indexedRows[slot] - 1, indexed, row)) {
+					masses[slot] = saturatedAdd(masses[slot], indexed.multiplicity(row));
+					merged = true;
+					break;
+				}
+				slot = (slot + 1) & mask;
+			}
+			if (merged) {
+				continue;
+			}
+			indexedRows[slot] = row + 1;
+			hashes[slot] = hash;
+			masses[slot] = indexed.multiplicity(row);
+		}
+		double overlap = 0.0d;
+		for (int row = 0; row < probed.size(); row++) {
+			long hash = probed.tupleHash(row);
+			int slot = (int) hash & mask;
+			while (indexedRows[slot] != 0) {
+				if (hashes[slot] == hash && indexed.sameTuple(indexedRows[slot] - 1, probed, row)) {
+					overlap = saturatedAdd(overlap,
+							saturatedMultiply(masses[slot], probed.multiplicity(row)));
+					break;
+				}
+				slot = (slot + 1) & mask;
+			}
+		}
+		return overlap;
+	}
+
+	private long tupleHash(int row) {
+		long hash = 0x9e3779b97f4a7c15L;
+		int offset = Math.multiplyExact(row, width);
+		for (int column = 0; column < width; column++) {
+			long value = tuples[offset + column];
+			long mixed = value ^ value >>> 33;
+			mixed *= 0xff51afd7ed558ccdL;
+			mixed ^= mixed >>> 33;
+			mixed *= 0xc4ceb9fe1a85ec53L;
+			mixed ^= mixed >>> 33;
+			hash ^= mixed + 0x9e3779b97f4a7c15L + (hash << 6) + (hash >>> 2);
+		}
+		return hash;
+	}
+
+	private boolean sameTuple(int leftRow, FrontierPrimitiveCorrelationRelation right, int rightRow) {
+		int leftOffset = Math.multiplyExact(leftRow, width);
+		int rightOffset = Math.multiplyExact(rightRow, width);
+		for (int column = 0; column < width; column++) {
+			if (tuples[leftOffset + column] != right.tuples[rightOffset + column]) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static double saturatedAdd(double left, double right) {
+		double sum = left + right;
+		return Double.isFinite(sum) && sum >= 0.0d ? sum : Double.MAX_VALUE;
+	}
+
+	private static double saturatedMultiply(double left, double right) {
+		double product = left * right;
+		return Double.isFinite(product) && product >= 0.0d ? product : Double.MAX_VALUE;
+	}
 }

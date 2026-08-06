@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
 
 /**
  * Main interface for all query model nodes.
@@ -144,6 +145,18 @@ public interface QueryModelNode extends Cloneable, Serializable {
 
 	@Experimental
 	default void setCostFeedbackTrackingEnabled(boolean costFeedbackTrackingEnabled) {
+		// no-op for backwards compatibility
+	}
+
+	/** Returns the typed planning contract that is resolved before evaluation, if any. */
+	@Experimental
+	default RuntimeFeedbackContract getRuntimeFeedbackContract() {
+		return null;
+	}
+
+	/** Attaches an immutable typed feedback contract without encoding it in generic metric maps. */
+	@Experimental
+	default void setRuntimeFeedbackContract(RuntimeFeedbackContract runtimeFeedbackContract) {
 		// no-op for backwards compatibility
 	}
 

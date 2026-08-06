@@ -86,6 +86,7 @@ public final class PackedCostingReplay {
 			context.setAssuredBindingRelationId(trace.assuredBindingRelationId(eventId));
 			context.setEvidenceIdentity(trace.bindingLayoutId(eventId), trace.correlationMaskId(eventId),
 					trace.semanticScopeMaskId(eventId));
+			context.setHashJoinMasks(trace.hashLookupMaskId(eventId), trace.hashCompatibilityMaskId(eventId));
 			context.setOperatorInputs(leftRows, rightRows, leftStateId, rightStateId);
 			estimate.clear();
 			restoreProviderInput(trace, eventId, estimate, currentSession, currentStateByCachedOrdinal,

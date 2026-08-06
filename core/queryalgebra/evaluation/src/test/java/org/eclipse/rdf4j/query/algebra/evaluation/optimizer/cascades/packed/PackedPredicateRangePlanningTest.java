@@ -59,6 +59,28 @@ class PackedPredicateRangePlanningTest {
 	private static final IRI PREDICATE = VF.createIRI("http://example.com/intValued");
 	private static final PackedPredicateRangeProvider INT_FIFTY_TO_NINETY_NINE_PROVIDER = integerRangeProvider(
 			50L, 99L, CoreDatatype.XSD.INT);
+	private static final PackedCostModel BOUND_OBJECT_LOOKUP_COSTS = new PackedCostModel() {
+
+		@Override
+		public double estimateRows(PackedQueryView query, int relationId) {
+			return query.isStatementPattern(relationId) ? 10_000.0d : Double.NaN;
+		}
+
+		@Override
+		public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+				PackedCostEstimate output) {
+			double rows = estimateRows(query, relationId);
+			if (!Double.isFinite(rows)) {
+				return;
+			}
+			if (context.prefixRelationCount() != 0
+					&& query.prefixBindsStatementComponent(context, relationId, 2)) {
+				output.setContextualRows(context.prefixRows(), context.prefixRows());
+			} else {
+				output.setRows(rows, rows);
+			}
+		}
+	};
 
 	/** Provider proving PREDICATE holds only the canonical xsd:int value 7. */
 	private static final PackedPredicateRangeProvider INT_SEVEN_PROVIDER = new PackedPredicateRangeProvider() {
@@ -589,7 +611,7 @@ class PackedPredicateRangePlanningTest {
 
 	private static TupleExpr optimize(TupleExpr root, PackedPredicateRangeProvider provider) {
 		return PackedCascadesPlanner
-				.optimize(root.clone(), OptimizationGoal.root(root, null), null, provider)
+				.optimize(root.clone(), OptimizationGoal.root(root, null), BOUND_OBJECT_LOOKUP_COSTS, provider)
 				.selectedPlan();
 	}
 

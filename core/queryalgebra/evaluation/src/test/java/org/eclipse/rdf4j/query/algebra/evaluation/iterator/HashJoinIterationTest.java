@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
@@ -31,12 +32,16 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.HashJoinBindingContract;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StreamBindingSchema;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
 
@@ -323,8 +328,10 @@ public class HashJoinIterationTest {
 		List<String> adaptive = join(left, right, joinAttributes, HashJoinIteration.BuildSide.UNKNOWN);
 		List<String> buildLeft = join(left, right, joinAttributes, HashJoinIteration.BuildSide.LEFT);
 		List<String> buildRight = join(left, right, joinAttributes, HashJoinIteration.BuildSide.RIGHT);
+		List<String> iterator = joinIterator(left, right);
 
 		assertEquals(List.of("a=1,b=1,i=x", "a=2,b=2,i=y"), adaptive);
+		assertEquals(iterator, adaptive);
 		assertEquals(adaptive, buildLeft);
 		assertEquals(adaptive, buildRight);
 	}
@@ -343,6 +350,7 @@ public class HashJoinIterationTest {
 
 		List<String> matches = join(left, right, joinAttributes, HashJoinIteration.BuildSide.RIGHT);
 
+		assertEquals(joinIterator(left, right), matches);
 		assertEquals(List.of("a=1,b=1,i=x,j=p", "a=1,b=2,i=x,j=p", "a=1,b=3,i=x,j=p"), matches);
 	}
 
@@ -354,19 +362,169 @@ public class HashJoinIterationTest {
 
 		List<String> matches = join(left, right, joinAttributes, HashJoinIteration.BuildSide.RIGHT);
 
+		assertEquals(joinIterator(left, right), matches);
 		assertEquals(List.of("a=1,b=1,i=x,j=p", "a=1,b=2,i=x,j=p"), matches);
+	}
+
+	@Test
+	public void testAssuredLookupKeyStillChecksNullableCompatibilityBindings() throws QueryEvaluationException {
+		BindingSetAssignment left = assignment(row("a", "1", "i", "x", "optional", "same"));
+		BindingSetAssignment right = assignment(
+				row("b", "1", "i", "x", "optional", "same"),
+				row("b", "2", "i", "x", "optional", "different"),
+				row("b", "3", "i", "y", "optional", "same"));
+		HashJoinBindingContract contract = HashJoinBindingContract.from(
+				new StreamBindingSchema(Set.of("i", "optional"), Set.of("i")),
+				new StreamBindingSchema(Set.of("i", "optional"), Set.of("i")));
+		Join joinNode = new Join(left.clone(), right.clone());
+		joinNode.setRuntimeTelemetryEnabled(true);
+
+		List<String> matches = join(left, right, contract, HashJoinIteration.BuildSide.RIGHT, joinNode);
+
+		assertEquals(joinIterator(left, right), matches);
+		assertEquals(List.of("a=1,b=1,i=x,optional=same"), matches);
+		assertEquals(3L, joinNode.getLongMetricActual("actualCostHashBuildRows"));
+		assertEquals(1L, joinNode.getLongMetricActual("actualCostHashProbeInputRows"));
+		assertEquals(2L, joinNode.getLongMetricActual("actualCostHashCandidateRows"));
+		assertEquals(3L, joinNode.getLongMetricActual("actualCostHashProbeRows"));
+		assertEquals(3L, joinNode.getLongMetricActual("actualCostPeakMemoryRows"));
+	}
+
+	@Test
+	public void testEmptyLookupKeyExaminesTheCartesianProduct() throws QueryEvaluationException {
+		BindingSetAssignment left = assignment(row("a", "1"), row("a", "2"));
+		BindingSetAssignment right = assignment(row("b", "1"), row("b", "2"), row("b", "3"));
+		HashJoinBindingContract contract = HashJoinBindingContract.from(
+				new StreamBindingSchema(Set.of("a"), Set.of("a")),
+				new StreamBindingSchema(Set.of("b"), Set.of("b")));
+		Join joinNode = new Join(left.clone(), right.clone());
+		joinNode.setRuntimeTelemetryEnabled(true);
+
+		List<String> matches = join(left, right, contract, HashJoinIteration.BuildSide.RIGHT, joinNode);
+
+		assertEquals(joinIterator(left, right), matches);
+		assertEquals(6, matches.size());
+		assertEquals(2L, joinNode.getLongMetricActual("actualCostHashProbeInputRows"));
+		assertEquals(6L, joinNode.getLongMetricActual("actualCostHashCandidateRows"));
+		assertEquals(8L, joinNode.getLongMetricActual("actualCostHashProbeRows"));
+	}
+
+	@Test
+	public void testCompatibilityOnlyEmptyLookupMatchesJoinIterator() throws QueryEvaluationException {
+		BindingSetAssignment left = assignment(row("left", "1", "nullable", "same"), row("left", "2"));
+		BindingSetAssignment right = assignment(
+				row("right", "1", "nullable", "same"),
+				row("right", "2", "nullable", "different"),
+				row("right", "3"));
+		HashJoinBindingContract contract = HashJoinBindingContract.from(
+				new StreamBindingSchema(Set.of("left", "nullable"), Set.of("left")),
+				new StreamBindingSchema(Set.of("right", "nullable"), Set.of("right")));
+
+		assertTrue(contract.lookupBindings().isEmpty());
+		assertEquals(joinIterator(left, right),
+				join(left, right, contract, HashJoinIteration.BuildSide.RIGHT, null));
+	}
+
+	@Test
+	public void testPlannedEmptyLookupHashJoinUsesCartesianBucket() {
+		BindingSetAssignment left = assignment(row("left", "1", "nullable", "same"), row("left", "2"));
+		BindingSetAssignment right = assignment(
+				row("right", "1", "nullable", "same"),
+				row("right", "2", "nullable", "different"),
+				row("right", "3"));
+		Join iteratorJoin = new Join(left.clone(), right.clone());
+		Join hashJoin = new Join(left, right);
+		hashJoin.setStringMetricPlanned("optimizer.joinAlgorithmHint", "hash");
+
+		assertEquals(evaluate(iteratorJoin), evaluate(hashJoin));
+		assertEquals(HashJoinIteration.class.getSimpleName(), hashJoin.getAlgorithmName());
+	}
+
+	@Test
+	public void testLeftJoinContractMatchesLeftJoinIterator() throws QueryEvaluationException {
+		BindingSetAssignment left = assignment(
+				row("left", "1", "i", "x", "nullable", "same"),
+				row("left", "2", "i", "y"));
+		BindingSetAssignment right = assignment(
+				row("right", "1", "i", "x", "nullable", "different"),
+				row("right", "2", "i", "z"));
+		HashJoinBindingContract contract = HashJoinBindingContract.from(
+				new StreamBindingSchema(Set.of("left", "i", "nullable"), Set.of("left", "i")),
+				new StreamBindingSchema(Set.of("right", "i", "nullable"), Set.of("right", "i")));
+
+		assertEquals(leftJoinIterator(left, right),
+				join(left, right, contract, HashJoinIteration.BuildSide.RIGHT, null, true));
+	}
+
+	@Test
+	public void testNestedHashJoinsMatchNestedJoinIterators() throws QueryEvaluationException {
+		BindingSetAssignment first = assignment(row("a", "1", "i", "x"), row("a", "2", "i", "y"));
+		BindingSetAssignment second = assignment(row("b", "1", "i", "x", "j", "p"),
+				row("b", "2", "i", "y", "j", "q"));
+		BindingSetAssignment third = assignment(row("c", "1", "j", "p"), row("c", "2", "j", "z"));
+		Join iteratorInner = new Join(first.clone(), second.clone());
+		Join iteratorOuter = new Join(iteratorInner, third.clone());
+		Join hashInner = new Join(first.clone(), second.clone());
+		hashInner.setStringMetricPlanned("optimizer.joinAlgorithmHint", "hash");
+		Join hashOuter = new Join(hashInner, third.clone());
+		hashOuter.setStringMetricPlanned("optimizer.joinAlgorithmHint", "hash");
+
+		assertEquals(evaluate(iteratorOuter), evaluate(hashOuter));
+		assertEquals(HashJoinIteration.class.getSimpleName(), hashInner.getAlgorithmName());
+		assertEquals(HashJoinIteration.class.getSimpleName(), hashOuter.getAlgorithmName());
 	}
 
 	private List<String> join(BindingSetAssignment left, BindingSetAssignment right, String[] joinAttributes,
 			HashJoinIteration.BuildSide buildSide) throws QueryEvaluationException {
+		return join(left, right, HashJoinBindingContract.legacy(joinAttributes), buildSide, null);
+	}
+
+	private List<String> join(BindingSetAssignment left, BindingSetAssignment right,
+			HashJoinBindingContract contract, HashJoinIteration.BuildSide buildSide, Join joinNode)
+			throws QueryEvaluationException {
+		return join(left, right, contract, buildSide, joinNode, false);
+	}
+
+	private List<String> join(BindingSetAssignment left, BindingSetAssignment right,
+			HashJoinBindingContract contract, HashJoinIteration.BuildSide buildSide, Join joinNode, boolean leftJoin)
+			throws QueryEvaluationException {
 		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
 		QueryEvaluationStep leftStep = evaluator.precompile(left, context);
 		QueryEvaluationStep rightStep = evaluator.precompile(right, context);
 		List<String> rows = new ArrayList<>();
 		try (HashJoinIteration iter = new HashJoinIteration(leftStep, rightStep, EmptyBindingSet.getInstance(),
-				false, joinAttributes, context, buildSide, null)) {
+				leftJoin, contract, context, buildSide, joinNode)) {
 			while (iter.hasNext()) {
 				rows.add(render(iter.next()));
+			}
+		}
+		Collections.sort(rows);
+		return rows;
+	}
+
+	private List<String> joinIterator(BindingSetAssignment left, BindingSetAssignment right) {
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		return render(
+				JoinIterator.getInstance(evaluator.precompile(left, context), evaluator.precompile(right, context),
+						EmptyBindingSet.getInstance()));
+	}
+
+	private List<String> leftJoinIterator(BindingSetAssignment left, BindingSetAssignment right) {
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		return render(LeftJoinIterator.getInstance(evaluator.precompile(left, context), EmptyBindingSet.getInstance(),
+				evaluator.precompile(right, context)));
+	}
+
+	private List<String> evaluate(TupleExpr expression) {
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		return render(evaluator.precompile(expression, context).evaluate(EmptyBindingSet.getInstance()));
+	}
+
+	private List<String> render(CloseableIteration<BindingSet> iteration) {
+		List<String> rows = new ArrayList<>();
+		try (iteration) {
+			while (iteration.hasNext()) {
+				rows.add(render(iteration.next()));
 			}
 		}
 		Collections.sort(rows);

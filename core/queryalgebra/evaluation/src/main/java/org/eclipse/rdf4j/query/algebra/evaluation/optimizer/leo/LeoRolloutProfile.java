@@ -20,13 +20,14 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
  */
 @Experimental
 public enum LeoRolloutProfile {
-	OFF(false, false, false, false, false),
-	OBSERVE_ONLY(true, false, false, false, false),
-	SHADOW_EXPLAIN(true, true, false, false, false),
-	SAFE_CARDINALITY_CORRECTION(true, true, true, false, false),
-	SAFE_RULE_STEERING(true, true, true, true, false),
-	SAFE_PLAN_RERANKING(true, true, true, true, true),
-	EXPERIMENTAL_FULL(true, true, true, true, true);
+	OFF(false, false, false, false, false, false),
+	OBSERVE_ONLY(true, false, false, false, false, false),
+	SHADOW_EXPLAIN(true, true, false, false, false, false),
+	SAFE_CARDINALITY_CORRECTION(true, true, true, false, false, false),
+	SAFE_PLAN_LIFECYCLE(true, true, true, false, false, true),
+	SAFE_RULE_STEERING(true, true, true, true, false, false),
+	SAFE_PLAN_RERANKING(true, true, true, true, true, false),
+	EXPERIMENTAL_FULL(true, true, true, true, true, true);
 
 	public static final String PROPERTY = "rdf4j.optimizer.lmdb.leoProfile";
 	public static final String ROLLOUT_PROFILE_PROPERTY = "rdf4j.optimizer.lmdb.leo.rolloutProfile";
@@ -37,14 +38,16 @@ public enum LeoRolloutProfile {
 	private final boolean cardinalityCorrectionEnabled;
 	private final boolean ruleSteeringEnabled;
 	private final boolean planRerankingEnabled;
+	private final boolean planLifecycleEnforced;
 
 	LeoRolloutProfile(boolean observationEnabled, boolean explainEnabled, boolean cardinalityCorrectionEnabled,
-			boolean ruleSteeringEnabled, boolean planRerankingEnabled) {
+			boolean ruleSteeringEnabled, boolean planRerankingEnabled, boolean planLifecycleEnforced) {
 		this.observationEnabled = observationEnabled;
 		this.explainEnabled = explainEnabled;
 		this.cardinalityCorrectionEnabled = cardinalityCorrectionEnabled;
 		this.ruleSteeringEnabled = ruleSteeringEnabled;
 		this.planRerankingEnabled = planRerankingEnabled;
+		this.planLifecycleEnforced = planLifecycleEnforced;
 	}
 
 	public boolean observationEnabled() {
@@ -65,6 +68,11 @@ public enum LeoRolloutProfile {
 
 	public boolean planRerankingEnabled() {
 		return planRerankingEnabled;
+	}
+
+	/** Whether persisted LastGood/Blocked/Quarantined state participates in winner selection. */
+	public boolean planLifecycleEnforced() {
+		return planLifecycleEnforced;
 	}
 
 	public String externalName() {

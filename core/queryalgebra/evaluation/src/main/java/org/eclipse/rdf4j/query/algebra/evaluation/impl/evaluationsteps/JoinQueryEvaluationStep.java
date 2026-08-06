@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.InnerMergeJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.HashJoinBindingContract;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -49,11 +50,10 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 		boolean runtimeTelemetryTrackingActive = strategy.isTrackResultSize() || strategy.isTrackTime();
 		QueryEvaluationStep leftRaw = strategy.precompile(join.getLeftArg(), context);
 		QueryEvaluationStep rightRaw = strategy.precompile(join.getRightArg(), context);
-		boolean metricsTrackingActive = runtimeTelemetryTrackingActive || costFeedbackTrackingActive(join);
 		QueryEvaluationStep leftPrepared = JoinMetricsTracking
-				.wrapLeftInput(leftRaw, join, join.getLeftArg(), metricsTrackingActive);
+				.wrapLeftInput(leftRaw, join, join.getLeftArg(), runtimeTelemetryTrackingActive);
 		QueryEvaluationStep rightPrepared = JoinMetricsTracking
-				.wrapRightInput(rightRaw, join, join.getRightArg(), metricsTrackingActive);
+				.wrapRightInput(rightRaw, join, join.getRightArg(), runtimeTelemetryTrackingActive);
 		BoundStatementPatternGuardJoinIteration.GuardCounter leftGuardCounter = getGuardCounter(join.getLeftArg(),
 				leftRaw);
 		BoundStatementPatternGuardJoinIteration.GuardCounter rightGuardCounter = getGuardCounter(join.getRightArg(),
@@ -65,16 +65,16 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 					strategy);
 			join.setAlgorithm(ServiceJoinIterator.class.getSimpleName());
 		} else if (isHashJoinHint(join)) {
-			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(join);
+			HashJoinBindingContract contract = HashJoinBindingContract.from(join.getLeftArg(), join.getRightArg());
 			HashJoinIteration.BuildSide buildSide = plannedBuildSide(join);
 			eval = bindings -> new HashJoinIteration(leftPrepared, rightPrepared, bindings, false,
-					joinAttributes, context, buildSide, join);
+					contract, context, buildSide, join);
 			join.setAlgorithm(HashJoinIteration.class.getSimpleName());
 		} else if (isOutOfScopeForLeftArgBindings(join.getRightArg()) || rightLocallyProducesSharedBinding(join)) {
-			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(join);
+			HashJoinBindingContract contract = HashJoinBindingContract.from(join.getLeftArg(), join.getRightArg());
 			HashJoinIteration.BuildSide buildSide = plannedBuildSide(join);
 			eval = bindings -> new HashJoinIteration(leftPrepared, rightPrepared, bindings, false,
-					joinAttributes, context, buildSide, join);
+					contract, context, buildSide, join);
 			join.setAlgorithm(HashJoinIteration.class.getSimpleName());
 		} else if (join.isMergeJoin() && context.getComparator() != null) {
 			eval = bindings -> InnerMergeJoinIterator.getInstance(leftPrepared, rightPrepared, bindings,
@@ -126,12 +126,6 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 		return eval.apply(bindings);
 	}
 
-	private static boolean costFeedbackTrackingActive(Join join) {
-		return join != null && (join.isCostFeedbackTrackingEnabled()
-				|| join.getLeftArg().isCostFeedbackTrackingEnabled()
-				|| join.getRightArg().isCostFeedbackTrackingEnabled());
-	}
-
 	/**
 	 * Reads the input the planner already decided to buffer. Absent or unrecognised, the iteration falls back to
 	 * discovering the smaller input itself.
@@ -148,11 +142,11 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	private static boolean isHashJoinHint(Join join) {
+		// if(true) return false;
 		if (!"hash".equals(join.getStringMetricPlanned("optimizer.joinAlgorithmHint"))) {
 			return false;
 		}
-		return !isOutOfScopeForLeftArgBindings(join.getRightArg())
-				&& HashJoinIteration.hashJoinAttributeNames(join).length > 0;
+		return !isOutOfScopeForLeftArgBindings(join.getRightArg());
 	}
 
 	private static boolean isOutOfScopeForLeftArgBindings(TupleExpr expr) {

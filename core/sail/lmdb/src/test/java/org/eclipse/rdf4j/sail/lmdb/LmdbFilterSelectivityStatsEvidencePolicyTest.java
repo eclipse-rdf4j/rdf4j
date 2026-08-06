@@ -12,19 +12,25 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
 import org.junit.jupiter.api.Test;
@@ -75,6 +81,30 @@ class LmdbFilterSelectivityStatsEvidencePolicyTest {
 		adaptiveEvidenceAllowed.set(false);
 		assertEquals(1, stats.pendingBackgroundSamplingRequests(),
 				"Queue diagnostics must report physical work rather than a policy-filtered zero.");
+	}
+
+	@Test
+	void activeRuntimeFeedbackCellsRejectCapacityOverflow(@TempDir Path dataDir) {
+		LmdbFilterSelectivityStats stats = stats(dataDir, mock(TripleStore.class), new AtomicBoolean(true));
+		List<LmdbFilterSelectivityStats.ResolvedFilterCells> leases = new ArrayList<>(4_095);
+		StatementPattern pattern = new StatementPattern(new Var("subject"), new Var("predicate"), new Var("value"));
+		for (int index = 0; index < 4_095; index++) {
+			Filter filter = new Filter(pattern.clone(), new Compare(new Var("value"),
+					new ValueConstant(SimpleValueFactory.getInstance().createLiteral(index))));
+			LmdbFilterSelectivityStats.ResolvedFilterCells cells = stats.resolveRuntimeFeedbackTarget(filter);
+			assertNotNull(cells, "The configured surface capacity should admit every cell through its limit");
+			leases.add(cells);
+		}
+
+		Filter overflow = new Filter(pattern.clone(), new Compare(new Var("value"),
+				new ValueConstant(SimpleValueFactory.getInstance().createLiteral(4_096))));
+		assertNull(stats.resolveRuntimeFeedbackTarget(overflow),
+				"A fully leased store must compile a no-op target instead of growing past its bound");
+
+		leases.forEach(stats::releaseRuntimeFeedbackTarget);
+		LmdbFilterSelectivityStats.ResolvedFilterCells replacement = stats.resolveRuntimeFeedbackTarget(overflow);
+		assertNotNull(replacement, "Released cells should become eligible for bounded oldest-first eviction");
+		stats.releaseRuntimeFeedbackTarget(replacement);
 	}
 
 	private static LmdbFilterSelectivityStats stats(Path dataDir, TripleStore tripleStore,

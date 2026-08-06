@@ -12,6 +12,8 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
@@ -34,6 +36,16 @@ class LeoRolloutProfileTest {
 			restore(LeoRolloutProfile.PROPERTY, current);
 			restore(LeoRolloutProfile.LEGACY_PROFILE_PROPERTY, legacy);
 		}
+	}
+
+	@Test
+	void safePlanLifecycleIsExplicitAndCardinalityDefaultRemainsMonitoringOnly() {
+		LeoRolloutProfile lifecycle = LeoRolloutProfile.parse("safe-plan-lifecycle", LeoRolloutProfile.OFF);
+
+		assertEquals(LeoRolloutProfile.SAFE_PLAN_LIFECYCLE, lifecycle);
+		assertTrue(lifecycle.cardinalityCorrectionEnabled());
+		assertTrue(lifecycle.planLifecycleEnforced());
+		assertFalse(LeoRolloutProfile.SAFE_CARDINALITY_CORRECTION.planLifecycleEnforced());
 	}
 
 	private static void restore(String property, String value) {

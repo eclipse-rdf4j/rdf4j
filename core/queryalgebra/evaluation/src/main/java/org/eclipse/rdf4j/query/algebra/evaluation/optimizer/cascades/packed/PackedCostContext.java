@@ -27,6 +27,8 @@ public final class PackedCostContext {
 	private int bindingLayoutId;
 	private int correlationMaskId;
 	private int semanticScopeMaskId;
+	private int hashLookupMaskId;
+	private int hashCompatibilityMaskId;
 	private double prefixRows;
 	private double leftInputRows;
 	private double rightInputRows;
@@ -55,6 +57,8 @@ public final class PackedCostContext {
 		bindingLayoutId = 0;
 		correlationMaskId = 0;
 		semanticScopeMaskId = 0;
+		hashLookupMaskId = 0;
+		hashCompatibilityMaskId = 0;
 		prefixRows = Double.isFinite(rows) && rows >= 0.0d ? rows : 1.0d;
 		leftInputRows = Double.NaN;
 		rightInputRows = Double.NaN;
@@ -77,6 +81,8 @@ public final class PackedCostContext {
 		bindingLayoutId = context.bindingLayoutId;
 		correlationMaskId = context.correlationMaskId;
 		semanticScopeMaskId = context.semanticScopeMaskId;
+		hashLookupMaskId = context.hashLookupMaskId;
+		hashCompatibilityMaskId = context.hashCompatibilityMaskId;
 		prefixRows = context.prefixRows;
 		leftInputRows = context.leftInputRows;
 		rightInputRows = context.rightInputRows;
@@ -116,6 +122,14 @@ public final class PackedCostContext {
 		rightInputRows = finiteNonNegativeOrNaN(rightRows);
 		leftInputEvidenceStateId = leftEvidenceStateId;
 		rightInputEvidenceStateId = rightEvidenceStateId;
+	}
+
+	void setHashJoinMasks(int lookupMaskId, int compatibilityMaskId) {
+		if (lookupMaskId < 0 || compatibilityMaskId < 0) {
+			throw new IllegalArgumentException("packed hash-join mask IDs must be nonnegative");
+		}
+		hashLookupMaskId = lookupMaskId;
+		hashCompatibilityMaskId = compatibilityMaskId;
 	}
 
 	public int prefixRelationCount() {
@@ -162,6 +176,16 @@ public final class PackedCostContext {
 	/** Returns the query-local semantic-scope mask identity used when the Frontier prefix was costed. */
 	public int semanticScopeMaskId() {
 		return semanticScopeMaskId;
+	}
+
+	/** Returns the query-local mask of assured bindings used as the physical hash lookup key. */
+	public int hashLookupMaskId() {
+		return hashLookupMaskId;
+	}
+
+	/** Returns the query-local mask of all shared bindings checked for SPARQL compatibility. */
+	public int hashCompatibilityMaskId() {
+		return hashCompatibilityMaskId;
 	}
 
 	/** Returns the first child's output rows for a non-leaf refinement, or {@link Double#NaN} when unavailable. */

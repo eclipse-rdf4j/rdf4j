@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -48,6 +49,19 @@ class LeoOperatorKeyTest {
 				pattern("y", "urn:knows", "z"));
 
 		assertEquals(LeoOperatorKey.from(first), LeoOperatorKey.from(second));
+	}
+
+	@Test
+	void inputBindingShapeIsAlphaNormalizedAndPositionSensitive() {
+		StatementPattern first = pattern("a", "urn:knows", "b");
+		StatementPattern renamed = pattern("x", "urn:knows", "y");
+
+		assertEquals(LeoOperatorKey.alphaNormalizedInputBindingShape(first, Set.of("a")),
+				LeoOperatorKey.alphaNormalizedInputBindingShape(renamed, Set.of("x")));
+		assertNotEquals(LeoOperatorKey.alphaNormalizedInputBindingShape(first, Set.of("a")),
+				LeoOperatorKey.alphaNormalizedInputBindingShape(first, Set.of("b")));
+		assertEquals("unbound", LeoOperatorKey.alphaNormalizedInputBindingShape(first, Set.of()));
+		assertEquals("unbound", LeoOperatorKey.alphaNormalizedInputBindingShape(first, Set.of("irrelevant")));
 	}
 
 	@Test

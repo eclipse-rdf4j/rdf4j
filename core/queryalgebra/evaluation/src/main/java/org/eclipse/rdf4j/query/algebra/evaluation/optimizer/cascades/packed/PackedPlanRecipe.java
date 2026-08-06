@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import java.util.Arrays;
 
+import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierEvidenceBundle;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDisposition;
@@ -43,6 +44,7 @@ final class PackedPlanRecipe {
 	private final int[] estimateSourceIds;
 	private final int[] estimateFusionIds;
 	private final int[] accessModeIds;
+	private final int[] runtimeFeedbackContractIds;
 	private final int[] plannedStringMetricStarts;
 	private final int[] plannedStringMetricCounts;
 	private final int[] plannedStringMetricNameIds;
@@ -70,7 +72,8 @@ final class PackedPlanRecipe {
 			int[] childStarts, int[] childCounts, int[] childRecipeIds, byte[] physicalMetadataPresent,
 			double[] outputRows, double[] workRows, double[] accessRows, double[] invocations, int[] lookupMasks,
 			int[] missingLookupMasks, int[] indexPrefixLengths, int[] indexNameIds, int[] estimateSourceIds,
-			int[] estimateFusionIds, int[] accessModeIds, int[] plannedStringMetricStarts,
+			int[] estimateFusionIds, int[] accessModeIds, int[] runtimeFeedbackContractIds,
+			int[] plannedStringMetricStarts,
 			int[] plannedStringMetricCounts, int[] plannedStringMetricNameIds, int[] plannedStringMetricValueIds,
 			int[] plannedDoubleMetricStarts, int[] plannedDoubleMetricCounts, int[] plannedDoubleMetricNameIds,
 			double[] plannedDoubleMetricValues, int[] dependentOwnerRecipeIds,
@@ -103,6 +106,7 @@ final class PackedPlanRecipe {
 		this.estimateSourceIds = estimateSourceIds;
 		this.estimateFusionIds = estimateFusionIds;
 		this.accessModeIds = accessModeIds;
+		this.runtimeFeedbackContractIds = runtimeFeedbackContractIds;
 		this.plannedStringMetricStarts = plannedStringMetricStarts;
 		this.plannedStringMetricCounts = plannedStringMetricCounts;
 		this.plannedStringMetricNameIds = plannedStringMetricNameIds;
@@ -269,6 +273,12 @@ final class PackedPlanRecipe {
 
 	String accessMode(int recipeId) {
 		return providerString(accessModeIds[recipeId]);
+	}
+
+	RuntimeFeedbackContract runtimeFeedbackContract(int recipeId) {
+		checkRecipeId(recipeId);
+		int objectId = runtimeFeedbackContractIds[recipeId];
+		return objectId == 0 ? null : (RuntimeFeedbackContract) providerObjects[objectId];
 	}
 
 	int plannedStringMetricCount(int recipeId) {
@@ -571,7 +581,8 @@ final class PackedPlanRecipe {
 				implementationForms, sourcePhysicalExpressionIds, sourceLogicalExpressionIds, childStarts, childCounts,
 				childRecipeIds, physicalMetadataPresent, outputRows, workRows, accessRows, invocations, lookupMasks,
 				missingLookupMasks, indexPrefixLengths, indexNameIds, estimateSourceIds, estimateFusionIds,
-				accessModeIds, plannedStringMetricStarts, plannedStringMetricCounts, plannedStringMetricNameIds,
+				accessModeIds, runtimeFeedbackContractIds, plannedStringMetricStarts, plannedStringMetricCounts,
+				plannedStringMetricNameIds,
 				plannedStringMetricValueIds, plannedDoubleMetricStarts, plannedDoubleMetricCounts,
 				plannedDoubleMetricNameIds, plannedDoubleMetricValues, dependentOwnerRecipeIds,
 				dependentSubqueryPayloadIds, dependentRootRecipeIds, validation.evidenceBundle(), validatedTrace,
@@ -598,7 +609,8 @@ final class PackedPlanRecipe {
 				implementationForms, sourcePhysicalExpressionIds, sourceLogicalExpressionIds, childStarts, childCounts,
 				childRecipeIds, physicalMetadataPresent, outputRows, workRows, accessRows, invocations, lookupMasks,
 				missingLookupMasks, indexPrefixLengths, indexNameIds, estimateSourceIds, estimateFusionIds,
-				accessModeIds, plannedStringMetricStarts, plannedStringMetricCounts, plannedStringMetricNameIds,
+				accessModeIds, runtimeFeedbackContractIds, plannedStringMetricStarts, plannedStringMetricCounts,
+				plannedStringMetricNameIds,
 				plannedStringMetricValueIds, plannedDoubleMetricStarts, plannedDoubleMetricCounts,
 				plannedDoubleMetricNameIds, plannedDoubleMetricValues, dependentOwnerRecipeIds,
 				dependentSubqueryPayloadIds, dependentRootRecipeIds,
@@ -728,6 +740,7 @@ final class PackedPlanRecipe {
 		private int[] estimateSourceIds = new int[INITIAL_ROW_CAPACITY];
 		private int[] estimateFusionIds = new int[INITIAL_ROW_CAPACITY];
 		private int[] accessModeIds = new int[INITIAL_ROW_CAPACITY];
+		private int[] runtimeFeedbackContractIds = new int[INITIAL_ROW_CAPACITY];
 		private int[] plannedStringMetricStarts = new int[INITIAL_ROW_CAPACITY];
 		private int[] plannedStringMetricCounts = new int[INITIAL_ROW_CAPACITY];
 		private int[] plannedStringMetricNameIds = new int[INITIAL_ROW_CAPACITY];
@@ -827,6 +840,7 @@ final class PackedPlanRecipe {
 					Arrays.copyOf(missingLookupMasks, size + 1), Arrays.copyOf(indexPrefixLengths, size + 1),
 					Arrays.copyOf(indexNameIds, size + 1), Arrays.copyOf(estimateSourceIds, size + 1),
 					Arrays.copyOf(estimateFusionIds, size + 1), Arrays.copyOf(accessModeIds, size + 1),
+					Arrays.copyOf(runtimeFeedbackContractIds, size + 1),
 					Arrays.copyOf(plannedStringMetricStarts, size + 1),
 					Arrays.copyOf(plannedStringMetricCounts, size + 1),
 					Arrays.copyOf(plannedStringMetricNameIds, plannedStringMetricSize),
@@ -985,6 +999,8 @@ final class PackedPlanRecipe {
 				estimateFusionIds[recipeId] = providerObjects.intern(
 						memo.physicalMetadataEstimateFusion(metadataId));
 				accessModeIds[recipeId] = providerObjects.intern(memo.physicalMetadataAccessMode(metadataId));
+				runtimeFeedbackContractIds[recipeId] = providerObjects
+						.intern(memo.physicalMetadataRuntimeFeedbackContract(metadataId));
 				appendPlannedMetrics(recipeId, metadataId);
 			}
 			int count = memo.winnerChildCount(winnerId);
@@ -1152,6 +1168,7 @@ final class PackedPlanRecipe {
 			estimateSourceIds = Arrays.copyOf(estimateSourceIds, newCapacity);
 			estimateFusionIds = Arrays.copyOf(estimateFusionIds, newCapacity);
 			accessModeIds = Arrays.copyOf(accessModeIds, newCapacity);
+			runtimeFeedbackContractIds = Arrays.copyOf(runtimeFeedbackContractIds, newCapacity);
 			plannedStringMetricStarts = Arrays.copyOf(plannedStringMetricStarts, newCapacity);
 			plannedStringMetricCounts = Arrays.copyOf(plannedStringMetricCounts, newCapacity);
 			plannedDoubleMetricStarts = Arrays.copyOf(plannedDoubleMetricStarts, newCapacity);

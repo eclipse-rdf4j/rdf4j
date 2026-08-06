@@ -87,6 +87,23 @@ final class PackedBindingFacts {
 		return masks.intersects(leftMaskId, rightMaskId);
 	}
 
+	int union(int leftMaskId, int rightMaskId) {
+		clearScratch();
+		masks.orInto(leftMaskId, scratch, 0);
+		masks.orInto(rightMaskId, scratch, 0);
+		return masks.intern(scratch, 0);
+	}
+
+	int intersection(int leftMaskId, int rightMaskId) {
+		clearScratch();
+		for (int symbolId = 1; symbolId <= query.symbolCount(); symbolId++) {
+			if (masks.containsSymbol(leftMaskId, symbolId) && masks.containsSymbol(rightMaskId, symbolId)) {
+				layout.set(scratch, 0, symbolId - 1);
+			}
+		}
+		return masks.intern(scratch, 0);
+	}
+
 	boolean containsAllScheduledDependencies(int containerMaskId, int directDependencyMaskId,
 			int embeddedReferenceMaskId, int outerOutputMaskId) {
 		return masks.containsAll(containerMaskId, directDependencyMaskId)
@@ -261,8 +278,9 @@ final class PackedBindingFacts {
 				addAssuredChild(relationId, 0);
 				addAssuredChild(relationId, 1);
 			}
-			case PackedRelOp.LEFT_JOIN, PackedRelOp.DIFFERENCE, PackedRelOp.FILTER, PackedRelOp.SEMI_JOIN, PackedRelOp.ANTI_JOIN, PackedRelOp.QUERY_ROOT, PackedRelOp.DESCRIBE, PackedRelOp.SLICE, PackedRelOp.REDUCED, PackedRelOp.DISTINCT, PackedRelOp.MATERIALIZE, PackedRelOp.ORDER, PackedRelOp.EXTENSION -> addAssuredChild(
+			case PackedRelOp.LEFT_JOIN, PackedRelOp.DIFFERENCE, PackedRelOp.FILTER, PackedRelOp.SEMI_JOIN, PackedRelOp.ANTI_JOIN, PackedRelOp.QUERY_ROOT, PackedRelOp.DESCRIBE, PackedRelOp.SLICE, PackedRelOp.REDUCED, PackedRelOp.DISTINCT, PackedRelOp.MATERIALIZE, PackedRelOp.ORDER -> addAssuredChild(
 					relationId, 0);
+			case PackedRelOp.EXTENSION -> addAssuredExtension(relationId);
 			case PackedRelOp.UNION, PackedRelOp.INTERSECTION -> addAssuredIntersection(relationId);
 			case PackedRelOp.PROJECTION -> addAssuredProjection(relationId);
 			case PackedRelOp.MULTI_PROJECTION -> addAssuredMultiProjection(relationId);
@@ -277,6 +295,34 @@ final class PackedBindingFacts {
 
 	private void addAssuredChild(int relationId, int childOrdinal) {
 		masks.orInto(relationAssuredMaskIds[query.relChild(relationId, childOrdinal)], scratch, 0);
+	}
+
+	private void addAssuredExtension(int relationId) {
+		addAssuredChild(relationId, 0);
+		int extensionPayloadId = query.relPayload(relationId);
+		for (int ordinal = 0; ordinal < query.payloadChildCount(extensionPayloadId); ordinal++) {
+			int elementId = query.payloadChild(extensionPayloadId, ordinal);
+			int expressionId = query.payloadSecondary(elementId);
+			if (extensionExpressionAssured(expressionId)) {
+				addNameObject(query.payloadPrimary(elementId));
+			}
+		}
+	}
+
+	private boolean extensionExpressionAssured(int expressionId) {
+		int operator = query.scalarOperator(expressionId);
+		if (operator == PackedScalarOp.VALUE_CONSTANT) {
+			return true;
+		}
+		if (operator != PackedScalarOp.VARIABLE) {
+			return false;
+		}
+		int termId = query.scalarPayload(expressionId);
+		if (query.payloadSecondary(termId) != 0) {
+			return true;
+		}
+		int symbolId = query.symbolIdForObject(query.payloadPrimary(termId));
+		return symbolId != 0 && layout.contains(scratch, 0, symbolId - 1);
 	}
 
 	private void addAssuredIntersection(int relationId) {

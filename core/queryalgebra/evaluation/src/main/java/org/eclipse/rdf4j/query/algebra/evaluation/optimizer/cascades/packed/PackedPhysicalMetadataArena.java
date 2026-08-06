@@ -27,6 +27,9 @@ final class PackedPhysicalMetadataArena {
 	private static final int DEPENDENT_SUBQUERIES_COSTED = 1 << 1;
 	private static final int CONTEXTUAL_OUTPUT_ROWS = 1 << 2;
 	private static final int COMPONENT_OUTPUT_ROWS = 1 << 3;
+	private static final int LIFECYCLE_ENFORCED = 1;
+	private static final int LIFECYCLE_ELIGIBLE = 1 << 1;
+	private static final int LIFECYCLE_LAST_GOOD = 1 << 2;
 
 	private final PackedObjectPool objects;
 	private double[] outputRows;
@@ -41,6 +44,11 @@ final class PackedPhysicalMetadataArena {
 	private double[] resultRows;
 	private double[] remoteCalls;
 	private double[] peakMemoryRows;
+	private double[] objectiveLowerBounds;
+	private double[] objectivePointCosts;
+	private double[] objectiveUpperBounds;
+	private double[] lifecycleComparisonCosts;
+	private byte[] lifecycleFlags;
 	private byte[] costScopes;
 	private byte[] physicalCostFlags;
 	private double[] accessRows;
@@ -57,6 +65,7 @@ final class PackedPhysicalMetadataArena {
 	private int[] estimateSourceIds;
 	private int[] estimateFusionIds;
 	private int[] accessModeIds;
+	private int[] runtimeFeedbackContractIds;
 	private int[] plannedStringMetricStarts;
 	private int[] plannedStringMetricCounts;
 	private int[] plannedDoubleMetricStarts;
@@ -84,6 +93,11 @@ final class PackedPhysicalMetadataArena {
 		resultRows = new double[capacity];
 		remoteCalls = new double[capacity];
 		peakMemoryRows = new double[capacity];
+		objectiveLowerBounds = new double[capacity];
+		objectivePointCosts = new double[capacity];
+		objectiveUpperBounds = new double[capacity];
+		lifecycleComparisonCosts = new double[capacity];
+		lifecycleFlags = new byte[capacity];
 		costScopes = new byte[capacity];
 		physicalCostFlags = new byte[capacity];
 		accessRows = new double[capacity];
@@ -100,6 +114,7 @@ final class PackedPhysicalMetadataArena {
 		estimateSourceIds = new int[capacity];
 		estimateFusionIds = new int[capacity];
 		accessModeIds = new int[capacity];
+		runtimeFeedbackContractIds = new int[capacity];
 		plannedStringMetricStarts = new int[capacity];
 		plannedStringMetricCounts = new int[capacity];
 		plannedDoubleMetricStarts = new int[capacity];
@@ -121,6 +136,26 @@ final class PackedPhysicalMetadataArena {
 		resultRows[metadataId] = finiteNonNegative(estimate.resultRows(), 0.0d);
 		remoteCalls[metadataId] = finiteNonNegative(estimate.remoteCalls(), 0.0d);
 		peakMemoryRows[metadataId] = finiteNonNegative(estimate.peakMemoryRows(), 0.0d);
+		double objectivePoint = finiteNonNegative(estimate.objectivePoint(), workRows[metadataId]);
+		objectivePointCosts[metadataId] = objectivePoint;
+		objectiveLowerBounds[metadataId] = Math.min(objectivePoint,
+				finiteNonNegative(estimate.objectiveLower(), objectivePoint));
+		objectiveUpperBounds[metadataId] = Math.max(objectivePoint,
+				finiteNonNegative(estimate.objectiveUpper(), objectivePoint));
+		lifecycleComparisonCosts[metadataId] = finiteNonNegative(
+				estimate.plannedDoubleMetric("optimizer.lifecycleComparisonCost", objectiveUpperBounds[metadataId]),
+				objectiveUpperBounds[metadataId]);
+		int lifecycleFlag = estimate.plannedDoubleMetric("optimizer.lifecycleEnforced", 0.0d) >= 1.0d
+				? LIFECYCLE_ENFORCED
+				: 0;
+		double defaultEligibility = lifecycleComparisonCosts[metadataId] == Double.MAX_VALUE ? 0.0d : 1.0d;
+		if (estimate.plannedDoubleMetric("optimizer.lifecycleEligible", defaultEligibility) >= 1.0d) {
+			lifecycleFlag |= LIFECYCLE_ELIGIBLE;
+		}
+		if (estimate.plannedDoubleMetric("optimizer.lifecycleLastGood", 0.0d) >= 1.0d) {
+			lifecycleFlag |= LIFECYCLE_LAST_GOOD;
+		}
+		lifecycleFlags[metadataId] = (byte) lifecycleFlag;
 		costScopes[metadataId] = (byte) estimate.costScope().ordinal();
 		physicalCostFlags[metadataId] = (byte) ((estimate.hasExplicitPhysicalCost() ? EXPLICIT_PHYSICAL_COST : 0)
 				| (estimate.dependentSubqueriesCosted() ? DEPENDENT_SUBQUERIES_COSTED : 0)
@@ -145,6 +180,7 @@ final class PackedPhysicalMetadataArena {
 		estimateSourceIds[metadataId] = objects.intern(estimate.estimateSource());
 		estimateFusionIds[metadataId] = objects.intern(estimate.estimateFusion());
 		accessModeIds[metadataId] = objects.intern(estimate.accessMode());
+		runtimeFeedbackContractIds[metadataId] = objects.intern(estimate.runtimeFeedbackContract());
 		appendPlannedMetrics(metadataId, estimate);
 		return metadataId;
 	}
@@ -209,6 +245,41 @@ final class PackedPhysicalMetadataArena {
 		return peakMemoryRows[metadataId];
 	}
 
+	double objectiveLowerBound(int metadataId) {
+		checkId(metadataId);
+		return objectiveLowerBounds[metadataId];
+	}
+
+	double objectivePointCost(int metadataId) {
+		checkId(metadataId);
+		return objectivePointCosts[metadataId];
+	}
+
+	double objectiveUpperBound(int metadataId) {
+		checkId(metadataId);
+		return objectiveUpperBounds[metadataId];
+	}
+
+	double lifecycleComparisonCost(int metadataId) {
+		checkId(metadataId);
+		return lifecycleComparisonCosts[metadataId];
+	}
+
+	boolean lifecycleEnforced(int metadataId) {
+		checkId(metadataId);
+		return (lifecycleFlags[metadataId] & LIFECYCLE_ENFORCED) != 0;
+	}
+
+	boolean lifecycleEligible(int metadataId) {
+		checkId(metadataId);
+		return (lifecycleFlags[metadataId] & LIFECYCLE_ELIGIBLE) != 0;
+	}
+
+	boolean lifecycleLastGood(int metadataId) {
+		checkId(metadataId);
+		return (lifecycleFlags[metadataId] & LIFECYCLE_LAST_GOOD) != 0;
+	}
+
 	PackedCostEstimate.CostScope costScope(int metadataId) {
 		checkId(metadataId);
 		return COST_SCOPES[Byte.toUnsignedInt(costScopes[metadataId])];
@@ -261,6 +332,8 @@ final class PackedPhysicalMetadataArena {
 			estimate.setOutputRowsPreservingPhysicalCost(outputRows[metadataId]);
 		}
 		estimate.setDependentSubqueriesCosted(dependentSubqueriesCosted(metadataId));
+		estimate.setObjectiveInterval(objectiveLowerBounds[metadataId], objectivePointCosts[metadataId],
+				objectiveUpperBounds[metadataId]);
 	}
 
 	double accessRows(int metadataId) {
@@ -338,6 +411,11 @@ final class PackedPhysicalMetadataArena {
 	Object accessMode(int metadataId) {
 		checkId(metadataId);
 		return objects.value(accessModeIds[metadataId]);
+	}
+
+	Object runtimeFeedbackContract(int metadataId) {
+		checkId(metadataId);
+		return objects.value(runtimeFeedbackContractIds[metadataId]);
 	}
 
 	int plannedStringMetricCount(int metadataId) {
@@ -430,6 +508,11 @@ final class PackedPhysicalMetadataArena {
 		resultRows = Arrays.copyOf(resultRows, capacity);
 		remoteCalls = Arrays.copyOf(remoteCalls, capacity);
 		peakMemoryRows = Arrays.copyOf(peakMemoryRows, capacity);
+		objectiveLowerBounds = Arrays.copyOf(objectiveLowerBounds, capacity);
+		objectivePointCosts = Arrays.copyOf(objectivePointCosts, capacity);
+		objectiveUpperBounds = Arrays.copyOf(objectiveUpperBounds, capacity);
+		lifecycleComparisonCosts = Arrays.copyOf(lifecycleComparisonCosts, capacity);
+		lifecycleFlags = Arrays.copyOf(lifecycleFlags, capacity);
 		costScopes = Arrays.copyOf(costScopes, capacity);
 		physicalCostFlags = Arrays.copyOf(physicalCostFlags, capacity);
 		accessRows = Arrays.copyOf(accessRows, capacity);
@@ -446,6 +529,7 @@ final class PackedPhysicalMetadataArena {
 		estimateSourceIds = Arrays.copyOf(estimateSourceIds, capacity);
 		estimateFusionIds = Arrays.copyOf(estimateFusionIds, capacity);
 		accessModeIds = Arrays.copyOf(accessModeIds, capacity);
+		runtimeFeedbackContractIds = Arrays.copyOf(runtimeFeedbackContractIds, capacity);
 		plannedStringMetricStarts = Arrays.copyOf(plannedStringMetricStarts, capacity);
 		plannedStringMetricCounts = Arrays.copyOf(plannedStringMetricCounts, capacity);
 		plannedDoubleMetricStarts = Arrays.copyOf(plannedDoubleMetricStarts, capacity);

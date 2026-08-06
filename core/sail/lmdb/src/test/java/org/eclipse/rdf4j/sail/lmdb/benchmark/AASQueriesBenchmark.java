@@ -178,7 +178,7 @@ public class AASQueriesBenchmark {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			System.out.println("Number of statements: " + connection.size());
 		}
-		prepareSketchesIfEnabled();
+		// prepareSketchesIfEnabled();
 
 		printExplanation("setup");
 
@@ -375,7 +375,7 @@ public class AASQueriesBenchmark {
 		BenchmarkJoinEstimatorSupport.prepareStableEstimatorForBenchmark(lmdbStore);
 	}
 
-	@Benchmark
+	// @Benchmark
 	public long query() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			TupleQuery tupleQuery = connection.prepareTupleQuery(querySpec.query());
@@ -384,7 +384,7 @@ public class AASQueriesBenchmark {
 		}
 	}
 
-	@Benchmark
+	// @Benchmark
 	public int planUncached() {
 		try (SailRepositoryConnection connection = repository.getConnection();
 				LmdbBenchmarkQueryPlan plan = LmdbBenchmarkQueryPlan.prepare(lmdbStore, connection,

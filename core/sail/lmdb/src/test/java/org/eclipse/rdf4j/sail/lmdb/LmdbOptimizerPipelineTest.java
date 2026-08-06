@@ -1144,7 +1144,7 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
-	void lmdbPipelineUsesSemanticFiniteAnchorWithoutPredicateNameHeuristic() {
+	void lmdbPipelineKeepsConservativeFilterWithoutFiniteAccessProfile() {
 		TripleSource tripleSource = new EmptyTripleSource();
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
 		TupleExpr tupleExpr = parseTupleExpr("""
@@ -1161,8 +1161,10 @@ class LmdbOptimizerPipelineTest {
 			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
 
-		assertTrue(containsBindingSetAssignmentFor(tupleExpr, "candidate"), tupleExpr.toString());
-		assertFalse(hasLiteralFilterFor(tupleExpr, "candidate", Set.of("alpha", "beta")), tupleExpr.toString());
+		// Generic statistics expose selectivity but no physical lookup or invocation profile. D3 therefore keeps the
+		// conservative filter instead of manufacturing an unpriced finite-access win.
+		assertFalse(containsBindingSetAssignmentFor(tupleExpr, "candidate"), tupleExpr.toString());
+		assertTrue(hasLiteralFilterFor(tupleExpr, "candidate", Set.of("alpha", "beta")), tupleExpr.toString());
 	}
 
 	@Test

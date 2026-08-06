@@ -21,6 +21,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -97,6 +98,7 @@ class LmdbFilterSelectivityStats
 	private static final double LOW_BENEFIT_RATIO_THRESHOLD = 0.25d;
 	private static final double FULL_SCAN_ROW_BUDGET = 1_000_000.0d;
 	private static final int MAX_BACKGROUND_SAMPLING_REQUESTS = 4096;
+	private static final int MAX_LEARNED_SURFACE_ENTRIES = 4096;
 	private static final long MISSING_VALUE_ID = Long.MIN_VALUE;
 
 	private final TripleStore tripleStore;
@@ -114,7 +116,7 @@ class LmdbFilterSelectivityStats
 	private final Map<PatternFilterKey, LearnedCounts> learnedByFilter = new HashMap<>();
 	private final Map<PatternFilterKey, LearnedCounts> learnedByTemplate = new HashMap<>();
 	private final Map<PatternKey, LearnedCounts> learnedByPattern = new HashMap<>();
-	private final Map<FilterSurfaceKey, LearnedCounts> learnedBySurface = new HashMap<>();
+	private final LinkedHashMap<FilterSurfaceKey, LearnedCounts> learnedBySurface = new LinkedHashMap<>();
 	private final Map<PatternFilterKey, SampledPassRatio> sampledByFilter = new HashMap<>();
 	private final Map<PatternFilterKey, BackgroundSamplingRequest> backgroundSamplingRequests = new HashMap<>();
 	private final Map<RuntimeRowsKey, Double> expectedRuntimeRowsByPattern = new HashMap<>();
@@ -125,6 +127,20 @@ class LmdbFilterSelectivityStats
 	private boolean coldSynopsisDirty;
 	private long backgroundSamplingSequence;
 	private long planningRevision;
+	private long runtimeTargetGeneration;
+
+	static final class ResolvedFilterCells {
+		private final LearnedCounts exact;
+		private final LearnedCounts generalized;
+		private final long generation;
+		private boolean released;
+
+		private ResolvedFilterCells(LearnedCounts exact, LearnedCounts generalized, long generation) {
+			this.exact = exact;
+			this.generalized = generalized;
+			this.generation = generation;
+		}
+	}
 
 	LmdbFilterSelectivityStats(Path estimatorPath, TripleStore tripleStore, ValueStore valueStore) {
 		this(estimatorPath, tripleStore, valueStore, true, LmdbStoreConfig.OPTIMIZER_SAMPLING_MAX_MILLIS,
@@ -187,6 +203,7 @@ class LmdbFilterSelectivityStats
 
 	@Override
 	public synchronized void reset() {
+		runtimeTargetGeneration++;
 		boolean hasPersistedStats = !learnedByFilter.isEmpty() || !learnedByTemplate.isEmpty()
 				|| !learnedByPattern.isEmpty() || !learnedBySurface.isEmpty() || !sampledByFilter.isEmpty();
 		boolean hasVolatileStats = !backgroundSamplingRequests.isEmpty() || !expectedRuntimeRowsByPattern.isEmpty();
@@ -212,6 +229,60 @@ class LmdbFilterSelectivityStats
 		}
 		if (hasPersistedStats || hasColdSynopsis) {
 			planningRevision++;
+		}
+	}
+
+	synchronized ResolvedFilterCells resolveRuntimeFeedbackTarget(Filter filter) {
+		if (!adaptiveEvidenceAllowed() || filter == null || filter.getCondition() == null) {
+			return null;
+		}
+		FilterSurfaceKey exactKey = FilterSurfaceKey.exact(filter);
+		FilterSurfaceKey generalizedKey = FilterSurfaceKey.generalized(filter);
+		if (exactKey == null && generalizedKey == null) {
+			return null;
+		}
+		if (!reserveLearnedSurfaceCells(exactKey, generalizedKey)) {
+			return null;
+		}
+		LearnedCounts exact = exactKey == null ? null : learnedSurfaceCell(exactKey);
+		LearnedCounts generalized = generalizedKey == null || generalizedKey.equals(exactKey)
+				? exact
+				: learnedSurfaceCell(generalizedKey);
+		if (exact != null) {
+			exact.leases++;
+		}
+		if (generalized != null && generalized != exact) {
+			generalized.leases++;
+		}
+		return new ResolvedFilterCells(exact, generalized, runtimeTargetGeneration);
+	}
+
+	synchronized boolean recordRuntimeFeedback(ResolvedFilterCells cells, long passedCount, long filteredCount) {
+		if (cells == null || cells.released || cells.generation != runtimeTargetGeneration
+				|| passedCount < 0L || filteredCount < 0L || passedCount == 0L && filteredCount == 0L) {
+			return false;
+		}
+		if (cells.exact != null) {
+			cells.exact.add(passedCount, filteredCount);
+		}
+		if (cells.generalized != null && cells.generalized != cells.exact) {
+			cells.generalized.add(passedCount, filteredCount);
+		}
+		dirty = true;
+		planningRevision++;
+		return true;
+	}
+
+	synchronized void releaseRuntimeFeedbackTarget(ResolvedFilterCells cells) {
+		if (cells == null || cells.released) {
+			return;
+		}
+		cells.released = true;
+		if (cells.exact != null && cells.exact.leases > 0) {
+			cells.exact.leases--;
+		}
+		if (cells.generalized != null && cells.generalized != cells.exact && cells.generalized.leases > 0) {
+			cells.generalized.leases--;
 		}
 	}
 
@@ -274,15 +345,15 @@ class LmdbFilterSelectivityStats
 		boolean changed = false;
 		FilterSurfaceKey exact = FilterSurfaceKey.exact(filter);
 		FilterSurfaceKey generalized = FilterSurfaceKey.generalized(filter);
-		if (exact != null) {
-			learnedBySurface.computeIfAbsent(exact, ignored -> new LearnedCounts())
-					.add(passedCount, filteredCount);
-			changed = true;
-		}
-		if (generalized != null && !generalized.equals(exact)) {
-			learnedBySurface.computeIfAbsent(generalized, ignored -> new LearnedCounts())
-					.add(passedCount, filteredCount);
-			changed = true;
+		if (reserveLearnedSurfaceCells(exact, generalized)) {
+			if (exact != null) {
+				learnedSurfaceCell(exact).add(passedCount, filteredCount);
+				changed = true;
+			}
+			if (generalized != null && !generalized.equals(exact)) {
+				learnedSurfaceCell(generalized).add(passedCount, filteredCount);
+				changed = true;
+			}
 		}
 		PatternKey patternKey = FilterSelectivityKeys.patternKeyFor(legacyPattern);
 		if (patternKey != null) {
@@ -1300,6 +1371,46 @@ class LmdbFilterSelectivityStats
 		}
 	}
 
+	private boolean reserveLearnedSurfaceCells(FilterSurfaceKey exact, FilterSurfaceKey generalized) {
+		int additions = missingLearnedSurfaceCell(exact) ? 1 : 0;
+		if (generalized != null && !generalized.equals(exact) && missingLearnedSurfaceCell(generalized)) {
+			additions++;
+		}
+		while (learnedBySurface.size() + additions > MAX_LEARNED_SURFACE_ENTRIES) {
+			if (!evictLearnedSurfaceCell(exact, generalized)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private boolean missingLearnedSurfaceCell(FilterSurfaceKey key) {
+		return key != null && !learnedBySurface.containsKey(key);
+	}
+
+	private LearnedCounts learnedSurfaceCell(FilterSurfaceKey key) {
+		LearnedCounts counts = learnedBySurface.get(key);
+		if (counts == null) {
+			counts = new LearnedCounts();
+			learnedBySurface.put(key, counts);
+		}
+		return counts;
+	}
+
+	private boolean evictLearnedSurfaceCell(FilterSurfaceKey exact, FilterSurfaceKey generalized) {
+		var iterator = learnedBySurface.entrySet().iterator();
+		while (iterator.hasNext()) {
+			Map.Entry<FilterSurfaceKey, LearnedCounts> candidate = iterator.next();
+			if (candidate.getValue().leases == 0
+					&& !candidate.getKey().equals(exact)
+					&& !candidate.getKey().equals(generalized)) {
+				iterator.remove();
+				return true;
+			}
+		}
+		return false;
+	}
+
 	int optimizerSamplingRowBudget(double expectedRuntimeRows, double expectedBenefitRows,
 			double decisionUncertainty) {
 		return samplingRowBudget(expectedRuntimeRows, expectedBenefitRows, decisionUncertainty, true);
@@ -1921,6 +2032,7 @@ class LmdbFilterSelectivityStats
 	private static final class LearnedCounts {
 		private long passedCount;
 		private long filteredCount;
+		private int leases;
 
 		private void add(long passedCount, long filteredCount) {
 			this.passedCount += Math.max(0L, passedCount);

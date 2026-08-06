@@ -337,15 +337,29 @@ final class PackedMemo {
 		}
 		checkPhysicalChildCount(physicalExpressionId, childCount);
 		properties.satisfies(requiredPropertyId, requiredPropertyId);
-		int winnerId = winners.offerWithMetadata(groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
-				costPolicyId, physicalExpressionId, physicalMetadataId, tieBreakRank, startupCost, totalCost,
-				comparisonCost, physicalMetadataId == 0 ? 0.0d : physicalMetadata.peakMemoryRows(physicalMetadataId),
+		double lifecycleComparisonCost = lifecycleComparisonCost(physicalMetadataId, totalCost, comparisonCost,
 				childWinnerIds, childOffset, childCount);
+		boolean robustComparisonPrimary = physicalMetadataId != 0
+				&& physicalMetadata.lifecycleEnforced(physicalMetadataId);
+		boolean lifecycleExcluded = lifecycleExcluded(physicalMetadataId);
+		int winnerId = lifecycleExcluded
+				? winners.offerExecutableFallbackWithMetadata(groupId, requiredPropertyId, semanticRowGoalId,
+						inputContextId, costPolicyId, physicalExpressionId, physicalMetadataId, tieBreakRank,
+						startupCost, totalCost, lifecycleComparisonCost,
+						physicalMetadata.peakMemoryRows(physicalMetadataId), robustComparisonPrimary, childWinnerIds,
+						childOffset, childCount)
+				: winners.offerWithMetadata(groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
+						costPolicyId, physicalExpressionId, physicalMetadataId, tieBreakRank, startupCost, totalCost,
+						lifecycleComparisonCost,
+						physicalMetadataId == 0 ? 0.0d : physicalMetadata.peakMemoryRows(physicalMetadataId),
+						robustComparisonPrimary, childWinnerIds, childOffset, childCount);
 		boolean accepted = winners.physicalExpressionId(winnerId) == physicalExpressionId
 				&& winners.physicalMetadataId(winnerId) == physicalMetadataId;
 		decisionTrace.append(groupId, requiredPropertyId, semanticRowGoalId, inputContextId, costPolicyId,
-				physicalExpressionId, physicalMetadataId, PackedWinnerTable.COSTED, tieBreakRank, startupCost,
-				totalCost, comparisonCost, accepted, winners, physicalMetadata, childWinnerIds, childOffset,
+				physicalExpressionId, physicalMetadataId,
+				lifecycleExcluded ? PackedWinnerTable.EXECUTABLE_FALLBACK : PackedWinnerTable.COSTED,
+				tieBreakRank, startupCost,
+				totalCost, lifecycleComparisonCost, accepted, winners, physicalMetadata, childWinnerIds, childOffset,
 				childCount);
 		return winnerId;
 	}
@@ -364,19 +378,64 @@ final class PackedMemo {
 		}
 		checkPhysicalChildCount(physicalExpressionId, childCount);
 		properties.satisfies(requiredPropertyId, requiredPropertyId);
-		int winnerId = winners.offerExecutableFallbackWithMetadata(groupId, requiredPropertyId, semanticRowGoalId,
-				inputContextId, costPolicyId, physicalExpressionId, physicalMetadataId, tieBreakRank, startupCost,
-				totalCost, comparisonCost,
-				physicalMetadataId == 0 ? 0.0d : physicalMetadata.peakMemoryRows(physicalMetadataId),
+		double lifecycleComparisonCost = lifecycleComparisonCost(physicalMetadataId, totalCost, comparisonCost,
 				childWinnerIds, childOffset, childCount);
+		boolean robustComparisonPrimary = physicalMetadataId != 0
+				&& physicalMetadata.lifecycleEnforced(physicalMetadataId);
+		boolean lifecycleExcluded = lifecycleExcluded(physicalMetadataId);
+		boolean verifiedLastGood = physicalMetadataId != 0
+				&& physicalMetadata.lifecycleEnforced(physicalMetadataId)
+				&& physicalMetadata.lifecycleEligible(physicalMetadataId)
+				&& physicalMetadata.lifecycleLastGood(physicalMetadataId)
+				&& !lifecycleExcluded;
+		double peakMemoryRows = physicalMetadataId == 0 ? 0.0d
+				: physicalMetadata.peakMemoryRows(physicalMetadataId);
+		int winnerId = verifiedLastGood
+				? winners.offerWithMetadata(groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
+						costPolicyId, physicalExpressionId, physicalMetadataId, tieBreakRank, startupCost, totalCost,
+						lifecycleComparisonCost, peakMemoryRows, robustComparisonPrimary, childWinnerIds, childOffset,
+						childCount)
+				: winners.offerExecutableFallbackWithMetadata(groupId, requiredPropertyId, semanticRowGoalId,
+						inputContextId, costPolicyId, physicalExpressionId, physicalMetadataId, tieBreakRank,
+						startupCost, totalCost, lifecycleComparisonCost, peakMemoryRows, robustComparisonPrimary,
+						childWinnerIds, childOffset, childCount);
 		boolean accepted = winners.physicalExpressionId(winnerId) == physicalExpressionId
 				&& winners.physicalMetadataId(winnerId) == physicalMetadataId;
 		decisionTrace.append(groupId, requiredPropertyId, semanticRowGoalId, inputContextId, costPolicyId,
-				physicalExpressionId, physicalMetadataId, PackedWinnerTable.EXECUTABLE_FALLBACK, tieBreakRank,
-				startupCost, totalCost, comparisonCost, accepted, winners, physicalMetadata, childWinnerIds,
+				physicalExpressionId, physicalMetadataId,
+				verifiedLastGood ? PackedWinnerTable.COSTED : PackedWinnerTable.EXECUTABLE_FALLBACK, tieBreakRank,
+				startupCost, totalCost, lifecycleComparisonCost, accepted, winners, physicalMetadata, childWinnerIds,
 				childOffset,
 				childCount);
 		return winnerId;
+	}
+
+	private boolean lifecycleExcluded(int physicalMetadataId) {
+		return physicalMetadataId != 0 && physicalMetadata.lifecycleEnforced(physicalMetadataId)
+				&& !physicalMetadata.lifecycleEligible(physicalMetadataId);
+	}
+
+	private double lifecycleComparisonCost(int physicalMetadataId, double totalCost, double fallbackComparisonCost,
+			int[] candidateChildWinnerIds, int childOffset, int childCount) {
+		if (physicalMetadataId == 0 || !physicalMetadata.lifecycleEnforced(physicalMetadataId)) {
+			return fallbackComparisonCost;
+		}
+		double localComparisonCost = physicalMetadata.lifecycleComparisonCost(physicalMetadataId);
+		if (localComparisonCost == Double.MAX_VALUE) {
+			return Double.MAX_VALUE;
+		}
+		double comparisonCost = saturatedAdd(totalCost,
+				Math.max(0.0d, localComparisonCost - physicalMetadata.objectivePointCost(physicalMetadataId)));
+		for (int ordinal = 0; ordinal < childCount; ordinal++) {
+			int childWinnerId = candidateChildWinnerIds[childOffset + ordinal];
+			double childComparisonCost = winners.comparisonCost(childWinnerId);
+			if (childComparisonCost == Double.MAX_VALUE) {
+				return Double.MAX_VALUE;
+			}
+			comparisonCost = saturatedAdd(comparisonCost,
+					Math.max(0.0d, childComparisonCost - winners.totalCost(childWinnerId)));
+		}
+		return comparisonCost;
 	}
 
 	private void checkPhysicalChildCount(int physicalExpressionId, int selectedChildCount) {
@@ -389,6 +448,10 @@ final class PackedMemo {
 
 	double winnerTotalCost(int winnerId) {
 		return winners.totalCost(winnerId);
+	}
+
+	double winnerStartupCost(int winnerId) {
+		return winners.startupCost(winnerId);
 	}
 
 	int winnerCount() {
@@ -521,6 +584,8 @@ final class PackedMemo {
 						dependentCostScratch.peakMemoryRows()));
 		addDependentMetric(destination, "plannedDependentSubqueryWorkRows", dependentCostScratch.workRows());
 		addDependentMetric(destination, "plannedDependentSubqueryObjectiveCost", winnerTotalCost(winnerId));
+		addDependentMetric(destination, "plannedDependentSubqueryStartupOnceObjectiveCost",
+				winnerStartupCost(winnerId));
 		dependentReopenScratch.clear();
 		dependentReopenScratch.setLocalPhysicalCost(
 				0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
@@ -553,6 +618,8 @@ final class PackedMemo {
 			addDependentMetric(destination, "plannedDependentSubqueryReopenWorkRows",
 					dependentReopenScratch.workRows());
 			addDependentMetric(destination, "plannedDependentSubqueryReopenObjectiveCost", reopenObjective);
+			addDependentMetric(destination, "plannedDependentSubqueryReopenStartupOnceObjectiveCost",
+					collectOuterIndependentReopenStartupCost(winnerId, outerBindingMaskId));
 		}
 		if (winnerContainsPlannedMetric(winnerId, "optimizer.physicalJoinImplementation", "independent-hash")) {
 			destination.putPlannedDoubleMetric("plannedDependentSubqueryContainsIndependentHash", 1.0d);
@@ -571,6 +638,18 @@ final class PackedMemo {
 					winnerChildWinnerId(winnerId, ordinal), outerBindingMaskId, destination));
 		}
 		return objective;
+	}
+
+	private double collectOuterIndependentReopenStartupCost(int winnerId, int outerBindingMaskId) {
+		if (!winnerDependsOnOuterBindings(winnerId, outerBindingMaskId)) {
+			return winnerStartupCost(winnerId);
+		}
+		double startup = 0.0d;
+		for (int ordinal = 0; ordinal < winnerChildCount(winnerId); ordinal++) {
+			startup = saturatedAdd(startup, collectOuterIndependentReopenStartupCost(
+					winnerChildWinnerId(winnerId, ordinal), outerBindingMaskId));
+		}
+		return startup;
 	}
 
 	boolean winnerDependsOnOuterBindings(int winnerId, int outerBindingMaskId) {
@@ -852,6 +931,10 @@ final class PackedMemo {
 
 	Object physicalMetadataAccessMode(int metadataId) {
 		return physicalMetadata.accessMode(metadataId);
+	}
+
+	Object physicalMetadataRuntimeFeedbackContract(int metadataId) {
+		return physicalMetadata.runtimeFeedbackContract(metadataId);
 	}
 
 	int physicalMetadataPlannedStringMetricCount(int metadataId) {

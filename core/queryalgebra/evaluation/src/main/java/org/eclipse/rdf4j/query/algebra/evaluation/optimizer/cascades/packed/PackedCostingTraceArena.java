@@ -15,6 +15,7 @@ import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.Objects;
 
+import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDisposition;
 
@@ -47,6 +48,8 @@ final class PackedCostingTraceArena {
 	private int[] bindingLayoutIds = new int[INITIAL_CAPACITY];
 	private int[] correlationMaskIds = new int[INITIAL_CAPACITY];
 	private int[] semanticScopeMaskIds = new int[INITIAL_CAPACITY];
+	private int[] hashLookupMaskIds = new int[INITIAL_CAPACITY];
+	private int[] hashCompatibilityMaskIds = new int[INITIAL_CAPACITY];
 	private double[] leftInputRows = new double[INITIAL_CAPACITY];
 	private double[] rightInputRows = new double[INITIAL_CAPACITY];
 	private double[] providerInputRows = new double[INITIAL_CAPACITY];
@@ -73,6 +76,7 @@ final class PackedCostingTraceArena {
 	private int[] providerInputAccessModeIds = new int[INITIAL_CAPACITY];
 	private int[] providerInputEstimateSourceIds = new int[INITIAL_CAPACITY];
 	private int[] providerInputEstimateFusionIds = new int[INITIAL_CAPACITY];
+	private int[] providerInputRuntimeFeedbackContractIds = new int[INITIAL_CAPACITY];
 	private byte[] providerInputCostScopes = new byte[INITIAL_CAPACITY];
 	private byte[] providerInputFlags = new byte[INITIAL_CAPACITY];
 	private byte[] providerInputGuarantees = new byte[INITIAL_CAPACITY];
@@ -103,6 +107,7 @@ final class PackedCostingTraceArena {
 	private int[] accessModeIds = new int[INITIAL_CAPACITY];
 	private int[] estimateSourceIds = new int[INITIAL_CAPACITY];
 	private int[] estimateFusionIds = new int[INITIAL_CAPACITY];
+	private int[] runtimeFeedbackContractIds = new int[INITIAL_CAPACITY];
 	private long[] digestHigh = new long[INITIAL_CAPACITY];
 	private long[] digestLow = new long[INITIAL_CAPACITY];
 	private long[] invocationHashes = new long[INITIAL_CAPACITY];
@@ -151,6 +156,8 @@ final class PackedCostingTraceArena {
 		bindingLayoutIds[eventId] = context.bindingLayoutId();
 		correlationMaskIds[eventId] = context.correlationMaskId();
 		semanticScopeMaskIds[eventId] = context.semanticScopeMaskId();
+		hashLookupMaskIds[eventId] = context.hashLookupMaskId();
+		hashCompatibilityMaskIds[eventId] = context.hashCompatibilityMaskId();
 		leftInputRows[eventId] = context.leftInputRows();
 		rightInputRows[eventId] = context.rightInputRows();
 		providerInputRows[eventId] = providerInput.outputRows();
@@ -178,6 +185,7 @@ final class PackedCostingTraceArena {
 		providerInputAccessModeIds[eventId] = objects.intern(providerInput.accessMode());
 		providerInputEstimateSourceIds[eventId] = objects.intern(providerInput.estimateSource());
 		providerInputEstimateFusionIds[eventId] = objects.intern(providerInput.estimateFusion());
+		providerInputRuntimeFeedbackContractIds[eventId] = objects.intern(providerInput.runtimeFeedbackContract());
 		providerInputCostScopes[eventId] = (byte) (providerInput.costScope().ordinal() + 1);
 		int inputFlags = providerInput.hasExplicitPhysicalCost() ? 1 : 0;
 		inputFlags |= providerInput.hasContextualOutputRows() ? 1 << 1 : 0;
@@ -226,6 +234,7 @@ final class PackedCostingTraceArena {
 		accessModeIds[eventId] = objects.intern(estimate.accessMode());
 		estimateSourceIds[eventId] = objects.intern(estimate.estimateSource());
 		estimateFusionIds[eventId] = objects.intern(estimate.estimateFusion());
+		runtimeFeedbackContractIds[eventId] = objects.intern(estimate.runtimeFeedbackContract());
 		annotateEventVector(estimate);
 		appendMetrics(eventId, estimate);
 
@@ -301,6 +310,8 @@ final class PackedCostingTraceArena {
 				providerObject(estimateSourceIds[eventId], String.class),
 				providerObject(accessModeIds[eventId], String.class));
 		estimate.setEstimateFusion(providerObject(estimateFusionIds[eventId], String.class));
+		estimate.setRuntimeFeedbackContract(
+				providerObject(runtimeFeedbackContractIds[eventId], RuntimeFeedbackContract.class));
 		estimate.setEvidenceStateId(outputStateIds[eventId]);
 		estimate.setEvidenceGuarantee(enumValue(EvidenceGuarantee.values(), guarantees[eventId]));
 		estimate.setEvidenceDisposition(enumValue(FrontierStateDisposition.values(), dispositions[eventId]));
@@ -499,6 +510,8 @@ final class PackedCostingTraceArena {
 				|| bindingLayoutIds[eventId] != context.bindingLayoutId()
 				|| correlationMaskIds[eventId] != context.correlationMaskId()
 				|| semanticScopeMaskIds[eventId] != context.semanticScopeMaskId()
+				|| hashLookupMaskIds[eventId] != context.hashLookupMaskId()
+				|| hashCompatibilityMaskIds[eventId] != context.hashCompatibilityMaskId()
 				|| !sameDouble(leftInputRows[eventId], context.leftInputRows())
 				|| !sameDouble(rightInputRows[eventId], context.rightInputRows())
 				|| leftStateIds[eventId] != context.leftInputEvidenceStateId()
@@ -533,6 +546,7 @@ final class PackedCostingTraceArena {
 				&& Objects.equals(objects.value(providerInputAccessModeIds[eventId]), input.accessMode())
 				&& Objects.equals(objects.value(providerInputEstimateSourceIds[eventId]), input.estimateSource())
 				&& Objects.equals(objects.value(providerInputEstimateFusionIds[eventId]), input.estimateFusion())
+				&& objects.value(providerInputRuntimeFeedbackContractIds[eventId]) == input.runtimeFeedbackContract()
 				&& providerInputCostScopes[eventId] == (byte) (input.costScope().ordinal() + 1)
 				&& providerInputFlags[eventId] == inputFlags(input)
 				&& providerInputGuarantees[eventId] == enumCode(input.evidenceGuarantee())
@@ -584,6 +598,7 @@ final class PackedCostingTraceArena {
 		hash = PackedPrimitiveHash.step(hash, Objects.hashCode(input.accessMode()));
 		hash = PackedPrimitiveHash.step(hash, Objects.hashCode(input.estimateSource()));
 		hash = PackedPrimitiveHash.step(hash, Objects.hashCode(input.estimateFusion()));
+		hash = PackedPrimitiveHash.step(hash, System.identityHashCode(input.runtimeFeedbackContract()));
 		hash = PackedPrimitiveHash.step(hash, input.costScope().ordinal());
 		hash = PackedPrimitiveHash.step(hash, inputFlags(input));
 		hash = PackedPrimitiveHash.step(hash, enumCode(input.evidenceGuarantee()));
@@ -681,6 +696,7 @@ final class PackedCostingTraceArena {
 				Arrays.copyOf(rightSourceStateIds, length),
 				Arrays.copyOf(outputStateIds, length), Arrays.copyOf(bindingLayoutIds, length),
 				Arrays.copyOf(correlationMaskIds, length), Arrays.copyOf(semanticScopeMaskIds, length),
+				Arrays.copyOf(hashLookupMaskIds, length), Arrays.copyOf(hashCompatibilityMaskIds, length),
 				Arrays.copyOf(leftInputRows, length), Arrays.copyOf(rightInputRows, length),
 				Arrays.copyOf(providerInputRows, length), Arrays.copyOf(providerInputWorkRows, length),
 				Arrays.copyOf(providerInputSequentialRows, length), Arrays.copyOf(providerInputRandomSeeks, length),
@@ -785,6 +801,8 @@ final class PackedCostingTraceArena {
 		hash = mix(hash, bindingLayoutIds[eventId]);
 		hash = mix(hash, correlationMaskIds[eventId]);
 		hash = mix(hash, semanticScopeMaskIds[eventId]);
+		hash = mix(hash, hashLookupMaskIds[eventId]);
+		hash = mix(hash, hashCompatibilityMaskIds[eventId]);
 		hash = mix(hash, inputStateIds[eventId]);
 		hash = mix(hash, leftStateIds[eventId]);
 		hash = mix(hash, rightStateIds[eventId]);
@@ -876,6 +894,8 @@ final class PackedCostingTraceArena {
 		hash = mix(hash, context.bindingLayoutId());
 		hash = mix(hash, context.correlationMaskId());
 		hash = mix(hash, context.semanticScopeMaskId());
+		hash = mix(hash, context.hashLookupMaskId());
+		hash = mix(hash, context.hashCompatibilityMaskId());
 		hash = mix(hash, Double.doubleToLongBits(context.leftInputRows()));
 		hash = mix(hash, Double.doubleToLongBits(context.rightInputRows()));
 		hash = mix(hash, context.leftInputEvidenceStateId());
@@ -919,6 +939,8 @@ final class PackedCostingTraceArena {
 		bindingLayoutIds = Arrays.copyOf(bindingLayoutIds, capacity);
 		correlationMaskIds = Arrays.copyOf(correlationMaskIds, capacity);
 		semanticScopeMaskIds = Arrays.copyOf(semanticScopeMaskIds, capacity);
+		hashLookupMaskIds = Arrays.copyOf(hashLookupMaskIds, capacity);
+		hashCompatibilityMaskIds = Arrays.copyOf(hashCompatibilityMaskIds, capacity);
 		leftInputRows = Arrays.copyOf(leftInputRows, capacity);
 		rightInputRows = Arrays.copyOf(rightInputRows, capacity);
 		providerInputRows = Arrays.copyOf(providerInputRows, capacity);
@@ -945,6 +967,7 @@ final class PackedCostingTraceArena {
 		providerInputAccessModeIds = Arrays.copyOf(providerInputAccessModeIds, capacity);
 		providerInputEstimateSourceIds = Arrays.copyOf(providerInputEstimateSourceIds, capacity);
 		providerInputEstimateFusionIds = Arrays.copyOf(providerInputEstimateFusionIds, capacity);
+		providerInputRuntimeFeedbackContractIds = Arrays.copyOf(providerInputRuntimeFeedbackContractIds, capacity);
 		providerInputCostScopes = Arrays.copyOf(providerInputCostScopes, capacity);
 		providerInputFlags = Arrays.copyOf(providerInputFlags, capacity);
 		providerInputGuarantees = Arrays.copyOf(providerInputGuarantees, capacity);
@@ -975,6 +998,7 @@ final class PackedCostingTraceArena {
 		accessModeIds = Arrays.copyOf(accessModeIds, capacity);
 		estimateSourceIds = Arrays.copyOf(estimateSourceIds, capacity);
 		estimateFusionIds = Arrays.copyOf(estimateFusionIds, capacity);
+		runtimeFeedbackContractIds = Arrays.copyOf(runtimeFeedbackContractIds, capacity);
 		digestHigh = Arrays.copyOf(digestHigh, capacity);
 		digestLow = Arrays.copyOf(digestLow, capacity);
 		invocationHashes = Arrays.copyOf(invocationHashes, capacity);
