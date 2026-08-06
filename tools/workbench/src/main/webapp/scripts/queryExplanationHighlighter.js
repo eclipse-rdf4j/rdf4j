@@ -17,6 +17,11 @@ var workbench;
     var queryExplanationHighlighter;
     (function (queryExplanationHighlighter) {
         var UNKNOWN = 'UNKNOWN';
+        var TWO_DECIMAL_FORMATTER = new Intl.NumberFormat('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+            useGrouping: false
+        });
         var SPOC = ['s', 'p', 'o', 'c'];
         var PREFERRED_PLANNED_STRINGS = [
             'plannedIndexName',
@@ -144,6 +149,15 @@ var workbench;
             return children;
         }
         function javaDecimal(value) {
+            var absoluteValue = Math.abs(value);
+            if (absoluteValue >= 10000000 || (absoluteValue > 0 && absoluteValue < 0.001)) {
+                var exponentialParts = value.toExponential().split('e');
+                var significand = exponentialParts[0];
+                if (significand.indexOf('.') < 0) {
+                    significand += '.0';
+                }
+                return significand + 'E' + String(parseInt(exponentialParts[1], 10));
+            }
             return Math.floor(value) === value ? value.toFixed(1) : String(value);
         }
         function parsedDouble(value) {
@@ -173,7 +187,7 @@ var workbench;
                 return javaDecimal(Math.round(numericValue / 100) / 10) + 'K';
             }
             if (numericValue < 10 && numericValue > 0) {
-                return numericValue.toFixed(2);
+                return TWO_DECIMAL_FORMATTER.format(numericValue);
             }
             if (numericValue >= 0) {
                 return String(Math.round(numericValue));
@@ -701,12 +715,16 @@ var workbench;
             }
             return value;
         }
-        function format(plan, level) {
+        function effectiveLineSeparator(lineSeparator) {
+            return typeof lineSeparator === 'string' && lineSeparator.length > 0 ? lineSeparator : '\n';
+        }
+        function format(plan, level, lineSeparator) {
             var effectiveLevel = level || 'Optimized';
+            var separator = effectiveLineSeparator(lineSeparator);
             var lines = formatLines(plan || {}, 0, isProjectionElemList(plan || {}), effectiveLevel);
             var text = '';
             for (var i = 0; i < lines.length; i++) {
-                text += lineText(lines[i]) + '\n';
+                text += lineText(lines[i]) + separator;
             }
             return { lines: lines, text: text };
         }
@@ -760,7 +778,8 @@ var workbench;
             return 'rgb(' + red + ', ' + green + ', ' + blue + ')';
         }
         function render(plan, options) {
-            var formatted = format(plan, options.level);
+            var separator = effectiveLineSeparator(options.lineSeparator);
+            var formatted = format(plan, options.level, separator);
             var hotspot = options.mode === 'hotspot' ? getHotspot(plan, options.level) : null;
             var localMaximum = hotspot ? hotspot.maximum : 0;
             var sharedMaximum = finiteNonNegative(options.sharedMaximum)
@@ -792,7 +811,7 @@ var workbench;
                     lineElement.appendChild(tokenElement);
                 }
                 fragment.appendChild(lineElement);
-                fragment.appendChild(document.createTextNode('\n'));
+                fragment.appendChild(document.createTextNode(separator));
             }
             return {
                 fragment: fragment,

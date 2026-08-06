@@ -45,7 +45,9 @@ class QueryExplanationHighlightContractTest {
 			GenericPlanNode plan = OBJECT_MAPPER.readValue(Files.readString(jsonFixture), GenericPlanNode.class);
 			plan.applyExplanationLevel(Explanation.Level.valueOf(levelName));
 			String expected = Files.readString(FIXTURE_DIRECTORY.resolve(fixtureName + ".txt"),
-					StandardCharsets.UTF_8);
+					StandardCharsets.UTF_8)
+					.replace("\r\n", "\n")
+					.replace("\n", System.lineSeparator());
 
 			assertEquals(expected, plan.toString(), fixtureName);
 		}

@@ -165,16 +165,21 @@ test('interactive Text explanation requests JSON and toggles cached highlighting
             { type: 'Var (name=o)' }
         ]
     };
-    const expectedText = 'StatementPattern (costEstimate=1.3K)\n'
-        + '   s: Var (name=s)\n'
-        + '   p: Var (name=p)\n'
-        + '   o: Var (name=o)\n';
+    const expectedText = 'StatementPattern (costEstimate=1.3K)\r\n'
+        + '   s: Var (name=s)\r\n'
+        + '   p: Var (name=p)\r\n'
+        + '   o: Var (name=o)\r\n';
 
     harness.runPageLoad();
     harness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
     const request = harness.pendingExplainRequests[0];
     assert.equal(request.params.get('explain-format'), 'json');
-    request.resolve({ content: JSON.stringify(plan), format: 'json', error: '' });
+    request.resolve({
+        content: JSON.stringify(plan),
+        format: 'json',
+        error: '',
+        lineSeparator: '\r\n'
+    });
 
     assert.equal(harness.getText('query-explanation'), expectedText);
     assert.equal(harness.getAttribute('query-explanation', 'data-format'), 'text');

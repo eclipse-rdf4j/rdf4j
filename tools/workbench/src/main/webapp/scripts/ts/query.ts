@@ -67,6 +67,7 @@ module workbench {
             view: ExplanationView;
             rawContent: string;
             displayContent: string;
+            lineSeparator: string;
             plan?: queryExplanationHighlighter.QueryPlanNode;
         }
 
@@ -631,6 +632,7 @@ module workbench {
                 view: explanation.view,
                 rawContent: explanation.rawContent,
                 displayContent: explanation.displayContent,
+                lineSeparator: explanation.lineSeparator,
                 plan: explanation.plan
             };
         }
@@ -656,6 +658,7 @@ module workbench {
                 explanation.responseFormat,
                 explanation.view,
                 explanation.rawContent,
+                explanation.lineSeparator,
                 getExplanationDisplayContent(explanation)
             ].join('||');
         }
@@ -670,6 +673,7 @@ module workbench {
                 explanation.requestedFormat,
                 explanation.responseFormat,
                 explanation.rawContent,
+                explanation.lineSeparator,
                 getExplanationDisplayContent(explanation)
             ].join('||');
         }
@@ -1111,6 +1115,7 @@ module workbench {
             content: string;
             format: string;
             error: string;
+            lineSeparator?: string;
         }
 
         interface DiffRow {
@@ -2084,7 +2089,8 @@ module workbench {
             var rendered = queryExplanationHighlighter.render(explanation.plan, {
                 level: explanation.level,
                 mode: explanationHighlightMode,
-                sharedMaximum: sharedMaximum
+                sharedMaximum: sharedMaximum,
+                lineSeparator: explanation.lineSeparator
             });
             $('#' + paneState.explanationRowId).show();
             if (paneState.explanationControlsRowId) {
@@ -2385,6 +2391,8 @@ module workbench {
             var explanationView: ExplanationView = 'text';
             var displayContent = explanationText;
             var parsedPlan: queryExplanationHighlighter.QueryPlanNode = null;
+            var lineSeparator = typeof response.lineSeparator === 'string' && response.lineSeparator.length > 0
+                ? response.lineSeparator : '\n';
             if (signature.format === 'text' && responseFormat === 'json') {
                 if (explanationText) {
                     try {
@@ -2394,7 +2402,9 @@ module workbench {
                             throw new Error('JSON explanation does not contain a plan root.');
                         }
                         parsedPlan = <queryExplanationHighlighter.QueryPlanNode>parsedResponse;
-                        displayContent = queryExplanationHighlighter.format(parsedPlan, signature.level).text;
+                        displayContent = queryExplanationHighlighter.format(
+                            parsedPlan, signature.level, lineSeparator
+                        ).text;
                         explanationView = 'highlightedText';
                     } catch (parseError) {
                         explanationView = 'text';
@@ -2420,6 +2430,7 @@ module workbench {
                 view: explanationView,
                 rawContent: explanationText,
                 displayContent: displayContent,
+                lineSeparator: lineSeparator,
                 plan: parsedPlan
             };
         }

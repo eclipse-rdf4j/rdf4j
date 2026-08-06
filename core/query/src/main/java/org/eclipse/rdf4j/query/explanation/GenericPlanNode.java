@@ -17,6 +17,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -789,7 +790,7 @@ public class GenericPlanNode {
 		} else if (number > 1_000) {
 			humanReadbleString = Math.round(number / 100) / 10.0 + "K";
 		} else if (number < 10 && number > 0) {
-			humanReadbleString = String.format("%.2f", number);
+			humanReadbleString = String.format(Locale.ROOT, "%.2f", number);
 		} else if (number >= 0) {
 			humanReadbleString = Math.round(number) + "";
 		} else {

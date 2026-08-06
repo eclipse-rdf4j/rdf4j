@@ -154,6 +154,14 @@ test('query testing helpers cover serialization, explanation parsing, diff rende
     assert.equal(testing.createStableExplanationFromResponse(createSignature(), { content: '[]', format: 'json', error: '' }, 'json').view, 'text');
     assert.equal(testing.createStableExplanationFromResponse(createSignature({ format: 'json' }), { content: '{bad', format: 'json', error: '' }, 'json').view, 'jsonRawFallback');
     assert.equal(testing.createStableExplanationFromResponse(createSignature(), { content: 'digraph{}', format: 'dot', error: '' }, 'dot').view, 'dotRendering');
+    const crlfExplanation = testing.createStableExplanationFromResponse(createSignature(), {
+        content: JSON.stringify({ type: 'StatementPattern' }),
+        format: 'json',
+        error: '',
+        lineSeparator: '\r\n'
+    }, 'json');
+    assert.equal(crlfExplanation.lineSeparator, '\r\n');
+    assert.equal(crlfExplanation.displayContent, 'StatementPattern\r\n');
 
     assert.deepEqual(Array.from(testing.splitDiffLines('a\r\nb')), ['a', 'b']);
     assert.deepEqual(

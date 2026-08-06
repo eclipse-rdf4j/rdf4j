@@ -413,6 +413,7 @@ public class QueryServlet extends TransformationServlet {
 		ObjectNode jsonObject = mapper.createObjectNode();
 		jsonObject.put("format", explainQueryResult.getFormat());
 		jsonObject.put("content", explainQueryResult.getContent());
+		jsonObject.put("lineSeparator", System.lineSeparator());
 		writeExplainJsonResponse(resp, HttpServletResponse.SC_OK, jsonObject);
 	}
 

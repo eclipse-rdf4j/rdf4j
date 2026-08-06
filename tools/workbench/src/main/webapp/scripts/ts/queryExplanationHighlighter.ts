@@ -62,6 +62,7 @@ module workbench {
             level: ExplainLevel;
             mode: HighlightMode;
             sharedMaximum?: number;
+            lineSeparator?: string;
         }
 
         export interface TextToken {
@@ -93,6 +94,11 @@ module workbench {
         }
 
         var UNKNOWN = 'UNKNOWN';
+        var TWO_DECIMAL_FORMATTER = new Intl.NumberFormat('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+            useGrouping: false
+        });
         var SPOC = ['s', 'p', 'o', 'c'];
         var PREFERRED_PLANNED_STRINGS = [
             'plannedIndexName',
@@ -241,6 +247,15 @@ module workbench {
         }
 
         function javaDecimal(value: number): string {
+            var absoluteValue = Math.abs(value);
+            if (absoluteValue >= 10000000 || (absoluteValue > 0 && absoluteValue < 0.001)) {
+                var exponentialParts = value.toExponential().split('e');
+                var significand = exponentialParts[0];
+                if (significand.indexOf('.') < 0) {
+                    significand += '.0';
+                }
+                return significand + 'E' + String(parseInt(exponentialParts[1], 10));
+            }
             return Math.floor(value) === value ? value.toFixed(1) : String(value);
         }
 
@@ -272,7 +287,7 @@ module workbench {
                 return javaDecimal(Math.round(numericValue / 100) / 10) + 'K';
             }
             if (numericValue < 10 && numericValue > 0) {
-                return numericValue.toFixed(2);
+                return TWO_DECIMAL_FORMATTER.format(numericValue);
             }
             if (numericValue >= 0) {
                 return String(Math.round(numericValue));
@@ -846,12 +861,17 @@ module workbench {
             return value;
         }
 
-        export function format(plan: QueryPlanNode, level?: ExplainLevel): FormatResult {
+        function effectiveLineSeparator(lineSeparator?: string): string {
+            return typeof lineSeparator === 'string' && lineSeparator.length > 0 ? lineSeparator : '\n';
+        }
+
+        export function format(plan: QueryPlanNode, level?: ExplainLevel, lineSeparator?: string): FormatResult {
             var effectiveLevel = level || 'Optimized';
+            var separator = effectiveLineSeparator(lineSeparator);
             var lines = formatLines(plan || {}, 0, isProjectionElemList(plan || {}), effectiveLevel);
             var text = '';
             for (var i = 0; i < lines.length; i++) {
-                text += lineText(lines[i]) + '\n';
+                text += lineText(lines[i]) + separator;
             }
             return { lines: lines, text: text };
         }
@@ -908,7 +928,8 @@ module workbench {
         }
 
         export function render(plan: QueryPlanNode, options: RenderOptions): RenderResult {
-            var formatted = format(plan, options.level);
+            var separator = effectiveLineSeparator(options.lineSeparator);
+            var formatted = format(plan, options.level, separator);
             var hotspot = options.mode === 'hotspot' ? getHotspot(plan, options.level) : null;
             var localMaximum = hotspot ? hotspot.maximum : 0;
             var sharedMaximum = finiteNonNegative(options.sharedMaximum)
@@ -940,7 +961,7 @@ module workbench {
                     lineElement.appendChild(tokenElement);
                 }
                 fragment.appendChild(lineElement);
-                fragment.appendChild(document.createTextNode('\n'));
+                fragment.appendChild(document.createTextNode(separator));
             }
             return {
                 fragment: fragment,

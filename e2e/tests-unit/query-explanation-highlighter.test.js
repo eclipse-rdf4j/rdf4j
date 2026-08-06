@@ -36,6 +36,47 @@ test('formats plan JSON as the legacy text tree', () => {
     );
 });
 
+test('matches Java decimal rounding and scientific notation', () => {
+    const { highlighter } = createHighlighterHarness();
+    const result = highlighter.format({
+        type: 'Join',
+        costEstimate: 2.675,
+        plans: [
+            { type: 'StatementPattern', costEstimate: 10000000000000 }
+        ]
+    });
+
+    assert.equal(
+        result.text,
+        'Join (costEstimate=2.68)\n'
+            + '   StatementPattern (costEstimate=1.0E7M)\n'
+    );
+});
+
+test('uses the server line separator for formatted and rendered text', () => {
+    const { harness, highlighter } = createHighlighterHarness();
+    const plan = {
+        type: 'StatementPattern',
+        plans: [{ type: 'Var (name=s)' }]
+    };
+
+    assert.equal(
+        highlighter.format(plan, 'Optimized', '\r\n').text,
+        'StatementPattern\r\n   s: Var (name=s)\r\n'
+    );
+
+    const rendered = highlighter.render(plan, {
+        level: 'Optimized',
+        mode: 'syntax',
+        lineSeparator: '\r\n'
+    });
+    const target = harness.document.createElement('pre');
+    target.appendChild(rendered.fragment);
+
+    assert.equal(rendered.text, 'StatementPattern\r\n   s: Var (name=s)\r\n');
+    assert.equal(target.textContent, rendered.text);
+});
+
 test('renders HTML-like values as inert highlighted text', () => {
     const { harness, highlighter } = createHighlighterHarness();
     const result = highlighter.render({

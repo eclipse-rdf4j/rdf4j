@@ -40,6 +40,17 @@ class GenericPlanNodeTest {
 	}
 
 	@Test
+	void toStringUsesLocaleIndependentDecimalFormatting() {
+		Locale.setDefault(Locale.GERMANY);
+		GenericPlanNode node = new GenericPlanNode("StatementPattern");
+		node.setCostEstimate(2.675);
+
+		String actual = node.toString();
+
+		assertTrue(actual.contains("costEstimate=2.68"), actual);
+	}
+
+	@Test
 	void toStringIncludesPopulatedTelemetryFields() {
 		GenericPlanNode node = new GenericPlanNode("Join");
 		node.setCostEstimate(1.0);

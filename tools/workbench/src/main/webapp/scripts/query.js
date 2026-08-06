@@ -419,6 +419,7 @@ var workbench;
                 view: explanation.view,
                 rawContent: explanation.rawContent,
                 displayContent: explanation.displayContent,
+                lineSeparator: explanation.lineSeparator,
                 plan: explanation.plan
             };
         }
@@ -442,6 +443,7 @@ var workbench;
                 explanation.responseFormat,
                 explanation.view,
                 explanation.rawContent,
+                explanation.lineSeparator,
                 getExplanationDisplayContent(explanation)
             ].join('||');
         }
@@ -455,6 +457,7 @@ var workbench;
                 explanation.requestedFormat,
                 explanation.responseFormat,
                 explanation.rawContent,
+                explanation.lineSeparator,
                 getExplanationDisplayContent(explanation)
             ].join('||');
         }
@@ -1667,7 +1670,8 @@ var workbench;
             var rendered = workbench.queryExplanationHighlighter.render(explanation.plan, {
                 level: explanation.level,
                 mode: explanationHighlightMode,
-                sharedMaximum: sharedMaximum
+                sharedMaximum: sharedMaximum,
+                lineSeparator: explanation.lineSeparator
             });
             $('#' + paneState.explanationRowId).show();
             if (paneState.explanationControlsRowId) {
@@ -1945,6 +1949,8 @@ var workbench;
             var explanationView = 'text';
             var displayContent = explanationText;
             var parsedPlan = null;
+            var lineSeparator = typeof response.lineSeparator === 'string' && response.lineSeparator.length > 0
+                ? response.lineSeparator : '\n';
             if (signature.format === 'text' && responseFormat === 'json') {
                 if (explanationText) {
                     try {
@@ -1954,7 +1960,7 @@ var workbench;
                             throw new Error('JSON explanation does not contain a plan root.');
                         }
                         parsedPlan = parsedResponse;
-                        displayContent = workbench.queryExplanationHighlighter.format(parsedPlan, signature.level).text;
+                        displayContent = workbench.queryExplanationHighlighter.format(parsedPlan, signature.level, lineSeparator).text;
                         explanationView = 'highlightedText';
                     }
                     catch (parseError) {
@@ -1984,6 +1990,7 @@ var workbench;
                 view: explanationView,
                 rawContent: explanationText,
                 displayContent: displayContent,
+                lineSeparator: lineSeparator,
                 plan: parsedPlan
             };
         }
