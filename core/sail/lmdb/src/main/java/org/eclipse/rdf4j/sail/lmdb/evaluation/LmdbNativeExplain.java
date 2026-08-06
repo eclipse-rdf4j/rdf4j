@@ -128,15 +128,19 @@ final class LmdbNativeExplain {
 		if (expr == null || !expr.isRuntimeTelemetryEnabled()) {
 			return null;
 		}
-		String initialBoundMask = describeBoundMask(boundMask, layout.slotNames());
+		String initialBoundMask = null;
 		synchronized (expr) {
 			if (expr.getStringMetricActual(INITIAL_BOUND_MASK) == null) {
+				initialBoundMask = describeBoundMask(boundMask, layout.slotNames());
 				expr.setStringMetricActual(INITIAL_BOUND_MASK, initialBoundMask);
 			}
 			if (expr instanceof QueryRoot) {
 				TupleExpr arg = ((QueryRoot) expr).getArg();
 				synchronized (arg) {
 					if (arg.getStringMetricActual(INITIAL_BOUND_MASK) == null) {
+						if (initialBoundMask == null) {
+							initialBoundMask = describeBoundMask(boundMask, layout.slotNames());
+						}
 						arg.setStringMetricActual(INITIAL_BOUND_MASK, initialBoundMask);
 					}
 				}

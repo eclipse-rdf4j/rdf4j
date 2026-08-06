@@ -218,9 +218,9 @@ final class LmdbNativeChunkPipeline {
 			return null;
 		}
 		long keyMask = pattern.producedMask() & boundBefore;
-		// single-key only: ordered scans over composite (explicit+inferred) sources merge per order field, which
-		// guarantees contiguous runs for one key field but not full multi-field tuple order
-		if (Long.bitCount(keyMask) != 1 || pattern.hasRepeatedSlot() || root.hasRepeatedSlot()) {
+		int keyWidth = Long.bitCount(keyMask);
+		if (keyWidth == 0 || keyWidth > LmdbNativeMergeJoin.MAX_KEY_WIDTH || pattern.hasRepeatedSlot()
+				|| root.hasRepeatedSlot()) {
 			return null;
 		}
 		if ((keyMask & row.boundMask()) != 0L || (keyMask & ~root.producedMask()) != 0L) {
@@ -237,6 +237,11 @@ final class LmdbNativeChunkPipeline {
 		String rootIndex = root.statementOrder == null
 				? row.source.indexName(rootSubj, rootPred, rootObj, rootCtx)
 				: row.source.indexName(root.statementOrder, rootSubj, rootPred, rootObj, rootCtx);
+		if (keyWidth > 1 && row.source.indexName(rootSubj, rootPred, rootObj, rootCtx).isEmpty()) {
+			// multi-branch composite ordered scans merge per order field only: contiguous runs for the leading
+			// field, never full multi-field tuple order — keep those single-key
+			return null;
+		}
 		int[] keySeqSlots = leadingKeySequence(rootIndex, root, row, keyMask);
 		if (keySeqSlots == null) {
 			return null;
@@ -249,6 +254,10 @@ final class LmdbNativeChunkPipeline {
 		long sweepPred = PatternPlan.lookupUnbinding(pattern.p, row.slots, keyMask);
 		long sweepObj = PatternPlan.lookupUnbinding(pattern.o, row.slots, keyMask);
 		long sweepCtx = PatternPlan.lookupUnbinding(pattern.c, row.slots, keyMask);
+		if (keyWidth > 1 && row.source.indexName(sweepSubj, sweepPred, sweepObj, sweepCtx).isEmpty()) {
+			// same multi-branch restriction for the walked side: its cursor must be in full index tuple order
+			return null;
+		}
 		String sweepIndex = row.source.indexName(order, sweepSubj, sweepPred, sweepObj, sweepCtx);
 		if (!sweepAligned(sweepIndex, pattern, row, keySeqSlots, keyMask)) {
 			return null;
@@ -272,7 +281,7 @@ final class LmdbNativeChunkPipeline {
 	 * index (a non-key varying field or a slotless wildcard before the last key field means the key tuple stream is not
 	 * globally sorted).
 	 */
-	private static int[] leadingKeySequence(String rootIndex, PatternPlan root, RowState row, long keyMask) {
+	static int[] leadingKeySequence(String rootIndex, PatternPlan root, RowState row, long keyMask) {
 		if (rootIndex.length() != 4) {
 			return null;
 		}

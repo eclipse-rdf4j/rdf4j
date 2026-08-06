@@ -44,6 +44,27 @@ class LmdbNativeExplainTest {
 	}
 
 	@Test
+	void perRowReopensOfTheSameEntryPlanAggregateIntoOneInvocation() {
+		SingletonSet target = new SingletonSet();
+		target.setRuntimeTelemetryEnabled(true);
+		NativeSlotLayout layout = layout();
+
+		for (int i = 0; i < 128; i++) {
+			LmdbNativeRuntimePlan.Invocation invocation = LmdbNativeExplain.recordRuntimeEntryPlan(target,
+					SingletonPlan.INSTANCE, layout, 1L);
+			invocation.activate("bareExists", null);
+			invocation.complete();
+		}
+
+		assertThat(target.getStringMetricActual(TelemetryMetricNames.RUNTIME_PHYSICAL_PLAN))
+				.contains("  invocation[0]:")
+				.contains("    opens: 128")
+				.contains("    strategy: bareExists")
+				.contains("    status: COMPLETED")
+				.doesNotContain("invocation[1]:");
+	}
+
+	@Test
 	void executionStrategySummarizesDistinctObservedStrategiesDeterministically() {
 		SingletonSet target = new SingletonSet();
 		target.setExecutionSummaryEnabled(true);

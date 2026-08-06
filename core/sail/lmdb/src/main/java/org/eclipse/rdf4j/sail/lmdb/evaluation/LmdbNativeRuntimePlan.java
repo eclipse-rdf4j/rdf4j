@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -48,9 +49,7 @@ final class LmdbNativeRuntimePlan {
 				target.setQueryModelMetadata(SUMMARY_KEY, summary);
 			}
 		}
-		Invocation invocation = summary.begin(entryPlan, layout.slotNames(), initialBoundMask);
-		summary.publish();
-		return invocation;
+		return summary.begin(entryPlan, layout.slotNames(), initialBoundMask);
 	}
 
 	static String planned(String kind, String plan) {
@@ -75,14 +74,36 @@ final class LmdbNativeRuntimePlan {
 	private static final class Summary {
 		private final TupleExpr target;
 		private final List<Invocation> invocations = new ArrayList<>();
+		private final Map<InvocationShape, Invocation> byShape = new LinkedHashMap<>();
 
 		private Summary(TupleExpr target) {
 			this.target = target;
 		}
 
-		private synchronized Invocation begin(SlotPlan entryPlan, String[] slotNames, long initialBoundMask) {
-			Invocation invocation = new Invocation(this, invocations.size(), entryPlan, slotNames, initialBoundMask);
-			invocations.add(invocation);
+		/**
+		 * One invocation per (entry plan, initial bound mask) shape: correlated subplans re-opened once per outer row
+		 * (EXISTS value steps, per-entry evaluation) fold into a single invocation whose {@code opens} count grows,
+		 * instead of appending one rendered block per row — the append-per-row form made every publish re-render a
+		 * summary that itself grew per row, turning telemetry collection quadratic in the outer row count.
+		 */
+		private Invocation begin(SlotPlan entryPlan, String[] slotNames, long initialBoundMask) {
+			Invocation invocation;
+			boolean fresh;
+			synchronized (this) {
+				InvocationShape shape = new InvocationShape(entryPlan, initialBoundMask);
+				invocation = byShape.get(shape);
+				fresh = invocation == null;
+				if (fresh) {
+					invocation = new Invocation(this, invocations.size(), entryPlan, slotNames, initialBoundMask);
+					invocations.add(invocation);
+					byShape.put(shape, invocation);
+				}
+			}
+			if (fresh) {
+				publish();
+			} else {
+				invocation.reopened();
+			}
 			return invocation;
 		}
 
@@ -103,6 +124,31 @@ final class LmdbNativeRuntimePlan {
 				invocation.render(out);
 			}
 			return out.toString();
+		}
+	}
+
+	/** Identity of a runtime entry: the same compiled plan object re-opened with the same runtime bound mask. */
+	private static final class InvocationShape {
+		private final SlotPlan entryPlan;
+		private final long initialBoundMask;
+
+		private InvocationShape(SlotPlan entryPlan, long initialBoundMask) {
+			this.entryPlan = entryPlan;
+			this.initialBoundMask = initialBoundMask;
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			if (!(other instanceof InvocationShape)) {
+				return false;
+			}
+			InvocationShape shape = (InvocationShape) other;
+			return entryPlan == shape.entryPlan && initialBoundMask == shape.initialBoundMask;
+		}
+
+		@Override
+		public int hashCode() {
+			return System.identityHashCode(entryPlan) * 31 + Long.hashCode(initialBoundMask);
 		}
 	}
 
@@ -132,6 +178,8 @@ final class LmdbNativeRuntimePlan {
 		private String adaptiveEpochs = "[]";
 		private Integer adaptiveFinalDepth;
 		private boolean completed;
+		private long opens = 1L;
+		private SlotPlan[] lastRenderedOrder;
 
 		private Invocation(Summary owner, int index, SlotPlan entryPlan, String[] slotNames, long initialBoundMask) {
 			this.owner = owner;
@@ -168,8 +216,37 @@ final class LmdbNativeRuntimePlan {
 					: "NOT_ATTEMPTED[eligibleFilters=" + eligible + "]";
 		}
 
+		/**
+		 * A shared (per-row re-opened) invocation republishes on power-of-two opens only: the log-many renders bound
+		 * the total string work while the rendered state still converges to the final one for single-open queries
+		 * (opens == 1 always publishes) and stays representative for aggregated ones.
+		 */
+		private synchronized boolean publishAllowed() {
+			return (opens & (opens - 1L)) == 0L;
+		}
+
+		private void publishIfAllowed() {
+			if (publishAllowed()) {
+				owner.publish();
+			}
+		}
+
+		void reopened() {
+			boolean publish;
+			synchronized (this) {
+				opens++;
+				publish = publishAllowed();
+			}
+			if (publish) {
+				owner.publish();
+			}
+		}
+
 		void activate(String strategy, SlotPlan[] order) {
 			synchronized (this) {
+				if (strategy.equals(this.strategy) && (order == null || order == lastRenderedOrder)) {
+					return;
+				}
 				this.strategy = strategy;
 				setActualOrder(order);
 				if (janinoUsed && !adjacencyUsed) {
@@ -178,7 +255,7 @@ final class LmdbNativeRuntimePlan {
 					adjacencyWhere = null;
 				}
 			}
-			owner.publish();
+			publishIfAllowed();
 		}
 
 		void restartWithEncounterOrderFallback(EncounterOrderFallback.Reason reason, SlotPlan entryOrder) {
@@ -203,35 +280,40 @@ final class LmdbNativeRuntimePlan {
 				adaptiveEpochs = "[]";
 				adaptiveFinalDepth = null;
 			}
-			owner.publish();
+			publishIfAllowed();
 		}
 
 		void actualOrder(SlotPlan[] order) {
+			boolean changed;
 			synchronized (this) {
-				setActualOrder(order);
+				changed = setActualOrder(order);
 			}
-			owner.publish();
+			if (changed) {
+				publishIfAllowed();
+			}
 		}
 
-		private void setActualOrder(SlotPlan[] order) {
-			if (order == null) {
-				return;
+		private boolean setActualOrder(SlotPlan[] order) {
+			if (order == null || order == lastRenderedOrder) {
+				return false;
 			}
 			ArrayList<String> rendered = new ArrayList<>(order.length);
 			for (SlotPlan child : order) {
 				rendered.add(LmdbNativeExplain.describe(child, slotNames, initialBoundMask));
 			}
 			actualOrder = List.copyOf(rendered);
+			lastRenderedOrder = order;
+			return true;
 		}
 
 		void janinoDeclined(String reason) {
 			synchronized (this) {
-				if (janinoUsed) {
+				if (janinoUsed || reason.equals(janinoReason)) {
 					return;
 				}
 				janinoReason = reason;
 			}
-			owner.publish();
+			publishIfAllowed();
 		}
 
 		void janinoActivated(String route, SlotPlan[] order) {
@@ -242,7 +324,7 @@ final class LmdbNativeRuntimePlan {
 				setActualOrder(order);
 				generatedOrder = actualOrder;
 			}
-			owner.publish();
+			publishIfAllowed();
 		}
 
 		NativeLmdbQuerySource.AdjacencyAccessObserver adjacencyAccessAt(String where) {
@@ -261,7 +343,7 @@ final class LmdbNativeRuntimePlan {
 						publish = matched.incrementAndShouldPublish();
 					}
 				}
-				if (publish) {
+				if (publish && publishAllowed()) {
 					owner.publish();
 				}
 			};
@@ -269,14 +351,15 @@ final class LmdbNativeRuntimePlan {
 
 		void adjacencyDecision(String state, String reason, String where) {
 			synchronized (this) {
-				if (adjacencyUsed) {
+				if (adjacencyUsed || state.equals(adjacencyState) && reason.equals(adjacencyReason)
+						&& Objects.equals(where, adjacencyWhere)) {
 					return;
 				}
 				adjacencyState = state;
 				adjacencyReason = reason;
 				adjacencyWhere = where;
 			}
-			owner.publish();
+			publishIfAllowed();
 		}
 
 		synchronized void adjacencyMembershipCheck(String where, boolean rejected) {
@@ -297,7 +380,7 @@ final class LmdbNativeRuntimePlan {
 				adjacencyReason = "RUNTIME_COST_REJECTED[membershipChecks=" + checks + ",rowsRejected=" + misses
 						+ "]";
 			}
-			owner.publish();
+			publishIfAllowed();
 		}
 
 		void adaptivePlacement(String epochs, int finalDepth) {
@@ -307,18 +390,21 @@ final class LmdbNativeRuntimePlan {
 				adaptiveEpochs = epochs;
 				adaptiveFinalDepth = finalDepth;
 			}
-			owner.publish();
+			publishIfAllowed();
 		}
 
 		void publish() {
-			owner.publish();
+			publishIfAllowed();
 		}
 
 		void complete() {
 			synchronized (this) {
+				if (completed) {
+					return;
+				}
 				completed = true;
 			}
-			owner.publish();
+			publishIfAllowed();
 		}
 
 		private synchronized void render(StringBuilder out) {
@@ -327,6 +413,8 @@ final class LmdbNativeRuntimePlan {
 					.append("]:")
 					.append("\n    status: ")
 					.append(completed ? "COMPLETED" : "ACTIVE_OR_PARTIAL")
+					.append("\n    opens: ")
+					.append(opens)
 					.append("\n    strategy: ")
 					.append(strategy)
 					.append("\n    initialBoundMask: 0x")

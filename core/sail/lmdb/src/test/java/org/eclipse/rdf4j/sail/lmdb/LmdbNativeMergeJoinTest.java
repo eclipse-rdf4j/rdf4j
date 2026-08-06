@@ -40,6 +40,7 @@ class LmdbNativeMergeJoinTest {
 
 	private static final String EX = "http://example.com/";
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
+	private static final String PARALLEL_FLAG = "rdf4j.lmdb.parallel.enabled";
 	private static final String MANY_TO_MANY_QUERY = "PREFIX ex: <" + EX + ">\n"
 			+ "SELECT ?left ?key ?right WHERE { ?left ex:key ?key . ?right ex:key ?key }";
 	private static final String SPARSE_QUERY = "PREFIX ex: <" + EX + ">\n"
@@ -78,6 +79,7 @@ class LmdbNativeMergeJoinTest {
 		System.clearProperty(LmdbNativeMergeJoin.MAX_RUN_ROWS_PROPERTY);
 		System.clearProperty(LmdbNativeHashJoin.ENABLED_PROPERTY);
 		System.clearProperty(LmdbNativeHashJoin.MIN_ROWS_PROPERTY);
+		System.clearProperty(PARALLEL_FLAG);
 		repository.shutDown();
 	}
 
@@ -187,7 +189,7 @@ class LmdbNativeMergeJoinTest {
 	}
 
 	@Test
-	void twoSharedVariablesDeclineToHashJoin() {
+	void twoFullyCoveredSharedVariablesMatchGenericViaCountingBranch() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
 			IRI key2 = vf.createIRI(EX, "key2");
@@ -195,13 +197,122 @@ class LmdbNativeMergeJoinTest {
 				connection.add(vf.createIRI(EX, "row" + i), key2, vf.createIRI(EX, "key" + (i % 20)));
 			}
 		}
+		// the second pattern is fully covered by the shared variables: factorized rows absorbs it as a counting
+		// branch, so neither batch join engages — parity is the contract here
 		String query = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT ?row ?key WHERE { ?row ex:key ?key . ?row ex:key2 ?key }";
 		List<String> generic = genericRows(query);
 		resetCounters();
 
 		assertThat(rows(query)).isEqualTo(generic).hasSize(200);
-		assertThat(LmdbNativeMergeJoin.JOINS.get()).isZero();
+	}
+
+	@Test
+	void multiKeyProbeStageUsesMergeWalkWithRuns() {
+		addValuePairData();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			IRI valueA = vf.createIRI(EX, "valueA");
+			IRI marker = vf.createIRI(EX, "marker");
+			IRI next = vf.createIRI(EX, "next");
+			for (int i = 0; i < 300; i++) {
+				connection.add(vf.createIRI(EX, "pairValue" + i), next, vf.createIRI(EX, "nextValue" + i));
+			}
+			for (int s = 0; s < 100; s++) {
+				connection.add(vf.createIRI(EX, "pairSubject" + s), valueA, marker);
+			}
+		}
+		// the selective marker pattern roots the chain; ?y is consumed by the third pattern, so the
+		// (?a, ?p)-keyed second pattern stays a chunk probe stage whose walked runs hold repeated values;
+		// morsel parallelism would break the ordered root stream
+		System.setProperty(PARALLEL_FLAG, "false");
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?a ?y ?z WHERE { ?a ?p ex:marker . ?a ?p ?y . ?y ex:next ?z }";
+		List<String> generic = genericRows(query);
+		resetCounters();
+		long walksBefore = LmdbNativeChunkPipeline.MERGE_WALKS.get();
+
+		assertThat(rows(query)).isEqualTo(generic).isNotEmpty();
+		assertThat(LmdbNativeChunkPipeline.MERGE_WALKS.get()).isGreaterThan(walksBefore);
+	}
+
+	@Test
+	void multiKeySparseMergeWalkSeeksAcrossGaps() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			IRI predicate = vf.createIRI(EX, "sparseWalkP");
+			IRI marker = vf.createIRI(EX, "marker");
+			IRI next = vf.createIRI(EX, "next");
+			for (int i = 0; i < 3000; i++) {
+				IRI subject = vf.createIRI(EX, "sparseWalk" + i);
+				IRI value = vf.createIRI(EX, "walkValue" + i);
+				connection.add(subject, predicate, value);
+				connection.add(value, next, vf.createIRI(EX, "nextValue" + i));
+				if (i % 30 == 0) {
+					connection.add(subject, predicate, marker);
+				}
+			}
+		}
+		System.setProperty(PARALLEL_FLAG, "false");
+		// the selective marker pattern roots the chain; the (?a, ?p) walk skips ~30 keys between matches
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?a ?y ?z WHERE { ?a ?p ex:marker . ?a ?p ?y . ?y ex:next ?z }";
+		List<String> generic = genericRows(query);
+		resetCounters();
+		long walksBefore = LmdbNativeChunkPipeline.MERGE_WALKS.get();
+		long seeksBefore = LmdbNativeChunkPipeline.MERGE_SEEKS.get();
+
+		assertThat(rows(query)).isEqualTo(generic).hasSize(100);
+		assertThat(LmdbNativeChunkPipeline.MERGE_WALKS.get()).isGreaterThan(walksBefore);
+		assertThat(LmdbNativeChunkPipeline.MERGE_SEEKS.get()).isGreaterThan(seeksBefore);
+	}
+
+	@Test
+	void multiKeyValuePairsUseBatchMergeJoin() {
+		addValuePairData();
+		// keys (?a, ?p) lead both sides' spoc order while ?x and ?y keep each pattern from full coverage
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?a ?x ?y WHERE { ?a ?p ?x . ?a ?p ?y }";
+		List<String> generic = genericRows(query);
+		resetCounters();
+
+		assertThat(rows(query)).isEqualTo(generic);
+		assertThat(LmdbNativeMergeJoin.JOINS.get()).isOne();
+	}
+
+	private void addValuePairData() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			IRI valueA = vf.createIRI(EX, "valueA");
+			IRI valueB = vf.createIRI(EX, "valueB");
+			for (int i = 0; i < 300; i++) {
+				IRI subject = vf.createIRI(EX, "pairSubject" + (i % 100));
+				IRI predicate = i % 2 == 0 ? valueA : valueB;
+				connection.add(subject, predicate, vf.createIRI(EX, "pairValue" + i));
+			}
+		}
+	}
+
+	@Test
+	void skewedRunsBufferTheSmallerSideInsteadOfRescanning() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			IRI sparseKey = vf.createIRI(EX, "sparseKey");
+			for (int i = 0; i < 60; i++) {
+				connection.add(vf.createIRI(EX, "sparseRow" + i), sparseKey, vf.createIRI(EX, "key" + (i % 20)));
+			}
+		}
+		// ex:key runs are 10 rows per key, ex:sparseKey runs are 3: a cap of 4 overflows one side only
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?left ?key ?right WHERE { ?left ex:sparseKey ?key . ?right ex:key ?key }";
+		List<String> generic = genericRows(query);
+		resetCounters();
+		System.setProperty(LmdbNativeMergeJoin.MAX_RUN_ROWS_PROPERTY, "4");
+
+		assertThat(rows(query)).isEqualTo(generic).hasSize(600);
+		assertThat(LmdbNativeMergeJoin.JOINS.get()).isOne();
+		assertThat(LmdbNativeMergeJoin.SMALLER_RUN_BUFFERS.get()).isPositive();
+		assertThat(LmdbNativeMergeJoin.RUN_RESCANS.get()).isZero();
 	}
 
 	@Test
@@ -264,6 +375,7 @@ class LmdbNativeMergeJoinTest {
 		LmdbNativeMergeJoin.BATCHES.set(0);
 		LmdbNativeMergeJoin.SEEKS.set(0);
 		LmdbNativeMergeJoin.RUN_RESCANS.set(0);
+		LmdbNativeMergeJoin.SMALLER_RUN_BUFFERS.set(0);
 		LmdbNativeHashJoin.BUILDS.set(0);
 		LmdbNativeHashJoin.PROBE_BATCHES.set(0);
 		LmdbNativeHashJoin.CAP_FALLBACKS.set(0);
