@@ -1,3 +1,8 @@
+> **Reference only — not the governing RDF4J plan.** This document analyzes an external MySQL optimizer and includes
+> scalar cardinality formulas, one implementation sequence, and heuristic graph simplification. The governing RDF4J
+> direction is `.agent/execplans/GH-0000-frontier-estimator-cost-model-roadmap.md`: preserve rich Frontier state,
+> use exact continuation classes, retain multidimensional Pareto alternatives, and treat degradation explicitly.
+
 I treated the uploaded archive as the source of truth and read the core hypergraph optimizer path under `sql/join_optimizer/`. The short version of the architecture is:
 
 ```text

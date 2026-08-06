@@ -1,5 +1,10 @@
 # LMDB Query Optimizer — Root Cause Analysis & Roadmap to a State-of-the-Art Engine
 
+> **Historical RCA; roadmap superseded on 2026-08-06.** The diagnosis remains useful evidence, but its implementation
+> phases are not current instructions. In particular, estimators must not collapse their state into a single
+> `PlanCost`, subset DP must not retain one scalar winner, and Pareto/learned work is not optional. See
+> `.agent/execplans/GH-0000-frontier-estimator-cost-model-roadmap.md`.
+
 *2026-07-07. Routine C investigation (no production code changed). Produced from a 27-agent
 orchestrated investigation: plan diffs of `result-latests.txt` vs prior runs, git archaeology
 2026-06-03 → HEAD, 12 component audits, 4 research deep-dives (papers2/ + mysql/), adversarial
