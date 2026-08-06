@@ -56,6 +56,17 @@ final class LmdbNativeKernelBindings {
 		}
 	}
 
+	/** One computed-BIND registration, index-aligned with the IR's {@code BindHook.bindId}. */
+	static final class BindHook {
+		final LmdbNativeCompiledInlineId computed;
+		final int[] argSlots; // engine slots receiving computeBind's a0..a1, ascending mask order
+
+		BindHook(LmdbNativeCompiledInlineId computed, int[] argSlots) {
+			this.computed = computed;
+			this.argSlots = argSlots;
+		}
+	}
+
 	// Aggregate-output encodings for KernelGroupLayout (plan 21).
 	static final int ENC_LONG_COUNT = 0;
 	static final int ENC_EXACT_NUMERIC = 1;
@@ -130,6 +141,7 @@ final class LmdbNativeKernelBindings {
 	final int[] entrySlotIds;
 	final DomainRequest[] keyDomains;
 	final FilterHook[] filterHooks;
+	final BindHook[] bindHooks;
 	final int[] columnEngineSlots;
 	final List<MaskedFilter> residualFilters;
 	/** Bind-time order descriptor for each kernel scan site; null means the source's natural index choice. */
@@ -180,11 +192,20 @@ final class LmdbNativeKernelBindings {
 			DomainRequest[] keyDomains, FilterHook[] filterHooks, int[] columnEngineSlots,
 			List<MaskedFilter> residualFilters, StatementOrder[] scanOrders, PlanRequest[] planRequests,
 			KernelGroupLayout groupLayout, boolean hooksRequired, int distinctExpected) {
+		this(adjacencies, constants, entrySlotIds, keyDomains, filterHooks, new BindHook[0], columnEngineSlots,
+				residualFilters, scanOrders, planRequests, groupLayout, hooksRequired, distinctExpected);
+	}
+
+	LmdbNativeKernelBindings(AdjacencyRequest[] adjacencies, long[] constants, int[] entrySlotIds,
+			DomainRequest[] keyDomains, FilterHook[] filterHooks, BindHook[] bindHooks, int[] columnEngineSlots,
+			List<MaskedFilter> residualFilters, StatementOrder[] scanOrders, PlanRequest[] planRequests,
+			KernelGroupLayout groupLayout, boolean hooksRequired, int distinctExpected) {
 		this.adjacencies = adjacencies;
 		this.constants = constants;
 		this.entrySlotIds = entrySlotIds;
 		this.keyDomains = keyDomains;
 		this.filterHooks = filterHooks;
+		this.bindHooks = bindHooks;
 		this.columnEngineSlots = columnEngineSlots;
 		this.residualFilters = residualFilters;
 		this.scanOrders = scanOrders;
@@ -195,7 +216,7 @@ final class LmdbNativeKernelBindings {
 	}
 
 	boolean needsHooks() {
-		return filterHooks.length > 0 || hooksRequired;
+		return filterHooks.length > 0 || bindHooks.length > 0 || hooksRequired;
 	}
 
 	/**

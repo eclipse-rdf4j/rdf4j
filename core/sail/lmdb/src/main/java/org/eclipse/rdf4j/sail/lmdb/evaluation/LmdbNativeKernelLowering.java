@@ -128,6 +128,21 @@ final class LmdbNativeKernelLowering {
 	/** HAVING guards sunk into an aggregate kernel terminal (M7 witness). */
 	static final AtomicLong HAVING_SINKS = new AtomicLong();
 
+	/**
+	 * Enables lowering computed BIND copies through {@code hooks.computeBind} (three-tier parity plan, M7). Only
+	 * expressions the inline-id expression compiler already serves interpreted (constants and guaranteed-inline
+	 * functions) ever reach this seam, so the hook evaluates the exact same compiled evaluator the interpreted
+	 * {@code ExtensionCursor} would. Kill switch, default ON: a shape that does not lower runs exactly as before.
+	 */
+	static final String BIND_HOOK_PROPERTY = "rdf4j.lmdb.janinoCodegen.bindHooks";
+
+	static boolean bindHooksEnabled() {
+		return Boolean.parseBoolean(System.getProperty(BIND_HOOK_PROPERTY, "true"));
+	}
+
+	/** Computed BIND copies lowered through the bind-hook seam (M7 witness; constant folds do not count). */
+	static final AtomicLong BIND_HOOK_LOWERINGS = new AtomicLong();
+
 	private static final int MAX_CHILDREN = 12;
 	private static final int MAX_HOOK_ARGS = 3;
 	/** Rows of a multi-variable VALUES table the lowering will unroll into generated source. */
@@ -845,6 +860,7 @@ final class LmdbNativeKernelLowering {
 
 		final List<LmdbNativeKernelBindings.AdjacencyRequest> adjacencies = new ArrayList<>();
 		final List<LmdbNativeKernelBindings.FilterHook> filterHooks = new ArrayList<>();
+		final List<LmdbNativeKernelBindings.BindHook> bindHooks = new ArrayList<>();
 		final List<Integer> columnEngineSlots = new ArrayList<>();
 		final List<Integer> columnOrderedDomains = new ArrayList<>();
 		final List<MaskedFilter> residualFilters = new ArrayList<>();
@@ -1307,13 +1323,15 @@ final class LmdbNativeKernelLowering {
 				return false;
 			}
 			for (CopyBinding copy : extension.copies) {
-				if (copy.computed != null) {
-					reason = reasonPrefix + "bind-computed";
-					return false;
-				}
 				if (!slotFresh(copy.targetSlot)) {
 					reason = reasonPrefix + "bind-target-bound";
 					return false;
+				}
+				if (copy.computed != null) {
+					if (!lowerComputedCopy(copy)) {
+						return false;
+					}
+					continue;
 				}
 				Operand source;
 				if (copy.sourceSlot >= 0) {
@@ -1339,6 +1357,67 @@ final class LmdbNativeKernelLowering {
 				}
 				currentDepthNodes().add(new LmdbNativeKernelIr.BindAlias(source, target));
 			}
+			return true;
+		}
+
+		/**
+		 * Lowers one computed BIND copy through {@code hooks.computeBind} (three-tier parity plan, M7). The hook
+		 * evaluates the exact compiled inline-id evaluator the interpreted {@code ExtensionCursor} would run, against a
+		 * scratch row carrying the argument ids, so semantics — including error-means-unbound — are inherited rather
+		 * than re-implemented. Restrictions mark real boundaries: a non-repeatable expression (RAND-family) would need
+		 * one evaluation per solution in encounter order, which a re-runnable kernel cannot promise; the IR node takes
+		 * at most two arguments; and a zero-input repeatable expression is folded here into a plain constant alias so
+		 * constant BINDs never pay a per-row hook call.
+		 */
+		private boolean lowerComputedCopy(CopyBinding copy) {
+			if (!bindHooksEnabled()) {
+				reason = reasonPrefix + "bind-computed";
+				return false;
+			}
+			if (!copy.computed.encounterOrderReplaySafe()) {
+				reason = reasonPrefix + "bind-computed-unstable";
+				return false;
+			}
+			long mask = copy.computed.requiredMask();
+			if (mask == 0L) {
+				long folded = copy.computed.id((LmdbNativeSlotReader) slot -> LmdbNativeAggregateCompiler.UNKNOWN);
+				if (folded != LmdbNativeAggregateCompiler.UNKNOWN) {
+					int target = newColumn(copy.targetSlot);
+					currentDepthNodes().add(new LmdbNativeKernelIr.BindAlias(
+							Operand.constant(constantIndex(folded)), target));
+					return true;
+				}
+				// An always-erroring constant expression falls through to the hook, which reproduces the
+				// unbound-target semantics per row; it is not worth a special empty-column form.
+			}
+			int bits = Long.bitCount(mask);
+			if (bits > 2) {
+				reason = reasonPrefix + "bind-computed-args";
+				return false;
+			}
+			int[] argSlots = new int[bits];
+			Operand[] args = new Operand[bits];
+			int out = 0;
+			for (int slot = 0; slot < 64 && out < bits; slot++) {
+				if ((mask >>> slot & 1L) == 0L) {
+					continue;
+				}
+				Operand operand = slotOperand(slot);
+				if (operand == null) {
+					reason = reasonPrefix + "bind-source-unavailable";
+					return false;
+				}
+				argSlots[out] = slot;
+				args[out] = operand;
+				out++;
+			}
+			int target = newColumn(copy.targetSlot);
+			// The expression can error on any row (leaving the target unbound while the row survives), so the column
+			// is maybe-null regardless of its inputs.
+			optionalColMask |= 1L << target;
+			bindHooks.add(new LmdbNativeKernelBindings.BindHook(copy.computed, argSlots));
+			currentDepthNodes().add(new LmdbNativeKernelIr.BindHook(bindHooks.size() - 1, args, target));
+			BIND_HOOK_LOWERINGS.incrementAndGet();
 			return true;
 		}
 
@@ -2770,7 +2849,8 @@ final class LmdbNativeKernelLowering {
 			LmdbNativeKernelBindings bindings = new LmdbNativeKernelBindings(
 					adjacencies.toArray(new LmdbNativeKernelBindings.AdjacencyRequest[0]), constantArray, entryArray,
 					keyDomains.toArray(new LmdbNativeKernelBindings.DomainRequest[0]),
-					filterHooks.toArray(new LmdbNativeKernelBindings.FilterHook[0]), columnArray, residualFilters,
+					filterHooks.toArray(new LmdbNativeKernelBindings.FilterHook[0]),
+					bindHooks.toArray(new LmdbNativeKernelBindings.BindHook[0]), columnArray, residualFilters,
 					scanOrders.toArray(new StatementOrder[0]),
 					planRequests.toArray(new LmdbNativeKernelBindings.PlanRequest[0]),
 					new LmdbNativeKernelBindings.KernelGroupLayout(groupSlots.clone(), outs), hooksRequired,
@@ -2815,7 +2895,8 @@ final class LmdbNativeKernelLowering {
 			LmdbNativeKernelBindings bindings = new LmdbNativeKernelBindings(
 					adjacencies.toArray(new LmdbNativeKernelBindings.AdjacencyRequest[0]), constantArray, entryArray,
 					keyDomains.toArray(new LmdbNativeKernelBindings.DomainRequest[0]),
-					filterHooks.toArray(new LmdbNativeKernelBindings.FilterHook[0]), columnArray, residualFilters,
+					filterHooks.toArray(new LmdbNativeKernelBindings.FilterHook[0]),
+					bindHooks.toArray(new LmdbNativeKernelBindings.BindHook[0]), columnArray, residualFilters,
 					scanOrders.toArray(new StatementOrder[0]),
 					planRequests.toArray(new LmdbNativeKernelBindings.PlanRequest[0]), null, false, 16);
 			return new Lowered(kernel, bindings);

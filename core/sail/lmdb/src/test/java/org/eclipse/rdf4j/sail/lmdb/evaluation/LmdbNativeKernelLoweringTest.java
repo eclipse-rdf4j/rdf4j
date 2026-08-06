@@ -391,17 +391,47 @@ class LmdbNativeKernelLoweringTest {
 	}
 
 	/**
-	 * A computed BIND must decline: it needs {@code LmdbNativeKernelHooks.computeBind}, which throws. Lowering it to a
-	 * BindAlias would silently substitute the wrong value, so the decline is the correctness boundary.
+	 * Computed BINDs lower through {@code hooks.computeBind} since the M7 bind-hook seam. Three boundaries pinned here:
+	 * a zero-input repeatable expression folds at lowering time into a constant alias (no per-row hook), an
+	 * input-bearing expression registers a bind hook carrying its argument slots, and a non-repeatable expression
+	 * (RAND-family) still declines because a re-runnable kernel cannot promise one evaluation per solution.
 	 */
 	@Test
-	void aggregateRungDeclinesAComputedBind() {
+	void aggregateRungLowersAComputedBindThroughTheBindHookSeam() {
+		LmdbNativeCompiledInlineId constant = new LmdbNativeCompiledInlineId(0L, true, row -> PRED);
+		LmdbNativeKernelLowering.Lowered folded = lowerCounting(computedBindCore(constant), 2);
+		assertNotNull(folded, "a zero-input repeatable expression must fold into a constant alias");
+		assertEquals(0, folded.bindings.bindHooks.length, "a folded constant must not register a bind hook");
+
+		LmdbNativeCompiledInlineId dependent = new LmdbNativeCompiledInlineId(1L << 1, true, row -> row.id(1));
+		LmdbNativeKernelLowering.Lowered hooked = lowerCounting(computedBindCore(dependent), 2);
+		assertNotNull(hooked, "an input-bearing computed BIND must lower through the bind hook");
+		assertEquals(1, hooked.bindings.bindHooks.length, "one computed copy registers exactly one bind hook");
+		assertArrayEquals(new int[] { 1 }, hooked.bindings.bindHooks[0].argSlots);
+
+		LmdbNativeCompiledInlineId unstable = new LmdbNativeCompiledInlineId(0L, false, row -> PRED);
+		assertNull(lowerCounting(computedBindCore(unstable), 2),
+				"a non-repeatable expression must keep declining");
+	}
+
+	/** The kill switch restores the pre-M7 decline unchanged. */
+	@Test
+	void bindHookFlagOffRestoresTheComputedBindDecline() {
+		System.setProperty(LmdbNativeKernelLowering.BIND_HOOK_PROPERTY, "false");
+		try {
+			LmdbNativeCompiledInlineId computed = new LmdbNativeCompiledInlineId(0L, true, row -> PRED);
+			assertNull(lowerCounting(computedBindCore(computed), 2),
+					"flag off must keep computed BINDs out of the kernel");
+		} finally {
+			System.clearProperty(LmdbNativeKernelLowering.BIND_HOOK_PROPERTY);
+		}
+	}
+
+	private static SlotPlan computedBindCore(LmdbNativeCompiledInlineId computed) {
 		SlotPlan inner = new MultiJoinPlan(new SlotPlan[] { pattern(Term.slot(0), Term.slot(1)) },
 				new MaskedFilter[0]);
-		LmdbNativeCompiledInlineId computed = new LmdbNativeCompiledInlineId(0L, true, row -> PRED);
-		SlotPlan core = SlotPlan.join(pattern(Term.slot(1), Term.slot(2)),
+		return SlotPlan.join(pattern(Term.slot(1), Term.slot(2)),
 				new ExtensionPlan(inner, new CopyBinding[] { CopyBinding.computed(3, computed) }));
-		assertNull(lowerCounting(core, 2), "a computed BIND has no kernel representation yet");
 	}
 
 	// ------------------------------------------------------------------

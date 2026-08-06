@@ -45,6 +45,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	private final RowState scratch;
 	private final LmdbNativeValueCodec codec;
 	private final LmdbNativeKernelBindings.FilterHook[] filters;
+	private final LmdbNativeKernelBindings.BindHook[] binds;
 	private final ValueComparator comparator = new ValueComparator();
 	private final AggKind[] numericKinds;
 	private final Literal[][] numericSums;
@@ -68,6 +69,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		this.scratch.memoryScope = liveRow.memoryScope;
 		this.codec = liveRow.source.nativeValueCodec();
 		this.filters = filterHooks;
+		this.binds = bindings.bindHooks;
 		int aggregateCount = bindings.groupLayout == null ? 0 : bindings.groupLayout.outs.length;
 		this.numericKinds = new AggKind[aggregateCount];
 		this.numericSums = new Literal[aggregateCount][];
@@ -126,9 +128,38 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		}
 	}
 
+	/**
+	 * Computed BIND (three-tier parity plan, M7): installs the argument ids into the registered engine slots of the
+	 * scratch row — exactly the {@link #testFilter} discipline, so an unbound argument ({@code -1}) leaves its slot
+	 * unbound — and runs the same compiled inline-id evaluator the interpreted {@code ExtensionCursor} would. An
+	 * evaluation error surfaces as UNKNOWN, which the generated code writes into the target column as the unbound
+	 * sentinel: the row survives with the target unbound, matching BIND's error semantics.
+	 */
 	@Override
 	public long computeBind(int bindId, long a0, long a1) {
-		throw new UnsupportedOperationException("bind hooks are not registered in this tier yet (plan 20, M1)");
+		LmdbNativeKernelBindings.BindHook hook = binds[bindId];
+		int[] argSlots = hook.argSlots;
+		long previous0 = UNKNOWN;
+		long previous1 = UNKNOWN;
+		int installed = 0;
+		try {
+			if (argSlots.length > 0) {
+				previous0 = scratch.replaceSlot(argSlots[0], a0);
+				installed = 1;
+			}
+			if (argSlots.length > 1) {
+				previous1 = scratch.replaceSlot(argSlots[1], a1);
+				installed = 2;
+			}
+			return hook.computed.id(scratch);
+		} finally {
+			if (installed > 1) {
+				scratch.replaceSlot(argSlots[1], previous1);
+			}
+			if (installed > 0) {
+				scratch.replaceSlot(argSlots[0], previous0);
+			}
+		}
 	}
 
 	@Override

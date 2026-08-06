@@ -104,6 +104,21 @@ public class LmdbNativeKernelAggregateTest {
 			+ "SELECT ?g (SUM(?v) AS ?total) WHERE {\n"
 			+ "  ?s ex:bucket ?g ; ex:groupScore ?v . } GROUP BY ?g HAVING(SUM(?v) > 5.0)";
 
+	// M7 bind hook: STRLEN is the one guaranteed-inline computed BIND the expression compiler serves, so this is the
+	// shape whose kernel decline (`bind-computed`) the bind-hook seam must remove (BIND_HOOK_LOWERINGS witness).
+	private static final String BIND_STRLEN_GROUPED_QUERY = "PREFIX ex: <" + EX + ">\n"
+			+ "SELECT ?len (COUNT(*) AS ?n) WHERE { ?s ex:word ?w . BIND(STRLEN(?w) AS ?len) }\n"
+			+ "GROUP BY ?len";
+	// One object is an IRI and one a plain integer: STRLEN errors on both, the target stays unbound, the row survives
+	// — the kernel's UNKNOWN column convention must reproduce the interpreted error-means-unbound semantics exactly.
+	private static final String BIND_STRLEN_ERROR_QUERY = "PREFIX ex: <" + EX + ">\n"
+			+ "SELECT ?len (COUNT(*) AS ?n) WHERE { ?s ex:token ?w . BIND(STRLEN(?w) AS ?len) }\n"
+			+ "GROUP BY ?len";
+	// A constant expression folds at lowering time into a plain alias: the kernel must engage with ZERO bind hooks.
+	private static final String BIND_CONSTANT_QUERY = "PREFIX ex: <" + EX + ">\n"
+			+ "SELECT ?x (COUNT(*) AS ?n) WHERE { ?s ex:word ?w . BIND(5 AS ?x) }\n"
+			+ "GROUP BY ?x";
+
 	// The VALUES literal is absent from the store, so its id is plan-local synthetic: before the plan-22 Step-0
 	// guard relaxation the whole NOT EXISTS compiled to an unintrospectable generic lambda (catalog HC q10's shape).
 	private static final String SYNTHETIC_VALUES_WITNESS_QUERY = "PREFIX ex: <" + EX + ">\n"
@@ -190,6 +205,17 @@ public class LmdbNativeKernelAggregateTest {
 			connection.add(vf.createIRI(EX + "f0"), floatingScore, vf.createLiteral(1.0e16));
 			connection.add(vf.createIRI(EX + "f1"), floatingScore, vf.createLiteral(-1.0e16));
 			connection.add(vf.createIRI(EX + "f2"), floatingScore, vf.createLiteral(1.0));
+			IRI word = vf.createIRI(EX + "word");
+			connection.add(vf.createIRI(EX + "w0"), word, vf.createLiteral("a"));
+			connection.add(vf.createIRI(EX + "w1"), word, vf.createLiteral("ab"));
+			connection.add(vf.createIRI(EX + "w2"), word, vf.createLiteral("abc"));
+			connection.add(vf.createIRI(EX + "w3"), word, vf.createLiteral("xyz"));
+			connection.add(vf.createIRI(EX + "w4"), word, vf.createLiteral("hello"));
+			IRI token = vf.createIRI(EX + "token");
+			connection.add(vf.createIRI(EX + "t0"), token, vf.createLiteral("x"));
+			connection.add(vf.createIRI(EX + "t1"), token, vf.createLiteral("xyz"));
+			connection.add(vf.createIRI(EX + "t2"), token, vf.createLiteral(BigInteger.valueOf(42)));
+			connection.add(vf.createIRI(EX + "t3"), token, vf.createIRI(EX + "not-a-string"));
 			connection.commit();
 		}
 	}
@@ -238,6 +264,10 @@ public class LmdbNativeKernelAggregateTest {
 					+ " } ?a ex:bucket ?g ; ex:groupScore ?v }");
 			rows("PREFIX ex: <" + EX
 					+ "> SELECT * WHERE { VALUES ?a { ex:f0 ex:f1 ex:f2 } ?a ex:floatingScore ?v }");
+			rows("PREFIX ex: <" + EX
+					+ "> SELECT * WHERE { VALUES ?a { ex:w0 ex:w1 ex:w2 ex:w3 ex:w4 } ?a ex:word ?w }");
+			rows("PREFIX ex: <" + EX
+					+ "> SELECT * WHERE { VALUES ?a { ex:t0 ex:t1 ex:t2 ex:t3 } ?a ex:token ?w }");
 		}
 		for (int round = 0; round < 300 && KernelExecutionTestAccess.aggOpened() == 0L; round++) {
 			rows(query);
@@ -422,6 +452,59 @@ public class LmdbNativeKernelAggregateTest {
 			assertEquals(expected, rows(HAVING_GROUPED_QUERY));
 		} finally {
 			System.clearProperty(LmdbNativeKernelLowering.HAVING_SINK_PROPERTY);
+		}
+	}
+
+	@Test
+	public void strlenBindLowersThroughTheBindHookAndMatchesGeneric() {
+		List<String> expected = genericRows(BIND_STRLEN_GROUPED_QUERY);
+		assertTrue(expected.size() >= 4, "fixture must produce several distinct lengths, got " + expected);
+		warmUntilEngaged(BIND_STRLEN_GROUPED_QUERY);
+		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
+				"aggregate rung never engaged for the computed-BIND shape (planned="
+						+ KernelExecutionTestAccess.aggPlanned() + ", declined="
+						+ KernelExecutionTestAccess.aggDeclined() + ")");
+		assertTrue(KernelExecutionTestAccess.bindHookLowerings() > 0L,
+				"computed BIND was not lowered through the bind-hook seam");
+		assertEquals(expected, rows(BIND_STRLEN_GROUPED_QUERY));
+	}
+
+	@Test
+	public void strlenBindErrorLeavesTheTargetUnboundInsideTheKernel() {
+		List<String> expected = genericRows(BIND_STRLEN_ERROR_QUERY);
+		warmUntilEngaged(BIND_STRLEN_ERROR_QUERY);
+		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
+				"aggregate rung never engaged for the erroring computed-BIND shape");
+		assertTrue(KernelExecutionTestAccess.bindHookLowerings() > 0L,
+				"erroring computed BIND was not lowered through the bind-hook seam");
+		assertEquals(expected, rows(BIND_STRLEN_ERROR_QUERY));
+	}
+
+	@Test
+	public void constantBindFoldsToAnAliasWithoutABindHook() {
+		List<String> expected = genericRows(BIND_CONSTANT_QUERY);
+		assertFalse(expected.isEmpty(), "fixture must produce the constant group");
+		warmUntilEngaged(BIND_CONSTANT_QUERY);
+		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
+				"aggregate rung never engaged for the constant-BIND shape");
+		assertEquals(0L, KernelExecutionTestAccess.bindHookLowerings(),
+				"a constant expression must fold at lowering time, not run a per-row hook");
+		assertEquals(expected, rows(BIND_CONSTANT_QUERY));
+	}
+
+	@Test
+	public void bindHookFlagOffKeepsCorrectResultsWithoutLowering() {
+		System.setProperty(LmdbNativeKernelLowering.BIND_HOOK_PROPERTY, "false");
+		try {
+			List<String> expected = genericRows(BIND_STRLEN_GROUPED_QUERY);
+			for (int round = 0; round < 20; round++) {
+				rows(BIND_STRLEN_GROUPED_QUERY);
+			}
+			assertEquals(0L, KernelExecutionTestAccess.bindHookLowerings(),
+					"flag off must keep the computed BIND outside the kernel");
+			assertEquals(expected, rows(BIND_STRLEN_GROUPED_QUERY));
+		} finally {
+			System.clearProperty(LmdbNativeKernelLowering.BIND_HOOK_PROPERTY);
 		}
 	}
 

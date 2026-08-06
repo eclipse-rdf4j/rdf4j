@@ -117,6 +117,11 @@ final class LmdbNativeParallelKernelAggregate {
 		if (!LmdbNativeKernelPartitions.filterHooksForkable(bindings.filterHooks)) {
 			return debugDecline("filter-not-forkable");
 		}
+		// Bind-hook evaluators are compiled against the query thread's source/codec and expose no fork SPI, so a
+		// computed BIND keeps the sequential kernel (v1; mirrors the filter-hook situation before plan 31).
+		if (bindings.bindHooks.length > 0) {
+			return debugDecline("bind-hook");
+		}
 		if (!bindings.residualFilters.isEmpty()) {
 			return debugDecline("residual-filter");
 		}
