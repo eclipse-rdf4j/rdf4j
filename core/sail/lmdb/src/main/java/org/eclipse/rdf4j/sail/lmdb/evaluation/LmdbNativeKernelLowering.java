@@ -861,7 +861,7 @@ final class LmdbNativeKernelLowering {
 		/** Try a direct LMDB scan before any adjacency view; set on the rungs' retry after a bind-time view failure. */
 		boolean preferScans;
 		long assuredMask;
-		String reason = "unknown";
+		String reason;
 
 		final List<List<Node>> nodesPerDepth = new ArrayList<>(); // nodes contributed by producer depth d
 		final List<Node> entryDepthFilters = new ArrayList<>(); // filters decidable before any producer
@@ -903,14 +903,14 @@ final class LmdbNativeKernelLowering {
 					|| pattern.p.hasSlot() || pattern.c.hasSlot() || pattern.c.isConstant()
 					|| pattern.contexts.isFixed() || pattern.s.bindConstant || pattern.o.bindConstant
 					|| pattern.statementOrder != null) {
-				reason = "optional-arm-guards";
+				reason = reasonPrefix + "optional-arm-guards";
 				return false;
 			}
 			Operand subject = operandOf(pattern.s);
 			Operand object = operandOf(pattern.o);
 			// A key that is itself optional would need non-well-designed scan semantics when null — decline.
 			if ((subject != null && operandMaybeNull(subject)) || (object != null && operandMaybeNull(object))) {
-				reason = "optional-chained-on-optional";
+				reason = reasonPrefix + "optional-chained-on-optional";
 				return false;
 			}
 			if (subject != null && object == null && pattern.o.hasSlot() && slotFresh(pattern.o.slot)) {
@@ -1001,6 +1001,7 @@ final class LmdbNativeKernelLowering {
 		Builder(RowState row, String reasonPrefix) {
 			this.row = row;
 			this.reasonPrefix = reasonPrefix;
+			this.reason = reasonPrefix + "unknown";
 			this.entryMask = row.boundMask();
 			this.slotColumn = new int[row.slots.length];
 			this.slotColumnDepth = new int[row.slots.length];
@@ -1658,7 +1659,7 @@ final class LmdbNativeKernelLowering {
 				if (lowerPatternAsScan(pattern)) {
 					return true;
 				}
-				reason = "pattern-guards";
+				reason = reasonPrefix + "pattern-guards";
 				return false;
 			}
 			// An ordered scan hint is a promise the consumer may rely on (ORDER BY satisfied by index order,
@@ -1667,7 +1668,7 @@ final class LmdbNativeKernelLowering {
 				if (lowerPatternAsScan(pattern)) {
 					return true;
 				}
-				reason = "pattern-ordered-scan";
+				reason = reasonPrefix + "pattern-ordered-scan";
 				return false;
 			}
 			Operand ctxMatch = null;
@@ -1736,7 +1737,7 @@ final class LmdbNativeKernelLowering {
 					if (lowerPatternAsScan(pattern)) {
 						return true;
 					}
-					reason = "pattern-ctx-shape";
+					reason = reasonPrefix + "pattern-ctx-shape";
 					return false;
 				}
 				int adj = adjacency(pattern.p.constant, true, false);
@@ -1755,7 +1756,7 @@ final class LmdbNativeKernelLowering {
 				witnessCtxLowering(ctxActive);
 				return true;
 			}
-			reason = "pattern-shape";
+			reason = reasonPrefix + "pattern-shape";
 			return false;
 		}
 
@@ -1871,12 +1872,12 @@ final class LmdbNativeKernelLowering {
 
 		boolean lowerMultiValuePattern(MultiValuePatternPlan plan) {
 			if (plan.fallback == null) {
-				reason = "multi-value-no-fallback";
+				reason = reasonPrefix + "multi-value-no-fallback";
 				return false;
 			}
 			int slot = plan.constrainedSlot;
 			if (slot < 0 || (entryMask >>> slot & 1L) == 1L || slotColumn[slot] >= 0) {
-				reason = "multi-value-slot-bound";
+				reason = reasonPrefix + "multi-value-slot-bound";
 				return false;
 			}
 			openDepth();
@@ -1893,7 +1894,7 @@ final class LmdbNativeKernelLowering {
 				return lowerValuesTable(plan);
 			}
 			if (!plan.bindsAllSlotsEveryRow) {
-				reason = "values-shape";
+				reason = reasonPrefix + "values-shape";
 				return false;
 			}
 			int slot = Long.numberOfTrailingZeros(plan.producedMask());
@@ -1909,7 +1910,7 @@ final class LmdbNativeKernelLowering {
 					}
 				}
 				if (id == LmdbNativeAggregateCompiler.UNKNOWN) {
-					reason = "values-missing-binding";
+					reason = reasonPrefix + "values-missing-binding";
 					return false;
 				}
 				domain[i] = id;
@@ -1920,7 +1921,7 @@ final class LmdbNativeKernelLowering {
 				// never had. A maybe-null operand is refused instead: unbound is not a member of any VALUES table, but
 				// an id-tier membership node would compare the -1 sentinel as if it were a term.
 				if (operandMaybeNull(alreadyBound)) {
-					reason = "values-slot-optional";
+					reason = reasonPrefix + "values-slot-optional";
 					return false;
 				}
 				// A membership test yields one row where the join would yield one per matching table row, so a table
@@ -1928,7 +1929,7 @@ final class LmdbNativeKernelLowering {
 				for (int i = 0; i < domain.length; i++) {
 					for (int j = i + 1; j < domain.length; j++) {
 						if (domain[i] == domain[j]) {
-							reason = "values-slot-bound-duplicates";
+							reason = reasonPrefix + "values-slot-bound-duplicates";
 							return false;
 						}
 					}
@@ -1967,7 +1968,7 @@ final class LmdbNativeKernelLowering {
 			long produced = plan.producedMask();
 			int variables = Long.bitCount(produced);
 			if (plan.rows.length < 2 || plan.rows.length > MAX_VALUES_TABLE_ROWS || variables > MAX_HOOK_ARGS * 2) {
-				reason = "values-shape";
+				reason = reasonPrefix + "values-shape";
 				return false;
 			}
 			for (int slot = 0; slot < slotColumn.length; slot++) {
@@ -1975,7 +1976,7 @@ final class LmdbNativeKernelLowering {
 					// One of the table's variables already has a value, so this is a join against the table rather
 					// than a seed. Sound handling is a per-variable membership test on matching rows, which the
 					// single-variable path does but this one does not model.
-					reason = "values-table-slot-bound";
+					reason = reasonPrefix + "values-table-slot-bound";
 					return false;
 				}
 			}
@@ -2000,7 +2001,7 @@ final class LmdbNativeKernelLowering {
 				}
 				if (branch.isEmpty()) {
 					// An all-UNDEF row is one empty solution, which the union node cannot carry as an empty branch.
-					reason = "values-table-empty-row";
+					reason = reasonPrefix + "values-table-empty-row";
 					return false;
 				}
 				branches.add(branch);

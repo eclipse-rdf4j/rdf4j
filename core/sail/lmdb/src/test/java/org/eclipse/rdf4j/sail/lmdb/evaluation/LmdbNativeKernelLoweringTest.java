@@ -356,6 +356,34 @@ class LmdbNativeKernelLoweringTest {
 	}
 
 	/**
+	 * M7 decline-reason prefix fix: the pattern/VALUES lowering sites are SHARED between the row builder (prefix
+	 * {@code ""}) and the aggregate builder (prefix {@code "agg:"}), but historically recorded bare strings — an
+	 * aggregate decline surfaced as {@code irKernel:pattern-guards} and the census mis-attributed it as a row-tier
+	 * decline. A bind-constant subject refuses both the adjacency guards and the scan fallback, so the shape declines
+	 * at exactly such a shared site.
+	 */
+	@Test
+	void aggregateProducerDeclinesCarryTheAggPrefixAtSharedSites() {
+		MultiJoinPlan plan = new MultiJoinPlan(
+				new SlotPlan[] { pattern(Term.constantSlot(0, 42L), Term.slot(1)),
+						pattern(Term.slot(1), Term.slot(2)) },
+				new MaskedFilter[0]);
+		String previousBridge = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
+		try {
+			SingletonSet target = new SingletonSet();
+			target.setRuntimeTelemetryEnabled(true);
+			assertNull(LmdbNativeKernelLowering.lowerAggregate(plan, freshRow(), new int[0],
+					new AggregateSpec[] { AggregateSpec.slot("count", 2, false, AggKind.COUNT) }, target));
+			assertEquals("irKernel:agg:pattern-guards",
+					LmdbNativeAttemptMetrics.dispatchTrace(target).declineReasons(),
+					"an aggregate-path decline at a shared lowering site must carry the agg: prefix");
+		} finally {
+			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
+		}
+	}
+
+	/**
 	 * The corpus's dominant declining shape, {@code Join(pattern, Extension(copies, MultiJoin(pattern)))}. A binary
 	 * {@code JoinPlan} exists precisely because an operand is not flattenable, so this asserts the construction too —
 	 * if {@code SlotPlan.join} ever flattened an extension, the test would silently stop covering the JoinPlan path.
