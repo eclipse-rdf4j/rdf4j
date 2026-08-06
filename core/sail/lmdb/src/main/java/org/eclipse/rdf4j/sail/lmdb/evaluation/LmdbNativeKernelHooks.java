@@ -53,11 +53,21 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	private final AggContext numericContext;
 
 	LmdbNativeKernelHooks(RowState liveRow, LmdbNativeKernelBindings bindings) {
+		this(liveRow, bindings, bindings.filterHooks);
+	}
+
+	/**
+	 * Variant with an explicit hook-filter set: parallel workers pass worker-confined forks of the shared plan filters
+	 * so concurrent {@code testFilter} calls never touch shared mutable filter state. The forking worker owns the
+	 * forks' release; {@link #closeFilters} on this instance then releases the forks, not the shared originals.
+	 */
+	LmdbNativeKernelHooks(RowState liveRow, LmdbNativeKernelBindings bindings,
+			LmdbNativeKernelBindings.FilterHook[] filterHooks) {
 		this.source = liveRow.source;
 		this.scratch = new RowState(liveRow.source, liveRow.layout, liveRow.base);
 		this.scratch.memoryScope = liveRow.memoryScope;
 		this.codec = liveRow.source.nativeValueCodec();
-		this.filters = bindings.filterHooks;
+		this.filters = filterHooks;
 		int aggregateCount = bindings.groupLayout == null ? 0 : bindings.groupLayout.outs.length;
 		this.numericKinds = new AggKind[aggregateCount];
 		this.numericSums = new Literal[aggregateCount][];

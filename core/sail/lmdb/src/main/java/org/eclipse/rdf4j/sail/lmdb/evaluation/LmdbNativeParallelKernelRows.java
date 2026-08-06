@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -23,6 +24,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -30,6 +32,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Emit;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.OutputMods;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
  * Morsel parallelism for IR-lowered ROW kernels (three-tier parity ExecPlan, Milestone 10B second half): partitions the
@@ -40,12 +43,14 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
  * view, so shape keys and the compile cache are shared with the sequential path.
  *
  * <p>
- * Admission is deliberately narrow: STATELESS pipelines only. In-kernel DISTINCT would need a cross-partition dedup and
- * in-kernel ORDER/LIMIT/OFFSET a merge step, so both decline (they gate on the M7 primitives they interact with).
- * Hook-invoked filters and residual filters are shared plan objects with lazily created native state that would race
- * across workers, so they decline too. The parallel attempt only hands a cursor to the caller after the first worker
- * page (or a clean end) has arrived; any failure before that point declines to the sequential kernel cursor — nothing
- * has been emitted, so the fallback is exact. After handoff, worker failures propagate like any cursor failure.
+ * Parity with the interpreted parallel engine (plan: plans/lmdb-native-engine/31-parallel-kernel-parity.md): hook and
+ * residual filters run when every filter can fork a worker-confined copy through the same
+ * {@code NativeBooleanFilter.forkForParallelWorker} SPI the interpreted engine's workers use; in-kernel DISTINCT keeps
+ * its per-worker dedup and the query thread removes the cross-partition duplicates; ORDER/LIMIT/OFFSET run each worker
+ * with the offset folded into the limit (a per-worker OFFSET would drop rows in every partition) and the query thread
+ * applies the global sort and slice through the same {@code KernelRuntime} comparator the generated code uses.
+ * Plan-producing kernels still decline: their EXISTS-style subplans carry per-instance memo and probe state that the
+ * interpreted engine cannot fork either.
  */
 @Experimental
 final class LmdbNativeParallelKernelRows {
@@ -70,11 +75,13 @@ final class LmdbNativeParallelKernelRows {
 	 * Runs the compiled row pipeline partitioned across workers, or returns null when any gate fails and the sequential
 	 * kernel cursor must serve instead. A null return leaves the caller's probe and kernel untouched. The materialized
 	 * {@code domains} are the query thread's — workers share the immutable arrays, which also guarantees every worker
-	 * slices the SAME domain ordering (per-worker re-materialization could not).
+	 * slices the SAME domain ordering (per-worker re-materialization could not). The {@code kernelFactory} compiles any
+	 * requested kernel shape through the shared cache: the workers usually run the caller's own shape, but an OFFSET
+	 * demands a worker variant with the offset folded into the limit (see class javadoc).
 	 */
 	static RowCursor tryOpen(LmdbNativeKernelLowering.Lowered lowered,
 			NativeLmdbQuerySource.NativeAdjacency[] queryViews, long[][] domains, SlotPlan arg, RowState row,
-			TupleExpr explainTarget, Supplier<JaninoKernel> kernelFactory) {
+			TupleExpr explainTarget, Function<LmdbNativeKernelIr.Kernel, JaninoKernel> kernelFactory) {
 		if (!enabled() || !LmdbNativeParallelPipelines.enabled()) {
 			return null;
 		}
@@ -83,25 +90,21 @@ final class LmdbNativeParallelKernelRows {
 			return debugDecline("not-emit");
 		}
 		Emit emit = (Emit) lowered.kernel.terminal;
-		if (emit.distinct) {
-			// per-partition dedup sets would let cross-partition duplicates through
-			return debugDecline("in-kernel-distinct");
-		}
 		if (emit.cols.length == 0) {
 			return debugDecline("zero-columns");
 		}
 		OutputMods mods = emit.mods;
-		if (mods.orderKeys != null || mods.limit >= 0 || mods.offset > 0) {
-			// order and slicing are global properties of the whole result, not of a partition
-			return debugDecline("output-mods");
-		}
 		if (bindings.planRequests.length > 0) {
 			return debugDecline("plan-producer");
 		}
-		// Hook-invoked filters and residual filters are SHARED plan objects with lazily created native state —
-		// concurrent workers would race on them, and their release contract is per-route. Decline in v1.
-		if (bindings.filterHooks.length > 0 || !bindings.residualFilters.isEmpty()) {
-			return debugDecline("filter-hooks");
+		// Shared plan filters are admissible exactly when each can fork a worker-confined copy — the same gate the
+		// interpreted parallel engine applies. A non-forkable filter (EXISTS memo state, generic predicates over the
+		// outer binding set) keeps the sequential kernel, and the interpreted engine would stay sequential too.
+		if (!LmdbNativeKernelPartitions.filterHooksForkable(bindings.filterHooks)) {
+			return debugDecline("filter-not-forkable");
+		}
+		if (!LmdbNativeKernelPartitions.residualsForkable(bindings.residualFilters)) {
+			return debugDecline("residual-filter-not-forkable");
 		}
 		int rootAdjacency = LmdbNativeKernelPartitions.partitionableRootAdjacency(lowered.kernel.pipeline);
 		int rootDomain = rootAdjacency >= 0 ? -1
@@ -126,6 +129,20 @@ final class LmdbNativeParallelKernelRows {
 		if (!LmdbNativeKernelPartitions.entryReseedable(row.source, row.layout, row.base, row)) {
 			return debugDecline("correlated-entry");
 		}
+		LmdbNativeKernelIr.Kernel workerKernel = lowered.kernel;
+		if (mods.offset > 0) {
+			// A per-worker OFFSET would skip rows in every partition; fold it into the worker limit and let the query
+			// thread apply the global slice. The variant is a distinct shape in the compile cache; while its compile is
+			// below threshold or pending, decline to the sequential kernel rather than stall the workers.
+			long widened = mods.limit >= 0 ? saturatedSum(mods.limit, mods.offset) : -1L;
+			workerKernel = new LmdbNativeKernelIr.Kernel(lowered.kernel.columnCount, lowered.kernel.pipeline,
+					emit.withMods(new OutputMods(mods.orderKeys, mods.descending, mods.valueOrder, widened, 0L)));
+			JaninoKernel probeKernel = kernelFactory.apply(workerKernel);
+			if (probeKernel == null) {
+				return debugDecline("worker-kernel-pending");
+			}
+			probeKernel.close();
+		}
 		LmdbNativeParallelPipelines.TaskReservation reservation = LmdbNativeParallelPipelines.tryReserveTasks(false,
 				desiredWorkers);
 		if (reservation == null) {
@@ -147,18 +164,27 @@ final class LmdbNativeParallelKernelRows {
 			reservation.close();
 			return debugDecline("snapshot-unavailable");
 		}
-		return start(lowered, rootAdjacency, rootDomain, domains, rootKeys, sources, threads, row, kernelFactory,
-				reservation);
+		LmdbNativeKernelIr.Kernel workerKernelFinal = workerKernel;
+		Supplier<JaninoKernel> workerFactory = () -> kernelFactory.apply(workerKernelFinal);
+		return start(lowered, rootAdjacency, rootDomain, domains, rootKeys, sources, threads, row, workerFactory,
+				reservation, emit);
+	}
+
+	/** Non-negative saturating addition; both mods fields are non-negative by {@code OutputMods} construction. */
+	private static long saturatedSum(long limit, long offset) {
+		long sum = limit + offset;
+		return sum < 0L ? Long.MAX_VALUE : sum;
 	}
 
 	/**
 	 * Submits the workers and waits for the first output page (or a clean end, or a failure) before handing the cursor
 	 * to the caller: a pre-handoff failure cancels the group, releases every resource, and declines to the sequential
-	 * cursor — no row has been emitted yet, so the fallback is exact.
+	 * cursor — no row has been emitted yet, so the fallback is exact. An ORDER BY kernel instead drains every worker
+	 * page before handoff (order is a whole-result property) and returns a materialized cursor.
 	 */
 	private static RowCursor start(LmdbNativeKernelLowering.Lowered lowered, int rootAdjacency, int rootDomain,
 			long[][] domains, long rootKeys, NativeLmdbQuerySource.ParallelSource[] sources, int threads, RowState row,
-			Supplier<JaninoKernel> kernelFactory, LmdbNativeParallelPipelines.TaskReservation reservation) {
+			Supplier<JaninoKernel> kernelFactory, LmdbNativeParallelPipelines.TaskReservation reservation, Emit emit) {
 		ConcurrentLinkedQueue<long[]> ranges = LmdbNativeKernelPartitions.ranges(rootKeys, threads, RANGES_PER_WORKER);
 		ArrayBlockingQueue<Page> output = new ArrayBlockingQueue<>(threads * 2);
 		AtomicReference<Throwable> failure = new AtomicReference<>();
@@ -189,6 +215,9 @@ final class LmdbNativeParallelKernelRows {
 				break;
 			}
 		}
+		if (emit.mods.orderKeys != null) {
+			return startOrdered(lowered, sources, threads, row, reservation, emit, output, failure, cancelled, tasks);
+		}
 		Page first = null;
 		int endedWorkers = 0;
 		boolean interrupted = false;
@@ -206,19 +235,10 @@ final class LmdbNativeParallelKernelRows {
 			}
 		}
 		if (first == null && failure.get() != null) {
-			cancelled.set(true);
-			awaitTasks(tasks);
-			Throwable cleanupFailure = LmdbNativeParallelPipelines.closeSources(sources, null);
-			reservation.close();
-			if (interrupted) {
-				Thread.currentThread().interrupt();
-			}
+			abandon(sources, reservation, tasks, cancelled, interrupted);
 			Throwable problem = failure.get();
 			if (problem instanceof Error) {
 				throw (Error) problem;
-			}
-			if (cleanupFailure instanceof Error) {
-				throw (Error) cleanupFailure;
 			}
 			if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
 				System.err.println("[ir-kernel-parallel] fallback: " + problem);
@@ -227,7 +247,109 @@ final class LmdbNativeParallelKernelRows {
 		}
 		PARALLEL_RUNS.incrementAndGet();
 		return new ParallelKernelRowCursor(row, lowered.bindings.columnEngineSlots, sources, reservation, output,
-				failure, cancelled, tasks, threads, first, endedWorkers);
+				failure, cancelled, tasks, threads, first, endedWorkers, emit);
+	}
+
+	/** Cancels the worker group pre-handoff and releases every resource; close failures surface as errors only. */
+	private static void abandon(NativeLmdbQuerySource.ParallelSource[] sources,
+			LmdbNativeParallelPipelines.TaskReservation reservation, CountDownLatch tasks, AtomicBoolean cancelled,
+			boolean interrupted) {
+		cancelled.set(true);
+		awaitTasks(tasks);
+		Throwable cleanupFailure = LmdbNativeParallelPipelines.closeSources(sources, null);
+		reservation.close();
+		if (interrupted) {
+			Thread.currentThread().interrupt();
+		}
+		if (cleanupFailure instanceof Error) {
+			throw (Error) cleanupFailure;
+		}
+	}
+
+	/**
+	 * ORDER BY handoff: the query thread drains every page, removes cross-partition duplicates when the kernel is
+	 * DISTINCT, sorts the union through the same {@code KernelRuntime} comparator the generated code uses (each worker
+	 * shipped at most its own top-limit-plus-offset rows, so the union is small when a LIMIT exists), and applies the
+	 * global OFFSET/LIMIT slice. Every failure before the cursor exists declines exactly — nothing has been emitted.
+	 */
+	private static RowCursor startOrdered(LmdbNativeKernelLowering.Lowered lowered,
+			NativeLmdbQuerySource.ParallelSource[] sources, int threads, RowState row,
+			LmdbNativeParallelPipelines.TaskReservation reservation, Emit emit, ArrayBlockingQueue<Page> output,
+			AtomicReference<Throwable> failure, AtomicBoolean cancelled, CountDownLatch tasks) {
+		int[] columnSlots = lowered.bindings.columnEngineSlots;
+		int stride = columnSlots.length;
+		ArrayList<Page> pages = new ArrayList<>();
+		long totalRows = 0L;
+		int endedWorkers = 0;
+		boolean interrupted = false;
+		while (endedWorkers < threads && failure.get() == null) {
+			try {
+				Page page = output.poll(50, TimeUnit.MILLISECONDS);
+				if (page == Page.END) {
+					endedWorkers++;
+				} else if (page != null) {
+					pages.add(page);
+					totalRows += page.count;
+				}
+			} catch (InterruptedException e) {
+				interrupted = true;
+				failure.compareAndSet(null, e);
+			}
+		}
+		if (failure.get() != null || totalRows > Integer.MAX_VALUE / Math.max(stride, 1)) {
+			if (failure.get() == null) {
+				failure.compareAndSet(null,
+						new LmdbNativeKernelPartitions.ParallelKernelDecline("ordered-result-too-large"));
+			}
+			abandon(sources, reservation, tasks, cancelled, interrupted);
+			Throwable problem = failure.get();
+			if (problem instanceof Error) {
+				throw (Error) problem;
+			}
+			if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
+				System.err.println("[ir-kernel-parallel] fallback: " + problem);
+			}
+			return null;
+		}
+		awaitTasks(tasks);
+		Throwable cleanupFailure = LmdbNativeParallelPipelines.closeSources(sources, null);
+		reservation.close();
+		if (cleanupFailure instanceof RuntimeException) {
+			throw (RuntimeException) cleanupFailure;
+		}
+		if (cleanupFailure instanceof Error) {
+			throw (Error) cleanupFailure;
+		}
+		int count = 0;
+		long[] rows = new long[Math.toIntExact(totalRows * stride)];
+		HashSet<PackedKey> distinct = emit.distinct ? new HashSet<>() : null;
+		for (Page page : pages) {
+			if (distinct == null) {
+				System.arraycopy(page.rows, 0, rows, count * stride, page.count * stride);
+				count += page.count;
+			} else {
+				for (int r = 0; r < page.count; r++) {
+					if (distinct.add(new PackedKey(Arrays.copyOfRange(page.rows, r * stride, (r + 1) * stride)))) {
+						System.arraycopy(page.rows, r * stride, rows, count * stride, stride);
+						count++;
+					}
+				}
+			}
+			LmdbNativeKernelExecution.KERNEL_ROWS.addAndGet(page.count);
+		}
+		OutputMods mods = emit.mods;
+		// the comparator is the generated code's own: KernelRuntime with the kernel's hook sidecar for value order
+		LmdbNativeKernelHooks orderHooks = mods.valueOrder ? new LmdbNativeKernelHooks(row, lowered.bindings) : null;
+		if (mods.limit >= 0) {
+			int cap = (int) Math.min(saturatedSum(mods.limit, mods.offset), Integer.MAX_VALUE);
+			count = KernelRuntime.topKRows(rows, count, stride, mods.orderKeys, mods.descending, orderHooks, cap);
+		} else {
+			KernelRuntime.sortRows(rows, count, stride, mods.orderKeys, mods.descending, orderHooks);
+		}
+		int from = (int) Math.min(mods.offset, count);
+		int to = mods.limit < 0 ? count : (int) Math.min(count, from + Math.min(mods.limit, Integer.MAX_VALUE));
+		PARALLEL_RUNS.incrementAndGet();
+		return new MaterializedKernelRowCursor(row, columnSlots, rows, from, to);
 	}
 
 	private static void runWorker(LmdbNativeKernelLowering.Lowered lowered, int rootAdjacency, int rootDomain,
@@ -240,15 +362,39 @@ final class LmdbNativeParallelKernelRows {
 			throw new LmdbNativeKernelPartitions.ParallelKernelDecline("worker-seed-unavailable");
 		}
 		workerRow.recomputeBoundMask();
-		NativeLmdbQuerySource.NativeProbe probe = source.newProbe();
+		// Worker-confined forks of the shared plan filters (admission proved every filter forkable); the worker owns
+		// their release — a fork may lazily acquire native read state, and leaking it wedges the dataset close exactly
+		// like the sequential route's LmdbNativeKernelHooks.closeFilters.
+		LmdbNativeKernelBindings.FilterHook[] forkedHooks = bindings.filterHooks.length > 0
+				? LmdbNativeKernelPartitions.forkFilterHooks(bindings.filterHooks)
+				: null;
+		NativeBooleanFilter[] forkedResiduals = null;
+		NativeLmdbQuerySource.NativeProbe probe = null;
 		LmdbNativeKernelScanner scanner = null;
 		try {
+			forkedResiduals = bindings.residualFilters.isEmpty() ? null
+					: LmdbNativeKernelPartitions.forkResidualFilters(bindings.residualFilters);
+			probe = source.newProbe();
 			NativeLmdbQuerySource.NativeAdjacency[] views = bindings.requestAdjacencies(probe);
 			if (views == null) {
 				throw new LmdbNativeKernelPartitions.ParallelKernelDecline("worker-adjacency-unavailable");
 			}
 			if (lowered.kernel.requirements.scans > 0) {
 				scanner = new LmdbNativeKernelScanner(workerRow, bindings.scanOrders);
+			}
+			LmdbNativeKernelHooks hooks = bindings.needsHooks()
+					? new LmdbNativeKernelHooks(workerRow, bindings,
+							forkedHooks != null ? forkedHooks : bindings.filterHooks)
+					: null;
+			RowState residualRow = null;
+			if (forkedResiduals != null) {
+				// residual filters see exactly the state the consumer's bind loop would produce: a fresh entry-seeded
+				// row with the packed columns bound on top (admission guarantees the entry is reproducible)
+				residualRow = new RowState(source, consumerRow.layout, consumerRow.base);
+				if (!NativeRowSeeder.seed(residualRow.slots, consumerRow.layout, consumerRow.base, source)) {
+					throw new LmdbNativeKernelPartitions.ParallelKernelDecline("worker-seed-unavailable");
+				}
+				residualRow.recomputeBoundMask();
 			}
 			int stride = lowered.kernel.stride();
 			long[] buffer = new long[stride * FILL_ROWS];
@@ -259,9 +405,6 @@ final class LmdbNativeParallelKernelRows {
 					throw new LmdbNativeKernelPartitions.ParallelKernelDecline("kernel-instance-unavailable");
 				}
 				try {
-					LmdbNativeKernelHooks hooks = bindings.needsHooks()
-							? new LmdbNativeKernelHooks(workerRow, bindings)
-							: null;
 					NativeLmdbQuerySource.NativeAdjacency[] windowViews = views;
 					long[][] windowDomains = domains;
 					if (rootAdjacency >= 0) {
@@ -276,8 +419,12 @@ final class LmdbNativeParallelKernelRows {
 					kernel.bind(bindings.context(windowViews, windowDomains, workerRow, hooks, scanner));
 					int filled;
 					while ((filled = kernel.fill(buffer, FILL_ROWS)) > 0) {
-						if (!offer(output, new Page(Arrays.copyOf(buffer, filled * stride), filled), failure,
-								cancelled)) {
+						int kept = forkedResiduals == null ? filled
+								: applyResiduals(buffer, filled, stride, bindings.columnEngineSlots, forkedResiduals,
+										residualRow);
+						if (kept > 0
+								&& !offer(output, new Page(Arrays.copyOf(buffer, kept * stride), kept), failure,
+										cancelled)) {
 							return;
 						}
 					}
@@ -287,14 +434,72 @@ final class LmdbNativeParallelKernelRows {
 			}
 			offer(output, Page.END, failure, cancelled);
 		} finally {
+			RuntimeException closeFailure = null;
 			try {
 				if (scanner != null) {
 					scanner.close();
 				}
+			} catch (RuntimeException problem) {
+				closeFailure = problem;
 			} finally {
-				probe.close();
+				try {
+					if (probe != null) {
+						probe.close();
+					}
+				} catch (RuntimeException problem) {
+					closeFailure = closeFailure == null ? problem : closeFailure;
+				} finally {
+					try {
+						if (forkedResiduals != null) {
+							LmdbNativeKernelPartitions.closeForked(forkedResiduals, null);
+						}
+					} finally {
+						if (forkedHooks != null) {
+							LmdbNativeKernelPartitions.closeForkedHooks(forkedHooks, closeFailure);
+						} else if (closeFailure != null) {
+							throw closeFailure;
+						}
+					}
+				}
 			}
 		}
+	}
+
+	/**
+	 * Runs the worker's forked residual filters against each packed row and compacts survivors in place, replicating
+	 * the sequential cursor's bind-then-filter semantics on a worker-private scratch row: a row whose bind would fail
+	 * on the consumer is rejected here for the same reason (the scratch and the live row share the entry state).
+	 */
+	private static int applyResiduals(long[] buffer, int filled, int stride, int[] columnSlots,
+			NativeBooleanFilter[] residuals, RowState scratch) {
+		int kept = 0;
+		for (int r = 0; r < filled; r++) {
+			int base = r * stride;
+			int mark = scratch.mark();
+			boolean ok = true;
+			for (int i = 0; i < columnSlots.length; i++) {
+				long value = buffer[base + i];
+				// NULL (-1) columns come from OPTIONAL null arms: the slot stays unbound.
+				if (value == LmdbNativeAggregateCompiler.UNKNOWN) {
+					continue;
+				}
+				if (!scratch.bind(columnSlots[i], value)) {
+					ok = false;
+					break;
+				}
+			}
+			for (int i = 0; ok && i < residuals.length; i++) {
+				ok = residuals[i].accept(scratch);
+			}
+			scratch.rollback(mark);
+			if (ok) {
+				if (kept != r) {
+					System.arraycopy(buffer, base, buffer, kept * stride, stride);
+				}
+				kept++;
+			}
+		}
+		return kept;
 	}
 
 	/** Bounded hand-off with abort checks; false means the group is shutting down and the worker should stop. */
@@ -342,7 +547,30 @@ final class LmdbNativeParallelKernelRows {
 		}
 	}
 
-	/** Query-thread cursor over streamed worker pages; binds packed rows exactly like the sequential cursor. */
+	/** Identity of one packed result row, for the query thread's cross-partition DISTINCT. */
+	private static final class PackedKey {
+		final long[] row;
+
+		PackedKey(long[] row) {
+			this.row = row;
+		}
+
+		@Override
+		public int hashCode() {
+			return Arrays.hashCode(row);
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			return other instanceof PackedKey && Arrays.equals(row, ((PackedKey) other).row);
+		}
+	}
+
+	/**
+	 * Query-thread cursor over streamed worker pages; binds packed rows exactly like the sequential cursor. Carries the
+	 * global output modifiers the workers could not apply: cross-partition DISTINCT, and the OFFSET/LIMIT slice counted
+	 * on packed rows exactly where the sequential kernel's in-loop cap counts them.
+	 */
 	private static final class ParallelKernelRowCursor implements RowCursor {
 		private final RowState row;
 		private final int[] columnSlots;
@@ -353,6 +581,9 @@ final class LmdbNativeParallelKernelRows {
 		private final AtomicBoolean cancelled;
 		private final CountDownLatch tasks;
 		private final int threads;
+		private final HashSet<PackedKey> distinct;
+		private long skipRemaining;
+		private long remaining;
 		private Page active;
 		private int activeIndex;
 		private int endedWorkers;
@@ -362,7 +593,7 @@ final class LmdbNativeParallelKernelRows {
 		ParallelKernelRowCursor(RowState row, int[] columnSlots, NativeLmdbQuerySource.ParallelSource[] sources,
 				LmdbNativeParallelPipelines.TaskReservation reservation, ArrayBlockingQueue<Page> output,
 				AtomicReference<Throwable> failure, AtomicBoolean cancelled, CountDownLatch tasks, int threads,
-				Page first, int endedWorkers) {
+				Page first, int endedWorkers, Emit emit) {
 			this.row = row;
 			this.columnSlots = columnSlots;
 			this.sources = sources;
@@ -374,6 +605,9 @@ final class LmdbNativeParallelKernelRows {
 			this.threads = threads;
 			this.active = first;
 			this.endedWorkers = endedWorkers;
+			this.distinct = emit.distinct ? new HashSet<>() : null;
+			this.skipRemaining = emit.mods.offset;
+			this.remaining = emit.mods.limit;
 			if (first != null) {
 				LmdbNativeKernelExecution.KERNEL_ROWS.addAndGet(first.count);
 			}
@@ -392,6 +626,21 @@ final class LmdbNativeParallelKernelRows {
 				while (active != null && activeIndex < active.count) {
 					int base = activeIndex * columnSlots.length;
 					activeIndex++;
+					if (distinct != null && !distinct
+							.add(new PackedKey(Arrays.copyOfRange(active.rows, base, base + columnSlots.length)))) {
+						continue;
+					}
+					if (skipRemaining > 0L) {
+						skipRemaining--;
+						continue;
+					}
+					if (remaining == 0L) {
+						close();
+						return false;
+					}
+					if (remaining > 0L) {
+						remaining--;
+					}
 					int mark = row.mark();
 					boolean ok = true;
 					for (int i = 0; i < columnSlots.length; i++) {
@@ -480,6 +729,73 @@ final class LmdbNativeParallelKernelRows {
 			}
 			if (cleanupFailure instanceof Error) {
 				throw (Error) cleanupFailure;
+			}
+		}
+	}
+
+	/**
+	 * Query-thread cursor over the fully sorted-and-sliced ORDER BY result. Workers, snapshot sources, and the task
+	 * reservation were all released before construction, so close only unwinds the live row.
+	 */
+	private static final class MaterializedKernelRowCursor implements RowCursor {
+		private final RowState row;
+		private final int[] columnSlots;
+		private final long[] rows;
+		private final int to;
+		private int at;
+		private int activeMark = -1;
+		private boolean closed;
+
+		MaterializedKernelRowCursor(RowState row, int[] columnSlots, long[] rows, int from, int to) {
+			this.row = row;
+			this.columnSlots = columnSlots;
+			this.rows = rows;
+			this.at = from;
+			this.to = to;
+		}
+
+		@Override
+		public boolean next() {
+			if (closed) {
+				return false;
+			}
+			if (activeMark >= 0) {
+				row.rollback(activeMark);
+				activeMark = -1;
+			}
+			while (at < to) {
+				int base = at * columnSlots.length;
+				at++;
+				int mark = row.mark();
+				boolean ok = true;
+				for (int i = 0; i < columnSlots.length; i++) {
+					// NULL (-1) columns come from OPTIONAL null arms: the slot stays unbound.
+					if (rows[base + i] == LmdbNativeAggregateCompiler.UNKNOWN) {
+						continue;
+					}
+					if (!row.bind(columnSlots[i], rows[base + i])) {
+						ok = false;
+						break;
+					}
+				}
+				if (ok) {
+					activeMark = mark;
+					return true;
+				}
+				row.rollback(mark);
+			}
+			return false;
+		}
+
+		@Override
+		public void close() {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			if (activeMark >= 0) {
+				row.rollback(activeMark);
+				activeMark = -1;
 			}
 		}
 	}

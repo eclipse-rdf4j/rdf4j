@@ -17,6 +17,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelBindings.FilterHook;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateAdjKeys;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateDomain;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Node;
@@ -95,6 +96,112 @@ final class LmdbNativeKernelPartitions {
 		}
 		seeded.recomputeBoundMask();
 		return seeded.boundMask() == row.boundMask() && Arrays.equals(seeded.slots, row.slots);
+	}
+
+	/**
+	 * True when every hook-invoked filter can create a worker-confined copy through the same
+	 * {@code NativeBooleanFilter.forkForParallelWorker} SPI the interpreted parallel engine uses. A shared filter with
+	 * mutable native state (memo tables, lazily acquired probes) answers false and keeps the sequential route.
+	 */
+	static boolean filterHooksForkable(FilterHook[] hooks) {
+		for (FilterHook hook : hooks) {
+			if (!hook.source.filter.parallelWorkerForkable()) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** Residual-filter twin of {@link #filterHooksForkable}. */
+	static boolean residualsForkable(List<MaskedFilter> residuals) {
+		for (MaskedFilter residual : residuals) {
+			if (!residual.filter.parallelWorkerForkable()) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * Worker-confined copies of the hook filters, argument-slot mapping preserved. The preflight
+	 * ({@link #filterHooksForkable}) must have passed; a null fork here is a store-state surprise and declines the
+	 * worker via {@link ParallelKernelDecline} after releasing the copies already made.
+	 */
+	static FilterHook[] forkFilterHooks(FilterHook[] hooks) {
+		FilterHook[] forked = new FilterHook[hooks.length];
+		for (int i = 0; i < hooks.length; i++) {
+			MaskedFilter source = hooks[i].source;
+			NativeBooleanFilter fork = source.filter.forkForParallelWorker();
+			if (fork == null) {
+				closeForkedHooks(forked, new ParallelKernelDecline("filter-fork-unavailable"));
+			}
+			forked[i] = new FilterHook(new MaskedFilter(fork, source.mask, source.adaptive, source.plannedDepth),
+					hooks[i].argSlots);
+		}
+		return forked;
+	}
+
+	/** Worker-confined copies of the residual filters, encounter order preserved. */
+	static NativeBooleanFilter[] forkResidualFilters(List<MaskedFilter> residuals) {
+		NativeBooleanFilter[] forked = new NativeBooleanFilter[residuals.size()];
+		for (int i = 0; i < forked.length; i++) {
+			NativeBooleanFilter fork = residuals.get(i).filter.forkForParallelWorker();
+			if (fork == null) {
+				closeForked(forked, new ParallelKernelDecline("filter-fork-unavailable"));
+			}
+			forked[i] = fork;
+		}
+		return forked;
+	}
+
+	/**
+	 * Releases every forked hook filter and rethrows {@code primary} (when given) with close failures suppressed. The
+	 * worker that forked owns this call: a fork may lazily acquire native read state during the run, and leaking it
+	 * wedges the dataset close exactly like the sequential route's {@code LmdbNativeKernelHooks.closeFilters}.
+	 */
+	static void closeForkedHooks(FilterHook[] forked, RuntimeException primary) {
+		RuntimeException failure = primary;
+		for (FilterHook hook : forked) {
+			if (hook == null) {
+				continue;
+			}
+			try {
+				hook.source.filter.close();
+			} catch (RuntimeException problem) {
+				failure = suppress(failure, problem);
+			}
+		}
+		if (failure != null) {
+			throw failure;
+		}
+	}
+
+	/** Residual twin of {@link #closeForkedHooks}. */
+	static void closeForked(NativeBooleanFilter[] forked, RuntimeException primary) {
+		RuntimeException failure = primary;
+		for (NativeBooleanFilter filter : forked) {
+			if (filter == null) {
+				continue;
+			}
+			try {
+				filter.close();
+			} catch (RuntimeException problem) {
+				failure = suppress(failure, problem);
+			}
+		}
+		if (failure != null) {
+			throw failure;
+		}
+	}
+
+	private static RuntimeException suppress(RuntimeException primary, RuntimeException later) {
+		if (primary == null) {
+			return later;
+		}
+		if (primary != later) {
+			primary.addSuppressed(later);
+		}
+		return primary;
 	}
 
 	/** Contiguous ordinal windows {@code [from, to)} covering {@code [0, total)}, over-partitioned for stealing. */

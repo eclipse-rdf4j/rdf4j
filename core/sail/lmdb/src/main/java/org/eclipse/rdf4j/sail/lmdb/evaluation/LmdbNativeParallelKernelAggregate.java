@@ -25,6 +25,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -33,7 +34,10 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelBindings.KernelGroupLayout;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Aggregate;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Having;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.OutputMods;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
  * Morsel parallelism for IR-lowered aggregate kernels (three-tier parity ExecPlan, Milestone 10B): partitions the
@@ -44,11 +48,14 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
  * adjacency view, so shape keys and the compile cache are shared with the sequential path.
  *
  * <p>
- * Admission is deliberately narrow: the root producer must be an {@code EnumerateAdjKeys} whose view no other pipeline
- * node re-enumerates (probes by {@code find} are unaffected by the window), every aggregate output must merge exactly
- * across partitions (COUNT, SUM, AVG, MIN, MAX — no DISTINCT channels, whose per-partition sets would double-count),
- * and in-kernel HAVING / output modifiers decline (they must see final values, not partials). Any dynamic failure
- * declines cleanly to the sequential kernel drain — nothing has been emitted.
+ * Admission: the root producer must be an {@code EnumerateAdjKeys} whose view no other pipeline node re-enumerates
+ * (probes by {@code find} are unaffected by the window), and every aggregate output must merge exactly across
+ * partitions (COUNT, SUM, AVG, MIN, MAX — no DISTINCT channels, whose per-partition sets would double-count). Hook
+ * filters run when each can fork a worker-confined copy (plan: plans/lmdb-native-engine/31-parallel-kernel-parity.md).
+ * HAVING and ORDER/LIMIT/OFFSET must see final group values, not partials, so the workers run a kernel variant with
+ * both stripped and the query thread applies them after the merge — through the same count comparison and the same
+ * {@code KernelRuntime} sort the generated code uses. Any dynamic failure declines cleanly to the sequential kernel
+ * drain — nothing has been emitted.
  */
 @Experimental
 final class LmdbNativeParallelKernelAggregate {
@@ -77,7 +84,8 @@ final class LmdbNativeParallelKernelAggregate {
 	 */
 	static List<BindingSet> tryEvaluate(LmdbNativeKernelLowering.Lowered lowered,
 			NativeLmdbQuerySource.NativeAdjacency[] queryViews, long[][] domains, SlotPlan arg, RowState row,
-			NativeGroupIteration emitter, TupleExpr explainTarget, Supplier<JaninoKernel> kernelFactory) {
+			NativeGroupIteration emitter, TupleExpr explainTarget,
+			Function<LmdbNativeKernelIr.Kernel, JaninoKernel> kernelFactory) {
 		if (!enabled() || !LmdbNativeParallelPipelines.enabled()) {
 			return null;
 		}
@@ -87,12 +95,6 @@ final class LmdbNativeParallelKernelAggregate {
 			return debugDecline("not-aggregate");
 		}
 		Aggregate aggregate = (Aggregate) lowered.kernel.terminal;
-		// HAVING and in-kernel ORDER/LIMIT/OFFSET filter or truncate on FINAL group values; per-partition partials
-		// would apply them to fragments of a group, so both decline.
-		if (aggregate.having != null || aggregate.mods != null
-				&& (aggregate.mods.orderKeys != null || aggregate.mods.limit >= 0 || aggregate.mods.offset > 0)) {
-			return debugDecline("having-or-output-mods");
-		}
 		for (LmdbNativeKernelIr.AggregateOutput output : aggregate.outputs) {
 			switch (output.kind) {
 			case LmdbNativeKernelIr.AGG_COUNT_STAR:
@@ -109,10 +111,14 @@ final class LmdbNativeParallelKernelAggregate {
 		if (bindings.planRequests.length > 0) {
 			return debugDecline("plan-producer");
 		}
-		// Hook-invoked filters and residual filters are SHARED plan objects with lazily created native state —
-		// concurrent workers would race on them, and their release contract is per-route. Decline in v1.
-		if (bindings.filterHooks.length > 0 || !bindings.residualFilters.isEmpty()) {
-			return debugDecline("filter-hooks");
+		// Hook-invoked filters are admissible when each can fork a worker-confined copy — the interpreted parallel
+		// engine's gate. The sequential aggregate drain never consults residual filters, so an aggregate lowering that
+		// carried one would be a lowering bug; decline defensively rather than silently ignore it in parallel.
+		if (!LmdbNativeKernelPartitions.filterHooksForkable(bindings.filterHooks)) {
+			return debugDecline("filter-not-forkable");
+		}
+		if (!bindings.residualFilters.isEmpty()) {
+			return debugDecline("residual-filter");
 		}
 		int rootAdjacency = LmdbNativeKernelPartitions.partitionableRootAdjacency(lowered.kernel.pipeline);
 		int rootDomain = rootAdjacency >= 0 ? -1
@@ -137,6 +143,23 @@ final class LmdbNativeParallelKernelAggregate {
 		if (!LmdbNativeKernelPartitions.entryReseedable(emitter.source, emitter.layout, emitter.base, row)) {
 			return debugDecline("correlated-entry");
 		}
+		LmdbNativeKernelIr.Kernel workerKernel = lowered.kernel;
+		if (aggregate.having != null || aggregate.mods.orderKeys != null || aggregate.mods.limit >= 0
+				|| aggregate.mods.offset > 0) {
+			// HAVING and ORDER/LIMIT/OFFSET filter or truncate on FINAL group values; a per-partition kernel would
+			// apply them to fragments of a group. The workers run a variant with both stripped and the query thread
+			// applies them after the merge. The variant is its own shape in the compile cache; while it is below
+			// threshold or pending, decline to the sequential drain rather than stall the workers.
+			workerKernel = new LmdbNativeKernelIr.Kernel(lowered.kernel.columnCount, lowered.kernel.pipeline,
+					new Aggregate(aggregate.groupCols, aggregate.outputs, null, OutputMods.none()));
+			JaninoKernel probeKernel = kernelFactory.apply(workerKernel);
+			if (probeKernel == null) {
+				return debugDecline("worker-kernel-pending");
+			}
+			probeKernel.close();
+		}
+		LmdbNativeKernelIr.Kernel workerKernelFinal = workerKernel;
+		Supplier<JaninoKernel> workerFactory = () -> kernelFactory.apply(workerKernelFinal);
 		LmdbNativeParallelPipelines.TaskReservation reservation = LmdbNativeParallelPipelines.tryReserveTasks(false,
 				desiredWorkers);
 		if (reservation == null) {
@@ -159,7 +182,7 @@ final class LmdbNativeParallelKernelAggregate {
 				return debugDecline("snapshot-unavailable");
 			}
 			return execute(lowered, rootAdjacency, rootDomain, domains, rootKeys, sources, threads, row, emitter,
-					kernelFactory);
+					workerFactory);
 		} finally {
 			cleanupFailure = LmdbNativeParallelPipelines.closeSources(sources, cleanupFailure);
 			reservation.close();
@@ -260,34 +283,79 @@ final class LmdbNativeParallelKernelAggregate {
 			// a global aggregate over no input still answers one row (COUNT 0, SUM/AVG 0, MIN/MAX unbound)
 			total.put(new LongsKey(new long[0]), new Partial(layout.outs.length));
 		}
-		List<BindingSet> results = new ArrayList<>(total.size());
-		long[] rowBuf = new long[groupLength + layout.outs.length];
-		int ordinal = 0;
+		// The workers ran without HAVING and output mods (they must see final values, not partials); replicate the
+		// sequential drain's order here: HAVING per group while packing, then sort/top-K, then the OFFSET/LIMIT slice.
+		Having having = aggregate.having;
+		OutputMods mods = aggregate.mods;
+		int stride = groupLength + layout.outs.length;
+		long[] rows = new long[total.size() * Math.max(stride, 1)];
+		int count = 0;
 		for (Map.Entry<LongsKey, Partial> entry : total.entrySet()) {
-			System.arraycopy(entry.getKey().ids, 0, rowBuf, 0, groupLength);
 			Partial partial = entry.getValue();
+			// HAVING is count-kind only by Aggregate construction, so the merged count is the final value it tests
+			if (having != null && !havingHolds(partial.counts[having.outputIndex], having.op, having.threshold)) {
+				continue;
+			}
+			int base = count * stride;
+			System.arraycopy(entry.getKey().ids, 0, rows, base, groupLength);
 			for (int i = 0; i < layout.outs.length; i++) {
 				switch (aggregate.outputs[i].kind) {
 				case LmdbNativeKernelIr.AGG_COUNT_STAR:
 				case LmdbNativeKernelIr.AGG_COUNT:
-					rowBuf[groupLength + i] = partial.counts[i];
+					rows[base + groupLength + i] = partial.counts[i];
 					break;
 				case LmdbNativeKernelIr.AGG_SUM:
 				case LmdbNativeKernelIr.AGG_AVG:
-					mergeHooks.installNumericPartial(i, ordinal, partial.sums[i], partial.avgCounts[i],
+					// the packed ordinal travels with the row, so sorting below cannot detach a group's exact state
+					mergeHooks.installNumericPartial(i, count, partial.sums[i], partial.avgCounts[i],
 							partial.errors[i]);
-					rowBuf[groupLength + i] = ordinal;
+					rows[base + groupLength + i] = count;
 					break;
 				default: // AGG_MIN_ID / AGG_MAX_ID
-					rowBuf[groupLength + i] = partial.hasWinner[i] ? partial.winners[i] : UNKNOWN;
+					rows[base + groupLength + i] = partial.hasWinner[i] ? partial.winners[i] : UNKNOWN;
 					break;
 				}
 			}
-			results.add(emitter.kernelGroupRow(rowBuf, 0, layout, mergeHooks));
-			ordinal++;
+			count++;
+		}
+		if (mods.orderKeys != null) {
+			// the same KernelRuntime comparator the generated drain uses, with the hook sidecar for value order
+			if (mods.limit >= 0) {
+				long cap = mods.limit + mods.offset;
+				count = KernelRuntime.topKRows(rows, count, stride, mods.orderKeys, mods.descending,
+						mods.valueOrder ? mergeHooks : null, (int) Math.min(cap < 0L ? Long.MAX_VALUE : cap,
+								Integer.MAX_VALUE));
+			} else {
+				KernelRuntime.sortRows(rows, count, stride, mods.orderKeys, mods.descending,
+						mods.valueOrder ? mergeHooks : null);
+			}
+		}
+		int from = (int) Math.min(mods.offset, count);
+		int to = mods.limit < 0 ? count : (int) Math.min(count, from + Math.min(mods.limit, Integer.MAX_VALUE));
+		List<BindingSet> results = new ArrayList<>(to - from);
+		for (int r = from; r < to; r++) {
+			results.add(emitter.kernelGroupRow(rows, r * stride, layout, mergeHooks));
 		}
 		PARALLEL_RUNS.incrementAndGet();
 		return results;
+	}
+
+	/** The generated drain's HAVING test: keep the group when {@code count <op> threshold} holds. */
+	private static boolean havingHolds(long count, int op, long threshold) {
+		switch (op) {
+		case LmdbNativeKernelIr.OP_EQ:
+			return count == threshold;
+		case LmdbNativeKernelIr.OP_NE:
+			return count != threshold;
+		case LmdbNativeKernelIr.OP_LT:
+			return count < threshold;
+		case LmdbNativeKernelIr.OP_LE:
+			return count <= threshold;
+		case LmdbNativeKernelIr.OP_GT:
+			return count > threshold;
+		default: // OP_GE
+			return count >= threshold;
+		}
 	}
 
 	private static HashMap<LongsKey, Partial> runWorker(LmdbNativeKernelLowering.Lowered lowered, int rootAdjacency,
@@ -303,9 +371,16 @@ final class LmdbNativeParallelKernelAggregate {
 		}
 		workerRow.recomputeBoundMask();
 		HashMap<LongsKey, Partial> merged = new HashMap<>();
-		NativeLmdbQuerySource.NativeProbe probe = source.newProbe();
+		// Worker-confined forks of the shared plan filters (admission proved every filter forkable); the worker owns
+		// their release — a fork may lazily acquire native read state, and leaking it wedges the dataset close exactly
+		// like the sequential route's LmdbNativeKernelHooks.closeFilters.
+		LmdbNativeKernelBindings.FilterHook[] forkedHooks = bindings.filterHooks.length > 0
+				? LmdbNativeKernelPartitions.forkFilterHooks(bindings.filterHooks)
+				: null;
+		NativeLmdbQuerySource.NativeProbe probe = null;
 		LmdbNativeKernelScanner scanner = null;
 		try {
+			probe = source.newProbe();
 			NativeLmdbQuerySource.NativeAdjacency[] views = bindings.requestAdjacencies(probe);
 			if (views == null) {
 				throw new LmdbNativeKernelPartitions.ParallelKernelDecline("worker-adjacency-unavailable");
@@ -322,8 +397,11 @@ final class LmdbNativeParallelKernelAggregate {
 					throw new LmdbNativeKernelPartitions.ParallelKernelDecline("kernel-instance-unavailable");
 				}
 				try {
+					// hooks stay PER RANGE: the numeric accumulator sidecar is indexed by the kernel instance's group
+					// ordinals, which restart at zero for every window; only the forked filter array is per worker
 					LmdbNativeKernelHooks hooks = bindings.needsHooks()
-							? new LmdbNativeKernelHooks(workerRow, bindings)
+							? new LmdbNativeKernelHooks(workerRow, bindings,
+									forkedHooks != null ? forkedHooks : bindings.filterHooks)
 							: null;
 					NativeLmdbQuerySource.NativeAdjacency[] windowViews = views;
 					long[][] windowDomains = domains;
@@ -354,7 +432,15 @@ final class LmdbNativeParallelKernelAggregate {
 					scanner.close();
 				}
 			} finally {
-				probe.close();
+				try {
+					if (probe != null) {
+						probe.close();
+					}
+				} finally {
+					if (forkedHooks != null) {
+						LmdbNativeKernelPartitions.closeForkedHooks(forkedHooks, null);
+					}
+				}
 			}
 		}
 	}

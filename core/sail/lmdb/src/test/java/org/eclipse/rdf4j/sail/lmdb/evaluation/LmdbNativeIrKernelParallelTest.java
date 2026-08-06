@@ -59,9 +59,17 @@ class LmdbNativeIrKernelParallelTest {
 	private static final String OPTIONAL_QUERY = "SELECT ?s ?v ?w WHERE { ?s <" + EX + "p> ?m . ?m <" + EX
 			+ "q> ?v . OPTIONAL { ?m <" + EX + "r> ?w } }";
 
-	/** The EXISTS filter becomes a kernel filter hook: shared plan state, so parallel must decline. */
+	/** The EXISTS filter's memo and probe state cannot fork a worker copy, so parallel must still decline. */
 	private static final String EXISTS_QUERY = "SELECT ?s ?v WHERE { ?s <" + EX + "p> ?m . ?m <" + EX
 			+ "q> ?v . FILTER EXISTS { ?m <" + EX + "r> ?x } }";
+
+	/**
+	 * The slot-against-slot inequality compiles to a forkable native compare filter (parity plan
+	 * plans/lmdb-native-engine/31-parallel-kernel-parity.md): each worker runs its own fork, so the kernel must run
+	 * partitioned instead of declining on the mere presence of a filter hook.
+	 */
+	private static final String FORKABLE_FILTER_QUERY = "SELECT ?s ?v ?v2 ?w WHERE { ?s <" + EX + "p> ?m . ?m <" + EX
+			+ "q> ?v . ?m <" + EX + "q2> ?v2 . OPTIONAL { ?m <" + EX + "r> ?w } FILTER(?v != ?v2) }";
 
 	/** The constant-object class pattern lowers to an {@code EnumerateDomain} root (the type extent). */
 	private static final String DOMAIN_ROOT_QUERY = "SELECT ?s ?v ?w WHERE { ?s <" + EX + "t> <" + EX
@@ -87,6 +95,7 @@ class LmdbNativeIrKernelParallelTest {
 			ValueFactory vf = conn.getValueFactory();
 			IRI p = vf.createIRI(EX, "p");
 			IRI q = vf.createIRI(EX, "q");
+			IRI q2 = vf.createIRI(EX, "q2");
 			IRI r = vf.createIRI(EX, "r");
 			IRI t = vf.createIRI(EX, "t");
 			IRI x = vf.createIRI(EX, "X");
@@ -101,6 +110,8 @@ class LmdbNativeIrKernelParallelTest {
 					IRI m = vf.createIRI(EX, "m" + i + "_" + j);
 					conn.add(s, p, m);
 					conn.add(m, q, vf.createLiteral(i * 7 + j));
+					// q2 equals q for j==0 and differs for j==1, so FILTER(?v != ?v2) keeps exactly the j==1 rows
+					conn.add(m, q2, vf.createLiteral(i * 7 + 2 * j));
 					if ((i + j) % 3 == 0) {
 						conn.add(m, r, vf.createLiteral("tag" + i + "_" + j));
 					}
@@ -166,6 +177,27 @@ class LmdbNativeIrKernelParallelTest {
 				.as("a domain-rooted row kernel must partition by domain slice")
 				.isGreaterThan(parallelBefore);
 		assertThat(rows(DOMAIN_ROOT_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	@Test
+	void parallelIrKernelRunsForkableFilterHooks() {
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		List<String> expected = rows(FORKABLE_FILTER_QUERY);
+		assertThat(expected).hasSize(600);
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+
+		KernelExecutionTestAccess.resetMetrics();
+		long parallelBefore = LmdbNativeParallelKernelRows.PARALLEL_RUNS.get();
+		for (int round = 0; round < 300
+				&& LmdbNativeParallelKernelRows.PARALLEL_RUNS.get() == parallelBefore; round++) {
+			assertThat(rows(FORKABLE_FILTER_QUERY)).as("parity on round " + round)
+					.containsExactlyInAnyOrderElementsOf(expected);
+		}
+		assertThat(LmdbNativeParallelKernelRows.PARALLEL_RUNS.get())
+				.as("a forkable filter must fork per worker, not force the sequential kernel")
+				.isGreaterThan(parallelBefore);
+		// one more run with the parallel path known-active must still be exact
+		assertThat(rows(FORKABLE_FILTER_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
 	}
 
 	@Test

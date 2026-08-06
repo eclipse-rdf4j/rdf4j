@@ -150,13 +150,14 @@ final class LmdbNativeKernelExecution {
 				AGG_DECLINED.incrementAndGet();
 				return null;
 			}
-			LmdbNativeKernelLowering.Lowered loweredFinal = lowered;
 			long[][] domains = lowered.bindings.materializeDomains(probe, row, "irAggregate");
+			// The parallel rung may request a worker kernel VARIANT (HAVING and output mods stripped); every requested
+			// shape compiles through the same cache under its own shape key, so the sequential shape stays untouched.
 			List<BindingSet> parallel = LmdbNativeParallelKernelAggregate
 					.tryEvaluate(lowered, views, domains, arg, row, emitter, explainTarget,
-							() -> LmdbNativeJaninoCodegen.kernel(CACHE_OWNER, shapeKey,
-									loweredFinal.kernel.className(),
-									() -> LmdbNativeKernelEmitter.emit(loweredFinal.kernel), observedRows));
+							variant -> LmdbNativeJaninoCodegen.kernel(CACHE_OWNER, variant.shapeKey(),
+									variant.className(),
+									() -> LmdbNativeKernelEmitter.emit(variant), observedRows));
 			if (parallel != null) {
 				AGG_OPENED.incrementAndGet();
 				AGG_ROWS.addAndGet(parallel.size());
@@ -371,11 +372,12 @@ final class LmdbNativeKernelExecution {
 				DECLINED.incrementAndGet();
 				return null;
 			}
-			LmdbNativeKernelLowering.Lowered loweredFinal = lowered;
 			long[][] domains = lowered.bindings.materializeDomains(probe, row, "irKernel");
+			// The parallel rung may request a worker kernel VARIANT (offset folded into the limit); every requested
+			// shape compiles through the same cache under its own shape key, so the sequential shape stays untouched.
 			RowCursor parallel = LmdbNativeParallelKernelRows.tryOpen(lowered, views, domains, arg, row, originalExpr,
-					() -> LmdbNativeJaninoCodegen.kernel(CACHE_OWNER, shapeKey, loweredFinal.kernel.className(),
-							() -> LmdbNativeKernelEmitter.emit(loweredFinal.kernel), observedRows));
+					variant -> LmdbNativeJaninoCodegen.kernel(CACHE_OWNER, variant.shapeKey(), variant.className(),
+							() -> LmdbNativeKernelEmitter.emit(variant), observedRows));
 			if (parallel != null) {
 				// the workers own their probes and kernel instances; the sequential pair is surplus
 				kernel.close();

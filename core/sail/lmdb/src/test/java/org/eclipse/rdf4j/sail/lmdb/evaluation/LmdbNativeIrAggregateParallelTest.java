@@ -57,6 +57,14 @@ class LmdbNativeIrAggregateParallelTest {
 	private static final String DISTINCT_QUERY = "SELECT ?s (COUNT(DISTINCT ?v) AS ?c) WHERE { ?s <" + EX
 			+ "p> ?m . ?m <" + EX + "q> ?v . } GROUP BY ?s";
 
+	/**
+	 * The slot-against-slot inequality compiles to a forkable native compare filter (parity plan
+	 * plans/lmdb-native-engine/31-parallel-kernel-parity.md): each worker forks its own copy, so the aggregate must run
+	 * partitioned instead of declining on the mere presence of a filter hook.
+	 */
+	private static final String FORKABLE_FILTER_QUERY = "SELECT ?s (COUNT(?v) AS ?c) (SUM(?v) AS ?sum) WHERE { ?s <"
+			+ EX + "p> ?m . ?m <" + EX + "q> ?v . ?m <" + EX + "q2> ?v2 . FILTER(?v != ?v2) } GROUP BY ?s";
+
 	/** The constant-object class pattern lowers to an {@code EnumerateDomain} root (the type extent). */
 	private static final String DOMAIN_ROOT_QUERY = "SELECT ?s (COUNT(?v) AS ?c) (SUM(?v) AS ?sum) WHERE { ?s <"
 			+ EX + "t> <" + EX + "X> . ?s <" + EX + "p> ?m . ?m <" + EX + "q> ?v . } GROUP BY ?s";
@@ -81,6 +89,7 @@ class LmdbNativeIrAggregateParallelTest {
 			ValueFactory vf = conn.getValueFactory();
 			IRI p = vf.createIRI(EX, "p");
 			IRI q = vf.createIRI(EX, "q");
+			IRI q2 = vf.createIRI(EX, "q2");
 			IRI t = vf.createIRI(EX, "t");
 			IRI x = vf.createIRI(EX, "X");
 			// One transaction, deliberately: per-add autocommit floods the direct adjacency store with thousands of
@@ -94,6 +103,8 @@ class LmdbNativeIrAggregateParallelTest {
 					IRI m = vf.createIRI(EX, "m" + i + "_" + j);
 					conn.add(s, p, m);
 					conn.add(m, q, vf.createLiteral(i * 7 + j));
+					// q2 equals q for j==0 and differs for j==1, so FILTER(?v != ?v2) keeps exactly the j==1 rows
+					conn.add(m, q2, vf.createLiteral(i * 7 + 2 * j));
 				}
 			}
 			conn.commit();
@@ -158,6 +169,28 @@ class LmdbNativeIrAggregateParallelTest {
 				.as("a domain-rooted aggregate kernel must partition by domain slice")
 				.isGreaterThan(parallelBefore);
 		assertThat(rows(DOMAIN_ROOT_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	@Test
+	void parallelIrAggregateRunsForkableFilterHooks() {
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		List<String> expected = rows(FORKABLE_FILTER_QUERY);
+		assertThat(expected).hasSize(600);
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		System.setProperty(LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "true");
+
+		KernelExecutionTestAccess.resetMetrics();
+		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
+		for (int round = 0; round < 300
+				&& LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get() == parallelBefore; round++) {
+			assertThat(rows(FORKABLE_FILTER_QUERY)).as("parity on round " + round)
+					.containsExactlyInAnyOrderElementsOf(expected);
+		}
+		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
+				.as("a forkable filter must fork per worker, not force the sequential drain")
+				.isGreaterThan(parallelBefore);
+		// one more run with the parallel path known-active must still be exact
+		assertThat(rows(FORKABLE_FILTER_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
 	}
 
 	@Test
