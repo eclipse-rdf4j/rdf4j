@@ -332,6 +332,89 @@ public class LmdbNativeChunkPipelineTest {
 	}
 
 	@Test
+	public void sipMasksPublishPerRootKeySlotOnAMultiKeyStage() throws Exception {
+		// Multi-key probe stage (keys ?a AND ?p, both freshly root-produced): the completed hash build must
+		// publish one root-scan mask PER qualifying key slot — the per-slot projection of the build's key set.
+		// Root rows whose ?a never appears in the graph-scoped stage range are dead pairs the ?a mask drops.
+		String previousMerge = System.getProperty("rdf4j.lmdb.chunkPipeline.merge.enabled");
+		System.setProperty("rdf4j.lmdb.chunkPipeline.merge.enabled", "false");
+		String previousParallel = System.getProperty("rdf4j.lmdb.parallel.enabled");
+		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
+		File multiDir = new File(dataDir, "sip-multikey");
+		SailRepository multi = new SailRepository(new LmdbStore(multiDir, chunkPipelineConfig()));
+		try {
+			try (SailRepositoryConnection conn = multi.getConnection()) {
+				ValueFactory vf = conn.getValueFactory();
+				IRI marker = vf.createIRI(EX, "marker");
+				IRI next = vf.createIRI(EX, "next");
+				IRI g2 = vf.createIRI(EX, "g2");
+				conn.begin();
+				// 4500 root rows (?a ?p ex:marker), five predicates. Every third subject replicates its
+				// (?a,?p) pair into graph g2 with twelve ?y legs (whose ?y feeds the trailing ex:next
+				// branch, pinning the g2 stage into the flat prefix); the other two thirds are dead pairs.
+				for (int i = 0; i < 4500; i++) {
+					IRI a = vf.createIRI(EX, String.format("mk%04d", i));
+					IRI p = vf.createIRI(EX, "mp" + (i % 5));
+					conn.add(a, p, marker);
+					if (i % 3 == 0) {
+						for (int j = 0; j < 12; j++) {
+							IRI y = vf.createIRI(EX, "my" + i + "_" + j);
+							conn.add(a, p, y, g2);
+							conn.add(y, next, vf.createIRI(EX, "mz" + i + "_" + j));
+						}
+					}
+				}
+				conn.commit();
+			}
+			String query = "PREFIX ex: <" + EX + ">\n"
+					+ "SELECT ?a ?p ?y ?z WHERE { ?a ?p ex:marker . GRAPH ex:g2 { ?a ?p ?y } . ?y ex:next ?z }";
+			long engagedBefore = LmdbNativeChunkPipeline.ENGAGED.get();
+			long buildsBefore = LmdbNativeChunkPipeline.HASH_BUILDS.get();
+			long masksBefore = LmdbNativeChunkPipeline.SIP_MASKS.get();
+			long maskedBefore = LmdbNativeChunkPipeline.SIP_MASKED_ROWS.get();
+
+			List<String> nativeRows = rows(multi, query);
+			String previous = System.getProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
+			List<String> genericRows;
+			try {
+				System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+				genericRows = rows(multi, query);
+			} finally {
+				if (previous == null) {
+					System.clearProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
+				} else {
+					System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", previous);
+				}
+			}
+			assertThat(nativeRows).containsExactlyInAnyOrderElementsOf(genericRows);
+			assertThat(LmdbNativeChunkPipeline.ENGAGED.get())
+					.as("the chunk pipeline should have driven the flat prefix")
+					.isGreaterThan(engagedBefore);
+			assertThat(LmdbNativeChunkPipeline.HASH_BUILDS.get())
+					.as("the flooded multi-key stage should flip to a hash build")
+					.isGreaterThan(buildsBefore);
+			assertThat(LmdbNativeChunkPipeline.SIP_MASKS.get())
+					.as("both root-produced key slots (?a and ?p) should publish their own mask")
+					.isGreaterThanOrEqualTo(masksBefore + 2);
+			assertThat(LmdbNativeChunkPipeline.SIP_MASKED_ROWS.get())
+					.as("dead (?a,?p) root pairs should be dropped by the ?a projection mask")
+					.isGreaterThan(maskedBefore);
+		} finally {
+			multi.shutDown();
+			if (previousMerge == null) {
+				System.clearProperty("rdf4j.lmdb.chunkPipeline.merge.enabled");
+			} else {
+				System.setProperty("rdf4j.lmdb.chunkPipeline.merge.enabled", previousMerge);
+			}
+			if (previousParallel == null) {
+				System.clearProperty("rdf4j.lmdb.parallel.enabled");
+			} else {
+				System.setProperty("rdf4j.lmdb.parallel.enabled", previousParallel);
+			}
+		}
+	}
+
+	@Test
 	public void sipMaskSeeksRootRunsWhenKeyLeadsTheRootIndex() throws Exception {
 		// with the merge walk disabled, the order-aligned chain stage falls back to the hash build; its
 		// mask key is the root's leading varying field, so masked-out key runs must be crossed with seeks

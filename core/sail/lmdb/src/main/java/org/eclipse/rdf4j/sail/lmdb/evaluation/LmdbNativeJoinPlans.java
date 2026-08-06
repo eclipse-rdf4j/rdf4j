@@ -687,6 +687,13 @@ final class JoinPlan implements SlotPlan {
 		}
 	}
 
+	@Override
+	public BatchCursor openBatch(RowState row, int capacity) throws IOException {
+		// Bushy runtime build (three-tier parity ExecPlan M6): a pattern beside a sub-plan whose sweep is
+		// input-independent drains the sub-plan once into the primitive hash table instead of nested-looping it.
+		return LmdbNativeHashJoin.tryOpenBushy(this, row, capacity);
+	}
+
 	RowCursor open(RowState row, PathTargetSet targets, boolean ownsTargets) throws IOException {
 		double expectedProbes = Double.NaN;
 		double perProbeRows = Double.NaN;

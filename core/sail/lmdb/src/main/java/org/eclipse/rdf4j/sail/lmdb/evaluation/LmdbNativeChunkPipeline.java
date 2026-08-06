@@ -146,7 +146,7 @@ final class LmdbNativeChunkPipeline {
 				if (merge != null) {
 					mergeStages++;
 				}
-				SipTarget sip = merge == null ? trySipTarget(root, pattern, bound, row) : null;
+				SipTarget[] sip = merge == null ? trySipTarget(root, pattern, bound, row) : null;
 				stage = new ProbeStage(stage, pattern, row, bound, memoBudget, arena, merge, rootStage, sip);
 				stage = appendDepthFilters(stage, plan, derived, d, row);
 				bound |= pattern.producedMask();
@@ -433,39 +433,53 @@ final class LmdbNativeChunkPipeline {
 	 * binding cannot change any result. The mask additionally *seeks* across masked-out key runs only when the key is
 	 * the root's leading varying index field (ascending key runs) — otherwise it filters row by row.
 	 */
-	static SipTarget trySipTarget(PatternPlan root, PatternPlan pattern, long boundBefore, RowState row) {
+	static SipTarget[] trySipTarget(PatternPlan root, PatternPlan pattern, long boundBefore, RowState row) {
 		if (!sipEnabled()) {
 			return null;
 		}
 		long keyMask = pattern.producedMask() & boundBefore;
-		if (Long.bitCount(keyMask) != 1 || root.hasRepeatedSlot()) {
+		if (keyMask == 0L || root.hasRepeatedSlot()) {
 			return null;
 		}
-		if ((keyMask & row.boundMask()) != 0L || (keyMask & ~root.producedMask()) != 0L) {
-			return null;
-		}
-		int slot = Long.numberOfTrailingZeros(keyMask);
-		int quadPos = root.quadPositionOfSlot(slot);
-		if (quadPos < 0) {
-			return null;
-		}
-		boolean seekable = false;
+		// Per-slot qualification (three-tier parity ExecPlan M6, multi-key publication): a stage keyed on
+		// several slots still publishes one mask per slot the root freshly produces — the build sweeps the
+		// stage's complete range with ALL key slots unbound, so a root row whose value never occurs at one
+		// key position cannot match any build row regardless of the other key slots.
+		String rootIndex = null;
 		if (!(root.contexts.isFixed() && root.contexts.ids.length > 1)) {
 			long rootSubj = root.s.lookup(row.slots);
 			long rootPred = root.p.lookup(row.slots);
 			long rootObj = root.o.lookup(row.slots);
 			long rootCtx = root.c.lookup(row.slots);
-			String rootIndex = root.statementOrder == null
+			rootIndex = root.statementOrder == null
 					? row.source.indexName(rootSubj, rootPred, rootObj, rootCtx)
 					: row.source.indexName(root.statementOrder, rootSubj, rootPred, rootObj, rootCtx);
-			seekable = leadingKeySequence(rootIndex, root, row, keyMask) != null;
 		}
-		long[] template = new long[4];
-		template[TripleIndex.SUBJ_IDX] = boundOrZero(root.s, row);
-		template[TripleIndex.PRED_IDX] = boundOrZero(root.p, row);
-		template[TripleIndex.OBJ_IDX] = boundOrZero(root.o, row);
-		template[TripleIndex.CONTEXT_IDX] = boundOrZero(root.c, row);
-		return new SipTarget(quadPos, seekable, template);
+		long[] template = null;
+		ArrayList<SipTarget> targets = null;
+		int keyIndex = -1;
+		for (long remaining = keyMask; remaining != 0L; remaining &= remaining - 1) {
+			keyIndex++;
+			long slotBit = Long.lowestOneBit(remaining);
+			if ((slotBit & row.boundMask()) != 0L || (slotBit & ~root.producedMask()) != 0L) {
+				continue;
+			}
+			int quadPos = root.quadPositionOfSlot(Long.numberOfTrailingZeros(slotBit));
+			if (quadPos < 0) {
+				continue;
+			}
+			boolean seekable = rootIndex != null && leadingKeySequence(rootIndex, root, row, slotBit) != null;
+			if (template == null) {
+				template = new long[4];
+				template[TripleIndex.SUBJ_IDX] = boundOrZero(root.s, row);
+				template[TripleIndex.PRED_IDX] = boundOrZero(root.p, row);
+				template[TripleIndex.OBJ_IDX] = boundOrZero(root.o, row);
+				template[TripleIndex.CONTEXT_IDX] = boundOrZero(root.c, row);
+				targets = new ArrayList<>(1);
+			}
+			targets.add(new SipTarget(quadPos, seekable, template, keyIndex));
+		}
+		return targets == null ? null : targets.toArray(new SipTarget[0]);
 	}
 
 	/**
@@ -498,11 +512,18 @@ final class LmdbNativeChunkPipeline {
 		final int quadPos;
 		final boolean seekable;
 		final long[] template;
+		/** Position of this target's slot within the stage's ascending key-slot order (its {@code GroupKey} index). */
+		final int keyIndex;
 
 		SipTarget(int quadPos, boolean seekable, long[] template) {
+			this(quadPos, seekable, template, 0);
+		}
+
+		SipTarget(int quadPos, boolean seekable, long[] template, int keyIndex) {
 			this.quadPos = quadPos;
 			this.seekable = seekable;
 			this.template = template;
+			this.keyIndex = keyIndex;
 		}
 	}
 
@@ -553,17 +574,40 @@ final class LmdbNativeChunkPipeline {
 				long[] sortedKeys = new long[capacity];
 				int index = 0;
 				for (GroupKey key : keys) {
-					sortedKeys[index++] = key.ids[0];
+					sortedKeys[index++] = key.ids[target.keyIndex];
 				}
 				if (index != capacity) {
 					throw new IllegalStateException("SIP key set changed while materializing its mask");
 				}
 				sortUnsigned(sortedKeys);
-				return new SipMask(LmdbNativeIdDomain.sortedDistinct(sortedKeys), target, budget, capacity, null);
+				// a multi-key stage's per-slot projection repeats values across group keys; the domain is the
+				// distinct set, and the surplus reservation is returned once the mask exists
+				int distinct = dedupeSorted(sortedKeys);
+				long[] domainKeys = distinct == capacity ? sortedKeys : Arrays.copyOf(sortedKeys, distinct);
+				SipMask mask = new SipMask(LmdbNativeIdDomain.sortedDistinct(domainKeys), target, budget, distinct,
+						null);
+				if (distinct != capacity) {
+					budget.release(0, capacity - distinct);
+				}
+				return mask;
 			} catch (RuntimeException | Error problem) {
 				budget.release(1, capacity);
 				throw problem;
 			}
+		}
+
+		/** Compacts adjacent duplicates in a sorted array in place; returns the distinct prefix length. */
+		private static int dedupeSorted(long[] sorted) {
+			if (sorted.length == 0) {
+				return 0;
+			}
+			int distinct = 1;
+			for (int i = 1; i < sorted.length; i++) {
+				if (sorted[i] != sorted[distinct - 1]) {
+					sorted[distinct++] = sorted[i];
+				}
+			}
+			return distinct;
 		}
 
 		/**
@@ -954,17 +998,18 @@ final class LmdbNativeChunkPipeline {
 		boolean mergeLastTargetValid;
 		/** SIP: where this stage's completed key domain can prune the root scan; null when the gate refused. */
 		final ScanStage rootStage;
-		final SipTarget sip;
+		/** One target per qualifying key slot (multi-key publication, three-tier parity ExecPlan M6). */
+		final SipTarget[] sip;
 
 		ProbeStage(BatchStage upstream, PatternPlan pattern, RowState row, long boundBefore,
 				FactorizedTail.MemoBudget memoBudget, LmdbNativeLongArena arena, MergePlan merge,
-				ScanStage rootStage, SipTarget sip) {
+				ScanStage rootStage, SipTarget[] sip) {
 			this(upstream, pattern, row, boundBefore, memoBudget, arena, merge, rootStage, sip, true);
 		}
 
 		ProbeStage(BatchStage upstream, PatternPlan pattern, RowState row, long boundBefore,
 				FactorizedTail.MemoBudget memoBudget, LmdbNativeLongArena arena, MergePlan merge,
-				ScanStage rootStage, SipTarget sip, boolean allowHashBuild) {
+				ScanStage rootStage, SipTarget[] sip, boolean allowHashBuild) {
 			this.upstream = upstream;
 			this.pattern = pattern;
 			this.row = row;
@@ -1148,6 +1193,15 @@ final class LmdbNativeChunkPipeline {
 			}
 		}
 
+		/**
+		 * The adjacency-domain mask serves exactly the single-key shape (bound subject, constant predicate): a
+		 * multi-key stage has no one plane whose key domain bounds its matches, so only a stage whose whole key is one
+		 * qualifying slot exposes a target here.
+		 */
+		private SipTarget adjacencySipTarget() {
+			return sip != null && sip.length == 1 && keySlots.length == 1 ? sip[0] : null;
+		}
+
 		private boolean adjacencyMaskEstimatedWorthTrying() {
 			if (adjacencyMaskPublished) {
 				return false;
@@ -1156,6 +1210,7 @@ final class LmdbNativeChunkPipeline {
 				adjacencyDecision("NOT_CONSIDERED", "FEATURE_DISABLED[" + SIP_PROPERTY + "=false]");
 				return false;
 			}
+			SipTarget sip = adjacencySipTarget();
 			if (sip == null) {
 				adjacencyDecision("REJECTED", "SHAPE_REJECTED[probe key is not one root-produced slot]");
 				return false;
@@ -1195,6 +1250,7 @@ final class LmdbNativeChunkPipeline {
 				adjacencyDecision("REJECTED", "ADJACENCY_DOMAIN_CURSOR_UNAVAILABLE");
 				return;
 			}
+			SipTarget sip = adjacencySipTarget();
 			if (adjacencyMaskPublished || sip == null || !sip.seekable || !sipEnabled()
 					|| !adjacencySipMasksEnabled()) {
 				adjacencyDecision("REJECTED", "ADMISSION_INVALIDATED[enabled=" + adjacencySipMasksEnabled()
@@ -1479,7 +1535,7 @@ final class LmdbNativeChunkPipeline {
 			int reservedEntries = 0;
 			long reservedValues = 0L;
 			boolean published = false;
-			SipMask mask = null;
+			SipMask[] masks = null;
 			if (probe == null) {
 				probe = row.source.newProbe();
 			}
@@ -1528,9 +1584,13 @@ final class LmdbNativeChunkPipeline {
 						}
 					}
 				}
-				mask = sip != null && sipEnabled()
-						? SipMask.tryCreate(buckets.keySet(), sip, memoBudget)
-						: null;
+				if (sip != null && sipEnabled()) {
+					masks = new SipMask[sip.length];
+					for (int t = 0; t < sip.length; t++) {
+						// a budget refusal for one slot's projection leaves the other targets untouched
+						masks[t] = SipMask.tryCreate(buckets.keySet(), sip[t], memoBudget);
+					}
+				}
 				int memoEntries = memo.size();
 				memo.clear();
 				memoBudget.release(memoEntries, 0);
@@ -1539,15 +1599,24 @@ final class LmdbNativeChunkPipeline {
 				hashReservedValues = reservedValues;
 				published = true;
 				metrics.recordChunkHashBuild();
-				if (mask != null) {
-					// publishMask either accepts ownership or closes the mask when its list cannot grow
-					SipMask retainedMask = mask;
-					mask = null;
-					rootStage.publishMask(retainedMask);
+				if (masks != null) {
+					for (int t = 0; t < masks.length; t++) {
+						SipMask retainedMask = masks[t];
+						if (retainedMask == null) {
+							continue;
+						}
+						// publishMask either accepts ownership or closes the mask when its list cannot grow
+						masks[t] = null;
+						rootStage.publishMask(retainedMask);
+					}
 				}
 			} finally {
-				if (mask != null) {
-					mask.close();
+				if (masks != null) {
+					for (SipMask unpublished : masks) {
+						if (unpublished != null) {
+							unpublished.close();
+						}
+					}
 				}
 				if (!published) {
 					memoBudget.release(reservedEntries, reservedValues);
