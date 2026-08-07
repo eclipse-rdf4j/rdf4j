@@ -53,6 +53,13 @@ public final class LmdbNativeAttemptMetrics {
 	static final String PATH_IR_KERNEL = "irKernel";
 	static final String PATH_IR_AGGREGATE = "irAggregate";
 	/**
+	 * The morsel-parallel rungs of the two IR kernel tiers. They are separate strategies from the sequential kernels
+	 * because they decline for their own reasons — and those declines have to be readable from explain output rather
+	 * than only from a debug-flagged stderr print, which is what the parity ledger checks (plan 32, M5).
+	 */
+	static final String PATH_IR_KERNEL_PARALLEL = "irKernelParallel";
+	static final String PATH_IR_AGGREGATE_PARALLEL = "irAggregateParallel";
+	/**
 	 * Whole-stage codegen strategies; declines against these are logged at INFO to explain why Janino was not picked.
 	 */
 	private static final Set<String> JANINO_STRATEGIES = Set.of(PATH_JANINO_AGGREGATE,

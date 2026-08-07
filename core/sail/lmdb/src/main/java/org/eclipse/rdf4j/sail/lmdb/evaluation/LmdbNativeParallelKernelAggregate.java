@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelBindings.KernelGroupLayout;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Aggregate;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Having;
@@ -48,14 +49,16 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
  * adjacency view, so shape keys and the compile cache are shared with the sequential path.
  *
  * <p>
- * Admission: the root producer must be an {@code EnumerateAdjKeys} whose view no other pipeline node re-enumerates
- * (probes by {@code find} are unaffected by the window), and every aggregate output must merge exactly across
- * partitions (COUNT, SUM, AVG, MIN, MAX — no DISTINCT channels, whose per-partition sets would double-count). Hook
- * filters run when each can fork a worker-confined copy (plan: plans/lmdb-native-engine/31-parallel-kernel-parity.md).
- * HAVING and ORDER/LIMIT/OFFSET must see final group values, not partials, so the workers run a kernel variant with
- * both stripped and the query thread applies them after the merge — through the same count comparison and the same
- * {@code KernelRuntime} sort the generated code uses. Any dynamic failure declines cleanly to the sequential kernel
- * drain — nothing has been emitted.
+ * Admission: the root producer must be partitionable — an {@code EnumerateAdjKeys} or {@code EnumerateDomain} that no
+ * other pipeline node re-enumerates (probes by {@code find} are unaffected by a window), or a {@code ScanQuad} whose
+ * key range the store can split (plan 32 M3, matching the interpreted engine's range-partitioned root scans). Every
+ * aggregate output must merge exactly across partitions: COUNT adds, SUM/AVG merge sum+count, MIN/MAX fold by value
+ * order, and DISTINCT channels union their id sets in the hook sidecar with the count or the arithmetic deferred until
+ * after the union (plan 32 M2 — a per-partition distinct count or sum is what could not be merged, not the channel
+ * itself). Hook filters run when each can fork a worker-confined copy (plan 31). HAVING and ORDER/LIMIT/OFFSET must see
+ * final group values, not partials, so the workers run a kernel variant with both stripped and the query thread applies
+ * them after the merge — through the same count comparison and the same {@code KernelRuntime} sort the generated code
+ * uses. Any dynamic failure declines cleanly to the sequential kernel drain — nothing has been emitted.
  */
 @Experimental
 final class LmdbNativeParallelKernelAggregate {
@@ -92,7 +95,7 @@ final class LmdbNativeParallelKernelAggregate {
 		LmdbNativeKernelBindings bindings = lowered.bindings;
 		KernelGroupLayout layout = bindings.groupLayout;
 		if (layout == null || !(lowered.kernel.terminal instanceof Aggregate)) {
-			return debugDecline("not-aggregate");
+			return debugDecline(explainTarget, "not-aggregate");
 		}
 		Aggregate aggregate = (Aggregate) lowered.kernel.terminal;
 		for (LmdbNativeKernelIr.AggregateOutput output : aggregate.outputs) {
@@ -112,52 +115,82 @@ final class LmdbNativeParallelKernelAggregate {
 			case LmdbNativeKernelIr.AGG_AVG_DISTINCT:
 				break;
 			default:
-				return debugDecline("unmergeable-aggregate-kind-" + output.kind);
+				return debugDecline(explainTarget, "unmergeable-aggregate-kind-" + output.kind);
 			}
 		}
 		if (bindings.planRequests.length > 0) {
-			return debugDecline("plan-producer");
+			return debugDecline(explainTarget, "plan-producer");
 		}
 		// Hook-invoked filters are admissible when each can fork a worker-confined copy — the interpreted parallel
 		// engine's gate. The sequential aggregate drain never consults residual filters, so an aggregate lowering that
 		// carried one would be a lowering bug; decline defensively rather than silently ignore it in parallel.
 		if (!LmdbNativeKernelPartitions.filterHooksForkable(bindings.filterHooks)) {
-			return debugDecline("filter-not-forkable");
+			return debugDecline(explainTarget, "filter-not-forkable");
 		}
 		// Bind-hook evaluators are compiled against the query thread's source/codec and expose no fork SPI, so a
 		// computed BIND keeps the sequential kernel (v1; mirrors the filter-hook situation before plan 31).
 		if (bindings.bindHooks.length > 0) {
-			return debugDecline("bind-hook");
+			return debugDecline(explainTarget, "bind-hook");
 		}
 		// Kernel residual predicates run the shared engine-side filter instance; no fork SPI yet (M10 v1).
 		if (bindings.kernelResiduals.length > 0) {
-			return debugDecline("kernel-residual");
+			return debugDecline(explainTarget, "kernel-residual");
 		}
 		if (!bindings.residualFilters.isEmpty()) {
-			return debugDecline("residual-filter");
+			return debugDecline(explainTarget, "residual-filter");
 		}
 		int rootAdjacency = LmdbNativeKernelPartitions.partitionableRootAdjacency(lowered.kernel.pipeline);
 		int rootDomain = rootAdjacency >= 0 ? -1
 				: LmdbNativeKernelPartitions.partitionableRootDomain(lowered.kernel.pipeline);
-		if (rootAdjacency < 0 && rootDomain < 0) {
-			return debugDecline("root-not-partitionable");
+		// A raw scan root range-partitions instead, the way the interpreted parallel engine partitions any root
+		// pattern scan (plan 32 M3) — a kernel must not lose its parallelism merely for being lowered onto a scan.
+		int rootScan = rootAdjacency < 0 && rootDomain < 0
+				? LmdbNativeKernelPartitions.partitionableRootScan(lowered.kernel.pipeline)
+				: -1;
+		if (rootAdjacency < 0 && rootDomain < 0 && rootScan < 0) {
+			return debugDecline(explainTarget, "root-not-partitionable");
+		}
+		if (rootScan >= 0 && bindings.scanOrders[rootScan] != null) {
+			// the partitioned open carries no StatementOrder, and dropping one silently would change what an
+			// order-dependent consumer sees
+			return debugDecline(explainTarget, "root-scan-ordered");
+		}
+		if (rootScan >= 0 && !LmdbNativeParallelPipelines.rangePartitionEnabled()) {
+			return debugDecline(explainTarget, "range-partition-disabled");
 		}
 		int desiredWorkers = LmdbNativeParallelPipelines.configuredThreads();
 		if (desiredWorkers < 2) {
-			return debugDecline("single-thread");
+			return debugDecline(explainTarget, "single-thread");
 		}
 		double totalWork = arg.estimate(row);
 		if (!(totalWork >= LmdbNativeParallelPipelines.minimumWorkEstimate())) {
-			return debugDecline("below-threshold");
+			return debugDecline(explainTarget, "below-threshold");
 		}
-		long rootKeys = rootAdjacency >= 0 ? queryViews[rootAdjacency].keyCount() : domains[rootDomain].length;
-		if (rootKeys < 2L * desiredWorkers) {
-			return debugDecline("root-too-small");
+		long rootKeys = 0L;
+		LmdbRootScanPartition[] scanPartitions = null;
+		if (rootScan >= 0) {
+			long[] quad = LmdbNativeKernelPartitions.rootScanQuad(
+					LmdbNativeKernelPartitions.rootScanNode(lowered.kernel.pipeline), bindings, row);
+			try {
+				scanPartitions = emitter.source.planRootScanPartitions(quad[0], quad[1], quad[2], quad[3],
+						LmdbNativeParallelPipelines.rangePartitionTarget(desiredWorkers, totalWork));
+			} catch (IOException e) {
+				// split planning is best-effort, exactly as it is for the interpreted engine
+				return debugDecline(explainTarget, "root-scan-unplannable-" + e);
+			}
+			if (scanPartitions == null || scanPartitions.length < 2) {
+				return debugDecline(explainTarget, "root-scan-not-splittable");
+			}
+		} else {
+			rootKeys = rootAdjacency >= 0 ? queryViews[rootAdjacency].keyCount() : domains[rootDomain].length;
+			if (rootKeys < 2L * desiredWorkers) {
+				return debugDecline(explainTarget, "root-too-small");
+			}
 		}
 		// The workers re-seed from the entry bindings; a live row carrying additional correlated slots would not be
 		// reproducible from the base, so such entries keep the sequential drain.
 		if (!LmdbNativeKernelPartitions.entryReseedable(emitter.source, emitter.layout, emitter.base, row)) {
-			return debugDecline("correlated-entry");
+			return debugDecline(explainTarget, "correlated-entry");
 		}
 		// DISTINCT channels move to the hook sidecar in the worker variant so the consumer can reach the per-partition
 		// id sets; the rewrite also drops the ordered-domain fast path, whose agO counter counts RUNS of equal values
@@ -187,7 +220,7 @@ final class LmdbNativeParallelKernelAggregate {
 					new Aggregate(aggregate.groupCols, workerOutputs, null, OutputMods.none()));
 			JaninoKernel probeKernel = kernelFactory.apply(workerKernel);
 			if (probeKernel == null) {
-				return debugDecline("worker-kernel-pending");
+				return debugDecline(explainTarget, "worker-kernel-pending");
 			}
 			probeKernel.close();
 		}
@@ -196,12 +229,12 @@ final class LmdbNativeParallelKernelAggregate {
 		LmdbNativeParallelPipelines.TaskReservation reservation = LmdbNativeParallelPipelines.tryReserveTasks(false,
 				desiredWorkers);
 		if (reservation == null) {
-			return debugDecline("task-budget");
+			return debugDecline(explainTarget, "task-budget");
 		}
 		int threads = reservation.grantedWorkers();
 		if (threads < 2) {
 			reservation.close();
-			return debugDecline("task-budget");
+			return debugDecline(explainTarget, "task-budget");
 		}
 		NativeLmdbQuerySource.ParallelSource[] sources = null;
 		Throwable cleanupFailure = null;
@@ -209,13 +242,13 @@ final class LmdbNativeParallelKernelAggregate {
 			try {
 				sources = emitter.source.openParallelSources(threads);
 			} catch (IOException e) {
-				return debugDecline("snapshot-unavailable-" + e);
+				return debugDecline(explainTarget, "snapshot-unavailable-" + e);
 			}
 			if (sources == null) {
-				return debugDecline("snapshot-unavailable");
+				return debugDecline(explainTarget, "snapshot-unavailable");
 			}
-			return execute(lowered, (Aggregate) workerKernelFinal.terminal, rootAdjacency, rootDomain, domains,
-					rootKeys, sources, threads, row, emitter, workerFactory);
+			return execute(lowered, (Aggregate) workerKernelFinal.terminal, rootAdjacency, rootDomain, rootScan,
+					domains, rootKeys, scanPartitions, sources, threads, row, emitter, workerFactory);
 		} finally {
 			cleanupFailure = LmdbNativeParallelPipelines.closeSources(sources, cleanupFailure);
 			reservation.close();
@@ -229,10 +262,16 @@ final class LmdbNativeParallelKernelAggregate {
 	}
 
 	private static List<BindingSet> execute(LmdbNativeKernelLowering.Lowered lowered, Aggregate workerAggregate,
-			int rootAdjacency, int rootDomain,
-			long[][] domains, long rootKeys, NativeLmdbQuerySource.ParallelSource[] sources, int threads, RowState row,
+			int rootAdjacency, int rootDomain, int rootScan,
+			long[][] domains, long rootKeys, LmdbRootScanPartition[] scanPartitions,
+			NativeLmdbQuerySource.ParallelSource[] sources, int threads, RowState row,
 			NativeGroupIteration emitter, Supplier<JaninoKernel> kernelFactory) {
-		ConcurrentLinkedQueue<long[]> ranges = LmdbNativeKernelPartitions.ranges(rootKeys, threads, RANGES_PER_WORKER);
+		// One work queue either way: key-ordinal windows over an adjacency or domain root, or planned scan ranges.
+		ConcurrentLinkedQueue<long[]> ranges = rootScan >= 0 ? null
+				: LmdbNativeKernelPartitions.ranges(rootKeys, threads, RANGES_PER_WORKER);
+		ConcurrentLinkedQueue<LmdbRootScanPartition> scanQueue = rootScan >= 0
+				? new ConcurrentLinkedQueue<>(Arrays.asList(scanPartitions))
+				: null;
 		AtomicReference<Throwable> failure = new AtomicReference<>();
 		ArrayList<Future<HashMap<LongsKey, Partial>>> futures = new ArrayList<>(threads);
 		for (int w = 0; w < threads; w++) {
@@ -240,8 +279,8 @@ final class LmdbNativeParallelKernelAggregate {
 			try {
 				futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
 					try {
-						return runWorker(lowered, workerAggregate, rootAdjacency, rootDomain, domains, source, emitter,
-								ranges, kernelFactory, failure);
+						return runWorker(lowered, workerAggregate, rootAdjacency, rootDomain, rootScan, domains,
+								source, emitter, ranges, scanQueue, kernelFactory, failure);
 					} catch (Throwable t) {
 						failure.compareAndSet(null, t);
 						throw t;
@@ -301,6 +340,11 @@ final class LmdbNativeParallelKernelAggregate {
 		Aggregate aggregate = (Aggregate) lowered.kernel.terminal;
 		KernelGroupLayout layout = bindings.groupLayout;
 		LmdbNativeKernelHooks mergeHooks = bindings.needsHooks() ? new LmdbNativeKernelHooks(row, bindings) : null;
+		if (mergeHooks != null && aggregate.mods.orderKeys != null && aggregate.mods.valueOrder) {
+			// align the value comparator with the consumer's strict/extended evaluation mode, exactly as the row route
+			// and the interpreted sort's AggContext do — the consumer sort below runs through this same hooks object
+			mergeHooks.orderComparatorStrict(lowered.strictOrderCompare);
+		}
 		HashMap<LongsKey, Partial> total = new HashMap<>();
 		try {
 			for (HashMap<LongsKey, Partial> workerResult : workerResults) {
@@ -442,8 +486,9 @@ final class LmdbNativeParallelKernelAggregate {
 
 	private static HashMap<LongsKey, Partial> runWorker(LmdbNativeKernelLowering.Lowered lowered,
 			Aggregate aggregate, int rootAdjacency,
-			int rootDomain, long[][] domains, NativeLmdbQuerySource source, NativeGroupIteration emitter,
-			Queue<long[]> ranges, Supplier<JaninoKernel> kernelFactory, AtomicReference<Throwable> failure)
+			int rootDomain, int rootScan, long[][] domains, NativeLmdbQuerySource source, NativeGroupIteration emitter,
+			Queue<long[]> ranges, Queue<LmdbRootScanPartition> scanQueue, Supplier<JaninoKernel> kernelFactory,
+			AtomicReference<Throwable> failure)
 			throws IOException {
 		LmdbNativeKernelBindings bindings = lowered.bindings;
 		KernelGroupLayout layout = bindings.groupLayout;
@@ -479,8 +524,21 @@ final class LmdbNativeParallelKernelAggregate {
 			}
 			int stride = lowered.kernel.stride();
 			long[] buffer = new long[stride * FILL_ROWS];
-			long[] range;
-			while ((range = ranges.poll()) != null && failure.get() == null) {
+			while (failure.get() == null) {
+				// One unit of work per kernel instance: a key-ordinal window, or one planned scan range.
+				long[] range = null;
+				LmdbRootScanPartition scanPartition = null;
+				if (rootScan >= 0) {
+					scanPartition = scanQueue.poll();
+					if (scanPartition == null) {
+						break;
+					}
+				} else {
+					range = ranges.poll();
+					if (range == null) {
+						break;
+					}
+				}
 				JaninoKernel kernel = kernelFactory.get();
 				if (kernel == null) {
 					throw new LmdbNativeKernelPartitions.ParallelKernelDecline("kernel-instance-unavailable");
@@ -497,7 +555,11 @@ final class LmdbNativeParallelKernelAggregate {
 							: null;
 					NativeLmdbQuerySource.NativeAdjacency[] windowViews = views;
 					long[][] windowDomains = domains;
-					if (rootAdjacency >= 0) {
+					if (rootScan >= 0) {
+						// the scanner is per worker and re-aimed per unit; the generated code is untouched, exactly as
+						// a key window leaves it untouched for an adjacency root
+						scanner.restrictRootScan(rootScan, scanPartition);
+					} else if (rootAdjacency >= 0) {
 						windowViews = views.clone();
 						windowViews[rootAdjacency] = new LmdbNativeKernelPartitions.KeyWindowView(views[rootAdjacency],
 								range[0], range[1]);
@@ -554,7 +616,8 @@ final class LmdbNativeParallelKernelAggregate {
 			switch (output.kind) {
 			case LmdbNativeKernelIr.AGG_COUNT_STAR:
 			case LmdbNativeKernelIr.AGG_COUNT:
-				partial.counts[i] += raw;
+				// overflow-checked, matching AggState.mergeFrom: a silently wrapped count is worse than a failure
+				partial.counts[i] = FactorizedTail.addCounts(partial.counts[i], raw);
 				break;
 			case LmdbNativeKernelIr.AGG_SUM:
 			case LmdbNativeKernelIr.AGG_AVG: {
@@ -600,7 +663,7 @@ final class LmdbNativeParallelKernelAggregate {
 			switch (aggregate.outputs[i].kind) {
 			case LmdbNativeKernelIr.AGG_COUNT_STAR:
 			case LmdbNativeKernelIr.AGG_COUNT:
-				into.counts[i] += from.counts[i];
+				into.counts[i] = FactorizedTail.addCounts(into.counts[i], from.counts[i]);
 				break;
 			case LmdbNativeKernelIr.AGG_SUM:
 			case LmdbNativeKernelIr.AGG_AVG:
@@ -662,7 +725,14 @@ final class LmdbNativeParallelKernelAggregate {
 		}
 	}
 
-	private static List<BindingSet> debugDecline(String reason) {
+	/**
+	 * Records one decline and keeps the sequential drain. The reason goes to explain output as well as to the debug
+	 * stream, so "why did this not parallelize" is answerable from a query plan rather than only from a rerun with a
+	 * system property set — the interpreted parallel aggregation has always reported its declines this way.
+	 */
+	private static List<BindingSet> debugDecline(TupleExpr explainTarget, String reason) {
+		LmdbNativeAttemptMetrics.recordDecline(explainTarget,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL, reason);
 		if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
 			System.err.println("[ir-aggregate-parallel] decline: " + reason);
 		}

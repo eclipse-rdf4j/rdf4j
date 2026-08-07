@@ -157,6 +157,37 @@ final class LmdbNativeKernelPartitions {
 	}
 
 	/**
+	 * The root scan's {@code (subject, predicate, object, context)} ids, resolved the same way the generated code
+	 * resolves them at bind time: a missing term is the unbound sentinel {@code -1}, a constant reads the bindings'
+	 * constant pool, and an entry term reads the entry-bound slot off the query thread's row. Admission has already
+	 * refused column terms, so nothing here depends on a row the query thread cannot see.
+	 */
+	static long[] rootScanQuad(LmdbNativeKernelIr.ScanQuad root, LmdbNativeKernelBindings bindings, RowState row) {
+		long[] quad = new long[4];
+		for (int i = 0; i < 4; i++) {
+			LmdbNativeKernelIr.Operand term = root.terms[i];
+			if (term == null) {
+				quad[i] = -1L;
+			} else if (term.kind == LmdbNativeKernelIr.Operand.CONST) {
+				quad[i] = bindings.constants[term.index];
+			} else {
+				quad[i] = row.slots[bindings.entrySlotIds[term.index]];
+			}
+		}
+		return quad;
+	}
+
+	/** The root {@code ScanQuad} of a pipeline admitted by {@link #partitionableRootScan}. */
+	static LmdbNativeKernelIr.ScanQuad rootScanNode(List<Node> pipeline) {
+		for (Node node : pipeline) {
+			if (node instanceof LmdbNativeKernelIr.ScanQuad) {
+				return (LmdbNativeKernelIr.ScanQuad) node;
+			}
+		}
+		throw new IllegalStateException("pipeline admitted as scan-rooted has no ScanQuad");
+	}
+
+	/**
 	 * True when any node other than the root re-reads the same scan site. Such a node would inherit the worker's
 	 * partition bound and silently see a slice of what it asked for.
 	 */

@@ -18,8 +18,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
@@ -67,22 +69,44 @@ public class LmdbNativeKernelScanPartitionTest {
 	/** Large enough that the planner has real key ranges to split rather than falling back to a single partition. */
 	private static final int STATEMENTS = 20_000;
 
+	/**
+	 * A variable predicate is expressible by no adjacency view, so this join's root producer is a raw scan while the
+	 * second pattern stays a probe — the shape whose row kernel used to decline with {@code root-not-partitionable}.
+	 */
+	private static final String ROWS_SCAN_JOIN = "SELECT ?s ?o ?t WHERE { ?s ?p ?o . ?s <" + EX + "q> ?t }";
+
+	private static final String[] PROPERTIES = {
+			LmdbNativeJaninoCodegen.ENABLED_PROPERTY,
+			"rdf4j.lmdb.nativeQueryEngine.enabled",
+			"rdf4j.lmdb.janinoCodegen.thresholdRows",
+			"rdf4j.lmdb.parallel.threads",
+			"rdf4j.lmdb.parallel.minWorkEstimate",
+			LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY,
+			LmdbNativeParallelKernelRows.ENABLED_PROPERTY };
+
 	@TempDir
 	File dataDir;
 
 	private SailRepository repository;
-	private String previousEnabled;
+	private final Map<String, String> previousProperties = new HashMap<>();
 
 	@BeforeEach
 	public void setUp() {
-		previousEnabled = System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "true");
+		for (String property : PROPERTIES) {
+			previousProperties.put(property, System.getProperty(property));
+		}
+		System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "true");
 		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
 			IRI p = vf.createIRI(EX, "p");
+			IRI q = vf.createIRI(EX, "q");
 			connection.begin();
 			for (int i = 0; i < STATEMENTS; i++) {
-				connection.add(vf.createIRI(EX, "s" + i), p, vf.createLiteral(i));
+				IRI s = vf.createIRI(EX, "s" + i);
+				connection.add(s, p, vf.createLiteral(i));
+				// a second edge per subject, so a row query can join the scan root against a probe
+				connection.add(s, q, vf.createIRI(EX, "t" + i));
 			}
 			connection.commit();
 		}
@@ -93,10 +117,12 @@ public class LmdbNativeKernelScanPartitionTest {
 		if (repository != null) {
 			repository.shutDown();
 		}
-		if (previousEnabled == null) {
-			System.clearProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY);
-		} else {
-			System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, previousEnabled);
+		for (Map.Entry<String, String> property : previousProperties.entrySet()) {
+			if (property.getValue() == null) {
+				System.clearProperty(property.getKey());
+			} else {
+				System.setProperty(property.getKey(), property.getValue());
+			}
 		}
 	}
 
@@ -129,6 +155,77 @@ public class LmdbNativeKernelScanPartitionTest {
 					"partitions must cover the scan exactly once — a different total means a gap or a duplicate");
 			assertEquals(render(whole), render(unioned), "the union of the partitions must be the whole scan");
 		}
+	}
+
+	/**
+	 * End to end: a variable-predicate pattern is expressible by no adjacency view, so its aggregate kernel is rooted
+	 * at a raw scan. That used to decline with {@code root-not-partitionable} and run single-threaded even though the
+	 * interpreted parallel engine would have range-partitioned the very same root scan.
+	 */
+	@Test
+	public void scanRootedAggregateRunsPartitioned() {
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		List<String> expected = rows("SELECT (COUNT(?o) AS ?c) WHERE { ?s ?p ?o }");
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
+		System.setProperty("rdf4j.lmdb.parallel.threads", "4");
+		System.setProperty("rdf4j.lmdb.parallel.minWorkEstimate", "1");
+		System.setProperty(LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "true");
+
+		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
+		for (int round = 0; round < 200
+				&& LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get() == parallelBefore; round++) {
+			assertEquals(expected, rows("SELECT (COUNT(?o) AS ?c) WHERE { ?s ?p ?o }"), "parity on round " + round);
+		}
+		assertTrue(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get() > parallelBefore,
+				"a scan-rooted aggregate must range-partition its root rather than decline to a single thread");
+		assertEquals(expected, rows("SELECT (COUNT(?o) AS ?c) WHERE { ?s ?p ?o }"));
+	}
+
+	/** The rows-rung twin: the same scan root, streamed instead of aggregated. */
+	@Test
+	public void scanRootedRowsRunPartitioned() {
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		List<String> expected = rows(ROWS_SCAN_JOIN);
+		assertTrue(expected.size() >= STATEMENTS, "expected a populated join result");
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
+		System.setProperty("rdf4j.lmdb.parallel.threads", "4");
+		System.setProperty("rdf4j.lmdb.parallel.minWorkEstimate", "1");
+		System.setProperty(LmdbNativeParallelKernelRows.ENABLED_PROPERTY, "true");
+
+		long parallelBefore = LmdbNativeParallelKernelRows.PARALLEL_RUNS.get();
+		for (int round = 0; round < 200
+				&& LmdbNativeParallelKernelRows.PARALLEL_RUNS.get() == parallelBefore; round++) {
+			assertEquals(sorted(rows(ROWS_SCAN_JOIN)), sorted(expected), "parity on round " + round);
+		}
+		assertTrue(LmdbNativeParallelKernelRows.PARALLEL_RUNS.get() > parallelBefore,
+				"a scan-rooted row kernel must range-partition its root rather than decline to a single thread");
+		assertEquals(sorted(rows(ROWS_SCAN_JOIN)), sorted(expected));
+	}
+
+	private static List<String> sorted(List<String> rows) {
+		List<String> copy = new ArrayList<>(rows);
+		copy.sort(String::compareTo);
+		return copy;
+	}
+
+	private List<String> rows(String query) {
+		List<String> rendered = new ArrayList<>();
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			try (var result = conn.prepareTupleQuery(query).evaluate()) {
+				while (result.hasNext()) {
+					var bindings = result.next();
+					List<String> parts = new ArrayList<>();
+					for (String name : bindings.getBindingNames()) {
+						parts.add(name + "=" + bindings.getValue(name));
+					}
+					parts.sort(String::compareTo);
+					rendered.add(String.join("|", parts));
+				}
+			}
+		}
+		return rendered;
 	}
 
 	@Test
