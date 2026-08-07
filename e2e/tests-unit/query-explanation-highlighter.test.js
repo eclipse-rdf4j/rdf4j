@@ -36,6 +36,36 @@ test('formats plan JSON as the legacy text tree', () => {
     );
 });
 
+test('discovers and filters individual plan properties without changing the tree', () => {
+    const { harness, highlighter } = createHighlighterHarness();
+    const plan = {
+        type: 'Join',
+        newScope: true,
+        algorithm: 'hash join',
+        costEstimate: 10,
+        resultSizeEstimate: 4,
+        stringMetricsActual: {
+            bindingState: 'bound'
+        }
+    };
+
+    assert.deepEqual(
+        Array.from(highlighter.getProperties(plan, 'Optimized')),
+        ['newScope', 'algorithm', 'costEstimate', 'resultSizeEstimate', 'bindingState']
+    );
+
+    const rendered = highlighter.render(plan, {
+        level: 'Optimized',
+        mode: 'syntax',
+        hiddenProperties: ['algorithm', 'costEstimate', 'bindingState']
+    });
+    const target = harness.document.createElement('pre');
+    target.appendChild(rendered.fragment);
+
+    assert.equal(rendered.text, 'Join (new scope) (resultSizeEstimate=4.00)\n');
+    assert.equal(target.textContent, rendered.text);
+});
+
 test('matches Java decimal rounding and scientific notation', () => {
     const { highlighter } = createHighlighterHarness();
     const result = highlighter.format({

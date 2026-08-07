@@ -156,6 +156,32 @@
                             </span>
                             <span id="explanation-hotspot-legend" class="query-explanation-hotspot-legend"
                                   aria-live="polite"></span>
+                            <details id="explanation-property-config"
+                                     class="query-explanation-property-config">
+                                <summary id="explanation-property-summary"
+                                         class="query-explanation-property-config__summary">
+                                    <span>Properties</span>
+                                    <span id="explanation-property-count"
+                                          class="query-explanation-property-config__count"
+                                          aria-live="polite"></span>
+                                </summary>
+                                <div id="explanation-property-panel"
+                                     class="query-explanation-property-config__panel">
+                                    <div class="query-explanation-property-config__header">
+                                        <strong>Visible properties</strong>
+                                        <span class="query-explanation-property-config__actions">
+                                            <button id="explanation-properties-all" type="button">All</button>
+                                            <button id="explanation-properties-none" type="button">None</button>
+                                        </span>
+                                    </div>
+                                    <div id="explanation-property-options"
+                                         class="query-explanation-property-config__options"
+                                         role="group" aria-label="Visible query plan properties"></div>
+                                    <p class="query-explanation-property-config__hint">
+                                        Plan structure always remains visible.
+                                    </p>
+                                </div>
+                            </details>
                         </span>
                         <span id="primary-explain-repeat-controls" class="query-form__field--controls-group">
                             <input id="rerun-explanation" type="button"

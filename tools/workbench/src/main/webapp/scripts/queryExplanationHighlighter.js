@@ -597,7 +597,10 @@ var workbench;
         function textLine(text) {
             return { tokens: [token(text)] };
         }
-        function nodeLine(node, level) {
+        function isPropertyVisible(name, hiddenProperties) {
+            return !hiddenProperties || hiddenProperties.indexOf(name) < 0;
+        }
+        function nodeLine(node, level, hiddenProperties) {
             var lineTokens = [];
             var type = planType(node);
             if (type.indexOf('Var') === 0) {
@@ -617,13 +620,16 @@ var workbench;
             else {
                 lineTokens.push(token(type, 'node-type'));
             }
-            if (node.newScope) {
+            if (node.newScope && isPropertyVisible('newScope', hiddenProperties)) {
                 lineTokens.push(token(' (new scope)', 'annotation'));
             }
-            if (typeof node.algorithm === 'string' && node.algorithm.length) {
+            if (typeof node.algorithm === 'string' && node.algorithm.length
+                && isPropertyVisible('algorithm', hiddenProperties)) {
                 lineTokens.push(token(' (' + node.algorithm + ')', 'annotation'));
             }
-            var nodeMetrics = metrics(node, level);
+            var nodeMetrics = metrics(node, level).filter(function (entry) {
+                return isPropertyVisible(entry.name, hiddenProperties);
+            });
             if (nodeMetrics.length) {
                 lineTokens.push(token(' (', 'punctuation'));
                 for (var i = 0; i < nodeMetrics.length; i++) {
@@ -654,14 +660,14 @@ var workbench;
             result.tokens.push(token(' [' + side + ']', 'join-side'));
             return result;
         }
-        function formatLines(node, depth, ordered, level) {
+        function formatLines(node, depth, ordered, level, hiddenProperties) {
             var result = [];
             if (node.timedOut) {
                 result.push(textLine('Timed out while retrieving explanation! Explanation may be incomplete!'));
                 result.push(textLine('You can change the timeout by setting .setMaxExecutionTime(...) on your query.'));
                 result.push(textLine(''));
             }
-            result.push(nodeLine(node, level));
+            result.push(nodeLine(node, level, hiddenProperties));
             var children = displayPlans(node, ordered);
             var hasNestedChild = false;
             for (var childIndex = 0; childIndex < children.length; childIndex++) {
@@ -676,8 +682,8 @@ var workbench;
                 var horizontal = even ? '══' : '──';
                 var vertical = even ? '║' : '│';
                 var end = even ? '╚' : '└';
-                var leftLines = formatLines(children[0], depth + 1, false, level);
-                var rightLines = formatLines(children[1], depth + 1, false, level);
+                var leftLines = formatLines(children[0], depth + 1, false, level, hiddenProperties);
+                var rightLines = formatLines(children[1], depth + 1, false, level, hiddenProperties);
                 if (leftLines.length) {
                     var firstLeft = prefixLine(leftLines[0], start + horizontal + ' ', 'connector');
                     result.push(hasJoinSideLabels(node) ? appendJoinSide(firstLeft, 'left') : firstLeft);
@@ -696,7 +702,7 @@ var workbench;
             else {
                 for (childIndex = 0; childIndex < children.length; childIndex++) {
                     var child = children[childIndex];
-                    var childLines = formatLines(child, depth + 1, isProjectionElemList(child) && !isMultiProjection(node), level);
+                    var childLines = formatLines(child, depth + 1, isProjectionElemList(child) && !isMultiProjection(node), level, hiddenProperties);
                     for (var lineIndex = 0; lineIndex < childLines.length; lineIndex++) {
                         var childLine = childLines[lineIndex];
                         if (startsWithType(node, 'StatementPattern') && startsWithType(child, 'Var')) {
@@ -718,10 +724,10 @@ var workbench;
         function effectiveLineSeparator(lineSeparator) {
             return typeof lineSeparator === 'string' && lineSeparator.length > 0 ? lineSeparator : '\n';
         }
-        function format(plan, level, lineSeparator) {
+        function format(plan, level, lineSeparator, hiddenProperties) {
             var effectiveLevel = level || 'Optimized';
             var separator = effectiveLineSeparator(lineSeparator);
-            var lines = formatLines(plan || {}, 0, isProjectionElemList(plan || {}), effectiveLevel);
+            var lines = formatLines(plan || {}, 0, isProjectionElemList(plan || {}), effectiveLevel, hiddenProperties);
             var text = '';
             for (var i = 0; i < lines.length; i++) {
                 text += lineText(lines[i]) + separator;
@@ -729,6 +735,35 @@ var workbench;
             return { lines: lines, text: text };
         }
         queryExplanationHighlighter.format = format;
+        function getProperties(plan, level) {
+            var effectiveLevel = level || 'Optimized';
+            var result = [];
+            function add(name) {
+                if (result.indexOf(name) < 0) {
+                    result.push(name);
+                }
+            }
+            function visit(node) {
+                var currentNode = node || {};
+                if (currentNode.newScope) {
+                    add('newScope');
+                }
+                if (typeof currentNode.algorithm === 'string' && currentNode.algorithm.length) {
+                    add('algorithm');
+                }
+                var nodeMetrics = metrics(currentNode, effectiveLevel);
+                for (var metricIndex = 0; metricIndex < nodeMetrics.length; metricIndex++) {
+                    add(nodeMetrics[metricIndex].name);
+                }
+                var children = plans(currentNode);
+                for (var childIndex = 0; childIndex < children.length; childIndex++) {
+                    visit(children[childIndex]);
+                }
+            }
+            visit(plan || {});
+            return result;
+        }
+        queryExplanationHighlighter.getProperties = getProperties;
         function hotspotMetric(level) {
             if (level === 'Timed') {
                 return { metric: 'selfTimeActual', label: 'Self time' };
@@ -779,7 +814,7 @@ var workbench;
         }
         function render(plan, options) {
             var separator = effectiveLineSeparator(options.lineSeparator);
-            var formatted = format(plan, options.level, separator);
+            var formatted = format(plan, options.level, separator, options.hiddenProperties);
             var hotspot = options.mode === 'hotspot' ? getHotspot(plan, options.level) : null;
             var localMaximum = hotspot ? hotspot.maximum : 0;
             var sharedMaximum = finiteNonNegative(options.sharedMaximum)

@@ -63,6 +63,7 @@ module workbench {
             mode: HighlightMode;
             sharedMaximum?: number;
             lineSeparator?: string;
+            hiddenProperties?: string[];
         }
 
         export interface TextToken {
@@ -738,7 +739,12 @@ module workbench {
             return { tokens: [token(text)] };
         }
 
-        function nodeLine(node: QueryPlanNode, level: ExplainLevel): FormattedLine {
+        function isPropertyVisible(name: string, hiddenProperties?: string[]): boolean {
+            return !hiddenProperties || hiddenProperties.indexOf(name) < 0;
+        }
+
+        function nodeLine(node: QueryPlanNode, level: ExplainLevel,
+                          hiddenProperties?: string[]): FormattedLine {
             var lineTokens: TextToken[] = [];
             var type = planType(node);
             if (type.indexOf('Var') === 0) {
@@ -756,13 +762,16 @@ module workbench {
             } else {
                 lineTokens.push(token(type, 'node-type'));
             }
-            if (node.newScope) {
+            if (node.newScope && isPropertyVisible('newScope', hiddenProperties)) {
                 lineTokens.push(token(' (new scope)', 'annotation'));
             }
-            if (typeof node.algorithm === 'string' && node.algorithm.length) {
+            if (typeof node.algorithm === 'string' && node.algorithm.length
+                && isPropertyVisible('algorithm', hiddenProperties)) {
                 lineTokens.push(token(' (' + node.algorithm + ')', 'annotation'));
             }
-            var nodeMetrics = metrics(node, level);
+            var nodeMetrics = metrics(node, level).filter(function(entry: MetricEntry): boolean {
+                return isPropertyVisible(entry.name, hiddenProperties);
+            });
             if (nodeMetrics.length) {
                 lineTokens.push(token(' (', 'punctuation'));
                 for (var i = 0; i < nodeMetrics.length; i++) {
@@ -798,14 +807,14 @@ module workbench {
         }
 
         function formatLines(node: QueryPlanNode, depth: number, ordered: boolean,
-                             level: ExplainLevel): FormattedLine[] {
+                             level: ExplainLevel, hiddenProperties?: string[]): FormattedLine[] {
             var result: FormattedLine[] = [];
             if (node.timedOut) {
                 result.push(textLine('Timed out while retrieving explanation! Explanation may be incomplete!'));
                 result.push(textLine('You can change the timeout by setting .setMaxExecutionTime(...) on your query.'));
                 result.push(textLine(''));
             }
-            result.push(nodeLine(node, level));
+            result.push(nodeLine(node, level, hiddenProperties));
             var children = displayPlans(node, ordered);
             var hasNestedChild = false;
             for (var childIndex = 0; childIndex < children.length; childIndex++) {
@@ -820,8 +829,8 @@ module workbench {
                 var horizontal = even ? '══' : '──';
                 var vertical = even ? '║' : '│';
                 var end = even ? '╚' : '└';
-                var leftLines = formatLines(children[0], depth + 1, false, level);
-                var rightLines = formatLines(children[1], depth + 1, false, level);
+                var leftLines = formatLines(children[0], depth + 1, false, level, hiddenProperties);
+                var rightLines = formatLines(children[1], depth + 1, false, level, hiddenProperties);
                 if (leftLines.length) {
                     var firstLeft = prefixLine(leftLines[0], start + horizontal + ' ', 'connector');
                     result.push(hasJoinSideLabels(node) ? appendJoinSide(firstLeft, 'left') : firstLeft);
@@ -840,7 +849,7 @@ module workbench {
                 for (childIndex = 0; childIndex < children.length; childIndex++) {
                     var child = children[childIndex];
                     var childLines = formatLines(child, depth + 1,
-                        isProjectionElemList(child) && !isMultiProjection(node), level);
+                        isProjectionElemList(child) && !isMultiProjection(node), level, hiddenProperties);
                     for (var lineIndex = 0; lineIndex < childLines.length; lineIndex++) {
                         var childLine = childLines[lineIndex];
                         if (startsWithType(node, 'StatementPattern') && startsWithType(child, 'Var')) {
@@ -865,15 +874,49 @@ module workbench {
             return typeof lineSeparator === 'string' && lineSeparator.length > 0 ? lineSeparator : '\n';
         }
 
-        export function format(plan: QueryPlanNode, level?: ExplainLevel, lineSeparator?: string): FormatResult {
+        export function format(plan: QueryPlanNode, level?: ExplainLevel, lineSeparator?: string,
+                               hiddenProperties?: string[]): FormatResult {
             var effectiveLevel = level || 'Optimized';
             var separator = effectiveLineSeparator(lineSeparator);
-            var lines = formatLines(plan || {}, 0, isProjectionElemList(plan || {}), effectiveLevel);
+            var lines = formatLines(plan || {}, 0, isProjectionElemList(plan || {}), effectiveLevel,
+                hiddenProperties);
             var text = '';
             for (var i = 0; i < lines.length; i++) {
                 text += lineText(lines[i]) + separator;
             }
             return { lines: lines, text: text };
+        }
+
+        export function getProperties(plan: QueryPlanNode, level?: ExplainLevel): string[] {
+            var effectiveLevel = level || 'Optimized';
+            var result: string[] = [];
+
+            function add(name: string): void {
+                if (result.indexOf(name) < 0) {
+                    result.push(name);
+                }
+            }
+
+            function visit(node: QueryPlanNode): void {
+                var currentNode = node || {};
+                if (currentNode.newScope) {
+                    add('newScope');
+                }
+                if (typeof currentNode.algorithm === 'string' && currentNode.algorithm.length) {
+                    add('algorithm');
+                }
+                var nodeMetrics = metrics(currentNode, effectiveLevel);
+                for (var metricIndex = 0; metricIndex < nodeMetrics.length; metricIndex++) {
+                    add(nodeMetrics[metricIndex].name);
+                }
+                var children = plans(currentNode);
+                for (var childIndex = 0; childIndex < children.length; childIndex++) {
+                    visit(children[childIndex]);
+                }
+            }
+
+            visit(plan || {});
+            return result;
         }
 
         function hotspotMetric(level: ExplainLevel): { metric: string; label: string } {
@@ -929,7 +972,7 @@ module workbench {
 
         export function render(plan: QueryPlanNode, options: RenderOptions): RenderResult {
             var separator = effectiveLineSeparator(options.lineSeparator);
-            var formatted = format(plan, options.level, separator);
+            var formatted = format(plan, options.level, separator, options.hiddenProperties);
             var hotspot = options.mode === 'hotspot' ? getHotspot(plan, options.level) : null;
             var localMaximum = hotspot ? hotspot.maximum : 0;
             var sharedMaximum = finiteNonNegative(options.sharedMaximum)

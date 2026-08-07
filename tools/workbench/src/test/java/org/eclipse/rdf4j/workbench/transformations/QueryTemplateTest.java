@@ -21,6 +21,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import javax.xml.transform.Templates;
 import javax.xml.transform.Transformer;
@@ -46,6 +48,34 @@ class QueryTemplateTest {
 				.contains("aria-pressed=\"true\"")
 				.contains("scripts/queryExplanationHighlighter.js")
 				.containsSubsequence("scripts/queryExplanationHighlighter.js", "scripts/query.js");
+	}
+
+	@Test
+	void textExplanationShouldExposePropertyVisibilityConfig() throws IOException {
+		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
+				StandardCharsets.UTF_8);
+		String queryStyles = readQueryStyles();
+
+		assertThat(queryTemplate)
+				.contains("id=\"explanation-property-config\"")
+				.contains("id=\"explanation-property-options\"")
+				.contains("id=\"explanation-properties-all\"")
+				.contains("id=\"explanation-properties-none\"")
+				.contains("aria-label=\"Visible query plan properties\"");
+		assertThat(queryStyles)
+				.contains(".query-explanation-property-config")
+				.contains(".query-explanation-property-option");
+	}
+
+	@Test
+	void propertyVisibilityConfigShouldUseResponsiveFlowBeforeItCanOverflow() throws IOException {
+		String queryStyles = readQueryStyles();
+
+		assertThat(queryStyles)
+				.containsPattern("(?s)@media \\(max-width: 70rem\\) \\{.{0,800}?"
+						+ "\\.query-explanation-property-config\\[open\\] \\{\\s*display: block;")
+				.containsPattern("(?s)@media \\(max-width: 48rem\\) \\{.{0,800}?"
+						+ "\\.query-explanation-property-config__options \\{\\s*grid-template-columns:");
 	}
 
 	@Test
@@ -604,6 +634,48 @@ class QueryTemplateTest {
 	}
 
 	@Test
+	void queryExplanationSyntaxHighlightingShouldUseYasqeSemanticColors() throws IOException {
+		String queryStyles = readQueryStyles();
+		String yasqeStyles = Files.readString(Path.of("src/main/webapp/styles/yasqe.min.css"), StandardCharsets.UTF_8);
+
+		assertThat(queryStyles)
+				.contains("--query-code-surface: "
+						+ cssProperty(yasqeStyles, ".yasqe .CodeMirror", "background") + ";")
+				.contains("--query-code-surface-hover: "
+						+ cssProperty(yasqeStyles, ".yasqe .CodeMirror-activeline-background", "background") + ";")
+				.contains("--query-code-selection: "
+						+ cssProperty(yasqeStyles, ".yasqe .CodeMirror-focused .CodeMirror-selected", "background")
+						+ ";")
+				.contains("--query-code-ink: "
+						+ cssColor(yasqeStyles, ".yasqe .CodeMirror") + ";")
+				.contains("--query-code-node: "
+						+ cssColor(yasqeStyles, ".yasqe .cm-s-default .cm-keyword") + ";")
+				.contains("--query-code-variable: "
+						+ cssColor(yasqeStyles, ".yasqe .cm-s-default .cm-atom") + ";")
+				.contains("--query-code-value: "
+						+ cssColor(yasqeStyles, ".yasqe .cm-s-default .cm-variable-3") + ";")
+				.contains("--query-code-metric: "
+						+ cssColor(yasqeStyles, ".yasqe .cm-s-default .cm-number") + ";")
+				.contains("--query-code-annotation: "
+						+ cssColor(yasqeStyles, ".yasqe .cm-s-default .cm-meta") + ";")
+				.contains("--query-code-connector: "
+						+ cssColor(yasqeStyles, ".yasqe .CodeMirror-linenumber") + ";")
+				.containsPattern(
+						"#query-explanation,\\s*#query-explanation-compare\\s*\\{[^}]*background:\\s*var\\(--query-code-surface\\);[^}]*color:\\s*var\\(--query-code-ink\\);")
+				.containsPattern(
+						"\\.query-explanation-token--node-type\\s*\\{[^}]*color:\\s*var\\(--query-code-node\\);")
+				.containsPattern(
+						"\\.query-explanation-token--variable,[^}]*\\{[^}]*color:\\s*var\\(--query-code-variable\\);")
+				.containsPattern(
+						"\\.query-explanation-token--value\\s*\\{[^}]*color:\\s*var\\(--query-code-value\\);")
+				.containsPattern(
+						"\\.query-explanation-token--metric-value\\s*\\{[^}]*color:\\s*var\\(--query-code-metric\\);")
+				.contains("background: var(--query-code-selection);")
+				.containsPattern(
+						"\\.query-explanation--highlighted \\.query-explanation-line:hover\\s*\\{[^}]*background:");
+	}
+
+	@Test
 	void queryTemplateShouldLetExplanationDiffUseMostOfModalHeight() throws IOException {
 		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
 				StandardCharsets.UTF_8);
@@ -1003,6 +1075,18 @@ class QueryTemplateTest {
 		return Files.readString(Path.of("src/main/webapp/styles/query.css"), StandardCharsets.UTF_8)
 				+ Files.readString(Path.of("src/main/webapp/styles/query-explanation.css"), StandardCharsets.UTF_8)
 				+ Files.readString(Path.of("src/main/webapp/styles/query-compare.css"), StandardCharsets.UTF_8);
+	}
+
+	private static String cssColor(String styles, String selector) {
+		return cssProperty(styles, selector, "color");
+	}
+
+	private static String cssProperty(String styles, String selector, String property) {
+		Matcher matcher = Pattern
+				.compile(Pattern.quote(selector) + "\\{[^}]*" + Pattern.quote(property) + ":([^;}]+)")
+				.matcher(styles);
+		assertThat(matcher.find()).as("CSS %s for %s", property, selector).isTrue();
+		return matcher.group(1).trim();
 	}
 
 	private static String templateDefault(ConfigTemplate template, String name) {

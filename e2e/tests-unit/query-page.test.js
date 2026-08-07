@@ -206,6 +206,100 @@ test('interactive Text explanation requests JSON and toggles cached highlighting
     assert.equal(harness.createdBlobs[0].options.type, 'text/plain;charset=utf-8');
 });
 
+test('property config filters both plans and persists hidden properties', () => {
+    const storedValues = new Map();
+    const localStorage = {
+        getItem(key) {
+            return storedValues.has(key) ? storedValues.get(key) : null;
+        },
+        removeItem(key) {
+            storedValues.delete(key);
+        },
+        setItem(key, value) {
+            storedValues.set(key, String(value));
+        }
+    };
+    const harness = createQueryBrowserHarness({ window: { localStorage } });
+
+    harness.runPageLoad();
+    harness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
+    harness.pendingExplainRequests[0].resolve({
+        content: JSON.stringify({
+            type: 'Join',
+            costEstimate: 10,
+            resultSizeEstimate: 4,
+            stringMetricsActual: { bindingState: 'bound' }
+        }),
+        format: 'json',
+        error: ''
+    });
+
+    const costToggle = harness.document.querySelectorAll(
+        '#explanation-property-options input[data-property-name="costEstimate"]'
+    )[0];
+    assert.ok(costToggle);
+    assert.equal(costToggle.checked, true);
+    assert.equal(harness.getText('explanation-property-count'), 'All 3');
+
+    costToggle.checked = false;
+    costToggle.trigger('change');
+    assert.equal(
+        harness.document.querySelectorAll(
+            '#explanation-property-options input[data-property-name="costEstimate"]'
+        )[0] === costToggle,
+        true
+    );
+    assert.doesNotMatch(harness.getText('query-explanation'), /costEstimate/);
+    assert.match(harness.getText('query-explanation'), /resultSizeEstimate=4\.00/);
+    assert.equal(harness.getText('explanation-property-count'), '2 of 3');
+    assert.equal(
+        storedValues.get('rdf4j.workbench.query.explanation.hiddenProperties'),
+        '["costEstimate"]'
+    );
+
+    harness.context.workbench.query.toggleCompareMode();
+    harness.pendingExplainRequests[1].resolve({
+        content: JSON.stringify({ type: 'StatementPattern', costEstimate: 20, resultSizeActual: 8 }),
+        format: 'json',
+        error: ''
+    });
+    assert.doesNotMatch(harness.getText('query-explanation'), /costEstimate/);
+    assert.doesNotMatch(harness.getText('query-explanation-compare'), /costEstimate/);
+    assert.match(harness.getText('query-explanation-compare'), /resultSizeActual=8/);
+    assert.equal(harness.getText('explanation-property-count'), '3 of 4');
+
+    harness.click('explanation-properties-none');
+    assert.equal(harness.getText('query-explanation'), 'Join\n');
+    assert.equal(harness.getText('query-explanation-compare'), 'StatementPattern\n');
+    assert.equal(harness.getText('explanation-property-count'), '0 of 4');
+
+    harness.click('explanation-properties-all');
+    assert.match(harness.getText('query-explanation'), /costEstimate=10/);
+    assert.match(harness.getText('query-explanation-compare'), /costEstimate=20/);
+    assert.equal(harness.getText('explanation-property-count'), 'All 4');
+
+    const restoredCostToggle = harness.document.querySelectorAll(
+        '#explanation-property-options input[data-property-name="costEstimate"]'
+    )[0];
+    restoredCostToggle.checked = false;
+    restoredCostToggle.trigger('change');
+    const reloadedHarness = createQueryBrowserHarness({ window: { localStorage } });
+    reloadedHarness.runPageLoad();
+    reloadedHarness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
+    reloadedHarness.pendingExplainRequests[0].resolve({
+        content: JSON.stringify({ type: 'Join', costEstimate: 10, resultSizeEstimate: 4 }),
+        format: 'json',
+        error: ''
+    });
+    assert.doesNotMatch(reloadedHarness.getText('query-explanation'), /costEstimate/);
+    assert.equal(
+        reloadedHarness.document.querySelectorAll(
+            '#explanation-property-options input[data-property-name="costEstimate"]'
+        )[0].checked,
+        false
+    );
+});
+
 test('hotspot mode shares one scale across comparison panes', () => {
     const harness = createQueryBrowserHarness();
 

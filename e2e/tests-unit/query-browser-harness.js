@@ -301,6 +301,28 @@ function createQueryBrowserHarness(options = {}) {
     explanationHighlightMode.appendChild(explanationHighlightSyntax);
     explanationHighlightMode.appendChild(explanationHighlightHotspot);
     const explanationHotspotLegend = registerElement('span', { id: 'explanation-hotspot-legend' });
+    const explanationPropertyConfig = registerElement('details', { id: 'explanation-property-config' });
+    const explanationPropertySummary = registerElement('summary', { id: 'explanation-property-summary' });
+    const explanationPropertyCount = registerElement('span', { id: 'explanation-property-count' });
+    const explanationPropertyPanel = registerElement('div', { id: 'explanation-property-panel' });
+    const explanationPropertyOptions = registerElement('div', {
+        id: 'explanation-property-options',
+        attributes: { 'aria-label': 'Visible query plan properties' }
+    });
+    const explanationPropertiesAll = registerElement('button', {
+        id: 'explanation-properties-all',
+        type: 'button'
+    });
+    const explanationPropertiesNone = registerElement('button', {
+        id: 'explanation-properties-none',
+        type: 'button'
+    });
+    explanationPropertySummary.appendChild(explanationPropertyCount);
+    explanationPropertyPanel.appendChild(explanationPropertiesAll);
+    explanationPropertyPanel.appendChild(explanationPropertiesNone);
+    explanationPropertyPanel.appendChild(explanationPropertyOptions);
+    explanationPropertyConfig.appendChild(explanationPropertySummary);
+    explanationPropertyConfig.appendChild(explanationPropertyPanel);
     const primaryExplainRepeatControls = registerElement('div', { id: 'primary-explain-repeat-controls' });
     const compareToggle = registerElement('button', { id: 'compare-toggle' });
     const queryDiffTrigger = registerElement('button', { id: 'query-diff-trigger' });
@@ -374,6 +396,7 @@ function createQueryBrowserHarness(options = {}) {
         primaryExplainSettings,
         explanationHighlightMode,
         explanationHotspotLegend,
+        explanationPropertyConfig,
         primaryExplainRepeatControls,
         compareToggle,
         queryDiffTrigger,

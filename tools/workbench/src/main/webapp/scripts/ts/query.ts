@@ -46,6 +46,10 @@ module workbench {
         var diffNotReadyLabel = '';
         var lastDiffTriggerElement: HTMLElement = null;
         var explanationHighlightMode: queryExplanationHighlighter.HighlightMode = 'syntax';
+        var EXPLANATION_HIDDEN_PROPERTIES_STORAGE_KEY =
+            'rdf4j.workbench.query.explanation.hiddenProperties';
+        var explanationHiddenProperties: string[] = loadExplanationHiddenProperties();
+        var explanationPropertyOptionsKey = '';
 
         type ExplainLevel = 'Unoptimized' | 'Optimized' | 'Executed' | 'Telemetry' | 'Timed';
         type ExplainFormat = 'text' | 'dot' | 'json';
@@ -2051,6 +2055,168 @@ module workbench {
             return result;
         }
 
+        function normalizeExplanationHiddenProperties(value: any): string[] {
+            if (!Array.isArray(value)) {
+                return [];
+            }
+            var result: string[] = [];
+            for (var i = 0; i < value.length; i++) {
+                if (typeof value[i] === 'string' && value[i].length && result.indexOf(value[i]) < 0) {
+                    result.push(value[i]);
+                }
+            }
+            return result;
+        }
+
+        function loadExplanationHiddenProperties(): string[] {
+            try {
+                var stored = window.localStorage.getItem(EXPLANATION_HIDDEN_PROPERTIES_STORAGE_KEY);
+                return stored ? normalizeExplanationHiddenProperties(JSON.parse(stored)) : [];
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function persistExplanationHiddenProperties(): void {
+            try {
+                if (explanationHiddenProperties.length) {
+                    window.localStorage.setItem(
+                        EXPLANATION_HIDDEN_PROPERTIES_STORAGE_KEY,
+                        JSON.stringify(explanationHiddenProperties)
+                    );
+                } else {
+                    window.localStorage.removeItem(EXPLANATION_HIDDEN_PROPERTIES_STORAGE_KEY);
+                }
+            } catch (e) {
+                // Ignore browsers where storage access is unavailable.
+            }
+        }
+
+        function getAvailableExplanationProperties(): string[] {
+            var result: string[] = [];
+            var paneKeys: PaneKey[] = ['primary', 'compare'];
+            for (var paneIndex = 0; paneIndex < paneKeys.length; paneIndex++) {
+                var explanation = getPaneDisplayExplanation(getPaneMachineState(paneKeys[paneIndex]));
+                if (!explanation || explanation.requestedFormat !== 'text' || !explanation.plan) {
+                    continue;
+                }
+                var paneProperties = queryExplanationHighlighter.getProperties(
+                    explanation.plan, explanation.level
+                );
+                for (var propertyIndex = 0; propertyIndex < paneProperties.length; propertyIndex++) {
+                    if (result.indexOf(paneProperties[propertyIndex]) < 0) {
+                        result.push(paneProperties[propertyIndex]);
+                    }
+                }
+            }
+            return result;
+        }
+
+        function renderExplanationPropertyOptions(properties: string[]): void {
+            var optionsElement = document.getElementById('explanation-property-options');
+            if (!optionsElement) {
+                return;
+            }
+            optionsElement.textContent = '';
+            for (var i = 0; i < properties.length; i++) {
+                var property = properties[i];
+                var option = document.createElement('label');
+                option.className = 'query-explanation-property-option';
+                option.title = property;
+                var checkbox = <HTMLInputElement>document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.checked = explanationHiddenProperties.indexOf(property) < 0;
+                checkbox.setAttribute('data-property-name', property);
+                checkbox.addEventListener('change', function(event: Event): void {
+                    var target = <HTMLInputElement>event.currentTarget;
+                    setExplanationPropertyVisible(target.getAttribute('data-property-name'), target.checked);
+                });
+                option.appendChild(checkbox);
+                option.appendChild(document.createTextNode(property));
+                optionsElement.appendChild(option);
+            }
+        }
+
+        function syncExplanationPropertyCheckboxes(): void {
+            var optionsElement = document.getElementById('explanation-property-options');
+            if (!optionsElement) {
+                return;
+            }
+            var checkboxes = optionsElement.getElementsByTagName('input');
+            for (var i = 0; i < checkboxes.length; i++) {
+                var checkbox = <HTMLInputElement>checkboxes[i];
+                checkbox.checked = explanationHiddenProperties.indexOf(
+                    checkbox.getAttribute('data-property-name')
+                ) < 0;
+            }
+        }
+
+        function syncExplanationPropertyControls(): void {
+            var properties = getAvailableExplanationProperties();
+            var config = $('#explanation-property-config');
+            var visible = properties.length > 0;
+            config.toggle(visible).attr('aria-hidden', visible ? 'false' : 'true');
+            if (!visible) {
+                config.prop('open', false);
+                $('#explanation-property-count').text('');
+                $('#explanation-property-options').empty();
+                explanationPropertyOptionsKey = '';
+                return;
+            }
+            var visibleCount = 0;
+            for (var i = 0; i < properties.length; i++) {
+                if (explanationHiddenProperties.indexOf(properties[i]) < 0) {
+                    visibleCount += 1;
+                }
+            }
+            $('#explanation-property-count').text(
+                visibleCount === properties.length
+                    ? 'All ' + properties.length
+                    : visibleCount + ' of ' + properties.length
+            );
+            var propertiesKey = JSON.stringify(properties);
+            if (propertiesKey !== explanationPropertyOptionsKey) {
+                renderExplanationPropertyOptions(properties);
+                explanationPropertyOptionsKey = propertiesKey;
+            } else {
+                syncExplanationPropertyCheckboxes();
+            }
+        }
+
+        export function setExplanationPropertyVisible(property: string, visible: boolean): void {
+            if (!property) {
+                return;
+            }
+            var index = explanationHiddenProperties.indexOf(property);
+            if (visible && index >= 0) {
+                explanationHiddenProperties.splice(index, 1);
+            } else if (!visible && index < 0) {
+                explanationHiddenProperties.push(property);
+            } else {
+                syncExplanationPropertyControls();
+                return;
+            }
+            persistExplanationHiddenProperties();
+            lastRenderedExplanationKeys = {};
+            renderQueryPageState();
+        }
+
+        export function setAllExplanationPropertiesVisible(visible: boolean): void {
+            if (visible) {
+                explanationHiddenProperties = [];
+            } else {
+                var properties = getAvailableExplanationProperties();
+                for (var i = 0; i < properties.length; i++) {
+                    if (explanationHiddenProperties.indexOf(properties[i]) < 0) {
+                        explanationHiddenProperties.push(properties[i]);
+                    }
+                }
+            }
+            persistExplanationHiddenProperties();
+            lastRenderedExplanationKeys = {};
+            renderQueryPageState();
+        }
+
         function syncExplanationHighlightControls() {
             var controlsVisible = !!queryPageState
                 && queryPageState.inputs.explainFormat === 'text'
@@ -2068,6 +2234,7 @@ module workbench {
             $('#explanation-hotspot-legend')
                 .toggle(!!hotspot)
                 .text(hotspot ? 'Heat: ' + hotspot.label : '');
+            syncExplanationPropertyControls();
         }
 
         export function setExplanationHighlightMode(mode: string) {
@@ -2090,7 +2257,8 @@ module workbench {
                 level: explanation.level,
                 mode: explanationHighlightMode,
                 sharedMaximum: sharedMaximum,
-                lineSeparator: explanation.lineSeparator
+                lineSeparator: explanation.lineSeparator,
+                hiddenProperties: explanationHiddenProperties
             });
             $('#' + paneState.explanationRowId).show();
             if (paneState.explanationControlsRowId) {
@@ -2176,7 +2344,8 @@ module workbench {
             var sharedHotspot = getSharedHotspotSummary();
             var sharedMaximum = sharedHotspot ? sharedHotspot.maximum : null;
             var renderContentKey = getStableExplanationContentKey(paneDisplayExplanation)
-                + '||' + explanationHighlightMode + '||' + String(sharedMaximum);
+                + '||' + explanationHighlightMode + '||' + String(sharedMaximum)
+                + '||' + JSON.stringify(explanationHiddenProperties);
 
             $('#' + paneState.explanationRowId).toggle(rowVisible);
             $('#' + paneState.copyButtonId).prop('disabled', !paneDisplayExplanation);
@@ -3453,6 +3622,7 @@ module workbench {
                     diffNotReadyLabel: diffNotReadyLabel,
                     explainServerRequestIdCounter: explainServerRequestIdCounter,
                     explanationHighlightMode: explanationHighlightMode,
+                    explanationHiddenProperties: explanationHiddenProperties,
                     lastRenderedExplanationKeys: lastRenderedExplanationKeys,
                     pendingDotRenderKeys: pendingDotRenderKeys,
                     primaryPaneState: primaryPaneState,
@@ -3484,6 +3654,8 @@ module workbench {
                 diffNotReadyLabel = '';
                 lastDiffTriggerElement = null;
                 explanationHighlightMode = 'syntax';
+                explanationHiddenProperties = loadExplanationHiddenProperties();
+                explanationPropertyOptionsKey = '';
                 primaryPaneState.latestExplanation = '';
                 primaryPaneState.latestExplanationFormat = 'text';
                 primaryPaneState.dotPanZoomInstance = null;
@@ -3525,6 +3697,11 @@ module workbench {
                 }
                 if ('explainServerRequestIdCounter' in state) {
                     explainServerRequestIdCounter = state.explainServerRequestIdCounter;
+                }
+                if ('explanationHiddenProperties' in state) {
+                    explanationHiddenProperties = normalizeExplanationHiddenProperties(
+                        state.explanationHiddenProperties
+                    );
                 }
                 if ('lastRenderedExplanationKeys' in state) {
                     lastRenderedExplanationKeys = state.lastRenderedExplanationKeys;
@@ -3674,6 +3851,12 @@ workbench.addLoad(function queryPageLoaded() {
     });
     $('#explanation-highlight-hotspot').click(function() {
         workbench.query.setExplanationHighlightMode('hotspot');
+    });
+    $('#explanation-properties-all').click(function() {
+        workbench.query.setAllExplanationPropertiesVisible(true);
+    });
+    $('#explanation-properties-none').click(function() {
+        workbench.query.setAllExplanationPropertiesVisible(false);
     });
     $('#explanation-highlight-mode').bind('keydown', function(event: any) {
         if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
