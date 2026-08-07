@@ -20,8 +20,8 @@ After this plan: every remaining kernel-rung decline names a condition under whi
 - [x] (2026-08-07) M3: ScanQuad-rooted partitioning, both rungs. Mechanism plus admission wiring in `LmdbNativeParallelKernelAggregate` and `LmdbNativeParallelKernelRows`: a partition queue alongside the key-window queue, one partition per kernel instance, refusing ordered scan sites and honouring the shared `rangePartition` kill switch. End-to-end: a variable-predicate aggregate and a variable-predicate join both run partitioned (`LmdbNativeKernelScanPartitionTest`, 4/4). Original mechanism note: `LmdbNativeKernelScanner.restrictRootScan(scanId, partition)` confines one scan site to a planned `LmdbRootScanPartition`, and `LmdbNativeKernelPartitions.partitionableRootScan(pipeline)` is the admission predicate. New `LmdbNativeKernelScanPartitionTest` (2 tests, green) proves the property everything else rests on: over a 20k-statement store, the planned partitions cover the full scan **exactly once** and are pairwise disjoint.
 - [x] (2026-08-07) M4: overflow-checked count merges via `FactorizedTail.addCounts` in both `mergeRow` and `mergePartial`; `orderComparatorStrict` applied to the aggregate rung's consumer sort. The stricter worker-count and `root-too-small` gates are kept deliberately and recorded in the ledger rather than loosened.
 - [x] (2026-08-07) M5: `PATH_IR_KERNEL_PARALLEL` / `PATH_IR_AGGREGATE_PARALLEL`; every decline in both rungs now goes through `LmdbNativeAttemptMetrics.recordDecline` as well as the debug stream, so declines are readable from explain output. Success labelling already existed via `runtimePlan.janinoActivated("irKernelParallel"/"irAggregateParallel")`.
-- [ ] M6: cost-arbitrated dispatch.
-- [ ] M7: census and executable parity ledger.
+- [!] M6: cost-arbitrated dispatch — **NOT implemented; the evidence removed its premise.** See the Decision Log entry; this is flagged for the user rather than silently dropped.
+- [x] (2026-08-07) M7: executable parity ledger. New `LmdbNativeParallelKernelParityLedgerTest` runs an 11-query corpus (adjacency, domain and scan roots; filters; DISTINCT aggregates; BIND; EXISTS) and asserts every decline reason both rungs emit appears in a ledger carrying the reason the interpreted engine also stays sequential. It also asserts the observation set is non-empty, so it cannot pass vacuously.
 - [ ] M8: benchmarks, flag flip, single full module verify.
 
 ## Surprises & Discoveries
@@ -60,6 +60,20 @@ After this plan: every remaining kernel-rung decline names a condition under whi
 ## Outcomes & Retrospective
 
 (To be completed as milestones land.)
+
+M6 was not built, and the reason is worth stating precisely because it inverts the plan's own premise.
+
+The plan was written on the finding that "a kernel-rung decline is not a handoff": the kernel tier wins dispatch before the interpreted parallel engine is offered, so any decline meant single-threaded execution. That was true and it was expensive — but the expense lived almost entirely in two reasons, `unmergeable-aggregate-kind-*` and `root-not-partitionable`, and M2 and M3 closed both.
+
+With those closed, the M7 ledger run over an 11-query corpus observes exactly ONE decline reason across both rungs: `worker-kernel-pending`, the transient window while a worker variant's async compile finishes. There is no steady-state shape in the corpus where the rungs decline and the interpreted engine would have parallelized.
+
+Building M6 as specified would mean giving the kernel tier a cost model it does not have. The arbiter selects on `estCost`, and while the interpreted parallel aggregation and the factorized tail both have real cost functions, "what will the compiled kernel cost" is unmodelled. Supplying a number would make dispatch decisions on a fabricated constant, and a wrong one would regress every kernel-eligible query — a large risk in exchange for a benefit the census now measures as approximately zero.
+
+Recommendation: leave dispatch as it stands, and revisit only if the ledger starts reporting a non-transient reason. If it does, the cheaper move is a conditional fall-through for exactly that reason (return null from the kernel tier so the ladder reaches the existing arbiter), not a kernel cost model.
+
+- Decision: do NOT implement M6 (cost-arbitrated dispatch); flag it to the user instead of dropping it silently.
+  Rationale: M2 and M3 closed the two decline reasons that made the dispatch gap expensive. The M7 ledger now observes only `worker-kernel-pending` across an 11-query corpus, so the remaining benefit is approximately zero, while the cost is inventing a cost model for the kernel tier that would drive dispatch for every kernel-eligible query. Scaling scope down is the user's call, so this is reported rather than decided.
+  Date/Author: 2026-08-07 / Claude.
 
 ## Context and Orientation
 
