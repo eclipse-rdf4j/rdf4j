@@ -1278,15 +1278,28 @@ final class LmdbNativeKernelIr {
 		final int col; // -1 for COUNT_STAR
 		/** Domain whose checked encounter order permits last-seen DISTINCT counting, or -1 for hash-only. */
 		final int orderedDomain;
+		/**
+		 * Worker-variant marker: this DISTINCT channel's id set lives in the engine hook sidecar instead of a generated
+		 * field, and a COUNT_DISTINCT output emits its group ordinal instead of the count. Set only by the parallel
+		 * rungs' worker kernel variant (plan: plans/lmdb-native-engine/32-parallel-kernel-parity-closure.md), because a
+		 * per-partition distinct COUNT or SUM cannot be merged across partitions while the id sets behind them can.
+		 * Part of the shape key, so the variant never collides with the sequential kernel in the compile cache.
+		 */
+		final boolean hookDistinct;
 
 		private AggregateOutput(int kind, int col) {
 			this(kind, col, -1);
 		}
 
 		private AggregateOutput(int kind, int col, int orderedDomain) {
+			this(kind, col, orderedDomain, false);
+		}
+
+		private AggregateOutput(int kind, int col, int orderedDomain, boolean hookDistinct) {
 			this.kind = kind;
 			this.col = col;
 			this.orderedDomain = orderedDomain;
+			this.hookDistinct = hookDistinct;
 		}
 
 		static AggregateOutput countStar() {
@@ -1342,6 +1355,22 @@ final class LmdbNativeKernelIr {
 			return new AggregateOutput(AGG_MAX_ID, col);
 		}
 
+		boolean isDistinctKind() {
+			return kind == AGG_COUNT_DISTINCT || kind == AGG_SUM_DISTINCT || kind == AGG_AVG_DISTINCT;
+		}
+
+		/**
+		 * The worker-variant form of this output: the distinct channel moves to the hook sidecar so the consumer can
+		 * union per-partition id sets, and the ordered-domain fast path is dropped because {@code agO} counts
+		 * <em>runs</em> of equal values — per-partition run counts are not additive when a value spans partitions.
+		 */
+		AggregateOutput asHookDistinct() {
+			if (!isDistinctKind()) {
+				throw new IllegalArgumentException("hook-distinct is only defined for DISTINCT aggregate kinds");
+			}
+			return hookDistinct ? this : new AggregateOutput(kind, col, -1, true);
+		}
+
 		boolean isCountKind() {
 			return kind == AGG_COUNT_STAR || kind == AGG_COUNT || kind == AGG_COUNT_DISTINCT;
 		}
@@ -1357,7 +1386,7 @@ final class LmdbNativeKernelIr {
 		}
 
 		boolean needsHooks() {
-			return needsNumericHooks() || kind == AGG_MIN_ID || kind == AGG_MAX_ID;
+			return needsNumericHooks() || kind == AGG_MIN_ID || kind == AGG_MAX_ID || hookDistinct;
 		}
 	}
 
@@ -1395,6 +1424,11 @@ final class LmdbNativeKernelIr {
 				}
 				if (!outputs[having.outputIndex].isCountKind()) {
 					throw new IllegalArgumentException("HAVING is only supported over count aggregates in this tier");
+				}
+				if (outputs[having.outputIndex].hookDistinct) {
+					// a hook-distinct COUNT emits its group ordinal, not the count, so a guard over it would compare
+					// the ordinal; the worker variant strips HAVING for exactly this reason, so the two never co-occur
+					throw new IllegalArgumentException("HAVING cannot guard a hook-distinct output");
 				}
 			}
 			if (groupCols.length > 0) {
@@ -1448,7 +1482,9 @@ final class LmdbNativeKernelIr {
 						.append(':')
 						.append(outputs[i].col)
 						.append('@')
-						.append(outputs[i].orderedDomain);
+						.append(outputs[i].orderedDomain)
+						// the worker variant emits different code for the same kind/col, so it must key differently
+						.append(outputs[i].hookDistinct ? "!" : "");
 			}
 			if (having != null) {
 				key.append(";h=")

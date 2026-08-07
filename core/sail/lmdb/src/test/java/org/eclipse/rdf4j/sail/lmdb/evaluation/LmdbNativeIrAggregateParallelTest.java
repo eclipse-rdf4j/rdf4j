@@ -38,7 +38,13 @@ import org.junit.jupiter.api.io.TempDir;
  * Milestone 10B (three-tier parity ExecPlan): with {@code rdf4j.lmdb.irAggregateParallel.enabled=true}, an IR aggregate
  * kernel whose root enumerates an adjacency view's keys must run partitioned across worker threads — one kernel
  * instance per key-range window, per-worker partial group states merged exactly — with a result multiset identical to
- * the sequential kernel and to the generic evaluator. DISTINCT aggregates and the flag-off path must stay sequential.
+ * the sequential kernel and to the generic evaluator.
+ *
+ * <p>
+ * Two things must still refuse to run partitioned, both because their answer would otherwise depend on partition and
+ * merge order: a MIN/MAX tie between distinct terms that compare equal, and a floating-point SUM/AVG. The flag-off path
+ * must stay sequential too. DISTINCT aggregates used to belong on that list; since plan 32 they merge as a union of id
+ * sets, exactly as the interpreted parallel engine has always merged them.
  */
 class LmdbNativeIrAggregateParallelTest {
 
@@ -225,8 +231,19 @@ class LmdbNativeIrAggregateParallelTest {
 		assertThat(rows(FORKABLE_FILTER_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
 	}
 
+	/**
+	 * DISTINCT aggregates merge in parallel since plan 32: the worker kernel variant keeps each channel's id set in the
+	 * engine hook sidecar, and the consumer unions those sets before counting once — the same rule the interpreted
+	 * parallel engine has always used. Before that, a per-partition count could not be merged, so this query declined
+	 * with {@code unmergeable-aggregate-kind-2} and lost parallelism outright.
+	 *
+	 * <p>
+	 * The loop runs until the rung engages rather than until the kernel first opens: the worker variant is a shape of
+	 * its own in the compile cache, so the earliest rounds legitimately decline with {@code worker-kernel-pending}
+	 * while its async compile finishes.
+	 */
 	@Test
-	void distinctAggregateDeclinesParallelButKeepsTheSequentialKernel() {
+	void distinctAggregateMergesInParallel() {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
 		List<String> expected = rows(DISTINCT_QUERY);
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
@@ -234,13 +251,15 @@ class LmdbNativeIrAggregateParallelTest {
 
 		KernelExecutionTestAccess.resetMetrics();
 		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
-		for (int round = 0; round < 300 && KernelExecutionTestAccess.aggOpened() == 0; round++) {
-			assertThat(rows(DISTINCT_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
+		for (int round = 0; round < 300
+				&& LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get() == parallelBefore; round++) {
+			assertThat(rows(DISTINCT_QUERY)).as("parity on round " + round)
+					.containsExactlyInAnyOrderElementsOf(expected);
 		}
-		assertThat(KernelExecutionTestAccess.aggOpened()).as("sequential kernel still serves").isGreaterThan(0);
 		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
-				.as("per-partition DISTINCT would double-count; parallel must decline")
-				.isEqualTo(parallelBefore);
+				.as("DISTINCT channels merge as a union of id sets, so the rung must partition rather than decline")
+				.isGreaterThan(parallelBefore);
+		assertThat(rows(DISTINCT_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
 	}
 
 	@Test

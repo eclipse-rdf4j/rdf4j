@@ -103,6 +103,13 @@ final class LmdbNativeParallelKernelAggregate {
 			case LmdbNativeKernelIr.AGG_AVG:
 			case LmdbNativeKernelIr.AGG_MIN_ID:
 			case LmdbNativeKernelIr.AGG_MAX_ID:
+				// DISTINCT channels merge as SETS, never as counts or sums: the worker variant keeps its id sets in
+				// the hook sidecar, the consumer unions them, and only then counts or folds. This is the interpreted
+				// engine's contract too (all-hash distinct channels unioned by AggState.mergeFrom, with SUM/AVG
+				// arithmetic deferred until the union is complete).
+			case LmdbNativeKernelIr.AGG_COUNT_DISTINCT:
+			case LmdbNativeKernelIr.AGG_SUM_DISTINCT:
+			case LmdbNativeKernelIr.AGG_AVG_DISTINCT:
 				break;
 			default:
 				return debugDecline("unmergeable-aggregate-kind-" + output.kind);
@@ -152,15 +159,32 @@ final class LmdbNativeParallelKernelAggregate {
 		if (!LmdbNativeKernelPartitions.entryReseedable(emitter.source, emitter.layout, emitter.base, row)) {
 			return debugDecline("correlated-entry");
 		}
+		// DISTINCT channels move to the hook sidecar in the worker variant so the consumer can reach the per-partition
+		// id sets; the rewrite also drops the ordered-domain fast path, whose agO counter counts RUNS of equal values
+		// and is therefore not additive once a value spans two partitions.
+		LmdbNativeKernelIr.AggregateOutput[] workerOutputs = aggregate.outputs;
+		boolean hookDistinct = false;
+		for (int i = 0; i < aggregate.outputs.length; i++) {
+			if (aggregate.outputs[i].isDistinctKind()) {
+				if (!hookDistinct) {
+					workerOutputs = aggregate.outputs.clone();
+					hookDistinct = true;
+				}
+				workerOutputs[i] = aggregate.outputs[i].asHookDistinct();
+			}
+		}
+		// HAVING and ORDER/LIMIT/OFFSET filter or truncate on FINAL group values; a per-partition kernel would apply
+		// them to fragments of a group. The workers run a variant with those stripped and the query thread applies
+		// them after the merge.
+		boolean stripsModifiers = aggregate.having != null || aggregate.mods.orderKeys != null
+				|| aggregate.mods.limit >= 0 || aggregate.mods.offset > 0;
 		LmdbNativeKernelIr.Kernel workerKernel = lowered.kernel;
-		if (aggregate.having != null || aggregate.mods.orderKeys != null || aggregate.mods.limit >= 0
-				|| aggregate.mods.offset > 0) {
-			// HAVING and ORDER/LIMIT/OFFSET filter or truncate on FINAL group values; a per-partition kernel would
-			// apply them to fragments of a group. The workers run a variant with both stripped and the query thread
-			// applies them after the merge. The variant is its own shape in the compile cache; while it is below
-			// threshold or pending, decline to the sequential drain rather than stall the workers.
+		if (hookDistinct || stripsModifiers) {
+			// The variant is its own shape in the compile cache (the hook-distinct marker and the stripped modifiers
+			// both key differently); while it is below threshold or pending, decline to the sequential drain rather
+			// than stall the workers.
 			workerKernel = new LmdbNativeKernelIr.Kernel(lowered.kernel.columnCount, lowered.kernel.pipeline,
-					new Aggregate(aggregate.groupCols, aggregate.outputs, null, OutputMods.none()));
+					new Aggregate(aggregate.groupCols, workerOutputs, null, OutputMods.none()));
 			JaninoKernel probeKernel = kernelFactory.apply(workerKernel);
 			if (probeKernel == null) {
 				return debugDecline("worker-kernel-pending");
@@ -190,8 +214,8 @@ final class LmdbNativeParallelKernelAggregate {
 			if (sources == null) {
 				return debugDecline("snapshot-unavailable");
 			}
-			return execute(lowered, rootAdjacency, rootDomain, domains, rootKeys, sources, threads, row, emitter,
-					workerFactory);
+			return execute(lowered, (Aggregate) workerKernelFinal.terminal, rootAdjacency, rootDomain, domains,
+					rootKeys, sources, threads, row, emitter, workerFactory);
 		} finally {
 			cleanupFailure = LmdbNativeParallelPipelines.closeSources(sources, cleanupFailure);
 			reservation.close();
@@ -204,7 +228,8 @@ final class LmdbNativeParallelKernelAggregate {
 		}
 	}
 
-	private static List<BindingSet> execute(LmdbNativeKernelLowering.Lowered lowered, int rootAdjacency, int rootDomain,
+	private static List<BindingSet> execute(LmdbNativeKernelLowering.Lowered lowered, Aggregate workerAggregate,
+			int rootAdjacency, int rootDomain,
 			long[][] domains, long rootKeys, NativeLmdbQuerySource.ParallelSource[] sources, int threads, RowState row,
 			NativeGroupIteration emitter, Supplier<JaninoKernel> kernelFactory) {
 		ConcurrentLinkedQueue<long[]> ranges = LmdbNativeKernelPartitions.ranges(rootKeys, threads, RANGES_PER_WORKER);
@@ -215,8 +240,8 @@ final class LmdbNativeParallelKernelAggregate {
 			try {
 				futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
 					try {
-						return runWorker(lowered, rootAdjacency, rootDomain, domains, source, emitter, ranges,
-								kernelFactory, failure);
+						return runWorker(lowered, workerAggregate, rootAdjacency, rootDomain, domains, source, emitter,
+								ranges, kernelFactory, failure);
 					} catch (Throwable t) {
 						failure.compareAndSet(null, t);
 						throw t;
@@ -307,33 +332,61 @@ final class LmdbNativeParallelKernelAggregate {
 		int stride = groupLength + layout.outs.length;
 		long[] rows = new long[total.size() * Math.max(stride, 1)];
 		int count = 0;
-		for (Map.Entry<LongsKey, Partial> entry : total.entrySet()) {
-			Partial partial = entry.getValue();
-			// HAVING is count-kind only by Aggregate construction, so the merged count is the final value it tests
-			if (having != null && !havingHolds(partial.counts[having.outputIndex], having.op, having.threshold)) {
-				continue;
-			}
-			int base = count * stride;
-			System.arraycopy(entry.getKey().ids, 0, rows, base, groupLength);
-			for (int i = 0; i < layout.outs.length; i++) {
-				switch (aggregate.outputs[i].kind) {
-				case LmdbNativeKernelIr.AGG_COUNT_STAR:
-				case LmdbNativeKernelIr.AGG_COUNT:
-					rows[base + groupLength + i] = partial.counts[i];
-					break;
-				case LmdbNativeKernelIr.AGG_SUM:
-				case LmdbNativeKernelIr.AGG_AVG:
-					// the packed ordinal travels with the row, so sorting below cannot detach a group's exact state
-					mergeHooks.installNumericPartial(i, count, partial.sums[i], partial.avgCounts[i],
-							partial.errors[i]);
-					rows[base + groupLength + i] = count;
-					break;
-				default: // AGG_MIN_ID / AGG_MAX_ID
-					rows[base + groupLength + i] = partial.hasWinner[i] ? partial.winners[i] : UNKNOWN;
-					break;
+		try {
+			for (Map.Entry<LongsKey, Partial> entry : total.entrySet()) {
+				Partial partial = entry.getValue();
+				// HAVING is count-kind only by Aggregate construction — but a DISTINCT count's final value is the size
+				// of the merged id set, not the counts column, which stays zero for that output.
+				if (having != null && !havingHolds(finalCount(partial, having.outputIndex, aggregate),
+						having.op, having.threshold)) {
+					continue;
 				}
+				int base = count * stride;
+				System.arraycopy(entry.getKey().ids, 0, rows, base, groupLength);
+				for (int i = 0; i < layout.outs.length; i++) {
+					switch (aggregate.outputs[i].kind) {
+					case LmdbNativeKernelIr.AGG_COUNT_STAR:
+					case LmdbNativeKernelIr.AGG_COUNT:
+					case LmdbNativeKernelIr.AGG_COUNT_DISTINCT:
+						rows[base + groupLength + i] = finalCount(partial, i, aggregate);
+						break;
+					case LmdbNativeKernelIr.AGG_SUM:
+					case LmdbNativeKernelIr.AGG_AVG:
+						// the packed ordinal travels with the row, so sorting below cannot detach a group's exact state
+						mergeHooks.installNumericPartial(i, count, partial.sums[i], partial.avgCounts[i],
+								partial.errors[i]);
+						rows[base + groupLength + i] = count;
+						break;
+					case LmdbNativeKernelIr.AGG_SUM_DISTINCT:
+					case LmdbNativeKernelIr.AGG_AVG_DISTINCT: {
+						// The DEFERRED arithmetic: the workers only collected ids, so fold the merged set here, once
+						// per distinct value, through the very same accumulator the sequential kernel uses — which is
+						// what keeps datatype promotion, type-error poisoning and the floating-point encounter-order
+						// refusal identical between the two routes.
+						final int out = i;
+						final int ordinal = count;
+						KernelRuntime.LongHashSet ids = partial.distinctIds[i];
+						if (ids != null) {
+							ids.forEach(id -> mergeHooks.accumulateNumeric(out, ordinal, id));
+						}
+						rows[base + groupLength + i] = count;
+						break;
+					}
+					default: // AGG_MIN_ID / AGG_MAX_ID
+						rows[base + groupLength + i] = partial.hasWinner[i] ? partial.winners[i] : UNKNOWN;
+						break;
+					}
+				}
+				count++;
 			}
-			count++;
+		} catch (EncounterOrderFallback fallback) {
+			// A floating-point DISTINCT SUM/AVG only reveals itself here: the workers collected ids without doing any
+			// arithmetic, so the order-sensitivity refusal fires at the consumer fold instead of inside a worker.
+			// Nothing has been emitted yet, so the sequential drain is still exact.
+			if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
+				System.err.println("[ir-aggregate-parallel] fallback: " + fallback);
+			}
+			return null;
 		}
 		if (mods.orderKeys != null) {
 			// the same KernelRuntime comparator the generated drain uses, with the hook sidecar for value order
@@ -357,6 +410,18 @@ final class LmdbNativeParallelKernelAggregate {
 		return results;
 	}
 
+	/**
+	 * The final value of a count-kind output: a plain count adds across partitions, while a DISTINCT count is the size
+	 * of the unioned id set — the counts column is never written for a distinct channel.
+	 */
+	private static long finalCount(Partial partial, int out, Aggregate aggregate) {
+		if (aggregate.outputs[out].kind == LmdbNativeKernelIr.AGG_COUNT_DISTINCT) {
+			KernelRuntime.LongHashSet ids = partial.distinctIds[out];
+			return ids == null ? 0L : ids.size();
+		}
+		return partial.counts[out];
+	}
+
 	/** The generated drain's HAVING test: keep the group when {@code count <op> threshold} holds. */
 	private static boolean havingHolds(long count, int op, long threshold) {
 		switch (op) {
@@ -375,13 +440,20 @@ final class LmdbNativeParallelKernelAggregate {
 		}
 	}
 
-	private static HashMap<LongsKey, Partial> runWorker(LmdbNativeKernelLowering.Lowered lowered, int rootAdjacency,
+	private static HashMap<LongsKey, Partial> runWorker(LmdbNativeKernelLowering.Lowered lowered,
+			Aggregate aggregate, int rootAdjacency,
 			int rootDomain, long[][] domains, NativeLmdbQuerySource source, NativeGroupIteration emitter,
 			Queue<long[]> ranges, Supplier<JaninoKernel> kernelFactory, AtomicReference<Throwable> failure)
 			throws IOException {
 		LmdbNativeKernelBindings bindings = lowered.bindings;
-		Aggregate aggregate = (Aggregate) lowered.kernel.terminal;
 		KernelGroupLayout layout = bindings.groupLayout;
+		boolean workerNeedsHooks = false;
+		for (LmdbNativeKernelIr.AggregateOutput output : aggregate.outputs) {
+			if (output.hookDistinct) {
+				workerNeedsHooks = true;
+				break;
+			}
+		}
 		RowState workerRow = new RowState(source, emitter.layout, emitter.base);
 		if (!NativeRowSeeder.seed(workerRow.slots, emitter.layout, emitter.base, source)) {
 			throw new LmdbNativeKernelPartitions.ParallelKernelDecline("worker-seed-unavailable");
@@ -414,9 +486,12 @@ final class LmdbNativeParallelKernelAggregate {
 					throw new LmdbNativeKernelPartitions.ParallelKernelDecline("kernel-instance-unavailable");
 				}
 				try {
-					// hooks stay PER RANGE: the numeric accumulator sidecar is indexed by the kernel instance's group
-					// ordinals, which restart at zero for every window; only the forked filter array is per worker
-					LmdbNativeKernelHooks hooks = bindings.needsHooks()
+					// hooks stay PER RANGE: the numeric and distinct sidecars are indexed by the kernel instance's
+					// group ordinals, which restart at zero for every window; only the forked filter array is per
+					// worker. The variant's hook-distinct channels need a hooks object even when the BINDINGS do not
+					// ask for one — bindings.hooksRequired is false for a COUNT(DISTINCT)-only query, whose sequential
+					// kernel keeps its sets in generated fields, and the variant would call into a null hooks.
+					LmdbNativeKernelHooks hooks = bindings.needsHooks() || workerNeedsHooks
 							? new LmdbNativeKernelHooks(workerRow, bindings,
 									forkedHooks != null ? forkedHooks : bindings.filterHooks)
 							: null;
@@ -470,7 +545,13 @@ final class LmdbNativeParallelKernelAggregate {
 		int offset = base + groupLength;
 		for (int i = 0; i < layout.outs.length; i++) {
 			long raw = buffer[offset++];
-			switch (aggregate.outputs[i].kind) {
+			LmdbNativeKernelIr.AggregateOutput output = aggregate.outputs[i];
+			if (output.hookDistinct) {
+				// every hook-distinct kind ships its GROUP ORDINAL, not a value: the mergeable state is the id set
+				unionDistinct(partial, i, hooks.distinctIdsAt(i, Math.toIntExact(raw)));
+				continue;
+			}
+			switch (output.kind) {
 			case LmdbNativeKernelIr.AGG_COUNT_STAR:
 			case LmdbNativeKernelIr.AGG_COUNT:
 				partial.counts[i] += raw;
@@ -492,8 +573,30 @@ final class LmdbNativeParallelKernelAggregate {
 		}
 	}
 
+	/**
+	 * Copies a worker's DISTINCT ids into the partial's own set. The source set belongs to a kernel instance that is
+	 * closed when its range finishes, so the partial must not retain the reference.
+	 */
+	private static void unionDistinct(Partial partial, int out, KernelRuntime.LongHashSet ids) {
+		if (ids == null || ids.size() == 0) {
+			return;
+		}
+		KernelRuntime.LongHashSet target = partial.distinctIds[out];
+		if (target == null) {
+			target = new KernelRuntime.LongHashSet(ids.size());
+			partial.distinctIds[out] = target;
+		}
+		target.addAll(ids);
+	}
+
 	private static void mergePartial(Partial into, Partial from, Aggregate aggregate, LmdbNativeKernelHooks hooks) {
 		for (int i = 0; i < into.counts.length; i++) {
+			if (aggregate.outputs[i].isDistinctKind()) {
+				// exactly the interpreted engine's rule: distinct channels union, and nothing is counted or summed
+				// until the union across every partition is complete
+				unionDistinct(into, i, from.distinctIds[i]);
+				continue;
+			}
 			switch (aggregate.outputs[i].kind) {
 			case LmdbNativeKernelIr.AGG_COUNT_STAR:
 			case LmdbNativeKernelIr.AGG_COUNT:
@@ -513,6 +616,15 @@ final class LmdbNativeParallelKernelAggregate {
 		}
 	}
 
+	/**
+	 * Adds a worker's numeric partial into the merged one. There is deliberately no floating-point guard here: the
+	 * refusal happens upstream, at accumulation, because {@link LmdbNativeKernelHooks} builds its {@code AggContext}
+	 * with {@code encounterOrderChanging=true}, so {@code AggState.numericLiteral} throws
+	 * {@code EncounterOrderFallback.floatingSumOrAvg()} the first time a float or double reaches a SUM/AVG accumulator
+	 * on ANY kernel route. Every partial that reaches this method therefore holds exact integer or decimal arithmetic,
+	 * which is associative — so merge order cannot change the answer. Remove that upstream guard and this becomes
+	 * order-dependent.
+	 */
 	private static void mergeNumeric(Partial partial, int out, Literal sum, long count, boolean error) {
 		if (error) {
 			// a type error poisons the aggregate for this group, matching AggState semantics
@@ -565,6 +677,8 @@ final class LmdbNativeParallelKernelAggregate {
 		final boolean[] errors;
 		final long[] winners;
 		final boolean[] hasWinner;
+		/** Merged DISTINCT ids per output; null until that channel sees its first value. */
+		final KernelRuntime.LongHashSet[] distinctIds;
 
 		Partial(int outs) {
 			counts = new long[outs];
@@ -573,6 +687,7 @@ final class LmdbNativeParallelKernelAggregate {
 			errors = new boolean[outs];
 			winners = new long[outs];
 			hasWinner = new boolean[outs];
+			distinctIds = new KernelRuntime.LongHashSet[outs];
 		}
 	}
 

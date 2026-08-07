@@ -24,8 +24,10 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.function.LongPredicate;
 import java.util.function.LongUnaryOperator;
@@ -664,6 +666,63 @@ class LmdbNativeKernelIrEmitterTest {
 				.domains(new long[] { 100, 200 }, new long[] { 200 }));
 		// Group 200 is seeded by both branches; COUNT(DISTINCT) collapses the duplicate member.
 		assertRows(rows, new long[][] { { 100, 2 }, { 200, 1 } });
+	}
+
+	/**
+	 * The parallel rungs' worker variant (plan: plans/lmdb-native-engine/32-parallel-kernel-parity-closure.md): a
+	 * hook-distinct COUNT keeps its id set in the engine sidecar and emits the GROUP ORDINAL instead of a count, so the
+	 * consumer can union the per-partition sets — which is the only thing that merges exactly — and size each group
+	 * once at the end. Key 2 repeats value 5 from key 1, proving the channels stay per-group.
+	 */
+	@Test
+	void hookDistinctCountEmitsGroupOrdinalAndFillsTheSidecar() throws Exception {
+		TestHooks hooks = new TestHooks();
+		NativeLmdbQuerySource.NativeAdjacency shared = new FixtureAdjacency(
+				new long[][] { { 1, 5, 7 }, { 2, 5, 9 } });
+		Kernel ir = new Kernel(2, List.of(new EnumerateAdjKeys(0, 0, 1)),
+				new Aggregate(new int[] { 0 },
+						new AggregateOutput[] { AggregateOutput.countDistinct(1).asHookDistinct() }, null,
+						OutputMods.none()));
+		List<long[]> rows = run(ir, context().adjacencies(shared).hooks(hooks));
+		// the second column is the group ordinal, NOT the count — group 1 interns first, group 2 second
+		assertRows(rows, new long[][] { { 1, 0 }, { 2, 1 } });
+		assertEquals(Set.of(5L, 7L), hooks.distinctIds(0, 0));
+		assertEquals(Set.of(5L, 9L), hooks.distinctIds(0, 1));
+	}
+
+	/**
+	 * A hook-distinct SUM collects ids only: the arithmetic is deferred to the consumer, which folds the merged set
+	 * once. Summing per partition and adding the partials would double-count every value appearing in more than one
+	 * partition — the reason DISTINCT could not be merged before. Mirrors the interpreted engine's
+	 * {@code deferDistinctValueAggregates}.
+	 */
+	@Test
+	void hookDistinctSumDefersArithmeticToTheConsumer() throws Exception {
+		TestHooks hooks = new TestHooks();
+		Kernel ir = new Kernel(2, List.of(new EnumerateAdjKeys(0, 0, 1)),
+				new Aggregate(new int[0],
+						new AggregateOutput[] { AggregateOutput.sumDistinct(1).asHookDistinct() }, null,
+						OutputMods.none()));
+		run(ir, context().adjacencies(new FixtureAdjacency(new long[][] { { 1, 5, 7 }, { 2, 5 } })).hooks(hooks));
+		assertEquals(Set.of(5L, 7L), hooks.distinctIds(0, 0));
+		assertEquals(0D, hooks.numericSum(0, 0),
+				"the worker must not run per-partition arithmetic over a DISTINCT channel");
+	}
+
+	/**
+	 * The worker variant emits different code for the same kind and column, so it must not share a compile-cache entry
+	 * with the sequential shape — otherwise one would silently be served the other's generated class.
+	 */
+	@Test
+	void hookDistinctIsPartOfTheShapeKey() {
+		Kernel sequential = new Kernel(2, List.of(new EnumerateAdjKeys(0, 0, 1)),
+				new Aggregate(new int[] { 0 }, new AggregateOutput[] { AggregateOutput.countDistinct(1) }, null,
+						OutputMods.none()));
+		Kernel variant = new Kernel(2, List.of(new EnumerateAdjKeys(0, 0, 1)),
+				new Aggregate(new int[] { 0 },
+						new AggregateOutput[] { AggregateOutput.countDistinct(1).asHookDistinct() }, null,
+						OutputMods.none()));
+		assertNotEquals(sequential.shapeKey(), variant.shapeKey());
 	}
 
 	@Test
@@ -1453,6 +1512,7 @@ class LmdbNativeKernelIrEmitterTest {
 		LongUnaryOperator bindCompute = a -> a;
 		final Map<Long, Double> numericSums = new HashMap<>();
 		final Map<Long, Long> numericCounts = new HashMap<>();
+		final Map<Long, Set<Long>> distinctSets = new HashMap<>();
 		int lastFilterId;
 		long lastA1;
 		long lastA2;
@@ -1490,6 +1550,16 @@ class LmdbNativeKernelIrEmitterTest {
 			long key = numericKey(aggregateId, groupId);
 			numericSums.merge(key, (double) valueId, Double::sum);
 			numericCounts.merge(key, 1L, Long::sum);
+		}
+
+		@Override
+		public boolean accumulateDistinct(int aggregateId, int groupId, long valueId) {
+			return distinctSets.computeIfAbsent(numericKey(aggregateId, groupId), key -> new LinkedHashSet<>())
+					.add(valueId);
+		}
+
+		Set<Long> distinctIds(int aggregateId, int groupId) {
+			return distinctSets.getOrDefault(numericKey(aggregateId, groupId), Set.of());
 		}
 
 		double numericSum(int aggregateId, int groupId) {

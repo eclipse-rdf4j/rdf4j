@@ -304,6 +304,36 @@ public final class KernelRuntime {
 			return size;
 		}
 
+		/**
+		 * Unions another set into this one. The parallel aggregate rungs merge DISTINCT channels this way:
+		 * per-partition counts and sums cannot be added across partitions, but the id sets behind them union exactly.
+		 */
+		public void addAll(LongHashSet other) {
+			if (other == null || other == this) {
+				return;
+			}
+			if (other.hasZero) {
+				add(0L);
+			}
+			for (long key : other.keys) {
+				if (key != 0L) {
+					add(key);
+				}
+			}
+		}
+
+		/** Feeds every member to the consumer, in unspecified order. */
+		public void forEach(java.util.function.LongConsumer consumer) {
+			if (hasZero) {
+				consumer.accept(0L);
+			}
+			for (long key : keys) {
+				if (key != 0L) {
+					consumer.accept(key);
+				}
+			}
+		}
+
 		private void grow() {
 			long[] old = keys;
 			int capacity = old.length << 1;

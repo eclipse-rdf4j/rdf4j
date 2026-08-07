@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
  * Engine-side implementation of the generated-kernel callback SPI (plan:
@@ -53,6 +54,13 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	private final long[][] numericCounts;
 	private final boolean[][] numericErrors;
 	private final AggContext numericContext;
+	/**
+	 * DISTINCT id sets for hook-routed channels, indexed {@code [aggregateId][groupOrdinal]}; the outer entry is null
+	 * for any aggregate that is not a DISTINCT spec. Only the parallel rungs' worker kernel variant fills these — the
+	 * sequential kernel keeps its distinct sets as generated fields — so on the ordinary route these arrays stay empty.
+	 */
+	private final KernelRuntime.LongHashSet[][] distinctSets;
+	private final int distinctExpected;
 
 	LmdbNativeKernelHooks(RowState liveRow, LmdbNativeKernelBindings bindings) {
 		this(liveRow, bindings, bindings.filterHooks);
@@ -77,9 +85,12 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		this.numericSums = new Literal[aggregateCount][];
 		this.numericCounts = new long[aggregateCount][];
 		this.numericErrors = new boolean[aggregateCount][];
+		this.distinctSets = new KernelRuntime.LongHashSet[aggregateCount][];
+		this.distinctExpected = bindings.distinctExpected;
 		boolean hasNumericAggregate = false;
 		for (int i = 0; i < aggregateCount; i++) {
-			AggKind kind = bindings.groupLayout.outs[i].spec.kind;
+			AggregateSpec spec = bindings.groupLayout.outs[i].spec;
+			AggKind kind = spec.kind;
 			if (kind == AggKind.SUM || kind == AggKind.AVG) {
 				hasNumericAggregate = true;
 				numericKinds[i] = kind;
@@ -88,6 +99,11 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 				if (kind == AggKind.AVG) {
 					numericCounts[i] = new long[16];
 				}
+			}
+			// A DISTINCT spec is the only thing a hook-distinct variant can be lowered from, so the channel slot is
+			// reserved here from the bindings alone; the per-group sets themselves are created on first value.
+			if (spec.distinct) {
+				distinctSets[i] = new KernelRuntime.LongHashSet[16];
 			}
 		}
 		// A generated traversal may change encounter order. Integer and decimal addition remain exact; floating-point
@@ -242,6 +258,51 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		if (numericKinds[aggregateId] == AggKind.AVG) {
 			numericCounts[aggregateId][groupId]++;
 		}
+	}
+
+	@Override
+	public boolean accumulateDistinct(int aggregateId, int groupId, long valueId) {
+		requireDistinctChannel(aggregateId, groupId);
+		ensureDistinctCapacity(aggregateId, groupId);
+		KernelRuntime.LongHashSet[] sets = distinctSets[aggregateId];
+		KernelRuntime.LongHashSet set = sets[groupId];
+		if (set == null) {
+			set = new KernelRuntime.LongHashSet(distinctExpected);
+			sets[groupId] = set;
+		}
+		return set.add(valueId);
+	}
+
+	/**
+	 * One group's DISTINCT id set for the parallel merge, or null when the group contributed no value to that channel.
+	 * The set is the worker's own, so the consumer may union it into an accumulator but must not assume it is stable
+	 * after the worker's kernel instance is reused.
+	 */
+	KernelRuntime.LongHashSet distinctIdsAt(int aggregateId, int groupId) {
+		requireDistinctChannel(aggregateId, groupId);
+		KernelRuntime.LongHashSet[] sets = distinctSets[aggregateId];
+		return groupId < sets.length ? sets[groupId] : null;
+	}
+
+	private void requireDistinctChannel(int aggregateId, int groupId) {
+		if (aggregateId < 0 || aggregateId >= distinctSets.length || distinctSets[aggregateId] == null) {
+			throw new IllegalArgumentException("aggregate " + aggregateId + " is not a DISTINCT channel");
+		}
+		if (groupId < 0) {
+			throw new IllegalArgumentException("negative aggregate group ordinal: " + groupId);
+		}
+	}
+
+	private void ensureDistinctCapacity(int aggregateId, int groupId) {
+		KernelRuntime.LongHashSet[] sets = distinctSets[aggregateId];
+		if (groupId < sets.length) {
+			return;
+		}
+		int capacity = sets.length;
+		while (capacity <= groupId) {
+			capacity = Math.multiplyExact(capacity, 2);
+		}
+		distinctSets[aggregateId] = Arrays.copyOf(sets, capacity);
 	}
 
 	/**

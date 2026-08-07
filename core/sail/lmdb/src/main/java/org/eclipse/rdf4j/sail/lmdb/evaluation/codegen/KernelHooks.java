@@ -56,6 +56,17 @@ public interface KernelHooks {
 	void accumulateNumeric(int aggregateId, int groupId, long valueId);
 
 	/**
+	 * Adds one bound value to a DISTINCT channel owned by the engine, returning true when the value was not already
+	 * present in that group's set. Only the parallel rungs' worker kernel variant routes here: a per-partition distinct
+	 * COUNT or SUM cannot be merged across partitions, while the id sets behind them union exactly, so the variant
+	 * keeps the sets somewhere the consumer can reach them. The ordinary sequential kernel keeps its distinct sets as
+	 * generated fields and never calls this.
+	 */
+	default boolean accumulateDistinct(int aggregateId, int groupId, long valueId) {
+		throw new UnsupportedOperationException("distinct channels are not supported by this hook implementation");
+	}
+
+	/**
 	 * Installs one engine-slot value into the residual scratch row before {@link #testResidual(int)} (M10 aggregate
 	 * residual tier). The generated code installs every slot in the residual's read mask, so stale scratch values can
 	 * never be read.

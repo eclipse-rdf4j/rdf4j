@@ -249,6 +249,10 @@ final class LmdbNativeKernelEmitter {
 					case LmdbNativeKernelIr.AGG_COUNT_DISTINCT:
 					case LmdbNativeKernelIr.AGG_SUM_DISTINCT:
 					case LmdbNativeKernelIr.AGG_AVG_DISTINCT:
+						if (output.hookDistinct) {
+							// the id set lives in the engine hook sidecar; this kernel declares no distinct state
+							break;
+						}
 						source.append("    private KernelRuntime.LongHashSet[] agD").append(i).append(";\n");
 						if (output.kind == LmdbNativeKernelIr.AGG_COUNT_DISTINCT && output.orderedDomain >= 0) {
 							source.append("    private long[] agC")
@@ -346,6 +350,9 @@ final class LmdbNativeKernelEmitter {
 					case LmdbNativeKernelIr.AGG_COUNT_DISTINCT:
 					case LmdbNativeKernelIr.AGG_SUM_DISTINCT:
 					case LmdbNativeKernelIr.AGG_AVG_DISTINCT:
+						if (output.hookDistinct) {
+							break;
+						}
 						source.append("        agD").append(i).append(" = new KernelRuntime.LongHashSet[16];\n");
 						if (output.kind == LmdbNativeKernelIr.AGG_COUNT_DISTINCT && output.orderedDomain >= 0) {
 							source.append("        agC")
@@ -618,7 +625,7 @@ final class LmdbNativeKernelEmitter {
 
 		private static boolean hasDistinctAggregate(Aggregate aggregate) {
 			for (AggregateOutput output : aggregate.outputs) {
-				if (isDistinctAggregate(output)) {
+				if (isGeneratedDistinct(output)) {
 					return true;
 				}
 			}
@@ -631,6 +638,15 @@ final class LmdbNativeKernelEmitter {
 					|| output.kind == LmdbNativeKernelIr.AGG_AVG_DISTINCT;
 		}
 
+		/**
+		 * True when this DISTINCT channel's id set lives in a generated {@code agD} field. A hook-distinct output keeps
+		 * its set in the engine sidecar instead, so it declares, allocates and grows nothing here — that is what lets
+		 * the parallel consumer union the per-partition sets it could never have reached inside generated code.
+		 */
+		private static boolean isGeneratedDistinct(AggregateOutput output) {
+			return isDistinctAggregate(output) && !output.hookDistinct;
+		}
+
 		private static String distinctCountExpression(AggregateOutput output, int index) {
 			String hashCount = "(agD" + index + "[g] == null ? 0L : (long) agD" + index + "[g].size())";
 			return output.orderedDomain >= 0 ? "(agO" + index + " ? agC" + index + "[g] : " + hashCount + ")"
@@ -640,6 +656,18 @@ final class LmdbNativeKernelEmitter {
 		private static void emitCountDistinctUpdate(StringBuilder source, AggregateOutput output, int index,
 				String value) {
 			source.append("        if (").append(value).append(" != -1L) {\n");
+			if (output.hookDistinct) {
+				// The sidecar owns the set; the drain emits this group's ordinal so the consumer can union across
+				// partitions and count once at the end. Adding a value twice is idempotent, so the bulk-count tail
+				// folds a whole run through this same call exactly as it does for the generated set.
+				source.append("            hooks.accumulateDistinct(")
+						.append(index)
+						.append(", g, ")
+						.append(value)
+						.append(");\n")
+						.append("        }\n");
+				return;
+			}
 			if (output.orderedDomain >= 0) {
 				source.append("            if (agO")
 						.append(index)
@@ -731,6 +759,22 @@ final class LmdbNativeKernelEmitter {
 					break;
 				case LmdbNativeKernelIr.AGG_SUM_DISTINCT:
 				case LmdbNativeKernelIr.AGG_AVG_DISTINCT:
+					if (output.hookDistinct) {
+						// Collect ids only — the arithmetic is DEFERRED to the consumer, which folds the UNIONED set
+						// once. Summing per partition and adding the partials would double-count every value that
+						// appears in more than one partition, which is the whole reason DISTINCT could not merge.
+						// This mirrors the interpreted engine's deferDistinctValueAggregates.
+						source.append("        if (")
+								.append(value)
+								.append(" != -1L) {\n")
+								.append("            hooks.accumulateDistinct(")
+								.append(i)
+								.append(", g, ")
+								.append(value)
+								.append(");\n")
+								.append("        }\n");
+						break;
+					}
 					source.append("        if (")
 							.append(value)
 							.append(" != -1L && agD")
@@ -863,6 +907,10 @@ final class LmdbNativeKernelEmitter {
 				case LmdbNativeKernelIr.AGG_COUNT_DISTINCT:
 				case LmdbNativeKernelIr.AGG_SUM_DISTINCT:
 				case LmdbNativeKernelIr.AGG_AVG_DISTINCT:
+					if (output.hookDistinct) {
+						// the sidecar grows itself, keyed by the same group ordinal this kernel hands it
+						break;
+					}
 					emitArrayGrow(source, "agD" + i, "KernelRuntime.LongHashSet");
 					if (output.kind == LmdbNativeKernelIr.AGG_COUNT_DISTINCT && output.orderedDomain >= 0) {
 						emitArrayGrow(source, "agC" + i, "long");
@@ -889,7 +937,7 @@ final class LmdbNativeKernelEmitter {
 					.append("        }\n");
 			for (int i = 0; i < aggregate.outputs.length; i++) {
 				AggregateOutput output = aggregate.outputs[i];
-				if (isDistinctAggregate(output)) {
+				if (isGeneratedDistinct(output)) {
 					source.append("        if (")
 							.append(output.kind == LmdbNativeKernelIr.AGG_COUNT_DISTINCT
 									&& output.orderedDomain >= 0 ? "!agO" + i + " && " : "")
@@ -944,7 +992,9 @@ final class LmdbNativeKernelEmitter {
 					source.append("        ")
 							.append(target)
 							.append(" = ")
-							.append(distinctCountExpression(output, i))
+							// a hook-distinct count is not countable yet: ship the group ordinal so the consumer can
+							// find this group's id set, union it across partitions, and size it once
+							.append(output.hookDistinct ? "g" : distinctCountExpression(output, i))
 							.append(";\n");
 					break;
 				case LmdbNativeKernelIr.AGG_SUM:
