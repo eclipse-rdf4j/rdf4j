@@ -128,6 +128,63 @@ final class LmdbNativeKernelPartitions {
 	 * {@code NativeBooleanFilter.forkForParallelWorker} SPI the interpreted parallel engine uses. A shared filter with
 	 * mutable native state (memo tables, lazily acquired probes) answers false and keeps the sequential route.
 	 */
+	/**
+	 * The root producer's scan site when the pipeline is rooted at a {@link LmdbNativeKernelIr.ScanQuad} that no other
+	 * node re-reads, or -1. This is the scan-rooted twin of {@link #partitionableRootAdjacency}: the interpreted
+	 * parallel engine range-partitions any root pattern scan, so a kernel that happens to be lowered onto a raw scan
+	 * rather than an adjacency view should not lose its parallelism for that reason alone.
+	 *
+	 * <p>
+	 * A root scan's terms can only be constants or entry-bound slots — no column is written yet — but a column operand
+	 * is rejected explicitly rather than assumed away, because it would make the scan's key range depend on a row the
+	 * query thread cannot see when it plans the partitions.
+	 */
+	static int partitionableRootScan(List<Node> pipeline) {
+		int start = 0;
+		while (start < pipeline.size() && pipeline.get(start) instanceof LmdbNativeKernelIr.HashBuild) {
+			start++;
+		}
+		if (start >= pipeline.size() || !(pipeline.get(start) instanceof LmdbNativeKernelIr.ScanQuad)) {
+			return -1;
+		}
+		LmdbNativeKernelIr.ScanQuad root = (LmdbNativeKernelIr.ScanQuad) pipeline.get(start);
+		for (LmdbNativeKernelIr.Operand term : root.terms) {
+			if (term != null && term.kind == LmdbNativeKernelIr.Operand.COL) {
+				return -1;
+			}
+		}
+		return readsScanElsewhere(pipeline, start, root.scan) ? -1 : root.scan;
+	}
+
+	/**
+	 * True when any node other than the root re-reads the same scan site. Such a node would inherit the worker's
+	 * partition bound and silently see a slice of what it asked for.
+	 */
+	private static boolean readsScanElsewhere(List<Node> pipeline, int rootIndex, int rootScan) {
+		for (int i = 0; i < pipeline.size(); i++) {
+			if (i == rootIndex) {
+				continue;
+			}
+			if (scanSiteUsed(pipeline.get(i), rootScan)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean scanSiteUsed(Node node, int rootScan) {
+		if (node instanceof LmdbNativeKernelIr.ScanQuad) {
+			return ((LmdbNativeKernelIr.ScanQuad) node).scan == rootScan;
+		}
+		// Composite nodes hide producers inside their arms; anything that can carry a nested scan is treated as a
+		// possible second reader rather than walked, because a missed arm would corrupt results silently.
+		if (node instanceof LmdbNativeKernelIr.Union || node instanceof LmdbNativeKernelIr.Exists
+				|| node instanceof LmdbNativeKernelIr.Intersect) {
+			return true;
+		}
+		return false;
+	}
+
 	static boolean filterHooksForkable(FilterHook[] hooks) {
 		for (FilterHook hook : hooks) {
 			if (!hook.source.filter.parallelWorkerForkable()) {

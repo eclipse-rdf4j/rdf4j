@@ -17,6 +17,7 @@ import java.io.IOException;
 
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQuadCursor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelScanner;
@@ -42,6 +43,9 @@ final class LmdbNativeKernelScanner implements KernelScanner, Closeable {
 	private final RecordIterator[] orderedIterators;
 	private final ReusableCursor[] cursors;
 	private final StatementOrder[] scanOrders;
+	/** Scan site restricted to one planned key range, or -1 when every site scans in full. */
+	private int rootScanId = -1;
+	private LmdbRootScanPartition rootPartition;
 
 	LmdbNativeKernelScanner(NativeLmdbQuerySource source, int scanCount) {
 		this(source, null, new StatementOrder[scanCount]);
@@ -65,6 +69,29 @@ final class LmdbNativeKernelScanner implements KernelScanner, Closeable {
 		this.cursors = new ReusableCursor[scanOrders.length];
 	}
 
+	/**
+	 * Confines one scan site to a single planned key range, so a worker's kernel instance reads its own slice of the
+	 * root scan instead of the whole thing (plan: plans/lmdb-native-engine/32-parallel-kernel-parity-closure.md). This
+	 * is the scan-rooted counterpart of the adjacency rungs' {@code KeyWindowView}: the partitions come from
+	 * {@link NativeLmdbQuerySource#planRootScanPartitions}, exactly as the interpreted engine's range-partitioned root
+	 * scan plans them, so the two engines split a scan the same way.
+	 *
+	 * <p>
+	 * Only a site with no {@link StatementOrder} may be restricted: the partitioned open cannot honour an order, and
+	 * silently dropping one would change what an order-dependent consumer sees. Admission enforces that; this asserts
+	 * it.
+	 */
+	void restrictRootScan(int scanId, LmdbRootScanPartition partition) {
+		if (scanId < 0 || scanId >= scanOrders.length) {
+			throw new IllegalArgumentException("scan site out of range: " + scanId);
+		}
+		if (scanOrders[scanId] != null) {
+			throw new IllegalArgumentException("an ordered scan site cannot be range-partitioned: " + scanId);
+		}
+		this.rootScanId = scanId;
+		this.rootPartition = partition;
+	}
+
 	@Override
 	public KernelQuadCursor open(int scanId, long subj, long pred, long obj, long context) {
 		try {
@@ -74,6 +101,18 @@ final class LmdbNativeKernelScanner implements KernelScanner, Closeable {
 			if (cursor == null) {
 				cursor = new ReusableCursor();
 				cursors[scanId] = cursor;
+			}
+			if (scanId == rootScanId && rootPartition != null) {
+				// The partition owns the key bounds; the iterator is retained in the ordered slot so close() releases
+				// it on the same path as every other retained iterator.
+				RecordIterator previous = orderedIterators[scanId];
+				if (previous != null) {
+					previous.close();
+				}
+				RecordIterator current = source.statements(subj, pred, obj, context, rootPartition);
+				orderedIterators[scanId] = current;
+				cursor.reset(current);
+				return cursor;
 			}
 			StatementOrder order = scanOrders[scanId];
 			if (order == null) {
