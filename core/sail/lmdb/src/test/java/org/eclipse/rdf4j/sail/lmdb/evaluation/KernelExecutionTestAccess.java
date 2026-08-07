@@ -72,6 +72,10 @@ public final class KernelExecutionTestAccess {
 		return LmdbNativeKernelLowering.HASH_JOIN_LOWERINGS.get();
 	}
 
+	public static long wcojLowerings() {
+		return LmdbNativeKernelLowering.WCOJ_LOWERINGS.get();
+	}
+
 	public static void resetMetrics() {
 		LmdbNativeKernelExecution.resetMetrics();
 	}

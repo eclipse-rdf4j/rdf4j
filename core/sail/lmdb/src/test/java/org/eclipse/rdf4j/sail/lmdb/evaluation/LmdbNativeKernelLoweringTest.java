@@ -159,15 +159,22 @@ class LmdbNativeKernelLoweringTest {
 
 	@Test
 	void closingEdgeLowersToProbeCloseWithMultiplicity() {
+		// Since M9 the simple-cycle core lowers to the Intersect closing level by default; the ProbeClose closing
+		// edge is the fallback contract this test keeps pinned, so it runs with the WCOJ seam off.
 		MultiJoinPlan plan = new MultiJoinPlan(
 				new SlotPlan[] { pattern(Term.slot(0), Term.slot(1)), pattern(Term.slot(1), Term.slot(2)),
 						pattern(Term.slot(2), Term.slot(0)) },
 				new MaskedFilter[0]);
-		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, freshRow(), null);
-		assertNotNull(lowered);
-		// The closing edge lowers to a ProbeClose in seek mode by default (the ",k" token), so the run's target is
-		// found with a binary-search seek instead of a linear scan.
-		assertTrue(lowered.kernel.shapeKey().contains("C(a2,v2,v0,m,k);"), lowered.kernel.shapeKey());
+		System.setProperty(LmdbNativeKernelLowering.WCOJ_KERNEL_PROPERTY, "false");
+		try {
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, freshRow(), null);
+			assertNotNull(lowered);
+			// The closing edge lowers to a ProbeClose in seek mode by default (the ",k" token), so the run's target
+			// is found with a binary-search seek instead of a linear scan.
+			assertTrue(lowered.kernel.shapeKey().contains("C(a2,v2,v0,m,k);"), lowered.kernel.shapeKey());
+		} finally {
+			System.clearProperty(LmdbNativeKernelLowering.WCOJ_KERNEL_PROPERTY);
+		}
 	}
 
 	@Test
@@ -399,6 +406,55 @@ class LmdbNativeKernelLoweringTest {
 			assertFalse(key.contains("hb0("), "flag off must keep the probe chain: " + key);
 		} finally {
 			System.clearProperty(LmdbNativeKernelLowering.HASH_JOIN_PROPERTY);
+			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
+		}
+	}
+
+	/**
+	 * M9 kernel WCOJ: a three-pattern triangle (the classic cyclic core) must lower to the root edge enumeration plus
+	 * an {@code Intersect} closing level instead of the probe chain with its closing existence probe.
+	 */
+	@Test
+	void triangleLowersToAnIntersectClosingLevel() {
+		PatternPlan ab = new PatternPlan(Term.slot(0), Term.constant(PRED), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 100D);
+		PatternPlan bc = new PatternPlan(Term.slot(1), Term.constant(PRED), Term.slot(2), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 100D);
+		PatternPlan ca = new PatternPlan(Term.slot(2), Term.constant(PRED), Term.slot(0), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 100D);
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { ab, bc, ca }, new MaskedFilter[0]);
+		String previousBridge = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
+		try {
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, freshRow(), null);
+			assertNotNull(lowered, "the triangle must lower");
+			String key = lowered.kernel.shapeKey();
+			assertTrue(key.contains("I("), "expected an Intersect closing level in the shape key: " + key);
+		} finally {
+			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
+		}
+	}
+
+	/** The kernel WCOJ sink honors its kill switch: flag off keeps the probe chain. */
+	@Test
+	void wcojKernelFlagOffKeepsTheProbeChain() {
+		PatternPlan ab = new PatternPlan(Term.slot(0), Term.constant(PRED), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 100D);
+		PatternPlan bc = new PatternPlan(Term.slot(1), Term.constant(PRED), Term.slot(2), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 100D);
+		PatternPlan ca = new PatternPlan(Term.slot(2), Term.constant(PRED), Term.slot(0), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 100D);
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { ab, bc, ca }, new MaskedFilter[0]);
+		String previousBridge = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
+		System.setProperty(LmdbNativeKernelLowering.WCOJ_KERNEL_PROPERTY, "false");
+		try {
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, freshRow(), null);
+			assertNotNull(lowered);
+			assertFalse(lowered.kernel.shapeKey().contains("I("),
+					"flag off must keep the probe chain: " + lowered.kernel.shapeKey());
+		} finally {
+			System.clearProperty(LmdbNativeKernelLowering.WCOJ_KERNEL_PROPERTY);
 			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
 		}
 	}

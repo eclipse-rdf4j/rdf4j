@@ -189,6 +189,44 @@ class LmdbNativeKernelIrEmitterTest {
 		assertRows(rows, new long[][] { { 7 }, { 7 }, { 10 } });
 	}
 
+	// M9 kernel WCOJ: the Intersect node intersects sorted runs from several adjacencies and must emit once per
+	// PRODUCT of duplicate counts (the interpreted leapfrog's counts rule — duplicate quads multiply results).
+	@Test
+	void intersectEmitsCommonNeighborsWithDuplicateProducts() throws Exception {
+		// list A keyed by 1: {5, 7, 7, 9}; list B keyed by 2: {6, 7, 9, 9} — common: 7 (2x1) and 9 (1x2)
+		NativeLmdbQuerySource.NativeAdjacency left = new FixtureAdjacency(new long[][] { { 1, 5, 7, 7, 9 } });
+		NativeLmdbQuerySource.NativeAdjacency right = new FixtureAdjacency(new long[][] { { 2, 6, 7, 9, 9 } });
+		Kernel ir = new Kernel(2, List.of(
+				new EnumerateDomain(0, 0),
+				new Intersect(new int[] { 0, 1 },
+						new Operand[] { Operand.constant(0), Operand.constant(1) }, 1)),
+				emit(0, 1));
+		List<long[]> rows = run(ir,
+				context().adjacencies(left, right).domains(new long[] { 42 }).constants(1L, 2L));
+		assertRows(rows, new long[][] { { 42, 7 }, { 42, 7 }, { 42, 9 }, { 42, 9 } },
+				"7 matches 2x1 ways, 9 matches 1x2 ways");
+	}
+
+	@Test
+	void intersectGallopsAcrossALongRunWithoutMissingMatches() throws Exception {
+		long[] longRun = new long[130];
+		longRun[0] = 1L;
+		for (int i = 1; i < longRun.length; i++) {
+			longRun[i] = i * 3L; // 3, 6, ..., 387
+		}
+		NativeLmdbQuerySource.NativeAdjacency sparse = new FixtureAdjacency(new long[][] { { 2, 9, 300, 384 } });
+		Kernel ir = new Kernel(2, List.of(
+				new EnumerateDomain(0, 0),
+				new Intersect(new int[] { 0, 1 },
+						new Operand[] { Operand.constant(0), Operand.constant(1) }, 1)),
+				emit(0, 1));
+		List<long[]> rows = run(ir,
+				context().adjacencies(new FixtureAdjacency(new long[][] { longRun }), sparse)
+						.domains(new long[] { 7 })
+						.constants(1L, 2L));
+		assertRows(rows, new long[][] { { 7, 9 }, { 7, 300 }, { 7, 384 } });
+	}
+
 	@Test
 	void enumerateEntrySeedsSingleRowFromEntrySlots() throws Exception {
 		Kernel ir = new Kernel(1, List.of(new EnumerateEntry(), new BindAlias(Operand.entry(0), 0)), emit(0));

@@ -191,6 +191,22 @@ final class LmdbNativeKernelLowering {
 	/** Two-pattern joins lowered through the kernel hash seam (M8 witness). */
 	static final AtomicLong HASH_JOIN_LOWERINGS = new AtomicLong();
 
+	/**
+	 * Enables lowering a simple-cycle core (triangle, square, pentagon — every variable on exactly two patterns) into
+	 * the kernel's worst-case-optimal {@code Intersect} node (three-tier parity plan, M9): the root edge enumerates,
+	 * the path probes forward, and the closing vertex intersects its two candidate runs with in-kernel galloping and
+	 * the interpreted leapfrog's duplicate-count product rule. Kill switch, default ON — a shape that does not lower
+	 * this way keeps today's probe chain.
+	 */
+	static final String WCOJ_KERNEL_PROPERTY = "rdf4j.lmdb.janinoCodegen.wcoj";
+
+	static boolean wcojKernelEnabled() {
+		return Boolean.parseBoolean(System.getProperty(WCOJ_KERNEL_PROPERTY, "true"));
+	}
+
+	/** Simple-cycle cores lowered through the kernel Intersect seam (M9 witness). */
+	static final AtomicLong WCOJ_LOWERINGS = new AtomicLong();
+
 	private static final int MAX_CHILDREN = 12;
 	private static final int MAX_HOOK_ARGS = 3;
 	/** Rows of a multi-variable VALUES table the lowering will unroll into generated source. */
@@ -1192,6 +1208,9 @@ final class LmdbNativeKernelLowering {
 				MultiJoinPlan multiJoin = (MultiJoinPlan) plan;
 				filters.addAll(java.util.Arrays.asList(multiJoin.filters));
 				if (tryLowerHashJoin(multiJoin, row)) {
+					return true;
+				}
+				if (tryLowerCyclicCore(multiJoin, row)) {
 					return true;
 				}
 				SlotPlan[] order = multiJoin.derivedPlan(row).order;
@@ -2221,6 +2240,146 @@ final class LmdbNativeKernelLowering {
 			assuredMask |= payloadMask;
 			currentDepthNodes().add(new LmdbNativeKernelIr.HashProbe(0, keyOps, dstCols));
 			HASH_JOIN_LOWERINGS.incrementAndGet();
+			return true;
+		}
+
+		/**
+		 * Lowers a simple-cycle core into WCOJ form (M9): every child a plain two-slot pattern, every variable on
+		 * exactly TWO patterns, pattern count equal to variable count (one cycle, no chords), the interpreted
+		 * leapfrog's own {@code findCyclicCore} agreeing the whole bag is cyclic. Emission: the first pattern
+		 * enumerates the root edge, each next vertex with one bound neighbor probes forward, and the closing vertex
+		 * intersects its two candidate runs. All refusals run before any builder mutation.
+		 */
+		private boolean tryLowerCyclicCore(MultiJoinPlan multiJoin, RowState row) {
+			if (!wcojKernelEnabled() || distinctRetainedMask != 0L || pendingHashBuild != null
+					|| multiJoin.children.length < 3) {
+				return false;
+			}
+			SlotPlan[] children = multiJoin.children;
+			long degreeOnce = 0L;
+			long degreeTwice = 0L;
+			long degreeMore = 0L;
+			long vars = 0L;
+			for (SlotPlan child : children) {
+				if (!(child instanceof PatternPlan)) {
+					return false;
+				}
+				PatternPlan pattern = (PatternPlan) child;
+				if (!hashJoinablePattern(pattern) || !pattern.s.hasSlot() || !pattern.o.hasSlot()
+						|| pattern.hasRuntimeBoundSlot(row)) {
+					return false;
+				}
+				long produced = pattern.producedMask();
+				degreeMore |= degreeTwice & produced;
+				degreeTwice |= degreeOnce & produced;
+				degreeOnce |= produced;
+				vars |= produced;
+			}
+			if (degreeMore != 0L || vars != degreeTwice || Long.bitCount(vars) != children.length
+					|| (vars & row.boundMask()) != 0L) {
+				return false;
+			}
+			// One connected component only: a disjoint union of cycles passes the degree test but has no single
+			// elimination walk from one root edge.
+			boolean[] reached = new boolean[children.length];
+			reached[0] = true;
+			long reach = children[0].producedMask();
+			int reachedCount = 1;
+			boolean grew = true;
+			while (grew) {
+				grew = false;
+				for (int i = 1; i < children.length; i++) {
+					if (!reached[i] && (children[i].producedMask() & reach) != 0L) {
+						reached[i] = true;
+						reach |= children[i].producedMask();
+						reachedCount++;
+						grew = true;
+					}
+				}
+			}
+			if (reachedCount != children.length) {
+				return false;
+			}
+			boolean[] core = LmdbNativeLeapfrogJoin.findCyclicCore(children, row.boundMask());
+			if (core == null) {
+				return false;
+			}
+			for (boolean member : core) {
+				if (!member) {
+					return false;
+				}
+			}
+			// Commit: enumerate the root edge, then bind each remaining vertex from its already-bound neighbors.
+			PatternPlan root = (PatternPlan) children[0];
+			boolean[] consumed = new boolean[children.length];
+			consumed[0] = true;
+			openDepth();
+			int rootAdj = adjacency(root.p.constant, true, true);
+			int rootSubjectCol = newColumn(root.s.slot);
+			int rootObjectCol = newColumn(root.o.slot);
+			currentDepthNodes().add(new LmdbNativeKernelIr.EnumerateAdjKeys(rootAdj, rootSubjectCol, rootObjectCol));
+			assuredMask |= 1L << root.s.slot | 1L << root.o.slot;
+			long bound = 1L << root.s.slot | 1L << root.o.slot;
+			int remaining = children.length - 1;
+			while (remaining > 0) {
+				int nextVar = -1;
+				List<Integer> incident = new ArrayList<>(2);
+				for (int i = 0; i < children.length && nextVar < 0; i++) {
+					if (consumed[i]) {
+						continue;
+					}
+					PatternPlan pattern = (PatternPlan) children[i];
+					int fresh = (bound >>> pattern.s.slot & 1L) == 0L ? pattern.s.slot
+							: (bound >>> pattern.o.slot & 1L) == 0L ? pattern.o.slot : -1;
+					if (fresh < 0) {
+						throw new IllegalStateException("cycle lowering left a closed pattern unconsumed");
+					}
+					int other = fresh == pattern.s.slot ? pattern.o.slot : pattern.s.slot;
+					if ((bound >>> other & 1L) != 0L) {
+						nextVar = fresh;
+					}
+				}
+				if (nextVar < 0) {
+					throw new IllegalStateException("cycle lowering found no reachable next vertex");
+				}
+				incident.clear();
+				for (int i = 0; i < children.length; i++) {
+					PatternPlan pattern = (PatternPlan) children[i];
+					if (!consumed[i] && (pattern.s.slot == nextVar || pattern.o.slot == nextVar)) {
+						int other = pattern.s.slot == nextVar ? pattern.o.slot : pattern.s.slot;
+						if ((bound >>> other & 1L) != 0L) {
+							incident.add(i);
+						}
+					}
+				}
+				openDepth();
+				int valueCol = newColumn(nextVar);
+				if (incident.size() == 1) {
+					PatternPlan pattern = (PatternPlan) children[incident.get(0)];
+					boolean forward = pattern.o.slot == nextVar;
+					int adj = adjacency(pattern.p.constant, forward, false);
+					Operand key = slotOperand(forward ? pattern.s.slot : pattern.o.slot);
+					currentDepthNodes().add(new LmdbNativeKernelIr.Probe(adj, key, valueCol));
+				} else {
+					int[] adjacencyIds = new int[incident.size()];
+					Operand[] keys = new Operand[incident.size()];
+					for (int j = 0; j < incident.size(); j++) {
+						PatternPlan pattern = (PatternPlan) children[incident.get(j)];
+						boolean forward = pattern.o.slot == nextVar;
+						adjacencyIds[j] = adjacency(pattern.p.constant, forward, false);
+						keys[j] = slotOperand(forward ? pattern.s.slot : pattern.o.slot);
+					}
+					currentDepthNodes().add(new LmdbNativeKernelIr.Intersect(adjacencyIds, keys, valueCol));
+				}
+				for (int i : incident) {
+					consumed[i] = true;
+					remaining--;
+				}
+				assuredMask |= 1L << nextVar;
+				bound |= 1L << nextVar;
+			}
+			joinOperands += children.length;
+			WCOJ_LOWERINGS.incrementAndGet();
 			return true;
 		}
 

@@ -149,6 +149,16 @@ public class LmdbNativeKernelAggregateTest {
 	private static final String HASH_JOIN_TWO_KEY_QUERY = "PREFIX ex: <" + EX + ">\n"
 			+ "SELECT ?a ?b WHERE { ?a ex:knows ?b . ?b ex:knows ?a }";
 
+	// M9 kernel WCOJ: the triangle is the classic cyclic core — the interpreted leapfrog is disabled in this class
+	// (WCOJ_FLAG=false), so the kernel's Intersect lowering is what serves it (WCOJ_LOWERINGS witness). The fixture
+	// holds two directed 3-cycles (p0-p1-p2 and p3-p4-p5), so the triangle query has exactly 6 rotations.
+	private static final String TRIANGLE_QUERY = "PREFIX ex: <" + EX + ">\n"
+			+ "SELECT ?a ?b ?c WHERE { ?a ex:knows ?b . ?b ex:knows ?c . ?c ex:knows ?a }";
+	// A GRAPH-scoped member cannot be adjacency-served by the v1 WCOJ seam: the shape must keep its ordinary route
+	// (witness stays 0) and still answer correctly.
+	private static final String TRIANGLE_GRAPH_QUERY = "PREFIX ex: <" + EX + ">\n"
+			+ "SELECT ?a ?b ?c WHERE { GRAPH ?g { ?a ex:knows ?b } . ?b ex:knows ?c . ?c ex:knows ?a }";
+
 	// M7 context columns: a constant GRAPH restriction previously declined the kernel outright (the adjacency guards
 	// reject any context term and the quad-scan lowering refuses a constant context) — it must now lower against the
 	// adjacency view with an in-node context match (CONTEXT_COLUMN_LOWERINGS witness).
@@ -690,6 +700,47 @@ public class LmdbNativeKernelAggregateTest {
 			assertEquals(expected, rows(HASH_JOIN_TWO_KEY_QUERY));
 		} finally {
 			System.clearProperty("rdf4j.lmdb.nativeHashJoin.minRows");
+		}
+	}
+
+	@Test
+	public void triangleLowersThroughTheKernelIntersectAndMatchesGeneric() {
+		List<String> expected = genericRows(TRIANGLE_QUERY);
+		assertEquals(6, expected.size(), "two directed 3-cycles must yield six rotations, got " + expected);
+		warmRowSeeds();
+		for (int round = 0; round < 300
+				&& (KernelExecutionTestAccess.opened() == 0L
+						|| KernelExecutionTestAccess.wcojLowerings() == 0L); round++) {
+			rows(TRIANGLE_QUERY);
+		}
+		assertTrue(KernelExecutionTestAccess.wcojLowerings() > 0L,
+				"the triangle was not lowered through the kernel Intersect seam");
+		assertEquals(expected, rows(TRIANGLE_QUERY));
+	}
+
+	@Test
+	public void graphScopedTriangleKeepsItsOrdinaryRouteAndStaysCorrect() {
+		List<String> expected = genericRows(TRIANGLE_GRAPH_QUERY);
+		long before = KernelExecutionTestAccess.wcojLowerings();
+		for (int round = 0; round < 20; round++) {
+			assertEquals(expected, rows(TRIANGLE_GRAPH_QUERY));
+		}
+		assertEquals(before, KernelExecutionTestAccess.wcojLowerings(),
+				"a GRAPH-scoped member must keep the cyclic core off the v1 WCOJ seam");
+	}
+
+	@Test
+	public void wcojKernelFlagOffKeepsCorrectTriangleResults() {
+		System.setProperty(LmdbNativeKernelLowering.WCOJ_KERNEL_PROPERTY, "false");
+		try {
+			List<String> expected = genericRows(TRIANGLE_QUERY);
+			for (int round = 0; round < 20; round++) {
+				assertEquals(expected, rows(TRIANGLE_QUERY));
+			}
+			assertEquals(0L, KernelExecutionTestAccess.wcojLowerings(),
+					"flag off must keep the cyclic core on the probe chain");
+		} finally {
+			System.clearProperty(LmdbNativeKernelLowering.WCOJ_KERNEL_PROPERTY);
 		}
 	}
 

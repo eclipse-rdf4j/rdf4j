@@ -405,7 +405,7 @@ final class LmdbNativeLeapfrogJoin {
 	 * remainder means the bag is (alpha-)acyclic and the ordinary join strategies keep it. Returns a per-child core
 	 * membership mask, or null when there is no usable core.
 	 */
-	private static boolean[] findCyclicCore(SlotPlan[] children, long boundMask) {
+	static boolean[] findCyclicCore(SlotPlan[] children, long boundMask) {
 		int n = children.length;
 		if (n < 3) {
 			return null;

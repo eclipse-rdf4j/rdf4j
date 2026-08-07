@@ -72,6 +72,7 @@ final class LmdbNativeKernelExecution {
 		LmdbNativeKernelLowering.CONTEXT_COLUMN_LOWERINGS.set(0L);
 		LmdbNativeKernelLowering.OUTPUT_MODS_LOWERINGS.set(0L);
 		LmdbNativeKernelLowering.HASH_JOIN_LOWERINGS.set(0L);
+		LmdbNativeKernelLowering.WCOJ_LOWERINGS.set(0L);
 		SHAPE_OPENS.clear();
 	}
 
