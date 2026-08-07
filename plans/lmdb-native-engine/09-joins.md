@@ -4,6 +4,16 @@ Goal: the join layer reaches Kuzu parity where it matters for RDF: lean hash-tab
 mark/anti joins for EXISTS/NOT EXISTS/MINUS, multi-key merge and SIP, cost-chosen build sides, a
 worst-case-optimal intersect for cyclic BGPs, and decorrelation via outer-side accumulation.
 
+## Status update (2026-08-07, three-tier parity ExecPlan M7–M10B)
+
+The COMPILED tier caught up with the join layer this file describes: the kernel now owns an
+in-kernel hash join (`HashBuild`/`HashProbe` over `KernelRuntime.LongRowMap`, sharing
+`LmdbNativeHashJoin.tryPlanKernel`'s cost gate verbatim — M8), a worst-case-optimal `Intersect`
+closing level for simple-cycle cores (counts-rule multiplicity, in-kernel galloping — M9), in-kernel
+EXISTS witnesses on the row rung, an aggregate residual filter tier, per-pattern mixed
+adjacency/scan binding (M10), and parallel partitioning for hash and WCOJ kernels (M10B). See
+`.agent/three-tier-parity-execplan.md` Progress for the full record.
+
 
 ## Status (2026-07-31)
 

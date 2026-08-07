@@ -3,6 +3,11 @@
 Status: survey complete (2026-08-03). This is a Routine C investigation artifact plus two permanent harnesses; no
 production code was changed. It is the design input for follow-up ExecPlans.
 
+> **SUPERSEDED (2026-08-07):** the census table below describes the tree as of 2026-08-03 and is stale — the
+> three-tier parity ExecPlan (`.agent/three-tier-parity-execplan.md`, M1–M10B) closed most of the gap list
+> (kernel hash join, kernel WCOJ, context columns, computed BINDs, ORDER/LIMIT sinks, EXISTS witnesses, mixed
+> binding, parallel kernels). Consult that plan's Progress section for the current state.
+
 ## Motivation
 
 Kuzu answers full predicate scans, joins, and point lookups from its in-memory adjacency lists. This branch's LMDB
